@@ -282,7 +282,7 @@ func (e *Engine) ensureDatabaseVolume(ctx context.Context, row *dbrepo.Database)
 }
 
 // projectNetworkNames 返回 Project 的活跃网络名列表（数据库挂全部活跃
-// 项目网——受管 Edge 同款语义、限本项目，ADR-0029 决策 5）。
+// 项目网——受管 Proxy 同款语义、限本项目，ADR-0029 决策 5）。
 func (e *Engine) projectNetworkNames(ctx context.Context, projectID string) []string {
 	rows, err := e.networks.ListByProject(ctx, e.db.Runner(), projectID)
 	if err != nil {

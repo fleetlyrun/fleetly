@@ -67,10 +67,10 @@ type BuildResult struct {
 	Digest string
 }
 
-// Edge 是流量接入 Capability 端口：Route 发布与证书管理（CONTEXT.md
-// Edge/Route/Certificate 词条）。受管 Provider（traefik）以普通 Workload
+// Proxy 是流量接入 Capability 端口：Route 发布与证书管理（CONTEXT.md
+// Proxy/Route/Certificate 词条）。受管 Provider（traefik）以普通 Workload
 // 形态自宿（ADR-0004），本端口承接配置发布。
-type Edge interface {
+type Proxy interface {
 	Provider
 
 	// PublishRoutes 幂等发布全量 Route 集（控制面强制全量配置防裸 {}
@@ -102,7 +102,7 @@ type MaterialsSource interface {
 	ManagedMaterials() Materials
 }
 
-// ConfigSource 是受管 Edge 的配置拉取数据面（Provider 经 HTTP provider
+// ConfigSource 是受管 Proxy 的配置拉取数据面（Provider 经 HTTP provider
 // 轮询控制面时，控制面端点从本子面取全量配置快照；非拉取型 Provider
 // 不实现）。
 type ConfigSource interface {
@@ -126,7 +126,7 @@ type Route struct {
 	// TLS 模式：auto（ACME）/ none（明文，仅 sslip.io 调试）。
 	TLS string
 	// BackendAddr 是发布时解析的后端地址（Runtime.Addresses 产物，
-	// host:port 形态；Edge Provider 不再反查 Runtime）。
+	// host:port 形态；Proxy Provider 不再反查 Runtime）。
 	BackendAddr string
 }
 
@@ -134,7 +134,7 @@ type Route struct {
 type CertificateRequest struct {
 	// Domains 是 SAN 集。
 	Domains []string
-	// HTTP01 通过受管 Edge 自身完成 challenge；材料写入由 ChallengeWriter
+	// HTTP01 通过受管 Proxy 自身完成 challenge；材料写入由 ChallengeWriter
 	// 承接。
 	HTTP01 bool
 }
@@ -209,24 +209,24 @@ func RegistryAddrFromContext(ctx context.Context) string {
 	return addr
 }
 
-// edgeAuthTokenKey 是 Edge 拉取端点共享令牌的装配 ctx 载键（消费方：
+// proxyAuthTokenKey 是 Proxy 拉取端点共享令牌的装配 ctx 载键（消费方：
 // traefik Provider 工厂——受管实例以 --providers.http.headers 同头携带；
-// 注入方是 internal/assembly 的 NewEdgeProvider，ADR-0036 N2 兑现）。
-type edgeAuthTokenKey struct{}
+// 注入方是 internal/assembly 的 NewProxyProvider，ADR-0036 N2 兑现）。
+type proxyAuthTokenKey struct{}
 
-// WithEdgeAuthToken 把拉取端点共享令牌挂进装配 ctx：
-// config.server.edge_config.auth_token 是唯一契约源，空值不注入（端点
+// WithProxyAuthToken 把拉取端点共享令牌挂进装配 ctx：
+// config.server.proxy_config.auth_token 是唯一契约源，空值不注入（端点
 // 无认证现状维持，升级零扰动）。
-func WithEdgeAuthToken(ctx context.Context, token string) context.Context {
+func WithProxyAuthToken(ctx context.Context, token string) context.Context {
 	if token == "" {
 		return ctx
 	}
-	return context.WithValue(ctx, edgeAuthTokenKey{}, token)
+	return context.WithValue(ctx, proxyAuthTokenKey{}, token)
 }
 
-// EdgeAuthTokenFromContext 读回装配期注入的共享令牌（未注入 = 空）。
-func EdgeAuthTokenFromContext(ctx context.Context) string {
-	token, _ := ctx.Value(edgeAuthTokenKey{}).(string)
+// ProxyAuthTokenFromContext 读回装配期注入的共享令牌（未注入 = 空）。
+func ProxyAuthTokenFromContext(ctx context.Context) string {
+	token, _ := ctx.Value(proxyAuthTokenKey{}).(string)
 	return token
 }
 

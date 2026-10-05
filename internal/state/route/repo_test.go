@@ -77,7 +77,7 @@ func TestRouteListPagePagination(t *testing.T) {
 	}
 }
 
-// 全量发布面（引擎 Edge 发布消费）语义不变：含全部活跃行、id 升序。
+// 全量发布面（引擎 Proxy 发布消费）语义不变：含全部活跃行、id 升序。
 func TestRouteListUnchanged(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()

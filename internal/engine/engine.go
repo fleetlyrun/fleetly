@@ -279,7 +279,7 @@ type expectDomain struct {
 type managedDomain struct {
 	// gens 是 per-受管域 Generation 计数（F2.5 修复：全局单计数把任一
 	// Provider 指纹变化放大成全部受管域滚动——新增受管 Provider 或 zot
-	// 材料随 Project 集变化都会把 Edge 滚一遍（traefik stop-first = 路由
+	// 材料随 Project 集变化都会把 Proxy 滚一遍（traefik stop-first = 路由
 	// 中断，升级零扰动锚实证）。键 = ManagedNamespace().String()。
 	gens   map[string]*managedGenState
 	ensure map[string]ensureMemo // namespace → 上次成功 Ensure（managedFingerprint 全量保守口径）
@@ -295,8 +295,8 @@ type deliveryDomain struct {
 	release map[string]ensureMemo
 }
 
-// edgeState 是 Route 发布备忘与即时发布信号（受管 Edge 面）。
-type edgeState struct {
+// proxyState 是 Route 发布备忘与即时发布信号（受管 Proxy 面）。
+type proxyState struct {
 	pub    map[string]ensureMemo // 发布单槽（键恒 routesPubKey；routesFingerprint 行集内容指纹）
 	pubNow atomic.Bool           // PublishRoutesNow 即时发布信号（消费即清）
 }
@@ -404,15 +404,15 @@ type Engine struct {
 	wg           sync.WaitGroup
 
 	// 域状态（各域行为文件就近消费；域类型注释见上）。
-	task     taskDomain
-	obs      observDomain
-	drift    driftDomain
-	expect   expectDomain
-	managed  managedDomain
-	database databaseDomain
-	delivery deliveryDomain
-	edgeMemo edgeState
-	build    buildDomain
+	task      taskDomain
+	obs       observDomain
+	drift     driftDomain
+	expect    expectDomain
+	managed   managedDomain
+	database  databaseDomain
+	delivery  deliveryDomain
+	proxyMemo proxyState
+	build     buildDomain
 
 	// ensureMu 是收敛域签名短路备忘族的共用锁（五张 memo map 分住各域
 	// 子结构，锁保持单点——拆锁随域分化需要时再裁，本批锁语义零漂移）。
@@ -423,7 +423,7 @@ type Engine struct {
 	// 全部 Ensure 族调用点（materialize/databaseStep/managedStep/
 	// driveEnsure/backup 环的 utility 附着）与 TeardownDatabase（拆载体
 	// 是载体写动词，2026-10-05 级联批入册）持读锁——读锁间照旧并发，
-	// 只有重建排他（受管 Edge 单次 Ensure 引用全部活跃项目网络，全局
+	// 只有重建排他（受管 Proxy 单次 Ensure 引用全部活跃项目网络，全局
 	// 粒度是对该耦合的诚实取舍，ADR-0046 决策 3）。锁等待不占步预算
 	// （排队语义，见 lockMaintenance）。
 	maintenanceMu sync.RWMutex
@@ -460,8 +460,8 @@ type Engine struct {
 	builders  map[string]capability.Builder
 	buildOpts buildOptions
 
-	// Edge 面（F0.15）：Route 全量发布 + 受管 Provider reconciler。
-	edge   capability.Edge
+	// Proxy 面（F0.15）：Route 全量发布 + 受管 Provider reconciler。
+	proxy  capability.Proxy
 	routes *route.Repo
 
 	// Registry 面（F1.11，ADR-0019 附录 B）：构建推送目标 + from_build
@@ -473,7 +473,7 @@ type Engine struct {
 	secrets  *secret.Repo
 	configs  *configrepo.Repo
 	volumes  *volume.Repo
-	networks *networkrepo.Repo // 受管 Edge 挂网真源（活跃 Project 网络全量）
+	networks *networkrepo.Repo // 受管 Proxy 挂网真源（活跃 Project 网络全量）
 }
 
 // Deps 是引擎依赖（装配注入；可选依赖为 nil 时对应能力停用并给出精确
@@ -482,7 +482,7 @@ type Deps struct {
 	DB          *state.DB
 	Runtime     capability.Runtime
 	Builders    map[string]capability.Builder // 可空/空 map：构建链停用（镜像直投不受影响；ADR-0032 spec 路由家族）
-	Edge        capability.Edge               // 可空：Route 发布与受管自宿停用
+	Proxy       capability.Proxy              // 可空：Route 发布与受管自宿停用
 	Registry    capability.Registry           // 可空：build 源部署精确失败（附录 B.5①）
 	Logging     capability.Logging            // 可空：采集/检索面停用——logs 回退 Runtime 实时路径、build 日志回退环形缓冲（ADR-0040）
 	Metrics     capability.Metrics            // 可空：零采集/零告警、查询精确失败（ADR-0041）
@@ -499,7 +499,7 @@ func New(deps Deps, opts Options) *Engine {
 	clock := db.Clock()
 	e := &Engine{
 		builders:     deps.Builders,
-		edge:         deps.Edge,
+		proxy:        deps.Proxy,
 		registry:     deps.Registry,
 		logging:      deps.Logging,
 		metrics:      deps.Metrics,
@@ -569,7 +569,7 @@ func New(deps Deps, opts Options) *Engine {
 	e.managed.gens = make(map[string]*managedGenState)
 	e.database.ensure = make(map[string]ensureMemo)
 	e.delivery.release = make(map[string]ensureMemo)
-	e.edgeMemo.pub = make(map[string]ensureMemo)
+	e.proxyMemo.pub = make(map[string]ensureMemo)
 	// 环表（表序 = DriveOnce 手动驱动序：schedule 先于 task——同一轮内
 	// 铸出的 Task 即刻进补足链；goroutine 挂载/Kick 顺序随表，环间独立
 	// 无依赖）。

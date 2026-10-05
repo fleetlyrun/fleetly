@@ -130,7 +130,7 @@ func (e *Engine) RebuildNetwork(ctx context.Context, projectID, name string) (Ne
 
 // checkNetworkAttachments 裁决附着载体清单的归属（ADR-0046 决策 2.2）：
 // 期望集 = 域锚可解析到活跃行（App 轴 apps 表 / Task 轴 active·draining
-// 行 / Database 轴活跃行）或在册受管 Provider 命名空间（Edge 挂全部活跃
+// 行 / Database 轴活跃行）或在册受管 Provider 命名空间（Proxy 挂全部活跃
 // 项目网）。载体标记值是 sanitizeNamePart 产物（平台 ID 的小写形），比对
 // 大小写折叠。任一无法归属即 ForeignAttachmentError（E_CONFLICT 面）。
 func (e *Engine) checkNetworkAttachments(ctx context.Context, attachments []capability.NetworkAttachment) error {
@@ -174,7 +174,7 @@ func (e *Engine) checkNetworkAttachments(ctx context.Context, attachments []capa
 			continue
 		}
 		if managedNS[strings.ToLower(d.Team+"/"+d.Project)] {
-			continue // 受管域载体（Edge 挂项目网是部署形态的一部分）
+			continue // 受管域载体（Proxy 挂项目网是部署形态的一部分）
 		}
 		switch {
 		case d.App != "":

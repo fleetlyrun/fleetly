@@ -147,7 +147,7 @@ func nsSelector(ns capability.NamespaceRef) map[string]string {
 // toServiceSpec 把平台 Workload 翻译为 swarm ServiceSpec。
 //
 // 关键映射决策（真机坑对照）：
-//   - 不发布宿主端口：Route 流量经 Edge（traefik）进 overlay 网络；
+//   - 不发布宿主端口：Route 流量经 Proxy（traefik）进 overlay 网络；
 //     swarm 不应用 Hosts 且 nft 可能杀 DNAT，端口发布不可依赖。
 //   - Env 排序：swarm update 以 spec 变更为准，排序保幂等 diff 稳定。
 //   - Placement → 节点 label 约束公式（node.labels.fleetly.node.id==<id>）。
@@ -247,7 +247,7 @@ func toServiceSpec(ns capability.NamespaceRef, w capability.Workload, gen capabi
 			Aliases: aliases,
 		})
 	}
-	// 跨域网络引用（受管 Edge 挂项目网）：载体名按引用自身的域解析——
+	// 跨域网络引用（受管 Proxy 挂项目网）：载体名按引用自身的域解析——
 	// 域名与载体名公式都是 Provider 私有，engine 只发引用形态（B1）。
 	// 别名不挂跨域附件（平台 DNS 名是域内 API 面）。
 	for _, ref := range w.NetworkRefs {
@@ -263,9 +263,9 @@ func toServiceSpec(ns capability.NamespaceRef, w capability.Workload, gen capabi
 		},
 		TaskTemplate: task,
 		Mode:         serviceMode(w),
-		// 端口发布仅限受管形态的部署声明（Workload.Publish 显式——Edge
+		// 端口发布仅限受管形态的部署声明（Workload.Publish 显式——Proxy
 		// 80/443、受管 zot 5000）；用户 Workload 一律不发布宿主端口（流量
-		// 经 Edge，见函数注释）。
+		// 经 Proxy，见函数注释）。
 		EndpointSpec: endpointSpec(w.Publish),
 		// UpdateConfig 语义由平台 Deployment 状态机掌管（滚动与回滚 =
 		// Replay），编排器原生回滚不用（ADR-0005）。顺序按争用面分流
@@ -332,7 +332,7 @@ func addressAliases(addressing []capability.Address) []string {
 	return names
 }
 
-// endpointSpec 翻译宿主端口发布声明（受管 Edge/zot/VL/VM 形态使用）。
+// endpointSpec 翻译宿主端口发布声明（受管 Proxy/zot/VL/VM 形态使用）。
 // Mode 显式 vip——服务端对空 Mode 物化为 vip，发送形态与回读形态
 // 一致是 no-op 比对的前提（staging 真机实证：受管 zot 恒不等 → update 风暴
 // → 滚动替换把无钉住载体漂到无卷节点，2026-10-02）。PublishMode 缺省 =

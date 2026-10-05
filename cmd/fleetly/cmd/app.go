@@ -101,7 +101,7 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 		groupVerb("schedules", "manage timezone-aware cron schedules firing one-shot tasks",
 			newSchedulesCreateVerb(), newSchedulesListVerb(), newSchedulesGetVerb(),
 			newSchedulesTriggerVerb(), newSchedulesDeleteVerb()),
-		// Edge / Runtime 上下文。
+		// Proxy / Runtime 上下文。
 		newQuickstartVerb(),
 		groupVerb("routes", "manage routes", newRoutesCreateVerb(), newRoutesListVerb()),
 		groupVerb("nodes", "inspect cluster nodes and administer scheduling", newNodesListVerb(), newNodesEnrollVerb(),

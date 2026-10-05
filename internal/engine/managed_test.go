@@ -14,50 +14,50 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state/statetest"
 )
 
-// fakeEdge 是 Edge 端口假底座（受管形态 + 配置快照面）。
-type fakeEdge struct {
+// fakeProxy 是 Proxy 端口假底座（受管形态 + 配置快照面）。
+type fakeProxy struct {
 	published []capability.Route
 	fail      bool
 	ws        []capability.Workload // 非空时覆盖默认受管 workload 集
 }
 
-func (f *fakeEdge) Describe() capability.ProviderDescriptor {
-	return capability.ProviderDescriptor{Name: "fake-edge", Capability: capability.KindEdge, Managed: true}
+func (f *fakeProxy) Describe() capability.ProviderDescriptor {
+	return capability.ProviderDescriptor{Name: "fake-proxy", Capability: capability.KindProxy, Managed: true}
 }
-func (f *fakeEdge) Health(context.Context) capability.HealthReport {
+func (f *fakeProxy) Health(context.Context) capability.HealthReport {
 	return capability.HealthReport{Healthy: true}
 }
-func (f *fakeEdge) PublishRoutes(_ context.Context, routes []capability.Route) error {
+func (f *fakeProxy) PublishRoutes(_ context.Context, routes []capability.Route) error {
 	if f.fail {
 		return assert.AnError
 	}
 	f.published = routes
 	return nil
 }
-func (f *fakeEdge) IssueCertificate(context.Context, capability.CertificateRequest, capability.ChallengeWriter) (capability.CertificateStatus, error) {
+func (f *fakeProxy) IssueCertificate(context.Context, capability.CertificateRequest, capability.ChallengeWriter) (capability.CertificateStatus, error) {
 	return capability.CertificateStatus{}, nil
 }
-func (f *fakeEdge) ManagedWorkloads() []capability.Workload {
+func (f *fakeProxy) ManagedWorkloads() []capability.Workload {
 	if len(f.ws) > 0 {
 		return f.ws
 	}
-	return []capability.Workload{{ID: "fleetly-edge-fake", Process: "edge", Image: "fake/edge:1", Replicas: 1}}
+	return []capability.Workload{{ID: "fleetly-proxy-fake", Process: "proxy", Image: "fake/proxy:1", Replicas: 1}}
 }
-func (f *fakeEdge) ManagedNamespace() capability.NamespaceRef {
-	return capability.NamespaceRef{Team: "fleetly", Project: "system", App: "edge"}
+func (f *fakeProxy) ManagedNamespace() capability.NamespaceRef {
+	return capability.NamespaceRef{Team: "fleetly", Project: "system", App: "proxy"}
 }
 
 var (
-	_ capability.Edge    = (*fakeEdge)(nil)
-	_ capability.Managed = (*fakeEdge)(nil)
+	_ capability.Proxy   = (*fakeProxy)(nil)
+	_ capability.Managed = (*fakeProxy)(nil)
 )
 
 // 受管 reconciler：Ensure 到系统域 + Generation 推进 + 归属登记。
 func TestManagedReconcilerEnsuresSystemNamespace(t *testing.T) {
 	db, _ := statetest.New(t)
 	rt := newFakeRuntime()
-	edge := &fakeEdge{}
-	e := New(Deps{DB: db, Runtime: rt, Edge: edge, Logger: discardLogger()}, Options{})
+	proxy := &fakeProxy{}
+	e := New(Deps{DB: db, Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
 
 	e.managedStep(ctx)
@@ -68,8 +68,8 @@ func TestManagedReconcilerEnsuresSystemNamespace(t *testing.T) {
 	last := calls[len(calls)-1]
 	assert.Equal(t, "fleetly", last.NS.Team)
 	assert.Equal(t, "system", last.NS.Project)
-	assert.Equal(t, "fleetly-edge-fake", last.Spec["edge"].ID)
-	assert.Equal(t, "fake/edge:1", last.Spec["edge"].Image)
+	assert.Equal(t, "fleetly-proxy-fake", last.Spec["proxy"].ID)
+	assert.Equal(t, "fake/proxy:1", last.Spec["proxy"].Image)
 	assert.Greater(t, uint64(last.Gen), uint64(0))
 }
 
@@ -81,8 +81,8 @@ func TestManagedReconcilerEnsuresSystemNamespace(t *testing.T) {
 func TestManagedGenerationStableAcrossTicks(t *testing.T) {
 	db, _ := statetest.New(t)
 	rt := newFakeRuntime()
-	edge := &fakeEdge{}
-	e := New(Deps{DB: db, Runtime: rt, Edge: edge, Logger: discardLogger()}, Options{})
+	proxy := &fakeProxy{}
+	e := New(Deps{DB: db, Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
 
 	for i := 0; i < 5; i++ {
@@ -93,14 +93,14 @@ func TestManagedGenerationStableAcrossTicks(t *testing.T) {
 	assert.Equal(t, capability.Generation(1), calls[0].Gen)
 
 	// spec 变化（受管 workload 镜像升级）→ 恰好推进一次，随后稳定。
-	edge.ws = []capability.Workload{{ID: "fleetly-edge-fake", Process: "edge", Image: "fake/edge:2", Replicas: 1}}
+	proxy.ws = []capability.Workload{{ID: "fleetly-proxy-fake", Process: "proxy", Image: "fake/proxy:2", Replicas: 1}}
 	for i := 0; i < 3; i++ {
 		e.managedStep(ctx)
 	}
 	calls = rt.calls()
 	require.Len(t, calls, 2, "spec change must produce exactly one new Ensure")
 	assert.Greater(t, uint64(calls[1].Gen), uint64(calls[0].Gen), "spec change must advance the generation")
-	assert.Equal(t, "fake/edge:2", calls[1].Spec["edge"].Image)
+	assert.Equal(t, "fake/proxy:2", calls[1].Spec["proxy"].Image)
 }
 
 // N1 C16：受管 Ensure 签名覆盖材料面——MaterialsSource 材料变化（ws 不变）
@@ -111,9 +111,9 @@ func TestManagedEnsureMaterialsChangeForcesEnsure(t *testing.T) {
 	reg := newFakeRegistry()
 	reg.managed = true
 	reg.materials = capability.Materials{SecretFiles: map[string][]byte{"zot-config": []byte(`{"v":1}`)}}
-	e := New(Deps{DB: db, Runtime: rt, Edge: &fakeEdge{}, Registry: reg, Logger: discardLogger()}, Options{})
+	e := New(Deps{DB: db, Runtime: rt, Proxy: &fakeProxy{}, Registry: reg, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
-	// 双 Provider（edge+registry）：首轮各一次 Ensure。
+	// 双 Provider（proxy+registry）：首轮各一次 Ensure。
 	e.managedStep(ctx)
 	e.managedStep(ctx)
 	require.Len(t, rt.calls(), 2, "stable inputs must short-circuit after the first tick")
@@ -134,7 +134,7 @@ func TestManagedEnsureFailureRetriesNextTick(t *testing.T) {
 	db, _ := statetest.New(t)
 	rt := newFakeRuntime()
 	rt.failNext = true
-	e := New(Deps{DB: db, Runtime: rt, Edge: &fakeEdge{}, Logger: discardLogger()}, Options{})
+	e := New(Deps{DB: db, Runtime: rt, Proxy: &fakeProxy{}, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
 
 	e.managedStep(ctx) // Ensure 失败
@@ -151,7 +151,7 @@ func TestManagedStepBoundedWhenRuntimeHangs(t *testing.T) {
 	db, _ := statetest.New(t)
 	rt := newFakeRuntime()
 	rt.blockPoint = make(chan struct{}) // 永不关闭 = Ensure 永久挂起
-	e := New(Deps{DB: db, Runtime: rt, Edge: &fakeEdge{}, Logger: discardLogger()},
+	e := New(Deps{DB: db, Runtime: rt, Proxy: &fakeProxy{}, Logger: discardLogger()},
 		Options{ManagedStepTimeout: 50 * time.Millisecond})
 	ctx := context.Background()
 
@@ -173,8 +173,8 @@ func TestManagedStepBoundedWhenRuntimeHangs(t *testing.T) {
 func TestRoutePublishResolvesBackends(t *testing.T) {
 	db, clock := statetest.New(t)
 	rt := newFakeRuntime()
-	edge := &fakeEdge{}
-	e := New(Deps{DB: db, Runtime: rt, Edge: edge, Logger: discardLogger()}, Options{})
+	proxy := &fakeProxy{}
+	e := New(Deps{DB: db, Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
 	// Team 轴接实（ADR-0028）：后端域解析从 Project 行实取团队。
 	require.NoError(t, project.New(clock).Create(ctx, db.Runner(), &project.Project{
@@ -201,8 +201,8 @@ func TestRoutePublishResolvesBackends(t *testing.T) {
 	}))
 
 	e.publishRoutes(ctx)
-	require.Len(t, edge.published, 1, "unresolvable route is skipped, the rest still publish")
-	got := edge.published[0]
+	require.Len(t, proxy.published, 1, "unresolvable route is skipped, the rest still publish")
+	got := proxy.published[0]
 	assert.Equal(t, "shop.127.0.0.1.sslip.io", got.Host)
 	assert.NotEmpty(t, got.BackendAddr, "backend address must be resolved via Runtime.Addresses")
 	assert.Equal(t, capability.ProtocolH2C, got.Protocol)
@@ -213,8 +213,8 @@ func TestRoutePublishResolvesBackends(t *testing.T) {
 func TestPublishRoutesShortCircuitsWhenUnchanged(t *testing.T) {
 	db, clock := statetest.New(t)
 	rt := newFakeRuntime()
-	edge := &fakeEdge{}
-	e := New(Deps{DB: db, Runtime: rt, Edge: edge, Logger: discardLogger()}, Options{})
+	proxy := &fakeProxy{}
+	e := New(Deps{DB: db, Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
 	require.NoError(t, project.New(clock).Create(ctx, db.Runner(), &project.Project{
 		ID: tProjectID, Name: "shop", TeamID: "default",
@@ -231,7 +231,7 @@ func TestPublishRoutesShortCircuitsWhenUnchanged(t *testing.T) {
 	}))
 
 	e.publishRoutes(ctx)
-	require.Len(t, edge.published, 1)
+	require.Len(t, proxy.published, 1)
 	first := len(rt.addrCallsSnapshot())
 
 	e.publishRoutes(ctx) // 行集未变：短路
@@ -247,7 +247,7 @@ func TestPublishRoutesShortCircuitsWhenUnchanged(t *testing.T) {
 	}))
 	e.publishRoutes(ctx)
 	assert.Greater(t, len(rt.addrCallsSnapshot()), first, "route-set change must re-resolve")
-	require.Len(t, edge.published, 2, "the new route must join the full publish")
+	require.Len(t, proxy.published, 2, "the new route must join the full publish")
 }
 
 // N1 C16b：PublishRoutesNow 即时触发绕过短路（API 写路径契约）——后端
@@ -255,8 +255,8 @@ func TestPublishRoutesShortCircuitsWhenUnchanged(t *testing.T) {
 func TestPublishRoutesForcedBypassResolvesFreshBackends(t *testing.T) {
 	db, clock := statetest.New(t)
 	rt := newFakeRuntime()
-	edge := &fakeEdge{}
-	e := New(Deps{DB: db, Runtime: rt, Edge: edge, Logger: discardLogger()}, Options{})
+	proxy := &fakeProxy{}
+	e := New(Deps{DB: db, Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
 	require.NoError(t, project.New(clock).Create(ctx, db.Runner(), &project.Project{
 		ID: tProjectID, Name: "shop", TeamID: "default",
@@ -272,8 +272,8 @@ func TestPublishRoutesForcedBypassResolvesFreshBackends(t *testing.T) {
 		Protocol: capability.ProtocolHTTP, TLSMode: "auto",
 	}))
 	e.publishRoutes(ctx)
-	require.Len(t, edge.published, 1)
-	require.Equal(t, "10.0.0.2:8080", edge.published[0].BackendAddr)
+	require.Len(t, proxy.published, 1)
+	require.Equal(t, "10.0.0.2:8080", proxy.published[0].BackendAddr)
 
 	// 后端地址漂移（VIP 变化）：行集未变 → 短路保持（滞后有界）。
 	rt.mu.Lock()
@@ -281,14 +281,14 @@ func TestPublishRoutesForcedBypassResolvesFreshBackends(t *testing.T) {
 	rt.mu.Unlock()
 	e.publishRoutes(ctx)
 	require.Len(t, rt.addrCallsSnapshot(), 1, "unchanged route set short-circuits")
-	assert.Equal(t, "10.0.0.2:8080", edge.published[0].BackendAddr, "stale target persists until forced")
+	assert.Equal(t, "10.0.0.2:8080", proxy.published[0].BackendAddr, "stale target persists until forced")
 
 	// PublishRoutesNow → 绕过短路 → 新地址即时进发布集。
 	e.PublishRoutesNow()
 	e.publishRoutes(ctx)
 	assert.Greater(t, len(rt.addrCallsSnapshot()), 1, "the forced publish must re-resolve backends")
-	require.Len(t, edge.published, 1)
-	assert.Equal(t, "10.0.0.9:8080", edge.published[0].BackendAddr, "forced publish converges address drift")
+	require.Len(t, proxy.published, 1)
+	assert.Equal(t, "10.0.0.9:8080", proxy.published[0].BackendAddr, "forced publish converges address drift")
 }
 
 // N1 C16b：强制重放节拍兜底环外变更——Dead backend（Addresses 解析不到）
@@ -296,8 +296,8 @@ func TestPublishRoutesForcedBypassResolvesFreshBackends(t *testing.T) {
 func TestPublishRoutesReplayWindowDropsDeadBackend(t *testing.T) {
 	db, clock := statetest.New(t)
 	rt := newFakeRuntime()
-	edge := &fakeEdge{}
-	e := New(Deps{DB: db, Runtime: rt, Edge: edge, Logger: discardLogger()},
+	proxy := &fakeProxy{}
+	e := New(Deps{DB: db, Runtime: rt, Proxy: proxy, Logger: discardLogger()},
 		Options{ReconcileReplayInterval: 30 * time.Second})
 	ctx := context.Background()
 	require.NoError(t, project.New(clock).Create(ctx, db.Runner(), &project.Project{
@@ -314,17 +314,17 @@ func TestPublishRoutesReplayWindowDropsDeadBackend(t *testing.T) {
 		Protocol: capability.ProtocolHTTP, TLSMode: "auto",
 	}))
 	e.publishRoutes(ctx)
-	require.Len(t, edge.published, 1)
+	require.Len(t, proxy.published, 1)
 
 	// 后端消失（载体已拆）：行集未变 → 短路保持（配置滞后有界）。
 	rt.mu.Lock()
 	delete(rt.endpoints, "default/"+tProjectID+"/"+tAppID)
 	rt.mu.Unlock()
 	e.publishRoutes(ctx)
-	require.Len(t, edge.published, 1, "the skipped tick keeps the last good config")
+	require.Len(t, proxy.published, 1, "the skipped tick keeps the last good config")
 
 	// 节拍到 → 强制全量重发布 → Dead backend 撤流（诚实降级语义不变）。
 	clock.Advance(31 * time.Second)
 	e.publishRoutes(ctx)
-	assert.Empty(t, edge.published, "the replay window must converge the dead-backend withdrawal")
+	assert.Empty(t, proxy.published, "the replay window must converge the dead-backend withdrawal")
 }

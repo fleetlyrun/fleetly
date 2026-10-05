@@ -1,7 +1,7 @@
 {
   "swagger": "2.0",
   "info": {
-    "title": "Structure 上下文（领域模型 §2）：组织结构——项目/应用骨架与材料\n（Project/App/Secret/Config/Volume/Network）。读写分离的 CRUD 面；\nRoute 属 Edge 上下文、Deployment 属 Delivery 上下文（各自 proto 包）。",
+    "title": "Structure 上下文（领域模型 §2）：组织结构——项目/应用骨架与材料\n（Project/App/Secret/Config/Volume/Network）。读写分离的 CRUD 面；\nRoute 属 Proxy 上下文、Deployment 属 Delivery 上下文（各自 proto 包）。",
     "version": "version not set"
   },
   "tags": [

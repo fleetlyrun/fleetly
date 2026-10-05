@@ -1,9 +1,9 @@
 syntax = "proto3";
 
-// Edge & TLS 上下文（领域模型 §2）：Route 与证书资产。
-package fleetly.edge.v1;
+// Proxy & TLS 上下文（领域模型 §2）：Route 与证书资产。
+package fleetly.proxy.v1;
 
-option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/edge/v1;edgev1";
+option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/proxy/v1;proxyv1";
 
 import "google/api/annotations.proto";
 import "protoc-gen-openapiv2/options/annotations.proto";

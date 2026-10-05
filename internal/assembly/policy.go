@@ -7,8 +7,8 @@ import (
 
 	automationv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/automation/v1"
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
-	edgev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/edge/v1"
 	identityv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/identity/v1"
+	proxyv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/proxy/v1"
 	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
@@ -26,7 +26,7 @@ func authzFiles() []protoreflect.FileDescriptor {
 		deliveryv1.File_fleetly_delivery_v1_delivery_proto,
 		automationv1.File_fleetly_automation_v1_automation_proto,
 		runtimev1.File_fleetly_runtime_v1_runtime_proto,
-		edgev1.File_fleetly_edge_v1_edge_proto,
+		proxyv1.File_fleetly_proxy_v1_proxy_proto,
 		telemetryv1.File_fleetly_telemetry_v1_telemetry_proto,
 		identityv1.File_fleetly_identity_v1_identity_proto,
 	}

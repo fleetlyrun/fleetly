@@ -73,16 +73,16 @@ func TestManagedHostCredentialInjection(t *testing.T) {
 	assert.Equal(t, "ci", m.RegistryAuth["ghcr.io"].Username, "non-managed hosts keep the project secret channel")
 }
 
-// 附录 B.1：reconcileManaged 双 Provider——Edge 挂活跃项目网、zot 域不挂；
+// 附录 B.1：reconcileManaged 双 Provider——Proxy 挂活跃项目网、zot 域不挂；
 // MaterialsSource 材料透传到受管 Ensure。
 func TestReconcileManagedDualProviders(t *testing.T) {
 	db, clock := statetest.New(t)
 	rt := newFakeRuntime()
-	edge := &fakeEdge{}
+	proxy := &fakeProxy{}
 	reg := newFakeRegistry()
 	reg.managed = true
 	reg.materials = capability.Materials{SecretFiles: map[string][]byte{"zot-config": []byte(`{"http":{}}`)}}
-	e := New(Deps{DB: db, Runtime: rt, Edge: edge, Registry: reg, Logger: discardLogger()}, Options{})
+	e := New(Deps{DB: db, Runtime: rt, Proxy: proxy, Registry: reg, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
 	require.NoError(t, project.New(clock).Create(ctx, db.Runner(), &project.Project{ID: tProjectID, Name: "shop", TeamID: "default"}))
 	require.NoError(t, e.networks.Create(ctx, db.Runner(), &networkrepo.Network{
@@ -91,27 +91,27 @@ func TestReconcileManagedDualProviders(t *testing.T) {
 
 	e.managedStep(ctx)
 
-	edgeNS := capability.NamespaceRef{Team: "fleetly", Project: "system", App: "edge"}
+	proxyNS := capability.NamespaceRef{Team: "fleetly", Project: "system", App: "proxy"}
 	regNS := capability.NamespaceRef{Team: "fleetly", Project: "system", App: "registry"}
-	var edgeCall, regCall *ensureCall
+	var proxyCall, regCall *ensureCall
 	for i := range rt.calls() {
 		c := rt.calls()[i]
 		switch c.NS.String() {
-		case edgeNS.String():
-			edgeCall = &rt.calls()[i]
+		case proxyNS.String():
+			proxyCall = &rt.calls()[i]
 		case regNS.String():
 			regCall = &rt.calls()[i]
 		}
 	}
-	require.NotNil(t, edgeCall, "edge domain must be ensured")
+	require.NotNil(t, proxyCall, "proxy domain must be ensured")
 	require.NotNil(t, regCall, "registry domain must be ensured")
 
-	require.Len(t, edgeCall.Spec["edge"].NetworkRefs, 1, "edge must attach the active project network")
+	require.Len(t, proxyCall.Spec["proxy"].NetworkRefs, 1, "proxy must attach the active project network")
 	assert.Empty(t, regCall.Spec["zot"].NetworkRefs, "registry must not attach project networks (B.1)")
 	assert.Empty(t, regCall.Spec["zot"].Networks)
 
-	assert.Empty(t, edgeCall.Materials.SecretFiles, "edge declares no materials")
+	assert.Empty(t, proxyCall.Materials.SecretFiles, "proxy declares no materials")
 	assert.Equal(t, []byte(`{"http":{}}`), regCall.Materials.SecretFiles["zot-config"],
 		"MaterialsSource payload must ride the managed Ensure")
-	assert.Equal(t, edgeCall.Gen, regCall.Gen, "managed generation is shared across providers")
+	assert.Equal(t, proxyCall.Gen, regCall.Gen, "managed generation is shared across providers")
 }

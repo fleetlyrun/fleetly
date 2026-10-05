@@ -16,7 +16,7 @@ import (
 	"github.com/lynx-go/commands"
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
-	edgev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/edge/v1"
+	proxyv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/proxy/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 )
 
@@ -125,8 +125,8 @@ func newQuickstartVerb() commands.Command {
 				appID = a.GetApp().GetId()
 			}
 
-			// 3. Project 网络（幂等：存在即复用）。受管 Edge 挂全部活跃
-			// Project 网络（B1）——后端与 Edge 在同一 overlay 才互通，
+			// 3. Project 网络（幂等：存在即复用）。受管 Proxy 挂全部活跃
+			// Project 网络（B1）——后端与 Proxy 在同一 overlay 才互通，
 			// quickstart 一条龙必须把网络实体建出来。
 			nlist, err := c.Networks.ListNetworks(ctx, &structurev1.ListNetworksRequest{ProjectId: projectID})
 			if err != nil {
@@ -147,8 +147,8 @@ func newQuickstartVerb() commands.Command {
 			}
 
 			// 4. 部署样例镜像（compose 形态：Route 后端解析依赖端口声明
-			// 落 fleetly.ports 标注——镜像直投无端口声明面，Edge 后端将
-			// 无从解析；networks 挂 Project 网让后端与受管 Edge 同网互通）。
+			// 落 fleetly.ports 标注——镜像直投无端口声明面，Proxy 后端将
+			// 无从解析；networks 挂 Project 网让后端与受管 Proxy 同网互通）。
 			compose := fmt.Sprintf("services:\n  web:\n    image: %s\n    ports:\n      - \"%d\"\n    networks:\n      - default\n", image, port)
 			dep, err := c.Deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: appID, ComposeYaml: compose})
 			if err != nil {
@@ -160,18 +160,18 @@ func newQuickstartVerb() commands.Command {
 			if host == "" {
 				host = sslipHost(serverAddr, appName)
 			}
-			rlist, err := c.Routes.ListRoutes(ctx, &edgev1.ListRoutesRequest{})
+			rlist, err := c.Routes.ListRoutes(ctx, &proxyv1.ListRoutesRequest{})
 			if err != nil {
 				return err
 			}
-			var route *edgev1.Route
+			var route *proxyv1.Route
 			for _, r := range rlist.GetRoutes() {
 				if r.GetHost() == host {
 					route = r // 同 host 既有 Route 直接复用（列表携带全量字段）
 				}
 			}
 			if route == nil {
-				created, err := c.Routes.CreateRoute(ctx, &edgev1.CreateRouteRequest{
+				created, err := c.Routes.CreateRoute(ctx, &proxyv1.CreateRouteRequest{
 					ProjectId: projectID, Host: host, AppId: appID,
 					Process: "web", Port: int32(port), Protocol: "http", TlsMode: tlsMode, //nolint:gosec // 端口域内
 				})

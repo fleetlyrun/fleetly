@@ -23,7 +23,7 @@
 | **Structure** | 组织结构：项目/应用骨架与材料 | Project, App, Process, Variable, Secret, Config |
 | **Delivery** | 源接入、构建、Revision 冻结 | Source, Build, Revision, Deployment |
 | **Runtime** | 期望状态投影与集群观测 | Spec, Workload, Generation, Cluster, Node, Enrollment, Placement |
-| **Edge & TLS** | 流量接入与证书 | Route, Certificate |
+| **Proxy & TLS** | 流量接入与证书 | Route, Certificate |
 | **Data Services** | 托管数据服务与备份 | Database, Backup, Restore |
 | **Automation** | 程序化工作负载面 | Task(one-shot/resident), Run, Schedule, Owner Lease |
 | **Telemetry** | 日志与指标消费 | Logging 查询面, Metrics 查询面, Event 流 |
@@ -31,7 +31,7 @@
 上下文间关系：
 
 - Delivery → Runtime：Deployment 在 releasing 阶段把 Spec 投影为 Workload 交 Runtime Provider。
-- Delivery → Edge：发布成功后发布 Route；失败回滚不触碰 Route。
+- Delivery → Proxy：发布成功后发布 Route；失败回滚不触碰 Route。
 - Automation → Runtime：Run 同样投影为 Workload（短生命周期 + TTL）。
 - Data Services → Runtime：Database 模板渲染成 Spec 后走同一条 Runtime 通道（不建第二条翻译线——旧项目第二份翻译已实证漂移）。
 - Telemetry ← 各上下文：一切状态迁移写 Event（Outbox）；日志/指标查询经 Capability 端口转发。
@@ -119,7 +119,7 @@ Run: pending → running → stopping → stopped | failed
 1. **发布中途被杀**（旧 spike V4）：进程在 releasing 中途被 SIGKILL，重启后按 Generation 幂等重下发；in-flight 请求必须优雅退出，否则 502 真实发生。
 2. **回滚遇到对象缺失**：Replay R(n-1) 时若载体已被人工删除，必须重建而非报成功（旧 spike B2）。
 3. **换 Runtime**：同一 App 在 swarm → k3s 迁移，App/Revision/Route/ID 全部保持；载体命名、探针实现、Enrollment 方式全部更换。无状态 Workload 语义全保持；有状态 Workload（Volume/Database）经 Backup/Restore + 显式数据处置迁移——placement 绑定不跨 Runtime 复用，节点 ID 永不复用。这是检验运行时中立的验收场景。
-4. **Provider 降级**：Logging Provider 宕机 → 部署照常、日志查询报"能力不可用"；Edge Provider 宕机 → 存量路由继续服务，Route 变更失败且明示。降级矩阵见架构文档 §9。
+4. **Provider 降级**：Logging Provider 宕机 → 部署照常、日志查询报"能力不可用"；Proxy Provider 宕机 → 存量路由继续服务，Route 变更失败且明示。降级矩阵见架构文档 §9。
 5. **节点失联 + Volume**：节点 DOWN（旧实测 ~13.5s 检出）期间钉住卷的工作负载不迁移、不重建（旧 spike C3a：无钉住跨节点 = 数据丢失）；node rm 后卡 PENDING 的工作负载登记为孤儿，人工裁决（旧 C4b）。
 6. **Agent 重试幂等**：同一 Idempotency-Key + 同请求体 → 返回同一 Deployment；同 Key 不同体 → 409。
 7. **漂移与人工干预**：人工改了载体配置 → Drift 事件可见，默认不自动 Converge；挂起（suspend）永不被静默撤销（旧 ADR-0004）。

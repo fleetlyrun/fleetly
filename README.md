@@ -11,7 +11,7 @@ fleetly 是一个轻量 PaaS：把源码或镜像变成运行在可插拔运行�
 
 - **宿主 Linux 二进制**：`fleetlyd`（daemon，systemd 优先）+ `fleetly`（CLI）。控制面 gRPC `:9080` / REST `:9081`。
 - **运行时**：Docker Swarm（单节点 `swarm init` 起步，`fleetly nodes enroll` 扩到多节点）。
-- **五件受管自宿**（零外部依赖起步）：zot 镜像仓 `:5000`、traefik Edge、VictoriaLogs `:9428`、VictoriaMetrics `:8428`、cadvisor（每节点 `:8080` host 直绑、无认证=VPC-only 边界）。
+- **五件受管自宿**（零外部依赖起步）：zot 镜像仓 `:5000`、traefik Proxy、VictoriaLogs `:9428`、VictoriaMetrics `:8428`、cadvisor（每节点 `:8080` host 直绑、无认证=VPC-only 边界）。
 
 ## 快速开始
 

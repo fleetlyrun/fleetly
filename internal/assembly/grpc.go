@@ -27,7 +27,7 @@ import (
 const grpcShutdownTimeout = 60 * time.Second
 
 // grpcUnaryTimeout 是 unary RPC 服务端硬上限。选值依据：与引擎
-// ManagedStepTimeout（默认 30s）同量级——API 面背后的 docker/edge 调用
+// ManagedStepTimeout（默认 30s）同量级——API 面背后的 docker/proxy 调用
 // 均以该值为界，超过即属挂死而非慢；客户端自带更短 deadline 时以短者
 // 为准（ctx 语义）。流式 RPC（StreamLogs / StreamBuildLogs / events
 // follow 等）不走本拦截器，天然豁免——长流面的生命周期由取消信号管理。

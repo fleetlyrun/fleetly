@@ -8,11 +8,11 @@ const (
 	// DefaultHTTPAddr REST gateway 监听地址（与 gRPC 端口配对，避开常见
 	// 开发机占用段 8080）。
 	DefaultHTTPAddr = ":9081"
-	// DefaultEdgeConfigAddr Edge config 拉取端点（traefik HTTP provider 的
+	// DefaultProxyConfigAddr Proxy config 拉取端点（traefik HTTP provider 的
 	// 控制面侧）监听地址。缺省通配绑定维持 ADR-0019 批次的现状——收窄是
 	// 显式配置动作，不静默改绑（ADR-0036）；无认证端点，公网必须由防火墙
 	// 封死或钉内网地址。
-	DefaultEdgeConfigAddr = ":9082"
+	DefaultProxyConfigAddr = ":9082"
 	// DefaultDataRoot 平台私有状态（SQLite/密封密钥）落盘目录；容器形态
 	// 经 FLEETLY_DATA_ROOT 覆盖为 bind 卷（F0.1 安装链）。
 	DefaultDataRoot = "./data"
@@ -54,11 +54,11 @@ func WithDefaults(c *AppConfig) *AppConfig {
 	if c.Server.Http.GetAddr() == "" {
 		c.Server.Http.Addr = DefaultHTTPAddr
 	}
-	if c.Server.GetEdgeConfig() == nil {
-		c.Server.EdgeConfig = &EdgeConfig{}
+	if c.Server.GetProxyConfig() == nil {
+		c.Server.ProxyConfig = &ProxyConfig{}
 	}
-	if c.Server.EdgeConfig.GetAddr() == "" {
-		c.Server.EdgeConfig.Addr = DefaultEdgeConfigAddr
+	if c.Server.ProxyConfig.GetAddr() == "" {
+		c.Server.ProxyConfig.Addr = DefaultProxyConfigAddr
 	}
 	if c.GetData() == nil {
 		c.Data = &Data{}
@@ -96,7 +96,7 @@ func WithDefaults(c *AppConfig) *AppConfig {
 	return c
 }
 
-// GRPCAddr / HTTPAddr / EdgeConfigAddr / DataRoot 是带缺省的只读访问器
+// GRPCAddr / HTTPAddr / ProxyConfigAddr / DataRoot 是带缺省的只读访问器
 // （容忍 nil 链）。
 func (c *AppConfig) GRPCAddr() string {
 	if addr := c.GetServer().GetGrpc().GetAddr(); addr != "" {
@@ -112,18 +112,18 @@ func (c *AppConfig) HTTPAddr() string {
 	return DefaultHTTPAddr
 }
 
-// EdgeConfigAddr 是带缺省的 Edge config 拉取端点监听地址访问器（容忍 nil 链）。
-func (c *AppConfig) EdgeConfigAddr() string {
-	if addr := c.GetServer().GetEdgeConfig().GetAddr(); addr != "" {
+// ProxyConfigAddr 是带缺省的 Proxy config 拉取端点监听地址访问器（容忍 nil 链）。
+func (c *AppConfig) ProxyConfigAddr() string {
+	if addr := c.GetServer().GetProxyConfig().GetAddr(); addr != "" {
 		return addr
 	}
-	return DefaultEdgeConfigAddr
+	return DefaultProxyConfigAddr
 }
 
-// EdgeConfigAuthToken 是拉取端点共享令牌访问器（容忍 nil 链）。空 = 无
+// ProxyConfigAuthToken 是拉取端点共享令牌访问器（容忍 nil 链）。空 = 无
 // 认证现状（ADR-0036 N2 兑现：多租户启用前必须置值）。
-func (c *AppConfig) EdgeConfigAuthToken() string {
-	return c.GetServer().GetEdgeConfig().GetAuthToken()
+func (c *AppConfig) ProxyConfigAuthToken() string {
+	return c.GetServer().GetProxyConfig().GetAuthToken()
 }
 
 // RegistryAddr 是受管仓库引用地址访问器（容忍 nil 链）。无缺省可回退：

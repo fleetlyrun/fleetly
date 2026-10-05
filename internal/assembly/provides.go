@@ -44,7 +44,7 @@ var ProviderSet = wire.NewSet(
 	NewAuthenticator,
 	NewRuntimeProvider,
 	NewBuilderProviders,
-	NewEdgeProvider,
+	NewProxyProvider,
 	NewRegistryProvider,
 	NewLoggingProvider,
 	NewMetricsProvider,
@@ -57,7 +57,7 @@ var ProviderSet = wire.NewSet(
 	NewAPIServices,
 	NewEngineService,
 	NewRetentionJanitorService,
-	NewEdgeConfigServer,
+	NewProxyConfigServer,
 	systemgrpc.New,
 	NewGRPCServer,
 	NewGatewayServer,
@@ -277,7 +277,7 @@ func NewEngine(
 	db *state.DB,
 	rt capability.Runtime,
 	b map[string]capability.Builder,
-	edge capability.Edge,
+	proxy capability.Proxy,
 	reg capability.Registry,
 	logs capability.Logging,
 	mtr capability.Metrics,
@@ -303,7 +303,7 @@ func NewEngine(
 		}
 	}
 	return engine.New(engine.Deps{
-		DB: db, Runtime: rt, Builders: b, Edge: edge, Registry: reg, Logging: logs,
+		DB: db, Runtime: rt, Builders: b, Proxy: proxy, Registry: reg, Logging: logs,
 		Metrics: mtr, ObjectStore: store, Cipher: cipher, Logger: app.Logger(),
 	}, engine.Options{
 		DataRoot:        cfg.DataRoot(),
@@ -507,7 +507,7 @@ func NewPreStartHooks(db *state.DB, cfg *config.AppConfig, app lynx.App) boot.Pr
 }
 
 // NewDrainHooks 排水钩子（OnDrain，摘流窗口内执行）：当前为空；Managed
-// Provider 摘流随 Edge 批次挂入。
+// Provider 摘流随 Proxy 批次挂入。
 func NewDrainHooks() boot.DrainHooks { return nil }
 
 // NewPreStopHooks 停止前钩子（OnPreStop，服务仍在处理在途请求）：当前为
@@ -519,9 +519,9 @@ func NewPreStopHooks() boot.PreStopHooks { return nil }
 func NewPostStopHooks() boot.PostStopHooks { return nil }
 
 // NewServices 返回服务注册顺序：engine → idem-janitor → grpc → gateway →
-// edgeconfig。lynx 按注册顺序启动、逆序停止——引擎最后停：服务面已摘流
+// proxyconfig。lynx 按注册顺序启动、逆序停止——引擎最后停：服务面已摘流
 // （gateway → grpc 先停）后引擎才排空（ADR-0005 优雅退出：在途 Ensure 可
-// 安全中断重放）。edgeconfig（受管 Edge 的配置拉取端点）最先停——受管
+// 安全中断重放）。proxyconfig（受管 Proxy 的配置拉取端点）最先停——受管
 // 实例轮询失败保留存量配置，无中断面。idem-janitor 在 grpc 之前停：新请
 // 求面关闭后不再产生新记录，收尾 Sweep 由下次启动补上。
 func NewServices(
@@ -529,11 +529,11 @@ func NewServices(
 	idemJanitor *RetentionJanitorService,
 	grpcServer *lynxgrpc.Server,
 	gateway *lynxhttp.Server,
-	edgeConfig *EdgeConfigServer,
+	proxyConfig *ProxyConfigServer,
 ) []lynx.Service {
 	services := []lynx.Service{engineSvc, idemJanitor, grpcServer, gateway}
-	if edgeConfig != nil {
-		services = append(services, edgeConfig)
+	if proxyConfig != nil {
+		services = append(services, proxyConfig)
 	}
 	return services
 }

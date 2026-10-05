@@ -1,6 +1,6 @@
 package engine
 
-// 受管域 Placement 钉住测试（F2.3 收口 F1.15 挂账）：受管 zot/edge 带本地
+// 受管域 Placement 钉住测试（F2.3 收口 F1.15 挂账）：受管 zot/proxy 带本地
 // 卷无钉住——spec 变更滚动替换可把 task 漂到无卷节点 preparing 打转。
 // 带卷受管 Workload 钉控制面节点（首个可用 manager），卷外 Workload 保持
 // 无约束（调度自由）；锚不可解析 = 本拍整组不下发（下拍重试——漏钉住
@@ -26,12 +26,12 @@ func TestManagedVolumeWorkloadPinnedToControlPlane(t *testing.T) {
 	t.Run("volume-bearing workload pins the manager, volumeless stays free", func(t *testing.T) {
 		db, _ := statertest.New(t)
 		rt := newFakeRuntime()
-		edge := &fakeEdge{ws: []capability.Workload{
+		proxy := &fakeProxy{ws: []capability.Workload{
 			{ID: "fleetly-vol", Process: "vol", Image: "fake/vol:1", Replicas: 1,
 				Volumes: []capability.VolumeMount{{VolumeID: "fleetly-data", Target: "/data"}}},
 			{ID: "fleetly-novol", Process: "novol", Image: "fake/novol:1", Replicas: 1},
 		}}
-		e := New(Deps{DB: db, Runtime: rt, Edge: edge, Logger: discardLogger()}, Options{})
+		e := New(Deps{DB: db, Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
 		e.managedStep(ctx)
 
 		last := rt.calls()[len(rt.calls())-1]
@@ -45,11 +45,11 @@ func TestManagedVolumeWorkloadPinnedToControlPlane(t *testing.T) {
 		db, _ := statertest.New(t)
 		rt := newFakeRuntime()
 		rt.clusterOverride = true // 可编程视图（空 = 无可用 manager）
-		edge := &fakeEdge{ws: []capability.Workload{
+		proxy := &fakeProxy{ws: []capability.Workload{
 			{ID: "fleetly-vol", Process: "vol", Image: "fake/vol:1", Replicas: 1,
 				Volumes: []capability.VolumeMount{{VolumeID: "fleetly-data", Target: "/data"}}},
 		}}
-		e := New(Deps{DB: db, Runtime: rt, Edge: edge, Logger: discardLogger()}, Options{})
+		e := New(Deps{DB: db, Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
 		e.managedStep(ctx)
 		assert.Empty(t, rt.calls(), "no ensure may go out without the pinning anchor")
 

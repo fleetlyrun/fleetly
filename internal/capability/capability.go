@@ -20,7 +20,7 @@ const (
 	KindRuntime     Kind = "runtime"     // 编排器：Workload 期望状态下发与集群观测
 	KindBuilder     Kind = "builder"     // Source → 镜像
 	KindRegistry    Kind = "registry"    // OCI 镜像仓库（拉取来源/推送目标）
-	KindEdge        Kind = "edge"        // 流量接入：Route 发布与证书
+	KindProxy       Kind = "proxy"       // 流量接入：Route 发布与证书
 	KindLogging     Kind = "logging"     // 日志采集与查询
 	KindMetrics     Kind = "metrics"     // 指标采集与查询
 	KindObjectStore Kind = "objectstore" // S3 兼容对象存储（Backup 与产物）

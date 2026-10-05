@@ -17,7 +17,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
-	edgev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/edge/v1"
+	proxyv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/proxy/v1"
 	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
 	"github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
@@ -730,7 +730,7 @@ func newRoutesCreateVerb() commands.Command {
 			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			ctx = idem.bind(ctx)
-			resp, err := c.Routes.CreateRoute(ctx, &edgev1.CreateRouteRequest{
+			resp, err := c.Routes.CreateRoute(ctx, &proxyv1.CreateRouteRequest{
 				ProjectId: project, Host: host, Path: path, AppId: app, Process: process,
 				Port:     int32(port), //nolint:gosec // 端口域内
 				Protocol: protocol, TlsMode: tlsMode,
@@ -772,7 +772,7 @@ func newRoutesListVerb() commands.Command {
 			}
 			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Routes.ListRoutes(ctx, &edgev1.ListRoutesRequest{
+			resp, err := c.Routes.ListRoutes(ctx, &proxyv1.ListRoutesRequest{
 				ProjectId: project, AfterRouteId: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
 			})
 			if err != nil {

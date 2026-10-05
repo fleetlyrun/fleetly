@@ -251,7 +251,7 @@ log "[postgres] data survived task replacement"
 # ---- P1-4 场景腿（续）：legacy 非 attachable 网挡 utility 附着 → 精确
 # 失败（ADR-0039 §47 预告的错误路径，attachHint 文案锚）→ rebuild → 重试
 # 成功。rebuild 是分钟级同步动词（detach 排水 + 复建 + re-attach 的滚动
-# 替换窗）；本腿唯一附着载体 = 库服务（dind 腿无受管 Edge 挂网）。----
+# 替换窗）；本腿唯一附着载体 = 库服务（dind 腿无受管 Proxy 挂网）。----
 log "[postgres] backup must fail on the legacy non-attachable network"
 cli databases backup "$PG_SRC" >/dev/null
 i=0; st=""

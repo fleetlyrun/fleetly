@@ -1,7 +1,7 @@
 package engine
 
 // per-受管域 Generation 的重启续接测试（F2.5 修复：CI 升级零扰动锚咬出
-// 的全域滚动缺陷——全局计数 + 进程重置 = Edge 标签差 = traefik 滚动）。
+// 的全域滚动缺陷——全局计数 + 进程重置 = Proxy 标签差 = traefik 滚动）。
 
 import (
 	"sync/atomic"

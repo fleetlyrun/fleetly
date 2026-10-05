@@ -165,16 +165,16 @@ _Avoid_: file, mount, profile
 ### 能力与路由
 
 **Capability**:
-可插拔子系统的端口：Runtime、Builder、Registry、Edge、Logging、Metrics、ObjectStore。
+可插拔子系统的端口：Runtime、Builder、Registry、Proxy、Logging、Metrics、ObjectStore。
 _Avoid_: plugin(标识符中), module, subsystem
 
 **Provider**:
 Capability 的具体实现（swarm、traefik、victorialogs…）。每个 Capability 同期恰有一个在册 Provider。
 _Avoid_: driver, backend, engine, adapter(对外文案中)
 
-**Edge**:
-流量接入 Capability：Route 发布与证书管理。
-_Avoid_: ingress, gateway, load balancer
+**Proxy**:
+流量接入 Capability：Route 发布与证书管理（ADR-0047 由 Edge 更名；即反向代理层，traefik 为其在册 Provider）。
+_Avoid_: edge, ingress, gateway, load balancer
 
 **Route**:
 `host/path → Process 端口` 的映射，附协议（http/h2c/tcp）与 TLS 模式。

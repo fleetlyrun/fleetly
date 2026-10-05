@@ -55,7 +55,7 @@ var EnforcedMethods = map[string]bool{
 	"/fleetly.structure.v1.VolumesService/CreateVolume":              true,
 	"/fleetly.structure.v1.NetworksService/CreateNetwork":            true,
 	"/fleetly.structure.v1.DatabasesService/CreateDatabase":          true,
-	"/fleetly.edge.v1.RoutesService/CreateRoute":                     true,
+	"/fleetly.proxy.v1.RoutesService/CreateRoute":                    true,
 	"/fleetly.delivery.v1.DeploymentsService/Deploy":                 true,
 	"/fleetly.delivery.v1.DeploymentsService/Rollback":               true,
 	"/fleetly.delivery.v1.HooksService/SetGitHook":                   true,

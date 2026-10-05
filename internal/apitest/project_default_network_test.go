@@ -14,7 +14,7 @@ import (
 
 // TestProjectBirthCreatesDefaultNetwork（F-C，2026-10-03 staging 实证）：
 // 项目出生同事务建 default 网络行——compose 引用 networks:[default] 与受管
-// Edge 挂靠真源（networks 表，activeProjectNetworks）保持同源，杜绝
+// Proxy 挂靠真源（networks 表，activeProjectNetworks）保持同源，杜绝
 // "swarm 侧 overlay 半物化 + 表无行 + traefik 永不挂靠 → 路由 502" 的
 // 静默窗口。重复显式建同名网络仍被唯一约束拒绝（出生建行不开后门）。
 func TestProjectBirthCreatesDefaultNetwork(t *testing.T) {

@@ -10,14 +10,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// 绑面字段的缺省语义（ADR-0036）：不配置 = 原行为——edge config 仍
+// 绑面字段的缺省语义（ADR-0036）：不配置 = 原行为——proxy config 仍
 // ":9082"（现状硬编码平移为缺省），registry 仍停用（未设 env 的现状）；
 // 钉址是显式动作，平台不静默改绑。
 func TestWithDefaultsBindSurface(t *testing.T) {
 	c := WithDefaults(&AppConfig{})
 	assert.Equal(t, ":9080", c.GRPCAddr())
 	assert.Equal(t, ":9081", c.HTTPAddr())
-	assert.Equal(t, ":9082", c.EdgeConfigAddr())
+	assert.Equal(t, ":9082", c.ProxyConfigAddr())
 	assert.Empty(t, c.RegistryAddr(), "registry addr unset = managed registry stays disabled")
 }
 
@@ -25,15 +25,15 @@ func TestWithDefaultsBindSurface(t *testing.T) {
 func TestWithDefaultsPreservesConfiguredBinds(t *testing.T) {
 	c := WithDefaults(&AppConfig{
 		Server: &Server{
-			Grpc:       &GRPC{Addr: "10.124.0.3:9080"},
-			Http:       &HTTP{Addr: "127.0.0.1:9081"},
-			EdgeConfig: &EdgeConfig{Addr: "10.124.0.3:9082"},
+			Grpc:        &GRPC{Addr: "10.124.0.3:9080"},
+			Http:        &HTTP{Addr: "127.0.0.1:9081"},
+			ProxyConfig: &ProxyConfig{Addr: "10.124.0.3:9082"},
 		},
 		Registry: &Registry{Addr: "10.124.0.3:5000"},
 	})
 	assert.Equal(t, "10.124.0.3:9080", c.GRPCAddr())
 	assert.Equal(t, "127.0.0.1:9081", c.HTTPAddr())
-	assert.Equal(t, "10.124.0.3:9082", c.EdgeConfigAddr())
+	assert.Equal(t, "10.124.0.3:9082", c.ProxyConfigAddr())
 	assert.Equal(t, "10.124.0.3:5000", c.RegistryAddr())
 }
 
@@ -42,20 +42,20 @@ func TestBindAccessorsTolerateNil(t *testing.T) {
 	c := &AppConfig{}
 	assert.Equal(t, DefaultGRPCAddr, c.GRPCAddr())
 	assert.Equal(t, DefaultHTTPAddr, c.HTTPAddr())
-	assert.Equal(t, DefaultEdgeConfigAddr, c.EdgeConfigAddr())
+	assert.Equal(t, DefaultProxyConfigAddr, c.ProxyConfigAddr())
 	assert.Empty(t, c.RegistryAddr())
-	assert.Equal(t, DefaultEdgeConfigAddr, (*AppConfig)(nil).EdgeConfigAddr())
+	assert.Equal(t, DefaultProxyConfigAddr, (*AppConfig)(nil).ProxyConfigAddr())
 	assert.Empty(t, (*AppConfig)(nil).RegistryAddr())
 }
 
 // 拉取端点共享令牌（ADR-0036 N2 兑现）：缺省空 = 无认证现状（升级零
 // 扰动）；显式值原样透传；nil 链安全。
-func TestEdgeConfigAuthToken(t *testing.T) {
-	assert.Empty(t, WithDefaults(&AppConfig{}).EdgeConfigAuthToken(),
+func TestProxyConfigAuthToken(t *testing.T) {
+	assert.Empty(t, WithDefaults(&AppConfig{}).ProxyConfigAuthToken(),
 		"unset token keeps the endpoint unauthenticated (current behavior)")
-	c := WithDefaults(&AppConfig{Server: &Server{EdgeConfig: &EdgeConfig{AuthToken: "edge-secret"}}})
-	assert.Equal(t, "edge-secret", c.EdgeConfigAuthToken())
-	assert.Empty(t, (*AppConfig)(nil).EdgeConfigAuthToken())
+	c := WithDefaults(&AppConfig{Server: &Server{ProxyConfig: &ProxyConfig{AuthToken: "proxy-secret"}}})
+	assert.Equal(t, "proxy-secret", c.ProxyConfigAuthToken())
+	assert.Empty(t, (*AppConfig)(nil).ProxyConfigAuthToken())
 }
 
 // Logging 面缺省语义（ADR-0040）：addr 空 = 面停用（logs 回退实时路径，

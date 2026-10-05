@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	edgev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/edge/v1"
 	identityv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/identity/v1"
+	proxyv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/proxy/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/apitest"
 	"github.com/fleetlyrun/fleetly/internal/identity"
@@ -92,7 +92,7 @@ func TestIdentityDeletesCovered(t *testing.T) {
 }
 
 // TestMaterialAndRouteDeletesCovered：DeleteSecret（软删后列表不可见）与
-// DeleteRoute（撤下后列表不可见，Edge 全量发布即时触发）各落显式删除
+// DeleteRoute（撤下后列表不可见，Proxy 全量发布即时触发）各落显式删除
 // 生效形态。
 func TestMaterialAndRouteDeletesCovered(t *testing.T) {
 	h := apitest.New(t)
@@ -100,7 +100,7 @@ func TestMaterialAndRouteDeletesCovered(t *testing.T) {
 	projects := structurev1.NewProjectsServiceClient(h.Conn)
 	secrets := structurev1.NewSecretsServiceClient(h.Conn)
 	apps := structurev1.NewAppsServiceClient(h.Conn)
-	routes := edgev1.NewRoutesServiceClient(h.Conn)
+	routes := proxyv1.NewRoutesServiceClient(h.Conn)
 
 	proj, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "materials"})
 	require.NoError(t, err)
@@ -120,14 +120,14 @@ func TestMaterialAndRouteDeletesCovered(t *testing.T) {
 	// ---- DeleteRoute：create → delete → 列表不再可见。----
 	app, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: projectID, Name: "web"})
 	require.NoError(t, err)
-	route, err := routes.CreateRoute(ctx, &edgev1.CreateRouteRequest{
+	route, err := routes.CreateRoute(ctx, &proxyv1.CreateRouteRequest{
 		ProjectId: projectID, Host: "gone.materials.test",
 		AppId: app.GetApp().GetId(), Process: "web", Port: 8000,
 	})
 	require.NoError(t, err)
-	_, err = routes.DeleteRoute(ctx, &edgev1.DeleteRouteRequest{Id: route.GetRoute().GetId()})
+	_, err = routes.DeleteRoute(ctx, &proxyv1.DeleteRouteRequest{Id: route.GetRoute().GetId()})
 	require.NoError(t, err)
-	routeList, err := routes.ListRoutes(ctx, &edgev1.ListRoutesRequest{ProjectId: projectID})
+	routeList, err := routes.ListRoutes(ctx, &proxyv1.ListRoutesRequest{ProjectId: projectID})
 	require.NoError(t, err)
 	require.False(t, routeListed(t, routeList, route.GetRoute().GetId()),
 		"deleted route must be withdrawn from the list")

@@ -16,8 +16,8 @@ import (
 
 	automationv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/automation/v1"
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
-	edgev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/edge/v1"
 	identityv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/identity/v1"
+	proxyv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/proxy/v1"
 	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
@@ -50,7 +50,7 @@ type Client struct {
 	Runs        automationv1.RunsServiceClient
 	Schedules   automationv1.SchedulesServiceClient
 	Nodes       runtimev1.NodesServiceClient
-	Routes      edgev1.RoutesServiceClient
+	Routes      proxyv1.RoutesServiceClient
 	Events      telemetryv1.EventsServiceClient
 	Logs        telemetryv1.LogsServiceClient
 	Metrics     telemetryv1.MetricsServiceClient
@@ -86,7 +86,7 @@ func Dial(addr string, opts ...Option) (*Client, error) {
 		opt(&o)
 	}
 	// 默认 insecure：fleetlyd gRPC 面设计为本机/内网直连；对外暴露经
-	// Edge TLS 或反向代理。TLS 形态随证书体系批次提供 WithDialOptions
+	// Proxy TLS 或反向代理。TLS 形态随证书体系批次提供 WithDialOptions
 	// 注入（grpc:// 与 grpcs:// scheme，架构文档 §1）。
 	dialOpts := append([]grpc.DialOption{
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -121,7 +121,7 @@ func newClient(conn *grpc.ClientConn) *Client {
 		Runs:        automationv1.NewRunsServiceClient(conn),
 		Schedules:   automationv1.NewSchedulesServiceClient(conn),
 		Nodes:       runtimev1.NewNodesServiceClient(conn),
-		Routes:      edgev1.NewRoutesServiceClient(conn),
+		Routes:      proxyv1.NewRoutesServiceClient(conn),
 		Events:      telemetryv1.NewEventsServiceClient(conn),
 		Logs:        telemetryv1.NewLogsServiceClient(conn),
 		Metrics:     telemetryv1.NewMetricsServiceClient(conn),

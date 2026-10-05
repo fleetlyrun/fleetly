@@ -1,4 +1,4 @@
-// Package traefik 实现 Edge Capability 的 traefik Provider：受管自宿
+// Package traefik 实现 Proxy Capability 的 traefik Provider：受管自宿
 // （ADR-0004 首实例——以普通 Workload 形态跑在 Runtime 上，经通用
 // managedprovider reconciler 部署），配置经 HTTP provider 拉取端点下发
 // （控制面是真源，强制全量配置防裸 {} 清空——旧 spike 教训）。LE 证书走
@@ -19,11 +19,11 @@ import (
 const Image = "traefik:v3.5.4"
 
 // acmeVolumeID 是受管 ACME 存储卷的平台 ID。fleetly- 前缀与用户 Volume
-// 名空间隔离（C5：用户卷名 "edge-acme" 不得撞上受管卷——载体名公式只按
+// 名空间隔离（C5：用户卷名 "proxy-acme" 不得撞上受管卷——载体名公式只按
 // VolumeID 拼，前缀即边界）。
-const acmeVolumeID = "fleetly-edge-acme"
+const acmeVolumeID = "fleetly-proxy-acme"
 
-// Provider 是 traefik Edge Provider。
+// Provider 是 traefik Proxy Provider。
 type Provider struct {
 	// configEndpoint 是控制面 HTTP provider 拉取端点（受管实例的
 	// --providers.http.endpoint 值）。
@@ -37,14 +37,14 @@ type Provider struct {
 	schema []byte // 最近发布的全量动态配置（拉取端点快照）
 }
 
-// 编译期契约断言：Edge 端口 + 受管形态声明。
+// 编译期契约断言：Proxy 端口 + 受管形态声明。
 var (
-	_ capability.Edge    = (*Provider)(nil)
+	_ capability.Proxy   = (*Provider)(nil)
 	_ capability.Managed = (*Provider)(nil)
 )
 
-// New 构造 Provider。configEndpoint 形如 http://fleetlyd:9082/edge/config；
-// authToken 非空时受管实例以 X-Fleetly-Edge-Token 头携带（端点侧常量时间
+// New 构造 Provider。configEndpoint 形如 http://fleetlyd:9082/proxy/config；
+// authToken 非空时受管实例以 X-Fleetly-Proxy-Token 头携带（端点侧常量时间
 // 比对——空串维持无认证现状，升级零扰动）。
 func New(configEndpoint, acmeEmail, authToken string) (*Provider, error) {
 	if configEndpoint == "" {
@@ -66,12 +66,12 @@ func New(configEndpoint, acmeEmail, authToken string) (*Provider, error) {
 func (p *Provider) Describe() capability.ProviderDescriptor {
 	return capability.ProviderDescriptor{
 		Name:       "traefik",
-		Capability: capability.KindEdge,
+		Capability: capability.KindProxy,
 		Version:    "1",
 		Managed:    true,
 		Notes: []string{
 			"routes are served from the control-plane HTTP provider endpoint (control plane is the source of truth)",
-			"existing routes keep serving while the Edge workload is down; route changes fail explicitly (degradation matrix)",
+			"existing routes keep serving while the Proxy workload is down; route changes fail explicitly (degradation matrix)",
 		},
 	}
 }
@@ -117,15 +117,15 @@ func (p *Provider) IssueCertificate(context.Context, capability.CertificateReque
 
 // ManagedNamespace 返回平台系统隔离域（与用户 Project 分离）。
 func (p *Provider) ManagedNamespace() capability.NamespaceRef {
-	return capability.NamespaceRef{Team: "fleetly", Project: "system", App: "edge"}
+	return capability.NamespaceRef{Team: "fleetly", Project: "system", App: "proxy"}
 }
 
 // ManagedWorkloads 声明受管部署形态（通用 reconciler 经 Runtime Ensure
-// 下发；发布 80/443 是 Edge 部署形态的一部分）。Networks 由 reconciler
+// 下发；发布 80/443 是 Proxy 部署形态的一部分）。Networks 由 reconciler
 // 组装时合并活跃 Project 网络（跨网后端可达性）。
 func (p *Provider) ManagedWorkloads() []capability.Workload {
 	return []capability.Workload{{
-		ID:      "fleetly-edge-traefik",
+		ID:      "fleetly-proxy-traefik",
 		Process: "traefik",
 		Image:   Image,
 		Command: func() []string {
@@ -150,7 +150,7 @@ func (p *Provider) ManagedWorkloads() []capability.Workload {
 				// 端点共享令牌（ADR-0036 N2 兑现）：traefik http provider
 				// 的自定义头通道；令牌变更 = 载体 spec 变更 = 一次滚动
 				// 替换（opt-in 动作窗口，操作者自知）。
-				cmd = append(cmd, "--providers.http.headers.X-Fleetly-Edge-Token="+p.authToken)
+				cmd = append(cmd, "--providers.http.headers.X-Fleetly-Proxy-Token="+p.authToken)
 			}
 			return cmd
 		}(),
@@ -170,14 +170,14 @@ func (p *Provider) ManagedWorkloads() []capability.Workload {
 }
 
 // init 自注册工厂（cmd/fleetlyd blank import 触发）。端点与邮箱经环境
-// 变量注入，令牌走装配 ctx（config.server.edge_config.auth_token，唯一
-// 契约源）+ env FLEETLY_EDGE_AUTH_TOKEN 同键兜底（ADR-0036 形态）。
+// 变量注入，令牌走装配 ctx（config.server.proxy_config.auth_token，唯一
+// 契约源）+ env FLEETLY_PROXY_AUTH_TOKEN 同键兜底（ADR-0036 形态）。
 func init() {
-	capability.RegisterFactory(capability.KindEdge, "traefik", func(ctx context.Context) (capability.Provider, error) {
-		token := capability.EdgeAuthTokenFromContext(ctx)
+	capability.RegisterFactory(capability.KindProxy, "traefik", func(ctx context.Context) (capability.Provider, error) {
+		token := capability.ProxyAuthTokenFromContext(ctx)
 		if token == "" {
-			token = os.Getenv("FLEETLY_EDGE_AUTH_TOKEN")
+			token = os.Getenv("FLEETLY_PROXY_AUTH_TOKEN")
 		}
-		return New(os.Getenv("FLEETLY_EDGE_CONFIG_ENDPOINT"), os.Getenv("FLEETLY_EDGE_ACME_EMAIL"), token)
+		return New(os.Getenv("FLEETLY_PROXY_CONFIG_ENDPOINT"), os.Getenv("FLEETLY_PROXY_ACME_EMAIL"), token)
 	})
 }

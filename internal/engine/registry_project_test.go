@@ -124,7 +124,7 @@ func TestReconcileManagedFeedsActiveProjects(t *testing.T) {
 	db, clock := statertest.New(t)
 	rt := newFakeRuntime()
 	reg := newProjectFakeRegistry()
-	e := New(Deps{DB: db, Runtime: rt, Edge: &fakeEdge{}, Registry: reg, Logger: discardLogger()}, Options{})
+	e := New(Deps{DB: db, Runtime: rt, Proxy: &fakeProxy{}, Registry: reg, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
 	require.NoError(t, project.New(clock).Create(ctx, db.Runner(), &project.Project{ID: tProjectID2, Name: "b", TeamID: "default"}))
 	require.NoError(t, project.New(clock).Create(ctx, db.Runner(), &project.Project{ID: tProjectID, Name: "a", TeamID: "default"}))

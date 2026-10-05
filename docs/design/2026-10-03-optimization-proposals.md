@@ -31,7 +31,7 @@
 2. **N2 开工前**：P3 采纳——审查文档入仓，发现逐条三选一处置，双节点 e2e 补断言。
 3. **N2**：P4 采纳、阈值 1200（现仓最大正常文件 628 行留一倍余量，低于竞品事故水位一个量级；1000 太紧徒增白名单噪音）。P6：T1 实时收窄 + T2 fail-safe 门（含 scope 声明表守卫反扫）采纳；**T3 三级 ability 否决**——Secret"值永不回显只回指纹"已把敏感轴内化进实体模型，不存在读明文面；Token 空交集报 **403 带原因**（Agent 可判定"找管理员"而非"重新认证"）。P7 采纳（两条性质测试随首个消费点落）。P9 采纳（traefik 校验能力真机核对为实施前置，不可用降级 schema 级并诚实记录边界）。P10 采纳（四 outcome golden，幂等命中与 admission 去重字段分立）。
 4. **N2b**：P11 采纳，随 Logging Provider 批；占位锚=build log 中 Secret 值零出现。
-5. **N3**：P5 采纳，**N3 伴随不提前**（N2 重心是安全缺口；Console 部署详情页是价值最大化面；例外口：若升级修复批发现滚动语义与 stop-first 修复存在必须蓝绿机制才解的交互，允许拉子件提前）；**Process 级字段**；**stable 别名双代窗=轮询双代（方案①）**，接流量走 Edge 精确切换，诚实边界入文档；**代次名 `{proc}.g{gen}`、stable 名为主引用面**，代次名只服务 Edge 后端解析与调试。本裁决 N3 开工 ADR 时终审（deletion test 复审）。P15 并入 N3 与 P5 同批——resolveBackend/期望缓存是共同动土面，分两次拆是二次动土；当前锁竞争不是小微规模痛点。
+5. **N3**：P5 采纳，**N3 伴随不提前**（N2 重心是安全缺口；Console 部署详情页是价值最大化面；例外口：若升级修复批发现滚动语义与 stop-first 修复存在必须蓝绿机制才解的交互，允许拉子件提前）；**Process 级字段**；**stable 别名双代窗=轮询双代（方案①）**，接流量走 Proxy 精确切换，诚实边界入文档；**代次名 `{proc}.g{gen}`、stable 名为主引用面**，代次名只服务 Proxy 后端解析与调试。本裁决 N3 开工 ADR 时终审（deletion test 复审）。P15 并入 N3 与 P5 同批——resolveBackend/期望缓存是共同动土面，分两次拆是二次动土；当前锁竞争不是小微规模痛点。
 6. **挂账**：P8 记录（首次 v1→v2 启用）；P12 记录不排期（三触发条件在册）；P13 挂账 N4 ADR；P14 维持 ADR-0037（两重开触发器在册）。
 7. **即席（2026-10-03，DNS 议题）**：P16——**不内置集群 DNS 服务**，维持"平台只生成命名声明（Addressing/alias 公式），解析器归 Runtime（swarm 节点本地 DNS）"；同网裸名撞名以**双别名**（`进程名` + `进程名.应用名`）消歧，挂 P5 同批定稿。六竞品深调未出现推翻"自建 DNS 不做"（领域模型 §7）的硬理由。
 
@@ -137,10 +137,10 @@ fleetly 的 Runtime 契约是"Ensure(ns, 期望 Workload 集, gen) 幂等收敛"
 - **执行序列**（Deployment 状态机内新增 releasing 的变体路径，状态枚举不变）：
   1. releasing(双代窗)：Ensure 期望集 = 旧代 ∪ 新代（两代并存，期望集语义天然不移除任何一方）；新代带代次化网络别名（`{proc}.g{gen}`，Task per-Run DNS 的同构先例）。
   2. L1 健康门：新代全部就绪。失败 → 直接 Ensure 期望集 = 仅旧代（新代载体被移除，旧代从未被触碰）→ failed。**这步就是"回滚零重建"**：不需要 Replay，因为旧代还在跑。
-  3. 切换：Route 后端解析从旧代别名切到新代别名（Edge 发布行集指纹机制复用；`resolveBackend` 消费代次化地址——盘点确认该面已是独立解析点）。
+  3. 切换：Route 后端解析从旧代别名切到新代别名（Proxy 发布行集指纹机制复用；`resolveBackend` 消费代次化地址——盘点确认该面已是独立解析点）。
   4. observing（L3 观察窗）：窗内失败 → Route 切回旧代（仍在双代窗）→ 移除新代 → rolling-back 终态路径复用。
   5. 收尾：观察窗过 → Ensure 期望集 = 仅新代（旧代载体移除）→ succeeded；stable 进程别名（ADR-0034 `{app}.{proc}`）在此刻随旧代退役、新代继承。
-- **跨进程引用的诚实边界**：双代窗内，跨进程 DNS 引用（app A worker → app B `web`）打到哪一代？swarm 别名轮询会双代分摊。裁决候选：①stable 别名双代窗内轮询双代（与滚动部署的共存窗语义一致，不算倒退，文档明示）；②blue-green Process 的跨进程引用也走代次名（引用方需感知代次——复杂，否决倾向）。**建议①**：接流量走 Edge（精确切换），进程间调用接受短暂双代（本来就是无状态调用语义）。
+- **跨进程引用的诚实边界**：双代窗内，跨进程 DNS 引用（app A worker → app B `web`）打到哪一代？swarm 别名轮询会双代分摊。裁决候选：①stable 别名双代窗内轮询双代（与滚动部署的共存窗语义一致，不算倒退，文档明示）；②blue-green Process 的跨进程引用也走代次名（引用方需感知代次——复杂，否决倾向）。**建议①**：接流量走 Proxy（精确切换），进程间调用接受短暂双代（本来就是无状态调用语义）。
 - **与既有机制的交互**：
   - supersede 抢占：新 Deployment 收口在途 Generation 的既有语义（ADR-0016/领域模型 §4）扩展为"收口在途双代"——旧 Deployment 的双代窗内被抢占时，其新代由抢占者移除，其旧代照常由抢占者序列接管；
   - 配额（ADR-0017）：双代窗内 Workload 计数双代都计（诚实，不豁免）；
@@ -171,8 +171,8 @@ fleetly 的 Runtime 契约是"Ensure(ns, 期望 Workload 集, gen) 幂等收敛"
 **→ 裁决（2026-10-03）**：
 1. **N3 伴随，不提前进 N2**——N2 重心是数据安全与备份（安全缺口优先），蓝绿是体验增益；例外口：若 N2 升级修复批发现滚动语义与 stop-first 修复存在必须蓝绿机制才解的交互，允许拉子件提前。N3 开工 ADR 时终审（deletion test 复审）。
 2. **Process 级**——投影单位一致；web 蓝绿 + worker 滚动的混合是真实需求。
-3. **方案①（轮询双代）**——无状态跨进程调用本就接受共存窗（与滚动语义一致，非倒退），接流量走 Edge 精确切换；诚实边界入文档。
-4. **`{proc}.g{gen}`，stable 名为主引用面**——代次名只服务 Edge 后端解析与调试，不鼓励用户直接引用。
+3. **方案①（轮询双代）**——无状态跨进程调用本就接受共存窗（与滚动语义一致，非倒退），接流量走 Proxy 精确切换；诚实边界入文档。
+4. **`{proc}.g{gen}`，stable 名为主引用面**——代次名只服务 Proxy 后端解析与调试，不鼓励用户直接引用。
 
 ---
 
@@ -231,17 +231,17 @@ fleetly 的 Runtime 契约是"Ensure(ns, 期望 Workload 集, gen) 幂等收敛"
 
 ## P9 Route 发布前校验
 
-**动机**：caprover 的 nginx 管线"生成→校验→激活→失败回滚"是 Edge 面正确形态（`LoadBalancerManager.ts:104-241`）。fleetly 的 traefik HTTP provider 形态下控制面是真源、天然免疫配置丢失，但**发布一个会让 traefik 拒载的 Route**（畸形规则、冲突 host）目前要等 traefik poll 失败才发现。
+**动机**：caprover 的 nginx 管线"生成→校验→激活→失败回滚"是 Proxy 面正确形态（`LoadBalancerManager.ts:104-241`）。fleetly 的 traefik HTTP provider 形态下控制面是真源、天然免疫配置丢失，但**发布一个会让 traefik 拒载的 Route**（畸形规则、冲突 host）目前要等 traefik poll 失败才发现。
 
 **设计**：
-- Route 发布步（managed reconciler 的 Route 发布通道）增加前置校验：完整 Edge 配置快照（含新增 Route）经 traefik 校验面验证（traefik 配置 dry-run/validate 能力核对：`--configfile` 校验模式或 API 面的校验端点；不可用则退化为 schema 级校验 + 冲突检测）。
-- 校验失败：Route 发布失败并明示（Edge 降级矩阵既有口径："Route 变更失败并明示"），存量路由不受影响。
+- Route 发布步（managed reconciler 的 Route 发布通道）增加前置校验：完整 Proxy 配置快照（含新增 Route）经 traefik 校验面验证（traefik 配置 dry-run/validate 能力核对：`--configfile` 校验模式或 API 面的校验端点；不可用则退化为 schema 级校验 + 冲突检测）。
+- 校验失败：Route 发布失败并明示（Proxy 降级矩阵既有口径："Route 变更失败并明示"），存量路由不受影响。
 - 发布后确认：traefik 实际加载确认（poll 间隔 5s 内的回读或事件），失败回滚该次发布。
 
 **验收锚**：
 - [x] 发布畸形 Route → 拒绝并给精确原因（不是等 traefik 静默拒载）〔2026-10-04：受理位白名单（安全批 P0 已建，host/path 单真源 `capability.ValidateRouteHost/Path`）+ 新增**发布前 schema 级预检** `validateDynamicConfig`——JSON 严格回读（未知字段=形态漂移）/router.service 引用闭合/规则精确落生成语法（Host/PathPrefix/HostSNI + 反引号定界）/servers URL scheme 合面；预检红=整快照拒绝且快照不换（单测钉死）；畸形 host 的 e2e 断言进 dind-h2c-route.sh（拒绝文案锚 "must be a DNS hostname"）〕
 - [x] 校验失败不影响存量路由（e2e 断言）〔2026-10-04：e2e 断言拒绝尝试后 HTTP/h2c 双存量路由继续服务；**traefik 侧行为真机实证**（见开放问题结论）——坏快照整份拒载 + last-known-good 继续匹配转发（502 来自死后端、路由仍在），控制面预检把同一语义提前到发布位〕
-- [x] 降级矩阵行更新（Edge 配置发布行的行为细化）〔2026-10-04：架构 §8 Edge 行带真机核对实录 + 预检语义 + 发布后确认未落地的边界注〕
+- [x] 降级矩阵行更新（Proxy 配置发布行的行为细化）〔2026-10-04：架构 §8 Proxy 行带真机核对实录 + 预检语义 + 发布后确认未落地的边界注〕
 
 **开放问题**：traefik 校验能力的真机核对（v3 API 是否暴露 config validate）——若不可用，schema 级校验的覆盖边界要诚实记录。
 **→ 裁决（2026-10-03）**：真机核对为实施前置动作（非裁决项）；不可用则降级 schema 级校验，边界诚实记录进降级矩阵行。
@@ -317,11 +317,11 @@ ADR-0037（2026-10-03）刚裁决事件/审计声明面维持现状。tsuru 证�
 | 跨 App/跨 Project 撞名消歧 | 真问题，零成本解法见下（双别名） |
 | 解析行为控制权（双代轮询/池级负载） | swarm 同 alias 多载体 DNS RR 即所需语义（ADR-0034 决策 3 诚实标注 + 真机实证）；当前无 swarm RR 达不到的需求 |
 | Runtime 无关 | 论点错位：平台承诺的是命名约定（Addressing 进投影，alias 公式 Provider 私有），换 k3s 时翻译为 k8s Service 名 + 自带 CoreDNS；自持解析器反而把 Runtime 实现细节变成平台负担 |
-| 集群外用服务名访问 | 非 fleetly 场景：外部流量走 Route/Edge（公网域名+TLS），东西向名只在集群内有意义 |
+| 集群外用服务名访问 | 非 fleetly 场景：外部流量走 Route/Proxy（公网域名+TLS），东西向名只在集群内有意义 |
 | 诊断观测 | `fleetly net` 类 CLI 诊断命令可覆盖，不需要 server |
 
 **结构性反对理由**：
-1. **故障面**：Edge 挂 = 外部流量断（事故等级单列）；平台 DNS 挂 = **集群内一切服务发现断**。用节点本地、无单点的 swarm 内置 DNS 换平台自持组件（哪怕多副本）是可靠性倒退，违背"升级永不弄坏你的东西"的信任主线。
+1. **故障面**：Proxy 挂 = 外部流量断（事故等级单列）；平台 DNS 挂 = **集群内一切服务发现断**。用节点本地、无单点的 swarm 内置 DNS 换平台自持组件（哪怕多副本）是可靠性倒退，违背"升级永不弄坏你的东西"的信任主线。
 2. **重量**：又一个受管组件全生命周期（部署/升级序/观测），加所有 Workload 改 `--dns` 接入的 ndots/search domain/转发链坑面（Docker29 坑清单级）。
 3. **竞品零先例**（上述六家）。
 
@@ -347,5 +347,5 @@ ADR-0037（2026-10-03）刚裁决事件/审计声明面维持现状。tsuru 证�
 | P4 采纳 | sizeguard + 白名单双向保鲜 |
 | P5 采纳 | strategy 归一化 golden + CONTEXT.md 词条/Avoid 同批 + 双代收口守卫（孤儿清扫断言）；**P16 双别名随本批：projection 断言 + 同网撞名消歧 e2e** |
 | P6 采纳 | scope 声明表反扫守卫 |
-| P9 采纳 | Edge 降级矩阵 golden 更新 |
+| P9 采纳 | Proxy 降级矩阵 golden 更新 |
 | P10 采纳 | admission outcome golden 四形态 |

@@ -23,7 +23,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	edgev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/edge/v1"
+	proxyv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/proxy/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/apitest"
 	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
@@ -88,7 +88,7 @@ func TestCreateRequiresLiveParent(t *testing.T) {
 
 	projects := structurev1.NewProjectsServiceClient(h.Conn)
 	apps := structurev1.NewAppsServiceClient(h.Conn)
-	routes := edgev1.NewRoutesServiceClient(h.Conn)
+	routes := proxyv1.NewRoutesServiceClient(h.Conn)
 	volumes := structurev1.NewVolumesServiceClient(h.Conn)
 	networks := structurev1.NewNetworksServiceClient(h.Conn)
 	secrets := structurev1.NewSecretsServiceClient(h.Conn)
@@ -121,7 +121,7 @@ func TestCreateRequiresLiveParent(t *testing.T) {
 			return err
 		}},
 		{"route", func(projectID, appID string) error {
-			_, err := routes.CreateRoute(ctx, &edgev1.CreateRouteRequest{
+			_, err := routes.CreateRoute(ctx, &proxyv1.CreateRouteRequest{
 				ProjectId: projectID, Host: fmt.Sprintf("%s.guard.test", ulid.Make().String()),
 				AppId: appID, Process: "web", Port: 8000,
 			})
@@ -147,7 +147,7 @@ func TestCreateRequiresLiveParent(t *testing.T) {
 
 	// Route 的父 App 形态：已删 App 与跨项目 App 均拒绝。
 	t.Run("route app deleted", func(t *testing.T) {
-		_, err := routes.CreateRoute(ctx, &edgev1.CreateRouteRequest{
+		_, err := routes.CreateRoute(ctx, &proxyv1.CreateRouteRequest{
 			ProjectId: fx.liveID, Host: "gone-app.guard.test",
 			AppId: fx.deletedApp, Process: "web", Port: 8000,
 		})
@@ -157,7 +157,7 @@ func TestCreateRequiresLiveParent(t *testing.T) {
 	t.Run("route app cross-project", func(t *testing.T) {
 		other, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "guard-other"})
 		require.NoError(t, err)
-		_, err = routes.CreateRoute(ctx, &edgev1.CreateRouteRequest{
+		_, err = routes.CreateRoute(ctx, &proxyv1.CreateRouteRequest{
 			ProjectId: other.GetProject().GetId(), Host: "cross.guard.test",
 			AppId: fx.liveApp, Process: "web", Port: 8000,
 		})
@@ -171,7 +171,7 @@ func TestCreateRequiresLiveParent(t *testing.T) {
 		return err
 	}())
 	require.NoError(t, func() error {
-		_, err := routes.CreateRoute(ctx, &edgev1.CreateRouteRequest{
+		_, err := routes.CreateRoute(ctx, &proxyv1.CreateRouteRequest{
 			ProjectId: fx.liveID, Host: "control.guard.test",
 			AppId: fx.liveApp, Process: "web", Port: 8000,
 		})

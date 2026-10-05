@@ -17,3 +17,8 @@ lint:
 breaking:
   use:
     - FILE
+  # ADR-0047 一次性更名豁免：fleetly.edge.v1 整包迁移至 fleetly.proxy.v1
+  #（删除 edge.proto、新增 proxy.proto，词条更名非契约破坏）。豁免仅此
+  # 旧路径、不开全局口子；落地 origin/main 后本条目可移除。
+  ignore:
+    - proto/fleetly/edge/v1/edge.proto

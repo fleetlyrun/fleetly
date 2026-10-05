@@ -1,5 +1,5 @@
 // Package route 是 Route 聚合 repo（CONTEXT.md Route 词条：host/path →
-// Process 端口的映射，附协议与 TLS 模式；Edge 上下文实体）。
+// Process 端口的映射，附协议与 TLS 模式；Proxy 上下文实体）。
 package route
 
 import (
@@ -62,7 +62,7 @@ func (r *Repo) Get(ctx context.Context, run state.Runner, id string) (*Route, er
 	return scanRoute(row.Scan)
 }
 
-// List 返回全部活跃 Route（Edge 全量发布面；跨 Project）。
+// List 返回全部活跃 Route（Proxy 全量发布面；跨 Project）。
 func (r *Repo) List(ctx context.Context, run state.Runner) ([]Route, error) {
 	rows, err := run.QueryContext(ctx, `
 		SELECT id, project_id, host, path, app_id, process, port, protocol, tls_mode, created_at, updated_at, deleted_at

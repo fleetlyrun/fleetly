@@ -76,12 +76,12 @@ docker cp "$WORKDIR/bins/h2cserver" "$DIND_CID":/root/h2csrc/h2cserver
 docker exec "$DIND_CID" sh -c \
   'printf "FROM scratch\nCOPY h2cserver /h2cserver\nEXPOSE 8080\nENTRYPOINT [\"/h2cserver\"]\n" > /root/h2csrc/Dockerfile && docker build -t h2cbackend:local /root/h2csrc >/dev/null'
 
-# install.sh 的 setsid env 会继承本 exec 的环境 → Edge 端点直达 fleetlyd。
-log "running install.sh inside dind (edge config endpoint wired)"
+# install.sh 的 setsid env 会继承本 exec 的环境 → Proxy 端点直达 fleetlyd。
+log "running install.sh inside dind (proxy config endpoint wired)"
 docker cp "$WORKDIR/bins" "$DIND_CID":/root/bins
 docker cp install.sh "$DIND_CID":/root/install.sh
 docker exec -e FLEETLY_BIN_DIR=/root/bins \
-  -e FLEETLY_EDGE_CONFIG_ENDPOINT="http://$DIND_IP:9082/edge/config" \
+  -e FLEETLY_PROXY_CONFIG_ENDPOINT="http://$DIND_IP:9082/proxy/config" \
   "$DIND_CID" sh /root/install.sh
 
 log "identity chain via fleetly init"
@@ -137,19 +137,19 @@ wait_state() {
 wait_state succeeded
 log "quickstart deployment succeeded"
 
-# 受管 traefik 存在 + 挂项目网（B1 直接断言：网络载体里有 edge 任务）。
+# 受管 traefik 存在 + 挂项目网（B1 直接断言：网络载体里有 proxy 任务）。
 log "verifying managed traefik joined the project overlay"
 NET_CARRIER=$(docker exec "$DIND_CID" docker network ls --format '{{.Name}}' | grep '^fleetly-net-' | head -1)
 if [ -z "$NET_CARRIER" ]; then
   echo "no fleetly project network carrier exists" >&2
   exit 1
 fi
-EDGE_SVC=$(docker exec "$DIND_CID" docker service ls --format '{{.Name}}' | grep 'fleetly-fleetly-system' | head -1)
-if [ -z "$EDGE_SVC" ]; then
-  echo "managed edge service not found" >&2
+PROXY_SVC=$(docker exec "$DIND_CID" docker service ls --format '{{.Name}}' | grep 'fleetly-fleetly-system' | head -1)
+if [ -z "$PROXY_SVC" ]; then
+  echo "managed proxy service not found" >&2
   exit 1
 fi
-# 网络载体上必须能看到受管 edge 的容器（swarm 网络附着以 container 计）。
+# 网络载体上必须能看到受管 proxy 的容器（swarm 网络附着以 container 计）。
 i=0
 attached=""
 while [ "$i" -lt 30 ]; do

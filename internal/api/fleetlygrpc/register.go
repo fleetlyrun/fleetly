@@ -7,8 +7,8 @@ import (
 
 	automationv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/automation/v1"
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
-	edgev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/edge/v1"
 	identityv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/identity/v1"
+	proxyv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/proxy/v1"
 	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
@@ -33,7 +33,7 @@ func RegisterAll(srv *grpc.Server, s *Services) {
 	automationv1.RegisterRunsServiceServer(srv, &RunsService{s: s})
 	automationv1.RegisterSchedulesServiceServer(srv, &SchedulesService{s: s})
 	runtimev1.RegisterNodesServiceServer(srv, &NodesService{s: s})
-	edgev1.RegisterRoutesServiceServer(srv, &RoutesService{s: s})
+	proxyv1.RegisterRoutesServiceServer(srv, &RoutesService{s: s})
 	telemetryv1.RegisterEventsServiceServer(srv, &EventsService{s: s})
 	telemetryv1.RegisterLogsServiceServer(srv, &LogsService{s: s})
 	telemetryv1.RegisterMetricsServiceServer(srv, &MetricsService{s: s})

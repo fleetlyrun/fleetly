@@ -38,9 +38,9 @@
     },
     {
       "area": "local",
-      "name": "edge config exposure",
+      "name": "proxy config exposure",
       "status": "ok",
-      "detail": "not configured (edge config endpoint stays disabled)"
+      "detail": "not configured (proxy config endpoint stays disabled)"
     },
     {
       "area": "local",
@@ -52,7 +52,7 @@
       "area": "local",
       "name": "bind surface",
       "status": "warn",
-      "detail": "grpc :9080, gateway http :9081, edge config :9082 (wildcard: server.grpc.addr, server.http.addr, server.edge_config.addr)",
+      "detail": "grpc :9080, gateway http :9081, proxy config :9082 (wildcard: server.grpc.addr, server.http.addr, server.proxy_config.addr)",
       "advice": "wildcard binds listen on every interface; pin the listed config keys to a loopback/VPC address, or enforce the VPC firewall boundary (runbook: port exposure matrix)"
     },
     {

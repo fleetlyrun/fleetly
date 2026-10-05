@@ -38,13 +38,13 @@ func TestClassifyHost(t *testing.T) {
 }
 
 func TestParseEndpointTarget(t *testing.T) {
-	tgt := parseEndpointTarget("http://10.124.0.3:9082/edge/config")
+	tgt := parseEndpointTarget("http://10.124.0.3:9082/proxy/config")
 	assert.Equal(t, "10.124.0.3", tgt.host)
 	assert.Equal(t, "9082", tgt.port)
 	assert.False(t, tgt.parseErr)
 
 	// 缺端口回退既知监听端口。
-	tgt = parseEndpointTarget("http://10.124.0.3/edge/config")
+	tgt = parseEndpointTarget("http://10.124.0.3/proxy/config")
 	assert.Equal(t, "10.124.0.3", tgt.host)
 	assert.Equal(t, "9082", tgt.port)
 
@@ -70,35 +70,35 @@ func TestParseRegistryTarget(t *testing.T) {
 	assert.True(t, parseRegistryTarget("").parseErr)
 }
 
-func TestEdgeConfigExposure(t *testing.T) {
+func TestProxyConfigExposure(t *testing.T) {
 	listening := func(string) error { return nil }
 	refusing := func(string) error { return errors.New("connection refused") }
 
 	// 未配置 = 面停用（现状语义），ok 不探测。
-	c := edgeConfigExposure("", listening)
+	c := proxyConfigExposure("", listening)
 	assert.Equal(t, checkOK, c.Status)
 	assert.Contains(t, c.Detail, "not configured")
 
 	// 公网可达 = fail（无认证端点，暴露即全量路由可改写）。
-	c = edgeConfigExposure("http://8.8.8.8:9082/edge/config", listening)
+	c = proxyConfigExposure("http://8.8.8.8:9082/proxy/config", listening)
 	assert.Equal(t, checkFail, c.Status)
 	assert.Contains(t, c.Detail, "publicly reachable at 8.8.8.8:9082")
 
 	// 公网不可达 = 自证不可达（本检查的核心价值）。
-	c = edgeConfigExposure("http://8.8.8.8:9082/edge/config", refusing)
+	c = proxyConfigExposure("http://8.8.8.8:9082/proxy/config", refusing)
 	assert.Equal(t, checkOK, c.Status)
 	assert.Contains(t, c.Detail, "self-certified")
 
 	// 私网可达 = ok（边界 = 云防火墙）；不可达 = warn 未监听。
-	c = edgeConfigExposure("http://10.124.0.3:9082/edge/config", listening)
+	c = proxyConfigExposure("http://10.124.0.3:9082/proxy/config", listening)
 	assert.Equal(t, checkOK, c.Status)
 	assert.Contains(t, c.Detail, "non-public address")
-	c = edgeConfigExposure("http://10.124.0.3:9082/edge/config", refusing)
+	c = proxyConfigExposure("http://10.124.0.3:9082/proxy/config", refusing)
 	assert.Equal(t, checkWarn, c.Status)
 	assert.Contains(t, c.Detail, "not listening")
 
 	// 通配目标 = 无法自证。
-	c = edgeConfigExposure("http://0.0.0.0:9082/edge/config", listening)
+	c = proxyConfigExposure("http://0.0.0.0:9082/proxy/config", listening)
 	assert.Equal(t, checkWarn, c.Status)
 	assert.Contains(t, c.Detail, "wildcard")
 }
@@ -132,17 +132,17 @@ func TestBindSurfaceCheck(t *testing.T) {
 	c := bindSurfaceCheck([]struct{ name, addr, key string }{
 		{"grpc", ":9080", "server.grpc.addr"},
 		{"gateway http", ":9081", "server.http.addr"},
-		{"edge config", ":9082", "server.edge_config.addr"},
+		{"proxy config", ":9082", "server.proxy_config.addr"},
 	})
 	assert.Equal(t, checkWarn, c.Status)
-	assert.Contains(t, c.Detail, "(wildcard: server.grpc.addr, server.http.addr, server.edge_config.addr)")
+	assert.Contains(t, c.Detail, "(wildcard: server.grpc.addr, server.http.addr, server.proxy_config.addr)")
 	assert.NotEmpty(t, c.Advice)
 
 	// 全部钉定 → ok（pinned）。
 	c = bindSurfaceCheck([]struct{ name, addr, key string }{
 		{"grpc", "127.0.0.1:9080", "server.grpc.addr"},
 		{"gateway http", "10.124.0.3:9081", "server.http.addr"},
-		{"edge config", "10.124.0.3:9082", "server.edge_config.addr"},
+		{"proxy config", "10.124.0.3:9082", "server.proxy_config.addr"},
 	})
 	assert.Equal(t, checkOK, c.Status)
 	assert.Contains(t, c.Detail, "(pinned)")
@@ -151,7 +151,7 @@ func TestBindSurfaceCheck(t *testing.T) {
 	c = bindSurfaceCheck([]struct{ name, addr, key string }{
 		{"grpc", "127.0.0.1:9080", "server.grpc.addr"},
 		{"gateway http", ":9081", "server.http.addr"},
-		{"edge config", "10.124.0.3:9082", "server.edge_config.addr"},
+		{"proxy config", "10.124.0.3:9082", "server.proxy_config.addr"},
 	})
 	assert.Equal(t, checkWarn, c.Status)
 	assert.Contains(t, c.Detail, "(wildcard: server.http.addr)")
@@ -161,7 +161,7 @@ func TestBindSurfaceCheck(t *testing.T) {
 func TestRunExposureChecksShape(t *testing.T) {
 	checks := runExposureChecks(exposureTargets{}, func(string) error { return nil })
 	assert.Len(t, checks, 3)
-	assert.Equal(t, "edge config exposure", checks[0].Name)
+	assert.Equal(t, "proxy config exposure", checks[0].Name)
 	assert.Equal(t, "registry exposure", checks[1].Name)
 	assert.Equal(t, "bind surface", checks[2].Name)
 }

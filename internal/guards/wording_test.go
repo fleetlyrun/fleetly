@@ -46,7 +46,8 @@ var bannedPatterns = map[string]*regexp.Regexp{
 	"revert":     wordRe(`revert|reverts|reverted|reverting`),
 	"dump":       wordRe(`dump|dumps|dumped|dumping`),
 	"epoch":      wordRe(`epoch|epochs`),
-	// Route/Edge 词条。
+	// Route/Proxy 词条（Edge→Proxy 更名，ADR-0047）。
+	"edge":          wordRe(`edge[_ -]?config|edgev1|fleetly[./_-]edge|edge[.]proto`),
 	"vhost":         wordRe(`vhost|vhosts`),
 	"load balancer": wordRe(`load[ -]balancer|load[ -]balancers`),
 	// Logging/Metrics/Build Log 词条（ADR-0040 入册；Logging 与 Metrics
@@ -166,7 +167,7 @@ var skippedTokens = map[string]string{
 	"driver":           "通用词；Provider 同义词语境人工评审",
 	"backend":          "通用词；Provider 同义词语境人工评审",
 	"adapter":          "仅禁对外文案；Go 适配器模式义合法",
-	"gateway":          "REST gateway（grpc-gateway）为技术术语；Edge 同义词语境禁",
+	"gateway":          "REST gateway（grpc-gateway）为技术术语；Proxy 同义词语境禁（ADR-0047 更名裁定）",
 	"domain":           "DNS domain/TLS 通用义；Route 同义词语境人工评审",
 	"endpoint":         "gRPC endpoint 技术语；Route 同义词语境人工评审",
 	"route rule":       "短语；人工评审",
@@ -289,7 +290,7 @@ var wordingExemptions = map[string]map[string]string{
 	"middleware": {
 		"genproto/fleetly/automation/v1/automation.pb.gw.go": "grpc-gateway generated boilerplate comment (library's own middleware term), not platform admission naming",
 		"genproto/fleetly/delivery/v1/delivery.pb.gw.go":     "grpc-gateway generated boilerplate comment (library's own middleware term), not platform admission naming",
-		"genproto/fleetly/edge/v1/edge.pb.gw.go":             "grpc-gateway generated boilerplate comment (library's own middleware term), not platform admission naming",
+		"genproto/fleetly/proxy/v1/proxy.pb.gw.go":           "grpc-gateway generated boilerplate comment (library's own middleware term), not platform admission naming",
 		"genproto/fleetly/identity/v1/identity.pb.gw.go":     "grpc-gateway generated boilerplate comment (library's own middleware term), not platform admission naming",
 		"genproto/fleetly/runtime/v1/runtime.pb.gw.go":       "grpc-gateway generated boilerplate comment (library's own middleware term), not platform admission naming",
 		"genproto/fleetly/structure/v1/structure.pb.gw.go":   "grpc-gateway generated boilerplate comment (library's own middleware term), not platform admission naming",

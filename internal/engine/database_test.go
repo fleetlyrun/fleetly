@@ -119,7 +119,7 @@ func TestDatabaseReconcileConverges(t *testing.T) {
 }
 
 // gen 重启安全语义：指纹未变多 tick 不重下发（载体不滚；N1 C16 短路——
-// 稳态零 Ensure 调用）；网集变化推进 gen 一次后在新值稳定（managed_edge_test
+// 稳态零 Ensure 调用）；网集变化推进 gen 一次后在新值稳定（managed_proxy_test
 // 钉死语义的用户域版）。
 func TestDatabaseGenerationStableAcrossTicks(t *testing.T) {
 	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证

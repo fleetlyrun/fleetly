@@ -39,7 +39,7 @@ func wireBootstrap(app lynx.App, info buildinfo.BuildInfo) (*boot.Bootstrap, fun
 		cleanup()
 		return nil, nil, err
 	}
-	edge, cleanup4, err := NewEdgeProvider(app, appConfig)
+	proxy, cleanup4, err := NewProxyProvider(app, appConfig)
 	if err != nil {
 		cleanup3()
 		cleanup2()
@@ -96,7 +96,7 @@ func wireBootstrap(app lynx.App, info buildinfo.BuildInfo) (*boot.Bootstrap, fun
 		cleanup()
 		return nil, nil, err
 	}
-	engine, err := NewEngine(db, runtime, v, edge, registry, logging, metrics, objectStore, cipher, app, appConfig)
+	engine, err := NewEngine(db, runtime, v, proxy, registry, logging, metrics, objectStore, cipher, app, appConfig)
 	if err != nil {
 		cleanup9()
 		cleanup8()
@@ -156,7 +156,7 @@ func wireBootstrap(app lynx.App, info buildinfo.BuildInfo) (*boot.Bootstrap, fun
 		cleanup()
 		return nil, nil, err
 	}
-	edgeConfigServer, err := NewEdgeConfigServer(app, appConfig, edge)
+	proxyConfigServer, err := NewProxyConfigServer(app, appConfig, proxy)
 	if err != nil {
 		cleanup10()
 		cleanup9()
@@ -170,7 +170,7 @@ func wireBootstrap(app lynx.App, info buildinfo.BuildInfo) (*boot.Bootstrap, fun
 		cleanup()
 		return nil, nil, err
 	}
-	v2 := NewServices(service, retentionJanitorService, server, httpServer, edgeConfigServer)
+	v2 := NewServices(service, retentionJanitorService, server, httpServer, proxyConfigServer)
 	v3 := NewServiceFactories()
 	bootstrap := boot.New(preStartHooks, drainHooks, preStopHooks, postStopHooks, v2, v3)
 	return bootstrap, func() {

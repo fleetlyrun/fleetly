@@ -270,8 +270,8 @@ type Server struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Grpc  *GRPC                  `protobuf:"bytes,1,opt,name=grpc,proto3" json:"grpc,omitempty"`
 	Http  *HTTP                  `protobuf:"bytes,2,opt,name=http,proto3" json:"http,omitempty"`
-	// Edge config 拉取端点（traefik HTTP provider 的控制面侧监听，ADR-0036）。
-	EdgeConfig    *EdgeConfig `protobuf:"bytes,3,opt,name=edge_config,json=edgeConfig,proto3" json:"edge_config,omitempty"`
+	// Proxy config 拉取端点（traefik HTTP provider 的控制面侧监听，ADR-0036）。
+	ProxyConfig   *ProxyConfig `protobuf:"bytes,3,opt,name=proxy_config,json=proxyConfig,proto3" json:"proxy_config,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -320,9 +320,9 @@ func (x *Server) GetHttp() *HTTP {
 	return nil
 }
 
-func (x *Server) GetEdgeConfig() *EdgeConfig {
+func (x *Server) GetProxyConfig() *ProxyConfig {
 	if x != nil {
-		return x.EdgeConfig
+		return x.ProxyConfig
 	}
 	return nil
 }
@@ -417,15 +417,15 @@ func (x *HTTP) GetAddr() string {
 	return ""
 }
 
-type EdgeConfig struct {
+type ProxyConfig struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Edge config 拉取端点（traefik HTTP provider 的控制面侧）监听地址；
+	// Proxy config 拉取端点（traefik HTTP provider 的控制面侧）监听地址；
 	// 空值回退默认 ":9082"。该端点无认证（traefik HTTP provider 不支持
 	// 凭证的既知形态），公网可达 = 任意人可改写全量路由——钉内网/VPC
 	// 地址或以防火墙封公网（ADR-0036）。
 	Addr string `protobuf:"bytes,1,opt,name=addr,proto3" json:"addr,omitempty"`
 	// 拉取端点共享令牌（ADR-0036 N2 兑现）：非空时端点要求
-	// X-Fleetly-Edge-Token 头常量时间比对（traefik 经
+	// X-Fleetly-Proxy-Token 头常量时间比对（traefik 经
 	// --providers.http.headers 同头携带），空 = 无认证现状（收窄是显式
 	// 动作，升级零扰动）。多租户启用前的必选项。
 	AuthToken     string `protobuf:"bytes,2,opt,name=auth_token,json=authToken,proto3" json:"auth_token,omitempty"`
@@ -433,20 +433,20 @@ type EdgeConfig struct {
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *EdgeConfig) Reset() {
-	*x = EdgeConfig{}
+func (x *ProxyConfig) Reset() {
+	*x = ProxyConfig{}
 	mi := &file_config_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *EdgeConfig) String() string {
+func (x *ProxyConfig) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*EdgeConfig) ProtoMessage() {}
+func (*ProxyConfig) ProtoMessage() {}
 
-func (x *EdgeConfig) ProtoReflect() protoreflect.Message {
+func (x *ProxyConfig) ProtoReflect() protoreflect.Message {
 	mi := &file_config_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -458,19 +458,19 @@ func (x *EdgeConfig) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use EdgeConfig.ProtoReflect.Descriptor instead.
-func (*EdgeConfig) Descriptor() ([]byte, []int) {
+// Deprecated: Use ProxyConfig.ProtoReflect.Descriptor instead.
+func (*ProxyConfig) Descriptor() ([]byte, []int) {
 	return file_config_proto_rawDescGZIP(), []int{6}
 }
 
-func (x *EdgeConfig) GetAddr() string {
+func (x *ProxyConfig) GetAddr() string {
 	if x != nil {
 		return x.Addr
 	}
 	return ""
 }
 
-func (x *EdgeConfig) GetAuthToken() string {
+func (x *ProxyConfig) GetAuthToken() string {
 	if x != nil {
 		return x.AuthToken
 	}
@@ -755,18 +755,16 @@ const file_config_proto_rawDesc = "" +
 	"\x06bucket\x18\x02 \x01(\tR\x06bucket\x12\x16\n" +
 	"\x06prefix\x18\x03 \x01(\tR\x06prefix\x12\"\n" +
 	"\raccess_key_id\x18\x04 \x01(\tR\vaccessKeyId\x12*\n" +
-	"\x11secret_access_key\x18\x05 \x01(\tR\x0fsecretAccessKey\"\xa2\x01\n" +
+	"\x11secret_access_key\x18\x05 \x01(\tR\x0fsecretAccessKey\"\xa5\x01\n" +
 	"\x06Server\x12+\n" +
 	"\x04grpc\x18\x01 \x01(\v2\x17.fleetly.config.v1.GRPCR\x04grpc\x12+\n" +
-	"\x04http\x18\x02 \x01(\v2\x17.fleetly.config.v1.HTTPR\x04http\x12>\n" +
-	"\vedge_config\x18\x03 \x01(\v2\x1d.fleetly.config.v1.EdgeConfigR\n" +
-	"edgeConfig\"\x1a\n" +
+	"\x04http\x18\x02 \x01(\v2\x17.fleetly.config.v1.HTTPR\x04http\x12A\n" +
+	"\fproxy_config\x18\x03 \x01(\v2\x1e.fleetly.config.v1.ProxyConfigR\vproxyConfig\"\x1a\n" +
 	"\x04GRPC\x12\x12\n" +
 	"\x04addr\x18\x01 \x01(\tR\x04addr\"\x1a\n" +
 	"\x04HTTP\x12\x12\n" +
-	"\x04addr\x18\x01 \x01(\tR\x04addr\"?\n" +
-	"\n" +
-	"EdgeConfig\x12\x12\n" +
+	"\x04addr\x18\x01 \x01(\tR\x04addr\"@\n" +
+	"\vProxyConfig\x12\x12\n" +
 	"\x04addr\x18\x01 \x01(\tR\x04addr\x12\x1d\n" +
 	"\n" +
 	"auth_token\x18\x02 \x01(\tR\tauthToken\"\x1e\n" +
@@ -803,7 +801,7 @@ var file_config_proto_goTypes = []any{
 	(*Server)(nil),           // 3: fleetly.config.v1.Server
 	(*GRPC)(nil),             // 4: fleetly.config.v1.GRPC
 	(*HTTP)(nil),             // 5: fleetly.config.v1.HTTP
-	(*EdgeConfig)(nil),       // 6: fleetly.config.v1.EdgeConfig
+	(*ProxyConfig)(nil),      // 6: fleetly.config.v1.ProxyConfig
 	(*Registry)(nil),         // 7: fleetly.config.v1.Registry
 	(*Logging)(nil),          // 8: fleetly.config.v1.Logging
 	(*Metrics)(nil),          // 9: fleetly.config.v1.Metrics
@@ -821,7 +819,7 @@ var file_config_proto_depIdxs = []int32{
 	2,  // 7: fleetly.config.v1.PlatformBackup.s3:type_name -> fleetly.config.v1.PlatformBackupS3
 	4,  // 8: fleetly.config.v1.Server.grpc:type_name -> fleetly.config.v1.GRPC
 	5,  // 9: fleetly.config.v1.Server.http:type_name -> fleetly.config.v1.HTTP
-	6,  // 10: fleetly.config.v1.Server.edge_config:type_name -> fleetly.config.v1.EdgeConfig
+	6,  // 10: fleetly.config.v1.Server.proxy_config:type_name -> fleetly.config.v1.ProxyConfig
 	11, // [11:11] is the sub-list for method output_type
 	11, // [11:11] is the sub-list for method input_type
 	11, // [11:11] is the sub-list for extension type_name

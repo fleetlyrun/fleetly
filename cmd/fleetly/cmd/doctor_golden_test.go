@@ -30,7 +30,7 @@ func injectDoctorProbes(t *testing.T, dk dockerProbeResult, portErr error, diskF
 func TestGoldenDoctor(t *testing.T) {
 	// 暴露自证输入钉空（ADR-0036）：golden 断言不依赖环境变量——真机
 	// 由 dind smoke 锚定，夹具路径永远是"未配置面 + 缺省绑面"。
-	t.Setenv(envEdgeConfigEndpoint, "")
+	t.Setenv(envProxyConfigEndpoint, "")
 	t.Setenv(envRegistryAddr, "")
 	injectDoctorProbes(t,
 		dockerProbeResult{
@@ -55,7 +55,7 @@ func TestGoldenDoctor(t *testing.T) {
 }
 
 func TestDoctorFailuresExitNonZero(t *testing.T) {
-	t.Setenv(envEdgeConfigEndpoint, "")
+	t.Setenv(envProxyConfigEndpoint, "")
 	t.Setenv(envRegistryAddr, "")
 	injectDoctorProbes(t,
 		dockerProbeResult{Err: "exec: docker: not found"},
@@ -91,7 +91,7 @@ func injectAlertingProbe(t *testing.T, chs []*telemetryv1.NotificationChannel, s
 // 不进 e2e——单测是唯一锚）；③通道在场 → 消警 ok（e2e smoke F2.5 段断言
 // 同款）。warn-only 检查不得置失败退出码。
 func TestDoctorAlertingChecks(t *testing.T) {
-	t.Setenv(envEdgeConfigEndpoint, "")
+	t.Setenv(envProxyConfigEndpoint, "")
 	t.Setenv(envRegistryAddr, "")
 
 	// ① 无通道：warn + 可行动建议。

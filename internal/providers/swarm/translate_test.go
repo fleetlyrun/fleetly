@@ -294,11 +294,11 @@ func TestPlacementConstraintsLabelFormula(t *testing.T) {
 }
 
 // B1 回归（N0 修复批）：跨域网络引用按引用自身的域解析载体名——受管
-// Edge（系统域）挂项目网，载体名绝不可用 workload 自己的域拼接。
+// Proxy（系统域）挂项目网，载体名绝不可用 workload 自己的域拼接。
 func TestNetworkRefsResolveUnderTheirOwnNamespace(t *testing.T) {
-	systemNS := capability.NamespaceRef{Team: "fleetly", Project: "system", App: "edge"}
+	systemNS := capability.NamespaceRef{Team: "fleetly", Project: "system", App: "proxy"}
 	w := capability.Workload{
-		ID:      "fleetly-edge-traefik",
+		ID:      "fleetly-proxy-traefik",
 		Process: "traefik",
 		Image:   "traefik:v3.5.4",
 		NetworkRefs: []capability.NetworkRef{

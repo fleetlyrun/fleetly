@@ -125,7 +125,7 @@ func (svc *ProjectsService) CreateProject(ctx context.Context, req *structurev1.
 	p := &project.Project{ID: newID(), Name: req.GetName(), TeamID: teamID}
 	// default 网络随项目出生（F-C，2026-10-03 staging 实证）：compose 引用
 	// `networks: [default]` 而表行缺失时会静默半物化——swarm 侧 overlay 由
-	// workload Ensure 建了，networks 表（受管 Edge 挂靠真源）却无行，traefik
+	// workload Ensure 建了，networks 表（受管 Proxy 挂靠真源）却无行，traefik
 	// 永不挂靠该网 → 路由 502。出生即建行，引用面与挂靠面同源；overlay
 	// 本身仍随首个 workload 物化（表行不建网，无空跑）。
 	net := &networkrepo.Network{ID: newID(), ProjectID: p.ID, Name: "default"}
@@ -429,7 +429,7 @@ func (svc *AppsService) DeleteApp(ctx context.Context, req *structurev1.DeleteAp
 		}
 		return nil, mapStateError(err, "app")
 	}
-	svc.s.Engine.PublishRoutesNow() // Edge 全量发布即时触发（撤流收口）
+	svc.s.Engine.PublishRoutesNow() // Proxy 全量发布即时触发（撤流收口）
 	return &structurev1.DeleteAppResponse{}, nil
 }
 

@@ -14,8 +14,8 @@ import (
 
 	automationv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/automation/v1"
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
-	edgev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/edge/v1"
 	identityv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/identity/v1"
+	proxyv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/proxy/v1"
 	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
@@ -63,7 +63,7 @@ func gatewayRegistrations() []gateway.RegisterFunc {
 		registerClient(automationv1.NewTasksServiceClient, automationv1.RegisterTasksServiceHandlerClient),
 		registerClient(automationv1.NewRunsServiceClient, automationv1.RegisterRunsServiceHandlerClient),
 		registerClient(automationv1.NewSchedulesServiceClient, automationv1.RegisterSchedulesServiceHandlerClient),
-		registerClient(edgev1.NewRoutesServiceClient, edgev1.RegisterRoutesServiceHandlerClient),
+		registerClient(proxyv1.NewRoutesServiceClient, proxyv1.RegisterRoutesServiceHandlerClient),
 		registerClient(telemetryv1.NewEventsServiceClient, telemetryv1.RegisterEventsServiceHandlerClient),
 		registerClient(telemetryv1.NewLogsServiceClient, telemetryv1.RegisterLogsServiceHandlerClient),
 		// Metrics/Alerting（F2.5，ADR-0041）：查询面 + 告警配置面。

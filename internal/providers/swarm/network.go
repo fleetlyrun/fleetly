@@ -28,7 +28,7 @@ func carrierNetworkName(ns capability.NamespaceRef, platformName string) string 
 // ensureNetworks create-or-get Workload 引用的全部平台网络（per-Project
 // overlay；egress:none 网络 = 独立 overlay + 不发布端口 + 不注入跨网 DNS
 // ——swarm v1 弱隔离，出网不阻断，能力边界经 Describe Notes 明示）。
-// 同域引用（w.Networks）与跨域引用（w.NetworkRefs——受管 Edge 挂项目网）
+// 同域引用（w.Networks）与跨域引用（w.NetworkRefs——受管 Proxy 挂项目网）
 // 都在此落载体；引用网络可能尚无任何用户 Workload 挂靠，首次由此创建。
 func (p *Provider) ensureNetworks(ctx context.Context, ns capability.NamespaceRef, ws []capability.Workload) error {
 	type netRef struct {

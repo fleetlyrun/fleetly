@@ -89,17 +89,17 @@ func newDoctorVerb() commands.Command {
 	return &flaggedVerb{
 		name:     name,
 		synopsis: "Diagnose the local install (docker, ports, exposure, disk, clock) and the remote fleetlyd",
-		usage:    "doctor [--addr ADDR] [--registry-addr ADDR] [--edge-config-endpoint URL] [--bind-grpc ADDR] [--bind-http ADDR] [--bind-edge-config ADDR]",
+		usage:    "doctor [--addr ADDR] [--registry-addr ADDR] [--proxy-config-endpoint URL] [--bind-grpc ADDR] [--bind-http ADDR] [--bind-proxy-config ADDR]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&addr, "addr", "", fmt.Sprintf("fleetlyd gRPC address to merge status from (env %s)", envAddr))
 			// 暴露自证输入（ADR-0036）：地址旗标缺省回退 daemon 同键 env
 			//（与 install.sh 注入 unit 的一组键）；bind 三面缺省 = config
 			// 缺省——操作者钉绑后应把同值传进来，自证才有真凭据。
-			fs.StringVar(&ex.edgeEndpoint, "edge-config-endpoint", "", fmt.Sprintf("edge config endpoint URL to self-certify (default: env %s)", envEdgeConfigEndpoint))
+			fs.StringVar(&ex.proxyEndpoint, "proxy-config-endpoint", "", fmt.Sprintf("proxy config endpoint URL to self-certify (default: env %s)", envProxyConfigEndpoint))
 			fs.StringVar(&ex.registryAddr, "registry-addr", "", fmt.Sprintf("managed registry address to self-certify (default: env %s)", envRegistryAddr))
 			fs.StringVar(&ex.bindGRPC, "bind-grpc", config.DefaultGRPCAddr, "fleetlyd gRPC bind address as configured (server.grpc.addr)")
 			fs.StringVar(&ex.bindHTTP, "bind-http", config.DefaultHTTPAddr, "gateway HTTP bind address as configured (server.http.addr)")
-			fs.StringVar(&ex.bindEdge, "bind-edge-config", config.DefaultEdgeConfigAddr, "edge config endpoint bind address as configured (server.edge_config.addr)")
+			fs.StringVar(&ex.bindProxy, "bind-proxy-config", config.DefaultProxyConfigAddr, "proxy config endpoint bind address as configured (server.proxy_config.addr)")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if err := noArgs(name, args); err != nil {

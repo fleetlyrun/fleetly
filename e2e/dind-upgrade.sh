@@ -6,7 +6,7 @@
 #
 # 三件代表性负载：
 #   ①web + sslip Route（受管 traefik）——升级全程探针断言请求零失败
-#     （存量路由不依赖控制面活着，架构 §8 降级矩阵 Edge 行的实证）；
+#     （存量路由不依赖控制面活着，架构 §8 降级矩阵 Proxy 行的实证）；
 #   ②第二 App 无 Route——断言平台零重启用户 Workload（task 行零新增）；
 #   ③受管 postgres Database——断言零滚动零硬杀（task 恰 1 Running）+
 #     pg_isready 活体（挂卷 stop-first 的数据面回归锚）；两代模板 digest
@@ -97,7 +97,7 @@ for img in nginx:1.27 traefik:v3.5 traefik/whoami:v1.10 postgres:17-bookworm; do
 done
 docker exec "$DIND_CID" docker tag traefik:v3.5 traefik:v3.5.4
 
-# 3. 旧版一行安装（install.sh bin-dir 模式 + Edge 配置端点直达 fleetlyd：
+# 3. 旧版一行安装（install.sh bin-dir 模式 + Proxy 配置端点直达 fleetlyd：
 # traefik 经 HTTP provider 拉配置，见 dind-h2c-route.sh 先例）。
 log "running install.sh inside dind with OLD binaries"
 docker cp "$WORKDIR/bins-old" "$DIND_CID":/root/bins
@@ -106,7 +106,7 @@ docker cp install.sh "$DIND_CID":/root/install.sh
 # 平台双件——漏此步则探针 90s 全空"status: none"）。
 docker cp "$WORKDIR/bins-new/h2cclient" "$DIND_CID":/root/bins/h2cclient
 docker exec -e FLEETLY_BIN_DIR=/root/bins \
-  -e FLEETLY_EDGE_CONFIG_ENDPOINT="http://$DIND_IP:9082/edge/config" \
+  -e FLEETLY_PROXY_CONFIG_ENDPOINT="http://$DIND_IP:9082/proxy/config" \
   "$DIND_CID" sh /root/install.sh
 
 # 4. 身份链（与 smoke 同款：bootstrap → init 铸 CLI token → 默认吊销）。
@@ -250,7 +250,7 @@ probe() {
   if [ "$code" != "200" ]; then
     PROBE_FAILS=$((PROBE_FAILS + 1))
     echo "probe failed with status: $code" >&2
-    docker exec "$DIND_CID" docker service ps "$(docker exec "$DIND_CID" docker service ls --quiet --filter name=fleetly-fleetly-system-edge)" --format '{{.Name}} {{.CurrentState}}' 2>/dev/null | head -3 >&2 || true
+    docker exec "$DIND_CID" docker service ps "$(docker exec "$DIND_CID" docker service ls --quiet --filter name=fleetly-fleetly-system-proxy)" --format '{{.Name}} {{.CurrentState}}' 2>/dev/null | head -3 >&2 || true
   fi
 }
 # 路由就绪窗（dind-h2c-route.sh 同款）：quickstart 返回 ≠ traefik 已发布
@@ -332,7 +332,7 @@ log "UPGRADE: starting NEW fleetlyd (goose rollforward + managed reconcile)"
 # env 同源 /etc/fleetlyd.env；文件缺席（HEAD~1 的旧 install.sh 未写——升级
 # 矩阵的旧相位）回退旧内联形态。空 env 起旁路 daemon（./data 新数据根 +
 # 受管面扰动）是升级零扰动锚的破坏面，CI 实证 2026-10-04。
-docker exec -e FLEETLY_EDGE_CONFIG_ENDPOINT="http://$DIND_IP:9082/edge/config" "$DIND_CID" sh -c \
+docker exec -e FLEETLY_PROXY_CONFIG_ENDPOINT="http://$DIND_IP:9082/proxy/config" "$DIND_CID" sh -c \
   'ENVARGS="$(grep -v "^$" /etc/fleetlyd.env 2>/dev/null | tr "\n" " ")"; [ -n "$ENVARGS" ] || ENVARGS="FLEETLY_DATA_ROOT=/var/lib/fleetly"; setsid env $ENVARGS /usr/local/bin/fleetlyd >>/var/log/fleetlyd.log 2>&1 </dev/null &'
 
 i=0

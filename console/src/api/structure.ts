@@ -244,6 +244,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/networks/rebuild": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * RebuildNetwork 是网络重建维护动词（ADR-0046）：平台中介地删除并按
+         *     ensureNetworks 同源形态复建载体网络（Attachable=true，标签同源）——
+         *     平台归属载体逐个 detach/re-attach，编排全程与部署 Ensure/受管
+         *     reconciler 串行化。存在平台无法归属的附着即 E_CONFLICT 拒绝并列出。
+         *     在幂等执法面（Idempotency-Key 头，ADR-0024）；变更冻结期拒绝。
+         */
+        post: operations["NetworksService_RebuildNetwork"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/projects": {
         parameters: {
             query?: never;
@@ -620,6 +643,24 @@ export interface components {
         v1PutSharedVariableResponse: {
             variable?: components["schemas"]["v1SharedVariable"];
             affected_apps?: string[];
+        };
+        /**
+         * RebuildNetworkResponse 携带网络引用与本次执行的载体计数（幂等重跑的
+         *     快速路径两者为 0——已 attachable 且标签在位即零扰动返回）。
+         */
+        v1RebuildNetworkRequest: {
+            project_id?: string;
+            name?: string;
+        };
+        v1RebuildNetworkResponse: {
+            network?: components["schemas"]["v1Network"];
+            /**
+             * detached/reattached 是本次被摘除又加回的附着载体数。
+             * Format: int32
+             */
+            detached?: number;
+            /** Format: int32 */
+            reattached?: number;
         };
         v1RevokeNetworkPeerResponse: {
             peer?: components["schemas"]["v1NetworkPeer"];
@@ -1372,6 +1413,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1RevokeNetworkPeerResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    NetworksService_RebuildNetwork: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["v1RebuildNetworkRequest"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1RebuildNetworkResponse"];
                 };
             };
             /** @description An unexpected error response. */

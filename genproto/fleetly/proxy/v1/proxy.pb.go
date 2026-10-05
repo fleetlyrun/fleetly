@@ -2,11 +2,11 @@
 // versions:
 // 	protoc-gen-go v1.36.11
 // 	protoc        (unknown)
-// source: fleetly/edge/v1/edge.proto
+// source: fleetly/proxy/v1/proxy.proto
 
-// Edge & TLS 上下文（领域模型 §2）：Route 与证书资产。
+// Proxy & TLS 上下文（领域模型 §2）：Route 与证书资产。
 
-package edgev1
+package proxyv1
 
 import (
 	_ "github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2/options"
@@ -45,7 +45,7 @@ type Route struct {
 
 func (x *Route) Reset() {
 	*x = Route{}
-	mi := &file_fleetly_edge_v1_edge_proto_msgTypes[0]
+	mi := &file_fleetly_proxy_v1_proxy_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -57,7 +57,7 @@ func (x *Route) String() string {
 func (*Route) ProtoMessage() {}
 
 func (x *Route) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_edge_v1_edge_proto_msgTypes[0]
+	mi := &file_fleetly_proxy_v1_proxy_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -70,7 +70,7 @@ func (x *Route) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Route.ProtoReflect.Descriptor instead.
 func (*Route) Descriptor() ([]byte, []int) {
-	return file_fleetly_edge_v1_edge_proto_rawDescGZIP(), []int{0}
+	return file_fleetly_proxy_v1_proxy_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *Route) GetId() string {
@@ -161,7 +161,7 @@ type CreateRouteRequest struct {
 
 func (x *CreateRouteRequest) Reset() {
 	*x = CreateRouteRequest{}
-	mi := &file_fleetly_edge_v1_edge_proto_msgTypes[1]
+	mi := &file_fleetly_proxy_v1_proxy_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -173,7 +173,7 @@ func (x *CreateRouteRequest) String() string {
 func (*CreateRouteRequest) ProtoMessage() {}
 
 func (x *CreateRouteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_edge_v1_edge_proto_msgTypes[1]
+	mi := &file_fleetly_proxy_v1_proxy_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -186,7 +186,7 @@ func (x *CreateRouteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateRouteRequest.ProtoReflect.Descriptor instead.
 func (*CreateRouteRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_edge_v1_edge_proto_rawDescGZIP(), []int{1}
+	return file_fleetly_proxy_v1_proxy_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *CreateRouteRequest) GetProjectId() string {
@@ -254,7 +254,7 @@ type CreateRouteResponse struct {
 
 func (x *CreateRouteResponse) Reset() {
 	*x = CreateRouteResponse{}
-	mi := &file_fleetly_edge_v1_edge_proto_msgTypes[2]
+	mi := &file_fleetly_proxy_v1_proxy_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -266,7 +266,7 @@ func (x *CreateRouteResponse) String() string {
 func (*CreateRouteResponse) ProtoMessage() {}
 
 func (x *CreateRouteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_edge_v1_edge_proto_msgTypes[2]
+	mi := &file_fleetly_proxy_v1_proxy_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -279,7 +279,7 @@ func (x *CreateRouteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateRouteResponse.ProtoReflect.Descriptor instead.
 func (*CreateRouteResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_edge_v1_edge_proto_rawDescGZIP(), []int{2}
+	return file_fleetly_proxy_v1_proxy_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *CreateRouteResponse) GetRoute() *Route {
@@ -303,7 +303,7 @@ type ListRoutesRequest struct {
 
 func (x *ListRoutesRequest) Reset() {
 	*x = ListRoutesRequest{}
-	mi := &file_fleetly_edge_v1_edge_proto_msgTypes[3]
+	mi := &file_fleetly_proxy_v1_proxy_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -315,7 +315,7 @@ func (x *ListRoutesRequest) String() string {
 func (*ListRoutesRequest) ProtoMessage() {}
 
 func (x *ListRoutesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_edge_v1_edge_proto_msgTypes[3]
+	mi := &file_fleetly_proxy_v1_proxy_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -328,7 +328,7 @@ func (x *ListRoutesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRoutesRequest.ProtoReflect.Descriptor instead.
 func (*ListRoutesRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_edge_v1_edge_proto_rawDescGZIP(), []int{3}
+	return file_fleetly_proxy_v1_proxy_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *ListRoutesRequest) GetProjectId() string {
@@ -361,7 +361,7 @@ type ListRoutesResponse struct {
 
 func (x *ListRoutesResponse) Reset() {
 	*x = ListRoutesResponse{}
-	mi := &file_fleetly_edge_v1_edge_proto_msgTypes[4]
+	mi := &file_fleetly_proxy_v1_proxy_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -373,7 +373,7 @@ func (x *ListRoutesResponse) String() string {
 func (*ListRoutesResponse) ProtoMessage() {}
 
 func (x *ListRoutesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_edge_v1_edge_proto_msgTypes[4]
+	mi := &file_fleetly_proxy_v1_proxy_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -386,7 +386,7 @@ func (x *ListRoutesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRoutesResponse.ProtoReflect.Descriptor instead.
 func (*ListRoutesResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_edge_v1_edge_proto_rawDescGZIP(), []int{4}
+	return file_fleetly_proxy_v1_proxy_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ListRoutesResponse) GetRoutes() []*Route {
@@ -405,7 +405,7 @@ type DeleteRouteRequest struct {
 
 func (x *DeleteRouteRequest) Reset() {
 	*x = DeleteRouteRequest{}
-	mi := &file_fleetly_edge_v1_edge_proto_msgTypes[5]
+	mi := &file_fleetly_proxy_v1_proxy_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -417,7 +417,7 @@ func (x *DeleteRouteRequest) String() string {
 func (*DeleteRouteRequest) ProtoMessage() {}
 
 func (x *DeleteRouteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_edge_v1_edge_proto_msgTypes[5]
+	mi := &file_fleetly_proxy_v1_proxy_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -430,7 +430,7 @@ func (x *DeleteRouteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteRouteRequest.ProtoReflect.Descriptor instead.
 func (*DeleteRouteRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_edge_v1_edge_proto_rawDescGZIP(), []int{5}
+	return file_fleetly_proxy_v1_proxy_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *DeleteRouteRequest) GetId() string {
@@ -448,7 +448,7 @@ type DeleteRouteResponse struct {
 
 func (x *DeleteRouteResponse) Reset() {
 	*x = DeleteRouteResponse{}
-	mi := &file_fleetly_edge_v1_edge_proto_msgTypes[6]
+	mi := &file_fleetly_proxy_v1_proxy_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -460,7 +460,7 @@ func (x *DeleteRouteResponse) String() string {
 func (*DeleteRouteResponse) ProtoMessage() {}
 
 func (x *DeleteRouteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_edge_v1_edge_proto_msgTypes[6]
+	mi := &file_fleetly_proxy_v1_proxy_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -473,14 +473,14 @@ func (x *DeleteRouteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteRouteResponse.ProtoReflect.Descriptor instead.
 func (*DeleteRouteResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_edge_v1_edge_proto_rawDescGZIP(), []int{6}
+	return file_fleetly_proxy_v1_proxy_proto_rawDescGZIP(), []int{6}
 }
 
-var File_fleetly_edge_v1_edge_proto protoreflect.FileDescriptor
+var File_fleetly_proxy_v1_proxy_proto protoreflect.FileDescriptor
 
-const file_fleetly_edge_v1_edge_proto_rawDesc = "" +
+const file_fleetly_proxy_v1_proxy_proto_rawDesc = "" +
 	"\n" +
-	"\x1afleetly/edge/v1/edge.proto\x12\x0ffleetly.edge.v1\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"\xf9\x01\n" +
+	"\x1cfleetly/proxy/v1/proxy.proto\x12\x10fleetly.proxy.v1\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"\xf9\x01\n" +
 	"\x05Route\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
 	"\n" +
@@ -504,67 +504,67 @@ const file_fleetly_edge_v1_edge_proto_rawDesc = "" +
 	"\aprocess\x18\x05 \x01(\tR\aprocess\x12\x12\n" +
 	"\x04port\x18\x06 \x01(\x05R\x04port\x12\x1a\n" +
 	"\bprotocol\x18\a \x01(\tR\bprotocol\x12\x19\n" +
-	"\btls_mode\x18\b \x01(\tR\atlsMode\"C\n" +
-	"\x13CreateRouteResponse\x12,\n" +
-	"\x05route\x18\x01 \x01(\v2\x16.fleetly.edge.v1.RouteR\x05route\"n\n" +
+	"\btls_mode\x18\b \x01(\tR\atlsMode\"D\n" +
+	"\x13CreateRouteResponse\x12-\n" +
+	"\x05route\x18\x01 \x01(\v2\x17.fleetly.proxy.v1.RouteR\x05route\"n\n" +
 	"\x11ListRoutesRequest\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12$\n" +
 	"\x0eafter_route_id\x18\x02 \x01(\tR\fafterRouteId\x12\x14\n" +
-	"\x05limit\x18\x03 \x01(\x05R\x05limit\"D\n" +
-	"\x12ListRoutesResponse\x12.\n" +
-	"\x06routes\x18\x01 \x03(\v2\x16.fleetly.edge.v1.RouteR\x06routes\"$\n" +
+	"\x05limit\x18\x03 \x01(\x05R\x05limit\"E\n" +
+	"\x12ListRoutesResponse\x12/\n" +
+	"\x06routes\x18\x01 \x03(\v2\x17.fleetly.proxy.v1.RouteR\x06routes\"$\n" +
 	"\x12DeleteRouteRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"\x15\n" +
-	"\x13DeleteRouteResponse2\x9e\x03\n" +
-	"\rRoutesService\x12\x81\x01\n" +
-	"\vCreateRoute\x12#.fleetly.edge.v1.CreateRouteRequest\x1a$.fleetly.edge.v1.CreateRouteResponse\"'\xea\xc4\x19\x0e\b\x03\"\n" +
+	"\x13DeleteRouteResponse2\xa4\x03\n" +
+	"\rRoutesService\x12\x83\x01\n" +
+	"\vCreateRoute\x12$.fleetly.proxy.v1.CreateRouteRequest\x1a%.fleetly.proxy.v1.CreateRouteResponse\"'\xea\xc4\x19\x0e\b\x03\"\n" +
 	"\n" +
 	"\x06routes\x10\x02\x82\xd3\xe4\x93\x02\x0f:\x01*\"\n" +
-	"/v1/routes\x12{\n" +
+	"/v1/routes\x12}\n" +
 	"\n" +
-	"ListRoutes\x12\".fleetly.edge.v1.ListRoutesRequest\x1a#.fleetly.edge.v1.ListRoutesResponse\"$\xea\xc4\x19\x0e\b\x03\"\n" +
+	"ListRoutes\x12#.fleetly.proxy.v1.ListRoutesRequest\x1a$.fleetly.proxy.v1.ListRoutesResponse\"$\xea\xc4\x19\x0e\b\x03\"\n" +
 	"\n" +
 	"\x06routes\x10\x01\x82\xd3\xe4\x93\x02\f\x12\n" +
-	"/v1/routes\x12\x83\x01\n" +
-	"\vDeleteRoute\x12#.fleetly.edge.v1.DeleteRouteRequest\x1a$.fleetly.edge.v1.DeleteRouteResponse\")\xea\xc4\x19\x0e\b\x03\"\n" +
+	"/v1/routes\x12\x85\x01\n" +
+	"\vDeleteRoute\x12$.fleetly.proxy.v1.DeleteRouteRequest\x1a%.fleetly.proxy.v1.DeleteRouteResponse\")\xea\xc4\x19\x0e\b\x03\"\n" +
 	"\n" +
-	"\x06routes\x10\x03\x82\xd3\xe4\x93\x02\x11*\x0f/v1/routes/{id}\x1a\x06\xf2\xc4\x19\x02\b\x03B\x94\x01\x92ARRP\n" +
+	"\x06routes\x10\x03\x82\xd3\xe4\x93\x02\x11*\x0f/v1/routes/{id}\x1a\x06\xf2\xc4\x19\x02\b\x03B\x96\x01\x92ARRP\n" +
 	"\adefault\x12E\n" +
 	"\x1dAn unexpected error response.\x12$\n" +
-	"\"\x1a .fleetly.shared.v1.ErrorResponseZ=github.com/fleetlyrun/fleetly/genproto/fleetly/edge/v1;edgev1b\x06proto3"
+	"\"\x1a .fleetly.shared.v1.ErrorResponseZ?github.com/fleetlyrun/fleetly/genproto/fleetly/proxy/v1;proxyv1b\x06proto3"
 
 var (
-	file_fleetly_edge_v1_edge_proto_rawDescOnce sync.Once
-	file_fleetly_edge_v1_edge_proto_rawDescData []byte
+	file_fleetly_proxy_v1_proxy_proto_rawDescOnce sync.Once
+	file_fleetly_proxy_v1_proxy_proto_rawDescData []byte
 )
 
-func file_fleetly_edge_v1_edge_proto_rawDescGZIP() []byte {
-	file_fleetly_edge_v1_edge_proto_rawDescOnce.Do(func() {
-		file_fleetly_edge_v1_edge_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_fleetly_edge_v1_edge_proto_rawDesc), len(file_fleetly_edge_v1_edge_proto_rawDesc)))
+func file_fleetly_proxy_v1_proxy_proto_rawDescGZIP() []byte {
+	file_fleetly_proxy_v1_proxy_proto_rawDescOnce.Do(func() {
+		file_fleetly_proxy_v1_proxy_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_fleetly_proxy_v1_proxy_proto_rawDesc), len(file_fleetly_proxy_v1_proxy_proto_rawDesc)))
 	})
-	return file_fleetly_edge_v1_edge_proto_rawDescData
+	return file_fleetly_proxy_v1_proxy_proto_rawDescData
 }
 
-var file_fleetly_edge_v1_edge_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
-var file_fleetly_edge_v1_edge_proto_goTypes = []any{
-	(*Route)(nil),               // 0: fleetly.edge.v1.Route
-	(*CreateRouteRequest)(nil),  // 1: fleetly.edge.v1.CreateRouteRequest
-	(*CreateRouteResponse)(nil), // 2: fleetly.edge.v1.CreateRouteResponse
-	(*ListRoutesRequest)(nil),   // 3: fleetly.edge.v1.ListRoutesRequest
-	(*ListRoutesResponse)(nil),  // 4: fleetly.edge.v1.ListRoutesResponse
-	(*DeleteRouteRequest)(nil),  // 5: fleetly.edge.v1.DeleteRouteRequest
-	(*DeleteRouteResponse)(nil), // 6: fleetly.edge.v1.DeleteRouteResponse
+var file_fleetly_proxy_v1_proxy_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_fleetly_proxy_v1_proxy_proto_goTypes = []any{
+	(*Route)(nil),               // 0: fleetly.proxy.v1.Route
+	(*CreateRouteRequest)(nil),  // 1: fleetly.proxy.v1.CreateRouteRequest
+	(*CreateRouteResponse)(nil), // 2: fleetly.proxy.v1.CreateRouteResponse
+	(*ListRoutesRequest)(nil),   // 3: fleetly.proxy.v1.ListRoutesRequest
+	(*ListRoutesResponse)(nil),  // 4: fleetly.proxy.v1.ListRoutesResponse
+	(*DeleteRouteRequest)(nil),  // 5: fleetly.proxy.v1.DeleteRouteRequest
+	(*DeleteRouteResponse)(nil), // 6: fleetly.proxy.v1.DeleteRouteResponse
 }
-var file_fleetly_edge_v1_edge_proto_depIdxs = []int32{
-	0, // 0: fleetly.edge.v1.CreateRouteResponse.route:type_name -> fleetly.edge.v1.Route
-	0, // 1: fleetly.edge.v1.ListRoutesResponse.routes:type_name -> fleetly.edge.v1.Route
-	1, // 2: fleetly.edge.v1.RoutesService.CreateRoute:input_type -> fleetly.edge.v1.CreateRouteRequest
-	3, // 3: fleetly.edge.v1.RoutesService.ListRoutes:input_type -> fleetly.edge.v1.ListRoutesRequest
-	5, // 4: fleetly.edge.v1.RoutesService.DeleteRoute:input_type -> fleetly.edge.v1.DeleteRouteRequest
-	2, // 5: fleetly.edge.v1.RoutesService.CreateRoute:output_type -> fleetly.edge.v1.CreateRouteResponse
-	4, // 6: fleetly.edge.v1.RoutesService.ListRoutes:output_type -> fleetly.edge.v1.ListRoutesResponse
-	6, // 7: fleetly.edge.v1.RoutesService.DeleteRoute:output_type -> fleetly.edge.v1.DeleteRouteResponse
+var file_fleetly_proxy_v1_proxy_proto_depIdxs = []int32{
+	0, // 0: fleetly.proxy.v1.CreateRouteResponse.route:type_name -> fleetly.proxy.v1.Route
+	0, // 1: fleetly.proxy.v1.ListRoutesResponse.routes:type_name -> fleetly.proxy.v1.Route
+	1, // 2: fleetly.proxy.v1.RoutesService.CreateRoute:input_type -> fleetly.proxy.v1.CreateRouteRequest
+	3, // 3: fleetly.proxy.v1.RoutesService.ListRoutes:input_type -> fleetly.proxy.v1.ListRoutesRequest
+	5, // 4: fleetly.proxy.v1.RoutesService.DeleteRoute:input_type -> fleetly.proxy.v1.DeleteRouteRequest
+	2, // 5: fleetly.proxy.v1.RoutesService.CreateRoute:output_type -> fleetly.proxy.v1.CreateRouteResponse
+	4, // 6: fleetly.proxy.v1.RoutesService.ListRoutes:output_type -> fleetly.proxy.v1.ListRoutesResponse
+	6, // 7: fleetly.proxy.v1.RoutesService.DeleteRoute:output_type -> fleetly.proxy.v1.DeleteRouteResponse
 	5, // [5:8] is the sub-list for method output_type
 	2, // [2:5] is the sub-list for method input_type
 	2, // [2:2] is the sub-list for extension type_name
@@ -572,26 +572,26 @@ var file_fleetly_edge_v1_edge_proto_depIdxs = []int32{
 	0, // [0:2] is the sub-list for field type_name
 }
 
-func init() { file_fleetly_edge_v1_edge_proto_init() }
-func file_fleetly_edge_v1_edge_proto_init() {
-	if File_fleetly_edge_v1_edge_proto != nil {
+func init() { file_fleetly_proxy_v1_proxy_proto_init() }
+func file_fleetly_proxy_v1_proxy_proto_init() {
+	if File_fleetly_proxy_v1_proxy_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fleetly_edge_v1_edge_proto_rawDesc), len(file_fleetly_edge_v1_edge_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fleetly_proxy_v1_proxy_proto_rawDesc), len(file_fleetly_proxy_v1_proxy_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_fleetly_edge_v1_edge_proto_goTypes,
-		DependencyIndexes: file_fleetly_edge_v1_edge_proto_depIdxs,
-		MessageInfos:      file_fleetly_edge_v1_edge_proto_msgTypes,
+		GoTypes:           file_fleetly_proxy_v1_proxy_proto_goTypes,
+		DependencyIndexes: file_fleetly_proxy_v1_proxy_proto_depIdxs,
+		MessageInfos:      file_fleetly_proxy_v1_proxy_proto_msgTypes,
 	}.Build()
-	File_fleetly_edge_v1_edge_proto = out.File
-	file_fleetly_edge_v1_edge_proto_goTypes = nil
-	file_fleetly_edge_v1_edge_proto_depIdxs = nil
+	File_fleetly_proxy_v1_proxy_proto = out.File
+	file_fleetly_proxy_v1_proxy_proto_goTypes = nil
+	file_fleetly_proxy_v1_proxy_proto_depIdxs = nil
 }

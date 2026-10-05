@@ -2,7 +2,7 @@
 
 | 状态 | 日期 | 关联 |
 |---|---|---|
-| Accepted（实施挂起：并行批落地后一次性 sweep，验收锚随批勾选） | 2026-10-05 | ADR-0007（词汇冻结与显式更名出口）、F0.15（Edge 落地面）、ADR-0044（console 生成物纪律）、ADR-0039 决策 4（flag-day 操作序文化） |
+| Accepted（已实施：2026-10-05 一次性全库 sweep 落地，验收锚全勾） | 2026-10-05 | ADR-0007（词汇冻结与显式更名出口）、F0.15（Edge 落地面）、ADR-0044（console 生成物纪律）、ADR-0039 决策 4（flag-day 操作序文化） |
 
 ## 背景
 
@@ -112,20 +112,31 @@ ADR-0007 把 Edge 列入禁改清单，同时留了出口：发现词条不合�
 
 ## 验收锚
 
-- [ ] CONTEXT.md：Edge→Proxy 词条（_Avoid_: edge, ingress, gateway, load
+- [x] CONTEXT.md：Edge→Proxy 词条（_Avoid_: edge, ingress, gateway, load
       balancer）+ Capability 七端口正文；TestAvoidTokensTriaged 双向保鲜绿
-- [ ] proto 迁移 fleetly.proxy.v1 + generate:all 零漂移（generate:verify）
-      + buf breaking 例外条目最小化并注释链接本 ADR
-- [ ] capability 面全量更名（Kind/接口/context helper/fake）；全仓无 Edge
-      词条残留（机械扫 + usage 反扫；docs/adr 与 docs/reviews 历史文件除外）
-- [ ] 跨进程契约换代：X-Fleetly-Proxy-Token / FLEETLY_PROXY_CONFIG_ENDPOINT
-      / proxy_config；无兼容层；staging flag-day 换装序回写 runbook（含
-      FLEETLY_EDGE_CONFIG_ENDPOINT 旧值清理注记）
-- [ ] console:gen + console:build 同 commit，console:verify 零漂移
-- [ ] doctor 文案与双形态 golden 更新；含 Edge 字样 golden 全量再生成
-- [ ] wording 守卫：edge 分诊入表带理由；gateway 条目理由文更新；全门禁绿
-      （mise run test 三 module -race + lint + generate:verify +
-      console:verify）
-- [ ] e2e:h2c（受管 traefik 链路含新 header）dind 演练绿
-- [ ] 活文档更新：架构/领域模型/checklist F0.15 注记/runbook——历史 ADR
-      与评审原文零追改
+      （sweep commit 实测）
+- [x] proto 迁移 fleetly.proxy.v1 + generate:all 零漂移（generate:verify
+      提交后复跑绿）+ buf breaking 例外条目最小化并注释链接本 ADR
+      （breaking.ignore 路径为 workspace 根相对——需 proto/ 前缀，实测）
+- [x] capability 面全量更名（Kind/接口/context helper/fake）；全仓无 Edge
+      词条残留（机械扫 + usage 反扫；docs/adr 与 docs/reviews 历史文件、
+      CONTEXT.md 更名注记/_Avoid_ 表、buf.yaml 豁免注释、runbook flag-day
+      对照表等有意引用除外）
+- [x] 跨进程契约换代：X-Fleetly-Proxy-Token / FLEETLY_PROXY_CONFIG_ENDPOINT
+      / proxy_config；无兼容层；staging flag-day 换装序回写 runbook 记录·六
+      （含 FLEETLY_EDGE_CONFIG_ENDPOINT / FLEETLY_EDGE_ACME_EMAIL 旧值清理
+      与 /edge/config → /proxy/config 值内路径换代注记）
+- [x] console:gen + console:build 同 commit，console:verify 零漂移
+      （structure.ts 随 structure.proto 注释更新；dist 字节级未变）
+- [x] doctor 文案与双形态 golden 更新（proxy config exposure）；
+      含 Edge 字样 golden 全量再生成（doctor 双形态，-update）
+- [x] wording 守卫：edge 分诊入 banned 复合形态
+      （edge[_ -]?config|edgev1|fleetly[./_-]edge|edge[.]proto——裸词
+      edge case 等通用英文不误伤）；gateway 条目理由文更新；middleware
+      豁免路径随 genproto 新路径更新；全门禁绿（mise run test 三 module
+      -race + lint（vet/gofmt/golangci/buf lint/buf breaking）+
+      generate:verify + console:verify）
+- [x] e2e:h2c（受管 traefik 链路含新 env/端点/header 契约）dind 演练绿
+      （2026-10-05 本地 ALL PASSED：h2c 双证明 + 精确拒绝 + 降级存量服务）
+- [x] 活文档更新：架构/领域模型/checklist F0.15 注记/runbook 记录·六——
+      历史 ADR 与评审原文零追改

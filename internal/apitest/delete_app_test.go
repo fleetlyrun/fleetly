@@ -11,8 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
-	edgev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/edge/v1"
 	identityv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/identity/v1"
+	proxyv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/proxy/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
 	"github.com/fleetlyrun/fleetly/internal/apitest"
@@ -32,7 +32,7 @@ func appErrCode(t *testing.T, err error) string {
 
 // routeListed 报告 routeID 是否在 ListRoutes 结果可见（List 是活跃行
 // 口径——可见即未软删）。
-func routeListed(t *testing.T, list *edgev1.ListRoutesResponse, routeID string) bool {
+func routeListed(t *testing.T, list *proxyv1.ListRoutesResponse, routeID string) bool {
 	t.Helper()
 	for _, r := range list.GetRoutes() {
 		if r.GetId() == routeID {
@@ -50,7 +50,7 @@ func TestDeleteAppSemantics(t *testing.T) {
 	ctx := sdk.WithToken(context.Background(), h.Token)
 	apps := structurev1.NewAppsServiceClient(h.Conn)
 	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
-	routes := edgev1.NewRoutesServiceClient(h.Conn)
+	routes := proxyv1.NewRoutesServiceClient(h.Conn)
 
 	proj, err := structurev1.NewProjectsServiceClient(h.Conn).CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "teardown"})
 	require.NoError(t, err)
@@ -59,7 +59,7 @@ func TestDeleteAppSemantics(t *testing.T) {
 	appID := app.GetApp().GetId()
 
 	// 引用该 App 的路由（撤路由面的前置）。
-	route, err := routes.CreateRoute(ctx, &edgev1.CreateRouteRequest{
+	route, err := routes.CreateRoute(ctx, &proxyv1.CreateRouteRequest{
 		ProjectId: proj.GetProject().GetId(), Host: "gone.teardown.test",
 		AppId: appID, Process: "web", Port: 8000,
 	})
@@ -76,7 +76,7 @@ func TestDeleteAppSemantics(t *testing.T) {
 	// 拒删零副作用（ADR-0023 修订）：E_CONFLICT 路径不拆载体、不碰路由
 	// （不变式"App 存活 ⇒ 路由不得消失"的常规面）。
 	require.Empty(t, h.Runtime.Removed(), "rejected delete must not tear down carriers")
-	preRouteList, err := routes.ListRoutes(ctx, &edgev1.ListRoutesRequest{ProjectId: proj.GetProject().GetId()})
+	preRouteList, err := routes.ListRoutes(ctx, &proxyv1.ListRoutesRequest{ProjectId: proj.GetProject().GetId()})
 	require.NoError(t, err)
 	require.True(t, routeListed(t, preRouteList, route.GetRoute().GetId()),
 		"rejected delete must not touch routes")
@@ -94,7 +94,7 @@ func TestDeleteAppSemantics(t *testing.T) {
 	require.NotEmpty(t, h.Runtime.Removed(), "delete must tear down runtime carriers")
 
 	// 引用路由随删：列表不再可见。
-	routeList, err := routes.ListRoutes(ctx, &edgev1.ListRoutesRequest{ProjectId: proj.GetProject().GetId()})
+	routeList, err := routes.ListRoutes(ctx, &proxyv1.ListRoutesRequest{ProjectId: proj.GetProject().GetId()})
 	require.NoError(t, err)
 	for _, r := range routeList.GetRoutes() {
 		require.NotEqual(t, route.GetRoute().GetId(), r.GetId(), "routes referencing the app must be withdrawn on delete")
@@ -284,7 +284,7 @@ func TestDeleteAppTeardownAbortKeepsRoute(t *testing.T) {
 	ctx := sdk.WithToken(context.Background(), h.Token)
 	apps := structurev1.NewAppsServiceClient(h.Conn)
 	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
-	routes := edgev1.NewRoutesServiceClient(h.Conn)
+	routes := proxyv1.NewRoutesServiceClient(h.Conn)
 	events := telemetryv1.NewEventsServiceClient(h.Conn)
 	auditq := identityv1.NewAuditQueryServiceClient(h.Conn)
 
@@ -293,7 +293,7 @@ func TestDeleteAppTeardownAbortKeepsRoute(t *testing.T) {
 	app, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: proj.GetProject().GetId(), Name: "web"})
 	require.NoError(t, err)
 	appID := app.GetApp().GetId()
-	route, err := routes.CreateRoute(ctx, &edgev1.CreateRouteRequest{
+	route, err := routes.CreateRoute(ctx, &proxyv1.CreateRouteRequest{
 		ProjectId: proj.GetProject().GetId(), Host: "abort.teardown.test",
 		AppId: appID, Process: "web", Port: 8000,
 	})
@@ -338,7 +338,7 @@ func TestDeleteAppTeardownAbortKeepsRoute(t *testing.T) {
 	// 不变式：App 存活 ⇒ 路由仍在（拒绝路径不碰路由；可见即未软删）。
 	_, err = apps.GetApp(ctx, &structurev1.GetAppRequest{Id: appID})
 	require.NoError(t, err)
-	routeList, err := routes.ListRoutes(ctx, &edgev1.ListRoutesRequest{ProjectId: proj.GetProject().GetId()})
+	routeList, err := routes.ListRoutes(ctx, &proxyv1.ListRoutesRequest{ProjectId: proj.GetProject().GetId()})
 	require.NoError(t, err)
 	require.True(t, routeListed(t, routeList, routeID),
 		"app alive ⇒ routes referencing it must survive an aborted delete")
@@ -379,14 +379,14 @@ func TestDeleteAppRoutesRaceInvariant(t *testing.T) {
 	ctx := sdk.WithToken(context.Background(), h.Token)
 	apps := structurev1.NewAppsServiceClient(h.Conn)
 	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
-	routes := edgev1.NewRoutesServiceClient(h.Conn)
+	routes := proxyv1.NewRoutesServiceClient(h.Conn)
 
 	proj, err := structurev1.NewProjectsServiceClient(h.Conn).CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "route-race"})
 	require.NoError(t, err)
 	app, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: proj.GetProject().GetId(), Name: "web"})
 	require.NoError(t, err)
 	appID := app.GetApp().GetId()
-	route, err := routes.CreateRoute(ctx, &edgev1.CreateRouteRequest{
+	route, err := routes.CreateRoute(ctx, &proxyv1.CreateRouteRequest{
 		ProjectId: proj.GetProject().GetId(), Host: "race.teardown.test",
 		AppId: appID, Process: "web", Port: 8000,
 	})
@@ -441,7 +441,7 @@ func TestDeleteAppRoutesRaceInvariant(t *testing.T) {
 	// 未软删）。App 被删则引用路由必同逝；任一交错下"活 App 零路由"
 	// （缺陷形态）都不可出现。
 	_, getErr := apps.GetApp(ctx, &structurev1.GetAppRequest{Id: appID})
-	routeList, err := routes.ListRoutes(ctx, &edgev1.ListRoutesRequest{ProjectId: proj.GetProject().GetId()})
+	routeList, err := routes.ListRoutes(ctx, &proxyv1.ListRoutesRequest{ProjectId: proj.GetProject().GetId()})
 	require.NoError(t, err)
 	listed := routeListed(t, routeList, route.GetRoute().GetId())
 	if getErr == nil {

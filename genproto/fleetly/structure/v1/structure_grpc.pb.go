@@ -6,7 +6,7 @@
 
 // Structure 上下文（领域模型 §2）：组织结构——项目/应用骨架与材料
 //（Project/App/Secret/Config/Volume/Network）。读写分离的 CRUD 面；
-// Route 属 Edge 上下文、Deployment 属 Delivery 上下文（各自 proto 包）。
+// Route 属 Proxy 上下文、Deployment 属 Delivery 上下文（各自 proto 包）。
 
 package structurev1
 

@@ -6,7 +6,7 @@
 
 ## 1. 一页结论
 
-1. **接入形态先于项目选择，且形态比项目更"fleetly"**：推荐**按需实例 + Edge 门禁 + 一次性接入凭证（launcher token）+ 服务端凭据注入 + 默认只读**（§6 形态 B）。它与既有原语完全同构（Task 双形态/TTL/Owner Lease、网络组挂靠、Route、Secret 注入），不发明新机制；idle 成本为零，不破"单核轻量自宿"红线（ADR-0008 参考预算）。
+1. **接入形态先于项目选择，且形态比项目更"fleetly"**：推荐**按需实例 + Proxy 门禁 + 一次性接入凭证（launcher token）+ 服务端凭据注入 + 默认只读**（§6 形态 B）。它与既有原语完全同构（Task 双形态/TTL/Owner Lease、网络组挂靠、Route、Secret 注入），不发明新机制；idle 成本为零，不破"单核轻量自宿"红线（ADR-0008 参考预算）。
 2. **PostgreSQL 主选 pgweb**（MIT、Go 单二进制 ~7MB、`--sessions --lock-session --readonly --connect-backend`）：`--connect-backend` 就是为"平台持有凭据、用户持一次性 token 换会话"的场景设计的官方机制——pgweb 拿 token 回调**我们的** API 取连接串，凭据全程不出服务端。无 X-Frame-Options/CSP 头，iframe 默认可用。
 3. **Redis 主选 redis-commander**（MIT、活跃、env 注入多 host、**自带只读模式**、bcrypt basic auth、子路径反代友好）。SQL 浏览器没有一家能正经覆盖 Redis，redis-commander 是该生态的事实标准。
 4. **MySQL/Mongo（F2.1 时再终选）最强候选是 Adminer 6.x**：原仓库 2025-02 复活后高频发版（v6.1.1，2026-09-25），凭据注入是文档化插件面（覆盖 `credentials()` 约 20 行插件 + 6.1.0 新增 `verifyLoginToken()` 明确服务"接受外部网站登录"），iframe 有官方 `frames` 插件；Mongo 是年轻插件、Redis 驱动不可依赖。Mongo 专用备选 Mongoku（MIT、只读模式、env 注入连接）。
@@ -68,7 +68,7 @@ C2 推论：候选必须是**独立部署的服务端 web 应用**（桌面/Elec
 
 **形态 A：常驻受管组件，挂全部活跃 Project 网络**（traefik B1 同款）。优点：零启动延迟、一处升级；缺点：所有 Project 的连接集中一容器（爆炸半径大、C5 隔离被削弱）、idle 常驻吃预算（C3，Node 系尤甚）。
 
-**形态 B（推荐）：按需实例**。用户在 Console 发起浏览 → fleetlyd 校验 Scope → 铸造短 TTL 一次性 launcher token → 在目标 Project 网络上起浏览器实例（凭据从 Secret 解封注入 env，C1）→ Route + Edge ForwardAuth 门禁对外 → 会话结束/超时回收。与 Task（one-shot/resident、TTL、Owner Lease、网络组挂靠）完全同构，**不新增平台机制**；实例只持有单个 Project 的连接（C5、爆炸半径最小）；idle 零成本（C3）。代价：秒级冷启动（可预热池缓解）与实例生命周期管理。pgweb/redis-commander/Adminer 均可作按需实例；DbGate 因重量只适合此形态而非常驻。
+**形态 B（推荐）：按需实例**。用户在 Console 发起浏览 → fleetlyd 校验 Scope → 铸造短 TTL 一次性 launcher token → 在目标 Project 网络上起浏览器实例（凭据从 Secret 解封注入 env，C1）→ Route + Proxy ForwardAuth 门禁对外 → 会话结束/超时回收。与 Task（one-shot/resident、TTL、Owner Lease、网络组挂靠）完全同构，**不新增平台机制**；实例只持有单个 Project 的连接（C5、爆炸半径最小）；idle 零成本（C3）。代价：秒级冷启动（可预热池缓解）与实例生命周期管理。pgweb/redis-commander/Adminer 均可作按需实例；DbGate 因重量只适合此形态而非常驻。
 
 **形态 C：库级嵌入 fleetlyd——否决**。无候选具备可嵌入库形态（pgweb 是独立二进制、其余 PHP/Node）；且必然制造"Console 私有服务端面"违 C2。
 
@@ -77,7 +77,7 @@ C2 推论：候选必须是**独立部署的服务端 web 应用**（桌面/Elec
 1. **Scope 映射**：`databases:read` 门禁进入浏览器（默认只读档：工具只读开关 + 平台侧铸造只读 DB 角色双保险）；`databases:write` 才解锁写档（SQL 控制台天然是任意查询面——"读默认开放、写显式授权"在此必须是双层执法，工具开关只是 UX，真隔离靠 DB 授权）。
 2. **审计缺口**：浏览器内的查询不属于平台写 RPC，C6 覆盖不到。至少记录"谁在何时开了哪个 Database 的浏览器会话"；查询文本是否留痕（审计价值 vs 内容隐私）是开放问题。
 3. **SSRF 面**：连接目标一律由平台下发（Adminer 历史 SSRF 的攻击面即用户自填 server 参数），实例只挂 Project 网络进一步收窄。
-4. **launcher token**：短 TTL、单次、绑定 User/Project/Database 三元组，经 Edge 校验后才允许建立工具会话。
+4. **launcher token**：短 TTL、单次、绑定 User/Project/Database 三元组，经 Proxy 校验后才允许建立工具会话。
 5. **钉版**：所有浏览器镜像走 digest 钉定（与 F2.7 dbtemplate 同纪律）；DbGate 必须钉在 RCE 修复版之上。
 
 ## 8. 风险与开放问题

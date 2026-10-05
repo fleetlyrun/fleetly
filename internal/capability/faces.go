@@ -4,7 +4,7 @@ package capability
 // 包级探测函数 / 探测+断言点替换+可观测面同批 / 启动日志本批 API 后续）。
 //
 // 此前 duck-typing 发现散在 8 处类型断言点（drift/hygiene/managed×3/
-// edgeconfig/contexts×2），降级文化（谁缺谁让位、缺面时各消费点的诚实
+// proxyconfig/contexts×2），降级文化（谁缺谁让位、缺面时各消费点的诚实
 // 行为）只活在各点注释里、无处枚举——FacesOf 收进单点，ProviderFaces
 // 持 typed 值（nil = 未提供），Offered 给装配期日志与后续 doctor 面
 //（GetStatus 扩字段随 F0.19 能力降级矩阵批次设计，避免两次 API 变更）。

@@ -1,7 +1,7 @@
 {
   "swagger": "2.0",
   "info": {
-    "title": "Edge \u0026 TLS 上下文（领域模型 §2）：Route 与证书资产。",
+    "title": "Proxy \u0026 TLS 上下文（领域模型 §2）：Route 与证书资产。",
     "version": "version not set"
   },
   "tags": [

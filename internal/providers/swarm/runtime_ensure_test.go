@@ -192,8 +192,8 @@ func TestPollTasksListsManagedServicesPerService(t *testing.T) {
 // per-Ensure 备忘去重（同名只探一次）；404 保留名字原样（既有语义）；非
 // 404 错误上抛带原因（Q-20，不再吞）。
 func TestResolveNetworkTargetsMemoAndFaults(t *testing.T) {
-	const carrier = "fleetly-net-shop-edge"
-	const netID = "net-edge-id"
+	const carrier = "fleetly-net-shop-proxy"
+	const netID = "net-proxy-id"
 
 	spec := func() swarm.ServiceSpec {
 		return swarm.ServiceSpec{
@@ -242,15 +242,15 @@ func TestResolveNetworkTargetsMemoAndFaults(t *testing.T) {
 // 引用同一网络，材料期 inspect（create-or-get）+ 解析期 memo 共两次
 // NetworkInspect——修复前解析期无 memo 为三次。
 func TestEnsureResolvesSharedNetworkOnce(t *testing.T) {
-	carrier := carrierNetworkName(ensureNS, "edge")
+	carrier := carrierNetworkName(ensureNS, "proxy")
 	d := newFakeDaemon()
-	d.nets[carrier] = "net-edge-id"
+	d.nets[carrier] = "net-proxy-id"
 	p := &Provider{cli: d.newClient(t)}
 	w1, w2 := ensureWorkload(), ensureWorkload()
 	w1.ID, w2.ID = "wl_01", "wl_02"
 	w2.Process = "web-2"
-	w1.Networks = []string{"edge"}
-	w2.Networks = []string{"edge"}
+	w1.Networks = []string{"proxy"}
+	w2.Networks = []string{"proxy"}
 	require.NoError(t, p.Ensure(context.Background(), ensureNS, []capability.Workload{w1, w2}, capability.Generation(1), capability.Materials{}))
 	assert.Equal(t, 2, d.count("GET /networks/"+carrier),
 		"materials inspect + one memoized resolve for two workloads sharing the network")
@@ -258,7 +258,7 @@ func TestEnsureResolvesSharedNetworkOnce(t *testing.T) {
 		svc, ok := d.byRef(name)
 		require.True(t, ok)
 		require.NotEmpty(t, svc.Spec.TaskTemplate.Networks)
-		assert.Equal(t, "net-edge-id", svc.Spec.TaskTemplate.Networks[0].Target, name)
+		assert.Equal(t, "net-proxy-id", svc.Spec.TaskTemplate.Networks[0].Target, name)
 	}
 }
 

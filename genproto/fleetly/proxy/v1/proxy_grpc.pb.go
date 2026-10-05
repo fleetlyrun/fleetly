@@ -2,11 +2,11 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.0
 // - protoc             (unknown)
-// source: fleetly/edge/v1/edge.proto
+// source: fleetly/proxy/v1/proxy.proto
 
-// Edge & TLS 上下文（领域模型 §2）：Route 与证书资产。
+// Proxy & TLS 上下文（领域模型 §2）：Route 与证书资产。
 
-package edgev1
+package proxyv1
 
 import (
 	context "context"
@@ -21,9 +21,9 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	RoutesService_CreateRoute_FullMethodName = "/fleetly.edge.v1.RoutesService/CreateRoute"
-	RoutesService_ListRoutes_FullMethodName  = "/fleetly.edge.v1.RoutesService/ListRoutes"
-	RoutesService_DeleteRoute_FullMethodName = "/fleetly.edge.v1.RoutesService/DeleteRoute"
+	RoutesService_CreateRoute_FullMethodName = "/fleetly.proxy.v1.RoutesService/CreateRoute"
+	RoutesService_ListRoutes_FullMethodName  = "/fleetly.proxy.v1.RoutesService/ListRoutes"
+	RoutesService_DeleteRoute_FullMethodName = "/fleetly.proxy.v1.RoutesService/DeleteRoute"
 )
 
 // RoutesServiceClient is the client API for RoutesService service.
@@ -178,7 +178,7 @@ func _RoutesService_DeleteRoute_Handler(srv interface{}, ctx context.Context, de
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var RoutesService_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "fleetly.edge.v1.RoutesService",
+	ServiceName: "fleetly.proxy.v1.RoutesService",
 	HandlerType: (*RoutesServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
@@ -195,5 +195,5 @@ var RoutesService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "fleetly/edge/v1/edge.proto",
+	Metadata: "fleetly/proxy/v1/proxy.proto",
 }

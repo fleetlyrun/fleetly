@@ -17,28 +17,28 @@ import (
 //
 //  1. Ensure 受管 Workload（Managed 声明；MaterialsSource 子面的材料随
 //     Ensure 注入（zot config/htpasswd，F1.11）；活跃 Project 网络合并仅
-//     Edge（跨网触达后端）——zot 靠发布端口可达，不挂项目网；受管域
+//     Proxy（跨网触达后端）——zot 靠发布端口可达，不挂项目网；受管域
 //     Generation 进程内单调——重启重新 Ensure 幂等收敛）。观测前置读
-//     （gen 播种 InspectWorkloads / Edge 挂网 list）失败 = 跳过该域本拍
+//     （gen 播种 InspectWorkloads / Proxy 挂网 list）失败 = 跳过该域本拍
 //     + 告警（P1-5 根修：观测错误不判 drift、不重置 gen——staging
 //     记录·五 #2 观测风暴假滚动的事故裁决）；
-//  2. Route 发布：routes 表全量 → Runtime.Addresses 解析后端 → Edge.
+//  2. Route 发布：routes 表全量 → Runtime.Addresses 解析后端 → Proxy.
 //     PublishRoutes（强制全量；解析不到的 Route 跳过并记日志——存量路由
 //     继续服务的降级语义）。
 func (e *Engine) managedStep(ctx context.Context) {
-	// 维护互斥读半边（ADR-0046）：受管 Ensure 引用全部活跃项目网络（Edge
+	// 维护互斥读半边（ADR-0046）：受管 Ensure 引用全部活跃项目网络（Proxy
 	// 挂网面），网络重建窗内必须排队；锁等待不占步预算（排队语义）。
 	// 全步带界（staging 实证：无界的 docker API hang 卡死单写者循环）。
 	unlockMaintenance := e.lockMaintenance()
 	defer unlockMaintenance()
 	stepCtx, cancel := context.WithTimeout(ctx, e.opts.ManagedStepTimeout)
 	defer cancel()
-	e.reconcileNodes(stepCtx) // 节点对账不依赖 Edge（观测面独立收敛）
-	// 受管面按在册 Provider 各自收敛（Edge 缺席不阻断 Registry/Logging——
+	e.reconcileNodes(stepCtx) // 节点对账不依赖 Proxy（观测面独立收敛）
+	// 受管面按在册 Provider 各自收敛（Proxy 缺席不阻断 Registry/Logging——
 	// ADR-0040 起 Logging 是独立受管面）。
 	e.reconcileManaged(stepCtx)
-	if e.edge == nil {
-		return // Edge 未装配（可选项）：无 Route 发布面
+	if e.proxy == nil {
+		return // Proxy 未装配（可选项）：无 Route 发布面
 	}
 	e.publishRoutes(stepCtx)
 }
@@ -104,7 +104,7 @@ func (m *managedGenState) seedFromRuntime(gen uint64) {
 }
 
 // managedProviderDecl 是一个受管 Provider 的 reconciler 投影：声明 +
-// 材料源子面（FacesOf 探测产物）+ 是否挂活跃项目网（Edge 要跨网触达
+// 材料源子面（FacesOf 探测产物）+ 是否挂活跃项目网（Proxy 要跨网触达
 // 后端；zot 只需被发布端口可达，附录 B.1）+ per-Project 材料面（zot
 // htpasswd/config 随活跃 Project 集再生成，ADR-0036 N2 兑现节 2；nil =
 // 无集依赖，走 MaterialsSource）。
@@ -147,16 +147,16 @@ func applyManagedVolumePinning(ws []capability.Workload, nodeID string) {
 	}
 }
 
-// managedProviders 列出在册受管 Provider（注册序稳定：Edge → Registry →
+// managedProviders 列出在册受管 Provider（注册序稳定：Proxy → Registry →
 // Logging → Metrics——Route 面优先收敛，观测面殿后）。受管/材料源子面经
 // FacesOf 协商点探测。
 func (e *Engine) managedProviders() []managedProviderDecl {
 	var out []managedProviderDecl
-	if e.edge != nil {
-		if faces := capability.FacesOf(e.edge); faces.Managed != nil {
+	if e.proxy != nil {
+		if faces := capability.FacesOf(e.proxy); faces.Managed != nil {
 			out = append(out, managedProviderDecl{m: faces.Managed, materials: faces.MaterialsSource, attachNetwork: true})
 		} else {
-			e.log.Warn("edge provider is not managed-selfhosted; skipping reconciler")
+			e.log.Warn("proxy provider is not managed-selfhosted; skipping reconciler")
 		}
 	}
 	if e.registry != nil {
@@ -200,8 +200,8 @@ func (e *Engine) reconcileManaged(ctx context.Context) {
 	if len(decls) == 0 {
 		return
 	}
-	// 活跃 Project 网引用（Edge 挂网面）。P1-5 根修：list 失败不再折成
-	// "无网络"喂给 spec——那会把 Edge 的全部项目网引用从下发集挖掉，
+	// 活跃 Project 网引用（Proxy 挂网面）。P1-5 根修：list 失败不再折成
+	// "无网络"喂给 spec——那会把 Proxy 的全部项目网引用从下发集挖掉，
 	// 指纹一变一还 = traefik 摘/挂全网两轮假滚（staging 记录·五 #2 的
 	// "list 失败被当作 spec 失配"分支）；上抛，挂网域按跳拍收口（见
 	// 循环内 netObsErr 分支）。
@@ -253,7 +253,7 @@ func (e *Engine) reconcileManaged(ctx context.Context) {
 		}
 		pinNode = node
 	}
-	// 逐 Provider 组装下发集（Edge 合并活跃项目网——跨网触达后端；zot
+	// 逐 Provider 组装下发集（Proxy 合并活跃项目网——跨网触达后端；zot
 	// 不挂——发布端口可达，附录 B.1）并预计算签名（C16：Ensure 全部输入
 	// 的指纹——下发集含网引用集 + 材料；任一输入变化即短路失效，无需
 	// 额外 Kick 通道）。
@@ -406,13 +406,13 @@ func (e *Engine) publishRoutes(ctx context.Context) {
 	routes, err := e.routes.List(ctx, e.db.Runner())
 	if err != nil {
 		e.log.Error("route publish: list", "err", err)
-		e.ensureForget(e.edgeMemo.pub, routesPubKey) // 指纹失真：下拍强制全量
+		e.ensureForget(e.proxyMemo.pub, routesPubKey) // 指纹失真：下拍强制全量
 		return
 	}
 	now := e.clock.Now()
 	sig := routesFingerprint(routes)
-	forced := e.edgeMemo.pubNow.CompareAndSwap(true, false) // API 写路径即时触发绕过短路
-	_, fresh := e.ensureFresh(e.edgeMemo.pub, routesPubKey, sig, now)
+	forced := e.proxyMemo.pubNow.CompareAndSwap(true, false) // API 写路径即时触发绕过短路
+	_, fresh := e.ensureFresh(e.proxyMemo.pub, routesPubKey, sig, now)
 	if fresh && !forced {
 		return
 	}
@@ -431,12 +431,12 @@ func (e *Engine) publishRoutes(ctx context.Context) {
 		}
 		publish = append(publish, cr)
 	}
-	if err := e.edge.PublishRoutes(ctx, publish); err != nil {
-		e.log.Error("route publish: edge rejected config", "err", err)
-		e.ensureForget(e.edgeMemo.pub, routesPubKey) // 发布失败：下拍强制重试全量
+	if err := e.proxy.PublishRoutes(ctx, publish); err != nil {
+		e.log.Error("route publish: proxy rejected config", "err", err)
+		e.ensureForget(e.proxyMemo.pub, routesPubKey) // 发布失败：下拍强制重试全量
 		return
 	}
-	e.ensureRemember(e.edgeMemo.pub, routesPubKey, ensureMemo{sig: sig, at: now})
+	e.ensureRemember(e.proxyMemo.pub, routesPubKey, ensureMemo{sig: sig, at: now})
 }
 
 // routesPubKey 是 Route 发布单槽的恒定键（发布面无多键维度——行集指纹
@@ -530,11 +530,11 @@ func (e *Engine) activeProjectIDs(ctx context.Context) ([]string, error) {
 	return ids, nil
 }
 
-// activeProjectNetworks 返回全部活跃 Project 网络的引用列表（受管 Edge
+// activeProjectNetworks 返回全部活跃 Project 网络的引用列表（受管 Proxy
 // 挂全部项目网以达后端；N0 修复批 B1 实装）。返回跨域引用形态——载体名
 // 是 Provider 私有公式，engine 不拼接。Team 轴从 Project 行实取（ADR-0028；
 // 批量读 Project 行，避免 per-network 点查）。读失败上抛（P1-5 根修：
-// 折成"无网络"会让 Edge 下发挖掉全部项目网引用的 spec——指纹一变一还
+// 折成"无网络"会让 Proxy 下发挖掉全部项目网引用的 spec——指纹一变一还
 // 两轮假滚；调用方对挂网域跳拍），绝不以空集代偿。
 func (e *Engine) activeProjectNetworks(ctx context.Context) ([]capability.NetworkRef, error) {
 	rows, err := e.networks.List(ctx, e.db.Runner())
@@ -570,7 +570,7 @@ func (e *Engine) activeProjectNetworks(ctx context.Context) ([]capability.Networ
 // Kick；测试直调）。置即时信号消费于下一拍——短路对本次发布失效（C16b
 // 的强制绕过通道），随后恢复签名节律。
 func (e *Engine) PublishRoutesNow() {
-	e.edgeMemo.pubNow.Store(true)
+	e.proxyMemo.pubNow.Store(true)
 	e.managedLoop.Kick()
 }
 

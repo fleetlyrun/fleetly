@@ -124,7 +124,7 @@ const (
 	maxListLimit     = 200
 )
 
-// List 返回全部活跃网络（跨 Project；受管 Edge 挂网的全量真源，N0 修复
+// List 返回全部活跃网络（跨 Project；受管 Proxy 挂网的全量真源，N0 修复
 // 批 B1）。
 func (r *Repo) List(ctx context.Context, run state.Runner) ([]Network, error) {
 	rows, err := run.QueryContext(ctx, `

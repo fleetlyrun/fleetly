@@ -107,7 +107,7 @@ func (e *Engine) flushIdleLogBatches() {
 
 // collectNamespaces 枚举活跃隔离域（权威表真源：用户域 apps/活跃 tasks/
 // databases + 受管域三件）。受管域从各 Provider 的 Managed 声明实取
-// （Edge/Registry/Logging 自描述——新增受管 Provider 自动进采集面）。
+// （Proxy/Registry/Logging 自描述——新增受管 Provider 自动进采集面）。
 func (e *Engine) collectNamespaces(ctx context.Context) ([]capability.NamespaceRef, error) {
 	projects, err := e.projects.List(ctx, e.db.Runner())
 	if err != nil {
@@ -161,8 +161,8 @@ func (e *Engine) collectNamespaces(ctx context.Context) ([]capability.NamespaceR
 			out = append(out, ns)
 		}
 	}
-	// 受管域（Edges 顺序：Edge → Registry → Logging，与 reconciler 同源）。
-	for _, p := range []capability.Provider{e.edge, e.registry, e.logging} {
+	// 受管域（Proxies 顺序：Proxy → Registry → Logging，与 reconciler 同源）。
+	for _, p := range []capability.Provider{e.proxy, e.registry, e.logging} {
 		if p == nil {
 			continue
 		}

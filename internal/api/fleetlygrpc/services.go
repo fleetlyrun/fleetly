@@ -1,5 +1,5 @@
 // Package fleetlygrpc 实现五上下文 API 面（structure/delivery/runtime/
-// edge/telemetry）。读路径直读聚合 repo；写路径四件一拍（engine 或 repo
+// proxy/telemetry）。读路径直读聚合 repo；写路径四件一拍（engine 或 repo
 // 事务内组合 outbox/audit）；错误一律 apperr 信封（映射 helper 在
 // mapping.go）。scope 注解已在 proto 写好；enforcement 随账号批接管。
 package fleetlygrpc

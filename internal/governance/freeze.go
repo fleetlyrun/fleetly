@@ -69,8 +69,8 @@ var FrozenVerbs = map[string]freezeScope{
 	"/fleetly.automation.v1.SchedulesService/CreateSchedule":            {field: "project_id", kind: anchor.KindProject},
 	"/fleetly.automation.v1.SchedulesService/DeleteSchedule":            {field: "id", kind: anchor.KindSchedule},
 	"/fleetly.automation.v1.SchedulesService/TriggerSchedule":           {field: "id", kind: anchor.KindSchedule},
-	"/fleetly.edge.v1.RoutesService/CreateRoute":                        {field: "project_id", kind: anchor.KindProject},
-	"/fleetly.edge.v1.RoutesService/DeleteRoute":                        {field: "id", kind: anchor.KindRoute},
+	"/fleetly.proxy.v1.RoutesService/CreateRoute":                       {field: "project_id", kind: anchor.KindProject},
+	"/fleetly.proxy.v1.RoutesService/DeleteRoute":                       {field: "id", kind: anchor.KindRoute},
 	// 上传产物接入（F1.10，ADR-0019 附录 A.2）：client-streaming 写面——
 	// Team 锚在首帧 meta.project_id（流式拦截器首帧 RecvMsg 执法；点路径
 	// 读嵌套字段）。

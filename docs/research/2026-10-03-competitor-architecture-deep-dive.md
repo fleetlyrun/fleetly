@@ -11,7 +11,7 @@
 3. **zane-ops 是对"要不要上工作流引擎"的终审样本**：11 个容器、约 3.5C/4.5G 静态足迹、三个状态存储、双轨 DTO、手写心跳/补偿/取消监控——换来的部署流本质是"12-14 步线性序列"，这正是手写单写者循环的舒适区。结论：暂停/审批成为产品功能、数百并发编排、跨编排器 saga 之前，外部 workflow 引擎不划算。
 4. **tsuru 用 13 年验证了一个 fleetly 尚未做的高级形态：事件文档同时是锁、审计、授权载体**（Kind=PermissionScheme，行级可见性在查询层完成）。这是六家对手最值得敬畏的单一资产，与 ADR-0037"事件/审计声明面维持现状"裁决构成张力——本文裁为观察项（§6.3）。
 5. **最值得立即偷的是三件测试形态**：dokploy 的升级矩阵集成测试（对刚被 staging 咬出血的升级链是直接解药）、dokploy 的执行型注入守卫（真 shell 执行 payload 断言，比 golden 硬）、porter 的 re-exec 假命令测试法。
-6. **两个真实的增量 ADR 候选**（非推翻）：① App 部署策略面——rolling 默认 + bluegreen 可选（zane 的 per-deployment slot 别名 + Edge 切换是成熟参照，fleetly 的进程网络别名 ADR-0034 已有基建先例）；② Token 语义补强——"token 权限随 creator 实时收窄 + fail-safe scope 门"（zane 模式）。
+6. **两个真实的增量 ADR 候选**（非推翻）：① App 部署策略面——rolling 默认 + bluegreen 可选（zane 的 per-deployment slot 别名 + Proxy 切换是成熟参照，fleetly 的进程网络别名 ADR-0034 已有基建先例）；② Token 语义补强——"token 权限随 creator 实时收窄 + fail-safe scope 门"（zane 模式）。
 7. **对手的教训对 fleetly 的唯一结构性警示：警惕我们自己长出 God module。**fleetly 的 `Engine` 结构体汇聚 20+ repo、9 个域子结构、3 把锁；coolify 的 God job 就是从"部署先跑起来"开始长出来的。守卫体系管住了 import 方向，还管不住**体积聚集**——这是守卫文化下一步的执法面。
 
 ## 2. 总体形态对比矩阵
@@ -126,8 +126,8 @@ zane 为 Temporal 付出：11 个部署单元、~3.5C/4.5G 预留、debug_mode=T
 
 | # | 决策 | 来源与证据 | fleetly 落点 |
 |---|---|---|---|
-| E1 | **App 部署策略面：rolling 默认 + bluegreen 可选**。每个部署独立载体（`srv-{app}-{hash}`）+ slot 网络别名（`{proc}.{blue|green}`）+ Edge upstream 切换；回滚=指回旧 slot 零重建；先验后切 | zane `temporal/helpers.py:157-162`、`models/main.py:1823-1831`（slot 交替）、Caddy ETag read-modify-write（`temporal/proxy.py:308-352`） | **增量 ADR 候选**（§6.2）。fleetly 已有的基建：进程网络别名（ADR-0034）、Route 发布行集指纹、Revision Replay。注意蓝绿对有状态负载的数据分叉问题——数据库轨不适用（数据面另有 stop-first 裁决） |
-| E2 | **Edge 配置"生成→校验→激活→失败回滚"结构化**：写临时文件→原子 rename→校验→热载，校验失败自动回滚上一份配置与 DB 定义 | caprover `LoadBalancerManager.ts:104-241`（.fut→rename→nginx -t→HUP→失败回写） | traefik HTTP provider 形态下"控制面是真源"已天然免疫配置丢失；可偷的是**发布前校验**（traefik 配置 dry-run 校验端点）进 Route 发布步 |
+| E1 | **App 部署策略面：rolling 默认 + bluegreen 可选**。每个部署独立载体（`srv-{app}-{hash}`）+ slot 网络别名（`{proc}.{blue|green}`）+ Proxy upstream 切换；回滚=指回旧 slot 零重建；先验后切 | zane `temporal/helpers.py:157-162`、`models/main.py:1823-1831`（slot 交替）、Caddy ETag read-modify-write（`temporal/proxy.py:308-352`） | **增量 ADR 候选**（§6.2）。fleetly 已有的基建：进程网络别名（ADR-0034）、Route 发布行集指纹、Revision Replay。注意蓝绿对有状态负载的数据分叉问题——数据库轨不适用（数据面另有 stop-first 裁决） |
+| E2 | **Proxy 配置"生成→校验→激活→失败回滚"结构化**：写临时文件→原子 rename→校验→热载，校验失败自动回滚上一份配置与 DB 定义 | caprover `LoadBalancerManager.ts:104-241`（.fut→rename→nginx -t→HUP→失败回写） | traefik HTTP provider 形态下"控制面是真源"已天然免疫配置丢失；可偷的是**发布前校验**（traefik 配置 dry-run 校验端点）进 Route 发布步 |
 | E3 | **事件=锁=权限三位一体**（观察，见 §6.3） | tsuru `event/event.go:752-760,294-320` | — |
 | E4 | **存储契约测试套件**：一套行为测试钉死任何存储实现 | tsuru `storage/storagetest` | 仅当出现第二存储后端诉求时启用；SQLite 单后端下 YAGNI |
 
@@ -153,7 +153,7 @@ zane 为 Temporal 付出：11 个部署单元、~3.5C/4.5G 预留、debug_mode=T
 
 ### 6.2 增量 ADR 候选（建议开 ADR，属新增非推翻）
 
-- **候选 A（部署策略面）**：App 部署可选 bluegreen（per-deployment 载体 + slot 别名 + Edge 切换）。动机：零停机后进者被罚是行业公认痛点（DX 报告）；staging 升级事故证明"滚动替换对启动慢/有状态倾向的负载是危险默认"；fleetly 的 Revision Replay + 网络别名基建使边际成本可控。范围：仅无状态 App 进程；数据库轨维持 stop-first+宽 grace 裁决。
+- **候选 A（部署策略面）**：App 部署可选 bluegreen（per-deployment 载体 + slot 别名 + Proxy 切换）。动机：零停机后进者被罚是行业公认痛点（DX 报告）；staging 升级事故证明"滚动替换对启动慢/有状态倾向的负载是危险默认"；fleetly 的 Revision Replay + 网络别名基建使边际成本可控。范围：仅无状态 App 进程；数据库轨维持 stop-first+宽 grace 裁决。
 - **候选 B（token 语义补强）**：T1 实时收窄 + T2 fail-safe 门 + T3 三级 ability 讨论，一个 ADR 收口。
 - **候选 C（守卫下一步：体积执法）**：当前守卫全部执法"方向"（import/词汇/单源），不执法"聚集"。coolify 的 God job（5806 行）、zane models（3700 行）、porter manifest（1750 行）都是从功能正确的代码长出来的。建议：guards 增加文件级规模红线（如单文件非生成物 >1200 行即红，例外白名单带理由）——把"每段只许有一份"的既有包规则延伸到"每段不许长成怪物"。
 

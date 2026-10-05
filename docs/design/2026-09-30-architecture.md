@@ -55,7 +55,7 @@ providers 之间互不 import；除 cmd 外无人 import providers（经注册�
 
 ## 3. Capability 系统（插件模型）
 
-**七类 Capability 端口**：Runtime、Builder、Registry、Edge、Logging、Metrics、ObjectStore。
+**七类 Capability 端口**：Runtime、Builder、Registry、Proxy、Logging、Metrics、ObjectStore。
 
 - **机制（ADR-0003）**：编译期 Go interface + 注册表；Provider 自注册（init），配置选定每 Capability 同期唯一在册 Provider。**先不做进程外插件协议**（deletion test：当前没有第三方插件作者，gRPC 插件协议是 porter 生态规模才配付的成本）；但契约类型全部定义在 proto（经 genproto 落 `internal/spec`），未来抽进程外插件是机械工作，不需要改语义。
 - **版本化**：Spec 带 `schemaVersion`，读入时按 check-strategy（默认：可读旧版+提示，拒绝跳代）——继承 porter 的演进教训。
@@ -138,7 +138,7 @@ type RuntimeAdmin interface { Drain/Cordon/... }    // 子面，CLI 管理操作
 | Capability | 引导期依赖 | 故障影响 |
 |---|---|---|
 | Runtime | 必须 | 平台不可部署；已运行 Workload 不受影响（控制面单点诚实暴露） |
-| Edge（配置发布） | 否 | 受管 Edge Workload 存活时存量路由继续服务，Route 变更失败并明示；发布前 schema 级预检（P9：traefik 无配置校验面——2026-10-04 真机核对 v3.5.6，子命令仅 healthcheck/version、API 全只读、坏快照**整份拒载且零日志**、last-known-good 继续服务），预检红 = 整快照拒绝、旧快照继续服务（控制面侧提前闭合 traefik 拒载语义，消除 5s poll 窗口与静默面）；发布后加载确认未落地（traefik 只读 API 面的暴露是安全权衡，随 Console/证书观测批裁决——IssueCertificate 观测同批）；受管 Edge Workload 自身宕机 = 全量路由中断（独立事故等级，单列通报） |
+| Proxy（配置发布） | 否 | 受管 Proxy Workload 存活时存量路由继续服务，Route 变更失败并明示；发布前 schema 级预检（P9：traefik 无配置校验面——2026-10-04 真机核对 v3.5.6，子命令仅 healthcheck/version、API 全只读、坏快照**整份拒载且零日志**、last-known-good 继续服务），预检红 = 整快照拒绝、旧快照继续服务（控制面侧提前闭合 traefik 拒载语义，消除 5s poll 窗口与静默面）；发布后加载确认未落地（traefik 只读 API 面的暴露是安全权衡，随 Console/证书观测批裁决——IssueCertificate 观测同批）；受管 Proxy Workload 自身宕机 = 全量路由中断（独立事故等级，单列通报） |
 | Logging/Metrics | 否 | 部署照常；查询面报"能力不可用" |
 | Registry | 多节点强烈建议 | 构建推送失败；未预拉到节点的 digest 新部署同样失败（已运行 Workload 不受影响） |
 | ObjectStore | 否 | 备份失败；运行不受影响 |
@@ -157,7 +157,7 @@ type RuntimeAdmin interface { Drain/Cordon/... }    // 子面，CLI 管理操作
 | Capability | 默认 Provider | 理由 |
 |---|---|---|
 | Runtime | swarm | 继承真机经验与 Docker29 坑清单；节点零安装 |
-| Edge | traefik | swarm 上经 HTTP provider 下发配置已被旧项目验证；控制面强制全量配置防裸 `{}` 清空（旧 spike 教训） |
+| Proxy | traefik | swarm 上经 HTTP provider 下发配置已被旧项目验证；控制面强制全量配置防裸 `{}` 清空（旧 spike 教训） |
 | Logging | victorialogs | 单核轻量、ES bulk 协议（旧 ADR-0006 实测裁决，OpenObserve 340MB 出局） |
 | Metrics | victoria 系（vmsingle+vmalert） | 同族裁决 |
 | Registry | zot（受管自宿） | 单二进制轻量；多节点镜像分发刚需（旧"预拉"痛点）；可切外置 registry |
@@ -185,7 +185,7 @@ type RuntimeAdmin interface { Drain/Cordon/... }    // 子面，CLI 管理操作
 
 ## 12. 演进路线（建议批次）
 
-- **N0 心脏（单节点可用）**：spec/model/state + Runtime(swarm，含节点锚定) + Deployment 状态机与 admission 队列 + Build（控制面节点）+ Edge(traefik，含 h2c) + Secret/Config + git webhook 触发 + gRPC/REST + Token/Scope + CLI 核心命令（`--json`）+ 一行安装 + quickstart（sslip.io 零 DNS 首部署）；e2e dind 骨架与守卫先行。
+- **N0 心脏（单节点可用）**：spec/model/state + Runtime(swarm，含节点锚定) + Deployment 状态机与 admission 队列 + Build（控制面节点）+ Proxy(traefik，含 h2c) + Secret/Config + git webhook 触发 + gRPC/REST + Token/Scope + CLI 核心命令（`--json`）+ 一行安装 + quickstart（sslip.io 零 DNS 首部署）；e2e dind 骨架与守卫先行。
 - **N1 Agent 面 + torchwood 线**（验收 = ADR-0012 能力清单全绿）：幂等键 + 事件流(SSE) + Wait 原语 + `events follow` + `fleetly explain/schema` + Task/Run（one-shot/resident + Owner Lease + 双级稳定 DNS）+ Schedule + Task Network Group + App 跨挂 + 跨 Project 互通 + 治理刹车（配额/速率/change freeze）+ build-from-upload + zot 受管自宿（多节点镜像分发）+ Database 最小集（postgres[含 percona/pgvector]/redis 模板 + 本地备份）+ 首批 Skills。
 - **N2 数据与观测 + 信任**：Database 全矩阵（mysql/mongo）+ 升级/迁移 + restic 备份 + ObjectStore（外置 S3/RustFS）+ 恢复演练 + Logging/Metrics Provider 受管自宿 + 平台升级工具（ADR-0015 验收：升级零扰动）+ dbtemplate 目录化与镜像 digest 钉定（DT-9）。
 - **N3 体验**：Console（消费同一 API）+ exec 子面 + 终端 + 模板库。

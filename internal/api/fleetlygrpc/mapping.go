@@ -8,7 +8,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
-	edgev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/edge/v1"
+	proxyv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/proxy/v1"
 	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/api/apperr"
@@ -118,8 +118,8 @@ func networkMsg(n networkrepo.Network) *structurev1.Network {
 	return &structurev1.Network{Id: n.ID, ProjectId: n.ProjectID, Name: n.Name, EgressNone: n.EgressNone, CreatedAt: n.CreatedAt}
 }
 
-func routeMsg(r route.Route) *edgev1.Route {
-	return &edgev1.Route{
+func routeMsg(r route.Route) *proxyv1.Route {
+	return &proxyv1.Route{
 		Id: r.ID, ProjectId: r.ProjectID, Host: r.Host, Path: r.Path,
 		AppId: r.AppID, Process: r.Process, Port: r.Port,
 		Protocol: string(r.Protocol), TlsMode: r.TLSMode, CreatedAt: r.CreatedAt,

@@ -19,8 +19,8 @@ import (
 
 	automationv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/automation/v1"
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
-	edgev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/edge/v1"
 	identityv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/identity/v1"
+	proxyv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/proxy/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
 	"github.com/fleetlyrun/fleetly/internal/apitest"
@@ -80,7 +80,7 @@ func TestRowLevelTeamAuthorization(t *testing.T) {
 	secrets := structurev1.NewSecretsServiceClient(h.Conn)
 	configs := structurev1.NewConfigsServiceClient(h.Conn)
 	networks := structurev1.NewNetworksServiceClient(h.Conn)
-	routes := edgev1.NewRoutesServiceClient(h.Conn)
+	routes := proxyv1.NewRoutesServiceClient(h.Conn)
 	tasks := automationv1.NewTasksServiceClient(h.Conn)
 	runs := automationv1.NewRunsServiceClient(h.Conn)
 	schedules := automationv1.NewSchedulesServiceClient(h.Conn)
@@ -175,7 +175,7 @@ func TestRowLevelTeamAuthorization(t *testing.T) {
 	assert.Equal(t, codes.PermissionDenied, status.Code(err), "cross-team Deploy")
 	_, err = deployments.Rollback(bAdmin, &deliveryv1.RollbackRequest{AppId: appAID, ToRevision: "1"})
 	assert.Equal(t, codes.PermissionDenied, status.Code(err), "cross-team Rollback")
-	_, err = routes.CreateRoute(bAdmin, &edgev1.CreateRouteRequest{
+	_, err = routes.CreateRoute(bAdmin, &proxyv1.CreateRouteRequest{
 		ProjectId: projAID, AppId: appAID, Process: "web", Port: 8080, Host: "hijack.example.com",
 	})
 	assert.Equal(t, codes.PermissionDenied, status.Code(err), "cross-team CreateRoute")

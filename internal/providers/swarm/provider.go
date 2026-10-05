@@ -2,7 +2,7 @@
 // 全部私有（fleetly.* 标记 + 命名公式），平台永不解析。
 //
 // 真机实证坑（归档仓 Docker29 多节点经验，实现必读）：
-//   - swarm 不应用 Hosts；nft 规则可能杀 DNAT——Route 流量一律经 Edge
+//   - swarm 不应用 Hosts；nft 规则可能杀 DNAT——Route 流量一律经 Proxy
 //     （traefik）而非端口发布；本 Provider 不发布宿主端口。
 //   - digest 不落 tag：Ensure 收到的镜像引用由平台解析；预拉场景按 tag
 //     直拉（digest-pull save/load 丢 tag）。

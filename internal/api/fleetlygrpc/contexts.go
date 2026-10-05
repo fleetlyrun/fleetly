@@ -1,6 +1,6 @@
 package fleetlygrpc
 
-// Runtime / Edge / Telemetry 上下文服务实现。
+// Runtime / Proxy / Telemetry 上下文服务实现。
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"time"
 
-	edgev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/edge/v1"
+	proxyv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/proxy/v1"
 	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
 	"github.com/fleetlyrun/fleetly/internal/api/apperr"
@@ -124,20 +124,20 @@ func (svc *NodesService) nodeAdmin(ctx context.Context, nodeID, action string, o
 	})
 }
 
-// ---- Routes（Edge & TLS 上下文） ----
+// ---- Routes（Proxy & TLS 上下文） ----
 
 type RoutesService struct {
-	edgev1.UnimplementedRoutesServiceServer
+	proxyv1.UnimplementedRoutesServiceServer
 	s *Services
 }
 
-func (svc *RoutesService) CreateRoute(ctx context.Context, req *edgev1.CreateRouteRequest) (*edgev1.CreateRouteResponse, error) {
+func (svc *RoutesService) CreateRoute(ctx context.Context, req *proxyv1.CreateRouteRequest) (*proxyv1.CreateRouteResponse, error) {
 	if req.GetProjectId() == "" || req.GetHost() == "" || req.GetAppId() == "" || req.GetProcess() == "" || req.GetPort() == 0 {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "project_id, host, app_id, process and port: must not be empty")
 	}
 	// 受理面校验（安全批 P0）：host/path 原样内插进 traefik 规则的反引号
 	// 定界符内（Host(`%s`)），反引号等元字符可注入/劫持路由规则；白名单
-	// 与 Edge Provider 纵深面共用同一真源（capability.ValidateRouteHost）。
+	// 与 Proxy Provider 纵深面共用同一真源（capability.ValidateRouteHost）。
 	if err := capability.ValidateRouteHost(req.GetHost()); err != nil {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "%v", err)
 	}
@@ -163,7 +163,7 @@ func (svc *RoutesService) CreateRoute(ctx context.Context, req *edgev1.CreateRou
 	}
 	// 父资源存活校验（批 0 复核，同族面）：路由挂在不存在/已删的
 	// Project 或 App 下此前直接成功（routes 无 FK）——活路由指向已删
-	// App 会让 Edge 全量发布把流量钉在 tombstone 上。
+	// App 会让 Proxy 全量发布把流量钉在 tombstone 上。
 	err := svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{
 			svc.s.parentProjectAlive(req.GetProjectId()),
@@ -180,15 +180,15 @@ func (svc *RoutesService) CreateRoute(ctx context.Context, req *edgev1.CreateRou
 	if err != nil {
 		return nil, mapStateError(err, "route")
 	}
-	svc.s.Engine.PublishRoutesNow() // Edge 全量发布即时触发
-	return &edgev1.CreateRouteResponse{Route: routeMsg(*row)}, nil
+	svc.s.Engine.PublishRoutesNow() // Proxy 全量发布即时触发
+	return &proxyv1.CreateRouteResponse{Route: routeMsg(*row)}, nil
 }
 
 // ListRoutes 非 owner 按 Team 过滤（ADR-0035 List 面：行级过滤在内存比对
 // 调用方 Team 的 project 集合；owner 全量）。project 过滤下推 SQL 与游标
 // 分页叠加（过滤语义不变）；Team 过滤在分页后的页内比对（peers 可见性
 // 过滤同款形态——过滤语义不变，非 owner 的页可能稀疏）。
-func (svc *RoutesService) ListRoutes(ctx context.Context, req *edgev1.ListRoutesRequest) (*edgev1.ListRoutesResponse, error) {
+func (svc *RoutesService) ListRoutes(ctx context.Context, req *proxyv1.ListRoutesRequest) (*proxyv1.ListRoutesResponse, error) {
 	teamProjects, all, err := svc.s.teamProjectFilter(ctx)
 	if err != nil {
 		return nil, err
@@ -198,7 +198,7 @@ func (svc *RoutesService) ListRoutes(ctx context.Context, req *edgev1.ListRoutes
 	if err != nil {
 		return nil, mapStateError(err, "route")
 	}
-	out := &edgev1.ListRoutesResponse{}
+	out := &proxyv1.ListRoutesResponse{}
 	for _, r := range list {
 		if !all && !teamProjects[r.ProjectID] {
 			continue
@@ -208,7 +208,7 @@ func (svc *RoutesService) ListRoutes(ctx context.Context, req *edgev1.ListRoutes
 	return out, nil
 }
 
-func (svc *RoutesService) DeleteRoute(ctx context.Context, req *edgev1.DeleteRouteRequest) (*edgev1.DeleteRouteResponse, error) {
+func (svc *RoutesService) DeleteRoute(ctx context.Context, req *proxyv1.DeleteRouteRequest) (*proxyv1.DeleteRouteResponse, error) {
 	// 行级授权（ADR-0035）：此前 ID 直删零校验。
 	if err := svc.s.authorizeRouteID(ctx, req.GetId()); err != nil {
 		return nil, err
@@ -226,7 +226,7 @@ func (svc *RoutesService) DeleteRoute(ctx context.Context, req *edgev1.DeleteRou
 		return nil, mapStateError(err, "route")
 	}
 	svc.s.Engine.PublishRoutesNow()
-	return &edgev1.DeleteRouteResponse{}, nil
+	return &proxyv1.DeleteRouteResponse{}, nil
 }
 
 // ---- Events（F0.23 读路径；流式 follow N1） ----

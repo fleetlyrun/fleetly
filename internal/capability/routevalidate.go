@@ -3,7 +3,7 @@ package capability
 // Route host/path 白名单校验（安全批共享真源）：host/path 会原样内插进
 // traefik 路由规则的反引号定界符内（Host(`%s`) / PathPrefix(`%s`)）——
 // 反引号等规则元字符可注入/劫持路由；host 又是平台级命名空间（跨项目
-// 同 host 双路由会让 Edge 同名 router 互覆）。API 受理面与 Edge Provider
+// 同 host 双路由会让 Proxy 同名 router 互覆）。API 受理面与 Proxy Provider
 // 纵深面共用本函数（单真源，两处不漂移）。非法形态一律拒绝，不做清洗
 // 改写（清洗=语义漂移，fail-closed）。
 
