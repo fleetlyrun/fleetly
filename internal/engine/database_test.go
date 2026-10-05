@@ -81,7 +81,7 @@ func TestDatabaseReconcileConverges(t *testing.T) {
 	w := last.Spec["postgres"]
 	require.NotNil(t, w, "workload keyed by template engine name")
 	assert.Equal(t, tDatabaseID, w.ID)
-	assert.Equal(t, "postgres:17-bookworm", w.Image)
+	assert.Equal(t, "postgres:17-bookworm@sha256:639ab7ceb90e13123085b741fb31ef493fba25463002f6da665352e7b534b652", w.Image)
 	assert.Equal(t, []string{"default"}, w.Networks, "database attaches the project's active networks")
 	assert.Equal(t, []capability.Address{{Name: DatabaseDNSName(tDatabaseID)}}, w.Addressing)
 	require.Len(t, w.Volumes, 1)
@@ -221,7 +221,7 @@ func TestDatabaseRedisTemplateMaterials(t *testing.T) {
 	require.NotEmpty(t, calls)
 	last := calls[len(calls)-1]
 	w := last.Spec["redis"]
-	assert.Equal(t, "redis:7.4", w.Image)
+	assert.Equal(t, "redis:7.4@sha256:c6eabf748fc7a61dbb5a705c78bcf3d6377b1127a97d0ce965c11c44ba46896f", w.Image)
 	assert.Equal(t, []string{"redis-server", "/run/secrets/" + dbtemplate.RedisConfFile}, w.Command)
 	conf := string(last.Materials.SecretFiles[dbtemplate.RedisConfFile])
 	assert.Contains(t, conf, "requirepass redispw")
@@ -239,7 +239,7 @@ func TestDatabasePgvectorTemplateRenders(t *testing.T) {
 	calls := rt.calls()
 	require.NotEmpty(t, calls)
 	w := calls[len(calls)-1].Spec["pgvector"]
-	assert.Equal(t, "pgvector/pgvector:0.8.6-pg17-bookworm", w.Image)
+	assert.Equal(t, "pgvector/pgvector:0.8.6-pg17-bookworm@sha256:cf134a767f474095eeba57e0117be8e568e011a63f33fbf252f14c9b760f8e6f", w.Image)
 	require.Len(t, w.Command, 3)
 	assert.Contains(t, w.Command[2], "CREATE EXTENSION IF NOT EXISTS vector")
 	assert.Contains(t, w.Command[2], "docker-entrypoint.sh")

@@ -236,7 +236,7 @@ func TestBackupScheduleExecuteSucceeds(t *testing.T) {
 	// 渲染钉板钉死，此处断言装配面）。
 	reqs := ut.requests()
 	require.Len(t, reqs, 1)
-	assert.Equal(t, "postgres:17-bookworm", reqs[0].Image)
+	assert.Equal(t, "postgres:17-bookworm@sha256:639ab7ceb90e13123085b741fb31ef493fba25463002f6da665352e7b534b652", reqs[0].Image)
 	assert.Equal(t, []string{"default"}, reqs[0].Networks)
 	assert.Equal(t, capability.NamespaceRef{Team: "default", Project: tProjectID, Database: tDatabaseID}, reqs[0].Namespace)
 	assert.Contains(t, reqs[0].SecretFiles, "database-backup-pgpass")

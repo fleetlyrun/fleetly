@@ -13,7 +13,17 @@ func (pgvectorTemplate) Engine() string { return "pgvector" }
 func (pgvectorTemplate) Meta() Info {
 	return Info{Version: "0.8.6-pg17-bookworm", Port: 5432}
 }
-func (pgvectorTemplate) Image() string { return "pgvector/pgvector:0.8.6-pg17-bookworm" }
+
+// pgvectorImageTag / pgvectorImageDigest 是 digest 钉定对（F2.7/ADR-0045；
+// bump 纪律同 postgresImageTag 注）。digest 取 2026-10-05 Docker Hub index
+// digest（multi-arch 真源）。
+const (
+	pgvectorImageTag    = "pgvector/pgvector:0.8.6-pg17-bookworm"
+	pgvectorImageDigest = "sha256:cf134a767f474095eeba57e0117be8e568e011a63f33fbf252f14c9b760f8e6f"
+)
+
+func (pgvectorTemplate) Image() string       { return pinnedRef(pgvectorImageTag, pgvectorImageDigest) }
+func (pgvectorTemplate) ImageDigest() string { return pgvectorImageDigest }
 
 func (pgvectorTemplate) Workload() (map[string]string, []string) {
 	env := map[string]string{

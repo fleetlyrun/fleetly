@@ -26,10 +26,19 @@ const (
 // mysqlTemplate 是 mysql 引擎的模板 adapter。
 type mysqlTemplate struct{}
 
-func (mysqlTemplate) Engine() string     { return "mysql" }
-func (mysqlTemplate) Meta() Info         { return Info{Version: "8.4", Port: 3306} }
-func (mysqlTemplate) Image() string      { return "mysql:8.4" }
-func (mysqlTemplate) DataTarget() string { return "/var/lib/mysql" }
+// mysqlImageTag / mysqlImageDigest 是 digest 钉定对（F2.7/ADR-0045；bump
+// 纪律同 postgresImageTag 注）。digest 取 2026-10-05 Docker Hub index
+// digest（multi-arch 真源）。
+const (
+	mysqlImageTag    = "mysql:8.4"
+	mysqlImageDigest = "sha256:6ea90827b1100f8f2ae306a539f86d2c264a26ed435a2a9f75551dd5c3aeb242"
+)
+
+func (mysqlTemplate) Engine() string      { return "mysql" }
+func (mysqlTemplate) Meta() Info          { return Info{Version: "8.4", Port: 3306} }
+func (mysqlTemplate) Image() string       { return pinnedRef(mysqlImageTag, mysqlImageDigest) }
+func (mysqlTemplate) ImageDigest() string { return mysqlImageDigest }
+func (mysqlTemplate) DataTarget() string  { return "/var/lib/mysql" }
 
 func (mysqlTemplate) Workload() (map[string]string, []string) {
 	return map[string]string{
@@ -107,5 +116,3 @@ func (mysqlTemplate) Restore(host, password string) (RestoreSpec, error) {
 		SecretFiles: files,
 	}, nil
 }
-
-func (mysqlTemplate) ImageDigest() string { return "" } // F2.7 空槽

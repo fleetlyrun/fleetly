@@ -15,10 +15,19 @@ const RedisConfFile = "database-redis-conf"
 // redisTemplate 是 redis 引擎的模板 adapter。
 type redisTemplate struct{}
 
-func (redisTemplate) Engine() string     { return "redis" }
-func (redisTemplate) Meta() Info         { return Info{Version: "7.4", Port: 6379} }
-func (redisTemplate) Image() string      { return "redis:7.4" }
-func (redisTemplate) DataTarget() string { return "/data" }
+// redisImageTag / redisImageDigest 是 digest 钉定对（F2.7/ADR-0045；bump
+// 纪律同 postgresImageTag 注）。digest 取 2026-10-05 Docker Hub index
+// digest（multi-arch 真源）。
+const (
+	redisImageTag    = "redis:7.4"
+	redisImageDigest = "sha256:c6eabf748fc7a61dbb5a705c78bcf3d6377b1127a97d0ce965c11c44ba46896f"
+)
+
+func (redisTemplate) Engine() string      { return "redis" }
+func (redisTemplate) Meta() Info          { return Info{Version: "7.4", Port: 6379} }
+func (redisTemplate) Image() string       { return pinnedRef(redisImageTag, redisImageDigest) }
+func (redisTemplate) ImageDigest() string { return redisImageDigest }
+func (redisTemplate) DataTarget() string  { return "/data" }
 
 func (redisTemplate) Workload() (map[string]string, []string) {
 	return nil, []string{"redis-server", "/run/secrets/" + RedisConfFile}
@@ -88,5 +97,3 @@ func (redisTemplate) Restore(host, password string) (RestoreSpec, error) {
 		Argv: []string{"sh", "-c", redisRestoreScript},
 	}, nil
 }
-
-func (redisTemplate) ImageDigest() string { return "" } // F2.7 空槽

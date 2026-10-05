@@ -17,7 +17,18 @@ type postgresTemplate struct{}
 
 func (postgresTemplate) Engine() string { return "postgres" }
 func (postgresTemplate) Meta() Info     { return Info{Version: "17-bookworm", Port: 5432} }
-func (postgresTemplate) Image() string  { return "postgres:17-bookworm" }
+
+// postgresImageTag / postgresImageDigest 是 digest 钉定对（F2.7/ADR-0045；
+// bump 纪律：同 commit 更新 TestTemplateFaces 钉板，吸收范围限同版本契约
+// 内的上游刷新——major/suite 变更是版本矩阵的事，独立 ADR）。digest 取
+// 2026-10-05 Docker Hub index digest（multi-arch 真源）。
+const (
+	postgresImageTag    = "postgres:17-bookworm"
+	postgresImageDigest = "sha256:639ab7ceb90e13123085b741fb31ef493fba25463002f6da665352e7b534b652"
+)
+
+func (postgresTemplate) Image() string       { return pinnedRef(postgresImageTag, postgresImageDigest) }
+func (postgresTemplate) ImageDigest() string { return postgresImageDigest }
 
 // DataTarget 挂父目录而非 /var/lib/postgresql/data：2026-10 刷新的
 // postgres:17-bookworm 镜像带 18+ 目录布局入口（docker-library/postgres
@@ -116,5 +127,3 @@ func (postgresTemplate) Restore(host, password string) (RestoreSpec, error) {
 		SecretFiles: files,
 	}, nil
 }
-
-func (postgresTemplate) ImageDigest() string { return "" } // F2.7 空槽

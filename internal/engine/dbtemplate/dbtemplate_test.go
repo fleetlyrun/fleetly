@@ -2,10 +2,12 @@ package dbtemplate_test
 
 // 模板面的零漂移钉板（架构评审第二轮候选 1）：per-engine adapter 的完整
 // 输出面逐字钉死——重构批的行为不变证明。F2.1 加 mysql/mongo 时本表
-// 追加行即验收面；F2.2/F2.7 空槽断言届时随实现改写。
+// 追加行即验收面；F2.2 备份槽与 F2.7 digest 钉定已启用（ADR-0045：本表
+// 的镜像列即五引擎钉定清单视图）。
 
 import (
 	"encoding/json"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -38,6 +40,7 @@ func TestTemplateFaces(t *testing.T) {
 		engine     string
 		meta       dbtemplate.Info
 		image      string
+		digest     string
 		dataTarget string
 		env        map[string]string
 		command    []string
@@ -48,7 +51,8 @@ func TestTemplateFaces(t *testing.T) {
 		{ //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
 			engine:     "postgres",
 			meta:       dbtemplate.Info{Version: "17-bookworm", Port: 5432},
-			image:      "postgres:17-bookworm",
+			image:      "postgres:17-bookworm@sha256:639ab7ceb90e13123085b741fb31ef493fba25463002f6da665352e7b534b652",
+			digest:     "sha256:639ab7ceb90e13123085b741fb31ef493fba25463002f6da665352e7b534b652",
 			dataTarget: "/var/lib/postgresql",
 			env: map[string]string{
 				"POSTGRES_USER":          "fleetly",
@@ -63,7 +67,8 @@ func TestTemplateFaces(t *testing.T) {
 		{ //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
 			engine:     "pgvector",
 			meta:       dbtemplate.Info{Version: "0.8.6-pg17-bookworm", Port: 5432},
-			image:      "pgvector/pgvector:0.8.6-pg17-bookworm",
+			image:      "pgvector/pgvector:0.8.6-pg17-bookworm@sha256:cf134a767f474095eeba57e0117be8e568e011a63f33fbf252f14c9b760f8e6f",
+			digest:     "sha256:cf134a767f474095eeba57e0117be8e568e011a63f33fbf252f14c9b760f8e6f",
 			dataTarget: "/var/lib/postgresql",
 			env: map[string]string{
 				"POSTGRES_USER":          "fleetly",
@@ -82,7 +87,8 @@ func TestTemplateFaces(t *testing.T) {
 		{
 			engine:     "redis",
 			meta:       dbtemplate.Info{Version: "7.4", Port: 6379},
-			image:      "redis:7.4",
+			image:      "redis:7.4@sha256:c6eabf748fc7a61dbb5a705c78bcf3d6377b1127a97d0ce965c11c44ba46896f",
+			digest:     "sha256:c6eabf748fc7a61dbb5a705c78bcf3d6377b1127a97d0ce965c11c44ba46896f",
 			dataTarget: "/data",
 			command:    []string{"redis-server", "/run/secrets/" + dbtemplate.RedisConfFile},
 			probe:      []string{"redis-cli", "-p", "6379", "ping"},
@@ -94,7 +100,8 @@ func TestTemplateFaces(t *testing.T) {
 		{ //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
 			engine:     "mysql",
 			meta:       dbtemplate.Info{Version: "8.4", Port: 3306},
-			image:      "mysql:8.4",
+			image:      "mysql:8.4@sha256:6ea90827b1100f8f2ae306a539f86d2c264a26ed435a2a9f75551dd5c3aeb242",
+			digest:     "sha256:6ea90827b1100f8f2ae306a539f86d2c264a26ed435a2a9f75551dd5c3aeb242",
 			dataTarget: "/var/lib/mysql",
 			env: map[string]string{
 				"MYSQL_DATABASE":           "fleetly",
@@ -109,7 +116,8 @@ func TestTemplateFaces(t *testing.T) {
 		{ //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
 			engine:     "mongo",
 			meta:       dbtemplate.Info{Version: "8.0", Port: 27017},
-			image:      "mongo:8.0",
+			image:      "mongo:8.0@sha256:d0d926f94df099bff534b7ee5b5986458131a22489dfff8664509af0c1e2ca9c",
+			digest:     "sha256:d0d926f94df099bff534b7ee5b5986458131a22489dfff8664509af0c1e2ca9c",
 			dataTarget: "/data/db",
 			command: []string{"sh", "-c",
 				"cp /run/secrets/" + dbtemplate.MongoInitJSFile + " /docker-entrypoint-initdb.d/10-fleetly-user.js" +
@@ -129,6 +137,7 @@ func TestTemplateFaces(t *testing.T) {
 			assert.Equal(t, tc.engine, tpl.Engine())
 			assert.Equal(t, tc.meta, tpl.Meta())
 			assert.Equal(t, tc.image, tpl.Image())
+			assert.Equal(t, tc.digest, tpl.ImageDigest())
 			assert.Equal(t, tc.dataTarget, tpl.DataTarget())
 			env, command := tpl.Workload()
 			assert.Equal(t, tc.env, env)
@@ -374,13 +383,26 @@ func TestVolumeShadowContract(t *testing.T) {
 	}
 }
 
-// TestReservedSlotsVacant：F2.7 digest 钉定的预留空槽现状（恒空）——
-// F2.2 备份槽已启用（见 TestBackupRestoreFaces），空槽只剩 digest 面。
-func TestReservedSlotsVacant(t *testing.T) {
+// TestImageDigestsPinned：F2.7 digest 钉定门禁（ADR-0045 决策 3）——全值域
+// 反扫：digest 非空、形态合法（带算法前缀 + 64 hex）、Image() 恰为
+// tag@digest 双段拼装（透传完整性：钉定值在引用面不被改写）。新增引擎漏
+// 钉或拼装面绕开 pinnedRef 即红。
+func TestImageDigestsPinned(t *testing.T) {
+	digestRe := regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 	for _, engine := range dbtemplate.Engines() {
-		tpl, ok := dbtemplate.For(engine)
-		require.True(t, ok)
-		assert.Empty(t, tpl.ImageDigest(), "%s: digest slot must stay vacant until F2.7", engine)
+		t.Run(engine, func(t *testing.T) {
+			tpl, ok := dbtemplate.For(engine)
+			require.True(t, ok)
+			digest := tpl.ImageDigest()
+			require.Regexp(t, digestRe, digest,
+				"%s: ImageDigest must be a pinned index digest with algorithm prefix (ADR-0045)", engine)
+			image := tpl.Image()
+			assert.True(t, strings.HasSuffix(image, "@"+digest),
+				"%s: Image() must be exactly <tag>@<digest> — got %q", engine, image)
+			tag := strings.TrimSuffix(image, "@"+digest)
+			assert.NotContains(t, tag, "@", "%s: reference carries more than one digest segment: %q", engine, image)
+			assert.Contains(t, tag, ":", "%s: tag segment must carry a version tag (readability face): %q", engine, image)
+		})
 	}
 }
 

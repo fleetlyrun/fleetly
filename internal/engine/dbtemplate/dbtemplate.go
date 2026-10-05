@@ -5,9 +5,12 @@
 // 形状（2026-10-03，架构评审第二轮候选 1，F2.7 目录化提前落）：per-engine
 // 接口 adapter——每引擎一个类型实现 Template，注册表零 switch（原四把
 // per-engine switch 收编进 entry 本身；加引擎 = 加一个类型 + 一个注册表
-// entry，F2.7 只剩 digest 钉定门禁）。host 注入：模板只拥有"这个引擎的
-// URL 长什么样"，铸名公式（db-<id>）留在 engine（TaskDNSName 先例同款
-// 分居）。本包 stdlib-only 近叶子（import 守卫口径下无 internal 依赖）。
+// entry）。F2.7 收口（2026-10-05，ADR-0045）：镜像引用 digest 钉定门禁
+// 落地——Image() 恒为 tag@digest 双段形态，钉定对常量住各 adapter（清单
+// 视图 = dbtemplate_test 的 TestTemplateFaces 钉板）。host 注入：模板只拥有
+// "这个引擎的 URL 长什么样"，铸名公式（db-<id>）留在 engine（TaskDNSName
+// 先例同款分居）。本包 stdlib-only 近叶子（import 守卫口径下无 internal
+// 依赖）。
 //
 // 钉版调研（2026-10-02）：postgres 取 major+suite 级钉（trixie 基座启动
 // 坑 docker-library/postgres#1363 规避；精确 patch 钉随 F2）；pgvector 落
@@ -35,7 +38,8 @@ type Template interface {
 	Engine() string
 	// Meta 返回回显与 spec 组装共用的版本/端口（单源）。
 	Meta() Info
-	// Image 返回钉版镜像引用（ADR-0021 口径；digest 钉定随 F2.7）。
+	// Image 返回钉版镜像引用（ADR-0021 口径；F2.7/ADR-0045 起 digest 钉定：
+	// 恒为 tag@sha256:<index digest> 双段形态，digest 主导、tag 是可读性面）。
 	Image() string
 	// DataTarget 返回数据卷容器内挂载目标。
 	DataTarget() string
@@ -59,10 +63,17 @@ type Template interface {
 	// Restore 渲染恢复执行：流式（stdin 注入运行中的库）或预置卷（redis
 	// 形态——RDB 仅启动时装载，ADR-0039 决策 5）。
 	Restore(host, password string) (RestoreSpec, error)
-	// ImageDigest 是镜像 digest 钉定面（F2.7 预留空槽：空串 = 未钉，现状
-	// tag 级钉定；门禁随 F2.7 落）。
+	// ImageDigest 是镜像 digest 钉定面（F2.7/ADR-0045 落地）：带算法前缀的
+	// index digest，与 Image() 的 digest 段恒一致（P7 第三消费点 = registry
+	// digest 透传，只核对传递完整性——测试门禁断言自洽）。
 	ImageDigest() string
 }
+
+// pinnedRef 组装 digest 钉定引用（F2.7/ADR-0045）：ref = tag@digest 双段
+// 形态的唯一拼装点——digest 主导（编排器按内容寻址拉取），tag 是可读性面
+// （载体/事件流里版本可见）。钉的是 OCI index（manifest-list）digest——
+// multi-arch 真源，registry API Docker-Content-Digest 头原值。
+func pinnedRef(tag, digest string) string { return tag + "@" + digest }
 
 // BackupSpec 是一次备份的引擎渲染产物（argv 纯数组、零 shell 拼串——args
 // 数组文化，shellguard 射程不变）。执行器（engine 备份环）把 SecretFiles

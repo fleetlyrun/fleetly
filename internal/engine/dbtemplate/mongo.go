@@ -29,10 +29,19 @@ const (
 // mongoTemplate 是 mongo 引擎的模板 adapter。
 type mongoTemplate struct{}
 
-func (mongoTemplate) Engine() string     { return "mongo" }
-func (mongoTemplate) Meta() Info         { return Info{Version: "8.0", Port: 27017} }
-func (mongoTemplate) Image() string      { return "mongo:8.0" }
-func (mongoTemplate) DataTarget() string { return "/data/db" }
+// mongoImageTag / mongoImageDigest 是 digest 钉定对（F2.7/ADR-0045；bump
+// 纪律同 postgresImageTag 注）。digest 取 2026-10-05 Docker Hub index
+// digest（multi-arch 真源）。
+const (
+	mongoImageTag    = "mongo:8.0"
+	mongoImageDigest = "sha256:d0d926f94df099bff534b7ee5b5986458131a22489dfff8664509af0c1e2ca9c"
+)
+
+func (mongoTemplate) Engine() string      { return "mongo" }
+func (mongoTemplate) Meta() Info          { return Info{Version: "8.0", Port: 27017} }
+func (mongoTemplate) Image() string       { return pinnedRef(mongoImageTag, mongoImageDigest) }
+func (mongoTemplate) ImageDigest() string { return mongoImageDigest }
+func (mongoTemplate) DataTarget() string  { return "/data/db" }
 
 func (mongoTemplate) Workload() (map[string]string, []string) {
 	return nil, []string{"sh", "-c",
@@ -114,5 +123,3 @@ func (mongoTemplate) Restore(host, password string) (RestoreSpec, error) {
 		SecretFiles: files,
 	}, nil
 }
-
-func (mongoTemplate) ImageDigest() string { return "" } // F2.7 空槽
