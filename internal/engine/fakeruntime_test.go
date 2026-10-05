@@ -13,10 +13,11 @@ import (
 type fakeRuntime struct {
 	mu sync.Mutex
 
-	ensures    []ensureCall
-	failNext   bool // 下一次 Ensure 失败（一次性注入；消费后自动清除）
-	removed    []capability.NamespaceRef
-	blockPoint chan struct{} // 非空时 Ensure 阻塞直至关闭或 ctx 取消（hang 注入）
+	ensures     []ensureCall
+	failNext    bool // 下一次 Ensure 失败（一次性注入；消费后自动清除）
+	inspectFail bool // InspectWorkloads 持续失败（P1-5 观测风暴注入缝；清除即恢复）
+	removed     []capability.NamespaceRef
+	blockPoint  chan struct{} // 非空时 Ensure 阻塞直至关闭或 ctx 取消（hang 注入）
 	// ensured 非空时每次 Ensure 入口非阻塞发信号（测试同步：探知某次
 	// Ensure 已进入并停在 blockPoint）。
 	ensureEntered chan struct{}
@@ -316,25 +317,29 @@ func (f *fakeRuntime) removedSnapshot() []capability.NamespaceRef {
 	return out
 }
 
-// InspectWorkloads 实现 RuntimeInspector 子面（ADR-0022）：观测 = 最近
-// 一次 Ensure 的 spec；tamper 非空时按 workloadID 覆写（人工改载体注入）。
+// InspectWorkloads 实现 RuntimeInspector 子面（ADR-0022）：观测 = 该域
+// 最近一次 Ensure 的 spec（与真 Provider 的 ServiceList 快照一致——载体
+// 持有的是最新 spec，不是下发历史的首笔；P1-5 播种续接测试咬出旧实现
+// 首笔匹配的失真）；tamper 非空时按 workloadID 覆写（人工改载体注入）。
+// inspectFail 置位时返回错误（P1-5：docker API 停滞的观测失败缝）。
 func (f *fakeRuntime) InspectWorkloads(_ context.Context, ns capability.NamespaceRef) ([]capability.WorkloadObservation, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.inspectFail {
+		return nil, fmt.Errorf("injected inspect failure (ns %s)", ns.String())
+	}
 	var obs []capability.WorkloadObservation
 	for _, c := range f.ensures {
 		if c.NS.String() != ns.String() {
 			continue
 		}
+		obs = nil
 		for _, w := range c.Spec {
 			obs = append(obs, capability.WorkloadObservation{
 				WorkloadID: w.ID, Generation: c.Gen, Image: w.Image, Command: w.Command,
 				Replicas: w.Replicas, State: capability.WorkloadRunning,
 			})
 		}
-		// 只取该域最近一次 Ensure（与真 Provider 的快照语义一致）。
-		obs = obs[len(obs)-len(c.Spec):]
-		break
 	}
 	for i := range obs {
 		if t, ok := f.tamper[obs[i].WorkloadID]; ok {

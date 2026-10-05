@@ -18,7 +18,10 @@ import (
 //  1. Ensure 受管 Workload（Managed 声明；MaterialsSource 子面的材料随
 //     Ensure 注入（zot config/htpasswd，F1.11）；活跃 Project 网络合并仅
 //     Edge（跨网触达后端）——zot 靠发布端口可达，不挂项目网；受管域
-//     Generation 进程内单调——重启重新 Ensure 幂等收敛）；
+//     Generation 进程内单调——重启重新 Ensure 幂等收敛）。观测前置读
+//     （gen 播种 InspectWorkloads / Edge 挂网 list）失败 = 跳过该域本拍
+//     + 告警（P1-5 根修：观测错误不判 drift、不重置 gen——staging
+//     记录·五 #2 观测风暴假滚动的事故裁决）；
 //  2. Route 发布：routes 表全量 → Runtime.Addresses 解析后端 → Edge.
 //     PublishRoutes（强制全量；解析不到的 Route 跳过并记日志——存量路由
 //     继续服务的降级语义）。
@@ -48,9 +51,16 @@ type managedGenState struct {
 	// adopted 标记首见指纹已沿用（seedFromRuntime 播种后的第一拍不 +1——
 	// 播种值本身来自载体现行 spec，是"已下发"事实而非新变更）。
 	adopted atomic.Bool
-	// seeded 标记本进程已做过载体观测播种（一次性；观测失败也置位——
-	// 冷启 gen=1 兜底，与旧行为一致）。
+	// seeded 标记本进程已做过载体观测播种（一次性）。P1-5 根修
+	// （2026-10-05 评审，staging 记录·五 #2）：观测【失败】不再置位——
+	// 冷启 gen=1 与载体持久的 fleetly.generation 标签差值就是假滚动
+	//（I/O 风暴窗重启五受管域连滚、traefik 路由中断级）；失败 = 跳过
+	// 本域本拍 Ensure/gen 推进，下拍重试播种。子面缺席（无从观测）仍
+	// 冷启 gen=1 兜底（旧行为）。
 	seeded atomic.Bool
+	// obsSkipLogged 是观测失败跳拍告警的去抖位：连续失败沿只告警一次，
+	// 观测门恢复即清（告警状态机"沿才通知"同款取向——风暴窗不逐拍刷屏）。
+	obsSkipLogged atomic.Bool
 }
 
 // managedFingerprint 返回受管 Workload 集的稳定指纹（json.Marshal 对 map
@@ -190,7 +200,12 @@ func (e *Engine) reconcileManaged(ctx context.Context) {
 	if len(decls) == 0 {
 		return
 	}
-	refs := e.activeProjectNetworks(ctx)
+	// 活跃 Project 网引用（Edge 挂网面）。P1-5 根修：list 失败不再折成
+	// "无网络"喂给 spec——那会把 Edge 的全部项目网引用从下发集挖掉，
+	// 指纹一变一还 = traefik 摘/挂全网两轮假滚（staging 记录·五 #2 的
+	// "list 失败被当作 spec 失配"分支）；上抛，挂网域按跳拍收口（见
+	// 循环内 netObsErr 分支）。
+	refs, netObsErr := e.activeProjectNetworks(ctx)
 	// 活跃 Project 集（zot per-Project 材料的输入，ADR-0036 N2 兑现节 2）。
 	// 读失败 = 本拍受管面整组不下发（清签名下拍重试，pinNode 失败同款
 	// 取向）：空集喂给材料面会把全部项目用户滚出 htpasswd（在场 workload
@@ -270,16 +285,31 @@ func (e *Engine) reconcileManaged(ctx context.Context) {
 		gst := e.gensFor(ns.String())
 		if !gst.seeded.Load() {
 			// 载体现行 Generation 播种（重启续接）：Inspector 是可选子面
-			// （FacesOf 协商），缺席/失败不播种——冷启 gen=1 兜底（旧行为）。
+			// （FacesOf 协商）。观测【错误】= 跳过本域本拍（P1-5 根修，
+			// 2026-10-05 评审批 + staging 记录·五 #2 裁决："观测错误不得
+			// 触发 spec 对照判 drift"）：观测失败不是"载体不存在"的证据，
+			// 置位走冷启 gen=1 会与载体持久标签形成差值 = 假滚动——下拍
+			// 重试播种。子面缺席（nil，无从观测）仍冷启 gen=1 兜底（旧行为）。
 			if insp := capability.FacesOf(e.runtime).Inspector; insp != nil {
-				if obs, oerr := insp.InspectWorkloads(ctx, ns); oerr == nil {
-					for _, o := range obs {
-						gst.seedFromRuntime(uint64(o.Generation))
-					}
+				obs, oerr := insp.InspectWorkloads(ctx, ns)
+				if oerr != nil {
+					e.managedObsSkip(gst, ns, "inspect workloads", oerr)
+					continue
+				}
+				for _, o := range obs {
+					gst.seedFromRuntime(uint64(o.Generation))
 				}
 			}
 			gst.seeded.Store(true)
 		}
+		// 挂网域的网/项目 list 失败 → 同款跳拍（P1-5）：refs 不可信时
+		// Ensure 会下发挖掉全部项目网引用的 spec。非挂网域（zot/VL/VM）
+		// 不消费 refs，照常收敛。
+		if netObsErr != nil && decl.attachNetwork {
+			e.managedObsSkip(gst, ns, "list project networks", netObsErr)
+			continue
+		}
+		gst.obsSkipLogged.Store(false) // 观测门全过：清告警去抖位（再失败可再告）
 		gen := gst.next(sigs[i])
 		// 签名短路（C16）：上次成功 Ensure 的完整签名未变且未到强制重放
 		// 节拍 → 跳过本拍 Ensure（材料解析+下发全套）。环外变更（人工改
@@ -308,6 +338,17 @@ func (e *Engine) reconcileManaged(ctx context.Context) {
 			e.expect.expected[systemOwner(w.Process)] = gen
 		}
 		e.expect.mu.Unlock()
+	}
+}
+
+// managedObsSkip 记一次观测失败跳拍（P1-5 根修）：观测错误不得触发 spec
+// 对照判 drift、不得推进 gen、不得 Ensure——跳过本域本拍，下拍重试。
+// warn 带 namespace 与错误；连续失败沿只告警一次（obsSkipLogged 去抖，
+// 观测门恢复即清——告警状态机"沿才通知"同款取向，风暴窗不逐拍刷屏）。
+func (e *Engine) managedObsSkip(gst *managedGenState, ns capability.NamespaceRef, what string, err error) {
+	if gst.obsSkipLogged.CompareAndSwap(false, true) {
+		e.log.Warn("managed reconciler: observation failed; skipping domain this tick (no drift verdict)",
+			"namespace", ns.String(), "observation", what, "err", err)
 	}
 }
 
@@ -492,19 +533,17 @@ func (e *Engine) activeProjectIDs(ctx context.Context) ([]string, error) {
 // activeProjectNetworks 返回全部活跃 Project 网络的引用列表（受管 Edge
 // 挂全部项目网以达后端；N0 修复批 B1 实装）。返回跨域引用形态——载体名
 // 是 Provider 私有公式，engine 不拼接。Team 轴从 Project 行实取（ADR-0028；
-// 批量读 Project 行，避免 per-network 点查）。
-func (e *Engine) activeProjectNetworks(ctx context.Context) []capability.NetworkRef {
+// 批量读 Project 行，避免 per-network 点查）。读失败上抛（P1-5 根修：
+// 折成"无网络"会让 Edge 下发挖掉全部项目网引用的 spec——指纹一变一还
+// 两轮假滚；调用方对挂网域跳拍），绝不以空集代偿。
+func (e *Engine) activeProjectNetworks(ctx context.Context) ([]capability.NetworkRef, error) {
 	rows, err := e.networks.List(ctx, e.db.Runner())
 	if err != nil {
-		// 读面失败按"无网络"处理：受管 Ensure 照常（不挂新网），下一拍
-		// 重试——挂网是增量收敛，不是阻断条件。
-		e.log.Error("managed reconciler: list project networks", "err", err)
-		return nil
+		return nil, err
 	}
 	projects, err := e.projects.List(ctx, e.db.Runner())
 	if err != nil {
-		e.log.Error("managed reconciler: list projects", "err", err)
-		return nil
+		return nil, err
 	}
 	teams := make(map[string]string, len(projects))
 	for i := range projects {
@@ -524,7 +563,7 @@ func (e *Engine) activeProjectNetworks(ctx context.Context) []capability.Network
 			Name:      n.Name,
 		})
 	}
-	return refs
+	return refs, nil
 }
 
 // PublishRoutesNow 触发一次即时 Route 发布（API 写路径在 Route 变更后
