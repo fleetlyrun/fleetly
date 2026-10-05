@@ -6,6 +6,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -283,4 +284,49 @@ func TestRebuildNetworkSerializesWithDatabaseTeardown(t *testing.T) {
 	assert.Contains(t, rt.removedSnapshot(), capability.NamespaceRef{
 		Team: "default", Project: tProjectID, Database: tDatabaseID,
 	}, "queued teardown proceeds after the rebuild releases the lock")
+}
+
+// 失败回滚（2026-10-05 staging 实录收口）：detach 之后的步骤失败（本测
+// 注入 RemoveNetwork 错误）必须把已 detach 的载体尽力挂回——app 域没有
+// 周期 ensure 重放面，不回滚会把服务留在网外直到下次部署；AttachNetwork
+// 幂等使回滚对已挂回载体安全。
+func TestRebuildNetworkRollbackReattachesDetachedCarriers(t *testing.T) {
+	db, clock := statertest.New(t)
+	rt := newFakeRuntime()
+	e := New(Deps{DB: db, Runtime: rt, Registry: newFakeRegistry(), Logger: discardLogger()}, Options{})
+	t.Cleanup(func() { _ = e.Stop(context.Background()) })
+	require.NoError(t, project.New(clock).Create(context.Background(), db.Runner(), &project.Project{
+		ID: tProjectID, Name: "shop", TeamID: "default",
+	}))
+	seedDefaultNetworkRow(t, e)
+
+	taskID := ulid.Make().String()
+	require.NoError(t, task.New(clock).Create(context.Background(), db.Runner(), &task.Task{
+		ID: taskID, ProjectID: tProjectID, Name: "migrate", State: task.StateActive,
+		Spec: []byte(`{"schema_version":1,"task":{"id":"` + taskID + `","project":"` + tProjectID + `"},` +
+			`"process":{"name":"run","image":"busybox:1.37"},"desired_concurrency":1,"form":"oneshot"}`),
+	}))
+	ns := capability.NamespaceRef{Team: "default", Project: tProjectID}
+	rt.seedNetworkCarrier(ns, "default", false,
+		capability.NetworkAttachment{Carrier: "fleetly-run-1", Domain: lowerDomain(capability.NamespaceRef{Team: "default", Project: tProjectID, Task: taskID})},
+		capability.NetworkAttachment{Carrier: "fleetly-fleetly-system-registry", Workload: "fleetly-registry", Domain: lowerDomain(capability.NamespaceRef{Team: "fleetly", Project: "system", App: "registry"})},
+	)
+
+	rt.setNetRemoveErr(errors.New("injected drain failure"))
+	_, err := e.RebuildNetwork(context.Background(), tProjectID, "default")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "detach rolled back")
+	// 流水：inspect → detach×2 → remove（失败，不进流水）→ 回滚 attach×2。
+	flow := rt.maintFlow()
+	assert.Equal(t, []string{
+		"inspect " + fakeNetKey(ns, "default"),
+		"detach " + fakeNetKey(ns, "default") + " fleetly-fleetly-system-registry",
+		"detach " + fakeNetKey(ns, "default") + " fleetly-run-1",
+		"attach " + fakeNetKey(ns, "default") + " fleetly-fleetly-system-registry",
+		"attach " + fakeNetKey(ns, "default") + " fleetly-run-1",
+	}, flow)
+	// 载体仍是原网（attach 幂等挂回原 attachments 集）。
+	state, err := rt.InspectNetwork(context.Background(), ns, "default")
+	require.NoError(t, err)
+	assert.Len(t, state.Attachments, 2, "rollback must restore both detached carriers")
 }

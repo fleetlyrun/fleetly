@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 
 	"github.com/fleetlyrun/fleetly/internal/capability"
@@ -44,9 +45,10 @@ type fakeRuntime struct {
 	// netCarriers 在场面（seed 复现 legacy 非 attachable 形态）+ 维护
 	// 原语调用流水（重建序断言面）。maintHookFn 非空时在每个维护原语
 	// 入口（锁外）调用（串行化测试的卡点注入）。
-	netCarriers map[string]*fakeNetCarrier
-	maintOps    []string
-	maintHookFn func(op string)
+	netCarriers  map[string]*fakeNetCarrier
+	maintOps     []string
+	maintHookFn  func(op string)
+	netRemoveErr error
 }
 
 // fakeNetCarrier 是假载体网络状态。
@@ -123,6 +125,10 @@ func (f *fakeRuntime) InspectNetwork(_ context.Context, ns capability.NamespaceR
 	for _, a := range c.attachments {
 		state.Attachments = append(state.Attachments, a)
 	}
+	// 排序契约同真源（swarm InspectNetwork——确定性执行序）。
+	sort.Slice(state.Attachments, func(i, j int) bool {
+		return state.Attachments[i].Carrier < state.Attachments[j].Carrier
+	})
 	f.maintOps = append(f.maintOps, "inspect "+fakeNetKey(ns, network))
 	return state, nil
 }
@@ -141,16 +147,30 @@ func (f *fakeRuntime) DetachNetwork(_ context.Context, ns capability.NamespaceRe
 	return nil
 }
 
-// RemoveNetwork 实现 RuntimeNetworkMaintenance 子面。
+// RemoveNetwork 实现 RuntimeNetworkMaintenance 子面（netRemoveErr 可注
+// 入——失败回滚路径的测试面）。
 func (f *fakeRuntime) RemoveNetwork(_ context.Context, ns capability.NamespaceRef, network string) error {
 	if hook := f.maintHook(); hook != nil {
 		hook("remove " + fakeNetKey(ns, network))
+	}
+	f.mu.Lock()
+	err := f.netRemoveErr
+	f.mu.Unlock()
+	if err != nil {
+		return err
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	delete(f.netCarriers, fakeNetKey(ns, network))
 	f.maintOps = append(f.maintOps, "remove "+fakeNetKey(ns, network))
 	return nil
+}
+
+// setNetRemoveErr 注入 RemoveNetwork 错误（nil 清除）。
+func (f *fakeRuntime) setNetRemoveErr(err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.netRemoveErr = err
 }
 
 // EnsureNetwork 实现 RuntimeNetworkMaintenance 子面（复建恒 attachable）。

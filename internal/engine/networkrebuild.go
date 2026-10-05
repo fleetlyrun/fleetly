@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/capability"
 	"github.com/fleetlyrun/fleetly/internal/state"
@@ -100,22 +101,40 @@ func (e *Engine) RebuildNetwork(ctx context.Context, projectID, name string) (Ne
 		}
 	}
 	detached := len(state0.Attachments)
+	// 失败回滚：detach 之后的任何一步失败，把已 detach 的载体尽力挂回
+	// （AttachNetwork 幂等）。数据库/受管域本有下一拍 ensure 重放自愈，
+	// app 域没有周期重放面——不回滚会把 app 服务留在网外直到下次部署
+	// （2026-10-05 staging 实录：失败重试间隙的半 detach 态）。bctx 此刻
+	// 可能已耗尽，回滚用独立带界 ctx（utility remove 的 WithoutCancel 同款）。
+	rollbackDetach := func() {
+		rctx, cancel := context.WithTimeout(context.WithoutCancel(context.Background()), time.Minute)
+		defer cancel()
+		for _, att := range state0.Attachments {
+			if err := ops.AttachNetwork(rctx, ns, name, att.Carrier); err != nil {
+				e.log.Error("network rebuild: rollback re-attach", "carrier", att.Carrier, "network", name, "err", err)
+			}
+		}
+	}
 
 	if state0.Exists {
 		if err := ops.RemoveNetwork(bctx, ns, name); err != nil {
-			return NetworkRebuildResult{}, fmt.Errorf("rebuild network: remove carrier (detached %d carriers stay detached until their domain's next ensure replay; retry the rebuild to converge): %w", detached, err)
+			rollbackDetach()
+			return NetworkRebuildResult{}, fmt.Errorf("rebuild network: remove carrier (detach rolled back; retry the rebuild to converge): %w", err)
 		}
 	}
 	if err := ops.EnsureNetwork(bctx, ns, name); err != nil {
+		rollbackDetach()
 		return NetworkRebuildResult{}, fmt.Errorf("rebuild network: recreate carrier (network removed; retry the rebuild to recreate and re-attach): %w", err)
 	}
 	// 终态核验：复建撞名/竞态（重建窗内他方建了同名非 attachable 网）即
 	// 诚实失败——不接受"删了旧网换来一个同样不可附着的新网"。
 	after, err := ops.InspectNetwork(bctx, ns, name)
 	if err != nil {
+		rollbackDetach()
 		return NetworkRebuildResult{}, fmt.Errorf("rebuild network: verify carrier: %w", err)
 	}
 	if !after.Exists || !after.Attachable || !after.Managed {
+		rollbackDetach()
 		return NetworkRebuildResult{}, fmt.Errorf("rebuild network: carrier for %q exists but is not the managed attachable form (exists=%t attachable=%t managed=%t); remove the foreign carrier network and retry", name, after.Exists, after.Attachable, after.Managed)
 	}
 
