@@ -111,13 +111,22 @@ P7 把本项列为 fleetly 三处 digest 消费点的第三处，口径已钉：
 
 ## 验收锚
 
-- [ ] 五引擎 digest 全钉：`Image()` 为 `tag@sha256:<64hex>` 形态、
+- [x] 五引擎 digest 全钉：`Image()` 为 `tag@sha256:<64hex>` 形态、
   `ImageDigest()` 非空且与 Image 自洽（dbtemplate 测试门禁，全值域反扫）
-- [ ] 消费面零改动收编：投影/备份/恢复三处 `tpl.Image()` 调用点即 digest 引用
-  （既有测试断言更新后全绿；无第二真源）
-- [ ] e2e 升级矩阵条件化零滚动断言落地：digest 集无差严格零滚动、有差恰一次
+  （TestImageDigestsPinned + TestTemplateFaces digest 列，2026-10-05）
+- [x] 消费面零改动收编：投影/备份/恢复三处 `tpl.Image()` 调用点即 digest 引用
+  （既有测试断言更新后全绿；无第二真源）（engine 侧 database/backup 断言面
+  同批更新，mise test 三 module 全绿）
+- [x] e2e 升级矩阵条件化零滚动断言落地：digest 集无差严格零滚动、有差恰一次
   滚动 + 活体断言（本批跨代配对 tag→digest 在本地 dind 实战走一遍）
-- [ ] e2e backup 演练全绿：四引擎 digest 引用拉取 + 备份/verify/恢复数据断言
-  不变（CI e2e-backup job 常态）
-- [ ] golden 零漂移：databases 面 CLI golden 不含 digest（回显面只有 version）
-- [ ] mise run test + lint 全绿；改散文后守卫 `go test -count=1 ./internal/guards/`
+  （2026-10-05 本地 dind：3def22e→本批 squash 配对——"digest set changed"
+  分支实战触发，db task delta = 1 (budget 1)，pg_isready 活体、零 drift，
+  UPGRADE PASSED；CI 常态随 e2e-upgrade job）
+- [x] e2e backup 演练全绿：四引擎 digest 引用拉取 + 备份/verify/恢复数据断言
+  不变（CI e2e-backup job 常态）（2026-10-05 本地 dind：四引擎 digest 拉取 +
+  stream/preseed 恢复 + 平台备份 roundtrip + S3 离机腿 ALL DRILLS GREEN）
+- [x] golden 零漂移：databases 面 CLI golden 不含 digest（回显面只有 version）
+  （本批零 golden 改动即证；apitest Version 断言不变）
+- [x] mise run test + lint 全绿；改散文后守卫 `go test -count=1 ./internal/guards/`
+  （2026-10-05 全绿；golangci 0 issues + buf breaking 过 + 守卫含散文扩面
+  ADR/checklist/e2e 注释全过）
