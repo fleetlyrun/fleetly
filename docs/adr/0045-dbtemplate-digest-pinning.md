@@ -109,6 +109,39 @@ P7 把本项列为 fleetly 三处 digest 消费点的第三处，口径已钉：
 - staging 换装批（F2.9/F2.6/F2.7 一批）将首次在真机走"tag 钉 → digest 钉"的
   跨代配对：预期库任务各滚一次（受监督序），实录随换装批记 runbook。
 
+## 执法补强（2026-10-05 评审批 P2-1）
+
+N2 评审 P2-1 指出：决策 4 的 bump 射程约束（"VOLUME/目录布局面不变"）是承诺
+不是执法——TestVolumeShadowContract 的预期表是硬编码快照，从不读镜像真实
+VOLUME，digest bump 后上游改 VOLUME 声明该测试照绿（既有兜底只有 bump 批 CI
+的 e2e-backup 任务替换存活锚，动态且滞后）。补强落地：
+
+- **live 核对测试**（`TestVolumeShadowContractLive`，internal/engine/dbtemplate/
+  dbtemplate_live_test.go）：经 Docker Hub registry API 匿名拉取面（token →
+  钉定 index → 本平台 arch manifest → config blob）读五引擎钉定镜像的
+  `config.Volumes` 键集，与 **volumeShadowTable**（唯一预期表）对账——上游
+  VOLUME 面任何增删即红。repo/tag/digest 从 `tpl.Image()` 拆解取得（adapter
+  钉定对的唯一暴露面 = 平台实际部署的引用），live 侧零重抄钉定值；表由
+  TestVolumeShadowContract（静态面）与本测试（镜像真源面）同源消费，禁止
+  第二份。
+- **用法**：缺省 SKIP（env gate `FLEETLY_DBTEMPLATE_LIVE`，CI 零网络依赖
+  不红）；本地与 **bump 批必跑**：
+
+  ```sh
+  FLEETLY_DBTEMPLATE_LIVE=1 go test ./internal/engine/dbtemplate/ -run TestVolumeShadowContractLive
+  ```
+
+  （需出网可达 registry-1.docker.io 一次，与决策 5 的 e2e index 解析同条件。）
+  红了的处置：按决策 4 评估 bump 射程——patch 内不变量被破坏（VOLUME 面变化）
+  = major 级变更，走版本矩阵独立 ADR（ADR-0029 决策 2 口径），**不许静默
+  改表**。runbook 侧 bump 检查单同步记档（教训与边界节）。
+- **首跑实录（执法价值的即时证明）**：2026-10-05 首跑即红一枚——mongo 钉定
+  镜像另声明 `/data/configdb`（在 DataTarget `/data/db` 之外），静态表自
+  建表以来从未对账过全集。该路径即 N2 评审 P2-4 匿名卷泄漏台账的镜像遗产面
+  （每次任务替换铸一枚匿名卷、无数据丢失面）：表按实测全集记档，静态契约
+  升级为"声明路径按与 DataTarget 关系三分派生"（精确重合 / 嵌套逃逸 /
+  之外记档），五引擎 live 复跑全绿。
+
 ## 验收锚
 
 - [x] 五引擎 digest 全钉：`Image()` 为 `tag@sha256:<64hex>` 形态、
@@ -130,3 +163,8 @@ P7 把本项列为 fleetly 三处 digest 消费点的第三处，口径已钉：
 - [x] mise run test + lint 全绿；改散文后守卫 `go test -count=1 ./internal/guards/`
   （2026-10-05 全绿；golangci 0 issues + buf breaking 过 + 守卫含散文扩面
   ADR/checklist/e2e 注释全过）
+- [x] VOLUME 契约 live 核对落地：五引擎钉定 index 实测 VOLUME 集与唯一
+  预期表（volumeShadowTable，静态/live 两测试同源）对账，env-gated 缺省
+  SKIP、bump 批必跑（TestVolumeShadowContractLive，2026-10-05 首跑五引擎
+  全绿；首跑发现 mongo /data/configdb 未入表，按实测全集记档并升级静态
+  契约为三分派生）

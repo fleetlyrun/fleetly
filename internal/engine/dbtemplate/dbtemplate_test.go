@@ -347,38 +347,70 @@ func parseINI(t *testing.T, text string) ([]string, map[string]string) {
 //     镜像 VOLUME 路径之下。
 //
 // 违反任一形态 = 任务替换即空库服现（数据隐形丢失），本表钉死。
+//
+// volumeShadowTable 是 VOLUME 契约的**唯一**预期表（共享夹具，2026-10-05
+// N2 评审 P2-1 执法补强）：本测试消费其静态面（DataTarget/PGDATA 与声明
+// 集的关系断言，形态派生自表 + DataTarget），TestVolumeShadowContractLive
+// （dbtemplate_live_test.go）消费其镜像真源面（Docker Hub 钉定 index 实测
+// 的 VOLUME 集与本表对账）——两个测试同源消费，禁止出现第二份表。
+//
+// 表值 = 镜像 config 的 Volumes 键集（2026-10-05 五引擎 registry 实测）：
+// mongo 另声明 /data/configdb——在 DataTarget（/data/db）之外，任务替换铸
+// 匿名卷（N2 评审 P2-4 泄漏台账的具体镜像遗产面；无数据丢失面），如实
+// 记档而非视而不见。上游增删任何声明路径 = live 核对红。
+type volumeShadowRow struct {
+	engine       string
+	imageVolumes []string // 镜像声明的 VOLUME 路径全集（live 核对对账面）
+}
+
+var volumeShadowTable = []volumeShadowRow{
+	{engine: "postgres", imageVolumes: []string{"/var/lib/postgresql/data"}}, // 父挂 + PGDATA 重定向
+	{engine: "pgvector", imageVolumes: []string{"/var/lib/postgresql/data"}},
+	{engine: "mysql", imageVolumes: []string{"/var/lib/mysql"}},
+	{engine: "mongo", imageVolumes: []string{"/data/configdb", "/data/db"}}, // configdb 在 DataTarget 之外：匿名卷泄漏面（P2-4），无遮蔽险
+	{engine: "redis", imageVolumes: []string{"/data"}},
+}
+
 func TestVolumeShadowContract(t *testing.T) {
-	for _, tc := range []struct {
-		engine      string
-		volumePath  string // 引擎镜像的 VOLUME 声明路径
-		expectExact bool   // true: DataTarget 必须与 volumePath 精确重合
-	}{
-		{engine: "postgres", volumePath: "/var/lib/postgresql/data"}, // 父挂 + PGDATA 重定向
-		{engine: "pgvector", volumePath: "/var/lib/postgresql/data"},
-		{engine: "mysql", volumePath: "/var/lib/mysql", expectExact: true},
-		{engine: "mongo", volumePath: "/data/db", expectExact: true},
-		{engine: "redis", volumePath: "/data", expectExact: true},
-	} {
+	for _, tc := range volumeShadowTable {
 		t.Run(tc.engine, func(t *testing.T) {
 			tpl, ok := dbtemplate.For(tc.engine)
 			require.True(t, ok)
 			target := tpl.DataTarget()
-			if tc.expectExact {
-				assert.Equal(t, tc.volumePath, target,
-					"%s: DataTarget must coincide with the image VOLUME path (exact mount, no shadow)", tc.engine)
-				return
+			// 声明路径按与 DataTarget 的关系三分（形态断言全派生自表 +
+			// DataTarget，无第二份语义）：
+			//   精确重合 → 挂载覆盖声明（无匿名卷）；
+			//   嵌套在 DataTarget 之下 → 遮蔽险（postgres 系父挂形态）→
+			//     显式 PGDATA 逃逸断言（逐嵌套路径）；
+			//   在 DataTarget 之外 → 任务替换铸匿名卷（泄漏面 P2-4，无
+			//     数据丢失面）——如实记档，不判红。
+			// 数据面挂载必须落前两形态之一（二选一契约）。
+			exact := false
+			var nested []string
+			for _, p := range tc.imageVolumes {
+				switch {
+				case p == target:
+					exact = true
+				case strings.HasPrefix(p, target+"/"):
+					nested = append(nested, p)
+				}
 			}
-			// 父挂形态：PGDATA 必须在场、落在 DataTarget 内部、且不在镜像
-			// VOLUME 路径之下（其下任意路径都在匿名卷里）。
-			env, _ := tpl.Workload()
-			pgdata, ok := env["PGDATA"]
-			require.True(t, ok, "%s: parent-mount DataTarget requires explicit PGDATA", tc.engine)
-			assert.True(t, strings.HasPrefix(pgdata, target+"/"),
-				"%s: PGDATA %q must live inside DataTarget %q", tc.engine, pgdata, target)
-			assert.NotEqual(t, tc.volumePath, pgdata,
-				"%s: PGDATA must not sit on the image VOLUME path %q (anonymous volume shadows it)", tc.engine, tc.volumePath)
-			assert.False(t, strings.HasPrefix(pgdata, tc.volumePath+"/"),
-				"%s: PGDATA %q must not live under the image VOLUME path %q", tc.engine, pgdata, tc.volumePath)
+			require.True(t, exact || len(nested) > 0,
+				"%s: DataTarget %q neither coincides with nor parents any declared image VOLUME %v (mount contract requires one of the two forms)",
+				tc.engine, target, tc.imageVolumes)
+			for _, p := range nested {
+				// 父挂形态：PGDATA 必须在场、落在 DataTarget 内部、且不在该
+				// 嵌套声明路径之上或之下（其下任意路径都在匿名卷里）。
+				env, _ := tpl.Workload()
+				pgdata, ok := env["PGDATA"]
+				require.True(t, ok, "%s: parent-mount DataTarget requires explicit PGDATA (shadowing path %q)", tc.engine, p)
+				assert.True(t, strings.HasPrefix(pgdata, target+"/"),
+					"%s: PGDATA %q must live inside DataTarget %q", tc.engine, pgdata, target)
+				assert.NotEqual(t, p, pgdata,
+					"%s: PGDATA must not sit on the image VOLUME path %q (anonymous volume shadows it)", tc.engine, p)
+				assert.False(t, strings.HasPrefix(pgdata, p+"/"),
+					"%s: PGDATA %q must not live under the image VOLUME path %q", tc.engine, pgdata, p)
+			}
 		})
 	}
 }

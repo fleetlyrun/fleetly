@@ -357,6 +357,11 @@ ADR-0015 升级序的完整落地形态：**Platform Backup 前置 → SIGTERM �
 - **受管 zot 边界（ADR-0019 附录 B.5）**：~~数据卷节点本地无钉住~~（F2.3b 429b521 收口：带卷受管 Workload 钉控制面节点——zot/edge 均已钉住；spec 变更不再漂移）；镜像无 GC（只增）；新 worker 加入时 dockerd 必须带同款 `--insecure-registry 10.124.0.3:5000`。
 - **ssh 命令里的 `$()`/管道在 Windows 侧会被转义吃掉**——远程复杂操作一律写脚本→scp→sh（本 runbook 2026-10-02 的全部诊断脚本在 manager `/root/dogfooding/`）。
 - **dbtemplate digest 钉不防 registry 侧清退**（上游删 digest 后重拉失败；ADR-0045 决策 5 诚实边界）：换装/新装前预拉镜像或评估镜像入受管 zot（超射程记档）；e2e 预拉只暖层不暖 index，digest 解析需 registry 可达一次。
+- **dbtemplate digest bump 批必跑 VOLUME 契约 live 核对**（2026-10-05 N2 评审 P2-1 执法补强；ADR-0045 执法补强节）：改 adapter 钉定对常量的批次，本地实跑
+  ```sh
+  FLEETLY_DBTEMPLATE_LIVE=1 go test ./internal/engine/dbtemplate/ -run TestVolumeShadowContractLive
+  ```
+  （经 Docker Hub 匿名 API 读钉定 index 的 VOLUME 集与唯一预期表对账；需出网可达 registry-1.docker.io 一次，缺省 SKIP 不红 CI。实测锚：mongo 另声明 /data/configdb——P2-4 匿名卷泄漏的镜像遗产面。）红 = 上游 VOLUME 面变化：按 ADR-0045 决策 4 评估射程（patch 内不变量被破坏 = major 级变更走独立 ADR），不许静默改表。
 - **docker 日志驱动默认 json-file 无轮转**（ADR-0040 卫生挂账）：磁盘占用无界 + VL 断流补窗深度以日志文件在场为界；运维建议 daemon.json 配 log-opts max-size/max-file（改后新容器生效）。
 
 ### 端口暴露矩阵（操作者责任 + 平台自证，ADR-0036）
