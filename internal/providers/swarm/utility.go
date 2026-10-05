@@ -160,10 +160,14 @@ func (p *Provider) daemonUtilityExec(ctx context.Context, spec utilityContainerS
 	}
 	id := created.ID
 	// 结束即删（含中断路径；daemon 对已消失容器的 Remove 幂等）。
+	// RemoveVolumes 必带：工具容器用的引擎镜像声明 VOLUME（如 pgvector
+	// 的 /var/lib/postgresql/data）——docker 在 create 期已为它分配匿名卷，
+	// 删容器不带本旗标会逐次泄漏（2026-10-05 staging 实录：attachable 拒绝
+	// 使 START 失败但容器已创建，1s 重试 × 33h 累计 11.6 万枚匿名卷）。
 	defer func() {
 		rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), utilityRemoveTimeout)
 		defer cancel()
-		_, _ = p.cli.ContainerRemove(rctx, id, client.ContainerRemoveOptions{Force: true})
+		_, _ = p.cli.ContainerRemove(rctx, id, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true})
 	}()
 
 	attach, err := p.cli.ContainerAttach(ctx, id, client.ContainerAttachOptions{

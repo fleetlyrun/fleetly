@@ -253,6 +253,10 @@ log "[postgres] data survived task replacement"
 # 成功。rebuild 是分钟级同步动词（detach 排水 + 复建 + re-attach 的滚动
 # 替换窗）；本腿唯一附着载体 = 库服务（dind 腿无受管 Proxy 挂网）。----
 log "[postgres] backup must fail on the legacy non-attachable network"
+# 匿名卷泄漏锚（失败面，2026-10-05 staging 实录回归钉）：utility 容器在
+# create 期已为镜像 VOLUME 分配匿名卷，START 被拒后删容器不带
+# RemoveVolumes 即逐次泄漏——本窗只含这一次失败尝试，计数必须零增量。
+ANON_FAIL_BEFORE=$(docker exec "$DIND_CID" docker volume ls -q | grep -cE '^[0-9a-f]{64}$' || true)
 cli databases backup "$PG_SRC" >/dev/null
 i=0; st=""
 while [ "$i" -lt 120 ]; do
@@ -267,6 +271,10 @@ done
 cli --json databases backups "$PG_SRC" | grep -q "not attachable" \
   || fail "legacy-form backup error lacks the attachable anchor"
 log "legacy-form backup failed as designed (attachable anchor present)"
+ANON_FAIL_AFTER=$(docker exec "$DIND_CID" docker volume ls -q | grep -cE '^[0-9a-f]{64}$' || true)
+[ "$ANON_FAIL_AFTER" = "$ANON_FAIL_BEFORE" ] \
+  || fail "the failed backup attempt leaked an anonymous volume ($ANON_FAIL_BEFORE -> $ANON_FAIL_AFTER): utility remove must carry RemoveVolumes"
+log "no anonymous volume leaked by the failed utility attempt"
 
 log "[postgres] rebuilding the network (ADR-0046 verb)"
 REBUILD_OUT=$(cli networks rebuild --project "$PROJECT_ID" default)
@@ -299,7 +307,14 @@ PG_AFTER=$(docker exec "$DIND_CID" docker exec "$PG_CID" psql -U fleetly -d flee
 log "database serving again after rebuild (network DNS + data intact)"
 
 log "[postgres] backup + verify"
+# 匿名卷泄漏锚（成功面）：本窗只含一次成功备份的 utility 生灭（无任务替
+# 换——db task 的镜像 VOLUME 遗产不在本窗），计数必须零增量。
+ANON_OK_BEFORE=$(docker exec "$DIND_CID" docker volume ls -q | grep -cE '^[0-9a-f]{64}$' || true)
 PG_BACKUP=$(backup_and_verify "$PG_SRC")
+ANON_OK_AFTER=$(docker exec "$DIND_CID" docker volume ls -q | grep -cE '^[0-9a-f]{64}$' || true)
+[ "$ANON_OK_AFTER" = "$ANON_OK_BEFORE" ] \
+  || fail "the successful backup leaked an anonymous volume ($ANON_OK_BEFORE -> $ANON_OK_AFTER): utility remove must carry RemoveVolumes"
+log "no anonymous volume leaked by the successful utility run"
 
 log "[postgres] restoring into a new database"
 PG_DST=$(restore_target postgres pgshop-restored "$PG_BACKUP")
