@@ -183,6 +183,7 @@ staging 真机验收（14:53-14:56）：
 - **`docker service logs` 在本 daemon（29.8.1）可无限挂起**（对已删/不存在服务尤甚——10-02 起三只僵尸即此，连带 nettest3/4、mgrtest 残留）；诊断一律容器级 `timeout 20 docker logs <cid>`，service 级禁用。
 - pkill -f 自匹配：ssh 远端命令行含 pattern 即自杀（会话无输出退出）——按 PID kill。
 - db 任务每次替换泄漏一枚匿名卷（镜像 VOLUME 遗产）：本机已积 1680 枚——RuntimeHygiene 扫匿名孤儿卷**挂账**。
+  - **闭合注记（2026-10-05，N2 评审批 P2-4 根修）**：匿名孤儿卷清扫落地（88bc1c6；`RuntimeHygiene` 子面扩 `SweepOrphanVolumes`，retention janitor 100 枚/拍 × 10 分钟节拍）。判据五重全满足才删（宁可漏扫不可误删）：① 名字 64 位小写 hex（docker 匿名卷命名规律，命名卷/fleetly-vol-* 天然出局）；② 悬空（daemon dangling 过滤，无任何容器引用）；③ 出生超 7d 年龄窗；④ 无任何 label（用户/编排器标记卷绝不碰）；⑤ 仅控制面节点本机 daemon（worker 节点泄漏不在射程）。法律依据 = 架构 §8 孤儿词条后半句"平台自建残留由看门狗收口"。staging 实效预期：存量 1680 枚按 100/拍约 17 拍（~3 小时）清空；稳态每次 db 替换泄漏一枚、7d 窗后由清扫回收。**诚实边界**：匿名卷无标记面，操作者想保住某枚就得在 7d 窗内命名化或导出（如 `docker run --rm -v <64hex名>:/from -v "$PWD:/to" busybox cp -a /from/. /to/` 导出，或 `docker volume create` 具名副本后迁数据）——窗外无保留手段：匿名卷不载任何"谁在用它"的信息，超窗即按平台副产物收口。
 - 升级断言面：**路由 200 ≠ 数据在场**——数据核对步已进升级操作序第 5 步。
 
 ## 2026-10-04 记录·二（per-Project registry 凭证域隔离上线：迁移实录 + 竞速修复）
