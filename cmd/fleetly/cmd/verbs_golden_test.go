@@ -6,6 +6,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -17,6 +18,7 @@ import (
 	automationv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/automation/v1"
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	"github.com/fleetlyrun/fleetly/internal/apitest"
+	"github.com/fleetlyrun/fleetly/internal/capability"
 	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
@@ -264,6 +266,18 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 			"--idempotency-key", "bgimg-1"}, 0},
 		{"revisions diff strategy", []string{"revisions", "diff", "--app", "GOLDEN_APP3", "--from", "1", "--to", "2"}, exitChanges},
 
+		// F3.1 API 可见面（from_generation / process_strategies 读面）：
+		// "deploy compose strategy" 步后钩子把 app3 蓝绿 R1 驱动到 succeeded
+		//（代次化载体 g1 的 L1 + 观察窗——基线 gen 1 落位）；本段第三笔
+		// blue-green 部署（换镜像 → R3 新冻结）携带 from_generation=1 与
+		// merged 受理（R2 的 queued 请求被合并取代）。deployments get 钉
+		// 单行双代窗叙事（generation 3←1），revisions list 钉策略目录
+		//（R1/R3 web:blue-green、R2 缺省 rolling 的零值省略形态）。
+		{"deploy compose strategy bump", []string{"deploy", "--app", "GOLDEN_APP3", "--compose-file", "GOLDEN_COMPOSE_BG_BUMP",
+			"--idempotency-key", "compose-bg-3"}, 0},
+		{"deployments get", []string{"deployments", "get", "--deployment", "GOLDEN_BG_DEPLOYMENT"}, 0},
+		{"revisions list strategies", []string{"revisions", "list", "--app", "GOLDEN_APP3"}, 0},
+
 		// Platform 动词（F2.3，ADR-0039 决策 10）：手动触发（同步执行——
 		// 幂等键让 --json 轮重放同响应）与快照列举（假 restic 的 canned
 		// 集；golden 双形态）。
@@ -294,10 +308,15 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 	composeBGFile := filepath.Join(t.TempDir(), "compose-bg.yaml")
 	require.NoError(t, os.WriteFile(composeBGFile, []byte(
 		"services:\n  web:\n    image: nginx:1.27\n    deploy:\n      strategy: blue-green\n"), 0o600))
+	// GOLDEN_COMPOSE_BG_BUMP 是基线之上的第二笔 blue-green（换镜像 →
+	// 内容寻址新冻结 R3；strategy 同键——from_generation golden 的载体）。
+	composeBGBumpFile := filepath.Join(t.TempDir(), "compose-bg-bump.yaml")
+	require.NoError(t, os.WriteFile(composeBGBumpFile, []byte(
+		"services:\n  web:\n    image: nginx:1.28\n    deploy:\n      strategy: blue-green\n"), 0o600))
 
 	// GOLDEN_PROJECT/GOLDEN_APP 占位替换为夹具真实 ID（项目 ID 是 ULID，
 	// 归一后可预测）。
-	var projectID, project2ID, networkID, peerID, appID, app2ID, app3ID, taskID, task2ID, runID, scheduleID, freezeID, deployID, rollbackDeployID string
+	var projectID, project2ID, networkID, peerID, appID, app2ID, app3ID, taskID, task2ID, runID, scheduleID, freezeID, deployID, rollbackDeployID, bgDeployID string
 	for _, st := range steps {
 		t.Run(st.verb, func(t *testing.T) {
 			args := st.args
@@ -352,6 +371,12 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 				}
 				if a == "GOLDEN_COMPOSE_BG" {
 					args[i] = composeBGFile
+				}
+				if a == "GOLDEN_COMPOSE_BG_BUMP" {
+					args[i] = composeBGBumpFile
+				}
+				if a == "GOLDEN_BG_DEPLOYMENT" {
+					args[i] = bgDeployID
 				}
 				if a == "GOLDEN_SPECFILE" {
 					args[i] = specFile
@@ -431,6 +456,20 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 			// 不驱动完成：done 游标下字段归空）。
 			if st.verb == "deploy compose jobs" {
 				anchorFirstBootJob(t, h, app2ID)
+			}
+			// app3 蓝绿 R1 驱动到 succeeded（F3.1 from_generation 基线）：
+			// 首代无旧代（from=0，窗口退化为单代），载体是代次化 g1——
+			// promoteToSucceeded 的平名上报对蓝绿新代不命中。
+			if st.verb == "deploy compose strategy" {
+				promoteScopedToSucceeded(t, h, app3ID, 1)
+			}
+			// 蓝绿基线之上的第三笔部署 ID（deployments get 步的锚）。
+			if st.verb == "deploy compose strategy bump" {
+				m := deploymentQueuedRe.FindStringSubmatch(out)
+				if len(m) < 2 {
+					t.Fatalf("cannot extract deployment id from bump output: %q", out)
+				}
+				bgDeployID = m[1]
 			}
 			// runs stop 后收口到终态（runs wait 的前置：WaitRun 首帧即终态）。
 			if st.verb == "runs stop" {
@@ -515,10 +554,25 @@ func extractTailID(out string) string {
 // rollback 的成功基线前置——手动形态保证 golden 确定性）。
 func promoteToSucceeded(t *testing.T, h *apitest.Harness, appID string) {
 	t.Helper()
+	promoteCarrierToSucceeded(t, h, appID, appID+"-web", 1)
+}
+
+// promoteScopedToSucceeded 驱动蓝绿部署到 succeeded（F3.1 from_generation
+// golden 的基线前置）：新代载体是代次化名 app-web-g<gen>（ADR-0048 决策
+// 1.4——genScopedWorkloadID 公式），running 上报按代次名命中 L1。
+func promoteScopedToSucceeded(t *testing.T, h *apitest.Harness, appID string, gen uint64) {
+	t.Helper()
+	promoteCarrierToSucceeded(t, h, appID, fmt.Sprintf("%s-web-g%d", appID, gen), gen)
+}
+
+// promoteCarrierToSucceeded 是驱动公因子：载体 running 观测 + 假时钟推过
+// L1/L3，直到该 App 最新部署行 succeeded。
+func promoteCarrierToSucceeded(t *testing.T, h *apitest.Harness, appID, workloadID string, gen uint64) {
+	t.Helper()
 	client := deliveryv1.NewDeploymentsServiceClient(h.Conn)
 	ctx := sdk.WithToken(context.Background(), h.Token) // 执法链激活后读路径同样要凭证
 	for i := 0; i < 20; i++ {
-		h.Runtime.ReportRunning(appID+"-web", 1)
+		h.Runtime.ReportRunning(workloadID, capability.Generation(gen))
 		h.Drive(ctx)
 		h.Clock.Advance(120 * time.Second)
 		h.Drive(ctx)

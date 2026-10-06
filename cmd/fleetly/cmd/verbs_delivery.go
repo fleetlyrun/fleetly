@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/lynx-go/commands"
 	"google.golang.org/protobuf/proto"
@@ -19,6 +20,7 @@ import (
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	proxyv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/proxy/v1"
 	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
+	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	"github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
@@ -400,6 +402,80 @@ func newBuildsWaitVerb() commands.Command {
 	}
 }
 
+// newDeploymentsGetVerb 构造 deployments get（F3.1 API 可见面批）：单行
+// 读面钉双代窗叙事字段（from_generation/observe_deadline/first_boot_task_id
+// ——list 列形态不携带的行细节；REST GetDeployment 面在册，CLI 补齐同款
+// Agent 语义断裂先例 = deployments cancel）。
+func newDeploymentsGetVerb() commands.Command {
+	const name = "get"
+	var depID string
+	return &flaggedVerb{
+		name:     name,
+		synopsis: "Show one deployment in full (generation window, observe deadline, error)",
+		usage:    "deployments get --deployment DEPLOYMENT_ID",
+		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&depID, "deployment", "", "deployment id (required)") },
+		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
+			if depID == "" {
+				return usageErr(name, "--deployment is required")
+			}
+			ctx, cancel, c, err := dialFromEnv(ctx)
+			if err != nil {
+				return err
+			}
+			defer cancel()
+			defer c.Close() //nolint:errcheck // 进程退出路径
+			resp, err := c.Deployments.GetDeployment(ctx, &deliveryv1.GetDeploymentRequest{Id: depID})
+			if err != nil {
+				return err
+			}
+			return renderOut(env, jsonOut, resp.GetDeployment(), func() {
+				d := resp.GetDeployment()
+				_, _ = fmt.Fprintf(env.Stdout, "deployment %s %s\n", d.GetId(), d.GetState())
+				_, _ = fmt.Fprintf(env.Stdout, "  revision:   %s → %s\n", d.GetFromRevision(), d.GetToRevision())
+				_, _ = fmt.Fprintf(env.Stdout, "  generation: %s\n", generationCell(d))
+				if d.GetObserveDeadline() != "" {
+					_, _ = fmt.Fprintf(env.Stdout, "  observe deadline: %s\n", d.GetObserveDeadline())
+				}
+				if d.GetFirstBootTaskId() != "" {
+					_, _ = fmt.Fprintf(env.Stdout, "  first boot task: %s\n", d.GetFirstBootTaskId())
+				}
+				if d.GetError() != "" {
+					_, _ = fmt.Fprintf(env.Stdout, "  error: %s\n", d.GetError())
+				}
+			})
+		},
+	}
+}
+
+// generationCell 是部署行的代次形态（F3.1 双代窗叙事）：有基线时
+// "NEW←BASE"（← 读 from——replay 与蓝绿双代窗同款诚实），首代纯数字。
+func generationCell(d *deliveryv1.Deployment) string {
+	if d.GetFromGeneration() > 0 {
+		return fmt.Sprintf("%d←%d", d.GetGeneration(), d.GetFromGeneration())
+	}
+	return fmt.Sprintf("%d", d.GetGeneration())
+}
+
+// strategySummary 是 Revision 行的策略列形态：全 rolling/无进程 = "—"；
+// 否则 "process:strategy" 逗号并置（只列 blue-green——rolling 是缺省语义，
+// 全列等于每行都写 web:rolling 的噪声；人类词形 = compose intake 同源
+// rolling|blue-green，ADR-0048 词汇面）。
+func strategySummary(entries []*deliveryv1.ProcessStrategy) string {
+	var parts []string
+	for _, e := range entries {
+		if e.GetStrategy() == specv1.DeployStrategy_DEPLOY_STRATEGY_BLUE_GREEN {
+			parts = append(parts, e.GetProcess()+":blue-green")
+		}
+	}
+	if len(parts) == 0 {
+		return "—"
+	}
+	return strings.Join(parts, ",")
+}
+
 // newDeploymentsCancelVerb 构造 deployments cancel（ADR-0016 CLI 补面）：
 // CancelDeployment 的 API/REST 面在册而 CLI 缺席，Agent 语义断裂。幂等
 // 语义照 API——排队/在途可取消（终态拒：E_NOT_CANCELLABLE 信封，随机
@@ -467,7 +543,7 @@ func newDeploymentsListVerb() commands.Command {
 			return renderOut(env, jsonOut, resp, func() {
 				_, _ = fmt.Fprintln(env.Stdout, "ID\tSTATE\tREVISION\tGENERATION\tUPDATED")
 				for _, d := range resp.GetDeployments() {
-					_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\t%d\t%s\n", d.GetId(), d.GetState(), d.GetToRevision(), d.GetGeneration(), d.GetUpdatedAt())
+					_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\t%s\t%s\n", d.GetId(), d.GetState(), d.GetToRevision(), generationCell(d), d.GetUpdatedAt())
 				}
 			})
 		},
@@ -560,9 +636,9 @@ func newRevisionsListVerb() commands.Command {
 				return err
 			}
 			return renderOut(env, jsonOut, resp, func() {
-				_, _ = fmt.Fprintln(env.Stdout, "SEQ\tID\tDIGEST\tCREATED")
+				_, _ = fmt.Fprintln(env.Stdout, "SEQ\tID\tDIGEST\tSTRATEGY\tCREATED")
 				for _, r := range resp.GetRevisions() {
-					_, _ = fmt.Fprintf(env.Stdout, "R%d\t%s\t%s\t%s\n", r.GetSeq(), r.GetId(), r.GetDigest(), r.GetCreatedAt())
+					_, _ = fmt.Fprintf(env.Stdout, "R%d\t%s\t%s\t%s\t%s\n", r.GetSeq(), r.GetId(), r.GetDigest(), strategySummary(r.GetProcessStrategies()), r.GetCreatedAt())
 				}
 			})
 		},

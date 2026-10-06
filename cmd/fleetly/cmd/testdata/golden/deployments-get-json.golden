@@ -1,0 +1,12 @@
+{
+  "id": "<ULID>",
+  "app_id": "<ULID>",
+  "from_revision": "<ULID>",
+  "to_revision": "<ULID>",
+  "state": "queued",
+  "generation": "3",
+  "idempotency_key": "compose-bg-3",
+  "created_at": "2026-01-01T00:04:00Z",
+  "updated_at": "2026-01-01T00:04:00Z",
+  "from_generation": "1"
+}

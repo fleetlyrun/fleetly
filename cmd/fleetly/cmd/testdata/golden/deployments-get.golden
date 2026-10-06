@@ -1,0 +1,3 @@
+deployment <ULID> queued
+  revision:   <ULID> → <ULID>
+  generation: 3←1

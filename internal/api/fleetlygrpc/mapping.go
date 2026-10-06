@@ -10,6 +10,7 @@ import (
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	proxyv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/proxy/v1"
 	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
+	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/api/apperr"
 	"github.com/fleetlyrun/fleetly/internal/engine"
@@ -22,6 +23,7 @@ import (
 	networkrepo "github.com/fleetlyrun/fleetly/internal/state/network"
 	"github.com/fleetlyrun/fleetly/internal/state/node"
 	"github.com/fleetlyrun/fleetly/internal/state/project"
+	"github.com/fleetlyrun/fleetly/internal/state/revision"
 	"github.com/fleetlyrun/fleetly/internal/state/route"
 	"github.com/fleetlyrun/fleetly/internal/state/secret"
 	"github.com/fleetlyrun/fleetly/internal/state/sharedvariable"
@@ -133,7 +135,28 @@ func deploymentMsg(d deployment.Deployment) *deliveryv1.Deployment {
 		CommitSha: d.CommitSHA, SupersededBy: d.SupersededBy, Error: d.Error,
 		ObserveDeadline: d.ObserveDeadline, CreatedAt: d.CreatedAt, UpdatedAt: d.UpdatedAt,
 		FinishedAt: d.FinishedAt, FirstBootTaskId: engine.FirstBootTaskID(&d),
+		FromGeneration: d.FromGeneration,
 	}
+}
+
+// revisionMsg 是 Revision 行投影（F3.1：process_strategies 从冻结 spec 派生
+// ——行本就存 AppSpec protojson 规范序列化，解析零额外存储面；解析失败
+// 静默退化为零值摘要（不可变行落库前已过 ValidateApp，坏行不该出现，
+// 读面不因摘要缺位而整页 500）。
+func revisionMsg(rev revision.Revision) *deliveryv1.Revision {
+	msg := &deliveryv1.Revision{
+		Id: rev.ID, AppId: rev.AppID, Seq: rev.Seq, Digest: rev.Digest, CreatedAt: rev.CreatedAt,
+	}
+	var frozen specv1.AppSpec
+	if err := protojson.Unmarshal(rev.Spec, &frozen); err == nil {
+		for i := range frozen.Processes {
+			p := frozen.Processes[i]
+			msg.ProcessStrategies = append(msg.ProcessStrategies, &deliveryv1.ProcessStrategy{
+				Process: p.GetName(), Strategy: p.GetStrategy(),
+			})
+		}
+	}
+	return msg
 }
 
 // admissionMsg 是 Submit 判定附注的响应投影（P10；nil 安全——engine 旧

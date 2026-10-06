@@ -368,6 +368,20 @@ export interface components {
             deployment?: components["schemas"]["v1Deployment"];
             admission?: components["schemas"]["v1Admission"];
         };
+        /**
+         * DeployStrategy 是部署切换策略（CONTEXT.md Deployment Strategy 词条：
+         *     rolling | blue-green；Avoid 表两词条不引入——渐进分流与代次槽位机制
+         *     均显式不做，ADR-0048）。blue-green = engine 的编排变体（Runtime 契约
+         *     不变，ADR-0048）：双代窗期间两代载体并存，新代 L1 全就绪才切换流量。
+         *     UNSPECIFIED（零值）语义归一为 rolling——存量 Revision 无该字段重放即
+         *     rolling，无迁移面。
+         * @description - DEPLOY_STRATEGY_UNSPECIFIED: 缺省 = rolling（归一面：投影/引擎按 rolling 语义消费）。
+         *      - DEPLOY_STRATEGY_ROLLING: 滚动替换（与既有语义逐字节相同——存量零变化）。
+         *      - DEPLOY_STRATEGY_BLUE_GREEN: 蓝绿：旧代∪新代双代窗 → 新代 L1 门 → 切换 → 观察窗 → 收口。
+         * @default DEPLOY_STRATEGY_UNSPECIFIED
+         * @enum {string}
+         */
+        v1DeployStrategy: "DEPLOY_STRATEGY_UNSPECIFIED" | "DEPLOY_STRATEGY_ROLLING" | "DEPLOY_STRATEGY_BLUE_GREEN";
         /** Deployment 是受监督迁移的行形态（状态机值 kebab-case 与存储一致）。 */
         v1Deployment: {
             id?: string;
@@ -390,6 +404,14 @@ export interface components {
              *     态 jobs 子相位非空；无作业或已完成为空。ADR-0030）。
              */
             first_boot_task_id?: string;
+            /**
+             * from_generation 是基线 Generation（最近 succeeded 行的 gen；ADR-0048
+             *     双代窗的旧代锚）。0 = 无基线（首次部署/存量行——protojson 零值省略，
+             *     与 generation 的首代形态一致）。Console 判"双代窗进行中"= 活跃部署
+             *     state ∈ releasing/observing 且 from_generation < generation。
+             * Format: uint64
+             */
+            from_generation?: string;
         };
         v1DiffEntry: {
             path?: string;
@@ -436,6 +458,14 @@ export interface components {
         v1ListUploadsResponse: {
             uploads?: components["schemas"]["v1Upload"][];
         };
+        /**
+         * ProcessStrategy 是 Revision 冻结体的单进程策略摘要（F3.1：双代窗叙事
+         *     的最小读面——名字 + 策略，不携带 spec 全文；声明序即列表序）。
+         */
+        v1ProcessStrategy: {
+            process?: string;
+            strategy?: components["schemas"]["v1DeployStrategy"];
+        };
         v1ReceiveWebhookResponse: {
             /**
              * status: pong（ping 事件）| accepted | skipped | ignored
@@ -455,6 +485,15 @@ export interface components {
             seq?: string;
             digest?: string;
             created_at?: string;
+            /**
+             * process_strategies 是冻结体全进程的策略目录投影（F3.1 读面裁决：
+             *     Revision 行本就存 AppSpec 冻结体，本字段把 per-process strategy 从
+             *     "只能 diff 两侧才可见"升为列表即可见——首部署无 from 侧、replay 同
+             *     侧 diff 均为空，diff 面不构成 Console 双代窗叙事的数据源）。全进程
+             *     在场（含 rolling——strategy 缺省零值时 protojson 省略 strategy 字段，
+             *     消费方按 rolling 解释，与 ProcessSpec.strategy 的缺省语义同款）。
+             */
+            process_strategies?: components["schemas"]["v1ProcessStrategy"][];
         };
         v1RollbackResponse: {
             deployment?: components["schemas"]["v1Deployment"];

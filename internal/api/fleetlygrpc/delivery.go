@@ -390,9 +390,7 @@ func (svc *RevisionsService) ListRevisions(ctx context.Context, req *deliveryv1.
 	}
 	out := &deliveryv1.ListRevisionsResponse{}
 	for _, rev := range list {
-		out.Revisions = append(out.Revisions, &deliveryv1.Revision{
-			Id: rev.ID, AppId: rev.AppID, Seq: rev.Seq, Digest: rev.Digest, CreatedAt: rev.CreatedAt,
-		})
+		out.Revisions = append(out.Revisions, revisionMsg(rev))
 	}
 	return out, nil
 }

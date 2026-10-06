@@ -1,0 +1,42 @@
+{
+  "revisions": [
+    {
+      "id": "<ULID>",
+      "app_id": "<ULID>",
+      "seq": "1",
+      "digest": "<DIGEST>",
+      "created_at": "2026-01-01T00:02:00Z",
+      "process_strategies": [
+        {
+          "process": "web",
+          "strategy": "DEPLOY_STRATEGY_BLUE_GREEN"
+        }
+      ]
+    },
+    {
+      "id": "<ULID>",
+      "app_id": "<ULID>",
+      "seq": "2",
+      "digest": "<DIGEST>",
+      "created_at": "2026-01-01T00:04:00Z",
+      "process_strategies": [
+        {
+          "process": "web"
+        }
+      ]
+    },
+    {
+      "id": "<ULID>",
+      "app_id": "<ULID>",
+      "seq": "3",
+      "digest": "<DIGEST>",
+      "created_at": "2026-01-01T00:04:00Z",
+      "process_strategies": [
+        {
+          "process": "web",
+          "strategy": "DEPLOY_STRATEGY_BLUE_GREEN"
+        }
+      ]
+    }
+  ]
+}

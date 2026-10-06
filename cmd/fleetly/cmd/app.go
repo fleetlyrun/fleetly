@@ -84,7 +84,7 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 			newDatabasesBackupVerb(), newDatabasesBackupsVerb(), newDatabasesVerifyVerb()),
 		// Delivery 上下文。
 		newDeployVerb(),
-		groupVerb("deployments", "inspect, wait for and cancel deployments", newDeploymentsListVerb(), newDeploymentsWaitVerb(), newDeploymentsCancelVerb()),
+		groupVerb("deployments", "inspect, wait for and cancel deployments", newDeploymentsListVerb(), newDeploymentsGetVerb(), newDeploymentsWaitVerb(), newDeploymentsCancelVerb()),
 		newRollbackVerb(),
 		groupVerb("revisions", "inspect frozen revisions", newRevisionsListVerb(), newRevisionsDiffVerb()),
 		groupVerb("builds", "inspect and wait for builds, stream build logs", newBuildsListVerb(), newBuildsWaitVerb(), newBuildsLogsVerb()),
