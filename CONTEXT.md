@@ -104,6 +104,10 @@ _Avoid_: version, snapshot
 从旧 Revision 到新 Revision 的受监督迁移。
 _Avoid_: apply, release, rollout, deploy(名词单用)
 
+**Deployment Strategy**:
+Process 级部署切换策略：rolling（默认，健康门内逐代替换）| blue-green（双 Generation 并存窗，先验后切；ADR-0048）。Database/受管域不适用。
+_Avoid_: canary, slot
+
 **Admission**:
 创建型请求的入队判定：去重、latest-wins 合并、supersede 抢占、queue 满反馈。受理响应附注（P10）：outcome=queued|merged|superseded|deduplicated + position（per-App 串行位次，1=队头）+ existing_deployment（deduplicated 时的既有引用）；幂等层命中（ADR-0024）重放原始响应、不标 deduplicated——两机制分立。
 _Avoid_: throttle(另指限流), gate

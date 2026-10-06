@@ -70,6 +70,10 @@ var bannedPatterns = map[string]*regexp.Regexp{
 	// 标识符（词边界内嵌不命中）；泛称义（把受理位叫 middleware）命中即红。
 	"middleware":       wordRe(`middleware|middlewares`),
 	"validation layer": wordRe(`validation[ _]layer`),
+	// Deployment Strategy 词条（ADR-0048 入册）。canary 显式不做（T1 后
+	// 再议），机械无歧义、扫描面零命中；slot 是 zane 的 slot 别名机制词
+	// ——本仓不引入，但泛义英文（占位义）误伤面大，进 skipped 人工把关。
+	"canary": wordRe(`canary|canaries`),
 }
 
 // wordRe 构造大小写不敏感、词边界的匹配器（多形态以 | 预展开）。
@@ -198,6 +202,9 @@ var skippedTokens = map[string]string{
 	"admin key":        "短语；人工评审",
 	"notification":     "N2 告警通知通道为契约语汇；Event 同义词语境禁",
 	"webhook":          "GitHub webhook（F0.13）为契约语汇；仅 Event 通知通道语境禁",
+	// Deployment Strategy 词条（ADR-0048）：slot 禁的是 zane 的 slot 别名
+	// 机制义；占位泛义（free a slot/实例池 slot）为通用英文在用。
+	"slot": "通用占位义（free a slot/task slot）合法；zane slot 别名机制义人工评审",
 }
 
 // contextAvoidTokens 解析 CONTEXT.md 的 _Avoid_ 行，收集全部词条（剥除
