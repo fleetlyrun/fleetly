@@ -134,7 +134,7 @@ func (e *Engine) prepare(ctx context.Context, d *deployment.Deployment) (*deploy
 	// 态产出；releasing 前再次投影校验）；无 Build 声明的 from_build 是
 	// 永久错误，此处精确失败。跨 Project 引用未 approved 同样 fail-closed
 	//（ADR-0013 附录 A.3——受理面已拒一次，此处是部署链内的第二道）。
-	digests, derr := e.buildDigests(ctx, d)
+	digests, derr := e.buildDigests(ctx, d.AppID, d.ToRevision)
 	if derr == nil && (digests != nil || spec.GetBuild() == nil) {
 		peers, perr := e.resolvePeerRefs(ctx, e.db.Runner(), spec.GetApp().GetProject(), spec, false)
 		if perr == nil {
@@ -180,8 +180,21 @@ func (e *Engine) release(ctx context.Context, d *deployment.Deployment) (*deploy
 	if !jobsDone {
 		return nil, nil // 等 job 终态（tick 再进）
 	}
+	// blue-green 变体路径（ADR-0048 决策 1/2：firstBootJobs 在新代 L1 之前
+	// ——jobs 是部署相位不是代属性，序列不变）。BG 部署走双代窗物化，
+	// rolling 部署维持单代 materialize（存量路径逐字节不变）。
+	bg := anyBlueGreen(spec)
 	if e.releaseMaterializeFresh(d) {
 		// 签名短路（C17）：等待期重物化跳过，观测门/超时门照常判定。
+	} else if bg {
+		team, appRow, terr := e.appTeam(ctx, d.AppID)
+		if terr != nil {
+			return e.failDeployment(ctx, d, "resolve app: "+terr.Error())
+		}
+		if werr := e.blueGreenWindowMaterialize(ctx, d, spec, team, appRow.Name); werr != nil {
+			return e.failDeployment(ctx, d, werr.Error())
+		}
+		e.rememberReleaseMaterialize(d)
 	} else if err := e.materialize(ctx, d, d.ToRevision, d.Generation, false); err != nil {
 		return e.failDeployment(ctx, d, err.Error())
 	} else {
@@ -199,11 +212,23 @@ func (e *Engine) release(ctx context.Context, d *deployment.Deployment) (*deploy
 	if e.releaseReady(d) {
 		e.ensureForget(e.delivery.release, d.ID) // 离开 releasing：物化备忘随相位作废
 		window := state.FormatTime(e.clock.Now().Add(e.opts.ObserveWindow))
-		return e.transitAndReload(ctx, d,
+		next, terr := e.transitAndReload(ctx, d,
 			[]deployment.State{deployment.StateReleasing}, deployment.StateObserving,
 			func(m *deployment.Deployment) { m.ObserveDeadline = window })
+		if terr == nil {
+			// 切换步（ADR-0048 决策 1.2）：releasing→observing 迁移即在服代
+			// 翻转（servingGenerations 以行态为源）——即时重发布，Route
+			// 后端不留滞后窗（行集指纹不含后端地址，签名短路不会自发重发）。
+			e.PublishRoutesNow()
+		}
+		return next, terr
 	}
 	if e.clock.Now().After(*deadline) {
+		if bg {
+			// 新代 L1 失败 = "回滚零重建"：Ensure 仅基线 + failed 终态，
+			// 无 Replay（ADR-0048 决策 1.2）。
+			return e.failBlueGreen(ctx, d, "health gate L1 timed out waiting for the new generation to become ready")
+		}
 		return e.failDeployment(ctx, d, "health gate L1 timed out waiting for workloads to become ready")
 	}
 	return nil, nil // 等观测或到期（tick 再进；等待期物化签名短路）
@@ -229,8 +254,10 @@ func (e *Engine) rememberReleaseMaterialize(d *deployment.Deployment) {
 	})
 }
 
-// observe：L3 观察窗到期 → succeeded；L2 看门狗 = 当前 Generation 观测
-// 劣化（stopped）→ 失败回滚。
+// observe：L3 观察窗到期 → 收口（blue-green：Ensure 仅新代——旧代载体
+// 移除、stable 别名随旧代退役新代继承，ADR-0048 决策 1.2）→ succeeded；
+// L2 看门狗 = 当前 Generation 观测劣化（stopped）→ 失败回滚（BG 的切回
+// 语义由 failed 态的服务代推导 + rolling-back 在基线 gen 重放兑现）。
 func (e *Engine) observe(ctx context.Context, d *deployment.Deployment) (*deployment.Deployment, error) {
 	if bad := e.watchdogBite(d); bad != "" {
 		return e.failDeployment(ctx, d, "health gate L2 watchdog: "+bad)
@@ -247,6 +274,20 @@ func (e *Engine) observe(ctx context.Context, d *deployment.Deployment) (*deploy
 	}
 	if e.clock.Now().Before(*deadline) {
 		return nil, nil // 观察窗内（tick 再进）
+	}
+	// blue-green 收口（ADR-0048 决策 1.2）：期望集 = 仅新代（旧代载体由
+	// 域内收敛移除）。失败不上终态——留 observing 下一拍重试（崩溃在
+	// 收口 Ensure 与迁移之间 = 幂等重放，同形态）。rolling 无收口面
+	//（release 已单代 Ensure，存量路径不变）。
+	spec, err := e.loadSpec(ctx, d.ToRevision)
+	if err != nil {
+		return nil, err
+	}
+	if anyBlueGreen(spec) {
+		if err := e.materialize(ctx, d, d.ToRevision, d.Generation, false); err != nil {
+			e.log.Error("engine observe: blue-green collection ensure", "deployment", d.ID, "err", err)
+			return nil, err
+		}
 	}
 	return e.transitAndReload(ctx, d,
 		[]deployment.State{deployment.StateObserving}, deployment.StateSucceeded, nil)
@@ -265,18 +306,36 @@ func (e *Engine) startRollback(ctx context.Context, d *deployment.Deployment) (*
 // rollback：Revision Replay——重新下发 from_revision 的 Spec（永不编排器
 // 原生回滚，ADR-0005；Ensure 域内收敛天然重建人工删除的载体，场景 2）。
 // 物化走 materialize 单序列（与 release/基线重放同源）。
+//
+// blue-green 切回（ADR-0048 决策 1.2/2）：Replay 在基线 gen 重放（非新
+// 号）——基线载体从未被触碰，Ensure 即 no-op；旧代即刻回服（failed 态的
+// 服务代推导已切回），rolling-back → observing → succeeded 收口。窗口
+// 形态按 to-spec 策略判定（窗口怎么铸的，回滚就怎么收——混策略部署的
+// rolling 进程在重放里照常替换回基线 spec）。
 func (e *Engine) rollback(ctx context.Context, d *deployment.Deployment) (*deployment.Deployment, error) {
+	bg := false
+	if d.FromRevision != "" && d.FromGeneration > 0 {
+		if spec, err := e.loadSpec(ctx, d.ToRevision); err == nil {
+			bg = anyBlueGreen(spec)
+		}
+	}
 	// Replay 用新 Generation 幂等重下发（单调编号；Drift 对照同步刷新）。
 	// deadline 未设 = 首轮（gen 未推进）；已设 = 等待期（gen 已在行上）。
 	// gen 在物化前取（物化失败不落行，号未持久化，重试同号无损）。
 	deadline := parseDeadline(d.ObserveDeadline)
 	gen := d.Generation
-	if deadline == nil {
-		var err error
-		gen, err = e.deployments.NextGeneration(ctx, e.db.Runner(), d.AppID)
-		if err != nil {
-			return e.rollbackFailed(ctx, d, "next generation: "+err.Error())
+	if !bg {
+		if deadline == nil {
+			var err error
+			gen, err = e.deployments.NextGeneration(ctx, e.db.Runner(), d.AppID)
+			if err != nil {
+				return e.rollbackFailed(ctx, d, "next generation: "+err.Error())
+			}
 		}
+	} else {
+		// BG 切回：基线 gen 重放（载体在服事实的 gen——succeeded 行的
+		// "行 gen == 载体 gen"不变式在切回后保持，下一部署的基线锚不漂）。
+		gen = d.FromGeneration
 	}
 	if err := e.materialize(ctx, d, d.FromRevision, gen, false); err != nil {
 		return e.rollbackFailed(ctx, d, err.Error())
@@ -320,9 +379,12 @@ func (e *Engine) rollbackFailed(ctx context.Context, d *deployment.Deployment, r
 // 分支接手）。ObserveDeadline 是相位局部截止（job 等待/L1/L3），进 failed
 // 即终止该相位——残留会让 rollback 误读为"等待期已设、gen 已推进"
 // （ADR-0030：job 等待截止不泄漏进回滚相位）。等待期物化备忘随相位终止
-// 作废（C17）。
+// 作废（C17）。失败即触发即时 Route 重发布（ADR-0048：failed 态的服务代
+// 推导切回基线——行集指纹不含后端地址，靠签名短路不会自发重发；无代理
+// 装配时是 no-op Kick）。
 func (e *Engine) failDeployment(ctx context.Context, d *deployment.Deployment, reason string) (*deployment.Deployment, error) {
 	e.ensureForget(e.delivery.release, d.ID)
+	e.PublishRoutesNow()
 	return e.transitAndReload(ctx, d,
 		deployment.ActiveStatesNoQueued(), deployment.StateFailed,
 		func(m *deployment.Deployment) { m.Error, m.ObserveDeadline = reason, "" })

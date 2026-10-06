@@ -163,7 +163,7 @@ func (o *observDomain) scanGen(appID string, gen uint64, pred func(capability.Wo
 }
 
 // expectations 返回 App 名下的期望 Workload 集（最近 Ensure 投影缓存
-// 快照；Route 后端解析 Addresses 的端口真源）。
+// 快照；Addresses 的端口真源）。
 func (o *observDomain) expectations(appID string) []capability.Workload {
 	o.mu.RLock()
 	defer o.mu.RUnlock()
@@ -177,6 +177,63 @@ func (o *observDomain) expectations(appID string) []capability.Workload {
 		}
 	}
 	return out
+}
+
+// routeExpectations 是 Route 后端解析的期望集快照——蓝绿代次解析的显式
+// 接口（ADR-0048 决策 4/P15：resolveBackend 消费代次化地址，不再是观测
+// 缓存"不参与决策"口径的例外）。过滤规则按进程组收窄：仅当某进程在
+// 缓存里有多个成员（双代窗两代并存——BG 旧代可能是代次化或 rolling
+// 时代的稳定名）且 App 有在服代（servingGen > 0）时，保留在服代成员；
+// 单成员进程恒通过——rolling 发布中（替换即同 ID 更新，缓存单成员）与
+// 无在途稳态零行为漂移。servingGen == 0 = 无在途：全通过（stale 条目
+// 无活载体——Addresses 以最近 Ensure 存活集为真源，不产端点）。
+func (o *observDomain) routeExpectations(appID string, servingGen uint64) []capability.Workload {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	type member struct {
+		wid string
+		w   capability.Workload
+		gen uint64
+	}
+	byProcess := map[string][]member{}
+	for wid, owner := range o.workloadApp {
+		if owner.domain != ownerApp || owner.id != appID {
+			continue
+		}
+		w, ok := o.ensuredSpec[wid]
+		if !ok {
+			continue
+		}
+		byProcess[w.Process] = append(byProcess[w.Process], member{wid: wid, w: w, gen: o.ensuredGen[wid]})
+	}
+	var out []capability.Workload
+	for _, ms := range byProcess {
+		keep := ms
+		if servingGen != 0 && len(ms) > 1 {
+			var serving []member
+			for _, m := range ms {
+				if m.gen == servingGen {
+					serving = append(serving, m)
+				}
+			}
+			if len(serving) > 0 {
+				keep = serving // 窗内在服代圈定；全部不匹配（窗口未记账）保守全通过
+			}
+		}
+		for _, m := range keep {
+			out = append(out, m.w)
+		}
+	}
+	return out
+}
+
+// ensuredGenOf 返回载体最近 Ensure 的 gen（Drift 逐载体对照锚——双代窗
+// 两代并存时 owner 级单值无法对照两代，ADR-0048 决策 2）。
+func (o *observDomain) ensuredGenOf(wid string) (uint64, bool) {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	gen, ok := o.ensuredGen[wid]
+	return gen, ok
 }
 
 // observSnapshot 是观测槽与归属的锁内一致快照（漂移扫描等巡检面的

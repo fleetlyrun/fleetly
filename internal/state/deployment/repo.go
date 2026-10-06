@@ -77,6 +77,7 @@ type Deployment struct {
 	ToRevision        string // 目标 Revision ID
 	State             State
 	Generation        uint64 // 本 Deployment 拟下发的 Generation（单调）
+	FromGeneration    uint64 // 基线 Generation（最近 succeeded 行的 gen；ADR-0048 双代窗的旧代锚——窗口 Ensure 调用 gen 与服务代推导共用；0 = 无基线（首次部署/存量行））
 	IdempotencyKey    string
 	CommitSHA         string
 	SupersededBy      string // 被哪个 Deployment 抢占（终态 superseded 时非空）
@@ -125,11 +126,11 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, d *Deployment) erro
 	// ADR-0030 决策 5；常规部署为空串 = 未开始）。
 	_, err := run.ExecContext(ctx, `
 		INSERT INTO deployments
-			(id, app_id, from_revision, to_revision, state, generation,
+			(id, app_id, from_revision, to_revision, state, generation, from_generation,
 			 idempotency_key, commit_sha, superseded_by, error, observe_deadline,
 			 first_boot, created_at, updated_at, finished_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', '', '', ?, ?, ?, '')`,
-		d.ID, d.AppID, d.FromRevision, d.ToRevision, string(d.State), d.Generation,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '', '', '', ?, ?, ?, '')`,
+		d.ID, d.AppID, d.FromRevision, d.ToRevision, string(d.State), d.Generation, d.FromGeneration,
 		d.IdempotencyKey, d.CommitSHA, d.FirstBoot, d.CreatedAt, d.UpdatedAt)
 	if state.IsUniqueViolation(err) {
 		// 唯一索引作用域是 App 内（B10）：冲突 = 同 App 同键已有活跃行。
@@ -280,11 +281,11 @@ func (r *Repo) Transit(ctx context.Context, run state.Runner, id string, from []
 	}
 	res, err := run.ExecContext(ctx, `
 		UPDATE deployments SET
-			state = ?, generation = ?, error = ?, superseded_by = ?,
+			state = ?, generation = ?, from_generation = ?, error = ?, superseded_by = ?,
 			observe_deadline = ?, first_boot = ?, rollback_attempted = ?,
 			to_revision = ?, updated_at = ?, finished_at = ?
 		WHERE id = ? AND state = ?`,
-		string(cur.State), cur.Generation, cur.Error, cur.SupersededBy,
+		string(cur.State), cur.Generation, cur.FromGeneration, cur.Error, cur.SupersededBy,
 		cur.ObserveDeadline, cur.FirstBoot, cur.RollbackAttempted, cur.ToRevision,
 		cur.UpdatedAt, cur.FinishedAt,
 		id, string(origState))
@@ -303,7 +304,7 @@ func (r *Repo) Transit(ctx context.Context, run state.Runner, id string, from []
 }
 
 const selectCols = `
-	SELECT id, app_id, from_revision, to_revision, state, generation,
+	SELECT id, app_id, from_revision, to_revision, state, generation, from_generation,
 	       idempotency_key, commit_sha, superseded_by, error, observe_deadline,
 	       first_boot, rollback_attempted, created_at, updated_at, finished_at
 	FROM deployments`
@@ -312,7 +313,7 @@ func scanDeployment(scan func(dest ...any) error) (*Deployment, error) {
 	var d Deployment
 	var stateStr string
 	var rollback int
-	err := scan(&d.ID, &d.AppID, &d.FromRevision, &d.ToRevision, &stateStr, &d.Generation,
+	err := scan(&d.ID, &d.AppID, &d.FromRevision, &d.ToRevision, &stateStr, &d.Generation, &d.FromGeneration,
 		&d.IdempotencyKey, &d.CommitSHA, &d.SupersededBy, &d.Error, &d.ObserveDeadline,
 		&d.FirstBoot, &rollback, &d.CreatedAt, &d.UpdatedAt, &d.FinishedAt)
 	if err != nil {

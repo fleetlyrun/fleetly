@@ -228,7 +228,7 @@ func (e *Engine) firstBootJobImage(ctx context.Context, d *deployment.Deployment
 		return img, nil
 	}
 	from := job.GetProcess().GetFromBuild()
-	digests, err := e.buildDigests(ctx, d)
+	digests, err := e.buildDigests(ctx, d.AppID, d.ToRevision)
 	if err != nil {
 		return "", fmt.Errorf("first boot job %q: resolve build digests: %w", job.GetName(), err)
 	}

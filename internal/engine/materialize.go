@@ -50,7 +50,10 @@ func (e *Engine) materialize(ctx context.Context, d *deployment.Deployment, revi
 	if err != nil {
 		return fmt.Errorf("resolve cross-project network peers: %w", err)
 	}
-	digests, err := e.buildDigests(ctx, d)
+	// 产物按被物化的 revision 解析（BG 切回重放 from_revision 起走本参数
+	// ——此前钉 d.ToRevision 是回放路径的存量错源，回放 from_build spec
+	// 会拿目标 revision 的产物映射）。
+	digests, err := e.buildDigests(ctx, d.AppID, revision)
 	if err != nil {
 		return fmt.Errorf("resolve build digests: %w", err)
 	}
@@ -58,6 +61,10 @@ func (e *Engine) materialize(ctx context.Context, d *deployment.Deployment, revi
 	if err != nil {
 		return fmt.Errorf("project spec: %w", err)
 	}
+	// 部署代标记（ADR-0048：全员逐载体 gen 锚 + blue-green 进程的代次化
+	// ID/命名位——rolling spec 全员 unscoped，逐字节零漂移）。release/
+	// rollback/基线重放/收口共用（stampDeploymentGenerations 单源）。
+	stampDeploymentGenerations(ws, spec, gen)
 	materials, err := e.resolveMaterials(ctx, spec, spec.GetApp().GetProject())
 	if err != nil {
 		return fmt.Errorf("resolve materials: %w", err)

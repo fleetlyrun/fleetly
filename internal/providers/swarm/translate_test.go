@@ -383,7 +383,7 @@ func TestAddressAliasesPreserveDots(t *testing.T) {
 // TestWorkloadServiceNameGenerationScoped（ADR-0048 决策 1.4）：代次化
 // 载体名追加 -g<gen>——逐载体覆写优先、覆写缺席沿用调用 gen；rolling
 // （GenerationScoped=false）名零变化（存量零漂移锚），含覆写也不改名
-//（rolling 时代的旧代成员在双代窗里只锚 gen 标签不改名）。
+// （rolling 时代的旧代成员在双代窗里只锚 gen 标签不改名）。
 func TestWorkloadServiceNameGenerationScoped(t *testing.T) {
 	ns := capability.NamespaceRef{Team: "acme", Project: "shop", App: "app1"}
 	base := "fleetly-acme-shop-app1-web"

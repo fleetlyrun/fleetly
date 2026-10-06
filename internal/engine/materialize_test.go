@@ -58,8 +58,19 @@ func TestMaterializeThreePathsIdentical(t *testing.T) {
 
 	assert.Equal(t, release.NS.String(), rbEnsure.NS.String(), "rollback namespace must match release")
 	assert.Equal(t, release.NS.String(), replay.NS.String(), "baseline replay namespace must match release")
-	assert.Equal(t, release.Spec, rbEnsure.Spec, "rollback must dispatch identical workloads")
-	assert.Equal(t, release.Spec, replay.Spec, "baseline replay must dispatch identical workloads")
+	// 逐载体 Generation 锚随各路 gen 语义走（ADR-0048：stampDeployment
+	// Generations 落 gen 于载体）——spec 内容一致性比对先归一该字段。
+	stripped := func(c ensureCall) map[string]capability.Workload {
+		out := map[string]capability.Workload{}
+		for k, w := range c.Spec {
+			w.Generation, w.GenerationScoped = 0, false
+			out[k] = w
+		}
+		return out
+	}
+	assert.Equal(t, stripped(release), stripped(rbEnsure), "rollback must dispatch identical workloads")
+	assert.Equal(t, stripped(release), stripped(replay), "baseline replay must dispatch identical workloads")
+	assert.Equal(t, release.Spec["web"].ID, rbEnsure.Spec["web"].ID, "rolling workloads keep one identity across paths")
 	assert.Equal(t, release.Materials, rbEnsure.Materials, "rollback must dispatch identical materials")
 	assert.Equal(t, release.Materials, replay.Materials, "baseline replay must dispatch identical materials")
 

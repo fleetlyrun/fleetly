@@ -414,13 +414,17 @@ func (e *Engine) publishRoutes(ctx context.Context) {
 		return
 	}
 	publish := make([]capability.Route, 0, len(routes))
+	// 在服代推导（ADR-0048 决策 1.2 切换步的服务面）：一次 ListDriving
+	// 全量推导（observing = 已切换本代；其余在途 = 基线代）——resolveBackend
+	// 据此圈定期望集的服务代（蓝绿双代窗消歧；rolling 无在途不过滤）。
+	serving := e.servingGenerations(ctx)
 	for _, rt := range routes {
 		cr := capability.Route{
 			Host: rt.Host, Path: rt.Path,
 			Process: rt.Process, Port: rt.Port,
 			Protocol: rt.Protocol, TLS: rt.TLSMode,
 		}
-		cr.Target, cr.BackendAddr, err = e.resolveBackend(ctx, rt)
+		cr.Target, cr.BackendAddr, err = e.resolveBackend(ctx, rt, serving[rt.AppID])
 		if err != nil {
 			e.log.Warn("route publish: backend unresolved, skipping route",
 				"route", rt.ID, "host", rt.Host, "err", err)
@@ -471,18 +475,20 @@ func routesFingerprint(rows []route.Route) string {
 	return string(b)
 }
 
-// resolveBackend 解析 Route 后端地址（Runtime.Addresses 按 process+port
-// 匹配；期望集 = 本 App 的 Ensure 投影缓存——载体原生不承载声明端口，
-// 端点端口由期望集供给，架构评审第二轮候选 7。缓存冷（重启后基线重放
-// 未及）时 Provider 侧匹配不中 → 可重试错误，重放完成下一拍即解）。
-// Team 轴从 Project 行实取，ADR-0028。
-func (e *Engine) resolveBackend(ctx context.Context, rt route.Route) (capability.NamespaceRef, string, error) {
+// resolveBackend 解析 Route 后端地址（Runtime.Addresses 按 workload ID
+// 匹配期望集；期望集 = 本 App 的 Ensure 投影缓存快照——载体原生不承载
+// 声明端口，端点端口由期望集供给，架构评审第二轮候选 7。缓存冷（重启后
+// 基线重放未及）时 Provider 侧匹配不中 → 可重试错误，重放完成下一拍即
+// 解）。servingGen 是蓝绿代次解析的入参（observ 域 routeExpectations
+// 显式接口，ADR-0048 决策 4：0 = 无在途不过滤）。Team 轴从 Project 行
+// 实取，ADR-0028。
+func (e *Engine) resolveBackend(ctx context.Context, rt route.Route, servingGen uint64) (capability.NamespaceRef, string, error) {
 	team, err := e.projectTeam(ctx, rt.ProjectID)
 	if err != nil {
 		return capability.NamespaceRef{}, "", err
 	}
 	ns := capability.NamespaceRef{Team: team, Project: rt.ProjectID, App: rt.AppID}
-	eps, err := e.runtime.Addresses(ctx, ns, e.appWorkloadExpectations(rt.AppID))
+	eps, err := e.runtime.Addresses(ctx, ns, e.obs.routeExpectations(rt.AppID, servingGen))
 	if err != nil {
 		return ns, "", fmt.Errorf("addresses %s: %w", ns, err)
 	}
@@ -492,12 +498,6 @@ func (e *Engine) resolveBackend(ctx context.Context, rt route.Route) (capability
 		}
 	}
 	return ns, "", fmt.Errorf("no endpoint for process %q port %d", rt.Process, rt.Port)
-}
-
-// appWorkloadExpectations 返回 App 名下的期望 Workload 集（最近 Ensure
-// 投影缓存快照；Addresses 的端口真源）。
-func (e *Engine) appWorkloadExpectations(appID string) []capability.Workload {
-	return e.obs.expectations(appID)
 }
 
 // activeProjectIDs 返回全部活跃 Project ID（排序稳定——材料铸造字节稳定

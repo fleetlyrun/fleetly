@@ -187,8 +187,9 @@ func (e *Engine) compareSpecs(ctx context.Context, appID string, obs []capabilit
 	e.expect.mu.Unlock()
 
 	type pendingDrift struct {
-		wid string
-		ev  capability.WorkloadEvent
+		wid    string
+		anchor uint64
+		ev     capability.WorkloadEvent
 	}
 	var pending []pendingDrift
 	for _, o := range obs {
@@ -196,7 +197,13 @@ func (e *Engine) compareSpecs(ctx context.Context, appID string, obs []capabilit
 		if !ok {
 			continue // 非平台管辖（孤儿面：只登记原则）
 		}
-		if uint64(o.Generation) != expected {
+		// 逐载体对照锚（ADR-0048 决策 2：双代窗两代并存各自对照——
+		// ensuredGen 在场即优先，缺席回落 App 级锚）。
+		anchor := expected
+		if g, ok := e.obs.ensuredGenOf(o.WorkloadID); ok {
+			anchor = g
+		}
+		if uint64(o.Generation) != anchor {
 			// gen 偏离由 Watch 流路径负责（detectDrift），此处不重复发。
 			continue
 		}
@@ -226,7 +233,8 @@ func (e *Engine) compareSpecs(ctx context.Context, appID string, obs []capabilit
 		e.drift.sig[o.WorkloadID] = sig
 		e.drift.mu.Unlock()
 		pending = append(pending, pendingDrift{
-			wid: o.WorkloadID,
+			wid:    o.WorkloadID,
+			anchor: anchor,
 			ev: capability.WorkloadEvent{
 				WorkloadID: o.WorkloadID, Generation: o.Generation,
 				State:   capability.WorkloadDegraded,
@@ -238,7 +246,7 @@ func (e *Engine) compareSpecs(ctx context.Context, appID string, obs []capabilit
 	for _, p := range pending {
 		if _, err := e.outbox.Append(ctx, e.db.Runner(),
 			eventWorkloadDrift, "workload", p.wid,
-			driftEventPayloadJSON(p.ev, appOwner(appID), expected)); err != nil {
+			driftEventPayloadJSON(p.ev, appOwner(appID), p.anchor)); err != nil {
 			e.log.Error("drift scan: event", "workload", p.wid, "err", err)
 		}
 	}

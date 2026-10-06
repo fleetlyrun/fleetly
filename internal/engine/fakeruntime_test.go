@@ -212,10 +212,14 @@ func (f *fakeRuntime) AttachNetwork(_ context.Context, ns capability.NamespaceRe
 }
 
 type ensureCall struct {
-	NS        capability.NamespaceRef
-	Gen       capability.Generation
-	Spec      map[string]capability.Workload // process → workload
-	Materials capability.Materials
+	NS   capability.NamespaceRef
+	Gen  capability.Generation
+	Spec map[string]capability.Workload // process → workload（同进程末见胜——单代形态；双代窗断言用 ByID）
+	ByID map[string]capability.Workload // workloadID → workload（双代窗两代同 process 并存的完整记录）
+	// MaterialsOf 是逐载体材料覆写快照（ADR-0048 双代窗旧代零扰动断言面；
+	// nil 值 = 沿用调用级 Materials）。
+	MaterialsOf map[string]*capability.Materials
+	Materials   capability.Materials
 }
 
 func newFakeRuntime() *fakeRuntime {
@@ -247,15 +251,17 @@ func (f *fakeRuntime) Ensure(ctx context.Context, ns capability.NamespaceRef, ws
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	spec := make(map[string]capability.Workload, len(ws))
+	byID := make(map[string]capability.Workload, len(ws))
+	mats := make(map[string]*capability.Materials, len(ws))
+	for _, w := range ws {
+		spec[w.Process] = w
+		byID[w.ID] = w
+		mats[w.ID] = w.Materials
+	}
 	f.ensures = append(f.ensures, ensureCall{
 		NS: ns, Gen: gen, Materials: materials,
-		Spec: func() map[string]capability.Workload {
-			m := make(map[string]capability.Workload, len(ws))
-			for _, w := range ws {
-				m[w.Process] = w
-			}
-			return m
-		}(),
+		Spec: spec, ByID: byID, MaterialsOf: mats,
 	})
 	if f.failNext {
 		f.failNext = false
@@ -288,11 +294,41 @@ func (f *fakeRuntime) Watch(context.Context) (<-chan capability.WorkloadEvent, e
 	return f.obsCh, nil
 }
 
-func (f *fakeRuntime) Addresses(_ context.Context, ns capability.NamespaceRef, _ []capability.Workload) ([]capability.Endpoint, error) {
+// Addresses 返回隔离域可达地址：可编程端点表（endpoints[ns]）优先——
+// 测试直设 VIP 的既有断言面；缺席时按期望集推导——存活载体 = 该域最近
+// 一次 Ensure 的集合（真源 swarm 的域内收敛：Ensure 移除非期望集载体；
+// InspectWorkloads 同款"最近一次"语义），期望集按平台 Workload ID 圈定
+// 成员（双代窗两代同 process 的消歧断言面，ADR-0048 决策 1.4）。
+func (f *fakeRuntime) Addresses(_ context.Context, ns capability.NamespaceRef, expected []capability.Workload) ([]capability.Endpoint, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.addrCalls = append(f.addrCalls, ns)
-	return f.endpoints[ns.String()], nil
+	if eps, ok := f.endpoints[ns.String()]; ok {
+		return eps, nil
+	}
+	var live *ensureCall
+	for i := range f.ensures {
+		if f.ensures[i].NS.String() == ns.String() {
+			live = &f.ensures[i]
+		}
+	}
+	if live == nil {
+		return nil, nil
+	}
+	var eps []capability.Endpoint
+	for _, w := range expected {
+		if _, ok := live.ByID[w.ID]; !ok {
+			continue // 期望集圈定成员，但只有最近 Ensure 存活集产端点
+		}
+		for _, port := range w.Ports {
+			eps = append(eps, capability.Endpoint{
+				Addr:    "vip-" + w.ID,
+				Process: w.Process,
+				Port:    port.Port,
+			})
+		}
+	}
+	return eps, nil
 }
 
 // addrCallsSnapshot 返回 Addresses 调用快照（publishRoutes 短路断言面）。
@@ -355,8 +391,14 @@ func (f *fakeRuntime) InspectWorkloads(_ context.Context, ns capability.Namespac
 		}
 		obs = nil
 		for _, w := range c.Spec {
+			// 载体观测的 gen = 逐载体生效锚（覆写优先，缺省调用 gen——
+			// 真源 swarm 的 labelGeneration 同款，ADR-0048 双代窗）。
+			gen := c.Gen
+			if w.Generation != 0 {
+				gen = capability.Generation(w.Generation)
+			}
 			obs = append(obs, capability.WorkloadObservation{
-				WorkloadID: w.ID, Generation: c.Gen, Image: w.Image, Command: w.Command,
+				WorkloadID: w.ID, Generation: gen, Image: w.Image, Command: w.Command,
 				Replicas: w.Replicas, State: capability.WorkloadRunning,
 			})
 		}

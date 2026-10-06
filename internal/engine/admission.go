@@ -191,13 +191,14 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 		}
 
 		// 6. 受理落行 + 事件 + 审计。
-		baseline, err := e.lastDeployedRevision(ctx, tx, req.AppID)
+		baseline, baselineGen, err := e.lastDeployedRevision(ctx, tx, req.AppID)
 		if err != nil {
 			return err
 		}
 		d := &deployment.Deployment{
 			ID: newID, AppID: req.AppID,
 			FromRevision:   baseline,
+			FromGeneration: baselineGen, // 双代窗旧代锚（ADR-0048）：与 from_revision 同行取 gen
 			ToRevision:     req.RevisionID,
 			State:          deployment.StateQueued,
 			Generation:     gen,
@@ -290,26 +291,28 @@ func (e *Engine) Cancel(ctx context.Context, id string) (*deployment.Deployment,
 	return out, nil
 }
 
-// lastDeployedRevision 返回 App 当前基线（最近一次终态成功的 to_revision；
-// 首次部署为空——回滚无对象，失败即终态，领域模型 §4）。查询失败如实
-// 上抛（C5：吞错误按"首次"处理会在失败时缺回滚对象——错误面进不了
-// 事务，整单拒绝让调用方看到存储故障）。
-func (e *Engine) lastDeployedRevision(ctx context.Context, tx *sql.Tx, appID string) (string, error) {
+// lastDeployedRevision 返回 App 当前基线（最近一次终态成功的 to_revision
+// 与其 generation——双代窗的旧代锚，ADR-0048；首次部署为空/0——回滚无
+// 对象，失败即终态，领域模型 §4）。查询失败如实上抛（C5：吞错误按"首次"
+// 处理会在失败时缺回滚对象——错误面进不了事务，整单拒绝让调用方看到
+// 存储故障）。
+func (e *Engine) lastDeployedRevision(ctx context.Context, tx *sql.Tx, appID string) (string, uint64, error) {
 	rows, err := tx.QueryContext(ctx,
-		`SELECT to_revision FROM deployments WHERE app_id = ? AND state = 'succeeded'
+		`SELECT to_revision, generation FROM deployments WHERE app_id = ? AND state = 'succeeded'
 		 ORDER BY id DESC LIMIT 1`, appID)
 	if err != nil {
-		return "", fmt.Errorf("resolve baseline: %w", err)
+		return "", 0, fmt.Errorf("resolve baseline: %w", err)
 	}
 	defer rows.Close() //nolint:errcheck // 只读单行，关闭错误无处置面
 	if rows.Next() {
 		var rev string
-		if err := rows.Scan(&rev); err != nil {
-			return "", fmt.Errorf("resolve baseline: %w", err)
+		var gen uint64
+		if err := rows.Scan(&rev, &gen); err != nil {
+			return "", 0, fmt.Errorf("resolve baseline: %w", err)
 		}
-		return rev, nil
+		return rev, gen, nil
 	}
-	return "", nil
+	return "", 0, nil
 }
 
 // transit（四件一的 Deployment 前门）与 transitAndReload 已收口至

@@ -290,7 +290,7 @@ func TaskGroupNetworkName(group string) string {
 // AppProcessDNSName 铸 App 进程的全名 DNS 名（{进程名}.{应用名}，ADR-0048
 // 决策 3；铸名公式住 engine——名字是平台 API 面，N4 换 Runtime 名字不变，
 // TaskDNSName/RunDNSName/DatabaseDNSName 同族）。应用名取 App 行 name
-//（Project 内唯一——同名进程不同 App 的全名必不同；DNS 大小写不敏感，
+// （Project 内唯一——同名进程不同 App 的全名必不同；DNS 大小写不敏感，
 // 统一小写。名字含 DNS 敌对字符的折叠由 Provider 别名通道兜底，仅理论
 // 撞名面——受名字面唯一性保护的是 DNS 干净形态）。
 func AppProcessDNSName(process, appName string) string {

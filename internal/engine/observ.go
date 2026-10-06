@@ -51,15 +51,16 @@ func (e *Engine) appTeam(ctx context.Context, appID string) (string, *app.App, e
 	return team, a, nil
 }
 
-// buildDigests 解析 Deployment 目标 Revision 的构建产物（from_build 进程
-// → 下发镜像引用映射；无成功构建返回 nil → 投影期得到精确错误）。Build 是
-// Revision 级单产物：全部 from_build 进程共用同一 digest。引用是 digest
-// 形态完整引用（<registry>/<repo>@sha256:...——地址是平台级配置不进冻结体，
+// buildDigests 解析一个 Revision 的构建产物（from_build 进程 → 下发镜像
+// 引用映射；无成功构建返回 nil → 投影期得到精确错误）。Build 是 Revision
+// 级单产物：全部 from_build 进程共用同一 digest。引用是 digest 形态完整
+// 引用（<registry>/<repo>@sha256:...——地址是平台级配置不进冻结体，
 // 投影期组合，ADR-0019 附录 B.4）。repo 判别（ADR-0036 N2 兑现节 2）：行
 // 有值 = 前纲仓；存量行（repo 空）= 扁平回退 lower(appID)——扁平仓保持
-// 全用户可读，存量 digest 引用不断流。
-func (e *Engine) buildDigests(ctx context.Context, d *deployment.Deployment) (map[string]string, error) {
-	spec, err := e.loadSpec(ctx, d.ToRevision)
+// 全用户可读，存量 digest 引用不断流。双代窗对 from/to 两侧各调一次
+// （ADR-0048：旧代成员的 from_build 引用按其自身 Revision 解析）。
+func (e *Engine) buildDigests(ctx context.Context, appID, revision string) (map[string]string, error) {
+	spec, err := e.loadSpec(ctx, revision)
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +79,7 @@ func (e *Engine) buildDigests(ctx context.Context, d *deployment.Deployment) (ma
 	if err != nil {
 		return nil, err
 	}
-	builds, err := e.builds.ListByRevision(ctx, e.db.Runner(), d.ToRevision)
+	builds, err := e.builds.ListByRevision(ctx, e.db.Runner(), revision)
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +88,7 @@ func (e *Engine) buildDigests(ctx context.Context, d *deployment.Deployment) (ma
 			out := make(map[string]string, len(fromBuild))
 			repo := b.Repo
 			if repo == "" {
-				repo = strings.ToLower(d.AppID) // 存量扁平回退（repo 列加入前的行）
+				repo = strings.ToLower(appID) // 存量扁平回退（repo 列加入前的行）
 			}
 			ref := LocalImageDigestRef(endpoint.Addr, repo, b.Digest)
 			for _, name := range fromBuild {
@@ -100,14 +101,25 @@ func (e *Engine) buildDigests(ctx context.Context, d *deployment.Deployment) (ma
 }
 
 // recordEnsured 记录 Ensure 事实：观测域归属缓存 + 各 Workload 的
-// Generation 与投影 spec（就绪门集合界定——被移除 process 的旧 workload
-// 不再计入）+ App 级最近 Generation（expect 域，Drift 对照锚）。进程内
-// 缓存，重启后由幂等重放的 Ensure 或启动基线重放重建（ADR-0022）。
+// Generation 与投影 spec（逐载体锚分组——ADR-0048 双代窗联合期望集两代
+// 并存，各自记录；同代一批）+ App 级最近 Generation（expect 域，Drift
+// 对照锚 = 调用 gen）。进程内缓存，重启后由幂等重放的 Ensure 或启动基线
+// 重放重建（ADR-0022）。
 func (e *Engine) recordEnsured(d *deployment.Deployment, gen uint64, ws []capability.Workload) {
 	e.expect.mu.Lock()
 	e.expect.expected[appOwner(d.AppID)] = gen
 	e.expect.mu.Unlock()
-	e.obs.recordSpecs(appOwner(d.AppID), gen, ws)
+	groups := map[uint64][]capability.Workload{}
+	for _, w := range ws {
+		g := w.Generation
+		if g == 0 {
+			g = gen
+		}
+		groups[g] = append(groups[g], w)
+	}
+	for g, batch := range groups {
+		e.obs.recordSpecs(appOwner(d.AppID), g, batch)
+	}
 }
 
 // releaseReady 是 L1 健康门：本 Deployment 下发的全部 Workload（gen 匹配
@@ -240,6 +252,12 @@ func (e *Engine) detectDrift(ctx context.Context, ev capability.WorkloadEvent) {
 	e.expect.mu.Lock()
 	expected := e.expect.expected[owner]
 	e.expect.mu.Unlock()
+	// 逐载体对照锚（ADR-0048 决策 2：双代窗两代并存，owner 级单值无法
+	// 对照两代——ensuredGen[wid] 是该载体最近 Ensure 的 gen，在场即优先；
+	// 缺席（未知载体）回落 owner 级锚）。
+	if g, ok := e.obs.ensuredGenOf(ev.WorkloadID); ok {
+		expected = g
+	}
 
 	if expected != 0 && uint64(ev.Generation) == expected && !ev.Drift {
 		e.drift.mu.Lock()
