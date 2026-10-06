@@ -25,6 +25,36 @@ export interface EventRow {
   created_at?: string;
 }
 
+// streamDeploymentWait 消费单部署等待流（ADR-0044 决策 1 预留的 F3.1
+// 单部署跟踪面）：NDJSON 帧 {"result":{"deployment":{...}}}，终态帧后
+// 服务端收流（resolve 带 ended=true；传输层收口/中断 = ended=false，
+// 调用方自行重开——详情页的重开按钮面）。
+export async function streamDeploymentWait(
+  deploymentId: string,
+  signal: AbortSignal,
+  onFrame: (deployment: unknown) => void,
+): Promise<{ ended: boolean }> {
+  const res = await fetch(`/v1/deployments/${encodeURIComponent(deploymentId)}/wait`, { signal, headers: authHeaders() });
+  if (!res.ok || !res.body) {
+    let code = "unknown";
+    let message = `${res.status} ${res.statusText}`.trim();
+    try {
+      const body = (await res.json()) as { code?: string; message?: string };
+      if (body.code) code = body.code;
+      if (body.message) message = body.message;
+    } catch {
+      // 非 JSON 错误体：保留状态行口径。
+    }
+    throw new ApiError(res.status, code, message);
+  }
+  await readLines(res.body, (line) => {
+    if (line === "") return;
+    const frame = JSON.parse(line) as { result?: { deployment?: unknown } };
+    if (frame.result?.deployment != null) onFrame(frame.result.deployment);
+  });
+  return { ended: !signal.aborted };
+}
+
 // streamLogs 消费 NDJSON 帧流直至服务端收流或 abort；onFrame 逐帧回调。
 export async function streamLogs(
   query: URLSearchParams,

@@ -3,11 +3,24 @@ import { useState } from "react";
 import type { components } from "../api/delivery";
 import { apiFetch } from "../api/client";
 import { appNameOf, useApps, useProjects } from "../lib/catalog";
-import { EmptyNote, ErrorNote, LoadingNote, PageShell, formatTime, shortId } from "../components/ui";
+import { DeployForm } from "../components/DeployForm";
+import {
+  DangerRowButton,
+  EmptyNote,
+  ErrorNote,
+  LoadingNote,
+  PageShell,
+  RowButton,
+  TableHead,
+  TableWrap,
+  formatTime,
+  shortId,
+  useApiMutation,
+} from "../components/ui";
 
-// 部署状态页（F2.6/ADR-0044 决策 1）：部署列表是 per-App 轴（API 语义：
+// 部署状态页（F2.6 只读面 + F3.1 写面）：部署列表是 per-App 轴（API 语义：
 // app_id 必填）——页面 = 项目过滤 + App 必选（自动选首个）+ 轮询 5s；
-// 行展开看 from/to Revision、generation 与失败详情（纯只读面）。
+// F3.1 增 deploy 表单入口、活跃行取消、App 级回滚与详情页跳转。
 
 type Deployment = components["schemas"]["v1Deployment"];
 
@@ -23,19 +36,25 @@ const STATE_STYLES: Record<string, string> = {
   running: "bg-sky-950 text-sky-300 border border-sky-800",
   observing: "bg-sky-950 text-sky-300 border border-sky-800",
   releasing: "bg-sky-950 text-sky-300 border border-sky-800",
+  preparing: "bg-sky-950 text-sky-300 border border-sky-800",
   succeeded: "bg-emerald-950 text-emerald-300 border border-emerald-800",
   failed: "bg-red-950 text-red-300 border border-red-900",
   canceled: "bg-amber-950 text-amber-300 border border-amber-900",
   superseded: "bg-slate-800 text-slate-400",
 };
 
-function stateBadgeClass(state: string | undefined): string {
+export function stateBadgeClass(state: string | undefined): string {
   return STATE_STYLES[state ?? ""] ?? "bg-slate-800 text-slate-400";
+}
+
+export function isActiveState(state: string | undefined): boolean {
+  return state === "running" || state === "observing" || state === "releasing" || state === "queued" || state === "preparing";
 }
 
 export function DeploymentsPage() {
   const [projectId, setProjectId] = useState("");
   const [appId, setAppId] = useState("");
+  const [deployOpen, setDeployOpen] = useState(false);
   const projects = useProjects();
   const apps = useApps(projectId);
 
@@ -86,9 +105,27 @@ export function DeploymentsPage() {
               </option>
             ))}
           </select>
+          <RowButton
+            onClick={() => {
+              window.location.hash = "#/deployments";
+              setDeployOpen(true);
+            }}
+            className="border-sky-700 bg-sky-900/40 font-medium text-sky-300"
+          >
+            Deploy…
+          </RowButton>
         </>
       }
     >
+      <DeployForm
+        open={deployOpen}
+        onClose={() => setDeployOpen(false)}
+        apps={apps.data ?? []}
+        defaultAppId={effectiveAppId}
+        onDeployed={(id) => {
+          window.location.hash = `#/deployments/${id}`;
+        }}
+      />
       {projects.isPending ? (
         <LoadingNote label="Loading catalog…" />
       ) : projects.isError ? (
@@ -102,7 +139,7 @@ export function DeploymentsPage() {
       ) : apps.isError ? (
         <ErrorNote error={apps.error} hint="GET /v1/apps failed — check the API token in the header." />
       ) : (apps.data ?? []).length === 0 ? (
-        <EmptyNote label="No apps yet — deploy something first (fleetly deploy or POST /v1/deployments)." />
+        <EmptyNote label="No apps yet — create one on the Apps tab, or run quickstart." />
       ) : deployments.isError ? (
         <ErrorNote error={deployments.error} hint="GET /v1/deployments failed — check the API token in the header." />
       ) : deployments.isPending ? (
@@ -110,32 +147,31 @@ export function DeploymentsPage() {
       ) : deployments.data.length === 0 ? (
         <EmptyNote label="No deployments for this app yet." />
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-slate-800">
+        <TableWrap>
           <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-800 bg-slate-900/60 text-left text-xs uppercase tracking-wide text-slate-500">
-                <th className="px-3 py-2 font-medium">App</th>
-                <th className="px-3 py-2 font-medium">State</th>
-                <th className="px-3 py-2 font-medium">Revision</th>
-                <th className="px-3 py-2 font-medium">Generation</th>
-                <th className="px-3 py-2 font-medium">Updated</th>
-              </tr>
-            </thead>
+            <TableHead columns={["App", "State", "Revision", "Generation", "Updated", ""]} />
             <tbody>
               {deployments.data.map((item) => (
                 <DeploymentRow key={item.id} item={item} apps={apps.data} />
               ))}
             </tbody>
           </table>
-        </div>
+        </TableWrap>
       )}
     </PageShell>
   );
 }
 
-// DeploymentRow：一行部署；error/详情经 details 展开（无 JS 状态面）。
+// DeploymentRow：一行部署；error/详情经 details 展开；活跃行可取消，行
+// 首状态徽章进详情页（双代窗叙事在详情页承载）。
 function DeploymentRow({ item, apps }: { item: Deployment; apps: ReturnType<typeof useApps>["data"] }) {
-  const active = item.state === "running" || item.state === "observing" || item.state === "releasing" || item.state === "queued";
+  const active = isActiveState(item.state);
+  const cancel = useApiMutation<{ deployment?: Deployment }>({
+    path: `/v1/deployments/${encodeURIComponent(item.id ?? "")}/cancel`,
+    method: "POST",
+    invalidate: [["deployments"]],
+  });
+  const hasBaseline = item.from_generation != null && item.from_generation !== "0";
   return (
     <tr className="border-b border-slate-800/60 align-top hover:bg-slate-900/40">
       <td className="px-3 py-2">
@@ -145,10 +181,12 @@ function DeploymentRow({ item, apps }: { item: Deployment; apps: ReturnType<type
         </div>
       </td>
       <td className="px-3 py-2">
-        <span className={`inline-block rounded px-1.5 py-0.5 text-xs font-medium ${stateBadgeClass(item.state)}`}>
-          {item.state ?? "unknown"}
-          {active ? <span className="ml-1 animate-pulse">●</span> : null}
-        </span>
+        <a href={`#/deployments/${item.id}`} className="inline-block">
+          <span className={`inline-block rounded px-1.5 py-0.5 text-xs font-medium ${stateBadgeClass(item.state)}`}>
+            {item.state ?? "unknown"}
+            {active ? <span className="ml-1 animate-pulse">●</span> : null}
+          </span>
+        </a>
         {item.error ? (
           <div className="mt-1 max-w-md truncate font-mono text-xs text-red-400" title={item.error}>
             {item.error}
@@ -161,7 +199,10 @@ function DeploymentRow({ item, apps }: { item: Deployment; apps: ReturnType<type
           {shortId(item.to_revision)}
         </div>
       </td>
-      <td className="px-3 py-2 font-mono text-xs text-slate-400">{item.generation ?? "—"}</td>
+      <td className="px-3 py-2 font-mono text-xs text-slate-400">
+        <div>{item.generation ?? "—"}</div>
+        {hasBaseline ? <div className="text-slate-500">← {item.from_generation}</div> : null}
+      </td>
       <td className="px-3 py-2 text-xs text-slate-400">
         <div>{formatTime(item.updated_at)}</div>
         <details className="mt-1">
@@ -181,6 +222,21 @@ function DeploymentRow({ item, apps }: { item: Deployment; apps: ReturnType<type
             <dd>{item.first_boot_task_id || "—"}</dd>
           </dl>
         </details>
+      </td>
+      <td className="px-3 py-2">
+        <div className="flex flex-col items-start gap-1">
+          <RowButton onClick={() => (window.location.hash = `#/deployments/${item.id}`)}>open</RowButton>
+          {active ? (
+            <DangerRowButton
+              confirm={`Cancel deployment ${item.id}?`}
+              disabled={cancel.isPending}
+              onClick={() => void cancel.mutate()}
+            >
+              cancel
+            </DangerRowButton>
+          ) : null}
+          {cancel.isError ? <ErrorNote error={cancel.error} /> : null}
+        </div>
       </td>
     </tr>
   );

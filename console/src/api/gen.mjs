@@ -16,7 +16,11 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import converter from "swagger2openapi";
 
-const CONTEXTS = ["structure", "delivery", "telemetry"];
+// F3.1 写面扩面：identity/automation/proxy 入生成清单（audit/tokens 与
+// tasks/schedules/routes 的消费类型面；system/governance 的 freeze 面小，
+// 按需再入——消费哪些上下文就生成哪些，同 ADR-0044 口径）。
+const CONTEXTS = ["structure", "delivery", "telemetry", "identity", "automation", "proxy"];
+
 const GENPROTO = "../genproto/fleetly";
 const OUT_DIR = "src/api";
 const DANGLING_REF = ".fleetly.shared.v1.ErrorResponse";

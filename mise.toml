@@ -170,5 +170,11 @@ run = [
   { task = "console:install" },
   { task = "console:gen" },
   { task = "console:build" },
+  { task = "console:test" },
   "git diff --exit-code -- console/src/api internal/console/dist",
 ]
+
+[tasks."console:test"]
+description = "console 单测（vitest：tar 构建器/路由解析/载荷构造/TanStack Query 消费面）"
+dir = "console"
+run = "pnpm test"

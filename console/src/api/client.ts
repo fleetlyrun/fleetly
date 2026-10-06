@@ -35,6 +35,27 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   return (await res.json()) as T;
 }
 
+// apiSend 是写面助手：JSON 体 + 方法动词，响应同 apiFetch 口径（200 面
+// 的 protojson；错误走统一信封抛 ApiError）。REST 写面全部 body:"*"，
+// 携带体的 Content-Type 是 grpc-gateway 的 JSON 判定键。
+export function apiSend<T>(path: string, method: string, body?: unknown): Promise<T> {
+  return apiFetch<T>(path, {
+    method,
+    headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+}
+
+// apiSendRaw 发送任意字节体（上传面的 application/x-tar——服务端只认
+// 内容寻址，Content-Type 是建议不是契约，F3.5 裁决）。
+export function apiSendRaw<T>(path: string, body: ArrayBuffer | Blob, contentType: string): Promise<T> {
+  return apiFetch<T>(path, {
+    method: "POST",
+    headers: { "Content-Type": contentType },
+    body,
+  });
+}
+
 // authHeaders 是当前凭证的头形态（fetch 面；SSE 面走票据不带凭证头）。
 export function authHeaders(init?: HeadersInit): Headers {
   const headers = new Headers(init);
