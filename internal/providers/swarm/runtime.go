@@ -941,14 +941,16 @@ func managerHost(addr string) string {
 // 重建；curl/wget 双通道——载体镜像 busybox:1.37 与 e2e 预载清单同钉版）。
 // 下载凭证 = swarm join token（/v1/platform/binary 的鉴权单源，C3 等价
 // 敏感度——脚本本体即携活 token，分发的敏感度与 join 命令同面）。
+// 形态约束：纯单引号（JSON 转义恒等——消费方可原样 sed 抽取执行，e2e
+// 与 runbook 同口径）；mktemp 路径无空格，免引号展开安全。
 func relayAgentScript(baseURL, token string) string {
-	argv := fmt.Sprintf("chmod +x /tmp/fleetlyd && exec /tmp/fleetlyd relay --manager %s --join-token %s", baseURL, token)
+	argv := fmt.Sprintf("chmod +x /tmp/fleetlyd && exec /tmp/fleetlyd relay --manager %[1]s --join-token %[2]s", baseURL, token)
 	return fmt.Sprintf(
-		`t=$(mktemp) && { curl -sfL -H "Authorization: Bearer %[1]s" -o "$t" %[2]s/v1/platform/binary || wget -q --header "Authorization: Bearer %[1]s" -O "$t" %[2]s/v1/platform/binary; } && `+
+		`t=$(mktemp) && { curl -sfL -H 'Authorization: Bearer %[2]s' -o $t %[1]s/v1/platform/binary || wget -q --header 'Authorization: Bearer %[2]s' -O $t %[1]s/v1/platform/binary; } && `+
 			`docker rm -f fleetly-relay >/dev/null 2>&1; `+
-			`c=$(docker create --name fleetly-relay --restart unless-stopped -v /var/run/docker.sock:/var/run/docker.sock --entrypoint sh %[3]s -c %[4]q) && `+
-			`docker cp "$t" "$c":/tmp/fleetlyd && docker start "$c" && rm -f "$t"`,
-		token, baseURL, relayCarrierImage, argv)
+			`c=$(docker create --name fleetly-relay --restart unless-stopped -v /var/run/docker.sock:/var/run/docker.sock --entrypoint sh %[3]s -c '%[4]s') && `+
+			`docker cp $t $c:/tmp/fleetlyd && docker start $c && rm -f $t`,
+		baseURL, token, relayCarrierImage, argv)
 }
 
 // relayCarrierImage 是节点代理的载体镜像（钉版 tag；e2e 预载清单同源）。

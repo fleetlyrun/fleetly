@@ -475,6 +475,50 @@ log "hook + audit read paths"
 cli hooks get --app "$APP_ID" >/dev/null
 cli audit --source webhook --limit 5 >/dev/null
 
+# ---- F3.2 exec 子面（ADR-0049）：回环代理形态 ----
+# manager 节点进程内回环代理随 daemon 启动连自身 gateway——单节点零
+# enroll 即具备 exec 面。全链：nodes list 的 relay_online 观测 →
+# `fleetly exec` one-shot（真 docker exec：nginx 容器内 /bin/echo）→
+# 退出码透传（非零命令）→ `fleetly shell` 非交互 stdin EOF 形态 →
+# 审计 exec.session 行带命令面（audit Detail）。
+log "exec leg: loopback relay agent (manager node, zero-enroll form)"
+i=0
+while [ "$i" -lt 45 ]; do
+  if cli --json nodes list | grep -q '"relay_online": *true'; then
+    break
+  fi
+  i=$((i + 1)); sleep 2
+done
+cli --json nodes list | grep -q '"relay_online": *true' || {
+  echo "loopback relay agent never came online (relay_online=false)" >&2
+  cli --json nodes list >&2 || true
+  exit 1
+}
+log "relay agent online (loopback form)"
+
+EXEC_OUT=$(cli exec "$APP_ID/web" -- /bin/echo exec-loop-ok)
+case "$EXEC_OUT" in
+  *exec-loop-ok*) log "fleetly exec ran in the container (real docker exec chain)" ;;
+  *) echo "exec output missing marker, got: $EXEC_OUT" >&2; exit 1 ;;
+esac
+
+EXEC_RC=0
+cli exec "$APP_ID/web" -- /bin/false >/dev/null 2>&1 || EXEC_RC=$?
+[ "$EXEC_RC" = "1" ] || { echo "exec exit code passthrough broken (expected 1 from /bin/false, got $EXEC_RC)" >&2; exit 1; }
+log "exec exit code passed through (/bin/false → 1)"
+
+SHELL_ERR=$(cli shell "$APP_ID/web" </dev/null 2>&1 >/dev/null || true)
+case "$SHELL_ERR" in
+  *"# session"*) log "fleetly shell session opened and closed on stdin EOF" ;;
+  *) echo "shell session header missing, stderr: $SHELL_ERR" >&2; exit 1 ;;
+esac
+
+cli audit --action exec. --limit 5 | grep -q "exec.session" || {
+  echo "exec.session audit rows missing" >&2
+  exit 1
+}
+log "exec session audit rows carry the command face"
+
 # ---- F2.5 Metrics/Alerting 面（ADR-0041）----
 # install.sh 物化 FLEETLY_METRICS_ADDR（同 registry/logging 源）——受管
 # VM + cadvisor 全局端随新版起服。等待受管双件 1/1（全局服务单节点也是

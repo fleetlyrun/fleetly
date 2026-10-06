@@ -35,9 +35,17 @@ func (svc *NodesService) ListNodes(ctx context.Context, req *runtimev1.ListNodes
 	if err != nil {
 		return nil, mapStateError(err, "node")
 	}
+	// 中继在连状态是活体观测（engine hub 快照，非 nodes 表行——代理断连
+	// 即失，无持久化面；ADR-0049）。
+	relay := svc.s.Engine.RelayStatuses()
 	out := &runtimev1.ListNodesResponse{}
 	for _, n := range list {
-		out.Nodes = append(out.Nodes, nodeMsg(n))
+		msg := nodeMsg(n)
+		if st, ok := relay[n.PlatformID]; ok {
+			msg.RelayOnline = st.Online
+			msg.RelayAgentVersion = st.Version
+		}
+		out.Nodes = append(out.Nodes, msg)
 	}
 	return out, nil
 }
