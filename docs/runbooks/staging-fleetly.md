@@ -305,7 +305,7 @@ ADR-0042 落地（64f07f0..8b7f51d 七 commit，CI run 37218474928 六 job 全�
 | F2.9 合成真机 | `revisions diff --from 1 --to 2` = `processes[0].env.FOO: bar1`（Project 层共享变量进冻结 Spec，与 `--env OVR=1` 共存）；put 响应 affected_apps 提示；值明文回显；同输入重部署内容寻址复用同 Revision |
 | F3 级联删除真机 | redis 建库 running → apps delete → projects delete → 载体拆除 + 事件链 `app.deleted → database.deleted → project.deleted`（117722-117724）+ `fleetly-vol-r1` 卷保留义（ADR-0023 语义） |
 | ADR-0041 锚 6 告警真发 | staging 本机 webhookrecv（e2e/webhookrecv 同款二进制）：`channels test` → `alert_test` 载荷落盘 + delivered；阈值规则（memory>1B）15s 内 firing → `alert.fired` 真载荷（真 rule/app ID + 真采样 3.17MB）落接收器；顺带清掉 10-04 验收遗留的两条恒 firing 规则 |
-| Console 真机（F2.6） | HTTP 五项（index 200+title/asset immutable/index no-cache/SPA fallback/无凭证 401）+ 三页消费面逐端点对拍（per-App deployments 轴/logs NDJSON 帧含 base64 line/events 票据 SSE 具名帧 117721 实投）+ 走查 token 创建-吊销-401 复核；浏览器 UI 走查仍留痕缺（本环境无浏览器后端） |
+| Console 真机（F2.6） | HTTP 五项（index 200+title/asset immutable/index no-cache/SPA fallback/无凭证 401）+ 三页消费面逐端点对拍（per-App deployments 轴/logs NDJSON 帧含 base64 line/events 票据 SSE 具名帧 117721 实投）+ 走查 token 创建-吊销-401 复核；**浏览器 UI 走查已补**（2026-10-05/06 真机走查 PASS-with-notes，docs/reviews/2026-10-05-console-browser-walkthrough.md：判据全绿，SSE 活体双证；四发现 F1-F4 同日修复批闭——F2 服务端 300ec2d / F1+F3+F4 Console f9d42f5，staging 换装后生效） |
 | CLI 旗标纪律再证 | Go flag 位置参数停析——`--value`/`--channel`/`--role` 等必须前置位置参数（runbook"旗标前置"条的三次新实录） |
 
 **事件面**：风暴 ~11.5 万 `database.backup_failed` 事件在 outbox（7d 保留窗自然老化；台账行由 48h 清扫出清——**观察窗 10-06 04:30Z 起**，验证：`fleetly --json databases backups 01M3Y8WZ94YZ0R2D9PSK8MR13Z | grep -c '"status": *"failed"'` 应骤降、成功行不受影响、journal 无 prune 报错）。

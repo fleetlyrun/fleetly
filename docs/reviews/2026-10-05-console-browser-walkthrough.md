@@ -84,3 +84,12 @@
 **Console 浏览器走查：PASS-with-notes**
 
 判据面全绿（日志活体增量一项因 torchwood 应用侧不打访问日志而「无法验证」，已如实记录，非 UI 缺陷）；四个发现待办：**F2（服务端 `text`+`follow` 组合 hang，高危，UI 默认态引爆）**、F1（Console Stop 失效且反向重查，中危）、F3/F4（空流与空参的错误态提示，低危）。
+
+## 修复批闭环（2026-10-06）
+
+四发现当日修复落地（staging 换装后生效）：
+
+- **F2** `300ec2d`：follow 检索径补积压段——根因两层（原 follow 形态完全忽略 TailLines/Since 积压窗；grpc-gateway 首帧前不写响应头），修法 = 积压段先行出帧 + 尾随段 `start_offset` 锚最新积压帧、重叠窗去重，与实时径 `--tail/--follow` 语义对齐；回归测试 `TestFollowBacklogThenTail` / `TestFollowEmptyBacklogTailFromSince`。
+- **F1** `f9d42f5`：Stop/Start 同位换型按钮（mousedown 的 Stop 把节点原地改成 submit 型，同按压的 click 即重提交）改为恒 `type=button` 的单一稳定节点；Enter 隐式提交保住。
+- **F3** `f9d42f5`：新增 ended 状态（自然收流区别于手动 Stop）——空结果提示 "Stream ended — no frames matched"，计数后缀 "· ended"。
+- **F4** `f9d42f5`：`useApps` 空项目禁查（ListApps 契约 project_id 必填）；部署页未选项目呈现引导态；日志页项目下拉首项改引导语义。
