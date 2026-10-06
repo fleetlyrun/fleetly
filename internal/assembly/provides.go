@@ -348,6 +348,11 @@ func gatewayPort(httpAddr string) string {
 func NewAPIServices(db *state.DB, e *engine.Engine, cipher *material.Cipher, rt capability.Runtime, cfg *config.AppConfig, app lynx.App) *fleetlygrpc.Services {
 	s := fleetlygrpc.NewServices(db, e, cipher, rt, cfg.DataRoot(), ScopeResources(), app.Logger())
 	s.GatewayPort = gatewayPort(cfg.HTTPAddr())
+	// App 模板目录刷新源（F3.3，ADR-0050 决策 4：空 = 刷新停用，内嵌目录
+	// 即全部）。
+	if cfg.Server != nil {
+		s.TemplatesCatalogURL = cfg.Server.TemplatesCatalogUrl
+	}
 	return s
 }
 

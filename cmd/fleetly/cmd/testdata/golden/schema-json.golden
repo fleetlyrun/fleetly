@@ -433,6 +433,18 @@
       "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"name\":{\"type\":\"string\"}},\"required\":[\"name\"],\"type\":\"object\"}"
     },
     {
+      "name": "template.instantiated",
+      "kind": "event",
+      "summary": "A template was instantiated into a deployment (payload carries the template name@version and the deployment id).",
+      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"deployment\":{\"type\":\"string\"},\"template\":{\"type\":\"string\"},\"version\":{\"type\":\"string\"}},\"required\":[\"template\",\"version\",\"deployment\"],\"type\":\"object\"}"
+    },
+    {
+      "name": "templates.refreshed",
+      "kind": "event",
+      "summary": "The template catalog snapshot was refreshed (payload carries the previous and new aggregate digests and the entry count).",
+      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"count\":{\"type\":\"integer\"},\"digest\":{\"type\":\"string\"},\"previous\":{\"type\":\"string\"}},\"required\":[\"previous\",\"digest\",\"count\"],\"type\":\"object\"}"
+    },
+    {
       "name": "token.created",
       "kind": "event",
       "summary": "A token was minted (secret shown once at creation).",

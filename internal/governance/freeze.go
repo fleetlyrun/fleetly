@@ -60,6 +60,7 @@ var FrozenVerbs = map[string]freezeScope{
 	"/fleetly.structure.v1.DatabasesService/DeleteDatabase":             {field: "id", kind: anchor.KindDatabase},
 	"/fleetly.delivery.v1.DeploymentsService/Deploy":                    {field: "app_id", kind: anchor.KindApp},
 	"/fleetly.delivery.v1.DeploymentsService/Rollback":                  {field: "app_id", kind: anchor.KindApp},
+	"/fleetly.delivery.v1.TemplatesService/InstantiateTemplate":         {field: "project_id", kind: anchor.KindProject},
 	"/fleetly.delivery.v1.HooksService/SetGitHook":                      {field: "app_id", kind: anchor.KindApp},
 	"/fleetly.delivery.v1.HooksService/RotateHookToken":                 {field: "app_id", kind: anchor.KindApp},
 	"/fleetly.delivery.v1.HooksService/ReceiveWebhook":                  {field: "token", kind: anchor.KindHookToken},

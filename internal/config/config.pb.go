@@ -271,9 +271,13 @@ type Server struct {
 	Grpc  *GRPC                  `protobuf:"bytes,1,opt,name=grpc,proto3" json:"grpc,omitempty"`
 	Http  *HTTP                  `protobuf:"bytes,2,opt,name=http,proto3" json:"http,omitempty"`
 	// Proxy config 拉取端点（traefik HTTP provider 的控制面侧监听，ADR-0036）。
-	ProxyConfig   *ProxyConfig `protobuf:"bytes,3,opt,name=proxy_config,json=proxyConfig,proto3" json:"proxy_config,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	ProxyConfig *ProxyConfig `protobuf:"bytes,3,opt,name=proxy_config,json=proxyConfig,proto3" json:"proxy_config,omitempty"`
+	// App 模板目录刷新源（F3.3，ADR-0050 决策 4）：base URL（清单拼
+	// /catalog.json）；空 = 刷新停用（内嵌目录即全部——冷启动/离线形态）。
+	// env 形态 FLEETLY_SERVER_TEMPLATES_CATALOG_URL。
+	TemplatesCatalogUrl string `protobuf:"bytes,4,opt,name=templates_catalog_url,json=templatesCatalogUrl,proto3" json:"templates_catalog_url,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *Server) Reset() {
@@ -325,6 +329,13 @@ func (x *Server) GetProxyConfig() *ProxyConfig {
 		return x.ProxyConfig
 	}
 	return nil
+}
+
+func (x *Server) GetTemplatesCatalogUrl() string {
+	if x != nil {
+		return x.TemplatesCatalogUrl
+	}
+	return ""
 }
 
 type GRPC struct {
@@ -755,11 +766,12 @@ const file_config_proto_rawDesc = "" +
 	"\x06bucket\x18\x02 \x01(\tR\x06bucket\x12\x16\n" +
 	"\x06prefix\x18\x03 \x01(\tR\x06prefix\x12\"\n" +
 	"\raccess_key_id\x18\x04 \x01(\tR\vaccessKeyId\x12*\n" +
-	"\x11secret_access_key\x18\x05 \x01(\tR\x0fsecretAccessKey\"\xa5\x01\n" +
+	"\x11secret_access_key\x18\x05 \x01(\tR\x0fsecretAccessKey\"\xd9\x01\n" +
 	"\x06Server\x12+\n" +
 	"\x04grpc\x18\x01 \x01(\v2\x17.fleetly.config.v1.GRPCR\x04grpc\x12+\n" +
 	"\x04http\x18\x02 \x01(\v2\x17.fleetly.config.v1.HTTPR\x04http\x12A\n" +
-	"\fproxy_config\x18\x03 \x01(\v2\x1e.fleetly.config.v1.ProxyConfigR\vproxyConfig\"\x1a\n" +
+	"\fproxy_config\x18\x03 \x01(\v2\x1e.fleetly.config.v1.ProxyConfigR\vproxyConfig\x122\n" +
+	"\x15templates_catalog_url\x18\x04 \x01(\tR\x13templatesCatalogUrl\"\x1a\n" +
 	"\x04GRPC\x12\x12\n" +
 	"\x04addr\x18\x01 \x01(\tR\x04addr\"\x1a\n" +
 	"\x04HTTP\x12\x12\n" +

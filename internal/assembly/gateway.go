@@ -58,6 +58,8 @@ func gatewayRegistrations() []gateway.RegisterFunc {
 		// Hooks 配置面（Set/Get/Rotate）：注解面 RPC；接收面 ReceiveWebhook
 		// 在原生挂法（mountHooks），不在此。
 		registerClient(deliveryv1.NewHooksServiceClient, deliveryv1.RegisterHooksServiceHandlerClient),
+		// Templates 目录/实例化/刷新（F3.3，ADR-0050）。
+		registerClient(deliveryv1.NewTemplatesServiceClient, deliveryv1.RegisterTemplatesServiceHandlerClient),
 		registerClient(runtimev1.NewNodesServiceClient, runtimev1.RegisterNodesServiceHandlerClient),
 		// Exec 受理面注解 RPC（F3.2，ADR-0049）；会话流在原生挂法
 		//（mountExecStream——WS），不在此。

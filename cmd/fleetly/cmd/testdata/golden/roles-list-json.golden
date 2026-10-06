@@ -29,6 +29,7 @@
         "shared_variables:admin",
         "tasks:admin",
         "teams:admin",
+        "templates:admin",
         "tokens:admin",
         "users:admin",
         "volumes:admin"
@@ -67,6 +68,7 @@
         "shared_variables:write",
         "tasks:read",
         "tasks:write",
+        "templates:read",
         "volumes:read",
         "volumes:write"
       ],

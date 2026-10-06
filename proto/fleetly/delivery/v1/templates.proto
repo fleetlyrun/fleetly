@@ -1,0 +1,148 @@
+syntax = "proto3";
+
+// Templates 子面（F3.3，ADR-0050）：App 模板目录与一键部署。Template 是
+// 平台全局内容寻址目录文档（内嵌 + 刷新快照，非资源行）；InstantiateTemplate
+// 是服务端 create-or-reuse 编排——渲染走既有 Deploy 链（admission/审计/
+// 事件全复用，零新部署轨）。RefreshTemplates 是目录热更新动词（"CDN"的
+// fleetly 形态：可配置 base URL + 内容寻址清单 + 显式刷新，非后台轮询）。
+package fleetly.delivery.v1;
+
+option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1;deliveryv1";
+
+import "google/api/annotations.proto";
+import "protoc-gen-openapiv2/options/annotations.proto";
+import "grpcapi/v1/authz.proto";
+
+option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
+  responses: {
+    key: "default"
+    value: {
+      description: "An unexpected error response."
+      schema: { json_schema: { ref: ".fleetly.shared.v1.ErrorResponse" } }
+    }
+  }
+};
+
+service TemplatesService {
+  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+
+  // ListTemplates 列目录（当前服务源：内嵌或最近刷新快照）。平台全局读面
+  // ——无行级归属。
+  rpc ListTemplates(ListTemplatesRequest) returns (ListTemplatesResponse) {
+    option (google.api.http) = { get: "/v1/templates" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "templates" op: SCOPE_OP_READ }
+    };
+  }
+  // GetTemplate 读单条（含模板体原文——插值前，无 secret 材料）。
+  rpc GetTemplate(GetTemplateRequest) returns (GetTemplateResponse) {
+    option (google.api.http) = { get: "/v1/templates/{name}" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "templates" op: SCOPE_OP_READ }
+    };
+  }
+  // InstantiateTemplate 一键部署：模板 + values → create-or-reuse 序
+  //（App/网络/Secret/Database）→ 渲染 → 既有 Deploy 链 → Route。响应逐
+  // 资源报 created|reused；重跑按名收敛（不旋转密码）。等待是调用方的
+  // 事（部署引用已返回）。
+  rpc InstantiateTemplate(InstantiateTemplateRequest) returns (InstantiateTemplateResponse) {
+    option (google.api.http) = { post: "/v1/templates/instantiate" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "templates" op: SCOPE_OP_WRITE }
+    };
+  }
+  // RefreshTemplates 刷新目录（操作员动词）：拉取配置的 catalog URL →
+  // digest 核对 + 全量预校验 → 原子覆盖快照（fail-closed：坏目录不换好
+  // 目录）。未配置 catalog URL = 精确拒绝（内嵌目录即全部）。
+  rpc RefreshTemplates(RefreshTemplatesRequest) returns (RefreshTemplatesResponse) {
+    option (google.api.http) = { post: "/v1/templates/refresh" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "platform" op: SCOPE_OP_WRITE }
+    };
+  }
+}
+
+message Template {
+  string name = 1;
+  string version = 2;
+  // digest 是模板体 sha256（刷新核对与回显锚）。
+  string digest = 3;
+  string description = 4;
+  repeated TemplateVariable variables = 5;
+}
+
+// TemplateVariable 是一条语义变量声明（ADR-0050 决策 2 三型）。
+message TemplateVariable {
+  string name = 1;
+  // type 是 string | secret | domain：string 插值进 compose 文本；secret
+  // 平台铸造随机密码（值永不出现在渲染产物——文件注入）；domain 驱动
+  // Route（与模板 routes 声明联动）。
+  string type = 2;
+  string description = 3;
+  // default 是缺省值（secret 型恒缺省——平台铸造，不可设置）。
+  string default = 4;
+  bool required = 5;
+}
+
+message ListTemplatesRequest {}
+
+message ListTemplatesResponse {
+  repeated Template templates = 1;
+  // source 是当前服务源：builtin（内嵌目录）| refreshed（最近刷新快照）。
+  string source = 2;
+}
+
+message GetTemplateRequest {
+  string name = 1;
+}
+
+message GetTemplateResponse {
+  Template template = 1;
+  // body 是模板 YAML 原文（x-fleetly-template 声明 + compose 子集；插值
+  // 前形态，无 secret 材料）。
+  string body = 2;
+}
+
+message InstantiateTemplateRequest {
+  string project_id = 1;
+  // template 是目录键（如 "nginx"）。
+  string template = 2;
+  // app_name 是目标 App 名（create-or-reuse：同名活跃 App 直接复用——
+  // 重跑即重部署，latest-wins）。
+  string app_name = 3;
+  // values 是 string/domain 型变量值（secret 型携带即拒——平台铸造）。
+  map<string, string> values = 4;
+}
+
+// InstantiatedResource 是实例化报告的一条资源行。
+message InstantiatedResource {
+  // kind 是 app | network | secret | database | route | deployment。
+  string kind = 1;
+  string id = 2;
+  string name = 3;
+  // reused 为 true 表示同名既有资源直接复用（未新建——幂等重跑面）。
+  bool reused = 4;
+}
+
+message InstantiateTemplateResponse {
+  string app_id = 1;
+  string deployment_id = 2;
+  // template_version 是本次实例化消费的模板版本（审计锚）。
+  string template_version = 3;
+  repeated InstantiatedResource resources = 4;
+}
+
+message RefreshTemplatesRequest {}
+
+message RefreshTemplatesResponse {
+  // previous_digest 是刷新前服务目录 digest（内嵌目录的 digest 或旧快照
+  // digest；首次刷新前无快照 = 内嵌目录聚合 digest）。
+  string previous_digest = 1;
+  // digest 是新快照聚合 digest（条目 digest 的聚合）。
+  string digest = 2;
+  int32 template_count = 3;
+}

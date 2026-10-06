@@ -15,6 +15,7 @@ import (
 	"io"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/spec"
@@ -36,6 +37,18 @@ type Entry struct {
 func DigestOf(body string) string {
 	sum := sha256.Sum256([]byte(body))
 	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+// AggregateDigest 铸一组条目的聚合 digest（排序后 name@digest 行串——
+// 快照与内嵌目录同公式；templates.refreshed 事件与 RefreshTemplates 响应
+// 的前后对照锚）。
+func AggregateDigest(entries []Entry) string {
+	lines := make([]string, 0, len(entries))
+	for _, e := range entries {
+		lines = append(lines, e.Name+"@"+e.Digest)
+	}
+	sort.Strings(lines)
+	return DigestOf(strings.Join(lines, "\n"))
 }
 
 // Builtin 解析内嵌目录（启动即校验：坏内嵌条目是构建期缺陷，启动即红——

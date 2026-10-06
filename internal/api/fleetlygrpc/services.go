@@ -16,6 +16,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state/audit"
 	"github.com/fleetlyrun/fleetly/internal/state/backup"
 	"github.com/fleetlyrun/fleetly/internal/state/build"
+	catalogrepo "github.com/fleetlyrun/fleetly/internal/state/catalog"
 	configrepo "github.com/fleetlyrun/fleetly/internal/state/config"
 	dbrepo "github.com/fleetlyrun/fleetly/internal/state/database"
 	"github.com/fleetlyrun/fleetly/internal/state/deployment"
@@ -98,6 +99,14 @@ type Services struct {
 	// ObjectStore 端口是 engine 执行链的装配物）。
 	Backups *backup.Repo
 
+	// Catalog 是 App 模板目录快照 repo（F3.3，ADR-0050：RefreshTemplates
+	// 的单行快照；解析序 = 快照在场优先、内嵌目录兜底）。
+	Catalog *catalogrepo.Repo
+
+	// TemplatesCatalogURL 是目录刷新源（ADR-0050 决策 4：空 = 刷新停用，
+	// 内嵌目录即全部；装配期从 server.templates_catalog_url 注入）。
+	TemplatesCatalogURL string
+
 	// Anchor 是「聚合行 → Project → Team」归属解析图（freeze 与行级授权
 	// 共用单源，架构评审第二轮候选 3；ADR-0017 附录 A.3 / ADR-0035）。
 	Anchor *anchor.Anchor
@@ -158,6 +167,7 @@ func NewServices(db *state.DB, e *engine.Engine, c *material.Cipher, rt capabili
 		UploadStore:     upload.NewStore(dataRoot, 0, 0),
 		Databases:       dbrepo.New(clock),
 		Backups:         backup.New(clock),
+		Catalog:         catalogrepo.New(clock),
 		Anchor:          anchor.New(clock),
 		eventTickets:    newEventTicketStore(clock),
 		ScopeVocabulary: vocab,

@@ -49,6 +49,10 @@ message Server {
   HTTP http = 2;
   // Proxy config 拉取端点（traefik HTTP provider 的控制面侧监听，ADR-0036）。
   ProxyConfig proxy_config = 3;
+  // App 模板目录刷新源（F3.3，ADR-0050 决策 4）：base URL（清单拼
+  // /catalog.json）；空 = 刷新停用（内嵌目录即全部——冷启动/离线形态）。
+  // env 形态 FLEETLY_SERVER_TEMPLATES_CATALOG_URL。
+  string templates_catalog_url = 4;
 }
 
 message GRPC {

@@ -67,6 +67,9 @@ var freezeExemptions = map[string]string{
 	"/fleetly.telemetry.v1.AlertingService/DeleteNotificationChannel": "alerting configuration is operational, not a change-controlled workload",
 	"/fleetly.telemetry.v1.AlertingService/CreateAlertRule":           "alerting configuration is operational, not a change-controlled workload",
 	"/fleetly.telemetry.v1.AlertingService/DeleteAlertRule":           "alerting configuration is operational, not a change-controlled workload",
+	// 目录刷新（F3.3，ADR-0050 决策 4）：平台全局操作员内容（集群面权力在
+	// platform scope），不是 Team 变更控制面的 Workload/结构变更。
+	"/fleetly.delivery.v1.TemplatesService/RefreshTemplates": "cluster ops: the platform template catalog is operator content, not team workload state (ADR-0050)",
 }
 
 // freezeReadPrefixes 是读面前缀（无副作用，免冻结分类；Diff 是两 Revision

@@ -104,4 +104,7 @@ func init() {
 	// Exec 会话受理（execEventPayload，exec.go 单源；F3.2/ADR-0049——
 	// 安全可见性：谁在何时进入了哪个进程）。
 	registerEventPayload("exec.session_opened", execEventPayload{})
+	// App 模板面（templates.go 单源；F3.3，ADR-0050——实例化摘要与目录刷新台账）。
+	registerEventPayload(eventTemplateInstantiated, templateEventPayload{})
+	registerEventPayload(eventTemplatesRefreshed, templatesRefreshedPayload{})
 }

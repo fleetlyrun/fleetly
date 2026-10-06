@@ -47,6 +47,7 @@ const redactedInternalMessage = "internal server error"
 // （Canceled→499、DeadlineExceeded→504 等）。
 var errcodeToHTTP = map[string]int{
 	"E_ALREADY_EXISTS":           http.StatusConflict,
+	"E_CATALOG_UNAVAILABLE":      http.StatusServiceUnavailable,
 	"E_CHANGE_FROZEN":            http.StatusConflict,
 	"E_CONFLICT":                 http.StatusConflict,
 	"E_EVENTS_GONE":              http.StatusGone,
@@ -66,6 +67,7 @@ var errcodeToHTTP = map[string]int{
 	"E_QUOTA_EXCEEDED":           http.StatusTooManyRequests,
 	"E_RATE_LIMITED":             http.StatusTooManyRequests,
 	"E_SECRET_UNAVAILABLE":       http.StatusConflict,
+	"E_TEMPLATE_INVALID":         http.StatusBadRequest,
 	"E_UNAUTHENTICATED":          http.StatusUnauthorized,
 	"E_UPLOAD_TOO_LARGE":         http.StatusRequestEntityTooLarge,
 	"E_UPLOAD_UNAVAILABLE":       http.StatusGone,

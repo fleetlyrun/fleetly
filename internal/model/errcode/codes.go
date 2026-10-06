@@ -166,4 +166,18 @@ var builtins = []Code{
 		Source:     "internal/engine/exec.go CreateSession (ADR-0049 decision 2: reverse-relay routing requires a live agent; nodes with zero inbound ports are reached only through their outbound relay)",
 		GRPC:       codes.FailedPrecondition,
 	},
+	{
+		ID:         "E_TEMPLATE_INVALID",
+		Summary:    "An app template document failed to parse, render or validate.",
+		Suggestion: "The error names the template field at fault. If the template came from a catalog refresh, the refresh pre-validation should have caught it; report the template name@version (in the message) with the error text.",
+		Source:     "internal/api/fleetlygrpc/templates.go InstantiateTemplate (ADR-0050 decision 2: fail-closed render chain; refresh pre-validates the same entry points, so reaching this code means a template defect)",
+		GRPC:       codes.InvalidArgument,
+	},
+	{
+		ID:         "E_CATALOG_UNAVAILABLE",
+		Summary:    "The template catalog refresh failed (fetch, digest verification or pre-validation).",
+		Suggestion: "The served catalog is unchanged. Check the configured server.templates_catalog_url, that the endpoint serves catalog.json (manifest version 1 with per-template sha256 digests), and that every entry passes validation; the error text names the failing step.",
+		Source:     "internal/api/fleetlygrpc/templates.go RefreshTemplates (ADR-0050 decision 4: fail-closed refresh — a bad catalog never replaces a working one)",
+		GRPC:       codes.Unavailable,
+	},
 }

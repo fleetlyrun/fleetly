@@ -139,4 +139,12 @@ var builtins = []Event{
 	// Exec 会话（F3.2，ADR-0049 决策 4：安全可见性——谁在何时进入了哪个
 	// 进程；会话不是资源行，受理即唯一事件/审计落点，结束不落第二行）。
 	{Name: "exec.session_opened", Summary: "An exec session was accepted into a running workload (actor, process, instance, node and command are in the payload; change freeze is exempt — diagnostics face).", Source: "internal/api/fleetlygrpc/exec.go CreateExecSession"},
+
+	// App 模板（F3.3，ADR-0050）：实例化摘要事件——伴生资源各自的
+	// app.created/secret.updated/database.created/route 事件由 create-or-reuse
+	// 步骤自然发射，本事件钉"哪个模板在哪次部署落了地"的审计锚。
+	{Name: "template.instantiated", Summary: "A template was instantiated into a deployment (payload carries the template name@version and the deployment id).", Source: "internal/api/fleetlygrpc/templates.go InstantiateTemplate"},
+	// 目录刷新（F3.3，ADR-0050 决策 4）：操作员动词的事实面——快照 digest
+	// 前后对照是"目录何时被谁换成什么"的唯一台账。
+	{Name: "templates.refreshed", Summary: "The template catalog snapshot was refreshed (payload carries the previous and new aggregate digests and the entry count).", Source: "internal/api/fleetlygrpc/templates.go RefreshTemplates"},
 }

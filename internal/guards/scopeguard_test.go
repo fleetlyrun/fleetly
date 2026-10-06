@@ -23,7 +23,7 @@ var mutatingVerbs = []string{
 	"Create", "Delete", "Put", "Deploy", "Rollback", "Revoke", "Enroll",
 	"Drain", "Cordon", "Uncordon", "Scale", "Stop", "Cancel", "Renew",
 	"Trigger", "Rotate", "Upload", "Set", "Lift", "Approve", "Accept",
-	"Declare", "Rebuild",
+	"Declare", "Rebuild", "Instantiate", "Refresh",
 }
 
 // readVerbs 是读型动词前缀（op 必须 READ）。

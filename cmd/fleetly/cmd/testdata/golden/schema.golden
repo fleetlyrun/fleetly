@@ -71,6 +71,8 @@ task.draining	event	A task started draining: replenishment stopped; in-flight ru
 task.failed	event	A one-shot task's run failed.
 task.updated	event	A task's desired concurrency was updated.
 team.created	event	A team was created.
+template.instantiated	event	A template was instantiated into a deployment (payload carries the template name@version and the deployment id).
+templates.refreshed	event	The template catalog snapshot was refreshed (payload carries the previous and new aggregate digests and the entry count).
 token.created	event	A token was minted (secret shown once at creation).
 token.revoked	event	A token was revoked; its next call will be rejected.
 upload.stored	event	An uploaded source was stored (content-addressed; payload carries id, digest, size and deduplicated).
