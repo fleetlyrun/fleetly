@@ -363,3 +363,19 @@ func TestRegistryAuthNeverEntersCarrierSpec(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, anon, "no matching host must mean anonymous pull (empty auth header)")
 }
+
+// TestAddressAliasesPreserveDots（ADR-0048 决策 3）：全名 {进程名}.{应用名}
+// 的点是合法 DNS 成分——别名净化保点（载体名净化折 dash 的分立面）；
+// 排序稳定 + 大写折叠 + DNS 敌对字符折叠。
+func TestAddressAliasesPreserveDots(t *testing.T) {
+	got := addressAliases([]capability.Address{
+		{Name: "web"},
+		{Name: "web.torchwood"},
+	})
+	assert.Equal(t, []string{"web", "web.torchwood"}, got)
+
+	// 大写折叠与敌对字符折叠；首尾点/连字符修剪。
+	assert.Equal(t, []string{"web.shop"}, addressAliases([]capability.Address{{Name: "WEB.Shop"}}))
+	assert.Equal(t, []string{"web-shop"}, addressAliases([]capability.Address{{Name: "web shop"}}))
+	assert.Equal(t, []string{"web"}, addressAliases([]capability.Address{{Name: ".web."}}))
+}

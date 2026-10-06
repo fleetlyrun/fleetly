@@ -319,17 +319,41 @@ func restartPolicyCondition(r capability.RestartPolicy) swarm.RestartPolicyCondi
 }
 
 // addressAliases 把平台标准 DNS 名声明映射为 swarm 网络别名（排序稳定：
-// 幂等 diff 逐字节稳定）。
+// 幂等 diff 逐字节稳定）。别名净化保点：全名 {进程名}.{应用名}（ADR-0048
+// 决策 3）是多标签 DNS 名，'.' 是合法成分——与载体名净化（点折 dash）
+// 分立；其余 DNS 敌对字符仍折叠，理论撞名面由应用名 Project 内唯一性
+// 兜底（见 engine.AppProcessDNSName）。
 func addressAliases(addressing []capability.Address) []string {
 	if len(addressing) == 0 {
 		return nil
 	}
 	names := make([]string, 0, len(addressing))
 	for _, a := range addressing {
-		names = append(names, sanitizeNamePart(a.Name))
+		names = append(names, sanitizeAliasName(a.Name))
 	}
 	sort.Strings(names)
 	return names
+}
+
+// sanitizeAliasName 把别名压到 DNS 安全集（小写字母数字、连字符与内点
+// ——多标签名保形）。
+func sanitizeAliasName(s string) string {
+	s = strings.ToLower(s)
+	var b strings.Builder
+	lastDash := false
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '.':
+			b.WriteRune(r)
+			lastDash = false
+		default:
+			if !lastDash && b.Len() > 0 {
+				b.WriteByte('-')
+				lastDash = true
+			}
+		}
+	}
+	return strings.Trim(b.String(), "-.")
 }
 
 // endpointSpec 翻译宿主端口发布声明（受管 Proxy/zot/VL/VM 形态使用）。

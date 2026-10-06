@@ -118,7 +118,7 @@ func (e *Engine) prepare(ctx context.Context, d *deployment.Deployment) (*deploy
 			return e.failDeployment(ctx, d, "first boot job: "+verr.Error())
 		}
 	}
-	team, _, err := e.appTeam(ctx, d.AppID)
+	team, appRow, err := e.appTeam(ctx, d.AppID)
 	if err != nil {
 		return e.failDeployment(ctx, d, "resolve app: "+err.Error())
 	}
@@ -138,7 +138,7 @@ func (e *Engine) prepare(ctx context.Context, d *deployment.Deployment) (*deploy
 	if derr == nil && (digests != nil || spec.GetBuild() == nil) {
 		peers, perr := e.resolvePeerRefs(ctx, e.db.Runner(), spec.GetApp().GetProject(), spec, false)
 		if perr == nil {
-			_, _, perr = Project(spec, team, digests, peers)
+			_, _, perr = Project(spec, team, appRow.Name, digests, peers)
 		}
 		derr = perr
 	}

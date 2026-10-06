@@ -76,12 +76,13 @@ type PeerRefs struct {
 
 // Project 把 Revision 冻结的 AppSpec 投影为 Runtime 无关的 Workload 集
 // （架构 §4 投影规则：探针/卷钉住/网络附件在 IR 是声明，映射成编排器
-// 原语是 Provider 的事）。Team 取 Project 行（归属轴），调用方负责解析。
+// 原语是 Provider 的事）。Team 取 Project 行（归属轴）、appName 取 App
+// 行 name（P16 全名别名的成分），调用方负责解析。
 //
 // from_build 解析：buildDigests 提供同名构建产物 digest（Ensure 前由平台
 // 解析——Revision 只冻结引用，产物随 Build 行走）；缺失即校验错误。
 // 跨 Project 引用经 peers 翻译为 NetworkRefs（ADR-0013 附录 A.3）。
-func Project(spec *specv1.AppSpec, team string, buildDigests map[string]string, peers PeerRefs) ([]capability.Workload, capability.NamespaceRef, error) {
+func Project(spec *specv1.AppSpec, team, appName string, buildDigests map[string]string, peers PeerRefs) ([]capability.Workload, capability.NamespaceRef, error) {
 	ns := capability.NamespaceRef{Team: team, Project: spec.GetApp().GetProject(), App: spec.GetApp().GetId()}
 	workloads := make([]capability.Workload, 0, len(spec.GetProcesses()))
 	for _, p := range spec.GetProcesses() {
@@ -105,10 +106,16 @@ func Project(spec *specv1.AppSpec, team string, buildDigests map[string]string, 
 			}(),
 			Networks: p.GetNetworks(),
 		}
-		// 网络别名 = 进程名（ADR-0034：compose 服务名互访语义补全——
-		// Provider 把 Addressing 映射为挂靠网络的别名；Task 域双级 DNS
-		// 同通道，ADR-0025 决策 6）。
-		w.Addressing = []capability.Address{{Name: p.GetName()}}
+		// 网络别名双值（ADR-0034 裸名 + ADR-0048 决策 3 全名）：裸名保
+		// compose 单栈兼容（单 App 内进程名唯一，归一化路径永不撞名）；
+		// 全名 {进程名}.{应用名} 消歧同网多 App 同名进程（跨 Project
+		// 挂靠同网同理）。应用名取 App 行 name（Project 内唯一——同名
+		// 进程不同 App 的全名必不同）。纯投影/alias 通道变化，零解析器
+		//（P16 维持项：解析器归 Runtime）。
+		w.Addressing = []capability.Address{
+			{Name: p.GetName()},
+			{Name: AppProcessDNSName(p.GetName(), appName)},
+		}
 		for _, port := range p.GetPorts() {
 			w.Ports = append(w.Ports, capability.WorkloadPort{
 				Port:     port.GetPort(),
@@ -278,6 +285,16 @@ func ProjectDatabase(s *specv1.DatabaseSpec, team, volumeName string, networks [
 // 在此归一——单一翻译真源，ADR-0025 决策 5）。
 func TaskGroupNetworkName(group string) string {
 	return "taskgrp-" + strings.ToLower(group)
+}
+
+// AppProcessDNSName 铸 App 进程的全名 DNS 名（{进程名}.{应用名}，ADR-0048
+// 决策 3；铸名公式住 engine——名字是平台 API 面，N4 换 Runtime 名字不变，
+// TaskDNSName/RunDNSName/DatabaseDNSName 同族）。应用名取 App 行 name
+//（Project 内唯一——同名进程不同 App 的全名必不同；DNS 大小写不敏感，
+// 统一小写。名字含 DNS 敌对字符的折叠由 Provider 别名通道兜底，仅理论
+// 撞名面——受名字面唯一性保护的是 DNS 干净形态）。
+func AppProcessDNSName(process, appName string) string {
+	return strings.ToLower(process + "." + appName)
 }
 
 // TaskDNSName 铸 per-Task 池级稳定 DNS 名（活 Run 轮询解析；公式住 engine

@@ -23,14 +23,16 @@ func TestProjectTranslatesTaskGroupRefs(t *testing.T) {
 			Networks:    []string{"default", "taskGroup:dispatcher", "taskgrp-plain"},
 		}},
 	}
-	ws, ns, err := Project(spec, "acme", nil, PeerRefs{})
+	ws, ns, err := Project(spec, "acme", "torchwood", nil, PeerRefs{})
 	require.NoError(t, err)
 	assert.Equal(t, capability.NamespaceRef{Team: "acme", Project: "shop", App: "01JAPP"}, ns)
 	require.Len(t, ws, 1)
 	assert.Equal(t, []string{"default", "taskgrp-dispatcher", "taskgrp-plain"}, ws[0].Networks)
-	// ADR-0034：App Process 网络别名 = 进程名（compose 服务名互访语义）。
-	require.Len(t, ws[0].Addressing, 1)
+	// ADR-0034 + ADR-0048 决策 3：App Process 网络别名双值——裸名（compose
+	// 服务名互访语义）+ 全名 {进程名}.{应用名}（同网多 App 同名进程消歧）。
+	require.Len(t, ws[0].Addressing, 2)
 	assert.Equal(t, "web", ws[0].Addressing[0].Name)
+	assert.Equal(t, "web.torchwood", ws[0].Addressing[1].Name)
 }
 
 // TestProjectTaskRunWorkload（ADR-0025 决策 2/4/6）：Run Workload 投影——

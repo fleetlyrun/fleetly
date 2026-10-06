@@ -173,16 +173,16 @@ func TestProjectTranslatesCrossProjectRef(t *testing.T) {
 	approved := PeerRefs{Refs: map[string]capability.NetworkRef{
 		"project:01JD0PROJ00000000000000007/bus": {Namespace: capability.NamespaceRef{Team: "platform", Project: "01JD0PROJ00000000000000007"}, Name: "bus"},
 	}}
-	ws, _, err := Project(spec, "acme", nil, approved)
+	ws, _, err := Project(spec, "acme", "torchwood", nil, approved)
 	require.NoError(t, err)
 	require.Len(t, ws, 1)
 	assert.Equal(t, []string{"default", "taskgrp-dispatcher"}, ws[0].Networks, "only same-domain and taskGroup names stay in Networks")
 	require.Len(t, ws[0].NetworkRefs, 1)
 
-	_, _, err = Project(spec, "acme", nil, PeerRefs{})
+	_, _, err = Project(spec, "acme", "torchwood", nil, PeerRefs{})
 	require.ErrorContains(t, err, "not approved by the receiving project")
 
-	ws, _, err = Project(spec, "acme", nil, PeerRefs{Isolate: true})
+	ws, _, err = Project(spec, "acme", "torchwood", nil, PeerRefs{Isolate: true})
 	require.NoError(t, err)
 	require.Len(t, ws, 1)
 	assert.Equal(t, []string{"default", "taskgrp-dispatcher"}, ws[0].Networks)

@@ -42,7 +42,7 @@ func (e *Engine) materialize(ctx context.Context, d *deployment.Deployment, revi
 	if err != nil {
 		return fmt.Errorf("load revision spec: %w", err)
 	}
-	team, _, err := e.appTeam(ctx, d.AppID)
+	team, appRow, err := e.appTeam(ctx, d.AppID)
 	if err != nil {
 		return fmt.Errorf("resolve app: %w", err)
 	}
@@ -54,7 +54,7 @@ func (e *Engine) materialize(ctx context.Context, d *deployment.Deployment, revi
 	if err != nil {
 		return fmt.Errorf("resolve build digests: %w", err)
 	}
-	ws, ns, err := Project(spec, team, digests, peers)
+	ws, ns, err := Project(spec, team, appRow.Name, digests, peers)
 	if err != nil {
 		return fmt.Errorf("project spec: %w", err)
 	}
