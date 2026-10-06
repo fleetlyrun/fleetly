@@ -373,6 +373,17 @@ ADR-0042 落地（64f07f0..8b7f51d 七 commit，CI run 37218474928 六 job 全�
 - **代理运维面**：AgentCommand 幂等（重跑 = rm -f 旧容器重建——e2e 实证单容器收口）；**rotate 双 token 后旧代理失联待重跑**（C3 泄漏处置语义）；**平台升级后代理二进制滞后**——帧协议只增容忍、`nodes list` 的 `relay_agent_version` 回显滞后，升级序补一步"worker 重跑 AgentCommand"（本批 node2 已重跑至 f32exec2 同版）。
 - 残留清理（上批挂账）：torchwood 项目 buildprobe/staticprobe/railpackprobe 三 app 删除（级联拆载体）+ `fleetly-vol-archredis`/`fleetly-vol-probe-redis` 孤儿卷删除。
 
+## 2026-10-06 记录·十二（F3.3 模板库批换装 9df27c9-f33tpl + 模板面真机全链）
+
+**换装**（05df932-f32exec2 → 9df27c9-f33tpl，七 commit 9cb011c/…/9df27c9）：前置 Platform Backup `013d0362` + 卷 tar 五份（`/root/upgrade-f33/`）；**00026 迁移随批前滚**（template_catalog 单行快照表）。零扰动：受管 db task 行零新增（Running 8h 不变）；tw.dev 200 / n0.dev 200 / ml-api 415（预期形态）；worker AgentCommand 重跑（升级序既有步）→ 双节点 relay_online=true。走查判定 PASS，详见 `docs/reviews/2026-10-06-template-walkthrough.md`。
+
+- **版本戳纪律**：本地构建换装必须带 mise build 同款 ldflags（`-X main.version=<shorthash>-<slug>`）——裸构建 `fleetly status` 显示 `server=unknown`，走查第一发即咬出（17:32 重装收口）。
+- **模板面真机锚**：CLI `templates list`（source builtin）+ REST `/v1/templates[/name]`（gateway :9081，digest/变量声明规范形）；`templates refresh` 未配置 `server.templates_catalog_url` → E_INVALID_ARGUMENT 精确拒绝（内嵌目录即全部——staging 常态形态，刷新腿在 e2e dind 覆盖）。
+- **实例化全链**：nginx（string+domain 链）66s 全绿（真镜像拉取）→ Route 80 口 200 "Welcome to nginx!"——**模板 routes 声明的 tls 缺省 none**（quickstart 同款；e2e 首发踩 CreateRoute 服务端缺省 auto → dind 无 ACME 404，模板面显式收口）；grafana（secret 链）→ `template:dash:admin_password` 指纹面在场、值零回显、GF_*__FILE 文件注入 302 登录重定向（应用活体）。幂等重跑 reused 报告面真机一致。
+- **台账**：`template.instantiated` ×3（aggregate=app，payload template@version+deployment 三元组）+ audit `template.instantiate` ×3（AfterFP=模板名@版本）。
+- **走查脚注**：事件尾被 `database.backup_failed` 洪水覆盖（既有面，每拍轰炸，处置另行）——台账取证走 outbox 直查（manager 有 python3 无 sqlite3 CLI，`sqlite3.connect(file:…?mode=ro)` 可用）；`events list` 大窗翻页脚本要小心 limit 页帽（after_seq 游标语义不变）。
+- 残留清理：走查项目 staging-tpl 整体删除（routes→apps→project 序；apps delete 拆载体连带路由）；`template:dash:*` secret 行随项目材料保留（database: 凭证同口径——平台级命名空间，无级联清理面）。
+
 ## 平台升级操作序（F2.3 工具化，2026-10-04）
 
 ADR-0015 升级序的完整落地形态：**Platform Backup 前置 → SIGTERM 排水 → 二进制替换 → 起新版（goose 前滚 + Managed Provider 逐个 reconcile + 解除只读，全自动）**。前置动词自 75a3d31 起可用（旧版无 platform 组时按 b4cfea0 节的手工快照纪律执行）。

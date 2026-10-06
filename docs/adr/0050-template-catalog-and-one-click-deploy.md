@@ -171,19 +171,38 @@ F3.3 要求模板库四面：模板 schema（语义变量/自动生成密码/域
 
 ## 验收锚
 
-- [ ] 三型变量各得其所：string 插值、secret 铸造 + secret_refs 文件注入 + 值零
+- [x] 三型变量各得其所：string 插值、secret 铸造 + secret_refs 文件注入 + 值零
       出现于渲染产物与 AppSpec（反扫断言）、domain 变量驱动 Route 创建
-- [ ] fail-closed 渲染：未知变量/缺必填/secret 携值/残余插值/平台键漏剥/未知扩展
+      （internal/apptest/templates_test.go TestInstantiateTemplateSecretChain——
+      Ensure Materials.SecretFiles 形态值面 + env 路径引用面；staging grafana
+      真机复证，2026-10-06）
+- [x] fail-closed 渲染：未知变量/缺必填/secret 携值/残余插值/平台键漏剥/未知扩展
       字段 全拒（信封文案断言）
-- [ ] 实例化幂等：重跑同 instantiate 不旋转密码、不重建 Database/Route
+      （internal/apptemplate/apptemplate_test.go TestParseRejectsUnknownFields +
+      TestRenderFailClosed）
+- [x] 实例化幂等：重跑同 instantiate 不旋转密码、不重建 Database/Route
       （created→reused 报告面可见）
-- [ ] 目录刷新 fail-closed：digest 不符/预校验拒的清单不覆盖快照（apitest）
-- [ ] 内嵌目录冷启动：无目录源环境 list/instantiate 全可用
-- [ ] create-from-dokploy：解析映射 + skip 报告诚实（不可映射项逐条可见），
+      （apitest 指纹不变断言 + CLI golden rerun；staging 真机 reused 报告一致）
+- [x] 目录刷新 fail-closed：digest 不符/预校验拒的清单不覆盖快照（apitest）
+      （TestRefreshTemplatesFailClosed；e2e dind 篡改清单反锚——digest reason +
+      快照存活，2026-10-06 本地 dind 两腿全绿）
+- [x] 内嵌目录冷启动：无目录源环境 list/instantiate 全可用
+      （e2e dind-template.sh 腿 1 无目录源配置；staging 常态即此形态）
+- [x] create-from-dokploy：解析映射 + skip 报告诚实（不可映射项逐条可见），
       --dry-run 零调用
-- [ ] CLI golden 双形态：templates list/show/instantiate + create-from-dokploy
-- [ ] e2e 一腿全链：instantiate → deployment succeeded → Route 200（本地 dind）
-- [ ] Console：Templates 页目录/详情/实例化（tsc+vitest；dist 同 commit）
-- [ ] 门禁全套绿：mise run test + lint、guards -count=1、动 proto 后
+      （cmd/fleetly/cmd/templates_golden_test.go TestGoldenCreateFromDokploy——
+      git 源 app/插值孔 compose/mariadb 三类 skip 逐条钉板）
+- [x] CLI golden 双形态：templates list/show/instantiate + create-from-dokploy
+      （TestGoldenTemplatesCatalog/…InstantiateWaitsToSucceeded/…NoWaitJSON/
+      TestGoldenCreateFromDokploy，含组与 refresh 的动词级双形态契约）
+- [x] e2e 一腿全链：instantiate → deployment succeeded → Route 200（本地 dind）
+      （e2e/dind-template.sh 两腿：内嵌目录 + 目录热更新，TEMPLATE E2E PASSED）
+- [x] Console：Templates 页目录/详情/实例化（tsc+vitest；dist 同 commit）
+      （console/src/pages/Templates.tsx + lib/templateForm.ts/vitest 28 用例，
+      console:verify 零漂移）
+- [x] 门禁全套绿：mise run test + lint、guards -count=1、动 proto 后
       generate:verify、console:verify
-- [ ] staging 走查：目录读面 + 实例化全链 + 事件/审计（HTTP/消费契约级）
+      （2026-10-07 收官批全绿；守卫咬出并同批修复：dbtemplate 引擎词例外
+      机制重构 + 禁词 apply/dump/sink 措辞面）
+- [x] staging 走查：目录读面 + 实例化全链 + 事件/审计（HTTP/消费契约级）
+      （docs/reviews/2026-10-06-template-walkthrough.md PASS；runbook 记录·十二）
