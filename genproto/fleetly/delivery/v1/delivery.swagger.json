@@ -1,7 +1,7 @@
 {
   "swagger": "2.0",
   "info": {
-    "title": "Delivery 上下文（领域模型 §2）：源接入、构建、Revision 冻结与 Deployment\n生命周期。Deploy 是一站式入口：两源归一化 → AppSpec 校验 → Revision\n冻结（内容寻址复用）→ admission（ADR-0016）。",
+    "title": "Delivery 上下文（领域模型 §2）：源接入、构建、Revision 冻结与 Deployment\n生命周期。Deploy 是一站式入口：四源归一化（镜像直投 / Compose 受控子集 /\n上传产物 / 裸 AppSpec）→ AppSpec 校验 → Revision 冻结（内容寻址复用）→\nadmission（ADR-0016）。",
     "version": "version not set"
   },
   "tags": [
@@ -338,7 +338,7 @@
         ]
       },
       "post": {
-        "summary": "Deploy 归一化两源（镜像直投 / Compose 受控子集）并受理部署。",
+        "summary": "Deploy 归一化四源（镜像直投 / Compose 受控子集 / 上传产物 / 裸\nAppSpec）并受理部署。",
         "operationId": "DeploymentsService_Deploy",
         "responses": {
           "200": {
@@ -762,9 +762,21 @@
             "type": "string"
           },
           "title": "env 是 App 级变量直传（ADR-0043 决策 2）：image/upload 形态的单进程\n环境变量；归一化期覆盖 Project 层 SharedVariable（同键）。compose 形态\n自带 environment 声明面，携带即拒。"
+        },
+        "port": {
+          "type": "integer",
+          "format": "int32",
+          "title": "port/protocol 是直投与上传形态的端口声明（F3.5）：Route 后端解析的\n期望集供给面——单进程形态此前无 ports 声明通道（static Route 404 的\n根因）。protocol 缺省 http（http|h2c|tcp，Route 同词汇）；声明端口时\n进程同时挂靠项目 default 网络（Proxy 可达性）。compose/spec_file 形态\n自带 ports/networks 声明面，携带即拒。"
+        },
+        "protocol": {
+          "type": "string"
+        },
+        "spec_file": {
+          "type": "string",
+          "title": "spec_file 是裸 AppSpec 部署面（第四源，F3.5）：protojson（snake_case）\n的归一化 AppSpec——AppRef 由服务端按 app_id 权威覆写；schema_version\n缺省当前版。全部 AppSpec 字段经此成为 API 可写面（校验爆炸半径由\n叶子 ValidateApp 单源承载）。与 image/compose_yaml/upload_id 及全部\n单进程形态旗标（process_name/probe/port/env/builder 族）互斥。"
         }
       },
-      "title": "DeployRequest 三源（互斥；spec_file 已归一化 AppSpec JSON 随 API 扩展批）。"
+      "title": "DeployRequest 四源互斥（image 直投 / compose_yaml 受控子集 / upload_id\n上传产物 / spec_file 裸 AppSpec，F3.5）。"
     },
     "v1DeployResponse": {
       "type": "object",

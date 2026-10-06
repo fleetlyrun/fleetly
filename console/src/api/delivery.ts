@@ -124,7 +124,10 @@ export interface paths {
         };
         get: operations["DeploymentsService_ListDeployments"];
         put?: never;
-        /** Deploy 归一化两源（镜像直投 / Compose 受控子集）并受理部署。 */
+        /**
+         * Deploy 归一化四源（镜像直投 / Compose 受控子集 / 上传产物 / 裸
+         *     AppSpec）并受理部署。
+         */
         post: operations["DeploymentsService_Deploy"];
         delete?: never;
         options?: never;
@@ -293,7 +296,10 @@ export interface components {
         v1CancelDeploymentResponse: {
             deployment?: components["schemas"]["v1Deployment"];
         };
-        /** DeployRequest 三源（互斥；spec_file 已归一化 AppSpec JSON 随 API 扩展批）。 */
+        /**
+         * DeployRequest 四源互斥（image 直投 / compose_yaml 受控子集 / upload_id
+         *     上传产物 / spec_file 裸 AppSpec，F3.5）。
+         */
         v1DeployRequest: {
             app_id?: string;
             /** image 直投形态（如 nginx:1.27）。 */
@@ -339,6 +345,24 @@ export interface components {
             env?: {
                 [key: string]: string;
             };
+            /**
+             * port/protocol 是直投与上传形态的端口声明（F3.5）：Route 后端解析的
+             *     期望集供给面——单进程形态此前无 ports 声明通道（static Route 404 的
+             *     根因）。protocol 缺省 http（http|h2c|tcp，Route 同词汇）；声明端口时
+             *     进程同时挂靠项目 default 网络（Proxy 可达性）。compose/spec_file 形态
+             *     自带 ports/networks 声明面，携带即拒。
+             * Format: int32
+             */
+            port?: number;
+            protocol?: string;
+            /**
+             * spec_file 是裸 AppSpec 部署面（第四源，F3.5）：protojson（snake_case）
+             *     的归一化 AppSpec——AppRef 由服务端按 app_id 权威覆写；schema_version
+             *     缺省当前版。全部 AppSpec 字段经此成为 API 可写面（校验爆炸半径由
+             *     叶子 ValidateApp 单源承载）。与 image/compose_yaml/upload_id 及全部
+             *     单进程形态旗标（process_name/probe/port/env/builder 族）互斥。
+             */
+            spec_file?: string;
         };
         v1DeployResponse: {
             deployment?: components["schemas"]["v1Deployment"];

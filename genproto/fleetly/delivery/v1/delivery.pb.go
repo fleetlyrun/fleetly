@@ -5,8 +5,9 @@
 // source: fleetly/delivery/v1/delivery.proto
 
 // Delivery 上下文（领域模型 §2）：源接入、构建、Revision 冻结与 Deployment
-// 生命周期。Deploy 是一站式入口：两源归一化 → AppSpec 校验 → Revision
-// 冻结（内容寻址复用）→ admission（ADR-0016）。
+// 生命周期。Deploy 是一站式入口：四源归一化（镜像直投 / Compose 受控子集 /
+// 上传产物 / 裸 AppSpec）→ AppSpec 校验 → Revision 冻结（内容寻址复用）→
+// admission（ADR-0016）。
 
 package deliveryv1
 
@@ -187,7 +188,8 @@ func (x *Deployment) GetFirstBootTaskId() string {
 	return ""
 }
 
-// DeployRequest 三源（互斥；spec_file 已归一化 AppSpec JSON 随 API 扩展批）。
+// DeployRequest 四源互斥（image 直投 / compose_yaml 受控子集 / upload_id
+// 上传产物 / spec_file 裸 AppSpec，F3.5）。
 type DeployRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	AppId string                 `protobuf:"bytes,1,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
@@ -220,7 +222,20 @@ type DeployRequest struct {
 	// env 是 App 级变量直传（ADR-0043 决策 2）：image/upload 形态的单进程
 	// 环境变量；归一化期覆盖 Project 层 SharedVariable（同键）。compose 形态
 	// 自带 environment 声明面，携带即拒。
-	Env           map[string]string `protobuf:"bytes,15,rep,name=env,proto3" json:"env,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Env map[string]string `protobuf:"bytes,15,rep,name=env,proto3" json:"env,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// port/protocol 是直投与上传形态的端口声明（F3.5）：Route 后端解析的
+	// 期望集供给面——单进程形态此前无 ports 声明通道（static Route 404 的
+	// 根因）。protocol 缺省 http（http|h2c|tcp，Route 同词汇）；声明端口时
+	// 进程同时挂靠项目 default 网络（Proxy 可达性）。compose/spec_file 形态
+	// 自带 ports/networks 声明面，携带即拒。
+	Port     int32  `protobuf:"varint,16,opt,name=port,proto3" json:"port,omitempty"`
+	Protocol string `protobuf:"bytes,17,opt,name=protocol,proto3" json:"protocol,omitempty"`
+	// spec_file 是裸 AppSpec 部署面（第四源，F3.5）：protojson（snake_case）
+	// 的归一化 AppSpec——AppRef 由服务端按 app_id 权威覆写；schema_version
+	// 缺省当前版。全部 AppSpec 字段经此成为 API 可写面（校验爆炸半径由
+	// 叶子 ValidateApp 单源承载）。与 image/compose_yaml/upload_id 及全部
+	// 单进程形态旗标（process_name/probe/port/env/builder 族）互斥。
+	SpecFile      string `protobuf:"bytes,18,opt,name=spec_file,json=specFile,proto3" json:"spec_file,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -358,6 +373,27 @@ func (x *DeployRequest) GetEnv() map[string]string {
 		return x.Env
 	}
 	return nil
+}
+
+func (x *DeployRequest) GetPort() int32 {
+	if x != nil {
+		return x.Port
+	}
+	return 0
+}
+
+func (x *DeployRequest) GetProtocol() string {
+	if x != nil {
+		return x.Protocol
+	}
+	return ""
+}
+
+func (x *DeployRequest) GetSpecFile() string {
+	if x != nil {
+		return x.SpecFile
+	}
+	return ""
 }
 
 // Admission 是创建型部署受理的判定附注（P10：ADR-0016 语义的响应面显式
@@ -2694,7 +2730,7 @@ const file_fleetly_delivery_v1_delivery_proto_rawDesc = "" +
 	"updated_at\x18\r \x01(\tR\tupdatedAt\x12\x1f\n" +
 	"\vfinished_at\x18\x0e \x01(\tR\n" +
 	"finishedAt\x12+\n" +
-	"\x12first_boot_task_id\x18\x0f \x01(\tR\x0ffirstBootTaskId\"\xbc\x04\n" +
+	"\x12first_boot_task_id\x18\x0f \x01(\tR\x0ffirstBootTaskId\"\x89\x05\n" +
 	"\rDeployRequest\x12\x15\n" +
 	"\x06app_id\x18\x01 \x01(\tR\x05appId\x12\x14\n" +
 	"\x05image\x18\x02 \x01(\tR\x05image\x12!\n" +
@@ -2716,7 +2752,10 @@ const file_fleetly_delivery_v1_delivery_proto_rawDesc = "" +
 	"\x10railpack_version\x18\r \x01(\tR\x0frailpackVersion\x12\x1d\n" +
 	"\n" +
 	"output_dir\x18\x0e \x01(\tR\toutputDir\x12=\n" +
-	"\x03env\x18\x0f \x03(\v2+.fleetly.delivery.v1.DeployRequest.EnvEntryR\x03env\x1a6\n" +
+	"\x03env\x18\x0f \x03(\v2+.fleetly.delivery.v1.DeployRequest.EnvEntryR\x03env\x12\x12\n" +
+	"\x04port\x18\x10 \x01(\x05R\x04port\x12\x1a\n" +
+	"\bprotocol\x18\x11 \x01(\tR\bprotocol\x12\x1b\n" +
+	"\tspec_file\x18\x12 \x01(\tR\bspecFile\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"r\n" +

@@ -1,8 +1,9 @@
 syntax = "proto3";
 
 // Delivery 上下文（领域模型 §2）：源接入、构建、Revision 冻结与 Deployment
-// 生命周期。Deploy 是一站式入口：两源归一化 → AppSpec 校验 → Revision
-// 冻结（内容寻址复用）→ admission（ADR-0016）。
+// 生命周期。Deploy 是一站式入口：四源归一化（镜像直投 / Compose 受控子集 /
+// 上传产物 / 裸 AppSpec）→ AppSpec 校验 → Revision 冻结（内容寻址复用）→
+// admission（ADR-0016）。
 package fleetly.delivery.v1;
 
 option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1;deliveryv1";
@@ -24,7 +25,8 @@ option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
 service DeploymentsService {
   option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
 
-  // Deploy 归一化两源（镜像直投 / Compose 受控子集）并受理部署。
+  // Deploy 归一化四源（镜像直投 / Compose 受控子集 / 上传产物 / 裸
+  // AppSpec）并受理部署。
   rpc Deploy(DeployRequest) returns (DeployResponse) {
     option (google.api.http) = { post: "/v1/deployments" body: "*" };
     option (grpcapi.v1.method_auth) = {
@@ -211,7 +213,8 @@ message Deployment {
   string first_boot_task_id = 15;
 }
 
-// DeployRequest 三源（互斥；spec_file 已归一化 AppSpec JSON 随 API 扩展批）。
+// DeployRequest 四源互斥（image 直投 / compose_yaml 受控子集 / upload_id
+// 上传产物 / spec_file 裸 AppSpec，F3.5）。
 message DeployRequest {
   string app_id = 1;
   // image 直投形态（如 nginx:1.27）。
@@ -244,6 +247,19 @@ message DeployRequest {
   // 环境变量；归一化期覆盖 Project 层 SharedVariable（同键）。compose 形态
   // 自带 environment 声明面，携带即拒。
   map<string, string> env = 15;
+  // port/protocol 是直投与上传形态的端口声明（F3.5）：Route 后端解析的
+  // 期望集供给面——单进程形态此前无 ports 声明通道（static Route 404 的
+  // 根因）。protocol 缺省 http（http|h2c|tcp，Route 同词汇）；声明端口时
+  // 进程同时挂靠项目 default 网络（Proxy 可达性）。compose/spec_file 形态
+  // 自带 ports/networks 声明面，携带即拒。
+  int32 port = 16;
+  string protocol = 17;
+  // spec_file 是裸 AppSpec 部署面（第四源，F3.5）：protojson（snake_case）
+  // 的归一化 AppSpec——AppRef 由服务端按 app_id 权威覆写；schema_version
+  // 缺省当前版。全部 AppSpec 字段经此成为 API 可写面（校验爆炸半径由
+  // 叶子 ValidateApp 单源承载）。与 image/compose_yaml/upload_id 及全部
+  // 单进程形态旗标（process_name/probe/port/env/builder 族）互斥。
+  string spec_file = 18;
 }
 
 // Admission 是创建型部署受理的判定附注（P10：ADR-0016 语义的响应面显式

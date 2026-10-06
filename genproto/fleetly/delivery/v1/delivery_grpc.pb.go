@@ -5,8 +5,9 @@
 // source: fleetly/delivery/v1/delivery.proto
 
 // Delivery 上下文（领域模型 §2）：源接入、构建、Revision 冻结与 Deployment
-// 生命周期。Deploy 是一站式入口：两源归一化 → AppSpec 校验 → Revision
-// 冻结（内容寻址复用）→ admission（ADR-0016）。
+// 生命周期。Deploy 是一站式入口：四源归一化（镜像直投 / Compose 受控子集 /
+// 上传产物 / 裸 AppSpec）→ AppSpec 校验 → Revision 冻结（内容寻址复用）→
+// admission（ADR-0016）。
 
 package deliveryv1
 
@@ -35,7 +36,8 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type DeploymentsServiceClient interface {
-	// Deploy 归一化两源（镜像直投 / Compose 受控子集）并受理部署。
+	// Deploy 归一化四源（镜像直投 / Compose 受控子集 / 上传产物 / 裸
+	// AppSpec）并受理部署。
 	Deploy(ctx context.Context, in *DeployRequest, opts ...grpc.CallOption) (*DeployResponse, error)
 	GetDeployment(ctx context.Context, in *GetDeploymentRequest, opts ...grpc.CallOption) (*GetDeploymentResponse, error)
 	ListDeployments(ctx context.Context, in *ListDeploymentsRequest, opts ...grpc.CallOption) (*ListDeploymentsResponse, error)
@@ -129,7 +131,8 @@ type DeploymentsService_WaitDeploymentClient = grpc.ServerStreamingClient[WaitDe
 // All implementations must embed UnimplementedDeploymentsServiceServer
 // for forward compatibility.
 type DeploymentsServiceServer interface {
-	// Deploy 归一化两源（镜像直投 / Compose 受控子集）并受理部署。
+	// Deploy 归一化四源（镜像直投 / Compose 受控子集 / 上传产物 / 裸
+	// AppSpec）并受理部署。
 	Deploy(context.Context, *DeployRequest) (*DeployResponse, error)
 	GetDeployment(context.Context, *GetDeploymentRequest) (*GetDeploymentResponse, error)
 	ListDeployments(context.Context, *ListDeploymentsRequest) (*ListDeploymentsResponse, error)
