@@ -3,31 +3,25 @@ import { DeploymentsPage } from "./pages/Deployments";
 import { DeploymentDetailPage } from "./pages/DeploymentDetail";
 import { LogsPage } from "./pages/Logs";
 import { EventsPage } from "./pages/Events";
+import { AppsPage } from "./pages/Apps";
+import { ResourcesPage } from "./pages/Resources";
+import { TasksPage } from "./pages/Tasks";
+import { AuditPage } from "./pages/Audit";
+import { SettingsPage } from "./pages/Settings";
+import { QuickstartPage } from "./pages/Quickstart";
 import { LoginPage } from "./pages/Login";
 import { ROUTES, useHashRoute, type Route } from "./lib/router";
 import { setToken, useToken } from "./lib/token";
 import { useWhoami } from "./lib/catalog";
 
 // Console 外壳（F2.6 三页 → F3.1 全功能）：无 Token = 登录页；有 Token =
-// 页头导航 + 身份栏（whoami + 登出）。终端页不在导航（F3.2 exec 子面
-// 同批落——排期裁决见 checklist F3.1 注记）。
+// 页头导航（九路由）+ 身份栏（whoami + 登出）。终端页不在导航（F3.2
+// exec 子面同批落——排期裁决见 checklist F3.1 注记）。
 export function App() {
   const [token] = useToken();
   if (token === "") return <LoginPage />;
   return <Shell />;
 }
-
-const ROUTE_LABELS: Record<Route, string> = {
-  deployments: "Deployments",
-  apps: "Apps",
-  resources: "Resources",
-  tasks: "Tasks",
-  logs: "Logs",
-  events: "Events",
-  audit: "Audit",
-  settings: "Settings",
-  quickstart: "Quickstart",
-};
 
 function Shell() {
   const [view, navigate] = useHashRoute();
@@ -49,20 +43,40 @@ function Shell() {
   );
 }
 
-// 本批落地面：部署（列表/详情双代窗叙事）+ 日志/事件；其余路由在后续
-// 写面 commit 进驻（renderPage 的分派按页面落地逐个接线）。
 function renderPage(page: Route, detailId: string, navigate: (path: string) => void) {
   switch (page) {
     case "deployments":
       return detailId === "" ? <DeploymentsPage /> : <DeploymentDetailPage id={detailId} navigate={navigate} />;
+    case "apps":
+      return <AppsPage />;
+    case "resources":
+      return <ResourcesPage />;
+    case "tasks":
+      return <TasksPage />;
     case "logs":
       return <LogsPage />;
     case "events":
       return <EventsPage />;
-    default:
-      return <DeploymentsPage />;
+    case "audit":
+      return <AuditPage />;
+    case "settings":
+      return <SettingsPage />;
+    case "quickstart":
+      return <QuickstartPage />;
   }
 }
+
+const ROUTE_LABELS: Record<Route, string> = {
+  deployments: "Deployments",
+  apps: "Apps",
+  resources: "Resources",
+  tasks: "Tasks",
+  logs: "Logs",
+  events: "Events",
+  audit: "Audit",
+  settings: "Settings",
+  quickstart: "Quickstart",
+};
 
 function NavTab({ route, active, onNavigate }: { route: Route; active: boolean; onNavigate: () => void }) {
   return (
