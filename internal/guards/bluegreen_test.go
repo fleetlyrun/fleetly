@@ -76,10 +76,10 @@ func TestBlueGreenCollectionUsesExpectationSetsOnly(t *testing.T) {
 var genSuffixRe = regexp.MustCompile(`"-g|%s-g|-g"|g%d`)
 
 var genNameAllowlist = map[string]string{
-	"internal/engine/bluegreen.go":            "genScopedWorkloadID 铸名公式单源（平台 Workload ID 面）",
-	"internal/providers/swarm/translate.go":   "workloadServiceName 的 scoped 分支（Provider 私有载体名公式）",
+	"internal/engine/bluegreen.go":                                   "genScopedWorkloadID 铸名公式单源（平台 Workload ID 面）",
+	"internal/providers/swarm/translate.go":                          "workloadServiceName 的 scoped 分支（Provider 私有载体名公式）",
 	"internal/state/migrations/00024_deployment_from_generation.sql": "迁移列名（非拼接）",
-	"internal/guards/bluegreen_test.go":       "本守卫的模式定义",
+	"internal/guards/bluegreen_test.go":                              "本守卫的模式定义",
 }
 
 func TestBlueGreenGenerationNamingSingleSource(t *testing.T) {
