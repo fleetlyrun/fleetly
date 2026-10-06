@@ -1,6 +1,7 @@
 [
   "backup",
   "backups",
+  "browse",
   "create",
   "delete",
   "get",

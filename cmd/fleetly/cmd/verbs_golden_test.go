@@ -46,13 +46,15 @@ func normalizeGolden(s string) string {
 	s = credPathRe.ReplaceAllString(s, "credentials saved: <CREDS>")
 	s = credJSONRe.ReplaceAllString(s, `"credentials_path": "<CREDS>"`)
 	s = tokenRe.ReplaceAllString(s, "<TOKEN>")
-	s = browseTicketRe.ReplaceAllString(s, "<BROWSETICKET>")
 	// digest/指纹先行（完整十六进制串），铸名的小写 ULID 后行——顺序颠倒
 	// 会把 digest 中恰符合 ULID 字符集的 26 长段误占位（revisions_list 实证）。
 	s = digestRe.ReplaceAllString(s, "<DIGEST>")
 	s = fprRe.ReplaceAllString(s, "<FP>")
 	s = lowerULIDRe.ReplaceAllString(s, "<ULID>")
 	s = ulidRe.ReplaceAllString(s, "<ULID>")
+	// browse 票据殿后：base64url 43 字符与 hex digest/ULID 形态部分重叠
+	//（digest 前缀恰 43 hex 即误吞）——确定性更长的族先占位。
+	s = browseTicketRe.ReplaceAllString(s, "<BROWSETICKET>")
 	return s
 }
 
