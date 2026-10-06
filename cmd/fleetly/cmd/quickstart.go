@@ -146,11 +146,13 @@ func newQuickstartVerb() commands.Command {
 				}
 			}
 
-			// 4. 部署样例镜像（compose 形态：Route 后端解析依赖端口声明
-			// 落 fleetly.ports 标注——镜像直投无端口声明面，Proxy 后端将
-			// 无从解析；networks 挂 Project 网让后端与受管 Proxy 同网互通）。
-			compose := fmt.Sprintf("services:\n  web:\n    image: %s\n    ports:\n      - \"%d\"\n    networks:\n      - default\n", image, port)
-			dep, err := c.Deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: appID, ComposeYaml: compose})
+			// 4. 部署样例镜像（image 直投 + 端口声明，F3.5：声明端口即
+			// Route-facing——进程携带 ports 并挂靠项目 default 网，Route
+			// 后端解析与 Proxy 可达性同时成立。此前 compose 绕道形态
+			// （借 compose 的 ports/networks 键携带声明）退役）。
+			dep, err := c.Deployments.Deploy(ctx, &deliveryv1.DeployRequest{
+				AppId: appID, Image: image, Port: int32(port), //nolint:gosec // 端口域内
+			})
 			if err != nil {
 				return err
 			}

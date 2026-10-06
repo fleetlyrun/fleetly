@@ -319,16 +319,34 @@ func TestComposeVolumeModeParsing(t *testing.T) {
 func TestImageDeployProbeDeclaration(t *testing.T) {
 	s, err := ImageDeploy("a", "p", "nginx:1.27", "", &specv1.HealthcheckSpec{
 		Probe: &specv1.HealthcheckSpec_HttpPath{HttpPath: "/healthz"}, Retries: 3,
-	}, nil)
+	}, nil, nil)
 	require.NoError(t, err)
 	require.Len(t, s.GetProcesses(), 1)
 	assert.Equal(t, "/healthz", s.GetProcesses()[0].GetHealthcheck().GetHttpPath())
 
 	s, err = ImageDeploy("a", "p", "nginx:1.27", "worker", &specv1.HealthcheckSpec{
 		Probe: &specv1.HealthcheckSpec_TcpPort{TcpPort: 5432},
-	}, nil)
+	}, nil, nil)
 	require.NoError(t, err)
 	assert.Equal(t, int32(5432), s.GetProcesses()[0].GetHealthcheck().GetTcpPort())
+}
+
+// 端口声明（F3.5）：声明端口 = Route-facing——进程携带 ports 且挂靠项目
+// default 网（Proxy 可达性）；未声明维持"无网络即无 DNS 面"（ADR-0034）。
+func TestImageDeployPortDeclaration(t *testing.T) {
+	ports := []*specv1.PortSpec{{Port: 8080, Protocol: specv1.Protocol_PROTOCOL_H2C}}
+	s, err := ImageDeploy("a", "p", "nginx:1.27", "", nil, nil, ports)
+	require.NoError(t, err)
+	p := s.GetProcesses()[0]
+	require.Len(t, p.GetPorts(), 1)
+	assert.Equal(t, int32(8080), p.GetPorts()[0].GetPort())
+	assert.Equal(t, specv1.Protocol_PROTOCOL_H2C, p.GetPorts()[0].GetProtocol())
+	assert.Equal(t, []string{"default"}, p.GetNetworks())
+
+	s, err = ImageDeploy("a", "p", "nginx:1.27", "", nil, nil, nil)
+	require.NoError(t, err)
+	assert.Empty(t, s.GetProcesses()[0].GetPorts())
+	assert.Empty(t, s.GetProcesses()[0].GetNetworks())
 }
 
 // CMD-SHELL 探针的引号结构保真（staging 真机实证修复，2026-10-02）：载荷

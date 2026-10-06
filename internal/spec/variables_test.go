@@ -14,12 +14,12 @@ import (
 // 与新增面的键校验。
 
 func TestImageDeployEnvPassThrough(t *testing.T) {
-	s, err := ImageDeploy("a", "p", "nginx:1.27", "", nil, map[string]string{"MODE": "prod"})
+	s, err := ImageDeploy("a", "p", "nginx:1.27", "", nil, map[string]string{"MODE": "prod"}, nil)
 	require.NoError(t, err)
 	require.Len(t, s.GetProcesses(), 1)
 	assert.Equal(t, map[string]string{"MODE": "prod"}, s.GetProcesses()[0].GetEnv())
 
-	_, err = ImageDeploy("a", "p", "nginx:1.27", "", nil, map[string]string{"BAD-KEY": "x"})
+	_, err = ImageDeploy("a", "p", "nginx:1.27", "", nil, map[string]string{"BAD-KEY": "x"}, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "image.env")
 	assert.Contains(t, err.Error(), "BAD-KEY")

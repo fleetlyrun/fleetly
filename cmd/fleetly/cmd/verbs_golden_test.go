@@ -238,6 +238,12 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 		{"shared-variables delete", []string{"shared-variables", "delete", "--project", "GOLDEN_PROJECT",
 			"CACHE_HOST"}, 0},
 
+		// 端口声明（F3.5）：直投形态的 --port/--protocol（Route-facing 面
+		// ——static Route 404 的受理闭口；归一化产物断言在 apitest
+		// portdecl 双件）。置于变量段后：不挪既有 revisions diff 的序号锚。
+		{"deploy image with port", []string{"deploy", "--app", "GOLDEN_APP", "--image", "nginx:1.23",
+			"--port", "8080", "--protocol", "h2c"}, 0},
+
 		// Platform 动词（F2.3，ADR-0039 决策 10）：手动触发（同步执行——
 		// 幂等键让 --json 轮重放同响应）与快照列举（假 restic 的 canned
 		// 集；golden 双形态）。

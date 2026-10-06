@@ -183,9 +183,15 @@ func normalizeDeploySource(req *deliveryv1.DeployRequest, appRow *app.App, uploa
 		}
 		probe = &specv1.HealthcheckSpec{Probe: &specv1.HealthcheckSpec_TcpPort{TcpPort: req.GetTcpProbe()}, Retries: 3}
 	}
+	// 端口声明（F3.5）：直投与上传形态的 Route-facing 面。compose 自带
+	// ports 声明（服务键），携带即拒（http_probe/env 旗标同款先例）。
+	ports, err := deployRequestPorts(req)
+	if err != nil {
+		return nil, err
+	}
 	switch {
 	case req.GetImage() != "":
-		s, err := spec.ImageDeploy(appRow.ID, appRow.ProjectID, req.GetImage(), req.GetProcessName(), probe, req.GetEnv())
+		s, err := spec.ImageDeploy(appRow.ID, appRow.ProjectID, req.GetImage(), req.GetProcessName(), probe, req.GetEnv(), ports)
 		if err != nil {
 			return nil, mapValidationError(err)
 		}
@@ -226,6 +232,7 @@ func normalizeDeploySource(req *deliveryv1.DeployRequest, appRow *app.App, uploa
 			ProcessName: req.GetProcessName(), Builder: req.GetBuilder(),
 			Dockerfile: req.GetDockerfile(), RailpackVersion: req.GetRailpackVersion(),
 			OutputDir: req.GetOutputDir(), Probe: probe, Env: req.GetEnv(),
+			Ports: ports,
 		})
 		if err != nil {
 			return nil, mapValidationError(err)
@@ -242,6 +249,40 @@ func builderOrDefault(b string) string {
 		return spec.BuilderDockerfile
 	}
 	return b
+}
+
+// deployRequestPorts 解析 DeployRequest 的端口声明（F3.5）：直投与上传
+// 形态专属（compose 自带服务键 ports，携带即拒——归一化层引用隔离在此
+// 单点收口）；protocol 缺省 http（Route 同词汇）；端口域与协议枚举的
+// 叶子级复核由 ValidateProcess 承载（归一化产物必经）。
+func deployRequestPorts(req *deliveryv1.DeployRequest) ([]*specv1.PortSpec, error) {
+	if req.GetComposeYaml() != "" && (req.GetPort() != 0 || req.GetProtocol() != "") {
+		return nil, apperr.New("E_INVALID_ARGUMENT",
+			"port and protocol are for image or upload deploys; compose declares ports per service (\"8080\" or \"8080/h2c\")")
+	}
+	if req.GetPort() == 0 {
+		if req.GetProtocol() != "" {
+			return nil, apperr.New("E_INVALID_ARGUMENT", "protocol is only meaningful together with a declared port")
+		}
+		return nil, nil
+	}
+	if req.GetPort() < 1 || req.GetPort() > 65535 {
+		return nil, apperr.New("E_INVALID_ARGUMENT", "port: out of range (1-65535)")
+	}
+	var proto specv1.Protocol
+	switch p := req.GetProtocol(); p {
+	case "":
+		proto = specv1.Protocol_PROTOCOL_HTTP
+	case "http":
+		proto = specv1.Protocol_PROTOCOL_HTTP
+	case "h2c":
+		proto = specv1.Protocol_PROTOCOL_H2C
+	case "tcp":
+		proto = specv1.Protocol_PROTOCOL_TCP
+	default:
+		return nil, apperr.New("E_INVALID_ARGUMENT", "protocol %q must be http, h2c or tcp", p)
+	}
+	return []*specv1.PortSpec{{Port: req.GetPort(), Protocol: proto}}, nil
 }
 
 func (svc *DeploymentsService) GetDeployment(ctx context.Context, req *deliveryv1.GetDeploymentRequest) (*deliveryv1.GetDeploymentResponse, error) {

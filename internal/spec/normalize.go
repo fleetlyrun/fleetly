@@ -91,7 +91,9 @@ var composeJobRejections = map[string]string{
 // probe 是可选探针声明（B2：http path 或 tcp port——二选一，nil = 无探针）。
 // env 是 App 级变量直传（ADR-0043 决策 2：键按 EnvNamePattern 受理面即拒；
 // Project 层 SharedVariable 的合成在冻结咽喉，此处只落 App 层）。
-func ImageDeploy(appID, projectID, image string, processName string, probe *specv1.HealthcheckSpec, env map[string]string) (*specv1.AppSpec, error) {
+// ports 是可选端口声明（F3.5）：Route 后端解析的期望集供给面——声明即
+// Route-facing（挂靠项目 default 网，Proxy 可达），见 portDeclNetworks。
+func ImageDeploy(appID, projectID, image string, processName string, probe *specv1.HealthcheckSpec, env map[string]string, ports []*specv1.PortSpec) (*specv1.AppSpec, error) {
 	if err := ValidateEnvKeys("image.env", env); err != nil {
 		return nil, err
 	}
@@ -110,12 +112,26 @@ func ImageDeploy(appID, projectID, image string, processName string, probe *spec
 			Replicas:    1,
 			Healthcheck: probe,
 			Env:         env,
+			Ports:       ports,
+			Networks:    portDeclNetworks(ports),
 		}},
 	}
 	if err := ValidateApp(spec); err != nil {
 		return nil, err
 	}
 	return spec, nil
+}
+
+// portDeclNetworks 是单进程形态（image 直投/upload）端口声明的挂网裁决
+// （F3.5）：声明端口 = Route-facing 意图——进程挂靠项目 default 网（项目
+// 出生必建、ensureNetworks create-or-get 兜底），受管 Proxy 挂全部项目网
+// 即可达后端（static Route 404 的可达性半边）。未声明端口维持"无网络即
+// 无 DNS 面"的既有诚实语义（ADR-0034 决策 2），行为零变化。
+func portDeclNetworks(ports []*specv1.PortSpec) []string {
+	if len(ports) == 0 {
+		return nil
+	}
+	return []string{"default"}
 }
 
 // UploadDeployInput 是上传产物形态的部署输入（三 strategy 旗标经此组装
@@ -139,6 +155,9 @@ type UploadDeployInput struct {
 	// Env 是 App 级变量直传（ADR-0043 决策 2；键按 EnvNamePattern 受理面
 	// 即拒——与 image 直投同口径）。
 	Env map[string]string
+	// Ports 是可选端口声明（F3.5）：Route 后端解析的期望集供给面——声明
+	// 即 Route-facing（挂靠项目 default 网，Proxy 可达），见 portDeclNetworks。
+	Ports []*specv1.PortSpec
 }
 
 // UploadDeploy 归一化上传产物形态（F1.10，ADR-0019 附录 A；strategy 面
@@ -194,6 +213,8 @@ func UploadDeploy(in UploadDeployInput) (*specv1.AppSpec, error) {
 			Replicas:    1,
 			Healthcheck: in.Probe,
 			Env:         in.Env,
+			Ports:       in.Ports,
+			Networks:    portDeclNetworks(in.Ports),
 		}},
 	}
 	if err := ValidateApp(s); err != nil {
