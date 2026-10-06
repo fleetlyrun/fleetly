@@ -28,16 +28,22 @@ const (
 
 // Node 是观测缓存行（非权威；节点 ID 永不复用）。
 type Node struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	PlatformId    string                 `protobuf:"bytes,1,opt,name=platform_id,json=platformId,proto3" json:"platform_id,omitempty"`
-	CarrierId     string                 `protobuf:"bytes,2,opt,name=carrier_id,json=carrierId,proto3" json:"carrier_id,omitempty"`
-	Hostname      string                 `protobuf:"bytes,3,opt,name=hostname,proto3" json:"hostname,omitempty"`
-	Role          string                 `protobuf:"bytes,4,opt,name=role,proto3" json:"role,omitempty"`
-	Available     bool                   `protobuf:"varint,5,opt,name=available,proto3" json:"available,omitempty"`
-	FirstSeenAt   string                 `protobuf:"bytes,6,opt,name=first_seen_at,json=firstSeenAt,proto3" json:"first_seen_at,omitempty"`
-	LastSeenAt    string                 `protobuf:"bytes,7,opt,name=last_seen_at,json=lastSeenAt,proto3" json:"last_seen_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	PlatformId  string                 `protobuf:"bytes,1,opt,name=platform_id,json=platformId,proto3" json:"platform_id,omitempty"`
+	CarrierId   string                 `protobuf:"bytes,2,opt,name=carrier_id,json=carrierId,proto3" json:"carrier_id,omitempty"`
+	Hostname    string                 `protobuf:"bytes,3,opt,name=hostname,proto3" json:"hostname,omitempty"`
+	Role        string                 `protobuf:"bytes,4,opt,name=role,proto3" json:"role,omitempty"`
+	Available   bool                   `protobuf:"varint,5,opt,name=available,proto3" json:"available,omitempty"`
+	FirstSeenAt string                 `protobuf:"bytes,6,opt,name=first_seen_at,json=firstSeenAt,proto3" json:"first_seen_at,omitempty"`
+	LastSeenAt  string                 `protobuf:"bytes,7,opt,name=last_seen_at,json=lastSeenAt,proto3" json:"last_seen_at,omitempty"`
+	// relay_online 是节点中继代理在连状态（活体观测——exec 会话的路由前提，
+	// ADR-0049；false = 该节点不可 exec，重跑 enroll 的 agent 脚本恢复）。
+	RelayOnline bool `protobuf:"varint,8,opt,name=relay_online,json=relayOnline,proto3" json:"relay_online,omitempty"`
+	// relay_agent_version 是在连代理上报的平台版本（滞后代理照常受理——帧
+	// 协议只增；升级后重跑 agent 脚本即刷新）。
+	RelayAgentVersion string `protobuf:"bytes,9,opt,name=relay_agent_version,json=relayAgentVersion,proto3" json:"relay_agent_version,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *Node) Reset() {
@@ -115,6 +121,20 @@ func (x *Node) GetFirstSeenAt() string {
 func (x *Node) GetLastSeenAt() string {
 	if x != nil {
 		return x.LastSeenAt
+	}
+	return ""
+}
+
+func (x *Node) GetRelayOnline() bool {
+	if x != nil {
+		return x.RelayOnline
+	}
+	return false
+}
+
+func (x *Node) GetRelayAgentVersion() string {
+	if x != nil {
+		return x.RelayAgentVersion
 	}
 	return ""
 }
@@ -267,7 +287,13 @@ func (x *EnrollNodeRequest) GetRotate() bool {
 type EnrollNodeResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// join_command 是工作节点完整加入命令（swarm join 形态）。
-	JoinCommand   string `protobuf:"bytes,1,opt,name=join_command,json=joinCommand,proto3" json:"join_command,omitempty"`
+	JoinCommand string `protobuf:"bytes,1,opt,name=join_command,json=joinCommand,proto3" json:"join_command,omitempty"`
+	// agent_command 是节点中继代理装载脚本（ADR-0049：busybox 载体 +
+	// /v1/platform/binary 下载 fleetlyd + docker cp 注入 + docker.sock 挂载
+	// 跑 `fleetlyd relay`；幂等——重跑即代理升级/修复通道）。join 语义不变：
+	// 只跑 join_command 的节点集群面完整，exec 面不可用（relay_online=false
+	// 诚实可见）。
+	AgentCommand  string `protobuf:"bytes,2,opt,name=agent_command,json=agentCommand,proto3" json:"agent_command,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -305,6 +331,13 @@ func (*EnrollNodeResponse) Descriptor() ([]byte, []int) {
 func (x *EnrollNodeResponse) GetJoinCommand() string {
 	if x != nil {
 		return x.JoinCommand
+	}
+	return ""
+}
+
+func (x *EnrollNodeResponse) GetAgentCommand() string {
+	if x != nil {
+		return x.AgentCommand
 	}
 	return ""
 }
@@ -555,7 +588,7 @@ var File_fleetly_runtime_v1_runtime_proto protoreflect.FileDescriptor
 
 const file_fleetly_runtime_v1_runtime_proto_rawDesc = "" +
 	"\n" +
-	" fleetly/runtime/v1/runtime.proto\x12\x12fleetly.runtime.v1\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"\xda\x01\n" +
+	" fleetly/runtime/v1/runtime.proto\x12\x12fleetly.runtime.v1\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"\xad\x02\n" +
 	"\x04Node\x12\x1f\n" +
 	"\vplatform_id\x18\x01 \x01(\tR\n" +
 	"platformId\x12\x1d\n" +
@@ -566,16 +599,19 @@ const file_fleetly_runtime_v1_runtime_proto_rawDesc = "" +
 	"\tavailable\x18\x05 \x01(\bR\tavailable\x12\"\n" +
 	"\rfirst_seen_at\x18\x06 \x01(\tR\vfirstSeenAt\x12 \n" +
 	"\flast_seen_at\x18\a \x01(\tR\n" +
-	"lastSeenAt\"L\n" +
+	"lastSeenAt\x12!\n" +
+	"\frelay_online\x18\b \x01(\bR\vrelayOnline\x12.\n" +
+	"\x13relay_agent_version\x18\t \x01(\tR\x11relayAgentVersion\"L\n" +
 	"\x10ListNodesRequest\x12\"\n" +
 	"\rafter_node_id\x18\x01 \x01(\tR\vafterNodeId\x12\x14\n" +
 	"\x05limit\x18\x02 \x01(\x05R\x05limit\"C\n" +
 	"\x11ListNodesResponse\x12.\n" +
 	"\x05nodes\x18\x01 \x03(\v2\x18.fleetly.runtime.v1.NodeR\x05nodes\"+\n" +
 	"\x11EnrollNodeRequest\x12\x16\n" +
-	"\x06rotate\x18\x01 \x01(\bR\x06rotate\"7\n" +
+	"\x06rotate\x18\x01 \x01(\bR\x06rotate\"\\\n" +
 	"\x12EnrollNodeResponse\x12!\n" +
-	"\fjoin_command\x18\x01 \x01(\tR\vjoinCommand\"+\n" +
+	"\fjoin_command\x18\x01 \x01(\tR\vjoinCommand\x12#\n" +
+	"\ragent_command\x18\x02 \x01(\tR\fagentCommand\"+\n" +
 	"\x10DrainNodeRequest\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"\x13\n" +
 	"\x11DrainNodeResponse\",\n" +

@@ -61,11 +61,11 @@ func (svc *NodesService) EnrollNode(ctx context.Context, req *runtimev1.EnrollNo
 	}); err != nil {
 		return nil, err
 	}
-	kit, err := svc.s.Runtime.Enrollment(ctx, req.GetRotate())
+	kit, err := svc.s.Runtime.Enrollment(ctx, req.GetRotate(), capability.EnrollmentOptions{GatewayPort: svc.s.GatewayPort})
 	if err != nil {
 		return nil, mapStateError(err, "enrollment")
 	}
-	return &runtimev1.EnrollNodeResponse{JoinCommand: kit.Command}, nil
+	return &runtimev1.EnrollNodeResponse{JoinCommand: kit.Command, AgentCommand: kit.AgentCommand}, nil
 }
 
 // DrainNode 把节点置为排空（F0.19 RuntimeAdmin 面；平台节点 ID 为锚）。
@@ -319,7 +319,7 @@ func (svc *EventsService) IssueEventTicket(ctx context.Context, _ *telemetryv1.I
 	if _, ok := authn.FromContext(ctx); !ok {
 		return nil, apperr.New("E_UNAUTHENTICATED", "present a valid token to mint an event ticket")
 	}
-	ticket, ttl, err := svc.s.eventTickets.issue()
+	ticket, ttl, err := svc.s.eventTickets.issue(ticketPurposeEvents, "")
 	if err != nil {
 		return nil, apperr.New("E_INTERNAL", "ticket generation failed").WithCause(err)
 	}

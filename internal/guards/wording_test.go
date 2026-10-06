@@ -74,6 +74,13 @@ var bannedPatterns = map[string]*regexp.Regexp{
 	// 再议），机械无歧义、扫描面零命中；slot 是 zane 的 slot 别名机制词
 	// ——本仓不引入，但泛义英文（占位义）误伤面大，进 skipped 人工把关。
 	"canary": wordRe(`canary|canaries`),
+	// Exec Session / Relay 词条（ADR-0049 入册）。ssh/remote shell/tunnel
+	// 是把平台 exec 面叫成外词的命名缺陷（机械无歧义）；mesh 因 swarm
+	// routing mesh 是在册技术术语进 skipped 人工把关。
+	"ssh":          wordRe(`ssh`),
+	"remote shell": wordRe(`remote[ _-]shell`),
+	"tunnel":       wordRe(`tunnel|tunneling`),
+	"agent net":    wordRe(`agent[ _-]net`),
 }
 
 // wordRe 构造大小写不敏感、词边界的匹配器（多形态以 | 预展开）。
@@ -122,6 +129,7 @@ var skippedTokens = map[string]string{
 	"attempt":          "通用词；Run 同义词语境人工评审",
 	"instance":         "实例池（resident instances）为 ADR-0012 契约语汇；Run 同义词语境人工评审",
 	"cron":             "仅禁作实体名；robfig/cron 解析器为选型依赖",
+	"mesh":             "swarm routing mesh 是 docker 在册技术术语（PublishModeMesh）；Relay 同义语境人工评审",
 	"timer":            "通用词；Schedule 同义词语境人工评审",
 	"db instance":      "短语；Database 同义词语境人工评审",
 	"service instance": "短语；人工评审",
@@ -278,6 +286,12 @@ var wordingExemptions = map[string]map[string]string{
 	"apply": {
 		"cmd/fleetlyd/main.go": "lynx boot.Bootstrap.Apply 是框架 API（钩子/服务挂载面）；ADR-0007 禁的是部署语义 apply，框架方法名不可更名",
 	},
+	// ssh（ADR-0049 入册）：git 传输 scheme 拒绝文案是技术义（hooks 面
+	// 只收 https 直连仓库），非把 exec 面叫 ssh 的命名缺陷。
+	"ssh": {
+		"internal/api/fleetlygrpc/hooks.go":         "git ssh:// 是被拒绝的仓库传输 scheme（技术义文案），非 exec 面命名（ADR-0049）",
+		"internal/apitest/hooks_validation_test.go": "git ssh:// scheme 拒绝面的夹具（技术义），非 exec 面命名（ADR-0049）",
+	},
 	// dbtemplate 备份执行链（F2.2，ADR-0039）：pg_dump/mysqldump/mongodump
 	// 是引擎原生命令名、dump.rdb 是 redis 数据文件名——外部工具专有名，
 	// 非平台 Backup 词汇面使用（ADR-0007 禁的是把 dump 当 Backup 同义词）。
@@ -300,6 +314,7 @@ var wordingExemptions = map[string]map[string]string{
 		"genproto/fleetly/proxy/v1/proxy.pb.gw.go":           "grpc-gateway generated boilerplate comment (library's own middleware term), not platform admission naming",
 		"genproto/fleetly/identity/v1/identity.pb.gw.go":     "grpc-gateway generated boilerplate comment (library's own middleware term), not platform admission naming",
 		"genproto/fleetly/runtime/v1/runtime.pb.gw.go":       "grpc-gateway generated boilerplate comment (library's own middleware term), not platform admission naming",
+		"genproto/fleetly/runtime/v1/exec.pb.gw.go":          "grpc-gateway generated boilerplate comment (library's own middleware term), not platform admission naming",
 		"genproto/fleetly/structure/v1/structure.pb.gw.go":   "grpc-gateway generated boilerplate comment (library's own middleware term), not platform admission naming",
 		"genproto/fleetly/system/v1/governance.pb.gw.go":     "grpc-gateway generated boilerplate comment (library's own middleware term), not platform admission naming",
 		"genproto/fleetly/system/v1/system.pb.gw.go":         "grpc-gateway generated boilerplate comment (library's own middleware term), not platform admission naming",

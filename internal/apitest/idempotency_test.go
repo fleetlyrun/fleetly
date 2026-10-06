@@ -85,7 +85,7 @@ func TestIdempotencyDeployReplayAndConflicts(t *testing.T) {
 // 异体 409 走统一错误信封。
 func TestIdempotencyRESTHeader(t *testing.T) {
 	h := apitest.New(t)
-	handler, err := assembly.NewGatewayHandler(slog.New(slog.DiscardHandler), h.Conn, nil)
+	handler, err := assembly.NewGatewayHandler(slog.New(slog.DiscardHandler), h.Conn, nil, nil)
 	require.NoError(t, err)
 
 	post := func(key, body string) *httptest.ResponseRecorder {

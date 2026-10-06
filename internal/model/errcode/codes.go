@@ -152,4 +152,18 @@ var builtins = []Code{
 		Source:     "internal/api/fleetlygrpc/platform.go TriggerPlatformBackup/ListPlatformBackups (ADR-0039 decision 10; F2.3 upgrade precondition)",
 		GRPC:       codes.FailedPrecondition,
 	},
+	{
+		ID:         "E_EXEC_UNSUPPORTED",
+		Summary:    "The runtime provider does not implement the exec sub-face.",
+		Suggestion: "Exec sessions require a runtime with RuntimeExec implemented; this deployment's runtime cannot serve them. Diagnose via `fleetly nodes list` (relay_online shows per-node agent reachability where the sub-face exists).",
+		Source:     "internal/api/fleetlygrpc/exec.go CreateExecSession (ADR-0049 decision 1: honest failure when the sub-face is absent, no degraded path)",
+		GRPC:       codes.Unimplemented,
+	},
+	{
+		ID:         "E_NODE_AGENT_OFFLINE",
+		Summary:    "The target node has no relay agent connected, so the exec session cannot be routed to it.",
+		Suggestion: "Run the agent command printed by `fleetly nodes enroll` on the affected node (idempotent; it also refreshes an outdated agent after a platform upgrade), then retry. `fleetly nodes list` shows relay_online per node.",
+		Source:     "internal/engine/exec.go CreateSession (ADR-0049 decision 2: reverse-relay routing requires a live agent; nodes with zero inbound ports are reached only through their outbound relay)",
+		GRPC:       codes.FailedPrecondition,
+	},
 }

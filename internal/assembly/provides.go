@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"net"
 	"path/filepath"
 	"strings"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/api/fleetlygrpc"
 	"github.com/fleetlyrun/fleetly/internal/api/systemgrpc"
 	"github.com/fleetlyrun/fleetly/internal/authn"
+	"github.com/fleetlyrun/fleetly/internal/buildinfo"
 	"github.com/fleetlyrun/fleetly/internal/capability"
 	"github.com/fleetlyrun/fleetly/internal/config"
 	"github.com/fleetlyrun/fleetly/internal/engine"
@@ -285,6 +287,7 @@ func NewEngine(
 	cipher *material.Cipher,
 	app lynx.App,
 	cfg *config.AppConfig,
+	info buildinfo.BuildInfo,
 ) (*engine.Engine, error) {
 	overlap, err := engine.ParseScheduleOverlap(cfg.ScheduleOverlapPolicy())
 	if err != nil {
@@ -309,13 +312,43 @@ func NewEngine(
 		DataRoot:        cfg.DataRoot(),
 		ScheduleOverlap: overlap,
 		PlatformBackup:  pb,
+		// 回环中继代理（ADR-0049）：gateway 基址按绑定地址派生（空 host =
+		// 127.0.0.1；绑定具体 IP 时照用该 IP——staging 形态 10.124.0.3:9081
+		// 只在该地址监听）。版本取 buildinfo（回环代理握手上报）。
+		RelayLoopbackURL:  relayLoopbackURL(cfg.HTTPAddr()),
+		RelayAgentVersion: info.Version,
 	}), nil
 }
 
+// relayLoopbackURL 从 gateway 绑定地址派生回环代理基址。
+func relayLoopbackURL(httpAddr string) string {
+	host, port, err := net.SplitHostPort(httpAddr)
+	if err != nil {
+		return ""
+	}
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	return "http://" + host + ":" + port
+}
+
+// gatewayPort 从 gateway 绑定地址取端口段（EnrollNode 的 AgentCommand
+// 拼装锚；空 = 无代理装载脚本面）。
+func gatewayPort(httpAddr string) string {
+	_, port, err := net.SplitHostPort(httpAddr)
+	if err != nil {
+		return ""
+	}
+	return port
+}
+
 // NewAPIServices 构造六上下文 API 服务依赖集（scope 词表单一源注入；
-// dataRoot 透传给上传产物 blob 面）。
+// dataRoot 透传给上传产物 blob 面；gateway 端口 = EnrollNode 的
+// AgentCommand 拼装锚，ADR-0049）。
 func NewAPIServices(db *state.DB, e *engine.Engine, cipher *material.Cipher, rt capability.Runtime, cfg *config.AppConfig, app lynx.App) *fleetlygrpc.Services {
-	return fleetlygrpc.NewServices(db, e, cipher, rt, cfg.DataRoot(), ScopeResources(), app.Logger())
+	s := fleetlygrpc.NewServices(db, e, cipher, rt, cfg.DataRoot(), ScopeResources(), app.Logger())
+	s.GatewayPort = gatewayPort(cfg.HTTPAddr())
+	return s
 }
 
 // NewIdemEnforcer 构造通用幂等执法器（ADR-0024：拦截器 + janitor sweep 面）。

@@ -21,7 +21,11 @@ import (
 
 // idemExemptions 是创建型动词 → 不入执法面的豁免表（FullMethod → 理由）。
 // 当前为空：全部创建型动词均已执法。豁免不再命中（差异消失）即红。
-var idemExemptions = map[string]string{}
+var idemExemptions = map[string]string{
+	// exec 会话（F3.2，ADR-0049）：进程内流态（无持久资源行），幂等重放
+	// 保证不适用——会话不可重放（票据单用途）。
+	"/fleetly.runtime.v1.ExecService/CreateExecSession": "sessions are in-memory stream state with no durable row; the idempotency replay guarantee is inapplicable (ADR-0049)",
+}
 
 // createVerbPrefixes 是"创建型"动词集（含部署创建语义的 Rollback——它
 // 经 Submit 落一条新 Deployment；不含天然幂等或串行管理面的 Enroll/

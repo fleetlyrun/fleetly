@@ -96,7 +96,7 @@ func wireBootstrap(app lynx.App, info buildinfo.BuildInfo) (*boot.Bootstrap, fun
 		cleanup()
 		return nil, nil, err
 	}
-	engine, err := NewEngine(db, runtime, v, proxy, registry, logging, metrics, objectStore, cipher, app, appConfig)
+	engine, err := NewEngine(db, runtime, v, proxy, registry, logging, metrics, objectStore, cipher, app, appConfig, info)
 	if err != nil {
 		cleanup9()
 		cleanup8()

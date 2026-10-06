@@ -122,3 +122,19 @@ func (r *Repo) Get(ctx context.Context, run state.Runner, platformID string) (*N
 	n.Available = avail != 0
 	return &n, nil
 }
+
+// ByCarrier 按载体节点 ID 反查（ADR-0049 中继握手绑定面：agent 握手携带
+// 载体节点 ID，平台锚定表反查平台节点 ID——与 Watch 锚定同一张表）。
+func (r *Repo) ByCarrier(ctx context.Context, run state.Runner, carrierID string) (*Node, error) {
+	row := run.QueryRowContext(ctx, `
+		SELECT platform_id, carrier_id, hostname, role, available, first_seen_at, last_seen_at
+		FROM nodes WHERE carrier_id = ?`, carrierID)
+	var n Node
+	var avail int
+	err := row.Scan(&n.PlatformID, &n.CarrierID, &n.Hostname, &n.Role, &avail, &n.FirstSeenAt, &n.LastSeenAt)
+	if err != nil {
+		return nil, state.MapScanErr(err)
+	}
+	n.Available = avail != 0
+	return &n, nil
+}

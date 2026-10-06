@@ -22,7 +22,7 @@ func NewEventStreamSource(s *Services) *EventStreamSource {
 
 // RedeemTicket 兑换一次性票据（单用途：命中即删；过期/未知一律拒绝）。
 func (src *EventStreamSource) RedeemTicket(ticket string) bool {
-	return src.s.eventTickets.redeem(ticket)
+	return src.s.eventTickets.redeem(ticketPurposeEvents, "", ticket)
 }
 
 // Gone 断档预检（SSE 入口必须在写出 200/SSE 头之前判定——状态行一旦

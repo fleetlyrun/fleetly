@@ -236,6 +236,10 @@
         "join_command": {
           "type": "string",
           "title": "join_command 是工作节点完整加入命令（swarm join 形态）。"
+        },
+        "agent_command": {
+          "type": "string",
+          "title": "agent_command 是节点中继代理装载脚本（ADR-0049：busybox 载体 +\n/v1/platform/binary 下载 fleetlyd + docker cp 注入 + docker.sock 挂载\n跑 `fleetlyd relay`；幂等——重跑即代理升级/修复通道）。join 语义不变：\n只跑 join_command 的节点集群面完整，exec 面不可用（relay_online=false\n诚实可见）。"
         }
       }
     },
@@ -274,6 +278,14 @@
         },
         "last_seen_at": {
           "type": "string"
+        },
+        "relay_online": {
+          "type": "boolean",
+          "title": "relay_online 是节点中继代理在连状态（活体观测——exec 会话的路由前提，\nADR-0049；false = 该节点不可 exec，重跑 enroll 的 agent 脚本恢复）。"
+        },
+        "relay_agent_version": {
+          "type": "string",
+          "title": "relay_agent_version 是在连代理上报的平台版本（滞后代理照常受理——帧\n协议只增；升级后重跑 agent 脚本即刷新）。"
         }
       },
       "title": "Node 是观测缓存行（非权威；节点 ID 永不复用）。"

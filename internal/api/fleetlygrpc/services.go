@@ -110,6 +110,10 @@ type Services struct {
 	// 注入——服务面不自带词表）。
 	ScopeVocabulary []string
 
+	// GatewayPort 是 REST gateway 端口（ADR-0049：EnrollNode 的 AgentCommand
+	// 拼装锚——装配期从配置注入，默认空 = 无代理装载脚本面）。
+	GatewayPort string
+
 	Log *slog.Logger
 }
 

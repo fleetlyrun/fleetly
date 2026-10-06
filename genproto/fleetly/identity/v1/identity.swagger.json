@@ -699,6 +699,10 @@
         },
         "created_at": {
           "type": "string"
+        },
+        "detail": {
+          "type": "string",
+          "title": "detail 是动作详情（JSON；ADR-0049 首用 = exec.session 的进程/实例/\n节点/命令面——无命令面的 exec 审计无牙。既有行为 detail 为空串）。"
         }
       }
     },

@@ -422,6 +422,9 @@ message AuditEntry {
   string before_fp = 6;
   string after_fp = 7;
   string created_at = 8;
+  // detail 是动作详情（JSON；ADR-0049 首用 = exec.session 的进程/实例/
+  // 节点/命令面——无命令面的 exec 审计无牙。既有行为 detail 为空串）。
+  string detail = 9;
 }
 
 message ListAuditRequest {

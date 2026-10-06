@@ -41,6 +41,9 @@ var scopeOpExemptions = map[string]string{
 	// 通道测试面（F2.5）：channels:write 对应通道配置权；测试载荷是配置权
 	// 的诊断行使（channels:read 不足以承载——测试发的是出站流量）。
 	"/fleetly.telemetry.v1.AlertingService/TestNotificationChannel": "sends one outbound test payload; channels:write matches the configuration authority being exercised (ADR-0041)",
+	// exec 会话流（F3.2，ADR-0049）：Stream 前缀按读动词命名惯例误判——
+	// 双向流携 stdin，是 exec:write 会话能力的传输本体。
+	"/fleetly.runtime.v1.ExecService/StreamExecSession": "bidirectional session transport carrying stdin; exec:write matches the session capability being exercised (ADR-0049)",
 }
 
 // methodVerb 从 FullMethod 取动词段（"/pkg.Svc/CreateApp" → "CreateApp"）。

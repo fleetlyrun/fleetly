@@ -5,10 +5,13 @@ package apitest
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -216,6 +219,128 @@ type FakeRuntime struct {
 	netMu       sync.Mutex
 	netCarriers map[string]*fakeNetCarrier
 	maintOps    []string
+
+	// exec 假底座（RuntimeExec，ADR-0049）：确定性执行——banner + argv
+	// 回显 + 可选 stdin 回声 + 固定退出码；调用流水供断言。
+	execMu        sync.Mutex
+	execCalls     []FakeExecCall
+	execExitCode  int
+	execBanner    string
+	execEchoStdin bool
+	execSkipStdin bool // 不读 stdin（自退出形态——WS 客户端无 half-close 的测试面）
+}
+
+// FakeExecCall 是一次 ExecWorkload 调用记录（ResizeSeen/Stdin 是会话期
+// 聚合面——测试读快照）。
+type FakeExecCall struct {
+	WorkloadID string
+	Instance   string
+	Argv       []string
+	TTY        bool
+	StdinBytes []byte
+	Resizes    []capability.ExecSize
+}
+
+// SetExecBehavior 配置假执行行为（缺省：退出码 0、无 banner、不回声）。
+func (f *FakeRuntime) SetExecBehavior(exitCode int, banner string, echoStdin bool) {
+	f.execMu.Lock()
+	f.execExitCode = exitCode
+	f.execBanner = banner
+	f.execEchoStdin = echoStdin
+	f.execMu.Unlock()
+}
+
+// SetExecSkipStdin 配置自退出形态（不读 stdin 即返回——WS 消费端无
+// half-close，stdin 永不 EOF 的测试面用）。
+func (f *FakeRuntime) SetExecSkipStdin(skip bool) {
+	f.execMu.Lock()
+	f.execSkipStdin = skip
+	f.execMu.Unlock()
+}
+
+// ExecCalls 返回调用快照。
+func (f *FakeRuntime) ExecCalls() []FakeExecCall {
+	f.execMu.Lock()
+	defer f.execMu.Unlock()
+	out := make([]FakeExecCall, len(f.execCalls))
+	copy(out, f.execCalls)
+	return out
+}
+
+// FakeExecInstance / FakeExecCarrier 是假解析常量（DescribeCluster 的
+// manager 载体身份同源）。
+const (
+	FakeExecInstance = "fake-instance-0001"
+	FakeExecCarrier  = "apimanager"
+	FakeExecNode     = "01JD0NODE00000000000000000"
+)
+
+// ExecTarget 实现 RuntimeExec：恒定假解析（manager 载体上的单实例）。
+func (f *FakeRuntime) ExecTarget(context.Context, string) (capability.ExecTargetInstance, error) {
+	return capability.ExecTargetInstance{Instance: FakeExecInstance, CarrierNodeID: FakeExecCarrier}, nil
+}
+
+// ExecClusterToken 实现 RuntimeExec：TESTTOKEN（Enrollment 同源假材料）。
+func (f *FakeRuntime) ExecClusterToken(_ context.Context, token string) error {
+	if token == "TESTTOKEN" {
+		return nil
+	}
+	return errors.New("relay credential does not match an active swarm join token")
+}
+
+// ExecWorkload 实现 RuntimeExec：banner + argv 回显 + 可选 stdin 回声 +
+// 固定退出码（deterministic——golden 钉死面）。
+func (f *FakeRuntime) ExecWorkload(ctx context.Context, req capability.ExecWorkloadRequest) (int, error) {
+	call := FakeExecCall{WorkloadID: req.WorkloadID, Instance: req.Instance, Argv: req.Argv, TTY: req.TTY}
+	f.execMu.Lock()
+	banner, echo, exit, skipStdin := f.execBanner, f.execEchoStdin, f.execExitCode, f.execSkipStdin
+	f.execMu.Unlock()
+	if banner != "" {
+		_, _ = req.Stdout.Write([]byte(banner))
+	}
+	_, _ = fmt.Fprintf(req.Stdout, "argv: %s\n", strings.Join(req.Argv, " "))
+	// resize 采集（采集 goroutine 生命周期 = 会话期；记录时快照加锁）。
+	var rmu sync.Mutex
+	var resizes []capability.ExecSize
+	if req.Resize != nil {
+		go func() {
+			for {
+				select {
+				case sz, ok := <-req.Resize:
+					if !ok {
+						return
+					}
+					rmu.Lock()
+					resizes = append(resizes, sz)
+					rmu.Unlock()
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
+	}
+	var buf []byte
+	if !skipStdin {
+		buf, _ = io.ReadAll(req.Stdin)
+	}
+	call.StdinBytes = buf
+	if echo && len(buf) > 0 {
+		_, _ = req.Stdout.Write(buf)
+	}
+	rmu.Lock()
+	call.Resizes = append(call.Resizes, resizes...)
+	rmu.Unlock()
+	f.execMu.Lock()
+	f.execCalls = append(f.execCalls, call)
+	f.execMu.Unlock()
+	return exit, nil
+}
+
+// RunRelayAgent 实现 RuntimeExec：进程内形态不可用（假代理经
+// AttachFakeExecAgent 以接口形态接入 hub——传输中立红利，无 WS 需求）。
+func (f *FakeRuntime) RunRelayAgent(ctx context.Context, o capability.RelayAgentOptions) error {
+	<-ctx.Done()
+	return ctx.Err()
 }
 
 // AdminCall 是一次 RuntimeAdmin 动词记录。
@@ -321,11 +446,15 @@ func (f *FakeRuntime) DescribeCluster(context.Context) (capability.ClusterView, 
 	}}}, nil
 }
 
-func (f *FakeRuntime) Enrollment(_ context.Context, rotate bool) (capability.EnrollKit, error) {
+func (f *FakeRuntime) Enrollment(_ context.Context, rotate bool, o capability.EnrollmentOptions) (capability.EnrollKit, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.enrollCalls = append(f.enrollCalls, rotate)
-	return capability.EnrollKit{Command: "docker swarm join --token TESTTOKEN 127.0.0.1:2377"}, nil
+	kit := capability.EnrollKit{Command: "docker swarm join --token TESTTOKEN 127.0.0.1:2377"}
+	if o.GatewayPort != "" {
+		kit.AgentCommand = "true # fake agent script"
+	}
+	return kit, nil
 }
 
 // EnrollCalls 返回 Enrollment 调用记录（rotate 标志序列；C3 断言面）。

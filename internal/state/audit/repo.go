@@ -31,6 +31,9 @@ type Entry struct {
 	Resource string // 如 "project/<id>"
 	BeforeFP string // 变更前指纹（创建为空）
 	AfterFP  string // 变更后指纹（删除为空）
+	// Detail 是动作详情 JSON（ADR-0049 首用 = exec.session 的进程/实例/
+	// 节点/命令面——exec 审计的命令面入账）。空串 = 无详情（既有行为零变化）。
+	Detail string
 	// TeamID 是操作者的 Team 轴（ADR-0035）：写入时由 Append 从 ctx 铸入
 	// （调用方显式置空 = system/无身份动作）。'' = 平台级行（ListAudit 对
 	// 全部 Team 可见——内容是动作名+资源 ID+指纹，无值载荷）。
@@ -74,9 +77,9 @@ func (r *Repo) Append(ctx context.Context, run state.Runner, e *Entry) error {
 	}
 	e.CreatedAt = state.FormatTime(r.clock.Now())
 	_, err := run.ExecContext(ctx, `
-		INSERT INTO audit (id, actor, source, action, resource, before_fp, after_fp, team_id, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		e.ID, e.Actor, string(e.Source), e.Action, e.Resource, e.BeforeFP, e.AfterFP, e.TeamID, e.CreatedAt)
+		INSERT INTO audit (id, actor, source, action, resource, before_fp, after_fp, team_id, created_at, detail)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		e.ID, e.Actor, string(e.Source), e.Action, e.Resource, e.BeforeFP, e.AfterFP, e.TeamID, e.CreatedAt, e.Detail)
 	return err
 }
 
@@ -103,7 +106,7 @@ func (r *Repo) ListFiltered(ctx context.Context, run state.Runner, f Filter) ([]
 	if f.Limit <= 0 || f.Limit > 1000 {
 		f.Limit = 1000
 	}
-	query := `SELECT id, actor, source, action, resource, before_fp, after_fp, team_id, created_at FROM audit`
+	query := `SELECT id, actor, source, action, resource, before_fp, after_fp, team_id, created_at, detail FROM audit`
 	var conds []string
 	var args []any
 	if f.Actor != "" {
@@ -141,7 +144,7 @@ func (r *Repo) ListFiltered(ctx context.Context, run state.Runner, f Filter) ([]
 	for rows.Next() {
 		var e Entry
 		var src string
-		if err := rows.Scan(&e.ID, &e.Actor, &src, &e.Action, &e.Resource, &e.BeforeFP, &e.AfterFP, &e.TeamID, &e.CreatedAt); err != nil {
+		if err := rows.Scan(&e.ID, &e.Actor, &src, &e.Action, &e.Resource, &e.BeforeFP, &e.AfterFP, &e.TeamID, &e.CreatedAt, &e.Detail); err != nil {
 			return nil, err
 		}
 		e.Source = Source(src)

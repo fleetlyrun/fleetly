@@ -2276,15 +2276,18 @@ func (x *AcceptInvitationResponse) GetUser() *User {
 }
 
 type AuditEntry struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Actor         string                 `protobuf:"bytes,2,opt,name=actor,proto3" json:"actor,omitempty"`
-	Source        string                 `protobuf:"bytes,3,opt,name=source,proto3" json:"source,omitempty"` // manual|api|cli|webhook|schedule|system
-	Action        string                 `protobuf:"bytes,4,opt,name=action,proto3" json:"action,omitempty"`
-	Resource      string                 `protobuf:"bytes,5,opt,name=resource,proto3" json:"resource,omitempty"`
-	BeforeFp      string                 `protobuf:"bytes,6,opt,name=before_fp,json=beforeFp,proto3" json:"before_fp,omitempty"`
-	AfterFp       string                 `protobuf:"bytes,7,opt,name=after_fp,json=afterFp,proto3" json:"after_fp,omitempty"`
-	CreatedAt     string                 `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Id        string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Actor     string                 `protobuf:"bytes,2,opt,name=actor,proto3" json:"actor,omitempty"`
+	Source    string                 `protobuf:"bytes,3,opt,name=source,proto3" json:"source,omitempty"` // manual|api|cli|webhook|schedule|system
+	Action    string                 `protobuf:"bytes,4,opt,name=action,proto3" json:"action,omitempty"`
+	Resource  string                 `protobuf:"bytes,5,opt,name=resource,proto3" json:"resource,omitempty"`
+	BeforeFp  string                 `protobuf:"bytes,6,opt,name=before_fp,json=beforeFp,proto3" json:"before_fp,omitempty"`
+	AfterFp   string                 `protobuf:"bytes,7,opt,name=after_fp,json=afterFp,proto3" json:"after_fp,omitempty"`
+	CreatedAt string                 `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	// detail 是动作详情（JSON；ADR-0049 首用 = exec.session 的进程/实例/
+	// 节点/命令面——无命令面的 exec 审计无牙。既有行为 detail 为空串）。
+	Detail        string `protobuf:"bytes,9,opt,name=detail,proto3" json:"detail,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2371,6 +2374,13 @@ func (x *AuditEntry) GetAfterFp() string {
 func (x *AuditEntry) GetCreatedAt() string {
 	if x != nil {
 		return x.CreatedAt
+	}
+	return ""
+}
+
+func (x *AuditEntry) GetDetail() string {
+	if x != nil {
+		return x.Detail
 	}
 	return ""
 }
@@ -2635,7 +2645,7 @@ const file_fleetly_identity_v1_identity_proto_rawDesc = "" +
 	"\x06secret\x18\x01 \x01(\tR\x06secret\x12\x1b\n" +
 	"\tuser_name\x18\x02 \x01(\tR\buserName\"I\n" +
 	"\x18AcceptInvitationResponse\x12-\n" +
-	"\x04user\x18\x01 \x01(\v2\x19.fleetly.identity.v1.UserR\x04user\"\xd5\x01\n" +
+	"\x04user\x18\x01 \x01(\v2\x19.fleetly.identity.v1.UserR\x04user\"\xed\x01\n" +
 	"\n" +
 	"AuditEntry\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
@@ -2646,7 +2656,8 @@ const file_fleetly_identity_v1_identity_proto_rawDesc = "" +
 	"\tbefore_fp\x18\x06 \x01(\tR\bbeforeFp\x12\x19\n" +
 	"\bafter_fp\x18\a \x01(\tR\aafterFp\x12\x1d\n" +
 	"\n" +
-	"created_at\x18\b \x01(\tR\tcreatedAt\"\x8a\x01\n" +
+	"created_at\x18\b \x01(\tR\tcreatedAt\x12\x16\n" +
+	"\x06detail\x18\t \x01(\tR\x06detail\"\x8a\x01\n" +
 	"\x10ListAuditRequest\x12\x16\n" +
 	"\x06source\x18\x01 \x01(\tR\x06source\x12\x16\n" +
 	"\x06action\x18\x02 \x01(\tR\x06action\x12\x1a\n" +

@@ -135,4 +135,8 @@ var builtins = []Event{
 	{Name: "alert.fired", Summary: "A threshold alert rule transitioned to firing (breach held for the rule's for-window); notification channels were attempted.", Source: "internal/engine/metrics.go evaluateRules"},
 	{Name: "alert.resolved", Summary: "A firing threshold alert rule transitioned back to ok (observed value fell below the threshold).", Source: "internal/engine/metrics.go evaluateRules"},
 	{Name: "alert.channel_failed", Summary: "A notification channel delivery failed; the channel row records the error tail (diagnostics face).", Source: "internal/engine/metrics.go dispatchAlert"},
+
+	// Exec 会话（F3.2，ADR-0049 决策 4：安全可见性——谁在何时进入了哪个
+	// 进程；会话不是资源行，受理即唯一事件/审计落点，结束不落第二行）。
+	{Name: "exec.session_opened", Summary: "An exec session was accepted into a running workload (actor, process, instance, node and command are in the payload; change freeze is exempt — diagnostics face).", Source: "internal/api/fleetlygrpc/exec.go CreateExecSession"},
 }

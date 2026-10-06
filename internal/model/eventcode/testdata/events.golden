@@ -27,6 +27,7 @@ deployment.releasing	Deployment started releasing workloads to runtime.	added du
 deployment.rolling_back	Deployment started replaying last successful revision.	added during implementation
 deployment.succeeded	Deployment reached succeeded terminal state.	added during implementation
 deployment.superseded	Deployment superseded by a newer one.	added during implementation
+exec.session_opened	An exec session was accepted into a running workload (actor, process, instance, node and command are in the payload; change freeze is exempt — diagnostics face).	internal/api/fleetlygrpc/exec.go CreateExecSession
 freeze.lifted	A change freeze was lifted; change verbs in scope are accepted again.	internal/api/fleetlygrpc/governance.go LiftChangeFreeze
 freeze.set	A change freeze was set for a team (or globally); change verbs in scope are refused with the reason.	internal/api/fleetlygrpc/governance.go SetChangeFreeze
 hook.push_accepted	A verified webhook push triggered a deployment.	internal/api/fleetlygrpc/webhook.go handlePush

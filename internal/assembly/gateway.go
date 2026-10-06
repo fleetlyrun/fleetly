@@ -59,6 +59,9 @@ func gatewayRegistrations() []gateway.RegisterFunc {
 		// 在原生挂法（mountHooks），不在此。
 		registerClient(deliveryv1.NewHooksServiceClient, deliveryv1.RegisterHooksServiceHandlerClient),
 		registerClient(runtimev1.NewNodesServiceClient, runtimev1.RegisterNodesServiceHandlerClient),
+		// Exec 受理面注解 RPC（F3.2，ADR-0049）；会话流在原生挂法
+		//（mountExecStream——WS），不在此。
+		registerClient(runtimev1.NewExecServiceClient, runtimev1.RegisterExecServiceHandlerClient),
 		// Automation（F1.5/F1.6/F1.7）：Task/Run/Schedule 聚合面。
 		registerClient(automationv1.NewTasksServiceClient, automationv1.RegisterTasksServiceHandlerClient),
 		registerClient(automationv1.NewRunsServiceClient, automationv1.RegisterRunsServiceHandlerClient),
@@ -78,8 +81,8 @@ func gatewayRegistrations() []gateway.RegisterFunc {
 // 生产完全同一清单与错误信封——清单漂移先在守卫 A 红，行为面在此冒烟红。
 // eventsSrc 为 nil 时跳过 SSE 挂载（不需要订阅面的 REST 冒烟）。最外层
 // console.Mount 把非 /v1 路径交给 embed 静态产物（F2.6/ADR-0044；/v1/*
-// 零变化）。
-func NewGatewayHandler(logger *slog.Logger, conn grpc.ClientConnInterface, eventsSrc *fleetlygrpc.EventStreamSource) (http.Handler, error) {
+// 零变化）。execSrc nil = exec 原生入口停用（纯 gateway 测试形态）。
+func NewGatewayHandler(logger *slog.Logger, conn grpc.ClientConnInterface, eventsSrc *fleetlygrpc.EventStreamSource, execSrc *fleetlygrpc.ExecStreamSource) (http.Handler, error) {
 	mux := gateway.NewMux(gateway.MuxOptions{
 		ErrorHandler: newGatewayErrorHandler(logger),
 	})
@@ -92,6 +95,13 @@ func NewGatewayHandler(logger *slog.Logger, conn grpc.ClientConnInterface, event
 	h = mountUploads(h, newUploadsHandler(deliveryv1.NewBuildsServiceClient(conn), h))
 	if eventsSrc != nil {
 		h = mountEventsSSE(h, newEventsSSEHandler(eventsSrc))
+	}
+	if execSrc != nil {
+		// exec 原生入口三件（F3.2，ADR-0049）：中继代理 WS + 会话消费端
+		// WS + 控制面二进制下载。
+		h = mountRelay(h, execSrc.Engine())
+		h = mountExecStream(h, execSrc)
+		h = mountPlatformBinary(h, execSrc.Engine())
 	}
 	return console.Mount(h), nil
 }
@@ -109,7 +119,7 @@ func NewGatewayServer(
 	if err != nil {
 		return nil, nil, err
 	}
-	handler, err := NewGatewayHandler(app.Logger(), conn, fleetlygrpc.NewEventStreamSource(services))
+	handler, err := NewGatewayHandler(app.Logger(), conn, fleetlygrpc.NewEventStreamSource(services), fleetlygrpc.NewExecStreamSource(services))
 	if err != nil {
 		_ = conn.Close()
 		return nil, nil, err

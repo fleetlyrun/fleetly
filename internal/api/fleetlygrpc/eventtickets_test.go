@@ -16,15 +16,15 @@ func TestEventTicketSingleUse(t *testing.T) {
 	db, _ := statertest.New(t)
 	store := newEventTicketStore(db.Clock())
 
-	ticket, ttl, err := store.issue()
+	ticket, ttl, err := store.issue(ticketPurposeEvents, "")
 	require.NoError(t, err)
 	assert.NotEmpty(t, ticket)
 	assert.Equal(t, eventTicketTTL, ttl)
 
-	require.True(t, store.redeem(ticket), "first redemption must succeed")
-	assert.False(t, store.redeem(ticket), "second redemption must fail (single-use)")
-	assert.False(t, store.redeem(""), "empty ticket must fail")
-	assert.False(t, store.redeem("bogus"), "unknown ticket must fail")
+	require.True(t, store.redeem(ticketPurposeEvents, "", ticket), "first redemption must succeed")
+	assert.False(t, store.redeem(ticketPurposeEvents, "", ticket), "second redemption must fail (single-use)")
+	assert.False(t, store.redeem(ticketPurposeEvents, "", ""), "empty ticket must fail")
+	assert.False(t, store.redeem(ticketPurposeEvents, "", "bogus"), "unknown ticket must fail")
 }
 
 func TestEventTicketExpiry(t *testing.T) {
@@ -32,12 +32,15 @@ func TestEventTicketExpiry(t *testing.T) {
 	clock := db.Clock().(*statertest.FakeClock)
 	store := newEventTicketStore(db.Clock())
 
-	ticket, _, err := store.issue()
+	ticket, _, err := store.issue(ticketPurposeEvents, "")
 	require.NoError(t, err)
 	clock.Advance(eventTicketTTL + time.Second)
-	assert.False(t, store.redeem(ticket), "an expired ticket must fail")
-	// 过期票据经铸造路径惰性清理（sweepLocked）。
+	// 失败兑换不消费票据（ADR-0049：载荷不匹配/过期的尝试不烧票据——
+	// 错会话试兑不构成对真会话的拒绝服务）；过期条目经铸造路径惰性清理。
+	assert.False(t, store.redeem(ticketPurposeEvents, "", ticket), "an expired ticket must fail")
+	_, _, err = store.issue(ticketPurposeEvents, "")
+	require.NoError(t, err)
 	store.mu.Lock()
-	assert.Empty(t, store.tickets, "expired tickets are swept lazily on issue")
+	assert.Len(t, store.tickets, 1, "expired tickets are swept lazily on issue")
 	store.mu.Unlock()
 }

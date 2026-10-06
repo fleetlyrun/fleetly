@@ -101,4 +101,7 @@ func init() {
 	// 数据库面（structureEventPayload，databases.go 单源；F1.12/ADR-0029）。
 	registerEventPayload(eventDatabaseCreated, structureEventPayload{})
 	registerEventPayload(eventDatabaseDeleted, structureEventPayload{})
+	// Exec 会话受理（execEventPayload，exec.go 单源；F3.2/ADR-0049——
+	// 安全可见性：谁在何时进入了哪个进程）。
+	registerEventPayload("exec.session_opened", execEventPayload{})
 }

@@ -127,6 +127,13 @@ type Options struct {
 	// ResticPath 是 restic 二进制路径缝（测试注入假可执行；空 = 生产
 	// exec.LookPath 探测——缺席即 Platform Backup 停用的探测面）。
 	ResticPath string
+	// RelayLoopbackURL 是控制面回环中继代理的 gateway 基址（空 = 回环
+	// 代理停用；ADR-0049：manager 节点也是 exec 目标，进程内代理经此
+	// URL 连自身 gateway——单节点部署零 enroll 即具备 exec 面）。
+	RelayLoopbackURL string
+	// RelayAgentVersion 是回环代理握手上报的版本（buildinfo 注入；空 =
+	// dev 形态）。
+	RelayAgentVersion string
 	// DataRoot 是平台数据根（构建上下文与 git 检出落盘）。
 	DataRoot string
 }
@@ -369,6 +376,11 @@ type Engine struct {
 	backups     *backup.Repo
 	objectStore capability.ObjectStore
 	utility     capability.RuntimeUtility
+	// execFace 是 exec 子面 typed 持有（F3.2，ADR-0049；nil = 受理诚实
+	// 失败 E_EXEC_UNSUPPORTED——无降级路径）。
+	execFace capability.RuntimeExec
+	// exec 是会话域实例态（受理/路由/生命周期；进程内活体，零持久化）。
+	exec execDomain
 
 	// Logging 域（F2.4，ADR-0040）：受管日志存储 Provider + 采集环（域流
 	// 账本/游标 repo；build 日志出口经同 Provider 持久化——见 buildlog.go）。
@@ -498,6 +510,7 @@ func New(deps Deps, opts Options) *Engine {
 		metrics:      deps.Metrics,
 		objectStore:  deps.ObjectStore,
 		utility:      capability.FacesOf(deps.Runtime).Utility,
+		execFace:     capability.FacesOf(deps.Runtime).Exec,
 		cipher:       deps.Cipher,
 		runtime:      deps.Runtime,
 		db:           db,
@@ -549,6 +562,7 @@ func New(deps Deps, opts Options) *Engine {
 	e.alertRules = alertrule.New(clock)
 	e.channels = channel.New(clock)
 	e.obs.init()
+	e.exec.init()
 	e.expect.expected = make(map[workloadOwner]uint64)
 	e.drift.sig = make(map[string]string)
 	e.drift.stoppedSig = make(map[string]string)
@@ -676,6 +690,17 @@ func (e *Engine) Start(ctx context.Context) {
 		defer e.wg.Done()
 		e.driftScanLoop(runCtx)
 	}()
+	// 回环中继代理（ADR-0049）：manager 节点的 exec 路由面。子面缺席或
+	// 未配 URL 即静默跳过（exec 受理面诚实失败兜底）。
+	if e.execFace != nil && e.opts.RelayLoopbackURL != "" {
+		e.wg.Add(1)
+		go func() {
+			defer e.wg.Done()
+			_ = e.execFace.RunRelayAgent(runCtx, capability.RelayAgentOptions{
+				GatewayURL: e.opts.RelayLoopbackURL, AgentVersion: e.opts.RelayAgentVersion,
+			})
+		}()
+	}
 }
 
 // StartWatch 只启动 Watch 消费（手动驱动形态配套：收敛循环不启动，观测

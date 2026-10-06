@@ -1,0 +1,124 @@
+syntax = "proto3";
+
+// Exec 子面（F3.2，ADR-0049）：进入运行中 Workload 载体的会话。受理面
+// （CreateExecSession）四件一拍（限额/审计/事件）；流面三消费径同构——
+// CLI gRPC bidi（本文件 StreamExecSession，authn 常规鉴权）、Console
+// WebSocket（原生入口 /v1/exec/stream?session_id=&ticket=，票据鉴权，
+// 不进 gateway 注解——uploads/webhook 先例）。会话非资源行：不可列表、
+// 不可回读，台账 = 受理审计行。
+package fleetly.runtime.v1;
+
+option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1;runtimev1";
+
+import "google/api/annotations.proto";
+import "protoc-gen-openapiv2/options/annotations.proto";
+import "grpcapi/v1/authz.proto";
+
+option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
+  responses: {
+    key: "default"
+    value: {
+      description: "An unexpected error response."
+      schema: { json_schema: { ref: ".fleetly.shared.v1.ErrorResponse" } }
+    }
+  }
+};
+
+service ExecService {
+  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+
+  // CreateExecSession 受理会话：实时解析目标实例与节点（观测缓存不参与
+  // 决策）、per-Team 并发限额、审计 + exec.session_opened 事件、铸造单
+  // 用途票据（WS 消费用；gRPC 消费不经票据）。change freeze 豁免
+  // （ADR-0049：exec 不变更资源状态，诊断面在冻结窗内最需要）。
+  rpc CreateExecSession(CreateExecSessionRequest) returns (CreateExecSessionResponse) {
+    option (google.api.http) = { post: "/v1/exec/sessions" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "exec" op: SCOPE_OP_WRITE }
+    };
+  }
+  // StreamExecSession 是会话流（gRPC 消费径；CLI）。首帧必须 attach 携带
+  // CreateExecSession 返回的会话 ID；随后 stdin/resize 上行、stdout/stderr/
+  // exit/error 下行，直至 exit 或 error 收口。一个会话至多一个消费端附着。
+  rpc StreamExecSession(stream StreamExecSessionRequest) returns (stream StreamExecSessionResponse) {
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "exec" op: SCOPE_OP_WRITE }
+    };
+  }
+}
+
+message CreateExecSessionRequest {
+  string app_id = 1;
+  // process 是 App 内进程模板名（web/worker…）。
+  string process = 2;
+  // command 是完整 argv（数组形态；零 shell——shellguard 射程延续）。
+  // 空且 tty=true 时缺省 ["/bin/sh"]；空且 tty=false 拒绝（服务端校验）。
+  repeated string command = 3;
+  bool tty = 4;
+}
+
+// ExecSession 是受理后的会话元数据（instance/node 是实际命中——诚实回显，
+// 多副本进程平台代选首个在跑实例）。
+message ExecSession {
+  string id = 1;
+  string app_id = 2;
+  string process = 3;
+  string workload_id = 4;
+  string instance = 5;
+  string node_id = 6;
+  repeated string command = 7;
+  bool tty = 8;
+  string created_at = 9;
+}
+
+message CreateExecSessionResponse {
+  ExecSession session = 1;
+  // ticket 是单用途秒级票据（绑会话；WS 流消费专用，ADR-0026 exec 版）。
+  string ticket = 2;
+  // expires_in 是票据 TTL 秒数。
+  int32 expires_in = 3;
+}
+
+message StreamExecSessionRequest {
+  oneof frame {
+    // attach 是必发首帧：CreateExecSession 返回的会话 ID。
+    string attach_session_id = 1;
+    bytes stdin = 2;
+    ExecResize resize = 3;
+  }
+}
+
+message ExecResize {
+  int32 cols = 1;
+  int32 rows = 2;
+}
+
+message StreamExecSessionResponse {
+  oneof frame {
+    // meta 是首帧：实际命中实例与节点（与受理回显同源）。
+    ExecSessionMeta meta = 1;
+    bytes stdout = 2;
+    bytes stderr = 3;
+    ExecExit exit = 4;
+    ExecStreamError error = 5;
+  }
+}
+
+message ExecSessionMeta {
+  string instance = 1;
+  string node_id = 2;
+}
+
+message ExecExit {
+  // code 是载体进程退出码（透传；CLI 以此为自身退出码）。
+  int32 code = 1;
+}
+
+// ExecStreamError 是流中错误帧（收口即会话终止）：code 是 errcode 注册表
+// 形态（E_ 前缀）或传输面标识（session_expired/idle_timeout/attach_conflict）。
+message ExecStreamError {
+  string code = 1;
+  string message = 2;
+}

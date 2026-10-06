@@ -1,0 +1,199 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "Exec 子面（F3.2，ADR-0049）：进入运行中 Workload 载体的会话。受理面\n（CreateExecSession）四件一拍（限额/审计/事件）；流面三消费径同构——\nCLI gRPC bidi（本文件 StreamExecSession，authn 常规鉴权）、Console\nWebSocket（原生入口 /v1/exec/stream?session_id=\u0026ticket=，票据鉴权，\n不进 gateway 注解——uploads/webhook 先例）。会话非资源行：不可列表、\n不可回读，台账 = 受理审计行。",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "ExecService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/v1/exec/sessions": {
+      "post": {
+        "summary": "CreateExecSession 受理会话：实时解析目标实例与节点（观测缓存不参与\n决策）、per-Team 并发限额、审计 + exec.session_opened 事件、铸造单\n用途票据（WS 消费用；gRPC 消费不经票据）。change freeze 豁免\n（ADR-0049：exec 不变更资源状态，诊断面在冻结窗内最需要）。",
+        "operationId": "ExecService_CreateExecSession",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1CreateExecSessionResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1CreateExecSessionRequest"
+            }
+          }
+        ],
+        "tags": [
+          "ExecService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "v1CreateExecSessionRequest": {
+      "type": "object",
+      "properties": {
+        "app_id": {
+          "type": "string"
+        },
+        "process": {
+          "type": "string",
+          "title": "process 是 App 内进程模板名（web/worker…）。"
+        },
+        "command": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "command 是完整 argv（数组形态；零 shell——shellguard 射程延续）。\n空且 tty=true 时缺省 [\"/bin/sh\"]；空且 tty=false 拒绝（服务端校验）。"
+        },
+        "tty": {
+          "type": "boolean"
+        }
+      }
+    },
+    "v1CreateExecSessionResponse": {
+      "type": "object",
+      "properties": {
+        "session": {
+          "$ref": "#/definitions/v1ExecSession"
+        },
+        "ticket": {
+          "type": "string",
+          "title": "ticket 是单用途秒级票据（绑会话；WS 流消费专用，ADR-0026 exec 版）。"
+        },
+        "expires_in": {
+          "type": "integer",
+          "format": "int32",
+          "title": "expires_in 是票据 TTL 秒数。"
+        }
+      }
+    },
+    "v1ExecExit": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "integer",
+          "format": "int32",
+          "title": "code 是载体进程退出码（透传；CLI 以此为自身退出码）。"
+        }
+      }
+    },
+    "v1ExecResize": {
+      "type": "object",
+      "properties": {
+        "cols": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "rows": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
+    "v1ExecSession": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "app_id": {
+          "type": "string"
+        },
+        "process": {
+          "type": "string"
+        },
+        "workload_id": {
+          "type": "string"
+        },
+        "instance": {
+          "type": "string"
+        },
+        "node_id": {
+          "type": "string"
+        },
+        "command": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "tty": {
+          "type": "boolean"
+        },
+        "created_at": {
+          "type": "string"
+        }
+      },
+      "title": "ExecSession 是受理后的会话元数据（instance/node 是实际命中——诚实回显，\n多副本进程平台代选首个在跑实例）。"
+    },
+    "v1ExecSessionMeta": {
+      "type": "object",
+      "properties": {
+        "instance": {
+          "type": "string"
+        },
+        "node_id": {
+          "type": "string"
+        }
+      }
+    },
+    "v1ExecStreamError": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "title": "ExecStreamError 是流中错误帧（收口即会话终止）：code 是 errcode 注册表\n形态（E_ 前缀）或传输面标识（session_expired/idle_timeout/attach_conflict）。"
+    },
+    "v1StreamExecSessionResponse": {
+      "type": "object",
+      "properties": {
+        "meta": {
+          "$ref": "#/definitions/v1ExecSessionMeta",
+          "title": "meta 是首帧：实际命中实例与节点（与受理回显同源）。"
+        },
+        "stdout": {
+          "type": "string",
+          "format": "byte"
+        },
+        "stderr": {
+          "type": "string",
+          "format": "byte"
+        },
+        "exit": {
+          "$ref": "#/definitions/v1ExecExit"
+        },
+        "error": {
+          "$ref": "#/definitions/v1ExecStreamError"
+        }
+      }
+    }
+  }
+}
