@@ -153,24 +153,44 @@ type RuntimeExec interface {
   提供确定性 exec（echo argv/固定退出码）——CLI golden 与 apitest 契约经 fake
   驱动全链（真 docker 链路在 e2e 与 staging）。
 
-## 验收锚
+## 验收锚（2026-10-06 实施批全勾；实录锚 file:line）
 
-- [ ] proto：runtime/v1 ExecService（CreateExecSession 注解面 + StreamExecSession
+- [x] proto：runtime/v1 ExecService（CreateExecSession 注解面 + StreamExecSession
   bidi）+ scope 注解 exec:write；errcode 两新码（E_EXEC_UNSUPPORTED /
   E_NODE_AGENT_OFFLINE，Source 锚点 + suggestion）+ eventcode
   exec.session_opened + schema golden + usage 反扫同步
-- [ ] capability RuntimeExec 子面 + swarm 实现（ExecTarget 实时解析 / ExecWorkload
+  （proto/fleetly/runtime/v1/exec.proto 全文；internal/model/errcode/codes.go
+  E_EXEC_UNSUPPORTED/E_NODE_AGENT_OFFLINE 条目；events.go exec.session_opened；
+  fleetlygrpc/schemareg.go 注册；codes/events/self-description golden 同批）
+- [x] capability RuntimeExec 子面 + swarm 实现（ExecTarget 实时解析 / ExecWorkload
   tty+管道+resize / RunRelayAgent）；未实现子面诚实失败（E_EXEC_UNSUPPORTED）
-- [ ] 反向中继：/v1/relay WS（join-token 鉴权、载体 ID→平台 ID 锚定绑定、多路
+  （internal/capability/exec.go 契约 + 帧协议单源；providers/swarm/exec.go
+  ExecTarget/ExecWorkload/ExecClusterToken + relayagent.go RunRelayAgent 重连环；
+  faces.go Exec 入 FacesOf/Offered）
+- [x] 反向中继：/v1/relay WS（join-token 鉴权、载体 ID→平台 ID 锚定绑定、多路
   复用帧路由）+ /v1/platform/binary 原生入口 + EnrollKit.AgentCommand 幂等脚本
   + manager 回环代理（单节点零 enroll 可 exec）
-- [ ] 受理面：CreateExecSession 四件一拍（audit Detail 列 + exec.session_opened
+  （internal/assembly/gateway_exec.go 三原生入口——relay 凭证先于升级校验；
+  providers/swarm/runtime.go relayAgentScript（形状钉板 exec_script_test.go）；
+  engine.Options.RelayLoopbackURL 回环代理 + provides.go 派生）
+- [x] 受理面：CreateExecSession 四件一拍（audit Detail 列 + exec.session_opened
   事件）+ per-Team 限额 + 空闲/硬 TTL 收口（apitest 契约：票据 TTL/单用途/
-  限额拒绝信封/未实现子面）
-- [ ] CLI `shell`/`exec` 双形态 golden（fake 驱动全链：帧流/退出码透传）
-- [ ] Console 终端页（xterm + 票据 WS + 断线重开 + 进程选择）+ 帧编解码 vitest +
-  dist 同 commit
-- [ ] e2e：dind-smoke exec 腿（回环代理全链）+ dind-two-node exec 腿（worker
-  代理 enroll + 双节点 exec + tty 交互）
-- [ ] staging 真机：worker AgentCommand 落地 + 双节点 CLI exec/shell + WS 契约
-  （票据 401/握手）+ Console 终端页走查（HTTP/消费契约级）
+  限额拒绝信封/未实现子面）（fleetlygrpc/exec.go；engine/exec.go 限额/TTL/
+  慢消费端收口；apitest/exec_test.go 五件——gRPC 全链/WS 票据/拒绝信封/
+  Team 限额/坏凭证；00025_audit_detail 迁移）
+- [x] CLI `shell`/`exec` 双形态 golden（fake 驱动全链：帧流/退出码透传）
+  （cmd/fleetly/cmd/verbs_exec.go + exec_golden_test.go 六 golden + 退出码
+  透传 exitCodeFor；进程内假代理 apitest/execagent.go = 帧协议第二消费方）
+- [x] Console 终端页（xterm + 票据 WS + 断线重开 + 进程选择）+ 帧编解码 vitest +
+  dist 同 commit（console/src/pages/Terminal.tsx + api/execstream.ts +
+  lib/execFrames.ts + execFrames.test.ts 六件；console:verify 零漂移）
+- [x] e2e：dind-smoke exec 腿（回环代理全链）+ dind-two-node exec 腿（worker
+  代理 enroll + 双节点 exec + tty 交互）（e2e/dind-smoke.sh exec 节——
+  relay_online/exec/退出码/shell/审计五锚本地 SMOKE PASSED；dind-two-node.sh
+  exec 节——AgentCommand 原样执行/双节点 relay_online/卷钉住+spread 双 exec/
+  幂等重装本地 TWO-NODE E2E PASSED）
+- [x] staging 真机：worker AgentCommand 落地 + 双节点 CLI exec/shell + WS 契约
+  （票据 401/握手）+ Console 终端页走查（HTTP/消费契约级）（runbook 2026-10-06
+  记录·十一：双节点 relay_online + worker TTY 交互 shell 实测 + WS 101 升级/
+  单用途 401 + 审计/事件 + W1 同日修复——Provider 哨兵未映射 E_INTERNAL 吞错因，
+  capability.ErrExecNoRunning 单源收口）

@@ -38,7 +38,7 @@ export function TerminalPage() {
   const wsRef = useRef<WebSocket | null>(null);
   const termDiv = useRef<HTMLDivElement | null>(null);
 
-  // xterm 挂载（一次）：输出写入 + 输入上行 + resize 双向（fit addon 驱动
+  // xterm 挂载（一次）：输出写入 + 输入上行 + resize 双向（fit 组件驱动
   // 尺寸事件 → resize 帧；resize 帧是尽力语义——服务端转发到载体 PTY）。
   useEffect(() => {
     const term = new Terminal({
@@ -206,7 +206,7 @@ export function TerminalPage() {
       </div>
       <p className="text-xs text-slate-500">
         Sessions are interactive TTYs into a running replica (platform picks the first running instance and reports it in
-        the session header). Change freeze does not apply — exec is a diagnostics face (ADR-0049).
+        the session header). Change freeze does not cover exec — it is a diagnostics face (ADR-0049).
       </p>
     </section>
   );

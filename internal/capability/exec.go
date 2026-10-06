@@ -88,6 +88,11 @@ type RelayAgentOptions struct {
 // 实例漂移/容器退出）。engine 映射为会话 error 帧如实上抛。
 var ErrExecTargetGone = errors.New("exec target carrier is not on this node")
 
+// ErrExecNoRunning 是 ExecTarget 哨兵：Workload 无在跑实例（服务缺席/
+// 任务非 running）。engine 归一为受理位 E_NOT_FOUND——跨层哨兵词汇单源
+// 在 capability（engine 不 import providers）。
+var ErrExecNoRunning = errors.New("no running instance for workload")
+
 // ---- 中继帧协议（execwire 单源；assembly 的 /v1/relay 服务端与 swarm
 // 代理客户端共用；engine 路由消费同构类型）。字节形态：[1B kind][26B
 // session ULID][payload]（hello 例外：文本 JSON 首帧）。kind 与 payload

@@ -292,6 +292,12 @@ var wordingExemptions = map[string]map[string]string{
 		"internal/api/fleetlygrpc/hooks.go":         "git ssh:// 是被拒绝的仓库传输 scheme（技术义文案），非 exec 面命名（ADR-0049）",
 		"internal/apitest/hooks_validation_test.go": "git ssh:// scheme 拒绝面的夹具（技术义），非 exec 面命名（ADR-0049）",
 	},
+	// addon（Database 词条 _Avoid_）：xterm 库 API 标识符（@xterm/addon-fit
+	// 包名 / FitAddon 类 / loadAddon 方法）不可更名——终端页（F3.2，ADR-
+	// 0049）的库依赖面，非平台 Database 同义词。
+	"addon": {
+		"console/src/pages/Terminal.tsx": "xterm library API identifiers (@xterm/addon-fit, FitAddon, loadAddon) cannot be renamed; not platform database naming (ADR-0049 terminal page)",
+	},
 	// dbtemplate 备份执行链（F2.2，ADR-0039）：pg_dump/mysqldump/mongodump
 	// 是引擎原生命令名、dump.rdb 是 redis 数据文件名——外部工具专有名，
 	// 非平台 Backup 词汇面使用（ADR-0007 禁的是把 dump 当 Backup 同义词）。

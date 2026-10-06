@@ -175,6 +175,11 @@ func (e *Engine) CreateSession(ctx context.Context, in CreateExecInput) (*ExecSe
 	workloadID := WorkloadID(in.AppID, in.Process)
 	target, err := e.execFace.ExecTarget(ctx, workloadID)
 	if err != nil {
+		// Provider 哨兵归一为受理位信封（跨层哨兵词汇单源 capability：
+		// engine 不 import providers）。
+		if errors.Is(err, capability.ErrExecNoRunning) {
+			return nil, fmt.Errorf("%w: %s", ErrExecNoInstance, workloadID)
+		}
 		return nil, err
 	}
 	if target.Instance == "" || target.CarrierNodeID == "" {

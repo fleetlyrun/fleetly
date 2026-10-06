@@ -58,7 +58,7 @@ func mapExecError(err error) error {
 	case errors.Is(err, engine.ErrExecUnsupported):
 		return apperr.New("E_EXEC_UNSUPPORTED", "the runtime provider does not implement exec sessions")
 	case errors.Is(err, engine.ErrExecNoInstance):
-		return apperr.New("E_NOT_FOUND", "no running instance for the requested process")
+		return apperr.New("E_NOT_FOUND", "no running instance for the requested process: %v", err)
 	case errors.Is(err, engine.ErrExecNodeUnanchored):
 		return apperr.New("E_NODE_AGENT_OFFLINE", "the target node is not anchored yet (recently joined); retry shortly")
 	case errors.Is(err, engine.ErrExecAgentOffline):

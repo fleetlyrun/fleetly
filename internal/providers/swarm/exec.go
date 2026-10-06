@@ -30,9 +30,10 @@ const labelSwarmTaskID = "com.docker.swarm.task.id"
 // 是 CLI 同款机制）。
 const execInspectPoll = 150 * time.Millisecond
 
-// ErrNoRunningTask 是 ExecTarget 无在跑实例的 Provider 侧哨兵（engine
-// 归一为 ErrExecNoInstance 信封）。
-var ErrNoRunningTask = errors.New("no running task for workload")
+// ErrNoRunningTask 是 ExecTarget 无在跑实例的 Provider 侧哨兵（capability
+// 层 ErrExecNoRunning 的别名——跨层哨兵词汇单源在 capability，engine 的
+// 受理位信封映射不 import providers）。
+var ErrNoRunningTask = capability.ErrExecNoRunning
 
 // ExecTarget 实现 RuntimeExec：按 Workload 标记定位服务，任务列表实时
 // 快照取首个 running 任务（ID 字典序——swarm task ID 时间有序，确定性

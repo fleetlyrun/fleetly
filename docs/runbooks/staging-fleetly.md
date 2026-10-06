@@ -359,6 +359,20 @@ ADR-0042 落地（64f07f0..8b7f51d 七 commit，CI run 37218474928 六 job 全�
 - **观察项**：①`GET /v1/databases` 缺 project_id 回 404 E_NOT_FOUND（ListApps 同场景是 400）——读面口径不一致，留 API 面小裁决；②e2e 升级矩阵覆盖不到"旧代码物化存量载体"的收敛滚动（夹具无存量）——后续引擎批上真机应预期同类一次性收敛并预记基线差。
 - walk-f31 走查痕迹全清（app→db→project 级联删除；`fleetly-vol-walkredis` 卷手工清——**级联删库不清卷**，与残留清理先例同形态）；console-walk-f31 token 已吊销；浏览器级 UI 走查本环境无浏览器后端未做（HTTP/消费契约级全绿，docs/reviews/2026-10-06-console-walkthrough.md——渲染层 tsc+vitest 承载，浏览器补档待有后端环境）。
 
+## 2026-10-06 记录·十一（F3.2 exec 子面批换装 05df932-f32exec2 + 反向中继真机全链）
+
+**换装**（161b62b-f31walk → 05df932-f32exec2，五 commit 3829263/0e50fb8/bd29438/console 批/05df932）：前置 Platform Backup `c8a74e33` + 卷 tar（受管四卷——含 probe 遗留 archredis；torchwood-pg 已非独立卷名）；**00025 迁移随批前滚**（audit detail 列）。零扰动：34 running task 行稳定；tw.dev 200。
+
+- **回环代理（manager）零动作在线**：daemon 起服即进程内回环代理连自身 gateway（10.124.0.3:9081，明文 VPC 形态）——`nodes list` manager 行 `relay_online=true`、无容器（与 worker 容器形态分立）。
+- **worker 代理落地 = AgentCommand 原样执行**：`fleetly --json nodes enroll` 的 `agent_command` sed 抽取（纯单引号形态 JSON 转义恒等——契约实测成立）→ node2 `sh` 执行：busybox:1.37 载体 + 41MB binary 经 `/v1/platform/binary` 下载 + docker cp 注入 + docker.sock 挂载 `fleetlyd relay` 起服（Up 即连，`relay_online=true`）。
+- **exec 真机全链**：worker 侧（probe/web，node2 经反向中继）one-shot `echo` + **TTY 交互 shell**（管道灌命令实测：pty 回显/执行/`exit 0` 退出码透传）双绿；manager 侧（n0reg/web 回环 + torchwood/server 真负载 `/bin/hostname` 返回容器名）；错误进程名 → `E_NOT_FOUND: no running instance ... <workload-id>` 诚实信封。
+- **WS/binary 契约探针**：`/v1/exec/stream` 无票 401、票据换流 **101 升级**（HTTP/1.1 upgrade 经真 gateway）、同票复用 401（单用途）、`/v1/relay` 无凭证 401、`/v1/platform/binary` 坏 token 401；票据铸造 REST（POST /v1/exec/sessions）protojson snake_case 全形。
+- **审计/事件**：`audit --action exec.` 行 actor/source（cli/api 分立）+ Detail 命令面；`exec.session_opened` 事件在 outbox（注意 events list 是 after_seq 游标语义——从窗头起查尾部事件要 `--after-seq`，walkthrough 坑①）。
+- **走查咬出 W1（同日修复）**：Provider 哨兵（无在跑实例）未进受理位信封映射 → E_INTERNAL 吞错因（3ms 快败无诊断面）。修复 = capability 跨层哨兵 `ErrExecNoRunning` 单源 + engine 归一 E_NOT_FOUND + 信封带 workload-id。**错因面**：目标 app 的 process 名错用（probe app 的进程是 web——`docker service inspect` 标签核对是排障第一步）。
+- **TTY stdin EOF 语义实测**（e2e 咬出 + staging 复证）：非交互 `shell </dev/null` = 连接半关闭 → daemon 收口 TTY exec（退出 137 形态，非挂死）——交互面不受影响（真终端 stdin 常开）。
+- **代理运维面**：AgentCommand 幂等（重跑 = rm -f 旧容器重建——e2e 实证单容器收口）；**rotate 双 token 后旧代理失联待重跑**（C3 泄漏处置语义）；**平台升级后代理二进制滞后**——帧协议只增容忍、`nodes list` 的 `relay_agent_version` 回显滞后，升级序补一步"worker 重跑 AgentCommand"（本批 node2 已重跑至 f32exec2 同版）。
+- 残留清理（上批挂账）：torchwood 项目 buildprobe/staticprobe/railpackprobe 三 app 删除（级联拆载体）+ `fleetly-vol-archredis`/`fleetly-vol-probe-redis` 孤儿卷删除。
+
 ## 平台升级操作序（F2.3 工具化，2026-10-04）
 
 ADR-0015 升级序的完整落地形态：**Platform Backup 前置 → SIGTERM 排水 → 二进制替换 → 起新版（goose 前滚 + Managed Provider 逐个 reconcile + 解除只读，全自动）**。前置动词自 75a3d31 起可用（旧版无 platform 组时按 b4cfea0 节的手工快照纪律执行）。
