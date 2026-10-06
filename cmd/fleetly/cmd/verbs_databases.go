@@ -266,3 +266,54 @@ func newDatabasesVerifyVerb() commands.Command {
 		},
 	}
 }
+
+// databases browse（F3.6，ADR-0051）：铸造数据浏览器会话——打印入口 URL
+// （含一次性 Launcher Ticket，120s 单用途；兑换即烧，过期重开）。不自动开
+// 浏览器：CLI 面以脚本消费为主（URL 是唯一交付物）。
+func newDatabasesBrowseVerb() commands.Command {
+	const name = "browse"
+	var write bool
+	return &flaggedVerb{
+		name: name, synopsis: "Open a data-browser session for a database (prints a one-time entry URL)",
+		usage: "databases browse DATABASE_ID [--write]",
+		setFlags: func(fs *flag.FlagSet) {
+			fs.BoolVar(&write, "write", false, "unlock the write mode (requires the databases:write scope; default is read-only)")
+		},
+		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if len(args) != 1 {
+				return usageErr(name, "expected exactly one DATABASE_ID argument")
+			}
+			ctx, cancel, c, err := dialFromEnv(ctx)
+			if err != nil {
+				return err
+			}
+			defer cancel()
+			defer c.Close() //nolint:errcheck // 进程退出路径
+			resp, err := c.Databases.BrowseDatabase(ctx, &structurev1.BrowseDatabaseRequest{
+				DatabaseId: args[0], ReadWrite: write,
+			})
+			if err != nil {
+				return err
+			}
+			return renderOut(env, jsonOut, resp, func() {
+				_, _ = fmt.Fprintf(env.Stdout,
+					"browse session %s opened (%s, read-only %t, enforcement %s)\nopen within %d seconds (one-time ticket):\n%s\n",
+					resp.GetSessionId(), resp.GetBrowser(), resp.GetReadOnly(),
+					shortEnforcement(resp.GetEnforcement()), resp.GetExpiresIn(), resp.GetUrl())
+			})
+		},
+	}
+}
+
+// shortEnforcement 把执法层级枚举压成人类短形（session/tool/none——proto
+// 枚举全名是 wire 面，终端面用词值）。
+func shortEnforcement(e structurev1.BrowseReadOnlyEnforcement) string {
+	switch e {
+	case structurev1.BrowseReadOnlyEnforcement_BROWSE_READ_ONLY_ENFORCEMENT_SESSION:
+		return "session"
+	case structurev1.BrowseReadOnlyEnforcement_BROWSE_READ_ONLY_ENFORCEMENT_TOOL:
+		return "tool"
+	default:
+		return "none"
+	}
+}

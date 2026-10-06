@@ -1,0 +1,9 @@
+{
+  "session_id": "<ULID>",
+  "url": "http://browse-<ULID>.browse.test/v1/browse/entry?session=<ULID>&ticket=<BROWSETICKET>",
+  "ticket": "<BROWSETICKET>",
+  "expires_in": 120,
+  "browser": "pgweb",
+  "read_only": true,
+  "enforcement": "BROWSE_READ_ONLY_ENFORCEMENT_SESSION"
+}

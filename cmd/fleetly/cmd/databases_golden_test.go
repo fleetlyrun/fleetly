@@ -5,7 +5,13 @@ package cmd
 // 残留的口径在 apitest 承载。
 
 import (
+	"context"
 	"testing"
+
+	"github.com/fleetlyrun/fleetly/internal/apitest"
+	"github.com/fleetlyrun/fleetly/internal/capability"
+	"github.com/fleetlyrun/fleetly/internal/engine"
+	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 // seedDatabaseProject 建项目并返回 projectID。default 网络随项目出生
@@ -140,4 +146,39 @@ func TestGoldenDatabasesBackup(t *testing.T) {
 		t.Fatalf("cross-engine restore must be rejected, got exit 0")
 	}
 	compareGolden(t, "databases-restore-mismatch", normalizeGolden(stderr))
+}
+
+// TestGoldenDatabasesBrowse：browse 动词双形态（F3.6，ADR-0051）。golden
+// 夹具引擎注入 BrowseConfig（host_suffix/gateway_url 形态确定性）；postgres
+// 库推到 running 后受理。URL/票据/会话 id 均随机——normalize 掩码钉形。
+func TestGoldenDatabasesBrowse(t *testing.T) {
+	h := apitest.NewManualOpts(t, func(o *engine.Options) {
+		o.Browse = engine.BrowseConfig{
+			HostSuffix: "browse.test", GatewayURL: "http://127.0.0.1:9081", TLSMode: "none",
+		}
+	})
+	origDial := dialClient
+	dialClient = func(_ string, opts ...sdk.Option) (*sdk.Client, error) {
+		return sdk.Dial("passthrough:///bufnet", append(opts, h.DialOpts()...)...)
+	}
+	t.Cleanup(func() { dialClient = origDial })
+	t.Setenv("FLEETLY_TOKEN", h.Token)
+	projectID := seedDatabaseProject(t, "dbs-browse")
+	dbID, _ := createDatabase(t, projectID, "postgres", "shop", false)
+	// 库状态推到 running（受理前置：E_DATABASE_NOT_READY 拒 pending）。
+	h.Drive(sdk.WithToken(context.Background(), h.Token))
+	h.Runtime.ReportRunning(dbID, capability.Generation(1))
+	h.Drive(sdk.WithToken(context.Background(), h.Token))
+
+	code, out, stderr := runCLI(t, "databases", "browse", dbID)
+	if code != 0 || stderr != "" {
+		t.Fatalf("databases browse: code=%d stderr=%q", code, stderr)
+	}
+	compareGolden(t, "databases-browse", normalizeGolden(out))
+
+	code, out, stderr = runCLI(t, "databases", "browse", dbID, "--json")
+	if code != 0 || stderr != "" {
+		t.Fatalf("databases browse --json: code=%d stderr=%q", code, stderr)
+	}
+	compareGolden(t, "databases-browse-json", normalizeGolden(out))
 }

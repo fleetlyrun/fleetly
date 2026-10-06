@@ -31,6 +31,9 @@ var (
 	digestRe     = regexp.MustCompile(`\b[0-9a-f]{64}\b`)
 	fprRe        = regexp.MustCompile(`\b[0-9a-f]{16}\b`)
 	tokenRe      = regexp.MustCompile(`flt_[A-Za-z0-9_-]{4,}`)
+	// browseTicketRe 是 Launcher Ticket 的 base64url 43 字符形态（随机
+	// 32B；entry URL 与回显字段双落点——ADR-0051）。
+	browseTicketRe = regexp.MustCompile(`[A-Za-z0-9_-]{43}`)
 	invitationRe = regexp.MustCompile(`fltinv_[A-Za-z0-9_-]{4,}`)
 	hookTokenRe  = regexp.MustCompile(`flthook_[A-Za-z0-9_-]{4,}`)
 	credPathRe   = regexp.MustCompile(`(?m)^credentials saved: .*$`)
@@ -43,6 +46,7 @@ func normalizeGolden(s string) string {
 	s = credPathRe.ReplaceAllString(s, "credentials saved: <CREDS>")
 	s = credJSONRe.ReplaceAllString(s, `"credentials_path": "<CREDS>"`)
 	s = tokenRe.ReplaceAllString(s, "<TOKEN>")
+	s = browseTicketRe.ReplaceAllString(s, "<BROWSETICKET>")
 	// digest/指纹先行（完整十六进制串），铸名的小写 ULID 后行——顺序颠倒
 	// 会把 digest 中恰符合 ULID 字符集的 26 长段误占位（revisions_list 实证）。
 	s = digestRe.ReplaceAllString(s, "<DIGEST>")
