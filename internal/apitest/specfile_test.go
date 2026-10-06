@@ -105,7 +105,7 @@ func TestDeploySpecFileValidation(t *testing.T) {
 	}{
 		{
 			"unknown field rejected",
-			&deliveryv1.DeployRequest{AppId: appID, SpecFile: `{"source":{"image":{"ref":"nginx:1.27"}},"processes":[{"name":"web","image":"nginx:1.27"}],"canary":true}`},
+			&deliveryv1.DeployRequest{AppId: appID, SpecFile: `{"source":{"image":{"ref":"nginx:1.27"}},"processes":[{"name":"web","image":"nginx:1.27"}],"not_a_field":true}`},
 			"invalid AppSpec JSON",
 		},
 		{

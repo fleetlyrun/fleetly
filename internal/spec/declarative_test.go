@@ -380,7 +380,7 @@ func TestParseSpecFile(t *testing.T) {
 	assert.Equal(t, int32(SchemaVersion), s.GetSchemaVersion(), "absent schema_version defaults to current")
 	assert.Equal(t, specv1.Protocol_PROTOCOL_H2C, s.GetProcesses()[0].GetPorts()[0].GetProtocol())
 
-	_, err = ParseSpecFile([]byte(`{"canary":true}`), "a", "p")
+	_, err = ParseSpecFile([]byte(`{"not_a_field":true}`), "a", "p")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid AppSpec JSON")
 

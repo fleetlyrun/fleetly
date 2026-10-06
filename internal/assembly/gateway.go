@@ -87,6 +87,9 @@ func NewGatewayHandler(logger *slog.Logger, conn grpc.ClientConnInterface, event
 		return nil, err
 	}
 	h := mountHooks(mux, newHooksHandler(deliveryv1.NewHooksServiceClient(conn)))
+	// 上传产物 REST 入口（F3.5，ADR-0019 附录 A 留白）：与 ListUploads
+	// 同路径、按方法分派（非 POST 回落 gateway，注解面不被遮蔽）。
+	h = mountUploads(h, newUploadsHandler(deliveryv1.NewBuildsServiceClient(conn), h))
 	if eventsSrc != nil {
 		h = mountEventsSSE(h, newEventsSSEHandler(eventsSrc))
 	}
