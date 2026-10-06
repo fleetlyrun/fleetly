@@ -9,6 +9,7 @@ import { TasksPage } from "./pages/Tasks";
 import { AuditPage } from "./pages/Audit";
 import { SettingsPage } from "./pages/Settings";
 import { QuickstartPage } from "./pages/Quickstart";
+import { TerminalPage } from "./pages/Terminal";
 import { LoginPage } from "./pages/Login";
 import { ROUTES, useHashRoute, type Route } from "./lib/router";
 import { setToken, useToken } from "./lib/token";
@@ -63,6 +64,8 @@ function renderPage(page: Route, detailId: string, navigate: (path: string) => v
       return <SettingsPage />;
     case "quickstart":
       return <QuickstartPage />;
+    case "terminal":
+      return <TerminalPage />;
   }
 }
 
@@ -76,6 +79,7 @@ const ROUTE_LABELS: Record<Route, string> = {
   audit: "Audit",
   settings: "Settings",
   quickstart: "Quickstart",
+  terminal: "Terminal",
 };
 
 function NavTab({ route, active, onNavigate }: { route: Route; active: boolean; onNavigate: () => void }) {

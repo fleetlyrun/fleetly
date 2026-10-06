@@ -235,6 +235,11 @@ export interface components {
             before_fp?: string;
             after_fp?: string;
             created_at?: string;
+            /**
+             * detail 是动作详情（JSON；ADR-0049 首用 = exec.session 的进程/实例/
+             *     节点/命令面——无命令面的 exec 审计无牙。既有行为 detail 为空串）。
+             */
+            detail?: string;
         };
         v1CreateInvitationRequest: {
             team_id?: string;

@@ -15,6 +15,7 @@ export const ROUTES = [
   "audit",
   "settings",
   "quickstart",
+  "terminal",
 ] as const;
 export type Route = (typeof ROUTES)[number];
 
