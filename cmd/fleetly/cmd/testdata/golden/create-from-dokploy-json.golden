@@ -1,0 +1,59 @@
+{
+  "plan": {
+    "Apps": [
+      {
+        "Name": "landing",
+        "Image": "nginx:1.27",
+        "ComposeYAML": "",
+        "Env": {
+          "TITLE": "hello"
+        },
+        "Routes": [
+          {
+            "Host": "landing.127.0.0.1.sslip.io",
+            "Process": "web",
+            "Port": 80
+          }
+        ]
+      },
+      {
+        "Name": "kitchen-sink",
+        "Image": "",
+        "ComposeYAML": "services:\n  web:\n    image: hashicorp/http-echo:1.0\n    environment:\n      GREETING: hi\n    ports: [\"5678\"]\n",
+        "Env": {
+          "GREETING": "hi"
+        },
+        "Routes": [
+          {
+            "Host": "sink.127.0.0.1.sslip.io",
+            "Process": "web",
+            "Port": 5678
+          }
+        ]
+      }
+    ],
+    "Databases": [
+      {
+        "Name": "shop",
+        "Engine": "postgres"
+      }
+    ],
+    "Skipped": [
+      {
+        "Item": "builder",
+        "Kind": "application",
+        "Reason": "build type \"dockerfile\" with repository \"github.com/acme/builder\" is a build-source app; re-deploy it from fleetly source intake (uploads or git push) and migrate only its configuration here"
+      },
+      {
+        "Item": "holey",
+        "Kind": "compose",
+        "Reason": "compose references variables absent from the dokploy env panel (MISSING); fleetly compose intake lands unresolved holes as literal values, so this app is skipped rather than silently corrupted"
+      },
+      {
+        "Item": "maria",
+        "Kind": "database",
+        "Reason": "dokploy engine \"mariadb\" has no fleetly mapping (engines: postgres, mysql, mongo, redis)"
+      }
+    ]
+  }
+}

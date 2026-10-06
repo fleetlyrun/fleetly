@@ -1,0 +1,33 @@
+{
+  "template": "grafana",
+  "version": "1.0.0",
+  "app_id": "<ULID>",
+  "deployment_id": "<ULID>",
+  "state": "queued",
+  "resources": [
+    {
+      "kind": "app",
+      "id": "<ULID>",
+      "name": "dash",
+      "reused": true
+    },
+    {
+      "kind": "secret",
+      "id": "",
+      "name": "template:dash:admin_password",
+      "reused": true
+    },
+    {
+      "kind": "deployment",
+      "id": "<ULID>",
+      "name": "",
+      "reused": false
+    },
+    {
+      "kind": "route",
+      "id": "<ULID>",
+      "name": "dash.127.0.0.1.sslip.io",
+      "reused": true
+    }
+  ]
+}

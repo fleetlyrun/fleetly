@@ -72,3 +72,14 @@ func noArgs(verb string, args []string) error {
 	}
 	return nil
 }
+
+// exactArgs 校验位置参数个数（templates show NAME 形态）。
+func exactArgs(verb string, want int, args []string) error {
+	if len(args) != want {
+		return &commands.UsageError{
+			Usage: verb,
+			Err:   fmt.Errorf("expected %d positional argument(s), got %d: %v", want, len(args), args),
+		}
+	}
+	return nil
+}

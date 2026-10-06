@@ -1,0 +1,3 @@
+source builtin
+grafana	1.0.0	Grafana with a platform-generated admin password (file-injected; the value is never printed).
+nginx	1.0.0	nginx web server on the declared route (image direct, no database).

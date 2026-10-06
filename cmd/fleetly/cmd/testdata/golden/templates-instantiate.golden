@@ -1,0 +1,5 @@
+app site created
+deployment <ULID> created
+route site.127.0.0.1.sslip.io created
+deployment <ULID> succeeded
+open http://site.127.0.0.1.sslip.io

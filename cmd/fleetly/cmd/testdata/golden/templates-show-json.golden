@@ -1,0 +1,20 @@
+{
+  "name": "grafana",
+  "version": "1.0.0",
+  "digest": "sha256:<DIGEST>",
+  "description": "Grafana with a platform-generated admin password (file-injected; the value is never printed).",
+  "variables": [
+    {
+      "name": "admin_password",
+      "type": "secret",
+      "description": "admin login password, generated at instantiation and injected as a file"
+    },
+    {
+      "name": "host",
+      "type": "domain",
+      "description": "route host serving Grafana",
+      "required": true
+    }
+  ],
+  "body": "# grafana 模板（ADR-0050 内嵌目录第二条）：secret 变量全链形态——平台铸造\n# 随机密码落 Secret template:\u003capp\u003e:admin_password，进程经 secrets 列表吃文件\n# 注入（/run/secrets/\u003c真名\u003e），GF_*__FILE 是 grafana 镜像的原生文件读取惯例。\nx-fleetly-template:\n  name: grafana\n  version: 1.0.0\n  description: Grafana with a platform-generated admin password (file-injected; the value is never printed).\n  variables:\n    - name: admin_password\n      type: secret\n      description: admin login password, generated at instantiation and injected as a file\n    - name: host\n      type: domain\n      description: route host serving Grafana\n      required: true\n  routes:\n    - var: host\n      process: grafana\n      port: 3000\nservices:\n  grafana:\n    image: grafana/grafana:11.3.0\n    environment:\n      GF_SECURITY_ADMIN_USER: admin\n      GF_SECURITY_ADMIN_PASSWORD__FILE: ${admin_password}\n    secrets: [admin_password]\n    ports: [\"3000\"]\n"
+}

@@ -1,0 +1,3 @@
+E_NOT_FOUND: template "missing" is not in the catalog (available: [grafana nginx]; source: builtin)
+suggestion: Check the resource id and list existing resources to confirm the target.
+docs: https://docs.fleetly.dev/errors/E_NOT_FOUND

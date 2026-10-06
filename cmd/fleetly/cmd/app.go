@@ -103,6 +103,10 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 			newSchedulesTriggerVerb(), newSchedulesDeleteVerb()),
 		// Proxy / Runtime 上下文。
 		newQuickstartVerb(),
+		// App 模板目录（F3.3，ADR-0050）：目录读面 + 一键部署 + 操作员刷新。
+		groupVerb("templates", "manage the app template catalog (one-click deploy; values for secret variables are platform-generated)",
+			newTemplatesListVerb(), newTemplatesShowVerb(), newTemplatesInstantiateVerb(), newTemplatesRefreshVerb()),
+		newCreateFromDokployVerb(),
 		groupVerb("routes", "manage routes", newRoutesCreateVerb(), newRoutesListVerb()),
 		groupVerb("nodes", "inspect cluster nodes and administer scheduling", newNodesListVerb(), newNodesEnrollVerb(),
 			newNodesDrainVerb(), newNodesCordonVerb(), newNodesUncordonVerb()),

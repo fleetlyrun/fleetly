@@ -1,0 +1,17 @@
+{
+  "source": "builtin",
+  "templates": [
+    {
+      "name": "grafana",
+      "version": "1.0.0",
+      "digest": "sha256:<DIGEST>",
+      "description": "Grafana with a platform-generated admin password (file-injected; the value is never printed)."
+    },
+    {
+      "name": "nginx",
+      "version": "1.0.0",
+      "digest": "sha256:<DIGEST>",
+      "description": "nginx web server on the declared route (image direct, no database)."
+    }
+  ]
+}

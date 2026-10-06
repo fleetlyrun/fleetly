@@ -1,0 +1,9 @@
+database shop (engine postgres)
+app landing (image nginx:1.27)
+  route landing.127.0.0.1.sslip.io -> web:80
+app kitchen-sink (compose)
+  route sink.127.0.0.1.sslip.io -> web:5678
+skipped application "builder": build type "dockerfile" with repository "github.com/acme/builder" is a build-source app; re-deploy it from fleetly source intake (uploads or git push) and migrate only its configuration here
+skipped compose "holey": compose references variables absent from the dokploy env panel (MISSING); fleetly compose intake lands unresolved holes as literal values, so this app is skipped rather than silently corrupted
+skipped database "maria": dokploy engine "mariadb" has no fleetly mapping (engines: postgres, mysql, mongo, redis)
+dry run: nothing was created
