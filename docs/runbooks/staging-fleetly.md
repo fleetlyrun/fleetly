@@ -287,31 +287,6 @@ ADR-0042 落地（64f07f0..8b7f51d 七 commit，CI run 37218474928 六 job 全�
 2. 配置文件如有 `edge_config` 键 → `proxy_config`（staging 现为 env 注入形态，无配置键面）。
 3. 按平台升级操作序换装（前置 Platform Backup → 替换二进制 → 起新版）；新版 `fleetly doctor` 的 `proxy config exposure` / `bind surface` 行复核（文案与端点已随 ADR-0047 更名）。
 
-## 2026-10-05 记录·八（8b7f51d→a57de18 换装实录 + N2 修复批真机锚闭环）
-
-**换装一**（8b7f51d-f28final → a57de18-n2final，评审修复栈 18 commits + Edge→Proxy 更名）：前置 Platform Backup `560d998e` + 七卷 tar（/root/upgrade-a57de18-n2final/vols/）+ unit 主文件两行 EDGE→PROXY env 改名（记·六序）+ **acme 卷预置**（`fleetly-vol-fleetly-edge-acme` → `fleetly-vol-fleetly-proxy-acme` 卷内 cp -a——ACME 卷名随更名换代，不预置则证书全重签；预置后 staging 证书无重发、路由即恢复）。
-
-- **勘误（ADR-0047"无手工面"断言的缺口）**：受管域 App 轴 `edge`→`proxy` 使 traefik 服务名换代（`fleetly-fleetly-system-edge-traefik` → `...-proxy-traefik`），而 reconciler 只 ensure 现役域、**不拆除旧域**（孤儿永不自动删原则）——旧服务占 mesh 80/443，新 traefik 创建即端口冲突。处置：停机窗内 `docker service rm` 旧 edge-traefik（紧贴起服，中断最小）。后续同型全库更名若再动受管域命名，flag-day 序必须含旧域拆除步。
-- **零扰动断言全绿**：用户域全部服务 task 行数与基线逐位一致；zot/VL/VM/cadvisor 零滚；零 drift 事件；goose v22→v23 干净前滚；traefik 新名一次性重建（1/1）。
-- **torchwood-pg digest 零滚分支实录（F2.7/ADR-0045 决策 4）**：镜像引用更新为 `pgvector/pgvector:0.8.6-pg17-bookworm@sha256:cf134a…`，但运行中容器镜像 ID 恰等于钉定 digest（上游未漂移）→ swarm 视为同镜像、spec 原地更新、**零任务替换**（delta=0、21 表/tw_secrets 数据锚不变、pg_isready 活体）——"tag→digest 同内容"分支的真机形态；"digest 有差→恰一次受监督滚动"分支由 F2.7 本地 dind 配对实证。
-- **事故处置接记·七**：风暴根修批（24ee477/356f208/e67a23f/b2eda80）push 后 CI run 37325995883 七 job 全绿（含 e2e-backup 匿名卷零增量双窗锚与 P1-4 rebuild 腿）。
-
-**messaging 网 rebuild 收敛（记·七分诊序的第四层根因与操作解）**：detach 后 messageloop 应用 **boot 期 fatal（exit 1，跨服务 DNS 解析失败即退）**→ start-first 滚动序下新 task 永不 ready → 老 task（持有端点）永不退役 → rm 排水恒超时（与 torchwood 的 probe-fail-later 形态不同：boot-fatal 根本走不到滚动完成）。**操作解（scale-0 收敛法）**：`docker service scale <三服务>=0` 清端点 → `fleetly networks rebuild`（秒级成功，detach 4/attach 4、attachable=true）→ `fleetly rollback --app <ml> --wait`（replay 重放=re-Ensure，新 task 落新网）→ ml 三路由活体（404/415/405 均应用层应答）。torchwood app 六服务在网重建+回滚 re-attach 后自愈（Running 20min+、tw.dev 200，crash 是环境性 db 失联——无需动 torchwood 仓）。
-
-**N2 修复批真机锚（一次 scratch 流全闭，事件尾链 seq 117701-117724 完整在册）**：
-
-| 锚 | 证据 |
-|---|---|
-| F2.9 合成真机 | `revisions diff --from 1 --to 2` = `processes[0].env.FOO: bar1`（Project 层共享变量进冻结 Spec，与 `--env OVR=1` 共存）；put 响应 affected_apps 提示；值明文回显；同输入重部署内容寻址复用同 Revision |
-| F3 级联删除真机 | redis 建库 running → apps delete → projects delete → 载体拆除 + 事件链 `app.deleted → database.deleted → project.deleted`（117722-117724）+ `fleetly-vol-r1` 卷保留义（ADR-0023 语义） |
-| ADR-0041 锚 6 告警真发 | staging 本机 webhookrecv（e2e/webhookrecv 同款二进制）：`channels test` → `alert_test` 载荷落盘 + delivered；阈值规则（memory>1B）15s 内 firing → `alert.fired` 真载荷（真 rule/app ID + 真采样 3.17MB）落接收器；顺带清掉 10-04 验收遗留的两条恒 firing 规则 |
-| Console 真机（F2.6） | HTTP 五项（index 200+title/asset immutable/index no-cache/SPA fallback/无凭证 401）+ 三页消费面逐端点对拍（per-App deployments 轴/logs NDJSON 帧含 base64 line/events 票据 SSE 具名帧 117721 实投）+ 走查 token 创建-吊销-401 复核；**浏览器 UI 走查已补**（2026-10-05/06 真机走查 PASS-with-notes，docs/reviews/2026-10-05-console-browser-walkthrough.md：判据全绿，SSE 活体双证；四发现 F1-F4 同日修复批闭——F2 服务端 300ec2d / F1+F3+F4 Console f9d42f5，staging 换装后生效） |
-| CLI 旗标纪律再证 | Go flag 位置参数停析——`--value`/`--channel`/`--role` 等必须前置位置参数（runbook"旗标前置"条的三次新实录） |
-
-**事件面**：风暴 ~11.5 万 `database.backup_failed` 事件在 outbox（7d 保留窗自然老化；台账行由 48h 清扫出清——**观察窗 10-06 04:30Z 起**，验证：`fleetly --json databases backups 01M3Y8WZ94YZ0R2D9PSK8MR13Z | grep -c '"status": *"failed"'` 应骤降、成功行不受影响、journal 无 prune 报错）。
-
-**遗留（挂账）**：三个 probe app（buildprobe/staticprobe/railpackprobe）服务半 detach 遗留（无网运行、F1.15 验证残留，可弃——清理走 apps delete）；`fleetly-vol-archredis`/`fleetly-vol-probe-redis` 历史残留卷；node2 根因观察窗维持（本批尾 90s 零 fatal task error、node.left×25 系事故窗事件非现行）。
-
 ## 2026-10-05 记录·七（备份重试风暴事故 + 网络重建四刀实录：torchwood-pg 备份自愈）
 
 ### 事故：116,938 枚匿名卷（诊断链完整，复盘锚）
@@ -337,6 +312,41 @@ ADR-0042 落地（64f07f0..8b7f51d 七 commit，CI run 37218474928 六 job 全�
 - **node2 抖动根因未深查**（dockerd journal 804 错误未逐条分诊；重启后恢复，观察窗——记·八尾窗 90s 零 fatal task error）。
 - ~~其余三 legacy 网（messaging/n0reg/n0probe）待新版部署后逐个 rebuild~~ **已收口**（记·八：messaging scale-0 收敛法完成；n0reg default 实测已 attachable；n0probe 无 default 网表行无库无动作；另 quickstart 网亦已 rebuild）。
 - rebuild 遇 "attached endpoints did not drain" 的分诊序：`docker service ps`（失败列=crash-loop？）→ `docker node ls` + 节点 dockerd journal（半死？）→ **app 是否 boot 期 fatal（exit 1 即退——probe-fail-later 可等滚动、boot-fatal 永不收敛；解=snapshot scale-0 清端点 → rebuild → 平台 replay 回挂，记·八）**→ 处置后重试（动词幂等收敛）。
+
+## 2026-10-05 记录·八（8b7f51d→a57de18 换装实录 + N2 修复批真机锚闭环）
+
+**换装一**（8b7f51d-f28final → a57de18-n2final，评审修复栈 18 commits + Edge→Proxy 更名）：前置 Platform Backup `560d998e` + 七卷 tar（/root/upgrade-a57de18-n2final/vols/）+ unit 主文件两行 EDGE→PROXY env 改名（记·六序）+ **acme 卷预置**（`fleetly-vol-fleetly-edge-acme` → `fleetly-vol-fleetly-proxy-acme` 卷内 cp -a——ACME 卷名随更名换代，不预置则证书全重签；预置后 staging 证书无重发、路由即恢复）。
+
+- **勘误（ADR-0047"无手工面"断言的缺口）**：受管域 App 轴 `edge`→`proxy` 使 traefik 服务名换代（`fleetly-fleetly-system-edge-traefik` → `...-proxy-traefik`），而 reconciler 只 ensure 现役域、**不拆除旧域**（孤儿永不自动删原则）——旧服务占 mesh 80/443，新 traefik 创建即端口冲突。处置：停机窗内 `docker service rm` 旧 edge-traefik（紧贴起服，中断最小）。后续同型全库更名若再动受管域命名，flag-day 序必须含旧域拆除步。
+- **零扰动断言全绿**：用户域全部服务 task 行数与基线逐位一致；zot/VL/VM/cadvisor 零滚；零 drift 事件；goose v22→v23 干净前滚；traefik 新名一次性重建（1/1）。
+- **torchwood-pg digest 零滚分支实录（F2.7/ADR-0045 决策 4）**：镜像引用更新为 `pgvector/pgvector:0.8.6-pg17-bookworm@sha256:cf134a…`，但运行中容器镜像 ID 恰等于钉定 digest（上游未漂移）→ swarm 视为同镜像、spec 原地更新、**零任务替换**（delta=0、21 表/tw_secrets 数据锚不变、pg_isready 活体）——"tag→digest 同内容"分支的真机形态；"digest 有差→恰一次受监督滚动"分支由 F2.7 本地 dind 配对实证。
+- **事故处置接记·七**：风暴根修批（24ee477/356f208/e67a23f/b2eda80）push 后 CI run 37325995883 七 job 全绿（含 e2e-backup 匿名卷零增量双窗锚与 P1-4 rebuild 腿）。
+
+**messaging 网 rebuild 收敛（记·七分诊序的第四层根因与操作解）**：detach 后 messageloop 应用 **boot 期 fatal（exit 1，跨服务 DNS 解析失败即退）**→ start-first 滚动序下新 task 永不 ready → 老 task（持有端点）永不退役 → rm 排水恒超时（与 torchwood 的 probe-fail-later 形态不同：boot-fatal 根本走不到滚动完成）。**操作解（scale-0 收敛法）**：`docker service scale <三服务>=0` 清端点 → `fleetly networks rebuild`（秒级成功，detach 4/attach 4、attachable=true）→ `fleetly rollback --app <ml> --wait`（replay 重放=re-Ensure，新 task 落新网）→ ml 三路由活体（404/415/405 均应用层应答）。torchwood app 六服务在网重建+回滚 re-attach 后自愈（Running 20min+、tw.dev 200，crash 是环境性 db 失联——无需动 torchwood 仓）。
+
+**N2 修复批真机锚（一次 scratch 流全闭，事件尾链 seq 117701-117724 完整在册）**：
+
+| 锚 | 证据 |
+|---|---|
+| F2.9 合成真机 | `revisions diff --from 1 --to 2` = `processes[0].env.FOO: bar1`（Project 层共享变量进冻结 Spec，与 `--env OVR=1` 共存）；put 响应 affected_apps 提示；值明文回显；同输入重部署内容寻址复用同 Revision |
+| F3 级联删除真机 | redis 建库 running → apps delete → projects delete → 载体拆除 + 事件链 `app.deleted → database.deleted → project.deleted`（117722-117724）+ `fleetly-vol-r1` 卷保留义（ADR-0023 语义） |
+| ADR-0041 锚 6 告警真发 | staging 本机 webhookrecv（e2e/webhookrecv 同款二进制）：`channels test` → `alert_test` 载荷落盘 + delivered；阈值规则（memory>1B）15s 内 firing → `alert.fired` 真载荷（真 rule/app ID + 真采样 3.17MB）落接收器；顺带清掉 10-04 验收遗留的两条恒 firing 规则 |
+| Console 真机（F2.6） | HTTP 五项（index 200+title/asset immutable/index no-cache/SPA fallback/无凭证 401）+ 三页消费面逐端点对拍（per-App deployments 轴/logs NDJSON 帧含 base64 line/events 票据 SSE 具名帧 117721 实投）+ 走查 token 创建-吊销-401 复核；**浏览器 UI 走查已补**（2026-10-05/06 真机走查 PASS-with-notes，docs/reviews/2026-10-05-console-browser-walkthrough.md：判据全绿，SSE 活体双证；四发现 F1-F4 同日修复批闭——F2 服务端 300ec2d / F1+F3+F4 Console f9d42f5，staging 换装后生效） |
+| CLI 旗标纪律再证 | Go flag 位置参数停析——`--value`/`--channel`/`--role` 等必须前置位置参数（runbook"旗标前置"条的三次新实录） |
+
+**事件面**：风暴 ~11.5 万 `database.backup_failed` 事件在 outbox（7d 保留窗自然老化；台账行由 48h 清扫出清——**观察窗 10-06 04:30Z 起**，验证：`fleetly --json databases backups 01M3Y8WZ94YZ0R2D9PSK8MR13Z | grep -c '"status": *"failed"'` 应骤降、成功行不受影响、journal 无 prune 报错）。
+
+**遗留（挂账）**：三个 probe app（buildprobe/staticprobe/railpackprobe）服务半 detach 遗留（无网运行、F1.15 验证残留，可弃——清理走 apps delete）；`fleetly-vol-archredis`/`fleetly-vol-probe-redis` 历史残留卷；node2 根因观察窗维持（本批尾 90s 零 fatal task error、node.left×25 系事故窗事件非现行）。
+
+## 2026-10-06 记录·九（走查修复批换装 826fd93-conswalk + F2 服务端锚真机复验）
+
+**换装**（b2eda80-n2storm → 826fd93-conswalk，走查修复批 aecf813/300ec2d/f9d42f5/826fd93）：无 flag-day、无新迁移（00023 仍是末位）；前置 Platform Backup + 七卷 tar（/root/upgrade-826fd93-conswalk/vols/）。**零扰动断言全绿**：全部服务（用户域 + 五受管域）task 行数与基线逐位一致、tw.dev 200、torchwood-pg 21 表锚不变、journal 干净（旧版 context canceled 为关停噪音）。
+
+- **新 dist 上架实证**：`GET /` 引用 `index-BvdIo0nD.js`（f9d42f5 的新指纹）——F1（Stop 反向重提交）/F3（空流结束态）/F4（空项目禁查）前端修复已对现役流量生效；Console HTTP 五项复验绿（index/asset/SPA fallback/401）。
+- **F2 服务端锚真机复验（走查复验第一锚）**：`/v1/logs?text=error&follow=1` **首帧 75ms**（修复前 = 零字节无限假挂死；积压段先行出帧生效）；非 follow 的 no-match 走 200 + 干净关流（F3 服务端契约）。
+- **残留边（观察项，回传修复归属方）**：`text+follow` 且**积压零匹配**时仍 3s+ 零字节——follow 靠积压帧触发 grpc-gateway 写头，空积压无首帧则头仍悬着（F2 同类边的空集分支；UI 恒带 since 时可能不可达，curl 面可观测）。处置建议：gateway 层或 writer 链补"开流即写头"的空帧/哨兵——需设计裁决，不随记档顺手改。
+- **F1 Stop 点击级行为**（走查复验第二锚）属 UI 面：新 dist 已上架 + f9d42f5 单测承载，浏览器点击级复核留走查环境（可选）。
+- 两个 anchor token（anchor-check/anchor-check2）已吊销；匿名卷 27 枚稳定。
 
 ## 平台升级操作序（F2.3 工具化，2026-10-04）
 
