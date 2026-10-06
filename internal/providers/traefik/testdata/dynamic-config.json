@@ -13,6 +13,17 @@
           ]
         }
       },
+      "browse-01jd-test-989ef22825e5": {
+        "rule": "Host(`browse-01jd.test`)",
+        "service": "browse-01jd-test-989ef22825e5",
+        "middlewares": [
+          "browse-01jd-test-989ef22825e5-fw"
+        ]
+      },
+      "browse-01jd-test-v1-browse-entry-28144ffb3ead": {
+        "rule": "Host(`browse-01jd.test`) && PathPrefix(`/v1/browse/entry`)",
+        "service": "browse-01jd-test-v1-browse-entry-28144ffb3ead"
+      },
       "plain-localhost-f60aa2de49cc": {
         "rule": "Host(`plain.localhost`)",
         "service": "plain-localhost-f60aa2de49cc"
@@ -40,6 +51,24 @@
           ]
         }
       },
+      "browse-01jd-test-989ef22825e5": {
+        "loadBalancer": {
+          "servers": [
+            {
+              "url": "http://10.0.0.6:8080"
+            }
+          ]
+        }
+      },
+      "browse-01jd-test-v1-browse-entry-28144ffb3ead": {
+        "loadBalancer": {
+          "servers": [
+            {
+              "url": "http://fleetlyd-host:9081"
+            }
+          ]
+        }
+      },
       "plain-localhost-f60aa2de49cc": {
         "loadBalancer": {
           "servers": [
@@ -56,6 +85,13 @@
               "url": "http://10.0.0.2:8080"
             }
           ]
+        }
+      }
+    },
+    "middlewares": {
+      "browse-01jd-test-989ef22825e5-fw": {
+        "forwardAuth": {
+          "address": "http://fleetlyd-host:9081/v1/browse/authorize"
         }
       }
     }

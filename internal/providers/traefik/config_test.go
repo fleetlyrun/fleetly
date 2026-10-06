@@ -17,7 +17,8 @@ import (
 var update = flag.Bool("update", false, "rewrite golden files")
 
 // 动态配置翻译 golden（h2c/http/tcp + TLS 标注；F0.15 验收：h2c 后端
-// 路由可通——messageloop 形态）。
+// 路由可通——messageloop 形态；F3.6 增 browse 双路由——ForwardAuth
+// 门禁渲染）。
 func TestDynamicConfigGolden(t *testing.T) {
 	p, err := New("http://fleetlyd:9082/proxy/config", "ops@example.com", "")
 	require.NoError(t, err)
@@ -30,6 +31,13 @@ func TestDynamicConfigGolden(t *testing.T) {
 			Protocol: capability.ProtocolTCP, TLS: "none", BackendAddr: "10.0.0.4:5432"},
 		{Host: "plain.localhost", Process: "web", Port: 3000,
 			Protocol: capability.ProtocolHTTP, TLS: "none", BackendAddr: "10.0.0.5:3000"},
+		// browse 会话双路由（ADR-0051 决策 5）：entry 免门禁 + 工具路由带
+		// ForwardAuth。
+		{Host: "browse-01jd.test", Path: "/v1/browse/entry", Process: "pgweb", Port: 8080,
+			Protocol: capability.ProtocolHTTP, TLS: "none", BackendAddr: "fleetlyd-host:9081"},
+		{Host: "browse-01jd.test", Process: "pgweb", Port: 8080,
+			Protocol: capability.ProtocolHTTP, TLS: "none", BackendAddr: "10.0.0.6:8080",
+			Auth: &capability.RouteAuth{Address: "http://fleetlyd-host:9081/v1/browse/authorize"}},
 	}))
 	got := string(p.ConfigSnapshot())
 
