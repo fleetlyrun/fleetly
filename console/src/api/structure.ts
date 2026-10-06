@@ -127,6 +127,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/databases/{database_id}/browse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * BrowseDatabase 铸造数据浏览器按需会话（F3.6，ADR-0051）：静态 scope 是
+         *     最低门（只读档）；read_write=true 或无只读执法的方言（mysql）在服务内
+         *     动态要求 databases:write。响应 URL 含一次性 Launcher Ticket（120s 单
+         *     用途）——兑换入口即 URL 本身。会话硬 TTL 30min、空闲 10min 回收。
+         */
+        post: operations["DatabasesService_BrowseDatabase"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/databases/{id}": {
         parameters: {
             query?: never;
@@ -383,6 +405,13 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * BrowseDatabase 铸造数据浏览器会话（ADR-0051）。read_write 缺省 false =
+         *     只读档；true 解锁写（动态要求 databases:write——静态注解只能表达最低门）。
+         */
+        DatabasesServiceBrowseDatabaseBody: {
+            read_write?: boolean;
+        };
         DatabasesServiceTriggerBackupBody: Record<string, never>;
         /**
          * VerifyBackup 重算对象 sha256 比对 Put 回执（ADR-0039 决策 8：静态完整
@@ -420,6 +449,30 @@ export interface components {
             finished_at?: string;
             created_at?: string;
         };
+        v1BrowseDatabaseResponse: {
+            session_id?: string;
+            /**
+             * url 是会话入口（含一次性票据 query）；ticket/expires_in 另行透出供
+             *     脚本化消费。票据兑换即烧，过期重开新会话。
+             */
+            url?: string;
+            ticket?: string;
+            /** Format: int32 */
+            expires_in?: number;
+            /**
+             * browser 是承接工具名（pgweb/redis-commander/adminer/mongoku——引擎
+             *     方言映射的单源在 dbbrowser 注册表）。
+             */
+            browser?: string;
+            read_only?: boolean;
+            enforcement?: components["schemas"]["v1BrowseReadOnlyEnforcement"];
+        };
+        /**
+         * BrowseReadOnlyEnforcement 是只读执法层级值域（ADR-0051 决策 6）。
+         * @default BROWSE_READ_ONLY_ENFORCEMENT_UNSPECIFIED
+         * @enum {string}
+         */
+        v1BrowseReadOnlyEnforcement: "BROWSE_READ_ONLY_ENFORCEMENT_UNSPECIFIED" | "BROWSE_READ_ONLY_ENFORCEMENT_SESSION" | "BROWSE_READ_ONLY_ENFORCEMENT_TOOL" | "BROWSE_READ_ONLY_ENFORCEMENT_NONE";
         v1Config: {
             id?: string;
             project_id?: string;
@@ -1108,6 +1161,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1TriggerBackupResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    DatabasesService_BrowseDatabase: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                database_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DatabasesServiceBrowseDatabaseBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1BrowseDatabaseResponse"];
                 };
             };
             /** @description An unexpected error response. */

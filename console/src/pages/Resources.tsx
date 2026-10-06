@@ -902,11 +902,25 @@ function DatabaseRow({ database }: { database: { id?: string; name?: string; eng
     method: "POST",
     body: () => ({}),
   });
+  // browse（F3.6，ADR-0051）：铸造只读会话并在新窗口打开入口 URL（一次性
+  // Launcher Ticket；enforcement 层级等回显字段留给后续批的展示面）。
+  const browse = useApiMutation<{ url?: string }>({
+    path: `/v1/databases/${encodeURIComponent(database.id ?? "")}/browse`,
+    method: "POST",
+    body: () => ({}),
+  });
   const del = useApiMutation({
     path: `/v1/databases/${encodeURIComponent(database.id ?? "")}`,
     method: "DELETE",
     invalidate: [["resources", "databases"]],
   });
+  const openBrowse = () => {
+    browse.mutate(undefined, {
+      onSuccess: (resp) => {
+        if (resp?.url) window.open(resp.url, "_blank", "noopener");
+      },
+    });
+  };
   return (
     <>
       <tr className="border-b border-slate-800/60 hover:bg-slate-900/40">
@@ -917,6 +931,13 @@ function DatabaseRow({ database }: { database: { id?: string; name?: string; eng
         <td className="px-3 py-2 text-right">
           <div className="flex items-center justify-end gap-1">
             <RowButton onClick={() => setExpanded((prev) => !prev)}>{expanded ? "hide backups" : "backups"}</RowButton>
+            <RowButton
+              disabled={browse.isPending}
+              onClick={openBrowse}
+              title={`Open a read-only ${database.engine ?? "database"} browser session in a new window (one-time ticket, 120s)`}
+            >
+              browse
+            </RowButton>
             <RowButton disabled={trigger.isPending} onClick={() => void trigger.mutate()} title="Trigger an on-demand backup">
               backup
             </RowButton>
@@ -924,6 +945,7 @@ function DatabaseRow({ database }: { database: { id?: string; name?: string; eng
               delete
             </DangerRowButton>
           </div>
+          {browse.isError ? <div className="mt-1"><ErrorNote error={browse.error} /></div> : null}
           {trigger.isError ? <div className="mt-1"><ErrorNote error={trigger.error} /></div> : null}
           {trigger.isSuccess ? <div className="mt-1 text-[11px] text-emerald-400">backup ledger row created</div> : null}
         </td>
