@@ -130,6 +130,14 @@ _Avoid_: manifest, config(泛指), template
 Runtime 接受的最小执行单元，由 Spec 投影而来；平台不感知其载体形态（容器、pod、task）。
 _Avoid_: service, container, pod, unit
 
+**Exec Session**:
+进入运行中 Workload 载体的会话；双形态：tty 交互（Console 终端页、`fleetly shell`）与 one-shot 命令（`fleetly exec`）。会话绑定受理时的实例与节点，非资源行（不可列表回读，台账 = 审计）（ADR-0049）。
+_Avoid_: ssh, tunnel, remote shell
+
+**Relay**:
+节点代理到控制面的出站长连通道（WebSocket over 公共 gateway），exec 会话帧经其多路复用送达；节点零入站端口（ADR-0049）。
+_Avoid_: tunnel, mesh, agent net
+
 **Runtime**:
 编排器 Capability，Provider 实现（swarm、k8s、nomad…）。
 _Avoid_: substrate, engine, orchestrator, docker(指平台概念时)
