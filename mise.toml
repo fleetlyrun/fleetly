@@ -128,6 +128,10 @@ run = "sh e2e/dind-h2c-route.sh"
 description = "e2e dind 模板库全链（F3.3，ADR-0050：内嵌目录实例化 + 目录刷新热更新两腿）"
 run = "sh e2e/dind-template.sh"
 
+[tasks."e2e:browse"]
+description = "e2e dind 数据浏览器全链（F3.6，ADR-0051：pgweb 会话 + ForwardAuth 门禁 + 服务端只读执法）"
+run = "sh e2e/dind-browse.sh"
+
 [tasks."e2e:twonode"]
 description = "e2e dind 双节点：enroll join + 双节点部署 + 卷钉住（F0.20）"
 run = "sh e2e/dind-two-node.sh"

@@ -26,18 +26,18 @@ import (
 // digest——digest 由含 ULID 的 spec 派生，逐次不同；fake clock 时间戳
 // 确定不占位；凭证明文随机逐次不同）。
 var (
-	ulidRe       = regexp.MustCompile(`[0-9A-HJKMNP-TV-Z]{26}`)
-	lowerULIDRe  = regexp.MustCompile(`[0-9a-hjkmnp-tv-z]{26}`) // engine 铸名（task-/run- DNS 名）
-	digestRe     = regexp.MustCompile(`\b[0-9a-f]{64}\b`)
-	fprRe        = regexp.MustCompile(`\b[0-9a-f]{16}\b`)
-	tokenRe      = regexp.MustCompile(`flt_[A-Za-z0-9_-]{4,}`)
+	ulidRe      = regexp.MustCompile(`[0-9A-HJKMNP-TV-Z]{26}`)
+	lowerULIDRe = regexp.MustCompile(`[0-9a-hjkmnp-tv-z]{26}`) // engine 铸名（task-/run- DNS 名）
+	digestRe    = regexp.MustCompile(`\b[0-9a-f]{64}\b`)
+	fprRe       = regexp.MustCompile(`\b[0-9a-f]{16}\b`)
+	tokenRe     = regexp.MustCompile(`flt_[A-Za-z0-9_-]{4,}`)
 	// browseTicketRe 是 Launcher Ticket 的 base64url 43 字符形态（随机
 	// 32B；entry URL 与回显字段双落点——ADR-0051）。
 	browseTicketRe = regexp.MustCompile(`[A-Za-z0-9_-]{43}`)
-	invitationRe = regexp.MustCompile(`fltinv_[A-Za-z0-9_-]{4,}`)
-	hookTokenRe  = regexp.MustCompile(`flthook_[A-Za-z0-9_-]{4,}`)
-	credPathRe   = regexp.MustCompile(`(?m)^credentials saved: .*$`)
-	credJSONRe   = regexp.MustCompile(`"credentials_path": ".*?"`)
+	invitationRe   = regexp.MustCompile(`fltinv_[A-Za-z0-9_-]{4,}`)
+	hookTokenRe    = regexp.MustCompile(`flthook_[A-Za-z0-9_-]{4,}`)
+	credPathRe     = regexp.MustCompile(`(?m)^credentials saved: .*$`)
+	credJSONRe     = regexp.MustCompile(`"credentials_path": ".*?"`)
 )
 
 func normalizeGolden(s string) string {

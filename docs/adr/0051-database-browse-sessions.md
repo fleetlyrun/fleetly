@@ -190,20 +190,51 @@ none（Adminer 无只读方言）。**scope 门禁按层级收**：
 
 ## 验收锚
 
-- [ ] dbbrowser 四 adapter + digest 全钉（tag@sha256 形态/自洽/全值域——
+- [x] dbbrowser 四 adapter + digest 全钉（tag@sha256 形态/自洽/全值域——
   TestBrowserDigestsPinned 门禁；router.php vendored）
-- [ ] NamespaceRef.Browse 轴：swarm 标签/载体名/选择器分支 + fakes
-- [ ] browse 会话域：受理四件一拍 + quota + 硬/空闲 TTL 回收（fake clock 引擎
+  （internal/engine/dbbrowser/{dbbrowser,pgweb,rediscommander,adminer,mongoku}.go
+  + dbbrowser_test.go TestBrowserDigestsPinned/TestAdminerRouterPHPPinned/
+  TestRegistryCoversDbtemplateEngines/TestRenderingsAreClean，2026-10-07）
+- [x] NamespaceRef.Browse 轴：swarm 标签/载体名/选择器分支 + fakes
+  （internal/capability/runtime.go NamespaceRef（第五轴 + String 分支）；
+  internal/providers/swarm/translate.go labelBrowse/browseNamePrefix 与
+  workloadServiceName/workloadLabels/nsSelector 三分支；e2e 实证载体名
+  fleetly-browse-<lower(sid)>）
+- [x] browse 会话域：受理四件一拍 + quota + 硬/空闲 TTL 回收（fake clock 引擎
   测试）+ 重启行恢复（grant 重铸）
-- [ ] Launcher Ticket：120s 单用途（entry 烧票；二次兑换 401——apitest）
-- [ ] ForwardAuth 门禁：无 cookie 401 / 有效 cookie 放行 / grant 失效 401
+  （internal/engine/browse.go RegisterBrowseSession/browseStep/
+  teardownBrowseSession + internal/state/browse/repo.go + 迁移 00027；
+  internal/engine/browse_test.go 六件：收敛投影/双路由/grant 生命周期/
+  硬 TTL/空闲续活与回收/重启恢复）
+- [x] Launcher Ticket：120s 单用途（entry 烧票；二次兑换 401——apitest）
+  （internal/api/fleetlygrpc/databases.go BrowseDatabase:425 + eventtickets.go
+  issueWithTTL（purpose browse）+ internal/assembly/gateway_browse.go
+  serveBrowseEntry:82；apitest/browse_test.go TestBrowseEntryTicketAndCookie）
+- [x] ForwardAuth 门禁：无 cookie 401 / 有效 cookie 放行 / grant 失效 401
   （traefik 真链 e2e）
-- [ ] 只读分层回显 + scope 动态门（mysql/write 档 PermissionDenied——apitest）
-- [ ] publishRoutes 合并 ephemeral 双路由（entry 免门禁 + 工具路由带
+  （internal/assembly/gateway_browse.go serveBrowseAuthorize:113 +
+  internal/providers/traefik/config.go middlewares 渲染；e2e/dind-browse.sh
+  无 cookie 401 + cookie 放行断言）
+- [x] 只读分层回显 + scope 动态门（mysql/write 档 PermissionDenied——apitest）
+  （databases.go BrowseDatabase 动态 HasScope 校验 + internal/authn
+  Identity.HasScope；apitest TestBrowseWriteScopeGate/TestBrowseMysqlRequiresWriteForReadOnly）
+- [x] publishRoutes 合并 ephemeral 双路由（entry 免门禁 + 工具路由带
   ForwardAuth）；traefik middlewares 渲染 + 预检 + golden
-- [ ] CLI `databases browse` golden 双形态（ticket/ULID 掩码）
-- [ ] Console browse 动作（新窗口）+ dist 同 commit
-- [ ] e2e dind-browse 腿：postgres 库 → browse → traefik 真链 200（pgweb 页）
+  （internal/engine/managed.go publishRoutes（browseRoutesFingerprint 并入
+  签名）+ internal/engine/browse.go browseCapabilityRoutes:530 +
+  internal/capability/routevalidate.go ValidateRouteAuthAddress；
+  traefik testdata/dynamic-config.json 增 browse 双路由 golden）
+- [x] CLI `databases browse` golden 双形态（ticket/ULID 掩码）
+  （cmd/fleetly/cmd/verbs_databases.go newDatabasesBrowseVerb +
+  databases_golden_test.go TestGoldenDatabasesBrowse + verbs_golden_test.go
+  browseTicketRe 掩码（殿后——digest/ULID 先占位））
+- [x] Console browse 动作（新窗口）+ dist 同 commit
+  （console/src/pages/Resources.tsx DatabaseRow browse 动作 +
+  window.open；console:verify 零漂移，2026-10-07）
+- [x] e2e dind-browse 腿：postgres 库 → browse → traefik 真链 200（pgweb 页）
   + `SHOW default_transaction_read_only`=on（服务端只读锚）+ 票据复用拒
+  （e2e/dind-browse.sh + mise 任务 e2e:browse；2026-10-07 本地 dind
+  BROWSE E2E PASSED——受理回显/载体在场/entry 烧票 302+cookie/同票二次
+  401/pgweb 页经 ForwardAuth 200/无 cookie 401/服务端只读 on）
 - [ ] staging 真机走查：config 置位 → CLI browse → curl 全链 + Console 按钮
   （浏览器级）+ runbook 记录

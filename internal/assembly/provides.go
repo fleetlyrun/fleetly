@@ -305,6 +305,12 @@ func NewEngine(
 			AccessKeyID: s3.GetAccessKeyId(), SecretAccessKey: s3.GetSecretAccessKey(),
 		}
 	}
+	// TLS 缺省归一 none：traefik 渲染层把空串当 auto（既有口径），browse
+	// 的缺省明文（ADR-0051 决策 5）必须在装配侧钉住。
+	browseTLS := cfg.Browse.GetTls()
+	if browseTLS == "" {
+		browseTLS = "none"
+	}
 	return engine.New(engine.Deps{
 		DB: db, Runtime: rt, Builders: b, Proxy: proxy, Registry: reg, Logging: logs,
 		Metrics: mtr, ObjectStore: store, Cipher: cipher, Logger: app.Logger(),
@@ -318,11 +324,12 @@ func NewEngine(
 		RelayLoopbackURL:  relayLoopbackURL(cfg.HTTPAddr()),
 		RelayAgentVersion: info.Version,
 		// 数据浏览器面（F3.6，ADR-0051）：config 三字段直通（host_suffix 空
-		// = 面停用——BrowseDatabase 精确拒绝，升级零扰动）。
+		// = 面停用——BrowseDatabase 精确拒绝，升级零扰动）；TLS 缺省经
+		// browseTLS 归一 none（traefik 渲染层把空串当 auto 的既有口径）。
 		Browse: engine.BrowseConfig{
 			HostSuffix: cfg.Browse.GetHostSuffix(),
 			GatewayURL: cfg.Browse.GetGatewayUrl(),
-			TLSMode:    cfg.Browse.GetTls(),
+			TLSMode:    browseTLS,
 		},
 	}), nil
 }

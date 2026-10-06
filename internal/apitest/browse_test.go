@@ -16,12 +16,12 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/fleetlyrun/fleetly/genproto/fleetly/identity/v1"
+	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/apitest"
 	"github.com/fleetlyrun/fleetly/internal/assembly"
 	"github.com/fleetlyrun/fleetly/internal/capability"
 	"github.com/fleetlyrun/fleetly/internal/engine"
-	"github.com/fleetlyrun/fleetly/genproto/fleetly/identity/v1"
-	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
