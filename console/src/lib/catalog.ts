@@ -40,12 +40,16 @@ export function useProjects() {
   });
 }
 
-// useApps 拉取 App 目录；projectId 空 = 全部（日志页的跨项目选择面）。
+// useApps 拉取 App 目录。ListApps 契约 project_id 必填（structure.proto
+// 校验；曾按"空 = 全部"发送，吃回 E_INVALID_ARGUMENT 噪声——2026-10-05
+// 走查 F4），故空 projectId 直接禁查（React Query enabled 门）：各页在
+// 项目未选时呈现各自的引导态，而不是错误面板。
 export function useApps(projectId: string) {
   return useQuery({
     queryKey: ["catalog", "apps", projectId],
+    enabled: projectId !== "",
     queryFn: async (): Promise<AppEntry[]> => {
-      const query = projectId === "" ? "limit=200" : `project_id=${encodeURIComponent(projectId)}&limit=200`;
+      const query = `project_id=${encodeURIComponent(projectId)}&limit=200`;
       const res = await apiFetch<AppsResponse>(`/v1/apps?${query}`);
       return (res.apps ?? []).flatMap((app) => (app?.id && app.name ? [{ id: app.id, project_id: app.project_id ?? "", name: app.name }] : []));
     },

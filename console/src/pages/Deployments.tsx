@@ -89,10 +89,16 @@ export function DeploymentsPage() {
         </>
       }
     >
-      {projects.isPending || apps.isPending ? (
+      {projects.isPending ? (
         <LoadingNote label="Loading catalog…" />
       ) : projects.isError ? (
         <ErrorNote error={projects.error} hint="GET /v1/projects failed — check the API token in the header." />
+      ) : projectId === "" ? (
+        /* ListApps 契约 project_id 必填（F4）：未选项目 = 引导态，不查
+           /v1/apps（曾吃回 E_INVALID_ARGUMENT 的误导错误面板）。 */
+        <EmptyNote label="Select a project — deployments are listed per app." />
+      ) : apps.isPending ? (
+        <LoadingNote label="Loading catalog…" />
       ) : apps.isError ? (
         <ErrorNote error={apps.error} hint="GET /v1/apps failed — check the API token in the header." />
       ) : (apps.data ?? []).length === 0 ? (

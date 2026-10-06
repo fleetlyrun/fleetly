@@ -41,6 +41,9 @@ export function LogsPage() {
   const [frames, setFrames] = useState<LogFrame[]>([]);
   const [error, setError] = useState<unknown>(null);
   const [streaming, setStreaming] = useState(false);
+  // ended = 最近一次运行已自然收流（服务端关流/查询完），区别于手动 Stop
+  // 与未启动——空结果时的提示与计数后缀都靠它区分（F3）。
+  const [ended, setEnded] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
   const abortRef = useRef<AbortController | null>(null);
   const tailRef = useRef<HTMLDivElement | null>(null);
@@ -58,6 +61,7 @@ export function LogsPage() {
     setFrames([]);
     setError(null);
     setStreaming(true);
+    setEnded(false);
     const query = new URLSearchParams();
     if (controls.appId !== "") query.set("app_id", controls.appId);
     if (controls.process !== "") query.set("process", controls.process);
@@ -74,7 +78,10 @@ export function LogsPage() {
         if (!controller.signal.aborted) setError(err);
       })
       .finally(() => {
-        if (!controller.signal.aborted) setStreaming(false);
+        if (!controller.signal.aborted) {
+          setStreaming(false);
+          setEnded(true);
+        }
       });
   }
 
@@ -90,9 +97,12 @@ export function LogsPage() {
         className="flex flex-wrap items-end gap-2"
         onSubmit={(event) => {
           event.preventDefault();
-          if (!noApp) start();
+          if (!streaming && !noApp) start();
         }}
       >
+        {/* 隐形 submit 锚点：保住文本框 Enter 的隐式提交（无 submit 按钮的
+            多输入表单按规范不触发）；不可点、不参与视觉。 */}
+        <button type="submit" hidden tabIndex={-1} aria-hidden="true" />
         <label className="flex flex-col gap-1 text-xs text-slate-500">
           Project
           <select
@@ -103,7 +113,9 @@ export function LogsPage() {
             }}
             className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-slate-200"
           >
-            <option value="">All projects</option>
+            {/* ListApps 契约 project_id 必填（F4）：App 目录按项目取，首项
+              是引导语义而非"全部"。 */}
+            <option value="">select a project…</option>
             {(projects.data ?? []).map((project) => (
               <option key={project.id} value={project.id}>
                 {project.name}
@@ -116,7 +128,8 @@ export function LogsPage() {
           <select
             value={controls.appId}
             onChange={(event) => setControls((prev) => ({ ...prev, appId: event.target.value }))}
-            className="w-44 rounded-md border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-slate-200"
+            disabled={projectId === ""}
+            className="w-44 rounded-md border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-slate-200 disabled:opacity-50"
           >
             <option value="">select an app…</option>
             {(apps.data ?? []).map((app) => (
@@ -164,24 +177,24 @@ export function LogsPage() {
           />
           Follow
         </label>
-        {streaming ? (
-          <button
-            type="button"
-            onClick={stop}
-            className="rounded-md border border-red-800 bg-red-950/50 px-3 py-1.5 text-sm font-medium text-red-300"
-          >
-            Stop
-          </button>
-        ) : (
-          <button
-            type="submit"
-            disabled={noApp}
-            title={noApp ? "select an app first" : undefined}
-            className="rounded-md border border-sky-700 bg-sky-900/40 px-3 py-1.5 text-sm font-medium text-sky-300 disabled:opacity-40"
-          >
-            Start
-          </button>
-        )}
+        {/* 单一稳定按钮（F1 修复，2026-10-05 走查）：Stop/Start 若为同位
+            换型的两个按钮，mousedown 的 Stop 会把 DOM 原地改成 submit 型
+            Start，同一按压的 click 即触发 form 重提交——Stop 变成"停了
+            又立刻重启"。恒为 type=button 的同一节点，点击语义随 streaming
+            分派，换型面不存在。 */}
+        <button
+          type="button"
+          onClick={() => (streaming ? stop() : start())}
+          disabled={!streaming && noApp}
+          title={streaming ? undefined : noApp ? "select an app first" : undefined}
+          className={
+            streaming
+              ? "rounded-md border border-red-800 bg-red-950/50 px-3 py-1.5 text-sm font-medium text-red-300"
+              : "rounded-md border border-sky-700 bg-sky-900/40 px-3 py-1.5 text-sm font-medium text-sky-300 disabled:opacity-40"
+          }
+        >
+          {streaming ? "Stop" : "Start"}
+        </button>
       </form>
 
       {error ? <ErrorNote error={error} hint="GET /v1/logs failed — check the API token and the app selection." /> : null}
@@ -189,7 +202,11 @@ export function LogsPage() {
       <div className="max-h-[70vh] min-h-48 overflow-auto rounded-lg border border-slate-800 bg-slate-950 p-2">
         {frames.length === 0 ? (
           <div className="p-6 text-center text-sm text-slate-600">
-            {streaming ? "Waiting for frames…" : "Pick an app and press Start."}
+            {streaming
+              ? "Waiting for frames…"
+              : ended
+                ? "Stream ended — no frames matched (check the process name and filter)."
+                : "Pick an app and press Start."}
           </div>
         ) : (
           <table className="w-full border-separate border-spacing-0 font-mono text-xs">
@@ -220,7 +237,7 @@ export function LogsPage() {
         </label>
         <span>
           {frames.length} frame{frames.length === 1 ? "" : "s"}
-          {streaming ? " · streaming" : ""}
+          {streaming ? " · streaming" : ended ? " · ended" : ""}
           {frames.length >= MAX_FRAMES ? " · buffer capped (oldest dropped)" : ""}
         </span>
       </div>
