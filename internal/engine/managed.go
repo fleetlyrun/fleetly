@@ -324,12 +324,9 @@ func (e *Engine) reconcileManaged(ctx context.Context) {
 			continue                                      // 单 Provider 失败不阻断其余受管面收敛
 		}
 		e.ensureRemember(e.managed.ensure, ns.String(), ensureMemo{sig: sigs[i], gen: gen, at: now})
-		for _, w := range ws {
-			e.obs.mu.Lock()
-			e.obs.workloadApp[w.ID] = systemOwner(w.Process) // 归属登记（观测/drift 面）
-			e.obs.ensuredGen[w.ID] = gen
-			e.obs.mu.Unlock()
-		}
+		e.obs.recordOwners(gen, ws, func(w capability.Workload) workloadOwner {
+			return systemOwner(w.Process) // 归属登记（观测/drift 面）
+		})
 		// 稳态看门狗登记（N0.1 P2-10）：受管域 expected 也落在期望缓存——
 		// 受管载体挂掉要报 workload.stopped（受管面是平台自身可用性，失明
 		// 不可接受）。键与归属登记同形（fleetly/system/<process>）。
@@ -500,18 +497,7 @@ func (e *Engine) resolveBackend(ctx context.Context, rt route.Route) (capability
 // appWorkloadExpectations 返回 App 名下的期望 Workload 集（最近 Ensure
 // 投影缓存快照；Addresses 的端口真源）。
 func (e *Engine) appWorkloadExpectations(appID string) []capability.Workload {
-	e.obs.mu.RLock()
-	defer e.obs.mu.RUnlock()
-	var out []capability.Workload
-	for wid, owner := range e.obs.workloadApp {
-		if owner.domain != ownerApp || owner.id != appID {
-			continue
-		}
-		if w, ok := e.obs.ensuredSpec[wid]; ok {
-			out = append(out, w)
-		}
-	}
-	return out
+	return e.obs.expectations(appID)
 }
 
 // activeProjectIDs 返回全部活跃 Project ID（排序稳定——材料铸造字节稳定

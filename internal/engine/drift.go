@@ -146,8 +146,8 @@ func (e *Engine) driftScan(ctx context.Context) {
 	e.expect.mu.Unlock()
 
 	var candidates []wlObs
-	e.obs.mu.RLock()
-	for wid, owner := range e.obs.workloadApp {
+	snap := e.obs.snapshot()
+	for wid, owner := range snap.workloadApp {
 		if expected[owner] == 0 {
 			continue
 		}
@@ -156,12 +156,11 @@ func (e *Engine) driftScan(ctx context.Context) {
 		if owner.domain == ownerApp && inFlight[owner.id] {
 			continue
 		}
-		ev, seen := e.obs.observations[wid]
+		ev, seen := snap.observations[wid]
 		if seen && ev.State == capability.WorkloadStopped && uint64(ev.Generation) == expected[owner] {
 			candidates = append(candidates, wlObs{wid: wid, ev: ev})
 		}
 	}
-	e.obs.mu.RUnlock()
 	for _, c := range candidates {
 		e.emitSteadyStateStopped(ctx, c.wid, c.ev)
 	}
@@ -192,9 +191,8 @@ func (e *Engine) compareSpecs(ctx context.Context, appID string, obs []capabilit
 		ev  capability.WorkloadEvent
 	}
 	var pending []pendingDrift
-	e.obs.mu.RLock()
 	for _, o := range obs {
-		want, ok := e.obs.ensuredSpec[o.WorkloadID]
+		want, ok := e.obs.ensuredSpecOf(o.WorkloadID)
 		if !ok {
 			continue // 非平台管辖（孤儿面：只登记原则）
 		}
@@ -236,7 +234,6 @@ func (e *Engine) compareSpecs(ctx context.Context, appID string, obs []capabilit
 			},
 		})
 	}
-	e.obs.mu.RUnlock()
 
 	for _, p := range pending {
 		if _, err := e.outbox.Append(ctx, e.db.Runner(),
@@ -274,14 +271,10 @@ func (e *Engine) emitSteadyStateStopped(ctx context.Context, wid string, ev capa
 	e.drift.stoppedMu.Unlock()
 	// app_id 仅 App 域载体携带（typed owner 行为批）：内部路由键不再漏进
 	// 用户可见载荷——数据库/受管载体的 stopped 事件不带伪 app_id。
-	appID := func() string {
-		e.obs.mu.RLock()
-		defer e.obs.mu.RUnlock()
-		if owner, ok := e.obs.workloadApp[wid]; ok && owner.domain == ownerApp {
-			return owner.id
-		}
-		return ""
-	}()
+	appID := ""
+	if owner, ok := e.obs.ownerOf(wid); ok && owner.domain == ownerApp {
+		appID = owner.id
+	}
 	_, err := e.outbox.Append(ctx, e.db.Runner(), eventWorkloadStopped, "workload", wid,
 		stoppedEventPayloadJSON(wid, appID, ev))
 	if err != nil {

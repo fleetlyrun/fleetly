@@ -182,10 +182,9 @@ func (e *Engine) reconcileDatabase(ctx context.Context, row *dbrepo.Database) {
 	e.ensureRemember(e.database.ensure, row.ID, ensureMemo{sig: sig, gen: gen, at: now})
 	// 归属/期望登记（观测路由 + 稳态看门狗；driftScan 对 database/ 前缀
 	// 跳过 spec 对照——非 App 行键）。
-	e.obs.mu.Lock()
-	e.obs.workloadApp[w.ID] = databaseOwner(row.ID)
-	e.obs.ensuredGen[w.ID] = gen
-	e.obs.mu.Unlock()
+	e.obs.recordOwners(gen, []capability.Workload{w}, func(capability.Workload) workloadOwner {
+		return databaseOwner(row.ID)
+	})
 	e.expect.mu.Lock()
 	e.expect.expected[databaseOwner(row.ID)] = gen
 	e.expect.mu.Unlock()
@@ -215,10 +214,7 @@ func credentialFingerprint(ciphertext []byte) string {
 
 // observationOf 读单 Workload 的最新观测（观测缓存拷贝）。
 func (e *Engine) observationOf(workloadID string) (capability.WorkloadEvent, bool) {
-	e.obs.mu.RLock()
-	defer e.obs.mu.RUnlock()
-	ev, ok := e.obs.observations[workloadID]
-	return ev, ok
+	return e.obs.observationOf(workloadID)
 }
 
 // dbStatusFromObservation 把 Workload 观测映射为 Database 状态（长运行
@@ -338,11 +334,7 @@ func (e *Engine) TeardownDatabase(ctx context.Context, id string) error {
 	if removeErr != nil {
 		return fmt.Errorf("database teardown: %w", removeErr)
 	}
-	e.obs.mu.Lock()
-	delete(e.obs.observations, row.ID)
-	delete(e.obs.workloadApp, row.ID)
-	delete(e.obs.ensuredGen, row.ID)
-	e.obs.mu.Unlock()
+	e.obs.forget(row.ID)
 	e.expect.mu.Lock()
 	delete(e.expect.expected, databaseOwner(row.ID))
 	e.expect.mu.Unlock()

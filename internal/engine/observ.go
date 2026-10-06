@@ -99,21 +99,15 @@ func (e *Engine) buildDigests(ctx context.Context, d *deployment.Deployment) (ma
 	return nil, nil
 }
 
-// recordEnsured 记录 Ensure 事实：归属缓存 + 各 Workload 的 Generation 与
-// 投影 spec（就绪门集合界定——被移除 process 的旧 workload 不再计入）+
-// App 级最近 Generation（Drift 对照锚）。进程内缓存，重启后由幂等重放的
-// Ensure 或启动基线重放重建（ADR-0022）。
+// recordEnsured 记录 Ensure 事实：观测域归属缓存 + 各 Workload 的
+// Generation 与投影 spec（就绪门集合界定——被移除 process 的旧 workload
+// 不再计入）+ App 级最近 Generation（expect 域，Drift 对照锚）。进程内
+// 缓存，重启后由幂等重放的 Ensure 或启动基线重放重建（ADR-0022）。
 func (e *Engine) recordEnsured(d *deployment.Deployment, gen uint64, ws []capability.Workload) {
 	e.expect.mu.Lock()
 	e.expect.expected[appOwner(d.AppID)] = gen
 	e.expect.mu.Unlock()
-	e.obs.mu.Lock()
-	for _, w := range ws {
-		e.obs.workloadApp[w.ID] = appOwner(d.AppID)
-		e.obs.ensuredGen[w.ID] = gen
-		e.obs.ensuredSpec[w.ID] = w
-	}
-	e.obs.mu.Unlock()
+	e.obs.recordSpecs(appOwner(d.AppID), gen, ws)
 }
 
 // releaseReady 是 L1 健康门：本 Deployment 下发的全部 Workload（gen 匹配
@@ -124,22 +118,7 @@ func (e *Engine) releaseReady(d *deployment.Deployment) bool {
 }
 
 func (e *Engine) releaseReadyGen(d *deployment.Deployment, gen uint64) bool {
-	e.obs.mu.RLock()
-	defer e.obs.mu.RUnlock()
-	count := 0
-	for wid, owner := range e.obs.workloadApp {
-		if owner.domain != ownerApp || owner.id != d.AppID || e.obs.ensuredGen[wid] != gen {
-			continue
-		}
-		count++
-		ev, seen := e.obs.observations[wid]
-		// 就绪门：全部成员必须已观测且 running@gen（未观测 = 未就绪，
-		// 与看门狗语义相反——后者未观测不咬合）。
-		if !seen || ev.State != capability.WorkloadRunning || uint64(ev.Generation) != gen {
-			return false
-		}
-	}
-	return count > 0
+	return e.obs.readyGen(d.AppID, gen)
 }
 
 // watchdogBite 是 L2 看门狗：当前 Generation 观测到 stopped → 咬合描述
@@ -162,23 +141,7 @@ func (e *Engine) watchdogBite(d *deployment.Deployment) string {
 // 集合大小）。pred 返回非空即咬合（短路）；未观测的 Workload 不咬合
 // （等待/超时路径处理）。集合为空（重启后缓存未重建）由调用方解释。
 func (e *Engine) scanGeneration(appID string, gen uint64, pred func(capability.WorkloadEvent) string) (string, int) {
-	e.obs.mu.RLock()
-	defer e.obs.mu.RUnlock()
-	count := 0
-	for wid, owner := range e.obs.workloadApp {
-		if owner.domain != ownerApp || owner.id != appID || e.obs.ensuredGen[wid] != gen {
-			continue
-		}
-		count++
-		ev, seen := e.obs.observations[wid]
-		if !seen {
-			continue
-		}
-		if msg := pred(ev); msg != "" {
-			return msg, count
-		}
-	}
-	return "", count
+	return e.obs.scanGen(appID, gen, pred)
 }
 
 // consumeWatch 消费 Runtime Watch 流（连接断开自动重连；provider 内部
@@ -226,9 +189,7 @@ func (e *Engine) handleObservation(ctx context.Context, ev capability.WorkloadEv
 		e.handleRunObservation(ctx, ev.WorkloadID, ev)
 		return
 	}
-	e.obs.mu.Lock()
-	e.obs.observations[ev.WorkloadID] = ev
-	e.obs.mu.Unlock()
+	e.obs.observe(ev)
 	if ev.State != capability.WorkloadStopped {
 		e.clearStoppedSig(ev.WorkloadID) // 稳态 stopped 去抖解除（ADR-0022）
 	}
@@ -272,9 +233,7 @@ func (e *Engine) handleNodeJoined(ctx context.Context, nj *capability.NodeJoined
 // (workload, expected, observed) 签名不重复发；观测回归 expected 即清
 // 签名（下次偏离可再发）。
 func (e *Engine) detectDrift(ctx context.Context, ev capability.WorkloadEvent) {
-	e.obs.mu.RLock()
-	owner, owned := e.obs.workloadApp[ev.WorkloadID]
-	e.obs.mu.RUnlock()
+	owner, owned := e.obs.ownerOf(ev.WorkloadID)
 	if !owned {
 		return // 非平台管辖载体：观测缓存已登记，事件不落（孤儿面后续批）
 	}

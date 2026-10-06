@@ -249,15 +249,8 @@ func appOwner(appID string) workloadOwner      { return workloadOwner{ownerApp, 
 func databaseOwner(id string) workloadOwner    { return workloadOwner{ownerDatabase, id} }
 func systemOwner(process string) workloadOwner { return workloadOwner{ownerSystem, process} }
 
-// observDomain 是观测枢纽（全部域共用的载体观测/归属/就绪门——Watch
-// 消费单点路由写这里，各域读自己的键）。
-type observDomain struct {
-	mu           sync.RWMutex
-	observations map[string]capability.WorkloadEvent // workloadID → 最新观测
-	workloadApp  map[string]workloadOwner            // workloadID → 归属（观测路由/drift 跳过面）
-	ensuredGen   map[string]uint64                   // workloadID → 最近 Ensure 的 Generation（就绪门集合界定）
-	ensuredSpec  map[string]capability.Workload      // workloadID → 最近 Ensure 的投影 spec（ADR-0022 spec 对照 drift）
-}
+// observDomain 见 observdomain.go（P15 域内组件：归属解析/期望缓存/
+// Route 后端解析）。
 
 // driftDomain 是漂移扫描域的去抖签名（spec 对照签名 + 稳态 stopped 签名，
 // ADR-0022）。
@@ -555,10 +548,7 @@ func New(deps Deps, opts Options) *Engine {
 	e.metricsDom.cores = make(map[string]float64)
 	e.alertRules = alertrule.New(clock)
 	e.channels = channel.New(clock)
-	e.obs.observations = make(map[string]capability.WorkloadEvent)
-	e.obs.workloadApp = make(map[string]workloadOwner)
-	e.obs.ensuredGen = make(map[string]uint64)
-	e.obs.ensuredSpec = make(map[string]capability.Workload)
+	e.obs.init()
 	e.expect.expected = make(map[workloadOwner]uint64)
 	e.drift.sig = make(map[string]string)
 	e.drift.stoppedSig = make(map[string]string)

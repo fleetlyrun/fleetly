@@ -172,19 +172,7 @@ func (e *Engine) IsolateNetworkPeer(ctx context.Context, networkID, peerProjectI
 // isolate 重收敛。附件快照在锁内取、批准态复核在锁外做（锁内无 DB 面）；
 // 复核读失败不剥离（假隔离比迟隔离糟，下一拍重试）。
 func (e *Engine) enforcePeerIsolation(ctx context.Context) {
-	appRefs := map[string][]capability.NetworkRef{}
-	e.obs.mu.RLock()
-	for wid, ensured := range e.obs.ensuredSpec {
-		if len(ensured.NetworkRefs) == 0 {
-			continue
-		}
-		owner := e.obs.workloadApp[wid]
-		if owner.domain != ownerApp {
-			continue
-		}
-		appRefs[owner.id] = append(appRefs[owner.id], ensured.NetworkRefs...)
-	}
-	e.obs.mu.RUnlock()
+	appRefs := e.obs.crossProjectRefs()
 	if len(appRefs) == 0 {
 		return
 	}
