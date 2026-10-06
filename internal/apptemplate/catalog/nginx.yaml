@@ -1,0 +1,19 @@
+# nginx 模板（ADR-0050 内嵌目录首条）：最小 web 服务形态——镜像直投 + 域名
+# 变量驱动 Route。string 插值面见 grafana 模板。
+x-fleetly-template:
+  name: nginx
+  version: 1.0.0
+  description: nginx web server on the declared route (image direct, no database).
+  variables:
+    - name: host
+      type: domain
+      description: route host serving the site (e.g. demo.203-0-113-10.sslip.io)
+      required: true
+  routes:
+    - var: host
+      process: web
+      port: 80
+services:
+  web:
+    image: nginx:1.27
+    ports: ["80"]

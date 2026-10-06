@@ -1,0 +1,27 @@
+# grafana 模板（ADR-0050 内嵌目录第二条）：secret 变量全链形态——平台铸造
+# 随机密码落 Secret template:<app>:admin_password，进程经 secrets 列表吃文件
+# 注入（/run/secrets/<真名>），GF_*__FILE 是 grafana 镜像的原生文件读取惯例。
+x-fleetly-template:
+  name: grafana
+  version: 1.0.0
+  description: Grafana with a platform-generated admin password (file-injected; the value is never printed).
+  variables:
+    - name: admin_password
+      type: secret
+      description: admin login password, generated at instantiation and injected as a file
+    - name: host
+      type: domain
+      description: route host serving Grafana
+      required: true
+  routes:
+    - var: host
+      process: grafana
+      port: 3000
+services:
+  grafana:
+    image: grafana/grafana:11.3.0
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD__FILE: ${admin_password}
+    secrets: [admin_password]
+    ports: ["3000"]
