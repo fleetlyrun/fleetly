@@ -327,6 +327,20 @@ type Workload struct {
 	// engine——名字是平台 API 面，N4 换 Runtime 不变；Provider 把声明映射
 	// 为自己的原语：swarm=网络别名、k8s=Service 名）。
 	Addressing []Address
+	// Generation 是本 Workload 载体的 Generation 锚覆写（ADR-0048 决策 1
+	// 双代窗：Ensure 调用 gen 是新部署的 gen，窗内旧代成员携带基线 gen
+	// ——标签与就绪门按载体各自锚，旧代不得被翻新；新代成员在窗口调用
+	// 里显式携带自身 gen。0 = 沿用 Ensure 调用的 gen（rolling 存量零漂移）。
+	Generation uint64
+	// GenerationScoped 声明载体名带代次成分（blue-green 策略投影位，ADR-
+	// 0048 决策 1.4：{proc}.g{gen} 代次名只服务 Proxy 后端解析与调试；
+	// 命名公式追加代次后缀是 Provider 私有公式扩展。rolling 恒 false——
+	// 存量名零变化）。true 时 Generation 恒非零（投影期覆写）。
+	GenerationScoped bool
+	// Materials 是本 Workload 的逐载体材料覆写（ADR-0048 双代窗：旧代
+	// 成员持基线材料——secret 载体引用与拉取凭证不被新代材料改写（旧代
+	// 零扰动锚）；nil = 沿用 Ensure 调用级材料（域默认挂全域，既有语义）。
+	Materials *Materials
 }
 
 // RestartPolicy 是 Workload 生命周期声明（ADR-0025）。

@@ -17,14 +17,14 @@ import (
 
 func TestServiceNameFormula(t *testing.T) {
 	ns := capability.NamespaceRef{Team: "acme", Project: "shop", App: "web"}
-	assert.Equal(t, "fleetly-acme-shop-web-web", workloadServiceName(ns, capability.Workload{Process: "web"}))
+	assert.Equal(t, "fleetly-acme-shop-web-web", workloadServiceName(ns, capability.Workload{Process: "web"}, 1))
 }
 
 // Task 域命名（ADR-0025 决策 4/7）：Run 载体按 run id 命名，域内天然唯一。
 func TestRunServiceNameFormula(t *testing.T) {
 	ns := capability.NamespaceRef{Team: "acme", Project: "shop", Task: "01JTASK"}
 	w := capability.Workload{ID: "01JRUN"}
-	assert.Equal(t, "fleetly-run-01jrun", workloadServiceName(ns, w))
+	assert.Equal(t, "fleetly-run-01jrun", workloadServiceName(ns, w, 1))
 }
 
 // Database 域命名（ADR-0029）：载体按 database 行 ID 命名；标记与选择器
@@ -32,7 +32,7 @@ func TestRunServiceNameFormula(t *testing.T) {
 func TestDatabaseDomainNamingAndLabels(t *testing.T) {
 	ns := capability.NamespaceRef{Team: "acme", Project: "shop", Database: "01JDB01"}
 	w := capability.Workload{ID: "01JDB01", Process: "postgres"}
-	assert.Equal(t, "fleetly-db-01jdb01", workloadServiceName(ns, w))
+	assert.Equal(t, "fleetly-db-01jdb01", workloadServiceName(ns, w, 1))
 	labels := workloadLabels(ns, w, capability.Generation(3))
 	assert.Equal(t, "01jdb01", labels[labelDatabase])
 	assert.NotContains(t, labels, labelApp, "database domain must not carry an empty app label")
@@ -48,11 +48,11 @@ func TestServiceNameTruncationStable(t *testing.T) {
 		Project: strings.Repeat("p", 30),
 		App:     strings.Repeat("a", 20),
 	}
-	name := workloadServiceName(ns, capability.Workload{Process: "web"})
+	name := workloadServiceName(ns, capability.Workload{Process: "web"}, 1)
 	assert.LessOrEqual(t, len(name), 63, "swarm DNS label limit")
 	// 同输入稳定；不同 process 可区分（截断段 + 哈希后缀）。
-	assert.Equal(t, name, workloadServiceName(ns, capability.Workload{Process: "web"}))
-	assert.NotEqual(t, name, workloadServiceName(ns, capability.Workload{Process: "worker"}))
+	assert.Equal(t, name, workloadServiceName(ns, capability.Workload{Process: "web"}, 1))
+	assert.NotEqual(t, name, workloadServiceName(ns, capability.Workload{Process: "worker"}, 1))
 }
 
 func TestSanitizeNamePart(t *testing.T) {
@@ -378,4 +378,27 @@ func TestAddressAliasesPreserveDots(t *testing.T) {
 	assert.Equal(t, []string{"web.shop"}, addressAliases([]capability.Address{{Name: "WEB.Shop"}}))
 	assert.Equal(t, []string{"web-shop"}, addressAliases([]capability.Address{{Name: "web shop"}}))
 	assert.Equal(t, []string{"web"}, addressAliases([]capability.Address{{Name: ".web."}}))
+}
+
+// TestWorkloadServiceNameGenerationScoped（ADR-0048 决策 1.4）：代次化
+// 载体名追加 -g<gen>——逐载体覆写优先、覆写缺席沿用调用 gen；rolling
+// （GenerationScoped=false）名零变化（存量零漂移锚），含覆写也不改名
+//（rolling 时代的旧代成员在双代窗里只锚 gen 标签不改名）。
+func TestWorkloadServiceNameGenerationScoped(t *testing.T) {
+	ns := capability.NamespaceRef{Team: "acme", Project: "shop", App: "app1"}
+	base := "fleetly-acme-shop-app1-web"
+
+	assert.Equal(t, base, workloadServiceName(ns, capability.Workload{Process: "web"}, 41), "rolling name unchanged")
+	assert.Equal(t, base, workloadServiceName(ns, capability.Workload{Process: "web", Generation: 41}, 42),
+		"a rolling-era baseline carrier keeps its name even with a generation override")
+
+	scoped := capability.Workload{Process: "web", GenerationScoped: true}
+	assert.Equal(t, base+"-g42", workloadServiceName(ns, scoped, 42), "scoped suffix from the call generation")
+	assert.Equal(t, base+"-g43", workloadServiceName(ns,
+		capability.Workload{Process: "web", GenerationScoped: true, Generation: 43}, 41),
+		"per-workload generation override wins over the call generation")
+
+	// gen 标签同源（workloadGeneration 单源）：覆写优先、缺省调用 gen。
+	assert.Equal(t, uint64(43), workloadGeneration(capability.Workload{Generation: 43}, 41))
+	assert.Equal(t, uint64(41), workloadGeneration(capability.Workload{}, 41))
 }

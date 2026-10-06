@@ -48,7 +48,7 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 	// 作用（同 Generation 重放安全不变：同 Workload 重复出现不算碰撞）。
 	desired := make(map[string]string, len(ws))
 	for _, w := range ws {
-		name := workloadServiceName(ns, w)
+		name := workloadServiceName(ns, w, gen)
 		if prev, ok := desired[name]; ok && prev != w.ID {
 			return fmt.Errorf("swarm ensure %s: workloads %s and %s both resolve to service name %q (carrier name collision; process names must be distinct DNS labels)", ns, prev, w.ID, name)
 		}
@@ -65,13 +65,36 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 	}()
 
 	// 材料先行（ADR-0014）：网络 create-or-get + Secret 载体落盘，再翻译
-	// 载体 spec（引用载体名）。
+	// 载体 spec（引用载体名）。逐载体材料覆写（ADR-0048 双代窗）：旧代
+	// 成员持基线材料——secret 引用与拉取凭证按各自材料面解析，调用级
+	// 材料不再全域改写（旧代零扰动锚）；nil = 调用级（域默认，既有语义）。
 	if err := p.ensureNetworks(ctx, ns, ws); err != nil {
 		return fmt.Errorf("swarm ensure %s: %w", ns, err)
 	}
-	secretCarriers, err := p.ensureSecrets(ctx, m)
+	callCarriers, err := p.ensureSecrets(ctx, m)
 	if err != nil {
 		return fmt.Errorf("swarm ensure %s: %w", ns, err)
+	}
+	carrierSets := map[*capability.Materials]map[string]secretCarrier{&m: callCarriers}
+	for i := range ws {
+		pm := ws[i].Materials
+		if pm == nil {
+			continue
+		}
+		if _, seen := carrierSets[pm]; seen {
+			continue
+		}
+		c, cerr := p.ensureSecrets(ctx, *pm)
+		if cerr != nil {
+			return fmt.Errorf("swarm ensure %s: %w", ns, cerr)
+		}
+		carrierSets[pm] = c
+	}
+	materialsOf := func(w capability.Workload) capability.Materials {
+		if w.Materials != nil {
+			return *w.Materials
+		}
+		return m
 	}
 
 	existing, err := p.listNsServices(ctx, ns)
@@ -83,7 +106,11 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 	// 网络只探一次 daemon；Ensure 序结束随局部变量废弃。
 	resolvedNets := map[string]netResolve{}
 	for _, w := range ws {
-		spec := toServiceSpec(ns, w, gen, secretCarriers)
+		carriers := callCarriers
+		if w.Materials != nil {
+			carriers = carrierSets[w.Materials]
+		}
+		spec := toServiceSpec(ns, w, gen, carriers)
 		// 网络引用名→ID 先行解析（服务端对名字输入会改写为 ID——发送
 		// ID 使回读形态与发送形态一致，no-op 比对的前提）。
 		spec, nerr := p.resolveNetworkTargets(ctx, spec, resolvedNets)
@@ -91,7 +118,7 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 			return fmt.Errorf("swarm ensure %s: %w", ns, nerr)
 		}
 
-		auth, err := p.registryAuthFor(ctx, w.Image, m)
+		auth, err := p.registryAuthFor(ctx, w.Image, materialsOf(w))
 		if err != nil {
 			return fmt.Errorf("swarm ensure %s: %w", ns, err)
 		}
@@ -783,12 +810,16 @@ func (p *Provider) mintNodeID(ctx context.Context, node swarm.Node) (string, err
 
 // Addresses 返回隔离域可达地址（overlay VIP / 服务 DNS 名；平台无关形态）。
 // 端点端口取自期望集的声明端口（engine 注入——载体原生不承载声明端口，
-// 期望集取代端口 label 平行编码，架构评审第二轮候选 7）：服务按 process
-// label 匹配期望集成员，未匹配的服务不计入端点。
+// 期望集取代端口 label 平行编码，架构评审第二轮候选 7）：服务按平台
+// Workload ID 标记（labelWorkload——Provider 搬运平台标记的本职）匹配
+// 期望集成员，未匹配的服务不计入端点。ID 匹配（而非 process 名）是
+// 蓝绿双代窗的消歧锚（ADR-0048 决策 1.4：resolveBackend 消费代次化地址
+// ——两代同 process 各自独立载体，engine 以期望集圈定服务代）；单代
+// 形态 ID↔process 一一对应，语义不变。
 func (p *Provider) Addresses(ctx context.Context, ns capability.NamespaceRef, expected []capability.Workload) ([]capability.Endpoint, error) {
-	byProcess := make(map[string]capability.Workload, len(expected))
+	byID := make(map[string]capability.Workload, len(expected))
 	for _, w := range expected {
-		byProcess[sanitizeNamePart(w.Process)] = w // label 侧是净化后的进程名
+		byID[w.ID] = w
 	}
 	services, err := p.listNsServices(ctx, ns)
 	if err != nil {
@@ -796,7 +827,7 @@ func (p *Provider) Addresses(ctx context.Context, ns capability.NamespaceRef, ex
 	}
 	var endpoints []capability.Endpoint
 	for _, svc := range services {
-		w, ok := byProcess[svc.Spec.Labels[labelProcess]]
+		w, ok := byID[svc.Spec.Labels[labelWorkload]]
 		if !ok {
 			continue // 非期望集成员（stale 载体/期望未重放）不计入
 		}

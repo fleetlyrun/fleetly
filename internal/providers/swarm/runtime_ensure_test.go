@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"log/slog"
+	"net/netip"
 	"testing"
 	"time"
 
@@ -25,7 +26,7 @@ func ensureWorkload() capability.Workload {
 
 // ensureCarrierName 是上述夹具的载体名（workloadServiceName 公式）。
 func ensureCarrierName() string {
-	return workloadServiceName(ensureNS, ensureWorkload())
+	return workloadServiceName(ensureNS, ensureWorkload(), 1)
 }
 
 // TestEnsureNoopBreakerSkipsIdenticalDesired（C19-1）：daemon 版本漂移新增
@@ -254,7 +255,7 @@ func TestEnsureResolvesSharedNetworkOnce(t *testing.T) {
 	require.NoError(t, p.Ensure(context.Background(), ensureNS, []capability.Workload{w1, w2}, capability.Generation(1), capability.Materials{}))
 	assert.Equal(t, 2, d.count("GET /networks/"+carrier),
 		"materials inspect + one memoized resolve for two workloads sharing the network")
-	for _, name := range []string{workloadServiceName(ensureNS, w1), workloadServiceName(ensureNS, w2)} {
+	for _, name := range []string{workloadServiceName(ensureNS, w1, 1), workloadServiceName(ensureNS, w2, 1)} {
 		svc, ok := d.byRef(name)
 		require.True(t, ok)
 		require.NotEmpty(t, svc.Spec.TaskTemplate.Networks)
@@ -283,4 +284,84 @@ func TestDescribeClusterAnchorsWithoutEventSink(t *testing.T) {
 	assert.Equal(t, "carrier-1", view.Nodes[0].CarrierID)
 	assert.NotEmpty(t, view.Nodes[0].NodeID, "the node must leave anchored (minted platform id visible)")
 	assert.Equal(t, 1, d.count("POST /nodes/carrier-1/update"))
+}
+
+// TestEnsurePerWorkloadMaterials（ADR-0048 双代窗零扰动锚）：联合期望集
+// 单次 Ensure——旧代成员持基线材料（Materials 覆写），新代成员沿用调用
+// 级材料；两代载体的 secret 引用各归各面（旧代 spec 不被新代材料改写，
+// 否则 spec diff → update → 旧代任务滚动 = 零扰动承诺失守）。
+func TestEnsurePerWorkloadMaterials(t *testing.T) {
+	d := newFakeDaemon()
+	p := &Provider{cli: d.newClient(t)}
+	ctx := context.Background()
+
+	oldMat := capability.Materials{SecretFiles: map[string][]byte{"tok": []byte("old-value")}}
+	newMat := capability.Materials{SecretFiles: map[string][]byte{"tok": []byte("new-value")}}
+	// 预置两版 secret 载体（fake 无 create 路由；ensureSecrets inspect 命中即复用）。
+	d.addSecret(swarm.Secret{Spec: swarm.SecretSpec{Annotations: swarm.Annotations{
+		Name: secretCarrierName("tok", fingerprintHex([]byte("old-value")))}}})
+	d.addSecret(swarm.Secret{Spec: swarm.SecretSpec{Annotations: swarm.Annotations{
+		Name: secretCarrierName("tok", fingerprintHex([]byte("new-value")))}}})
+	from := capability.Workload{ID: "wl_01", Process: "web-1", Image: "nginx:1.27", Materials: &oldMat}
+	next := capability.Workload{ID: "wl_01-g42", Process: "web-1", Image: "nginx:1.28",
+		Generation: 42, GenerationScoped: true}
+
+	require.NoError(t, p.Ensure(ctx, ensureNS, []capability.Workload{from, next}, capability.Generation(41), newMat))
+
+	oldName := workloadServiceName(ensureNS, from, 41)
+	newName := workloadServiceName(ensureNS, next, 41)
+	oldSvc, ok := d.store[oldName]
+	require.True(t, ok, "baseline carrier service must exist")
+	newSvc, ok := d.store[newName]
+	require.True(t, ok, "generation-scoped carrier service must exist")
+
+	wantOldSecret := secretCarrierName("tok", fingerprintHex([]byte("old-value")))
+	wantNewSecret := secretCarrierName("tok", fingerprintHex([]byte("new-value")))
+	require.Len(t, oldSvc.Spec.TaskTemplate.ContainerSpec.Secrets, 1)
+	assert.Equal(t, wantOldSecret, oldSvc.Spec.TaskTemplate.ContainerSpec.Secrets[0].SecretName,
+		"baseline carrier keeps referencing its baseline secret carrier")
+	require.Len(t, newSvc.Spec.TaskTemplate.ContainerSpec.Secrets, 1)
+	assert.Equal(t, wantNewSecret, newSvc.Spec.TaskTemplate.ContainerSpec.Secrets[0].SecretName,
+		"new-generation carrier references the new secret carrier")
+
+	// gen 标签按载体各自锚（workloadLabels 单源 workloadGeneration）：
+	// 旧代 41（调用 gen）+ 新代 42（覆写）——同一次 Ensure 两代并存。
+	assert.Equal(t, "41", oldSvc.Spec.TaskTemplate.ContainerSpec.Labels[labelGeneration])
+	assert.Equal(t, "42", newSvc.Spec.TaskTemplate.ContainerSpec.Labels[labelGeneration])
+}
+
+// TestAddressesMatchesByWorkloadID（ADR-0048 决策 1.4 消歧锚）：双代窗内
+// 两代载体同 process 标签、各自独立服务——Addresses 以平台 Workload ID
+// 标记匹配期望集：期望圈定哪代，端点就只出哪代（resolveBackend 消费
+// 代次化地址的 Provider 半边；单代形态 ID↔process 一一对应，语义不变）。
+func TestAddressesMatchesByWorkloadID(t *testing.T) {
+	d := newFakeDaemon()
+	p := &Provider{cli: d.newClient(t)}
+	ctx := context.Background()
+
+	makeSvc := func(name, wlid string, vip string) swarm.Service {
+		spec := toServiceSpec(ensureNS, capability.Workload{ID: wlid, Process: "web-1"}, 41, nil)
+		spec.Name = name
+		spec.Labels[labelWorkload] = wlid
+		svc := swarm.Service{ID: "srv-" + name, Spec: spec}
+		svc.Endpoint.VirtualIPs = []swarm.EndpointVirtualIP{{Addr: netip.MustParsePrefix(vip + "/24")}}
+		return svc
+	}
+	d.store["fleetly-acme-shop-web-web"] = makeSvc("fleetly-acme-shop-web-web", "wl_01", "10.0.0.41")
+	d.store["fleetly-acme-shop-web-web-g42"] = makeSvc("fleetly-acme-shop-web-web-g42", "wl_01-g42", "10.0.0.42")
+
+	ports := []capability.WorkloadPort{{Port: 8080, Protocol: capability.ProtocolHTTP}}
+	oldW := capability.Workload{ID: "wl_01", Process: "web-1", Ports: ports}
+	newW := capability.Workload{ID: "wl_01-g42", Process: "web-1", Ports: ports}
+
+	eps, err := p.Addresses(ctx, ensureNS, []capability.Workload{oldW})
+	require.NoError(t, err)
+	require.Len(t, eps, 1)
+	assert.Equal(t, "10.0.0.41", eps[0].Addr)
+	assert.Equal(t, int32(8080), eps[0].Port)
+
+	eps, err = p.Addresses(ctx, ensureNS, []capability.Workload{newW})
+	require.NoError(t, err)
+	require.Len(t, eps, 1)
+	assert.Equal(t, "10.0.0.42", eps[0].Addr, "the expected set pins the serving generation")
 }

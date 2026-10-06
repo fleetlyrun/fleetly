@@ -51,17 +51,32 @@ const (
 	swarmServiceNameLimit = 63
 )
 
+// workloadGeneration 解析载体生效 Generation（ADR-0048 双代窗）：逐载体
+// 覆写优先，0 = 沿用 Ensure 调用 gen（rolling 存量零漂移）。gen 标签与
+// 代次名后缀共用本真源——两者不一致会让 Drift 对照与后端解析各说各话。
+func workloadGeneration(w capability.Workload, gen capability.Generation) uint64 {
+	if w.Generation != 0 {
+		return w.Generation
+	}
+	return uint64(gen)
+}
+
 // workloadServiceName 计算载体服务名：App 域 = fleetly-<team>-<prj>-<app>-
 // <proc>；Task 域 = fleetly-run-<run id>（决策 4/7）；Database 域 =
-// fleetly-db-<database id>（ADR-0029）。超长时截断并以稳定哈希后缀兜底
-// （唯一性以 fleetly.* 标记锚定，架构 §5）。
-func workloadServiceName(ns capability.NamespaceRef, w capability.Workload) string {
+// fleetly-db-<database id>（ADR-0029）。代次化载体（GenerationScoped，
+// ADR-0048 决策 1.4）追加 -g<gen> 后缀——双代窗两代各自独立载体，rolling
+// 名零变化。超长时截断并以稳定哈希后缀兜底（唯一性以 fleetly.* 标记锚定，
+// 架构 §5）。
+func workloadServiceName(ns capability.NamespaceRef, w capability.Workload, gen capability.Generation) string {
 	var full string
 	switch {
 	case ns.Task != "":
 		full = strings.Join([]string{runNamePrefix, w.ID}, "-")
 	case ns.Database != "":
 		full = strings.Join([]string{dbNamePrefix, w.ID}, "-")
+	case w.GenerationScoped:
+		full = strings.Join([]string{namePrefix, ns.Team, ns.Project, ns.App, w.Process,
+			"g" + strconv.FormatUint(workloadGeneration(w, gen), 10)}, "-")
 	default:
 		full = strings.Join([]string{namePrefix, ns.Team, ns.Project, ns.App, w.Process}, "-")
 	}
@@ -112,7 +127,7 @@ func workloadLabels(ns capability.NamespaceRef, w capability.Workload, gen capab
 		labelProject:    sanitizeNamePart(ns.Project),
 		labelWorkload:   w.ID,
 		labelProcess:    sanitizeNamePart(w.Process),
-		labelGeneration: strconv.FormatUint(uint64(gen), 10),
+		labelGeneration: strconv.FormatUint(workloadGeneration(w, gen), 10),
 	}
 	switch {
 	case ns.Task != "":
@@ -258,7 +273,7 @@ func toServiceSpec(ns capability.NamespaceRef, w capability.Workload, gen capabi
 
 	return swarm.ServiceSpec{
 		Annotations: swarm.Annotations{
-			Name:   workloadServiceName(ns, w),
+			Name:   workloadServiceName(ns, w, gen),
 			Labels: container.Labels,
 		},
 		TaskTemplate: task,

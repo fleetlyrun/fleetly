@@ -266,6 +266,23 @@ func (f *fakeDaemon) routeLocked(r *http.Request, key string) (status int, body 
 		items = filterSecrets(items, decodeFilters(r.URL.Query()))
 		sort.Slice(items, func(i, j int) bool { return items[i].Spec.Name < items[j].Spec.Name })
 		return http.StatusOK, items, true
+	case strings.HasPrefix(key, "GET /secrets/"):
+		// secret 载体 inspect（ensureSecrets 的 get 半边）。
+		ref := strings.TrimPrefix(key, "GET /secrets/")
+		for name, sec := range f.secrets {
+			if name == ref || sec.ID == ref {
+				return http.StatusOK, sec, true
+			}
+		}
+		return http.StatusNotFound, map[string]string{"message": fmt.Sprintf("secret %s not found", ref)}, true
+	case key == "POST /secrets/create":
+		var spec swarm.SecretSpec
+		if err := json.NewDecoder(r.Body).Decode(&spec); err != nil {
+			return http.StatusBadRequest, map[string]string{"message": err.Error()}, true
+		}
+		sec := swarm.Secret{ID: "sec-" + spec.Name, Spec: spec}
+		f.secrets[spec.Name] = sec
+		return http.StatusOK, swarm.SecretCreateResponse{ID: sec.ID}, true
 	case strings.HasPrefix(key, "DELETE /secrets/"):
 		ref := strings.TrimPrefix(key, "DELETE /secrets/")
 		for name, sec := range f.secrets {
