@@ -50,6 +50,7 @@ type Client struct {
 	Runs        automationv1.RunsServiceClient
 	Schedules   automationv1.SchedulesServiceClient
 	Nodes       runtimev1.NodesServiceClient
+	Exec        runtimev1.ExecServiceClient
 	Routes      proxyv1.RoutesServiceClient
 	Events      telemetryv1.EventsServiceClient
 	Logs        telemetryv1.LogsServiceClient
@@ -121,6 +122,7 @@ func newClient(conn *grpc.ClientConn) *Client {
 		Runs:        automationv1.NewRunsServiceClient(conn),
 		Schedules:   automationv1.NewSchedulesServiceClient(conn),
 		Nodes:       runtimev1.NewNodesServiceClient(conn),
+		Exec:        runtimev1.NewExecServiceClient(conn),
 		Routes:      proxyv1.NewRoutesServiceClient(conn),
 		Events:      telemetryv1.NewEventsServiceClient(conn),
 		Logs:        telemetryv1.NewLogsServiceClient(conn),

@@ -109,6 +109,10 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 		// Telemetry 上下文。
 		groupVerb("events", "list and follow platform events from the outbox", newEventsListVerb(), newEventsFollowVerb()),
 		newLogsVerb(),
+		// Exec 子面（F3.2，ADR-0049）：one-shot 命令（退出码透传）与交互
+		// TTY——机器与人机同面。
+		newExecVerb(),
+		newShellVerb(),
 		// Metrics/Alerting 上下文（F2.5，ADR-0041）。
 		groupVerb("metrics", "query the managed metrics store (PromQL pass-through)", newMetricsQueryVerb()),
 		groupVerb("channels", "manage notification channels for alerting (credentials are write-only)",
@@ -132,6 +136,12 @@ func exitCodeFor(err error) int {
 	}
 	if errors.Is(err, errChanges) {
 		return exitChanges
+	}
+	// exec 子面退出码透传（F3.2，ADR-0049）：载体进程退出码即 CLI 退出码
+	//（机器编排的成败锚——`fleetly exec app/web -- make test` 的 $?）。
+	var exec exitCodeError
+	if errors.As(err, &exec) {
+		return int(exec.code)
 	}
 	var unknown *commands.UnknownVerbError
 	var usage *commands.UsageError

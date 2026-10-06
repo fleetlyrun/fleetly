@@ -187,6 +187,12 @@
       "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"app_id\":{\"type\":\"string\"},\"deployment_id\":{\"type\":\"string\"},\"error\":{\"type\":\"string\"},\"from_revision\":{\"type\":\"string\"},\"generation\":{\"type\":\"integer\"},\"kind\":{\"type\":\"string\"},\"observe_deadline\":{\"type\":\"string\"},\"state\":{\"type\":\"string\"},\"superseded_by\":{\"type\":\"string\"},\"to_revision\":{\"type\":\"string\"}},\"required\":[\"deployment_id\",\"app_id\",\"state\",\"generation\"],\"type\":\"object\"}"
     },
     {
+      "name": "exec.session_opened",
+      "kind": "event",
+      "summary": "An exec session was accepted into a running workload (actor, process, instance, node and command are in the payload; change freeze is exempt — diagnostics face).",
+      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"actor\":{\"type\":\"string\"},\"command\":{\"items\":{\"type\":\"string\"},\"type\":\"array\"},\"instance\":{\"type\":\"string\"},\"node_id\":{\"type\":\"string\"},\"process\":{\"type\":\"string\"},\"session_id\":{\"type\":\"string\"},\"tty\":{\"type\":\"boolean\"}},\"required\":[\"session_id\",\"actor\",\"process\",\"instance\",\"node_id\",\"command\",\"tty\"],\"type\":\"object\"}"
+    },
+    {
       "name": "freeze.lifted",
       "kind": "event",
       "summary": "A change freeze was lifted; change verbs in scope are accepted again.",

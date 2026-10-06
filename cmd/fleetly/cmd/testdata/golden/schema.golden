@@ -30,6 +30,7 @@ deployment.releasing	event	Deployment started releasing workloads to runtime.
 deployment.rolling_back	event	Deployment started replaying last successful revision.
 deployment.succeeded	event	Deployment reached succeeded terminal state.
 deployment.superseded	event	Deployment superseded by a newer one.
+exec.session_opened	event	An exec session was accepted into a running workload (actor, process, instance, node and command are in the payload; change freeze is exempt — diagnostics face).
 freeze.lifted	event	A change freeze was lifted; change verbs in scope are accepted again.
 freeze.set	event	A change freeze was set for a team (or globally); change verbs in scope are refused with the reason.
 hook.push_accepted	event	A verified webhook push triggered a deployment.
