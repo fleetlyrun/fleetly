@@ -87,7 +87,7 @@
 
 ## N3 体验全量
 
-- F3.1 Console 全功能：全部读写操作、终端页、quickstart 向导 UI 化、审计/设置页。
+- F3.1 Console 全功能：全部读写操作、终端页、quickstart 向导 UI 化、审计/设置页。〔ADR-0048 引擎实施批已提前兑现引擎半边（2026-10-06，e2e20e6..0b2d5fb 七 commit，验收锚全勾带实录）；本批承接 **Console 叙事面 + API 可见面盘点**：①部署详情页"当前代/上一代"双代窗叙事（数据面 = deployments 行的 generation/from_generation——**from_generation 已落列（00024 迁移）但未进 proto Deployment 消息，本批需 only-add 暴露**（Console 判"双代窗进行中"= 活跃部署 state ∈ releasing/observing + strategy 面）；②spec 的 strategy 字段已进 Revision 冻结体（protojson 枚举名规范形）——Console 部署表单的 per-process 策略选择与 compose/spec_file intake 对齐；③进程双别名与代次名（{proc}/{proc}.{app}/{proc}.g{gen}）在进程详情/日志视图的展示锚；④蓝绿资源代价诚实标注（双代窗副本翻倍）与双代窗跨进程引用诚实边界（裸名/全名 RR 两代）——架构 §5 已落口径；⑤CLI 已就绪面：deploy --compose-file 的 deploy.strategy 键、deploy --spec-file、rollback 即观察窗手动切回〕
 - F3.2 exec 子面：RuntimeExec + 反向中继（节点零入站端口）+ `fleetly shell` + Web 终端（票据鉴权、限额、审计）。
 - F3.3 模板库：模板 schema（语义变量/自动生成密码/域名）+ 一键部署 + CDN 热更新 + 竞品迁移钩子（`create-from-dokploy` 形态）。
 - F3.4 Git 集成扩展：GitLab/Gitea 原生 webhook（届时按需求确认）。

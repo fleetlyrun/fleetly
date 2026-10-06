@@ -162,23 +162,6 @@ func (o *observDomain) scanGen(appID string, gen uint64, pred func(capability.Wo
 	return "", count
 }
 
-// expectations 返回 App 名下的期望 Workload 集（最近 Ensure 投影缓存
-// 快照；Addresses 的端口真源）。
-func (o *observDomain) expectations(appID string) []capability.Workload {
-	o.mu.RLock()
-	defer o.mu.RUnlock()
-	var out []capability.Workload
-	for wid, owner := range o.workloadApp {
-		if owner.domain != ownerApp || owner.id != appID {
-			continue
-		}
-		if w, ok := o.ensuredSpec[wid]; ok {
-			out = append(out, w)
-		}
-	}
-	return out
-}
-
 // routeExpectations 是 Route 后端解析的期望集快照——蓝绿代次解析的显式
 // 接口（ADR-0048 决策 4/P15：resolveBackend 消费代次化地址，不再是观测
 // 缓存"不参与决策"口径的例外）。过滤规则按进程组收窄：仅当某进程在

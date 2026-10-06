@@ -109,6 +109,7 @@ type RuntimeAdmin interface { Drain/Cordon/... }    // 子面，CLI 管理操作
 - **材料分发**（ADR-0014）：Ensure 携带平台已解析的镜像拉取凭证与 Secret 注入材料，Provider 按节点分发（swarm `--with-registry-auth` 等价）；凭证不落载体 label 或明文 env（旧 DT-2 真机 404 教训）。
 - **Drift 判定**：Provider 在 Watch 流里对照最近 Ensure 的 Generation 报 `drift` 信号；平台以 ID 查权威表判定归属（§3 已述），不解析载体命名。
 - **载体命名/标记**：Provider 私有。swarm Provider 自持命名公式（`fleetly-<team>-<prj>-<app>-<proc>`，受 64 字符上限约束时可截断策略，唯一性以平台 ID 标记兜底）与 `fleetly.*` 标记；换 k8s Provider 时换成 annotation，平台语义不变。
+- **部署策略（blue-green 编排变体，ADR-0048）**：蓝绿是 engine 序列不是 Runtime 子面——双代窗 = 期望集阶段性包含两代（窗内载体各携自身 Generation 锚与逐载体材料，旧代零扰动；代次化载体名/ID 带 `-g<gen>` 成分，Provider 私有公式扩展），流量切换 = 部署行态驱动在服代 + Proxy 即时重发布。**诚实边界**：双代窗内跨进程 DNS 引用（裸名/全名）轮询两代（无状态调用共存窗语义，与滚动一致）；接流量走 Proxy 精确切换；窗内 Workload 计数双代都计（平台无 App 载体配额面，Task 域配额不参与代语义）。
 
 ## 6. 状态与事件
 

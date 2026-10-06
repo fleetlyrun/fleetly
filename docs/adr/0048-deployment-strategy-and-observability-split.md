@@ -165,19 +165,60 @@ rolling + 健康门在多数场景够用的判断维持不变；独占价值三�
 
 - [x] 本 ADR + CONTEXT.md Deployment Strategy 词条（_Avoid_: canary,
       slot）+ wording 守卫分诊（canary banned / slot skipped）绿
-- [ ] strategy 归一化 golden 双形态（rolling 缺省零值兼容存量零漂移 +
-      blue-green 值域执法拒绝文本）〔F3.1 批〕
-- [ ] blue-green e2e：Route 探针在切换步零 5xx（ADR-0015 同款探针口径）
-      〔F3.1 批〕
-- [ ] blue-green e2e：旧代载体在观察窗内始终存活（载体 ID 不变）〔F3.1 批〕
-- [ ] 新代 L1 失败：旧代零扰动（载体 ID 不变、零重启），Deployment 终态
-      failed，无 Replay 发生〔F3.1 批〕
-- [ ] 观察窗内手动切回：Route 指回旧代，请求恢复，旧代载体未重建〔F3.1 批〕
-- [ ] supersede 在双代窗内抢占：无双代残留（孤儿清扫零新增）〔F3.1 批〕
-- [ ] 双节点拓扑下蓝绿两代可分节点调度（Placement 约束对两代一致）〔F3.1 批〕
-- [ ] P16：projection 断言 Addressing 双值（进程名 + 进程名.应用名）+
-      同网撞名消歧 e2e（双 App 同名进程，全名各自可达、裸名 RR）〔F3.1 批〕
-- [ ] P15：观测域组件化落位（期望缓存/resolveBackend 域内组件 + 蓝绿代次
-      解析显式接口），全测试绿 + golden 零漂移〔F3.1 批〕
-- [ ] 双代收口守卫（孤儿清扫断言）入 internal/guards〔F3.1 批，AGENTS
-      纪律：可静态执法承诺同批开守卫任务〕
+- [x] strategy 归一化 golden 双形态（rolling 缺省零值兼容存量零漂移 +
+      blue-green 值域执法拒绝文本）〔实施批 2026-10-06，e2e20e6：golden
+      三腿双形态八件（deploy-compose-strategy 归一化受理 / deploy-image-
+      no-strategy 缺省零值零漂移 / revisions-diff-strategy 钉
+      DEPLOY_STRATEGY_BLUE_GREEN 规范形增量）；值域拒绝文本住 spec 单测
+      三件（ValidateProcess 未知数值/job 禁面/compose 词形映射）——CLI
+      错误信封含随机 error_id 不可 golden（freeze 拒绝面同款先例）；存量
+      golden 全零漂移〕
+- [x] blue-green e2e：Route 探针在切换步零 5xx（ADR-0015 同款探针口径）
+      〔0b2d5fb：dind-bluegreen.sh 腿 1，部署全程探针轮询 240 请求零失败
+      （5xx/传输错误双计）〕
+- [x] blue-green e2e：旧代载体在观察窗内始终存活（载体 ID 不变）〔0b2d5fb：
+      腿 2——双代窗内旧代服务 ID 不变 + task 在跑；引擎面另有
+      bluegreen_test.go 六件 hermetic 锚（7fc343d）〕
+- [x] 新代 L1 失败：旧代零扰动（载体 ID 不变、零重启），Deployment 终态
+      failed，无 Replay 发生〔0b2d5fb：腿 3——坏 command 使新代永不就绪，
+      Route 仍 v2/基线服务 ID 不变/部署行数不增（rollback_attempted=1 终
+      态）/失败代零残留〕
+- [x] 观察窗内手动切回：Route 指回旧代，请求恢复，旧代载体未重建〔0b2d5fb：
+      腿 4——`fleetly rollback`（Submit supersede 语义）即手动切回入口：
+      抢占者首个期望集移除在途新代、回放部署自身双代窗以基线为 from——
+      流量指回 v2 且基线服务 ID 全程不变〕
+- [x] supersede 在双代窗内抢占：无双代残留（孤儿清扫零新增）〔0b2d5fb：
+      腿 5——观察窗内 supersede，终态单载体；机制 = 期望集不含即移除，
+      无第二拆除通道（守卫 TestBlueGreenCollectionUsesExpectationSetsOnly
+      静态执法，518d16e）〕
+- [x] 双节点拓扑下蓝绿两代可分节点调度（Placement 约束对两代一致）〔0b2d5fb：
+      腿 6——spec_file 声明 worker 钉住，新代 task 落 worker、约束公式
+      锚定平台节点 ID（两代约束面同源 stampDeploymentGenerations）〕
+- [x] P16：projection 断言 Addressing 双值（进程名 + 进程名.应用名）+
+      同网撞名消歧 e2e（双 App 同名进程，全名各自可达、裸名 RR）〔8bc9734
+      投影/别名保点断言；0b2d5fb 腿 7——web.alpha/web.beta 各自解析不同
+      VIP 且内容各归各，裸名 web 双 VIP（DNS RR 面）〕
+- [x] P15：观测域组件化落位（期望缓存/resolveBackend 域内组件 + 蓝绿代次
+      解析显式接口），全测试绿 + golden 零漂移〔3f17645 observDomain 域
+      内组件（自有锁/快照面）；7fc343d 落 routeExpectations 显式接口
+      （resolveBackend 消费代次化地址——进程组多代歧义才按在服代圈定，
+      rolling/稳态零漂移）+ servingGenerations 部署行态推导〕
+- [x] 双代收口守卫（孤儿清扫断言）入 internal/guards〔518d16e：
+      TestBlueGreenCollectionUsesExpectationSetsOnly（engine 对
+      runtime.Remove 调用面收口四域级拆除白名单）+
+      TestBlueGreenGenerationNamingSingleSource（代次后缀公式单源）〕
+
+### 实施批实录（2026-10-06，七 commit e2e20e6..0b2d5fb）
+
+引擎面七件全清、真机 e2e 双节点全绿；本批为**引擎实施批**（原排期 F3.1
+写面批的引擎半边提前兑现，Console 叙事面仍随 F3.1）。关键设计落点：双代
+窗 = 单次 Ensure 联合期望集（旧代成员确定性重投影 + 基线 gen 锚 + 逐载体
+基线材料——零扰动；新代成员本部署 gen + 代次化 ID + {proc}.g{gen} 代次
+名）；服务代由部署行态纯推导（observing = 已切换，余在途 = 基线代），
+无内存第二真源；L1 失败 = Ensure 仅基线 + failed 终态（rollback_attempted
+落位，无 Replay）；切回走 rolling-back 在基线 gen 重放（无新号——succeeded
+行"行 gen == 载体 gen"不变式保持）；supersede 收口零特例代码。配套：
+deployments.from_generation 列（00024 迁移）、Drift 逐载体对照锚、
+Addresses 匹配键 process label → 平台 Workload ID 标记、materialize 产物
+按被物化 revision 解析（回放 from_build 拿错产物源的存量错源闭口）。留给
+F3.1 的 API 可见面盘点见 checklist F3.1 行注记。
