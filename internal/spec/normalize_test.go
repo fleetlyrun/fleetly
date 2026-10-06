@@ -87,3 +87,36 @@ func TestNormalizeComposeRejections(t *testing.T) {
 		})
 	}
 }
+
+// compose 扩展键 deploy.strategy（ADR-0048 决策 1）：blue-green 人类词形
+// → 枚举；缺省不落字段（零值 = rolling——存量冻结体零漂移）；值域外
+// 拒绝且指名 deploy.strategy 字段与合法值。
+func TestNormalizeComposeDeployStrategy(t *testing.T) {
+	docFor := func(strategy any) ComposeDoc {
+		svc := map[string]any{"image": "nginx:1.27"}
+		if strategy != nil {
+			svc["deploy"] = map[string]any{"strategy": strategy}
+		}
+		return ComposeDoc{"services": map[string]any{"web": svc}}
+	}
+
+	s, err := NormalizeCompose(docFor("blue-green"), "app-1", "prj-1")
+	require.NoError(t, err)
+	require.Len(t, s.GetProcesses(), 1)
+	assert.Equal(t, specv1.DeployStrategy_DEPLOY_STRATEGY_BLUE_GREEN, s.GetProcesses()[0].GetStrategy())
+
+	s, err = NormalizeCompose(docFor("rolling"), "app-1", "prj-1")
+	require.NoError(t, err)
+	assert.Equal(t, specv1.DeployStrategy_DEPLOY_STRATEGY_ROLLING, s.GetProcesses()[0].GetStrategy())
+
+	// 缺省 = 零值（UNSPECIFIED 归一 rolling）：无策略的 compose 冻结体
+	// 逐字节与存量形态一致——零漂移锚。
+	s, err = NormalizeCompose(docFor(nil), "app-1", "prj-1")
+	require.NoError(t, err)
+	assert.Equal(t, specv1.DeployStrategy_DEPLOY_STRATEGY_UNSPECIFIED, s.GetProcesses()[0].GetStrategy())
+
+	_, err = NormalizeCompose(docFor("immediate"), "app-1", "prj-1")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "deploy.strategy")
+	assert.Contains(t, err.Error(), `strategy must be rolling or blue-green (got "immediate")`)
+}

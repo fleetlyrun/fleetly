@@ -132,6 +132,13 @@ func ValidateJob(field string, j *specv1.JobSpec) error {
 	if p.GetReplicas() > 1 {
 		return invalidf(field+".process.replicas", "a deploy-time job is a single one-shot run")
 	}
+	// 部署策略是一次性执行无意义面（ADR-0048：strategy 是 App Process 的
+	// 切换面；job 走值域兜底，此处给精确禁面理由——非缺省形态一律拒）。
+	switch p.GetStrategy() {
+	case specv1.DeployStrategy_DEPLOY_STRATEGY_UNSPECIFIED, specv1.DeployStrategy_DEPLOY_STRATEGY_ROLLING:
+	default:
+		return invalidf(field+".process.strategy", "a deploy-time job is a single one-shot run; deployment strategy is an app-process surface")
+	}
 	for i, net := range p.GetNetworks() {
 		if net == "" {
 			return invalidf(fmt.Sprintf("%s.process.networks[%d]", field, i), "must not be empty")
@@ -307,6 +314,17 @@ func ValidateProcess(field string, p *specv1.ProcessSpec) error {
 	}
 	if p.GetReplicas() < 0 {
 		return invalidf(field+".replicas", "must not be negative")
+	}
+	// 部署策略值域（ADR-0048 决策 1：词条单源 = CONTEXT.md Deployment
+	// Strategy——rolling 缺省 | blue-green；Avoid 表两词条（渐进分流/代次
+	// 槽位机制）显式不做，不接受近义词形态）。UNSPECIFIED（零值/缺省）
+	// 归一为 rolling：存量 Revision 无该字段重放即 rolling，无迁移面。
+	switch p.GetStrategy() {
+	case specv1.DeployStrategy_DEPLOY_STRATEGY_UNSPECIFIED,
+		specv1.DeployStrategy_DEPLOY_STRATEGY_ROLLING,
+		specv1.DeployStrategy_DEPLOY_STRATEGY_BLUE_GREEN:
+	default:
+		return invalidf(field+".strategy", "strategy must be rolling or blue-green (got %d)", p.GetStrategy())
 	}
 	if err := validateHealthcheck(field+".healthcheck", p.GetHealthcheck()); err != nil {
 		return err

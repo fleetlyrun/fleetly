@@ -27,6 +27,64 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// DeployStrategy 是部署切换策略（CONTEXT.md Deployment Strategy 词条：
+// rolling | blue-green；Avoid 表两词条不引入——渐进分流与代次槽位机制
+// 均显式不做，ADR-0048）。blue-green = engine 的编排变体（Runtime 契约
+// 不变，ADR-0048）：双代窗期间两代载体并存，新代 L1 全就绪才切换流量。
+// UNSPECIFIED（零值）语义归一为 rolling——存量 Revision 无该字段重放即
+// rolling，无迁移面。
+type DeployStrategy int32
+
+const (
+	// 缺省 = rolling（归一面：投影/引擎按 rolling 语义消费）。
+	DeployStrategy_DEPLOY_STRATEGY_UNSPECIFIED DeployStrategy = 0
+	// 滚动替换（与既有语义逐字节相同——存量零变化）。
+	DeployStrategy_DEPLOY_STRATEGY_ROLLING DeployStrategy = 1
+	// 蓝绿：旧代∪新代双代窗 → 新代 L1 门 → 切换 → 观察窗 → 收口。
+	DeployStrategy_DEPLOY_STRATEGY_BLUE_GREEN DeployStrategy = 2
+)
+
+// Enum value maps for DeployStrategy.
+var (
+	DeployStrategy_name = map[int32]string{
+		0: "DEPLOY_STRATEGY_UNSPECIFIED",
+		1: "DEPLOY_STRATEGY_ROLLING",
+		2: "DEPLOY_STRATEGY_BLUE_GREEN",
+	}
+	DeployStrategy_value = map[string]int32{
+		"DEPLOY_STRATEGY_UNSPECIFIED": 0,
+		"DEPLOY_STRATEGY_ROLLING":     1,
+		"DEPLOY_STRATEGY_BLUE_GREEN":  2,
+	}
+)
+
+func (x DeployStrategy) Enum() *DeployStrategy {
+	p := new(DeployStrategy)
+	*p = x
+	return p
+}
+
+func (x DeployStrategy) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (DeployStrategy) Descriptor() protoreflect.EnumDescriptor {
+	return file_fleetly_spec_v1_spec_proto_enumTypes[0].Descriptor()
+}
+
+func (DeployStrategy) Type() protoreflect.EnumType {
+	return &file_fleetly_spec_v1_spec_proto_enumTypes[0]
+}
+
+func (x DeployStrategy) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use DeployStrategy.Descriptor instead.
+func (DeployStrategy) EnumDescriptor() ([]byte, []int) {
+	return file_fleetly_spec_v1_spec_proto_rawDescGZIP(), []int{0}
+}
+
 // Protocol 是 Route/端口协议（http/h2c/tcp）。
 type Protocol int32
 
@@ -64,11 +122,11 @@ func (x Protocol) String() string {
 }
 
 func (Protocol) Descriptor() protoreflect.EnumDescriptor {
-	return file_fleetly_spec_v1_spec_proto_enumTypes[0].Descriptor()
+	return file_fleetly_spec_v1_spec_proto_enumTypes[1].Descriptor()
 }
 
 func (Protocol) Type() protoreflect.EnumType {
-	return &file_fleetly_spec_v1_spec_proto_enumTypes[0]
+	return &file_fleetly_spec_v1_spec_proto_enumTypes[1]
 }
 
 func (x Protocol) Number() protoreflect.EnumNumber {
@@ -77,7 +135,7 @@ func (x Protocol) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Protocol.Descriptor instead.
 func (Protocol) EnumDescriptor() ([]byte, []int) {
-	return file_fleetly_spec_v1_spec_proto_rawDescGZIP(), []int{0}
+	return file_fleetly_spec_v1_spec_proto_rawDescGZIP(), []int{1}
 }
 
 // AppSpec 是长运行可部署单元的期望状态（App = 一个或多个 Process）。
@@ -486,7 +544,14 @@ type ProcessSpec struct {
 	Placement   *PlacementSpec      `protobuf:"bytes,12,opt,name=placement,proto3" json:"placement,omitempty"`
 	Volumes     []*VolumeAttachment `protobuf:"bytes,13,rep,name=volumes,proto3" json:"volumes,omitempty"`
 	// networks 是网络附件（Project 网络名或 taskGroup:<name> 跨挂）。
-	Networks      []string `protobuf:"bytes,14,rep,name=networks,proto3" json:"networks,omitempty"`
+	Networks []string `protobuf:"bytes,14,rep,name=networks,proto3" json:"networks,omitempty"`
+	// strategy 是部署切换策略（ADR-0048 决策 1：rolling 缺省 | blue-green
+	// 可选——Process 级，"web 蓝绿 + worker 滚动"的混合是真实需求）。
+	// UNSPECIFIED（零值）归一为 rolling：存量 Revision 无该字段重放即
+	// rolling，无迁移面。值域住叶子校验（spec.ValidateProcess，词条单源
+	// = CONTEXT.md Deployment Strategy）。Database/受管域不适用（结构性
+	// 保证，同 ADR）。
+	Strategy      DeployStrategy `protobuf:"varint,15,opt,name=strategy,proto3,enum=fleetly.spec.v1.DeployStrategy" json:"strategy,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -628,6 +693,13 @@ func (x *ProcessSpec) GetNetworks() []string {
 		return x.Networks
 	}
 	return nil
+}
+
+func (x *ProcessSpec) GetStrategy() DeployStrategy {
+	if x != nil {
+		return x.Strategy
+	}
+	return DeployStrategy_DEPLOY_STRATEGY_UNSPECIFIED
 }
 
 type isProcessSpec_ImageOrigin interface {
@@ -1790,7 +1862,7 @@ const file_fleetly_spec_v1_spec_proto_rawDesc = "" +
 	"\vImageSource\x12\x10\n" +
 	"\x03ref\x18\x01 \x01(\tR\x03ref\"\x1e\n" +
 	"\fUploadSource\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\x9d\x05\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\xda\x05\n" +
 	"\vProcessSpec\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
 	"\x05image\x18\x02 \x01(\tH\x00R\x05image\x12\x1f\n" +
@@ -1809,7 +1881,8 @@ const file_fleetly_spec_v1_spec_proto_rawDesc = "" +
 	"\breplicas\x18\v \x01(\x03R\breplicas\x12<\n" +
 	"\tplacement\x18\f \x01(\v2\x1e.fleetly.spec.v1.PlacementSpecR\tplacement\x12;\n" +
 	"\avolumes\x18\r \x03(\v2!.fleetly.spec.v1.VolumeAttachmentR\avolumes\x12\x1a\n" +
-	"\bnetworks\x18\x0e \x03(\tR\bnetworks\x1a6\n" +
+	"\bnetworks\x18\x0e \x03(\tR\bnetworks\x12;\n" +
+	"\bstrategy\x18\x0f \x01(\x0e2\x1f.fleetly.spec.v1.DeployStrategyR\bstrategy\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01B\x0e\n" +
@@ -1896,7 +1969,11 @@ const file_fleetly_spec_v1_spec_proto_rawDesc = "" +
 	"\aproject\x18\x02 \x01(\tR\aproject\"\x82\x01\n" +
 	"\x10BackupPolicySpec\x125\n" +
 	"\binterval\x18\x01 \x01(\v2\x19.google.protobuf.DurationR\binterval\x127\n" +
-	"\tretention\x18\x02 \x01(\v2\x19.google.protobuf.DurationR\tretention*[\n" +
+	"\tretention\x18\x02 \x01(\v2\x19.google.protobuf.DurationR\tretention*n\n" +
+	"\x0eDeployStrategy\x12\x1f\n" +
+	"\x1bDEPLOY_STRATEGY_UNSPECIFIED\x10\x00\x12\x1b\n" +
+	"\x17DEPLOY_STRATEGY_ROLLING\x10\x01\x12\x1e\n" +
+	"\x1aDEPLOY_STRATEGY_BLUE_GREEN\x10\x02*[\n" +
 	"\bProtocol\x12\x18\n" +
 	"\x14PROTOCOL_UNSPECIFIED\x10\x00\x12\x11\n" +
 	"\rPROTOCOL_HTTP\x10\x01\x12\x10\n" +
@@ -1915,73 +1992,75 @@ func file_fleetly_spec_v1_spec_proto_rawDescGZIP() []byte {
 	return file_fleetly_spec_v1_spec_proto_rawDescData
 }
 
-var file_fleetly_spec_v1_spec_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_fleetly_spec_v1_spec_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
 var file_fleetly_spec_v1_spec_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
 var file_fleetly_spec_v1_spec_proto_goTypes = []any{
-	(Protocol)(0),               // 0: fleetly.spec.v1.Protocol
-	(*AppSpec)(nil),             // 1: fleetly.spec.v1.AppSpec
-	(*AppRef)(nil),              // 2: fleetly.spec.v1.AppRef
-	(*Source)(nil),              // 3: fleetly.spec.v1.Source
-	(*GitSource)(nil),           // 4: fleetly.spec.v1.GitSource
-	(*ImageSource)(nil),         // 5: fleetly.spec.v1.ImageSource
-	(*UploadSource)(nil),        // 6: fleetly.spec.v1.UploadSource
-	(*ProcessSpec)(nil),         // 7: fleetly.spec.v1.ProcessSpec
-	(*PortSpec)(nil),            // 8: fleetly.spec.v1.PortSpec
-	(*HealthcheckSpec)(nil),     // 9: fleetly.spec.v1.HealthcheckSpec
-	(*ExecProbe)(nil),           // 10: fleetly.spec.v1.ExecProbe
-	(*ResourcesSpec)(nil),       // 11: fleetly.spec.v1.ResourcesSpec
-	(*PlacementSpec)(nil),       // 12: fleetly.spec.v1.PlacementSpec
-	(*VolumeAttachment)(nil),    // 13: fleetly.spec.v1.VolumeAttachment
-	(*BuildSpec)(nil),           // 14: fleetly.spec.v1.BuildSpec
-	(*RailpackBuilder)(nil),     // 15: fleetly.spec.v1.RailpackBuilder
-	(*StaticBuilder)(nil),       // 16: fleetly.spec.v1.StaticBuilder
-	(*JobSpec)(nil),             // 17: fleetly.spec.v1.JobSpec
-	(*TaskSpec)(nil),            // 18: fleetly.spec.v1.TaskSpec
-	(*TaskRef)(nil),             // 19: fleetly.spec.v1.TaskRef
-	(*DatabaseSpec)(nil),        // 20: fleetly.spec.v1.DatabaseSpec
-	(*DatabaseRef)(nil),         // 21: fleetly.spec.v1.DatabaseRef
-	(*BackupPolicySpec)(nil),    // 22: fleetly.spec.v1.BackupPolicySpec
-	nil,                         // 23: fleetly.spec.v1.ProcessSpec.EnvEntry
-	nil,                         // 24: fleetly.spec.v1.JobSpec.EnvEntry
-	(*durationpb.Duration)(nil), // 25: google.protobuf.Duration
+	(DeployStrategy)(0),         // 0: fleetly.spec.v1.DeployStrategy
+	(Protocol)(0),               // 1: fleetly.spec.v1.Protocol
+	(*AppSpec)(nil),             // 2: fleetly.spec.v1.AppSpec
+	(*AppRef)(nil),              // 3: fleetly.spec.v1.AppRef
+	(*Source)(nil),              // 4: fleetly.spec.v1.Source
+	(*GitSource)(nil),           // 5: fleetly.spec.v1.GitSource
+	(*ImageSource)(nil),         // 6: fleetly.spec.v1.ImageSource
+	(*UploadSource)(nil),        // 7: fleetly.spec.v1.UploadSource
+	(*ProcessSpec)(nil),         // 8: fleetly.spec.v1.ProcessSpec
+	(*PortSpec)(nil),            // 9: fleetly.spec.v1.PortSpec
+	(*HealthcheckSpec)(nil),     // 10: fleetly.spec.v1.HealthcheckSpec
+	(*ExecProbe)(nil),           // 11: fleetly.spec.v1.ExecProbe
+	(*ResourcesSpec)(nil),       // 12: fleetly.spec.v1.ResourcesSpec
+	(*PlacementSpec)(nil),       // 13: fleetly.spec.v1.PlacementSpec
+	(*VolumeAttachment)(nil),    // 14: fleetly.spec.v1.VolumeAttachment
+	(*BuildSpec)(nil),           // 15: fleetly.spec.v1.BuildSpec
+	(*RailpackBuilder)(nil),     // 16: fleetly.spec.v1.RailpackBuilder
+	(*StaticBuilder)(nil),       // 17: fleetly.spec.v1.StaticBuilder
+	(*JobSpec)(nil),             // 18: fleetly.spec.v1.JobSpec
+	(*TaskSpec)(nil),            // 19: fleetly.spec.v1.TaskSpec
+	(*TaskRef)(nil),             // 20: fleetly.spec.v1.TaskRef
+	(*DatabaseSpec)(nil),        // 21: fleetly.spec.v1.DatabaseSpec
+	(*DatabaseRef)(nil),         // 22: fleetly.spec.v1.DatabaseRef
+	(*BackupPolicySpec)(nil),    // 23: fleetly.spec.v1.BackupPolicySpec
+	nil,                         // 24: fleetly.spec.v1.ProcessSpec.EnvEntry
+	nil,                         // 25: fleetly.spec.v1.JobSpec.EnvEntry
+	(*durationpb.Duration)(nil), // 26: google.protobuf.Duration
 }
 var file_fleetly_spec_v1_spec_proto_depIdxs = []int32{
-	2,  // 0: fleetly.spec.v1.AppSpec.app:type_name -> fleetly.spec.v1.AppRef
-	3,  // 1: fleetly.spec.v1.AppSpec.source:type_name -> fleetly.spec.v1.Source
-	7,  // 2: fleetly.spec.v1.AppSpec.processes:type_name -> fleetly.spec.v1.ProcessSpec
-	14, // 3: fleetly.spec.v1.AppSpec.build:type_name -> fleetly.spec.v1.BuildSpec
-	17, // 4: fleetly.spec.v1.AppSpec.first_boot_jobs:type_name -> fleetly.spec.v1.JobSpec
-	4,  // 5: fleetly.spec.v1.Source.git:type_name -> fleetly.spec.v1.GitSource
-	5,  // 6: fleetly.spec.v1.Source.image:type_name -> fleetly.spec.v1.ImageSource
-	6,  // 7: fleetly.spec.v1.Source.upload:type_name -> fleetly.spec.v1.UploadSource
-	23, // 8: fleetly.spec.v1.ProcessSpec.env:type_name -> fleetly.spec.v1.ProcessSpec.EnvEntry
-	8,  // 9: fleetly.spec.v1.ProcessSpec.ports:type_name -> fleetly.spec.v1.PortSpec
-	9,  // 10: fleetly.spec.v1.ProcessSpec.healthcheck:type_name -> fleetly.spec.v1.HealthcheckSpec
-	11, // 11: fleetly.spec.v1.ProcessSpec.resources:type_name -> fleetly.spec.v1.ResourcesSpec
-	12, // 12: fleetly.spec.v1.ProcessSpec.placement:type_name -> fleetly.spec.v1.PlacementSpec
-	13, // 13: fleetly.spec.v1.ProcessSpec.volumes:type_name -> fleetly.spec.v1.VolumeAttachment
-	0,  // 14: fleetly.spec.v1.PortSpec.protocol:type_name -> fleetly.spec.v1.Protocol
-	10, // 15: fleetly.spec.v1.HealthcheckSpec.exec:type_name -> fleetly.spec.v1.ExecProbe
-	25, // 16: fleetly.spec.v1.HealthcheckSpec.interval:type_name -> google.protobuf.Duration
-	25, // 17: fleetly.spec.v1.HealthcheckSpec.timeout:type_name -> google.protobuf.Duration
-	25, // 18: fleetly.spec.v1.HealthcheckSpec.start_period:type_name -> google.protobuf.Duration
-	15, // 19: fleetly.spec.v1.BuildSpec.railpack:type_name -> fleetly.spec.v1.RailpackBuilder
-	16, // 20: fleetly.spec.v1.BuildSpec.static:type_name -> fleetly.spec.v1.StaticBuilder
-	24, // 21: fleetly.spec.v1.JobSpec.env:type_name -> fleetly.spec.v1.JobSpec.EnvEntry
-	25, // 22: fleetly.spec.v1.JobSpec.ttl:type_name -> google.protobuf.Duration
-	7,  // 23: fleetly.spec.v1.JobSpec.process:type_name -> fleetly.spec.v1.ProcessSpec
-	19, // 24: fleetly.spec.v1.TaskSpec.task:type_name -> fleetly.spec.v1.TaskRef
-	7,  // 25: fleetly.spec.v1.TaskSpec.process:type_name -> fleetly.spec.v1.ProcessSpec
-	21, // 26: fleetly.spec.v1.DatabaseSpec.database:type_name -> fleetly.spec.v1.DatabaseRef
-	11, // 27: fleetly.spec.v1.DatabaseSpec.resources:type_name -> fleetly.spec.v1.ResourcesSpec
-	22, // 28: fleetly.spec.v1.DatabaseSpec.backup_policy:type_name -> fleetly.spec.v1.BackupPolicySpec
-	25, // 29: fleetly.spec.v1.BackupPolicySpec.interval:type_name -> google.protobuf.Duration
-	25, // 30: fleetly.spec.v1.BackupPolicySpec.retention:type_name -> google.protobuf.Duration
-	31, // [31:31] is the sub-list for method output_type
-	31, // [31:31] is the sub-list for method input_type
-	31, // [31:31] is the sub-list for extension type_name
-	31, // [31:31] is the sub-list for extension extendee
-	0,  // [0:31] is the sub-list for field type_name
+	3,  // 0: fleetly.spec.v1.AppSpec.app:type_name -> fleetly.spec.v1.AppRef
+	4,  // 1: fleetly.spec.v1.AppSpec.source:type_name -> fleetly.spec.v1.Source
+	8,  // 2: fleetly.spec.v1.AppSpec.processes:type_name -> fleetly.spec.v1.ProcessSpec
+	15, // 3: fleetly.spec.v1.AppSpec.build:type_name -> fleetly.spec.v1.BuildSpec
+	18, // 4: fleetly.spec.v1.AppSpec.first_boot_jobs:type_name -> fleetly.spec.v1.JobSpec
+	5,  // 5: fleetly.spec.v1.Source.git:type_name -> fleetly.spec.v1.GitSource
+	6,  // 6: fleetly.spec.v1.Source.image:type_name -> fleetly.spec.v1.ImageSource
+	7,  // 7: fleetly.spec.v1.Source.upload:type_name -> fleetly.spec.v1.UploadSource
+	24, // 8: fleetly.spec.v1.ProcessSpec.env:type_name -> fleetly.spec.v1.ProcessSpec.EnvEntry
+	9,  // 9: fleetly.spec.v1.ProcessSpec.ports:type_name -> fleetly.spec.v1.PortSpec
+	10, // 10: fleetly.spec.v1.ProcessSpec.healthcheck:type_name -> fleetly.spec.v1.HealthcheckSpec
+	12, // 11: fleetly.spec.v1.ProcessSpec.resources:type_name -> fleetly.spec.v1.ResourcesSpec
+	13, // 12: fleetly.spec.v1.ProcessSpec.placement:type_name -> fleetly.spec.v1.PlacementSpec
+	14, // 13: fleetly.spec.v1.ProcessSpec.volumes:type_name -> fleetly.spec.v1.VolumeAttachment
+	0,  // 14: fleetly.spec.v1.ProcessSpec.strategy:type_name -> fleetly.spec.v1.DeployStrategy
+	1,  // 15: fleetly.spec.v1.PortSpec.protocol:type_name -> fleetly.spec.v1.Protocol
+	11, // 16: fleetly.spec.v1.HealthcheckSpec.exec:type_name -> fleetly.spec.v1.ExecProbe
+	26, // 17: fleetly.spec.v1.HealthcheckSpec.interval:type_name -> google.protobuf.Duration
+	26, // 18: fleetly.spec.v1.HealthcheckSpec.timeout:type_name -> google.protobuf.Duration
+	26, // 19: fleetly.spec.v1.HealthcheckSpec.start_period:type_name -> google.protobuf.Duration
+	16, // 20: fleetly.spec.v1.BuildSpec.railpack:type_name -> fleetly.spec.v1.RailpackBuilder
+	17, // 21: fleetly.spec.v1.BuildSpec.static:type_name -> fleetly.spec.v1.StaticBuilder
+	25, // 22: fleetly.spec.v1.JobSpec.env:type_name -> fleetly.spec.v1.JobSpec.EnvEntry
+	26, // 23: fleetly.spec.v1.JobSpec.ttl:type_name -> google.protobuf.Duration
+	8,  // 24: fleetly.spec.v1.JobSpec.process:type_name -> fleetly.spec.v1.ProcessSpec
+	20, // 25: fleetly.spec.v1.TaskSpec.task:type_name -> fleetly.spec.v1.TaskRef
+	8,  // 26: fleetly.spec.v1.TaskSpec.process:type_name -> fleetly.spec.v1.ProcessSpec
+	22, // 27: fleetly.spec.v1.DatabaseSpec.database:type_name -> fleetly.spec.v1.DatabaseRef
+	12, // 28: fleetly.spec.v1.DatabaseSpec.resources:type_name -> fleetly.spec.v1.ResourcesSpec
+	23, // 29: fleetly.spec.v1.DatabaseSpec.backup_policy:type_name -> fleetly.spec.v1.BackupPolicySpec
+	26, // 30: fleetly.spec.v1.BackupPolicySpec.interval:type_name -> google.protobuf.Duration
+	26, // 31: fleetly.spec.v1.BackupPolicySpec.retention:type_name -> google.protobuf.Duration
+	32, // [32:32] is the sub-list for method output_type
+	32, // [32:32] is the sub-list for method input_type
+	32, // [32:32] is the sub-list for extension type_name
+	32, // [32:32] is the sub-list for extension extendee
+	0,  // [0:32] is the sub-list for field type_name
 }
 
 func init() { file_fleetly_spec_v1_spec_proto_init() }
@@ -2017,7 +2096,7 @@ func file_fleetly_spec_v1_spec_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fleetly_spec_v1_spec_proto_rawDesc), len(file_fleetly_spec_v1_spec_proto_rawDesc)),
-			NumEnums:      1,
+			NumEnums:      2,
 			NumMessages:   24,
 			NumExtensions: 0,
 			NumServices:   0,

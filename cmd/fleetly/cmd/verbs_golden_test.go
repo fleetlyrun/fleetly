@@ -249,6 +249,21 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 		// specfile 三件）。
 		{"deploy spec file", []string{"deploy", "--app", "GOLDEN_APP", "--spec-file", "GOLDEN_SPECFILE"}, 0},
 
+		// 部署策略 intake（ADR-0048 决策 6：compose 扩展键 deploy.strategy
+		// 是 spec_file 面外的受理形态；DeployRequest 不加 strategy 面）。
+		// 独立 app3（免扰本流部署序）：compose blue-green 冻结 R1（归一化
+		// 产物断言）→ 无策略镜像直投冻结 R2（缺省零值 = rolling，冻结体
+		// 无 strategy 字段——存量零漂移形态）→ revisions diff 钉
+		// strategy 字段增量（protojson 枚举名规范形）。值域拒绝文本在
+		// spec 单测（CLI 错误信封含随机 error_id，不可 golden——freeze
+		// 拒绝面同款先例）。
+		{"apps create bgapp", []string{"apps", "create", "--project", "GOLDEN_PROJECT", "bgapp"}, 0},
+		{"deploy compose strategy", []string{"deploy", "--app", "GOLDEN_APP3", "--compose-file", "GOLDEN_COMPOSE_BG",
+			"--idempotency-key", "compose-bg-1"}, 0},
+		{"deploy image no strategy", []string{"deploy", "--app", "GOLDEN_APP3", "--image", "nginx:1.27",
+			"--idempotency-key", "bgimg-1"}, 0},
+		{"revisions diff strategy", []string{"revisions", "diff", "--app", "GOLDEN_APP3", "--from", "1", "--to", "2"}, exitChanges},
+
 		// Platform 动词（F2.3，ADR-0039 决策 10）：手动触发（同步执行——
 		// 幂等键让 --json 轮重放同响应）与快照列举（假 restic 的 canned
 		// 集；golden 双形态）。
@@ -273,10 +288,16 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 	specFile := filepath.Join(t.TempDir(), "appspec.json")
 	require.NoError(t, os.WriteFile(specFile, []byte(
 		`{"source":{"image":{"ref":"nginx:1.22"}},"processes":[{"name":"web","image":"nginx:1.22","ports":[{"port":8080,"protocol":"PROTOCOL_HTTP"}],"networks":["default"]},{"name":"worker","image":"busybox:1.37"}]}`), 0o600))
+	// GOLDEN_COMPOSE_BG 是部署策略扩展键的固定 compose（ADR-0048：
+	// deploy.strategy: blue-green——app3 的 R1 冻结源；独立目录同
+	// GOLDEN_COMPOSE 先例）。
+	composeBGFile := filepath.Join(t.TempDir(), "compose-bg.yaml")
+	require.NoError(t, os.WriteFile(composeBGFile, []byte(
+		"services:\n  web:\n    image: nginx:1.27\n    deploy:\n      strategy: blue-green\n"), 0o600))
 
 	// GOLDEN_PROJECT/GOLDEN_APP 占位替换为夹具真实 ID（项目 ID 是 ULID，
 	// 归一后可预测）。
-	var projectID, project2ID, networkID, peerID, appID, app2ID, taskID, task2ID, runID, scheduleID, freezeID, deployID, rollbackDeployID string
+	var projectID, project2ID, networkID, peerID, appID, app2ID, app3ID, taskID, task2ID, runID, scheduleID, freezeID, deployID, rollbackDeployID string
 	for _, st := range steps {
 		t.Run(st.verb, func(t *testing.T) {
 			args := st.args
@@ -298,6 +319,9 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 				}
 				if a == "GOLDEN_APP2" {
 					args[i] = app2ID
+				}
+				if a == "GOLDEN_APP3" {
+					args[i] = app3ID
 				}
 				if a == "GOLDEN_DEPLOYMENT" {
 					args[i] = deployID
@@ -325,6 +349,9 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 				}
 				if a == "GOLDEN_COMPOSE" {
 					args[i] = composeFile
+				}
+				if a == "GOLDEN_COMPOSE_BG" {
+					args[i] = composeBGFile
 				}
 				if a == "GOLDEN_SPECFILE" {
 					args[i] = specFile
@@ -356,6 +383,9 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 			}
 			if st.verb == "apps create fbjobs" {
 				app2ID = extractTailID(out)
+			}
+			if st.verb == "apps create bgapp" {
+				app3ID = extractTailID(out)
 			}
 			if st.verb == "tasks create" {
 				taskID = extractTaskID(t, out)
@@ -439,6 +469,7 @@ var jsonArgOverrides = map[string]map[int]string{
 	"projects create messaging": {2: "messaging-json"},
 	"apps create":               {4: "web-json"},
 	"apps create fbjobs":        {4: "fbjobs-json"},
+	"apps create bgapp":         {4: "bgapp-json"},
 	"secrets put":               {6: "api-token-json"},
 	"configs put":               {6: "app-json.ini"},
 	// 删除步的 --json 轮换名（CACHE_HOST 已被人轮删——重删 404 非零退出；

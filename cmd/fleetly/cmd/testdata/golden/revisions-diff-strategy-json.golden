@@ -1,0 +1,8 @@
+{
+  "entries": [
+    {
+      "path": "processes[0].strategy",
+      "old_value": "DEPLOY_STRATEGY_BLUE_GREEN"
+    }
+  ]
+}

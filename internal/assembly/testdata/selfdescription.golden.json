@@ -360,6 +360,14 @@
                       },
                       "type": "array"
                     },
+                    "strategy": {
+                      "enum": [
+                        "DEPLOY_STRATEGY_UNSPECIFIED",
+                        "DEPLOY_STRATEGY_ROLLING",
+                        "DEPLOY_STRATEGY_BLUE_GREEN"
+                      ],
+                      "type": "string"
+                    },
                     "volumes": {
                       "items": {
                         "additionalProperties": false,
@@ -554,6 +562,14 @@
                     "type": "string"
                   },
                   "type": "array"
+                },
+                "strategy": {
+                  "enum": [
+                    "DEPLOY_STRATEGY_UNSPECIFIED",
+                    "DEPLOY_STRATEGY_ROLLING",
+                    "DEPLOY_STRATEGY_BLUE_GREEN"
+                  ],
+                  "type": "string"
                 },
                 "volumes": {
                   "items": {
@@ -2751,6 +2767,14 @@
                   "type": "string"
                 },
                 "type": "array"
+              },
+              "strategy": {
+                "enum": [
+                  "DEPLOY_STRATEGY_UNSPECIFIED",
+                  "DEPLOY_STRATEGY_ROLLING",
+                  "DEPLOY_STRATEGY_BLUE_GREEN"
+                ],
+                "type": "string"
               },
               "volumes": {
                 "items": {

@@ -263,6 +263,14 @@ app (spec) — AppSpec: desired state of a long-running deployable unit (an app 
                 },
                 "type": "array"
               },
+              "strategy": {
+                "enum": [
+                  "DEPLOY_STRATEGY_UNSPECIFIED",
+                  "DEPLOY_STRATEGY_ROLLING",
+                  "DEPLOY_STRATEGY_BLUE_GREEN"
+                ],
+                "type": "string"
+              },
               "volumes": {
                 "items": {
                   "additionalProperties": false,
@@ -457,6 +465,14 @@ app (spec) — AppSpec: desired state of a long-running deployable unit (an app 
               "type": "string"
             },
             "type": "array"
+          },
+          "strategy": {
+            "enum": [
+              "DEPLOY_STRATEGY_UNSPECIFIED",
+              "DEPLOY_STRATEGY_ROLLING",
+              "DEPLOY_STRATEGY_BLUE_GREEN"
+            ],
+            "type": "string"
           },
           "volumes": {
             "items": {

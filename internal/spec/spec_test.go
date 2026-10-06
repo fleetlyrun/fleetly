@@ -343,3 +343,30 @@ func TestValidateDatabase(t *testing.T) {
 	base.CredentialsRef = ""
 	assert.ErrorContains(t, ValidateDatabase(base), "credentials_ref")
 }
+
+// 部署策略值域（ADR-0048 决策 1：rolling 缺省 | blue-green；词条单源 =
+// CONTEXT.md Deployment Strategy）。UNSPECIFIED 零值 = 缺省滚动（存量
+// Revision 无该字段重放即 rolling——零迁移面锚）；未知数值（绕过 intake
+// 的程序化构造）fail-closed 拒绝且指名字段。
+func TestValidateProcessStrategy(t *testing.T) {
+	for _, tc := range []struct {
+		strategy specv1.DeployStrategy
+		ok       bool
+	}{
+		{specv1.DeployStrategy_DEPLOY_STRATEGY_UNSPECIFIED, true},
+		{specv1.DeployStrategy_DEPLOY_STRATEGY_ROLLING, true},
+		{specv1.DeployStrategy_DEPLOY_STRATEGY_BLUE_GREEN, true},
+		{specv1.DeployStrategy(42), false},
+	} {
+		s := validAppSpec()
+		s.Processes[0].Strategy = tc.strategy
+		err := ValidateApp(s)
+		if tc.ok {
+			assert.NoErrorf(t, err, "strategy %d must be accepted", tc.strategy)
+		} else {
+			require.Errorf(t, err, "strategy %d must be rejected", tc.strategy)
+			assert.Contains(t, err.Error(), "app.processes[0].strategy")
+			assert.Contains(t, err.Error(), "strategy must be rolling or blue-green")
+		}
+	}
+}

@@ -1,0 +1,2 @@
+PATH	OLD	NEW
+processes[0].strategy	DEPLOY_STRATEGY_BLUE_GREEN	

@@ -55,8 +55,12 @@ var composeHealthcheckWhitelist = map[string]bool{
 }
 
 var composeDeployWhitelist = map[string]bool{
-	"replicas":        true,
-	"resources":       true,  // limits.cpus/memory 受控翻译
+	"replicas":  true,
+	"resources": true, // limits.cpus/memory 受控翻译
+	// strategy 是 fleetly 扩展键（ADR-0048 决策 1：compose 服务键
+	// deploy.strategy，值 rolling|blue-green——镜像直投/spec_file 面外的
+	// 第三 intake 形态；非 compose 标准键，同 http_path/tcp_port 扩展先例）。
+	"strategy":        true,
 	"restart_policy":  false, // 重启策略是平台语义（受管）——显式拒绝
 	"update_config":   false,
 	"rollback_config": false,
@@ -371,7 +375,7 @@ func composeService(name string, svc map[string]any) (*specv1.ProcessSpec, strin
 		for key := range deploy {
 			if allowed, seen := composeDeployWhitelist[key]; !seen {
 				return nil, "", invalidf(field+".deploy."+key,
-					"unsupported deploy field %q (supported: replicas, resources.limits)", key)
+					"unsupported deploy field %q (supported: replicas, resources.limits, strategy)", key)
 			} else if !allowed {
 				return nil, "", invalidf(field+".deploy."+key,
 					"deploy field %q is managed by the platform and cannot be set from compose", key)
@@ -379,6 +383,19 @@ func composeService(name string, svc map[string]any) (*specv1.ProcessSpec, strin
 		}
 		if r, ok := deploy["replicas"].(int); ok && r > 0 {
 			p.Replicas = int64(r) //nolint:gosec // int→int64 域内
+		}
+		// 部署策略（ADR-0048）：人类词形 rolling|blue-green → 枚举；空 =
+		// 缺省滚动（零值，不落字段——存量 Revision 冻结体零漂移）。
+		if raw, ok := deploy["strategy"].(string); ok && raw != "" {
+			switch raw {
+			case "rolling":
+				p.Strategy = specv1.DeployStrategy_DEPLOY_STRATEGY_ROLLING
+			case "blue-green":
+				p.Strategy = specv1.DeployStrategy_DEPLOY_STRATEGY_BLUE_GREEN
+			default:
+				return nil, "", invalidf(field+".deploy.strategy",
+					"strategy must be rolling or blue-green (got %q)", raw)
+			}
 		}
 		if res, ok := deploy["resources"].(map[string]any); ok {
 			if limits, ok := res["limits"].(map[string]any); ok {

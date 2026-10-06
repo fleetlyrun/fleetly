@@ -78,6 +78,27 @@ message ProcessSpec {
   repeated VolumeAttachment volumes = 13;
   // networks 是网络附件（Project 网络名或 taskGroup:<name> 跨挂）。
   repeated string networks = 14;
+  // strategy 是部署切换策略（ADR-0048 决策 1：rolling 缺省 | blue-green
+  // 可选——Process 级，"web 蓝绿 + worker 滚动"的混合是真实需求）。
+  // UNSPECIFIED（零值）归一为 rolling：存量 Revision 无该字段重放即
+  // rolling，无迁移面。值域住叶子校验（spec.ValidateProcess，词条单源
+  // = CONTEXT.md Deployment Strategy）。Database/受管域不适用（结构性
+  // 保证，同 ADR）。
+  DeployStrategy strategy = 15;}
+
+// DeployStrategy 是部署切换策略（CONTEXT.md Deployment Strategy 词条：
+// rolling | blue-green；Avoid 表两词条不引入——渐进分流与代次槽位机制
+// 均显式不做，ADR-0048）。blue-green = engine 的编排变体（Runtime 契约
+// 不变，ADR-0048）：双代窗期间两代载体并存，新代 L1 全就绪才切换流量。
+// UNSPECIFIED（零值）语义归一为 rolling——存量 Revision 无该字段重放即
+// rolling，无迁移面。
+enum DeployStrategy {
+  // 缺省 = rolling（归一面：投影/引擎按 rolling 语义消费）。
+  DEPLOY_STRATEGY_UNSPECIFIED = 0;
+  // 滚动替换（与既有语义逐字节相同——存量零变化）。
+  DEPLOY_STRATEGY_ROLLING = 1;
+  // 蓝绿：旧代∪新代双代窗 → 新代 L1 门 → 切换 → 观察窗 → 收口。
+  DEPLOY_STRATEGY_BLUE_GREEN = 2;
 }
 
 // PortSpec 是进程监听端口声明（Route 投影来源）。
