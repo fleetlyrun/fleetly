@@ -138,6 +138,14 @@ _Avoid_: service, container, pod, unit
 进入运行中 Workload 载体的会话；双形态：tty 交互（Console 终端页、`fleetly shell`）与 one-shot 命令（`fleetly exec`）。会话绑定受理时的实例与节点，非资源行（不可列表回读，台账 = 审计）（ADR-0049）。
 _Avoid_: ssh, tunnel, remote shell
 
+**Browse Session**:
+进入 Database 数据面的托管浏览器按需会话（pgweb/redis-commander/Adminer/Mongoku 四件按引擎方言选择）；受理铸造、TTL 回收、非资源行（ADR-0051）。
+_Avoid_: db console, data explorer, admin panel
+
+**Launcher Ticket**:
+Browse Session 的一次性进入票据（短 TTL、单用途、绑会话）；兑换铸 host-only cookie 会话凭证，经 Proxy ForwardAuth 持续校验（ADR-0051）。
+_Avoid_: launch token, magic link, access url
+
 **Relay**:
 节点代理到控制面的出站长连通道（WebSocket over 公共 gateway），exec 会话帧经其多路复用送达；节点零入站端口（ADR-0049）。
 _Avoid_: tunnel, mesh, agent net

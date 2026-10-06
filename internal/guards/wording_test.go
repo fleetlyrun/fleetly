@@ -85,6 +85,14 @@ var bannedPatterns = map[string]*regexp.Regexp{
 	"remote shell": wordRe(`remote[ _-]shell`),
 	"tunnel":       wordRe(`tunnel|tunneling`),
 	"agent net":    wordRe(`agent[ _-]net`),
+	// Browse Session / Launcher Ticket 词条（ADR-0051 入册）：外词命名
+	// 缺陷，机械无歧义。
+	"db console":    wordRe(`db[ _-]?consoles?`),
+	"data explorer": wordRe(`data[ _-]?explorers?`),
+	"admin panel":   wordRe(`admin[ _-]?panels?`),
+	"launch token":  wordRe(`launch[ _-]?tokens?`),
+	"magic link":    wordRe(`magic[ _-]?links?`),
+	"access url":    wordRe(`access[ _-]?urls?`),
 }
 
 // wordRe 构造大小写不敏感、词边界的匹配器（多形态以 | 预展开）。
