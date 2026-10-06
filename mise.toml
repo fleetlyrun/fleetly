@@ -136,6 +136,10 @@ run = "sh e2e/dind-upgrade.sh"
 description = "e2e dind 备份演练（F2.2 四引擎恢复演练 + Platform Backup roundtrip + F2.8 S3 离机腿，ADR-0039/0020/0042 验收必过项）"
 run = "sh e2e/dind-backup.sh"
 
+[tasks."e2e:bluegreen"]
+description = "e2e dind 蓝绿全链（ADR-0048 P5/P16：零 5xx 切换/旧代存活/L1 零扰动/手动切回/supersede 零残留/双节点 Placement/P16 撞名消歧）"
+run = "sh e2e/dind-bluegreen.sh"
+
 # ---- Console（F2.6/ADR-0044：最小只读三页，React+Vite）----
 # 产物输出 internal/console/dist（committed 生成物，纪律同 genproto）；
 # 漂移门禁 console:verify 与 CI console job 同口径。
