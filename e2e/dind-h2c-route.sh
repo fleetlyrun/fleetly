@@ -11,8 +11,10 @@
 # ACME/TLS 不在本脚本（dind 无公网 DNS/80-443 不可达；LE 真机随 staging
 # 批）。镜像离线预载：宿侧 save → dind load；traefik 以本地 v3.5 别名
 # v3.5.4 预载（版本保真由 staging 现役背书，本脚本测的是挂网与路由机制）。
+# F3.5 端口声明锚追加 static 腿：caddy:2.11-alpine 预载（钉版同 ADR-0032）。
 #
-# 前置：本机 docker 可用且持有 traefik:v3.5 与 traefik/whoami:v1.10。
+# 前置：本机 docker 可用且持有 traefik:v3.5、traefik/whoami:v1.10 与
+# caddy:2.11-alpine。
 set -eu
 
 export MSYS_NO_PATHCONV=1
@@ -83,6 +85,58 @@ docker cp install.sh "$DIND_CID":/root/install.sh
 docker exec -e FLEETLY_BIN_DIR=/root/bins \
   -e FLEETLY_PROXY_CONFIG_ENDPOINT="http://$DIND_IP:9082/proxy/config" \
   "$DIND_CID" sh /root/install.sh
+
+# install.sh 的 insecure-registry drop-in 需要 daemon 重载——重启机制走
+# service/systemctl（真机 systemd 面），dind 两者皆无（|| true 静默吞）且
+# dockerd 是容器 PID 1（kill 即容器退出）：e2e 侧 docker restart 整容器
+# 使 entrypoint 重启的 dockerd 读到 drop-in（本脚本的 static 构建腿是
+# 全 e2e 套件首个构建推送链——此前矩阵全是 image 直投，registry 信任面
+# 从未被 CI 走到）。bridge 网络 IP 随 restart 保持——变更即环境异常，
+# 如实红。
+log "restarting the dind container to load the insecure-registry drop-in"
+docker restart "$DIND_CID" >/dev/null
+i=0
+while [ "$i" -lt 30 ]; do
+  if docker exec "$DIND_CID" docker info >/dev/null 2>&1; then
+    break
+  fi
+  i=$((i + 1))
+  sleep 1
+done
+if [ "$i" -ge 30 ]; then
+  echo "dockerd did not come back after the container restart" >&2
+  exit 1
+fi
+RESTARTED_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$DIND_CID")
+if [ "$RESTARTED_IP" != "$DIND_IP" ]; then
+  echo "dind ip changed across restart ($DIND_IP -> $RESTARTED_IP); the baked proxy endpoint would break" >&2
+  exit 1
+fi
+case "$(docker exec "$DIND_CID" docker info 2>/dev/null | grep -c ':5000')" in
+  0) echo "insecure-registry drop-in did not take effect (no :5000 entry in docker info)" >&2; exit 1 ;;
+  *) log "dockerd trusts the managed registry" ;;
+esac
+
+# 容器重启杀掉了 install.sh 的后台 fleetlyd（非 systemd 无自启）：经
+# /etc/fleetlyd.env 同文件重建（install.sh 崩溃恢复既定通道）；Proxy 端点
+# 经本 exec 的继承 env 注入（setsid env 继承语义，install 同款）。
+log "restarting fleetlyd after the container restart"
+docker exec -e FLEETLY_PROXY_CONFIG_ENDPOINT="http://$DIND_IP:9082/proxy/config" "$DIND_CID" sh -c \
+  'setsid env $(grep -v "^$" /etc/fleetlyd.env | tr "\n" " ") /usr/local/bin/fleetlyd >>/var/log/fleetlyd.log 2>&1 < /dev/null &'
+i=0
+while [ "$i" -lt 60 ]; do
+  if docker exec -e FLEETLY_ADDR="127.0.0.1:9080" "$DIND_CID" fleetly status >/dev/null 2>&1; then
+    break
+  fi
+  i=$((i + 1))
+  sleep 1
+done
+if [ "$i" -ge 60 ]; then
+  echo "fleetlyd did not come back after the container restart" >&2
+  docker exec "$DIND_CID" sh -c 'tail -20 /var/log/fleetlyd.log >&2' || true
+  exit 1
+fi
+log "fleetlyd healthy again"
 
 log "identity chain via fleetly init"
 CURRENT_TOKEN=$(docker exec "$DIND_CID" sh -c 'tr -d "\r\n" < /var/lib/fleetly/bootstrap-token')
@@ -250,6 +304,44 @@ esac
 p9h2c=$(docker exec "$DIND_CID" /root/bins/h2cclient -h2c -host "h2c.$DIND_IP.sslip.io" "http://$DIND_IP/" || true)
 case "$p9h2c" in *PROTO-LINE\ HTTP/2.0*) log "existing h2c route still serving after rejection" ;;
   *) echo "existing h2c route broke after a rejected route attempt (body: $p9h2c)" >&2; exit 1 ;;
+esac
+
+# F3.5 端口声明（复现-修复锚）：static 应用建 Route 200——修复前 image/
+# upload 直投无 ports 声明面，Route 后端解析无从匹配期望集端口（404 半边）
+# 且进程未挂项目网（可达性半边）；--port 声明即 Route-facing：ports 落
+# 期望集 + 挂靠项目 default 网，两半同时闭口。
+log "F3.5: static app with a port declaration serves over its route"
+docker image save caddy:2.11-alpine | docker exec -i "$DIND_CID" docker load >/dev/null
+docker exec "$DIND_CID" sh -c 'mkdir -p /root/staticsite && printf "<h1>static-ok</h1>\n" > /root/staticsite/index.html'
+cli apps create --project "$PROJECT_ID" staticsite >/dev/null
+STATIC_APP_ID=$(cli --json apps list --project "$PROJECT_ID" \
+  | grep -B3 '"staticsite"' | grep '"id"' | head -1 \
+  | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p')
+if [ -z "$STATIC_APP_ID" ]; then
+  echo "could not resolve the staticsite app id" >&2
+  exit 1
+fi
+cli deploy --app "$STATIC_APP_ID" --from-dir /root/staticsite \
+  --builder static --port 8080 >/dev/null
+APP_ID_SAVE="$APP_ID"; APP_ID="$STATIC_APP_ID"
+wait_state succeeded
+APP_ID="$APP_ID_SAVE"
+log "static deployment succeeded"
+cli routes create --project "$PROJECT_ID" --host "static.$DIND_IP.sslip.io" \
+  --app "$STATIC_APP_ID" --process web --port 8080 --tls none >/dev/null
+i=0
+sbody=""
+while [ "$i" -lt 45 ]; do
+  sbody=$(docker exec "$DIND_CID" /root/bins/h2cclient -host "static.$DIND_IP.sslip.io" "http://$DIND_IP/" || true)
+  case "$sbody" in
+    *static-ok*) break ;;
+  esac
+  i=$((i + 1))
+  sleep 2
+done
+case "$sbody" in
+  *static-ok*) log "static route answers over HTTP (F3.5 port declaration green)" ;;
+  *) echo "static route did not answer (last body: $sbody)" >&2; exit 1 ;;
 esac
 
 log "H2C ROUTE E2E PASSED"
