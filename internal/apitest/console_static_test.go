@@ -21,7 +21,7 @@ import (
 
 func TestGatewayServesConsoleAndKeepsV1Untouched(t *testing.T) {
 	h := apitest.New(t)
-	handler, err := assembly.NewGatewayHandler(slog.New(slog.DiscardHandler), h.Conn, nil, nil)
+	handler, err := assembly.NewGatewayHandler(slog.New(slog.DiscardHandler), h.Conn, nil, nil, assembly.NewBrowseGate(h.Services))
 	require.NoError(t, err)
 
 	get := func(path string) *httptest.ResponseRecorder {

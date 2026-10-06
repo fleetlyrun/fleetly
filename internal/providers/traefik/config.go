@@ -23,14 +23,28 @@ type dynamicConfig struct {
 }
 
 type httpConfig struct {
-	Routers  map[string]httpRouter  `json:"routers,omitempty"`
-	Services map[string]httpService `json:"services,omitempty"`
+	Routers     map[string]httpRouter     `json:"routers,omitempty"`
+	Services    map[string]httpService    `json:"services,omitempty"`
+	Middlewares map[string]httpMiddleware `json:"middlewares,omitempty"`
 }
 
 type httpRouter struct {
-	Rule    string     `json:"rule"`
-	Service string     `json:"service"`
-	TLS     *routerTLS `json:"tls,omitempty"`
+	Rule        string     `json:"rule"`
+	Service     string     `json:"service"`
+	Middlewares []string   `json:"middlewares,omitempty"`
+	TLS         *routerTLS `json:"tls,omitempty"`
+}
+
+// httpMiddleware 是 traefik 中间件声明的受管子集（ADR-0051：仅 forwardAuth
+// ——browse 会话路由的请求门禁；其余形态不入受管面）。
+type httpMiddleware struct {
+	ForwardAuth *forwardAuth `json:"forwardAuth,omitempty"`
+}
+
+// forwardAuth 指向平台 authorize 端点（每请求校验会话 cookie；traefik
+// 透传原始请求头——含 Cookie，2026-10-07 v3.6 实证）。
+type forwardAuth struct {
+	Address string `json:"address"`
 }
 
 type routerTLS struct {
@@ -115,6 +129,21 @@ func buildDynamicConfig(routes []capability.Route) ([]byte, error) {
 			router := httpRouter{Rule: rule, Service: name}
 			if r.TLS == "auto" || r.TLS == "" {
 				router.TLS = &routerTLS{CertResolver: "le", Domains: []tlsDomain{{Main: r.Host}}}
+			}
+			if r.Auth != nil {
+				// ForwardAuth 门禁（ADR-0051 决策 5）：browse 会话路由每请求
+				// 校验会话 cookie；中间件与 router 同键派生（单射守卫同源）。
+				if err := capability.ValidateRouteAuthAddress(r.Auth.Address); err != nil {
+					slog.Error("traefik config: invalid route auth address, skipping route",
+						"host", r.Host, "path", r.Path, "err", err)
+					continue
+				}
+				mwName := name + "-fw"
+				router.Middlewares = []string{mwName}
+				if cfg.HTTP.Middlewares == nil {
+					cfg.HTTP.Middlewares = map[string]httpMiddleware{}
+				}
+				cfg.HTTP.Middlewares[mwName] = httpMiddleware{ForwardAuth: &forwardAuth{Address: r.Auth.Address}}
 			}
 			cfg.HTTP.Routers[name] = router
 			// 后端协议：h2c = 明文 HTTP/2（messageloop 形态），http 同为

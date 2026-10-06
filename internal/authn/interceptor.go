@@ -442,3 +442,10 @@ func SourceFromContext(ctx context.Context) audit.Source {
 	}
 	return audit.SourceAPI
 }
+
+// HasScope 报告身份是否携带指定 scope（服务内动态提权门消费——静态
+// method_auth 注解只能表达 RPC 的最低门，写档形态按请求值运行时校验；
+// ADR-0051 决策 6：browse 的 read_write/无执法方言要求 databases:write）。
+func (id *Identity) HasScope(resource string, op authz.ScopeOp) bool {
+	return id != nil && id.scopeSet.Satisfies(authz.ScopeRule{Resource: resource, Op: op})
+}

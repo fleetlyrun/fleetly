@@ -482,6 +482,45 @@
         ]
       }
     },
+    "/v1/databases/{database_id}/browse": {
+      "post": {
+        "summary": "BrowseDatabase 铸造数据浏览器按需会话（F3.6，ADR-0051）：静态 scope 是\n最低门（只读档）；read_write=true 或无只读执法的方言（mysql）在服务内\n动态要求 databases:write。响应 URL 含一次性 Launcher Ticket（120s 单\n用途）——兑换入口即 URL 本身。会话硬 TTL 30min、空闲 10min 回收。",
+        "operationId": "DatabasesService_BrowseDatabase",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1BrowseDatabaseResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "database_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/DatabasesServiceBrowseDatabaseBody"
+            }
+          }
+        ],
+        "tags": [
+          "DatabasesService"
+        ]
+      }
+    },
     "/v1/databases/{id}": {
       "get": {
         "operationId": "DatabasesService_GetDatabase",
@@ -1247,6 +1286,15 @@
     }
   },
   "definitions": {
+    "DatabasesServiceBrowseDatabaseBody": {
+      "type": "object",
+      "properties": {
+        "read_write": {
+          "type": "boolean"
+        }
+      },
+      "title": "BrowseDatabase 铸造数据浏览器会话（ADR-0051）。read_write 缺省 false =\n只读档；true 解锁写（动态要求 databases:write——静态注解只能表达最低门）。"
+    },
     "DatabasesServiceTriggerBackupBody": {
       "type": "object"
     },
@@ -1328,6 +1376,47 @@
         }
       },
       "title": "Backup 是一次备份的台账行（ADR-0039）：成功行携带 ObjectStore 回执\n（object_key/digest/size = verify 锚）；credential 值永不出现。"
+    },
+    "v1BrowseDatabaseResponse": {
+      "type": "object",
+      "properties": {
+        "session_id": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string",
+          "title": "url 是会话入口（含一次性票据 query）；ticket/expires_in 另行透出供\n脚本化消费。票据兑换即烧，过期重开新会话。"
+        },
+        "ticket": {
+          "type": "string"
+        },
+        "expires_in": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "browser": {
+          "type": "string",
+          "title": "browser 是承接工具名（pgweb/redis-commander/adminer/mongoku——引擎\n方言映射的单源在 dbbrowser 注册表）。"
+        },
+        "read_only": {
+          "type": "boolean"
+        },
+        "enforcement": {
+          "$ref": "#/definitions/v1BrowseReadOnlyEnforcement",
+          "title": "enforcement 是只读执法层级（诚实分层，ADR-0051 决策 6）：session =\n服务端会话执法（PG 家族）；tool = 工具 HTTP API 层门（redis/mongo）；\nnone = 无方言（mysql——read_write 才可开）。"
+        }
+      }
+    },
+    "v1BrowseReadOnlyEnforcement": {
+      "type": "string",
+      "enum": [
+        "BROWSE_READ_ONLY_ENFORCEMENT_UNSPECIFIED",
+        "BROWSE_READ_ONLY_ENFORCEMENT_SESSION",
+        "BROWSE_READ_ONLY_ENFORCEMENT_TOOL",
+        "BROWSE_READ_ONLY_ENFORCEMENT_NONE"
+      ],
+      "default": "BROWSE_READ_ONLY_ENFORCEMENT_UNSPECIFIED",
+      "title": "BrowseReadOnlyEnforcement 是只读执法层级值域（ADR-0051 决策 6）。"
     },
     "v1Config": {
       "type": "object",

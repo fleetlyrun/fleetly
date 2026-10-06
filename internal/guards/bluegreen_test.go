@@ -28,6 +28,7 @@ var removeCallAllowlist = map[string]string{
 	"internal/engine/database.go": "Database 拆除（ADR-0029 域删除动词）",
 	"internal/engine/task.go":     "DeleteTask 整域拆除（Task 域删除动词）",
 	"internal/engine/hygiene.go":  "Task 终态载体清扫（janitor 面）",
+	"internal/engine/browse.go":   "Browse 会话回收（ADR-0051：per-会话独立命名空间即独立收敛单元——Remove 拆单会话域，不经 App 期望集）",
 }
 
 var runtimeRemoveRe = regexp.MustCompile(`runtime\.Remove\(`)

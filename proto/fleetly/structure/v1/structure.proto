@@ -257,6 +257,17 @@ service DatabasesService {
       api_key_scope: { resource: "databases" op: SCOPE_OP_READ }
     };
   }
+  // BrowseDatabase 铸造数据浏览器按需会话（F3.6，ADR-0051）：静态 scope 是
+  // 最低门（只读档）；read_write=true 或无只读执法的方言（mysql）在服务内
+  // 动态要求 databases:write。响应 URL 含一次性 Launcher Ticket（120s 单
+  // 用途）——兑换入口即 URL 本身。会话硬 TTL 30min、空闲 10min 回收。
+  rpc BrowseDatabase(BrowseDatabaseRequest) returns (BrowseDatabaseResponse) {
+    option (google.api.http) = { post: "/v1/databases/{database_id}/browse" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "databases" op: SCOPE_OP_READ }
+    };
+  }
 }
 
 // NetworksService：Network 聚合面 + 跨 Project peer 声明面（ADR-0013
@@ -564,6 +575,36 @@ message VerifyBackupResponse {
   bool ok = 1;
   string digest = 2;
   string error = 3;
+}
+
+// BrowseDatabase 铸造数据浏览器会话（ADR-0051）。read_write 缺省 false =
+// 只读档；true 解锁写（动态要求 databases:write——静态注解只能表达最低门）。
+message BrowseDatabaseRequest {
+  string database_id = 1;
+  bool read_write = 2;
+}
+message BrowseDatabaseResponse {
+  string session_id = 1;
+  // url 是会话入口（含一次性票据 query）；ticket/expires_in 另行透出供
+  // 脚本化消费。票据兑换即烧，过期重开新会话。
+  string url = 2;
+  string ticket = 3;
+  int32 expires_in = 4;
+  // browser 是承接工具名（pgweb/redis-commander/adminer/mongoku——引擎
+  // 方言映射的单源在 dbbrowser 注册表）。
+  string browser = 5;
+  bool read_only = 6;
+  // enforcement 是只读执法层级（诚实分层，ADR-0051 决策 6）：session =
+  // 服务端会话执法（PG 家族）；tool = 工具 HTTP API 层门（redis/mongo）；
+  // none = 无方言（mysql——read_write 才可开）。
+  BrowseReadOnlyEnforcement enforcement = 7;
+}
+// BrowseReadOnlyEnforcement 是只读执法层级值域（ADR-0051 决策 6）。
+enum BrowseReadOnlyEnforcement {
+  BROWSE_READ_ONLY_ENFORCEMENT_UNSPECIFIED = 0;
+  BROWSE_READ_ONLY_ENFORCEMENT_SESSION = 1;
+  BROWSE_READ_ONLY_ENFORCEMENT_TOOL = 2;
+  BROWSE_READ_ONLY_ENFORCEMENT_NONE = 3;
 }
 
 message Network {

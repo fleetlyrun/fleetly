@@ -9,6 +9,7 @@ package capability
 
 import (
 	"fmt"
+	"net/url"
 	"regexp"
 	"strings"
 )
@@ -47,6 +48,23 @@ func ValidateRoutePath(path string) error {
 		if !ok {
 			return fmt.Errorf("path: character %q is not allowed; use letters, digits and one of %s", string(c), routePathAllowed)
 		}
+	}
+	return nil
+}
+
+// ValidateRouteAuthAddress 校验 Route 门禁地址（ADR-0051）：ForwardAuth
+// 目标必须是 http/https 绝对 URL（platform authorize 端点）——编排器把它
+// 原样递给 Proxy，非 URL 形态即配置错误，fail-closed。
+func ValidateRouteAuthAddress(address string) error {
+	if address == "" {
+		return fmt.Errorf("auth address: must not be empty")
+	}
+	u, err := url.Parse(address)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return fmt.Errorf("auth address: must be an absolute http(s) URL")
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("auth address: scheme must be http or https")
 	}
 	return nil
 }

@@ -27,6 +27,7 @@ const (
 	labelApp      = "fleetly.ns.app"
 	labelTask     = "fleetly.ns.task"
 	labelDatabase = "fleetly.ns.database"
+	labelBrowse   = "fleetly.ns.browse"
 	labelWorkload = "fleetly.workload.id"
 	labelProcess  = "fleetly.process"
 	// labelGeneration 搬运平台 Generation（幂等重放与 Drift 判定锚）。
@@ -47,6 +48,9 @@ const (
 	// dbNamePrefix 是 Database 域载体命名公式前缀：fleetly-db-<database id>
 	//（Workload ID = database 行 ID，域内唯一；ADR-0029）。
 	dbNamePrefix = "fleetly-db"
+	// browseNamePrefix 是 Browse 会话域载体命名公式前缀：fleetly-browse-<session
+	// id>（Workload ID = 会话 ID；ADR-0051 决策 1，与 Database 轴分立）。
+	browseNamePrefix = "fleetly-browse"
 	// swarmServiceNameLimit 是 swarm 服务名上限（DNS label 约束 63）。
 	swarmServiceNameLimit = 63
 )
@@ -74,6 +78,8 @@ func workloadServiceName(ns capability.NamespaceRef, w capability.Workload, gen 
 		full = strings.Join([]string{runNamePrefix, w.ID}, "-")
 	case ns.Database != "":
 		full = strings.Join([]string{dbNamePrefix, w.ID}, "-")
+	case ns.Browse != "":
+		full = strings.Join([]string{browseNamePrefix, w.ID}, "-")
 	case w.GenerationScoped:
 		full = strings.Join([]string{namePrefix, ns.Team, ns.Project, ns.App, w.Process,
 			"g" + strconv.FormatUint(workloadGeneration(w, gen), 10)}, "-")
@@ -134,6 +140,8 @@ func workloadLabels(ns capability.NamespaceRef, w capability.Workload, gen capab
 		labels[labelTask] = sanitizeNamePart(ns.Task)
 	case ns.Database != "":
 		labels[labelDatabase] = sanitizeNamePart(ns.Database)
+	case ns.Browse != "":
+		labels[labelBrowse] = sanitizeNamePart(ns.Browse)
 	default:
 		labels[labelApp] = sanitizeNamePart(ns.App)
 	}
@@ -141,7 +149,7 @@ func workloadLabels(ns capability.NamespaceRef, w capability.Workload, gen capab
 }
 
 // nsSelector 是隔离域的列表过滤器（label 全等匹配；域主体按 App/Task/
-// Database 轴分支，与 workloadLabels 同构）。
+// Database/Browse 轴分支，与 workloadLabels 同构）。
 func nsSelector(ns capability.NamespaceRef) map[string]string {
 	selector := map[string]string{
 		labelManaged: "true",
@@ -153,6 +161,8 @@ func nsSelector(ns capability.NamespaceRef) map[string]string {
 		selector[labelTask] = sanitizeNamePart(ns.Task)
 	case ns.Database != "":
 		selector[labelDatabase] = sanitizeNamePart(ns.Database)
+	case ns.Browse != "":
+		selector[labelBrowse] = sanitizeNamePart(ns.Browse)
 	default:
 		selector[labelApp] = sanitizeNamePart(ns.App)
 	}

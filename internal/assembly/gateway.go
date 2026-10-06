@@ -84,7 +84,7 @@ func gatewayRegistrations() []gateway.RegisterFunc {
 // eventsSrc 为 nil 时跳过 SSE 挂载（不需要订阅面的 REST 冒烟）。最外层
 // console.Mount 把非 /v1 路径交给 embed 静态产物（F2.6/ADR-0044；/v1/*
 // 零变化）。execSrc nil = exec 原生入口停用（纯 gateway 测试形态）。
-func NewGatewayHandler(logger *slog.Logger, conn grpc.ClientConnInterface, eventsSrc *fleetlygrpc.EventStreamSource, execSrc *fleetlygrpc.ExecStreamSource) (http.Handler, error) {
+func NewGatewayHandler(logger *slog.Logger, conn grpc.ClientConnInterface, eventsSrc *fleetlygrpc.EventStreamSource, execSrc *fleetlygrpc.ExecStreamSource, browseGate *BrowseGate) (http.Handler, error) {
 	mux := gateway.NewMux(gateway.MuxOptions{
 		ErrorHandler: newGatewayErrorHandler(logger),
 	})
@@ -105,6 +105,11 @@ func NewGatewayHandler(logger *slog.Logger, conn grpc.ClientConnInterface, event
 		h = mountExecStream(h, execSrc)
 		h = mountPlatformBinary(h, execSrc.Engine())
 	}
+	if browseGate != nil {
+		// browse 原生入口两件（F3.6，ADR-0051 决策 5）：Launcher Ticket
+		// 兑换 + ForwardAuth 校验目标。
+		h = mountBrowse(h, browseGate)
+	}
 	return console.Mount(h), nil
 }
 
@@ -121,7 +126,7 @@ func NewGatewayServer(
 	if err != nil {
 		return nil, nil, err
 	}
-	handler, err := NewGatewayHandler(app.Logger(), conn, fleetlygrpc.NewEventStreamSource(services), fleetlygrpc.NewExecStreamSource(services))
+	handler, err := NewGatewayHandler(app.Logger(), conn, fleetlygrpc.NewEventStreamSource(services), fleetlygrpc.NewExecStreamSource(services), NewBrowseGate(services))
 	if err != nil {
 		_ = conn.Close()
 		return nil, nil, err

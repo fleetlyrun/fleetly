@@ -29,6 +29,12 @@ var engineNameLiteralAllowlist = map[string]string{
 	// 端口/命令）；值侧在册性由 CreateDatabase 受理位以 dbtemplate 注册表
 	// 单源执法（未知词在解析期即 skip 进报告，见 dokploy.go）。
 	"internal/spec/dokploy.go": "dokploy type-word to fleetly engine-word translation (ADR-0050 migration hook); carries no engine knowledge — registry membership is enforced at CreateDatabase acceptance",
+	// dbbrowser 注册表（F3.6，ADR-0051 决策 3）：engine 名作为映射键出现——
+	// 值侧是浏览器方言 adapter（与 dbtemplate 的引擎知识分立：无镜像/端口/
+	// 凭证渲染）。映射的 totality（对 dbtemplate.Engines 全覆盖）由
+	// dbbrowser_test 的 TestRegistryCoversDbtemplateEngines 双向钉死；值域
+	// 外的引擎键走 E_BROWSER_UNSUPPORTED 诚实失败。
+	"internal/engine/dbbrowser/dbbrowser.go": "engine-to-browser registry keys (ADR-0051 decision 3); totality over dbtemplate.Engines() is pinned by dbbrowser_test and unknown engines fail with E_BROWSER_UNSUPPORTED",
 }
 
 // scanEngineNameLiterals 是反扫纯核（红灯实验直测）：files 是路径→源文本，

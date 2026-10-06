@@ -47,7 +47,7 @@ func TestRESTGatewayServesLogsAsNDJSONFrames(t *testing.T) {
 	app, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: project.Project.Id, Name: "web"})
 	require.NoError(t, err)
 
-	handler, err := assembly.NewGatewayHandler(slog.New(slog.DiscardHandler), h.Conn, nil, nil)
+	handler, err := assembly.NewGatewayHandler(slog.New(slog.DiscardHandler), h.Conn, nil, nil, assembly.NewBrowseGate(h.Services))
 	require.NoError(t, err)
 
 	// 未带凭证：401（Bearer 面照常拦截流式注解面）。

@@ -32,7 +32,7 @@ import (
 // restGateway 装配 REST 面（与生产同清单同错误出口）并返回 POST/DELETE 助手。
 func restGateway(t *testing.T, h *apitest.Harness) (post func(path, body string) *httptest.ResponseRecorder, del func(path string) *httptest.ResponseRecorder) {
 	t.Helper()
-	handler, err := assembly.NewGatewayHandler(slog.New(slog.DiscardHandler), h.Conn, nil, nil)
+	handler, err := assembly.NewGatewayHandler(slog.New(slog.DiscardHandler), h.Conn, nil, nil, assembly.NewBrowseGate(h.Services))
 	require.NoError(t, err)
 	do := func(method, path, body string) *httptest.ResponseRecorder {
 		t.Helper()

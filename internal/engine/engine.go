@@ -16,6 +16,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state/app"
 	"github.com/fleetlyrun/fleetly/internal/state/audit"
 	"github.com/fleetlyrun/fleetly/internal/state/backup"
+	browserepo "github.com/fleetlyrun/fleetly/internal/state/browse"
 	"github.com/fleetlyrun/fleetly/internal/state/build"
 	"github.com/fleetlyrun/fleetly/internal/state/channel"
 	configrepo "github.com/fleetlyrun/fleetly/internal/state/config"
@@ -136,6 +137,9 @@ type Options struct {
 	RelayAgentVersion string
 	// DataRoot 是平台数据根（构建上下文与 git 检出落盘）。
 	DataRoot string
+	// Browse 是数据浏览器面配置（F3.6，ADR-0051；零值 = 面停用——
+	// BrowseDatabase 受理拒 E_BROWSE_DISABLED，browseLoop 零成本拍）。
+	Browse BrowseConfig
 }
 
 func (o *Options) fill() {
@@ -239,6 +243,7 @@ const (
 	ownerApp      ownerDomain = iota // App 进程载体
 	ownerDatabase                    // Database 载体（ADR-0029）
 	ownerSystem                      // 受管域进程载体（fleetly/system）
+	ownerBrowse                      // Browse 会话载体（ADR-0051）
 )
 
 // workloadOwner 是 workloadID 与 Drift 期望锚的类型化归属（域 + 域内锚
@@ -370,6 +375,11 @@ type Engine struct {
 	//（第三条部署轨——挂项目网供 App 连，与 App 部署链/受管域分立）。
 	databases *dbrepo.Repo
 
+	// Browse 会话域（F3.6，ADR-0051）：回收台账 repo + 收敛环（会话
+	// 注册表进程内活体——行是重启恢复锚，见 browse.go）。
+	browseRepo *browserepo.Repo
+	browse     browseDomain
+
 	// Backup 域（F2.2，ADR-0039）：台账 repo + 备份环 + 执行链装配面
 	//（ObjectStore 端口 = 产物承载；Utility 子面 = 工具容器执行，装配期
 	// 经 FacesOf 从 Runtime 探测）。
@@ -403,6 +413,7 @@ type Engine struct {
 	metricsLoop  *Loop // 指标采集环（scrape/评估，ADR-0041；粗节拍锚在 step 内）
 	taskLoop     *Loop // Task/Run 收敛环（janitor/补足/Ensure/收口）
 	scheduleLoop *Loop // Schedule 到期拍环（F1.7）
+	browseLoop   *Loop // Browse 会话收敛环（F3.6，ADR-0051）
 	driftLoop    *Loop // ADR-0022 漂移扫描环（spec 对照 + 稳态看门狗）
 	rings        []ring
 	cancel       context.CancelFunc
@@ -531,6 +542,7 @@ func New(deps Deps, opts Options) *Engine {
 		schedules:    schedule.New(clock),
 		peerDecls:    networkpeer.New(clock),
 		uploads:      sourceupload.New(clock),
+		browseRepo:   browserepo.New(clock),
 		databases:    dbrepo.New(clock),
 		backups:      backup.New(clock),
 		loop:         NewLoop("deployment", log),
@@ -543,6 +555,7 @@ func New(deps Deps, opts Options) *Engine {
 		taskLoop:     NewLoop("task", log),
 		scheduleLoop: NewLoop("schedule", log),
 		driftLoop:    NewLoop("drift", log),
+		browseLoop:   NewLoop("browse", log),
 		nodeLeftSeen: map[string]bool{},
 		routes:       route.New(clock),
 		secrets:      secret.New(clock),
@@ -574,6 +587,8 @@ func New(deps Deps, opts Options) *Engine {
 	e.database.ensure = make(map[string]ensureMemo)
 	e.delivery.release = make(map[string]ensureMemo)
 	e.proxyMemo.pub = make(map[string]ensureMemo)
+	e.browse.sessions = make(map[string]*browseSession)
+	e.browse.ensure = make(map[string]ensureMemo)
 	// 环表（表序 = DriveOnce 手动驱动序：schedule 先于 task——同一轮内
 	// 铸出的 Task 即刻进补足链；goroutine 挂载/Kick 顺序随表，环间独立
 	// 无依赖）。
@@ -587,6 +602,7 @@ func New(deps Deps, opts Options) *Engine {
 		{name: "metrics", loop: e.metricsLoop, step: e.metricsStep},
 		{name: "schedule", loop: e.scheduleLoop, step: e.scheduleStep},
 		{name: "task", loop: e.taskLoop, step: e.taskStep},
+		{name: "browse", loop: e.browseLoop, step: e.browseStep},
 	}
 	return e
 }

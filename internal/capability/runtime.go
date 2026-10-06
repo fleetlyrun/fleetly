@@ -243,13 +243,17 @@ type Generation uint64
 // .App 是 App 域主体（AppSpec 投影的 Workload 集合边界）；.Task 是 Task 域
 // 主体（Run Workload 池边界，App 为空时有效——ADR-0025 决策 4：拒把 Task ID
 // 塞 .App 字段，词汇污染）；.Database 是 Database 域主体（用户域受管数据
-// 服务边界，App/Task 为空时有效——ADR-0029 同款词汇分立）。
+// 服务边界，App/Task 为空时有效——ADR-0029 同款词汇分立）；.Browse 是
+// Browse 会话域主体（单浏览器载体边界，App/Task/Database 为空时有效——
+// ADR-0051 决策 1：与 Database 轴分立，Runtime Ensure 按命名空间收敛整集，
+// 共轴会被 databaseLoop 当多余载体拆除）。
 type NamespaceRef struct {
 	Team     string
 	Project  string
 	App      string
 	Task     string
 	Database string
+	Browse   string
 }
 
 // String 返回稳定展示形态（日志/审计用）。
@@ -259,6 +263,9 @@ func (n NamespaceRef) String() string {
 	}
 	if n.Database != "" {
 		return n.Team + "/" + n.Project + "/db:" + n.Database
+	}
+	if n.Browse != "" {
+		return n.Team + "/" + n.Project + "/browse:" + n.Browse
 	}
 	return n.Team + "/" + n.Project + "/" + n.App
 }

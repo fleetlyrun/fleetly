@@ -103,6 +103,12 @@
       "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"backup_id\":{\"type\":\"string\"},\"database_id\":{\"type\":\"string\"},\"digest\":{\"type\":\"string\"},\"engine\":{\"type\":\"string\"},\"error\":{\"type\":\"string\"},\"object_key\":{\"type\":\"string\"},\"project_id\":{\"type\":\"string\"},\"size_bytes\":{\"type\":\"integer\"}},\"required\":[\"backup_id\",\"database_id\",\"project_id\",\"engine\"],\"type\":\"object\"}"
     },
     {
+      "name": "database.browser_opened",
+      "kind": "event",
+      "summary": "A browse session was opened for a database (payload carries the browser tool, read-only flag and enforcement tier; change freeze is exempt — diagnostics face).",
+      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"active_deployments\":{\"type\":\"integer\"},\"id\":{\"type\":\"string\"},\"project_id\":{\"type\":\"string\"}},\"required\":[\"id\"],\"type\":\"object\"}"
+    },
+    {
       "name": "database.created",
       "kind": "event",
       "summary": "A database was created from a template; the platform minted its credential secret (value never returned).",

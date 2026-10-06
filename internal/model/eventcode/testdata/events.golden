@@ -13,6 +13,7 @@ build.succeeded	Build produced an image digest.	added during implementation
 config.updated	A config version was written.	internal/api/fleetlygrpc/structure.go PutConfig
 database.backup_failed	A database backup failed; the payload carries the error tail (utility container stderr included).	internal/engine/backup.go executeOneBackup
 database.backup_succeeded	A database backup completed; the payload carries the object key, sha256 digest and size (the restore-verification anchors).	internal/engine/backup.go executeOneBackup
+database.browser_opened	A browse session was opened for a database (payload carries the browser tool, read-only flag and enforcement tier; change freeze is exempt — diagnostics face).	internal/api/fleetlygrpc/databases.go BrowseDatabase
 database.created	A database was created from a template; the platform minted its credential secret (value never returned).	internal/api/fleetlygrpc/databases.go CreateDatabase
 database.deleted	A database was deleted (carriers torn down, row tombstoned; volume and credential secret retained as project materials).	internal/api/fleetlygrpc/databases.go DeleteDatabase
 database.restored	A database restore completed (stream into a running target or volume pre-seeding before first start).	internal/engine/backup.go restoreDatabase

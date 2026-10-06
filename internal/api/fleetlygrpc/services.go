@@ -15,6 +15,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state/app"
 	"github.com/fleetlyrun/fleetly/internal/state/audit"
 	"github.com/fleetlyrun/fleetly/internal/state/backup"
+	browserepo "github.com/fleetlyrun/fleetly/internal/state/browse"
 	"github.com/fleetlyrun/fleetly/internal/state/build"
 	catalogrepo "github.com/fleetlyrun/fleetly/internal/state/catalog"
 	configrepo "github.com/fleetlyrun/fleetly/internal/state/config"
@@ -95,6 +96,11 @@ type Services struct {
 	// Databases 是 Database 聚合 repo（F1.12，ADR-0029）。
 	Databases *dbrepo.Repo
 
+	// Browse 是 Browse 会话回收台账 repo（F3.6，ADR-0051 决策 1：受理
+	// 事务落行；engine browseLoop 消费——注册表是进程内活体，行是
+	// 重启恢复与到点回收的锚）。
+	Browse *browserepo.Repo
+
 	// Backups 是 Backup 台账 repo（F2.2，ADR-0039；对象面经 Engine——
 	// ObjectStore 端口是 engine 执行链的装配物）。
 	Backups *backup.Repo
@@ -166,6 +172,7 @@ func NewServices(db *state.DB, e *engine.Engine, c *material.Cipher, rt capabili
 		Uploads:         sourceupload.New(clock),
 		UploadStore:     upload.NewStore(dataRoot, 0, 0),
 		Databases:       dbrepo.New(clock),
+		Browse:          browserepo.New(clock),
 		Backups:         backup.New(clock),
 		Catalog:         catalogrepo.New(clock),
 		Anchor:          anchor.New(clock),

@@ -29,7 +29,7 @@ var mutatingVerbs = []string{
 // readVerbs 是读型动词前缀（op 必须 READ）。
 var readVerbs = []string{
 	"Get", "List", "Stream", "Wait", "Diff", "Explain", "WhoAmI",
-	"Follow", "Watch", "Verify", "Query",
+	"Follow", "Watch", "Verify", "Query", "Browse",
 }
 
 // scopeOpExemptions 是 FullMethod → 豁免理由（表与动词方向不一致的唯一

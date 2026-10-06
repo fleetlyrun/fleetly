@@ -182,7 +182,7 @@ func TestExecStreamWSTicketFlow(t *testing.T) {
 	require.NoError(t, err)
 	sessID, ticket := resp.GetSession().GetId(), resp.GetTicket()
 
-	handler, err := assembly.NewGatewayHandler(slog.New(slog.DiscardHandler), h.Conn, nil, fleetlygrpc.NewExecStreamSource(h.Services))
+	handler, err := assembly.NewGatewayHandler(slog.New(slog.DiscardHandler), h.Conn, nil, fleetlygrpc.NewExecStreamSource(h.Services), assembly.NewBrowseGate(h.Services))
 	require.NoError(t, err)
 
 	// 无票据/坏票据 → 401（对匿名面只呈现 bad_ticket）。
@@ -286,7 +286,7 @@ func TestExecTeamLimit(t *testing.T) {
 // ——WS 升级前的最小拒绝）。
 func TestRelayAgentBadToken(t *testing.T) {
 	h := apitest.New(t)
-	handler, err := assembly.NewGatewayHandler(slog.New(slog.DiscardHandler), h.Conn, nil, fleetlygrpc.NewExecStreamSource(h.Services))
+	handler, err := assembly.NewGatewayHandler(slog.New(slog.DiscardHandler), h.Conn, nil, fleetlygrpc.NewExecStreamSource(h.Services), assembly.NewBrowseGate(h.Services))
 	require.NoError(t, err)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), "GET", "/v1/relay", nil))

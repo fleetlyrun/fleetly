@@ -101,6 +101,10 @@ func init() {
 	// 数据库面（structureEventPayload，databases.go 单源；F1.12/ADR-0029）。
 	registerEventPayload(eventDatabaseCreated, structureEventPayload{})
 	registerEventPayload(eventDatabaseDeleted, structureEventPayload{})
+	// Browse 会话受理（F3.6，ADR-0051 决策 1：安全可见性——谁在何时打开了
+	// 哪个 Database 的浏览器；载荷同 structureEventPayload（id 字段携带
+	// 库 ID；会话明细在审计 Detail）。
+	registerEventPayload(eventDatabaseBrowserOpened, structureEventPayload{})
 	// Exec 会话受理（execEventPayload，exec.go 单源；F3.2/ADR-0049——
 	// 安全可见性：谁在何时进入了哪个进程）。
 	registerEventPayload("exec.session_opened", execEventPayload{})

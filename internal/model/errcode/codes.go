@@ -180,4 +180,25 @@ var builtins = []Code{
 		Source:     "internal/api/fleetlygrpc/templates.go RefreshTemplates (ADR-0050 decision 4: fail-closed refresh — a bad catalog never replaces a working one)",
 		GRPC:       codes.Unavailable,
 	},
+	{
+		ID:         "E_BROWSE_DISABLED",
+		Summary:    "The database browse face is not configured on this platform (browse.host_suffix empty).",
+		Suggestion: "Browse sessions need a host suffix to mint session routes. Set browse.host_suffix (and browse.gateway_url) in the fleetlyd config, then restart; absence is an explicit off state, not a degraded mode (ADR-0051 decision 5).",
+		Source:     "internal/api/fleetlygrpc/databases.go BrowseDatabase (ADR-0051 decision 5: empty host_suffix = face disabled, precise rejection)",
+		GRPC:       codes.FailedPrecondition,
+	},
+	{
+		ID:         "E_DATABASE_NOT_READY",
+		Summary:    "The database is not running, so a browse session would serve a connection error page.",
+		Suggestion: "Wait for the database to converge to running (`fleetly databases get` shows status); browse is refused for pending/stopped databases rather than serving an unusable browser.",
+		Source:     "internal/api/fleetlygrpc/databases.go BrowseDatabase (ADR-0051 decision 1: acceptance requires a running target — honest refusal over a broken session)",
+		GRPC:       codes.FailedPrecondition,
+	},
+	{
+		ID:         "E_BROWSER_UNSUPPORTED",
+		Summary:    "The database engine has no browse browser mapped in the dbbrowser registry.",
+		Suggestion: "The engine-to-browser mapping (postgres/pgvector→pgweb, redis→redis-commander, mysql→adminer, mongo→mongoku) is total over the dbtemplate value set; reaching this code means a new engine was added without a browser adapter. Extend internal/engine/dbbrowser (ADR-0051 decision 3).",
+		Source:     "internal/engine/dbbrowser For (ADR-0051 decision 3: registry totality is the acceptance contract; unmapped engine = honest failure)",
+		GRPC:       codes.Unimplemented,
+	},
 }

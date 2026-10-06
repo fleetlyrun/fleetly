@@ -128,6 +128,17 @@ type Route struct {
 	// BackendAddr 是发布时解析的后端地址（Runtime.Addresses 产物，
 	// host:port 形态；Proxy Provider 不再反查 Runtime）。
 	BackendAddr string
+	// Auth 是可选的请求门禁（ADR-0051）：非 nil 时 Proxy Provider 在该
+	// 路由前置 ForwardAuth——每请求校验会话凭证（browse 会话路由）；
+	// App 路由恒 nil。
+	Auth *RouteAuth
+}
+
+// RouteAuth 是 Route 的请求门禁声明（ADR-0051 决策 5：launcher ticket 兑换
+// 后的持续校验面——Address 是平台 authorize 端点（容器可达的 gateway 基址
+// + 路径），Proxy 原样作为 ForwardAuth 目标）。
+type RouteAuth struct {
+	Address string
 }
 
 // CertificateRequest 是证书申请。

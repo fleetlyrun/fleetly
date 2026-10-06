@@ -11,24 +11,32 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"net/url"
+	"time"
+
+	"github.com/lynx-go/grpcapi/authz"
 
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/api/apperr"
 	"github.com/fleetlyrun/fleetly/internal/authn"
 	"github.com/fleetlyrun/fleetly/internal/engine"
+	"github.com/fleetlyrun/fleetly/internal/engine/dbbrowser"
 	"github.com/fleetlyrun/fleetly/internal/engine/dbtemplate"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/state/audit"
 	"github.com/fleetlyrun/fleetly/internal/state/backup"
+	browserepo "github.com/fleetlyrun/fleetly/internal/state/browse"
 	dbrepo "github.com/fleetlyrun/fleetly/internal/state/database"
 	"github.com/fleetlyrun/fleetly/internal/state/secret"
 )
 
 // 数据库面事件名（usage 反扫的字面量锚点）。
 const (
-	eventDatabaseCreated = "database.created"
-	eventDatabaseDeleted = "database.deleted"
+	eventDatabaseCreated       = "database.created"
+	eventDatabaseBrowserOpened = "database.browser_opened"
+	eventDatabaseDeleted       = "database.deleted"
 )
 
 // dbPasswordRandBytes 是随机密码字节数（hex 后 48 字符；zot 平台凭证
@@ -400,4 +408,124 @@ func mintDatabasePassword() string {
 		panic("fleetlygrpc: entropy source unavailable for database credentials: " + err.Error())
 	}
 	return hex.EncodeToString(raw)
+}
+
+// browse 票据常量（ADR-0051 决策 2）：120s TTL——实例冷启动（首次拉镜像）
+// + 用户点击的窗口；exec 的 60s 不够。
+const browseTicketTTL = 120 * time.Second
+
+// BrowseDatabase 铸造数据浏览器会话（F3.6，ADR-0051）：受理四件一拍
+// （browse 台账行 + database.browser_opened 事件 + database.browse 审计）
+// → 引擎注册 + Kick → 铸 Launcher Ticket（120s 单用途）→ 回显入口 URL。
+//
+// 动态提权门（决策 6）：静态注解只表达最低门（databases:read）；
+// read_write=true 或无只读执法的方言（mysql/adminer——读权用户不该拿到
+// 可写控制台）在服务内要求 databases:write。freeze 豁免（诊断面同 exec
+// 语义，ADR-0017 边界注记）。
+func (svc *DatabasesService) BrowseDatabase(ctx context.Context, req *structurev1.BrowseDatabaseRequest) (*structurev1.BrowseDatabaseResponse, error) {
+	if req.GetDatabaseId() == "" {
+		return nil, apperr.New("E_INVALID_ARGUMENT", "database_id: must not be empty")
+	}
+	if !svc.s.Engine.BrowseConfigured() {
+		return nil, apperr.New("E_BROWSE_DISABLED",
+			"the database browse face is not configured on this platform (browse.host_suffix is empty)")
+	}
+	db, err := svc.s.Databases.Get(ctx, svc.s.DB.Runner(), req.GetDatabaseId())
+	if err != nil {
+		return nil, mapStateError(err, "database")
+	}
+	if err := svc.s.authorizeProjectID(ctx, db.ProjectID); err != nil {
+		return nil, err
+	}
+	if db.Status != dbrepo.StatusRunning && db.Status != dbrepo.StatusDegraded {
+		return nil, apperr.New("E_DATABASE_NOT_READY",
+			"database %s is %s; browse requires a running database (refused over an unusable session)", db.Name, db.Status)
+	}
+	browser, ok := dbbrowser.For(db.Engine)
+	if !ok {
+		return nil, apperr.New("E_BROWSER_UNSUPPORTED",
+			"engine %q has no browse browser mapped in the dbbrowser registry", db.Engine)
+	}
+	readOnly := !req.GetReadWrite()
+	if req.GetReadWrite() || browser.ReadOnlyEnforcement() == dbbrowser.EnforcementNone {
+		if id, ok := authn.FromContext(ctx); !ok || !id.HasScope("databases", authz.ScopeWrite) {
+			return nil, apperr.New("E_FORBIDDEN",
+				"this browse form requires the databases:write scope (read_write, or engines with no read-only enforcement)").
+				WithSuggestion("Open the session read-only (the default), or use a token carrying databases:write.")
+		}
+	}
+	team, err := svc.s.Anchor.TeamOfProjectID(ctx, svc.s.DB.Runner(), db.ProjectID)
+	if err != nil {
+		return nil, mapAnchorError(err)
+	}
+	if err := svc.s.Engine.BrowseCheckQuota(team); err != nil {
+		return nil, apperr.New("E_QUOTA_EXCEEDED",
+			"too many concurrent browse sessions for this team (limit %d); wait for a session to expire or go idle", engine.BrowseMaxSessionsPerTeam)
+	}
+	sessionID := newID()
+	now := svc.s.DB.Clock().Now()
+	row := &browserepo.Session{
+		ID: sessionID, ProjectID: db.ProjectID, DatabaseID: db.ID,
+		Engine: db.Engine, ReadOnly: readOnly,
+		CreatedAt: state.FormatTime(now), ExpiresAt: state.FormatTime(now.Add(engine.BrowseHardTTL)),
+	}
+	detail, _ := json.Marshal(map[string]any{ //nolint:errcheck // 结构体字段恒可序列化
+		"session_id": sessionID, "browser": browser.Name(),
+		"read_only": readOnly, "enforcement": string(browser.ReadOnlyEnforcement()),
+	})
+	err = svc.s.commit(ctx, writeFact{
+		write: func(ctx context.Context, tx *sql.Tx) error {
+			return svc.s.Browse.Create(ctx, tx, row)
+		},
+		events: []eventFact{structureEvent(eventDatabaseBrowserOpened, "database", db.ID, db.ProjectID)},
+		audits: []*audit.Entry{{
+			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "database.browse",
+			Resource: "database/" + db.ID, Detail: string(detail),
+		}},
+	})
+	if err != nil {
+		return nil, mapStateError(err, "browse session")
+	}
+	info, err := svc.s.Engine.RegisterBrowseSession(engine.BrowseInput{
+		SessionID: sessionID, TeamID: team, ProjectID: db.ProjectID, DatabaseID: db.ID,
+		DatabaseName: db.Name, EngineName: db.Engine, ReadOnly: readOnly,
+	})
+	if err != nil {
+		return nil, apperr.New("E_INTERNAL", "browse session could not be registered; the ledger row stays and the loop will reclaim it").WithCause(err)
+	}
+	ticket, ttl, err := svc.s.eventTickets.issueWithTTL(ticketPurposeBrowse, sessionID, browseTicketTTL)
+	if err != nil {
+		return nil, apperr.New("E_INTERNAL", "browse launcher ticket could not be minted").WithCause(err)
+	}
+	url := svc.s.Engine.BrowseEntryURL(sessionID) + "?session=" + urlQueryEscape(sessionID) + "&ticket=" + urlQueryEscape(ticket)
+	return &structurev1.BrowseDatabaseResponse{
+		SessionId: sessionID, Url: url, Ticket: ticket,
+		ExpiresIn: int32(ttl / time.Second),
+		Browser:   info.Browser, ReadOnly: readOnly,
+		Enforcement: browseEnforcementMsg(browser.ReadOnlyEnforcement()),
+	}, nil
+}
+
+// browseEnforcementMsg 映射执法层级枚举（protojson 规范名单源）。
+func browseEnforcementMsg(e dbbrowser.Enforcement) structurev1.BrowseReadOnlyEnforcement {
+	switch e {
+	case dbbrowser.EnforcementSession:
+		return structurev1.BrowseReadOnlyEnforcement_BROWSE_READ_ONLY_ENFORCEMENT_SESSION
+	case dbbrowser.EnforcementTool:
+		return structurev1.BrowseReadOnlyEnforcement_BROWSE_READ_ONLY_ENFORCEMENT_TOOL
+	default:
+		return structurev1.BrowseReadOnlyEnforcement_BROWSE_READ_ONLY_ENFORCEMENT_NONE
+	}
+}
+
+// urlQueryEscape 是 URL query 值转义（票据 base64url 形态实际零转义面，
+// 显式转义是纵深）。
+func urlQueryEscape(s string) string {
+	return url.QueryEscape(s)
+}
+
+// RedeemBrowseTicket 兑换 browse 票据（assembly 原生入口消费；purpose+
+// 会话绑定、单用途——ADR-0051 决策 2）。
+func (s *Services) RedeemBrowseTicket(sessionID, ticket string) bool {
+	return s.eventTickets.redeem(ticketPurposeBrowse, sessionID, ticket)
 }

@@ -28,7 +28,7 @@ import (
 
 func TestRESTUploadSourceLifecycle(t *testing.T) {
 	h := apitest.New(t)
-	handler, err := assembly.NewGatewayHandler(slog.New(slog.DiscardHandler), h.Conn, nil, nil)
+	handler, err := assembly.NewGatewayHandler(slog.New(slog.DiscardHandler), h.Conn, nil, nil, assembly.NewBrowseGate(h.Services))
 	require.NoError(t, err)
 
 	ctx := sdk.WithToken(context.Background(), h.Token)
@@ -88,7 +88,7 @@ func TestRESTUploadSourceEnforcement(t *testing.T) {
 	// 超限：413 诚实信封（E_UPLOAD_TOO_LARGE，非不透明形态——Q-11 教训）。
 	h := apitest.New(t)
 	h.Services.UploadStore = upload.NewStore(h.DataRoot, 64, 1<<20)
-	handler, err := assembly.NewGatewayHandler(slog.New(slog.DiscardHandler), h.Conn, nil, nil)
+	handler, err := assembly.NewGatewayHandler(slog.New(slog.DiscardHandler), h.Conn, nil, nil, assembly.NewBrowseGate(h.Services))
 	require.NoError(t, err)
 
 	ctx := sdk.WithToken(context.Background(), h.Token)

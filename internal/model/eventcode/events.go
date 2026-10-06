@@ -147,4 +147,9 @@ var builtins = []Event{
 	// 目录刷新（F3.3，ADR-0050 决策 4）：操作员动词的事实面——快照 digest
 	// 前后对照是"目录何时被谁换成什么"的唯一台账。
 	{Name: "templates.refreshed", Summary: "The template catalog snapshot was refreshed (payload carries the previous and new aggregate digests and the entry count).", Source: "internal/api/fleetlygrpc/templates.go RefreshTemplates"},
+
+	// 数据浏览器（F3.6，ADR-0051 决策 1：安全可见性——谁在何时打开了哪个
+	// Database 的浏览器会话；会话非资源行，受理即唯一事件/审计落点，回收
+	// 不落第二行）。
+	{Name: "database.browser_opened", Summary: "A browse session was opened for a database (payload carries the browser tool, read-only flag and enforcement tier; change freeze is exempt — diagnostics face).", Source: "internal/api/fleetlygrpc/databases.go BrowseDatabase"},
 }

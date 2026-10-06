@@ -19,6 +19,9 @@ message AppConfig {
   Logging logging = 6;
   // Metrics 面（F2.5，ADR-0041）：受管 VictoriaMetrics 端点与保留窗。
   Metrics metrics = 7;
+  // 数据浏览器面（F3.6，ADR-0051）：host_suffix 空 = 面停用（BrowseDatabase
+  // 精确拒绝，升级零扰动）。
+  Browse browse = 8;
 }
 
 // PlatformBackup 是控制面导出（CONTEXT.md 词条）的配置面：本地仓恒在
@@ -104,6 +107,23 @@ message Metrics {
   string addr = 1;
   // retention_days 是保留窗天数（空值回退 30；VM -retentionPeriod 同口径）。
   int64 retention_days = 2;
+}
+
+// Browse 是数据浏览器面配置（ADR-0051）：host_suffix 空即整面停用——收窄是
+// 显式动作，不静默降级（registry.addr 同文化）。
+message Browse {
+  // host_suffix 是 browse-<session id>. 的后缀域（如 dev.fleetly.run；泛解析
+  // 或 sslip 形态均可）。空 = BrowseDatabase 拒绝（E_BROWSE_DISABLED）。env
+  // 形态 FLEETLY_BROWSE_HOST_SUFFIX。
+  string host_suffix = 1;
+  // gateway_url 是容器可达的 REST gateway 基址（如 http://10.124.0.3:9081）：
+  // entry 兑换入口与 ForwardAuth authorize 的寻址源（traefik configEndpoint
+  // 同文化——traefik 容器能拉到的地址即正确地址）。env 形态
+  // FLEETLY_BROWSE_GATEWAY_URL。
+  string gateway_url = 2;
+  // tls 是会话路由的 TLS 模式："none"（缺省，明文 :80）或 "auto"（LE per-host
+  // SAN，需公网解析）；空值回退 "none"。env 形态 FLEETLY_BROWSE_TLS。
+  string tls = 3;
 }
 
 message Data {

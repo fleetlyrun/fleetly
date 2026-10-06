@@ -26,6 +26,7 @@ const eventTicketTTL = 60 * time.Second
 const (
 	ticketPurposeEvents = "events" // SSE 事件流（ADR-0026 原面）
 	ticketPurposeExec   = "exec"   // exec 会话 WS 流（ADR-0049）
+	ticketPurposeBrowse = "browse" // browse 会话 entry 兑换（ADR-0051）
 )
 
 // ticketEntry 是一枚在册票据。
@@ -90,4 +91,19 @@ func (s *eventTicketStore) sweepLocked() {
 			delete(s.tickets, t)
 		}
 	}
+}
+
+// issueWithTTL 铸造指定 TTL 的票据（browse 面 120s——冷启动余量；ADR-0051
+// 决策 2：exec 60s 不够浏览器首次拉镜像 + 用户点击的窗口）。
+func (s *eventTicketStore) issueWithTTL(purpose, payload string, ttl time.Duration) (string, time.Duration, error) {
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return "", 0, err
+	}
+	token := base64.RawURLEncoding.EncodeToString(buf)
+	s.mu.Lock()
+	s.sweepLocked()
+	s.tickets[token] = ticketEntry{expiry: s.clock.Now().Add(ttl), purpose: purpose, payload: payload}
+	s.mu.Unlock()
+	return token, ttl, nil
 }

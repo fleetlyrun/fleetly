@@ -1161,6 +1161,7 @@ const (
 	DatabasesService_TriggerBackup_FullMethodName  = "/fleetly.structure.v1.DatabasesService/TriggerBackup"
 	DatabasesService_ListBackups_FullMethodName    = "/fleetly.structure.v1.DatabasesService/ListBackups"
 	DatabasesService_VerifyBackup_FullMethodName   = "/fleetly.structure.v1.DatabasesService/VerifyBackup"
+	DatabasesService_BrowseDatabase_FullMethodName = "/fleetly.structure.v1.DatabasesService/BrowseDatabase"
 )
 
 // DatabasesServiceClient is the client API for DatabasesService service.
@@ -1188,6 +1189,11 @@ type DatabasesServiceClient interface {
 	ListBackups(ctx context.Context, in *ListBackupsRequest, opts ...grpc.CallOption) (*ListBackupsResponse, error)
 	// VerifyBackup 重算对象摘要比对回执（ADR-0039 决策 8）。
 	VerifyBackup(ctx context.Context, in *VerifyBackupRequest, opts ...grpc.CallOption) (*VerifyBackupResponse, error)
+	// BrowseDatabase 铸造数据浏览器按需会话（F3.6，ADR-0051）：静态 scope 是
+	// 最低门（只读档）；read_write=true 或无只读执法的方言（mysql）在服务内
+	// 动态要求 databases:write。响应 URL 含一次性 Launcher Ticket（120s 单
+	// 用途）——兑换入口即 URL 本身。会话硬 TTL 30min、空闲 10min 回收。
+	BrowseDatabase(ctx context.Context, in *BrowseDatabaseRequest, opts ...grpc.CallOption) (*BrowseDatabaseResponse, error)
 }
 
 type databasesServiceClient struct {
@@ -1268,6 +1274,16 @@ func (c *databasesServiceClient) VerifyBackup(ctx context.Context, in *VerifyBac
 	return out, nil
 }
 
+func (c *databasesServiceClient) BrowseDatabase(ctx context.Context, in *BrowseDatabaseRequest, opts ...grpc.CallOption) (*BrowseDatabaseResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BrowseDatabaseResponse)
+	err := c.cc.Invoke(ctx, DatabasesService_BrowseDatabase_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // DatabasesServiceServer is the server API for DatabasesService service.
 // All implementations must embed UnimplementedDatabasesServiceServer
 // for forward compatibility.
@@ -1293,6 +1309,11 @@ type DatabasesServiceServer interface {
 	ListBackups(context.Context, *ListBackupsRequest) (*ListBackupsResponse, error)
 	// VerifyBackup 重算对象摘要比对回执（ADR-0039 决策 8）。
 	VerifyBackup(context.Context, *VerifyBackupRequest) (*VerifyBackupResponse, error)
+	// BrowseDatabase 铸造数据浏览器按需会话（F3.6，ADR-0051）：静态 scope 是
+	// 最低门（只读档）；read_write=true 或无只读执法的方言（mysql）在服务内
+	// 动态要求 databases:write。响应 URL 含一次性 Launcher Ticket（120s 单
+	// 用途）——兑换入口即 URL 本身。会话硬 TTL 30min、空闲 10min 回收。
+	BrowseDatabase(context.Context, *BrowseDatabaseRequest) (*BrowseDatabaseResponse, error)
 	mustEmbedUnimplementedDatabasesServiceServer()
 }
 
@@ -1323,6 +1344,9 @@ func (UnimplementedDatabasesServiceServer) ListBackups(context.Context, *ListBac
 }
 func (UnimplementedDatabasesServiceServer) VerifyBackup(context.Context, *VerifyBackupRequest) (*VerifyBackupResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method VerifyBackup not implemented")
+}
+func (UnimplementedDatabasesServiceServer) BrowseDatabase(context.Context, *BrowseDatabaseRequest) (*BrowseDatabaseResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method BrowseDatabase not implemented")
 }
 func (UnimplementedDatabasesServiceServer) mustEmbedUnimplementedDatabasesServiceServer() {}
 func (UnimplementedDatabasesServiceServer) testEmbeddedByValue()                          {}
@@ -1471,6 +1495,24 @@ func _DatabasesService_VerifyBackup_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DatabasesService_BrowseDatabase_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BrowseDatabaseRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DatabasesServiceServer).BrowseDatabase(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DatabasesService_BrowseDatabase_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DatabasesServiceServer).BrowseDatabase(ctx, req.(*BrowseDatabaseRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // DatabasesService_ServiceDesc is the grpc.ServiceDesc for DatabasesService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1505,6 +1547,10 @@ var DatabasesService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "VerifyBackup",
 			Handler:    _DatabasesService_VerifyBackup_Handler,
+		},
+		{
+			MethodName: "BrowseDatabase",
+			Handler:    _DatabasesService_BrowseDatabase_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

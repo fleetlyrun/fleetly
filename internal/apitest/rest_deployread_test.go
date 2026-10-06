@@ -31,7 +31,7 @@ import (
 func TestRESTDeploymentReadSurface(t *testing.T) {
 	h := apitest.New(t)
 	ctx := sdk.WithToken(context.Background(), h.Token)
-	handler, err := assembly.NewGatewayHandler(slog.New(slog.DiscardHandler), h.Conn, nil, nil)
+	handler, err := assembly.NewGatewayHandler(slog.New(slog.DiscardHandler), h.Conn, nil, nil, assembly.NewBrowseGate(h.Services))
 	require.NoError(t, err)
 
 	get := func(path string) map[string]any {

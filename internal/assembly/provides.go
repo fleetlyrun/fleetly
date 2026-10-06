@@ -317,6 +317,13 @@ func NewEngine(
 		// 只在该地址监听）。版本取 buildinfo（回环代理握手上报）。
 		RelayLoopbackURL:  relayLoopbackURL(cfg.HTTPAddr()),
 		RelayAgentVersion: info.Version,
+		// 数据浏览器面（F3.6，ADR-0051）：config 三字段直通（host_suffix 空
+		// = 面停用——BrowseDatabase 精确拒绝，升级零扰动）。
+		Browse: engine.BrowseConfig{
+			HostSuffix: cfg.Browse.GetHostSuffix(),
+			GatewayURL: cfg.Browse.GetGatewayUrl(),
+			TLSMode:    cfg.Browse.GetTls(),
+		},
 	}), nil
 }
 

@@ -407,7 +407,9 @@ func (e *Engine) publishRoutes(ctx context.Context) {
 		return
 	}
 	now := e.clock.Now()
-	sig := routesFingerprint(routes)
+	// 签名必须覆盖 browse 会话集（ADR-0051 决策 5）：ephemeral 路由不经
+	// route 行，会话增删不改行集指纹——不并入则短路吞掉会话路由变更。
+	sig := routesFingerprint(routes) + "\x00" + e.browseRoutesFingerprint()
 	forced := e.proxyMemo.pubNow.CompareAndSwap(true, false) // API 写路径即时触发绕过短路
 	_, fresh := e.ensureFresh(e.proxyMemo.pub, routesPubKey, sig, now)
 	if fresh && !forced {
@@ -432,6 +434,9 @@ func (e *Engine) publishRoutes(ctx context.Context) {
 		}
 		publish = append(publish, cr)
 	}
+	// Browse 会话的 ephemeral 双路由合并（ADR-0051 决策 5：entry 兑换入口
+	// + ForwardAuth 门禁的工具路由；非 route 行——会话拓扑是平台内置）。
+	publish = append(publish, e.browseCapabilityRoutes(ctx)...)
 	if err := e.proxy.PublishRoutes(ctx, publish); err != nil {
 		e.log.Error("route publish: proxy rejected config", "err", err)
 		e.ensureForget(e.proxyMemo.pub, routesPubKey) // 发布失败：下拍强制重试全量

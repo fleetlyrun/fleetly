@@ -59,6 +59,10 @@ var freezeExemptions = map[string]string{
 	// VerifyBackup：无状态迁移的校验面（重算摘要比对回执——读路径的
 	// 执行面，动词名不在读前缀集，豁免登记）。
 	"/fleetly.structure.v1.DatabasesService/VerifyBackup": "read-path execution: recomputes the object digest against the ledger receipt, changes no platform state",
+	// Browse 会话受理（F3.6，ADR-0051 决策 1）：诊断面同 exec 语义——
+	// 会话不变更资源状态（browse 台账行是会话自身的回收锚，非资源迁移）；
+	// 冻结窗内诊断恰恰最需要。
+	"/fleetly.structure.v1.DatabasesService/BrowseDatabase": "diagnostics face: a browse session mutates no resource state (ADR-0051); a freeze window is exactly when diagnosis is needed",
 	// 告警面（F2.5，ADR-0041）：通道/规则是运维配置不是变更控制面
 	//（ADR-0017 冻结语义 = Workload 与结构变更族）；通道无 Team 锚
 	//（平台级），test 是诊断动作。

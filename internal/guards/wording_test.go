@@ -338,6 +338,10 @@ var wordingExemptions = map[string]map[string]string{
 		"genproto/fleetly/system/v1/governance.pb.gw.go":     "grpc-gateway generated boilerplate comment (library's own middleware term), not platform admission naming",
 		"genproto/fleetly/system/v1/system.pb.gw.go":         "grpc-gateway generated boilerplate comment (library's own middleware term), not platform admission naming",
 		"genproto/fleetly/telemetry/v1/telemetry.pb.gw.go":   "grpc-gateway generated boilerplate comment (library's own middleware term), not platform admission naming",
+		// traefik 动态配置 schema 自有键（middlewares 是 traefik 官方动态配置
+		// 的 router 字段名与集合键——Provider 私有翻译产物的库契约词，非
+		// 平台受理位命名；ADR-0051 browse 门禁面引入）。
+		"internal/providers/traefik/config.go": "traefik dynamic-config schema's own middlewares key (library contract term in the provider translation layer), not platform admission naming (ADR-0051)",
 	},
 }
 
