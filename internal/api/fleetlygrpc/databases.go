@@ -151,6 +151,12 @@ func (svc *DatabasesService) GetDatabase(ctx context.Context, req *structurev1.G
 
 // ListDatabases 新→旧分页（ADR-0026 after_* + limit）。
 func (svc *DatabasesService) ListDatabases(ctx context.Context, req *structurev1.ListDatabasesRequest) (*structurev1.ListDatabasesResponse, error) {
+	// 空 project_id 先拒（E_INVALID_ARGUMENT）——与 ListApps 同口径；此前
+	// 落到行级授权的 E_NOT_FOUND（404），调用方把"缺参"误判为"项目不存在"
+	//（N3 交接 O1 收口，2026-10-06）。
+	if req.GetProjectId() == "" {
+		return nil, apperr.New("E_INVALID_ARGUMENT", "project_id: must not be empty")
+	}
 	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}
