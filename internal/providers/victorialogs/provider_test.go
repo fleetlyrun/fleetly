@@ -283,23 +283,41 @@ func TestQueryRoundTrip(t *testing.T) {
 	assert.Equal(t, "2026-10-04T13:00:00Z", gotForm.Get("end"))
 }
 
-// TestTailStream 钉 tail 端点：start_offset 回填窗（Since 距今秒数）、
-// 流式逐帧写出、ctx 取消干净收口。
-func TestTailStream(t *testing.T) {
+// TestFollowBacklogThenTail 钉 follow 检索径两段式契约（2026-10-05
+// Console 走查 F2 修复回归）：①积压段先出帧（TailLines/Since 窗口经
+// /select/logsql/query——REST 面首帧及时到，"零字节假挂死"根除）；
+// ②尾随段 start_offset 锚最新积压帧（≈ now-newest），重叠窗内已写帧
+// 去重、新帧放行；③ctx 取消干净收口。
+func TestFollowBacklogThenTail(t *testing.T) {
+	now := time.Now().UTC()
+	newest := now.Add(-8 * time.Minute) // 积压段最新帧时刻（尾随锚点）
 	var formMu sync.Mutex
-	var gotForm url.Values
+	var queryForm, tailForm url.Values
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.NoError(t, r.ParseForm())
 		formMu.Lock()
-		gotForm = r.Form
+		if r.URL.Path == "/select/logsql/query" {
+			queryForm = r.Form
+		} else {
+			tailForm = r.Form
+		}
 		formMu.Unlock()
 		w.Header().Set("Content-Type", "application/stream+json; charset=utf-8")
-		_, _ = w.Write([]byte(`{"_time":"2026-10-04T12:00:01Z","_msg":"live1","fleetly_workload":"W1","fleetly_kind":"runtime"}` + "\n"))
-		_, _ = w.Write([]byte(`{"_time":"2026-10-04T12:00:02Z","_msg":"live2","fleetly_workload":"W1","fleetly_kind":"runtime"}` + "\n"))
-		if f, ok := w.(http.Flusher); ok {
-			f.Flush() // ndjson 流式语义：写即推（否则 httptest 缓冲到 handler 返回）
+		switch r.URL.Path {
+		case "/select/logsql/query": // 积压段：倒序给（实现侧统一升序），写完收流
+			_, _ = w.Write([]byte(vlRow(t, newest, "backlog2") + "\n"))
+			_, _ = w.Write([]byte(vlRow(t, now.Add(-10*time.Minute), "backlog1") + "\n"))
+		case "/select/logsql/tail": // 尾随段：重叠窗重读帧（去重）+ 一条新帧
+			_, _ = w.Write([]byte(vlRow(t, now.Add(-10*time.Minute), "backlog1") + "\n"))
+			_, _ = w.Write([]byte(vlRow(t, newest, "backlog2") + "\n"))
+			_, _ = w.Write([]byte(vlRow(t, now.Add(-1*time.Minute), "live-new") + "\n"))
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush() // ndjson 流式语义：写即推（否则 httptest 缓冲到 handler 返回）
+			}
+			<-r.Context().Done() // 模拟持续尾随流（客户端取消时服务端收口）
+		default:
+			t.Errorf("unexpected path %s", r.URL.Path)
 		}
-		<-r.Context().Done() // 模拟持续尾随流（客户端取消时服务端收口）
 	}))
 	defer srv.Close()
 
@@ -307,28 +325,115 @@ func TestTailStream(t *testing.T) {
 	p.addr = strings.TrimPrefix(srv.URL, "http://")
 	var cw collectWriter
 	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
 	go func() {
-		_ = p.Query(ctx, capability.LogQuery{
+		done <- p.Query(ctx, capability.LogQuery{
 			Namespace: capability.NamespaceRef{Project: "P1"},
-			Text:      "err", Follow: true,
+			Text:      "err", Follow: true, TailLines: 200,
+			Since: now.Add(-90 * time.Minute),
+		}, &cw)
+	}()
+	// 积压 2 帧 + 尾随新帧 1 条 = 3（重叠窗 2 条重读被去重）。
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) && cw.len() < 3 {
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	require.NoError(t, <-done)
+	cw.mu.Lock()
+	frames := append([]capability.LogFrame(nil), cw.frames...)
+	cw.mu.Unlock()
+	require.Len(t, frames, 3, "follow = backlog frames + new tail frame, overlap deduped")
+	assert.Equal(t, "backlog1", string(frames[0].Line))
+	assert.Equal(t, "backlog2", string(frames[1].Line))
+	assert.Equal(t, "live-new", string(frames[2].Line))
+
+	formMu.Lock()
+	qf, tf := queryForm, tailForm
+	formMu.Unlock()
+	require.NotNil(t, qf, "backlog phase must hit /select/logsql/query first")
+	// 积压段窗口契约：limit=TailLines、start=Since（Until 不下发）。
+	assert.Equal(t, "200", qf.Get("limit"))
+	assert.Equal(t, sinceForm(now.Add(-90*time.Minute)), qf.Get("start"))
+	assert.Empty(t, qf.Get("end"), "Until is ignored in follow shape")
+	require.NotNil(t, tf, "tail phase must follow the backlog phase")
+	// 尾随段锚点 = 最新积堆帧（≈ now-9m，容忍测试耗时漂移）。
+	offset := parseOffsetSeconds(t, tf.Get("start_offset"))
+	assert.GreaterOrEqual(t, offset, int64(8*60), "tail anchors at newest backlog frame")
+	assert.LessOrEqual(t, offset, int64(10*60))
+}
+
+// TestFollowEmptyBacklogTailFromSince 钉无积压帧锚点：尾随段回退 Since
+// （start_offset ≈ now-Since），不因积压空窗而错锚当前时刻。
+func TestFollowEmptyBacklogTailFromSince(t *testing.T) {
+	var formMu sync.Mutex
+	var tailForm url.Values
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.NoError(t, r.ParseForm())
+		if r.URL.Path == "/select/logsql/tail" {
+			formMu.Lock()
+			tailForm = r.Form
+			formMu.Unlock()
+			w.Header().Set("Content-Type", "application/stream+json; charset=utf-8")
+			_, _ = w.Write([]byte(vlRow(t, time.Now().UTC(), "live1") + "\n"))
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
+			<-r.Context().Done()
+			return
+		}
+		// 积压段：空窗口（200 + 0 行）——真机 2026-10-05 实录形态。
+		w.Header().Set("Content-Type", "application/stream+json; charset=utf-8")
+	}))
+	defer srv.Close()
+
+	p := newTestProvider(t)
+	p.addr = strings.TrimPrefix(srv.URL, "http://")
+	var cw collectWriter
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- p.Query(ctx, capability.LogQuery{
+			Namespace: capability.NamespaceRef{Project: "P1"},
+			Text:      "nomatch", Follow: true, TailLines: 200,
 			Since: time.Now().Add(-90 * time.Minute),
 		}, &cw)
 	}()
 	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) && cw.len() < 2 {
+	for time.Now().Before(deadline) && cw.len() < 1 {
 		time.Sleep(10 * time.Millisecond)
 	}
 	cancel()
+	require.NoError(t, <-done)
 	cw.mu.Lock()
-	frames := append([]capability.LogFrame(nil), cw.frames...)
-	cw.mu.Unlock()
-	require.Len(t, frames, 2, "tail must stream frames until cancel")
-	assert.Equal(t, "live1", string(frames[0].Line))
+	defer cw.mu.Unlock()
+	require.Len(t, cw.frames, 1, "empty backlog must not block tail frames")
+	assert.Equal(t, "live1", string(cw.frames[0].Line))
+
 	formMu.Lock()
-	offset := gotForm.Get("start_offset")
-	formMu.Unlock()
-	assert.Contains(t, offset, "s")
-	assert.GreaterOrEqual(t, parseOffsetSeconds(t, offset), int64(5300), "backfill window ≈ now-since (90m)")
+	defer formMu.Unlock()
+	require.NotNil(t, tailForm)
+	// Since 距今 ≈ 90m（容忍测试耗时漂移）；去重边界为空（无积压帧）。
+	assert.GreaterOrEqual(t, parseOffsetSeconds(t, tailForm.Get("start_offset")), int64(89*60))
+}
+
+// vlRow 生成一帧 VL 平铺形态检索响应行（provider 的 vlLine 是 Ingest
+// 写入形态结构体，此处只是同名帮手——行字段集与 decodeFrame 兼容）。
+func vlRow(t *testing.T, ts time.Time, msg string) string {
+	t.Helper()
+	b, err := json.Marshal(map[string]any{
+		"_msg":            msg,
+		"_time":           ts.Format(time.RFC3339Nano),
+		"fleetly_project": "P1",
+		"fleetly_kind":    "runtime",
+	})
+	require.NoError(t, err)
+	return string(b)
+}
+
+// sinceForm 是积压段 start 字段形态（RFC3339Nano UTC）。
+func sinceForm(ts time.Time) string {
+	return ts.UTC().Format(time.RFC3339Nano)
 }
 
 func parseOffsetSeconds(t *testing.T, s string) int64 {

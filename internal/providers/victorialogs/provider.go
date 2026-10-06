@@ -294,15 +294,80 @@ func (p *Provider) Ingest(ctx context.Context, frames []capability.LogFrame) err
 
 // Query 实现 Logging 端口（检索路径）：LogsQL 流过滤（域字段 +
 // fleetly_build）+ 可选文本管道 → /select/logsql/query（非 follow，
-// limit = tail 语义——VL 返回最大 _time 的 N 条）；Follow 经
-// /select/logsql/tail 实时尾随（start_offset 回填 Since 起的历史，官方
-// 流式端点，≥5s 批汇延迟诚实标注）。text 是否必填是调用方（server 双径
-// 路由）的策略，本端口不执法。
+// limit = tail 语义——VL 返回最大 _time 的 N 条）；follow = 积压段（同
+// query 端点，TailLines/Since 窗口语义）+ /select/logsql/tail 实时尾随
+// （官方流式端点，≥5s 批汇延迟诚实标注；start_offset 锚最新积压帧，重叠
+// 窗去重——与实时径 --tail/--follow 语义对齐）。text 是否必填是调用方
+// （server 双径路由）的策略，本端口不执法。
 func (p *Provider) Query(ctx context.Context, q capability.LogQuery, w capability.LogWriter) error {
 	query := buildLogSQL(q)
 	if q.Follow {
-		return p.tail(ctx, query, q, w)
+		return p.follow(ctx, query, q, w)
 	}
+	_, err := p.selectBacklog(ctx, query, q, w)
+	return err
+}
+
+// follow = 积压段 + 尾随段（2026-10-05 Console 走查 F2 修复：原实现
+// follow 形态完全忽略 TailLines/Since——text 过滤命中历史但应用静默时
+// 整条流零帧，而 REST 面（grpc-gateway ForwardResponseStream）首帧前
+// 不写响应头，客户端呈现"零字节假挂死"。积压段先出帧 = 首帧及时 +
+// tail 语义对齐）。
+func (p *Provider) follow(ctx context.Context, query string, q capability.LogQuery, w capability.LogWriter) error {
+	// 积压段：TailLines=0 = 全量最近缓冲（proto 注释语义）；Until 在
+	// follow 形态忽略（尾随流无界——诚实边界记 ADR-0040）。
+	bq := q
+	bq.Until = time.Time{}
+	newest, err := p.selectBacklog(ctx, query, bq, w)
+	if err != nil {
+		return err
+	}
+	// 尾随段锚点：最新积压帧（重叠窗去重边界）；无积压 = Since；都无 =
+	// 当前时刻（0s = 尾随新行，不回读）。锚点在未来（时钟偏斜）时
+	// formatOffset 归 0s。
+	anchor := newest
+	if anchor.IsZero() {
+		anchor = q.Since
+	}
+	form := url.Values{}
+	form.Set("query", query)
+	form.Set("start_offset", formatOffset(time.Since(anchor)))
+	body, err := p.postBody(ctx, "/select/logsql/tail", form.Encode())
+	if err != nil {
+		return fmt.Errorf("victorialogs tail: %w", err)
+	}
+	defer func() { _ = body.Close() }()
+	r := bufio.NewReader(body)
+	boundary := newest // 非零 = [锚点, 当前] 的匹配帧已在积压段写过
+	for {
+		line, err := r.ReadBytes('\n')
+		if len(line) > 0 {
+			if f, derr := decodeFrame(bytes.TrimRight(line, "\r\n")); derr == nil {
+				if !boundary.IsZero() && !f.Time.After(boundary) {
+					continue // 积压重读重叠窗：同一帧去重
+				}
+				boundary = time.Time{} // 越过锚点后不再过滤
+				if werr := w.WriteLog(ctx, f); werr != nil {
+					return werr
+				}
+			}
+			// 单行解码失败：跳过该行继续（VL 尾随流中间可能穿插空行/心跳；
+			// 丢行优于断流——诚实边界记 ADR-0040）。
+		}
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil // 调用方取消的正常收口
+			}
+			return fmt.Errorf("victorialogs tail: read stream: %w", err)
+		}
+	}
+}
+
+// selectBacklog 一次性窗口检索（非 follow 载荷径 + follow 的积压段共用）：
+// 窗口 = Since/Until（零值不限）、limit = TailLines（VL 语义 = 最大 _time
+// 的 N 条，行序不承诺）；帧统一升序写出（与实时路径帧序一致），返回最新
+// 帧时间（窗口空匹配 = 零值）。
+func (p *Provider) selectBacklog(ctx context.Context, query string, q capability.LogQuery, w capability.LogWriter) (time.Time, error) {
 	form := url.Values{}
 	form.Set("query", query)
 	if !q.Since.IsZero() {
@@ -318,61 +383,27 @@ func (p *Provider) Query(ctx context.Context, q capability.LogQuery, w capabilit
 	defer cancel()
 	rc, err := p.postBody(qctx, "/select/logsql/query", form.Encode())
 	if err != nil {
-		return fmt.Errorf("victorialogs query: %w", err)
+		return time.Time{}, fmt.Errorf("victorialogs query: %w", err)
 	}
 	body, err := io.ReadAll(rc)
 	_ = rc.Close()
 	if err != nil {
-		return fmt.Errorf("victorialogs query: read response: %w", err)
+		return time.Time{}, fmt.Errorf("victorialogs query: read response: %w", err)
 	}
 	frames, err := decodeFrames(body)
 	if err != nil {
-		return err
+		return time.Time{}, err
 	}
-	// VL limit 语义 = 最大 _time 的 N 条，但行序不承诺——统一升序输出
-	//（与实时路径帧序一致）。
 	sort.SliceStable(frames, func(i, j int) bool { return frames[i].Time.Before(frames[j].Time) })
 	for i := range frames {
 		if err := w.WriteLog(ctx, frames[i]); err != nil {
-			return err
+			return time.Time{}, err
 		}
 	}
-	return nil
-}
-
-// tail 经 /select/logsql/tail 实时尾随：start_offset 回填 Since 起的历史
-// 再持续跟随（单流无接缝——两段拼接的窗口缺口不存在）。Until 与
-// TailLines 在 follow 形态忽略（诚实边界：尾随流无界、无行数上限）。
-func (p *Provider) tail(ctx context.Context, query string, q capability.LogQuery, w capability.LogWriter) error {
-	form := url.Values{}
-	form.Set("query", query)
-	if !q.Since.IsZero() {
-		form.Set("start_offset", formatOffset(time.Since(q.Since)))
+	if len(frames) == 0 {
+		return time.Time{}, nil
 	}
-	body, err := p.postBody(ctx, "/select/logsql/tail", form.Encode())
-	if err != nil {
-		return fmt.Errorf("victorialogs tail: %w", err)
-	}
-	defer func() { _ = body.Close() }()
-	r := bufio.NewReader(body)
-	for {
-		line, err := r.ReadBytes('\n')
-		if len(line) > 0 {
-			if f, derr := decodeFrame(bytes.TrimRight(line, "\r\n")); derr == nil {
-				if werr := w.WriteLog(ctx, f); werr != nil {
-					return werr
-				}
-			}
-			// 单行解码失败：跳过该行继续（VL 尾随流中间可能穿插空行/心跳；
-			// 丢行优于断流——诚实边界记 ADR-0040）。
-		}
-		if err != nil {
-			if ctx.Err() != nil {
-				return nil // 调用方取消的正常收口
-			}
-			return fmt.Errorf("victorialogs tail: read stream: %w", err)
-		}
-	}
+	return frames[len(frames)-1].Time, nil
 }
 
 // post 发一次性请求（2xx = 成功；否则带状态码与响应片段上抛）。
