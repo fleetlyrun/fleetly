@@ -11,8 +11,8 @@ export function AuditPage() {
   const [action, setAction] = useState("");
   const [actor, setActor] = useState("");
   const [resource, setResource] = useState("");
-  const [applied, setApplied] = useState({ source: "", action: "", actor: "", resource: "" });
-  const audit = useAudit({ ...applied, limit: 100 });
+  const [active, setActive] = useState({ source: "", action: "", actor: "", resource: "" });
+  const audit = useAudit({ ...active, limit: 100 });
 
   return (
     <PageShell title="Audit" hint="server-written audit trail (GET /v1/audit)">
@@ -20,7 +20,7 @@ export function AuditPage() {
         className="flex flex-wrap items-end gap-2"
         onSubmit={(event) => {
           event.preventDefault();
-          setApplied({ source, action, actor, resource });
+          setActive({ source, action, actor, resource });
         }}
       >
         <Field label="Source">
@@ -42,7 +42,7 @@ export function AuditPage() {
           <TextInput value={resource} onChange={(event) => setResource(event.target.value)} />
         </Field>
         <button type="submit" className="rounded-md border border-sky-700 bg-sky-900/40 px-3 py-1.5 text-sm text-sky-300">
-          apply
+          filter
         </button>
       </form>
       {audit.isPending ? (
