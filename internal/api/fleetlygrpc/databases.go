@@ -500,7 +500,8 @@ func (svc *DatabasesService) BrowseDatabase(ctx context.Context, req *structurev
 	url := svc.s.Engine.BrowseEntryURL(sessionID) + "?session=" + urlQueryEscape(sessionID) + "&ticket=" + urlQueryEscape(ticket)
 	return &structurev1.BrowseDatabaseResponse{
 		SessionId: sessionID, Url: url, Ticket: ticket,
-		ExpiresIn: int32(ttl / time.Second),
+		// G115：TTL 是 browseTicketTTL 常量（120s），域内恒小于 int32 上限。
+		ExpiresIn: int32(ttl / time.Second), //nolint:gosec
 		Browser:   info.Browser, ReadOnly: readOnly,
 		Enforcement: browseEnforcementMsg(browser.ReadOnlyEnforcement()),
 	}, nil

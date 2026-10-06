@@ -95,7 +95,7 @@ func serveBrowseEntry(w http.ResponseWriter, r *http.Request, gate *BrowseGate) 
 		writeExecStatus(w, http.StatusUnauthorized, "session_unavailable", "browse session is no longer active")
 		return
 	}
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124：Secure 刻意缺省 false——browse 路由缺省明文 none（ADR-0051 决策 5）；tls=auto 形态下 cookie 面 Secure 化随 TLS 批次收口
 		// cookie 名单源（entry 铸 / authorize 读，双端同文件）。
 		Name:     browseCookieName,
 		Value:    cookieValue,

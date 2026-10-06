@@ -62,7 +62,7 @@ func (r *Repo) List(ctx context.Context, run state.Runner) ([]*Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面（backup repo 同款）
 	var out []*Session
 	for rows.Next() {
 		s, err := scanSession(rows.Scan)
