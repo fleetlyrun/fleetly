@@ -74,6 +74,10 @@ var bannedPatterns = map[string]*regexp.Regexp{
 	// 再议），机械无歧义、扫描面零命中；slot 是 zane 的 slot 别名机制词
 	// ——本仓不引入，但泛义英文（占位义）误伤面大，进 skipped 人工把关。
 	"canary": wordRe(`canary|canaries`),
+	// Template 词条（ADR-0050 入册）：blueprint/recipe 是 Template 同义词，
+	// 机械无歧义、预期扫面零命中。
+	"blueprint": wordRe(`blueprint|blueprints`),
+	"recipe":    wordRe(`recipe|recipes`),
 	// Exec Session / Relay 词条（ADR-0049 入册）。ssh/remote shell/tunnel
 	// 是把平台 exec 面叫成外词的命名缺陷（机械无歧义）；mesh 因 swarm
 	// routing mesh 是在册技术术语进 skipped 人工把关。
@@ -153,7 +157,7 @@ var skippedTokens = map[string]string{
 	"manifest":        "通用词；Spec 同义词语境人工评审",
 	"config":          "Config 是 fleetly 冻结实体 + 配置通用词；泛指义合法",
 	"file":            "通用词；Config 同义词语境人工评审",
-	"template":        "Database 模板（dbtemplate）为契约语汇；Spec 同义词语境人工评审",
+	"template":        "Template（App 模板，ADR-0050）与 Database 模板（dbtemplate）均为契约语汇；Spec 同义词语境人工评审",
 	"pod":             "k8s 载体词仅 Provider 内部合法（当前无引用）；Workload 同义词语境禁",
 	"unit":            "通用词；Workload 同义词语境人工评审",
 	"engine":          "internal/engine 为架构 §2 包名（收敛循环）；Runtime 同义词语境禁",
