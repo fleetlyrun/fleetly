@@ -120,3 +120,30 @@ func TestNormalizeComposeDeployStrategy(t *testing.T) {
 	assert.Contains(t, err.Error(), "deploy.strategy")
 	assert.Contains(t, err.Error(), `strategy must be rolling or blue-green (got "immediate")`)
 }
+
+// compose 端口声明的 Route-facing 两半边（F3.5 裁决 + 2026-10-06 staging
+// 走查修复）：声明 ports 而 networks 未列 default 时补挂项目 default 网
+// （Proxy 可达性半边——image/upload 形态的 portDeclNetworks 同语义）；
+// 显式 networks 原样保留（default 已在则不重复）；未声明端口零挂网
+// （ADR-0034 无网络即无 DNS 面诚实语义不变）。
+func TestNormalizeComposePortsAttachDefaultNetwork(t *testing.T) {
+	doc := func(svc map[string]any) ComposeDoc {
+		base := map[string]any{"image": "traefik/whoami:v1.10"}
+		for k, v := range svc {
+			base[k] = v
+		}
+		return ComposeDoc{"services": map[string]any{"web": base}}
+	}
+
+	s, err := NormalizeCompose(doc(map[string]any{"ports": []any{"80"}}), "app-1", "prj-1")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"default"}, s.GetProcesses()[0].GetNetworks(), "a port declaration implies the project default network (proxy reachability half)")
+
+	s, err = NormalizeCompose(doc(map[string]any{"ports": []any{"80"}, "networks": []any{"default", "internal"}}), "app-1", "prj-1")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"default", "internal"}, s.GetProcesses()[0].GetNetworks(), "an explicit network list is preserved verbatim (no duplicate default)")
+
+	s, err = NormalizeCompose(doc(nil), "app-1", "prj-1")
+	require.NoError(t, err)
+	assert.Empty(t, s.GetProcesses()[0].GetNetworks(), "without a declared port the no-network honesty semantics stay unchanged")
+}

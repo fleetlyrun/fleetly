@@ -5,6 +5,7 @@ package spec
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -423,6 +424,14 @@ func composeService(name string, svc map[string]any) (*specv1.ProcessSpec, strin
 				p.Networks = append(p.Networks, n)
 			}
 		}
+	}
+	// 声明端口即 Route-facing（F3.5 裁决的两半边）：ports 在场而 default
+	// 未挂时补挂项目 default 网——与 image/upload 形态的 portDeclNetworks
+	// 同语义（Proxy 可达性半边）。2026-10-06 staging 走查发现：compose 声明
+	// ports 不挂网时 Route 后端发布成不可达名（502），声明面只兑现了 404
+	// 半边。spec_file 是用户亲笔 AppSpec，平台不改写其 networks（用户全权）。
+	if len(p.Ports) > 0 && !slices.Contains(p.Networks, "default") {
+		p.Networks = append(p.Networks, "default")
 	}
 	// 卷挂载（B2）：短语法 name:/target[:mode]——name 是平台 Volume 名
 	//（fleetly volumes create 的实体），target 容器内绝对路径，mode 可选

@@ -349,6 +349,16 @@ ADR-0042 落地（64f07f0..8b7f51d 七 commit，CI run 37218474928 六 job 全�
 - 两个 anchor token（anchor-check/anchor-check2）已吊销；匿名卷 27 枚稳定。
 - **失败行出清实测（记·八观察项落地，2026-10-06 04:33Z）**：全表翻页（200/页 × 585 页）共 **116,802 行**，最老行 finished_at = `10-04T04:33:53Z`，测量时刻 now-48h = `10-04T04:33:52Z`——**清扫资格前沿与 48h 线贴合到 1 秒**（线外行零残留，机制满速在役）。**完成时点修正：交接估的"数分钟内清完"不成立**——资格线按墙钟推进（出清速率 ≈ 原风暴发射速率 ≈1 行/秒），全清预计 **10-07 ~13:59Z**（风暴止点+48h）；期间 `databases backups` 翻页量逐小时下降即为健康形态。附 API 面小坑记档：`ListBackups` 请求 limit>200 时静默落回默认 50（钳到默认而非钳到上限，repo.go ListByDatabase）——翻页统计用 `--limit 200`。
 
+## 2026-10-06 记录·十（F3.1 Console 写面批换装 161b62b-f31console → 161b62b-f31walk + 蓝绿叙事真机锚）
+
+**换装**（826fd93-conswalk → 161b62b-f31console，四 commit 48b963e/6f2bf60/ab70c9e/161b62b）：前置 Platform Backup `aadd7634` + 卷 tar（fleetly-db-三卷 + zot 卷 + torchwood-pg 旧名卷）；**00024 迁移随批前滚**（from_generation 列——826fd93 仍是 00023 末位，ADR-0048 引擎批的迁移首次上真机）。同日二次换装 `161b62b-f31walk`（走查发现 W1 修复，仅 spec/normalize.go 变更）。
+
+- **零扰动断言带注（新形态）**：task 行数 22 服务 19 逐位一致；**3 个用户域服务一次性滚动**——ADR-0048 引擎批（e2e20e6..8e8a925）首次上真机的载体 spec 收敛（P16 双别名渲染 vs 旧代码物化存量；messaging/mlbridge 为停服窗内应用自崩 exit 1 自愈 ×3）。收敛后复测 STABLE-NO-FURTHER-ROLLS；tw.dev 200（注意：**manager 本机 curl 公网域名 000**——出站自环形态，探针走 `--resolve <公网IP>` 或 localhost+Host，本机直连 LE staging CA 需 `-k`）；torchwood-pg 21 表锚不变。
+- **蓝绿叙事真机锚（F3.1 旗舰）**：walk-f31/bgwalk 项目 compose blue-green（whoami）——第二笔部署 REST 面带 `"from_generation":"1"`；observing 时点**两代 swarm 服务并存各 1/1**；收口后唯一在役服务容器 Aliases = `web`/`web.bgwalk`/`web.g5`（三别名形态真机在役）；R1..R3 revisions 全带 `"process_strategies":[{...DEPLOY_STRATEGY_BLUE_GREEN}]`；卡 L1 部署 cancel 写面 200。**坑复证：swarm 服务名/标签全小写（sanitizeNamePart），grep 大写 ULID 恒空**——交接单坑①在 service ls 过滤上同样成立。
+- **走查发现 W1（同日修复）**：compose 声明 `ports` 不挂项目 default 网（image/upload 形态有 portDeclNetworks、compose 路径漏）→ Route 502（404 半边成立、可达性半边缺失）。修复 `internal/spec/normalize.go`：ports 在场且 networks 未列 default 补挂（spec_file 用户亲笔不改写）；`TestNormalizeComposePortsAttachDefaultNetwork` 三锚；修复后复验 walk.dev 200 端到端（whoami 主机名 = 收口代服务）。
+- **观察项**：①`GET /v1/databases` 缺 project_id 回 404 E_NOT_FOUND（ListApps 同场景是 400）——读面口径不一致，留 API 面小裁决；②e2e 升级矩阵覆盖不到"旧代码物化存量载体"的收敛滚动（夹具无存量）——后续引擎批上真机应预期同类一次性收敛并预记基线差。
+- walk-f31 走查痕迹全清（app→db→project 级联删除；`fleetly-vol-walkredis` 卷手工清——**级联删库不清卷**，与残留清理先例同形态）；console-walk-f31 token 已吊销；浏览器级 UI 走查本环境无浏览器后端未做（HTTP/消费契约级全绿，docs/reviews/2026-10-06-console-walkthrough.md——渲染层 tsc+vitest 承载，浏览器补档待有后端环境）。
+
 ## 平台升级操作序（F2.3 工具化，2026-10-04）
 
 ADR-0015 升级序的完整落地形态：**Platform Backup 前置 → SIGTERM 排水 → 二进制替换 → 起新版（goose 前滚 + Managed Provider 逐个 reconcile + 解除只读，全自动）**。前置动词自 75a3d31 起可用（旧版无 platform 组时按 b4cfea0 节的手工快照纪律执行）。
