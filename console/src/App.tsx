@@ -9,6 +9,7 @@ import { TasksPage } from "./pages/Tasks";
 import { AuditPage } from "./pages/Audit";
 import { SettingsPage } from "./pages/Settings";
 import { QuickstartPage } from "./pages/Quickstart";
+import { TemplatesPage } from "./pages/Templates";
 import { TerminalPage } from "./pages/Terminal";
 import { LoginPage } from "./pages/Login";
 import { ROUTES, useHashRoute, type Route } from "./lib/router";
@@ -64,6 +65,8 @@ function renderPage(page: Route, detailId: string, navigate: (path: string) => v
       return <SettingsPage />;
     case "quickstart":
       return <QuickstartPage />;
+    case "templates":
+      return <TemplatesPage navigate={navigate} />;
     case "terminal":
       return <TerminalPage />;
   }
@@ -79,6 +82,7 @@ const ROUTE_LABELS: Record<Route, string> = {
   audit: "Audit",
   settings: "Settings",
   quickstart: "Quickstart",
+  templates: "Templates",
   terminal: "Terminal",
 };
 
