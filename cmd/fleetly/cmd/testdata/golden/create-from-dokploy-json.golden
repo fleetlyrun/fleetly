@@ -17,7 +17,7 @@
         ]
       },
       {
-        "Name": "kitchen-sink",
+        "Name": "echo-app",
         "Image": "",
         "ComposeYAML": "services:\n  web:\n    image: hashicorp/http-echo:1.0\n    environment:\n      GREETING: hi\n    ports: [\"5678\"]\n",
         "Env": {
@@ -25,7 +25,7 @@
         },
         "Routes": [
           {
-            "Host": "sink.127.0.0.1.sslip.io",
+            "Host": "echo.127.0.0.1.sslip.io",
             "Process": "web",
             "Port": 5678
           }

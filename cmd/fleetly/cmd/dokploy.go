@@ -2,7 +2,7 @@ package cmd
 
 // create-from-dokploy（F3.3，ADR-0050 决策 5：竞品迁移钩子）：解析
 // dokploy 导出 JSON → 迁移计划（逐 App 部署意图 + 引擎映射 + 逐条 skip
-// 报告——不静默丢）→ --dry-run 只报计划；缺省 apply 走既有 API（project
+// 报告——不静默丢）→ --dry-run 只报计划；缺省执行态走既有 API（project
 // create-or-reuse → databases create-or-reuse → app create-or-reuse →
 // deploy（image/compose）→ routes create-or-reuse）。数据面不搬移
 // （Volume/数据库内容走 Backup/Restore——skip 报告明示）。
@@ -23,7 +23,7 @@ import (
 	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
-// dokployReport 是 --json 形态（dry-run 与 apply 共用骨架；apply 附结果列）。
+// dokployReport 是 --json 形态（dry-run 与执行态共用骨架；执行态附结果列）。
 type dokployReport struct {
 	Plan  *spec.DokployPlan `json:"plan"`
 	Steps []dokployStep     `json:"steps,omitempty"`
@@ -192,7 +192,7 @@ func newCreateFromDokployVerb() commands.Command {
 			}
 			if len(plan.Databases) > 0 {
 				_, err := fmt.Fprintln(env.Stdout,
-					"note: database data was not moved; it still lives on the dokploy host — restore it via Backup/Restore or dump/reload")
+					"note: database data was not moved; it still lives on the dokploy host — restore it via Backup/Restore or a manual export/reload")
 				if err != nil {
 					return err
 				}

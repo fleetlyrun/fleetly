@@ -17,7 +17,7 @@ describe("inputKindOf", () => {
 });
 
 describe("buildTemplateValues", () => {
-  it("omits empty values so defaults/required server semantics apply", () => {
+  it("omits empty values so defaults/required server semantics take over", () => {
     expect(buildTemplateValues(decls, { title: "  ", host: "demo.example.org" })).toEqual({
       host: "demo.example.org",
     });

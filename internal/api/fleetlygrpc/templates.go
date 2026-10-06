@@ -285,7 +285,7 @@ func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliv
 	record("deployment", deploymentID, "", false)
 
 	// 7. routes create-or-reuse（host 全局唯一——同 host 既有 Route 复用，
-	// quickstart 同款；缺省 tls auto 与 CreateRoute 缺省一致）。
+	// quickstart 同款；tls 缺省 none——模板 routes 声明可显式 auto/ACME）。
 	allRoutes, err := svc.s.Routes.List(ctx, svc.s.DB.Runner())
 	if err != nil {
 		return nil, mapStateError(err, "route")
@@ -301,7 +301,7 @@ func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliv
 		}
 		created, err := (&RoutesService{s: svc.s}).CreateRoute(ctx, &proxyv1.CreateRouteRequest{
 			ProjectId: req.GetProjectId(), Host: r.Host, AppId: appID,
-			Process: r.Process, Port: r.Port, Protocol: r.Protocol,
+			Process: r.Process, Port: r.Port, Protocol: r.Protocol, TlsMode: routeTLS(r.TLS),
 		})
 		if err != nil {
 			return nil, err
@@ -369,4 +369,13 @@ func (svc *TemplatesService) RefreshTemplates(ctx context.Context, _ *deliveryv1
 	return &deliveryv1.RefreshTemplatesResponse{
 		PreviousDigest: previous.digest, Digest: digest, TemplateCount: int32(len(entries)), //nolint:gosec // 目录条目数
 	}, nil
+}
+
+// routeTLS 是模板 routes 声明的 tls 值（缺省 none——quickstart CLI 同款；
+// CreateRoute 的服务端缺省是 auto，模板面 sslip 形态无公网 DNS，显式收口）。
+func routeTLS(tls string) string {
+	if tls == "" {
+		return "none"
+	}
+	return tls
 }

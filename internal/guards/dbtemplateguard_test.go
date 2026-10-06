@@ -23,24 +23,24 @@ import (
 // engineNameLiteralAllowlist 是反扫例外（路径前缀 → 理由）。条目不再命中
 // 即红：删除失效例外与修掉真泄漏同批。
 var engineNameLiteralAllowlist = map[string]string{
-	// 目前零例外：internal/ 非测试代码里没有引擎名字面量的合法落点。
-	// 新例外必须带理由（例：某 Provider 的镜像 tag 组装——但那更应该
-	// 消费模板注册表）。
+	// 目前一例外：dokploy 迁移解析的引擎词映射（F3.3，ADR-0050 决策 5）——
+	// 键侧是 dokploy 的 type 词、值侧恰好与 fleetly 引擎词同名。该表承载
+	// 的是"竞品词汇 → fleetly 词汇"的翻译面，不携带任何引擎知识（无镜像/
+	// 端口/命令）；值侧在册性由 CreateDatabase 受理位以 dbtemplate 注册表
+	// 单源执法（未知词在解析期即 skip 进报告，见 dokploy.go）。
+	"internal/spec/dokploy.go": "dokploy type-word to fleetly engine-word translation (ADR-0050 migration hook); carries no engine knowledge — registry membership is enforced at CreateDatabase acceptance",
 }
 
 // scanEngineNameLiterals 是反扫纯核（红灯实验直测）：files 是路径→源文本，
-// engines 是注册表值域；返回违例清单（文件 + 引擎名）。命中形态 = 引擎名
-// 的完整带引号字面量（"postgres"），前缀撞车不误伤（"postgresql://…"、
-// "pgvector/pgvector:…" 都不含闭合引号形态）。
+// engines 是注册表值域；返回全量命中清单（例外不过滤——例外表的对账由
+// 调用方与保鲜测试分别承担）。命中形态 = 引擎名的完整带引号字面量
+// （"postgres"），前缀撞车不误伤（"postgresql://…"、"pgvector/pgvector:…"
+// 都不含闭合引号形态）。
 func scanEngineNameLiterals(files map[string]string, engines []string) []string {
 	var errs []string
 	for _, engine := range engines {
 		needle := `"` + engine + `"`
 		for path, src := range files {
-			if reason, ok := engineNameLiteralAllowlist[path]; ok {
-				_ = reason // 例外命中由 TestEngineNameLiteralAllowlistFresh 单独对账
-				continue
-			}
 			if strings.Contains(src, needle) {
 				errs = append(errs, fmt.Sprintf(
 					"%s: engine name %q appears as a string literal outside internal/engine/dbtemplate — per-engine knowledge must live in the template adapter (dbtemplate registry is the single source)", path, engine))
@@ -52,7 +52,8 @@ func scanEngineNameLiterals(files map[string]string, engines []string) []string 
 }
 
 // TestEngineNamesStayInTemplatePackage：internal/ 非测试代码引擎名字面量
-// 反扫（值域真源 = dbtemplate.Engines()，运行时导入保新鲜）。
+// 反扫（值域真源 = dbtemplate.Engines()，运行时导入保新鲜）。例外表路径
+// 的命中在此放行（例外面由保鲜测试单独对账）。
 func TestEngineNamesStayInTemplatePackage(t *testing.T) {
 	files := map[string]string{}
 	root := filepath.Join(repoRoot(t), "internal")
@@ -87,6 +88,9 @@ func TestEngineNamesStayInTemplatePackage(t *testing.T) {
 		t.Fatal("no Go sources found under internal/ — the scan surface moved; update this guard with it")
 	}
 	for _, e := range scanEngineNameLiterals(files, dbtemplate.Engines()) {
+		if _, allowed := engineNameLiteralAllowlist[strings.SplitN(e, ":", 2)[0]]; allowed {
+			continue
+		}
 		t.Error(e)
 	}
 }

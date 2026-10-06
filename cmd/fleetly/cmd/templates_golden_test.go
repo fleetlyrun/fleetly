@@ -158,12 +158,12 @@ const dokployExportFixture = `{
     {"applicationId": "app-2", "name": "builder", "buildType": "dockerfile", "repository": "github.com/acme/builder", "env": ""}
   ],
   "compose": [
-    {"composeId": "cmp-1", "name": "kitchen-sink", "composeContent": "services:\n  web:\n    image: hashicorp/http-echo:1.0\n    environment:\n      GREETING: ${GREETING}\n    ports: [\"5678\"]\n", "env": "GREETING=hi"},
+    {"composeId": "cmp-1", "name": "echo-app", "composeContent": "services:\n  web:\n    image: hashicorp/http-echo:1.0\n    environment:\n      GREETING: ${GREETING}\n    ports: [\"5678\"]\n", "env": "GREETING=hi"},
     {"composeId": "cmp-2", "name": "holey", "composeContent": "services:\n  web:\n    image: nginx:1.27\n    environment:\n      X: ${MISSING}\n", "env": ""}
   ],
   "domains": [
     {"domainId": "dom-1", "host": "landing.127.0.0.1.sslip.io", "port": 80, "applicationId": "app-1", "serviceName": ""},
-    {"domainId": "dom-2", "host": "sink.127.0.0.1.sslip.io", "port": 5678, "composeId": "cmp-1", "serviceName": "web"}
+    {"domainId": "dom-2", "host": "echo.127.0.0.1.sslip.io", "port": 5678, "composeId": "cmp-1", "serviceName": "web"}
   ],
   "databases": [
     {"databaseId": "db-1", "name": "shop", "type": "postgres"},
@@ -192,18 +192,18 @@ func TestGoldenCreateFromDokploy(t *testing.T) {
 	}
 	compareGolden(t, "create-from-dokploy-json", normalizeGolden(out))
 
-	// apply：project/database/app/deployment/route 各就位（FakeRuntime 收
+	// 执行态：project/database/app/deployment/route 各就位（FakeRuntime 收
 	// 敛环在手动夹具下不推进——部署停在 queued 即递交成功面）。
 	code, out, stderr = runCLI(t, "create-from-dokploy", "--file", path, "--project", "mig")
 	if code != 0 || stderr != "" {
-		t.Fatalf("apply: code=%d stderr=%q", code, stderr)
+		t.Fatalf("run: code=%d stderr=%q", code, stderr)
 	}
-	compareGolden(t, "dokploy-apply", normalizeGolden(out))
+	compareGolden(t, "dokploy-run", normalizeGolden(out))
 
 	// 重跑收敛：全部 reused。
 	code, out, stderr = runCLI(t, "create-from-dokploy", "--file", path, "--project", "mig")
 	if code != 0 || stderr != "" {
-		t.Fatalf("apply re-run: code=%d stderr=%q", code, stderr)
+		t.Fatalf("run re-run: code=%d stderr=%q", code, stderr)
 	}
-	compareGolden(t, "dokploy-apply-rerun", normalizeGolden(out))
+	compareGolden(t, "dokploy-run-rerun", normalizeGolden(out))
 }

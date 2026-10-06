@@ -57,6 +57,7 @@ type RouteDecl struct {
 	Process  string
 	Port     int32
 	Protocol string // 缺省 http（Route 同词汇 http|h2c|tcp）
+	TLS      string // 缺省 none（quickstart 同款；auto = ACME，真机公网 DNS 面）
 }
 
 // DatabaseDecl 是 x-fleetly-databases 的一条声明：实例化时 create-or-reuse
@@ -198,9 +199,9 @@ func Parse(body []byte) (*Doc, error) {
 			}
 			for key := range m {
 				switch key {
-				case "var", "process", "port", "protocol":
+				case "var", "process", "port", "protocol", "tls":
 				default:
-					return nil, verr(field+"."+key, "unsupported route field %q (supported: var, process, port, protocol)", key)
+					return nil, verr(field+"."+key, "unsupported route field %q (supported: var, process, port, protocol, tls)", key)
 				}
 			}
 			r := RouteDecl{}
@@ -219,6 +220,12 @@ func Parse(body []byte) (*Doc, error) {
 			case "", "http", "h2c", "tcp":
 			default:
 				return nil, verr(field+".protocol", "protocol %q must be http, h2c or tcp", r.Protocol)
+			}
+			r.TLS, _ = m["tls"].(string)
+			switch r.TLS {
+			case "", "none", "auto":
+			default:
+				return nil, verr(field+".tls", "tls %q must be none or auto (auto needs public DNS for ACME)", r.TLS)
 			}
 			out.Routes = append(out.Routes, r)
 		}

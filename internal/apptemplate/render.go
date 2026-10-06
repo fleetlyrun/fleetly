@@ -30,6 +30,7 @@ type ResolvedRoute struct {
 	Process  string
 	Port     int32
 	Protocol string
+	TLS      string
 }
 
 // Render 渲染模板：appName 参与 secret 命名（template:<app>:<var>——ADR-0029
@@ -132,7 +133,7 @@ func (d *Doc) Render(values map[string]string, appName string) (*Rendered, error
 			sort.Strings(list)
 			return nil, verr(templateKey+".routes", "route port %d is not declared by service %q (declared: %v)", r.Port, r.Process, list)
 		}
-		out.Routes = append(out.Routes, ResolvedRoute{Host: host, Process: r.Process, Port: r.Port, Protocol: r.Protocol})
+		out.Routes = append(out.Routes, ResolvedRoute{Host: host, Process: r.Process, Port: r.Port, Protocol: r.Protocol, TLS: r.TLS})
 	}
 	return out, nil
 }
