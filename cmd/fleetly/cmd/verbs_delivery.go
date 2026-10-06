@@ -126,18 +126,19 @@ func waitBuildOnFrame(env *commands.Environment, jsonOut bool, buildID string) f
 
 func newDeployVerb() commands.Command {
 	const name = "deploy"
-	var app, image, composeFile, fromDir, dockerfile, builder, railpackVersion, outputDir, process, idemKey, commit, httpProbe, portProtocol string
+	var app, image, composeFile, fromDir, dockerfile, builder, railpackVersion, outputDir, process, idemKey, commit, httpProbe, portProtocol, specFile string
 	var tcpProbe, port int
 	var supersede, wait bool
 	var appEnv envSlice
 	return &flaggedVerb{
-		name: name, synopsis: "Deploy an app from an image, compose file, or uploaded directory",
-		usage: "deploy --app APP_ID (--image REF | --compose-file PATH | --from-dir DIR) [--builder dockerfile|railpack|static] [--dockerfile PATH] [--railpack-version SEMVER] [--output-dir DIR] [--port N] [--protocol http|h2c|tcp] [--env KEY=VALUE]... [--idempotency-key K] [--supersede] [--wait] [--http-probe PATH | --tcp-probe PORT]",
+		name: name, synopsis: "Deploy an app from an image, compose file, uploaded directory, or raw AppSpec file",
+		usage: "deploy --app APP_ID (--image REF | --compose-file PATH | --from-dir DIR | --spec-file PATH) [--builder dockerfile|railpack|static] [--dockerfile PATH] [--railpack-version SEMVER] [--output-dir DIR] [--port N] [--protocol http|h2c|tcp] [--env KEY=VALUE]... [--idempotency-key K] [--supersede] [--wait] [--http-probe PATH | --tcp-probe PORT]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&app, "app", "", "app id (required)")
 			fs.StringVar(&image, "image", "", "image reference (direct image deploy)")
 			fs.StringVar(&composeFile, "compose-file", "", "compose file path (controlled subset)")
 			fs.StringVar(&fromDir, "from-dir", "", "local directory to tar and upload as build source (F1.10; .git is never uploaded)")
+			fs.StringVar(&specFile, "spec-file", "", "path to a normalized AppSpec JSON file (protojson snake_case; full spec surface, excludes single-process flags)")
 			fs.StringVar(&builder, "builder", "", "builder for --from-dir deploys: dockerfile (default), railpack (zero-config source builds, version-pinned) or static (serve an artifact directory)")
 			fs.StringVar(&dockerfile, "dockerfile", "", "dockerfile path inside the uploaded source (default Dockerfile; dockerfile builder only)")
 			fs.StringVar(&railpackVersion, "railpack-version", "", "pinned railpack version, bare semver like 0.39.0 (required with --builder railpack)")
@@ -161,13 +162,20 @@ func newDeployVerb() commands.Command {
 				return usageErr(name, "--app is required")
 			}
 			sources := 0
-			for _, v := range []string{image, composeFile, fromDir} {
+			for _, v := range []string{image, composeFile, fromDir, specFile} {
 				if v != "" {
 					sources++
 				}
 			}
 			if sources != 1 {
-				return usageErr(name, "exactly one of --image, --compose-file or --from-dir is required")
+				return usageErr(name, "exactly one of --image, --compose-file, --from-dir or --spec-file is required")
+			}
+			// spec_file 自带全部声明面：单进程形态旗标互斥（服务端同款执法，
+			// CLI 先拒省一轮往返）。
+			if specFile != "" && (process != "" || httpProbe != "" || tcpProbe != 0 || port != 0 ||
+				portProtocol != "" || len(appEnv) > 0 || builder != "" || dockerfile != "" ||
+				railpackVersion != "" || outputDir != "") {
+				return usageErr(name, "process/probe/port/protocol/env/builder flags are for image or upload deploys; --spec-file carries the full process declaration")
 			}
 			if httpProbe != "" && tcpProbe != 0 {
 				return usageErr(name, "--http-probe and --tcp-probe are mutually exclusive")
@@ -223,6 +231,14 @@ func newDeployVerb() commands.Command {
 				}
 				compose = string(data)
 			}
+			specBody := ""
+			if specFile != "" {
+				data, err := os.ReadFile(specFile) //nolint:gosec // 用户显式指定的输入路径
+				if err != nil {
+					return fmt.Errorf("read spec file: %w", err)
+				}
+				specBody = string(data)
+			}
 			// --wait 与 --from-dir 的上传流都是流式长面：豁免请求级 deadline。
 			var dialOpts []dialOption
 			if wait || fromDir != "" {
@@ -269,6 +285,7 @@ func newDeployVerb() commands.Command {
 				ProcessName:    process,
 				Port:           int32(port), //nolint:gosec // 端口域内
 				Protocol:       portProtocol,
+				SpecFile:       specBody,
 				Env:            appEnv.envMap(),
 				IdempotencyKey: idemKey, CommitSha: commit, Supersede: supersede,
 				HttpProbe: httpProbe, TcpProbe: int32(tcpProbe), //nolint:gosec // 端口域内

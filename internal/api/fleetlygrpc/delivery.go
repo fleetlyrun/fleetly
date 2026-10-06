@@ -33,8 +33,8 @@ type DeploymentsService struct {
 	s *Services
 }
 
-// Deploy 归一化三源（image 直投 / Compose 受控子集 / 上传产物）并受理部署
-// （admission 判定全在 engine.Submit）。
+// Deploy 归一化四源（image 直投 / Compose 受控子集 / 上传产物 / 裸
+// AppSpec spec_file）并受理部署（admission 判定全在 engine.Submit）。
 func (svc *DeploymentsService) Deploy(ctx context.Context, req *deliveryv1.DeployRequest) (*deliveryv1.DeployResponse, error) {
 	if req.GetAppId() == "" {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "app_id: must not be empty")
@@ -45,28 +45,45 @@ func (svc *DeploymentsService) Deploy(ctx context.Context, req *deliveryv1.Deplo
 		return nil, err
 	}
 
+	// spec_file 形态（第四源，F3.5）先解析：Source.upload 引用要在受理
+	// 前置走与 upload_id 形态同一条归属/blob 执法（intake 形态不放松
+	// project 级材料纪律），解析产物直通归一化（单次解析）。
+	var specFile *specv1.AppSpec
+	if body := req.GetSpecFile(); body != "" {
+		s, err := spec.ParseSpecFile([]byte(body), appRow.ID, appRow.ProjectID)
+		if err != nil {
+			return nil, mapValidationError(err)
+		}
+		specFile = s
+	}
+
 	// 上传产物形态的受理前置：行存在、归属同 Project、blob 在盘（跨项目
-	// 引用拒绝——Upload 是 project 级材料，ADR-0019 附录 A.1）。
+	// 引用拒绝——Upload 是 project 级材料，ADR-0019 附录 A.1；spec_file
+	// 形态的 Source.upload 同一条执法）。
 	var uploadRow *sourceupload.Upload
-	if uid := req.GetUploadId(); uid != "" {
-		row, err := svc.s.Uploads.Get(ctx, svc.s.DB.Runner(), uid)
+	uploadID := req.GetUploadId()
+	if uploadID == "" && specFile != nil {
+		uploadID = specFile.GetSource().GetUpload().GetId()
+	}
+	if uploadID != "" {
+		row, err := svc.s.Uploads.Get(ctx, svc.s.DB.Runner(), uploadID)
 		if err != nil {
 			return nil, mapStateError(err, "upload")
 		}
 		if row.ProjectID != appRow.ProjectID {
 			return nil, apperr.New("E_INVALID_ARGUMENT",
 				"upload %s belongs to project %s, not project %s; upload the source again within the app's project",
-				uid, row.ProjectID, appRow.ProjectID)
+				uploadID, row.ProjectID, appRow.ProjectID)
 		}
 		if !svc.s.UploadStore.BlobExists(row.Digest) {
 			return nil, apperr.New("E_UPLOAD_UNAVAILABLE",
-				"the uploaded source %s no longer has its blob on disk (digest %s)", uid, row.Digest).
+				"the uploaded source %s no longer has its blob on disk (digest %s)", uploadID, row.Digest).
 				WithSuggestion("The upload was likely affected by a retention sweep or data-root migration; upload the source again.")
 		}
 		uploadRow = row
 	}
 
-	appSpec, err := normalizeDeploySource(req, appRow, uploadRow)
+	appSpec, err := normalizeDeploySource(req, appRow, uploadRow, specFile)
 	if err != nil {
 		return nil, err
 	}
@@ -143,18 +160,20 @@ func freezeRevision(ctx context.Context, s *Services, appRow *app.App, appSpec *
 	return rev, nil
 }
 
-// normalizeDeploySource 归一化三源：image 直投 / Compose 受控子集 / 上传
-// 产物。直投与上传形态的探针声明（http_probe/tcp_probe，B2）互斥；compose
-// 形态的探针经 healthcheck 扩展键（直投/上传旗标与 compose 互斥）。
-func normalizeDeploySource(req *deliveryv1.DeployRequest, appRow *app.App, uploadRow *sourceupload.Upload) (*specv1.AppSpec, error) {
+// normalizeDeploySource 归一化四源：image 直投 / Compose 受控子集 / 上传
+// 产物 / 裸 AppSpec（spec_file，F3.5）。直投与上传形态的探针声明
+// （http_probe/tcp_probe，B2）互斥；compose 形态的探针经 healthcheck 扩展键
+// （直投/上传旗标与 compose 互斥）。specFile 是 spec_file 形态在 Deploy
+// 受理前置已解析的产物（Source.upload 归属执法需先行），此处直通。
+func normalizeDeploySource(req *deliveryv1.DeployRequest, appRow *app.App, uploadRow *sourceupload.Upload, specFile *specv1.AppSpec) (*specv1.AppSpec, error) {
 	sources := 0
-	for _, v := range []string{req.GetImage(), req.GetComposeYaml(), req.GetUploadId()} {
+	for _, v := range []string{req.GetImage(), req.GetComposeYaml(), req.GetUploadId(), req.GetSpecFile()} {
 		if v != "" {
 			sources++
 		}
 	}
 	if sources > 1 {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "image, compose_yaml and upload_id are mutually exclusive; exactly one source form per deploy")
+		return nil, apperr.New("E_INVALID_ARGUMENT", "image, compose_yaml, upload_id and spec_file are mutually exclusive; exactly one source form per deploy")
 	}
 	// builder 面是上传形态专属（ADR-0032）：image 直投无构建、compose 受控
 	// 子集无构建源，携带即拒。
@@ -167,6 +186,15 @@ func normalizeDeploySource(req *deliveryv1.DeployRequest, appRow *app.App, uploa
 	if req.GetComposeYaml() != "" && len(req.GetEnv()) > 0 {
 		return nil, apperr.New("E_INVALID_ARGUMENT",
 			"env is for image or upload deploys; compose declares variables via each service's environment")
+	}
+	// spec_file 自带全部声明面：单进程形态旗标（进程名/探针/端口/变量）
+	// 与裸 spec 互斥——文件是期望状态唯一来源（builder 族已由上面的
+	// upload 专属执法盖住）。
+	if req.GetSpecFile() != "" &&
+		(req.GetProcessName() != "" || req.GetHttpProbe() != "" || req.GetTcpProbe() != 0 ||
+			req.GetPort() != 0 || req.GetProtocol() != "" || len(req.GetEnv()) > 0) {
+		return nil, apperr.New("E_INVALID_ARGUMENT",
+			"process_name, probe, port, protocol and env flags are for image or upload deploys; spec_file carries the full process declaration")
 	}
 	var probe *specv1.HealthcheckSpec
 	switch {
@@ -238,8 +266,13 @@ func normalizeDeploySource(req *deliveryv1.DeployRequest, appRow *app.App, uploa
 			return nil, mapValidationError(err)
 		}
 		return s, nil
+	case req.GetSpecFile() != "":
+		// 受理前置已解析并校验（AppRef 权威覆写 + ValidateApp 叶子执法
+		// + Source.upload 归属/blob 检查在 Deploy）；此处直通——归一化
+		// 语义 = "文件即期望状态"。
+		return specFile, nil
 	default:
-		return nil, apperr.New("E_INVALID_ARGUMENT", "one of image, compose_yaml or upload_id is required")
+		return nil, apperr.New("E_INVALID_ARGUMENT", "one of image, compose_yaml, upload_id or spec_file is required")
 	}
 }
 

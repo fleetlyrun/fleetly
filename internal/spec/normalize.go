@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
@@ -132,6 +133,29 @@ func portDeclNetworks(ports []*specv1.PortSpec) []string {
 		return nil
 	}
 	return []string{"default"}
+}
+
+// ParseSpecFile 解析裸 AppSpec 部署面（第四 intake 源，F3.5）：protojson
+// 解码（未知字段拒绝——fail-closed，AppSpec 消息 schema 即可写面边界，
+// ADR-0033"校验爆炸半径"担忧的解法：字段白名单不存在、全部字段合法，
+// 约束由 ValidateApp 叶子单源执法）+ AppRef 权威覆写（归属锚来自
+// DeployRequest.app_id 行，文件内声明不信任、恒覆写）+ schema_version
+// 缺省当前版（0 = 未声明；>当前版由 ValidateApp 拒——读入 check-strategy
+// 的"拒绝跳代"半边）。归一化产物与三形态同喉——freezeRevision 的共享
+// 变量合成与内容寻址复用天然覆盖。
+func ParseSpecFile(body []byte, appID, projectID string) (*specv1.AppSpec, error) {
+	s := &specv1.AppSpec{}
+	if err := protojson.Unmarshal(body, s); err != nil {
+		return nil, invalidf("spec_file", "invalid AppSpec JSON: %v", err)
+	}
+	if s.GetSchemaVersion() == 0 {
+		s.SchemaVersion = SchemaVersion
+	}
+	s.App = &specv1.AppRef{Id: appID, Project: projectID}
+	if err := ValidateApp(s); err != nil {
+		return nil, err
+	}
+	return s, nil
 }
 
 // UploadDeployInput 是上传产物形态的部署输入（三 strategy 旗标经此组装

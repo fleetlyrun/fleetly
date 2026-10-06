@@ -244,6 +244,11 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 		{"deploy image with port", []string{"deploy", "--app", "GOLDEN_APP", "--image", "nginx:1.23",
 			"--port", "8080", "--protocol", "h2c"}, 0},
 
+		// spec_file 裸 AppSpec（第四源，F3.5）：全字段 intake——两进程/
+		// 端口/网络直接声明（互斥、AppRef 覆写与 upload 执法在 apitest
+		// specfile 三件）。
+		{"deploy spec file", []string{"deploy", "--app", "GOLDEN_APP", "--spec-file", "GOLDEN_SPECFILE"}, 0},
+
 		// Platform 动词（F2.3，ADR-0039 决策 10）：手动触发（同步执行——
 		// 幂等键让 --json 轮重放同响应）与快照列举（假 restic 的 canned
 		// 集；golden 双形态）。
@@ -263,6 +268,11 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 	composeFile := filepath.Join(t.TempDir(), "compose-firstboot.yaml")
 	require.NoError(t, os.WriteFile(composeFile, []byte(
 		"services:\n  web:\n    image: nginx:1.27\nx-fleetly-first-boot-jobs:\n  - name: migrate\n    image: migrate/migrate:v4.18.1\n    command: [\"sh\", \"-c\", \"migrate -database \\\"$(cat /run/secrets/api-token)\\\" up\"]\n    secrets:\n      - api-token\n    ttl: 300s\n"), 0o600))
+	// GOLDEN_SPECFILE 是裸 AppSpec 的固定 spec（F3.5 第四源；protojson
+	// 规范形——枚举名与 Revision 冻结体同形；AppRef 缺席 = 服务端覆写）。
+	specFile := filepath.Join(t.TempDir(), "appspec.json")
+	require.NoError(t, os.WriteFile(specFile, []byte(
+		`{"source":{"image":{"ref":"nginx:1.22"}},"processes":[{"name":"web","image":"nginx:1.22","ports":[{"port":8080,"protocol":"PROTOCOL_HTTP"}],"networks":["default"]},{"name":"worker","image":"busybox:1.37"}]}`), 0o600))
 
 	// GOLDEN_PROJECT/GOLDEN_APP 占位替换为夹具真实 ID（项目 ID 是 ULID，
 	// 归一后可预测）。
@@ -315,6 +325,9 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 				}
 				if a == "GOLDEN_COMPOSE" {
 					args[i] = composeFile
+				}
+				if a == "GOLDEN_SPECFILE" {
+					args[i] = specFile
 				}
 			}
 			code, out, stderr := runCLI(t, args...)
