@@ -6,7 +6,7 @@
 
 ## 拓扑与连接
 
-- **manager** = `ssh root@fleetly-dev.deeploop.net`（146.190.58.0；VPC eth1=10.124.0.3；Debian 13 / 2C / 4G）。新 fleetlyd = systemd `fleetlyd.service`（数据根 /var/lib/fleetly；unit 另注入 `FLEETLY_PROXY_CONFIG_ENDPOINT=http://10.124.0.3:9082/proxy/config` + `FLEETLY_PROXY_ACME_EMAIL`）。
+- **manager** = `ssh root@fleetly-dev.deeploop.net`（146.190.58.0；VPC eth1=10.124.0.3；Debian 13 / 2C / 4G）。新 fleetlyd = systemd `fleetlyd.service`（数据根 /var/lib/fleetly；unit 另注入 `FLEETLY_PROXY_CONFIG_ENDPOINT=http://10.124.0.3:9082/proxy/config` + `FLEETLY_PROXY_ACME_EMAIL` + drop-in `browse.conf`：`FLEETLY_BROWSE_HOST_SUFFIX=dev.fleetly.run` + `FLEETLY_BROWSE_GATEWAY_URL=http://10.124.0.3:9081`，2026-10-07 起）。
 - **worker** = `ssh root@143.198.234.68`（本机可直连；跳板形态 `ssh -J root@fleetly-dev.deeploop.net root@fleetly-node2.deeploop.net` 亦可）。VPC eth1=10.124.0.5。**零平台安装物**：只跑 docker daemon + swarm worker。
 - DNS：DNSPod 通配 CNAME `*.dev.fleetly.run → fleetly-dev.deeploop.net`（n0.dev 实证解析）。
 - 两台 dockerd 均带 drop-in `--insecure-registry 10.124.0.3:5000`（zot 走 HTTP；VPC 内网形态）。
@@ -513,3 +513,13 @@ fleetly doctor
 
 1. **zot 平台凭证全域可读**：任何租户可拉他人镜像——单租户窗口下接受；多租户前必须按租户隔离或经 Proxy 前置认证（per-Project 凭证/前置认证已裁决推迟 N2，ADR-0036 决策 3，不静默升级）。
 2. **9082 前置认证已具备、缺省关**：`server.proxy_config.auth_token` 置值后拉取端点要求 `X-Fleetly-Proxy-Token` 头常量时间比对（traefik 受管实例随 token 增同名头，providers.http.headers 原生通道）；Unix socket 形态已否决（traefik http provider 无 unix scheme 支持，ADR-0036 N2 兑现节 1）。多租户启用前置=置值。
+
+## 2026-10-07 记录·十三（F3.6 数据浏览器批换装 b4953ca-f36browse + browse 面真机全链）
+
+**换装**（9df27c9-f33tpl → b4953ca-f36browse，九 commit b7e8f5a/…/b4953ca）：前置 Platform Backup `08c13298` + 卷 tar 七份（`/root/upgrade-f36/`）；**00027 迁移随批前滚**（browse_sessions 回收台账）。零扰动：torchwood-pg task 行 Running 15h 不变；tw.dev/n0.dev https 200（`:80` 明文口 404 是既有 TLS 路由形态——探针必须走 443 -k）；worker AgentCommand 重跑 → 双节点 relay_online=true 同版。走查判定 PASS，详见 `docs/reviews/2026-10-07-browse-walkthrough.md`。
+
+- **browse 面配置**：unit drop-in `browse.conf` 两 env（host_suffix=dev.fleetly.run 泛解析 ✓ / gateway_url=VPC 9081——traefik 容器可达即可，configEndpoint 同文化）；tls 缺省 none（明文 :80）。**轮询窗坑**：受理后即刻 curl 会撞 traefik 5s 配置轮询（404 假象）——走查链前 sleep 8s；e2e 探针已内置重试窗。
+- **CLI 全链**：`databases browse <id>`（pgvector→pgweb、enforcement=session 回显）→ entry 302 + `Set-Cookie flt_browse=<sid>.<grant>`（HttpOnly/SameSite=Lax/MaxAge=剩余）→ 同票二次 **401**（单用途）→ 无 cookie 工具路由 **401**（ForwardAuth 门禁在 traefik v3.5.4 真机生效——middlewares 渲染面首发）→ cookie 取 pgweb 页 200 → `show default_transaction_read_only` = **"on"**（torchwood-pg 真簇上服务端只读执法实证）。
+- **quota 面真机**：10min 窗内第 5 会话 → `E_QUOTA_EXCEEDED`（per-Team 并发 4）——信封 suggestion 是 E_QUOTA_EXCEEDED 共用文案（browse 语境下"等会话到期/空闲回收"已在 message 里）；走查会话靠空闲回收（10min 无接触），无需手工清理。
+- **载体面**：`fleetly-browse-<sid>` 1/1（与 e2e 一致）；**硬 TTL 回收真机精确生效**——四走查会话在 created+30min 整点后 Remove 拆载体 + 删行（rows=0/carriers=0）+ 路由随发布消失。**空闲窗观察**：staging 走查会话活到硬 TTL（10min 空闲未提前收——最可能是走查探针的迟到接触；空闲判定 fake-clock 单测绿，硬 TTL 是外层 belt 且实证兜底）。
+- **挂账**：E_QUOTA_EXCEEDED 的共用 suggestion 文案对 browse 语境欠贴切（后续批随 quota 文案分立收口）；mysql 只读角色铸造（服务端执法）与 redis/mongo 的角色铸造挂账（ADR-0051 决策 6）；Console enforcement 层级展示留后续批。

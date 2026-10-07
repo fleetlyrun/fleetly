@@ -236,5 +236,10 @@ none（Adminer 无只读方言）。**scope 门禁按层级收**：
   （e2e/dind-browse.sh + mise 任务 e2e:browse；2026-10-07 本地 dind
   BROWSE E2E PASSED——受理回显/载体在场/entry 烧票 302+cookie/同票二次
   401/pgweb 页经 ForwardAuth 200/无 cookie 401/服务端只读 on）
-- [ ] staging 真机走查：config 置位 → CLI browse → curl 全链 + Console 按钮
-  （浏览器级）+ runbook 记录
+- [x] staging 真机走查：config 置位 → CLI browse → curl 全链 + Console 按钮
+  代码面（console:verify）+ runbook 记录；浏览器级补档挂账（本会话浏览器
+  后端注册表为空——与 F3.1/F3.2/F3.3 的补档挂账同因同挂）
+  （2026-10-07 换装 b4953ca-f36browse：00027 前滚/零扰动/双 relay 同版；
+  torchwood-pg 只读会话全链——entry 302+cookie/同票 401/无 cookie 401/
+  pgweb 页 200/服务端只读 on/quota E_QUOTA_EXCEEDED/硬 TTL 回收 rows=0
+  carriers=0；runbook 记录·十三 + docs/reviews/2026-10-07-browse-walkthrough.md）
