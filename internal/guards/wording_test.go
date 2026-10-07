@@ -310,6 +310,14 @@ var wordingExemptions = map[string]map[string]string{
 	"addon": {
 		"console/src/pages/Terminal.tsx": "xterm library API identifiers (@xterm/addon-fit, FitAddon, loadAddon) cannot be renamed; not platform database naming (ADR-0049 terminal page)",
 	},
+	// ingress（Proxy 词条 _Avoid_）：k8s NetworkPolicy API 的入站方向字段/
+	// 枚举/类型名（Spec.Ingress、PolicyTypeIngress、NetworkPolicyIngressRule）
+	// 不可更名——成员资格入站隔离（ADR-0054）的编排器原语，非平台 Proxy
+	// 同义词；散文面一律用"入站"（Notes 措辞已避开该词）。
+	"ingress": {
+		"internal/providers/k3s/netisolate.go":      "k8s NetworkPolicy API identifiers (Spec.Ingress, PolicyTypeIngress, NetworkPolicyIngressRule) cannot be renamed; direction primitive of membership isolation (ADR-0054), not the platform Proxy term",
+		"internal/providers/k3s/netisolate_test.go": "assertions over the k8s NetworkPolicy API ingress field (ADR-0054), not the platform Proxy term",
+	},
 	// dbtemplate 备份执行链（F2.2，ADR-0039）：pg_dump/mysqldump/mongodump
 	// 是引擎原生命令名、dump.rdb 是 redis 数据文件名——外部工具专有名，
 	// 非平台 Backup 词汇面使用（ADR-0007 禁的是把 dump 当 Backup 同义词）。

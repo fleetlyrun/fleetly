@@ -151,7 +151,7 @@ func TestDesiredClusterRoleTable(t *testing.T) {
 		rule("", []string{"persistentvolumeclaims"}, "create", "get"),
 		rule("", []string{"events"}, "get", "list"),
 		rule("apps", []string{"deployments", "daemonsets"}, "create", "delete", "get", "list", "update"),
-		rule("networking.k8s.io", []string{"networkpolicies"}, "create", "delete", "get"),
+		rule("networking.k8s.io", []string{"networkpolicies"}, "create", "delete", "get", "list"),
 		rule("policy", []string{"pods/eviction"}, "create"),
 	}, desiredClusterRole().Rules)
 }

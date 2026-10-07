@@ -35,6 +35,14 @@ const (
 	// labelEgress 标记挂 egress:none 网络的载体（ADR-0052 决策 6：per-carrier
 	// deny 的 podSelector 锚——载体挂任一 egress:none 网络即整体限制出站）。
 	labelEgress = "fleetly.egress"
+	// netLabelPrefix 是网络成员资格 label 的 key 前缀（ADR-0054 决策 1：附件
+	// 集翻译为成员资格 label，同域网与跨域引用按 (projectID, name) 复合同
+	// 公式推导——接收方自己的网与挂靠方的引用得到同一 key，跨 ns 放行规则
+	// 两侧天然对齐）。
+	netLabelPrefix = "fleetly.net."
+	// labelNetNone 是零附件载体的隔离锚（k8s 无 policy 选中即全通——零附件
+	// 载体必须显式选中收口，与 swarm 零附件不可达逐位对齐）。
+	labelNetNone = "fleetly.net.none"
 	// labelNodeID 是节点锚定标记（D-MN-8：平台节点 ID 先于 placement 存在、
 	// 永不复用；k8s Node 对象 label，Placement 的 nodeSelector 锚）。
 	labelNodeID = "fleetly.node.id"
@@ -144,7 +152,8 @@ func sanitizeNamePart(s string) string {
 }
 
 // workloadLabels 构造归属标记集（域主体按 App/Task/Database/Browse 轴互斥，
-// swarm workloadLabels 同构）。egress 载体标记与 addressing 标记在此合入。
+// swarm workloadLabels 同构）。egress 载体标记、网络成员资格标记与
+// addressing 标记在此合入。
 func workloadLabels(ns capability.NamespaceRef, w capability.Workload, gen capability.Generation) map[string]string {
 	labels := map[string]string{
 		labelManaged:    "true",
@@ -167,10 +176,54 @@ func workloadLabels(ns capability.NamespaceRef, w capability.Workload, gen capab
 	if len(w.EgressNetworks) > 0 {
 		labels[labelEgress] = "true"
 	}
+	for k, v := range netMembershipLabels(ns, w) {
+		labels[k] = v
+	}
 	for _, a := range w.Addressing {
 		labels[addressingLabelKey(a.Name)] = "true"
 	}
 	return labels
+}
+
+// netMembershipLabels 构造 Workload 的网络成员资格标记（ADR-0054 决策 1）：
+// 同域附件（Networks）与跨域引用（NetworkRefs）都落成员 label；零附件载体
+// 落 none 锚；Publish 载体豁免（hostPort 发布 = 节点级可达语义，入站不隔离
+// ——外部→hostPort 的 DNAT 流量源无 pod 身份，被 policy 选中的载体会对之
+// 落默认拒，受管 Proxy/zot/cadvisor 的宿主发布面会整体断流）。
+func netMembershipLabels(ns capability.NamespaceRef, w capability.Workload) map[string]string {
+	if len(w.Publish) > 0 {
+		return nil
+	}
+	if len(w.Networks) == 0 && len(w.NetworkRefs) == 0 {
+		return map[string]string{labelNetNone: "true"}
+	}
+	out := make(map[string]string, len(w.Networks)+len(w.NetworkRefs))
+	for _, n := range w.Networks {
+		out[netLabelKey(ns.Project, n)] = "true"
+	}
+	for _, r := range w.NetworkRefs {
+		out[netLabelKey(r.Namespace.Project, r.Name)] = "true"
+	}
+	return out
+}
+
+// netLabelKey 是成员资格 label 的完整 key（复合名段见 netMembershipName）。
+func netLabelKey(projectID, networkName string) string {
+	return netLabelPrefix + netMembershipName(projectID, networkName)
+}
+
+// netMembershipName 计算 (projectID, networkName) 复合的成员资格名段：名段
+// 可读 + 项目哈希消歧（同项目内同名网与跨项目引用不碰撞；项目 ID 段不直
+// 接入名——ULID 26 字符会把 key 顶爆）。超长截断 + 稳定哈希兜底，
+// addressingLabelKey 同模式。
+func netMembershipName(projectID, networkName string) string {
+	name := sanitizeNamePart(networkName)
+	if len(name) > 38 {
+		sum := sha256.Sum256([]byte(name))
+		name = name[:29] + "-" + hex.EncodeToString(sum[:])[:8]
+	}
+	sum := sha256.Sum256([]byte(projectID + "/" + networkName))
+	return name + "-" + hex.EncodeToString(sum[:])[:6]
 }
 
 // addressingLabelKey 把平台 DNS 名声明映射为 pod label key（Service 的

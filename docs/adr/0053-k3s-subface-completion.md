@@ -61,7 +61,7 @@ ADR-0052 决策 4 明文"三子面补齐前 k3s 不升格为可缺省 Runtime"�
 | core/persistentvolumeclaims | create, get | Volume PVC |
 | core/events | get, list | utility 失败诊断 |
 | apps/deployments, apps/daemonsets | create, delete, get, list, update | 长运行/全局载体 |
-| networking.k8s.io/networkpolicies | create, delete, get | egress 强隔离 |
+| networking.k8s.io/networkpolicies | create, delete, get | egress 强隔离（〔2026-10-08 ADR-0054 追记：+list——成员资格隔离的期望集收敛对照〕） |
 | policy/pods/eviction | create | Drain（eviction API 尊重 PDB） |
 
 - **自愈与升级路径**：ensureRBAC 幂等——对象在位且 ClusterRole 规则与期望一致即跳过写入（SA kubeconfig 直接起动的形态零 admin 需求）；规则漂移（平台升级改动词面）需要写权限，错误文本带可行动指引（"以管理 kubeconfig 重跑一次以收敛 ClusterRole"，runbook 记录）。token Secret 轮换 = 后续批（长期 token 的诚实边界入 Notes/runbook）。

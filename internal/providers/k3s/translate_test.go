@@ -211,7 +211,10 @@ func TestDescribeNotesHonesty(t *testing.T) {
 	assert.Contains(t, notes, "exec sessions run through the apiserver natively")
 	assert.Contains(t, notes, "worker nodes carry no platform agent")
 	assert.Contains(t, notes, "without declared ports resolve via headless services")
+	assert.Contains(t, notes, "network membership isolation", "ADR-0054 membership model must be declared")
+	assert.Contains(t, notes, "isolation boundaries", "honest boundaries line must stay adjacent to the membership claim")
 	assert.NotContains(t, notes, "not implemented", "exec absence note must be gone once the sub-face lands")
+	assert.NotContains(t, notes, "relaxed", "pre-ADR-0054 weakening language must be gone")
 	assert.Equal(t, "k3s", p.Describe().Name)
 	assert.Equal(t, capability.KindRuntime, p.Describe().Capability)
 }

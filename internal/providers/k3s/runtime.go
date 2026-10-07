@@ -64,6 +64,11 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 	if err := p.reconcileEgressNetpol(ctx, nsName, ws); err != nil {
 		return fmt.Errorf("k3s ensure %s: %w", ns, err)
 	}
+	// 网络成员资格入站隔离（ADR-0054 决策 1）：每网一条成员 policy + 零附件
+	// deny-all + 跨域引用的接收方 grant，期望集收敛删除 stale。
+	if err := p.reconcileNetIsolation(ctx, ns, nsName, ws); err != nil {
+		return fmt.Errorf("k3s ensure %s: %w", ns, err)
+	}
 
 	// 材料先行（ADR-0014）：Secret 对象落盘 + 拉取凭证（imagePullSecrets），
 	// 再翻译载体 spec（引用对象名）。逐载体材料覆写（ADR-0048 双代窗）：
@@ -364,9 +369,21 @@ func (p *Provider) Remove(ctx context.Context, ns capability.NamespaceRef) error
 		}
 		p.forgetLastIssued("service/" + svc.Name)
 	}
-	// egress policy 是域级对象，随域拆除。
-	if err := p.cli.NetworkingV1().NetworkPolicies(nsName).Delete(ctx, toEgressNetpol().Name, metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
-		return fmt.Errorf("k3s remove %s: netpol: %w", ns, err)
+	// 隔离 policy 集（egress deny + 成员资格 + 零附件）是域级对象，随域拆除
+	// （他方 grant 不在此域：挂靠方 Ensure 持有，ADR-0054 决策 1）。
+	polSel := labels.Set(map[string]string{labelManaged: "true"}).String()
+	pols, err := p.cli.NetworkingV1().NetworkPolicies(nsName).List(ctx, metav1.ListOptions{LabelSelector: polSel})
+	if err != nil {
+		return fmt.Errorf("k3s remove %s: list netpols: %w", ns, err)
+	}
+	for i := range pols.Items {
+		pol := &pols.Items[i]
+		if owner := pol.Labels[labelPeerOwner]; owner != "" {
+			continue // 接收方 ns 里的他方 grant：挂靠方收敛面，不随本域拆
+		}
+		if err := p.cli.NetworkingV1().NetworkPolicies(nsName).Delete(ctx, pol.Name, metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
+			return fmt.Errorf("k3s remove %s: netpol %s: %w", ns, pol.Name, err)
+		}
 	}
 	return nil
 }

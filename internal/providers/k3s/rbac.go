@@ -52,7 +52,8 @@ func desiredClusterRole() *rbacv1.ClusterRole {
 			{APIGroups: []string{""}, Resources: []string{"persistentvolumeclaims"}, Verbs: []string{"create", "get"}},
 			{APIGroups: []string{""}, Resources: []string{"events"}, Verbs: []string{"get", "list"}},
 			{APIGroups: []string{"apps"}, Resources: []string{"deployments", "daemonsets"}, Verbs: []string{"create", "delete", "get", "list", "update"}},
-			{APIGroups: []string{"networking.k8s.io"}, Resources: []string{"networkpolicies"}, Verbs: []string{"create", "delete", "get"}},
+			// networkpolicies list：成员资格隔离的期望集收敛对照（ADR-0054）。
+			{APIGroups: []string{"networking.k8s.io"}, Resources: []string{"networkpolicies"}, Verbs: []string{"create", "delete", "get", "list"}},
 			{APIGroups: []string{"policy"}, Resources: []string{"pods/eviction"}, Verbs: []string{"create"}},
 		},
 	}

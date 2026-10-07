@@ -1,7 +1,7 @@
 // Package k3s 实现 Runtime Capability 的 k3s Provider（ADR-0052）：域映射 =
 // per-Project Namespace + 六轴 fleetly.* label（载体命名/标记全部私有，
-// 平台永不解析）；网络 = Namespace 即互通域，egress:none 载体级 NetworkPolicy
-// 强隔离。
+// 平台永不解析）；网络 = 成员资格入站隔离（附件集 label + per-network
+// NetworkPolicy，ADR-0054）+ egress:none 载体级出站强隔离（ADR-0052 决策 6）。
 //
 // 真机实证坑（2026-10-07 dind 预研，实现必读）：
 //   - dind（overlay 文件系统）上 containerd overlayfs snapshotter 不可用
@@ -152,7 +152,8 @@ func (p *Provider) Describe() capability.ProviderDescriptor {
 		Version:    "1",
 		Notes: []string{
 			"network isolation enforced by NetworkPolicy; egress:none is strong isolation (per-carrier deny with in-namespace and DNS allowlist)",
-			"task network group isolation is relaxed: single per-project namespace is fully connected; cross-project peers are not isolated yet (pilot)",
+			"network membership isolation: per-network NetworkPolicy rules admit same-network members, the system namespace, and approved cross-project peers; task network groups and unapproved cross-project traffic are isolated (per-network pod labels, ADR-0054)",
+			"isolation boundaries: workloads publishing host ports are exempt (node-level reachability), project pods keep direct pod-network reach into the system namespace, and egress stays open unless egress:none (cross-domain initiation is gated at the target's isolation policy)",
 			"network rebuild verb is semantically absent: namespaces are always present with no carrier-network object to rebuild (swarm attachable flag-day has no k8s counterpart)",
 			"full process DNS names ({process}.{app}) fold dots to dashes for service carrier names (k8s services are single DNS labels); bare process names are unchanged",
 			"processes without declared ports resolve via headless services (pod IPs directly, no virtual IP round-robin for multi-replica)",

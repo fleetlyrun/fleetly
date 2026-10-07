@@ -341,11 +341,17 @@ func (p *Provider) buildUtilityPod(ctx context.Context, req capability.UtilityRe
 			ReadOnly:  req.Volume.ReadOnly,
 		})
 	}
+	// 成员资格标记（ADR-0054 决策 1）：工具 Pod 挂全部项目网——db/browse
+	// 的成员 policy 放行同网成员，无标记即被拒（备份链可达性锚）。
+	podLabels := map[string]string{"fleetly.utility": "true"}
+	for _, n := range req.Networks {
+		podLabels[netLabelKey(req.Namespace.Project, n)] = "true"
+	}
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: podName,
 			// 无 managed 标记：非 Workload，不进 Watch 观测面（ADR-0039 契约）。
-			Labels: map[string]string{"fleetly.utility": "true"},
+			Labels: podLabels,
 		},
 		Spec: spec,
 	}, nil

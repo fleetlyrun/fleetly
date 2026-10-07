@@ -271,6 +271,7 @@ log "verifying least-privilege service account (fleetly-manager)"
 docker exec "$DIND_CID" sh -c '
   sa=system:serviceaccount:fleetly-system:fleetly-manager
   [ "$(k3s kubectl auth can-i create deployments.apps --as=$sa 2>/dev/null)" = "yes" ] || { echo "SA must be allowed to create deployments" >&2; exit 1; }
+  [ "$(k3s kubectl auth can-i list networkpolicies.networking.k8s.io --as=$sa 2>/dev/null)" = "yes" ] || { echo "SA must be allowed to list network policies (membership isolation convergence, ADR-0054)" >&2; exit 1; }
   [ "$(k3s kubectl auth can-i create clusterroles.rbac.authorization.k8s.io --as=$sa 2>/dev/null)" = "no" ] || { echo "SA must NOT be allowed to create cluster roles" >&2; exit 1; }
   [ "$(k3s kubectl auth can-i delete namespaces --as=$sa 2>/dev/null)" = "no" ] || { echo "SA must NOT be allowed to delete namespaces" >&2; exit 1; }
   k3s kubectl get clusterrole fleetly-manager >/dev/null 2>&1 || { echo "fleetly-manager ClusterRole missing" >&2; exit 1; }

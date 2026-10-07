@@ -325,6 +325,28 @@ func TestBuildUtilityPodMountsLand(t *testing.T) {
 	assert.True(t, found, "materials and input project through one /run/secrets volume")
 }
 
+// 工具 Pod 的网络成员资格标记：req.Networks 逐网落 label（备份工具 Pod 达
+// db 的入站放行锚——ADR-0054 决策 1）。
+func TestBuildUtilityPodNetMembershipLabels(t *testing.T) {
+	ctx := context.Background()
+	seededNode := &corev1.Node{ObjectMeta: metav1.ObjectMeta{
+		Name:   "n1",
+		Labels: map[string]string{labelNodeID: "01N1", "node-role.kubernetes.io/control-plane": ""},
+	}}
+	p, _ := newFakeProvider(seededNode)
+	req := capability.UtilityRequest{
+		ID:        "backup-y",
+		Namespace: capability.NamespaceRef{Project: "shop"},
+		Image:     "postgres:17-bookworm",
+		Argv:      []string{"pg_dump"},
+		Networks:  []string{"default", "isolated"},
+	}
+	pod, err := p.buildUtilityPod(ctx, req, "fleetly-shop", "fleetly-util-backup-y", "/var/lib/fleetly/utility/backup-y")
+	require.NoError(t, err)
+	assert.Equal(t, "true", pod.Labels[netLabelKey("shop", "default")])
+	assert.Equal(t, "true", pod.Labels[netLabelKey("shop", "isolated")])
+}
+
 // putDeployment 冲突重试（e2e 实证回归：rollback 重放拍 Get→Update 窗口撞
 // deployment controller 的 status 写（resourceVersion 抬升）即 409——
 // retry.OnConflict 重读重试收敛）。
