@@ -28,6 +28,7 @@ ADR-0052 决策 4 明文"三子面补齐前 k3s 不升格为可缺省 Runtime"�
 - **凭证**：`ExecClusterToken` = k3s node token 文件对照（与 Enrollment 同源；C3 等价成立）。`RunRelayAgent` 的 JoinToken 缺省走本地 token 文件（k3s 无 swarm rotate 面——node token 轮换需 server 重启，Enrollment rotate 已诚实失败，同口径）。
 - **否决 per-node relay agent kubeconfig**（ADR-0052 挂账 1 的原始倾向）：为不存在的问题（节点本地 exec API 缺口）引入部署面（每节点常驻容器 + kubeconfig 分发）；kubelet 通道本就是 k8s 基础设施，平台不再叠加第二通道。**挂账 5 的"AgentCommand kubeconfig 装载"随之溶解**：k3s EnrollKit.AgentCommand 恒空（无节点侧代理面），worker enrollment = k3s agent join 命令（唯一装载面，k3s 对节点 = docker 对 swarm 节点的运行时前提）。
 - E_EXEC_UNSUPPORTED 退役路径：errcode 注册表只增不删（engine 对无 exec 面 Runtime 的受理拒绝语义不变）；k3s 侧的退役 = 实现 RuntimeExec 接口本身——编译期断言 + FacesOf/Offered 自动扩面 + Describe Notes 撤"exec subface is not implemented"声明（TestDescribeNotesHonesty 同步）。
+- **TTY 会话的 stdin EOF 诚实边界**（e2e 实证后补录）：PTY 形态下消费端收流只关闭 stdin 流，**不终止载体进程**——k8s 通道的 stdin 关闭不等价 swarm hijack 连接关闭的 daemon 收口（swarm 的"daemon 随连接关闭杀 TTY exec"是编排器侧语义，非平台契约）；契约允许会话活到 idle/hard TTL 收口。非交互消费面（e2e/脚本）用显式 argv 自退出形态（进程退出即会话收口），交互 TTY 用户照常 exit。
 
 ### 2. RuntimeNetworkMaintenance = 永久语义性缺席定型（不实现接口）
 
@@ -88,11 +89,11 @@ Describe Notes 变更四行：撤"exec subface is not implemented"；增 exec �
 
 ## 验收锚
 
-- [ ] RBAC 自举：ensureRBAC 幂等收敛（SA/ClusterRole/binding/token 在位 + 规则一致时零写）+ 规则集单测（表格逐行断言）+ 工作客户端换 SA token（New 后对 apiserver 的调用经 SA 身份）+ e2e auth can-i 三断言（yes 在册动词 / no create clusterroles / no delete namespaces）
-- [ ] Exec 子面：编译期断言 + ExecTarget（label 快照解析/无在跑实例哨兵）+ ExecWorkload（argv/tty/resize/退出码还原的单测经执行器接缝 fake）+ relayagent 集中形态（per-node 注册/节点消失收口）单测 + Notes 撤缺席声明（TestDescribeNotesHonesty）
-- [ ] e2e `e2e:k3s` 增 exec 节全绿（exec 单命令退出码与输出 + shell 会话 + 审计行）
-- [ ] e2e `e2e:k3s-tw`（两节点腿）全绿：enroll 材料原样 join + 双节点 Ready/锚定 + worker 落点 pod exec 全链 + 双节点 relay_online；CI job 常态化
-- [ ] Hygiene：SweepOrphanSecrets 判据单测（引用集含 Deployment template/宽限窗/字典序/maxDelete/NotFound 幂等）+ SweepOrphanVolumes no-op + ensureSecrets 值轮换单测（值变更新/值同零写）
-- [ ] NetMaintenance 定型：不实现接口的编译期断言维持 + Notes 声明 + ADR-0046 追记
-- [ ] 全门禁：`mise run test` + `mise run lint` + `go test -count=1 ./internal/guards/` + `generate:verify` + `console:verify` 全绿；swarm 全套零回归
-- [ ] ADR-0052 §9 挂账 1/2/5/6 划线注日期；checklist F4.1 条目补本批实录
+- [x] RBAC 自举：ensureRBAC 幂等收敛（SA/ClusterRole/binding/token 在位 + 规则一致时零写——TestEnsureRBACIdempotentZeroWrite）+ 规则集单测（表格逐行断言 TestDesiredClusterRoleTable）+ 工作客户端换 SA token（New 构造期换装，自举客户端即弃）+ e2e auth can-i 三断言（yes create deployments / no create clusterroles / no delete namespaces；dind-k3s.sh 6b 节，2026-10-08 本机 fuse 形态两轮全绿）
+- [x] Exec 子面：编译期断言 + ExecTarget（label 快照解析/字典序确定性/无在跑实例哨兵 TestExecTarget*）+ ExecWorkload（argv/tty/resize/stdin-EOF/退出码管道经执行器接缝 fake——TestExecWorkloadSeam）+ 会话多路复用帧序（open→ack→stdout→exit / error 帧——TestAgentSessionFrameFlow/TestAgentSessionErrorFrame）+ 退出码还原走 v4 协议结构化 CodeExitError（e2e 咬出字符串解析形态不成立，exit 23 还原为 1 的实证后修复）+ Notes 撤缺席声明（TestDescribeNotesHonesty 断 NotContains "not implemented"）
+- [x] e2e `e2e:k3s` 增 exec 节全绿（2026-10-08 本机 fuse 形态 `K3S E2E PASSED`：relay_online 回环注册 + 输出透传 + 退出码 23 透传 + shell 会话（显式 argv 自退出——PTY stdin EOF 不终止载体进程的诚实边界）+ exec.session_opened 事件）
+- [x] e2e `e2e:k3s-tw`（两节点腿）全绿（2026-10-08 本机 fuse 形态 `K3S TWO-NODE E2E PASSED`：enroll 材料原样执行 join（advertise 地址断言——join 命令携带 manager IP 非 127.0.0.1）+ worker Ready + 双节点平台锚定 + 双节点 relay_online（集中形态）+ 卷钉住 worker 落点（pod 落 k3s-tw-w 断言）+ worker pod 跨节点 exec（输出 + 退出码 7））；CI e2e-k3s-tw job 常态化
+- [x] Hygiene：SweepOrphanSecrets 判据单测（引用集含缩容到零的 Deployment template/宽限窗/字典序/maxDelete 预算/零预算——TestSweepOrphanSecrets*）+ SweepOrphanVolumes no-op + ensureSecrets 值轮换单测（值变更新/值同零写——TestEnsureSecretsRotatesValue）+ registry 凭证轮换同面（TestEnsureImagePullSecretsRotatesValue）
+- [x] NetMaintenance 定型：不实现接口的编译期断言维持（provider.go 断言块注释）+ Notes 声明（"network rebuild verb is semantically absent"——TestDescribeNotesHonesty 锚）+ ADR-0046 追记（2026-10-08 永久语义性缺席定型段）
+- [x] 全门禁：`mise run test` 三 module + `mise run lint`（golangci 0 issues + buf breaking 过）+ `go test -count=1 ./internal/guards/`（含双腿 k3s 钉版一致守卫扩展）+ `generate:verify` + `console:verify` 全绿；swarm 全套零回归（providers/swarm 零代码改动）
+- [x] ADR-0052 §9 挂账 1/2/5/6 划线注日期（2026-10-08）；checklist F4.1 条目补本批实录

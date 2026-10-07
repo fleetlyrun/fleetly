@@ -80,7 +80,7 @@ func TestEnsureRBACFreshConverge(t *testing.T) {
 }
 
 // TestEnsureRBACIdempotentZeroWrite：全对象在位且规则一致 → 零写入
-//（SA kubeconfig 直接起动的生产形态无 admin 需求的锚）。
+// （SA kubeconfig 直接起动的生产形态无 admin 需求的锚）。
 func TestEnsureRBACIdempotentZeroWrite(t *testing.T) {
 	cli := fake.NewClientset(
 		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: systemNamespace}},

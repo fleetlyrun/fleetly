@@ -106,10 +106,10 @@ func TestExecWorkloadSeam(t *testing.T) {
 	resize <- capability.ExecSize{Cols: 120, Rows: 40}
 	code, err := p.ExecWorkload(context.Background(), capability.ExecWorkloadRequest{
 		WorkloadID: "wl-1", Instance: "web-a", Argv: []string{"/bin/sh", "-c", "echo hi"},
-		Stdin:      bytes.NewReader([]byte("stdin-bytes")),
-		Stdout:     &out,
-		Stderr:     io.Discard,
-		Resize:     resize,
+		Stdin:  bytes.NewReader([]byte("stdin-bytes")),
+		Stdout: &out,
+		Stderr: io.Discard,
+		Resize: resize,
 	})
 	require.NoError(t, err)
 	assert.Equal(t, 42, code)

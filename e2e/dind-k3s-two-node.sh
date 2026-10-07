@@ -248,8 +248,12 @@ if [ "$K3S_SNAPSHOTTER" = "fuse" ]; then
 fi
 # worker 预载：k3s 二进制 + airgap tar + 应用镜像（agent 起动自动 import；
 # 起动前注入——docker cp 在 agent 起动后受 mount 遮蔽，统一走 exec stdin）。
-log "staging worker (k3s binary + airgap images)"
-docker exec "$WRK_CID" mkdir -p /var/lib/rancher/k3s/agent/images /usr/local/bin /root
+# snapshotter 经 k3s config.yaml 注入（环境面——join 材料原样执行不得追加
+# 旗标；agent 缺省 overlayfs 在 dind 被内核拒，run1 实证 agent 卡在
+# "Waiting to retrieve agent configuration" 本地快照器校验环）。
+log "staging worker (k3s binary + airgap images + snapshotter config)"
+docker exec "$WRK_CID" mkdir -p /var/lib/rancher/k3s/agent/images /etc/rancher/k3s /usr/local/bin /root
+docker exec "$WRK_CID" sh -c "printf 'snapshotter: %s\n' '$K3S_SNAPSHOTTER_FLAG' > /etc/rancher/k3s/config.yaml"
 docker exec -i "$WRK_CID" sh -c 'cat > /usr/local/bin/k3s && chmod +x /usr/local/bin/k3s' < "$WORKDIR/k3s"
 docker exec -i "$WRK_CID" sh -c 'cat > /var/lib/rancher/k3s/agent/images/k3s-airgap-images-amd64.tar' < "$WORKDIR/k3s-airgap.tar"
 for img in nginx:1.27 busybox:1.37; do
@@ -261,10 +265,13 @@ done
 log "executing join command on the worker"
 docker exec -d "$WRK_CID" sh -c "$JOIN_CMD >/var/log/k3s-agent.log 2>&1"
 
+# 就绪探针：kubectl 表格 STATUS 列（宿主侧 awk 取列）——jsonpath 的
+# [?(@.type==…)] 谓词带括号，内层 sh -c 双引号串会让 dash 语法炸
+#（run2 实证 "unexpected ("）。
 i=0
 while [ "$i" -lt 90 ]; do
-  ready=$(docker exec "$DIND_CID" sh -c "k3s kubectl get node k3s-tw-w -o jsonpath={.status.conditions[?(@.type=='Ready')].status} 2>/dev/null" || true)
-  [ "$ready" = "True" ] && break
+  ready=$(docker exec "$DIND_CID" sh -c "k3s kubectl get node k3s-tw-w --no-headers" 2>/dev/null | awk '{print $2}' || true)
+  [ "$ready" = "Ready" ] && break
   i=$((i + 1)); sleep 2
 done
 if [ "$i" -ge 90 ]; then
@@ -310,7 +317,7 @@ APP_ID=$(cli --json apps list --project "$PROJECT_ID" | sed -n 's/.*"id": *"\([^
 # platform_id 先于 role 三行——-B6 开窗,单行 sed 永不匹配的既定坑）。
 WORKER_NODE_ID=$(cli --json nodes list | grep -B6 -A2 '"role": *"worker"' | sed -n 's/.*"platform_id": *"\([^"]*\)".*/\1/p' | head -1)
 [ -n "$WORKER_NODE_ID" ] || { cli --json nodes list >&2; fail "could not resolve worker platform node id"; }
-cli volumes create --project "$PROJECT_ID" workervol --node "$WORKER_NODE_ID" >/dev/null
+cli volumes create --project "$PROJECT_ID" --node "$WORKER_NODE_ID" workervol >/dev/null
 
 cat > "$WORKDIR/tw-compose.yaml" <<'EOF'
 services:

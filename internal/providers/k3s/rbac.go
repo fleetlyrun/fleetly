@@ -106,8 +106,8 @@ func ensureRBAC(ctx context.Context, boot kubernetes.Interface, tokenWait time.D
 	// ClusterRoleBinding（roleRef 不可变——存在且主体不一致即重建）。
 	binding := &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{Name: rbacServiceAccount},
-		RoleRef: rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "ClusterRole", Name: rbacServiceAccount},
-		Subjects: []rbacv1.Subject{{Kind: rbacv1.ServiceAccountKind, Name: rbacServiceAccount, Namespace: systemNamespace}},
+		RoleRef:    rbacv1.RoleRef{APIGroup: rbacv1.GroupName, Kind: "ClusterRole", Name: rbacServiceAccount},
+		Subjects:   []rbacv1.Subject{{Kind: rbacv1.ServiceAccountKind, Name: rbacServiceAccount, Namespace: systemNamespace}},
 	}
 	needBinding := true
 	if curB, err := boot.RbacV1().ClusterRoleBindings().Get(ctx, binding.Name, metav1.GetOptions{}); err == nil {

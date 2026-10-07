@@ -146,7 +146,7 @@ func (p *Provider) SweepOrphanSecrets(ctx context.Context, maxDelete int) (int, 
 }
 
 // SweepOrphanVolumes 实现 capability.RuntimeHygiene 卷面：诚实 no-op
-//（判据论证见包注释——k8s 无匿名卷遗产，PVC 是显式数据面）。
+// （判据论证见包注释——k8s 无匿名卷遗产，PVC 是显式数据面）。
 func (p *Provider) SweepOrphanVolumes(ctx context.Context, maxDelete int) (int, error) {
 	return 0, nil
 }

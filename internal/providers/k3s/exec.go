@@ -31,7 +31,7 @@ func execPodSelect(workloadID string) string {
 // ExecTarget 实现 RuntimeExec：label 选择器实时快照（观测缓存不参与决策）
 // 取首个 Running pod（名字典序——确定性，与 swarm task ID 字典序同款）。
 // Instance = pod 名（agent 侧定位锚）；CarrierNodeID = pod 所在 k8s 节点名
-//（平台锚定表反查平台节点 ID——与 Watch 锚定同源）。
+// （平台锚定表反查平台节点 ID——与 Watch 锚定同源）。
 func (p *Provider) ExecTarget(ctx context.Context, workloadID string) (capability.ExecTargetInstance, error) {
 	pods, err := p.cli.CoreV1().Pods("").List(ctx, metav1.ListOptions{LabelSelector: execPodSelect(workloadID)})
 	if err != nil {
@@ -78,7 +78,7 @@ func (p *Provider) readNodeToken() (string, error) {
 	if path == "" {
 		path = nodeTokenPath
 	}
-	b, err := os.ReadFile(path)
+	b, err := os.ReadFile(path) //nolint:gosec // 路径是平台常量或单测注入,非用户输入
 	if err != nil {
 		return "", err
 	}
@@ -175,7 +175,7 @@ func (p *Provider) spdyExec(ctx context.Context, req capability.ExecWorkloadRequ
 }
 
 // resizeQueue 把 Resize 订阅适配为 remotecommand 的 TerminalSizeQueue
-//（通道关闭即 Next 返回 nil——订阅停止）。
+// （通道关闭即 Next 返回 nil——订阅停止）。
 type resizeQueue struct {
 	ch <-chan capability.ExecSize
 }

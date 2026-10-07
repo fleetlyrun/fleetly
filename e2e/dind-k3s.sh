@@ -529,11 +529,18 @@ cli exec "$APP_ID/web" -- /bin/sh -c 'exit 23' >/dev/null 2>&1 || rc=$?
 [ "$rc" = "23" ] || fail "exec exit code passthrough failed (expected 23, got $rc)"
 log "exec exit code passthrough green (23)"
 
-# shell 会话：stdin EOF 收口（swarm two-node 腿同款锚——会话头行在 stderr）。
-SHELL_ERR=$(cli shell "$APP_ID/web" </dev/null 2>&1 >/dev/null || true)
-case "$SHELL_ERR" in
-  *"# session"*) log "shell session opened and closed on stdin EOF" ;;
-  *) fail "shell session header missing, stderr: $SHELL_ERR" ;;
+# shell 会话（TTY 形态）：显式 argv 自退出——PTY 会话的 stdin EOF 不终止
+# 载体进程（k8s 通道的 stdin 关闭 ≠ swarm hijack 关闭收口；契约允许会话
+# 活到 idle timeout，显式 argv 是非交互形态的确定性通道）。头行在 stderr
+# （swarm 腿同锚），命令体在 stdout——合并流双锚。
+SHELL_ALL=$(cli shell "$APP_ID/web" -- sh -c 'echo session-body-ok' 2>&1)
+case "$SHELL_ALL" in
+  *"# session"*) : ;;
+  *) fail "shell session header missing, output: $SHELL_ALL" ;;
+esac
+case "$SHELL_ALL" in
+  *session-body-ok*) log "shell session opened, argv executed, exited cleanly" ;;
+  *) fail "shell command body missing, output: $SHELL_ALL" ;;
 esac
 
 # exec.session_opened 事件（安全可见性面——events follow 双形态的回读锚）。

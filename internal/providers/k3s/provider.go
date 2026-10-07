@@ -119,10 +119,10 @@ func New(ctx context.Context, kubeconfig string) (*Provider, error) {
 	work.BearerToken = token
 	work.BearerTokenFile = ""
 	// 自举凭证面（客户端证书/外部凭证）全部让位 SA token。
-	work.TLSClientConfig.CertFile = ""
-	work.TLSClientConfig.KeyFile = ""
-	work.TLSClientConfig.CertData = nil
-	work.TLSClientConfig.KeyData = nil
+	work.CertFile = ""
+	work.KeyFile = ""
+	work.CertData = nil
+	work.KeyData = nil
 	work.ExecProvider = nil
 	cli, err := kubernetes.NewForConfig(work)
 	if err != nil {
@@ -153,7 +153,7 @@ func (p *Provider) Describe() capability.ProviderDescriptor {
 		Notes: []string{
 			"network isolation enforced by NetworkPolicy; egress:none is strong isolation (per-carrier deny with in-namespace and DNS allowlist)",
 			"task network group isolation is relaxed: single per-project namespace is fully connected; cross-project peers are not isolated yet (pilot)",
-			"network rebuild verb is semantically absent: namespaces are always present with no carrier-network object to repair (swarm attachable flag-day has no k8s counterpart)",
+			"network rebuild verb is semantically absent: namespaces are always present with no carrier-network object to rebuild (swarm attachable flag-day has no k8s counterpart)",
 			"full process DNS names ({process}.{app}) fold dots to dashes for service carrier names (k8s services are single DNS labels); bare process names are unchanged",
 			"processes without declared ports resolve via headless services (pod IPs directly, no virtual IP round-robin for multi-replica)",
 			"exec sessions run through the apiserver natively (per-node relay registrations are manager-side; worker nodes carry no platform agent)",
