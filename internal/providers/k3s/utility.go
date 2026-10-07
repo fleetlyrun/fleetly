@@ -84,16 +84,23 @@ func (p *Provider) RunUtility(ctx context.Context, req capability.UtilityRequest
 		return fmt.Errorf("k3s utility %s: create: %w", req.ID, err)
 	}
 
-	// 日志跟随与终态等待并行（日志面即 stdout 面）。
+	// 日志跟随与终态等待并行（日志面即 stdout 面）。计数写者守卫：超短命
+	// 工具 Pod（秒败）终态→cleanup 删 pod 可能快于跟随流的 404 重试窗——
+	// 零产出时在 cleanup 前做一次终态直拉兜底（e2e 取证：exit 1 报文恒无
+	// 日志尾的末位根因）。
+	counting := &countingWriter{w: stdout}
 	logsDone := make(chan error, 1)
 	go func() {
-		logsDone <- p.followUtilityLogs(ctx, nsName, podName, stdout)
+		logsDone <- p.followUtilityLogs(ctx, nsName, podName, counting)
 	}()
 	exitCode, werr := p.waitUtilityExit(ctx, nsName, podName)
 	// 终态后等日志流排空（容器日志此刻已终态；有界等待）。
 	select {
 	case <-logsDone:
 	case <-time.After(5 * time.Second):
+	}
+	if counting.n == 0 {
+		_ = p.fetchUtilityLogsOnce(ctx, nsName, podName, counting) //nolint:errcheck // 兜底拉取失败维持现状，主错误面在退出码
 	}
 	if werr != nil {
 		return fmt.Errorf("k3s utility %s: %w%s", req.ID, werr, p.utilityPodDiagnosis(ctx, nsName, podName))
@@ -102,6 +109,28 @@ func (p *Provider) RunUtility(ctx context.Context, req capability.UtilityRequest
 		return fmt.Errorf("k3s utility %s: exited with code %d%s", req.ID, exitCode, p.utilityPodDiagnosis(ctx, nsName, podName))
 	}
 	return nil
+}
+
+// countingWriter 计数透传写者（日志兜底直拉的零产出判据）。
+type countingWriter struct {
+	w io.Writer
+	n int
+}
+
+func (c *countingWriter) Write(p []byte) (int, error) {
+	c.n += len(p)
+	return c.w.Write(p)
+}
+
+// fetchUtilityLogsOnce 终态单次拉取（非 follow）。
+func (p *Provider) fetchUtilityLogsOnce(ctx context.Context, nsName, podName string, w io.Writer) error {
+	stream, err := p.cli.CoreV1().Pods(nsName).GetLogs(podName, &corev1.PodLogOptions{Container: "utility"}).Stream(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = stream.Close() }() //nolint:errcheck // 只读流收尾
+	_, err = io.Copy(w, stream)
+	return err
 }
 
 // utilityPodDiagnosis 拼工具 Pod 的失败诊断面（等待原因/终态/事件尾）——
