@@ -80,7 +80,7 @@ func (fakeRuntimeProvider) Managed() bool { return false }
 // swarm（config 访问器单真源，升级零扰动）；在册名装配生效（Describe 名
 // 回环证明选名真被消费）；未注册名启动 fail-fast 且报错列在册候选（config
 // 错误不静默回退）。真 k3s/swarm 注册对的装配面由 e2e 启动日志承载
-//（runtime provider=k3s faces=logs,admin,inspector,utility）——分层禁令
+// （runtime provider=k3s faces=logs,admin,inspector,utility）——分层禁令
 // 下 assembly 测试不 import providers，在册候选以假工厂背书（Metrics
 // 面测试同款形态）。
 func TestRuntimeProviderSelection(t *testing.T) {

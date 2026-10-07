@@ -122,6 +122,7 @@ jobs:
           docker pull docker:29-dind
           docker pull traefik:v3.5
           docker pull traefik/whoami:v1.10
+          docker pull caddy:2.11-alpine
 
       - name: h2c route e2e (managed traefik on the project network)
         run: mise run e2e:h2c
@@ -147,6 +148,7 @@ jobs:
         run: |
           docker pull docker:29-dind
           docker pull nginx:1.27
+          docker pull busybox:1.37
 
       - name: two-node e2e (enroll join → dual-node deploy → volume pinning)
         run: mise run e2e:twonode
@@ -214,17 +216,18 @@ jobs:
       - name: backup drill (backup -> verify -> restore to new database -> data assertions)
         run: mise run e2e:backup
 
-  # F4.1/ADR-0052：k3s 第二运行时两腿进 CI。GH Actions runner 原生文件
-  # 系统上 nested overlay 可用（k3d-on-CI 同形态）——snapshotter 走
-  # overlayfs（本机 WSL2 dind 内核拒 nested overlay → fuse 加速/native
-  # 保底，三形态经 FLEETLY_E2E_K3S_SNAPSHOTTER 选定，ADR-0052 决策 8
-  # 补录）；k3s 资产 ~280MB（二进制 + airgap tar）走 actions/cache。
+  # F4.1/ADR-0052：k3s 第二运行时两腿进 CI。snapshotter 走 fuse-overlayfs
+  #（GH runner 的 dind 内同样拒 nested overlay——PR #1 实证 multiple-
+  # lowerdir mount invalid argument，overlayfs 假设否决；fuse 用户态 CoW
+  # 首容器秒级，--device /dev/fuse + 四 apk 预载 mount.fuse3 helper 由脚本
+  # fuse 分支承载，ADR-0052 决策 8 补录）；k3s 资产 ~280MB（二进制 +
+  # airgap tar）走 actions/cache。
   e2e-k3s:
     name: E2E (dind k3s runtime full chain)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      FLEETLY_E2E_K3S_SNAPSHOTTER: overlayfs
+      FLEETLY_E2E_K3S_SNAPSHOTTER: fuse
     steps:
       - uses: actions/checkout@v4
 
@@ -259,7 +262,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      FLEETLY_E2E_K3S_SNAPSHOTTER: overlayfs
+      FLEETLY_E2E_K3S_SNAPSHOTTER: fuse
     steps:
       - uses: actions/checkout@v4
 

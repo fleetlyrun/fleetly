@@ -244,9 +244,16 @@ docker exec "$DIND_CID" sh -c '
 # 见 dind-k3s.sh 坑注）。
 docker exec "$DIND_CID" mkdir -p /var/lib/rancher/k3s/agent/images
 docker exec -i "$DIND_CID" sh -c 'cat > /var/lib/rancher/k3s/agent/images/k3s-airgap-images-amd64.tar' < "$WORKDIR/k3s-airgap.tar"
+# postgres digest 同 dbtemplate 钉版（dind-k3s.sh 同款坑注：k3s 段 restore
+# 新库的 digest 拉取经 containerd 代理通道不稳，airgap 预载即零在线拉）。
+PG_DIGEST="sha256:639ab7ceb90e13123085b741fb31ef493fba25463002f6da665352e7b534b652"
 i=0
-for img in nginx:1.27 traefik:v3.5.4; do
-  docker image save "$img" | docker exec -i "$DIND_CID" sh -c "cat > /var/lib/rancher/k3s/agent/images/app-$i.tar"
+for img in nginx:1.27 traefik:v3.5.4 "postgres:17-bookworm@$PG_DIGEST"; do
+  # name@digest 是 inspect/save 的规范形态（tag@digest 只保证 pull 通道）。
+  sref=$(printf '%s' "$img" | sed 's/:[^/@]*@/@/')
+  docker image inspect "$sref" >/dev/null 2>&1 || docker image pull "$img" >/dev/null
+  name=$(printf '%s' "$img" | sed 's#/#-#g; s#@.*##')
+  docker image save "$sref" | docker exec -i "$DIND_CID" sh -c "cat > /var/lib/rancher/k3s/agent/images/app-$name.tar"
   i=$((i + 1))
 done
 docker cp "$WORKDIR/k3s" "$DIND_CID":/usr/local/bin/k3s

@@ -41,3 +41,20 @@ func TestK3sPinConstantAndE2EAgree(t *testing.T) {
 		t.Errorf("ADR-0052 decision 8 no longer names the pinned k3s version %q — bump the ADR text with the e2e constant in the same commit (ADR-0052 decision 8)", pin)
 	}
 }
+
+// TestPostgresDigestPinAgreement：e2e 两腿 airgap 预载的 postgres digest 与
+// dbtemplate.postgresImageDigest 同源双向保鲜——k3s 侧 containerd 经代理
+// 在线拉 digest 不稳（12 分钟窗超时实证，2026-10-07），预载是 db 段的
+// 确定性前提；模板换版不同步 e2e 即红（同 commit 纪律）。
+func TestPostgresDigestPinAgreement(t *testing.T) {
+	tplSrc := readFileLF(t, "internal/engine/dbtemplate/postgres.go")
+	tpl := regexp.MustCompile(`postgresImageDigest = "(sha256:[0-9a-f]{64})"`).FindStringSubmatch(tplSrc)
+	if len(tpl) != 2 {
+		t.Fatal("internal/engine/dbtemplate/postgres.go no longer declares the postgresImageDigest constant — the pin moved; update this guard with it")
+	}
+	for _, f := range []string{"e2e/dind-k3s.sh", "e2e/dind-runtimeswitch.sh"} {
+		if !strings.Contains(readFileLF(t, f), tpl[1]) {
+			t.Errorf("%s no longer stages the pinned postgres digest %s — dbtemplate bumped without syncing the e2e airgap preload (same-commit discipline)", f, tpl[1])
+		}
+	}
+}

@@ -154,10 +154,17 @@ fi
 log "staging images for k3s auto-import (airgap channel)"
 docker exec "$DIND_CID" mkdir -p /var/lib/rancher/k3s/agent/images
 docker exec -i "$DIND_CID" sh -c 'cat > /var/lib/rancher/k3s/agent/images/k3s-airgap-images-amd64.tar' < "$WORKDIR/k3s-airgap.tar"
+# postgres digest 与 dbtemplate.postgresImageDigest 同源钉版（守卫
+# TestK3sPinConstantAndE2EAgree 双向保鲜）——db 段在线拉经 containerd 代理
+# 通道不稳（12 分钟窗超时实证），airgap 预载即零在线拉。
+PG_DIGEST="sha256:639ab7ceb90e13123085b741fb31ef493fba25463002f6da665352e7b534b652"
 i=0
-for img in nginx:1.27 busybox:1.37 traefik:v3.5.4; do
-  docker image inspect "$img" >/dev/null 2>&1 || docker image pull "$img" >/dev/null
-  docker image save "$img" | docker exec -i "$DIND_CID" sh -c "cat > /var/lib/rancher/k3s/agent/images/app-$i.tar"
+for img in nginx:1.27 busybox:1.37 traefik:v3.5.4 "postgres:17-bookworm@$PG_DIGEST"; do
+  # name@digest 是 inspect/save 的规范形态（tag@digest 只保证 pull 通道）。
+  sref=$(printf '%s' "$img" | sed 's/:[^/@]*@/@/')
+  docker image inspect "$sref" >/dev/null 2>&1 || docker image pull "$img" >/dev/null
+  name=$(printf '%s' "$img" | sed 's#/#-#g; s#@.*##')
+  docker image save "$sref" | docker exec -i "$DIND_CID" sh -c "cat > /var/lib/rancher/k3s/agent/images/app-$name.tar"
   i=$((i + 1))
 done
 
@@ -371,14 +378,24 @@ docker exec "$DIND_CID" sh -c "k3s kubectl get netpol fleetly-egress-deny -n $P1
   }
 log "egress carrier marker + NetworkPolicy present"
 
-# 活体：跨 ns 不可达（deny）+ DNS 放行（allowlist 面）。
+# 活体：跨 ns 不可达（deny）+ DNS 放行（allowlist 面）。探针一律 FQDN——
+# busybox nslookup/wget 不走 search list，短名形态假阴（DNS 步）与假阳
+# （deny 步：DNS 挂也会让 wget 失败、断言空过）双坑。
 docker exec "$DIND_CID" sh -c "
-  pod=\$(k3s kubectl get pods -n $P1_NS -l fleetly.egress=true -o jsonpath={.items[0].metadata.name})
-  # DNS 放行：nslookup 必须 succeed（放行集承载服务发现）。
-  k3s kubectl exec -n $P1_NS \"\$pod\" -- nslookup kubernetes.default >/dev/null 2>&1 \
-    || { echo 'DNS must stay allowed for egress carriers' >&2; exit 1; }
-  # 跨 ns 出站：shop2 的 nginx Service 必须不可达。
-  if k3s kubectl exec -n $P1_NS \"\$pod\" -- wget -q -O /dev/null -T 5 http://web.$P2_NS.svc/ >/dev/null 2>&1; then
+  pod=\$(k3s kubectl get pods -n $P1_NS -l fleetly.egress=true --field-selector=status.phase=Running -o jsonpath={.items[0].metadata.name})
+  [ -n \"\$pod\" ] || { echo 'no running egress pod for live probe' >&2; exit 1; }
+  # DNS 放行：放行集承载服务发现。
+  if ! k3s kubectl exec -n $P1_NS \"\$pod\" -- nslookup kubernetes.default.svc.cluster.local >/dev/null 2>&1; then
+    echo 'DNS must stay allowed for egress carriers; diagnostics:' >&2
+    k3s kubectl exec -n $P1_NS \"\$pod\" -- nslookup kubernetes.default.svc.cluster.local 2>&1 >&2 || true
+    k3s kubectl exec -n $P1_NS \"\$pod\" -- cat /etc/resolv.conf >&2 || true
+    webpod=\$(k3s kubectl get pods -n $P1_NS -l fleetly.ns.app=$P1_APP_LC --field-selector=status.phase=Running -o jsonpath={.items[0].metadata.name})
+    echo '--- control pod (no egress label) same probe:' >&2
+    k3s kubectl exec -n $P1_NS \"\$webpod\" -- nslookup kubernetes.default.svc.cluster.local >&2 2>&1 || true
+    exit 1
+  fi
+  # 跨 ns 出站：shop2 的 nginx Service 必须不可达（FQDN——DNS 已在上步实证）。
+  if k3s kubectl exec -n $P1_NS \"\$pod\" -- wget -q -O /dev/null -T 5 http://web.$P2_NS.svc.cluster.local/ >/dev/null 2>&1; then
     echo 'cross-namespace egress must be denied by NetworkPolicy' >&2
     exit 1
   fi
