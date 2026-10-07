@@ -93,7 +93,7 @@ if [ -n "${HTTPS_PROXY:-}${https_proxy:-}" ]; then
   PX_REST=$(printf '%s' "$PX" | sed -E 's#^(https?://)?[^:/]+##')
   # NO_PROXY 必须显式（实证坑：无 no_proxy 时 k3s/fleetlyd 的 localhost:6443 与集群内
   # 通信全被代理劫持——kubelet/watch/ensure 诡异慢挂）。
-  NO_PROXY="localhost,127.0.0.1,::1,10.0.0.0/8,10.42.0.0/16,.svc,.cluster.local,kubernetes.default.svc"
+  NO_PROXY="localhost,127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,10.42.0.0/16,.svc,.cluster.local,kubernetes.default.svc"
   PROXY_ENV="-e HTTPS_PROXY=http://host.docker.internal$PX_REST -e HTTP_PROXY=http://host.docker.internal$PX_REST -e NO_PROXY=$NO_PROXY -e no_proxy=$NO_PROXY --add-host=host.docker.internal:host-gateway"
 fi
 FUSE_DEV=""

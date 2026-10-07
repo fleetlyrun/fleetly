@@ -80,7 +80,7 @@ func (p *Provider) ensureSecrets(ctx context.Context, nsName string, files map[s
 				Labels: map[string]string{labelManaged: "true"},
 			},
 			Type: corev1.SecretTypeOpaque,
-			Data: map[string][]byte{"value": value},
+			Data: map[string][]byte{secretDataKey: value},
 		}
 		_, err := p.cli.CoreV1().Secrets(nsName).Create(ctx, secret, metav1.CreateOptions{})
 		if err != nil && !apierrors.IsAlreadyExists(err) {

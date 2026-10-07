@@ -96,17 +96,25 @@ func TestToDeployment(t *testing.T) {
 	require.NotNil(t, c.Resources.Limits)
 	assert.Equal(t, "500m", c.Resources.Limits.Cpu().String())
 	assert.Equal(t, "256Mi", c.Resources.Limits.Memory().String())
-	// 卷挂载 + PVC 引用（名公式）。
+	// 卷挂载 + PVC 引用（名公式）+ 材料 projected 卷（PVC 卷在前、
+	// projected 卷在后——sortedKeys 稳定序）。
 	require.Len(t, d.Spec.Template.Spec.Volumes, 2)
 	assert.Equal(t, pvcName("01V"), d.Spec.Template.Spec.Volumes[0].PersistentVolumeClaim.ClaimName)
-	// 材料挂载 /run/secrets/<名>。
+	pv := d.Spec.Template.Spec.Volumes[1].Projected
+	require.NotNil(t, pv, "materials must land as a single projected volume")
+	require.Len(t, pv.Sources, 1)
+	assert.Equal(t, "fleetly-mat-db-pass", pv.Sources[0].Secret.Name)
+	require.Len(t, pv.Sources[0].Secret.Items, 1)
+	assert.Equal(t, "value", pv.Sources[0].Secret.Items[0].Key)
+	assert.Equal(t, "db-pass", pv.Sources[0].Secret.Items[0].Path, "value key projects as the platform-named file (docker secrets parity)")
+	// 材料挂载点 /run/secrets（单挂载点；文件 <名> 由 items 投影）。
 	found := false
 	for _, m := range c.VolumeMounts {
-		if m.MountPath == "/run/secrets/db-pass" {
+		if m.MountPath == "/run/secrets" {
 			found = true
 		}
 	}
-	assert.True(t, found, "secret material must mount at /run/secrets/<name>")
+	assert.True(t, found, "secret materials must mount at /run/secrets")
 	// 钉住节点 selector（平台节点 ID 锚）。
 	assert.Equal(t, "01NODE", d.Spec.Template.Spec.NodeSelector[labelNodeID])
 	// 挂卷负载 = Recreate（单实例争用面）。

@@ -81,7 +81,7 @@ if [ -n "${HTTPS_PROXY:-}${https_proxy:-}" ]; then
   PX_REST=$(printf '%s' "$PX" | sed -E 's#^(https?://)?[^:/]+##')
   # NO_PROXY 必须显式（实证坑：无 no_proxy 时 k3s/fleetlyd 的 localhost:6443 与集群内
   # 通信全被代理劫持——kubelet/watch/ensure 诡异慢挂）。
-  NO_PROXY="localhost,127.0.0.1,::1,10.0.0.0/8,10.42.0.0/16,.svc,.cluster.local,kubernetes.default.svc"
+  NO_PROXY="localhost,127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,10.42.0.0/16,.svc,.cluster.local,kubernetes.default.svc"
   PROXY_ENV="-e HTTPS_PROXY=http://host.docker.internal$PX_REST -e HTTP_PROXY=http://host.docker.internal$PX_REST -e NO_PROXY=$NO_PROXY -e no_proxy=$NO_PROXY --add-host=host.docker.internal:host-gateway"
 fi
 FUSE_DEV=""
@@ -118,11 +118,15 @@ if [ "$K3S_SNAPSHOTTER" = "fuse" ]; then
   ' || { echo "FATAL: fuse helpers not present after apk install" >&2; exit 1; }
 fi
 
-# 3. 镜像预载（swarm 侧 docker load；k3s 侧稍后 import）。
+# 3. 镜像预载（swarm 侧 docker load；k3s 侧稍后 airgap 预载）。postgres
+#    digest 同 dbtemplate 钉版（swarm 段 db 的在线拉经 dind dockerd 代理
+#    通道有不确定性——预载即零在线拉）。
 log "preloading docker images (swarm side)"
-for img in nginx:1.27 traefik:v3.5.4; do
-  docker image inspect "$img" >/dev/null 2>&1 || docker image pull "$img" >/dev/null
-  docker image save "$img" | docker exec -i "$DIND_CID" docker load >/dev/null
+PG_DIGEST="sha256:639ab7ceb90e13123085b741fb31ef493fba25463002f6da665352e7b534b652"
+for img in nginx:1.27 traefik:v3.5.4 "postgres:17-bookworm@$PG_DIGEST"; do
+  sref=$(printf '%s' "$img" | sed 's/:[^/@]*@/@/')
+  docker image inspect "$sref" >/dev/null 2>&1 || docker image pull "$img" >/dev/null
+  docker image save "$sref" | docker exec -i "$DIND_CID" docker load >/dev/null
 done
 
 # 4. 段一 swarm：swarm init + fleetlyd（缺省 provider=swarm）。

@@ -305,10 +305,15 @@ func toContainer(w capability.Workload, secretFiles map[string]string) corev1.Co
 			ReadOnly:  true,
 		})
 	}
-	for _, platformName := range sortedKeys(secretFiles) {
+	// 材料注入：单个 projected 卷挂 /run/secrets，逐 Secret 的 value 键经
+	// items 投影为文件 <平台名>——与 docker secrets 语义逐位对齐（挂载点
+	// 即文件本体；裸 Secret 卷挂 /run/secrets/<名> 会得到目录/<名>/value
+	// 两级形态，模板 _FILE env 指到目录即崩——e2e db 段 CrashLoop 实证，
+	// ADR-0014 的容器内路径契约）。
+	if len(secretFiles) > 0 {
 		c.VolumeMounts = append(c.VolumeMounts, corev1.VolumeMount{
-			Name:      secretVolumeName(platformName),
-			MountPath: "/run/secrets/" + platformName,
+			Name:      secretsVolumeName,
+			MountPath: "/run/secrets",
 			ReadOnly:  true,
 		})
 	}
@@ -368,10 +373,12 @@ func readinessProbe(h *capability.Healthcheck) *corev1.Probe {
 	return probe
 }
 
-// secretVolumeName 是 Secret 材料的挂载卷名（载体内的卷名，非 Secret 对象名）。
-func secretVolumeName(platformName string) string {
-	return "mat-" + sanitizeNamePart(platformName)
-}
+// secretsVolumeName 是材料 projected 卷的载体卷名（全部 SecretFiles 单卷
+// 投影到 /run/secrets——docker secrets 语义对齐，见挂载处坑注）。
+const secretsVolumeName = "fleetly-secrets"
+
+// secretDataKey 是 ensureSecrets 落盘 Secret 的数据键（投影 items 的源键）。
+const secretDataKey = "value"
 
 // secretObjectName 是 Secret 材料的 k8s 对象名（值经 k8s Secret 分发——
 // 不落载体 label 或明文 env，ADR-0014）。
@@ -421,13 +428,24 @@ func podTemplate(ns capability.NamespaceRef, w capability.Workload, gen capabili
 			},
 		})
 	}
-	for _, platformName := range sortedKeys(secretFiles) {
-		sn := secretObjectName(platformName)
+	if len(secretFiles) > 0 {
+		sources := make([]corev1.VolumeProjection, 0, len(secretFiles))
+		for _, platformName := range sortedKeys(secretFiles) {
+			sources = append(sources, corev1.VolumeProjection{
+				Secret: &corev1.SecretProjection{
+					LocalObjectReference: corev1.LocalObjectReference{Name: secretObjectName(platformName)},
+					Items: []corev1.KeyToPath{{
+						Key:  secretDataKey,
+						Path: platformName,
+					}},
+				},
+			})
+		}
 		spec.Volumes = append(spec.Volumes, corev1.Volume{
-			Name: secretVolumeName(platformName),
+			Name: secretsVolumeName,
 			VolumeSource: corev1.VolumeSource{
-				Secret: &corev1.SecretVolumeSource{
-					SecretName:  sn,
+				Projected: &corev1.ProjectedVolumeSource{
+					Sources:     sources,
 					DefaultMode: ptr(int32(0o444)),
 				},
 			},

@@ -60,7 +60,29 @@ func TestEnsureCreatesObjects(t *testing.T) {
 	// Secret 材料（值不落载体 label/明文 env——ADR-0014）。
 	sec, err := cli.CoreV1().Secrets(nsName).Get(ctx, secretObjectName("db-pass"), metav1.GetOptions{})
 	require.NoError(t, err)
-	assert.Equal(t, []byte("secret"), sec.Data["value"])
+	assert.Equal(t, []byte("secret"), sec.Data[secretDataKey])
+	// 材料注入形态：projected 卷挂 /run/secrets，value 键投影为文件
+	// <平台名>（docker secrets 语义对齐——裸 Secret 卷的两级目录形态会
+	// 让模板 _FILE env 指到目录即崩，e2e db 段 CrashLoop 实证）。
+	var pv *corev1.ProjectedVolumeSource
+	for _, v := range d.Spec.Template.Spec.Volumes {
+		if v.Name == secretsVolumeName {
+			pv = v.Projected
+		}
+	}
+	require.NotNil(t, pv, "materials must land as a single projected volume")
+	require.Len(t, pv.Sources, 1)
+	assert.Equal(t, secretObjectName("db-pass"), pv.Sources[0].Secret.Name)
+	require.Len(t, pv.Sources[0].Secret.Items, 1)
+	assert.Equal(t, secretDataKey, pv.Sources[0].Secret.Items[0].Key)
+	assert.Equal(t, "db-pass", pv.Sources[0].Secret.Items[0].Path)
+	found := false
+	for _, m := range d.Spec.Template.Spec.Containers[0].VolumeMounts {
+		if m.MountPath == "/run/secrets" {
+			found = true
+		}
+	}
+	assert.True(t, found)
 	// Addressing Service。
 	svc, err := cli.CoreV1().Services(nsName).Get(ctx, "api-web", metav1.GetOptions{})
 	require.NoError(t, err)
