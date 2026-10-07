@@ -19,8 +19,10 @@ import (
 
 	// 编译期 Provider 注册（blank import 触发工厂自注册；架构 §2：
 	// providers 只准经注册表间接装配，全仓唯此一处）。builders 是 Builder
-	// 家族单包三 Provider（ADR-0032）。
+	// 家族单包三 Provider（ADR-0032）；k3s 与 swarm 双 Runtime 在册候选，
+	// config runtime.provider 装配期恰选一（ADR-0052 决策 1）。
 	_ "github.com/fleetlyrun/fleetly/internal/providers/builders"
+	_ "github.com/fleetlyrun/fleetly/internal/providers/k3s"
 	_ "github.com/fleetlyrun/fleetly/internal/providers/localobjectstore"
 	_ "github.com/fleetlyrun/fleetly/internal/providers/s3objectstore"
 	_ "github.com/fleetlyrun/fleetly/internal/providers/swarm"
