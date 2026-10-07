@@ -419,6 +419,11 @@ docker exec -e P_NS="$P_NS" -e DB_SEL="$NEW_DB_LC" -e SEED="$SEED_COUNT" "$DIND_
   echo "restored rows: $count (expected $SEED) after $j polls" >&2
   echo "--- psql stderr:"; k3s kubectl exec -n "$P_NS" "$pod" -- psql -U fleetly -d fleetly -tAc "SELECT count(*) FROM migration_probe;" 2>&1 | tail -3
   echo "--- ns pods (utility one-shots incl):"; k3s kubectl get pods -n "$P_NS" --no-headers 2>&1
+  upod=$(k3s kubectl get pods -n "$P_NS" --no-headers 2>/dev/null | grep util-restore | head -1 | cut -d" " -f1 || true)
+  if [ -n "$upod" ]; then
+    echo "--- utility pod describe:"; k3s kubectl describe pod -n "$P_NS" "$upod" 2>&1 | grep -A8 "Events:" | tail -9
+  fi
+  echo "--- node labels:"; k3s kubectl get nodes --show-labels 2>&1 | tr "," "\n" | grep -E "NAME|fleetly.node.id" | head -4
   exit 1
 ' || fail "restored data assertion failed"
 log "restored database carries all $SEED_COUNT seeded rows"
