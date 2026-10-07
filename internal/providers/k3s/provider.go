@@ -33,6 +33,10 @@ import (
 type Provider struct {
 	cli kubernetes.Interface
 
+	// restCfg 是工作客户端的连接面（SA token 身份；ExecWorkload 的 SPDY
+	// 执行器构造消费——ADR-0053 决策 1/4）。
+	restCfg *rest.Config
+
 	// apiserver 地址（kubeconfig 解析产物；Enrollment 的 agent 命令锚）。
 	apiServer string
 
@@ -55,17 +59,24 @@ type Provider struct {
 
 	// kubeconfigPath 是连接面元数据（Inspect/诊断输出用）。
 	kubeconfigPath string
+
+	// execFn 是 SPDY 执行器的单测接缝（nil = 生产 remotecommand 形态；
+	// fake clientset 无 exec 子资源服务——接缝承载 argv/tty/退出码管道
+	// 的确定性测试，真 SPDY 链路在 e2e）。
+	execFn func(ctx context.Context, req capability.ExecWorkloadRequest, ns, name string) (int, error)
 }
 
-// 编译期契约断言：核心面 + 四个子面（ADR-0052 决策 4）。Exec/
-// NetworkMaintenance/Hygiene 是诚实失败缺席（engine 侧按子面缺席降级，
-// E_EXEC_UNSUPPORTED / 重建动词诚实失败既有语义）——故意不实现接口。
+// 编译期契约断言：核心面 + 五个子面（Exec 随 ADR-0053 决策 1 补齐）。
+// NetworkMaintenance 是永久语义性缺席（ADR-0053 决策 2：前置病灶在 k8s
+// 不存在——重建动词诚实失败是正确行为，非缺口）；Hygiene 随下批补齐
+// ——两者故意不实现接口。
 var (
 	_ capability.Runtime          = (*Provider)(nil)
 	_ capability.RuntimeLogs      = (*Provider)(nil)
 	_ capability.RuntimeAdmin     = (*Provider)(nil)
 	_ capability.RuntimeInspector = (*Provider)(nil)
 	_ capability.RuntimeUtility   = (*Provider)(nil)
+	_ capability.RuntimeExec      = (*Provider)(nil)
 )
 
 // New 构造 Provider：kubeconfig 为文件路径（空 = 缺省 /etc/rancher/k3s/k3s.yaml，
@@ -115,6 +126,7 @@ func New(ctx context.Context, kubeconfig string) (*Provider, error) {
 	}
 	return &Provider{
 		cli:            cli,
+		restCfg:        work,
 		apiServer:      bootCfg.Host,
 		kubeconfigPath: kubeconfig,
 	}, nil
@@ -139,7 +151,7 @@ func (p *Provider) Describe() capability.ProviderDescriptor {
 			"task network group isolation is relaxed: single per-project namespace is fully connected; cross-project peers are not isolated yet (pilot)",
 			"full process DNS names ({process}.{app}) fold dots to dashes for service carrier names (k8s services are single DNS labels); bare process names are unchanged",
 			"processes without declared ports resolve via headless services (pod IPs directly, no virtual IP round-robin for multi-replica)",
-			"exec subface is not implemented by this provider yet (E_EXEC_UNSUPPORTED); k8s native exec is planned",
+			"exec sessions run through the apiserver natively (per-node relay registrations are manager-side; worker nodes carry no platform agent)",
 			"platform identity is the fleetly-manager ServiceAccount bound to a single narrowly-scoped ClusterRole (bootstrap identity is discarded after startup)",
 			"workload identity is carried by fleetly.* labels; platform node IDs never reuse",
 		},

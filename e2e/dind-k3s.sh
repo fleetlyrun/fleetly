@@ -507,5 +507,39 @@ docker exec "$DIND_CID" sh -c "k3s kubectl get pvc -n $P1_NS | grep -q fleetly-v
   || fail "database PVC not bound"
 log "database running with bound PVC"
 
+# 13. exec 子面（ADR-0053 决策 1 集中形态的 e2e 锚）：回环 per-node 注册
+#     （relay_online）→ 单命令退出码/输出透传 → shell 会话（stdin EOF 收口）
+#     → 审计行。SPDY 通道 + engine 会话路由全链经真 apiserver。
+log "exec leg (central form: loopback relay + apiserver SPDY)"
+i=0
+while [ "$i" -lt 60 ]; do
+  n=$(cli --json nodes list | grep -c '"relay_online": *true' || true)
+  [ "$n" -ge 1 ] && break
+  i=$((i + 1)); sleep 2
+done
+[ "$i" -lt 60 ] || { docker exec "$DIND_CID" sh -c "grep -i relay /var/log/fleetlyd.log | tail -10" >&2 || true; fail "node relay_online never came up (central loopback agent)"; }
+log "node relay_online (central loopback agent registered)"
+
+# 退出码与输出透传（|| rc=$? 形态护住 set -e——非零退出码是被测语义）。
+EXEC_OUT=$(cli exec "$APP_ID/web" -- /bin/echo store-exec-ok 2>&1) \
+  || fail "fleetly exec failed: $EXEC_OUT"
+case "$EXEC_OUT" in *store-exec-ok*) log "exec output passthrough green" ;; *) fail "exec output missing: $EXEC_OUT" ;; esac
+rc=0
+cli exec "$APP_ID/web" -- /bin/sh -c 'exit 23' >/dev/null 2>&1 || rc=$?
+[ "$rc" = "23" ] || fail "exec exit code passthrough failed (expected 23, got $rc)"
+log "exec exit code passthrough green (23)"
+
+# shell 会话：stdin EOF 收口（swarm two-node 腿同款锚——会话头行在 stderr）。
+SHELL_ERR=$(cli shell "$APP_ID/web" </dev/null 2>&1 >/dev/null || true)
+case "$SHELL_ERR" in
+  *"# session"*) log "shell session opened and closed on stdin EOF" ;;
+  *) fail "shell session header missing, stderr: $SHELL_ERR" ;;
+esac
+
+# exec.session_opened 事件（安全可见性面——events follow 双形态的回读锚）。
+n=$(cli --json events list 2>/dev/null | grep -c 'exec.session_opened' || true)
+[ "$n" -ge 1 ] || fail "exec.session_opened events missing"
+log "exec events present"
+
 echo ""
 echo "K3S E2E PASSED"

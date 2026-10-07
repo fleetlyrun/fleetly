@@ -201,14 +201,16 @@ func TestCanonicalJSONStable(t *testing.T) {
 }
 
 // Describe Notes 是能力发现面的诚实边界声明（架构 §10：与 swarm 弱隔离
-// Notes 对照）——强隔离/全名折点/exec 缺席三锚入测，措辞漂移即红。
+// Notes 对照）——强隔离/全名折点/exec 集中形态三锚入测，措辞漂移即红。
 func TestDescribeNotesHonesty(t *testing.T) {
 	p := &Provider{}
 	notes := strings.Join(p.Describe().Notes, "\n")
 	assert.Contains(t, notes, "egress:none is strong isolation")
 	assert.Contains(t, notes, "fold dots to dashes")
-	assert.Contains(t, notes, "exec subface is not implemented")
+	assert.Contains(t, notes, "exec sessions run through the apiserver natively")
+	assert.Contains(t, notes, "worker nodes carry no platform agent")
 	assert.Contains(t, notes, "without declared ports resolve via headless services")
+	assert.NotContains(t, notes, "not implemented", "exec absence note must be gone once the sub-face lands")
 	assert.Equal(t, "k3s", p.Describe().Name)
 	assert.Equal(t, capability.KindRuntime, p.Describe().Capability)
 }
