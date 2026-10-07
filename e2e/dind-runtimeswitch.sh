@@ -419,6 +419,7 @@ docker exec -e P_NS="$P_NS" -e DB_SEL="$NEW_DB_LC" -e SEED="$SEED_COUNT" "$DIND_
   echo "restored rows: $count (expected $SEED) after $j polls" >&2
   echo "--- psql stderr:"; k3s kubectl exec -n "$P_NS" "$pod" -- psql -U fleetly -d fleetly -tAc "SELECT count(*) FROM migration_probe;" 2>&1 | tail -3
   echo "--- ns pods (utility one-shots incl):"; k3s kubectl get pods -n "$P_NS" --no-headers 2>&1
+  echo "--- fleetlyd restore lines:"; grep -iE "restore|utility" /var/log/fleetlyd.log | grep -v gRPC | tail -15
   upod=$(k3s kubectl get pods -n "$P_NS" --no-headers 2>/dev/null | grep util-restore | head -1 | cut -d" " -f1 || true)
   if [ -n "$upod" ]; then
     echo "--- utility pod describe:"; k3s kubectl describe pod -n "$P_NS" "$upod" 2>&1 | grep -A8 "Events:" | tail -9
