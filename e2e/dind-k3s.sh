@@ -463,8 +463,11 @@ done
 }
 log "managed traefik running in fleetly-system namespace"
 
+# --tls none 必须显式:route TLS 缺省语义是 auto(ACME 求解)——sslip 域名
+# 无效邮箱形态 ACME 必败,明文 80 上无路由即 404(h2c e2e 先例 + 聚焦探针
+# 实证 traefik 日志 ACME invalidContact)。
 cli routes create --project "$PROJECT_ID" --app "$APP_ID" --process web --port 80 \
-  --host k3s-e2e.127.0.0.1.sslip.io --protocol http >/dev/null
+  --host k3s-e2e.127.0.0.1.sslip.io --protocol http --tls none >/dev/null
 # hostPort 探测打节点 IP 而非 127.0.0.1：flannel 的 hostPort 由 portmap
 # DNAT 承载，不覆盖 loopback 流量（swarm 的 routing mesh 相反，ingress
 # 监听 0.0.0.0 含 lo——跨 Runtime 的探测形态差异）。
