@@ -426,9 +426,16 @@ func (e *Engine) restoreDatabase(ctx context.Context, db *dbrepo.Database) {
 		fail("engine %q declares unknown restore mode %q", db.Engine, spec.Mode)
 		return
 	}
-	if err := e.utility.RunUtility(execCtx, req, io.Discard, stderr); err != nil {
+	// 工具输出捕获双通道：k3s 的 Utility 日志合流走 stdout（stderr 恒空），
+	// 只收 stderr 的报文面对该形态失明（restore exit 1 无真相，e2e 取证
+	// 实证）——失败报文带上 stdout 尾部（恢复流不产 stdout 产物，无混流面）。
+	stdout := &bytes.Buffer{}
+	if err := e.utility.RunUtility(execCtx, req, stdout, stderr); err != nil {
 		msg := err.Error()
 		if tail := stderrTail(stderr.String()); tail != "" {
+			msg += ": " + tail
+		}
+		if tail := stderrTail(stdout.String()); tail != "" {
 			msg += ": " + tail
 		}
 		fail("restore execution failed: %s", msg)
