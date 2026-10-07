@@ -96,12 +96,46 @@ func (p *Provider) RunUtility(ctx context.Context, req capability.UtilityRequest
 	case <-time.After(5 * time.Second):
 	}
 	if werr != nil {
-		return fmt.Errorf("k3s utility %s: %w", req.ID, werr)
+		return fmt.Errorf("k3s utility %s: %w%s", req.ID, werr, p.utilityPodDiagnosis(ctx, nsName, podName))
 	}
 	if exitCode != 0 {
-		return fmt.Errorf("k3s utility %s: exited with code %d", req.ID, exitCode)
+		return fmt.Errorf("k3s utility %s: exited with code %d%s", req.ID, exitCode, p.utilityPodDiagnosis(ctx, nsName, podName))
 	}
 	return nil
+}
+
+// utilityPodDiagnosis 拼工具 Pod 的失败诊断面（等待原因/终态/事件尾）——
+// 容器未起（挂载/镜像/调度期失败）时无日志产出，报文只带退出码对排障
+// 失明（e2e restore 段取证：exit 1 恒无真相）。清理前调用。
+func (p *Provider) utilityPodDiagnosis(ctx context.Context, nsName, podName string) string {
+	pod, err := p.cli.CoreV1().Pods(nsName).Get(ctx, podName, metav1.GetOptions{})
+	if err != nil {
+		return ""
+	}
+	var parts []string
+	for _, cs := range pod.Status.ContainerStatuses {
+		if w := cs.State.Waiting; w != nil && w.Reason != "" {
+			parts = append(parts, fmt.Sprintf("waiting=%s:%s", w.Reason, w.Message))
+		}
+		if t := cs.State.Terminated; t != nil {
+			parts = append(parts, fmt.Sprintf("terminated=%s:exit=%d:%s", t.Reason, t.ExitCode, t.Message))
+		}
+	}
+	events, err := p.cli.CoreV1().Events(nsName).List(ctx, metav1.ListOptions{
+		FieldSelector: "involvedObject.name=" + podName,
+	})
+	if err == nil {
+		for i := range events.Items {
+			ev := &events.Items[i]
+			if ev.Type == corev1.EventTypeWarning {
+				parts = append(parts, fmt.Sprintf("event=%s:%s", ev.Reason, ev.Message))
+			}
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return " [" + strings.Join(parts, "; ") + "]"
 }
 
 // buildUtilityPod 组装工具 Pod 声明（材料 Secret + 输入 hostPath + 卷 PVC）。
