@@ -1,6 +1,7 @@
 package k3s
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -72,8 +73,10 @@ func serviceLabels(ns capability.NamespaceRef) map[string]string {
 // 域标识：Namespace 是 per-Project 的，同项目第二个 App/Database 的同名
 // 材料（如 "database-password"）会撞 AlreadyExists 沿用首库密码——第二
 // 个库即用错凭证初始化（restore 密码不合的终极根因，e2e 取证矩阵闭环：
-// passfile=行真源密码 vs 载体 secret=首库旧密码）。返回平台名 → Secret
-// 对象名的解析集（翻译层引用）。
+// passfile=行真源密码 vs 载体 secret=首库旧密码）。create-or-update（ADR-
+// 0053 决策 3 值轮换面）：已存在且值不同即更新——域内材料值轮换（密码
+// 轮换）到达载体；值相同跳过（幂等重放零写）。返回平台名 → Secret 对象
+// 名的解析集（翻译层引用）。
 func (p *Provider) ensureSecrets(ctx context.Context, ns capability.NamespaceRef, nsName string, files map[string][]byte) (map[string]string, error) {
 	out := make(map[string]string, len(files))
 	for platformName, value := range files {
@@ -87,7 +90,19 @@ func (p *Provider) ensureSecrets(ctx context.Context, ns capability.NamespaceRef
 			Data: map[string][]byte{secretDataKey: value},
 		}
 		_, err := p.cli.CoreV1().Secrets(nsName).Create(ctx, secret, metav1.CreateOptions{})
-		if err != nil && !apierrors.IsAlreadyExists(err) {
+		if apierrors.IsAlreadyExists(err) {
+			cur, gerr := p.cli.CoreV1().Secrets(nsName).Get(ctx, objName, metav1.GetOptions{})
+			if gerr != nil {
+				return nil, fmt.Errorf("ensure secret %s: %w", objName, gerr)
+			}
+			if !bytes.Equal(cur.Data[secretDataKey], value) {
+				cur.Data[secretDataKey] = value
+				cur.Labels[labelManaged] = "true" // 既有对象缺标记时顺手补齐（管辖判定锚）
+				if _, uerr := p.cli.CoreV1().Secrets(nsName).Update(ctx, cur, metav1.UpdateOptions{}); uerr != nil {
+					return nil, fmt.Errorf("ensure secret %s: rotate value: %w", objName, uerr)
+				}
+			}
+		} else if err != nil {
 			return nil, fmt.Errorf("ensure secret %s: %w", objName, err)
 		}
 		out[platformName] = objName
@@ -136,7 +151,19 @@ func (p *Provider) ensureImagePullSecrets(ctx context.Context, nsName string, au
 			Data: map[string][]byte{corev1.DockerConfigJsonKey: raw},
 		}
 		_, err := p.cli.CoreV1().Secrets(nsName).Create(ctx, secret, metav1.CreateOptions{})
-		if err != nil && !apierrors.IsAlreadyExists(err) {
+		if apierrors.IsAlreadyExists(err) {
+			// 凭证轮换面（ensureSecrets 同款）：已存在且值不同即更新。
+			cur, gerr := p.cli.CoreV1().Secrets(nsName).Get(ctx, objName, metav1.GetOptions{})
+			if gerr != nil {
+				return nil, fmt.Errorf("ensure pull secret %s: %w", objName, gerr)
+			}
+			if !bytes.Equal(cur.Data[corev1.DockerConfigJsonKey], raw) {
+				cur.Data[corev1.DockerConfigJsonKey] = raw
+				if _, uerr := p.cli.CoreV1().Secrets(nsName).Update(ctx, cur, metav1.UpdateOptions{}); uerr != nil {
+					return nil, fmt.Errorf("ensure pull secret %s: rotate value: %w", objName, uerr)
+				}
+			}
+		} else if err != nil {
 			return nil, fmt.Errorf("ensure pull secret %s: %w", objName, err)
 		}
 		names = append(names, objName)

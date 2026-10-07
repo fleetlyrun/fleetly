@@ -66,10 +66,9 @@ type Provider struct {
 	execFn func(ctx context.Context, req capability.ExecWorkloadRequest, ns, name string) (int, error)
 }
 
-// 编译期契约断言：核心面 + 五个子面（Exec 随 ADR-0053 决策 1 补齐）。
+// 编译期契约断言：核心面 + 六个子面（Exec/Hygiene 随 ADR-0053 补齐）。
 // NetworkMaintenance 是永久语义性缺席（ADR-0053 决策 2：前置病灶在 k8s
-// 不存在——重建动词诚实失败是正确行为，非缺口）；Hygiene 随下批补齐
-// ——两者故意不实现接口。
+// 不存在——重建动词诚实失败是正确行为，非缺口）——故意不实现接口。
 var (
 	_ capability.Runtime          = (*Provider)(nil)
 	_ capability.RuntimeLogs      = (*Provider)(nil)
@@ -77,6 +76,7 @@ var (
 	_ capability.RuntimeInspector = (*Provider)(nil)
 	_ capability.RuntimeUtility   = (*Provider)(nil)
 	_ capability.RuntimeExec      = (*Provider)(nil)
+	_ capability.RuntimeHygiene   = (*Provider)(nil)
 )
 
 // New 构造 Provider：kubeconfig 为文件路径（空 = 缺省 /etc/rancher/k3s/k3s.yaml，
@@ -152,6 +152,7 @@ func (p *Provider) Describe() capability.ProviderDescriptor {
 			"full process DNS names ({process}.{app}) fold dots to dashes for service carrier names (k8s services are single DNS labels); bare process names are unchanged",
 			"processes without declared ports resolve via headless services (pod IPs directly, no virtual IP round-robin for multi-replica)",
 			"exec sessions run through the apiserver natively (per-node relay registrations are manager-side; worker nodes carry no platform agent)",
+			"orphan secret sweep removes unreferenced managed secrets; orphan volume sweep is a no-op (k8s has no anonymous-volume legacy; PVC lifecycle is explicit data disposal)",
 			"platform identity is the fleetly-manager ServiceAccount bound to a single narrowly-scoped ClusterRole (bootstrap identity is discarded after startup)",
 			"workload identity is carried by fleetly.* labels; platform node IDs never reuse",
 		},
