@@ -460,7 +460,11 @@ func (svc *DatabasesService) BrowseDatabase(ctx context.Context, req *structurev
 	}
 	if err := svc.s.Engine.BrowseCheckQuota(team); err != nil {
 		return nil, apperr.New("E_QUOTA_EXCEEDED",
-			"too many concurrent browse sessions for this team (limit %d); wait for a session to expire or go idle", engine.BrowseMaxSessionsPerTeam)
+			"too many concurrent browse sessions for this team (limit %d); wait for a session to expire or go idle", engine.BrowseMaxSessionsPerTeam).
+			// browse 语境的处置提示分立（F3.6 挂账收口）：注册表默认文案面向
+			// 可删除的资源行；会话是 TTL 回收的非常驻实体，处置是等待或换
+			// 只读形态，不是清理条目。
+			WithSuggestion("Wait for a session to reach its idle or hard TTL (both reclaim automatically), or close an open browser session before opening another.")
 	}
 	sessionID := newID()
 	now := svc.s.DB.Clock().Now()
