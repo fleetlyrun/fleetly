@@ -152,11 +152,13 @@ start_fleetlyd() {
   provider="$1"
   # pkill 按进程名精确匹配（-f 会匹配承载 sh 的命令行自杀——dind-template.sh
   # 同坑实录；首跑实证 sh 自杀即 fleetlyd 从未起动、/var/log/fleetlyd.log 缺位）。
+  # 受管 Proxy 配置端点（h2c e2e 先例；缺它受管域零部署）。
+  DIND_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$DIND_CID")
   docker exec "$DIND_CID" sh -c "
     pkill -TERM fleetlyd >/dev/null 2>&1 || true
     sleep 1
     mkdir -p /var/lib/fleetly
-    setsid env FLEETLY_DATA_ROOT=/var/lib/fleetly FLEETLY_RUNTIME_PROVIDER=$provider FLEETLY_RUNTIME_K3S_KUBECONFIG=/etc/rancher/k3s/k3s.yaml /root/bins/fleetlyd >>/var/log/fleetlyd.log 2>&1 </dev/null &"
+    setsid env FLEETLY_DATA_ROOT=/var/lib/fleetly FLEETLY_RUNTIME_PROVIDER=$provider FLEETLY_RUNTIME_K3S_KUBECONFIG=/etc/rancher/k3s/k3s.yaml FLEETLY_PROXY_CONFIG_ENDPOINT=http://$DIND_IP:9082/proxy/config /root/bins/fleetlyd >>/var/log/fleetlyd.log 2>&1 </dev/null &"
   i=0
   while [ "$i" -lt 60 ]; do
     if docker exec "$DIND_CID" sh -c 'FLEETLY_ADDR=127.0.0.1:9080 /root/bins/fleetly status >/dev/null 2>&1'; then

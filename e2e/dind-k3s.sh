@@ -245,8 +245,13 @@ log "starting fleetlyd (runtime.provider=k3s)"
 docker exec "$DIND_CID" mkdir -p /root/bins
 docker exec -i "$DIND_CID" sh -c 'cat > /root/bins/fleetlyd && chmod +x /root/bins/fleetlyd' < "$WORKDIR/bins/fleetlyd"
 docker exec -i "$DIND_CID" sh -c 'cat > /root/bins/fleetly && chmod +x /root/bins/fleetly' < "$WORKDIR/bins/fleetly"
+# 受管 traefik 的 providers.http 配置端点（h2c e2e 先例：受管 Proxy 需
+# FLEETLY_PROXY_CONFIG_ENDPOINT 指向控制面 :9082——缺它即 "proxy provider
+# unavailable; route publishing disabled"，受管域零部署，run16 实证）。
+# dind 容器 IP：traefik pod 从集群网经节点回连控制面用。
+DIND_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$DIND_CID")
 docker exec "$DIND_CID" sh -c \
-  'mkdir -p /var/lib/fleetly && setsid env FLEETLY_DATA_ROOT=/var/lib/fleetly FLEETLY_RUNTIME_PROVIDER=k3s FLEETLY_RUNTIME_K3S_KUBECONFIG=/etc/rancher/k3s/k3s.yaml /root/bins/fleetlyd >>/var/log/fleetlyd.log 2>&1 </dev/null &'
+  "mkdir -p /var/lib/fleetly && setsid env FLEETLY_DATA_ROOT=/var/lib/fleetly FLEETLY_RUNTIME_PROVIDER=k3s FLEETLY_RUNTIME_K3S_KUBECONFIG=/etc/rancher/k3s/k3s.yaml FLEETLY_PROXY_CONFIG_ENDPOINT=http://$DIND_IP:9082/proxy/config /root/bins/fleetlyd >>/var/log/fleetlyd.log 2>&1 </dev/null &"
 i=0
 while [ "$i" -lt 60 ]; do
   if docker exec "$DIND_CID" sh -c 'FLEETLY_ADDR=127.0.0.1:9080 /root/bins/fleetly status >/dev/null 2>&1'; then
