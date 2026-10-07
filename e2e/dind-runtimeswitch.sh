@@ -235,9 +235,11 @@ docker exec "$DIND_CID" sh -c '
     i=$((i+1)); sleep 2
   done
   [ -n "$cid" ] || { echo "database carrier not found" >&2; exit 1; }
-  docker exec "$cid" psql -U postgres -c "CREATE TABLE IF NOT EXISTS migration_probe (id int);" >/dev/null
-  docker exec "$cid" psql -U postgres -c "TRUNCATE migration_probe;" >/dev/null
-  docker exec "$cid" psql -U postgres -c "INSERT INTO migration_probe SELECT generate_series(1, '"$SEED_COUNT"');" >/dev/null
+  # 模板超管是 fleetly/fleetly（POSTGRES_USER/DB——psql -U postgres 是
+  # "role postgres does not exist" 的裸坑，run4 实证）。
+  docker exec "$cid" psql -U fleetly -d fleetly -c "CREATE TABLE IF NOT EXISTS migration_probe (id int);" >/dev/null
+  docker exec "$cid" psql -U fleetly -d fleetly -c "TRUNCATE migration_probe;" >/dev/null
+  docker exec "$cid" psql -U fleetly -d fleetly -c "INSERT INTO migration_probe SELECT generate_series(1, '"$SEED_COUNT"');" >/dev/null
 ' || fail "seeding data failed"
 
 # 6. Backup（等完成——对象在 local ObjectStore，随数据根跨 Runtime 存活）。
@@ -397,7 +399,7 @@ docker exec -e P_NS="$P_NS" -e DB_SEL="$NEW_DB_LC" -e SEED="$SEED_COUNT" "$DIND_
     i=$((i+1)); sleep 2
   done
   [ -n "$pod" ] || { echo "restored database pod not found" >&2; exit 1; }
-  count=$(k3s kubectl exec -n "$P_NS" "$pod" -- psql -U postgres -tAc "SELECT count(*) FROM migration_probe;" 2>/dev/null | tr -d "[:space:]")
+  count=$(k3s kubectl exec -n "$P_NS" "$pod" -- psql -U fleetly -d fleetly -tAc "SELECT count(*) FROM migration_probe;" 2>/dev/null | tr -d "[:space:]")
   echo "restored rows: $count"
   [ "$count" = "$SEED" ] || { echo "expected $SEED rows, got $count" >&2; exit 1; }
 ' || fail "restored data assertion failed"
