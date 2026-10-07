@@ -407,9 +407,19 @@ docker exec -e P_NS="$P_NS" -e DB_SEL="$NEW_DB_LC" -e SEED="$SEED_COUNT" "$DIND_
     i=$((i+1)); sleep 2
   done
   [ -n "$pod" ] || { echo "restored database pod not found" >&2; exit 1; }
-  count=$(k3s kubectl exec -n "$P_NS" "$pod" -- psql -U fleetly -d fleetly -tAc "SELECT count(*) FROM migration_probe;" 2>/dev/null | tr -d "[:space:]")
-  echo "restored rows: $count"
-  [ "$count" = "$SEED" ] || { echo "expected $SEED rows, got $count" >&2; exit 1; }
+  # 行数断言带重试环:restore 是库 healthy 之后由 one-shot Utility Pod 落数据
+  # (k3s 首跑时序——run9 实证 pod Running 但数据未到),固定时点单查会假阴。
+  count=""
+  j=0
+  while [ $j -lt 60 ]; do
+    count=$(k3s kubectl exec -n "$P_NS" "$pod" -- psql -U fleetly -d fleetly -tAc "SELECT count(*) FROM migration_probe;" 2>/dev/null | tr -d "[:space:]" || true)
+    [ "$count" = "$SEED" ] && { echo "restored rows: $count"; exit 0; }
+    j=$((j+1)); sleep 2
+  done
+  echo "restored rows: $count (expected $SEED) after $j polls" >&2
+  echo "--- psql stderr:"; k3s kubectl exec -n "$P_NS" "$pod" -- psql -U fleetly -d fleetly -tAc "SELECT count(*) FROM migration_probe;" 2>&1 | tail -3
+  echo "--- ns pods (utility one-shots incl):"; k3s kubectl get pods -n "$P_NS" --no-headers 2>&1
+  exit 1
 ' || fail "restored data assertion failed"
 log "restored database carries all $SEED_COUNT seeded rows"
 
