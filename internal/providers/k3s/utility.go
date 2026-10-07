@@ -229,11 +229,9 @@ func (p *Provider) buildUtilityPod(ctx context.Context, req capability.UtilityRe
 		})
 	}
 	// 输入文件（恢复流）：宿主暂存目录 hostPath 进容器（写侧 = Provider
-	// 本机文件系统）。挂载形态 = 卷挂暂存目录 + subPath 文件名把文件本体
-	// 暴露在契约路径（swarm 文件级 bind 的 k8s 对应物）——按父目录挂会把
-	// hostDir 挂到容器根（BackupInputPath=/backup-input 的 Dir 是 "/"），
-	// 整个文件系统被暂存目录覆盖、工具二进制消失即秒败（e2e restore 段
-	// exit 1 实证）。
+	// 本机文件系统）。挂载形态 = 父目录挂载（契约路径 BackupInputPath 带
+	// 目录段——根级路径的父目录是 "/"，挂载即覆盖容器根、工具二进制消失，
+	// e2e restore 段秒败实证；subPath 形态对 hostPath 不达，同批实证）。
 	if req.Input != nil {
 		if err := os.MkdirAll(hostDir, 0o750); err != nil {
 			return nil, fmt.Errorf("stage input dir: %w", err)
@@ -259,8 +257,7 @@ func (p *Provider) buildUtilityPod(ctx context.Context, req capability.UtilityRe
 		})
 		container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{
 			Name:      "input",
-			MountPath: req.Input.Target,
-			SubPath:   fileName,
+			MountPath: filepath.Dir(req.Input.Target),
 			ReadOnly:  true,
 		})
 	}

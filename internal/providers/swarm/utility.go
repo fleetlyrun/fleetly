@@ -75,8 +75,9 @@ func (p *Provider) RunUtility(ctx context.Context, req capability.UtilityRequest
 	}
 	// 恢复输入文件（ADR-0039 实录：hijack attach 的 CloseWrite 不向容器
 	// stdin 送 EOF——dind 实证 mysql 客户端读流永挂；输入走文件挂载）。
+	// 暂存文件名从 Target base 派生（BackupInputPath 契约无关化）。
 	if req.Input != nil {
-		inputPath := filepath.Join(dir, "backup-input")
+		inputPath := filepath.Join(dir, filepath.Base(strings.TrimSuffix(req.Input.Target, "/")))
 		f, ferr := os.OpenFile(inputPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600) //nolint:gosec // G304：路径段为平台常量 + 私有临时目录
 		if ferr != nil {
 			return fmt.Errorf("swarm utility: input file: %w", ferr)

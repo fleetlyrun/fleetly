@@ -70,11 +70,11 @@ func TestRunUtilityInputFile(t *testing.T) {
 	err := p.RunUtility(context.Background(), capability.UtilityRequest{
 		ID: "u0", Namespace: capability.NamespaceRef{Project: "p"}, Image: "i", Argv: []string{"x"},
 		Networks: []string{"default"},
-		Input:    &capability.UtilityInput{Content: strings.NewReader("BACKUP-BYTES"), Target: "/backup-input"},
+		Input:    &capability.UtilityInput{Content: strings.NewReader("BACKUP-BYTES"), Target: "/backup/input"},
 	}, io.Discard, io.Discard)
 	require.NoError(t, err)
 	require.Len(t, got.binds, 1)
-	assert.Regexp(t, `^(?:[A-Za-z]:)?[\\/].*[/\\]backup-input:/backup-input:ro$`, got.binds[0],
+	assert.Regexp(t, `^(?:[A-Za-z]:)?[\\/].*[/\\]input:/backup/input:ro$`, got.binds[0],
 		"input materializes in a private temp file and mounts read-only at the target path")
 }
 

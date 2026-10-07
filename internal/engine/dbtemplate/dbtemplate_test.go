@@ -199,7 +199,7 @@ func TestBackupRestoreFaces(t *testing.T) {
 			backupArgv: []string{"redis-cli", "-h", "db-01j8", "-p", "6379", "--rdb", "-"},
 			backupEnv:  map[string]string{"REDISCLI_AUTH": "secretpw"},
 			restoreArgv: []string{"sh", "-c",
-				"cp /backup-input /seed/dump.rdb; " +
+				"cp /backup/input /seed/dump.rdb; " +
 					"redis-server --dir /seed --port 6399 --daemonize no --appendonly no & " +
 					"i=0; until redis-cli -p 6399 ping >/dev/null 2>&1; do i=$((i+1)); [ $i -gt 300 ] && exit 1; sleep 0.1; done; " +
 					"redis-cli -p 6399 BGREWRITEAOF; " +
