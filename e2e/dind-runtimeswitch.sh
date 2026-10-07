@@ -13,6 +13,9 @@
 #
 # placement 绑定不跨 Runtime 复用、节点 ID 永不复用：k3s 节点是全新节点
 #（新铸平台 ID），旧 swarm 节点 ID 随旧集群退役——断言 nodes 列表换血。
+#
+# snapshotter 形态（ADR-0052 决策 8 补录，FLEETLY_E2E_K3S_SNAPSHOTTER 选；
+# 选型注释与 apk 预载坑注全文见 dind-k3s.sh——两脚本同款三形态）。
 set -eu
 
 export MSYS_NO_PATHCONV=1
@@ -32,6 +35,19 @@ fail() { echo "FATAL: $1" >&2; exit 1; }
 
 K3S_VERSION="v1.36.5+k3s1"
 K3S_SHA256="d73847bcd3c5fccef0115b372e2f9a91f3032dc84bbf71518a4617565294d313"
+
+# snapshotter 选型（native|overlayfs|fuse，语义与坑注见 dind-k3s.sh 头注；
+# fuse 需 /dev/fuse 直通 + apk 预载段）。
+K3S_SNAPSHOTTER="${FLEETLY_E2E_K3S_SNAPSHOTTER:-native}"
+case "$K3S_SNAPSHOTTER" in
+  native) K3S_SNAPSHOTTER_FLAG="native" ;;
+  overlayfs) K3S_SNAPSHOTTER_FLAG="overlayfs" ;;
+  fuse)
+    [ -e /dev/fuse ] || { echo "FATAL: fuse form needs /dev/fuse on the host" >&2; exit 1; }
+    K3S_SNAPSHOTTER_FLAG="fuse-overlayfs"
+    ;;
+  *) echo "FATAL: unknown FLEETLY_E2E_K3S_SNAPSHOTTER: $K3S_SNAPSHOTTER (native|overlayfs|fuse)" >&2; exit 1 ;;
+esac
 
 # 1. 编译 + 下载（k3s 钉版 sha256 校验）。
 log "cross-compiling binaries"
@@ -68,14 +84,39 @@ if [ -n "${HTTPS_PROXY:-}${https_proxy:-}" ]; then
   NO_PROXY="localhost,127.0.0.1,::1,10.0.0.0/8,10.42.0.0/16,.svc,.cluster.local,kubernetes.default.svc"
   PROXY_ENV="-e HTTPS_PROXY=http://host.docker.internal$PX_REST -e HTTP_PROXY=http://host.docker.internal$PX_REST -e NO_PROXY=$NO_PROXY -e no_proxy=$NO_PROXY --add-host=host.docker.internal:host-gateway"
 fi
+FUSE_DEV=""
+[ "$K3S_SNAPSHOTTER" = "fuse" ] && FUSE_DEV="--device /dev/fuse"
 DIND_CID=$(eval docker run -d --privileged --name fleetly-e2e-sw-"$$" \
-  --cgroupns=host $PROXY_ENV -e DOCKER_TLS_CERTDIR= docker:29-dind)
+  --cgroupns=host $FUSE_DEV $PROXY_ENV -e DOCKER_TLS_CERTDIR= docker:29-dind)
 i=0
 while [ "$i" -lt 60 ]; do
   docker exec "$DIND_CID" docker info >/dev/null 2>&1 && break
   i=$((i + 1)); sleep 1
 done
 [ "$i" -lt 60 ] || fail "dind daemon did not become ready"
+
+# fuse 形态预载段（坑注全文见 dind-k3s.sh：helper 与 libfuse3 缺位即
+# mount.fuse3 not found；容器内 apk 经代理不可用，宿主 curl + stdin 注入）。
+if [ "$K3S_SNAPSHOTTER" = "fuse" ]; then
+  log "installing fuse-overlayfs helpers (four apks)"
+  APK_BASE="https://dl-cdn.alpinelinux.org/alpine/v3.24"
+  for apk in \
+    main/x86_64/fuse-common-3.18.3-r0.apk \
+    main/x86_64/fuse3-libs-3.18.3-r0.apk \
+    main/x86_64/fuse3-3.18.3-r0.apk \
+    community/x86_64/fuse-overlayfs-1.16-r0.apk; do
+    name=$(basename "$apk")
+    curl -sL --retry 3 -o "$WORKDIR/$name" "$APK_BASE/$apk" || { echo "FATAL: apk fetch failed: $name" >&2; exit 1; }
+    docker exec -i "$DIND_CID" sh -c "cat > /tmp/$name" < "$WORKDIR/$name"
+  done
+  docker exec "$DIND_CID" sh -c \
+    'cd /tmp && apk add --allow-untrusted ./fuse-common-*.apk ./fuse3-libs-*.apk ./fuse3-*.apk ./fuse-overlayfs-*.apk >/dev/null 2>&1' \
+    || { echo "FATAL: fuse helper apk install failed" >&2; exit 1; }
+  docker exec "$DIND_CID" sh -c '
+    { [ -e /sbin/mount.fuse3 ] || [ -e /usr/sbin/mount.fuse3 ]; } || { echo "mount.fuse3 helper missing after install" >&2; exit 1; }
+    command -v fuse-overlayfs >/dev/null 2>&1 || { echo "fuse-overlayfs binary missing after install" >&2; exit 1; }
+  ' || { echo "FATAL: fuse helpers not present after apk install" >&2; exit 1; }
+fi
 
 # 3. 镜像预载（swarm 侧 docker load；k3s 侧稍后 import）。
 log "preloading docker images (swarm side)"
@@ -211,7 +252,7 @@ done
 docker cp "$WORKDIR/k3s" "$DIND_CID":/usr/local/bin/k3s
 docker exec "$DIND_CID" chmod +x /usr/local/bin/k3s
 docker exec -d "$DIND_CID" sh -c \
-  'K3S_KUBECONFIG_MODE=644 k3s server --disable=traefik --disable=servicelb --node-name=k3s-sw-0 --snapshotter=native >/var/log/k3s.log 2>&1'
+  "K3S_KUBECONFIG_MODE=644 k3s server --disable=traefik --disable=servicelb --node-name=k3s-sw-0 --snapshotter=$K3S_SNAPSHOTTER_FLAG >/var/log/k3s.log 2>&1"
 i=0
 while [ "$i" -lt 90 ]; do
   docker exec "$DIND_CID" sh -c 'k3s kubectl get --raw=/readyz' >/dev/null 2>&1 && break
@@ -267,22 +308,27 @@ done
 [ "${K3S_NODE_ID:-}" != "$SWARM_NODE_ID" ] || fail "k3s node must be a freshly minted platform node id (never reuse)"
 log "node identity freshly minted on k3s (old swarm node retired)"
 
-# 11. 基线重放：app 载体在 k3s 上重建（drift 基线重放链）。
+# 11. 基线重放：app 载体在 k3s 上重建（drift 基线重放链）。ns/deployment
+#     名 = fleetly-<projectID/appID 小写>（ULID 不硬编码；label 值是实体 ID
+#     不是名——dind-k3s.sh 首跑实锤同款）。
 log "phase k3s: baseline replay of app carriers"
-docker exec "$DIND_CID" sh -c '
+P_NS="fleetly-$(printf '%s' "$PROJECT_ID" | tr 'A-Z' 'a-z')"
+P_APP_LC=$(printf '%s' "$APP_ID" | tr 'A-Z' 'a-z')
+docker exec -e P_NS="$P_NS" -e APP_SEL="$P_APP_LC" "$DIND_CID" sh -c '
   i=0
   while [ $i -lt 120 ]; do
-    ready=$(k3s kubectl get deployment fleetly-web-web -n fleetly-shop -o jsonpath={.status.readyReplicas} 2>/dev/null || echo 0)
+    ready=$(k3s kubectl get pods -n "$P_NS" -l "fleetly.ns.app=$APP_SEL" --no-headers 2>/dev/null | grep -c "1/1" || echo 0)
     [ "$ready" = "1" ] && exit 0
     i=$((i+1)); sleep 2
   done
-  k3s kubectl get all -n fleetly-shop >&2
+  k3s kubectl get all -n "$P_NS" >&2
   exit 1
 ' || fail "app carrier did not come up on k3s via baseline replay"
 log "app carrier replayed on k3s"
 
 # 12. 数据迁移闭环：旧 Database 行显式处置（k3s 侧 Remove 幂等）→ Backup
-#     恢复（restore_from_backup 新库）→ 数据完整断言。
+#     恢复（restore_from_backup 新库）→ 数据完整断言（pod 选择器锚新库
+#     ID——旧库 pod 可能仍在终止中，key 存在性选择器会误选）。
 log "phase k3s: explicit database disposal + restore + data assertion"
 cli databases delete "$DB_ID" >/dev/null 2>&1 || true
 NEW_DB_ID=$(cli --json databases create --project "$PROJECT_ID" --engine postgres --restore-from-backup "$BACKUP_ID" pgnew | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | head -1)
@@ -290,17 +336,18 @@ NEW_DB_ID=$(cli --json databases create --project "$PROJECT_ID" --engine postgre
 DB_ID="$NEW_DB_ID"
 wait_db_state running
 
-docker exec "$DIND_CID" sh -c '
+NEW_DB_LC=$(printf '%s' "$NEW_DB_ID" | tr 'A-Z' 'a-z')
+docker exec -e P_NS="$P_NS" -e DB_SEL="$NEW_DB_LC" -e SEED="$SEED_COUNT" "$DIND_CID" sh -c '
   i=0
   while [ $i -lt 60 ]; do
-    pod=$(k3s kubectl get pods -n fleetly-shop -l fleetly.ns.database --no-headers 2>/dev/null | grep Running | head -1 | cut -d" " -f1)
+    pod=$(k3s kubectl get pods -n "$P_NS" -l "fleetly.ns.database=$DB_SEL" --no-headers 2>/dev/null | grep Running | head -1 | cut -d" " -f1)
     [ -n "$pod" ] && break
     i=$((i+1)); sleep 2
   done
   [ -n "$pod" ] || { echo "restored database pod not found" >&2; exit 1; }
-  count=$(k3s kubectl exec -n fleetly-shop "$pod" -- psql -U postgres -tAc "SELECT count(*) FROM migration_probe;" 2>/dev/null | tr -d "[:space:]")
+  count=$(k3s kubectl exec -n "$P_NS" "$pod" -- psql -U postgres -tAc "SELECT count(*) FROM migration_probe;" 2>/dev/null | tr -d "[:space:]")
   echo "restored rows: $count"
-  [ "$count" = "'"$SEED_COUNT"'" ] || { echo "expected '"$SEED_COUNT"' rows, got $count" >&2; exit 1; }
+  [ "$count" = "$SEED" ] || { echo "expected $SEED rows, got $count" >&2; exit 1; }
 ' || fail "restored data assertion failed"
 log "restored database carries all $SEED_COUNT seeded rows"
 

@@ -213,3 +213,77 @@ jobs:
 
       - name: backup drill (backup -> verify -> restore to new database -> data assertions)
         run: mise run e2e:backup
+
+  # F4.1/ADR-0052：k3s 第二运行时两腿进 CI。GH Actions runner 原生文件
+  # 系统上 nested overlay 可用（k3d-on-CI 同形态）——snapshotter 走
+  # overlayfs（本机 WSL2 dind 内核拒 nested overlay → fuse 加速/native
+  # 保底，三形态经 FLEETLY_E2E_K3S_SNAPSHOTTER 选定，ADR-0052 决策 8
+  # 补录）；k3s 资产 ~280MB（二进制 + airgap tar）走 actions/cache。
+  e2e-k3s:
+    name: E2E (dind k3s runtime full chain)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      FLEETLY_E2E_K3S_SNAPSHOTTER: overlayfs
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: jdx/mise-action@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-${{ runner.os }}-${{ hashFiles('go.sum', 'genproto/go.sum', 'sdk/go/go.sum') }}
+          restore-keys: go-${{ runner.os }}-
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/fleetly-e2e
+          key: k3s-e2e-${{ hashFiles('e2e/dind-k3s.sh') }}
+          restore-keys: k3s-e2e-
+
+      - name: Pre-pull images
+        run: |
+          docker pull docker:29-dind
+          docker pull nginx:1.27
+          docker pull busybox:1.37
+          docker pull traefik:v3.5.4
+
+      - name: k3s full chain (deploy -> carriers -> rollback -> egress drill -> database PVC -> managed traefik route)
+        run: mise run e2e:k3s
+
+  e2e-runtimeswitch:
+    name: E2E (dind runtime switch, scenario 3 acceptance)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      FLEETLY_E2E_K3S_SNAPSHOTTER: overlayfs
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: jdx/mise-action@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-${{ runner.os }}-${{ hashFiles('go.sum', 'genproto/go.sum', 'sdk/go/go.sum') }}
+          restore-keys: go-${{ runner.os }}-
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/fleetly-e2e
+          key: k3s-e2e-${{ hashFiles('e2e/dind-runtimeswitch.sh') }}
+          restore-keys: k3s-e2e-
+
+      - name: Pre-pull images
+        run: |
+          docker pull docker:29-dind
+          docker pull nginx:1.27
+          docker pull traefik:v3.5.4
+
+      - name: runtime switch e2e (swarm deploy/backup -> switch to k3s -> id preservation -> restore data loop)
+        run: mise run e2e:runtimeswitch

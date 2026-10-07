@@ -8,6 +8,13 @@
 # → Database（postgres digest 在线拉 + PVC local-path 绑定）→ 受管 traefik
 # （hostPort 80）+ Route 明文端到端。
 #
+# snapshotter 形态（ADR-0052 决策 8 补录，FLEETLY_E2E_K3S_SNAPSHOTTER 选）：
+#   native（缺省）dind 内核拒 nested overlay 的保底形态（WSL2 实证）；首次
+#                 解包逐层全拷 ~2 分钟/镜像（预热段承载），载体就绪迟滞分钟级
+#   overlayfs     CI 形态（GH Actions runner 原生文件系统，nested overlay 可用）
+#   fuse          本机加速形态（fuse-overlayfs 用户态 CoW，实证首容器 2s）——
+#                 需 /dev/fuse 直通 + Alpine apk 预载 mount.fuse3 helper
+#
 # 前置：本机 docker 可用；宿主 HTTPS_PROXY 可选（在线段 = db digest 拉取，
 # 存在时透传进 dind——CI 直连环境无代理同样可行）。
 set -eu
@@ -31,6 +38,19 @@ fail() { echo "FATAL: $1" >&2; exit 1; }
 # TestK3sPinConstantAndE2EAgree 静态断言本处一致）。
 K3S_VERSION="v1.36.5+k3s1"
 K3S_SHA256="d73847bcd3c5fccef0115b372e2f9a91f3032dc84bbf71518a4617565294d313"
+
+# snapshotter 选型（见头注三形态；fuse 传入 k3s 的 containerd snapshotter
+# 名是 fuse-overlayfs）。
+K3S_SNAPSHOTTER="${FLEETLY_E2E_K3S_SNAPSHOTTER:-native}"
+case "$K3S_SNAPSHOTTER" in
+  native) K3S_SNAPSHOTTER_FLAG="native" ;;
+  overlayfs) K3S_SNAPSHOTTER_FLAG="overlayfs" ;;
+  fuse)
+    [ -e /dev/fuse ] || { echo "FATAL: fuse form needs /dev/fuse on the host" >&2; exit 1; }
+    K3S_SNAPSHOTTER_FLAG="fuse-overlayfs"
+    ;;
+  *) echo "FATAL: unknown FLEETLY_E2E_K3S_SNAPSHOTTER: $K3S_SNAPSHOTTER (native|overlayfs|fuse)" >&2; exit 1 ;;
+esac
 
 # 1. 交叉编译两个二进制（linux/amd64；纯 Go 零 cgo）。
 log "cross-compiling fleetlyd + fleetly (linux/amd64)"
@@ -76,8 +96,11 @@ if [ -n "${HTTPS_PROXY:-}${https_proxy:-}" ]; then
   NO_PROXY="localhost,127.0.0.1,::1,10.0.0.0/8,10.42.0.0/16,.svc,.cluster.local,kubernetes.default.svc"
   PROXY_ENV="-e HTTPS_PROXY=http://host.docker.internal$PX_REST -e HTTP_PROXY=http://host.docker.internal$PX_REST -e NO_PROXY=$NO_PROXY -e no_proxy=$NO_PROXY --add-host=host.docker.internal:host-gateway"
 fi
+FUSE_DEV=""
+[ "$K3S_SNAPSHOTTER" = "fuse" ] && FUSE_DEV="--device /dev/fuse"
 DIND_CID=$(eval docker run -d --privileged --name fleetly-e2e-k3s-"$$" \
   --cgroupns=host \
+  $FUSE_DEV \
   $PROXY_ENV \
   -e DOCKER_TLS_CERTDIR= \
   docker:29-dind)
@@ -96,6 +119,32 @@ wait_docker() {
 log "waiting for dind daemon"
 wait_docker
 
+# fuse 形态预载段：k3s 的 fuse-overlayfs snapshotter 走内核 mount 通道调
+# /sbin/mount.fuse3 + /sbin/mount.fuse-overlayfs（k3s 自带 fuse-overlayfs
+# 二进制，helper 与 libfuse3 缺位——首试坑实锤）；dind 容器内 apk 经代理
+# 不可用（libfetch 与本环境代理不兼容），宿主 curl 拉 apk 经 stdin 注入
+# 离线装（版本随 v3.24 通道钉定，与镜像 tag 同级钉法）。
+if [ "$K3S_SNAPSHOTTER" = "fuse" ]; then
+  log "installing fuse-overlayfs helpers (four apks)"
+  APK_BASE="https://dl-cdn.alpinelinux.org/alpine/v3.24"
+  for apk in \
+    main/x86_64/fuse-common-3.18.3-r0.apk \
+    main/x86_64/fuse3-libs-3.18.3-r0.apk \
+    main/x86_64/fuse3-3.18.3-r0.apk \
+    community/x86_64/fuse-overlayfs-1.16-r0.apk; do
+    name=$(basename "$apk")
+    curl -sL --retry 3 -o "$WORKDIR/$name" "$APK_BASE/$apk" || { echo "FATAL: apk fetch failed: $name" >&2; exit 1; }
+    docker exec -i "$DIND_CID" sh -c "cat > /tmp/$name" < "$WORKDIR/$name"
+  done
+  docker exec "$DIND_CID" sh -c \
+    'cd /tmp && apk add --allow-untrusted ./fuse-common-*.apk ./fuse3-libs-*.apk ./fuse3-*.apk ./fuse-overlayfs-*.apk >/dev/null 2>&1' \
+    || { echo "FATAL: fuse helper apk install failed" >&2; exit 1; }
+  docker exec "$DIND_CID" sh -c '
+    { [ -e /sbin/mount.fuse3 ] || [ -e /usr/sbin/mount.fuse3 ]; } || { echo "mount.fuse3 helper missing after install" >&2; exit 1; }
+    command -v fuse-overlayfs >/dev/null 2>&1 || { echo "fuse-overlayfs binary missing after install" >&2; exit 1; }
+  ' || { echo "FATAL: fuse helpers not present after apk install" >&2; exit 1; }
+fi
+
 # 4. 镜像预载（k3s airgap 官方通道：tar 落 /var/lib/rancher/k3s/agent/images/
 #    ——k3s 起动时自动 import，用 server 配置的 snapshotter。预研坑三连：
 #    ①overlayfs snapshotter 在 dind 不可用 → server --snapshotter=native；
@@ -112,13 +161,12 @@ for img in nginx:1.27 busybox:1.37 traefik:v3.5.4; do
   i=$((i + 1))
 done
 
-# 5. 注入 k3s 并起动（native snapshotter：dind overlay-on-overlay 上
-#    overlayfs snapshotter 不可用——ADR-0052 预研坑 1）。
+# 5. 注入 k3s 并起动（snapshotter 形态见头注三选一）。
 log "injecting and starting k3s server"
 docker cp "$WORKDIR/k3s" "$DIND_CID":/usr/local/bin/k3s
 docker exec "$DIND_CID" chmod +x /usr/local/bin/k3s
 docker exec -d "$DIND_CID" sh -c \
-  'K3S_KUBECONFIG_MODE=644 k3s server --disable=traefik --disable=servicelb --node-name=k3s-e2e-0 --snapshotter=native >/var/log/k3s.log 2>&1'
+  "K3S_KUBECONFIG_MODE=644 k3s server --disable=traefik --disable=servicelb --node-name=k3s-e2e-0 --snapshotter=$K3S_SNAPSHOTTER_FLAG >/var/log/k3s.log 2>&1"
 i=0
 while [ "$i" -lt 90 ]; do
   if docker exec "$DIND_CID" sh -c 'k3s kubectl get --raw=/readyz' >/dev/null 2>&1; then
@@ -228,13 +276,15 @@ wait_state succeeded
 log "deployment succeeded on k3s"
 
 # k3s 载体断言：Deployment ready（label 定位——ns 名 = fleetly-<projectID>、
-# 载体名 = fleetly-<appID>-<proc>，ULID 均不硬编码）+ addressing Service。
+# 载体名 = fleetly-<appID>-<proc>，ULID 均不硬编码；label 值是 sanitize 后
+# 的实体 ID（与 swarm 公式同构），不是实体名——首跑实锤 =web 查空）。
 P1_NS="fleetly-$(printf '%s' "$PROJECT_ID" | tr 'A-Z' 'a-z')"
-log "verifying k3s carriers (ns=$P1_NS)"
-docker exec "$DIND_CID" sh -c '
+P1_APP_LC=$(printf '%s' "$APP_ID" | tr 'A-Z' 'a-z')
+log "verifying k3s carriers (ns=$P1_NS app=$P1_APP_LC)"
+docker exec -e APP_SEL="$P1_APP_LC" "$DIND_CID" sh -c '
   i=0
   while [ $i -lt 150 ]; do
-    ready=$(k3s kubectl get pods -A -l fleetly.ns.app=web --no-headers 2>/dev/null | grep -c "1/1" || echo 0)
+    ready=$(k3s kubectl get pods -A -l "fleetly.ns.app=$APP_SEL" --no-headers 2>/dev/null | grep -c "1/1" || echo 0)
     [ "$ready" = "1" ] && break
     i=$((i+1)); sleep 2
   done
@@ -259,18 +309,27 @@ log "rollback green"
 #     - 活体：跨 ns（shop2 的 nginx）不可达；DNS（kube-system）放行
 log "egress:none strong isolation drill"
 cli networks create --project "$PROJECT_ID" --egress-none isolated >/dev/null
+# compose 受控子集：顶层 networks 声明被拒（白名单只收 services/volumes，
+# 网络实体走平台 API——cli networks create 在先）；service 级 networks
+# 按名引用平台网络（egress 属性真源在 networks 表，投影期解析——ADR-0052
+# 决策 6）。web 服务保进夹具：deploy 是整 App 新 Revision，只带 worker
+# 会把 web 收敛掉，§12 Route drill 即无后端。
 cat > "$WORKDIR/egress-compose.yaml" <<'EOF'
 services:
+  web:
+    image: nginx:1.27
+    ports: ["80"]
   worker:
     image: busybox:1.37
     command: ["sleep", "3600"]
     networks: [isolated]
-networks:
-  isolated: {}
 EOF
 docker exec -i "$DIND_CID" sh -c 'cat > /tmp/egress-compose.yaml' < "$WORKDIR/egress-compose.yaml"
 EGRESS_DEP=$(cli --json deploy --app "$APP_ID" --compose-file /tmp/egress-compose.yaml | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | head -1)
 [ -n "$EGRESS_DEP" ] || fail "egress compose deploy failed"
+# compose 部署同链 L1 门（run3/4 实证非确定性：标记在而 netpol 缺/标记缺
+# 两种死法——不 wait 部署态会把失败吞进后面的轮询窗）。
+wait_state succeeded
 
 cli projects create shop2 >/dev/null
 PROJECT2_ID=$(cli --json projects list | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | tail -1)
@@ -280,17 +339,36 @@ APP2_ID=$(cli --json apps list --project "$PROJECT2_ID" | sed -n 's/.*"id": *"\(
 cli deploy --app "$APP2_ID" --image nginx:1.27 --port 80 >/dev/null
 
 wait_pod_label() {
+  # 等 Running 而非对象在场：活体探针随后 exec 进该 pod，Pending 期 exec
+  # 必失败（label 在 pod 模板里，对象一创建选择器即命中——计数是竞态）。
   i=0
   while [ "$i" -lt 120 ]; do
-    n=$(docker exec "$DIND_CID" sh -c "k3s kubectl get pods -n $P1_NS -l fleetly.egress=true --no-headers 2>/dev/null | wc -l")
+    n=$(docker exec "$DIND_CID" sh -c "k3s kubectl get pods -n $P1_NS -l fleetly.egress=true --no-headers 2>/dev/null | grep -c Running")
     [ "$n" -ge 1 ] && return 0
     i=$((i + 1)); sleep 2
   done
   return 1
 }
-wait_pod_label || fail "egress carrier label missing (projection->carrier chain broke)"
+wait_pod_label || {
+  docker exec "$DIND_CID" sh -c "
+    echo '--- pods'; k3s kubectl get pods -n $P1_NS -o wide --show-labels 2>&1 | head -8
+    echo '--- deploy'; k3s kubectl get deploy -n $P1_NS -o wide 2>&1
+    echo '--- events'; k3s kubectl get events -n $P1_NS --sort-by=.lastTimestamp 2>&1 | tail -10
+    echo '--- fleetlyd tail'; grep -v 'gRPC request' /var/log/fleetlyd.log | tail -40
+  " >&2 || true
+  fail "egress carrier label missing (projection->carrier chain broke)"
+}
 docker exec "$DIND_CID" sh -c "k3s kubectl get netpol fleetly-egress-deny -n $P1_NS >/dev/null" \
-  || fail "egress deny NetworkPolicy missing in project namespace"
+  || {
+    docker exec "$DIND_CID" sh -c "
+      echo '--- netpol -A'; k3s kubectl get netpol -A 2>&1
+      echo '--- pods labels'; k3s kubectl get pods -n $P1_NS -o wide --show-labels 2>&1 | head -8
+      echo '--- deploy template labels'; k3s kubectl get deploy -n $P1_NS -o jsonpath='{range .items[*]}{.metadata.name}{\" gen=\"}{.metadata.labels.fleetly-generation}{\" tmpl=\"}{.spec.template.metadata.labels}{\"\\n\"}{end}' 2>&1
+      echo '--- events'; k3s kubectl get events -n $P1_NS --sort-by=.lastTimestamp 2>&1 | tail -10
+      echo '--- fleetlyd egress lines'; grep -i egress /var/log/fleetlyd.log | tail -15
+    " >&2 || true
+    fail "egress deny NetworkPolicy missing in project namespace"
+  }
 log "egress carrier marker + NetworkPolicy present"
 
 # 活体：跨 ns 不可达（deny）+ DNS 放行（allowlist 面）。
