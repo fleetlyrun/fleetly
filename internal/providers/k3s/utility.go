@@ -73,6 +73,9 @@ func (p *Provider) RunUtility(ctx context.Context, req capability.UtilityRequest
 	hostDir := filepath.Join(utilityHostDir, sanitizeNamePart(req.ID))
 	cleanup := func() {
 		_ = p.cli.CoreV1().Pods(nsName).Delete(context.Background(), podName, metav1.DeleteOptions{})
+		// 材料 Secret 按标签清理（名含 utility ID,零复用——不删即泄漏）。
+		_ = p.cli.CoreV1().Secrets(nsName).DeleteCollection(context.Background(),
+			metav1.DeleteOptions{}, metav1.ListOptions{LabelSelector: "fleetly.utility=" + sanitizeNamePart(req.ID)})
 		_ = os.RemoveAll(hostDir)
 	}
 	defer cleanup()
@@ -246,12 +249,20 @@ func (p *Provider) buildUtilityPod(ctx context.Context, req capability.UtilityRe
 			},
 		})
 	} else {
+		// 材料名纳入 utility ID：同名跨调用复用会撞 AlreadyExists 沿用旧
+		// 内容（backup 与 restore 的 passfile host 不同库——restore 读到
+		// backup 期的旧行即 host 不匹配、no password supplied，e2e 取证
+		// 终章）。label 携 utility ID 供清理按标签删。
+		utilTag := sanitizeNamePart(req.ID)
 		sources := make([]corev1.VolumeProjection, 0, len(req.SecretFiles)+1)
 		for _, platformName := range sortedKeys(req.SecretFiles) {
-			objName := "fleetly-util-mat-" + sanitizeNamePart(platformName)
+			objName := "fleetly-util-" + utilTag + "-mat-" + sanitizeNamePart(platformName)
 			if _, err := p.cli.CoreV1().Secrets(nsName).Create(ctx, &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{Name: objName},
-				Data:       map[string][]byte{secretDataKey: req.SecretFiles[platformName]},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   objName,
+					Labels: map[string]string{"fleetly.utility": utilTag},
+				},
+				Data: map[string][]byte{secretDataKey: req.SecretFiles[platformName]},
 			}, metav1.CreateOptions{}); err != nil && !apierrors.IsAlreadyExists(err) {
 				return nil, fmt.Errorf("ensure utility secret: %w", err)
 			}
@@ -266,10 +277,13 @@ func (p *Provider) buildUtilityPod(ctx context.Context, req capability.UtilityRe
 			})
 		}
 		if inputContent != nil {
-			objName := "fleetly-util-input-" + sanitizeNamePart(req.ID)
+			objName := "fleetly-util-" + utilTag + "-input"
 			if _, err := p.cli.CoreV1().Secrets(nsName).Create(ctx, &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{Name: objName},
-				Data:       map[string][]byte{"input": inputContent},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   objName,
+					Labels: map[string]string{"fleetly.utility": utilTag},
+				},
+				Data: map[string][]byte{"input": inputContent},
 			}, metav1.CreateOptions{}); err != nil && !apierrors.IsAlreadyExists(err) {
 				return nil, fmt.Errorf("ensure utility input secret: %w", err)
 			}
