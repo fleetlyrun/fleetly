@@ -235,11 +235,11 @@ func (p *Provider) buildUtilityPod(ctx context.Context, req capability.UtilityRe
 			return nil, fmt.Errorf("stage input dir: %w", err)
 		}
 		for platformName, content := range req.SecretFiles {
-			if err := os.WriteFile(filepath.Join(hostDir, platformName), content, 0o640); err != nil {
+			if err := os.WriteFile(filepath.Join(hostDir, platformName), content, 0o600); err != nil {
 				return nil, fmt.Errorf("stage material file: %w", err) //nolint:gosec // 材料名是引擎铸造的平台名，非用户自由输入
 			}
 		}
-		if err := os.WriteFile(filepath.Join(hostDir, inputName), inputContent, 0o640); err != nil {
+		if err := os.WriteFile(filepath.Join(hostDir, inputName), inputContent, 0o600); err != nil {
 			return nil, fmt.Errorf("stage input file: %w", err) //nolint:gosec // 路径由平台 ULID 与挂点合成，非用户自由输入
 		}
 		spec.Volumes = append(spec.Volumes, corev1.Volume{

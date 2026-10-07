@@ -68,12 +68,16 @@ func serviceLabels(ns capability.NamespaceRef) map[string]string {
 }
 
 // ensureSecrets 落盘 Secret 材料（ADR-0014：值经 k8s Secret 分发，容器内
-// /run/secrets/<名> 文件注入——不落载体 label 或明文 env）。返回平台名 →
-// Secret 对象名的解析集（翻译层引用）。
-func (p *Provider) ensureSecrets(ctx context.Context, nsName string, files map[string][]byte) (map[string]string, error) {
+// /run/secrets/<名> 文件注入——不落载体 label 或明文 env）。对象名纳入
+// 域标识：Namespace 是 per-Project 的，同项目第二个 App/Database 的同名
+// 材料（如 "database-password"）会撞 AlreadyExists 沿用首库密码——第二
+// 个库即用错凭证初始化（restore 密码不合的终极根因，e2e 取证矩阵闭环：
+// passfile=行真源密码 vs 载体 secret=首库旧密码）。返回平台名 → Secret
+// 对象名的解析集（翻译层引用）。
+func (p *Provider) ensureSecrets(ctx context.Context, ns capability.NamespaceRef, nsName string, files map[string][]byte) (map[string]string, error) {
 	out := make(map[string]string, len(files))
 	for platformName, value := range files {
-		objName := secretObjectName(platformName)
+		objName := domainSecretObjectName(ns, platformName)
 		secret := &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:   objName,
@@ -89,6 +93,17 @@ func (p *Provider) ensureSecrets(ctx context.Context, nsName string, files map[s
 		out[platformName] = objName
 	}
 	return out, nil
+}
+
+// domainSecretObjectName 是材料 Secret 的域唯一对象名（域标识取六轴首个
+// 非空轴——App/Database/Task/Browse 各自独立成域；受管域无轴用 system）。
+func domainSecretObjectName(ns capability.NamespaceRef, platformName string) string {
+	for _, axis := range []string{ns.App, ns.Database, ns.Task, ns.Browse} {
+		if axis != "" {
+			return "fleetly-mat-" + sanitizeNamePart(axis) + "-" + sanitizeNamePart(platformName)
+		}
+	}
+	return secretObjectName(platformName)
 }
 
 // ensureImagePullSecrets 落盘 registry 拉取凭证（dockerconfigjson 形态；

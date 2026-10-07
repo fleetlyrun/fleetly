@@ -59,7 +59,7 @@ func TestEnsureCreatesObjects(t *testing.T) {
 	_, err = cli.CoreV1().PersistentVolumeClaims(nsName).Get(ctx, pvcName("01V"), metav1.GetOptions{})
 	require.NoError(t, err)
 	// Secret 材料（值不落载体 label/明文 env——ADR-0014）。
-	sec, err := cli.CoreV1().Secrets(nsName).Get(ctx, secretObjectName("db-pass"), metav1.GetOptions{})
+	sec, err := cli.CoreV1().Secrets(nsName).Get(ctx, domainSecretObjectName(appNS(), "db-pass"), metav1.GetOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, []byte("secret"), sec.Data[secretDataKey])
 	// 材料注入形态：projected 卷挂 /run/secrets，value 键投影为文件
@@ -73,7 +73,7 @@ func TestEnsureCreatesObjects(t *testing.T) {
 	}
 	require.NotNil(t, pv, "materials must land as a single projected volume")
 	require.Len(t, pv.Sources, 1)
-	assert.Equal(t, secretObjectName("db-pass"), pv.Sources[0].Secret.Name)
+	assert.Equal(t, domainSecretObjectName(appNS(), "db-pass"), pv.Sources[0].Secret.Name)
 	require.Len(t, pv.Sources[0].Secret.Items, 1)
 	assert.Equal(t, secretDataKey, pv.Sources[0].Secret.Items[0].Key)
 	assert.Equal(t, "db-pass", pv.Sources[0].Secret.Items[0].Path)
@@ -162,7 +162,7 @@ func TestRemoveKeepsDataPlane(t *testing.T) {
 	// PVC 与 Secret 残留（数据处置是显式动作——场景 3 语义）。
 	_, err = cli.CoreV1().PersistentVolumeClaims(nsName).Get(ctx, pvcName("01V"), metav1.GetOptions{})
 	assert.NoError(t, err)
-	_, err = cli.CoreV1().Secrets(nsName).Get(ctx, secretObjectName("db-pass"), metav1.GetOptions{})
+	_, err = cli.CoreV1().Secrets(nsName).Get(ctx, domainSecretObjectName(appNS(), "db-pass"), metav1.GetOptions{})
 	assert.NoError(t, err)
 }
 
@@ -282,7 +282,6 @@ func TestEnsurePortlessWorkloadHeadlessService(t *testing.T) {
 // 工具 Pod 挂载落位（e2e 深挖终章回归：container 局部变量的 append 不进
 // pod spec——零挂载形态下 passfile/输入文件全部不可见，备份恢复全断）。
 func TestBuildUtilityPodMountsLand(t *testing.T) {
-	p, _ := newFakeProvider()
 	ctx := context.Background()
 	// 种一个带锚定 label 的节点（工具 Pod 钉住解析的前提——fake 无节点
 	// 会让 buildUtilityPod 在 utilityNodeSelector 处失败）。
@@ -290,15 +289,15 @@ func TestBuildUtilityPodMountsLand(t *testing.T) {
 		Name:   "n1",
 		Labels: map[string]string{labelNodeID: "01N1", "node-role.kubernetes.io/control-plane": ""},
 	}}
-	p, _ = newFakeProvider(seededNode)
+	p, _ := newFakeProvider(seededNode)
 	req := capability.UtilityRequest{
 		ID:        "restore-x",
 		Namespace: capability.NamespaceRef{Project: "shop"},
 		Image:     "postgres:17-bookworm",
 		Argv:      []string{"pg_restore"},
-		Env:       map[string]string{"PGPASSFILE": "/run/secrets/database-backup-pgpass"},
+		Env:       map[string]string{"PGPASSFILE": "/run/secrets/database-backup-pgpass"}, //nolint:gosec // 环境变量名形似凭证串,实为路径声明
 		SecretFiles: map[string][]byte{
-			"database-backup-pgpass": []byte("db-x:5432:fleetly:fleetly:pw"),
+			"database-backup-pgpass": []byte("db-x:5432:fleetly:fleetly:pw"), //nolint:gosec // 测试载荷,非凭证本体
 		},
 		Input: &capability.UtilityInput{
 			Content: strings.NewReader("DUMP-BYTES"),

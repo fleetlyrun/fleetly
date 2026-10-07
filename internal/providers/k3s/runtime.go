@@ -68,7 +68,7 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 	// 材料先行（ADR-0014）：Secret 对象落盘 + 拉取凭证（imagePullSecrets），
 	// 再翻译载体 spec（引用对象名）。逐载体材料覆写（ADR-0048 双代窗）：
 	// nil = 调用级（域默认）。
-	callSecrets, err := p.ensureSecrets(ctx, nsName, m.SecretFiles)
+	callSecrets, err := p.ensureSecrets(ctx, ns, nsName, m.SecretFiles)
 	if err != nil {
 		return fmt.Errorf("k3s ensure %s: %w", ns, err)
 	}
@@ -85,7 +85,7 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 		if _, seen := carrierSets[pm]; seen {
 			continue
 		}
-		c, cerr := p.ensureSecrets(ctx, nsName, pm.SecretFiles)
+		c, cerr := p.ensureSecrets(ctx, ns, nsName, pm.SecretFiles)
 		if cerr != nil {
 			return fmt.Errorf("k3s ensure %s: %w", ns, cerr)
 		}

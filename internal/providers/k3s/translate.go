@@ -439,7 +439,9 @@ func podTemplate(ns capability.NamespaceRef, w capability.Workload, gen capabili
 		for _, platformName := range sortedKeys(secretFiles) {
 			sources = append(sources, corev1.VolumeProjection{
 				Secret: &corev1.SecretProjection{
-					LocalObjectReference: corev1.LocalObjectReference{Name: secretObjectName(platformName)},
+					// 解析集的域唯一对象名（ensureSecrets 已落盘的实体——重算
+					// 常量名会与域唯一名分叉，投影引用即悬空）。
+					LocalObjectReference: corev1.LocalObjectReference{Name: secretFiles[platformName]},
 					Items: []corev1.KeyToPath{{
 						Key:  secretDataKey,
 						Path: platformName,
