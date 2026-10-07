@@ -417,7 +417,7 @@ docker exec -e P_NS="$P_NS" -e DB_SEL="$NEW_DB_LC" -e SEED="$SEED_COUNT" "$DIND_
   while [ $j -lt 60 ]; do
     count=$(k3s kubectl exec -n "$P_NS" "$pod" -- psql -U fleetly -d fleetly -tAc "SELECT count(*) FROM migration_probe;" 2>/dev/null | tr -d "[:space:]" || true)
     [ "$count" = "$SEED" ] && { echo "restored rows: $count"; exit 0; }
-    upod=$(k3s kubectl get pods -n "$P_NS" --no-headers 2>/dev/null | grep util-restore | awk '{print $1}' || true)
+    upod=$(k3s kubectl get pods -n "$P_NS" --no-headers 2>/dev/null | grep util-restore | head -1 | cut -d" " -f1 || true)
     if [ -n "$upod" ] && [ -z "$ulog" ]; then
       sleep 4
       ulog=$(k3s kubectl logs -n "$P_NS" "$upod" 2>&1 || true)
