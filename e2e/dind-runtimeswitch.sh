@@ -131,6 +131,18 @@ for img in nginx:1.27 traefik:v3.5.4 postgres:17-bookworm; do
   docker image inspect "$img" >/dev/null 2>&1 || docker image pull "$img" >/dev/null
   docker image save "$img" | docker exec -i "$DIND_CID" docker load >/dev/null
 done
+# swarm db 是 digest 拉取（tag@digest）：docker load 的 tar 无 RepoDigests，
+# 不命中本地、回退在线（CI 的 Docker Hub 慢通道 10 分钟窗超时实证）——
+# dind docker daemon 预拉 digest 本体（原生存 index digest + RepoDigests），
+# 重试环扛代理抖动；此后 swarm 的 digest 拉零网络命中。
+log "pre-pulling postgres digest into dind docker (retry loop)"
+docker exec -e PG_REF="postgres@$PG_DIGEST" "$DIND_CID" sh -c '
+  i=0; while [ $i -lt 40 ]; do
+    timeout 90 docker image pull "$PG_REF" >/dev/null 2>&1 && exit 0
+    i=$((i+1)); sleep 5
+  done
+  echo "postgres docker pre-pull did not succeed after $i attempts" >&2; exit 1' \
+  || fail "postgres digest pre-pull (docker daemon) failed"
 
 # 4. 段一 swarm：swarm init + fleetlyd（缺省 provider=swarm）。
 log "phase swarm: init swarm + start fleetlyd"
