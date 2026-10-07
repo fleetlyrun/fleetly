@@ -105,7 +105,7 @@ F4.1 是 N4 唯一项，也是 v1 功能清单收官项：k3s Provider 作为 Ru
 
 ### 9. 试点诚实清单（挂账，后续批）
 
-1. RuntimeExec（k8s 原生 exec + relay agent kubeconfig 形态）；2. RuntimeHygiene（Secret/PVC 孤儿判据）；3. Task Network Group 隔离语义（netpol 细分）；4. 跨 Project peer（Namespace 间互放行）；5. Enrollment AgentCommand 的 worker 节点 kubeconfig 装载（两节点 e2e 腿）；6. kubeconfig RBAC 最小权限面（试点用 cluster-admin，生产形态收敛）；7. 多 server HA（k3s embedded etcd/sqlite 单 server 试点）；8. 旧 Runtime 孤儿载体登记面（平台失明的诚实形态，runbook 承载）；9. `--snapshotter` 缺省 native 为 e2e 保底形态（生产节点原生文件系统用默认 overlayfs；CI overlayfs / 本机 fuse 加速两通道已开——决策 8 补录）；10. 装配选名专门测试（config provider=k3s 的装配面单测——lab 实证已背书，apitest 级测试随 e2e 全链批）；11. e2e 两腿全链收口（本机 dind+native 形态容器就绪延迟 3-6 分钟/载体，时间预算不可行——CI 环境（GitHub Actions runner 原生文件系统可用默认 overlayfs）或 fuse-overlayfs 通道批；脚本在册含全部坑注）。
+1. RuntimeExec（k8s 原生 exec + relay agent kubeconfig 形态）；2. RuntimeHygiene（Secret/PVC 孤儿判据）；3. Task Network Group 隔离语义（netpol 细分）；4. 跨 Project peer（Namespace 间互放行）；5. Enrollment AgentCommand 的 worker 节点 kubeconfig 装载（两节点 e2e 腿）；6. kubeconfig RBAC 最小权限面（试点用 cluster-admin，生产形态收敛；载体侧 automountServiceAccountToken=false 已随收官批落地——正交加固）；7. 多 server HA（k3s embedded etcd/sqlite 单 server 试点）；8. 旧 Runtime 孤儿载体登记面（平台失明的诚实形态，runbook 承载）；9. `--snapshotter` 缺省 native 为 e2e 保底形态（生产节点原生文件系统用默认 overlayfs；CI 与本机共用 fuse 通道——决策 8 补录）；10. ~~装配选名专门测试~~（2026-10-07 收官批收口：TestRuntimeProviderSelection）；11. ~~e2e 两腿全链收口~~（2026-10-07 收官批收口：本机 fuse 形态两腿全链绿 + CI e2e-k3s/e2e-runtimeswitch job 常态化；全链咬出平台 bug 九连与环境坑十余条——坑录全在脚本注释与验收锚）；12. 大档恢复输入的 hostPath 通道在 dind 形态受 mount 命名空间遮蔽影响（小档 ≤900KB 已走 Secret 投影零依赖；生产节点原生文件系统无此形态，随首个生产形态部署实证）。
 
 ## 后果
 
@@ -118,11 +118,11 @@ F4.1 是 N4 唯一项，也是 v1 功能清单收官项：k3s Provider 作为 Ru
 
 ## 验收锚
 
-- [x] config `runtime.provider` 缺省 swarm 行为逐位一致（全量测试零漂移——swarm 侧零代码改动）；显式 `k3s` 装配生效（lab faces 启动日志 `runtime provider=k3s faces=logs,admin,inspector,utility`）；未注册名启动 fail-fast（capability.Build 既有错误面列在册候选）；专门的装配选名测试随 e2e 全链批补（挂账 10）
+- [x] config `runtime.provider` 缺省 swarm 行为逐位一致（全量测试零漂移——swarm 侧零代码改动）；显式 `k3s` 装配生效（lab faces 启动日志 `runtime provider=k3s faces=logs,admin,inspector,utility`）；未注册名启动 fail-fast（capability.Build 既有错误面列在册候选）；专门的装配选名测试已补（TestRuntimeProviderSelection：缺省 swarm 锚 + 在册名装配回环 + 未注册名列候选 fail-fast）
 - [x] k3s Provider 契约断言齐全（编译期断言：核心六面 + Logs/Admin/Inspector/Utility；Exec/NetworkMaintenance/Hygiene 缺席是裁决本体）
 - [x] 翻译单测：Workload IR → k8s 对象全字段映射（Deployment/DaemonSet/one-shot Pod/Service 池级与单载体双 selector/PVC/probe/nodeSelector/双代窗代次名/hostPort 双模式/Recreate 争用面/egress netpol 形态/全名折点）+ fake clientset 的 Ensure 域收敛/Remove 数据面保留/碰撞拒绝/one-shot 幂等/netpol 双向 + Describe Notes 诚实边界三锚
-- [ ] e2e `e2e:k3s` 全链：**deploy(image) → succeeded 已实证**（2026-10-07 两 run 复现——k3s Provider 全链含 L1 健康门/Watch 观测真实工作）；rollback/egress 活体/Database PVC/受管 traefik 各段脚本在册（含全部坑注），**受 dind+native snapshotter 形态的容器就绪延迟（每载体 3-6 分钟）限制未在本机走完**——CI 环境或 fuse-overlayfs 通道批收口（挂账 11；坑录见 e2e 脚本头注与 dind-k3s.sh 实战坑段）
-- [ ] e2e `e2e:runtimeswitch` 场景 3 全链：脚本在册（ID 保持断言/基线重放/Backup/Restore 数据闭环/显式数据处置/节点换血），同上时间预算限制未实证（挂账 11）；链路构件已分别实证（lab：数据根跨 k3s 起动存活、Ensure/载体创建、egress netpol 预研活体、local-path PVC 预研活体）
+- [x] e2e `e2e:k3s` 全链绿（2026-10-07 收官批，本机 fuse 形态 run22 `K3S E2E PASSED`：deploy→succeeded→载体断言（label 定位 + addressing 双名 Service）→受管 traefik + Route 明文端到端 200（hostPort 80）→rollback 基线重放→egress:none 强隔离活体（载体标记 + netpol 在场 + DNS 放行 + 跨 ns 拒）→Database running + PVC local-path 绑定；CI e2e-k3s job 常态化——fuse snapshotter + actions/cache）。全链咬出平台五 bug（portless Service 硬校验→headless、put 族 409→RetryOnConflict、材料卷两级目录→projected 卷、SA token 挂载点冲突→automount false、Endpoint.Addr 双端口→裸主机名）与环境坑十余条（坑录全在脚本注释与 memory：index digest≠manifest digest 的 airgap 不可命中、ctr 客户端三坑、pretty JSON 轮询、grep -c set -e、route TLS 缺省 auto、受管 Proxy 配置端点前置、hostPort 不覆盖 loopback、pkill -f 自匹配）
+- [x] e2e `e2e:runtimeswitch` 场景 3 全链绿（2026-10-07 收官批，本机 fuse 形态 run30 `RUNTIME SWITCH E2E PASSED`：swarm 段 deploy succeeded + Database running + 42 行种子 + backup succeeded → 停 fleetlyd + 显式数据处置（旧载体 service rm）+ k3s 起 → Project/App/Revision ID 全保持 + 节点换血（新铸平台节点 ID，旧 swarm 节点退役）+ 基线重放（app 载体 k3s 重建 ready）+ 旧库显式处置 + restore_from_backup 新库 + 42 行数据闭环断言；CI e2e-runtimeswitch job 常态化）。收官链咬出平台 bug 全谱（utility Pod 零挂载/材料 Secret 域撞名/工具 Pod 钉住与投影面/Endpoint.Addr 双端口/材料 projected 卷/SA token 冲突/portless Service/put 族 409）——见各 fix commit 与验收锚五锚
 - [x] 能力发现面：k3s Describe().Notes 含强隔离声明与弱化对照（TestDescribeNotesHonesty 钉死措辞）
 - [x] swarm 全套测试零回归 + `mise run test`（57 包）/`mise run lint`（golangci 0 issues + buf breaking 过）+ `go test -count=1 ./internal/guards/` 全绿；`generate:verify`/`console:verify` 零漂移
 - [x] k3s 版本常量与 e2e 下载段同 commit 一致（TestK3sPinConstantAndE2EAgree：常量在位 + sha256 在场 + 下载段模板 + ADR 双向保鲜）

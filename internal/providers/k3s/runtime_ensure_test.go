@@ -300,7 +300,7 @@ func TestBuildUtilityPodMountsLand(t *testing.T) {
 			"database-backup-pgpass": []byte("db-x:5432:fleetly:fleetly:pw"), //nolint:gosec // 测试载荷,非凭证本体
 		},
 		Input: &capability.UtilityInput{
-			Content: strings.NewReader("DUMP-BYTES"),
+			Content: strings.NewReader("BACKUP-STREAM-BYTES"),
 			// 与 dbtemplate.BackupInputPath 契约同值（providers 不 import
 			// engine——字面量 + 守卫双向由 engine 侧测试承载）。
 			Target: "/run/secrets/backup-input",
