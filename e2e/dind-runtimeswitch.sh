@@ -429,6 +429,16 @@ docker exec -e P_NS="$P_NS" -e DB_SEL="$NEW_DB_LC" -e SEED="$SEED_COUNT" "$DIND_
   echo "--- psql stderr:"; k3s kubectl exec -n "$P_NS" "$pod" -- psql -U fleetly -d fleetly -tAc "SELECT count(*) FROM migration_probe;" 2>&1 | tail -3
   echo "--- ns pods (utility one-shots incl):"; k3s kubectl get pods -n "$P_NS" --no-headers 2>&1
   echo "--- fleetlyd restore lines:"; grep -iE "restore|utility" /var/log/fleetlyd.log | grep -v gRPC | tail -15
+  # 对照实验:busybox pod 挂同一 hostDir 读同一文件(独立探针证明 hostPath
+  # 通道本身通——分歧面在 utility pod 形态)。
+  hdir=$(ls -d /var/lib/fleetly/utility/restore-* 2>/dev/null | head -1)
+  if [ -n "$hdir" ]; then
+    echo "--- host dir from exec view:"; ls -la "$hdir" 2>&1 | head -3
+    k3s kubectl run hpdiag --image=busybox:1.37 --restart=Never --overrides "{\"spec\":{\"containers\":[{\"name\":\"hpdiag\",\"image\":\"busybox:1.37\",\"command\":[\"cat\",\"/data/input\"],\"volumeMounts\":[{\"name\":\"in\",\"mountPath\":\"/data\"}],\"imagePullPolicy\":\"IfNotPresent\"}],\"volumes\":[{\"name\":\"in\",\"hostPath\":{\"path\":\"$hdir\"}}]}}" >/dev/null 2>&1 || true
+    k3s kubectl wait --for=condition=Ready pod/hpdiag --timeout=45s >/dev/null 2>&1; sleep 2
+    echo "--- busybox cat via hostPath:"; k3s kubectl logs hpdiag 2>&1 | head -c 120; echo
+    k3s kubectl delete pod hpdiag --force --grace-period=0 >/dev/null 2>&1 || true
+  fi
   upod=$(k3s kubectl get pods -n "$P_NS" --no-headers 2>/dev/null | grep util-restore | head -1 | cut -d" " -f1 || true)
   if [ -n "$upod" ]; then
     echo "--- utility pod describe:"; k3s kubectl describe pod -n "$P_NS" "$upod" 2>&1 | grep -A8 "Events:" | tail -9
