@@ -155,16 +155,20 @@ log "staging images for k3s auto-import (airgap channel)"
 docker exec "$DIND_CID" mkdir -p /var/lib/rancher/k3s/agent/images
 docker exec -i "$DIND_CID" sh -c 'cat > /var/lib/rancher/k3s/agent/images/k3s-airgap-images-amd64.tar' < "$WORKDIR/k3s-airgap.tar"
 # postgres digest 与 dbtemplate.postgresImageDigest 同源钉版（守卫
-# TestK3sPinConstantAndE2EAgree 双向保鲜）——db 段在线拉经 containerd 代理
-# 通道不稳（12 分钟窗超时实证），airgap 预载即零在线拉。
+# TestPostgresDigestPinAgreement 双向保鲜）——db 段在线拉经 containerd 代理
+# 通道不稳（12 分钟窗超时实证），airgap 预载即零在线拉。pull 按 tag@digest
+# 验真后回填 tag 再 save：digest-only 的 docker save 产物无 RepoTag，ctr
+# airgap 导入 0 张（Imported 0 images 实证）；tag 形态入库后 kubelet 按
+# name 命中本地（digest 同体——拉取即验过）。
 PG_DIGEST="sha256:639ab7ceb90e13123085b741fb31ef493fba25463002f6da665352e7b534b652"
+docker image inspect "postgres@$PG_DIGEST" >/dev/null 2>&1 \
+  || docker image pull "postgres:17-bookworm@$PG_DIGEST" >/dev/null
+docker image tag "postgres@$PG_DIGEST" postgres:17-bookworm >/dev/null 2>&1 || true
 i=0
-for img in nginx:1.27 busybox:1.37 traefik:v3.5.4 "postgres:17-bookworm@$PG_DIGEST"; do
-  # name@digest 是 inspect/save 的规范形态（tag@digest 只保证 pull 通道）。
-  sref=$(printf '%s' "$img" | sed 's/:[^/@]*@/@/')
-  docker image inspect "$sref" >/dev/null 2>&1 || docker image pull "$img" >/dev/null
-  name=$(printf '%s' "$img" | sed 's#/#-#g; s#@.*##')
-  docker image save "$sref" | docker exec -i "$DIND_CID" sh -c "cat > /var/lib/rancher/k3s/agent/images/app-$name.tar"
+for img in nginx:1.27 busybox:1.37 traefik:v3.5.4 postgres:17-bookworm; do
+  docker image inspect "$img" >/dev/null 2>&1 || docker image pull "$img" >/dev/null
+  name=$(printf '%s' "$img" | sed 's#/#-#g')
+  docker image save "$img" | docker exec -i "$DIND_CID" sh -c "cat > /var/lib/rancher/k3s/agent/images/app-$name.tar"
   i=$((i + 1))
 done
 

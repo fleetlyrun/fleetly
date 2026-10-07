@@ -119,14 +119,17 @@ if [ "$K3S_SNAPSHOTTER" = "fuse" ]; then
 fi
 
 # 3. 镜像预载（swarm 侧 docker load；k3s 侧稍后 airgap 预载）。postgres
-#    digest 同 dbtemplate 钉版（swarm 段 db 的在线拉经 dind dockerd 代理
-#    通道有不确定性——预载即零在线拉）。
+#    digest 同 dbtemplate 钉版（在线拉经代理通道有不确定性——预载即零在线
+#    拉）；pull 按 tag@digest 验真后回填 tag 再 save（digest-only tar 无
+#    RepoTag，docker load 不落 tag、ctr 导入 0 张——dind-k3s.sh 同款实证）。
 log "preloading docker images (swarm side)"
 PG_DIGEST="sha256:639ab7ceb90e13123085b741fb31ef493fba25463002f6da665352e7b534b652"
-for img in nginx:1.27 traefik:v3.5.4 "postgres:17-bookworm@$PG_DIGEST"; do
-  sref=$(printf '%s' "$img" | sed 's/:[^/@]*@/@/')
-  docker image inspect "$sref" >/dev/null 2>&1 || docker image pull "$img" >/dev/null
-  docker image save "$sref" | docker exec -i "$DIND_CID" docker load >/dev/null
+docker image inspect "postgres@$PG_DIGEST" >/dev/null 2>&1 \
+  || docker image pull "postgres:17-bookworm@$PG_DIGEST" >/dev/null
+docker image tag "postgres@$PG_DIGEST" postgres:17-bookworm >/dev/null 2>&1 || true
+for img in nginx:1.27 traefik:v3.5.4 postgres:17-bookworm; do
+  docker image inspect "$img" >/dev/null 2>&1 || docker image pull "$img" >/dev/null
+  docker image save "$img" | docker exec -i "$DIND_CID" docker load >/dev/null
 done
 
 # 4. 段一 swarm：swarm init + fleetlyd（缺省 provider=swarm）。
@@ -250,16 +253,18 @@ docker exec "$DIND_CID" sh -c '
 # 见 dind-k3s.sh 坑注）。
 docker exec "$DIND_CID" mkdir -p /var/lib/rancher/k3s/agent/images
 docker exec -i "$DIND_CID" sh -c 'cat > /var/lib/rancher/k3s/agent/images/k3s-airgap-images-amd64.tar' < "$WORKDIR/k3s-airgap.tar"
-# postgres digest 同 dbtemplate 钉版（dind-k3s.sh 同款坑注：k3s 段 restore
-# 新库的 digest 拉取经 containerd 代理通道不稳，airgap 预载即零在线拉）。
+# postgres digest 同 dbtemplate 钉版（dind-k3s.sh 同款坑注：digest-only
+# save 产物无 RepoTag，ctr 导入 0 张——tag 回填后 tag 形态入库，k3s 段
+# restore 新库零在线拉）。
 PG_DIGEST="sha256:639ab7ceb90e13123085b741fb31ef493fba25463002f6da665352e7b534b652"
+docker image inspect "postgres@$PG_DIGEST" >/dev/null 2>&1 \
+  || docker image pull "postgres:17-bookworm@$PG_DIGEST" >/dev/null
+docker image tag "postgres@$PG_DIGEST" postgres:17-bookworm >/dev/null 2>&1 || true
 i=0
-for img in nginx:1.27 traefik:v3.5.4 "postgres:17-bookworm@$PG_DIGEST"; do
-  # name@digest 是 inspect/save 的规范形态（tag@digest 只保证 pull 通道）。
-  sref=$(printf '%s' "$img" | sed 's/:[^/@]*@/@/')
-  docker image inspect "$sref" >/dev/null 2>&1 || docker image pull "$img" >/dev/null
-  name=$(printf '%s' "$img" | sed 's#/#-#g; s#@.*##')
-  docker image save "$sref" | docker exec -i "$DIND_CID" sh -c "cat > /var/lib/rancher/k3s/agent/images/app-$name.tar"
+for img in nginx:1.27 traefik:v3.5.4 postgres:17-bookworm; do
+  docker image inspect "$img" >/dev/null 2>&1 || docker image pull "$img" >/dev/null
+  name=$(printf '%s' "$img" | sed 's#/#-#g')
+  docker image save "$img" | docker exec -i "$DIND_CID" sh -c "cat > /var/lib/rancher/k3s/agent/images/app-$name.tar"
   i=$((i + 1))
 done
 docker cp "$WORKDIR/k3s" "$DIND_CID":/usr/local/bin/k3s
