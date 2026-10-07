@@ -224,9 +224,12 @@ func (e *Engine) executeOneBackup(ctx context.Context) {
 	}
 	key := backup.KeyMint(db.ProjectID, db.ID, b.ID, e.clock.Now())
 	// stdout → io.Pipe → Put（流经纪：Put 在调用方读，工具容器在 goroutine
-	// 写；任一侧失败经 Pipe 错误传导到对端）。
+	// 写；任一侧失败经 Pipe 错误传导到对端）。tee 收 2KB 有界尾部：k8s 侧
+	// 工具日志合流走 stdout，失败报文不带尾部对排障失明（restore 面同款
+	// 修，e2e 批实证）。
 	pr, pw := io.Pipe()
 	stderr := &bytes.Buffer{}
+	tail := &boundedTail{}
 	runErr := make(chan error, 1)
 	go func() {
 		err := e.utility.RunUtility(execCtx, capability.UtilityRequest{
@@ -237,7 +240,7 @@ func (e *Engine) executeOneBackup(ctx context.Context) {
 			Env:         spec.Env,
 			Networks:    e.projectNetworkFactsNamesOnly(execCtx, db.ProjectID),
 			SecretFiles: spec.SecretFiles,
-		}, pw, stderr)
+		}, io.MultiWriter(pw, tail), stderr)
 		// 收尾必关：成功 = 干净 EOF（Put 读尽完整产物）；失败 = 错误传导
 		//（不关则 Put 永远阻塞在读面）。
 		if err != nil {
@@ -254,8 +257,10 @@ func (e *Engine) executeOneBackup(ctx context.Context) {
 	}
 	if putErr != nil {
 		msg := fmt.Sprintf("backup execution failed: %v", putErr)
-		if tail := stderrTail(stderr.String()); tail != "" {
-			msg += ": " + tail
+		if et := stderrTail(stderr.String()); et != "" {
+			msg += ": " + et
+		} else if s := tail.String(); s != "" {
+			msg += ": " + s
 		}
 		fail(msg)
 		return
@@ -315,6 +320,23 @@ func stderrTail(s string) string {
 	}
 	return trimTrailing(s[len(s)-max:])
 }
+
+// boundedTail 是 2KB 有界尾部捕获写者（backup 的 stdout 是产物流不可截
+// 留——tee 侧仅留尾部，失败报文面专用）。
+type boundedTail struct {
+	buf []byte
+}
+
+func (t *boundedTail) Write(p []byte) (int, error) {
+	const max = 2048
+	t.buf = append(t.buf, p...)
+	if len(t.buf) > max {
+		t.buf = t.buf[len(t.buf)-max:]
+	}
+	return len(p), nil
+}
+
+func (t *boundedTail) String() string { return trimTrailing(string(t.buf)) }
 
 func trimTrailing(s string) string {
 	for len(s) > 0 && (s[len(s)-1] == '\n' || s[len(s)-1] == ' ') {
