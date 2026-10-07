@@ -106,9 +106,23 @@ func (p *Provider) RunUtility(ctx context.Context, req capability.UtilityRequest
 		return fmt.Errorf("k3s utility %s: %w%s", req.ID, werr, p.utilityPodDiagnosis(ctx, nsName, podName))
 	}
 	if exitCode != 0 {
-		return fmt.Errorf("k3s utility %s: exited with code %d%s", req.ID, exitCode, p.utilityPodDiagnosis(ctx, nsName, podName))
+		return fmt.Errorf("k3s utility %s: exited with code %d%s%s",
+			req.ID, exitCode, p.utilityPodDiagnosis(ctx, nsName, podName), stagedFileStat(hostDir, req))
 	}
 	return nil
+}
+
+// stagedFileStat 报暂存输入文件的 Provider 侧视图（存在性+字节数）——
+// 输入挂载失败排障的写侧锚（kubelet 挂载面与写侧的可见性分歧取证）。
+func stagedFileStat(hostDir string, req capability.UtilityRequest) string {
+	if req.Input == nil {
+		return ""
+	}
+	staged := filepath.Join(hostDir, filepath.Base(strings.TrimSuffix(req.Input.Target, "/")))
+	if st, err := os.Stat(staged); err == nil {
+		return fmt.Sprintf(" [staged %s: %d bytes]", staged, st.Size())
+	}
+	return fmt.Sprintf(" [staged %s: missing]", staged)
 }
 
 // countingWriter 计数透传写者（日志兜底直拉的零产出判据）。
