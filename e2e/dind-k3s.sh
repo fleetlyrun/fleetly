@@ -222,16 +222,18 @@ docker exec "$DIND_CID" sh -c '
 docker exec "$DIND_CID" sh -c 'k3s kubectl delete pod warm-a warm-b --force --grace-period=0 >/dev/null 2>&1 || true'
 log "runtime warmed"
 
-# db digest 预拉重试环（坑：模板钉的是多架构 index digest（docker 侧
-# 639ab7ce…），docker save 的 tar 只含 amd64 manifest——airgap 导入后 ctr
-# 挂的是 manifest digest（13e49e17…），kubelet 按 index digest 拉永远不命中
-# 本地、回退在线；layer 已全部在 content store（tag 回填导入），在线段只剩
-# index/manifest 几 KB——但经代理单次拉取会挂起且 kubelet 不会及时重试。
-# bounded timeout + 重试环直到代理放行，之后 kubelet 零网络命中）。
+# db digest 预拉重试环（坑四连：①模板钉的是多架构 index digest（639ab7ce…），
+# docker save 的 tar 只含 amd64 manifest——airgap 导入挂的是 manifest digest
+# （13e49e17…），kubelet 按 index digest 拉不命中本地；②ctr images pull
+# 客户端解包撞 "no unpack platforms defined"（坑录 #2，--platform 也无用）；
+# ③裸名/tag@digest 的 ref ctr 解析即 "invalid port"——须 FQ digest 形态；
+# ④经代理单次拉取会挂起。正解 = ctr content fetch：纯取内容不解包（解包
+# 留给 kubelet 触发的服务端 CRI 拉，用 server 配置的 snapshotter），content
+# store 断点续传，bounded timeout + 重试环磨完，之后 kubelet 零网络命中）。
 log "pre-pulling postgres digest (retry loop through flaky proxy)"
-docker exec -e PG_REF="postgres:17-bookworm@$PG_DIGEST" -e SNAP="$K3S_SNAPSHOTTER_FLAG" "$DIND_CID" sh -c '
+docker exec -e PG_REF="docker.io/library/postgres@$PG_DIGEST" "$DIND_CID" sh -c '
   i=0; while [ $i -lt 40 ]; do
-    timeout 45 k3s ctr images pull --snapshotter "$SNAP" "$PG_REF" >/dev/null 2>&1 && exit 0
+    timeout 90 k3s ctr content fetch --platform linux/amd64 "$PG_REF" >/dev/null 2>&1 && exit 0
     i=$((i+1)); sleep 5
   done
   echo "postgres pre-pull did not succeed after $i attempts" >&2; exit 1' \

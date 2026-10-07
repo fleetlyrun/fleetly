@@ -309,12 +309,12 @@ docker exec "$DIND_CID" sh -c '
 docker exec "$DIND_CID" sh -c 'k3s kubectl delete pod warm-b --force --grace-period=0 >/dev/null 2>&1 || true'
 
 # db digest 预拉重试环（坑注全文见 dind-k3s.sh：index digest 与 airgap 导入
-# 的 manifest digest 永不互命中，在线段只剩 index/manifest 几 KB 但经代理
-# 单次拉取会挂起——bounded 重试直到放行；restore 新库的拉取零网络命中）。
+# 的 manifest digest 永不互命中 + ctr images pull 解包器坑 + FQ ref 形态 +
+# 代理挂起——ctr content fetch 纯取内容断点续传，磨完即 kubelet 零网络）。
 log "pre-pulling postgres digest (retry loop through flaky proxy)"
-docker exec -e PG_REF="postgres:17-bookworm@$PG_DIGEST" -e SNAP="$K3S_SNAPSHOTTER_FLAG" "$DIND_CID" sh -c '
+docker exec -e PG_REF="docker.io/library/postgres@$PG_DIGEST" "$DIND_CID" sh -c '
   i=0; while [ $i -lt 40 ]; do
-    timeout 45 k3s ctr images pull --snapshotter "$SNAP" "$PG_REF" >/dev/null 2>&1 && exit 0
+    timeout 90 k3s ctr content fetch --platform linux/amd64 "$PG_REF" >/dev/null 2>&1 && exit 0
     i=$((i+1)); sleep 5
   done
   echo "postgres pre-pull did not succeed after $i attempts" >&2; exit 1' \
