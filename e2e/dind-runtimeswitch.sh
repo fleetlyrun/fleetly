@@ -180,7 +180,13 @@ wait_app_state() {
   while [ "$i" -lt 240 ]; do
     state=$(cli --json deployments list --app "$APP_ID" | sed -n 's/.*"state": *"\([^"]*\)".*/\1/p' | head -1)
     [ "$state" = "$want" ] && return 0
-    case "$state" in failed|superseded|cancelled) fail "deployment reached $state";; esac
+    case "$state" in failed|superseded|cancelled)
+      cli --json deployments list --app "$APP_ID" >&2 || true
+      docker exec "$DIND_CID" sh -c \
+        'docker service ls 2>&1; for s in $(docker service ls -q); do docker service ps "$s" --no-trunc 2>&1 | head -5; done; tail -20 /var/log/fleetlyd.log' >&2 || true
+      fail "deployment reached $state"
+      ;;
+    esac
     i=$((i + 1)); sleep 1
   done
   fail "timed out waiting for app $want"
@@ -301,6 +307,18 @@ docker exec "$DIND_CID" sh -c '
   done
 '
 docker exec "$DIND_CID" sh -c 'k3s kubectl delete pod warm-b --force --grace-period=0 >/dev/null 2>&1 || true'
+
+# db digest 预拉重试环（坑注全文见 dind-k3s.sh：index digest 与 airgap 导入
+# 的 manifest digest 永不互命中，在线段只剩 index/manifest 几 KB 但经代理
+# 单次拉取会挂起——bounded 重试直到放行；restore 新库的拉取零网络命中）。
+log "pre-pulling postgres digest (retry loop through flaky proxy)"
+docker exec -e PG_REF="postgres:17-bookworm@$PG_DIGEST" -e SNAP="$K3S_SNAPSHOTTER_FLAG" "$DIND_CID" sh -c '
+  i=0; while [ $i -lt 40 ]; do
+    timeout 45 k3s ctr images pull --snapshotter "$SNAP" "$PG_REF" >/dev/null 2>&1 && exit 0
+    i=$((i+1)); sleep 5
+  done
+  echo "postgres pre-pull did not succeed after $i attempts" >&2; exit 1' \
+  || fail "postgres digest pre-pull failed"
 
 # 9. 段二 k3s：fleetlyd 重启（同数据根）。
 log "phase k3s: restarting fleetlyd on k3s"
