@@ -288,8 +288,11 @@ func (p *Provider) buildUtilityPod(ctx context.Context, req capability.UtilityRe
 				Name: secretsVolumeName,
 				VolumeSource: corev1.VolumeSource{
 					Projected: &corev1.ProjectedVolumeSource{
-						Sources:     sources,
-						DefaultMode: ptr(int32(0o444)),
+						Sources: sources,
+						// 0400：libpq 拒收权限宽于 0600 的 passfile（world-readable
+						// 即忽略——"no password supplied" 的最后一层，e2e 实证）；
+						// 载体材料面的 0444 无碍（postgres _FILE 不查权限）。
+						DefaultMode: ptr(int32(0o400)),
 					},
 				},
 			})
