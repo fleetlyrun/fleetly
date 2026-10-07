@@ -263,6 +263,20 @@ done
 [ "$i" -lt 60 ] || { docker exec "$DIND_CID" tail -30 /var/log/fleetlyd.log >&2; fail "fleetlyd did not become ready"; }
 log "fleetlyd ready"
 
+# 6b. RBAC 最小权限断言（ADR-0053 决策 4，ADR-0052 挂账 6）：fleetlyd 起
+#     动自举专用 SA——工作身份必须非 admin：在册动词 yes、越权动词 no
+#     （断言打 k3s admin 面 impersonate 该 SA；充分性由本腿全链承载——
+#     全部载体操作都在该身份下完成）。
+log "verifying least-privilege service account (fleetly-manager)"
+docker exec "$DIND_CID" sh -c '
+  sa=system:serviceaccount:fleetly-system:fleetly-manager
+  [ "$(k3s kubectl auth can-i create deployments.apps --as=$sa 2>/dev/null)" = "yes" ] || { echo "SA must be allowed to create deployments" >&2; exit 1; }
+  [ "$(k3s kubectl auth can-i create clusterroles.rbac.authorization.k8s.io --as=$sa 2>/dev/null)" = "no" ] || { echo "SA must NOT be allowed to create cluster roles" >&2; exit 1; }
+  [ "$(k3s kubectl auth can-i delete namespaces --as=$sa 2>/dev/null)" = "no" ] || { echo "SA must NOT be allowed to delete namespaces" >&2; exit 1; }
+  k3s kubectl get clusterrole fleetly-manager >/dev/null 2>&1 || { echo "fleetly-manager ClusterRole missing" >&2; exit 1; }
+' || fail "RBAC least-privilege convergence failed"
+log "RBAC green (in-role yes, out-of-role no, cluster role present)"
+
 # 7. 身份链（smoke 同款：bootstrap → init 铸 CLI token）。
 CURRENT_TOKEN=$(docker exec "$DIND_CID" sh -c 'tr -d "\r\n" < /var/lib/fleetly/bootstrap-token')
 [ -n "$CURRENT_TOKEN" ] || fail "bootstrap token missing"

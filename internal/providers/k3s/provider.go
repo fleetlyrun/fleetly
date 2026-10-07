@@ -20,8 +20,10 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"time"
 
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/fleetlyrun/fleetly/internal/capability"
@@ -67,22 +69,53 @@ var (
 )
 
 // New 构造 Provider：kubeconfig 为文件路径（空 = 缺省 /etc/rancher/k3s/k3s.yaml，
-// k3s 发行缺省；e2e 形态 fleetlyd 与 k3s 同容器即达）。
+// k3s 发行缺省；e2e 形态 fleetlyd 与 k3s 同容器即达）。kubeconfig 是自举
+// 身份（ADR-0053 决策 4）：构造期经它收敛专用 SA/ClusterRole/token（带界
+// 重试——apiserver 起动竞态容忍），工作客户端整体换为 SA token，自举
+// 客户端即弃（进程内不再持全权凭证）。
 func New(ctx context.Context, kubeconfig string) (*Provider, error) {
 	if kubeconfig == "" {
 		kubeconfig = defaultKubeconfig
 	}
-	rest, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
+	bootCfg, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
 	if err != nil {
 		return nil, fmt.Errorf("k3s provider: kubeconfig %s: %w", kubeconfig, err)
 	}
-	cli, err := kubernetes.NewForConfig(rest)
+	boot, err := kubernetes.NewForConfig(bootCfg)
+	if err != nil {
+		return nil, fmt.Errorf("k3s provider: bootstrap client: %w", err)
+	}
+	var token string
+	for attempt := 0; ; attempt++ {
+		token, err = ensureRBAC(ctx, boot, rbacTokenWait)
+		if err == nil {
+			break
+		}
+		if attempt >= 14 { // ~30s 带界（apiserver 起动竞态窗；超窗 fail-fast——config 面语义）
+			return nil, fmt.Errorf("k3s provider: rbac bootstrap: %w", err)
+		}
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("k3s provider: rbac bootstrap: %w", ctx.Err())
+		case <-time.After(2 * time.Second):
+		}
+	}
+	work := rest.CopyConfig(bootCfg)
+	work.BearerToken = token
+	work.BearerTokenFile = ""
+	// 自举凭证面（客户端证书/外部凭证）全部让位 SA token。
+	work.TLSClientConfig.CertFile = ""
+	work.TLSClientConfig.KeyFile = ""
+	work.TLSClientConfig.CertData = nil
+	work.TLSClientConfig.KeyData = nil
+	work.ExecProvider = nil
+	cli, err := kubernetes.NewForConfig(work)
 	if err != nil {
 		return nil, fmt.Errorf("k3s provider: client: %w", err)
 	}
 	return &Provider{
 		cli:            cli,
-		apiServer:      rest.Host,
+		apiServer:      bootCfg.Host,
 		kubeconfigPath: kubeconfig,
 	}, nil
 }
@@ -107,6 +140,7 @@ func (p *Provider) Describe() capability.ProviderDescriptor {
 			"full process DNS names ({process}.{app}) fold dots to dashes for service carrier names (k8s services are single DNS labels); bare process names are unchanged",
 			"processes without declared ports resolve via headless services (pod IPs directly, no virtual IP round-robin for multi-replica)",
 			"exec subface is not implemented by this provider yet (E_EXEC_UNSUPPORTED); k8s native exec is planned",
+			"platform identity is the fleetly-manager ServiceAccount bound to a single narrowly-scoped ClusterRole (bootstrap identity is discarded after startup)",
 			"workload identity is carried by fleetly.* labels; platform node IDs never reuse",
 		},
 	}
