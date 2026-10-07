@@ -451,7 +451,11 @@ while [ "$i" -lt 90 ]; do
   [ "$n" -ge 1 ] && break
   i=$((i + 1)); sleep 2
 done
-[ "$i" -lt 90 ] || { docker exec "$DIND_CID" sh -c 'k3s kubectl get all -n fleetly-system' >&2; fail "managed traefik did not come up on k3s"; }
+[ "$i" -lt 90 ] || {
+  docker exec "$DIND_CID" sh -c 'k3s kubectl get all -n fleetly-system 2>&1' >&2
+  docker exec "$DIND_CID" sh -c "grep -iE 'managed|traefik|ensure' /var/log/fleetlyd.log | grep -v gRPC | tail -25" >&2 || true
+  fail "managed traefik did not come up on k3s"
+}
 log "managed traefik running in fleetly-system namespace"
 
 cli routes create --project "$PROJECT_ID" --app "$APP_ID" --process web --port 80 \
