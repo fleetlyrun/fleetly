@@ -295,8 +295,13 @@ func (p *Provider) buildUtilityPod(ctx context.Context, req capability.UtilityRe
 			})
 		}
 	}
+	// 挂载必须经 spec.Containers[0] 写入：container 变量在 spec 装配时已
+	// 值拷贝进切片，对局部变量的后续 append 不会进 pod spec——备份/恢复
+	// 工具 Pod 曾因此零挂载（/run/secrets 不存在 → passfile 不可读 →
+	// "no password supplied"；输入文件同理 No such file——e2e 深挖 12 轮
+	// 的终章根因，YAML 复刻 pod 实证投影机制本身无罪）。
 	if len(req.SecretFiles) > 0 || inputContent != nil {
-		container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{
+		spec.Containers[0].VolumeMounts = append(spec.Containers[0].VolumeMounts, corev1.VolumeMount{
 			Name:      secretsVolumeName,
 			MountPath: "/run/secrets",
 			ReadOnly:  true,
@@ -313,7 +318,7 @@ func (p *Provider) buildUtilityPod(ctx context.Context, req capability.UtilityRe
 				},
 			},
 		})
-		container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{
+		spec.Containers[0].VolumeMounts = append(spec.Containers[0].VolumeMounts, corev1.VolumeMount{
 			Name:      "volume",
 			MountPath: req.Volume.Target,
 			ReadOnly:  req.Volume.ReadOnly,

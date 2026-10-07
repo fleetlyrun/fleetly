@@ -3,6 +3,7 @@ package k3s
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -276,6 +277,53 @@ func TestEnsurePortlessWorkloadHeadlessService(t *testing.T) {
 	assert.Empty(t, svc.Spec.ClusterIP)
 	require.Len(t, svc.Spec.Ports, 1)
 	assert.EqualValues(t, 8080, svc.Spec.Ports[0].Port)
+}
+
+// 工具 Pod 挂载落位（e2e 深挖终章回归：container 局部变量的 append 不进
+// pod spec——零挂载形态下 passfile/输入文件全部不可见，备份恢复全断）。
+func TestBuildUtilityPodMountsLand(t *testing.T) {
+	p, _ := newFakeProvider()
+	ctx := context.Background()
+	// 种一个带锚定 label 的节点（工具 Pod 钉住解析的前提——fake 无节点
+	// 会让 buildUtilityPod 在 utilityNodeSelector 处失败）。
+	seededNode := &corev1.Node{ObjectMeta: metav1.ObjectMeta{
+		Name:   "n1",
+		Labels: map[string]string{labelNodeID: "01N1", "node-role.kubernetes.io/control-plane": ""},
+	}}
+	p, _ = newFakeProvider(seededNode)
+	req := capability.UtilityRequest{
+		ID:        "restore-x",
+		Namespace: capability.NamespaceRef{Project: "shop"},
+		Image:     "postgres:17-bookworm",
+		Argv:      []string{"pg_restore"},
+		Env:       map[string]string{"PGPASSFILE": "/run/secrets/database-backup-pgpass"},
+		SecretFiles: map[string][]byte{
+			"database-backup-pgpass": []byte("db-x:5432:fleetly:fleetly:pw"),
+		},
+		Input: &capability.UtilityInput{
+			Content: strings.NewReader("DUMP-BYTES"),
+			// 与 dbtemplate.BackupInputPath 契约同值（providers 不 import
+			// engine——字面量 + 守卫双向由 engine 侧测试承载）。
+			Target: "/run/secrets/backup-input",
+		},
+	}
+	pod, err := p.buildUtilityPod(ctx, req, "fleetly-shop", "fleetly-util-restore-x", "/var/lib/fleetly/utility/restore-x")
+	require.NoError(t, err)
+	require.Len(t, pod.Spec.Containers, 1)
+	var mounted []string
+	for _, m := range pod.Spec.Containers[0].VolumeMounts {
+		mounted = append(mounted, m.MountPath)
+	}
+	assert.Contains(t, mounted, "/run/secrets", "materials+input projection must land on the container (not the dead local copy)")
+	assert.Equal(t, "PGPASSFILE", pod.Spec.Containers[0].Env[0].Name)
+	// 投影卷在场（材料 + 输入双 source）。
+	found := false
+	for _, v := range pod.Spec.Volumes {
+		if v.Name == secretsVolumeName && v.Projected != nil {
+			found = len(v.Projected.Sources) == 2
+		}
+	}
+	assert.True(t, found, "materials and input project through one /run/secrets volume")
 }
 
 // putDeployment 冲突重试（e2e 实证回归：rollback 重放拍 Get→Update 窗口撞
