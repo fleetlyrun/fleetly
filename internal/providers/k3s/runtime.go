@@ -4,10 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
+	"net"
+	"net/url"
 	"sort"
 	"strconv"
-	"strings"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -631,23 +631,66 @@ func (p *Provider) DescribeCluster(ctx context.Context) (capability.ClusterView,
 }
 
 // Enrollment 生成节点加入材料（k3s agent 命令；节点零平台安装物——k8s
-// 节点 kubelet 由 k3s agent 自带）。rotate 是 k3s 侧未支持面：node token
-// 轮换需 server 重启介入，诚实失败（C3 泄漏处置走 runbook 的 server 面
-// 轮换序）。AgentCommand 空 = 无代理面（exec 子面未实现，EnrollKit 契约
-// 同判）。
+// 节点 kubelet 由 k3s agent 自带，k3s 对 k8s 节点 = docker 对 swarm 节点
+// 的运行时前提）。rotate 是 k3s 侧未支持面：node token 轮换需 server 重启
+// 介入，诚实失败（C3 泄漏处置走 runbook 的 server 面轮换序）。AgentCommand
+// 恒空 = 无节点侧代理面（exec 集中形态经 apiserver，ADR-0053 决策 1——
+// worker 节点零平台代理物，EnrollKit 契约"空 = Provider 无代理面"同判）。
 func (p *Provider) Enrollment(ctx context.Context, rotate bool, o capability.EnrollmentOptions) (capability.EnrollKit, error) {
 	if rotate {
 		return capability.EnrollKit{}, fmt.Errorf("k3s enrollment: token rotation is not supported by this provider yet (rotate via k3s server restart; see runbook)")
 	}
-	tokenBytes, err := os.ReadFile(nodeTokenPath)
+	token, err := p.readNodeToken()
 	if err != nil {
-		return capability.EnrollKit{}, fmt.Errorf("k3s enrollment: read node token: %w", err)
+		return capability.EnrollKit{}, fmt.Errorf("k3s enrollment: %w", err)
 	}
-	token := strings.TrimSpace(string(tokenBytes))
 	return capability.EnrollKit{
-		Command:   fmt.Sprintf("k3s agent --server %s --token %s", p.apiServer, token),
+		Command:   fmt.Sprintf("k3s agent --server %s --token %s", p.advertiseServerURL(ctx), token),
 		ExpiresAt: time.Time{}, // k3s node token 无时效字段（观测面空）
 	}, nil
+}
+
+// advertiseServerURL 解析 worker 可达的控制面地址：kubeconfig 的 server
+// 常是 127.0.0.1 形态（k3s 发行缺省），worker 执行 `--server 127.0.0.1`
+// 必失败——列 Node 取 control-plane 角色节点的 InternalIP（端口沿用
+// kubeconfig server 的端口；k3s server 证书默认含节点 IP SAN）。解析
+// 失败回退 kubeconfig 原文（单节点同机形态语义不变）。
+func (p *Provider) advertiseServerURL(ctx context.Context) string {
+	u, err := url.Parse(p.apiServer)
+	if err != nil {
+		return p.apiServer
+	}
+	port := u.Port()
+	if port == "" {
+		port = "6443"
+	}
+	nodes, err := p.cli.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return p.apiServer
+	}
+	fallback := ""
+	for i := range nodes.Items {
+		node := &nodes.Items[i]
+		addr := ""
+		for _, a := range node.Status.Addresses {
+			if a.Type == corev1.NodeInternalIP && addr == "" {
+				addr = a.Address
+			}
+		}
+		if addr == "" {
+			continue
+		}
+		if _, cp := node.Labels["node-role.kubernetes.io/control-plane"]; cp {
+			return "https://" + net.JoinHostPort(addr, port)
+		}
+		if fallback == "" {
+			fallback = addr
+		}
+	}
+	if fallback != "" {
+		return "https://" + net.JoinHostPort(fallback, port)
+	}
+	return p.apiServer
 }
 
 // canonicalJSON 把对象归一为可比较的 JSON 字节串（map 键排序由

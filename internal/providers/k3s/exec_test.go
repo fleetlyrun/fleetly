@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -238,4 +239,64 @@ func TestResizeQueueNext(t *testing.T) {
 	assert.Equal(t, uint16(10), sz.Width)
 	close(ch)
 	assert.Nil(t, q.Next())
+}
+
+// TestAdvertiseServerURL：控制面节点 InternalIP 解析（端口沿用 kubeconfig
+// server）+ 角色优先 + 无节点回退 kubeconfig 原文（挂账 5 的 worker 可达
+// 地址面，ADR-0053 决策 5）。
+func TestAdvertiseServerURL(t *testing.T) {
+	node := func(name, ip string, cp bool) runtime.Object {
+		labels := map[string]string{}
+		if cp {
+			labels["node-role.kubernetes.io/control-plane"] = ""
+		}
+		return &corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Labels: labels},
+			Status: corev1.NodeStatus{Addresses: []corev1.NodeAddress{
+				{Type: corev1.NodeInternalIP, Address: ip},
+			}},
+		}
+	}
+	p, _ := newFakeProvider(node("k3s-e2e-0", "10.0.0.3", true), node("k3s-e2e-1", "10.0.0.4", false))
+	assert.Equal(t, "https://10.0.0.3:6443", p.advertiseServerURL(context.Background()))
+
+	// 无 control-plane 角色:回退首个有 InternalIP 的节点。
+	p2, _ := newFakeProvider(node("a", "10.0.0.9", false))
+	assert.Equal(t, "https://10.0.0.9:6443", p2.advertiseServerURL(context.Background()))
+
+	// 无节点:回退 kubeconfig 原文(单节点同机形态)。
+	p3, _ := newFakeProvider()
+	assert.Equal(t, "https://k3s-lab:6443", p3.advertiseServerURL(context.Background()))
+}
+
+// TestEnrollmentCommandShape：join 命令形态锚(advertise server + token;
+// AgentCommand 恒空 = 集中形态无节点侧代理面)。
+func TestEnrollmentCommandShape(t *testing.T) {
+	tokFile := t.TempDir() + "/node-token"
+	require.NoError(t, os.WriteFile(tokFile, []byte("K10abc::worker:secret\n"), 0o600))
+	p, _ := newFakeProvider(&corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "cp", Labels: map[string]string{"node-role.kubernetes.io/control-plane": ""}},
+		Status: corev1.NodeStatus{Addresses: []corev1.NodeAddress{
+			{Type: corev1.NodeInternalIP, Address: "10.0.0.3"},
+		}},
+	})
+	p.nodeTokenPath = tokFile
+	kit, err := p.Enrollment(context.Background(), false, capability.EnrollmentOptions{})
+	require.NoError(t, err)
+	assert.Contains(t, kit.Command, "k3s agent --server https://10.0.0.3:6443 --token K10abc::worker:secret")
+	assert.Empty(t, kit.AgentCommand, "central exec form carries no node-side agent face")
+
+	_, err = p.Enrollment(context.Background(), true, capability.EnrollmentOptions{})
+	require.Error(t, err, "rotate must fail honestly (k3s server-side operation)")
+}
+
+// TestExecClusterToken：node token 对照面（同源文件;不匹配即拒）。
+func TestExecClusterToken(t *testing.T) {
+	tokFile := t.TempDir() + "/node-token"
+	require.NoError(t, os.WriteFile(tokFile, []byte("K10abc\n"), 0o600))
+	p, _ := newFakeProvider()
+	p.nodeTokenPath = tokFile
+	require.NoError(t, p.ExecClusterToken(context.Background(), "K10abc"))
+	require.Error(t, p.ExecClusterToken(context.Background(), "K10other"))
+	require.Error(t, p.ExecClusterToken(context.Background(), ""))
 }

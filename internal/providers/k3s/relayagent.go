@@ -141,7 +141,7 @@ func (p *Provider) nodeRelayOnce(ctx context.Context, o capability.RelayAgentOpt
 		}
 		token = t
 	} else {
-		t, err := readNodeToken()
+		t, err := p.readNodeToken()
 		if err != nil {
 			return fmt.Errorf("relay agent: credential: %w", err)
 		}

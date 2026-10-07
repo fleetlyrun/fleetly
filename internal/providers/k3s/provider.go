@@ -64,6 +64,10 @@ type Provider struct {
 	// fake clientset 无 exec 子资源服务——接缝承载 argv/tty/退出码管道
 	// 的确定性测试，真 SPDY 链路在 e2e）。
 	execFn func(ctx context.Context, req capability.ExecWorkloadRequest, ns, name string) (int, error)
+
+	// nodeTokenPath 是 node token 文件位置覆写（空 = k3s 发行缺省
+	// nodeTokenPath 常量；单测注入临时文件）。
+	nodeTokenPath string
 }
 
 // 编译期契约断言：核心面 + 六个子面（Exec/Hygiene 随 ADR-0053 补齐）。

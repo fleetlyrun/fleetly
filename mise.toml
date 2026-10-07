@@ -188,8 +188,12 @@ dir = "console"
 run = "pnpm test"
 
 [tasks."e2e:k3s"]
-description = "e2e dind k3s 第二运行时全链（F4.1，ADR-0052：k3s server in dind + deploy/rollback + egress netpol 活体 + Database PVC + 受管 traefik Route）"
+description = "e2e dind k3s 第二运行时全链（F4.1，ADR-0052：k3s server in dind + deploy/rollback + egress netpol 活体 + Database PVC + 受管 traefik Route + exec 集中形态）"
 run = "sh e2e/dind-k3s.sh"
+
+[tasks."e2e:k3s-tw"]
+description = "e2e dind k3s 两节点（ADR-0053 决策 5：enroll 材料 join + 双节点锚定/relay_online + 卷钉住 worker 落点 + 跨节点 exec 全链）"
+run = "sh e2e/dind-k3s-two-node.sh"
 
 [tasks."e2e:runtimeswitch"]
 description = "e2e dind 场景 3 换 Runtime（F4.1，ADR-0052：swarm→k3s 迁移——ID 全保持/基线重放/Backup/Restore 数据闭环/显式数据处置/节点 ID 不复用）"
