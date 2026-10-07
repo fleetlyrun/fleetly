@@ -421,10 +421,12 @@ docker exec -e P_NS="$P_NS" -e DB_SEL="$NEW_DB_LC" -e SEED="$SEED_COUNT" "$DIND_
     if [ -n "$upod" ] && [ -z "$ulog" ]; then
       sleep 4
       ulog=$(k3s kubectl logs -n "$P_NS" "$upod" 2>&1 || true)
+      uspec=$(k3s kubectl get pod -n "$P_NS" "$upod" -o jsonpath="{.spec.volumes} {.spec.containers[0].volumeMounts}" 2>&1 || true)
     fi
     j=$((j+1)); sleep 2
   done
   echo "--- utility pod logs:"; echo "$ulog" | head -12
+  echo "--- utility pod spec (volumes + mounts):"; echo "$uspec" | head -c 1200; echo
   echo "restored rows: $count (expected $SEED) after $j polls" >&2
   echo "--- psql stderr:"; k3s kubectl exec -n "$P_NS" "$pod" -- psql -U fleetly -d fleetly -tAc "SELECT count(*) FROM migration_probe;" 2>&1 | tail -3
   echo "--- ns pods (utility one-shots incl):"; k3s kubectl get pods -n "$P_NS" --no-headers 2>&1
