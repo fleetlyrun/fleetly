@@ -436,14 +436,18 @@ docker exec -e P_NS="$P_NS" -e DB_SEL="$NEW_DB_LC" -e SEED="$SEED_COUNT" "$DIND_
   nid=$(k3s kubectl get nodes -o jsonpath="{.items[0].metadata.labels.fleetly\\.node\\.id}" 2>/dev/null)
   diagrun() {
     name="$1"; img="$2"; extra="$3"
-    k3s kubectl run "$name" --image="$img" --restart=Never --overrides "{\"spec\":{\"automountServiceAccountToken\":false,\"nodeSelector\":{\"fleetly.node.id\":\"$nid\"},\"containers\":[{\"name\":\"c\",\"image\":\"$img\",\"command\":[\"cat\",\"/backup/input\"],\"imagePullPolicy\":\"IfNotPresent\",\"volumeMounts\":[{\"name\":\"in\",\"mountPath\":\"/backup\",\"readOnly\":true}]$extra}],\"volumes\":[{\"name\":\"in\",\"hostPath\":{\"path\":\"/var/lib/fleetly/utility/diag\"}}]}}" >/dev/null 2>&1 || true
-    k3s kubectl wait --for="condition=Ready" pod/"$name" --timeout=60s >/dev/null 2>&1; sleep 2
+    k3s kubectl run "$name" --image="$img" --restart=Never --overrides "{\"spec\":{\"automountServiceAccountToken\":false,\"nodeSelector\":{\"fleetly.node.id\":\"$nid\"},\"containers\":[{\"name\":\"c\",\"image\":\"$img\",\"command\":[\"cat\",\"/backup/input\"],\"imagePullPolicy\":\"IfNotPresent\",\"volumeMounts\":[{\"name\":\"in\",\"mountPath\":\"/backup\"}]$extra}],\"volumes\":[{\"name\":\"in\",\"hostPath\":{\"path\":\"/var/lib/fleetly/utility/diag\"}}]}}" >/dev/null 2>&1 || true
+    k3s kubectl wait --for="condition=Ready" pod/"$name" --timeout=120s >/dev/null 2>&1; sleep 2
     echo "--- $name:"; k3s kubectl logs "$name" 2>&1 | head -c 100; echo
     k3s kubectl delete pod "$name" --force --grace-period=0 >/dev/null 2>&1 || true
   }
-  diagrun d1 busybox:1.37 ""
-  diagrun d2 "postgres:17-bookworm@$PG_DIGEST" ""
-  diagrun d3 "postgres:17-bookworm@$PG_DIGEST" ",\"env\":[{\"name\":\"X\",\"value\":\"1\"}]"
+  # d3: postgres + hostPath 读写挂载(ro-bind × fuse 根疑点)
+  diagrun d3 "postgres:17-bookworm@$PG_DIGEST" ""
+  # d4: postgres + emptyDir + busybox initContainer 搬运(PVC 同源机制 + busybox 读 hostPath 已证)
+  k3s kubectl run d4 --image="postgres:17-bookworm@$PG_DIGEST" --restart=Never --overrides "{\"spec\":{\"automountServiceAccountToken\":false,\"nodeSelector\":{\"fleetly.node.id\":\"$nid\"},\"initContainers\":[{\"name\":\"stg\",\"image\":\"busybox:1.37\",\"command\":[\"sh\",\"-c\",\"cp /staged/input /backup/input\"],\"imagePullPolicy\":\"IfNotPresent\",\"volumeMounts\":[{\"name\":\"stg\",\"mountPath\":\"/staged\"},{\"name\":\"in\",\"mountPath\":\"/backup\"}]}],\"containers\":[{\"name\":\"c\",\"image\":\"postgres:17-bookworm@$PG_DIGEST\",\"command\":[\"cat\",\"/backup/input\"],\"imagePullPolicy\":\"IfNotPresent\",\"volumeMounts\":[{\"name\":\"in\",\"mountPath\":\"/backup\"}]}],\"volumes\":[{\"name\":\"stg\",\"hostPath\":{\"path\":\"/var/lib/fleetly/utility/diag\"}},{\"name\":\"in\",\"emptyDir\":{}}]}}" >/dev/null 2>&1 || true
+  k3s kubectl wait --for="condition=Ready" pod/d4 --timeout=120s >/dev/null 2>&1; sleep 2
+  echo "--- d4 (emptyDir+init):"; k3s kubectl logs d4 2>&1 | head -c 100; echo
+  k3s kubectl delete pod d4 --force --grace-period=0 >/dev/null 2>&1 || true
   echo "--- exec view of diag dir:"; ls -la /var/lib/fleetly/utility/diag 2>&1 | head -3
   # 对照实验:busybox pod 挂同一 hostDir 读同一文件(独立探针证明 hostPath
   # 通道本身通——分歧面在 utility pod 形态)。
