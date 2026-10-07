@@ -196,6 +196,7 @@ func TestDescribeNotesHonesty(t *testing.T) {
 	assert.Contains(t, notes, "egress:none is strong isolation")
 	assert.Contains(t, notes, "fold dots to dashes")
 	assert.Contains(t, notes, "exec subface is not implemented")
+	assert.Contains(t, notes, "without declared ports resolve via headless services")
 	assert.Equal(t, "k3s", p.Describe().Name)
 	assert.Equal(t, capability.KindRuntime, p.Describe().Capability)
 }

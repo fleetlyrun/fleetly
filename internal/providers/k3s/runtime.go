@@ -16,6 +16,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/watch"
+	"k8s.io/client-go/util/retry"
 
 	"github.com/fleetlyrun/fleetly/internal/capability"
 )
@@ -149,7 +150,9 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 		_ = desiredJSON
 
 		// Addressing → Service（平台 DNS 名 = Service 名；多 Workload 同名
-		// 池级声明幂等——后写覆盖同形）。
+		// 池级声明幂等——后写覆盖同形）。无声明端口的工作负载翻译为 headless
+		// Service（toService 内裁决——k8s 零端口 Service 仅 headless 合法，
+		// 名解析语义保持）。
 		for _, a := range w.Addressing {
 			svc := toService(ns, a.Name, addressingLabelKey(a.Name), w)
 			svcJSON := canonicalJSON(svc)
@@ -207,19 +210,23 @@ func (p *Provider) putObject(ctx context.Context, nsName, kind, name, desiredJSO
 }
 
 // putDeployment 以 create-or-update 落 Deployment（冲突 = spec 不等即
-// 全量替换更新——Generation 语义由平台掌管）。
+// 全量替换更新——Generation 语义由平台掌管）。update 走冲突重试：status
+// 子资源的控制器写者会抬 resourceVersion，Get→Update 窗口内被写即 409
+// （e2e 实证 rollback 重放拍撞 deployment controller 的 status 写）。
 func (p *Provider) putDeployment(ctx context.Context, nsName string, d *appsv1.Deployment) error {
 	_, err := p.cli.AppsV1().Deployments(nsName).Create(ctx, d, metav1.CreateOptions{})
 	if err == nil || !apierrors.IsAlreadyExists(err) {
 		return err
 	}
-	cur, err := p.cli.AppsV1().Deployments(nsName).Get(ctx, d.Name, metav1.GetOptions{})
-	if err != nil {
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		cur, err := p.cli.AppsV1().Deployments(nsName).Get(ctx, d.Name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		d.ResourceVersion = cur.ResourceVersion
+		_, err = p.cli.AppsV1().Deployments(nsName).Update(ctx, d, metav1.UpdateOptions{})
 		return err
-	}
-	d.ResourceVersion = cur.ResourceVersion
-	_, err = p.cli.AppsV1().Deployments(nsName).Update(ctx, d, metav1.UpdateOptions{})
-	return err
+	})
 }
 
 func (p *Provider) putDaemonSet(ctx context.Context, nsName string, ds *appsv1.DaemonSet) error {
@@ -227,13 +234,15 @@ func (p *Provider) putDaemonSet(ctx context.Context, nsName string, ds *appsv1.D
 	if err == nil || !apierrors.IsAlreadyExists(err) {
 		return err
 	}
-	cur, err := p.cli.AppsV1().DaemonSets(nsName).Get(ctx, ds.Name, metav1.GetOptions{})
-	if err != nil {
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		cur, err := p.cli.AppsV1().DaemonSets(nsName).Get(ctx, ds.Name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		ds.ResourceVersion = cur.ResourceVersion
+		_, err = p.cli.AppsV1().DaemonSets(nsName).Update(ctx, ds, metav1.UpdateOptions{})
 		return err
-	}
-	ds.ResourceVersion = cur.ResourceVersion
-	_, err = p.cli.AppsV1().DaemonSets(nsName).Update(ctx, ds, metav1.UpdateOptions{})
-	return err
+	})
 }
 
 func (p *Provider) putPod(ctx context.Context, nsName string, pod *corev1.Pod) error {
@@ -250,14 +259,16 @@ func (p *Provider) putService(ctx context.Context, nsName string, svc *corev1.Se
 	if err == nil || !apierrors.IsAlreadyExists(err) {
 		return err
 	}
-	cur, err := p.cli.CoreV1().Services(nsName).Get(ctx, svc.Name, metav1.GetOptions{})
-	if err != nil {
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		cur, err := p.cli.CoreV1().Services(nsName).Get(ctx, svc.Name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+		svc.ResourceVersion = cur.ResourceVersion
+		svc.Spec.ClusterIP = cur.Spec.ClusterIP // Service immutability：ClusterIP 由服务端持有
+		_, err = p.cli.CoreV1().Services(nsName).Update(ctx, svc, metav1.UpdateOptions{})
 		return err
-	}
-	svc.ResourceVersion = cur.ResourceVersion
-	svc.Spec.ClusterIP = cur.Spec.ClusterIP // Service immutability：ClusterIP 由服务端持有
-	_, err = p.cli.CoreV1().Services(nsName).Update(ctx, svc, metav1.UpdateOptions{})
-	return err
+	})
 }
 
 // domainObject 是域内对象的轻量枚举（收敛对照面）。

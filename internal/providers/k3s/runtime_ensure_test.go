@@ -2,6 +2,7 @@ package k3s
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -10,7 +11,9 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 
 	"github.com/fleetlyrun/fleetly/internal/capability"
 )
@@ -214,6 +217,64 @@ func TestPodWorkloadState(t *testing.T) {
 	pending := &corev1.Pod{Status: corev1.PodStatus{Phase: corev1.PodPending}}
 	st, _, _ = podWorkloadState(pending)
 	assert.Equal(t, capability.WorkloadPending, st)
+}
+
+// 无声明端口的工作负载 → headless Service（e2e 实证回归：portless 普通
+// Service 撞 k8s 硬校验 "spec.ports: Required value" 整拍 Ensure 炸——
+// v1.36 校验源明证零端口仅 headless/ExternalName 合法；headless 保名解析
+// 语义，多副本无 VIP 轮询是 Notes 诚实边界）。
+func TestEnsurePortlessWorkloadHeadlessService(t *testing.T) {
+	p, cli := newFakeProvider()
+	ctx := context.Background()
+	ws := []capability.Workload{
+		{
+			ID: "w1", Process: "worker", Image: "busybox:1.37",
+			Addressing: []capability.Address{{Name: "worker.app"}},
+		},
+		{
+			ID: "w2", Process: "api", Image: "nginx:1.27",
+			Ports:      []capability.WorkloadPort{{Port: 8080}},
+			Addressing: []capability.Address{{Name: "api.app"}},
+		},
+	}
+	require.NoError(t, p.Ensure(ctx, appNS(), ws, 1, capability.Materials{}))
+
+	// portless：headless（ClusterIP None）+ 零端口——合法形态。
+	svc, err := cli.CoreV1().Services("fleetly-shop").Get(ctx, "worker-app", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, corev1.ClusterIPNone, svc.Spec.ClusterIP)
+	assert.Empty(t, svc.Spec.Ports)
+	// 有端口对照：普通 ClusterIP Service 携声明端口。
+	svc, err = cli.CoreV1().Services("fleetly-shop").Get(ctx, "api-app", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Empty(t, svc.Spec.ClusterIP)
+	require.Len(t, svc.Spec.Ports, 1)
+	assert.EqualValues(t, 8080, svc.Spec.Ports[0].Port)
+}
+
+// putDeployment 冲突重试（e2e 实证回归：rollback 重放拍 Get→Update 窗口撞
+// deployment controller 的 status 写（resourceVersion 抬升）即 409——
+// retry.OnConflict 重读重试收敛）。
+func TestPutDeploymentRetriesOnConflict(t *testing.T) {
+	p, cli := newFakeProvider()
+	ctx := context.Background()
+	seed := toDeployment(appNS(), capability.Workload{ID: "w1", Process: "api", Image: "nginx:1.27"}, 1, nil, nil)
+	seed.ResourceVersion = "10"
+	_, err := cli.AppsV1().Deployments("fleetly-shop").Create(ctx, seed, metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	conflicts := 0
+	cli.Fake.PrependReactor("update", "deployments", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		conflicts++
+		if conflicts == 1 {
+			return true, nil, apierrors.NewConflict(schema.GroupResource{Group: "apps", Resource: "deployments"},
+				seed.Name, errors.New("the object has been modified"))
+		}
+		return false, nil, nil
+	})
+
+	require.NoError(t, p.putDeployment(ctx, "fleetly-shop", seed))
+	assert.GreaterOrEqual(t, conflicts, 2, "first 409 must be retried, not surfaced")
 }
 
 func errNotFound(err error) bool { return apierrors.IsNotFound(err) }

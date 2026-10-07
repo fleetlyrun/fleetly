@@ -545,7 +545,12 @@ func serviceCarrierName(addressing string) string {
 // k8s endpoint 天然 RR = swarm alias RR 的原生等价）。ports 取该 Workload
 // 的声明端口（Addresses 期望集端口注入语义同源）。labels 携域锚
 // （serviceLabels：域收敛与 Remove 的对照面——Service 名是平台 Addressing
-// 名的载体形态，不带 workload 轴）。
+// 名的载体形态，不带 workload 轴）。无声明端口的工作负载 → headless
+// （clusterIP None）：k8s 硬校验下零端口 Service 仅此形态合法（v1.36
+// validation.go：ports required unless headless/ExternalName——e2e 实证
+// portless worker 普通 Service 即 "spec.ports: Required value" 整拍 Ensure
+// 炸）；名解析语义保持（headless = 直返 pod IP，单副本与 swarm 无差；
+// 多副本无 VIP 轮询——Notes 诚实边界）。
 func toService(ns capability.NamespaceRef, addressing string, selectorKey string, w capability.Workload) *corev1.Service {
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -555,6 +560,10 @@ func toService(ns capability.NamespaceRef, addressing string, selectorKey string
 		Spec: corev1.ServiceSpec{
 			Selector: map[string]string{selectorKey: "true"},
 		},
+	}
+	if len(w.Ports) == 0 {
+		svc.Spec.ClusterIP = corev1.ClusterIPNone
+		return svc
 	}
 	for _, p := range w.Ports {
 		svc.Spec.Ports = append(svc.Spec.Ports, corev1.ServicePort{
