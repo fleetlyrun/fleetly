@@ -88,10 +88,11 @@ func NewStateDB(app lynx.App, cfg *config.AppConfig) (*state.DB, func(), error) 
 }
 
 // NewRuntimeProvider 经工厂注册表构造 Runtime Provider（cmd/fleetlyd 的
-// blank import 触发 swarm 自注册；配置层选择 Provider 名的能力随配置面
-// 扩展接入，当前缺省在册者）。
-func NewRuntimeProvider(app lynx.App) (capability.Runtime, func(), error) {
-	p, err := capability.Build(context.Background(), capability.KindRuntime, "")
+// blank import 触发在册 Provider 自注册；选择 = config runtime.provider，
+// 缺省 swarm——ADR-0052 决策 1：整集群声明迁移，未注册名 Build 报错
+// fail-fast 并列在册候选）。
+func NewRuntimeProvider(app lynx.App, cfg *config.AppConfig) (capability.Runtime, func(), error) {
+	p, err := capability.Build(context.Background(), capability.KindRuntime, cfg.RuntimeProvider())
 	if err != nil {
 		return nil, nil, err
 	}

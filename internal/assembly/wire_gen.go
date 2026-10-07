@@ -28,7 +28,7 @@ func wireBootstrap(app lynx.App, info buildinfo.BuildInfo) (*boot.Bootstrap, fun
 	drainHooks := NewDrainHooks()
 	preStopHooks := NewPreStopHooks()
 	postStopHooks := NewPostStopHooks()
-	runtime, cleanup2, err := NewRuntimeProvider(app)
+	runtime, cleanup2, err := NewRuntimeProvider(app, appConfig)
 	if err != nil {
 		cleanup()
 		return nil, nil, err

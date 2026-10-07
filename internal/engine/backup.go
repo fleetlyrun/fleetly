@@ -235,7 +235,7 @@ func (e *Engine) executeOneBackup(ctx context.Context) {
 			Image:       tpl.Image(),
 			Argv:        spec.Argv,
 			Env:         spec.Env,
-			Networks:    e.projectNetworkNames(execCtx, db.ProjectID),
+			Networks:    e.projectNetworkFactsNamesOnly(execCtx, db.ProjectID),
 			SecretFiles: spec.SecretFiles,
 		}, pw, stderr)
 		// 收尾必关：成功 = 干净 EOF（Put 读尽完整产物）；失败 = 错误传导
@@ -398,7 +398,7 @@ func (e *Engine) restoreDatabase(ctx context.Context, db *dbrepo.Database) {
 		Image:       tpl.Image(),
 		Argv:        spec.Argv,
 		Env:         spec.Env,
-		Networks:    e.projectNetworkNames(execCtx, db.ProjectID),
+		Networks:    e.projectNetworkFactsNamesOnly(execCtx, db.ProjectID),
 		SecretFiles: spec.SecretFiles,
 		// 恢复流经文件挂载（BackupInputPath 单源——hijack stdin EOF 不可
 		// 达的 dind 实证，ADR-0039 落地实录）。

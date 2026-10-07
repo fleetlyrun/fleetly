@@ -138,7 +138,7 @@ func (e *Engine) prepare(ctx context.Context, d *deployment.Deployment) (*deploy
 	if derr == nil && (digests != nil || spec.GetBuild() == nil) {
 		peers, perr := e.resolvePeerRefs(ctx, e.db.Runner(), spec.GetApp().GetProject(), spec, false)
 		if perr == nil {
-			_, _, perr = Project(spec, team, appRow.Name, digests, peers)
+			_, _, perr = Project(spec, team, appRow.Name, digests, peers, nil)
 		}
 		derr = perr
 	}

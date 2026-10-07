@@ -32,6 +32,13 @@ const (
 	// DefaultMetricsRetentionDays 是受管指标保留窗缺省（30d，VM
 	// -retentionPeriod 同口径；ADR-0041）。
 	DefaultMetricsRetentionDays = int64(30)
+	// DefaultRuntimeProvider 是 Runtime Provider 名缺省（ADR-0052 决策 1：
+	// 整集群声明迁移，缺省现役 swarm——升级零扰动）。未注册名的值域执法
+	// 在装配 capability.Build（fail-fast，报错列在册候选）。
+	DefaultRuntimeProvider = "swarm"
+	// DefaultK3sKubeconfig 是 k3s Provider kubeconfig 缺省路径（k3s 发行
+	// 缺省；e2e 形态 fleetlyd 与 k3s 同容器即达）。
+	DefaultK3sKubeconfig = "/etc/rancher/k3s/k3s.yaml"
 )
 
 // WithDefaults 就地填充空缺省字段，返回同一实例（链式）。
@@ -92,6 +99,9 @@ func WithDefaults(c *AppConfig) *AppConfig {
 	}
 	if c.GetMetrics().GetRetentionDays() <= 0 {
 		c.Metrics.RetentionDays = DefaultMetricsRetentionDays
+	}
+	if c.GetRuntime() == nil {
+		c.Runtime = &Runtime{}
 	}
 	return c
 }
@@ -199,4 +209,22 @@ func (c *AppConfig) MetricsRetentionDays() int64 {
 		return v
 	}
 	return DefaultMetricsRetentionDays
+}
+
+// RuntimeProvider 是带缺省的 Runtime Provider 名访问器（容忍 nil 链；
+// ADR-0052：装配经 capability.Build 按名构造，未注册名启动 fail-fast）。
+func (c *AppConfig) RuntimeProvider() string {
+	if p := c.GetRuntime().GetProvider(); p != "" {
+		return p
+	}
+	return DefaultRuntimeProvider
+}
+
+// K3sKubeconfig 是 k3s Provider kubeconfig 路径访问器（容忍 nil 链；
+// ADR-0052 决策 2）。
+func (c *AppConfig) K3sKubeconfig() string {
+	if p := c.GetRuntime().GetK3S().GetKubeconfig(); p != "" {
+		return p
+	}
+	return DefaultK3sKubeconfig
 }

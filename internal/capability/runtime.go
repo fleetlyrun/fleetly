@@ -309,6 +309,12 @@ type Workload struct {
 	Volumes []VolumeMount
 	// Networks 是网络附件（Project 网络名或 taskGroup:<name> 跨挂）。
 	Networks []string
+	// EgressNetworks 是 Networks 中声明 egress:none 的子集（ADR-0052 决策 6：
+	// egress 属性真源在 networks 表，投影期解析填入——载体挂任一 egress:none
+	// 网络即整体限制出站，防经其他附件绕行）。空 = 无出站限制。受管域载体
+	// 不填（平台载体非隔离对象；受管 Proxy 出站转发不得被 deny）。swarm 侧
+	// 忽略（弱隔离 Notes 声明）。
+	EgressNetworks []string
 	// NetworkRefs 是跨隔离域网络挂靠（受管面专用形态）：引用另一 Project
 	// 的平台网络——载体名解析是 Provider 私有公式，engine 不拼载体名
 	//（N0 修复批 B1：受管 Proxy 挂全部活跃 Project 网络以达后端）。同域

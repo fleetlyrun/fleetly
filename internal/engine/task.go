@@ -384,7 +384,7 @@ func (e *Engine) driveEnsure(ctx context.Context, t *task.Task, spec *specv1.Tas
 	}
 	ws := make([]capability.Workload, 0, len(runs))
 	for i := range runs {
-		w, _, err := ProjectTask(spec, team, runs[i].ID, runs[i].State != run.StateStopping)
+		w, _, err := ProjectTask(spec, team, runs[i].ID, runs[i].State != run.StateStopping, e.egressNetworkMap(ctx, t.ProjectID))
 		if err != nil {
 			e.log.Error("task drive: project run", "run", runs[i].ID, "err", err)
 			continue

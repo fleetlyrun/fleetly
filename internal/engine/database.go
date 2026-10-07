@@ -125,8 +125,8 @@ func (e *Engine) reconcileDatabase(ctx context.Context, row *dbrepo.Database) {
 		e.log.Error("database reconcile: invalid spec", "database", row.ID, "err", err)
 		return
 	}
-	networks := e.projectNetworkNames(stepCtx, row.ProjectID)
-	w, ns, err := ProjectDatabase(spec, team, row.Name, networks, tpl)
+	networks, egress := e.projectNetworkFacts(stepCtx, row.ProjectID)
+	w, ns, err := ProjectDatabase(spec, team, row.Name, networks, egress, tpl)
 	if err != nil {
 		e.log.Error("database reconcile: project spec", "database", row.ID, "err", err)
 		return
@@ -277,19 +277,32 @@ func (e *Engine) ensureDatabaseVolume(ctx context.Context, row *dbrepo.Database)
 	})
 }
 
-// projectNetworkNames 返回 Project 的活跃网络名列表（数据库挂全部活跃
-// 项目网——受管 Proxy 同款语义、限本项目，ADR-0029 决策 5）。
-func (e *Engine) projectNetworkNames(ctx context.Context, projectID string) []string {
+// projectNetworkFacts 返回 Project 的活跃网络名列表与 egress:none 名集
+//（数据库挂全部活跃项目网——受管 Proxy 同款语义、限本项目，ADR-0029
+// 决策 5；egress 事实供投影填 Workload.EgressNetworks，ADR-0052 决策 6）。
+func (e *Engine) projectNetworkFacts(ctx context.Context, projectID string) ([]string, map[string]bool) {
 	rows, err := e.networks.ListByProject(ctx, e.db.Runner(), projectID)
 	if err != nil {
 		e.log.Error("database reconcile: list project networks", "project", projectID, "err", err)
-		return nil
+		return nil, nil
 	}
 	names := make([]string, 0, len(rows))
+	egress := make(map[string]bool, len(rows))
 	for _, n := range rows {
 		names = append(names, n.Name)
+		if n.EgressNone {
+			egress[n.Name] = true
+		}
 	}
-	return names
+	return names, egress
+}
+
+// egressNetworkMap 返回 Project 活跃网络的 egress:none 名集（投影期的
+// 网络事实面——k3s Provider 铸载体级 deny 的数据源，ADR-0052 决策 6；
+// 查询失败如实记日志返回空集：隔离是收敛不变式，下一拍重放自愈）。
+func (e *Engine) egressNetworkMap(ctx context.Context, projectID string) map[string]bool {
+	_, egress := e.projectNetworkFacts(ctx, projectID)
+	return egress
 }
 
 // databaseSpecFromRow 由行 + 模板组装 DatabaseSpec（IR 单真源：投影输入
@@ -340,4 +353,12 @@ func (e *Engine) TeardownDatabase(ctx context.Context, id string) error {
 	e.expect.mu.Unlock()
 	e.ensureForget(e.database.ensure, row.ID) // 签名随域收口作废（同 ID 永不复用，防御性清理）
 	return nil
+}
+
+// projectNetworkFactsNamesOnly 是 projectNetworkFacts 的名列表形态（备份
+// 工具容器挂网/browse 会话挂网/firstBoot job 挂网消费面——egress 事实
+// 语义上不适用于工具容器：平台工具载体非隔离对象，ADR-0052 决策 6）。
+func (e *Engine) projectNetworkFactsNamesOnly(ctx context.Context, projectID string) []string {
+	names, _ := e.projectNetworkFacts(ctx, projectID)
+	return names
 }

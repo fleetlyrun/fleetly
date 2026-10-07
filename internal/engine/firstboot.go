@@ -246,7 +246,7 @@ func (e *Engine) firstBootJobImage(ctx context.Context, d *deployment.Deployment
 func (e *Engine) firstBootJobNetworks(ctx context.Context, d *deployment.Deployment, spec *specv1.AppSpec, job *specv1.JobSpec) ([]string, error) {
 	declared := job.GetProcess().GetNetworks()
 	if len(declared) == 0 {
-		return e.projectNetworkNames(ctx, spec.GetApp().GetProject()), nil
+		return e.projectNetworkFactsNamesOnly(ctx, spec.GetApp().GetProject()), nil
 	}
 	peers, err := e.resolvePeerRefs(ctx, e.db.Runner(), spec.GetApp().GetProject(), spec, false)
 	if err != nil {

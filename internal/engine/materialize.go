@@ -57,7 +57,8 @@ func (e *Engine) materialize(ctx context.Context, d *deployment.Deployment, revi
 	if err != nil {
 		return fmt.Errorf("resolve build digests: %w", err)
 	}
-	ws, ns, err := Project(spec, team, appRow.Name, digests, peers)
+	egress := e.egressNetworkMap(ctx, spec.GetApp().GetProject())
+	ws, ns, err := Project(spec, team, appRow.Name, digests, peers, egress)
 	if err != nil {
 		return fmt.Errorf("project spec: %w", err)
 	}

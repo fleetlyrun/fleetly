@@ -40,7 +40,10 @@ type AppConfig struct {
 	Metrics *Metrics `protobuf:"bytes,7,opt,name=metrics,proto3" json:"metrics,omitempty"`
 	// 数据浏览器面（F3.6，ADR-0051）：host_suffix 空 = 面停用（BrowseDatabase
 	// 精确拒绝，升级零扰动）。
-	Browse        *Browse `protobuf:"bytes,8,opt,name=browse,proto3" json:"browse,omitempty"`
+	Browse *Browse `protobuf:"bytes,8,opt,name=browse,proto3" json:"browse,omitempty"`
+	// Runtime 面（F4.1，ADR-0052）：Runtime Provider 选择——整集群声明迁移
+	// （per-部署双 Runtime 否决）；缺省 "swarm"（升级零扰动）。
+	Runtime       *Runtime `protobuf:"bytes,9,opt,name=runtime,proto3" json:"runtime,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -127,6 +130,13 @@ func (x *AppConfig) GetMetrics() *Metrics {
 func (x *AppConfig) GetBrowse() *Browse {
 	if x != nil {
 		return x.Browse
+	}
+	return nil
+}
+
+func (x *AppConfig) GetRuntime() *Runtime {
+	if x != nil {
+		return x.Runtime
 	}
 	return nil
 }
@@ -731,6 +741,112 @@ func (x *Browse) GetTls() string {
 	return ""
 }
 
+// Runtime 是 Runtime Capability 配置面（ADR-0052 决策 1）：Provider 名
+// 装配期经注册表 Build 选定；未注册名启动 fail-fast（Build 报错并列出
+// 在册候选）。
+type Runtime struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// provider 是 Runtime Provider 名（在册：swarm、k3s）；空值回退 "swarm"。
+	// env 形态 FLEETLY_RUNTIME_PROVIDER。
+	Provider string `protobuf:"bytes,1,opt,name=provider,proto3" json:"provider,omitempty"`
+	// k3s 是 k3s Provider 专属连接面。
+	K3S           *RuntimeK3S `protobuf:"bytes,2,opt,name=k3s,proto3" json:"k3s,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Runtime) Reset() {
+	*x = Runtime{}
+	mi := &file_config_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Runtime) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Runtime) ProtoMessage() {}
+
+func (x *Runtime) ProtoReflect() protoreflect.Message {
+	mi := &file_config_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Runtime.ProtoReflect.Descriptor instead.
+func (*Runtime) Descriptor() ([]byte, []int) {
+	return file_config_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *Runtime) GetProvider() string {
+	if x != nil {
+		return x.Provider
+	}
+	return ""
+}
+
+func (x *Runtime) GetK3S() *RuntimeK3S {
+	if x != nil {
+		return x.K3S
+	}
+	return nil
+}
+
+// RuntimeK3s 是 k3s Provider 连接面（kubeconfig 即全部——apiserver 地址
+// 与凭证都在文件内；e2e 形态 fleetlyd 与 k3s 同容器即达）。
+type RuntimeK3S struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// kubeconfig 是 kubeconfig 文件路径；空值回退 "/etc/rancher/k3s/k3s.yaml"
+	// （k3s 缺省路径）。env 形态 FLEETLY_RUNTIME_K3S_KUBECONFIG。
+	Kubeconfig    string `protobuf:"bytes,1,opt,name=kubeconfig,proto3" json:"kubeconfig,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RuntimeK3S) Reset() {
+	*x = RuntimeK3S{}
+	mi := &file_config_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RuntimeK3S) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RuntimeK3S) ProtoMessage() {}
+
+func (x *RuntimeK3S) ProtoReflect() protoreflect.Message {
+	mi := &file_config_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RuntimeK3S.ProtoReflect.Descriptor instead.
+func (*RuntimeK3S) Descriptor() ([]byte, []int) {
+	return file_config_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *RuntimeK3S) GetKubeconfig() string {
+	if x != nil {
+		return x.Kubeconfig
+	}
+	return ""
+}
+
 type Data struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// 数据根：SQLite、密封密钥等平台私有状态的落盘目录；
@@ -742,7 +858,7 @@ type Data struct {
 
 func (x *Data) Reset() {
 	*x = Data{}
-	mi := &file_config_proto_msgTypes[11]
+	mi := &file_config_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -754,7 +870,7 @@ func (x *Data) String() string {
 func (*Data) ProtoMessage() {}
 
 func (x *Data) ProtoReflect() protoreflect.Message {
-	mi := &file_config_proto_msgTypes[11]
+	mi := &file_config_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -767,7 +883,7 @@ func (x *Data) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Data.ProtoReflect.Descriptor instead.
 func (*Data) Descriptor() ([]byte, []int) {
-	return file_config_proto_rawDescGZIP(), []int{11}
+	return file_config_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *Data) GetRoot() string {
@@ -790,7 +906,7 @@ type Engine struct {
 
 func (x *Engine) Reset() {
 	*x = Engine{}
-	mi := &file_config_proto_msgTypes[12]
+	mi := &file_config_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -802,7 +918,7 @@ func (x *Engine) String() string {
 func (*Engine) ProtoMessage() {}
 
 func (x *Engine) ProtoReflect() protoreflect.Message {
-	mi := &file_config_proto_msgTypes[12]
+	mi := &file_config_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -815,7 +931,7 @@ func (x *Engine) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Engine.ProtoReflect.Descriptor instead.
 func (*Engine) Descriptor() ([]byte, []int) {
-	return file_config_proto_rawDescGZIP(), []int{12}
+	return file_config_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *Engine) GetScheduleOverlapPolicy() string {
@@ -829,7 +945,7 @@ var File_config_proto protoreflect.FileDescriptor
 
 const file_config_proto_rawDesc = "" +
 	"\n" +
-	"\fconfig.proto\x12\x11fleetly.config.v1\"\xc2\x03\n" +
+	"\fconfig.proto\x12\x11fleetly.config.v1\"\xf8\x03\n" +
 	"\tAppConfig\x121\n" +
 	"\x06server\x18\x01 \x01(\v2\x19.fleetly.config.v1.ServerR\x06server\x12+\n" +
 	"\x04data\x18\x02 \x01(\v2\x17.fleetly.config.v1.DataR\x04data\x121\n" +
@@ -838,7 +954,8 @@ const file_config_proto_rawDesc = "" +
 	"\x0fplatform_backup\x18\x05 \x01(\v2!.fleetly.config.v1.PlatformBackupR\x0eplatformBackup\x124\n" +
 	"\alogging\x18\x06 \x01(\v2\x1a.fleetly.config.v1.LoggingR\alogging\x124\n" +
 	"\ametrics\x18\a \x01(\v2\x1a.fleetly.config.v1.MetricsR\ametrics\x121\n" +
-	"\x06browse\x18\b \x01(\v2\x19.fleetly.config.v1.BrowseR\x06browse\"\x91\x01\n" +
+	"\x06browse\x18\b \x01(\v2\x19.fleetly.config.v1.BrowseR\x06browse\x124\n" +
+	"\aruntime\x18\t \x01(\v2\x1a.fleetly.config.v1.RuntimeR\aruntime\"\x91\x01\n" +
 	"\x0ePlatformBackup\x12#\n" +
 	"\rinterval_secs\x18\x01 \x01(\x03R\fintervalSecs\x12%\n" +
 	"\x0eretention_secs\x18\x02 \x01(\x03R\rretentionSecs\x123\n" +
@@ -875,7 +992,15 @@ const file_config_proto_rawDesc = "" +
 	"hostSuffix\x12\x1f\n" +
 	"\vgateway_url\x18\x02 \x01(\tR\n" +
 	"gatewayUrl\x12\x10\n" +
-	"\x03tls\x18\x03 \x01(\tR\x03tls\"\x1a\n" +
+	"\x03tls\x18\x03 \x01(\tR\x03tls\"V\n" +
+	"\aRuntime\x12\x1a\n" +
+	"\bprovider\x18\x01 \x01(\tR\bprovider\x12/\n" +
+	"\x03k3s\x18\x02 \x01(\v2\x1d.fleetly.config.v1.RuntimeK3sR\x03k3s\",\n" +
+	"\n" +
+	"RuntimeK3s\x12\x1e\n" +
+	"\n" +
+	"kubeconfig\x18\x01 \x01(\tR\n" +
+	"kubeconfig\"\x1a\n" +
 	"\x04Data\x12\x12\n" +
 	"\x04root\x18\x01 \x01(\tR\x04root\"@\n" +
 	"\x06Engine\x126\n" +
@@ -893,7 +1018,7 @@ func file_config_proto_rawDescGZIP() []byte {
 	return file_config_proto_rawDescData
 }
 
-var file_config_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_config_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_config_proto_goTypes = []any{
 	(*AppConfig)(nil),        // 0: fleetly.config.v1.AppConfig
 	(*PlatformBackup)(nil),   // 1: fleetly.config.v1.PlatformBackup
@@ -906,27 +1031,31 @@ var file_config_proto_goTypes = []any{
 	(*Logging)(nil),          // 8: fleetly.config.v1.Logging
 	(*Metrics)(nil),          // 9: fleetly.config.v1.Metrics
 	(*Browse)(nil),           // 10: fleetly.config.v1.Browse
-	(*Data)(nil),             // 11: fleetly.config.v1.Data
-	(*Engine)(nil),           // 12: fleetly.config.v1.Engine
+	(*Runtime)(nil),          // 11: fleetly.config.v1.Runtime
+	(*RuntimeK3S)(nil),       // 12: fleetly.config.v1.RuntimeK3s
+	(*Data)(nil),             // 13: fleetly.config.v1.Data
+	(*Engine)(nil),           // 14: fleetly.config.v1.Engine
 }
 var file_config_proto_depIdxs = []int32{
 	3,  // 0: fleetly.config.v1.AppConfig.server:type_name -> fleetly.config.v1.Server
-	11, // 1: fleetly.config.v1.AppConfig.data:type_name -> fleetly.config.v1.Data
-	12, // 2: fleetly.config.v1.AppConfig.engine:type_name -> fleetly.config.v1.Engine
+	13, // 1: fleetly.config.v1.AppConfig.data:type_name -> fleetly.config.v1.Data
+	14, // 2: fleetly.config.v1.AppConfig.engine:type_name -> fleetly.config.v1.Engine
 	7,  // 3: fleetly.config.v1.AppConfig.registry:type_name -> fleetly.config.v1.Registry
 	1,  // 4: fleetly.config.v1.AppConfig.platform_backup:type_name -> fleetly.config.v1.PlatformBackup
 	8,  // 5: fleetly.config.v1.AppConfig.logging:type_name -> fleetly.config.v1.Logging
 	9,  // 6: fleetly.config.v1.AppConfig.metrics:type_name -> fleetly.config.v1.Metrics
 	10, // 7: fleetly.config.v1.AppConfig.browse:type_name -> fleetly.config.v1.Browse
-	2,  // 8: fleetly.config.v1.PlatformBackup.s3:type_name -> fleetly.config.v1.PlatformBackupS3
-	4,  // 9: fleetly.config.v1.Server.grpc:type_name -> fleetly.config.v1.GRPC
-	5,  // 10: fleetly.config.v1.Server.http:type_name -> fleetly.config.v1.HTTP
-	6,  // 11: fleetly.config.v1.Server.proxy_config:type_name -> fleetly.config.v1.ProxyConfig
-	12, // [12:12] is the sub-list for method output_type
-	12, // [12:12] is the sub-list for method input_type
-	12, // [12:12] is the sub-list for extension type_name
-	12, // [12:12] is the sub-list for extension extendee
-	0,  // [0:12] is the sub-list for field type_name
+	11, // 8: fleetly.config.v1.AppConfig.runtime:type_name -> fleetly.config.v1.Runtime
+	2,  // 9: fleetly.config.v1.PlatformBackup.s3:type_name -> fleetly.config.v1.PlatformBackupS3
+	4,  // 10: fleetly.config.v1.Server.grpc:type_name -> fleetly.config.v1.GRPC
+	5,  // 11: fleetly.config.v1.Server.http:type_name -> fleetly.config.v1.HTTP
+	6,  // 12: fleetly.config.v1.Server.proxy_config:type_name -> fleetly.config.v1.ProxyConfig
+	12, // 13: fleetly.config.v1.Runtime.k3s:type_name -> fleetly.config.v1.RuntimeK3s
+	14, // [14:14] is the sub-list for method output_type
+	14, // [14:14] is the sub-list for method input_type
+	14, // [14:14] is the sub-list for extension type_name
+	14, // [14:14] is the sub-list for extension extendee
+	0,  // [0:14] is the sub-list for field type_name
 }
 
 func init() { file_config_proto_init() }
@@ -940,7 +1069,7 @@ func file_config_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_config_proto_rawDesc), len(file_config_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   13,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

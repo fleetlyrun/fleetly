@@ -893,7 +893,7 @@ func TestProjectTaskSpecFields(t *testing.T) {
 		Task:          &specv1.TaskRef{Id: "01JTASK", Project: tTaskProject},
 		Process:       &specv1.ProcessSpec{Name: "run", ImageOrigin: &specv1.ProcessSpec_Image{Image: "busybox:1.37"}},
 	}
-	w, _, err := ProjectTask(spec, "default", "01JRUN", true)
+	w, _, err := ProjectTask(spec, "default", "01JRUN", true, nil)
 	require.NoError(t, err)
 	assert.Equal(t, "01JRUN", w.ID)
 	assert.Equal(t, capability.RestartNever, w.Restart)

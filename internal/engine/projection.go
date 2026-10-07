@@ -82,7 +82,11 @@ type PeerRefs struct {
 // from_build 解析：buildDigests 提供同名构建产物 digest（Ensure 前由平台
 // 解析——Revision 只冻结引用，产物随 Build 行走）；缺失即校验错误。
 // 跨 Project 引用经 peers 翻译为 NetworkRefs（ADR-0013 附录 A.3）。
-func Project(spec *specv1.AppSpec, team, appName string, buildDigests map[string]string, peers PeerRefs) ([]capability.Workload, capability.NamespaceRef, error) {
+// Project 把 AppSpec 投影为 Runtime 无关 Workload 集。egress 是 Project
+// 活跃网络的 egress:none 名集（ADR-0052 决策 6：投影期解析网络事实填
+// EgressNetworks——真源在 networks 表，k3s Provider 据此铸载体级 deny；
+// swarm 侧忽略）。
+func Project(spec *specv1.AppSpec, team, appName string, buildDigests map[string]string, peers PeerRefs, egress map[string]bool) ([]capability.Workload, capability.NamespaceRef, error) {
 	ns := capability.NamespaceRef{Team: team, Project: spec.GetApp().GetProject(), App: spec.GetApp().GetId()}
 	workloads := make([]capability.Workload, 0, len(spec.GetProcesses()))
 	for _, p := range spec.GetProcesses() {
@@ -104,7 +108,8 @@ func Project(spec *specv1.AppSpec, team, appName string, buildDigests map[string
 				}
 				return 1 // 缺省单副本
 			}(),
-			Networks: p.GetNetworks(),
+			Networks:       p.GetNetworks(),
+			EgressNetworks: egressSubset(p.GetNetworks(), egress),
 		}
 		// 网络别名双值（ADR-0034 裸名 + ADR-0048 决策 3 全名）：裸名保
 		// compose 单栈兼容（单 App 内进程名唯一，归一化路径永不撞名）；
@@ -180,7 +185,7 @@ func Project(spec *specv1.AppSpec, team, appName string, buildDigests map[string
 // API 受理面禁用该字段（validateTaskCommon），engine 铸造的部署期 job 例外
 // ——铸造时已解析为平台网络名（taskGroup:/project: 引用不复存在），此处
 // 原样透传。
-func ProjectTask(t *specv1.TaskSpec, team string, runID string, running bool) (capability.Workload, capability.NamespaceRef, error) {
+func ProjectTask(t *specv1.TaskSpec, team string, runID string, running bool, egress map[string]bool) (capability.Workload, capability.NamespaceRef, error) {
 	if t.GetProcess().GetImage() == "" {
 		return capability.Workload{}, capability.NamespaceRef{}, fmt.Errorf("task %s process has no image origin (build source is an app-only surface)", t.GetTask().GetId())
 	}
@@ -219,7 +224,25 @@ func ProjectTask(t *specv1.TaskSpec, team string, runID string, running bool) (c
 		{Name: TaskDNSName(t.GetTask().GetId())},
 		{Name: RunDNSName(runID)},
 	}
+	// egress 事实（job 挂靠的项目网络可能是 egress:none；taskGroup 网络
+	// 是独立组、无 egress 属性面——ADR-0052 决策 6）。
+	w.EgressNetworks = egressSubset(w.Networks, egress)
 	return w, ns, nil
+}
+
+// egressSubset 返回 names 中声明 egress:none 的子集（投影期网络事实过滤
+// ——egress 集来自 networks 表 ListByProject）。
+func egressSubset(names []string, egress map[string]bool) []string {
+	if len(egress) == 0 || len(names) == 0 {
+		return nil
+	}
+	var out []string
+	for _, n := range names {
+		if egress[n] {
+			out = append(out, n)
+		}
+	}
+	return out
 }
 
 func containsString(ss []string, s string) bool {
@@ -240,7 +263,7 @@ const dbProbeConnectTimeout = 10 * time.Second
 // 注册表（模板参数不可变，无 Revision 冻结面——IR 仍是投影单真源）。
 // volumeName 是挂靠卷的 Project 内卷名（= 数据库名的确定性公式）；挂网
 // networks 是 Project 活跃网络全集（受理位已保证非空）。
-func ProjectDatabase(s *specv1.DatabaseSpec, team, volumeName string, networks []string, tpl dbtemplate.Template) (capability.Workload, capability.NamespaceRef, error) {
+func ProjectDatabase(s *specv1.DatabaseSpec, team, volumeName string, networks []string, egress map[string]bool, tpl dbtemplate.Template) (capability.Workload, capability.NamespaceRef, error) {
 	if s.GetDatabase().GetId() == "" || s.GetDatabase().GetProject() == "" {
 		return capability.Workload{}, capability.NamespaceRef{}, fmt.Errorf("database spec has no identity ref")
 	}
@@ -256,6 +279,10 @@ func ProjectDatabase(s *specv1.DatabaseSpec, team, volumeName string, networks [
 		Env:      env,
 		Replicas: 1,
 		Networks: networks,
+		// egress 事实（数据库挂全部活跃项目网；egress:none 网络的成员
+		// 语义对数据面无损——deny 只挡载体主动出站，服务入站与域内互通
+		// 由放行集承载，ADR-0052 决策 6）。
+		EgressNetworks: egressSubset(networks, egress),
 		// 数据面停止宽限：pg/redis 干净关停（含恢复期）远超编排器缺省的
 		// 10s——滚动替换窗口硬杀会把 WAL/AOF 留在损坏态（staging pgvector
 		// 事故实证，2026-10-03）。60s 给足快速关停与检查点收口。

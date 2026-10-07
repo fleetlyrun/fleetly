@@ -444,7 +444,7 @@ func (e *Engine) projectBrowseWorkload(ctx context.Context, s *browseSession) (c
 		Command:  rendering.Command,
 		Env:      rendering.Env,
 		Replicas: 1,
-		Networks: e.projectNetworkNames(ctx, s.projectID),
+		Networks: e.projectNetworkFactsNamesOnly(ctx, s.projectID),
 		Ports: []capability.WorkloadPort{
 			{Port: s.browser.Port(), Protocol: capability.ProtocolHTTP},
 		},

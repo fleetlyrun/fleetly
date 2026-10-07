@@ -23,7 +23,7 @@ func TestProjectTranslatesTaskGroupRefs(t *testing.T) {
 			Networks:    []string{"default", "taskGroup:dispatcher", "taskgrp-plain"},
 		}},
 	}
-	ws, ns, err := Project(spec, "acme", "torchwood", nil, PeerRefs{})
+	ws, ns, err := Project(spec, "acme", "torchwood", nil, PeerRefs{}, nil)
 	require.NoError(t, err)
 	assert.Equal(t, capability.NamespaceRef{Team: "acme", Project: "shop", App: "01JAPP"}, ns)
 	require.Len(t, ws, 1)
@@ -52,7 +52,7 @@ func TestProjectTaskRunWorkload(t *testing.T) {
 	}
 	runID := "01JRUN0000000000000000000"
 
-	w, ns, err := ProjectTask(ts, "acme", runID, true)
+	w, ns, err := ProjectTask(ts, "acme", runID, true, nil)
 	require.NoError(t, err)
 	assert.Equal(t, capability.NamespaceRef{Team: "acme", Project: "shop", Task: "01JTASK"}, ns)
 	assert.Equal(t, runID, w.ID)
@@ -67,7 +67,7 @@ func TestProjectTaskRunWorkload(t *testing.T) {
 	assert.Equal(t, int64(500), w.Resources.CPUMillis)
 
 	// 排空缩零：stopping Run 投影为 replicas 0（承载 SIGTERM+StopGrace 路径）。
-	wDrain, _, err := ProjectTask(ts, "acme", runID, false)
+	wDrain, _, err := ProjectTask(ts, "acme", runID, false, nil)
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), wDrain.Replicas)
 }
@@ -83,7 +83,7 @@ func TestProjectTaskRejectsMissingImage(t *testing.T) {
 			ImageOrigin: &specv1.ProcessSpec_FromBuild{FromBuild: "x"},
 		},
 	}
-	_, _, err := ProjectTask(ts, "acme", "01JRUN", true)
+	_, _, err := ProjectTask(ts, "acme", "01JRUN", true, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no image origin")
 }
