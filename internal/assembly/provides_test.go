@@ -60,6 +60,58 @@ func TestObjectStoreSelection(t *testing.T) {
 	assert.Nil(t, capability.ObjectStoreS3FromContext(ctx))
 }
 
+// fakeRuntimeProvider 是装配选名测试的假 Runtime Provider（核心六面嵌入
+// nil 零值——装配面只消费 Describe/Health，越界调用 panic 即测试红）。
+type fakeRuntimeProvider struct {
+	capability.Runtime
+	name string
+}
+
+func (f fakeRuntimeProvider) Describe() capability.ProviderDescriptor {
+	return capability.ProviderDescriptor{Name: f.name, Capability: capability.KindRuntime}
+}
+func (fakeRuntimeProvider) Health(context.Context) capability.HealthReport {
+	return capability.HealthReport{Healthy: true}
+}
+func (fakeRuntimeProvider) Managed() bool { return false }
+
+// TestRuntimeProviderSelection（ADR-0052 决策 1 装配选名锚，挂账 10 收口）：
+// runtime.provider 经 NewRuntimeProvider → capability.Build 选名——缺省
+// swarm（config 访问器单真源，升级零扰动）；在册名装配生效（Describe 名
+// 回环证明选名真被消费）；未注册名启动 fail-fast 且报错列在册候选（config
+// 错误不静默回退）。真 k3s/swarm 注册对的装配面由 e2e 启动日志承载
+//（runtime provider=k3s faces=logs,admin,inspector,utility）——分层禁令
+// 下 assembly 测试不 import providers，在册候选以假工厂背书（Metrics
+// 面测试同款形态）。
+func TestRuntimeProviderSelection(t *testing.T) {
+	// 缺省名 = swarm（config 访问器单真源；ADR-0052 缺省零漂移锚）。
+	cfg := config.WithDefaults(&config.AppConfig{})
+	require.Equal(t, "swarm", cfg.RuntimeProvider(), "default runtime provider must stay swarm (upgrade zero-drift anchor)")
+
+	capability.RegisterFactory(capability.KindRuntime, "assembly-test-runtime-swarm", func(context.Context) (capability.Provider, error) {
+		return fakeRuntimeProvider{name: "assembly-test-runtime-swarm"}, nil
+	})
+	capability.RegisterFactory(capability.KindRuntime, "assembly-test-runtime-k3s", func(context.Context) (capability.Provider, error) {
+		return fakeRuntimeProvider{name: "assembly-test-runtime-k3s"}, nil
+	})
+	app := &metricsFaceApp{log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+
+	// 显式在册名：装配生效，返回的 Provider 就是选名产物。
+	cfg.Runtime = &config.Runtime{Provider: "assembly-test-runtime-k3s"}
+	rt, cleanup, err := NewRuntimeProvider(app, cfg)
+	require.NoError(t, err)
+	require.NotNil(t, cleanup)
+	cleanup()
+	assert.Equal(t, "assembly-test-runtime-k3s", rt.Describe().Name, "assembled runtime must be the configured pick")
+
+	// 未注册名：fail-fast，报错列在册候选（含 k3s 试点在册位）。
+	cfg.Runtime = &config.Runtime{Provider: "nomad"}
+	_, _, err = NewRuntimeProvider(app, cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown provider")
+	assert.Contains(t, err.Error(), "assembly-test-runtime-k3s", "fail-fast error must list registered candidates")
+}
+
 // metricsFaceApp 是 NewMetricsProvider 的最小 App 夹具：嵌入接口零值
 // （未触碰的成员 panic——装配面只用 Logger，越界即测试红）+ 显式 Logger。
 type metricsFaceApp struct {
