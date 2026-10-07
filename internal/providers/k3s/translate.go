@@ -75,7 +75,7 @@ func workloadGeneration(w capability.Workload, gen capability.Generation) uint64
 }
 
 // namespaceName 计算 Namespace（per-Project，ADR-0052 决策 3）。受管域
-//（无 Project 锚）落 systemNamespace。
+// （无 Project 锚）落 systemNamespace。
 func namespaceName(ns capability.NamespaceRef) string {
 	if ns.Project == "" {
 		return systemNamespace
@@ -343,16 +343,16 @@ func readinessProbe(h *capability.Healthcheck) *corev1.Probe {
 	}
 	switch {
 	case h.HTTPPath != "":
-		probe.ProbeHandler.HTTPGet = &corev1.HTTPGetAction{
+		probe.HTTPGet = &corev1.HTTPGetAction{
 			Path: h.HTTPPath,
 			Port: intstr.FromInt32(h.HTTPPort),
 		}
 	case h.TCPPort != 0:
-		probe.ProbeHandler.TCPSocket = &corev1.TCPSocketAction{
+		probe.TCPSocket = &corev1.TCPSocketAction{
 			Port: intstr.FromInt32(h.TCPPort),
 		}
 	case h.Exec != nil:
-		probe.ProbeHandler.Exec = &corev1.ExecAction{Command: h.Exec}
+		probe.Exec = &corev1.ExecAction{Command: h.Exec}
 	default:
 		return nil
 	}
@@ -530,16 +530,26 @@ func hasHostPublish(w capability.Workload) bool {
 	return false
 }
 
+// serviceCarrierName 是 Addressing 平台名的 Service 载体名。k8s Service
+// 名必须是单个 DNS label（RFC 1123，不允许点）——平台全名
+// {进程名}.{应用名} 的点折横线（web.web → web-web；app 段消歧保留）。
+// 裸名单 label 语义零变化；全名折点是 k3s 方言的诚实边界（Describe
+// Notes 声明 + ADR-0052 决策 3 注记：跨 Runtime 的全名引用不保持，裸名
+// 保持）。
+func serviceCarrierName(addressing string) string {
+	return sanitizeNamePart(addressing)
+}
+
 // toService 把一条平台 DNS 名声明翻译为 Service（selector = addressing
 // label；池级名选全部声明载体（task-<id> 池 RR）、单载体名选自身——
 // k8s endpoint 天然 RR = swarm alias RR 的原生等价）。ports 取该 Workload
 // 的声明端口（Addresses 期望集端口注入语义同源）。labels 携域锚
-//（serviceLabels：域收敛与 Remove 的对照面——Service 名是平台 Addressing
-// 名，不带 workload 轴）。
+// （serviceLabels：域收敛与 Remove 的对照面——Service 名是平台 Addressing
+// 名的载体形态，不带 workload 轴）。
 func toService(ns capability.NamespaceRef, addressing string, selectorKey string, w capability.Workload) *corev1.Service {
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:   sanitizeAliasName(addressing),
+			Name:   serviceCarrierName(addressing),
 			Labels: serviceLabels(ns),
 		},
 		Spec: corev1.ServiceSpec{

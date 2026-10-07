@@ -96,7 +96,7 @@
 
 ## N4 第二运行时试点
 
-- F4.1 k3s Provider：场景 3 验收（无状态全语义保持 + 有状态 Backup/Restore + 显式数据处置；egress:none 升级为 NetworkPolicy 强隔离）。
+- F4.1 [ ] k3s Provider：场景 3 验收（无状态全语义保持 + 有状态 Backup/Restore + 显式数据处置；egress:none 升级为 NetworkPolicy 强隔离）。〔**2026-10-07 第一批落地（ADR-0052 裁决+实施，f528188..本批七 commit）**：①契约与地基——config `runtime.provider`（缺省 swarm 零漂移）+ capability.Build 选名接通 + `Workload.EgressNetworks` 只增字段（egress 事实投影期从 networks 表解析，此前属性从未到达 Provider——契约追查结论）；②k3s Provider 全量——per-Project Namespace + 六轴 label 域映射、核心六面 + Logs/Admin/Inspector/Utility 四子面（Exec/NetworkMaintenance/Hygiene 诚实失败挂账）、翻译层全字段（Deployment/DaemonSet/one-shot Pod/Service 双 selector/PVC local-path/hostPort 双模式/全名折点方言）、egress per-carrier netpol（挂任一 egress:none 网络的载体整体 deny 出站+同 ns/DNS 放行）、client-go v0.36.5 钉版仅 providers/k3s；③测试——翻译/fake clientset 全链单测 + 钉版守卫 + Notes 诚实断言 + swarm 零回归 + 门禁全套绿（golangci 0）；④F3.6 挂账顺带收口（E_QUOTA_EXCEEDED suggestion browse 语境分立）；⑤e2e 两腿脚本在册（e2e:k3s/e2e:runtimeswitch，含九坑实录注：airgap 官方通道/CNI 窗+podCIDR 锚/native 首次解包 2 分钟预热/NO_PROXY 显式/docker cp mount 遮蔽/断言动态化/下载缓存）——**deploy→succeeded 段已实证**（L1 健康门+Watch 观测真实工作，两 run 复现），全链受 dind+native snapshotter 容器就绪延迟（3-6 分钟/载体）时间预算限制未走完（挂账 11：CI 环境或 fuse-overlayfs 批收口）。**未勾**：场景 3 全链（egress 活体/迁移链/restore 数据闭环）待 e2e 全绿——v1 收官批〕
 
 ## Backlog（v1 外，触发条件见对应 ADR）
 

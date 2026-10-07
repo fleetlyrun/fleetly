@@ -65,9 +65,9 @@ func TestToDeployment(t *testing.T) {
 	ns := capability.NamespaceRef{Team: "acme", Project: "shop", App: "web"}
 	w := capability.Workload{
 		ID: "w1", Process: "api", Image: "nginx:1.27",
-		Command: []string{"/bin/app", "--flag"},
-		Env:     map[string]string{"B": "2", "A": "1"},
-		Ports:   []capability.WorkloadPort{{Port: 8080, Protocol: capability.ProtocolHTTP}},
+		Command:  []string{"/bin/app", "--flag"},
+		Env:      map[string]string{"B": "2", "A": "1"},
+		Ports:    []capability.WorkloadPort{{Port: 8080, Protocol: capability.ProtocolHTTP}},
 		Replicas: 2,
 		Healthcheck: &capability.Healthcheck{
 			HTTPPath: "/healthz", HTTPPort: 8080,
@@ -78,7 +78,7 @@ func TestToDeployment(t *testing.T) {
 		Volumes:   []capability.VolumeMount{{VolumeID: "01V", Target: "/data"}},
 		StopGrace: 30 * time.Second,
 	}
-	d := toDeployment(ns, w, 7, map[string]string{"db-pass": "fleetly-mat-db-pass"}, nil)
+	d := toDeployment(ns, w, 7, map[string]string{"db-pass": "fleetly-mat-db-pass"}, nil) //nolint:gosec // 测试载荷：材料名→对象名映射断言，非凭证本体
 	assert.Equal(t, "fleetly-web-api", d.Name)
 	require.Len(t, d.Spec.Template.Spec.Containers, 1)
 	c := d.Spec.Template.Spec.Containers[0]
@@ -150,7 +150,7 @@ func TestToService(t *testing.T) {
 		Ports: []capability.WorkloadPort{{Port: 8080}},
 	}
 	svc := toService(capability.NamespaceRef{Team: "acme", Project: "shop"}, "api.web", addressingLabelKey("api.web"), w)
-	assert.Equal(t, "api.web", svc.Name)
+	assert.Equal(t, "api-web", svc.Name)
 	assert.Equal(t, "true", svc.Spec.Selector[addressingLabelKey("api.web")])
 	require.Len(t, svc.Spec.Ports, 1)
 	assert.EqualValues(t, 8080, svc.Spec.Ports[0].Port)
@@ -186,4 +186,16 @@ func TestCanonicalJSONStable(t *testing.T) {
 	a := toDeployment(capability.NamespaceRef{Project: "p", App: "a"}, capability.Workload{ID: "w", Process: "x"}, 1, nil, nil)
 	b := toDeployment(capability.NamespaceRef{Project: "p", App: "a"}, capability.Workload{ID: "w", Process: "x"}, 1, nil, nil)
 	assert.Equal(t, canonicalJSON(a), canonicalJSON(b))
+}
+
+// Describe Notes 是能力发现面的诚实边界声明（架构 §10：与 swarm 弱隔离
+// Notes 对照）——强隔离/全名折点/exec 缺席三锚入测，措辞漂移即红。
+func TestDescribeNotesHonesty(t *testing.T) {
+	p := &Provider{}
+	notes := strings.Join(p.Describe().Notes, "\n")
+	assert.Contains(t, notes, "egress:none is strong isolation")
+	assert.Contains(t, notes, "fold dots to dashes")
+	assert.Contains(t, notes, "exec subface is not implemented")
+	assert.Equal(t, "k3s", p.Describe().Name)
+	assert.Equal(t, capability.KindRuntime, p.Describe().Capability)
 }

@@ -59,7 +59,7 @@ func TestEnsureCreatesObjects(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []byte("secret"), sec.Data["value"])
 	// Addressing Service。
-	svc, err := cli.CoreV1().Services(nsName).Get(ctx, "api.web", metav1.GetOptions{})
+	svc, err := cli.CoreV1().Services(nsName).Get(ctx, "api-web", metav1.GetOptions{})
 	require.NoError(t, err)
 	assert.EqualValues(t, 8080, svc.Spec.Ports[0].Port)
 	// egress netpol（egress 载体在场即建）。
@@ -131,7 +131,7 @@ func TestRemoveKeepsDataPlane(t *testing.T) {
 
 	_, err := cli.AppsV1().Deployments(nsName).Get(ctx, "fleetly-web-api", metav1.GetOptions{})
 	assert.True(t, errNotFound(err))
-	_, err = cli.CoreV1().Services(nsName).Get(ctx, "api.web", metav1.GetOptions{})
+	_, err = cli.CoreV1().Services(nsName).Get(ctx, "api-web", metav1.GetOptions{})
 	assert.True(t, errNotFound(err))
 	// PVC 与 Secret 残留（数据处置是显式动作——场景 3 语义）。
 	_, err = cli.CoreV1().PersistentVolumeClaims(nsName).Get(ctx, pvcName("01V"), metav1.GetOptions{})
@@ -174,8 +174,8 @@ func TestAddresses(t *testing.T) {
 	eps, err := p.Addresses(context.Background(), appNS(), ws)
 	require.NoError(t, err)
 	require.Len(t, eps, 2)
-	assert.Equal(t, "api.web.fleetly-shop.svc:8080", eps[0].Addr)
-	assert.Equal(t, "api.web.fleetly-shop.svc:9090", eps[1].Addr)
+	assert.Equal(t, "api-web.fleetly-shop.svc:8080", eps[0].Addr)
+	assert.Equal(t, "api-web.fleetly-shop.svc:9090", eps[1].Addr)
 }
 
 // InspectWorkloads：Deployment spec 还原（gen/workload id/镜像/命令/副本）。

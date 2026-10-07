@@ -19,7 +19,7 @@ import (
 
 // StreamLogs 实现 RuntimeLogs 子面：pod logs API（tail/since/until/容器过
 // 滤/文本匹配；Follow 持续跟随）。集群聚合 = 域 label 选 pod 逐个读流合流
-//（swarm 集群面 ServiceLogs 同源语义，ADR-0040 发现 A）。
+// （swarm 集群面 ServiceLogs 同源语义，ADR-0040 发现 A）。
 func (p *Provider) StreamLogs(ctx context.Context, q capability.LogQuery, w capability.LogWriter) error {
 	nsName := namespaceName(q.Namespace)
 	sel := labels.Set(nsSelector(q.Namespace)).AsSelector()
@@ -85,7 +85,7 @@ func (p *Provider) pumpPodLogs(ctx context.Context, nsName, podName string, q ca
 	if err != nil {
 		return fmt.Errorf("k3s logs %s: %w", podName, err)
 	}
-	defer stream.Close()
+	defer func() { _ = stream.Close() }() //nolint:errcheck // 只读流收尾，错误无处置面（swarm 同款口径）
 	r := bufio.NewReader(stream)
 	for {
 		line, err := r.ReadBytes('\n')

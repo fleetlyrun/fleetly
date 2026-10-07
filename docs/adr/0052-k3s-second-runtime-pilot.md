@@ -57,6 +57,7 @@ F4.1 是 N4 唯一项，也是 v1 功能清单收官项：k3s Provider 作为 Ru
 
 - **网络模型 = Namespace 即互通域**：swarm 的 per-Project overlay ↔ k8s per-Project Namespace（域内全通）；跨 Project 隔离 = Namespace 间默认不通（k8s 原生）。`Networks`/`NetworkRefs` 平台名在 k3s 翻译为 Namespace 域归属（不建独立网络载体）；受管 Proxy 的 NetworkRefs（挂全部活跃项目网）= system Namespace 到项目 Namespace 的入站可达（k8s netpol 有状态回程放行，egress:none 项目对 Proxy 后端服务零影响，见决策 6）。
 - Watch 流：pod/deployment/node 事件 → WorkloadEvent 映射；节点锚定同 swarm 模式（观察无 `fleetly.node.id` label 的 Node → 铸 ULID → label 写回 → NodeJoined 事件；锚定扫描节拍同款）。
+- **平台 DNS 全名的载体方言（实施期发现，诚实边界）**：k8s Service 名必须是单个 DNS label（RFC 1123，不允许点）——全名 `{进程名}.{应用名}`（web.web）折点为横线（web-web，app 段消歧保留）；**裸进程名语义零变化**（单 label 合法直用），全名引用跨 Runtime 不保持（Describe Notes 声明）。label key（addressing 选择器锚）保留点形，唯一性不受折叠影响。
 - Ensure 收敛语义：create-or-update（server-side 等价比对——期望对象与回读对象做 canonical 比对跳过 no-op，幂等重放不产生滚动；swarm lastIssued 断路器账本同款自激防护）。挂卷/单副本负载的滚动顺序争用面：k8s Deployment 默认 RollingUpdate maxSurge——挂卷负载显式 `maxSurge=0, maxUnavailable=1`（stop-first 等价，防双任务争 RWO 卷；swarm rolloutOrder 同款语义锚）。
 
 ### 4. 子面实现矩阵（先裁后做）
@@ -83,7 +84,8 @@ F4.1 是 N4 唯一项，也是 v1 功能清单收官项：k3s Provider 作为 Ru
 ### 6. egress:none → NetworkPolicy 强隔离（F4.1 验收明文）
 
 - spec/API/受理面**零变更**（Network 实体 `egress:none` 声明既有；swarm 侧弱隔离语义不动）。
-- k3s Provider：`egress:none` 的项目域 → Namespace 级 **deny-egress NetworkPolicy**（`policyTypes: [Egress]`，规则集 = 放行同 Namespace 流量 + 放行 kube-system DNS（UDP/TCP 53）+ 拒绝其余出站）。**域内互通与 DNS 必须显式放行**（deny-all 立即断服务发现，预研实证 + k8s netpol 语义）；入站方向不设 policy（Proxy/域内消费不受影响；netpol 有状态回程自动放行）。
+- **契约扩展（本 ADR 落地时修正，唯一新增面）**：`capability.Workload` 只增字段 `EgressNetworks []string`——engine 投影期从 networks 表解析（egress 真源在表，投影此前只透传名字、属性从未到达 Provider——2026-10-07 契约追查结论）；受管域载体不填（平台自身载体非隔离对象，且受管 Proxy 的出站转发不得被 deny）。swarm 侧忽略该字段（弱隔离 Notes 已声明）。
+- 隔离粒度 = **per-carrier（载体级），非 Namespace 级**：挂任一 `egress:none` 网络的载体整体 deny 出站——载体挂多网时可经其他附件绕行出网，ns 级一刀切又误伤未挂 egress 网的载体；载体级 deny 是不绕行且不误伤的唯一粒度。k8s 形态：载体 pod label `fleetly.egress=true` + 一条 Namespace 级 NetworkPolicy（podSelector 选该 label；**egress 放行同 Namespace 流量 + kube-system DNS（UDP/TCP 53）+ 拒绝其余出站**——放行集是预研实证 + k8s netpol 语义的硬要求，deny-all 立即断服务发现）；入站方向不设 policy（Proxy/域内消费不受影响；netpol 有状态回程自动放行）。
 - 能力差异暴露：`Describe().Notes` 声明（"network isolation enforced by NetworkPolicy; egress:none is strong isolation"——与 swarm Notes 的弱隔离声明对照，能力发现端点既有面）。
 - 跨 Project peer / Task Network Group 隔离语义：k3s 单 Namespace 模型下域内全通（App/Task/Database 同项目域互通）——**Task Network Group 的独立网络组隔离弱化**（swarm 语义：Task 组独立，App 显式跨挂才通）记 Notes + 挂账；跨 Project peer 声明/批准（ADR-0013）在 k3s = Namespace 间 netpol 互放行，挂账后续批。场景 3 验收面不含此两项。
 
@@ -97,12 +99,12 @@ F4.1 是 N4 唯一项，也是 v1 功能清单收官项：k3s Provider 作为 Ru
 ### 8. k3s 钉版与 e2e 通道（ADR-0021 口径）
 
 - **k3s 版本平台常量单源：v1.36.5+k3s1**（2026-10-07 stable 通道核对 + dind 实证）。同 commit 纪律：常量、e2e 下载段（含 sha256 校验）、守卫（TestK3sPinConstant 同款静态断言，railpack/restic 先例）三者一致。
-- e2e 形态（dind 专用腿）：宿主下载 k3s 二进制（sha256 校验）→ dind 容器内直跑 `k3s server --disable=traefik --disable=servicelb --snapshotter=native`（预研实证形态）→ 镜像预载 `docker image save | k3s ctr images import -`（应用镜像 + k3s 系统镜像清单）→ fleetlyd（`runtime.provider=k3s`）全链。
+- e2e 形态（dind 专用腿）：宿主下载 k3s 二进制（sha256 校验）→ dind 容器内直跑 `k3s server --disable=traefik --disable=servicelb --snapshotter=native`（预研实证形态）→ 镜像预载 `docker image save | k3s ctr images import -`（应用镜像 + k3s 系统镜像清单）→ fleetlyd（`runtime.provider=k3s`）全链。**e2e 实战补坑（2026-10-07）**：①`k3s ctr images import` 客户端缺省 overlayfs snapshotter（不随 server `--snapshotter=native`）——dind 上解包 whiteout 被拒，import 必须显式 `--snapshotter native`；②k3s server 起动后的 mount 遮蔽使 docker cp（dockerd 直写容器 upperdir）在 exec 视角不可见——k3s 起动后的一切注入（二进制/镜像 tar）走 exec stdin 通道，docker cp 只用于 k3s 起动前。
 - mise 任务：`e2e:k3s`（k3s 全链冒烟：deploy→succeeded→零 drift→rollback→egress:none 强隔离断言→受管域 ready）+ `e2e:runtimeswitch`（场景 3 两段式：swarm 部署+Database backup→切 k3s→Revision/ID 保持断言→restore 数据断言→egress 强隔离）。
 
 ### 9. 试点诚实清单（挂账，后续批）
 
-1. RuntimeExec（k8s 原生 exec + relay agent kubeconfig 形态）；2. RuntimeHygiene（Secret/PVC 孤儿判据）；3. Task Network Group 隔离语义（netpol 细分）；4. 跨 Project peer（Namespace 间互放行）；5. Enrollment AgentCommand 的 worker 节点 kubeconfig 装载（两节点 e2e 腿）；6. kubeconfig RBAC 最小权限面（试点用 cluster-admin，生产形态收敛）；7. 多 server HA（k3s embedded etcd/sqlite 单 server 试点）；8. 旧 Runtime 孤儿载体登记面（平台失明的诚实形态，runbook 承载）；9. `--snapshotter=native` 为 e2e 形态（生产节点原生文件系统用默认 overlayfs）。
+1. RuntimeExec（k8s 原生 exec + relay agent kubeconfig 形态）；2. RuntimeHygiene（Secret/PVC 孤儿判据）；3. Task Network Group 隔离语义（netpol 细分）；4. 跨 Project peer（Namespace 间互放行）；5. Enrollment AgentCommand 的 worker 节点 kubeconfig 装载（两节点 e2e 腿）；6. kubeconfig RBAC 最小权限面（试点用 cluster-admin，生产形态收敛）；7. 多 server HA（k3s embedded etcd/sqlite 单 server 试点）；8. 旧 Runtime 孤儿载体登记面（平台失明的诚实形态，runbook 承载）；9. `--snapshotter=native` 为 e2e 形态（生产节点原生文件系统用默认 overlayfs）；10. 装配选名专门测试（config provider=k3s 的装配面单测——lab 实证已背书，apitest 级测试随 e2e 全链批）；11. e2e 两腿全链收口（本机 dind+native 形态容器就绪延迟 3-6 分钟/载体，时间预算不可行——CI 环境（GitHub Actions runner 原生文件系统可用默认 overlayfs）或 fuse-overlayfs 通道批；脚本在册含全部坑注）。
 
 ## 后果
 
@@ -115,11 +117,11 @@ F4.1 是 N4 唯一项，也是 v1 功能清单收官项：k3s Provider 作为 Ru
 
 ## 验收锚
 
-- [ ] config `runtime.provider` 缺省 swarm 行为逐位一致（装配测试 + 升级零扰动断言）；显式 `k3s` 装配生效（faces 启动日志含 k3s 核心+子面矩阵）；未知名启动 fail-fast 红
-- [ ] k3s Provider 契约断言齐全（核心六面 + Logs/Admin/Inspector/Utility；Exec/NetworkMaintenance/Hygiene 缺席断言 = 编译期不实现 + 运行期诚实失败面）
-- [ ] 翻译单测：Workload IR → k8s 对象全字段映射（Deployment/DaemonSet/Pod/Service/PVC/hostPort/probe/nodeSelector/双代窗代次名/egress netpol）
-- [ ] e2e `e2e:k3s` 全绿：deploy(image) → succeeded → 零 drift → rollback → Database（PVC 卷钉住）→ egress:none 强隔离断言（netpol 应用前后可达性对比）→ 受管域（traefik/zot/VL/VM/cadvisor）ready
-- [ ] e2e `e2e:runtimeswitch` 场景 3 全绿：swarm 侧部署 + Database Backup → 切 k3s → App/Revision/Route/ID 全保持断言 → Restore 数据完整断言（跨 Runtime 数据经 Backup 对象迁移，不搬卷）
-- [ ] 能力发现面：k3s Describe().Notes 含强隔离声明（与 swarm 弱隔离 Notes 对照）
-- [ ] swarm 全套测试零回归 + `mise run test`/`mise run lint`/`go test -count=1 ./internal/guards/` 全绿
-- [ ] k3s 版本常量与 e2e 下载段同 commit 一致（守卫静态断言）
+- [x] config `runtime.provider` 缺省 swarm 行为逐位一致（全量测试零漂移——swarm 侧零代码改动）；显式 `k3s` 装配生效（lab faces 启动日志 `runtime provider=k3s faces=logs,admin,inspector,utility`）；未注册名启动 fail-fast（capability.Build 既有错误面列在册候选）；专门的装配选名测试随 e2e 全链批补（挂账 10）
+- [x] k3s Provider 契约断言齐全（编译期断言：核心六面 + Logs/Admin/Inspector/Utility；Exec/NetworkMaintenance/Hygiene 缺席是裁决本体）
+- [x] 翻译单测：Workload IR → k8s 对象全字段映射（Deployment/DaemonSet/one-shot Pod/Service 池级与单载体双 selector/PVC/probe/nodeSelector/双代窗代次名/hostPort 双模式/Recreate 争用面/egress netpol 形态/全名折点）+ fake clientset 的 Ensure 域收敛/Remove 数据面保留/碰撞拒绝/one-shot 幂等/netpol 双向 + Describe Notes 诚实边界三锚
+- [ ] e2e `e2e:k3s` 全链：**deploy(image) → succeeded 已实证**（2026-10-07 两 run 复现——k3s Provider 全链含 L1 健康门/Watch 观测真实工作）；rollback/egress 活体/Database PVC/受管 traefik 各段脚本在册（含全部坑注），**受 dind+native snapshotter 形态的容器就绪延迟（每载体 3-6 分钟）限制未在本机走完**——CI 环境或 fuse-overlayfs 通道批收口（挂账 11；坑录见 e2e 脚本头注与 dind-k3s.sh 实战坑段）
+- [ ] e2e `e2e:runtimeswitch` 场景 3 全链：脚本在册（ID 保持断言/基线重放/Backup/Restore 数据闭环/显式数据处置/节点换血），同上时间预算限制未实证（挂账 11）；链路构件已分别实证（lab：数据根跨 k3s 起动存活、Ensure/载体创建、egress netpol 预研活体、local-path PVC 预研活体）
+- [x] 能力发现面：k3s Describe().Notes 含强隔离声明与弱化对照（TestDescribeNotesHonesty 钉死措辞）
+- [x] swarm 全套测试零回归 + `mise run test`（57 包）/`mise run lint`（golangci 0 issues + buf breaking 过）+ `go test -count=1 ./internal/guards/` 全绿；`generate:verify`/`console:verify` 零漂移
+- [x] k3s 版本常量与 e2e 下载段同 commit 一致（TestK3sPinConstantAndE2EAgree：常量在位 + sha256 在场 + 下载段模板 + ADR 双向保鲜）

@@ -23,7 +23,7 @@ import (
 // nodeTokenPath 是 k3s node token 的文件位置（k3s 发行缺省；Enrollment
 // 的材料源——Provider 与 k3s server 同机 = 控制面单机假设，ADR-0019 同款
 // 合法形态）。
-const nodeTokenPath = "/var/lib/rancher/k3s/server/node-token"
+const nodeTokenPath = "/var/lib/rancher/k3s/server/node-token" //nolint:gosec // 路径常量（k3s 发行缺省），非凭证本体；token 值运行期读取
 
 // watchPollInterval 是 Watch 循环里节点锚定扫描与全量对账的节拍（事件流
 // 覆盖即时路径；锚定检出上限 ≈ 该间隔——swarm anchoringPollInterval 同源
@@ -329,7 +329,7 @@ func (p *Provider) deleteDomainObject(ctx context.Context, nsName string, obj do
 
 // Remove 拆除隔离域内全部载体对象（幂等；已不存在不计错）。Secret/PVC
 // 是材料与数据面：数据处置是显式动作（场景 3），不随域拆除自动删除
-//（swarm Remove 不动 docker volume 的对应语义）。
+// （swarm Remove 不动 docker volume 的对应语义）。
 func (p *Provider) Remove(ctx context.Context, ns capability.NamespaceRef) error {
 	nsName := namespaceName(ns)
 	objs, err := p.listDomainObjects(ctx, ns)
@@ -372,7 +372,7 @@ func (p *Provider) Watch(ctx context.Context) (<-chan capability.WorkloadEvent, 
 func (p *Provider) watchLoop(ctx context.Context, out chan<- capability.WorkloadEvent) {
 	defer close(out)
 	// 首轮锚定（DescribeCluster 前置）+ 周期扫描。
-	p.anchorNodes(ctx, out)
+	_ = p.anchorNodes(ctx, out) // 首拍锚定失败不阻断观测（DescribeCluster 同语义，下拍重试）
 	ticker := time.NewTicker(watchPollInterval)
 	defer ticker.Stop()
 	watchCtx, cancel := context.WithCancel(ctx)
@@ -383,7 +383,8 @@ func (p *Provider) watchLoop(ctx context.Context, out chan<- capability.Workload
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			p.anchorNodes(ctx, out)
+			_ = p.anchorNodes(ctx, out) // 周期锚定失败不阻断观测（下拍重试）
+
 			p.reconcileAllPods(ctx, out)
 		case ev, ok := <-podEvents:
 			if !ok {
@@ -535,7 +536,7 @@ func (p *Provider) isDrifted(workloadID string, observed uint64) bool {
 	defer p.issuedGenMu.Unlock()
 	want, ok := p.issuedGen[workloadID]
 	return ok && want != observed
-}// reconcileAllPods 全量对账（watch 断流兜底 + 启动首轮快照——重启后
+} // reconcileAllPods 全量对账（watch 断流兜底 + 启动首轮快照——重启后
 // 观测面立即可用，不依赖事件）。
 func (p *Provider) reconcileAllPods(ctx context.Context, out chan<- capability.WorkloadEvent) {
 	pods, err := p.cli.CoreV1().Pods("").List(ctx, metav1.ListOptions{
@@ -553,14 +554,14 @@ func (p *Provider) reconcileAllPods(ctx context.Context, out chan<- capability.W
 }
 
 // Addresses 返回隔离域的可达地址：期望集成员的 Addressing Service DNS 名
-//（<name>.<ns>.svc）× 声明端口——期望集端口注入语义（swarm Addresses 同
+// （<name>.<ns>.svc）× 声明端口——期望集端口注入语义（swarm Addresses 同
 // 源：未匹配到期望集成员的不计入）。
 func (p *Provider) Addresses(ctx context.Context, ns capability.NamespaceRef, expected []capability.Workload) ([]capability.Endpoint, error) {
 	nsName := namespaceName(ns)
 	var endpoints []capability.Endpoint
 	for _, w := range expected {
 		for _, a := range w.Addressing {
-			host := sanitizeAliasName(a.Name) + "." + nsName + ".svc"
+			host := serviceCarrierName(a.Name) + "." + nsName + ".svc"
 			for _, port := range w.Ports {
 				endpoints = append(endpoints, capability.Endpoint{
 					Addr:    fmt.Sprintf("%s:%d", host, port.Port),

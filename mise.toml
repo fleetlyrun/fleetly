@@ -186,3 +186,11 @@ run = [
 description = "console 单测（vitest：tar 构建器/路由解析/载荷构造/TanStack Query 消费面）"
 dir = "console"
 run = "pnpm test"
+
+[tasks."e2e:k3s"]
+description = "e2e dind k3s 第二运行时全链（F4.1，ADR-0052：k3s server in dind + deploy/rollback + egress netpol 活体 + Database PVC + 受管 traefik Route）"
+run = "sh e2e/dind-k3s.sh"
+
+[tasks."e2e:runtimeswitch"]
+description = "e2e dind 场景 3 换 Runtime（F4.1，ADR-0052：swarm→k3s 迁移——ID 全保持/基线重放/Backup/Restore 数据闭环/显式数据处置/节点 ID 不复用）"
+run = "sh e2e/dind-runtimeswitch.sh"

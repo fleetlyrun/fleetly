@@ -104,6 +104,7 @@ func (p *Provider) Describe() capability.ProviderDescriptor {
 		Notes: []string{
 			"network isolation enforced by NetworkPolicy; egress:none is strong isolation (per-carrier deny with in-namespace and DNS allowlist)",
 			"task network group isolation is relaxed: single per-project namespace is fully connected; cross-project peers are not isolated yet (pilot)",
+			"full process DNS names ({process}.{app}) fold dots to dashes for service carrier names (k8s services are single DNS labels); bare process names are unchanged",
 			"exec subface is not implemented by this provider yet (E_EXEC_UNSUPPORTED); k8s native exec is planned",
 			"workload identity is carried by fleetly.* labels; platform node IDs never reuse",
 		},

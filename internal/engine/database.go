@@ -278,7 +278,7 @@ func (e *Engine) ensureDatabaseVolume(ctx context.Context, row *dbrepo.Database)
 }
 
 // projectNetworkFacts 返回 Project 的活跃网络名列表与 egress:none 名集
-//（数据库挂全部活跃项目网——受管 Proxy 同款语义、限本项目，ADR-0029
+// （数据库挂全部活跃项目网——受管 Proxy 同款语义、限本项目，ADR-0029
 // 决策 5；egress 事实供投影填 Workload.EgressNetworks，ADR-0052 决策 6）。
 func (e *Engine) projectNetworkFacts(ctx context.Context, projectID string) ([]string, map[string]bool) {
 	rows, err := e.networks.ListByProject(ctx, e.db.Runner(), projectID)

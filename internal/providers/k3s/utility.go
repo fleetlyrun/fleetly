@@ -118,20 +118,22 @@ func (p *Provider) buildUtilityPod(ctx context.Context, req capability.UtilityRe
 	// 本机文件系统；挂点 = Target 的父目录，文件名 = Target 的 base——
 	// swarm 文件级 bind 的 k8s 对应物）。
 	if req.Input != nil {
-		if err := os.MkdirAll(hostDir, 0o755); err != nil {
+		if err := os.MkdirAll(hostDir, 0o750); err != nil {
 			return nil, fmt.Errorf("stage input dir: %w", err)
 		}
 		fileName := filepath.Base(strings.TrimSuffix(req.Input.Target, "/"))
 		staged := filepath.Join(hostDir, fileName)
-		f, err := os.Create(staged)
+		f, err := os.Create(staged) //nolint:gosec // 路径由平台 ULID 与 dbtemplate 钉定挂点合成，非用户自由输入
 		if err != nil {
 			return nil, fmt.Errorf("stage input file: %w", err)
 		}
 		if _, err := io.Copy(f, req.Input.Content); err != nil {
-			f.Close()
+			_ = f.Close() // 失败路径收尾，主错误已是 Copy
 			return nil, fmt.Errorf("stage input content: %w", err)
 		}
-		f.Close()
+		if err := f.Close(); err != nil {
+			return nil, fmt.Errorf("stage input close: %w", err) // 暂存不完整会让恢复工具容器读到截断档
+		}
 		spec.Volumes = append(spec.Volumes, corev1.Volume{
 			Name: "input",
 			VolumeSource: corev1.VolumeSource{
@@ -178,7 +180,7 @@ func (p *Provider) followUtilityLogs(ctx context.Context, nsName, podName string
 	if err != nil {
 		return err
 	}
-	defer stream.Close()
+	defer func() { _ = stream.Close() }() //nolint:errcheck // 只读流收尾，错误无处置面（swarm 同款口径）
 	r := bufio.NewReader(stream)
 	for {
 		line, err := r.ReadBytes('\n')
