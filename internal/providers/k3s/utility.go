@@ -23,9 +23,37 @@ import (
 // 工具 Pod nodeSelector 钉 control-plane 节点保证同机）。
 const utilityHostDir = "/var/lib/fleetly/utility"
 
-// controlPlaneSelector 钉 control-plane 节点（k8s 原生 label；单 server
-// 试点形态——多 server 的收敛面挂账 ADR-0052 决策 9.7）。
-var controlPlaneSelector = map[string]string{"node-role.kubernetes.io/control-plane": ""}
+// utilityNodeSelector 解析工具 Pod 的钉住目标（hostPath 输入通道与
+// Provider 同机）：优先原生 control-plane 角色 label 的节点，钉住键用
+// 平台自身锚定的 fleetly.node.id——k3s 原生角色 label 的 value 形态有
+// 空/非空两种世界，直接按它选节点会调度永不匹配（e2e restore 段
+// FailedScheduling 实证）；锚定 label 是平台单源、恒在场。单 server
+// 试点：control-plane 角色缺位时回退唯一锚定节点（多 server 收敛面
+// 挂账 ADR-0052 决策 9.7）。
+func (p *Provider) utilityNodeSelector(ctx context.Context) (map[string]string, error) {
+	nodes, err := p.cli.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list nodes for utility pinning: %w", err)
+	}
+	pick := ""
+	for i := range nodes.Items {
+		n := &nodes.Items[i]
+		id := n.Labels[labelNodeID]
+		if id == "" {
+			continue
+		}
+		if _, cp := n.Labels["node-role.kubernetes.io/control-plane"]; cp {
+			return map[string]string{labelNodeID: id}, nil
+		}
+		if pick == "" {
+			pick = id
+		}
+	}
+	if pick != "" {
+		return map[string]string{labelNodeID: pick}, nil
+	}
+	return nil, fmt.Errorf("no anchored node available for utility pinning")
+}
 
 // RunUtility 实现 RuntimeUtility 子面（ADR-0039 备份执行链的 k3s 形态）：
 // 一次性工具 Pod（同项目 Namespace → 域内 DNS 达 db-<id>），等待退出，
@@ -88,29 +116,52 @@ func (p *Provider) buildUtilityPod(ctx context.Context, req capability.UtilityRe
 		Command: req.Argv,
 		Env:     env,
 	}
+	pin, err := p.utilityNodeSelector(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("k3s utility %s: %w", req.ID, err)
+	}
 	spec := corev1.PodSpec{
 		RestartPolicy: corev1.RestartPolicyNever,
-		NodeSelector:  controlPlaneSelector,
-		Containers:    []corev1.Container{container},
+		NodeSelector:  pin,
+		// 工具 Pod 同样不消费 k8s API（SA token 关闭——载体面同款裁决）。
+		AutomountServiceAccountToken: ptr(false),
+		Containers:                   []corev1.Container{container},
 	}
-	// Secret 材料文件（/run/secrets/<名> 只读）。
-	for _, platformName := range sortedKeys(req.SecretFiles) {
-		objName := "fleetly-util-mat-" + sanitizeNamePart(platformName)
-		if _, err := p.cli.CoreV1().Secrets(nsName).Create(ctx, &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{Name: objName},
-			Data:       map[string][]byte{"value": req.SecretFiles[platformName]},
-		}, metav1.CreateOptions{}); err != nil && !apierrors.IsAlreadyExists(err) {
-			return nil, fmt.Errorf("ensure utility secret: %w", err)
+	// Secret 材料文件：projected 卷挂 /run/secrets，value 键投影为文件
+	// <平台名>（docker secrets 语义对齐——裸 Secret 卷的两级目录形态会让
+	// _FILE env 指到目录即崩，载体面同款实证）。
+	if len(req.SecretFiles) > 0 {
+		sources := make([]corev1.VolumeProjection, 0, len(req.SecretFiles))
+		for _, platformName := range sortedKeys(req.SecretFiles) {
+			objName := "fleetly-util-mat-" + sanitizeNamePart(platformName)
+			if _, err := p.cli.CoreV1().Secrets(nsName).Create(ctx, &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: objName},
+				Data:       map[string][]byte{secretDataKey: req.SecretFiles[platformName]},
+			}, metav1.CreateOptions{}); err != nil && !apierrors.IsAlreadyExists(err) {
+				return nil, fmt.Errorf("ensure utility secret: %w", err)
+			}
+			sources = append(sources, corev1.VolumeProjection{
+				Secret: &corev1.SecretProjection{
+					LocalObjectReference: corev1.LocalObjectReference{Name: objName},
+					Items: []corev1.KeyToPath{{
+						Key:  secretDataKey,
+						Path: platformName,
+					}},
+				},
+			})
 		}
 		spec.Volumes = append(spec.Volumes, corev1.Volume{
-			Name: "mat-" + sanitizeNamePart(platformName),
+			Name: secretsVolumeName,
 			VolumeSource: corev1.VolumeSource{
-				Secret: &corev1.SecretVolumeSource{SecretName: objName, DefaultMode: ptr(int32(0o444))},
+				Projected: &corev1.ProjectedVolumeSource{
+					Sources:     sources,
+					DefaultMode: ptr(int32(0o444)),
+				},
 			},
 		})
 		container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{
-			Name:      "mat-" + sanitizeNamePart(platformName),
-			MountPath: "/run/secrets/" + platformName,
+			Name:      secretsVolumeName,
+			MountPath: "/run/secrets",
 			ReadOnly:  true,
 		})
 	}
