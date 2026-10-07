@@ -23,6 +23,10 @@ import (
 // 工具 Pod nodeSelector 钉 control-plane 节点保证同机）。
 const utilityHostDir = "/var/lib/fleetly/utility"
 
+// secretInputLimit 是恢复输入走 Secret 投影通道的上限（k8s Secret 受 etcd
+// 对象限 ~1.5MB，留余量；超过即回退 hostPath 通道——见输入通道双轨注释）。
+const secretInputLimit = 900 << 10
+
 // utilityNodeSelector 解析工具 Pod 的钉住目标（hostPath 输入通道与
 // Provider 同机）：优先原生 control-plane 角色 label 的节点，钉住键用
 // 平台自身锚定的 fleetly.node.id——k3s 原生角色 label 的 value 形态有
@@ -242,33 +246,61 @@ func (p *Provider) buildUtilityPod(ctx context.Context, req capability.UtilityRe
 			ReadOnly:  true,
 		})
 	}
-	// 输入文件（恢复流）：宿主暂存目录 hostPath 进容器（写侧 = Provider
-	// 本机文件系统）。挂载形态 = 父目录挂载（契约路径 BackupInputPath 带
-	// 目录段——根级路径的父目录是 "/"，挂载即覆盖容器根、工具二进制消失，
-	// e2e restore 段秒败实证；subPath 形态对 hostPath 不达，同批实证）。
+	// 输入文件（恢复流）双通道：
+	//   小档（≤secretInputLimit）→ Secret 投影（items 投影为契约路径文件）
+	//   ——与材料凭证同通道，全镜像形态实证可读（db 密码文件实证）；k8s
+	//   Secret 受 etcd 对象限，大档不可承载。
+	//   大档 → 宿主暂存 hostPath（父目录挂载；契约路径带目录段——根级路径
+	//   父目录是 "/" 会覆盖容器根）。诚实边界：dind 形态（swarm 段先行 +
+	//   k3s 的 mount 命名空间遮蔽）下 hostPath 对 kubelet 不可见（e2e 取证
+	//   实证：写侧 1413 字节完好、容器侧 No such file）；生产节点原生文件
+	//   系统无此形态——ADR-0052 挂账注记。
 	if req.Input != nil {
-		if err := os.MkdirAll(hostDir, 0o750); err != nil {
-			return nil, fmt.Errorf("stage input dir: %w", err)
-		}
 		fileName := filepath.Base(strings.TrimSuffix(req.Input.Target, "/"))
-		staged := filepath.Join(hostDir, fileName)
-		f, err := os.Create(staged) //nolint:gosec // 路径由平台 ULID 与 dbtemplate 钉定挂点合成，非用户自由输入
-		if err != nil {
-			return nil, fmt.Errorf("stage input file: %w", err)
+		content, rerr := io.ReadAll(req.Input.Content)
+		if rerr != nil {
+			return nil, fmt.Errorf("stage input content: %w", rerr)
 		}
-		if _, err := io.Copy(f, req.Input.Content); err != nil {
-			_ = f.Close() // 失败路径收尾，主错误已是 Copy
-			return nil, fmt.Errorf("stage input content: %w", err)
+		if len(content) <= secretInputLimit {
+			objName := "fleetly-util-input-" + sanitizeNamePart(req.ID)
+			if _, err := p.cli.CoreV1().Secrets(nsName).Create(ctx, &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: objName},
+				Data:       map[string][]byte{"input": content},
+			}, metav1.CreateOptions{}); err != nil && !apierrors.IsAlreadyExists(err) {
+				return nil, fmt.Errorf("ensure utility input secret: %w", err)
+			}
+			spec.Volumes = append(spec.Volumes, corev1.Volume{
+				Name: "input",
+				VolumeSource: corev1.VolumeSource{
+					Projected: &corev1.ProjectedVolumeSource{
+						Sources: []corev1.VolumeProjection{{
+							Secret: &corev1.SecretProjection{
+								LocalObjectReference: corev1.LocalObjectReference{Name: objName},
+								Items: []corev1.KeyToPath{{
+									Key:  "input",
+									Path: fileName,
+								}},
+							},
+						}},
+						DefaultMode: ptr(int32(0o444)),
+					},
+				},
+			})
+		} else {
+			if err := os.MkdirAll(hostDir, 0o750); err != nil {
+				return nil, fmt.Errorf("stage input dir: %w", err)
+			}
+			staged := filepath.Join(hostDir, fileName)
+			if err := os.WriteFile(staged, content, 0o640); err != nil {
+				return nil, fmt.Errorf("stage input file: %w", err) //nolint:gosec // 路径由平台 ULID 与挂点合成，非用户自由输入
+			}
+			spec.Volumes = append(spec.Volumes, corev1.Volume{
+				Name: "input",
+				VolumeSource: corev1.VolumeSource{
+					HostPath: &corev1.HostPathVolumeSource{Path: hostDir},
+				},
+			})
 		}
-		if err := f.Close(); err != nil {
-			return nil, fmt.Errorf("stage input close: %w", err) // 暂存不完整会让恢复工具容器读到截断档
-		}
-		spec.Volumes = append(spec.Volumes, corev1.Volume{
-			Name: "input",
-			VolumeSource: corev1.VolumeSource{
-				HostPath: &corev1.HostPathVolumeSource{Path: hostDir},
-			},
-		})
 		container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{
 			Name:      "input",
 			MountPath: filepath.Dir(req.Input.Target),
