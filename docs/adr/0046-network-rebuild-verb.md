@@ -213,3 +213,14 @@ network-rm/add 会被平台 reconcile 回滚**（Ensure 全量替换语义把载
       Carriers；fake InspectNetwork 补排序契约对齐真源）
 - [x] e2e 匿名卷零增量双窗锚（失败面 + 成功面，dind-backup.sh P1-4 腿内）
       ——utility RemoveVolumes 修复的行为锚
+
+## 追记：k3s 侧永久语义性缺席定型（2026-10-08，ADR-0053 决策 2）
+
+后果节曾预记"非 swarm Runtime（假想 k8s）未实现时动词诚实失败（E_INTERNAL
+信封）"——k3s 试点后升格定论：**缺席不是排序缺口，是语义性事实，永不补齐**。
+动词的修复对象是 swarm overlay 的 attachable flag-day 病灶（pre-F2.2 存量
+网不可附着、手工修复被 Ensure 回滚）；k3s 的域与载体映射是 per-Project
+Namespace（ADR-0052 决策 3）——Namespace 恒存在、无载体网络对象、无
+attachable 概念，前置病灶在 k8s 形态下不成立。RebuildNetwork 在 k3s 集群
+上的诚实失败是正确行为（engine 侧既有子面缺席降级语义承载）；k3s Provider
+的 Describe Notes 声明该边界（TestDescribeNotesHonesty 钉死措辞）。

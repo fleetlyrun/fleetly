@@ -207,6 +207,7 @@ func TestDescribeNotesHonesty(t *testing.T) {
 	notes := strings.Join(p.Describe().Notes, "\n")
 	assert.Contains(t, notes, "egress:none is strong isolation")
 	assert.Contains(t, notes, "fold dots to dashes")
+	assert.Contains(t, notes, "network rebuild verb is semantically absent")
 	assert.Contains(t, notes, "exec sessions run through the apiserver natively")
 	assert.Contains(t, notes, "worker nodes carry no platform agent")
 	assert.Contains(t, notes, "without declared ports resolve via headless services")
