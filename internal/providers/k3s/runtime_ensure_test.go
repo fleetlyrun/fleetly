@@ -199,8 +199,12 @@ func TestAddresses(t *testing.T) {
 	eps, err := p.Addresses(context.Background(), appNS(), ws)
 	require.NoError(t, err)
 	require.Len(t, eps, 2)
-	assert.Equal(t, "api-web.fleetly-shop.svc:8080", eps[0].Addr)
-	assert.Equal(t, "api-web.fleetly-shop.svc:9090", eps[1].Addr)
+	// Addr 裸主机名、端口在 Port 字段分立（swarm 契约同构——消费面拼
+	// scheme://Addr:Port，端口折进 Addr 即双端口 URL，traefik precheck 即拒）。
+	assert.Equal(t, "api-web.fleetly-shop.svc", eps[0].Addr)
+	assert.EqualValues(t, 8080, eps[0].Port)
+	assert.Equal(t, "api-web.fleetly-shop.svc", eps[1].Addr)
+	assert.EqualValues(t, 9090, eps[1].Port)
 }
 
 // InspectWorkloads：Deployment spec 还原（gen/workload id/镜像/命令/副本）。

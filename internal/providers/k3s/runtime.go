@@ -574,8 +574,12 @@ func (p *Provider) Addresses(ctx context.Context, ns capability.NamespaceRef, ex
 		for _, a := range w.Addressing {
 			host := serviceCarrierName(a.Name) + "." + nsName + ".svc"
 			for _, port := range w.Ports {
+				// Addr 是裸主机名、端口在 Port 字段分立（swarm 契约同构——
+				// 消费面拼 scheme://Addr:Port；把端口折进 Addr 会产出
+				// "host:80:80" 双端口 URL，traefik precheck 即拒——e2e
+				// route 段实证）。
 				endpoints = append(endpoints, capability.Endpoint{
-					Addr:    fmt.Sprintf("%s:%d", host, port.Port),
+					Addr:    host,
 					Process: w.Process,
 					Port:    port.Port,
 				})
