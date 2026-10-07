@@ -262,27 +262,41 @@ func (p *Provider) buildUtilityPod(ctx context.Context, req capability.UtilityRe
 	}, nil
 }
 
-// followUtilityLogs 跟随工具 Pod 日志到容器终止（stdout 转写）。
+// followUtilityLogs 跟随工具 Pod 日志到容器终止（stdout 转写）。起流带
+// 404/400 重试：Create 返回时 pod 尚未调度/容器未起，立即 GetLogs 即
+// NotFound/BadRequest——一次失败就放弃会让短命工具 Pod 的日志恒丢
+// （e2e restore 取证：exit 1 报文永远无真相的另一半根因）。
 func (p *Provider) followUtilityLogs(ctx context.Context, nsName, podName string, stdout io.Writer) error {
 	opts := &corev1.PodLogOptions{Follow: true, Container: "utility"}
-	stream, err := p.cli.CoreV1().Pods(nsName).GetLogs(podName, opts).Stream(ctx)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = stream.Close() }() //nolint:errcheck // 只读流收尾，错误无处置面（swarm 同款口径）
-	r := bufio.NewReader(stream)
 	for {
-		line, err := r.ReadBytes('\n')
-		if len(line) > 0 {
-			if _, werr := stdout.Write(line); werr != nil {
-				return werr
-			}
-		}
+		stream, err := p.cli.CoreV1().Pods(nsName).GetLogs(podName, opts).Stream(ctx)
 		if err != nil {
-			if err == io.EOF {
-				return nil
+			if apierrors.IsNotFound(err) || apierrors.IsBadRequest(err) {
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-time.After(300 * time.Millisecond):
+					continue
+				}
 			}
 			return err
+		}
+		r := bufio.NewReader(stream)
+		for {
+			line, rerr := r.ReadBytes('\n')
+			if len(line) > 0 {
+				if _, werr := stdout.Write(line); werr != nil {
+					_ = stream.Close() //nolint:errcheck // 写侧失败即收流，错误以写侧为准
+					return werr
+				}
+			}
+			if rerr != nil {
+				_ = stream.Close() //nolint:errcheck // 只读流收尾，错误无处置面（swarm 同款口径）
+				if rerr == io.EOF {
+					return nil
+				}
+				return rerr
+			}
 		}
 	}
 }
