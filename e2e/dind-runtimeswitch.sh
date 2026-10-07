@@ -265,7 +265,8 @@ log "backup completed ($BACKUP_ID)"
 
 # 7. 基线记录（场景 3 断言锚：切换前后行 ID 全保持）。
 REVISION_COUNT=$(cli --json revisions list --app "$APP_ID" | grep -c '"id"')
-SWARM_NODE_ID=$(cli --json nodes list | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | head -1)
+# nodes 行的平台 ID 字段是 platform_id（twonode e2e 先例）。
+SWARM_NODE_ID=$(cli --json nodes list | sed -n 's/.*"platform_id": *"\([^"]*\)".*/\1/p' | head -1)
 [ -n "$SWARM_NODE_ID" ] || fail "swarm node id not captured"
 
 # 8. 切换：停 fleetlyd → 显式数据处置（旧载体 service rm；卷与备份保留）
@@ -360,7 +361,7 @@ log "app/project/revision ids preserved"
 # 节点换血断言（placement 绑定不跨 Runtime 复用、节点 ID 永不复用）。
 i=0
 while [ "$i" -lt 60 ]; do
-  K3S_NODE_ID=$(cli --json nodes list | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | head -1)
+  K3S_NODE_ID=$(cli --json nodes list | sed -n 's/.*"platform_id": *"\([^"]*\)".*/\1/p' | head -1)
   [ -n "$K3S_NODE_ID" ] && [ "$K3S_NODE_ID" != "$SWARM_NODE_ID" ] && break
   i=$((i + 1)); sleep 2
 done
