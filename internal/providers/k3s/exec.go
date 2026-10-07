@@ -14,7 +14,6 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -62,7 +61,7 @@ func (p *Provider) ExecClusterToken(ctx context.Context, token string) error {
 	if token == "" {
 		return errors.New("empty relay credential")
 	}
-	want, err := readNodeToken()
+	want, err := p.readNodeToken()
 	if err != nil {
 		return fmt.Errorf("k3s exec token: %w", err)
 	}
@@ -72,9 +71,14 @@ func (p *Provider) ExecClusterToken(ctx context.Context, token string) error {
 	return nil
 }
 
-// readNodeToken 读 node token 文件（Enrollment 与 ExecClusterToken 共用）。
-func readNodeToken() (string, error) {
-	b, err := os.ReadFile(nodeTokenPath)
+// readNodeToken 读 node token 文件（Enrollment 与 ExecClusterToken 共用；
+// p.nodeTokenPath 覆写供单测，缺省 k3s 发行路径）。
+func (p *Provider) readNodeToken() (string, error) {
+	path := p.nodeTokenPath
+	if path == "" {
+		path = nodeTokenPath
+	}
+	b, err := os.ReadFile(path)
 	if err != nil {
 		return "", err
 	}
@@ -160,12 +164,12 @@ func (p *Provider) spdyExec(ctx context.Context, req capability.ExecWorkloadRequ
 	if err == nil {
 		return 0, nil
 	}
-	var statusErr *apierrors.StatusError
-	if errors.As(err, &statusErr) {
-		var code int
-		if _, perr := fmt.Sscanf(statusErr.Error(), "command terminated with exit code %d", &code); perr == nil {
-			return code, nil
-		}
+	// 退出码还原：v4 协议经错误流回传结构化 CodeExitError（ExitStatus()
+	// ——client-go util/exec 的既定承载；字符串解析是老 kubectl 机制，
+	// 结构面优先）。解析不到的错误如实上抛（会话 error 帧承载）。
+	var exitErr interface{ ExitStatus() int }
+	if errors.As(err, &exitErr) {
+		return exitErr.ExitStatus(), nil
 	}
 	return 0, fmt.Errorf("k3s exec: %w", err)
 }
