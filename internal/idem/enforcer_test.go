@@ -94,7 +94,10 @@ func TestConflictDifferentBody(t *testing.T) {
 func TestInflightConflictThenReplay(t *testing.T) {
 	db, _ := statertest.New(t)
 	e := NewEnforcer(db, slog.New(slog.DiscardHandler))
-	entered := make(chan struct{})
+	// entered 必须缓冲 1：handler 内是非阻塞 send——无缓冲形态下 spawn 的
+	// goroutine 在主测试抵达 <-entered 前跑到 select 即信号被 default 吞，
+	// 主测试永久阻塞（CI 慢调度实证挂起 600s，2026-10-07；本地快调度侥幸）。
+	entered := make(chan struct{}, 1)
 	release := make(chan struct{})
 	done := make(chan struct{})
 	handler := func(context.Context, any) (any, error) {
