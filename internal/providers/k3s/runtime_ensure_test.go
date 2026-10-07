@@ -286,7 +286,7 @@ func TestPutDeploymentRetriesOnConflict(t *testing.T) {
 	require.NoError(t, err)
 
 	conflicts := 0
-	cli.Fake.PrependReactor("update", "deployments", func(action k8stesting.Action) (bool, runtime.Object, error) {
+	cli.PrependReactor("update", "deployments", func(action k8stesting.Action) (bool, runtime.Object, error) {
 		conflicts++
 		if conflicts == 1 {
 			return true, nil, apierrors.NewConflict(schema.GroupResource{Group: "apps", Resource: "deployments"},
