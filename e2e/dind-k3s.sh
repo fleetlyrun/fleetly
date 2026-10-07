@@ -327,7 +327,53 @@ docker exec "$DIND_CID" sh -c "k3s kubectl get svc web -n $P1_NS >/dev/null && k
   || fail "addressing services (bare + full process names) missing"
 log "k3s carriers + addressing services verified"
 
-# 9. rollback = Revision Replay（k3s 上同链）。单 Revision 场景：先落第二
+# 9. 受管 traefik（k3s 形态：hostPort 80）+ Route 明文端到端。前置于
+#    rollback/egress/db 段：route 链只依赖 app+traefik（fleetlyd 起动即
+#    部署），早断言早失败——run21 实证尾段时点单节点上多载体挤压会让
+#    后端不可达（502），语义验证不应与容量压力耦合。
+log "managed traefik + plaintext route drill"
+i=0
+while [ "$i" -lt 90 ]; do
+  # grep -c 零匹配/查无 ns 均为非零退出——|| true 防 set -e 静默击穿
+  #（dash 对 n=$(失败命令) 即死，run14 实证日志戛然而止无 FATAL）。
+  n=$(docker exec "$DIND_CID" sh -c "k3s kubectl get pods -n fleetly-system --no-headers 2>/dev/null | grep -c Running" || true)
+  [ "$n" -ge 1 ] && break
+  i=$((i + 1)); sleep 2
+done
+[ "$i" -lt 90 ] || {
+  docker exec "$DIND_CID" sh -c 'k3s kubectl get all -n fleetly-system 2>&1' >&2
+  docker exec "$DIND_CID" sh -c "grep -iE 'managed|traefik|ensure' /var/log/fleetlyd.log | grep -v gRPC | tail -25" >&2 || true
+  fail "managed traefik did not come up on k3s"
+}
+log "managed traefik running in fleetly-system namespace"
+
+# --tls none 必须显式:route TLS 缺省语义是 auto(ACME 求解)——sslip 域名
+# 无效邮箱形态 ACME 必败,明文 80 上无路由即 404(h2c e2e 先例 + 聚焦探针
+# 实证 traefik 日志 ACME invalidContact)。
+cli routes create --project "$PROJECT_ID" --app "$APP_ID" --process web --port 80 \
+  --host k3s-e2e.127.0.0.1.sslip.io --protocol http --tls none >/dev/null
+# hostPort 探测打节点 IP 而非 127.0.0.1：flannel 的 hostPort 由 portmap
+# DNAT 承载，不覆盖 loopback 流量（swarm 的 routing mesh 相反，ingress
+# 监听 0.0.0.0 含 lo——跨 Runtime 的探测形态差异）。
+i=0
+while [ "$i" -lt 60 ]; do
+  code=$(docker exec "$DIND_CID" sh -c "wget -q -O /dev/null -T 5 --header='Host: k3s-e2e.127.0.0.1.sslip.io' http://$DIND_IP/ && echo ok" 2>/dev/null || true)
+  [ "$code" = "ok" ] && break
+  i=$((i + 1)); sleep 2
+done
+[ "$i" -lt 60 ] || {
+  docker exec "$DIND_CID" sh -c "
+    echo '--- route/proxy log lines'; grep -iE 'route|proxy|traefik|publish' /var/log/fleetlyd.log | grep -v gRPC | tail -20
+    echo '--- config served'; wget -q -O- -T 5 http://$DIND_IP:9082/proxy/config 2>&1 | head -40; echo
+    echo '--- wget status'; wget -S -O /dev/null -T 5 --header='Host: k3s-e2e.127.0.0.1.sslip.io' http://$DIND_IP/ 2>&1 | head -10
+    echo '--- pods all'; k3s kubectl get pods -A 2>&1 | head -12
+    echo '--- traefik logs'; k3s kubectl logs -n fleetly-system \$(k3s kubectl get pods -n fleetly-system --field-selector=status.phase=Running -o jsonpath={.items[0].metadata.name}) --tail=15 2>&1 | tail -15
+  " >&2 || true
+  fail "route 200 via managed traefik (hostPort 80) not reachable"
+}
+log "route end-to-end green (traefik hostPort 80 -> app service backend)"
+
+# 10. rollback = Revision Replay（k3s 上同链）。单 Revision 场景：先落第二
 #    部署（--env 变化）制造双 Revision 基线，再显式回滚到 R1。
 log "rollback via revision replay"
 R1=$(cli --json revisions list --app "$APP_ID" | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | head -1)
@@ -336,7 +382,7 @@ wait_state succeeded
 cli rollback --app "$APP_ID" --to "$R1" --wait >/dev/null
 log "rollback green"
 
-# 10. egress:none 强隔离活体实证（ADR-0052 决策 6 的 e2e 锚）：
+# 11. egress:none 强隔离活体实证（ADR-0052 决策 6 的 e2e 锚）：
 #     - 项目 shop 声明 egress:none 网络 + busybox 载体挂之
 #     - 载体标记 fleetly.egress=true + ns 内 netpol 在场
 #     - 活体：跨 ns（shop2 的 nginx）不可达；DNS（kube-system）放行
@@ -346,7 +392,7 @@ cli networks create --project "$PROJECT_ID" --egress-none isolated >/dev/null
 # 网络实体走平台 API——cli networks create 在先）；service 级 networks
 # 按名引用平台网络（egress 属性真源在 networks 表，投影期解析——ADR-0052
 # 决策 6）。web 服务保进夹具：deploy 是整 App 新 Revision，只带 worker
-# 会把 web 收敛掉，§12 Route drill 即无后端。
+# 会把 web 收敛掉（应用语义连续性 + 终态完整性）。
 cat > "$WORKDIR/egress-compose.yaml" <<'EOF'
 services:
   web:
@@ -428,7 +474,8 @@ docker exec "$DIND_CID" sh -c "
 " || fail "egress isolation live probe failed"
 log "egress live probe green (DNS allowed, cross-namespace denied)"
 
-# 11. Database：postgres（digest 引用在线拉）+ PVC local-path 绑定。
+# 12. Database：postgres（digest 引用）+ PVC local-path 绑定（digest 预拉
+#     已前置，零在线拉）。
 log "database drill (postgres + PVC)"
 DB_ID=$(cli --json databases create --project "$PROJECT_ID" --engine postgres pgold | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | head -1)
 [ -n "$DB_ID" ] || fail "database create failed"
@@ -441,44 +488,10 @@ while [ "$i" -lt 360 ]; do
   [ "$status" = "failed" ] && fail "database reached failed"
   i=$((i + 1)); sleep 2
 done
-[ "$i" -lt 360 ] || fail "database did not reach running (digest pull window exceeded?)"
+[ "$i" -lt 360 ] || fail "database did not reach running"
 docker exec "$DIND_CID" sh -c "k3s kubectl get pvc -n $P1_NS | grep -q fleetly-vol-" \
   || fail "database PVC not bound"
 log "database running with bound PVC"
-
-# 12. 受管 traefik（k3s 形态：hostPort 80）+ Route 明文端到端。
-log "managed traefik + plaintext route drill"
-i=0
-while [ "$i" -lt 90 ]; do
-  # grep -c 零匹配/查无 ns 均为非零退出——|| true 防 set -e 静默击穿
-  #（dash 对 n=$(失败命令) 即死，run14 实证日志戛然而止无 FATAL）。
-  n=$(docker exec "$DIND_CID" sh -c "k3s kubectl get pods -n fleetly-system --no-headers 2>/dev/null | grep -c Running" || true)
-  [ "$n" -ge 1 ] && break
-  i=$((i + 1)); sleep 2
-done
-[ "$i" -lt 90 ] || {
-  docker exec "$DIND_CID" sh -c 'k3s kubectl get all -n fleetly-system 2>&1' >&2
-  docker exec "$DIND_CID" sh -c "grep -iE 'managed|traefik|ensure' /var/log/fleetlyd.log | grep -v gRPC | tail -25" >&2 || true
-  fail "managed traefik did not come up on k3s"
-}
-log "managed traefik running in fleetly-system namespace"
-
-# --tls none 必须显式:route TLS 缺省语义是 auto(ACME 求解)——sslip 域名
-# 无效邮箱形态 ACME 必败,明文 80 上无路由即 404(h2c e2e 先例 + 聚焦探针
-# 实证 traefik 日志 ACME invalidContact)。
-cli routes create --project "$PROJECT_ID" --app "$APP_ID" --process web --port 80 \
-  --host k3s-e2e.127.0.0.1.sslip.io --protocol http --tls none >/dev/null
-# hostPort 探测打节点 IP 而非 127.0.0.1：flannel 的 hostPort 由 portmap
-# DNAT 承载，不覆盖 loopback 流量（swarm 的 routing mesh 相反，ingress
-# 监听 0.0.0.0 含 lo——跨 Runtime 的探测形态差异）。
-i=0
-while [ "$i" -lt 60 ]; do
-  code=$(docker exec "$DIND_CID" sh -c "wget -q -O /dev/null -T 5 --header='Host: k3s-e2e.127.0.0.1.sslip.io' http://$DIND_IP/ && echo ok" 2>/dev/null || true)
-  [ "$code" = "ok" ] && break
-  i=$((i + 1)); sleep 2
-done
-[ "$i" -lt 60 ] || { docker exec "$DIND_CID" tail -30 /var/log/fleetlyd.log >&2; fail "route 200 via managed traefik (hostPort 80) not reachable"; }
-log "route end-to-end green (traefik hostPort 80 -> app service backend)"
 
 echo ""
 echo "K3S E2E PASSED"
