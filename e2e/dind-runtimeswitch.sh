@@ -429,6 +429,22 @@ docker exec -e P_NS="$P_NS" -e DB_SEL="$NEW_DB_LC" -e SEED="$SEED_COUNT" "$DIND_
   echo "--- psql stderr:"; k3s kubectl exec -n "$P_NS" "$pod" -- psql -U fleetly -d fleetly -tAc "SELECT count(*) FROM migration_probe;" 2>&1 | tail -3
   echo "--- ns pods (utility one-shots incl):"; k3s kubectl get pods -n "$P_NS" --no-headers 2>&1
   echo "--- fleetlyd restore lines:"; grep -iE "restore|utility" /var/log/fleetlyd.log | grep -v gRPC | tail -15
+  # 形态复刻消融:自备暂存文件,4 个变体 pod(busybox 裸 / postgres 裸 /
+  # postgres+钉住+secret+automount 全形态 / 全形态)逐个读 /backup/input
+  # ——独立探针已证 busybox+hostPath 通,分歧面定位到 utility pod 形态。
+  mkdir -p /var/lib/fleetly/utility/diag && echo DIAG-DATA-42 > /var/lib/fleetly/utility/diag/input
+  nid=$(k3s kubectl get nodes -o jsonpath="{.items[0].metadata.labels.fleetly\\.node\\.id}" 2>/dev/null)
+  diagrun() {
+    name="$1"; img="$2"; extra="$3"
+    k3s kubectl run "$name" --image="$img" --restart=Never --overrides "{\"spec\":{\"automountServiceAccountToken\":false,\"nodeSelector\":{\"fleetly.node.id\":\"$nid\"},\"containers\":[{\"name\":\"c\",\"image\":\"$img\",\"command\":[\"cat\",\"/backup/input\"],\"imagePullPolicy\":\"IfNotPresent\",\"volumeMounts\":[{\"name\":\"in\",\"mountPath\":\"/backup\",\"readOnly\":true}]$extra}],\"volumes\":[{\"name\":\"in\",\"hostPath\":{\"path\":\"/var/lib/fleetly/utility/diag\"}}]}}" >/dev/null 2>&1 || true
+    k3s kubectl wait --for="condition=Ready" pod/"$name" --timeout=60s >/dev/null 2>&1; sleep 2
+    echo "--- $name:"; k3s kubectl logs "$name" 2>&1 | head -c 100; echo
+    k3s kubectl delete pod "$name" --force --grace-period=0 >/dev/null 2>&1 || true
+  }
+  diagrun d1 busybox:1.37 ""
+  diagrun d2 "postgres:17-bookworm@$PG_DIGEST" ""
+  diagrun d3 "postgres:17-bookworm@$PG_DIGEST" ",\"env\":[{\"name\":\"X\",\"value\":\"1\"}]"
+  echo "--- exec view of diag dir:"; ls -la /var/lib/fleetly/utility/diag 2>&1 | head -3
   # 对照实验:busybox pod 挂同一 hostDir 读同一文件(独立探针证明 hostPath
   # 通道本身通——分歧面在 utility pod 形态)。
   hdir=$(ls -d /var/lib/fleetly/utility/restore-* 2>/dev/null | head -1)
