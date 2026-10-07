@@ -135,8 +135,10 @@ docker exec "$DIND_CID" docker swarm init --advertise-addr 127.0.0.1 >/dev/null
 docker cp "$WORKDIR/bins" "$DIND_CID":/root/bins
 start_fleetlyd() {
   provider="$1"
+  # pkill 按进程名精确匹配（-f 会匹配承载 sh 的命令行自杀——dind-template.sh
+  # 同坑实录；首跑实证 sh 自杀即 fleetlyd 从未起动、/var/log/fleetlyd.log 缺位）。
   docker exec "$DIND_CID" sh -c "
-    pkill -f bins/fleetlyd >/dev/null 2>&1 || true
+    pkill -TERM fleetlyd >/dev/null 2>&1 || true
     sleep 1
     mkdir -p /var/lib/fleetly
     setsid env FLEETLY_DATA_ROOT=/var/lib/fleetly FLEETLY_RUNTIME_PROVIDER=$provider FLEETLY_RUNTIME_K3S_KUBECONFIG=/etc/rancher/k3s/k3s.yaml /root/bins/fleetlyd >>/var/log/fleetlyd.log 2>&1 </dev/null &"
@@ -237,7 +239,7 @@ SWARM_NODE_ID=$(cli --json nodes list | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' |
 # 8. 切换：停 fleetlyd → 显式数据处置（旧载体 service rm；卷与备份保留）
 #    → k3s server 起。
 log "switch: stopping fleetlyd + explicit carrier disposal + starting k3s"
-docker exec "$DIND_CID" sh -c 'pkill -f bins/fleetlyd; sleep 2' || true
+docker exec "$DIND_CID" sh -c "pkill -TERM fleetlyd; sleep 2" || true
 docker exec "$DIND_CID" sh -c '
   docker service ls --format "{{.Name}}" | grep "^fleetly-" | while read -r svc; do
     docker service rm "$svc" >/dev/null
