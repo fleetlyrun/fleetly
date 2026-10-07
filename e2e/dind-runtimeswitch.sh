@@ -358,14 +358,16 @@ K3S_REVISION_COUNT=$(cli --json revisions list --app "$APP_ID" | grep -c '"id"')
 [ "$K3S_REVISION_COUNT" = "$REVISION_COUNT" ] || fail "revision set changed across runtime switch ($REVISION_COUNT -> $K3S_REVISION_COUNT)"
 log "app/project/revision ids preserved"
 
-# 节点换血断言（placement 绑定不跨 Runtime 复用、节点 ID 永不复用）。
+# 节点换血断言（placement 绑定不跨 Runtime 复用、节点 ID 永不复用）。节点
+# 表跨 Runtime 存活：旧 swarm 节点行仍在列表（退役不是删除）——过滤旧行
+# 取新铸 ID（run8 实证 head -1 恰取旧行）。
 i=0
 while [ "$i" -lt 60 ]; do
-  K3S_NODE_ID=$(cli --json nodes list | sed -n 's/.*"platform_id": *"\([^"]*\)".*/\1/p' | head -1)
-  [ -n "$K3S_NODE_ID" ] && [ "$K3S_NODE_ID" != "$SWARM_NODE_ID" ] && break
+  K3S_NODE_ID=$(cli --json nodes list | sed -n 's/.*"platform_id": *"\([^"]*\)".*/\1/p' | grep -v "^$SWARM_NODE_ID$" | head -1)
+  [ -n "$K3S_NODE_ID" ] && break
   i=$((i + 1)); sleep 2
 done
-[ "${K3S_NODE_ID:-}" != "$SWARM_NODE_ID" ] || fail "k3s node must be a freshly minted platform node id (never reuse)"
+[ -n "${K3S_NODE_ID:-}" ] || fail "k3s node must be a freshly minted platform node id (never reuse)"
 log "node identity freshly minted on k3s (old swarm node retired)"
 
 # 11. 基线重放：app 载体在 k3s 上重建（drift 基线重放链）。ns/deployment
