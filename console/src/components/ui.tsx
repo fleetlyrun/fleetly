@@ -69,10 +69,25 @@ export function shortId(value: string | undefined): string {
 
 // ---- 写面扩展（F3.1） ----
 
-// Modal 是受控表单对话框：原生 <dialog>（焦点管理/Escape/Escalation 免费，
-// Radix 留给真正需要无障碍组合件的场合——最小依赖纪律）。
+// Modal 是受控表单对话框：原生 <dialog>（焦点管理/Escape 免费，Radix 留给
+// 真正需要无障碍组合件的场合——最小依赖纪律）。壳层不得包 form：
+// ①嵌套 form 的 submit 事件在真实浏览器不冒泡出外层 form（非规范 HTML，
+// Chromium 实测截断），内层业务表单的 React onSubmit 会整体失效——2026-10-07
+// 浏览器走查 W1，jsdom 冒泡行为不同所以组件测试此前全绿；②dialog 的
+// close/cancel 事件不冒泡，React 19 委托面收不到，Escape 关窗会让受控 open
+// 态与原生 dialog 失同步（同批走查 W3，"再开同一弹窗无响应"形态）——由
+// 原生监听直挂 dialog 节点收口，Escape/✕/背板三路关闭都归一到 onClose。
 export function Modal({ title, open, onClose, children }: { title: string; open: boolean; onClose: () => void; children: ReactNode }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  useEffect(() => {
+    const dlg = ref.current;
+    if (dlg === null) return;
+    const handle = () => onCloseRef.current();
+    dlg.addEventListener("close", handle);
+    return () => dlg.removeEventListener("close", handle);
+  }, []);
   useEffect(() => {
     if (open) ref.current?.showModal();
     else ref.current?.close();
@@ -80,21 +95,20 @@ export function Modal({ title, open, onClose, children }: { title: string; open:
   return (
     <dialog
       ref={ref}
-      onClose={onClose}
       onClick={(event) => {
-        if (event.target === ref.current) onClose();
+        if (event.target === ref.current) onCloseRef.current();
       }}
       className="m-auto w-full max-w-lg rounded-lg border border-slate-700 bg-slate-900 p-0 text-slate-200 backdrop:bg-slate-950/70"
     >
-      <form method="dialog" onSubmit={onClose} className="flex flex-col gap-4 p-5">
+      <div className="flex flex-col gap-4 p-5">
         <div className="flex items-baseline justify-between gap-4">
           <h2 className="text-base font-semibold text-slate-100">{title}</h2>
-          <button type="submit" className="rounded px-2 py-0.5 text-sm text-slate-500 hover:bg-slate-800 hover:text-slate-300">
+          <button type="button" onClick={onClose} className="rounded px-2 py-0.5 text-sm text-slate-500 hover:bg-slate-800 hover:text-slate-300">
             ✕
           </button>
         </div>
         {children}
-      </form>
+      </div>
     </dialog>
   );
 }
