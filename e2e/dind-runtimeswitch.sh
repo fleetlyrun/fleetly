@@ -242,20 +242,25 @@ docker exec "$DIND_CID" sh -c '
   docker exec "$cid" psql -U fleetly -d fleetly -c "INSERT INTO migration_probe SELECT generate_series(1, '"$SEED_COUNT"');" >/dev/null
 ' || fail "seeding data failed"
 
-# 6. Backup（等完成——对象在 local ObjectStore，随数据根跨 Runtime 存活）。
+# 6. Backup（等完成——对象在 local ObjectStore，随数据根跨 Runtime 存活；
+#    状态词是 succeeded 不是 completed——run6 实证 4 分钟空等词汇错位）。
 log "phase swarm: backup"
 cli databases backup "$DB_ID" >/dev/null
 BACKUP_ID=""
 i=0
 while [ "$i" -lt 120 ]; do
   BACKUP_ID=$(cli --json databases backups "$DB_ID" | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | head -1)
-  state=$(cli --json databases backups "$DB_ID" | sed -n 's/.*"state": *"\([^\"]*\)".*/\1/p' | head -1)
-  if [ -n "$BACKUP_ID" ] && [ "$state" = "completed" ]; then
+  state=$(cli --json databases backups "$DB_ID" | sed -n 's/.*"status": *"\([^\"]*\)".*/\1/p' | head -1)
+  if [ -n "$BACKUP_ID" ] && [ "$state" = "succeeded" ]; then
     break
   fi
   i=$((i + 1)); sleep 2
 done
-[ -n "$BACKUP_ID" ] && [ "$state" = "completed" ] || fail "backup did not complete"
+[ -n "$BACKUP_ID" ] && [ "$state" = "succeeded" ] || {
+  cli --json databases backups "$DB_ID" >&2 || true
+  docker exec "$DIND_CID" sh -c "grep -iE 'backup' /var/log/fleetlyd.log | grep -v gRPC | tail -15; docker ps -a | head -8" >&2 || true
+  fail "backup did not complete"
+}
 log "backup completed ($BACKUP_ID)"
 
 # 7. 基线记录（场景 3 断言锚：切换前后行 ID 全保持）。
