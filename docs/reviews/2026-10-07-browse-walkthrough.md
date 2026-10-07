@@ -33,20 +33,21 @@
 真机坑实录：受理后即刻 curl 撞 traefik 5s 配置轮询（404 假象）——链前
 sleep 8s 即稳；e2e browseprobe 已内置同款重试窗（步 1/3）。
 
-## 浏览器级（Console browse 按钮）——挂账（后端缺席）
+## 浏览器级（Console browse 按钮）——2026-10-07 补档收口
 
-本会话浏览器后端注册表为空（agent.browsers.list() = []）——浏览器级
-补档与 F3.1/F3.2/F3.3 三批的待办同因同挂（后端可用时一并补）。
-已覆盖的部分（HTTP 契约级 = 浏览器将执行的整条链）：
+后端在场环境（ZCode IAB / Chromium）补做浏览器级走查，原挂账两锚全闭：
 
-- Console 入口代码面：`POST /v1/databases/<id>/browse` → 响应 url →
-  `window.open`（新窗口；一次性票据 120s 内点击即兑）——console:verify
-  零漂移钉死；按钮渲染在 DatabaseRow（Resources 页 databases tab）。
-- 浏览器消费的 HTTP 链已全绿：entry 302 + Set-Cookie（HttpOnly/
-  SameSite=Lax——浏览器原生接受形态）→ 重定向 / → ForwardAuth 放行 →
-  pgweb 页 200（title=pgweb）——即 window.open 后浏览器实际发生的每一步。
-- 待补档锚：真实浏览器中 torchwood-pg 表集可见性（21 表族）+ 只读档
-  写语句被 postgres 会话拒绝的 UI 形态呈现。
+| 锚 | 结果 | 活体证据 |
+|---|---|---|
+| browse 按钮受理 | ✅ | Resources → databases → torchwood-pg 行 browse 按钮点击 → `POST /v1/databases/<id>/browse` **200**（会话铸造成功；`window.open` 弹窗被走查环境的合成点击弹窗拦截器挡下——环境伪影，真实用户可信点击不受限；后续经 REST 同 token 铸会话 + 浏览器直走 entry 链等价完成） |
+| entry 链（window.open 后浏览器实际发生的每一步） | ✅ | 浏览器新标签直访 entry URL（一次性票据）→ 302 + `flt_browse` cookie → `/` → ForwardAuth 放行 → **pgweb 页 200（title=pgweb）** |
+| **表集可见（挂账锚①）** | ✅ | pgweb 侧栏 `Tables 21` 全列（admin_projects/admins/api_keys/audit_logs/catalog_*/document_events_outbox*/idempotency_keys/invite_codes/project_oauth_providers/projects/provider_resource_index/runbook_steps/runtime_var*/schema_migrations/tw_secrets）+ Functions 162 + Sequences 3——真簇 21 表族浏览器直见 |
+| **select 见数（挂账锚②前半）** | ✅ | pgweb 查询面执行 `select current_database(), count(*) from admins` → `fleetly / 0`（真簇 200，3ms） |
+| **写语句被拒（挂账锚②后半）** | ✅ | `create table` → **400 `query contains keywords not allowed in read-only mode`**（pgweb 工具层关键词拦截——enforcement 语境的干净错误信封）+ 同会话 `show default_transaction_read_only` → **`on`**（postgres 会话级服务端执法）——**双层只读执法在浏览器上下文实证**（会话 cookie 经 ForwardAuth 的完整链上） |
+| enforcement 展示形态 | 注 | Console v1 侧 browse 按钮带 title 提示（"read-only … session … one-time ticket, 120s"），响应 enforcement 字段无专门展示——与实施批"enforcement 展示留后续批"挂账一致，确认为已知挂账非缺陷 |
+
+- 走查环境注记：本会话 IAB 的 locator click 通道超时（按钮点击经 evaluate 直发等价完成）；pgweb 为外置工具 UI（ace 编辑器/原生 DOM），探针不作为其缺陷依据。
+- 走查会话 ×2 靠硬 TTL/空闲回收（复测 browse carriers=0）；走查 token 已吊销。
 
 ## 残留与挂账
 

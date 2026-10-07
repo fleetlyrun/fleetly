@@ -523,3 +523,16 @@ fleetly doctor
 - **quota 面真机**：10min 窗内第 5 会话 → `E_QUOTA_EXCEEDED`（per-Team 并发 4）——信封 suggestion 是 E_QUOTA_EXCEEDED 共用文案（browse 语境下"等会话到期/空闲回收"已在 message 里）；走查会话靠空闲回收（10min 无接触），无需手工清理。
 - **载体面**：`fleetly-browse-<sid>` 1/1（与 e2e 一致）；**硬 TTL 回收真机精确生效**——四走查会话在 created+30min 整点后 Remove 拆载体 + 删行（rows=0/carriers=0）+ 路由随发布消失。**空闲窗观察**：staging 走查会话活到硬 TTL（10min 空闲未提前收——最可能是走查探针的迟到接触；空闲判定 fake-clock 单测绿，硬 TTL 是外层 belt 且实证兜底）。
 - **挂账**：E_QUOTA_EXCEEDED 的共用 suggestion 文案对 browse 语境欠贴切（后续批随 quota 文案分立收口）；mysql 只读角色铸造（服务端执法）与 redis/mongo 的角色铸造挂账（ADR-0051 决策 6）；Console enforcement 层级展示留后续批。
+
+## 2026-10-07 记录·十四（四挂账浏览器级走查补档批 + W1/W3 修复换装 6ff4f08-w1fix）
+
+F3.1/F3.2/F3.3/F3.6 四批走查的浏览器级挂账在后端在场的环境（ZCode IAB）一次收口：隧道 `127.0.0.1:19527`（显式绑 127.0.0.1，18081 wslrelay 劫持坑既有）；走查凭证 `console-walk-browser`（owner）+ `console-walk-sse`（member，SSE 活体专用），毕吊销（401 复核）。判据与证据全量见四份报告补档节（docs/reviews/2026-10-06-console-walkthrough.md 浏览器级补档节〔含 F3.2 终端页小节〕/ 2026-10-06-template-walkthrough.md / 2026-10-07-browse-walkthrough.md）。
+
+- **走查咬出 W1（P0，当日修复 `6ff4f08`）**：Console Modal 壳层 `method=dialog` form 包业务表单 = 嵌套 form（非规范 HTML）——真实浏览器内层 submit 不冒泡出外层 form（捕获相达 root、冒泡相截断），**全部 Modal 表单（新建项目/应用/部署表单/五类资源/token/task/schedule/模板实例化）在真实浏览器提交零动作**，未 preventDefault 的默认提交还带 `?` 整页跳转；jsdom 冒泡不同 → 组件测试全绿漏网。修法 = 壳层去 form + ✕ 改 type=button；ui.test.tsx 四守卫同批。
+- **W3（P1，同批修复）**：dialog close/cancel 不冒泡、React 19 委托收不到——Escape 关 Modal 后受控态失同步，再点同入口无响应（Templates grafana 详情实测死窗）。修法 = 原生 `close` 监听直挂 dialog 节点；Escape/✕/背板三路归一。
+- **换装**（b4953ca-f36browse → 6ff4f08-w1fix，console-only commit）：前置 Platform Backup `6b403083` + 卷 tar 四份（`/root/upgrade-w1/`）；goose "current version: 27" 无迁移。零扰动带注：torchwood-pg Running 16h 不变、VL/VM 2 天不动；**zot+traefik（host 面受管服务）重启 reconcile 各滚一次**（STABLE-NO-FURTHER-ROLLS 复测达成；与用户域负载无关——host 端口面服务对 daemon 重启的已知形态，后续批再升级时留意是否复现）。**修复活体复验**：换装后同路径点击 New project → walk-verify 真创建+关窗+零跳转；合成 close 事件（真实浏览器 Escape 的规范事件）→ 态清 → 再开成功；✕ → 再开成功——W1/W3 双闭环。
+- **W2（CLI 契约挂账）**：`templates instantiate --project <ID>` 不解析 ID——get-or-create 按名字把裸 ID 当新项目名静默建幽灵项目（实测 `01M49WV6C3…` 项目 + demo-site 落入；Console 项目下拉如实渲染裸 ID 行）；`apps create --project` 却只收 ID——两子命令语义相反，名字/ID 解析归一挂后续批。
+- **Logs 修复复验三锚（F2.6 F1/F2/F3 换装后确认）**：text+follow 2.5s 出 200 帧积压 / Stop 翻 Start 且 fetch 计数恒 1 / 空流 `0 frames · ended` + 提示——300ec2d 与 f9d42f5 在 staging 全部生效。
+- **走查环境怪癖实录（非产品缺陷，F2.6 双重曝光伪影同族）**：本 IAB 构建（Electron 41/Chromium 146）locator click 全超时（evaluate 直发等价）、**rAF 挂起**（visibility=visible 仍 0 帧——xterm 不落屏，数据面经 WS 帧解码验证：hostname 回真实容器名/exit 码透传/重开面）、**编程式 `dialog.close()` 不发 close 事件**（W3 活体验证改合成 close 事件路径——真实浏览器用户态关闭不受影响）、合成点击触发 `window.open` 被弹窗拦截器挡（browse 弹窗链经 REST 铸票 + 浏览器直访 entry 等价完成）。
+- **残留清理**：walk-browser（bgwalk 蓝绿）/walk-qs（quickstart demo）/walk-verify（W1 复验）/幽灵项目（demo-site）四项目按 apps→project 序全删，无残留载体/卷；browse 会话 ×2 硬 TTL 回收（carriers=0）；compose 文件与 cleanup 脚本（/root/walk-cleanup.sh）留档。
+- **观察项**：部署详情 observe_deadline 原始 UTC ISO 与相邻字段本地化并存（Logs 时间列 O1 同族）；蓝绿卡收口终局仍写 `← serving g1`；Tasks 子 tab 不共享项目输入；App.tsx "终端页不在导航"注释过时。

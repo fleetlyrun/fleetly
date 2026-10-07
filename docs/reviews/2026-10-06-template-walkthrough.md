@@ -72,3 +72,17 @@ fleetly templates instantiate --project staging-tpl --app demo-site \
   处置另行）；走查台账取证经 outbox 直查。
 - 走查资源已清理（routes/apps/project 删除；`template:dash:*` secret 行随
   项目级材料保留——与 database: 凭证同口径）。
+
+## 浏览器级补档（2026-10-07，Console Templates 页）
+
+后端在场环境（ZCode IAB，bundle `index-CSOhUoLd.js`）补做 Templates 页浏览器级走查：
+
+| 面 | 结果 | 活体锚 |
+|---|---|---|
+| 目录列表 | ✅ | `Templates — catalog source: builtin` 标题 + secret 平台生成注记 + grafana/nginx 双条目（version/description/show·instantiate） |
+| 详情弹窗 | ✅ | nginx：变量声明 `host (domain, required)` + digest `sha256:8334…` + 模板体原文（x-fleetly-template 头 + routes var 引用 + compose 服务）只读渲染 |
+| 实例化向导 | ✅(带注) | 表单渲染全（Project 下拉/App name 复用注记/host 变量字段带 hint）；**提交面当时被 Console Modal 嵌套 form 缺陷（W1）拦截**——实例化经 CLI 完成，向导 UI 提交随 W1 修复批（`6ff4f08`，换装 6ff4f08-w1fix 后 Modal 表单提交活体恢复） |
+| 实例化部署详情 | ✅ | CLI 实例化的 nginx 部署在浏览器详情页渲染（`app demo-site · succeeded`，DNS 名 `web · web.demo-site · web.g1`，from_revision `—`）；Route `tplb.dev.fleetly.run:80 → 200` |
+
+- **grafana 详情死窗**：本批走查发现 Templates 详情弹窗 Escape/关闭后再开无响应——Console Modal 受控态失同步（W3），同批修复（`6ff4f08`）；修复后 close 事件同步 + 再开成功活体复验（详见 F3.1 报告补档节 W3 条）。
+- **W2（挂账）**：`templates instantiate --project` 传项目 **ID** 被按名字 get-or-create 静默建幽灵项目（名字=裸 ID，实测 `01M49WV6C3…` 项目 + demo-site 落入）；与 `apps create --project` 只收 ID 的语义相反。走查残留已清理；名字/ID 解析归一挂后续批裁决。
