@@ -210,7 +210,9 @@ DB_ID=$(cli --json databases create --project "$PROJECT_ID" --engine postgres pg
 wait_db_state() {
   want="$1"; i=0
   while [ "$i" -lt 300 ]; do
-    status=$(cli --json databases list --project "$PROJECT_ID" | sed -n "s/.*\"id\": *\"$DB_ID\".*\"status\": *\"\([^\"]*\)\".*/\1/p" | head -1)
+    # pretty JSON：id 与 status 不同行——grep -A 窗口锚 id 行再取 status
+    #（dind-k3s.sh 同款裸死教训：单行 sed 永不匹配）。
+    status=$(cli --json databases list --project "$PROJECT_ID" | grep -A10 "\"id\": *\"$DB_ID\"" | sed -n 's/.*"status": *"\([^"]*\)".*/\1/p' | head -1)
     [ "$status" = "$want" ] && return 0
     [ "$status" = "failed" ] && fail "database failed"
     i=$((i + 1)); sleep 2

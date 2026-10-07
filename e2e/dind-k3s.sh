@@ -429,7 +429,9 @@ DB_ID=$(cli --json databases create --project "$PROJECT_ID" --engine postgres pg
 [ -n "$DB_ID" ] || fail "database create failed"
 i=0
 while [ "$i" -lt 360 ]; do
-  status=$(cli --json databases list --project "$PROJECT_ID" | sed -n "s/.*\"id\": *\"$DB_ID\".*\"status\": *\"\([^\"]*\)\".*/\1/p" | head -1)
+  # pretty JSON：id 与 status 不同行——grep -A 窗口锚 id 行再取 status
+  #（单行 sed 永不匹配 = 空转 12 分钟超时的裸死教训）。
+  status=$(cli --json databases list --project "$PROJECT_ID" | grep -A10 "\"id\": *\"$DB_ID\"" | sed -n 's/.*"status": *"\([^"]*\)".*/\1/p' | head -1)
   [ "$status" = "running" ] && break
   [ "$status" = "failed" ] && fail "database reached failed"
   i=$((i + 1)); sleep 2
