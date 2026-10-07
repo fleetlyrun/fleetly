@@ -392,6 +392,12 @@ func podTemplate(ns capability.NamespaceRef, w capability.Workload, gen capabili
 	labels := workloadLabels(ns, w, gen)
 	spec := corev1.PodSpec{
 		Containers: []corev1.Container{toContainer(w, secretFiles)},
+		// 载体不消费 k8s API：SA token 自动挂载关闭。双因：kubelet 的
+		// kube-api-access 投影卷要在 /run/secrets/kubernetes.io 建挂载点，
+		// 与材料 projected 卷的 /run/secrets 只读挂载冲突（runc "read-only
+		// file system"、exit 128 起容器即炸——e2e db 段实证）；且是最小
+		// 权限面——载体永不持有集群凭证。
+		AutomountServiceAccountToken: ptr(false),
 	}
 	if restart != "" {
 		spec.RestartPolicy = restart

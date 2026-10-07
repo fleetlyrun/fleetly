@@ -117,6 +117,10 @@ func TestToDeployment(t *testing.T) {
 	assert.True(t, found, "secret materials must mount at /run/secrets")
 	// 钉住节点 selector（平台节点 ID 锚）。
 	assert.Equal(t, "01NODE", d.Spec.Template.Spec.NodeSelector[labelNodeID])
+	// SA token 自动挂载关闭（载体不消费 k8s API + 与材料 projected 卷的
+	// /run/secrets 挂载点冲突——见 podTemplate 坑注）。
+	require.NotNil(t, d.Spec.Template.Spec.AutomountServiceAccountToken)
+	assert.False(t, *d.Spec.Template.Spec.AutomountServiceAccountToken)
 	// 挂卷负载 = Recreate（单实例争用面）。
 	assert.Equal(t, appsv1.RecreateDeploymentStrategyType, d.Spec.Strategy.Type)
 	require.NotNil(t, d.Spec.Replicas)
