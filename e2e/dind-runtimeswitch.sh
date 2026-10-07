@@ -409,13 +409,22 @@ docker exec -e P_NS="$P_NS" -e DB_SEL="$NEW_DB_LC" -e SEED="$SEED_COUNT" "$DIND_
   [ -n "$pod" ] || { echo "restored database pod not found" >&2; exit 1; }
   # 行数断言带重试环:restore 是库 healthy 之后由 one-shot Utility Pod 落数据
   # (k3s 首跑时序——run9 实证 pod Running 但数据未到),固定时点单查会假阴。
+  # 重试环同时逮重试的 util pod 抓日志(restore 失败有 backoff 重跑,pod
+  # 即删——错过即取证不可能)。
   count=""
   j=0
+  ulog=""
   while [ $j -lt 60 ]; do
     count=$(k3s kubectl exec -n "$P_NS" "$pod" -- psql -U fleetly -d fleetly -tAc "SELECT count(*) FROM migration_probe;" 2>/dev/null | tr -d "[:space:]" || true)
     [ "$count" = "$SEED" ] && { echo "restored rows: $count"; exit 0; }
+    upod=$(k3s kubectl get pods -n "$P_NS" --no-headers 2>/dev/null | grep util-restore | awk '{print $1}' || true)
+    if [ -n "$upod" ] && [ -z "$ulog" ]; then
+      sleep 4
+      ulog=$(k3s kubectl logs -n "$P_NS" "$upod" 2>&1 || true)
+    fi
     j=$((j+1)); sleep 2
   done
+  echo "--- utility pod logs:"; echo "$ulog" | head -12
   echo "restored rows: $count (expected $SEED) after $j polls" >&2
   echo "--- psql stderr:"; k3s kubectl exec -n "$P_NS" "$pod" -- psql -U fleetly -d fleetly -tAc "SELECT count(*) FROM migration_probe;" 2>&1 | tail -3
   echo "--- ns pods (utility one-shots incl):"; k3s kubectl get pods -n "$P_NS" --no-headers 2>&1
