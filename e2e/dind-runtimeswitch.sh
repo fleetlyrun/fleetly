@@ -390,7 +390,7 @@ NEW_DB_LC=$(printf '%s' "$NEW_DB_ID" | tr 'A-Z' 'a-z')
 docker exec -e P_NS="$P_NS" -e DB_SEL="$NEW_DB_LC" -e SEED="$SEED_COUNT" "$DIND_CID" sh -c '
   i=0
   while [ $i -lt 60 ]; do
-    pod=$(k3s kubectl get pods -n "$P_NS" -l "fleetly.ns.database=$DB_SEL" --no-headers 2>/dev/null | grep Running | head -1 | cut -d" " -f1)
+    pod=$(k3s kubectl get pods -n "$P_NS" -l "fleetly.ns.database=$DB_SEL" --no-headers 2>/dev/null | grep Running | head -1 | cut -d" " -f1 || true)
     [ -n "$pod" ] && break
     i=$((i+1)); sleep 2
   done

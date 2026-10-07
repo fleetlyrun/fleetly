@@ -371,7 +371,7 @@ wait_pod_label() {
   # 必失败（label 在 pod 模板里，对象一创建选择器即命中——计数是竞态）。
   i=0
   while [ "$i" -lt 120 ]; do
-    n=$(docker exec "$DIND_CID" sh -c "k3s kubectl get pods -n $P1_NS -l fleetly.egress=true --no-headers 2>/dev/null | grep -c Running")
+    n=$(docker exec "$DIND_CID" sh -c "k3s kubectl get pods -n $P1_NS -l fleetly.egress=true --no-headers 2>/dev/null | grep -c Running" || true)
     [ "$n" -ge 1 ] && return 0
     i=$((i + 1)); sleep 2
   done
@@ -445,7 +445,9 @@ log "database running with bound PVC"
 log "managed traefik + plaintext route drill"
 i=0
 while [ "$i" -lt 90 ]; do
-  n=$(docker exec "$DIND_CID" sh -c "k3s kubectl get pods -n fleetly-system --no-headers 2>/dev/null | grep -c Running")
+  # grep -c 零匹配/查无 ns 均为非零退出——|| true 防 set -e 静默击穿
+  #（dash 对 n=$(失败命令) 即死，run14 实证日志戛然而止无 FATAL）。
+  n=$(docker exec "$DIND_CID" sh -c "k3s kubectl get pods -n fleetly-system --no-headers 2>/dev/null | grep -c Running" || true)
   [ "$n" -ge 1 ] && break
   i=$((i + 1)); sleep 2
 done
