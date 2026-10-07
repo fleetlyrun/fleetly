@@ -107,10 +107,11 @@ const SeedMountPoint = "/seed"
 // BackupInputPath 是恢复流的输入文件容器内固定挂载路径（ADR-0039 落地
 // 实录：hijack attach 的 CloseWrite 不向容器 stdin 送 EOF——dind 实证
 // mysql 客户端读流永挂；恢复流经文件挂载承载，模板 argv 与执行器共用
-// 本单源。带目录段形态：swarm 侧文件级 bind 任意路径成立；k3s 侧按父
-// 目录挂 hostPath——根级路径的父目录是 "/"，挂载即覆盖容器根（ADR-0052
-// e2e 批实证）。
-const BackupInputPath = "/backup/input"
+// 本单源）。落在 /run/secrets 命名空间（与材料凭证同域——备份档与凭证
+// 同保密级）：swarm 侧文件级 bind 任意路径成立；k3s 侧与材料同 projected
+// 卷投影（实证通道——fuse 深层根上新顶层目录的挂载点创建不达，ADR-0052
+// e2e 批实证矩阵）。
+const BackupInputPath = "/run/secrets/backup-input"
 
 // RestoreSpec 是一次恢复的引擎渲染产物。
 type RestoreSpec struct {

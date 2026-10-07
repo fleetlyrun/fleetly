@@ -208,11 +208,45 @@ func (p *Provider) buildUtilityPod(ctx context.Context, req capability.UtilityRe
 		AutomountServiceAccountToken: ptr(false),
 		Containers:                   []corev1.Container{container},
 	}
-	// Secret 材料文件：projected 卷挂 /run/secrets，value 键投影为文件
-	// <平台名>（docker secrets 语义对齐——裸 Secret 卷的两级目录形态会让
-	// _FILE env 指到目录即崩，载体面同款实证）。
-	if len(req.SecretFiles) > 0 {
-		sources := make([]corev1.VolumeProjection, 0, len(req.SecretFiles))
+	// /run/secrets 域注入（材料凭证 + 恢复输入同域——备份档与凭证同保密
+	// 级）。通道裁决（e2e 取证矩阵，ADR-0052 批）：projected 卷在
+	// /run/secrets 全镜像形态实证可读（db 密码文件）；fuse 深层根上新
+	// 顶层目录的挂载点创建不达（/backup 形态实证不可见）——输入恒落
+	// /run/secrets 域（BackupInputPath 契约单源）。小档（≤
+	// secretInputLimit，k8s Secret 受 etcd 对象限）全走投影；大档回退
+	// hostDir 挂 /run/secrets（材料文件一并暂存、单挂载点）——诚实边界：
+	// 该回退在 dind 形态受 mount 命名空间遮蔽影响，生产节点原生文件系统
+	// 无此形态（ADR-0052 挂账注记）。
+	var inputContent []byte
+	var inputName string
+	if req.Input != nil {
+		inputName = filepath.Base(strings.TrimSuffix(req.Input.Target, "/"))
+		var rerr error
+		inputContent, rerr = io.ReadAll(req.Input.Content)
+		if rerr != nil {
+			return nil, fmt.Errorf("stage input content: %w", rerr)
+		}
+	}
+	if len(inputContent) > secretInputLimit {
+		if err := os.MkdirAll(hostDir, 0o750); err != nil {
+			return nil, fmt.Errorf("stage input dir: %w", err)
+		}
+		for platformName, content := range req.SecretFiles {
+			if err := os.WriteFile(filepath.Join(hostDir, platformName), content, 0o640); err != nil {
+				return nil, fmt.Errorf("stage material file: %w", err) //nolint:gosec // 材料名是引擎铸造的平台名，非用户自由输入
+			}
+		}
+		if err := os.WriteFile(filepath.Join(hostDir, inputName), inputContent, 0o640); err != nil {
+			return nil, fmt.Errorf("stage input file: %w", err) //nolint:gosec // 路径由平台 ULID 与挂点合成，非用户自由输入
+		}
+		spec.Volumes = append(spec.Volumes, corev1.Volume{
+			Name: secretsVolumeName,
+			VolumeSource: corev1.VolumeSource{
+				HostPath: &corev1.HostPathVolumeSource{Path: hostDir},
+			},
+		})
+	} else {
+		sources := make([]corev1.VolumeProjection, 0, len(req.SecretFiles)+1)
 		for _, platformName := range sortedKeys(req.SecretFiles) {
 			objName := "fleetly-util-mat-" + sanitizeNamePart(platformName)
 			if _, err := p.cli.CoreV1().Secrets(nsName).Create(ctx, &corev1.Secret{
@@ -231,79 +265,40 @@ func (p *Provider) buildUtilityPod(ctx context.Context, req capability.UtilityRe
 				},
 			})
 		}
-		spec.Volumes = append(spec.Volumes, corev1.Volume{
-			Name: secretsVolumeName,
-			VolumeSource: corev1.VolumeSource{
-				Projected: &corev1.ProjectedVolumeSource{
-					Sources:     sources,
-					DefaultMode: ptr(int32(0o444)),
-				},
-			},
-		})
-		container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{
-			Name:      secretsVolumeName,
-			MountPath: "/run/secrets",
-			ReadOnly:  true,
-		})
-	}
-	// 输入文件（恢复流）双通道：
-	//   小档（≤secretInputLimit）→ Secret 投影（items 投影为契约路径文件）
-	//   ——与材料凭证同通道，全镜像形态实证可读（db 密码文件实证）；k8s
-	//   Secret 受 etcd 对象限，大档不可承载。
-	//   大档 → 宿主暂存 hostPath（父目录挂载；契约路径带目录段——根级路径
-	//   父目录是 "/" 会覆盖容器根）。诚实边界：dind 形态（swarm 段先行 +
-	//   k3s 的 mount 命名空间遮蔽）下 hostPath 对 kubelet 不可见（e2e 取证
-	//   实证：写侧 1413 字节完好、容器侧 No such file）；生产节点原生文件
-	//   系统无此形态——ADR-0052 挂账注记。
-	if req.Input != nil {
-		fileName := filepath.Base(strings.TrimSuffix(req.Input.Target, "/"))
-		content, rerr := io.ReadAll(req.Input.Content)
-		if rerr != nil {
-			return nil, fmt.Errorf("stage input content: %w", rerr)
-		}
-		if len(content) <= secretInputLimit {
+		if inputContent != nil {
 			objName := "fleetly-util-input-" + sanitizeNamePart(req.ID)
 			if _, err := p.cli.CoreV1().Secrets(nsName).Create(ctx, &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{Name: objName},
-				Data:       map[string][]byte{"input": content},
+				Data:       map[string][]byte{"input": inputContent},
 			}, metav1.CreateOptions{}); err != nil && !apierrors.IsAlreadyExists(err) {
 				return nil, fmt.Errorf("ensure utility input secret: %w", err)
 			}
+			sources = append(sources, corev1.VolumeProjection{
+				Secret: &corev1.SecretProjection{
+					LocalObjectReference: corev1.LocalObjectReference{Name: objName},
+					Items: []corev1.KeyToPath{{
+						Key:  "input",
+						Path: inputName,
+					}},
+				},
+			})
+		}
+		if len(sources) > 0 {
 			spec.Volumes = append(spec.Volumes, corev1.Volume{
-				Name: "input",
+				Name: secretsVolumeName,
 				VolumeSource: corev1.VolumeSource{
 					Projected: &corev1.ProjectedVolumeSource{
-						Sources: []corev1.VolumeProjection{{
-							Secret: &corev1.SecretProjection{
-								LocalObjectReference: corev1.LocalObjectReference{Name: objName},
-								Items: []corev1.KeyToPath{{
-									Key:  "input",
-									Path: fileName,
-								}},
-							},
-						}},
+						Sources:     sources,
 						DefaultMode: ptr(int32(0o444)),
 					},
 				},
 			})
-		} else {
-			if err := os.MkdirAll(hostDir, 0o750); err != nil {
-				return nil, fmt.Errorf("stage input dir: %w", err)
-			}
-			staged := filepath.Join(hostDir, fileName)
-			if err := os.WriteFile(staged, content, 0o640); err != nil {
-				return nil, fmt.Errorf("stage input file: %w", err) //nolint:gosec // 路径由平台 ULID 与挂点合成，非用户自由输入
-			}
-			spec.Volumes = append(spec.Volumes, corev1.Volume{
-				Name: "input",
-				VolumeSource: corev1.VolumeSource{
-					HostPath: &corev1.HostPathVolumeSource{Path: hostDir},
-				},
-			})
 		}
+	}
+	if len(req.SecretFiles) > 0 || inputContent != nil {
 		container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{
-			Name:      "input",
-			MountPath: filepath.Dir(req.Input.Target),
+			Name:      secretsVolumeName,
+			MountPath: "/run/secrets",
 			ReadOnly:  true,
 		})
 	}
