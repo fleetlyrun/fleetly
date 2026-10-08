@@ -5,8 +5,28 @@ k3s 是第二运行时（ADR-0052 试点 → ADR-0054 资格认定 production-re
 ## 装机序（opt-in 形态）
 
 1. 节点就绪：全部节点安装 k3s（server 起动建议 `--disable=traefik --disable=servicelb`——与平台受管 Proxy 争 80/443 hostPort）；worker 经 `k3s agent --server <控制面节点 IP> --token <node-token>` 加入（token 在 server 的 `/var/lib/rancher/k3s/server/node-token`；`fleetly nodes enroll` 材料即此命令，advertise 地址已解析为控制面节点 IP——ADR-0053 决策 5）。
-2. fleetlyd 与 k3s server 同机（控制面单机假设，ADR-0019 同款合法形态）；config 写 `runtime.provider: k3s`（缺省 kubeconfig `/etc/rancher/k3s/k3s.yaml`，可用 `runtime.k3s.kubeconfig` 覆写）。
-3. 起动即自举 RBAC（fleetly-system/fleetly-manager SA + 最小 ClusterRole），随后工作客户端换 SA token、弃自举凭证（ADR-0053 决策 4）。
+2. **明文 registry 信任面（ADR-0056 决策 1，全部节点）**：装机时落 `/etc/rancher/k3s/registries.yaml`（k3s 起动期渲染 containerd hosts.toml；变更需重启 k3s）——mirror 键 = 受管仓库地址（与 fleetlyd 的 `registry.addr` 同源）：
+
+   ```yaml
+   mirrors:
+     "<registryAddr>":
+       endpoint:
+         - "http://<registryAddr>"
+   ```
+
+   分层边界：节点级只承载传输信任（明文可达）；**认证面恒走 pod 级 imagePullSecrets**（per-Project 凭证既有链）——registries.yaml 不配 auth（节点级 auth 是全域共享凭证，会击穿 per-Project 域隔离）。
+3. **控制面节点构建面（ADR-0056 决策 2）**：构建恒在控制面节点本地 daemon（ADR-0019）——控制面节点需跑 docker daemon **仅作构建面**（不 init swarm），配 `--insecure-registry <registryAddr>`（`/etc/docker/daemon.json` 的 insecure-registries，install.sh drop-in 同款；k3s 腿不经 install.sh 的装机复刻此 drop-in）。worker 节点不需要。
+4. fleetlyd 与 k3s server 同机（控制面单机假设，ADR-0019 同款合法形态）；config 写 `runtime.provider: k3s`（缺省 kubeconfig `/etc/rancher/k3s/k3s.yaml`，可用 `runtime.k3s.kubeconfig` 覆写）。
+5. 起动即自举 RBAC（fleetly-system/fleetly-manager SA + 最小 ClusterRole），随后工作客户端换 SA token、弃自举凭证（ADR-0053 决策 4）。
+
+## 多 server HA（embedded etcd，ADR-0056 决策 3）
+
+**支持形态**（e2e `e2e:k3s-ha` 四容器腿实证）：首节点 `k3s server --cluster-init` → 其余 server `k3s server --server https://<首节点>:6443 --token <node-token>` 加入（node-token 同 worker join 同源；奇数成员 quorum，3/5/…）。worker 照常经 `fleetly nodes enroll` 加入。
+
+- **语义 = Runtime 面高可用**：单 server 失效时集群读写保持（quorum 内）、worker 载体零滚动（kubelet autonomy——与 apiserver 失联不杀容器；NotReady taint 的默认驱逐容忍窗 300s，失效窗超此即进入灾难恢复形态）。
+- **fleetlyd 单实例诚实边界**：fleetlyd（控制面 sqlite + 数据根）不在 k3s HA 覆盖内——apiserver 失效对它是断连重连，fleetlyd 自身高可用是独立话题（触发条件：首个要求控制面无停机窗的真实部署）。
+- **无 LB 诚实边界**：fleetlyd kubeconfig 与 worker join 各钉单 apiserver 端点——该 server 长死则控制面不可达直至恢复。多 apiserver 前置 LB/DNS 多记录是部署形态选择（k3s 官方建议），按需实施。
+- **server 扩缩容 = 装机级手工序，不经平台 Enrollment**（etcd 成员变更是 quorum 风险面；与孤儿处置同文化：一次性动作不进常驻 API 面）。缩容注意：etcd 死成员残留不自动清理，quorum 按成员总数计——**缩容必须先 etcd member remove 再停机**，否则 quorum 永久受损（`k3s etcd-member-list` 核对）。
 
 ## RBAC 规则升级序（单向门）
 
@@ -49,6 +69,7 @@ staging node2（143.198.234.68 / VPC 10.124.0.5）是 k3s 形态生产实证环�
 - 排障：`k3s kubectl get netpol -A`（fleetly-netisolate-* / fleetly-peer-* / fleetly-egress-deny）；`kubectl get pods --show-labels` 查成员资格。
 - 诚实边界两行：项目域 pod 直连系统域载体维持全通（弱于 swarm）；撤销 peer 的隔离生效时点 = 挂靠方下一次 isolate Ensure 完成（engine 隔离环 + 漂移扫描兜底）。
 - 残留 grant（声明方项目/App 消亡后接收方 ns 的 no-op policy）由 RuntimeHygiene 周期清扫（ADR-0055 决策 3）：owner ns 无活 pod 持 key 且无该 key 成员 policy 即删。
+- 空域收尾（ADR-0056 决策 5）：项目删除后，最后拆除的域在 Remove 尾部判空（ns 内零活 fleetly 载体 + 零 PVC）即删除项目 Namespace（ns 删除级联带走域内一切，含挂靠方遗留 grant）。**有 PVC 在场即不拆**——卷是数据兜底（swarm 形态项目删除后 `fleetly-vol-*` 残留同款文化）；空 ns + 卷的残留处置序：确认数据不要 → `kubectl delete pvc -n <ns> --all` → `kubectl delete ns <ns>`（下次任一域 Remove 也会自动收尾）。
 
 ## 旧 Runtime 孤儿载体处置（场景 3 迁移后，ADR-0054 决策 3）
 
@@ -97,7 +118,7 @@ staging node2（143.198.234.68 / VPC 10.124.0.5）是 k3s 形态生产实证环�
 ### 诚实边界（本环境实证补录）
 
 - **CNI 准入传播窗**：kube-router 对新建 pod 的成员 label ipset 准入在繁忙集群可达分钟级（本集群实测 ~75s；e2e 新鲜集群秒级故未咬出）——长命载体的入站放行窗内不可达会自愈，一次性短命载体必须走 hostNetwork（备份链已修）；后续若再引入秒级工具载体，同款形态是唯一安全面。
-- from_build → 受管 zot（HTTP 明文 registry）拉取需节点 containerd hosts.toml 配置面——本环境未实证（ADR-0055 决策 1 记档，后续批裁决）。
+- from_build → 受管 zot（HTTP 明文 registry）拉取需节点 containerd hosts.toml 配置面——本环境未实证（ADR-0055 决策 1 记档，后续批裁决）。〔2026-10-08 随 ADR-0056 收口：拉取面 = registries.yaml 装机序承载 + 构建面 = 控制面 docker daemon（insecure-registry drop-in）；staging 实录见文末记录表。〕
 - 受管 traefik 证书面/ACME 未在本环境演练（route 全 tls none 明文形态）。
 
-- 项目删除不拆 Namespace（k3s Provider 只建不删——ensureNamespace 单向；空 ns Active 残留是已知形态，cosmetic，后续批可随卫生清扫收口）。
+- ~~项目删除不拆 Namespace（k3s Provider 只建不删——ensureNamespace 单向；空 ns Active 残留是已知形态，cosmetic，后续批可随卫生清扫收口）~~（2026-10-08 随 ADR-0056 决策 5 收口：域 Remove 尾部空域收尾——零活载体 + 零 PVC 即删 ns；有 PVC 的空 ns 维持残留（数据兜底），处置序见网络隔离模型节末行。）

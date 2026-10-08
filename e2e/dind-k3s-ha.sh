@@ -130,8 +130,15 @@ if [ "$K3S_SNAPSHOTTER" = "fuse" ]; then
     main/x86_64/fuse3-3.18.3-r0.apk \
     community/x86_64/fuse-overlayfs-1.16-r0.apk; do
     name=$(basename "$apk")
-    [ -s "$WORKDIR/$name" ] || curl -sL --retry 3 -o "$WORKDIR/$name" "$APK_BASE/$apk" \
-      || { echo "FATAL: apk fetch failed: $name" >&2; exit 1; }
+    # 下载缓存（k3s 缓存目录同库——alpine CDN 经代理有瞬态抖动；CI actions
+    # cache 路径恰同此目录）。
+    if [ -s "$K3S_CACHE_DIR/$name" ]; then
+      cp "$K3S_CACHE_DIR/$name" "$WORKDIR/$name"
+    else
+      curl -sL --retry 3 -o "$WORKDIR/$name" "$APK_BASE/$apk" \
+        || { echo "FATAL: apk fetch failed: $name" >&2; exit 1; }
+      cp "$WORKDIR/$name" "$K3S_CACHE_DIR/$name"
+    fi
   done
   install_fuse_apks() {
     for apk in fuse-common-3.18.3-r0.apk fuse3-libs-3.18.3-r0.apk fuse3-3.18.3-r0.apk fuse-overlayfs-1.16-r0.apk; do
@@ -352,14 +359,11 @@ done
 [ "$n" = "0" ] || fail "k3s did not exit on server1"
 sleep 8 # 断连窗:让 fleetlyd 的 watch/Ensure 撞上拒连并留下日志痕迹
 
-# 断连被感知（fleetlyd 日志出现连接类错误行——宽匹配,client-go 文本随版本）。
-docker exec "$S1_CID" sh -c "grep -iE 'connection refused|connect:|unavailable|watch.*ended|apiserver' /var/log/fleetlyd.log | grep -v gRPC | tail -3" \
-  || true
-n=$(docker exec "$S1_CID" sh -c "grep -icE 'connection refused|connect:|unavailable|watch.*ended' /var/log/fleetlyd.log" || true)
-case "$n" in
-  ''|0) docker exec "$S1_CID" sh -c "grep -v 'gRPC request' /var/log/fleetlyd.log | tail -20" >&2
-        fail "fleetlyd never noticed the apiserver loss (no connection-error lines)" ;;
-esac
+# 断连面诊断（非断言——Provider 的 watch 断流重建是静默路径，日志锚可能
+# 无痕；断连由 apiserver 死亡 + 恢复后 fleetlyd 行为收口双锚承载）。
+docker exec "$S1_CID" sh -c 'k3s kubectl get --raw=/readyz >/dev/null 2>&1' \
+  && fail "server1 apiserver still answering after the kill"
+docker exec "$S1_CID" sh -c "grep -icE 'connection refused|connect:|unavailable|watch.*ended' /var/log/fleetlyd.log" || true
 
 # 载体零滚动 + 持续服务（断言经 server3——quorum 内的旁路 apiserver）。
 UID_DURING=$(uid_now "$S3_CID")
@@ -384,10 +388,12 @@ while [ "$i" -lt 120 ]; do
 done
 [ "$i" -lt 120 ] || { docker exec "$S1_CID" tail -30 /var/log/k3s.log >&2; fail "server1 did not come back"; }
 
-# fleetlyd 重连收口（status 恢复 = watch/Ensure 环重新可用）。
+# fleetlyd 重连收口：status（进程面）+ nodes list（apiserver 面——重连后
+# DescribeCluster 必须恢复服务）双锚。
 i=0
 while [ "$i" -lt 60 ]; do
-  if docker exec -e FLEETLY_ADDR=127.0.0.1:9080 -e FLEETLY_TOKEN="$CURRENT_TOKEN" "$S1_CID" /root/bins/fleetly status >/dev/null 2>&1; then
+  if docker exec -e FLEETLY_ADDR=127.0.0.1:9080 -e FLEETLY_TOKEN="$CURRENT_TOKEN" "$S1_CID" /root/bins/fleetly status >/dev/null 2>&1 \
+    && docker exec -e FLEETLY_ADDR=127.0.0.1:9080 -e FLEETLY_TOKEN="$CURRENT_TOKEN" "$S1_CID" /root/bins/fleetly --json nodes list >/dev/null 2>&1; then
     break
   fi
   i=$((i + 1))

@@ -122,8 +122,15 @@ if [ "$K3S_SNAPSHOTTER" = "fuse" ]; then
     main/x86_64/fuse3-3.18.3-r0.apk \
     community/x86_64/fuse-overlayfs-1.16-r0.apk; do
     name=$(basename "$apk")
-    [ -s "$WORKDIR/$name" ] || curl -sL --retry 3 -o "$WORKDIR/$name" "$APK_BASE/$apk" \
-      || { echo "FATAL: apk fetch failed: $name" >&2; exit 1; }
+    # 下载缓存（k3s 缓存目录同库——alpine CDN 经代理有瞬态抖动；CI actions
+    # cache 路径恰同此目录）。
+    if [ -s "$K3S_CACHE_DIR/$name" ]; then
+      cp "$K3S_CACHE_DIR/$name" "$WORKDIR/$name"
+    else
+      curl -sL --retry 3 -o "$WORKDIR/$name" "$APK_BASE/$apk" \
+        || { echo "FATAL: apk fetch failed: $name" >&2; exit 1; }
+      cp "$WORKDIR/$name" "$K3S_CACHE_DIR/$name"
+    fi
   done
   install_fuse_apks() {
     for apk in fuse-common-3.18.3-r0.apk fuse3-libs-3.18.3-r0.apk fuse3-3.18.3-r0.apk fuse-overlayfs-1.16-r0.apk; do

@@ -490,3 +490,39 @@ func TestRemoveNamespaceDrain(t *testing.T) {
 		assert.NoError(t, err, "the managed system namespace must never be removed")
 	})
 }
+
+// TestRemoveNamespaceDrainOwnedPods：GC 链上的 owned pod（ReplicaSet 级联，
+// 控制器已消失但 pod 的消失有异步窗）不阻拆——控制器的存亡由
+// deployments/daemonsets 判据承载；独立 one-shot pod（无 owner）在场即阻拆。
+func TestRemoveNamespaceDrainOwnedPods(t *testing.T) {
+	ctx := context.Background()
+	ownerlessPod := func(name string) *corev1.Pod {
+		return &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+			Name: name, Namespace: "fleetly-shop", Labels: map[string]string{labelManaged: "true"},
+		}}
+	}
+	ownedPod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+		Name:      "web-web-abc",
+		Namespace: "fleetly-shop",
+		Labels:    map[string]string{labelManaged: "true"},
+		OwnerReferences: []metav1.OwnerReference{{
+			APIVersion: "apps/v1", Kind: "ReplicaSet", Name: "web-web", UID: "rs-uid",
+		}},
+	}}
+
+	t.Run("owned orphaned pod does not hold the namespace", func(t *testing.T) {
+		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "fleetly-shop"}}
+		p, cli := newFakeProvider(ns, ownedPod)
+		require.NoError(t, p.Remove(ctx, capability.NamespaceRef{Team: "t", Project: "shop", App: "gone"}))
+		_, err := cli.CoreV1().Namespaces().Get(ctx, "fleetly-shop", metav1.GetOptions{})
+		assert.True(t, apierrors.IsNotFound(err), "pod owned by a gone controller must not hold the namespace (GC will collect it)")
+	})
+
+	t.Run("ownerless live pod holds the namespace", func(t *testing.T) {
+		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "fleetly-shop"}}
+		p, cli := newFakeProvider(ns, ownerlessPod("taskrun-x"))
+		require.NoError(t, p.Remove(ctx, capability.NamespaceRef{Team: "t", Project: "shop", App: "gone"}))
+		_, err := cli.CoreV1().Namespaces().Get(ctx, "fleetly-shop", metav1.GetOptions{})
+		assert.NoError(t, err, "ownerless one-shot pod is genuinely live and must hold the namespace")
+	})
+}

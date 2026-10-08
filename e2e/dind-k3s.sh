@@ -133,6 +133,9 @@ wait_docker
 #     DIND_IP 在此刻取并在重启后断言保持（既有 fleetlyd env 同源）。
 DIND_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$DIND_CID")
 [ -n "$DIND_IP" ] || fail "could not resolve the dind container IP"
+# mkdir 先行：docker:29-dind 镜像无 /etc/docker（install.sh 形态建它——手起
+# 腿复刻）。
+docker exec "$DIND_CID" mkdir -p /etc/docker
 docker exec "$DIND_CID" sh -c "printf '{\"insecure-registries\":[\"$DIND_IP:5000\"]}\n' > /etc/docker/daemon.json"
 log "restarting the dind container to load the insecure-registry drop-in (before k3s starts)"
 docker restart "$DIND_CID" >/dev/null
@@ -160,7 +163,14 @@ if [ "$K3S_SNAPSHOTTER" = "fuse" ]; then
     main/x86_64/fuse3-3.18.3-r0.apk \
     community/x86_64/fuse-overlayfs-1.16-r0.apk; do
     name=$(basename "$apk")
-    curl -sL --retry 3 -o "$WORKDIR/$name" "$APK_BASE/$apk" || { echo "FATAL: apk fetch failed: $name" >&2; exit 1; }
+    # 下载缓存（k3s 缓存目录同库——alpine CDN 经代理有瞬态抖动，重跑不重下；
+    # CI 的 actions cache 路径恰同此目录，双保险）。
+    if [ -s "$K3S_CACHE_DIR/$name" ]; then
+      cp "$K3S_CACHE_DIR/$name" "$WORKDIR/$name"
+    else
+      curl -sL --retry 3 -o "$WORKDIR/$name" "$APK_BASE/$apk" || { echo "FATAL: apk fetch failed: $name" >&2; exit 1; }
+      cp "$WORKDIR/$name" "$K3S_CACHE_DIR/$name"
+    fi
     docker exec -i "$DIND_CID" sh -c "cat > /tmp/$name" < "$WORKDIR/$name"
   done
   docker exec "$DIND_CID" sh -c \

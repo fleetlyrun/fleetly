@@ -460,7 +460,16 @@ func (p *Provider) deleteNamespaceIfDrained(ctx context.Context, nsName string) 
 		return
 	}
 	for i := range pods.Items {
-		if pods.Items[i].DeletionTimestamp == nil {
+		pod := &pods.Items[i]
+		// 有 owner 的 pod（ReplicaSet/Job 级联）跳过：控制器已消失时 GC 链
+		// 必然收走（Delete 后控制器对象同步消失，pod 的消失有异步窗——
+		// 同步判空会被这个窗卡住，e2e 实证 2026-10-08）；控制器的存亡已由
+		// 上面的 deployments/daemonsets 判据承载。独立 one-shot Pod 无
+		// owner——Delete 后同步消失，在场即真活，必须阻拆。
+		if len(pod.OwnerReferences) > 0 {
+			continue
+		}
+		if pod.DeletionTimestamp == nil {
 			return
 		}
 	}
