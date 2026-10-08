@@ -148,7 +148,7 @@ func TestDesiredClusterRoleTable(t *testing.T) {
 		rule("", []string{"pods/log"}, "get"), // k8s 子资源真名单数(staging k3s 实证)
 		rule("", []string{"services"}, "create", "delete", "get", "list", "update"),
 		rule("", []string{"secrets"}, "create", "delete", "deletecollection", "get", "list", "update"),
-		rule("", []string{"persistentvolumeclaims"}, "create", "get"),
+		rule("", []string{"persistentvolumeclaims"}, "create", "get", "list"), // list = 空域收尾零卷判据(ADR-0056)
 		rule("", []string{"events"}, "get", "list"),
 		rule("apps", []string{"deployments", "daemonsets"}, "create", "delete", "get", "list", "update"),
 		rule("networking.k8s.io", []string{"networkpolicies"}, "create", "delete", "get", "list"),
