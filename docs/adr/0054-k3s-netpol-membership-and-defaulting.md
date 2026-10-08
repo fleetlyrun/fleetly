@@ -73,7 +73,7 @@ ADR-0053 补齐 Exec/Hygiene/RBAC/两节点四子面后，ADR-0052 决策 4"三�
 
 ## 后果
 
-- k3s Provider 文件面：translate.go（成员资格 label）、network.go（成员/peer policy 收敛）、runtime.go（Ensure/Remove 挂钩）、utility.go（工具 Pod 成员 label）、rbac.go（+list 动词）。swarm Provider 零改动（回归底座）。
+- k3s Provider 文件面：translate.go（成员资格 label）、netisolate.go（成员/peer policy 构造与收敛）、network.go（serviceLabels 轴锚）、runtime.go（Ensure/Remove 挂钩）、utility.go（工具 Pod 成员 label）、rbac.go（+list 动词）。swarm Provider 零改动（回归底座）。
 - engine/api/CLI/Console 零改动（附件集投影既有；隔离是 Provider 载体面）。
 - 升级面：载体 pod 模板新增 label = 一次受控滚动（k3s 域 Ensure 的代次机制承载）；e2e 升级腿不受牵动（runtimeswitch 是冷迁移）。
 - 隔离不变式自愈：netpol 是 Ensure 收敛产物（期望集对照），载体漂移/人工删 policy 由下拍收敛兜底；peer 撤销由 engine 隔离环（A.4）+ Ensure 收敛双承载。
@@ -82,14 +82,16 @@ ADR-0053 补齐 Exec/Hygiene/RBAC/两节点四子面后，ADR-0052 决策 4"三�
 
 ## 验收锚
 
-- [ ] 成员资格翻译单测：Networks/NetworkRefs/零附件/Publish 豁免四形态的 label 断言（workloadLabels 扩展）+ 复合 key 同域/跨域同值 + label key 上限截断哈希（TestNetMembershipLabels）
-- [ ] 成员 policy 收敛单测：每网一条（组级聚合非 per-carrier）+ 放行集三规则 + stale 删除（活 label 派生：无成员 pod 即删/有成员 pod 保留/egress deny 与他方 grant 不触碰/非 managed 不触碰）（fake clientset，TestReconcileNetIsolation*）
-- [ ] 跨域安全双锚（e2e 咬出后的回归面）：task 域 Ensure 不删 app 域成员 policy（TestReconcileNetIsolationCrossDomainSafe）+ task 域 Ensure 不删 app 域 Service/无轴遗留清除（TestEnsureServiceConvergenceIsDomainScoped——预存 Service 轴缺失 bug 的钉板）
-- [ ] peer grant 单测：双侧 policy 形态（挂靠 ns 引用衍生规则 + 接收 ns grant）+ 按.owner label 清 stale + 撤销（refs 消失）双侧收敛删除（TestReconcilePeerGrants*）
-- [ ] 工具 Pod 成员 label 单测（buildUtilityPod 挂 req.Networks 附件集——备份链可达性锚）
-- [ ] RBAC 表格测试更新（networkpolicies create,delete,get,list）+ e2e auth can-i 断言扩展（list networkpolicies yes）
-- [ ] Notes 诚实边界更新：撤"task network group isolation is relaxed"行，入成员资格隔离声明 + 两行诚实边界（项目域→系统域 pod 直连全通、出站方向目标侧收口）——TestDescribeNotesHonesty 同批钉死
-- [ ] e2e `e2e:k3s` 网络段全绿：跨 ns 活体（P1 常规载体 → P2 服务拒 / 同网成员通）+ 成员 policy 在场 + peer drill（declare→approve→挂靠部署→跨项目通→revoke→隔离收敛→拒）+ task-group drill（task pod → 项目服务拒 / 跨挂 app ↔ task 组内通）
-- [ ] e2e 双腿回归（k3s/k3s-tw 现有段零漂移——route/exec/db/backup 链在隔离模型下照常绿）
-- [ ] 全门禁：`mise run test` + `mise run lint` + `go test -count=1 ./internal/guards/` + `generate:verify` + `console:verify`；swarm 全套零回归
-- [ ] ADR-0052 §9 挂账 3/4/8 划线注日期 + 决策 3 事实修正追记；runbook k3s 节落地；checklist F4.1 追记
+- [x] 成员资格翻译单测：Networks/NetworkRefs/零附件/Publish 豁免四形态的 label 断言（workloadLabels 扩展）+ 复合 key 同域/跨域同值 + label key 上限截断哈希（TestNetMembershipLabels）
+- [x] 成员 policy 收敛单测：每网一条（组级聚合非 per-carrier）+ 放行集三规则 + stale 删除（活 label 派生：无成员 pod 即删/有成员 pod 保留/egress deny 与他方 grant 不触碰/非 managed 不触碰）（fake clientset，TestReconcileNetIsolation*）
+- [x] 跨域安全双锚（e2e 咬出后的回归面）：task 域 Ensure 不删 app 域成员 policy（TestReconcileNetIsolationCrossDomainSafe）+ task 域 Ensure 不删 app 域 Service/无轴遗留清除（TestEnsureServiceConvergenceIsDomainScoped——预存 Service 轴缺失 bug 的钉板）
+- [x] peer grant 单测：双侧 policy 形态（挂靠 ns 引用衍生规则 + 接收 ns grant）+ 按.owner label 清 stale + 撤销（refs 消失）双侧收敛删除（TestReconcilePeerGrants*）
+- [x] 工具 Pod 成员 label 单测（buildUtilityPod 挂 req.Networks 附件集——备份链可达性锚）
+- [x] RBAC 表格测试更新（networkpolicies create,delete,get,list）+ e2e auth can-i 断言扩展（list networkpolicies yes）
+- [x] Notes 诚实边界更新：撤"task network group isolation is relaxed"行，入成员资格隔离声明 + 两行诚实边界（项目域→系统域 pod 直连全通、出站方向目标侧收口）——TestDescribeNotesHonesty 同批钉死
+- [x] e2e `e2e:k3s` 网络段全绿：跨 ns 活体（P1 常规载体 → P2 服务拒 / 同网成员通）+ 成员 policy 在场 + peer drill（declare→approve→挂靠部署→跨项目通→revoke→隔离收敛→拒）+ task-group drill（task pod → 项目服务拒 / 跨挂 app ↔ task 组内通）
+- [x] e2e 双腿回归（k3s/k3s-tw 现有段零漂移——route/exec/db/backup 链在隔离模型下照常绿）
+- [x] 全门禁：`mise run test` + `mise run lint` + `go test -count=1 ./internal/guards/` + `generate:verify` + `console:verify`；swarm 全套零回归
+- [x] ADR-0052 §9 挂账 3/4/8 划线注日期 + 决策 3 事实修正追记；runbook k3s 节落地；checklist F4.1 追记
+
+验收实录（2026-10-08，本机 fuse 形态）：`K3S E2E PASSED`（七轮收敛——网络矩阵/peer drill 全绿；咬出域收敛轴缺失双 bug 与收敛自噬，见决策 1 追记）+ `K3S TWO-NODE E2E PASSED` + `RUNTIME SWITCH E2E PASSED`（回归零漂移）+ 全门禁绿（mise test/lint/guards -count=1/generate:verify/console:verify）；实施期新坑六条沉淀 memory（fleetly-k3s-e2e-closure N6 节）。CI 确认随批末 push。
