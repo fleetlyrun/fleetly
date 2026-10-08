@@ -929,11 +929,12 @@ case "$SHELL_ALL" in
 esac
 
 # exec.session_opened 事件（安全可见性面——events follow 双形态的回读锚）。
-# 事件落库异步于会话收口（run5 实证 shell 三锚全绿而 list 尚未见行）——
-# 带三拍重试窗。
+# 缺省 limit=100 从头取（AfterSeq 0 的前 100 条）——from_build 段加入后
+# 全腿事件量过百，高 seq 的 exec 事件被挤出窗（run5/6 连挂实证，非落库
+# 异步）；--limit 1000（服务端钳制上限）盖全腿事件量，另带三拍重试窗。
 i=0
 while [ "$i" -lt 3 ]; do
-  n=$(cli --json events list 2>/dev/null | grep -c 'exec.session_opened' || true)
+  n=$(cli --json events list --limit 1000 2>/dev/null | grep -c 'exec.session_opened' || true)
   [ "$n" -ge 1 ] && break
   i=$((i + 1)); sleep 3
 done
