@@ -12,9 +12,9 @@ import (
 // 合法（v<semver>+k3s<N> / sha256 64hex），并与 ADR 文本中的钉版陈述
 // 双向保鲜（ADR 换版不同步 e2e 即红）。
 func TestK3sPinConstantAndE2EAgree(t *testing.T) {
-	// 两条 k3s e2e 腿同款钉版（two-node 腿随 ADR-0053 落地）——逐脚本断言
-	// 且互相一致（单脚本换版不同步另一腿即红）。
-	e2eFiles := []string{"e2e/dind-k3s.sh", "e2e/dind-k3s-two-node.sh"}
+	// 三条 k3s e2e 腿同款钉版（two-node 随 ADR-0053、HA 随 ADR-0056 落地）
+	// ——逐脚本断言且互相一致（单脚本换版不同步另一腿即红）。
+	e2eFiles := []string{"e2e/dind-k3s.sh", "e2e/dind-k3s-two-node.sh", "e2e/dind-k3s-ha.sh"}
 	var firstPin, firstSum string
 	for _, e2eFile := range e2eFiles {
 		src := readFileLF(t, e2eFile)

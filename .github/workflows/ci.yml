@@ -324,3 +324,37 @@ jobs:
 
       - name: k3s two-node e2e (enroll join -> both nodes relay_online -> volume-pinned worker pod -> cross-node exec)
         run: mise run e2e:k3s-tw
+
+  e2e-k3s-ha:
+    name: E2E (dind k3s HA, embedded etcd quorum + carrier zero-roll)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      FLEETLY_E2E_K3S_SNAPSHOTTER: fuse
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: jdx/mise-action@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-${{ runner.os }}-${{ hashFiles('go.sum', 'genproto/go.sum', 'sdk/go/go.sum') }}
+          restore-keys: go-${{ runner.os }}-
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/fleetly-e2e
+          key: k3s-e2e-${{ hashFiles('e2e/dind-k3s-ha.sh') }}
+          restore-keys: k3s-e2e-
+
+      - name: Pre-pull images
+        run: |
+          docker pull docker:29-dind
+          docker pull nginx:1.27
+          docker pull busybox:1.37
+
+      - name: k3s HA e2e (3-server etcd quorum -> server1 outage zero-roll via kubelet autonomy -> recovery -> permanent server2 loss read-write green)
+        run: mise run e2e:k3s-ha

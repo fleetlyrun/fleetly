@@ -54,11 +54,13 @@ case "$K3S_SNAPSHOTTER" in
   *) echo "FATAL: unknown FLEETLY_E2E_K3S_SNAPSHOTTER: $K3S_SNAPSHOTTER (native|overlayfs|fuse)" >&2; exit 1 ;;
 esac
 
-# 1. 交叉编译两个二进制（linux/amd64；纯 Go 零 cgo）。
-log "cross-compiling fleetlyd + fleetly (linux/amd64)"
+# 1. 交叉编译二进制（linux/amd64；纯 Go 零 cgo）。h2cserver 是 from_build
+#    段的上传源产物（scratch 基础镜像零外网依赖，h2c e2e 先例同款）。
+log "cross-compiling fleetlyd + fleetly + h2cserver (linux/amd64)"
 mkdir -p "$WORKDIR/bins"
 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o "$WORKDIR/bins/fleetlyd" ./cmd/fleetlyd
 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o "$WORKDIR/bins/fleetly" ./cmd/fleetly
+GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o "$WORKDIR/bins/h2cserver" ./e2e/h2cserver
 
 # 2. 下载 k3s（版本钉定 + sha256 校验）与 airgap 系统镜像 tar。
 log "downloading k3s $K3S_VERSION (pinned, sha256-verified)"
@@ -121,6 +123,29 @@ wait_docker() {
 log "waiting for dind daemon"
 wait_docker
 
+# 3b. 构建链传输信任面（ADR-0056 决策 1/2——from_build 全链的前置）：
+#     ① dockerd 侧 insecure-registry drop-in（builder 推送受管 zot 用；
+#     install.sh 同款 drop-in，k3s 腿 fleetlyd 手起不经 install.sh 故此处
+#     复刻）——必须在 k3s 起动前落好并重启容器（k3s 起在 exec -d 里，容器
+#     重启会杀掉它；h2c e2e 先例同款时序）。
+#     ② 节点侧 k3s registries.yaml（kubelet 拉取明文 registry 的信任面）
+#     在 k3s 起动前落位（起动期渲染 containerd hosts.toml）。
+#     DIND_IP 在此刻取并在重启后断言保持（既有 fleetlyd env 同源）。
+DIND_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$DIND_CID")
+[ -n "$DIND_IP" ] || fail "could not resolve the dind container IP"
+docker exec "$DIND_CID" sh -c "printf '{\"insecure-registries\":[\"$DIND_IP:5000\"]}\n' > /etc/docker/daemon.json"
+log "restarting the dind container to load the insecure-registry drop-in (before k3s starts)"
+docker restart "$DIND_CID" >/dev/null
+wait_docker
+RESTARTED_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$DIND_CID")
+if [ "$RESTARTED_IP" != "$DIND_IP" ]; then
+  fail "dind ip changed across restart ($DIND_IP -> $RESTARTED_IP); the baked registry/proxy endpoints would break"
+fi
+case "$(docker exec "$DIND_CID" docker info 2>/dev/null | grep -c ':5000')" in
+  0) fail "insecure-registry drop-in did not take effect (no :5000 entry in docker info)" ;;
+  *) log "dockerd trusts the managed registry (build push face)" ;;
+esac
+
 # fuse 形态预载段：k3s 的 fuse-overlayfs snapshotter 走内核 mount 通道调
 # /sbin/mount.fuse3 + /sbin/mount.fuse-overlayfs（k3s 自带 fuse-overlayfs
 # 二进制，helper 与 libfuse3 缺位——首试坑实锤）；dind 容器内 apk 经代理
@@ -182,7 +207,20 @@ for img in nginx:1.27 busybox:1.37 traefik:v3.5.4 postgres:17-bookworm \
   i=$((i + 1))
 done
 
-# 5. 注入 k3s 并起动（snapshotter 形态见头注三选一）。
+# 5. 注入 k3s 并起动（snapshotter 形态见头注三选一）。registries.yaml 先行
+#    落位（k3s 起动期渲染 containerd hosts.toml——kubelet 拉受管 zot 明文
+#    registry 的节点级信任面，ADR-0056 决策 1；mirror 键 = 镜像引用 host，
+#    不改写 host 名——认证面恒走 pod 级 imagePullSecrets，两层正交）。
+log "staging k3s registries.yaml (plain-HTTP mirror for the managed registry)"
+docker exec "$DIND_CID" mkdir -p /etc/rancher/k3s
+docker exec -i "$DIND_CID" sh -c "cat > /etc/rancher/k3s/registries.yaml" <<EOF
+mirrors:
+  "$DIND_IP:5000":
+    endpoint:
+      - "http://$DIND_IP:5000"
+EOF
+docker exec "$DIND_CID" grep -q "endpoint" /etc/rancher/k3s/registries.yaml \
+  || fail "registries.yaml staging failed"
 log "injecting and starting k3s server"
 docker cp "$WORKDIR/k3s" "$DIND_CID":/usr/local/bin/k3s
 docker exec "$DIND_CID" chmod +x /usr/local/bin/k3s
@@ -761,6 +799,78 @@ done
 docker exec "$DIND_CID" sh -c "k3s kubectl get pvc -n $P1_NS | grep -q fleetly-vol-" \
   || fail "database PVC not bound"
 log "database running with bound PVC"
+
+# 13b. from_build 构建链（ADR-0056 决策 1/2 的 e2e 锚——k3s 形态首次全链）：
+#      CLI --from-dir 上传源 → engine 构建（builder 连控制面节点 daemon 内嵌
+#      buildkit）→ solve 产物入 daemon 镜像库 → ImagePush 推受管 zot（per-Project
+#      凭证；daemon 侧 insecure-registry 信任面）→ digest 冻结 → 下发引用
+#      <addr>/<projectID>/<appID>@sha256 → kubelet 拉起（节点侧 registries.yaml
+#      明文信任面 + pod imagePullSecrets 认证面）→ Route 活体。scratch 基础
+#      镜像零外网依赖（h2c e2e 先例同款源）。
+log "from_build chain drill (dockerfile builder -> managed zot -> kubelet pull)"
+docker exec "$DIND_CID" mkdir -p /root/h2csrc
+docker exec -i "$DIND_CID" sh -c 'cat > /root/h2csrc/h2cserver && chmod +x /root/h2csrc/h2cserver' < "$WORKDIR/bins/h2cserver"
+docker exec "$DIND_CID" sh -c \
+  'printf "FROM scratch\nCOPY h2cserver /h2cserver\nEXPOSE 8080\nENTRYPOINT [\"/h2cserver\"]\n" > /root/h2csrc/Dockerfile'
+cli apps create --project "$PROJECT_ID" buildapp >/dev/null
+BUILD_APP_ID=$(cli --json apps list --project "$PROJECT_ID" \
+  | grep -B3 '"buildapp"' | grep '"id"' | head -1 \
+  | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p')
+[ -n "$BUILD_APP_ID" ] || fail "from_build drill: buildapp app id not resolved"
+cli --json deploy --app "$BUILD_APP_ID" --from-dir /root/h2csrc --builder dockerfile --port 8080 >/dev/null \
+  || fail "from_build drill: deploy --from-dir failed"
+wait_state succeeded "$BUILD_APP_ID"
+log "from_build deployment succeeded (build -> push -> release chain green)"
+
+# Build 行断言：succeeded + digest 冻结（Revision 级单产物）。
+BUILD_STATE=$(cli --json builds list --app "$BUILD_APP_ID" \
+  | sed -n 's/.*"state": *"\([^"]*\)".*/\1/p' | head -1)
+BUILD_DIGEST=$(cli --json builds list --app "$BUILD_APP_ID" \
+  | sed -n 's/.*"digest": *"\(sha256:[a-f0-9]*\)".*/\1/p' | head -1)
+[ "$BUILD_STATE" = "succeeded" ] || fail "from_build drill: build state is $BUILD_STATE (want succeeded)"
+[ -n "$BUILD_DIGEST" ] || fail "from_build drill: build digest missing on the build row"
+
+# 载体镜像断言：pod image 引用 = 受管仓库 digest 形态（repo 双段小写
+# buildRepo 公式 + 本批 digest；该镜像只可能在受管 zot——airgap 预载清单
+# 不含它，Running 即证明 kubelet 经明文信任面拉取成功）。
+BUILD_LC=$(printf '%s' "$BUILD_APP_ID" | tr 'A-Z' 'a-z')
+P1_PROJ_LC=$(printf '%s' "$PROJECT_ID" | tr 'A-Z' 'a-z')
+BIMAGE=""
+i=0
+while [ "$i" -lt 90 ]; do
+  BIMAGE=$(docker exec "$DIND_CID" sh -c \
+    "k3s kubectl get pods -n $P1_NS -l fleetly.ns.app=$BUILD_LC --field-selector=status.phase=Running -o jsonpath={.items[0].spec.containers[0].image} 2>/dev/null" || true)
+  [ -n "$BIMAGE" ] && break
+  i=$((i + 1)); sleep 2
+done
+[ -n "$BIMAGE" ] || { docker exec "$DIND_CID" sh -c "k3s kubectl get pods -n $P1_NS --show-labels 2>&1 | tail -6" >&2 || true; fail "from_build drill: carrier pod never running"; }
+WANT_PREFIX="$DIND_IP:5000/$P1_PROJ_LC/$BUILD_LC@"
+case "$BIMAGE" in
+  "$WANT_PREFIX"sha256:*) log "carrier image is the managed-registry digest ref ($BIMAGE)" ;;
+  *) fail "from_build drill: carrier image is $BIMAGE (want $WANT_PREFIX sha256:...)" ;;
+esac
+
+# Route 活体：受管 traefik → buildapp 后端（h2cserver 回显 PROTO-LINE）。
+cli routes create --project "$PROJECT_ID" --host frombuild.127.0.0.1.sslip.io \
+  --app "$BUILD_APP_ID" --process web --port 8080 --protocol http --tls none >/dev/null
+i=0
+FBODY=""
+while [ "$i" -lt 60 ]; do
+  FBODY=$(docker exec "$DIND_CID" sh -c "wget -q -O- -T 5 --header='Host: frombuild.127.0.0.1.sslip.io' http://$DIND_IP/ 2>/dev/null" || true)
+  case "$FBODY" in
+    *PROTO-LINE*) break ;;
+  esac
+  i=$((i + 1)); sleep 2
+done
+case "$FBODY" in
+  *PROTO-LINE*) log "from_build route live probe green (built artifact serving traffic)" ;;
+  *) docker exec "$DIND_CID" sh -c "
+    echo '--- fleetlyd build/push lines'; grep -iE 'build|push|registry' /var/log/fleetlyd.log | grep -v gRPC | tail -20
+    echo '--- pod describe'; k3s kubectl describe pods -n $P1_NS -l fleetly.ns.app=$BUILD_LC 2>&1 | grep -A8 Events: | tail -12
+    echo '--- traefik log tail'; k3s kubectl logs -n fleetly-system \$(k3s kubectl get pods -n fleetly-system -l app=registry 2>/dev/null | head -1) --tail=5 2>/dev/null || true
+  " >&2 || true
+     fail "from_build drill: route probe never returned the built artifact body" ;;
+esac
 
 # 14. exec 子面（ADR-0053 决策 1 集中形态的 e2e 锚）：回环 per-node 注册
 #     （relay_online）→ 单命令退出码/输出透传 → shell 会话（stdin EOF 收口）

@@ -188,7 +188,7 @@ dir = "console"
 run = "pnpm test"
 
 [tasks."e2e:k3s"]
-description = "e2e dind k3s 第二运行时全链（F4.1，ADR-0052：k3s server in dind + deploy/rollback + egress netpol 活体 + Database PVC + 受管 traefik Route + exec 集中形态）"
+description = "e2e dind k3s 第二运行时全链（F4.1/ADR-0052/0056：deploy/rollback + egress netpol 活体 + Database PVC + from_build 构建链（受管 zot 推/拉全链）+ 受管 traefik Route + exec 集中形态 + 空域收尾）"
 run = "sh e2e/dind-k3s.sh"
 
 [tasks."e2e:k3s-tw"]
@@ -198,3 +198,7 @@ run = "sh e2e/dind-k3s-two-node.sh"
 [tasks."e2e:runtimeswitch"]
 description = "e2e dind 场景 3 换 Runtime（F4.1，ADR-0052：swarm→k3s 迁移——ID 全保持/基线重放/Backup/Restore 数据闭环/显式数据处置/节点 ID 不复用）"
 run = "sh e2e/dind-runtimeswitch.sh"
+
+[tasks."e2e:k3s-ha"]
+description = "e2e dind k3s HA 腿（ADR-0056 决策 3/挂账 7 收口：embedded etcd 三 server + worker——quorum/单 server 失效载体零滚动 kubelet autonomy/恢复回环/永久失效后读写保持）"
+run = "sh e2e/dind-k3s-ha.sh"
