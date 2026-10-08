@@ -141,7 +141,7 @@ func TestDesiredClusterRoleTable(t *testing.T) {
 		return rbacv1.PolicyRule{APIGroups: []string{group}, Resources: resources, Verbs: verbs}
 	}
 	assert.Equal(t, []rbacv1.PolicyRule{
-		rule("", []string{"namespaces"}, "create", "get"),
+		rule("", []string{"namespaces"}, "create", "delete", "get"), // delete = 空域收尾(ADR-0056 决策 5)
 		rule("", []string{"nodes"}, "get", "list", "update"),
 		rule("", []string{"pods"}, "create", "delete", "get", "list", "watch"),
 		rule("", []string{"pods/exec"}, "create"),

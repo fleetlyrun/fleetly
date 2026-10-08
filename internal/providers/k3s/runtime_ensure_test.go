@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -424,4 +425,68 @@ func TestBuildUtilityPodHostNetwork(t *testing.T) {
 	assert.Equal(t, corev1.DNSClusterFirstWithHostNet, pod.Spec.DNSPolicy, "cluster DNS must stay usable with host network")
 	require.NotNil(t, pod.Spec.AutomountServiceAccountToken)
 	assert.False(t, *pod.Spec.AutomountServiceAccountToken, "SA token automount stays off")
+}
+
+// TestRemoveNamespaceDrain（ADR-0056 决策 5）：域 Remove 尾部的空域收尾——
+// 项目 ns 在零活 fleetly 载体 + 零 PVC 时删除；有活载体（他域在管）或
+// 有 PVC（数据兜底，swarm 卷残留文化对齐）时保留。
+func TestRemoveNamespaceDrain(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("drained namespace is deleted", func(t *testing.T) {
+		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "fleetly-shop"}}
+		p, cli := newFakeProvider(ns)
+		require.NoError(t, p.Remove(ctx, capability.NamespaceRef{Team: "t", Project: "shop", App: "gone"}))
+		_, err := cli.CoreV1().Namespaces().Get(ctx, "fleetly-shop", metav1.GetOptions{})
+		assert.True(t, apierrors.IsNotFound(err), "empty project namespace must be removed after the last domain Remove")
+	})
+
+	t.Run("live carrier in another domain keeps the namespace", func(t *testing.T) {
+		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "fleetly-shop"}}
+		p, cli := newFakeProvider(ns)
+		_, err := cli.AppsV1().Deployments("fleetly-shop").Create(ctx, &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{Name: "fleetly-web-web", Labels: map[string]string{labelManaged: "true"}},
+		}, metav1.CreateOptions{})
+		require.NoError(t, err)
+		require.NoError(t, p.Remove(ctx, capability.NamespaceRef{Team: "t", Project: "shop", App: "gone"}))
+		_, err = cli.CoreV1().Namespaces().Get(ctx, "fleetly-shop", metav1.GetOptions{})
+		assert.NoError(t, err, "namespace with a live carrier must stay")
+	})
+
+	t.Run("deleting carrier counts as drained", func(t *testing.T) {
+		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "fleetly-shop"}}
+		p, cli := newFakeProvider(ns)
+		now := metav1.Now()
+		_, err := cli.AppsV1().Deployments("fleetly-shop").Create(ctx, &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:              "fleetly-web-web",
+				Labels:            map[string]string{labelManaged: "true"},
+				DeletionTimestamp: &now,
+			},
+		}, metav1.CreateOptions{})
+		require.NoError(t, err)
+		require.NoError(t, p.Remove(ctx, capability.NamespaceRef{Team: "t", Project: "shop", App: "gone"}))
+		_, err = cli.CoreV1().Namespaces().Get(ctx, "fleetly-shop", metav1.GetOptions{})
+		assert.True(t, apierrors.IsNotFound(err), "carrier already deleting must not hold the namespace")
+	})
+
+	t.Run("pvc keeps the namespace", func(t *testing.T) {
+		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "fleetly-shop"}}
+		p, cli := newFakeProvider(ns)
+		_, err := cli.CoreV1().PersistentVolumeClaims("fleetly-shop").Create(ctx, &corev1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{Name: "fleetly-vol-db"},
+		}, metav1.CreateOptions{})
+		require.NoError(t, err)
+		require.NoError(t, p.Remove(ctx, capability.NamespaceRef{Team: "t", Project: "shop", App: "gone"}))
+		_, err = cli.CoreV1().Namespaces().Get(ctx, "fleetly-shop", metav1.GetOptions{})
+		assert.NoError(t, err, "namespace with a PVC (data safety net) must stay")
+	})
+
+	t.Run("system namespace is never removed", func(t *testing.T) {
+		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: systemNamespace, Labels: map[string]string{labelManaged: "true"}}}
+		p, cli := newFakeProvider(ns)
+		require.NoError(t, p.Remove(ctx, capability.NamespaceRef{Team: "fleetly", Project: "system", App: "registry"}))
+		_, err := cli.CoreV1().Namespaces().Get(ctx, systemNamespace, metav1.GetOptions{})
+		assert.NoError(t, err, "the managed system namespace must never be removed")
+	})
 }

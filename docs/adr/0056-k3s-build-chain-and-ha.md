@@ -65,7 +65,8 @@
 ### 5. 小账 = Remove 链收尾拆空 Namespace
 
 - **候选裁决**：(a) Remove 链收尾拆 ns ✅｜(b) hygiene janitor 扫描拆 ❌——ns 删除是全 ns 级联毁灭，janitor 自动面的误判半径（ns 名与项目 ID 的映射是单向推断）不可接受，"宁可漏扫不可误删"纪律下重几个量级；｜(c) 维持记档 ❌——项目删除语义 = 域销毁，ns 是域的载体，拆除是语义正确收尾，残留是缺口不是选择。
-- **实现**：k3s Provider `Remove` 尾部——ns 内零 fleetly 域载体（deployments/daemonsets/pods 带 `fleetly.managed=true` 的宽列）时删除 Namespace。删除失败仅记日志不阻断（k8s ns 删除是受理即返回的异步收敛，terminating 卡住是集群侧运维面，项目行删除不回滚）；ns 删除级联拆除域内一切（含挂靠方遗留 grant——接收方项目删除形态的 grant 随 ns 级联走，SweepOrphanPeerGrants 的信号③判据不变）。
+- **实现**：k3s Provider `Remove` 尾部——**项目删除路径没有单一项目级 Remove 调用点**（App/Database/Browse 各自域 Remove 收口，DeleteProject 只做行级联），所以收尾判据挂每次域 Remove 尾部：ns 内**零活 fleetly 域载体**（deployments/daemonsets/pods 带 `fleetly.managed=true` 的宽列，deletionTimestamp 非空视为已拆）**且零 PVC（全部，不只 fleetly 卷）**时删除 Namespace——最后一个拆完的域触发。**PVC 零判据与 swarm 卷残留文化对齐**（平台文化：卷是数据兜底，项目删除后卷残留待显式处置——swarm 形态 `fleetly-vol-*` 同款）；ns 删除的 k8s 级联会连带删除域内一切（含挂靠方遗留 grant——接收方项目删除形态的 grant 随 ns 级联走，SweepOrphanPeerGrants 的信号③判据不变），有 PVC 在场即不拆（空 ns + 卷的残留形态记 runbook 处置序）。
+- **失败语义**：ns 删除失败（含 RBAC 未收敛的 403 形态、terminating 卡住的集群侧运维面）**不阻断 Remove**——收尾是 best-effort，判据不满足或删除失败即跳过（下次任一域 Remove 重判）；App/项目删除不因 ns 异步收口回滚。RBAC 未收敛的存量集群经既有升级序收敛（admin kubeconfig 重跑一次，runbook 单向门节）。
 - **RBAC**：`namespaces` 动词面 `create,get` → `create,get,delete`（6b 断言的第二个 no 相应改写——它钉的是"越权动词必须 no"，换成 server join 等真越权面）。
 - **e2e 锚**：单节点腿 12b 节扩断言（挂靠方项目删除 → ns 收敛消失带界轮询）；staging 真机同锚。
 

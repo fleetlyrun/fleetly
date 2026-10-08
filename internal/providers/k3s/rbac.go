@@ -42,7 +42,7 @@ func desiredClusterRole() *rbacv1.ClusterRole {
 	return &rbacv1.ClusterRole{
 		ObjectMeta: metav1.ObjectMeta{Name: rbacServiceAccount},
 		Rules: []rbacv1.PolicyRule{
-			{APIGroups: []string{""}, Resources: []string{"namespaces"}, Verbs: []string{"create", "get"}},
+			{APIGroups: []string{""}, Resources: []string{"namespaces"}, Verbs: []string{"create", "delete", "get"}},
 			{APIGroups: []string{""}, Resources: []string{"nodes"}, Verbs: []string{"get", "list", "update"}},
 			{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"create", "delete", "get", "list", "watch"}},
 			{APIGroups: []string{""}, Resources: []string{"pods/exec"}, Verbs: []string{"create"}},

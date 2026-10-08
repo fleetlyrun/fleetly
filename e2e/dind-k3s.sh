@@ -284,7 +284,8 @@ docker exec "$DIND_CID" sh -c '
   [ "$(k3s kubectl auth can-i get pods/log --as=$sa 2>/dev/null)" = "yes" ] || { echo "SA must be allowed to get pod logs (subresource name is pods/log, singular; a plural-form rule silently grants nothing — staging k3s live finding, ADR-0055)" >&2; exit 1; }
   [ "$(k3s kubectl auth can-i list networkpolicies.networking.k8s.io --as=$sa 2>/dev/null)" = "yes" ] || { echo "SA must be allowed to list network policies (membership isolation convergence, ADR-0054)" >&2; exit 1; }
   [ "$(k3s kubectl auth can-i create clusterroles.rbac.authorization.k8s.io --as=$sa 2>/dev/null)" = "no" ] || { echo "SA must NOT be allowed to create cluster roles" >&2; exit 1; }
-  [ "$(k3s kubectl auth can-i delete namespaces --as=$sa 2>/dev/null)" = "no" ] || { echo "SA must NOT be allowed to delete namespaces" >&2; exit 1; }
+  [ "$(k3s kubectl auth can-i delete namespaces --as=$sa 2>/dev/null)" = "yes" ] || { echo "SA must be allowed to delete namespaces (drained-namespace teardown, ADR-0056)" >&2; exit 1; }
+  [ "$(k3s kubectl auth can-i delete nodes --as=$sa 2>/dev/null)" = "no" ] || { echo "SA must NOT be allowed to delete nodes" >&2; exit 1; }
   k3s kubectl get clusterrole fleetly-manager >/dev/null 2>&1 || { echo "fleetly-manager ClusterRole missing" >&2; exit 1; }
 ' || fail "RBAC least-privilege convergence failed"
 log "RBAC green (in-role yes, out-of-role no, cluster role present)"
@@ -728,6 +729,19 @@ done
   fail "hygiene drill: orphaned peer grant was not swept by the retention janitor"
 }
 log "peer grant hygiene green (orphaned grant swept after declarer project deletion)"
+
+# 空域收尾断言（ADR-0056 决策 5）：挂靠方项目删除（级联已拆全部域载体，
+# 无 PVC）→ 项目 ns 随最后域 Remove 收尾删除。ns 删除是异步收敛——带界
+# 轮询；已进 terminating/消失均算收口（kubectl get ns 查不到即断言通过）。
+i=0
+while [ "$i" -lt 60 ]; do
+  if ! docker exec "$DIND_CID" sh -c "k3s kubectl get ns $P2_NS >/dev/null 2>&1"; then
+    break
+  fi
+  i=$((i + 1)); sleep 2
+done
+[ "$i" -lt 60 ] || { docker exec "$DIND_CID" sh -c "k3s kubectl get ns $P2_NS -o yaml 2>&1 | tail -8; k3s kubectl get all -n $P2_NS 2>&1" >&2 || true; fail "hygiene drill: project namespace $P2_NS was not torn down after project deletion"; }
+log "drained-namespace teardown green (empty project namespace removed)"
 
 # 13. Database：postgres（digest 引用）+ PVC local-path 绑定（digest 预拉
 #     已前置，零在线拉）。

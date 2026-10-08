@@ -415,7 +415,64 @@ func (p *Provider) Remove(ctx context.Context, ns capability.NamespaceRef) error
 			return fmt.Errorf("k3s remove %s: netpol %s: %w", ns, pol.Name, err)
 		}
 	}
+	// 空域收尾（ADR-0056 决策 5）：项目 ns 在全部 fleetly 域载体拆除后
+	// 删除——项目删除路径没有单一项目级 Remove 调用点（App/Database/
+	// Browse 各自域收口），判据挂每次域 Remove 尾部，最后拆完的域触发。
+	// best-effort：判据不满足或删除失败即跳过（下次任一域 Remove 重判），
+	// 不阻断 Remove——ns 拆除是收尾不是前置。
+	if nsName != systemNamespace {
+		p.deleteNamespaceIfDrained(ctx, nsName)
+	}
 	return nil
+}
+
+// deleteNamespaceIfDrained 在 ns 真正空（零活 fleetly 域载体 + 零 PVC）时
+// 删除 Namespace（ADR-0056 决策 5）。判据与失败全部静默跳过（收尾面）：
+//   - 活载体：deployments/daemonsets/pods 带 fleetly.managed=true 的宽列，
+//     deletionTimestamp 非空视为已拆（本拍刚删的域对象在异步收口中）；
+//   - PVC 全算（不只 fleetly 卷）：ns 删除的 k8s 级联会连带删卷——卷是
+//     数据兜底（swarm 形态项目删除后 fleetly-vol-* 残留同款文化），有卷
+//     在场即不拆，残留形态由 runbook 处置序承载；
+//   - system 域永不拆（受管 reconciler 常驻），调用方已判。
+func (p *Provider) deleteNamespaceIfDrained(ctx context.Context, nsName string) {
+	sel := labels.Set(map[string]string{labelManaged: "true"}).String()
+	listOpts := metav1.ListOptions{LabelSelector: sel}
+	deps, err := p.cli.AppsV1().Deployments(nsName).List(ctx, listOpts)
+	if err != nil {
+		return
+	}
+	for i := range deps.Items {
+		if deps.Items[i].DeletionTimestamp == nil {
+			return
+		}
+	}
+	dss, err := p.cli.AppsV1().DaemonSets(nsName).List(ctx, listOpts)
+	if err != nil {
+		return
+	}
+	for i := range dss.Items {
+		if dss.Items[i].DeletionTimestamp == nil {
+			return
+		}
+	}
+	pods, err := p.cli.CoreV1().Pods(nsName).List(ctx, listOpts)
+	if err != nil {
+		return
+	}
+	for i := range pods.Items {
+		if pods.Items[i].DeletionTimestamp == nil {
+			return
+		}
+	}
+	// PVC 不按 label 滤：ns 是平台私有命名域，任何在场卷都是数据兜底面。
+	pvcs, err := p.cli.CoreV1().PersistentVolumeClaims(nsName).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return
+	}
+	if len(pvcs.Items) > 0 {
+		return
+	}
+	_ = p.cli.CoreV1().Namespaces().Delete(ctx, nsName, metav1.DeleteOptions{})
 }
 
 // Watch 返回全集群状态流：pod 事件 → WorkloadEvent（engine 按 ID 归属
