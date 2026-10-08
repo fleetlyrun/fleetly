@@ -14,6 +14,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"reflect"
 	"strings"
 
 	networkingv1 "k8s.io/api/networking/v1"
@@ -160,11 +161,28 @@ func netIsolationPolicyName(key string) string {
 	return netisolatePrefix + strings.TrimPrefix(key, netLabelPrefix)
 }
 
-// putNetpol 是 netpol 的 create-only 落盘（AlreadyExists 即幂等跳过——与
-// egress policy 同口径；期望集的收敛删除承载 stale 面）。
+// putNetpol 是 netpol 的 create-or-update 落盘：相等（名称 + 语义 spec +
+// managed 标记逐位一致）零写；形状漂移（平台升级改放行集——如 ADR-0055
+// 的 utility 放行）即更新收敛——create-only 会让存量 policy 永锁旧形态
+//（staging 真机实证：新 FROM 规则不落地）。stale 面仍由期望集收敛删除
+// 承载。
 func (p *Provider) putNetpol(ctx context.Context, nsName string, pol *networkingv1.NetworkPolicy) error {
-	_, err := p.cli.NetworkingV1().NetworkPolicies(nsName).Create(ctx, pol, metav1.CreateOptions{})
-	if err != nil && !apierrors.IsAlreadyExists(err) {
+	existing, err := p.cli.NetworkingV1().NetworkPolicies(nsName).Get(ctx, pol.Name, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		_, cerr := p.cli.NetworkingV1().NetworkPolicies(nsName).Create(ctx, pol, metav1.CreateOptions{})
+		if cerr != nil && !apierrors.IsAlreadyExists(cerr) {
+			return fmt.Errorf("ensure net isolation policy %s: %w", pol.Name, cerr)
+		}
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("ensure net isolation policy %s: %w", pol.Name, err)
+	}
+	if reflect.DeepEqual(existing.Spec, pol.Spec) && existing.Labels[labelManaged] == pol.Labels[labelManaged] {
+		return nil // 幂等重放零写
+	}
+	_, err = p.cli.NetworkingV1().NetworkPolicies(nsName).Update(ctx, pol, metav1.UpdateOptions{})
+	if err != nil {
 		return fmt.Errorf("ensure net isolation policy %s: %w", pol.Name, err)
 	}
 	return nil
