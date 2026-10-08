@@ -60,9 +60,9 @@ func mapExecError(err error) error {
 	case errors.Is(err, engine.ErrExecNoInstance):
 		return apperr.New("E_NOT_FOUND", "no running instance for the requested process: %v", err)
 	case errors.Is(err, engine.ErrExecNodeUnanchored):
-		return apperr.New("E_NODE_AGENT_OFFLINE", "the target node is not anchored yet (recently joined); retry shortly")
-	case errors.Is(err, engine.ErrExecAgentOffline):
-		return apperr.New("E_NODE_AGENT_OFFLINE", "the target node has no relay agent connected; run the agent command from `fleetly nodes enroll` on the node and retry")
+		return apperr.New("E_NODE_RELAY_OFFLINE", "the target node is not anchored yet (recently joined); retry shortly")
+	case errors.Is(err, engine.ErrExecRelayOffline):
+		return apperr.New("E_NODE_RELAY_OFFLINE", "the target node has no connected relay; run the relay command from `fleetly nodes enroll` on the node and retry")
 	case errors.Is(err, engine.ErrExecTeamLimit):
 		return apperr.New("E_QUOTA_EXCEEDED", "too many concurrent exec sessions for this team; close existing sessions or retry later")
 	default:

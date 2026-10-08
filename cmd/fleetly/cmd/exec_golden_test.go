@@ -39,7 +39,7 @@ func execGoldenSeed(t *testing.T) (h *apitest.Harness, appID string) {
 
 func TestGoldenExecVerbs(t *testing.T) {
 	h, appID := execGoldenSeed(t)
-	detach := apitest.AttachFakeExecAgent(context.Background(), h)
+	detach := apitest.AttachFakeRelay(context.Background(), h)
 	defer detach()
 	h.Runtime.SetExecBehavior(0, "", false)
 
@@ -75,7 +75,7 @@ func TestGoldenExecVerbs(t *testing.T) {
 // 退出码即 CLI 退出码）。
 func TestGoldenExecExitCodePassthrough(t *testing.T) {
 	h, appID := execGoldenSeed(t)
-	detach := apitest.AttachFakeExecAgent(context.Background(), h)
+	detach := apitest.AttachFakeRelay(context.Background(), h)
 	defer detach()
 	h.Runtime.SetExecBehavior(42, "", false)
 	h.Runtime.SetExecSkipStdin(true)

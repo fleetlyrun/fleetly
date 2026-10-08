@@ -309,9 +309,9 @@ done
 [ "$i" -lt 60 ] || {
   docker exec "$DIND_CID" sh -c "grep -i relay /var/log/fleetlyd.log | tail -10" >&2 || true
   cli --json nodes list >&2 || true
-  fail "both nodes must be relay_online (central loopback agents)"
+  fail "both nodes must be relay_online (central loopback relays)"
 }
-log "both nodes relay_online (central form, zero worker-side platform agents)"
+log "both nodes relay_online (central form, zero worker-side platform daemons)"
 
 # 10. 卷钉住 worker 落点 + worker pod exec 全链。
 log "deploying a volume-pinned workload onto the worker"

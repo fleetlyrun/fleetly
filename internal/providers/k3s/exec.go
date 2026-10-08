@@ -3,7 +3,7 @@ package k3s
 // exec 子面的 k3s 实现（F3.2/ADR-0049 契约，ADR-0053 决策 1 集中形态）：
 // 执行面 = apiserver 原生 exec（remotecommand SPDY——apiserver→kubelet 通道
 // 是 k8s 自身基础设施，无 swarm 侧"exec 是节点本地 API"的缺口）；会话路由
-// 与节点侧代理循环在 relayagent.go（per-node 回环注册，engine 零改动）。
+// 与节点中继循环在 noderelay.go（per-node 回环注册，engine 零改动）。
 
 import (
 	"context"
@@ -30,7 +30,7 @@ func execPodSelect(workloadID string) string {
 
 // ExecTarget 实现 RuntimeExec：label 选择器实时快照（观测缓存不参与决策）
 // 取首个 Running pod（名字典序——确定性，与 swarm task ID 字典序同款）。
-// Instance = pod 名（agent 侧定位锚）；CarrierNodeID = pod 所在 k8s 节点名
+// Instance = pod 名（中继侧定位锚）；CarrierNodeID = pod 所在 k8s 节点名
 // （平台锚定表反查平台节点 ID——与 Watch 锚定同源）。
 func (p *Provider) ExecTarget(ctx context.Context, workloadID string) (capability.ExecTargetInstance, error) {
 	pods, err := p.cli.CoreV1().Pods("").List(ctx, metav1.ListOptions{LabelSelector: execPodSelect(workloadID)})
@@ -188,6 +188,6 @@ func (q *resizeQueue) Next() *remotecommand.TerminalSize {
 	return &remotecommand.TerminalSize{Width: sz.Cols, Height: sz.Rows}
 }
 
-// relayFrameCap 是单帧输出分块上限（与 swarm 侧 agentFrameWriter 对齐——
+// relayFrameCap 是单帧输出分块上限（与 swarm 侧 relayFrameWriter 对齐——
 // manager 侧读上限同值）。
 const relayFrameCap = 32 * 1024

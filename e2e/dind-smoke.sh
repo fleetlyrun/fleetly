@@ -481,7 +481,7 @@ cli audit --source webhook --limit 5 >/dev/null
 # `fleetly exec` one-shot（真 docker exec：nginx 容器内 /bin/echo）→
 # 退出码透传（非零命令）→ `fleetly shell` 非交互 stdin EOF 形态 →
 # 审计 exec.session 行带命令面（audit Detail）。
-log "exec leg: loopback relay agent (manager node, zero-enroll form)"
+log "exec leg: loopback relay (manager node, zero-enroll form)"
 i=0
 while [ "$i" -lt 45 ]; do
   if cli --json nodes list | grep -q '"relay_online": *true'; then
@@ -490,11 +490,11 @@ while [ "$i" -lt 45 ]; do
   i=$((i + 1)); sleep 2
 done
 cli --json nodes list | grep -q '"relay_online": *true' || {
-  echo "loopback relay agent never came online (relay_online=false)" >&2
+  echo "loopback relay never came online (relay_online=false)" >&2
   cli --json nodes list >&2 || true
   exit 1
 }
-log "relay agent online (loopback form)"
+log "relay online (loopback form)"
 
 EXEC_OUT=$(cli exec "$APP_ID/web" -- /bin/echo exec-loop-ok)
 case "$EXEC_OUT" in

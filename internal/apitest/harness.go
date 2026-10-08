@@ -336,9 +336,9 @@ func (f *FakeRuntime) ExecWorkload(ctx context.Context, req capability.ExecWorkl
 	return exit, nil
 }
 
-// RunRelayAgent 实现 RuntimeExec：进程内形态不可用（假代理经
-// AttachFakeExecAgent 以接口形态接入 hub——传输中立红利，无 WS 需求）。
-func (f *FakeRuntime) RunRelayAgent(ctx context.Context, o capability.RelayAgentOptions) error {
+// RunNodeRelay 实现 RuntimeExec：进程内形态不可用（假中继经
+// AttachFakeRelay 以接口形态接入 hub——传输中立红利，无 WS 需求）。
+func (f *FakeRuntime) RunNodeRelay(ctx context.Context, o capability.NodeRelayOptions) error {
 	<-ctx.Done()
 	return ctx.Err()
 }
@@ -452,7 +452,7 @@ func (f *FakeRuntime) Enrollment(_ context.Context, rotate bool, o capability.En
 	f.enrollCalls = append(f.enrollCalls, rotate)
 	kit := capability.EnrollKit{Command: "docker swarm join --token TESTTOKEN 127.0.0.1:2377"}
 	if o.GatewayPort != "" {
-		kit.AgentCommand = "true # fake agent script"
+		kit.RelayCommand = "true # fake relay script"
 	}
 	return kit, nil
 }

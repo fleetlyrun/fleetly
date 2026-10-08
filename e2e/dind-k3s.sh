@@ -892,8 +892,8 @@ while [ "$i" -lt 60 ]; do
   [ "$n" -ge 1 ] && break
   i=$((i + 1)); sleep 2
 done
-[ "$i" -lt 60 ] || { docker exec "$DIND_CID" sh -c "grep -i relay /var/log/fleetlyd.log | tail -10" >&2 || true; fail "node relay_online never came up (central loopback agent)"; }
-log "node relay_online (central loopback agent registered)"
+[ "$i" -lt 60 ] || { docker exec "$DIND_CID" sh -c "grep -i relay /var/log/fleetlyd.log | tail -10" >&2 || true; fail "node relay_online never came up (central loopback relay)"; }
+log "node relay_online (central loopback relay registered)"
 
 # 退出码与输出透传（|| rc=$? 形态护住 set -e——非零退出码是被测语义）。
 EXEC_OUT=$(cli exec "$APP_ID/web" -- /bin/echo store-exec-ok 2>&1) \

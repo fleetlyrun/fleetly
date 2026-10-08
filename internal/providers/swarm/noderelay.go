@@ -1,7 +1,7 @@
 package swarm
 
-// 节点中继代理（F3.2，ADR-0049 决策 2）：`fleetlyd relay` 在节点上运行的本
-// 实现与 manager 进程内回环代理共用——拨号控制面 gateway 的 /v1/relay，
+// 节点中继（F3.2，ADR-0049 决策 2）：`fleetlyd relay` 在节点上运行的本
+// 实现与 manager 进程内回环中继共用——拨号控制面 gateway 的 /v1/relay，
 // 握手上报载体节点身份（docker info 的本机 NodeID），随后多路复用收发
 // exec 会话帧。阻塞至 ctx 结束（内部重连退避）；凭证每次拨号前取新
 //（回环形态 = 本地 SwarmInspect，rotate 后自愈；worker 形态 = 启动注入
@@ -34,16 +34,16 @@ const (
 // 读上限与其对齐）。
 const relayFrameCap = 32 * 1024
 
-// RunRelayAgent 实现 RuntimeExec：代理主循环（重连 + 服务单连接）。
-func (p *Provider) RunRelayAgent(ctx context.Context, o capability.RelayAgentOptions) error {
+// RunNodeRelay 实现 RuntimeExec：中继主循环（重连 + 服务单连接）。
+func (p *Provider) RunNodeRelay(ctx context.Context, o capability.NodeRelayOptions) error {
 	backoff := relayReconnectMin
 	for {
-		err := p.relayAgentOnce(ctx, o)
+		err := p.relayOnce(ctx, o)
 		if ctx.Err() != nil {
 			return nil
 		}
 		if err != nil {
-			p.logAgent("relay agent connection ended", err)
+			p.logRelay("node relay connection ended", err)
 		}
 		select {
 		case <-ctx.Done():
@@ -57,18 +57,18 @@ func (p *Provider) RunRelayAgent(ctx context.Context, o capability.RelayAgentOpt
 	}
 }
 
-// relayAgentOnce 服务一条连接：拨号 → hello → 会话帧循环，直至错误或
+// relayOnce 服务一条连接：拨号 → hello → 会话帧循环，直至错误或
 // ctx 结束。成功服务一段时期（无错误存活）后重连退避复位由调用侧节拍
 // 保证（错误路径才退避增长——简化：恒定增长，长连接场景重连罕见）。
-func (p *Provider) relayAgentOnce(ctx context.Context, o capability.RelayAgentOptions) error {
+func (p *Provider) relayOnce(ctx context.Context, o capability.NodeRelayOptions) error {
 	if o.GatewayURL == "" {
-		return errors.New("relay agent: gateway url is required")
+		return errors.New("node relay: gateway url is required")
 	}
 	token := ""
 	if o.JoinToken != nil {
 		t, err := o.JoinToken(ctx)
 		if err != nil {
-			return fmt.Errorf("relay agent: credential: %w", err)
+			return fmt.Errorf("node relay: credential: %w", err)
 		}
 		token = t
 	} else {
@@ -80,10 +80,10 @@ func (p *Provider) relayAgentOnce(ctx context.Context, o capability.RelayAgentOp
 	}
 	info, err := p.cli.Info(ctx, client.InfoOptions{})
 	if err != nil {
-		return fmt.Errorf("relay agent: local info: %w", err)
+		return fmt.Errorf("node relay: local info: %w", err)
 	}
 	if info.Info.Swarm.NodeID == "" {
-		return errors.New("relay agent: local node is not in a swarm")
+		return errors.New("node relay: local node is not in a swarm")
 	}
 
 	hdr := http.Header{"Authorization": []string{"Bearer " + token}}
@@ -98,24 +98,24 @@ func (p *Provider) relayAgentOnce(ctx context.Context, o capability.RelayAgentOp
 		if dialResp != nil && dialResp.Body != nil {
 			_ = dialResp.Body.Close()
 		}
-		return fmt.Errorf("relay agent: dial: %w", err)
+		return fmt.Errorf("node relay: dial: %w", err)
 	}
-	defer conn.Close(websocket.StatusNormalClosure, "agent stopping") //nolint:errcheck // 重连循环吞关闭错误
+	defer conn.Close(websocket.StatusNormalClosure, "relay stopping") //nolint:errcheck // 重连循环吞关闭错误
 	conn.SetReadLimit(1 << 20)
 
-	hello := capability.AgentHello{Type: "hello", CarrierNodeID: info.Info.Swarm.NodeID, AgentVersion: o.AgentVersion}
+	hello := capability.RelayHello{Type: "hello", CarrierNodeID: info.Info.Swarm.NodeID, RelayVersion: o.Version}
 	hb, _ := json.Marshal(hello)
 	wctx, wcancel := context.WithTimeout(ctx, 10*time.Second)
 	err = conn.Write(wctx, websocket.MessageText, hb)
 	wcancel()
 	if err != nil {
-		return fmt.Errorf("relay agent: hello: %w", err)
+		return fmt.Errorf("node relay: hello: %w", err)
 	}
 
-	a := &agentConn{
+	a := &relayConn{
 		provider: p, conn: conn,
 		send:     make(chan []byte, 64),
-		sessions: make(map[string]*agentSession),
+		sessions: make(map[string]*relaySession),
 	}
 	defer a.shutdown()
 	go a.writeLoop(ctx)
@@ -123,40 +123,40 @@ func (p *Provider) relayAgentOnce(ctx context.Context, o capability.RelayAgentOp
 	for {
 		msgType, data, err := conn.Read(ctx)
 		if err != nil {
-			return fmt.Errorf("relay agent: read: %w", err)
+			return fmt.Errorf("node relay: read: %w", err)
 		}
 		if msgType != websocket.MessageBinary {
 			continue // 服务端只发二进制帧（hello 无应答面）
 		}
-		f, err := capability.ParseAgentFrame(data)
+		f, err := capability.ParseRelayFrame(data)
 		if err != nil {
-			p.logAgent("relay agent: malformed frame", err)
+			p.logRelay("node relay: malformed frame", err)
 			continue
 		}
 		a.dispatch(ctx, f)
 	}
 }
 
-// agentSession 是节点侧一个会话的活体。
-type agentSession struct {
+// relaySession 是节点侧一个会话的活体。
+type relaySession struct {
 	cancel context.CancelFunc
 	stdin  *io.PipeWriter
 	resize chan capability.ExecSize
 }
 
-// agentConn 是单连接的多路复用面。
-type agentConn struct {
+// relayConn 是单连接的多路复用面。
+type relayConn struct {
 	provider *Provider
 	conn     *websocket.Conn
 	send     chan []byte
 
 	mu       sync.Mutex
-	sessions map[string]*agentSession
+	sessions map[string]*relaySession
 	closed   bool
 }
 
 // writeLoop 串行化写（coder/websocket 单写者纪律）。
-func (a *agentConn) writeLoop(ctx context.Context) {
+func (a *relayConn) writeLoop(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -166,7 +166,7 @@ func (a *agentConn) writeLoop(ctx context.Context) {
 			err := a.conn.Write(wctx, websocket.MessageBinary, b)
 			cancel()
 			if err != nil {
-				_ = a.conn.Close(websocket.StatusInternalError, "agent write failed")
+				_ = a.conn.Close(websocket.StatusInternalError, "relay write failed")
 				return
 			}
 		}
@@ -174,14 +174,14 @@ func (a *agentConn) writeLoop(ctx context.Context) {
 }
 
 // shutdown 收口连接与全部会话（ctx 结束/读循环退出路径）。
-func (a *agentConn) shutdown() {
+func (a *relayConn) shutdown() {
 	a.mu.Lock()
 	a.closed = true
-	sessions := make([]*agentSession, 0, len(a.sessions))
+	sessions := make([]*relaySession, 0, len(a.sessions))
 	for _, s := range a.sessions {
 		sessions = append(sessions, s)
 	}
-	a.sessions = make(map[string]*agentSession)
+	a.sessions = make(map[string]*relaySession)
 	a.mu.Unlock()
 	for _, s := range sessions {
 		s.cancel()
@@ -189,28 +189,28 @@ func (a *agentConn) shutdown() {
 	}
 }
 
-// dispatch 处理一条下行帧（manager→agent）。
-func (a *agentConn) dispatch(ctx context.Context, f capability.AgentFrame) {
+// dispatch 处理一条下行帧（manager→relay）。
+func (a *relayConn) dispatch(ctx context.Context, f capability.RelayFrame) {
 	switch f.Kind {
-	case capability.AgentFrameOpen:
-		open, err := capability.DecodeAgentJSON[capability.AgentSessionOpen](f.Payload)
+	case capability.RelayFrameOpen:
+		open, err := capability.DecodeRelayJSON[capability.RelaySessionOpen](f.Payload)
 		if err != nil {
 			return
 		}
 		a.startSession(ctx, open)
-	case capability.AgentFrameStdin:
+	case capability.RelayFrameStdin:
 		if s := a.session(f.SessionID); s != nil {
 			if len(f.Payload) > 0 {
 				_, _ = s.stdin.Write(f.Payload) // PipeWriter 无 ctx 面；Close 由会话收口
 			}
 		}
-	case capability.AgentFrameStdinEOF:
+	case capability.RelayFrameStdinEOF:
 		if s := a.session(f.SessionID); s != nil {
 			_ = s.stdin.Close()
 		}
-	case capability.AgentFrameResize:
+	case capability.RelayFrameResize:
 		if s := a.session(f.SessionID); s != nil {
-			pl, err := capability.DecodeAgentJSON[capability.ExecSizeWire](f.Payload)
+			pl, err := capability.DecodeRelayJSON[capability.ExecSizeWire](f.Payload)
 			if err == nil {
 				select {
 				case s.resize <- capability.ExecSize(pl):
@@ -218,14 +218,14 @@ func (a *agentConn) dispatch(ctx context.Context, f capability.AgentFrame) {
 				}
 			}
 		}
-	case capability.AgentFrameClose:
+	case capability.RelayFrameClose:
 		if s := a.session(f.SessionID); s != nil {
 			s.cancel() // ExecWorkload ctx 收口 = hijack 关闭（尽力终止）
 		}
 	}
 }
 
-func (a *agentConn) session(id string) *agentSession {
+func (a *relayConn) session(id string) *relaySession {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.sessions[id]
@@ -233,10 +233,10 @@ func (a *agentConn) session(id string) *agentSession {
 
 // startSession 起一个 exec 会话 goroutine：ack → ExecWorkload → exit/error
 // 收口帧。
-func (a *agentConn) startSession(ctx context.Context, open capability.AgentSessionOpen) {
+func (a *relayConn) startSession(ctx context.Context, open capability.RelaySessionOpen) {
 	sctx, cancel := context.WithCancel(ctx)
 	pr, pw := io.Pipe()
-	s := &agentSession{cancel: cancel, stdin: pw, resize: make(chan capability.ExecSize, 8)}
+	s := &relaySession{cancel: cancel, stdin: pw, resize: make(chan capability.ExecSize, 8)}
 	a.mu.Lock()
 	if a.closed {
 		a.mu.Unlock()
@@ -256,32 +256,32 @@ func (a *agentConn) startSession(ctx context.Context, open capability.AgentSessi
 			_ = pw.Close()
 		}()
 		// 受理回执（instance 与受理解析同源——平台回显链）。
-		a.post(capability.MarshalAgentFrame(capability.AgentFrameAck, open.SessionID,
-			capability.EncodeAgentJSON(capability.AgentSessionAck{Instance: open.Instance})))
+		a.post(capability.MarshalRelayFrame(capability.RelayFrameAck, open.SessionID,
+			capability.EncodeRelayJSON(capability.RelaySessionAck{Instance: open.Instance})))
 		code, err := a.provider.ExecWorkload(sctx, capability.ExecWorkloadRequest{
 			WorkloadID: open.WorkloadID,
 			Instance:   open.Instance,
 			Argv:       open.Argv,
 			TTY:        open.TTY,
 			Stdin:      pr,
-			Stdout:     &agentFrameWriter{a: a, kind: capability.AgentFrameStdout, session: open.SessionID},
-			Stderr:     &agentFrameWriter{a: a, kind: capability.AgentFrameStderr, session: open.SessionID},
+			Stdout:     &relayFrameWriter{a: a, kind: capability.RelayFrameStdout, session: open.SessionID},
+			Stderr:     &relayFrameWriter{a: a, kind: capability.RelayFrameStderr, session: open.SessionID},
 			Resize:     s.resize,
 		})
 		if err != nil {
 			// 执行失败如实上报（exit 帧缺席即会话失败；连接级收口时 post
 			// 静默——对端已不在）。
-			a.post(capability.MarshalAgentFrame(capability.AgentFrameError, open.SessionID,
-				capability.EncodeAgentJSON(capability.AgentSessionError{Code: "exec_failed", Message: err.Error()})))
+			a.post(capability.MarshalRelayFrame(capability.RelayFrameError, open.SessionID,
+				capability.EncodeRelayJSON(capability.RelaySessionError{Code: "exec_failed", Message: err.Error()})))
 			return
 		}
-		a.post(capability.MarshalAgentFrame(capability.AgentFrameExit, open.SessionID,
-			capability.EncodeAgentJSON(capability.AgentSessionExit{Code: code})))
+		a.post(capability.MarshalRelayFrame(capability.RelayFrameExit, open.SessionID,
+			capability.EncodeRelayJSON(capability.RelaySessionExit{Code: code})))
 	}()
 }
 
 // post 入队一帧（连接收口后静默丢弃）。
-func (a *agentConn) post(b []byte) {
+func (a *relayConn) post(b []byte) {
 	a.mu.Lock()
 	closed := a.closed
 	a.mu.Unlock()
@@ -295,21 +295,21 @@ func (a *agentConn) post(b []byte) {
 	}
 }
 
-// agentFrameWriter 把容器输出流切帧上行。
-type agentFrameWriter struct {
-	a       *agentConn
-	kind    capability.AgentFrameKind
+// relayFrameWriter 把容器输出流切帧上行。
+type relayFrameWriter struct {
+	a       *relayConn
+	kind    capability.RelayFrameKind
 	session string
 }
 
-func (w *agentFrameWriter) Write(p []byte) (int, error) {
+func (w *relayFrameWriter) Write(p []byte) (int, error) {
 	total := len(p)
 	for len(p) > 0 {
 		chunk := p
 		if len(chunk) > relayFrameCap {
 			chunk = chunk[:relayFrameCap]
 		}
-		w.a.post(capability.MarshalAgentFrame(w.kind, w.session, chunk))
+		w.a.post(capability.MarshalRelayFrame(w.kind, w.session, chunk))
 		p = p[len(chunk):]
 	}
 	return total, nil
@@ -320,12 +320,12 @@ func (w *agentFrameWriter) Write(p []byte) (int, error) {
 func (p *Provider) localClusterToken(ctx context.Context) (string, error) {
 	inspect, err := p.cli.SwarmInspect(ctx, client.SwarmInspectOptions{})
 	if err != nil {
-		return "", fmt.Errorf("relay agent: local credential: %w", err)
+		return "", fmt.Errorf("node relay: local credential: %w", err)
 	}
 	return inspect.Swarm.JoinTokens.Worker, nil
 }
 
-func (p *Provider) logAgent(msg string, err error) {
+func (p *Provider) logRelay(msg string, err error) {
 	if err != nil {
 		slog.Info(msg, "err", err.Error())
 	}

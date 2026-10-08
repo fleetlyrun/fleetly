@@ -22,3 +22,12 @@ breaking:
   # 旧路径、不开全局口子；落地 origin/main 后本条目可移除。
   ignore:
     - proto/fleetly/edge/v1/edge.proto
+  # ADR-0049 附录 B 一次性更名豁免（2026-10-08）：节点中继词汇收口——
+  # Node.relay_agent_version→relay_version、EnrollNodeResponse.agent_command
+  # →relay_command（字段号与类型不动，词汇更名非契约破坏）。豁免仅此两
+  # 规则此一文件、不开全局口子；落地 origin/main 后本条目可移除。
+  ignore_only:
+    FIELD_SAME_NAME:
+      - proto/fleetly/runtime/v1/runtime.proto
+    FIELD_SAME_JSON_NAME:
+      - proto/fleetly/runtime/v1/runtime.proto

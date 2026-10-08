@@ -2,7 +2,7 @@ package apitest_test
 
 // exec 子面契约测试（F3.2，ADR-0049）：受理（四件一拍——审计 Detail 行 +
 // exec.session_opened 事件）、gRPC 全链（帧流/退出码）、WS 票据流
-//（单用途/绑会话/坏凭证 401）、拒绝信封（无代理 E_NODE_AGENT_OFFLINE/
+//（单用途/绑会话/坏凭证 401）、拒绝信封（无中继 E_NODE_RELAY_OFFLINE/
 // 空命令非 tty/Team 并发上限 E_QUOTA_EXCEEDED）、代理凭证校验。
 
 import (
@@ -47,7 +47,7 @@ func TestExecSessionGRPCLink(t *testing.T) {
 	h := apitest.New(t)
 	ctx := sdk.WithToken(context.Background(), h.Token)
 	appID := execSeed(t, h, ctx)
-	detach := apitest.AttachFakeExecAgent(context.Background(), h)
+	detach := apitest.AttachFakeRelay(context.Background(), h)
 	defer detach()
 	h.Runtime.SetExecBehavior(0, "hello\n", false)
 
@@ -132,7 +132,7 @@ func TestExecSessionGRPCLink(t *testing.T) {
 	assert.True(t, seen, "exec.session_opened event must exist")
 }
 
-// TestExecCreateRejections 钉受理拒绝信封：无代理（E_NODE_AGENT_OFFLINE）、
+// TestExecCreateRejections 钉受理拒绝信封：无中继（E_NODE_RELAY_OFFLINE）、
 // 空命令非 tty（E_INVALID_ARGUMENT）、未知 App（E_NOT_FOUND）。
 func TestExecCreateRejections(t *testing.T) {
 	h := apitest.New(t)
@@ -140,15 +140,15 @@ func TestExecCreateRejections(t *testing.T) {
 	appID := execSeed(t, h, ctx)
 	exec := runtimev1.NewExecServiceClient(h.Conn)
 
-	// 无在连代理 → E_NODE_AGENT_OFFLINE。
+	// 无在连中继 → E_NODE_RELAY_OFFLINE。
 	_, err := exec.CreateExecSession(ctx, &runtimev1.CreateExecSessionRequest{
 		AppId: appID, Process: "web", Command: []string{"true"},
 	})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "E_NODE_AGENT_OFFLINE")
+	assert.Contains(t, err.Error(), "E_NODE_RELAY_OFFLINE")
 
 	// 空 argv 非 tty → E_INVALID_ARGUMENT。
-	detach := apitest.AttachFakeExecAgent(context.Background(), h)
+	detach := apitest.AttachFakeRelay(context.Background(), h)
 	defer detach()
 	_, err = exec.CreateExecSession(ctx, &runtimev1.CreateExecSessionRequest{
 		AppId: appID, Process: "web", Tty: false,
@@ -170,7 +170,7 @@ func TestExecStreamWSTicketFlow(t *testing.T) {
 	h := apitest.New(t)
 	ctx := sdk.WithToken(context.Background(), h.Token)
 	appID := execSeed(t, h, ctx)
-	detach := apitest.AttachFakeExecAgent(context.Background(), h)
+	detach := apitest.AttachFakeRelay(context.Background(), h)
 	defer detach()
 	h.Runtime.SetExecBehavior(7, "", false)
 	h.Runtime.SetExecSkipStdin(true) // WS 客户端无 half-close：自退出形态
@@ -252,7 +252,7 @@ func TestExecTeamLimit(t *testing.T) {
 	h := apitest.New(t)
 	ctx := sdk.WithToken(context.Background(), h.Token)
 	appID := execSeed(t, h, ctx)
-	detach := apitest.AttachFakeExecAgent(context.Background(), h)
+	detach := apitest.AttachFakeRelay(context.Background(), h)
 	defer detach()
 	exec := runtimev1.NewExecServiceClient(h.Conn)
 
@@ -282,9 +282,9 @@ func TestExecTeamLimit(t *testing.T) {
 	assert.Contains(t, err.Error(), "E_QUOTA_EXCEEDED")
 }
 
-// TestRelayAgentBadToken 钉代理凭证面：坏 join token 的握手被拒（401 形态
+// TestRelayBadToken 钉中继凭证面：坏 join token 的握手被拒（401 形态
 // ——WS 升级前的最小拒绝）。
-func TestRelayAgentBadToken(t *testing.T) {
+func TestRelayBadToken(t *testing.T) {
 	h := apitest.New(t)
 	handler, err := assembly.NewGatewayHandler(slog.New(slog.DiscardHandler), h.Conn, nil, fleetlygrpc.NewExecStreamSource(h.Services), assembly.NewBrowseGate(h.Services))
 	require.NoError(t, err)

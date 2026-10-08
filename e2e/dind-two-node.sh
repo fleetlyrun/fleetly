@@ -58,8 +58,8 @@ log "manager ip: $MGR_IP"
 log "preloading nginx + busybox into both nodes"
 docker image save nginx:1.27 | docker exec -i "$MGR_CID" docker load >/dev/null
 docker image save nginx:1.27 | docker exec -i "$WRK_CID" docker load >/dev/null
-# busybox:1.37 是节点中继代理的载体镜像（ADR-0049 EnrollKit.AgentCommand
-# 钉版；与 e2e 预载清单同源）——worker 装载代理前预载（离线确定性）。
+# busybox:1.37 是节点中继的载体镜像（ADR-0049 EnrollKit.RelayCommand
+# 钉版；与 e2e 预载清单同源）——worker 装载中继前预载（离线确定性）。
 docker image save busybox:1.37 | docker exec -i "$WRK_CID" docker load >/dev/null
 
 log "installing fleetly on the manager (worker stays zero-install)"
@@ -225,19 +225,19 @@ fi
 log "log stream covers both nodes ($LOG_NODES node ids seen)"
 
 # ---- F3.2 exec 子面（ADR-0049）：反向中继全链 ----
-# 节点代理装载走 EnrollKit.AgentCommand（纯单引号形态——JSON 转义恒等，
+# 节点中继装载走 EnrollKit.RelayCommand（纯单引号形态——JSON 转义恒等，
 # --json 输出可原样 sed 抽取执行；幂等 = 重跑即升级通道）。worker 上的
-# 代理容器 busybox 载体 + docker cp 注入的 fleetlyd 出站拨 manager
+# 中继容器 busybox 载体 + docker cp 注入的 fleetlyd 出站拨 manager
 # gateway——节点零入站端口。装好后断言：双节点 relay_online=true →
 # 卷钉住 process（worker 侧落点）exec 全链 → 跨节点 process exec →
-# `fleetly shell` 非交互形态 → 代理容器在场与重跑幂等。
-log "exec leg: installing the worker relay agent via EnrollKit.AgentCommand"
-AGENT_CMD=$(cli --json nodes enroll | sed -n 's/.*"agent_command": *"\([^"]*\)".*/\1/p' | head -1)
-case "$AGENT_CMD" in
-  */v1/platform/binary*fleetly-relay*busybox:1.37*) log "agent command shape verified (carrier/busybox/binary endpoint)" ;;
-  *) echo "agent command missing expected shape: $AGENT_CMD" >&2; exit 1 ;;
+# `fleetly shell` 非交互形态 → 中继容器在场与重跑幂等。
+log "exec leg: installing the worker node relay via EnrollKit.RelayCommand"
+RELAY_CMD=$(cli --json nodes enroll | sed -n 's/.*"relay_command": *"\([^"]*\)".*/\1/p' | head -1)
+case "$RELAY_CMD" in
+  */v1/platform/binary*fleetly-relay*busybox:1.37*) log "relay command shape verified (carrier/busybox/binary endpoint)" ;;
+  *) echo "relay command missing expected shape: $RELAY_CMD" >&2; exit 1 ;;
 esac
-docker exec "$WRK_CID" sh -c "$AGENT_CMD"
+docker exec "$WRK_CID" sh -c "$RELAY_CMD"
 i=0
 while [ "$i" -lt 60 ]; do
   n=$(cli --json nodes list | grep -c '"relay_online": *true' || true)
@@ -245,21 +245,21 @@ while [ "$i" -lt 60 ]; do
   i=$((i + 1)); sleep 2
 done
 [ "${n:-0}" = "2" ] || {
-  echo "expected both nodes relay_online (worker agent + manager loopback), got $n" >&2
+  echo "expected both nodes relay_online (worker relay + manager loopback), got $n" >&2
   cli --json nodes list >&2 || true
   docker exec "$WRK_CID" sh -c 'docker ps -a --filter name=fleetly-relay; docker logs fleetly-relay 2>&1 | tail -5' >&2 || true
   exit 1
 }
-log "both nodes relay_online (worker agent installed + manager loopback)"
+log "both nodes relay_online (worker relay installed + manager loopback)"
 
 log "exec leg: exec into the volume-pinned process (worker-or-manager landing)"
 STORE_OUT=$(cli exec "$APP_ID/store" -- /bin/echo store-exec-ok)
 case "$STORE_OUT" in
-  *store-exec-ok*) log "exec reached the volume-pinned process via its relay agent" ;;
+  *store-exec-ok*) log "exec reached the volume-pinned process via its node relay" ;;
   *) echo "store exec output missing marker, got: $STORE_OUT" >&2; exit 1 ;;
 esac
 
-log "exec leg: exec into the spread process (either node's agent)"
+log "exec leg: exec into the spread process (either node's relay)"
 WEB_OUT=$(cli exec "$APP_ID/web" -- /bin/echo web-exec-ok)
 case "$WEB_OUT" in
   *web-exec-ok*) log "exec reached a spread process replica" ;;
@@ -272,12 +272,12 @@ case "$SHELL_ERR" in
   *) echo "shell session header missing, stderr: $SHELL_ERR" >&2; exit 1 ;;
 esac
 
-log "exec leg: agent reinstall is idempotent (upgrade channel)"
-docker exec "$WRK_CID" sh -c "$AGENT_CMD"
+log "exec leg: relay reinstall is idempotent (upgrade channel)"
+docker exec "$WRK_CID" sh -c "$RELAY_CMD"
 docker exec "$WRK_CID" docker ps --filter name=fleetly-relay --format '{{.Names}}' | grep -q '^fleetly-relay$' || {
-  echo "relay agent container missing after reinstall" >&2; exit 1
+  echo "relay container missing after reinstall" >&2; exit 1
 }
-log "agent reinstall idempotent (single fleetly-relay container)"
+log "relay reinstall idempotent (single fleetly-relay container)"
 
 
 # 受管日志存储（F2.4/ADR-0040）：VL 起服 + 采集环落地后 --text 检索路径

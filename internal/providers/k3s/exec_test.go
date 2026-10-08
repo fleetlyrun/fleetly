@@ -121,10 +121,10 @@ func TestExecWorkloadSeam(t *testing.T) {
 	_ = cli
 }
 
-// TestAgentSessionFrameFlow：会话多路复用的帧序（open → ack → stdin →
+// TestRelaySessionFrameFlow：会话多路复用的帧序（open → ack → stdin →
 // exit；执行失败 → error 帧）。不经 WS——send 通道直读（dial/hello 的线
 // 上形态在 e2e）。
-func TestAgentSessionFrameFlow(t *testing.T) {
+func TestRelaySessionFrameFlow(t *testing.T) {
 	p, _ := newFakeProvider(execPod("fleetly-shop", "web-a", "node-1", corev1.PodRunning))
 	p.execFn = func(ctx context.Context, req capability.ExecWorkloadRequest, ns, name string) (int, error) {
 		buf, _ := io.ReadAll(req.Stdin)
@@ -134,39 +134,39 @@ func TestAgentSessionFrameFlow(t *testing.T) {
 		_, _ = req.Stdout.Write([]byte("pong"))
 		return 7, nil
 	}
-	a := &agentConn{
+	a := &relayConn{
 		provider: p,
 		send:     make(chan []byte, 16),
-		sessions: map[string]*agentSession{},
+		sessions: map[string]*relaySession{},
 	}
 	defer a.shutdown()
 	ctx := context.Background()
 	sid := "01H" + strings.Repeat("Z", 22) + "1" // ULID 定长 26（手写字面量差一位即帧界错位——实锤过）
 
 	// open → 会话起。
-	a.dispatch(ctx, capability.AgentFrame{
-		Kind:      capability.AgentFrameOpen,
+	a.dispatch(ctx, capability.RelayFrame{
+		Kind:      capability.RelayFrameOpen,
 		SessionID: sid,
-		Payload: capability.EncodeAgentJSON(capability.AgentSessionOpen{
+		Payload: capability.EncodeRelayJSON(capability.RelaySessionOpen{
 			SessionID: sid, WorkloadID: "wl-1", Instance: "web-a",
 			Argv: []string{"true"}, TTY: false,
 		}),
 	})
 	// stdin + EOF → 执行器收到 "ping"。
-	a.dispatch(ctx, capability.AgentFrame{Kind: capability.AgentFrameStdin, SessionID: sid, Payload: []byte("ping")})
-	a.dispatch(ctx, capability.AgentFrame{Kind: capability.AgentFrameStdinEOF, SessionID: sid})
+	a.dispatch(ctx, capability.RelayFrame{Kind: capability.RelayFrameStdin, SessionID: sid, Payload: []byte("ping")})
+	a.dispatch(ctx, capability.RelayFrame{Kind: capability.RelayFrameStdinEOF, SessionID: sid})
 
 	// 收帧：ack → stdout("pong") → exit(7)。
 	deadline := time.After(5 * time.Second)
-	var frames []capability.AgentFrame
+	var frames []capability.RelayFrame
 	wantExit := false
 	for !wantExit {
 		select {
 		case b := <-a.send:
-			f, err := capability.ParseAgentFrame(b)
+			f, err := capability.ParseRelayFrame(b)
 			require.NoError(t, err)
 			frames = append(frames, f)
-			if f.Kind == capability.AgentFrameExit {
+			if f.Kind == capability.RelayFrameExit {
 				wantExit = true
 			}
 		case <-deadline:
@@ -174,54 +174,54 @@ func TestAgentSessionFrameFlow(t *testing.T) {
 		}
 	}
 	require.GreaterOrEqual(t, len(frames), 3)
-	assert.Equal(t, capability.AgentFrameAck, frames[0].Kind)
-	ack, err := capability.DecodeAgentJSON[capability.AgentSessionAck](frames[0].Payload)
+	assert.Equal(t, capability.RelayFrameAck, frames[0].Kind)
+	ack, err := capability.DecodeRelayJSON[capability.RelaySessionAck](frames[0].Payload)
 	require.NoError(t, err)
 	assert.Equal(t, "web-a", ack.Instance)
 	var sawPong bool
 	for _, f := range frames {
-		if f.Kind == capability.AgentFrameStdout {
+		if f.Kind == capability.RelayFrameStdout {
 			assert.Equal(t, "pong", string(f.Payload))
 			sawPong = true
 		}
 	}
 	assert.True(t, sawPong, "stdout frame must carry executor output")
-	exit, err := capability.DecodeAgentJSON[capability.AgentSessionExit](frames[len(frames)-1].Payload)
+	exit, err := capability.DecodeRelayJSON[capability.RelaySessionExit](frames[len(frames)-1].Payload)
 	require.NoError(t, err)
 	assert.Equal(t, 7, exit.Code)
 }
 
-// TestAgentSessionErrorFrame：执行失败 → error 帧（exit 缺席即会话失败）。
-func TestAgentSessionErrorFrame(t *testing.T) {
+// TestRelaySessionErrorFrame：执行失败 → error 帧（exit 缺席即会话失败）。
+func TestRelaySessionErrorFrame(t *testing.T) {
 	p, _ := newFakeProvider(execPod("fleetly-shop", "web-a", "node-1", corev1.PodRunning))
 	p.execFn = func(ctx context.Context, req capability.ExecWorkloadRequest, ns, name string) (int, error) {
 		return 0, assert.AnError
 	}
-	a := &agentConn{provider: p, send: make(chan []byte, 16), sessions: map[string]*agentSession{}}
+	a := &relayConn{provider: p, send: make(chan []byte, 16), sessions: map[string]*relaySession{}}
 	defer a.shutdown()
 	ctx := context.Background()
 	sid := "01H" + strings.Repeat("Z", 22) + "2"
-	a.dispatch(ctx, capability.AgentFrame{
-		Kind:      capability.AgentFrameOpen,
+	a.dispatch(ctx, capability.RelayFrame{
+		Kind:      capability.RelayFrameOpen,
 		SessionID: sid,
-		Payload: capability.EncodeAgentJSON(capability.AgentSessionOpen{
+		Payload: capability.EncodeRelayJSON(capability.RelaySessionOpen{
 			SessionID: sid, WorkloadID: "wl-1", Instance: "web-a", Argv: []string{"true"},
 		}),
 	})
 	select {
 	case b := <-a.send:
-		f, err := capability.ParseAgentFrame(b)
+		f, err := capability.ParseRelayFrame(b)
 		require.NoError(t, err)
-		require.Equal(t, capability.AgentFrameAck, f.Kind) // 首帧 ack
+		require.Equal(t, capability.RelayFrameAck, f.Kind) // 首帧 ack
 	case <-time.After(5 * time.Second):
 		t.Fatal("no ack frame")
 	}
 	select {
 	case b := <-a.send:
-		f, err := capability.ParseAgentFrame(b)
+		f, err := capability.ParseRelayFrame(b)
 		require.NoError(t, err)
-		require.Equal(t, capability.AgentFrameError, f.Kind)
-		pl, err := capability.DecodeAgentJSON[capability.AgentSessionError](f.Payload)
+		require.Equal(t, capability.RelayFrameError, f.Kind)
+		pl, err := capability.DecodeRelayJSON[capability.RelaySessionError](f.Payload)
 		require.NoError(t, err)
 		assert.NotEmpty(t, pl.Message)
 	case <-time.After(5 * time.Second):
@@ -270,7 +270,7 @@ func TestAdvertiseServerURL(t *testing.T) {
 }
 
 // TestEnrollmentCommandShape：join 命令形态锚(advertise server + token;
-// AgentCommand 恒空 = 集中形态无节点侧代理面)。
+// RelayCommand 恒空 = 集中形态无节点中继面)。
 func TestEnrollmentCommandShape(t *testing.T) {
 	tokFile := t.TempDir() + "/node-token"
 	require.NoError(t, os.WriteFile(tokFile, []byte("K10abc::worker:secret\n"), 0o600))
@@ -284,7 +284,7 @@ func TestEnrollmentCommandShape(t *testing.T) {
 	kit, err := p.Enrollment(context.Background(), false, capability.EnrollmentOptions{})
 	require.NoError(t, err)
 	assert.Contains(t, kit.Command, "k3s agent --server https://10.0.0.3:6443 --token K10abc::worker:secret")
-	assert.Empty(t, kit.AgentCommand, "central exec form carries no node-side agent face")
+	assert.Empty(t, kit.RelayCommand, "central exec form carries no node-side relay face")
 
 	_, err = p.Enrollment(context.Background(), true, capability.EnrollmentOptions{})
 	require.Error(t, err, "rotate must fail honestly (k3s server-side operation)")

@@ -7,7 +7,7 @@
 ## 拓扑与连接
 
 - **manager** = `ssh root@fleetly-dev.deeploop.net`（146.190.58.0；VPC eth1=10.124.0.3；Debian 13 / 2C / 4G）。新 fleetlyd = systemd `fleetlyd.service`（数据根 /var/lib/fleetly；unit 另注入 `FLEETLY_PROXY_CONFIG_ENDPOINT=http://10.124.0.3:9082/proxy/config` + `FLEETLY_PROXY_ACME_EMAIL` + drop-in `browse.conf`：`FLEETLY_BROWSE_HOST_SUFFIX=dev.fleetly.run` + `FLEETLY_BROWSE_GATEWAY_URL=http://10.124.0.3:9081`，2026-10-07 起）。
-- **worker → k3s 生产实证节点（2026-10-08 改造，ADR-0055 决策 1）**：`ssh root@143.198.234.68`（VPC eth1=10.124.0.5）已退出 swarm 改纯 k3s 单机（k3s server + fleetlyd systemd，独立平台身份/数据根；docker daemon 停用 disable）。**swarm 现役拓扑 = manager 单节点**（node2 任务经 drain 全迁 manager，dogfooding 无断流；sec-test 等手工载体续跑 manager）。k3s 侧操作序/实录/回滚（还原 swarm worker）见 `k3s-runtime.md` staging 节；worker 侧 swarm 操作（AgentCommand 重跑等）自本改造起不适用。
+- **worker → k3s 生产实证节点（2026-10-08 改造，ADR-0055 决策 1）**：`ssh root@143.198.234.68`（VPC eth1=10.124.0.5）已退出 swarm 改纯 k3s 单机（k3s server + fleetlyd systemd，独立平台身份/数据根；docker daemon 停用 disable）。**swarm 现役拓扑 = manager 单节点**（node2 任务经 drain 全迁 manager，dogfooding 无断流；sec-test 等手工载体续跑 manager）。k3s 侧操作序/实录/回滚（还原 swarm worker）见 `k3s-runtime.md` staging 节；worker 侧 swarm 操作（RelayCommand 重跑等）自本改造起不适用。
 - DNS：DNSPod 通配 CNAME `*.dev.fleetly.run → fleetly-dev.deeploop.net`（n0.dev 实证解析）。
 - manager dockerd 带 drop-in `--insecure-registry 10.124.0.3:5000`（zot 走 HTTP；VPC 内网形态）；node2 dockerd 已停用（swarm 退出，k3s 用 containerd）。
 - CLI 凭据在 manager `/root/.config/fleetly/credentials`（`FLEETLY_ADDR=127.0.0.1:9080` + 自动读凭据）；node2 k3s 平台 CLI 走 `/root/n7cli.sh`（FLEETLY_ADDR=10.124.0.5:9080）。
@@ -363,19 +363,19 @@ ADR-0042 落地（64f07f0..8b7f51d 七 commit，CI run 37218474928 六 job 全�
 
 **换装**（161b62b-f31walk → 05df932-f32exec2，五 commit 3829263/0e50fb8/bd29438/console 批/05df932）：前置 Platform Backup `c8a74e33` + 卷 tar（受管四卷——含 probe 遗留 archredis；torchwood-pg 已非独立卷名）；**00025 迁移随批前滚**（audit detail 列）。零扰动：34 running task 行稳定；tw.dev 200。
 
-- **回环代理（manager）零动作在线**：daemon 起服即进程内回环代理连自身 gateway（10.124.0.3:9081，明文 VPC 形态）——`nodes list` manager 行 `relay_online=true`、无容器（与 worker 容器形态分立）。
-- **worker 代理落地 = AgentCommand 原样执行**：`fleetly --json nodes enroll` 的 `agent_command` sed 抽取（纯单引号形态 JSON 转义恒等——契约实测成立）→ node2 `sh` 执行：busybox:1.37 载体 + 41MB binary 经 `/v1/platform/binary` 下载 + docker cp 注入 + docker.sock 挂载 `fleetlyd relay` 起服（Up 即连，`relay_online=true`）。
+- **回环中继（manager）零动作在线**：daemon 起服即进程内回环中继连自身 gateway（10.124.0.3:9081，明文 VPC 形态）——`nodes list` manager 行 `relay_online=true`、无容器（与 worker 容器形态分立）。
+- **worker 中继落地 = RelayCommand 原样执行**：`fleetly --json nodes enroll` 的 `relay_command` sed 抽取（纯单引号形态 JSON 转义恒等——契约实测成立）→ node2 `sh` 执行：busybox:1.37 载体 + 41MB binary 经 `/v1/platform/binary` 下载 + docker cp 注入 + docker.sock 挂载 `fleetlyd relay` 起服（Up 即连，`relay_online=true`）。
 - **exec 真机全链**：worker 侧（probe/web，node2 经反向中继）one-shot `echo` + **TTY 交互 shell**（管道灌命令实测：pty 回显/执行/`exit 0` 退出码透传）双绿；manager 侧（n0reg/web 回环 + torchwood/server 真负载 `/bin/hostname` 返回容器名）；错误进程名 → `E_NOT_FOUND: no running instance ... <workload-id>` 诚实信封。
 - **WS/binary 契约探针**：`/v1/exec/stream` 无票 401、票据换流 **101 升级**（HTTP/1.1 upgrade 经真 gateway）、同票复用 401（单用途）、`/v1/relay` 无凭证 401、`/v1/platform/binary` 坏 token 401；票据铸造 REST（POST /v1/exec/sessions）protojson snake_case 全形。
 - **审计/事件**：`audit --action exec.` 行 actor/source（cli/api 分立）+ Detail 命令面；`exec.session_opened` 事件在 outbox（注意 events list 是 after_seq 游标语义——从窗头起查尾部事件要 `--after-seq`，walkthrough 坑①）。
 - **走查咬出 W1（同日修复）**：Provider 哨兵（无在跑实例）未进受理位信封映射 → E_INTERNAL 吞错因（3ms 快败无诊断面）。修复 = capability 跨层哨兵 `ErrExecNoRunning` 单源 + engine 归一 E_NOT_FOUND + 信封带 workload-id。**错因面**：目标 app 的 process 名错用（probe app 的进程是 web——`docker service inspect` 标签核对是排障第一步）。
 - **TTY stdin EOF 语义实测**（e2e 咬出 + staging 复证）：非交互 `shell </dev/null` = 连接半关闭 → daemon 收口 TTY exec（退出 137 形态，非挂死）——交互面不受影响（真终端 stdin 常开）。
-- **代理运维面**：AgentCommand 幂等（重跑 = rm -f 旧容器重建——e2e 实证单容器收口）；**rotate 双 token 后旧代理失联待重跑**（C3 泄漏处置语义）；**平台升级后代理二进制滞后**——帧协议只增容忍、`nodes list` 的 `relay_agent_version` 回显滞后，升级序补一步"worker 重跑 AgentCommand"（本批 node2 已重跑至 f32exec2 同版）。
+- **中继运维面**：RelayCommand 幂等（重跑 = rm -f 旧容器重建——e2e 实证单容器收口）；**rotate 双 token 后旧中继失联待重跑**（C3 泄漏处置语义）；**平台升级后中继二进制滞后**——帧协议只增容忍、`nodes list` 的 `relay_version` 回显滞后，升级序补一步"worker 重跑 RelayCommand"（本批 node2 已重跑至 f32exec2 同版）。
 - 残留清理（上批挂账）：torchwood 项目 buildprobe/staticprobe/railpackprobe 三 app 删除（级联拆载体）+ `fleetly-vol-archredis`/`fleetly-vol-probe-redis` 孤儿卷删除。
 
 ## 2026-10-06 记录·十二（F3.3 模板库批换装 9df27c9-f33tpl + 模板面真机全链）
 
-**换装**（05df932-f32exec2 → 9df27c9-f33tpl，七 commit 9cb011c/…/9df27c9）：前置 Platform Backup `013d0362` + 卷 tar 五份（`/root/upgrade-f33/`）；**00026 迁移随批前滚**（template_catalog 单行快照表）。零扰动：受管 db task 行零新增（Running 8h 不变）；tw.dev 200 / n0.dev 200 / ml-api 415（预期形态）；worker AgentCommand 重跑（升级序既有步）→ 双节点 relay_online=true。走查判定 PASS，详见 `docs/reviews/2026-10-06-template-walkthrough.md`。
+**换装**（05df932-f32exec2 → 9df27c9-f33tpl，七 commit 9cb011c/…/9df27c9）：前置 Platform Backup `013d0362` + 卷 tar 五份（`/root/upgrade-f33/`）；**00026 迁移随批前滚**（template_catalog 单行快照表）。零扰动：受管 db task 行零新增（Running 8h 不变）；tw.dev 200 / n0.dev 200 / ml-api 415（预期形态）；worker RelayCommand 重跑（升级序既有步）→ 双节点 relay_online=true。走查判定 PASS，详见 `docs/reviews/2026-10-06-template-walkthrough.md`。
 
 - **版本戳纪律**：本地构建换装必须带 mise build 同款 ldflags（`-X main.version=<shorthash>-<slug>`）——裸构建 `fleetly status` 显示 `server=unknown`，走查第一发即咬出（17:32 重装收口）。
 - **模板面真机锚**：CLI `templates list`（source builtin）+ REST `/v1/templates[/name]`（gateway :9081，digest/变量声明规范形）；`templates refresh` 未配置 `server.templates_catalog_url` → E_INVALID_ARGUMENT 精确拒绝（内嵌目录即全部——staging 常态形态，刷新腿在 e2e dind 覆盖）。
@@ -516,7 +516,7 @@ fleetly doctor
 
 ## 2026-10-07 记录·十三（F3.6 数据浏览器批换装 b4953ca-f36browse + browse 面真机全链）
 
-**换装**（9df27c9-f33tpl → b4953ca-f36browse，九 commit b7e8f5a/…/b4953ca）：前置 Platform Backup `08c13298` + 卷 tar 七份（`/root/upgrade-f36/`）；**00027 迁移随批前滚**（browse_sessions 回收台账）。零扰动：torchwood-pg task 行 Running 15h 不变；tw.dev/n0.dev https 200（`:80` 明文口 404 是既有 TLS 路由形态——探针必须走 443 -k）；worker AgentCommand 重跑 → 双节点 relay_online=true 同版。走查判定 PASS，详见 `docs/reviews/2026-10-07-browse-walkthrough.md`。
+**换装**（9df27c9-f33tpl → b4953ca-f36browse，九 commit b7e8f5a/…/b4953ca）：前置 Platform Backup `08c13298` + 卷 tar 七份（`/root/upgrade-f36/`）；**00027 迁移随批前滚**（browse_sessions 回收台账）。零扰动：torchwood-pg task 行 Running 15h 不变；tw.dev/n0.dev https 200（`:80` 明文口 404 是既有 TLS 路由形态——探针必须走 443 -k）；worker RelayCommand 重跑 → 双节点 relay_online=true 同版。走查判定 PASS，详见 `docs/reviews/2026-10-07-browse-walkthrough.md`。
 
 - **browse 面配置**：unit drop-in `browse.conf` 两 env（host_suffix=dev.fleetly.run 泛解析 ✓ / gateway_url=VPC 9081——traefik 容器可达即可，configEndpoint 同文化）；tls 缺省 none（明文 :80）。**轮询窗坑**：受理后即刻 curl 会撞 traefik 5s 配置轮询（404 假象）——走查链前 sleep 8s；e2e 探针已内置重试窗。
 - **CLI 全链**：`databases browse <id>`（pgvector→pgweb、enforcement=session 回显）→ entry 302 + `Set-Cookie flt_browse=<sid>.<grant>`（HttpOnly/SameSite=Lax/MaxAge=剩余）→ 同票二次 **401**（单用途）→ 无 cookie 工具路由 **401**（ForwardAuth 门禁在 traefik v3.5.4 真机生效——middlewares 渲染面首发）→ cookie 取 pgweb 页 200 → `show default_transaction_read_only` = **"on"**（torchwood-pg 真簇上服务端只读执法实证）。

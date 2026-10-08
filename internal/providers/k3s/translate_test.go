@@ -209,7 +209,7 @@ func TestDescribeNotesHonesty(t *testing.T) {
 	assert.Contains(t, notes, "fold dots to dashes")
 	assert.Contains(t, notes, "network rebuild verb is semantically absent")
 	assert.Contains(t, notes, "exec sessions run through the apiserver natively")
-	assert.Contains(t, notes, "worker nodes carry no platform agent")
+	assert.Contains(t, notes, "worker nodes run no platform daemon")
 	assert.Contains(t, notes, "without declared ports resolve via headless services")
 	assert.Contains(t, notes, "network membership isolation", "ADR-0054 membership model must be declared")
 	assert.Contains(t, notes, "isolation boundaries", "honest boundaries line must stay adjacent to the membership claim")

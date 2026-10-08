@@ -85,6 +85,11 @@ var bannedPatterns = map[string]*regexp.Regexp{
 	"remote shell": wordRe(`remote[ _-]shell`),
 	"tunnel":       wordRe(`tunnel|tunneling`),
 	"agent net":    wordRe(`agent[ _-]net`),
+	// Relay 词条（2026-10-08 更名收口，ADR-0049 附录 B）：节点侧端点定名
+	// node relay（节点中继），agent 一词收归 AI Agent 一等用户（bare
+	// "agent" 不禁——那是产品核心语汇，Task 词条语境另判）。防回流禁的是
+	// 复合形态：CamelCase 标识符族、snake/proto 键与散文短语。
+	"relay agent": regexp.MustCompile(`RelayAgent\w*|Agent(Command|Frame|Session|Hello|Version)\w*|agent_command|relay_agent|(?i:relay[ _-]agents?)`),
 	// Browse Session / Launcher Ticket 词条（ADR-0051 入册）：外词命名
 	// 缺陷，机械无歧义。
 	"db console":    wordRe(`db[ _-]?consoles?`),
@@ -133,7 +138,7 @@ var skippedTokens = map[string]string{
 	"job":              "firstBootJobs 为架构 §4 契约字段（部署期 init）；Task 同义词语境人工评审",
 	"run":              "Run 是 fleetly 冻结实体；仅 Task 同义词语境禁",
 	"function":         "通用词（函数）；FaaS 义在明确不做清单",
-	"agent":            "AI Agent 是产品核心语汇；仅 Task 命名语境禁",
+	"agent":            "AI Agent 是产品核心语汇；仅 Task 命名语境禁（节点中继语境已更名收口，ADR-0049 附录 B）",
 	"renewal":          "泛指禁用；证书/租约续期语境人工评审",
 	"sandbox net":      "Task Network Group 同义词；短语机械扫描误伤面大，人工评审",
 	"task net":         "仅禁作标识符",

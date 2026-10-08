@@ -123,7 +123,7 @@ func (r *Repo) Get(ctx context.Context, run state.Runner, platformID string) (*N
 	return &n, nil
 }
 
-// ByCarrier 按载体节点 ID 反查（ADR-0049 中继握手绑定面：agent 握手携带
+// ByCarrier 按载体节点 ID 反查（ADR-0049 中继握手绑定面：中继握手携带
 // 载体节点 ID，平台锚定表反查平台节点 ID——与 Watch 锚定同一张表）。
 func (r *Repo) ByCarrier(ctx context.Context, run state.Runner, carrierID string) (*Node, error) {
 	row := run.QueryRowContext(ctx, `

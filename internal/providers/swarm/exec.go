@@ -4,7 +4,7 @@ package swarm
 // 服务任务实时快照）、节点侧载体执行（ExecWorkload = 本地 daemon 的
 // docker exec——exec API 只落在持有容器的 daemon 上，节点代理是唯一
 // 抵达面）、凭证校验（ExecClusterToken = swarm join token 对照）。
-// 中继代理循环（RunRelayAgent）在 relayagent.go。
+// 节点中继循环（RunNodeRelay）在 noderelay.go。
 
 import (
 	"context"
@@ -22,7 +22,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/capability"
 )
 
-// labelSwarmTaskID 是 swarm 原生任务标记（task 容器自带；agent 侧容器
+// labelSwarmTaskID 是 swarm 原生任务标记（task 容器自带；中继侧容器
 // 定位锚——平台标记 + 实例标记双验）。
 const labelSwarmTaskID = "com.docker.swarm.task.id"
 

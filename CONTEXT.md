@@ -147,8 +147,8 @@ Browse Session 的一次性进入票据（短 TTL、单用途、绑会话）；�
 _Avoid_: launch token, magic link, access url
 
 **Relay**:
-节点代理到控制面的出站长连通道（WebSocket over 公共 gateway），exec 会话帧经其多路复用送达；节点零入站端口（ADR-0049）。
-_Avoid_: tunnel, mesh, agent net
+节点中继（node relay）到控制面的出站长连通道（WebSocket over 公共 gateway），exec 会话帧经其多路复用送达；节点零入站端口（ADR-0049；节点侧端点定名见其附录 B，2026-10-08）。
+_Avoid_: tunnel, mesh, agent net, relay agent
 
 **Runtime**:
 编排器 Capability，Provider 实现（swarm、k8s、nomad…）。

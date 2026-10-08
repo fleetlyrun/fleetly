@@ -746,9 +746,9 @@ func (p *Provider) DescribeCluster(ctx context.Context) (capability.ClusterView,
 // Enrollment 生成节点加入材料（k3s agent 命令；节点零平台安装物——k8s
 // 节点 kubelet 由 k3s agent 自带，k3s 对 k8s 节点 = docker 对 swarm 节点
 // 的运行时前提）。rotate 是 k3s 侧未支持面：node token 轮换需 server 重启
-// 介入，诚实失败（C3 泄漏处置走 runbook 的 server 面轮换序）。AgentCommand
-// 恒空 = 无节点侧代理面（exec 集中形态经 apiserver，ADR-0053 决策 1——
-// worker 节点零平台代理物，EnrollKit 契约"空 = Provider 无代理面"同判）。
+// 介入，诚实失败（C3 泄漏处置走 runbook 的 server 面轮换序）。RelayCommand
+// 恒空 = 无节点中继面（exec 集中形态经 apiserver，ADR-0053 决策 1——
+// worker 节点零平台守护物，EnrollKit 契约"空 = Provider 无中继面"同判）。
 func (p *Provider) Enrollment(ctx context.Context, rotate bool, o capability.EnrollmentOptions) (capability.EnrollKit, error) {
 	if rotate {
 		return capability.EnrollKit{}, fmt.Errorf("k3s enrollment: token rotation is not supported by this provider yet (rotate via k3s server restart; see runbook)")

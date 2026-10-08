@@ -48,14 +48,14 @@ type Runtime interface {
 	// 既有），含轮换。rotate=true 先作废全部现有材料（泄漏处置：旧
 	// token 即刻失效）再返回新材料——活材料等价集群成员权，动词面与
 	// 授权档位都按此敏感度对待（C3）。o 携带受理面上下文（ADR-0049：
-	// AgentCommand 拼装需要 gateway 可达锚——控制面配置口径，Provider
+	// RelayCommand 拼装需要 gateway 可达锚——控制面配置口径，Provider
 	// 不读配置）。
 	Enrollment(ctx context.Context, rotate bool, o EnrollmentOptions) (EnrollKit, error)
 }
 
 // EnrollmentOptions 是 Enrollment 的受理面上下文。
 type EnrollmentOptions struct {
-	// GatewayPort 是 REST gateway 端口（AgentCommand 的 manager 基址
+	// GatewayPort 是 REST gateway 端口（RelayCommand 的 manager 基址
 	// 拼装锚：http://<swarm manager 广播地址>:<port>；明文 VPC 形态，
 	// ADR-0049 决策 2）。
 	GatewayPort string
@@ -604,12 +604,12 @@ type EnrollKit struct {
 	Command string
 	// ManagerCommand 是追加 manager 的加入命令（HA 扩容用；v1 延后）。
 	ManagerCommand string
-	// AgentCommand 是节点中继代理装载脚本（ADR-0049：busybox 载体 +
+	// RelayCommand 是节点中继装载脚本（ADR-0049：busybox 载体 +
 	// /v1/platform/binary 下载 fleetlyd + docker cp 注入 + docker.sock
-	// 挂载跑 `fleetlyd relay`）。幂等——重跑即代理升级/修复通道。只跑
+	// 挂载跑 `fleetlyd relay`）。幂等——重跑即中继升级/修复通道。只跑
 	// Command 的节点集群面完整，exec 面不可用（relay_online=false 诚实
-	// 可见）。空 = Provider 无代理面（exec 子面同判）。
-	AgentCommand string
+	// 可见）。空 = Provider 无节点中继面（exec 子面同判）。
+	RelayCommand string
 	// ExpiresAt 是材料时效观测。
 	ExpiresAt time.Time
 }

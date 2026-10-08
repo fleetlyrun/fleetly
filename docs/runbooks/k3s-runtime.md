@@ -39,7 +39,7 @@ fleetly-manager 的 token 是长期 Secret（`kubernetes.io/service-account-toke
 
 ## relay_online 的载体事实（exec 集中形态）
 
-k3s 上 exec 经 apiserver 原生通道（SPDY→kubelet），**无节点侧平台代理**——relay agent 是 manager 侧 per-node 回环注册（每节点一条到自身 gateway 的 WS 连接，hello 帧携带 k8s 节点名）。因此：
+k3s 上 exec 经 apiserver 原生通道（SPDY→kubelet），**无节点侧平台守护**——节点中继是 manager 侧 per-node 回环注册（每节点一条到自身 gateway 的 WS 连接，hello 帧携带 k8s 节点名）。因此：
 
 - `relay_online=true` 的语义 = "该节点上 pod 的 exec 可服务"（回环连接在 + 节点在锚定表），与 swarm（节点侧代理在连）载体事实不同、平台语义等价。
 - 节点失联的会话收口由 engine dropAgentConn 承载（回环连接随 relay 循环节拍消亡）。

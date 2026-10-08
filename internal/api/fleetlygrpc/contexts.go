@@ -43,7 +43,7 @@ func (svc *NodesService) ListNodes(ctx context.Context, req *runtimev1.ListNodes
 		msg := nodeMsg(n)
 		if st, ok := relay[n.PlatformID]; ok {
 			msg.RelayOnline = st.Online
-			msg.RelayAgentVersion = st.Version
+			msg.RelayVersion = st.Version
 		}
 		out.Nodes = append(out.Nodes, msg)
 	}
@@ -73,7 +73,7 @@ func (svc *NodesService) EnrollNode(ctx context.Context, req *runtimev1.EnrollNo
 	if err != nil {
 		return nil, mapStateError(err, "enrollment")
 	}
-	return &runtimev1.EnrollNodeResponse{JoinCommand: kit.Command, AgentCommand: kit.AgentCommand}, nil
+	return &runtimev1.EnrollNodeResponse{JoinCommand: kit.Command, RelayCommand: kit.RelayCommand}, nil
 }
 
 // DrainNode 把节点置为排空（F0.19 RuntimeAdmin 面；平台节点 ID 为锚）。

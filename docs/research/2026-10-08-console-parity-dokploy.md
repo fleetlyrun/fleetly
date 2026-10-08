@@ -44,7 +44,7 @@
 
 1. 身份管理页：users（create/invite/accept/list）、teams、roles——RBAC 的 UI 面。
 2. Alerts 页：rules / channels（create/test/delete，test 不可达诚实呈现）。
-3. Nodes 页：list（available 过滤、relay_online、runtime 形态）+ enroll 材料展示（AgentCommand 复制）。
+3. Nodes 页：list（available 过滤、relay_online、runtime 形态）+ enroll 材料展示（RelayCommand 复制）。
 4. Hooks UI：get/set/rotate（per-App webhook）。
 5. 部署表单 git 源（后端 `deploy` git 源已在；表单补 URL+branch+subdir）。
 6. Revisions diff 视图（CLI `revisions diff`；详情页列表已索引 revision）。

@@ -879,10 +879,10 @@ func (p *Provider) DescribeCluster(ctx context.Context) (capability.ClusterView,
 // Enrollment 生成节点加入材料（worker 加入命令；节点零平台安装物）。
 // rotate=true 先作废全部现有材料（SwarmUpdate 带 token 轮换旗标）再取
 // 新材料（C3：泄漏处置路径）。管理面地址取可达 manager 的广播地址
-// （N1 HA 扩容再扩展 manager 命令）。AgentCommand 是节点中继代理装载
+// （N1 HA 扩容再扩展 manager 命令）。RelayCommand 是节点中继装载
 // 脚本（ADR-0049：busybox 载体容器 + 二进制经 /v1/platform/binary 下载
 // 后 docker cp 注入 + docker.sock 挂载跑 `fleetlyd relay`；幂等——重跑
-// 即代理升级/修复通道）。join 语义不变：只跑 Command 的节点集群面完整，
+// 即中继升级/修复通道）。join 语义不变：只跑 Command 的节点集群面完整，
 // exec 面不可用。
 func (p *Provider) Enrollment(ctx context.Context, rotate bool, o capability.EnrollmentOptions) (capability.EnrollKit, error) {
 	if rotate {
@@ -924,7 +924,7 @@ func (p *Provider) Enrollment(ctx context.Context, rotate bool, o capability.Enr
 	}
 	if o.GatewayPort != "" {
 		base := "http://" + managerHost(managerAddr) + ":" + o.GatewayPort
-		kit.AgentCommand = relayAgentScript(base, workerToken)
+		kit.RelayCommand = nodeRelayScript(base, workerToken)
 	}
 	return kit, nil
 }
@@ -937,13 +937,13 @@ func managerHost(addr string) string {
 	return addr
 }
 
-// relayAgentScript 生成节点中继代理装载脚本（幂等：先清旧代理容器再
+// nodeRelayScript 生成节点中继装载脚本（幂等：先清旧中继容器再
 // 重建；curl/wget 双通道——载体镜像 busybox:1.37 与 e2e 预载清单同钉版）。
 // 下载凭证 = swarm join token（/v1/platform/binary 的鉴权单源，C3 等价
 // 敏感度——脚本本体即携活 token，分发的敏感度与 join 命令同面）。
 // 形态约束：纯单引号（JSON 转义恒等——消费方可原样 sed 抽取执行，e2e
 // 与 runbook 同口径）；mktemp 路径无空格，免引号展开安全。
-func relayAgentScript(baseURL, token string) string {
+func nodeRelayScript(baseURL, token string) string {
 	argv := fmt.Sprintf("chmod +x /tmp/fleetlyd && exec /tmp/fleetlyd relay --manager %[1]s --join-token %[2]s", baseURL, token)
 	return fmt.Sprintf(
 		`t=$(mktemp) && { curl -sfL -H 'Authorization: Bearer %[2]s' -o $t %[1]s/v1/platform/binary || wget -q --header 'Authorization: Bearer %[2]s' -O $t %[1]s/v1/platform/binary; } && `+

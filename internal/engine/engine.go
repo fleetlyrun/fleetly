@@ -128,13 +128,13 @@ type Options struct {
 	// ResticPath 是 restic 二进制路径缝（测试注入假可执行；空 = 生产
 	// exec.LookPath 探测——缺席即 Platform Backup 停用的探测面）。
 	ResticPath string
-	// RelayLoopbackURL 是控制面回环中继代理的 gateway 基址（空 = 回环
-	// 代理停用；ADR-0049：manager 节点也是 exec 目标，进程内代理经此
+	// RelayLoopbackURL 是控制面回环中继的 gateway 基址（空 = 回环
+	// 中继停用；ADR-0049：manager 节点也是 exec 目标，进程内中继经此
 	// URL 连自身 gateway——单节点部署零 enroll 即具备 exec 面）。
 	RelayLoopbackURL string
-	// RelayAgentVersion 是回环代理握手上报的版本（buildinfo 注入；空 =
+	// RelayVersion 是回环中继握手上报的版本（buildinfo 注入；空 =
 	// dev 形态）。
-	RelayAgentVersion string
+	RelayVersion string
 	// DataRoot 是平台数据根（构建上下文与 git 检出落盘）。
 	DataRoot string
 	// Browse 是数据浏览器面配置（F3.6，ADR-0051；零值 = 面停用——
@@ -706,14 +706,14 @@ func (e *Engine) Start(ctx context.Context) {
 		defer e.wg.Done()
 		e.driftScanLoop(runCtx)
 	}()
-	// 回环中继代理（ADR-0049）：manager 节点的 exec 路由面。子面缺席或
+	// 回环中继（ADR-0049）：manager 节点的 exec 路由面。子面缺席或
 	// 未配 URL 即静默跳过（exec 受理面诚实失败兜底）。
 	if e.execFace != nil && e.opts.RelayLoopbackURL != "" {
 		e.wg.Add(1)
 		go func() {
 			defer e.wg.Done()
-			_ = e.execFace.RunRelayAgent(runCtx, capability.RelayAgentOptions{
-				GatewayURL: e.opts.RelayLoopbackURL, AgentVersion: e.opts.RelayAgentVersion,
+			_ = e.execFace.RunNodeRelay(runCtx, capability.NodeRelayOptions{
+				GatewayURL: e.opts.RelayLoopbackURL, Version: e.opts.RelayVersion,
 			})
 		}()
 	}

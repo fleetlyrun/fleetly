@@ -2,13 +2,13 @@ package assembly
 
 // gateway 的 exec 原生入口（F3.2，ADR-0049）三件：
 //
-//   - GET /v1/relay          节点中继代理 WS（Bearer = swarm join token，
+//   - GET /v1/relay          节点中继 WS（Bearer = swarm join token，
 //     集群成员权等价 C3；首帧 hello 绑定载体节点身份，随后多路复用
 //     capability 帧协议的二进制形态）。
 //   - GET /v1/exec/stream    会话消费端 WS（Console 终端页；浏览器 WS 无
 //     自定义头——query 携带秒级单用途票据，ADR-0026 exec 版；帧形态 =
 //     [1B kind][payload] 的会话流信封，与 gRPC oneof 同构）。
-//   - GET /v1/platform/binary  控制面二进制下载（EnrollKit.AgentCommand 的
+//   - GET /v1/platform/binary  控制面二进制下载（EnrollKit.RelayCommand 的
 //     curl 目标；鉴权与 /v1/relay 同一 join token）。
 //
 // 与 uploads/hooks/events SSE 同一挂法族：root mux 精确路径 + gateway
@@ -52,13 +52,13 @@ const (
 )
 
 // relayAcceptOptions 收紧 WS 握手（无压缩——帧是二进制协议；来源不限：
-// 节点出站连接的目标地址由 AgentCommand 携带）。
+// 节点出站连接的目标地址由 RelayCommand 携带）。
 var relayAcceptOptions = websocket.AcceptOptions{
 	CompressionMode: websocket.CompressionDisabled,
-	OriginPatterns:  []string{"*"}, // 节点代理非浏览器（无 Origin 面）
+	OriginPatterns:  []string{"*"}, // 节点中继非浏览器（无 Origin 面）
 }
 
-// mountRelay 挂载节点中继代理入口。
+// mountRelay 挂载节点中继入口。
 func mountRelay(h http.Handler, eng *engine.Engine) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != relayURLPath {
@@ -69,13 +69,13 @@ func mountRelay(h http.Handler, eng *engine.Engine) http.Handler {
 			writeExecStatus(w, http.StatusMethodNotAllowed, "get_only", "the relay endpoint accepts WebSocket GET only")
 			return
 		}
-		serveRelayAgent(w, r, eng)
+		serveRelay(w, r, eng)
 	})
 }
 
-// serveRelayAgent 服务一条代理连接：凭证（HTTP 层，升级前 401）→ 升级 →
+// serveRelay 服务一条中继连接：凭证（HTTP 层，升级前 401）→ 升级 →
 // hello（文本 JSON）→ engine 附着（凭证复验 + 节点绑定）→ 读循环投递帧。
-func serveRelayAgent(w http.ResponseWriter, r *http.Request, eng *engine.Engine) {
+func serveRelay(w http.ResponseWriter, r *http.Request, eng *engine.Engine) {
 	// 凭证先于升级校验：坏凭证对 HTTP 面呈现 401（匿名面最小事实），
 	// 不进 WS 协议层。
 	if err := eng.ExecValidateClusterToken(r.Context(), bearerToken(r)); err != nil {
@@ -99,15 +99,15 @@ func serveRelayAgent(w http.ResponseWriter, r *http.Request, eng *engine.Engine)
 		_ = conn.Close(websocket.StatusPolicyViolation, "hello expected")
 		return
 	}
-	var hello capability.AgentHello
+	var hello capability.RelayHello
 	if err := json.Unmarshal(helloRaw, &hello); err != nil || hello.Type != "hello" || hello.CarrierNodeID == "" {
 		_ = conn.Close(websocket.StatusPolicyViolation, "malformed hello")
 		return
 	}
 	token := bearerToken(r)
-	feed, detach, err := eng.RelayAgentAttach(ctx, token, hello.CarrierNodeID, hello.AgentVersion, &wsAgentWriter{conn: conn})
+	feed, detach, err := eng.RelayAttach(ctx, token, hello.CarrierNodeID, hello.RelayVersion, &wsRelayWriter{conn: conn})
 	if err != nil {
-		slog.Warn("relay agent attach rejected", "err", err.Error())
+		slog.Warn("relay attach rejected", "err", err.Error())
 		_ = conn.Close(websocket.StatusPolicyViolation, "attach rejected")
 		return
 	}
@@ -122,23 +122,23 @@ func serveRelayAgent(w http.ResponseWriter, r *http.Request, eng *engine.Engine)
 		if msgType != websocket.MessageBinary {
 			continue
 		}
-		f, err := capability.ParseAgentFrame(data)
+		f, err := capability.ParseRelayFrame(data)
 		if err != nil {
-			slog.Warn("relay agent frame dropped", "err", err.Error())
+			slog.Warn("relay frame dropped", "err", err.Error())
 			continue
 		}
 		feed(f)
 	}
 }
 
-// wsAgentWriter 把代理写端适配为 engine.RelayAgentWriter（写串行化经
+// wsRelayWriter 把中继写端适配为 engine.RelayWriter（写串行化经
 // per-frame 互斥；coder/websocket 单写者纪律——读循环与下行写分属两个
 // goroutine 面）。
-type wsAgentWriter struct {
+type wsRelayWriter struct {
 	conn *websocket.Conn
 }
 
-func (w *wsAgentWriter) WriteAgentFrame(b []byte) error {
+func (w *wsRelayWriter) WriteRelayFrame(b []byte) error {
 	wctx, cancel := context.WithTimeout(context.WithoutCancel(context.Background()), 30*time.Second)
 	defer cancel()
 	return w.conn.Write(wctx, websocket.MessageBinary, b)
@@ -248,7 +248,7 @@ func (c *execWSClient) Send(f engine.ExecServerFrame) error {
 	return c.conn.Write(wctx, websocket.MessageBinary, buf)
 }
 
-// mountPlatformBinary 挂载控制面二进制下载入口（AgentCommand 的 curl
+// mountPlatformBinary 挂载控制面二进制下载入口（RelayCommand 的 curl
 // 目标；Bearer = join token 与 /v1/relay 同源）。
 func mountPlatformBinary(h http.Handler, eng *engine.Engine) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

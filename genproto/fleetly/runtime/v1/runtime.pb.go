@@ -36,14 +36,14 @@ type Node struct {
 	Available   bool                   `protobuf:"varint,5,opt,name=available,proto3" json:"available,omitempty"`
 	FirstSeenAt string                 `protobuf:"bytes,6,opt,name=first_seen_at,json=firstSeenAt,proto3" json:"first_seen_at,omitempty"`
 	LastSeenAt  string                 `protobuf:"bytes,7,opt,name=last_seen_at,json=lastSeenAt,proto3" json:"last_seen_at,omitempty"`
-	// relay_online 是节点中继代理在连状态（活体观测——exec 会话的路由前提，
-	// ADR-0049；false = 该节点不可 exec，重跑 enroll 的 agent 脚本恢复）。
+	// relay_online 是节点中继在连状态（活体观测——exec 会话的路由前提，
+	// ADR-0049；false = 该节点不可 exec，重跑 enroll 的中继装载脚本恢复）。
 	RelayOnline bool `protobuf:"varint,8,opt,name=relay_online,json=relayOnline,proto3" json:"relay_online,omitempty"`
-	// relay_agent_version 是在连代理上报的平台版本（滞后代理照常受理——帧
-	// 协议只增；升级后重跑 agent 脚本即刷新）。
-	RelayAgentVersion string `protobuf:"bytes,9,opt,name=relay_agent_version,json=relayAgentVersion,proto3" json:"relay_agent_version,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// relay_version 是在连节点中继上报的平台版本（滞后中继照常受理——帧
+	// 协议只增；升级后重跑中继装载脚本即刷新）。
+	RelayVersion  string `protobuf:"bytes,9,opt,name=relay_version,json=relayVersion,proto3" json:"relay_version,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Node) Reset() {
@@ -132,9 +132,9 @@ func (x *Node) GetRelayOnline() bool {
 	return false
 }
 
-func (x *Node) GetRelayAgentVersion() string {
+func (x *Node) GetRelayVersion() string {
 	if x != nil {
-		return x.RelayAgentVersion
+		return x.RelayVersion
 	}
 	return ""
 }
@@ -288,12 +288,12 @@ type EnrollNodeResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// join_command 是工作节点完整加入命令（swarm join 形态）。
 	JoinCommand string `protobuf:"bytes,1,opt,name=join_command,json=joinCommand,proto3" json:"join_command,omitempty"`
-	// agent_command 是节点中继代理装载脚本（ADR-0049：busybox 载体 +
+	// relay_command 是节点中继装载脚本（ADR-0049：busybox 载体 +
 	// /v1/platform/binary 下载 fleetlyd + docker cp 注入 + docker.sock 挂载
-	// 跑 `fleetlyd relay`；幂等——重跑即代理升级/修复通道）。join 语义不变：
+	// 跑 `fleetlyd relay`；幂等——重跑即中继升级/修复通道）。join 语义不变：
 	// 只跑 join_command 的节点集群面完整，exec 面不可用（relay_online=false
 	// 诚实可见）。
-	AgentCommand  string `protobuf:"bytes,2,opt,name=agent_command,json=agentCommand,proto3" json:"agent_command,omitempty"`
+	RelayCommand  string `protobuf:"bytes,2,opt,name=relay_command,json=relayCommand,proto3" json:"relay_command,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -335,9 +335,9 @@ func (x *EnrollNodeResponse) GetJoinCommand() string {
 	return ""
 }
 
-func (x *EnrollNodeResponse) GetAgentCommand() string {
+func (x *EnrollNodeResponse) GetRelayCommand() string {
 	if x != nil {
-		return x.AgentCommand
+		return x.RelayCommand
 	}
 	return ""
 }
@@ -588,7 +588,7 @@ var File_fleetly_runtime_v1_runtime_proto protoreflect.FileDescriptor
 
 const file_fleetly_runtime_v1_runtime_proto_rawDesc = "" +
 	"\n" +
-	" fleetly/runtime/v1/runtime.proto\x12\x12fleetly.runtime.v1\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"\xad\x02\n" +
+	" fleetly/runtime/v1/runtime.proto\x12\x12fleetly.runtime.v1\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"\xa2\x02\n" +
 	"\x04Node\x12\x1f\n" +
 	"\vplatform_id\x18\x01 \x01(\tR\n" +
 	"platformId\x12\x1d\n" +
@@ -600,8 +600,8 @@ const file_fleetly_runtime_v1_runtime_proto_rawDesc = "" +
 	"\rfirst_seen_at\x18\x06 \x01(\tR\vfirstSeenAt\x12 \n" +
 	"\flast_seen_at\x18\a \x01(\tR\n" +
 	"lastSeenAt\x12!\n" +
-	"\frelay_online\x18\b \x01(\bR\vrelayOnline\x12.\n" +
-	"\x13relay_agent_version\x18\t \x01(\tR\x11relayAgentVersion\"L\n" +
+	"\frelay_online\x18\b \x01(\bR\vrelayOnline\x12#\n" +
+	"\rrelay_version\x18\t \x01(\tR\frelayVersion\"L\n" +
 	"\x10ListNodesRequest\x12\"\n" +
 	"\rafter_node_id\x18\x01 \x01(\tR\vafterNodeId\x12\x14\n" +
 	"\x05limit\x18\x02 \x01(\x05R\x05limit\"C\n" +
@@ -611,7 +611,7 @@ const file_fleetly_runtime_v1_runtime_proto_rawDesc = "" +
 	"\x06rotate\x18\x01 \x01(\bR\x06rotate\"\\\n" +
 	"\x12EnrollNodeResponse\x12!\n" +
 	"\fjoin_command\x18\x01 \x01(\tR\vjoinCommand\x12#\n" +
-	"\ragent_command\x18\x02 \x01(\tR\fagentCommand\"+\n" +
+	"\rrelay_command\x18\x02 \x01(\tR\frelayCommand\"+\n" +
 	"\x10DrainNodeRequest\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"\x13\n" +
 	"\x11DrainNodeResponse\",\n" +

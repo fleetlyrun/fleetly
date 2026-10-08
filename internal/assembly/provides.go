@@ -322,8 +322,8 @@ func NewEngine(
 		// 回环中继代理（ADR-0049）：gateway 基址按绑定地址派生（空 host =
 		// 127.0.0.1；绑定具体 IP 时照用该 IP——staging 形态 10.124.0.3:9081
 		// 只在该地址监听）。版本取 buildinfo（回环代理握手上报）。
-		RelayLoopbackURL:  relayLoopbackURL(cfg.HTTPAddr()),
-		RelayAgentVersion: info.Version,
+		RelayLoopbackURL: relayLoopbackURL(cfg.HTTPAddr()),
+		RelayVersion:     info.Version,
 		// 数据浏览器面（F3.6，ADR-0051）：config 三字段直通（host_suffix 空
 		// = 面停用——BrowseDatabase 精确拒绝，升级零扰动）；TLS 缺省经
 		// browseTLS 归一 none（traefik 渲染层把空串当 auto 的既有口径）。
@@ -347,7 +347,7 @@ func relayLoopbackURL(httpAddr string) string {
 	return "http://" + host + ":" + port
 }
 
-// gatewayPort 从 gateway 绑定地址取端口段（EnrollNode 的 AgentCommand
+// gatewayPort 从 gateway 绑定地址取端口段（EnrollNode 的 RelayCommand
 // 拼装锚；空 = 无代理装载脚本面）。
 func gatewayPort(httpAddr string) string {
 	_, port, err := net.SplitHostPort(httpAddr)
@@ -359,7 +359,7 @@ func gatewayPort(httpAddr string) string {
 
 // NewAPIServices 构造六上下文 API 服务依赖集（scope 词表单一源注入；
 // dataRoot 透传给上传产物 blob 面；gateway 端口 = EnrollNode 的
-// AgentCommand 拼装锚，ADR-0049）。
+// RelayCommand 拼装锚，ADR-0049）。
 func NewAPIServices(db *state.DB, e *engine.Engine, cipher *material.Cipher, rt capability.Runtime, cfg *config.AppConfig, app lynx.App) *fleetlygrpc.Services {
 	s := fleetlygrpc.NewServices(db, e, cipher, rt, cfg.DataRoot(), ScopeResources(), app.Logger())
 	s.GatewayPort = gatewayPort(cfg.HTTPAddr())

@@ -5,12 +5,12 @@ package engine
 // 活体，台账 = 受理审计行（api 层四件一拍，本域零持久化）。
 //
 // 数据流：消费端（CLI gRPC / Console WS 适配器，ExecClientPipe）↔ 会话泵
-// ↔ 中继 hub ↔ 节点代理 WS 连接（RelayAgentWriter 适配器）。帧协议单源
+// ↔ 中继 hub ↔ 节点中继 WS 连接（RelayWriter 适配器）。帧协议单源
 // capability；engine 不感知传输。
 //
 // 会话语义锚：消费端收流（Recv io.EOF / gRPC CloseSend）≠ 终止——只关
 // 载体 stdin（`fleetly exec` 形态：attach 后 CloseSend 读退出码）；终止 =
-// exit/error 收口、TTL、代理失联或消费端整流断开（ctx 结束）。
+// exit/error 收口、TTL、中继失联或消费端整流断开（ctx 结束）。
 
 import (
 	"context"
@@ -34,7 +34,7 @@ const (
 	execHardTTL = 30 * time.Minute
 	// execOutboundCap 是下行帧缓冲上限（慢消费端防内存膨胀——满即收口）。
 	execOutboundCap = 256
-	// execCloseGrace 是消费端断开后等待代理收口的宽限。
+	// execCloseGrace 是消费端断开后等待中继收口的宽限。
 	execCloseGrace = 5 * time.Second
 )
 
@@ -46,8 +46,8 @@ var (
 	ErrExecNoInstance = errors.New("no running instance for workload")
 	// ErrExecNodeUnanchored 是载体节点尚未锚定（刚加入/对账未及）。
 	ErrExecNodeUnanchored = errors.New("carrier node not anchored yet")
-	// ErrExecAgentOffline 是目标节点代理不在线（E_NODE_AGENT_OFFLINE）。
-	ErrExecAgentOffline = errors.New("node relay agent offline")
+	// ErrExecRelayOffline 是目标节点中继不在线（E_NODE_RELAY_OFFLINE）。
+	ErrExecRelayOffline = errors.New("node relay relay offline")
 	// ErrExecTeamLimit 是 per-Team 并发会话超限。
 	ErrExecTeamLimit = errors.New("too many concurrent exec sessions for team")
 	// ErrExecSessionNotFound 是会话不存在或已收口。
@@ -113,25 +113,25 @@ type ExecClientPipe interface {
 	Send(ExecServerFrame) error
 }
 
-// RelayAgentWriter 是节点代理连接的下行写端（assembly WS 适配器实现；
+// RelayWriter 是节点中继连接的下行写端（assembly WS 适配器实现；
 // 实现负责串行化与连接生命周期）。
-type RelayAgentWriter interface {
-	// WriteAgentFrame 下发一条线上形态中继帧（capability.Marshal 产物）。
-	WriteAgentFrame(b []byte) error
+type RelayWriter interface {
+	// WriteRelayFrame 下发一条线上形态中继帧（capability.Marshal 产物）。
+	WriteRelayFrame(b []byte) error
 }
 
 // execDomain 是 exec 会话域实例态。
 type execDomain struct {
 	mu       sync.Mutex
 	sessions map[string]*execSession
-	agents   map[string]*relayAgentConn // 平台节点 ID → 在连代理
+	relays   map[string]*relayConn // 平台节点 ID → 在连中继
 }
 
-// relayAgentConn 是一条在连节点代理。
-type relayAgentConn struct {
+// relayConn 是一条在连节点中继。
+type relayConn struct {
 	nodeID  string
 	version string
-	w       RelayAgentWriter
+	w       RelayWriter
 }
 
 // execSession 是一个受理后的会话活体。
@@ -142,7 +142,7 @@ type execSession struct {
 	closed   bool
 	attached bool
 	out      chan ExecServerFrame
-	agent    *relayAgentConn // 路由锚（受理时锁定；代理失联即收口）
+	relay    *relayConn // 路由锚（受理时锁定；中继失联即收口）
 
 	idleTimer *time.Timer
 	hardTimer *time.Timer
@@ -150,14 +150,14 @@ type execSession struct {
 
 func (d *execDomain) init() {
 	d.sessions = make(map[string]*execSession)
-	d.agents = make(map[string]*relayAgentConn)
+	d.relays = make(map[string]*relayConn)
 }
 
 // ExecUnsupported 报告 Runtime 是否缺 exec 子面（api 受理面诚实失败锚）。
 func (e *Engine) ExecUnsupported() bool { return e.execFace == nil }
 
 // ExecValidateClusterToken 校验中继凭证（/v1/platform/binary 原生入口的
-// 鉴权面；RelayAgentAttach 内含同一校验——单源 Provider 调用）。
+// 鉴权面；RelayAttach 内含同一校验——单源 Provider 调用）。
 func (e *Engine) ExecValidateClusterToken(ctx context.Context, token string) error {
 	if e.execFace == nil {
 		return ErrExecUnsupported
@@ -201,10 +201,10 @@ func (e *Engine) CreateSession(ctx context.Context, in CreateExecInput) (*ExecSe
 		e.exec.mu.Unlock()
 		return nil, fmt.Errorf("%w: limit %d", ErrExecTeamLimit, execMaxSessionsPerTeam)
 	}
-	agent := e.exec.agents[n.PlatformID]
-	if agent == nil {
+	relay := e.exec.relays[n.PlatformID]
+	if relay == nil {
 		e.exec.mu.Unlock()
-		return nil, fmt.Errorf("%w: node %s", ErrExecAgentOffline, n.PlatformID)
+		return nil, fmt.Errorf("%w: node %s", ErrExecRelayOffline, n.PlatformID)
 	}
 
 	s := &execSession{
@@ -221,7 +221,7 @@ func (e *Engine) CreateSession(ctx context.Context, in CreateExecInput) (*ExecSe
 			CreatedAt:  e.clock.Now(),
 		},
 		out:   make(chan ExecServerFrame, execOutboundCap),
-		agent: agent,
+		relay: relay,
 	}
 	e.exec.sessions[s.info.ID] = s
 	e.exec.mu.Unlock()
@@ -243,7 +243,7 @@ func (e *Engine) AbandonSession(id string) {
 }
 
 // AttachClient 附着消费端并驱动会话至收口（阻塞直至会话终止：exit/error
-// 帧、TTL、代理失联或消费端整流断开）。第二附着者即刻 attach_conflict。
+// 帧、TTL、中继失联或消费端整流断开）。第二附着者即刻 attach_conflict。
 // 消费端收流（Recv EOF）只关载体 stdin——`fleetly exec` 形态依赖此语义
 // （attach 后 CloseSend 读退出码）。
 func (e *Engine) AttachClient(ctx context.Context, sessionID string, pipe ExecClientPipe) error {
@@ -259,20 +259,20 @@ func (e *Engine) AttachClient(ctx context.Context, sessionID string, pipe ExecCl
 		return nil
 	}
 	s.attached = true
-	agent := s.agent
+	relay := s.relay
 	e.exec.mu.Unlock()
 
-	// 首帧元数据 + 向代理下发会话开帧（受理时已锁定路由锚）。
+	// 首帧元数据 + 向中继下发会话开帧（受理时已锁定路由锚）。
 	if err := pipe.Send(ExecServerFrame{Meta: &ExecMetaFrame{Instance: s.info.Instance, NodeID: s.info.NodeID}}); err != nil {
 		e.finishSession(s, nil)
 		return nil
 	}
-	open := capability.AgentSessionOpen{
+	open := capability.RelaySessionOpen{
 		SessionID: s.info.ID, WorkloadID: s.info.WorkloadID,
 		Instance: s.info.Instance, Argv: s.info.Argv, TTY: s.info.TTY,
 	}
-	if err := e.sendAgent(agent, capability.AgentFrameOpen, s.info.ID, capability.EncodeAgentJSON(open)); err != nil {
-		e.finishSession(s, agentGoneFrame(err))
+	if err := e.sendRelay(relay, capability.RelayFrameOpen, s.info.ID, capability.EncodeRelayJSON(open)); err != nil {
+		e.finishSession(s, relayGoneFrame(err))
 		return nil
 	}
 
@@ -288,8 +288,8 @@ func (e *Engine) AttachClient(ctx context.Context, sessionID string, pipe ExecCl
 		s.hardTimer.Stop()
 	}()
 
-	// 上行泵：消费端帧 → 代理。EOF = stdin 关闭（StdinEOF 帧转达），
-	// 非终止；写失败（代理断）由 deliver 路径收口兜底。
+	// 上行泵：消费端帧 → 中继。EOF = stdin 关闭（StdinEOF 帧转达），
+	// 非终止；写失败（中继断）由 deliver 路径收口兜底。
 	upDone := make(chan struct{})
 	go func() {
 		defer close(upDone)
@@ -302,23 +302,23 @@ func (e *Engine) AttachClient(ctx context.Context, sessionID string, pipe ExecCl
 			switch {
 			case f.Resize != nil:
 				pl := capability.ExecSizeWire{Cols: f.Resize.Cols, Rows: f.Resize.Rows}
-				if e.sendAgent(agent, capability.AgentFrameResize, s.info.ID, capability.EncodeAgentJSON(pl)) != nil {
+				if e.sendRelay(relay, capability.RelayFrameResize, s.info.ID, capability.EncodeRelayJSON(pl)) != nil {
 					return
 				}
 			default:
-				if e.sendAgent(agent, capability.AgentFrameStdin, s.info.ID, f.Stdin) != nil {
+				if e.sendRelay(relay, capability.RelayFrameStdin, s.info.ID, f.Stdin) != nil {
 					return
 				}
 			}
 		}
 	}()
 
-	// 下行泵：代理帧通道 → 消费端。
+	// 下行泵：中继帧通道 → 消费端。
 	for {
 		select {
 		case <-upDone:
 			// 消费端收流：关载体 stdin（一次性信号）；会话继续至 exit。
-			_ = e.sendAgent(agent, capability.AgentFrameStdinEOF, s.info.ID, nil)
+			_ = e.sendRelay(relay, capability.RelayFrameStdinEOF, s.info.ID, nil)
 			upDone = nil // nil 通道恒阻塞——此 case 只处理一次
 		case f, ok := <-s.out:
 			if !ok {
@@ -335,7 +335,7 @@ func (e *Engine) AttachClient(ctx context.Context, sessionID string, pipe ExecCl
 			}
 		case <-ctx.Done():
 			// 整流断开：尽力终止载体 exec 后收口（宽限内等 exit 帧）。
-			_ = e.sendAgent(agent, capability.AgentFrameClose, s.info.ID, nil)
+			_ = e.sendRelay(relay, capability.RelayFrameClose, s.info.ID, nil)
 			deadline := time.After(execCloseGrace)
 			for {
 				select {
@@ -348,7 +348,7 @@ func (e *Engine) AttachClient(ctx context.Context, sessionID string, pipe ExecCl
 						return nil
 					}
 				case <-deadline:
-					e.finishSession(s, &ExecErrFrame{Code: "client_gone", Message: "client stream ended; agent close not acknowledged"})
+					e.finishSession(s, &ExecErrFrame{Code: "client_gone", Message: "client stream ended; relay close not acknowledged"})
 					return nil
 				}
 			}
@@ -356,8 +356,8 @@ func (e *Engine) AttachClient(ctx context.Context, sessionID string, pipe ExecCl
 	}
 }
 
-// deliverAgentFrame 是 hub 上行投递（代理读循环逐帧调用）。
-func (e *Engine) deliverAgentFrame(f capability.AgentFrame) {
+// deliverRelayFrame 是 hub 上行投递（中继读循环逐帧调用）。
+func (e *Engine) deliverRelayFrame(f capability.RelayFrame) {
 	e.exec.mu.Lock()
 	s := e.exec.sessions[f.SessionID]
 	e.exec.mu.Unlock()
@@ -366,14 +366,14 @@ func (e *Engine) deliverAgentFrame(f capability.AgentFrame) {
 	}
 	var out ExecServerFrame
 	switch f.Kind {
-	case capability.AgentFrameAck:
+	case capability.RelayFrameAck:
 		return // 受理回执（instance 已在 meta 首帧回显）
-	case capability.AgentFrameStdout:
+	case capability.RelayFrameStdout:
 		out.Stdout = f.Payload
-	case capability.AgentFrameStderr:
+	case capability.RelayFrameStderr:
 		out.Stderr = f.Payload
-	case capability.AgentFrameExit:
-		pl, err := capability.DecodeAgentJSON[capability.AgentSessionExit](f.Payload)
+	case capability.RelayFrameExit:
+		pl, err := capability.DecodeRelayJSON[capability.RelaySessionExit](f.Payload)
 		if err != nil {
 			return
 		}
@@ -381,8 +381,8 @@ func (e *Engine) deliverAgentFrame(f capability.AgentFrame) {
 		// 纵深防御——代理侧是我们自己的 ExecWorkload 返回值）。
 		code := int32(clampExitCode(pl.Code))
 		out.Exit = &code
-	case capability.AgentFrameError:
-		pl, err := capability.DecodeAgentJSON[capability.AgentSessionError](f.Payload)
+	case capability.RelayFrameError:
+		pl, err := capability.DecodeRelayJSON[capability.RelaySessionError](f.Payload)
 		if err != nil {
 			return
 		}
@@ -398,10 +398,10 @@ func (e *Engine) deliverAgentFrame(f capability.AgentFrame) {
 	}
 }
 
-// sendAgent 下发一帧到代理连接；失败即注销该连接并收口其名下会话。
-func (e *Engine) sendAgent(a *relayAgentConn, kind capability.AgentFrameKind, sessionID string, payload []byte) error {
-	if err := a.w.WriteAgentFrame(capability.MarshalAgentFrame(kind, sessionID, payload)); err != nil {
-		e.dropAgentConn(a)
+// sendRelay 下发一帧到中继连接；失败即注销该连接并收口其名下会话。
+func (e *Engine) sendRelay(a *relayConn, kind capability.RelayFrameKind, sessionID string, payload []byte) error {
+	if err := a.w.WriteRelayFrame(capability.MarshalRelayFrame(kind, sessionID, payload)); err != nil {
+		e.dropRelayConn(a)
 		return err
 	}
 	return nil
@@ -414,7 +414,7 @@ func (e *Engine) touchSession(s *execSession) {
 	}
 }
 
-// finishSession 收口会话（幂等）：停计时、尽力向代理发终止、清注册表、
+// finishSession 收口会话（幂等）：停计时、尽力向中继发终止、清注册表、
 // 投递终结帧（有则）后关闭下行通道。
 func (e *Engine) finishSession(s *execSession, last *ExecErrFrame) {
 	s.mu.Lock()
@@ -432,14 +432,14 @@ func (e *Engine) finishSession(s *execSession, last *ExecErrFrame) {
 		s.hardTimer.Stop()
 	}
 	e.exec.mu.Lock()
-	agent := s.agent
+	relay := s.relay
 	if e.exec.sessions[s.info.ID] == s {
 		delete(e.exec.sessions, s.info.ID)
 	}
 	e.exec.mu.Unlock()
-	if agent != nil {
-		// 尽力终止（代理断线时静默；代理侧 exec 收口尽力而为）。
-		_ = agent.w.WriteAgentFrame(capability.MarshalAgentFrame(capability.AgentFrameClose, s.info.ID, nil))
+	if relay != nil {
+		// 尽力终止（中继断线时静默；中继侧 exec 收口尽力而为）。
+		_ = relay.w.WriteRelayFrame(capability.MarshalRelayFrame(capability.RelayFrameClose, s.info.ID, nil))
 	}
 	if last != nil {
 		select {
@@ -452,11 +452,11 @@ func (e *Engine) finishSession(s *execSession, last *ExecErrFrame) {
 
 // ---- 中继 hub（/v1/relay 服务端握手与注册面；assembly WS 适配器消费） ----
 
-// RelayAgentAttach 是代理连接附着：校验凭证（集群成员权等价，C3）→ 载体
+// RelayAttach 是中继连接附着：校验凭证（集群成员权等价，C3）→ 载体
 // 节点 ID 反查平台节点 ID（锚定表）→ 注册写端。同节点重连顶替旧连接：
 // 未附着会话重指新连接（受理面立即可用），已附着会话收口（exec 不可迁移，
 // 客户端重开——诚实边界）。feed 供适配器上行投递；detach 在连接断开时调用。
-func (e *Engine) RelayAgentAttach(ctx context.Context, token, carrierNodeID, agentVersion string, w RelayAgentWriter) (feed func(capability.AgentFrame), detach func(), err error) {
+func (e *Engine) RelayAttach(ctx context.Context, token, carrierNodeID, relayVersion string, w RelayWriter) (feed func(capability.RelayFrame), detach func(), err error) {
 	if e.execFace == nil {
 		return nil, nil, ErrExecUnsupported
 	}
@@ -468,47 +468,47 @@ func (e *Engine) RelayAgentAttach(ctx context.Context, token, carrierNodeID, age
 		return nil, nil, fmt.Errorf("%w: carrier %s", ErrExecNodeUnanchored, carrierNodeID)
 	}
 
-	a := &relayAgentConn{nodeID: n.PlatformID, version: agentVersion, w: w}
+	a := &relayConn{nodeID: n.PlatformID, version: relayVersion, w: w}
 	e.exec.mu.Lock()
-	old := e.exec.agents[n.PlatformID]
-	e.exec.agents[n.PlatformID] = a
+	old := e.exec.relays[n.PlatformID]
+	e.exec.relays[n.PlatformID] = a
 	var attached []*execSession
 	for _, s := range e.exec.sessions {
-		if s.agent != old {
+		if s.relay != old {
 			continue
 		}
 		if s.attached {
 			attached = append(attached, s) // 在途 exec 不可迁移：收口
 		} else {
-			s.agent = a // 未附着：重指新连接
+			s.relay = a // 未附着：重指新连接
 		}
 	}
 	e.exec.mu.Unlock()
 	if old != nil {
-		e.log.Info("relay agent replaced", "node", n.PlatformID, "version", agentVersion)
+		e.log.Info("node relay replaced", "node", n.PlatformID, "version", relayVersion)
 	} else {
-		e.log.Info("relay agent connected", "node", n.PlatformID, "version", agentVersion)
+		e.log.Info("node relay connected", "node", n.PlatformID, "version", relayVersion)
 	}
 	for _, s := range attached {
-		e.finishSession(s, agentGoneFrame(nil))
+		e.finishSession(s, relayGoneFrame(nil))
 	}
 
-	feed = func(f capability.AgentFrame) { e.deliverAgentFrame(f) }
-	detach = func() { e.dropAgentConn(a) }
+	feed = func(f capability.RelayFrame) { e.deliverRelayFrame(f) }
+	detach = func() { e.dropRelayConn(a) }
 	return feed, detach, nil
 }
 
-// dropAgentConn 注销代理连接（身份校验：已被顶替的连接不误删继任者）并
-// 收口其名下会话（agent_disconnected 如实告知）。
-func (e *Engine) dropAgentConn(a *relayAgentConn) {
+// dropRelayConn 注销中继连接（身份校验：已被顶替的连接不误删继任者）并
+// 收口其名下会话（relay_disconnected 如实告知）。
+func (e *Engine) dropRelayConn(a *relayConn) {
 	e.exec.mu.Lock()
-	current := e.exec.agents[a.nodeID]
+	current := e.exec.relays[a.nodeID]
 	if current == a {
-		delete(e.exec.agents, a.nodeID)
+		delete(e.exec.relays, a.nodeID)
 	}
 	var affected []*execSession
 	for _, s := range e.exec.sessions {
-		if s.agent == a {
+		if s.relay == a {
 			affected = append(affected, s)
 		}
 	}
@@ -516,9 +516,9 @@ func (e *Engine) dropAgentConn(a *relayAgentConn) {
 	if current != a {
 		return // 顶替路径已处理会话重指/收口
 	}
-	e.log.Info("relay agent disconnected", "node", a.nodeID)
+	e.log.Info("node relay disconnected", "node", a.nodeID)
 	for _, s := range affected {
-		e.finishSession(s, agentGoneFrame(nil))
+		e.finishSession(s, relayGoneFrame(nil))
 	}
 }
 
@@ -532,8 +532,8 @@ type RelayStatus struct {
 func (e *Engine) RelayStatuses() map[string]RelayStatus {
 	e.exec.mu.Lock()
 	defer e.exec.mu.Unlock()
-	out := make(map[string]RelayStatus, len(e.exec.agents))
-	for id, a := range e.exec.agents {
+	out := make(map[string]RelayStatus, len(e.exec.relays))
+	for id, a := range e.exec.relays {
 		out[id] = RelayStatus{Online: true, Version: a.version}
 	}
 	return out
@@ -563,12 +563,12 @@ func (e *Engine) ExecSessionByID(id string) (*ExecSessionInfo, bool) {
 	return &s.info, true
 }
 
-func agentGoneFrame(err error) *ExecErrFrame {
-	msg := "node relay agent connection lost"
+func relayGoneFrame(err error) *ExecErrFrame {
+	msg := "node relay connection lost"
 	if err != nil {
 		msg += ": " + err.Error()
 	}
-	return &ExecErrFrame{Code: "agent_disconnected", Message: msg}
+	return &ExecErrFrame{Code: "relay_disconnected", Message: msg}
 }
 
 // clampExitCode 钳制退出码到 proto int32 值域（G115 转换收口）。

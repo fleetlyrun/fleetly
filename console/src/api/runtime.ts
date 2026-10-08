@@ -115,13 +115,13 @@ export interface components {
             /** join_command 是工作节点完整加入命令（swarm join 形态）。 */
             join_command?: string;
             /**
-             * agent_command 是节点中继代理装载脚本（ADR-0049：busybox 载体 +
+             * relay_command 是节点中继装载脚本（ADR-0049：busybox 载体 +
              *     /v1/platform/binary 下载 fleetlyd + docker cp 注入 + docker.sock 挂载
-             *     跑 `fleetlyd relay`；幂等——重跑即代理升级/修复通道）。join 语义不变：
+             *     跑 `fleetlyd relay`；幂等——重跑即中继升级/修复通道）。join 语义不变：
              *     只跑 join_command 的节点集群面完整，exec 面不可用（relay_online=false
              *     诚实可见）。
              */
-            agent_command?: string;
+            relay_command?: string;
         };
         v1ListNodesResponse: {
             nodes?: components["schemas"]["v1Node"][];
@@ -136,15 +136,15 @@ export interface components {
             first_seen_at?: string;
             last_seen_at?: string;
             /**
-             * relay_online 是节点中继代理在连状态（活体观测——exec 会话的路由前提，
-             *     ADR-0049；false = 该节点不可 exec，重跑 enroll 的 agent 脚本恢复）。
+             * relay_online 是节点中继在连状态（活体观测——exec 会话的路由前提，
+             *     ADR-0049；false = 该节点不可 exec，重跑 enroll 的中继装载脚本恢复）。
              */
             relay_online?: boolean;
             /**
-             * relay_agent_version 是在连代理上报的平台版本（滞后代理照常受理——帧
-             *     协议只增；升级后重跑 agent 脚本即刷新）。
+             * relay_version 是在连节点中继上报的平台版本（滞后中继照常受理——帧
+             *     协议只增；升级后重跑中继装载脚本即刷新）。
              */
-            relay_agent_version?: string;
+            relay_version?: string;
         };
         v1UncordonNodeResponse: Record<string, never>;
         ErrorResponse: {

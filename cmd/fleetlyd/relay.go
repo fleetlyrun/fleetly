@@ -1,11 +1,11 @@
 package main
 
-// relay 子命令（F3.2，ADR-0049）：节点中继代理——在节点上经
-// EnrollKit.AgentCommand 装载的 busybox 载体容器内运行（manager 节点是
-// 进程内回环代理，不经本入口）。只读节点本地 docker 套接字 + 出站拨号
+// relay 子命令（F3.2，ADR-0049）：节点中继——在节点上经
+// EnrollKit.RelayCommand 装载的 busybox 载体容器内运行（manager 节点是
+// 进程内回环中继，不经本入口）。只读节点本地 docker 套接字 + 出站拨号
 // 控制面 gateway：无配置文件、无状态库、无平台安装物。Provider 经注册表
 // 装配（blank import 已触发 swarm 工厂注册；未来 Runtime 换届时
-// AgentCommand 由新 Provider 生成、本入口零改动）。
+// RelayCommand 由新 Provider 生成、本入口零改动）。
 
 import (
 	"context"
@@ -19,7 +19,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/capability"
 )
 
-// runRelay 执行代理主循环；返回进程退出码（admin 同款收口）。
+// runRelay 执行中继主循环；返回进程退出码（admin 同款收口）。
 func runRelay(args []string) int {
 	fs := pflag.NewFlagSet("fleetlyd relay", pflag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
@@ -46,10 +46,10 @@ func runRelay(args []string) int {
 		fmt.Fprintf(os.Stderr, "fleetlyd relay: runtime provider %q has no exec sub-face\n", *runtimeName)
 		return 1
 	}
-	if err := exec.RunRelayAgent(ctx, capability.RelayAgentOptions{
+	if err := exec.RunNodeRelay(ctx, capability.NodeRelayOptions{
 		GatewayURL: *manager,
 		JoinToken:  func(context.Context) (string, error) { return *joinToken, nil },
-		AgentVersion: func() string {
+		Version: func() string {
 			if version != "" {
 				return version
 			}

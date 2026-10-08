@@ -2,7 +2,7 @@
 
 | 状态 | 日期 | 关联 |
 |---|---|---|
-| Accepted | 2026-10-08 | ADR-0055（决策 1 记档 from_build 的 containerd hosts.toml 面"后续批裁决"——本批直系授权面；决策 5 缺省翻转前置②HA 裁决收口）、ADR-0052（§9 挂账 7 多 server HA；决策 8 e2e 通道蓝本）、ADR-0054（决策 2 翻转前置三条件——本批收口②续喂①）、ADR-0019（附录 B 构建链：控制面节点本地 daemon 构建 + 受管仓库推送 + digest 下发）、ADR-0036（N2 兑现节 per-Project 凭证域隔离）、ADR-0053（决策 5 Enrollment AgentCommand 空形态——server join 分立裁决的既定口径）、`docs/runbooks/k3s-runtime.md`（装机序承载面）、`e2e/dind-h2c-route.sh`（构建链 e2e 唯一先例：insecure-registry drop-in + 容器重启时序） |
+| Accepted | 2026-10-08 | ADR-0055（决策 1 记档 from_build 的 containerd hosts.toml 面"后续批裁决"——本批直系授权面；决策 5 缺省翻转前置②HA 裁决收口）、ADR-0052（§9 挂账 7 多 server HA；决策 8 e2e 通道蓝本）、ADR-0054（决策 2 翻转前置三条件——本批收口②续喂①）、ADR-0019（附录 B 构建链：控制面节点本地 daemon 构建 + 受管仓库推送 + digest 下发）、ADR-0036（N2 兑现节 per-Project 凭证域隔离）、ADR-0053（决策 5 Enrollment RelayCommand 空形态——server join 分立裁决的既定口径）、`docs/runbooks/k3s-runtime.md`（装机序承载面）、`e2e/dind-h2c-route.sh`（构建链 e2e 唯一先例：insecure-registry drop-in + 容器重启时序） |
 
 ## 背景
 
@@ -56,7 +56,7 @@
   4. server1 恢复（etcd 成员数据在容器 FS，重起即回环）→ fleetlyd 重连收口（status + nodes list 双锚）→ 载体零滚动 → 收官断言（4 Ready + 全程 uid 不变）。
   5. k3s 版本/资产纪律同既有腿（下载缓存 + sha256 钉版；三 server 一 worker 同版本）。
 - **永久 server 失效段的裁决撤记（CI 两连挂实证，2026-10-08）**：etcd 死成员（非优雅 rm 后成员表残留）拖累 apiserver `/readyz` 的 etcd 子检查——quorum 读写仍活但 readyz 间歇不健康，fleetlyd 的 Health 门敏感拒（CI 慢环境尤甚，失效后新部署可因 L1 窗内 Ensure 失败而 failed）。**单 server 失效的 quorum 容错 + 读写保持已由第 3 节完整承载**（零滚动 + 活体 + etcd 写面三锚）；死成员清理（etcdctl member remove）是灾后运维序非集群可用性断言——runbook HA 节记档（诚实边界）。
-- **Enrollment server join 分立裁决（必答项）**：平台**不封装 server join**。Enrollment 维持 worker-only（ADR-0053 决策 5 的 AgentCommand 空形态不动）；server 扩容/收缩是 etcd 成员变更（quorum 风险面，运维决策 + 装机级一次性动作），runbook 记录手工序（node-token + `--cluster-init`/`--server` 形态）——与 ADR-0054 决策 3（孤儿处置 runbook 承载）同文化：一次性动作不进常驻 API 面。k3s 侧 server 与 agent join 用同一 node-token 文件（实现事实），平台不引入"server-token"第二契约。
+- **Enrollment server join 分立裁决（必答项）**：平台**不封装 server join**。Enrollment 维持 worker-only（ADR-0053 决策 5 的 RelayCommand 空形态不动）；server 扩容/收缩是 etcd 成员变更（quorum 风险面，运维决策 + 装机级一次性动作），runbook 记录手工序（node-token + `--cluster-init`/`--server` 形态）——与 ADR-0054 决策 3（孤儿处置 runbook 承载）同文化：一次性动作不进常驻 API 面。k3s 侧 server 与 agent join 用同一 node-token 文件（实现事实），平台不引入"server-token"第二契约。
 
 ### 4. 前置①续喂（不阻塞主轴）
 

@@ -157,7 +157,7 @@ func (p *Provider) Describe() capability.ProviderDescriptor {
 			"network rebuild verb is semantically absent: namespaces are always present with no carrier-network object to rebuild (swarm attachable flag-day has no k8s counterpart)",
 			"full process DNS names ({process}.{app}) fold dots to dashes for service carrier names (k8s services are single DNS labels); bare process names are unchanged",
 			"processes without declared ports resolve via headless services (pod IPs directly, no virtual IP round-robin for multi-replica)",
-			"exec sessions run through the apiserver natively (per-node relay registrations are manager-side; worker nodes carry no platform agent)",
+			"exec sessions run through the apiserver natively (per-node relay registrations are manager-side; worker nodes run no platform daemon)",
 			"orphan secret sweep removes unreferenced managed secrets; orphan volume sweep is a no-op (k8s has no anonymous-volume legacy; PVC lifecycle is explicit data disposal)",
 			"platform identity is the fleetly-manager ServiceAccount bound to a single narrowly-scoped ClusterRole (bootstrap identity is discarded after startup)",
 			"workload identity is carried by fleetly.* labels; platform node IDs never reuse",
