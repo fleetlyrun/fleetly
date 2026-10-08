@@ -32,6 +32,10 @@ func TestGoldenDoctor(t *testing.T) {
 	// 由 dind smoke 锚定，夹具路径永远是"未配置面 + 缺省绑面"。
 	t.Setenv(envProxyConfigEndpoint, "")
 	t.Setenv(envRegistryAddr, "")
+	t.Setenv(envRuntimeProvider, "")
+	t.Setenv(envServerGRPCAddr, "")
+	t.Setenv(envServerHTTPAddr, "")
+	t.Setenv(envServerProxyConfAddr, "")
 	injectDoctorProbes(t,
 		dockerProbeResult{
 			ClientVersion: "29.7.2", ServerVersion: "29.7.2", SwarmState: "active",
@@ -129,4 +133,63 @@ func TestDoctorAlertingChecks(t *testing.T) {
 	assert.Contains(t, out, "1 channel(s) configured")
 	assert.NotContains(t, out, "[warn] notification channels", "a configured channel must clear the warn")
 	assert.NotContains(t, out, "[warn] platform-offsite-backup", "a non-firing system rule must not warn")
+}
+
+// TestDoctorK3sRuntimeFormSkipsDockerProbes（ADR-0055 实录锚）：k3s 形态
+//（env FLEETLY_RUNTIME_PROVIDER=k3s，daemon 同键）下 docker 面整体跳过、
+// 以一行 ok 呈报——k3s 节点无 docker 是合法形态，恒红会淹没真信号
+//（staging k3s 实证）。docker 探针注入"若被咨询即 fail"形态反证未触达。
+func TestDoctorK3sRuntimeFormSkipsDockerProbes(t *testing.T) {
+	t.Setenv(envProxyConfigEndpoint, "")
+	t.Setenv(envRegistryAddr, "")
+	t.Setenv(envRuntimeProvider, "k3s")
+	injectDoctorProbes(t,
+		dockerProbeResult{Err: "exec: docker: not found"}, // 会被 fail 的形态
+		nil, 128<<30, nil,
+		&systemv1.GetStatusResponse{State: systemv1.StatusState_STATUS_STATE_HEALTHY, Version: "0.1.0-test"},
+		nil,
+	)
+	code, out, stderr := runCLI(t, "doctor")
+	assert.Equal(t, 0, code, "k3s form must not fail on absent docker")
+	assert.Empty(t, stderr)
+	assert.Contains(t, out, "[ok  ] runtime form")
+	assert.Contains(t, out, "k3s (local docker probes skipped")
+	assert.NotContains(t, out, "docker cli", "docker probes must be skipped entirely in k3s form")
+}
+
+// TestDoctorPortProbeUsesEffectiveBind（ADR-0055 实录锚）：端口监听探测目标
+// = 生效绑址——钉址绑面（env FLEETLY_SERVER_GRPC_ADDR 同 daemon 键）时探
+// 该地址而非 127.0.0.1 假警；通配缺省维持回环探测（golden 形态不变）。
+func TestDoctorPortProbeUsesEffectiveBind(t *testing.T) {
+	t.Setenv(envProxyConfigEndpoint, "")
+	t.Setenv(envRegistryAddr, "")
+	t.Setenv(envRuntimeProvider, "k3s")
+	injectDoctorProbes(t,
+		dockerProbeResult{Err: "exec: docker: not found"},
+		nil, 128<<30, nil,
+		&systemv1.GetStatusResponse{State: systemv1.StatusState_STATUS_STATE_HEALTHY, Version: "0.1.0-test"},
+		nil,
+	)
+	var probed []string
+	orig := probePort
+	probePort = func(a string) error { probed = append(probed, a); return nil }
+	t.Cleanup(func() { probePort = orig })
+
+	t.Run("pinned bind probes the pinned address", func(t *testing.T) {
+		t.Setenv(envServerGRPCAddr, "10.124.0.5:9090")
+		t.Setenv(envServerHTTPAddr, "10.124.0.5:9091")
+		probed = nil
+		_, _, _ = runCLI(t, "doctor")
+		assert.Contains(t, probed, "10.124.0.5:9090", "grpc probe must target the pinned bind")
+		assert.Contains(t, probed, "10.124.0.5:9091", "http probe must target the pinned bind")
+		assert.NotContains(t, probed, "127.0.0.1:9090")
+	})
+	t.Run("wildcard default stays loopback", func(t *testing.T) {
+		t.Setenv(envServerGRPCAddr, "")
+		t.Setenv(envServerHTTPAddr, "")
+		probed = nil
+		_, _, _ = runCLI(t, "doctor")
+		assert.Contains(t, probed, doctorGRPCPort)
+		assert.Contains(t, probed, doctorHTTPPort)
+	})
 }

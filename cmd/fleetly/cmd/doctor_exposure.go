@@ -10,6 +10,8 @@ import (
 	"net"
 	"net/url"
 	"strings"
+
+	"github.com/fleetlyrun/fleetly/internal/config"
 )
 
 // exposeClass 是主机暴露分类（探测裁决的输入）。
@@ -206,10 +208,28 @@ func hostPart(addr string) string {
 const (
 	envProxyConfigEndpoint = "FLEETLY_PROXY_CONFIG_ENDPOINT"
 	envRegistryAddr        = "FLEETLY_REGISTRY_ADDR"
+	// runtime 感知键（doctor 的 docker 面门控；与 daemon 的 config env 桥
+	// 同键——k3s 形态节点无 docker 是合法形态，staging k3s 实证 ADR-0055）。
+	envRuntimeProvider = "FLEETLY_RUNTIME_PROVIDER"
+	// 绑面三键（端口监听探测的目标回退——daemon 钉址接口监听时探
+	// 127.0.0.1 是假警，staging k3s 实证）。
+	envServerGRPCAddr      = "FLEETLY_SERVER_GRPC_ADDR"
+	envServerHTTPAddr      = "FLEETLY_SERVER_HTTP_ADDR"
+	envServerProxyConfAddr = "FLEETLY_SERVER_PROXY_CONFIG_ADDR"
 	// 探测缺省端口（目标缺端口时的宽容回退——两个面的既知监听端口）。
 	configProxyConfigPort = "9082"
 	configRegistryPort    = "5000"
 )
+
+// probeBindTarget 把生效绑址换算为监听探测目标：通配（空主机/0.0.0.0/::）
+// 回退回环（daemon 在全部接口监听，探哪个都行——保持既有缺省行为与
+// golden 形态）；钉址原样（daemon 只在该接口监听）。
+func probeBindTarget(bind, loopback string) string {
+	if host := hostPart(bind); host != "" && host != "0.0.0.0" && host != "::" {
+		return bind
+	}
+	return loopback
+}
 
 // exposureTargets 是 doctor 的暴露自证输入集（旗标解析产物；测试直接
 // 构造以保 hermetic）。exposure 两面的地址旗标缺省时回退 daemon env
@@ -230,6 +250,17 @@ func (f exposureTargets) resolved() exposureTargets {
 	}
 	if t.registryAddr == "" {
 		t.registryAddr = envOr(envRegistryAddr, "")
+	}
+	// 绑面三键的 env 兜底（旗标缺省 = config 缺省时才回退——操作者显式
+	// 传旗标优先；daemon 同键 env 在场即对齐，与暴露面同键文化）。
+	if t.bindGRPC == config.DefaultGRPCAddr {
+		t.bindGRPC = envOr(envServerGRPCAddr, config.DefaultGRPCAddr)
+	}
+	if t.bindHTTP == config.DefaultHTTPAddr {
+		t.bindHTTP = envOr(envServerHTTPAddr, config.DefaultHTTPAddr)
+	}
+	if t.bindProxy == config.DefaultProxyConfigAddr {
+		t.bindProxy = envOr(envServerProxyConfAddr, config.DefaultProxyConfigAddr)
 	}
 	return t
 }

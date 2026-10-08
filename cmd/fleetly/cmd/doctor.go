@@ -126,56 +126,68 @@ func runDoctorProbes(ctx context.Context, addr string, ex exposureTargets) docto
 	var checks []doctorCheck
 	local := func(c doctorCheck) doctorCheck { c.Area = "local"; return c }
 
-	// Docker 面。
-	dk := probeDocker(ctx)
-	switch {
-	case dk.Err != "" && dk.ClientVersion == "":
+	// Docker 面（runtime 感知，ADR-0055 实录：staging k3s 节点无 docker 是
+	// 合法形态——恒红会淹没真信号；真源键与 daemon 同源（config env 桥），
+	// 操作者带 daemon 同组 env 跑 doctor 即自证，与暴露面的同键文化一致）。
+	if v := envOr(envRuntimeProvider, "swarm"); v == "k3s" {
 		checks = append(checks, local(doctorCheck{
-			Name: "docker cli", Status: checkFail, Detail: dk.Err,
-			Advice: "install Docker: curl -fsSL https://get.docker.com | sh (or use your OS package manager)",
+			Name:   "runtime form",
+			Status: checkOK,
+			Detail: "k3s (local docker probes skipped — the runtime is not docker-based; see runbook k3s-runtime.md)",
 		}))
-	case dk.ServerVersion == "":
-		checks = append(checks, local(doctorCheck{
-			Name: "docker daemon", Status: checkFail, Detail: "docker CLI works but the daemon is unreachable",
-			Advice: "start the docker service (systemctl start docker) and re-run 'fleetly doctor'",
-		}))
-	default:
-		checks = append(checks,
-			local(doctorCheck{Name: "docker client", Status: checkOK, Detail: dk.ClientVersion}),
-			local(doctorCheck{Name: "docker daemon", Status: checkOK, Detail: dk.ServerVersion}),
-		)
-		switch dk.SwarmState {
-		case "active":
-			checks = append(checks, local(doctorCheck{Name: "swarm", Status: checkOK, Detail: "active"}))
-		case "":
-			// daemon 不可达时已由上一条报告。
-		default:
+	} else {
+		dk := probeDocker(ctx)
+		switch {
+		case dk.Err != "" && dk.ClientVersion == "":
 			checks = append(checks, local(doctorCheck{
-				Name: "swarm", Status: checkWarn, Detail: dk.SwarmState,
-				Advice: "initialize a single-node swarm: docker swarm init (the installer does this for you)",
+				Name: "docker cli", Status: checkFail, Detail: dk.Err,
+				Advice: "install Docker: curl -fsSL https://get.docker.com | sh (or use your OS package manager)",
 			}))
-		}
-		if !dk.SystemTime.IsZero() {
-			drift := time.Since(dk.SystemTime)
-			if drift < 0 {
-				drift = -drift
-			}
-			if drift > doctorDriftTolerance {
+		case dk.ServerVersion == "":
+			checks = append(checks, local(doctorCheck{
+				Name: "docker daemon", Status: checkFail, Detail: "docker CLI works but the daemon is unreachable",
+				Advice: "start the docker service (systemctl start docker) and re-run 'fleetly doctor'",
+			}))
+		default:
+			checks = append(checks,
+				local(doctorCheck{Name: "docker client", Status: checkOK, Detail: dk.ClientVersion}),
+				local(doctorCheck{Name: "docker daemon", Status: checkOK, Detail: dk.ServerVersion}),
+			)
+			switch dk.SwarmState {
+			case "active":
+				checks = append(checks, local(doctorCheck{Name: "swarm", Status: checkOK, Detail: "active"}))
+			case "":
+				// daemon 不可达时已由上一条报告。
+			default:
 				checks = append(checks, local(doctorCheck{
-					Name: "clock drift", Status: checkWarn,
-					Detail: fmt.Sprintf("%s off the docker daemon clock", drift.Round(time.Second)),
-					Advice: "enable NTP/time sync (cert windows and audit timelines depend on it)",
+					Name: "swarm", Status: checkWarn, Detail: dk.SwarmState,
+					Advice: "initialize a single-node swarm: docker swarm init (the installer does this for you)",
 				}))
-			} else {
-				checks = append(checks, local(doctorCheck{Name: "clock drift", Status: checkOK, Detail: "within tolerance"}))
+			}
+			if !dk.SystemTime.IsZero() {
+				drift := time.Since(dk.SystemTime)
+				if drift < 0 {
+					drift = -drift
+				}
+				if drift > doctorDriftTolerance {
+					checks = append(checks, local(doctorCheck{
+						Name: "clock drift", Status: checkWarn,
+						Detail: fmt.Sprintf("%s off the docker daemon clock", drift.Round(time.Second)),
+						Advice: "enable NTP/time sync (cert windows and audit timelines depend on it)",
+					}))
+				} else {
+					checks = append(checks, local(doctorCheck{Name: "clock drift", Status: checkOK, Detail: "within tolerance"}))
+				}
 			}
 		}
 	}
 
-	// 端口监听（安装后置检查：fleetlyd 应在监听）。
+	// 端口监听（安装后置检查：fleetlyd 应在监听）。探测目标 = 生效绑址
+	//（ex.bind*；通配绑面回退 127.0.0.1——daemon 只在钉址接口上监听时，
+	// 探 127.0.0.1 是假警，staging k3s 实证）。
 	for _, p := range []struct{ name, addr string }{
-		{"fleetlyd grpc (:9080)", doctorGRPCPort},
-		{"gateway http (:9081)", doctorHTTPPort},
+		{"fleetlyd grpc (:9080)", probeBindTarget(ex.bindGRPC, doctorGRPCPort)},
+		{"gateway http (:9081)", probeBindTarget(ex.bindHTTP, doctorHTTPPort)},
 	} {
 		if err := probePort(p.addr); err != nil {
 			checks = append(checks, local(doctorCheck{
@@ -186,6 +198,7 @@ func runDoctorProbes(ctx context.Context, addr string, ex exposureTargets) docto
 			checks = append(checks, local(doctorCheck{Name: p.name, Status: checkOK, Detail: "listening"}))
 		}
 	}
+
 
 	// 端口暴露自证（ADR-0036）：对配置地址探测公网可达性（公网可达即
 	// fail/warn，自证不可达即 ok）+ 汇报三面生效绑址（通配绑定显式警示）。
