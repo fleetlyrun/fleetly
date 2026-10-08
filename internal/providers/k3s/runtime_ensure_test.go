@@ -405,3 +405,23 @@ func TestEnsureSkipMaterialsCarrierOmitsProjectedVolume(t *testing.T) {
 		assert.Equal(t, wantMount, found, "%s materials mount", name)
 	}
 }
+
+// TestBuildUtilityPodHostNetwork（ADR-0055 实录锚）：工具 Pod 走 hostNetwork
+// + ClusterFirstWithHostNet——备份链可达性与 CNI 对新 pod 的 ipset 准入
+// 传播解耦（staging k3s 实证 kube-router 传播分钟级，秒级 utility pod 在
+// pod 网络形态下 4/4 拒连；hostNetwork 源 = 节点本机，过 per-pod FW 的
+// src-type LOCAL 放行规则）。
+func TestBuildUtilityPodHostNetwork(t *testing.T) {
+	seededNode := &corev1.Node{ObjectMeta: metav1.ObjectMeta{
+		Name:   "n1",
+		Labels: map[string]string{labelNodeID: "01N1", "node-role.kubernetes.io/control-plane": ""},
+	}}
+	p, _ := newFakeProvider(seededNode)
+	req := capability.UtilityRequest{ID: "01U", Image: "postgres:17", Argv: []string{"pg_dump"}}
+	pod, err := p.buildUtilityPod(context.Background(), req, "fleetly-shop", "util-x", "")
+	require.NoError(t, err)
+	assert.True(t, pod.Spec.HostNetwork, "utility pod must use host network (backup chain anchor)")
+	assert.Equal(t, corev1.DNSClusterFirstWithHostNet, pod.Spec.DNSPolicy, "cluster DNS must stay usable with host network")
+	require.NotNil(t, pod.Spec.AutomountServiceAccountToken)
+	assert.False(t, *pod.Spec.AutomountServiceAccountToken, "SA token automount stays off")
+}

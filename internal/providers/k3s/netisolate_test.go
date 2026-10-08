@@ -15,6 +15,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	k8stesting "k8s.io/client-go/testing"
 
 	"github.com/fleetlyrun/fleetly/internal/capability"
 )
@@ -102,13 +104,11 @@ func TestReconcileNetIsolationPerNetwork(t *testing.T) {
 	require.True(t, ok, "member policy for 'default' must exist")
 	assert.Equal(t, map[string]string{defKey: "true"}, defPol.Spec.PodSelector.MatchLabels)
 	require.Len(t, defPol.Spec.Ingress, 1)
-	require.Len(t, defPol.Spec.Ingress[0].From, 3)
+	require.Len(t, defPol.Spec.Ingress[0].From, 2)
 	assert.Equal(t, map[string]string{defKey: "true"}, defPol.Spec.Ingress[0].From[0].PodSelector.MatchLabels,
 		"same-namespace members must be admitted")
 	assert.Equal(t, map[string]string{nsNameLabel: systemNamespace}, defPol.Spec.Ingress[0].From[1].NamespaceSelector.MatchLabels,
 		"system namespace must be admitted (managed proxy reachability)")
-	assert.Equal(t, map[string]string{labelUtility: "true"}, defPol.Spec.Ingress[0].From[2].PodSelector.MatchLabels,
-		"same-namespace platform utility pods must be admitted (backup chain, ADR-0055)")
 	assert.Equal(t, []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}, defPol.Spec.PolicyTypes)
 	assert.Equal(t, "true", defPol.Labels[labelManaged])
 
@@ -355,29 +355,37 @@ func TestEnsureServiceConvergenceIsDomainScoped(t *testing.T) {
 	}
 }
 
-// TestMemberPolicyAllowsUtilityPods（ADR-0055 实录锚）：成员 policy 的 FROM
-// 含同 ns 平台工具载体放行（fleetly.utility）——备份/恢复链是秒级一次性
-// pod，不能赌 CNI 对新 pod 成员 label 的准入传播时序（staging k3s 实证：
-// kube-router ipset 传播分钟级，label 路径输给载体生命周期）。
-func TestMemberPolicyAllowsUtilityPods(t *testing.T) {
-	key := netLabelKey("shop", "default")
-	pol := toNetIsolationPolicy(key, "")
-	require.Len(t, pol.Spec.Ingress, 1)
-	var utility, member, system bool
-	for _, peer := range pol.Spec.Ingress[0].From {
-		if peer.PodSelector != nil {
-			if peer.PodSelector.MatchLabels[key] == "true" {
-				member = true
-			}
-			if peer.PodSelector.MatchLabels[labelUtility] == "true" {
-				utility = true
-			}
-		}
-		if peer.NamespaceSelector != nil && peer.NamespaceSelector.MatchLabels[nsNameLabel] == systemNamespace {
-			system = true
-		}
-	}
-	assert.True(t, member, "same-net member allow must stay")
-	assert.True(t, system, "fleetly-system allow must stay")
-	assert.True(t, utility, "same-namespace platform utility pods must be allowed (backup chain anchor)")
+// TestNetpolShapeDriftConverges（ADR-0055 实录锚）：存量 policy 形状漂移
+//（平台升级改放行集）经 Ensure 收敛更新——create-only 会把存量锁死在旧
+// 形态；相等幂等零写。备份链的可达性不走 policy 放行面（utility pod 走
+// hostNetwork，见 utility.go——CNI 对新 pod 的 ipset 准入传播赌不起）。
+func TestNetpolShapeDriftConverges(t *testing.T) {
+	p, cli := newFakeProvider()
+	ctx := context.Background()
+	defKey := netLabelKey("shop", "default")
+	ns := appNS()
+
+	// 首拍：多一个多余 peer 的漂移形态落盘（模拟升级前/人工改动存量）。
+	legacy := toNetIsolationPolicy(defKey, "")
+	legacy.Spec.Ingress[0].From = append(legacy.Spec.Ingress[0].From,
+		networkingv1.NetworkPolicyPeer{PodSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"stale": "true"}}})
+	_, err := cli.NetworkingV1().NetworkPolicies("fleetly-shop").Create(ctx, legacy, metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	ws := []capability.Workload{{ID: "w1", Process: "api", Networks: []string{"default"}}}
+	seedMemberPod(t, p, "fleetly-shop", "pod-web", defKey)
+	require.NoError(t, p.reconcileNetIsolation(ctx, ns, "fleetly-shop", ws))
+
+	got, err := cli.NetworkingV1().NetworkPolicies("fleetly-shop").Get(ctx, netIsolationPolicyName(defKey), metav1.GetOptions{})
+	require.NoError(t, err)
+	require.Len(t, got.Spec.Ingress[0].From, 2, "shape drift must converge to the desired allow set")
+
+	// 相等幂等：再拍零写（Update 计数不增）。
+	updates := 0
+	cli.PrependReactor("update", "networkpolicies", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		updates++
+		return false, nil, nil
+	})
+	require.NoError(t, p.reconcileNetIsolation(ctx, ns, "fleetly-shop", ws))
+	assert.Zero(t, updates, "converged policy must not be rewritten on replay")
 }

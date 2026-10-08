@@ -210,6 +210,16 @@ func (p *Provider) buildUtilityPod(ctx context.Context, req capability.UtilityRe
 		// 工具 Pod 同样不消费 k8s API（SA token 关闭——载体面同款裁决）。
 		AutomountServiceAccountToken: ptr(false),
 		Containers:                   []corev1.Container{container},
+		// hostNetwork：备份/恢复链的可达性锚（staging k3s 真机实证，
+		// ADR-0055）。utility pod 是秒级一次性载体，而 CNI 对新 pod 成员
+		// label 的 ipset 准入传播（kube-router）在繁忙集群可达分钟级——
+		// pod 网络形态下 pg_dump 输给载体生命周期（4/4 拒连）。hostNetwork
+		// 使连接以节点本机源出发，过目标 pod per-pod FW 链的 src-type
+		// LOCAL 无条件放行规则（kube-router 标准），可达性与 CNI 传播时序
+		// 解耦；ClusterFirstWithHostNet 保住 service DNS 解析。多节点形态
+		// 由 utilityNodeSelector 钉住目标域节点（本机链路）。
+		HostNetwork: true,
+		DNSPolicy:   corev1.DNSClusterFirstWithHostNet,
 	}
 	// /run/secrets 域注入（材料凭证 + 恢复输入同域——备份档与凭证同保密
 	// 级）。通道裁决（e2e 取证矩阵，ADR-0052 批）：projected 卷在
