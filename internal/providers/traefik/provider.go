@@ -50,9 +50,10 @@ func New(configEndpoint, acmeEmail, authToken string) (*Provider, error) {
 	if configEndpoint == "" {
 		return nil, fmt.Errorf("traefik provider: config endpoint is required")
 	}
-	if acmeEmail == "" {
-		acmeEmail = "fleetly@localhost"
-	}
+	// acmeEmail 空即不带 contact 注册（LE v2 允许空 contact 账户）——此前
+	// 兜底 "fleetly@localhost" 被 LE 拒（single-label 域：400 invalidContact，
+	// staging k3s 真机实证 2026-10-08），tls auto 路由静默落默认证书。
+	// 部署侧要通知邮箱配 FLEETLY_PROXY_ACME_EMAIL（runbook 记档）。
 	return &Provider{
 		configEndpoint: configEndpoint,
 		acmeEmail:      acmeEmail,
@@ -137,14 +138,17 @@ func (p *Provider) ManagedWorkloads() []capability.Workload {
 				"--providers.http.endpoint=" + p.configEndpoint,
 				"--providers.http.pollInterval=5s",
 				// LE HTTP-01（traefik 原生；staging CA 防误触发生产配额，
-				// 生产 CA 随安装引导批切换）。
-				"--certificatesresolvers.le.acme.email=" + p.acmeEmail,
+				// 生产 CA 随安装引导批切换）。email 空即不带 contact 注册
+				//（LE v2 合法形态；New 注释——不传 flag 而非传空值 flag）。
 				"--certificatesresolvers.le.acme.storage=/acme/acme.json",
 				"--certificatesresolvers.le.acme.caserver=https://acme-staging-v02.api.letsencrypt.org/directory",
 				"--certificatesresolvers.le.acme.httpchallenge=true",
 				"--certificatesresolvers.le.acme.httpchallenge.entrypoint=web",
 				// 观测面（api 只读 dashboard，随 Console 批次决定暴露）。
 				"--api.dashboard=false",
+			}
+			if p.acmeEmail != "" {
+				cmd = append(cmd, "--certificatesresolvers.le.acme.email="+p.acmeEmail)
 			}
 			if p.authToken != "" {
 				// 端点共享令牌（ADR-0036 N2 兑现）：traefik http provider
