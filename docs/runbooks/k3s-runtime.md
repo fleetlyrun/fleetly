@@ -23,12 +23,32 @@ k3s 上 exec 经 apiserver 原生通道（SPDY→kubelet），**无节点侧平�
 - `relay_online=true` 的语义 = "该节点上 pod 的 exec 可服务"（回环连接在 + 节点在锚定表），与 swarm（节点侧代理在连）载体事实不同、平台语义等价。
 - 节点失联的会话收口由 engine dropAgentConn 承载（回环连接随 relay 循环节拍消亡）。
 
+## 场景 3 真机迁移序（swarm → k3s，ADR-0055 决策 5 / 缺省翻转前置③）
+
+以 `e2e/dind-runtimeswitch.sh` 两段式为蓝本的真机形态（同机两段或跨机均可；跨机时第 5 步经 Platform Backup 重放迁数据根）。**placement 绑定不跨 Runtime 复用、节点 ID 永不复用**：k3s 集群节点是新节点（新铸平台节点 ID），旧 swarm 节点行退役非删除。
+
+1. **Platform Backup 前置（硬停分支——备份没成 = 不得动手）**：旧平台 `fleetly platform backup` + `fleetly platform backups` 核对在场。
+2. **数据面 Backup**：逐数据库 `fleetly databases backup <id>` 至 succeeded（对象随 ObjectStore 配置走；local provider 时在数据根内——跨机迁移优先评估 s3 五元组）。
+3. **停旧 fleetlyd**：`systemctl stop fleetlyd`（30s 排水窗）。
+4. **显式载体处置**（平台失明即显式处置，决策 3 同判）：`docker service ls --filter label=fleetly.managed=true` 枚举 → 逐个 `docker service rm`；**卷与备份保留**（数据兜底）。
+5. **k3s 就绪**：按装机序节安装 k3s server（控制面单机）+ fleetlyd（config `runtime.provider: k3s`）；跨机形态先在旧机 `fleetly platform backup` 后于新机恢复数据根（restic restore，`staging-fleetly.md` 失败回滚路径同款序）。
+6. **身份保持断言**：Project/App/Revision/Route ID 与切换前逐位一致（`fleetly --json` 对照）。
+7. **基线重放**：App 载体经 drift 基线重放在 k3s 重建（`kubectl get pods -A -l fleetly.managed=true` 观察，ns 名 = `fleetly-<projectID 小写>`）。
+8. **数据库闭环**：旧 Database 行显式处置（`fleetly databases delete <id>`，幂等）→ `fleetly databases create --restore-from-backup <backupID>` 新库 → 行数/内容断言（恢复是异步任务，等 `database.restore_*` 收口）。
+9. **旧 Runtime 孤儿处置**：按本文件"旧 Runtime 孤儿载体处置"节收尾（排空确认/卷处置/节点退役）。
+10. **回滚序**：迁移窗内失败 = 回到第 3 步前状态：k3s 侧停 fleetlyd（k3s 可留待重试），旧 fleetlyd 起回（数据根未动）、旧载体由平台 reconcile 重建——**goose 只前滚的约束仅在第 5 步换了二进制后成立，窗内回滚零迁移面**。
+
+## staging k3s 生产实证环境（ADR-0055 决策 1）
+
+staging node2（143.198.234.68 / VPC 10.124.0.5）是 k3s 形态生产实证环境（与 manager 的 swarm dogfooding 分立）：装机实录、生产形态实跑记录与挂账 12 实证见文末实录节。回滚序（还原 node2 为 swarm worker）：k3s 卸载 → 重启 docker → manager 取 `docker swarm join-token worker` → node2 join（平台铸新节点行，旧 ID 退役）。
+
 ## 网络隔离模型（ADR-0054 决策 1）
 
 - 项目 Namespace 内按**网络附件集**隔离：pod 带 `fleetly.net.<k>` 成员资格 label，每网一条入站 policy（同网成员 + fleetly-system + 已批准跨项目引用放行）；零附件载体入站全拒；hostPort 发布载体豁免（节点级可达语义）。
 - egress:none = 载体级强隔离（出站仅同 ns + DNS）。非 egress 载体出站不限——跨域隔离由目标侧入站 policy 收口。
 - 排障：`k3s kubectl get netpol -A`（fleetly-netisolate-* / fleetly-peer-* / fleetly-egress-deny）；`kubectl get pods --show-labels` 查成员资格。
 - 诚实边界两行：项目域 pod 直连系统域载体维持全通（弱于 swarm）；撤销 peer 的隔离生效时点 = 挂靠方下一次 isolate Ensure 完成（engine 隔离环 + 漂移扫描兜底）。
+- 残留 grant（声明方项目/App 消亡后接收方 ns 的 no-op policy）由 RuntimeHygiene 周期清扫（ADR-0055 决策 3）：owner ns 无活 pod 持 key 且无该 key 成员 policy 即删。
 
 ## 旧 Runtime 孤儿载体处置（场景 3 迁移后，ADR-0054 决策 3）
 
