@@ -2,7 +2,7 @@
 
 | 状态 | 日期 | 关联 |
 |---|---|---|
-| 现役：新 fleetly（N0 批尾 HEAD 起）双节点 | 2026-09-30 | 功能清单 F0.18/F0.19 真机验收、F1.15 前哨；归档仓 runbook `fleetly-archived/docs/runbooks/vps-dogfooding.md`（历史教训） |
+| 现役：新 fleetly 单机 `fleetly-dev`（2026-10-08 用户口径：staging 收缩为一台，泛域名 `*.dev.fleetly.run`；node2 k3s 实证环境记录见 `k3s-runtime.md`） | 2026-09-30 | 功能清单 F0.18/F0.19 真机验收、F1.15 前哨；归档仓 runbook `fleetly-archived/docs/runbooks/vps-dogfooding.md`（历史教训） |
 
 ## 拓扑与连接
 
@@ -536,3 +536,16 @@ F3.1/F3.2/F3.3/F3.6 四批走查的浏览器级挂账在后端在场的环境（
 - **走查环境怪癖实录（非产品缺陷，F2.6 双重曝光伪影同族）**：本 IAB 构建（Electron 41/Chromium 146）locator click 全超时（evaluate 直发等价）、**rAF 挂起**（visibility=visible 仍 0 帧——xterm 不落屏，数据面经 WS 帧解码验证：hostname 回真实容器名/exit 码透传/重开面）、**编程式 `dialog.close()` 不发 close 事件**（W3 活体验证改合成 close 事件路径——真实浏览器用户态关闭不受影响）、合成点击触发 `window.open` 被弹窗拦截器挡（browse 弹窗链经 REST 铸票 + 浏览器直访 entry 等价完成）。
 - **残留清理**：walk-browser（bgwalk 蓝绿）/walk-qs（quickstart demo）/walk-verify（W1 复验）/幽灵项目（demo-site）四项目按 apps→project 序全删，无残留载体/卷；browse 会话 ×2 硬 TTL 回收（carriers=0）；compose 文件与 cleanup 脚本（/root/walk-cleanup.sh）留档。
 - **观察项**：部署详情 observe_deadline 原始 UTC ISO 与相邻字段本地化并存（Logs 时间列 O1 同族）；蓝绿卡收口终局仍写 `← serving g1`；Tasks 子 tab 不共享项目输入；App.tsx "终端页不在导航"注释过时。
+
+## 2026-10-08 记录·十五（N8 收口批换装 840d8da-n8final + staging 单机化口径）
+
+**拓扑口径更新（用户）**：staging 收缩为单台 `fleetly-dev.deeploop.net`，泛域名 `*.dev.fleetly.run`（DNSPod 通配 CNAME 指向不变，本表 DNS 行维持）；swarm 现役 = manager 单节点。node2 的 k3s 生产实证环境（ADR-0055/0056 装机与实录）记录移 `k3s-runtime.md` 维护。
+
+**换装**（6ff4f08-w1fix → **840d8da-n8final（现役）**，N4-N8 k3s 批 + traefik ACME 修复面；区间核验：无新迁移、install.sh 零变更、console dist 不在区间、config 键面零新增——k3s Provider 仅注册在册，`runtime.provider` 缺省 swarm 不装配）：按平台升级操作序五步走完——前置 Platform Backup `cdba17e1` + 五卷 tar（zot/torchwood-pg/proxy-acme/VM/VL 至 `/root/upgrade-840d8da/`）+ 旧版二进制留存（fleetlyd-6ff4f08）→ SIGTERM 排水 30s 干净收口 → 起服。
+
+**零扰动断言（STABLE-NO-FURTHER-ROLLS 达成）**：
+
+- **17/19 服务 task ID 逐位不变**（用户域 14 + VL/VM/cadvisor/zot）；零 drift 事件；doctor 10 ok / 0 fail（两 warn 既有形态）；journal 零 error；goose `current version: 27` 无迁移；tw.dev / n0.dev 200；torchwood-pg 数据锚 21 表。
+- **traefik 滚一次** = 记录·十四已知形态（host 端口面服务对 daemon 重启），复测无后续滚动。
+- **torchwood-pg 恰一次受监督滚动（新形态，预期内记档）**：区间投影 IR 新增 `Workload.EgressNetworks`（无 omitempty，json.Marshal 指纹形态变化）→ **db generation 指纹持久在库表**（`databases.EnsureGeneration`，与受管域 7232da4 的进程内播种续接不同轨）→ 指纹变更即恰一次滚动。**干净关停实证**：旧容器 `checkpoint complete → database system is shut down`（stop-first + 60s 宽限在位，3b3dd86 投资生效），1.2s 后新容器 ready，数据零损。教训：**投影 IR 字段增删对用户域 db = 一次性指纹滚动代价**，后续带 IR 形状变化的升级断言要把"db 恰滚一次（干净关停）"列入预期形态。
+- zot 本次零滚——记录·十四的"zot 重启滚动"未复现（同型两样本形态不一，继续观察）。
