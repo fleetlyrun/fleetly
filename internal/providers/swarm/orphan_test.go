@@ -83,3 +83,13 @@ func TestSweepOrphanSecrets(t *testing.T) {
 		assert.Equal(t, 1, f.secretCount(), "remaining orphan waits for the next tick")
 	})
 }
+
+// TestSweepOrphanPeerGrantsNoop：peer grant 面在 swarm 是诚实 no-op（互放行
+// 是网络附件语义，无独立 grant 载体对象——ADR-0055 决策 3 的 swarm 对应面）。
+func TestSweepOrphanPeerGrantsNoop(t *testing.T) {
+	f := newFakeDaemon()
+	p := &Provider{cli: f.newClient(t)}
+	deleted, err := p.SweepOrphanPeerGrants(context.Background(), 10)
+	require.NoError(t, err)
+	assert.Zero(t, deleted)
+}

@@ -108,3 +108,11 @@ type swarmSecretRef struct {
 	id   string
 	name string
 }
+
+// SweepOrphanPeerGrants 实现 capability.RuntimeHygiene 的 peer grant 面：
+// 诚实 no-op。swarm 的 peer 互放行是网络附件语义（docker 无独立 grant
+// 载体对象）——剥离由 engine 隔离环（ADR-0013 附录 A.4）原子承载，无
+// 残留面；k3s netpol 形态的残留清扫（ADR-0055 决策 3）在 swarm 无对应物。
+func (p *Provider) SweepOrphanPeerGrants(context.Context, int) (int, error) {
+	return 0, nil
+}

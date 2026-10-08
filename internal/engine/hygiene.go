@@ -42,6 +42,20 @@ func (e *Engine) SweepOrphanVolumeCarriers(ctx context.Context, maxDelete int) (
 	return h.SweepOrphanVolumes(ctx, maxDelete)
 }
 
+// SweepOrphanPeerGrantCarriers 清扫声明方已消亡的 peer grant 载体
+// （RuntimeHygiene 子面透传；ADR-0055 决策 3——ADR-0054 决策 1 残留留口
+// 的兑现）。判据与删除全在 Provider 侧（三信号全满足才删，宁可漏扫不可
+// 误删），engine 只做面协商与预算透传——与 Secret/卷清扫同一分层。Runtime
+// 未实现该子面时静默跳过（返回 0,nil）。maxDelete 是单次删除预算（janitor
+// 节拍限流防 API 风暴）。
+func (e *Engine) SweepOrphanPeerGrantCarriers(ctx context.Context, maxDelete int) (int, error) {
+	h := capability.FacesOf(e.runtime).Hygiene // 清扫子面（FacesOf 协商点）
+	if h == nil || maxDelete <= 0 {
+		return 0, nil
+	}
+	return h.SweepOrphanPeerGrants(ctx, maxDelete)
+}
+
 // SweepTerminalTaskCarriers 对窗内收口的终态 Task 逐个拆除隔离域残留载体
 // （runtime.Remove；E29-2 兜底面）。正常链路的残留收敛是终态收口拍自身的
 // 空集 Ensure（task.go 收口次序：Ensure 成功才落终态迁移）——本扫兜的

@@ -140,6 +140,8 @@ type hygieneRuntime struct {
 	maxGiven    int
 	volSwept    int
 	volMaxGiven int
+	grantSwept  int
+	grantMax    int
 }
 
 func (h *hygieneRuntime) SweepOrphanSecrets(_ context.Context, maxDelete int) (int, error) {
@@ -152,6 +154,12 @@ func (h *hygieneRuntime) SweepOrphanVolumes(_ context.Context, maxDelete int) (i
 	h.volMaxGiven = maxDelete
 	h.volSwept++
 	return 3, nil
+}
+
+func (h *hygieneRuntime) SweepOrphanPeerGrants(_ context.Context, maxDelete int) (int, error) {
+	h.grantMax = maxDelete
+	h.grantSwept++
+	return 5, nil
 }
 
 // TestSweepOrphanSecretCarriersDelegates 钉透传面：实现 RuntimeHygiene 的
@@ -208,5 +216,34 @@ func TestSweepOrphanVolumeCarriersDelegates(t *testing.T) {
 		require.NoError(t, err)
 		assert.Zero(t, n)
 		assert.Zero(t, h.volSwept)
+	})
+}
+
+// TestSweepOrphanPeerGrantCarriersDelegates 钉 ADR-0055 决策 3 的 grant 面
+// 透传：实现 RuntimeHygiene 的 Runtime 被调用且预算透传；未实现的 Runtime
+// 静默跳过（与 Secret/卷面同款降级文化）。
+func TestSweepOrphanPeerGrantCarriersDelegates(t *testing.T) {
+	_, base, _ := newTestEngine(t)
+	t.Run("runtime without the hygiene face skips silently", func(t *testing.T) {
+		e := &Engine{runtime: base, log: discardLogger()}
+		n, err := e.SweepOrphanPeerGrantCarriers(context.Background(), 100)
+		require.NoError(t, err)
+		assert.Zero(t, n)
+	})
+	t.Run("runtime with the hygiene face passes the budget through", func(t *testing.T) {
+		h := &hygieneRuntime{fakeRuntime: base}
+		e := &Engine{runtime: h, log: discardLogger()}
+		n, err := e.SweepOrphanPeerGrantCarriers(context.Background(), 42)
+		require.NoError(t, err)
+		assert.Equal(t, 5, n)
+		assert.Equal(t, 42, h.grantMax)
+	})
+	t.Run("non-positive budget is a no-op", func(t *testing.T) {
+		h := &hygieneRuntime{fakeRuntime: base}
+		e := &Engine{runtime: h, log: discardLogger()}
+		n, err := e.SweepOrphanPeerGrantCarriers(context.Background(), 0)
+		require.NoError(t, err)
+		assert.Zero(t, n)
+		assert.Zero(t, h.grantSwept)
 	})
 }

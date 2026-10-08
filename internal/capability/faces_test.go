@@ -27,6 +27,8 @@ func (p *fakeFaceProvider) InspectWorkloads(context.Context, NamespaceRef) ([]Wo
 }
 func (p *fakeFaceProvider) SweepOrphanSecrets(context.Context, int) (int, error) { return 0, nil }
 func (p *fakeFaceProvider) SweepOrphanVolumes(context.Context, int) (int, error) { return 0, nil }
+
+func (p *fakeFaceProvider) SweepOrphanPeerGrants(context.Context, int) (int, error) { return 0, nil }
 func (p *fakeFaceProvider) RunUtility(context.Context, UtilityRequest, io.Writer, io.Writer) error {
 	return nil
 }

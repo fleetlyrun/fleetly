@@ -416,6 +416,7 @@ const (
 const (
 	orphanSecretDeleteBudget = 100
 	orphanVolumeDeleteBudget = 100
+	orphanGrantDeleteBudget  = 100
 	terminalCarrierWindow    = 7 * 24 * time.Hour
 	terminalCarrierLimit     = 20
 )
@@ -464,6 +465,11 @@ func (s *RetentionJanitorService) Start(ctx context.Context) error {
 			s.log.Error("retention janitor: orphan volume sweep", "err", err)
 		} else if n > 0 {
 			s.log.Info("retention janitor: removed orphaned anonymous volumes", "count", n)
+		}
+		if n, err := s.engine.SweepOrphanPeerGrantCarriers(ctx, orphanGrantDeleteBudget); err != nil {
+			s.log.Error("retention janitor: orphan peer grant sweep", "err", err)
+		} else if n > 0 {
+			s.log.Info("retention janitor: removed orphaned peer grant policies", "count", n)
 		}
 		if n, err := s.engine.SweepTerminalTaskCarriers(ctx, terminalCarrierWindow, terminalCarrierLimit); err != nil {
 			s.log.Error("retention janitor: terminal task carrier sweep", "err", err)

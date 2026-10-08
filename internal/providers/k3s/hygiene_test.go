@@ -14,9 +14,11 @@ import (
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
 
 	"github.com/fleetlyrun/fleetly/internal/capability"
@@ -174,4 +176,99 @@ func TestEnsureImagePullSecretsRotatesValue(t *testing.T) {
 	sec, err := cli.CoreV1().Secrets("fleetly-shop").Get(ctx, names[0], metav1.GetOptions{})
 	require.NoError(t, err)
 	assert.Contains(t, string(sec.Data[corev1.DockerConfigJsonKey]), `"new"`, "rotated registry credential must reach the pull secret")
+}
+
+// putGrant 是 grant 夹具的显式落位通道（接收方 ns；toPeerGrantPolicy 不设
+// ns——与 netisolate 测试同款经 Create 路径放置）。
+func putGrant(t *testing.T, cli *fake.Clientset, recvNS string, pol *networkingv1.NetworkPolicy) {
+	t.Helper()
+	_, err := cli.NetworkingV1().NetworkPolicies(recvNS).Create(context.Background(), pol, metav1.CreateOptions{})
+	require.NoError(t, err)
+}
+
+// TestSweepOrphanPeerGrantsCriteria：判据矩阵（ADR-0055 决策 3）——owner
+// ns 缺失删 / 双缺（无活 pod 持 key ∧ 无成员 policy）删 / 活 pod 持 key 保留
+// / 成员 policy 在场（声明方意图锚，如缩容到零）保留 / 未知选择器形状不碰。
+func TestSweepOrphanPeerGrantsCriteria(t *testing.T) {
+	recvNS := "fleetly-partner"
+	shopKey := netLabelKey("shop", "default")
+	goneKey := netLabelKey("gone", "default")
+	idleKey := netLabelKey("idler", "default")
+	intentKey := netLabelKey("intent", "default")
+	weirdKey := netLabelKey("weird", "other")
+	p, cli := newFakeProvider()
+	ctx := context.Background()
+	putGrant(t, cli, recvNS, toPeerGrantPolicy("gone", "web", goneKey))
+	putGrant(t, cli, recvNS, toPeerGrantPolicy("idler", "web", idleKey))
+	putGrant(t, cli, recvNS, toPeerGrantPolicy("shop", "web", shopKey))
+	putGrant(t, cli, recvNS, toPeerGrantPolicy("intent", "web", intentKey))
+	putGrant(t, cli, recvNS, &networkingv1.NetworkPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "fleetly-peer-weird",
+			Labels: map[string]string{
+				labelManaged:    "true",
+				labelPeerOwner:  "weird",
+				labelPeerDomain: "web",
+			},
+		},
+		Spec: networkingv1.NetworkPolicySpec{
+			PodSelector: metav1.LabelSelector{MatchLabels: map[string]string{
+				weirdKey: "true",
+				"other":  "true",
+			}},
+		},
+	})
+	// 现役①的声明方活 pod（持 key——任意相位均在场）。
+	seedMemberPod(t, p, "fleetly-shop", "shop-pod", shopKey)
+	// 现役②的意图锚：声明方 ns 的成员 policy 在场（无活 pod）。
+	_, err := cli.NetworkingV1().NetworkPolicies("fleetly-intent").Create(ctx, toNetIsolationPolicy(intentKey, ""), metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	deleted, err := p.SweepOrphanPeerGrants(ctx, 10)
+	require.NoError(t, err)
+	assert.Equal(t, 2, deleted)
+	_, err = cli.NetworkingV1().NetworkPolicies(recvNS).Get(ctx, peerGrantName("gone", "web", goneKey), metav1.GetOptions{})
+	assert.True(t, apierrors.IsNotFound(err), "owner-namespace-missing grant must be swept")
+	_, err = cli.NetworkingV1().NetworkPolicies(recvNS).Get(ctx, peerGrantName("idler", "web", idleKey), metav1.GetOptions{})
+	assert.True(t, apierrors.IsNotFound(err), "dead-intent grant (no pods, no member policy) must be swept")
+	for _, keep := range []string{
+		peerGrantName("shop", "web", shopKey),
+		peerGrantName("intent", "web", intentKey),
+		"fleetly-peer-weird",
+	} {
+		_, err := cli.NetworkingV1().NetworkPolicies(recvNS).Get(ctx, keep, metav1.GetOptions{})
+		assert.NoError(t, err, "%s must be kept", keep)
+	}
+}
+
+// TestSweepOrphanPeerGrantsBudgetAndOrder：字典序 + 预算限流 + 零预算。
+// 全部夹具是孤儿（声明方 ns 全缺）——按接收方 ns/名字典序删前 N。
+func TestSweepOrphanPeerGrantsBudgetAndOrder(t *testing.T) {
+	k1 := netLabelKey("alpha", "default")
+	k2 := netLabelKey("beta", "default")
+	k3 := netLabelKey("gamma", "default")
+	p, cli := newFakeProvider()
+	ctx := context.Background()
+	// 同一接收方 ns 的三个孤儿 grant：字典序 = peerGrantName 哈希名排序。
+	putGrant(t, cli, "fleetly-recv", toPeerGrantPolicy("alpha", "web", k1))
+	putGrant(t, cli, "fleetly-recv", toPeerGrantPolicy("beta", "web", k2))
+	putGrant(t, cli, "fleetly-recv", toPeerGrantPolicy("gamma", "web", k3))
+
+	deleted, err := p.SweepOrphanPeerGrants(ctx, 2)
+	require.NoError(t, err)
+	assert.Equal(t, 2, deleted)
+	grants, err := cli.NetworkingV1().NetworkPolicies("fleetly-recv").List(ctx, metav1.ListOptions{LabelSelector: labelPeerOwner})
+	require.NoError(t, err)
+	require.Len(t, grants.Items, 1, "budget exhausted: remaining orphan stays for next sweep")
+
+	deleted, err = p.SweepOrphanPeerGrants(ctx, 0)
+	require.NoError(t, err)
+	assert.Zero(t, deleted, "zero budget must be a no-op")
+	grants, err = cli.NetworkingV1().NetworkPolicies("fleetly-recv").List(ctx, metav1.ListOptions{LabelSelector: labelPeerOwner})
+	require.NoError(t, err)
+	assert.Len(t, grants.Items, 1)
+
+	deleted, err = p.SweepOrphanPeerGrants(ctx, 10)
+	require.NoError(t, err)
+	assert.Equal(t, 1, deleted, "remaining orphan swept on the next full-budget pass")
 }

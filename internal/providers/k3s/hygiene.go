@@ -150,3 +150,92 @@ func (p *Provider) SweepOrphanSecrets(ctx context.Context, maxDelete int) (int, 
 func (p *Provider) SweepOrphanVolumes(ctx context.Context, maxDelete int) (int, error) {
 	return 0, nil
 }
+
+// SweepOrphanPeerGrants 实现 capability.RuntimeHygiene 的 peer grant 面
+// （ADR-0055 决策 3，ADR-0054 决策 1 残留留口的兑现）：清扫声明方已消亡的
+// 接收方残留 grant。残留面：grant 落接收方 ns、由声明方 Ensure 持有——
+// 声明方 App 删除（Remove 只拆本 ns 非 grant netpol）或项目删除（ns 拆除）
+// 后该 (owner, domain) 再无 Ensure 拍，grant 永残留为指向空集的 no-op。
+//
+// 判据三信号全满足才删（宁可漏扫不可误删，与 Secret/卷清扫同纪律）：
+//   - 声明方 ns 无活 pod 持有该 grant 选择器 key（pod 对象任意相位均计
+//     ——CrashLoop/终止中也在场，滚动窗安全）；
+//   - 声明方 ns 无该 key 的成员 policy——声明方意图的 Provider 可见锚：
+//     成员 policy 与 grant 同拍同源创建（policy 先于 grant）、仅由声明方
+//     Remove/Ensure 收敛删除，在场即意图可能仍活（如声明方载体缩容到零、
+//     app 域无周期 Ensure 拍），保留；
+//   - 声明方 ns 不存在时两者平凡成立（项目删除形态；ns 名 = 项目 ID 公式，
+//     ULID 永不复用，无同名复活面）。
+//
+// 无出生宽限窗：出生竞态由成员 policy 信号覆盖（结构判据非 eventual）。
+// 成员 policy 核查刻意放在删除前最后一步（TOCTOU 收窄）——与并发声明方
+// Ensure 的微秒窗残余是诚实边界：删除方向恒为"更早拒绝"（安全侧），自愈
+// 面 = 声明方下一次部署重铸 grant。
+func (p *Provider) SweepOrphanPeerGrants(ctx context.Context, maxDelete int) (int, error) {
+	if maxDelete <= 0 {
+		return 0, nil
+	}
+	grants, err := p.cli.NetworkingV1().NetworkPolicies("").List(ctx, metav1.ListOptions{LabelSelector: labelPeerOwner})
+	if err != nil {
+		return 0, fmt.Errorf("k3s orphan grant sweep: list: %w", err)
+	}
+	type orphanGrant struct{ ns, name, ownerNS, key string }
+	var orphans []orphanGrant
+	liveKeys := map[string]map[string]bool{} // 声明方 ns → 活成员键集（拍内缓存）
+	for i := range grants.Items {
+		g := &grants.Items[i]
+		key := selectorKey(g.Spec.PodSelector.MatchLabels)
+		if key == "" {
+			continue // 未知选择器形状不参与清扫（保守跳过，与收敛删除同口径）
+		}
+		ownerNS := namespacePrefix + "-" + g.Labels[labelPeerOwner]
+		keys, ok := liveKeys[ownerNS]
+		if !ok {
+			keys, err = p.liveMembershipKeys(ctx, ownerNS) // ns 缺失 = 空 pod 集，平凡成立
+			if err != nil {
+				return 0, fmt.Errorf("k3s orphan grant sweep: %w", err)
+			}
+			liveKeys[ownerNS] = keys
+		}
+		if keys[key] {
+			continue // 声明方仍有活 pod 持 key
+		}
+		orphans = append(orphans, orphanGrant{ns: g.Namespace, name: g.Name, ownerNS: ownerNS, key: key})
+	}
+	sort.Slice(orphans, func(i, j int) bool {
+		if orphans[i].ns != orphans[j].ns {
+			return orphans[i].ns < orphans[j].ns
+		}
+		return orphans[i].name < orphans[j].name
+	})
+
+	deleted := 0
+	var lastErr error
+	for _, o := range orphans {
+		if deleted >= maxDelete {
+			break
+		}
+		// 删除前最后核查（TOCTOU 收窄）：成员 policy 在场 = 声明方意图仍活，保留。
+		_, err := p.cli.NetworkingV1().NetworkPolicies(o.ownerNS).Get(ctx, netIsolationPolicyName(o.key), metav1.GetOptions{})
+		if err == nil {
+			continue
+		}
+		if !apierrors.IsNotFound(err) {
+			lastErr = err
+			continue
+		}
+		if err := p.cli.NetworkingV1().NetworkPolicies(o.ns).Delete(ctx, o.name, metav1.DeleteOptions{}); err != nil {
+			if apierrors.IsNotFound(err) {
+				deleted++ // 已不存在：幂等目标已达成
+				continue
+			}
+			lastErr = err // 单体失败不中断（下一拍重扫续清）
+			continue
+		}
+		deleted++
+	}
+	if lastErr != nil {
+		return deleted, fmt.Errorf("k3s orphan grant sweep: remove: %w", lastErr)
+	}
+	return deleted, nil
+}

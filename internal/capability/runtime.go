@@ -108,6 +108,15 @@ type RuntimeHygiene interface {
 	// 风暴）。返回实际删除数；列表级错误上抛，单体删除失败不中断（计入
 	// 下一拍）。
 	SweepOrphanVolumes(ctx context.Context, maxDelete int) (int, error)
+
+	// SweepOrphanPeerGrants 删除声明方已消亡的跨 Project peer grant 载体
+	//（ADR-0054 决策 1 残留留口的兑现，ADR-0055 决策 3；判据三信号全满足
+	// 才删，宁可漏扫不可误删：声明方 ns 无活 pod 持有 grant 选择器 key ∧
+	// 声明方 ns 无该 key 的成员 policy——ns 缺失时平凡成立。细节见 k3s 侧
+	// 实现）。幂等：已不存在不计错。maxDelete 是单次调用删除上限（调用方
+	// 节拍限流防 API 风暴）。返回实际删除数；列表级错误上抛，单体删除失败
+	// 不中断（计入下一拍）。无 grant 载体概念的 Runtime（swarm）诚实 no-op。
+	SweepOrphanPeerGrants(ctx context.Context, maxDelete int) (int, error)
 }
 
 // NetworkAttachment 是一条附着在载体网络上的编排器载体投影（ADR-0046
