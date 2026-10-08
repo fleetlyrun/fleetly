@@ -549,3 +549,15 @@ F3.1/F3.2/F3.3/F3.6 四批走查的浏览器级挂账在后端在场的环境（
 - **traefik 滚一次** = 记录·十四已知形态（host 端口面服务对 daemon 重启），复测无后续滚动。
 - **torchwood-pg 恰一次受监督滚动（新形态，预期内记档）**：区间投影 IR 新增 `Workload.EgressNetworks`（无 omitempty，json.Marshal 指纹形态变化）→ **db generation 指纹持久在库表**（`databases.EnsureGeneration`，与受管域 7232da4 的进程内播种续接不同轨）→ 指纹变更即恰一次滚动。**干净关停实证**：旧容器 `checkpoint complete → database system is shut down`（stop-first + 60s 宽限在位，3b3dd86 投资生效），1.2s 后新容器 ready，数据零损。教训：**投影 IR 字段增删对用户域 db = 一次性指纹滚动代价**，后续带 IR 形状变化的升级断言要把"db 恰滚一次（干净关停）"列入预期形态。
 - zot 本次零滚——记录·十四的"zot 重启滚动"未复现（同型两样本形态不一，继续观察）。
+
+## 2026-10-09 记录·十六（C1 可观测批换装 778e3a2-c1obs + Console 对齐 Dokploy 路线图开批）
+
+**路线图**：`docs/research/2026-10-08-console-parity-dokploy.md`——地位裁决（**Console 与 CLI 同为一等能力面**；ADR-0044 钉形不变：纯静态瘦客户端、零专属服务端面），对标矩阵（Dokploy/Coolify × 后端 × console 现状）+ 三层缺口（L1 纯消费 / L2 后端小批伴生 / L3 真后端缺口）+ C1-C6 分批建议 + 不追随项（容器 CRUD / i18n / 多租户 Cloud）。待裁决：C6 认证形态（密码会话 vs SSO）、批次优先级序。
+
+**换装**（840d8da-n8final → **778e3a2-c1obs（现役）**）：前置 Platform Backup `64b39b57` + 三卷 tar（zot/torchwood-pg/proxy-acme，VM/VL 沿上一轮 tars）；goose 无新迁移。**零扰动断言强于上轮：本轮零新滚动**（现役 19 task 逐位不变——db 无 IR 变更不滚；traefik 已知形态本轮也未复现）+ 路由 200/200 + torchwood-pg 21 表 + 零 drift 事件。
+
+**C1 批内容（778e3a2）**：
+- 后端 `QuerySeries` 多序列：capability.Metrics 返回 `[]Series`（原 decodeQueryRange 首条截断废除——proto 响应本就 repeated series，零契约变更）。多序列真机锚 = staging 单查询 **47 序列**（`container_memory_working_set_bytes{image!=""}`，每序列 13 点）。
+- Console `Observability` 页（路由 +1）：metrics tab（项目→App→三指标预设〔cpu cores / cpu % of node / memory working set〕+ custom PromQL + 四档时间窗；零依赖 SVG 多序列折线 + 图例 + 峰值注记）+ alerts tab（规则表 firing 内联 + observed_value + 创建/删除；通道表 test 诚实呈现 delivered/error + 创建/删除——webhook/telegram 双形态，凭证只写不读）。
+- Console HTTP 面核验：index 200（新指纹 `index-Ccu1QSDo.js` 对现役流量生效）/ asset 200 / 无凭证 `/v1/metrics` 401。
+- 全门禁：go test -race 三 module 绿（本机 sandbox 环境性跳过 railpack 一用例——docker.sock 权限，CI 正常跑）+ lint 0 issues + buf breaking 绿 + console:verify 零漂移 + vitest 35 绿。
