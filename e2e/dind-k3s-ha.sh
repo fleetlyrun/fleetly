@@ -348,16 +348,21 @@ uid_now() { # $1 = 承载容器 id
 }
 
 # 9. server1 的 k3s 进程失效（fleetlyd 的 apiserver 端点；quorum 2/3 保持）。
+# kill 面扩到子进程：k3s 主进程 TERM 后其子进程（apiserver 等）可成孤儿
+# 继续服务（run1 实证 pgrep k3s=0 而 readyz 仍答）——以 apiserver 死亡为
+# 断言锚（readyz 必须拒），进程清点只是尽力。
 log "killing k3s on server1 (fleetlyd loses its apiserver endpoint)"
-docker exec "$S1_CID" sh -c 'pkill -x k3s || true'
+docker exec "$S1_CID" sh -c 'pkill -TERM k3s 2>/dev/null; pkill -TERM kube-apiserver 2>/dev/null; pkill -TERM containerd-k3s 2>/dev/null; true'
 i=0
-while [ "$i" -lt 30 ]; do
-  n=$(docker exec "$S1_CID" sh -c 'pgrep -x k3s | grep -c .' 2>/dev/null || true)
-  [ "$n" = "0" ] && break
+while [ "$i" -lt 45 ]; do
+  if ! docker exec "$S1_CID" sh -c 'k3s kubectl get --raw=/readyz >/dev/null 2>&1'; then
+    break
+  fi
+  docker exec "$S1_CID" sh -c 'pkill -TERM k3s 2>/dev/null; pkill -TERM kube-apiserver 2>/dev/null; true'
   i=$((i + 1)); sleep 2
 done
-[ "$n" = "0" ] || fail "k3s did not exit on server1"
-sleep 8 # 断连窗:让 fleetlyd 的 watch/Ensure 撞上拒连并留下日志痕迹
+[ "$i" -lt 45 ] || { docker exec "$S1_CID" sh -c 'ps aux | head -15' >&2; fail "server1 apiserver did not die"; }
+sleep 8 # 断连窗:让 fleetlyd 的 watch/Ensure 撞上拒连
 
 # 断连面诊断（非断言——Provider 的 watch 断流重建是静默路径，日志锚可能
 # 无痕；断连由 apiserver 死亡 + 恢复后 fleetlyd 行为收口双锚承载）。
