@@ -10,6 +10,7 @@ export const ROUTES = [
   "apps",
   "resources",
   "tasks",
+  "observability",
   "logs",
   "events",
   "audit",

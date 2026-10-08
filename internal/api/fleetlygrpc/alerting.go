@@ -62,14 +62,18 @@ func (svc *MetricsService) QueryMetrics(ctx context.Context, req *telemetryv1.Qu
 	if err != nil {
 		return nil, mapStateError(err, "metrics")
 	}
-	out := &telemetryv1.MetricSeries{Labels: series.Metric}
-	for _, p := range series.Points {
-		out.Points = append(out.Points, &telemetryv1.MetricPoint{
-			Time:  p.Time.Format(time.RFC3339),
-			Value: p.Value,
-		})
+	resp := &telemetryv1.QueryMetricsResponse{}
+	for _, s := range series {
+		out := &telemetryv1.MetricSeries{Labels: s.Metric}
+		for _, p := range s.Points {
+			out.Points = append(out.Points, &telemetryv1.MetricPoint{
+				Time:  p.Time.Format(time.RFC3339),
+				Value: p.Value,
+			})
+		}
+		resp.Series = append(resp.Series, out)
 	}
-	return &telemetryv1.QueryMetricsResponse{Series: []*telemetryv1.MetricSeries{out}}, nil
+	return resp, nil
 }
 
 // AlertingService 是告警配置面。

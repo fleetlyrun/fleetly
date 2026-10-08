@@ -150,7 +150,8 @@ func TestImportRejected(t *testing.T) {
 }
 
 // TestQuerySeriesRoundTrip 钉查询请求形态（query/start/end/step unix 秒）
-// 与 matrix 响应解析（真机 ground truth 形态：Prometheus 兼容 envelope）。
+// 与 matrix 响应解析（真机 ground truth 形态：Prometheus 兼容 envelope）；
+// 多标签命中逐序列返回（C1 Console 图表批：单序列截断已废）。
 func TestQuerySeriesRoundTrip(t *testing.T) {
 	var formMu sync.Mutex
 	var gotForm url.Values
@@ -161,27 +162,31 @@ func TestQuerySeriesRoundTrip(t *testing.T) {
 		formMu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[` +
-			`{"metric":{"__name__":"container_memory_working_set_bytes","node":"01N1"},"values":[[1767225600,"1024.5"],[1767225615,"2048"]]}` +
+			`{"metric":{"__name__":"container_memory_working_set_bytes","node":"01N1"},"values":[[1767225600,"1024.5"],[1767225615,"2048"]]},` +
+			`{"metric":{"__name__":"container_memory_working_set_bytes","node":"01N2"},"values":[]}` +
 			`]}}` + "\n"))
 	}))
 	defer srv.Close()
 
 	p := newTestProvider(t)
 	p.addr = strings.TrimPrefix(srv.URL, "http://")
-	s, err := p.QuerySeries(context.Background(),
-		`max(container_memory_working_set_bytes{node="01N1"})`,
+	series, err := p.QuerySeries(context.Background(),
+		`container_memory_working_set_bytes`,
 		time.Unix(1767225600, 0), time.Unix(1767225900, 0), 15*time.Second)
 	require.NoError(t, err)
+	require.Len(t, series, 2)
+	s := series[0]
 	assert.Equal(t, map[string]string{"__name__": "container_memory_working_set_bytes", "node": "01N1"}, s.Metric)
 	require.Len(t, s.Points, 2)
 	assert.InDelta(t, 1024.5, s.Points[0].Value, 0.001)
 	assert.InDelta(t, 2048, s.Points[1].Value, 0.001)
 	assert.Equal(t, time.Unix(1767225615, 0).UTC(), s.Points[1].Time)
+	assert.Empty(t, series[1].Points)
 
 	formMu.Lock()
 	q := gotForm
 	formMu.Unlock()
-	assert.Equal(t, `max(container_memory_working_set_bytes{node="01N1"})`, q.Get("query"))
+	assert.Equal(t, `container_memory_working_set_bytes`, q.Get("query"))
 	assert.Equal(t, "1767225600", q.Get("start"))
 	assert.Equal(t, "1767225900", q.Get("end"))
 	assert.Equal(t, "15", q.Get("step"))

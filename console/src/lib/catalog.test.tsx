@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { useApps, useProjects } from "./catalog";
+import { useApps, useProjects, useAlertRules, useAlertStates, useMetricsSeries } from "./catalog";
 import { setToken } from "./token";
 
 // 目录查询消费面锚（F2.6 只读面 + F3.1 扩面共用）：REST 路径/查询串、
@@ -66,6 +66,64 @@ describe("useApps", () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual([{ id: "01M4A1", project_id: "01M4P1", name: "web" }]);
     expect((fetchMock.mock.calls[0] as [string])[0]).toBe("/v1/apps?project_id=01M4P1&limit=200");
+    client.clear();
+  });
+});
+
+// C1 可观测批 hooks 锚：告警规则/评估态 REST 面 + 指标时序（多序列行展平
+// + 空 query 不发请求 + step_seconds 取窗/240 下限 15s）。
+describe("useAlertRules / useAlertStates", () => {
+  it("fetches rules and states from the alerting REST face", async () => {
+    fetchMock
+      .mockResolvedValueOnce(new Response(JSON.stringify({ rules: [{ id: "R1", app_id: "A1", metric: "cpu_percent", threshold: 90 }] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ states: [{ rule_id: "R1", state: "firing", observed_value: 97.5 }] }), { status: 200 }));
+    const { client, wrapper } = withClient();
+    const rules = renderHook(() => useAlertRules(), { wrapper });
+    const states = renderHook(() => useAlertStates(), { wrapper });
+    await waitFor(() => expect(rules.result.current.isSuccess).toBe(true));
+    await waitFor(() => expect(states.result.current.isSuccess).toBe(true));
+    expect(rules.result.current.data).toEqual([{ id: "R1", app_id: "A1", metric: "cpu_percent", threshold: 90 }]);
+    expect((fetchMock.mock.calls[0] as [string])[0]).toBe("/v1/alerts/rules");
+    expect((fetchMock.mock.calls[1] as [string])[0]).toBe("/v1/alerts");
+    client.clear();
+  });
+});
+
+describe("useMetricsSeries", () => {
+  it("does not query with an empty promql", async () => {
+    const { client, wrapper } = withClient();
+    const { result } = renderHook(() => useMetricsSeries("", "1h"), { wrapper });
+    await Promise.resolve();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(result.current.data).toBeUndefined();
+    client.clear();
+  });
+
+  it("queries with an explicit window and flattens multi-series rows", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          series: [
+            { labels: { name: "web.1" }, points: [{ time: "2026-10-08T12:00:00Z", value: 1.5 }] },
+            undefined,
+            { labels: { name: "web.2" }, points: [] },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+    const { client, wrapper } = withClient();
+    const { result } = renderHook(() => useMetricsSeries('rate(container_cpu_usage_seconds_total{container_label_fleetly_ns_app="01m4a1"}[2m])', "30m"), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toEqual([
+      { labels: { name: "web.1" }, points: [{ time: "2026-10-08T12:00:00Z", value: 1.5 }] },
+      { labels: { name: "web.2" }, points: [] },
+    ]);
+    const [path] = fetchMock.mock.calls[0] as [string];
+    expect(path.startsWith("/v1/metrics?query=")).toBe(true);
+    expect(path).toContain("step_seconds=15"); // 30m/240 = 7.5s → 下限 15s
+    expect(path).toContain("start=");
+    expect(path).toContain("end=");
     client.clear();
   });
 });

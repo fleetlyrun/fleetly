@@ -351,7 +351,8 @@ type Metrics interface {
 	// 通道）。成功即样本可查（VM 流式导入）。
 	ImportPrometheus(ctx context.Context, body []byte, extraLabels map[string]string) error
 	// QuerySeries 查询指标序列（PromQL 透传；Console 图表与 CLI 诊断面）。
-	QuerySeries(ctx context.Context, query string, start, end time.Time, step time.Duration) (Series, error)
+	// 多标签命中返回多序列（空集合法——查询无数据不是错误）。
+	QuerySeries(ctx context.Context, query string, start, end time.Time, step time.Duration) ([]Series, error)
 }
 
 // Series 是一段指标序列。

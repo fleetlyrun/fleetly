@@ -6,6 +6,7 @@ import { EventsPage } from "./pages/Events";
 import { AppsPage } from "./pages/Apps";
 import { ResourcesPage } from "./pages/Resources";
 import { TasksPage } from "./pages/Tasks";
+import { ObservabilityPage } from "./pages/Observability";
 import { AuditPage } from "./pages/Audit";
 import { SettingsPage } from "./pages/Settings";
 import { QuickstartPage } from "./pages/Quickstart";
@@ -16,9 +17,9 @@ import { ROUTES, useHashRoute, type Route } from "./lib/router";
 import { setToken, useToken } from "./lib/token";
 import { useWhoami } from "./lib/catalog";
 
-// Console 外壳（F2.6 三页 → F3.1 全功能）：无 Token = 登录页；有 Token =
-// 页头导航（九路由）+ 身份栏（whoami + 登出）。终端页不在导航（F3.2
-// exec 子面同批落——排期裁决见 checklist F3.1 注记）。
+// Console 外壳（F2.6 三页 → F3.1 全功能 → C1 可观测批）：无 Token = 登录
+// 页；有 Token = 页头导航（十二路由）+ 身份栏（whoami + 登出）。终端页
+// 在导航末位（F3.2 exec 子面）。
 export function App() {
   const [token] = useToken();
   if (token === "") return <LoginPage />;
@@ -55,6 +56,8 @@ function renderPage(page: Route, detailId: string, navigate: (path: string) => v
       return <ResourcesPage />;
     case "tasks":
       return <TasksPage />;
+    case "observability":
+      return <ObservabilityPage />;
     case "logs":
       return <LogsPage />;
     case "events":
@@ -77,6 +80,7 @@ const ROUTE_LABELS: Record<Route, string> = {
   apps: "Apps",
   resources: "Resources",
   tasks: "Tasks",
+  observability: "Observability",
   logs: "Logs",
   events: "Events",
   audit: "Audit",

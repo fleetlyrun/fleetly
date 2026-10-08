@@ -42,8 +42,8 @@ func (f *fakeMetrics) ImportPrometheus(_ context.Context, body []byte, _ map[str
 	f.imports = append(f.imports, body)
 	return nil
 }
-func (f *fakeMetrics) QuerySeries(context.Context, string, time.Time, time.Time, time.Duration) (capability.Series, error) {
-	return capability.Series{}, nil
+func (f *fakeMetrics) QuerySeries(context.Context, string, time.Time, time.Time, time.Duration) ([]capability.Series, error) {
+	return nil, nil
 }
 
 // cadvisorFixture 是 exposition 夹具（平台容器 + 系统噪音行混布）。

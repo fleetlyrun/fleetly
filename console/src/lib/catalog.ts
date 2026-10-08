@@ -315,6 +315,59 @@ export function useAlertingChannels() {
   });
 }
 
+// 告警规则与现行评估态（C1 可观测批）：states 单独拉是为了 observed_value
+// 与内置 system 行（规则表行内联 state 已有，states 是 firing 总览面）。
+export function useAlertRules() {
+  return useQuery({
+    queryKey: ["alerts", "rules"],
+    queryFn: async () => {
+      const res = await apiFetch<{ rules?: Array<Telemetry["v1AlertRule"] | undefined> }>("/v1/alerts/rules");
+      return rowsOf(res.rules);
+    },
+    refetchInterval: RESOURCE_MS,
+  });
+}
+
+export function useAlertStates() {
+  return useQuery({
+    queryKey: ["alerts", "states"],
+    queryFn: async () => {
+      const res = await apiFetch<{ states?: Array<Telemetry["v1AlertState"] | undefined> }>("/v1/alerts");
+      return rowsOf(res.states);
+    },
+    refetchInterval: RESOURCE_MS,
+  });
+}
+
+// METRIC_RANGES 是图表时间窗值域（ms）；step 取窗/240（下限 15s——
+// 与服务端缺省步长同源）。
+export const METRIC_RANGES: Record<string, number> = {
+  "30m": 30 * 60_000,
+  "1h": 60 * 60_000,
+  "6h": 6 * 60 * 60_000,
+  "24h": 24 * 60 * 60_000,
+};
+
+// useMetricsSeries 拉 PromQL 时序（多序列——C1 起后端返回全量命中序列）。
+// 空 query 不发请求（表单未就绪态）。
+export function useMetricsSeries(query: string, rangeKey: string) {
+  return useQuery({
+    queryKey: ["metrics", query, rangeKey],
+    queryFn: async (): Promise<Telemetry["v1MetricSeries"][]> => {
+      const windowMs = METRIC_RANGES[rangeKey] ?? METRIC_RANGES["1h"];
+      const end = new Date();
+      const start = new Date(end.getTime() - windowMs);
+      const stepSeconds = Math.max(15, Math.round(windowMs / 1000 / 240));
+      const res = await apiFetch<{ series?: Array<Telemetry["v1MetricSeries"] | undefined> }>(
+        `/v1/metrics${qs({ query, start: start.toISOString(), end: end.toISOString(), step_seconds: stepSeconds })}`,
+      );
+      return rowsOf(res.series);
+    },
+    enabled: query !== "",
+    refetchInterval: 30_000,
+  });
+}
+
 // appNameOf 从目录里解析 App 显示名（缺失回退短 id）。
 export function appNameOf(apps: AppEntry[] | undefined, appId: string | undefined): string {
   if (!appId) return "—";

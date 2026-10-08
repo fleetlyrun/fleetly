@@ -288,8 +288,9 @@ func (p *Provider) ImportPrometheus(ctx context.Context, body []byte, extraLabel
 }
 
 // QuerySeries 实现 Metrics 端口：PromQL 透传 VM query_range（Prometheus
-// 兼容 API）；step 秒形态。响应是标准 matrix（{metric, values} 列表）。
-func (p *Provider) QuerySeries(ctx context.Context, query string, start, end time.Time, step time.Duration) (capability.Series, error) {
+// 兼容 API）；step 秒形态。响应是标准 matrix（{metric, values} 列表），
+// 多标签命中逐序列返回（空集 = 查询无数据，合法形态）。
+func (p *Provider) QuerySeries(ctx context.Context, query string, start, end time.Time, step time.Duration) ([]capability.Series, error) {
 	if step <= 0 {
 		step = 15 * time.Second
 	}
@@ -302,20 +303,20 @@ func (p *Provider) QuerySeries(ctx context.Context, query string, start, end tim
 	defer cancel()
 	req, err := http.NewRequestWithContext(qctx, http.MethodPost, "http://"+p.addr+"/api/v1/query_range?"+q.Encode(), nil)
 	if err != nil {
-		return capability.Series{}, err
+		return nil, err
 	}
 	req.SetBasicAuth(p.cred.Username, p.cred.Secret)
 	resp, err := p.hc.Do(req)
 	if err != nil {
-		return capability.Series{}, fmt.Errorf("victoriametrics query: %w", err)
+		return nil, fmt.Errorf("victoriametrics query: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return capability.Series{}, fmt.Errorf("victoriametrics query: read response: %w", err)
+		return nil, fmt.Errorf("victoriametrics query: read response: %w", err)
 	}
 	if resp.StatusCode/100 != 2 {
-		return capability.Series{}, fmt.Errorf("victoriametrics query: status %d: %s", resp.StatusCode, snippetOf(body))
+		return nil, fmt.Errorf("victoriametrics query: status %d: %s", resp.StatusCode, snippetOf(body))
 	}
 	return decodeQueryRange(body)
 }
@@ -334,16 +335,17 @@ type vmQueryResponse struct {
 	Error string `json:"error"`
 }
 
-// decodeQueryRange 解析 matrix 响应为 Series（单序列；多序列时返回首个——
-// 调用方查询应按标签唯一化，多序列形态留给 Console 批次的富查询面）。
-func decodeQueryRange(body []byte) (capability.Series, error) {
+// decodeQueryRange 解析 matrix 响应为多序列（每个 {metric, values} 元素一条；
+// 空集 = 查询无数据的合法形态。单序列截断形态已被 C1 Console 图表批取代）。
+func decodeQueryRange(body []byte) ([]capability.Series, error) {
 	var r vmQueryResponse
 	if err := json.Unmarshal(body, &r); err != nil {
-		return capability.Series{}, fmt.Errorf("victoriametrics: decode query response: %w", err)
+		return nil, fmt.Errorf("victoriametrics: decode query response: %w", err)
 	}
 	if r.Status != "success" {
-		return capability.Series{}, fmt.Errorf("victoriametrics: query failed: %s", r.Error)
+		return nil, fmt.Errorf("victoriametrics: query failed: %s", r.Error)
 	}
+	out := make([]capability.Series, 0, len(r.Data.Result))
 	for _, res := range r.Data.Result {
 		s := capability.Series{Metric: res.Metric}
 		for _, v := range res.Values {
@@ -358,9 +360,9 @@ func decodeQueryRange(body []byte) (capability.Series, error) {
 			}
 			s.Points = append(s.Points, capability.SeriesPoint{Time: time.Unix(int64(ts), 0).UTC(), Value: val})
 		}
-		return s, nil
+		out = append(out, s)
 	}
-	return capability.Series{}, nil
+	return out, nil
 }
 
 // snippetOf 是错误载荷片段（有界）。

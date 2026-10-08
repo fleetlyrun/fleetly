@@ -134,8 +134,8 @@ func (fakeMetricsProvider) Managed() bool { return false }
 func (fakeMetricsProvider) ImportPrometheus(_ context.Context, _ []byte, _ map[string]string) error {
 	return nil
 }
-func (fakeMetricsProvider) QuerySeries(_ context.Context, _ string, _, _ time.Time, _ time.Duration) (capability.Series, error) {
-	return capability.Series{}, nil
+func (fakeMetricsProvider) QuerySeries(_ context.Context, _ string, _, _ time.Time, _ time.Duration) ([]capability.Series, error) {
+	return nil, nil
 }
 
 // TestMetricsFaceDisabledWhenAddrEmpty（ADR-0041 锚 7 装配面）：metrics.addr
