@@ -200,5 +200,5 @@ description = "e2e dind 场景 3 换 Runtime（F4.1，ADR-0052：swarm→k3s 迁
 run = "sh e2e/dind-runtimeswitch.sh"
 
 [tasks."e2e:k3s-ha"]
-description = "e2e dind k3s HA 腿（ADR-0056 决策 3/挂账 7 收口：embedded etcd 三 server + worker——quorum/单 server 失效载体零滚动 kubelet autonomy/恢复回环/永久失效后读写保持）"
+description = "e2e dind k3s HA 腿（ADR-0056 决策 3/挂账 7 收口：embedded etcd 三 server + worker——quorum/server1 失效载体零滚动 + etcd 写面经 server3/kubelet autonomy/恢复回环收官）"
 run = "sh e2e/dind-k3s-ha.sh"

@@ -27,6 +27,7 @@ k3s 是第二运行时（ADR-0052 试点 → ADR-0054 资格认定 production-re
 - **fleetlyd 单实例诚实边界**：fleetlyd（控制面 sqlite + 数据根）不在 k3s HA 覆盖内——apiserver 失效对它是断连重连，fleetlyd 自身高可用是独立话题（触发条件：首个要求控制面无停机窗的真实部署）。
 - **无 LB 诚实边界**：fleetlyd kubeconfig 与 worker join 各钉单 apiserver 端点——该 server 长死则控制面不可达直至恢复。多 apiserver 前置 LB/DNS 多记录是部署形态选择（k3s 官方建议），按需实施。
 - **server 扩缩容 = 装机级手工序，不经平台 Enrollment**（etcd 成员变更是 quorum 风险面；与孤儿处置同文化：一次性动作不进常驻 API 面）。缩容注意：etcd 死成员残留不自动清理，quorum 按成员总数计——**缩容必须先 etcd member remove 再停机**，否则 quorum 永久受损（`k3s etcd-member-list` 核对）。
+- **永久 server 失效后的形态（e2e CI 实证）**：非优雅死亡的成员留在 etcd 成员表，quorum 读写仍活（2/3），但 apiserver `/readyz` 的 etcd 子检查**间歇不健康**（etcd client 对死成员的连接尝试拖累）——fleetlyd 的 Health 门会间歇拒（managed reconciler/node reconcile 报 "apiserver not ready"）。恢复 quorum 健康需清理死成员（`etcdctl member remove`——k3s 无文档化单成员移除子命令；全量灾恢复形态是 `k3s server --cluster-reset`〔+ 快照恢复〕，会断全部成员需逐个重加，最后手段）。运维窗口内 fleetlyd 的部署受理可能因 L1 窗内 Ensure 失败而 failed——重试即收。
 
 ## RBAC 规则升级序（单向门）
 
