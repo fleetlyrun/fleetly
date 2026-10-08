@@ -75,6 +75,6 @@ staging 实测事实（2026-10-08，裁决依据）：
 - [x] 挂账 12 生产实证：大档（dump 1,749,351B > 900KB）Backup → 新库 restore utility pod 输入卷 = hostPath（实证）→ 60,000 行 + md5 checksum 与种子逐位一致（原生 fs 默认 overlayfs snapshotter 形态）
 - [x] 生产形态实跑记录节首录（deploy/route[含公网外测 200]/exec/egress/db backup-restore/grant hygiene 真机锚）+ 场景 3 真机迁移序 runbook 落档（前置③）
 - [x] 实施期咬出的产品修复链（staging 真机）：SkipMaterials k3s 缺席（cadvisor EROFS）/ RBAC pods/log 单复数 typo（log collector 403）/ doctor runtime 感知与生效绑址探测 / 备份链 CNI 准入竞态（utility pod hostNetwork 终判）/ putNetpol 形状漂移收敛——各带单测或 e2e 锚，全在 main
-- [ ] 全门禁：`mise run test` + `mise run lint` + `go test -count=1 ./internal/guards/` + `generate:verify` + `console:verify`；swarm 全套零回归；e2e 三腿回归
+- [x] 全门禁：`mise run test` + `mise run lint` + `go test -count=1 ./internal/guards/` + `generate:verify` + `console:verify`；swarm 全套零回归；e2e 三腿回归
 
-验收实录（2026-10-08）：staging node2 全链如上表（runbook k3s-runtime.md 生产形态实跑记录节）；e2e k3s 腿 fuse 形态第三跑含 12b 节全绿（`K3S E2E PASSED`）；runtimeswitch/两节点回归与全门禁随批末收口。
+验收实录（2026-10-08）：staging node2 全链如上表（runbook k3s-runtime.md 生产形态实跑记录节）；e2e 三腿 fuse 形态全绿——k3s 腿第三跑含 12b 节与五域断言（`K3S E2E PASSED`）+ `K3S TWO-NODE E2E PASSED` + `RUNTIME SWITCH E2E PASSED`（hostNetwork 工具 Pod 形态经场景 3 恢复链回归）；全门禁绿（mise test 三 module -race EXIT=0 / golangci 0 issues + buf breaking 过 / guards -count=1 / generate:verify / console:verify 零漂移）。grant hygiene 真机锚日志在案（"removed orphaned peer grant policies count=1"）；观察项一例未复现：一 daemon 实例的 janitor 循环两拍未触发（疑首拍挂死、无 panic 痕迹，重启后首拍即扫——记 runbook 观察）。
