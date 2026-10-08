@@ -102,11 +102,13 @@ func TestReconcileNetIsolationPerNetwork(t *testing.T) {
 	require.True(t, ok, "member policy for 'default' must exist")
 	assert.Equal(t, map[string]string{defKey: "true"}, defPol.Spec.PodSelector.MatchLabels)
 	require.Len(t, defPol.Spec.Ingress, 1)
-	require.Len(t, defPol.Spec.Ingress[0].From, 2)
+	require.Len(t, defPol.Spec.Ingress[0].From, 3)
 	assert.Equal(t, map[string]string{defKey: "true"}, defPol.Spec.Ingress[0].From[0].PodSelector.MatchLabels,
 		"same-namespace members must be admitted")
 	assert.Equal(t, map[string]string{nsNameLabel: systemNamespace}, defPol.Spec.Ingress[0].From[1].NamespaceSelector.MatchLabels,
 		"system namespace must be admitted (managed proxy reachability)")
+	assert.Equal(t, map[string]string{labelUtility: "true"}, defPol.Spec.Ingress[0].From[2].PodSelector.MatchLabels,
+		"same-namespace platform utility pods must be admitted (backup chain, ADR-0055)")
 	assert.Equal(t, []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}, defPol.Spec.PolicyTypes)
 	assert.Equal(t, "true", defPol.Labels[labelManaged])
 
@@ -351,4 +353,31 @@ func TestEnsureServiceConvergenceIsDomainScoped(t *testing.T) {
 			assert.True(t, errNotFound(err), "legacy axis-less service %s must be cleaned", name)
 		}
 	}
+}
+
+// TestMemberPolicyAllowsUtilityPods（ADR-0055 实录锚）：成员 policy 的 FROM
+// 含同 ns 平台工具载体放行（fleetly.utility）——备份/恢复链是秒级一次性
+// pod，不能赌 CNI 对新 pod 成员 label 的准入传播时序（staging k3s 实证：
+// kube-router ipset 传播分钟级，label 路径输给载体生命周期）。
+func TestMemberPolicyAllowsUtilityPods(t *testing.T) {
+	key := netLabelKey("shop", "default")
+	pol := toNetIsolationPolicy(key, "")
+	require.Len(t, pol.Spec.Ingress, 1)
+	var utility, member, system bool
+	for _, peer := range pol.Spec.Ingress[0].From {
+		if peer.PodSelector != nil {
+			if peer.PodSelector.MatchLabels[key] == "true" {
+				member = true
+			}
+			if peer.PodSelector.MatchLabels[labelUtility] == "true" {
+				utility = true
+			}
+		}
+		if peer.NamespaceSelector != nil && peer.NamespaceSelector.MatchLabels[nsNameLabel] == systemNamespace {
+			system = true
+		}
+	}
+	assert.True(t, member, "same-net member allow must stay")
+	assert.True(t, system, "fleetly-system allow must stay")
+	assert.True(t, utility, "same-namespace platform utility pods must be allowed (backup chain anchor)")
 }

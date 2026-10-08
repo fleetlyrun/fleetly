@@ -38,6 +38,9 @@ const (
 	// labelPeerDomain 标记 grant 的声明方域（app 轴值——per-domain 键控，
 	// 同项目多 App 的 grant 互不误删）。
 	labelPeerDomain = "fleetly.peer.domain"
+	// labelUtility 是平台工具载体标记（utility.go 的 pod label 同键——
+	// 成员 policy 的 FROM 放行锚，见 toNetIsolationPolicy 坑注）。
+	labelUtility = "fleetly.utility"
 )
 
 // sha256Sum8 返回输入的 SHA-256 前 8 个十六进制字符（policy 名的消歧段）。
@@ -49,6 +52,10 @@ func sha256Sum8(s string) string {
 // toNetIsolationPolicy 构造单网成员 policy：podSelector 选挂该网载体；
 // 入站放行 = 同 Namespace 同网成员 + fleetly-system（受管 Proxy 触达
 // 后端——swarm"Proxy 附件全部项目网"的等价宽放，系统域全是平台载体）+
+// 同 ns 的平台工具载体（fleetly.utility——备份/恢复链的可达性锚：utility
+// pod 是秒级一次性载体，其成员 label 的 CNI 准入传播（kube-router ipset
+// 更新）在繁忙集群可达分钟级，label 放行路径会输给载体生命周期；工具载
+// 体由平台铸造、与系统域同信任族，staging k3s 真机实证 ADR-0055）+
 // 引用衍生网（peerNS 非空时）的接收方 Namespace 同网成员（双向互通的挂靠
 // 方半边）。
 func toNetIsolationPolicy(key, peerNS string) *networkingv1.NetworkPolicy {
@@ -56,6 +63,7 @@ func toNetIsolationPolicy(key, peerNS string) *networkingv1.NetworkPolicy {
 		From: []networkingv1.NetworkPolicyPeer{
 			{PodSelector: &metav1.LabelSelector{MatchLabels: map[string]string{key: "true"}}},
 			{NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{nsNameLabel: systemNamespace}}},
+			{PodSelector: &metav1.LabelSelector{MatchLabels: map[string]string{labelUtility: "true"}}},
 		},
 	}}
 	if peerNS != "" {
