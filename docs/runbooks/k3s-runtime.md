@@ -99,3 +99,5 @@ staging node2（143.198.234.68 / VPC 10.124.0.5）是 k3s 形态生产实证环�
 - **CNI 准入传播窗**：kube-router 对新建 pod 的成员 label ipset 准入在繁忙集群可达分钟级（本集群实测 ~75s；e2e 新鲜集群秒级故未咬出）——长命载体的入站放行窗内不可达会自愈，一次性短命载体必须走 hostNetwork（备份链已修）；后续若再引入秒级工具载体，同款形态是唯一安全面。
 - from_build → 受管 zot（HTTP 明文 registry）拉取需节点 containerd hosts.toml 配置面——本环境未实证（ADR-0055 决策 1 记档，后续批裁决）。
 - 受管 traefik 证书面/ACME 未在本环境演练（route 全 tls none 明文形态）。
+
+- 项目删除不拆 Namespace（k3s Provider 只建不删——ensureNamespace 单向；空 ns Active 残留是已知形态，cosmetic，后续批可随卫生清扫收口）。
