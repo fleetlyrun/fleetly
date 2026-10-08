@@ -46,7 +46,9 @@ func desiredClusterRole() *rbacv1.ClusterRole {
 			{APIGroups: []string{""}, Resources: []string{"nodes"}, Verbs: []string{"get", "list", "update"}},
 			{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"create", "delete", "get", "list", "watch"}},
 			{APIGroups: []string{""}, Resources: []string{"pods/exec"}, Verbs: []string{"create"}},
-			{APIGroups: []string{""}, Resources: []string{"pods/logs"}, Verbs: []string{"get"}},
+			// pods/log 是 k8s 子资源真名（单数——"pods/logs" 不命中任何
+			// 子资源，log collector 全程 403；staging k3s 真机实证 ADR-0055）。
+			{APIGroups: []string{""}, Resources: []string{"pods/log"}, Verbs: []string{"get"}},
 			{APIGroups: []string{""}, Resources: []string{"services"}, Verbs: []string{"create", "delete", "get", "list", "update"}},
 			{APIGroups: []string{""}, Resources: []string{"secrets"}, Verbs: []string{"create", "delete", "deletecollection", "get", "list", "update"}},
 			{APIGroups: []string{""}, Resources: []string{"persistentvolumeclaims"}, Verbs: []string{"create", "get"}},

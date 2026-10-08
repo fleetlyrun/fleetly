@@ -167,7 +167,15 @@ docker image inspect "postgres@$PG_DIGEST" >/dev/null 2>&1 \
   || docker image pull "postgres:17-bookworm@$PG_DIGEST" >/dev/null
 docker image tag "postgres@$PG_DIGEST" postgres:17-bookworm >/dev/null 2>&1 || true
 i=0
-for img in nginx:1.27 busybox:1.37 traefik:v3.5.4 postgres:17-bookworm; do
+# 受管栈全量镜像（与 staging 生产形态对齐——此前 e2e 只配 Proxy 端点，受管
+# 栈实际只部署 traefik，zot/VL/VM/cadvisor 从未在 e2e 过面；staging k3s
+# 落地实证咬出的覆盖缺口，ADR-0055 实录）。镜像钉版 = Provider 常量单一
+# 真源（zot/VL/VM/cadvisor 各 provider 的 Image 常量）。
+for img in nginx:1.27 busybox:1.37 traefik:v3.5.4 postgres:17-bookworm \
+  ghcr.io/project-zot/zot-minimal:v2.1.21 \
+  victoriametrics/victoria-logs:v1.52.0 \
+  victoriametrics/victoria-metrics:v1.152.0 \
+  gcr.io/cadvisor/cadvisor:v0.55.1; do
   docker image inspect "$img" >/dev/null 2>&1 || docker image pull "$img" >/dev/null
   name=$(printf '%s' "$img" | sed 's#/#-#g')
   docker image save "$img" | docker exec -i "$DIND_CID" sh -c "cat > /var/lib/rancher/k3s/agent/images/app-$name.tar"
@@ -253,7 +261,7 @@ docker exec -i "$DIND_CID" sh -c 'cat > /root/bins/fleetly && chmod +x /root/bin
 # dind 容器 IP：traefik pod 从集群网经节点回连控制面用。
 DIND_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$DIND_CID")
 docker exec "$DIND_CID" sh -c \
-  "mkdir -p /var/lib/fleetly && setsid env FLEETLY_DATA_ROOT=/var/lib/fleetly FLEETLY_RUNTIME_PROVIDER=k3s FLEETLY_RUNTIME_K3S_KUBECONFIG=/etc/rancher/k3s/k3s.yaml FLEETLY_PROXY_CONFIG_ENDPOINT=http://$DIND_IP:9082/proxy/config /root/bins/fleetlyd >>/var/log/fleetlyd.log 2>&1 </dev/null &"
+  "mkdir -p /var/lib/fleetly && setsid env FLEETLY_DATA_ROOT=/var/lib/fleetly FLEETLY_RUNTIME_PROVIDER=k3s FLEETLY_RUNTIME_K3S_KUBECONFIG=/etc/rancher/k3s/k3s.yaml FLEETLY_PROXY_CONFIG_ENDPOINT=http://$DIND_IP:9082/proxy/config FLEETLY_REGISTRY_ADDR=$DIND_IP:5000 FLEETLY_LOGGING_ADDR=$DIND_IP:9428 FLEETLY_METRICS_ADDR=$DIND_IP:8428 /root/bins/fleetlyd >>/var/log/fleetlyd.log 2>&1 </dev/null &"
 i=0
 while [ "$i" -lt 60 ]; do
   if docker exec "$DIND_CID" sh -c 'FLEETLY_ADDR=127.0.0.1:9080 /root/bins/fleetly status >/dev/null 2>&1'; then
@@ -273,6 +281,7 @@ log "verifying least-privilege service account (fleetly-manager)"
 docker exec "$DIND_CID" sh -c '
   sa=system:serviceaccount:fleetly-system:fleetly-manager
   [ "$(k3s kubectl auth can-i create deployments.apps --as=$sa 2>/dev/null)" = "yes" ] || { echo "SA must be allowed to create deployments" >&2; exit 1; }
+  [ "$(k3s kubectl auth can-i get pods/log --as=$sa 2>/dev/null)" = "yes" ] || { echo "SA must be allowed to get pod logs (subresource name is pods/log, singular; a plural-form rule silently grants nothing — staging k3s live finding, ADR-0055)" >&2; exit 1; }
   [ "$(k3s kubectl auth can-i list networkpolicies.networking.k8s.io --as=$sa 2>/dev/null)" = "yes" ] || { echo "SA must be allowed to list network policies (membership isolation convergence, ADR-0054)" >&2; exit 1; }
   [ "$(k3s kubectl auth can-i create clusterroles.rbac.authorization.k8s.io --as=$sa 2>/dev/null)" = "no" ] || { echo "SA must NOT be allowed to create cluster roles" >&2; exit 1; }
   [ "$(k3s kubectl auth can-i delete namespaces --as=$sa 2>/dev/null)" = "no" ] || { echo "SA must NOT be allowed to delete namespaces" >&2; exit 1; }
@@ -303,15 +312,15 @@ APP_ID=$(cli --json apps list --project "$PROJECT_ID" | sed -n 's/.*"id": *"\([^
 DEP_ID=$(cli --json deploy --app "$APP_ID" --image nginx:1.27 --port 80 | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | head -1)
 
 wait_state() {
-  want="$1"; i=0
+  want="$1"; app="${2:-$APP_ID}"; i=0
   while [ "$i" -lt 240 ]; do
-    state=$(cli --json deployments list --app "$APP_ID" | sed -n 's/.*"state": *"\([^"]*\)".*/\1/p' | head -1)
+    state=$(cli --json deployments list --app "$app" | sed -n 's/.*"state": *"\([^"]*\)".*/\1/p' | head -1)
     if [ "$state" = "$want" ]; then
       return 0
     fi
     case "$state" in
       failed|superseded|cancelled)
-        cli --json deployments list --app "$APP_ID" >&2 || true
+        cli --json deployments list --app "$app" >&2 || true
         docker exec "$DIND_CID" sh -c 'k3s kubectl get pods -A 2>&1; k3s kubectl describe pods -A --field-selector=status.phase!=Running 2>&1 | grep -A10 Events: | tail -30; k3s kubectl get events --sort-by=.lastTimestamp 2>&1 | tail -15' >&2 || true
         docker exec "$DIND_CID" sh -c "grep -v 'gRPC request' /var/log/fleetlyd.log | tail -30" >&2 || true
         fail "deployment reached $state before $want"
@@ -344,25 +353,28 @@ docker exec "$DIND_CID" sh -c "k3s kubectl get svc web -n $P1_NS >/dev/null && k
   || fail "addressing services (bare + full process names) missing"
 log "k3s carriers + addressing services verified"
 
-# 9. 受管 traefik（k3s 形态：hostPort 80）+ Route 明文端到端。前置于
-#    rollback/egress/db 段：route 链只依赖 app+traefik（fleetlyd 起动即
-#    部署），早断言早失败——run21 实证尾段时点单节点上多载体挤压会让
-#    后端不可达（502），语义验证不应与容量压力耦合。
-log "managed traefik + plaintext route drill"
+# 9. 受管域全绿（traefik/zot/VL/VM/cadvisor 五域——首跑曾只等 traefik，
+#    cadvisor 的材料卷冲突在 dind 同样 RunContainerError 却无人看,staging
+#    真机才咬出;断言面 = ns 内全部 pod Running）+ Route 明文端到端。前置
+#    于 rollback/egress/db 段:route 链只依赖 app+traefik(fleetlyd 起动即
+#    部署),早断言早失败——run21 实证尾段时点单节点上多载体挤压会让
+#    后端不可达(502),语义验证不应与容量压力耦合。
+log "managed stack readiness (five domains) + plaintext route drill"
 i=0
-while [ "$i" -lt 90 ]; do
+while [ "$i" -lt 150 ]; do
   # grep -c 零匹配/查无 ns 均为非零退出——|| true 防 set -e 静默击穿
   #（dash 对 n=$(失败命令) 即死，run14 实证日志戛然而止无 FATAL）。
-  n=$(docker exec "$DIND_CID" sh -c "k3s kubectl get pods -n fleetly-system --no-headers 2>/dev/null | grep -c Running" || true)
-  [ "$n" -ge 1 ] && break
+  total=$(docker exec "$DIND_CID" sh -c "k3s kubectl get pods -n fleetly-system --no-headers 2>/dev/null | grep -c ." || true)
+  running=$(docker exec "$DIND_CID" sh -c "k3s kubectl get pods -n fleetly-system --no-headers 2>/dev/null | grep -c Running" || true)
+  [ "$total" -ge 5 ] && [ "$running" = "$total" ] && break
   i=$((i + 1)); sleep 2
 done
-[ "$i" -lt 90 ] || {
-  docker exec "$DIND_CID" sh -c 'k3s kubectl get all -n fleetly-system 2>&1' >&2
+[ "$i" -lt 150 ] || {
+  docker exec "$DIND_CID" sh -c 'k3s kubectl get all -n fleetly-system 2>&1; k3s kubectl describe pods -n fleetly-system --field-selector=status.phase!=Running 2>&1 | grep -A8 Events: | tail -25' >&2
   docker exec "$DIND_CID" sh -c "grep -iE 'managed|traefik|ensure' /var/log/fleetlyd.log | grep -v gRPC | tail -25" >&2 || true
-  fail "managed traefik did not come up on k3s"
+  fail "managed stack did not come up all-Running on k3s (five domains expected)"
 }
-log "managed traefik running in fleetly-system namespace"
+log "managed stack all-Running in fleetly-system (traefik/zot/VL/VM/cadvisor)"
 
 # --tls none 必须显式:route TLS 缺省语义是 auto(ACME 求解)——sslip 域名
 # 无效邮箱形态 ACME 必败,明文 80 上无路由即 404(h2c e2e 先例 + 聚焦探针
@@ -682,6 +694,40 @@ done
 docker exec "$DIND_CID" sh -c "k3s kubectl get netpol -n $P1_NS --no-headers 2>/dev/null | grep -q fleetly-peer-" \
   && fail "peer grant policy must be converged away after revoke"
 log "peer revoke isolation green (unreachable + grant converged away)"
+
+# 12b. grant 残留卫生清扫（ADR-0055 决策 3 的 e2e 锚）：再声明→批准→挂靠
+#     部署（grant 在场）→ 删挂靠方 App+项目（Remove 不清他 ns 的自有 grant
+#     ——残留面）→ retention janitor 拍（10min 节拍）后接收方 ns 的 grant
+#     被清扫。断言带界轮询（janitor 相位不可控,预算 13min 窗）。
+log "peer grant hygiene drill (declare -> grant present -> declarer project deleted -> grant swept)"
+PEER2_ID=$(cli --json networks declare --network "$P1_NET_ID" --project "$PROJECT2_ID" | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | head -1)
+[ -n "$PEER2_ID" ] || fail "hygiene drill: peer re-declare failed"
+cli networks approve "$PEER2_ID" >/dev/null || fail "hygiene drill: peer approve failed"
+docker exec -i "$DIND_CID" sh -c 'cat > /tmp/peer-compose.yaml' < "$WORKDIR/peer-compose.yaml"
+cli --json deploy --app "$APP2_ID" --compose-file /tmp/peer-compose.yaml >/dev/null || fail "hygiene drill: peer compose deploy failed"
+# 等的必须是挂靠方自己的 App（wait_state 缺省 $APP_ID 是 shop 的——首跑
+# 实锤：等错 App 即刻假绿，随后 apps delete 撞 E_CONFLICT 活跃部署拒）。
+wait_state succeeded "$APP2_ID"
+wait_process_pod "$P2_NS" consumer || fail "hygiene drill: consumer pod never running"
+docker exec "$DIND_CID" sh -c "k3s kubectl get netpol -n $P1_NS --no-headers 2>/dev/null | grep -q fleetly-peer-" \
+  || fail "hygiene drill: peer grant policy missing before declarer teardown"
+log "hygiene drill: grant present in receiving namespace (declarer live)"
+# 删挂靠方 App + 项目（活跃 App 会挡项目删除——先拆 App 再删项目；delete
+# 动词走旗标非位置参数——verbs_structure 契约）。
+cli apps delete --app "$APP2_ID" >/dev/null || fail "hygiene drill: apps delete failed"
+cli projects delete --project "$PROJECT2_ID" >/dev/null || fail "hygiene drill: projects delete failed"
+log "hygiene drill: declarer app+project deleted (grant now orphaned in receiving namespace)"
+i=0
+while [ "$i" -lt 78 ]; do
+  n=$(docker exec "$DIND_CID" sh -c "k3s kubectl get netpol -n $P1_NS --no-headers 2>/dev/null | grep -c fleetly-peer-" || true)
+  [ "$n" = "0" ] && break
+  i=$((i + 1)); sleep 10
+done
+[ "$i" -lt 78 ] || {
+  docker exec "$DIND_CID" sh -c "grep -i 'orphan grant' /var/log/fleetlyd.log | tail -5; k3s kubectl get netpol -A 2>&1 | grep peer" >&2 || true
+  fail "hygiene drill: orphaned peer grant was not swept by the retention janitor"
+}
+log "peer grant hygiene green (orphaned grant swept after declarer project deletion)"
 
 # 13. Database：postgres（digest 引用）+ PVC local-path 绑定（digest 预拉
 #     已前置，零在线拉）。
