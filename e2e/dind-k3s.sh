@@ -929,7 +929,14 @@ case "$SHELL_ALL" in
 esac
 
 # exec.session_opened 事件（安全可见性面——events follow 双形态的回读锚）。
-n=$(cli --json events list 2>/dev/null | grep -c 'exec.session_opened' || true)
+# 事件落库异步于会话收口（run5 实证 shell 三锚全绿而 list 尚未见行）——
+# 带三拍重试窗。
+i=0
+while [ "$i" -lt 3 ]; do
+  n=$(cli --json events list 2>/dev/null | grep -c 'exec.session_opened' || true)
+  [ "$n" -ge 1 ] && break
+  i=$((i + 1)); sleep 3
+done
 [ "$n" -ge 1 ] || fail "exec.session_opened events missing"
 log "exec events present"
 
