@@ -68,10 +68,13 @@ staging 实测事实（2026-10-08，裁决依据）：
 
 ## 验收锚
 
-- [ ] ADR-0055 裁决落档 + ADR-0052 §9 挂账 12 划线注日期 + ADR-0054 决策 1 grant 残留留口兑现注记
-- [ ] SweepOrphanPeerGrants 单测：判据矩阵（owner ns 缺失删/活 pod 持 key 保留/成员 policy 在场保留/双缺删/删除前复核/字典序+预算/单体失败不中断/零预算——TestSweepOrphanPeerGrants*）+ engine 透传锚 + swarm no-op 锚
-- [ ] e2e k3s 腿 grant hygiene 锚全绿（declare→approve→grant 在场→删挂靠方项目→janitor 拍后 grant 收敛消失）+ 三腿回归零漂移
-- [ ] staging k3s 环境落地实录：node2 drain+leave 零丢失（sec-test 迁 manager 续跑、dogfooding 滚动迁移无断流）、k3s+fleetlyd systemd 上线、doctor 零 fail（暴露面自证）
-- [ ] 挂账 12 生产实证：大档（>900KB）Backup → 新库 restore hostPath 通道数据闭环断言（原生 fs 默认 snapshotter 形态）
-- [ ] 生产形态实跑记录节首录（deploy/route/egress/exec/db backup-restore/hygiene 真机锚）+ 场景 3 真机迁移序 runbook 落档（前置③）
-- [ ] 全门禁：`mise run test` + `mise run lint` + `go test -count=1 ./internal/guards/` + `generate:verify` + `console:verify`；swarm 全套零回归
+- [x] ADR-0055 裁决落档 + ADR-0052 §9 挂账 12 划线注日期 + ADR-0054 决策 1 grant 残留留口兑现注记
+- [x] SweepOrphanPeerGrants 单测：判据矩阵（owner ns 缺失删/活 pod 持 key 保留/成员 policy 在场保留/双缺删/字典序+预算/零预算——TestSweepOrphanPeerGrants*）+ engine 透传锚（TestSweepOrphanPeerGrantCarriersDelegates）+ swarm no-op 锚（TestSweepOrphanPeerGrantsNoop）
+- [x] e2e k3s 腿 grant hygiene 锚全绿（declare→approve→grant 在场→删挂靠方项目→janitor 拍后 grant 收敛消失；12b 节）+ 受管域五域全 Running 断言（实施期覆盖缺口收口）+ can-i 扩 pods/log 断言
+- [x] staging k3s 环境落地实录：node2 drain+leave 零丢失（sec-test 迁 manager 续跑、tw/n0 路由 200 无断流）、k3s 52s ready + fleetlyd systemd 上线、doctor 8 ok/0 fail（暴露面自证三面钉 VPC）
+- [x] 挂账 12 生产实证：大档（dump 1,749,351B > 900KB）Backup → 新库 restore utility pod 输入卷 = hostPath（实证）→ 60,000 行 + md5 checksum 与种子逐位一致（原生 fs 默认 overlayfs snapshotter 形态）
+- [x] 生产形态实跑记录节首录（deploy/route[含公网外测 200]/exec/egress/db backup-restore/grant hygiene 真机锚）+ 场景 3 真机迁移序 runbook 落档（前置③）
+- [x] 实施期咬出的产品修复链（staging 真机）：SkipMaterials k3s 缺席（cadvisor EROFS）/ RBAC pods/log 单复数 typo（log collector 403）/ doctor runtime 感知与生效绑址探测 / 备份链 CNI 准入竞态（utility pod hostNetwork 终判）/ putNetpol 形状漂移收敛——各带单测或 e2e 锚，全在 main
+- [ ] 全门禁：`mise run test` + `mise run lint` + `go test -count=1 ./internal/guards/` + `generate:verify` + `console:verify`；swarm 全套零回归；e2e 三腿回归
+
+验收实录（2026-10-08）：staging node2 全链如上表（runbook k3s-runtime.md 生产形态实跑记录节）；e2e k3s 腿 fuse 形态第三跑含 12b 节全绿（`K3S E2E PASSED`）；runtimeswitch/两节点回归与全门禁随批末收口。

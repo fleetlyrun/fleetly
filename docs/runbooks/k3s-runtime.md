@@ -64,3 +64,38 @@ staging node2（143.198.234.68 / VPC 10.124.0.5）是 k3s 形态生产实证环�
 
 - k3s 版本平台常量单源（`internal/providers/k3s` 的 k3sVersion；e2e 下载段与守卫 TestK3sPinConstantAndE2EAgree 同 commit 一致）。
 - fleetlyd 升级 = 常规平台升级序（Backup 前置不变）；载体 pod 模板 label/policy 变更随 Ensure 收敛滚动。
+
+## staging node2 装机实录（2026-10-08，ADR-0055 决策 1 兑现）
+
+- **前置**：manager `docker node update --availability drain fleetly-node2`（20s 排空，dogfooding 滚动迁 manager 无断流；sec-test 等手工载体续跑 manager）→ node2 `docker swarm leave` → manager `docker node rm` → node2 `systemctl stop/disable docker docker.socket`（释放 ~150MB + 防 mesh 监听复活；回滚序内重启）。
+- **k3s**：sha256 验过的钉版二进制直放 `/usr/local/bin/k3s` + 手写 `k3s.service`（`--disable=traefik --disable=servicelb`；原生 fs 无 snapshotter 旗标 = 默认 overlayfs）——52s ready、CNI ~40s、受管镜像在线拉（生产形态，无 airgap 预载）。
+- **fleetlyd**：systemd `fleetlyd.service` env 组（provider/kubeconfig/绑面三键钉 VPC 10.124.0.5/Proxy 端点/registry+logging+metrics 三址）+ restic 0.19.1 先装（install.sh 4d 节钉版）。CLI 凭据 `FLEETLY_ADDR=10.124.0.5:9080`。
+- **doctor 零 fail 形态**：带 daemon 同组 env 跑（manager 先例）——`FLEETLY_RUNTIME_PROVIDER=k3s` 跳过本地 docker 探针、绑面三键让端口探测打生效地址。
+- node2 内存 2GB 峰值 ~1.5GB（k3s server + fleetlyd + 受管五域 + 验证负载）——无 swap，扩负载前留意。
+
+## 生产形态实跑记录（缺省翻转前置①的累积面，逐批追加）
+
+| 日期 | 面 | 断言锚 | 结果 |
+|---|---|---|---|
+| 2026-10-08 | 装机+自举 | k3s 52s ready；RBAC 自举（faces=logs,admin,inspector,hygiene,utility,exec）；doctor 8 ok/0 fail（暴露面自证：三面钉 VPC listening non-public） | ✅ |
+| 2026-10-08 | deploy | `deploy --image nginx:1.27` → succeeded；载体 pod 1/1（label 定位） | ✅ |
+| 2026-10-08 | Route | sslip 域 + tls none：node2 本机 curl 200 + **工作站经公网 IP 直探 200**（hostPort 80 生产形态外测） | ✅ |
+| 2026-10-08 | exec | relay_online（集中形态）+ 输出透传 + 退出码 23 透传 | ✅ |
+| 2026-10-08 | egress/成员隔离 | DNS 放行 + 跨 ns 拒 + 同 ns 异网拒（成员 policy 表在场）——kube-router 拒绝形态 = Connection refused（非超时） | ✅ |
+| 2026-10-08 | db backup/restore | 6000 行随机种子 → backup succeeded → 新库 restore 行数 + md5 checksum 逐位一致 | ✅ |
+| 2026-10-08 | **大档 hostPath（挂账 12）** | 60k 行（dump 1,749,351B > 900KB 阈值）→ restore utility pod 输入卷 = **hostPath**（`/var/lib/fleetly/utility/restore-*`，jsonpath 实证）→ 60,000 行 + checksum 逐位一致——原生 fs 无 dind mount 遮蔽 | ✅ |
+| 2026-10-08 | grant hygiene | declare→approve→挂靠部署（grant 在场）→删声明方 App+项目→retention janitor 拍后 grant 收敛消失 | ✅ |
+
+### 实施期咬出的修复链（全在仓，2026-10-08 staging 实录）
+
+1. **SkipMaterials k3s 缺席**（3e1c265）：受管 cadvisor 的材料 projected 卷要在 /run/secrets 建挂载点，与只读 hostPath 绑定冲突 → runc EROFS 起容器炸；swarm translate 既有判据，k3s secretFilesOf 补齐。e2e 受管域断言同步扩五域全 Running（此前只等 traefik——cadvisor 同病在 dind 无人看）。
+2. **RBAC `pods/logs` 单复数 typo**（84eeea4）：`pods/logs` 不命中任何子资源 → log collector 全程 403；can-i 断言补 `get pods/log=yes`（e2e 6b 节第四断言）。
+3. **doctor 两假红/假警**（5bfecc9）：k3s 形态 docker 探针恒红（env 门控跳过）+ 端口探测打 127.0.0.1 假警（生效绑址探测 + 三键 env 兜底）。
+4. **备份链 CNI 准入竞态**（7978b27 终判）：utility pod 是秒级一次性载体，kube-router 对新 pod 的成员 label ipset 准入传播在本集群实测分钟级（t=0 拒/t=75s 通）→ pg_dump 4/4 拒连。**修 = 工具 Pod hostNetwork + ClusterFirstWithHostNet**：连接以节点本机源出发，过目标 pod per-pod FW 链 src-type LOCAL 无条件放行（kube-router 标准），与 CNI 传播解耦；utility peer 放行路线被证伪（FROM podSelector 一律 ipset 源集，同样有传播迟滞）。
+5. **putNetpol create-only 锁死旧形态**（01447b8）：policy 形状漂移（平台升级改放行集）在存量集群永不落地；升 create-or-update（相等零写）。
+
+### 诚实边界（本环境实证补录）
+
+- **CNI 准入传播窗**：kube-router 对新建 pod 的成员 label ipset 准入在繁忙集群可达分钟级（本集群实测 ~75s；e2e 新鲜集群秒级故未咬出）——长命载体的入站放行窗内不可达会自愈，一次性短命载体必须走 hostNetwork（备份链已修）；后续若再引入秒级工具载体，同款形态是唯一安全面。
+- from_build → 受管 zot（HTTP 明文 registry）拉取需节点 containerd hosts.toml 配置面——本环境未实证（ADR-0055 决策 1 记档，后续批裁决）。
+- 受管 traefik 证书面/ACME 未在本环境演练（route 全 tls none 明文形态）。

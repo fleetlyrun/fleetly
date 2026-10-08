@@ -7,10 +7,10 @@
 ## 拓扑与连接
 
 - **manager** = `ssh root@fleetly-dev.deeploop.net`（146.190.58.0；VPC eth1=10.124.0.3；Debian 13 / 2C / 4G）。新 fleetlyd = systemd `fleetlyd.service`（数据根 /var/lib/fleetly；unit 另注入 `FLEETLY_PROXY_CONFIG_ENDPOINT=http://10.124.0.3:9082/proxy/config` + `FLEETLY_PROXY_ACME_EMAIL` + drop-in `browse.conf`：`FLEETLY_BROWSE_HOST_SUFFIX=dev.fleetly.run` + `FLEETLY_BROWSE_GATEWAY_URL=http://10.124.0.3:9081`，2026-10-07 起）。
-- **worker** = `ssh root@143.198.234.68`（本机可直连；跳板形态 `ssh -J root@fleetly-dev.deeploop.net root@fleetly-node2.deeploop.net` 亦可）。VPC eth1=10.124.0.5。**零平台安装物**：只跑 docker daemon + swarm worker。
+- **worker → k3s 生产实证节点（2026-10-08 改造，ADR-0055 决策 1）**：`ssh root@143.198.234.68`（VPC eth1=10.124.0.5）已退出 swarm 改纯 k3s 单机（k3s server + fleetlyd systemd，独立平台身份/数据根；docker daemon 停用 disable）。**swarm 现役拓扑 = manager 单节点**（node2 任务经 drain 全迁 manager，dogfooding 无断流；sec-test 等手工载体续跑 manager）。k3s 侧操作序/实录/回滚（还原 swarm worker）见 `k3s-runtime.md` staging 节；worker 侧 swarm 操作（AgentCommand 重跑等）自本改造起不适用。
 - DNS：DNSPod 通配 CNAME `*.dev.fleetly.run → fleetly-dev.deeploop.net`（n0.dev 实证解析）。
-- 两台 dockerd 均带 drop-in `--insecure-registry 10.124.0.3:5000`（zot 走 HTTP；VPC 内网形态）。
-- CLI 凭据在 manager `/root/.config/fleetly/credentials`（`FLEETLY_ADDR=127.0.0.1:9080` + 自动读凭据）。
+- manager dockerd 带 drop-in `--insecure-registry 10.124.0.3:5000`（zot 走 HTTP；VPC 内网形态）；node2 dockerd 已停用（swarm 退出，k3s 用 containerd）。
+- CLI 凭据在 manager `/root/.config/fleetly/credentials`（`FLEETLY_ADDR=127.0.0.1:9080` + 自动读凭据）；node2 k3s 平台 CLI 走 `/root/n7cli.sh`（FLEETLY_ADDR=10.124.0.5:9080）。
 
 ## 现役资产
 
