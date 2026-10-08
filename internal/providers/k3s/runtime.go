@@ -180,18 +180,30 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 			p.forgetLastIssued(obj.name)
 		}
 	}
-	svcSel := labels.Set(serviceLabels(ns)).AsSelector()
-	svcs, err := p.cli.CoreV1().Services(nsName).List(ctx, metav1.ListOptions{LabelSelector: svcSel.String()})
+	// Service 收敛（补轴后的域感规则）：按 team+project 宽列，只删本域轴
+	// 与无轴遗留（serviceAxis 0/1）——他域（2）不可见亦不可删（同项目多域
+	// 各自 Ensure，ADR-0054 批咬出的跨域误删实锤）。
+	mine := serviceLabels(ns)
+	svcSel := labels.Set(map[string]string{
+		labelManaged: mine[labelManaged],
+		labelTeam:    mine[labelTeam],
+		labelProject: mine[labelProject],
+	}).String()
+	svcs, err := p.cli.CoreV1().Services(nsName).List(ctx, metav1.ListOptions{LabelSelector: svcSel})
 	if err != nil {
 		return fmt.Errorf("k3s ensure %s: list services: %w", ns, err)
 	}
 	for _, svc := range svcs.Items {
-		if !wantServices[svc.Name] {
-			if err := p.cli.CoreV1().Services(nsName).Delete(ctx, svc.Name, metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
-				return fmt.Errorf("k3s ensure %s: remove stale service %s: %w", ns, svc.Name, err)
-			}
-			p.forgetLastIssued("service/" + svc.Name)
+		if wantServices[svc.Name] {
+			continue
 		}
+		if serviceAxis(svc.Labels, mine) == 2 {
+			continue
+		}
+		if err := p.cli.CoreV1().Services(nsName).Delete(ctx, svc.Name, metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
+			return fmt.Errorf("k3s ensure %s: remove stale service %s: %w", ns, svc.Name, err)
+		}
+		p.forgetLastIssued("service/" + svc.Name)
 	}
 	// Drift 对照账本落账（Watch 的 gen 对照信号面）。
 	for _, w := range ws {
@@ -358,12 +370,21 @@ func (p *Provider) Remove(ctx context.Context, ns capability.NamespaceRef) error
 		}
 		p.forgetLastIssued(obj.name)
 	}
-	sel := labels.Set(serviceLabels(ns)).AsSelector()
-	svcs, err := p.cli.CoreV1().Services(nsName).List(ctx, metav1.ListOptions{LabelSelector: sel.String()})
+	// Service 拆除（域感规则同 Ensure：宽列 + 只删本域轴与无轴遗留）。
+	mine := serviceLabels(ns)
+	svcSel := labels.Set(map[string]string{
+		labelManaged: mine[labelManaged],
+		labelTeam:    mine[labelTeam],
+		labelProject: mine[labelProject],
+	}).String()
+	svcs, err := p.cli.CoreV1().Services(nsName).List(ctx, metav1.ListOptions{LabelSelector: svcSel})
 	if err != nil {
 		return fmt.Errorf("k3s remove %s: %w", ns, err)
 	}
 	for _, svc := range svcs.Items {
+		if serviceAxis(svc.Labels, mine) == 2 {
+			continue // 他域管辖面：本域拆除不触碰
+		}
 		if err := p.cli.CoreV1().Services(nsName).Delete(ctx, svc.Name, metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
 			return fmt.Errorf("k3s remove %s: %w", ns, err)
 		}

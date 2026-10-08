@@ -31,10 +31,11 @@ ADR-0053 补齐 Exec/Hygiene/RBAC/两节点四子面后，ADR-0052 决策 4"三�
   - 引用衍生网（k 来自 NetworkRef）：目标 Project Namespace + 该网成员 label（双向互通的挂靠方半边）。
 - **零附件载体**：`fleetly-net.none` 锚的 policy 无放行规则（入站全拒）——与 swarm 零附件不可达逐位对齐（Proxy 也触达不了）。
 - **taskgrp-\* 网络同公式**：Task Run 挂 taskgrp-\<g\> label；App 跨挂（taskGroup:\<g\> 投影为同名平台网）同 label——组内互通、组外与项目域双向拒。**挂账 3 收口**。
-- **跨 Project peer（挂账 4 收口）**：peer 的网络层收口 = 上述引用衍生规则（挂靠方 ns）+ **peer grant policy**（接收方 ns，挂靠方 Ensure 持有写入）：`fleetly-peer-<hash>`，选中接收方该网成员，放行 {挂靠方 ns + 引用 label}——批准的互放行是双向的，policy 由声明方（唯一知情方）持有，两侧写。撤销收敛：engine isolate 剥离引用（ADR-0013 附录 A.4 既有）→ 挂靠方 Ensure 期望集不含 → 收敛删除两侧 policy（挂靠方按 `fleetly.peer.owner` label 清理自己名下的 stale）。挂靠方项目消亡后接收方残留 grant = 指向空集的 no-op（诚实边界，后续卫生清扫批可收）。
+- **跨 Project peer（挂账 4 收口）**：peer 的网络层收口 = 上述引用衍生规则（挂靠方 ns）+ **peer grant policy**（接收方 ns，挂靠方 Ensure 持有写入、**按声明方域（app 轴）键控**）：`fleetly-peer-<hash>`，选中接收方该网成员，放行 {挂靠方 ns + 引用 label}——批准的互放行是双向的，policy 由声明方（唯一知情方）持有，两侧写。撤销收敛：engine isolate 剥离引用（ADR-0013 附录 A.4 既有）→ 挂靠方 Ensure 的**纯意图集**收敛当拍删 grant（grant 只放行携 key 的载体，删除只会更早拒绝——安全方向，不等旧 pod 终止）；引用衍生成员 policy 走活 label 半边（终止窗内保留、滚动完成后删）。挂靠方项目消亡后接收方残留 grant = 指向空集的 no-op（诚实边界，后续卫生清扫批可收）。
 - **hostPort 发布载体豁免**：声明 Publish 的 Workload 不带成员资格 label（不被任何 policy 选中 = 入站不隔离）。理由见背景 4；用户面不暴露 Publish（受管域专用声明）。
 - **受管域（fleetly-system）不设隔离 policy**：受管载体要么发布宿主端口（豁免面）要么只被 fleetlyd host 流量触达（host→pod 不过 netpol 链）；项目域→系统域 pod 直连维持全通，弱于 swarm 的诚实边界（系统域载体全是平台自有面），Notes/本 ADR 声明。
-- **Ensure 收敛序**：`reconcileNetIsolation` 与 egress netpol 同拍——期望集 create-only + 按 managed label 列举删除 stale（egress deny 名保白名单）；Remove 拆全部 managed netpol（含 peer grant）。成员 label 恒随 spec 滚动更新——policy 与 label 同拍收敛，"policy 删除后残留 label 的载体敞开"窗口不存在（label 随载体代次滚动消失）。
+- **Ensure 收敛序（活 pod label 派生，实施期定稿）**：隔离 policy 与 grant 是**项目级共享资源**——同项目多域（App/Task/Database/Browse）各自独立 Ensure，按"本拍期望集"删除会让一域收敛掉别域成员的 policy（e2e task drill 咬出的实锤：task 域 Ensure 删掉 app 域的 default 成员 policy）。收敛判据改为集群事实：**policy 选择器 key 不被本 ns 任何 managed pod 持有即删**（grant：挂靠方 ns）——跨域天然安全（他域成员 pod 在场即保留）、滚动窗口安全（替换中的旧 pod 仍持有 label）、重启安全（无内存态）。成员 label 恒随 spec 滚动更新——policy 与 label 同拍收敛。Remove 拆域内 managed netpol（他方 grant 跳过——挂靠方收敛面）。
+- **姊妹 bug 修复（预存，e2e 同源咬出）**：k3s 的 Service 收敛标签只有 team+project 无域主体轴——**同项目第二域的 Ensure/Remove 会把别域的 Service 当 stale 删除**（task/db 域删 app 的 web Service → 全域 NXDOMAIN；此前批次 e2e 绿是 app reconciler 重建对拍的运气，现役多域项目一直在隐性闪断）。修复：serviceLabels 补六轴锚（nsSelector 同构），收敛/拆除按"宽列 + 轴裁决"——他域（2）不可见亦不可删，无轴遗留（补轴前形态）首拍清除（升级收敛面）。
 - **RBAC 动词面**：networkpolicies 增 `list`（收敛对照）；create/delete/get 既有。
 
 **语义对照表（本 ADR 的裁决口径）**：
@@ -82,7 +83,8 @@ ADR-0053 补齐 Exec/Hygiene/RBAC/两节点四子面后，ADR-0052 决策 4"三�
 ## 验收锚
 
 - [ ] 成员资格翻译单测：Networks/NetworkRefs/零附件/Publish 豁免四形态的 label 断言（workloadLabels 扩展）+ 复合 key 同域/跨域同值 + label key 上限截断哈希（TestNetMembershipLabels）
-- [ ] 成员 policy 收敛单测：每网一条（组级聚合非 per-carrier）+ 放行集三规则 + stale 删除（egress deny 保白名单）+ 零附件 deny-all + Remove 全拆（fake clientset，TestReconcileNetIsolation*）
+- [ ] 成员 policy 收敛单测：每网一条（组级聚合非 per-carrier）+ 放行集三规则 + stale 删除（活 label 派生：无成员 pod 即删/有成员 pod 保留/egress deny 与他方 grant 不触碰/非 managed 不触碰）（fake clientset，TestReconcileNetIsolation*）
+- [ ] 跨域安全双锚（e2e 咬出后的回归面）：task 域 Ensure 不删 app 域成员 policy（TestReconcileNetIsolationCrossDomainSafe）+ task 域 Ensure 不删 app 域 Service/无轴遗留清除（TestEnsureServiceConvergenceIsDomainScoped——预存 Service 轴缺失 bug 的钉板）
 - [ ] peer grant 单测：双侧 policy 形态（挂靠 ns 引用衍生规则 + 接收 ns grant）+ 按.owner label 清 stale + 撤销（refs 消失）双侧收敛删除（TestReconcilePeerGrants*）
 - [ ] 工具 Pod 成员 label 单测（buildUtilityPod 挂 req.Networks 附件集——备份链可达性锚）
 - [ ] RBAC 表格测试更新（networkpolicies create,delete,get,list）+ e2e auth can-i 断言扩展（list networkpolicies yes）

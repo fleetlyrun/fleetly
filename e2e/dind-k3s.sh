@@ -5,6 +5,8 @@
 # 其 swarm init 步骤与 k3s 腿无关）→ 身份链 → app deploy(image) →
 # succeeded → k3s 载体断言（Deployment/Service/addressing 名）→ rollback →
 # egress:none 强隔离活体实证（跨 ns 拒 + DNS 放行 + 载体标记 + netpol 在场）
+# → 网络成员资格入站隔离活体矩阵（ADR-0054：同网通/跨 ns 拒/task 组拒/
+# 跨挂通 + peer declare→approve→通→revoke→隔离收敛全环）
 # → Database（postgres digest 在线拉 + PVC local-path 绑定）→ 受管 traefik
 # （hostPort 80）+ Route 明文端到端。
 #
@@ -489,7 +491,199 @@ docker exec "$DIND_CID" sh -c "
 " || fail "egress isolation live probe failed"
 log "egress live probe green (DNS allowed, cross-namespace denied)"
 
-# 12. Database：postgres（digest 引用）+ PVC local-path 绑定（digest 预拉
+# 12. 网络成员资格入站隔离（ADR-0054 决策 1 的 e2e 锚）：
+#     - 成员 policy 在场（每网一条组级聚合）+ 载体成员资格 label
+#     - 活体矩阵（探针一律 busybox wget，deny = netpol 落丢包 → -T 超时）：
+#       default 成员 → 同网 web 通 / 跨 ns（shop2）拒 / task 组拒；
+#       task pod（taskgrp-pipe）→ 项目服务拒；跨挂 bridge → task 组内通
+#     - peer drill：declare→approve→挂靠部署→跨项目通（grant policy 在场）
+#       →revoke→engine isolate 环收敛→拒（grant policy 消失）
+log "network membership isolation drill (ADR-0054)"
+docker exec "$DIND_CID" sh -c "k3s kubectl get netpol -n $P1_NS --no-headers 2>/dev/null | grep -c fleetly-netisolate-" \
+  | grep -qv '^0$' || fail "membership policies missing in project namespace"
+log "membership policies present (per-network, group-level aggregation)"
+
+# drill 夹具：web（nginx/default）+ probe（default 探针）+ bridge（跨挂
+# taskGroup:pipe）。task 先行——bridge 的组内通探针要目标在场。
+TASK_ID=$(cli --json tasks create --project "$PROJECT_ID" --name netgrp-drill \
+  --form one-shot --image busybox:1.37 --network-group pipe \
+  --command sh --command '-c' --command 'mkdir -p /www && echo task-ok > /www/index.html && httpd -f -p 8080 -h /www' \
+  | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | head -1)
+[ -n "$TASK_ID" ] || fail "task create failed"
+TASK_LC=$(printf '%s' "$TASK_ID" | tr 'A-Z' 'a-z')
+i=0
+while [ "$i" -lt 120 ]; do
+  n=$(docker exec "$DIND_CID" sh -c "k3s kubectl get pods -n $P1_NS -l fleetly.ns.task=$TASK_LC --no-headers 2>/dev/null | grep -c Running" || true)
+  [ "$n" -ge 1 ] && break
+  i=$((i + 1)); sleep 2
+done
+[ "$i" -lt 120 ] || { docker exec "$DIND_CID" sh -c "k3s kubectl get pods -n $P1_NS -o wide 2>&1 | head -10" >&2 || true; fail "task run pod never running"; }
+log "task run pod running (network group pipe, httpd on 8080)"
+
+cat > "$WORKDIR/netisolate-compose.yaml" <<EOF
+services:
+  web:
+    image: nginx:1.27
+    ports: ["80"]
+  probe:
+    image: busybox:1.37
+    command: ["sleep", "3600"]
+    networks: ["default"]
+  bridge:
+    image: busybox:1.37
+    command: ["sleep", "3600"]
+    networks: ["taskGroup:pipe"]
+EOF
+docker exec -i "$DIND_CID" sh -c 'cat > /tmp/netisolate-compose.yaml' < "$WORKDIR/netisolate-compose.yaml"
+cli --json deploy --app "$APP_ID" --compose-file /tmp/netisolate-compose.yaml >/dev/null || fail "netisolate compose deploy failed"
+wait_state succeeded
+
+P2_APP_LC=$(printf '%s' "$APP2_ID" | tr 'A-Z' 'a-z')
+wait_app_pod() {
+  ns="$1"; applc="$2"; i=0
+  while [ "$i" -lt 120 ]; do
+    n=$(docker exec "$DIND_CID" sh -c "k3s kubectl get pods -n $ns -l fleetly.ns.app=$applc --field-selector=status.phase=Running --no-headers 2>/dev/null | grep -c Running" || true)
+    [ "$n" -ge 1 ] && return 0
+    i=$((i + 1)); sleep 2
+  done
+  return 1
+}
+wait_app_pod "$P1_NS" "$P1_APP_LC" || fail "drill web pod never running"
+wait_app_pod "$P2_NS" "$P2_APP_LC" || fail "shop2 web pod never running"
+# 进程名等待（probe/bridge/consumer 是部署后新增载体——succeeded 只是 L1 门，
+# pod 就绪有调度窗）。
+wait_process_pod() {
+  ns="$1"; proc="$2"; i=0
+  while [ "$i" -lt 120 ]; do
+    n=$(docker exec "$DIND_CID" sh -c "k3s kubectl get pods -n $ns -l fleetly.process=$proc --field-selector=status.phase=Running --no-headers 2>/dev/null | grep -c Running" || true)
+    [ "$n" -ge 1 ] && return 0
+    i=$((i + 1)); sleep 2
+  done
+  return 1
+}
+wait_process_pod "$P1_NS" probe || fail "probe pod never running"
+wait_process_pod "$P1_NS" bridge || fail "bridge pod never running"
+probe_pod() {
+  docker exec "$DIND_CID" sh -c "k3s kubectl get pods -n $1 -l fleetly.process=$2 --field-selector=status.phase=Running -o jsonpath={.items[0].metadata.name}"
+}
+PROBE_POD=$(probe_pod "$P1_NS" probe)
+BRIDGE_POD=$(probe_pod "$P1_NS" bridge)
+[ -n "$PROBE_POD" ] && [ -n "$BRIDGE_POD" ] || fail "probe/bridge pods missing"
+TASK_FQDN="task-$TASK_LC.$P1_NS.svc.cluster.local"
+
+# 活体矩阵（must-pass 用 if ! …；must-deny 用 if … ——deny 的表现形态是
+# wget -T 超时（netpol 落丢包），非快速拒绝）。探针带两拍重试（瞬时 DNS 窗
+# 误判防护）；终态失败时落全景诊断（nslookup/resolv.conf/svc/netpol/CoreDNS）。
+docker exec "$DIND_CID" sh -c "
+  wget_probe() {
+    p=\$1; url=\$2; k=0
+    while [ \$k -lt 3 ]; do
+      if k3s kubectl exec -n $P1_NS \"\$p\" -- wget -q -O /dev/null -T 5 \"\$url\"; then
+        return 0
+      fi
+      k=\$((k + 1)); sleep 3
+    done
+    return 1
+  }
+  diag() {
+    echo '--- pod resolv.conf' >&2
+    k3s kubectl exec -n $P1_NS \"\$1\" -- cat /etc/resolv.conf >&2 2>&1 || true
+    echo '--- nslookup target' >&2
+    k3s kubectl exec -n $P1_NS \"\$1\" -- nslookup web.$P1_NS.svc.cluster.local >&2 2>&1 || true
+    echo '--- nslookup kubernetes.default' >&2
+    k3s kubectl exec -n $P1_NS \"\$1\" -- nslookup kubernetes.default.svc.cluster.local >&2 2>&1 || true
+    echo '--- services' >&2
+    k3s kubectl get svc -n $P1_NS >&2 2>&1 || true
+    echo '--- pods wide' >&2
+    k3s kubectl get pods -n $P1_NS -o wide >&2 2>&1 || true
+    echo '--- netpol all namespaces' >&2
+    k3s kubectl get netpol -A >&2 2>&1 || true
+    echo '--- coredns pods' >&2
+    k3s kubectl get pods -n kube-system -l k8s-app=kube-dns -o wide >&2 2>&1 || true
+  }
+  diag_deny() {
+    echo '--- netpol -A' >&2
+    k3s kubectl get netpol -A >&2 2>&1 || true
+    echo '--- target ns default policy yaml' >&2
+    k3s kubectl get netpol -n $P2_NS -o yaml 2>&1 | grep -vE 'creationTimestamp|resourceVersion|uid|generation|managedFields' >&2 || true
+    echo '--- target pods labels' >&2
+    k3s kubectl get pods -n $P2_NS --show-labels >&2 2>&1 || true
+    echo '--- target pod direct-IP probe (bypass service VIP)' >&2
+    tip=\$(k3s kubectl get pods -n $P2_NS --field-selector=status.phase=Running -o jsonpath={.items[0].status.podIP})
+    k3s kubectl exec -n $P1_NS $PROBE_POD -- wget -q -O /dev/null -T 3 http://\$tip/ 2>&1 >&2 || true
+  }
+  if ! wget_probe $PROBE_POD http://web.$P1_NS.svc.cluster.local/; then
+    echo 'same-network member must reach web' >&2; diag $PROBE_POD; exit 1
+  fi
+  if wget_probe $PROBE_POD http://web.$P2_NS.svc.cluster.local/; then
+    echo 'cross-namespace must be denied by membership isolation' >&2; diag_deny; exit 1
+  fi
+  if wget_probe $PROBE_POD http://$TASK_FQDN:8080/; then
+    echo 'task group must be isolated from project network members' >&2; exit 1
+  fi
+  if ! wget_probe $BRIDGE_POD http://$TASK_FQDN:8080/; then
+    echo 'cross-attached app process must reach the task group' >&2; diag $BRIDGE_POD; exit 1
+  fi
+  taskpod=\$(k3s kubectl get pods -n $P1_NS -l fleetly.ns.task=$TASK_LC --field-selector=status.phase=Running -o jsonpath={.items[0].metadata.name})
+  if wget_probe \"\$taskpod\" http://web.$P1_NS.svc.cluster.local/; then
+    echo 'task pod must not reach project services (group-only attachment)' >&2; exit 1
+  fi
+" || fail "membership isolation live matrix failed"
+log "membership isolation live matrix green (same-net allow, cross-ns/task-group deny, cross-attach allow)"
+
+# peer drill：shop2（挂靠方）挂 shop 的 default 网（接收方）。
+P1_NET_ID=$(cli --json networks list --project "$PROJECT_ID" | grep -B3 '"name": *"default"' | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | head -1)
+[ -n "$P1_NET_ID" ] || fail "shop default network id not resolved"
+PEER_ID=$(cli --json networks declare --network "$P1_NET_ID" --project "$PROJECT2_ID" | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | head -1)
+[ -n "$PEER_ID" ] || fail "peer declare failed"
+cli networks approve "$PEER_ID" >/dev/null || fail "peer approve failed"
+log "peer declared and approved (shop2 -> shop default)"
+
+cat > "$WORKDIR/peer-compose.yaml" <<EOF
+services:
+  web:
+    image: nginx:1.27
+    ports: ["80"]
+  consumer:
+    image: busybox:1.37
+    command: ["sleep", "3600"]
+    networks: ["project:$PROJECT_ID/default"]
+EOF
+docker exec -i "$DIND_CID" sh -c 'cat > /tmp/peer-compose.yaml' < "$WORKDIR/peer-compose.yaml"
+cli --json deploy --app "$APP2_ID" --compose-file /tmp/peer-compose.yaml >/dev/null || fail "peer compose deploy failed"
+wait_process_pod "$P2_NS" consumer || fail "peer consumer pod never running"
+CONSUMER_POD=$(probe_pod "$P2_NS" consumer)
+[ -n "$CONSUMER_POD" ] || fail "consumer pod missing"
+docker exec "$DIND_CID" sh -c "k3s kubectl get netpol -n $P1_NS --no-headers 2>/dev/null | grep -q fleetly-peer-" \
+  || fail "peer grant policy missing in receiving namespace"
+docker exec "$DIND_CID" sh -c "
+  if ! k3s kubectl exec -n $P2_NS $CONSUMER_POD -- wget -q -O /dev/null -T 5 http://web.$P1_NS.svc.cluster.local/; then
+    echo 'approved peer must reach the receiving project network' >&2; exit 1
+  fi
+" || fail "peer attachment live probe failed"
+log "peer grant green (approved cross-project attachment reachable, grant policy present)"
+
+# 撤销：engine isolate 环（A.4）剥离引用 → 挂靠方 Ensure 收敛删双侧 policy。
+# 轮询内重解析 consumer pod 名——剥离改 pod 模板（引用 label 消失）触发
+# 滚动替换，旧名 exec 会假阴（pod 不存在 ≠ 隔离生效）。
+cli networks revoke "$PEER_ID" >/dev/null || fail "peer revoke failed"
+i=0
+while [ "$i" -lt 60 ]; do
+  cp=$(probe_pod "$P2_NS" consumer)
+  if [ -z "$cp" ]; then
+    i=$((i + 1)); sleep 2; continue
+  fi
+  if docker exec "$DIND_CID" sh -c "k3s kubectl exec -n $P2_NS $cp -- wget -q -O /dev/null -T 3 http://web.$P1_NS.svc.cluster.local/" >/dev/null 2>&1; then
+    i=$((i + 1)); sleep 2; continue
+  fi
+  break
+done
+[ "$i" -lt 60 ] || fail "peer isolation never converged after revoke (still reachable)"
+docker exec "$DIND_CID" sh -c "k3s kubectl get netpol -n $P1_NS --no-headers 2>/dev/null | grep -q fleetly-peer-" \
+  && fail "peer grant policy must be converged away after revoke"
+log "peer revoke isolation green (unreachable + grant converged away)"
+
+# 13. Database：postgres（digest 引用）+ PVC local-path 绑定（digest 预拉
 #     已前置，零在线拉）。
 log "database drill (postgres + PVC)"
 DB_ID=$(cli --json databases create --project "$PROJECT_ID" --engine postgres pgold | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | head -1)
@@ -508,7 +702,7 @@ docker exec "$DIND_CID" sh -c "k3s kubectl get pvc -n $P1_NS | grep -q fleetly-v
   || fail "database PVC not bound"
 log "database running with bound PVC"
 
-# 13. exec 子面（ADR-0053 决策 1 集中形态的 e2e 锚）：回环 per-node 注册
+# 14. exec 子面（ADR-0053 决策 1 集中形态的 e2e 锚）：回环 per-node 注册
 #     （relay_online）→ 单命令退出码/输出透传 → shell 会话（stdin EOF 收口）
 #     → 审计行。SPDY 通道 + engine 会话路由全链经真 apiserver。
 log "exec leg (central form: loopback relay + apiserver SPDY)"
@@ -533,8 +727,18 @@ log "exec exit code passthrough green (23)"
 # shell 会话（TTY 形态）：显式 argv 自退出——PTY 会话的 stdin EOF 不终止
 # 载体进程（k8s 通道的 stdin 关闭 ≠ swarm hijack 关闭收口；契约允许会话
 # 活到 idle timeout，显式 argv 是非交互形态的确定性通道）。头行在 stderr
-# （swarm 腿同锚），命令体在 stdout——合并流双锚。
-SHELL_ALL=$(cli shell "$APP_ID/web" -- sh -c 'echo session-body-ok' 2>&1)
+# （swarm 腿同锚），命令体在 stdout——合并流双锚。带两拍重试：PTY 输出
+# 排空与会话收口存在时序窗（N6 批实录一次 flake——exec/relay 链零改动、
+# 单命令形态全绿，重试即绿）。
+SHELL_ALL=""
+i=0
+while [ "$i" -lt 3 ]; do
+  SHELL_ALL=$(cli shell "$APP_ID/web" -- sh -c 'echo session-body-ok' 2>&1)
+  case "$SHELL_ALL" in
+    *session-body-ok*) break ;;
+  esac
+  i=$((i + 1)); sleep 3
+done
 case "$SHELL_ALL" in
   *"# session"*) : ;;
   *) fail "shell session header missing, output: $SHELL_ALL" ;;

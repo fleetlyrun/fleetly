@@ -59,12 +59,53 @@ func (p *Provider) reconcileEgressNetpol(ctx context.Context, nsName string, ws 
 }
 
 // serviceLabels 是域内 Service 的归属标记（域收敛对照面——Service 名是
-// 平台 Addressing 名，不带 workload 轴，team/project 双锚过滤）。
+// 平台 Addressing 名，不带 workload 轴，但**必须带域主体轴**：Namespace 是
+// per-Project 的，同项目多域（App/Task/Database/Browse）各自 Ensure，无轴
+// 的 team+project 选择器会让一域的收敛把别域的 Service 当 stale 删掉——
+// task drill 咬出的实锤（app 的 web Service 被 task Ensure 删除 → 全域
+// NXDOMAIN）。轴公式与 nsSelector 同构。
 func serviceLabels(ns capability.NamespaceRef) map[string]string {
-	return map[string]string{
+	labels := map[string]string{
 		labelManaged: "true",
 		labelTeam:    sanitizeNamePart(ns.Team),
 		labelProject: sanitizeNamePart(ns.Project),
+	}
+	switch {
+	case ns.Task != "":
+		labels[labelTask] = sanitizeNamePart(ns.Task)
+	case ns.Database != "":
+		labels[labelDatabase] = sanitizeNamePart(ns.Database)
+	case ns.Browse != "":
+		labels[labelBrowse] = sanitizeNamePart(ns.Browse)
+	case ns.App != "":
+		labels[labelApp] = sanitizeNamePart(ns.App)
+	}
+	return labels
+}
+
+// serviceAxis 报告 Service 标记集相对给定域轴的归属：0 = 无轴锚（补轴前的
+// 遗留孤儿——升级后首拍收敛清除），1 = 本域轴，2 = 他域轴。收敛删除只碰
+// 0 与 1（2 是别域的管辖面，本域 Ensure 不可见亦不可删）。
+func serviceAxis(labels, mine map[string]string) int {
+	var mineKey, mineVal string
+	for _, k := range []string{labelApp, labelTask, labelDatabase, labelBrowse} {
+		if v, ok := mine[k]; ok {
+			mineKey, mineVal = k, v
+		}
+	}
+	var foundKey, foundVal string
+	for _, k := range []string{labelApp, labelTask, labelDatabase, labelBrowse} {
+		if v, ok := labels[k]; ok {
+			foundKey, foundVal = k, v
+		}
+	}
+	switch {
+	case foundKey == "":
+		return 0
+	case foundKey == mineKey && foundVal == mineVal:
+		return 1
+	default:
+		return 2
 	}
 }
 
