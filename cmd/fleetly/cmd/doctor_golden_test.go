@@ -136,9 +136,9 @@ func TestDoctorAlertingChecks(t *testing.T) {
 }
 
 // TestDoctorK3sRuntimeFormSkipsDockerProbes（ADR-0055 实录锚）：k3s 形态
-//（env FLEETLY_RUNTIME_PROVIDER=k3s，daemon 同键）下 docker 面整体跳过、
+// （env FLEETLY_RUNTIME_PROVIDER=k3s，daemon 同键）下 docker 面整体跳过、
 // 以一行 ok 呈报——k3s 节点无 docker 是合法形态，恒红会淹没真信号
-//（staging k3s 实证）。docker 探针注入"若被咨询即 fail"形态反证未触达。
+// （staging k3s 实证）。docker 探针注入"若被咨询即 fail"形态反证未触达。
 func TestDoctorK3sRuntimeFormSkipsDockerProbes(t *testing.T) {
 	t.Setenv(envProxyConfigEndpoint, "")
 	t.Setenv(envRegistryAddr, "")

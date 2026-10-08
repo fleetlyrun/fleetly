@@ -356,7 +356,7 @@ func TestEnsureServiceConvergenceIsDomainScoped(t *testing.T) {
 }
 
 // TestNetpolShapeDriftConverges（ADR-0055 实录锚）：存量 policy 形状漂移
-//（平台升级改放行集）经 Ensure 收敛更新——create-only 会把存量锁死在旧
+// （平台升级改放行集）经 Ensure 收敛更新——create-only 会把存量锁死在旧
 // 形态；相等幂等零写。备份链的可达性不走 policy 放行面（utility pod 走
 // hostNetwork，见 utility.go——CNI 对新 pod 的 ipset 准入传播赌不起）。
 func TestNetpolShapeDriftConverges(t *testing.T) {

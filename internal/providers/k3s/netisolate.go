@@ -159,7 +159,7 @@ func netIsolationPolicyName(key string) string {
 // putNetpol 是 netpol 的 create-or-update 落盘：相等（名称 + 语义 spec +
 // managed 标记逐位一致）零写；形状漂移（平台升级改放行集——如 ADR-0055
 // 的 utility 放行）即更新收敛——create-only 会让存量 policy 永锁旧形态
-//（staging 真机实证：新 FROM 规则不落地）。stale 面仍由期望集收敛删除
+// （staging 真机实证：新 FROM 规则不落地）。stale 面仍由期望集收敛删除
 // 承载。
 func (p *Provider) putNetpol(ctx context.Context, nsName string, pol *networkingv1.NetworkPolicy) error {
 	existing, err := p.cli.NetworkingV1().NetworkPolicies(nsName).Get(ctx, pol.Name, metav1.GetOptions{})

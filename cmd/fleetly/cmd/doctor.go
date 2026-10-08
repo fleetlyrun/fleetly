@@ -199,7 +199,6 @@ func runDoctorProbes(ctx context.Context, addr string, ex exposureTargets) docto
 		}
 	}
 
-
 	// 端口暴露自证（ADR-0036）：对配置地址探测公网可达性（公网可达即
 	// fail/warn，自证不可达即 ok）+ 汇报三面生效绑址（通配绑定显式警示）。
 	// 探测复用 probePort 接缝（golden 注入确定性假探针）。
