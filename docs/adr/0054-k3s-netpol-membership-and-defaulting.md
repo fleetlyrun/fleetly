@@ -58,7 +58,7 @@ ADR-0053 补齐 Exec/Hygiene/RBAC/两节点四子面后，ADR-0052 决策 4"三�
 
 - **k3s 认定 production-ready**：核心面 + 七子面齐（ADR-0053 收口后），网络语义补面（决策 1）后与 swarm 的语义差收敛到上表两行诚实边界（项目域→系统域 pod 直连、出站方向目标侧收口）。
 - **config `runtime.provider` 缺省维持 `swarm`**（"缺省 swarm 升级零扰动"硬锚不动）；新装显式 opt-in（`runtime.provider=k3s`，装机序入 runbook）。
-- **否决缺省翻转 (a)**：无生产形态实跑记录（挂账 12 未收）、无多 server HA（挂账 7）、无迁移序 runbook——翻转条件不成熟。**缺省翻转的前置条件显式记录**：①首个生产形态 k3s 集群实跑一段（覆盖大档 hostPath 通道）；②多 server HA 裁决收口；③迁移序与 flag-day runbook 落地。届时另开 ADR。
+- **否决缺省翻转 (a)**：无生产形态实跑记录（挂账 12 未收）、无多 server HA（挂账 7）、无迁移序 runbook——翻转条件不成熟。**缺省翻转的前置条件显式记录**：①首个生产形态 k3s 集群实跑一段（覆盖大档 hostPath 通道）；②多 server HA 裁决收口；③迁移序与 flag-day runbook 落地。届时另开 ADR。〔②已于 2026-10-08 随 ADR-0056 收口（挂账 7 划线：embedded etcd 多 server 支持形态 + e2e 实证 + Enrollment 不封装 server join）；①的累积面自 ADR-0055 起开积累，N8 批续喂（TLS/ACME + 换装演练）；③已随 ADR-0055 决策 5 落地。三条件就绪声明与翻转 ADR 输入清单见 ADR-0056 决策 6。〕
 - **否决 install.sh 分叉 (c)**：install.sh 的 swarm init 步骤与 k3s 形态正交（e2e 既证：fleetlyd 手起不走 install.sh）；k3s 装机序（k3s server 起 → config 写 provider=k3s → fleetlyd）是 runbook 面，不是安装器面。分叉会制造双安装器维护负担。
 - staging 不换装维持（ADR-0052 决策 1 同判）；k3s 专用 staging 环境若建，另批裁决。
 
