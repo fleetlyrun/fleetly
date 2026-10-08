@@ -97,6 +97,15 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 		carrierSets[pm] = c
 	}
 	secretFilesOf := func(w capability.Workload) map[string]string {
+		// SkipMaterials：域材料默认挂全域 Workload，显式退出面（ADR-0041 的
+		// cadvisor——无状态采集端不收存储凭证）。k8s 形态的退出同时是启动
+		// 正确性：材料 projected 卷要在 /run/secrets 建挂载点，与 cadvisor
+		// 的只读 hostPath 绑定（/var/run 与 /run 同路径族）冲突即 runc
+		// "read-only file system" 起容器炸（staging 真机实证 2026-10-08，
+		// swarm translate 的 SkipMaterials 同款判据同款现象）。
+		if w.SkipMaterials {
+			return nil
+		}
 		if w.Materials != nil {
 			if c, ok := carrierSets[w.Materials]; ok {
 				return c

@@ -373,3 +373,35 @@ func TestPutDeploymentRetriesOnConflict(t *testing.T) {
 }
 
 func errNotFound(err error) bool { return apierrors.IsNotFound(err) }
+
+// TestEnsureSkipMaterialsCarrierOmitsProjectedVolume：SkipMaterials 的载体
+// 不挂域材料 projected 卷（ADR-0041 退出面；staging 真机实证 2026-10-08：
+// 材料卷要在 /run/secrets 建挂载点，与 cadvisor 只读 hostPath 绑定冲突即
+// runc EROFS 起容器炸——swarm translate 同款判据）。
+func TestEnsureSkipMaterialsCarrierOmitsProjectedVolume(t *testing.T) {
+	p, cli := newFakeProvider()
+	ctx := context.Background()
+	ws := []capability.Workload{
+		{ID: "w1", Process: "api", Image: "nginx:1.27", Replicas: 1},
+		{ID: "w2", Process: "collector", Image: "gcr.io/cadvisor/cadvisor:v0.55.1", Replicas: 1, SkipMaterials: true},
+	}
+	mats := capability.Materials{SecretFiles: map[string][]byte{"db-pass": []byte("secret")}}
+	require.NoError(t, p.Ensure(ctx, appNS(), ws, 1, mats))
+
+	for name, wantMount := range map[string]bool{"fleetly-web-api": true, "fleetly-web-collector": false} {
+		d, err := cli.AppsV1().Deployments("fleetly-shop").Get(ctx, name, metav1.GetOptions{})
+		require.NoError(t, err, name)
+		found := false
+		for _, v := range d.Spec.Template.Spec.Volumes {
+			if v.Name == secretsVolumeName {
+				found = true
+			}
+		}
+		for _, m := range d.Spec.Template.Spec.Containers[0].VolumeMounts {
+			if m.MountPath == "/run/secrets" {
+				found = true
+			}
+		}
+		assert.Equal(t, wantMount, found, "%s materials mount", name)
+	}
+}
