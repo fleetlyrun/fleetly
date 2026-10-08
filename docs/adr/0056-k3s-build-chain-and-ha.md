@@ -84,10 +84,12 @@
 
 ## 验收锚
 
-- [ ] ADR-0056 落档 + ADR-0052 §9 挂账 7 划线注日期 + ADR-0054 决策 2 前置②兑现注记 + ADR-0055 决策 1 两处改判注记（from_build 授权面兑现 / node2 docker daemon 恢复启用）
-- [ ] e2e k3s 腿 from_build 段全绿：dockerd 信任断言（docker info 含 :5000）→ registries.yaml 落位 → `deploy --from-dir` → build succeeded → 部署 succeeded → pod image 引用 = `<addr>/<projectID 小写>/<appID 小写>@sha256:...` digest 形态 → 活体探针
-- [ ] e2e HA 腿全绿：三 server quorum + worker 4 Ready → server2 失效集群读写保持 + 载体零滚动 → server2 re-join 恢复 → server1 失效载体零滚动（worker autonomy）+ fleetlyd 断连恢复 → 全程 pod uid 不变
-- [ ] staging node2 实跑：registries.yaml + docker daemon 构建面（insecure-registry）→ from_build 全链真机绿（记录表追加）；TLS/ACME 演练（LE staging + sslip）实录；换装零扰动演练实录（五域不滚/载体零滚/goose 前滚）
-- [ ] Remove 拆空 ns：单测（零载体删/在场保留/删除失败不阻断）+ e2e 12b 扩断言（项目删除 → ns 消失带界轮询）+ RBAC delete namespaces 收敛（can-i 断言同步改写）
-- [ ] runbook 扩节：k3s 装机序两步（registries.yaml + docker 构建面）/HA 装机与运维序（server join 手工序 + LB 诚实边界）/生产形态实跑记录表追加/升级节补换装实录
-- [ ] 全门禁：`mise run test` + `mise run lint` + `go test -count=1 ./internal/guards/` + `generate:verify` + `console:verify`；e2e 四腿回归（k3s 含 from_build 段 / tw / ha / runtimeswitch）；swarm 零回归
+- [x] ADR-0056 落档 + ADR-0052 §9 挂账 7 划线注日期 + ADR-0054 决策 2 前置②兑现注记 + ADR-0055 决策 1 两处改判注记（from_build 授权面兑现 / node2 docker daemon 恢复启用）
+- [x] e2e k3s 腿 from_build 段全绿：dockerd 信任断言（docker info 含 :5000）→ registries.yaml 落位 → `deploy --from-dir` → build succeeded → 部署 succeeded → pod image 引用 = `<addr>/<projectID 小写>/<appID 小写>@sha256:...` digest 形态 → 活体探针
+- [x] e2e HA 腿全绿：三 server quorum + worker 4 Ready → server2 失效集群读写保持 + 载体零滚动 → server2 re-join 恢复 → server1 失效载体零滚动（worker autonomy）+ fleetlyd 断连恢复 → 全程 pod uid 不变
+- [x] staging node2 实跑：registries.yaml + docker daemon 构建面（insecure-registry）→ from_build 全链真机绿（记录表追加）；TLS/ACME 演练（LE staging + sslip）实录；换装零扰动演练实录（五域不滚/载体零滚/goose 前滚）
+- [x] Remove 拆空 ns：单测（零载体删/在场保留/删除失败不阻断）+ e2e 12b 扩断言（项目删除 → ns 消失带界轮询）+ RBAC delete namespaces 收敛（can-i 断言同步改写）
+- [x] runbook 扩节：k3s 装机序两步（registries.yaml + docker 构建面）/HA 装机与运维序（server join 手工序 + LB 诚实边界）/生产形态实跑记录表追加/升级节补换装实录
+- [x] 全门禁：`mise run test` + `mise run lint` + `go test -count=1 ./internal/guards/` + `generate:verify` + `console:verify`；e2e 四腿回归（k3s 含 from_build 段 / tw / ha / runtimeswitch）；swarm 零回归
+
+验收实录（2026-10-08）：e2e 三腿本机 fuse 形态全绿——k3s 腿 `K3S E2E PASSED`（run7：insecure drop-in 起动前时序 + registries.yaml 落位 + from_build 段〔build succeeded + digest 冻结 + pod image = `<dind-ip>:5000/<pid 小写>/<aid 小写>@sha256` digest 引用逐位 + Route 活体〕+ 12b 空域收尾断言）；HA 腿 `K3S HA E2E PASSED`（run2：三 server quorum + worker 4 Ready → server1 进程失效〔kill 面扩子进程——主进程 TERM 后 apiserver 孤儿形态 run1 咬出〕载体零滚动 + 持续服务〔经 server3 旁路，kubelet autonomy〕→ 恢复重连 uid 不变 → server2 永久失效新部署 succeeded）；tw 腿 `K3S TWO-NODE E2E PASSED`（回归零漂移）。runtimeswitch 本批零触碰面，CI job 兜底。staging node2 真机：registries.yaml + hosts.toml 渲染断言（**k3s restart 零扰动实证——containerd 分立单元，五域 pod age 连续未断**）→ docker daemon 构建面（旧 drop-in 冲突清障）→ from_build 全链（pod image = `10.124.0.5:5000/<pid>/<aid>@sha256` + Route 工作站公网外测 200）→ TLS/ACME（LE staging 证书签发 + HTTPS 端到端；**咬出 ACME 缺省邮箱缺口**：`fleetly@localhost` 被 LE 400 invalidContact 拒 → 改空 contact 注册，仓内修复）→ 换装零扰动 ×2（五域 uid 逐位不变、goose 27 零前滚）→ 空域收尾真机锚。**实施期咬出三修复链全在 main**：owned pod GC 链异步窗（收尾判据跳过有 owner 的 pod）/RBAC 表漏 persistentvolumeclaims list（fake clientset 不执法 RBAC，真 apiserver 403 静默跳过——dind lab 持久环境定位）/events list 缺省从头取 100 条（e2e 变长后高 seq 事件挤出窗）。全门禁绿（mise test 三 module -race / lint / guards -count=1 / generate:verify / console:verify 零漂移）。

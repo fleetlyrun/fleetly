@@ -85,14 +85,16 @@ staging node2（143.198.234.68 / VPC 10.124.0.5）是 k3s 形态生产实证环�
 
 - k3s 版本平台常量单源（`internal/providers/k3s` 的 k3sVersion；e2e 下载段与守卫 TestK3sPinConstantAndE2EAgree 同 commit 一致）。
 - fleetlyd 升级 = 常规平台升级序（Backup 前置不变）；载体 pod 模板 label/policy 变更随 Ensure 收敛滚动。
+- **k3s 形态换装实录形态（2026-10-08 首录）**：`systemctl stop fleetlyd`（~40s 优雅排水窗）→ 替 `/usr/local/bin/fleetlyd` → `systemctl start`——RBAC 规则漂移随 admin kubeconfig 起动自动收敛（node2 形态；SA kubeconfig 直起形态走上文单向门序）；受管域 spec 漂移（如 Provider Command 变更）滚对应域、其余域 uid 不变；**手工编译二进制无版本标记**（status 的 version 空——正式升级序走发布二进制带注入）。
 
 ## staging node2 装机实录（2026-10-08，ADR-0055 决策 1 兑现）
 
 - **前置**：manager `docker node update --availability drain fleetly-node2`（20s 排空，dogfooding 滚动迁 manager 无断流；sec-test 等手工载体续跑 manager）→ node2 `docker swarm leave` → manager `docker node rm` → node2 `systemctl stop/disable docker docker.socket`（释放 ~150MB + 防 mesh 监听复活；回滚序内重启）。
 - **k3s**：sha256 验过的钉版二进制直放 `/usr/local/bin/k3s` + 手写 `k3s.service`（`--disable=traefik --disable=servicelb`；原生 fs 无 snapshotter 旗标 = 默认 overlayfs）——52s ready、CNI ~40s、受管镜像在线拉（生产形态，无 airgap 预载）。
 - **fleetlyd**：systemd `fleetlyd.service` env 组（provider/kubeconfig/绑面三键钉 VPC 10.124.0.5/Proxy 端点/registry+logging+metrics 三址）+ restic 0.19.1 先装（install.sh 4d 节钉版）。CLI 凭据 `FLEETLY_ADDR=10.124.0.5:9080`。
-- **doctor 零 fail 形态**：带 daemon 同组 env 跑（manager 先例）——`FLEETLY_RUNTIME_PROVIDER=k3s` 跳过本地 docker 探针、绑面三键让端口探测打生效地址。
-- node2 内存 2GB 峰值 ~1.5GB（k3s server + fleetlyd + 受管五域 + 验证负载）——无 swap，扩负载前留意。
+- **doctor 零 fail 形态**：带 daemon 同组 env 跑（manager 先例）——`FLEETLY_RUNTIME_PROVIDER=k3s` 跳过本地 docker 探针、绑面三键让端口探测打生效地址、`FLEETLY_ADDR` 让 grpc 探测打生效绑址（127.0.0.1 形态假红）。
+- node2 内存 2GB 峰值 ~1.65GB（k3s server + fleetlyd + docker daemon 构建面 ~150MB + 受管五域 + 验证负载）——无 swap，扩负载前留意。
+- 〔2026-10-08 构建链两步（ADR-0056）〕registries.yaml 落位（mirror 10.124.0.5:5000 明文 endpoint）+ `systemctl restart k3s`（**零扰动实证：containerd 是独立 systemd 单元，k3s 重启不滚任何 pod——五域 pod age 连续未断**；hosts.toml 渲染断言 `ls /var/lib/rancher/k3s/agent/etc/containerd/certs.d/10.124.0.5:5000/`）；docker daemon 构建面启用（daemon.json insecure-registries + enable——**注意清掉 swarm 时代的旧 drop-in** `/etc/systemd/system/docker.service.d/insecure.conf`（--insecure-registry 10.124.0.3 指旧 manager zot，与 daemon.json 冲突使 docker 起不来；删除 + daemon-reload + reset-failed 后正常）。
 
 ## 生产形态实跑记录（缺省翻转前置①的累积面，逐批追加）
 
@@ -106,6 +108,10 @@ staging node2（143.198.234.68 / VPC 10.124.0.5）是 k3s 形态生产实证环�
 | 2026-10-08 | db backup/restore | 6000 行随机种子 → backup succeeded → 新库 restore 行数 + md5 checksum 逐位一致 | ✅ |
 | 2026-10-08 | **大档 hostPath（挂账 12）** | 60k 行（dump 1,749,351B > 900KB 阈值）→ restore utility pod 输入卷 = **hostPath**（`/var/lib/fleetly/utility/restore-*`，jsonpath 实证）→ 60,000 行 + checksum 逐位一致——原生 fs 无 dind mount 遮蔽 | ✅ |
 | 2026-10-08 | grant hygiene | declare→approve→挂靠部署（grant 在场）→删声明方 App+项目→retention janitor 拍后 grant 收敛消失 | ✅ |
+| 2026-10-08 | **from_build 构建链（ADR-0056）** | scratch 源 `deploy --from-dir --builder dockerfile` → build succeeded + digest 冻结 → pod image = `10.124.0.5:5000/<pid小写>/<aid小写>@sha256:...`（digest 逐位）→ Route 明文 200（node2 本机 + **工作站经公网 IP 外测 200**） | ✅ |
+| 2026-10-08 | TLS/ACME（前置①续喂） | `tls auto` 缺省路由 + LE staging CA：证书 subject=sslip 域、issuer=(STAGING) Ersatz Emmer；HTTPS 端到端 `PROTO-LINE`（`-k`——staging 根不在系统 CA）。**咬出 ACME 缺省联系邮箱缺口**（`fleetly@localhost` 被 LE 400 invalidContact 拒，改空 contact 注册——仓内修复带真机锚） | ✅ |
+| 2026-10-08 | 换装零扰动（前置①续喂） | HEAD 二进制替换 + restart ×2：五域 pod uid 逐位不变（zot 一次随首换装滚替、traefik 一次随 ACME 修复滚替——受管域 spec 收敛，数据面 stop-grace 无扰）；goose 27 零前滚（schema 未变）；janitor 循环正常 init/start | ✅ |
+| 2026-10-08 | 空域收尾（ADR-0056 决策 5） | buildshop 项目 app+project 删除 → 项目 ns 收敛消失（带界轮询实证） | ✅ |
 
 ### 实施期咬出的修复链（全在仓，2026-10-08 staging 实录）
 
@@ -119,6 +125,6 @@ staging node2（143.198.234.68 / VPC 10.124.0.5）是 k3s 形态生产实证环�
 
 - **CNI 准入传播窗**：kube-router 对新建 pod 的成员 label ipset 准入在繁忙集群可达分钟级（本集群实测 ~75s；e2e 新鲜集群秒级故未咬出）——长命载体的入站放行窗内不可达会自愈，一次性短命载体必须走 hostNetwork（备份链已修）；后续若再引入秒级工具载体，同款形态是唯一安全面。
 - from_build → 受管 zot（HTTP 明文 registry）拉取需节点 containerd hosts.toml 配置面——本环境未实证（ADR-0055 决策 1 记档，后续批裁决）。〔2026-10-08 随 ADR-0056 收口：拉取面 = registries.yaml 装机序承载 + 构建面 = 控制面 docker daemon（insecure-registry drop-in）；staging 实录见文末记录表。〕
-- 受管 traefik 证书面/ACME 未在本环境演练（route 全 tls none 明文形态）。
+- ~~受管 traefik 证书面/ACME 未在本环境演练（route 全 tls none 明文形态）~~（2026-10-08 演练收口：LE staging CA 证书签发 + HTTPS 端到端绿（记录表 TLS/ACME 行）；ACME 联系邮箱经 `FLEETLY_PROXY_ACME_EMAIL` 配置（空 = 无 contact 注册，合法形态）；生产 CA 切换随安装引导批。）
 
 - ~~项目删除不拆 Namespace（k3s Provider 只建不删——ensureNamespace 单向；空 ns Active 残留是已知形态，cosmetic，后续批可随卫生清扫收口）~~（2026-10-08 随 ADR-0056 决策 5 收口：域 Remove 尾部空域收尾——零活载体 + 零 PVC 即删 ns；有 PVC 的空 ns 维持残留（数据兜底），处置序见网络隔离模型节末行。）
