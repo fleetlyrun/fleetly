@@ -618,3 +618,13 @@ F3.1/F3.2/F3.3/F3.6 四批走查的浏览器级挂账在后端在场的环境（
 - 门禁：lint 0 + buf 绿 + cmd 全测绿（golden 双形态 + identity 密码三步场景）+ console:verify 零漂移 + vitest 41 绿。
 
 **路线图**：C1-C5 ✓ + C6 第一期 ✓。C6 第二期（SSO）与自助改密独立批；Backlog 余项（preview deployments、environments 轴）维持。
+
+## 2026-10-09 记录·二十一（W1'：密码登录嵌套 form 修复——用户报"无法登录"的浏览器级走查实录）
+
+**症状**：用户报 Console 密码登录零动作。浏览器级走查（IAB + SSH 隧道 19527）复现：填表点 Sign in → 整页刷新回登录页、URL 带 `?`（默认 GET 提交签名）、localStorage 无 token——onSubmit 的 preventDefault 从未执行。
+
+**根因（W1 同款复发）**：C6 重写 LoginPage 时**外层布局容器误用 `<form>`**，内层密码/API token 表单成嵌套 form——真实浏览器中内层 submit 归属外层无 handler 的 form，走默认提交。jsdom 冒泡行为不同 → 组件测试全绿漏网（W1 当年 Modal 壳层的漏网机制原样再现，只是换了页面）。**教训固化：form 永远只做业务表单容器，布局容器用 div——现守卫从 Modal 扩到页面级**（ui.test：LoginPage 渲染恰一 form 且无 form 祖先）。
+
+**修复与验证**（761f516-w1p，console-only）：外层 form → div；守卫扩页级；vitest 42 绿。浏览器重走全绿：founder 密码登录 → 完整 Shell（14 路由 + 身份栏 `password session · admin`）→ 截图在案。staging 现役 761f516-w1p，新 dist `index-CfjOVfZB.js`。
+
+**走查环境事实**：19527 隧道是易逝品（会话结束即断）——重走查先 `ssh -N -L 19527:127.0.0.1:9081` 重建；IAB 对本机回环可达（record·十四 口径不变）。
