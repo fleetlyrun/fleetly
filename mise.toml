@@ -173,13 +173,13 @@ dir = "console"
 run = "pnpm dev"
 
 [tasks."console:verify"]
-description = "console 再生成 + 再构建 + 零漂移断言（src/api 类型 + dist 产物）"
+description = "console 再生成 + 再构建 + 零漂移断言（src/api 类型 + routeTree 生成物 + dist 产物）"
 run = [
   { task = "console:install" },
   { task = "console:gen" },
   { task = "console:build" },
   { task = "console:test" },
-  "git diff --exit-code -- console/src/api internal/console/dist",
+  "git diff --exit-code -- console/src/api console/src/routeTree.gen.ts internal/console/dist",
 ]
 
 [tasks."console:test"]

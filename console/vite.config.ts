@@ -1,5 +1,6 @@
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
+import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
@@ -11,9 +12,19 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 // REST gateway（默认 :9081）——开发面不进 fleetlyd。
 // test 面（F3.1）：jsdom 环境（TanStack Query renderHook 消费面），
 // `pnpm test` = console:verify 的组成步（与 CI console job 同口径）。
-// UI v2 重构（ADR-0057）：@ alias 对齐 components.json（shadcn 体系）。
+// UI v2 重构（ADR-0057）：@ alias 对齐 components.json（shadcn 体系）；
+// TanStack Router 文件式路由（router 插件须先于 react 插件），autoCodeSplitting
+// 延续走查性能批的路由级分包口径。
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [
+    tanstackRouter({
+      routesDirectory: "src/routes",
+      generatedRouteTree: "src/routeTree.gen.ts",
+      autoCodeSplitting: true,
+    }),
+    react(),
+    tailwindcss(),
+  ],
   resolve: {
     alias: {
       "@": path.resolve(here, "src"),
@@ -25,12 +36,20 @@ export default defineConfig({
     target: "es2022",
     rollupOptions: {
       output: {
-        // vendor 拆分（走查性能批）：react 全家桶变更频率远低于业务代码——
-        // 独立 chunk 吃满 immutable 缓存；xterm 随 Terminal 路由 lazy 自动
-        // 分包，不进首屏。
+        // vendor 拆分（走查性能批口径的延续）：壳层依赖（react 全家桶/
+        // router/query/radix/lucide）吃 immutable 缓存；重库按消费路由
+        // 独立分包——charts 随指标页、table/forms 随资源页、virtual 随
+        // 日志页、xterm 随终端页，首屏不背。
         manualChunks(id) {
           if (!id.includes("node_modules")) return undefined;
           if (id.includes("@xterm")) return "xterm";
+          if (id.includes("recharts") || id.includes("d3-") || id.includes("victory") || id.includes("internmap")) {
+            return "charts";
+          }
+          if (id.includes("@tanstack/react-table") || id.includes("@tanstack/table-core")) return "table";
+          if (id.includes("@tanstack/react-virtual")) return "virtual";
+          if (id.includes("react-hook-form") || id.includes("zod") || id.includes("@hookform")) return "forms";
+          if (id.includes("cmdk")) return "cmdk";
           return "vendor";
         },
       },

@@ -14,6 +14,16 @@ export class ApiError extends Error {
   }
 }
 
+// 401 全局闭环（UI v2 鉴权契约）：apiFetch 收 401 且当前持有凭证时通知
+// 注册的 handler（main.tsx：清 token + 清查询缓存 + 路由回登录页）。
+// 登录页自身的凭证验证失败（无 token）不触发——不打断表单内联报错。
+type UnauthorizedHandler = () => void;
+let unauthorizedHandler: UnauthorizedHandler | null = null;
+
+export function setUnauthorizedHandler(handler: UnauthorizedHandler | null) {
+  unauthorizedHandler = handler;
+}
+
 // errorFromResponse 尽力解析统一错误信封；解析失败退回状态行文本。
 async function errorFromResponse(res: Response): Promise<ApiError> {
   let code = "unknown";
@@ -31,7 +41,10 @@ async function errorFromResponse(res: Response): Promise<ApiError> {
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = authHeaders(init?.headers);
   const res = await fetch(path, { ...init, headers });
-  if (!res.ok) throw await errorFromResponse(res);
+  if (!res.ok) {
+    if (res.status === 401 && getToken() !== "") unauthorizedHandler?.();
+    throw await errorFromResponse(res);
+  }
   return (await res.json()) as T;
 }
 

@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "gen": "node src/api/gen.mjs",
+    "gen": "node src/api/gen.mjs && tsr generate",
     "dev": "vite",
     "typecheck": "tsc -b",
     "test": "vitest run",
@@ -52,6 +52,7 @@
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.0",
+    "@tanstack/router-cli": "^1.167.40",
     "@tanstack/router-plugin": "^1.168.42",
     "@testing-library/dom": "^10.4.2",
     "@testing-library/react": "^16.3.3",
