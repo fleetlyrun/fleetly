@@ -1,23 +1,9 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { DatabasesPanel, UploadsPanel, VolumesPanel } from "@/features/resources/panels";
-import { PageHeader } from "@/components/domain/page-header";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
-// 数据页（UI v2 批 4）：databases（备份/verify/restore/browse）+ volumes
-// + uploads 三区——旧巨石 Resources 的 Data 域拆出。
+// /data 已拆分（IA v3 T3/T4）：Databases → 一级页，Volumes/Uploads →
+// Storage。旧入口 301 式收敛到 Storage（Databases 由导航一级直达）。
 export const Route = createFileRoute("/_shell/p/$projectId/data")({
-  component: DataPage,
+  beforeLoad: ({ params }) => {
+    throw redirect({ to: "/p/$projectId/storage", params });
+  },
 });
-
-function DataPage() {
-  const { projectId } = Route.useParams();
-  return (
-    <div className="mx-auto max-w-7xl px-6 py-8">
-      <PageHeader title="Data" description="Databases, volumes and deployable source uploads" />
-      <section className="flex flex-col gap-8">
-        <DatabasesPanel projectId={projectId} />
-        <VolumesPanel projectId={projectId} />
-        <UploadsPanel projectId={projectId} />
-      </section>
-    </div>
-  );
-}

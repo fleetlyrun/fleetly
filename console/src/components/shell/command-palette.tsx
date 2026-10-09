@@ -52,13 +52,22 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
         <CommandSeparator />
         <CommandGroup heading="Actions">
           <CommandItem
-            value="quickstart guided setup"
+            value="new project app quickstart guided setup"
             onSelect={() => {
               onOpenChange(false);
               void navigate({ to: "/quickstart" });
             }}
           >
-            Quickstart…
+            New project / app…
+          </CommandItem>
+          <CommandItem
+            value="new app from template catalog"
+            onSelect={() => {
+              onOpenChange(false);
+              void navigate({ to: "/templates" });
+            }}
+          >
+            New app from template…
           </CommandItem>
         </CommandGroup>
       </CommandList>
