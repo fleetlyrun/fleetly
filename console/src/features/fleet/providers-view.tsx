@@ -1,5 +1,6 @@
 import { ActivityIcon, GlobeIcon, LayersIcon, ScrollTextIcon } from "lucide-react";
 import { METRICS_FRESHNESS_QUERY, formatFreshness, lastPointValue } from "@/features/fleet/freshness";
+import { componentHealth, useSystemStatus } from "@/features/fleet/use-system-status";
 import { useMetricsSeries } from "@/lib/catalog";
 import { PageHeader } from "@/components/domain/page-header";
 import { StatusBadge, type StatusTone } from "@/components/domain/status-badge";
@@ -48,24 +49,46 @@ const MANAGED_PROVIDERS: ManagedProviderCard[] = [
 ];
 
 export function ManagedProvidersView() {
+  const status = useSystemStatus();
+  const degraded = status.data?.state === "STATUS_STATE_DEGRADED";
   return (
     <div className="mx-auto max-w-7xl px-6 py-8">
-      <PageHeader title="Managed Providers" description="Platform-hosted provider instances — health, pins and data freshness" />
+      <PageHeader
+        title="Managed Providers"
+        description="Platform-hosted provider instances — health, pins and data freshness"
+        actions={
+          <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11.5px] font-semibold ${degraded ? "border-destructive/30 bg-destructive/10 text-destructive" : "border-success/30 bg-success/10 text-[var(--status-success)]"}`}>
+            <span className={`inline-block size-1.5 rounded-full bg-current ${degraded ? "" : ""}`} />
+            platform {degraded ? "degraded" : "healthy"}
+          </span>
+        }
+      />
       <div className="grid gap-4 lg:grid-cols-2">
         {MANAGED_PROVIDERS.map((provider) => (
-          <ProviderCardView key={provider.key} provider={provider} />
+          <ProviderCardView key={provider.key} provider={provider} health={componentHealth(status.data?.components, provider.key)} />
         ))}
       </div>
       <p className="mt-4 text-[11.5px] text-muted-foreground">
-        cAdvisor runs per node for container metrics. Provider health probes (provider Health() wiring) land in phase 2 — cards
-        show the pinned version facts and honest unknowns until then. Endpoints are config-defined (config file is the single
-        source) and not exposed over the API.
+        cAdvisor runs per node for container metrics. Health is probed per provider (2s budget; timeout counts as unhealthy) and
+        aggregated into the platform state. Endpoints are config-defined (config file is the single source) and not exposed over
+        the API.
       </p>
     </div>
   );
 }
 
-function ProviderCardView({ provider }: { provider: ManagedProviderCard }) {
+function ProviderCardView({ provider, health }: { provider: ManagedProviderCard; health: ReturnType<typeof componentHealth> }) {
+  const probed = health != null;
+  const healthy = health?.healthy === true;
+  const badge = !probed ? (
+    <StatusBadge tone="neutral">unverified</StatusBadge>
+  ) : healthy ? (
+    <StatusBadge tone="success">healthy</StatusBadge>
+  ) : (
+    <StatusBadge tone="danger" pulse>
+      unhealthy
+    </StatusBadge>
+  );
   return (
     <section className="flex flex-col gap-3 rounded-xl border bg-card p-5">
       <div className="flex items-center gap-3">
@@ -75,7 +98,7 @@ function ProviderCardView({ provider }: { provider: ManagedProviderCard }) {
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <span className="text-[15px] font-bold">{provider.name}</span>
-            <StatusBadge tone="neutral">unverified</StatusBadge>
+            {badge}
           </div>
           <div className="text-[11.5px] text-muted-foreground">{provider.role}</div>
         </div>
@@ -84,6 +107,11 @@ function ProviderCardView({ provider }: { provider: ManagedProviderCard }) {
           <div className="text-[10.5px] text-muted-foreground">pinned (provider)</div>
         </div>
       </div>
+      {!probed || healthy ? null : (
+        <p className="rounded-md border border-destructive/30 bg-destructive/10 px-2.5 py-1.5 text-[11.5px] text-destructive">
+          {health?.details || "health check failed"}
+        </p>
+      )}
       <div className="flex items-center gap-2 text-xs">
         <span className="w-32 flex-none text-muted-foreground">ingest freshness</span>
         {provider.freshness === "metrics-probe" ? (

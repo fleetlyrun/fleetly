@@ -17,10 +17,11 @@ import { join } from "node:path";
 import converter from "swagger2openapi";
 
 // F3.1 写面扩面：identity/automation/proxy 入生成清单（audit/tokens 与
-// tasks/schedules/routes 的消费类型面；system/governance 的 freeze 面小，
-// 按需再入——消费哪些上下文就生成哪些，同 ADR-0044 口径）。F3.3 的
-// templates 与 exec 同为"上下文内第二 proto 文件"——按文件镜像生成。
-const CONTEXTS = ["structure", "delivery", "telemetry", "identity", "automation", "proxy", "runtime", "exec", "templates"];
+// tasks/schedules/routes 的消费类型面；system 随 IA v3 二期③ Managed
+// Providers 健康面入列，governance 仍按需再入——消费哪些上下文就生成
+// 哪些，同 ADR-0044 口径）。F3.3 的 templates 与 exec 同为"上下文内第
+// 二 proto 文件"——按文件镜像生成。
+const CONTEXTS = ["structure", "delivery", "telemetry", "identity", "automation", "proxy", "runtime", "exec", "templates", "system"];
 
 const GENPROTO = "../genproto/fleetly";
 const OUT_DIR = "src/api";
