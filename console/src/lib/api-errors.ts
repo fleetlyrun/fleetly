@@ -37,7 +37,7 @@ export function describeError(error: unknown): DescribedError {
   }
 
   if (error instanceof TypeError && /fetch|network/i.test(error.message)) {
-    return { title: "Cannot reach the API", hint: "The gateway is unreachable — check the server or your tunnel.", detail };
+    return { title: "Cannot reach the API", hint: "The gateway is unreachable — check the server or your connection.", detail };
   }
   return { title: "Something went wrong", hint: "An unexpected client error occurred — retry, or check the browser console.", detail };
 }

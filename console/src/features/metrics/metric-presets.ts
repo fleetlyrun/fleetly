@@ -18,8 +18,11 @@ export const METRIC_PRESETS: MetricPreset[] = [
     key: "cpu_percent",
     label: "CPU (% of node)",
     unit: "percent",
+    // group_left 必带：容器序列（多）对 machine_cpu_cores（单）是多对一
+    // 除法——裸 on(node) 被 VM 拒 422（duplicate time series，F-B1）；
+    // per-container 出线与 ADR-0041 cpu_percent 语义一致。
     build: (appLabel) =>
-      `100 * rate(container_cpu_usage_seconds_total{container_label_fleetly_ns_app="${appLabel}"}[2m]) / on(node) machine_cpu_cores`,
+      `100 * rate(container_cpu_usage_seconds_total{container_label_fleetly_ns_app="${appLabel}"}[2m]) / on(node) group_left machine_cpu_cores`,
   },
   {
     key: "memory",
