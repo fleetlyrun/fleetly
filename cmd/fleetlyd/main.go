@@ -1,14 +1,16 @@
 // fleetlyd 是 fleetly 控制面守护进程：装配见 internal/assembly（唯一 wire
-// 站点），本文件只保留 lynx runner 装配与版本注入。
+// 站点），本文件只保留动词面分发（admin/relay，commands 框架——见
+// verbs.go）、lynx runner 装配与版本注入。
 package main
 
 import (
-	"fmt"
+	"context"
 	"log"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/lynx-go/commands"
 	"github.com/lynx-go/lynx"
 	lynxzap "github.com/lynx-go/lynx/contrib/zap"
 	"github.com/spf13/pflag"
@@ -35,15 +37,18 @@ import (
 // version/commit/date 由 mise build 的 ldflags 注入。
 var version, commit, date string
 
-// validateFirstArg 拒绝非旗标首参：fleetlyd 除 admin/relay 外不收任何
-// 子命令，而未知位置参数会被 runner 静默吞掉并直接引导 daemon（默认
-// 配置 = 流浪数据根 + bootstrap token + 抢端口，staging 实证 2026-10-03）。
-// 只查首参——旗标值（`--config-dir /path` 的 /path）永不落首位。
-func validateFirstArg(args []string) error {
-	if len(args) == 0 || strings.HasPrefix(args[0], "-") || args[0] == "admin" || args[0] == "relay" {
-		return nil
+// hasVerbArgs 判定是否进动词面：首参存在且非旗标形态（不带 "-" 前缀，
+// 含 "--"）。旗标值（`--config-dir /path` 的 /path）永不落首位。
+func hasVerbArgs(args []string) bool {
+	return len(args) > 0 && !strings.HasPrefix(args[0], "-")
+}
+
+// displayVersion 返回人读版本串（ldflags 未注入时 dev 兜底）。
+func displayVersion() string {
+	if version == "" {
+		return "dev"
 	}
-	return fmt.Errorf("unknown argument %q: fleetlyd takes no subcommands besides \"admin\" and \"relay\" and no positional arguments; a stray word here would boot a daemon with default config", args[0])
+	return version
 }
 
 // setupApp 组装依赖图：cleanup（wire 聚合的资源清理）挂 OnPostStop——
@@ -61,23 +66,16 @@ func setupApp(app lynx.App) error {
 }
 
 func main() {
-	// admin 离线维护面（停机窗口子命令）：不进 lynx runner——数据根被
-	// 守护进程持有时禁止维护操作（见 admin.go）。
-	if len(os.Args) > 1 && os.Args[1] == "admin" {
-		os.Exit(runAdmin(os.Args[2:]))
-	}
-	// relay 节点中继代理（F3.2，ADR-0049）：节点载体容器内运行的前台
-	// 进程（无 lynx 装配面——见 relay.go）。
-	if len(os.Args) > 1 && os.Args[1] == "relay" {
-		os.Exit(runRelay(os.Args[2:]))
-	}
-	// 未知非旗标首参守卫（staging 实证 2026-10-03：`fleetlyd version` 一类
-	// 笔误会绕过参数校验、以默认配置引导一个流浪 daemon——建库、铸
-	// bootstrap token、抢端口）。只查首参：旗标值位置参数（如
-	// `--config-dir /path` 的 /path）永不落首位，不受影响。
-	if err := validateFirstArg(os.Args[1:]); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(2)
+	// 动词面（commands 框架，fleetly CLI 同款）：非旗标首参进 admin/relay
+	// 分发——admin 离线维护面不进 lynx runner 与 wire 装配（数据根被守护
+	// 进程持有时禁止维护操作，见 admin.go）；relay 是节点载体容器内的前台
+	// 进程（见 relay.go）。未知首参报 unknown verb 退 2 并附 help——staging
+	// 实证 2026-10-03：`fleetlyd version` 一类笔误曾绕过参数校验、以默认配
+	// 置引导流浪 daemon（建库、铸 bootstrap token、抢端口）；该防线现由
+	// 分发器接管。空参/纯旗标（含 `--`）落回下方 daemon 引导路径。
+	if hasVerbArgs(os.Args[1:]) {
+		env := &commands.Environment{Stdout: os.Stdout, Stderr: os.Stderr}
+		os.Exit(newVerbApp(displayVersion()).Run(context.Background(), env, os.Args[1:]))
 	}
 	runner := lynx.NewRunner(setupApp,
 		lynx.WithName("Fleetly"),
