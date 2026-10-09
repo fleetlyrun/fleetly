@@ -2,14 +2,14 @@
 
 日期：2026-10-09；状态：**设计定稿，原型已过走查，待实施**。
 
-原型：`2026-10-09-console-ia-v3-prototype.html`（五屏：侧栏分组 / App 8-tab / Databases 列表 / Database 6-tab / Components），走查记录见 `docs/reviews/2026-10-09-console-ia-v3-prototype-walkthrough.md`（PASS）。
+原型：`2026-10-09-console-ia-v3-prototype.html`（五屏：侧栏分组 / App 8-tab / Databases 列表 / Database 6-tab / Managed Providers），走查记录见 `docs/reviews/2026-10-09-console-ia-v3-prototype-walkthrough.md`（PASS）。
 
 上游：ADR-0057（UI v2 设计系统——shadcn/TanStack Router/双主题/六原型解剖**全部延续**，本设计只动信息架构层）；ADR-0044（词汇冻结执法面覆盖全部新 UI 文案）。
 
 ## 0. 决策记录（2026-10-09 与用户对齐）
 
 1. **App 详情含独立 Settings tab**（8 tabs）。边界（2026-10-09 二/五轮修订）：**Variables = 高频编辑面**（env vars + secret refs，独立 tab；原更名历程 Configuration→Environment→Variables，终名与 Add variable 按钮及项目级 "Shared Variables" 成族）；**Settings = 低频配置面 + 生命周期与凭证**（General / Build / Processes & rollout / Git hook / Danger zone——Railway 的 Variables/Settings 分法）；Database 的 Settings tab 同语义。
-2. **推翻 "managed proxy" 泛称策略**：Components 页露出组件实名（Traefik / zot / VictoriaLogs / VictoriaMetrics）。词汇变更随一期实现 commit 同批开 ADR + CONTEXT.md 词条（见 §7）。
+2. **推翻 "managed proxy" 泛称策略**：Managed Providers 页露出组件实名（Traefik / zot / VictoriaLogs / VictoriaMetrics）。页名词裁决见 ADR-0058——采用既有词条 Managed Provider（"Components" 撞其 Avoid 表，废弃），零新词条（2026-10-09 T6 批修订）。
 3. **Database 的 Logs/Metrics tab 接受降级预案**：载体寻址验证（§8 T8）不过则一期 4-tab 上线，6-tab 为目标态，验证通过或二期补齐后点亮。
 4. **对象存储留战略位**：DATA & STORAGE 分组名已占住语义；导航**不上空项**（与原则 4 一致），产品立项时新增 "Object Storage" 项并开独立 ADR。
 
@@ -26,7 +26,7 @@
 2. **资源绑定功能下沉**：凡离开该资源没有意义的功能（App 的日志/指标/终端/配置/路由，DB 的备份/浏览）一律成为资源详情 tab；全局工作台保留为跨资源排障工具，重定位 ≈ fly.io 的 Grafana 位。
 3. **一级资源 = 独立生命周期实体**：Apps / Databases / Tasks 是工作负载三兄弟；**DB 与 App 对等**（DB 本身是受管 workload，有容器/日志/指标/凭证）；Volumes / Registry 是项目资产；受管组件是平台设施。
 4. **导航无空壳**：每个导航项上线当天就有真数据（一期每页都有现有 API 可拼，见 §8）。
-5. **新页复用 ADR-0057 六原型解剖**：列表页走 List、详情页走 Detail、Components 走 Dashboard 卡片、Logs/Metrics/Terminal 走 Workbench、危险区走 Settings。
+5. **新页复用 ADR-0057 六原型解剖**：列表页走 List、详情页走 Detail、Managed Providers 走 Dashboard 卡片、Logs/Metrics/Terminal 走 Workbench、危险区走 Settings。
 6. **创建交互统一模式**（2026-10-09 三轮修订拍板）：CRUD 列表的创建入口固定在**列表工具栏右上**（页面级列表在 pagehead 右上），创建/编辑表单一律**模态对话框**；行级动词动作（Deploy / Back up / Browse / Verify）留行尾。原型已按此执法四处：App Routes（Add route）、App Variables（Add variable）、Apps 列表（New app）、Databases 列表（New database），侧栏 + New 与 ⌘K 同链路。同批拍板：**tab 级提交型动作（Apply changes）与创建动作同驻工具栏右侧，脏态（有暂存）才启用**。
 
 竞品锚：fly.io（用途分组 + 资源下沉）；Railway（service 固定 tab 集——Deployments/Metrics/Variables/Settings 范式）；Dokploy 反例（[侧栏混乱 issue #2805](https://github.com/dokploy/dokploy/issues/2805)，空壳/交叉入口之弊）。
@@ -55,7 +55,7 @@
 ├────────────────────────────────────────┤ 平台域
 │ ── FLEET ────────────────────────────  │
 │   Nodes         enroll/drain/cordon    │
-│   Components    受管组件健康 ★          │
+│   Managed Providers 受管组件健康 ★      │
 │   Events        舰队事件流              │
 │   Alerts        规则+状态；渠道→Settings │
 │   Backups       数据安全聚合视图 ★      │
@@ -118,9 +118,9 @@ Task 是程序化工作负载（one-shot / resident 双形态 + Owner Lease；Sc
 
 - **一期**：按 app 维度"当前镜像"视图——每 app 当前部署 image + digest（revisions/builds 拼），链到部署记录。回答"到底跑的哪个镜像"。
 - **二期（proto 先行）**：zot `/v2/_catalog` + tags/list 按项目凭证代理（新动词）→ 完整 tag 清单/大小/最近推送；**凭证轮换**入口（构建时经 Secret `registry:<host>` 解析，理论无级联，需验证）。
-- 平台侧（GC/配额/总用量）归 Components 页，不做项目入口。
+- 平台侧（GC/配额/总用量）归 Managed Providers 页，不做项目入口。
 
-### 5.2 Components（平台域 FLEET）——排障驾驶舱
+### 5.2 Managed Providers（平台域 FLEET）——排障驾驶舱
 
 卡片四张：**Traefik（Proxy）/ zot（Registry）/ VictoriaLogs（Logs）/ VictoriaMetrics（Metrics）**（+ 每节点 cadvisor 附注）。每卡三层：
 
@@ -161,7 +161,7 @@ Task 是程序化工作负载（one-shot / resident 双形态 + Owner Lease；Sc
 
 ## 7. 词汇与 ADR 事项
 
-- **组件实名 ADR**（随一期实现 commit 同批）：推翻 "managed proxy" 泛称；Components 页实名露出 Traefik/zot/VictoriaLogs/VictoriaMetrics；其他页面保持产品语态（Routes 页副标题可注 "managed Traefik"）。CONTEXT.md 新词条：Components、FLEET（分组名）、四组件实名；退役词条按流程处理。守卫反扫同步（散文/示例里的 "managed proxy" 一并清）。
+- **组件实名 ADR-0058**（随 T6 实现 commit 同批）：推翻 "managed proxy" 泛称；Managed Providers 页实名露出 Traefik/zot/VictoriaLogs/VictoriaMetrics；页名采用既有词条 Managed Provider（"Components" 撞 Avoid 表废弃）；CONTEXT.md 零新词条，Registry/Logging/Metrics 词条括注补全实名。
 - 新 UI 文案全部过 ADR-0044 词汇冻结执法面（既有测试自动覆盖）。tab 终名 **Variables** 沿用既有词条族（项目级 "Shared Variables" 同源），不新增词条；退役的 "managed proxy" 一并进 T9 的 CONTEXT.md 批次。
 
 ## 8. 分期与一期任务清单
@@ -176,7 +176,7 @@ Task 是程序化工作负载（one-shot / resident 双形态 + Owner Lease；Sc
 | T3b | Task/Run 详情页 | 3-tab 详情 + Run 叙事详情（复用 deployment-detail 范式；run 日志定址并入 T8 验证） |
 | T4 | Storage 页 | Volumes（挂载反查）+ Uploads（引用 build 反查） |
 | T5 | Registry v1 | 当前镜像视图（revisions/builds 拼） |
-| T6 | Components | 版本 + `unverified` 状态 + ingest 时效 + 工作台链接（Dashboard 原型） |
+| T6 | Managed Providers | 版本（provider 钉版）+ `unverified` 状态 + ingest 时效（Metrics 探针）+ 工作台链接；页名词与实名裁决随 ADR-0058 |
 | T7 | Backups 聚合页 | 库 fan-out + 平台快照区块 |
 | T8 | **验证：载体寻址** | ✅ **已完成（2026-10-09）**：metrics 可（零后端，PromQL 按 `container_label_fleetly_workload_id` / k3s namespace+pod，swarm 实证）；logs 不可（`StreamLogsRequest` 无 db/run 轴，需二期 proto 加 `database_id`/`run_id` + API 换轴 + VL 过滤项，provider 零改动）。**T3 据此定稿：DB 详情一期 5-tab（Overview/Metrics/Backups/Browse/Settings），Logs tab 二期点亮；T3b Run 详情一期无日志流（WaitRun 状态流不受影响）** |
 | T9 | 词汇 ADR + CONTEXT.md | 同批落地（§7） |
@@ -193,7 +193,7 @@ VL/VM 原生查询 ticket 代理；DB 账号/参数/扩容；App restart/scale �
 ## 9. 动线验证
 
 1. **应用 5xx**：App 详情一跳到位（Overview 徽标 → Metrics/Logs → Terminal 复现），全程不出 App 语境。
-2. **日志断了**：FLEET → Components → VictoriaLogs 卡片 ingest 时效标红 → 一期跳工作台验证，二期就地 Restart carrier。此前全站零入口。
+2. **日志断了**：FLEET → Managed Providers → VictoriaLogs 卡片（一期健康 unverified 照实；VictoriaMetrics 卡 ingest 时效探针可判停摆）→ 跳工作台验证，二期就地 Restart carrier。此前全站零入口。
 3. **昨晚备份成没成**：FLEET → Backups 一屏看全（每库 + 平台快照）。
 4. **跑的哪个镜像**：项目 → Registry → 当前 digest + 链到部署记录。
 

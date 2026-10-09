@@ -26,7 +26,7 @@
 ## 处置记录
 
 1. **侧栏矮视口溢出**：20 项 + 8 组标签在 1000px 视口下初始溢出 182px（Backups/Organization 完全不可见）。已收紧密度（组间距 13→9px、项高 7→5.5px），溢出降至 88px，主项全部露出，Audit/Settings 仍需滚动——与 fly.io 同为滚动侧栏形态，实施时建议加滚动位置记忆；不再追加压密度（继续压会牺牲可点面积）。
-2. **组件实名露出**已按拍板落地在 Components 卡片（"managed proxy" 未出现在任何新面）；Routes 卡注脚 "managed Traefik" 属设计文档 §7 允许的注记位。词汇 ADR（T9）随实施批落地。
+2. **组件实名露出**已按拍板落地在 Managed Providers 卡片（"managed proxy" 未出现在任何新面；页名词依 ADR-0058 采用既有词条 Managed Provider，初稿词 Components 撞 Avoid 表废弃）；Routes 卡注脚 "managed Traefik" 属设计文档 §7 允许的注记位。词汇 ADR（T9）随实施批落地。
 
 ## 变更记录（同日二轮修订，已复验）
 

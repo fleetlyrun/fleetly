@@ -316,6 +316,7 @@ var wordingExemptions = map[string]map[string]string{
 	// 位），CLI 生成物、再装即漂移——非平台 Database 同义词。
 	"addon": {
 		"console/src/routes/_shell/terminal.tsx":    "xterm library API identifiers (@xterm/addon-fit, FitAddon, loadAddon) cannot be renamed; not platform database naming (ADR-0049 terminal page)",
+		"console/src/features/apps-tabs/exec-terminal.tsx": "xterm library API identifiers (@xterm/addon-fit, FitAddon, loadAddon) cannot be renamed; not platform database naming (ADR-0049 core extracted to app tab, IA v3 T2)",
 		"console/src/components/ui/command.tsx":     "shadcn registry component API naming (addon slot); generated file, not platform database naming (ADR-0057)",
 		"console/src/components/ui/input-group.tsx": "shadcn registry component API naming (Input Addon); generated file, not platform database naming (ADR-0057)",
 	},

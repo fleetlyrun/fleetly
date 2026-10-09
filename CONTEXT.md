@@ -209,7 +209,7 @@ TLS 证书资产，ACME 托管或上传。
 _Avoid_: cert(标识符中), SSL
 
 **Registry**:
-OCI 镜像仓库 Capability，拉取来源与推送目标。
+OCI 镜像仓库 Capability，拉取来源与推送目标（zot 为其在册 Provider）。
 _Avoid_: mirror, hub
 
 **ObjectStore**:
@@ -217,11 +217,11 @@ S3 兼容对象存储 Capability，承载 Backup 与产物。
 _Avoid_: storage, bucket, S3(泛指)
 
 **Logging**:
-日志 Capability：控制面集中采集（runtime 容器日志）与 build 日志承载；查询双径（Runtime 实时 / 持久化检索），保留窗可配（ADR-0040）。
+日志 Capability：控制面集中采集（runtime 容器日志）与 build 日志承载；查询双径（Runtime 实时 / 持久化检索），保留窗可配（ADR-0040；VictoriaLogs 为其在册 Provider）。
 _Avoid_: observability(泛指单一系统), log pipeline
 
 **Metrics**:
-指标 Capability：cadvisor 全局采集（每节点端点）+ 控制面集中抓取入库；PromQL 查询面；阈值告警评估在引擎原生完成（ADR-0041）。
+指标 Capability：cadvisor 全局采集（每节点端点）+ 控制面集中抓取入库；PromQL 查询面；阈值告警评估在引擎原生完成（ADR-0041；VictoriaMetrics 为其在册 Provider）。
 _Avoid_: monitoring(泛指), telemetry(另指事件面)
 
 **Alert Rule**:

@@ -282,7 +282,7 @@ function TaskSettings({ task, projectId, taskId }: { task: TaskEntry | undefined
   const scale = useMutation({
     mutationFn: async () => apiSend(`/v1/tasks/${encodeURIComponent(taskId)}/scale`, "POST", { desired_concurrency: scaleTo }),
     onSuccess: () => {
-      toast("Scale applied — converges on the next reconcile");
+      toast("Scale updated — converges on the next reconcile");
       invalidate();
     },
     onError: (cause) => toast.error(fieldError(cause)),
@@ -330,7 +330,7 @@ function TaskSettings({ task, projectId, taskId }: { task: TaskEntry | undefined
             />
           </div>
           <Button size="sm" disabled={scale.isPending || scaleTo === ""} onClick={() => scale.mutate()}>
-            Apply scale
+            Scale pool
           </Button>
           <Button size="sm" variant="outline" disabled={renew.isPending} onClick={() => renew.mutate()} title="Renew the owner lease (proves ownership presence)">
             Renew lease

@@ -20,6 +20,7 @@ import { Route as ShellLogsRouteImport } from './routes/_shell/logs'
 import { Route as ShellMetricsRouteImport } from './routes/_shell/metrics'
 import { Route as ShellNodesRouteImport } from './routes/_shell/nodes'
 import { Route as ShellOverviewRouteImport } from './routes/_shell/overview'
+import { Route as ShellProvidersRouteImport } from './routes/_shell/providers'
 import { Route as ShellQuickstartRouteImport } from './routes/_shell/quickstart'
 import { Route as ShellSettingsRouteImport } from './routes/_shell/settings'
 import { Route as ShellTemplatesRouteImport } from './routes/_shell/templates'
@@ -101,6 +102,11 @@ const ShellNodesRoute = ShellNodesRouteImport.update({
 const ShellOverviewRoute = ShellOverviewRouteImport.update({
   id: '/overview',
   path: '/overview',
+  getParentRoute: () => ShellRoute,
+} as any)
+const ShellProvidersRoute = ShellProvidersRouteImport.update({
+  id: '/providers',
+  path: '/providers',
   getParentRoute: () => ShellRoute,
 } as any)
 const ShellQuickstartRoute = ShellQuickstartRouteImport.update({
@@ -271,6 +277,7 @@ export interface FileRoutesByFullPath {
   '/metrics': typeof ShellMetricsRoute
   '/nodes': typeof ShellNodesRoute
   '/overview': typeof ShellOverviewRoute
+  '/providers': typeof ShellProvidersRoute
   '/quickstart': typeof ShellQuickstartRoute
   '/settings': typeof ShellSettingsRoute
   '/templates': typeof ShellTemplatesRoute
@@ -311,6 +318,7 @@ export interface FileRoutesByTo {
   '/metrics': typeof ShellMetricsRoute
   '/nodes': typeof ShellNodesRoute
   '/overview': typeof ShellOverviewRoute
+  '/providers': typeof ShellProvidersRoute
   '/quickstart': typeof ShellQuickstartRoute
   '/settings': typeof ShellSettingsRoute
   '/templates': typeof ShellTemplatesRoute
@@ -351,6 +359,7 @@ export interface FileRoutesById {
   '/_shell/metrics': typeof ShellMetricsRoute
   '/_shell/nodes': typeof ShellNodesRoute
   '/_shell/overview': typeof ShellOverviewRoute
+  '/_shell/providers': typeof ShellProvidersRoute
   '/_shell/quickstart': typeof ShellQuickstartRoute
   '/_shell/settings': typeof ShellSettingsRoute
   '/_shell/templates': typeof ShellTemplatesRoute
@@ -393,6 +402,7 @@ export interface FileRouteTypes {
     | '/metrics'
     | '/nodes'
     | '/overview'
+    | '/providers'
     | '/quickstart'
     | '/settings'
     | '/templates'
@@ -433,6 +443,7 @@ export interface FileRouteTypes {
     | '/metrics'
     | '/nodes'
     | '/overview'
+    | '/providers'
     | '/quickstart'
     | '/settings'
     | '/templates'
@@ -472,6 +483,7 @@ export interface FileRouteTypes {
     | '/_shell/metrics'
     | '/_shell/nodes'
     | '/_shell/overview'
+    | '/_shell/providers'
     | '/_shell/quickstart'
     | '/_shell/settings'
     | '/_shell/templates'
@@ -585,6 +597,13 @@ declare module '@tanstack/react-router' {
       path: '/overview'
       fullPath: '/overview'
       preLoaderRoute: typeof ShellOverviewRouteImport
+      parentRoute: typeof ShellRoute
+    }
+    '/_shell/providers': {
+      id: '/_shell/providers'
+      path: '/providers'
+      fullPath: '/providers'
+      preLoaderRoute: typeof ShellProvidersRouteImport
       parentRoute: typeof ShellRoute
     }
     '/_shell/quickstart': {
@@ -875,6 +894,7 @@ interface ShellRouteChildren {
   ShellMetricsRoute: typeof ShellMetricsRoute
   ShellNodesRoute: typeof ShellNodesRoute
   ShellOverviewRoute: typeof ShellOverviewRoute
+  ShellProvidersRoute: typeof ShellProvidersRoute
   ShellQuickstartRoute: typeof ShellQuickstartRoute
   ShellSettingsRoute: typeof ShellSettingsRoute
   ShellTemplatesRoute: typeof ShellTemplatesRoute
@@ -892,6 +912,7 @@ const ShellRouteChildren: ShellRouteChildren = {
   ShellMetricsRoute: ShellMetricsRoute,
   ShellNodesRoute: ShellNodesRoute,
   ShellOverviewRoute: ShellOverviewRoute,
+  ShellProvidersRoute: ShellProvidersRoute,
   ShellQuickstartRoute: ShellQuickstartRoute,
   ShellSettingsRoute: ShellSettingsRoute,
   ShellTemplatesRoute: ShellTemplatesRoute,
