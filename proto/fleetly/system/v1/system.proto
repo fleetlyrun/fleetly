@@ -90,6 +90,20 @@ message GetStatusRequest {}
 message GetStatusResponse {
   StatusState state = 1;
   string version = 2;
+  // components 是进程内在册 Provider 实例的逐项健康（IA v3 二期③：
+  // Managed Providers 排障面数据源——架构 §8 降级矩阵驱动；聚合态 =
+  // 任一不健康即 DEGRADED，检查超时按不健康计）。
+  repeated ComponentHealth components = 3;
+}
+
+message ComponentHealth {
+  // name 是 Provider 名（"swarm"、"traefik"、"victorialogs"…）。
+  string name = 1;
+  // capability 是端口种类（runtime/proxy/registry/logging/metrics/objectstore）。
+  string capability = 2;
+  bool healthy = 3;
+  // details 是降级矩阵口径的人读说明（用户可见文本英文）。
+  string details = 4;
 }
 
 // SchemaEntry 是一条可解释资源的自描述（寻址名/家族/摘要/契约体）。

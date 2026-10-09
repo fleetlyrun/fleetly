@@ -60,6 +60,7 @@ var ProviderSet = wire.NewSet(
 	NewEngineService,
 	NewRetentionJanitorService,
 	NewProxyConfigServer,
+	NewHealthCheckers,
 	systemgrpc.New,
 	NewGRPCServer,
 	NewGatewayServer,
@@ -106,6 +107,28 @@ func NewRuntimeProvider(app lynx.App, cfg *config.AppConfig) (capability.Runtime
 			_ = c.Close()
 		}
 	}, nil
+}
+
+// NewHealthCheckers 聚合进程内在册 Provider 实例为健康检查面（IA v3
+// 二期③：GetStatus components 的数据源——架构 §8 降级矩阵驱动）。face
+// 类型经 Provider 断言回收 Health 契约（三件套必实现）；builder 家族
+// 不入列（无状态构建执行器，健康无观测意义）。
+func NewHealthCheckers(
+	rt capability.Runtime,
+	proxy capability.Proxy,
+	reg capability.Registry,
+	logs capability.Logging,
+	mtr capability.Metrics,
+	store capability.ObjectStore,
+) []capability.Provider {
+	faces := []any{rt, proxy, reg, logs, mtr, store}
+	checkers := make([]capability.Provider, 0, len(faces))
+	for _, face := range faces {
+		if provider, ok := face.(capability.Provider); ok && provider != nil {
+			checkers = append(checkers, provider)
+		}
+	}
+	return checkers
 }
 
 // logCapabilityFaces 打一行能力提供面矩阵（FacesOf 协商点的可观测枚举，

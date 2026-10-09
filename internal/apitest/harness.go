@@ -158,7 +158,7 @@ func newHarness(t testing.TB, autostart bool, mutators ...EngineOption) *Harness
 	fleetlygrpc.RegisterAll(srv, services)
 	// SystemService 与生产 NewGRPCServer 同挂（此前夹具缺席——schema/
 	// explain 自描述面需要全量注册贡献，夹具必须链到 assembly 同一面）。
-	systemv1.RegisterSystemServiceServer(srv, systemgrpc.New(buildinfo.BuildInfo{Version: "0.1.0-test"}))
+	systemv1.RegisterSystemServiceServer(srv, systemgrpc.New(buildinfo.BuildInfo{Version: "0.1.0-test"}, nil))
 	if err := grpcapiinterceptor.AssertAllRegisteredHavePolicy(srv, policySet); err != nil {
 		t.Fatalf("apitest: policy coverage: %v", err)
 	}

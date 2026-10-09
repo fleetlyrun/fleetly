@@ -192,6 +192,26 @@
     }
   },
   "definitions": {
+    "v1ComponentHealth": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "title": "name 是 Provider 名（\"swarm\"、\"traefik\"、\"victorialogs\"…）。"
+        },
+        "capability": {
+          "type": "string",
+          "title": "capability 是端口种类（runtime/proxy/registry/logging/metrics/objectstore）。"
+        },
+        "healthy": {
+          "type": "boolean"
+        },
+        "details": {
+          "type": "string",
+          "title": "details 是降级矩阵口径的人读说明（用户可见文本英文）。"
+        }
+      }
+    },
     "v1ExplainResponse": {
       "type": "object",
       "properties": {
@@ -221,6 +241,14 @@
         },
         "version": {
           "type": "string"
+        },
+        "components": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1ComponentHealth"
+          },
+          "title": "components 是进程内在册 Provider 实例的逐项健康（IA v3 二期③：\nManaged Providers 排障面数据源——架构 §8 降级矩阵驱动；聚合态 =\n任一不健康即 DEGRADED，检查超时按不健康计）。"
         }
       }
     },

@@ -128,7 +128,8 @@ func wireBootstrap(app lynx.App, info buildinfo.BuildInfo) (*boot.Bootstrap, fun
 	authenticator := NewAuthenticator(db, policySet, app)
 	rateLimiter := NewRateLimiter(db)
 	freezeGuard := NewFreezeGuard(db, app)
-	systemgrpcService := systemgrpc.New(info)
+	v2 := NewHealthCheckers(runtime, proxy, registry, logging, metrics, objectStore)
+	systemgrpcService := systemgrpc.New(info, v2)
 	services := NewAPIServices(db, engine, cipher, runtime, appConfig, app)
 	server, err := NewGRPCServer(app, appConfig, policySet, authenticator, enforcer, rateLimiter, freezeGuard, systemgrpcService, services)
 	if err != nil {
@@ -170,9 +171,9 @@ func wireBootstrap(app lynx.App, info buildinfo.BuildInfo) (*boot.Bootstrap, fun
 		cleanup()
 		return nil, nil, err
 	}
-	v2 := NewServices(service, retentionJanitorService, server, httpServer, proxyConfigServer)
-	v3 := NewServiceFactories()
-	bootstrap := boot.New(preStartHooks, drainHooks, preStopHooks, postStopHooks, v2, v3)
+	v3 := NewServices(service, retentionJanitorService, server, httpServer, proxyConfigServer)
+	v4 := NewServiceFactories()
+	bootstrap := boot.New(preStartHooks, drainHooks, preStopHooks, postStopHooks, v3, v4)
 	return bootstrap, func() {
 		cleanup10()
 		cleanup9()
