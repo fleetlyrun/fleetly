@@ -561,3 +561,17 @@ F3.1/F3.2/F3.3/F3.6 四批走查的浏览器级挂账在后端在场的环境（
 - Console `Observability` 页（路由 +1）：metrics tab（项目→App→三指标预设〔cpu cores / cpu % of node / memory working set〕+ custom PromQL + 四档时间窗；零依赖 SVG 多序列折线 + 图例 + 峰值注记）+ alerts tab（规则表 firing 内联 + observed_value + 创建/删除；通道表 test 诚实呈现 delivered/error + 创建/删除——webhook/telegram 双形态，凭证只写不读）。
 - Console HTTP 面核验：index 200（新指纹 `index-Ccu1QSDo.js` 对现役流量生效）/ asset 200 / 无凭证 `/v1/metrics` 401。
 - 全门禁：go test -race 三 module 绿（本机 sandbox 环境性跳过 railpack 一用例——docker.sock 权限，CI 正常跑）+ lint 0 issues + buf breaking 绿 + console:verify 零漂移 + vitest 35 绿。
+
+## 2026-10-09 记录·十七（C2 治理批换装 db9bc34-c2gov：身份管理页 + git hook 面板 + 平台备份台账）
+
+**换装**（778e3a2-c1obs → **db9bc34-c2gov（现役）**）：纯 console 批（Go 零变更），前置 Platform Backup `c2f926fa` + 双卷 tar。**零扰动再度成立**（traefik task 保持 C1 时代 10h 龄不滚）；tw.dev 首探 000 = 重启后路由冷窗（45s 探太早——已知 ~60s 行为，60s 后连续三探 200），非回归。
+
+**C2 批内容（db9bc34，Console 对齐 Dokploy 路线图第二批）**：
+- **Identity 页（路由 +1，四 tab）**：users（建/删，team/role 归属）/ teams（建/删）/ roles（建/删——自定义 scope 表，builtin 只读）/ invitations（建——**secret 一次性展示** + `fleetly users accept --token …` 接引文案 / 列表含 consumed 态）。RBAC 的 UI 消费面首次闭环，动词面对齐 identity 上下文 CLI。
+- **Apps 级 git hook 面板**（行动作 `hook…`）：get/set/rotate 三动词对齐 CLI hooks 组；首配表单由 E_NOT_FOUND 驱动；**webhook URL = `<console 同源>/v1/hooks/<secret>` 一次性揭示**（secret 兼 GitHub 签名密钥，配置面只回 token_prefix）；rotate 确认提示旧 URL 立即失效。
+- **Settings 平台备份台账**：ListPlatformBackups 只读表（快照 id/time/hostname）——触发面（F3.1 既有）补齐台账面，触发写后即时失效。
+- 全门禁：console:verify 零漂移 + vitest 37 绿（Go 面零变更未重跑，C1 全套在案）。
+
+**Console 端点真机核验**：users/teams/roles/invitations/platform-backups/alerts-rules/channels 全 200；新 dist 指纹 `index-CrCyrUsC.js` 在役。
+
+**路线图进度**：C1 ✓ C2 ✓；C3（git 源部署表单 + revisions diff + dokploy 导入 + runs 入口）、C4（nodes 页）、C5（DB verify/restore）待续；C6（凭证第二形态：密码会话 vs SSO）待裁决。
