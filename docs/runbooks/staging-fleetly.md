@@ -690,3 +690,33 @@ F3.1/F3.2/F3.3/F3.6 四批走查的浏览器级挂账在后端在场的环境（
 **真机复验全绿**：①三预设经 /v1/metrics 全 200（专用 token fb1-verify，查毕吊销）；②坏查询（裸除法）400 `E_INVALID_ARGUMENT` 带上游 "duplicate time series" 原文；③Console 指标页三预设真浏览器出图（n0reg/web：CPU % 双容器 0 基线 + y 轴 0-4% 域 + Memory 8MiB/3MiB 末值图例 + CPU cores）；④Custom PromQL 坏查询呈现 Request rejected 态（非 500 万金油）。
 
 **环境备忘**：本机（LIQIULIN-UBUNTU）qiulin 已入 docker 组（`sudo usermod -aG docker qiulin`，2026-10-09）——运行中会话组列表不刷新，railpack docker 面测试需重启会话后验证（CI 不受影响，本机恒红是旧组列表假象）。
+
+## 2026-10-09 记录·二十七（缩放 N/1 疑案收案：paused 滚动僵尸 task 叠加 + workload.rollout_stalled 观测面，12a28b1-fb1b → 69d7608-rolloutstall）
+
+记录·二十五遗留观察的收案。**交接单三处勘正**：①`docker service ls` 的 REPLICAS 列是 **running/desired**——「4/1」= 4 个活 task / 期望 1，是**超编（僵尸 task 叠加）不是缺编**（「slot 2..N 无任务行」实为同一 slot `.1` 的 `\_` 历史链，slot 2..N 从不存在）；②失配主体是 **torchwood**（dispatcher/server/worker 4/1 ×3）+ messaging（mlbridge/messageloop 2/1 ×2）共五服务，非 quickstart；③平台缩放链无缺口——DB revisions 现行 spec replicas 全 =1，最后部署 torchwood 10-02（gen 13）/messageloop 10-05（gen 2 rollback replay）。
+
+**定性链（三面铁证）**：
+
+- **触发**：journal 显示 10-06 09:21:27 旧版停机 → 09:22:28 `161b62b-f31console` 起服（记录·十换装）→ 09:22:31 baseline replay 对五服务做 ADR-0048 spec 收敛滚动（与五个 `UpdateStatus.StartedAt` 秒级吻合）——非人操作，无审计嫌疑。
+- **机制**：滚动 start-first + 新 task `non-zero exit (1)`（停机窗内应用自崩，记录·十实录形态）→ swarm `FailureAction=pause`（translate 层）→ 滚动停中间态 → **start-first 语义下旧 task 永不退役**；10-08 node2 退 swarm 的 drain 迁移又给 torchwood 三服务各叠 task（4 = 10-06 残留 2 + 10-08 迁移 2）。
+- **无感三天**：ServiceUpdate 已被接受、spec 面恒一致 → drift 只对比 spec 无感；部署状态机早已 succeeded；swarm `UpdateStatus` 无任何平台反馈面——路由照常 200（僵尸参与 DNS RR，流量打到旧代 task 无人察觉）。
+
+**现场收口（12:51Z）**：快照前置（Platform Backup `164b2435` + zot 卷 tar 132M）→ `docker service update --force` ×5 → 全部 1/1 + `UpdateStatus: completed`（12:51:23→12:52:47 依序收口）→ 路由活体不变（tw.dev 200 / ml-api 415 / ml 404）。psql anchor 报 role 不存在 = 受管库模板自定义角色的探测姿势问题（pg 服务本批零接触，21 表锚在换装断言中补核）。
+
+**平台修复（69d7608，观测面收口——不违 ADR-0005 opt-in，只发事件不自动纠正）**：
+
+- `capability.WorkloadObservation` 新增 `RolloutStalled`/`RolloutDetail`（未观测面零值）；swarm `InspectWorkloads` 透传 `UpdateStatus=paused`（编排器 Message 原话进事件）。
+- drift 扫描（compareSpecs）检测停摆 → 新事件 `workload.rollout_stalled`（独立签名去抖 + 恢复即清；与 spec drift 分立——停摆时 spec 恰是一致的，这正是三天无感知的根）。eventcode 注册表只增（Source 锚 compareSpecs）+ schemareg + 三 golden 同批（eventcode/assembly 自描述/CLI explain）。
+- 测试同批：engine `TestRolloutStalledEmitsEventWithoutSpecDrift`（去抖/恢复清签名/不产 spec drift）+ swarm `TestInspectWorkloadsSurfacesPausedRollout`（fake daemon 种 paused→stalled、completed→不报）。
+
+**换装**（12a28b1-fb1b → **69d7608-rolloutstall（现役）**）：平台备份 `9c803f03` + 三卷 tar（acme×2 + zot）；goose v28 无新迁移；**零扰动全绿**——六受管域 task id 逐位一致 + SERVICES-IDENTICAL + tw.dev 200 + torchwood-pg 21 表锚 + status healthy。三个中间 commit（1a84826 docs / 379747d CLI 动词面 / 69d7608 观测面）均不动 workload IR，零收敛滚动预期成立。
+
+**分诊序沉淀（runbook 级——「服务 N/1」先读两字段再动手）**：`docker service inspect <svc>` 看 `.Spec.Mode.Replicated.Replicas`（spec 真源）与 `.UpdateStatus.State`：
+
+1. spec.Replicas = 平台期望 + **UpdateStatus=paused** → 滚动停摆（本记录形态）：`docker service update --force <svc>` 恢复；**平台重部署/rollback 对 spec 相同走 no-op 断路器，不会 resume paused 滚动**。
+2. spec.Replicas ≠ DB revisions 口径 → 真 drift（对照 revisions 表现行 spec）。
+3. REPLICAS 分子 > spec.Replicas → 僵尸叠加（路由可能照常 200，勿以活体判断健康）。
+
+**诚实边界**：①k3s 面暂不覆盖 RolloutStalled（observeFromPodSpec 未填，Deployment 滚动卡住检测留后续批）；②driftScan 只扫 App 域——受管域/Database 域的 paused 检测不在射程（受管域 60s 强制重放对 spec 相同同样 no-op 不 resume，同缺口另一面，受管服务健康概率低，挂账）；③恢复动作纯人工（--force 或带 spec 变更的重部署），不自动纠正。
+
+**门禁**：test 三 module + lint 全绿；builders railpack 测试红 = 本机 docker 组旧会话假象（记录·二十六环境备忘在案，非本批引入）。
