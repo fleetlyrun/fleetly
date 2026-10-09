@@ -105,11 +105,18 @@ export function DokployImportModal({ open, onClose }: { open: boolean; onClose: 
         step({ kind: "app", name: app.name, detail: appId, reused });
 
         // deploy（image 直投带 env / compose 文本——env 已在解析期插值，
-        // 与 DeployRequest.env 互斥，CLI 同款）。
+        // 与 DeployRequest.env 互斥，CLI 同款）。image 直投必须带端口声明
+        // （route 后端解析锚——staging 真机咬出：无端口声明则 route 永远
+        // backend unresolved），取首条 route 的 port；compose 自带声明。
         const body =
           app.composeYaml !== ""
             ? { app_id: appId, compose_yaml: app.composeYaml }
-            : { app_id: appId, image: app.image, env: Object.keys(app.env).length > 0 ? app.env : undefined };
+            : {
+                app_id: appId,
+                image: app.image,
+                env: Object.keys(app.env).length > 0 ? app.env : undefined,
+                port: app.routes[0]?.port != null && app.routes[0].port > 0 ? app.routes[0].port : undefined,
+              };
         const dep = await apiSend<{ deployment?: { id?: string } }>("/v1/deployments", "POST", body);
         step({ kind: "deployment", name: app.name, detail: dep.deployment?.id ?? "", reused: false });
 

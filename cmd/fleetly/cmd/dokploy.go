@@ -149,6 +149,12 @@ func newCreateFromDokployVerb() commands.Command {
 					deploy.ComposeYAML = app.ComposeYAML
 				} else {
 					deploy.Image = app.Image
+					// image 直投必须带端口声明（route 后端解析锚——staging
+					// 真机咬出：无声明则 route 永远 backend unresolved，
+					// 与 quickstart 直投同款教训）；取首条 route 的 port。
+					if len(app.Routes) > 0 && app.Routes[0].Port > 0 {
+						deploy.Port = app.Routes[0].Port
+					}
 				}
 				depID, err := deployViaAPI(ctx, c, deploy)
 				if err != nil {
@@ -248,6 +254,9 @@ type deliveryDeployInput struct {
 	Image       string
 	ComposeYAML string
 	Env         map[string]string
+	// Port 是 image 直投的端口声明（route 后端解析锚；compose 形态自带
+	// 声明不适用）。
+	Port int32
 }
 
 // deployViaAPI 走 Deploy RPC（compose 形态 env 已在解析期插值进文本——
@@ -259,6 +268,7 @@ func deployViaAPI(ctx context.Context, c *sdk.Client, in *deliveryDeployInput) (
 	} else {
 		req.Image = in.Image
 		req.Env = in.Env
+		req.Port = in.Port
 	}
 	dep, err := c.Deployments.Deploy(ctx, req)
 	if err != nil {
