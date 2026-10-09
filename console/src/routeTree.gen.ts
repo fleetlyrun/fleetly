@@ -30,6 +30,7 @@ import { Route as ShellPProjectIdIndexRouteImport } from './routes/_shell/p.$pro
 import { Route as ShellPProjectIdConfigurationRouteImport } from './routes/_shell/p.$projectId.configuration'
 import { Route as ShellPProjectIdDataRouteImport } from './routes/_shell/p.$projectId.data'
 import { Route as ShellPProjectIdNetworksRouteImport } from './routes/_shell/p.$projectId.networks'
+import { Route as ShellPProjectIdRegistryRouteImport } from './routes/_shell/p.$projectId.registry'
 import { Route as ShellPProjectIdRoutesRouteImport } from './routes/_shell/p.$projectId.routes'
 import { Route as ShellPProjectIdStorageRouteImport } from './routes/_shell/p.$projectId.storage'
 import { Route as ShellPProjectIdTasksRouteImport } from './routes/_shell/p.$projectId.tasks'
@@ -154,6 +155,11 @@ const ShellPProjectIdNetworksRoute = ShellPProjectIdNetworksRouteImport.update({
   path: '/networks',
   getParentRoute: () => ShellPProjectIdRoute,
 } as any)
+const ShellPProjectIdRegistryRoute = ShellPProjectIdRegistryRouteImport.update({
+  id: '/registry',
+  path: '/registry',
+  getParentRoute: () => ShellPProjectIdRoute,
+} as any)
 const ShellPProjectIdRoutesRoute = ShellPProjectIdRoutesRouteImport.update({
   id: '/routes',
   path: '/routes',
@@ -274,6 +280,7 @@ export interface FileRoutesByFullPath {
   '/p/$projectId/configuration': typeof ShellPProjectIdConfigurationRoute
   '/p/$projectId/data': typeof ShellPProjectIdDataRoute
   '/p/$projectId/networks': typeof ShellPProjectIdNetworksRoute
+  '/p/$projectId/registry': typeof ShellPProjectIdRegistryRoute
   '/p/$projectId/routes': typeof ShellPProjectIdRoutesRoute
   '/p/$projectId/storage': typeof ShellPProjectIdStorageRoute
   '/p/$projectId/tasks': typeof ShellPProjectIdTasksRouteWithChildren
@@ -312,6 +319,7 @@ export interface FileRoutesByTo {
   '/p/$projectId/configuration': typeof ShellPProjectIdConfigurationRoute
   '/p/$projectId/data': typeof ShellPProjectIdDataRoute
   '/p/$projectId/networks': typeof ShellPProjectIdNetworksRoute
+  '/p/$projectId/registry': typeof ShellPProjectIdRegistryRoute
   '/p/$projectId/routes': typeof ShellPProjectIdRoutesRoute
   '/p/$projectId/storage': typeof ShellPProjectIdStorageRoute
   '/p/$projectId/tasks': typeof ShellPProjectIdTasksRouteWithChildren
@@ -352,6 +360,7 @@ export interface FileRoutesById {
   '/_shell/p/$projectId/configuration': typeof ShellPProjectIdConfigurationRoute
   '/_shell/p/$projectId/data': typeof ShellPProjectIdDataRoute
   '/_shell/p/$projectId/networks': typeof ShellPProjectIdNetworksRoute
+  '/_shell/p/$projectId/registry': typeof ShellPProjectIdRegistryRoute
   '/_shell/p/$projectId/routes': typeof ShellPProjectIdRoutesRoute
   '/_shell/p/$projectId/storage': typeof ShellPProjectIdStorageRoute
   '/_shell/p/$projectId/tasks': typeof ShellPProjectIdTasksRouteWithChildren
@@ -393,6 +402,7 @@ export interface FileRouteTypes {
     | '/p/$projectId/configuration'
     | '/p/$projectId/data'
     | '/p/$projectId/networks'
+    | '/p/$projectId/registry'
     | '/p/$projectId/routes'
     | '/p/$projectId/storage'
     | '/p/$projectId/tasks'
@@ -431,6 +441,7 @@ export interface FileRouteTypes {
     | '/p/$projectId/configuration'
     | '/p/$projectId/data'
     | '/p/$projectId/networks'
+    | '/p/$projectId/registry'
     | '/p/$projectId/routes'
     | '/p/$projectId/storage'
     | '/p/$projectId/tasks'
@@ -470,6 +481,7 @@ export interface FileRouteTypes {
     | '/_shell/p/$projectId/configuration'
     | '/_shell/p/$projectId/data'
     | '/_shell/p/$projectId/networks'
+    | '/_shell/p/$projectId/registry'
     | '/_shell/p/$projectId/routes'
     | '/_shell/p/$projectId/storage'
     | '/_shell/p/$projectId/tasks'
@@ -645,6 +657,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShellPProjectIdNetworksRouteImport
       parentRoute: typeof ShellPProjectIdRoute
     }
+    '/_shell/p/$projectId/registry': {
+      id: '/_shell/p/$projectId/registry'
+      path: '/registry'
+      fullPath: '/p/$projectId/registry'
+      preLoaderRoute: typeof ShellPProjectIdRegistryRouteImport
+      parentRoute: typeof ShellPProjectIdRoute
+    }
     '/_shell/p/$projectId/routes': {
       id: '/_shell/p/$projectId/routes'
       path: '/routes'
@@ -814,6 +833,7 @@ interface ShellPProjectIdRouteChildren {
   ShellPProjectIdConfigurationRoute: typeof ShellPProjectIdConfigurationRoute
   ShellPProjectIdDataRoute: typeof ShellPProjectIdDataRoute
   ShellPProjectIdNetworksRoute: typeof ShellPProjectIdNetworksRoute
+  ShellPProjectIdRegistryRoute: typeof ShellPProjectIdRegistryRoute
   ShellPProjectIdRoutesRoute: typeof ShellPProjectIdRoutesRoute
   ShellPProjectIdStorageRoute: typeof ShellPProjectIdStorageRoute
   ShellPProjectIdTasksRoute: typeof ShellPProjectIdTasksRouteWithChildren
@@ -829,6 +849,7 @@ const ShellPProjectIdRouteChildren: ShellPProjectIdRouteChildren = {
   ShellPProjectIdConfigurationRoute: ShellPProjectIdConfigurationRoute,
   ShellPProjectIdDataRoute: ShellPProjectIdDataRoute,
   ShellPProjectIdNetworksRoute: ShellPProjectIdNetworksRoute,
+  ShellPProjectIdRegistryRoute: ShellPProjectIdRegistryRoute,
   ShellPProjectIdRoutesRoute: ShellPProjectIdRoutesRoute,
   ShellPProjectIdStorageRoute: ShellPProjectIdStorageRoute,
   ShellPProjectIdTasksRoute: ShellPProjectIdTasksRouteWithChildren,
