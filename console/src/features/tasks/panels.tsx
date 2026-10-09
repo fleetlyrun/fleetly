@@ -203,7 +203,15 @@ function TaskRow({ task }: { task: { id?: string; name?: string; form?: string; 
     <>
       <tr className="border-b border-slate-800/60 hover:bg-slate-900/40">
         <td className="px-3 py-2">
-          <div className="font-medium text-slate-200">{task.name || shortId(task.id)}</div>
+          <div className="font-medium text-slate-200">
+            <a
+              href={`/p/${encodeURIComponent(task.project_id ?? "")}/tasks/${encodeURIComponent(task.id ?? "")}`}
+              className="hover:text-sky-300 hover:underline"
+              onClick={(event) => event.stopPropagation()}
+            >
+              {task.name || shortId(task.id)}
+            </a>
+          </div>
           <div className="font-mono text-xs text-slate-500" title={task.id}>
             {shortId(task.id)}
           </div>
