@@ -1,5 +1,6 @@
 [
   "create",
   "delete",
-  "list"
+  "list",
+  "spec"
 ]

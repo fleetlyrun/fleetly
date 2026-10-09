@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "app": {
+    "id": "<ULID>",
+    "project": "<ULID>"
+  },
+  "source": {
+    "image": {
+      "ref": "nginx:1.27"
+    }
+  },
+  "processes": [
+    {
+      "name": "web",
+      "image": "nginx:1.27",
+      "replicas": "1"
+    }
+  ]
+}

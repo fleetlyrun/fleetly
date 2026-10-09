@@ -305,6 +305,29 @@ func (svc *AppsService) GetApp(ctx context.Context, req *structurev1.GetAppReque
 	return &structurev1.GetAppResponse{App: appMsg(a)}, nil
 }
 
+// GetAppSpec 回读 App 当前冻结 Spec（最新 Revision；只读面——写路径仅
+// Deploy）。Variables 编辑面 / Used-by 反查 / Volume 挂载反查的数据源
+//（IA v3 二期②；spec.proto 唯一运行时边界的只读回读）。未部署过 =
+// E_NOT_FOUND（诚实：无冻结即无 Spec）。
+func (svc *AppsService) GetAppSpec(ctx context.Context, req *structurev1.GetAppSpecRequest) (*structurev1.GetAppSpecResponse, error) {
+	a, err := svc.s.Apps.Get(ctx, svc.s.DB.Runner(), req.GetId())
+	if err != nil {
+		return nil, mapStateError(err, "app")
+	}
+	if err := svc.s.authorizeAppRow(ctx, a); err != nil {
+		return nil, err
+	}
+	rev, err := svc.s.Revisions.Latest(ctx, svc.s.DB.Runner(), a.ID)
+	if err != nil {
+		return nil, mapStateError(err, "spec")
+	}
+	var spec specv1.AppSpec
+	if err := protojson.Unmarshal(rev.Spec, &spec); err != nil {
+		return nil, apperr.New("E_INTERNAL", "app spec: frozen revision is not valid protojson (%v)", err)
+	}
+	return &structurev1.GetAppSpecResponse{Spec: &spec}, nil
+}
+
 func (svc *AppsService) ListApps(ctx context.Context, req *structurev1.ListAppsRequest) (*structurev1.ListAppsResponse, error) {
 	if req.GetProjectId() == "" {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "project_id: must not be empty")

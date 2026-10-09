@@ -169,6 +169,37 @@
         ]
       }
     },
+    "/v1/apps/{id}/spec": {
+      "get": {
+        "summary": "GetAppSpec 回读 App 当前冻结 Spec（最新 Revision 的 protojson 规范\n序列化反解；只读面——写路径仅 Deploy）。Variables 编辑面 / Used-by\n反查 / Volume 挂载反查的数据源（IA v3 二期②）。",
+        "operationId": "AppsService_GetAppSpec",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetAppSpecResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "AppsService"
+        ]
+      }
+    },
     "/v1/backups/{backup_id}/verify": {
       "post": {
         "summary": "VerifyBackup 重算对象摘要比对回执（ADR-0039 决策 8）。",
@@ -1325,6 +1356,52 @@
         }
       }
     },
+    "v1AppRef": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        }
+      },
+      "title": "AppRef 是 App 归属锚。"
+    },
+    "v1AppSpec": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "app": {
+          "$ref": "#/definitions/v1AppRef"
+        },
+        "source": {
+          "$ref": "#/definitions/v1Source"
+        },
+        "processes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1ProcessSpec"
+          }
+        },
+        "build": {
+          "$ref": "#/definitions/v1BuildSpec"
+        },
+        "first_boot_jobs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1JobSpec"
+          },
+          "title": "first_boot_jobs 是部署期 init job（数据库迁移等）：releasing 前串行\n执行，失败即回滚。"
+        }
+      },
+      "title": "AppSpec 是长运行可部署单元的期望状态（App = 一个或多个 Process）。"
+    },
     "v1ApproveNetworkPeerResponse": {
       "type": "object",
       "properties": {
@@ -1417,6 +1494,31 @@
       ],
       "default": "BROWSE_READ_ONLY_ENFORCEMENT_UNSPECIFIED",
       "title": "BrowseReadOnlyEnforcement 是只读执法层级值域（ADR-0051 决策 6）。"
+    },
+    "v1BuildSpec": {
+      "type": "object",
+      "properties": {
+        "builder": {
+          "type": "string",
+          "title": "builder 是 Builder Provider 名（dockerfile / railpack / static），与\nstrategy oneof 形态配对（叶子 ValidateBuild 执法）。"
+        },
+        "dockerfile": {
+          "type": "string"
+        },
+        "railpack": {
+          "$ref": "#/definitions/v1RailpackBuilder"
+        },
+        "static": {
+          "$ref": "#/definitions/v1StaticBuilder"
+        },
+        "cache_from": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "title": "BuildSpec 是构建声明（dockerfile / railpack 钉版 / static，ADR-0032）。"
     },
     "v1Config": {
       "type": "object",
@@ -1653,11 +1755,42 @@
         }
       }
     },
+    "v1DeployStrategy": {
+      "type": "string",
+      "enum": [
+        "DEPLOY_STRATEGY_UNSPECIFIED",
+        "DEPLOY_STRATEGY_ROLLING",
+        "DEPLOY_STRATEGY_BLUE_GREEN"
+      ],
+      "default": "DEPLOY_STRATEGY_UNSPECIFIED",
+      "description": "- DEPLOY_STRATEGY_UNSPECIFIED: 缺省 = rolling（归一面：投影/引擎按 rolling 语义消费）。\n - DEPLOY_STRATEGY_ROLLING: 滚动替换（与既有语义逐字节相同——存量零变化）。\n - DEPLOY_STRATEGY_BLUE_GREEN: 蓝绿：旧代∪新代双代窗 → 新代 L1 门 → 切换 → 观察窗 → 收口。",
+      "title": "DeployStrategy 是部署切换策略（CONTEXT.md Deployment Strategy 词条：\nrolling | blue-green；Avoid 表两词条不引入——渐进分流与代次槽位机制\n均显式不做，ADR-0048）。blue-green = engine 的编排变体（Runtime 契约\n不变，ADR-0048）：双代窗期间两代载体并存，新代 L1 全就绪才切换流量。\nUNSPECIFIED（零值）语义归一为 rolling——存量 Revision 无该字段重放即\nrolling，无迁移面。"
+    },
+    "v1ExecProbe": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
     "v1GetAppResponse": {
       "type": "object",
       "properties": {
         "app": {
           "$ref": "#/definitions/v1App"
+        }
+      }
+    },
+    "v1GetAppSpecResponse": {
+      "type": "object",
+      "properties": {
+        "spec": {
+          "$ref": "#/definitions/v1AppSpec",
+          "title": "spec 是最新 Revision 冻结的 AppSpec（spec.proto 唯一运行时边界的\n只读回读；未部署过 = E_NOT_FOUND）。"
         }
       }
     },
@@ -1692,6 +1825,98 @@
           "$ref": "#/definitions/v1Project"
         }
       }
+    },
+    "v1GitSource": {
+      "type": "object",
+      "properties": {
+        "repo": {
+          "type": "string",
+          "title": "repo 是仓库 URL（部署 Token 形态，Token 不进 URL 路径段日志）。"
+        },
+        "ref": {
+          "type": "string",
+          "title": "ref 是分支/标签/commit。"
+        }
+      }
+    },
+    "v1HealthcheckSpec": {
+      "type": "object",
+      "properties": {
+        "http_path": {
+          "type": "string"
+        },
+        "tcp_port": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "exec": {
+          "$ref": "#/definitions/v1ExecProbe"
+        },
+        "interval": {
+          "type": "string"
+        },
+        "timeout": {
+          "type": "string"
+        },
+        "start_period": {
+          "type": "string"
+        },
+        "retries": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      "title": "HealthcheckSpec 是声明式探针（三选一 + 节律）。"
+    },
+    "v1ImageSource": {
+      "type": "object",
+      "properties": {
+        "ref": {
+          "type": "string",
+          "title": "ref 是镜像引用（私有仓库凭证经 Secret 解析分发）。"
+        }
+      }
+    },
+    "v1JobSpec": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "image": {
+          "type": "string"
+        },
+        "from_build": {
+          "type": "string"
+        },
+        "command": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "secret_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "ttl": {
+          "type": "string",
+          "title": "ttl 是作业硬超时（超时即失败回滚）。"
+        },
+        "process": {
+          "$ref": "#/definitions/v1ProcessSpec",
+          "title": "process 是单进程模板（重塑后的唯一读取面）。"
+        }
+      },
+      "title": "JobSpec 是部署期一次性作业（first boot jobs，ADR-0007 词汇裁决：词条归\nTask——部署期特例）。C-13 重塑：进程模板共享 ProcessSpec（process 字段，\n与 TaskSpec 同款嵌套形态）；旧标量字段（image_origin/command/env/\nsecret_refs）保留号退役（deprecated，读取面一律走 process——buf breaking\nFILE 档下零消费者字段删除亦红，彻底删除待 breaking 基线策略变更）。"
     },
     "v1ListAppsResponse": {
       "type": "object",
@@ -1868,6 +2093,114 @@
       },
       "title": "NetworkPeer 是一条跨 Project 挂靠声明（ADR-0013 附录 A.1）：挂靠方\n项目 declare（pending）→ 接收方 approve（approved）→ 任一侧 revoke\n（revoked；重新挂靠走新声明行）。network_* 是接收方（网络归属方）读\n投影；peer_project_id 是挂靠方（声明方）项目。"
     },
+    "v1PlacementSpec": {
+      "type": "object",
+      "properties": {
+        "node_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "title": "PlacementSpec 是调度意图（节点选择约束；平台节点 ID 为锚——映射为\n编排器约束语法是 Provider 私有）。"
+    },
+    "v1PortSpec": {
+      "type": "object",
+      "properties": {
+        "port": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "protocol": {
+          "$ref": "#/definitions/v1Protocol"
+        }
+      },
+      "title": "PortSpec 是进程监听端口声明（Route 投影来源）。"
+    },
+    "v1ProcessSpec": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "image": {
+          "type": "string",
+          "title": "image 是镜像直部署引用。"
+        },
+        "from_build": {
+          "type": "string",
+          "title": "from_build 引用同 Spec Build 输出（Ensure 前由平台解析为 digest）。"
+        },
+        "command": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "command 覆盖镜像入口；空 = 镜像默认。"
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "env 是非敏感环境变量（Project/App 两级合成的归一化结果）。"
+        },
+        "secret_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "secret_refs 按名引用 Project Secret（注入时解析，值不进 Spec）。"
+        },
+        "config_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "config_refs 按名引用 Project Config 版本化挂载文件。"
+        },
+        "ports": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1PortSpec"
+          }
+        },
+        "healthcheck": {
+          "$ref": "#/definitions/v1HealthcheckSpec"
+        },
+        "resources": {
+          "$ref": "#/definitions/v1ResourcesSpec"
+        },
+        "replicas": {
+          "type": "string",
+          "format": "int64"
+        },
+        "placement": {
+          "$ref": "#/definitions/v1PlacementSpec"
+        },
+        "volumes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1VolumeAttachment"
+          }
+        },
+        "networks": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "networks 是网络附件（Project 网络名或 taskGroup:\u003cname\u003e 跨挂）。"
+        },
+        "strategy": {
+          "$ref": "#/definitions/v1DeployStrategy",
+          "title": "strategy 是部署切换策略（ADR-0048 决策 1：rolling 缺省 | blue-green\n可选——Process 级，\"web 蓝绿 + worker 滚动\"的混合是真实需求）。\nUNSPECIFIED（零值）归一为 rolling：存量 Revision 无该字段重放即\nrolling，无迁移面。值域住叶子校验（spec.ValidateProcess，词条单源\n= CONTEXT.md Deployment Strategy）。Database/受管域不适用（结构性\n保证，同 ADR）。"
+        }
+      },
+      "title": "ProcessSpec 是 App 内的进程模板（web/worker…）。"
+    },
     "v1Project": {
       "type": "object",
       "properties": {
@@ -1887,6 +2220,17 @@
           "type": "string"
         }
       }
+    },
+    "v1Protocol": {
+      "type": "string",
+      "enum": [
+        "PROTOCOL_UNSPECIFIED",
+        "PROTOCOL_HTTP",
+        "PROTOCOL_H2C",
+        "PROTOCOL_TCP"
+      ],
+      "default": "PROTOCOL_UNSPECIFIED",
+      "title": "Protocol 是 Route/端口协议（http/h2c/tcp）。"
     },
     "v1PutConfigRequest": {
       "type": "object",
@@ -1963,6 +2307,15 @@
       },
       "title": "affected_apps 是受影响 App 提示（近似口径，ADR-0043 决策 4）：项目内\n已有 Revision 且最新冻结 env 会因本次变更而不同的 App——重部署取新值；\n不触发任何自动重部署。"
     },
+    "v1RailpackBuilder": {
+      "type": "object",
+      "properties": {
+        "pinned_version": {
+          "type": "string"
+        }
+      },
+      "title": "RailpackBuilder 必须钉版本（防 plan 漂移，旧 spike 教训；ADR-0032：\nbare semver，须等于平台钉版常量——Build 期执法，错误文本带平台版本）。"
+    },
     "v1RebuildNetworkRequest": {
       "type": "object",
       "properties": {
@@ -1991,6 +2344,21 @@
           "format": "int32"
         }
       }
+    },
+    "v1ResourcesSpec": {
+      "type": "object",
+      "properties": {
+        "cpu_millis": {
+          "type": "string",
+          "format": "int64",
+          "title": "cpu_millis 毫核（1000 = 1 CPU）。"
+        },
+        "memory_mb": {
+          "type": "string",
+          "format": "int64"
+        }
+      },
+      "title": "ResourcesSpec 是每副本资源上限（v1 仅每 Process 上限）。"
     },
     "v1RevokeNetworkPeerResponse": {
       "type": "object",
@@ -2042,11 +2410,44 @@
       },
       "title": "SharedVariable 是 Project 级共享变量（ADR-0043）：值明文回显——非敏感\n契约与 env 同源（敏感值走 Secrets）；归一化期作为 Project 层合成进\nAppSpec（App 层 env 覆盖）。"
     },
+    "v1Source": {
+      "type": "object",
+      "properties": {
+        "git": {
+          "$ref": "#/definitions/v1GitSource"
+        },
+        "image": {
+          "$ref": "#/definitions/v1ImageSource"
+        },
+        "upload": {
+          "$ref": "#/definitions/v1UploadSource"
+        }
+      },
+      "title": "Source 是 App 的来源三形态（Git 引用 / 镜像引用 / 上传产物）。"
+    },
+    "v1StaticBuilder": {
+      "type": "object",
+      "properties": {
+        "output_dir": {
+          "type": "string",
+          "title": "output_dir 是产物目录（context 内相对路径，缺省 \".\"；拒 .. 与绝对路径）。"
+        }
+      },
+      "title": "StaticBuilder 是产物目录包装声明（ADR-0032）：上传上下文的产物子目录\n整体 COPY 进钉版 Caddy 伺服镜像；无构建步（源码构建是 railpack 的地盘）。"
+    },
     "v1TriggerBackupResponse": {
       "type": "object",
       "properties": {
         "backup": {
           "$ref": "#/definitions/v1Backup"
+        }
+      }
+    },
+    "v1UploadSource": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
         }
       }
     },
@@ -2083,6 +2484,22 @@
           "type": "string"
         }
       }
+    },
+    "v1VolumeAttachment": {
+      "type": "object",
+      "properties": {
+        "volume_id": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "read_only": {
+          "type": "boolean",
+          "title": "read_only 是只读挂载（compose 短语法 name:/target:ro；缺省可写）。"
+        }
+      },
+      "title": "VolumeAttachment 是持久存储附件（无显式 Placement 时默认钉住节点）。"
     }
   }
 }

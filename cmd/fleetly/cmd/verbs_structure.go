@@ -6,7 +6,9 @@ package cmd
 // Run 读字段）。
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -15,6 +17,7 @@ import (
 
 	"github.com/lynx-go/commands"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 )
@@ -179,6 +182,43 @@ func newAppsCreateVerb() commands.Command {
 			}
 			return renderOut(env, jsonOut, resp.GetApp(), func() {
 				_, _ = fmt.Fprintf(env.Stdout, "created app %s (id %s)\n", resp.GetApp().GetName(), resp.GetApp().GetId())
+			})
+		},
+	}
+}
+
+// newAppsSpecVerb 回读 App 当前冻结 Spec（IA v3 二期②：Variables/反查
+// 数据源；protojson 双形态同构——Spec 本就是 JSON 边界）。未部署过 =
+// E_NOT_FOUND。
+func newAppsSpecVerb() commands.Command {
+	const name = "spec"
+	return &flaggedVerb{
+		name:     name,
+		synopsis: "Read the app's current frozen AppSpec (latest revision; read-only)",
+		usage:    "apps spec APP_ID",
+		setFlags: func(fs *flag.FlagSet) {},
+		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if len(args) != 1 {
+				return usageErr(name, "expected exactly one APP_ID argument")
+			}
+			ctx, cancel, c, err := dialFromEnv(ctx)
+			if err != nil {
+				return err
+			}
+			defer cancel()
+			defer c.Close() //nolint:errcheck // 进程退出路径
+			resp, err := c.Apps.GetAppSpec(ctx, &structurev1.GetAppSpecRequest{Id: args[0]})
+			if err != nil {
+				return err
+			}
+			return renderOut(env, jsonOut, resp.GetSpec(), func() {
+				data, merr := protojson.Marshal(resp.GetSpec())
+				if merr != nil {
+					return
+				}
+				var buf bytes.Buffer
+				_ = json.Compact(&buf, data)
+				_, _ = fmt.Fprintln(env.Stdout, buf.String())
 			})
 		},
 	}

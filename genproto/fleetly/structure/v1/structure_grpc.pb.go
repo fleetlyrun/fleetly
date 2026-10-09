@@ -245,10 +245,11 @@ var ProjectsService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	AppsService_CreateApp_FullMethodName = "/fleetly.structure.v1.AppsService/CreateApp"
-	AppsService_GetApp_FullMethodName    = "/fleetly.structure.v1.AppsService/GetApp"
-	AppsService_ListApps_FullMethodName  = "/fleetly.structure.v1.AppsService/ListApps"
-	AppsService_DeleteApp_FullMethodName = "/fleetly.structure.v1.AppsService/DeleteApp"
+	AppsService_CreateApp_FullMethodName  = "/fleetly.structure.v1.AppsService/CreateApp"
+	AppsService_GetApp_FullMethodName     = "/fleetly.structure.v1.AppsService/GetApp"
+	AppsService_GetAppSpec_FullMethodName = "/fleetly.structure.v1.AppsService/GetAppSpec"
+	AppsService_ListApps_FullMethodName   = "/fleetly.structure.v1.AppsService/ListApps"
+	AppsService_DeleteApp_FullMethodName  = "/fleetly.structure.v1.AppsService/DeleteApp"
 )
 
 // AppsServiceClient is the client API for AppsService service.
@@ -257,6 +258,10 @@ const (
 type AppsServiceClient interface {
 	CreateApp(ctx context.Context, in *CreateAppRequest, opts ...grpc.CallOption) (*CreateAppResponse, error)
 	GetApp(ctx context.Context, in *GetAppRequest, opts ...grpc.CallOption) (*GetAppResponse, error)
+	// GetAppSpec 回读 App 当前冻结 Spec（最新 Revision 的 protojson 规范
+	// 序列化反解；只读面——写路径仅 Deploy）。Variables 编辑面 / Used-by
+	// 反查 / Volume 挂载反查的数据源（IA v3 二期②）。
+	GetAppSpec(ctx context.Context, in *GetAppSpecRequest, opts ...grpc.CallOption) (*GetAppSpecResponse, error)
 	ListApps(ctx context.Context, in *ListAppsRequest, opts ...grpc.CallOption) (*ListAppsResponse, error)
 	DeleteApp(ctx context.Context, in *DeleteAppRequest, opts ...grpc.CallOption) (*DeleteAppResponse, error)
 }
@@ -289,6 +294,16 @@ func (c *appsServiceClient) GetApp(ctx context.Context, in *GetAppRequest, opts 
 	return out, nil
 }
 
+func (c *appsServiceClient) GetAppSpec(ctx context.Context, in *GetAppSpecRequest, opts ...grpc.CallOption) (*GetAppSpecResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetAppSpecResponse)
+	err := c.cc.Invoke(ctx, AppsService_GetAppSpec_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *appsServiceClient) ListApps(ctx context.Context, in *ListAppsRequest, opts ...grpc.CallOption) (*ListAppsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListAppsResponse)
@@ -315,6 +330,10 @@ func (c *appsServiceClient) DeleteApp(ctx context.Context, in *DeleteAppRequest,
 type AppsServiceServer interface {
 	CreateApp(context.Context, *CreateAppRequest) (*CreateAppResponse, error)
 	GetApp(context.Context, *GetAppRequest) (*GetAppResponse, error)
+	// GetAppSpec 回读 App 当前冻结 Spec（最新 Revision 的 protojson 规范
+	// 序列化反解；只读面——写路径仅 Deploy）。Variables 编辑面 / Used-by
+	// 反查 / Volume 挂载反查的数据源（IA v3 二期②）。
+	GetAppSpec(context.Context, *GetAppSpecRequest) (*GetAppSpecResponse, error)
 	ListApps(context.Context, *ListAppsRequest) (*ListAppsResponse, error)
 	DeleteApp(context.Context, *DeleteAppRequest) (*DeleteAppResponse, error)
 	mustEmbedUnimplementedAppsServiceServer()
@@ -332,6 +351,9 @@ func (UnimplementedAppsServiceServer) CreateApp(context.Context, *CreateAppReque
 }
 func (UnimplementedAppsServiceServer) GetApp(context.Context, *GetAppRequest) (*GetAppResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetApp not implemented")
+}
+func (UnimplementedAppsServiceServer) GetAppSpec(context.Context, *GetAppSpecRequest) (*GetAppSpecResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetAppSpec not implemented")
 }
 func (UnimplementedAppsServiceServer) ListApps(context.Context, *ListAppsRequest) (*ListAppsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListApps not implemented")
@@ -396,6 +418,24 @@ func _AppsService_GetApp_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AppsService_GetAppSpec_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetAppSpecRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AppsServiceServer).GetAppSpec(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AppsService_GetAppSpec_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AppsServiceServer).GetAppSpec(ctx, req.(*GetAppSpecRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _AppsService_ListApps_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListAppsRequest)
 	if err := dec(in); err != nil {
@@ -446,6 +486,10 @@ var AppsService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetApp",
 			Handler:    _AppsService_GetApp_Handler,
+		},
+		{
+			MethodName: "GetAppSpec",
+			Handler:    _AppsService_GetAppSpec_Handler,
 		},
 		{
 			MethodName: "ListApps",
