@@ -41,18 +41,10 @@ export function isActiveDeploymentState(state: string | undefined): boolean {
   return state === "running" || state === "observing" || state === "releasing" || state === "queued" || state === "preparing";
 }
 
-// NODE_TONES 钉 Node availability 值域（runtime 口径；W2 走查措辞：
-// unavailable 是历史行语义，不是"故障"）。
-const NODE_TONES: Record<string, StatusTone> = {
-  available: "success",
-  cordon: "warning",
-  drain: "warning",
-  unavailable: "neutral",
-  unknown: "neutral",
-};
-
-export function nodeTone(availability: string | undefined): StatusTone {
-  return NODE_TONES[availability ?? ""] ?? "neutral";
+// nodeTone 钉 Node available 布尔（runtime 口径；W2 走查措辞：false 是
+// 历史行语义，不是"故障"——呈现为 neutral 置灰而非红色）。
+export function nodeTone(available: boolean | undefined): StatusTone {
+  return available ? "success" : "neutral";
 }
 
 // ALERT_TONES 钉告警评估态值域。

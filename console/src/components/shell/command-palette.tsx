@@ -52,13 +52,13 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
         <CommandSeparator />
         <CommandGroup heading="Actions">
           <CommandItem
-            value="deploy deployments"
+            value="quickstart guided setup"
             onSelect={() => {
               onOpenChange(false);
-              void navigate({ to: "/deployments" });
+              void navigate({ to: "/quickstart" });
             }}
           >
-            Deploy…
+            Quickstart…
           </CommandItem>
         </CommandGroup>
       </CommandList>

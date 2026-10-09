@@ -1,3 +1,4 @@
+import { useNavigate } from "@tanstack/react-router";
 import { ChevronDownIcon } from "lucide-react";
 import { useProjects } from "@/lib/catalog";
 import { useProjectId } from "@/lib/project";
@@ -16,6 +17,7 @@ import { SidebarMenuButton } from "@/components/ui/sidebar";
 // 批 1 只承载选中记忆；批 2 选中即跳 /p/$projectId（此后项目语境进 URL）。
 export function ProjectSwitcher() {
   const [projectId, setProjectId] = useProjectId();
+  const navigate = useNavigate();
   const projects = useProjects();
   const list = projects.data ?? [];
   const current = list.find((project) => project.id === projectId) ?? list[0];
@@ -38,7 +40,11 @@ export function ProjectSwitcher() {
           list.map((project) => (
             <DropdownMenuItem
               key={project.id}
-              onClick={() => setProjectId(project.id)}
+              onClick={() => {
+                setProjectId(project.id);
+                // 项目语境进 URL（UI v2 信息架构锚）：切换即跳项目总览。
+                void navigate({ to: "/p/$projectId", params: { projectId: project.id } });
+              }}
             >
               <ProjectAvatar seed={project.id} label={project.name} className="size-5 rounded-md text-[10px]" />
               <span className="truncate">{project.name}</span>

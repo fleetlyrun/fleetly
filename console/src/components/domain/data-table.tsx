@@ -9,7 +9,7 @@ import {
 } from "@tanstack/react-table/legacy";
 import { ArrowDownIcon, ArrowUpIcon, ChevronsUpDownIcon } from "lucide-react";
 import { cn } from "cn";
-import { ApiError } from "@/api/client";
+import { describeError } from "@/lib/api-errors";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -140,14 +140,14 @@ export function DataTable<T extends Record<string, any>>({
   );
 }
 
-// ErrorInline：表格体内的错误行（批 1 接 describeError 分状态文案升级）。
+// ErrorInline：表格体内的错误行（分状态文案出自 lib/api-errors 单源）。
 function ErrorInline({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
-  const detail =
-    error instanceof ApiError ? `${error.code}: ${error.message}` : error instanceof Error ? error.message : String(error);
+  const described = describeError(error);
   return (
     <div className="flex flex-col items-start gap-2 rounded-lg border border-[color-mix(in_oklch,var(--status-danger)_35%,transparent)] bg-[var(--status-danger-bg)] px-4 py-3">
-      <div className="text-sm font-semibold text-[var(--status-danger)]">Request failed</div>
-      <div className="font-mono text-xs break-all text-[var(--status-danger)]/80">{detail}</div>
+      <div className="text-sm font-semibold text-[var(--status-danger)]">{described.title}</div>
+      <div className="text-xs text-[var(--status-danger)]/80">{described.hint}</div>
+      <div className="font-mono text-xs break-all text-muted-foreground">{described.detail}</div>
       {onRetry ? (
         <Button variant="outline" size="sm" onClick={onRetry}>
           Retry

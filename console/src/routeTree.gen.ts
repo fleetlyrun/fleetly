@@ -12,9 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ShellRouteImport } from './routes/_shell'
 import { Route as LoginRouteImport } from './routes/login'
-import { Route as ShellAppsRouteImport } from './routes/_shell/apps'
 import { Route as ShellAuditRouteImport } from './routes/_shell/audit'
-import { Route as ShellDeploymentsRouteImport } from './routes/_shell/deployments'
 import { Route as ShellEventsRouteImport } from './routes/_shell/events'
 import { Route as ShellIdentityRouteImport } from './routes/_shell/identity'
 import { Route as ShellLogsRouteImport } from './routes/_shell/logs'
@@ -28,6 +26,14 @@ import { Route as ShellTasksRouteImport } from './routes/_shell/tasks'
 import { Route as ShellTemplatesRouteImport } from './routes/_shell/templates'
 import { Route as ShellTerminalRouteImport } from './routes/_shell/terminal'
 import { Route as ShellDeploymentsDeploymentIdRouteImport } from './routes/_shell/deployments.$deploymentId'
+import { Route as ShellPProjectIdRouteImport } from './routes/_shell/p.$projectId'
+import { Route as ShellPProjectIdIndexRouteImport } from './routes/_shell/p.$projectId.index'
+import { Route as ShellPProjectIdAppsIndexRouteImport } from './routes/_shell/p.$projectId.apps.index'
+import { Route as ShellPProjectIdAppsAppIdRouteImport } from './routes/_shell/p.$projectId.apps.$appId'
+import { Route as ShellPProjectIdDeploymentsIndexRouteImport } from './routes/_shell/p.$projectId.deployments.index'
+import { Route as ShellPProjectIdAppsAppIdIndexRouteImport } from './routes/_shell/p.$projectId.apps.$appId.index'
+import { Route as ShellPProjectIdAppsAppIdDeploymentsIndexRouteImport } from './routes/_shell/p.$projectId.apps.$appId.deployments.index'
+import { Route as ShellPProjectIdAppsAppIdDeploymentsDeploymentIdRouteImport } from './routes/_shell/p.$projectId.apps.$appId.deployments.$deploymentId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -43,19 +49,9 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ShellAppsRoute = ShellAppsRouteImport.update({
-  id: '/apps',
-  path: '/apps',
-  getParentRoute: () => ShellRoute,
-} as any)
 const ShellAuditRoute = ShellAuditRouteImport.update({
   id: '/audit',
   path: '/audit',
-  getParentRoute: () => ShellRoute,
-} as any)
-const ShellDeploymentsRoute = ShellDeploymentsRouteImport.update({
-  id: '/deployments',
-  path: '/deployments',
   getParentRoute: () => ShellRoute,
 } as any)
 const ShellEventsRoute = ShellEventsRouteImport.update({
@@ -120,17 +116,61 @@ const ShellTerminalRoute = ShellTerminalRouteImport.update({
 } as any)
 const ShellDeploymentsDeploymentIdRoute =
   ShellDeploymentsDeploymentIdRouteImport.update({
-    id: '/$deploymentId',
-    path: '/$deploymentId',
-    getParentRoute: () => ShellDeploymentsRoute,
+    id: '/deployments/$deploymentId',
+    path: '/deployments/$deploymentId',
+    getParentRoute: () => ShellRoute,
+  } as any)
+const ShellPProjectIdRoute = ShellPProjectIdRouteImport.update({
+  id: '/p/$projectId',
+  path: '/p/$projectId',
+  getParentRoute: () => ShellRoute,
+} as any)
+const ShellPProjectIdIndexRoute = ShellPProjectIdIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ShellPProjectIdRoute,
+} as any)
+const ShellPProjectIdAppsIndexRoute =
+  ShellPProjectIdAppsIndexRouteImport.update({
+    id: '/apps/',
+    path: '/apps/',
+    getParentRoute: () => ShellPProjectIdRoute,
+  } as any)
+const ShellPProjectIdAppsAppIdRoute =
+  ShellPProjectIdAppsAppIdRouteImport.update({
+    id: '/apps/$appId',
+    path: '/apps/$appId',
+    getParentRoute: () => ShellPProjectIdRoute,
+  } as any)
+const ShellPProjectIdDeploymentsIndexRoute =
+  ShellPProjectIdDeploymentsIndexRouteImport.update({
+    id: '/deployments/',
+    path: '/deployments/',
+    getParentRoute: () => ShellPProjectIdRoute,
+  } as any)
+const ShellPProjectIdAppsAppIdIndexRoute =
+  ShellPProjectIdAppsAppIdIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => ShellPProjectIdAppsAppIdRoute,
+  } as any)
+const ShellPProjectIdAppsAppIdDeploymentsIndexRoute =
+  ShellPProjectIdAppsAppIdDeploymentsIndexRouteImport.update({
+    id: '/deployments/',
+    path: '/deployments/',
+    getParentRoute: () => ShellPProjectIdAppsAppIdRoute,
+  } as any)
+const ShellPProjectIdAppsAppIdDeploymentsDeploymentIdRoute =
+  ShellPProjectIdAppsAppIdDeploymentsDeploymentIdRouteImport.update({
+    id: '/deployments/$deploymentId',
+    path: '/deployments/$deploymentId',
+    getParentRoute: () => ShellPProjectIdAppsAppIdRoute,
   } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
-  '/apps': typeof ShellAppsRoute
   '/audit': typeof ShellAuditRoute
-  '/deployments': typeof ShellDeploymentsRouteWithChildren
   '/events': typeof ShellEventsRoute
   '/identity': typeof ShellIdentityRoute
   '/logs': typeof ShellLogsRoute
@@ -144,13 +184,19 @@ export interface FileRoutesByFullPath {
   '/templates': typeof ShellTemplatesRoute
   '/terminal': typeof ShellTerminalRoute
   '/deployments/$deploymentId': typeof ShellDeploymentsDeploymentIdRoute
+  '/p/$projectId': typeof ShellPProjectIdRouteWithChildren
+  '/p/$projectId/': typeof ShellPProjectIdIndexRoute
+  '/p/$projectId/apps/$appId': typeof ShellPProjectIdAppsAppIdRouteWithChildren
+  '/p/$projectId/apps/': typeof ShellPProjectIdAppsIndexRoute
+  '/p/$projectId/deployments/': typeof ShellPProjectIdDeploymentsIndexRoute
+  '/p/$projectId/apps/$appId/': typeof ShellPProjectIdAppsAppIdIndexRoute
+  '/p/$projectId/apps/$appId/deployments/$deploymentId': typeof ShellPProjectIdAppsAppIdDeploymentsDeploymentIdRoute
+  '/p/$projectId/apps/$appId/deployments/': typeof ShellPProjectIdAppsAppIdDeploymentsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
-  '/apps': typeof ShellAppsRoute
   '/audit': typeof ShellAuditRoute
-  '/deployments': typeof ShellDeploymentsRouteWithChildren
   '/events': typeof ShellEventsRoute
   '/identity': typeof ShellIdentityRoute
   '/logs': typeof ShellLogsRoute
@@ -164,15 +210,19 @@ export interface FileRoutesByTo {
   '/templates': typeof ShellTemplatesRoute
   '/terminal': typeof ShellTerminalRoute
   '/deployments/$deploymentId': typeof ShellDeploymentsDeploymentIdRoute
+  '/p/$projectId': typeof ShellPProjectIdIndexRoute
+  '/p/$projectId/apps': typeof ShellPProjectIdAppsIndexRoute
+  '/p/$projectId/deployments': typeof ShellPProjectIdDeploymentsIndexRoute
+  '/p/$projectId/apps/$appId': typeof ShellPProjectIdAppsAppIdIndexRoute
+  '/p/$projectId/apps/$appId/deployments/$deploymentId': typeof ShellPProjectIdAppsAppIdDeploymentsDeploymentIdRoute
+  '/p/$projectId/apps/$appId/deployments': typeof ShellPProjectIdAppsAppIdDeploymentsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_shell': typeof ShellRouteWithChildren
   '/login': typeof LoginRoute
-  '/_shell/apps': typeof ShellAppsRoute
   '/_shell/audit': typeof ShellAuditRoute
-  '/_shell/deployments': typeof ShellDeploymentsRouteWithChildren
   '/_shell/events': typeof ShellEventsRoute
   '/_shell/identity': typeof ShellIdentityRoute
   '/_shell/logs': typeof ShellLogsRoute
@@ -186,15 +236,21 @@ export interface FileRoutesById {
   '/_shell/templates': typeof ShellTemplatesRoute
   '/_shell/terminal': typeof ShellTerminalRoute
   '/_shell/deployments/$deploymentId': typeof ShellDeploymentsDeploymentIdRoute
+  '/_shell/p/$projectId': typeof ShellPProjectIdRouteWithChildren
+  '/_shell/p/$projectId/': typeof ShellPProjectIdIndexRoute
+  '/_shell/p/$projectId/apps/$appId': typeof ShellPProjectIdAppsAppIdRouteWithChildren
+  '/_shell/p/$projectId/apps/': typeof ShellPProjectIdAppsIndexRoute
+  '/_shell/p/$projectId/deployments/': typeof ShellPProjectIdDeploymentsIndexRoute
+  '/_shell/p/$projectId/apps/$appId/': typeof ShellPProjectIdAppsAppIdIndexRoute
+  '/_shell/p/$projectId/apps/$appId/deployments/$deploymentId': typeof ShellPProjectIdAppsAppIdDeploymentsDeploymentIdRoute
+  '/_shell/p/$projectId/apps/$appId/deployments/': typeof ShellPProjectIdAppsAppIdDeploymentsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
     | '/login'
-    | '/apps'
     | '/audit'
-    | '/deployments'
     | '/events'
     | '/identity'
     | '/logs'
@@ -208,13 +264,19 @@ export interface FileRouteTypes {
     | '/templates'
     | '/terminal'
     | '/deployments/$deploymentId'
+    | '/p/$projectId'
+    | '/p/$projectId/'
+    | '/p/$projectId/apps/$appId'
+    | '/p/$projectId/apps/'
+    | '/p/$projectId/deployments/'
+    | '/p/$projectId/apps/$appId/'
+    | '/p/$projectId/apps/$appId/deployments/$deploymentId'
+    | '/p/$projectId/apps/$appId/deployments/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/login'
-    | '/apps'
     | '/audit'
-    | '/deployments'
     | '/events'
     | '/identity'
     | '/logs'
@@ -228,14 +290,18 @@ export interface FileRouteTypes {
     | '/templates'
     | '/terminal'
     | '/deployments/$deploymentId'
+    | '/p/$projectId'
+    | '/p/$projectId/apps'
+    | '/p/$projectId/deployments'
+    | '/p/$projectId/apps/$appId'
+    | '/p/$projectId/apps/$appId/deployments/$deploymentId'
+    | '/p/$projectId/apps/$appId/deployments'
   id:
     | '__root__'
     | '/'
     | '/_shell'
     | '/login'
-    | '/_shell/apps'
     | '/_shell/audit'
-    | '/_shell/deployments'
     | '/_shell/events'
     | '/_shell/identity'
     | '/_shell/logs'
@@ -249,6 +315,14 @@ export interface FileRouteTypes {
     | '/_shell/templates'
     | '/_shell/terminal'
     | '/_shell/deployments/$deploymentId'
+    | '/_shell/p/$projectId'
+    | '/_shell/p/$projectId/'
+    | '/_shell/p/$projectId/apps/$appId'
+    | '/_shell/p/$projectId/apps/'
+    | '/_shell/p/$projectId/deployments/'
+    | '/_shell/p/$projectId/apps/$appId/'
+    | '/_shell/p/$projectId/apps/$appId/deployments/$deploymentId'
+    | '/_shell/p/$projectId/apps/$appId/deployments/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -280,25 +354,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_shell/apps': {
-      id: '/_shell/apps'
-      path: '/apps'
-      fullPath: '/apps'
-      preLoaderRoute: typeof ShellAppsRouteImport
-      parentRoute: typeof ShellRoute
-    }
     '/_shell/audit': {
       id: '/_shell/audit'
       path: '/audit'
       fullPath: '/audit'
       preLoaderRoute: typeof ShellAuditRouteImport
-      parentRoute: typeof ShellRoute
-    }
-    '/_shell/deployments': {
-      id: '/_shell/deployments'
-      path: '/deployments'
-      fullPath: '/deployments'
-      preLoaderRoute: typeof ShellDeploymentsRouteImport
       parentRoute: typeof ShellRoute
     }
     '/_shell/events': {
@@ -387,29 +447,110 @@ declare module '@tanstack/react-router' {
     }
     '/_shell/deployments/$deploymentId': {
       id: '/_shell/deployments/$deploymentId'
-      path: '/$deploymentId'
+      path: '/deployments/$deploymentId'
       fullPath: '/deployments/$deploymentId'
       preLoaderRoute: typeof ShellDeploymentsDeploymentIdRouteImport
-      parentRoute: typeof ShellDeploymentsRoute
+      parentRoute: typeof ShellRoute
+    }
+    '/_shell/p/$projectId': {
+      id: '/_shell/p/$projectId'
+      path: '/p/$projectId'
+      fullPath: '/p/$projectId'
+      preLoaderRoute: typeof ShellPProjectIdRouteImport
+      parentRoute: typeof ShellRoute
+    }
+    '/_shell/p/$projectId/': {
+      id: '/_shell/p/$projectId/'
+      path: '/'
+      fullPath: '/p/$projectId/'
+      preLoaderRoute: typeof ShellPProjectIdIndexRouteImport
+      parentRoute: typeof ShellPProjectIdRoute
+    }
+    '/_shell/p/$projectId/apps/': {
+      id: '/_shell/p/$projectId/apps/'
+      path: '/apps'
+      fullPath: '/p/$projectId/apps/'
+      preLoaderRoute: typeof ShellPProjectIdAppsIndexRouteImport
+      parentRoute: typeof ShellPProjectIdRoute
+    }
+    '/_shell/p/$projectId/apps/$appId': {
+      id: '/_shell/p/$projectId/apps/$appId'
+      path: '/apps/$appId'
+      fullPath: '/p/$projectId/apps/$appId'
+      preLoaderRoute: typeof ShellPProjectIdAppsAppIdRouteImport
+      parentRoute: typeof ShellPProjectIdRoute
+    }
+    '/_shell/p/$projectId/deployments/': {
+      id: '/_shell/p/$projectId/deployments/'
+      path: '/deployments'
+      fullPath: '/p/$projectId/deployments/'
+      preLoaderRoute: typeof ShellPProjectIdDeploymentsIndexRouteImport
+      parentRoute: typeof ShellPProjectIdRoute
+    }
+    '/_shell/p/$projectId/apps/$appId/': {
+      id: '/_shell/p/$projectId/apps/$appId/'
+      path: '/'
+      fullPath: '/p/$projectId/apps/$appId/'
+      preLoaderRoute: typeof ShellPProjectIdAppsAppIdIndexRouteImport
+      parentRoute: typeof ShellPProjectIdAppsAppIdRoute
+    }
+    '/_shell/p/$projectId/apps/$appId/deployments/': {
+      id: '/_shell/p/$projectId/apps/$appId/deployments/'
+      path: '/deployments'
+      fullPath: '/p/$projectId/apps/$appId/deployments/'
+      preLoaderRoute: typeof ShellPProjectIdAppsAppIdDeploymentsIndexRouteImport
+      parentRoute: typeof ShellPProjectIdAppsAppIdRoute
+    }
+    '/_shell/p/$projectId/apps/$appId/deployments/$deploymentId': {
+      id: '/_shell/p/$projectId/apps/$appId/deployments/$deploymentId'
+      path: '/deployments/$deploymentId'
+      fullPath: '/p/$projectId/apps/$appId/deployments/$deploymentId'
+      preLoaderRoute: typeof ShellPProjectIdAppsAppIdDeploymentsDeploymentIdRouteImport
+      parentRoute: typeof ShellPProjectIdAppsAppIdRoute
     }
   }
 }
 
-interface ShellDeploymentsRouteChildren {
-  ShellDeploymentsDeploymentIdRoute: typeof ShellDeploymentsDeploymentIdRoute
+interface ShellPProjectIdAppsAppIdRouteChildren {
+  ShellPProjectIdAppsAppIdIndexRoute: typeof ShellPProjectIdAppsAppIdIndexRoute
+  ShellPProjectIdAppsAppIdDeploymentsDeploymentIdRoute: typeof ShellPProjectIdAppsAppIdDeploymentsDeploymentIdRoute
+  ShellPProjectIdAppsAppIdDeploymentsIndexRoute: typeof ShellPProjectIdAppsAppIdDeploymentsIndexRoute
 }
 
-const ShellDeploymentsRouteChildren: ShellDeploymentsRouteChildren = {
-  ShellDeploymentsDeploymentIdRoute: ShellDeploymentsDeploymentIdRoute,
+const ShellPProjectIdAppsAppIdRouteChildren: ShellPProjectIdAppsAppIdRouteChildren =
+  {
+    ShellPProjectIdAppsAppIdIndexRoute: ShellPProjectIdAppsAppIdIndexRoute,
+    ShellPProjectIdAppsAppIdDeploymentsDeploymentIdRoute:
+      ShellPProjectIdAppsAppIdDeploymentsDeploymentIdRoute,
+    ShellPProjectIdAppsAppIdDeploymentsIndexRoute:
+      ShellPProjectIdAppsAppIdDeploymentsIndexRoute,
+  }
+
+const ShellPProjectIdAppsAppIdRouteWithChildren =
+  ShellPProjectIdAppsAppIdRoute._addFileChildren(
+    ShellPProjectIdAppsAppIdRouteChildren,
+  )
+
+interface ShellPProjectIdRouteChildren {
+  ShellPProjectIdIndexRoute: typeof ShellPProjectIdIndexRoute
+  ShellPProjectIdAppsAppIdRoute: typeof ShellPProjectIdAppsAppIdRouteWithChildren
+  ShellPProjectIdAppsIndexRoute: typeof ShellPProjectIdAppsIndexRoute
+  ShellPProjectIdDeploymentsIndexRoute: typeof ShellPProjectIdDeploymentsIndexRoute
 }
 
-const ShellDeploymentsRouteWithChildren =
-  ShellDeploymentsRoute._addFileChildren(ShellDeploymentsRouteChildren)
+const ShellPProjectIdRouteChildren: ShellPProjectIdRouteChildren = {
+  ShellPProjectIdIndexRoute: ShellPProjectIdIndexRoute,
+  ShellPProjectIdAppsAppIdRoute: ShellPProjectIdAppsAppIdRouteWithChildren,
+  ShellPProjectIdAppsIndexRoute: ShellPProjectIdAppsIndexRoute,
+  ShellPProjectIdDeploymentsIndexRoute: ShellPProjectIdDeploymentsIndexRoute,
+}
+
+const ShellPProjectIdRouteWithChildren = ShellPProjectIdRoute._addFileChildren(
+  ShellPProjectIdRouteChildren,
+)
 
 interface ShellRouteChildren {
-  ShellAppsRoute: typeof ShellAppsRoute
   ShellAuditRoute: typeof ShellAuditRoute
-  ShellDeploymentsRoute: typeof ShellDeploymentsRouteWithChildren
   ShellEventsRoute: typeof ShellEventsRoute
   ShellIdentityRoute: typeof ShellIdentityRoute
   ShellLogsRoute: typeof ShellLogsRoute
@@ -422,12 +563,12 @@ interface ShellRouteChildren {
   ShellTasksRoute: typeof ShellTasksRoute
   ShellTemplatesRoute: typeof ShellTemplatesRoute
   ShellTerminalRoute: typeof ShellTerminalRoute
+  ShellDeploymentsDeploymentIdRoute: typeof ShellDeploymentsDeploymentIdRoute
+  ShellPProjectIdRoute: typeof ShellPProjectIdRouteWithChildren
 }
 
 const ShellRouteChildren: ShellRouteChildren = {
-  ShellAppsRoute: ShellAppsRoute,
   ShellAuditRoute: ShellAuditRoute,
-  ShellDeploymentsRoute: ShellDeploymentsRouteWithChildren,
   ShellEventsRoute: ShellEventsRoute,
   ShellIdentityRoute: ShellIdentityRoute,
   ShellLogsRoute: ShellLogsRoute,
@@ -440,6 +581,8 @@ const ShellRouteChildren: ShellRouteChildren = {
   ShellTasksRoute: ShellTasksRoute,
   ShellTemplatesRoute: ShellTemplatesRoute,
   ShellTerminalRoute: ShellTerminalRoute,
+  ShellDeploymentsDeploymentIdRoute: ShellDeploymentsDeploymentIdRoute,
+  ShellPProjectIdRoute: ShellPProjectIdRouteWithChildren,
 }
 
 const ShellRouteWithChildren = ShellRoute._addFileChildren(ShellRouteChildren)

@@ -25,11 +25,10 @@ describe("status-badge", () => {
     expect(isActiveDeploymentState("succeeded")).toBe(false);
   });
 
-  it("maps node availability (W2 wording: unavailable is history, not failure)", () => {
-    expect(nodeTone("available")).toBe("success");
-    expect(nodeTone("cordon")).toBe("warning");
-    expect(nodeTone("drain")).toBe("warning");
-    expect(nodeTone("unavailable")).toBe("neutral");
+  it("maps node availability (W2 wording: false is history, not failure)", () => {
+    expect(nodeTone(true)).toBe("success");
+    expect(nodeTone(false)).toBe("neutral");
+    expect(nodeTone(undefined)).toBe("neutral");
   });
 
   it("maps alert states", () => {
