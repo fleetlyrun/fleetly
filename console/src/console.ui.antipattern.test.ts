@@ -8,13 +8,13 @@ import { describe, expect, it } from "vitest";
 // ③ toLocaleString 时间散写（一律 lib/format 单源）；
 // ④ window.location.hash 直写（导航一律 TanStack Router）；
 // ⑤ "check the API token" 万金油错误文案（分状态诚实文案）。
-// 执法范围批 0 = 新世界（components/domain + lib + features/hooks/routes），
-// 批 6 扩全量 src/**（pages/ 与旧 ui.tsx 届时消亡）。
+// 执法范围：全量 src/**（批 5 起旧页消亡）。components/ui/**（shadcn 上游
+// 手植层）按上游原样纪律天然不在扫描面。
 // 范围例外（带理由，双向保鲜）：
 // - components/ui/**：shadcn 上游手植层，按原样保留不自改（升级即 diff 干净）；
 // - components/ui.tsx：旧共享层，尚在役服务 pre-v2 页面，批 5 消亡后移除例外；
 // - lib/router.ts：旧 hash 路由，批 1 被 TanStack Router 取代后移除例外。
-const SCANNED_ROOTS = ["src/components/domain", "src/lib", "src/features", "src/hooks", "src/routes"];
+const SCANNED_ROOTS = ["src/components/domain", "src/lib", "src/features", "src/hooks", "src/routes", "src/pages"];
 const EXEMPT_FILES = ["src/components/ui.tsx", "src/lib/router.ts"];
 
 const RULES: Array<{ pattern: RegExp; message: string }> = [
