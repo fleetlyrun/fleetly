@@ -793,6 +793,18 @@ export interface operations {
                  *     匹配；与 follow 组合 = 实时尾随检索（≥5s 批汇延迟）。
                  */
                 text?: string;
+                /**
+                 * @description database_id 是 Database 域寻址（ADR-0029 域分立）：库载体日志通路，
+                 *     与 app_id/run_id 三轴互斥（IA v3 T8——Service 层 NamespaceRef 本有
+                 *     Database 域，本字段补 API 入口）。
+                 */
+                database_id?: string;
+                /**
+                 * @description run_id 是 Run 域寻址（ADR-0025 决策 4 词汇分立）：单 Run 载体日志，
+                 *     与 app_id/database_id 三轴互斥；归属 Task 经行链解析（NamespaceRef
+                 *     .Task 轴，拒塞 .App——同款词汇纪律）。
+                 */
+                run_id?: string;
             };
             header?: never;
             path?: never;

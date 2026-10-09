@@ -17,6 +17,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
+import { useLogStream } from "@/features/logs/use-log-stream";
+import { LogViewer } from "@/features/logs/log-viewer";
 
 // Task 详情（IA v3 T3b，3 tabs——工作负载三兄弟对齐）：Overview（定义/形态/
 // Lease/Schedule 反链）/ Runs（列表 + Stop；run 日志按 T8 结论一期无通路，
@@ -239,6 +241,17 @@ function TaskRuns({ taskId }: { taskId: string }) {
 }
 
 function RunRow({ run }: { run: RunEntry }) {
+  const [logsOpen, setLogsOpen] = useState(false);
+  const log = useLogStream();
+  function toggleLogs() {
+    if (logsOpen) {
+      log.stop();
+      setLogsOpen(false);
+      return;
+    }
+    setLogsOpen(true);
+    log.start({ runId: run.id ?? "", process: "", tailLines: "300", text: "", follow: true });
+  }
   const stop = useMutation({
     mutationFn: async () => apiSend(`/v1/runs/${encodeURIComponent(run.id ?? "")}/stop`, "POST", {}),
     onSuccess: () => toast("Stop requested"),
@@ -246,7 +259,8 @@ function RunRow({ run }: { run: RunEntry }) {
   });
   const active = run.state === "running" || run.state === "pending" || run.state === "stopping";
   return (
-    <tr className="border-b last:border-b-0">
+    <>
+      <tr className="border-b last:border-b-0">
       <td className="px-3 py-2">
         <span className="flex items-center gap-1 font-mono text-xs">
           {(run.id ?? "").slice(0, 14)}…
@@ -267,11 +281,38 @@ function RunRow({ run }: { run: RunEntry }) {
         <RelativeTime value={run.created_at} />
       </td>
       <td className="px-3 py-2 text-right">
-        <Button variant="outline" size="sm" disabled={!active || stop.isPending} onClick={() => stop.mutate()} title="Request a graceful stop">
+        <Button variant="outline" size="sm" onClick={toggleLogs}>
+          {logsOpen ? "Hide logs" : "Logs"}
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="ml-1.5"
+          disabled={!active || stop.isPending}
+          onClick={() => stop.mutate()}
+          title="Request a graceful stop"
+        >
           Stop
         </Button>
       </td>
     </tr>
+      {logsOpen ? (
+        <tr className="border-b last:border-b-0 bg-muted/30">
+          <td colSpan={6} className="px-3 py-2">
+            <div className="h-64 overflow-hidden rounded-lg border">
+              <LogViewer frames={log.frames} streaming={log.streaming} />
+            </div>
+            <div className="mt-1.5 flex items-center gap-3 font-mono text-[11px] text-muted-foreground">
+              <span>scope: run {run.id}</span>
+              <span>{log.frames.length} frames</span>
+              {log.error != null ? (
+                <span className="text-destructive">{log.error instanceof Error ? log.error.message : String(log.error)}</span>
+              ) : null}
+            </div>
+          </td>
+        </tr>
+      ) : null}
+    </>
   );
 }
 

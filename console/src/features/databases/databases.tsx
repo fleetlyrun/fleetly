@@ -14,6 +14,7 @@ import {
 import { toast } from "sonner";
 import { apiSend } from "@/api/client";
 import { backupHealth } from "@/features/databases/backup-health";
+import { DatabaseLogsTab } from "@/features/databases/database-logs";
 import { DATABASE_CARRIER_PRESETS } from "@/features/databases/database-metrics";
 import { MetricChart } from "@/features/metrics/metric-chart";
 import { useDatabases, useDatabaseBackups, useMetricsSeries } from "@/lib/catalog";
@@ -428,8 +429,6 @@ export function DatabaseDetailPage({ projectId, databaseId }: { projectId: strin
     },
     onError: (cause) => toast.error(fieldError(cause)),
   });
-  const tabBase = `/p/${encodeURIComponent(projectId)}/databases/${encodeURIComponent(databaseId)}`;
-
   return (
     <div className="mx-auto max-w-7xl px-6 py-8">
       <PageHeader
@@ -482,6 +481,7 @@ export function DatabaseDetailPage({ projectId, databaseId }: { projectId: strin
         <TabsList className="mb-4">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="metrics">Metrics</TabsTrigger>
+          <TabsTrigger value="logs">Logs</TabsTrigger>
           <TabsTrigger value="backups">Backups</TabsTrigger>
           <TabsTrigger value="browse">Browse</TabsTrigger>
           <TabsTrigger value="settings">Settings</TabsTrigger>
@@ -493,6 +493,9 @@ export function DatabaseDetailPage({ projectId, databaseId }: { projectId: strin
         <TabsContent value="metrics">
           <DatabaseMetrics databaseId={databaseId} projectId={projectId} />
         </TabsContent>
+        <TabsContent value="logs">
+          <DatabaseLogsTab databaseId={databaseId} />
+        </TabsContent>
         <TabsContent value="backups">
           <DatabaseBackups database={database} projectId={projectId} databaseId={databaseId} />
         </TabsContent>
@@ -503,8 +506,6 @@ export function DatabaseDetailPage({ projectId, databaseId }: { projectId: strin
           <DatabaseSettings database={database} onDeleted={() => navigate({ to: "/p/$projectId/databases", params: { projectId } })} />
         </TabsContent>
       </Tabs>
-      {/* tabBase 预留给 Logs tab（二期 proto 加 database 轴后点亮） */}
-      <span className="hidden" data-log-tab-reserved={tabBase} />
     </div>
   );
 }

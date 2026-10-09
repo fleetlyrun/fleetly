@@ -10,7 +10,11 @@ import { streamLogs } from "@/api/streams";
 const MAX_FRAMES = 5_000;
 
 export interface LogControls {
-  appId: string;
+  /** appId / databaseId / runId 三轴互斥（IA v3 二期①：服务端三轴寻址）；
+   * appId 缺省且 database/run 在场时走对应轴。process 仅 app 轴有意义。 */
+  appId?: string;
+  databaseId?: string;
+  runId?: string;
   process: string;
   tailLines: string;
   text: string;
@@ -45,7 +49,9 @@ export function useLogStream() {
     setStreaming(true);
     setEnded(false);
     const query = new URLSearchParams();
-    if (controls.appId !== "") query.set("app_id", controls.appId);
+    if (controls.appId) query.set("app_id", controls.appId);
+    if (controls.databaseId) query.set("database_id", controls.databaseId);
+    if (controls.runId) query.set("run_id", controls.runId);
     if (controls.process !== "") query.set("process", controls.process);
     if (controls.tailLines !== "") query.set("tail_lines", controls.tailLines);
     if (controls.text !== "") query.set("text", controls.text);
