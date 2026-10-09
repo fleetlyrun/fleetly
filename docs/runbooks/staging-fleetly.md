@@ -628,3 +628,13 @@ F3.1/F3.2/F3.3/F3.6 四批走查的浏览器级挂账在后端在场的环境（
 **修复与验证**（761f516-w1p，console-only）：外层 form → div；守卫扩页级；vitest 42 绿。浏览器重走全绿：founder 密码登录 → 完整 Shell（14 路由 + 身份栏 `password session · admin`）→ 截图在案。staging 现役 761f516-w1p，新 dist `index-CfjOVfZB.js`。
 
 **走查环境事实**：19527 隧道是易逝品（会话结束即断）——重走查先 `ssh -N -L 19527:127.0.0.1:9081` 重建；IAB 对本机回环可达（record·十四 口径不变）。
+
+## 2026-10-09 记录·二十二（Console UI 完整浏览器走查：14 路由 PASS + 三修随批 09083ea-walk）
+
+**换装**（81dcced-c6pw → 761f516-w1p → **09083ea-walk（现役）**）：W1' 密码登录修复 + 走查三修，均为 console-only；零扰动。判定 PASS，报告 = `docs/reviews/2026-10-09-console-full-walkthrough.md`。
+
+- **W1'（P0 当轮修）**：用户报"无法登录"——浏览器级走查复现：C6 重写 LoginPage 外层布局误用 form，嵌套 form 致内层 submit 走默认 GET 提交（URL 带 `?`），登录零动作；jsdom 冒泡不同组件测试全绿漏网（W1 同机制换页面复发）。修：外层 div + 守卫扩页面级。教训固化：**form 永远只做业务表单容器**。
+- **W2（Nodes 历史行混淆面，当轮修）**：历史注册行与现役行混排（现役沉底+同名 hostname+全带 drain/uncordon 按钮）。修：现役先行 + 历史行置灰 + "unavailable" 措辞（不臆断死活）+ platform_id 悬浮锚；复验现役行置顶。
+- **F1/F2（当轮修）**：备份 Size toFixed(2)；指标图例中段截断保 task id 尾段。
+- **活体锚**：密码登录全链（截图在案）/指标图表多序列（torchwood CPU）/备份 verify（digest 与记录·十九同值）/Events SSE（following+200 行）/relay 版本随换装实时回显。
+- 走查环境事实：19527 隧道易逝（重走查先重建）；IAB locator click 偶发超时但动作实际生效（重读状态，勿盲目重试）。
