@@ -650,3 +650,13 @@ F3.1/F3.2/F3.3/F3.6 四批走查的浏览器级挂账在后端在场的环境（
 **浏览器复验**：reload → Nodes 路由懒加载渲染正常；终端页懒加载链（路由 chunk → xterm chunk）按需拉取全通、无控制台报错。门禁：console:verify 零漂移（注：verify 首跑曾报 dist 漂移——pnpm install 后 hash 不稳定的一次性形态，重建即齐）+ vitest 42 绿。
 
 **教训**：console:verify 的漂移断言对"构建非确定性"敏感（同输入偶发异 hash）——复现为零 diff 即非产物问题；若再现按构建环境差异排查。
+
+## 2026-10-09 记录·二十四（Console UI v2 重构换装前置走查：dev 面 + 隧道真数据）
+
+**形态**：v2 尚未换装 staging 现役二进制（现役仍 9c1fe3d-split 的 v1 dist）——走查走 **vite dev + `FLEETLY_DEV_API=http://127.0.0.1:19527`**（vite.config 新增环境覆盖位）直连隧道打真数据；凭证 = founder 密码会话（演练值），走查毕吊销本会话 token（01M4FWKA…；用户自持的三枚 password session 未动）。报告 = `docs/reviews/2026-10-09-console-ui-v2-walkthrough.md`。
+
+- **活体锚（v2 新 UI 全真机）**：密码登录全链 → 壳层（三域 Sidebar+⌘K+主题开关）→ 总览（Nodes 1/4 + 5 项目磁贴）→ /p/语境树（torchwood/messaging 真表）→ App 详情 tab 化 → 部署列表（两代真部署 5s 轮询）→ **部署旗舰页**（R3 全绿时间线 + 进程策略 DNS 面 + diff + Raw 折叠）→ **日志真流**（mlbridge JSON 帧 react-virtual 渲染 + Follow/Stop/Download）→ **指标真序列**（Memory 5 序列坐标轴图表）→ 双主题抽查。PASS。
+- **当轮四修**（c7bdc9d）：切换器 store 种子化（展示项目与导航置灰表里不一）/面包屑 ULID 短显/总览 Deploy 死链摘除/根 404 诚实态。
+- **F-B1 后端挂账**：`GET /v1/metrics` 对 `/ on(node) machine_cpu_cores` 除法查询 E_INTERNAL（error_id 1426e23def91215ae4340c1f5ac8f100，同形 curl 亦 500；无除法裸指标与 memory 预设正常）——查 VM 侧 machine_cpu_cores 序列与 on(node) join；C1 走查 47 序列锚时的行为需复核。与 Console 前端无关（旧页同预设同病）。
+- **换装序（下一批）**：批 5（Identity/Settings/Nodes/Templates/Quickstart/Terminal/Events/Login 的 v2 reskin + Templates 非法 DOM 修复）落齐后 `console:gen && console:build` → fleetlyd 重嵌 dist → 按记录·十四换装序走 staging；届时反模式守卫扩全量 src/**。
+- **环境事实增补**：vite dev 代理目标可用 `FLEETLY_DEV_API` 覆盖（走查直打隧道，不必先换装）；shadcn CLI 在本机对 ui.shadcn.com 的 fetch 恒被掐（curl/node fetch 均通）——组件增补走 `components.json` + registry 镜像自装（tools 与内容同 CLI）。

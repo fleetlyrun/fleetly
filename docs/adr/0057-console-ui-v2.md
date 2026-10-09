@@ -1,6 +1,6 @@
 # ADR-0057: Console UI v2——设计系统、信息架构与依赖口径升格
 
-日期：2026-10-09；状态：草案（批 0 落地，批 6 随全量走查定稿）
+日期：2026-10-09；状态：定稿（批 0-4 + staging 走查落地；批 5 reskin 与守卫扩全量见验收锚未勾项）
 
 ## 背景
 
@@ -29,6 +29,6 @@ Console 经 F2.6 只读面→F3.1 写面→C1-C6 对齐批的逐期演进，能�
 - [x] 领域件单源：StatusBadge（deployment/node/alert 值域映射）、RelativeTime、CopyButton、EmptyState、DataTable、PageHeader、ProjectAvatar 各一文件，组件测试覆盖
 - [x] `console.ui.antipattern.test.ts` 五条规则执法新世界目录，范围例外带理由
 - [x] 既有 42 用例不回退；全套 vitest 绿
-- [ ] routeTree.gen.ts 纳入 console:verify 断言路径（批 1）
-- [ ] 六原型全页面落地且禁词扫描过闸（批 2-5）
-- [ ] staging 双主题全路由走查 PASS 报告进 docs/reviews（批 6）
+- [x] routeTree.gen.ts 纳入 console:verify 断言路径（批 1，c3c266b）
+- [~] 六原型全页面落地：Dashboard/List/Detail/Flow(DeploySheet)/Workbench(Logs/Metrics) 已落地并过 staging 真机走查（docs/reviews/2026-10-09-console-ui-v2-walkthrough.md PASS）；Identity/Settings/Nodes/Templates/Quickstart/Terminal/Events/Login 仍旧页挂新壳（功能与 mutation 语义原样），reskin 留下一批
+- [~] staging 真机走查 PASS 报告已进 docs/reviews（双主题抽查；全路由×双主题矩阵待批 5 落齐后补全）
