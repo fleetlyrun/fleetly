@@ -49,7 +49,7 @@ export function navSections(projectId: string | undefined): NavSection[] {
         { label: "Deployments", to: projectBase === "" ? "/overview" : `${projectBase}/deployments`, icon: Layers, needsProject: pid === "" },
         { label: "Tasks", to: "/tasks", icon: Clock, transitional: true },
         { label: "Logs", to: "/logs", icon: ScrollText, transitional: true },
-        { label: "Metrics", to: "/observability", icon: Activity, transitional: true },
+        { label: "Metrics", to: "/metrics", icon: Activity },
         { label: "Networks", to: "/resources", icon: Globe, transitional: true },
         { label: "Data", to: "/resources", icon: Database, transitional: true },
         { label: "Configuration", to: "/resources", icon: KeyRound, transitional: true },
@@ -60,7 +60,7 @@ export function navSections(projectId: string | undefined): NavSection[] {
       items: [
         { label: "Nodes", to: "/nodes", icon: Box },
         { label: "Events", to: "/events", icon: Zap },
-        { label: "Alerts", to: "/observability", icon: Bell, transitional: true },
+        { label: "Alerts", to: "/alerts", icon: Bell },
         { label: "Audit", to: "/audit", icon: ShieldCheck },
       ],
     },

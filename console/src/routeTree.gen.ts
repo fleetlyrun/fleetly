@@ -12,12 +12,13 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ShellRouteImport } from './routes/_shell'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as ShellAlertsRouteImport } from './routes/_shell/alerts'
 import { Route as ShellAuditRouteImport } from './routes/_shell/audit'
 import { Route as ShellEventsRouteImport } from './routes/_shell/events'
 import { Route as ShellIdentityRouteImport } from './routes/_shell/identity'
 import { Route as ShellLogsRouteImport } from './routes/_shell/logs'
+import { Route as ShellMetricsRouteImport } from './routes/_shell/metrics'
 import { Route as ShellNodesRouteImport } from './routes/_shell/nodes'
-import { Route as ShellObservabilityRouteImport } from './routes/_shell/observability'
 import { Route as ShellOverviewRouteImport } from './routes/_shell/overview'
 import { Route as ShellQuickstartRouteImport } from './routes/_shell/quickstart'
 import { Route as ShellResourcesRouteImport } from './routes/_shell/resources'
@@ -49,6 +50,11 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ShellAlertsRoute = ShellAlertsRouteImport.update({
+  id: '/alerts',
+  path: '/alerts',
+  getParentRoute: () => ShellRoute,
+} as any)
 const ShellAuditRoute = ShellAuditRouteImport.update({
   id: '/audit',
   path: '/audit',
@@ -69,14 +75,14 @@ const ShellLogsRoute = ShellLogsRouteImport.update({
   path: '/logs',
   getParentRoute: () => ShellRoute,
 } as any)
+const ShellMetricsRoute = ShellMetricsRouteImport.update({
+  id: '/metrics',
+  path: '/metrics',
+  getParentRoute: () => ShellRoute,
+} as any)
 const ShellNodesRoute = ShellNodesRouteImport.update({
   id: '/nodes',
   path: '/nodes',
-  getParentRoute: () => ShellRoute,
-} as any)
-const ShellObservabilityRoute = ShellObservabilityRouteImport.update({
-  id: '/observability',
-  path: '/observability',
   getParentRoute: () => ShellRoute,
 } as any)
 const ShellOverviewRoute = ShellOverviewRouteImport.update({
@@ -170,12 +176,13 @@ const ShellPProjectIdAppsAppIdDeploymentsDeploymentIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/alerts': typeof ShellAlertsRoute
   '/audit': typeof ShellAuditRoute
   '/events': typeof ShellEventsRoute
   '/identity': typeof ShellIdentityRoute
   '/logs': typeof ShellLogsRoute
+  '/metrics': typeof ShellMetricsRoute
   '/nodes': typeof ShellNodesRoute
-  '/observability': typeof ShellObservabilityRoute
   '/overview': typeof ShellOverviewRoute
   '/quickstart': typeof ShellQuickstartRoute
   '/resources': typeof ShellResourcesRoute
@@ -196,12 +203,13 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/alerts': typeof ShellAlertsRoute
   '/audit': typeof ShellAuditRoute
   '/events': typeof ShellEventsRoute
   '/identity': typeof ShellIdentityRoute
   '/logs': typeof ShellLogsRoute
+  '/metrics': typeof ShellMetricsRoute
   '/nodes': typeof ShellNodesRoute
-  '/observability': typeof ShellObservabilityRoute
   '/overview': typeof ShellOverviewRoute
   '/quickstart': typeof ShellQuickstartRoute
   '/resources': typeof ShellResourcesRoute
@@ -222,12 +230,13 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_shell': typeof ShellRouteWithChildren
   '/login': typeof LoginRoute
+  '/_shell/alerts': typeof ShellAlertsRoute
   '/_shell/audit': typeof ShellAuditRoute
   '/_shell/events': typeof ShellEventsRoute
   '/_shell/identity': typeof ShellIdentityRoute
   '/_shell/logs': typeof ShellLogsRoute
+  '/_shell/metrics': typeof ShellMetricsRoute
   '/_shell/nodes': typeof ShellNodesRoute
-  '/_shell/observability': typeof ShellObservabilityRoute
   '/_shell/overview': typeof ShellOverviewRoute
   '/_shell/quickstart': typeof ShellQuickstartRoute
   '/_shell/resources': typeof ShellResourcesRoute
@@ -250,12 +259,13 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/login'
+    | '/alerts'
     | '/audit'
     | '/events'
     | '/identity'
     | '/logs'
+    | '/metrics'
     | '/nodes'
-    | '/observability'
     | '/overview'
     | '/quickstart'
     | '/resources'
@@ -276,12 +286,13 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/login'
+    | '/alerts'
     | '/audit'
     | '/events'
     | '/identity'
     | '/logs'
+    | '/metrics'
     | '/nodes'
-    | '/observability'
     | '/overview'
     | '/quickstart'
     | '/resources'
@@ -301,12 +312,13 @@ export interface FileRouteTypes {
     | '/'
     | '/_shell'
     | '/login'
+    | '/_shell/alerts'
     | '/_shell/audit'
     | '/_shell/events'
     | '/_shell/identity'
     | '/_shell/logs'
+    | '/_shell/metrics'
     | '/_shell/nodes'
-    | '/_shell/observability'
     | '/_shell/overview'
     | '/_shell/quickstart'
     | '/_shell/resources'
@@ -354,6 +366,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_shell/alerts': {
+      id: '/_shell/alerts'
+      path: '/alerts'
+      fullPath: '/alerts'
+      preLoaderRoute: typeof ShellAlertsRouteImport
+      parentRoute: typeof ShellRoute
+    }
     '/_shell/audit': {
       id: '/_shell/audit'
       path: '/audit'
@@ -382,18 +401,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShellLogsRouteImport
       parentRoute: typeof ShellRoute
     }
+    '/_shell/metrics': {
+      id: '/_shell/metrics'
+      path: '/metrics'
+      fullPath: '/metrics'
+      preLoaderRoute: typeof ShellMetricsRouteImport
+      parentRoute: typeof ShellRoute
+    }
     '/_shell/nodes': {
       id: '/_shell/nodes'
       path: '/nodes'
       fullPath: '/nodes'
       preLoaderRoute: typeof ShellNodesRouteImport
-      parentRoute: typeof ShellRoute
-    }
-    '/_shell/observability': {
-      id: '/_shell/observability'
-      path: '/observability'
-      fullPath: '/observability'
-      preLoaderRoute: typeof ShellObservabilityRouteImport
       parentRoute: typeof ShellRoute
     }
     '/_shell/overview': {
@@ -550,12 +569,13 @@ const ShellPProjectIdRouteWithChildren = ShellPProjectIdRoute._addFileChildren(
 )
 
 interface ShellRouteChildren {
+  ShellAlertsRoute: typeof ShellAlertsRoute
   ShellAuditRoute: typeof ShellAuditRoute
   ShellEventsRoute: typeof ShellEventsRoute
   ShellIdentityRoute: typeof ShellIdentityRoute
   ShellLogsRoute: typeof ShellLogsRoute
+  ShellMetricsRoute: typeof ShellMetricsRoute
   ShellNodesRoute: typeof ShellNodesRoute
-  ShellObservabilityRoute: typeof ShellObservabilityRoute
   ShellOverviewRoute: typeof ShellOverviewRoute
   ShellQuickstartRoute: typeof ShellQuickstartRoute
   ShellResourcesRoute: typeof ShellResourcesRoute
@@ -568,12 +588,13 @@ interface ShellRouteChildren {
 }
 
 const ShellRouteChildren: ShellRouteChildren = {
+  ShellAlertsRoute: ShellAlertsRoute,
   ShellAuditRoute: ShellAuditRoute,
   ShellEventsRoute: ShellEventsRoute,
   ShellIdentityRoute: ShellIdentityRoute,
   ShellLogsRoute: ShellLogsRoute,
+  ShellMetricsRoute: ShellMetricsRoute,
   ShellNodesRoute: ShellNodesRoute,
-  ShellObservabilityRoute: ShellObservabilityRoute,
   ShellOverviewRoute: ShellOverviewRoute,
   ShellQuickstartRoute: ShellQuickstartRoute,
   ShellResourcesRoute: ShellResourcesRoute,

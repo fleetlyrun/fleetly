@@ -30,7 +30,7 @@ function AppDetailLayout() {
     { label: "Overview", to: tabBase, exact: true },
     { label: "Deployments", to: `${tabBase}/deployments`, exact: false },
     { label: "Logs", to: "/logs", exact: false, external: true },
-    { label: "Metrics", to: "/observability", exact: false, external: true },
+    { label: "Metrics", to: "/metrics", exact: false, external: true },
   ];
 
   return (
