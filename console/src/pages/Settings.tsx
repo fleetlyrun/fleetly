@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "../api/client";
-import { useRoles, useTokens, useWhoami } from "../lib/catalog";
+import { usePlatformBackups, useRoles, useTokens, useWhoami } from "../lib/catalog";
 import {
   DangerRowButton,
   EmptyNote,
@@ -22,8 +22,8 @@ import {
 } from "../components/ui";
 
 // 设置页（F3.1）：身份（whoami）/ Token 铸造与吊销（Console 自身的凭证
-// 生命周期）/ 平台治理（变更冻结 + 平台备份触发——治理刹车是全局写面
-// 的开关，放在设置页就近呈现）。
+// 生命周期）/ 平台治理（变更冻结 + 平台备份触发与台账——治理刹车是全局
+// 写面的开关，放在设置页就近呈现；备份台账是 C2 补齐面）。
 
 export function SettingsPage() {
   return (
@@ -202,6 +202,7 @@ function GovernanceCard() {
     path: "/v1/platform/backups",
     method: "POST",
     body: () => ({}),
+    invalidate: [["settings", "platform-backups"]],
   });
   const active = (freezes.data ?? []).filter((row) => !row.lifted_at);
   return (
@@ -250,6 +251,7 @@ function GovernanceCard() {
             success={backup.isSuccess ? `platform backup ${backup.data?.backup?.id ?? ""} finished` : null}
           />
         </div>
+        <PlatformBackupsTable />
       </div>
     </section>
   );
@@ -265,5 +267,32 @@ function LiftButton({ freezeId, reason }: { freezeId: string; reason: string }) 
     <DangerRowButton confirm={`Lift the change freeze "${reason}"?`} disabled={lift.isPending} onClick={() => void lift.mutate()}>
       lift
     </DangerRowButton>
+  );
+}
+
+// PlatformBackupsTable 是平台备份台账（C2 补齐面）：ListPlatformBackups
+// 的只读消费——快照 id/time/hostname 三列，触发按钮写后即时失效。
+function PlatformBackupsTable() {
+  const backups = usePlatformBackups();
+  if (backups.isPending) return <LoadingNote label="loading backups…" />;
+  if (backups.isError) return <ErrorNote error={backups.error} />;
+  if ((backups.data ?? []).length === 0) {
+    return <EmptyNote label="No platform backups yet — trigger one above (a pre-upgrade snapshot is the hard gate for binary swaps)." />;
+  }
+  return (
+    <TableWrap>
+      <table className="w-full text-left text-sm">
+        <TableHead columns={["snapshot", "time", "hostname"]} />
+        <tbody>
+          {(backups.data ?? []).map((row) => (
+            <tr key={row.id} className="border-t border-slate-800">
+              <td className="px-3 py-2 font-mono text-xs text-slate-300">{row.id}</td>
+              <td className="px-3 py-2 text-xs text-slate-500">{formatTime(row.time)}</td>
+              <td className="px-3 py-2 text-xs text-slate-500">{row.hostname}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </TableWrap>
   );
 }

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useApps, useProjects } from "../lib/catalog";
 import { DeployForm } from "../components/DeployForm";
+import { HookModal } from "../components/HookModal";
 import {
   DangerRowButton,
   EmptyNote,
@@ -164,23 +165,28 @@ function AppRow({
     method: "DELETE",
     invalidate: [["catalog", "apps"]],
   });
+  const [hookOpen, setHookOpen] = useState(false);
   return (
-    <tr className="border-b border-slate-800/60 hover:bg-slate-900/40">
-      <td className="px-3 py-2 font-medium text-slate-200">{app.name}</td>
-      <td className="px-3 py-2 font-mono text-xs text-slate-500" title={app.id}>
-        {app.id}
-      </td>
-      <td className="px-3 py-2">
-        <div className="flex items-center justify-end gap-1">
-          <RowButton onClick={() => (window.location.hash = `#/deployments`)}>deployments</RowButton>
-          <RowButton onClick={onDeploy}>deploy…</RowButton>
-          <DangerRowButton confirm={`Delete app ${app.name}? Routes and carriers are torn down.`} disabled={del.isPending} onClick={() => void del.mutate()}>
-            delete
-          </DangerRowButton>
-        </div>
-        {del.isError ? <ErrorNote error={del.error} /> : null}
-      </td>
-    </tr>
+    <>
+      <tr className="border-b border-slate-800/60 hover:bg-slate-900/40">
+        <td className="px-3 py-2 font-medium text-slate-200">{app.name}</td>
+        <td className="px-3 py-2 font-mono text-xs text-slate-500" title={app.id}>
+          {app.id}
+        </td>
+        <td className="px-3 py-2">
+          <div className="flex items-center justify-end gap-1">
+            <RowButton onClick={() => (window.location.hash = `#/deployments`)}>deployments</RowButton>
+            <RowButton onClick={onDeploy}>deploy…</RowButton>
+            <RowButton onClick={() => setHookOpen(true)}>hook…</RowButton>
+            <DangerRowButton confirm={`Delete app ${app.name}? Routes and carriers are torn down.`} disabled={del.isPending} onClick={() => void del.mutate()}>
+              delete
+            </DangerRowButton>
+          </div>
+          {del.isError ? <ErrorNote error={del.error} /> : null}
+        </td>
+      </tr>
+      {hookOpen ? <HookModal appId={app.id} appName={app.name} open={hookOpen} onClose={() => setHookOpen(false)} /> : null}
+    </>
   );
 }
 

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { useApps, useProjects, useAlertRules, useAlertStates, useMetricsSeries } from "./catalog";
+import { useApps, useProjects, useAlertRules, useAlertStates, useMetricsSeries, useUsers, useTeams, useInvitations, usePlatformBackups } from "./catalog";
 import { setToken } from "./token";
 
 // 目录查询消费面锚（F2.6 只读面 + F3.1 扩面共用）：REST 路径/查询串、
@@ -124,6 +124,41 @@ describe("useMetricsSeries", () => {
     expect(path).toContain("step_seconds=15"); // 30m/240 = 7.5s → 下限 15s
     expect(path).toContain("start=");
     expect(path).toContain("end=");
+    client.clear();
+  });
+});
+
+// C2 治理批 hooks 锚：身份管理面（users/teams/invitations）与平台备份
+// 台账的 REST 路径/行展平。
+describe("identity and platform backup hooks", () => {
+  it("fetches users, teams and invitations from the identity REST face", async () => {
+    fetchMock
+      .mockResolvedValueOnce(new Response(JSON.stringify({ users: [{ id: "U1", name: "alice" }] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ teams: [{ id: "T1", name: "platform" }] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ invitations: [{ id: "I1", role_id: "builtin-admin" }] }), { status: 200 }));
+    const { client, wrapper } = withClient();
+    const users = renderHook(() => useUsers(), { wrapper });
+    const teams = renderHook(() => useTeams(), { wrapper });
+    const invitations = renderHook(() => useInvitations(), { wrapper });
+    await waitFor(() => expect(users.result.current.isSuccess).toBe(true));
+    await waitFor(() => expect(teams.result.current.isSuccess).toBe(true));
+    await waitFor(() => expect(invitations.result.current.isSuccess).toBe(true));
+    expect(users.result.current.data).toEqual([{ id: "U1", name: "alice" }]);
+    expect((fetchMock.mock.calls[0] as [string])[0]).toBe("/v1/users");
+    expect((fetchMock.mock.calls[1] as [string])[0]).toBe("/v1/teams");
+    expect((fetchMock.mock.calls[2] as [string])[0]).toBe("/v1/invitations");
+    client.clear();
+  });
+
+  it("fetches platform backup snapshots", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ snapshots: [{ id: "64b39b57", time: "2026-10-08T16:39:43Z", hostname: "fleetly-dev" }, undefined] }), { status: 200 }),
+    );
+    const { client, wrapper } = withClient();
+    const { result } = renderHook(() => usePlatformBackups(), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toEqual([{ id: "64b39b57", time: "2026-10-08T16:39:43Z", hostname: "fleetly-dev" }]);
+    expect((fetchMock.mock.calls[0] as [string])[0]).toBe("/v1/platform/backups");
     client.clear();
   });
 });

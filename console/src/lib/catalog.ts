@@ -280,6 +280,61 @@ export function useRoles() {
   });
 }
 
+// 身份管理面（C2 治理批）：users/teams/invitations——RBAC 的 UI 消费面
+// （roles 上面已有）。动词面对齐 CLI（users/teams/invitations 组）。
+export function useUsers() {
+  return useQuery({
+    queryKey: ["identity", "users"],
+    queryFn: async () => {
+      const res = await apiFetch<{ users?: Array<Identity["v1User"] | undefined> }>("/v1/users");
+      return rowsOf(res.users);
+    },
+    refetchInterval: RESOURCE_MS,
+  });
+}
+
+export function useTeams() {
+  return useQuery({
+    queryKey: ["identity", "teams"],
+    queryFn: async () => {
+      const res = await apiFetch<{ teams?: Array<Identity["v1Team"] | undefined> }>("/v1/teams");
+      return rowsOf(res.teams);
+    },
+    refetchInterval: RESOURCE_MS,
+  });
+}
+
+export function useInvitations() {
+  return useQuery({
+    queryKey: ["identity", "invitations"],
+    queryFn: async () => {
+      const res = await apiFetch<{ invitations?: Array<Identity["v1Invitation"] | undefined> }>("/v1/invitations");
+      return rowsOf(res.invitations);
+    },
+    refetchInterval: RESOURCE_MS,
+  });
+}
+
+// Platform backups 列表（C2：Settings 触发面补齐台账面）。system 服务
+// 不在 console 生成上下文（gen.mjs CONTEXTS 刻意不含）——类型内联手写，
+// 与 freeze 面同法。PlatformSnapshot = { id, time, hostname }。
+export interface PlatformSnapshot {
+  id: string;
+  time: string;
+  hostname: string;
+}
+
+export function usePlatformBackups() {
+  return useQuery({
+    queryKey: ["settings", "platform-backups"],
+    queryFn: async (): Promise<PlatformSnapshot[]> => {
+      const res = await apiFetch<{ snapshots?: Array<PlatformSnapshot | undefined> }>("/v1/platform/backups");
+      return rowsOf(res.snapshots);
+    },
+    refetchInterval: 60_000,
+  });
+}
+
 // WhoAmIResponse 的行形态（identity swagger 的信封名以生成类型为准）。
 export interface WhoAmI {
   tokenName: string;

@@ -7,6 +7,7 @@ import { AppsPage } from "./pages/Apps";
 import { ResourcesPage } from "./pages/Resources";
 import { TasksPage } from "./pages/Tasks";
 import { ObservabilityPage } from "./pages/Observability";
+import { IdentityPage } from "./pages/Identity";
 import { AuditPage } from "./pages/Audit";
 import { SettingsPage } from "./pages/Settings";
 import { QuickstartPage } from "./pages/Quickstart";
@@ -17,9 +18,9 @@ import { ROUTES, useHashRoute, type Route } from "./lib/router";
 import { setToken, useToken } from "./lib/token";
 import { useWhoami } from "./lib/catalog";
 
-// Console 外壳（F2.6 三页 → F3.1 全功能 → C1 可观测批）：无 Token = 登录
-// 页；有 Token = 页头导航（十二路由）+ 身份栏（whoami + 登出）。终端页
-// 在导航末位（F3.2 exec 子面）。
+// Console 外壳（F2.6 三页 → F3.1 全功能 → C1 可观测批 → C2 治理批）：无
+// Token = 登录页；有 Token = 页头导航（十三路由）+ 身份栏（whoami + 登出）。
+// 终端页在导航末位（F3.2 exec 子面）。
 export function App() {
   const [token] = useToken();
   if (token === "") return <LoginPage />;
@@ -58,6 +59,8 @@ function renderPage(page: Route, detailId: string, navigate: (path: string) => v
       return <TasksPage />;
     case "observability":
       return <ObservabilityPage />;
+    case "identity":
+      return <IdentityPage />;
     case "logs":
       return <LogsPage />;
     case "events":
@@ -81,6 +84,7 @@ const ROUTE_LABELS: Record<Route, string> = {
   resources: "Resources",
   tasks: "Tasks",
   observability: "Observability",
+  identity: "Identity",
   logs: "Logs",
   events: "Events",
   audit: "Audit",
