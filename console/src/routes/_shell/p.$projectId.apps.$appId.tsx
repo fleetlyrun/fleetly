@@ -11,9 +11,8 @@ import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { useAlertStates, useApps } from "@/lib/catalog";
 
-// App 详情布局（IA v3 T2，Detail 原型）：状态 hero（firing 徽标）+ 快捷动作
-// + 7 个实页 tab。Variables tab 按 §4.1 挂二期 proto（spec 读取通路）——
-// tab 位保留 hidden，点亮时在 tabs 数组加回 Variables 项。
+// App 详情布局（IA v3 T2 + 二期②，Detail 原型）：状态 hero（firing 徽标）+
+// 快捷动作 + 8 个实页 tab（Variables 由 GetAppSpec 通路点亮，只读面）。
 export const Route = createFileRoute("/_shell/p/$projectId/apps/$appId")({
   component: AppDetailLayout,
 });
@@ -36,7 +35,7 @@ function AppDetailLayout() {
     { label: "Metrics", to: `${tabBase}/metrics`, exact: false },
     { label: "Logs", to: `${tabBase}/logs`, exact: false },
     { label: "Terminal", to: `${tabBase}/terminal`, exact: false },
-    // { label: "Variables", to: `${tabBase}/variables`, exact: false }, // 二期 proto：spec 读取通路（§4.1）
+    { label: "Variables", to: `${tabBase}/variables`, exact: false },
     { label: "Routes", to: `${tabBase}/routes`, exact: false },
     { label: "Settings", to: `${tabBase}/settings`, exact: false },
   ];

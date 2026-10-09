@@ -36,6 +36,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/apps/{id}/spec": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * GetAppSpec 回读 App 当前冻结 Spec（最新 Revision 的 protojson 规范
+         *     序列化反解；只读面——写路径仅 Deploy）。Variables 编辑面 / Used-by
+         *     反查 / Volume 挂载反查的数据源（IA v3 二期②）。
+         */
+        get: operations["AppsService_GetAppSpec"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/backups/{backup_id}/verify": {
         parameters: {
             query?: never;
@@ -426,6 +447,25 @@ export interface components {
             name?: string;
             created_at?: string;
         };
+        /** AppRef 是 App 归属锚。 */
+        v1AppRef: {
+            id?: string;
+            project?: string;
+        };
+        /** AppSpec 是长运行可部署单元的期望状态（App = 一个或多个 Process）。 */
+        v1AppSpec: {
+            /** Format: int32 */
+            schema_version?: number;
+            app?: components["schemas"]["v1AppRef"];
+            source?: components["schemas"]["v1Source"];
+            processes?: components["schemas"]["v1ProcessSpec"][];
+            build?: components["schemas"]["v1BuildSpec"];
+            /**
+             * first_boot_jobs 是部署期 init job（数据库迁移等）：releasing 前串行
+             *     执行，失败即回滚。
+             */
+            first_boot_jobs?: components["schemas"]["v1JobSpec"][];
+        };
         v1ApproveNetworkPeerResponse: {
             peer?: components["schemas"]["v1NetworkPeer"];
         };
@@ -473,6 +513,18 @@ export interface components {
          * @enum {string}
          */
         v1BrowseReadOnlyEnforcement: "BROWSE_READ_ONLY_ENFORCEMENT_UNSPECIFIED" | "BROWSE_READ_ONLY_ENFORCEMENT_SESSION" | "BROWSE_READ_ONLY_ENFORCEMENT_TOOL" | "BROWSE_READ_ONLY_ENFORCEMENT_NONE";
+        /** BuildSpec 是构建声明（dockerfile / railpack 钉版 / static，ADR-0032）。 */
+        v1BuildSpec: {
+            /**
+             * builder 是 Builder Provider 名（dockerfile / railpack / static），与
+             *     strategy oneof 形态配对（叶子 ValidateBuild 执法）。
+             */
+            builder?: string;
+            dockerfile?: string;
+            railpack?: components["schemas"]["v1RailpackBuilder"];
+            static?: components["schemas"]["v1StaticBuilder"];
+            cache_from?: string[];
+        };
         v1Config: {
             id?: string;
             project_id?: string;
@@ -584,8 +636,28 @@ export interface components {
         v1DeleteSharedVariableResponse: {
             affected_apps?: string[];
         };
+        /**
+         * DeployStrategy 是部署切换策略（CONTEXT.md Deployment Strategy 词条：
+         *     rolling | blue-green；Avoid 表两词条不引入——渐进分流与代次槽位机制
+         *     均显式不做，ADR-0048）。blue-green = engine 的编排变体（Runtime 契约
+         *     不变，ADR-0048）：双代窗期间两代载体并存，新代 L1 全就绪才切换流量。
+         *     UNSPECIFIED（零值）语义归一为 rolling——存量 Revision 无该字段重放即
+         *     rolling，无迁移面。
+         * @description - DEPLOY_STRATEGY_UNSPECIFIED: 缺省 = rolling（归一面：投影/引擎按 rolling 语义消费）。
+         *      - DEPLOY_STRATEGY_ROLLING: 滚动替换（与既有语义逐字节相同——存量零变化）。
+         *      - DEPLOY_STRATEGY_BLUE_GREEN: 蓝绿：旧代∪新代双代窗 → 新代 L1 门 → 切换 → 观察窗 → 收口。
+         * @default DEPLOY_STRATEGY_UNSPECIFIED
+         * @enum {string}
+         */
+        v1DeployStrategy: "DEPLOY_STRATEGY_UNSPECIFIED" | "DEPLOY_STRATEGY_ROLLING" | "DEPLOY_STRATEGY_BLUE_GREEN";
+        v1ExecProbe: {
+            command?: string[];
+        };
         v1GetAppResponse: {
             app?: components["schemas"]["v1App"];
+        };
+        v1GetAppSpecResponse: {
+            spec?: components["schemas"]["v1AppSpec"];
         };
         v1GetConfigResponse: {
             config?: components["schemas"]["v1Config"];
@@ -598,6 +670,48 @@ export interface components {
         };
         v1GetProjectResponse: {
             project?: components["schemas"]["v1Project"];
+        };
+        v1GitSource: {
+            /** repo 是仓库 URL（部署 Token 形态，Token 不进 URL 路径段日志）。 */
+            repo?: string;
+            /** ref 是分支/标签/commit。 */
+            ref?: string;
+        };
+        /** HealthcheckSpec 是声明式探针（三选一 + 节律）。 */
+        v1HealthcheckSpec: {
+            http_path?: string;
+            /** Format: int32 */
+            tcp_port?: number;
+            exec?: components["schemas"]["v1ExecProbe"];
+            interval?: string;
+            timeout?: string;
+            start_period?: string;
+            /** Format: int32 */
+            retries?: number;
+        };
+        v1ImageSource: {
+            /** ref 是镜像引用（私有仓库凭证经 Secret 解析分发）。 */
+            ref?: string;
+        };
+        /**
+         * JobSpec 是部署期一次性作业（first boot jobs，ADR-0007 词汇裁决：词条归
+         *     Task——部署期特例）。C-13 重塑：进程模板共享 ProcessSpec（process 字段，
+         *     与 TaskSpec 同款嵌套形态）；旧标量字段（image_origin/command/env/
+         *     secret_refs）保留号退役（deprecated，读取面一律走 process——buf breaking
+         *     FILE 档下零消费者字段删除亦红，彻底删除待 breaking 基线策略变更）。
+         */
+        v1JobSpec: {
+            name?: string;
+            image?: string;
+            from_build?: string;
+            command?: string[];
+            env?: {
+                [key: string]: string;
+            };
+            secret_refs?: string[];
+            /** ttl 是作业硬超时（超时即失败回滚）。 */
+            ttl?: string;
+            process?: components["schemas"]["v1ProcessSpec"];
         };
         v1ListAppsResponse: {
             apps?: components["schemas"]["v1App"][];
@@ -658,6 +772,47 @@ export interface components {
             updated_at?: string;
             approved_at?: string;
         };
+        /**
+         * PlacementSpec 是调度意图（节点选择约束；平台节点 ID 为锚——映射为
+         *     编排器约束语法是 Provider 私有）。
+         */
+        v1PlacementSpec: {
+            node_ids?: string[];
+        };
+        /** PortSpec 是进程监听端口声明（Route 投影来源）。 */
+        v1PortSpec: {
+            /** Format: int32 */
+            port?: number;
+            protocol?: components["schemas"]["v1Protocol"];
+        };
+        /** ProcessSpec 是 App 内的进程模板（web/worker…）。 */
+        v1ProcessSpec: {
+            name?: string;
+            /** image 是镜像直部署引用。 */
+            image?: string;
+            /** from_build 引用同 Spec Build 输出（Ensure 前由平台解析为 digest）。 */
+            from_build?: string;
+            /** command 覆盖镜像入口；空 = 镜像默认。 */
+            command?: string[];
+            /** env 是非敏感环境变量（Project/App 两级合成的归一化结果）。 */
+            env?: {
+                [key: string]: string;
+            };
+            /** secret_refs 按名引用 Project Secret（注入时解析，值不进 Spec）。 */
+            secret_refs?: string[];
+            /** config_refs 按名引用 Project Config 版本化挂载文件。 */
+            config_refs?: string[];
+            ports?: components["schemas"]["v1PortSpec"][];
+            healthcheck?: components["schemas"]["v1HealthcheckSpec"];
+            resources?: components["schemas"]["v1ResourcesSpec"];
+            /** Format: int64 */
+            replicas?: string;
+            placement?: components["schemas"]["v1PlacementSpec"];
+            volumes?: components["schemas"]["v1VolumeAttachment"][];
+            /** networks 是网络附件（Project 网络名或 taskGroup:<name> 跨挂）。 */
+            networks?: string[];
+            strategy?: components["schemas"]["v1DeployStrategy"];
+        };
         v1Project: {
             id?: string;
             name?: string;
@@ -665,6 +820,12 @@ export interface components {
             created_at?: string;
             deleted_at?: string;
         };
+        /**
+         * Protocol 是 Route/端口协议（http/h2c/tcp）。
+         * @default PROTOCOL_UNSPECIFIED
+         * @enum {string}
+         */
+        v1Protocol: "PROTOCOL_UNSPECIFIED" | "PROTOCOL_HTTP" | "PROTOCOL_H2C" | "PROTOCOL_TCP";
         v1PutConfigRequest: {
             project_id?: string;
             name?: string;
@@ -698,6 +859,13 @@ export interface components {
             affected_apps?: string[];
         };
         /**
+         * RailpackBuilder 必须钉版本（防 plan 漂移，旧 spike 教训；ADR-0032：
+         *     bare semver，须等于平台钉版常量——Build 期执法，错误文本带平台版本）。
+         */
+        v1RailpackBuilder: {
+            pinned_version?: string;
+        };
+        /**
          * RebuildNetworkResponse 携带网络引用与本次执行的载体计数（幂等重跑的
          *     快速路径两者为 0——已 attachable 且标签在位即零扰动返回）。
          */
@@ -714,6 +882,16 @@ export interface components {
             detached?: number;
             /** Format: int32 */
             reattached?: number;
+        };
+        /** ResourcesSpec 是每副本资源上限（v1 仅每 Process 上限）。 */
+        v1ResourcesSpec: {
+            /**
+             * cpu_millis 毫核（1000 = 1 CPU）。
+             * Format: int64
+             */
+            cpu_millis?: string;
+            /** Format: int64 */
+            memory_mb?: string;
         };
         v1RevokeNetworkPeerResponse: {
             peer?: components["schemas"]["v1NetworkPeer"];
@@ -738,8 +916,25 @@ export interface components {
             value?: string;
             updated_at?: string;
         };
+        /** Source 是 App 的来源三形态（Git 引用 / 镜像引用 / 上传产物）。 */
+        v1Source: {
+            git?: components["schemas"]["v1GitSource"];
+            image?: components["schemas"]["v1ImageSource"];
+            upload?: components["schemas"]["v1UploadSource"];
+        };
+        /**
+         * StaticBuilder 是产物目录包装声明（ADR-0032）：上传上下文的产物子目录
+         *     整体 COPY 进钉版 Caddy 伺服镜像；无构建步（源码构建是 railpack 的地盘）。
+         */
+        v1StaticBuilder: {
+            /** output_dir 是产物目录（context 内相对路径，缺省 "."；拒 .. 与绝对路径）。 */
+            output_dir?: string;
+        };
         v1TriggerBackupResponse: {
             backup?: components["schemas"]["v1Backup"];
+        };
+        v1UploadSource: {
+            id?: string;
         };
         v1VerifyBackupResponse: {
             ok?: boolean;
@@ -752,6 +947,13 @@ export interface components {
             name?: string;
             pinned_node_id?: string;
             created_at?: string;
+        };
+        /** VolumeAttachment 是持久存储附件（无显式 Placement 时默认钉住节点）。 */
+        v1VolumeAttachment: {
+            volume_id?: string;
+            target?: string;
+            /** read_only 是只读挂载（compose 短语法 name:/target:ro；缺省可写）。 */
+            read_only?: boolean;
         };
         ErrorResponse: {
             code?: string;
@@ -885,6 +1087,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1DeleteAppResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    AppsService_GetAppSpec: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1GetAppSpecResponse"];
                 };
             };
             /** @description An unexpected error response. */

@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { UploadsPanel, VolumesPanel } from "@/features/resources/panels";
+import { UsageIndex } from "@/features/spec/usage-index";
 import { PageHeader } from "@/components/domain/page-header";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
@@ -15,6 +16,7 @@ function StoragePage() {
   return (
     <div className="mx-auto max-w-7xl px-6 py-8">
       <PageHeader title="Storage" description="Volumes and deployable source uploads" />
+      <UsageIndex projectId={projectId} />
       <Tabs defaultValue="volumes">
         <TabsList className="mb-4">
           <TabsTrigger value="volumes">Volumes</TabsTrigger>

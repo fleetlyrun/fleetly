@@ -17,7 +17,8 @@ import { backupHealth } from "@/features/databases/backup-health";
 import { DatabaseLogsTab } from "@/features/databases/database-logs";
 import { DATABASE_CARRIER_PRESETS } from "@/features/databases/database-metrics";
 import { MetricChart } from "@/features/metrics/metric-chart";
-import { useDatabases, useDatabaseBackups, useMetricsSeries } from "@/lib/catalog";
+import { useDatabases, useDatabaseBackups, useMetricsSeries, useApps } from "@/lib/catalog";
+import { useAppSpecs, specIndex, type AppSpec } from "@/features/spec/use-app-specs";
 import { CopyButton } from "@/components/domain/copy-button";
 import { DataTable } from "@/components/domain/data-table";
 import { EmptyState } from "@/components/domain/empty-state";
@@ -411,6 +412,8 @@ export function CreateDatabaseDialog({
 
 export function DatabaseDetailPage({ projectId, databaseId }: { projectId: string; databaseId: string }) {
   const databases = useDatabases(projectId);
+  const apps = useApps(projectId);
+  const { specs } = useAppSpecs(projectId, apps.data ?? []);
   const database = (databases.data ?? []).find((entry) => entry.id === databaseId);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -488,7 +491,7 @@ export function DatabaseDetailPage({ projectId, databaseId }: { projectId: strin
         </TabsList>
 
         <TabsContent value="overview">
-          <DatabaseOverview database={database} />
+          <DatabaseOverview database={database} projectApps={apps.data ?? []} specs={specs} />
         </TabsContent>
         <TabsContent value="metrics">
           <DatabaseMetrics databaseId={databaseId} projectId={projectId} />
@@ -510,10 +513,24 @@ export function DatabaseDetailPage({ projectId, databaseId }: { projectId: strin
   );
 }
 
-function DatabaseOverview({ database }: { database: DatabaseEntry | undefined }) {
+function DatabaseOverview({
+  database,
+  projectApps,
+  specs,
+}: {
+  database: DatabaseEntry | undefined;
+  projectApps: Array<{ id: string; name: string }>;
+  specs: Map<string, AppSpec>;
+}) {
   if (database == null) {
     return <EmptyState icon={DatabaseIcon} title="Database not found" description="It may have been deleted." />;
   }
+  // Used-by 反查（IA v3 二期②）：扫描项目内 App 冻结 Spec 的 secret_refs，
+  // 锚 = 库凭证 Secret 名（credentials_ref）——值永不进 Spec，引用即锚。
+  const usedBy = database.credentials_ref
+    ? (specIndex(specs, (spec) => (spec.processes ?? []).flatMap((process) => process.secret_refs ?? [])).get(database.credentials_ref) ?? [])
+        .map((appId) => projectApps.find((app) => app.id === appId)?.name ?? appId)
+    : [];
   const health = backupHealth(database.last_backup_at);
   return (
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -553,6 +570,29 @@ function DatabaseOverview({ database }: { database: DatabaseEntry | undefined })
             <RelativeTime value={database.updated_at} />
           </dd>
         </dl>
+      </section>
+      <section className="rounded-xl border bg-card p-4">
+        <h3 className="mb-3 text-[13px] font-semibold">Used by</h3>
+        {usedBy.length === 0 ? (
+          <p className="text-xs text-muted-foreground">
+            No app references this database yet — apps attach via secret_refs on the credential secret{" "}
+            <span className="font-mono">{database.credentials_ref ?? "—"}</span>.
+          </p>
+        ) : (
+          <div className="flex flex-col gap-2 text-xs">
+            {usedBy.map((appName) => (
+              <span key={appName} className="flex items-center gap-2">
+                <span className="font-mono">{appName}</span>
+                <span className="rounded-full border border-info/30 bg-info/10 px-2 py-0.5 text-[10.5px] text-info">
+                  {database.credentials_ref}
+                </span>
+              </span>
+            ))}
+          </div>
+        )}
+        <p className="mt-3 text-[11.5px] text-muted-foreground">
+          Resolved from frozen app specs (secret_refs scan) — live after the next deploy.
+        </p>
       </section>
       <section className="rounded-xl border bg-card p-4">
         <h3 className="mb-3 text-[13px] font-semibold">Backup</h3>

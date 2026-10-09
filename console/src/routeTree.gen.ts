@@ -48,6 +48,7 @@ import { Route as ShellPProjectIdAppsAppIdMetricsRouteImport } from './routes/_s
 import { Route as ShellPProjectIdAppsAppIdRoutesRouteImport } from './routes/_shell/p.$projectId.apps.$appId.routes'
 import { Route as ShellPProjectIdAppsAppIdSettingsRouteImport } from './routes/_shell/p.$projectId.apps.$appId.settings'
 import { Route as ShellPProjectIdAppsAppIdTerminalRouteImport } from './routes/_shell/p.$projectId.apps.$appId.terminal'
+import { Route as ShellPProjectIdAppsAppIdVariablesRouteImport } from './routes/_shell/p.$projectId.apps.$appId.variables'
 import { Route as ShellPProjectIdAppsAppIdDeploymentsIndexRouteImport } from './routes/_shell/p.$projectId.apps.$appId.deployments.index'
 import { Route as ShellPProjectIdAppsAppIdDeploymentsDeploymentIdRouteImport } from './routes/_shell/p.$projectId.apps.$appId.deployments.$deploymentId'
 
@@ -259,6 +260,12 @@ const ShellPProjectIdAppsAppIdTerminalRoute =
     path: '/terminal',
     getParentRoute: () => ShellPProjectIdAppsAppIdRoute,
   } as any)
+const ShellPProjectIdAppsAppIdVariablesRoute =
+  ShellPProjectIdAppsAppIdVariablesRouteImport.update({
+    id: '/variables',
+    path: '/variables',
+    getParentRoute: () => ShellPProjectIdAppsAppIdRoute,
+  } as any)
 const ShellPProjectIdAppsAppIdDeploymentsIndexRoute =
   ShellPProjectIdAppsAppIdDeploymentsIndexRouteImport.update({
     id: '/deployments/',
@@ -310,6 +317,7 @@ export interface FileRoutesByFullPath {
   '/p/$projectId/apps/$appId/routes': typeof ShellPProjectIdAppsAppIdRoutesRoute
   '/p/$projectId/apps/$appId/settings': typeof ShellPProjectIdAppsAppIdSettingsRoute
   '/p/$projectId/apps/$appId/terminal': typeof ShellPProjectIdAppsAppIdTerminalRoute
+  '/p/$projectId/apps/$appId/variables': typeof ShellPProjectIdAppsAppIdVariablesRoute
   '/p/$projectId/apps/$appId/': typeof ShellPProjectIdAppsAppIdIndexRoute
   '/p/$projectId/apps/$appId/deployments/$deploymentId': typeof ShellPProjectIdAppsAppIdDeploymentsDeploymentIdRoute
   '/p/$projectId/apps/$appId/deployments/': typeof ShellPProjectIdAppsAppIdDeploymentsIndexRoute
@@ -350,6 +358,7 @@ export interface FileRoutesByTo {
   '/p/$projectId/apps/$appId/routes': typeof ShellPProjectIdAppsAppIdRoutesRoute
   '/p/$projectId/apps/$appId/settings': typeof ShellPProjectIdAppsAppIdSettingsRoute
   '/p/$projectId/apps/$appId/terminal': typeof ShellPProjectIdAppsAppIdTerminalRoute
+  '/p/$projectId/apps/$appId/variables': typeof ShellPProjectIdAppsAppIdVariablesRoute
   '/p/$projectId/apps/$appId': typeof ShellPProjectIdAppsAppIdIndexRoute
   '/p/$projectId/apps/$appId/deployments/$deploymentId': typeof ShellPProjectIdAppsAppIdDeploymentsDeploymentIdRoute
   '/p/$projectId/apps/$appId/deployments': typeof ShellPProjectIdAppsAppIdDeploymentsIndexRoute
@@ -394,6 +403,7 @@ export interface FileRoutesById {
   '/_shell/p/$projectId/apps/$appId/routes': typeof ShellPProjectIdAppsAppIdRoutesRoute
   '/_shell/p/$projectId/apps/$appId/settings': typeof ShellPProjectIdAppsAppIdSettingsRoute
   '/_shell/p/$projectId/apps/$appId/terminal': typeof ShellPProjectIdAppsAppIdTerminalRoute
+  '/_shell/p/$projectId/apps/$appId/variables': typeof ShellPProjectIdAppsAppIdVariablesRoute
   '/_shell/p/$projectId/apps/$appId/': typeof ShellPProjectIdAppsAppIdIndexRoute
   '/_shell/p/$projectId/apps/$appId/deployments/$deploymentId': typeof ShellPProjectIdAppsAppIdDeploymentsDeploymentIdRoute
   '/_shell/p/$projectId/apps/$appId/deployments/': typeof ShellPProjectIdAppsAppIdDeploymentsIndexRoute
@@ -438,6 +448,7 @@ export interface FileRouteTypes {
     | '/p/$projectId/apps/$appId/routes'
     | '/p/$projectId/apps/$appId/settings'
     | '/p/$projectId/apps/$appId/terminal'
+    | '/p/$projectId/apps/$appId/variables'
     | '/p/$projectId/apps/$appId/'
     | '/p/$projectId/apps/$appId/deployments/$deploymentId'
     | '/p/$projectId/apps/$appId/deployments/'
@@ -478,6 +489,7 @@ export interface FileRouteTypes {
     | '/p/$projectId/apps/$appId/routes'
     | '/p/$projectId/apps/$appId/settings'
     | '/p/$projectId/apps/$appId/terminal'
+    | '/p/$projectId/apps/$appId/variables'
     | '/p/$projectId/apps/$appId'
     | '/p/$projectId/apps/$appId/deployments/$deploymentId'
     | '/p/$projectId/apps/$appId/deployments'
@@ -521,6 +533,7 @@ export interface FileRouteTypes {
     | '/_shell/p/$projectId/apps/$appId/routes'
     | '/_shell/p/$projectId/apps/$appId/settings'
     | '/_shell/p/$projectId/apps/$appId/terminal'
+    | '/_shell/p/$projectId/apps/$appId/variables'
     | '/_shell/p/$projectId/apps/$appId/'
     | '/_shell/p/$projectId/apps/$appId/deployments/$deploymentId'
     | '/_shell/p/$projectId/apps/$appId/deployments/'
@@ -807,6 +820,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShellPProjectIdAppsAppIdTerminalRouteImport
       parentRoute: typeof ShellPProjectIdAppsAppIdRoute
     }
+    '/_shell/p/$projectId/apps/$appId/variables': {
+      id: '/_shell/p/$projectId/apps/$appId/variables'
+      path: '/variables'
+      fullPath: '/p/$projectId/apps/$appId/variables'
+      preLoaderRoute: typeof ShellPProjectIdAppsAppIdVariablesRouteImport
+      parentRoute: typeof ShellPProjectIdAppsAppIdRoute
+    }
     '/_shell/p/$projectId/apps/$appId/deployments/': {
       id: '/_shell/p/$projectId/apps/$appId/deployments/'
       path: '/deployments'
@@ -841,6 +861,7 @@ interface ShellPProjectIdAppsAppIdRouteChildren {
   ShellPProjectIdAppsAppIdRoutesRoute: typeof ShellPProjectIdAppsAppIdRoutesRoute
   ShellPProjectIdAppsAppIdSettingsRoute: typeof ShellPProjectIdAppsAppIdSettingsRoute
   ShellPProjectIdAppsAppIdTerminalRoute: typeof ShellPProjectIdAppsAppIdTerminalRoute
+  ShellPProjectIdAppsAppIdVariablesRoute: typeof ShellPProjectIdAppsAppIdVariablesRoute
   ShellPProjectIdAppsAppIdIndexRoute: typeof ShellPProjectIdAppsAppIdIndexRoute
   ShellPProjectIdAppsAppIdDeploymentsDeploymentIdRoute: typeof ShellPProjectIdAppsAppIdDeploymentsDeploymentIdRoute
   ShellPProjectIdAppsAppIdDeploymentsIndexRoute: typeof ShellPProjectIdAppsAppIdDeploymentsIndexRoute
@@ -855,6 +876,8 @@ const ShellPProjectIdAppsAppIdRouteChildren: ShellPProjectIdAppsAppIdRouteChildr
       ShellPProjectIdAppsAppIdSettingsRoute,
     ShellPProjectIdAppsAppIdTerminalRoute:
       ShellPProjectIdAppsAppIdTerminalRoute,
+    ShellPProjectIdAppsAppIdVariablesRoute:
+      ShellPProjectIdAppsAppIdVariablesRoute,
     ShellPProjectIdAppsAppIdIndexRoute: ShellPProjectIdAppsAppIdIndexRoute,
     ShellPProjectIdAppsAppIdDeploymentsDeploymentIdRoute:
       ShellPProjectIdAppsAppIdDeploymentsDeploymentIdRoute,
