@@ -192,7 +192,9 @@ func TestQuerySeriesRoundTrip(t *testing.T) {
 	assert.Equal(t, "15", q.Get("step"))
 }
 
-// TestQuerySeriesError 钉 VM 错误信封上抛（status=error + error 文本）。
+// TestQuerySeriesError 钉 VM 4xx → capability.MetricsQueryError（F-B1：
+// 查询错属调用方面，Message 取信封 error 字段——API 层据此落
+// E_INVALID_ARGUMENT 而非 E_INTERNAL）。
 func TestQuerySeriesError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
@@ -203,7 +205,28 @@ func TestQuerySeriesError(t *testing.T) {
 	p.addr = strings.TrimPrefix(srv.URL, "http://")
 	_, err := p.QuerySeries(context.Background(), "~~", time.Now().Add(-time.Minute), time.Now(), 0)
 	require.Error(t, err)
+	var qe *capability.MetricsQueryError
+	require.ErrorAs(t, err, &qe)
+	assert.Equal(t, http.StatusBadRequest, qe.Status)
+	assert.Equal(t, "invalid PromQL", qe.Message)
 	assert.Contains(t, err.Error(), "invalid PromQL")
+}
+
+// TestQuerySeriesServerError 钉 5xx 不入 MetricsQueryError 型——平台故障
+// 面保持 E_INTERNAL 语义，不与调用方查询错混淆（F-B1 分流的另一侧）。
+func TestQuerySeriesServerError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"status":"error","errorType":"timeout","error":"query timeout"}`))
+	}))
+	defer srv.Close()
+	p := newTestProvider(t)
+	p.addr = strings.TrimPrefix(srv.URL, "http://")
+	_, err := p.QuerySeries(context.Background(), "up", time.Now().Add(-time.Minute), time.Now(), 0)
+	require.Error(t, err)
+	var qe *capability.MetricsQueryError
+	assert.NotErrorAs(t, err, &qe)
+	assert.Contains(t, err.Error(), "503")
 }
 
 // TestHealthProbe 钉 TCP 探测。

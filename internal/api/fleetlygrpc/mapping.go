@@ -13,6 +13,7 @@ import (
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/api/apperr"
+	"github.com/fleetlyrun/fleetly/internal/capability"
 	"github.com/fleetlyrun/fleetly/internal/engine"
 	"github.com/fleetlyrun/fleetly/internal/spec"
 	"github.com/fleetlyrun/fleetly/internal/state"
@@ -30,10 +31,12 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state/volume"
 )
 
-// mapStateError 把 repo/engine 哨兵映射为 apperr 信封（API 层唯一出口）。
-// 已是 *apperr.Error 的错误原样穿透（handler 在事务 fn 内组合的应用错误
-// 不二次包裹——二次包裹会把 E_CONFLICT 之类吞成 E_INTERNAL）。
+// mapStateError 把 repo/engine 哨兵与 capability 面（指标查询拒绝等）错误
+// 映射为 apperr 信封（API 层唯一出口）。已是 *apperr.Error 的错误原样穿透
+// （handler 在事务 fn 内组合的应用错误不二次包裹——二次包裹会把 E_CONFLICT
+// 之类吞成 E_INTERNAL）。
 func mapStateError(err error, what string) error {
+	var qe *capability.MetricsQueryError
 	switch {
 	case err == nil:
 		return nil
@@ -66,6 +69,12 @@ func mapStateError(err error, what string) error {
 	case errors.Is(err, engine.ErrFirstBootNetworkUnknown):
 		// firstBootJobs 裸网名受理预检（B12 P3-5）——同上可编程分支。
 		return apperr.New("E_INVALID_ARGUMENT", "%s", err.Error()).WithCause(err)
+	case errors.As(err, &qe):
+		// 指标存储上游 4xx（capability.MetricsQueryError，F-B1）：查询
+		// 语法/语义错属调用方错——透传上游原文落 E_INVALID_ARGUMENT，
+		// 不吞成 E_INTERNAL 500（staging 实证：缺 group_left 的除法查询
+		// 曾整链 500 且 cause 不落盘，误导排查方向）。
+		return apperr.New("E_INVALID_ARGUMENT", "metrics query: %s", qe.Message).WithCause(err)
 	default:
 		var ae *apperr.Error
 		if errors.As(err, &ae) {

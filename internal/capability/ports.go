@@ -3,6 +3,7 @@ package capability
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"time"
 )
@@ -365,6 +366,20 @@ type Series struct {
 type SeriesPoint struct {
 	Time  time.Time
 	Value float64
+}
+
+// MetricsQueryError 是查询被指标存储上游拒绝的可编程错误（HTTP 4xx——
+// PromQL 语法/语义问题属调用方错，API 面须落 E_INVALID_ARGUMENT 而非
+// E_INTERNAL；F-B1：VM 对缺 group_left 的多对一除法回 422，曾被整链吞成
+// 500）。5xx/网络错不走此型——平台故障面保持诚实。Message 是上游错误
+// 原文（通常内嵌查询原样回显，调用方按需截断展示）。
+type MetricsQueryError struct {
+	Status  int
+	Message string
+}
+
+func (e *MetricsQueryError) Error() string {
+	return fmt.Sprintf("metrics query rejected by upstream: status %d: %s", e.Status, e.Message)
 }
 
 // ObjectStoreS3Config 是外置 S3 兼容 ObjectStore 目标的配置面（ADR-0042：

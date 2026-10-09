@@ -6,7 +6,9 @@ package apitest_test
 
 import (
 	"context"
+	"net/http"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -14,6 +16,7 @@ import (
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
 	"github.com/fleetlyrun/fleetly/internal/apitest"
+	"github.com/fleetlyrun/fleetly/internal/capability"
 	"github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
@@ -111,6 +114,45 @@ func TestMetricsQueryDisabledFace(t *testing.T) {
 	_, err := c.Metrics.QueryMetrics(ctx, &telemetryv1.QueryMetricsRequest{Query: "up"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "metrics store")
+}
+
+// TestMetricsQueryUpstreamRejection 钉上游 4xx 的信封分流（F-B1）：假
+// Metrics 面回 capability.MetricsQueryError（真机形态：VM 对缺 group_left
+// 的多对一除法回 422）→ E_INVALID_ARGUMENT 带上游原文，绝不落 E_INTERNAL
+// 500——调用方查询错与平台故障面的信封边界。
+func TestMetricsQueryUpstreamRejection(t *testing.T) {
+	h := apitest.New(t)
+	h.Services.Metrics = &fakeMetrics{queryErr: &capability.MetricsQueryError{
+		Status:  http.StatusUnprocessableEntity,
+		Message: `error when executing query: duplicate time series on the left side of / on(node)`,
+	}}
+	c, ctx := alertingClient(t, h)
+	_, err := c.Metrics.QueryMetrics(ctx, &telemetryv1.QueryMetricsRequest{Query: "100 * rate(x[2m]) / on(node) y"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "E_INVALID_ARGUMENT")
+	assert.Contains(t, err.Error(), "duplicate time series")
+	assert.NotContains(t, err.Error(), "E_INTERNAL")
+}
+
+// fakeMetrics 是只承接查询错误注入的假 Metrics 面（其余动词不在用例面）。
+type fakeMetrics struct {
+	queryErr error
+}
+
+func (f *fakeMetrics) Describe() capability.ProviderDescriptor {
+	return capability.ProviderDescriptor{Name: "fake-metrics", Capability: capability.KindMetrics}
+}
+
+func (f *fakeMetrics) Health(_ context.Context) capability.HealthReport {
+	return capability.HealthReport{Healthy: true}
+}
+
+func (f *fakeMetrics) ImportPrometheus(_ context.Context, _ []byte, _ map[string]string) error {
+	return nil
+}
+
+func (f *fakeMetrics) QuerySeries(_ context.Context, _ string, _, _ time.Time, _ time.Duration) ([]capability.Series, error) {
+	return nil, f.queryErr
 }
 
 // alertingClient 铸带 owner token 的类型化客户端（apitest 同款形态）。

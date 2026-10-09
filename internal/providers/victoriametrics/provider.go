@@ -315,10 +315,26 @@ func (p *Provider) QuerySeries(ctx context.Context, query string, start, end tim
 	if err != nil {
 		return nil, fmt.Errorf("victoriametrics query: read response: %w", err)
 	}
+	if resp.StatusCode/100 == 4 {
+		// 上游 4xx = 查询语法/语义错（调用方面）——类型化上抛供 API 分流
+		// E_INVALID_ARGUMENT（F-B1：缺 group_left 的除法 422 曾被吞成
+		// E_INTERNAL 500）。Message 取 Prometheus 兼容信封的 error 字段。
+		return nil, &capability.MetricsQueryError{Status: resp.StatusCode, Message: queryErrorMessage(body)}
+	}
 	if resp.StatusCode/100 != 2 {
 		return nil, fmt.Errorf("victoriametrics query: status %d: %s", resp.StatusCode, snippetOf(body))
 	}
 	return decodeQueryRange(body)
+}
+
+// queryErrorMessage 提取 VM 错误载荷的 error 字段（status=error 信封）；
+// 解析失败或空缺退回有界原文片段。
+func queryErrorMessage(body []byte) string {
+	var vr vmQueryResponse
+	if err := json.Unmarshal(body, &vr); err == nil && vr.Error != "" {
+		return vr.Error
+	}
+	return snippetOf(body)
 }
 
 // vmQueryResponse 是 VM query_range 响应形态（Prometheus 兼容；values 元素
