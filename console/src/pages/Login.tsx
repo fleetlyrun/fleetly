@@ -12,7 +12,7 @@ export function LoginPage() {
   const [mode, setMode] = useState<"password" | "token">("password");
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-950 px-4">
-      <form className="flex w-full max-w-sm flex-col gap-4 rounded-lg border border-slate-800 bg-slate-900/60 p-6">
+      <div className="flex w-full max-w-sm flex-col gap-4 rounded-lg border border-slate-800 bg-slate-900/60 p-6">
         <div>
           <h1 className="text-lg font-semibold text-slate-100">fleetly console</h1>
           <p className="mt-1 text-xs text-slate-500">
@@ -38,7 +38,7 @@ export function LoginPage() {
           ))}
         </div>
         {mode === "password" ? <PasswordForm /> : <TokenForm />}
-      </form>
+      </div>
     </div>
   );
 }

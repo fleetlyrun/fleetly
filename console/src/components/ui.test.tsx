@@ -99,3 +99,24 @@ describe("Modal", () => {
     expect((document.querySelector("dialog") as HTMLDialogElement).open).toBe(true);
   });
 });
+
+// 页面级嵌套 form 守卫（2026-10-09 密码登录走查 W1' 回归锚）：LoginPage
+// 重写时外层布局容器误用 form，内层业务 form 成嵌套——真实浏览器内层
+// submit 归属外层无 handler form，默认 GET 提交整页刷新（URL 带 `?`），
+// 登录零动作；jsdom 冒泡行为不同，组件测试全绿漏网（W1 同款）。
+describe("LoginPage", () => {
+  it("renders each sign-in form without a form ancestor (nested forms break submit in real browsers)", async () => {
+    const { LoginPage } = await import("../pages/Login");
+    const { render } = await import("@testing-library/react");
+    const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <LoginPage />
+      </QueryClientProvider>,
+    );
+    const forms = document.querySelectorAll("form");
+    expect(forms.length).toBe(1);
+    expect(forms[0].parentElement?.closest("form")).toBeNull();
+  });
+});
