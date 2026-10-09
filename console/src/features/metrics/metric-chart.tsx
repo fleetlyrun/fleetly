@@ -17,6 +17,41 @@ import { formatMetricValue, seriesKey } from "./metric-presets";
 
 type MetricSeries = components["schemas"]["v1MetricSeries"];
 
+// buildChartRows 把多序列点流对齐到统一时间轴行（图表的数据底座）。
+// protojson 对 proto3 标量零值缺省序列化——value 缺席即 0（idle 应用的
+// CPU % 是合法全零序列，不是缺数据；W-B1 走查咬出曾把它当缺数据跳点，
+// 全零序列图表空白无线无轴）。time 缺席或不可解析才是脏点，跳过。
+export function buildChartRows(seriesList: MetricSeries[]): {
+  rows: Array<Record<string, number | string> & { t: number }>;
+  keys: string[];
+  labels: Record<string, string>;
+} {
+  const keys: string[] = [];
+  const labels: Record<string, string> = {};
+  const timeMap = new Map<number, Record<string, number | string> & { t: number }>();
+
+  seriesList.forEach((series, index) => {
+    const { key, label } = seriesKey(series, index);
+    keys.push(key);
+    labels[key] = label;
+    for (const point of series.points ?? []) {
+      if (point.time == null) continue;
+      const t = Date.parse(point.time);
+      if (Number.isNaN(t)) continue;
+      const value = point.value ?? 0;
+      const row: (Record<string, number | string> & { t: number }) | undefined = timeMap.get(t) ?? { t };
+      row[key] = value;
+      timeMap.set(t, row);
+    }
+  });
+
+  const rows = [...timeMap.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([timestamp, row]) => ({ ...row, t: timestamp }));
+
+  return { rows, keys, labels };
+}
+
 export function MetricChart({
   seriesList,
   unit,
@@ -26,30 +61,11 @@ export function MetricChart({
 }) {
   const { rows, config, keys } = useMemo(() => {
     const config: ChartConfig = {};
-    const keyBySeries: string[] = [];
-    const labelByKey: Record<string, string> = {};
-    const timeMap = new Map<number, Record<string, number | string> & { t: number }>();
-
-    seriesList.forEach((series, index) => {
-      const { key, label } = seriesKey(series, index);
-      keyBySeries.push(key);
-      labelByKey[key] = label;
-      config[key] = { label, color: `var(--chart-${(index % 5) + 1})` };
-      for (const point of series.points ?? []) {
-        if (point.time == null || point.value == null) continue;
-        const t = Date.parse(point.time);
-        if (Number.isNaN(t)) continue;
-        const row: (Record<string, number | string> & { t: number }) | undefined = timeMap.get(t) ?? { t };
-        row[key] = point.value;
-        timeMap.set(t, row);
-      }
-    });
-
-    const rows: Array<Record<string, number | string> & { t: number }> = [...timeMap.entries()]
-      .sort(([a], [b]) => a - b)
-      .map(([timestamp, row]) => ({ ...row, t: timestamp }));
-
-    return { rows, config, keys: keyBySeries, labelByKey };
+    const { rows, keys, labels } = buildChartRows(seriesList);
+    for (const key of keys) {
+      config[key] = { label: labels[key], color: `var(--chart-${(Number(key.slice(1)) % 5) + 1})` };
+    }
+    return { rows, config, keys };
   }, [seriesList]);
 
   const lastValues = useMemo(() => {
