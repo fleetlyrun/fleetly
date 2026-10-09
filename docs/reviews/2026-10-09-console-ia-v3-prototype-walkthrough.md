@@ -48,3 +48,21 @@
 
 - Deployments 详情页、Registry/Backups/Storage 等未在本原型 mock（设计文档 §5/§4 已定义，实施时按 v2 六原型解剖落）。
 - Components 页为二期目标态绘制（真健康/磁盘水位接线后）；一期按文档 §5.2 以 unverified + ingest 时效 + 版本上线。
+
+## 一期实施批记录（2026-10-09，原型走查同日收官）
+
+原型过审后按设计文档 §8 连续落七个实现 commit，每 commit 门禁全绿（typecheck + 88 vitest 含守卫反扫 + go guards + dist 同批构建）：
+
+| commit | 内容 |
+|---|---|
+| 0c064e4 | T3 Databases 一级页（列表备份健康度列 + 详情 5-tab，Metrics 载体寻址按 T8） |
+| 620d705 | T2 App 详情 7-tab（Metrics/Logs/Terminal/Routes/Settings scoped 实页 + firing 徽标；Variables 挂账二期） |
+| 6b19a1a | T3b Task 详情 3-tab（Runs/Stop；run 日志留二期） |
+| 3b5271e | T4 Storage 页（Volumes/Uploads 拆页） |
+| 2164a89 | T5 Registry v1（revision digest 当前运行内容） |
+| fbf0c2b | T6+T9 Managed Providers 页 + ADR-0058（页名词裁决：Components 撞 Avoid 表废弃） |
+| a05d601 | T1 导航翻闸（两域七组 + + New + /data 收敛；Admin 组名避禁词） |
+
+实施期词汇守卫三次拦截（addon/ingress/organization+applied）——全部按词条裁决处理（例外补注或文案改写），守卫全程在岗。
+
+**遗留与待办**：① staging 真机走查（本批仅静态门禁 + 纯函数单测，无 staging 面——待隧道/环境排期后按 v2 走查口径复验九屏）；② 二期 proto 批（logs db/run 轴、App spec 读取通路、GetStatus Health() 接线、zot catalog 代理、DB 备份下载/密码轮换、Volume 删除、carrier restart）；③ 批 6 遗留的 panels 资源族 reskin（Storage 页现仍挂批 4 件）。

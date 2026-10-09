@@ -1,6 +1,6 @@
 # Console 信息架构 v3——fly.io 式分组与一级资源升格
 
-日期：2026-10-09；状态：**设计定稿，原型已过走查，待实施**。
+日期：2026-10-09；状态：**一期已实施收官（2026-10-09，9 commit；staging 真机走查待排）**。
 
 原型：`2026-10-09-console-ia-v3-prototype.html`（五屏：侧栏分组 / App 8-tab / Databases 列表 / Database 6-tab / Managed Providers），走查记录见 `docs/reviews/2026-10-09-console-ia-v3-prototype-walkthrough.md`（PASS）。
 
@@ -170,17 +170,17 @@ Task 是程序化工作负载（one-shot / resident 双形态 + Owner Lease；Sc
 
 | # | 任务 | 说明 |
 |---|---|---|
-| T1 | 导航重组 | nav.ts 分组 + `+ New` + 撤三项 + ⌘K 同步（单源自动） |
-| T2 | App 详情 8-tab | 一期 **7 tab 实页**（Metrics/Logs/Terminal scoped + Routes/Settings）+ Variables tab hidden 挂账二期 proto（spec 读取通路）；Overview 加 firing 徽标 |
-| T3 | Databases 一级页 | 列表（备份健康度列）+ 详情（Overview/Backups/Browse/Settings 先行，Logs/Metrics 视 T8） |
-| T3b | Task/Run 详情页 | 3-tab 详情 + Run 叙事详情（复用 deployment-detail 范式；run 日志定址并入 T8 验证） |
-| T4 | Storage 页 | Volumes（挂载反查）+ Uploads（引用 build 反查） |
-| T5 | Registry v1 | 当前镜像视图（revisions/builds 拼） |
-| T6 | Managed Providers | 版本（provider 钉版）+ `unverified` 状态 + ingest 时效（Metrics 探针）+ 工作台链接；页名词与实名裁决随 ADR-0058 |
-| T7 | Backups 聚合页 | 库 fan-out + 平台快照区块 |
+| T1 | 导航重组 | ✅ a05d601——两域七组 + PLATFORM 分界 + + New 菜单 + ⌘K 同链路；组名 Admin（organization 在 Avoid 表） |
+| T2 | App 详情 8-tab | ✅ 620d705——7 tab 实页 + hero firing 徽标；Variables hidden 挂账二期 |
+| T3 | Databases 一级页 | ✅ 0c064e4——列表 + 详情 5-tab（Metrics 靠 T8 上岗，Logs 留二期） |
+| T3b | Task/Run 详情页 | ✅ 6b19a1a——3-tab（Overview/Runs/Settings）；run 日志留二期，WaitRun 收流视图后续批 |
+| T4 | Storage 页 | ✅ 3b5271e——双 tab 拆页；两类反查随 spec 通路挂二期 |
+| T5 | Registry v1 | ✅ 2164a89——当前运行内容（revision digest + commit）；tag 清单/image ref 二期 |
+| T6 | Managed Providers | ✅ fbf0c2b——四实名卡 + Metrics 时效探针；ADR-0058 同批 |
+| T7 | Backups 聚合页 | ✅ 3fa5770——每库一行（last_backup_at 锚）+ 平台快照区块 |
 | T8 | **验证：载体寻址** | ✅ **已完成（2026-10-09）**：metrics 可（零后端，PromQL 按 `container_label_fleetly_workload_id` / k3s namespace+pod，swarm 实证）；logs 不可（`StreamLogsRequest` 无 db/run 轴，需二期 proto 加 `database_id`/`run_id` + API 换轴 + VL 过滤项，provider 零改动）。**T3 据此定稿：DB 详情一期 5-tab（Overview/Metrics/Backups/Browse/Settings），Logs tab 二期点亮；T3b Run 详情一期无日志流（WaitRun 状态流不受影响）** |
-| T9 | 词汇 ADR + CONTEXT.md | 同批落地（§7） |
-| T10 | golden/守卫更新 | nav 快照、反扫、走查记录 |
+| T9 | 词汇 ADR + CONTEXT.md | ✅ fbf0c2b——ADR-0058；CONTEXT.md 零新词条（三词条括注补实名） |
+| T10 | golden/守卫更新 | ✅ 本批——守卫例外补 exec-terminal（xterm API）、文案禁词三处改写；88 vitest + 守卫 + 构建 each commit 全绿；staging 真机走查待排 |
 
 ### 二期（proto 先行，按排障价值排序）
 
