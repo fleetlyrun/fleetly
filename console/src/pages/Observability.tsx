@@ -142,7 +142,7 @@ const SERIES_COLORS = ["#38bdf8", "#a78bfa", "#34d399", "#fbbf24", "#f87171", "#
 // 归因链 node/name 最稳定；其余标签族兜底）。
 function seriesLegend(series: MetricSeries): string {
   const labels = series.labels ?? {};
-  if (labels.name) return labels.name;
+  if (labels.name) return shortenLegend(labels.name);
   if (labels.node) return labels.node;
   const key = Object.keys(labels)[0];
   return key !== undefined ? `${key}=${labels[key]}` : "series";
@@ -200,6 +200,13 @@ function SeriesChart({ seriesList }: { seriesList: MetricSeries[] }) {
       </div>
     </div>
   );
+}
+
+// shortenLegend 是图例短名（swarm 容器全名带 project/app 前缀——中段
+// 截断保 task id 尾段，走查 F2：全名图例可读性差）。
+function shortenLegend(name: string): string {
+  if (name.length <= 36) return name;
+  return `${name.slice(0, 18)}…${name.slice(-12)}`;
 }
 
 // formatValue 是图表注记的量纲缩写（bytes/K/M/G 与工程计数兜底）。

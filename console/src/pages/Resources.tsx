@@ -1122,7 +1122,7 @@ function BackupActionRow({
           {shortId(backup.id)}
         </td>
         <td className="px-3 py-1.5 text-slate-400">{backup.status ?? "—"}</td>
-        <td className="px-3 py-1.5 font-mono text-slate-500">{backup.size_bytes ? `${Number(backup.size_bytes) / 1048576} MiB` : "—"}</td>
+        <td className="px-3 py-1.5 font-mono text-slate-500">{backup.size_bytes ? `${(Number(backup.size_bytes) / 1048576).toFixed(2)} MiB` : "—"}</td>
         <td className="px-3 py-1.5 text-slate-500">{formatTime(backup.finished_at ?? backup.created_at)}</td>
         <td className="px-3 py-1.5 text-right">
           <div className="flex items-center justify-end gap-1">

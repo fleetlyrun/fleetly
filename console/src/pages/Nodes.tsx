@@ -56,9 +56,11 @@ export function NodesPage() {
               <table className="w-full text-left text-sm">
                 <TableHead columns={["hostname", "role", "availability", "relay", "last seen", "actions"]} />
                 <tbody>
-                  {nodes.data.map((node) => (
-                    <NodeRow key={node.platform_id} node={node} />
-                  ))}
+                  {[...nodes.data]
+                    .sort((a, b) => Number(b.available ?? false) - Number(a.available ?? false))
+                    .map((node) => (
+                      <NodeRow key={node.platform_id} node={node} />
+                    ))}
                 </tbody>
               </table>
             </TableWrap>
@@ -94,12 +96,12 @@ function NodeRow({ node }: { node: Node }) {
   const lastError = drain.error ?? cordon.error ?? uncordon.error;
   return (
     <>
-      <tr className="border-t border-slate-800">
-        <td className="px-3 py-2 font-medium text-slate-200">{node.hostname}</td>
+      <tr className={node.available ? "border-t border-slate-800" : "border-t border-slate-800 opacity-60"}>
+        <td className="px-3 py-2 font-medium text-slate-200" title={node.platform_id}>{node.hostname}</td>
         <td className="px-3 py-2 text-xs text-slate-400">{node.role}</td>
         <td className="px-3 py-2">
-          <span className={node.available ? "rounded bg-emerald-950/60 px-1.5 py-0.5 text-xs text-emerald-300" : "rounded bg-amber-950/60 px-1.5 py-0.5 text-xs text-amber-300"}>
-            {node.available ? "active" : "unschedulable"}
+          <span className={node.available ? "rounded bg-emerald-950/60 px-1.5 py-0.5 text-xs text-emerald-300" : "rounded bg-slate-800 px-1.5 py-0.5 text-xs text-slate-400"} title={node.available ? "schedulable" : "not schedulable — historical registration, cordoned or drained"}>
+            {node.available ? "active" : "unavailable"}
           </span>
         </td>
         <td className="px-3 py-2 text-xs">
