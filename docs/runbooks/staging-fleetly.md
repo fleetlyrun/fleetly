@@ -673,3 +673,20 @@ F3.1/F3.2/F3.3/F3.6 四批走查的浏览器级挂账在后端在场的环境（
 **遗留观察（换装前既有，与本轮无关）**：三服务 replicas 长期 N/1（quickstart web 4/1 ×3 + messaging 2/1 ×3，任务时间戳三天前）——desired 与实际失配三天未收敛，属平台缩放链路疑点（非本轮引入；换装窗内零相关任务），独立挂账查 EnsureGeneration 缩容链。
 
 **v2 真机复验（正式 dist）**：密码登录 → 总览（5 项目磁贴）→ Nodes（active/unavailable 徽章 + relay 版本回显）→ Templates（合法 DOM 表 + grafana/nginx 目录）全 PASS；走查毕会话 token 全清（remaining: 0）。
+
+## 2026-10-09 记录·二十六（F-B1 metrics 除法查询 500 收案：三病灶三修 + 全零序列图表修复，be8ec15-uiv2 → 12a28b1-fb1b）
+
+**症状与诊断**（走查 F-B1 挂账，error_id 1426e23def91215ae4340c1f5ac8f100）：GET /v1/metrics 对带除法 join 的 PromQL 恒 E_INTERNAL；journal 只有脱敏信封（`stack:null`，cause 不落盘，4.4ms 失败）。服务器直 curl VM :8428 分层定位：**VM 返回 422 + 明确理由** `duplicate time series on the left side of / on(node)`——cadvisor 每容器序列（多）对 machine_cpu_cores（每节点一条）是 PromQL 多对一除法，裸 on(node) 无 group_left 依法被拒。`machine_cpu_cores` 序列在场且 join 键 node 正确；VM v1.152.0 / cadvisor v0.55.1 task 全部 4 天前启动（数据面零变更）——**历史锚闭案：C1 走查的 47 序列锚是 memory 查询，CPU % 预设从来就没绿过，非回归**。
+
+**三修**（commit 6fb027d / 68f47c1 / 12a28b1）：
+1. **透传层错误分流**（后端）：VM 4xx 查询错曾被整链吞成 E_INTERNAL 500 且 cause 不落盘，误导排查方向。capability 新增 `MetricsQueryError`（上游 4xx 类型化）→ provider 提取信封 error 字段 → mapStateError 分流 `E_INVALID_ARGUMENT` 带上游原文（5xx/网络错保持 E_INTERNAL——平台故障面诚实）。provider 双侧测试 + apitest 假面信封断言同批。
+2. **预设补 group_left**（console）：`cpu_percent` 模板补 `group_left` 保留 per-container 出线（ADR-0041 cpu_percent 语义本就是 per-container）；staging VM 直查 5 序列正常出值。
+3. **全零序列图表空白**（console，二次换装咬出）：首轮复验截图发现 2 series 返回但无线无轴——protojson 对 proto3 double 零值**缺省序列化**（REST 点只剩 time 字段），MetricChart 按 `value==null` 跳点，全零序列 rows 空。VM 实证 n0reg/web 双容器 CPU 全零（idle 常态，此 bug 对 CPU % 预设几乎必现）。`buildChartRows` 抽纯函数，`value ?? 0`（缺省即零），4 例 vitest 锚。
+
+**随批**：guards 三红收口（23f0657，UI v2 批 5 遗漏——UsersService Login/SetUserPassword freeze 豁免 + idem 执法面入表；wording addon 白名单锚迁新 Terminal 路径 + shadcn registry 组件豁免；api-errors 的 tunnel 措辞改 connection）。
+
+**换装两跳**（runbook 序全付）：平台备份 `c684ce09` + 10 卷 tar 快照（479M，/root/upgrade-68f47c1-fb1/）→ 68f47c1-fb1（Go+console）→ 12a28b1-fb1b（console-only 二跳）；doctor 10 ok / 2 warn / 0 failed ×2；受管域 task 全 4 天前（**两跳零滚动**，与记录·二十五 console-only 推论一致）。
+
+**真机复验全绿**：①三预设经 /v1/metrics 全 200（专用 token fb1-verify，查毕吊销）；②坏查询（裸除法）400 `E_INVALID_ARGUMENT` 带上游 "duplicate time series" 原文；③Console 指标页三预设真浏览器出图（n0reg/web：CPU % 双容器 0 基线 + y 轴 0-4% 域 + Memory 8MiB/3MiB 末值图例 + CPU cores）；④Custom PromQL 坏查询呈现 Request rejected 态（非 500 万金油）。
+
+**环境备忘**：本机（LIQIULIN-UBUNTU）qiulin 已入 docker 组（`sudo usermod -aG docker qiulin`，2026-10-09）——运行中会话组列表不刷新，railpack docker 面测试需重启会话后验证（CI 不受影响，本机恒红是旧组列表假象）。
