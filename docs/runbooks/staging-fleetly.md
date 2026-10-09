@@ -660,3 +660,16 @@ F3.1/F3.2/F3.3/F3.6 四批走查的浏览器级挂账在后端在场的环境（
 - **F-B1 后端挂账**：`GET /v1/metrics` 对 `/ on(node) machine_cpu_cores` 除法查询 E_INTERNAL（error_id 1426e23def91215ae4340c1f5ac8f100，同形 curl 亦 500；无除法裸指标与 memory 预设正常）——查 VM 侧 machine_cpu_cores 序列与 on(node) join；C1 走查 47 序列锚时的行为需复核。与 Console 前端无关（旧页同预设同病）。
 - **换装序（下一批）**：批 5（Identity/Settings/Nodes/Templates/Quickstart/Terminal/Events/Login 的 v2 reskin + Templates 非法 DOM 修复）落齐后 `console:gen && console:build` → fleetlyd 重嵌 dist → 按记录·十四换装序走 staging；届时反模式守卫扩全量 src/**。
 - **环境事实增补**：vite dev 代理目标可用 `FLEETLY_DEV_API` 覆盖（走查直打隧道，不必先换装）；shadcn CLI 在本机对 ui.shadcn.com 的 fetch 恒被掐（curl/node fetch 均通）——组件增补走 `components.json` + registry 镜像自装（tools 与内容同 CLI）。
+
+## 2026-10-09 记录·二十五（Console UI v2 换装：9c1fe3d-split → be8ec15-uiv2，零扰动实锤）
+
+**换装**（console-only 变更：v2 dist 重嵌 + 版本戳；workload IR 零变化）：
+1. **硬门先付**——平台备份 `cd7b77b1`（fleetly platform backup）+ 三受管库卷 tar 快照（/root/pre-uiv2-fleetly-db-{torchwood-pg,mlredis,twredis}*.tar.gz，13M/292B/1.9K）。
+2. 交叉构建 `GOOS=linux CGO_ENABLED=0`（版本注入 be8ec15-uiv2）→ 嵌入校验（`grep index-CLXhB1zM bin/fleetlyd-linux` 与 dist 哈希对账）→ scp → 旧二进制留底 /root/fleetlyd-9c1fe3d-split.bak → /usr/local/bin 换装 → **drop-in 四文件全活核验**（registry/railpack/browse/11-metrics）→ restart。
+3. 验证：HEALTHY + version be8ec15-uiv2；正式 dist 哈希在线（index-CLXhB1zM.js）；doctor 10 ok / 2 warn / 0 failed；Nodes 页 relay 版本回显 `online · be8ec15-uiv2`（新二进制经节点注册表实锤）。
+
+**零扰动实锤（对照记录·十二的"换装全量滚动"预告）**：本轮换装窗内**唯一新任务 = sec-test.1 Complete**（一次性任务正常收口）——应用任务零重启（任务时间戳全为三天前）；原因：be8ec15 只改 console 资产与版本戳，workload spec 不漂移 → managedFingerprint 稳定 → 不触发 EnsureGeneration 滚动。**推论**：console-only 变更的换装天然零扰动（无需预付库卷快照级别戒备，但平台备份硬门照付——纪律不因二进制内容而打折）。
+
+**遗留观察（换装前既有，与本轮无关）**：三服务 replicas 长期 N/1（quickstart web 4/1 ×3 + messaging 2/1 ×3，任务时间戳三天前）——desired 与实际失配三天未收敛，属平台缩放链路疑点（非本轮引入；换装窗内零相关任务），独立挂账查 EnsureGeneration 缩容链。
+
+**v2 真机复验（正式 dist）**：密码登录 → 总览（5 项目磁贴）→ Nodes（active/unavailable 徽章 + relay 版本回显）→ Templates（合法 DOM 表 + grafana/nginx 目录）全 PASS；走查毕会话 token 全清（remaining: 0）。

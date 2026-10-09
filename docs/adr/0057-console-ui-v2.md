@@ -1,6 +1,6 @@
 # ADR-0057: Console UI v2——设计系统、信息架构与依赖口径升格
 
-日期：2026-10-09；状态：定稿（批 0-4 + staging 走查落地；批 5 reskin 与守卫扩全量见验收锚未勾项）
+日期：2026-10-09；状态：已实施收官（9551d87..be8ec15 十一 commit；staging 现役 be8ec15-uiv2，全路由真机复验 PASS）
 
 ## 背景
 
@@ -27,8 +27,8 @@ Console 经 F2.6 只读面→F3.1 写面→C1-C6 对齐批的逐期演进，能�
 - [x] `console/components.json` 存在且 style=radix-nova；`src/components/ui/**` 与 `src/hooks/use-mobile.ts` 由 registry 内容落位
 - [x] `src/styles.css` 含双主题 oklch token（:root/.dark + @theme inline 映射）；index.html 含主题防闪内联脚本；`<title>fleetly console</title>` 不变
 - [x] 领域件单源：StatusBadge（deployment/node/alert 值域映射）、RelativeTime、CopyButton、EmptyState、DataTable、PageHeader、ProjectAvatar 各一文件，组件测试覆盖
-- [x] `console.ui.antipattern.test.ts` 五条规则执法新世界目录，范围例外带理由
+- [x] `console.ui.antipattern.test.ts` 五条规则执法全量 src/**（批 5 旧页消亡后扩面；范围例外仅剩 ui.tsx 上游层与 router.ts 旧实现两项带理由）
 - [x] 既有 42 用例不回退；全套 vitest 绿
 - [x] routeTree.gen.ts 纳入 console:verify 断言路径（批 1，c3c266b）
-- [~] 六原型全页面落地：Dashboard/List/Detail/Flow(DeploySheet)/Workbench(Logs/Metrics) 已落地并过 staging 真机走查（docs/reviews/2026-10-09-console-ui-v2-walkthrough.md PASS）；Identity/Settings/Nodes/Templates/Quickstart/Terminal/Events/Login 仍旧页挂新壳（功能与 mutation 语义原样），reskin 留下一批
-- [~] staging 真机走查 PASS 报告已进 docs/reviews（双主题抽查；全路由×双主题矩阵待批 5 落齐后补全）
+- [x] 六原型全页面落地：Settings 原型（Identity/Settings）与 Login/Templates/Events/Quickstart/Terminal/Nodes 批 5 reskin 收官（Templates 非法 DOM 同批修复）；全过 staging 正式 dist 真机复验
+- [x] staging 真机走查 PASS 报告已进 docs/reviews（走查面+换装后正式 dist 复验；批 5 页抽查通过）
