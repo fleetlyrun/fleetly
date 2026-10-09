@@ -57,7 +57,8 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      "/v1": "http://localhost:9081",
+      // dev API 目标可环境覆盖（FLEETLY_DEV_API，staging 走查指隧道口）
+      "/v1": process.env.FLEETLY_DEV_API ?? "http://localhost:9081",
     },
   },
   test: {

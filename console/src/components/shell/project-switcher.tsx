@@ -1,4 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
+import { useEffect } from "react";
 import { ChevronDownIcon } from "lucide-react";
 import { useProjects } from "@/lib/catalog";
 import { useProjectId } from "@/lib/project";
@@ -20,6 +21,11 @@ export function ProjectSwitcher() {
   const navigate = useNavigate();
   const projects = useProjects();
   const list = projects.data ?? [];
+  // store 空时落首个项目——导航语境（navSections）以 store 为准，切换器
+  // 展示与导航置灰必须一致（走查发现：显示 n0reg 但 Apps 全灰）。
+  useEffect(() => {
+    if (projectId === "" && list.length > 0) setProjectId(list[0].id);
+  }, [projectId, list, setProjectId]);
   const current = list.find((project) => project.id === projectId) ?? list[0];
 
   return (

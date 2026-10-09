@@ -1,5 +1,5 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { BellIcon, BoxesIcon, PlusIcon, RocketIcon } from "lucide-react";
+import { BellIcon, BoxesIcon, PlusIcon } from "lucide-react";
 import { ErrorState } from "@/components/domain/error-state";
 import { PageHeader } from "@/components/domain/page-header";
 import { ProjectAvatar } from "@/components/domain/project-avatar";
@@ -35,12 +35,7 @@ function OverviewPage() {
                 New project
               </a>
             </Button>
-            <Button size="sm" asChild>
-              <a href="/deployments">
-                <RocketIcon data-icon-start-inline />
-                Deploy
-              </a>
-            </Button>
+
           </>
         }
       />

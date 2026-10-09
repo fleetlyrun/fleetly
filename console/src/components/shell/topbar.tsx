@@ -43,8 +43,8 @@ export function Topbar({ onOpenPalette }: { onOpenPalette: () => void }) {
               <BreadcrumbItem key={`${crumb}-${index}`}>
                 <div className="flex items-center gap-2">
                   {index > 0 ? <BreadcrumbSeparator /> : null}
-                  <BreadcrumbPage className={last ? "" : "text-muted-foreground"}>
-                    {CRUMB_LABELS[crumb] ?? crumb}
+                  <BreadcrumbPage className={last ? "" : "text-muted-foreground"} title={crumb.length > 20 ? crumb : undefined}>
+                    {CRUMB_LABELS[crumb] ?? (crumb.length > 20 ? `${crumb.slice(0, 10)}…` : crumb)}
                   </BreadcrumbPage>
                 </div>
               </BreadcrumbItem>
