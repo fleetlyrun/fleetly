@@ -23,11 +23,13 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	UsersService_WhoAmI_FullMethodName     = "/fleetly.identity.v1.UsersService/WhoAmI"
-	UsersService_CreateUser_FullMethodName = "/fleetly.identity.v1.UsersService/CreateUser"
-	UsersService_GetUser_FullMethodName    = "/fleetly.identity.v1.UsersService/GetUser"
-	UsersService_ListUsers_FullMethodName  = "/fleetly.identity.v1.UsersService/ListUsers"
-	UsersService_DeleteUser_FullMethodName = "/fleetly.identity.v1.UsersService/DeleteUser"
+	UsersService_WhoAmI_FullMethodName          = "/fleetly.identity.v1.UsersService/WhoAmI"
+	UsersService_CreateUser_FullMethodName      = "/fleetly.identity.v1.UsersService/CreateUser"
+	UsersService_Login_FullMethodName           = "/fleetly.identity.v1.UsersService/Login"
+	UsersService_SetUserPassword_FullMethodName = "/fleetly.identity.v1.UsersService/SetUserPassword"
+	UsersService_GetUser_FullMethodName         = "/fleetly.identity.v1.UsersService/GetUser"
+	UsersService_ListUsers_FullMethodName       = "/fleetly.identity.v1.UsersService/ListUsers"
+	UsersService_DeleteUser_FullMethodName      = "/fleetly.identity.v1.UsersService/DeleteUser"
 )
 
 // UsersServiceClient is the client API for UsersService service.
@@ -40,6 +42,13 @@ const (
 type UsersServiceClient interface {
 	WhoAmI(ctx context.Context, in *WhoAmIRequest, opts ...grpc.CallOption) (*WhoAmIResponse, error)
 	CreateUser(ctx context.Context, in *CreateUserRequest, opts ...grpc.CallOption) (*CreateUserResponse, error)
+	// Login（C6 密码会话第一期）：密码自证铸 Token——PUBLIC 位（先例 =
+	// AcceptInvitation 的免 token 自证位）；无限速是多租户前诚实边界
+	// （控制面 9080/9081 均 VPC-only）。
+	Login(ctx context.Context, in *LoginRequest, opts ...grpc.CallOption) (*LoginResponse, error)
+	// SetUserPassword 设置/重置密码（admin 面；自证走创建时初始密码或
+	// admin 重置——自助改密随 SSO 批裁决）。
+	SetUserPassword(ctx context.Context, in *SetUserPasswordRequest, opts ...grpc.CallOption) (*SetUserPasswordResponse, error)
 	GetUser(ctx context.Context, in *GetUserRequest, opts ...grpc.CallOption) (*GetUserResponse, error)
 	ListUsers(ctx context.Context, in *ListUsersRequest, opts ...grpc.CallOption) (*ListUsersResponse, error)
 	DeleteUser(ctx context.Context, in *DeleteUserRequest, opts ...grpc.CallOption) (*DeleteUserResponse, error)
@@ -67,6 +76,26 @@ func (c *usersServiceClient) CreateUser(ctx context.Context, in *CreateUserReque
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(CreateUserResponse)
 	err := c.cc.Invoke(ctx, UsersService_CreateUser_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *usersServiceClient) Login(ctx context.Context, in *LoginRequest, opts ...grpc.CallOption) (*LoginResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(LoginResponse)
+	err := c.cc.Invoke(ctx, UsersService_Login_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *usersServiceClient) SetUserPassword(ctx context.Context, in *SetUserPasswordRequest, opts ...grpc.CallOption) (*SetUserPasswordResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetUserPasswordResponse)
+	err := c.cc.Invoke(ctx, UsersService_SetUserPassword_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -113,6 +142,13 @@ func (c *usersServiceClient) DeleteUser(ctx context.Context, in *DeleteUserReque
 type UsersServiceServer interface {
 	WhoAmI(context.Context, *WhoAmIRequest) (*WhoAmIResponse, error)
 	CreateUser(context.Context, *CreateUserRequest) (*CreateUserResponse, error)
+	// Login（C6 密码会话第一期）：密码自证铸 Token——PUBLIC 位（先例 =
+	// AcceptInvitation 的免 token 自证位）；无限速是多租户前诚实边界
+	// （控制面 9080/9081 均 VPC-only）。
+	Login(context.Context, *LoginRequest) (*LoginResponse, error)
+	// SetUserPassword 设置/重置密码（admin 面；自证走创建时初始密码或
+	// admin 重置——自助改密随 SSO 批裁决）。
+	SetUserPassword(context.Context, *SetUserPasswordRequest) (*SetUserPasswordResponse, error)
 	GetUser(context.Context, *GetUserRequest) (*GetUserResponse, error)
 	ListUsers(context.Context, *ListUsersRequest) (*ListUsersResponse, error)
 	DeleteUser(context.Context, *DeleteUserRequest) (*DeleteUserResponse, error)
@@ -131,6 +167,12 @@ func (UnimplementedUsersServiceServer) WhoAmI(context.Context, *WhoAmIRequest) (
 }
 func (UnimplementedUsersServiceServer) CreateUser(context.Context, *CreateUserRequest) (*CreateUserResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method CreateUser not implemented")
+}
+func (UnimplementedUsersServiceServer) Login(context.Context, *LoginRequest) (*LoginResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Login not implemented")
+}
+func (UnimplementedUsersServiceServer) SetUserPassword(context.Context, *SetUserPasswordRequest) (*SetUserPasswordResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetUserPassword not implemented")
 }
 func (UnimplementedUsersServiceServer) GetUser(context.Context, *GetUserRequest) (*GetUserResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetUser not implemented")
@@ -194,6 +236,42 @@ func _UsersService_CreateUser_Handler(srv interface{}, ctx context.Context, dec 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(UsersServiceServer).CreateUser(ctx, req.(*CreateUserRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _UsersService_Login_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LoginRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(UsersServiceServer).Login(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: UsersService_Login_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(UsersServiceServer).Login(ctx, req.(*LoginRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _UsersService_SetUserPassword_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetUserPasswordRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(UsersServiceServer).SetUserPassword(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: UsersService_SetUserPassword_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(UsersServiceServer).SetUserPassword(ctx, req.(*SetUserPasswordRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -266,6 +344,14 @@ var UsersService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CreateUser",
 			Handler:    _UsersService_CreateUser_Handler,
+		},
+		{
+			MethodName: "Login",
+			Handler:    _UsersService_Login_Handler,
+		},
+		{
+			MethodName: "SetUserPassword",
+			Handler:    _UsersService_SetUserPassword_Handler,
 		},
 		{
 			MethodName: "GetUser",

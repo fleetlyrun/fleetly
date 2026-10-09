@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { PageShell, ErrorNote, LoadingNote, EmptyNote, Modal, Field, TextInput, Select, PrimaryButton, DangerRowButton, MutationBanner, TableWrap, TableHead, useApiMutation, formatTime } from "../components/ui";
+import { PageShell, ErrorNote, LoadingNote, EmptyNote, Modal, Field, TextInput, Select, PrimaryButton, RowButton, DangerRowButton, MutationBanner, TableWrap, TableHead, useApiMutation, formatTime } from "../components/ui";
 import { useUsers, useTeams, useRoles, useInvitations } from "../lib/catalog";
 import type { components as identitySchemas } from "../api/identity";
 
@@ -86,16 +86,53 @@ function UserRow({ user }: { user: User }) {
     method: "DELETE",
     invalidate: [["identity", "users"]],
   });
+  const [pwOpen, setPwOpen] = useState(false);
   return (
-    <tr className="border-t border-slate-800">
-      <td className="px-3 py-2 font-medium text-slate-200">{user.name}</td>
-      <td className="px-3 py-2 font-mono text-xs text-slate-500" title={user.id}>{user.id}</td>
-      <td className="px-3 py-2 text-xs text-slate-500">{formatTime(user.created_at)}</td>
-      <td className="px-3 py-2 text-right">
-        <DangerRowButton confirm={`Delete user ${user.name}?`} disabled={remove.isPending} onClick={() => void remove.mutate()}>
-          delete
-        </DangerRowButton>
-        {remove.isError ? <ErrorNote error={remove.error} /> : null}
+    <>
+      <tr className="border-t border-slate-800">
+        <td className="px-3 py-2 font-medium text-slate-200">{user.name}</td>
+        <td className="px-3 py-2 font-mono text-xs text-slate-500" title={user.id}>{user.id}</td>
+        <td className="px-3 py-2 text-xs text-slate-500">{formatTime(user.created_at)}</td>
+        <td className="px-3 py-2 text-right">
+          <div className="flex items-center justify-end gap-1">
+            <RowButton onClick={() => setPwOpen((prev) => !prev)}>password…</RowButton>
+            <DangerRowButton confirm={`Delete user ${user.name}?`} disabled={remove.isPending} onClick={() => void remove.mutate()}>
+              delete
+            </DangerRowButton>
+          </div>
+          {remove.isError ? <ErrorNote error={remove.error} /> : null}
+        </td>
+      </tr>
+      {pwOpen ? <SetPasswordRow userId={user.id ?? ""} onDone={() => setPwOpen(false)} /> : null}
+    </>
+  );
+}
+
+// SetPasswordRow 是行内设密表单（admin 重置面；C6 第一期——自助改密随
+// SSO 批裁决）。POST /v1/users/{id}/password，users:write scope 执法。
+function SetPasswordRow({ userId, onDone }: { userId: string; onDone: () => void }) {
+  const [password, setPassword] = useState("");
+  const set = useApiMutation({
+    path: `/v1/users/${encodeURIComponent(userId)}/password`,
+    method: "POST",
+    body: () => ({ password }),
+  });
+  return (
+    <tr className="border-t border-slate-800/40 bg-slate-950/60">
+      <td colSpan={4} className="px-3 py-2">
+        <form
+          className="flex flex-wrap items-end gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            set.mutate(undefined, { onSuccess: () => { setPassword(""); onDone(); } });
+          }}
+        >
+          <Field label="New password" hint="admin reset — the user signs in with this on the password tab">
+            <TextInput type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="••••••••" autoFocus />
+          </Field>
+          <PrimaryButton disabled={set.isPending || password === ""}>{set.isPending ? "Setting…" : "Set password"}</PrimaryButton>
+        </form>
+        {set.isError ? <ErrorNote error={set.error} /> : null}
       </td>
     </tr>
   );
@@ -105,10 +142,16 @@ function CreateUserModal({ open, onClose, teams, roles }: { open: boolean; onClo
   const [name, setName] = useState("");
   const [teamId, setTeamId] = useState("");
   const [roleId, setRoleId] = useState("");
+  const [password, setPassword] = useState("");
   const create = useApiMutation<{ user?: User }>({
     path: "/v1/users",
     method: "POST",
-    body: () => ({ name, team_id: teamId === "" ? undefined : teamId, role_id: roleId === "" ? undefined : roleId }),
+    body: () => ({
+      name,
+      team_id: teamId === "" ? undefined : teamId,
+      role_id: roleId === "" ? undefined : roleId,
+      password: password === "" ? undefined : password,
+    }),
     invalidate: [["identity", "users"]],
   });
   return (
@@ -138,6 +181,9 @@ function CreateUserModal({ open, onClose, teams, roles }: { open: boolean; onClo
               <option key={role.id} value={role.id}>{role.name}{role.builtin ? " (builtin)" : ""}</option>
             ))}
           </Select>
+        </Field>
+        <Field label="Initial password" hint="optional — empty means no password login (set one later from the users row)">
+          <TextInput type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="••••••••" />
         </Field>
         <MutationBanner pending={create.isPending} error={create.error} success={null} />
         <PrimaryButton disabled={create.isPending || name === ""}>Create user</PrimaryButton>

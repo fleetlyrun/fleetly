@@ -7,6 +7,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"strings"
 
 	"github.com/lynx-go/commands"
 
@@ -123,15 +124,18 @@ func newTokensRevokeVerb() commands.Command {
 
 func newUsersCreateVerb() commands.Command {
 	const name = "create"
-	var team, role string
+	var team, role, password string
+	var passwordStdin bool
 	var idem idemKeyFlag
 	return &flaggedVerb{
 		name:     name,
 		synopsis: "Create a user granted a role in a team",
-		usage:    "users create NAME --role ROLE_ID [--team TEAM_ID]",
+		usage:    "users create NAME --role ROLE_ID [--team TEAM_ID] [--password PASSWORD]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&team, "team", "", "team id (default \"default\")")
 			fs.StringVar(&role, "role", "", "role id (required)")
+			fs.StringVar(&password, "password", "", "initial password (empty = no password login; read stdin when omitted and --password-stdin is set)")
+			fs.BoolVar(&passwordStdin, "password-stdin", false, "read the initial password from stdin")
 			idem.declare(fs)
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
@@ -141,6 +145,17 @@ func newUsersCreateVerb() commands.Command {
 			if role == "" {
 				return usageErr(name, "--role is required")
 			}
+			pw := ""
+			if passwordStdin || password != "" {
+				v, err := valueOrStdin(password, env)
+				if err != nil {
+					return err
+				}
+				pw = strings.TrimSpace(v)
+				if pw == "" {
+					return usageErr(name, "--password is required (or pipe it via stdin)")
+				}
+			}
 			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
@@ -149,13 +164,54 @@ func newUsersCreateVerb() commands.Command {
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			ctx = idem.bind(ctx)
 			resp, err := c.Users.CreateUser(ctx, &identityv1.CreateUserRequest{
-				Name: args[0], TeamId: team, RoleId: role,
+				Name: args[0], TeamId: team, RoleId: role, Password: pw,
 			})
 			if err != nil {
 				return err
 			}
 			return renderOut(env, jsonOut, resp.GetUser(), func() {
 				_, _ = fmt.Fprintf(env.Stdout, "created user %s (id %s)\n", resp.GetUser().GetName(), resp.GetUser().GetId())
+			})
+		},
+	}
+}
+
+// users set-password：设置/重置密码（admin 面；C6 密码会话第一期的
+// 密码物主面——自助改密随 SSO 批裁决）。密码 stdin 兜底（valueOrStdin）。
+func newUsersSetPasswordVerb() commands.Command {
+	const name = "set-password"
+	var password string
+	return &flaggedVerb{
+		name:     name,
+		synopsis: "Set or reset a user's password (admin; the credential for password login)",
+		usage:    "users set-password [--password PASSWORD] USER_ID",
+		setFlags: func(fs *flag.FlagSet) {
+			fs.StringVar(&password, "password", "", "new password (empty = read stdin)")
+		},
+		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if len(args) != 1 {
+				return usageErr(name, "expected exactly one USER_ID argument")
+			}
+			pw, err := valueOrStdin(password, env)
+			if err != nil {
+				return err
+			}
+			pw = strings.TrimSpace(pw)
+			if pw == "" {
+				return usageErr(name, "--password is required (or pipe it via stdin)")
+			}
+			ctx, cancel, c, err := dialFromEnv(ctx)
+			if err != nil {
+				return err
+			}
+			defer cancel()
+			defer c.Close() //nolint:errcheck // 进程退出路径
+			_, err = c.Users.SetUserPassword(ctx, &identityv1.SetUserPasswordRequest{UserId: args[0], Password: pw})
+			if err != nil {
+				return err
+			}
+			return renderOut(env, jsonOut, &identityv1.SetUserPasswordResponse{}, func() {
+				_, _ = fmt.Fprintf(env.Stdout, "password set for user %s\n", args[0])
 			})
 		},
 	}

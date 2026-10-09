@@ -91,6 +91,39 @@
         ]
       }
     },
+    "/v1/auth/login": {
+      "post": {
+        "summary": "Login（C6 密码会话第一期）：密码自证铸 Token——PUBLIC 位（先例 =\nAcceptInvitation 的免 token 自证位）；无限速是多租户前诚实边界\n（控制面 9080/9081 均 VPC-only）。",
+        "operationId": "UsersService_Login",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1LoginResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1LoginRequest"
+            }
+          }
+        ],
+        "tags": [
+          "UsersService"
+        ]
+      }
+    },
     "/v1/invitations": {
       "get": {
         "operationId": "InvitationsService_ListInvitations",
@@ -625,6 +658,45 @@
         ]
       }
     },
+    "/v1/users/{user_id}/password": {
+      "post": {
+        "summary": "SetUserPassword 设置/重置密码（admin 面；自证走创建时初始密码或\nadmin 重置——自助改密随 SSO 批裁决）。",
+        "operationId": "UsersService_SetUserPassword",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1SetUserPasswordResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/UsersServiceSetUserPasswordBody"
+            }
+          }
+        ],
+        "tags": [
+          "UsersService"
+        ]
+      }
+    },
     "/v1/whoami": {
       "get": {
         "operationId": "UsersService_WhoAmI",
@@ -651,6 +723,14 @@
   "definitions": {
     "TokensServiceRevokeTokenBody": {
       "type": "object"
+    },
+    "UsersServiceSetUserPasswordBody": {
+      "type": "object",
+      "properties": {
+        "password": {
+          "type": "string"
+        }
+      }
     },
     "v1AcceptInvitationRequest": {
       "type": "object",
@@ -820,6 +900,10 @@
         "role_id": {
           "type": "string",
           "title": "Team 内授予的 Role"
+        },
+        "password": {
+          "type": "string",
+          "title": "password 是可选初始密码（bcrypt 落库；空 = 未设密，密码登录诚实拒绝）。\nC6 密码会话第一期。"
         }
       }
     },
@@ -971,6 +1055,41 @@
         }
       }
     },
+    "v1LoginRequest": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "password": {
+          "type": "string"
+        }
+      },
+      "title": "Login（C6 密码会话第一期）：密码自证铸常规 API Token（复用 tokens 面\n执法/审计/吊销——不引入独立会话表；secret 只在本响应出现一次）。"
+    },
+    "v1LoginResponse": {
+      "type": "object",
+      "properties": {
+        "token_id": {
+          "type": "string"
+        },
+        "secret": {
+          "type": "string"
+        },
+        "token_name": {
+          "type": "string"
+        },
+        "user_name": {
+          "type": "string"
+        },
+        "team_id": {
+          "type": "string"
+        },
+        "role_id": {
+          "type": "string"
+        }
+      }
+    },
     "v1RevokeTokenResponse": {
       "type": "object",
       "properties": {
@@ -1006,6 +1125,9 @@
           "type": "string"
         }
       }
+    },
+    "v1SetUserPasswordResponse": {
+      "type": "object"
     },
     "v1Team": {
       "type": "object",

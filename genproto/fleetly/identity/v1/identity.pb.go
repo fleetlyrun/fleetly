@@ -226,10 +226,13 @@ func (x *User) GetCreatedAt() string {
 }
 
 type CreateUserRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	TeamId        string                 `protobuf:"bytes,2,opt,name=team_id,json=teamId,proto3" json:"team_id,omitempty"` // 归属 Team（缺省 default）
-	RoleId        string                 `protobuf:"bytes,3,opt,name=role_id,json=roleId,proto3" json:"role_id,omitempty"` // Team 内授予的 Role
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Name   string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	TeamId string                 `protobuf:"bytes,2,opt,name=team_id,json=teamId,proto3" json:"team_id,omitempty"` // 归属 Team（缺省 default）
+	RoleId string                 `protobuf:"bytes,3,opt,name=role_id,json=roleId,proto3" json:"role_id,omitempty"` // Team 内授予的 Role
+	// password 是可选初始密码（bcrypt 落库；空 = 未设密，密码登录诚实拒绝）。
+	// C6 密码会话第一期。
+	Password      string `protobuf:"bytes,4,opt,name=password,proto3" json:"password,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -285,6 +288,13 @@ func (x *CreateUserRequest) GetRoleId() string {
 	return ""
 }
 
+func (x *CreateUserRequest) GetPassword() string {
+	if x != nil {
+		return x.Password
+	}
+	return ""
+}
+
 type CreateUserResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	User          *User                  `protobuf:"bytes,1,opt,name=user,proto3" json:"user,omitempty"`
@@ -329,6 +339,232 @@ func (x *CreateUserResponse) GetUser() *User {
 	return nil
 }
 
+// Login（C6 密码会话第一期）：密码自证铸常规 API Token（复用 tokens 面
+// 执法/审计/吊销——不引入独立会话表；secret 只在本响应出现一次）。
+type LoginRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Password      string                 `protobuf:"bytes,2,opt,name=password,proto3" json:"password,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LoginRequest) Reset() {
+	*x = LoginRequest{}
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LoginRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LoginRequest) ProtoMessage() {}
+
+func (x *LoginRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LoginRequest.ProtoReflect.Descriptor instead.
+func (*LoginRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *LoginRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *LoginRequest) GetPassword() string {
+	if x != nil {
+		return x.Password
+	}
+	return ""
+}
+
+type LoginResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TokenId       string                 `protobuf:"bytes,1,opt,name=token_id,json=tokenId,proto3" json:"token_id,omitempty"`
+	Secret        string                 `protobuf:"bytes,2,opt,name=secret,proto3" json:"secret,omitempty"`
+	TokenName     string                 `protobuf:"bytes,3,opt,name=token_name,json=tokenName,proto3" json:"token_name,omitempty"`
+	UserName      string                 `protobuf:"bytes,4,opt,name=user_name,json=userName,proto3" json:"user_name,omitempty"`
+	TeamId        string                 `protobuf:"bytes,5,opt,name=team_id,json=teamId,proto3" json:"team_id,omitempty"`
+	RoleId        string                 `protobuf:"bytes,6,opt,name=role_id,json=roleId,proto3" json:"role_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LoginResponse) Reset() {
+	*x = LoginResponse{}
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LoginResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LoginResponse) ProtoMessage() {}
+
+func (x *LoginResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LoginResponse.ProtoReflect.Descriptor instead.
+func (*LoginResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *LoginResponse) GetTokenId() string {
+	if x != nil {
+		return x.TokenId
+	}
+	return ""
+}
+
+func (x *LoginResponse) GetSecret() string {
+	if x != nil {
+		return x.Secret
+	}
+	return ""
+}
+
+func (x *LoginResponse) GetTokenName() string {
+	if x != nil {
+		return x.TokenName
+	}
+	return ""
+}
+
+func (x *LoginResponse) GetUserName() string {
+	if x != nil {
+		return x.UserName
+	}
+	return ""
+}
+
+func (x *LoginResponse) GetTeamId() string {
+	if x != nil {
+		return x.TeamId
+	}
+	return ""
+}
+
+func (x *LoginResponse) GetRoleId() string {
+	if x != nil {
+		return x.RoleId
+	}
+	return ""
+}
+
+type SetUserPasswordRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Password      string                 `protobuf:"bytes,2,opt,name=password,proto3" json:"password,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetUserPasswordRequest) Reset() {
+	*x = SetUserPasswordRequest{}
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetUserPasswordRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetUserPasswordRequest) ProtoMessage() {}
+
+func (x *SetUserPasswordRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetUserPasswordRequest.ProtoReflect.Descriptor instead.
+func (*SetUserPasswordRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *SetUserPasswordRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *SetUserPasswordRequest) GetPassword() string {
+	if x != nil {
+		return x.Password
+	}
+	return ""
+}
+
+type SetUserPasswordResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetUserPasswordResponse) Reset() {
+	*x = SetUserPasswordResponse{}
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetUserPasswordResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetUserPasswordResponse) ProtoMessage() {}
+
+func (x *SetUserPasswordResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetUserPasswordResponse.ProtoReflect.Descriptor instead.
+func (*SetUserPasswordResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{8}
+}
+
 type GetUserRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -338,7 +574,7 @@ type GetUserRequest struct {
 
 func (x *GetUserRequest) Reset() {
 	*x = GetUserRequest{}
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[5]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -350,7 +586,7 @@ func (x *GetUserRequest) String() string {
 func (*GetUserRequest) ProtoMessage() {}
 
 func (x *GetUserRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[5]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -363,7 +599,7 @@ func (x *GetUserRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetUserRequest.ProtoReflect.Descriptor instead.
 func (*GetUserRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{5}
+	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *GetUserRequest) GetId() string {
@@ -382,7 +618,7 @@ type GetUserResponse struct {
 
 func (x *GetUserResponse) Reset() {
 	*x = GetUserResponse{}
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[6]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -394,7 +630,7 @@ func (x *GetUserResponse) String() string {
 func (*GetUserResponse) ProtoMessage() {}
 
 func (x *GetUserResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[6]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -407,7 +643,7 @@ func (x *GetUserResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetUserResponse.ProtoReflect.Descriptor instead.
 func (*GetUserResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{6}
+	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *GetUserResponse) GetUser() *User {
@@ -425,7 +661,7 @@ type ListUsersRequest struct {
 
 func (x *ListUsersRequest) Reset() {
 	*x = ListUsersRequest{}
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[7]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -437,7 +673,7 @@ func (x *ListUsersRequest) String() string {
 func (*ListUsersRequest) ProtoMessage() {}
 
 func (x *ListUsersRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[7]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -450,7 +686,7 @@ func (x *ListUsersRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListUsersRequest.ProtoReflect.Descriptor instead.
 func (*ListUsersRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{7}
+	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{11}
 }
 
 type ListUsersResponse struct {
@@ -462,7 +698,7 @@ type ListUsersResponse struct {
 
 func (x *ListUsersResponse) Reset() {
 	*x = ListUsersResponse{}
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[8]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -474,7 +710,7 @@ func (x *ListUsersResponse) String() string {
 func (*ListUsersResponse) ProtoMessage() {}
 
 func (x *ListUsersResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[8]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -487,7 +723,7 @@ func (x *ListUsersResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListUsersResponse.ProtoReflect.Descriptor instead.
 func (*ListUsersResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{8}
+	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ListUsersResponse) GetUsers() []*User {
@@ -506,7 +742,7 @@ type DeleteUserRequest struct {
 
 func (x *DeleteUserRequest) Reset() {
 	*x = DeleteUserRequest{}
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[9]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -518,7 +754,7 @@ func (x *DeleteUserRequest) String() string {
 func (*DeleteUserRequest) ProtoMessage() {}
 
 func (x *DeleteUserRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[9]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -531,7 +767,7 @@ func (x *DeleteUserRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteUserRequest.ProtoReflect.Descriptor instead.
 func (*DeleteUserRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{9}
+	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *DeleteUserRequest) GetId() string {
@@ -549,7 +785,7 @@ type DeleteUserResponse struct {
 
 func (x *DeleteUserResponse) Reset() {
 	*x = DeleteUserResponse{}
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[10]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -561,7 +797,7 @@ func (x *DeleteUserResponse) String() string {
 func (*DeleteUserResponse) ProtoMessage() {}
 
 func (x *DeleteUserResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[10]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -574,7 +810,7 @@ func (x *DeleteUserResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteUserResponse.ProtoReflect.Descriptor instead.
 func (*DeleteUserResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{10}
+	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{14}
 }
 
 type Team struct {
@@ -588,7 +824,7 @@ type Team struct {
 
 func (x *Team) Reset() {
 	*x = Team{}
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[11]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -600,7 +836,7 @@ func (x *Team) String() string {
 func (*Team) ProtoMessage() {}
 
 func (x *Team) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[11]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -613,7 +849,7 @@ func (x *Team) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Team.ProtoReflect.Descriptor instead.
 func (*Team) Descriptor() ([]byte, []int) {
-	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{11}
+	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *Team) GetId() string {
@@ -646,7 +882,7 @@ type CreateTeamRequest struct {
 
 func (x *CreateTeamRequest) Reset() {
 	*x = CreateTeamRequest{}
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[12]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -658,7 +894,7 @@ func (x *CreateTeamRequest) String() string {
 func (*CreateTeamRequest) ProtoMessage() {}
 
 func (x *CreateTeamRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[12]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -671,7 +907,7 @@ func (x *CreateTeamRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateTeamRequest.ProtoReflect.Descriptor instead.
 func (*CreateTeamRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{12}
+	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *CreateTeamRequest) GetName() string {
@@ -690,7 +926,7 @@ type CreateTeamResponse struct {
 
 func (x *CreateTeamResponse) Reset() {
 	*x = CreateTeamResponse{}
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[13]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -702,7 +938,7 @@ func (x *CreateTeamResponse) String() string {
 func (*CreateTeamResponse) ProtoMessage() {}
 
 func (x *CreateTeamResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[13]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -715,7 +951,7 @@ func (x *CreateTeamResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateTeamResponse.ProtoReflect.Descriptor instead.
 func (*CreateTeamResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{13}
+	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *CreateTeamResponse) GetTeam() *Team {
@@ -734,7 +970,7 @@ type GetTeamRequest struct {
 
 func (x *GetTeamRequest) Reset() {
 	*x = GetTeamRequest{}
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[14]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -746,7 +982,7 @@ func (x *GetTeamRequest) String() string {
 func (*GetTeamRequest) ProtoMessage() {}
 
 func (x *GetTeamRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[14]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -759,7 +995,7 @@ func (x *GetTeamRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTeamRequest.ProtoReflect.Descriptor instead.
 func (*GetTeamRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{14}
+	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *GetTeamRequest) GetId() string {
@@ -778,7 +1014,7 @@ type GetTeamResponse struct {
 
 func (x *GetTeamResponse) Reset() {
 	*x = GetTeamResponse{}
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[15]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -790,7 +1026,7 @@ func (x *GetTeamResponse) String() string {
 func (*GetTeamResponse) ProtoMessage() {}
 
 func (x *GetTeamResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[15]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -803,7 +1039,7 @@ func (x *GetTeamResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTeamResponse.ProtoReflect.Descriptor instead.
 func (*GetTeamResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{15}
+	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *GetTeamResponse) GetTeam() *Team {
@@ -821,7 +1057,7 @@ type ListTeamsRequest struct {
 
 func (x *ListTeamsRequest) Reset() {
 	*x = ListTeamsRequest{}
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[16]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -833,7 +1069,7 @@ func (x *ListTeamsRequest) String() string {
 func (*ListTeamsRequest) ProtoMessage() {}
 
 func (x *ListTeamsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[16]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -846,7 +1082,7 @@ func (x *ListTeamsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListTeamsRequest.ProtoReflect.Descriptor instead.
 func (*ListTeamsRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{16}
+	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{20}
 }
 
 type ListTeamsResponse struct {
@@ -858,7 +1094,7 @@ type ListTeamsResponse struct {
 
 func (x *ListTeamsResponse) Reset() {
 	*x = ListTeamsResponse{}
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[17]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -870,7 +1106,7 @@ func (x *ListTeamsResponse) String() string {
 func (*ListTeamsResponse) ProtoMessage() {}
 
 func (x *ListTeamsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[17]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -883,7 +1119,7 @@ func (x *ListTeamsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListTeamsResponse.ProtoReflect.Descriptor instead.
 func (*ListTeamsResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{17}
+	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ListTeamsResponse) GetTeams() []*Team {
@@ -902,7 +1138,7 @@ type DeleteTeamRequest struct {
 
 func (x *DeleteTeamRequest) Reset() {
 	*x = DeleteTeamRequest{}
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[18]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -914,7 +1150,7 @@ func (x *DeleteTeamRequest) String() string {
 func (*DeleteTeamRequest) ProtoMessage() {}
 
 func (x *DeleteTeamRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[18]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -927,7 +1163,7 @@ func (x *DeleteTeamRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteTeamRequest.ProtoReflect.Descriptor instead.
 func (*DeleteTeamRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{18}
+	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *DeleteTeamRequest) GetId() string {
@@ -945,7 +1181,7 @@ type DeleteTeamResponse struct {
 
 func (x *DeleteTeamResponse) Reset() {
 	*x = DeleteTeamResponse{}
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[19]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -957,7 +1193,7 @@ func (x *DeleteTeamResponse) String() string {
 func (*DeleteTeamResponse) ProtoMessage() {}
 
 func (x *DeleteTeamResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[19]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -970,7 +1206,7 @@ func (x *DeleteTeamResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteTeamResponse.ProtoReflect.Descriptor instead.
 func (*DeleteTeamResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{19}
+	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{23}
 }
 
 type Role struct {
@@ -987,7 +1223,7 @@ type Role struct {
 
 func (x *Role) Reset() {
 	*x = Role{}
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[20]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -999,7 +1235,7 @@ func (x *Role) String() string {
 func (*Role) ProtoMessage() {}
 
 func (x *Role) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[20]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1012,7 +1248,7 @@ func (x *Role) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Role.ProtoReflect.Descriptor instead.
 func (*Role) Descriptor() ([]byte, []int) {
-	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{20}
+	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *Role) GetId() string {
@@ -1068,7 +1304,7 @@ type CreateRoleRequest struct {
 
 func (x *CreateRoleRequest) Reset() {
 	*x = CreateRoleRequest{}
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[21]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1080,7 +1316,7 @@ func (x *CreateRoleRequest) String() string {
 func (*CreateRoleRequest) ProtoMessage() {}
 
 func (x *CreateRoleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[21]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1093,7 +1329,7 @@ func (x *CreateRoleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateRoleRequest.ProtoReflect.Descriptor instead.
 func (*CreateRoleRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{21}
+	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *CreateRoleRequest) GetName() string {
@@ -1126,7 +1362,7 @@ type CreateRoleResponse struct {
 
 func (x *CreateRoleResponse) Reset() {
 	*x = CreateRoleResponse{}
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[22]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1138,7 +1374,7 @@ func (x *CreateRoleResponse) String() string {
 func (*CreateRoleResponse) ProtoMessage() {}
 
 func (x *CreateRoleResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[22]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1151,7 +1387,7 @@ func (x *CreateRoleResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateRoleResponse.ProtoReflect.Descriptor instead.
 func (*CreateRoleResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{22}
+	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *CreateRoleResponse) GetRole() *Role {
@@ -1170,7 +1406,7 @@ type GetRoleRequest struct {
 
 func (x *GetRoleRequest) Reset() {
 	*x = GetRoleRequest{}
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[23]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1182,7 +1418,7 @@ func (x *GetRoleRequest) String() string {
 func (*GetRoleRequest) ProtoMessage() {}
 
 func (x *GetRoleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[23]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1195,7 +1431,7 @@ func (x *GetRoleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRoleRequest.ProtoReflect.Descriptor instead.
 func (*GetRoleRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{23}
+	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *GetRoleRequest) GetId() string {
@@ -1214,7 +1450,7 @@ type GetRoleResponse struct {
 
 func (x *GetRoleResponse) Reset() {
 	*x = GetRoleResponse{}
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[24]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1226,7 +1462,7 @@ func (x *GetRoleResponse) String() string {
 func (*GetRoleResponse) ProtoMessage() {}
 
 func (x *GetRoleResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[24]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1239,7 +1475,7 @@ func (x *GetRoleResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRoleResponse.ProtoReflect.Descriptor instead.
 func (*GetRoleResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{24}
+	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *GetRoleResponse) GetRole() *Role {
@@ -1257,7 +1493,7 @@ type ListRolesRequest struct {
 
 func (x *ListRolesRequest) Reset() {
 	*x = ListRolesRequest{}
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[25]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1269,7 +1505,7 @@ func (x *ListRolesRequest) String() string {
 func (*ListRolesRequest) ProtoMessage() {}
 
 func (x *ListRolesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[25]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1282,7 +1518,7 @@ func (x *ListRolesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRolesRequest.ProtoReflect.Descriptor instead.
 func (*ListRolesRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{25}
+	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{29}
 }
 
 type ListRolesResponse struct {
@@ -1294,7 +1530,7 @@ type ListRolesResponse struct {
 
 func (x *ListRolesResponse) Reset() {
 	*x = ListRolesResponse{}
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[26]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1306,7 +1542,7 @@ func (x *ListRolesResponse) String() string {
 func (*ListRolesResponse) ProtoMessage() {}
 
 func (x *ListRolesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[26]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1319,7 +1555,7 @@ func (x *ListRolesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListRolesResponse.ProtoReflect.Descriptor instead.
 func (*ListRolesResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{26}
+	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *ListRolesResponse) GetRoles() []*Role {
@@ -1338,7 +1574,7 @@ type DeleteRoleRequest struct {
 
 func (x *DeleteRoleRequest) Reset() {
 	*x = DeleteRoleRequest{}
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[27]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1350,7 +1586,7 @@ func (x *DeleteRoleRequest) String() string {
 func (*DeleteRoleRequest) ProtoMessage() {}
 
 func (x *DeleteRoleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[27]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1363,7 +1599,7 @@ func (x *DeleteRoleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteRoleRequest.ProtoReflect.Descriptor instead.
 func (*DeleteRoleRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{27}
+	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *DeleteRoleRequest) GetId() string {
@@ -1381,7 +1617,7 @@ type DeleteRoleResponse struct {
 
 func (x *DeleteRoleResponse) Reset() {
 	*x = DeleteRoleResponse{}
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[28]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1393,7 +1629,7 @@ func (x *DeleteRoleResponse) String() string {
 func (*DeleteRoleResponse) ProtoMessage() {}
 
 func (x *DeleteRoleResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[28]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1406,7 +1642,7 @@ func (x *DeleteRoleResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteRoleResponse.ProtoReflect.Descriptor instead.
 func (*DeleteRoleResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{28}
+	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{32}
 }
 
 type Token struct {
@@ -1426,7 +1662,7 @@ type Token struct {
 
 func (x *Token) Reset() {
 	*x = Token{}
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[29]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1438,7 +1674,7 @@ func (x *Token) String() string {
 func (*Token) ProtoMessage() {}
 
 func (x *Token) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[29]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1451,7 +1687,7 @@ func (x *Token) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Token.ProtoReflect.Descriptor instead.
 func (*Token) Descriptor() ([]byte, []int) {
-	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{29}
+	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *Token) GetId() string {
@@ -1529,7 +1765,7 @@ type CreateTokenRequest struct {
 
 func (x *CreateTokenRequest) Reset() {
 	*x = CreateTokenRequest{}
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[30]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1541,7 +1777,7 @@ func (x *CreateTokenRequest) String() string {
 func (*CreateTokenRequest) ProtoMessage() {}
 
 func (x *CreateTokenRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[30]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1554,7 +1790,7 @@ func (x *CreateTokenRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateTokenRequest.ProtoReflect.Descriptor instead.
 func (*CreateTokenRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{30}
+	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *CreateTokenRequest) GetName() string {
@@ -1596,7 +1832,7 @@ type CreateTokenResponse struct {
 
 func (x *CreateTokenResponse) Reset() {
 	*x = CreateTokenResponse{}
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[31]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1608,7 +1844,7 @@ func (x *CreateTokenResponse) String() string {
 func (*CreateTokenResponse) ProtoMessage() {}
 
 func (x *CreateTokenResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[31]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1621,7 +1857,7 @@ func (x *CreateTokenResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateTokenResponse.ProtoReflect.Descriptor instead.
 func (*CreateTokenResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{31}
+	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *CreateTokenResponse) GetToken() *Token {
@@ -1647,7 +1883,7 @@ type GetTokenRequest struct {
 
 func (x *GetTokenRequest) Reset() {
 	*x = GetTokenRequest{}
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[32]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1659,7 +1895,7 @@ func (x *GetTokenRequest) String() string {
 func (*GetTokenRequest) ProtoMessage() {}
 
 func (x *GetTokenRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[32]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1672,7 +1908,7 @@ func (x *GetTokenRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTokenRequest.ProtoReflect.Descriptor instead.
 func (*GetTokenRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{32}
+	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *GetTokenRequest) GetId() string {
@@ -1691,7 +1927,7 @@ type GetTokenResponse struct {
 
 func (x *GetTokenResponse) Reset() {
 	*x = GetTokenResponse{}
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[33]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1703,7 +1939,7 @@ func (x *GetTokenResponse) String() string {
 func (*GetTokenResponse) ProtoMessage() {}
 
 func (x *GetTokenResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[33]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1716,7 +1952,7 @@ func (x *GetTokenResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTokenResponse.ProtoReflect.Descriptor instead.
 func (*GetTokenResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{33}
+	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *GetTokenResponse) GetToken() *Token {
@@ -1734,7 +1970,7 @@ type ListTokensRequest struct {
 
 func (x *ListTokensRequest) Reset() {
 	*x = ListTokensRequest{}
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[34]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1746,7 +1982,7 @@ func (x *ListTokensRequest) String() string {
 func (*ListTokensRequest) ProtoMessage() {}
 
 func (x *ListTokensRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[34]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1759,7 +1995,7 @@ func (x *ListTokensRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListTokensRequest.ProtoReflect.Descriptor instead.
 func (*ListTokensRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{34}
+	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{38}
 }
 
 type ListTokensResponse struct {
@@ -1771,7 +2007,7 @@ type ListTokensResponse struct {
 
 func (x *ListTokensResponse) Reset() {
 	*x = ListTokensResponse{}
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[35]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1783,7 +2019,7 @@ func (x *ListTokensResponse) String() string {
 func (*ListTokensResponse) ProtoMessage() {}
 
 func (x *ListTokensResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[35]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1796,7 +2032,7 @@ func (x *ListTokensResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListTokensResponse.ProtoReflect.Descriptor instead.
 func (*ListTokensResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{35}
+	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *ListTokensResponse) GetTokens() []*Token {
@@ -1815,7 +2051,7 @@ type RevokeTokenRequest struct {
 
 func (x *RevokeTokenRequest) Reset() {
 	*x = RevokeTokenRequest{}
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[36]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1827,7 +2063,7 @@ func (x *RevokeTokenRequest) String() string {
 func (*RevokeTokenRequest) ProtoMessage() {}
 
 func (x *RevokeTokenRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[36]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1840,7 +2076,7 @@ func (x *RevokeTokenRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeTokenRequest.ProtoReflect.Descriptor instead.
 func (*RevokeTokenRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{36}
+	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *RevokeTokenRequest) GetId() string {
@@ -1859,7 +2095,7 @@ type RevokeTokenResponse struct {
 
 func (x *RevokeTokenResponse) Reset() {
 	*x = RevokeTokenResponse{}
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[37]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1871,7 +2107,7 @@ func (x *RevokeTokenResponse) String() string {
 func (*RevokeTokenResponse) ProtoMessage() {}
 
 func (x *RevokeTokenResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[37]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1884,7 +2120,7 @@ func (x *RevokeTokenResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeTokenResponse.ProtoReflect.Descriptor instead.
 func (*RevokeTokenResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{37}
+	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *RevokeTokenResponse) GetToken() *Token {
@@ -1909,7 +2145,7 @@ type Invitation struct {
 
 func (x *Invitation) Reset() {
 	*x = Invitation{}
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[38]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1921,7 +2157,7 @@ func (x *Invitation) String() string {
 func (*Invitation) ProtoMessage() {}
 
 func (x *Invitation) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[38]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1934,7 +2170,7 @@ func (x *Invitation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Invitation.ProtoReflect.Descriptor instead.
 func (*Invitation) Descriptor() ([]byte, []int) {
-	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{38}
+	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *Invitation) GetId() string {
@@ -1997,7 +2233,7 @@ type CreateInvitationRequest struct {
 
 func (x *CreateInvitationRequest) Reset() {
 	*x = CreateInvitationRequest{}
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[39]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2009,7 +2245,7 @@ func (x *CreateInvitationRequest) String() string {
 func (*CreateInvitationRequest) ProtoMessage() {}
 
 func (x *CreateInvitationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[39]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2022,7 +2258,7 @@ func (x *CreateInvitationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateInvitationRequest.ProtoReflect.Descriptor instead.
 func (*CreateInvitationRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{39}
+	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *CreateInvitationRequest) GetTeamId() string {
@@ -2057,7 +2293,7 @@ type CreateInvitationResponse struct {
 
 func (x *CreateInvitationResponse) Reset() {
 	*x = CreateInvitationResponse{}
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[40]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2069,7 +2305,7 @@ func (x *CreateInvitationResponse) String() string {
 func (*CreateInvitationResponse) ProtoMessage() {}
 
 func (x *CreateInvitationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[40]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2082,7 +2318,7 @@ func (x *CreateInvitationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateInvitationResponse.ProtoReflect.Descriptor instead.
 func (*CreateInvitationResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{40}
+	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *CreateInvitationResponse) GetInvitation() *Invitation {
@@ -2107,7 +2343,7 @@ type ListInvitationsRequest struct {
 
 func (x *ListInvitationsRequest) Reset() {
 	*x = ListInvitationsRequest{}
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[41]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2119,7 +2355,7 @@ func (x *ListInvitationsRequest) String() string {
 func (*ListInvitationsRequest) ProtoMessage() {}
 
 func (x *ListInvitationsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[41]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2132,7 +2368,7 @@ func (x *ListInvitationsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListInvitationsRequest.ProtoReflect.Descriptor instead.
 func (*ListInvitationsRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{41}
+	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{45}
 }
 
 type ListInvitationsResponse struct {
@@ -2144,7 +2380,7 @@ type ListInvitationsResponse struct {
 
 func (x *ListInvitationsResponse) Reset() {
 	*x = ListInvitationsResponse{}
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[42]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2156,7 +2392,7 @@ func (x *ListInvitationsResponse) String() string {
 func (*ListInvitationsResponse) ProtoMessage() {}
 
 func (x *ListInvitationsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[42]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2169,7 +2405,7 @@ func (x *ListInvitationsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListInvitationsResponse.ProtoReflect.Descriptor instead.
 func (*ListInvitationsResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{42}
+	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *ListInvitationsResponse) GetInvitations() []*Invitation {
@@ -2189,7 +2425,7 @@ type AcceptInvitationRequest struct {
 
 func (x *AcceptInvitationRequest) Reset() {
 	*x = AcceptInvitationRequest{}
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[43]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2201,7 +2437,7 @@ func (x *AcceptInvitationRequest) String() string {
 func (*AcceptInvitationRequest) ProtoMessage() {}
 
 func (x *AcceptInvitationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[43]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2214,7 +2450,7 @@ func (x *AcceptInvitationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AcceptInvitationRequest.ProtoReflect.Descriptor instead.
 func (*AcceptInvitationRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{43}
+	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *AcceptInvitationRequest) GetSecret() string {
@@ -2240,7 +2476,7 @@ type AcceptInvitationResponse struct {
 
 func (x *AcceptInvitationResponse) Reset() {
 	*x = AcceptInvitationResponse{}
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[44]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2252,7 +2488,7 @@ func (x *AcceptInvitationResponse) String() string {
 func (*AcceptInvitationResponse) ProtoMessage() {}
 
 func (x *AcceptInvitationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[44]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2265,7 +2501,7 @@ func (x *AcceptInvitationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AcceptInvitationResponse.ProtoReflect.Descriptor instead.
 func (*AcceptInvitationResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{44}
+	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *AcceptInvitationResponse) GetUser() *User {
@@ -2294,7 +2530,7 @@ type AuditEntry struct {
 
 func (x *AuditEntry) Reset() {
 	*x = AuditEntry{}
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[45]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2306,7 +2542,7 @@ func (x *AuditEntry) String() string {
 func (*AuditEntry) ProtoMessage() {}
 
 func (x *AuditEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[45]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2319,7 +2555,7 @@ func (x *AuditEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuditEntry.ProtoReflect.Descriptor instead.
 func (*AuditEntry) Descriptor() ([]byte, []int) {
-	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{45}
+	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *AuditEntry) GetId() string {
@@ -2398,7 +2634,7 @@ type ListAuditRequest struct {
 
 func (x *ListAuditRequest) Reset() {
 	*x = ListAuditRequest{}
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[46]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2410,7 +2646,7 @@ func (x *ListAuditRequest) String() string {
 func (*ListAuditRequest) ProtoMessage() {}
 
 func (x *ListAuditRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[46]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2423,7 +2659,7 @@ func (x *ListAuditRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAuditRequest.ProtoReflect.Descriptor instead.
 func (*ListAuditRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{46}
+	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *ListAuditRequest) GetSource() string {
@@ -2470,7 +2706,7 @@ type ListAuditResponse struct {
 
 func (x *ListAuditResponse) Reset() {
 	*x = ListAuditResponse{}
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[47]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2482,7 +2718,7 @@ func (x *ListAuditResponse) String() string {
 func (*ListAuditResponse) ProtoMessage() {}
 
 func (x *ListAuditResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[47]
+	mi := &file_fleetly_identity_v1_identity_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2495,7 +2731,7 @@ func (x *ListAuditResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAuditResponse.ProtoReflect.Descriptor instead.
 func (*ListAuditResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{47}
+	return file_fleetly_identity_v1_identity_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *ListAuditResponse) GetEntries() []*AuditEntry {
@@ -2525,13 +2761,29 @@ const file_fleetly_identity_v1_identity_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1d\n" +
 	"\n" +
-	"created_at\x18\x03 \x01(\tR\tcreatedAt\"Y\n" +
+	"created_at\x18\x03 \x01(\tR\tcreatedAt\"u\n" +
 	"\x11CreateUserRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x17\n" +
 	"\ateam_id\x18\x02 \x01(\tR\x06teamId\x12\x17\n" +
-	"\arole_id\x18\x03 \x01(\tR\x06roleId\"C\n" +
+	"\arole_id\x18\x03 \x01(\tR\x06roleId\x12\x1a\n" +
+	"\bpassword\x18\x04 \x01(\tR\bpassword\"C\n" +
 	"\x12CreateUserResponse\x12-\n" +
-	"\x04user\x18\x01 \x01(\v2\x19.fleetly.identity.v1.UserR\x04user\" \n" +
+	"\x04user\x18\x01 \x01(\v2\x19.fleetly.identity.v1.UserR\x04user\">\n" +
+	"\fLoginRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1a\n" +
+	"\bpassword\x18\x02 \x01(\tR\bpassword\"\xb0\x01\n" +
+	"\rLoginResponse\x12\x19\n" +
+	"\btoken_id\x18\x01 \x01(\tR\atokenId\x12\x16\n" +
+	"\x06secret\x18\x02 \x01(\tR\x06secret\x12\x1d\n" +
+	"\n" +
+	"token_name\x18\x03 \x01(\tR\ttokenName\x12\x1b\n" +
+	"\tuser_name\x18\x04 \x01(\tR\buserName\x12\x17\n" +
+	"\ateam_id\x18\x05 \x01(\tR\x06teamId\x12\x17\n" +
+	"\arole_id\x18\x06 \x01(\tR\x06roleId\"M\n" +
+	"\x16SetUserPasswordRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x1a\n" +
+	"\bpassword\x18\x02 \x01(\tR\bpassword\"\x19\n" +
+	"\x17SetUserPasswordResponse\" \n" +
 	"\x0eGetUserRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"@\n" +
 	"\x0fGetUserResponse\x12-\n" +
@@ -2665,13 +2917,16 @@ const file_fleetly_identity_v1_identity_proto_rawDesc = "" +
 	"\x05limit\x18\x04 \x01(\x05R\x05limit\x12\x14\n" +
 	"\x05actor\x18\x05 \x01(\tR\x05actor\"N\n" +
 	"\x11ListAuditResponse\x129\n" +
-	"\aentries\x18\x01 \x03(\v2\x1f.fleetly.identity.v1.AuditEntryR\aentries2\x92\x05\n" +
+	"\aentries\x18\x01 \x03(\v2\x1f.fleetly.identity.v1.AuditEntryR\aentries2\xac\a\n" +
 	"\fUsersService\x12k\n" +
 	"\x06WhoAmI\x12\".fleetly.identity.v1.WhoAmIRequest\x1a#.fleetly.identity.v1.WhoAmIResponse\"\x18\xea\xc4\x19\x02\b\x01\x82\xd3\xe4\x93\x02\f\x12\n" +
 	"/v1/whoami\x12\x84\x01\n" +
 	"\n" +
 	"CreateUser\x12&.fleetly.identity.v1.CreateUserRequest\x1a'.fleetly.identity.v1.CreateUserResponse\"%\xea\xc4\x19\r\b\x03\"\t\n" +
-	"\x05users\x10\x02\x82\xd3\xe4\x93\x02\x0e:\x01*\"\t/v1/users\x12}\n" +
+	"\x05users\x10\x02\x82\xd3\xe4\x93\x02\x0e:\x01*\"\t/v1/users\x12o\n" +
+	"\x05Login\x12!.fleetly.identity.v1.LoginRequest\x1a\".fleetly.identity.v1.LoginResponse\"\x1f\xea\xc4\x19\x02\b\x01\x82\xd3\xe4\x93\x02\x13:\x01*\"\x0e/v1/auth/login\x12\xa6\x01\n" +
+	"\x0fSetUserPassword\x12+.fleetly.identity.v1.SetUserPasswordRequest\x1a,.fleetly.identity.v1.SetUserPasswordResponse\"8\xea\xc4\x19\r\b\x03\"\t\n" +
+	"\x05users\x10\x02\x82\xd3\xe4\x93\x02!:\x01*\"\x1c/v1/users/{user_id}/password\x12}\n" +
 	"\aGetUser\x12#.fleetly.identity.v1.GetUserRequest\x1a$.fleetly.identity.v1.GetUserResponse\"'\xea\xc4\x19\r\b\x03\"\t\n" +
 	"\x05users\x10\x01\x82\xd3\xe4\x93\x02\x10\x12\x0e/v1/users/{id}\x12~\n" +
 	"\tListUsers\x12%.fleetly.identity.v1.ListUsersRequest\x1a&.fleetly.identity.v1.ListUsersResponse\"\"\xea\xc4\x19\r\b\x03\"\t\n" +
@@ -2742,119 +2997,127 @@ func file_fleetly_identity_v1_identity_proto_rawDescGZIP() []byte {
 	return file_fleetly_identity_v1_identity_proto_rawDescData
 }
 
-var file_fleetly_identity_v1_identity_proto_msgTypes = make([]protoimpl.MessageInfo, 48)
+var file_fleetly_identity_v1_identity_proto_msgTypes = make([]protoimpl.MessageInfo, 52)
 var file_fleetly_identity_v1_identity_proto_goTypes = []any{
 	(*WhoAmIRequest)(nil),            // 0: fleetly.identity.v1.WhoAmIRequest
 	(*WhoAmIResponse)(nil),           // 1: fleetly.identity.v1.WhoAmIResponse
 	(*User)(nil),                     // 2: fleetly.identity.v1.User
 	(*CreateUserRequest)(nil),        // 3: fleetly.identity.v1.CreateUserRequest
 	(*CreateUserResponse)(nil),       // 4: fleetly.identity.v1.CreateUserResponse
-	(*GetUserRequest)(nil),           // 5: fleetly.identity.v1.GetUserRequest
-	(*GetUserResponse)(nil),          // 6: fleetly.identity.v1.GetUserResponse
-	(*ListUsersRequest)(nil),         // 7: fleetly.identity.v1.ListUsersRequest
-	(*ListUsersResponse)(nil),        // 8: fleetly.identity.v1.ListUsersResponse
-	(*DeleteUserRequest)(nil),        // 9: fleetly.identity.v1.DeleteUserRequest
-	(*DeleteUserResponse)(nil),       // 10: fleetly.identity.v1.DeleteUserResponse
-	(*Team)(nil),                     // 11: fleetly.identity.v1.Team
-	(*CreateTeamRequest)(nil),        // 12: fleetly.identity.v1.CreateTeamRequest
-	(*CreateTeamResponse)(nil),       // 13: fleetly.identity.v1.CreateTeamResponse
-	(*GetTeamRequest)(nil),           // 14: fleetly.identity.v1.GetTeamRequest
-	(*GetTeamResponse)(nil),          // 15: fleetly.identity.v1.GetTeamResponse
-	(*ListTeamsRequest)(nil),         // 16: fleetly.identity.v1.ListTeamsRequest
-	(*ListTeamsResponse)(nil),        // 17: fleetly.identity.v1.ListTeamsResponse
-	(*DeleteTeamRequest)(nil),        // 18: fleetly.identity.v1.DeleteTeamRequest
-	(*DeleteTeamResponse)(nil),       // 19: fleetly.identity.v1.DeleteTeamResponse
-	(*Role)(nil),                     // 20: fleetly.identity.v1.Role
-	(*CreateRoleRequest)(nil),        // 21: fleetly.identity.v1.CreateRoleRequest
-	(*CreateRoleResponse)(nil),       // 22: fleetly.identity.v1.CreateRoleResponse
-	(*GetRoleRequest)(nil),           // 23: fleetly.identity.v1.GetRoleRequest
-	(*GetRoleResponse)(nil),          // 24: fleetly.identity.v1.GetRoleResponse
-	(*ListRolesRequest)(nil),         // 25: fleetly.identity.v1.ListRolesRequest
-	(*ListRolesResponse)(nil),        // 26: fleetly.identity.v1.ListRolesResponse
-	(*DeleteRoleRequest)(nil),        // 27: fleetly.identity.v1.DeleteRoleRequest
-	(*DeleteRoleResponse)(nil),       // 28: fleetly.identity.v1.DeleteRoleResponse
-	(*Token)(nil),                    // 29: fleetly.identity.v1.Token
-	(*CreateTokenRequest)(nil),       // 30: fleetly.identity.v1.CreateTokenRequest
-	(*CreateTokenResponse)(nil),      // 31: fleetly.identity.v1.CreateTokenResponse
-	(*GetTokenRequest)(nil),          // 32: fleetly.identity.v1.GetTokenRequest
-	(*GetTokenResponse)(nil),         // 33: fleetly.identity.v1.GetTokenResponse
-	(*ListTokensRequest)(nil),        // 34: fleetly.identity.v1.ListTokensRequest
-	(*ListTokensResponse)(nil),       // 35: fleetly.identity.v1.ListTokensResponse
-	(*RevokeTokenRequest)(nil),       // 36: fleetly.identity.v1.RevokeTokenRequest
-	(*RevokeTokenResponse)(nil),      // 37: fleetly.identity.v1.RevokeTokenResponse
-	(*Invitation)(nil),               // 38: fleetly.identity.v1.Invitation
-	(*CreateInvitationRequest)(nil),  // 39: fleetly.identity.v1.CreateInvitationRequest
-	(*CreateInvitationResponse)(nil), // 40: fleetly.identity.v1.CreateInvitationResponse
-	(*ListInvitationsRequest)(nil),   // 41: fleetly.identity.v1.ListInvitationsRequest
-	(*ListInvitationsResponse)(nil),  // 42: fleetly.identity.v1.ListInvitationsResponse
-	(*AcceptInvitationRequest)(nil),  // 43: fleetly.identity.v1.AcceptInvitationRequest
-	(*AcceptInvitationResponse)(nil), // 44: fleetly.identity.v1.AcceptInvitationResponse
-	(*AuditEntry)(nil),               // 45: fleetly.identity.v1.AuditEntry
-	(*ListAuditRequest)(nil),         // 46: fleetly.identity.v1.ListAuditRequest
-	(*ListAuditResponse)(nil),        // 47: fleetly.identity.v1.ListAuditResponse
+	(*LoginRequest)(nil),             // 5: fleetly.identity.v1.LoginRequest
+	(*LoginResponse)(nil),            // 6: fleetly.identity.v1.LoginResponse
+	(*SetUserPasswordRequest)(nil),   // 7: fleetly.identity.v1.SetUserPasswordRequest
+	(*SetUserPasswordResponse)(nil),  // 8: fleetly.identity.v1.SetUserPasswordResponse
+	(*GetUserRequest)(nil),           // 9: fleetly.identity.v1.GetUserRequest
+	(*GetUserResponse)(nil),          // 10: fleetly.identity.v1.GetUserResponse
+	(*ListUsersRequest)(nil),         // 11: fleetly.identity.v1.ListUsersRequest
+	(*ListUsersResponse)(nil),        // 12: fleetly.identity.v1.ListUsersResponse
+	(*DeleteUserRequest)(nil),        // 13: fleetly.identity.v1.DeleteUserRequest
+	(*DeleteUserResponse)(nil),       // 14: fleetly.identity.v1.DeleteUserResponse
+	(*Team)(nil),                     // 15: fleetly.identity.v1.Team
+	(*CreateTeamRequest)(nil),        // 16: fleetly.identity.v1.CreateTeamRequest
+	(*CreateTeamResponse)(nil),       // 17: fleetly.identity.v1.CreateTeamResponse
+	(*GetTeamRequest)(nil),           // 18: fleetly.identity.v1.GetTeamRequest
+	(*GetTeamResponse)(nil),          // 19: fleetly.identity.v1.GetTeamResponse
+	(*ListTeamsRequest)(nil),         // 20: fleetly.identity.v1.ListTeamsRequest
+	(*ListTeamsResponse)(nil),        // 21: fleetly.identity.v1.ListTeamsResponse
+	(*DeleteTeamRequest)(nil),        // 22: fleetly.identity.v1.DeleteTeamRequest
+	(*DeleteTeamResponse)(nil),       // 23: fleetly.identity.v1.DeleteTeamResponse
+	(*Role)(nil),                     // 24: fleetly.identity.v1.Role
+	(*CreateRoleRequest)(nil),        // 25: fleetly.identity.v1.CreateRoleRequest
+	(*CreateRoleResponse)(nil),       // 26: fleetly.identity.v1.CreateRoleResponse
+	(*GetRoleRequest)(nil),           // 27: fleetly.identity.v1.GetRoleRequest
+	(*GetRoleResponse)(nil),          // 28: fleetly.identity.v1.GetRoleResponse
+	(*ListRolesRequest)(nil),         // 29: fleetly.identity.v1.ListRolesRequest
+	(*ListRolesResponse)(nil),        // 30: fleetly.identity.v1.ListRolesResponse
+	(*DeleteRoleRequest)(nil),        // 31: fleetly.identity.v1.DeleteRoleRequest
+	(*DeleteRoleResponse)(nil),       // 32: fleetly.identity.v1.DeleteRoleResponse
+	(*Token)(nil),                    // 33: fleetly.identity.v1.Token
+	(*CreateTokenRequest)(nil),       // 34: fleetly.identity.v1.CreateTokenRequest
+	(*CreateTokenResponse)(nil),      // 35: fleetly.identity.v1.CreateTokenResponse
+	(*GetTokenRequest)(nil),          // 36: fleetly.identity.v1.GetTokenRequest
+	(*GetTokenResponse)(nil),         // 37: fleetly.identity.v1.GetTokenResponse
+	(*ListTokensRequest)(nil),        // 38: fleetly.identity.v1.ListTokensRequest
+	(*ListTokensResponse)(nil),       // 39: fleetly.identity.v1.ListTokensResponse
+	(*RevokeTokenRequest)(nil),       // 40: fleetly.identity.v1.RevokeTokenRequest
+	(*RevokeTokenResponse)(nil),      // 41: fleetly.identity.v1.RevokeTokenResponse
+	(*Invitation)(nil),               // 42: fleetly.identity.v1.Invitation
+	(*CreateInvitationRequest)(nil),  // 43: fleetly.identity.v1.CreateInvitationRequest
+	(*CreateInvitationResponse)(nil), // 44: fleetly.identity.v1.CreateInvitationResponse
+	(*ListInvitationsRequest)(nil),   // 45: fleetly.identity.v1.ListInvitationsRequest
+	(*ListInvitationsResponse)(nil),  // 46: fleetly.identity.v1.ListInvitationsResponse
+	(*AcceptInvitationRequest)(nil),  // 47: fleetly.identity.v1.AcceptInvitationRequest
+	(*AcceptInvitationResponse)(nil), // 48: fleetly.identity.v1.AcceptInvitationResponse
+	(*AuditEntry)(nil),               // 49: fleetly.identity.v1.AuditEntry
+	(*ListAuditRequest)(nil),         // 50: fleetly.identity.v1.ListAuditRequest
+	(*ListAuditResponse)(nil),        // 51: fleetly.identity.v1.ListAuditResponse
 }
 var file_fleetly_identity_v1_identity_proto_depIdxs = []int32{
 	2,  // 0: fleetly.identity.v1.CreateUserResponse.user:type_name -> fleetly.identity.v1.User
 	2,  // 1: fleetly.identity.v1.GetUserResponse.user:type_name -> fleetly.identity.v1.User
 	2,  // 2: fleetly.identity.v1.ListUsersResponse.users:type_name -> fleetly.identity.v1.User
-	11, // 3: fleetly.identity.v1.CreateTeamResponse.team:type_name -> fleetly.identity.v1.Team
-	11, // 4: fleetly.identity.v1.GetTeamResponse.team:type_name -> fleetly.identity.v1.Team
-	11, // 5: fleetly.identity.v1.ListTeamsResponse.teams:type_name -> fleetly.identity.v1.Team
-	20, // 6: fleetly.identity.v1.CreateRoleResponse.role:type_name -> fleetly.identity.v1.Role
-	20, // 7: fleetly.identity.v1.GetRoleResponse.role:type_name -> fleetly.identity.v1.Role
-	20, // 8: fleetly.identity.v1.ListRolesResponse.roles:type_name -> fleetly.identity.v1.Role
-	29, // 9: fleetly.identity.v1.CreateTokenResponse.token:type_name -> fleetly.identity.v1.Token
-	29, // 10: fleetly.identity.v1.GetTokenResponse.token:type_name -> fleetly.identity.v1.Token
-	29, // 11: fleetly.identity.v1.ListTokensResponse.tokens:type_name -> fleetly.identity.v1.Token
-	29, // 12: fleetly.identity.v1.RevokeTokenResponse.token:type_name -> fleetly.identity.v1.Token
-	38, // 13: fleetly.identity.v1.CreateInvitationResponse.invitation:type_name -> fleetly.identity.v1.Invitation
-	38, // 14: fleetly.identity.v1.ListInvitationsResponse.invitations:type_name -> fleetly.identity.v1.Invitation
+	15, // 3: fleetly.identity.v1.CreateTeamResponse.team:type_name -> fleetly.identity.v1.Team
+	15, // 4: fleetly.identity.v1.GetTeamResponse.team:type_name -> fleetly.identity.v1.Team
+	15, // 5: fleetly.identity.v1.ListTeamsResponse.teams:type_name -> fleetly.identity.v1.Team
+	24, // 6: fleetly.identity.v1.CreateRoleResponse.role:type_name -> fleetly.identity.v1.Role
+	24, // 7: fleetly.identity.v1.GetRoleResponse.role:type_name -> fleetly.identity.v1.Role
+	24, // 8: fleetly.identity.v1.ListRolesResponse.roles:type_name -> fleetly.identity.v1.Role
+	33, // 9: fleetly.identity.v1.CreateTokenResponse.token:type_name -> fleetly.identity.v1.Token
+	33, // 10: fleetly.identity.v1.GetTokenResponse.token:type_name -> fleetly.identity.v1.Token
+	33, // 11: fleetly.identity.v1.ListTokensResponse.tokens:type_name -> fleetly.identity.v1.Token
+	33, // 12: fleetly.identity.v1.RevokeTokenResponse.token:type_name -> fleetly.identity.v1.Token
+	42, // 13: fleetly.identity.v1.CreateInvitationResponse.invitation:type_name -> fleetly.identity.v1.Invitation
+	42, // 14: fleetly.identity.v1.ListInvitationsResponse.invitations:type_name -> fleetly.identity.v1.Invitation
 	2,  // 15: fleetly.identity.v1.AcceptInvitationResponse.user:type_name -> fleetly.identity.v1.User
-	45, // 16: fleetly.identity.v1.ListAuditResponse.entries:type_name -> fleetly.identity.v1.AuditEntry
+	49, // 16: fleetly.identity.v1.ListAuditResponse.entries:type_name -> fleetly.identity.v1.AuditEntry
 	0,  // 17: fleetly.identity.v1.UsersService.WhoAmI:input_type -> fleetly.identity.v1.WhoAmIRequest
 	3,  // 18: fleetly.identity.v1.UsersService.CreateUser:input_type -> fleetly.identity.v1.CreateUserRequest
-	5,  // 19: fleetly.identity.v1.UsersService.GetUser:input_type -> fleetly.identity.v1.GetUserRequest
-	7,  // 20: fleetly.identity.v1.UsersService.ListUsers:input_type -> fleetly.identity.v1.ListUsersRequest
-	9,  // 21: fleetly.identity.v1.UsersService.DeleteUser:input_type -> fleetly.identity.v1.DeleteUserRequest
-	12, // 22: fleetly.identity.v1.TeamsService.CreateTeam:input_type -> fleetly.identity.v1.CreateTeamRequest
-	14, // 23: fleetly.identity.v1.TeamsService.GetTeam:input_type -> fleetly.identity.v1.GetTeamRequest
-	16, // 24: fleetly.identity.v1.TeamsService.ListTeams:input_type -> fleetly.identity.v1.ListTeamsRequest
-	18, // 25: fleetly.identity.v1.TeamsService.DeleteTeam:input_type -> fleetly.identity.v1.DeleteTeamRequest
-	21, // 26: fleetly.identity.v1.RolesService.CreateRole:input_type -> fleetly.identity.v1.CreateRoleRequest
-	23, // 27: fleetly.identity.v1.RolesService.GetRole:input_type -> fleetly.identity.v1.GetRoleRequest
-	25, // 28: fleetly.identity.v1.RolesService.ListRoles:input_type -> fleetly.identity.v1.ListRolesRequest
-	27, // 29: fleetly.identity.v1.RolesService.DeleteRole:input_type -> fleetly.identity.v1.DeleteRoleRequest
-	30, // 30: fleetly.identity.v1.TokensService.CreateToken:input_type -> fleetly.identity.v1.CreateTokenRequest
-	32, // 31: fleetly.identity.v1.TokensService.GetToken:input_type -> fleetly.identity.v1.GetTokenRequest
-	34, // 32: fleetly.identity.v1.TokensService.ListTokens:input_type -> fleetly.identity.v1.ListTokensRequest
-	36, // 33: fleetly.identity.v1.TokensService.RevokeToken:input_type -> fleetly.identity.v1.RevokeTokenRequest
-	39, // 34: fleetly.identity.v1.InvitationsService.CreateInvitation:input_type -> fleetly.identity.v1.CreateInvitationRequest
-	41, // 35: fleetly.identity.v1.InvitationsService.ListInvitations:input_type -> fleetly.identity.v1.ListInvitationsRequest
-	43, // 36: fleetly.identity.v1.InvitationsService.AcceptInvitation:input_type -> fleetly.identity.v1.AcceptInvitationRequest
-	46, // 37: fleetly.identity.v1.AuditQueryService.ListAudit:input_type -> fleetly.identity.v1.ListAuditRequest
-	1,  // 38: fleetly.identity.v1.UsersService.WhoAmI:output_type -> fleetly.identity.v1.WhoAmIResponse
-	4,  // 39: fleetly.identity.v1.UsersService.CreateUser:output_type -> fleetly.identity.v1.CreateUserResponse
-	6,  // 40: fleetly.identity.v1.UsersService.GetUser:output_type -> fleetly.identity.v1.GetUserResponse
-	8,  // 41: fleetly.identity.v1.UsersService.ListUsers:output_type -> fleetly.identity.v1.ListUsersResponse
-	10, // 42: fleetly.identity.v1.UsersService.DeleteUser:output_type -> fleetly.identity.v1.DeleteUserResponse
-	13, // 43: fleetly.identity.v1.TeamsService.CreateTeam:output_type -> fleetly.identity.v1.CreateTeamResponse
-	15, // 44: fleetly.identity.v1.TeamsService.GetTeam:output_type -> fleetly.identity.v1.GetTeamResponse
-	17, // 45: fleetly.identity.v1.TeamsService.ListTeams:output_type -> fleetly.identity.v1.ListTeamsResponse
-	19, // 46: fleetly.identity.v1.TeamsService.DeleteTeam:output_type -> fleetly.identity.v1.DeleteTeamResponse
-	22, // 47: fleetly.identity.v1.RolesService.CreateRole:output_type -> fleetly.identity.v1.CreateRoleResponse
-	24, // 48: fleetly.identity.v1.RolesService.GetRole:output_type -> fleetly.identity.v1.GetRoleResponse
-	26, // 49: fleetly.identity.v1.RolesService.ListRoles:output_type -> fleetly.identity.v1.ListRolesResponse
-	28, // 50: fleetly.identity.v1.RolesService.DeleteRole:output_type -> fleetly.identity.v1.DeleteRoleResponse
-	31, // 51: fleetly.identity.v1.TokensService.CreateToken:output_type -> fleetly.identity.v1.CreateTokenResponse
-	33, // 52: fleetly.identity.v1.TokensService.GetToken:output_type -> fleetly.identity.v1.GetTokenResponse
-	35, // 53: fleetly.identity.v1.TokensService.ListTokens:output_type -> fleetly.identity.v1.ListTokensResponse
-	37, // 54: fleetly.identity.v1.TokensService.RevokeToken:output_type -> fleetly.identity.v1.RevokeTokenResponse
-	40, // 55: fleetly.identity.v1.InvitationsService.CreateInvitation:output_type -> fleetly.identity.v1.CreateInvitationResponse
-	42, // 56: fleetly.identity.v1.InvitationsService.ListInvitations:output_type -> fleetly.identity.v1.ListInvitationsResponse
-	44, // 57: fleetly.identity.v1.InvitationsService.AcceptInvitation:output_type -> fleetly.identity.v1.AcceptInvitationResponse
-	47, // 58: fleetly.identity.v1.AuditQueryService.ListAudit:output_type -> fleetly.identity.v1.ListAuditResponse
-	38, // [38:59] is the sub-list for method output_type
-	17, // [17:38] is the sub-list for method input_type
+	5,  // 19: fleetly.identity.v1.UsersService.Login:input_type -> fleetly.identity.v1.LoginRequest
+	7,  // 20: fleetly.identity.v1.UsersService.SetUserPassword:input_type -> fleetly.identity.v1.SetUserPasswordRequest
+	9,  // 21: fleetly.identity.v1.UsersService.GetUser:input_type -> fleetly.identity.v1.GetUserRequest
+	11, // 22: fleetly.identity.v1.UsersService.ListUsers:input_type -> fleetly.identity.v1.ListUsersRequest
+	13, // 23: fleetly.identity.v1.UsersService.DeleteUser:input_type -> fleetly.identity.v1.DeleteUserRequest
+	16, // 24: fleetly.identity.v1.TeamsService.CreateTeam:input_type -> fleetly.identity.v1.CreateTeamRequest
+	18, // 25: fleetly.identity.v1.TeamsService.GetTeam:input_type -> fleetly.identity.v1.GetTeamRequest
+	20, // 26: fleetly.identity.v1.TeamsService.ListTeams:input_type -> fleetly.identity.v1.ListTeamsRequest
+	22, // 27: fleetly.identity.v1.TeamsService.DeleteTeam:input_type -> fleetly.identity.v1.DeleteTeamRequest
+	25, // 28: fleetly.identity.v1.RolesService.CreateRole:input_type -> fleetly.identity.v1.CreateRoleRequest
+	27, // 29: fleetly.identity.v1.RolesService.GetRole:input_type -> fleetly.identity.v1.GetRoleRequest
+	29, // 30: fleetly.identity.v1.RolesService.ListRoles:input_type -> fleetly.identity.v1.ListRolesRequest
+	31, // 31: fleetly.identity.v1.RolesService.DeleteRole:input_type -> fleetly.identity.v1.DeleteRoleRequest
+	34, // 32: fleetly.identity.v1.TokensService.CreateToken:input_type -> fleetly.identity.v1.CreateTokenRequest
+	36, // 33: fleetly.identity.v1.TokensService.GetToken:input_type -> fleetly.identity.v1.GetTokenRequest
+	38, // 34: fleetly.identity.v1.TokensService.ListTokens:input_type -> fleetly.identity.v1.ListTokensRequest
+	40, // 35: fleetly.identity.v1.TokensService.RevokeToken:input_type -> fleetly.identity.v1.RevokeTokenRequest
+	43, // 36: fleetly.identity.v1.InvitationsService.CreateInvitation:input_type -> fleetly.identity.v1.CreateInvitationRequest
+	45, // 37: fleetly.identity.v1.InvitationsService.ListInvitations:input_type -> fleetly.identity.v1.ListInvitationsRequest
+	47, // 38: fleetly.identity.v1.InvitationsService.AcceptInvitation:input_type -> fleetly.identity.v1.AcceptInvitationRequest
+	50, // 39: fleetly.identity.v1.AuditQueryService.ListAudit:input_type -> fleetly.identity.v1.ListAuditRequest
+	1,  // 40: fleetly.identity.v1.UsersService.WhoAmI:output_type -> fleetly.identity.v1.WhoAmIResponse
+	4,  // 41: fleetly.identity.v1.UsersService.CreateUser:output_type -> fleetly.identity.v1.CreateUserResponse
+	6,  // 42: fleetly.identity.v1.UsersService.Login:output_type -> fleetly.identity.v1.LoginResponse
+	8,  // 43: fleetly.identity.v1.UsersService.SetUserPassword:output_type -> fleetly.identity.v1.SetUserPasswordResponse
+	10, // 44: fleetly.identity.v1.UsersService.GetUser:output_type -> fleetly.identity.v1.GetUserResponse
+	12, // 45: fleetly.identity.v1.UsersService.ListUsers:output_type -> fleetly.identity.v1.ListUsersResponse
+	14, // 46: fleetly.identity.v1.UsersService.DeleteUser:output_type -> fleetly.identity.v1.DeleteUserResponse
+	17, // 47: fleetly.identity.v1.TeamsService.CreateTeam:output_type -> fleetly.identity.v1.CreateTeamResponse
+	19, // 48: fleetly.identity.v1.TeamsService.GetTeam:output_type -> fleetly.identity.v1.GetTeamResponse
+	21, // 49: fleetly.identity.v1.TeamsService.ListTeams:output_type -> fleetly.identity.v1.ListTeamsResponse
+	23, // 50: fleetly.identity.v1.TeamsService.DeleteTeam:output_type -> fleetly.identity.v1.DeleteTeamResponse
+	26, // 51: fleetly.identity.v1.RolesService.CreateRole:output_type -> fleetly.identity.v1.CreateRoleResponse
+	28, // 52: fleetly.identity.v1.RolesService.GetRole:output_type -> fleetly.identity.v1.GetRoleResponse
+	30, // 53: fleetly.identity.v1.RolesService.ListRoles:output_type -> fleetly.identity.v1.ListRolesResponse
+	32, // 54: fleetly.identity.v1.RolesService.DeleteRole:output_type -> fleetly.identity.v1.DeleteRoleResponse
+	35, // 55: fleetly.identity.v1.TokensService.CreateToken:output_type -> fleetly.identity.v1.CreateTokenResponse
+	37, // 56: fleetly.identity.v1.TokensService.GetToken:output_type -> fleetly.identity.v1.GetTokenResponse
+	39, // 57: fleetly.identity.v1.TokensService.ListTokens:output_type -> fleetly.identity.v1.ListTokensResponse
+	41, // 58: fleetly.identity.v1.TokensService.RevokeToken:output_type -> fleetly.identity.v1.RevokeTokenResponse
+	44, // 59: fleetly.identity.v1.InvitationsService.CreateInvitation:output_type -> fleetly.identity.v1.CreateInvitationResponse
+	46, // 60: fleetly.identity.v1.InvitationsService.ListInvitations:output_type -> fleetly.identity.v1.ListInvitationsResponse
+	48, // 61: fleetly.identity.v1.InvitationsService.AcceptInvitation:output_type -> fleetly.identity.v1.AcceptInvitationResponse
+	51, // 62: fleetly.identity.v1.AuditQueryService.ListAudit:output_type -> fleetly.identity.v1.ListAuditResponse
+	40, // [40:63] is the sub-list for method output_type
+	17, // [17:40] is the sub-list for method input_type
 	17, // [17:17] is the sub-list for extension type_name
 	17, // [17:17] is the sub-list for extension extendee
 	0,  // [0:17] is the sub-list for field type_name
@@ -2871,7 +3134,7 @@ func file_fleetly_identity_v1_identity_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fleetly_identity_v1_identity_proto_rawDesc), len(file_fleetly_identity_v1_identity_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   48,
+			NumMessages:   52,
 			NumExtensions: 0,
 			NumServices:   6,
 		},

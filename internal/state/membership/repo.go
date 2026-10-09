@@ -61,3 +61,24 @@ func scanOne(scan func(dest ...any) error) (*Membership, error) {
 	}
 	return &m, nil
 }
+
+// ListByUser 返回用户的全部 membership（Login 密码会话铸 Token 的
+// team/role 解析源；C6 第一期——单 membership 取首行，多队诚实取 ID 序
+// 首个，跨队会话面随多队裁决扩展）。
+func (r *Repo) ListByUser(ctx context.Context, run state.Runner, userID string) ([]Membership, error) {
+	rows, err := run.QueryContext(ctx, `
+		SELECT id, user_id, team_id, role_id, created_at FROM memberships WHERE user_id = ? ORDER BY id`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
+	var out []Membership
+	for rows.Next() {
+		var m Membership
+		if err := rows.Scan(&m.ID, &m.UserID, &m.TeamID, &m.RoleID, &m.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}

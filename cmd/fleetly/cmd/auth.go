@@ -90,24 +90,26 @@ func writeCredentials(addr, token string) error {
 
 func newLoginVerb() commands.Command {
 	const name = "login"
-	var token, addr string
+	var token, addr, loginName, password string
 	return &flaggedVerb{
 		name:     name,
-		synopsis: "Validate a token and save it locally (addr+token, file mode 0600)",
-		usage:    "login --token TOKEN [--addr ADDR]",
+		synopsis: "Validate a token, or log in with name+password (a platform token is minted server-side), and save it locally (addr+token, file mode 0600)",
+		usage:    "login (--token TOKEN | --name NAME [--password PASSWORD]) [--addr ADDR]",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&token, "token", "", "token to validate and store (required)")
+			fs.StringVar(&token, "token", "", "token to validate and store (exclusive with --name)")
+			fs.StringVar(&loginName, "name", "", "user name for password login (exclusive with --token)")
+			fs.StringVar(&password, "password", "", "password for --name (empty = read stdin; avoid passing secrets in argv)")
 			fs.StringVar(&addr, "addr", "", fmt.Sprintf("fleetlyd address (default %q; env %s)", defaultAddr, envAddr))
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if len(args) > 0 {
 				return usageErr(name, "unexpected argument(s)")
 			}
-			if token == "" {
-				return usageErr(name, "--token is required")
+			if token == "" && loginName == "" {
+				return usageErr(name, "--token or --name is required")
 			}
-			if identity.TokenKind(token) != "platform" {
-				return fmt.Errorf("login: token must be a platform token (%s prefix)", identity.TokenPrefix)
+			if token != "" && loginName != "" {
+				return usageErr(name, "--token and --name are exclusive")
 			}
 			if addr == "" {
 				addr = envOr(envAddr, defaultAddr)
@@ -117,6 +119,27 @@ func newLoginVerb() commands.Command {
 				return err
 			}
 			defer c.Close() //nolint:errcheck // 进程退出路径
+			if token == "" {
+				// 密码形态（C6 第一期）：服务端校验并铸 Token，本地只落
+				// 返回的 secret（与 --token 形态同一 credentials 通道）。
+				// 密码 stdin 兜底（valueOrStdin 同款）。
+				pw, err := valueOrStdin(password, env)
+				if err != nil {
+					return err
+				}
+				pw = strings.TrimSpace(pw)
+				if pw == "" {
+					return usageErr(name, "--password is required (or pipe it via stdin)")
+				}
+				resp, err := c.Users.Login(ctx, &identityv1.LoginRequest{Name: loginName, Password: pw})
+				if err != nil {
+					return err
+				}
+				token = resp.GetSecret()
+			}
+			if identity.TokenKind(token) != "platform" {
+				return fmt.Errorf("login: token must be a platform token (%s prefix)", identity.TokenPrefix)
+			}
 			// login 的凭证只在本动词生效：显式 WithToken，不读环境/文件。
 			who, err := c.Users.WhoAmI(fleetly.WithToken(ctx, token), &identityv1.WhoAmIRequest{})
 			if err != nil {

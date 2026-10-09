@@ -9,6 +9,8 @@ import (
 	"context"
 	"database/sql"
 
+	"golang.org/x/crypto/bcrypt"
+
 	identityv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/identity/v1"
 	"github.com/fleetlyrun/fleetly/internal/api/apperr"
 	"github.com/fleetlyrun/fleetly/internal/authn"
@@ -73,6 +75,15 @@ func (svc *UsersService) CreateUser(ctx context.Context, req *identityv1.CreateU
 	}
 	teamID = resolvedTeam
 	u := &user.User{ID: newID(), Name: req.GetName()}
+	// 密码凭证第二形态（C6 第一期）：可选初始密码 bcrypt 落库（zot
+	// htpasswd 同款算法；空 = 未设密）。
+	if pw := req.GetPassword(); pw != "" {
+		hash, err := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.DefaultCost)
+		if err != nil {
+			return nil, apperr.New("E_INTERNAL", "password hashing failed").WithCause(err)
+		}
+		u.PasswordHash = string(hash)
+	}
 	m := &membership.Membership{ID: newID(), UserID: u.ID, TeamID: teamID, RoleID: req.GetRoleId()}
 	err = svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{svc.s.teamExists(teamID), svc.s.roleInTeam(req.GetRoleId(), teamID)},
@@ -97,6 +108,77 @@ func (svc *UsersService) GetUser(ctx context.Context, req *identityv1.GetUserReq
 		return nil, mapStateError(err, "user")
 	}
 	return &identityv1.GetUserResponse{User: userMsg(u)}, nil
+}
+
+// Login 密码自证铸 Token（C6 密码会话第一期）：复用 tokens 面的全部
+// 执法（scope）、审计（token.created + user.login 双行）与吊销面（authn
+// 拦截器逐请求查表——吊销即 401），不引入独立会话表。失败形态不区分
+// 哪半边错（用户名枚举面收窄）；PUBLIC 端点无限速是多租户前诚实边界
+// （控制面 9080/9081 均 VPC-only，端口暴露矩阵承载边界）。
+func (svc *UsersService) Login(ctx context.Context, req *identityv1.LoginRequest) (*identityv1.LoginResponse, error) {
+	if req.GetName() == "" || req.GetPassword() == "" {
+		return nil, apperr.New("E_INVALID_ARGUMENT", "name and password: must not be empty")
+	}
+	u, err := svc.s.Users.GetByName(ctx, svc.s.DB.Runner(), req.GetName())
+	if err != nil || u.PasswordHash == "" ||
+		bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(req.GetPassword())) != nil {
+		return nil, apperr.New("E_UNAUTHENTICATED", "name or password is incorrect")
+	}
+	memberships, err := svc.s.Memberships.ListByUser(ctx, svc.s.DB.Runner(), u.ID)
+	if err != nil {
+		return nil, apperr.New("E_INTERNAL", "membership lookup failed").WithCause(err)
+	}
+	if len(memberships) == 0 {
+		return nil, apperr.New("E_CONFLICT", "user has no team membership; grant a role before login")
+	}
+	m := memberships[0]
+	material, err := identity.NewToken()
+	if err != nil {
+		return nil, apperr.New("E_INTERNAL", "token material generation failed")
+	}
+	t := &tokenrepo.Token{
+		ID: newID(), Name: "password session", TeamID: m.TeamID, UserID: u.ID,
+		RoleID: m.RoleID, SHA256: material.SHA256, Prefix: material.Prefix,
+	}
+	err = svc.s.commit(ctx, writeFact{
+		checks: []acceptanceCheck{svc.s.teamExists(m.TeamID), svc.s.roleInTeam(m.RoleID, m.TeamID), svc.s.userInTeam(u.ID, m.TeamID)},
+		write: func(ctx context.Context, tx *sql.Tx) error {
+			return svc.s.Tokens.Create(ctx, tx, t)
+		},
+		events: []eventFact{identityEvent("token.created", "token", t.ID, nameEventPayload{Name: t.Name})},
+		audits: []*audit.Entry{identityAudit(ctx, "user.login", "user/"+u.ID, "", u.Name)},
+	})
+	if err != nil {
+		return nil, mapStateError(err, "token")
+	}
+	return &identityv1.LoginResponse{
+		TokenId: t.ID, Secret: material.Secret, TokenName: t.Name,
+		UserName: u.Name, TeamId: m.TeamID, RoleId: m.RoleID,
+	}, nil
+}
+
+// SetUserPassword 设置/重置密码（admin 面；users:write scope——与
+// CreateUser 同档）。自助改密（带旧密码自证）随 SSO 批的认证面裁决。
+func (svc *UsersService) SetUserPassword(ctx context.Context, req *identityv1.SetUserPasswordRequest) (*identityv1.SetUserPasswordResponse, error) {
+	if req.GetPassword() == "" {
+		return nil, apperr.New("E_INVALID_ARGUMENT", "password: must not be empty")
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.GetPassword()), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, apperr.New("E_INTERNAL", "password hashing failed").WithCause(err)
+	}
+	entry := identityAudit(ctx, "user.password_set", "user/"+req.GetUserId(), "", "")
+	err = svc.s.commit(ctx, writeFact{
+		checks: []acceptanceCheck{svc.s.userExists(req.GetUserId())},
+		write: func(ctx context.Context, tx *sql.Tx) error {
+			return svc.s.Users.SetPassword(ctx, tx, req.GetUserId(), string(hash))
+		},
+		audits: []*audit.Entry{entry},
+	})
+	if err != nil {
+		return nil, mapStateError(err, "user")
+	}
+	return &identityv1.SetUserPasswordResponse{}, nil
 }
 
 func (svc *UsersService) ListUsers(ctx context.Context, _ *identityv1.ListUsersRequest) (*identityv1.ListUsersResponse, error) {

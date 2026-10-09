@@ -38,6 +38,22 @@ service UsersService {
       api_key_scope: { resource: "users" op: SCOPE_OP_WRITE }
     };
   }
+  // Login（C6 密码会话第一期）：密码自证铸 Token——PUBLIC 位（先例 =
+  // AcceptInvitation 的免 token 自证位）；无限速是多租户前诚实边界
+  // （控制面 9080/9081 均 VPC-only）。
+  rpc Login(LoginRequest) returns (LoginResponse) {
+    option (google.api.http) = { post: "/v1/auth/login" body: "*" };
+    option (grpcapi.v1.method_auth) = { access: ACCESS_LEVEL_PUBLIC };
+  }
+  // SetUserPassword 设置/重置密码（admin 面；自证走创建时初始密码或
+  // admin 重置——自助改密随 SSO 批裁决）。
+  rpc SetUserPassword(SetUserPasswordRequest) returns (SetUserPasswordResponse) {
+    option (google.api.http) = { post: "/v1/users/{user_id}/password" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "users" op: SCOPE_OP_WRITE }
+    };
+  }
   rpc GetUser(GetUserRequest) returns (GetUserResponse) {
     option (google.api.http) = { get: "/v1/users/{id}" };
     option (grpcapi.v1.method_auth) = {
@@ -230,11 +246,37 @@ message CreateUserRequest {
   string name = 1;
   string team_id = 2;  // 归属 Team（缺省 default）
   string role_id = 3;  // Team 内授予的 Role
+  // password 是可选初始密码（bcrypt 落库；空 = 未设密，密码登录诚实拒绝）。
+  // C6 密码会话第一期。
+  string password = 4;
 }
 
 message CreateUserResponse {
   User user = 1;
 }
+
+// Login（C6 密码会话第一期）：密码自证铸常规 API Token（复用 tokens 面
+// 执法/审计/吊销——不引入独立会话表；secret 只在本响应出现一次）。
+message LoginRequest {
+  string name = 1;
+  string password = 2;
+}
+
+message LoginResponse {
+  string token_id = 1;
+  string secret = 2;
+  string token_name = 3;
+  string user_name = 4;
+  string team_id = 5;
+  string role_id = 6;
+}
+
+message SetUserPasswordRequest {
+  string user_id = 1;
+  string password = 2;
+}
+
+message SetUserPasswordResponse {}
 
 message GetUserRequest {
   string id = 1;

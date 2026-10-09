@@ -74,6 +74,56 @@
     },
     {
       "id": "<ULID>",
+      "source": "api",
+      "action": "user.login",
+      "resource": "user/<ULID>",
+      "after_fp": "alice",
+      "created_at": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "<ULID>",
+      "source": "api",
+      "action": "user.login",
+      "resource": "user/<ULID>",
+      "after_fp": "alice",
+      "created_at": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "<ULID>",
+      "actor": "token:bootstrap",
+      "source": "cli",
+      "action": "user.password_set",
+      "resource": "user/<ULID>",
+      "created_at": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "<ULID>",
+      "actor": "token:bootstrap",
+      "source": "cli",
+      "action": "user.password_set",
+      "resource": "user/<ULID>",
+      "created_at": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "<ULID>",
+      "actor": "token:bootstrap",
+      "source": "cli",
+      "action": "user.create",
+      "resource": "user/<ULID>",
+      "after_fp": "bob-json",
+      "created_at": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "<ULID>",
+      "actor": "token:bootstrap",
+      "source": "cli",
+      "action": "user.create",
+      "resource": "user/<ULID>",
+      "after_fp": "bob",
+      "created_at": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "<ULID>",
       "actor": "token:bootstrap",
       "source": "cli",
       "action": "user.create",

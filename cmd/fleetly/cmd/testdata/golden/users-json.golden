@@ -2,5 +2,6 @@
   "accept",
   "create",
   "invite",
-  "list"
+  "list",
+  "set-password"
 ]

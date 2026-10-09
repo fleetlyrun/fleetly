@@ -1,4 +1,6 @@
 ID	NAME	PREFIX	ROLE	REVOKED	LAST_USED	CREATED
 <ULID>	bootstrap	<TOKEN>	builtin-owner	no	2026-01-01T00:00:00Z	2026-01-01T00:00:00Z
+<ULID>	password session	<TOKEN>	builtin-admin	no		2026-01-01T00:00:00Z
+<ULID>	password session	<TOKEN>	builtin-admin	no		2026-01-01T00:00:00Z
 <ULID>	alice-cli	<TOKEN>	builtin-admin	no		2026-01-01T00:00:00Z
 <ULID>	alice-cli-json	<TOKEN>	builtin-admin	no		2026-01-01T00:00:00Z

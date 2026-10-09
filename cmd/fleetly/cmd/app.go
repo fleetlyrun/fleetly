@@ -57,7 +57,7 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 		newLoginVerb(),
 		newWhoamiVerb(),
 		groupVerb("tokens", "manage tokens (secrets shown once at creation)", newTokensCreateVerb(), newTokensListVerb(), newTokensRevokeVerb()),
-		groupVerb("users", "manage users and invitations", newUsersCreateVerb(), newUsersListVerb(), newUsersInviteVerb(), newUsersAcceptVerb()),
+		groupVerb("users", "manage users and invitations", newUsersCreateVerb(), newUsersListVerb(), newUsersSetPasswordVerb(), newUsersInviteVerb(), newUsersAcceptVerb()),
 		groupVerb("roles", "manage roles (builtin owner/admin/member plus custom)", newRolesCreateVerb(), newRolesListVerb()),
 		groupVerb("teams", "manage teams", newTeamsCreateVerb(), newTeamsListVerb()),
 		newAuditVerb(),

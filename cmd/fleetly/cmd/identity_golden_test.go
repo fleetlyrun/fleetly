@@ -28,6 +28,11 @@ func TestGoldenIdentityVerbs(t *testing.T) {
 		{"login", []string{"login", "--token", "GOLDEN_TOKEN"}},
 		{"users create", []string{"users", "create", "--role", "builtin-admin", "alice"}},
 		{"users list", []string{"users", "list"}},
+		// 密码凭证面（C6 第一期）：初始密码建用户 → set-password 重置 →
+		// 密码 login（服务端铸 Token；secret 只落 credentials 不出 stdout）。
+		{"users create password", []string{"users", "create", "--role", "builtin-member", "--password", "init-pw-1", "bob"}},
+		{"users set-password", []string{"users", "set-password", "--password", "s3cret-pw", "GOLDEN_USER"}},
+		{"login password", []string{"login", "--name", "alice", "--password", "s3cret-pw"}},
 		{"roles create", []string{"roles", "create", "--scope", "deployments:write", "deployer"}},
 		{"roles list", []string{"roles", "list"}},
 		{"teams create", []string{"teams", "create", "shop"}},
@@ -42,10 +47,11 @@ func TestGoldenIdentityVerbs(t *testing.T) {
 	// jsonRoundOverrides 是 --json 轮的位置替换（create/invite 类换名撞
 	// 唯一约束；list/读类幂等直跑）。
 	jsonRoundOverrides := map[string]map[int]string{
-		"users create":  {4: "alice-json"},
-		"roles create":  {4: "deployer-json"},
-		"teams create":  {2: "shop-json"},
-		"tokens create": {6: "alice-cli-json"},
+		"users create":          {4: "alice-json"},
+		"users create password": {6: "bob-json"},
+		"roles create":          {4: "deployer-json"},
+		"teams create":          {2: "shop-json"},
+		"tokens create":         {6: "alice-cli-json"},
 	}
 	for _, st := range steps {
 		t.Run(st.verb, func(t *testing.T) {

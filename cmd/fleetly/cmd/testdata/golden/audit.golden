@@ -7,5 +7,11 @@ ID	ACTOR	SOURCE	ACTION	RESOURCE	BEFORE	AFTER	CREATED
 <ULID>	token:bootstrap	cli	team.create	team/<ULID>		shop	2026-01-01T00:00:00Z
 <ULID>	token:bootstrap	cli	role.create	role/<ULID>		deployments:write	2026-01-01T00:00:00Z
 <ULID>	token:bootstrap	cli	role.create	role/<ULID>		deployments:write	2026-01-01T00:00:00Z
+<ULID>		api	user.login	user/<ULID>		alice	2026-01-01T00:00:00Z
+<ULID>		api	user.login	user/<ULID>		alice	2026-01-01T00:00:00Z
+<ULID>	token:bootstrap	cli	user.password_set	user/<ULID>			2026-01-01T00:00:00Z
+<ULID>	token:bootstrap	cli	user.password_set	user/<ULID>			2026-01-01T00:00:00Z
+<ULID>	token:bootstrap	cli	user.create	user/<ULID>		bob-json	2026-01-01T00:00:00Z
+<ULID>	token:bootstrap	cli	user.create	user/<ULID>		bob	2026-01-01T00:00:00Z
 <ULID>	token:bootstrap	cli	user.create	user/<ULID>		alice-json	2026-01-01T00:00:00Z
 <ULID>	token:bootstrap	cli	user.create	user/<ULID>		alice	2026-01-01T00:00:00Z
