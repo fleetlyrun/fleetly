@@ -10,6 +10,9 @@ import {
   LoadingNote,
   PageShell,
   RowButton,
+  Select,
+  TableHead,
+  TableWrap,
   formatTime,
   shortId,
   useApiMutation,
@@ -138,6 +141,8 @@ export function DeploymentDetailPage({ id, navigate }: { id: string; navigate: (
         {window ? <GenerationWindowCard window={window} /> : null}
 
         <ProcessStrategiesCard deployment={effective} toRevision={toRevision} appName={appName ?? ""} />
+
+        <RevisionsDiffCard appId={appId} revisions={revisions.data ?? []} />
 
         <details className="rounded-lg border border-slate-800 px-3 py-2 text-sm text-slate-300" open>
           <summary className="cursor-pointer text-slate-400">row fields</summary>
@@ -308,5 +313,86 @@ function ProcessStrategiesCard({
         for debugging and moves with each deploy.
       </p>
     </div>
+  );
+}
+
+// ---- revisions diff（C3 部署 UX 深化：CLI revisions diff 的消费面） ----
+
+type DiffEntry = { path?: string; old_value?: string; new_value?: string };
+
+// RevisionsDiffCard 是任意两代 Revision 的字段级差异视图：GET
+// /v1/revisions/diff（路径字典序返回）。同侧 diff（首部署无 from 侧、
+// replay 同侧）服务端返回空集——空表即诚实形态，不特殊提示。
+function RevisionsDiffCard({ appId, revisions }: { appId: string; revisions: Revision[] }) {
+  const seqs = revisions
+    .map((rev) => Number(rev.seq ?? "0"))
+    .filter((seq) => seq > 0)
+    .sort((a, b) => b - a);
+  const [fromSeq, setFromSeq] = useState("");
+  const [toSeq, setToSeq] = useState("");
+  const diff = useQuery({
+    queryKey: ["revisions", "diff", appId, fromSeq, toSeq],
+    enabled: fromSeq !== "" && toSeq !== "" && fromSeq !== toSeq,
+    queryFn: async (): Promise<DiffEntry[]> => {
+      const res = await apiFetch<{ entries?: Array<DiffEntry | undefined> }>(
+        `/v1/revisions/diff?app_id=${encodeURIComponent(appId)}&from_seq=${fromSeq}&to_seq=${toSeq}`,
+      );
+      return (res.entries ?? []).flatMap((entry) => (entry != null ? [entry] : []));
+    },
+  });
+  return (
+    <details className="rounded-lg border border-slate-800 px-3 py-2 text-sm">
+      <summary className="cursor-pointer text-slate-400">revisions diff</summary>
+      <div className="mt-2 flex flex-wrap items-end gap-3">
+        <label className="flex flex-col gap-1 text-xs text-slate-500">
+          from
+          <Select value={fromSeq} onChange={(event) => setFromSeq(event.target.value)} className="w-28">
+            <option value="">—</option>
+            {seqs.map((seq) => (
+              <option key={seq} value={String(seq)}>
+                R{seq}
+              </option>
+            ))}
+          </Select>
+        </label>
+        <label className="flex flex-col gap-1 text-xs text-slate-500">
+          to
+          <Select value={toSeq} onChange={(event) => setToSeq(event.target.value)} className="w-28">
+            <option value="">—</option>
+            {seqs.map((seq) => (
+              <option key={seq} value={String(seq)}>
+                R{seq}
+              </option>
+            ))}
+          </Select>
+        </label>
+      </div>
+      {diff.isFetching ? <LoadingNote label="diffing…" /> : null}
+      {diff.isError ? <ErrorNote error={diff.error} /> : null}
+      {diff.data != null ? (
+        diff.data.length === 0 ? (
+          <p className="mt-2 text-xs text-slate-500">no field-level differences between the selected revisions.</p>
+        ) : (
+          <TableWrap>
+            <table className="mt-2 w-full text-left text-xs">
+              <TableHead columns={["path", "from", "to"]} />
+              <tbody>
+                {diff.data.map((entry) => (
+                  <tr key={entry.path} className="border-t border-slate-800">
+                    <td className="px-3 py-1.5 font-mono text-slate-300">{entry.path}</td>
+                    <td className="max-w-xs truncate px-3 py-1.5 font-mono text-slate-500" title={entry.old_value}>
+                      {entry.old_value || "—"}
+                    </td>
+                    <td className="max-w-xs truncate px-3 py-1.5 font-mono text-emerald-300/80" title={entry.new_value}>
+                      {entry.new_value || "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableWrap>
+        )
+      ) : null}
+    </details>
   );
 }

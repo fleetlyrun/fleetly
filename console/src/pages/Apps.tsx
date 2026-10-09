@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useApps, useProjects } from "../lib/catalog";
 import { DeployForm } from "../components/DeployForm";
 import { HookModal } from "../components/HookModal";
+import { DokployImportModal } from "../components/DokployImportModal";
 import {
   DangerRowButton,
   EmptyNote,
@@ -46,6 +47,7 @@ export function AppsPage() {
   });
 
   const [deployFor, setDeployFor] = useState<string | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
 
   return (
     <PageShell
@@ -75,9 +77,10 @@ export function AppsPage() {
           >
             New app…
           </RowButton>
+          <RowButton onClick={() => setImportOpen(true)}>Import dokploy…</RowButton>
         </>
       }
-    >
+      >
       <Modal title="New project" open={projectModal} onClose={() => setProjectModal(false)}>
         <form
           className="flex flex-col gap-3"
@@ -123,6 +126,7 @@ export function AppsPage() {
           }}
         />
       ) : null}
+      <DokployImportModal open={importOpen} onClose={() => setImportOpen(false)} />
 
       {projects.isPending ? (
         <LoadingNote label="Loading projects…" />
