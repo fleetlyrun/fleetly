@@ -472,6 +472,20 @@
             "in": "query",
             "required": false,
             "type": "string"
+          },
+          {
+            "name": "database_id",
+            "description": "database_id 是 Database 域寻址（ADR-0029 域分立）：库载体日志通路，\n与 app_id/run_id 三轴互斥（IA v3 T8——Service 层 NamespaceRef 本有\nDatabase 域，本字段补 API 入口）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "run_id",
+            "description": "run_id 是 Run 域寻址（ADR-0025 决策 4 词汇分立）：单 Run 载体日志，\n与 app_id/database_id 三轴互斥；归属 Task 经行链解析（NamespaceRef\n.Task 轴，拒塞 .App——同款词汇纪律）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
           }
         ],
         "tags": [

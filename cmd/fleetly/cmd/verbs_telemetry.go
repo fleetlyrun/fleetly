@@ -117,16 +117,18 @@ func newEventsFollowVerb() commands.Command {
 
 func newLogsVerb() commands.Command {
 	const name = "logs"
-	var app, process, since, until, text string
+	var app, database, run, process, since, until, text string
 	var tail int64
 	var follow bool
 	return &flaggedVerb{
 		name:     name,
-		synopsis: "Stream container logs for an app (--text switches to the persisted-search path across the retention window)",
-		usage:    "logs --app APP_ID [--process NAME] [--tail N] [--since T] [--until T] [--text SUBSTRING] [--follow]",
+		synopsis: "Stream container logs (--app for apps; --database / --run address carrier domains; --text switches to the persisted-search path)",
+		usage:    "logs --app APP_ID [--process NAME] | logs --database ID | logs --run ID [--tail N] [--since T] [--until T] [--text SUBSTRING] [--follow]",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&app, "app", "", "app id (required)")
-			fs.StringVar(&process, "process", "", "filter by process name")
+			fs.StringVar(&app, "app", "", "app id (exactly one of --app/--database/--run)")
+			fs.StringVar(&database, "database", "", "database id (carrier domain logs, IA v3 T8)")
+			fs.StringVar(&run, "run", "", "run id (single run carrier logs)")
+			fs.StringVar(&process, "process", "", "filter by process name (app axis only)")
 			fs.Int64Var(&tail, "tail", 0, "tail lines (0 = all buffered)")
 			fs.StringVar(&since, "since", "", "time window start (RFC3339, e.g. 2026-10-01T00:00:00Z)")
 			fs.StringVar(&until, "until", "", "time window end (RFC3339)")
@@ -137,8 +139,17 @@ func newLogsVerb() commands.Command {
 			if err := noArgs(name, args); err != nil {
 				return err
 			}
-			if app == "" {
-				return usageErr(name, "--app is required")
+			axes := 0
+			for _, v := range []string{app, database, run} {
+				if v != "" {
+					axes++
+				}
+			}
+			if axes == 0 {
+				return usageErr(name, "one of --app / --database / --run is required")
+			}
+			if axes > 1 {
+				return usageErr(name, "--app / --database / --run are mutually exclusive")
 			}
 			// 流式动词：拨号豁免请求级 deadline（follow 会话长存活，
 			// 客户端 deadline 会腰斩尾随流；服务端流面不经 unary 超时拦截器）。
@@ -149,8 +160,8 @@ func newLogsVerb() commands.Command {
 			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			stream, err := c.Logs.StreamLogs(ctx, &telemetryv1.StreamLogsRequest{
-				AppId: app, Process: process, TailLines: tail, Follow: follow,
-				Since: since, Until: until, Text: text,
+				AppId: app, DatabaseId: database, RunId: run, Process: process,
+				TailLines: tail, Follow: follow, Since: since, Until: until, Text: text,
 			})
 			if err != nil {
 				return err

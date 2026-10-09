@@ -509,7 +509,15 @@ type StreamLogsRequest struct {
 	Until string `protobuf:"bytes,6,opt,name=until,proto3" json:"until,omitempty"`
 	// text 是文本过滤（ADR-0040 检索路径）：非空时经持久化日志存储全保留窗
 	// 匹配；与 follow 组合 = 实时尾随检索（≥5s 批汇延迟）。
-	Text          string `protobuf:"bytes,7,opt,name=text,proto3" json:"text,omitempty"`
+	Text string `protobuf:"bytes,7,opt,name=text,proto3" json:"text,omitempty"`
+	// database_id 是 Database 域寻址（ADR-0029 域分立）：库载体日志通路，
+	// 与 app_id/run_id 三轴互斥（IA v3 T8——Service 层 NamespaceRef 本有
+	// Database 域，本字段补 API 入口）。
+	DatabaseId string `protobuf:"bytes,8,opt,name=database_id,json=databaseId,proto3" json:"database_id,omitempty"`
+	// run_id 是 Run 域寻址（ADR-0025 决策 4 词汇分立）：单 Run 载体日志，
+	// 与 app_id/database_id 三轴互斥；归属 Task 经行链解析（NamespaceRef
+	// .Task 轴，拒塞 .App——同款词汇纪律）。
+	RunId         string `protobuf:"bytes,9,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -589,6 +597,20 @@ func (x *StreamLogsRequest) GetUntil() string {
 func (x *StreamLogsRequest) GetText() string {
 	if x != nil {
 		return x.Text
+	}
+	return ""
+}
+
+func (x *StreamLogsRequest) GetDatabaseId() string {
+	if x != nil {
+		return x.DatabaseId
+	}
+	return ""
+}
+
+func (x *StreamLogsRequest) GetRunId() string {
+	if x != nil {
+		return x.RunId
 	}
 	return ""
 }
@@ -1957,7 +1979,7 @@ const file_fleetly_telemetry_v1_telemetry_proto_rawDesc = "" +
 	"\x18IssueEventTicketResponse\x12\x16\n" +
 	"\x06ticket\x18\x01 \x01(\tR\x06ticket\x12\x1d\n" +
 	"\n" +
-	"expires_in\x18\x02 \x01(\x05R\texpiresIn\"\xbb\x01\n" +
+	"expires_in\x18\x02 \x01(\x05R\texpiresIn\"\xf3\x01\n" +
 	"\x11StreamLogsRequest\x12\x15\n" +
 	"\x06app_id\x18\x01 \x01(\tR\x05appId\x12\x18\n" +
 	"\aprocess\x18\x02 \x01(\tR\aprocess\x12\x1d\n" +
@@ -1966,7 +1988,10 @@ const file_fleetly_telemetry_v1_telemetry_proto_rawDesc = "" +
 	"\x06follow\x18\x04 \x01(\bR\x06follow\x12\x14\n" +
 	"\x05since\x18\x05 \x01(\tR\x05since\x12\x14\n" +
 	"\x05until\x18\x06 \x01(\tR\x05until\x12\x12\n" +
-	"\x04text\x18\a \x01(\tR\x04text\"\x8f\x01\n" +
+	"\x04text\x18\a \x01(\tR\x04text\x12\x1f\n" +
+	"\vdatabase_id\x18\b \x01(\tR\n" +
+	"databaseId\x12\x15\n" +
+	"\x06run_id\x18\t \x01(\tR\x05runId\"\x8f\x01\n" +
 	"\x12StreamLogsResponse\x12\x1f\n" +
 	"\vworkload_id\x18\x01 \x01(\tR\n" +
 	"workloadId\x12\x1c\n" +

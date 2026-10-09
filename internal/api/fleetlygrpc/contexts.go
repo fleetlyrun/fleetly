@@ -383,12 +383,35 @@ type LogsService struct {
 	s *Services
 }
 
-// StreamLogs 双径路由（appID → 隔离域解析经 app 行 + project 行——Team
-// 轴实取；ADR-0035 行级授权同调用点——两路径共用同一授权链）。
+// StreamLogs 双径路由（寻址三轴互斥：app / database / run——域解析经各自
+// 行链 + project 行，Team 轴实取；ADR-0035 行级授权同调用点——两路径共用
+// 同一授权链。db/run 轴是 IA v3 T8 的 API 入口补齐：Service 层
+// NamespaceRef 域分立（ADR-0025 决策 4 / ADR-0029）本就支持）。
 func (svc *LogsService) StreamLogs(req *telemetryv1.StreamLogsRequest, stream telemetryv1.LogsService_StreamLogsServer) error {
-	if req.GetAppId() == "" {
-		return apperr.New("E_INVALID_ARGUMENT", "app_id: must not be empty")
+	axes := 0
+	for _, v := range []string{req.GetAppId(), req.GetDatabaseId(), req.GetRunId()} {
+		if v != "" {
+			axes++
+		}
 	}
+	if axes == 0 {
+		return apperr.New("E_INVALID_ARGUMENT", "app_id: must not be empty (or exactly one of database_id / run_id)")
+	}
+	if axes > 1 {
+		return apperr.New("E_INVALID_ARGUMENT", "app_id / database_id / run_id: exactly one addressing axis is allowed")
+	}
+	switch {
+	case req.GetDatabaseId() != "":
+		return svc.streamDatabaseLogs(req, stream)
+	case req.GetRunId() != "":
+		return svc.streamRunLogs(req, stream)
+	default:
+		return svc.streamAppLogs(req, stream)
+	}
+}
+
+// streamAppLogs 是 App 轴的原通路（app 行 → project 行 → 授权 → 双径）。
+func (svc *LogsService) streamAppLogs(req *telemetryv1.StreamLogsRequest, stream telemetryv1.LogsService_StreamLogsServer) error {
 	ctx := stream.Context()
 	appRow, err := svc.s.Apps.Get(ctx, svc.s.DB.Runner(), req.GetAppId())
 	if err != nil {
@@ -407,10 +430,88 @@ func (svc *LogsService) StreamLogs(req *telemetryv1.StreamLogsRequest, stream te
 	if err != nil {
 		return err
 	}
+	return svc.streamLogsDualPath(q, req, stream)
+}
+
+// streamDatabaseLogs 是 Database 轴（IA v3 T8）：库行 → project 行 → 授权
+// → NamespaceRef.Database 域；WorkloadID 收敛本库载体（载体 workload id =
+// databaseID，projection 投影公式），Runtime 与 VL 双径同锚。
+func (svc *LogsService) streamDatabaseLogs(req *telemetryv1.StreamLogsRequest, stream telemetryv1.LogsService_StreamLogsServer) error {
+	ctx := stream.Context()
+	dbRow, err := svc.s.Databases.Get(ctx, svc.s.DB.Runner(), req.GetDatabaseId())
+	if err != nil {
+		return mapStateError(err, "database")
+	}
+	proj, err := svc.s.Projects.Get(ctx, svc.s.DB.Runner(), dbRow.ProjectID)
+	if err != nil {
+		return mapStateError(err, "project")
+	}
+	if err := svc.s.authorizeTeamForProject(ctx, proj); err != nil {
+		return err
+	}
+	if req.GetProcess() != "" {
+		return apperr.New("E_INVALID_ARGUMENT", "process: app-axis only (database carriers are single-workload)")
+	}
+	q := capability.LogQuery{
+		Namespace:  capability.NamespaceRef{Team: proj.TeamID, Project: dbRow.ProjectID, Database: dbRow.ID},
+		WorkloadID: dbRow.ID,
+		TailLines:  req.GetTailLines(),
+		Follow:     req.GetFollow(),
+		Text:       req.GetText(),
+	}
+	if err := applyLogWindow(&q, req); err != nil {
+		return err
+	}
+	return svc.streamLogsDualPath(q, req, stream)
+}
+
+// streamRunLogs 是 Run 轴（IA v3 T8）：run 行 → task 行（NamespaceRef.Task
+// 域主键——ADR-0025 决策 4 拒塞 .App）→ project 行 → 授权；WorkloadID =
+// run 载体（workload id = runID，投影公式）。
+func (svc *LogsService) streamRunLogs(req *telemetryv1.StreamLogsRequest, stream telemetryv1.LogsService_StreamLogsServer) error {
+	ctx := stream.Context()
+	runRow, err := svc.s.Runs.Get(ctx, svc.s.DB.Runner(), req.GetRunId())
+	if err != nil {
+		return mapStateError(err, "run")
+	}
+	taskRow, err := svc.s.Tasks.Get(ctx, svc.s.DB.Runner(), runRow.TaskID)
+	if err != nil {
+		return mapStateError(err, "task")
+	}
+	proj, err := svc.s.Projects.Get(ctx, svc.s.DB.Runner(), runRow.ProjectID)
+	if err != nil {
+		return mapStateError(err, "project")
+	}
+	if err := svc.s.authorizeTeamForProject(ctx, proj); err != nil {
+		return err
+	}
+	if req.GetProcess() != "" {
+		return apperr.New("E_INVALID_ARGUMENT", "process: app-axis only (run carriers are single-workload)")
+	}
+	q := capability.LogQuery{
+		Namespace:  capability.NamespaceRef{Team: proj.TeamID, Project: runRow.ProjectID, Task: taskRow.ID},
+		WorkloadID: runRow.WorkloadID,
+		TailLines:  req.GetTailLines(),
+		Follow:     req.GetFollow(),
+		Text:       req.GetText(),
+	}
+	if runRow.WorkloadID == "" {
+		// 观测对账锚缺席（历史行）：收敛到 Run ID（投影公式同锚）。
+		q.WorkloadID = runRow.ID
+	}
+	if err := applyLogWindow(&q, req); err != nil {
+		return err
+	}
+	return svc.streamLogsDualPath(q, req, stream)
+}
+
+// streamLogsDualPath 是 App 轴收敛后的双径共享体（检索径要求 Logging 在场；
+// 实时径要求 Runtime Logs 子面——ADR-0040）。
+func (svc *LogsService) streamLogsDualPath(q capability.LogQuery, req *telemetryv1.StreamLogsRequest, stream telemetryv1.LogsService_StreamLogsServer) error {
 	w := &streamLogWriter{stream: stream}
 	if req.GetText() != "" {
 		// 检索路径（ADR-0040 决策 4）：行级隔离由查询构造执法——只携带
-		// 本 App 的域字段（VL 单租户，凭证不离开 daemon）。
+		// 本域的过滤字段（VL 单租户，凭证不离开 daemon）。
 		if svc.s.Logging == nil {
 			return apperr.New("E_INTERNAL", "log search requires the managed log store; set config logging.addr to enable it")
 		}
@@ -425,6 +526,25 @@ func (svc *LogsService) StreamLogs(req *telemetryv1.StreamLogsRequest, stream te
 	}
 	if err := logs.StreamLogs(stream.Context(), q, w); err != nil {
 		return mapStateError(err, "logs")
+	}
+	return nil
+}
+
+// applyLogWindow 解析 since/until 时间窗（RFC3339；空 = 不限，坏值精确拒绝）。
+func applyLogWindow(q *capability.LogQuery, req *telemetryv1.StreamLogsRequest) error {
+	if raw := req.GetSince(); raw != "" {
+		t, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			return apperr.New("E_INVALID_ARGUMENT", "since: must be RFC3339 (got %q)", raw)
+		}
+		q.Since = t
+	}
+	if raw := req.GetUntil(); raw != "" {
+		t, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			return apperr.New("E_INVALID_ARGUMENT", "until: must be RFC3339 (got %q)", raw)
+		}
+		q.Until = t
 	}
 	return nil
 }

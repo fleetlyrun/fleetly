@@ -228,6 +228,14 @@ message StreamLogsRequest {
   // text 是文本过滤（ADR-0040 检索路径）：非空时经持久化日志存储全保留窗
   // 匹配；与 follow 组合 = 实时尾随检索（≥5s 批汇延迟）。
   string text = 7;
+  // database_id 是 Database 域寻址（ADR-0029 域分立）：库载体日志通路，
+  // 与 app_id/run_id 三轴互斥（IA v3 T8——Service 层 NamespaceRef 本有
+  // Database 域，本字段补 API 入口）。
+  string database_id = 8;
+  // run_id 是 Run 域寻址（ADR-0025 决策 4 词汇分立）：单 Run 载体日志，
+  // 与 app_id/database_id 三轴互斥；归属 Task 经行链解析（NamespaceRef
+  // .Task 轴，拒塞 .App——同款词汇纪律）。
+  string run_id = 9;
 }
 
 // StreamLogsResponse 一帧日志（workload 标注归属；时间 RFC3339；container
