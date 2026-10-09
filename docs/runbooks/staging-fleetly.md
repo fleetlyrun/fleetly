@@ -592,3 +592,15 @@ F3.1/F3.2/F3.3/F3.6 四批走查的浏览器级挂账在后端在场的环境（
 **门禁**：console:verify 零漂移 + vitest 40 绿（+3 dokploy parity 锚）+ Go dokploy golden 双形态绿。演练痕迹全清（migprobe 项目×2 级联删除）。
 
 **路线图进度**：C1 ✓ C2 ✓ C3 ✓；C4（nodes 页）、C5（DB verify/restore 面）待续；C6（凭证第二形态：密码会话 vs SSO）待裁决。
+
+## 2026-10-09 记录·十九（C4+C5 批换装 c603111-c45：Nodes 页 + 备份 verify/restore——纯消费批收官）
+
+**换装**（81619b6-c3mig2 → **c603111-c45（现役）**）：纯 console 批（Go 零变更），Platform Backup + torchwood-pg 卷 tar；零扰动；tw.dev 200；新 dist `index-D6sMsU14.js` 在役。
+
+**C4 Nodes 页（路由 +1）**：集群成员表（hostname/role/可用态 chip/中继活体 relay_online+版本/last seen）+ 运维三动词（drain 带真迁移确认、cordon/uncordon 按可用态切换）+ **enroll 材料揭示面**（join + relay 两条命令——等价集群成员权的警示文案；rotate join tokens 泄漏处置动词带确认）。动词面对齐 CLI nodes 组（F0.19/F3.2/ADR-0049）。真机锚：manager 在役行 available+relay 双 True；历史行 available 缺省 = runbook 既有记档形态（观测缓存非权威），页面全量诚实呈现。
+
+**C5 数据面深化（Resources databases tab）**：备份行动作面——**verify**（`POST /v1/backups/{id}/verify` 重算 digest，ok/digest/error 诚实呈现；真机锚 = torchwood-pg 最新备份 verify ok=True digest 2abe86…）+ **restore**（行内表单按名建新库带 `restore_from_backup`，异步恢复注记；恢复是异步任务、库行先建后到数据——runbook 灾备路径口径）。
+
+**门禁**：console:verify 零漂移 + vitest 41 绿。
+
+**路线图进度**：C1-C5 全部收官（五批零回归、staging 五次换装零扰动）。剩 **C6 凭证第二形态**（密码会话 vs OIDC SSO）待裁决——见路线图文档 §5。
