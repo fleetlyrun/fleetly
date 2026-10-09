@@ -14,6 +14,7 @@ import { Route as ShellRouteImport } from './routes/_shell'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ShellAlertsRouteImport } from './routes/_shell/alerts'
 import { Route as ShellAuditRouteImport } from './routes/_shell/audit'
+import { Route as ShellBackupsRouteImport } from './routes/_shell/backups'
 import { Route as ShellEventsRouteImport } from './routes/_shell/events'
 import { Route as ShellIdentityRouteImport } from './routes/_shell/identity'
 import { Route as ShellLogsRouteImport } from './routes/_shell/logs'
@@ -72,6 +73,11 @@ const ShellAlertsRoute = ShellAlertsRouteImport.update({
 const ShellAuditRoute = ShellAuditRouteImport.update({
   id: '/audit',
   path: '/audit',
+  getParentRoute: () => ShellRoute,
+} as any)
+const ShellBackupsRoute = ShellBackupsRouteImport.update({
+  id: '/backups',
+  path: '/backups',
   getParentRoute: () => ShellRoute,
 } as any)
 const ShellEventsRoute = ShellEventsRouteImport.update({
@@ -271,6 +277,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/alerts': typeof ShellAlertsRoute
   '/audit': typeof ShellAuditRoute
+  '/backups': typeof ShellBackupsRoute
   '/events': typeof ShellEventsRoute
   '/identity': typeof ShellIdentityRoute
   '/logs': typeof ShellLogsRoute
@@ -312,6 +319,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/alerts': typeof ShellAlertsRoute
   '/audit': typeof ShellAuditRoute
+  '/backups': typeof ShellBackupsRoute
   '/events': typeof ShellEventsRoute
   '/identity': typeof ShellIdentityRoute
   '/logs': typeof ShellLogsRoute
@@ -353,6 +361,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/_shell/alerts': typeof ShellAlertsRoute
   '/_shell/audit': typeof ShellAuditRoute
+  '/_shell/backups': typeof ShellBackupsRoute
   '/_shell/events': typeof ShellEventsRoute
   '/_shell/identity': typeof ShellIdentityRoute
   '/_shell/logs': typeof ShellLogsRoute
@@ -396,6 +405,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/alerts'
     | '/audit'
+    | '/backups'
     | '/events'
     | '/identity'
     | '/logs'
@@ -437,6 +447,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/alerts'
     | '/audit'
+    | '/backups'
     | '/events'
     | '/identity'
     | '/logs'
@@ -477,6 +488,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/_shell/alerts'
     | '/_shell/audit'
+    | '/_shell/backups'
     | '/_shell/events'
     | '/_shell/identity'
     | '/_shell/logs'
@@ -555,6 +567,13 @@ declare module '@tanstack/react-router' {
       path: '/audit'
       fullPath: '/audit'
       preLoaderRoute: typeof ShellAuditRouteImport
+      parentRoute: typeof ShellRoute
+    }
+    '/_shell/backups': {
+      id: '/_shell/backups'
+      path: '/backups'
+      fullPath: '/backups'
+      preLoaderRoute: typeof ShellBackupsRouteImport
       parentRoute: typeof ShellRoute
     }
     '/_shell/events': {
@@ -888,6 +907,7 @@ const ShellPProjectIdRouteWithChildren = ShellPProjectIdRoute._addFileChildren(
 interface ShellRouteChildren {
   ShellAlertsRoute: typeof ShellAlertsRoute
   ShellAuditRoute: typeof ShellAuditRoute
+  ShellBackupsRoute: typeof ShellBackupsRoute
   ShellEventsRoute: typeof ShellEventsRoute
   ShellIdentityRoute: typeof ShellIdentityRoute
   ShellLogsRoute: typeof ShellLogsRoute
@@ -906,6 +926,7 @@ interface ShellRouteChildren {
 const ShellRouteChildren: ShellRouteChildren = {
   ShellAlertsRoute: ShellAlertsRoute,
   ShellAuditRoute: ShellAuditRoute,
+  ShellBackupsRoute: ShellBackupsRoute,
   ShellEventsRoute: ShellEventsRoute,
   ShellIdentityRoute: ShellIdentityRoute,
   ShellLogsRoute: ShellLogsRoute,
