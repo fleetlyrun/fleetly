@@ -82,5 +82,6 @@ variable.deleted	event	A project shared variable was deleted.
 variable.updated	event	A project shared variable was set (values are readable via the API; redeploy affected apps to pick up the new value).
 volume.created	event	A volume was created.
 workload.drift_detected	event	Observed workload diverged from the ensured generation or spec (ADR-0022).
+workload.rollout_stalled	event	A runtime rollout is stalled mid-flight (e.g. swarm update paused by task failure); spec matches, so spec-drift cannot see it.
 workload.stopped	event	A steady-state workload was observed stopped at the current generation.
 run 'fleetly explain <name>' for the full JSON Schema

@@ -414,17 +414,23 @@ func (f *fakeRuntime) InspectWorkloads(_ context.Context, ns capability.Namespac
 			if t.replicas != 0 {
 				obs[i].Replicas = t.replicas
 			}
+			if t.rollout != "" {
+				obs[i].RolloutStalled = true
+				obs[i].RolloutDetail = t.rollout
+			}
 		}
 	}
 	return obs, nil
 }
 
 // tamperEntry 是人工改载体的注入面（场景 7）。command 非 nil 即覆写
-// （含覆写为空切片 = 清掉入口覆盖）。
+// （含覆写为空切片 = 清掉入口覆盖）。rollout 非空 = 滚动停摆注入
+// （swarm UpdateStatus=paused 形态，runbook 记录·二十七）。
 type tamperEntry struct {
 	image    string
 	command  []string
 	replicas int64
+	rollout  string
 }
 
 var _ capability.RuntimeInspector = (*fakeRuntime)(nil)

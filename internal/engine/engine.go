@@ -264,11 +264,12 @@ func systemOwner(process string) workloadOwner { return workloadOwner{ownerSyste
 // observDomain 见 observdomain.go（P15 域内组件：归属解析/期望缓存/
 // Route 后端解析）。
 
-// driftDomain 是漂移扫描域的去抖签名（spec 对照签名 + 稳态 stopped 签名，
-// ADR-0022）。
+// driftDomain 是漂移扫描域的去抖签名（spec 对照签名 + 滚动停摆签名 +
+// 稳态 stopped 签名，ADR-0022；rollout 面见 runbook 记录·二十七）。
 type driftDomain struct {
 	mu         sync.Mutex
 	sig        map[string]string // workloadID → 最后 drift 签名
+	rolloutSig map[string]string // workloadID → 滚动停摆签名（rollout|detail）
 	stoppedMu  sync.Mutex
 	stoppedSig map[string]string // workloadID → 稳态 stopped 签名
 }
@@ -578,6 +579,7 @@ func New(deps Deps, opts Options) *Engine {
 	e.exec.init()
 	e.expect.expected = make(map[workloadOwner]uint64)
 	e.drift.sig = make(map[string]string)
+	e.drift.rolloutSig = make(map[string]string)
 	e.drift.stoppedSig = make(map[string]string)
 	e.task.workloadRun = make(map[string]string)
 	e.task.runObs = make(map[string]capability.WorkloadEvent)

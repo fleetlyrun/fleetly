@@ -54,6 +54,7 @@ func init() {
 	// 观测链（workload.* / node.*）。
 	registerEventPayload(eventWorkloadDrift, driftEventPayload{})
 	registerEventPayload(eventWorkloadStopped, stoppedEventPayload{})
+	registerEventPayload(eventWorkloadRolloutStall, rolloutStalledEventPayload{})
 	registerEventPayload(eventNodeJoined, nodeEventPayload{})
 	registerEventPayload("node.left", nodeEventPayload{})
 

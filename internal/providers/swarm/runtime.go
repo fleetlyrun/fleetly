@@ -984,6 +984,14 @@ func (p *Provider) InspectWorkloads(ctx context.Context, ns capability.Namespace
 		if svc.Spec.Mode.Replicated != nil && svc.Spec.Mode.Replicated.Replicas != nil {
 			obs.Replicas = int64(*svc.Spec.Mode.Replicated.Replicas) //nolint:gosec // 副本计数域内（swarm 上限远小于 2^63）
 		}
+		// 滚动停摆透传（runbook 记录·二十七）：ServiceUpdate 被接受后
+		// 滚动可能因新 task 失败进入 paused（translate 层 FailureAction=
+		// pause + start-first 旧 task 不退役）——spec 已是新版、spec 对照
+		// 无感，停摆事实只能从 UpdateStatus 读出（drift 面发事件用）。
+		if svc.UpdateStatus != nil && svc.UpdateStatus.State == swarm.UpdateStatePaused {
+			obs.RolloutStalled = true
+			obs.RolloutDetail = svc.UpdateStatus.Message
+		}
 		if obs.WorkloadID != "" {
 			out = append(out, obs)
 		}

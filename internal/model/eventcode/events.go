@@ -38,6 +38,12 @@ var builtins = []Event{
 	// 观测到 stopped——只观测不迁移，处置由人/Agent 决定）。
 	{Name: "workload.stopped", Summary: "A steady-state workload was observed stopped at the current generation.", Source: "internal/engine/drift.go emitSteadyStateStopped"},
 
+	// 滚动停摆观测（runbook 记录·二十七：Ensure 已被编排器接受但滚动停在
+	// 中间态——swarm paused 形态下 spec 面恒一致，spec drift 无感；僵尸
+	// task 叠加三天无人感知的观测面收口。只观测不纠正，处置 = 人工 resume
+	// 或重部署）。
+	{Name: "workload.rollout_stalled", Summary: "A runtime rollout is stalled mid-flight (e.g. swarm update paused by task failure); spec matches, so spec-drift cannot see it.", Source: "internal/engine/drift.go compareSpecs"},
+
 	// Identity & Access（F0.5~F0.7 账号批）。
 	{Name: "user.created", Summary: "A user was created and granted a role in a team.", Source: "added during implementation"},
 	{Name: "team.created", Summary: "A team was created.", Source: "added during implementation"},

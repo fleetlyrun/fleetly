@@ -55,6 +55,18 @@ type stoppedEventPayload struct {
 	Message    string `json:"message,omitempty"`
 }
 
+// workload.rollout_stalled（runbook 记录·二十七观测面收口）：编排器滚动
+// 更新停在中间态（swarm UpdateStatus=paused：新 task 失败 + FailureAction
+// =pause + start-first 旧 task 不退役 → 僵尸 task 叠加）。spec 面恒一致
+// 故与 drift 分立成事件；只观测不纠正（ADR-0005 opt-in），处置 = 人工
+// resume（docker service update --force）或重部署。
+type rolloutStalledEventPayload struct {
+	WorkloadID string `json:"workload_id"`
+	AppID      string `json:"app_id,omitempty"`
+	Generation uint64 `json:"generation"`
+	Detail     string `json:"detail,omitempty"`
+}
+
 // node.joined / node.left（nodes 表是观测缓存，事件是订阅面真源）。
 type nodeEventPayload struct {
 	NodeID    string `json:"node_id"`
@@ -75,10 +87,11 @@ type firstBootJobEventPayload struct {
 
 // 事件名锚定（usage 反扫的字面量命中点）。
 const (
-	eventWorkloadDrift     = "workload.drift_detected"
-	eventWorkloadStopped   = "workload.stopped"
-	eventNodeJoined        = "node.joined"
-	eventFirstBootJobFired = "deployment.first_boot_job"
+	eventWorkloadDrift        = "workload.drift_detected"
+	eventWorkloadStopped      = "workload.stopped"
+	eventWorkloadRolloutStall = "workload.rollout_stalled"
+	eventNodeJoined           = "node.joined"
+	eventFirstBootJobFired    = "deployment.first_boot_job"
 )
 
 // build.* payload schema。
@@ -393,6 +406,16 @@ func stoppedEventPayloadJSON(wid, appID string, ev capability.WorkloadEvent) []b
 		Generation: uint64(ev.Generation),
 		State:      string(ev.State),
 		Message:    ev.Message,
+	})
+	return b
+}
+
+func rolloutStalledEventPayloadJSON(wid, appID string, gen uint64, detail string) []byte {
+	b, _ := json.Marshal(rolloutStalledEventPayload{
+		WorkloadID: wid,
+		AppID:      appID,
+		Generation: gen,
+		Detail:     detail,
 	})
 	return b
 }

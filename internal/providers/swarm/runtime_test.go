@@ -107,3 +107,39 @@ func TestWatchDegradesOnInitialAnchorFailure(t *testing.T) {
 		t.Fatal("watch loop must close the stream on ctx cancel (existing semantics)")
 	}
 }
+
+// TestInspectWorkloadsSurfacesPausedRollout（runbook 记录·二十七）：
+// ServiceUpdate 被接受后滚动因新 task 失败进入 paused——spec 已是新版、
+// spec 对照无感，InspectWorkloads 必须把停摆事实透传给 drift 面；滚动
+// completed 后不再停摆。
+func TestInspectWorkloadsSurfacesPausedRollout(t *testing.T) {
+	d := newFakeDaemon()
+	p := &Provider{cli: d.newClient(t)}
+	ctx := context.Background()
+
+	// 真路径 Ensure 落 store，再注入 daemon 侧的 UpdateStatus=paused 形态
+	// （滚动失败是编排器行为，fake 的 update 路径不会自行产生）。
+	require.NoError(t, p.Ensure(ctx, ensureNS, []capability.Workload{ensureWorkload()}, capability.Generation(1), capability.Materials{}))
+	name := ensureCarrierName()
+	setRollout := func(state swarm.UpdateState, msg string) {
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		svc := d.store[name]
+		svc.UpdateStatus = &swarm.UpdateStatus{State: state, Message: msg}
+		d.store[name] = svc
+	}
+
+	setRollout(swarm.UpdateStatePaused, "update paused due to failure or early termination of task zzkzvwhxy1b3h36ai8swyvk8a")
+	obs, err := p.InspectWorkloads(ctx, ensureNS)
+	require.NoError(t, err)
+	require.Len(t, obs, 1)
+	assert.True(t, obs[0].RolloutStalled, "paused UpdateStatus must surface as RolloutStalled")
+	assert.Equal(t, "update paused due to failure or early termination of task zzkzvwhxy1b3h36ai8swyvk8a", obs[0].RolloutDetail)
+
+	setRollout(swarm.UpdateStateCompleted, "update completed")
+	obs, err = p.InspectWorkloads(ctx, ensureNS)
+	require.NoError(t, err)
+	require.Len(t, obs, 1)
+	assert.False(t, obs[0].RolloutStalled, "a completed rollout must not be reported as stalled")
+	assert.Empty(t, obs[0].RolloutDetail)
+}

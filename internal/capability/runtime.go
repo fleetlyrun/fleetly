@@ -238,6 +238,15 @@ type WorkloadObservation struct {
 	Command  []string
 	Replicas int64
 	State    WorkloadState
+	// RolloutStalled 报告载体滚动更新停在中间态：Ensure 已被编排器接受
+	// （spec 面与期望一致，spec drift 恒无感），但新 task 失败触发
+	// FailureAction=pause，start-first 下旧 task 不退役（staging 2026-10-06
+	// 起五服务僵尸 task 叠加三天无人感知，runbook 记录·二十七）。false =
+	// 无信号（含 Provider 暂不覆盖的面，如 k3s）。
+	RolloutStalled bool
+	// RolloutDetail 是编排器原话（swarm UpdateStatus.Message），事件
+	// payload 诊断面携带。
+	RolloutDetail string
 }
 
 // ErrNodeNotFound 是 RuntimeAdmin 子面哨兵：平台节点 ID 对不上任何载体

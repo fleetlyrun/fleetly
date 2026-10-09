@@ -179,6 +179,42 @@ func TestSpecDriftDetectedOnManualCarrierEdit(t *testing.T) {
 	assert.Len(t, eventNames(t, e, tAppID+"-web"), 3, "recovery clears the debounce signature")
 }
 
+// 滚动停摆观测（runbook 记录·二十七：staging 2026-10-06 换装收敛滚动遇
+// boot-fatal task → swarm paused → 旧 task 不退役，spec 面恒一致故 spec
+// drift 无感、三天无人感知）：RolloutStalled 观测 → workload.rollout_
+// stalled（去抖 + 恢复清签名），且不产 spec drift（口径分立）。
+func TestRolloutStalledEmitsEventWithoutSpecDrift(t *testing.T) {
+	e, rt, clock := newTestEngine(t)
+	rev := freezeSpec(t, e, 1, tImageSpec)
+	driftDeployToSucceeded(t, e, rt, clock, rev)
+
+	// swarm paused 形态注入（spec 不动——这正是事故形态）。
+	stall := tamperEntry{rollout: "update paused due to failure or early termination of task zzkzvwhxy1b3h36ai8swyvk8a"}
+	rt.mu.Lock()
+	rt.tamper = map[string]tamperEntry{tAppID + "-web": stall}
+	rt.mu.Unlock()
+	e.driftScan(context.Background())
+	assert.Equal(t, []string{"workload.rollout_stalled"}, eventNames(t, e, tAppID+"-web"),
+		"paused rollout must raise the stall event, not a spec drift")
+
+	// 去抖：同一停摆不重复发。
+	e.driftScan(context.Background())
+	assert.Len(t, eventNames(t, e, tAppID+"-web"), 1)
+
+	// 恢复（滚动收口）→ 签名清；不同停摆再发一条。
+	rt.mu.Lock()
+	rt.tamper = nil
+	rt.mu.Unlock()
+	e.driftScan(context.Background())
+	rt.mu.Lock()
+	rt.tamper = map[string]tamperEntry{tAppID + "-web": {rollout: "update paused due to failure or early termination of task second"}}
+	rt.mu.Unlock()
+	e.driftScan(context.Background())
+	names := eventNames(t, e, tAppID+"-web")
+	assert.Len(t, names, 2, "recovery clears the debounce signature; a new stall emits again")
+	assert.Equal(t, "workload.rollout_stalled", names[1])
+}
+
 // 稳态看门狗：succeeded 之后载体停止 → workload.stopped（只观测不迁移，
 // 无 Deployment 状态变化）；观测恢复 → 签名清；在途部署期不发。
 func TestSteadyStateWatchdogEmitsStopped(t *testing.T) {

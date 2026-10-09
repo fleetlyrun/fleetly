@@ -192,11 +192,37 @@ func (e *Engine) compareSpecs(ctx context.Context, appID string, obs []capabilit
 		ev     capability.WorkloadEvent
 	}
 	var pending []pendingDrift
+	type pendingRollout struct {
+		wid    string
+		gen    uint64
+		detail string
+	}
+	var rollout []pendingRollout
 	for _, o := range obs {
 		want, ok := e.obs.ensuredSpecOf(o.WorkloadID)
 		if !ok {
 			continue // 非平台管辖（孤儿面：只登记原则）
 		}
+
+		// 滚动停摆观测（workload.rollout_stalled，runbook 记录·二十七）：
+		// Ensure 已被编排器接受但滚动停在中间态——spec 面一致，spec drift
+		// 恒无感，与 spec 失配分立去抖（同停摆不重复发，恢复即清）。判定
+		// 在 gen 锚之前：停摆时 spec 通常是最新 gen，但 gen 偏离与停摆是
+		// 两个独立信号，不互斥。
+		if o.RolloutStalled {
+			sig := "rollout|" + o.RolloutDetail
+			e.drift.mu.Lock()
+			if e.drift.rolloutSig[o.WorkloadID] != sig {
+				e.drift.rolloutSig[o.WorkloadID] = sig
+				rollout = append(rollout, pendingRollout{wid: o.WorkloadID, gen: uint64(o.Generation), detail: o.RolloutDetail})
+			}
+			e.drift.mu.Unlock()
+		} else {
+			e.drift.mu.Lock()
+			delete(e.drift.rolloutSig, o.WorkloadID)
+			e.drift.mu.Unlock()
+		}
+
 		// 逐载体对照锚（ADR-0048 决策 2：双代窗两代并存各自对照——
 		// ensuredGen 在场即优先，缺席回落 App 级锚）。
 		anchor := expected
@@ -248,6 +274,13 @@ func (e *Engine) compareSpecs(ctx context.Context, appID string, obs []capabilit
 			eventWorkloadDrift, "workload", p.wid,
 			driftEventPayloadJSON(p.ev, appOwner(appID), p.anchor)); err != nil {
 			e.log.Error("drift scan: event", "workload", p.wid, "err", err)
+		}
+	}
+	for _, p := range rollout {
+		if _, err := e.outbox.Append(ctx, e.db.Runner(),
+			eventWorkloadRolloutStall, "workload", p.wid,
+			rolloutStalledEventPayloadJSON(p.wid, appID, p.gen, p.detail)); err != nil {
+			e.log.Error("drift scan: rollout event", "workload", p.wid, "err", err)
 		}
 	}
 }
