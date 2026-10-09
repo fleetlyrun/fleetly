@@ -1,6 +1,167 @@
+/* Console UI v2 主题层（ADR-0057）：shadcn/radix-nova 体系 + 双主题 token。
+   色板在 nova 中性灰基线上按重构原型定稿覆盖：violet 主色、品牌渐变仅
+   品牌时刻（磁贴/hero/主按钮微光），状态色语义单源由 StatusBadge 承载。
+   暗色默认（html.dark 由 main.tsx 首挂），亮色经主题开关切换并记忆。 */
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/inter";
+@import "@fontsource/jetbrains-mono/400.css";
+@import "@fontsource/jetbrains-mono/500.css";
 
-/* 最小只读 Console（F2.6）：暗色基线，观测面等宽。 */
+@custom-variant dark (&:is(.dark *));
+
 :root {
-  color-scheme: dark;
+  --radius: 0.75rem;
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --font-heading: var(--font-sans);
+
+  /* light：冷灰微紫基底 */
+  --background: oklch(0.975 0.004 285);
+  --foreground: oklch(0.24 0.02 285);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.24 0.02 285);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.24 0.02 285);
+  --primary: oklch(0.52 0.21 293);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.955 0.008 285);
+  --secondary-foreground: oklch(0.28 0.02 285);
+  --muted: oklch(0.955 0.008 285);
+  --muted-foreground: oklch(0.46 0.02 285);
+  --accent: oklch(0.945 0.012 288);
+  --accent-foreground: oklch(0.28 0.02 285);
+  --destructive: oklch(0.55 0.2 25);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(0.905 0.01 285);
+  --input: oklch(0.895 0.012 285);
+  --ring: oklch(0.52 0.21 293);
+  --chart-1: oklch(0.52 0.21 293);
+  --chart-2: oklch(0.55 0.12 235);
+  --chart-3: oklch(0.6 0.14 160);
+  --chart-4: oklch(0.68 0.14 75);
+  --chart-5: oklch(0.58 0.18 340);
+  --sidebar: oklch(0.952 0.006 285);
+  --sidebar-foreground: oklch(0.24 0.02 285);
+  --sidebar-primary: oklch(0.52 0.21 293);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.93 0.014 288);
+  --sidebar-accent-foreground: oklch(0.28 0.02 285);
+  --sidebar-border: oklch(0.9 0.01 285);
+  --sidebar-ring: oklch(0.52 0.21 293);
+
+  /* 语义状态色（StatusBadge 单源消费，非 tailwind 映射面） */
+  --status-success: oklch(0.55 0.14 160);
+  --status-success-bg: oklch(0.55 0.14 160 / 0.1);
+  --status-warning: oklch(0.62 0.13 75);
+  --status-warning-bg: oklch(0.62 0.13 75 / 0.12);
+  --status-danger: oklch(0.55 0.2 25);
+  --status-danger-bg: oklch(0.55 0.2 25 / 0.1);
+  --status-info: oklch(0.55 0.12 235);
+  --status-info-bg: oklch(0.55 0.12 235 / 0.1);
+  /* 品牌渐变（磁贴 avatar / hero 专用，克制使用） */
+  --brand-gradient: linear-gradient(135deg, oklch(0.62 0.19 293), oklch(0.68 0.15 235));
+}
+
+.dark {
+  --background: oklch(0.165 0.018 285);
+  --foreground: oklch(0.93 0.008 285);
+  --card: oklch(0.205 0.02 285);
+  --card-foreground: oklch(0.93 0.008 285);
+  --popover: oklch(0.21 0.02 285);
+  --popover-foreground: oklch(0.93 0.008 285);
+  --primary: oklch(0.62 0.19 293);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.26 0.022 285);
+  --secondary-foreground: oklch(0.93 0.008 285);
+  --muted: oklch(0.25 0.02 285);
+  --muted-foreground: oklch(0.72 0.014 285);
+  --accent: oklch(0.27 0.026 288);
+  --accent-foreground: oklch(0.93 0.008 285);
+  --destructive: oklch(0.68 0.18 25);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(0.3 0.022 285);
+  --input: oklch(0.32 0.024 285);
+  --ring: oklch(0.62 0.19 293);
+  --chart-1: oklch(0.7 0.18 293);
+  --chart-2: oklch(0.75 0.11 235);
+  --chart-3: oklch(0.78 0.14 160);
+  --chart-4: oklch(0.82 0.14 80);
+  --chart-5: oklch(0.72 0.16 340);
+  --sidebar: oklch(0.145 0.016 285);
+  --sidebar-foreground: oklch(0.93 0.008 285);
+  --sidebar-primary: oklch(0.62 0.19 293);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.24 0.024 288);
+  --sidebar-accent-foreground: oklch(0.93 0.008 285);
+  --sidebar-border: oklch(0.28 0.02 285);
+  --sidebar-ring: oklch(0.62 0.19 293);
+
+  --status-success: oklch(0.75 0.14 160);
+  --status-success-bg: oklch(0.75 0.14 160 / 0.13);
+  --status-warning: oklch(0.8 0.13 80);
+  --status-warning-bg: oklch(0.8 0.13 80 / 0.13);
+  --status-danger: oklch(0.68 0.18 25);
+  --status-danger-bg: oklch(0.68 0.18 25 / 0.13);
+  --status-info: oklch(0.75 0.11 235);
+  --status-info-bg: oklch(0.75 0.11 235 / 0.13);
+  --brand-gradient: linear-gradient(135deg, oklch(0.66 0.19 293), oklch(0.72 0.14 235));
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --font-heading: var(--font-heading);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "cv11", "ss01";
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+::selection {
+  background: color-mix(in oklch, var(--primary) 30%, transparent);
 }

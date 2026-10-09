@@ -1,14 +1,24 @@
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
+
+const here = path.dirname(fileURLToPath(import.meta.url));
 
 // 产物直出 internal/console/dist（go:embed 落点，ADR-0044）；outDir 在
 // 工程根之外时 vite 要求显式 emptyOutDir。dev 代理 /v1 到 fleetlyd 的
 // REST gateway（默认 :9081）——开发面不进 fleetlyd。
 // test 面（F3.1）：jsdom 环境（TanStack Query renderHook 消费面），
 // `pnpm test` = console:verify 的组成步（与 CI console job 同口径）。
+// UI v2 重构（ADR-0057）：@ alias 对齐 components.json（shadcn 体系）。
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  resolve: {
+    alias: {
+      "@": path.resolve(here, "src"),
+    },
+  },
   build: {
     outDir: "../internal/console/dist",
     emptyOutDir: true,

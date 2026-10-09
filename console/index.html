@@ -5,6 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="robots" content="noindex" />
     <title>fleetly console</title>
+    <script>
+      // 主题防闪（UI v2，暗色默认）：React 挂载前定 html.dark；存储键
+      // fleetly_console_theme，跟随 next-themes 的 class 形态。
+      try {
+        if ((localStorage.getItem("fleetly_console_theme") ?? "dark") === "dark") {
+          document.documentElement.classList.add("dark");
+        }
+      } catch {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

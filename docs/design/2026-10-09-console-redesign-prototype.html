@@ -1,0 +1,1727 @@
+<!DOCTYPE html>
+<!--
+  fleetly Console 重构交互原型（throwaway prototype，非生产代码）
+  单文件零外部请求：CSS/JS/图标全内联，离线可开。字体用系统栈近似 Inter。
+  用途：重构方案（TanStack Router + shadcn/ui + 双主题 + Railway 式品牌感）的
+  视觉方向与交互契约校准；定稿后回填逐页规格，本文件不进产物。
+  顶部虚线条是原型导航（PROTOTYPE bar），不属于 UI 本体。
+  用户可见文本英文（仓词汇冻结：App/Process/Deployment/Revision/Route/Node/
+  Task/Token/Project…），注释中文。
+-->
+<html lang="en" class="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>fleetly console — redesign prototype</title>
+<style>
+/* ============ tokens（shadcn oklch 变量体系预演，双主题） ============ */
+:root {
+  --radius: 12px;
+  --radius-sm: 8px;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+  /* light（默认浅色值，.dark 覆盖） */
+  --bg: oklch(0.975 0.004 285);
+  --bg-subtle: oklch(0.952 0.006 285);
+  --card: oklch(1 0 0);
+  --card-2: oklch(0.965 0.005 285);
+  --border: oklch(0.905 0.01 285);
+  --border-strong: oklch(0.84 0.015 285);
+  --fg: oklch(0.24 0.02 285);
+  --fg-muted: oklch(0.46 0.02 285);
+  --fg-subtle: oklch(0.60 0.02 285);
+  --primary: oklch(0.52 0.21 293);
+  --primary-hover: oklch(0.47 0.21 293);
+  --primary-fg: oklch(0.985 0 0);
+  --ring: oklch(0.52 0.21 293 / 0.35);
+  --success: oklch(0.55 0.14 160);
+  --success-bg: oklch(0.55 0.14 160 / 0.10);
+  --warning: oklch(0.62 0.13 75);
+  --warning-bg: oklch(0.62 0.13 75 / 0.12);
+  --danger: oklch(0.55 0.20 25);
+  --danger-bg: oklch(0.55 0.20 25 / 0.10);
+  --info: oklch(0.55 0.12 235);
+  --info-bg: oklch(0.55 0.12 235 / 0.10);
+  --chart-1: oklch(0.55 0.20 293);
+  --chart-2: oklch(0.58 0.13 235);
+  --chart-3: oklch(0.60 0.14 160);
+  --chart-4: oklch(0.68 0.14 75);
+  --chart-5: oklch(0.58 0.18 340);
+  --shadow-card: 0 1px 2px oklch(0.24 0.02 285 / 0.05);
+  --shadow-pop: 0 10px 32px oklch(0.24 0.02 285 / 0.16), 0 2px 8px oklch(0.24 0.02 285 / 0.08);
+  --term-bg: oklch(0.20 0.02 285);
+  --term-fg: oklch(0.88 0.01 285);
+}
+.dark {
+  --bg: oklch(0.165 0.018 285);
+  --bg-subtle: oklch(0.145 0.016 285);
+  --card: oklch(0.205 0.02 285);
+  --card-2: oklch(0.245 0.024 285);
+  --border: oklch(0.30 0.022 285);
+  --border-strong: oklch(0.38 0.028 285);
+  --fg: oklch(0.93 0.008 285);
+  --fg-muted: oklch(0.72 0.014 285);
+  --fg-subtle: oklch(0.55 0.018 285);
+  --primary: oklch(0.62 0.19 293);
+  --primary-hover: oklch(0.68 0.18 293);
+  --primary-fg: oklch(0.985 0 0);
+  --ring: oklch(0.62 0.19 293 / 0.45);
+  --success: oklch(0.75 0.14 160);
+  --success-bg: oklch(0.75 0.14 160 / 0.13);
+  --warning: oklch(0.80 0.13 80);
+  --warning-bg: oklch(0.80 0.13 80 / 0.13);
+  --danger: oklch(0.68 0.18 25);
+  --danger-bg: oklch(0.68 0.18 25 / 0.13);
+  --info: oklch(0.75 0.11 235);
+  --info-bg: oklch(0.75 0.11 235 / 0.13);
+  --chart-1: oklch(0.70 0.18 293);
+  --chart-2: oklch(0.75 0.11 235);
+  --chart-3: oklch(0.78 0.14 160);
+  --chart-4: oklch(0.82 0.14 80);
+  --chart-5: oklch(0.72 0.16 340);
+  --shadow-card: 0 1px 2px oklch(0 0 0 / 0.25);
+  --shadow-pop: 0 12px 36px oklch(0 0 0 / 0.45), 0 2px 8px oklch(0 0 0 / 0.3);
+  --term-bg: oklch(0.135 0.015 285);
+  --term-fg: oklch(0.88 0.01 285);
+}
+
+/* ============ base ============ */
+* { box-sizing: border-box; margin: 0; }
+html, body { height: 100%; }
+body {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--fg);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+button { font: inherit; color: inherit; background: none; border: none; cursor: pointer; }
+a { color: var(--info); text-decoration: none; }
+a:hover { text-decoration: underline; }
+svg.icon { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+svg.icon.sm { width: 14px; height: 14px; }
+::selection { background: color-mix(in oklch, var(--primary) 30%, transparent); }
+:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; border-radius: 4px; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 8px; border: 2px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-track { background: transparent; }
+.mono { font-family: var(--font-mono); font-size: 0.92em; }
+.muted { color: var(--fg-muted); }
+.subtle { color: var(--fg-subtle); }
+
+/* ============ prototype bar（原型导航，非 UI 本体） ============ */
+.protobar {
+  position: fixed; inset: 0 0 auto 0; height: 36px; z-index: 300;
+  display: flex; align-items: center; gap: 2px; padding: 0 12px;
+  background: var(--bg-subtle); border-bottom: 1px dashed var(--border-strong);
+  font-family: var(--font-mono); font-size: 11px; color: var(--fg-subtle);
+}
+.protobar .tag { color: var(--primary); font-weight: 700; letter-spacing: 0.08em; margin-right: 10px; }
+.protobar button { padding: 3px 8px; border-radius: 6px; color: var(--fg-muted); }
+.protobar button:hover { background: var(--card-2); color: var(--fg); }
+.protobar button.active { background: color-mix(in oklch, var(--primary) 16%, transparent); color: var(--fg); }
+.protobar .file { margin-left: auto; }
+
+/* ============ shell ============ */
+.shell { display: grid; grid-template-columns: 248px 1fr; height: 100vh; padding-top: 36px; transition: grid-template-columns 0.18s ease; }
+.shell.collapsed { grid-template-columns: 60px 1fr; }
+
+/* ---- sidebar ---- */
+.sidebar {
+  background: var(--bg-subtle); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.brand { display: flex; align-items: center; gap: 10px; padding: 14px 14px 10px; }
+.brand-mark {
+  width: 28px; height: 28px; border-radius: 8px; flex: none;
+  background: linear-gradient(135deg, var(--chart-5), var(--chart-1) 55%, var(--chart-2));
+  box-shadow: 0 0 12px color-mix(in oklch, var(--primary) 35%, transparent);
+}
+.brand-name { font-weight: 700; font-size: 15px; letter-spacing: -0.01em; }
+.switcher { position: relative; padding: 4px 10px 10px; }
+.switcher-btn {
+  width: 100%; display: flex; align-items: center; gap: 9px;
+  padding: 8px 10px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); background: var(--card);
+}
+.switcher-btn:hover { border-color: var(--border-strong); }
+.switcher-btn .pav { width: 22px; height: 22px; border-radius: 6px; flex: none; }
+.switcher-btn .pname { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.switcher-btn .chev { margin-left: auto; color: var(--fg-subtle); transition: transform 0.15s; }
+.switcher.open .chev { transform: rotate(180deg); }
+.switcher-pop {
+  position: absolute; left: 10px; right: 10px; top: calc(100% - 2px); z-index: 60;
+  background: var(--card); border: 1px solid var(--border-strong); border-radius: var(--radius);
+  box-shadow: var(--shadow-pop); padding: 6px; display: none;
+}
+.switcher.open .switcher-pop { display: block; }
+.switcher-pop input {
+  width: 100%; padding: 7px 9px; border-radius: 6px; font: inherit; font-size: 13px;
+  border: 1px solid var(--border); background: var(--bg-subtle); color: var(--fg); margin-bottom: 4px;
+}
+.switcher-pop input:focus { outline: none; border-color: var(--primary); }
+.switcher-item { display: flex; align-items: center; gap: 9px; width: 100%; padding: 7px 8px; border-radius: 6px; font-size: 13px; text-align: left; }
+.switcher-item:hover { background: var(--card-2); }
+.switcher-item.active { background: color-mix(in oklch, var(--primary) 12%, transparent); }
+.switcher-item .pav { width: 20px; height: 20px; border-radius: 5px; flex: none; }
+.switcher-item .cnt { margin-left: auto; font-size: 11px; color: var(--fg-subtle); }
+.nav { flex: 1; overflow-y: auto; padding: 2px 10px 14px; }
+.nav-group { margin-top: 14px; }
+.nav-label {
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase;
+  color: var(--fg-subtle); padding: 0 10px 5px; white-space: nowrap;
+}
+.nav-item {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 7px 10px; border-radius: var(--radius-sm);
+  color: var(--fg-muted); font-size: 13.5px; white-space: nowrap; position: relative;
+}
+.nav-item:hover { background: var(--card-2); color: var(--fg); }
+.nav-item.active { background: color-mix(in oklch, var(--primary) 13%, var(--card-2)); color: var(--fg); font-weight: 600; }
+.nav-item.active::before {
+  content: ""; position: absolute; left: 0; top: 7px; bottom: 7px; width: 3px; border-radius: 3px;
+  background: var(--primary);
+}
+.nav-item .nbadge { margin-left: auto; font-size: 10.5px; font-weight: 700; color: var(--danger); background: var(--danger-bg); padding: 1px 6px; border-radius: 99px; }
+.sidebar-foot { border-top: 1px solid var(--border); padding: 10px; }
+.collapse-btn {
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 7px 10px;
+  border-radius: var(--radius-sm); color: var(--fg-subtle); font-size: 13px;
+}
+.collapse-btn:hover { background: var(--card-2); color: var(--fg); }
+/* 折叠态 */
+.shell.collapsed .brand-name, .shell.collapsed .nav-label, .shell.collapsed .nav-item span,
+.shell.collapsed .switcher, .shell.collapsed .collapse-btn span { display: none; }
+.shell.collapsed .brand { justify-content: center; padding: 14px 0 10px; }
+.shell.collapsed .nav-item { justify-content: center; padding: 8px 0; }
+.shell.collapsed .nav-item.active::before { display: none; }
+.shell.collapsed .collapse-btn { justify-content: center; }
+
+/* ---- main ---- */
+.main { display: flex; flex-direction: column; min-width: 0; height: calc(100vh - 36px); }
+.topbar {
+  height: 52px; flex: none; display: flex; align-items: center; gap: 10px;
+  padding: 0 20px; border-bottom: 1px solid var(--border); background: var(--bg);
+}
+.crumb { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--fg-subtle); min-width: 0; }
+.crumb .sep { color: var(--border-strong); }
+.crumb .cur { color: var(--fg); font-weight: 600; }
+.crumb button { color: var(--fg-subtle); font-size: 13px; padding: 2px 4px; border-radius: 4px; }
+.crumb button:hover { color: var(--fg); background: var(--card-2); text-decoration: none; }
+.topbar-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.searchbtn {
+  display: flex; align-items: center; gap: 8px; padding: 6px 10px; min-width: 200px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  color: var(--fg-subtle); font-size: 13px; background: var(--card);
+}
+.searchbtn:hover { border-color: var(--border-strong); color: var(--fg-muted); }
+.searchbtn .kbd { margin-left: auto; }
+.kbd {
+  font-family: var(--font-mono); font-size: 10.5px; color: var(--fg-subtle);
+  border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 5px; padding: 1px 5px; background: var(--bg-subtle);
+}
+.whoami { display: flex; align-items: center; gap: 9px; padding: 5px 8px; border-radius: var(--radius-sm); }
+.whoami:hover { background: var(--card-2); }
+.avatar {
+  width: 26px; height: 26px; border-radius: 99px; flex: none;
+  background: linear-gradient(135deg, var(--chart-4), var(--chart-5));
+  display: grid; place-items: center; font-size: 11px; font-weight: 700; color: white;
+}
+.whoami .wm { line-height: 1.2; text-align: left; }
+.whoami .wm b { display: block; font-size: 12.5px; }
+.whoami .wm i { font-style: normal; font-size: 11px; color: var(--fg-subtle); }
+.content { flex: 1; overflow-y: auto; min-height: 0; }
+.content.bench { display: flex; flex-direction: column; overflow: hidden; }
+
+/* ============ 通用件 ============ */
+.screen { display: none; padding: 24px 26px 40px; max-width: 1280px; }
+.screen.active { display: block; }
+.screen--bench { max-width: none; height: 100%; padding: 16px 20px 0; display: none; flex-direction: column; }
+.screen--bench.active { display: flex; }
+
+.pagehead { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 18px; }
+.pagehead h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.015em; }
+.pagehead .desc { color: var(--fg-muted); font-size: 13px; margin-top: 2px; }
+.pagehead .actions { margin-left: auto; display: flex; gap: 8px; flex: none; padding-top: 2px; }
+
+.card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow-card); }
+.card-pad { padding: 16px 18px; }
+.card-title { font-size: 13.5px; font-weight: 650; display: flex; align-items: center; gap: 8px; }
+.card-title .viewall { margin-left: auto; font-size: 12px; font-weight: 500; }
+.section { margin-bottom: 20px; }
+.section > .card-title { margin-bottom: 10px; padding: 0 2px; }
+
+/* 按钮 */
+.btn {
+  display: inline-flex; align-items: center; gap: 7px; padding: 7px 13px;
+  border-radius: var(--radius-sm); font-size: 13px; font-weight: 600;
+  border: 1px solid var(--border); background: var(--card); color: var(--fg);
+  transition: background 0.12s, border-color 0.12s, box-shadow 0.12s;
+  white-space: nowrap;
+}
+.btn:hover { background: var(--card-2); border-color: var(--border-strong); }
+.btn.primary {
+  background: var(--primary); border-color: transparent; color: var(--primary-fg);
+  box-shadow: 0 1px 2px oklch(0 0 0 / 0.2);
+}
+.btn.primary:hover { background: var(--primary-hover); box-shadow: 0 0 0 3px color-mix(in oklch, var(--primary) 22%, transparent); }
+.btn.danger { color: var(--danger); border-color: color-mix(in oklch, var(--danger) 35%, var(--border)); }
+.btn.danger:hover { background: var(--danger-bg); }
+.btn.ghost { border-color: transparent; background: transparent; color: var(--fg-muted); }
+.btn.ghost:hover { background: var(--card-2); color: var(--fg); }
+.btn.sm { padding: 4px 9px; font-size: 12px; }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.iconbtn { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: var(--radius-sm); color: var(--fg-muted); border: 1px solid transparent; }
+.iconbtn:hover { background: var(--card-2); color: var(--fg); }
+.iconbtn.bordered { border-color: var(--border); background: var(--card); }
+
+/* 徽章 */
+.badge {
+  display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px;
+  border-radius: 99px; font-size: 11.5px; font-weight: 650; letter-spacing: 0.01em;
+  border: 1px solid transparent; white-space: nowrap;
+}
+.badge .dot { width: 6px; height: 6px; border-radius: 99px; background: currentColor; }
+.badge.pulse .dot { animation: pulse 1.6s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+.badge.ok { color: var(--success); background: var(--success-bg); border-color: color-mix(in oklch, var(--success) 30%, transparent); }
+.badge.info { color: var(--info); background: var(--info-bg); border-color: color-mix(in oklch, var(--info) 30%, transparent); }
+.badge.warn { color: var(--warning); background: var(--warning-bg); border-color: color-mix(in oklch, var(--warning) 30%, transparent); }
+.badge.bad { color: var(--danger); background: var(--danger-bg); border-color: color-mix(in oklch, var(--danger) 30%, transparent); }
+.badge.dim { color: var(--fg-subtle); background: var(--card-2); border-color: var(--border); }
+
+/* copy 按钮 */
+.copy {
+  display: inline-flex; align-items: center; gap: 4px; color: var(--fg-subtle);
+  padding: 2px 5px; border-radius: 5px; font-size: 11.5px;
+}
+.copy:hover { color: var(--fg); background: var(--card-2); }
+
+/* 表格 */
+.tablewrap { overflow-x: auto; }
+table.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+.tbl th {
+  text-align: left; font-size: 11px; font-weight: 650; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--fg-subtle); padding: 10px 14px; border-bottom: 1px solid var(--border);
+  white-space: nowrap; user-select: none;
+}
+.tbl th.sortable:hover { color: var(--fg); cursor: pointer; }
+.tbl th .sort-ic { opacity: 0.5; vertical-align: -2px; }
+.tbl td { padding: 11px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.tbl tbody tr:last-child td { border-bottom: none; }
+.tbl tbody tr { transition: background 0.1s; }
+.tbl tbody tr.rowlink { cursor: pointer; }
+.tbl tbody tr.rowlink:hover { background: color-mix(in oklch, var(--primary) 4%, var(--card)); }
+.cellmain { font-weight: 600; }
+.cellsub { font-size: 11.5px; color: var(--fg-subtle); margin-top: 1px; }
+.errline { font-size: 11.5px; color: var(--danger); margin-top: 2px; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rowactions { display: flex; gap: 6px; justify-content: flex-end; align-items: center; }
+
+/* 行菜单 */
+.menu { position: relative; }
+.menu-pop {
+  position: absolute; right: 0; top: calc(100% + 4px); z-index: 50; min-width: 168px;
+  background: var(--card); border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-pop); padding: 4px; display: none;
+}
+.menu.open .menu-pop { display: block; }
+.menu-item { display: flex; align-items: center; gap: 9px; width: 100%; text-align: left; padding: 7px 9px; border-radius: 6px; font-size: 13px; color: var(--fg-muted); }
+.menu-item:hover { background: var(--card-2); color: var(--fg); }
+.menu-item.danger { color: var(--danger); }
+.menu-item.danger:hover { background: var(--danger-bg); }
+.menu-sep { height: 1px; background: var(--border); margin: 4px 6px; }
+
+/* toolbar */
+.toolbar { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.input {
+  display: flex; align-items: center; gap: 7px; padding: 6px 10px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-subtle);
+  color: var(--fg); font-size: 13px; min-width: 0;
+}
+.input:focus-within { border-color: var(--primary); background: var(--card); }
+.input input, .input select { border: none; background: transparent; color: inherit; font: inherit; outline: none; width: 100%; }
+.input.plain { padding: 0; border: none; background: transparent; }
+select.ctl {
+  padding: 6px 28px 6px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--bg-subtle) url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="%23888" stroke-width="2.5" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>') no-repeat right 9px center;
+  color: var(--fg); font: inherit; font-size: 13px; appearance: none; cursor: pointer;
+}
+select.ctl:focus { outline: none; border-color: var(--primary); }
+
+/* switch */
+.switch { position: relative; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; color: var(--fg-muted); user-select: none; }
+.switch input { position: absolute; opacity: 0; }
+.switch .track { width: 32px; height: 18px; border-radius: 99px; background: var(--border-strong); position: relative; transition: background 0.15s; flex: none; }
+.switch .track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 99px; background: white; transition: transform 0.15s; box-shadow: 0 1px 2px oklch(0 0 0 / 0.3); }
+.switch input:checked + .track { background: var(--primary); }
+.switch input:checked + .track::after { transform: translateX(14px); }
+
+/* tabs */
+.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
+.tab { padding: 8px 14px; font-size: 13.5px; font-weight: 550; color: var(--fg-subtle); border-bottom: 2px solid transparent; margin-bottom: -1px; border-radius: 6px 6px 0 0; }
+.tab:hover { color: var(--fg); background: var(--card-2); }
+.tab.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 650; }
+.tabpanel { display: none; }
+.tabpanel.active { display: block; }
+
+/* 渐变 avatar（项目/App 磁贴——品牌时刻） */
+.pav { border-radius: 8px; display: grid; place-items: center; color: white; font-weight: 700; flex: none; }
+.grad-0 { background: linear-gradient(135deg, oklch(0.62 0.19 293), oklch(0.68 0.15 235)); }
+.grad-1 { background: linear-gradient(135deg, oklch(0.66 0.16 340), oklch(0.72 0.15 60)); }
+.grad-2 { background: linear-gradient(135deg, oklch(0.60 0.13 160), oklch(0.66 0.14 200)); }
+
+/* 统计卡 & 磁贴 */
+.statgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 20px; }
+.stat { padding: 14px 16px; }
+.stat .k { font-size: 12px; color: var(--fg-subtle); font-weight: 550; display: flex; align-items: center; gap: 7px; }
+.stat .v { font-size: 21px; font-weight: 700; letter-spacing: -0.02em; margin-top: 4px; }
+.stat .s { font-size: 11.5px; color: var(--fg-subtle); margin-top: 1px; }
+.stat.alert .v { color: var(--danger); }
+.tilegrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 14px; }
+.tile { padding: 16px; display: flex; flex-direction: column; gap: 10px; cursor: pointer; transition: border-color 0.12s, transform 0.12s, box-shadow 0.12s; }
+.tile:hover { border-color: var(--border-strong); transform: translateY(-1px); box-shadow: var(--shadow-pop); }
+.tile .head { display: flex; align-items: center; gap: 11px; }
+.tile .pav { width: 38px; height: 38px; font-size: 14px; border-radius: 10px; }
+.tile .name { font-weight: 700; font-size: 14.5px; }
+.tile .meta { font-size: 12px; color: var(--fg-subtle); }
+.tile .dots { display: flex; gap: 5px; margin-top: auto; align-items: center; }
+.sdot { width: 8px; height: 8px; border-radius: 99px; }
+.tile.ghost-tile { border-style: dashed; align-items: center; justify-content: center; color: var(--fg-subtle); min-height: 108px; gap: 6px; }
+.tile.ghost-tile:hover { color: var(--fg); border-color: var(--primary); }
+
+/* 时间线（部署阶段） */
+.timeline { display: flex; align-items: flex-start; padding: 6px 2px 0; }
+.tstep { flex: 1; position: relative; text-align: center; }
+.tstep .bar { height: 3px; border-radius: 3px; background: var(--border); margin-bottom: 9px; position: relative; overflow: visible; }
+.tstep:first-child .bar { border-radius: 3px 0 0 3px; }
+.tstep.done .bar { background: var(--success); }
+.tstep.cur .bar { background: color-mix(in oklch, var(--info) 55%, var(--border)); }
+.tstep .nd {
+  width: 18px; height: 18px; border-radius: 99px; border: 2px solid var(--border-strong);
+  background: var(--card); position: absolute; top: -8px; left: 50%; transform: translateX(-50%);
+  display: grid; place-items: center; color: transparent;
+}
+.tstep.done .nd { background: var(--success); border-color: var(--success); color: var(--primary-fg); }
+.tstep.cur .nd { border-color: var(--info); color: var(--info); }
+.tstep.cur .nd::after { content: ""; width: 7px; height: 7px; border-radius: 99px; background: currentColor; animation: pulse 1.4s infinite; }
+.tstep .lb { font-size: 11.5px; font-weight: 650; color: var(--fg-subtle); }
+.tstep.done .lb, .tstep.cur .lb { color: var(--fg); }
+.tstep .tm { font-size: 10.5px; color: var(--fg-subtle); font-family: var(--font-mono); }
+
+/* 键值网格 */
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 5px 16px; font-size: 12.5px; }
+.kv dt { color: var(--fg-subtle); }
+.kv dd { font-family: var(--font-mono); font-size: 12px; word-break: break-all; }
+
+/* skeleton */
+.skel { border-radius: 6px; background: linear-gradient(90deg, var(--card-2) 25%, var(--border) 45%, var(--card-2) 65%); background-size: 240% 100%; animation: shimmer 1.3s infinite linear; }
+@keyframes shimmer { from { background-position: 120% 0; } to { background-position: -120% 0; } }
+
+/* ============ 弹层：palette / sheet / dialog / toast ============ */
+.overlay { position: fixed; inset: 36px 0 0 0; z-index: 200; background: oklch(0 0 0 / 0.5); backdrop-filter: blur(2px); display: none; }
+.overlay.open { display: block; }
+.palette-wrap { position: fixed; inset: 36px 0 0 0; z-index: 210; display: none; justify-content: center; padding-top: 10vh; background: oklch(0 0 0 / 0.45); backdrop-filter: blur(2px); }
+.palette-wrap.open { display: flex; }
+.palette {
+  width: min(560px, 92vw); max-height: 380px; background: var(--card); border: 1px solid var(--border-strong);
+  border-radius: 14px; box-shadow: var(--shadow-pop); overflow: hidden; align-self: flex-start;
+  display: flex; flex-direction: column;
+}
+.palette > input { border: none; outline: none; background: transparent; padding: 15px 16px; font: inherit; font-size: 14.5px; color: var(--fg); border-bottom: 1px solid var(--border); }
+.palette-list { overflow-y: auto; padding: 6px; }
+.palette .plabel { font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-subtle); padding: 8px 10px 3px; }
+.palette-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; border-radius: 8px; font-size: 13.5px; color: var(--fg-muted); text-align: left; }
+.palette-item:hover, .palette-item.sel { background: var(--card-2); color: var(--fg); }
+.palette-item .hint { margin-left: auto; font-size: 11px; color: var(--fg-subtle); }
+.palette-empty { padding: 22px; text-align: center; color: var(--fg-subtle); font-size: 13px; }
+
+.sheet-wrap { position: fixed; inset: 36px 0 0 0; z-index: 210; display: none; }
+.sheet-wrap.open { display: block; }
+.sheet-veil { position: absolute; inset: 0; background: oklch(0 0 0 / 0.45); }
+.sheet {
+  position: absolute; top: 0; right: 0; bottom: 0; width: min(520px, 94vw);
+  background: var(--card); border-left: 1px solid var(--border-strong); box-shadow: var(--shadow-pop);
+  display: flex; flex-direction: column; animation: slidein 0.2s ease;
+}
+@keyframes slidein { from { transform: translateX(30px); opacity: 0; } to { transform: none; opacity: 1; } }
+.sheet-head { display: flex; align-items: center; gap: 10px; padding: 16px 20px; border-bottom: 1px solid var(--border); }
+.sheet-head h2 { font-size: 15.5px; font-weight: 700; }
+.sheet-body { flex: 1; overflow-y: auto; padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; }
+.sheet-foot { padding: 14px 20px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 8px; }
+.field { display: flex; flex-direction: column; gap: 5px; }
+.field > label { font-size: 12.5px; font-weight: 600; color: var(--fg-muted); }
+.field .hint { font-size: 11.5px; color: var(--fg-subtle); }
+.field .control { padding: 8px 11px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-subtle); color: var(--fg); font: inherit; font-size: 13px; width: 100%; }
+.field .control:focus { outline: none; border-color: var(--primary); background: var(--card); }
+textarea.control { font-family: var(--font-mono); font-size: 12px; resize: vertical; min-height: 84px; }
+.seg { display: flex; gap: 3px; background: var(--bg-subtle); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 3px; }
+.seg button { flex: 1; padding: 6px 8px; border-radius: 6px; font-size: 12.5px; font-weight: 550; color: var(--fg-subtle); }
+.seg button.active { background: var(--card); color: var(--fg); font-weight: 650; box-shadow: var(--shadow-card); }
+.dropzone {
+  border: 1.5px dashed var(--border-strong); border-radius: var(--radius); padding: 26px 16px;
+  text-align: center; color: var(--fg-subtle); font-size: 13px; background: var(--bg-subtle);
+}
+.dropzone b { color: var(--fg-muted); }
+
+.dialog-wrap { position: fixed; inset: 36px 0 0 0; z-index: 220; display: none; place-items: center; background: oklch(0 0 0 / 0.45); backdrop-filter: blur(2px); }
+.dialog-wrap.open { display: grid; }
+.dialog { width: min(420px, 92vw); background: var(--card); border: 1px solid var(--border-strong); border-radius: 14px; box-shadow: var(--shadow-pop); padding: 20px; }
+.dialog h2 { font-size: 15px; font-weight: 700; margin-bottom: 8px; }
+.dialog p { font-size: 13px; color: var(--fg-muted); margin-bottom: 6px; }
+.dialog .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+
+.toasts { position: fixed; right: 18px; bottom: 18px; z-index: 400; display: flex; flex-direction: column; gap: 8px; }
+.toast {
+  display: flex; align-items: center; gap: 10px; min-width: 280px; max-width: 380px;
+  background: var(--card); border: 1px solid var(--border-strong); border-radius: 10px;
+  box-shadow: var(--shadow-pop); padding: 11px 13px; font-size: 13px;
+  animation: toastin 0.18s ease;
+}
+@keyframes toastin { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
+.toast .t-ic { color: var(--success); }
+.toast .t-act { margin-left: auto; font-weight: 650; color: var(--primary); font-size: 12.5px; white-space: nowrap; }
+
+/* ============ workbench（logs/metrics/terminal） ============ */
+.bench-toolbar {
+  flex: none; display: flex; align-items: center; gap: 10px; padding: 10px 2px; flex-wrap: wrap;
+}
+.bench-body { flex: 1; min-height: 0; position: relative; }
+.bench-status { flex: none; display: flex; align-items: center; gap: 14px; padding: 8px 2px; font-size: 11.5px; color: var(--fg-subtle); font-family: var(--font-mono); }
+
+/* logs */
+.logview {
+  height: 100%; overflow-y: auto; background: var(--term-bg); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 10px 0; font-family: var(--font-mono); font-size: 12px; line-height: 1.65;
+  color: var(--term-fg); position: relative;
+}
+.logline { display: flex; gap: 14px; padding: 0 14px; white-space: pre-wrap; word-break: break-all; }
+.logline:hover { background: oklch(1 0 0 / 0.04); }
+.logline .lt { color: oklch(0.6 0.01 285); flex: none; }
+.logline .ls { color: oklch(0.55 0.02 285); flex: none; }
+.logline .lm { flex: 1; }
+.logline.warn .lm { color: oklch(0.82 0.13 80); }
+.logline.error .lm { color: oklch(0.72 0.17 25); }
+.jump-pill {
+  position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
+  display: none; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 99px;
+  background: var(--primary); color: var(--primary-fg); font-size: 12px; font-weight: 650;
+  box-shadow: var(--shadow-pop);
+}
+.jump-pill.show { display: inline-flex; }
+
+/* metrics 图 */
+.chartgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-content: start; flex: 1; min-height: 0; overflow-y: auto; padding-bottom: 20px; }
+.chartcard { padding: 14px 16px 10px; display: flex; flex-direction: column; }
+.chartcard .ch-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+.chartcard .ch-title { font-size: 13px; font-weight: 650; }
+.chartcard .ch-unit { font-size: 11.5px; color: var(--fg-subtle); }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 16px; padding: 8px 2px 4px; font-size: 12px; color: var(--fg-muted); }
+.legend .li { display: inline-flex; align-items: center; gap: 6px; }
+.legend .sw { width: 10px; height: 3px; border-radius: 2px; }
+.legend b { color: var(--fg); font-variant-numeric: tabular-nums; }
+.addpanel {
+  border: 1.5px dashed var(--border-strong); border-radius: var(--radius); min-height: 180px;
+  display: grid; place-items: center; color: var(--fg-subtle); font-size: 13px; cursor: pointer;
+  gap: 6px;
+}
+.addpanel:hover { color: var(--fg); border-color: var(--primary); }
+
+/* terminal */
+.term {
+  height: 100%; background: var(--term-bg); border: 1px solid var(--border); border-radius: var(--radius);
+  font-family: var(--font-mono); font-size: 12.5px; line-height: 1.7; color: var(--term-fg);
+  padding: 12px 16px; overflow-y: auto; white-space: pre-wrap; word-break: break-all;
+}
+.term .tp { color: oklch(0.75 0.15 160); }
+.term .tc { color: oklch(0.72 0.02 285); }
+.term .cursor { display: inline-block; width: 7px; height: 15px; background: var(--term-fg); vertical-align: -2px; animation: pulse 1.1s steps(2) infinite; }
+
+/* 事件列表 */
+.event-item { display: flex; gap: 11px; padding: 9px 2px; border-bottom: 1px solid var(--border); align-items: flex-start; cursor: pointer; }
+.event-item:last-child { border-bottom: none; }
+.event-item:hover { background: color-mix(in oklch, var(--primary) 3%, transparent); }
+.ev-ic { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; flex: none; background: var(--card-2); color: var(--fg-muted); }
+.ev-ic.ok { color: var(--success); background: var(--success-bg); }
+.ev-ic.bad { color: var(--danger); background: var(--danger-bg); }
+.ev-ic.info { color: var(--info); background: var(--info-bg); }
+.ev-body { flex: 1; min-width: 0; font-size: 12.5px; }
+.ev-body .et { color: var(--fg); }
+.ev-body .et b { font-weight: 650; }
+.ev-body .es { color: var(--fg-subtle); font-size: 11.5px; margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ev-tm { font-size: 11px; color: var(--fg-subtle); flex: none; font-family: var(--font-mono); }
+
+/* two-col 布局（overview / depdetail） */
+.twocol { display: grid; grid-template-columns: 1fr 320px; gap: 18px; align-items: start; }
+
+/* 响应式（原型最低限度） */
+@media (max-width: 1080px) { .twocol { grid-template-columns: 1fr; } .chartgrid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<!-- ============ SVG 图标 sprite（lucide 风格描边图标） ============ -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
+  <symbol id="i-box" viewBox="0 0 24 24"><path d="M21 8l-9-5-9 5v8l9 5 9-5V8z"/><path d="M3 8l9 5 9-5"/><path d="M12 13v8"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 2l10 6-10 6L2 8l10-6z"/><path d="M2 14l10 6 10-6"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-scroll" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h6"/></symbol>
+  <symbol id="i-activity" viewBox="0 0 24 24"><path d="M22 12h-4l-3 8-6-16-3 8H2"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18z"/></symbol>
+  <symbol id="i-db" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.7-4 3-9 3s-9-1.3-9-3"/><path d="M3 5v14c0 1.7 4 3 9 3s9-1.3 9-3V5"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></symbol>
+  <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="M10.8 12.2L20 3m-4 1l3 3m-6 0l2 2"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></symbol>
+  <symbol id="i-zap" viewBox="0 0 24 24"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.9"/><path d="M16 3.1a4 4 0 0 1 0 7.8"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3"/><path d="M1 14h6M9 8h6M17 16h6"/></symbol>
+  <symbol id="i-terminal" viewBox="0 0 24 24"><path d="M4 17l6-5-6-5"/><path d="M12 19h8"/></symbol>
+  <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z"/><path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9L19 15z"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></symbol>
+  <symbol id="i-chev-down" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+  <symbol id="i-chev-right" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></symbol>
+  <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></symbol>
+  <symbol id="i-ext" viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14L21 3"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></symbol>
+  <symbol id="i-arrow-up" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 16V8"/><path d="M8.5 11.5L12 8l3.5 3.5"/></symbol>
+  <symbol id="i-branch" viewBox="0 0 24 24"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M6 9v6"/><circle cx="18" cy="6" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M6 4l14 8-14 8V4z"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5"/></symbol>
+  <symbol id="i-sort" viewBox="0 0 24 24"><path d="M8 9l4-4 4 4"/><path d="M8 15l4 4 4-4"/></symbol>
+  <symbol id="i-filter" viewBox="0 0 24 24"><path d="M22 3H2l8 9.5V19l4 2v-8.5L22 3z"/></symbol>
+</svg>
+
+<!-- ============ 原型导航条 ============ -->
+<div class="protobar">
+  <span class="tag">PROTOTYPE</span>
+  <button data-goto="overview" class="active">overview</button>
+  <button data-goto="apps">apps</button>
+  <button data-goto="appdetail">app detail</button>
+  <button data-goto="deployments">deployments</button>
+  <button data-goto="depdetail">deployment detail</button>
+  <button data-goto="logs">logs</button>
+  <button data-goto="metrics">metrics</button>
+  <button data-goto="alerts">alerts</button>
+  <button data-goto="terminal">terminal</button>
+  <span class="file">docs/design/2026-10-09-console-redesign-prototype.html</span>
+</div>
+
+<div class="shell" id="shell">
+  <!-- ============ 侧边栏 ============ -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark"></div>
+      <span class="brand-name">fleetly</span>
+    </div>
+    <div class="switcher" id="switcher">
+      <button class="switcher-btn" id="switcherBtn" aria-haspopup="listbox">
+        <span class="pav grad-0" id="swAvatar">A</span>
+        <span class="pname" id="swName">acme-platform</span>
+        <svg class="icon sm chev"><use href="#i-chev-down"/></svg>
+      </button>
+      <div class="switcher-pop" role="listbox">
+        <input type="text" placeholder="Search projects…" id="swSearch" />
+        <div id="swList">
+          <button class="switcher-item active" data-pname="acme-platform" data-grad="grad-0" data-apps="4"><span class="pav grad-0">A</span>acme-platform<span class="cnt">4 apps</span></button>
+          <button class="switcher-item" data-pname="docs-site" data-grad="grad-1" data-apps="1"><span class="pav grad-1">D</span>docs-site<span class="cnt">1 app</span></button>
+          <button class="switcher-item" data-pname="infra-lab" data-grad="grad-2" data-apps="2"><span class="pav grad-2">I</span>infra-lab<span class="cnt">2 apps</span></button>
+        </div>
+      </div>
+    </div>
+    <nav class="nav">
+      <div class="nav-group">
+        <div class="nav-label">acme-platform</div>
+        <button class="nav-item" data-goto="overview" data-nav="overview"><svg class="icon sm"><use href="#i-grid"/></svg><span>Overview</span></button>
+        <button class="nav-item active" data-goto="apps" data-nav="apps"><svg class="icon sm"><use href="#i-box"/></svg><span>Apps</span></button>
+        <button class="nav-item" data-goto="deployments" data-nav="deployments"><svg class="icon sm"><use href="#i-layers"/></svg><span>Deployments</span></button>
+        <button class="nav-item" data-nav="tasks"><svg class="icon sm"><use href="#i-clock"/></svg><span>Tasks</span></button>
+        <button class="nav-item" data-goto="logs" data-nav="logs"><svg class="icon sm"><use href="#i-scroll"/></svg><span>Logs</span></button>
+        <button class="nav-item" data-goto="metrics" data-nav="metrics"><svg class="icon sm"><use href="#i-activity"/></svg><span>Metrics</span></button>
+        <button class="nav-item" data-nav="networks"><svg class="icon sm"><use href="#i-globe"/></svg><span>Networks</span></button>
+        <button class="nav-item" data-nav="data"><svg class="icon sm"><use href="#i-db"/></svg><span>Data</span></button>
+        <button class="nav-item" data-nav="config"><svg class="icon sm"><use href="#i-key"/></svg><span>Configuration</span></button>
+      </div>
+      <div class="nav-group">
+        <div class="nav-label">Platform</div>
+        <button class="nav-item" data-nav="nodes"><svg class="icon sm"><use href="#i-box"/></svg><span>Nodes</span></button>
+        <button class="nav-item" data-nav="events"><svg class="icon sm"><use href="#i-zap"/></svg><span>Events</span></button>
+        <button class="nav-item" data-goto="alerts" data-nav="alerts"><svg class="icon sm"><use href="#i-bell"/></svg><span>Alerts</span><span class="nbadge">1</span></button>
+        <button class="nav-item" data-nav="audit"><svg class="icon sm"><use href="#i-shield"/></svg><span>Audit</span></button>
+      </div>
+      <div class="nav-group">
+        <div class="nav-label">Admin</div>
+        <button class="nav-item" data-nav="identity"><svg class="icon sm"><use href="#i-users"/></svg><span>Identity</span></button>
+        <button class="nav-item" data-nav="settings"><svg class="icon sm"><use href="#i-settings"/></svg><span>Settings</span></button>
+        <button class="nav-item" data-nav="templates"><svg class="icon sm"><use href="#i-sparkle"/></svg><span>Templates</span></button>
+        <button class="nav-item" data-nav="quickstart"><svg class="icon sm"><use href="#i-arrow-up"/></svg><span>Quickstart</span></button>
+        <button class="nav-item" data-goto="terminal" data-nav="terminal"><svg class="icon sm"><use href="#i-terminal"/></svg><span>Terminal</span></button>
+      </div>
+    </nav>
+    <div class="sidebar-foot">
+      <button class="collapse-btn" id="collapseBtn"><svg class="icon sm"><use href="#i-panel"/></svg><span>Collapse</span></button>
+    </div>
+  </aside>
+
+  <!-- ============ 主区 ============ -->
+  <div class="main">
+    <header class="topbar">
+      <div class="crumb" id="crumb"></div>
+      <div class="topbar-right">
+        <button class="searchbtn" id="paletteBtn"><svg class="icon sm"><use href="#i-search"/></svg>Search or jump to…<span class="kbd">⌘K</span></button>
+        <button class="iconbtn" id="themeBtn" title="Toggle theme"><svg class="icon"><use href="#i-sun" id="themeIc"/></svg></button>
+        <button class="whoami">
+          <span class="avatar">QL</span>
+          <span class="wm"><b>qiulin</b><i>platform:admin</i></span>
+        </button>
+      </div>
+    </header>
+
+    <main class="content" id="content">
+
+      <!-- ========== 屏 1：Overview（Dashboard 原型） ========== -->
+      <section class="screen active" id="screen-overview">
+        <div class="pagehead">
+          <div>
+            <h1>Overview</h1>
+            <div class="desc">Fleet health at a glance — v0.11.2 · gateway 127.0.0.1:9081</div>
+          </div>
+          <div class="actions">
+            <button class="btn" data-toast="Prototype: New project flow not mocked"><svg class="icon sm"><use href="#i-plus"/></svg>New project</button>
+            <button class="btn primary js-deploy"><svg class="icon sm"><use href="#i-arrow-up"/></svg>Deploy</button>
+          </div>
+        </div>
+        <div class="statgrid">
+          <div class="card stat"><div class="k"><svg class="icon sm"><use href="#i-box"/></svg>Nodes</div><div class="v">1 <span class="subtle" style="font-size:13px">/ 1</span></div><div class="s">all online · relay ok</div></div>
+          <div class="card stat"><div class="k"><svg class="icon sm"><use href="#i-layers"/></svg>Deployments (24h)</div><div class="v">6</div><div class="s">4 succeeded · 1 failed</div></div>
+          <div class="card stat alert"><div class="k"><svg class="icon sm"><use href="#i-bell"/></svg>Alerts</div><div class="v">1</div><div class="s">cpu_percent &gt; 90% — web</div></div>
+          <div class="card stat"><div class="k"><svg class="icon sm"><use href="#i-zap"/></svg>Events (1h)</div><div class="v">37</div><div class="s">streaming</div></div>
+        </div>
+        <div class="twocol">
+          <div>
+            <div class="section">
+              <div class="card-title">Projects <a class="viewall" href="#" onclick="return false">View all</a></div>
+              <div class="tilegrid">
+                <div class="card tile" data-goto="apps">
+                  <div class="head"><span class="pav grad-0">A</span><div><div class="name">acme-platform</div><div class="meta">4 apps · updated 5m ago</div></div></div>
+                  <div class="dots">
+                    <span class="sdot" style="background:var(--success)" title="web — succeeded"></span>
+                    <span class="sdot" style="background:var(--info)" title="worker — running"></span>
+                    <span class="sdot" style="background:var(--danger)" title="api-gateway — failed"></span>
+                    <span class="sdot" style="background:var(--warning)" title="docs — canceled"></span>
+                    <span class="meta" style="margin-left:4px">3 routes · 1 database</span>
+                  </div>
+                </div>
+                <div class="card tile" data-goto="apps">
+                  <div class="head"><span class="pav grad-1">D</span><div><div class="name">docs-site</div><div class="meta">1 app · updated 2h ago</div></div></div>
+                  <div class="dots">
+                    <span class="sdot" style="background:var(--success)" title="site — succeeded"></span>
+                    <span class="meta" style="margin-left:4px">1 route</span>
+                  </div>
+                </div>
+                <div class="card tile" data-goto="apps">
+                  <div class="head"><span class="pav grad-2">I</span><div><div class="name">infra-lab</div><div class="meta">2 apps · updated 1d ago</div></div></div>
+                  <div class="dots">
+                    <span class="sdot" style="background:var(--success)"></span>
+                    <span class="sdot" style="background:var(--success)"></span>
+                    <span class="meta" style="margin-left:4px">0 routes</span>
+                  </div>
+                </div>
+                <div class="card tile ghost-tile" data-toast="Prototype: New project flow not mocked">
+                  <svg class="icon"><use href="#i-plus"/></svg>
+                  <span style="font-weight:600">New project</span>
+                </div>
+              </div>
+            </div>
+            <div class="section">
+              <div class="card-title">Active deployments <a class="viewall" style="color:var(--info);cursor:pointer" data-goto="deployments">View all</a></div>
+              <div class="card tablewrap">
+                <table class="tbl">
+                  <thead><tr><th>App</th><th>State</th><th>Revision</th><th>Started</th></tr></thead>
+                  <tbody>
+                    <tr class="rowlink" data-goto="depdetail"><td><span class="cellmain">worker</span></td><td><span class="badge info pulse"><span class="dot"></span>running</span></td><td class="mono">R7 → R8</td><td class="subtle">2m ago</td></tr>
+                    <tr class="rowlink" data-goto="depdetail"><td><span class="cellmain">web</span></td><td><span class="badge info pulse"><span class="dot"></span>observing</span></td><td class="mono">R11 → R12</td><td class="subtle">7m ago</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+          <div class="card card-pad">
+            <div class="card-title" style="margin-bottom:6px">Recent events</div>
+            <div class="event-item" data-goto="depdetail"><span class="ev-ic ok"><svg class="icon sm"><use href="#i-check"/></svg></span><div class="ev-body"><div class="et"><b>web</b> deployment observing</div><div class="es mono">R12 · blue-green g13→g14</div></div><span class="ev-tm">7m</span></div>
+            <div class="event-item" data-goto="apps"><span class="ev-ic bad"><svg class="icon sm"><use href="#i-x"/></svg></span><div class="ev-body"><div class="et"><b>api-gateway</b> deployment failed</div><div class="es mono">R9 · health check timeout</div></div><span class="ev-tm">1h</span></div>
+            <div class="event-item" data-goto="alerts"><span class="ev-ic bad"><svg class="icon sm"><use href="#i-bell"/></svg></span><div class="ev-body"><div class="et">alert rule firing</div><div class="es">web · cpu_percent 94.2 &gt; 90</div></div><span class="ev-tm">1h</span></div>
+            <div class="event-item"><span class="ev-ic info"><svg class="icon sm"><use href="#i-db"/></svg></span><div class="ev-body"><div class="et"><b>pg-main</b> backup completed</div><div class="es">142 MiB · verified</div></div><span class="ev-tm">3h</span></div>
+            <div class="event-item"><span class="ev-ic"><svg class="icon sm"><use href="#i-globe"/></svg></span><div class="ev-body"><div class="et">route created</div><div class="es mono">docs.dev.fleetly.run → site</div></div><span class="ev-tm">2h</span></div>
+            <div class="event-item"><span class="ev-ic ok"><svg class="icon sm"><use href="#i-check"/></svg></span><div class="ev-body"><div class="et"><b>site</b> deployment succeeded</div><div class="es mono">R5 · 48s</div></div><span class="ev-tm">2h</span></div>
+            <div class="event-item"><span class="ev-ic"><svg class="icon sm"><use href="#i-key"/></svg></span><div class="ev-body"><div class="et">token issued</div><div class="es">walkthrough-09 · builtin-member</div></div><span class="ev-tm">5h</span></div>
+            <div class="event-item"><span class="ev-ic info"><svg class="icon sm"><use href="#i-box"/></svg></span><div class="ev-body"><div class="et">node joined</div><div class="es mono">fleetly-dev · manager+worker</div></div><span class="ev-tm">1d</span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========== 屏 2：Apps 列表（List 原型） ========== -->
+      <section class="screen" id="screen-apps">
+        <div class="pagehead">
+          <div>
+            <h1>Apps</h1>
+            <div class="desc">4 apps in <b>acme-platform</b> — deployments are tracked per app</div>
+          </div>
+          <div class="actions">
+            <button class="btn" data-toast="Prototype: New app flow not mocked"><svg class="icon sm"><use href="#i-plus"/></svg>New app</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="toolbar">
+            <label class="input" style="width:240px"><svg class="icon sm subtle"><use href="#i-search"/></svg><input placeholder="Filter apps…" /></label>
+            <button class="btn sm ghost"><svg class="icon sm"><use href="#i-filter"/></svg>Filter</button>
+            <span class="subtle" style="font-size:12px;margin-left:auto">4 of 4</span>
+          </div>
+          <div class="tablewrap">
+            <table class="tbl" id="appsTbl">
+              <thead><tr>
+                <th class="sortable">App <svg class="icon sm sort-ic"><use href="#i-sort"/></svg></th>
+                <th class="sortable">Status <svg class="icon sm sort-ic"><use href="#i-sort"/></svg></th>
+                <th>Latest deployment</th>
+                <th class="sortable">Routes <svg class="icon sm sort-ic"><use href="#i-sort"/></svg></th>
+                <th class="sortable">Updated <svg class="icon sm sort-ic"><use href="#i-sort"/></svg></th>
+                <th></th>
+              </tr></thead>
+              <tbody>
+                <tr class="rowlink" data-goto="appdetail">
+                  <td><div style="display:flex;align-items:center;gap:10px"><span class="pav grad-0" style="width:28px;height:28px;font-size:11px">w</span><div><div class="cellmain">web</div><div class="cellsub mono">app_01j9x7…<button class="copy" data-copy="app_01j9x7q2m4n8"><svg class="icon sm"><use href="#i-copy"/></svg></button></div></div></div></td>
+                  <td><span class="badge ok"><span class="dot"></span>succeeded</span></td>
+                  <td><span class="mono">R12</span> <span class="subtle">· 7m ago</span><div class="cellsub">hook · main</div></td>
+                  <td><a href="#" onclick="return false">2</a></td>
+                  <td class="subtle">7m ago</td>
+                  <td><div class="rowactions">
+                    <button class="btn sm primary js-deploy">Deploy</button>
+                    <div class="menu"><button class="iconbtn js-menu"><svg class="icon sm"><use href="#i-more"/></svg></button>
+                      <div class="menu-pop">
+                        <button class="menu-item" data-goto="logs"><svg class="icon sm"><use href="#i-scroll"/></svg>Open logs</button>
+                        <button class="menu-item" data-goto="metrics"><svg class="icon sm"><use href="#i-activity"/></svg>Metrics</button>
+                        <button class="menu-item" data-goto="terminal"><svg class="icon sm"><use href="#i-terminal"/></svg>Terminal</button>
+                        <button class="menu-item" data-goto="appdetail"><svg class="icon sm"><use href="#i-settings"/></svg>Settings</button>
+                        <div class="menu-sep"></div>
+                        <button class="menu-item danger js-confirm"><svg class="icon sm"><use href="#i-trash"/></svg>Delete app</button>
+                      </div>
+                    </div>
+                  </div></td>
+                </tr>
+                <tr class="rowlink" data-goto="appdetail">
+                  <td><div style="display:flex;align-items:center;gap:10px"><span class="pav grad-2" style="width:28px;height:28px;font-size:11px">k</span><div><div class="cellmain">worker</div><div class="cellsub mono">app_01j9w2…<button class="copy" data-copy="app_01j9w2ff8p1x"><svg class="icon sm"><use href="#i-copy"/></svg></button></div></div></div></td>
+                  <td><span class="badge info pulse"><span class="dot"></span>running</span></td>
+                  <td><span class="mono">R8</span> <span class="subtle">· 2m ago</span><div class="cellsub">manual · qiulin</div></td>
+                  <td><span class="subtle">0</span></td>
+                  <td class="subtle">2m ago</td>
+                  <td><div class="rowactions">
+                    <button class="btn sm primary js-deploy">Deploy</button>
+                    <div class="menu"><button class="iconbtn js-menu"><svg class="icon sm"><use href="#i-more"/></svg></button>
+                      <div class="menu-pop">
+                        <button class="menu-item" data-goto="logs"><svg class="icon sm"><use href="#i-scroll"/></svg>Open logs</button>
+                        <button class="menu-item" data-goto="metrics"><svg class="icon sm"><use href="#i-activity"/></svg>Metrics</button>
+                        <button class="menu-item" data-goto="terminal"><svg class="icon sm"><use href="#i-terminal"/></svg>Terminal</button>
+                        <button class="menu-item" data-goto="appdetail"><svg class="icon sm"><use href="#i-settings"/></svg>Settings</button>
+                        <div class="menu-sep"></div>
+                        <button class="menu-item danger js-confirm"><svg class="icon sm"><use href="#i-trash"/></svg>Delete app</button>
+                      </div>
+                    </div>
+                  </div></td>
+                </tr>
+                <tr class="rowlink" data-goto="appdetail">
+                  <td><div style="display:flex;align-items:center;gap:10px"><span class="pav grad-1" style="width:28px;height:28px;font-size:11px">a</span><div><div class="cellmain">api-gateway</div><div class="cellsub mono">app_01j8z0…<button class="copy" data-copy="app_01j8z0kk3r7m"><svg class="icon sm"><use href="#i-copy"/></svg></button></div></div></div></td>
+                  <td><span class="badge bad"><span class="dot"></span>failed</span></td>
+                  <td><span class="mono">R9</span> <span class="subtle">· 1h ago</span><div class="errline" title="health check timeout after 90s">health check timeout after 90s</div></td>
+                  <td><a href="#" onclick="return false">1</a></td>
+                  <td class="subtle">1h ago</td>
+                  <td><div class="rowactions">
+                    <button class="btn sm primary js-deploy">Deploy</button>
+                    <div class="menu"><button class="iconbtn js-menu"><svg class="icon sm"><use href="#i-more"/></svg></button>
+                      <div class="menu-pop">
+                        <button class="menu-item" data-goto="logs"><svg class="icon sm"><use href="#i-scroll"/></svg>Open logs</button>
+                        <button class="menu-item" data-goto="metrics"><svg class="icon sm"><use href="#i-activity"/></svg>Metrics</button>
+                        <button class="menu-item" data-goto="terminal"><svg class="icon sm"><use href="#i-terminal"/></svg>Terminal</button>
+                        <button class="menu-item" data-goto="appdetail"><svg class="icon sm"><use href="#i-settings"/></svg>Settings</button>
+                        <div class="menu-sep"></div>
+                        <button class="menu-item danger js-confirm"><svg class="icon sm"><use href="#i-trash"/></svg>Delete app</button>
+                      </div>
+                    </div>
+                  </div></td>
+                </tr>
+                <tr class="rowlink" data-goto="appdetail">
+                  <td><div style="display:flex;align-items:center;gap:10px"><span class="pav grad-0" style="width:28px;height:28px;font-size:11px">d</span><div><div class="cellmain">docs</div><div class="cellsub mono">app_01j7aa…<button class="copy" data-copy="app_01j7aa99qq2z"><svg class="icon sm"><use href="#i-copy"/></svg></button></div></div></div></td>
+                  <td><span class="badge warn"><span class="dot"></span>canceled</span></td>
+                  <td><span class="mono">R3</span> <span class="subtle">· 2d ago</span></td>
+                  <td><span class="subtle">0</span></td>
+                  <td class="subtle">2d ago</td>
+                  <td><div class="rowactions">
+                    <button class="btn sm primary js-deploy">Deploy</button>
+                    <div class="menu"><button class="iconbtn js-menu"><svg class="icon sm"><use href="#i-more"/></svg></button>
+                      <div class="menu-pop">
+                        <button class="menu-item" data-goto="logs"><svg class="icon sm"><use href="#i-scroll"/></svg>Open logs</button>
+                        <button class="menu-item" data-goto="metrics"><svg class="icon sm"><use href="#i-activity"/></svg>Metrics</button>
+                        <button class="menu-item" data-goto="terminal"><svg class="icon sm"><use href="#i-terminal"/></svg>Terminal</button>
+                        <button class="menu-item" data-goto="appdetail"><svg class="icon sm"><use href="#i-settings"/></svg>Settings</button>
+                        <div class="menu-sep"></div>
+                        <button class="menu-item danger js-confirm"><svg class="icon sm"><use href="#i-trash"/></svg>Delete app</button>
+                      </div>
+                    </div>
+                  </div></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div style="margin-top:14px;display:flex;gap:8px;align-items:center;font-size:12px;color:var(--fg-subtle)">
+          <svg class="icon sm"><use href="#i-terminal"/></svg>
+          CLI equivalent: <span class="mono">fleetly apps list --project acme-platform</span>
+          <button class="copy" data-copy="fleetly apps list --project acme-platform"><svg class="icon sm"><use href="#i-copy"/></svg>Copy</button>
+        </div>
+      </section>
+
+      <!-- ========== 屏 3：App 详情（Detail 原型） ========== -->
+      <section class="screen" id="screen-appdetail">
+        <div class="card card-pad" style="margin-bottom:16px">
+          <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+            <span class="pav grad-0" style="width:44px;height:44px;font-size:17px;border-radius:12px">w</span>
+            <div style="min-width:0">
+              <div style="display:flex;align-items:center;gap:10px"><span style="font-size:17px;font-weight:700;letter-spacing:-0.01em">web</span><span class="badge ok"><span class="dot"></span>succeeded</span></div>
+              <div class="cellsub mono" style="margin-top:2px">app_01j9x7q2m4n8r6v3k1d<code class="copy" style="cursor:pointer" data-copy="app_01j9x7q2m4n8r6v3k1d"><svg class="icon sm"><use href="#i-copy"/></svg></code></div>
+            </div>
+            <div class="actions" style="margin-left:auto;display:flex;gap:8px">
+              <button class="btn primary js-deploy"><svg class="icon sm"><use href="#i-arrow-up"/></svg>Deploy</button>
+              <button class="btn" data-goto="logs"><svg class="icon sm"><use href="#i-scroll"/></svg>Logs</button>
+              <button class="btn" data-goto="terminal"><svg class="icon sm"><use href="#i-terminal"/></svg>Terminal</button>
+              <button class="btn" data-toast="Rollback accepted — replay deployment R11"><svg class="icon sm"><use href="#i-back"/></svg>Rollback</button>
+              <div class="menu"><button class="iconbtn bordered js-menu"><svg class="icon sm"><use href="#i-more"/></svg></button>
+                <div class="menu-pop">
+                  <button class="menu-item"><svg class="icon sm"><use href="#i-copy"/></svg>Copy CLI: apps deploy</button>
+                  <button class="menu-item"><svg class="icon sm"><use href="#i-ext"/></svg>Open public URL</button>
+                  <div class="menu-sep"></div>
+                  <button class="menu-item danger js-confirm"><svg class="icon sm"><use href="#i-trash"/></svg>Delete app</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="tabs" data-tabs="appdetail">
+          <button class="tab active" data-tab="ov">Overview</button>
+          <button class="tab" data-goto="deployments">Deployments</button>
+          <button class="tab" data-goto="logs">Logs</button>
+          <button class="tab" data-goto="metrics">Metrics</button>
+          <button class="tab" data-tab="set">Settings</button>
+        </div>
+        <div class="tabpanel active" data-panel="ov">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px">
+            <div class="card card-pad">
+              <div class="card-title" style="margin-bottom:10px">Current status</div>
+              <dl class="kv">
+                <dt>generation</dt><dd>g14 <span class="subtle">(from g13, blue-green)</span></dd>
+                <dt>latest deploy</dt><dd>R12 · hook · main</dd>
+                <dt>duration</dt><dd>2m 14s</dd>
+                <dt>processes</dt><dd>web ×3 (rolling)</dd>
+                <dt>updated</dt><dd>7m ago</dd>
+              </dl>
+            </div>
+            <div class="card card-pad">
+              <div class="card-title" style="margin-bottom:10px"><svg class="icon sm"><use href="#i-globe"/></svg>Routes <a class="viewall" style="color:var(--info);cursor:pointer">Manage</a></div>
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <div style="display:flex;align-items:center;gap:8px;font-size:12.5px">
+                  <span class="mono" style="flex:1;overflow:hidden;text-overflow:ellipsis">acme.dev.fleetly.run → web:8080</span>
+                  <button class="copy" data-copy="https://acme.dev.fleetly.run"><svg class="icon sm"><use href="#i-copy"/></svg></button>
+                  <a href="#" onclick="return false" title="Open"><svg class="icon sm"><use href="#i-ext"/></svg></a>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;font-size:12.5px">
+                  <span class="mono" style="flex:1;overflow:hidden;text-overflow:ellipsis">api.dev.fleetly.run → api-gateway:80</span>
+                  <button class="copy" data-copy="https://api.dev.fleetly.run"><svg class="icon sm"><use href="#i-copy"/></svg></button>
+                  <a href="#" onclick="return false" title="Open"><svg class="icon sm"><use href="#i-ext"/></svg></a>
+                </div>
+              </div>
+            </div>
+            <div class="card card-pad">
+              <div class="card-title" style="margin-bottom:10px">Hooks</div>
+              <dl class="kv">
+                <dt>hook id</dt><dd>hk_9f2e…<button class="copy" data-copy="hk_9f2e77aa01"><svg class="icon sm"><use href="#i-copy"/></svg></button></dd>
+                <dt>last delivery</dt><dd>7m ago · 200</dd>
+              </dl>
+            </div>
+          </div>
+        </div>
+        <div class="tabpanel" data-panel="set">
+          <div class="card card-pad" style="max-width:560px">
+            <div class="card-title" style="margin-bottom:10px">Danger zone</div>
+            <p class="muted" style="font-size:13px;margin-bottom:12px">Deleting an app removes its deployments history, routes and exec sessions. Databases and volumes are kept.</p>
+            <button class="btn danger js-confirm"><svg class="icon sm"><use href="#i-trash"/></svg>Delete app…</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========== 屏 4：Deployments 列表（List 原型） ========== -->
+      <section class="screen" id="screen-deployments">
+        <div class="pagehead">
+          <div>
+            <h1>Deployments</h1>
+            <div class="desc"><b>acme-platform</b> — all apps · refreshes every 5s</div>
+          </div>
+          <div class="actions">
+            <button class="btn primary js-deploy"><svg class="icon sm"><use href="#i-arrow-up"/></svg>Deploy…</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="toolbar">
+            <label class="input" style="width:240px"><svg class="icon sm subtle"><use href="#i-search"/></svg><input placeholder="Filter by revision, trigger…" /></label>
+            <select class="ctl" style="width:130px"><option>All apps</option><option>web</option><option>worker</option><option>api-gateway</option></select>
+            <select class="ctl" style="width:130px"><option>All states</option><option>Active</option><option>Succeeded</option><option>Failed</option></select>
+            <span class="subtle" style="font-size:12px;margin-left:auto">7 deployments</span>
+          </div>
+          <div class="tablewrap">
+            <table class="tbl">
+              <thead><tr>
+                <th class="sortable">State <svg class="icon sm sort-ic"><use href="#i-sort"/></svg></th>
+                <th>App</th>
+                <th>Revision</th>
+                <th>Generation</th>
+                <th>Trigger</th>
+                <th class="sortable">Started <svg class="icon sm sort-ic"><use href="#i-sort"/></svg></th>
+                <th>Duration</th>
+                <th></th>
+              </tr></thead>
+              <tbody>
+                <tr class="rowlink" data-goto="depdetail">
+                  <td><span class="badge info pulse"><span class="dot"></span>observing</span></td>
+                  <td><span class="cellmain">web</span></td>
+                  <td class="mono">R11 → <b>R12</b></td>
+                  <td class="mono subtle">g14 ← g13</td>
+                  <td class="subtle">hook · main</td>
+                  <td class="subtle">7m ago</td>
+                  <td class="mono subtle">—</td>
+                  <td><div class="rowactions"><button class="btn sm danger js-confirm">Cancel</button></div></td>
+                </tr>
+                <tr class="rowlink" data-goto="depdetail">
+                  <td><span class="badge info pulse"><span class="dot"></span>running</span></td>
+                  <td><span class="cellmain">worker</span></td>
+                  <td class="mono">R7 → <b>R8</b></td>
+                  <td class="mono subtle">g3</td>
+                  <td class="subtle">manual · qiulin</td>
+                  <td class="subtle">2m ago</td>
+                  <td class="mono subtle">—</td>
+                  <td><div class="rowactions"><button class="btn sm danger js-confirm">Cancel</button></div></td>
+                </tr>
+                <tr class="rowlink" data-goto="depdetail">
+                  <td><span class="badge ok"><span class="dot"></span>succeeded</span></td>
+                  <td><span class="cellmain">web</span></td>
+                  <td class="mono">R10 → <b>R11</b></td>
+                  <td class="mono subtle">g13</td>
+                  <td class="subtle">hook · main</td>
+                  <td class="subtle">3h ago</td>
+                  <td class="mono subtle">1m 58s</td>
+                  <td><div class="rowactions"><button class="btn sm ghost" data-goto="depdetail">Open</button></div></td>
+                </tr>
+                <tr class="rowlink" data-goto="depdetail">
+                  <td><span class="badge bad"><span class="dot"></span>failed</span></td>
+                  <td><span class="cellmain">api-gateway</span><div class="errline">health check timeout after 90s</div></td>
+                  <td class="mono">R8 → <b>R9</b></td>
+                  <td class="mono subtle">g2</td>
+                  <td class="subtle">hook · main</td>
+                  <td class="subtle">1h ago</td>
+                  <td class="mono subtle">4m 12s</td>
+                  <td><div class="rowactions"><button class="btn sm ghost" data-goto="depdetail">Open</button></div></td>
+                </tr>
+                <tr class="rowlink" data-goto="depdetail">
+                  <td><span class="badge dim"><span class="dot"></span>queued</span></td>
+                  <td><span class="cellmain">site</span></td>
+                  <td class="mono">R4 → <b>R5</b></td>
+                  <td class="mono subtle">g1</td>
+                  <td class="subtle">template · ghost</td>
+                  <td class="subtle">just now</td>
+                  <td class="mono subtle">—</td>
+                  <td><div class="rowactions"><button class="btn sm ghost" data-goto="depdetail">Open</button></div></td>
+                </tr>
+                <tr class="rowlink" data-goto="depdetail">
+                  <td><span class="badge warn"><span class="dot"></span>canceled</span></td>
+                  <td><span class="cellmain">docs</span></td>
+                  <td class="mono">R2 → <b>R3</b></td>
+                  <td class="mono subtle">g1</td>
+                  <td class="subtle">manual · qiulin</td>
+                  <td class="subtle">2d ago</td>
+                  <td class="mono subtle">38s</td>
+                  <td><div class="rowactions"><button class="btn sm ghost" data-goto="depdetail">Open</button></div></td>
+                </tr>
+                <tr class="rowlink" data-goto="depdetail">
+                  <td><span class="badge dim"><span class="dot"></span>superseded</span></td>
+                  <td><span class="cellmain">web</span></td>
+                  <td class="mono">R9 → <b>R10</b></td>
+                  <td class="mono subtle">g12</td>
+                  <td class="subtle">hook · main</td>
+                  <td class="subtle">5h ago</td>
+                  <td class="mono subtle">2m 03s</td>
+                  <td><div class="rowactions"><button class="btn sm ghost" data-goto="depdetail">Open</button></div></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========== 屏 5：Deployment 详情（Detail 原型，叙事旗舰页） ========== -->
+      <section class="screen" id="screen-depdetail">
+        <div class="card card-pad" style="margin-bottom:16px">
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            <button class="iconbtn bordered" data-goto="deployments" title="Back"><svg class="icon sm"><use href="#i-back"/></svg></button>
+            <span style="font-size:17px;font-weight:700">Deployment <span class="mono">R12</span></span>
+            <span class="badge info pulse" style="font-size:12px;padding:3px 10px"><span class="dot"></span>observing</span>
+            <span class="mono subtle" style="font-size:12px">dpl_01j9ya7c…<button class="copy" data-copy="dpl_01j9ya7ckk"><svg class="icon sm"><use href="#i-copy"/></svg></button></span>
+            <div style="margin-left:auto;display:flex;gap:8px">
+              <button class="btn" data-toast="Promotion requested (prototype)"><svg class="icon sm"><use href="#i-check"/></svg>Promote</button>
+              <button class="btn danger js-confirm">Cancel</button>
+            </div>
+          </div>
+          <!-- 阶段时间线 -->
+          <div class="timeline" style="margin-top:18px">
+            <div class="tstep done"><div class="bar"><span class="nd"><svg class="icon" style="width:10px;height:10px;stroke-width:3"><use href="#i-check"/></svg></span></div><div class="lb">queued</div><div class="tm">14:02:11</div></div>
+            <div class="tstep done"><div class="bar"><span class="nd"><svg class="icon" style="width:10px;height:10px;stroke-width:3"><use href="#i-check"/></svg></span></div><div class="lb">preparing</div><div class="tm">14:02:19</div></div>
+            <div class="tstep done"><div class="bar"><span class="nd"><svg class="icon" style="width:10px;height:10px;stroke-width:3"><use href="#i-check"/></svg></span></div><div class="lb">running</div><div class="tm">14:02:41</div></div>
+            <div class="tstep cur"><div class="bar"><span class="nd"></span></div><div class="lb">observing</div><div class="tm">14:04:55</div></div>
+            <div class="tstep"><div class="bar"><span class="nd"></span></div><div class="lb">succeeded</div><div class="tm">—</div></div>
+          </div>
+        </div>
+
+        <!-- 蓝绿窗叙事卡（ADR-0048 口径保留） -->
+        <div class="card card-pad" style="margin-bottom:16px;border-color:color-mix(in oklch, var(--info) 35%, var(--border));background:color-mix(in oklch, var(--info) 5%, var(--card))">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <span class="card-title" style="color:var(--info)">blue-green window · observing</span>
+            <span class="mono subtle" style="font-size:12px">current g14 ← serving g13</span>
+            <span class="mono" style="font-size:12px;color:var(--info);margin-left:auto" id="observeCd">observe window: 4m 32s</span>
+          </div>
+          <p class="muted" style="font-size:12.5px;margin-top:8px;max-width:820px">
+            Both generations of <span class="mono" style="color:var(--fg)">web</span> run side by side until the new one is fully healthy; traffic switches only after that.
+            During the window replicas double for those processes, and cross-process DNS names (<span class="mono">{process}</span> / <span class="mono">{process}.{app}</span>)
+            may round-robin to either generation — use the proxy route or the generation name for precise targeting.
+          </p>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+          <div class="card card-pad">
+            <div class="card-title" style="margin-bottom:10px">Processes</div>
+            <table class="tbl" style="font-size:12.5px">
+              <thead><tr><th>process</th><th>strategy</th><th>DNS names</th></tr></thead>
+              <tbody>
+                <tr><td class="mono">web</td><td><span class="badge info">blue-green</span></td><td class="mono subtle" style="font-size:11.5px">web · web.acme-platform · web.g14</td></tr>
+                <tr><td class="mono">migrate</td><td><span class="badge dim">rolling</span></td><td class="mono subtle" style="font-size:11.5px">migrate · migrate.acme-platform</td></tr>
+              </tbody>
+            </table>
+            <p class="subtle" style="font-size:11px;margin-top:8px">Bare and fully-qualified names are stable references; the generation name targets one generation for debugging and moves with each deploy.</p>
+          </div>
+          <div class="card card-pad">
+            <div class="card-title" style="margin-bottom:10px"><svg class="icon sm"><use href="#i-branch"/></svg>Revision diff — R11 → R12</div>
+            <table class="tbl" style="font-size:12px">
+              <thead><tr><th>path</th><th>from</th><th>to</th></tr></thead>
+              <tbody>
+                <tr><td class="mono">spec.image</td><td class="mono subtle" style="color:var(--danger)">registry/app:2024.3.1</td><td class="mono" style="color:var(--success)">registry/app:2024.4.0</td></tr>
+                <tr><td class="mono">processes.web.replicas</td><td class="mono subtle" style="color:var(--danger)">2</td><td class="mono" style="color:var(--success)">3</td></tr>
+                <tr><td class="mono">env.FEATURE_BG</td><td class="mono subtle">—</td><td class="mono" style="color:var(--success)">"on"</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <details class="card" style="padding:12px 16px">
+          <summary style="cursor:pointer;font-size:13px;font-weight:600;color:var(--fg-muted)">Raw fields (protojson)</summary>
+          <dl class="kv" style="margin-top:12px">
+            <dt>from_revision</dt><dd>rev_01j9x1…</dd>
+            <dt>to_revision</dt><dd>rev_01j9ya…</dd>
+            <dt>generation</dt><dd>14</dd>
+            <dt>from_generation</dt><dd>13</dd>
+            <dt>observe_deadline</dt><dd>2026-10-09T14:09:41Z</dd>
+            <dt>commit_sha</dt><dd>9c1fe3d2f0…</dd>
+            <dt>idempotency_key</dt><dd>hook-main-1759…</dd>
+            <dt>first_boot_task_id</dt><dd>task_01j9yb…</dd>
+            <dt>created_at</dt><dd>2026-10-09T14:02:11Z</dd>
+          </dl>
+        </details>
+      </section>
+
+      <!-- ========== 屏 6：Logs（Workbench 原型） ========== -->
+      <section class="screen screen--bench" id="screen-logs">
+        <div class="pagehead" style="margin-bottom:6px">
+          <div>
+            <h1 style="font-size:17px">Logs</h1>
+            <div class="desc">acme-platform / web — live stream or stored search</div>
+          </div>
+        </div>
+        <div class="bench-toolbar">
+          <select class="ctl" style="width:150px"><option>web</option><option>worker</option><option>api-gateway</option></select>
+          <label class="input" style="width:110px"><span class="subtle">process</span><input value="web" style="font-family:var(--font-mono);font-size:12px" /></label>
+          <label class="input" style="width:92px"><span class="subtle">tail</span><input value="200" style="font-family:var(--font-mono);font-size:12px;width:38px" /></label>
+          <label class="input" style="width:230px"><svg class="icon sm subtle"><use href="#i-search"/></svg><input placeholder="Text filter — switches to stored path" style="font-size:12.5px" /></label>
+          <label class="switch"><input type="checkbox" checked /><span class="track"></span>Follow</label>
+          <div style="margin-left:auto;display:flex;gap:6px">
+            <button class="btn sm danger" id="logStopBtn"><svg class="icon sm"><use href="#i-stop"/></svg>Stop</button>
+            <button class="iconbtn bordered" title="Download NDJSON" data-toast="logs-2026-10-09.ndjson downloaded (prototype)"><svg class="icon sm"><use href="#i-download"/></svg></button>
+            <button class="iconbtn bordered" title="Clear" id="logClearBtn"><svg class="icon sm"><use href="#i-x"/></svg></button>
+          </div>
+        </div>
+        <div class="bench-body">
+          <div class="logview" id="logView"></div>
+          <button class="jump-pill" id="jumpPill"><svg class="icon sm"><use href="#i-chev-down"/></svg>Jump to live</button>
+        </div>
+        <div class="bench-status">
+          <span id="logCount">0 frames</span>
+          <span>● streaming</span>
+          <span>buffer capped at 5,000 (oldest dropped)</span>
+          <span style="margin-left:auto">GET /v1/logs · follow</span>
+        </div>
+      </section>
+
+      <!-- ========== 屏 7：Metrics（Workbench 原型） ========== -->
+      <section class="screen screen--bench" id="screen-metrics">
+        <div class="pagehead" style="margin-bottom:6px">
+          <div>
+            <h1 style="font-size:17px">Metrics</h1>
+            <div class="desc">acme-platform / web — PromQL passthrough to managed VictoriaMetrics</div>
+          </div>
+        </div>
+        <div class="bench-toolbar">
+          <select class="ctl" style="width:190px"><option>CPU (% of node)</option><option>Memory working set (bytes)</option><option>Custom PromQL…</option></select>
+          <select class="ctl" style="width:100px"><option>last 1h</option><option>last 30m</option><option>last 6h</option><option>last 24h</option></select>
+          <button class="iconbtn bordered" title="Refresh"><svg class="icon sm"><use href="#i-refresh"/></svg></button>
+        </div>
+        <div class="chartgrid">
+          <div class="card chartcard">
+            <div class="ch-head"><span class="ch-title">CPU (% of node)</span><span class="ch-unit">max across replicas · 15s step</span></div>
+            <div id="chartCpu"></div>
+            <div class="legend" id="legendCpu"></div>
+          </div>
+          <div class="card chartcard">
+            <div class="ch-head"><span class="ch-title">Memory working set</span><span class="ch-unit">bytes · 15s step</span></div>
+            <div id="chartMem"></div>
+            <div class="legend" id="legendMem"></div>
+          </div>
+          <div class="addpanel" data-toast="Prototype: add panel not mocked"><svg class="icon"><use href="#i-plus"/></svg><span>Add panel (custom PromQL)</span></div>
+        </div>
+      </section>
+
+      <!-- ========== 屏 8：Alerts（List 原型） ========== -->
+      <section class="screen" id="screen-alerts">
+        <div class="pagehead">
+          <div>
+            <h1>Alerts</h1>
+            <div class="desc">Alert rules and notification channels — evaluated every 30s</div>
+          </div>
+          <div class="actions">
+            <button class="btn primary" data-toast="Prototype: New rule sheet not mocked"><svg class="icon sm"><use href="#i-plus"/></svg>New rule</button>
+          </div>
+        </div>
+        <div class="card card-pad" style="margin-bottom:16px;border-color:color-mix(in oklch, var(--danger) 40%, var(--border));background:color-mix(in oklch, var(--danger) 6%, var(--card))">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <span class="badge bad pulse"><span class="dot"></span>1 firing</span>
+            <span style="font-size:13px"><b>web</b> · <span class="mono">cpu_percent</span> observed <b class="mono">94.2</b> &gt; 90 for 5m</span>
+            <a style="margin-left:auto;cursor:pointer" data-goto="metrics">View metrics →</a>
+          </div>
+        </div>
+        <div class="card">
+          <div class="tabs" style="margin:0;border-bottom:1px solid var(--border);padding:0 14px" data-tabs="alerts">
+            <button class="tab active" data-tab="rules">Rules</button>
+            <button class="tab" data-tab="channels">Notification channels</button>
+          </div>
+          <div class="tabpanel active" data-panel="rules">
+            <div class="tablewrap">
+              <table class="tbl">
+                <thead><tr><th>App</th><th>Metric</th><th>Threshold</th><th>For</th><th>State</th><th>Since</th><th></th></tr></thead>
+                <tbody>
+                  <tr>
+                    <td><a href="#" onclick="return false" class="cellmain">web</a></td>
+                    <td class="mono">cpu_percent</td>
+                    <td class="mono">&gt; 90</td>
+                    <td class="mono subtle">300s</td>
+                    <td><span class="badge bad pulse"><span class="dot"></span>firing</span></td>
+                    <td class="subtle">1h ago</td>
+                    <td><div class="rowactions"><button class="btn sm danger js-confirm">Delete</button></div></td>
+                  </tr>
+                  <tr>
+                    <td><a href="#" onclick="return false" class="cellmain">worker</a></td>
+                    <td class="mono">memory_working_set_bytes</td>
+                    <td class="mono">&gt; 1073741824</td>
+                    <td class="mono subtle">0s</td>
+                    <td><span class="badge ok"><span class="dot"></span>ok</span></td>
+                    <td class="subtle">2d ago</td>
+                    <td><div class="rowactions"><button class="btn sm danger js-confirm">Delete</button></div></td>
+                  </tr>
+                  <tr>
+                    <td><a href="#" onclick="return false" class="cellmain">api-gateway</a></td>
+                    <td class="mono">cpu_percent</td>
+                    <td class="mono">&gt; 85</td>
+                    <td class="mono subtle">120s</td>
+                    <td><span class="badge ok"><span class="dot"></span>ok</span></td>
+                    <td class="subtle">6h ago</td>
+                    <td><div class="rowactions"><button class="btn sm danger js-confirm">Delete</button></div></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="tabpanel" data-panel="channels">
+            <div style="display:flex;justify-content:flex-end;padding:10px 14px 0">
+              <button class="btn sm" data-toast="Prototype: New channel sheet not mocked"><svg class="icon sm"><use href="#i-plus"/></svg>New channel</button>
+            </div>
+            <div class="tablewrap">
+              <table class="tbl">
+                <thead><tr><th>Name</th><th>Kind</th><th>Enabled</th><th>Last failure</th><th>Created</th><th></th></tr></thead>
+                <tbody>
+                  <tr>
+                    <td><span class="cellmain">ops-webhook</span></td><td class="mono">webhook</td>
+                    <td><span class="badge ok"><span class="dot"></span>yes</span></td>
+                    <td class="subtle">—</td><td class="subtle">3d ago</td>
+                    <td><div class="rowactions"><button class="btn sm" data-toast="Test delivered (prototype)">Test</button><button class="btn sm danger js-confirm">Delete</button></div></td>
+                  </tr>
+                  <tr>
+                    <td><span class="cellmain">oncall-telegram</span></td><td class="mono">telegram</td>
+                    <td><span class="badge warn"><span class="dot"></span>no</span></td>
+                    <td class="subtle" title="chat_id not reachable">chat_id not reachable</td><td class="subtle">1d ago</td>
+                    <td><div class="rowactions"><button class="btn sm" data-toast="Test failed — channel disabled (prototype)">Test</button><button class="btn sm danger js-confirm">Delete</button></div></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========== 屏 9：Terminal（Workbench 原型） ========== -->
+      <section class="screen screen--bench" id="screen-terminal">
+        <div class="pagehead" style="margin-bottom:6px">
+          <div>
+            <h1 style="font-size:17px">Terminal</h1>
+            <div class="desc">Exec session — one-shot ticket over WebSocket</div>
+          </div>
+        </div>
+        <div class="bench-toolbar">
+          <select class="ctl" style="width:150px"><option>acme-platform</option></select>
+          <select class="ctl" style="width:150px"><option>web</option><option>worker</option></select>
+          <select class="ctl" style="width:110px"><option>web</option><option>migrate</option></select>
+          <button class="btn sm primary"><svg class="icon sm"><use href="#i-play"/></svg>Connect</button>
+          <button class="btn sm" disabled><svg class="icon sm"><use href="#i-stop"/></svg>Disconnect</button>
+          <span class="badge ok"><span class="dot"></span>connected</span>
+          <div style="margin-left:auto;display:flex;gap:4px;align-items:center">
+            <span class="subtle" style="font-size:12px">Font</span>
+            <button class="iconbtn bordered" id="fontMinus" style="width:26px;height:26px;font-size:12px">A−</button>
+            <button class="iconbtn bordered" id="fontPlus" style="width:26px;height:26px;font-size:12px">A+</button>
+          </div>
+        </div>
+        <div class="bench-body">
+          <div class="term" id="termView"><span class="tc">Connecting to web.acme-platform (replica web-1)…</span>
+<span class="tp">root@web-1:/srv#</span> ls
+Dockerfile  proc  srv  tmp
+<span class="tp">root@web-1:/srv#</span> env | grep FLEETLY
+FLEETLY_APP=web
+FLEETLY_GENERATION=14
+FLEETLY_PROCESS=web
+<span class="tp">root@web-1:/srv#</span> <span class="cursor"></span></div>
+        </div>
+        <div class="bench-status">
+          <span>ws: connected · session 30s</span>
+          <span>resize: 118×34</span>
+          <span style="margin-left:auto">POST /v1/exec/sessions → /v1/exec/stream</span>
+        </div>
+      </section>
+
+    </main>
+  </div>
+</div>
+
+<!-- ============ ⌘K palette ============ -->
+<div class="palette-wrap" id="palette">
+  <div class="palette">
+    <input type="text" id="paletteInput" placeholder="Type a page, app or action…" />
+    <div class="palette-list" id="paletteList">
+      <div class="plabel">Navigation</div>
+      <button class="palette-item" data-search="overview fleet" data-goto="overview"><svg class="icon sm"><use href="#i-grid"/></svg>Overview<span class="hint">G O</span></button>
+      <button class="palette-item" data-search="apps list" data-goto="apps"><svg class="icon sm"><use href="#i-box"/></svg>Apps<span class="hint">G A</span></button>
+      <button class="palette-item" data-search="deployments releases" data-goto="deployments"><svg class="icon sm"><use href="#i-layers"/></svg>Deployments<span class="hint">G D</span></button>
+      <button class="palette-item" data-search="logs" data-goto="logs"><svg class="icon sm"><use href="#i-scroll"/></svg>Logs<span class="hint">G L</span></button>
+      <button class="palette-item" data-search="metrics charts" data-goto="metrics"><svg class="icon sm"><use href="#i-activity"/></svg>Metrics<span class="hint">G M</span></button>
+      <button class="palette-item" data-search="alerts rules" data-goto="alerts"><svg class="icon sm"><use href="#i-bell"/></svg>Alerts<span class="hint">G R</span></button>
+      <div class="plabel">Actions</div>
+      <button class="palette-item js-deploy" data-search="deploy create"><svg class="icon sm"><use href="#i-arrow-up"/></svg>Deploy web…<span class="hint">⌘⏎</span></button>
+      <button class="palette-item" data-search="terminal exec session" data-goto="terminal"><svg class="icon sm"><use href="#i-terminal"/></svg>Open terminal<span class="hint">G T</span></button>
+      <div class="plabel">Projects</div>
+      <button class="palette-item" data-search="acme-platform"><span class="pav grad-0" style="width:18px;height:18px;font-size:9px">A</span>acme-platform<span class="hint">4 apps</span></button>
+      <button class="palette-item" data-search="docs-site"><span class="pav grad-1" style="width:18px;height:18px;font-size:9px">D</span>docs-site<span class="hint">1 app</span></button>
+    </div>
+    <div class="palette-empty" id="paletteEmpty" style="display:none">No results — try "logs" or "deploy"</div>
+  </div>
+</div>
+
+<!-- ============ Deploy sheet（Flow 原型） ============ -->
+<div class="sheet-wrap" id="deploySheet">
+  <div class="sheet-veil" data-close-sheet></div>
+  <div class="sheet" role="dialog" aria-label="Deploy">
+    <div class="sheet-head">
+      <svg class="icon"><use href="#i-arrow-up"/></svg>
+      <h2>Deploy <span class="mono" style="font-weight:600">web</span></h2>
+      <button class="iconbtn" style="margin-left:auto" data-close-sheet><svg class="icon"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="sheet-body">
+      <div class="seg" id="deploySeg">
+        <button class="active" data-m="upload">Upload</button>
+        <button data-m="hook">Hook URL</button>
+        <button data-m="replay">Replay revision</button>
+        <button data-m="template">Template</button>
+      </div>
+      <div id="m-upload" class="fld">
+        <div class="dropzone"><b>Drop .tar.gz here</b> or click to browse<br/><span style="font-size:11.5px">uploads via POST /v1/uploads (browser-side tar build supported)</span></div>
+        <div class="field"><label>App</label><select class="ctl"><option>web</option><option>worker</option></select></div>
+      </div>
+      <div id="m-hook" class="fld" style="display:none">
+        <div class="field"><label>Hook URL</label><input class="control mono" style="font-size:12px" value="https://127.0.0.1:9081/v1/hooks/hk_9f2e…" readonly /><span class="hint">POST a spec to this URL to trigger a deployment — secret shown once at creation.</span></div>
+        <div class="field"><label>Idempotency key <span class="subtle">(optional)</span></label><input class="control mono" style="font-size:12px" placeholder="hook-main-1759…" /></div>
+      </div>
+      <div id="m-replay" class="fld" style="display:none">
+        <div class="field"><label>Revision</label><select class="ctl"><option>R11 (current)</option><option>R10</option><option>R9</option></select><span class="hint">Creates a replay deployment from the selected revision.</span></div>
+      </div>
+      <div id="m-template" class="fld" style="display:none">
+        <div class="field"><label>Template</label><select class="ctl"><option>ghost-blog</option><option>postgres</option><option>redis</option></select></div>
+        <div class="field"><label>Variables</label><textarea class="control" placeholder="url=https://blog.dev.fleetly.run"></textarea></div>
+      </div>
+    </div>
+    <div class="sheet-foot">
+      <button class="btn" data-close-sheet>Cancel</button>
+      <button class="btn primary" id="deployGo"><svg class="icon sm"><use href="#i-arrow-up"/></svg>Deploy</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ AlertDialog（破坏性确认） ============ -->
+<div class="dialog-wrap" id="confirmDlg">
+  <div class="dialog" role="alertdialog" aria-label="Confirm">
+    <h2>Delete app <span class="mono">docs</span>?</h2>
+    <p>This removes deployments history, routes and exec sessions for this app. Databases and volumes are kept.</p>
+    <p class="mono subtle" style="font-size:12px">app_01j7aa99qq2z</p>
+    <div class="dialog-actions">
+      <button class="btn" data-close-dlg>Cancel</button>
+      <button class="btn danger" id="confirmGo"><svg class="icon sm"><use href="#i-trash"/></svg>Delete app</button>
+    </div>
+  </div>
+</div>
+
+<div class="toasts" id="toasts"></div>
+
+<script>
+/* ============ 原型交互脚本（throwaway） ============ */
+const $ = (sel, el=document) => el.querySelector(sel);
+const $$ = (sel, el=document) => [...el.querySelectorAll(sel)];
+
+/* ---- toast ---- */
+function toast(text, action, onAction) {
+  const t = document.createElement("div");
+  t.className = "toast";
+  t.innerHTML = '<svg class="icon sm t-ic"><use href="#i-check"/></svg><span></span>' + (action ? '<button class="t-act"></button>' : '');
+  $("span", t).textContent = text;
+  if (action) { $(".t-act", t).textContent = action; $(".t-act", t).onclick = () => { onAction?.(); t.remove(); }; }
+  $("#toasts").appendChild(t);
+  setTimeout(() => t.remove(), 3600);
+}
+
+/* ---- 屏切换 ---- */
+const CRUMBS = {
+  overview: [["Overview", "cur"]],
+  apps: [["Projects", "overview"], ["acme-platform", null], ["Apps", "cur"]],
+  appdetail: [["Projects", "overview"], ["acme-platform", "apps"], ["web", "cur"]],
+  deployments: [["Projects", "overview"], ["acme-platform", null], ["Deployments", "cur"]],
+  depdetail: [["Projects", "overview"], ["acme-platform", "apps"], ["web", "appdetail"], ["Deployments", "deployments"], ["R12", "cur"]],
+  logs: [["Projects", "overview"], ["acme-platform", null], ["web", null], ["Logs", "cur"]],
+  metrics: [["Projects", "overview"], ["acme-platform", null], ["web", null], ["Metrics", "cur"]],
+  alerts: [["Alerts", "cur"]],
+  terminal: [["Terminal", "cur"]],
+};
+const NAV_ACTIVE = { overview:"overview", apps:"apps", appdetail:"apps", deployments:"deployments", depdetail:"deployments", logs:"logs", metrics:"metrics", alerts:"alerts", terminal:"terminal" };
+const BENCH = new Set(["logs", "metrics", "terminal"]);
+let currentScreen = "overview";
+
+function showScreen(name) {
+  currentScreen = name;
+  $$(".screen").forEach(s => s.classList.toggle("active", s.id === "screen-" + name));
+  $$(".protobar button").forEach(b => b.classList.toggle("active", b.dataset.goto === name));
+  const active = NAV_ACTIVE[name] || "";
+  $$(".nav-item").forEach(n => n.classList.toggle("active", n.dataset.nav === active));
+  const crumb = $("#crumb");
+  crumb.innerHTML = "";
+  (CRUMBS[name] || []).forEach(([label, target], i, arr) => {
+    if (i > 0) { const sep = document.createElement("span"); sep.className = "sep"; sep.textContent = "/"; crumb.appendChild(sep); }
+    if (target) { const b = document.createElement("button"); b.textContent = label; b.onclick = () => showScreen(target); crumb.appendChild(b); }
+    else { const s = document.createElement("span"); s.textContent = label; s.className = target === "cur" ? "cur" : ""; crumb.appendChild(s); }
+  });
+  $("#content").classList.toggle("bench", BENCH.has(name));
+  if (name === "metrics") requestAnimationFrame(drawCharts);
+  if (name === "logs" && !logTimer) startLogs();
+}
+document.addEventListener("click", (e) => {
+  const go = e.target.closest("[data-goto]");
+  if (go) { showScreen(go.dataset.goto); }
+  const tt = e.target.closest("[data-toast]");
+  if (tt) { toast(tt.dataset.toast); }
+});
+$$(".protobar button").forEach(b => b.addEventListener("click", () => showScreen(b.dataset.goto)));
+
+/* ---- 未 mock 的导航项：诚实提示 ---- */
+$$(".nav-item[data-nav]:not([data-goto])").forEach(n => n.addEventListener("click", () =>
+  toast("Prototype: '" + n.textContent.trim() + "' screen not mocked — see plan §三")));
+
+/* ---- 主题切换 ---- */
+const saved = localStorage.getItem("proto-theme");
+if (saved === "light") document.documentElement.classList.remove("dark");
+function syncThemeIc() {
+  const dark = document.documentElement.classList.contains("dark");
+  $("#themeIc").setAttribute("href", dark ? "#i-sun" : "#i-moon");
+}
+syncThemeIc();
+$("#themeBtn").onclick = () => {
+  document.documentElement.classList.toggle("dark");
+  localStorage.setItem("proto-theme", document.documentElement.classList.contains("dark") ? "dark" : "light");
+  syncThemeIc();
+  if (currentScreen === "metrics") drawCharts();
+};
+
+/* ---- 侧栏折叠 ---- */
+$("#collapseBtn").onclick = () => $("#shell").classList.toggle("collapsed");
+
+/* ---- 项目切换器 ---- */
+const switcher = $("#switcher");
+$("#switcherBtn").onclick = (e) => { e.stopPropagation(); switcher.classList.toggle("open"); $("#swSearch").focus(); };
+$("#swSearch").onclick = (e) => e.stopPropagation();
+$("#swSearch").addEventListener("input", () => {
+  const q = $("#swSearch").value.toLowerCase();
+  $$("#swList .switcher-item").forEach(it => it.style.display = it.dataset.pname.toLowerCase().includes(q) ? "" : "none");
+});
+function renderAppsRows() {
+  /* 骨架屏演示：切项目先骨架后数据（加载态契约） */
+  const tb = $("#appsTbl tbody");
+  tb.innerHTML = Array.from({length: 4}).map(() =>
+    '<tr><td><div class="skel" style="width:130px;height:22px"></div></td><td><div class="skel" style="width:88px;height:22px"></div></td><td><div class="skel" style="width:120px;height:22px"></div></td><td><div class="skel" style="width:40px;height:22px"></div></td><td><div class="skel" style="width:70px;height:22px"></div></td><td></td></tr>'
+  ).join("");
+}
+$$("#swList .switcher-item").forEach(it => it.onclick = () => {
+  $$("#swList .switcher-item").forEach(x => x.classList.remove("active"));
+  it.classList.add("active");
+  $("#swName").textContent = it.dataset.pname;
+  $("#swAvatar").textContent = it.dataset.pname[0].toUpperCase();
+  $("#swAvatar").className = "pav " + it.dataset.grad;
+  switcher.classList.remove("open");
+  toast("Switched to " + it.dataset.pname);
+  /* 骨架屏 700ms 后还原表格 */
+  const tb = $("#appsTbl tbody");
+  const backup = tb.innerHTML;
+  tb.innerHTML = Array.from({length: 4}).map(() =>
+    '<tr><td><div class="skel" style="width:130px;height:22px"></div></td><td><div class="skel" style="width:88px;height:22px"></div></td><td><div class="skel" style="width:120px;height:22px"></div></td><td><div class="skel" style="width:40px;height:22px"></div></td><td><div class="skel" style="width:70px;height:22px"></div></td><td></td></tr>'
+  ).join("");
+  setTimeout(() => { tb.innerHTML = backup; }, 700);
+});
+
+/* ---- 行菜单 ---- */
+document.addEventListener("click", (e) => {
+  const mb = e.target.closest(".js-menu");
+  if (mb) {
+    e.stopPropagation();
+    const m = mb.closest(".menu");
+    const was = m.classList.contains("open");
+    $$(".menu.open").forEach(x => x.classList.remove("open"));
+    if (!was) m.classList.add("open");
+    return;
+  }
+  if (!e.target.closest(".menu-pop")) $$(".menu.open").forEach(x => x.classList.remove("open"));
+});
+
+/* ---- copy ---- */
+document.addEventListener("click", (e) => {
+  const c = e.target.closest("[data-copy]");
+  if (c) { e.stopPropagation(); try { navigator.clipboard.writeText(c.dataset.copy); } catch {} toast("Copied to clipboard"); }
+});
+
+/* ---- tabs ---- */
+$$("[data-tabs]").forEach(wrap => {
+  $$("button[data-tab]", wrap).forEach(tb => tb.addEventListener("click", () => {
+    $$("button[data-tab]", wrap).forEach(x => x.classList.toggle("active", x === tb));
+    const scope = wrap.closest(".screen") || document;
+    $$("[data-panel]", scope).forEach(p => p.classList.toggle("active", p.dataset.panel === tb.dataset.tab));
+  }));
+});
+
+/* ---- ⌘K palette ---- */
+const palette = $("#palette");
+function openPalette() { palette.classList.add("open"); $("#paletteInput").value = ""; filterPalette(""); setTimeout(() => $("#paletteInput").focus(), 0); }
+function closePalette() { palette.classList.remove("open"); }
+function filterPalette(q) {
+  q = q.toLowerCase();
+  let any = false;
+  $$("#paletteList .palette-item").forEach(it => {
+    const hit = it.dataset.search.includes(q);
+    it.style.display = hit ? "" : "none"; if (hit) any = true;
+  });
+  $$("#paletteList .plabel").forEach(l => l.style.display = q ? "none" : "");
+  $("#paletteEmpty").style.display = any ? "none" : "";
+}
+$("#paletteBtn").onclick = openPalette;
+$("#paletteInput").addEventListener("input", (e) => filterPalette(e.target.value));
+palette.addEventListener("click", (e) => {
+  if (e.target === palette) closePalette();
+  const it = e.target.closest(".palette-item");
+  if (it) {
+    closePalette();
+    if (it.classList.contains("js-deploy")) openSheet();
+    else if (it.dataset.goto) showScreen(it.dataset.goto);
+  }
+});
+document.addEventListener("keydown", (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); palette.classList.contains("open") ? closePalette() : openPalette(); }
+  if (e.key === "Escape") { closePalette(); closeSheet(); closeDlg(); }
+});
+
+/* ---- deploy sheet ---- */
+const sheet = $("#deploySheet");
+function openSheet() { sheet.classList.add("open"); }
+function closeSheet() { sheet.classList.remove("open"); }
+$$(".js-deploy").forEach(b => b.addEventListener("click", (e) => { e.stopPropagation(); openSheet(); }));
+$$("[data-close-sheet]").forEach(b => b.addEventListener("click", closeSheet));
+$$("#deploySeg button").forEach(sb => sb.addEventListener("click", () => {
+  $$("#deploySeg button").forEach(x => x.classList.toggle("active", x === sb));
+  $$(".fld").forEach(f => f.style.display = "none");
+  $("#m-" + sb.dataset.m).style.display = "";
+}));
+$("#deployGo").onclick = () => {
+  closeSheet();
+  toast("Deployment created — R13 queued", "View", () => showScreen("depdetail"));
+};
+
+/* ---- alert dialog ---- */
+const dlg = $("#confirmDlg");
+function closeDlg() { dlg.classList.remove("open"); }
+$$(".js-confirm").forEach(b => b.addEventListener("click", (e) => { e.stopPropagation(); dlg.classList.add("open"); }));
+$$("[data-close-dlg]").forEach(b => b.addEventListener("click", closeDlg));
+dlg.addEventListener("click", (e) => { if (e.target === dlg) closeDlg(); });
+$("#confirmGo").onclick = () => { closeDlg(); toast("App docs deleted (prototype)"); };
+
+/* ---- 观察窗倒计时 ---- */
+let cd = 272;
+setInterval(() => {
+  if (cd > 0) cd -= 1;
+  const el = $("#observeCd");
+  if (el) el.textContent = "observe window: " + Math.floor(cd / 60) + "m " + String(cd % 60).padStart(2, "0") + "s";
+}, 1000);
+
+/* ---- logs 模拟流 ---- */
+const LOG_TPL = [
+  ["", "info", "GET /api/orders 200 12ms"],
+  ["", "info", "cache hit key=orders:recent ttl=28s"],
+  ["", "info", "worker heartbeat ok (queue=0)"],
+  ["web-1", "warn", "slow query 412ms SELECT orders WHERE user_id=$1"],
+  ["", "info", "POST /api/checkout 201 88ms"],
+  ["web-2", "error", "upstream timeout after 3000ms — retry 1/3"],
+  ["", "info", "GET /healthz 200 1ms"],
+  ["", "info", "autoscale: replicas=3 desired=3"],
+];
+let logTimer = null, logN = 0;
+const logView = $("#logView");
+function ts() { const d = new Date(); return d.toTimeString().slice(0, 8); }
+function pushLog() {
+  const [src, lv, msg] = LOG_TPL[Math.floor(Math.random() * LOG_TPL.length)];
+  const line = document.createElement("div");
+  line.className = "logline" + (lv === "warn" ? " warn" : lv === "error" ? " error" : "");
+  line.innerHTML = '<span class="lt"></span><span class="ls"></span><span class="lm"></span>';
+  $(".lt", line).textContent = ts();
+  $(".ls", line).textContent = src || "web";
+  $(".lm", line).textContent = msg;
+  const stick = logView.scrollTop + logView.clientHeight >= logView.scrollHeight - 30;
+  logView.appendChild(line);
+  logN += 1;
+  $("#logCount").textContent = logN + " frames";
+  if (stick) logView.scrollTop = logView.scrollHeight; else $("#jumpPill").classList.add("show");
+}
+function startLogs() {
+  if (logTimer) return;
+  for (let i = 0; i < 14; i++) pushLog();
+  logTimer = setInterval(pushLog, 1100);
+}
+logView.addEventListener("scroll", () => {
+  const atBottom = logView.scrollTop + logView.clientHeight >= logView.scrollHeight - 30;
+  if (atBottom) $("#jumpPill").classList.remove("show");
+});
+$("#jumpPill").onclick = () => { logView.scrollTop = logView.scrollHeight; $("#jumpPill").classList.remove("show"); };
+$("#logStopBtn").onclick = () => {
+  if (logTimer) { clearInterval(logTimer); logTimer = null; logStopHtml(true); }
+  else { startLogs(); logStopHtml(false); }
+};
+function logStopHtml(stopped) {
+  $("#logStopBtn").innerHTML = stopped
+    ? '<svg class="icon sm"><use href="#i-play"/></svg>Start'
+    : '<svg class="icon sm"><use href="#i-stop"/></svg>Stop';
+  $("#logStopBtn").className = "btn sm " + (stopped ? "primary" : "danger");
+}
+$("#logClearBtn").onclick = () => { logView.innerHTML = ""; logN = 0; $("#logCount").textContent = "0 frames"; };
+
+/* ---- metrics 图表（内联 SVG：坐标轴/网格/渐变面积/图例末值） ---- */
+function series(n, base, amp, drift) {
+  const pts = []; let v = base;
+  for (let i = 0; i < n; i++) { v += (Math.random() - 0.48) * amp; v = Math.max(2, Math.min(98, v + Math.sin(i / 9) * drift)); pts.push(v); }
+  return pts;
+}
+function drawChart(el, list, yFmt) {
+  const W = 560, H = 190, padL = 46, padR = 12, padT = 10, padB = 24;
+  const maxY = 100;
+  const x = (i) => padL + (i / (list[0].pts.length - 1)) * (W - padL - padR);
+  const y = (v) => padT + (1 - v / maxY) * (H - padT - padB);
+  let grid = "", ylab = "";
+  for (let g = 0; g <= 4; g++) {
+    const gy = y(g * 25);
+    grid += `<line x1="${padL}" y1="${gy}" x2="${W - padR}" y2="${gy}" stroke="var(--border)" stroke-width="1"/>`;
+    ylab += `<text x="${padL - 8}" y="${gy + 3.5}" text-anchor="end" font-size="10" fill="var(--fg-subtle)" font-family="var(--font-mono)">${yFmt(g * 25)}</text>`;
+  }
+  let xlab = "";
+  ["-60m", "-45m", "-30m", "-15m", "now"].forEach((t, i) => {
+    xlab += `<text x="${x(i * ((list[0].pts.length - 1) / 4))}" y="${H - 6}" text-anchor="middle" font-size="10" fill="var(--fg-subtle)" font-family="var(--font-mono)">${t}</text>`;
+  });
+  let paths = "", areas = "";
+  list.forEach((s, si) => {
+    const d = s.pts.map((v, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join("");
+    const area = d + `L${x(s.pts.length - 1).toFixed(1)},${y(0)}L${x(0)},${y(0)}Z`;
+    areas += `<path d="${area}" fill="url(#g${el.id}${si})"/>`;
+    paths += `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round"/>`;
+  });
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto" role="img" aria-label="metric chart">
+    <defs>
+      <linearGradient id="g${el.id}0" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${list[0].color}" stop-opacity="0.22"/><stop offset="1" stop-color="${list[0].color}" stop-opacity="0"/></linearGradient>
+      <linearGradient id="g${el.id}1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${list[1].color}" stop-opacity="0.16"/><stop offset="1" stop-color="${list[1].color}" stop-opacity="0"/></linearGradient>
+    </defs>${grid}${areas}${paths}${ylab}${xlab}</svg>`;
+}
+function fmtPct(v) { return v.toFixed(0) + "%"; }
+function fmtMem(v) { const b = v / 100 * (1024 ** 3); return b >= 1024 ** 3 ? (b / 1024 ** 3).toFixed(1) + "Gi" : (b / 1024 ** 2).toFixed(0) + "Mi"; }
+function drawCharts() {
+  const c1 = getComputedStyle(document.documentElement).getPropertyValue("--chart-1").trim();
+  const c2 = getComputedStyle(document.documentElement).getPropertyValue("--chart-2").trim();
+  const cpu = [{ name: "web-1", color: c1, pts: series(60, 30, 8, 2) }, { name: "web-2", color: c2, pts: series(60, 24, 7, 2) }];
+  const mem = [{ name: "web-1", color: c1, pts: series(60, 52, 5, 1) }, { name: "web-2", color: c2, pts: series(60, 44, 6, 1) }];
+  drawChart($("#chartCpu"), cpu, fmtPct);
+  drawChart($("#chartMem"), mem, fmtMem);
+  const leg = (el, list, fmt) => el.innerHTML = list.map(s =>
+    `<span class="li"><span class="sw" style="background:${s.color}"></span>${s.name} <b>${fmt(s.pts[s.pts.length - 1])}</b></span>`).join("");
+  leg($("#legendCpu"), cpu, fmtPct);
+  leg($("#legendMem"), mem, fmtMem);
+}
+
+/* ---- terminal 字号 ---- */
+let termSize = 12.5;
+$("#fontPlus").onclick = () => { termSize = Math.min(18, termSize + 1); $("#termView").style.fontSize = termSize + "px"; };
+$("#fontMinus").onclick = () => { termSize = Math.max(10, termSize - 1); $("#termView").style.fontSize = termSize + "px"; };
+</script>
+</body>
+</html>
