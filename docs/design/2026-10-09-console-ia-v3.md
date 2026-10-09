@@ -81,7 +81,7 @@
 | Metrics | app 域预设（CPU/内存/网络），复用全局工作台预设机制 + app 过滤 | 现有 API |
 | Logs | app 域流（工作台 scoped 变体，search params 协议不变） | 现有 API |
 | Terminal | exec 会话，process/replica 选择器（复用 execstream） | 现有 API |
-| Variables | **env vars + secret_refs 表格化编辑**（secret ref 链到库详情；Add/Edit/Remove 走对话框暂存，**Apply changes 在工具栏右侧、暂存后才启用**，应用 = 组装新 spec 走 Deploy）；高频编辑面，故独立成 tab | 现有 API |
+| Variables | **env vars + secret_refs 表格化编辑**（secret ref 链到库详情；Add/Edit/Remove 走对话框暂存，**Apply changes 在工具栏右侧、暂存后才启用**，应用 = 组装新 spec 走 Deploy）；高频编辑面，故独立成 tab | ❌ **T2 摸底修正（2026-10-09）：spec 无读取通路**——v1Revision 不带 spec、GetApp 仅 id/name/created，console 从未展示过 app env；tab 位保留 hidden，**二期 proto：GetApp 带 spec（或 v1App 加 spec 摘要）**（与 db/run logs 轴同批）。DeploySheet 的 image 模式 env 字段是现有唯一 env 写入面 |
 | Routes | 该 app 的 host 暴露面子集 + 创建（预选本 app）/ 删除 | 现有 API |
 | Settings | **低频配置面 + 生命周期与凭证**：General（名称/ID/创建）、**Build**（source/builder/dockerfile 路径）、**Processes & rollout**（副本/滚动/健康门/协议）、Git deploy hook（get/set/**rotate token**）、危险区（删除 + 级联披露）。rename 语义需验证（appID 稳定则安全，zot 仓布局按 appID 键） | 现有 API；rename 待验证 |
 
@@ -171,7 +171,7 @@ Task 是程序化工作负载（one-shot / resident 双形态 + Owner Lease；Sc
 | # | 任务 | 说明 |
 |---|---|---|
 | T1 | 导航重组 | nav.ts 分组 + `+ New` + 撤三项 + ⌘K 同步（单源自动） |
-| T2 | App 详情 8-tab | Variables/Routes/Settings 实页；Logs/Metrics/Terminal scoped 实页（复用 features 工作台组件）；Overview 加 firing 徽标 |
+| T2 | App 详情 8-tab | 一期 **7 tab 实页**（Metrics/Logs/Terminal scoped + Routes/Settings）+ Variables tab hidden 挂账二期 proto（spec 读取通路）；Overview 加 firing 徽标 |
 | T3 | Databases 一级页 | 列表（备份健康度列）+ 详情（Overview/Backups/Browse/Settings 先行，Logs/Metrics 视 T8） |
 | T3b | Task/Run 详情页 | 3-tab 详情 + Run 叙事详情（复用 deployment-detail 范式；run 日志定址并入 T8 验证） |
 | T4 | Storage 页 | Volumes（挂载反查）+ Uploads（引用 build 反查） |
@@ -184,7 +184,7 @@ Task 是程序化工作负载（one-shot / resident 双形态 + Owner Lease；Sc
 
 ### 二期（proto 先行，按排障价值排序）
 
-GetStatus 真健康接线 + 磁盘水位；carrier restart 动词；zot catalog 代理 + 凭证轮换；DB 备份 Download、密码轮换（含级联语义）；Volume 删除/用量；Backups 聚合 API。
+GetStatus 真健康接线 + 磁盘水位；carrier restart 动词；**logs database/run 轴（`StreamLogsRequest` 加 `database_id`/`run_id` + API 换 NamespaceRef + VL 过滤项，provider 零改动）**；**App spec 读取通路（GetApp 带 spec 或 v1App 加 spec 摘要——Variables tab 点亮的前提）**；zot catalog 代理 + 凭证轮换；DB 备份 Download、密码轮换（含级联语义）；Volume 删除/用量；Backups 聚合 API。
 
 ### 三期
 

@@ -64,7 +64,7 @@ describe("useApps", () => {
     const { client, wrapper } = withClient();
     const { result } = renderHook(() => useApps("01M4P1"), { wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data).toEqual([{ id: "01M4A1", project_id: "01M4P1", name: "web" }]);
+    expect(result.current.data).toEqual([{ id: "01M4A1", project_id: "01M4P1", name: "web", created_at: "" }]);
     expect((fetchMock.mock.calls[0] as [string])[0]).toBe("/v1/apps?project_id=01M4P1&limit=200");
     client.clear();
   });

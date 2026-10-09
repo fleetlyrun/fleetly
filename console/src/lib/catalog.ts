@@ -30,6 +30,7 @@ export interface AppEntry {
   id: string;
   project_id: string;
   name: string;
+  created_at: string;
 }
 
 const CATALOG_MS = 60_000;
@@ -74,7 +75,7 @@ export function useApps(projectId: string) {
     queryFn: async (): Promise<AppEntry[]> => {
       const res = await apiFetch<{ apps?: Array<Structure["v1App"] | undefined> }>(`/v1/apps${qs({ project_id: projectId, limit: 200 })}`);
       return rowsOf(res.apps).flatMap((app) =>
-        app.id && app.name ? [{ id: app.id, project_id: app.project_id ?? "", name: app.name }] : [],
+        app.id && app.name ? [{ id: app.id, project_id: app.project_id ?? "", name: app.name, created_at: app.created_at ?? "" }] : [],
       );
     },
     refetchInterval: CATALOG_MS,
