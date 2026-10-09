@@ -6,6 +6,7 @@ import type { components as automationSchemas } from "../api/automation";
 import type { components as identitySchemas } from "../api/identity";
 import type { components as telemetrySchemas } from "../api/telemetry";
 import type { components as proxySchemas } from "../api/proxy";
+import type { components as runtimeSchemas } from "../api/runtime";
 
 // 目录与资源查询面（F2.6 三页选择器 + F3.1 写面全资源）：查询键是失效
 // 粒度的唯一真源（写后 invalidateQueries 同键）。目录类 60s 轮询；资源
@@ -18,6 +19,7 @@ type Automation = automationSchemas["schemas"];
 type Identity = identitySchemas["schemas"];
 type Telemetry = telemetrySchemas["schemas"];
 type Proxy = proxySchemas["schemas"];
+type Runtime = runtimeSchemas["schemas"];
 
 export interface ProjectEntry {
   id: string;
@@ -428,4 +430,18 @@ export function appNameOf(apps: AppEntry[] | undefined, appId: string | undefine
   if (!appId) return "—";
   const hit = apps?.find((app) => app.id === appId);
   return hit ? hit.name : `${appId.slice(0, 10)}…`;
+}
+
+// 节点面（C4）：RuntimeAdmin 的 UI 消费面——list + enroll 材料 + drain/
+// cordon/uncordon 三动词（动词面对齐 CLI nodes 组）。enroll 材料等价集群
+// 成员权（platform:admin 档），响应只在铸造/轮换时可见。
+export function useNodes() {
+  return useQuery({
+    queryKey: ["nodes", "list"],
+    queryFn: async () => {
+      const res = await apiFetch<{ nodes?: Array<Runtime["v1Node"] | undefined> }>("/v1/nodes");
+      return rowsOf(res.nodes);
+    },
+    refetchInterval: RESOURCE_MS,
+  });
 }

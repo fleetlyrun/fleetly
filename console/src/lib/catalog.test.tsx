@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { useApps, useProjects, useAlertRules, useAlertStates, useMetricsSeries, useUsers, useTeams, useInvitations, usePlatformBackups } from "./catalog";
+import { useApps, useProjects, useAlertRules, useAlertStates, useMetricsSeries, useUsers, useTeams, useInvitations, usePlatformBackups, useNodes } from "./catalog";
 import { setToken } from "./token";
 
 // 目录查询消费面锚（F2.6 只读面 + F3.1 扩面共用）：REST 路径/查询串、
@@ -159,6 +159,23 @@ describe("identity and platform backup hooks", () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual([{ id: "64b39b57", time: "2026-10-08T16:39:43Z", hostname: "fleetly-dev" }]);
     expect((fetchMock.mock.calls[0] as [string])[0]).toBe("/v1/platform/backups");
+    client.clear();
+  });
+});
+
+// C4 节点面 hook 锚：list 路径 + 行展平。
+describe("useNodes", () => {
+  it("fetches cluster nodes from the runtime REST face", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ nodes: [{ platform_id: "N1", hostname: "fleetly-dev", role: "manager", available: true, relay_online: true }, undefined] }), { status: 200 }),
+    );
+    const { client, wrapper } = withClient();
+    const { result } = renderHook(() => useNodes(), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toEqual([
+      { platform_id: "N1", hostname: "fleetly-dev", role: "manager", available: true, relay_online: true },
+    ]);
+    expect((fetchMock.mock.calls[0] as [string])[0]).toBe("/v1/nodes");
     client.clear();
   });
 });

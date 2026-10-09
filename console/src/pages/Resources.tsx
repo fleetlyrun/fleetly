@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   useApps,
   useConfigs,
@@ -884,7 +885,7 @@ function DatabasesTab({ projectId }: { projectId: string }) {
             <TableHead columns={["Name", "Engine", "Status", "Created", ""]} />
             <tbody>
               {(databases.data ?? []).map((database) => (
-                <DatabaseRow key={database.id} database={database} />
+                <DatabaseRow key={database.id} database={database} projectId={projectId} />
               ))}
             </tbody>
           </table>
@@ -894,7 +895,7 @@ function DatabasesTab({ projectId }: { projectId: string }) {
   );
 }
 
-function DatabaseRow({ database }: { database: { id?: string; name?: string; engine?: string; state?: string; status?: string; created_at?: string } }) {
+function DatabaseRow({ database, projectId }: { database: { id?: string; name?: string; engine?: string; state?: string; status?: string; created_at?: string }; projectId: string }) {
   const [expanded, setExpanded] = useState(false);
   const backups = useDatabaseBackups(expanded ? database.id ?? "" : "");
   const trigger = useApiMutation({
@@ -961,17 +962,10 @@ function DatabaseRow({ database }: { database: { id?: string; name?: string; eng
               <EmptyNote label="No backups yet." />
             ) : (
               <table className="w-full text-xs">
-                <TableHead columns={["Backup", "State", "Size", "Created"]} />
+                <TableHead columns={["Backup", "State", "Size", "Created", ""]} />
                 <tbody>
                   {(backups.data ?? []).map((backup) => (
-                    <tr key={backup.id} className="border-b border-slate-800/40">
-                      <td className="px-3 py-1.5 font-mono text-slate-400" title={backup.id}>
-                        {shortId(backup.id)}
-                      </td>
-                      <td className="px-3 py-1.5 text-slate-400">{backup.status ?? "—"}</td>
-                      <td className="px-3 py-1.5 font-mono text-slate-500">{backup.size_bytes ? `${Number(backup.size_bytes) / 1048576} MiB` : "—"}</td>
-                      <td className="px-3 py-1.5 text-slate-500">{formatTime(backup.finished_at ?? backup.created_at)}</td>
-                    </tr>
+                    <BackupActionRow key={backup.id} backup={backup} projectId={projectId} engine={database.engine ?? ""} />
                   ))}
                 </tbody>
               </table>
@@ -1060,5 +1054,115 @@ function UploadsTab({ projectId }: { projectId: string }) {
         </TableWrap>
       )}
     </section>
+  );
+}
+
+// BackupActionRow 是备份行的动作面（C5 数据面深化）：verify（重算 digest
+// 的只读校验——ok/digest/error 诚实呈现）+ restore（按名 create-or-收敛
+// 的新库恢复流——restore_from_backup 在场 = 恢复挂起，ADR-0039；恢复是
+// 异步任务，目标库行先建后到数据）。
+function BackupActionRow({
+  backup,
+  projectId,
+  engine,
+}: {
+  backup: { id?: string; status?: string; size_bytes?: string | number; finished_at?: string; created_at?: string };
+  projectId: string;
+  engine: string;
+}) {
+  const queryClient = useQueryClient();
+  const [verifyResult, setVerifyResult] = useState<{ ok: boolean; digest: string; error: string } | null>(null);
+  const [verifying, setVerifying] = useState(false);
+  const [restoreOpen, setRestoreOpen] = useState(false);
+  const [restoreName, setRestoreName] = useState("");
+  const [restoring, setRestoring] = useState(false);
+  const [restoreError, setRestoreError] = useState<unknown>(null);
+
+  async function runVerify() {
+    setVerifying(true);
+    setVerifyResult(null);
+    try {
+      const res = await apiSend<{ ok?: boolean; digest?: string; error?: string }>(
+        `/v1/backups/${encodeURIComponent(backup.id ?? "")}/verify`,
+        "POST",
+        {},
+      );
+      setVerifyResult({ ok: res.ok === true, digest: res.digest ?? "", error: res.error ?? "" });
+    } catch (cause) {
+      setVerifyResult({ ok: false, digest: "", error: (cause as Error).message });
+    } finally {
+      setVerifying(false);
+    }
+  }
+
+  async function runRestore() {
+    setRestoring(true);
+    setRestoreError(null);
+    try {
+      await apiSend("/v1/databases", "POST", {
+        project_id: projectId,
+        name: restoreName,
+        engine,
+        restore_from_backup: backup.id,
+      });
+      void queryClient.invalidateQueries({ queryKey: ["resources", "databases"] });
+      setRestoreOpen(false);
+      setRestoreName("");
+    } catch (cause) {
+      setRestoreError(cause);
+    } finally {
+      setRestoring(false);
+    }
+  }
+
+  return (
+    <>
+      <tr className="border-b border-slate-800/40">
+        <td className="px-3 py-1.5 font-mono text-slate-400" title={backup.id}>
+          {shortId(backup.id)}
+        </td>
+        <td className="px-3 py-1.5 text-slate-400">{backup.status ?? "—"}</td>
+        <td className="px-3 py-1.5 font-mono text-slate-500">{backup.size_bytes ? `${Number(backup.size_bytes) / 1048576} MiB` : "—"}</td>
+        <td className="px-3 py-1.5 text-slate-500">{formatTime(backup.finished_at ?? backup.created_at)}</td>
+        <td className="px-3 py-1.5 text-right">
+          <div className="flex items-center justify-end gap-1">
+            <RowButton disabled={verifying} onClick={() => void runVerify()} title="Recompute the backup digest against the stored object (read-only)">
+              {verifying ? "verifying…" : "verify"}
+            </RowButton>
+            <RowButton onClick={() => setRestoreOpen((prev) => !prev)} title="Create a new database restored from this backup">
+              restore…
+            </RowButton>
+          </div>
+          {verifyResult != null ? (
+            <div className="mt-1 text-[11px]">
+              {verifyResult.ok ? (
+                <span className="text-emerald-400">ok — digest {verifyResult.digest.slice(0, 16)}…</span>
+              ) : (
+                <span className="text-red-300">failed — {verifyResult.error || "verification error"}</span>
+              )}
+            </div>
+          ) : null}
+        </td>
+      </tr>
+      {restoreOpen ? (
+        <tr className="border-b border-slate-800/40 bg-slate-950/60">
+          <td colSpan={5} className="px-3 py-2">
+            <form
+              className="flex flex-wrap items-end gap-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void runRestore();
+              }}
+            >
+              <Field label={`New ${engine} database name`} hint="restored from this backup; the restore task runs async after the row is created">
+                <TextInput value={restoreName} onChange={(event) => setRestoreName(event.target.value)} placeholder="restored-copy" autoFocus />
+              </Field>
+              <PrimaryButton disabled={restoring || restoreName === ""}>{restoring ? "Creating…" : "Restore"}</PrimaryButton>
+            </form>
+            {restoreError != null ? <ErrorNote error={restoreError} /> : null}
+          </td>
+        </tr>
+      ) : null}
+    </>
   );
 }

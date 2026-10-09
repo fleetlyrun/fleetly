@@ -8,6 +8,7 @@ import { ResourcesPage } from "./pages/Resources";
 import { TasksPage } from "./pages/Tasks";
 import { ObservabilityPage } from "./pages/Observability";
 import { IdentityPage } from "./pages/Identity";
+import { NodesPage } from "./pages/Nodes";
 import { AuditPage } from "./pages/Audit";
 import { SettingsPage } from "./pages/Settings";
 import { QuickstartPage } from "./pages/Quickstart";
@@ -61,6 +62,8 @@ function renderPage(page: Route, detailId: string, navigate: (path: string) => v
       return <ObservabilityPage />;
     case "identity":
       return <IdentityPage />;
+    case "nodes":
+      return <NodesPage />;
     case "logs":
       return <LogsPage />;
     case "events":
@@ -85,6 +88,7 @@ const ROUTE_LABELS: Record<Route, string> = {
   tasks: "Tasks",
   observability: "Observability",
   identity: "Identity",
+  nodes: "Nodes",
   logs: "Logs",
   events: "Events",
   audit: "Audit",
