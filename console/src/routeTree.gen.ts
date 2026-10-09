@@ -21,14 +21,17 @@ import { Route as ShellMetricsRouteImport } from './routes/_shell/metrics'
 import { Route as ShellNodesRouteImport } from './routes/_shell/nodes'
 import { Route as ShellOverviewRouteImport } from './routes/_shell/overview'
 import { Route as ShellQuickstartRouteImport } from './routes/_shell/quickstart'
-import { Route as ShellResourcesRouteImport } from './routes/_shell/resources'
 import { Route as ShellSettingsRouteImport } from './routes/_shell/settings'
-import { Route as ShellTasksRouteImport } from './routes/_shell/tasks'
 import { Route as ShellTemplatesRouteImport } from './routes/_shell/templates'
 import { Route as ShellTerminalRouteImport } from './routes/_shell/terminal'
 import { Route as ShellDeploymentsDeploymentIdRouteImport } from './routes/_shell/deployments.$deploymentId'
 import { Route as ShellPProjectIdRouteImport } from './routes/_shell/p.$projectId'
 import { Route as ShellPProjectIdIndexRouteImport } from './routes/_shell/p.$projectId.index'
+import { Route as ShellPProjectIdConfigurationRouteImport } from './routes/_shell/p.$projectId.configuration'
+import { Route as ShellPProjectIdDataRouteImport } from './routes/_shell/p.$projectId.data'
+import { Route as ShellPProjectIdNetworksRouteImport } from './routes/_shell/p.$projectId.networks'
+import { Route as ShellPProjectIdRoutesRouteImport } from './routes/_shell/p.$projectId.routes'
+import { Route as ShellPProjectIdTasksRouteImport } from './routes/_shell/p.$projectId.tasks'
 import { Route as ShellPProjectIdAppsIndexRouteImport } from './routes/_shell/p.$projectId.apps.index'
 import { Route as ShellPProjectIdAppsAppIdRouteImport } from './routes/_shell/p.$projectId.apps.$appId'
 import { Route as ShellPProjectIdDeploymentsIndexRouteImport } from './routes/_shell/p.$projectId.deployments.index'
@@ -95,19 +98,9 @@ const ShellQuickstartRoute = ShellQuickstartRouteImport.update({
   path: '/quickstart',
   getParentRoute: () => ShellRoute,
 } as any)
-const ShellResourcesRoute = ShellResourcesRouteImport.update({
-  id: '/resources',
-  path: '/resources',
-  getParentRoute: () => ShellRoute,
-} as any)
 const ShellSettingsRoute = ShellSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
-  getParentRoute: () => ShellRoute,
-} as any)
-const ShellTasksRoute = ShellTasksRouteImport.update({
-  id: '/tasks',
-  path: '/tasks',
   getParentRoute: () => ShellRoute,
 } as any)
 const ShellTemplatesRoute = ShellTemplatesRouteImport.update({
@@ -134,6 +127,32 @@ const ShellPProjectIdRoute = ShellPProjectIdRouteImport.update({
 const ShellPProjectIdIndexRoute = ShellPProjectIdIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => ShellPProjectIdRoute,
+} as any)
+const ShellPProjectIdConfigurationRoute =
+  ShellPProjectIdConfigurationRouteImport.update({
+    id: '/configuration',
+    path: '/configuration',
+    getParentRoute: () => ShellPProjectIdRoute,
+  } as any)
+const ShellPProjectIdDataRoute = ShellPProjectIdDataRouteImport.update({
+  id: '/data',
+  path: '/data',
+  getParentRoute: () => ShellPProjectIdRoute,
+} as any)
+const ShellPProjectIdNetworksRoute = ShellPProjectIdNetworksRouteImport.update({
+  id: '/networks',
+  path: '/networks',
+  getParentRoute: () => ShellPProjectIdRoute,
+} as any)
+const ShellPProjectIdRoutesRoute = ShellPProjectIdRoutesRouteImport.update({
+  id: '/routes',
+  path: '/routes',
+  getParentRoute: () => ShellPProjectIdRoute,
+} as any)
+const ShellPProjectIdTasksRoute = ShellPProjectIdTasksRouteImport.update({
+  id: '/tasks',
+  path: '/tasks',
   getParentRoute: () => ShellPProjectIdRoute,
 } as any)
 const ShellPProjectIdAppsIndexRoute =
@@ -185,13 +204,16 @@ export interface FileRoutesByFullPath {
   '/nodes': typeof ShellNodesRoute
   '/overview': typeof ShellOverviewRoute
   '/quickstart': typeof ShellQuickstartRoute
-  '/resources': typeof ShellResourcesRoute
   '/settings': typeof ShellSettingsRoute
-  '/tasks': typeof ShellTasksRoute
   '/templates': typeof ShellTemplatesRoute
   '/terminal': typeof ShellTerminalRoute
   '/deployments/$deploymentId': typeof ShellDeploymentsDeploymentIdRoute
   '/p/$projectId': typeof ShellPProjectIdRouteWithChildren
+  '/p/$projectId/configuration': typeof ShellPProjectIdConfigurationRoute
+  '/p/$projectId/data': typeof ShellPProjectIdDataRoute
+  '/p/$projectId/networks': typeof ShellPProjectIdNetworksRoute
+  '/p/$projectId/routes': typeof ShellPProjectIdRoutesRoute
+  '/p/$projectId/tasks': typeof ShellPProjectIdTasksRoute
   '/p/$projectId/': typeof ShellPProjectIdIndexRoute
   '/p/$projectId/apps/$appId': typeof ShellPProjectIdAppsAppIdRouteWithChildren
   '/p/$projectId/apps/': typeof ShellPProjectIdAppsIndexRoute
@@ -212,12 +234,15 @@ export interface FileRoutesByTo {
   '/nodes': typeof ShellNodesRoute
   '/overview': typeof ShellOverviewRoute
   '/quickstart': typeof ShellQuickstartRoute
-  '/resources': typeof ShellResourcesRoute
   '/settings': typeof ShellSettingsRoute
-  '/tasks': typeof ShellTasksRoute
   '/templates': typeof ShellTemplatesRoute
   '/terminal': typeof ShellTerminalRoute
   '/deployments/$deploymentId': typeof ShellDeploymentsDeploymentIdRoute
+  '/p/$projectId/configuration': typeof ShellPProjectIdConfigurationRoute
+  '/p/$projectId/data': typeof ShellPProjectIdDataRoute
+  '/p/$projectId/networks': typeof ShellPProjectIdNetworksRoute
+  '/p/$projectId/routes': typeof ShellPProjectIdRoutesRoute
+  '/p/$projectId/tasks': typeof ShellPProjectIdTasksRoute
   '/p/$projectId': typeof ShellPProjectIdIndexRoute
   '/p/$projectId/apps': typeof ShellPProjectIdAppsIndexRoute
   '/p/$projectId/deployments': typeof ShellPProjectIdDeploymentsIndexRoute
@@ -239,13 +264,16 @@ export interface FileRoutesById {
   '/_shell/nodes': typeof ShellNodesRoute
   '/_shell/overview': typeof ShellOverviewRoute
   '/_shell/quickstart': typeof ShellQuickstartRoute
-  '/_shell/resources': typeof ShellResourcesRoute
   '/_shell/settings': typeof ShellSettingsRoute
-  '/_shell/tasks': typeof ShellTasksRoute
   '/_shell/templates': typeof ShellTemplatesRoute
   '/_shell/terminal': typeof ShellTerminalRoute
   '/_shell/deployments/$deploymentId': typeof ShellDeploymentsDeploymentIdRoute
   '/_shell/p/$projectId': typeof ShellPProjectIdRouteWithChildren
+  '/_shell/p/$projectId/configuration': typeof ShellPProjectIdConfigurationRoute
+  '/_shell/p/$projectId/data': typeof ShellPProjectIdDataRoute
+  '/_shell/p/$projectId/networks': typeof ShellPProjectIdNetworksRoute
+  '/_shell/p/$projectId/routes': typeof ShellPProjectIdRoutesRoute
+  '/_shell/p/$projectId/tasks': typeof ShellPProjectIdTasksRoute
   '/_shell/p/$projectId/': typeof ShellPProjectIdIndexRoute
   '/_shell/p/$projectId/apps/$appId': typeof ShellPProjectIdAppsAppIdRouteWithChildren
   '/_shell/p/$projectId/apps/': typeof ShellPProjectIdAppsIndexRoute
@@ -268,13 +296,16 @@ export interface FileRouteTypes {
     | '/nodes'
     | '/overview'
     | '/quickstart'
-    | '/resources'
     | '/settings'
-    | '/tasks'
     | '/templates'
     | '/terminal'
     | '/deployments/$deploymentId'
     | '/p/$projectId'
+    | '/p/$projectId/configuration'
+    | '/p/$projectId/data'
+    | '/p/$projectId/networks'
+    | '/p/$projectId/routes'
+    | '/p/$projectId/tasks'
     | '/p/$projectId/'
     | '/p/$projectId/apps/$appId'
     | '/p/$projectId/apps/'
@@ -295,12 +326,15 @@ export interface FileRouteTypes {
     | '/nodes'
     | '/overview'
     | '/quickstart'
-    | '/resources'
     | '/settings'
-    | '/tasks'
     | '/templates'
     | '/terminal'
     | '/deployments/$deploymentId'
+    | '/p/$projectId/configuration'
+    | '/p/$projectId/data'
+    | '/p/$projectId/networks'
+    | '/p/$projectId/routes'
+    | '/p/$projectId/tasks'
     | '/p/$projectId'
     | '/p/$projectId/apps'
     | '/p/$projectId/deployments'
@@ -321,13 +355,16 @@ export interface FileRouteTypes {
     | '/_shell/nodes'
     | '/_shell/overview'
     | '/_shell/quickstart'
-    | '/_shell/resources'
     | '/_shell/settings'
-    | '/_shell/tasks'
     | '/_shell/templates'
     | '/_shell/terminal'
     | '/_shell/deployments/$deploymentId'
     | '/_shell/p/$projectId'
+    | '/_shell/p/$projectId/configuration'
+    | '/_shell/p/$projectId/data'
+    | '/_shell/p/$projectId/networks'
+    | '/_shell/p/$projectId/routes'
+    | '/_shell/p/$projectId/tasks'
     | '/_shell/p/$projectId/'
     | '/_shell/p/$projectId/apps/$appId'
     | '/_shell/p/$projectId/apps/'
@@ -429,25 +466,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShellQuickstartRouteImport
       parentRoute: typeof ShellRoute
     }
-    '/_shell/resources': {
-      id: '/_shell/resources'
-      path: '/resources'
-      fullPath: '/resources'
-      preLoaderRoute: typeof ShellResourcesRouteImport
-      parentRoute: typeof ShellRoute
-    }
     '/_shell/settings': {
       id: '/_shell/settings'
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof ShellSettingsRouteImport
-      parentRoute: typeof ShellRoute
-    }
-    '/_shell/tasks': {
-      id: '/_shell/tasks'
-      path: '/tasks'
-      fullPath: '/tasks'
-      preLoaderRoute: typeof ShellTasksRouteImport
       parentRoute: typeof ShellRoute
     }
     '/_shell/templates': {
@@ -483,6 +506,41 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/p/$projectId/'
       preLoaderRoute: typeof ShellPProjectIdIndexRouteImport
+      parentRoute: typeof ShellPProjectIdRoute
+    }
+    '/_shell/p/$projectId/configuration': {
+      id: '/_shell/p/$projectId/configuration'
+      path: '/configuration'
+      fullPath: '/p/$projectId/configuration'
+      preLoaderRoute: typeof ShellPProjectIdConfigurationRouteImport
+      parentRoute: typeof ShellPProjectIdRoute
+    }
+    '/_shell/p/$projectId/data': {
+      id: '/_shell/p/$projectId/data'
+      path: '/data'
+      fullPath: '/p/$projectId/data'
+      preLoaderRoute: typeof ShellPProjectIdDataRouteImport
+      parentRoute: typeof ShellPProjectIdRoute
+    }
+    '/_shell/p/$projectId/networks': {
+      id: '/_shell/p/$projectId/networks'
+      path: '/networks'
+      fullPath: '/p/$projectId/networks'
+      preLoaderRoute: typeof ShellPProjectIdNetworksRouteImport
+      parentRoute: typeof ShellPProjectIdRoute
+    }
+    '/_shell/p/$projectId/routes': {
+      id: '/_shell/p/$projectId/routes'
+      path: '/routes'
+      fullPath: '/p/$projectId/routes'
+      preLoaderRoute: typeof ShellPProjectIdRoutesRouteImport
+      parentRoute: typeof ShellPProjectIdRoute
+    }
+    '/_shell/p/$projectId/tasks': {
+      id: '/_shell/p/$projectId/tasks'
+      path: '/tasks'
+      fullPath: '/p/$projectId/tasks'
+      preLoaderRoute: typeof ShellPProjectIdTasksRouteImport
       parentRoute: typeof ShellPProjectIdRoute
     }
     '/_shell/p/$projectId/apps/': {
@@ -551,6 +609,11 @@ const ShellPProjectIdAppsAppIdRouteWithChildren =
   )
 
 interface ShellPProjectIdRouteChildren {
+  ShellPProjectIdConfigurationRoute: typeof ShellPProjectIdConfigurationRoute
+  ShellPProjectIdDataRoute: typeof ShellPProjectIdDataRoute
+  ShellPProjectIdNetworksRoute: typeof ShellPProjectIdNetworksRoute
+  ShellPProjectIdRoutesRoute: typeof ShellPProjectIdRoutesRoute
+  ShellPProjectIdTasksRoute: typeof ShellPProjectIdTasksRoute
   ShellPProjectIdIndexRoute: typeof ShellPProjectIdIndexRoute
   ShellPProjectIdAppsAppIdRoute: typeof ShellPProjectIdAppsAppIdRouteWithChildren
   ShellPProjectIdAppsIndexRoute: typeof ShellPProjectIdAppsIndexRoute
@@ -558,6 +621,11 @@ interface ShellPProjectIdRouteChildren {
 }
 
 const ShellPProjectIdRouteChildren: ShellPProjectIdRouteChildren = {
+  ShellPProjectIdConfigurationRoute: ShellPProjectIdConfigurationRoute,
+  ShellPProjectIdDataRoute: ShellPProjectIdDataRoute,
+  ShellPProjectIdNetworksRoute: ShellPProjectIdNetworksRoute,
+  ShellPProjectIdRoutesRoute: ShellPProjectIdRoutesRoute,
+  ShellPProjectIdTasksRoute: ShellPProjectIdTasksRoute,
   ShellPProjectIdIndexRoute: ShellPProjectIdIndexRoute,
   ShellPProjectIdAppsAppIdRoute: ShellPProjectIdAppsAppIdRouteWithChildren,
   ShellPProjectIdAppsIndexRoute: ShellPProjectIdAppsIndexRoute,
@@ -578,9 +646,7 @@ interface ShellRouteChildren {
   ShellNodesRoute: typeof ShellNodesRoute
   ShellOverviewRoute: typeof ShellOverviewRoute
   ShellQuickstartRoute: typeof ShellQuickstartRoute
-  ShellResourcesRoute: typeof ShellResourcesRoute
   ShellSettingsRoute: typeof ShellSettingsRoute
-  ShellTasksRoute: typeof ShellTasksRoute
   ShellTemplatesRoute: typeof ShellTemplatesRoute
   ShellTerminalRoute: typeof ShellTerminalRoute
   ShellDeploymentsDeploymentIdRoute: typeof ShellDeploymentsDeploymentIdRoute
@@ -597,9 +663,7 @@ const ShellRouteChildren: ShellRouteChildren = {
   ShellNodesRoute: ShellNodesRoute,
   ShellOverviewRoute: ShellOverviewRoute,
   ShellQuickstartRoute: ShellQuickstartRoute,
-  ShellResourcesRoute: ShellResourcesRoute,
   ShellSettingsRoute: ShellSettingsRoute,
-  ShellTasksRoute: ShellTasksRoute,
   ShellTemplatesRoute: ShellTemplatesRoute,
   ShellTerminalRoute: ShellTerminalRoute,
   ShellDeploymentsDeploymentIdRoute: ShellDeploymentsDeploymentIdRoute,
