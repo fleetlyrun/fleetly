@@ -604,3 +604,17 @@ F3.1/F3.2/F3.3/F3.6 四批走查的浏览器级挂账在后端在场的环境（
 **门禁**：console:verify 零漂移 + vitest 41 绿。
 
 **路线图进度**：C1-C5 全部收官（五批零回归、staging 五次换装零扰动）。剩 **C6 凭证第二形态**（密码会话 vs OIDC SSO）待裁决——见路线图文档 §5。
+
+## 2026-10-09 记录·二十（C6 第一期密码会话换装 81dcced-c6pw：00028 前滚 + 登录全链真机绿）
+
+**换装**（c603111-c45 → **81dcced-c6pw（现役）**）：Platform Backup + 双卷 tar；**00028_users_password.sql 干净前滚**（goose v28）；零扰动；tw.dev 200（冷窗照旧）。
+
+**C6 第一期内容（先密码后 SSO 裁决；SSO 独立后续批）**：
+- **凭证模型**：登录成功 = 服务端铸常规 API token（"password session"）——scope/审计/吊销面全量复用 tokens 面（authn 拦截器逐请求查表，吊销即 401），零独立会话表；bcrypt（zot htpasswd 同款）；users.password_hash 空 = 未设密（密码登录诚实拒绝）。
+- **端点**：`POST /v1/auth/login`（PUBLIC 位，AcceptInvitation 先例）+ `POST /v1/users/{id}/password`（admin 重置，users:write）+ CreateUser 可选初始密码。诚实边界：login 无限速（多租户前；9080/9081 VPC-only 承载）；失败形态不区分哪半边错（用户名枚举面收窄）；自助改密随 SSO 批裁决。
+- **CLI**：`login --name NAME [--password]`（stdin 兜底）+ `users set-password [--password] USER_ID` + `users create --password`。**旗标前置铁律再现**：首个实现把 --password 放在位置参数后，Go flag 停析即咬（runbook 三次记档的第四次实录）。
+- **Console**：登录页 Password | API token 双形态；users 建号初始密码字段 + 行内设密面。
+- **真机锚**：00028 前滚干净；set-password 200 → login（founder/builtin-admin，secret 一次性返回）→ 会话 token 调 whoami（user=founder role=admin）全链绿；错密码 E_UNAUTHENTICATED。**注记：staging founder 账号已设密码 `c6-live-pw-1`（演练值）——console 密码登录可直接体验；正式使用前建议轮换**（Identity 页 users 行 password… 动作即改）。
+- 门禁：lint 0 + buf 绿 + cmd 全测绿（golden 双形态 + identity 密码三步场景）+ console:verify 零漂移 + vitest 41 绿。
+
+**路线图**：C1-C5 ✓ + C6 第一期 ✓。C6 第二期（SSO）与自助改密独立批；Backlog 余项（preview deployments、environments 轴）维持。
