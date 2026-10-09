@@ -20,6 +20,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Login（C6 密码会话第一期）：密码自证铸 Token——PUBLIC 位（先例 =
+         *     AcceptInvitation 的免 token 自证位）；无限速是多租户前诚实边界
+         *     （控制面 9080/9081 均 VPC-only）。
+         */
+        post: operations["UsersService_Login"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/invitations": {
         parameters: {
             query?: never;
@@ -196,6 +217,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/users/{user_id}/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * SetUserPassword 设置/重置密码（admin 面；自证走创建时初始密码或
+         *     admin 重置——自助改密随 SSO 批裁决）。
+         */
+        post: operations["UsersService_SetUserPassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/whoami": {
         parameters: {
             query?: never;
@@ -217,6 +258,9 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         TokensServiceRevokeTokenBody: Record<string, never>;
+        UsersServiceSetUserPasswordBody: {
+            password?: string;
+        };
         v1AcceptInvitationRequest: {
             /** 邀请 Token 明文（被邀请者持信物） */
             secret?: string;
@@ -287,6 +331,11 @@ export interface components {
             team_id?: string;
             /** Team 内授予的 Role */
             role_id?: string;
+            /**
+             * password 是可选初始密码（bcrypt 落库；空 = 未设密，密码登录诚实拒绝）。
+             *     C6 密码会话第一期。
+             */
+            password?: string;
         };
         v1CreateUserResponse: {
             user?: components["schemas"]["v1User"];
@@ -334,6 +383,22 @@ export interface components {
         v1ListUsersResponse: {
             users?: components["schemas"]["v1User"][];
         };
+        /**
+         * Login（C6 密码会话第一期）：密码自证铸常规 API Token（复用 tokens 面
+         *     执法/审计/吊销——不引入独立会话表；secret 只在本响应出现一次）。
+         */
+        v1LoginRequest: {
+            name?: string;
+            password?: string;
+        };
+        v1LoginResponse: {
+            token_id?: string;
+            secret?: string;
+            token_name?: string;
+            user_name?: string;
+            team_id?: string;
+            role_id?: string;
+        };
         v1RevokeTokenResponse: {
             token?: components["schemas"]["v1Token"];
         };
@@ -347,6 +412,7 @@ export interface components {
             scopes?: string[];
             created_at?: string;
         };
+        v1SetUserPasswordResponse: Record<string, never>;
         v1Team: {
             id?: string;
             name?: string;
@@ -421,6 +487,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1ListAuditResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    UsersService_Login: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["v1LoginRequest"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1LoginResponse"];
                 };
             };
             /** @description An unexpected error response. */
@@ -1016,6 +1115,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1DeleteUserResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    UsersService_SetUserPassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UsersServiceSetUserPasswordBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1SetUserPasswordResponse"];
                 };
             };
             /** @description An unexpected error response. */

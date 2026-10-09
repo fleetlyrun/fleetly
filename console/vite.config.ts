@@ -13,6 +13,18 @@ export default defineConfig({
     outDir: "../internal/console/dist",
     emptyOutDir: true,
     target: "es2022",
+    rollupOptions: {
+      output: {
+        // vendor 拆分（走查性能批）：react 全家桶变更频率远低于业务代码——
+        // 独立 chunk 吃满 immutable 缓存；xterm 随 Terminal 路由 lazy 自动
+        // 分包，不进首屏。
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return undefined;
+          if (id.includes("@xterm")) return "xterm";
+          return "vendor";
+        },
+      },
+    },
   },
   server: {
     proxy: {
