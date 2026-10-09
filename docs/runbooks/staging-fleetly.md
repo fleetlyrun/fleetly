@@ -575,3 +575,20 @@ F3.1/F3.2/F3.3/F3.6 四批走查的浏览器级挂账在后端在场的环境（
 **Console 端点真机核验**：users/teams/roles/invitations/platform-backups/alerts-rules/channels 全 200；新 dist 指纹 `index-CrCyrUsC.js` 在役。
 
 **路线图进度**：C1 ✓ C2 ✓；C3（git 源部署表单 + revisions diff + dokploy 导入 + runs 入口）、C4（nodes 页）、C5（DB verify/restore）待续；C6（凭证第二形态：密码会话 vs SSO）待裁决。
+
+## 2026-10-09 记录·十八（C3 部署深化批换装 f5ed740→81619b6-c3mig2：dokploy 导入真机演练 + 端口声明修复）
+
+**换装**（db9bc34-c2gov → f5ed740-c3mig → **81619b6-c3mig2（现役）**，二次换装带端口修复）：纯 console 批 + 一枚 CLI/平台伴生修复；Platform Backup `05a30b33`（c3mig 轮）+ 追加；零扰动（traefik task 持续保持 C1 时代不滚）；tw.dev 200。
+
+**C3 批内容（f5ed740 + 81619b6）**：
+- **dokploy 导入面（Apps 页 `Import dokploy…`）**：解析器 TS 移植（`internal/spec/dokploy.go` 叶子拷贝，fail-closed 语义同构），**parity 由 CLI golden 同款夹具钉死**（skip 文本逐位对齐——迁移钩子的诚实契约）；编排与 CLI create-from-dokploy 同序（project/db/app create-or-reuse → deploy → routes host 复用），计划预览→步报告→数据不搬移注记。
+- **revisions diff 视图**（DeploymentDetail 卡片）：任意两代 R..Rn 字段级差异；真机锚 = 两个现役 App 的 diff 面（probe app R1→R2 三条/process 级差异、messaging app R10→R11 21 条 healthcheck 差异）。
+- **路线图收口注记**：git 源部署 = C2 hook 面板承载（push 触发即 git 部署路径，CLI deploy 本就无 git 旗标）；Routes TLS 列与 runs 入口盘点为已有覆盖。
+
+**真机导入演练咬出的修复（81619b6，console+CLI 同批）**：
+- **image 直投缺端口声明**：首演 deployment succeeded 而路由 404——journal 三连 `route publish: backend unresolved (no endpoint for process "web" port 80)`。根因 = dokploy 编排（CLI 与 console 同病）把 domain 的 port 传给 route 却没传给 DeployRequest.port（字段在场；quickstart 直投同款教训再现）。修复 = image 路径取首条 route 的 port 作端口声明（compose 路径自带声明不适用）。**修复后重演全链绿**：deployment observing→succeeded、route HTTPS 200 "Welcome to nginx" 四连。
+- **项目删除→同名重建的秒级竞速（记档未修，平台挂账）**：同名项目删除后立即重建并部署（drill 脚本同秒连发），新项目 default 网络的 create 与部署侧 ensure 撞 AlreadyExists——deployment 一次性诚实失败（`swarm ensure network … already exists`），网络在位后重部署即收敛。正常人间节奏（项目创建与部署间隔秒级以上）不触发；竞速窗根修（ensure 侧 AlreadyExists 容忍/串行化）挂后续平台批。
+
+**门禁**：console:verify 零漂移 + vitest 40 绿（+3 dokploy parity 锚）+ Go dokploy golden 双形态绿。演练痕迹全清（migprobe 项目×2 级联删除）。
+
+**路线图进度**：C1 ✓ C2 ✓ C3 ✓；C4（nodes 页）、C5（DB verify/restore 面）待续；C6（凭证第二形态：密码会话 vs SSO）待裁决。
