@@ -78,6 +78,9 @@ var EnforcedMethods = map[string]bool{
 	"/fleetly.delivery.v1.HooksService/ReceiveWebhook": true,
 	// change freeze 落行是创建型动词（Set 前缀；ADR-0017 附录 A.3）。
 	"/fleetly.system.v1.GovernanceService/SetChangeFreeze": true,
+	// 密码设置/重置是设值动词（Set 前缀；C6）——同 key 重放返回首次结果，
+	// 不重复下发新密码（与 SetGitHook 同款先例）。
+	"/fleetly.identity.v1.UsersService/SetUserPassword": true,
 	// Backup 触发族进 idem 面（ADR-0039 决策 10；动词不在创建型前缀集，
 	// 显式纳入——DeclareNetworkPeer 同款先例）：platform 面随 F2.3 落地，
 	// databases 面随批补录（决策 10 承诺的兑现注）。

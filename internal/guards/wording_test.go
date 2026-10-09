@@ -311,9 +311,13 @@ var wordingExemptions = map[string]map[string]string{
 	},
 	// addon（Database 词条 _Avoid_）：xterm 库 API 标识符（@xterm/addon-fit
 	// 包名 / FitAddon 类 / loadAddon 方法）不可更名——终端页（F3.2，ADR-
-	// 0049）的库依赖面，非平台 Database 同义词。
+	// 0049）的库依赖面，非平台 Database 同义词。shadcn 官方 registry 组件
+	// （radix-nova，ADR-0057）的 addon 是 UI 库 API 命名（Input Addon 附属
+	// 位），CLI 生成物、再装即漂移——非平台 Database 同义词。
 	"addon": {
-		"console/src/pages/Terminal.tsx": "xterm library API identifiers (@xterm/addon-fit, FitAddon, loadAddon) cannot be renamed; not platform database naming (ADR-0049 terminal page)",
+		"console/src/routes/_shell/terminal.tsx":    "xterm library API identifiers (@xterm/addon-fit, FitAddon, loadAddon) cannot be renamed; not platform database naming (ADR-0049 terminal page)",
+		"console/src/components/ui/command.tsx":     "shadcn registry component API naming (addon slot); generated file, not platform database naming (ADR-0057)",
+		"console/src/components/ui/input-group.tsx": "shadcn registry component API naming (Input Addon); generated file, not platform database naming (ADR-0057)",
 	},
 	// ingress（Proxy 词条 _Avoid_）：k8s NetworkPolicy API 的入站方向字段/
 	// 枚举/类型名（Spec.Ingress、PolicyTypeIngress、NetworkPolicyIngressRule）

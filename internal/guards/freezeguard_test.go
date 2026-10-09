@@ -33,9 +33,12 @@ var freezeExemptions = map[string]string{
 	"/fleetly.runtime.v1.ExecService/CreateExecSession": "diagnostics face: an exec session mutates no resource state (ADR-0049); a freeze window is exactly when diagnosis is needed",
 	"/fleetly.runtime.v1.ExecService/StreamExecSession": "diagnostics face: an exec session mutates no resource state (ADR-0049); a freeze window is exactly when diagnosis is needed",
 	// identity 全部变更：账号/Token 管理不属变更控制，且冻结解除依赖这些
-	// 面可用（冻结不得把自己锁在门外）。
+	// 面可用（冻结不得把自己锁在门外）。Login 是认证面（铸 Token 无资源
+	// 迁移；冻结不得锁死账号）——动词不在读前缀集，豁免登记。
 	"/fleetly.identity.v1.UsersService/CreateUser":             "identity management is outside change control; lifting a freeze depends on it",
 	"/fleetly.identity.v1.UsersService/DeleteUser":             "identity management is outside change control",
+	"/fleetly.identity.v1.UsersService/Login":                  "authentication face: login mints a token and mutates no resource state (C6); a freeze must not lock accounts out",
+	"/fleetly.identity.v1.UsersService/SetUserPassword":        "identity management is outside change control",
 	"/fleetly.identity.v1.TeamsService/CreateTeam":             "identity management is outside change control",
 	"/fleetly.identity.v1.TeamsService/DeleteTeam":             "identity management is outside change control",
 	"/fleetly.identity.v1.RolesService/CreateRole":             "identity management is outside change control",
