@@ -638,3 +638,15 @@ F3.1/F3.2/F3.3/F3.6 四批走查的浏览器级挂账在后端在场的环境（
 - **F1/F2（当轮修）**：备份 Size toFixed(2)；指标图例中段截断保 task id 尾段。
 - **活体锚**：密码登录全链（截图在案）/指标图表多序列（torchwood CPU）/备份 verify（digest 与记录·十九同值）/Events SSE（following+200 行）/relay 版本随换装实时回显。
 - 走查环境事实：19527 隧道易逝（重走查先重建）；IAB locator click 偶发超时但动作实际生效（重读状态，勿盲目重试）。
+
+## 2026-10-09 记录·二十三（Console 产物代码分割：首屏 183→86 KB gzip，9c1fe3d-split 现役）
+
+**换装**（09083ea-walk → **9c1fe3d-split（现役）**，console-only + fleetlyd 重嵌 dist）：用户报"单 js 文件太大加载慢"（单 chunk 680 KB min / 183.7 gzip，Vite 早已警告）。
+
+**修法**：App.tsx 全页面 React.lazy + Suspense（hash 路由零改动；LoginPage 静态进口——首屏态懒加载无收益）；manualChunks 函数式（node_modules 全量 → vendor；`@xterm` 单拆）。
+
+**产物形态**：入口 index 21.9 KB（6.6 gzip）+ vendor 257 KB（79.8 gzip，react 全家桶——跨版本 immutable 缓存，后续发版只拉业务 chunk）+ 业务路由 chunk 2-7 KB/页按需 + xterm 290 KB（72 gzip）仅终端页按需。**首屏 183.7 → ~86 KB gzip（-53%）**；xlsx/xterm 的解析成本只在真正进入终端页时支付。
+
+**浏览器复验**：reload → Nodes 路由懒加载渲染正常；终端页懒加载链（路由 chunk → xterm chunk）按需拉取全通、无控制台报错。门禁：console:verify 零漂移（注：verify 首跑曾报 dist 漂移——pnpm install 后 hash 不稳定的一次性形态，重建即齐）+ vitest 42 绿。
+
+**教训**：console:verify 的漂移断言对"构建非确定性"敏感（同输入偶发异 hash）——复现为零 diff 即非产物问题；若再现按构建环境差异排查。
