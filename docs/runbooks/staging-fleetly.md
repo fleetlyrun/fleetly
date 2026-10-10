@@ -494,6 +494,7 @@ ADR-0015 升级序的完整落地形态：**Platform Backup 前置 → SIGTERM �
 - **换装**（1e47eba-align4 → **263ff5f-align5（现役）**，五 commit + dist）：零迁移零键面；前置 Platform Backup `20e2183e`；doctor 0 failed；新 dist `index-vVBbFCTo.js` 上架；tw.dev 200；22 Running 基线一致。tsc/vitest 92（+4 新锚：分页切片/钳制/空列表/工具栏槽）。
 - **观察遗留**：侧栏项目切换器悬浮遮住 nav 首项（Overview 半遮，滚动位形态，既有）；Apps DataTable 表头混排 vs 旧表大写两代并存（批 6）。
 - **残留闭合（同日 5ac2100-align5b）**：Audit 卡外独立过滤表单收编入卡内工具栏——上批"既有设计豁免"不成立（规范无豁免页）。Server 端四过滤器入 ListToolbar children 槽（aria-label 化），Filter 钮入 actions 槽（form 包裹回车同效），主输入改页内快筛、计数随之有义；换装前置备份 `374fd95c`，doctor 0 failed。
+- **tab 化复裁（同日 520b3c3-align5c，用户裁决：一页多模块用 tab 组织、参照 App Detail）**：新共享件 PageTabs（域层下划线式——页头下 border-b 一行 + active 紫下边框，泛型 T 让 onChange 回传收窄 value 免 cast；App Detail 本体是路由式锚点不经此件）。八页统一：Variables 三模块 tab 化（Secrets/Configs/Shared variables）、Storage 换 PageTabs+URL param（修 defaultValue 深链无效）、Tasks/Identity 换 PageTabs、Alerts tab 出卡上移页头、Backups 双 tab（Databases/Snapshots，healthy 计数并入页头描述）、Networks 双 tab（Networks/Peers，PeersPanel 自拆）、Registry 双 tab（Apps/Image catalog，RegistryCatalog 去 section 化）。全部 URL param 深链（zod validateSearch）。换装前置备份 `9eacf1a8`。
 
 ## 教训与边界
 
