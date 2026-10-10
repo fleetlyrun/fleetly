@@ -2,10 +2,8 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiError, apiFetch, apiSend } from "@/api/client";
 import type { components } from "@/api/structure";
-import { Link, useNavigate } from "@tanstack/react-router";
-import { FileJsonIcon, PlusIcon } from "lucide-react";
+import { SlidersIcon, TrashIcon } from "lucide-react";
 import { toast } from "sonner";
-import { EmptyState } from "@/components/domain/empty-state";
 import { CopyButton } from "@/components/domain/copy-button";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -13,33 +11,31 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 type AppSpec = components["schemas"]["v1AppSpec"];
-type ProcessSpec = NonNullable<AppSpec["processes"]>[number];
 
-// per-process 暂存面（IA v3 §4.1 Variables = 高频编辑面）：env 与
-// secret_refs 的对话框暂存——Deploy changes = 冻结 Spec 全量 + 暂存改动组装
-// spec_file 走 Deploy（第四源自 F3.5 起即全部 AppSpec 字段的 API 写面，
-// 零新契约）。hasStagedEdits 以"与冻结 Spec 有差异"判定（同值编辑不算）。
+// per-process 暂存面（IA v3 §4.1 + 原型 screen-appdetail Variables 对齐）：
+// env 与 secret refs 单平面表（VALUE 列内 secret · ref 名 + secret ref
+// 徽标），多 process 用表内分组行承载；对话框暂存，Apply = 冻结 Spec 全量
+// + 暂存改动组装 spec_file 走 Deploy（第四源，零 proto）。脏态表达 =
+// Apply changes 由禁用变可用（原型口径，不另设 staged 描边）。
 interface ProcessEdits {
   env: Record<string, string>;
   secretRefs: string[];
 }
 
-// App Variables tab（IA v3 二期②点亮 + ⑤b 暂存式编辑流）：冻结 Spec 读面
-// + per-process env / secret_refs 表格化暂存编辑（Add/Edit/Remove 走对话
-// 框，Deploy changes 工具栏右侧、有暂存差异才启用，提交 = 新部署滚动替换）。
-// secret 值不进 Spec（引用即锚），Reveal once 语义在 Project Configuration。
 export function AppVariablesTab({ projectId, appId }: { projectId: string; appId: string }) {
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [staged, setStaged] = useState<Record<string, ProcessEdits>>({});
+  const [editTarget, setEditTarget] = useState<{ process: string; name: string } | null>(null);
+  const [addTarget, setAddTarget] = useState<string | null>(null);
+  const [refTarget, setRefTarget] = useState<string | null>(null);
   const spec = useQuery({
     queryKey: ["resources", "app-spec", projectId, appId],
-    queryFn: async (): Promise<AppSpec | undefined> => {
+    queryFn: async (): Promise<AppSpec | null> => {
       try {
         const res = await apiFetch<{ spec?: AppSpec }>(`/v1/apps/${encodeURIComponent(appId)}/spec`);
-        return res?.spec;
+        return res?.spec ?? null;
       } catch (error) {
-        if (error instanceof ApiError && error.status === 404) return undefined;
+        if (error instanceof ApiError && error.status === 404) return null; // 未部署 = 无冻结 Spec（空态面，W-3）
         throw error;
       }
     },
@@ -47,12 +43,13 @@ export function AppVariablesTab({ projectId, appId }: { projectId: string; appId
   });
 
   const frozen = spec.data;
+  const processes = frozen?.processes ?? [];
   const frozenProcess = (name: string): ProcessEdits => {
-    const process = frozen?.processes?.find((entry) => entry.name === name);
+    const process = processes.find((entry) => entry.name === name);
     return { env: { ...(process?.env ?? {}) }, secretRefs: [...(process?.secret_refs ?? [])] };
   };
   // hasStagedEdits：任一暂存面与其冻结基线有实际差异（同值编辑不算）——
-  // 工具栏 Deploy changes 的启用门。
+  // Apply changes 的启用门（原型口径：按钮由禁用变可用即脏态表达）。
   const hasStagedEdits =
     frozen != null &&
     Object.entries(staged).some(([name, edits]) => {
@@ -63,16 +60,12 @@ export function AppVariablesTab({ projectId, appId }: { projectId: string; appId
   const deploy = useMutation({
     mutationFn: async () => {
       if (frozen == null) throw new Error("no frozen spec");
-      const processes = (frozen.processes ?? []).map((process): ProcessSpec => {
+      const editedProcesses = processes.map((process) => {
         const edits = staged[process.name ?? ""];
         if (edits == null) return process;
-        return {
-          ...process,
-          env: edits.env,
-          secret_refs: edits.secretRefs,
-        };
+        return { ...process, env: edits.env, secret_refs: edits.secretRefs };
       });
-      const edited: AppSpec = { ...frozen, processes };
+      const edited: AppSpec = { ...frozen, processes: editedProcesses };
       return apiSend<{ deployment?: { id?: string } }>("/v1/deployments", "POST", {
         app_id: appId,
         spec_file: JSON.stringify(edited),
@@ -83,12 +76,7 @@ export function AppVariablesTab({ projectId, appId }: { projectId: string; appId
       void queryClient.invalidateQueries({ queryKey: ["resources", "app-spec", projectId, appId] });
       toast("Variables staged as a new deployment");
       const id = resp?.deployment?.id;
-      if (id) {
-        void navigate({
-          to: "/p/$projectId/apps/$appId/deployments/$deploymentId",
-          params: { projectId, appId, deploymentId: id },
-        });
-      }
+      if (id) window.location.assign(`../deployments/${encodeURIComponent(id)}`);
     },
     onError: (cause) => toast.error(cause instanceof Error ? cause.message : String(cause)),
   });
@@ -100,26 +88,33 @@ export function AppVariablesTab({ projectId, appId }: { projectId: string; appId
     return <p className="py-10 text-center text-xs text-destructive">{spec.error instanceof Error ? spec.error.message : String(spec.error)}</p>;
   }
   if (frozen == null) {
+    // W-3：未部署（404）= 空态面，不渲染查询内部错误。
     return (
-      <EmptyState
-        icon={FileJsonIcon}
-        title="No frozen spec yet"
-        description="The app has no deployment — its spec freezes on the first deploy. Environment can be provided at deploy time."
-        actionLabel="Deploy now"
-        onAction={() => window.location.assign(`/p/${encodeURIComponent(projectId)}/apps/${encodeURIComponent(appId)}?deploy=1`)}
-      />
+      <div className="rounded-xl border bg-card p-6 text-center">
+        <h3 className="text-[13px] font-semibold">No frozen spec yet</h3>
+        <p className="mt-1 text-xs text-muted-foreground">
+          The app has no deployment — its spec freezes on the first deploy. Environment can be provided at deploy time.
+        </p>
+        <Button size="sm" className="mt-3" onClick={() => window.location.assign("?deploy=1")}>
+          Deploy now
+        </Button>
+      </div>
     );
   }
+
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-end gap-2">
-        <span className="mr-auto text-[11.5px] text-muted-foreground">
-          Edits stage locally — submitting creates a new deployment (rolling replace).
-        </span>
+    <div className="rounded-xl border bg-card">
+      <div className="flex flex-wrap items-center gap-2 border-b px-4 py-3">
+        <p className="mr-auto text-xs text-muted-foreground">
+          Runtime environment for all processes · secret sources managed in project{" "}
+          <a href={`/p/${encodeURIComponent(projectId)}/configuration`} className="text-info underline-offset-2 hover:underline">
+            Variables
+          </a>
+        </p>
         {hasStagedEdits ? (
           <Button
             size="sm"
-            variant="outline"
+            variant="ghost"
             onClick={() => {
               setStaged({});
               toast("Staged edits discarded");
@@ -128,179 +123,189 @@ export function AppVariablesTab({ projectId, appId }: { projectId: string; appId
             Discard
           </Button>
         ) : null}
+        <Button size="sm" variant="outline" onClick={() => setAddTarget(processes[0]?.name ?? "web")}>
+          + Add variable
+        </Button>
         <Button size="sm" disabled={!hasStagedEdits || deploy.isPending} onClick={() => deploy.mutate()}>
-          {deploy.isPending ? "Deploying…" : "Deploy changes"}
+          {deploy.isPending ? "Deploying…" : "Apply changes"}
         </Button>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        {(frozen.processes ?? []).map((process) => (
-          <ProcessVariablesCard
-            key={process.name}
-            projectId={projectId}
-            process={process}
-            edits={staged[process.name ?? ""] ?? frozenProcess(process.name ?? "")}
-            staged={staged[process.name ?? ""] != null}
-            onStage={(edits) => setStaged((prev) => ({ ...prev, [process.name ?? ""]: edits }))}
-          />
-        ))}
-      </div>
+      {processes.length === 0 ? (
+        <p className="px-4 py-6 text-center text-xs text-muted-foreground">The frozen spec carries no processes.</p>
+      ) : (
+        <table className="w-full text-xs">
+          <thead className="border-b bg-muted/40 text-left text-[10.5px] font-semibold tracking-wide text-muted-foreground uppercase">
+            <tr>
+              <th className="px-4 py-2">Name</th>
+              <th className="px-4 py-2">Value</th>
+              <th className="px-4 py-2" />
+            </tr>
+          </thead>
+          <tbody>
+            {processes.map((process) => {
+              const name = process.name ?? "";
+              const edits = staged[name] ?? frozenProcess(name);
+              const envNames = Object.keys(edits.env).sort();
+              const stagedHere = staged[name] != null;
+              const showProcessRow = processes.length > 1;
+              const rows: React.ReactNode[] = [];
+              if (showProcessRow) {
+                rows.push(
+                  <tr key={`${name}-group`} className="border-b bg-muted/20">
+                    <td colSpan={3} className="px-4 py-1.5 text-[10.5px] font-semibold tracking-wide text-muted-foreground uppercase">
+                      process {name} ×{process.replicas ?? 1}
+                      {stagedHere ? <span className="ml-2 text-info normal-case">staged edits</span> : null}
+                    </td>
+                  </tr>,
+                );
+              }
+              if (envNames.length === 0 && edits.secretRefs.length === 0) {
+                rows.push(
+                  <tr key={`${name}-empty`} className="border-b last:border-b-0">
+                    <td colSpan={3} className="px-4 py-3 text-center text-muted-foreground">
+                      No variables.
+                    </td>
+                  </tr>,
+                );
+                return rows;
+              }
+              for (const envName of envNames) {
+                rows.push(
+                  <tr key={`${name}-${envName}`} className="border-b last:border-b-0">
+                    <td className="px-4 py-2.5 font-mono font-semibold">{envName}</td>
+                    <td className="px-4 py-2.5 font-mono text-muted-foreground">{edits.env[envName]}</td>
+                    <td className="whitespace-nowrap px-4 py-2.5 text-right">
+                      <IconAction label="Edit variable" onClick={() => setEditTarget({ process: name, name: envName })}>
+                        <SlidersIcon className="size-3.5" />
+                      </IconAction>
+                      <IconAction
+                        label="Remove variable"
+                        danger
+                        onClick={() => {
+                          const next = { ...edits.env };
+                          delete next[envName];
+                          setStaged((prev) => ({ ...prev, [name]: { ...edits, env: next } }));
+                        }}
+                      >
+                        <TrashIcon className="size-3.5" />
+                      </IconAction>
+                    </td>
+                  </tr>,
+                );
+              }
+              for (const ref of edits.secretRefs) {
+                rows.push(
+                  <tr key={`${name}-ref-${ref}`} className="border-b last:border-b-0">
+                    <td className="px-4 py-2.5 font-mono font-semibold">{ref}</td>
+                    <td className="px-4 py-2.5">
+                      <span className="flex flex-wrap items-center gap-1.5 font-mono">
+                        <span className="text-muted-foreground">secret ·</span>
+                        <a
+                          href={`/p/${encodeURIComponent(projectId)}/configuration`}
+                          className="text-info underline-offset-2 hover:underline"
+                        >
+                          {ref}
+                        </a>
+                        <span className="rounded-full border border-info/30 bg-info/10 px-1.5 py-0.5 text-[10px] font-semibold text-info">
+                          secret ref
+                        </span>
+                      </span>
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-2.5 text-right">
+                      <CopyButton value={ref} />
+                      <IconAction
+                        label="Remove secret ref"
+                        danger
+                        onClick={() =>
+                          setStaged((prev) => ({
+                            ...prev,
+                            [name]: { ...edits, secretRefs: edits.secretRefs.filter((entry) => entry !== ref) },
+                          }))
+                        }
+                      >
+                        <TrashIcon className="size-3.5" />
+                      </IconAction>
+                    </td>
+                  </tr>,
+                );
+              }
+              return rows;
+            })}
+          </tbody>
+        </table>
+      )}
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <SourceCard spec={frozen} />
-        <BuildCard spec={frozen} />
-      </div>
-
-      <p className="text-[11.5px] text-muted-foreground">
-        Values of secrets never enter the spec; only named references. Submitting re-deploys the frozen spec with your staged
-        variables — source and build stay untouched.
-      </p>
-    </div>
-  );
-}
-
-function ProcessVariablesCard({
-  projectId,
-  process,
-  edits,
-  staged,
-  onStage,
-}: {
-  projectId: string;
-  process: ProcessSpec;
-  edits: ProcessEdits;
-  staged: boolean;
-  onStage: (edits: ProcessEdits) => void;
-}) {
-  const [editName, setEditName] = useState<string | null>(null);
-  const [addRefOpen, setAddRefOpen] = useState(false);
-  const name = process.name ?? "";
-  return (
-    <section className={`rounded-xl border bg-card p-4 ${staged ? "border-info/40" : ""}`}>
-      <div className="mb-3 flex items-baseline justify-between">
-        <h3 className="text-[13px] font-semibold">
-          process <span className="font-mono">{name}</span>
-          {staged ? <span className="ml-2 rounded-full border border-info/30 bg-info/10 px-2 py-0.5 text-[10.5px] font-semibold text-info">staged</span> : null}
-        </h3>
-        <div className="flex items-center gap-2">
-          <span className="text-[11.5px] text-muted-foreground">×{process.replicas ?? 1}</span>
-          <Button size="sm" variant="outline" onClick={() => setEditName("")}>
-            <PlusIcon data-icon-start-inline />
-            Add variable
-          </Button>
-        </div>
-      </div>
-      <EnvTable
-        env={edits.env}
-        onEdit={(key) => setEditName(key)}
-        onRemove={(key) => {
-          const next = { ...edits.env };
-          delete next[key];
-          onStage({ ...edits, env: next });
+      {/* Add/Edit 变量对话框（keyed remount——重开不残留） */}
+      <VariableDialog
+        key={editTarget == null ? "closed" : `edit-${editTarget.process}-${editTarget.name}`}
+        open={editTarget != null}
+        initialName={editTarget?.name ?? ""}
+        initialValue={
+          editTarget ? (staged[editTarget.process] ?? frozenProcess(editTarget.process)).env[editTarget.name] ?? "" : ""
+        }
+        onClose={() => setEditTarget(null)}
+        onSubmit={(key, value) => {
+          if (editTarget == null) return;
+          const base = staged[editTarget.process] ?? frozenProcess(editTarget.process);
+          const next = { ...base.env, [key]: value };
+          setStaged((prev) => ({ ...prev, [editTarget.process]: { ...base, env: next } }));
+          setEditTarget(null);
         }}
       />
-      <div className="mt-3 flex flex-col gap-1.5 text-xs">
-        <div className="flex items-center justify-between">
-          <span className="text-muted-foreground">secret refs</span>
-          <Button size="sm" variant="ghost" onClick={() => setAddRefOpen(true)}>
-            <PlusIcon data-icon-start-inline />
-            Add ref
-          </Button>
-        </div>
-        {edits.secretRefs.length === 0 ? (
-          <span className="text-muted-foreground">—</span>
-        ) : (
-          <span className="flex flex-wrap gap-1.5">
-            {edits.secretRefs.map((ref) => (
-              <span key={ref} className="flex items-center gap-1 rounded-full border border-info/30 bg-info/10 px-2 py-0.5 font-mono text-[11px] text-info">
-                <Link to="/p/$projectId/configuration" params={{ projectId }}>
-                  {ref}
-                </Link>
-                <button
-                  type="button"
-                  aria-label={`Remove ${ref}`}
-                  className="text-info/70 hover:text-destructive"
-                  onClick={() => onStage({ ...edits, secretRefs: edits.secretRefs.filter((entry) => entry !== ref) })}
-                >
-                  ×
-                </button>
-              </span>
-            ))}
-          </span>
-        )}
-      </div>
-
       <VariableDialog
-        key={editName == null ? "closed" : `var-${editName}`}
-        open={editName != null}
-        initialName={editName ?? ""}
-        initialValue={editName ? (edits.env[editName] ?? "") : ""}
-        onClose={() => setEditName(null)}
+        key={addTarget == null ? "add-closed" : `add-${addTarget}`}
+        open={addTarget != null}
+        initialName=""
+        initialValue=""
+        onClose={() => setAddTarget(null)}
         onSubmit={(key, value) => {
-          onStage({ ...edits, env: { ...edits.env, [key]: value } });
-          setEditName(null);
+          if (addTarget == null) return;
+          const base = staged[addTarget] ?? frozenProcess(addTarget);
+          setStaged((prev) => ({ ...prev, [addTarget]: { ...base, env: { ...base.env, [key]: value } } }));
+          setAddTarget(null);
         }}
       />
       <RefDialog
-        key={addRefOpen ? "ref-open" : "ref-closed"}
-        open={addRefOpen}
-        existing={edits.secretRefs}
-        onClose={() => setAddRefOpen(false)}
+        key={refTarget == null ? "ref-closed" : "ref-open"}
+        open={refTarget != null}
+        processName={refTarget ?? processes[0]?.name ?? "web"}
+        existing={refTarget != null ? (staged[refTarget] ?? frozenProcess(refTarget)).secretRefs : []}
+        onClose={() => setRefTarget(null)}
         onSubmit={(ref) => {
-          onStage({ ...edits, secretRefs: [...edits.secretRefs, ref] });
-          setAddRefOpen(false);
+          if (refTarget == null) return;
+          const base = staged[refTarget] ?? frozenProcess(refTarget);
+          setStaged((prev) => ({ ...prev, [refTarget]: { ...base, secretRefs: [...base.secretRefs, ref] } }));
+          setRefTarget(null);
         }}
       />
-    </section>
-  );
-}
-
-function EnvTable({ env, onEdit, onRemove }: { env: Record<string, string>; onEdit: (name: string) => void; onRemove: (name: string) => void }) {
-  const names = Object.keys(env).sort();
-  return (
-    <div className="overflow-hidden rounded-lg border">
-      <table className="w-full text-xs">
-        <thead className="border-b bg-muted/40 text-left text-[10.5px] font-semibold tracking-wide text-muted-foreground uppercase">
-          <tr>
-            <th className="px-2.5 py-1.5">Variable</th>
-            <th className="px-2.5 py-1.5">Value</th>
-            <th className="px-2.5 py-1.5" />
-          </tr>
-        </thead>
-        <tbody>
-          {names.length === 0 ? (
-            <tr>
-              <td colSpan={3} className="px-2.5 py-3 text-center text-muted-foreground">
-                No plain env vars.
-              </td>
-            </tr>
-          ) : (
-            names.map((name) => (
-              <tr key={name} className="border-b last:border-b-0">
-                <td className="px-2.5 py-1.5 font-mono font-semibold">{name}</td>
-                <td className="px-2.5 py-1.5 font-mono text-muted-foreground">{env[name]}</td>
-                <td className="px-2.5 py-1.5 text-right whitespace-nowrap">
-                  <CopyButton value={env[name]} />
-                  <RowAction label="Edit" onClick={() => onEdit(name)} />
-                  <RowAction label="Remove" danger onClick={() => onRemove(name)} />
-                </td>
-              </tr>
-            ))
-          )}
-        </tbody>
-      </table>
     </div>
   );
 }
 
-function RowAction({ label, danger, onClick }: { label: string; danger?: boolean; onClick: () => void }) {
+// IconAction 是行内图标动作钮（原型 rowactions 形态；danger 语义红）。
+function IconAction({
+  label,
+  danger,
+  onClick,
+  children,
+}: {
+  label: string;
+  danger?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
   return (
     <button
       type="button"
-      className={`ml-1.5 text-[11px] underline-offset-2 hover:underline ${danger ? "text-destructive" : "text-info"}`}
+      aria-label={label}
+      title={label}
+      className={`ml-1.5 inline-flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted ${
+        danger ? "hover:text-destructive" : "hover:text-foreground"
+      }`}
       onClick={onClick}
     >
-      {label}
+      {children}
     </button>
   );
 }
@@ -338,12 +343,14 @@ function VariableDialog({
             onSubmit(name.trim(), value);
           }}
         >
-          <Field label="Name">
+          <Label className="flex flex-col gap-1.5">
+            <span className="text-xs font-semibold">Name</span>
             <Input value={name} onChange={(event) => setName(event.target.value)} readOnly={initialName !== ""} autoFocus={initialName === ""} />
-          </Field>
-          <Field label="Value">
+          </Label>
+          <Label className="flex flex-col gap-1.5">
+            <span className="text-xs font-semibold">Value</span>
             <Input value={value} onChange={(event) => setValue(event.target.value)} autoFocus={initialName !== ""} />
-          </Field>
+          </Label>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>
               Cancel
@@ -358,13 +365,16 @@ function VariableDialog({
   );
 }
 
+// RefDialog 是 secret ref 新增面（重复 ref 拒绝；值面在 secret 本体）。
 function RefDialog({
   open,
+  processName,
   existing,
   onClose,
   onSubmit,
 }: {
   open: boolean;
+  processName: string;
   existing: string[];
   onClose: () => void;
   onSubmit: (ref: string) => void;
@@ -386,9 +396,14 @@ function RefDialog({
             setRef("");
           }}
         >
-          <Field label="Secret name" hint="reference form — e.g. database:main or a plain project secret name; values live in the secret itself">
+          <Label className="flex flex-col gap-1.5">
+            <span className="text-xs font-semibold">Secret name</span>
             <Input value={ref} onChange={(event) => setRef(event.target.value)} autoFocus />
-          </Field>
+            <span className="text-[11px] font-normal text-muted-foreground">
+              Reference form (e.g. database:orders) — the value lives in the project secret, never in the spec. Lands on process{" "}
+              {processName}.
+            </span>
+          </Label>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>
               Cancel
@@ -400,53 +415,5 @@ function RefDialog({
         </form>
       </DialogContent>
     </Dialog>
-  );
-}
-
-function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
-  return (
-    <Label className="flex flex-col gap-1.5">
-      <span className="text-xs font-semibold">{label}</span>
-      {children}
-      {hint ? <span className="text-[11px] font-normal text-muted-foreground">{hint}</span> : null}
-    </Label>
-  );
-}
-
-function SourceCard({ spec }: { spec: AppSpec }) {
-  const source = spec.source;
-  const kind = source?.git ? "git" : source?.image ? "image" : source?.upload ? "upload" : "—";
-  const detail = source?.git ? `${source.git.repo} @ ${source.git.ref ?? "-"}` : source?.image?.ref ?? (source?.upload?.id ? `upload ${source.upload.id}` : "—");
-  return (
-    <section className="rounded-xl border bg-card p-4">
-      <h3 className="mb-3 text-[13px] font-semibold">Source</h3>
-      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
-        <dt className="text-muted-foreground">kind</dt>
-        <dd className="font-mono">{kind}</dd>
-        <dt className="text-muted-foreground">origin</dt>
-        <dd className="break-all font-mono">{detail}</dd>
-      </dl>
-    </section>
-  );
-}
-
-function BuildCard({ spec }: { spec: AppSpec }) {
-  const build = spec.build;
-  return (
-    <section className="rounded-xl border bg-card p-4">
-      <h3 className="mb-3 text-[13px] font-semibold">Build</h3>
-      {build == null ? (
-        <p className="text-xs text-muted-foreground">No build — image-deployed app.</p>
-      ) : (
-        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
-          <dt className="text-muted-foreground">builder</dt>
-          <dd className="font-mono">{build.builder ?? "—"}</dd>
-          <dt className="text-muted-foreground">dockerfile</dt>
-          <dd className="font-mono">{build.dockerfile || "—"}</dd>
-          <dt className="text-muted-foreground">cache from</dt>
-          <dd className="font-mono">{build.cache_from?.length ? build.cache_from.join(", ") : "—"}</dd>
-        </dl>
-      )}
-    </section>
   );
 }

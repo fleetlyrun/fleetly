@@ -1,4 +1,4 @@
-import { ActivityIcon, GlobeIcon, HardDriveIcon, LayersIcon, ScrollTextIcon } from "lucide-react";
+import { ActivityIcon, GlobeIcon, LayersIcon, ScrollTextIcon } from "lucide-react";
 import {
   DISK_WATERMARK_QUERY,
   METRICS_FRESHNESS_QUERY,
@@ -21,7 +21,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { useMetricsSeries, useNodes } from "@/lib/catalog";
+import { useMetricsSeries } from "@/lib/catalog";
 import { PageHeader } from "@/components/domain/page-header";
 import { StatusBadge, type StatusTone } from "@/components/domain/status-badge";
 import { Button } from "@/components/ui/button";
@@ -70,6 +70,8 @@ const MANAGED_PROVIDERS: ManagedProviderCard[] = [
 
 export function ManagedProvidersView() {
   const status = useSystemStatus();
+  const diskSeries = useMetricsSeries(DISK_WATERMARK_QUERY, "30m");
+  const diskUsage = formatWatermark(lastPointValue(diskSeries.data));
   const degraded = status.data?.state === "STATUS_STATE_DEGRADED";
   return (
     <div className="mx-auto max-w-7xl px-6 py-8">
@@ -89,11 +91,11 @@ export function ManagedProvidersView() {
             key={provider.key}
             provider={provider}
             health={componentHealth(status.data?.components, provider.key)}
+            diskUsage={diskUsage}
             onRestarted={() => void status.refetch()}
           />
         ))}
       </div>
-      <NodeDiskWatermark />
       <p className="mt-4 text-[11.5px] text-muted-foreground">
         cAdvisor runs per node for container metrics. Health is probed per provider (2s budget; timeout counts as unhealthy) and
         aggregated into the platform state. Endpoints are config-defined (config file is the single source) and not exposed over
@@ -105,64 +107,15 @@ export function ManagedProvidersView() {
 
 // NodeDiskWatermark 节点磁盘水位（IA v3 二期⑤b，§5.2 "吃得下吗"层）：
 // cadvisor fs 指标（usage/limit 比值，最满文件系统口径）逐节点一行。
-function NodeDiskWatermark() {
-  const series = useMetricsSeries(DISK_WATERMARK_QUERY, "30m");
-  const nodes = useNodes();
-  const nodeName = (id: string) => nodes.data?.find((node) => node.platform_id === id)?.hostname ?? `${id.slice(0, 10)}…`;
-  const rows = (series.data ?? []).map((entry) => {
-    const ratio = lastPointValue([entry]);
-    return { node: entry.labels?.node ?? "", watermark: formatWatermark(ratio) };
-  });
-  const toneClass: Record<StatusTone, string> = {
-    success: "text-emerald-600 dark:text-emerald-400",
-    warning: "text-amber-600 dark:text-amber-400",
-    danger: "text-destructive",
-    info: "text-info",
-    neutral: "text-muted-foreground",
-  };
-  return (
-    <section className="mt-6">
-      <h2 className="mb-2 flex items-center gap-2 text-[13px] font-semibold">
-        <HardDriveIcon className="size-4 text-muted-foreground" />
-        Node disk watermark
-      </h2>
-      {series.isPending ? (
-        <p className="text-xs text-muted-foreground">Probing node filesystems…</p>
-      ) : series.isError || rows.length === 0 ? (
-        <p className="text-xs text-muted-foreground">n/a — no cadvisor filesystem samples reachable (metrics face offline?).</p>
-      ) : (
-        <div className="overflow-hidden rounded-xl border">
-          {rows.map((row) => (
-            <div key={row.node} className="flex items-center gap-3 border-b px-3 py-2 last:border-b-0">
-              <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{nodeName(row.node)}</span>
-              <span className="hidden w-64 sm:block">
-                <span className="block h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                  <span
-                    className={`block h-full rounded-full ${
-                      row.watermark.tone === "danger" ? "bg-destructive" : row.watermark.tone === "warning" ? "bg-amber-500" : "bg-emerald-500"
-                    }`}
-                    style={{ width: `${Math.min(100, Math.round(row.watermark.ratio * 100))}%` }}
-                  />
-                </span>
-              </span>
-              <span className={`w-20 text-right font-mono text-[11.5px] font-semibold ${toneClass[row.watermark.tone]}`}>
-                {row.watermark.label}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-    </section>
-  );
-}
-
 function ProviderCardView({
   provider,
   health,
+  diskUsage,
   onRestarted,
 }: {
   provider: ManagedProviderCard;
   health: ReturnType<typeof componentHealth>;
+  diskUsage: ReturnType<typeof formatWatermark>;
   onRestarted: () => void;
 }) {
   const probed = health != null;
@@ -208,6 +161,24 @@ function ProviderCardView({
         ) : (
           <span className="font-mono text-[11.5px] text-muted-foreground">n/a</span>
         )}
+      </div>
+      {/* disk usage（原型卡内行形态，IA v3 对齐批）：数据卷所在宿主盘水位
+          ——单机拓扑四卡同值是事实；多节点分化后此行接 per-provider 载体
+          节点锚（GetStatus 载体节点信息挂账）。 */}
+      <div className="flex items-center gap-2 text-xs">
+        <span className="w-32 flex-none text-muted-foreground">disk usage</span>
+        <span className="hidden h-1.5 w-40 overflow-hidden rounded-full bg-muted sm:block">
+          <span
+            className={`block h-full rounded-full ${
+              diskUsage.tone === "danger" ? "bg-destructive" : diskUsage.tone === "warning" ? "bg-amber-500" : "bg-emerald-500"
+            }`}
+            style={{ width: `${Math.min(100, Math.round(diskUsage.ratio * 100))}%` }}
+          />
+        </span>
+        <span className={`font-mono text-[11.5px] font-semibold ${diskUsage.tone === "danger" ? "text-destructive" : ""}`}>
+          {diskUsage.label}
+        </span>
+        <span className="text-[11px] text-muted-foreground">root fs</span>
       </div>
       <div className="mt-1 flex gap-2 border-t pt-3">
         {provider.workbench ? (

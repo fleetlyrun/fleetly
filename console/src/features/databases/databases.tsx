@@ -969,10 +969,12 @@ function DatabaseSettings({
     },
     onError: (cause) => toast.error(fieldError(cause)),
   });
+  const [rotateOpen, setRotateOpen] = useState(false);
   const rotate = useMutation({
     mutationFn: async () => apiSend(`/v1/databases/${encodeURIComponent(id)}/rotate-password`, "POST", {}),
     onSuccess: () => {
       invalidateDatabases(queryClient);
+      setRotateOpen(false); // W-4：成功即关确认框（数据已换、引用方披露已确认）
       toast("Credential rotated — redeploy referencing apps to pick up the new value");
     },
     onError: (cause) => toast.error(fieldError(cause)),
@@ -986,7 +988,7 @@ function DatabaseSettings({
           <span className="font-mono">{database?.credentials_ref ?? "—"}</span> (full connection URL, never displayed). Rotation
           mints a new password; referencing apps must be redeployed to pick it up.
         </p>
-        <AlertDialog>
+        <AlertDialog open={rotateOpen} onOpenChange={setRotateOpen}>
           <AlertDialogTrigger asChild>
             <Button size="sm" disabled={database == null || !ready || rotate.isPending}>
               <RefreshCwIcon data-icon-start-inline />

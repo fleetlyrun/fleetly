@@ -51,6 +51,9 @@ export function Topbar({ onOpenPalette }: { onOpenPalette: () => void }) {
     <header className="sticky top-0 z-20 flex h-13 flex-none items-center gap-2 border-b bg-background/95 px-3 backdrop-blur">
       <SidebarTrigger />
       <Separator orientation="vertical" className="mr-1 !h-4" />
+      {/* 项目域（/p/…）页面的面包屑由内容区承载（IA v3 原型顶栏无
+          crumb——双份是视觉冗余）；平台域页面保留顶栏 crumb。 */}
+      {pathname.startsWith("/p/") ? null : (
       <Breadcrumb>
         <BreadcrumbList>
           {crumbs.map((crumb, index) => {
@@ -70,6 +73,7 @@ export function Topbar({ onOpenPalette }: { onOpenPalette: () => void }) {
           })}
         </BreadcrumbList>
       </Breadcrumb>
+      )}
       <div className="ml-auto flex items-center gap-1">
         <Button variant="ghost" size="sm" className="gap-2 text-muted-foreground" onClick={onOpenPalette}>
           <SearchIcon className="size-3.5" />

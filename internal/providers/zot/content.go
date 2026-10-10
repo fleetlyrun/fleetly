@@ -135,6 +135,11 @@ func (p *Provider) contentGet(ctx context.Context, ep capability.RegistryEndpoin
 	if err != nil {
 		return fmt.Errorf("zot content: read: %w", err)
 	}
+	if resp.StatusCode == http.StatusNotFound {
+		// NAME_UNKNOWN（in-scope 仓名不存在）→ 类型化 404：调用方按
+		// not found 呈现，不落 E_INTERNAL 裸包（W-6 走查发现）。
+		return &capability.RegistryContentError{Status: resp.StatusCode, Path: path, Message: snippet(string(body))}
+	}
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("zot content: %s: status %d: %s", path, resp.StatusCode, snippet(string(body)))
 	}

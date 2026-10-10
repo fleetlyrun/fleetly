@@ -1,5 +1,5 @@
 import { LinkIcon } from "lucide-react";
-import { useApps, useUploads, useVolumes } from "@/lib/catalog";
+import { useApps, useDatabases, useUploads, useVolumes } from "@/lib/catalog";
 import { specIndex, useAppSpecs } from "@/features/spec/use-app-specs";
 
 // UsageIndex（IA v3 二期②）：Volume 挂载反查 + Upload 引用反查——扫描项目
@@ -8,6 +8,7 @@ import { specIndex, useAppSpecs } from "@/features/spec/use-app-specs";
 export function UsageIndex({ projectId }: { projectId: string }) {
   const apps = useApps(projectId);
   const volumes = useVolumes(projectId);
+  const databases = useDatabases(projectId);
   const uploads = useUploads(projectId);
   const { specs, pending } = useAppSpecs(projectId, apps.data ?? []);
 
@@ -15,6 +16,9 @@ export function UsageIndex({ projectId }: { projectId: string }) {
   const volumeIndex = specIndex(specs, (spec) =>
     (spec.processes ?? []).flatMap((process) => (process.volumes ?? []).map((volume) => volume.volume_id ?? "")),
   );
+  // Database 挂靠判据（W-7 对齐：与 Volumes 行 in use 徽标同口径——挂靠
+  // 卷名 = 数据库名，引擎 ensureDatabaseVolume 同公式）。
+  const databaseNames = new Set((databases.data ?? []).map((database) => database.name ?? ""));
   const uploadIndex = specIndex(specs, (spec) => (spec.source?.upload?.id ? [spec.source.upload.id] : []));
 
   return (
@@ -37,10 +41,16 @@ export function UsageIndex({ projectId }: { projectId: string }) {
                   // 卷锚 = 平台卷名（引擎 pinVolumes/materials 同口径——
                   // Attachment.volume_id 装 Name 不是行 ID）。
                   const users = volumeIndex.get(volume.name ?? "") ?? [];
+                  const carried = databaseNames.has(volume.name ?? "");
                   return (
                     <li key={volume.id} className="flex items-center gap-2">
                       <span className="font-mono">{volume.name || volume.id}</span>
-                      {users.length === 0 ? (
+                      {carried ? (
+                        <span className="flex items-center gap-1 text-muted-foreground">
+                          <LinkIcon className="size-3" />
+                          database {volume.name} (carrier data volume)
+                        </span>
+                      ) : users.length === 0 ? (
                         <span className="text-muted-foreground">unmounted</span>
                       ) : (
                         <span className="flex items-center gap-1 text-muted-foreground">

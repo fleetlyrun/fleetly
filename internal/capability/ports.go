@@ -211,6 +211,19 @@ type RegistryTag struct {
 	PushedAt string
 }
 
+// RegistryContentError 是内容代理面的类型化上游错误（Status 携带上游
+// HTTP 状态码——404 由 engine 判别为 not found，其余按上游故障包装；
+// MetricsQueryError 同款分层）。
+type RegistryContentError struct {
+	Status  int
+	Path    string
+	Message string
+}
+
+func (e *RegistryContentError) Error() string {
+	return fmt.Sprintf("registry content %s: status %d: %s", e.Path, e.Status, e.Message)
+}
+
 // RegistryContent 是镜像仓内容的只读代理面（IA v3 二期⑤b：Registry 页
 // 二期视图的数据源——/v2/_catalog 与 tags/list 按调用方给的端点凭证代理）。
 // 未实现 = Registry 二期视图不可用（engine 侧精确失败，不静默空清单）。

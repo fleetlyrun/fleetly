@@ -8,6 +8,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -50,6 +51,10 @@ func (e *Engine) RegistryTags(ctx context.Context, projectID, repository string)
 	}
 	tags, err := content.Tags(ctx, ep, strings.ToLower(repository))
 	if err != nil {
+		var contentErr *capability.RegistryContentError
+		if errors.As(err, &contentErr) && contentErr.Status == 404 {
+			return nil, state.ErrNotFound // in-scope 仓名在上游不存在 → 精确 404（W-6）
+		}
 		return nil, fmt.Errorf("registry tags: %w", err)
 	}
 	return tags, nil
