@@ -131,7 +131,7 @@ function QuickstartPageV2() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8">
+    <div className="mx-auto max-w-3xl px-6 pt-6 pb-8">
       <PageHeader title="Quickstart" description="One form, full chain: project → app → network → deploy → route → wait" />
 
       <form onSubmit={run} className="flex flex-col gap-3.5 rounded-xl border bg-card px-5 py-5">

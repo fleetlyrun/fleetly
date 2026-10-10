@@ -75,7 +75,7 @@ function AppDetailLayout() {
   ];
 
   return (
-    <div className="mx-auto max-w-7xl px-6 py-8">
+    <div className="mx-auto max-w-7xl px-6 pt-6 pb-8">
       <ContentCrumb projectId={projectId} section={{ label: "Apps", to: `${tabBase.split("/apps")[0]}/apps` }} current={app?.name ?? appId} />
 
       <section className="mb-5 flex flex-wrap items-center gap-4 rounded-xl border bg-card p-4">

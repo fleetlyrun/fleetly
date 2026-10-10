@@ -14,7 +14,7 @@ export const Route = createFileRoute("/_shell/p/$projectId/storage")({
 function StoragePage() {
   const { projectId } = Route.useParams();
   return (
-    <div className="mx-auto max-w-7xl px-6 py-8">
+    <div className="mx-auto max-w-7xl px-6 pt-6 pb-8">
       <PageHeader title="Storage" description="Volumes and deployable source uploads" />
       <UsageIndex projectId={projectId} />
       <Tabs defaultValue="volumes">

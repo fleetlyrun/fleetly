@@ -67,7 +67,7 @@ export function TaskDetailPage({ projectId, taskId }: { projectId: string; taskI
   const sourceSchedule = (schedules.data ?? []).find((schedule) => schedule.last_task_id === taskId);
 
   return (
-    <div className="mx-auto max-w-7xl px-6 py-8">
+    <div className="mx-auto max-w-7xl px-6 pt-6 pb-8">
       <PageHeader
         breadcrumb={
           <ContentCrumb

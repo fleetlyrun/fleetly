@@ -14,7 +14,7 @@ function VariablesPage() {
   const { projectId } = Route.useParams();
   const apps = useApps(projectId);
   return (
-    <div className="mx-auto max-w-7xl px-6 py-8">
+    <div className="mx-auto max-w-7xl px-6 pt-6 pb-8">
       <PageHeader title="Variables" description="Secrets, configs and shared variables for this project" />
       <section className="flex flex-col gap-8">
         <SecretsPanel projectId={projectId} />

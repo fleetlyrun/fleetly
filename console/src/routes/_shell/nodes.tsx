@@ -65,7 +65,7 @@ function NodesPage() {
   const rows = useListFilter(sorted, query, (node: { platform_id?: string; hostname?: string; role?: string }) => [node.hostname ?? "", node.platform_id ?? "", node.role ?? ""]);
 
   return (
-    <div className="mx-auto max-w-7xl px-6 py-8">
+    <div className="mx-auto max-w-7xl px-6 pt-6 pb-8">
       <PageHeader
         title="Nodes"
         description="Cluster membership, relay liveness and the runtime admin verbs"

@@ -23,7 +23,7 @@ function OverviewPage() {
   const [, setProjectId] = useProjectId();
 
   return (
-    <div className="mx-auto max-w-7xl px-6 py-8">
+    <div className="mx-auto max-w-7xl px-6 pt-6 pb-8">
       <PageHeader
         title="Overview"
         description="Fleet health at a glance"

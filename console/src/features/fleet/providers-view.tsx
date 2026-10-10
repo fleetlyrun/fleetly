@@ -74,7 +74,7 @@ export function ManagedProvidersView() {
   const diskUsage = formatWatermark(lastPointValue(diskSeries.data));
   const degraded = status.data?.state === "STATUS_STATE_DEGRADED";
   return (
-    <div className="mx-auto max-w-7xl px-6 py-8">
+    <div className="mx-auto max-w-7xl px-6 pt-6 pb-8">
       <PageHeader
         title="Components"
         description="Platform-hosted provider instances — health, pins and data freshness"

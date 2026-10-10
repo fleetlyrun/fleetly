@@ -100,7 +100,7 @@ function TemplatesPageV2() {
   });
 
   return (
-    <div className="mx-auto max-w-7xl px-6 py-8">
+    <div className="mx-auto max-w-7xl px-6 pt-6 pb-8">
       <PageHeader
         title="Templates"
         description={`One-click deploys from the catalog — source: ${catalog.data?.source ?? "…"}. Secret variables are platform-generated and injected as files; values are never shown.`}

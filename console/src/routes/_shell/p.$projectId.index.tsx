@@ -53,7 +53,7 @@ function ProjectOverviewPage() {
   const name = project.data?.name ?? "…";
 
   return (
-    <div className="mx-auto max-w-7xl px-6 py-8">
+    <div className="mx-auto max-w-7xl px-6 pt-6 pb-8">
       <PageHeader
         title={
           <span className="flex items-center gap-3">

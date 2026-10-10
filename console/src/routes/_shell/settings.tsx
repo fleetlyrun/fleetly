@@ -53,7 +53,7 @@ export const Route = createFileRoute("/_shell/settings")({
 
 function SettingsPageV2() {
   return (
-    <div className="mx-auto max-w-5xl px-6 py-8">
+    <div className="mx-auto max-w-5xl px-6 pt-6 pb-8">
       <PageHeader title="Settings" description="Identity, API tokens and platform governance" />
       <div className="flex flex-col gap-5">
         <IdentityCard />
