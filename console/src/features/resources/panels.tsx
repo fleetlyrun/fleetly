@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { PlusIcon } from "lucide-react";
+import { toast } from "sonner";
 import {
   useApps,
   useConfigs,
@@ -16,6 +18,22 @@ import {
 } from "@/lib/catalog";
 import { apiSend, apiSendRaw } from "@/api/client";
 import { specIndex, useAppSpecs } from "@/features/spec/use-app-specs";
+import { RelativeTime } from "@/components/domain/relative-time";
+import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { buildTar, rootPrefixOf } from "@/lib/tar";
 import {
   DangerRowButton,
@@ -419,7 +437,8 @@ function RouteRow({
   );
 }
 
-// ---- volumes ----
+// ---- volumes（IA v3 二期⑤b 起 v2 形态：Dialog 创建 + AlertDialog 删除
+// 确认 + token 类；mutation 语义自批 4 零漂移） ----
 
 function VolumesTab({ projectId }: { projectId: string }) {
   const volumes = useVolumes(projectId);
@@ -451,52 +470,75 @@ function VolumesTab({ projectId }: { projectId: string }) {
   return (
     <section className="flex flex-col gap-3">
       <div className="flex justify-end">
-        <RowButton
+        <Button
+          size="sm"
+          variant="outline"
           onClick={() => {
             setName("");
             setCreateOpen(true);
           }}
         >
+          <PlusIcon data-icon-start-inline />
           New volume…
-        </RowButton>
+        </Button>
       </div>
-      <Modal title="New volume" open={createOpen} onClose={() => setCreateOpen(false)}>
-        <form
-          className="flex flex-col gap-3"
-          onSubmit={(event) => {
-            event.preventDefault();
-            create.mutate(undefined, { onSuccess: () => setCreateOpen(false) });
-          }}
-        >
-          <Field label="Name">
-            <TextInput value={name} onChange={(event) => setName(event.target.value)} autoFocus />
-          </Field>
-          <Field label="Pinned node" hint="optional platform node id — volume stays on that node">
-            <TextInput value={pinnedNode} onChange={(event) => setPinnedNode(event.target.value)} />
-          </Field>
-          <MutationBanner pending={create.isPending} error={create.isError ? create.error : null} success={null} />
-          <div className="flex justify-end">
-            <PrimaryButton disabled={create.isPending || name === ""}>Create</PrimaryButton>
-          </div>
-        </form>
-      </Modal>
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>New volume</DialogTitle>
+          </DialogHeader>
+          <form
+            className="flex flex-col gap-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              create.mutate(undefined, { onSuccess: () => setCreateOpen(false) });
+            }}
+          >
+            <Label className="flex flex-col gap-1.5">
+              <span className="text-xs font-semibold">Name</span>
+              <Input value={name} onChange={(event) => setName(event.target.value)} autoFocus />
+            </Label>
+            <Label className="flex flex-col gap-1.5">
+              <span className="text-xs font-semibold">Pinned node</span>
+              <Input value={pinnedNode} onChange={(event) => setPinnedNode(event.target.value)} />
+              <span className="text-[11px] font-normal text-muted-foreground">optional platform node id — volume stays on that node</span>
+            </Label>
+            {create.isError ? <p className="text-xs text-destructive">{create.error instanceof Error ? create.error.message : String(create.error)}</p> : null}
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={create.isPending || name === ""}>
+                {create.isPending ? "Creating…" : "Create"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
       {volumes.isPending ? (
-        <LoadingNote label="Loading volumes…" />
+        <p className="py-6 text-center text-xs text-muted-foreground">Loading volumes…</p>
       ) : volumes.isError ? (
-        <ErrorNote error={volumes.error} />
+        <p className="rounded-xl border bg-card p-4 text-xs text-destructive">{volumes.error instanceof Error ? volumes.error.message : String(volumes.error)}</p>
       ) : (volumes.data ?? []).length === 0 ? (
-        <EmptyNote label="No volumes." />
+        <p className="rounded-xl border bg-card p-6 text-center text-xs text-muted-foreground">No volumes — create one to attach it from an app's Variables tab.</p>
       ) : (
-        <TableWrap>
+        <div className="overflow-hidden rounded-xl border">
           <table className="w-full text-sm">
-            <TableHead columns={["Name", "Pinned node", "Created", ""]} />
+            <thead className="border-b bg-muted/40 text-left text-[10.5px] font-semibold tracking-wide text-muted-foreground uppercase">
+              <tr>
+                <th className="px-3 py-2">Name</th>
+                <th className="px-3 py-2">Pinned node</th>
+                <th className="px-3 py-2">Created</th>
+                <th className="px-3 py-2" />
+              </tr>
+            </thead>
             <tbody>
               {(volumes.data ?? []).map((volume) => (
                 <VolumeRow key={volume.id} volume={volume} mount={mountOf(volume)} projectId={projectId} />
               ))}
             </tbody>
           </table>
-        </TableWrap>
+        </div>
       )}
     </section>
   );
@@ -504,7 +546,7 @@ function VolumesTab({ projectId }: { projectId: string }) {
 
 // VolumeRow 行操作（IA v3 二期⑤b）：未挂载才可删（挂载判据由服务端
 // E_CONFLICT 兜底——客户端禁用是前置体验面）；删除仅收口平台行，底层
-// runtime 卷留存（数据兜底永不级联），确认文案明示。
+// runtime 卷留存（数据兜底永不级联），AlertDialog 确认文案明示。
 function VolumeRow({
   volume,
   mount,
@@ -520,23 +562,46 @@ function VolumeRow({
     invalidate: [["resources", "volumes", projectId]],
   });
   return (
-    <tr className="border-b border-slate-800/60 hover:bg-slate-900/40">
-      <td className="px-3 py-2 font-medium text-slate-200">{volume.name}</td>
-      <td className="px-3 py-2 font-mono text-xs text-slate-400">{volume.pinned_node_id || "any"}</td>
-      <td className="px-3 py-2 text-xs text-slate-500">{formatTime(volume.created_at)}</td>
+    <tr className="border-b transition-colors last:border-b-0 hover:bg-muted/40">
+      <td className="px-3 py-2 font-medium">{volume.name}</td>
+      <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{volume.pinned_node_id || "any"}</td>
+      <td className="px-3 py-2 text-xs text-muted-foreground">
+        <RelativeTime value={volume.created_at} />
+      </td>
       <td className="px-3 py-2 text-right">
         {mount ? (
-          <span className="text-[11px] text-slate-500" title={mount}>
+          <span className="text-[11px] text-muted-foreground" title={mount}>
             in use
           </span>
         ) : (
-          <DangerRowButton
-            confirm={`Delete volume ${volume.name}? The platform row is removed; the runtime-side volume stays (data is not reclaimed automatically).`}
-            disabled={del.isPending}
-            onClick={() => void del.mutate()}
-          >
-            delete
-          </DangerRowButton>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" disabled={del.isPending}>
+                delete
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete volume {volume.name}?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  The platform row is removed; the runtime-side volume stays (data is not reclaimed automatically). A volume still
+                  mounted by an app or carried by a database is refused with the referencing list.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  disabled={del.isPending}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    del.mutate(undefined, { onSuccess: () => toast(`Volume ${volume.name} deleted`) });
+                  }}
+                >
+                  {del.isPending ? "Deleting…" : "Delete"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         )}
       </td>
     </tr>
@@ -1036,39 +1101,51 @@ function UploadsTab({ projectId }: { projectId: string }) {
   return (
     <section className="flex flex-col gap-3">
       <div className="flex items-center justify-end gap-3">
-        <span className="text-xs text-slate-500">deterministic tar · .git skipped · content-addressed</span>
+        <span className="text-xs text-muted-foreground">deterministic tar · .git skipped · content-addressed</span>
         <input ref={inputRef} type="file" multiple className="hidden" onChange={(event) => void onFiles(event.target.files)} />
-        <RowButton disabled={pending} onClick={() => inputRef.current?.click()}>
+        <Button size="sm" variant="outline" disabled={pending} onClick={() => inputRef.current?.click()}>
+          <PlusIcon data-icon-start-inline />
           {pending ? "Uploading…" : "Upload directory…"}
-        </RowButton>
+        </Button>
       </div>
-      <MutationBanner pending={pending} error={error} success={result} />
+      {pending ? <p className="text-xs text-muted-foreground">Packing & uploading…</p> : null}
+      {error != null ? <p className="text-xs text-destructive">{error instanceof Error ? error.message : String(error)}</p> : null}
+      {result != null ? <p className="text-xs text-muted-foreground">{result}</p> : null}
       {uploads.isPending ? (
-        <LoadingNote label="Loading uploads…" />
+        <p className="py-6 text-center text-xs text-muted-foreground">Loading uploads…</p>
       ) : uploads.isError ? (
-        <ErrorNote error={uploads.error} />
+        <p className="rounded-xl border bg-card p-4 text-xs text-destructive">{uploads.error instanceof Error ? uploads.error.message : String(uploads.error)}</p>
       ) : (uploads.data ?? []).length === 0 ? (
-        <EmptyNote label="No uploads — pick a directory to build a deployable source." />
+        <p className="rounded-xl border bg-card p-6 text-center text-xs text-muted-foreground">No uploads — pick a directory to build a deployable source.</p>
       ) : (
-        <TableWrap>
+        <div className="overflow-hidden rounded-xl border">
           <table className="w-full text-sm">
-            <TableHead columns={["Upload", "Size", "Digest", "Created"]} />
+            <thead className="border-b bg-muted/40 text-left text-[10.5px] font-semibold tracking-wide text-muted-foreground uppercase">
+              <tr>
+                <th className="px-3 py-2">Upload</th>
+                <th className="px-3 py-2">Size</th>
+                <th className="px-3 py-2">Digest</th>
+                <th className="px-3 py-2">Created</th>
+              </tr>
+            </thead>
             <tbody>
               {(uploads.data ?? []).map((upload) => (
-                <tr key={upload.id} className="border-b border-slate-800/60 hover:bg-slate-900/40">
-                  <td className="px-3 py-2 font-mono text-xs text-slate-300" title={upload.id}>
+                <tr key={upload.id} className="border-b transition-colors last:border-b-0 hover:bg-muted/40">
+                  <td className="px-3 py-2 font-mono text-xs" title={upload.id}>
                     {upload.id}
                   </td>
-                  <td className="px-3 py-2 font-mono text-xs text-slate-400">{(Number(upload.size_bytes ?? 0) / 1024).toFixed(1)} KiB</td>
-                  <td className="px-3 py-2 font-mono text-xs text-slate-500" title={upload.digest}>
+                  <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{(Number(upload.size_bytes ?? 0) / 1024).toFixed(1)} KiB</td>
+                  <td className="px-3 py-2 font-mono text-xs text-muted-foreground" title={upload.digest}>
                     {upload.digest?.slice(0, 16)}…
                   </td>
-                  <td className="px-3 py-2 text-xs text-slate-500">{formatTime(upload.created_at)}</td>
+                  <td className="px-3 py-2 text-xs text-muted-foreground">
+                    <RelativeTime value={upload.created_at} />
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
-        </TableWrap>
+        </div>
       )}
     </section>
   );
