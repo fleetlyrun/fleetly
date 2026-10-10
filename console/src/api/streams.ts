@@ -186,3 +186,38 @@ function parseSSEFrame(raw: string): SSEFrame | undefined {
   if (dataLines.length > 0) frame.data = dataLines.join("\n");
   return frame.event !== undefined || frame.data !== undefined ? frame : undefined;
 }
+
+// downloadBackupChunks 消费备份下载 NDJSON 帧流（base64 分块），重组成
+// Blob（IA v3 二期⑤；SHA256 一致性由 Trigger 时台账锚定，此处不重算）。
+export async function downloadBackupChunks(
+  databaseId: string,
+  backupId: string,
+  signal: AbortSignal,
+): Promise<Blob> {
+  const query = new URLSearchParams({ database_id: databaseId, backup_id: backupId });
+  const res = await fetch(`/v1/databases/${encodeURIComponent(databaseId)}/backups/${encodeURIComponent(backupId)}/download?${query.toString()}`, { signal, headers: authHeaders() });
+  if (!res.ok || !res.body) {
+    let code = "unknown";
+    let message = `${res.status} ${res.statusText}`.trim();
+    try {
+      const body = (await res.json()) as { code?: string; message?: string };
+      if (body.code) code = body.code;
+      if (body.message) message = body.message;
+    } catch {
+      // 非 JSON 错误体：保留状态行口径。
+    }
+    throw new ApiError(res.status, code, message);
+  }
+  const parts: BlobPart[] = [];
+  await readLines(res.body, (line) => {
+    if (line === "") return;
+    const frame = JSON.parse(line) as { result?: { data?: string } };
+    const b64 = frame.result?.data;
+    if (!b64) return;
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+    parts.push(bytes);
+  });
+  return new Blob(parts, { type: "application/octet-stream" });
+}

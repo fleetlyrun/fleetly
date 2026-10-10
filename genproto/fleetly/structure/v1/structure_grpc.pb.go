@@ -1205,6 +1205,7 @@ const (
 	DatabasesService_TriggerBackup_FullMethodName  = "/fleetly.structure.v1.DatabasesService/TriggerBackup"
 	DatabasesService_ListBackups_FullMethodName    = "/fleetly.structure.v1.DatabasesService/ListBackups"
 	DatabasesService_VerifyBackup_FullMethodName   = "/fleetly.structure.v1.DatabasesService/VerifyBackup"
+	DatabasesService_DownloadBackup_FullMethodName = "/fleetly.structure.v1.DatabasesService/DownloadBackup"
 	DatabasesService_BrowseDatabase_FullMethodName = "/fleetly.structure.v1.DatabasesService/BrowseDatabase"
 )
 
@@ -1233,6 +1234,9 @@ type DatabasesServiceClient interface {
 	ListBackups(ctx context.Context, in *ListBackupsRequest, opts ...grpc.CallOption) (*ListBackupsResponse, error)
 	// VerifyBackup 重算对象摘要比对回执（ADR-0039 决策 8）。
 	VerifyBackup(ctx context.Context, in *VerifyBackupRequest, opts ...grpc.CallOption) (*VerifyBackupResponse, error)
+	// DownloadBackup 流式下载备份对象（Verify 同源存储读面；分块字节经
+	// gateway 帧化，消费端重组——IA v3 二期⑤）。仅 succeeded 台账行可下载。
+	DownloadBackup(ctx context.Context, in *DownloadBackupRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[DownloadBackupResponse], error)
 	// BrowseDatabase 铸造数据浏览器按需会话（F3.6，ADR-0051）：静态 scope 是
 	// 最低门（只读档）；read_write=true 或无只读执法的方言（mysql）在服务内
 	// 动态要求 databases:write。响应 URL 含一次性 Launcher Ticket（120s 单
@@ -1318,6 +1322,25 @@ func (c *databasesServiceClient) VerifyBackup(ctx context.Context, in *VerifyBac
 	return out, nil
 }
 
+func (c *databasesServiceClient) DownloadBackup(ctx context.Context, in *DownloadBackupRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[DownloadBackupResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &DatabasesService_ServiceDesc.Streams[0], DatabasesService_DownloadBackup_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[DownloadBackupRequest, DownloadBackupResponse]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type DatabasesService_DownloadBackupClient = grpc.ServerStreamingClient[DownloadBackupResponse]
+
 func (c *databasesServiceClient) BrowseDatabase(ctx context.Context, in *BrowseDatabaseRequest, opts ...grpc.CallOption) (*BrowseDatabaseResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(BrowseDatabaseResponse)
@@ -1353,6 +1376,9 @@ type DatabasesServiceServer interface {
 	ListBackups(context.Context, *ListBackupsRequest) (*ListBackupsResponse, error)
 	// VerifyBackup 重算对象摘要比对回执（ADR-0039 决策 8）。
 	VerifyBackup(context.Context, *VerifyBackupRequest) (*VerifyBackupResponse, error)
+	// DownloadBackup 流式下载备份对象（Verify 同源存储读面；分块字节经
+	// gateway 帧化，消费端重组——IA v3 二期⑤）。仅 succeeded 台账行可下载。
+	DownloadBackup(*DownloadBackupRequest, grpc.ServerStreamingServer[DownloadBackupResponse]) error
 	// BrowseDatabase 铸造数据浏览器按需会话（F3.6，ADR-0051）：静态 scope 是
 	// 最低门（只读档）；read_write=true 或无只读执法的方言（mysql）在服务内
 	// 动态要求 databases:write。响应 URL 含一次性 Launcher Ticket（120s 单
@@ -1388,6 +1414,9 @@ func (UnimplementedDatabasesServiceServer) ListBackups(context.Context, *ListBac
 }
 func (UnimplementedDatabasesServiceServer) VerifyBackup(context.Context, *VerifyBackupRequest) (*VerifyBackupResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method VerifyBackup not implemented")
+}
+func (UnimplementedDatabasesServiceServer) DownloadBackup(*DownloadBackupRequest, grpc.ServerStreamingServer[DownloadBackupResponse]) error {
+	return status.Error(codes.Unimplemented, "method DownloadBackup not implemented")
 }
 func (UnimplementedDatabasesServiceServer) BrowseDatabase(context.Context, *BrowseDatabaseRequest) (*BrowseDatabaseResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method BrowseDatabase not implemented")
@@ -1539,6 +1568,17 @@ func _DatabasesService_VerifyBackup_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DatabasesService_DownloadBackup_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(DownloadBackupRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(DatabasesServiceServer).DownloadBackup(m, &grpc.GenericServerStream[DownloadBackupRequest, DownloadBackupResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type DatabasesService_DownloadBackupServer = grpc.ServerStreamingServer[DownloadBackupResponse]
+
 func _DatabasesService_BrowseDatabase_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(BrowseDatabaseRequest)
 	if err := dec(in); err != nil {
@@ -1597,7 +1637,13 @@ var DatabasesService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _DatabasesService_BrowseDatabase_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "DownloadBackup",
+			Handler:       _DatabasesService_DownloadBackup_Handler,
+			ServerStreams: true,
+		},
+	},
 	Metadata: "fleetly/structure/v1/structure.proto",
 }
 

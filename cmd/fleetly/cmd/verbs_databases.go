@@ -6,8 +6,11 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
+	"os"
 
 	"github.com/lynx-go/commands"
 
@@ -270,6 +273,93 @@ func newDatabasesVerifyVerb() commands.Command {
 // databases browse（F3.6，ADR-0051）：铸造数据浏览器会话——打印入口 URL
 // （含一次性 Launcher Ticket，120s 单用途；兑换即烧，过期重开）。不自动开
 // 浏览器：CLI 面以脚本消费为主（URL 是唯一交付物）。
+// databases download-backup（IA v3 二期⑤）：流式下载备份对象到本地文件
+// （分块重组；--out 必填——不落 stdout，二进制不进管道文本面）。
+func newDatabasesDownloadBackupVerb() commands.Command {
+	const name = "download-backup"
+	var database, out string
+	return &flaggedVerb{
+		name:     name,
+		synopsis: "Download a succeeded backup object to a local file (streamed in chunks)",
+		usage:    "databases download-backup --database DATABASE_ID BACKUP_ID --out PATH",
+		setFlags: func(fs *flag.FlagSet) {
+			fs.StringVar(&database, "database", "", "owning database id (required)")
+			fs.StringVar(&out, "out", "", "output file path (required)")
+		},
+		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if len(args) != 1 {
+				return usageErr(name, "expected exactly one BACKUP_ID argument")
+			}
+			if database == "" {
+				return usageErr(name, "--database is required")
+			}
+			if out == "" {
+				return usageErr(name, "--out is required")
+			}
+			ctx, cancel, c, err := dialFromEnv(ctx)
+			if err != nil {
+				return err
+			}
+			defer cancel()
+			defer c.Close() //nolint:errcheck // 进程退出路径
+			stream, err := c.Databases.DownloadBackup(ctx, &structurev1.DownloadBackupRequest{
+				DatabaseId: database, BackupId: args[0],
+			})
+			if err != nil {
+				return err
+			}
+			// 截断语义：先清目标文件（追加写只发生在本次下载窗口内）。
+			if err := os.WriteFile(out, []byte{}, 0o600); err != nil {
+				return err
+			}
+			var size int64
+			for {
+				frame, rerr := stream.Recv()
+				if rerr == io.EOF {
+					break
+				}
+				if rerr != nil {
+					return rerr
+				}
+				if err := appendFile(out, frame.GetData()); err != nil {
+					return err
+				}
+				size += int64(len(frame.GetData()))
+			}
+			if jsonOut {
+				data, merr := json.Marshal(&downloadSummary{Database: database, Backup: args[0], Path: out, Bytes: size})
+				if merr != nil {
+					return merr
+				}
+				_, _ = fmt.Fprintln(env.Stdout, string(data))
+				return nil
+			}
+			_, _ = fmt.Fprintf(env.Stdout, "downloaded %s (%d bytes) → %s\n", args[0], size, out)
+			return nil
+		},
+	}
+}
+
+// downloadSummary 是 --json 形态的下载回执。
+type downloadSummary struct {
+	Database string `json:"database"`
+	Backup   string `json:"backup"`
+	Path     string `json:"path"`
+	Bytes    int64  `json:"bytes"`
+}
+
+// appendFile 以追加语义落盘（先截断在首次写入前由调用方保证——此处
+// 首帧前 O_TRUNC 由 downloadVerb 预清理实现）。
+func appendFile(path string, data []byte) error {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = f.Close() }()
+	_, err = f.Write(data)
+	return err
+}
+
 func newDatabasesBrowseVerb() commands.Command {
 	const name = "browse"
 	var write bool

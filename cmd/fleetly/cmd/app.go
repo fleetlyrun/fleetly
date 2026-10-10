@@ -81,7 +81,8 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 		// 托管数据服务（F1.12，ADR-0029；备份动词 F2.2/ADR-0039）。
 		groupVerb("databases", "manage managed data services (postgres/pgvector/redis/mysql/mongo templates; credential values never shown)",
 			newDatabasesCreateVerb(), newDatabasesListVerb(), newDatabasesGetVerb(), newDatabasesDeleteVerb(),
-			newDatabasesBackupVerb(), newDatabasesBackupsVerb(), newDatabasesVerifyVerb(), newDatabasesBrowseVerb()),
+			newDatabasesBackupVerb(), newDatabasesBackupsVerb(), newDatabasesVerifyVerb(), newDatabasesBrowseVerb(),
+			newDatabasesDownloadBackupVerb()),
 		// Delivery 上下文。
 		newDeployVerb(),
 		groupVerb("deployments", "inspect, wait for and cancel deployments", newDeploymentsListVerb(), newDeploymentsGetVerb(), newDeploymentsWaitVerb(), newDeploymentsCancelVerb()),

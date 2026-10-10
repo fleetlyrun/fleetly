@@ -148,6 +148,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/databases/{database_id}/backups/{backup_id}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * DownloadBackup 流式下载备份对象（Verify 同源存储读面；分块字节经
+         *     gateway 帧化，消费端重组——IA v3 二期⑤）。仅 succeeded 台账行可下载。
+         */
+        get: operations["DatabasesService_DownloadBackup"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/databases/{database_id}/browse": {
         parameters: {
             query?: never;
@@ -650,6 +670,10 @@ export interface components {
          * @enum {string}
          */
         v1DeployStrategy: "DEPLOY_STRATEGY_UNSPECIFIED" | "DEPLOY_STRATEGY_ROLLING" | "DEPLOY_STRATEGY_BLUE_GREEN";
+        v1DownloadBackupResponse: {
+            /** Format: byte */
+            data?: string;
+        };
         v1ExecProbe: {
             command?: string[];
         };
@@ -1394,6 +1418,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1TriggerBackupResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    DatabasesService_DownloadBackup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                database_id: string;
+                backup_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response.(streaming responses) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        result?: components["schemas"]["v1DownloadBackupResponse"];
+                    };
                 };
             };
             /** @description An unexpected error response. */

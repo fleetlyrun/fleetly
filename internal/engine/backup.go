@@ -280,6 +280,28 @@ func (e *Engine) executeOneBackup(ctx context.Context) {
 // VerifyBackup 重算对象 sha256 比对 Put 回执（ADR-0039 决策 8：静态完整
 // 性——腐损/截断可检出；API VerifyBackup 与恢复演练的共用单源）。ok=false
 // 时 errText 携带可诊断差异（用户可见文本英文）。
+// DownloadBackup 打开备份对象的只读流（IA v3 二期⑤；与 Verify 同源存储
+// 读面——调用方负责 Close）。仅 succeeded 台账行可下载；database_id 是
+// 归属校验锚（错配按 not found 处理，不泄漏跨库存在性）。
+func (e *Engine) DownloadBackup(ctx context.Context, databaseID, backupID string) (*backup.Backup, io.ReadCloser, error) {
+	// 行校验先行（归属/状态错误优先于环境缺口——错误语义对调用方更有用）。
+	b, err := e.backups.Get(ctx, e.db.Runner(), backupID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if b.DatabaseID != databaseID || b.Status != backup.StatusSucceeded || b.ObjectKey == "" {
+		return nil, nil, state.ErrNotFound
+	}
+	if e.objectStore == nil {
+		return nil, nil, fmt.Errorf("backup: object store is not assembled")
+	}
+	obj, err := e.objectStore.Get(ctx, b.ObjectKey)
+	if err != nil {
+		return nil, nil, fmt.Errorf("read backup object %q: %w", b.ObjectKey, err)
+	}
+	return b, obj, nil
+}
+
 func (e *Engine) VerifyBackup(ctx context.Context, backupID string) (bool, string, error) {
 	if e.objectStore == nil {
 		return false, "", fmt.Errorf("backup: object store is not assembled")

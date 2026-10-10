@@ -309,6 +309,42 @@ func (svc *AppsService) GetApp(ctx context.Context, req *structurev1.GetAppReque
 // Deploy）。Variables 编辑面 / Used-by 反查 / Volume 挂载反查的数据源
 //（IA v3 二期②；spec.proto 唯一运行时边界的只读回读）。未部署过 =
 // E_NOT_FOUND（诚实：无冻结即无 Spec）。
+// DownloadBackup 流式下载备份对象（IA v3 二期⑤）：授权链与行归属校验
+// 后经引擎打开只读流，256KiB 分块下发（gateway 帧化，消费端重组）。
+func (svc *DatabasesService) DownloadBackup(req *structurev1.DownloadBackupRequest, stream structurev1.DatabasesService_DownloadBackupServer) error {
+	ctx := stream.Context()
+	dbRow, err := svc.s.Databases.Get(ctx, svc.s.DB.Runner(), req.GetDatabaseId())
+	if err != nil {
+		return mapStateError(err, "database")
+	}
+	proj, err := svc.s.Projects.Get(ctx, svc.s.DB.Runner(), dbRow.ProjectID)
+	if err != nil {
+		return mapStateError(err, "project")
+	}
+	if err := svc.s.authorizeTeamForProject(ctx, proj); err != nil {
+		return err
+	}
+	backup, reader, err := svc.s.Engine.DownloadBackup(ctx, req.GetDatabaseId(), req.GetBackupId())
+	if err != nil {
+		return mapStateError(err, "backup")
+	}
+	defer func() { _ = reader.Close() }()
+	chunk := make([]byte, 256*1024)
+	for {
+		n, rerr := reader.Read(chunk)
+		if n > 0 {
+			if serr := stream.Send(&structurev1.DownloadBackupResponse{Data: append([]byte(nil), chunk[:n]...)}); serr != nil {
+				return serr
+			}
+		}
+		if rerr != nil {
+			break
+		}
+	}
+	_ = backup
+	return nil
+}
+
 func (svc *AppsService) GetAppSpec(ctx context.Context, req *structurev1.GetAppSpecRequest) (*structurev1.GetAppSpecResponse, error) {
 	a, err := svc.s.Apps.Get(ctx, svc.s.DB.Runner(), req.GetId())
 	if err != nil {

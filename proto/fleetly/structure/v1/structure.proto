@@ -268,6 +268,15 @@ service DatabasesService {
       api_key_scope: { resource: "databases" op: SCOPE_OP_READ }
     };
   }
+  // DownloadBackup 流式下载备份对象（Verify 同源存储读面；分块字节经
+  // gateway 帧化，消费端重组——IA v3 二期⑤）。仅 succeeded 台账行可下载。
+  rpc DownloadBackup(DownloadBackupRequest) returns (stream DownloadBackupResponse) {
+    option (google.api.http) = { get: "/v1/databases/{database_id}/backups/{backup_id}/download" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "databases" op: SCOPE_OP_READ }
+    };
+  }
   // BrowseDatabase 铸造数据浏览器按需会话（F3.6，ADR-0051）：静态 scope 是
   // 最低门（只读档）；read_write=true 或无只读执法的方言（mysql）在服务内
   // 动态要求 databases:write。响应 URL 含一次性 Launcher Ticket（120s 单
@@ -391,6 +400,15 @@ message CreateAppRequest { string project_id = 1; string name = 2; }
 message CreateAppResponse { App app = 1; }
 message GetAppRequest { string id = 1; }
 message GetAppResponse { App app = 1; }
+message DownloadBackupRequest {
+  string database_id = 1;
+  string backup_id = 2;
+}
+
+message DownloadBackupResponse {
+  bytes data = 1;
+}
+
 message GetAppSpecRequest { string id = 1; }
 message GetAppSpecResponse {
   // spec 是最新 Revision 冻结的 AppSpec（spec.proto 唯一运行时边界的

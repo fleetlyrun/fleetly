@@ -84,7 +84,7 @@ var freezeExemptions = map[string]string{
 
 // freezeReadPrefixes 是读面前缀（无副作用，免冻结分类；Diff 是两 Revision
 // 对照的读面；Query 是指标查询的读面，F2.5）。
-var freezeReadPrefixes = []string{"Get", "List", "Wait", "Stream", "Query", "WhoAmI", "Explain", "Diff"}
+var freezeReadPrefixes = []string{"Get", "List", "Wait", "Stream", "Query", "WhoAmI", "Explain", "Diff", "Download"}
 
 // isReadVerb 报告方法名是否落读面前缀。
 func isReadVerb(fullMethod string) bool {

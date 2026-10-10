@@ -513,6 +513,49 @@
         ]
       }
     },
+    "/v1/databases/{database_id}/backups/{backup_id}/download": {
+      "get": {
+        "summary": "DownloadBackup 流式下载备份对象（Verify 同源存储读面；分块字节经\ngateway 帧化，消费端重组——IA v3 二期⑤）。仅 succeeded 台账行可下载。",
+        "operationId": "DatabasesService_DownloadBackup",
+        "responses": {
+          "200": {
+            "description": "A successful response.(streaming responses)",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "result": {
+                  "$ref": "#/definitions/v1DownloadBackupResponse"
+                }
+              },
+              "title": "Stream result of v1DownloadBackupResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "database_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "backup_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "DatabasesService"
+        ]
+      }
+    },
     "/v1/databases/{database_id}/browse": {
       "post": {
         "summary": "BrowseDatabase 铸造数据浏览器按需会话（F3.6，ADR-0051）：静态 scope 是\n最低门（只读档）；read_write=true 或无只读执法的方言（mysql）在服务内\n动态要求 databases:write。响应 URL 含一次性 Launcher Ticket（120s 单\n用途）——兑换入口即 URL 本身。会话硬 TTL 30min、空闲 10min 回收。",
@@ -1765,6 +1808,15 @@
       "default": "DEPLOY_STRATEGY_UNSPECIFIED",
       "description": "- DEPLOY_STRATEGY_UNSPECIFIED: 缺省 = rolling（归一面：投影/引擎按 rolling 语义消费）。\n - DEPLOY_STRATEGY_ROLLING: 滚动替换（与既有语义逐字节相同——存量零变化）。\n - DEPLOY_STRATEGY_BLUE_GREEN: 蓝绿：旧代∪新代双代窗 → 新代 L1 门 → 切换 → 观察窗 → 收口。",
       "title": "DeployStrategy 是部署切换策略（CONTEXT.md Deployment Strategy 词条：\nrolling | blue-green；Avoid 表两词条不引入——渐进分流与代次槽位机制\n均显式不做，ADR-0048）。blue-green = engine 的编排变体（Runtime 契约\n不变，ADR-0048）：双代窗期间两代载体并存，新代 L1 全就绪才切换流量。\nUNSPECIFIED（零值）语义归一为 rolling——存量 Revision 无该字段重放即\nrolling，无迁移面。"
+    },
+    "v1DownloadBackupResponse": {
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "string",
+          "format": "byte"
+        }
+      }
     },
     "v1ExecProbe": {
       "type": "object",

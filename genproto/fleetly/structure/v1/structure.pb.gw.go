@@ -1064,6 +1064,43 @@ func local_request_DatabasesService_VerifyBackup_0(ctx context.Context, marshale
 	return msg, metadata, err
 }
 
+func request_DatabasesService_DownloadBackup_0(ctx context.Context, marshaler runtime.Marshaler, client DatabasesServiceClient, req *http.Request, pathParams map[string]string) (DatabasesService_DownloadBackupClient, runtime.ServerMetadata, error) {
+	var (
+		protoReq DownloadBackupRequest
+		metadata runtime.ServerMetadata
+		err      error
+	)
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
+	val, ok := pathParams["database_id"]
+	if !ok {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "database_id")
+	}
+	protoReq.DatabaseId, err = runtime.String(val)
+	if err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "database_id", err)
+	}
+	val, ok = pathParams["backup_id"]
+	if !ok {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "backup_id")
+	}
+	protoReq.BackupId, err = runtime.String(val)
+	if err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "backup_id", err)
+	}
+	stream, err := client.DownloadBackup(ctx, &protoReq)
+	if err != nil {
+		return nil, metadata, err
+	}
+	header, err := stream.Header()
+	if err != nil {
+		return nil, metadata, err
+	}
+	metadata.HeaderMD = header
+	return stream, metadata, nil
+}
+
 func request_DatabasesService_BrowseDatabase_0(ctx context.Context, marshaler runtime.Marshaler, client DatabasesServiceClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
 	var (
 		protoReq BrowseDatabaseRequest
@@ -1994,6 +2031,13 @@ func RegisterDatabasesServiceHandlerServer(ctx context.Context, mux *runtime.Ser
 			return
 		}
 		forward_DatabasesService_VerifyBackup_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
+
+	mux.Handle(http.MethodGet, pattern_DatabasesService_DownloadBackup_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		err := status.Error(codes.Unimplemented, "streaming calls are not yet supported in the in-process transport")
+		_, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+		return
 	})
 	mux.Handle(http.MethodPost, pattern_DatabasesService_BrowseDatabase_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
@@ -2994,6 +3038,23 @@ func RegisterDatabasesServiceHandlerClient(ctx context.Context, mux *runtime.Ser
 		}
 		forward_DatabasesService_VerifyBackup_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
 	})
+	mux.Handle(http.MethodGet, pattern_DatabasesService_DownloadBackup_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/fleetly.structure.v1.DatabasesService/DownloadBackup", runtime.WithHTTPPathPattern("/v1/databases/{database_id}/backups/{backup_id}/download"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := request_DatabasesService_DownloadBackup_0(annotatedContext, inboundMarshaler, client, req, pathParams)
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_DatabasesService_DownloadBackup_0(annotatedContext, mux, outboundMarshaler, w, req, func() (proto.Message, error) { return resp.Recv() }, mux.GetForwardResponseOptions()...)
+	})
 	mux.Handle(http.MethodPost, pattern_DatabasesService_BrowseDatabase_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
@@ -3022,6 +3083,7 @@ var (
 	pattern_DatabasesService_TriggerBackup_0  = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "databases", "database_id", "backups"}, ""))
 	pattern_DatabasesService_ListBackups_0    = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "databases", "database_id", "backups"}, ""))
 	pattern_DatabasesService_VerifyBackup_0   = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "backups", "backup_id", "verify"}, ""))
+	pattern_DatabasesService_DownloadBackup_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3, 1, 0, 4, 1, 5, 4, 2, 5}, []string{"v1", "databases", "database_id", "backups", "backup_id", "download"}, ""))
 	pattern_DatabasesService_BrowseDatabase_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "databases", "database_id", "browse"}, ""))
 )
 
@@ -3033,6 +3095,7 @@ var (
 	forward_DatabasesService_TriggerBackup_0  = runtime.ForwardResponseMessage
 	forward_DatabasesService_ListBackups_0    = runtime.ForwardResponseMessage
 	forward_DatabasesService_VerifyBackup_0   = runtime.ForwardResponseMessage
+	forward_DatabasesService_DownloadBackup_0 = runtime.ForwardResponseStream
 	forward_DatabasesService_BrowseDatabase_0 = runtime.ForwardResponseMessage
 )
 

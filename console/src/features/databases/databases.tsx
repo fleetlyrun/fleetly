@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import { apiSend } from "@/api/client";
 import { backupHealth } from "@/features/databases/backup-health";
 import { DatabaseLogsTab } from "@/features/databases/database-logs";
+import { downloadBackupChunks } from "@/api/streams";
 import { DATABASE_CARRIER_PRESETS } from "@/features/databases/database-metrics";
 import { MetricChart } from "@/features/metrics/metric-chart";
 import { useDatabases, useDatabaseBackups, useMetricsSeries, useApps } from "@/lib/catalog";
@@ -746,6 +747,7 @@ function BackupRow({
   queryClient: ReturnType<typeof useQueryClient>;
 }) {
   const [verifying, setVerifying] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [verifyResult, setVerifyResult] = useState<{ ok: boolean; detail: string } | null>(null);
   const [restoreOpen, setRestoreOpen] = useState(false);
   const [restoreName, setRestoreName] = useState("");
@@ -765,6 +767,24 @@ function BackupRow({
     },
     onError: (cause) => toast.error(fieldError(cause)),
   });
+  async function runDownload() {
+    setDownloading(true);
+    try {
+      const blob = await downloadBackupChunks(backup.project_id ?? projectId, backup.id ?? "", new AbortController().signal);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `${backup.id ?? "backup"}.backup`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      toast(`Backup downloaded (${(blob.size / 1048576).toFixed(2)} MiB)`);
+    } catch (cause) {
+      toast.error(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setDownloading(false);
+    }
+  }
+
   async function runVerify() {
     setVerifying(true);
     setVerifyResult(null);
@@ -806,6 +826,9 @@ function BackupRow({
               {verifyResult.ok ? `ok — ${verifyResult.detail}` : `failed — ${verifyResult.detail}`}
             </span>
           ) : null}
+          <Button variant="outline" size="sm" disabled={verifying || downloading || backup.status !== "succeeded"} onClick={() => void runDownload()} title="Stream the backup object to a local file">
+            {downloading ? "Downloading…" : "Download"}
+          </Button>
           <Button variant="outline" size="sm" disabled={verifying} onClick={() => void runVerify()} title="Recompute the digest against the stored object (read-only)">
             {verifying ? "Verifying…" : "Verify"}
           </Button>
