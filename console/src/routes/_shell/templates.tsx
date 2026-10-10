@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useRouter } from "@tanstack/react-router";
 import { SparklesIcon } from "lucide-react";
+import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
 import { apiFetch, apiSend } from "@/api/client";
 import type { components } from "@/api/templates";
 import { describeError } from "@/lib/api-errors";
@@ -10,7 +11,7 @@ import { buildTemplateValues, inputKindOf, type TemplateVariableDecl } from "@/l
 import { useProjects } from "@/lib/catalog";
 import { EmptyState } from "@/components/domain/empty-state";
 import { ErrorState } from "@/components/domain/error-state";
-import { PageHeader } from "@/components/domain/page-header";
+import { ListPage } from "@/components/domain/list-page";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -24,19 +25,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 
-// 模板库（F3.3/ADR-0050 决策 6 → UI v2 批 5 reskin）：目录 → 详情（变量
-// 声明 + compose 体只读）→ 实例化（project/app/values——secret 型
-// platform-generated 注入文件，值不回显）→ 提交跳部署详情。
-// 批 5 顺带修掉旧页非法 DOM（thead/tbody 裸放 div 无 table 包裹）。
+// 模板库（F3.3/ADR-0050 决策 6 → UI v2 批 5 reskin；模板化收编 ListPage）：
+// 目录 → 详情（变量声明 + compose 体只读）→ 实例化（project/app/values
+// ——secret 型 platform-generated 注入文件，值不回显）→ 提交跳部署详情。
 export const Route = createFileRoute("/_shell/templates")({
   component: TemplatesPageV2,
 });
@@ -99,109 +91,111 @@ function TemplatesPageV2() {
     },
   });
 
+  const columns: LegacyColumnDef<TemplateEntry, any>[] = [
+    {
+      accessorKey: "name",
+      header: "Name",
+      cell: ({ row }) => <span className="font-mono text-[13px] font-semibold">{row.original.name}</span>,
+    },
+    {
+      accessorKey: "version",
+      header: "Version",
+      cell: ({ row }) => <span className="font-mono text-xs text-muted-foreground">{row.original.version}</span>,
+    },
+    {
+      accessorKey: "description",
+      header: "Description",
+      cell: ({ row }) => (
+        <span className="block max-w-96 truncate text-[13px] text-muted-foreground" title={row.original.description}>
+          {row.original.description}
+        </span>
+      ),
+    },
+    {
+      id: "actions",
+      header: () => <span className="sr-only">Actions</span>,
+      cell: ({ row }) => (
+        <div className="whitespace-nowrap text-right">
+          <Button variant="ghost" size="sm" onClick={() => setDetailName(row.original.name)}>
+            Show
+          </Button>
+          <Button size="sm" className="ml-1.5" onClick={() => setWizard(row.original)}>
+            Instantiate…
+          </Button>
+        </div>
+      ),
+    },
+  ];
+
   return (
-    <div className="mx-auto max-w-7xl px-6 pt-6 pb-8">
-      <PageHeader
-        title="Templates"
-        description={`One-click deploys from the catalog — source: ${catalog.data?.source ?? "…"}. Secret variables are platform-generated and injected as files; values are never shown.`}
-      />
-
-      <div className="rounded-xl border bg-card">
-        {catalog.isPending ? (
-          <div className="flex flex-col gap-2 p-4">
-            {Array.from({ length: 4 }).map((_, index) => (
-              <Skeleton key={index} className="h-10 w-full" />
-            ))}
-          </div>
-        ) : catalog.isError ? (
-          <div className="p-4">
-            <ErrorState error={catalog.error} onRetry={() => void catalog.refetch()} />
-          </div>
-        ) : catalog.data.templates.length === 0 ? (
-          <EmptyState icon={SparklesIcon} title="The catalog is empty" description="Refresh the catalog source or add templates to the registry." />
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Version</TableHead>
-                <TableHead>Description</TableHead>
-                <TableHead />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {catalog.data.templates.map((template) => (
-                <TableRow key={template.name}>
-                  <TableCell className="font-mono text-[13px] font-semibold">{template.name}</TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground">{template.version}</TableCell>
-                  <TableCell className="max-w-96 truncate text-[13px] text-muted-foreground" title={template.description}>
-                    {template.description}
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap text-right">
-                    <Button variant="ghost" size="sm" onClick={() => setDetailName(template.name)}>
-                      Show
-                    </Button>
-                    <Button size="sm" className="ml-1.5" onClick={() => setWizard(template)}>
-                      Instantiate…
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-      </div>
-
-      {/* 详情：变量声明 + compose 体只读 */}
-      <Dialog open={detailName !== null} onOpenChange={(open) => !open && setDetailName(null)}>
-        <DialogContent className="sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Template {detailName}</DialogTitle>
-            <DialogDescription>
-              {detailQuery.data
-                ? `${detailQuery.data.description} · version ${detailQuery.data.version} · ${detailQuery.data.digest.slice(0, 19)}…`
-                : "loading…"}
-            </DialogDescription>
-          </DialogHeader>
-          {detailQuery.isPending ? <Skeleton className="h-40 w-full" /> : null}
-          {detailQuery.isError ? <ErrorState error={detailQuery.error} onRetry={() => void detailQuery.refetch()} /> : null}
-          {detailQuery.data ? (
-            <div className="flex flex-col gap-3">
-              {detailQuery.data.variables.length > 0 ? (
-                <div>
-                  <p className="mb-1 text-xs font-semibold">Variables</p>
-                  <ul className="space-y-1 text-[13px]">
-                    {detailQuery.data.variables.map((v) => (
-                      <li key={v.name}>
-                        <span className="font-mono">{v.name}</span> ({v.type}
-                        {v.required ? ", required" : ""}
-                        {v.default ? `, default ${v.default}` : ""}) — {v.description}
-                      </li>
-                    ))}
-                  </ul>
+    <ListPage
+      title="Templates"
+      description={`One-click deploys from the catalog — source: ${catalog.data?.source ?? "…"}. Secret variables are platform-generated and injected as files; values are never shown.`}
+      label="templates"
+      placeholder="Filter templates..."
+      rows={catalog.data?.templates ?? []}
+      fieldsOf={(template) => [template.name, template.description]}
+      loading={catalog.isPending}
+      error={catalog.isError ? catalog.error : null}
+      onRetry={() => void catalog.refetch()}
+      columns={columns}
+      empty={
+        <EmptyState icon={SparklesIcon} title="The catalog is empty" description="Refresh the catalog source or add templates to the registry." />
+      }
+      appendix={
+        <>
+          {/* 详情：变量声明 + compose 体只读 */}
+          <Dialog open={detailName !== null} onOpenChange={(open) => !open && setDetailName(null)}>
+            <DialogContent className="sm:max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>Template {detailName}</DialogTitle>
+                <DialogDescription>
+                  {detailQuery.data
+                    ? `${detailQuery.data.description} · version ${detailQuery.data.version} · ${detailQuery.data.digest.slice(0, 19)}…`
+                    : "loading…"}
+                </DialogDescription>
+              </DialogHeader>
+              {detailQuery.isPending ? <Skeleton className="h-40 w-full" /> : null}
+              {detailQuery.isError ? <ErrorState error={detailQuery.error} onRetry={() => void detailQuery.refetch()} /> : null}
+              {detailQuery.data ? (
+                <div className="flex flex-col gap-3">
+                  {detailQuery.data.variables.length > 0 ? (
+                    <div>
+                      <p className="mb-1 text-xs font-semibold">Variables</p>
+                      <ul className="space-y-1 text-[13px]">
+                        {detailQuery.data.variables.map((v) => (
+                          <li key={v.name}>
+                            <span className="font-mono">{v.name}</span> ({v.type}
+                            {v.required ? ", required" : ""}
+                            {v.default ? `, default ${v.default}` : ""}) — {v.description}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                  <div>
+                    <p className="mb-1 text-xs font-semibold">Template body</p>
+                    <pre className="max-h-64 overflow-auto rounded-lg border bg-muted/40 p-3 font-mono text-xs">{detailQuery.data.body}</pre>
+                  </div>
                 </div>
               ) : null}
-              <div>
-                <p className="mb-1 text-xs font-semibold">Template body</p>
-                <pre className="max-h-64 overflow-auto rounded-lg border bg-muted/40 p-3 font-mono text-xs">{detailQuery.data.body}</pre>
-              </div>
-            </div>
-          ) : null}
-        </DialogContent>
-      </Dialog>
+            </DialogContent>
+          </Dialog>
 
-      {wizard ? (
-        <InstantiateWizard
-          template={wizard}
-          projects={projects.data ?? []}
-          onClose={() => setWizard(null)}
-          onDeployed={(deploymentId) => {
-            setWizard(null);
-            navigate.history.push(`/deployments/${encodeURIComponent(deploymentId)}`);
-          }}
-        />
-      ) : null}
-    </div>
+          {wizard ? (
+            <InstantiateWizard
+              template={wizard}
+              projects={projects.data ?? []}
+              onClose={() => setWizard(null)}
+              onDeployed={(deploymentId) => {
+                setWizard(null);
+                navigate.history.push(`/deployments/${encodeURIComponent(deploymentId)}`);
+              }}
+            />
+          ) : null}
+        </>
+      }
+    />
   );
 }
 

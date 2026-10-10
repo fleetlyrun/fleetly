@@ -3,28 +3,20 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 import { PlusIcon } from "lucide-react";
+import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
 import { toast } from "sonner";
 import type { components as identitySchemas } from "@/api/identity";
 import { apiSend } from "@/api/client";
 import { describeError } from "@/lib/api-errors";
 import { useInvitations, useRoles, useTeams, useUsers } from "@/lib/catalog";
+import { ConfirmDialog } from "@/components/domain/confirm-dialog";
 import { CopyButton } from "@/components/domain/copy-button";
-import { CliEquivalent, ListPagination, ListToolbar, useClientPage, useListFilter } from "@/components/domain/list-toolbar";
 import { EmptyState } from "@/components/domain/empty-state";
 import { ErrorState } from "@/components/domain/error-state";
-import { PageHeader } from "@/components/domain/page-header";
+import { ListCard } from "@/components/domain/list-page";
+import { ModulePage } from "@/components/domain/module-page";
 import { RelativeTime } from "@/components/domain/relative-time";
 import { StatusBadge } from "@/components/domain/status-badge";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -46,16 +38,17 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { PageTabs } from "@/components/domain/page-tabs";
 
 type User = identitySchemas["schemas"]["v1User"];
 type Team = identitySchemas["schemas"]["v1Team"];
 type Role = identitySchemas["schemas"]["v1Role"];
 type Invitation = identitySchemas["schemas"]["v1Invitation"];
 
-// 身份管理页（C2 治理批 → UI v2 批 5 reskin）：RBAC 的 UI 面——users /
-// teams / roles / invitations 四 tab（URL param），动词面对齐 CLI。明文
-// 凭证沿 CLI 口径：邀请 secret 只在铸造响应出现一次（SecretReveal 形态）。
+// 身份管理页（C2 治理批 → UI v2 批 5 reskin；模板化收编 ModulePage +
+// ListCard + ConfirmDialog）：users / teams / roles / invitations 四 tab
+//（URL param），动词面对齐 CLI。明文凭证沿 CLI 口径：邀请 secret 只在
+// 铸造响应出现一次（SecretReveal 形态）。users tab 的行内设密表单行走
+// children 逃生舱（跨行展开是 DataTable 列模型表达不了的特例）。
 const identitySearch = z.object({ tab: z.enum(["users", "teams", "roles", "invitations"]).optional() });
 
 export const Route = createFileRoute("/_shell/identity")({
@@ -70,37 +63,30 @@ function IdentityPageV2() {
   // 切 tab 即收起未完成的创建弹窗。
   const [createOpen, setCreateOpen] = useState(false);
   return (
-    <div className="mx-auto max-w-7xl px-6 pt-6 pb-8">
-      <PageHeader
-        title="Identity"
-        description="Users, teams, roles and invitations — the RBAC face"
-      />
-      <PageTabs
-        tabs={[
-          { value: "users", label: "Users" },
-          { value: "teams", label: "Teams" },
-          { value: "roles", label: "Roles" },
-          { value: "invitations", label: "Invitations" },
-        ]}
-        current={tab}
-        onChange={(value) => {
-          setCreateOpen(false);
-          void navigate({ search: { tab: value } });
-        }}
-      />
+    <ModulePage
+      title="Identity"
+      description="Users, teams, roles and invitations — the RBAC face"
+      tabs={[
+        { value: "users", label: "Users" },
+        { value: "teams", label: "Teams" },
+        { value: "roles", label: "Roles" },
+        { value: "invitations", label: "Invitations" },
+      ]}
+      current={tab}
+      onTabChange={(value) => {
+        setCreateOpen(false);
+        void navigate({ search: { tab: value } });
+      }}
+    >
       {tab === "users" ? <UsersTab createOpen={createOpen} onCreateOpenChange={setCreateOpen} /> : null}
       {tab === "teams" ? <TeamsTab /> : null}
       {tab === "roles" ? <RolesTab createOpen={createOpen} onCreateOpenChange={setCreateOpen} /> : null}
       {tab === "invitations" ? <InvitationsTab createOpen={createOpen} onCreateOpenChange={setCreateOpen} /> : null}
-    </div>
+    </ModulePage>
   );
 }
 
 // ---- 共用小件 ----
-
-function PanelCard({ children }: { children: React.ReactNode }) {
-  return <div className="rounded-xl border bg-card">{children}</div>;
-}
 
 function useInvalidate(key: readonly unknown[]) {
   const queryClient = useQueryClient();
@@ -115,60 +101,62 @@ function fieldError(error: unknown): string {
 
 function UsersTab({ createOpen, onCreateOpenChange }: { createOpen: boolean; onCreateOpenChange: (open: boolean) => void }) {
   const users = useUsers();
-  const [query, setQuery] = useState("");
-  const filtered = useListFilter(users.data ?? [], query, (user: User) => [user.name ?? "", user.id ?? ""]);
-  const { page, pageCount, pageRows, setPage } = useClientPage(filtered);
+  const rows = users.data ?? [];
   return (
     <>
-      <PanelCard>
-        <div className="px-3 pt-3">
-          <ListToolbar
-            label="users"
-            value={query}
-            onChange={setQuery}
-            placeholder="Filter users..."
-            total={(users.data ?? []).length}
-            shown={filtered.length}
-            actions={
-              <Button size="sm" onClick={() => onCreateOpenChange(true)}>
-                <PlusIcon data-icon-start-inline />
-                New user…
-              </Button>
-            }
-          />
-        </div>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>ID</TableHead>
-              <TableHead>Created</TableHead>
-              <TableHead />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {users.isPending ? (
+      <ListCard
+        label="users"
+        placeholder="Filter users..."
+        rows={rows}
+        fieldsOf={(user) => [user.name ?? "", user.id ?? ""]}
+        loading={users.isPending}
+        error={users.isError ? users.error : null}
+        onRetry={() => void users.refetch()}
+        cli="fleetly users list"
+        actions={
+          <Button size="sm" onClick={() => onCreateOpenChange(true)}>
+            <PlusIcon data-icon-start-inline />
+            New user…
+          </Button>
+        }
+        empty={<EmptyState icon={PlusIcon} title="No users yet" description="Create one, or mint a token in Settings." />}
+      >
+        {({ rows: filtered, query }) => (
+          <Table>
+            <TableHeader>
               <TableRow>
-                <TableCell colSpan={4}><Skeleton className="h-5 w-full" /></TableCell>
+                <TableHead>Name</TableHead>
+                <TableHead>ID</TableHead>
+                <TableHead>Created</TableHead>
+                <TableHead />
               </TableRow>
-            ) : users.isError ? (
-              <TableRow>
-                <TableCell colSpan={4}><ErrorState error={users.error} onRetry={() => void users.refetch()} /></TableCell>
-              </TableRow>
-            ) : (users.data ?? []).length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={4}>
-                  <EmptyState icon={PlusIcon} title="No users yet" description="Create one, or mint a token in Settings." />
-                </TableCell>
-              </TableRow>
-            ) : (
-              pageRows.map((user) => <UserRow key={user.id} user={user} />)
-            )}
-          </TableBody>
-        </Table>
-        <ListPagination page={page} pageCount={pageCount} setPage={setPage} total={filtered.length} />
-      </PanelCard>
-      <CliEquivalent command="fleetly users list" />
+            </TableHeader>
+            <TableBody>
+              {users.isPending ? (
+                <TableRow>
+                  <TableCell colSpan={4}><Skeleton className="h-5 w-full" /></TableCell>
+                </TableRow>
+              ) : users.isError ? (
+                <TableRow>
+                  <TableCell colSpan={4}><ErrorState error={users.error} onRetry={() => void users.refetch()} /></TableCell>
+                </TableRow>
+              ) : filtered.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={4}>
+                    {query.trim() !== "" ? (
+                      <span className="block py-8 text-center text-sm text-muted-foreground">No users match the filter.</span>
+                    ) : (
+                      <EmptyState icon={PlusIcon} title="No users yet" description="Create one, or mint a token in Settings." />
+                    )}
+                  </TableCell>
+                </TableRow>
+              ) : (
+                filtered.map((user) => <UserRow key={user.id} user={user} />)
+              )}
+            </TableBody>
+          </Table>
+        )}
+      </ListCard>
       <CreateUserDialog open={createOpen} onClose={() => onCreateOpenChange(false)} />
     </>
   );
@@ -206,13 +194,13 @@ function UserRow({ user }: { user: User }) {
         </TableCell>
       </TableRow>
       {pwOpen ? <SetPasswordRow userId={user.id ?? ""} onDone={() => setPwOpen(false)} /> : null}
-      <AlertDialogLike
+      <ConfirmDialog
         open={deleting}
         onOpenChange={setDeleting}
-        title={`Delete user ${user.name}?`}
+        title={`Delete user ${user.name ?? ""}?`}
         description="Tokens minted by this user lose their membership scoping. This cannot be undone."
         confirmLabel="Delete user"
-        onConfirm={() => remove.mutateAsync().catch(() => undefined)}
+        onConfirm={() => remove.mutateAsync()}
       />
     </>
   );
@@ -340,9 +328,6 @@ function TeamsTab() {
   const [name, setName] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [deleting, setDeleting] = useState<Team | null>(null);
-  const [query, setQuery] = useState("");
-  const filtered = useListFilter(teams.data ?? [], query, (team: Team) => [team.name ?? "", team.id ?? ""]);
-  const { page, pageCount, pageRows, setPage } = useClientPage(filtered);
   const create = useMutation({
     mutationFn: () => apiSend("/v1/teams", "POST", { name }),
     onSuccess: () => {
@@ -353,66 +338,65 @@ function TeamsTab() {
     },
     onError: (cause) => toast.error(fieldError(cause)),
   });
+
+  function deleteTeam(id: string) {
+    return apiSend(`/v1/teams/${encodeURIComponent(id)}`, "DELETE").then(() => {
+      invalidate();
+      toast("Team deleted");
+    });
+  }
+
+  const columns: LegacyColumnDef<Team, any>[] = [
+    { accessorKey: "name", header: "Name", cell: ({ row }) => <span className="text-[13px] font-medium">{row.original.name}</span> },
+    {
+      accessorKey: "id",
+      header: "ID",
+      cell: ({ row }) => (
+        <span className="font-mono text-[11px] text-muted-foreground">
+          {row.original.id?.slice(0, 10)}…<CopyButton value={row.original.id ?? ""} />
+        </span>
+      ),
+    },
+    {
+      accessorKey: "created_at",
+      header: "Created",
+      cell: ({ row }) => (
+        <span className="text-xs text-muted-foreground"><RelativeTime value={row.original.created_at} /></span>
+      ),
+    },
+    {
+      id: "actions",
+      header: () => <span className="sr-only">Actions</span>,
+      cell: ({ row }) => (
+        <div className="text-right">
+          <Button variant="outline" size="sm" className="text-[var(--status-danger)]" onClick={() => setDeleting(row.original)}>
+            delete
+          </Button>
+        </div>
+      ),
+    },
+  ];
+
   return (
     <>
-      <PanelCard>
-        <div className="px-3 pt-3">
-          <ListToolbar
-            label="teams"
-            value={query}
-            onChange={setQuery}
-            placeholder="Filter teams..."
-            total={(teams.data ?? []).length}
-            shown={filtered.length}
-            actions={
-              <Button size="sm" onClick={() => { setName(""); setCreateOpen(true); }}>
-                <PlusIcon data-icon-start-inline />
-                New team…
-              </Button>
-            }
-          />
-        </div>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>ID</TableHead>
-              <TableHead>Created</TableHead>
-              <TableHead />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {teams.isPending ? (
-              <TableRow><TableCell colSpan={4}><Skeleton className="h-5 w-full" /></TableCell></TableRow>
-            ) : teams.isError ? (
-              <TableRow><TableCell colSpan={4}><ErrorState error={teams.error} onRetry={() => void teams.refetch()} /></TableCell></TableRow>
-            ) : (teams.data ?? []).length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={4}>
-                  <EmptyState icon={PlusIcon} title="No teams" description="The default team always exists implicitly." />
-                </TableCell>
-              </TableRow>
-            ) : (
-              pageRows.map((team) => (
-                <TableRow key={team.id}>
-                  <TableCell className="text-[13px] font-medium">{team.name}</TableCell>
-                  <TableCell className="font-mono text-[11px] text-muted-foreground">
-                    {team.id?.slice(0, 10)}…<CopyButton value={team.id ?? ""} />
-                  </TableCell>
-                  <TableCell className="text-xs text-muted-foreground"><RelativeTime value={team.created_at} /></TableCell>
-                  <TableCell className="text-right">
-                    <Button variant="outline" size="sm" className="text-[var(--status-danger)]" onClick={() => setDeleting(team)}>
-                      delete
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-        <ListPagination page={page} pageCount={pageCount} setPage={setPage} total={filtered.length} />
-      </PanelCard>
-      <CliEquivalent command="fleetly teams list" />
+      <ListCard
+        label="teams"
+        placeholder="Filter teams..."
+        rows={teams.data ?? []}
+        fieldsOf={(team) => [team.name ?? "", team.id ?? ""]}
+        loading={teams.isPending}
+        error={teams.isError ? teams.error : null}
+        onRetry={() => void teams.refetch()}
+        columns={columns}
+        cli="fleetly teams list"
+        actions={
+          <Button size="sm" onClick={() => { setName(""); setCreateOpen(true); }}>
+            <PlusIcon data-icon-start-inline />
+            New team…
+          </Button>
+        }
+        empty={<EmptyState icon={PlusIcon} title="No teams" description="The default team always exists implicitly." />}
+      />
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -440,7 +424,7 @@ function TeamsTab() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <AlertDialogLike
+      <ConfirmDialog
         open={deleting != null}
         onOpenChange={(open) => {
           if (!open) setDeleting(null);
@@ -448,13 +432,7 @@ function TeamsTab() {
         title={`Delete team ${deleting?.name ?? ""}?`}
         description="Members lose this team's role grants. This cannot be undone."
         confirmLabel="Delete team"
-        onConfirm={() =>
-          apiSend(`/v1/teams/${encodeURIComponent(deleting?.id ?? "")}`, "DELETE")
-            .then(() => {
-              invalidate();
-              toast("Team deleted");
-            })
-        }
+        onConfirm={() => deleteTeam(deleting?.id ?? "")}
       />
     </>
   );
@@ -465,98 +443,90 @@ function TeamsTab() {
 function RolesTab({ createOpen, onCreateOpenChange }: { createOpen: boolean; onCreateOpenChange: (open: boolean) => void }) {
   const teams = useTeams();
   const roles = useRoles();
-  const [query, setQuery] = useState("");
-  const filtered = useListFilter(roles.data ?? [], query, (role: Role) => [role.name ?? "", ...(role.scopes ?? [])]);
-  const { page, pageCount, pageRows, setPage } = useClientPage(filtered);
-  return (
-    <>
-      <PanelCard>
-        <div className="px-3 pt-3">
-          <ListToolbar
-            label="roles"
-            value={query}
-            onChange={setQuery}
-            placeholder="Filter roles..."
-            total={(roles.data ?? []).length}
-            shown={filtered.length}
-            actions={
-              <Button size="sm" onClick={() => onCreateOpenChange(true)}>
-                <PlusIcon data-icon-start-inline />
-                New role…
-              </Button>
-            }
-          />
-        </div>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Team</TableHead>
-              <TableHead>Kind</TableHead>
-              <TableHead>Scopes</TableHead>
-              <TableHead />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {roles.isPending ? (
-              <TableRow><TableCell colSpan={5}><Skeleton className="h-5 w-full" /></TableCell></TableRow>
-            ) : roles.isError ? (
-              <TableRow><TableCell colSpan={5}><ErrorState error={roles.error} onRetry={() => void roles.refetch()} /></TableCell></TableRow>
-            ) : (roles.data ?? []).length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={5}>
-                  <EmptyState icon={PlusIcon} title="No roles" description="Builtin templates are listed here once queried per team." />
-                </TableCell>
-              </TableRow>
-            ) : (
-              pageRows.map((role) => <RoleRow key={role.id} role={role} />)
-            )}
-          </TableBody>
-        </Table>
-        <ListPagination page={page} pageCount={pageCount} setPage={setPage} total={filtered.length} />
-      </PanelCard>
-      <CliEquivalent command="fleetly roles list" />
-      <CreateRoleDialog open={createOpen} onClose={() => onCreateOpenChange(false)} teams={teams.data ?? []} />
-    </>
-  );
-}
-
-function RoleRow({ role }: { role: Role }) {
   const invalidate = useInvalidate(["settings", "roles"]);
-  const [deleting, setDeleting] = useState(false);
-  return (
-    <>
-      <TableRow>
-        <TableCell className="text-[13px] font-medium">{role.name}</TableCell>
-        <TableCell className="font-mono text-[11px] text-muted-foreground">{role.team_id?.slice(0, 10) ?? "—"}</TableCell>
-        <TableCell>
-          <StatusBadge tone={role.builtin ? "info" : "neutral"}>{role.builtin ? "builtin" : "custom"}</StatusBadge>
-        </TableCell>
-        <TableCell className="max-w-md truncate font-mono text-[11px] text-muted-foreground" title={(role.scopes ?? []).join(" ")}>
-          {(role.scopes ?? []).join(" ")}
-        </TableCell>
-        <TableCell className="text-right">
-          {role.builtin ? null : (
-            <Button variant="outline" size="sm" className="text-[var(--status-danger)]" onClick={() => setDeleting(true)}>
+
+  function deleteRole(id: string) {
+    return apiSend(`/v1/roles/${encodeURIComponent(id)}`, "DELETE").then(() => {
+      invalidate();
+      toast("Role deleted");
+    });
+  }
+
+  const columns: LegacyColumnDef<Role, any>[] = [
+    { accessorKey: "name", header: "Name", cell: ({ row }) => <span className="text-[13px] font-medium">{row.original.name}</span> },
+    {
+      accessorKey: "team_id",
+      header: "Team",
+      cell: ({ row }) => <span className="font-mono text-[11px] text-muted-foreground">{row.original.team_id?.slice(0, 10) ?? "—"}</span>,
+    },
+    {
+      accessorKey: "builtin",
+      header: "Kind",
+      cell: ({ row }) => (
+        <StatusBadge tone={row.original.builtin ? "info" : "neutral"}>{row.original.builtin ? "builtin" : "custom"}</StatusBadge>
+      ),
+    },
+    {
+      id: "scopes",
+      header: "Scopes",
+      cell: ({ row }) => (
+        <span
+          className="block max-w-md truncate font-mono text-[11px] text-muted-foreground"
+          title={(row.original.scopes ?? []).join(" ")}
+        >
+          {(row.original.scopes ?? []).join(" ")}
+        </span>
+      ),
+    },
+    {
+      id: "actions",
+      header: () => <span className="sr-only">Actions</span>,
+      cell: ({ row }) =>
+        row.original.builtin ? null : (
+          <div className="text-right">
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-[var(--status-danger)]"
+              onClick={() => setDeleting(row.original)}
+            >
               delete
             </Button>
-          )}
-        </TableCell>
-      </TableRow>
-      <AlertDialogLike
-        open={deleting}
-        onOpenChange={setDeleting}
-        title={`Delete role ${role.name}?`}
+          </div>
+        ),
+    },
+  ];
+  const [deleting, setDeleting] = useState<Role | null>(null);
+
+  return (
+    <>
+      <ListCard
+        label="roles"
+        placeholder="Filter roles..."
+        rows={roles.data ?? []}
+        fieldsOf={(role) => [role.name ?? "", ...(role.scopes ?? [])]}
+        loading={roles.isPending}
+        error={roles.isError ? roles.error : null}
+        onRetry={() => void roles.refetch()}
+        columns={columns}
+        cli="fleetly roles list"
+        actions={
+          <Button size="sm" onClick={() => onCreateOpenChange(true)}>
+            <PlusIcon data-icon-start-inline />
+            New role…
+          </Button>
+        }
+        empty={<EmptyState icon={PlusIcon} title="No roles" description="Builtin templates are listed here once queried per team." />}
+      />
+      <ConfirmDialog
+        open={deleting != null}
+        onOpenChange={(open) => !open && setDeleting(null)}
+        title={`Delete role ${deleting?.name ?? ""}?`}
         description="Users holding this role lose its scopes. This cannot be undone."
         confirmLabel="Delete role"
-        onConfirm={() =>
-          apiSend(`/v1/roles/${encodeURIComponent(role.id ?? "")}`, "DELETE")
-            .then(() => {
-              invalidate();
-              toast("Role deleted");
-            })
-        }
+        onConfirm={() => deleteRole(deleting?.id ?? "")}
       />
+      <CreateRoleDialog open={createOpen} onClose={() => onCreateOpenChange(false)} teams={teams.data ?? []} />
     </>
   );
 }
@@ -628,76 +598,77 @@ function InvitationsTab({ createOpen, onCreateOpenChange }: { createOpen: boolea
   const invitations = useInvitations();
   const teams = useTeams();
   const roles = useRoles();
-  const [query, setQuery] = useState("");
-  const filtered = useListFilter(invitations.data ?? [], query, (invitation: Invitation) => [invitation.id ?? "", invitation.team_id ?? "", invitation.role_id ?? "", invitation.created_by ?? ""]);
-  const { page, pageCount, pageRows, setPage } = useClientPage(filtered);
+
+  const columns: LegacyColumnDef<Invitation, any>[] = [
+    {
+      accessorKey: "id",
+      header: "ID",
+      cell: ({ row }) => (
+        <span className="font-mono text-[11px] text-muted-foreground">
+          {row.original.id?.slice(0, 10)}…<CopyButton value={row.original.id ?? ""} />
+        </span>
+      ),
+    },
+    {
+      accessorKey: "team_id",
+      header: "Team",
+      cell: ({ row }) => <span className="font-mono text-[11px] text-muted-foreground">{row.original.team_id?.slice(0, 10)}</span>,
+    },
+    {
+      accessorKey: "role_id",
+      header: "Role",
+      cell: ({ row }) => <span className="font-mono text-[11px] text-muted-foreground">{row.original.role_id?.slice(0, 10)}</span>,
+    },
+    {
+      accessorKey: "created_by",
+      header: "Created by",
+      cell: ({ row }) => <span className="text-xs text-muted-foreground">{row.original.created_by}</span>,
+    },
+    {
+      accessorKey: "expires_at",
+      header: "Expires",
+      cell: ({ row }) => (
+        <span className="text-xs text-muted-foreground"><RelativeTime value={row.original.expires_at} /></span>
+      ),
+    },
+    {
+      accessorKey: "consumed_at",
+      header: "Consumed",
+      cell: ({ row }) =>
+        row.original.consumed_at ? (
+          <span className="text-xs text-muted-foreground">yes</span>
+        ) : (
+          <StatusBadge tone="success">open</StatusBadge>
+        ),
+    },
+    {
+      accessorKey: "created_at",
+      header: "Created",
+      cell: ({ row }) => (
+        <span className="text-xs text-muted-foreground"><RelativeTime value={row.original.created_at} /></span>
+      ),
+    },
+  ];
+
   return (
     <>
-      <PanelCard>
-        <div className="px-3 pt-3">
-          <ListToolbar
-            label="invitations"
-            value={query}
-            onChange={setQuery}
-            placeholder="Filter invitations..."
-            total={(invitations.data ?? []).length}
-            shown={filtered.length}
-            actions={
-              <Button size="sm" onClick={() => onCreateOpenChange(true)}>
-                <PlusIcon data-icon-start-inline />
-                New invitation…
-              </Button>
-            }
-          />
-        </div>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>ID</TableHead>
-              <TableHead>Team</TableHead>
-              <TableHead>Role</TableHead>
-              <TableHead>Created by</TableHead>
-              <TableHead>Expires</TableHead>
-              <TableHead>Consumed</TableHead>
-              <TableHead>Created</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {invitations.isPending ? (
-              <TableRow><TableCell colSpan={7}><Skeleton className="h-5 w-full" /></TableCell></TableRow>
-            ) : invitations.isError ? (
-              <TableRow><TableCell colSpan={7}><ErrorState error={invitations.error} onRetry={() => void invitations.refetch()} /></TableCell></TableRow>
-            ) : (invitations.data ?? []).length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={7}>
-                  <EmptyState icon={PlusIcon} title="No invitations" description="Mint one to onboard a teammate — the secret is shown once." />
-                </TableCell>
-              </TableRow>
-            ) : (
-              pageRows.map((invitation) => (
-                <TableRow key={invitation.id}>
-                  <TableCell className="font-mono text-[11px] text-muted-foreground">
-                    {invitation.id?.slice(0, 10)}…<CopyButton value={invitation.id ?? ""} />
-                  </TableCell>
-                  <TableCell className="font-mono text-[11px] text-muted-foreground">{invitation.team_id?.slice(0, 10)}</TableCell>
-                  <TableCell className="font-mono text-[11px] text-muted-foreground">{invitation.role_id?.slice(0, 10)}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{invitation.created_by}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground"><RelativeTime value={invitation.expires_at} /></TableCell>
-                  <TableCell>
-                    {invitation.consumed_at ? (
-                      <span className="text-xs text-muted-foreground">yes</span>
-                    ) : (
-                      <StatusBadge tone="success">open</StatusBadge>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-xs text-muted-foreground"><RelativeTime value={invitation.created_at} /></TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-        <ListPagination page={page} pageCount={pageCount} setPage={setPage} total={filtered.length} />
-      </PanelCard>
+      <ListCard
+        label="invitations"
+        placeholder="Filter invitations..."
+        rows={invitations.data ?? []}
+        fieldsOf={(invitation) => [invitation.id ?? "", invitation.team_id ?? "", invitation.role_id ?? "", invitation.created_by ?? ""]}
+        loading={invitations.isPending}
+        error={invitations.isError ? invitations.error : null}
+        onRetry={() => void invitations.refetch()}
+        columns={columns}
+        actions={
+          <Button size="sm" onClick={() => onCreateOpenChange(true)}>
+            <PlusIcon data-icon-start-inline />
+            New invitation…
+          </Button>
+        }
+        empty={<EmptyState icon={PlusIcon} title="No invitations" description="Mint one to onboard a teammate — the secret is shown once." />}
+      />
       {/* invitations 无 CLI list 动词——CLI 行诚实省略 */}
       <CreateInvitationDialog open={createOpen} onClose={() => onCreateOpenChange(false)} teams={teams.data ?? []} roles={roles.data ?? []} />
     </>
@@ -789,53 +760,5 @@ function CreateInvitationDialog({ open, onClose, teams, roles }: { open: boolean
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  );
-}
-
-// AlertDialogLike 是本页删除确认的薄封装（标题/描述/确认词参数化——
-// shadcn AlertDialog 原件，破坏性操作契约不变）。
-function AlertDialogLike({
-  open,
-  onOpenChange,
-  title,
-  description,
-  confirmLabel,
-  onConfirm,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  title: string;
-  description: string;
-  confirmLabel: string;
-  onConfirm: () => Promise<unknown>;
-}) {
-  const [pending, setPending] = useState(false);
-  return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>{title}</AlertDialogTitle>
-          <AlertDialogDescription>{description}</AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction asChild>
-            <Button
-              variant="destructive"
-              disabled={pending}
-              onClick={() => {
-                setPending(true);
-                void onConfirm().finally(() => {
-                  setPending(false);
-                  onOpenChange(false);
-                });
-              }}
-            >
-              {pending ? "Working…" : confirmLabel}
-            </Button>
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
   );
 }

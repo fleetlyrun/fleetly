@@ -7,23 +7,14 @@ import type { components as runtimeSchemas } from "@/api/runtime";
 import { apiSend } from "@/api/client";
 import { useNodes } from "@/lib/catalog";
 import { describeError } from "@/lib/api-errors";
+import { ConfirmDialog } from "@/components/domain/confirm-dialog";
 import { CopyButton } from "@/components/domain/copy-button";
 import { EmptyState } from "@/components/domain/empty-state";
 import { ErrorState } from "@/components/domain/error-state";
-import { ListToolbar, useListFilter } from "@/components/domain/list-toolbar";
-import { PageHeader } from "@/components/domain/page-header";
+import { ListCard } from "@/components/domain/list-page";
+import { PageFrame } from "@/components/domain/page-frame";
 import { RelativeTime } from "@/components/domain/relative-time";
 import { StatusBadge, nodeTone } from "@/components/domain/status-badge";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -45,7 +36,10 @@ import {
 
 type Node = runtimeSchemas["schemas"]["v1Node"];
 
-// 节点页（C4 → UI v2 批 5 reskin）：RuntimeAdmin 的 UI 面——集群成员表
+// 节点页（C4 → UI v2 批 5 reskin；模板化收编 PageFrame+ListCard）：页头
+// 动词钮随对齐批 5 裁决收进工具栏主动作槽。表格体走 children 逃生舱自
+// 绘——行级动作错误行（cordon/drain 的行内失败披露）是 DataTable 列模型
+// 表达不了的特例；四态语义原样。RuntimeAdmin 的 UI 面——集群成员表
 //（可用态/中继活体）+ 运维三动词（drain/cordon/uncordon，drain 真迁移
 // 任务）+ enroll 材料（join/relay 两条命令，等价集群成员权——platform
 // admin 档才能取）。动词面与 W2 措辞（unavailable = 历史行语义）原样。
@@ -60,15 +54,15 @@ function NodesPage() {
   const enroll = useEnrollMaterial(false, setMaterial);
   const rotate = useEnrollMaterial(true, setMaterial);
 
-  const [query, setQuery] = useState("");
   const sorted = [...(nodes.data ?? [])].sort((a, b) => Number(b.available ?? false) - Number(a.available ?? false));
-  const rows = useListFilter(sorted, query, (node: { platform_id?: string; hostname?: string; role?: string }) => [node.hostname ?? "", node.platform_id ?? "", node.role ?? ""]);
 
   return (
-    <div className="mx-auto max-w-7xl px-6 pt-6 pb-8">
-      <PageHeader
-        title="Nodes"
-        description="Cluster membership, relay liveness and the runtime admin verbs"
+    <PageFrame title="Nodes" description="Cluster membership, relay liveness and the runtime admin verbs">
+      <ListCard
+        label="nodes"
+        placeholder="Filter nodes..."
+        rows={sorted}
+        fieldsOf={(node) => [node.hostname ?? "", node.platform_id ?? "", node.role ?? ""]}
         actions={
           <>
             <Button variant="outline" size="sm" disabled={enroll.isPending} onClick={() => enroll.mutate()}>
@@ -80,89 +74,69 @@ function NodesPage() {
             </Button>
           </>
         }
-      />
-
-      <div className="rounded-xl border bg-card">
-        <div className="px-3 pt-3">
-          <ListToolbar label="nodes" value={query} onChange={setQuery} placeholder="Filter nodes..." total={(nodes.data ?? []).length} shown={rows.length} />
-        </div>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Hostname</TableHead>
-              <TableHead>Role</TableHead>
-              <TableHead>Availability</TableHead>
-              <TableHead>Relay</TableHead>
-              <TableHead>Last seen</TableHead>
-              <TableHead />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {nodes.isPending ? (
-              Array.from({ length: 2 }).map((_, index) => (
-                <TableRow key={index}>
-                  {Array.from({ length: 6 }).map((_, cell) => (
-                    <TableCell key={cell}>
-                      <Skeleton className="h-5 w-24" />
-                    </TableCell>
-                  ))}
+      >
+        {({ rows }) => (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Hostname</TableHead>
+                <TableHead>Role</TableHead>
+                <TableHead>Availability</TableHead>
+                <TableHead>Relay</TableHead>
+                <TableHead>Last seen</TableHead>
+                <TableHead />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {nodes.isPending ? (
+                Array.from({ length: 2 }).map((_, index) => (
+                  <TableRow key={index}>
+                    {Array.from({ length: 6 }).map((_, cell) => (
+                      <TableCell key={cell}>
+                        <Skeleton className="h-5 w-24" />
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))
+              ) : nodes.isError ? (
+                <TableRow>
+                  <TableCell colSpan={6}>
+                    <ErrorState error={nodes.error} onRetry={() => void nodes.refetch()} />
+                  </TableCell>
                 </TableRow>
-              ))
-            ) : nodes.isError ? (
-              <TableRow>
-                <TableCell colSpan={6}>
-                  <ErrorState error={nodes.error} onRetry={() => void nodes.refetch()} />
-                </TableCell>
-              </TableRow>
-            ) : rows.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={6}>
-                  <EmptyState
-                    icon={CheckCircle2Icon}
-                    title="No nodes registered"
-                    description="The control plane node appears once its daemon has observed the runtime."
-                  />
-                </TableCell>
-              </TableRow>
-            ) : (
-              rows.map((node) => <NodeRow key={node.platform_id} node={node} />)
-            )}
-          </TableBody>
-        </Table>
-      </div>
+              ) : rows.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6}>
+                    <EmptyState
+                      icon={CheckCircle2Icon}
+                      title="No nodes registered"
+                      description="The control plane node appears once its daemon has observed the runtime."
+                    />
+                  </TableCell>
+                </TableRow>
+              ) : (
+                rows.map((node) => <NodeRow key={node.platform_id} node={node} />)
+              )}
+            </TableBody>
+          </Table>
+        )}
+      </ListCard>
       <p className="mt-3 text-xs text-muted-foreground">
         Drain migrates running tasks off the node (real task movement); cordon/uncordon toggle schedulability. The control-plane node
         hosts the managed carriers (proxy, registry, metrics) and cannot be drained away from them.
       </p>
 
       {material != null ? <MaterialDialog material={material} onClose={() => setMaterial(null)} /> : null}
-      <AlertDialog open={rotating} onOpenChange={setRotating}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Rotate all join tokens?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Previously issued enrollment material stops working immediately (leak handling). Nodes already joined are unaffected.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction asChild>
-              <Button
-                variant="destructive"
-                disabled={rotate.isPending}
-                onClick={() =>
-                  rotate.mutate(undefined, {
-                    onSuccess: () => setRotating(false),
-                  })
-                }
-              >
-                {rotate.isPending ? "Rotating…" : "Rotate tokens"}
-              </Button>
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </div>
+      <ConfirmDialog
+        open={rotating}
+        onOpenChange={setRotating}
+        title="Rotate all join tokens?"
+        description="Previously issued enrollment material stops working immediately (leak handling). Nodes already joined are unaffected."
+        confirmLabel="Rotate tokens"
+        pendingLabel="Rotating…"
+        onConfirm={() => rotate.mutateAsync()}
+      />
+    </PageFrame>
   );
 }
 
@@ -252,38 +226,20 @@ function NodeRow({ node }: { node: Node }) {
 
 function DrainButton({ hostname, onRun }: { hostname: string; onRun: () => Promise<unknown> }) {
   const [open, setOpen] = useState(false);
-  const [pending, setPending] = useState(false);
   return (
     <>
       <Button variant="outline" size="sm" className="text-[var(--status-danger)]" onClick={() => setOpen(true)}>
         drain
       </Button>
-      <AlertDialog open={open} onOpenChange={setOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Drain {hostname}?</AlertDialogTitle>
-            <AlertDialogDescription>Running tasks migrate to other nodes in real time.</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction asChild>
-              <Button
-                variant="destructive"
-                disabled={pending}
-                onClick={() => {
-                  setPending(true);
-                  void onRun().finally(() => {
-                    setPending(false);
-                    setOpen(false);
-                  });
-                }}
-              >
-                {pending ? "Draining…" : "Drain node"}
-              </Button>
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        open={open}
+        onOpenChange={setOpen}
+        title={`Drain ${hostname}?`}
+        description="Running tasks migrate to other nodes in real time."
+        confirmLabel="Drain node"
+        pendingLabel="Draining…"
+        onConfirm={onRun}
+      />
     </>
   );
 }

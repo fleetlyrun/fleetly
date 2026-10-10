@@ -9,7 +9,8 @@ import { describeError } from "@/lib/api-errors";
 import { CopyButton } from "@/components/domain/copy-button";
 import { EmptyState } from "@/components/domain/empty-state";
 import { ErrorState } from "@/components/domain/error-state";
-import { PageHeader } from "@/components/domain/page-header";
+import { PageFrame } from "@/components/domain/page-frame";
+import { SectionCard } from "@/components/domain/section-card";
 import { RelativeTime } from "@/components/domain/relative-time";
 import { StatusBadge } from "@/components/domain/status-badge";
 import {
@@ -44,43 +45,30 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-// 设置页（F3.1 → UI v2 批 5 reskin）：身份（whoami）/ Token 铸造与吊销
-//（Console 自身凭证生命周期；secret 一次性揭示）/ 平台治理（变更冻结 +
-// 平台备份触发与台账）。全部动词语义原样，仅换呈现。
+// 设置页（F3.1 → UI v2 批 5 reskin；模板化收编 PageFrame(narrow) +
+// SectionCard）：身份（whoami）/ Token 铸造与吊销（Console 自身凭证生命
+// 周期；secret 一次性揭示）/ 平台治理（变更冻结 + 平台备份触发与台账）。
+// 全部动词语义原样，仅换呈现。
 export const Route = createFileRoute("/_shell/settings")({
   component: SettingsPageV2,
 });
 
 function SettingsPageV2() {
   return (
-    <div className="mx-auto max-w-5xl px-6 pt-6 pb-8">
-      <PageHeader title="Settings" description="Identity, API tokens and platform governance" />
+    <PageFrame width="narrow" title="Settings" description="Identity, API tokens and platform governance">
       <div className="flex flex-col gap-5">
         <IdentityCard />
         <TokensCard />
         <GovernanceCard />
       </div>
-    </div>
-  );
-}
-
-function Card({ title, icon: Icon, children, action }: { title: string; icon: React.ComponentType<{ className?: string }>; children: React.ReactNode; action?: React.ReactNode }) {
-  return (
-    <section className="rounded-xl border bg-card">
-      <div className="flex items-center gap-2 border-b px-4 py-3">
-        <Icon className="size-4 text-muted-foreground" />
-        <h2 className="text-[13.5px] font-semibold">{title}</h2>
-        {action ? <div className="ml-auto">{action}</div> : null}
-      </div>
-      <div className="px-4 py-3.5">{children}</div>
-    </section>
+    </PageFrame>
   );
 }
 
 function IdentityCard() {
   const whoami = useWhoami(true);
   return (
-    <Card title="Identity" icon={KeyRound}>
+    <SectionCard title="Identity" icon={KeyRound}>
       {whoami.isPending ? (
         <Skeleton className="h-12 w-full" />
       ) : whoami.isError ? (
@@ -97,7 +85,7 @@ function IdentityCard() {
           </dd>
         </dl>
       )}
-    </Card>
+    </SectionCard>
   );
 }
 
@@ -106,7 +94,7 @@ function TokensCard() {
   const roles = useRoles();
   const [createOpen, setCreateOpen] = useState(false);
   return (
-    <Card
+    <SectionCard
       title="API tokens"
       icon={KeyRound}
       action={
@@ -141,7 +129,7 @@ function TokensCard() {
         </Table>
       )}
       <CreateTokenDialog open={createOpen} onClose={() => setCreateOpen(false)} roles={roles.data ?? []} />
-    </Card>
+    </SectionCard>
   );
 }
 
@@ -321,7 +309,7 @@ function GovernanceCard() {
   const active = (freezes.data ?? []).filter((row) => !row.lifted_at);
 
   return (
-    <Card title="Platform governance" icon={ShieldOffIcon}>
+    <SectionCard title="Platform governance" icon={ShieldOffIcon}>
       <div className="flex flex-col gap-4">
         {active.length > 0 ? (
           <div className="rounded-lg border border-[color-mix(in_oklch,var(--status-warning)_35%,transparent)] bg-[var(--status-warning-bg)] px-3 py-2.5">
@@ -385,7 +373,7 @@ function GovernanceCard() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </Card>
+    </SectionCard>
   );
 }
 
