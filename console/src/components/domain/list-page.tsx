@@ -3,7 +3,7 @@ import { SearchXIcon } from "lucide-react";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
 import { DataTable } from "./data-table";
 import { EmptyState } from "./empty-state";
-import { CliEquivalent, ListToolbar, useListFilter } from "./list-toolbar";
+import { CliEquivalent, ListPagination, ListToolbar, useListFilter } from "./list-toolbar";
 import { PageFrame } from "./page-frame";
 
 // 简单 CRUD 列表模板（List 原型整页 = ListPage；卡体 = ListCard）。
@@ -34,7 +34,19 @@ export interface ListCardProps<T extends Record<string, any>> {
   filterEmpty?: ReactNode;
   cli?: string;
   className?: string;
-  children?: ReactNode | ((context: { rows: T[]; query: string }) => ReactNode);
+  children?: ReactNode | ((context: ListChildrenContext<T>) => ReactNode);
+}
+
+// ListChildrenContext 是 children 渲染槽的上下文：rows=过滤后全量，
+// pageRows=当前页切片（children 模式的分页由 ListCard 托管——自绘表格
+// 只管渲染 pageRows，翻页行由模板统一补在卡底）。
+export interface ListChildrenContext<T> {
+  rows: T[];
+  pageRows: T[];
+  query: string;
+  page: number;
+  pageCount: number;
+  setPage: (page: number) => void;
 }
 
 // ListCard 是列表卡体：rounded-xl 卡壳 + 工具栏 + 表格四态 + 分页 +
@@ -62,6 +74,11 @@ export function ListCard<T extends Record<string, any>>({
 }: ListCardProps<T>) {
   const [query, setQuery] = useState("");
   const filtered = useListFilter(rows, query, fieldsOf);
+  const [childPage, setChildPage] = useState(0);
+  const childPageSize = pageSize ?? 20;
+  const childPageCount = Math.max(1, Math.ceil(filtered.length / childPageSize));
+  const safeChildPage = Math.min(childPage, childPageCount - 1);
+  const childPageRows = filtered.slice(safeChildPage * childPageSize, safeChildPage * childPageSize + childPageSize);
   const toolbar = (
     <ListToolbar
       label={label}
@@ -87,25 +104,32 @@ export function ListCard<T extends Record<string, any>>({
           ))
         : empty
       : undefined;
-  const body =
-    typeof children === "function" ? (
-      children({ rows: filtered, query })
-    ) : children ? (
-      children
-    ) : columns ? (
-      <DataTable
-        data={filtered}
-        columns={columns}
-        loading={loading}
-        error={error}
-        onRetry={onRetry}
-        empty={emptyNode}
-        onRowClick={onRowClick}
-        pageSize={pageSize}
-        skeletonRows={skeletonRows}
-        className={className}
-      />
-    ) : null;
+  const childMode = typeof children === "function";
+  const body = childMode ? (
+    (children as (context: ListChildrenContext<T>) => ReactNode)({
+      rows: filtered,
+      pageRows: childPageRows,
+      query,
+      page: safeChildPage,
+      pageCount: childPageCount,
+      setPage: setChildPage,
+    })
+  ) : children ? (
+    children
+  ) : columns ? (
+    <DataTable
+      data={filtered}
+      columns={columns}
+      loading={loading}
+      error={error}
+      onRetry={onRetry}
+      empty={emptyNode}
+      onRowClick={onRowClick}
+      pageSize={pageSize}
+      skeletonRows={skeletonRows}
+      className={className}
+    />
+  ) : null;
   return (
     <>
       <div className="rounded-xl border bg-card">
@@ -122,6 +146,9 @@ export function ListCard<T extends Record<string, any>>({
           <div className="px-3 pt-3">{toolbar}</div>
         )}
         {body}
+        {childMode && !loading && filtered.length > 0 ? (
+          <ListPagination page={safeChildPage} pageCount={childPageCount} setPage={setChildPage} total={filtered.length} />
+        ) : null}
       </div>
       {cli ? <CliEquivalent command={cli} /> : null}
     </>

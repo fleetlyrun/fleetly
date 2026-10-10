@@ -75,7 +75,7 @@ function NodesPage() {
           </>
         }
       >
-        {({ rows }) => (
+        {({ pageRows }) => (
           <Table>
             <TableHeader>
               <TableRow>
@@ -104,7 +104,7 @@ function NodesPage() {
                     <ErrorState error={nodes.error} onRetry={() => void nodes.refetch()} />
                   </TableCell>
                 </TableRow>
-              ) : rows.length === 0 ? (
+              ) : pageRows.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={6}>
                     <EmptyState
@@ -115,7 +115,7 @@ function NodesPage() {
                   </TableCell>
                 </TableRow>
               ) : (
-                rows.map((node) => <NodeRow key={node.platform_id} node={node} />)
+                pageRows.map((node) => <NodeRow key={node.platform_id} node={node} />)
               )}
             </TableBody>
           </Table>

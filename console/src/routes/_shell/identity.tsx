@@ -121,7 +121,7 @@ function UsersTab({ createOpen, onCreateOpenChange }: { createOpen: boolean; onC
         }
         empty={<EmptyState icon={PlusIcon} title="No users yet" description="Create one, or mint a token in Settings." />}
       >
-        {({ rows: filtered, query }) => (
+        {({ pageRows, query }) => (
           <Table>
             <TableHeader>
               <TableRow>
@@ -140,7 +140,7 @@ function UsersTab({ createOpen, onCreateOpenChange }: { createOpen: boolean; onC
                 <TableRow>
                   <TableCell colSpan={4}><ErrorState error={users.error} onRetry={() => void users.refetch()} /></TableCell>
                 </TableRow>
-              ) : filtered.length === 0 ? (
+              ) : pageRows.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={4}>
                     {query.trim() !== "" ? (
@@ -151,7 +151,7 @@ function UsersTab({ createOpen, onCreateOpenChange }: { createOpen: boolean; onC
                   </TableCell>
                 </TableRow>
               ) : (
-                filtered.map((user) => <UserRow key={user.id} user={user} />)
+                pageRows.map((user) => <UserRow key={user.id} user={user} />)
               )}
             </TableBody>
           </Table>
