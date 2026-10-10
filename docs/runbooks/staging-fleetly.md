@@ -504,6 +504,7 @@ ADR-0015 升级序的完整落地形态：**Platform Backup 前置 → SIGTERM �
 - **staging 双主题截图复验（暗色 7 幅，模板代表页）**：Overview（PageFrame wide/Dashboard）、Audit 骨架+数据双态（ListPage：filters 槽 server 过滤器 + Filter 提交钮 + 计数 + 排序表头 + 骨架四态 + CLI 行）、Identity（ModulePage：PageTabs + ListCard + 行内动词）、Settings（narrow + SectionCard ×3）、Nodes（ListCard children 逃生舱：行级动词 + enroll/rotate 工具栏钮位）、Databases（项目级 ListPage：引擎下拉 filters + 项目语境描述 + 行动作）、Storage（ModulePage lead 槽 UsageIndex + Volumes ListCard）。无布局破损；换装前置备份的 platform.backup_trigger 审计行同屏可见（数据链活体）。
 - **诚实边界**：本批复验只过 typecheck/vitest 87/console:verify + staging 截图静态复验；Alerts firing 摘要条（lead 槽带数据形态）与 ConfirmDialog 交互链未真机触发（当前 0 firing、未执行破坏性动作）——下批涉及写面走查时顺带补验。走查痕迹零残留（纯只读 + 既有会话）。
 
+- **Browse 面点检（tmpl2 上复验，记录·十三锚再现）**：Console Browse 点击 → IAB 弹窗拦截器挡 window.open（记录·十四同款）→ REST 铸票等价链走通。**entry URL 形状补记**：`http://browse-<sid>.dev.fleetly.run/v1/browse/entry?session=<sid>&ticket=<one-time>`（查询参数缺席 = pgweb 侧 `bad_ticket` 明确报错；无 cookie 探假路径 401 = ForwardAuth 在位）；**铸票后即刻访问撞 traefik 轮询窗再现（traefik 纯文本 404，票未消费）——sleep 10s 再访**。pgweb 落地 21 表数据锚一致，`show default_transaction_read_only` = **on** 只读执法复证。三会话靠 10min 空闲/30min 硬 TTL 自清（配额窗 3/4）。
 - **同日二次换装 712b25b-tmpl2（UsageIndex 撤块收编，用户裁决"单独放一个没有意义"）**：Storage 独立 UsageIndex 块删除——Volume 挂载反查收编 Volumes 列表 "Mounted by" 列（carrier 卷注记/挂载 App 集/未挂载 `—`，与删除门控同源），Upload 引用反查收编 Uploads "Referenced by" 列；诚实边界注记降列表卡脚注；usage-index.tsx 删除。前置 Platform Backup `21929185`；doctor 0 failed；tw/n0 双 200（冷窗一拍）。Storage 页复验截图：反查信息全部行内可读， Mounted by 空缺行即 delete 可用行，对视路径消失。
 
 ## 教训与边界
