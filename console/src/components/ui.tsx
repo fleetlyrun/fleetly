@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, type ReactNode } from"react";
-import { useMutation, useQueryClient } from"@tanstack/react-query";
-import { ApiError, apiSend } from"../api/client";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { ApiError, apiSend } from "../api/client";
 
 // 共享 UI 件（F2.6 只读三页骨架 + F3.1 写面扩展）：页面骨架、状态徽章、
 // 错误/加载态之外，新增表单字段族（Modal 内的受控输入）、写操作确认钮

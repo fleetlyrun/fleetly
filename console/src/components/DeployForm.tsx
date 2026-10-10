@@ -1,10 +1,10 @@
-import { useState } from"react";
-import { useMutation } from"@tanstack/react-query";
-import type { components } from"../api/delivery";
-import { apiSend } from"../api/client";
-import { useUploads, type AppEntry } from"../lib/catalog";
-import { buildDeployPayload, type DeployFormState } from"../lib/deployPayload";
-import { ErrorNote, Field, Modal, PrimaryButton, Select, TextArea, TextInput } from"./ui";
+import { useState } from "react";
+import { useMutation } from "@tanstack/react-query";
+import type { components } from "../api/delivery";
+import { apiSend } from "../api/client";
+import { useUploads, type AppEntry } from "../lib/catalog";
+import { buildDeployPayload, type DeployFormState } from "../lib/deployPayload";
+import { ErrorNote, Field, Modal, PrimaryButton, Select, TextArea, TextInput } from "./ui";
 
 // DeployForm 是四源部署表单（F3.1 写面核心）：image 直投 / compose_yaml
 // 受控子集 / spec_file 裸 AppSpec / upload_id 上传产物——互斥由服务端

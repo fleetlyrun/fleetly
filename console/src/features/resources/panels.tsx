@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from"react";
-import { useQueryClient } from"@tanstack/react-query";
-import { PlusIcon } from"lucide-react";
-import { toast } from"sonner";
+import { useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { PlusIcon } from "lucide-react";
+import { toast } from "sonner";
 import {
  useApps,
  useConfigs,
@@ -15,11 +15,11 @@ import {
  useSharedVariables,
  useUploads,
  useVolumes,
-} from"@/lib/catalog";
-import { apiSend, apiSendRaw } from"@/api/client";
-import { specIndex, useAppSpecs } from"@/features/spec/use-app-specs";
-import { RelativeTime } from"@/components/domain/relative-time";
-import { Button } from"@/components/ui/button";
+} from "@/lib/catalog";
+import { apiSend, apiSendRaw } from "@/api/client";
+import { specIndex, useAppSpecs } from "@/features/spec/use-app-specs";
+import { RelativeTime } from "@/components/domain/relative-time";
+import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,11 +30,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from"@/components/ui/alert-dialog";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from"@/components/ui/dialog";
-import { Input } from"@/components/ui/input";
-import { Label } from"@/components/ui/label";
-import { buildTar, rootPrefixOf } from"@/lib/tar";
+} from "@/components/ui/alert-dialog";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { buildTar, rootPrefixOf } from "@/lib/tar";
 import {
   DangerRowButton,
   EmptyNote,
@@ -53,7 +53,7 @@ import {
  formatTime,
  shortId,
  useApiMutation,
-} from"@/components/ui";
+} from "@/components/ui";
 
 // 资源面板族（UI v2 批 4）：自旧 Resources.tsx 八 tab 近乎原样搬迁——
 // 走查过的 mutation 语义零漂移（创建/变更/删除/peer 审批/备份
