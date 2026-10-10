@@ -14,9 +14,9 @@ type AppSpec = components["schemas"]["v1AppSpec"];
 
 // per-process 暂存面（IA v3 §4.1 + 原型 screen-appdetail Variables 对齐）：
 // env 与 secret refs 单平面表（VALUE 列内 secret · ref 名 + secret ref
-// 徽标），多 process 用表内分组行承载；对话框暂存，Deploy changes = 冻结 Spec 全量
+// 徽标），多 process 用表内分组行承载；对话框暂存，Apply changes = 冻结 Spec 全量
 // + 暂存改动组装 spec_file 走 Deploy（第四源，零 proto）。脏态表达 =
-// Deploy changes 由禁用变可用（原型口径，不另设 staged 描边）。
+// Apply changes 由禁用变可用（原型口径，不另设 staged 描边）。
 interface ProcessEdits {
   env: Record<string, string>;
   secretRefs: string[];
@@ -49,7 +49,7 @@ export function AppVariablesTab({ projectId, appId }: { projectId: string; appId
     return { env: { ...(process?.env ?? {}) }, secretRefs: [...(process?.secret_refs ?? [])] };
   };
   // hasStagedEdits：任一暂存面与其冻结基线有实际差异（同值编辑不算）——
-  // Deploy changes 的启用门（原型口径：按钮由禁用变可用即脏态表达）。
+  // Apply changes 的启用门（原型口径：按钮由禁用变可用即脏态表达）。
   const hasStagedEdits =
     frozen != null &&
     Object.entries(staged).some(([name, edits]) => {
@@ -127,7 +127,7 @@ export function AppVariablesTab({ projectId, appId }: { projectId: string; appId
           + Add variable
         </Button>
         <Button size="sm" disabled={!hasStagedEdits || deploy.isPending} onClick={() => deploy.mutate()}>
-          {deploy.isPending ? "Deploying…" : "Deploy changes"}
+          {deploy.isPending ? "Deploying…" : "Apply changes"}
         </Button>
       </div>
 
