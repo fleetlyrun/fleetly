@@ -459,6 +459,13 @@ ADR-0015 升级序的完整落地形态：**Platform Backup 前置 → SIGTERM �
 - **新面真机**：GetStatus components 五组件真健康（Managed Providers 页真探活 details/ingest freshness "1s ago" 活体）；GetAppSpec 冻结 Spec 回读（Variables tab）；logs --database 真库载体日志（torchwood-pg）；DownloadBackup 真下载（55287B 与台账一致）；RestartComponent zot 真重启（1 carrier，15s 自愈回 healthy；unknown 精确 E_NOT_FOUND）。走查全录：docs/reviews/2026-10-10-console-ia-v3-staging-walkthrough.md（W-1/W-2 crumb 文案小项随批 6 修）。
 - **教训增补**：①console HTTP 在 9081 网关（9080 是 gRPC——HTTP/0.9 探针报错即探错口）；②tokens create 的 --role 取 ROLE_ID（builtin-owner）非角色名，且旗标必须前置（位置参数后旗标变位置参数——老坑新犯）。
 
+## 2026-10-10 记录·二十九（IA v3 二期⑤b 换装 a483335-iav3p2b + 浏览器真机走查 PASS）
+
+- **换装**（7a74b9f-iav3p2 → **a483335-iav3p2b（现役）**，二期⑤b 四件 + W-1/W-2 + Storage reskin 共 11 commit）：零迁移（goose 停 28）、install.sh 零变更、config 键面零新增。前置 Platform Backup `e384e66f` + 十卷 tar 至 /root/upgrade-iav3b/vols/ + 旧二进制留存。drop-in 五件全存活；doctor 10 ok / 2 warning / 0 failed。traefik 载体未滚动（Up 34h 跨换装）。
+- **真机走查 PASS**（报告 docs/reviews/2026-10-10-console-iav3p2b-walkthrough.md）：Variables 暂存编辑流真机全链（R3/R4 双部署 succeeded）；walkpg 真轮换（gRPC 1s + outbox database.credentials_rotated + Secret 指纹同刻）；walk-vol 卷删除全链 + 服务端 E_CONFLICT 点名 database 挂靠；磁盘水位 48% 真数据；Registry 诚实空态。发现 W-3/W-4（console 小 bug，随批 7 修）/W-5/W-6/W-7。
+- **教训增补（路由探针剧本）**：staging 路由探针 = `curl -sk --resolve <host>:443:127.0.0.1 https://<host>/`——①本环境 ACME caserver 钉 LE staging，严格校验必失败（-k 必带）；②带 tls 段的路由只在 443（80 探针 404 是正常行为）；③本机 shell 带死代理时探针全 000（对端执行或 --noproxy）。换装后"路由全断"警报曾为三重假象。
+- **残留**：walkpg 的 credential secret 与卷行按留存语义在册（清理走 DeleteSecret API——CLI secrets delete 缺口记账）；`n0.dev` 路由悬挂指向 tombstone app（存量数据观察）。
+
 ## 教训与边界
 
 - **本机（Windows 工作机）出站对该 VPS 全端口受限**（80/443/8420 全 000；node2 路径全通）——外部验证走 node2 或 check-host 类服务，勿信本机 curl。
