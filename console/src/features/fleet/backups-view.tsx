@@ -62,7 +62,7 @@ export function BackupsView({ tab, onTabChange }: { tab: "databases" | "snapshot
         title="Backups"
         description={
           rows.length > 0
-            ? `Data safety at a glance — ${rows.length} databases · ${healthyCount} healthy`
+            ? `Data safety at a glance — ${rows.length} database${rows.length === 1 ? "" : "s"} · ${healthyCount} healthy`
             : "Data safety at a glance — database backups and platform snapshots"
         }
         actions={
