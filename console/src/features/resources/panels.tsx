@@ -99,12 +99,10 @@ export function VariablesPanel({ projectId, apps }: { projectId: string; apps: A
 
 // ---- networks ----
 
-function NetworksTab({ projectId }: { projectId: string }) {
- const networks = useNetworks(projectId);
- const peers = useNetworkPeers(projectId);
+// NewNetworkButton 是 Networks 页头主创建钮（对齐批 4：创建入口收口
+// PageHeader 右上，Apps 基准同款）——弹窗与 mutation 自包含。
+export function NewNetworkButton({ projectId }: { projectId: string }) {
  const [createOpen, setCreateOpen] = useState(false);
- const [query, setQuery] = useState("");
- const filtered = useListFilter(networks.data ?? [], query, (network: { name?: string; id?: string }) => [network.name ?? "", network.id ?? ""]);
  const [name, setName] = useState("");
  const [egressNone, setEgressNone] = useState(false);
  const create = useApiMutation({
@@ -113,19 +111,17 @@ function NetworksTab({ projectId }: { projectId: string }) {
  body: () => ({ project_id: projectId, name, egress_none: egressNone || undefined }),
  invalidate: [["resources","networks", projectId]],
   });
-
  return (
-    <section className="flex flex-col gap-3">
-      <div className="flex justify-end">
-        <RowButton
+    <>
+      <Button
  onClick={() => {
  setName("");
  setCreateOpen(true);
           }}
-        >
-          New network…
-        </RowButton>
-      </div>
+      >
+        <PlusIcon data-icon-start-inline />
+        New network…
+      </Button>
       <Modal title="New network"open={createOpen} onClose={() => setCreateOpen(false)}>
         <form
  className="flex flex-col gap-3"
@@ -147,25 +143,38 @@ function NetworksTab({ projectId }: { projectId: string }) {
           </div>
         </form>
       </Modal>
+    </>
+  );
+}
+
+function NetworksTab({ projectId }: { projectId: string }) {
+ const networks = useNetworks(projectId);
+ const peers = useNetworkPeers(projectId);
+ const [query, setQuery] = useState("");
+ const filtered = useListFilter(networks.data ?? [], query, (network: { name?: string; id?: string }) => [network.name ?? "", network.id ?? ""]);
+ return (
+    <section className="flex flex-col gap-3">
       {networks.isPending ? (
         <LoadingNote label="Loading networks…"/>
       ) : networks.isError ? (
         <ErrorNote error={networks.error} />
       ) : (
         <>
-          <div className="px-1">
-            <ListToolbar label="networks" value={query} onChange={setQuery} placeholder="Filter networks..." total={(networks.data ?? []).length} shown={filtered.length} />
+          <div className="rounded-xl border bg-card">
+            <div className="px-3 pt-3">
+              <ListToolbar label="networks" value={query} onChange={setQuery} placeholder="Filter networks..." total={(networks.data ?? []).length} shown={filtered.length} />
+            </div>
+            <TableWrap className="rounded-none border-0">
+              <table className="w-full text-sm">
+                <TableHead columns={["Name","ID","Egress","Created",""]} />
+                <tbody>
+                  {filtered.map((network) => (
+                    <NetworkRow key={network.id} network={network} />
+                  ))}
+                </tbody>
+              </table>
+            </TableWrap>
           </div>
-          <TableWrap>
-            <table className="w-full text-sm">
-              <TableHead columns={["Name","ID","Egress","Created",""]} />
-              <tbody>
-                {filtered.map((network) => (
-                  <NetworkRow key={network.id} network={network} />
-                ))}
-              </tbody>
-            </table>
-          </TableWrap>
           <CliEquivalent command={`fleetly networks list --project ${projectId}`} />
         </>
       )}
@@ -303,11 +312,10 @@ function DeclarePeerForm({ projectId, networks }: { projectId: string; networks:
 
 // ---- routes ----
 
-function RoutesTab({ projectId, apps }: { projectId: string; apps: Array<{ id: string; name: string }> }) {
- const routes = useRoutes(projectId);
+// NewRouteButton 是 Routes 页头主创建钮（对齐批 4，Apps 基准同款）——
+// 弹窗与 mutation 自包含；项目尚无 App 时诚实禁用。
+export function NewRouteButton({ projectId, apps }: { projectId: string; apps: Array<{ id: string; name: string }> }) {
  const [createOpen, setCreateOpen] = useState(false);
- const [query, setQuery] = useState("");
- const filtered = useListFilter(routes.data ?? [], query, (route: { host?: string; app_id?: string; process?: string }) => [route.host ?? "", route.app_id ?? "", route.process ?? ""]);
  const [form, setForm] = useState({ host:"", path:"", app: apps[0]?.id ??"", process:"web", port:"8080", protocol:"http", tls:"auto"});
  const create = useApiMutation({
  path:"/v1/routes",
@@ -325,18 +333,17 @@ function RoutesTab({ projectId, apps }: { projectId: string; apps: Array<{ id: s
  invalidate: [["resources","routes", projectId]],
   });
  return (
-    <section className="flex flex-col gap-3">
-      <div className="flex justify-end">
-        <RowButton
+    <>
+      <Button
  onClick={() => {
  setForm((prev) => ({ ...prev, app: apps[0]?.id ?? prev.app }));
  setCreateOpen(true);
           }}
  disabled={apps.length === 0}
-        >
-          New route…
-        </RowButton>
-      </div>
+      >
+        <PlusIcon data-icon-start-inline />
+        New route…
+      </Button>
       <Modal title="New route"open={createOpen} onClose={() => setCreateOpen(false)}>
         <form
  className="flex flex-col gap-3"
@@ -391,6 +398,16 @@ function RoutesTab({ projectId, apps }: { projectId: string; apps: Array<{ id: s
           </div>
         </form>
       </Modal>
+    </>
+  );
+}
+
+function RoutesTab({ projectId, apps }: { projectId: string; apps: Array<{ id: string; name: string }> }) {
+ const routes = useRoutes(projectId);
+ const [query, setQuery] = useState("");
+ const filtered = useListFilter(routes.data ?? [], query, (route: { host?: string; app_id?: string; process?: string }) => [route.host ?? "", route.app_id ?? "", route.process ?? ""]);
+ return (
+    <section className="flex flex-col gap-3">
       {routes.isPending ? (
         <LoadingNote label="Loading routes…"/>
       ) : routes.isError ? (
@@ -399,19 +416,21 @@ function RoutesTab({ projectId, apps }: { projectId: string; apps: Array<{ id: s
         <EmptyNote label="No routes — traffic enters through routes (managed proxy)."/>
       ) : (
         <>
-          <div className="px-1">
-            <ListToolbar label="routes" value={query} onChange={setQuery} placeholder="Filter routes..." total={(routes.data ?? []).length} shown={filtered.length} />
+          <div className="rounded-xl border bg-card">
+            <div className="px-3 pt-3">
+              <ListToolbar label="routes" value={query} onChange={setQuery} placeholder="Filter routes..." total={(routes.data ?? []).length} shown={filtered.length} />
+            </div>
+            <TableWrap className="rounded-none border-0">
+              <table className="w-full text-sm">
+                <TableHead columns={["Host","Path","Target","Port","TLS",""]} />
+                <tbody>
+                  {filtered.map((route) => (
+                    <RouteRow key={route.id} route={route} apps={apps} projectId={projectId} />
+                  ))}
+                </tbody>
+              </table>
+            </TableWrap>
           </div>
-          <TableWrap>
-            <table className="w-full text-sm">
-              <TableHead columns={["Host","Path","Target","Port","TLS",""]} />
-              <tbody>
-                {filtered.map((route) => (
-                  <RouteRow key={route.id} route={route} apps={apps} projectId={projectId} />
-                ))}
-              </tbody>
-            </table>
-          </TableWrap>
           <CliEquivalent command={`fleetly routes list --project ${projectId}`} />
         </>
       )}
@@ -490,8 +509,6 @@ function VolumesTab({ projectId }: { projectId: string }) {
     <section className="flex flex-col gap-3">
       <div className="flex justify-end">
         <Button
- size="sm"
- variant="outline"
  onClick={() => {
  setName("");
  setCreateOpen(true);
@@ -534,9 +551,6 @@ function VolumesTab({ projectId }: { projectId: string }) {
           </form>
         </DialogContent>
       </Dialog>
-      <div className="px-1">
-        <ListToolbar label="volumes" value={query} onChange={setQuery} placeholder="Filter volumes..." total={(volumes.data ?? []).length} shown={filtered.length} />
-      </div>
       {volumes.isPending ? (
         <p className="py-6 text-center text-xs text-muted-foreground">Loading volumes…</p>
       ) : volumes.isError ? (
@@ -544,22 +558,27 @@ function VolumesTab({ projectId }: { projectId: string }) {
       ) : (volumes.data ?? []).length === 0 ? (
         <p className="rounded-xl border bg-card p-6 text-center text-xs text-muted-foreground">No volumes — create one to attach it from an app's Variables tab.</p>
       ) : (
-        <div className="overflow-hidden rounded-xl border">
-          <table className="w-full text-sm">
-            <thead className="border-b bg-muted/40 text-left text-[10.5px] font-semibold tracking-wide text-muted-foreground uppercase">
-              <tr>
-                <th className="px-3 py-2">Name</th>
-                <th className="px-3 py-2">Pinned node</th>
-                <th className="px-3 py-2">Created</th>
-                <th className="px-3 py-2"/>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((volume) => (
-                <VolumeRow key={volume.id} volume={volume} mount={mountOf(volume)} projectId={projectId} />
-              ))}
-            </tbody>
-          </table>
+        <div className="rounded-xl border bg-card">
+          <div className="px-3 pt-3">
+            <ListToolbar label="volumes" value={query} onChange={setQuery} placeholder="Filter volumes..." total={(volumes.data ?? []).length} shown={filtered.length} />
+          </div>
+          <TableWrap className="rounded-none border-0">
+            <table className="w-full text-sm">
+              <thead className="border-b bg-muted/40 text-left text-[10.5px] font-semibold tracking-wide text-muted-foreground uppercase">
+                <tr>
+                  <th className="px-3 py-2">Name</th>
+                  <th className="px-3 py-2">Pinned node</th>
+                  <th className="px-3 py-2">Created</th>
+                  <th className="px-3 py-2"/>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((volume) => (
+                  <VolumeRow key={volume.id} volume={volume} mount={mountOf(volume)} projectId={projectId} />
+                ))}
+              </tbody>
+            </table>
+          </TableWrap>
         </div>
       )}
     </section>
@@ -662,7 +681,7 @@ function PutForm({
  const [pending, setPending] = useState(false);
  return (
     <>
-      <RowButton
+      <Button
  onClick={() => {
  setName("");
  setValue("");
@@ -670,8 +689,9 @@ function PutForm({
  setOpen(true);
         }}
       >
+        <PlusIcon data-icon-start-inline />
         {title}
-      </RowButton>
+      </Button>
       <Modal title={title} open={open} onClose={() => setOpen(false)}>
         <form
  className="flex flex-col gap-3"
@@ -734,19 +754,21 @@ function SecretsTab({ projectId }: { projectId: string }) {
         <EmptyNote label="No secrets."/>
       ) : (
         <>
-          <div className="px-1">
-            <ListToolbar label="secrets" value={query} onChange={setQuery} placeholder="Filter secrets..." total={(secrets.data ?? []).length} shown={filtered.length} />
+          <div className="rounded-xl border bg-card">
+            <div className="px-3 pt-3">
+              <ListToolbar label="secrets" value={query} onChange={setQuery} placeholder="Filter secrets..." total={(secrets.data ?? []).length} shown={filtered.length} />
+            </div>
+            <TableWrap className="rounded-none border-0">
+              <table className="w-full text-sm">
+                <TableHead columns={["Name","Updated",""]} />
+                <tbody>
+                  {filtered.map((secret) => (
+                    <SecretRow key={secret.id ?? secret.name} row={secret} projectId={projectId} />
+                  ))}
+                </tbody>
+              </table>
+            </TableWrap>
           </div>
-          <TableWrap>
-            <table className="w-full text-sm">
-              <TableHead columns={["Name","Updated",""]} />
-              <tbody>
-                {filtered.map((secret) => (
-                  <SecretRow key={secret.id ?? secret.name} row={secret} projectId={projectId} />
-                ))}
-              </tbody>
-            </table>
-          </TableWrap>
           <CliEquivalent command={`fleetly secrets list --project ${projectId}`} />
         </>
       )}
@@ -797,23 +819,25 @@ function ConfigsTab({ projectId }: { projectId: string }) {
         <EmptyNote label="No configs."/>
       ) : (
         <>
-          <div className="px-1">
-            <ListToolbar label="configs" value={query} onChange={setQuery} placeholder="Filter configs..." total={(configs.data ?? []).length} shown={filtered.length} />
+          <div className="rounded-xl border bg-card">
+            <div className="px-3 pt-3">
+              <ListToolbar label="configs" value={query} onChange={setQuery} placeholder="Filter configs..." total={(configs.data ?? []).length} shown={filtered.length} />
+            </div>
+            <TableWrap className="rounded-none border-0">
+              <table className="w-full text-sm">
+                <TableHead columns={["Name","Version","Updated"]} />
+                <tbody>
+                  {filtered.map((config) => (
+                  <tr key={config.id ?? config.name} className="border-b border hover:bg-muted/40">
+                    <td className="px-3 py-2 font-mono text-foreground">{config.name}</td>
+                    <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{config.version ??"—"}</td>
+                    <td className="px-3 py-2 text-xs text-muted-foreground">{formatTime(config.created_at)}</td>
+                  </tr>
+                ))}
+                </tbody>
+              </table>
+            </TableWrap>
           </div>
-          <TableWrap>
-            <table className="w-full text-sm">
-              <TableHead columns={["Name","Version","Updated"]} />
-              <tbody>
-                {filtered.map((config) => (
-                <tr key={config.id ?? config.name} className="border-b border hover:bg-muted/40">
-                  <td className="px-3 py-2 font-mono text-foreground">{config.name}</td>
-                  <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{config.version ??"—"}</td>
-                  <td className="px-3 py-2 text-xs text-muted-foreground">{formatTime(config.created_at)}</td>
-                </tr>
-              ))}
-              </tbody>
-            </table>
-          </TableWrap>
           <CliEquivalent command={`fleetly configs list --project ${projectId}`} />
         </>
       )}
@@ -864,19 +888,21 @@ function VariablesTab({ projectId, apps }: { projectId: string; apps: Array<{ id
         <EmptyNote label="No shared variables."/>
       ) : (
         <>
-          <div className="px-1">
-            <ListToolbar label="shared variables" value={query} onChange={setQuery} placeholder="Filter variables..." total={(variables.data ?? []).length} shown={filtered.length} />
+          <div className="rounded-xl border bg-card">
+            <div className="px-3 pt-3">
+              <ListToolbar label="shared variables" value={query} onChange={setQuery} placeholder="Filter variables..." total={(variables.data ?? []).length} shown={filtered.length} />
+            </div>
+            <TableWrap className="rounded-none border-0">
+              <table className="w-full text-sm">
+                <TableHead columns={["Name","Value","Updated",""]} />
+                <tbody>
+                  {filtered.map((variable) => (
+                    <VariableRow key={variable.id ?? variable.name} row={variable} projectId={projectId} apps={apps} />
+                  ))}
+                </tbody>
+              </table>
+            </TableWrap>
           </div>
-          <TableWrap>
-            <table className="w-full text-sm">
-              <TableHead columns={["Name","Value","Updated",""]} />
-              <tbody>
-                {filtered.map((variable) => (
-                  <VariableRow key={variable.id ?? variable.name} row={variable} projectId={projectId} apps={apps} />
-                ))}
-              </tbody>
-            </table>
-          </TableWrap>
           <CliEquivalent command={`fleetly shared-variables list --project ${projectId}`} />
         </>
       )}
@@ -1151,7 +1177,7 @@ function UploadsTab({ projectId }: { projectId: string }) {
       <div className="flex items-center justify-end gap-3">
         <span className="text-xs text-muted-foreground">deterministic tar · .git skipped · content-addressed</span>
         <input ref={inputRef} type="file"multiple className="hidden"onChange={(event) => void onFiles(event.target.files)} />
-        <Button size="sm"variant="outline"disabled={pending} onClick={() => inputRef.current?.click()}>
+        <Button disabled={pending} onClick={() => inputRef.current?.click()}>
           <PlusIcon data-icon-start-inline />
           {pending ?"Uploading…":"Upload directory…"}
         </Button>
@@ -1167,36 +1193,38 @@ function UploadsTab({ projectId }: { projectId: string }) {
         <p className="rounded-xl border bg-card p-6 text-center text-xs text-muted-foreground">No uploads — pick a directory to build a deployable source.</p>
       ) : (
         <>
-          <div className="px-1">
-            <ListToolbar label="uploads" value={query} onChange={setQuery} placeholder="Filter uploads..." total={(uploads.data ?? []).length} shown={filtered.length} />
-          </div>
-          <div className="overflow-hidden rounded-xl border">
-            <table className="w-full text-sm">
-              <thead className="border-b bg-muted/40 text-left text-[10.5px] font-semibold tracking-wide text-muted-foreground uppercase">
-                <tr>
-                  <th className="px-3 py-2">Upload</th>
-                <th className="px-3 py-2">Size</th>
-                <th className="px-3 py-2">Digest</th>
-                <th className="px-3 py-2">Created</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((upload) => (
-                <tr key={upload.id} className="border-b transition-colors last:border-b-0 hover:bg-muted/40">
-                  <td className="px-3 py-2 font-mono text-xs"title={upload.id}>
-                    {upload.id}
-                  </td>
-                  <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{(Number(upload.size_bytes ?? 0) / 1024).toFixed(1)} KiB</td>
-                  <td className="px-3 py-2 font-mono text-xs text-muted-foreground"title={upload.digest}>
-                    {upload.digest?.slice(0, 16)}…
-                  </td>
-                  <td className="px-3 py-2 text-xs text-muted-foreground">
-                    <RelativeTime value={upload.created_at} />
-                  </td>
+          <div className="rounded-xl border bg-card">
+            <div className="px-3 pt-3">
+              <ListToolbar label="uploads" value={query} onChange={setQuery} placeholder="Filter uploads..." total={(uploads.data ?? []).length} shown={filtered.length} />
+            </div>
+            <TableWrap className="rounded-none border-0">
+              <table className="w-full text-sm">
+                <thead className="border-b bg-muted/40 text-left text-[10.5px] font-semibold tracking-wide text-muted-foreground uppercase">
+                  <tr>
+                    <th className="px-3 py-2">Upload</th>
+                  <th className="px-3 py-2">Size</th>
+                  <th className="px-3 py-2">Digest</th>
+                  <th className="px-3 py-2">Created</th>
                 </tr>
-              ))}
+              </thead>
+              <tbody>
+                {filtered.map((upload) => (
+                  <tr key={upload.id} className="border-b transition-colors last:border-b-0 hover:bg-muted/40">
+                    <td className="px-3 py-2 font-mono text-xs"title={upload.id}>
+                      {upload.id}
+                    </td>
+                    <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{(Number(upload.size_bytes ?? 0) / 1024).toFixed(1)} KiB</td>
+                    <td className="px-3 py-2 font-mono text-xs text-muted-foreground"title={upload.digest}>
+                      {upload.digest?.slice(0, 16)}…
+                    </td>
+                    <td className="px-3 py-2 text-xs text-muted-foreground">
+                      <RelativeTime value={upload.created_at} />
+                    </td>
+                  </tr>
+                ))}
               </tbody>
-            </table>
+              </table>
+            </TableWrap>
           </div>
           <CliEquivalent command={`fleetly uploads list --project ${projectId}`} />
         </>
