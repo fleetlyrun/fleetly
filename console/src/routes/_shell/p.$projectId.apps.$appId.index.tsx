@@ -35,8 +35,8 @@ function AppOverviewTab() {
   const spec = specs.get(appId);
   const replicas = (spec?.processes ?? []).reduce((sum, process) => sum + Number(process.replicas ?? 0), 0);
   // app 域指标（cadvisor ns 标签过滤；最近点取值——工作台预设同款查询）
-  const cpuQuery = METRIC_PRESETS.find((preset) => preset.key === "cpu_cores")?.build(appId) ?? "";
-  const memQuery = METRIC_PRESETS.find((preset) => preset.key === "memory")?.build(appId) ?? "";
+  const cpuQuery = METRIC_PRESETS.find((preset) => preset.key === "cpu_cores")?.build(appId.toLowerCase()) ?? "";
+  const memQuery = METRIC_PRESETS.find((preset) => preset.key === "memory")?.build(appId.toLowerCase()) ?? "";
   const cpu = useMetricsSeries(cpuQuery, "1h");
   const mem = useMetricsSeries(memQuery, "1h");
   const cpuValue = lastPointValue(cpu.data);
