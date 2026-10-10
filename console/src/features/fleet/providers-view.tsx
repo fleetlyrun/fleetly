@@ -1,6 +1,20 @@
 import { ActivityIcon, GlobeIcon, LayersIcon, ScrollTextIcon } from "lucide-react";
 import { METRICS_FRESHNESS_QUERY, formatFreshness, lastPointValue } from "@/features/fleet/freshness";
 import { componentHealth, useSystemStatus } from "@/features/fleet/use-system-status";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { apiSend } from "@/api/client";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { useMetricsSeries } from "@/lib/catalog";
 import { PageHeader } from "@/components/domain/page-header";
 import { StatusBadge, type StatusTone } from "@/components/domain/status-badge";
@@ -65,7 +79,12 @@ export function ManagedProvidersView() {
       />
       <div className="grid gap-4 lg:grid-cols-2">
         {MANAGED_PROVIDERS.map((provider) => (
-          <ProviderCardView key={provider.key} provider={provider} health={componentHealth(status.data?.components, provider.key)} />
+          <ProviderCardView
+            key={provider.key}
+            provider={provider}
+            health={componentHealth(status.data?.components, provider.key)}
+            onRestarted={() => void status.refetch()}
+          />
         ))}
       </div>
       <p className="mt-4 text-[11.5px] text-muted-foreground">
@@ -77,7 +96,15 @@ export function ManagedProvidersView() {
   );
 }
 
-function ProviderCardView({ provider, health }: { provider: ManagedProviderCard; health: ReturnType<typeof componentHealth> }) {
+function ProviderCardView({
+  provider,
+  health,
+  onRestarted,
+}: {
+  provider: ManagedProviderCard;
+  health: ReturnType<typeof componentHealth>;
+  onRestarted: () => void;
+}) {
   const probed = health != null;
   const healthy = health?.healthy === true;
   const badge = !probed ? (
@@ -122,14 +149,61 @@ function ProviderCardView({ provider, health }: { provider: ManagedProviderCard;
           <span className="font-mono text-[11.5px] text-muted-foreground">n/a</span>
         )}
       </div>
-      {provider.workbench ? (
-        <div className="mt-1 flex gap-2 border-t pt-3">
+      <div className="mt-1 flex gap-2 border-t pt-3">
+        {provider.workbench ? (
           <Button size="sm" variant="outline" asChild>
             <a href={provider.workbench.href}>{provider.workbench.label}</a>
           </Button>
-        </div>
-      ) : null}
+        ) : null}
+        <RestartButton name={provider.name} onRestarted={onRestarted} />
+      </div>
     </section>
+  );
+}
+
+// RestartButton（IA v3 二期④）：载体重启（Runtime 重启子面强制重排）——
+// 破坏性动作走 AlertDialog 确认（守卫执法：禁 window.confirm）；成功后
+// 刷新健康面（滚动重排期间 unhealthy 是预期中间态）。
+function RestartButton({ name, onRestarted }: { name: string; onRestarted: () => void }) {
+  const queryClient = useQueryClient();
+  const restart = useMutation({
+    mutationFn: async () => apiSend<{ restarted?: number }>(`/v1/system/components/${encodeURIComponent(name)}/restart`, "POST", {}),
+    onSuccess: (resp) => {
+      toast(`Restart requested — ${resp?.restarted ?? 1} carrier(s) rescheduling`);
+      void queryClient.invalidateQueries({ queryKey: ["system", "status"] });
+      onRestarted();
+    },
+    onError: (cause) => toast.error(cause instanceof Error ? cause.message : String(cause)),
+  });
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger asChild>
+        <Button size="sm" variant="outline" disabled={restart.isPending}>
+          {restart.isPending ? "Restarting…" : "Restart…"}
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Restart {name}?</AlertDialogTitle>
+          <AlertDialogDescription>
+            The carrier is force-rescheduled (tasks replaced with a rolling restart). Brief downtime on this component's
+            face is expected while the replacement becomes healthy.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            disabled={restart.isPending}
+            onClick={(event) => {
+              event.preventDefault();
+              restart.mutate();
+            }}
+          >
+            {restart.isPending ? "Restarting…" : "Restart"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 

@@ -89,6 +89,46 @@
         ]
       }
     },
+    "/v1/system/components/{name}/restart": {
+      "post": {
+        "summary": "RestartComponent 重启受管组件载体（IA v3 二期④，排障动线\"日志断了 →\n就地重启\"）：按 Provider 名路由（traefik/zot/victorialogs/\nvictoriametrics…），经 Runtime 重启原语逐 Workload 强制重排。\n未知名/非受管自宿 = 精确拒绝。",
+        "operationId": "SystemService_RestartComponent",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1RestartComponentResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "description": "name 是 Provider 名（与 GetStatus components 的 name 同域）。",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/SystemServiceRestartComponentBody"
+            }
+          }
+        ],
+        "tags": [
+          "SystemService"
+        ]
+      }
+    },
     "/v1/system/explain": {
       "get": {
         "summary": "Explain 返回单个资源的自描述（Spec 种类 \"app\"/\"task\"/\"database\" 或\n事件名 \"deployment.succeeded\"——`fleetly explain \u003c资源\u003e` 消费）。",
@@ -192,6 +232,9 @@
     }
   },
   "definitions": {
+    "SystemServiceRestartComponentBody": {
+      "type": "object"
+    },
     "v1ComponentHealth": {
       "type": "object",
       "properties": {
@@ -295,6 +338,16 @@
         }
       },
       "title": "PlatformSnapshot 是本地仓快照行投影（restic snapshots 直读面）。"
+    },
+    "v1RestartComponentResponse": {
+      "type": "object",
+      "properties": {
+        "restarted": {
+          "type": "integer",
+          "format": "int32",
+          "title": "restarted 是实际强制重排的载体数（受管组件通常 = 1）。"
+        }
+      }
     },
     "v1SchemaEntry": {
       "type": "object",

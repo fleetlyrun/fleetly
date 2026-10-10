@@ -36,6 +36,18 @@ service SystemService {
     option (google.api.http) = { get: "/v1/system/status" };
   }
 
+  // RestartComponent 重启受管组件载体（IA v3 二期④，排障动线"日志断了 →
+  // 就地重启"）：按 Provider 名路由（traefik/zot/victorialogs/
+  // victoriametrics…），经 Runtime 重启原语逐 Workload 强制重排。
+  // 未知名/非受管自宿 = 精确拒绝。
+  rpc RestartComponent(RestartComponentRequest) returns (RestartComponentResponse) {
+    option (google.api.http) = { post: "/v1/system/components/{name}/restart" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "platform" op: SCOPE_OP_ADMIN }
+    };
+  }
+
   // GetSchema 返回能力自描述全量文档（Spec 契约 + 事件 payload JSON
   // Schema，Go 类型反射生成——`fleetly schema` 消费；ADR-0026 形状钉扎）。
   rpc GetSchema(GetSchemaRequest) returns (GetSchemaResponse) {
@@ -94,6 +106,16 @@ message GetStatusResponse {
   // Managed Providers 排障面数据源——架构 §8 降级矩阵驱动；聚合态 =
   // 任一不健康即 DEGRADED，检查超时按不健康计）。
   repeated ComponentHealth components = 3;
+}
+
+message RestartComponentRequest {
+  // name 是 Provider 名（与 GetStatus components 的 name 同域）。
+  string name = 1;
+}
+
+message RestartComponentResponse {
+  // restarted 是实际强制重排的载体数（受管组件通常 = 1）。
+  int32 restarted = 1;
 }
 
 message ComponentHealth {

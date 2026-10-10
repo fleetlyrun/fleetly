@@ -127,6 +127,8 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 			newAlertsListVerb()),
 		// Platform 上下文（F2.3，ADR-0039 决策 10）：平台级操作面——
 		// Platform Backup 手动触发/列举（升级序前置动词）。
+		groupVerb("components", "operate managed component carriers (restart on the troubleshooting path)",
+			newComponentsRestartVerb()),
 		groupVerb("platform", "platform-level operations (backup before upgrades, list snapshots)",
 			newPlatformBackupVerb(), newPlatformBackupsVerb()),
 	)

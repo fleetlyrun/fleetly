@@ -23,10 +23,11 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	SystemService_GetVersion_FullMethodName = "/fleetly.system.v1.SystemService/GetVersion"
-	SystemService_GetStatus_FullMethodName  = "/fleetly.system.v1.SystemService/GetStatus"
-	SystemService_GetSchema_FullMethodName  = "/fleetly.system.v1.SystemService/GetSchema"
-	SystemService_Explain_FullMethodName    = "/fleetly.system.v1.SystemService/Explain"
+	SystemService_GetVersion_FullMethodName       = "/fleetly.system.v1.SystemService/GetVersion"
+	SystemService_GetStatus_FullMethodName        = "/fleetly.system.v1.SystemService/GetStatus"
+	SystemService_RestartComponent_FullMethodName = "/fleetly.system.v1.SystemService/RestartComponent"
+	SystemService_GetSchema_FullMethodName        = "/fleetly.system.v1.SystemService/GetSchema"
+	SystemService_Explain_FullMethodName          = "/fleetly.system.v1.SystemService/Explain"
 )
 
 // SystemServiceClient is the client API for SystemService service.
@@ -37,6 +38,11 @@ type SystemServiceClient interface {
 	GetVersion(ctx context.Context, in *GetVersionRequest, opts ...grpc.CallOption) (*GetVersionResponse, error)
 	// GetStatus 返回控制面服务状态。
 	GetStatus(ctx context.Context, in *GetStatusRequest, opts ...grpc.CallOption) (*GetStatusResponse, error)
+	// RestartComponent 重启受管组件载体（IA v3 二期④，排障动线"日志断了 →
+	// 就地重启"）：按 Provider 名路由（traefik/zot/victorialogs/
+	// victoriametrics…），经 Runtime 重启原语逐 Workload 强制重排。
+	// 未知名/非受管自宿 = 精确拒绝。
+	RestartComponent(ctx context.Context, in *RestartComponentRequest, opts ...grpc.CallOption) (*RestartComponentResponse, error)
 	// GetSchema 返回能力自描述全量文档（Spec 契约 + 事件 payload JSON
 	// Schema，Go 类型反射生成——`fleetly schema` 消费；ADR-0026 形状钉扎）。
 	GetSchema(ctx context.Context, in *GetSchemaRequest, opts ...grpc.CallOption) (*GetSchemaResponse, error)
@@ -73,6 +79,16 @@ func (c *systemServiceClient) GetStatus(ctx context.Context, in *GetStatusReques
 	return out, nil
 }
 
+func (c *systemServiceClient) RestartComponent(ctx context.Context, in *RestartComponentRequest, opts ...grpc.CallOption) (*RestartComponentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RestartComponentResponse)
+	err := c.cc.Invoke(ctx, SystemService_RestartComponent_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *systemServiceClient) GetSchema(ctx context.Context, in *GetSchemaRequest, opts ...grpc.CallOption) (*GetSchemaResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetSchemaResponse)
@@ -101,6 +117,11 @@ type SystemServiceServer interface {
 	GetVersion(context.Context, *GetVersionRequest) (*GetVersionResponse, error)
 	// GetStatus 返回控制面服务状态。
 	GetStatus(context.Context, *GetStatusRequest) (*GetStatusResponse, error)
+	// RestartComponent 重启受管组件载体（IA v3 二期④，排障动线"日志断了 →
+	// 就地重启"）：按 Provider 名路由（traefik/zot/victorialogs/
+	// victoriametrics…），经 Runtime 重启原语逐 Workload 强制重排。
+	// 未知名/非受管自宿 = 精确拒绝。
+	RestartComponent(context.Context, *RestartComponentRequest) (*RestartComponentResponse, error)
 	// GetSchema 返回能力自描述全量文档（Spec 契约 + 事件 payload JSON
 	// Schema，Go 类型反射生成——`fleetly schema` 消费；ADR-0026 形状钉扎）。
 	GetSchema(context.Context, *GetSchemaRequest) (*GetSchemaResponse, error)
@@ -122,6 +143,9 @@ func (UnimplementedSystemServiceServer) GetVersion(context.Context, *GetVersionR
 }
 func (UnimplementedSystemServiceServer) GetStatus(context.Context, *GetStatusRequest) (*GetStatusResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetStatus not implemented")
+}
+func (UnimplementedSystemServiceServer) RestartComponent(context.Context, *RestartComponentRequest) (*RestartComponentResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RestartComponent not implemented")
 }
 func (UnimplementedSystemServiceServer) GetSchema(context.Context, *GetSchemaRequest) (*GetSchemaResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetSchema not implemented")
@@ -186,6 +210,24 @@ func _SystemService_GetStatus_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SystemService_RestartComponent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RestartComponentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SystemServiceServer).RestartComponent(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SystemService_RestartComponent_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SystemServiceServer).RestartComponent(ctx, req.(*RestartComponentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _SystemService_GetSchema_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetSchemaRequest)
 	if err := dec(in); err != nil {
@@ -236,6 +278,10 @@ var SystemService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetStatus",
 			Handler:    _SystemService_GetStatus_Handler,
+		},
+		{
+			MethodName: "RestartComponent",
+			Handler:    _SystemService_RestartComponent_Handler,
 		},
 		{
 			MethodName: "GetSchema",

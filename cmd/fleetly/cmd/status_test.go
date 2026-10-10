@@ -22,7 +22,7 @@ func startBufconnServer(t *testing.T) *bufconn.Listener {
 	t.Helper()
 	lis := bufconn.Listen(1024 * 1024)
 	srv := grpc.NewServer()
-	systemv1.RegisterSystemServiceServer(srv, systemgrpc.New(testBuildInfo, nil))
+	systemv1.RegisterSystemServiceServer(srv, systemgrpc.New(testBuildInfo, nil, nil))
 	go func() { _ = srv.Serve(lis) }()
 	t.Cleanup(srv.Stop)
 	return lis

@@ -68,6 +68,15 @@ type RuntimeLogs interface {
 	StreamLogs(ctx context.Context, q LogQuery, w LogWriter) error
 }
 
+// RuntimeRestart 是可选的载体重启子面（IA v3 二期④）：按隔离域 + 平台
+// Workload ID 强制重排载体（swarm = ForceUpdate 自增滚动重排；k3s = pod
+// 驱逐由 Deployment 自愈重建）。按需实现——不支持者不实现，调用方
+// 精确拒绝。
+type RuntimeRestart interface {
+	// Restart 强制重排单个载体（按平台 Workload ID 定位）。
+	Restart(ctx context.Context, ns NamespaceRef, workloadID string) error
+}
+
 // RuntimeAdmin 是管理子面（`fleetly nodes` 运维操作；按需实现）。
 type RuntimeAdmin interface {
 	// Drain 把节点置为排空（不再调度新载体，存量按编排器语义迁移/回收）。

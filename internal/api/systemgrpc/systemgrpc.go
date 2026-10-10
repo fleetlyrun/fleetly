@@ -5,15 +5,17 @@ package systemgrpc
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/fleetlyrun/fleetly/internal/api/apperr"
 	"github.com/fleetlyrun/fleetly/internal/capability"
+	"github.com/fleetlyrun/fleetly/internal/engine"
 
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
-	"github.com/fleetlyrun/fleetly/internal/api/apperr"
 	"github.com/fleetlyrun/fleetly/internal/buildinfo"
 	"github.com/fleetlyrun/fleetly/internal/schema"
 )
@@ -27,15 +29,18 @@ type Service struct {
 
 	info     buildinfo.BuildInfo
 	checkers []capability.Provider
+	// engine 是组件重启的路由面（可空 = apitest 手工装配；缺席时重启
+	// 精确失败——E_INTERNAL）。
+	engine *engine.Engine
 }
 
 // healthCheckTimeout 是单项探活预算（TCP 拨号类检查自带更短超时；此处
 // 兜底防慢检查拖垮 status 面）。
 const healthCheckTimeout = 2 * time.Second
 
-// New 构造 SystemService（checkers 可空）。
-func New(info buildinfo.BuildInfo, checkers []capability.Provider) *Service {
-	return &Service{info: info, checkers: checkers}
+// New 构造 SystemService（checkers/engine 均可空）。
+func New(info buildinfo.BuildInfo, checkers []capability.Provider, eng *engine.Engine) *Service {
+	return &Service{info: info, checkers: checkers, engine: eng}
 }
 
 // GetVersion 返回控制面构建信息。
@@ -106,6 +111,28 @@ func (s *Service) checkComponents(ctx context.Context) []*systemv1.ComponentHeal
 	}
 	wg.Wait()
 	return out
+}
+
+// RestartComponent 重启受管组件载体（IA v3 二期④）：引擎按 Provider 名
+// 路由（capability.Managed 声明者），经 Runtime 重启子面逐 Workload 强制
+// 重排；哨兵错误 map 为精确错误码。
+func (s *Service) RestartComponent(ctx context.Context, req *systemv1.RestartComponentRequest) (*systemv1.RestartComponentResponse, error) {
+	if s.engine == nil {
+		return nil, apperr.New("E_INTERNAL", "component restart requires the engine face")
+	}
+	restarted, err := s.engine.RestartComponent(ctx, req.GetName())
+	if err != nil {
+		switch {
+		case errors.Is(err, engine.ErrComponentUnknown):
+			return nil, apperr.New("E_NOT_FOUND", "component %q: unknown managed provider name", req.GetName())
+		case errors.Is(err, engine.ErrRestartUnsupported):
+			return nil, apperr.New("E_CONFLICT", "component %q: no managed workloads to restart", req.GetName())
+		case errors.Is(err, engine.ErrRuntimeNoRestart):
+			return nil, apperr.New("E_INTERNAL", "the runtime provider does not implement carrier restart")
+		}
+		return nil, err
+	}
+	return &systemv1.RestartComponentResponse{Restarted: int32(restarted)}, nil
 }
 
 // GetSchema 返回能力自描述全量文档（Spec 契约 + 事件 payload schema；

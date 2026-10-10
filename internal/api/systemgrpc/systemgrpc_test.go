@@ -17,7 +17,7 @@ import (
 // 事件 payload 的全量贡献对账在 internal/assembly（组合根链接全部
 // 贡献方后的完备性守卫）。
 
-func testService() *Service { return New(buildinfo.BuildInfo{Version: "0.1.0-test"}, nil) }
+func testService() *Service { return New(buildinfo.BuildInfo{Version: "0.1.0-test"}, nil, nil) }
 
 // fakeHealthProvider 是健康聚合的最小探针（降级矩阵口径：任一不健康 /
 // 超时即 DEGRADED，IA v3 二期③）。
@@ -43,7 +43,7 @@ func TestGetStatusAggregatesComponentHealth(t *testing.T) {
 	svc := New(buildinfo.BuildInfo{Version: "0.1.0-test"}, []capability.Provider{
 		fakeHealthProvider{name: "healthy-one", healthy: true},
 		fakeHealthProvider{name: "sick-one", healthy: false, details: "dial refused"},
-	})
+	}, nil)
 	resp, err := svc.GetStatus(context.Background(), &systemv1.GetStatusRequest{})
 	require.NoError(t, err)
 	assert.Equal(t, systemv1.StatusState_STATUS_STATE_DEGRADED, resp.GetState())
@@ -57,7 +57,7 @@ func TestGetStatusHealthyWhenAllPass(t *testing.T) {
 	svc := New(buildinfo.BuildInfo{Version: "0.1.0-test"}, []capability.Provider{
 		fakeHealthProvider{name: "a", healthy: true},
 		fakeHealthProvider{name: "b", healthy: true},
-	})
+	}, nil)
 	resp, err := svc.GetStatus(context.Background(), &systemv1.GetStatusRequest{})
 	require.NoError(t, err)
 	assert.Equal(t, systemv1.StatusState_STATUS_STATE_HEALTHY, resp.GetState())
@@ -67,7 +67,7 @@ func TestGetStatusHealthyWhenAllPass(t *testing.T) {
 func TestGetStatusTimeoutCountsUnhealthy(t *testing.T) {
 	svc := New(buildinfo.BuildInfo{Version: "0.1.0-test"}, []capability.Provider{
 		fakeHealthProvider{name: "slow", block: true},
-	})
+	}, nil)
 	resp, err := svc.GetStatus(context.Background(), &systemv1.GetStatusRequest{})
 	require.NoError(t, err)
 	assert.Equal(t, systemv1.StatusState_STATUS_STATE_DEGRADED, resp.GetState())

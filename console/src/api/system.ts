@@ -30,6 +30,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/system/components/{name}/restart": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * RestartComponent 重启受管组件载体（IA v3 二期④，排障动线"日志断了 →
+         *     就地重启"）：按 Provider 名路由（traefik/zot/victorialogs/
+         *     victoriametrics…），经 Runtime 重启原语逐 Workload 强制重排。
+         *     未知名/非受管自宿 = 精确拒绝。
+         */
+        post: operations["SystemService_RestartComponent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/system/explain": {
         parameters: {
             query?: never;
@@ -108,6 +130,7 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        SystemServiceRestartComponentBody: Record<string, never>;
         v1ComponentHealth: {
             /** name 是 Provider 名（"swarm"、"traefik"、"victorialogs"…）。 */
             name?: string;
@@ -150,6 +173,13 @@ export interface components {
             time?: string;
             /** 快照主机名（控制面节点） */
             hostname?: string;
+        };
+        v1RestartComponentResponse: {
+            /**
+             * restarted 是实际强制重排的载体数（受管组件通常 = 1）。
+             * Format: int32
+             */
+            restarted?: number;
         };
         /** SchemaEntry 是一条可解释资源的自描述（寻址名/家族/摘要/契约体）。 */
         v1SchemaEntry: {
@@ -248,6 +278,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1TriggerPlatformBackupResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    SystemService_RestartComponent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description name 是 Provider 名（与 GetStatus components 的 name 同域）。 */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SystemServiceRestartComponentBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1RestartComponentResponse"];
                 };
             };
             /** @description An unexpected error response. */

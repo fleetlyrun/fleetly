@@ -29,6 +29,9 @@ var freezeExemptions = map[string]string{
 	"/fleetly.runtime.v1.NodesService/DrainNode":    "cluster ops: drain is runtime administration, not workload change control",
 	"/fleetly.runtime.v1.NodesService/CordonNode":   "cluster ops: cordon is runtime administration, not workload change control",
 	"/fleetly.runtime.v1.NodesService/UncordonNode": "cluster ops: uncordon is runtime administration, not workload change control",
+	// 受管组件重启（IA v3 二期④）：排障修复族——强制重排不迁移资源状态
+	//（冻结窗内排障恰恰最需要，与 exec 诊断面同型）。
+	"/fleetly.system.v1.SystemService/RestartComponent": "cluster ops: carrier force-reschedule is runtime remediation, not workload change control (freezing must not block the troubleshooting path)",
 	// exec 诊断面（F3.2，ADR-0049 决策 4）：会话不变更资源状态——冻结窗内诊断恰恰最需要。
 	"/fleetly.runtime.v1.ExecService/CreateExecSession": "diagnostics face: an exec session mutates no resource state (ADR-0049); a freeze window is exactly when diagnosis is needed",
 	"/fleetly.runtime.v1.ExecService/StreamExecSession": "diagnostics face: an exec session mutates no resource state (ADR-0049); a freeze window is exactly when diagnosis is needed",
