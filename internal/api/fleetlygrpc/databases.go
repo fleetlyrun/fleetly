@@ -8,9 +8,7 @@ package fleetlygrpc
 
 import (
 	"context"
-	"crypto/rand"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/url"
@@ -37,11 +35,10 @@ const (
 	eventDatabaseCreated       = "database.created"
 	eventDatabaseBrowserOpened = "database.browser_opened"
 	eventDatabaseDeleted       = "database.deleted"
+	// 轮换事实（IA v3 二期⑤b）：engine 改密 + Secret 重写后由受理位与
+	// 审计同事务落账（DeleteDatabase 同款先变更后留痕序）。
+	eventDatabaseRotated = "database.credentials_rotated"
 )
-
-// dbPasswordRandBytes 是随机密码字节数（hex 后 48 字符；zot 平台凭证
-// 同款强度）。
-const dbPasswordRandBytes = 24
 
 // maxDatabasesPerProject 是 per-Project 活跃数据库上限（ADR-0017 配额
 // 族；库是长驻真实资源，保守缺省）。
@@ -215,6 +212,51 @@ func (svc *DatabasesService) DeleteDatabase(ctx context.Context, req *structurev
 	}
 	svc.s.Engine.KickDatabases()
 	return &structurev1.DeleteDatabaseResponse{}, nil
+}
+
+// RotateDatabasePassword 凭证轮换受理（IA v3 二期⑤b）：授权 + 在服检查
+// 前置 → engine 方言改密 + Secret 重写（轮换真源在 engine/rotate.go）→
+// 审计落账。事件由 engine 发射（database.credentials_rotated，紧贴 Secret
+// 重写事实）；级联披露由调用方承担（Console 确认页/CLI 回执明示"引用库
+// 的 App 须重新部署取新值"）。新连接串只进 Secret，响应永不回显。
+func (svc *DatabasesService) RotateDatabasePassword(ctx context.Context, req *structurev1.RotateDatabasePasswordRequest) (*structurev1.RotateDatabasePasswordResponse, error) {
+	if req.GetDatabaseId() == "" {
+		return nil, apperr.New("E_INVALID_ARGUMENT", "database_id: must not be empty")
+	}
+	row, err := svc.s.Databases.Get(ctx, svc.s.DB.Runner(), req.GetDatabaseId())
+	if err != nil {
+		return nil, mapStateError(err, "database")
+	}
+	if err := svc.s.authorizeProjectID(ctx, row.ProjectID); err != nil {
+		return nil, err
+	}
+	if row.Status != dbrepo.StatusRunning && row.Status != dbrepo.StatusDegraded {
+		return nil, apperr.New("E_DATABASE_NOT_READY",
+			"database %s is %s; rotation requires a running database (the data-plane change needs a live target)", row.Name, row.Status)
+	}
+	if err := svc.s.Engine.RotateDatabasePassword(ctx, row.ID); err != nil {
+		if errors.Is(err, state.ErrNotFound) {
+			return nil, apperr.New("E_NOT_FOUND", "database %s not found", req.GetDatabaseId())
+		}
+		if errors.Is(err, engine.ErrRotateRejected) {
+			return nil, apperr.New("E_DATABASE_ROTATE_FAILED", "%s", err.Error())
+		}
+		return nil, apperr.New("E_INTERNAL", "credential rotation failed").WithCause(err)
+	}
+	if err := svc.s.commit(ctx, writeFact{
+		events: []eventFact{structureEvent(eventDatabaseRotated, "database", row.ID, row.ProjectID)},
+		audits: []*audit.Entry{{
+			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "database.rotate_password",
+			Resource: "database/" + row.ID, AfterFP: row.CredentialsRef,
+		}},
+	}); err != nil {
+		return nil, mapStateError(err, "database")
+	}
+	updated, err := svc.s.Databases.Get(ctx, svc.s.DB.Runner(), row.ID)
+	if err != nil {
+		return nil, mapStateError(err, "database")
+	}
+	return &structurev1.RotateDatabasePasswordResponse{Database: databaseMsg(updated)}, nil
 }
 
 // cascadeDeleteDatabases 级联收口项目下全部活跃 Database（DeleteProject
@@ -400,15 +442,9 @@ func backupMsg(row *backup.Backup) *structurev1.Backup {
 	}
 }
 
-// mintDatabasePassword 铸随机密码（hex 48 字符；crypto/rand 失败即内部
-// 错误——退化为弱密码不可接受）。
-func mintDatabasePassword() string {
-	raw := make([]byte, dbPasswordRandBytes)
-	if _, err := rand.Read(raw); err != nil {
-		panic("fleetlygrpc: entropy source unavailable for database credentials: " + err.Error())
-	}
-	return hex.EncodeToString(raw)
-}
+// mintDatabasePassword 铸随机密码——公式单源已收敛到 dbtemplate.MintPassword
+// （创建面与轮换面共用；IA v3 二期⑤b 收编）。
+func mintDatabasePassword() string { return dbtemplate.MintPassword() }
 
 // browse 票据常量（ADR-0051 决策 2）：120s TTL——实例冷启动（首次拉镜像）
 // + 用户点击的窗口；exec 的 60s 不够。

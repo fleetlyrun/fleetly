@@ -123,3 +123,26 @@ func (mongoTemplate) Restore(host, password string) (RestoreSpec, error) {
 		SecretFiles: files,
 	}, nil
 }
+
+// RotatePassword 渲染数据面改密（IA v3 二期⑤b）：changeUserPassword 改
+// 平台账号（用户活在业务库数据内——init 脚本只在空卷首启执行一次，改密
+// 必须走数据面）；认证走 --config URI（current）。--eval 单引号插值的转
+// 义安全由 validatePassword 字符集闸承担（与 init 脚本同款纵深口径）。
+// 载体重下发后新 init 脚本材料（next）落位——未来空卷重建与单真源自洽。
+func (mongoTemplate) RotatePassword(host, current, next string) (RotateSpec, error) {
+	if err := validatePassword(current); err != nil {
+		return RotateSpec{}, err
+	}
+	if err := validatePassword(next); err != nil {
+		return RotateSpec{}, err
+	}
+	files, err := moBackupMaterials(host, current)
+	if err != nil {
+		return RotateSpec{}, err
+	}
+	return RotateSpec{
+		Argv: []string{"mongosh", "--config=/run/secrets/" + moBackupConfigFile, "--quiet",
+			"--eval", "db.getSiblingDB('" + moDBName + "').changeUserPassword('" + moUser + "', '" + next + "')"},
+		SecretFiles: files,
+	}, nil
+}

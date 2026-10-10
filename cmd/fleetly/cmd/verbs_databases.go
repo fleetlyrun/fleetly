@@ -348,10 +348,43 @@ type downloadSummary struct {
 	Bytes    int64  `json:"bytes"`
 }
 
+// databases rotate-password（IA v3 二期⑤b）：方言级凭证轮换——新连接串
+// 只进凭证 Secret（值永不回显）；回执显式披露级联语义（引用库的 App 持
+// 旧值直到重新部署）。位置参数沿 get/delete 惯例。
+func newDatabasesRotatePasswordVerb() commands.Command {
+	const name = "rotate-password"
+	return &flaggedVerb{
+		name:     name,
+		synopsis: "Rotate the database credential (a new connection URL lands in the credential secret)",
+		usage:    "databases rotate-password DATABASE_ID",
+		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if len(args) != 1 {
+				return usageErr(name, "expected exactly one DATABASE_ID argument")
+			}
+			ctx, cancel, c, err := dialFromEnv(ctx)
+			if err != nil {
+				return err
+			}
+			defer cancel()
+			defer c.Close() //nolint:errcheck // 进程退出路径
+			resp, err := c.Databases.RotateDatabasePassword(ctx, &structurev1.RotateDatabasePasswordRequest{DatabaseId: args[0]})
+			if err != nil {
+				return err
+			}
+			return renderOut(env, jsonOut, resp.GetDatabase(), func() {
+				d := resp.GetDatabase()
+				_, _ = fmt.Fprintf(env.Stdout,
+					"rotated credential for database %s (id %s)\ncredential secret %s now holds the new connection URL (value never shown)\ncascade: apps referencing this database keep the old credential until redeployed - redeploy them now\n",
+					d.GetName(), d.GetId(), d.GetCredentialsRef())
+			})
+		},
+	}
+}
+
 // appendFile 以追加语义落盘（先截断在首次写入前由调用方保证——此处
 // 首帧前 O_TRUNC 由 downloadVerb 预清理实现）。
 func appendFile(path string, data []byte) error {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600) //nolint:gosec // G304：path 是用户 --out 旗标（本地落盘即目的），非不可信包含
 	if err != nil {
 		return err
 	}

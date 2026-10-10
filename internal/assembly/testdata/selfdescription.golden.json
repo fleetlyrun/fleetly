@@ -1155,6 +1155,30 @@
       }
     },
     {
+      "name": "database.credentials_rotated",
+      "kind": "event",
+      "summary": "A database credential was rotated; the credential secret now holds the new connection URL and referencing apps must be redeployed to pick it up.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "active_deployments": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    {
       "name": "database.deleted",
       "kind": "event",
       "summary": "A database was deleted (carriers torn down, row tombstoned; volume and credential secret retained as project materials).",

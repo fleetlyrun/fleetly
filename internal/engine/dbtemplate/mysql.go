@@ -116,3 +116,25 @@ func (mysqlTemplate) Restore(host, password string) (RestoreSpec, error) {
 		SecretFiles: files,
 	}, nil
 }
+
+// RotatePassword 渲染数据面改密（IA v3 二期⑤b）：ALTER USER 平台账号
+// （首启 entrypoint 铸的是 'fleetly'@'%'）；认证走 defaults 文件（current）。
+// IDENTIFIED BY 单引号插值的转义安全由 validatePassword 字符集闸承担。
+// MYSQL_PASSWORD_FILE 只在空卷首启建号生效，改密必须走数据面。
+func (mysqlTemplate) RotatePassword(host, current, next string) (RotateSpec, error) {
+	if err := validatePassword(current); err != nil {
+		return RotateSpec{}, err
+	}
+	if err := validatePassword(next); err != nil {
+		return RotateSpec{}, err
+	}
+	files, err := myBackupMaterials(host, current)
+	if err != nil {
+		return RotateSpec{}, err
+	}
+	return RotateSpec{
+		Argv: []string{"mysql", "--defaults-extra-file=/run/secrets/" + myBackupDefaultsFile,
+			"-e", "ALTER USER '" + myUser + "'@'%' IDENTIFIED BY '" + next + "'"},
+		SecretFiles: files,
+	}, nil
+}

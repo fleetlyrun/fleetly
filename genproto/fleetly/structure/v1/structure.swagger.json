@@ -595,6 +595,45 @@
         ]
       }
     },
+    "/v1/databases/{database_id}/rotate-password": {
+      "post": {
+        "summary": "RotateDatabasePassword 轮换数据库凭证（IA v3 二期⑤b）：方言级数据面\n改密（postgres/mysql/mongo 经一次性工具容器以旧凭证认证执行；redis\n声明式——requirepass 在平台合成材料内，Secret 重写 + 载体重下发生效）\n+ 凭证 Secret database:\u003cname\u003e 原子重写 + 收敛环重下发。级联语义：\n引用该库的 App 持旧值直到重新部署——调用方（Console 确认页/CLI 回执）\n必须披露。要求库在服；新连接串只进 Secret（与创建同口径，永不回显）。",
+        "operationId": "DatabasesService_RotateDatabasePassword",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1RotateDatabasePasswordResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "database_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/DatabasesServiceRotateDatabasePasswordBody"
+            }
+          }
+        ],
+        "tags": [
+          "DatabasesService"
+        ]
+      }
+    },
     "/v1/databases/{id}": {
       "get": {
         "operationId": "DatabasesService_GetDatabase",
@@ -1368,6 +1407,10 @@
         }
       },
       "title": "BrowseDatabase 铸造数据浏览器会话（ADR-0051）。read_write 缺省 false =\n只读档；true 解锁写（动态要求 databases:write——静态注解只能表达最低门）。"
+    },
+    "DatabasesServiceRotateDatabasePasswordBody": {
+      "type": "object",
+      "title": "RotateDatabasePassword 轮换凭证（IA v3 二期⑤b）。新连接串只进 Secret\n（与创建同口径，永不回显）；响应是轮换后的 Database 行（status 载体\n重下发的观测面）。"
     },
     "DatabasesServiceTriggerBackupBody": {
       "type": "object"
@@ -2417,6 +2460,14 @@
       "properties": {
         "peer": {
           "$ref": "#/definitions/v1NetworkPeer"
+        }
+      }
+    },
+    "v1RotateDatabasePasswordResponse": {
+      "type": "object",
+      "properties": {
+        "database": {
+          "$ref": "#/definitions/v1Database"
         }
       }
     },

@@ -1146,6 +1146,51 @@ func local_request_DatabasesService_BrowseDatabase_0(ctx context.Context, marsha
 	return msg, metadata, err
 }
 
+func request_DatabasesService_RotateDatabasePassword_0(ctx context.Context, marshaler runtime.Marshaler, client DatabasesServiceClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var (
+		protoReq RotateDatabasePasswordRequest
+		metadata runtime.ServerMetadata
+		err      error
+	)
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
+	val, ok := pathParams["database_id"]
+	if !ok {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "database_id")
+	}
+	protoReq.DatabaseId, err = runtime.String(val)
+	if err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "database_id", err)
+	}
+	msg, err := client.RotateDatabasePassword(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	return msg, metadata, err
+}
+
+func local_request_DatabasesService_RotateDatabasePassword_0(ctx context.Context, marshaler runtime.Marshaler, server DatabasesServiceServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var (
+		protoReq RotateDatabasePasswordRequest
+		metadata runtime.ServerMetadata
+		err      error
+	)
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	val, ok := pathParams["database_id"]
+	if !ok {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "database_id")
+	}
+	protoReq.DatabaseId, err = runtime.String(val)
+	if err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "database_id", err)
+	}
+	msg, err := server.RotateDatabasePassword(ctx, &protoReq)
+	return msg, metadata, err
+}
+
 func request_NetworksService_CreateNetwork_0(ctx context.Context, marshaler runtime.Marshaler, client NetworksServiceClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
 	var (
 		protoReq CreateNetworkRequest
@@ -2058,6 +2103,26 @@ func RegisterDatabasesServiceHandlerServer(ctx context.Context, mux *runtime.Ser
 			return
 		}
 		forward_DatabasesService_BrowseDatabase_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
+	mux.Handle(http.MethodPost, pattern_DatabasesService_RotateDatabasePassword_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		var stream runtime.ServerTransportStream
+		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/fleetly.structure.v1.DatabasesService/RotateDatabasePassword", runtime.WithHTTPPathPattern("/v1/databases/{database_id}/rotate-password"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := local_request_DatabasesService_RotateDatabasePassword_0(annotatedContext, inboundMarshaler, server, req, pathParams)
+		md.HeaderMD, md.TrailerMD = metadata.Join(md.HeaderMD, stream.Header()), metadata.Join(md.TrailerMD, stream.Trailer())
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_DatabasesService_RotateDatabasePassword_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
 	})
 
 	return nil
@@ -3072,31 +3137,50 @@ func RegisterDatabasesServiceHandlerClient(ctx context.Context, mux *runtime.Ser
 		}
 		forward_DatabasesService_BrowseDatabase_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
 	})
+	mux.Handle(http.MethodPost, pattern_DatabasesService_RotateDatabasePassword_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/fleetly.structure.v1.DatabasesService/RotateDatabasePassword", runtime.WithHTTPPathPattern("/v1/databases/{database_id}/rotate-password"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := request_DatabasesService_RotateDatabasePassword_0(annotatedContext, inboundMarshaler, client, req, pathParams)
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_DatabasesService_RotateDatabasePassword_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
 	return nil
 }
 
 var (
-	pattern_DatabasesService_CreateDatabase_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"v1", "databases"}, ""))
-	pattern_DatabasesService_GetDatabase_0    = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2}, []string{"v1", "databases", "id"}, ""))
-	pattern_DatabasesService_ListDatabases_0  = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"v1", "databases"}, ""))
-	pattern_DatabasesService_DeleteDatabase_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2}, []string{"v1", "databases", "id"}, ""))
-	pattern_DatabasesService_TriggerBackup_0  = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "databases", "database_id", "backups"}, ""))
-	pattern_DatabasesService_ListBackups_0    = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "databases", "database_id", "backups"}, ""))
-	pattern_DatabasesService_VerifyBackup_0   = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "backups", "backup_id", "verify"}, ""))
-	pattern_DatabasesService_DownloadBackup_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3, 1, 0, 4, 1, 5, 4, 2, 5}, []string{"v1", "databases", "database_id", "backups", "backup_id", "download"}, ""))
-	pattern_DatabasesService_BrowseDatabase_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "databases", "database_id", "browse"}, ""))
+	pattern_DatabasesService_CreateDatabase_0         = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"v1", "databases"}, ""))
+	pattern_DatabasesService_GetDatabase_0            = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2}, []string{"v1", "databases", "id"}, ""))
+	pattern_DatabasesService_ListDatabases_0          = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"v1", "databases"}, ""))
+	pattern_DatabasesService_DeleteDatabase_0         = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2}, []string{"v1", "databases", "id"}, ""))
+	pattern_DatabasesService_TriggerBackup_0          = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "databases", "database_id", "backups"}, ""))
+	pattern_DatabasesService_ListBackups_0            = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "databases", "database_id", "backups"}, ""))
+	pattern_DatabasesService_VerifyBackup_0           = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "backups", "backup_id", "verify"}, ""))
+	pattern_DatabasesService_DownloadBackup_0         = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3, 1, 0, 4, 1, 5, 4, 2, 5}, []string{"v1", "databases", "database_id", "backups", "backup_id", "download"}, ""))
+	pattern_DatabasesService_BrowseDatabase_0         = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "databases", "database_id", "browse"}, ""))
+	pattern_DatabasesService_RotateDatabasePassword_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "databases", "database_id", "rotate-password"}, ""))
 )
 
 var (
-	forward_DatabasesService_CreateDatabase_0 = runtime.ForwardResponseMessage
-	forward_DatabasesService_GetDatabase_0    = runtime.ForwardResponseMessage
-	forward_DatabasesService_ListDatabases_0  = runtime.ForwardResponseMessage
-	forward_DatabasesService_DeleteDatabase_0 = runtime.ForwardResponseMessage
-	forward_DatabasesService_TriggerBackup_0  = runtime.ForwardResponseMessage
-	forward_DatabasesService_ListBackups_0    = runtime.ForwardResponseMessage
-	forward_DatabasesService_VerifyBackup_0   = runtime.ForwardResponseMessage
-	forward_DatabasesService_DownloadBackup_0 = runtime.ForwardResponseStream
-	forward_DatabasesService_BrowseDatabase_0 = runtime.ForwardResponseMessage
+	forward_DatabasesService_CreateDatabase_0         = runtime.ForwardResponseMessage
+	forward_DatabasesService_GetDatabase_0            = runtime.ForwardResponseMessage
+	forward_DatabasesService_ListDatabases_0          = runtime.ForwardResponseMessage
+	forward_DatabasesService_DeleteDatabase_0         = runtime.ForwardResponseMessage
+	forward_DatabasesService_TriggerBackup_0          = runtime.ForwardResponseMessage
+	forward_DatabasesService_ListBackups_0            = runtime.ForwardResponseMessage
+	forward_DatabasesService_VerifyBackup_0           = runtime.ForwardResponseMessage
+	forward_DatabasesService_DownloadBackup_0         = runtime.ForwardResponseStream
+	forward_DatabasesService_BrowseDatabase_0         = runtime.ForwardResponseMessage
+	forward_DatabasesService_RotateDatabasePassword_0 = runtime.ForwardResponseMessage
 )
 
 // RegisterNetworksServiceHandlerFromEndpoint is same as RegisterNetworksServiceHandler but

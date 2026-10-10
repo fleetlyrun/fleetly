@@ -1198,15 +1198,16 @@ var VolumesService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	DatabasesService_CreateDatabase_FullMethodName = "/fleetly.structure.v1.DatabasesService/CreateDatabase"
-	DatabasesService_GetDatabase_FullMethodName    = "/fleetly.structure.v1.DatabasesService/GetDatabase"
-	DatabasesService_ListDatabases_FullMethodName  = "/fleetly.structure.v1.DatabasesService/ListDatabases"
-	DatabasesService_DeleteDatabase_FullMethodName = "/fleetly.structure.v1.DatabasesService/DeleteDatabase"
-	DatabasesService_TriggerBackup_FullMethodName  = "/fleetly.structure.v1.DatabasesService/TriggerBackup"
-	DatabasesService_ListBackups_FullMethodName    = "/fleetly.structure.v1.DatabasesService/ListBackups"
-	DatabasesService_VerifyBackup_FullMethodName   = "/fleetly.structure.v1.DatabasesService/VerifyBackup"
-	DatabasesService_DownloadBackup_FullMethodName = "/fleetly.structure.v1.DatabasesService/DownloadBackup"
-	DatabasesService_BrowseDatabase_FullMethodName = "/fleetly.structure.v1.DatabasesService/BrowseDatabase"
+	DatabasesService_CreateDatabase_FullMethodName         = "/fleetly.structure.v1.DatabasesService/CreateDatabase"
+	DatabasesService_GetDatabase_FullMethodName            = "/fleetly.structure.v1.DatabasesService/GetDatabase"
+	DatabasesService_ListDatabases_FullMethodName          = "/fleetly.structure.v1.DatabasesService/ListDatabases"
+	DatabasesService_DeleteDatabase_FullMethodName         = "/fleetly.structure.v1.DatabasesService/DeleteDatabase"
+	DatabasesService_TriggerBackup_FullMethodName          = "/fleetly.structure.v1.DatabasesService/TriggerBackup"
+	DatabasesService_ListBackups_FullMethodName            = "/fleetly.structure.v1.DatabasesService/ListBackups"
+	DatabasesService_VerifyBackup_FullMethodName           = "/fleetly.structure.v1.DatabasesService/VerifyBackup"
+	DatabasesService_DownloadBackup_FullMethodName         = "/fleetly.structure.v1.DatabasesService/DownloadBackup"
+	DatabasesService_BrowseDatabase_FullMethodName         = "/fleetly.structure.v1.DatabasesService/BrowseDatabase"
+	DatabasesService_RotateDatabasePassword_FullMethodName = "/fleetly.structure.v1.DatabasesService/RotateDatabasePassword"
 )
 
 // DatabasesServiceClient is the client API for DatabasesService service.
@@ -1242,6 +1243,13 @@ type DatabasesServiceClient interface {
 	// 动态要求 databases:write。响应 URL 含一次性 Launcher Ticket（120s 单
 	// 用途）——兑换入口即 URL 本身。会话硬 TTL 30min、空闲 10min 回收。
 	BrowseDatabase(ctx context.Context, in *BrowseDatabaseRequest, opts ...grpc.CallOption) (*BrowseDatabaseResponse, error)
+	// RotateDatabasePassword 轮换数据库凭证（IA v3 二期⑤b）：方言级数据面
+	// 改密（postgres/mysql/mongo 经一次性工具容器以旧凭证认证执行；redis
+	// 声明式——requirepass 在平台合成材料内，Secret 重写 + 载体重下发生效）
+	// + 凭证 Secret database:<name> 原子重写 + 收敛环重下发。级联语义：
+	// 引用该库的 App 持旧值直到重新部署——调用方（Console 确认页/CLI 回执）
+	// 必须披露。要求库在服；新连接串只进 Secret（与创建同口径，永不回显）。
+	RotateDatabasePassword(ctx context.Context, in *RotateDatabasePasswordRequest, opts ...grpc.CallOption) (*RotateDatabasePasswordResponse, error)
 }
 
 type databasesServiceClient struct {
@@ -1351,6 +1359,16 @@ func (c *databasesServiceClient) BrowseDatabase(ctx context.Context, in *BrowseD
 	return out, nil
 }
 
+func (c *databasesServiceClient) RotateDatabasePassword(ctx context.Context, in *RotateDatabasePasswordRequest, opts ...grpc.CallOption) (*RotateDatabasePasswordResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RotateDatabasePasswordResponse)
+	err := c.cc.Invoke(ctx, DatabasesService_RotateDatabasePassword_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // DatabasesServiceServer is the server API for DatabasesService service.
 // All implementations must embed UnimplementedDatabasesServiceServer
 // for forward compatibility.
@@ -1384,6 +1402,13 @@ type DatabasesServiceServer interface {
 	// 动态要求 databases:write。响应 URL 含一次性 Launcher Ticket（120s 单
 	// 用途）——兑换入口即 URL 本身。会话硬 TTL 30min、空闲 10min 回收。
 	BrowseDatabase(context.Context, *BrowseDatabaseRequest) (*BrowseDatabaseResponse, error)
+	// RotateDatabasePassword 轮换数据库凭证（IA v3 二期⑤b）：方言级数据面
+	// 改密（postgres/mysql/mongo 经一次性工具容器以旧凭证认证执行；redis
+	// 声明式——requirepass 在平台合成材料内，Secret 重写 + 载体重下发生效）
+	// + 凭证 Secret database:<name> 原子重写 + 收敛环重下发。级联语义：
+	// 引用该库的 App 持旧值直到重新部署——调用方（Console 确认页/CLI 回执）
+	// 必须披露。要求库在服；新连接串只进 Secret（与创建同口径，永不回显）。
+	RotateDatabasePassword(context.Context, *RotateDatabasePasswordRequest) (*RotateDatabasePasswordResponse, error)
 	mustEmbedUnimplementedDatabasesServiceServer()
 }
 
@@ -1420,6 +1445,9 @@ func (UnimplementedDatabasesServiceServer) DownloadBackup(*DownloadBackupRequest
 }
 func (UnimplementedDatabasesServiceServer) BrowseDatabase(context.Context, *BrowseDatabaseRequest) (*BrowseDatabaseResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method BrowseDatabase not implemented")
+}
+func (UnimplementedDatabasesServiceServer) RotateDatabasePassword(context.Context, *RotateDatabasePasswordRequest) (*RotateDatabasePasswordResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RotateDatabasePassword not implemented")
 }
 func (UnimplementedDatabasesServiceServer) mustEmbedUnimplementedDatabasesServiceServer() {}
 func (UnimplementedDatabasesServiceServer) testEmbeddedByValue()                          {}
@@ -1597,6 +1625,24 @@ func _DatabasesService_BrowseDatabase_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DatabasesService_RotateDatabasePassword_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RotateDatabasePasswordRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DatabasesServiceServer).RotateDatabasePassword(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DatabasesService_RotateDatabasePassword_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DatabasesServiceServer).RotateDatabasePassword(ctx, req.(*RotateDatabasePasswordRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // DatabasesService_ServiceDesc is the grpc.ServiceDesc for DatabasesService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1635,6 +1681,10 @@ var DatabasesService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "BrowseDatabase",
 			Handler:    _DatabasesService_BrowseDatabase_Handler,
+		},
+		{
+			MethodName: "RotateDatabasePassword",
+			Handler:    _DatabasesService_RotateDatabasePassword_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

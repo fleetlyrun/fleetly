@@ -97,3 +97,17 @@ func (redisTemplate) Restore(host, password string) (RestoreSpec, error) {
 		Argv: []string{"sh", "-c", redisRestoreScript},
 	}, nil
 }
+
+// RotatePassword 声明式轮换（IA v3 二期⑤b）：requirepass 在平台合成 conf
+// 材料内且 argv 每启重读——Secret 重写 + 收敛环重下发载体即生效，无
+// utility（Argv 空；旧值在新载体上线前保持有效，无破窗）。current/next
+// 仍过字符集闸：next 即将进新 conf 材料，闸是渲染面单一防线。
+func (redisTemplate) RotatePassword(host, current, next string) (RotateSpec, error) {
+	if err := validatePassword(current); err != nil {
+		return RotateSpec{}, err
+	}
+	if err := validatePassword(next); err != nil {
+		return RotateSpec{}, err
+	}
+	return RotateSpec{}, nil
+}

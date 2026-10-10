@@ -78,11 +78,11 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 		groupVerb("networks", "manage project networks and cross-project peer attachments",
 			newNetworksCreateVerb(), newNetworksListVerb(), newNetworksRebuildVerb(), newNetworksDeclareVerb(), newNetworksApproveVerb(),
 			newNetworksRevokeVerb(), newNetworksPeersVerb()),
-		// 托管数据服务（F1.12，ADR-0029；备份动词 F2.2/ADR-0039）。
+		// 托管数据服务（F1.12，ADR-0029；备份动词 F2.2/ADR-0039；凭证轮换 IA v3 二期⑤b）。
 		groupVerb("databases", "manage managed data services (postgres/pgvector/redis/mysql/mongo templates; credential values never shown)",
 			newDatabasesCreateVerb(), newDatabasesListVerb(), newDatabasesGetVerb(), newDatabasesDeleteVerb(),
 			newDatabasesBackupVerb(), newDatabasesBackupsVerb(), newDatabasesVerifyVerb(), newDatabasesBrowseVerb(),
-			newDatabasesDownloadBackupVerb()),
+			newDatabasesDownloadBackupVerb(), newDatabasesRotatePasswordVerb()),
 		// Delivery 上下文。
 		newDeployVerb(),
 		groupVerb("deployments", "inspect, wait for and cancel deployments", newDeploymentsListVerb(), newDeploymentsGetVerb(), newDeploymentsWaitVerb(), newDeploymentsCancelVerb()),

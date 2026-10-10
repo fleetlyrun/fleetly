@@ -127,3 +127,27 @@ func (postgresTemplate) Restore(host, password string) (RestoreSpec, error) {
 		SecretFiles: files,
 	}, nil
 }
+
+// RotatePassword 渲染数据面改密（IA v3 二期⑤b）：ALTER USER 平台账号；
+// 认证走 pgpass 材料（current）。PASSWORD 字面值单引号插值的转义安全由
+// validatePassword 字符集闸承担（与 mongo init 脚本同款纵深口径）。首启
+// env 的 POSTGRES_PASSWORD_FILE 只在空卷 initdb 生效，改密必须走数据面。
+func (postgresTemplate) RotatePassword(host, current, next string) (RotateSpec, error) {
+	if err := validatePassword(current); err != nil {
+		return RotateSpec{}, err
+	}
+	if err := validatePassword(next); err != nil {
+		return RotateSpec{}, err
+	}
+	files, err := pgBackupMaterials(host, current)
+	if err != nil {
+		return RotateSpec{}, err
+	}
+	return RotateSpec{
+		Argv: []string{"psql", "-h", host, "-p", "5432", "-U", pgUser, "-d", pgDBName,
+			"-v", "ON_ERROR_STOP=1", "--no-password",
+			"-c", "ALTER USER " + pgUser + " WITH PASSWORD '" + next + "'"},
+		Env:         map[string]string{"PGPASSFILE": "/run/secrets/" + pgBackupPassFile},
+		SecretFiles: files,
+	}, nil
+}

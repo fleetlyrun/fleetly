@@ -491,6 +491,11 @@ type Engine struct {
 	configs  *configrepo.Repo
 	volumes  *volume.Repo
 	networks *networkrepo.Repo // 受管 Proxy 挂网真源（活跃 Project 网络全量）
+
+	// rotateMu 串行化 Database 凭证轮换（IA v3 二期⑤b）：并发轮换的
+	// utility/Secret 写交错可能落下 Secret 与数据面不一致的终态——全域
+	// 单飞是罕见运维动作的最小诚实防线（rotate.go 注）。
+	rotateMu sync.Mutex
 }
 
 // Deps 是引擎依赖（装配注入；可选依赖为 nil 时对应能力停用并给出精确

@@ -62,6 +62,7 @@ var errcodeToHTTP = map[string]int{
 	"E_INVALID_INVITATION":       http.StatusForbidden,
 	"E_INVALID_SIGNATURE":        http.StatusUnauthorized,
 	"E_NODE_RELAY_OFFLINE":       http.StatusServiceUnavailable,
+	"E_DATABASE_ROTATE_FAILED":   http.StatusConflict,
 	"E_NOT_CANCELLABLE":          http.StatusConflict,
 	"E_NOT_FOUND":                http.StatusNotFound,
 	"E_NO_BASELINE":              http.StatusConflict,

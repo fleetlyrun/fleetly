@@ -132,7 +132,9 @@ func (s *Service) RestartComponent(ctx context.Context, req *systemv1.RestartCom
 		}
 		return nil, err
 	}
-	return &systemv1.RestartComponentResponse{Restarted: int32(restarted)}, nil
+	// G115：restarted 是单组件载体内活计数（Provider 声明面，个位数域），
+	// int32 溢出面不存在。
+	return &systemv1.RestartComponentResponse{Restarted: int32(restarted)}, nil //nolint:gosec
 }
 
 // GetSchema 返回能力自描述全量文档（Spec 契约 + 事件 payload schema；

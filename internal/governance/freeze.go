@@ -58,6 +58,7 @@ var FrozenVerbs = map[string]freezeScope{
 	"/fleetly.structure.v1.NetworksService/RevokeNetworkPeer":           {field: "id", kind: anchor.KindPeer},
 	"/fleetly.structure.v1.DatabasesService/CreateDatabase":             {field: "project_id", kind: anchor.KindProject},
 	"/fleetly.structure.v1.DatabasesService/DeleteDatabase":             {field: "id", kind: anchor.KindDatabase},
+	"/fleetly.structure.v1.DatabasesService/RotateDatabasePassword":     {field: "database_id", kind: anchor.KindDatabase},
 	"/fleetly.delivery.v1.DeploymentsService/Deploy":                    {field: "app_id", kind: anchor.KindApp},
 	"/fleetly.delivery.v1.DeploymentsService/Rollback":                  {field: "app_id", kind: anchor.KindApp},
 	"/fleetly.delivery.v1.TemplatesService/InstantiateTemplate":         {field: "project_id", kind: anchor.KindProject},

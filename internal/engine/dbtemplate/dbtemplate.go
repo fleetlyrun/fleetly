@@ -19,6 +19,8 @@
 package dbtemplate
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"net/url"
 	"sort"
@@ -63,6 +65,12 @@ type Template interface {
 	// Restore 渲染恢复执行：流式（stdin 注入运行中的库）或预置卷（redis
 	// 形态——RDB 仅启动时装载，ADR-0039 决策 5）。
 	Restore(host, password string) (RestoreSpec, error)
+	// RotatePassword 渲染凭证轮换执行（IA v3 二期⑤b）：current 供工具
+	// 容器认证，next 是目标密码（两者都过 validatePassword 闸）。Argv
+	// 非空 = 数据面改密命令（密码活在数据卷内的引擎——postgres/mysql/
+	// mongo，一次性工具容器执行）；Argv 空 = 声明式轮换（redis——
+	// requirepass 在平台合成材料内，Secret 重写 + 载体重下发即生效）。
+	RotatePassword(host, current, next string) (RotateSpec, error)
 	// ImageDigest 是镜像 digest 钉定面（F2.7/ADR-0045 落地）：带算法前缀的
 	// index digest，与 Image() 的 digest 段恒一致（P7 第三消费点 = registry
 	// digest 透传，只核对传递完整性——测试门禁断言自洽）。
@@ -121,6 +129,27 @@ type RestoreSpec struct {
 	Argv        []string
 	Env         map[string]string
 	SecretFiles map[string][]byte
+}
+
+// RotateSpec 是一次凭证轮换的引擎渲染产物（IA v3 二期⑤b）。Argv 空 =
+// 声明式轮换（无 utility；Secret 重写后由收敛环重下发载体生效——旧值在
+// 新载体上线前保持有效，无破窗）；Argv 非空 = 数据面改密命令（工具容器
+// 以 current 认证执行，Secret 重写在成功后落）。
+type RotateSpec struct {
+	Argv        []string
+	Env         map[string]string
+	SecretFiles map[string][]byte
+}
+
+// MintPassword 铸平台随机密码（hex 48 = crypto/rand 24 字节；创建面与
+// 轮换面共用的公式单源——用户面无覆写通道，validatePassword 是渲染面
+// 纵深闸）。熵不可用即 panic：退化为弱密码不可接受。
+func MintPassword() string {
+	raw := make([]byte, 24)
+	if _, err := rand.Read(raw); err != nil {
+		panic("dbtemplate: entropy source unavailable for database credentials: " + err.Error())
+	}
+	return hex.EncodeToString(raw)
 }
 
 // validatePassword 是渲染面的共享安全闸：密码只准 [0-9A-Za-z]。动机是

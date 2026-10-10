@@ -6,4 +6,5 @@ delete
 download-backup
 get
 list
+rotate-password
 verify

@@ -15,6 +15,7 @@ database.backup_failed	A database backup failed; the payload carries the error t
 database.backup_succeeded	A database backup completed; the payload carries the object key, sha256 digest and size (the restore-verification anchors).	internal/engine/backup.go executeOneBackup
 database.browser_opened	A browse session was opened for a database (payload carries the browser tool, read-only flag and enforcement tier; change freeze is exempt — diagnostics face).	internal/api/fleetlygrpc/databases.go BrowseDatabase
 database.created	A database was created from a template; the platform minted its credential secret (value never returned).	internal/api/fleetlygrpc/databases.go CreateDatabase
+database.credentials_rotated	A database credential was rotated; the credential secret now holds the new connection URL and referencing apps must be redeployed to pick it up.	internal/api/fleetlygrpc/databases.go RotateDatabasePassword
 database.deleted	A database was deleted (carriers torn down, row tombstoned; volume and credential secret retained as project materials).	internal/api/fleetlygrpc/databases.go DeleteDatabase
 database.restored	A database restore completed (stream into a running target or volume pre-seeding before first start).	internal/engine/backup.go restoreDatabase
 deployment.building	Deployment entered build stage.	added during implementation

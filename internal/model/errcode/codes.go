@@ -201,4 +201,11 @@ var builtins = []Code{
 		Source:     "internal/engine/dbbrowser For (ADR-0051 decision 3: registry totality is the acceptance contract; unmapped engine = honest failure)",
 		GRPC:       codes.Unimplemented,
 	},
+	{
+		ID:         "E_DATABASE_ROTATE_FAILED",
+		Summary:    "The database rejected the credential change, so the rotation did not land.",
+		Suggestion: "Read the error tail for the engine's own reply (auth failure or mid-flight stop are the common causes); the old credential stays valid and the rotation is retry-safe once the database is running again.",
+		Source:     "internal/engine/rotate.go runRotateUtility (IA v3 二期⑤b: utility-first ordering — a failed data-plane change leaves zero state behind; the secret rewrite only follows success)",
+		GRPC:       codes.FailedPrecondition,
+	},
 }

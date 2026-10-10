@@ -307,7 +307,7 @@ func (svc *AppsService) GetApp(ctx context.Context, req *structurev1.GetAppReque
 
 // GetAppSpec 回读 App 当前冻结 Spec（最新 Revision；只读面——写路径仅
 // Deploy）。Variables 编辑面 / Used-by 反查 / Volume 挂载反查的数据源
-//（IA v3 二期②；spec.proto 唯一运行时边界的只读回读）。未部署过 =
+// （IA v3 二期②；spec.proto 唯一运行时边界的只读回读）。未部署过 =
 // E_NOT_FOUND（诚实：无冻结即无 Spec）。
 // DownloadBackup 流式下载备份对象（IA v3 二期⑤）：授权链与行归属校验
 // 后经引擎打开只读流，256KiB 分块下发（gateway 帧化，消费端重组）。

@@ -131,6 +131,9 @@ var builtins = []Event{
 	{Name: "database.backup_succeeded", Summary: "A database backup completed; the payload carries the object key, sha256 digest and size (the restore-verification anchors).", Source: "internal/engine/backup.go executeOneBackup"},
 	{Name: "database.backup_failed", Summary: "A database backup failed; the payload carries the error tail (utility container stderr included).", Source: "internal/engine/backup.go executeOneBackup"},
 	{Name: "database.restored", Summary: "A database restore completed (stream into a running target or volume pre-seeding before first start).", Source: "internal/engine/backup.go restoreDatabase"},
+	// 凭证轮换（IA v3 二期⑤b：engine 方言改密 + Secret 重写后，受理位与
+	// 审计同事务落账——payload 同 structureEventPayload，密码/连接串永不出现）。
+	{Name: "database.credentials_rotated", Summary: "A database credential was rotated; the credential secret now holds the new connection URL and referencing apps must be redeployed to pick it up.", Source: "internal/api/fleetlygrpc/databases.go RotateDatabasePassword"},
 
 	// Platform Backup（F2.2，ADR-0039：restic 链整体成败；快照细节在仓库自身）。
 	{Name: "platform.backup_succeeded", Summary: "A platform backup (restic snapshot of the control-plane data root) completed on all configured repos.", Source: "internal/engine/backup.go platformBackupPass"},
