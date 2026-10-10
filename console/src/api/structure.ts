@@ -190,6 +190,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/databases/{database_id}/rotate-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * RotateDatabasePassword 轮换数据库凭证（IA v3 二期⑤b）：方言级数据面
+         *     改密（postgres/mysql/mongo 经一次性工具容器以旧凭证认证执行；redis
+         *     声明式——requirepass 在平台合成材料内，Secret 重写 + 载体重下发生效）
+         *     + 凭证 Secret database:<name> 原子重写 + 收敛环重下发。级联语义：
+         *     引用该库的 App 持旧值直到重新部署——调用方（Console 确认页/CLI 回执）
+         *     必须披露。要求库在服；新连接串只进 Secret（与创建同口径，永不回显）。
+         */
+        post: operations["DatabasesService_RotateDatabasePassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/databases/{id}": {
         parameters: {
             query?: never;
@@ -453,6 +477,12 @@ export interface components {
         DatabasesServiceBrowseDatabaseBody: {
             read_write?: boolean;
         };
+        /**
+         * RotateDatabasePassword 轮换凭证（IA v3 二期⑤b）。新连接串只进 Secret
+         *     （与创建同口径，永不回显）；响应是轮换后的 Database 行（status 载体
+         *     重下发的观测面）。
+         */
+        DatabasesServiceRotateDatabasePasswordBody: Record<string, never>;
         DatabasesServiceTriggerBackupBody: Record<string, never>;
         /**
          * VerifyBackup 重算对象 sha256 比对 Put 回执（ADR-0039 决策 8：静态完整
@@ -919,6 +949,9 @@ export interface components {
         };
         v1RevokeNetworkPeerResponse: {
             peer?: components["schemas"]["v1NetworkPeer"];
+        };
+        v1RotateDatabasePasswordResponse: {
+            database?: components["schemas"]["v1Database"];
         };
         v1Secret: {
             id?: string;
@@ -1487,6 +1520,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1BrowseDatabaseResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    DatabasesService_RotateDatabasePassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                database_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DatabasesServiceRotateDatabasePasswordBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1RotateDatabasePasswordResponse"];
                 };
             };
             /** @description An unexpected error response. */

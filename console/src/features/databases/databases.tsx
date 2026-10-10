@@ -9,6 +9,7 @@ import {
   HardDriveDownloadIcon,
   ExternalLinkIcon,
   EyeIcon,
+  RefreshCwIcon,
   Trash2Icon,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -502,7 +503,12 @@ export function DatabaseDetailPage({ projectId, databaseId }: { projectId: strin
           <DatabaseBrowsePanel browse={() => browse.mutate()} pending={browse.isPending} error={browse.error} engine={database?.engine} />
         </TabsContent>
         <TabsContent value="settings">
-          <DatabaseSettings database={database} onDeleted={() => navigate({ to: "/p/$projectId/databases", params: { projectId } })} />
+          <DatabaseSettings
+            database={database}
+            projectApps={apps.data ?? []}
+            specs={specs}
+            onDeleted={() => navigate({ to: "/p/$projectId/databases", params: { projectId } })}
+          />
         </TabsContent>
       </Tabs>
     </div>
@@ -897,13 +903,24 @@ function DatabaseBrowsePanel({
 
 function DatabaseSettings({
   database,
+  projectApps,
+  specs,
   onDeleted,
 }: {
   database: DatabaseEntry | undefined;
+  projectApps: Array<{ id: string; name: string }>;
+  specs: Map<string, AppSpec>;
   onDeleted: () => void;
 }) {
   const queryClient = useQueryClient();
   const id = database?.id ?? "";
+  // 级联披露数据源（与 Overview Used-by 同锚）：credentials_ref 扫项目内
+  // App 冻结 Spec 的 secret_refs——确认页必须点名引用方（IA v3 §4.2）。
+  const usedBy = database?.credentials_ref
+    ? (specIndex(specs, (spec) => (spec.processes ?? []).flatMap((process) => process.secret_refs ?? [])).get(database.credentials_ref) ?? [])
+        .map((appId) => projectApps.find((app) => app.id === appId)?.name ?? appId)
+    : [];
+  const ready = database?.status === "running" || database?.status === "degraded";
   const remove = useMutation({
     mutationFn: async () => apiSend(`/v1/databases/${encodeURIComponent(id)}`, "DELETE"),
     onSuccess: () => {
@@ -913,14 +930,60 @@ function DatabaseSettings({
     },
     onError: (cause) => toast.error(fieldError(cause)),
   });
+  const rotate = useMutation({
+    mutationFn: async () => apiSend(`/v1/databases/${encodeURIComponent(id)}/rotate-password`, "POST", {}),
+    onSuccess: () => {
+      invalidateDatabases(queryClient);
+      toast("Credential rotated — redeploy referencing apps to pick up the new value");
+    },
+    onError: (cause) => toast.error(fieldError(cause)),
+  });
   return (
     <div className="flex flex-col gap-4">
       <section className="max-w-2xl rounded-xl border bg-card p-5">
-        <h3 className="mb-2 text-[13px] font-semibold">Engine parameters</h3>
-        <p className="text-xs text-muted-foreground">
-          Per-database parameter overrides and credential rotation land in a later phase (IA v3 §8 二期) — rotation cascades to
-          apps using this database and must disclose that on confirm.
+        <h3 className="mb-2 text-[13px] font-semibold">Credential</h3>
+        <p className="mb-4 text-xs text-muted-foreground">
+          The single credential lives in the project secret{" "}
+          <span className="font-mono">{database?.credentials_ref ?? "—"}</span> (full connection URL, never displayed). Rotation
+          mints a new password; referencing apps must be redeployed to pick it up.
         </p>
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button size="sm" disabled={database == null || !ready || rotate.isPending}>
+              <RefreshCwIcon data-icon-start-inline />
+              {rotate.isPending ? "Rotating…" : "Rotate password…"}
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Rotate the credential for {database?.name}?</AlertDialogTitle>
+              <AlertDialogDescription>
+                A new password is minted and the connection URL in the credential secret is rewritten; the old password stops
+                working. Apps referencing this database keep the old value until redeployed
+                {usedBy.length > 0 ? `: ${usedBy.join(", ")}` : " (none found in this project right now)"}. Carriers re-roll as
+                the new materials are published, so expect a brief connection blip. The new URL is never displayed — apps receive
+                it via their secret refs.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                disabled={rotate.isPending}
+                onClick={(event) => {
+                  event.preventDefault();
+                  rotate.mutate();
+                }}
+              >
+                {rotate.isPending ? "Rotating…" : "Rotate"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+        {!ready ? (
+          <p className="mt-3 text-[11.5px] text-muted-foreground">
+            Rotation needs a running database — the data-plane change requires a live target.
+          </p>
+        ) : null}
       </section>
       <section className="max-w-2xl rounded-xl border border-destructive/30 bg-card p-5">
         <h3 className="mb-2 text-[13px] font-semibold text-destructive">Danger zone</h3>
