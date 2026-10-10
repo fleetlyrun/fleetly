@@ -466,6 +466,15 @@ ADR-0015 升级序的完整落地形态：**Platform Backup 前置 → SIGTERM �
 - **教训增补（路由探针剧本）**：staging 路由探针 = `curl -sk --resolve <host>:443:127.0.0.1 https://<host>/`——①本环境 ACME caserver 钉 LE staging，严格校验必失败（-k 必带）；②带 tls 段的路由只在 443（80 探针 404 是正常行为）；③本机 shell 带死代理时探针全 000（对端执行或 --noproxy）。换装后"路由全断"警报曾为三重假象。
 - **残留**：walkpg 的 credential secret 与卷行按留存语义在册（清理走 DeleteSecret API——CLI secrets delete 缺口记账）；`n0.dev` 路由悬挂指向 tombstone app（存量数据观察）。
 
+## 2026-10-10 记录·三十（对齐批换装 b59690e-iav3p2c：原型保真 + ADR-0059 词名复裁 + light theme 全清）
+
+- **换装**（a483335-iav3p2b → **b59690e-iav3p2c（现役）**，对齐批三 commit + Apply changes 复裁）：零迁移零键面；Platform Backup `d0a227a8` 前置；doctor 0 failed；路由 200。
+- **ADR-0059**：页名 Managed Providers → **Components**（用户复裁；route 保持 /providers；CONTEXT.md Avoid 表移出 component——显式修订通道）；同批复裁 **Apply changes** 为 Variables tab 提交动作文案（守卫例外表单点豁免）。
+- **对齐批落地**（原型 screen-apps/appdetail/Variables 对照审计驱动）：Apps 列表（+New app 瘦对话框/Filter 工具栏+计数/ROUTES 列/CLI equivalent 行/项目上下文描述）；App 详情（hero 卡+Rollback/四指标卡/Routes 卡/R 序号/内容区三段 crumb 成项目域唯一面包屑——topbar 对 /p/ 域不再渲染）；Variables tab 单卡单平面表（secret ref 行内徽标+图标动作）；Components 卡内 disk usage 行；列表规范（ListToolbar/CliEquivalent 共享件）落 11 页。
+- **light theme 全清**：ui.tsx 共享层 + panels/tasks/HookModal/DeployForm 等 90+ 处 slate-* 硬编码暗色类 → token 类（截图实证 Variables 重灾区页亮色可读）。**教训：全局正则清理要防引号前空格误伤（from" 形态 30 处回修）与行首缩进误伤**。
+- **W 项四修**：W-3（tombstone app Variables 空态面）/W-4（轮换确认框成功即关）/W-6（tags 404→E_NOT_FOUND，capability.RegistryContentError 类型化）/W-7（Usage index 补 Database 挂靠判据）。
+- **残留**：Alerts/Backups/Identity/Audit 四页工具栏（对齐批 4 收尾）；retention 行（config 无读取面）；Recent deployments 原型 hook 来源行；n0.dev 悬挂路由。
+
 ## 教训与边界
 
 - **本机（Windows 工作机）出站对该 VPS 全端口受限**（80/443/8420 全 000；node2 路径全通）——外部验证走 node2 或 check-host 类服务，勿信本机 curl。
