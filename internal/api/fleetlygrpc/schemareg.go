@@ -69,6 +69,7 @@ func init() {
 		eventVariableUpdated,
 		eventVariableDeleted,
 		eventVolumeCreated,
+		eventVolumeDeleted,
 		eventNetworkCreated,
 	} {
 		registerEventPayload(name, structureEventPayload{})

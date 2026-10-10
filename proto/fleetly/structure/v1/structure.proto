@@ -201,6 +201,18 @@ service VolumesService {
       api_key_scope: { resource: "volumes" op: SCOPE_OP_READ }
     };
   }
+  // DeleteVolume 删除未挂载卷（IA v3 二期⑤b）：受理位前置引用预检——项目
+  // 内活跃 App 冻结 Spec 的卷附件（volume_id 装平台卷名，引擎同锚）或同名
+  // Database 挂靠卷任一命中即 E_CONFLICT。删除 = 平台行 tombstone；底层
+  // 编排器卷不随删（swarm 命名卷残留是文档化文化、k3s PVC 卡 ns 排空——
+  // 数据兜底永不级联，调用方披露）。
+  rpc DeleteVolume(DeleteVolumeRequest) returns (DeleteVolumeResponse) {
+    option (google.api.http) = { delete: "/v1/volumes/{id}" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "volumes" op: SCOPE_OP_ADMIN }
+    };
+  }
 }
 
 // DatabasesService：托管数据服务聚合面（ADR-0029）。凭证值永不回显——
@@ -536,6 +548,8 @@ message CreateVolumeRequest { string project_id = 1; string name = 2; string pin
 message CreateVolumeResponse { Volume volume = 1; }
 message ListVolumesRequest { string project_id = 1; }
 message ListVolumesResponse { repeated Volume volumes = 1; }
+message DeleteVolumeRequest { string id = 1; }
+message DeleteVolumeResponse {}
 
 // Database 是托管有状态服务行（ADR-0029：模板参数创建即不可变，无
 // Revision/Deployment 面）。

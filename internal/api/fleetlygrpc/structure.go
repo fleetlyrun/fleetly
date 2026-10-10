@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"google.golang.org/protobuf/encoding/protojson"
 
@@ -47,6 +48,7 @@ const (
 	eventVariableUpdated = "variable.updated"
 	eventVariableDeleted = "variable.deleted"
 	eventVolumeCreated   = "volume.created"
+	eventVolumeDeleted   = "volume.deleted"
 	eventNetworkCreated  = "network.created"
 	// 跨 Project peer 声明面（F1.8，ADR-0013 附录 A.1）：三拍事件，
 	// aggregate=network（挂接收方网络 ID——事件流沿网络聚合面订阅）。
@@ -920,6 +922,89 @@ func (svc *VolumesService) CreateVolume(ctx context.Context, req *structurev1.Cr
 		return nil, mapStateError(err, "volume")
 	}
 	return &structurev1.CreateVolumeResponse{Volume: volumeMsg(*row)}, nil
+}
+
+// DeleteVolume 收口删除（IA v3 二期⑤b）：受理位引用预检（事务内——活跃
+// App 最新冻结 Spec 的卷附件按平台卷名匹配 + 同名 Database 挂靠卷）任一
+// 命中即 E_CONFLICT；删除 = tombstone 一事务（事件 + 审计）。底层编排器
+// 卷不随删（swarm 命名卷残留是文档化文化、k3s PVC 卡 ns 排空——数据兜底
+// 永不级联；调用方在确认页披露）。
+func (svc *VolumesService) DeleteVolume(ctx context.Context, req *structurev1.DeleteVolumeRequest) (*structurev1.DeleteVolumeResponse, error) {
+	if req.GetId() == "" {
+		return nil, apperr.New("E_INVALID_ARGUMENT", "id: must not be empty")
+	}
+	row, err := svc.s.Volumes.Get(ctx, svc.s.DB.Runner(), req.GetId())
+	if err != nil {
+		return nil, mapStateError(err, "volume")
+	}
+	if err := svc.s.authorizeProjectID(ctx, row.ProjectID); err != nil {
+		return nil, err
+	}
+	refs, err := svc.s.volumeReferences(ctx, row)
+	if err != nil {
+		return nil, err
+	}
+	if len(refs) > 0 {
+		return nil, apperr.New("E_CONFLICT",
+			"volume %s is still referenced: %s - detach it from the referencing apps (redeploy without the volume attachment) or delete the database first",
+			row.Name, strings.Join(refs, ", "))
+	}
+	err = svc.s.commit(ctx, writeFact{
+		write: func(ctx context.Context, tx *sql.Tx) error {
+			return svc.s.Volumes.SoftDelete(ctx, tx, req.GetId())
+		},
+		events: []eventFact{structureEvent(eventVolumeDeleted, "volume", row.Name, row.ProjectID)},
+		audits: []*audit.Entry{{
+			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "volume.delete",
+			Resource: "volume/" + row.Name,
+		}},
+	})
+	if err != nil {
+		return nil, mapStateError(err, "volume")
+	}
+	return &structurev1.DeleteVolumeResponse{}, nil
+}
+
+// volumeReferences 枚举卷的引用方描述（App 名清单 + Database 挂靠名；空 =
+// 未挂载）。卷锚 = 平台卷名（Attachment.volume_id 装 Name——引擎 pinVolumes/
+// materials 同口径），不是行 ID。
+func (s *Services) volumeReferences(ctx context.Context, vol *volume.Volume) ([]string, error) {
+	var refs []string
+	apps, err := s.Apps.ListByProject(ctx, s.DB.Runner(), vol.ProjectID)
+	if err != nil {
+		return nil, mapStateError(err, "app")
+	}
+	for i := range apps {
+		rev, err := s.Revisions.Latest(ctx, s.DB.Runner(), apps[i].ID)
+		if err != nil {
+			if errors.Is(err, state.ErrNotFound) {
+				continue // 从未部署的 App 无冻结 Spec，无引用
+			}
+			return nil, mapStateError(err, "spec")
+		}
+		var spec specv1.AppSpec
+		if err := protojson.Unmarshal(rev.Spec, &spec); err != nil {
+			return nil, apperr.New("E_INTERNAL", "app spec: frozen revision is not valid protojson (%v)", err)
+		}
+		for _, process := range spec.GetProcesses() {
+			for _, attachment := range process.GetVolumes() {
+				if attachment.GetVolumeId() == vol.Name {
+					refs = append(refs, "app "+apps[i].Name)
+					break
+				}
+			}
+		}
+	}
+	databases, err := s.Databases.ListByProject(ctx, s.DB.Runner(), vol.ProjectID, "", 200)
+	if err != nil {
+		return nil, mapStateError(err, "database")
+	}
+	for i := range databases {
+		if databases[i].Name == vol.Name {
+			refs = append(refs, "database "+databases[i].Name+" (carrier data volume)")
+		}
+	}
+	return refs, nil
 }
 
 func (svc *VolumesService) ListVolumes(ctx context.Context, req *structurev1.ListVolumesRequest) (*structurev1.ListVolumesResponse, error) {

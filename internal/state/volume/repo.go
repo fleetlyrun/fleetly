@@ -55,6 +55,24 @@ func (r *Repo) GetByName(ctx context.Context, run state.Runner, projectID, name 
 	return scanVolume(row.Scan)
 }
 
+// Get 读活跃行（按 ID；anchor 解析链与 API 单体读面共用）。
+func (r *Repo) Get(ctx context.Context, run state.Runner, id string) (*Volume, error) {
+	row := run.QueryRowContext(ctx, `
+		SELECT id, project_id, name, pinned_node_id, created_at, updated_at, deleted_at
+		FROM volumes WHERE id = ? AND deleted_at = ''`, id)
+	return scanVolume(row.Scan)
+}
+
+// SoftDelete 收口删除（tombstone；活跃行口径——被引用卷由受理位前置拒绝，
+// 本方法只管落账）。
+func (r *Repo) SoftDelete(ctx context.Context, run state.Runner, id string) error {
+	now := state.FormatTime(r.clock.Now())
+	_, err := run.ExecContext(ctx, `
+		UPDATE volumes SET deleted_at = ?, updated_at = ?
+		WHERE id = ? AND deleted_at = ''`, now, now, id)
+	return err
+}
+
 // Pin 钉住节点（一次性：已钉住时幂等返回；节点 ID 永不复用——不改锚）。
 func (r *Repo) Pin(ctx context.Context, run state.Runner, projectID, name, nodeID string) error {
 	now := state.FormatTime(r.clock.Now())

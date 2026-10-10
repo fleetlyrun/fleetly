@@ -499,6 +499,12 @@
       "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"active_deployments\":{\"type\":\"integer\"},\"id\":{\"type\":\"string\"},\"project_id\":{\"type\":\"string\"}},\"required\":[\"id\"],\"type\":\"object\"}"
     },
     {
+      "name": "volume.deleted",
+      "kind": "event",
+      "summary": "An unreferenced volume row was deleted (the platform tombstones the row; the runtime-side volume is left for manual hygiene).",
+      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"active_deployments\":{\"type\":\"integer\"},\"id\":{\"type\":\"string\"},\"project_id\":{\"type\":\"string\"}},\"required\":[\"id\"],\"type\":\"object\"}"
+    },
+    {
       "name": "workload.drift_detected",
       "kind": "event",
       "summary": "Observed workload diverged from the ensured generation or spec (ADR-0022).",

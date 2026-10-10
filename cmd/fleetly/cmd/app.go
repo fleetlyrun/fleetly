@@ -74,7 +74,7 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 		// 受影响 App）。
 		groupVerb("shared-variables", "manage project shared variables (merged under app-level env at deploy; values are returned)",
 			newSharedVarsPutVerb(), newSharedVarsListVerb(), newSharedVarsDeleteVerb()),
-		groupVerb("volumes", "manage volumes", newVolumesCreateVerb()),
+		groupVerb("volumes", "manage volumes", newVolumesCreateVerb(), newVolumesDeleteVerb()),
 		groupVerb("networks", "manage project networks and cross-project peer attachments",
 			newNetworksCreateVerb(), newNetworksListVerb(), newNetworksRebuildVerb(), newNetworksDeclareVerb(), newNetworksApproveVerb(),
 			newNetworksRevokeVerb(), newNetworksPeersVerb()),

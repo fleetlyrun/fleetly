@@ -78,6 +78,7 @@ user.created	A user was created and granted a role in a team.	added during imple
 variable.deleted	A project shared variable was deleted.	internal/api/fleetlygrpc/structure.go DeleteSharedVariable
 variable.updated	A project shared variable was set (values are readable via the API; redeploy affected apps to pick up the new value).	internal/api/fleetlygrpc/structure.go PutSharedVariable
 volume.created	A volume was created.	internal/api/fleetlygrpc/structure.go CreateVolume
+volume.deleted	An unreferenced volume row was deleted (the platform tombstones the row; the runtime-side volume is left for manual hygiene).	internal/api/fleetlygrpc/structure.go DeleteVolume
 workload.drift_detected	Observed workload diverged from the ensured generation or spec (ADR-0022).	internal/engine/observ.go detectDrift + internal/engine/drift.go compareSpecs
 workload.rollout_stalled	A runtime rollout is stalled mid-flight (e.g. swarm update paused by task failure); spec matches, so spec-drift cannot see it.	internal/engine/drift.go compareSpecs
 workload.stopped	A steady-state workload was observed stopped at the current generation.	internal/engine/drift.go emitSteadyStateStopped

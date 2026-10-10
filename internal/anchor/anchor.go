@@ -27,6 +27,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state/run"
 	"github.com/fleetlyrun/fleetly/internal/state/schedule"
 	"github.com/fleetlyrun/fleetly/internal/state/task"
+	"github.com/fleetlyrun/fleetly/internal/state/volume"
 )
 
 // Kind 是归属解析链的判别（freeze 冻结表与行级授权共用的值域）。
@@ -43,6 +44,7 @@ const (
 	KindPeer                   // peer id → Peer → Network → Project（二跳）
 	KindRoute                  // route id → Route → Project
 	KindDatabase               // database id → Database → Project（ADR-0029）
+	KindVolume                 // volume id → Volume → Project（DeleteVolume 冻结锚）
 	KindRun                    // run id → Run → Project
 	KindDeployment             // deployment id → Deployment → App（Any 档）→ Project
 	KindBuild                  // build id → Build → App（Any 档）→ Project
@@ -81,6 +83,7 @@ type Anchor struct {
 	hooks       *hook.Repo
 	routes      *route.Repo
 	databases   *dbrepo.Repo
+	volumes     *volume.Repo
 	runs        *run.Repo
 	deployments *deployment.Repo
 	builds      *build.Repo
@@ -98,6 +101,7 @@ func New(clock state.Clock) *Anchor {
 		hooks:       hook.New(clock),
 		routes:      route.New(clock),
 		databases:   dbrepo.New(clock),
+		volumes:     volume.New(clock),
 		runs:        run.New(clock),
 		deployments: deployment.New(clock),
 		builds:      build.New(clock),
@@ -120,6 +124,7 @@ var resolvers = map[Kind]resolver{
 	KindPeer:       (*Anchor).peerProject,
 	KindRoute:      (*Anchor).routeProject,
 	KindDatabase:   (*Anchor).databaseProject,
+	KindVolume:     (*Anchor).volumeProject,
 	KindRun:        (*Anchor).runProject,
 	KindDeployment: (*Anchor).deploymentProject,
 	KindBuild:      (*Anchor).buildProject,
@@ -247,6 +252,17 @@ func (a *Anchor) databaseProject(ctx context.Context, r state.Runner, ref string
 	if err != nil {
 		if errors.Is(err, state.ErrNotFound) {
 			return "", notFound("database", ref)
+		}
+		return "", err
+	}
+	return row.ProjectID, nil
+}
+
+func (a *Anchor) volumeProject(ctx context.Context, r state.Runner, ref string) (string, error) {
+	row, err := a.volumes.Get(ctx, r, ref)
+	if err != nil {
+		if errors.Is(err, state.ErrNotFound) {
+			return "", notFound("volume", ref)
 		}
 		return "", err
 	}

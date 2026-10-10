@@ -1396,6 +1396,37 @@
           "VolumesService"
         ]
       }
+    },
+    "/v1/volumes/{id}": {
+      "delete": {
+        "summary": "DeleteVolume 删除未挂载卷（IA v3 二期⑤b）：受理位前置引用预检——项目\n内活跃 App 冻结 Spec 的卷附件（volume_id 装平台卷名，引擎同锚）或同名\nDatabase 挂靠卷任一命中即 E_CONFLICT。删除 = 平台行 tombstone；底层\n编排器卷不随删（swarm 命名卷残留是文档化文化、k3s PVC 卡 ns 排空——\n数据兜底永不级联，调用方披露）。",
+        "operationId": "VolumesService_DeleteVolume",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1DeleteVolumeResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "VolumesService"
+        ]
+      }
     }
   },
   "definitions": {
@@ -1840,6 +1871,9 @@
           }
         }
       }
+    },
+    "v1DeleteVolumeResponse": {
+      "type": "object"
     },
     "v1DeployStrategy": {
       "type": "string",

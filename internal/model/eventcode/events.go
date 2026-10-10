@@ -68,6 +68,7 @@ var builtins = []Event{
 	{Name: "variable.updated", Summary: "A project shared variable was set (values are readable via the API; redeploy affected apps to pick up the new value).", Source: "internal/api/fleetlygrpc/structure.go PutSharedVariable"},
 	{Name: "variable.deleted", Summary: "A project shared variable was deleted.", Source: "internal/api/fleetlygrpc/structure.go DeleteSharedVariable"},
 	{Name: "volume.created", Summary: "A volume was created.", Source: "internal/api/fleetlygrpc/structure.go CreateVolume"},
+	{Name: "volume.deleted", Summary: "An unreferenced volume row was deleted (the platform tombstones the row; the runtime-side volume is left for manual hygiene).", Source: "internal/api/fleetlygrpc/structure.go DeleteVolume"},
 	{Name: "network.created", Summary: "A project network was created.", Source: "internal/api/fleetlygrpc/networks.go CreateNetwork"},
 
 	// 跨 Project peer 声明三拍（F1.8，ADR-0013 附录 A.1：双向声明、接收方

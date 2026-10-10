@@ -632,6 +632,35 @@ func newVolumesCreateVerb() commands.Command {
 	}
 }
 
+// volumes delete（IA v3 二期⑤b）：未挂载卷收口删除——被 App 冻结 Spec 或
+// Database 挂靠引用时精确拒绝（报文列引用方）；底层编排器卷不随删（数据
+// 兜底永不级联）。位置参数沿单体读惯例。
+func newVolumesDeleteVerb() commands.Command {
+	const name = "delete"
+	return &flaggedVerb{
+		name: name, synopsis: "Delete an unreferenced volume (referencing apps or databases are rejected with the referencing list)",
+		usage: "volumes delete VOLUME_ID",
+		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if len(args) != 1 {
+				return usageErr(name, "expected exactly one VOLUME_ID argument")
+			}
+			ctx, cancel, c, err := dialFromEnv(ctx)
+			if err != nil {
+				return err
+			}
+			defer cancel()
+			defer c.Close() //nolint:errcheck // 进程退出路径
+			resp, err := c.Volumes.DeleteVolume(ctx, &structurev1.DeleteVolumeRequest{Id: args[0]})
+			if err != nil {
+				return err
+			}
+			return renderOut(env, jsonOut, resp, func() {
+				_, _ = fmt.Fprintf(env.Stdout, "deleted volume %s (platform row removed; the runtime-side volume stays - clean it up manually if needed)\n", args[0])
+			})
+		},
+	}
+}
+
 func newNetworksCreateVerb() commands.Command {
 	const name = "create"
 	var project string

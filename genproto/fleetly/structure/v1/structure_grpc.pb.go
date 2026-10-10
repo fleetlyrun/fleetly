@@ -1060,6 +1060,7 @@ var SharedVariablesService_ServiceDesc = grpc.ServiceDesc{
 const (
 	VolumesService_CreateVolume_FullMethodName = "/fleetly.structure.v1.VolumesService/CreateVolume"
 	VolumesService_ListVolumes_FullMethodName  = "/fleetly.structure.v1.VolumesService/ListVolumes"
+	VolumesService_DeleteVolume_FullMethodName = "/fleetly.structure.v1.VolumesService/DeleteVolume"
 )
 
 // VolumesServiceClient is the client API for VolumesService service.
@@ -1068,6 +1069,12 @@ const (
 type VolumesServiceClient interface {
 	CreateVolume(ctx context.Context, in *CreateVolumeRequest, opts ...grpc.CallOption) (*CreateVolumeResponse, error)
 	ListVolumes(ctx context.Context, in *ListVolumesRequest, opts ...grpc.CallOption) (*ListVolumesResponse, error)
+	// DeleteVolume 删除未挂载卷（IA v3 二期⑤b）：受理位前置引用预检——项目
+	// 内活跃 App 冻结 Spec 的卷附件（volume_id 装平台卷名，引擎同锚）或同名
+	// Database 挂靠卷任一命中即 E_CONFLICT。删除 = 平台行 tombstone；底层
+	// 编排器卷不随删（swarm 命名卷残留是文档化文化、k3s PVC 卡 ns 排空——
+	// 数据兜底永不级联，调用方披露）。
+	DeleteVolume(ctx context.Context, in *DeleteVolumeRequest, opts ...grpc.CallOption) (*DeleteVolumeResponse, error)
 }
 
 type volumesServiceClient struct {
@@ -1098,12 +1105,28 @@ func (c *volumesServiceClient) ListVolumes(ctx context.Context, in *ListVolumesR
 	return out, nil
 }
 
+func (c *volumesServiceClient) DeleteVolume(ctx context.Context, in *DeleteVolumeRequest, opts ...grpc.CallOption) (*DeleteVolumeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteVolumeResponse)
+	err := c.cc.Invoke(ctx, VolumesService_DeleteVolume_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // VolumesServiceServer is the server API for VolumesService service.
 // All implementations must embed UnimplementedVolumesServiceServer
 // for forward compatibility.
 type VolumesServiceServer interface {
 	CreateVolume(context.Context, *CreateVolumeRequest) (*CreateVolumeResponse, error)
 	ListVolumes(context.Context, *ListVolumesRequest) (*ListVolumesResponse, error)
+	// DeleteVolume 删除未挂载卷（IA v3 二期⑤b）：受理位前置引用预检——项目
+	// 内活跃 App 冻结 Spec 的卷附件（volume_id 装平台卷名，引擎同锚）或同名
+	// Database 挂靠卷任一命中即 E_CONFLICT。删除 = 平台行 tombstone；底层
+	// 编排器卷不随删（swarm 命名卷残留是文档化文化、k3s PVC 卡 ns 排空——
+	// 数据兜底永不级联，调用方披露）。
+	DeleteVolume(context.Context, *DeleteVolumeRequest) (*DeleteVolumeResponse, error)
 	mustEmbedUnimplementedVolumesServiceServer()
 }
 
@@ -1119,6 +1142,9 @@ func (UnimplementedVolumesServiceServer) CreateVolume(context.Context, *CreateVo
 }
 func (UnimplementedVolumesServiceServer) ListVolumes(context.Context, *ListVolumesRequest) (*ListVolumesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListVolumes not implemented")
+}
+func (UnimplementedVolumesServiceServer) DeleteVolume(context.Context, *DeleteVolumeRequest) (*DeleteVolumeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteVolume not implemented")
 }
 func (UnimplementedVolumesServiceServer) mustEmbedUnimplementedVolumesServiceServer() {}
 func (UnimplementedVolumesServiceServer) testEmbeddedByValue()                        {}
@@ -1177,6 +1203,24 @@ func _VolumesService_ListVolumes_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _VolumesService_DeleteVolume_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteVolumeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(VolumesServiceServer).DeleteVolume(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: VolumesService_DeleteVolume_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(VolumesServiceServer).DeleteVolume(ctx, req.(*DeleteVolumeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // VolumesService_ServiceDesc is the grpc.ServiceDesc for VolumesService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1191,6 +1235,10 @@ var VolumesService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListVolumes",
 			Handler:    _VolumesService_ListVolumes_Handler,
+		},
+		{
+			MethodName: "DeleteVolume",
+			Handler:    _VolumesService_DeleteVolume_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
