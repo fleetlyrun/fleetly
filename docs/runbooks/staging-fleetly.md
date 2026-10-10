@@ -504,6 +504,8 @@ ADR-0015 升级序的完整落地形态：**Platform Backup 前置 → SIGTERM �
 - **staging 双主题截图复验（暗色 7 幅，模板代表页）**：Overview（PageFrame wide/Dashboard）、Audit 骨架+数据双态（ListPage：filters 槽 server 过滤器 + Filter 提交钮 + 计数 + 排序表头 + 骨架四态 + CLI 行）、Identity（ModulePage：PageTabs + ListCard + 行内动词）、Settings（narrow + SectionCard ×3）、Nodes（ListCard children 逃生舱：行级动词 + enroll/rotate 工具栏钮位）、Databases（项目级 ListPage：引擎下拉 filters + 项目语境描述 + 行动作）、Storage（ModulePage lead 槽 UsageIndex + Volumes ListCard）。无布局破损；换装前置备份的 platform.backup_trigger 审计行同屏可见（数据链活体）。
 - **诚实边界**：本批复验只过 typecheck/vitest 87/console:verify + staging 截图静态复验；Alerts firing 摘要条（lead 槽带数据形态）与 ConfirmDialog 交互链未真机触发（当前 0 firing、未执行破坏性动作）——下批涉及写面走查时顺带补验。走查痕迹零残留（纯只读 + 既有会话）。
 
+- **同日二次换装 712b25b-tmpl2（UsageIndex 撤块收编，用户裁决"单独放一个没有意义"）**：Storage 独立 UsageIndex 块删除——Volume 挂载反查收编 Volumes 列表 "Mounted by" 列（carrier 卷注记/挂载 App 集/未挂载 `—`，与删除门控同源），Upload 引用反查收编 Uploads "Referenced by" 列；诚实边界注记降列表卡脚注；usage-index.tsx 删除。前置 Platform Backup `21929185`；doctor 0 failed；tw/n0 双 200（冷窗一拍）。Storage 页复验截图：反查信息全部行内可读， Mounted by 空缺行即 delete 可用行，对视路径消失。
+
 ## 教训与边界
 
 - **本机（Windows 工作机）出站对该 VPS 全端口受限**（80/443/8420 全 000；node2 路径全通）——外部验证走 node2 或 check-host 类服务，勿信本机 curl。
