@@ -212,7 +212,8 @@ var skippedTokens = map[string]string{
 	"telemetry":        "proto telemetry 上下文是冻结包名（事件/日志查询面）；Metrics 同义词语境人工评审",
 	"notifier":         "通用词（fire 的 notifier 等）；Notification Channel 同义词语境人工评审",
 	"monitor":          "动词义（监视/盯）通用；Metrics/Alert Rule 同义词语境人工评审",
-	"component":        "通用词；Managed Provider 同义词语境人工评审",
+	// component 经 ADR-0059 复裁为在册页面名词 Components（CONTEXT.md
+	// Avoid 表同步移出）——不再人工评审，直扫反而会咬合法文案，故除名。
 	"internal service": "短语；人工评审",
 	// ---- 状态语义 ----
 	"revision number":  "短语；Generation 同义词语境人工评审",
