@@ -4,11 +4,10 @@ import { formatAbsolute } from "@/lib/format";
 import { useAudit } from "@/lib/catalog";
 import { EmptyState } from "@/components/domain/empty-state";
 import { ErrorState } from "@/components/domain/error-state";
-import { CliEquivalent, ListPagination, useClientPage } from "@/components/domain/list-toolbar";
+import { CliEquivalent, ListPagination, ListToolbar, useClientPage, useListFilter } from "@/components/domain/list-toolbar";
 import { PageHeader } from "@/components/domain/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -20,9 +19,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-// 审计页（F3.1 → UI v2 批 5 reskin）：GET /v1/audit 只读面 + CLI 同款
-// 过滤器（source/action 前缀/actor/resource）。审计行服务端只写——
-// Console 是观察面。
+// 审计页（F3.1 → UI v2 批 5 reskin；对齐批 5 收编 Apps 列表规范）：GET
+// /v1/audit 只读面 + CLI 同款服务器过滤器（source/action 前缀/actor/
+// resource，Filter 提交生效）在工具栏 children 槽，主输入为页内快筛。
+// 审计行服务端只写——Console 是观察面。
 const SOURCES = ["", "api", "cli", "manual", "webhook", "schedule", "system"];
 
 export const Route = createFileRoute("/_shell/audit")({
@@ -37,51 +37,75 @@ function AuditPageV2() {
   const [active, setActive] = useState({ source: "", action: "", actor: "", resource: "" });
   const audit = useAudit({ ...active, limit: 100 });
   const entries = audit.data ?? [];
-  const { page, pageCount, pageRows, setPage } = useClientPage(entries);
+  const [query, setQuery] = useState("");
+  const filtered = useListFilter(entries, query, (entry: { source?: string; actor?: string; action?: string; resource?: string }) => [
+    entry.source ?? "",
+    entry.actor ?? "",
+    entry.action ?? "",
+    entry.resource ?? "",
+  ]);
+  const { page, pageCount, pageRows, setPage } = useClientPage(filtered);
 
   return (
     <div className="mx-auto max-w-7xl px-6 pt-6 pb-8">
       <PageHeader title="Audit" description="Server-written audit trail (GET /v1/audit) — the console observes, never writes" />
-      <form
-        className="mb-4 flex flex-wrap items-end gap-2.5"
-        onSubmit={(event) => {
-          event.preventDefault();
-          setActive({ source, action, actor, resource });
-        }}
-      >
-        <div className="flex flex-col gap-1">
-          <Label className="text-[11px] text-muted-foreground">Source</Label>
-          <Select value={source} onValueChange={setSource}>
-            <SelectTrigger className="w-32">
-              <SelectValue>{source === "" ? "any" : source}</SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {SOURCES.map((item) => (
-                <SelectItem key={item || "any"} value={item}>
-                  {item === "" ? "any" : item}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="flex flex-col gap-1">
-          <Label className="text-[11px] text-muted-foreground">Action prefix</Label>
-          <Input value={action} onChange={(event) => setAction(event.target.value)} placeholder="deployment." className="h-8 w-36 font-mono text-xs" />
-        </div>
-        <div className="flex flex-col gap-1">
-          <Label className="text-[11px] text-muted-foreground">Actor</Label>
-          <Input value={actor} onChange={(event) => setActor(event.target.value)} className="h-8 w-32" />
-        </div>
-        <div className="flex flex-col gap-1">
-          <Label className="text-[11px] text-muted-foreground">Resource</Label>
-          <Input value={resource} onChange={(event) => setResource(event.target.value)} className="h-8 w-40" />
-        </div>
-        <Button type="submit" size="sm" className="mb-0.5">
-          Filter
-        </Button>
-      </form>
-
       <div className="rounded-xl border bg-card">
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            setActive({ source, action, actor, resource });
+          }}
+        >
+          <div className="px-3 pt-3">
+            <ListToolbar
+              label="audit"
+              value={query}
+              onChange={setQuery}
+              placeholder="Filter audit..."
+              total={entries.length}
+              shown={filtered.length}
+              actions={
+                <Button type="submit" size="sm">
+                  Filter
+                </Button>
+              }
+            >
+              <Select value={source} onValueChange={setSource}>
+                <SelectTrigger aria-label="Source" className="h-8 w-28">
+                  <SelectValue>{source === "" ? "any" : source}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {SOURCES.map((item) => (
+                    <SelectItem key={item || "any"} value={item}>
+                      {item === "" ? "any" : item}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Input
+                value={action}
+                onChange={(event) => setAction(event.target.value)}
+                placeholder="action prefix"
+                aria-label="Action prefix"
+                className="h-8 w-32 font-mono text-xs"
+              />
+              <Input
+                value={actor}
+                onChange={(event) => setActor(event.target.value)}
+                placeholder="actor"
+                aria-label="Actor"
+                className="h-8 w-28"
+              />
+              <Input
+                value={resource}
+                onChange={(event) => setResource(event.target.value)}
+                placeholder="resource"
+                aria-label="Resource"
+                className="h-8 w-36"
+              />
+            </ListToolbar>
+          </div>
+        </form>
         <Table className="text-[13px]">
           <TableHeader>
             <TableRow>
@@ -110,10 +134,16 @@ function AuditPageV2() {
                   <ErrorState error={audit.error} onRetry={() => void audit.refetch()} />
                 </TableCell>
               </TableRow>
-            ) : (audit.data ?? []).length === 0 ? (
+            ) : entries.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={6}>
                   <EmptyState icon={AuditPlaceholderIcon} title="No audit entries match" description="Widen the filters, or act on the platform to populate the trail." />
+                </TableCell>
+              </TableRow>
+            ) : filtered.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
+                  No entries match the filter.
                 </TableCell>
               </TableRow>
             ) : (
@@ -139,7 +169,7 @@ function AuditPageV2() {
             )}
           </TableBody>
         </Table>
-        <ListPagination page={page} pageCount={pageCount} setPage={setPage} total={entries.length} />
+        <ListPagination page={page} pageCount={pageCount} setPage={setPage} total={filtered.length} />
       </div>
       <CliEquivalent command="fleetly audit --limit 100" />
     </div>
