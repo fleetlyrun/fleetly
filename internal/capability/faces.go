@@ -29,6 +29,8 @@ type ProviderFaces struct {
 	// Registry 子面（ADR-0036 N2 兑现节 2：per-Project 凭证域隔离）
 	ProjectEndpoints       ProjectEndpoints       // per-Project 端点/凭证
 	ProjectScopedMaterials ProjectScopedMaterials // 材料随活跃 Project 集再生成
+	// Content 是镜像仓内容只读代理面（IA v3 二期⑤b：catalog/tags 代理）。
+	Content RegistryContent
 }
 
 // FacesOf 探测一个 Provider 的可选子面。duck-typing 单点：实现即拥有
@@ -72,6 +74,9 @@ func FacesOf(p Provider) ProviderFaces {
 	if v, ok := p.(ProjectScopedMaterials); ok {
 		f.ProjectScopedMaterials = v
 	}
+	if v, ok := p.(RegistryContent); ok {
+		f.Content = v
+	}
 	return f
 }
 
@@ -114,6 +119,9 @@ func (f ProviderFaces) Offered() []string {
 	}
 	if f.ProjectScopedMaterials != nil {
 		out = append(out, "project-materials")
+	}
+	if f.Content != nil {
+		out = append(out, "content")
 	}
 	return out
 }

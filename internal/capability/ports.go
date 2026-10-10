@@ -201,6 +201,27 @@ type ProjectScopedMaterials interface {
 	ManagedMaterialsFor(projectIDs []string) Materials
 }
 
+// RegistryTag 是一个 tag 的内容事实（只读代理面回执）。
+type RegistryTag struct {
+	Name      string
+	Digest    string
+	SizeBytes int64
+	// PushedAt 是 config created 注记（RFC3339；上游不可得 = 空串，诚实
+	// n/a——manifest index 形态无单 tag 事实）。
+	PushedAt string
+}
+
+// RegistryContent 是镜像仓内容的只读代理面（IA v3 二期⑤b：Registry 页
+// 二期视图的数据源——/v2/_catalog 与 tags/list 按调用方给的端点凭证代理）。
+// 未实现 = Registry 二期视图不可用（engine 侧精确失败，不静默空清单）。
+type RegistryContent interface {
+	// Catalog 列全仓仓名（上游无服务端过滤；调用方自行按项目前纲收敛）。
+	Catalog(ctx context.Context, ep RegistryEndpoint) ([]string, error)
+	// Tags 列单仓名的 tag 事实（digest/压缩大小/推送时刻；index 形态的
+	// tag 无单 tag 事实——PushedAt 空串、SizeBytes 0）。
+	Tags(ctx context.Context, ep RegistryEndpoint, repository string) ([]RegistryTag, error)
+}
+
 // registryAddrKey 是 Registry 参考地址的装配期 ctx 注入键（唯一写入点在
 // internal/assembly 的 NewRegistryProvider）。
 type registryAddrKey struct{}

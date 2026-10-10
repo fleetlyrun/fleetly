@@ -25,6 +25,7 @@ func authzFiles() []protoreflect.FileDescriptor {
 		structurev1.File_fleetly_structure_v1_structure_proto,
 		deliveryv1.File_fleetly_delivery_v1_delivery_proto,
 		deliveryv1.File_fleetly_delivery_v1_templates_proto,
+		deliveryv1.File_fleetly_delivery_v1_registry_proto,
 		automationv1.File_fleetly_automation_v1_automation_proto,
 		runtimev1.File_fleetly_runtime_v1_runtime_proto,
 		runtimev1.File_fleetly_runtime_v1_exec_proto,
@@ -43,7 +44,7 @@ func ScopeResources() []string {
 	return []string{
 		"projects", "apps", "secrets", "configs", "shared_variables", "volumes", "networks", "databases",
 		"deployments", "revisions", "builds", "tasks", "nodes", "routes", "events", "logs",
-		"metrics", "alerts", "channels", "exec", "templates",
+		"metrics", "alerts", "channels", "exec", "templates", "registry",
 		"users", "teams", "roles", "tokens", "invitations", "audit", "platform",
 	}
 }

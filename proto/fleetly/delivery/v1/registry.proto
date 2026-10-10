@@ -1,0 +1,62 @@
+syntax = "proto3";
+
+// Registry 只读代理面（IA v3 二期⑤b）：受管镜像仓内容视图——/v2/_catalog
+// 与 tags/list 按项目凭证代理（Registry 页二期视图的数据源；§5.1）。仓库
+// 前纲 = <project_id>/<app_id> 双段小写（buildRepo 单源），catalog 按前纲
+// 过滤、tags 校验归属——跨项目仓名不可达。内容面零状态迁移：纯读代理，
+// 大小/推送时刻从 manifest 诚实解析（index 形态不可得字段留空值）。
+package fleetly.delivery.v1;
+
+option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1;deliveryv1";
+
+import "google/api/annotations.proto";
+import "grpcapi/v1/authz.proto";
+
+service RegistryService {
+  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+
+  // ListRegistryCatalog 列项目前纲下的仓名（受管仓库停用 = 精确失败）。
+  rpc ListRegistryCatalog(ListRegistryCatalogRequest) returns (ListRegistryCatalogResponse) {
+    option (google.api.http) = { get: "/v1/registry/catalog" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "registry" op: SCOPE_OP_READ }
+    };
+  }
+  // ListRegistryTags 列仓名下的 tag 清单（digest/压缩大小/推送时刻；
+  // manifest index 形态的 tag 无可得大小/时刻——诚实留空）。
+  rpc ListRegistryTags(ListRegistryTagsRequest) returns (ListRegistryTagsResponse) {
+    option (google.api.http) = { get: "/v1/registry/{repository}/tags" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "registry" op: SCOPE_OP_READ }
+    };
+  }
+}
+
+message ListRegistryCatalogRequest {
+  string project_id = 1;
+}
+message ListRegistryCatalogResponse {
+  // repositories 是项目前纲下的仓名（全名含前纲，<project>/<app> 小写）。
+  repeated string repositories = 1;
+}
+
+// RegistryTag 是一个 tag 的内容事实（大小 = manifest config+layers 描述符
+// 之和，即压缩形态仓库占用；pushed_at 取 config created 注记，RFC3339）。
+message RegistryTag {
+  string name = 1;
+  // digest 是 manifest 内容寻址（sha256:…；from_build 下发的拉取锚）。
+  string digest = 2;
+  int64 size_bytes = 3;
+  string pushed_at = 4;
+}
+message ListRegistryTagsRequest {
+  string project_id = 1;
+  // repository 是仓名（须落在该项目前纲下——越纲按 not found 拒绝）。
+  string repository = 2;
+}
+message ListRegistryTagsResponse {
+  string repository = 1;
+  repeated RegistryTag tags = 2;
+}

@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
@@ -88,6 +89,18 @@ type Provider struct {
 	// lastMaterials 是最近一次成功铸造的材料（单 Project 读盘失败时的
 	// 稳定集回退——见 ManagedMaterialsFor 失败语义）。
 	lastMaterials *capability.Materials
+
+	// hc 是内容代理面的出站客户端（RegistryContent；惰性单例——健康面
+	// 的 TCP 拨号不走 HTTP，代理是唯一消费点）。
+	hcOnce sync.Once
+	hc     *http.Client
+}
+
+// httpClient 返回内容代理客户端（惰性单例；超时由每请求 ctx 带界承担，
+// 客户端自身不设总超时）。
+func (p *Provider) httpClient() *http.Client {
+	p.hcOnce.Do(func() { p.hc = &http.Client{} })
+	return p.hc
 }
 
 // projectCredential 是一个 Project 的铸造产物（持久化于

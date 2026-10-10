@@ -30,6 +30,7 @@ func RegisterAll(srv *grpc.Server, s *Services) {
 	deliveryv1.RegisterBuildsServiceServer(srv, &BuildsService{s: s})
 	deliveryv1.RegisterTemplatesServiceServer(srv, &TemplatesService{s: s})
 	deliveryv1.RegisterHooksServiceServer(srv, &HooksService{s: s})
+	deliveryv1.RegisterRegistryServiceServer(srv, &RegistryService{s: s})
 	automationv1.RegisterTasksServiceServer(srv, &TasksService{s: s})
 	automationv1.RegisterRunsServiceServer(srv, &RunsService{s: s})
 	automationv1.RegisterSchedulesServiceServer(srv, &SchedulesService{s: s})

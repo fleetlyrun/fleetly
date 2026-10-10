@@ -2,4 +2,4 @@ token alice-cli (id <ULID>)
 user alice
 role admin
 team default
-scopes [alerts:admin apps:admin audit:read builds:admin channels:admin configs:admin databases:admin deployments:admin events:admin exec:admin invitations:admin logs:admin metrics:admin networks:admin nodes:admin platform:admin projects:admin revisions:admin roles:admin routes:admin secrets:admin shared_variables:admin tasks:admin teams:admin templates:admin tokens:admin users:admin volumes:admin]
+scopes [alerts:admin apps:admin audit:read builds:admin channels:admin configs:admin databases:admin deployments:admin events:admin exec:admin invitations:admin logs:admin metrics:admin networks:admin nodes:admin platform:admin projects:admin registry:admin revisions:admin roles:admin routes:admin secrets:admin shared_variables:admin tasks:admin teams:admin templates:admin tokens:admin users:admin volumes:admin]

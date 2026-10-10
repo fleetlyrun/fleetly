@@ -83,6 +83,9 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 			newDatabasesCreateVerb(), newDatabasesListVerb(), newDatabasesGetVerb(), newDatabasesDeleteVerb(),
 			newDatabasesBackupVerb(), newDatabasesBackupsVerb(), newDatabasesVerifyVerb(), newDatabasesBrowseVerb(),
 			newDatabasesDownloadBackupVerb(), newDatabasesRotatePasswordVerb()),
+		// 镜像仓内容只读代理（IA v3 二期⑤b）。
+		groupVerb("registry", "inspect the managed registry content (repositories and tags under the project prefix)",
+			newRegistryCatalogVerb(), newRegistryTagsVerb()),
 		// Delivery 上下文。
 		newDeployVerb(),
 		groupVerb("deployments", "inspect, wait for and cancel deployments", newDeploymentsListVerb(), newDeploymentsGetVerb(), newDeploymentsWaitVerb(), newDeploymentsCancelVerb()),
