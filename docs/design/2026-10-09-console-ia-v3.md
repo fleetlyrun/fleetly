@@ -184,7 +184,7 @@ Task 是程序化工作负载（one-shot / resident 双形态 + Owner Lease；Sc
 
 ### 二期（proto 先行，按排障价值排序）
 
-~~GetStatus 真健康接线~~ ✅ 二期③（aee997c——GetStatus components 逐项探活聚合，DEGRADED 语义上岗）+ 磁盘水位；carrier restart 动词；**logs database/run 轴（`StreamLogsRequest` 加 `database_id`/`run_id` + API 换 NamespaceRef + VL 过滤项，provider 零改动）**；**App spec 读取通路（GetApp 带 spec 或 v1App 加 spec 摘要——Variables tab 点亮的前提）**；zot catalog 代理 + 凭证轮换；DB 备份 Download、密码轮换（含级联语义）；Volume 删除/用量；Backups 聚合 API。
+~~GetStatus 真健康接线~~ ✅ 二期③（aee997c——GetStatus components 逐项探活聚合，DEGRADED 语义上岗）+ 磁盘水位；carrier restart 动词；~~logs database/run 轴~~ ✅ 二期①（e8eb9cd/2b4a1a4——三轴互斥寻址端到端）；~~App spec 读取通路~~ ✅ 二期②（c3aac02/51b8955——GetAppSpec + Variables 只读 tab/Used-by/Storage UsageIndex）；zot catalog 代理 + 凭证轮换；~~DB 备份 Download~~ ✅ 二期⑤a（7a74b9f）、~~密码轮换（含级联语义）~~ ✅ 二期⑤b（3426fa8/cec3533——dbtemplate.RotatePassword 方言面：pg/mysql/mongo 数据面 utility、redis 声明式；engine 全域单飞 + Secret 原子重写 + Kick 重下发；console 确认页点名引用方级联披露）；Volume 删除/用量；Backups 聚合 API。W-1/W-2 crumb 文案修复 ✅ 8f876e5（ContentCrumb 收编 + topbar 项目名反查）。
 
 ### 三期
 
