@@ -16,9 +16,9 @@ type AppSpec = components["schemas"]["v1AppSpec"];
 type ProcessSpec = NonNullable<AppSpec["processes"]>[number];
 
 // per-process 暂存面（IA v3 §4.1 Variables = 高频编辑面）：env 与
-// secret_refs 的对话框暂存——Apply = 冻结 Spec 全量 + 暂存改动组装
+// secret_refs 的对话框暂存——Deploy changes = 冻结 Spec 全量 + 暂存改动组装
 // spec_file 走 Deploy（第四源自 F3.5 起即全部 AppSpec 字段的 API 写面，
-// 零新契约）。dirty 以"与冻结 Spec 有差异"判定（同值编辑不算脏）。
+// 零新契约）。hasStagedEdits 以"与冻结 Spec 有差异"判定（同值编辑不算）。
 interface ProcessEdits {
   env: Record<string, string>;
   secretRefs: string[];
@@ -26,7 +26,7 @@ interface ProcessEdits {
 
 // App Variables tab（IA v3 二期②点亮 + ⑤b 暂存式编辑流）：冻结 Spec 读面
 // + per-process env / secret_refs 表格化暂存编辑（Add/Edit/Remove 走对话
-// 框，Apply changes 工具栏右侧、脏态才启用，应用 = 新部署滚动替换）。
+// 框，Deploy changes 工具栏右侧、有暂存差异才启用，提交 = 新部署滚动替换）。
 // secret 值不进 Spec（引用即锚），Reveal once 语义在 Project Configuration。
 export function AppVariablesTab({ projectId, appId }: { projectId: string; appId: string }) {
   const navigate = useNavigate();
@@ -51,15 +51,16 @@ export function AppVariablesTab({ projectId, appId }: { projectId: string; appId
     const process = frozen?.processes?.find((entry) => entry.name === name);
     return { env: { ...(process?.env ?? {}) }, secretRefs: [...(process?.secret_refs ?? [])] };
   };
-  // dirty：任一暂存面与其冻结基线有实际差异（同值编辑不启 Apply）。
-  const dirty =
+  // hasStagedEdits：任一暂存面与其冻结基线有实际差异（同值编辑不算）——
+  // 工具栏 Deploy changes 的启用门。
+  const hasStagedEdits =
     frozen != null &&
     Object.entries(staged).some(([name, edits]) => {
       const base = frozenProcess(name);
       return JSON.stringify(edits.env) !== JSON.stringify(base.env) || JSON.stringify(edits.secretRefs) !== JSON.stringify(base.secretRefs);
     });
 
-  const apply = useMutation({
+  const deploy = useMutation({
     mutationFn: async () => {
       if (frozen == null) throw new Error("no frozen spec");
       const processes = (frozen.processes ?? []).map((process): ProcessSpec => {
@@ -113,9 +114,9 @@ export function AppVariablesTab({ projectId, appId }: { projectId: string; appId
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-end gap-2">
         <span className="mr-auto text-[11.5px] text-muted-foreground">
-          Edits stage locally — applying creates a new deployment (rolling replace).
+          Edits stage locally — submitting creates a new deployment (rolling replace).
         </span>
-        {dirty ? (
+        {hasStagedEdits ? (
           <Button
             size="sm"
             variant="outline"
@@ -127,8 +128,8 @@ export function AppVariablesTab({ projectId, appId }: { projectId: string; appId
             Discard
           </Button>
         ) : null}
-        <Button size="sm" disabled={!dirty || apply.isPending} onClick={() => apply.mutate()}>
-          {apply.isPending ? "Deploying…" : "Apply changes"}
+        <Button size="sm" disabled={!hasStagedEdits || deploy.isPending} onClick={() => deploy.mutate()}>
+          {deploy.isPending ? "Deploying…" : "Deploy changes"}
         </Button>
       </div>
 
@@ -151,7 +152,7 @@ export function AppVariablesTab({ projectId, appId }: { projectId: string; appId
       </div>
 
       <p className="text-[11.5px] text-muted-foreground">
-        Values of secrets never enter the spec; only named references. Applying re-deploys the frozen spec with your staged
+        Values of secrets never enter the spec; only named references. Submitting re-deploys the frozen spec with your staged
         variables — source and build stay untouched.
       </p>
     </div>
