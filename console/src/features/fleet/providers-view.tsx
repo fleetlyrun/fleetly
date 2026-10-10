@@ -22,7 +22,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { useMetricsSeries } from "@/lib/catalog";
-import { PageHeader } from "@/components/domain/page-header";
+import { PageFrame } from "@/components/domain/page-frame";
 import { StatusBadge, type StatusTone } from "@/components/domain/status-badge";
 import { Button } from "@/components/ui/button";
 
@@ -74,17 +74,16 @@ export function ManagedProvidersView() {
   const diskUsage = formatWatermark(lastPointValue(diskSeries.data));
   const degraded = status.data?.state === "STATUS_STATE_DEGRADED";
   return (
-    <div className="mx-auto max-w-7xl px-6 pt-6 pb-8">
-      <PageHeader
-        title="Components"
-        description="Platform-hosted provider instances — health, pins and data freshness"
-        actions={
-          <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11.5px] font-semibold ${degraded ? "border-destructive/30 bg-destructive/10 text-destructive" : "border-success/30 bg-success/10 text-[var(--status-success)]"}`}>
-            <span className={`inline-block size-1.5 rounded-full bg-current ${degraded ? "" : ""}`} />
-            platform {degraded ? "degraded" : "healthy"}
-          </span>
-        }
-      />
+    <PageFrame
+      title="Components"
+      description="Platform-hosted provider instances — health, pins and data freshness"
+      actions={
+        <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11.5px] font-semibold ${degraded ? "border-destructive/30 bg-destructive/10 text-destructive" : "border-success/30 bg-success/10 text-[var(--status-success)]"}`}>
+          <span className={`inline-block size-1.5 rounded-full bg-current ${degraded ? "" : ""}`} />
+          platform {degraded ? "degraded" : "healthy"}
+        </span>
+      }
+    >
       <div className="grid gap-4 lg:grid-cols-2">
         {MANAGED_PROVIDERS.map((provider) => (
           <ProviderCardView
@@ -101,7 +100,7 @@ export function ManagedProvidersView() {
         aggregated into the platform state. Endpoints are config-defined (config file is the single source) and not exposed over
         the API.
       </p>
-    </div>
+    </PageFrame>
   );
 }
 

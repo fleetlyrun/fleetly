@@ -3,7 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { ArrowUpRightIcon, LayersIcon } from "lucide-react";
 import { apiFetch } from "@/api/client";
 import { ErrorState } from "@/components/domain/error-state";
-import { PageHeader } from "@/components/domain/page-header";
+import { PageFrame } from "@/components/domain/page-frame";
 import { ProjectAvatar } from "@/components/domain/project-avatar";
 import { DeploymentStatusBadge } from "@/components/domain/status-badge";
 import { RelativeTime } from "@/components/domain/relative-time";
@@ -53,16 +53,15 @@ function ProjectOverviewPage() {
   const name = project.data?.name ?? "…";
 
   return (
-    <div className="mx-auto max-w-7xl px-6 pt-6 pb-8">
-      <PageHeader
-        title={
-          <span className="flex items-center gap-3">
-            <ProjectAvatar seed={projectId} label={name} className="size-8 rounded-xl text-sm" />
-            {name}
-          </span>
-        }
-        description="Project overview — apps and their latest deployments"
-      />
+    <PageFrame
+      title={
+        <span className="flex items-center gap-3">
+          <ProjectAvatar seed={projectId} label={name} className="size-8 rounded-xl text-sm" />
+          {name}
+        </span>
+      }
+      description="Project overview — apps and their latest deployments"
+    >
       {apps.isPending ? (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-3.5">
           {Array.from({ length: 3 }).map((_, index) => (
@@ -85,7 +84,7 @@ function ProjectOverviewPage() {
           ))}
         </div>
       )}
-    </div>
+    </PageFrame>
   );
 }
 

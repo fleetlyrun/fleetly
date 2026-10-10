@@ -7,7 +7,7 @@ import { useRuns, useSchedules, useTasks } from "@/lib/catalog";
 import { ContentCrumb } from "@/components/domain/content-crumb";
 import { CopyButton } from "@/components/domain/copy-button";
 import { EmptyState } from "@/components/domain/empty-state";
-import { PageHeader } from "@/components/domain/page-header";
+import { PageFrame } from "@/components/domain/page-frame";
 import { ProjectAvatar } from "@/components/domain/project-avatar";
 import { RelativeTime } from "@/components/domain/relative-time";
 import { StatusBadge, statusToneClass, type StatusTone } from "@/components/domain/status-badge";
@@ -67,32 +67,31 @@ export function TaskDetailPage({ projectId, taskId }: { projectId: string; taskI
   const sourceSchedule = (schedules.data ?? []).find((schedule) => schedule.last_task_id === taskId);
 
   return (
-    <div className="mx-auto max-w-7xl px-6 pt-6 pb-8">
-      <PageHeader
-        breadcrumb={
-          <ContentCrumb
-            projectId={projectId}
-            section={{ label: "Tasks", to: "/p/$projectId/tasks" }}
-            current={task?.name ?? taskId}
-          />
-        }
-        title={
-          <span className="flex items-center gap-3">
-            <ProjectAvatar seed={taskId} label={task?.name ?? taskId} className="size-8 rounded-xl text-sm" />
-            {task?.name ?? taskId}
-            <StatusBadge tone={taskTone(task?.state)}>{task?.state ?? "unknown"}</StatusBadge>
-            {task?.form ? (
-              <span className="rounded-full border px-2 py-0.5 text-[11.5px] font-semibold text-muted-foreground">{task.form}</span>
-            ) : null}
-          </span>
-        }
-        description={
-          <span className="flex items-center gap-1 font-mono text-[11.5px]">
-            {taskId}
-            <CopyButton value={taskId} />
-          </span>
-        }
-      />
+    <PageFrame
+      breadcrumb={
+        <ContentCrumb
+          projectId={projectId}
+          section={{ label: "Tasks", to: "/p/$projectId/tasks" }}
+          current={task?.name ?? taskId}
+        />
+      }
+      title={
+        <span className="flex items-center gap-3">
+          <ProjectAvatar seed={taskId} label={task?.name ?? taskId} className="size-8 rounded-xl text-sm" />
+          {task?.name ?? taskId}
+          <StatusBadge tone={taskTone(task?.state)}>{task?.state ?? "unknown"}</StatusBadge>
+          {task?.form ? (
+            <span className="rounded-full border px-2 py-0.5 text-[11.5px] font-semibold text-muted-foreground">{task.form}</span>
+          ) : null}
+        </span>
+      }
+      description={
+        <span className="flex items-center gap-1 font-mono text-[11.5px]">
+          {taskId}
+          <CopyButton value={taskId} />
+        </span>
+      }
+    >
 
       <Tabs defaultValue="overview">
         <TabsList className="mb-4">
@@ -110,7 +109,7 @@ export function TaskDetailPage({ projectId, taskId }: { projectId: string; taskI
           <TaskSettings task={task} projectId={projectId} taskId={taskId} />
         </TabsContent>
       </Tabs>
-    </div>
+    </PageFrame>
   );
 }
 

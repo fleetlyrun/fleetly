@@ -1,7 +1,7 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { BellIcon, BoxesIcon, PlusIcon } from "lucide-react";
 import { ErrorState } from "@/components/domain/error-state";
-import { PageHeader } from "@/components/domain/page-header";
+import { PageFrame } from "@/components/domain/page-frame";
 import { ProjectAvatar } from "@/components/domain/project-avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -23,22 +23,18 @@ function OverviewPage() {
   const [, setProjectId] = useProjectId();
 
   return (
-    <div className="mx-auto max-w-7xl px-6 pt-6 pb-8">
-      <PageHeader
-        title="Overview"
-        description="Fleet health at a glance"
-        actions={
-          <>
-            <Button variant="outline" size="sm" asChild>
-              <a href="/quickstart">
-                <PlusIcon data-icon-start-inline />
-                New project
-              </a>
-            </Button>
-
-          </>
-        }
-      />
+    <PageFrame
+      title="Overview"
+      description="Fleet health at a glance"
+      actions={
+        <Button variant="outline" size="sm" asChild>
+          <a href="/quickstart">
+            <PlusIcon data-icon-start-inline />
+            New project
+          </a>
+        </Button>
+      }
+    >
 
       <div className="mb-6 grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3">
         <StatCard label="Nodes" value={`${availableNodes.length}/${(nodes.data ?? []).length}`} sub="available" loading={nodes.isPending} />
@@ -78,7 +74,7 @@ function OverviewPage() {
           ))}
         </div>
       )}
-    </div>
+    </PageFrame>
   );
 }
 

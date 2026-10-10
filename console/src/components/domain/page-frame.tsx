@@ -2,11 +2,11 @@ import type { ReactNode } from "react";
 import { cn } from "cn";
 import { PageHeader } from "./page-header";
 
-// PageFrame 是页面壳单源（六原型公共底座）：宽容器 + PageHeader 一处收口
-// ——手拼 "mx-auto max-w-7xl px-6 pt-6 pb-8" 是反模式（守卫执法）。width
-// 两档：wide=列表/工作台默认；narrow=Settings 类表单区块页。ListPage /
-// ModulePage 模板内部经此落壳；特殊形态页（Workbench/Dashboard/Detail）
-// 直接消费本件。
+// PageFrame 是页面壳单源（六原型公共底座）：宽容器 + 页头一处收口——
+// 手拼 "mx-auto max-w-7xl px-6 pt-6 pb-8" 是反模式（守卫执法）。width
+// 三档对齐六原型：wide=Dashboard/List/Workbench 默认；narrow=Settings
+// 表单区块页；flow=Flow 类多步页。title 省略 = 纯容器（Detail 类页自带
+// crumb/英雄卡的壳位次）。ListPage/ModulePage 模板内部经此落壳。
 export function PageFrame({
   width = "wide",
   breadcrumb,
@@ -15,16 +15,19 @@ export function PageFrame({
   actions,
   children,
 }: {
-  width?: "wide" | "narrow";
+  width?: "wide" | "narrow" | "flow";
   breadcrumb?: ReactNode;
-  title: ReactNode;
+  title?: ReactNode;
   description?: ReactNode;
   actions?: ReactNode;
   children: ReactNode;
 }) {
+  const maxW = width === "narrow" ? "max-w-5xl" : width === "flow" ? "max-w-3xl" : "max-w-7xl";
   return (
-    <div className={cn("mx-auto px-6 pt-6 pb-8", width === "narrow" ? "max-w-5xl" : "max-w-7xl")}>
-      <PageHeader breadcrumb={breadcrumb} title={title} description={description} actions={actions} />
+    <div className={cn("mx-auto px-6 pt-6 pb-8", maxW)}>
+      {title != null ? (
+        <PageHeader breadcrumb={breadcrumb} title={title} description={description} actions={actions} />
+      ) : null}
       {children}
     </div>
   );

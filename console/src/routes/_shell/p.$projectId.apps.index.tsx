@@ -8,10 +8,8 @@ import { apiSend } from "@/api/client";
 import { DeploySheet } from "@/features/deployments/deploy-sheet";
 import { useAppDeployments, type Deployment } from "@/features/deployments/hooks";
 import { CopyButton } from "@/components/domain/copy-button";
-import { CliEquivalent, ListToolbar, useListFilter } from "@/components/domain/list-toolbar";
-import { DataTable } from "@/components/domain/data-table";
 import { EmptyState } from "@/components/domain/empty-state";
-import { PageHeader } from "@/components/domain/page-header";
+import { ListPage } from "@/components/domain/list-page";
 import { ProjectAvatar } from "@/components/domain/project-avatar";
 import { RelativeTime } from "@/components/domain/relative-time";
 import { DeploymentStatusBadge } from "@/components/domain/status-badge";
@@ -48,12 +46,6 @@ function AppsListPage() {
   const routes = useRoutes(projectId);
   const projectName = useProjectName(projectId);
   const rows = apps.data ?? [];
-  const [query, setQuery] = useState("");
-  const filtered = useListFilter(
-    rows,
-    query,
-    (app: AppEntry) => [app.name, app.id],
-  );
   const [createOpen, setCreateOpen] = useState(false);
   const [deployOpen, setDeployOpen] = useState(false);
   const [deployAppId, setDeployAppId] = useState("");
@@ -131,88 +123,71 @@ function AppsListPage() {
   ];
 
   return (
-    <div className="mx-auto max-w-7xl px-6 pt-6 pb-8">
-      <PageHeader
-        title="Apps"
-        description={
-          rows.length > 0
-            ? `${rows.length} app${rows.length === 1 ? "" : "s"} in ${projectName ?? "this project"} — deployments are tracked per app`
-            : "Deployments are tracked per app — create one to get started"
-        }
-      />
-      <div className="rounded-xl border bg-card">
-        <div className="px-3 pt-3">
-          <ListToolbar
-            label="apps"
-            value={query}
-            onChange={setQuery}
-            placeholder="Filter apps..."
-            total={rows.length}
-            shown={filtered.length}
-            actions={
-              <Button
-                size="sm"
-                onClick={() => {
-                  setCreateOpen(true);
-                }}
-              >
-                <PlusIcon data-icon-start-inline />
-                New app
-              </Button>
-            }
-          />
-        </div>
-        <DataTable
-          data={filtered}
-          columns={columns}
-          loading={apps.isPending}
-          error={apps.isError ? apps.error : null}
-          onRetry={() => void apps.refetch()}
-          onRowClick={(app) => {
-            void navigate({ to: "/p/$projectId/apps/$appId", params: { projectId, appId: app.id } });
+    <ListPage
+      title="Apps"
+      description={
+        rows.length > 0
+          ? `${rows.length} app${rows.length === 1 ? "" : "s"} in ${projectName ?? "this project"} — deployments are tracked per app`
+          : "Deployments are tracked per app — create one to get started"
+      }
+      label="apps"
+      placeholder="Filter apps..."
+      rows={rows}
+      fieldsOf={(app) => [app.name, app.id]}
+      loading={apps.isPending}
+      error={apps.isError ? apps.error : null}
+      onRetry={() => void apps.refetch()}
+      columns={columns}
+      onRowClick={(app) => {
+        void navigate({ to: "/p/$projectId/apps/$appId", params: { projectId, appId: app.id } });
+      }}
+      cli={`fleetly apps list --project ${projectId}`}
+      actions={
+        <Button
+          size="sm"
+          onClick={() => {
+            setCreateOpen(true);
           }}
-          empty={
-            query.trim() !== "" ? (
-              <EmptyState
-                icon={BoxesIcon}
-                title="No apps match the filter"
-                description={`No app name or id matches "${query.trim()}".`}
-              />
-            ) : (
-              <EmptyState
-                icon={BoxesIcon}
-                title="No apps yet"
-                description="Create one with New app — or close this and deploy an image, the app appears here."
-              />
-            )
-          }
+        >
+          <PlusIcon data-icon-start-inline />
+          New app
+        </Button>
+      }
+      empty={
+        <EmptyState
+          icon={BoxesIcon}
+          title="No apps yet"
+          description="Create one with New app — or close this and deploy an image, the app appears here."
         />
-      </div>
-      <CliEquivalent command={`fleetly apps list --project ${projectId}`} />
+      }
 
-      <NewAppDialog
-        projectId={projectId}
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        onCreated={(appId) => {
-          void navigate({ to: "/p/$projectId/apps/$appId", params: { projectId, appId } });
-        }}
-      />
+      appendix={
+        <>
+          <NewAppDialog
+            projectId={projectId}
+            open={createOpen}
+            onOpenChange={setCreateOpen}
+            onCreated={(appId) => {
+              void navigate({ to: "/p/$projectId/apps/$appId", params: { projectId, appId } });
+            }}
+          />
 
-      <DeploySheet
-        open={deployOpen}
-        onOpenChange={setDeployOpen}
-        apps={rows}
-        defaultAppId={deployAppId || rows[0]?.id || ""}
-        projectId={projectId}
-        onDeployed={(deploymentId) => {
-          void navigate({
-            to: "/p/$projectId/apps/$appId/deployments/$deploymentId",
-            params: { projectId, appId: deployAppId || rows[0]?.id || "", deploymentId },
-          });
-        }}
-      />
-    </div>
+          <DeploySheet
+            open={deployOpen}
+            onOpenChange={setDeployOpen}
+            apps={rows}
+            defaultAppId={deployAppId || rows[0]?.id || ""}
+            projectId={projectId}
+            onDeployed={(deploymentId) => {
+              void navigate({
+                to: "/p/$projectId/apps/$appId/deployments/$deploymentId",
+                params: { projectId, appId: deployAppId || rows[0]?.id || "", deploymentId },
+              });
+            }}
+          />
+        </>
+      }
+    />
   );
 }
 

@@ -23,10 +23,9 @@ import { useDatabases, useDatabaseBackups, useMetricsSeries, useApps, useProject
 import { useAppSpecs, specIndex, type AppSpec } from "@/features/spec/use-app-specs";
 import { CopyButton } from "@/components/domain/copy-button";
 import { ContentCrumb } from "@/components/domain/content-crumb";
-import { DataTable } from "@/components/domain/data-table";
 import { EmptyState } from "@/components/domain/empty-state";
-import { CliEquivalent, ListToolbar, useListFilter } from "@/components/domain/list-toolbar";
-import { PageHeader } from "@/components/domain/page-header";
+import { ListPage } from "@/components/domain/list-page";
+import { PageFrame } from "@/components/domain/page-frame";
 import { ProjectAvatar } from "@/components/domain/project-avatar";
 import { RelativeTime } from "@/components/domain/relative-time";
 import { StatusBadge, statusToneClass, type StatusTone } from "@/components/domain/status-badge";
@@ -94,12 +93,10 @@ export function DatabasesListPage({ projectId }: { projectId: string }) {
   const projectName = useProjectName(projectId);
   const navigate = useNavigate();
   const [createOpen, setCreateOpen] = useState(false);
-  const [query, setQuery] = useState("");
   const [engine, setEngine] = useState("all");
   const engines = Array.from(new Set(rows.map((row) => row.engine ?? "").filter(Boolean))).sort();
-  const filtered = useListFilter(rows, query, (row: DatabaseEntry) => [row.name ?? "", row.engine ?? "", row.id ?? ""]).filter(
-    (row) => engine === "all" || row.engine === engine,
-  );
+  // 引擎下拉是 ListCard 快筛之外的预过滤（行集先收窄，快筛在其上匹配）。
+  const engineRows = engine === "all" ? rows : rows.filter((row) => row.engine === engine);
 
   const columns: LegacyColumnDef<DatabaseEntry, any>[] = [
     {
@@ -185,75 +182,64 @@ export function DatabasesListPage({ projectId }: { projectId: string }) {
   ];
 
   return (
-    <div className="mx-auto max-w-7xl px-6 pt-6 pb-8">
-      <PageHeader
-        title="Databases"
-        description={
-          rows.length > 0
-            ? `${rows.length} database${rows.length === 1 ? "" : "s"} in ${projectName ?? "this project"} — scheduled backups with verify & restore (ADR-0039)`
-            : "Managed databases — scheduled backups with verify & restore (ADR-0039)"
-        }
-      />
-      <div className="rounded-xl border bg-card">
-        <div className="px-3 pt-3">
-          <ListToolbar
-            label="databases"
-            value={query}
-            onChange={setQuery}
-            placeholder="Filter databases..."
-            total={rows.length}
-            shown={filtered.length}
-            actions={
-              <Button size="sm" onClick={() => setCreateOpen(true)}>
-                <DatabaseIcon data-icon-start-inline />
-                New database
-              </Button>
-            }
-          >
-            <select
-              value={engine}
-              onChange={(event) => setEngine(event.target.value)}
-              aria-label="Filter by engine"
-              className="h-8 rounded-md border bg-muted/40 px-2 text-xs text-foreground"
-            >
-              <option value="all">All engines</option>
-              {engines.map((entry) => (
-                <option key={entry} value={entry}>
-                  {entry}
-                </option>
-              ))}
-            </select>
-          </ListToolbar>
-        </div>
-      <DataTable
-        data={filtered}
-        columns={columns}
-        loading={databases.isPending}
-        error={databases.error}
-        onRetry={() => void databases.refetch()}
-        onRowClick={(row) => navigate({ to: "/p/$projectId/databases/$databaseId", params: { projectId, databaseId: row.id ?? "" } })}
-        empty={
-          <EmptyState
-            icon={DatabaseIcon}
-            title="No databases"
-            description="Create a database to get a template-rendered managed service with scheduled backups."
-            actionLabel="New database"
-            onAction={() => setCreateOpen(true)}
-          />
-        }
-      />
-      </div>
-      <CliEquivalent command={`fleetly databases list --project ${projectId}`} />
-
-      <CreateDatabaseDialog
-        projectId={projectId}
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        onCreated={(databaseId) =>
-          navigate({ to: "/p/$projectId/databases/$databaseId", params: { projectId, databaseId } })
-        }
-      />
-    </div>
+    <ListPage
+      title="Databases"
+      description={
+        rows.length > 0
+          ? `${rows.length} database${rows.length === 1 ? "" : "s"} in ${projectName ?? "this project"} — scheduled backups with verify & restore (ADR-0039)`
+          : "Managed databases — scheduled backups with verify & restore (ADR-0039)"
+      }
+      label="databases"
+      placeholder="Filter databases..."
+      rows={engineRows}
+      fieldsOf={(database) => [database.name ?? "", database.engine ?? ""]}
+      loading={databases.isPending}
+      error={databases.isError ? databases.error : null}
+      onRetry={() => void databases.refetch()}
+      columns={columns}
+      onRowClick={(row) => navigate({ to: "/p/$projectId/databases/$databaseId", params: { projectId, databaseId: row.id ?? "" } })}
+      cli={`fleetly databases list --project ${projectId}`}
+      actions={
+        <Button size="sm" onClick={() => setCreateOpen(true)}>
+          <DatabaseIcon data-icon-start-inline />
+          New database
+        </Button>
+      }
+      filters={
+        <select
+          value={engine}
+          onChange={(event) => setEngine(event.target.value)}
+          aria-label="Filter by engine"
+          className="h-8 rounded-md border bg-muted/40 px-2 text-xs text-foreground"
+        >
+          <option value="all">All engines</option>
+          {engines.map((entry) => (
+            <option key={entry} value={entry}>
+              {entry}
+            </option>
+          ))}
+        </select>
+      }
+      empty={
+        <EmptyState
+          icon={DatabaseIcon}
+          title="No databases"
+          description="Create a database to get a template-rendered managed service with scheduled backups."
+          actionLabel="New database"
+          onAction={() => setCreateOpen(true)}
+        />
+      }
+      appendix={
+        <CreateDatabaseDialog
+          projectId={projectId}
+          open={createOpen}
+          onOpenChange={setCreateOpen}
+          onCreated={(databaseId) =>
+            navigate({ to: "/p/$projectId/databases/$databaseId", params: { projectId, databaseId } })
+          }
+        />
+      }
+    />
   );
 }
 
@@ -475,46 +461,45 @@ export function DatabaseDetailPage({ projectId, databaseId }: { projectId: strin
     onError: (cause) => toast.error(fieldError(cause)),
   });
   return (
-    <div className="mx-auto max-w-7xl px-6 pt-6 pb-8">
-      <PageHeader
-        breadcrumb={
-          <ContentCrumb
-            projectId={projectId}
-            section={{ label: "Databases", to: "/p/$projectId/databases" }}
-            current={database?.name ?? databaseId}
-          />
-        }
-        title={
-          <span className="flex items-center gap-3">
-            <ProjectAvatar seed={databaseId} label={database?.name ?? databaseId} className="size-8 rounded-xl text-sm" />
-            {database?.name ?? databaseId}
-            <StatusBadge tone={databaseTone(database?.status)}>{database?.status ?? "unknown"}</StatusBadge>
-            {database?.restore_from_backup ? (
-              <StatusBadge tone="info" pulse>
-                restoring
-              </StatusBadge>
-            ) : null}
-          </span>
-        }
-        description={
-          <span className="flex items-center gap-1 font-mono text-[11.5px]">
-            {databaseId}
-            <CopyButton value={databaseId} />
-          </span>
-        }
-        actions={
-          <>
-            <Button size="sm" disabled={backup.isPending} onClick={() => backup.mutate()}>
-              <HardDriveDownloadIcon data-icon-start-inline />
-              Back up now
-            </Button>
-            <Button size="sm" variant="outline" disabled={browse.isPending} onClick={() => browse.mutate()}>
-              <EyeIcon data-icon-start-inline />
-              Browse
-            </Button>
-          </>
-        }
-      />
+    <PageFrame
+      breadcrumb={
+        <ContentCrumb
+          projectId={projectId}
+          section={{ label: "Databases", to: "/p/$projectId/databases" }}
+          current={database?.name ?? databaseId}
+        />
+      }
+      title={
+        <span className="flex items-center gap-3">
+          <ProjectAvatar seed={databaseId} label={database?.name ?? databaseId} className="size-8 rounded-xl text-sm" />
+          {database?.name ?? databaseId}
+          <StatusBadge tone={databaseTone(database?.status)}>{database?.status ?? "unknown"}</StatusBadge>
+          {database?.restore_from_backup ? (
+            <StatusBadge tone="info" pulse>
+              restoring
+            </StatusBadge>
+          ) : null}
+        </span>
+      }
+      description={
+        <span className="flex items-center gap-1 font-mono text-[11.5px]">
+          {databaseId}
+          <CopyButton value={databaseId} />
+        </span>
+      }
+      actions={
+        <>
+          <Button size="sm" disabled={backup.isPending} onClick={() => backup.mutate()}>
+            <HardDriveDownloadIcon data-icon-start-inline />
+            Back up now
+          </Button>
+          <Button size="sm" variant="outline" disabled={browse.isPending} onClick={() => browse.mutate()}>
+            <EyeIcon data-icon-start-inline />
+            Browse
+          </Button>
+        </>
+      }
+    >
 
       <Tabs defaultValue="overview">
         <TabsList className="mb-4">
@@ -550,7 +535,7 @@ export function DatabaseDetailPage({ projectId, databaseId }: { projectId: strin
           />
         </TabsContent>
       </Tabs>
-    </div>
+    </PageFrame>
   );
 }
 

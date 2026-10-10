@@ -4,10 +4,8 @@ import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
 import { RocketIcon } from "lucide-react";
 import { DeploySheet } from "@/features/deployments/deploy-sheet";
 import { useProjectDeployments, type Deployment } from "@/features/deployments/hooks";
-import { DataTable } from "@/components/domain/data-table";
 import { EmptyState } from "@/components/domain/empty-state";
-import { ListToolbar, useListFilter } from "@/components/domain/list-toolbar";
-import { PageHeader } from "@/components/domain/page-header";
+import { ListPage } from "@/components/domain/list-page";
 import { ProjectAvatar } from "@/components/domain/project-avatar";
 import { RelativeTime } from "@/components/domain/relative-time";
 import { DeploymentStatusBadge } from "@/components/domain/status-badge";
@@ -89,56 +87,41 @@ function ProjectDeploymentsPage() {
     },
   ];
 
-  const [query, setQuery] = useState("");
-  const filtered = useListFilter(deployments.data ?? [], query, (d: { id?: string; app_id?: string; state?: string; to_revision?: string }) => [d.id ?? "", d.app_id ?? "", d.state ?? "", d.to_revision ?? ""]);
   return (
-    <div className="mx-auto max-w-7xl px-6 pt-6 pb-8">
-      <PageHeader
-        title="Deployments"
-        description="All apps in this project — client-side fan-out, refreshed every 15s"
-      />
-      <div className="rounded-xl border bg-card">
-        <div className="px-3 pt-3">
-          <ListToolbar
-            label="deployments"
-            value={query}
-            onChange={setQuery}
-            placeholder="Filter deployments..."
-            total={(deployments.data ?? []).length}
-            shown={filtered.length}
-            actions={
-              <Button size="sm" onClick={() => setDeployOpen(true)}>
-                <RocketIcon data-icon-start-inline />
-                Deploy…
-              </Button>
-            }
-          />
-        </div>
-        <DataTable
-          data={filtered}
-          columns={columns}
-          loading={deployments.isPending}
-          error={deployments.isError ? deployments.error : null}
-          onRetry={() => void deployments.refetch()}
-          skeletonRows={8}
-          onRowClick={(deployment) => {
-            const appId = deployment.app_id ?? "";
-            if (appId === "") return;
-            void navigate({
-              to: "/p/$projectId/apps/$appId/deployments/$deploymentId",
-              params: { projectId, appId, deploymentId: deployment.id ?? "" },
-            });
-          }}
-          empty={
-            <EmptyState
-              icon={RocketIcon}
-              title="No deployments yet"
-              description="Deploy from an app's page, or pick an app above and hit Deploy."
-            />
-          }
+    <ListPage
+      title="Deployments"
+      description="All apps in this project — client-side fan-out, refreshed every 15s"
+      label="deployments"
+      placeholder="Filter deployments..."
+      rows={deployments.data ?? []}
+      fieldsOf={(d) => [d.id ?? "", d.app_id ?? "", d.state ?? "", d.to_revision ?? ""]}
+      loading={deployments.isPending}
+      error={deployments.isError ? deployments.error : null}
+      onRetry={() => void deployments.refetch()}
+      columns={columns}
+      skeletonRows={8}
+      onRowClick={(deployment) => {
+        const appId = deployment.app_id ?? "";
+        if (appId === "") return;
+        void navigate({
+          to: "/p/$projectId/apps/$appId/deployments/$deploymentId",
+          params: { projectId, appId, deploymentId: deployment.id ?? "" },
+        });
+      }}
+      empty={
+        <EmptyState
+          icon={RocketIcon}
+          title="No deployments yet"
+          description="Deploy from an app's page, or pick an app above and hit Deploy."
         />
-      </div>
-
+      }
+      actions={
+        <Button size="sm" onClick={() => setDeployOpen(true)}>
+          <RocketIcon data-icon-start-inline />
+          Deploy…
+        </Button>
+      }
+      appendix={
       <DeploySheet
         open={deployOpen}
         onOpenChange={setDeployOpen}
@@ -154,6 +137,7 @@ function ProjectDeploymentsPage() {
           });
         }}
       />
-    </div>
+      }
+    />
   );
 }

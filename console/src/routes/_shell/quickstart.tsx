@@ -4,7 +4,7 @@ import { RocketIcon } from "lucide-react";
 import { apiFetch, apiSend } from "@/api/client";
 import { streamDeploymentWait } from "@/api/streams";
 import { ErrorState } from "@/components/domain/error-state";
-import { PageHeader } from "@/components/domain/page-header";
+import { PageFrame } from "@/components/domain/page-frame";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -131,8 +131,7 @@ function QuickstartPageV2() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-6 pt-6 pb-8">
-      <PageHeader title="Quickstart" description="One form, full chain: project → app → network → deploy → route → wait" />
+    <PageFrame width="flow" title="Quickstart" description="One form, full chain: project → app → network → deploy → route → wait">
 
       <form onSubmit={run} className="flex flex-col gap-3.5 rounded-xl border bg-card px-5 py-5">
         <div className="grid grid-cols-2 gap-3">
@@ -210,6 +209,6 @@ function QuickstartPageV2() {
         </ol>
       ) : null}
       <p className="mt-3 text-[11px] text-muted-foreground">Every step is idempotent — re-running reuses what exists.</p>
-    </div>
+    </PageFrame>
   );
 }

@@ -8,6 +8,7 @@ import { DeploySheet } from "@/features/deployments/deploy-sheet";
 import { useAppDeployments } from "@/features/deployments/hooks";
 import { firingAlerts } from "@/features/apps-tabs/alert-badges";
 import { ContentCrumb } from "@/components/domain/content-crumb";
+import { PageFrame } from "@/components/domain/page-frame";
 import { CopyButton } from "@/components/domain/copy-button";
 import { ProjectAvatar } from "@/components/domain/project-avatar";
 import { DeploymentStatusBadge } from "@/components/domain/status-badge";
@@ -75,7 +76,7 @@ function AppDetailLayout() {
   ];
 
   return (
-    <div className="mx-auto max-w-7xl px-6 pt-6 pb-8">
+    <PageFrame>
       <ContentCrumb projectId={projectId} section={{ label: "Apps", to: `${tabBase.split("/apps")[0]}/apps` }} current={app?.name ?? appId} />
 
       <section className="mb-5 flex flex-wrap items-center gap-4 rounded-xl border bg-card p-4">
@@ -195,6 +196,6 @@ function AppDetailLayout() {
           window.location.assign(`${tabBase}/deployments/${encodeURIComponent(deploymentId)}`);
         }}
       />
-    </div>
+    </PageFrame>
   );
 }

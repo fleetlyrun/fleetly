@@ -6,7 +6,7 @@ import type { EventRow } from "@/api/streams";
 import { followEvents, mintEventTicket } from "@/api/streams";
 import { formatAbsolute } from "@/lib/format";
 import { ErrorState } from "@/components/domain/error-state";
-import { PageHeader } from "@/components/domain/page-header";
+import { PageFrame } from "@/components/domain/page-frame";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -159,17 +159,16 @@ function EventsPageV2() {
   const displayed = [...rows].reverse();
 
   return (
-    <div className="mx-auto max-w-7xl px-6 pt-6 pb-8">
-      <PageHeader
-        title="Events"
-        description="Backlog via GET /v1/events, then following /v1/events/follow (one-time ticket, ADR-0026)"
-        actions={
-          <Button size="sm" variant={following ? "outline" : "default"} onClick={toggleFollowing}>
-            {following ? <PauseIcon data-icon-start-inline /> : <PlayIcon data-icon-start-inline />}
-            {following ? "Pause" : "Resume"}
-          </Button>
-        }
-      />
+    <PageFrame
+      title="Events"
+      description="Backlog via GET /v1/events, then following /v1/events/follow (one-time ticket, ADR-0026)"
+      actions={
+        <Button size="sm" variant={following ? "outline" : "default"} onClick={toggleFollowing}>
+          {following ? <PauseIcon data-icon-start-inline /> : <PlayIcon data-icon-start-inline />}
+          {following ? "Pause" : "Resume"}
+        </Button>
+      }
+    >
 
       {error ? <ErrorState error={error} onRetry={toggleFollowing} /> : null}
       {resynced ? (
@@ -236,6 +235,6 @@ function EventsPageV2() {
           </TableBody>
         </Table>
       </div>
-    </div>
+    </PageFrame>
   );
 }
