@@ -466,6 +466,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/volumes/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * DeleteVolume 删除未挂载卷（IA v3 二期⑤b）：受理位前置引用预检——项目
+         *     内活跃 App 冻结 Spec 的卷附件（volume_id 装平台卷名，引擎同锚）或同名
+         *     Database 挂靠卷任一命中即 E_CONFLICT。删除 = 平台行 tombstone；底层
+         *     编排器卷不随删（swarm 命名卷残留是文档化文化、k3s PVC 卡 ns 排空——
+         *     数据兜底永不级联，调用方披露）。
+         */
+        delete: operations["VolumesService_DeleteVolume"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -686,6 +709,7 @@ export interface components {
         v1DeleteSharedVariableResponse: {
             affected_apps?: string[];
         };
+        v1DeleteVolumeResponse: Record<string, never>;
         /**
          * DeployStrategy 是部署切换策略（CONTEXT.md Deployment Strategy 词条：
          *     rolling | blue-green；Avoid 表两词条不引入——渐进分流与代次槽位机制
@@ -2292,6 +2316,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1CreateVolumeResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    VolumesService_DeleteVolume: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1DeleteVolumeResponse"];
                 };
             };
             /** @description An unexpected error response. */

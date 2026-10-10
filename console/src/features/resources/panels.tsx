@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  useApps,
   useConfigs,
   useDatabaseBackups,
   useDatabases,
@@ -14,6 +15,7 @@ import {
   useVolumes,
 } from "@/lib/catalog";
 import { apiSend, apiSendRaw } from "@/api/client";
+import { specIndex, useAppSpecs } from "@/features/spec/use-app-specs";
 import { buildTar, rootPrefixOf } from "@/lib/tar";
 import {
   DangerRowButton,
@@ -421,6 +423,9 @@ function RouteRow({
 
 function VolumesTab({ projectId }: { projectId: string }) {
   const volumes = useVolumes(projectId);
+  const apps = useApps(projectId);
+  const databases = useDatabases(projectId);
+  const { specs } = useAppSpecs(projectId, apps.data ?? []);
   const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState("");
   const [pinnedNode, setPinnedNode] = useState("");
@@ -430,6 +435,19 @@ function VolumesTab({ projectId }: { projectId: string }) {
     body: () => ({ project_id: projectId, name, pinned_node_id: pinnedNode || undefined }),
     invalidate: [["resources", "volumes", projectId]],
   });
+  // 挂载判据（IA v3 二期⑤b）：卷锚 = 平台卷名（App 冻结 Spec 的卷附件
+  // volume_id 与 Database 挂靠卷名公式都按 Name——引擎同口径）。
+  const volumeIndex = specIndex(specs, (spec) =>
+    (spec.processes ?? []).flatMap((process) => (process.volumes ?? []).map((volume) => volume.volume_id ?? "")),
+  );
+  const appName = (id: string) => (apps.data ?? []).find((app) => app.id === id)?.name ?? id;
+  const mountOf = (volume: { name?: string }): string | null => {
+    const users = volumeIndex.get(volume.name ?? "") ?? [];
+    const db = (databases.data ?? []).some((database) => database.name === volume.name);
+    if (db) return "carrier data volume of database " + volume.name;
+    if (users.length > 0) return "mounted by " + users.map(appName).join(", ");
+    return null;
+  };
   return (
     <section className="flex flex-col gap-3">
       <div className="flex justify-end">
@@ -471,20 +489,57 @@ function VolumesTab({ projectId }: { projectId: string }) {
       ) : (
         <TableWrap>
           <table className="w-full text-sm">
-            <TableHead columns={["Name", "Pinned node", "Created"]} />
+            <TableHead columns={["Name", "Pinned node", "Created", ""]} />
             <tbody>
               {(volumes.data ?? []).map((volume) => (
-                <tr key={volume.id} className="border-b border-slate-800/60 hover:bg-slate-900/40">
-                  <td className="px-3 py-2 font-medium text-slate-200">{volume.name}</td>
-                  <td className="px-3 py-2 font-mono text-xs text-slate-400">{volume.pinned_node_id || "any"}</td>
-                  <td className="px-3 py-2 text-xs text-slate-500">{formatTime(volume.created_at)}</td>
-                </tr>
+                <VolumeRow key={volume.id} volume={volume} mount={mountOf(volume)} projectId={projectId} />
               ))}
             </tbody>
           </table>
         </TableWrap>
       )}
     </section>
+  );
+}
+
+// VolumeRow 行操作（IA v3 二期⑤b）：未挂载才可删（挂载判据由服务端
+// E_CONFLICT 兜底——客户端禁用是前置体验面）；删除仅收口平台行，底层
+// runtime 卷留存（数据兜底永不级联），确认文案明示。
+function VolumeRow({
+  volume,
+  mount,
+  projectId,
+}: {
+  volume: { id?: string; name?: string; pinned_node_id?: string; created_at?: string };
+  mount: string | null;
+  projectId: string;
+}) {
+  const del = useApiMutation({
+    path: `/v1/volumes/${encodeURIComponent(volume.id ?? "")}`,
+    method: "DELETE",
+    invalidate: [["resources", "volumes", projectId]],
+  });
+  return (
+    <tr className="border-b border-slate-800/60 hover:bg-slate-900/40">
+      <td className="px-3 py-2 font-medium text-slate-200">{volume.name}</td>
+      <td className="px-3 py-2 font-mono text-xs text-slate-400">{volume.pinned_node_id || "any"}</td>
+      <td className="px-3 py-2 text-xs text-slate-500">{formatTime(volume.created_at)}</td>
+      <td className="px-3 py-2 text-right">
+        {mount ? (
+          <span className="text-[11px] text-slate-500" title={mount}>
+            in use
+          </span>
+        ) : (
+          <DangerRowButton
+            confirm={`Delete volume ${volume.name}? The platform row is removed; the runtime-side volume stays (data is not reclaimed automatically).`}
+            disabled={del.isPending}
+            onClick={() => void del.mutate()}
+          >
+            delete
+          </DangerRowButton>
+        )}
+      </td>
+    </tr>
   );
 }
 

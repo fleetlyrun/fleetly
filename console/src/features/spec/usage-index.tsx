@@ -34,7 +34,9 @@ export function UsageIndex({ projectId }: { projectId: string }) {
             ) : (
               <ul className="flex flex-col gap-1 text-xs">
                 {(volumes.data ?? []).map((volume) => {
-                  const users = volumeIndex.get(volume.id ?? "") ?? [];
+                  // 卷锚 = 平台卷名（引擎 pinVolumes/materials 同口径——
+                  // Attachment.volume_id 装 Name 不是行 ID）。
+                  const users = volumeIndex.get(volume.name ?? "") ?? [];
                   return (
                     <li key={volume.id} className="flex items-center gap-2">
                       <span className="font-mono">{volume.name || volume.id}</span>
