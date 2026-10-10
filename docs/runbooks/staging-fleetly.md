@@ -496,6 +496,14 @@ ADR-0015 升级序的完整落地形态：**Platform Backup 前置 → SIGTERM �
 - **残留闭合（同日 5ac2100-align5b）**：Audit 卡外独立过滤表单收编入卡内工具栏——上批"既有设计豁免"不成立（规范无豁免页）。Server 端四过滤器入 ListToolbar children 槽（aria-label 化），Filter 钮入 actions 槽（form 包裹回车同效），主输入改页内快筛、计数随之有义；换装前置备份 `374fd95c`，doctor 0 failed。
 - **tab 化复裁（同日 520b3c3-align5c，用户裁决：一页多模块用 tab 组织、参照 App Detail）**：新共享件 PageTabs（域层下划线式——页头下 border-b 一行 + active 紫下边框，泛型 T 让 onChange 回传收窄 value 免 cast；App Detail 本体是路由式锚点不经此件）。八页统一：Variables 三模块 tab 化（Secrets/Configs/Shared variables）、Storage 换 PageTabs+URL param（修 defaultValue 深链无效）、Tasks/Identity 换 PageTabs、Alerts tab 出卡上移页头、Backups 双 tab（Databases/Snapshots，healthy 计数并入页头描述）、Networks 双 tab（Networks/Peers，PeersPanel 自拆）、Registry 双 tab（Apps/Image catalog，RegistryCatalog 去 section 化）。全部 URL param 深链（zod validateSearch）。换装前置备份 `9eacf1a8`。
 
+## 2026-10-11 记录·三十三（页面模板层换装 3ee8737-tmpl1 + 双主题截图复验）
+
+- **换装**（520b3c3-align5c → **3ee8737-tmpl1（现役）**，模板化批四 commit 654995e/ea951f3/c28e2a1/3ee8737 + 文档）：纯 console 批（Go 零变更），零迁移（goose 停 28）零键面。前置 Platform Backup `0c9d33c2`（卷 tar 按 align5b/5c 先例省略——console-only 批推论，记录·二十五）。drop-in 五件全存活；doctor 10 ok / 2 warning / 0 failed；tw.dev 200；新 dist `index-CpsTGLv8.js` 上架；Nodes 页 relay 版本回显 `online · 3ee8737-tmpl1`（新二进制活体实锤）。
+- **零扰动实锤**：受管域 task 全为旧龄（db 2d / VL 6d / traefik 9h / zot 18h）、用户域 8h-5d——换装窗零滚动（sec-test 的 4min 前任务是既有 ~5min 节拍的一次性测试任务，与换装无关）。
+- **模板层内容**（裁决记录=IA v3 文档 §5.6）：PageFrame（壳单源，width=wide/narrow/flow + 无页头形态）/ ListPage+ListCard（工具栏+四态+分页+CLI 行内建；children 渲染槽=跨行展开特例；appendix 槽=弹窗/脚注）/ ModulePage（lead 槽 + PageTabs）/ SectionCard / ConfirmDialog（落定即关窗统一契约）。批 1-3 收编 30+ 页；useApiMutation 迁 lib；components/ui.tsx+ui.test.tsx+DeployForm/DokployImportModal/HookModal 死代码删除。守卫新增三禁单：手拼页面壳 / pre-v2 层 barrel import / 页面手接线分页（backups 快照小表带理由豁免；lib/router.ts hash 写豁免保留）。
+- **staging 双主题截图复验（暗色 7 幅，模板代表页）**：Overview（PageFrame wide/Dashboard）、Audit 骨架+数据双态（ListPage：filters 槽 server 过滤器 + Filter 提交钮 + 计数 + 排序表头 + 骨架四态 + CLI 行）、Identity（ModulePage：PageTabs + ListCard + 行内动词）、Settings（narrow + SectionCard ×3）、Nodes（ListCard children 逃生舱：行级动词 + enroll/rotate 工具栏钮位）、Databases（项目级 ListPage：引擎下拉 filters + 项目语境描述 + 行动作）、Storage（ModulePage lead 槽 UsageIndex + Volumes ListCard）。无布局破损；换装前置备份的 platform.backup_trigger 审计行同屏可见（数据链活体）。
+- **诚实边界**：本批复验只过 typecheck/vitest 87/console:verify + staging 截图静态复验；Alerts firing 摘要条（lead 槽带数据形态）与 ConfirmDialog 交互链未真机触发（当前 0 firing、未执行破坏性动作）——下批涉及写面走查时顺带补验。走查痕迹零残留（纯只读 + 既有会话）。
+
 ## 教训与边界
 
 - **本机（Windows 工作机）出站对该 VPS 全端口受限**（80/443/8420 全 000；node2 路径全通）——外部验证走 node2 或 check-host 类服务，勿信本机 curl。
