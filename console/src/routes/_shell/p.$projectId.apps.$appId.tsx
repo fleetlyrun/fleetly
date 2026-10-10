@@ -1,9 +1,10 @@
-import { Link, Outlet, useLocation, createFileRoute } from "@tanstack/react-router";
+import { Outlet, useLocation, createFileRoute } from "@tanstack/react-router";
 import { RocketIcon, ScrollTextIcon, SquareTerminalIcon, TriangleAlertIcon } from "lucide-react";
 import { DeploySheet } from "@/features/deployments/deploy-sheet";
 import { useAppDeployments } from "@/features/deployments/hooks";
 import { firingAlerts } from "@/features/apps-tabs/alert-badges";
 import { CopyButton } from "@/components/domain/copy-button";
+import { ContentCrumb } from "@/components/domain/content-crumb";
 import { PageHeader } from "@/components/domain/page-header";
 import { ProjectAvatar } from "@/components/domain/project-avatar";
 import { DeploymentStatusBadge } from "@/components/domain/status-badge";
@@ -43,15 +44,7 @@ function AppDetailLayout() {
   return (
     <div className="mx-auto max-w-7xl px-6 py-8">
       <PageHeader
-        breadcrumb={
-          <span className="text-xs text-muted-foreground">
-            <Link to="/p/$projectId" params={{ projectId }} className="hover:text-foreground">
-              {app?.name ?? "Project"}
-            </Link>
-            <span className="mx-1.5">/</span>
-            <span className="text-foreground">{appId === app?.id ? app?.name : appId}</span>
-          </span>
-        }
+        breadcrumb={<ContentCrumb projectId={projectId} current={app?.name ?? appId} />}
         title={
           <span className="flex items-center gap-3">
             <ProjectAvatar seed={appId} label={app?.name ?? appId} className="size-8 rounded-xl text-sm" />

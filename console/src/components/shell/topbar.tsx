@@ -6,20 +6,34 @@ import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { ThemeToggle } from "./theme-toggle";
 import { UserMenu } from "./user-menu";
+import { useProjects } from "@/lib/catalog";
 
 // 顶栏（UI v2 外壳）：折叠触发 + 面包屑 + 搜索/⌘K + 主题 + 身份菜单。
-// 批 1 面包屑按过渡路由表直译；批 2 起由路由 matches 生成项目语境链。
+// 面包屑按 pathname 分段直译，静态段走词条表；项目 ID 段反查目录显
+// 项目名（W-1 走查教训：裸 ID 不该出现在面包屑），查无此段时回退截断。
 const CRUMB_LABELS: Record<string, string> = {
+  p: "Projects",
   overview: "Overview",
   apps: "Apps",
+  databases: "Databases",
+  storage: "Storage",
+  registry: "Registry",
   deployments: "Deployments",
   tasks: "Tasks",
   logs: "Logs",
+  metrics: "Metrics",
   observability: "Observability",
   resources: "Resources",
+  routes: "Routes",
+  networks: "Networks",
+  variables: "Variables",
+  configuration: "Configuration",
+  providers: "Managed Providers",
+  events: "Events",
+  alerts: "Alerts",
+  backups: "Backups",
   identity: "Identity",
   nodes: "Nodes",
-  events: "Events",
   audit: "Audit",
   settings: "Settings",
   quickstart: "Quickstart",
@@ -29,6 +43,8 @@ const CRUMB_LABELS: Record<string, string> = {
 
 export function Topbar({ onOpenPalette }: { onOpenPalette: () => void }) {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const projects = useProjects();
+  const projectNames = new Map((projects.data ?? []).map((project) => [project.id, project.name]));
   const crumbs = pathname.split("/").filter(Boolean);
 
   return (
@@ -39,12 +55,14 @@ export function Topbar({ onOpenPalette }: { onOpenPalette: () => void }) {
         <BreadcrumbList>
           {crumbs.map((crumb, index) => {
             const last = index === crumbs.length - 1;
+            const named = CRUMB_LABELS[crumb] ?? projectNames.get(crumb);
+            const shown = named ?? (crumb.length > 20 ? `${crumb.slice(0, 10)}…` : crumb);
             return (
               <BreadcrumbItem key={`${crumb}-${index}`}>
                 <div className="flex items-center gap-2">
                   {index > 0 ? <BreadcrumbSeparator /> : null}
-                  <BreadcrumbPage className={last ? "" : "text-muted-foreground"} title={crumb.length > 20 ? crumb : undefined}>
-                    {CRUMB_LABELS[crumb] ?? (crumb.length > 20 ? `${crumb.slice(0, 10)}…` : crumb)}
+                  <BreadcrumbPage className={last ? "" : "text-muted-foreground"} title={named === undefined && crumb.length > 20 ? crumb : undefined}>
+                    {shown}
                   </BreadcrumbPage>
                 </div>
               </BreadcrumbItem>

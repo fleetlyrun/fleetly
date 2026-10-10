@@ -65,6 +65,13 @@ export function useProjects() {
   });
 }
 
+// 项目名反查（crumb 首段唯一文案源）：ID→名；目录未达时 undefined，
+// 调用方回退通用词——裸 ID 不该出现在面包屑（W-1/W-2 走查教训）。
+export function useProjectName(projectId: string): string | undefined {
+  const projects = useProjects();
+  return projects.data?.find((project) => project.id === projectId)?.name;
+}
+
 // useApps 拉取 App 目录。ListApps 契约 project_id 必填（structure.proto
 // 校验；曾按"空 = 全部"发送，吃回 E_INVALID_ARGUMENT 噪声——2026-10-05
 // 走查 F4），故空 projectId 直接禁查（React Query enabled 门）。

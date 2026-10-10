@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
 import type { components } from "@/api/structure";
@@ -21,6 +21,7 @@ import { MetricChart } from "@/features/metrics/metric-chart";
 import { useDatabases, useDatabaseBackups, useMetricsSeries, useApps } from "@/lib/catalog";
 import { useAppSpecs, specIndex, type AppSpec } from "@/features/spec/use-app-specs";
 import { CopyButton } from "@/components/domain/copy-button";
+import { ContentCrumb } from "@/components/domain/content-crumb";
 import { DataTable } from "@/components/domain/data-table";
 import { EmptyState } from "@/components/domain/empty-state";
 import { PageHeader } from "@/components/domain/page-header";
@@ -437,17 +438,11 @@ export function DatabaseDetailPage({ projectId, databaseId }: { projectId: strin
     <div className="mx-auto max-w-7xl px-6 py-8">
       <PageHeader
         breadcrumb={
-          <span className="text-xs text-muted-foreground">
-            <Link to="/p/$projectId" params={{ projectId }} className="hover:text-foreground">
-              Project
-            </Link>
-            <span className="mx-1.5">/</span>
-            <Link to="/p/$projectId/databases" params={{ projectId }} className="hover:text-foreground">
-              Databases
-            </Link>
-            <span className="mx-1.5">/</span>
-            <span className="text-foreground">{database?.name ?? databaseId}</span>
-          </span>
+          <ContentCrumb
+            projectId={projectId}
+            section={{ label: "Databases", to: "/p/$projectId/databases" }}
+            current={database?.name ?? databaseId}
+          />
         }
         title={
           <span className="flex items-center gap-3">

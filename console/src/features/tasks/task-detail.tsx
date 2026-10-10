@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { ClockIcon, ListRestartIcon } from "lucide-react";
-import { Link } from "@tanstack/react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiSend } from "@/api/client";
 import type { components } from "@/api/automation";
 import { useRuns, useSchedules, useTasks } from "@/lib/catalog";
+import { ContentCrumb } from "@/components/domain/content-crumb";
 import { CopyButton } from "@/components/domain/copy-button";
 import { EmptyState } from "@/components/domain/empty-state";
 import { PageHeader } from "@/components/domain/page-header";
@@ -70,17 +70,11 @@ export function TaskDetailPage({ projectId, taskId }: { projectId: string; taskI
     <div className="mx-auto max-w-7xl px-6 py-8">
       <PageHeader
         breadcrumb={
-          <span className="text-xs text-muted-foreground">
-            <Link to="/p/$projectId" params={{ projectId }} className="hover:text-foreground">
-              Project
-            </Link>
-            <span className="mx-1.5">/</span>
-            <Link to="/p/$projectId/tasks" params={{ projectId }} className="hover:text-foreground">
-              Tasks
-            </Link>
-            <span className="mx-1.5">/</span>
-            <span className="text-foreground">{task?.name ?? taskId}</span>
-          </span>
+          <ContentCrumb
+            projectId={projectId}
+            section={{ label: "Tasks", to: "/p/$projectId/tasks" }}
+            current={task?.name ?? taskId}
+          />
         }
         title={
           <span className="flex items-center gap-3">
