@@ -5,6 +5,7 @@ import { apiFetch } from "@/api/client";
 import type { components } from "@/api/structure";
 import { backupHealth } from "@/features/databases/backup-health";
 import { CliEquivalent, ListPagination, ListToolbar, useClientPage, useListFilter } from "@/components/domain/list-toolbar";
+import { PageTabs } from "@/components/domain/page-tabs";
 import { EmptyState } from "@/components/domain/empty-state";
 import { PageHeader } from "@/components/domain/page-header";
 import { ProjectAvatar } from "@/components/domain/project-avatar";
@@ -19,7 +20,7 @@ type DatabaseEntry = components["schemas"]["v1Database"];
 // 每库一行（v1Database.last_backup_at 是最近成功锚，ADR-0039，无需深度
 // fan-out）+ 平台快照（restic）区块。跨项目聚合走客户端（ADR-0057 不变
 // 量）；聚合 API 二期优化（§8）。
-export function BackupsView() {
+export function BackupsView({ tab, onTabChange }: { tab: "databases" | "snapshots"; onTabChange: (value: "databases" | "snapshots") => void }) {
   const projects = useProjects();
   const projectList = projects.data ?? [];
   const databaseLists = useQueries({
@@ -59,14 +60,26 @@ export function BackupsView() {
     <div className="mx-auto max-w-7xl px-6 pt-6 pb-8">
       <PageHeader
         title="Backups"
-        description="Data safety at a glance — database backups and platform snapshots"
+        description={
+          rows.length > 0
+            ? `Data safety at a glance — ${rows.length} databases · ${healthyCount} healthy`
+            : "Data safety at a glance — database backups and platform snapshots"
+        }
         actions={
           <ButtonLink href="/settings" label="Platform backup settings" />
         }
       />
+      <PageTabs
+        tabs={[
+          { value: "databases", label: "Databases" },
+          { value: "snapshots", label: "Snapshots" },
+        ]}
+        current={tab}
+        onChange={onTabChange}
+      />
 
+      {tab === "databases" ? (
       <section className="mb-8">
-        <h2 className="mb-3 text-[13px] font-semibold">Databases ({rows.length} · {healthyCount} healthy)</h2>
         <div className="rounded-xl border bg-card">
           <div className="px-3 pt-3">
             <ListToolbar label="databases" value={query} onChange={setQuery} placeholder="Filter databases..." total={rows.length} shown={filtered.length} />
@@ -148,9 +161,8 @@ export function BackupsView() {
           )}
         </div>
       </section>
-
+      ) : (
       <section>
-        <h2 className="mb-3 text-[13px] font-semibold">Platform snapshots (restic)</h2>
         <div className="rounded-xl border bg-card">
         {(snapshots.data ?? []).length === 0 ? (
           <p className="p-6 text-center text-xs text-muted-foreground">
@@ -188,6 +200,7 @@ export function BackupsView() {
           Snapshot cadence and retention follow the platform backup config; the local store is same-node — not disaster recovery.
         </p>
       </section>
+      )}
     </div>
   );
 }

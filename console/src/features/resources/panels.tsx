@@ -150,7 +150,6 @@ export function NewNetworkButton({ projectId }: { projectId: string }) {
 
 function NetworksTab({ projectId }: { projectId: string }) {
  const networks = useNetworks(projectId);
- const peers = useNetworkPeers(projectId);
  const [query, setQuery] = useState("");
  const filtered = useListFilter(networks.data ?? [], query, (network: { name?: string; id?: string }) => [network.name ?? "", network.id ?? ""]);
  const { page, pageCount, pageRows, setPage } = useClientPage(filtered);
@@ -183,7 +182,17 @@ function NetworksTab({ projectId }: { projectId: string }) {
         )}
       </div>
       <CliEquivalent command={`fleetly networks list --project ${projectId}`} />
-      <h2 className="mt-4 text-sm font-semibold text-foreground">peers</h2>
+    </section>
+  );
+}
+
+// PeersPanel 是 Networks 页 Peers tab（跨项目挂靠面：审批表 + 声明表单
+// ——对齐批 5 复裁一页多模块 tab 化时自分拆出）。
+export function PeersPanel({ projectId }: { projectId: string }) {
+ const peers = useNetworkPeers(projectId);
+ const networks = useNetworks(projectId);
+ return (
+    <section className="flex flex-col gap-3">
       <p className="text-xs text-muted-foreground">
         Cross-project network attachment: the attaching project declares, the network owner approves.
       </p>

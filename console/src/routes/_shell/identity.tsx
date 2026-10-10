@@ -46,7 +46,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PageTabs } from "@/components/domain/page-tabs";
 
 type User = identitySchemas["schemas"]["v1User"];
 type Team = identitySchemas["schemas"]["v1Team"];
@@ -75,21 +75,19 @@ function IdentityPageV2() {
         title="Identity"
         description="Users, teams, roles and invitations — the RBAC face"
       />
-      <Tabs
-        value={tab}
-        onValueChange={(value) => {
+      <PageTabs
+        tabs={[
+          { value: "users", label: "Users" },
+          { value: "teams", label: "Teams" },
+          { value: "roles", label: "Roles" },
+          { value: "invitations", label: "Invitations" },
+        ]}
+        current={tab}
+        onChange={(value) => {
           setCreateOpen(false);
-          void navigate({ search: { tab: value as "users" | "teams" | "roles" | "invitations" } });
+          void navigate({ search: { tab: value } });
         }}
-        className="mb-4"
-      >
-        <TabsList className="bg-transparent">
-          <TabsTrigger value="users">Users</TabsTrigger>
-          <TabsTrigger value="teams">Teams</TabsTrigger>
-          <TabsTrigger value="roles">Roles</TabsTrigger>
-          <TabsTrigger value="invitations">Invitations</TabsTrigger>
-        </TabsList>
-      </Tabs>
+      />
       {tab === "users" ? <UsersTab createOpen={createOpen} onCreateOpenChange={setCreateOpen} /> : null}
       {tab === "teams" ? <TeamsTab /> : null}
       {tab === "roles" ? <RolesTab createOpen={createOpen} onCreateOpenChange={setCreateOpen} /> : null}

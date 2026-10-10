@@ -7,6 +7,7 @@ import type { components } from "@/api/delivery";
 import { digestByRevisionId, latestDeploymentPerApp } from "@/features/registry/registry-model";
 import { DeploymentStatusBadge } from "@/components/domain/status-badge";
 import { CliEquivalent, ListPagination, ListToolbar, useClientPage, useListFilter } from "@/components/domain/list-toolbar";
+import { PageTabs } from "@/components/domain/page-tabs";
 import { TableWrap } from "@/components/ui";
 import { CopyButton } from "@/components/domain/copy-button";
 import { EmptyState } from "@/components/domain/empty-state";
@@ -22,7 +23,15 @@ type Revision = components["schemas"]["v1Revision"];
 // Registry v1（IA v3 T5，§5.1 一期）：按 app 维度的"当前运行内容"视图——
 // 最新部署的 revision digest（内容寻址锚）+ commit + 状态。二期（⑤b）：
 // 镜像仓内容视图点亮——catalog/tags 经受管仓只读代理（按项目前纲）。
-export function RegistryView({ projectId }: { projectId: string }) {
+export function RegistryView({
+  projectId,
+  tab,
+  onTabChange,
+}: {
+  projectId: string;
+  tab: "apps" | "catalog";
+  onTabChange: (value: "apps" | "catalog") => void;
+}) {
   const apps = useApps(projectId);
   const appIds = (apps.data ?? []).map((app) => app.id);
   const deployments = useProjectDeployments(appIds);
@@ -53,6 +62,16 @@ export function RegistryView({ projectId }: { projectId: string }) {
         title="Registry"
         description="What each app runs right now — revision digests from the managed registry (zot)"
       />
+      <PageTabs
+        tabs={[
+          { value: "apps", label: "Apps" },
+          { value: "catalog", label: "Image catalog" },
+        ]}
+        current={tab}
+        onChange={onTabChange}
+      />
+      {tab === "catalog" ? <RegistryCatalog projectId={projectId} apps={apps.data ?? []} /> : (
+      <>
       <div className="rounded-xl border bg-card">
         <div className="px-3 pt-3">
           <ListToolbar label="apps" value={query} onChange={setQuery} placeholder="Filter apps..." total={rows.length} shown={filtered.length} />
@@ -139,7 +158,8 @@ export function RegistryView({ projectId }: { projectId: string }) {
       <p className="mt-3 text-[11.5px] text-muted-foreground">
         Digests are content-addressed — they identify exactly what is running.
       </p>
-      <RegistryCatalog projectId={projectId} apps={apps.data ?? []} />
+      </>
+      )}
     </div>
   );
 }
@@ -162,8 +182,7 @@ function RegistryCatalog({ projectId, apps }: { projectId: string; apps: Array<{
   });
   const appName = (repo: string) => apps.find((app) => app.id.toLowerCase() === repo.split("/")[1])?.name ?? repo.split("/")[1];
   return (
-    <section className="mt-6">
-      <h2 className="mb-2 text-[13px] font-semibold">Image catalog</h2>
+    <>
       {catalog.isPending ? (
         <p className="text-xs text-muted-foreground">Loading repositories…</p>
       ) : catalog.isError ? (
@@ -197,7 +216,7 @@ function RegistryCatalog({ projectId, apps }: { projectId: string; apps: Array<{
         </div>
       )}
       <CliEquivalent command={`fleetly registry catalog --project ${projectId}`} />
-    </section>
+    </>
   );
 }
 

@@ -34,7 +34,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PageTabs } from "@/components/domain/page-tabs";
 
 // 告警页（List 变体，UI v2 批 3）：firing 摘要条置顶 + rules/channels 双
 // tab（URL search param）。旧 Observability 三层嵌套 tab 在此拆平。
@@ -85,21 +85,21 @@ function AlertsPage() {
         </Card>
       ) : null}
 
-      <Card className="overflow-hidden">
-        <Tabs value={tab} onValueChange={(value) => void navigate({ search: { tab: value as "rules" | "channels" } })}>
-          <div className="border-b px-3 pt-2.5">
-            <TabsList className="bg-transparent">
-              <TabsTrigger value="rules">Rules</TabsTrigger>
-              <TabsTrigger value="channels">Notification channels</TabsTrigger>
-            </TabsList>
-          </div>
+      <PageTabs
+        tabs={[
+          { value: "rules", label: "Rules" },
+          { value: "channels", label: "Notification channels" },
+        ]}
+        current={tab}
+        onChange={(value) => void navigate({ search: { tab: value } })}
+      />
 
-          {tab === "rules" ? (
-            <RulesPanel rules={rules.data ?? []} states={states.data ?? []} loading={rules.isPending} error={rules.isError ? rules.error : null} onRetry={() => void rules.refetch()} onCreate={() => setCreateOpen(true)} />
-          ) : (
-            <ChannelsPanel />
-          )}
-        </Tabs>
+      <Card className="overflow-hidden">
+        {tab === "rules" ? (
+          <RulesPanel rules={rules.data ?? []} states={states.data ?? []} loading={rules.isPending} error={rules.isError ? rules.error : null} onRetry={() => void rules.refetch()} onCreate={() => setCreateOpen(true)} />
+        ) : (
+          <ChannelsPanel />
+        )}
       </Card>
       <CliEquivalent command={tab === "rules" ? "fleetly alerts rules list" : "fleetly channels list"} />
 
