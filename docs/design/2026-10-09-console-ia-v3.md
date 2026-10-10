@@ -137,6 +137,7 @@ Task 是程序化工作负载（one-shot / resident 双形态 + Owner Lease；Sc
 
 - **Volumes**：列表 + 创建（节点钉住）+ 挂载 Apps 反查；用量/删除二期（删除仅限未挂载）。
 - **Uploads**：源包列表（digest/大小/引用 build）。
+- **复裁（2026-10-11，用户裁决）**：独立 UsageIndex 块撤除——Volume 挂载反查收编为 Volumes 列表 "Mounted by" 列（app 名 / database 载体卷 / 未挂载 `—`；与行内删除门控同源同判据），Upload 引用反查收编为 Uploads 列表 "Referenced by" 列。"resolved from frozen app specs" 的诚实边界降为列表卡脚注。
 
 ### 5.5 创建对话框契约（New app / New database）
 
@@ -152,7 +153,7 @@ Task 是程序化工作负载（one-shot / resident 双形态 + Owner Lease；Sc
 
 - **`PageFrame`**——页面壳单源（宽容器 + 页头，width=wide/narrow/flow 对齐 Dashboard·List·Workbench/Settings/Flow 三档宽度；无页头形态服务 Detail 类自带 crumb/英雄卡的页）。手拼 `mx-auto max-w-* px-6 pt-6` 是反模式（守卫执法）。
 - **`ListPage` / `ListCard`**——简单 CRUD 列表：工具栏（快筛 + filters 槽 + 计数 + 主动作槽）+ 表格四态（骨架/错误/源空/过滤空，DataTable 底座）+ 客户端分页 + CLI equivalent 行全部内建；`children` 渲染槽供跨行展开等特例（nodes 行级错误行、identity 设密行、tasks runs 展开），`appendix` 槽承接揭示弹窗/脚注。对齐批 5 裁决随模板固化：列表主动作钉工具栏行最右，ListPage 不设页头钮位。
-- **`ModulePage`**——一页多模块复杂页：PageFrame + PageTabs + `lead` 槽（页级前置物如 Alerts firing 摘要条、Storage UsageIndex）；tab 深链（zod validateSearch）是路由类型面，各路由自带。
+- **`ModulePage`**——一页多模块复杂页：PageFrame + PageTabs + `lead` 槽（页级前置物如 Alerts firing 摘要条）；tab 深链（zod validateSearch）是路由类型面，各路由自带。
 - **`SectionCard`**——Settings 原型区块卡（图标 + 标题 + 动作位 + 内容）。
 - **`ConfirmDialog`**——确认弹窗薄封装（pendingLabel/破坏性色可调，落定即关窗为全站统一契约；window.confirm 禁单执法）。
 

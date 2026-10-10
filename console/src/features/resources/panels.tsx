@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { PlusIcon } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { LinkIcon, PlusIcon } from "lucide-react";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
 import { toast } from "sonner";
 import {
@@ -612,7 +612,7 @@ function VolumesTab({ projectId }: { projectId: string }) {
   const volumes = useVolumes(projectId);
   const apps = useApps(projectId);
   const databases = useDatabases(projectId);
-  const { specs } = useAppSpecs(projectId, apps.data ?? []);
+  const { specs, pending: specsPending } = useAppSpecs(projectId, apps.data ?? []);
   const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState("");
   const [pinnedNode, setPinnedNode] = useState("");
@@ -623,17 +623,15 @@ function VolumesTab({ projectId }: { projectId: string }) {
     invalidate: [["resources", "volumes", projectId]],
   });
   // 挂载判据（IA v3 二期⑤b）：卷锚 = 平台卷名（App 冻结 Spec 的卷附件
-  // volume_id 与 Database 挂靠卷名公式都按 Name——引擎同口径）。
+  // volume_id 与 Database 挂靠卷名公式都按 Name——引擎同口径；W-7 对齐）。
   const volumeIndex = specIndex(specs, (spec) =>
     (spec.processes ?? []).flatMap((process) => (process.volumes ?? []).map((volume) => volume.volume_id ?? "")),
   );
   const appName = (id: string) => (apps.data ?? []).find((app) => app.id === id)?.name ?? id;
-  const mountOf = (volume: { name?: string }): string | null => {
-    const users = volumeIndex.get(volume.name ?? "") ?? [];
-    const db = (databases.data ?? []).some((database) => database.name === volume.name);
-    if (db) return "carrier data volume of database " + volume.name;
-    if (users.length > 0) return "mounted by " + users.map(appName).join(",");
-    return null;
+  const mountOf = (volume: { name?: string }): { carrier: boolean; users: string[] } => {
+    const users = (volumeIndex.get(volume.name ?? "") ?? []).map(appName);
+    const carried = (databases.data ?? []).some((database) => database.name === volume.name);
+    return { carrier: carried, users: carried ? [] : users };
   };
 
   const columns: LegacyColumnDef<{ id?: string; name?: string; pinned_node_id?: string; created_at?: string }, any>[] = [
@@ -642,6 +640,31 @@ function VolumesTab({ projectId }: { projectId: string }) {
       accessorKey: "pinned_node_id",
       header: "Pinned node",
       cell: ({ row }) => <span className="font-mono text-xs text-muted-foreground">{row.original.pinned_node_id || "any"}</span>,
+    },
+    {
+      id: "mounted_by",
+      header: "Mounted by",
+      cell: ({ row }) => {
+        if (specsPending) return <span className="text-xs text-muted-foreground">…</span>;
+        const mount = mountOf(row.original);
+        if (mount.carrier) {
+          return (
+            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+              <LinkIcon className="size-3" />
+              database {row.original.name} (carrier data volume)
+            </span>
+          );
+        }
+        if (mount.users.length > 0) {
+          return (
+            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+              <LinkIcon className="size-3" />
+              {mount.users.join(", ")}
+            </span>
+          );
+        }
+        return <span className="text-xs text-muted-foreground">—</span>;
+      },
     },
     {
       accessorKey: "created_at",
@@ -655,7 +678,16 @@ function VolumesTab({ projectId }: { projectId: string }) {
     {
       id: "actions",
       header: () => <span className="sr-only">Actions</span>,
-      cell: ({ row }) => <VolumeActionsCell volume={row.original} mount={mountOf(row.original)} projectId={projectId} />,
+      cell: ({ row }) => {
+        const mount = mountOf(row.original);
+        return (
+          <VolumeActionsCell
+            volume={row.original}
+            mounted={mount.carrier || mount.users.length > 0}
+            projectId={projectId}
+          />
+        );
+      },
     },
   ];
 
@@ -728,20 +760,24 @@ function VolumesTab({ projectId }: { projectId: string }) {
           />
         }
       />
+      <p className="text-xs text-muted-foreground">
+        Mounts resolve from frozen app specs — new references go live on the app's next deploy.
+      </p>
     </section>
   );
 }
 
 // VolumeActionsCell：未挂载才可删（挂载判据由服务端 E_CONFLICT 兜底——
-// 客户端禁用是前置体验面）；删除仅收口平台行，底层 runtime 卷留存（数据
-// 兜底永不级联），AlertDialog 确认文案明示。
+// 客户端隐藏是前置体验面；挂载方信息由 Mounted by 列承载）；删除仅收口
+// 平台行，底层 runtime 卷留存（数据兜底永不级联），AlertDialog 确认文案
+// 明示。
 function VolumeActionsCell({
   volume,
-  mount,
+  mounted,
   projectId,
 }: {
   volume: { id?: string; name?: string };
-  mount: string | null;
+  mounted: boolean;
   projectId: string;
 }) {
   const del = useApiMutation({
@@ -749,14 +785,8 @@ function VolumeActionsCell({
     method: "DELETE",
     invalidate: [["resources", "volumes", projectId]],
   });
-  if (mount) {
-    return (
-      <div className="text-right">
-        <span className="text-[11px] text-muted-foreground" title={mount}>
-          in use
-        </span>
-      </div>
-    );
+  if (mounted) {
+    return null;
   }
   return (
     <div className="text-right">
@@ -1173,10 +1203,17 @@ export function UploadsPanel({ projectId }: { projectId: string }) {
 
 function UploadsTab({ projectId }: { projectId: string }) {
   const uploads = useUploads(projectId);
+  const apps = useApps(projectId);
+  const { specs, pending: specsPending } = useAppSpecs(projectId, apps.data ?? []);
   const inputRef = useRef<HTMLInputElement>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [result, setResult] = useState<string | null>(null);
+
+  // upload → apps 引用反查（原 UsageIndex Upload→apps 面收编入列）：扫
+  // App 冻结 Spec 的 source.upload.id（客户端 fan-out，ADR-0057 惯例）。
+  const uploadIndex = specIndex(specs, (spec) => (spec.source?.upload?.id ? [spec.source.upload.id] : []));
+  const appName = (id: string) => (apps.data ?? []).find((app) => app.id === id)?.name ?? id;
 
   // webkitdirectory 是非标准属性（目录选择面）：React TS 类型不含它，
   // 经 ref 挂属性（Chromium/Firefox 均支持目录选择）。
@@ -1243,6 +1280,21 @@ function UploadsTab({ projectId }: { projectId: string }) {
         </span>
       ),
     },
+    {
+      id: "referenced_by",
+      header: "Referenced by",
+      cell: ({ row }) => {
+        if (specsPending) return <span className="text-xs text-muted-foreground">…</span>;
+        const users = (uploadIndex.get(row.original.id ?? "") ?? []).map(appName);
+        if (users.length === 0) return <span className="text-xs text-muted-foreground">—</span>;
+        return (
+          <span className="flex items-center gap-1 text-xs text-muted-foreground">
+            <LinkIcon className="size-3" />
+            {users.join(", ")}
+          </span>
+        );
+      },
+    },
   ];
 
   return (
@@ -1274,6 +1326,9 @@ function UploadsTab({ projectId }: { projectId: string }) {
       {pending ? <p className="px-1 text-xs text-muted-foreground">Packing & uploading…</p> : null}
       {error != null ? <FormError error={error} /> : null}
       {result != null ? <p className="px-1 text-xs text-muted-foreground">{result}</p> : null}
+      <p className="text-xs text-muted-foreground">
+        Upload references resolve from frozen app specs — they go live on the app's next deploy.
+      </p>
     </section>
   );
 }
