@@ -475,6 +475,15 @@ ADR-0015 升级序的完整落地形态：**Platform Backup 前置 → SIGTERM �
 - **W 项四修**：W-3（tombstone app Variables 空态面）/W-4（轮换确认框成功即关）/W-6（tags 404→E_NOT_FOUND，capability.RegistryContentError 类型化）/W-7（Usage index 补 Database 挂靠判据）。
 - **残留**：Alerts/Backups/Identity/Audit 四页工具栏（对齐批 4 收尾）；retention 行（config 无读取面）；Recent deployments 原型 hook 来源行；n0.dev 悬挂路由。
 
+## 2026-10-10 记录·三十一（对齐批 4 换装 1e47eba-align4：列表页统一收口 + 双主题截图复验）
+
+- **换装**（b59690e-iav3p2c → **1e47eba-align4（现役）**，对齐批 4 七 commit：TableWrap v2 透传/资源面板族容器一体/Tasks 页钮移页头/Deployments+Nodes 工具栏入卡/Registry 工具栏+CLI 行/四页规范收尾/dist 重建）：零迁移（goose 停 28）、零键面。前置 Platform Backup `996dae9c` + 十卷 tar（/root/upgrade-align4/vols/）+ 旧二进制留存（fleetlyd.b59690e.bak）。doctor 10 ok / 2 warning / 0 failed。
+- **零扰动断言全绿**：22 Running task 行与基线逐位一致；tw.dev 200；新 dist 上架实证（`GET /` 引用 `index-C7lQ0TYs.js`）；torchwood-pg 21 表锚不变。**ml.dev/ml-grpc/ml-api 404 为存量形态**——前轮现役 b59690e 启动日志（14:22:20）对同三路由报一模一样的 `backend unresolved (messageloop)`，非本批回归（本批 Go 侧仅 embed dist 变化）；messaging 三进程 task 均 Running，端点解析缺席成因另行排查。node2 行 last_seen 停在重启刻为 k3s 改造（拓扑 10-08 节）后的历史观测行，非权威、RelayCommand 重跑不适用。
+- **列表页规范形态（Apps 基准，逐页落地）**：①容器一体——工具栏嵌表格卡内顶部（`px-3 pt-3` + ListToolbar），TableWrap 以 `className="rounded-none border-0"` 嵌卡削自带边框（cn 合并）；②创建钮 PageHeader 右上紫主钮 + PlusIcon（New network/route/task/schedule/user/role/invitation 自包含钮件上移页头，Tasks/Schedules 与 Identity 四 tab 随 active tab 切换）；Volumes/Uploads/PutForm 描边白小钮升默认主钮；③CLI equivalent 行按动词在案诚实落位——新增 schedules list/users list/teams list/roles list/alerts rules list/channels list/platform backups/audit/registry catalog 九处；invitations/volumes/deployments 无对应 list 动词诚实省略。
+- **双主题截图复验 PASS**（staging 真机，暗 22 幅 + 亮 9 幅，image-viewer 判读）：容器一体/钮位/CLI 行 14 页全达成，亮色可读性无白字白底。**截图管道教训**：IAB fullPage 截图会 2x2 平铺伪影——视口截图才是单幅真；浏览器 profile 的 localStorage 主题持久化会让"默认主题"假设翻车（本机存的是 light，两批主题标签曾整体颠倒）——显式 `localStorage.setItem("fleetly_console_theme", …)` + reload 后再拍；Storage 页 Tabs 非受控（defaultValue，无 URL param），深链 `?tab=` 无效须点击切换。
+- **判读观察（既有形态/批 6 范围，不属本批回归）**：①面板族空态无工具栏卡（EmptyNote 早退结构，Apps 是空态在卡内——批 6 DataTable reskin 统一）；②两代表格表头字形并存（DataTable 混排 vs ui.tsx TableHead 10.5px uppercase——同为批 6 收口）；③Alerts channels tab 页头钮不随 tab 切换（New rule 恒在，渠道创建是占位钮）；④peers 小节标题全小写；⑤侧栏项目选择器不随直连 URL 同步（显示 localStorage 记忆项目）。
+- **换装操作手顺**：本机 `go build -ldflags "-X main.version=$(git rev-parse --short HEAD)-align4 …"`（版本戳纪律，记录·十二）→ scp → `fleetly platform backup` → 卷 tar → `systemctl stop fleetlyd` → `install -m 0755` → start → doctor → 探针 `curl -sk --resolve <host>:443:127.0.0.1 https://<host>/`。数据面核对直接 `docker exec <pg 任务容器> psql -U $POSTGRES_USER`（fleetly CLI 无 databases exec 动词；torchwood-pg 载体容器名 `fleetly-db-<id>.*`）。
+
 ## 教训与边界
 
 - **本机（Windows 工作机）出站对该 VPS 全端口受限**（80/443/8420 全 000；node2 路径全通）——外部验证走 node2 或 check-host 类服务，勿信本机 curl。
