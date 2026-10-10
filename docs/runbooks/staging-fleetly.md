@@ -453,6 +453,12 @@ ADR-0015 升级序的完整落地形态：**Platform Backup 前置 → SIGTERM �
 
 **边界**：KEK 全损 = 全部信封密文不可恢复（备份恢复同理）；轮换窗口内"新 key 就位但未 rewrap"期间，新写入的 Secret 已用新 key 封装，属正常中间态。
 
+## 2026-10-10 记录·二十八（IA v3 一期+二期①-⑤a 换装 7a74b9f-iav3p2 + 真机走查）
+
+- **换装**（69d7608-rolloutstall → **7a74b9f-iav3p2（现役）**，Console IA v3 一期 + 二期①-⑤a 五批）：零迁移（goose 停 28）、install.sh 零变更、config 键面零新增。前置 Platform Backup `129a0aff` + 六卷 tar（三库+zot+VL/VM 至 /root/upgrade-iav3/vols/）+ 旧二进制留存。drop-in 五件全存活。doctor 0 failed；tw.dev 冷窗后 200。
+- **新面真机**：GetStatus components 五组件真健康（Managed Providers 页真探活 details/ingest freshness "1s ago" 活体）；GetAppSpec 冻结 Spec 回读（Variables tab）；logs --database 真库载体日志（torchwood-pg）；DownloadBackup 真下载（55287B 与台账一致）；RestartComponent zot 真重启（1 carrier，15s 自愈回 healthy；unknown 精确 E_NOT_FOUND）。走查全录：docs/reviews/2026-10-10-console-ia-v3-staging-walkthrough.md（W-1/W-2 crumb 文案小项随批 6 修）。
+- **教训增补**：①console HTTP 在 9081 网关（9080 是 gRPC——HTTP/0.9 探针报错即探错口）；②tokens create 的 --role 取 ROLE_ID（builtin-owner）非角色名，且旗标必须前置（位置参数后旗标变位置参数——老坑新犯）。
+
 ## 教训与边界
 
 - **本机（Windows 工作机）出站对该 VPS 全端口受限**（80/443/8420 全 000；node2 路径全通）——外部验证走 node2 或 check-host 类服务，勿信本机 curl。
