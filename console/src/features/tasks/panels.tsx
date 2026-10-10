@@ -1,6 +1,8 @@
 import { useState } from "react";
+import { PlusIcon } from "lucide-react";
 import { useRuns, useSchedules, useTasks } from "@/lib/catalog";
 import { CliEquivalent, ListToolbar, useListFilter } from "@/components/domain/list-toolbar";
+import { Button } from "@/components/ui/button";
 import {
   DangerRowButton,
   EmptyNote,
@@ -45,10 +47,9 @@ function kvLines(text: string): Array<string> {
     .filter((line) => line !== "" && !line.startsWith("#"));
 }
 
-function TasksTab({ projectId }: { projectId: string }) {
-  const tasks = useTasks(projectId);
-  const [query, setQuery] = useState("");
-  const filtered = useListFilter(tasks.data ?? [], query, (task: { id?: string; name?: string; form?: string; state?: string; image?: string }) => [task.name ?? "", task.id ?? "", task.form ?? "", task.state ?? ""]);
+// NewTaskButton 是 Tasks 页头主创建钮（对齐批 4：创建入口收口 PageHeader
+// 右上，Apps 基准同款）——弹窗与 mutation 自包含。
+export function NewTaskButton({ projectId }: { projectId: string }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState({
     name: "",
@@ -83,17 +84,16 @@ function TasksTab({ projectId }: { projectId: string }) {
     invalidate: [["resources", "tasks", projectId]],
   });
   return (
-    <section className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-end justify-between gap-2">
-        <RowButton
-          onClick={() => {
-            setForm({ ...form, name: "", image: "" });
-            setCreateOpen(true);
-          }}
-        >
-          New task…
-        </RowButton>
-      </div>
+    <>
+      <Button
+        onClick={() => {
+          setForm({ ...form, name: "", image: "" });
+          setCreateOpen(true);
+        }}
+      >
+        <PlusIcon data-icon-start-inline />
+        New task…
+      </Button>
       <Modal title="New task" open={createOpen} onClose={() => setCreateOpen(false)}>
         <form
           className="flex flex-col gap-3"
@@ -152,6 +152,16 @@ function TasksTab({ projectId }: { projectId: string }) {
           </div>
         </form>
       </Modal>
+    </>
+  );
+}
+
+function TasksTab({ projectId }: { projectId: string }) {
+  const tasks = useTasks(projectId);
+  const [query, setQuery] = useState("");
+  const filtered = useListFilter(tasks.data ?? [], query, (task: { id?: string; name?: string; form?: string; state?: string; image?: string }) => [task.name ?? "", task.id ?? "", task.form ?? "", task.state ?? ""]);
+  return (
+    <section className="flex flex-col gap-3">
       {projectId === "" ? (
         <EmptyNote label="Enter a project id to list its tasks." />
       ) : tasks.isPending ? (
@@ -162,19 +172,21 @@ function TasksTab({ projectId }: { projectId: string }) {
         <EmptyNote label="No tasks." />
       ) : (
         <>
-          <div className="px-1">
-            <ListToolbar label="tasks" value={query} onChange={setQuery} placeholder="Filter tasks..." total={(tasks.data ?? []).length} shown={filtered.length} />
+          <div className="rounded-xl border bg-card">
+            <div className="px-3 pt-3">
+              <ListToolbar label="tasks" value={query} onChange={setQuery} placeholder="Filter tasks..." total={(tasks.data ?? []).length} shown={filtered.length} />
+            </div>
+            <TableWrap className="rounded-none border-0">
+              <table className="w-full text-sm">
+                <TableHead columns={["Task", "Form", "State", "Image", "", ""]} />
+                <tbody>
+                  {filtered.map((task) => (
+                    <TaskRow key={task.id} task={task} />
+                  ))}
+                </tbody>
+              </table>
+            </TableWrap>
           </div>
-          <TableWrap>
-            <table className="w-full text-sm">
-              <TableHead columns={["Task", "Form", "State", "Image", "", ""]} />
-              <tbody>
-                {filtered.map((task) => (
-                  <TaskRow key={task.id} task={task} />
-                ))}
-              </tbody>
-            </table>
-          </TableWrap>
           <CliEquivalent command={`fleetly tasks list --project ${projectId}`} />
         </>
       )}
@@ -308,8 +320,9 @@ function RunRow({ run }: { run: { id?: string; state?: string; status?: string; 
   );
 }
 
-function SchedulesTab({ projectId }: { projectId: string }) {
-  const schedules = useSchedules(projectId);
+// NewScheduleButton 是 Tasks 页 Schedules tab 的页头主创建钮（对齐批 4，
+// 随 active tab 切换挂 PageHeader 右上）——弹窗与 mutation 自包含。
+export function NewScheduleButton({ projectId }: { projectId: string }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState({ name: "", cron: "0 3 * * *", timezone: "UTC", image: "", command: "", env: "", ttl: "3600" });
   const create = useApiMutation({
@@ -328,17 +341,16 @@ function SchedulesTab({ projectId }: { projectId: string }) {
     invalidate: [["resources", "schedules", projectId]],
   });
   return (
-    <section className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-end justify-between gap-2">
-        <RowButton
-          onClick={() => {
-            setForm({ ...form, name: "", image: "" });
-            setCreateOpen(true);
-          }}
-        >
-          New schedule…
-        </RowButton>
-      </div>
+    <>
+      <Button
+        onClick={() => {
+          setForm({ ...form, name: "", image: "" });
+          setCreateOpen(true);
+        }}
+      >
+        <PlusIcon data-icon-start-inline />
+        New schedule…
+      </Button>
       <Modal title="New schedule" open={createOpen} onClose={() => setCreateOpen(false)}>
         <form
           className="flex flex-col gap-3"
@@ -378,6 +390,16 @@ function SchedulesTab({ projectId }: { projectId: string }) {
           </div>
         </form>
       </Modal>
+    </>
+  );
+}
+
+function SchedulesTab({ projectId }: { projectId: string }) {
+  const schedules = useSchedules(projectId);
+  const [query, setQuery] = useState("");
+  const filtered = useListFilter(schedules.data ?? [], query, (schedule: { name?: string; cron?: string; image?: string }) => [schedule.name ?? "", schedule.cron ?? "", schedule.image ?? ""]);
+  return (
+    <section className="flex flex-col gap-3">
       {projectId === "" ? (
         <EmptyNote label="Enter a project id to list its schedules." />
       ) : schedules.isPending ? (
@@ -387,16 +409,24 @@ function SchedulesTab({ projectId }: { projectId: string }) {
       ) : (schedules.data ?? []).length === 0 ? (
         <EmptyNote label="No schedules." />
       ) : (
-        <TableWrap>
-          <table className="w-full text-sm">
-            <TableHead columns={["Schedule", "Cron", "Image", "Next", ""]} />
-            <tbody>
-              {(schedules.data ?? []).map((schedule) => (
-                <ScheduleRow key={schedule.id} schedule={schedule} />
-              ))}
-            </tbody>
-          </table>
-        </TableWrap>
+        <>
+          <div className="rounded-xl border bg-card">
+            <div className="px-3 pt-3">
+              <ListToolbar label="schedules" value={query} onChange={setQuery} placeholder="Filter schedules..." total={(schedules.data ?? []).length} shown={filtered.length} />
+            </div>
+            <TableWrap className="rounded-none border-0">
+              <table className="w-full text-sm">
+                <TableHead columns={["Schedule", "Cron", "Image", "Next", ""]} />
+                <tbody>
+                  {filtered.map((schedule) => (
+                    <ScheduleRow key={schedule.id} schedule={schedule} />
+                  ))}
+                </tbody>
+              </table>
+            </TableWrap>
+          </div>
+          <CliEquivalent command={`fleetly schedules list --project ${projectId}`} />
+        </>
       )}
     </section>
   );
