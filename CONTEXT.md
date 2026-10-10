@@ -234,7 +234,7 @@ _Avoid_: notifier, sink
 
 **Managed Provider**:
 由平台以普通 Workload 形式托管部署的 Provider 实例。
-_Avoid_: component, addon, internal service
+_Avoid_: addon, internal service（component 经 ADR-0059 复裁为在册页面名词 Components，移出本表）
 
 ### 状态语义
 

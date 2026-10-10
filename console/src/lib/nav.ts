@@ -22,7 +22,8 @@ import {
 } from "lucide-react";
 
 // 导航单源（IA v3，docs/design/2026-10-09-console-ia-v3.md §3）：项目域
-// 用途分组（Build / Data & Storage / Network / Monitor / Configuration）
+// 用途分组（Build / Data & Storage / Network / Monitor；Configuration 组经
+// ADR-0059 同批重组并入 Data & Storage 的 Variables 项）
 // + 平台域（Fleet / Admin），zone 标记承载两域分界渲染。撤下
 // Templates/Quickstart/Terminal 导航项（路由保留：前两者入 + New 与 ⌘K，
 // Terminal 由 App 详情 tab 承接）；Data 拆为 Databases + Storage。
@@ -72,6 +73,9 @@ export function navSections(projectId: string | undefined): NavSection[] {
       items: [
         projectItem("Databases", `${projectBase}/databases`, Database),
         projectItem("Storage", `${projectBase}/storage`, HardDrive),
+        // Variables（原 Configuration 组单项，ADR-0059 同批重组）：项目级
+        // 秘钥/配置/共享变量聚合页——与 Shared Variables / Add variable 成族。
+        projectItem("Variables", `${projectBase}/configuration`, KeyRound),
       ],
     },
     {
@@ -91,16 +95,11 @@ export function navSections(projectId: string | undefined): NavSection[] {
       ],
     },
     {
-      label: "Configuration",
-      zone: "project",
-      items: [projectItem("Configuration", `${projectBase}/configuration`, KeyRound)],
-    },
-    {
       label: "Fleet",
       zone: "platform",
       items: [
         { label: "Nodes", to: "/nodes", icon: Box },
-        { label: "Managed Providers", to: "/providers", icon: Boxes },
+        { label: "Components", to: "/providers", icon: Boxes }, // ADR-0059：页名复裁 Components（route 保持 /providers）
         { label: "Events", to: "/events", icon: Zap },
         { label: "Alerts", to: "/alerts", icon: Bell },
         { label: "Backups", to: "/backups", icon: DatabaseBackup },

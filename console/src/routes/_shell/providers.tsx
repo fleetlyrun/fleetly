@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { ManagedProvidersView } from "@/features/fleet/providers-view";
 
-// Managed Providers（IA v3 T6，ADR-0058）：受管 Provider 实例的排障面。
+// Components（IA v3 T6，ADR-0058 定名 + ADR-0059 复裁；route 保持 /providers）。
 export const Route = createFileRoute("/_shell/providers")({
   component: ProvidersRoute,
 });

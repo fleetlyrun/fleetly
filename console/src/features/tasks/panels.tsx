@@ -201,9 +201,9 @@ function TaskRow({ task }: { task: { id?: string; name?: string; form?: string; 
   });
   return (
     <>
-      <tr className="border-b border-slate-800/60 hover:bg-slate-900/40">
+      <tr className="border-b border/60 hover:bg-muted/40">
         <td className="px-3 py-2">
-          <div className="font-medium text-slate-200">
+          <div className="font-medium text-foreground">
             <a
               href={`/p/${encodeURIComponent(task.project_id ?? "")}/tasks/${encodeURIComponent(task.id ?? "")}`}
               className="hover:text-sky-300 hover:underline"
@@ -212,13 +212,13 @@ function TaskRow({ task }: { task: { id?: string; name?: string; form?: string; 
               {task.name || shortId(task.id)}
             </a>
           </div>
-          <div className="font-mono text-xs text-slate-500" title={task.id}>
+          <div className="font-mono text-xs text-muted-foreground" title={task.id}>
             {shortId(task.id)}
           </div>
         </td>
-        <td className="px-3 py-2 text-xs text-slate-400">{task.form}</td>
-        <td className="px-3 py-2 text-xs text-slate-400">{task.state ?? task.status ?? "—"}</td>
-        <td className="px-3 py-2 font-mono text-xs text-slate-400">{task.image}</td>
+        <td className="px-3 py-2 text-xs text-muted-foreground">{task.form}</td>
+        <td className="px-3 py-2 text-xs text-muted-foreground">{task.state ?? task.status ?? "—"}</td>
+        <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{task.image}</td>
         <td className="px-3 py-2">
           <div className="flex flex-wrap items-center justify-end gap-1">
             <RowButton onClick={() => setExpanded((prev) => !prev)}>{expanded ? "hide runs" : "runs"}</RowButton>
@@ -228,7 +228,7 @@ function TaskRow({ task }: { task: { id?: string; name?: string; form?: string; 
                   value={scaleTo}
                   onChange={(event) => setScaleTo(event.target.value)}
                   placeholder="n"
-                  className="w-14 rounded border border-slate-700 bg-slate-900 px-1.5 py-0.5 text-xs"
+                  className="w-14 rounded border border bg-muted px-1.5 py-0.5 text-xs"
                 />
                 <RowButton disabled={scale.isPending || scaleTo === ""} onClick={() => void scale.mutate()}>
                   scale
@@ -250,7 +250,7 @@ function TaskRow({ task }: { task: { id?: string; name?: string; form?: string; 
         </td>
       </tr>
       {expanded ? (
-        <tr className="border-b border-slate-800/60 bg-slate-950/40">
+        <tr className="border-b bg-muted/30">
           <td colSpan={6} className="px-3 py-2">
             {runs.isPending ? (
               <LoadingNote label="Loading runs…" />
@@ -283,13 +283,13 @@ function RunRow({ run }: { run: { id?: string; state?: string; status?: string; 
     invalidate: [["resources", "runs"]],
   });
   return (
-    <tr className="border-b border-slate-800/40">
-      <td className="px-3 py-1.5 font-mono text-slate-400" title={run.id}>
+    <tr className="border-b border/40">
+      <td className="px-3 py-1.5 font-mono text-muted-foreground" title={run.id}>
         {shortId(run.id)}
       </td>
-      <td className="px-3 py-1.5 text-slate-400">{run.state ?? run.status ?? "—"}</td>
-      <td className="px-3 py-1.5 font-mono text-slate-500">{run.exit_code ?? "—"}</td>
-      <td className="px-3 py-1.5 text-slate-500">{formatTime(run.started_at ?? run.created_at)}</td>
+      <td className="px-3 py-1.5 text-muted-foreground">{run.state ?? run.status ?? "—"}</td>
+      <td className="px-3 py-1.5 font-mono text-muted-foreground">{run.exit_code ?? "—"}</td>
+      <td className="px-3 py-1.5 text-muted-foreground">{formatTime(run.started_at ?? run.created_at)}</td>
       <td className="px-3 py-1.5 text-right">
         <DangerRowButton confirm={`Stop run ${run.id}?`} disabled={stop.isPending} onClick={() => void stop.mutate()}>
           stop
@@ -405,19 +405,19 @@ function ScheduleRow({ schedule }: { schedule: { id?: string; name?: string; cro
     invalidate: [["resources", "schedules"]],
   });
   return (
-    <tr className="border-b border-slate-800/60 hover:bg-slate-900/40">
+    <tr className="border-b border/60 hover:bg-muted/40">
       <td className="px-3 py-2">
-        <div className="font-medium text-slate-200">{schedule.name || shortId(schedule.id)}</div>
-        <div className="font-mono text-xs text-slate-500" title={schedule.id}>
+        <div className="font-medium text-foreground">{schedule.name || shortId(schedule.id)}</div>
+        <div className="font-mono text-xs text-muted-foreground" title={schedule.id}>
           {shortId(schedule.id)}
         </div>
       </td>
-      <td className="px-3 py-2 font-mono text-xs text-slate-300">
+      <td className="px-3 py-2 font-mono text-xs text-foreground">
         {schedule.cron}
-        {schedule.timezone ? <span className="ml-1 text-slate-500">({schedule.timezone})</span> : null}
+        {schedule.timezone ? <span className="ml-1 text-muted-foreground">({schedule.timezone})</span> : null}
       </td>
-      <td className="px-3 py-2 font-mono text-xs text-slate-400">{schedule.image}</td>
-      <td className="px-3 py-2 text-xs text-slate-500">{formatTime(schedule.next_run_at)}</td>
+      <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{schedule.image}</td>
+      <td className="px-3 py-2 text-xs text-muted-foreground">{formatTime(schedule.next_run_at)}</td>
       <td className="px-3 py-2 text-right">
         <div className="flex items-center justify-end gap-1">
           <RowButton disabled={trigger.isPending} onClick={() => void trigger.mutate()} title="Run now (does not move the next tick)">

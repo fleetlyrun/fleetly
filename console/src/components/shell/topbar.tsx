@@ -28,7 +28,7 @@ const CRUMB_LABELS: Record<string, string> = {
   networks: "Networks",
   variables: "Variables",
   configuration: "Configuration",
-  providers: "Managed Providers",
+  providers: "Components",
   events: "Events",
   alerts: "Alerts",
   backups: "Backups",

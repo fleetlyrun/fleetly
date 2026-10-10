@@ -19,12 +19,13 @@ import { DatabaseLogsTab } from "@/features/databases/database-logs";
 import { downloadBackupChunks } from "@/api/streams";
 import { DATABASE_CARRIER_PRESETS } from "@/features/databases/database-metrics";
 import { MetricChart } from "@/features/metrics/metric-chart";
-import { useDatabases, useDatabaseBackups, useMetricsSeries, useApps } from "@/lib/catalog";
+import { useDatabases, useDatabaseBackups, useMetricsSeries, useApps, useProjectName } from "@/lib/catalog";
 import { useAppSpecs, specIndex, type AppSpec } from "@/features/spec/use-app-specs";
 import { CopyButton } from "@/components/domain/copy-button";
 import { ContentCrumb } from "@/components/domain/content-crumb";
 import { DataTable } from "@/components/domain/data-table";
 import { EmptyState } from "@/components/domain/empty-state";
+import { CliEquivalent, ListToolbar, useListFilter } from "@/components/domain/list-toolbar";
 import { PageHeader } from "@/components/domain/page-header";
 import { ProjectAvatar } from "@/components/domain/project-avatar";
 import { RelativeTime } from "@/components/domain/relative-time";
@@ -90,8 +91,15 @@ function invalidateDatabases(queryClient: ReturnType<typeof useQueryClient>) {
 export function DatabasesListPage({ projectId }: { projectId: string }) {
   const databases = useDatabases(projectId);
   const rows = databases.data ?? [];
+  const projectName = useProjectName(projectId);
   const navigate = useNavigate();
   const [createOpen, setCreateOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [engine, setEngine] = useState("all");
+  const engines = Array.from(new Set(rows.map((row) => row.engine ?? "").filter(Boolean))).sort();
+  const filtered = useListFilter(rows, query, (row: DatabaseEntry) => [row.name ?? "", row.engine ?? "", row.id ?? ""]).filter(
+    (row) => engine === "all" || row.engine === engine,
+  );
 
   const columns: LegacyColumnDef<DatabaseEntry, any>[] = [
     {
@@ -180,7 +188,11 @@ export function DatabasesListPage({ projectId }: { projectId: string }) {
     <div className="mx-auto max-w-7xl px-6 py-8">
       <PageHeader
         title="Databases"
-        description="Managed databases — scheduled backups with verify & restore (ADR-0039)"
+        description={
+          rows.length > 0
+            ? `${rows.length} database${rows.length === 1 ? "" : "s"} in ${projectName ?? "this project"} — scheduled backups with verify & restore (ADR-0039)`
+            : "Managed databases — scheduled backups with verify & restore (ADR-0039)"
+        }
         actions={
           <Button size="sm" onClick={() => setCreateOpen(true)}>
             <DatabaseIcon data-icon-start-inline />
@@ -188,8 +200,33 @@ export function DatabasesListPage({ projectId }: { projectId: string }) {
           </Button>
         }
       />
+      <div className="rounded-xl border bg-card">
+        <div className="px-3 pt-3">
+          <ListToolbar
+            label="databases"
+            value={query}
+            onChange={setQuery}
+            placeholder="Filter databases..."
+            total={rows.length}
+            shown={filtered.length}
+          >
+            <select
+              value={engine}
+              onChange={(event) => setEngine(event.target.value)}
+              aria-label="Filter by engine"
+              className="h-8 rounded-md border bg-muted/40 px-2 text-xs text-foreground"
+            >
+              <option value="all">All engines</option>
+              {engines.map((entry) => (
+                <option key={entry} value={entry}>
+                  {entry}
+                </option>
+              ))}
+            </select>
+          </ListToolbar>
+        </div>
       <DataTable
-        data={rows}
+        data={filtered}
         columns={columns}
         loading={databases.isPending}
         error={databases.error}
@@ -205,6 +242,8 @@ export function DatabasesListPage({ projectId }: { projectId: string }) {
           />
         }
       />
+      </div>
+      <CliEquivalent command={`fleetly databases list --project ${projectId}`} />
 
       <CreateDatabaseDialog
         projectId={projectId}

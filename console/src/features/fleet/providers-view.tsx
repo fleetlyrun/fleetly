@@ -26,10 +26,10 @@ import { PageHeader } from "@/components/domain/page-header";
 import { StatusBadge, type StatusTone } from "@/components/domain/status-badge";
 import { Button } from "@/components/ui/button";
 
-// Managed Providers 页（IA v3 T6，ADR-0058）：受管组件的排障驾驶舱。
-// 页名采用既有词条 Managed Provider（CONTEXT.md；"component" 在其 Avoid
-// 表——ADR-0058 记录该裁决），实名露出为 2026-10-09 拍板（推翻
-// "managed proxy" 泛称）。
+// Components 页（IA v3 T6，ADR-0058 + ADR-0059 复裁）：受管组件的排障
+// 驾驶舱。页名 ADR-0058 定 Managed Providers、ADR-0059 复裁 Components
+// （原型命名直觉胜出；route 保持 /providers）。实名露出为 2026-10-09
+// 拍板（推翻 "managed proxy" 泛称）。
 // 一期诚实边界（§5.2）：健康照实 unverified（GetStatus 恒 HEALTHY，
 // provider Health() 二期接线）；endpoint 是 config 文件唯源不可读；
 // Logs 侧 ingest 时效需 VL 查询代理（三期 ticket 面）。钉版数字是
@@ -74,7 +74,7 @@ export function ManagedProvidersView() {
   return (
     <div className="mx-auto max-w-7xl px-6 py-8">
       <PageHeader
-        title="Managed Providers"
+        title="Components"
         description="Platform-hosted provider instances — health, pins and data freshness"
         actions={
           <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11.5px] font-semibold ${degraded ? "border-destructive/30 bg-destructive/10 text-destructive" : "border-success/30 bg-success/10 text-[var(--status-success)]"}`}>

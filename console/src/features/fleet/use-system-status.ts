@@ -12,7 +12,7 @@ export interface SystemStatus {
 }
 
 // useSystemStatus 拉控制面状态 + 逐项 Provider 健康（IA v3 二期③：
-// GetStatus components——架构 §8 降级矩阵驱动）。Managed Providers 页
+// GetStatus components——架构 §8 降级矩阵驱动）。Components 页
 // 与状态徽标的数据源；30s 轮询同工作台口径。
 export function useSystemStatus() {
   return useQuery({

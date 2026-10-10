@@ -32,10 +32,10 @@ export function HookModal({ appId, appName, open, onClose }: { appId: string; ap
   if (oneTimeSecret != null) {
     return (
       <Modal title="Webhook secret (shown once)" open={open} onClose={() => { setOneTimeSecret(null); onClose(); }}>
-        <p className="text-xs text-slate-400">
+        <p className="text-xs text-muted-foreground">
           Point the repository webhook at this URL (the secret doubles as the GitHub signing secret). It is shown once — store it now.
         </p>
-        <pre className="overflow-x-auto rounded-md border border-slate-800 bg-slate-950 px-3 py-2 font-mono text-xs text-emerald-300">
+        <pre className="overflow-x-auto rounded-md border bg-muted px-3 py-2 font-mono text-xs text-emerald-600 dark:text-emerald-400">
           {`${window.location.origin}/v1/hooks/${oneTimeSecret}`}
         </pre>
         <PrimaryButton onClick={() => { setOneTimeSecret(null); onClose(); }}>Done</PrimaryButton>
@@ -50,20 +50,20 @@ export function HookModal({ appId, appName, open, onClose }: { appId: string; ap
       {hook.data != null ? (
         <div className="flex flex-col gap-3">
           <dl className="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-1.5 text-xs">
-            <dt className="text-slate-500">repo</dt>
-            <dd className="break-all font-mono text-slate-300">{hook.data.repo}</dd>
-            <dt className="text-slate-500">branch</dt>
-            <dd className="font-mono text-slate-300">{hook.data.branch || "(all branches)"}</dd>
-            <dt className="text-slate-500">dockerfile</dt>
-            <dd className="font-mono text-slate-300">{hook.data.dockerfile || "Dockerfile"}</dd>
-            <dt className="text-slate-500">watch paths</dt>
-            <dd className="font-mono text-slate-300">{(hook.data.watch_paths ?? []).join(" ") || "(all changes)"}</dd>
-            <dt className="text-slate-500">token prefix</dt>
-            <dd className="font-mono text-slate-300">{hook.data.token_prefix}…</dd>
-            <dt className="text-slate-500">updated</dt>
-            <dd className="text-slate-500">{hook.data.updated_at}</dd>
+            <dt className="text-muted-foreground">repo</dt>
+            <dd className="break-all font-mono text-foreground">{hook.data.repo}</dd>
+            <dt className="text-muted-foreground">branch</dt>
+            <dd className="font-mono text-foreground">{hook.data.branch || "(all branches)"}</dd>
+            <dt className="text-muted-foreground">dockerfile</dt>
+            <dd className="font-mono text-foreground">{hook.data.dockerfile || "Dockerfile"}</dd>
+            <dt className="text-muted-foreground">watch paths</dt>
+            <dd className="font-mono text-foreground">{(hook.data.watch_paths ?? []).join(" ") || "(all changes)"}</dd>
+            <dt className="text-muted-foreground">token prefix</dt>
+            <dd className="font-mono text-foreground">{hook.data.token_prefix}…</dd>
+            <dt className="text-muted-foreground">updated</dt>
+            <dd className="text-muted-foreground">{hook.data.updated_at}</dd>
           </dl>
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-muted-foreground">
             Pushes to the matching branch rebuild and deploy this app. The URL token doubles as the webhook signing secret; rotate it if it leaked.
           </p>
           <MutationBanner pending={rotate.isPending} error={rotate.error} success={null} />
@@ -109,7 +109,7 @@ function SetHookForm({ appId, onMinted, onCancel }: { appId: string; onMinted: (
         set.mutate(undefined, { onSuccess: (data) => { if (data.secret) onMinted(data.secret); } });
       }}
     >
-      <p className="text-xs text-slate-500">No hook yet — configure one to rebuild and deploy on push.</p>
+      <p className="text-xs text-muted-foreground">No hook yet — configure one to rebuild and deploy on push.</p>
       <Field label="Repository URL">
         <TextInput value={repo} onChange={(event) => setRepo(event.target.value)} placeholder="https://github.com/org/repo" autoFocus required />
       </Field>
