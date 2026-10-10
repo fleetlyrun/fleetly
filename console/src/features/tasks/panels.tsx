@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useRuns, useSchedules, useTasks } from "@/lib/catalog";
+import { CliEquivalent, ListToolbar, useListFilter } from "@/components/domain/list-toolbar";
 import {
   DangerRowButton,
   EmptyNote,
@@ -46,6 +47,8 @@ function kvLines(text: string): Array<string> {
 
 function TasksTab({ projectId }: { projectId: string }) {
   const tasks = useTasks(projectId);
+  const [query, setQuery] = useState("");
+  const filtered = useListFilter(tasks.data ?? [], query, (task: { id?: string; name?: string; form?: string; state?: string; image?: string }) => [task.name ?? "", task.id ?? "", task.form ?? "", task.state ?? ""]);
   const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState({
     name: "",
@@ -158,16 +161,22 @@ function TasksTab({ projectId }: { projectId: string }) {
       ) : (tasks.data ?? []).length === 0 ? (
         <EmptyNote label="No tasks." />
       ) : (
-        <TableWrap>
-          <table className="w-full text-sm">
-            <TableHead columns={["Task", "Form", "State", "Image", "", ""]} />
-            <tbody>
-              {(tasks.data ?? []).map((task) => (
-                <TaskRow key={task.id} task={task} />
-              ))}
-            </tbody>
-          </table>
-        </TableWrap>
+        <>
+          <div className="px-1">
+            <ListToolbar label="tasks" value={query} onChange={setQuery} placeholder="Filter tasks..." total={(tasks.data ?? []).length} shown={filtered.length} />
+          </div>
+          <TableWrap>
+            <table className="w-full text-sm">
+              <TableHead columns={["Task", "Form", "State", "Image", "", ""]} />
+              <tbody>
+                {filtered.map((task) => (
+                  <TaskRow key={task.id} task={task} />
+                ))}
+              </tbody>
+            </table>
+          </TableWrap>
+          <CliEquivalent command={`fleetly tasks list --project ${projectId}`} />
+        </>
       )}
     </section>
   );

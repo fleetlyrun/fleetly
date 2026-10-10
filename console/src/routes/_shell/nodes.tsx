@@ -10,6 +10,7 @@ import { describeError } from "@/lib/api-errors";
 import { CopyButton } from "@/components/domain/copy-button";
 import { EmptyState } from "@/components/domain/empty-state";
 import { ErrorState } from "@/components/domain/error-state";
+import { ListToolbar, useListFilter } from "@/components/domain/list-toolbar";
 import { PageHeader } from "@/components/domain/page-header";
 import { RelativeTime } from "@/components/domain/relative-time";
 import { StatusBadge, nodeTone } from "@/components/domain/status-badge";
@@ -59,7 +60,9 @@ function NodesPage() {
   const enroll = useEnrollMaterial(false, setMaterial);
   const rotate = useEnrollMaterial(true, setMaterial);
 
-  const rows = [...(nodes.data ?? [])].sort((a, b) => Number(b.available ?? false) - Number(a.available ?? false));
+  const [query, setQuery] = useState("");
+  const sorted = [...(nodes.data ?? [])].sort((a, b) => Number(b.available ?? false) - Number(a.available ?? false));
+  const rows = useListFilter(sorted, query, (node: { platform_id?: string; hostname?: string; role?: string }) => [node.hostname ?? "", node.platform_id ?? "", node.role ?? ""]);
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-8">
@@ -80,6 +83,11 @@ function NodesPage() {
       />
 
       <div className="rounded-xl border bg-card">
+        {nodes.data != null && nodes.data.length > 0 ? (
+          <div className="mb-3">
+            <ListToolbar label="nodes" value={query} onChange={setQuery} placeholder="Filter nodes..." total={nodes.data.length} shown={rows.length} />
+          </div>
+        ) : null}
         <Table>
           <TableHeader>
             <TableRow>

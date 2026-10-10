@@ -6,6 +6,7 @@ import { DeploySheet } from "@/features/deployments/deploy-sheet";
 import { useProjectDeployments, type Deployment } from "@/features/deployments/hooks";
 import { DataTable } from "@/components/domain/data-table";
 import { EmptyState } from "@/components/domain/empty-state";
+import { ListToolbar, useListFilter } from "@/components/domain/list-toolbar";
 import { PageHeader } from "@/components/domain/page-header";
 import { ProjectAvatar } from "@/components/domain/project-avatar";
 import { RelativeTime } from "@/components/domain/relative-time";
@@ -88,6 +89,8 @@ function ProjectDeploymentsPage() {
     },
   ];
 
+  const [query, setQuery] = useState("");
+  const filtered = useListFilter(deployments.data ?? [], query, (d: { id?: string; app_id?: string; state?: string; to_revision?: string }) => [d.id ?? "", d.app_id ?? "", d.state ?? "", d.to_revision ?? ""]);
   return (
     <div className="mx-auto max-w-7xl px-6 py-8">
       <PageHeader
@@ -100,9 +103,14 @@ function ProjectDeploymentsPage() {
           </Button>
         }
       />
+      {deployments.data != null && deployments.data.length > 0 ? (
+        <div className="mb-3 px-1">
+          <ListToolbar label="deployments" value={query} onChange={setQuery} placeholder="Filter deployments..." total={deployments.data.length} shown={filtered.length} />
+        </div>
+      ) : null}
       <div className="rounded-xl border bg-card">
         <DataTable
-          data={deployments.data}
+          data={filtered}
           columns={columns}
           loading={deployments.isPending}
           error={deployments.isError ? deployments.error : null}

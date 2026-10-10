@@ -18,6 +18,7 @@ import {
 } from "@/lib/catalog";
 import { apiSend, apiSendRaw } from "@/api/client";
 import { specIndex, useAppSpecs } from "@/features/spec/use-app-specs";
+import { CliEquivalent, ListToolbar, useListFilter } from "@/components/domain/list-toolbar";
 import { RelativeTime } from "@/components/domain/relative-time";
 import { Button } from "@/components/ui/button";
 import {
@@ -102,6 +103,8 @@ function NetworksTab({ projectId }: { projectId: string }) {
  const networks = useNetworks(projectId);
  const peers = useNetworkPeers(projectId);
  const [createOpen, setCreateOpen] = useState(false);
+ const [query, setQuery] = useState("");
+ const filtered = useListFilter(networks.data ?? [], query, (network: { name?: string; id?: string }) => [network.name ?? "", network.id ?? ""]);
  const [name, setName] = useState("");
  const [egressNone, setEgressNone] = useState(false);
  const create = useApiMutation({
@@ -149,16 +152,22 @@ function NetworksTab({ projectId }: { projectId: string }) {
       ) : networks.isError ? (
         <ErrorNote error={networks.error} />
       ) : (
-        <TableWrap>
-          <table className="w-full text-sm">
-            <TableHead columns={["Name","ID","Egress","Created",""]} />
-            <tbody>
-              {(networks.data ?? []).map((network) => (
-                <NetworkRow key={network.id} network={network} />
-              ))}
-            </tbody>
-          </table>
-        </TableWrap>
+        <>
+          <div className="px-1">
+            <ListToolbar label="networks" value={query} onChange={setQuery} placeholder="Filter networks..." total={(networks.data ?? []).length} shown={filtered.length} />
+          </div>
+          <TableWrap>
+            <table className="w-full text-sm">
+              <TableHead columns={["Name","ID","Egress","Created",""]} />
+              <tbody>
+                {filtered.map((network) => (
+                  <NetworkRow key={network.id} network={network} />
+                ))}
+              </tbody>
+            </table>
+          </TableWrap>
+          <CliEquivalent command={`fleetly networks list --project ${projectId}`} />
+        </>
       )}
       <h2 className="mt-4 text-sm font-semibold text-foreground">peers</h2>
       <p className="text-xs text-muted-foreground">
@@ -297,6 +306,8 @@ function DeclarePeerForm({ projectId, networks }: { projectId: string; networks:
 function RoutesTab({ projectId, apps }: { projectId: string; apps: Array<{ id: string; name: string }> }) {
  const routes = useRoutes(projectId);
  const [createOpen, setCreateOpen] = useState(false);
+ const [query, setQuery] = useState("");
+ const filtered = useListFilter(routes.data ?? [], query, (route: { host?: string; app_id?: string; process?: string }) => [route.host ?? "", route.app_id ?? "", route.process ?? ""]);
  const [form, setForm] = useState({ host:"", path:"", app: apps[0]?.id ??"", process:"web", port:"8080", protocol:"http", tls:"auto"});
  const create = useApiMutation({
  path:"/v1/routes",
@@ -387,16 +398,22 @@ function RoutesTab({ projectId, apps }: { projectId: string; apps: Array<{ id: s
       ) : (routes.data ?? []).length === 0 ? (
         <EmptyNote label="No routes — traffic enters through routes (managed proxy)."/>
       ) : (
-        <TableWrap>
-          <table className="w-full text-sm">
-            <TableHead columns={["Host","Path","Target","Port","TLS",""]} />
-            <tbody>
-              {(routes.data ?? []).map((route) => (
-                <RouteRow key={route.id} route={route} apps={apps} projectId={projectId} />
-              ))}
-            </tbody>
-          </table>
-        </TableWrap>
+        <>
+          <div className="px-1">
+            <ListToolbar label="routes" value={query} onChange={setQuery} placeholder="Filter routes..." total={(routes.data ?? []).length} shown={filtered.length} />
+          </div>
+          <TableWrap>
+            <table className="w-full text-sm">
+              <TableHead columns={["Host","Path","Target","Port","TLS",""]} />
+              <tbody>
+                {filtered.map((route) => (
+                  <RouteRow key={route.id} route={route} apps={apps} projectId={projectId} />
+                ))}
+              </tbody>
+            </table>
+          </TableWrap>
+          <CliEquivalent command={`fleetly routes list --project ${projectId}`} />
+        </>
       )}
     </section>
   );
@@ -446,6 +463,8 @@ function VolumesTab({ projectId }: { projectId: string }) {
  const databases = useDatabases(projectId);
  const { specs } = useAppSpecs(projectId, apps.data ?? []);
  const [createOpen, setCreateOpen] = useState(false);
+ const [query, setQuery] = useState("");
+ const filtered = useListFilter(volumes.data ?? [], query, (volume: { name?: string; id?: string }) => [volume.name ?? "", volume.id ?? ""]);
  const [name, setName] = useState("");
  const [pinnedNode, setPinnedNode] = useState("");
  const create = useApiMutation({
@@ -515,6 +534,9 @@ function VolumesTab({ projectId }: { projectId: string }) {
           </form>
         </DialogContent>
       </Dialog>
+      <div className="px-1">
+        <ListToolbar label="volumes" value={query} onChange={setQuery} placeholder="Filter volumes..." total={(volumes.data ?? []).length} shown={filtered.length} />
+      </div>
       {volumes.isPending ? (
         <p className="py-6 text-center text-xs text-muted-foreground">Loading volumes…</p>
       ) : volumes.isError ? (
@@ -533,7 +555,7 @@ function VolumesTab({ projectId }: { projectId: string }) {
               </tr>
             </thead>
             <tbody>
-              {(volumes.data ?? []).map((volume) => (
+              {filtered.map((volume) => (
                 <VolumeRow key={volume.id} volume={volume} mount={mountOf(volume)} projectId={projectId} />
               ))}
             </tbody>
@@ -689,6 +711,8 @@ function PutForm({
 
 function SecretsTab({ projectId }: { projectId: string }) {
  const secrets = useSecrets(projectId);
+ const [query, setQuery] = useState("");
+ const filtered = useListFilter(secrets.data ?? [], query, (row: KeyValueRow) => [row.name ?? ""]);
  return (
     <section className="flex flex-col gap-3">
       <div className="flex justify-end">
@@ -709,16 +733,22 @@ function SecretsTab({ projectId }: { projectId: string }) {
       ) : (secrets.data ?? []).length === 0 ? (
         <EmptyNote label="No secrets."/>
       ) : (
-        <TableWrap>
-          <table className="w-full text-sm">
-            <TableHead columns={["Name","Updated",""]} />
-            <tbody>
-              {(secrets.data ?? []).map((secret) => (
-                <SecretRow key={secret.id ?? secret.name} row={secret} projectId={projectId} />
-              ))}
-            </tbody>
-          </table>
-        </TableWrap>
+        <>
+          <div className="px-1">
+            <ListToolbar label="secrets" value={query} onChange={setQuery} placeholder="Filter secrets..." total={(secrets.data ?? []).length} shown={filtered.length} />
+          </div>
+          <TableWrap>
+            <table className="w-full text-sm">
+              <TableHead columns={["Name","Updated",""]} />
+              <tbody>
+                {filtered.map((secret) => (
+                  <SecretRow key={secret.id ?? secret.name} row={secret} projectId={projectId} />
+                ))}
+              </tbody>
+            </table>
+          </TableWrap>
+          <CliEquivalent command={`fleetly secrets list --project ${projectId}`} />
+        </>
       )}
     </section>
   );
@@ -745,6 +775,8 @@ function SecretRow({ row, projectId }: { row: KeyValueRow; projectId: string }) 
 
 function ConfigsTab({ projectId }: { projectId: string }) {
  const configs = useConfigs(projectId);
+ const [query, setQuery] = useState("");
+ const filtered = useListFilter(configs.data ?? [], query, (config: { name?: string }) => [config.name ?? ""]);
  return (
     <section className="flex flex-col gap-3">
       <div className="flex justify-end">
@@ -764,20 +796,26 @@ function ConfigsTab({ projectId }: { projectId: string }) {
       ) : (configs.data ?? []).length === 0 ? (
         <EmptyNote label="No configs."/>
       ) : (
-        <TableWrap>
-          <table className="w-full text-sm">
-            <TableHead columns={["Name","Version","Updated"]} />
-            <tbody>
-              {(configs.data ?? []).map((config) => (
+        <>
+          <div className="px-1">
+            <ListToolbar label="configs" value={query} onChange={setQuery} placeholder="Filter configs..." total={(configs.data ?? []).length} shown={filtered.length} />
+          </div>
+          <TableWrap>
+            <table className="w-full text-sm">
+              <TableHead columns={["Name","Version","Updated"]} />
+              <tbody>
+                {filtered.map((config) => (
                 <tr key={config.id ?? config.name} className="border-b border hover:bg-muted/40">
                   <td className="px-3 py-2 font-mono text-foreground">{config.name}</td>
                   <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{config.version ??"—"}</td>
                   <td className="px-3 py-2 text-xs text-muted-foreground">{formatTime(config.created_at)}</td>
                 </tr>
               ))}
-            </tbody>
-          </table>
-        </TableWrap>
+              </tbody>
+            </table>
+          </TableWrap>
+          <CliEquivalent command={`fleetly configs list --project ${projectId}`} />
+        </>
       )}
     </section>
   );
@@ -785,6 +823,8 @@ function ConfigsTab({ projectId }: { projectId: string }) {
 
 function VariablesTab({ projectId, apps }: { projectId: string; apps: Array<{ id: string; name: string }> }) {
  const variables = useSharedVariables(projectId);
+ const [query, setQuery] = useState("");
+ const filtered = useListFilter(variables.data ?? [], query, (v: { name?: string }) => [v.name ?? ""]);
  const [banner, setBanner] = useState<string | null>(null);
  const [bannerError, setBannerError] = useState<unknown>(null);
  const [pending, setPending] = useState(false);
@@ -823,16 +863,22 @@ function VariablesTab({ projectId, apps }: { projectId: string; apps: Array<{ id
       ) : (variables.data ?? []).length === 0 ? (
         <EmptyNote label="No shared variables."/>
       ) : (
-        <TableWrap>
-          <table className="w-full text-sm">
-            <TableHead columns={["Name","Value","Updated",""]} />
-            <tbody>
-              {(variables.data ?? []).map((variable) => (
-                <VariableRow key={variable.id ?? variable.name} row={variable} projectId={projectId} apps={apps} />
-              ))}
-            </tbody>
-          </table>
-        </TableWrap>
+        <>
+          <div className="px-1">
+            <ListToolbar label="shared variables" value={query} onChange={setQuery} placeholder="Filter variables..." total={(variables.data ?? []).length} shown={filtered.length} />
+          </div>
+          <TableWrap>
+            <table className="w-full text-sm">
+              <TableHead columns={["Name","Value","Updated",""]} />
+              <tbody>
+                {filtered.map((variable) => (
+                  <VariableRow key={variable.id ?? variable.name} row={variable} projectId={projectId} apps={apps} />
+                ))}
+              </tbody>
+            </table>
+          </TableWrap>
+          <CliEquivalent command={`fleetly shared-variables list --project ${projectId}`} />
+        </>
       )}
     </section>
   );
@@ -1063,6 +1109,8 @@ function DatabaseRow({ database, projectId }: { database: { id?: string; name?: 
 
 function UploadsTab({ projectId }: { projectId: string }) {
  const uploads = useUploads(projectId);
+ const [query, setQuery] = useState("");
+ const filtered = useListFilter(uploads.data ?? [], query, (upload: { id?: string; digest?: string }) => [upload.id ?? "", upload.digest ?? ""]);
  const inputRef = useRef<HTMLInputElement>(null);
  const [pending, setPending] = useState(false);
  const [error, setError] = useState<unknown>(null);
@@ -1118,18 +1166,22 @@ function UploadsTab({ projectId }: { projectId: string }) {
       ) : (uploads.data ?? []).length === 0 ? (
         <p className="rounded-xl border bg-card p-6 text-center text-xs text-muted-foreground">No uploads — pick a directory to build a deployable source.</p>
       ) : (
-        <div className="overflow-hidden rounded-xl border">
-          <table className="w-full text-sm">
-            <thead className="border-b bg-muted/40 text-left text-[10.5px] font-semibold tracking-wide text-muted-foreground uppercase">
-              <tr>
-                <th className="px-3 py-2">Upload</th>
+        <>
+          <div className="px-1">
+            <ListToolbar label="uploads" value={query} onChange={setQuery} placeholder="Filter uploads..." total={(uploads.data ?? []).length} shown={filtered.length} />
+          </div>
+          <div className="overflow-hidden rounded-xl border">
+            <table className="w-full text-sm">
+              <thead className="border-b bg-muted/40 text-left text-[10.5px] font-semibold tracking-wide text-muted-foreground uppercase">
+                <tr>
+                  <th className="px-3 py-2">Upload</th>
                 <th className="px-3 py-2">Size</th>
                 <th className="px-3 py-2">Digest</th>
                 <th className="px-3 py-2">Created</th>
               </tr>
             </thead>
             <tbody>
-              {(uploads.data ?? []).map((upload) => (
+              {filtered.map((upload) => (
                 <tr key={upload.id} className="border-b transition-colors last:border-b-0 hover:bg-muted/40">
                   <td className="px-3 py-2 font-mono text-xs"title={upload.id}>
                     {upload.id}
@@ -1143,9 +1195,11 @@ function UploadsTab({ projectId }: { projectId: string }) {
                   </td>
                 </tr>
               ))}
-            </tbody>
-          </table>
-        </div>
+              </tbody>
+            </table>
+          </div>
+          <CliEquivalent command={`fleetly uploads list --project ${projectId}`} />
+        </>
       )}
     </section>
   );
