@@ -8,6 +8,7 @@ import type { components as telemetrySchemas } from "@/api/telemetry";
 import { apiSend } from "@/api/client";
 import { useAlertRules, useAlertStates, useAlertingChannels } from "@/lib/catalog";
 import { CreateRuleDialog } from "@/features/alerts/create-rule-dialog";
+import { CliEquivalent, ListToolbar, useListFilter } from "@/components/domain/list-toolbar";
 import { CopyButton } from "@/components/domain/copy-button";
 import { ErrorState } from "@/components/domain/error-state";
 import { PageHeader } from "@/components/domain/page-header";
@@ -64,7 +65,7 @@ function AlertsPage() {
         title="Alerts"
         description="Alert rules and notification channels — evaluated every 30s"
         actions={
-          <Button size="sm" onClick={() => setCreateOpen(true)}>
+          <Button onClick={() => setCreateOpen(true)}>
             <PlusIcon data-icon-start-inline />
             New rule
           </Button>
@@ -106,6 +107,7 @@ function AlertsPage() {
           )}
         </Tabs>
       </Card>
+      <CliEquivalent command={tab === "rules" ? "fleetly alerts rules list" : "fleetly channels list"} />
 
       <CreateRuleDialog open={createOpen} onOpenChange={setCreateOpen} />
     </div>
@@ -127,9 +129,14 @@ function RulesPanel({
 }) {
   const stateOf = new Map(states.map((state) => [state.rule_id ?? "", state]));
   const [deleting, setDeleting] = useState<AlertRule | null>(null);
+  const [query, setQuery] = useState("");
+  const filtered = useListFilter(rules, query, (rule: AlertRule) => [rule.app_id ?? "", rule.metric ?? ""]);
 
   return (
     <>
+      <div className="px-3 pt-3">
+        <ListToolbar label="alert rules" value={query} onChange={setQuery} placeholder="Filter rules..." total={rules.length} shown={filtered.length} />
+      </div>
       <Table>
         <TableHeader>
           <TableRow>
@@ -168,8 +175,14 @@ function RulesPanel({
                 </div>
               </TableCell>
             </TableRow>
+          ) : filtered.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={7} className="py-8 text-center text-sm text-muted-foreground">
+                No rules match the filter.
+              </TableCell>
+            </TableRow>
           ) : (
-            rules.map((rule) => {
+            filtered.map((rule) => {
               const live = stateOf.get(rule.id ?? "");
               return (
                 <TableRow key={rule.id}>
@@ -240,6 +253,8 @@ function ChannelsPanel() {
   const channels = useAlertingChannels();
   const [deleting, setDeleting] = useState<Channel | null>(null);
   const [testing, setTesting] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const filtered = useListFilter(channels.data ?? [], query, (channel: Channel) => [channel.name ?? "", channel.kind ?? ""]);
 
   function runTest(channelId: string) {
     setTesting(channelId);
@@ -251,12 +266,14 @@ function ChannelsPanel() {
 
   return (
     <>
-      <div className="flex justify-end px-3 pt-3">
-        {/* 渠道创建 Dialog 批 6 补齐（表单面迁移尾巴，不在本批谎称完成） */}
-        <Button size="sm" variant="outline" disabled title="Ships with the settings milestone">
-          <PlusIcon data-icon-start-inline />
-          New channel
-        </Button>
+      <div className="px-3 pt-3">
+        <ListToolbar label="channels" value={query} onChange={setQuery} placeholder="Filter channels..." total={(channels.data ?? []).length} shown={filtered.length}>
+          {/* 渠道创建 Dialog 批 6 补齐（表单面迁移尾巴，不在本批谎称完成） */}
+          <Button size="sm" variant="outline" disabled title="Ships with the settings milestone">
+            <PlusIcon data-icon-start-inline />
+            New channel
+          </Button>
+        </ListToolbar>
       </div>
       <Table>
         <TableHeader>
@@ -282,8 +299,14 @@ function ChannelsPanel() {
                 No notification channels — register a webhook or telegram channel so alerts reach someone.
               </TableCell>
             </TableRow>
+          ) : filtered.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
+                No channels match the filter.
+              </TableCell>
+            </TableRow>
           ) : (
-            (channels.data ?? []).map((channel) => (
+            filtered.map((channel) => (
               <TableRow key={channel.id}>
                 <TableCell className="text-[13px] font-medium">
                   {channel.name}

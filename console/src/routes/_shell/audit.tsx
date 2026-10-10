@@ -4,6 +4,7 @@ import { formatAbsolute } from "@/lib/format";
 import { useAudit } from "@/lib/catalog";
 import { EmptyState } from "@/components/domain/empty-state";
 import { ErrorState } from "@/components/domain/error-state";
+import { CliEquivalent } from "@/components/domain/list-toolbar";
 import { PageHeader } from "@/components/domain/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -137,6 +138,7 @@ function AuditPageV2() {
           </TableBody>
         </Table>
       </div>
+      <CliEquivalent command="fleetly audit --limit 100" />
     </div>
   );
 }

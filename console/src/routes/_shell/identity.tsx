@@ -9,6 +9,7 @@ import { apiSend } from "@/api/client";
 import { describeError } from "@/lib/api-errors";
 import { useInvitations, useRoles, useTeams, useUsers } from "@/lib/catalog";
 import { CopyButton } from "@/components/domain/copy-button";
+import { CliEquivalent } from "@/components/domain/list-toolbar";
 import { EmptyState } from "@/components/domain/empty-state";
 import { ErrorState } from "@/components/domain/error-state";
 import { PageHeader } from "@/components/domain/page-header";
@@ -65,10 +66,31 @@ export const Route = createFileRoute("/_shell/identity")({
 function IdentityPageV2() {
   const navigate = Route.useNavigate();
   const tab = Route.useSearch({ select: (search) => search.tab ?? "users" });
+  // 创建入口随 active tab 收口 PageHeader 右上（对齐批 4，Apps 基准同款）；
+  // teams 走卡下内联表单故无页头钮。切 tab 即收起未完成的创建弹窗。
+  const [createOpen, setCreateOpen] = useState(false);
   return (
     <div className="mx-auto max-w-7xl px-6 py-8">
-      <PageHeader title="Identity" description="Users, teams, roles and invitations — the RBAC face" />
-      <Tabs value={tab} onValueChange={(value) => void navigate({ search: { tab: value as "users" | "teams" | "roles" | "invitations" } })} className="mb-4">
+      <PageHeader
+        title="Identity"
+        description="Users, teams, roles and invitations — the RBAC face"
+        actions={
+          tab === "teams" ? undefined : (
+            <Button onClick={() => setCreateOpen(true)}>
+              <PlusIcon data-icon-start-inline />
+              {tab === "users" ? "New user…" : tab === "roles" ? "New role…" : "New invitation…"}
+            </Button>
+          )
+        }
+      />
+      <Tabs
+        value={tab}
+        onValueChange={(value) => {
+          setCreateOpen(false);
+          void navigate({ search: { tab: value as "users" | "teams" | "roles" | "invitations" } });
+        }}
+        className="mb-4"
+      >
         <TabsList className="bg-transparent">
           <TabsTrigger value="users">Users</TabsTrigger>
           <TabsTrigger value="teams">Teams</TabsTrigger>
@@ -76,10 +98,10 @@ function IdentityPageV2() {
           <TabsTrigger value="invitations">Invitations</TabsTrigger>
         </TabsList>
       </Tabs>
-      {tab === "users" ? <UsersTab /> : null}
+      {tab === "users" ? <UsersTab createOpen={createOpen} onCreateOpenChange={setCreateOpen} /> : null}
       {tab === "teams" ? <TeamsTab /> : null}
-      {tab === "roles" ? <RolesTab /> : null}
-      {tab === "invitations" ? <InvitationsTab /> : null}
+      {tab === "roles" ? <RolesTab createOpen={createOpen} onCreateOpenChange={setCreateOpen} /> : null}
+      {tab === "invitations" ? <InvitationsTab createOpen={createOpen} onCreateOpenChange={setCreateOpen} /> : null}
     </div>
   );
 }
@@ -101,17 +123,10 @@ function fieldError(error: unknown): string {
 
 // ---- users ----
 
-function UsersTab() {
+function UsersTab({ createOpen, onCreateOpenChange }: { createOpen: boolean; onCreateOpenChange: (open: boolean) => void }) {
   const users = useUsers();
-  const [createOpen, setCreateOpen] = useState(false);
   return (
     <>
-      <div className="mb-3 flex justify-end">
-        <Button size="sm" onClick={() => setCreateOpen(true)}>
-          <PlusIcon data-icon-start-inline />
-          New user…
-        </Button>
-      </div>
       <PanelCard>
         <Table>
           <TableHeader>
@@ -143,7 +158,8 @@ function UsersTab() {
           </TableBody>
         </Table>
       </PanelCard>
-      <CreateUserDialog open={createOpen} onClose={() => setCreateOpen(false)} />
+      <CliEquivalent command="fleetly users list" />
+      <CreateUserDialog open={createOpen} onClose={() => onCreateOpenChange(false)} />
     </>
   );
 }
@@ -364,6 +380,7 @@ function TeamsTab() {
           </TableBody>
         </Table>
       </PanelCard>
+      <CliEquivalent command="fleetly teams list" />
       <form
         className="mt-3 flex items-end gap-3"
         onSubmit={(event) => {
@@ -401,18 +418,11 @@ function TeamsTab() {
 
 // ---- roles ----
 
-function RolesTab() {
+function RolesTab({ createOpen, onCreateOpenChange }: { createOpen: boolean; onCreateOpenChange: (open: boolean) => void }) {
   const teams = useTeams();
   const roles = useRoles();
-  const [createOpen, setCreateOpen] = useState(false);
   return (
     <>
-      <div className="mb-3 flex justify-end">
-        <Button size="sm" onClick={() => setCreateOpen(true)}>
-          <PlusIcon data-icon-start-inline />
-          New role…
-        </Button>
-      </div>
       <PanelCard>
         <Table>
           <TableHeader>
@@ -441,7 +451,8 @@ function RolesTab() {
           </TableBody>
         </Table>
       </PanelCard>
-      <CreateRoleDialog open={createOpen} onClose={() => setCreateOpen(false)} teams={teams.data ?? []} />
+      <CliEquivalent command="fleetly roles list" />
+      <CreateRoleDialog open={createOpen} onClose={() => onCreateOpenChange(false)} teams={teams.data ?? []} />
     </>
   );
 }
@@ -549,19 +560,12 @@ function CreateRoleDialog({ open, onClose, teams }: { open: boolean; onClose: ()
 
 // ---- invitations ----
 
-function InvitationsTab() {
+function InvitationsTab({ createOpen, onCreateOpenChange }: { createOpen: boolean; onCreateOpenChange: (open: boolean) => void }) {
   const invitations = useInvitations();
   const teams = useTeams();
   const roles = useRoles();
-  const [createOpen, setCreateOpen] = useState(false);
   return (
     <>
-      <div className="mb-3 flex justify-end">
-        <Button size="sm" onClick={() => setCreateOpen(true)}>
-          <PlusIcon data-icon-start-inline />
-          New invitation…
-        </Button>
-      </div>
       <PanelCard>
         <Table>
           <TableHeader>
@@ -610,7 +614,8 @@ function InvitationsTab() {
           </TableBody>
         </Table>
       </PanelCard>
-      <CreateInvitationDialog open={createOpen} onClose={() => setCreateOpen(false)} teams={teams.data ?? []} roles={roles.data ?? []} />
+      {/* invitations 无 CLI list 动词——CLI 行诚实省略 */}
+      <CreateInvitationDialog open={createOpen} onClose={() => onCreateOpenChange(false)} teams={teams.data ?? []} roles={roles.data ?? []} />
     </>
   );
 }

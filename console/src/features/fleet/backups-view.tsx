@@ -1,13 +1,16 @@
+import { useState } from "react";
 import { useQueries } from "@tanstack/react-query";
 import { DatabaseIcon, HardDriveDownloadIcon, LinkIcon } from "lucide-react";
 import { apiFetch } from "@/api/client";
 import type { components } from "@/api/structure";
 import { backupHealth } from "@/features/databases/backup-health";
+import { CliEquivalent, ListToolbar, useListFilter } from "@/components/domain/list-toolbar";
 import { EmptyState } from "@/components/domain/empty-state";
 import { PageHeader } from "@/components/domain/page-header";
 import { ProjectAvatar } from "@/components/domain/project-avatar";
 import { RelativeTime } from "@/components/domain/relative-time";
 import { statusToneClass } from "@/components/domain/status-badge";
+import { TableWrap } from "@/components/ui";
 import { usePlatformBackups, useProjects } from "@/lib/catalog";
 
 type DatabaseEntry = components["schemas"]["v1Database"];
@@ -38,8 +41,15 @@ export function BackupsView() {
       (databaseLists[index]?.data ?? []).map((database) => ({ project, database })),
     )
     .sort((a, b) => (a.database.last_backup_at ?? "").localeCompare(b.database.last_backup_at ?? ""));
-  const staleFirst = rows.filter((row) => backupHealth(row.database.last_backup_at).tone !== "success");
-  const healthyCount = rows.length - staleFirst.length;
+  const healthyCount = rows.filter((row) => backupHealth(row.database.last_backup_at).tone === "success").length;
+  const [query, setQuery] = useState("");
+  const filtered = useListFilter(rows, query, (row: { database: DatabaseEntry; project: { name?: string } }) => [
+    row.database.name ?? "",
+    row.database.engine ?? "",
+    row.project.name ?? "",
+  ]);
+  const staleRows = filtered.filter((row) => backupHealth(row.database.last_backup_at).tone !== "success");
+  const healthyRows = filtered.filter((row) => backupHealth(row.database.last_backup_at).tone === "success");
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-8">
@@ -62,20 +72,24 @@ export function BackupsView() {
             description="Database backup health rows appear here once databases exist."
           />
         ) : (
-          <div className="overflow-hidden rounded-xl border">
-            <table className="w-full text-sm">
-              <thead className="border-b bg-muted/40 text-left text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
-                <tr>
-                  <th className="px-3 py-2">Database</th>
-                  <th className="px-3 py-2">Project</th>
-                  <th className="px-3 py-2">Engine</th>
-                  <th className="px-3 py-2">Backup health</th>
-                  <th className="px-3 py-2">Restore state</th>
-                  <th className="px-3 py-2 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[...staleFirst, ...rows.filter((row) => backupHealth(row.database.last_backup_at).tone === "success")].map(
+          <div className="rounded-xl border bg-card">
+            <div className="px-3 pt-3">
+              <ListToolbar label="databases" value={query} onChange={setQuery} placeholder="Filter databases..." total={rows.length} shown={filtered.length} />
+            </div>
+            <TableWrap className="rounded-none border-0">
+              <table className="w-full text-sm">
+                <thead className="border-b bg-muted/40 text-left text-[10.5px] font-semibold tracking-wide text-muted-foreground uppercase">
+                  <tr>
+                    <th className="px-3 py-2">Database</th>
+                    <th className="px-3 py-2">Project</th>
+                    <th className="px-3 py-2">Engine</th>
+                    <th className="px-3 py-2">Backup health</th>
+                    <th className="px-3 py-2">Restore state</th>
+                    <th className="px-3 py-2 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...staleRows, ...healthyRows].map(
                   ({ project, database }) => {
                     const health = backupHealth(database.last_backup_at);
                     return (
@@ -121,8 +135,9 @@ export function BackupsView() {
                     );
                   },
                 )}
-              </tbody>
-            </table>
+                </tbody>
+              </table>
+            </TableWrap>
           </div>
         )}
       </section>
@@ -134,9 +149,9 @@ export function BackupsView() {
             No snapshots listed yet — the platform backup window writes here (local store + optional S3 mirror).
           </p>
         ) : (
-          <div className="overflow-hidden rounded-xl border">
+          <div className="overflow-hidden rounded-xl border bg-card">
             <table className="w-full text-sm">
-              <thead className="border-b bg-muted/40 text-left text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+              <thead className="border-b bg-muted/40 text-left text-[10.5px] font-semibold tracking-wide text-muted-foreground uppercase">
                 <tr>
                   <th className="px-3 py-2">Snapshot</th>
                   <th className="px-3 py-2">Host</th>
@@ -157,6 +172,7 @@ export function BackupsView() {
             </table>
           </div>
         )}
+        <CliEquivalent command="fleetly platform backups" />
         <p className="mt-3 flex items-center gap-1.5 text-[11.5px] text-muted-foreground">
           <HardDriveDownloadIcon className="size-3.5" />
           Snapshot cadence and retention follow the platform backup config; the local store is same-node — not disaster recovery.
