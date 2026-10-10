@@ -146,6 +146,18 @@ Task 是程序化工作负载（one-shot / resident 双形态 + Owner Lease；Sc
 - **New database**：Name + engine（5 引擎）+ 可选 restore-from-backup；引擎参数配置属二期（§8）。
 - 多步流程不进对话框：Restore 向导、模板实例化走 Flow 型页面（v2 六原型之 Flow）。
 
+### 5.6 页面模板层（2026-10-11 模板化批：六原型的代码级执法面）
+
+六原型此前只落到零件级（PageHeader/ListToolbar/DataTable 各自可用），页面壳 + 卡体 + 工具栏 + 四态表格体 + 分页 + CLI 行的组装仍每页手写。模板化批按业务形态归纳四件收口（`console/src/components/domain/`），新页面**先选模板、内容特殊才新增槽位**：
+
+- **`PageFrame`**——页面壳单源（宽容器 + 页头，width=wide/narrow/flow 对齐 Dashboard·List·Workbench/Settings/Flow 三档宽度；无页头形态服务 Detail 类自带 crumb/英雄卡的页）。手拼 `mx-auto max-w-* px-6 pt-6` 是反模式（守卫执法）。
+- **`ListPage` / `ListCard`**——简单 CRUD 列表：工具栏（快筛 + filters 槽 + 计数 + 主动作槽）+ 表格四态（骨架/错误/源空/过滤空，DataTable 底座）+ 客户端分页 + CLI equivalent 行全部内建；`children` 渲染槽供跨行展开等特例（nodes 行级错误行、identity 设密行、tasks runs 展开），`appendix` 槽承接揭示弹窗/脚注。对齐批 5 裁决随模板固化：列表主动作钉工具栏行最右，ListPage 不设页头钮位。
+- **`ModulePage`**——一页多模块复杂页：PageFrame + PageTabs + `lead` 槽（页级前置物如 Alerts firing 摘要条、Storage UsageIndex）；tab 深链（zod validateSearch）是路由类型面，各路由自带。
+- **`SectionCard`**——Settings 原型区块卡（图标 + 标题 + 动作位 + 内容）。
+- **`ConfirmDialog`**——确认弹窗薄封装（pendingLabel/破坏性色可调，落定即关窗为全站统一契约；window.confirm 禁单执法）。
+
+Workbench（logs/metrics/terminal）与 Dashboard 磁贴墙内容异构不强行套壳——出现第二个同类页时再抽对应模板。守卫新增禁单：手拼页面壳、pre-v2 共享层（components/ui.tsx 已退役）import、页面手接线分页（分页内建于 ListCard/DataTable）。
+
 ## 6. 路由映射
 
 | 现状 | 目标 | 动作 |
