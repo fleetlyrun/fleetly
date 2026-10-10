@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { cn } from "cn";
 import { ApiError, apiSend } from "../api/client";
 
 // 共享 UI 件（F2.6 只读三页骨架 + F3.1 写面扩展）：页面骨架、状态徽章、
@@ -215,17 +216,19 @@ export function useActionState() {
  return { success, error, setSuccess, setError, clear: () => { setSuccess(null); setError(null); } };
 }
 
-// TableWrap 是共享表格容器（横向滚动 + 边框）。
-export function TableWrap({ children }: { children: ReactNode }) {
- return <div className="overflow-x-auto rounded-lg border border">{children}</div>;
+// TableWrap 是共享表格容器（横向滚动 + 边框）。className 走 cn 合并——
+// 嵌入外层卡片时用 "rounded-none border-0" 削平自带边框（列表页容器
+// 一体规范：工具栏与表格同卡）。
+export function TableWrap({ children, className }: { children: ReactNode; className?: string }) {
+ return <div className={cn("overflow-x-auto rounded-xl border bg-card", className)}>{children}</div>;
 }
 
 export function TableHead({ columns }: { columns: readonly string[] }) {
  return (
     <thead>
-      <tr className="border-b border bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
+      <tr className="border-b bg-muted/40 text-left text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">
         {columns.map((column) => (
-          <th key={column} className="px-3 py-2 font-medium">
+          <th key={column} className="px-3 py-2 font-semibold">
             {column}
           </th>
         ))}
