@@ -3,6 +3,7 @@ backups
 browse
 create
 delete
+download-backup
 get
 list
 verify
