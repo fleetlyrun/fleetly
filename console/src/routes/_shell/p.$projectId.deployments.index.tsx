@@ -103,12 +103,10 @@ function ProjectDeploymentsPage() {
           </Button>
         }
       />
-      {deployments.data != null && deployments.data.length > 0 ? (
-        <div className="mb-3 px-1">
-          <ListToolbar label="deployments" value={query} onChange={setQuery} placeholder="Filter deployments..." total={deployments.data.length} shown={filtered.length} />
-        </div>
-      ) : null}
       <div className="rounded-xl border bg-card">
+        <div className="px-3 pt-3">
+          <ListToolbar label="deployments" value={query} onChange={setQuery} placeholder="Filter deployments..." total={(deployments.data ?? []).length} shown={filtered.length} />
+        </div>
         <DataTable
           data={filtered}
           columns={columns}

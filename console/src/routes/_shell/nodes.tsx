@@ -83,11 +83,9 @@ function NodesPage() {
       />
 
       <div className="rounded-xl border bg-card">
-        {nodes.data != null && nodes.data.length > 0 ? (
-          <div className="mb-3">
-            <ListToolbar label="nodes" value={query} onChange={setQuery} placeholder="Filter nodes..." total={nodes.data.length} shown={rows.length} />
-          </div>
-        ) : null}
+        <div className="px-3 pt-3">
+          <ListToolbar label="nodes" value={query} onChange={setQuery} placeholder="Filter nodes..." total={(nodes.data ?? []).length} shown={rows.length} />
+        </div>
         <Table>
           <TableHeader>
             <TableRow>
