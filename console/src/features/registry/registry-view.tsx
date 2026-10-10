@@ -6,6 +6,8 @@ import { apiFetch } from "@/api/client";
 import type { components } from "@/api/delivery";
 import { digestByRevisionId, latestDeploymentPerApp } from "@/features/registry/registry-model";
 import { DeploymentStatusBadge } from "@/components/domain/status-badge";
+import { CliEquivalent, ListToolbar, useListFilter } from "@/components/domain/list-toolbar";
+import { TableWrap } from "@/components/ui";
 import { CopyButton } from "@/components/domain/copy-button";
 import { EmptyState } from "@/components/domain/empty-state";
 import { PageHeader } from "@/components/domain/page-header";
@@ -41,6 +43,8 @@ export function RegistryView({ projectId }: { projectId: string }) {
   });
   const digests = digestByRevisionId(revisionLists.map((entry) => entry.data));
   const rows = (apps.data ?? []).map((app) => ({ app, deployment: latest.get(app.id) }));
+  const [query, setQuery] = useState("");
+  const filtered = useListFilter(rows, query, (row: { app: { id?: string; name?: string } }) => [row.app.name ?? "", row.app.id ?? ""]);
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-8">
@@ -55,64 +59,77 @@ export function RegistryView({ projectId }: { projectId: string }) {
           description="Registry rows appear per app once apps exist — each row resolves the running revision digest."
         />
       ) : (
-        <div className="overflow-hidden rounded-xl border">
-          <table className="w-full text-sm">
-            <thead className="border-b bg-muted/40 text-left text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
-              <tr>
-                <th className="px-3 py-2">App</th>
-                <th className="px-3 py-2">Latest deployment</th>
-                <th className="px-3 py-2">Revision digest</th>
-                <th className="px-3 py-2">Commit</th>
-                <th className="px-3 py-2">Deployed</th>
-                <th className="px-3 py-2 text-right">History</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map(({ app, deployment }) => (
-                <tr key={app.id} className="border-b last:border-b-0">
-                  <td className="px-3 py-2">
-                    <div className="flex items-center gap-2.5">
-                      <ProjectAvatar seed={app.id} label={app.name} />
-                      <div className="text-[13px] font-semibold">{app.name}</div>
-                    </div>
-                  </td>
-                  <td className="px-3 py-2">
-                    {deployment ? (
-                      <div className="flex items-center gap-2">
-                        <DeploymentStatusBadge state={deployment.state} />
-                        <span className="font-mono text-xs text-muted-foreground">{deployment.id?.slice(0, 10)}…</span>
-                      </div>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">never deployed</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2">
-                    {deployment?.to_revision != null && digests.has(deployment.to_revision) ? (
-                      <span className="flex items-center gap-1 font-mono text-xs">
-                        {digests.get(deployment.to_revision)!.slice(0, 19)}…
-                        <CopyButton value={digests.get(deployment.to_revision) ?? ""} />
-                      </span>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">—</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{deployment?.commit_sha || "—"}</td>
-                  <td className="px-3 py-2 text-xs text-muted-foreground">
-                    <RelativeTime value={deployment?.finished_at ?? deployment?.created_at} />
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    <Link
-                      to="/p/$projectId/apps/$appId/deployments"
-                      params={{ projectId, appId: app.id }}
-                      className="text-xs text-info underline-offset-2 hover:underline"
-                    >
-                      deployments
-                    </Link>
-                  </td>
+        <div className="rounded-xl border bg-card">
+          <div className="px-3 pt-3">
+            <ListToolbar label="apps" value={query} onChange={setQuery} placeholder="Filter apps..." total={rows.length} shown={filtered.length} />
+          </div>
+          <TableWrap className="rounded-none border-0">
+            <table className="w-full text-sm">
+              <thead className="border-b bg-muted/40 text-left text-[10.5px] font-semibold tracking-wide text-muted-foreground uppercase">
+                <tr>
+                  <th className="px-3 py-2">App</th>
+                  <th className="px-3 py-2">Latest deployment</th>
+                  <th className="px-3 py-2">Revision digest</th>
+                  <th className="px-3 py-2">Commit</th>
+                  <th className="px-3 py-2">Deployed</th>
+                  <th className="px-3 py-2 text-right">History</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-3 py-8 text-center text-xs text-muted-foreground">
+                      No apps match the filter.
+                    </td>
+                  </tr>
+                ) : (
+                  filtered.map(({ app, deployment }) => (
+                    <tr key={app.id} className="border-b last:border-b-0">
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-2.5">
+                          <ProjectAvatar seed={app.id} label={app.name} />
+                          <div className="text-[13px] font-semibold">{app.name}</div>
+                        </div>
+                      </td>
+                      <td className="px-3 py-2">
+                        {deployment ? (
+                          <div className="flex items-center gap-2">
+                            <DeploymentStatusBadge state={deployment.state} />
+                            <span className="font-mono text-xs text-muted-foreground">{deployment.id?.slice(0, 10)}…</span>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">never deployed</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2">
+                        {deployment?.to_revision != null && digests.has(deployment.to_revision) ? (
+                          <span className="flex items-center gap-1 font-mono text-xs">
+                            {digests.get(deployment.to_revision)!.slice(0, 19)}…
+                            <CopyButton value={digests.get(deployment.to_revision) ?? ""} />
+                          </span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{deployment?.commit_sha || "—"}</td>
+                      <td className="px-3 py-2 text-xs text-muted-foreground">
+                        <RelativeTime value={deployment?.finished_at ?? deployment?.created_at} />
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <Link
+                          to="/p/$projectId/apps/$appId/deployments"
+                          params={{ projectId, appId: app.id }}
+                          className="text-xs text-info underline-offset-2 hover:underline"
+                        >
+                          deployments
+                        </Link>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </TableWrap>
         </div>
       )}
       <p className="mt-3 text-[11.5px] text-muted-foreground">
@@ -175,6 +192,7 @@ function RegistryCatalog({ projectId, apps }: { projectId: string; apps: Array<{
           ))}
         </div>
       )}
+      <CliEquivalent command={`fleetly registry catalog --project ${projectId}`} />
     </section>
   );
 }
