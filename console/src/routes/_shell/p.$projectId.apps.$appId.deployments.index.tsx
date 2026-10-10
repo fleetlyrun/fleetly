@@ -6,6 +6,7 @@ import { DeploySheet } from "@/features/deployments/deploy-sheet";
 import { useAppDeployments, type Deployment } from "@/features/deployments/hooks";
 import { DataTable } from "@/components/domain/data-table";
 import { EmptyState } from "@/components/domain/empty-state";
+import { ListToolbar, useListFilter } from "@/components/domain/list-toolbar";
 import { RelativeTime } from "@/components/domain/relative-time";
 import { DeploymentStatusBadge } from "@/components/domain/status-badge";
 import { Button } from "@/components/ui/button";
@@ -23,6 +24,8 @@ function AppDeploymentsPage() {
   const deployments = useAppDeployments(appId);
   const apps = useApps(projectId);
   const [deployOpen, setDeployOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const filtered = useListFilter(deployments.data ?? [], query, (d: { id?: string; state?: string; to_revision?: string }) => [d.id ?? "", d.state ?? "", d.to_revision ?? ""]);
 
   const columns: LegacyColumnDef<Deployment, any>[] = [
     {
@@ -72,15 +75,25 @@ function AppDeploymentsPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-end">
-        <Button size="sm" onClick={() => setDeployOpen(true)}>
-          <RocketIcon data-icon-start-inline />
-          Deploy…
-        </Button>
-      </div>
       <div className="rounded-xl border bg-card">
+        <div className="px-3 pt-3">
+          <ListToolbar
+            label="deployments"
+            value={query}
+            onChange={setQuery}
+            placeholder="Filter deployments..."
+            total={(deployments.data ?? []).length}
+            shown={filtered.length}
+            actions={
+              <Button size="sm" onClick={() => setDeployOpen(true)}>
+                <RocketIcon data-icon-start-inline />
+                Deploy…
+              </Button>
+            }
+          />
+        </div>
         <DataTable
-          data={deployments.data}
+          data={filtered}
           columns={columns}
           loading={deployments.isPending}
           error={deployments.isError ? deployments.error : null}

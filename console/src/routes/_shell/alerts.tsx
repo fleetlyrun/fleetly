@@ -8,7 +8,7 @@ import type { components as telemetrySchemas } from "@/api/telemetry";
 import { apiSend } from "@/api/client";
 import { useAlertRules, useAlertStates, useAlertingChannels } from "@/lib/catalog";
 import { CreateRuleDialog } from "@/features/alerts/create-rule-dialog";
-import { CliEquivalent, ListToolbar, useListFilter } from "@/components/domain/list-toolbar";
+import { CliEquivalent, ListPagination, ListToolbar, useClientPage, useListFilter } from "@/components/domain/list-toolbar";
 import { CopyButton } from "@/components/domain/copy-button";
 import { ErrorState } from "@/components/domain/error-state";
 import { PageHeader } from "@/components/domain/page-header";
@@ -60,16 +60,10 @@ function AlertsPage() {
   const [createOpen, setCreateOpen] = useState(false);
 
   return (
-    <div className="mx-auto max-w-7xl px-6 py-8">
+    <div className="mx-auto max-w-7xl px-6 pt-6 pb-8">
       <PageHeader
         title="Alerts"
         description="Alert rules and notification channels — evaluated every 30s"
-        actions={
-          <Button onClick={() => setCreateOpen(true)}>
-            <PlusIcon data-icon-start-inline />
-            New rule
-          </Button>
-        }
       />
 
       {firing.length > 0 ? (
@@ -101,7 +95,7 @@ function AlertsPage() {
           </div>
 
           {tab === "rules" ? (
-            <RulesPanel rules={rules.data ?? []} states={states.data ?? []} loading={rules.isPending} error={rules.isError ? rules.error : null} onRetry={() => void rules.refetch()} />
+            <RulesPanel rules={rules.data ?? []} states={states.data ?? []} loading={rules.isPending} error={rules.isError ? rules.error : null} onRetry={() => void rules.refetch()} onCreate={() => setCreateOpen(true)} />
           ) : (
             <ChannelsPanel />
           )}
@@ -120,22 +114,38 @@ function RulesPanel({
   loading,
   error,
   onRetry,
+  onCreate,
 }: {
   rules: AlertRule[];
   states: AlertState[];
   loading: boolean;
   error: unknown;
   onRetry: () => void;
+  onCreate: () => void;
 }) {
   const stateOf = new Map(states.map((state) => [state.rule_id ?? "", state]));
   const [deleting, setDeleting] = useState<AlertRule | null>(null);
   const [query, setQuery] = useState("");
   const filtered = useListFilter(rules, query, (rule: AlertRule) => [rule.app_id ?? "", rule.metric ?? ""]);
+  const { page, pageCount, pageRows, setPage } = useClientPage(filtered);
 
   return (
     <>
       <div className="px-3 pt-3">
-        <ListToolbar label="alert rules" value={query} onChange={setQuery} placeholder="Filter rules..." total={rules.length} shown={filtered.length} />
+        <ListToolbar
+          label="alert rules"
+          value={query}
+          onChange={setQuery}
+          placeholder="Filter rules..."
+          total={rules.length}
+          shown={filtered.length}
+          actions={
+            <Button size="sm" onClick={onCreate}>
+              <PlusIcon data-icon-start-inline />
+              New rule
+            </Button>
+          }
+        />
       </div>
       <Table>
         <TableHeader>
@@ -182,7 +192,7 @@ function RulesPanel({
               </TableCell>
             </TableRow>
           ) : (
-            filtered.map((rule) => {
+            pageRows.map((rule) => {
               const live = stateOf.get(rule.id ?? "");
               return (
                 <TableRow key={rule.id}>
@@ -209,6 +219,7 @@ function RulesPanel({
           )}
         </TableBody>
       </Table>
+      <ListPagination page={page} pageCount={pageCount} setPage={setPage} total={filtered.length} />
 
       <AlertDialog open={deleting != null} onOpenChange={(open) => !open && setDeleting(null)}>
         <AlertDialogContent>
@@ -255,6 +266,7 @@ function ChannelsPanel() {
   const [testing, setTesting] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const filtered = useListFilter(channels.data ?? [], query, (channel: Channel) => [channel.name ?? "", channel.kind ?? ""]);
+  const { page, pageCount, pageRows, setPage } = useClientPage(filtered);
 
   function runTest(channelId: string) {
     setTesting(channelId);
@@ -267,13 +279,21 @@ function ChannelsPanel() {
   return (
     <>
       <div className="px-3 pt-3">
-        <ListToolbar label="channels" value={query} onChange={setQuery} placeholder="Filter channels..." total={(channels.data ?? []).length} shown={filtered.length}>
-          {/* 渠道创建 Dialog 批 6 补齐（表单面迁移尾巴，不在本批谎称完成） */}
-          <Button size="sm" variant="outline" disabled title="Ships with the settings milestone">
-            <PlusIcon data-icon-start-inline />
-            New channel
-          </Button>
-        </ListToolbar>
+        <ListToolbar
+          label="channels"
+          value={query}
+          onChange={setQuery}
+          placeholder="Filter channels..."
+          total={(channels.data ?? []).length}
+          shown={filtered.length}
+          actions={
+            /* 渠道创建 Dialog 批 6 补齐（表单面迁移尾巴，不在本批谎称完成） */
+            <Button size="sm" variant="outline" disabled title="Ships with the settings milestone">
+              <PlusIcon data-icon-start-inline />
+              New channel
+            </Button>
+          }
+        />
       </div>
       <Table>
         <TableHeader>
@@ -306,7 +326,7 @@ function ChannelsPanel() {
               </TableCell>
             </TableRow>
           ) : (
-            filtered.map((channel) => (
+            pageRows.map((channel) => (
               <TableRow key={channel.id}>
                 <TableCell className="text-[13px] font-medium">
                   {channel.name}
@@ -339,6 +359,7 @@ function ChannelsPanel() {
           )}
         </TableBody>
       </Table>
+      <ListPagination page={page} pageCount={pageCount} setPage={setPage} total={filtered.length} />
 
       <AlertDialog open={deleting != null} onOpenChange={(open) => !open && setDeleting(null)}>
         <AlertDialogContent>

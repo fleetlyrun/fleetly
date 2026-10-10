@@ -131,23 +131,13 @@ function AppsListPage() {
   ];
 
   return (
-    <div className="mx-auto max-w-7xl px-6 py-8">
+    <div className="mx-auto max-w-7xl px-6 pt-6 pb-8">
       <PageHeader
         title="Apps"
         description={
           rows.length > 0
             ? `${rows.length} app${rows.length === 1 ? "" : "s"} in ${projectName ?? "this project"} — deployments are tracked per app`
             : "Deployments are tracked per app — create one to get started"
-        }
-        actions={
-          <Button
-            onClick={() => {
-              setCreateOpen(true);
-            }}
-          >
-            <PlusIcon data-icon-start-inline />
-            New app
-          </Button>
         }
       />
       <div className="rounded-xl border bg-card">
@@ -159,6 +149,17 @@ function AppsListPage() {
             placeholder="Filter apps..."
             total={rows.length}
             shown={filtered.length}
+            actions={
+              <Button
+                size="sm"
+                onClick={() => {
+                  setCreateOpen(true);
+                }}
+              >
+                <PlusIcon data-icon-start-inline />
+                New app
+              </Button>
+            }
           />
         </div>
         <DataTable

@@ -9,7 +9,7 @@ import { apiSend } from "@/api/client";
 import { describeError } from "@/lib/api-errors";
 import { useInvitations, useRoles, useTeams, useUsers } from "@/lib/catalog";
 import { CopyButton } from "@/components/domain/copy-button";
-import { CliEquivalent } from "@/components/domain/list-toolbar";
+import { CliEquivalent, ListPagination, ListToolbar, useClientPage, useListFilter } from "@/components/domain/list-toolbar";
 import { EmptyState } from "@/components/domain/empty-state";
 import { ErrorState } from "@/components/domain/error-state";
 import { PageHeader } from "@/components/domain/page-header";
@@ -66,22 +66,14 @@ export const Route = createFileRoute("/_shell/identity")({
 function IdentityPageV2() {
   const navigate = Route.useNavigate();
   const tab = Route.useSearch({ select: (search) => search.tab ?? "users" });
-  // 创建入口随 active tab 收口 PageHeader 右上（对齐批 4，Apps 基准同款）；
-  // teams 走卡下内联表单故无页头钮。切 tab 即收起未完成的创建弹窗。
+  // 创建入口在各 tab 工具栏行右侧（对齐批 5 用户复裁：页头钮位退役）。
+  // 切 tab 即收起未完成的创建弹窗。
   const [createOpen, setCreateOpen] = useState(false);
   return (
-    <div className="mx-auto max-w-7xl px-6 py-8">
+    <div className="mx-auto max-w-7xl px-6 pt-6 pb-8">
       <PageHeader
         title="Identity"
         description="Users, teams, roles and invitations — the RBAC face"
-        actions={
-          tab === "teams" ? undefined : (
-            <Button onClick={() => setCreateOpen(true)}>
-              <PlusIcon data-icon-start-inline />
-              {tab === "users" ? "New user…" : tab === "roles" ? "New role…" : "New invitation…"}
-            </Button>
-          )
-        }
       />
       <Tabs
         value={tab}
@@ -125,9 +117,28 @@ function fieldError(error: unknown): string {
 
 function UsersTab({ createOpen, onCreateOpenChange }: { createOpen: boolean; onCreateOpenChange: (open: boolean) => void }) {
   const users = useUsers();
+  const [query, setQuery] = useState("");
+  const filtered = useListFilter(users.data ?? [], query, (user: User) => [user.name ?? "", user.id ?? ""]);
+  const { page, pageCount, pageRows, setPage } = useClientPage(filtered);
   return (
     <>
       <PanelCard>
+        <div className="px-3 pt-3">
+          <ListToolbar
+            label="users"
+            value={query}
+            onChange={setQuery}
+            placeholder="Filter users..."
+            total={(users.data ?? []).length}
+            shown={filtered.length}
+            actions={
+              <Button size="sm" onClick={() => onCreateOpenChange(true)}>
+                <PlusIcon data-icon-start-inline />
+                New user…
+              </Button>
+            }
+          />
+        </div>
         <Table>
           <TableHeader>
             <TableRow>
@@ -153,10 +164,11 @@ function UsersTab({ createOpen, onCreateOpenChange }: { createOpen: boolean; onC
                 </TableCell>
               </TableRow>
             ) : (
-              (users.data ?? []).map((user) => <UserRow key={user.id} user={user} />)
+              pageRows.map((user) => <UserRow key={user.id} user={user} />)
             )}
           </TableBody>
         </Table>
+        <ListPagination page={page} pageCount={pageCount} setPage={setPage} total={filtered.length} />
       </PanelCard>
       <CliEquivalent command="fleetly users list" />
       <CreateUserDialog open={createOpen} onClose={() => onCreateOpenChange(false)} />
@@ -328,19 +340,40 @@ function TeamsTab() {
   const teams = useTeams();
   const invalidate = useInvalidate(["identity", "teams"]);
   const [name, setName] = useState("");
+  const [createOpen, setCreateOpen] = useState(false);
   const [deleting, setDeleting] = useState<Team | null>(null);
+  const [query, setQuery] = useState("");
+  const filtered = useListFilter(teams.data ?? [], query, (team: Team) => [team.name ?? "", team.id ?? ""]);
+  const { page, pageCount, pageRows, setPage } = useClientPage(filtered);
   const create = useMutation({
     mutationFn: () => apiSend("/v1/teams", "POST", { name }),
     onSuccess: () => {
       toast("Team created");
       invalidate();
       setName("");
+      setCreateOpen(false);
     },
     onError: (cause) => toast.error(fieldError(cause)),
   });
   return (
     <>
       <PanelCard>
+        <div className="px-3 pt-3">
+          <ListToolbar
+            label="teams"
+            value={query}
+            onChange={setQuery}
+            placeholder="Filter teams..."
+            total={(teams.data ?? []).length}
+            shown={filtered.length}
+            actions={
+              <Button size="sm" onClick={() => { setName(""); setCreateOpen(true); }}>
+                <PlusIcon data-icon-start-inline />
+                New team…
+              </Button>
+            }
+          />
+        </div>
         <Table>
           <TableHeader>
             <TableRow>
@@ -362,7 +395,7 @@ function TeamsTab() {
                 </TableCell>
               </TableRow>
             ) : (
-              (teams.data ?? []).map((team) => (
+              pageRows.map((team) => (
                 <TableRow key={team.id}>
                   <TableCell className="text-[13px] font-medium">{team.name}</TableCell>
                   <TableCell className="font-mono text-[11px] text-muted-foreground">
@@ -379,23 +412,36 @@ function TeamsTab() {
             )}
           </TableBody>
         </Table>
+        <ListPagination page={page} pageCount={pageCount} setPage={setPage} total={filtered.length} />
       </PanelCard>
       <CliEquivalent command="fleetly teams list" />
-      <form
-        className="mt-3 flex items-end gap-3"
-        onSubmit={(event) => {
-          event.preventDefault();
-          create.mutate();
-        }}
-      >
-        <div className="flex flex-col gap-1">
-          <Label className="text-xs">New team</Label>
-          <Input value={name} onChange={(event) => setName(event.target.value)} placeholder="platform" required className="h-8 w-48" />
-        </div>
-        <Button type="submit" size="sm" disabled={create.isPending || name === ""} className="mb-0.5">
-          Create team
-        </Button>
-      </form>
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>New team</DialogTitle>
+          </DialogHeader>
+          <form
+            className="flex flex-col gap-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              create.mutate();
+            }}
+          >
+            <div className="flex flex-col gap-1.5">
+              <Label className="text-xs">Name</Label>
+              <Input value={name} onChange={(event) => setName(event.target.value)} placeholder="platform" autoFocus required />
+            </div>
+          </form>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateOpen(false)}>
+              Cancel
+            </Button>
+            <Button disabled={create.isPending || name === ""} onClick={() => create.mutate()}>
+              {create.isPending ? "Creating…" : "Create team"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <AlertDialogLike
         open={deleting != null}
         onOpenChange={(open) => {
@@ -421,9 +467,28 @@ function TeamsTab() {
 function RolesTab({ createOpen, onCreateOpenChange }: { createOpen: boolean; onCreateOpenChange: (open: boolean) => void }) {
   const teams = useTeams();
   const roles = useRoles();
+  const [query, setQuery] = useState("");
+  const filtered = useListFilter(roles.data ?? [], query, (role: Role) => [role.name ?? "", ...(role.scopes ?? [])]);
+  const { page, pageCount, pageRows, setPage } = useClientPage(filtered);
   return (
     <>
       <PanelCard>
+        <div className="px-3 pt-3">
+          <ListToolbar
+            label="roles"
+            value={query}
+            onChange={setQuery}
+            placeholder="Filter roles..."
+            total={(roles.data ?? []).length}
+            shown={filtered.length}
+            actions={
+              <Button size="sm" onClick={() => onCreateOpenChange(true)}>
+                <PlusIcon data-icon-start-inline />
+                New role…
+              </Button>
+            }
+          />
+        </div>
         <Table>
           <TableHeader>
             <TableRow>
@@ -446,10 +511,11 @@ function RolesTab({ createOpen, onCreateOpenChange }: { createOpen: boolean; onC
                 </TableCell>
               </TableRow>
             ) : (
-              (roles.data ?? []).map((role) => <RoleRow key={role.id} role={role} />)
+              pageRows.map((role) => <RoleRow key={role.id} role={role} />)
             )}
           </TableBody>
         </Table>
+        <ListPagination page={page} pageCount={pageCount} setPage={setPage} total={filtered.length} />
       </PanelCard>
       <CliEquivalent command="fleetly roles list" />
       <CreateRoleDialog open={createOpen} onClose={() => onCreateOpenChange(false)} teams={teams.data ?? []} />
@@ -564,9 +630,28 @@ function InvitationsTab({ createOpen, onCreateOpenChange }: { createOpen: boolea
   const invitations = useInvitations();
   const teams = useTeams();
   const roles = useRoles();
+  const [query, setQuery] = useState("");
+  const filtered = useListFilter(invitations.data ?? [], query, (invitation: Invitation) => [invitation.id ?? "", invitation.team_id ?? "", invitation.role_id ?? "", invitation.created_by ?? ""]);
+  const { page, pageCount, pageRows, setPage } = useClientPage(filtered);
   return (
     <>
       <PanelCard>
+        <div className="px-3 pt-3">
+          <ListToolbar
+            label="invitations"
+            value={query}
+            onChange={setQuery}
+            placeholder="Filter invitations..."
+            total={(invitations.data ?? []).length}
+            shown={filtered.length}
+            actions={
+              <Button size="sm" onClick={() => onCreateOpenChange(true)}>
+                <PlusIcon data-icon-start-inline />
+                New invitation…
+              </Button>
+            }
+          />
+        </div>
         <Table>
           <TableHeader>
             <TableRow>
@@ -591,7 +676,7 @@ function InvitationsTab({ createOpen, onCreateOpenChange }: { createOpen: boolea
                 </TableCell>
               </TableRow>
             ) : (
-              (invitations.data ?? []).map((invitation) => (
+              pageRows.map((invitation) => (
                 <TableRow key={invitation.id}>
                   <TableCell className="font-mono text-[11px] text-muted-foreground">
                     {invitation.id?.slice(0, 10)}…<CopyButton value={invitation.id ?? ""} />
@@ -613,6 +698,7 @@ function InvitationsTab({ createOpen, onCreateOpenChange }: { createOpen: boolea
             )}
           </TableBody>
         </Table>
+        <ListPagination page={page} pageCount={pageCount} setPage={setPage} total={filtered.length} />
       </PanelCard>
       {/* invitations 无 CLI list 动词——CLI 行诚实省略 */}
       <CreateInvitationDialog open={createOpen} onClose={() => onCreateOpenChange(false)} teams={teams.data ?? []} roles={roles.data ?? []} />

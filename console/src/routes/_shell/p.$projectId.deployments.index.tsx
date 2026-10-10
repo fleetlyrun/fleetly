@@ -92,20 +92,27 @@ function ProjectDeploymentsPage() {
   const [query, setQuery] = useState("");
   const filtered = useListFilter(deployments.data ?? [], query, (d: { id?: string; app_id?: string; state?: string; to_revision?: string }) => [d.id ?? "", d.app_id ?? "", d.state ?? "", d.to_revision ?? ""]);
   return (
-    <div className="mx-auto max-w-7xl px-6 py-8">
+    <div className="mx-auto max-w-7xl px-6 pt-6 pb-8">
       <PageHeader
         title="Deployments"
         description="All apps in this project — client-side fan-out, refreshed every 15s"
-        actions={
-          <Button size="sm" onClick={() => setDeployOpen(true)}>
-            <RocketIcon data-icon-start-inline />
-            Deploy…
-          </Button>
-        }
       />
       <div className="rounded-xl border bg-card">
         <div className="px-3 pt-3">
-          <ListToolbar label="deployments" value={query} onChange={setQuery} placeholder="Filter deployments..." total={(deployments.data ?? []).length} shown={filtered.length} />
+          <ListToolbar
+            label="deployments"
+            value={query}
+            onChange={setQuery}
+            placeholder="Filter deployments..."
+            total={(deployments.data ?? []).length}
+            shown={filtered.length}
+            actions={
+              <Button size="sm" onClick={() => setDeployOpen(true)}>
+                <RocketIcon data-icon-start-inline />
+                Deploy…
+              </Button>
+            }
+          />
         </div>
         <DataTable
           data={filtered}

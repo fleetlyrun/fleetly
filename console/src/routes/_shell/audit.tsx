@@ -4,7 +4,7 @@ import { formatAbsolute } from "@/lib/format";
 import { useAudit } from "@/lib/catalog";
 import { EmptyState } from "@/components/domain/empty-state";
 import { ErrorState } from "@/components/domain/error-state";
-import { CliEquivalent } from "@/components/domain/list-toolbar";
+import { CliEquivalent, ListPagination, useClientPage } from "@/components/domain/list-toolbar";
 import { PageHeader } from "@/components/domain/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,9 +36,11 @@ function AuditPageV2() {
   const [resource, setResource] = useState("");
   const [active, setActive] = useState({ source: "", action: "", actor: "", resource: "" });
   const audit = useAudit({ ...active, limit: 100 });
+  const entries = audit.data ?? [];
+  const { page, pageCount, pageRows, setPage } = useClientPage(entries);
 
   return (
-    <div className="mx-auto max-w-7xl px-6 py-8">
+    <div className="mx-auto max-w-7xl px-6 pt-6 pb-8">
       <PageHeader title="Audit" description="Server-written audit trail (GET /v1/audit) — the console observes, never writes" />
       <form
         className="mb-4 flex flex-wrap items-end gap-2.5"
@@ -115,7 +117,7 @@ function AuditPageV2() {
                 </TableCell>
               </TableRow>
             ) : (
-              (audit.data ?? []).map((entry) => (
+              pageRows.map((entry) => (
                 <TableRow key={`${entry.created_at}-${entry.action}-${entry.resource}`} className="align-top">
                   <TableCell className="whitespace-nowrap text-xs text-muted-foreground" title={formatAbsolute(entry.created_at)}>
                     {formatAbsolute(entry.created_at)}
@@ -137,6 +139,7 @@ function AuditPageV2() {
             )}
           </TableBody>
         </Table>
+        <ListPagination page={page} pageCount={pageCount} setPage={setPage} total={entries.length} />
       </div>
       <CliEquivalent command="fleetly audit --limit 100" />
     </div>

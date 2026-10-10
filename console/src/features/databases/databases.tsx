@@ -185,19 +185,13 @@ export function DatabasesListPage({ projectId }: { projectId: string }) {
   ];
 
   return (
-    <div className="mx-auto max-w-7xl px-6 py-8">
+    <div className="mx-auto max-w-7xl px-6 pt-6 pb-8">
       <PageHeader
         title="Databases"
         description={
           rows.length > 0
             ? `${rows.length} database${rows.length === 1 ? "" : "s"} in ${projectName ?? "this project"} — scheduled backups with verify & restore (ADR-0039)`
             : "Managed databases — scheduled backups with verify & restore (ADR-0039)"
-        }
-        actions={
-          <Button size="sm" onClick={() => setCreateOpen(true)}>
-            <DatabaseIcon data-icon-start-inline />
-            New database
-          </Button>
         }
       />
       <div className="rounded-xl border bg-card">
@@ -209,6 +203,12 @@ export function DatabasesListPage({ projectId }: { projectId: string }) {
             placeholder="Filter databases..."
             total={rows.length}
             shown={filtered.length}
+            actions={
+              <Button size="sm" onClick={() => setCreateOpen(true)}>
+                <DatabaseIcon data-icon-start-inline />
+                New database
+              </Button>
+            }
           >
             <select
               value={engine}
@@ -475,7 +475,7 @@ export function DatabaseDetailPage({ projectId, databaseId }: { projectId: strin
     onError: (cause) => toast.error(fieldError(cause)),
   });
   return (
-    <div className="mx-auto max-w-7xl px-6 py-8">
+    <div className="mx-auto max-w-7xl px-6 pt-6 pb-8">
       <PageHeader
         breadcrumb={
           <ContentCrumb

@@ -4,7 +4,7 @@ import { DatabaseIcon, HardDriveDownloadIcon, LinkIcon } from "lucide-react";
 import { apiFetch } from "@/api/client";
 import type { components } from "@/api/structure";
 import { backupHealth } from "@/features/databases/backup-health";
-import { CliEquivalent, ListToolbar, useListFilter } from "@/components/domain/list-toolbar";
+import { CliEquivalent, ListPagination, ListToolbar, useClientPage, useListFilter } from "@/components/domain/list-toolbar";
 import { EmptyState } from "@/components/domain/empty-state";
 import { PageHeader } from "@/components/domain/page-header";
 import { ProjectAvatar } from "@/components/domain/project-avatar";
@@ -50,9 +50,13 @@ export function BackupsView() {
   ]);
   const staleRows = filtered.filter((row) => backupHealth(row.database.last_backup_at).tone !== "success");
   const healthyRows = filtered.filter((row) => backupHealth(row.database.last_backup_at).tone === "success");
+  const ordered = [...staleRows, ...healthyRows];
+  const { page, pageCount, pageRows, setPage } = useClientPage(ordered);
+  const snapList = snapshots.data ?? [];
+  const { page: snapPage, pageCount: snapPageCount, pageRows: snapRows, setPage: setSnapPage } = useClientPage(snapList);
 
   return (
-    <div className="mx-auto max-w-7xl px-6 py-8">
+    <div className="mx-auto max-w-7xl px-6 pt-6 pb-8">
       <PageHeader
         title="Backups"
         description="Data safety at a glance — database backups and platform snapshots"
@@ -63,20 +67,21 @@ export function BackupsView() {
 
       <section className="mb-8">
         <h2 className="mb-3 text-[13px] font-semibold">Databases ({rows.length} · {healthyCount} healthy)</h2>
-        {projects.isPending || databaseLists.some((list) => list.isPending) ? (
-          <p className="py-8 text-center text-xs text-muted-foreground">Loading databases…</p>
-        ) : rows.length === 0 ? (
-          <EmptyState
-            icon={DatabaseIcon}
-            title="No databases"
-            description="Database backup health rows appear here once databases exist."
-          />
-        ) : (
-          <div className="rounded-xl border bg-card">
-            <div className="px-3 pt-3">
-              <ListToolbar label="databases" value={query} onChange={setQuery} placeholder="Filter databases..." total={rows.length} shown={filtered.length} />
-            </div>
-            <TableWrap className="rounded-none border-0">
+        <div className="rounded-xl border bg-card">
+          <div className="px-3 pt-3">
+            <ListToolbar label="databases" value={query} onChange={setQuery} placeholder="Filter databases..." total={rows.length} shown={filtered.length} />
+          </div>
+          {projects.isPending || databaseLists.some((list) => list.isPending) ? (
+            <p className="py-8 text-center text-xs text-muted-foreground">Loading databases…</p>
+          ) : rows.length === 0 ? (
+            <EmptyState
+              icon={DatabaseIcon}
+              title="No databases"
+              description="Database backup health rows appear here once databases exist."
+            />
+          ) : (
+            <>
+              <TableWrap className="rounded-none border-0">
               <table className="w-full text-sm">
                 <thead className="border-b bg-muted/40 text-left text-[10.5px] font-semibold tracking-wide text-muted-foreground uppercase">
                   <tr>
@@ -88,8 +93,8 @@ export function BackupsView() {
                     <th className="px-3 py-2 text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody>
-                  {[...staleRows, ...healthyRows].map(
+                  <tbody>
+                  {pageRows.map(
                   ({ project, database }) => {
                     const health = backupHealth(database.last_backup_at);
                     return (
@@ -138,18 +143,21 @@ export function BackupsView() {
                 </tbody>
               </table>
             </TableWrap>
-          </div>
-        )}
+              <ListPagination page={page} pageCount={pageCount} setPage={setPage} total={ordered.length} />
+            </>
+          )}
+        </div>
       </section>
 
       <section>
         <h2 className="mb-3 text-[13px] font-semibold">Platform snapshots (restic)</h2>
+        <div className="rounded-xl border bg-card">
         {(snapshots.data ?? []).length === 0 ? (
-          <p className="rounded-xl border bg-card p-4 text-xs text-muted-foreground">
+          <p className="p-6 text-center text-xs text-muted-foreground">
             No snapshots listed yet — the platform backup window writes here (local store + optional S3 mirror).
           </p>
         ) : (
-          <div className="overflow-hidden rounded-xl border bg-card">
+          <>
             <table className="w-full text-sm">
               <thead className="border-b bg-muted/40 text-left text-[10.5px] font-semibold tracking-wide text-muted-foreground uppercase">
                 <tr>
@@ -159,7 +167,7 @@ export function BackupsView() {
                 </tr>
               </thead>
               <tbody>
-                {(snapshots.data ?? []).map((snapshot) => (
+                {snapRows.map((snapshot) => (
                   <tr key={snapshot.id} className="border-b last:border-b-0">
                     <td className="px-3 py-2 font-mono text-xs">{snapshot.id}</td>
                     <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{snapshot.hostname}</td>
@@ -170,8 +178,10 @@ export function BackupsView() {
                 ))}
               </tbody>
             </table>
-          </div>
+            <ListPagination page={snapPage} pageCount={snapPageCount} setPage={setSnapPage} total={snapList.length} />
+          </>
         )}
+        </div>
         <CliEquivalent command="fleetly platform backups" />
         <p className="mt-3 flex items-center gap-1.5 text-[11.5px] text-muted-foreground">
           <HardDriveDownloadIcon className="size-3.5" />

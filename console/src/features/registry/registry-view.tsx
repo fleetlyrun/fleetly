@@ -6,7 +6,7 @@ import { apiFetch } from "@/api/client";
 import type { components } from "@/api/delivery";
 import { digestByRevisionId, latestDeploymentPerApp } from "@/features/registry/registry-model";
 import { DeploymentStatusBadge } from "@/components/domain/status-badge";
-import { CliEquivalent, ListToolbar, useListFilter } from "@/components/domain/list-toolbar";
+import { CliEquivalent, ListPagination, ListToolbar, useClientPage, useListFilter } from "@/components/domain/list-toolbar";
 import { TableWrap } from "@/components/ui";
 import { CopyButton } from "@/components/domain/copy-button";
 import { EmptyState } from "@/components/domain/empty-state";
@@ -45,45 +45,47 @@ export function RegistryView({ projectId }: { projectId: string }) {
   const rows = (apps.data ?? []).map((app) => ({ app, deployment: latest.get(app.id) }));
   const [query, setQuery] = useState("");
   const filtered = useListFilter(rows, query, (row: { app: { id?: string; name?: string } }) => [row.app.name ?? "", row.app.id ?? ""]);
+  const { page, pageCount, pageRows, setPage } = useClientPage(filtered);
 
   return (
-    <div className="mx-auto max-w-7xl px-6 py-8">
+    <div className="mx-auto max-w-7xl px-6 pt-6 pb-8">
       <PageHeader
         title="Registry"
         description="What each app runs right now — revision digests from the managed registry (zot)"
       />
-      {rows.length === 0 ? (
-        <EmptyState
-          icon={LayersIcon}
-          title="No apps in this project"
-          description="Registry rows appear per app once apps exist — each row resolves the running revision digest."
-        />
-      ) : (
-        <div className="rounded-xl border bg-card">
-          <div className="px-3 pt-3">
-            <ListToolbar label="apps" value={query} onChange={setQuery} placeholder="Filter apps..." total={rows.length} shown={filtered.length} />
-          </div>
-          <TableWrap className="rounded-none border-0">
-            <table className="w-full text-sm">
-              <thead className="border-b bg-muted/40 text-left text-[10.5px] font-semibold tracking-wide text-muted-foreground uppercase">
-                <tr>
-                  <th className="px-3 py-2">App</th>
-                  <th className="px-3 py-2">Latest deployment</th>
-                  <th className="px-3 py-2">Revision digest</th>
-                  <th className="px-3 py-2">Commit</th>
-                  <th className="px-3 py-2">Deployed</th>
-                  <th className="px-3 py-2 text-right">History</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.length === 0 ? (
+      <div className="rounded-xl border bg-card">
+        <div className="px-3 pt-3">
+          <ListToolbar label="apps" value={query} onChange={setQuery} placeholder="Filter apps..." total={rows.length} shown={filtered.length} />
+        </div>
+        {rows.length === 0 ? (
+          <EmptyState
+            icon={LayersIcon}
+            title="No apps in this project"
+            description="Registry rows appear per app once apps exist — each row resolves the running revision digest."
+          />
+        ) : (
+          <>
+            <TableWrap className="rounded-none border-0">
+              <table className="w-full text-sm">
+                <thead className="border-b bg-muted/40 text-left text-[10.5px] font-semibold tracking-wide text-muted-foreground uppercase">
                   <tr>
-                    <td colSpan={6} className="px-3 py-8 text-center text-xs text-muted-foreground">
-                      No apps match the filter.
-                    </td>
+                    <th className="px-3 py-2">App</th>
+                    <th className="px-3 py-2">Latest deployment</th>
+                    <th className="px-3 py-2">Revision digest</th>
+                    <th className="px-3 py-2">Commit</th>
+                    <th className="px-3 py-2">Deployed</th>
+                    <th className="px-3 py-2 text-right">History</th>
                   </tr>
-                ) : (
-                  filtered.map(({ app, deployment }) => (
+                </thead>
+                <tbody>
+                  {filtered.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="px-3 py-8 text-center text-xs text-muted-foreground">
+                        No apps match the filter.
+                      </td>
+                    </tr>
+                  ) : (
+                    pageRows.map(({ app, deployment }) => (
                     <tr key={app.id} className="border-b last:border-b-0">
                       <td className="px-3 py-2">
                         <div className="flex items-center gap-2.5">
@@ -127,11 +129,13 @@ export function RegistryView({ projectId }: { projectId: string }) {
                     </tr>
                   ))
                 )}
-              </tbody>
-            </table>
-          </TableWrap>
-        </div>
-      )}
+                </tbody>
+              </table>
+            </TableWrap>
+            <ListPagination page={page} pageCount={pageCount} setPage={setPage} total={filtered.length} />
+          </>
+        )}
+      </div>
       <p className="mt-3 text-[11.5px] text-muted-foreground">
         Digests are content-addressed — they identify exactly what is running.
       </p>

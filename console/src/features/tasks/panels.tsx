@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { PlusIcon } from "lucide-react";
 import { useRuns, useSchedules, useTasks } from "@/lib/catalog";
-import { CliEquivalent, ListToolbar, useListFilter } from "@/components/domain/list-toolbar";
+import { CliEquivalent, ListPagination, ListToolbar, useClientPage, useListFilter } from "@/components/domain/list-toolbar";
 import { Button } from "@/components/ui/button";
 import {
   DangerRowButton,
@@ -86,6 +86,7 @@ export function NewTaskButton({ projectId }: { projectId: string }) {
   return (
     <>
       <Button
+        size="sm"
         onClick={() => {
           setForm({ ...form, name: "", image: "" });
           setCreateOpen(true);
@@ -160,36 +161,46 @@ function TasksTab({ projectId }: { projectId: string }) {
   const tasks = useTasks(projectId);
   const [query, setQuery] = useState("");
   const filtered = useListFilter(tasks.data ?? [], query, (task: { id?: string; name?: string; form?: string; state?: string; image?: string }) => [task.name ?? "", task.id ?? "", task.form ?? "", task.state ?? ""]);
+  const { page, pageCount, pageRows, setPage } = useClientPage(filtered);
   return (
     <section className="flex flex-col gap-3">
-      {projectId === "" ? (
-        <EmptyNote label="Enter a project id to list its tasks." />
-      ) : tasks.isPending ? (
-        <LoadingNote label="Loading tasks…" />
-      ) : tasks.isError ? (
-        <ErrorNote error={tasks.error} />
-      ) : (tasks.data ?? []).length === 0 ? (
-        <EmptyNote label="No tasks." />
-      ) : (
-        <>
-          <div className="rounded-xl border bg-card">
-            <div className="px-3 pt-3">
-              <ListToolbar label="tasks" value={query} onChange={setQuery} placeholder="Filter tasks..." total={(tasks.data ?? []).length} shown={filtered.length} />
-            </div>
+      <div className="rounded-xl border bg-card">
+        <div className="px-3 pt-3">
+          <ListToolbar
+            label="tasks"
+            value={query}
+            onChange={setQuery}
+            placeholder="Filter tasks..."
+            total={(tasks.data ?? []).length}
+            shown={filtered.length}
+            actions={<NewTaskButton projectId={projectId} />}
+          />
+        </div>
+        {projectId === "" ? (
+          <EmptyNote label="Enter a project id to list its tasks." />
+        ) : tasks.isPending ? (
+          <LoadingNote label="Loading tasks…" />
+        ) : tasks.isError ? (
+          <ErrorNote error={tasks.error} />
+        ) : (tasks.data ?? []).length === 0 ? (
+          <EmptyNote label="No tasks." />
+        ) : (
+          <>
             <TableWrap className="rounded-none border-0">
               <table className="w-full text-sm">
                 <TableHead columns={["Task", "Form", "State", "Image", "", ""]} />
                 <tbody>
-                  {filtered.map((task) => (
+                  {pageRows.map((task) => (
                     <TaskRow key={task.id} task={task} />
                   ))}
                 </tbody>
               </table>
             </TableWrap>
-          </div>
-          <CliEquivalent command={`fleetly tasks list --project ${projectId}`} />
-        </>
-      )}
+            <ListPagination page={page} pageCount={pageCount} setPage={setPage} total={filtered.length} />
+          </>
+        )}
+      </div>
+      <CliEquivalent command={`fleetly tasks list --project ${projectId}`} />
     </section>
   );
 }
@@ -343,6 +354,7 @@ export function NewScheduleButton({ projectId }: { projectId: string }) {
   return (
     <>
       <Button
+        size="sm"
         onClick={() => {
           setForm({ ...form, name: "", image: "" });
           setCreateOpen(true);
@@ -398,36 +410,46 @@ function SchedulesTab({ projectId }: { projectId: string }) {
   const schedules = useSchedules(projectId);
   const [query, setQuery] = useState("");
   const filtered = useListFilter(schedules.data ?? [], query, (schedule: { name?: string; cron?: string; image?: string }) => [schedule.name ?? "", schedule.cron ?? "", schedule.image ?? ""]);
+  const { page, pageCount, pageRows, setPage } = useClientPage(filtered);
   return (
     <section className="flex flex-col gap-3">
-      {projectId === "" ? (
-        <EmptyNote label="Enter a project id to list its schedules." />
-      ) : schedules.isPending ? (
-        <LoadingNote label="Loading schedules…" />
-      ) : schedules.isError ? (
-        <ErrorNote error={schedules.error} />
-      ) : (schedules.data ?? []).length === 0 ? (
-        <EmptyNote label="No schedules." />
-      ) : (
-        <>
-          <div className="rounded-xl border bg-card">
-            <div className="px-3 pt-3">
-              <ListToolbar label="schedules" value={query} onChange={setQuery} placeholder="Filter schedules..." total={(schedules.data ?? []).length} shown={filtered.length} />
-            </div>
+      <div className="rounded-xl border bg-card">
+        <div className="px-3 pt-3">
+          <ListToolbar
+            label="schedules"
+            value={query}
+            onChange={setQuery}
+            placeholder="Filter schedules..."
+            total={(schedules.data ?? []).length}
+            shown={filtered.length}
+            actions={<NewScheduleButton projectId={projectId} />}
+          />
+        </div>
+        {projectId === "" ? (
+          <EmptyNote label="Enter a project id to list its schedules." />
+        ) : schedules.isPending ? (
+          <LoadingNote label="Loading schedules…" />
+        ) : schedules.isError ? (
+          <ErrorNote error={schedules.error} />
+        ) : (schedules.data ?? []).length === 0 ? (
+          <EmptyNote label="No schedules." />
+        ) : (
+          <>
             <TableWrap className="rounded-none border-0">
               <table className="w-full text-sm">
                 <TableHead columns={["Schedule", "Cron", "Image", "Next", ""]} />
                 <tbody>
-                  {filtered.map((schedule) => (
+                  {pageRows.map((schedule) => (
                     <ScheduleRow key={schedule.id} schedule={schedule} />
                   ))}
                 </tbody>
               </table>
             </TableWrap>
-          </div>
-          <CliEquivalent command={`fleetly schedules list --project ${projectId}`} />
-        </>
-      )}
+            <ListPagination page={page} pageCount={pageCount} setPage={setPage} total={filtered.length} />
+          </>
+        )}
+      </div>
+      <CliEquivalent command={`fleetly schedules list --project ${projectId}`} />
     </section>
   );
 }
