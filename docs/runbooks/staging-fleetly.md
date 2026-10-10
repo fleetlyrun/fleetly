@@ -493,6 +493,7 @@ ADR-0015 升级序的完整落地形态：**Platform Backup 前置 → SIGTERM �
 - **容器卡常驻**（上批判读观察①顺手闭合）：面板族 loading/error/empty 态全部入卡，工具栏与创建钮空态在场可用（Tasks 空态截图实证）。
 - **换装**（1e47eba-align4 → **263ff5f-align5（现役）**，五 commit + dist）：零迁移零键面；前置 Platform Backup `20e2183e`；doctor 0 failed；新 dist `index-vVBbFCTo.js` 上架；tw.dev 200；22 Running 基线一致。tsc/vitest 92（+4 新锚：分页切片/钳制/空列表/工具栏槽）。
 - **观察遗留**：侧栏项目切换器悬浮遮住 nav 首项（Overview 半遮，滚动位形态，既有）；Apps DataTable 表头混排 vs 旧表大写两代并存（批 6）。
+- **残留闭合（同日 5ac2100-align5b）**：Audit 卡外独立过滤表单收编入卡内工具栏——上批"既有设计豁免"不成立（规范无豁免页）。Server 端四过滤器入 ListToolbar children 槽（aria-label 化），Filter 钮入 actions 槽（form 包裹回车同效），主输入改页内快筛、计数随之有义；换装前置备份 `374fd95c`，doctor 0 failed。
 
 ## 教训与边界
 
