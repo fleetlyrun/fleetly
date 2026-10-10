@@ -484,6 +484,16 @@ ADR-0015 升级序的完整落地形态：**Platform Backup 前置 → SIGTERM �
 - **判读观察（既有形态/批 6 范围，不属本批回归）**：①面板族空态无工具栏卡（EmptyNote 早退结构，Apps 是空态在卡内——批 6 DataTable reskin 统一）；②两代表格表头字形并存（DataTable 混排 vs ui.tsx TableHead 10.5px uppercase——同为批 6 收口）；③Alerts channels tab 页头钮不随 tab 切换（New rule 恒在，渠道创建是占位钮）；④peers 小节标题全小写；⑤侧栏项目选择器不随直连 URL 同步（显示 localStorage 记忆项目）。
 - **换装操作手顺**：本机 `go build -ldflags "-X main.version=$(git rev-parse --short HEAD)-align4 …"`（版本戳纪律，记录·十二）→ scp → `fleetly platform backup` → 卷 tar → `systemctl stop fleetlyd` → `install -m 0755` → start → doctor → 探针 `curl -sk --resolve <host>:443:127.0.0.1 https://<host>/`。数据面核对直接 `docker exec <pg 任务容器> psql -U $POSTGRES_USER`（fleetly CLI 无 databases exec 动词；torchwood-pg 载体容器名 `fleetly-db-<id>.*`）。
 
+## 2026-10-10 记录·三十二（对齐批 5 换装 263ff5f-align5：Apps 模板页三裁决——顶带/钮位/分页）
+
+- **用户三裁决**（Apps 列表页=模板页截图标注）：①顶部空白带 ②操作按钮移列表头右侧（"兼容性更好"——**页头钮位规范退役**，修订记录·三十一的"PageHeader 右上"裁）③补分页。
+- **①顶带根因两件**：顶栏 Separator 在 ui/** 上游类组合下顶死渲染（DOM 实测 y=0 未居中，1px 杂线悬顶边）；内容区 `py-8` 顶部 32px 留白。修：Separator 去除（侧栏边界足够分隔；topbar.tsx 是自有文件不碰上游）+ 全站 wrapper `py-8`→`pt-6 pb-8`（24 文件，整串字面量替换）。
+- **②钮位**：ListToolbar 增 `actions` 槽（计数右侧）；全部创建/主动作钮迁入——Apps/Databases/Deployments（项目级+App 级，后者顺带补过滤工具栏）/Routes/Networks/Volumes/Uploads/Put secret·config·variable/Tasks/Schedules/Alerts rules/Identity 四 tab；teams 内联表单升 New team 对话框；Networks/Routes 钮件回流面板内部。**页头侧保留**：Backups 平台备份设置（页级导航）、Nodes 运维动词（平台操作）——非列表行动作。
+- **③分页**：`useClientPage` 切片 hook（页码越界钳制/过滤收缩不空页）+ `ListPagination` 卡底行（右下 "N rows · page x of y" + 前后钮，≤1 页不渲染）；DataTable 内建（排序后切片，默认 20/页），旧表 15 处接入；**真机实证** Audit 100 行 5 页翻页（"page 2 of 5" 点击生效）。REST 面整取 + 页内翻页 = 客户端分页（数据面与服务端 after/limit 游标轴无关，Console 侧诚实形态）。
+- **容器卡常驻**（上批判读观察①顺手闭合）：面板族 loading/error/empty 态全部入卡，工具栏与创建钮空态在场可用（Tasks 空态截图实证）。
+- **换装**（1e47eba-align4 → **263ff5f-align5（现役）**，五 commit + dist）：零迁移零键面；前置 Platform Backup `20e2183e`；doctor 0 failed；新 dist `index-vVBbFCTo.js` 上架；tw.dev 200；22 Running 基线一致。tsc/vitest 92（+4 新锚：分页切片/钳制/空列表/工具栏槽）。
+- **观察遗留**：侧栏项目切换器悬浮遮住 nav 首项（Overview 半遮，滚动位形态，既有）；Apps DataTable 表头混排 vs 旧表大写两代并存（批 6）。
+
 ## 教训与边界
 
 - **本机（Windows 工作机）出站对该 VPS 全端口受限**（80/443/8420 全 000；node2 路径全通）——外部验证走 node2 或 check-host 类服务，勿信本机 curl。
