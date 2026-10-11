@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "@tanstack/react-router";
 import { ApiError, apiFetch, apiSend } from "@/api/client";
 import type { components } from "@/api/structure";
 import { SlidersIcon, TrashIcon } from "lucide-react";
@@ -28,6 +29,7 @@ interface ProcessEdits {
 
 export function AppVariablesTab({ projectId, appId }: { projectId: string; appId: string }) {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [staged, setStaged] = useState<Record<string, ProcessEdits>>({});
   const [editTarget, setEditTarget] = useState<{ process: string; name: string } | null>(null);
   const [filter, setFilter] = useState("all");
@@ -87,7 +89,15 @@ export function AppVariablesTab({ projectId, appId }: { projectId: string; appId
       void queryClient.invalidateQueries({ queryKey: ["resources", "app-spec", projectId, appId] });
       toast("Variables staged as a new deployment");
       const id = resp?.deployment?.id;
-      if (id) window.location.assign(`../deployments/${encodeURIComponent(id)}`);
+      // 受理成功落部署详情：typed 路由 SPA 导航。相对 URL（../deployments/<id>）
+      // 在 tab 路由下会解析成 /p/<pid>/apps/deployments/<id>（.. 吃掉 appId
+      // 段）——404 页，禁回退。
+      if (id) {
+        void navigate({
+          to: "/p/$projectId/apps/$appId/deployments/$deploymentId",
+          params: { projectId, appId, deploymentId: id },
+        });
+      }
     },
     onError: (cause) => toast.error(cause instanceof Error ? cause.message : String(cause)),
   });
@@ -106,7 +116,13 @@ export function AppVariablesTab({ projectId, appId }: { projectId: string; appId
         <p className="mt-1 text-xs text-muted-foreground">
           The app has no deployment — its spec freezes on the first deploy. Environment can be provided at deploy time.
         </p>
-        <Button size="sm" className="mt-3" onClick={() => window.location.assign("?deploy=1")}>
+        {/* Deploy now 落部署 tab（Deploy Sheet 所在面）；旧 ?deploy=1 全仓无
+            消费方，整页 reload 是死按钮。 */}
+        <Button
+          size="sm"
+          className="mt-3"
+          onClick={() => void navigate({ to: "/p/$projectId/apps/$appId/deployments", params: { projectId, appId } })}
+        >
           Deploy now
         </Button>
       </div>
