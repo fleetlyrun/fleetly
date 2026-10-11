@@ -810,3 +810,11 @@ F3.1/F3.2/F3.3/F3.6 四批走查的浏览器级挂账在后端在场的环境（
 **门禁**：mise run lint 全绿（vet / golangci 0 / buf lint / buf breaking）；mise run test 三 module 全绿（含 golden 零漂移：tasks-create 双形态 + deploy_compose_jobs/first_boot/supersede）。连带修面：50d0c12 入库的 vitest 回归锚引用钦定按钮 "Apply changes" 触禁词——wordingExemptions 补两条随本批（组件面同裁定 2026-10-10）。
 
 **换装**：未换装——纯 Go 机械批，随下次上站批部署。
+
+## 2026-10-11 记录·三十七（Processes/Variables 受理后 404 修复换装 + 记录·三十六 ADR-0062 补换装：现役 457a2c5-adr62）
+
+**换装**（cd4cd8c-adr61 → **457a2c5-adr62（现役）**，两 commit 50d0c12 console 修复 + 457a2c5 铸造批）：console 修复 = Processes/Variables tab「Apply changes」受理成功后 `window.location.assign("../deployments/<id>")` 相对路径在 IA v3 tab 路由下解析成 `/p/<pid>/apps/deployments/<id>`（`..` 吃掉 appId 段，"deployments" 被路由认成 $appId）→ Page not found；修复 = `useNavigate` typed 路由 `/p/$projectId/apps/$appId/deployments/$deploymentId` + 空态 Deploy now 修活（`?deploy=1` 自 51b8955 起全仓无消费方，改落部署 tab）+ vitest 回归锚 ×3。**两段换装实录（诚实记档）**：①09:36 首换以工作树构建、版本戳 50d0c12-navfix——但工作树含记录·三十六批的未提交 Go 改动（automation/minttask），**实际内容 = 457a2c5、戳失真**（教训：换装构建前 `git status` 核对工作树只含本批预期文件，并行会话在途时尤其致命）；②09:58 干净 HEAD 重建补换装，戳 457a2c5-adr62 与内容对齐，顺带兑现记录·三十六「随下次上站批部署」。前置 Platform Backup `27d8278b`（idempotency-key upgrade-50d0c12-navfix）+ 卷 tar 四份（proxy-acme/edge-acme/registry-zot/torchwood-pg 至 /root/upgrade-50d0c12-navfix/vols/）+ 旧二进制留底（cd4cd8c-adr61 与 50d0c12-navfix 双 .bak）。零迁移（goose 停 28 两换装窗各核一次）。
+
+**验证全绿**：doctor 10 ok / 2 warning / 0 failed（既有基线）；console 活体 index hash = `index-C_a9k8uD.js`，新 processes/variables chunk 内 typed 路由串在场、旧相对路径串已消失（`curl | grep` 实锤修复上架）；tw.dev 200（冷窗 ~60s 一次，二换装窗未再现）、n0.dev 200（存量观察不变）；受管域零滚动（VL/VM/cadvisor 6d、zot 30h、traefik 4h、managed-db 2d 全程旧龄）。
+
+**用户域伴生发现（非本批回归，引擎侧排查挂账）**：用户 09:09 经 Processes tab 调副本数的部署 `01M4N3JXQ`（g15←13）**双门超时失败**——health gate L1 超时 + rollback health gate 超时（09:13 判 failed），规格冻结停在 g15（server replicas 2）。首换装（09:36）boot reconcile 对该失败残留收敛：torchwood 六服务齐滚一次；**二换装（09:58）boot reconcile 零滚动 no-op 实锤**（torchwood 任务龄保持 22min 前不动）——daemon 重启只在存在未收敛分歧时滚用户域，收敛后重启不滚（W1 批先例同形）。收敛后 tw.dev 200 服务活体、孤儿任务 N/1 形态复现（9c35648e 曾 4/1）——与 2026-10-11 早间「缩放 N/1」收案同族，健康门/回滚门对 scale 部署的超时链路 + 孤儿清扫建议单独排查。受管库数据面核对 90 表在场（fleetly-db 2 天未滚）。
