@@ -303,6 +303,61 @@ if [ "$(deployment_states | wc -w)" -ne 3 ]; then
 fi
 log "scenario 2: window continued after restart (succeeded at +$((DONE_AT - OBS_AT))s)"
 
+# 场景 2b（ADR-0064 回归锚——staging 2026-10-11 事故本体）：replicas-only
+# 部署零任务替换。双进程 app，gen2 只把 web 副本 1→2：目标服务纯扩（2
+# Running + 0 Shutdown——零替换），另一服务零触碰（1 Running + 0 Shutdown）。
+# 旧行为（全员盖新代戳）下两服务任务全部被替换——本断言必红。
+log "scenario 2b: replicas-only scale must not replace tasks (content-anchored equivalence)"
+cli apps create --project "$PROJECT_ID" scaler >/dev/null
+APP2_ID=$(cli --json apps list --project "$PROJECT_ID" | awk -F'"' '/"id":/ {id=$4} /"name": *"scaler"/ {print id; exit}')
+[ -n "$APP2_ID" ] || { echo "scenario 2b: scaler app not found" >&2; exit 1; }
+docker exec -i "$DIND_CID" sh -c "cat > /root/scale-spec.json" <<'JSON'
+{"source":{"image":{"ref":"nginx:1.27"}},
+ "processes":[{"name":"web","image":"nginx:1.27","replicas":1},
+              {"name":"sidecar","image":"nginx:1.27","replicas":1}]}
+JSON
+cli deploy --app "$APP2_ID" --spec-file /root/scale-spec.json >/dev/null
+i=0
+while [ "$i" -lt 240 ]; do
+  s2=$(cli --json deployments list --app "$APP2_ID" | sed -n 's/.*"state": *"\([^"]*\)".*/\1/p' | head -1)
+  [ "$s2" = "succeeded" ] && break
+  case "$s2" in failed|superseded|cancelled) echo "scenario 2b: deployment reached $s2" >&2; exit 1 ;; esac
+  i=$((i + 1)); sleep 1
+done
+[ "$s2" = "succeeded" ] || { echo "scenario 2b: timed out waiting for succeeded (last=$s2)" >&2; exit 1; }
+APP2_LC=$(printf '%s' "$APP2_ID" | tr 'A-Z' 'a-z')
+svc_of() { docker exec "$DIND_CID" docker service ls --format '{{.Name}}' --filter "label=fleetly.ns.app=$APP2_LC" --filter "label=fleetly.process=$1" | head -1; }
+WEB_SVC=$(svc_of web); SIDE_SVC=$(svc_of sidecar)
+[ -n "$WEB_SVC" ] && [ -n "$SIDE_SVC" ] || { echo "scenario 2b: services not found (web=$WEB_SVC side=$SIDE_SVC)" >&2; exit 1; }
+# 基线核对：两服务各 1 Running + 0 Shutdown。
+for svc in "$WEB_SVC" "$SIDE_SVC"; do
+  rows=$(docker exec "$DIND_CID" docker service ps "$svc" --format '{{.CurrentState}}')
+  [ "$(printf '%s\n' "$rows" | grep -c '^Running ')" -eq 1 ] && [ "$(printf '%s\n' "$rows" | grep -c '^Shutdown ')" -eq 0 ] || {
+    echo "scenario 2b baseline broken for $svc:" >&2; printf '%s\n' "$rows" >&2; exit 1; }
+done
+# gen2：web replicas 1→2（唯一差异）。
+docker exec -i "$DIND_CID" sh -c "cat > /root/scale-spec2.json" <<'JSON'
+{"source":{"image":{"ref":"nginx:1.27"}},
+ "processes":[{"name":"web","image":"nginx:1.27","replicas":2},
+              {"name":"sidecar","image":"nginx:1.27","replicas":1}]}
+JSON
+cli deploy --app "$APP2_ID" --spec-file /root/scale-spec2.json >/dev/null
+i=0
+while [ "$i" -lt 240 ]; do
+  s2=$(cli --json deployments list --app "$APP2_ID" | sed -n 's/.*"state": *"\([^"]*\)".*/\1/p' | head -1)
+  [ "$s2" = "succeeded" ] && break
+  case "$s2" in failed|superseded|cancelled) echo "scenario 2b: scale deployment reached $s2" >&2; exit 1 ;; esac
+  i=$((i + 1)); sleep 1
+done
+[ "$s2" = "succeeded" ] || { echo "scenario 2b: scale deployment timed out (last=$s2)" >&2; exit 1; }
+web_rows=$(docker exec "$DIND_CID" docker service ps "$WEB_SVC" --format '{{.CurrentState}}')
+side_rows=$(docker exec "$DIND_CID" docker service ps "$SIDE_SVC" --format '{{.CurrentState}}')
+[ "$(printf '%s\n' "$web_rows" | grep -c '^Running ')" -eq 2 ] && [ "$(printf '%s\n' "$web_rows" | grep -c '^Shutdown ')" -eq 0 ] || {
+  echo "scenario 2b: scaled service must be pure scale-out (2 Running + 0 Shutdown), got:" >&2; printf '%s\n' "$web_rows" >&2; exit 1; }
+[ "$(printf '%s\n' "$side_rows" | grep -c '^Running ')" -eq 1 ] && [ "$(printf '%s\n' "$side_rows" | grep -c '^Shutdown ')" -eq 0 ] || {
+  echo "scenario 2b: untouched service must keep its original task (1 Running + 0 Shutdown), got:" >&2; printf '%s\n' "$side_rows" >&2; exit 1; }
+log "scenario 2b: replicas-only deploy scaled in place (2+0 / 1+0 task rows — zero replacement)"
+
 # 4d. 零 drift 断言（证据闭环，N0.1 P1-2）：compareSpecs 对镜像逐字比对，
 #     前提是 moby API 不把 tag 引用钉版成 repo:tag@sha256 存入 service
 #     spec（CLI 路径才会钉版）。该前提此前只有 staging 实证与 fake 单测
