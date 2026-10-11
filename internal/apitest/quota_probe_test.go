@@ -112,7 +112,10 @@ func TestTaskAndAppQuotaEnforcement(t *testing.T) {
 	})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "E_QUOTA_EXCEEDED")
-	require.Contains(t, err.Error(), "active tasks (limit 100)")
+	// 行数面文案随 ADR-0068 统一（create/scale/fire 一文案；行数腿的
+	// "would exceed" 措辞在两上限腿共用——总数锚由 E_QUOTA_EXCEEDED 码
+	// 与上方 100 行夹具承载）。
+	require.Contains(t, err.Error(), "would exceed")
 
 	// ScaleTask 增量面：199→200 放行；→201 拒。
 	scaled, err := tasksAPI.ScaleTask(ctx, &automationv1.ScaleTaskRequest{Id: made.GetTask().GetId(), DesiredConcurrency: 2})

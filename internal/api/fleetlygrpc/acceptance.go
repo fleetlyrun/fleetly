@@ -183,22 +183,17 @@ func (s *Services) configQuota(projectID, name string) acceptanceCheck {
 // Task 行数与 desired_concurrency 之和双上限；desired 是本单新增量（one-shot
 // 归一后 ≥1，resident 缩零初态合法为 0）。收口 F1.5 挂账的 per-Task
 // desired_concurrency sanity 上限——per-Task 上限由项目总量承载。读在
-// 事务内（SQLite 单写连接串行，与写同事务无 TOCTOU）。
+// 事务内（SQLite 单写连接串行，与写同事务无 TOCTOU）。配额定律经
+// engine.CheckTaskQuota 单源（ADR-0068）；哨兵经 mapTaskQuotaError 统一
+// 转义（与 scale/fire 动词同文案）。
 func (s *Services) taskQuota(projectID string, desired int64) acceptanceCheck {
 	return func(ctx context.Context, tx *sql.Tx) error {
 		active, sum, err := s.Tasks.StatsByProject(ctx, tx, projectID)
 		if err != nil {
 			return err
 		}
-		if active >= engine.MaxTasksPerProject {
-			return apperr.New("E_QUOTA_EXCEEDED",
-				"project %s already holds %d active tasks (limit %d); delete or drain tasks first",
-				projectID, active, engine.MaxTasksPerProject)
-		}
-		if sum+desired > engine.MaxTaskConcurrencyPerProject {
-			return apperr.New("E_QUOTA_EXCEEDED",
-				"project %s desired concurrency %d + %d new would exceed the limit %d",
-				projectID, sum, desired, engine.MaxTaskConcurrencyPerProject)
+		if err := engine.CheckTaskQuota(projectID, active, sum, desired, true); err != nil {
+			return mapTaskQuotaError(err)
 		}
 		return nil
 	}

@@ -870,3 +870,13 @@ F3.1/F3.2/F3.3/F3.6 四批走查的浏览器级挂账在后端在场的环境（
 **门禁**：mise run test 三 module 全绿 + mise run lint 全绿。
 
 **换装**：未换装——纯 Go 机械批，随下次上站批部署。
+
+## 2026-10-11 记录·四十二（架构评审第三轮候选 4：Task 配额定律单源 + 哨兵错误面收口 ADR-0068；未换装）
+
+**裁决**：ADR-0068——①配额定律收口 engine 纯函数 `CheckTaskQuota(projectID, active, sum, delta, spawn)`：双上限闭区间 + 两模态入签名（spawn 腿计活跃行数/scale 腿只计并发净增量），create 受理位/scale/fire 三判定共用（stats 读取留各调用方事务内）；②`mapTaskQuotaError` 唯一转义（动词中性文案 + suggestion 保留；scale 专属措辞与 schedule 复制体两旧文案退役——quota_probe 断言码 + "would exceed" 松短语，行数腿断言随统一文案更新注明依据）；③mapper 拓扑注记：mapStateError 的 Task 三分支实核不可达（现役 task 域调用点全为 state 读），归并单 case 委托 mapTaskVerbError 并注记「Task 哨兵唯一 owner」——不做无病灶搬迁；④firstboot 有界等待是哨兵第四消费者不同模态，保留。
+
+**测试与变异验证**：TestCheckTaskQuotaModes 直测（spawn/scale 两模态 + 恰好=limit 闭区间边界 + scale 超行数豁免）；变异=spawn 腿删除 → 直测 + TestFirstBootQuotaBoundedRetry 双红，还原复绿；quota_probe 全绿 + golden 零漂移。
+
+**门禁**：mise run test 三 module 全绿 + mise run lint 全绿。
+
+**换装**：未换装——纯 Go 机械批（错误文案变更含在内：create/scale/fire 配额拒面统一），随下次上站批部署。

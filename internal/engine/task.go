@@ -547,19 +547,35 @@ func (e *Engine) stopRunRow(ctx context.Context, m *run.Run, reason string, now 
 }
 
 // taskSpawnQuota 是铸 Task 的配额受理检查（ADR-0017 附录 A.1；含本单自
-// 占 desired 位）：命中返回哨兵——调用方转有界等待（firstboot）/skip
-// （到期拍）/诚实拒绝（手动拍）。此前在 firstboot 与 schedule 各持一份
-// 逐字拷贝，收口为 commitWrite 的 checks 段。
+// CheckTaskQuota 是项目 Task 配额的唯一定律（ADR-0017 附录 A.1；ADR-0068
+// 收口——此前 spawn/scale/API 受理位三处判定两条文案各自演化）。双上限：
+// spawn 模态计活跃行数（铸造占新行位），scale 模态只计并发净增量（原地
+// 改 desired 不占新行位）。active/sum 由调用方事务内 StatsByProject 读
+// （SQLite 单写串行，无 TOCTOU）；命中返回 ErrTaskQuota 哨兵——API 层
+// mapTaskQuotaError 统一转义，engine 域调用方转各自语义（firstboot 有界
+// 等待 / 到期拍 skip / 手动拍诚实拒绝）。
+func CheckTaskQuota(projectID string, active int, sum, delta int64, spawn bool) error {
+	if spawn && active >= MaxTasksPerProject {
+		return fmt.Errorf("%w: project %s holds %d active tasks (limit %d); delete or drain tasks first",
+			ErrTaskQuota, projectID, active, MaxTasksPerProject)
+	}
+	if sum+delta > MaxTaskConcurrencyPerProject {
+		return fmt.Errorf("%w: project %s desired concurrency %d + %d would exceed the limit %d",
+			ErrTaskQuota, projectID, sum, delta, MaxTaskConcurrencyPerProject)
+	}
+	return nil
+}
+
+// taskSpawnQuota 是铸造位的配额受理检查（含本单自占 desired 位）：命中
+// 返回哨兵——调用方转有界等待（firstboot）/skip（到期拍）/诚实拒绝（手动
+// 拍）。此前在 firstboot 与 schedule 各持一份逐字拷贝，收口为 commitWrite
+// 的 checks 段。
 func (e *Engine) taskSpawnQuota(ctx context.Context, tx *sql.Tx, projectID string, desired int64) error {
 	active, sum, err := e.tasks.StatsByProject(ctx, tx, projectID)
 	if err != nil {
 		return err
 	}
-	if active >= MaxTasksPerProject || sum+desired > MaxTaskConcurrencyPerProject {
-		return fmt.Errorf("%w: project %s active tasks %d, desired concurrency %d + %d",
-			ErrTaskQuota, projectID, active, sum, desired)
-	}
-	return nil
+	return CheckTaskQuota(projectID, active, sum, desired, true)
 }
 
 // createRun 落一条 pending Run（四件一拍：行 + run.created 事件 + 审计）。
@@ -717,15 +733,15 @@ func (e *Engine) ScaleTask(ctx context.Context, id string, desired int64) (*task
 				ErrTaskDraining, id)
 		}
 		// 配额增量检查（ADR-0017 附录 A.1）：本单对项目并发总量的净增量 =
-		// 新值 − 现值；事务内读（SQLite 单写连接串行，无 TOCTOU）。
+		// 新值 − 现值；事务内读（SQLite 单写连接串行，无 TOCTOU）。scale
+		// 模态不占新行位——CheckTaskQuota 的 spawn=false 腿（ADR-0068）。
 		if delta := desired - t.DesiredConcurrency; delta > 0 {
 			_, sum, err := e.tasks.StatsByProject(ctx, tx, t.ProjectID)
 			if err != nil {
 				return err
 			}
-			if sum+delta > MaxTaskConcurrencyPerProject {
-				return fmt.Errorf("%w: project %s desired concurrency %d + %d would exceed %d",
-					ErrTaskQuota, t.ProjectID, sum, delta, MaxTaskConcurrencyPerProject)
+			if err := CheckTaskQuota(t.ProjectID, 0, sum, delta, false); err != nil {
+				return err
 			}
 		}
 		// 原地迁移（active→active 仅改 desired）：无状态事件（抑制规则），

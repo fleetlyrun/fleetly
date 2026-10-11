@@ -413,7 +413,9 @@ func (svc *RunsService) waitRunByTask(ctx context.Context, taskID string, stream
 }
 
 // mapTaskVerbError 映射 Task 生命周期动词哨兵（形态/终态类错误是请求与
-// 行现状的冲突面）。
+// 行现状的冲突面）。Task 域哨兵的唯一 owner——新增 Task 哨兵落此；通用
+// 出口 mapStateError 内的 Task 分支只是防御 fallback（现役调用点全为
+// state 读，不可达；ADR-0068 拓扑注记）。
 func mapTaskVerbError(err error) error {
 	if err == nil {
 		return nil
@@ -423,10 +425,7 @@ func mapTaskVerbError(err error) error {
 		return ae
 	}
 	if errors.Is(err, engine.ErrTaskQuota) {
-		return apperr.New("E_QUOTA_EXCEEDED",
-			"scaling this task would exceed the project concurrency limit %d", engine.MaxTaskConcurrencyPerProject).
-			WithCause(err).
-			WithSuggestion("Scale down other tasks in the project, or delete finished tasks to free quota.")
+		return mapTaskQuotaError(err)
 	}
 	if errors.Is(err, engine.ErrTaskDraining) {
 		// 排空中缩容（B12 P3-2）：显式冲突 + 可行动建议，不落裸 CAS 文案。
@@ -435,6 +434,17 @@ func mapTaskVerbError(err error) error {
 			WithSuggestion("Renew the task to revive the pool before scaling, or wait for the drain to finish.")
 	}
 	return mapStateError(err, "task")
+}
+
+// mapTaskQuotaError 是 ErrTaskQuota 的唯一 errcode 面（create/scale/fire
+// 三 verb 共用一文案，ADR-0068——此前 scale 专属措辞与 schedule 复制体
+// 两种说法各自演化；哨兵详情（项目现值）在 cause 链）。
+func mapTaskQuotaError(err error) error {
+	return apperr.New("E_QUOTA_EXCEEDED",
+		"this request would exceed the project task quota (%d tasks / %d desired concurrency)",
+		engine.MaxTasksPerProject, engine.MaxTaskConcurrencyPerProject).
+		WithCause(err).
+		WithSuggestion("Scale down other tasks in the project, or delete finished tasks to free quota.")
 }
 
 // ---- Schedules（F1.7，ADR-0018） ----
@@ -660,10 +670,9 @@ func mapScheduleVerbError(err error) error {
 	case errors.Is(err, engine.ErrScheduleTerminal):
 		return apperr.New("E_CONFLICT", "schedule already deleted").WithCause(err)
 	case errors.Is(err, engine.ErrTaskQuota):
-		// 手动拍超配额诚实拒绝（到期拍走 skip；ADR-0017 附录 A.1）。
-		return apperr.New("E_QUOTA_EXCEEDED",
-			"firing this schedule would exceed the project task quota (%d tasks / %d desired concurrency)",
-			engine.MaxTasksPerProject, engine.MaxTaskConcurrencyPerProject).WithCause(err)
+		// 手动拍超配额诚实拒绝（到期拍走 skip；ADR-0017 附录 A.1）——
+		// 文案经 mapTaskQuotaError 单源（ADR-0068）。
+		return mapTaskQuotaError(err)
 	}
 	return mapStateError(err, "schedule")
 }

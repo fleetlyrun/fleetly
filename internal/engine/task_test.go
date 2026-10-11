@@ -681,6 +681,25 @@ func TestOwnerRevokedDrainsTasks(t *testing.T) {
 // TestScaleTaskDrainingRejected（B12 P3-2）：draining Task 的 ScaleTask
 // 不再落裸 CAS 冲突（"并发改动"文案误导）——显式哨兵 + 可行动文案，行
 // 零写入。
+// TestCheckTaskQuotaModes（ADR-0068）：配额定律两模态的直接锚——spawn 腿
+// 计活跃行数上限、scale 腿只计并发净增量（不占新行位）；恰好 =limit 放行
+// （两上限都是闭区间上界）。
+func TestCheckTaskQuotaModes(t *testing.T) {
+	const project = "01JD0PROJ00000000000000000"
+
+	// spawn 模态：行数腿与并发腿分别命中。
+	require.ErrorIs(t, CheckTaskQuota(project, MaxTasksPerProject, 0, 1, true), ErrTaskQuota)
+	require.ErrorIs(t, CheckTaskQuota(project, 0, MaxTaskConcurrencyPerProject, 1, true), ErrTaskQuota)
+	require.NoError(t, CheckTaskQuota(project, MaxTasksPerProject-1, 0, 1, true), "行数上限是闭区间上界")
+
+	// scale 模态：行数腿不参与（不占新行位），并发腿照执法。
+	require.NoError(t, CheckTaskQuota(project, MaxTasksPerProject+5, 10, 5, false),
+		"scale ignores the row-count leg even at/over the spawn limit")
+	require.ErrorIs(t, CheckTaskQuota(project, 0, MaxTaskConcurrencyPerProject-5, 6, false), ErrTaskQuota)
+	require.NoError(t, CheckTaskQuota(project, 0, MaxTaskConcurrencyPerProject-5, 5, false),
+		"恰好补满到上限放行")
+}
+
 func TestScaleTaskDrainingRejected(t *testing.T) {
 	e, _, _ := newTestEngine(t)
 	ctx := context.Background()
