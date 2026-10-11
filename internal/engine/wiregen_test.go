@@ -74,3 +74,44 @@ func TestWireGenAttributionUnchangedWorkloadsDontBlockL1(t *testing.T) {
 	e.step(ctx)
 	require.Equal(t, deployment.StateSucceeded, getDeployment(t, e, d2.ID).State)
 }
+
+// ADR-0064 纯 scale 部署（staging 2026-10-11 用户场景的本体）：全部载体
+// wire-gen 停旧值（跳过/scale 不换代）→ L1 门集合为空 = vacuously
+// ready——不得等一个永远不会到来的 running@部署gen（空集判假会把纯
+// scale 部署卡成 L1 超时 + 回滚也超时的双门事故）。
+func TestPureScaleDeploymentPassesL1(t *testing.T) {
+	e, rt, clock := newTestEngine(t)
+	ctx := context.Background()
+
+	rev1 := freezeSpec(t, e, 1, tTwoProcSpec)
+	d1, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev1})
+	require.NoError(t, err)
+	e.step(ctx)
+	e.handleObservation(ctx, workloadEventRunning(tAppID+"-web", 1))
+	e.handleObservation(ctx, workloadEventRunning(tAppID+"-sidecar", 1))
+	e.step(ctx)
+	clock.Advance(e.opts.ObserveWindow + time.Second)
+	e.step(ctx)
+	require.Equal(t, deployment.StateSucceeded, getDeployment(t, e, d1.ID).State)
+
+	// gen 2：web 副本 1→2（纯 scale）。回执全员 wire-gen=1（swarm scale-
+	// only 分支保模板；sidecar 跳过）。
+	rt.wireGens = map[string]capability.Generation{
+		tAppID + "-web":     1,
+		tAppID + "-sidecar": 1,
+	}
+	scaled := `{"schema_version":1,"app":{"id":"` + tAppID + `","project":"` + tProjectID + `"},` +
+		`"source":{"image":{"ref":"nginx:1.27"}},` +
+		`"processes":[{"name":"web","image":"nginx:1.27","replicas":2},` +
+		`{"name":"sidecar","image":"envoy:1.31","replicas":1}]}`
+	rev2 := freezeSpec(t, e, 2, scaled)
+	d2, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev2})
+	require.NoError(t, err)
+	e.step(ctx) // materialize + 空集 L1 → 一拍直落 observing
+	require.Equal(t, deployment.StateObserving, getDeployment(t, e, d2.ID).State,
+		"pure-scale deployments must pass L1 vacuously (no workload rolled at the deployment gen)")
+
+	clock.Advance(e.opts.ObserveWindow + time.Second)
+	e.step(ctx)
+	require.Equal(t, deployment.StateSucceeded, getDeployment(t, e, d2.ID).State)
+}

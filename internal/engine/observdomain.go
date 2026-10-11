@@ -118,17 +118,18 @@ func (o *observDomain) forget(wid string) {
 }
 
 // readyGen 是 L1 健康门的域内实现：某 App 在指定 Generation 下发的全部
-// Workload（ensuredGen 界定）均观测到 running@gen。集合为空（重启后缓存
-// 未重建）= 未就绪（驱动重新幂等 Ensure 后重建，语义自洽）。
+// Workload（ensuredGen 界定）均观测到 running@gen。空集 = 本代零滚动
+//（纯 scale / 全跳过——内容锚定等价下的合法形态，ADR-0064）：
+// vacuously ready。调用序保证查询前 materialize 已入账（重启冷缓存由
+// 首拍全量物化重建——C17 备忘同进程内存态，冷启动首拍必全量物化），
+// 空集不可能是缓存未建。
 func (o *observDomain) readyGen(appID string, gen uint64) bool {
 	o.mu.RLock()
 	defer o.mu.RUnlock()
-	count := 0
 	for wid, owner := range o.workloadApp {
 		if owner.domain != ownerApp || owner.id != appID || o.ensuredGen[wid] != gen {
 			continue
 		}
-		count++
 		ev, seen := o.observations[wid]
 		// 就绪门：全部成员必须已观测且 running@gen（未观测 = 未就绪，
 		// 与看门狗语义相反——后者未观测不咬合）。
@@ -136,7 +137,7 @@ func (o *observDomain) readyGen(appID string, gen uint64) bool {
 			return false
 		}
 	}
-	return count > 0
+	return true
 }
 
 // scanGen 遍历某 App 在指定 Generation 下发的 Workload 集，返回（咬合
