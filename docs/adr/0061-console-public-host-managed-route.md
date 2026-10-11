@@ -39,5 +39,5 @@ Console 访问长期依赖手工 SSH 隧道（`ssh -N -L` 转发 9081）——�
 - [x] engine 合成双路由 + 三态测试（装配/未配置/畸形 gateway_url）+ publishRoutes 合并与签名短路不回归（c790b9a）。
 - [x] `ConsoleLoginPath` 漂移守卫三锚（常量字面值 / gateway 实服务该路径 / 相近路径 404）（c790b9a）。
 - [x] ACME CA env 覆盖 + 缺省字节不变双案测试（01a5d38）。
-- [ ] staging 换装：drop-in `console.conf` + `FLEETLY_PROXY_ACME_CA_SERVER` 切生产 CA → `https://console.dev.fleetly.run` 走查（生产 CA 证书 + 主路由整面 + 登录限速活体）。
-- [ ] runbook 端口矩阵增补（80/443 行 + 9081 行注）与 dated 记录。
+- [x] staging 换装：drop-in `console.conf` + `FLEETLY_PROXY_ACME_CA_SERVER` 切生产 CA → `https://console.dev.fleetly.run` 走查全绿（生产 CA 证书 CN=YR2 + 主路由整面 index/SPA 200 + 登录限速活体 23×401→429；存量主机随 ACME 卷清理一并换发生产 CA，runbook 记录·三十五）。
+- [x] runbook 端口矩阵增补（80/443 行 + 9081 行注）与 dated 记录（记录·三十五）。

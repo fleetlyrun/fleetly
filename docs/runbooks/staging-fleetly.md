@@ -783,3 +783,20 @@ F3.1/F3.2/F3.3/F3.6 四批走查的浏览器级挂账在后端在场的环境（
 **诚实边界**：①k3s 面暂不覆盖 RolloutStalled（observeFromPodSpec 未填，Deployment 滚动卡住检测留后续批）；②driftScan 只扫 App 域——受管域/Database 域的 paused 检测不在射程（受管域 60s 强制重放对 spec 相同同样 no-op 不 resume，同缺口另一面，受管服务健康概率低，挂账）；③恢复动作纯人工（--force 或带 spec 变更的重部署），不自动纠正。
 
 **门禁**：test 三 module + lint 全绿；builders railpack 测试红 = 本机 docker 组旧会话假象（记录·二十六环境备忘在案，非本批引入）。
+
+## 2026-10-11 记录·三十五（ADR-0061 Console 公网发布批：console.dev.fleetly.run 上线 + 生产 CA 换发全量收口）
+
+**裁决与实现链**：ADR-0061 六 commit（7fe3034 config.console 三键+engine ConsoleConfig 装配 → 67ecf44 capability RouteRateLimit+校验+traefik rateLimit 受管中间件+golden → c790b9a engine 合成双路由+登录路径漂移守卫 → 01a5d38 ACME CA env 可配置 → d05f226 ADR 成文+端口矩阵）。
+
+**换装**（18a9c2b-adr60 → **cd4cd8c-adr61（现役）**）：纯 Go 批——零迁移、install.sh 零变更、dist 零换（嵌入指纹 index-BiQfzoN5.js 对账一致，`grep -oa` 口径）。前置 Platform Backup `35616e38` + 旧二进制留底 `/root/fleetlyd-18a9c2b-adr60.bak`。配置面新增：unit drop-in `console.conf` 三 env（`FLEETLY_CONSOLE_HOST=console.dev.fleetly.run` + `FLEETLY_CONSOLE_GATEWAY_URL=http://10.124.0.3:9081` + `FLEETLY_PROXY_ACME_CA_SERVER=生产 CA 目录`）——drop-in 五件→**六件**。
+
+**验证链（全绿）**：
+1. **发布面**：9082 `/proxy/config` 含 console 双路由（主路由 Host-only + 登录路由 `Host && PathPrefix(/v1/auth/login)`）与 rateLimit 中间件（average 10 / period 1m / burst 20）——与 golden 同形（routeKey FNV 后缀逐位一致）。
+2. **主路由整面**：https://console.dev.fleetly.run index 200 + SPA 深链 200 + `<title>fleetly console</title>`；未知 `/v1/*` 仍 gateway JSON 404（不被 SPA fallback 吞）。
+3. **证书生产 CA**：console 证书 issuer `CN=YR2`（Let's Encrypt 生产链，非 `(STAGING)`）——ACME 卷清空 + traefik 强滚后**存量主机一并换发**（tw.dev 同 YR2），`curl`（无 -k）直连 200——**浏览器告警源全量清零**（旧 staging CA 证书不再在服）。
+4. **登录限速活体**：突发 25 连发坏凭证 = 23×401 → 2×429（burst 20 + 均值 10/min 生效——限速从挂账变落地）。
+5. **零扰动**：tw.dev 全程 200（traefik 强滚窗无感）；doctor 10 ok / 2 warning / 0 failed（两条 warning 与既有批次同形：通知通道未建 + 告警口径）；受管域零新滚（traefik 强滚为显式动作恰一次）。
+
+**清 ACME 卷手顺（生产 CA 切换的存量换发通道，ADR-0061 决策 5 可选腿）**：`docker exec <traefik容器> sh -c ': > /acme/acme.json'` → `docker service update --force fleetly-fleetly-system-proxy-traefik`——强滚不触发 reconciler 竞态（spec 未变 = no-op），换发按需逐主机完成（访问触达才签，LE 生产配额 50/周对个位数主机余量充足；browse 会话 tls=none 不占配额）。
+
+**备忘**：`console.conf` 未设 `FLEETLY_CONSOLE_TLS`（空 = 渲染层 auto 口径）；登录路由覆盖的是 PathPrefix 形态（`/v1/auth/loginX` 亦在限速窗内——超集限速是安全侧）；ConsoleLoginPath 与 identity.proto 注解的漂移由 apitest 守卫钉死（注解改路径必须同批改 engine 常量）。
