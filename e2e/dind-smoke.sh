@@ -250,19 +250,21 @@ if [ "$(deployment_states | wc -w)" -ne 2 ] || [ "$(deployment_states | grep -c 
   exit 1
 fi
 
-# 载体无重复下发：同 spec 的 gen2 Ensure 是 update no-op；kill 前后的重放
-# 不得产生额外 task（恰两行：gen1 Shutdown + gen2 Running）。
+# 载体无重复下发（ADR-0064 口径）：同 spec 的 gen2 部署内容等价 → 零
+# 任务替换（gen1 任务原样在服，恰一行 Running；旧口径下期待 gen1
+# Shutdown + gen2 Running 两行——全员换代的旧行为已废止）。kill 前后的
+# 重放同样零新增。
 SVC=$(service_name)
 task_rows=$(docker exec "$DIND_CID" docker service ps "$SVC" --format '{{.CurrentState}}')
 n_running=$(printf '%s\n' "$task_rows" | grep -c '^Running ' || true)
 n_shutdown=$(printf '%s\n' "$task_rows" | grep -c '^Shutdown ' || true)
 n_total=$(printf '%s\n' "$task_rows" | grep -c . || true)
-if [ "$n_total" -ne 2 ] || [ "$n_running" -ne 1 ] || [ "$n_shutdown" -ne 1 ]; then
-  echo "scenario 1: expected 2 task rows (1 Running + 1 Shutdown), got ($n_total/$n_running/$n_shutdown):" >&2
+if [ "$n_total" -ne 1 ] || [ "$n_running" -ne 1 ] || [ "$n_shutdown" -ne 0 ]; then
+  echo "scenario 1: expected 1 task row (1 Running + 0 Shutdown — same-spec redeploy must not replace), got ($n_total/$n_running/$n_shutdown):" >&2
   printf '%s\n' "$task_rows" >&2
   exit 1
 fi
-log "scenario 1: no duplicate dispatch (2 task rows: 1 running + 1 shutdown), baseline intact"
+log "scenario 1: no duplicate dispatch (1 task row — same-spec redeploy replaced nothing), baseline intact"
 
 log "scenario 2: SIGTERM during observing (drain grace) then window continuation"
 cli --json deploy --app "$APP_ID" --image nginx:1.27 >/dev/null
