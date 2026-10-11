@@ -38,8 +38,12 @@ type CreateExecSessionRequest struct {
 	Process string `protobuf:"bytes,2,opt,name=process,proto3" json:"process,omitempty"`
 	// command 是完整 argv（数组形态；零 shell——shellguard 射程延续）。
 	// 空且 tty=true 时缺省 ["/bin/sh"]；空且 tty=false 拒绝（服务端校验）。
-	Command       []string `protobuf:"bytes,3,rep,name=command,proto3" json:"command,omitempty"`
-	Tty           bool     `protobuf:"varint,4,opt,name=tty,proto3" json:"tty,omitempty"`
+	Command []string `protobuf:"bytes,3,rep,name=command,proto3" json:"command,omitempty"`
+	Tty     bool     `protobuf:"varint,4,opt,name=tty,proto3" json:"tty,omitempty"`
+	// instance 是可选的实例锚（ADR-0067）：非空时受理锚定到该具体在跑实例
+	// （编排器载体标识——ListExecInstances 观测行的 instance 值），锚不中
+	// 即 E_NOT_FOUND 诚实失败；空 = 平台代选首个在跑实例（既有语义）。
+	Instance      string `protobuf:"bytes,5,opt,name=instance,proto3" json:"instance,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -102,8 +106,168 @@ func (x *CreateExecSessionRequest) GetTty() bool {
 	return false
 }
 
-// ExecSession 是受理后的会话元数据（instance/node 是实际命中——诚实回显，
-// 多副本进程平台代选首个在跑实例）。
+func (x *CreateExecSessionRequest) GetInstance() string {
+	if x != nil {
+		return x.Instance
+	}
+	return ""
+}
+
+// ListExecInstancesRequest 是进程在跑实例集的观测请求。
+type ListExecInstancesRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	AppId string                 `protobuf:"bytes,1,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
+	// process 是 App 内进程模板名（web/worker…）。
+	Process       string `protobuf:"bytes,2,opt,name=process,proto3" json:"process,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListExecInstancesRequest) Reset() {
+	*x = ListExecInstancesRequest{}
+	mi := &file_fleetly_runtime_v1_exec_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListExecInstancesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListExecInstancesRequest) ProtoMessage() {}
+
+func (x *ListExecInstancesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_runtime_v1_exec_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListExecInstancesRequest.ProtoReflect.Descriptor instead.
+func (*ListExecInstancesRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_runtime_v1_exec_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *ListExecInstancesRequest) GetAppId() string {
+	if x != nil {
+		return x.AppId
+	}
+	return ""
+}
+
+func (x *ListExecInstancesRequest) GetProcess() string {
+	if x != nil {
+		return x.Process
+	}
+	return ""
+}
+
+type ListExecInstancesResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// instances 是在跑实例集（ID 升序；空 = 无在跑实例）。
+	Instances     []*ExecInstance `protobuf:"bytes,1,rep,name=instances,proto3" json:"instances,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListExecInstancesResponse) Reset() {
+	*x = ListExecInstancesResponse{}
+	mi := &file_fleetly_runtime_v1_exec_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListExecInstancesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListExecInstancesResponse) ProtoMessage() {}
+
+func (x *ListExecInstancesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_runtime_v1_exec_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListExecInstancesResponse.ProtoReflect.Descriptor instead.
+func (*ListExecInstancesResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_runtime_v1_exec_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *ListExecInstancesResponse) GetInstances() []*ExecInstance {
+	if x != nil {
+		return x.Instances
+	}
+	return nil
+}
+
+// ExecInstance 是一行在跑实例观测（instance 与受理回显/会话 meta 的
+// instance 同源——编排器载体标识，平台不解析；node_id 是平台节点 ID）。
+type ExecInstance struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Instance      string                 `protobuf:"bytes,1,opt,name=instance,proto3" json:"instance,omitempty"`
+	NodeId        string                 `protobuf:"bytes,2,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExecInstance) Reset() {
+	*x = ExecInstance{}
+	mi := &file_fleetly_runtime_v1_exec_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExecInstance) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExecInstance) ProtoMessage() {}
+
+func (x *ExecInstance) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_runtime_v1_exec_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExecInstance.ProtoReflect.Descriptor instead.
+func (*ExecInstance) Descriptor() ([]byte, []int) {
+	return file_fleetly_runtime_v1_exec_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *ExecInstance) GetInstance() string {
+	if x != nil {
+		return x.Instance
+	}
+	return ""
+}
+
+func (x *ExecInstance) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
+// ExecSession 是受理后的会话元数据（instance/node 是实际命中——诚实回显；
+// 多副本进程由调用方锚定具体实例，未锚定时平台代选首个在跑实例）。
 type ExecSession struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -121,7 +285,7 @@ type ExecSession struct {
 
 func (x *ExecSession) Reset() {
 	*x = ExecSession{}
-	mi := &file_fleetly_runtime_v1_exec_proto_msgTypes[1]
+	mi := &file_fleetly_runtime_v1_exec_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -133,7 +297,7 @@ func (x *ExecSession) String() string {
 func (*ExecSession) ProtoMessage() {}
 
 func (x *ExecSession) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_runtime_v1_exec_proto_msgTypes[1]
+	mi := &file_fleetly_runtime_v1_exec_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -146,7 +310,7 @@ func (x *ExecSession) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecSession.ProtoReflect.Descriptor instead.
 func (*ExecSession) Descriptor() ([]byte, []int) {
-	return file_fleetly_runtime_v1_exec_proto_rawDescGZIP(), []int{1}
+	return file_fleetly_runtime_v1_exec_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ExecSession) GetId() string {
@@ -225,7 +389,7 @@ type CreateExecSessionResponse struct {
 
 func (x *CreateExecSessionResponse) Reset() {
 	*x = CreateExecSessionResponse{}
-	mi := &file_fleetly_runtime_v1_exec_proto_msgTypes[2]
+	mi := &file_fleetly_runtime_v1_exec_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -237,7 +401,7 @@ func (x *CreateExecSessionResponse) String() string {
 func (*CreateExecSessionResponse) ProtoMessage() {}
 
 func (x *CreateExecSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_runtime_v1_exec_proto_msgTypes[2]
+	mi := &file_fleetly_runtime_v1_exec_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -250,7 +414,7 @@ func (x *CreateExecSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateExecSessionResponse.ProtoReflect.Descriptor instead.
 func (*CreateExecSessionResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_runtime_v1_exec_proto_rawDescGZIP(), []int{2}
+	return file_fleetly_runtime_v1_exec_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *CreateExecSessionResponse) GetSession() *ExecSession {
@@ -288,7 +452,7 @@ type StreamExecSessionRequest struct {
 
 func (x *StreamExecSessionRequest) Reset() {
 	*x = StreamExecSessionRequest{}
-	mi := &file_fleetly_runtime_v1_exec_proto_msgTypes[3]
+	mi := &file_fleetly_runtime_v1_exec_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -300,7 +464,7 @@ func (x *StreamExecSessionRequest) String() string {
 func (*StreamExecSessionRequest) ProtoMessage() {}
 
 func (x *StreamExecSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_runtime_v1_exec_proto_msgTypes[3]
+	mi := &file_fleetly_runtime_v1_exec_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -313,7 +477,7 @@ func (x *StreamExecSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamExecSessionRequest.ProtoReflect.Descriptor instead.
 func (*StreamExecSessionRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_runtime_v1_exec_proto_rawDescGZIP(), []int{3}
+	return file_fleetly_runtime_v1_exec_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *StreamExecSessionRequest) GetFrame() isStreamExecSessionRequest_Frame {
@@ -383,7 +547,7 @@ type ExecResize struct {
 
 func (x *ExecResize) Reset() {
 	*x = ExecResize{}
-	mi := &file_fleetly_runtime_v1_exec_proto_msgTypes[4]
+	mi := &file_fleetly_runtime_v1_exec_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -395,7 +559,7 @@ func (x *ExecResize) String() string {
 func (*ExecResize) ProtoMessage() {}
 
 func (x *ExecResize) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_runtime_v1_exec_proto_msgTypes[4]
+	mi := &file_fleetly_runtime_v1_exec_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -408,7 +572,7 @@ func (x *ExecResize) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecResize.ProtoReflect.Descriptor instead.
 func (*ExecResize) Descriptor() ([]byte, []int) {
-	return file_fleetly_runtime_v1_exec_proto_rawDescGZIP(), []int{4}
+	return file_fleetly_runtime_v1_exec_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ExecResize) GetCols() int32 {
@@ -441,7 +605,7 @@ type StreamExecSessionResponse struct {
 
 func (x *StreamExecSessionResponse) Reset() {
 	*x = StreamExecSessionResponse{}
-	mi := &file_fleetly_runtime_v1_exec_proto_msgTypes[5]
+	mi := &file_fleetly_runtime_v1_exec_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -453,7 +617,7 @@ func (x *StreamExecSessionResponse) String() string {
 func (*StreamExecSessionResponse) ProtoMessage() {}
 
 func (x *StreamExecSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_runtime_v1_exec_proto_msgTypes[5]
+	mi := &file_fleetly_runtime_v1_exec_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -466,7 +630,7 @@ func (x *StreamExecSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamExecSessionResponse.ProtoReflect.Descriptor instead.
 func (*StreamExecSessionResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_runtime_v1_exec_proto_rawDescGZIP(), []int{5}
+	return file_fleetly_runtime_v1_exec_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *StreamExecSessionResponse) GetFrame() isStreamExecSessionResponse_Frame {
@@ -566,7 +730,7 @@ type ExecSessionMeta struct {
 
 func (x *ExecSessionMeta) Reset() {
 	*x = ExecSessionMeta{}
-	mi := &file_fleetly_runtime_v1_exec_proto_msgTypes[6]
+	mi := &file_fleetly_runtime_v1_exec_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -578,7 +742,7 @@ func (x *ExecSessionMeta) String() string {
 func (*ExecSessionMeta) ProtoMessage() {}
 
 func (x *ExecSessionMeta) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_runtime_v1_exec_proto_msgTypes[6]
+	mi := &file_fleetly_runtime_v1_exec_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -591,7 +755,7 @@ func (x *ExecSessionMeta) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecSessionMeta.ProtoReflect.Descriptor instead.
 func (*ExecSessionMeta) Descriptor() ([]byte, []int) {
-	return file_fleetly_runtime_v1_exec_proto_rawDescGZIP(), []int{6}
+	return file_fleetly_runtime_v1_exec_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ExecSessionMeta) GetInstance() string {
@@ -618,7 +782,7 @@ type ExecExit struct {
 
 func (x *ExecExit) Reset() {
 	*x = ExecExit{}
-	mi := &file_fleetly_runtime_v1_exec_proto_msgTypes[7]
+	mi := &file_fleetly_runtime_v1_exec_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -630,7 +794,7 @@ func (x *ExecExit) String() string {
 func (*ExecExit) ProtoMessage() {}
 
 func (x *ExecExit) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_runtime_v1_exec_proto_msgTypes[7]
+	mi := &file_fleetly_runtime_v1_exec_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -643,7 +807,7 @@ func (x *ExecExit) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecExit.ProtoReflect.Descriptor instead.
 func (*ExecExit) Descriptor() ([]byte, []int) {
-	return file_fleetly_runtime_v1_exec_proto_rawDescGZIP(), []int{7}
+	return file_fleetly_runtime_v1_exec_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ExecExit) GetCode() int32 {
@@ -665,7 +829,7 @@ type ExecStreamError struct {
 
 func (x *ExecStreamError) Reset() {
 	*x = ExecStreamError{}
-	mi := &file_fleetly_runtime_v1_exec_proto_msgTypes[8]
+	mi := &file_fleetly_runtime_v1_exec_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -677,7 +841,7 @@ func (x *ExecStreamError) String() string {
 func (*ExecStreamError) ProtoMessage() {}
 
 func (x *ExecStreamError) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_runtime_v1_exec_proto_msgTypes[8]
+	mi := &file_fleetly_runtime_v1_exec_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -690,7 +854,7 @@ func (x *ExecStreamError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecStreamError.ProtoReflect.Descriptor instead.
 func (*ExecStreamError) Descriptor() ([]byte, []int) {
-	return file_fleetly_runtime_v1_exec_proto_rawDescGZIP(), []int{8}
+	return file_fleetly_runtime_v1_exec_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ExecStreamError) GetCode() string {
@@ -711,12 +875,21 @@ var File_fleetly_runtime_v1_exec_proto protoreflect.FileDescriptor
 
 const file_fleetly_runtime_v1_exec_proto_rawDesc = "" +
 	"\n" +
-	"\x1dfleetly/runtime/v1/exec.proto\x12\x12fleetly.runtime.v1\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"w\n" +
+	"\x1dfleetly/runtime/v1/exec.proto\x12\x12fleetly.runtime.v1\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"\x93\x01\n" +
 	"\x18CreateExecSessionRequest\x12\x15\n" +
 	"\x06app_id\x18\x01 \x01(\tR\x05appId\x12\x18\n" +
 	"\aprocess\x18\x02 \x01(\tR\aprocess\x12\x18\n" +
 	"\acommand\x18\x03 \x03(\tR\acommand\x12\x10\n" +
-	"\x03tty\x18\x04 \x01(\bR\x03tty\"\xef\x01\n" +
+	"\x03tty\x18\x04 \x01(\bR\x03tty\x12\x1a\n" +
+	"\binstance\x18\x05 \x01(\tR\binstance\"K\n" +
+	"\x18ListExecInstancesRequest\x12\x15\n" +
+	"\x06app_id\x18\x01 \x01(\tR\x05appId\x12\x18\n" +
+	"\aprocess\x18\x02 \x01(\tR\aprocess\"[\n" +
+	"\x19ListExecInstancesResponse\x12>\n" +
+	"\tinstances\x18\x01 \x03(\v2 .fleetly.runtime.v1.ExecInstanceR\tinstances\"C\n" +
+	"\fExecInstance\x12\x1a\n" +
+	"\binstance\x18\x01 \x01(\tR\binstance\x12\x17\n" +
+	"\anode_id\x18\x02 \x01(\tR\x06nodeId\"\xef\x01\n" +
 	"\vExecSession\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x15\n" +
 	"\x06app_id\x18\x02 \x01(\tR\x05appId\x12\x18\n" +
@@ -757,12 +930,14 @@ const file_fleetly_runtime_v1_exec_proto_rawDesc = "" +
 	"\x04code\x18\x01 \x01(\x05R\x04code\"?\n" +
 	"\x0fExecStreamError\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\tR\x04code\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage2\xbf\x02\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage2\xec\x03\n" +
 	"\vExecService\x12\x9e\x01\n" +
 	"\x11CreateExecSession\x12,.fleetly.runtime.v1.CreateExecSessionRequest\x1a-.fleetly.runtime.v1.CreateExecSessionResponse\",\xea\xc4\x19\f\b\x03\"\b\n" +
 	"\x04exec\x10\x02\x82\xd3\xe4\x93\x02\x16:\x01*\"\x11/v1/exec/sessions\x12\x86\x01\n" +
 	"\x11StreamExecSession\x12,.fleetly.runtime.v1.StreamExecSessionRequest\x1a-.fleetly.runtime.v1.StreamExecSessionResponse\"\x10\xea\xc4\x19\f\b\x03\"\b\n" +
-	"\x04exec\x10\x02(\x010\x01\x1a\x06\xf2\xc4\x19\x02\b\x03B\x9a\x01\x92ARRP\n" +
+	"\x04exec\x10\x02(\x010\x01\x12\xaa\x01\n" +
+	"\x11ListExecInstances\x12,.fleetly.runtime.v1.ListExecInstancesRequest\x1a-.fleetly.runtime.v1.ListExecInstancesResponse\"8\xea\xc4\x19\f\b\x03\"\b\n" +
+	"\x04exec\x10\x01\x82\xd3\xe4\x93\x02\"\x12 /v1/apps/{app_id}/exec/instances\x1a\x06\xf2\xc4\x19\x02\b\x03B\x9a\x01\x92ARRP\n" +
 	"\adefault\x12E\n" +
 	"\x1dAn unexpected error response.\x12$\n" +
 	"\"\x1a .fleetly.shared.v1.ErrorResponseZCgithub.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1;runtimev1b\x06proto3"
@@ -779,33 +954,39 @@ func file_fleetly_runtime_v1_exec_proto_rawDescGZIP() []byte {
 	return file_fleetly_runtime_v1_exec_proto_rawDescData
 }
 
-var file_fleetly_runtime_v1_exec_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_fleetly_runtime_v1_exec_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
 var file_fleetly_runtime_v1_exec_proto_goTypes = []any{
 	(*CreateExecSessionRequest)(nil),  // 0: fleetly.runtime.v1.CreateExecSessionRequest
-	(*ExecSession)(nil),               // 1: fleetly.runtime.v1.ExecSession
-	(*CreateExecSessionResponse)(nil), // 2: fleetly.runtime.v1.CreateExecSessionResponse
-	(*StreamExecSessionRequest)(nil),  // 3: fleetly.runtime.v1.StreamExecSessionRequest
-	(*ExecResize)(nil),                // 4: fleetly.runtime.v1.ExecResize
-	(*StreamExecSessionResponse)(nil), // 5: fleetly.runtime.v1.StreamExecSessionResponse
-	(*ExecSessionMeta)(nil),           // 6: fleetly.runtime.v1.ExecSessionMeta
-	(*ExecExit)(nil),                  // 7: fleetly.runtime.v1.ExecExit
-	(*ExecStreamError)(nil),           // 8: fleetly.runtime.v1.ExecStreamError
+	(*ListExecInstancesRequest)(nil),  // 1: fleetly.runtime.v1.ListExecInstancesRequest
+	(*ListExecInstancesResponse)(nil), // 2: fleetly.runtime.v1.ListExecInstancesResponse
+	(*ExecInstance)(nil),              // 3: fleetly.runtime.v1.ExecInstance
+	(*ExecSession)(nil),               // 4: fleetly.runtime.v1.ExecSession
+	(*CreateExecSessionResponse)(nil), // 5: fleetly.runtime.v1.CreateExecSessionResponse
+	(*StreamExecSessionRequest)(nil),  // 6: fleetly.runtime.v1.StreamExecSessionRequest
+	(*ExecResize)(nil),                // 7: fleetly.runtime.v1.ExecResize
+	(*StreamExecSessionResponse)(nil), // 8: fleetly.runtime.v1.StreamExecSessionResponse
+	(*ExecSessionMeta)(nil),           // 9: fleetly.runtime.v1.ExecSessionMeta
+	(*ExecExit)(nil),                  // 10: fleetly.runtime.v1.ExecExit
+	(*ExecStreamError)(nil),           // 11: fleetly.runtime.v1.ExecStreamError
 }
 var file_fleetly_runtime_v1_exec_proto_depIdxs = []int32{
-	1, // 0: fleetly.runtime.v1.CreateExecSessionResponse.session:type_name -> fleetly.runtime.v1.ExecSession
-	4, // 1: fleetly.runtime.v1.StreamExecSessionRequest.resize:type_name -> fleetly.runtime.v1.ExecResize
-	6, // 2: fleetly.runtime.v1.StreamExecSessionResponse.meta:type_name -> fleetly.runtime.v1.ExecSessionMeta
-	7, // 3: fleetly.runtime.v1.StreamExecSessionResponse.exit:type_name -> fleetly.runtime.v1.ExecExit
-	8, // 4: fleetly.runtime.v1.StreamExecSessionResponse.error:type_name -> fleetly.runtime.v1.ExecStreamError
-	0, // 5: fleetly.runtime.v1.ExecService.CreateExecSession:input_type -> fleetly.runtime.v1.CreateExecSessionRequest
-	3, // 6: fleetly.runtime.v1.ExecService.StreamExecSession:input_type -> fleetly.runtime.v1.StreamExecSessionRequest
-	2, // 7: fleetly.runtime.v1.ExecService.CreateExecSession:output_type -> fleetly.runtime.v1.CreateExecSessionResponse
-	5, // 8: fleetly.runtime.v1.ExecService.StreamExecSession:output_type -> fleetly.runtime.v1.StreamExecSessionResponse
-	7, // [7:9] is the sub-list for method output_type
-	5, // [5:7] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	3,  // 0: fleetly.runtime.v1.ListExecInstancesResponse.instances:type_name -> fleetly.runtime.v1.ExecInstance
+	4,  // 1: fleetly.runtime.v1.CreateExecSessionResponse.session:type_name -> fleetly.runtime.v1.ExecSession
+	7,  // 2: fleetly.runtime.v1.StreamExecSessionRequest.resize:type_name -> fleetly.runtime.v1.ExecResize
+	9,  // 3: fleetly.runtime.v1.StreamExecSessionResponse.meta:type_name -> fleetly.runtime.v1.ExecSessionMeta
+	10, // 4: fleetly.runtime.v1.StreamExecSessionResponse.exit:type_name -> fleetly.runtime.v1.ExecExit
+	11, // 5: fleetly.runtime.v1.StreamExecSessionResponse.error:type_name -> fleetly.runtime.v1.ExecStreamError
+	0,  // 6: fleetly.runtime.v1.ExecService.CreateExecSession:input_type -> fleetly.runtime.v1.CreateExecSessionRequest
+	6,  // 7: fleetly.runtime.v1.ExecService.StreamExecSession:input_type -> fleetly.runtime.v1.StreamExecSessionRequest
+	1,  // 8: fleetly.runtime.v1.ExecService.ListExecInstances:input_type -> fleetly.runtime.v1.ListExecInstancesRequest
+	5,  // 9: fleetly.runtime.v1.ExecService.CreateExecSession:output_type -> fleetly.runtime.v1.CreateExecSessionResponse
+	8,  // 10: fleetly.runtime.v1.ExecService.StreamExecSession:output_type -> fleetly.runtime.v1.StreamExecSessionResponse
+	2,  // 11: fleetly.runtime.v1.ExecService.ListExecInstances:output_type -> fleetly.runtime.v1.ListExecInstancesResponse
+	9,  // [9:12] is the sub-list for method output_type
+	6,  // [6:9] is the sub-list for method input_type
+	6,  // [6:6] is the sub-list for extension type_name
+	6,  // [6:6] is the sub-list for extension extendee
+	0,  // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_fleetly_runtime_v1_exec_proto_init() }
@@ -813,12 +994,12 @@ func file_fleetly_runtime_v1_exec_proto_init() {
 	if File_fleetly_runtime_v1_exec_proto != nil {
 		return
 	}
-	file_fleetly_runtime_v1_exec_proto_msgTypes[3].OneofWrappers = []any{
+	file_fleetly_runtime_v1_exec_proto_msgTypes[6].OneofWrappers = []any{
 		(*StreamExecSessionRequest_AttachSessionId)(nil),
 		(*StreamExecSessionRequest_Stdin)(nil),
 		(*StreamExecSessionRequest_Resize)(nil),
 	}
-	file_fleetly_runtime_v1_exec_proto_msgTypes[5].OneofWrappers = []any{
+	file_fleetly_runtime_v1_exec_proto_msgTypes[8].OneofWrappers = []any{
 		(*StreamExecSessionResponse_Meta)(nil),
 		(*StreamExecSessionResponse_Stdout)(nil),
 		(*StreamExecSessionResponse_Stderr)(nil),
@@ -831,7 +1012,7 @@ func file_fleetly_runtime_v1_exec_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fleetly_runtime_v1_exec_proto_rawDesc), len(file_fleetly_runtime_v1_exec_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   9,
+			NumMessages:   12,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

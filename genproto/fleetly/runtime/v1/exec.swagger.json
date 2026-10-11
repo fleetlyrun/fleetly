@@ -16,6 +16,44 @@
     "application/json"
   ],
   "paths": {
+    "/v1/apps/{app_id}/exec/instances": {
+      "get": {
+        "summary": "ListExecInstances 实时观测进程的在跑实例集（ADR-0067 实例锚定）：\n受理前的锚定依据（Console 副本下拉 / CLI --instance 取值源），快照\n语义（每次调用直读编排器任务/_pod 列表——观测缓存不参与决策），ID\n升序确定性。空集 = 本进程无在跑实例（观测行，非错误）。",
+        "operationId": "ExecService_ListExecInstances",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListExecInstancesResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "process",
+            "description": "process 是 App 内进程模板名（web/worker…）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "ExecService"
+        ]
+      }
+    },
     "/v1/exec/sessions": {
       "post": {
         "summary": "CreateExecSession 受理会话：实时解析目标实例与节点（观测缓存不参与\n决策）、per-Team 并发限额、审计 + exec.session_opened 事件、铸造单\n用途票据（WS 消费用；gRPC 消费不经票据）。change freeze 豁免\n（ADR-0049：exec 不变更资源状态，诊断面在冻结窗内最需要）。",
@@ -70,6 +108,10 @@
         },
         "tty": {
           "type": "boolean"
+        },
+        "instance": {
+          "type": "string",
+          "title": "instance 是可选的实例锚（ADR-0067）：非空时受理锚定到该具体在跑实例\n（编排器载体标识——ListExecInstances 观测行的 instance 值），锚不中\n即 E_NOT_FOUND 诚实失败；空 = 平台代选首个在跑实例（既有语义）。"
         }
       }
     },
@@ -99,6 +141,18 @@
           "title": "code 是载体进程退出码（透传；CLI 以此为自身退出码）。"
         }
       }
+    },
+    "v1ExecInstance": {
+      "type": "object",
+      "properties": {
+        "instance": {
+          "type": "string"
+        },
+        "node_id": {
+          "type": "string"
+        }
+      },
+      "title": "ExecInstance 是一行在跑实例观测（instance 与受理回显/会话 meta 的\ninstance 同源——编排器载体标识，平台不解析；node_id 是平台节点 ID）。"
     },
     "v1ExecResize": {
       "type": "object",
@@ -147,7 +201,7 @@
           "type": "string"
         }
       },
-      "title": "ExecSession 是受理后的会话元数据（instance/node 是实际命中——诚实回显，\n多副本进程平台代选首个在跑实例）。"
+      "title": "ExecSession 是受理后的会话元数据（instance/node 是实际命中——诚实回显；\n多副本进程由调用方锚定具体实例，未锚定时平台代选首个在跑实例）。"
     },
     "v1ExecSessionMeta": {
       "type": "object",
@@ -171,6 +225,19 @@
         }
       },
       "title": "ExecStreamError 是流中错误帧（收口即会话终止）：code 是 errcode 注册表\n形态（E_ 前缀）或传输面标识（session_expired/idle_timeout/attach_conflict）。"
+    },
+    "v1ListExecInstancesResponse": {
+      "type": "object",
+      "properties": {
+        "instances": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1ExecInstance"
+          },
+          "title": "instances 是在跑实例集（ID 升序；空 = 无在跑实例）。"
+        }
+      }
     },
     "v1StreamExecSessionResponse": {
       "type": "object",

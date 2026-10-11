@@ -523,7 +523,13 @@ type StreamLogsRequest struct {
 	// （投影公式 engine.WorkloadID，空 = 本 App 全部 Workload）；database/
 	// run 轴拒收（载体单 Workload）。gateway 传形 = 重复键
 	// （processes=a&processes=b）——逗号形不分裂（REST 多进程测试钉此语义）。
-	Processes     []string `protobuf:"bytes,10,rep,name=processes,proto3" json:"processes,omitempty"`
+	Processes []string `protobuf:"bytes,10,rep,name=processes,proto3" json:"processes,omitempty"`
+	// containers 是多实例过滤（ADR-0067 实例锚定日志）：载体归因标识直锚
+	// （swarm = task ID，k3s = pod 名——StreamLogsResponse.container 同源
+	// 词汇，无派生公式），对该寻址轴收敛出的载体集做交集；空 = 全部副本
+	// 容器。三轴通用（载体身份过滤不依赖 App 派生）；条目非空校验与
+	// processes 同纪律（精确拒绝）。gateway 传形 = 重复键。
+	Containers    []string `protobuf:"bytes,11,rep,name=containers,proto3" json:"containers,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -624,6 +630,13 @@ func (x *StreamLogsRequest) GetRunId() string {
 func (x *StreamLogsRequest) GetProcesses() []string {
 	if x != nil {
 		return x.Processes
+	}
+	return nil
+}
+
+func (x *StreamLogsRequest) GetContainers() []string {
+	if x != nil {
+		return x.Containers
 	}
 	return nil
 }
@@ -1992,7 +2005,7 @@ const file_fleetly_telemetry_v1_telemetry_proto_rawDesc = "" +
 	"\x18IssueEventTicketResponse\x12\x16\n" +
 	"\x06ticket\x18\x01 \x01(\tR\x06ticket\x12\x1d\n" +
 	"\n" +
-	"expires_in\x18\x02 \x01(\x05R\texpiresIn\"\x91\x02\n" +
+	"expires_in\x18\x02 \x01(\x05R\texpiresIn\"\xb1\x02\n" +
 	"\x11StreamLogsRequest\x12\x15\n" +
 	"\x06app_id\x18\x01 \x01(\tR\x05appId\x12\x18\n" +
 	"\aprocess\x18\x02 \x01(\tR\aprocess\x12\x1d\n" +
@@ -2006,7 +2019,10 @@ const file_fleetly_telemetry_v1_telemetry_proto_rawDesc = "" +
 	"databaseId\x12\x15\n" +
 	"\x06run_id\x18\t \x01(\tR\x05runId\x12\x1c\n" +
 	"\tprocesses\x18\n" +
-	" \x03(\tR\tprocesses\"\x8f\x01\n" +
+	" \x03(\tR\tprocesses\x12\x1e\n" +
+	"\n" +
+	"containers\x18\v \x03(\tR\n" +
+	"containers\"\x8f\x01\n" +
 	"\x12StreamLogsResponse\x12\x1f\n" +
 	"\vworkload_id\x18\x01 \x01(\tR\n" +
 	"workloadId\x12\x1c\n" +

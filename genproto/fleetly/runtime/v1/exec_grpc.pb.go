@@ -28,6 +28,7 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	ExecService_CreateExecSession_FullMethodName = "/fleetly.runtime.v1.ExecService/CreateExecSession"
 	ExecService_StreamExecSession_FullMethodName = "/fleetly.runtime.v1.ExecService/StreamExecSession"
+	ExecService_ListExecInstances_FullMethodName = "/fleetly.runtime.v1.ExecService/ListExecInstances"
 )
 
 // ExecServiceClient is the client API for ExecService service.
@@ -43,6 +44,11 @@ type ExecServiceClient interface {
 	// CreateExecSession 返回的会话 ID；随后 stdin/resize 上行、stdout/stderr/
 	// exit/error 下行，直至 exit 或 error 收口。一个会话至多一个消费端附着。
 	StreamExecSession(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[StreamExecSessionRequest, StreamExecSessionResponse], error)
+	// ListExecInstances 实时观测进程的在跑实例集（ADR-0067 实例锚定）：
+	// 受理前的锚定依据（Console 副本下拉 / CLI --instance 取值源），快照
+	// 语义（每次调用直读编排器任务/_pod 列表——观测缓存不参与决策），ID
+	// 升序确定性。空集 = 本进程无在跑实例（观测行，非错误）。
+	ListExecInstances(ctx context.Context, in *ListExecInstancesRequest, opts ...grpc.CallOption) (*ListExecInstancesResponse, error)
 }
 
 type execServiceClient struct {
@@ -76,6 +82,16 @@ func (c *execServiceClient) StreamExecSession(ctx context.Context, opts ...grpc.
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type ExecService_StreamExecSessionClient = grpc.BidiStreamingClient[StreamExecSessionRequest, StreamExecSessionResponse]
 
+func (c *execServiceClient) ListExecInstances(ctx context.Context, in *ListExecInstancesRequest, opts ...grpc.CallOption) (*ListExecInstancesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListExecInstancesResponse)
+	err := c.cc.Invoke(ctx, ExecService_ListExecInstances_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ExecServiceServer is the server API for ExecService service.
 // All implementations must embed UnimplementedExecServiceServer
 // for forward compatibility.
@@ -89,6 +105,11 @@ type ExecServiceServer interface {
 	// CreateExecSession 返回的会话 ID；随后 stdin/resize 上行、stdout/stderr/
 	// exit/error 下行，直至 exit 或 error 收口。一个会话至多一个消费端附着。
 	StreamExecSession(grpc.BidiStreamingServer[StreamExecSessionRequest, StreamExecSessionResponse]) error
+	// ListExecInstances 实时观测进程的在跑实例集（ADR-0067 实例锚定）：
+	// 受理前的锚定依据（Console 副本下拉 / CLI --instance 取值源），快照
+	// 语义（每次调用直读编排器任务/_pod 列表——观测缓存不参与决策），ID
+	// 升序确定性。空集 = 本进程无在跑实例（观测行，非错误）。
+	ListExecInstances(context.Context, *ListExecInstancesRequest) (*ListExecInstancesResponse, error)
 	mustEmbedUnimplementedExecServiceServer()
 }
 
@@ -104,6 +125,9 @@ func (UnimplementedExecServiceServer) CreateExecSession(context.Context, *Create
 }
 func (UnimplementedExecServiceServer) StreamExecSession(grpc.BidiStreamingServer[StreamExecSessionRequest, StreamExecSessionResponse]) error {
 	return status.Error(codes.Unimplemented, "method StreamExecSession not implemented")
+}
+func (UnimplementedExecServiceServer) ListExecInstances(context.Context, *ListExecInstancesRequest) (*ListExecInstancesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListExecInstances not implemented")
 }
 func (UnimplementedExecServiceServer) mustEmbedUnimplementedExecServiceServer() {}
 func (UnimplementedExecServiceServer) testEmbeddedByValue()                     {}
@@ -151,6 +175,24 @@ func _ExecService_StreamExecSession_Handler(srv interface{}, stream grpc.ServerS
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type ExecService_StreamExecSessionServer = grpc.BidiStreamingServer[StreamExecSessionRequest, StreamExecSessionResponse]
 
+func _ExecService_ListExecInstances_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListExecInstancesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ExecServiceServer).ListExecInstances(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ExecService_ListExecInstances_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ExecServiceServer).ListExecInstances(ctx, req.(*ListExecInstancesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ExecService_ServiceDesc is the grpc.ServiceDesc for ExecService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -161,6 +203,10 @@ var ExecService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CreateExecSession",
 			Handler:    _ExecService_CreateExecSession_Handler,
+		},
+		{
+			MethodName: "ListExecInstances",
+			Handler:    _ExecService_ListExecInstances_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
