@@ -140,6 +140,8 @@ var skippedTokens = map[string]string{
 	"function":         "通用词（函数）；FaaS 义在明确不做清单",
 	"agent":            "AI Agent 是产品核心语汇；仅 Task 命名语境禁（节点中继语境已更名收口，ADR-0049 附录 B）",
 	"renewal":          "泛指禁用；证书/租约续期语境人工评审",
+	"provisioning":     "local-path provisioner 等存储面技术词与 skills 名沿用；Task Mint 同义词语境人工评审（ADR-0062）",
+	"spawn":            "spawnScheduleTask 机制动作与 eventcode 既有摘要沿用；Task Mint 同义词语境人工评审（ADR-0062）",
 	"sandbox net":      "Task Network Group 同义词；短语机械扫描误伤面大，人工评审",
 	"task net":         "仅禁作标识符",
 	"execution":        "通用词；Run 同义词语境人工评审",
@@ -304,6 +306,8 @@ var wordingExemptions = map[string]map[string]string{
 	"apply": {
 		"console/src/features/apps-tabs/app-variables.tsx": "Apply changes is the adjudicated label for the Variables tab commit action (user ruling 2026-10-10, prototype fidelity); the Deployment Avoid sense bans generic deploy-by-apply verbs, not this pinned button",
 		"console/src/features/apps-tabs/app-processes.tsx": "Apply changes is the adjudicated label for the staged-commit action (user ruling 2026-10-10 for the Variables tab; ADR-0060 Processes tab reuses the same pinned button for replica staging) — the Deployment Avoid sense bans generic deploy-by-apply verbs, not this pinned button",
+		"console/src/features/apps-tabs/app-variables.test.tsx": "vitest 回归锚引用同一钦定按钮文案（getByRole name: \"Apply changes\"）；豁免随 50d0c12 组件面同裁定（user ruling 2026-10-10）",
+		"console/src/features/apps-tabs/app-processes.test.tsx": "vitest 回归锚引用同一钦定按钮文案（getByRole name: \"Apply changes\"）；豁免随 50d0c12 组件面同裁定（user ruling 2026-10-10）",
 		"cmd/fleetlyd/main.go":                             "lynx boot.Bootstrap.Apply 是框架 API（钩子/服务挂载面）；ADR-0007 禁的是部署语义 apply，框架方法名不可更名",
 	},
 	// ssh（ADR-0049 入册）：git 传输 scheme 拒绝文案是技术义（hooks 面

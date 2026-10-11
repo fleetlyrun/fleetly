@@ -36,8 +36,13 @@ type TasksService struct {
 }
 
 // normalizeCreateTask 归一化创建源：直投镜像 + Variables + secretRefs →
-// 冻结 TaskSpec（schemaVersion 由平台钉当前版）。form 空 = 按并发推导。
-func normalizeCreateTask(req *automationv1.CreateTaskRequest, taskID string) (*specv1.TaskSpec, error) {
+// TaskSpec 组装（schemaVersion 由平台钉当前版；form 空 = 按并发推导，
+// one-shot 缺省并发 1）。身份注入（TaskRef/属主）与冻结经 engine.MintTaskRow
+// （ADR-0062）；验证住本函数——ref 缺席面（ValidateTaskTemplate），规则与
+// ValidateTask 同款（身份锚由铸造注入，project_id 非空已在头部受理面拒绝），
+// 可观察文案逐字不变。本函数只管请求形状（E_INVALID_ARGUMENT 受理面）与
+// spec 组装。
+func normalizeCreateTask(req *automationv1.CreateTaskRequest) (*specv1.TaskSpec, error) {
 	if req.GetProjectId() == "" {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "project_id: must not be empty")
 	}
@@ -79,15 +84,16 @@ func normalizeCreateTask(req *automationv1.CreateTaskRequest, taskID string) (*s
 	}
 	s := &specv1.TaskSpec{
 		SchemaVersion:      spec.SchemaVersion,
-		Task:               &specv1.TaskRef{Id: taskID, Project: req.GetProjectId()},
 		Process:            p,
 		TtlSeconds:         req.GetTtlSeconds(),
-		OwnerToken:         req.GetOwnerTokenId(),
 		NetworkGroup:       req.GetNetworkGroup(),
 		DesiredConcurrency: desired,
 		Form:               form,
 	}
-	if err := spec.ValidateTask(s); err != nil {
+	// ref 缺席面验证（validateTaskCommon 同款规则）：身份锚由 MintTaskRow
+	// 注入（task id 铸造时生成），ref 在场性由铸造构造保证——规则覆盖与
+	// ValidateTask 逐条相同，错误文案逐字不变。
+	if err := spec.ValidateTaskTemplate(s); err != nil {
 		return nil, mapValidationError(err)
 	}
 	return s, nil
@@ -112,7 +118,8 @@ func (svc *TasksService) resolveOwnerToken(ctx context.Context, req *automationv
 	return "", nil // 匿名/引导面：无属主（resident 需显式属主才有租约保温）
 }
 
-// CreateTask 受理 + 冻结 Spec + 落行（四件一拍：task.created 事件 + 审计）。
+// CreateTask 受理（行铸造经 engine.MintTaskRow 单源，ADR-0062）+ 落行
+// （四件一拍：task.created 事件 + 审计）。
 func (svc *TasksService) CreateTask(ctx context.Context, req *automationv1.CreateTaskRequest) (*automationv1.CreateTaskResponse, error) {
 	// 行级授权（ADR-0035）：写面受理前置。
 	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
@@ -122,21 +129,15 @@ func (svc *TasksService) CreateTask(ctx context.Context, req *automationv1.Creat
 	if err != nil {
 		return nil, err
 	}
-	taskID := newID()
-	taskSpec, err := normalizeCreateTask(req, taskID)
+	taskSpec, err := normalizeCreateTask(req)
 	if err != nil {
 		return nil, err
 	}
-	taskSpec.OwnerToken = owner
-	body, err := marshalSpec(taskSpec)
+	row, err := engine.MintTaskRow(req.GetProjectId(), req.GetName(), owner, taskSpec)
 	if err != nil {
+		// 铸造错误面只有冻结 marshal（验证住 normalizeCreateTask，nil spec
+		// 不可达）——文案与收编前逐字一致。
 		return nil, apperr.New("E_INVALID_ARGUMENT", "task spec: %s", err.Error()).WithCause(err)
-	}
-	row := &task.Task{
-		ID: taskID, ProjectID: req.GetProjectId(), Name: req.GetName(),
-		Form: spec.TaskForm(taskSpec), State: task.StateActive, Spec: body,
-		OwnerTokenID: owner, DesiredConcurrency: taskSpec.GetDesiredConcurrency(),
-		NetworkGroup: req.GetNetworkGroup(), DNSName: engine.TaskDNSName(taskID),
 	}
 	err = svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{

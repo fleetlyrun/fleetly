@@ -1,20 +1,42 @@
 package engine
 
-// one-shot Task 铸造原语（架构评审第二轮候选 2）：schedule 到期拍/手动拍
-// 与 firstBoot job 两个调用点的共享骨架收编——此前逐字双份（taskSpawnQuota
-// 的 checks 段收编是同族先例，注释在 task.go）。原语拥有不变骨架的全部：
-// ULID、TaskRef 注入、protojson 冻结、行形状（Name 空 / Form one-shot /
-// 并发 1 / DNS 名）、commitWrite 四件（配额 + tasks.Create + task.created
-// + 审计）与 taskLoop Kick。调用方的域差异收敛为三参数：assemble（spec
-// 来源——不带 Task 字段，原语注入身份；错误由调用方包装保留域语境）、
-// domainSteps（域副作用的 writeStep 构造器，收铸造出的 taskID——记账
-// 事件/游标都要锚定新 Task）、actorCtx（task.create 审计是否携带调用方
-// 身份——用户动作 true，部署链内的机制动作 false）。
+// Task 行铸造单源（ADR-0062，架构评审第三轮候选 1）：身份注入（TaskRef +
+// 属主 Token）→ 行缺省（Form 推导、one-shot 缺省并发）→ protojson 冻结 →
+// 行装配，只此一处。调用方（API 受理位、域铸造壳 mintOneShotTask）只供组
+// 装好的 TaskSpec 与身份字段，行形状知识（Form 推导、one-shot 缺省并发、
+// DNS 铸名、冻结选项）不得在 module 之外重现（internal/guards 行铸造反扫
+// 执法）。铸造产行，落账仍走各自写路径（受理位 commit 原语 / engine 写序
+// 列）——ADR-0024 受理纪律不因铸造单源而变。
 //
-// Name 留空的语义随原语继承（终态 Task 永久占名——tasks 唯一索引含终态
-// 行；拍出的 Task 靠各域记账导航，不占项目名位）。CAS/冲突语义同单回滚
-// 整体继承：域 step 失败 = Task 行不落孤账。F2.2 备份执行器是第三个消费
-// 者（ADR-0029 决策 7：定时 → 铸 one-shot 跑模板备份命令）。
+// spec 验证不住铸造（2026-10-11 cmd golden 实证回退）：铸造输入的效性契约
+// 不统一——firstBoot 铸造 spec 是平台投影，携带 taskGroup:/project: 跨挂
+// networks，而 ValidateTask 的"一条轨"禁用只治用户提交面（ADR-0012 裁决
+// 面）；ValidateTask 还要求 TaskRef 在场，而身份锚恰由铸造注入。验证归各
+// 入口受理面：API = normalizeCreateTask（ValidateTaskTemplate，ref 缺席同
+// 款规则）、schedule = 模板冻结时 ValidateTaskTemplate、firstBoot = AppSpec
+// 受理位 CheckFirstBootNetworks。铸造只保证注入构造出的 ref 非空。
+//
+// 错误契约：冻结 marshal 失败原样上抛，调用方自加语境。engine 不依赖
+// apperr（engine.go 哨兵纪律）。
+//
+// 冻结选项（snake_case / 不带未填充字段）与受理位 AppSpec 的 marshalSpec
+// 同口径：TaskSpec 冻结体是行内唯一期望状态载体，改序列化形态 = 存量行
+// 读回漂移，只在可承受一次性数据迁移的批次变更。
+//
+// one-shot 缺省并发 1 随铸造收编（firstBoot 铸造 spec 不带 Form/Desired、
+// schedule 模板可声明 0）：行值此前由各调用方手补（壳硬编码 1、受理位归一
+// 化补 1），现在铸造单源负责——只缺省行值，不改写冻结体；配额检查的
+// delta 仍由调用方显式传（taskSpawnQuota），不读行值。
+//
+// mintOneShotTask 是系统级 one-shot 的域铸造壳：配额 check + tasks.Create +
+// task.created + 审计四件走 engine 写序列（commitWrite），域副作用随
+// domainSteps 同单提交。调用方的域差异收敛为三参数（assemble / domainSteps /
+// actorCtx），行形状不再入壳。F2.2 备份执行器是第三个消费者（ADR-0029
+// 决策 7：定时 → 铸 one-shot 跑模板备份命令）。
+//
+// Name 留空的语义随壳继承（终态 Task 永久占名——tasks 唯一索引含终态行；
+// 拍出的 Task 靠各域记账导航，不占项目名位）。CAS/冲突语义同单回滚整体
+// 继承：域 step 失败 = Task 行不落孤账。
 
 import (
 	"context"
@@ -22,33 +44,54 @@ import (
 	"fmt"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
+	"github.com/fleetlyrun/fleetly/internal/spec"
 	"github.com/fleetlyrun/fleetly/internal/state/task"
 	"github.com/oklog/ulid/v2"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
+// MintTaskRow 铸一条 Task 行：TaskRef 与属主注入调用方 spec（原地变更）、
+// 行缺省、冻结并装配行。name 允许空（系统级铸造不占项目名位）；ownerTokenID
+// 允许空（匿名/机制铸造无属主，resident 无租约保温）。
+func MintTaskRow(projectID, name, ownerTokenID string, s *specv1.TaskSpec) (*task.Task, error) {
+	if s == nil {
+		return nil, fmt.Errorf("mint task row: nil spec")
+	}
+	taskID := ulid.Make().String()
+	s.Task = &specv1.TaskRef{Id: taskID, Project: projectID}
+	s.OwnerToken = ownerTokenID
+	form := spec.TaskForm(s)
+	desired := s.GetDesiredConcurrency()
+	if desired == 0 && form == spec.FormOneShot {
+		desired = 1 // one-shot 缺省 1（受理位同款规则收编入铸造）
+	}
+	body, err := protojson.MarshalOptions{EmitUnpopulated: false, UseProtoNames: true}.Marshal(s)
+	if err != nil {
+		return nil, err
+	}
+	return &task.Task{
+		ID: taskID, ProjectID: projectID, Name: name,
+		Form: form, State: task.StateActive, Spec: body,
+		OwnerTokenID: ownerTokenID, DesiredConcurrency: desired,
+		NetworkGroup: s.GetNetworkGroup(), DNSName: TaskDNSName(taskID),
+	}, nil
+}
+
 // mintOneShotTask 铸一条系统级 one-shot Task 并同事务落账（域副作用随
-// domainSteps 同单提交）：任一环节失败整单回滚。
+// domainSteps 同单提交）：任一环节失败整单回滚。行形状经 MintTaskRow 单源，
+// 本壳只保留域差异（配额 delta、写序列四件、Kick）。
 func (e *Engine) mintOneShotTask(ctx context.Context, projectID string,
 	assemble func() (*specv1.TaskSpec, error),
 	domainSteps func(taskID string) []writeStep,
 	actorCtx bool,
 ) (*task.Task, error) {
-	spec, err := assemble()
+	assembled, err := assemble()
 	if err != nil {
 		return nil, err
 	}
-	taskID := ulid.Make().String()
-	spec.Task = &specv1.TaskRef{Id: taskID, Project: projectID}
-	body, err := protojson.MarshalOptions{EmitUnpopulated: false, UseProtoNames: true}.Marshal(spec)
+	row, err := MintTaskRow(projectID, "", "", assembled)
 	if err != nil {
-		return nil, fmt.Errorf("marshal one-shot task spec: %w", err)
-	}
-	row := &task.Task{
-		ID: taskID, ProjectID: projectID, Name: "",
-		Form: task.FormOneShot, State: task.StateActive, Spec: body,
-		DesiredConcurrency: 1, NetworkGroup: spec.GetNetworkGroup(),
-		DNSName: TaskDNSName(taskID),
+		return nil, err
 	}
 	err = e.db.Tx(ctx, func(tx *sql.Tx) error {
 		return e.commitWrite(ctx, tx, writeFact{
@@ -63,7 +106,7 @@ func (e *Engine) mintOneShotTask(ctx context.Context, projectID string,
 				return eventFact{name: EventTaskCreated, aggregate: "task", id: row.ID, payload: TaskCreatedEventJSON(row)}
 			}},
 			audits: []auditFact{{action: "task.create", resource: "task/" + row.ID, afterFP: row.Form, actorCtx: actorCtx}},
-			steps:  domainSteps(taskID),
+			steps:  domainSteps(row.ID),
 		})
 	})
 	if err != nil {

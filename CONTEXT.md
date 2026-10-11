@@ -58,6 +58,10 @@ _Avoid_: env var(标识符中), parameter, setting
 程序化工作负载，双形态：one-shot（一次性执行）与 resident（常驻实例池）；有属主 Token、TTL 与专属网络组。部署期一次性工作负载（Spec 的 firstBootJobs/JobSpec）是 Task 的部署期特例——词条归 Task，不另立 Deployment Job 实体（ADR-0007 词汇冻结裁决，2026-10-01）。
 _Avoid_: job, run, function, agent, one-off
 
+**Task Mint（铸造）**:
+Task 行的受控铸造点：身份（TaskRef/属主）注入、TaskSpec 冻结与行装配的唯一所在；受理位与各域铸造调用方只供组装好的 TaskSpec。铸造产行，落账仍走各自写路径（ADR-0062）。
+_Avoid_: provisioning, spawn(泛指)
+
 **Owner Lease**:
 resident Run 的属主心跳租约；失联超宽限即排空回收。
 _Avoid_: heartbeat, keepalive, renewal(泛指)

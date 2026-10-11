@@ -800,3 +800,13 @@ F3.1/F3.2/F3.3/F3.6 四批走查的浏览器级挂账在后端在场的环境（
 **清 ACME 卷手顺（生产 CA 切换的存量换发通道，ADR-0061 决策 5 可选腿）**：`docker exec <traefik容器> sh -c ': > /acme/acme.json'` → `docker service update --force fleetly-fleetly-system-proxy-traefik`——强滚不触发 reconciler 竞态（spec 未变 = no-op），换发按需逐主机完成（访问触达才签，LE 生产配额 50/周对个位数主机余量充足；browse 会话 tls=none 不占配额）。
 
 **备忘**：`console.conf` 未设 `FLEETLY_CONSOLE_TLS`（空 = 渲染层 auto 口径）；登录路由覆盖的是 PathPrefix 形态（`/v1/auth/loginX` 亦在限速窗内——超集限速是安全侧）；ConsoleLoginPath 与 identity.proto 注解的漂移由 apitest 守卫钉死（注解改路径必须同批改 engine 常量）。
+
+## 2026-10-11 记录·三十六（架构评审第三轮候选 1：Task 行铸造单源 ADR-0062——MintTaskRow 收编受理位行装配；未换装）
+
+**裁决**：ADR-0062——engine 纯函数 `MintTaskRow` 成为 Task 行装配唯一所在（身份注入 → 行缺省 → protojson 冻结 → 行装配）；API 受理位（CreateTask）与域铸造壳（mintOneShotTask：schedule/firstBoot/backup 三消费点）退为薄 adapter；`TestTaskRowMintingSingleSite` 反扫守卫（go/ast 精判 + import 别名解析）钉唯一合法点；CONTEXT.md 增 **Task Mint（铸造）** 词条（既有词条零改动，ADR-0007 不破）。
+
+**实施要点**：①行为保持批——冻结选项逐字不变、错误文案逐字不变（`task spec: %s` 面原样）；②one-shot 缺省并发 1 收编入铸造且只缺省行值不改写冻结体（firstBoot spec 不带 Desired、schedule 模板可声明 0，两场景行值保持 1，配额口径不变）；③**初版"验证入铸造"被 cmd golden 当场证伪**（deploy_compose_jobs 等 3 例：firstBoot 铸造 spec 携带 taskGroup 跨挂 networks，`ValidateTask` 的"一条轨"禁用只治用户提交面且要求 TaskRef 在场——恰由铸造注入）→ 验证归位各入口受理面（API=normalize 用 ValidateTaskTemplate ref 缺席面逐字同规则；firstBoot=AppSpec 受理位；schedule=模板冻结时），ADR-0062 裁决 2 记录修正后形状；④变异验证=受理位重植 `task.Task{` 字面守卫必红，还原复绿。
+
+**门禁**：mise run lint 全绿（vet / golangci 0 / buf lint / buf breaking）；mise run test 三 module 全绿（含 golden 零漂移：tasks-create 双形态 + deploy_compose_jobs/first_boot/supersede）。连带修面：50d0c12 入库的 vitest 回归锚引用钦定按钮 "Apply changes" 触禁词——wordingExemptions 补两条随本批（组件面同裁定 2026-10-10）。
+
+**换装**：未换装——纯 Go 机械批，随下次上站批部署。
