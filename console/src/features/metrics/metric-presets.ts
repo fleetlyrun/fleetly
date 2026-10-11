@@ -1,15 +1,15 @@
-import type { components } from "@/api/telemetry";
 
-// 指标预设与序列配色（UI v2 批 3，Workbench 原型数据面）：PromQL 模板
-// 单源（旧 Observability 页内联的迁移）；cadvisor 归因标签经
-// sanitizeNamePart 小写化（F2.5 评估面同款归一）。
-
-type MetricSeries = components["schemas"]["v1MetricSeries"];
+// 指标预设（UI v2 批 3 引入；ADR-0065 起查询走负载词汇）：单源 PromQL
+// 模板。词汇序列由采集环归一导出（fleetly_container_*，身份标签
+// process/workload/container + 域主体），percent/cores 已在引擎差分面
+// 预计算——查询是单行等值匹配，无 rate()/group_left（F-B1 故障类消失）。
+// appLabel = appId 小写（swarm sanitizeNamePart 的 label 值，词汇导出侧
+// 同款归一）；cadvisor 归因标签经同款小写化（F2.5 评估面口径）。
 
 export interface MetricPreset {
   key: string;
   label: string;
-  unit: "percent" | "bytes";
+  unit: "percent" | "bytes" | "plain";
   build: (appLabel: string) => string;
 }
 
@@ -18,35 +18,21 @@ export const METRIC_PRESETS: MetricPreset[] = [
     key: "cpu_percent",
     label: "CPU (% of node)",
     unit: "percent",
-    // group_left 必带：容器序列（多）对 machine_cpu_cores（单）是多对一
-    // 除法——裸 on(node) 被 VM 拒 422（duplicate time series，F-B1）；
-    // per-container 出线与 ADR-0041 cpu_percent 语义一致。
-    build: (appLabel) =>
-      `100 * rate(container_cpu_usage_seconds_total{container_label_fleetly_ns_app="${appLabel}"}[2m]) / on(node) group_left machine_cpu_cores`,
+    build: (appLabel) => `fleetly_container_cpu_percent{app="${appLabel}"}`,
   },
   {
     key: "memory",
     label: "Memory working set (bytes)",
     unit: "bytes",
-    build: (appLabel) => `container_memory_working_set_bytes{container_label_fleetly_ns_app="${appLabel}"}`,
+    build: (appLabel) => `fleetly_container_memory_working_set_bytes{app="${appLabel}"}`,
   },
   {
     key: "cpu_cores",
     label: "CPU (cores)",
-    unit: "percent",
-    build: (appLabel) => `rate(container_cpu_usage_seconds_total{container_label_fleetly_ns_app="${appLabel}"}[2m])`,
+    unit: "plain",
+    build: (appLabel) => `fleetly_container_cpu_cores{app="${appLabel}"}`,
   },
 ];
-
-// seriesKey 把序列归因为稳定标识（legend 名 + chart config 键）：容器名 →
-// 节点 → 首标签族；超过 5 序列循环 chart-1..5。
-export function seriesKey(series: MetricSeries, index: number): { key: string; label: string } {
-  const labels = series.labels ?? {};
-  const raw = labels.name ?? labels.node ?? Object.entries(labels)[0]?.join("=") ?? "series";
-  const label = raw.length <= 36 ? raw : `${raw.slice(0, 18)}…${raw.slice(-12)}`;
-  const key = `s${index % 5}`;
-  return { key, label };
-}
 
 // formatMetricValue 是 y 轴/图例的量纲缩写（bytes 与百分制/工程计数兜底）。
 export function formatMetricValue(value: number, unit: "percent" | "bytes" | "plain"): string {

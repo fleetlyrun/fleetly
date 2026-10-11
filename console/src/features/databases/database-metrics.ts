@@ -1,11 +1,13 @@
-// 库载体指标寻址（IA v3 T8 已验证）：载体是普通容器，cadvisor 全量采集且
-// QueryMetrics 是 PromQL 透传——按 docker label（swarm 实证）或 k3s
-// namespace/pod 双臂 or 匹配，双 runtime 通用。label 值经 sanitizeNamePart
-// 小写（F2.5 同款归一），故 matcher 取 databaseID.toLowerCase()。
-// 注意：group_left 除法（cpu percent of node）不在库预设里——载体指标一期
-// 只出绝对量（cores/bytes），避免多臂 or 后的除法序列归因复杂化。
+// 库载体指标寻址（IA v3 T8 已验证；ADR-0065 起 docker 臂走负载词汇）：
+// docker 臂查采集环归一导出的 fleetly_container_* 词汇（身份标签
+// workload = fleetly.workload.id 小写归一）；k3s 载体词汇化挂账——保留
+// cadvisor/k8s 形态原文臂（namespace/pod 匹配），双 runtime 以 or 臂
+// 各自恰一命中。label/pod 值均经小写归一（F2.5 同款），matcher 取
+// databaseID.toLowerCase()。
+// 词汇 percent/cores 在引擎差分面预计算——docker 臂无 rate()；k3s 臂仍
+// 自带 rate()（raw counter 形态，双臂量纲一致：cores）。
 
-const dockerWorkload = (databaseId: string) => `container_label_fleetly_workload_id="${databaseId.toLowerCase()}"`;
+const dockerWorkload = (databaseId: string) => `workload="${databaseId.toLowerCase()}"`;
 
 const k3sCarrier = (databaseId: string, projectId: string) =>
   `namespace="fleetly-${projectId.toLowerCase()}",pod=~"fleetly-db-${databaseId.toLowerCase()}.*"`;
@@ -23,13 +25,13 @@ export const DATABASE_CARRIER_PRESETS: CarrierMetricPreset[] = [
     label: "Memory working set (bytes)",
     unit: "bytes",
     build: (databaseId, projectId) =>
-      `container_memory_working_set_bytes{${dockerWorkload(databaseId)}} or container_memory_working_set_bytes{${k3sCarrier(databaseId, projectId)}}`,
+      `fleetly_container_memory_working_set_bytes{${dockerWorkload(databaseId)}} or container_memory_working_set_bytes{${k3sCarrier(databaseId, projectId)}}`,
   },
   {
     key: "cpu_cores",
     label: "CPU (cores)",
     unit: "plain",
     build: (databaseId, projectId) =>
-      `rate(container_cpu_usage_seconds_total{${dockerWorkload(databaseId)}}[2m]) or rate(container_cpu_usage_seconds_total{${k3sCarrier(databaseId, projectId)}}[2m])`,
+      `fleetly_container_cpu_cores{${dockerWorkload(databaseId)}} or rate(container_cpu_usage_seconds_total{${k3sCarrier(databaseId, projectId)}}[2m])`,
   },
 ];
