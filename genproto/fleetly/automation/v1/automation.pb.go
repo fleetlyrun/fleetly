@@ -1380,9 +1380,13 @@ func (x *StopRunResponse) GetRun() *Run {
 	return nil
 }
 
+// WaitRunRequest 精确一选择（ADR-0063）：id = Run 直取流至终态；task_id =
+// 任务维度——钉等待开始时该 Task 的最新 Run 至终态（one-shot 即唯一
+// Run），无 Run 时事件驱动补获。
 type WaitRunRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	TaskId        string                 `protobuf:"bytes,2,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1420,6 +1424,13 @@ func (*WaitRunRequest) Descriptor() ([]byte, []int) {
 func (x *WaitRunRequest) GetId() string {
 	if x != nil {
 		return x.Id
+	}
+	return ""
+}
+
+func (x *WaitRunRequest) GetTaskId() string {
+	if x != nil {
+		return x.TaskId
 	}
 	return ""
 }
@@ -2287,9 +2298,10 @@ const file_fleetly_automation_v1_automation_proto_rawDesc = "" +
 	"\x0eStopRunRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"?\n" +
 	"\x0fStopRunResponse\x12,\n" +
-	"\x03run\x18\x01 \x01(\v2\x1a.fleetly.automation.v1.RunR\x03run\" \n" +
+	"\x03run\x18\x01 \x01(\v2\x1a.fleetly.automation.v1.RunR\x03run\"9\n" +
 	"\x0eWaitRunRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"?\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
+	"\atask_id\x18\x02 \x01(\tR\x06taskId\"?\n" +
 	"\x0fWaitRunResponse\x12,\n" +
 	"\x03run\x18\x01 \x01(\v2\x1a.fleetly.automation.v1.RunR\x03run\"\xe6\x02\n" +
 	"\bSchedule\x12\x0e\n" +
@@ -2371,7 +2383,7 @@ const file_fleetly_automation_v1_automation_proto_rawDesc = "" +
 	"DeleteTask\x12(.fleetly.automation.v1.DeleteTaskRequest\x1a).fleetly.automation.v1.DeleteTaskResponse\"'\xea\xc4\x19\r\b\x03\"\t\n" +
 	"\x05tasks\x10\x02\x82\xd3\xe4\x93\x02\x10*\x0e/v1/tasks/{id}\x12\x90\x01\n" +
 	"\tRenewTask\x12'.fleetly.automation.v1.RenewTaskRequest\x1a(.fleetly.automation.v1.RenewTaskResponse\"0\xea\xc4\x19\r\b\x03\"\t\n" +
-	"\x05tasks\x10\x02\x82\xd3\xe4\x93\x02\x19:\x01*\"\x14/v1/tasks/{id}/renew\x1a\x06\xf2\xc4\x19\x02\b\x032\xa9\x04\n" +
+	"\x05tasks\x10\x02\x82\xd3\xe4\x93\x02\x19:\x01*\"\x14/v1/tasks/{id}/renew\x1a\x06\xf2\xc4\x19\x02\b\x032\xca\x04\n" +
 	"\vRunsService\x12}\n" +
 	"\x06GetRun\x12$.fleetly.automation.v1.GetRunRequest\x1a%.fleetly.automation.v1.GetRunResponse\"&\xea\xc4\x19\r\b\x03\"\t\n" +
 	"\x05tasks\x10\x01\x82\xd3\xe4\x93\x02\x0f\x12\r/v1/runs/{id}\x12~\n" +
@@ -2379,9 +2391,9 @@ const file_fleetly_automation_v1_automation_proto_rawDesc = "" +
 	"\x05tasks\x10\x01\x82\xd3\xe4\x93\x02\n" +
 	"\x12\b/v1/runs\x12\x88\x01\n" +
 	"\aStopRun\x12%.fleetly.automation.v1.StopRunRequest\x1a&.fleetly.automation.v1.StopRunResponse\".\xea\xc4\x19\r\b\x03\"\t\n" +
-	"\x05tasks\x10\x02\x82\xd3\xe4\x93\x02\x17:\x01*\"\x12/v1/runs/{id}/stop\x12\x87\x01\n" +
-	"\aWaitRun\x12%.fleetly.automation.v1.WaitRunRequest\x1a&.fleetly.automation.v1.WaitRunResponse\"+\xea\xc4\x19\r\b\x03\"\t\n" +
-	"\x05tasks\x10\x01\x82\xd3\xe4\x93\x02\x14\x12\x12/v1/runs/{id}/wait0\x01\x1a\x06\xf2\xc4\x19\x02\b\x032\xa6\x06\n" +
+	"\x05tasks\x10\x02\x82\xd3\xe4\x93\x02\x17:\x01*\"\x12/v1/runs/{id}/stop\x12\xa8\x01\n" +
+	"\aWaitRun\x12%.fleetly.automation.v1.WaitRunRequest\x1a&.fleetly.automation.v1.WaitRunResponse\"L\xea\xc4\x19\r\b\x03\"\t\n" +
+	"\x05tasks\x10\x01\x82\xd3\xe4\x93\x025Z\x1f\x12\x1d/v1/tasks/{task_id}/runs/wait\x12\x12/v1/runs/{id}/wait0\x01\x1a\x06\xf2\xc4\x19\x02\b\x032\xa6\x06\n" +
 	"\x10SchedulesService\x12\x98\x01\n" +
 	"\x0eCreateSchedule\x12,.fleetly.automation.v1.CreateScheduleRequest\x1a-.fleetly.automation.v1.CreateScheduleResponse\")\xea\xc4\x19\r\b\x03\"\t\n" +
 	"\x05tasks\x10\x02\x82\xd3\xe4\x93\x02\x12:\x01*\"\r/v1/schedules\x12\x91\x01\n" +

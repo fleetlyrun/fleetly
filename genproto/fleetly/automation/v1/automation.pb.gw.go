@@ -429,6 +429,8 @@ func local_request_RunsService_StopRun_0(ctx context.Context, marshaler runtime.
 	return msg, metadata, err
 }
 
+var filter_RunsService_WaitRun_0 = &utilities.DoubleArray{Encoding: map[string]int{"id": 0}, Base: []int{1, 1, 0}, Check: []int{0, 1, 2}}
+
 func request_RunsService_WaitRun_0(ctx context.Context, marshaler runtime.Marshaler, client RunsServiceClient, req *http.Request, pathParams map[string]string) (RunsService_WaitRunClient, runtime.ServerMetadata, error) {
 	var (
 		protoReq WaitRunRequest
@@ -445,6 +447,49 @@ func request_RunsService_WaitRun_0(ctx context.Context, marshaler runtime.Marsha
 	protoReq.Id, err = runtime.String(val)
 	if err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "id", err)
+	}
+	if err := req.ParseForm(); err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	if err := runtime.PopulateQueryParameters(&protoReq, req.Form, filter_RunsService_WaitRun_0); err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	stream, err := client.WaitRun(ctx, &protoReq)
+	if err != nil {
+		return nil, metadata, err
+	}
+	header, err := stream.Header()
+	if err != nil {
+		return nil, metadata, err
+	}
+	metadata.HeaderMD = header
+	return stream, metadata, nil
+}
+
+var filter_RunsService_WaitRun_1 = &utilities.DoubleArray{Encoding: map[string]int{"task_id": 0}, Base: []int{1, 1, 0}, Check: []int{0, 1, 2}}
+
+func request_RunsService_WaitRun_1(ctx context.Context, marshaler runtime.Marshaler, client RunsServiceClient, req *http.Request, pathParams map[string]string) (RunsService_WaitRunClient, runtime.ServerMetadata, error) {
+	var (
+		protoReq WaitRunRequest
+		metadata runtime.ServerMetadata
+		err      error
+	)
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
+	val, ok := pathParams["task_id"]
+	if !ok {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "task_id")
+	}
+	protoReq.TaskId, err = runtime.String(val)
+	if err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "task_id", err)
+	}
+	if err := req.ParseForm(); err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	if err := runtime.PopulateQueryParameters(&protoReq, req.Form, filter_RunsService_WaitRun_1); err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
 	stream, err := client.WaitRun(ctx, &protoReq)
 	if err != nil {
@@ -867,6 +912,13 @@ func RegisterRunsServiceHandlerServer(ctx context.Context, mux *runtime.ServeMux
 		return
 	})
 
+	mux.Handle(http.MethodGet, pattern_RunsService_WaitRun_1, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		err := status.Error(codes.Unimplemented, "streaming calls are not yet supported in the in-process transport")
+		_, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+		return
+	})
+
 	return nil
 }
 
@@ -1262,6 +1314,23 @@ func RegisterRunsServiceHandlerClient(ctx context.Context, mux *runtime.ServeMux
 		}
 		forward_RunsService_WaitRun_0(annotatedContext, mux, outboundMarshaler, w, req, func() (proto.Message, error) { return resp.Recv() }, mux.GetForwardResponseOptions()...)
 	})
+	mux.Handle(http.MethodGet, pattern_RunsService_WaitRun_1, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/fleetly.automation.v1.RunsService/WaitRun", runtime.WithHTTPPathPattern("/v1/tasks/{task_id}/runs/wait"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := request_RunsService_WaitRun_1(annotatedContext, inboundMarshaler, client, req, pathParams)
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_RunsService_WaitRun_1(annotatedContext, mux, outboundMarshaler, w, req, func() (proto.Message, error) { return resp.Recv() }, mux.GetForwardResponseOptions()...)
+	})
 	return nil
 }
 
@@ -1270,6 +1339,7 @@ var (
 	pattern_RunsService_ListRuns_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"v1", "runs"}, ""))
 	pattern_RunsService_StopRun_0  = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "runs", "id", "stop"}, ""))
 	pattern_RunsService_WaitRun_0  = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "runs", "id", "wait"}, ""))
+	pattern_RunsService_WaitRun_1  = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3, 2, 4}, []string{"v1", "tasks", "task_id", "runs", "wait"}, ""))
 )
 
 var (
@@ -1277,6 +1347,7 @@ var (
 	forward_RunsService_ListRuns_0 = runtime.ForwardResponseMessage
 	forward_RunsService_StopRun_0  = runtime.ForwardResponseMessage
 	forward_RunsService_WaitRun_0  = runtime.ForwardResponseStream
+	forward_RunsService_WaitRun_1  = runtime.ForwardResponseStream
 )
 
 // RegisterSchedulesServiceHandlerFromEndpoint is same as RegisterSchedulesServiceHandler but

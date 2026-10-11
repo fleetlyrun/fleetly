@@ -525,7 +525,7 @@ func (e *Engine) drainTask(ctx context.Context, t *task.Task, reason string) {
 		return // 跑完 TTL 模式：存量 Run 自然收口
 	}
 	now := e.clock.Now()
-	runs, err := e.runs.ListByTaskStates(ctx, e.db.Runner(), t.ID, []run.State{run.StatePending, run.StateRunning})
+	runs, err := e.runs.ListByTaskStates(ctx, e.db.Runner(), t.ID, run.ActiveStates)
 	if err != nil {
 		e.log.Error("task drain: list runs", "task", t.ID, "err", err)
 		return
@@ -542,7 +542,7 @@ func (e *Engine) drainTask(ctx context.Context, t *task.Task, reason string) {
 func (e *Engine) stopRunRow(ctx context.Context, m *run.Run, reason string, now time.Time) error {
 	fallback := state.FormatTime(now.Add(2 * e.opts.TaskStopGrace).Add(10 * time.Second))
 	return e.transitRunFour(ctx, m,
-		[]run.State{run.StatePending, run.StateRunning}, run.StateStopping,
+		run.ActiveStates, run.StateStopping,
 		func(r *run.Run) { r.StopReason, r.Deadline = reason, fallback })
 }
 
@@ -682,7 +682,7 @@ func (e *Engine) StopTask(ctx context.Context, id string, force bool) (*task.Tas
 	}
 	if force {
 		now := e.clock.Now()
-		runs, rerr := e.runs.ListByTaskStates(ctx, e.db.Runner(), id, []run.State{run.StatePending, run.StateRunning})
+		runs, rerr := e.runs.ListByTaskStates(ctx, e.db.Runner(), id, run.ActiveStates)
 		if rerr != nil {
 			e.log.Error("task stop: list runs", "task", id, "err", rerr) // 行已 draining；停止收口交下一拍
 		}

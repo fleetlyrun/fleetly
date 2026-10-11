@@ -50,14 +50,14 @@ func (e *Engine) handleRunObservation(ctx context.Context, runID string, ev capa
 		}
 	case ev.State == capability.WorkloadCompleted && m.State.Active():
 		if err := e.transitRunFour(ctx, m,
-			[]run.State{run.StatePending, run.StateRunning}, run.StateStopped,
+			run.ActiveStates, run.StateStopped,
 			func(r *run.Run) { r.StopReason = run.ReasonCompleted; r.ExitCode = ev.ExitCode }); err != nil {
 			e.log.Error("run observe: completed", "run", runID, "err", err)
 		}
 		e.recycleRunObs(runID)
 	case ev.State == capability.WorkloadFailed && m.State.Active():
 		if err := e.transitRunFour(ctx, m,
-			[]run.State{run.StatePending, run.StateRunning}, run.StateFailed,
+			run.ActiveStates, run.StateFailed,
 			func(r *run.Run) { r.StopReason = run.ReasonFailed; r.ExitCode = ev.ExitCode }); err != nil {
 			e.log.Error("run observe: failed", "run", runID, "err", err)
 		}
@@ -72,7 +72,7 @@ func (e *Engine) handleRunObservation(ctx context.Context, runID string, ev capa
 		e.recycleRunObs(runID)
 	case ev.State == capability.WorkloadStopped && m.State.Active():
 		if err := e.transitRunFour(ctx, m,
-			[]run.State{run.StatePending, run.StateRunning}, run.StateStopped,
+			run.ActiveStates, run.StateStopped,
 			func(r *run.Run) { r.StopReason = run.ReasonPlatformDrained; r.ExitCode = ev.ExitCode }); err != nil {
 			e.log.Error("run observe: platform drained", "run", runID, "err", err)
 		}

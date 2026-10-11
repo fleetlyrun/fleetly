@@ -146,7 +146,7 @@
     },
     "/v1/runs/{id}/wait": {
       "get": {
-        "summary": "WaitRun 是等待原语（架构 §7）：逐状态快照帧，终态（stopped/failed）\n帧后收流。流面豁免 unary 超时（与 WaitDeployment/WaitBuild 同款）。",
+        "summary": "WaitRun 是等待原语（架构 §7）：逐状态快照帧，终态（stopped/failed）\n帧后收流。流面豁免 unary 超时（与 WaitDeployment/WaitBuild 同款）。\nid 与 task_id 精确一（ADR-0063）：task_id = 任务维度——钉等待开始时\n该 Task 的最新 Run 至终态（one-shot 即唯一 Run）；无 Run 时事件驱动\n补获（run.* payload task_id 匹配即重列），Task 已终态且无 Run 诚实\n拒绝不挂流。",
         "operationId": "RunsService_WaitRun",
         "responses": {
           "200": {
@@ -173,6 +173,12 @@
             "name": "id",
             "in": "path",
             "required": true,
+            "type": "string"
+          },
+          {
+            "name": "task_id",
+            "in": "query",
+            "required": false,
             "type": "string"
           }
         ],
@@ -604,6 +610,49 @@
         ],
         "tags": [
           "TasksService"
+        ]
+      }
+    },
+    "/v1/tasks/{task_id}/runs/wait": {
+      "get": {
+        "summary": "WaitRun 是等待原语（架构 §7）：逐状态快照帧，终态（stopped/failed）\n帧后收流。流面豁免 unary 超时（与 WaitDeployment/WaitBuild 同款）。\nid 与 task_id 精确一（ADR-0063）：task_id = 任务维度——钉等待开始时\n该 Task 的最新 Run 至终态（one-shot 即唯一 Run）；无 Run 时事件驱动\n补获（run.* payload task_id 匹配即重列），Task 已终态且无 Run 诚实\n拒绝不挂流。",
+        "operationId": "RunsService_WaitRun2",
+        "responses": {
+          "200": {
+            "description": "A successful response.(streaming responses)",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "result": {
+                  "$ref": "#/definitions/v1WaitRunResponse"
+                }
+              },
+              "title": "Stream result of v1WaitRunResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "id",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "RunsService"
         ]
       }
     }

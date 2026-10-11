@@ -832,3 +832,15 @@ F3.1/F3.2/F3.3/F3.6 四批走查的浏览器级挂账在后端在场的环境（
 **门禁**：mise run test 三 module 全绿 + mise run lint 全绿；golden 零漂移。
 
 **换装**：未换装——纯 Go 机械批，随下次上站批部署。
+
+## 2026-10-11 记录·三十九（架构评审第三轮候选 3：wait 协议任务维度 + 三 verb 等待循环收编 ADR-0063；未换装）
+
+**裁决**：ADR-0063——①waitOnRow 泛型唯一循环（读行/状态键/既有 Terminal() 谓词/帧构造四 variation points），WaitDeployment 内联四值 switch 换 `deployment.State.Terminal()`（谓词早已在册、闭包是平行重编码）；②WaitRun 任务维度 proto only-add（`task_id = 2` 与 id 精确一 + REST additional_bindings `/v1/tasks/{task_id}/runs/wait`）：钉等待开始时该 Task 最新 Run 至终态，无 Run 事件驱动补获（run.* payload task_id 过滤——payload 本就携带，`engine.RunPayloadTaskID` 导出键单源），终态无 Run `E_CONFLICT` 拒绝不挂流；③CLI `tasks create --wait` 退役 poll-30×（30 秒猜测窗 + "no run appeared" 错误面退役；waitRunOnFrame 的 run id 改取帧，by-id 输出逐字节不变）；④`run.ActiveStates` 收编 engine 六处 {pending,running} 字面量（观测 from-集 ×3/drain/stopRunRow/StopTask force——与 Active() 同形）。
+
+**剔除裁决（评审卡片申报项实核否决）**：proto 行消息派生布尔——console display-active 含 stopping、服务端 Active() 不含，语义分裂单一布尔必错一端；ADR-0012 冻结值集使本地重编码风险有界，tone 属装饰。
+
+**测试与验证**：apitest TestWaitRunTaskID（精确一/补获/钉定 Run 跟随/终态无 Run 拒绝）+ 既有 TestWaitRun/WaitDeployment/WaitBuild 行为保持绿；CLI golden 零漂移（runs-wait 双形态 + tasks-create 全系）；buf breaking 过（only-add）；genproto/swagger/console dist 同 commit 再生成。
+
+**门禁**：mise run test 三 module 全绿 + mise run lint 全绿。
+
+**换装**：未换装——纯 Go+proto only-add 批，随下次上站批部署。

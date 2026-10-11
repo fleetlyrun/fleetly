@@ -297,6 +297,20 @@ func runEventPayloadJSON(m *run.Run) []byte {
 	return b
 }
 
+// RunPayloadTaskID 从 run.* 事件 payload 提取 task_id（形状单源：本文件
+// runEventPayload 的 json 键，消费方不持键知识）。API 等待面的任务维度
+// 过滤用（WaitRun task_id：run.created 事件是首 Run 铸出的信号，ADR-0063）。
+// 非 run.* payload 或缺键返回空串。
+func RunPayloadTaskID(payload []byte) string {
+	var p struct {
+		TaskID string `json:"task_id"`
+	}
+	if err := json.Unmarshal(payload, &p); err != nil {
+		return ""
+	}
+	return p.TaskID
+}
+
 func leaseEventPayloadJSON(t *task.Task, reason string) []byte {
 	b, _ := json.Marshal(leaseEventPayload{
 		TaskID:   t.ID,

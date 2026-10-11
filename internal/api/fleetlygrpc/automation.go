@@ -14,6 +14,7 @@ import (
 
 	automationv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/automation/v1"
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
+	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
 	"github.com/fleetlyrun/fleetly/internal/api/apperr"
 	"github.com/fleetlyrun/fleetly/internal/authn"
 	"github.com/fleetlyrun/fleetly/internal/engine"
@@ -313,34 +314,102 @@ func (svc *RunsService) StopRun(ctx context.Context, req *automationv1.StopRunRe
 }
 
 // WaitRun：逐状态快照帧，终态（stopped/failed）帧后收流（F1.3 收口面——
-// 复用 subscribeEvents 单一订阅核心，行重读是真源）。
+// waitOnRow 单一循环，行重读是真源）。id/task_id 精确一（ADR-0063）：
+// task_id = 任务维度，钉等待开始时该 Task 的最新 Run（one-shot 即唯一
+// Run），无 Run 时事件驱动补获。
 func (svc *RunsService) WaitRun(req *automationv1.WaitRunRequest, stream automationv1.RunsService_WaitRunServer) error {
-	if req.GetId() == "" {
-		return apperr.New("E_INVALID_ARGUMENT", "id: must not be empty")
+	if (req.GetId() == "") == (req.GetTaskId() == "") {
+		return apperr.New("E_INVALID_ARGUMENT", "exactly one of id, task_id is required")
 	}
 	ctx := stream.Context()
-	if err := svc.s.authorizeRunID(ctx, req.GetId()); err != nil {
-		return err
-	}
-	last := ""
-	send := func() error {
-		row, err := svc.s.Runs.Get(ctx, svc.s.DB.Runner(), req.GetId())
-		if err != nil {
-			return mapStateError(err, "run")
-		}
-		if string(row.State) == last {
-			return nil // 状态未变不重发（事件只是信号，帧只走状态迁移）
-		}
-		last = string(row.State)
-		if err := stream.Send(&automationv1.WaitRunResponse{Run: runMsg(row)}); err != nil {
+	if req.GetId() != "" {
+		if err := svc.s.authorizeRunID(ctx, req.GetId()); err != nil {
 			return err
 		}
-		if row.State.Terminal() {
-			return errWaitDone
-		}
-		return nil
+		return svc.waitRunByID(ctx, req.GetId(), stream)
 	}
-	return waitOnAggregate(ctx, svc.s, "run", req.GetId(), send)
+	if err := svc.s.authorizeTaskID(ctx, req.GetTaskId()); err != nil {
+		return err
+	}
+	return svc.waitRunByTask(ctx, req.GetTaskId(), stream)
+}
+
+// waitRunByID 是 Run 行型的等待 adapter（read/状态键/Terminal/帧构造四个
+// variation points 注入 waitOnRow）。
+func (svc *RunsService) waitRunByID(ctx context.Context, runID string, stream automationv1.RunsService_WaitRunServer) error {
+	return waitOnRow(ctx, svc.s, "run", runID,
+		func(ctx context.Context) (*run.Run, error) {
+			row, err := svc.s.Runs.Get(ctx, svc.s.DB.Runner(), runID)
+			if err != nil {
+				return nil, mapStateError(err, "run")
+			}
+			return row, nil
+		},
+		func(r *run.Run) string { return string(r.State) },
+		func(r *run.Run) bool { return r.State.Terminal() },
+		func(r *run.Run) error {
+			return stream.Send(&automationv1.WaitRunResponse{Run: runMsg(r)})
+		})
+}
+
+// waitRunByTask 钉等待开始时该 Task 的最新 Run（one-shot 即唯一 Run；
+// resident 钉首个观测 Run——钉定后跟随其终态，不随补足换靶）。现成 Run
+// 直接钉；无 Run 先核对 Task 终态（终态无 Run = 诚实拒绝不挂流），再订阅
+// run.* 事件——payload task_id 命中（engine.RunPayloadTaskID 单源提取键）
+// 即重列钉定。订阅起点先于钉定读（waitOnAggregate 同款：两步间铸出的 Run
+// 只多一次幂等重列）。钉定后与 by-id 同流。
+func (svc *RunsService) waitRunByTask(ctx context.Context, taskID string, stream automationv1.RunsService_WaitRunServer) error {
+	cursor, err := svc.s.OutboxEvents.LastSeq(ctx, svc.s.DB.Runner())
+	if err != nil {
+		return mapStateError(err, "events")
+	}
+	pin := func() (*run.Run, error) {
+		rows, lerr := svc.s.Runs.ListByTask(ctx, svc.s.DB.Runner(), taskID, "", 1)
+		if lerr != nil {
+			return nil, mapStateError(lerr, "run")
+		}
+		if len(rows) == 0 {
+			return nil, nil
+		}
+		return &rows[0], nil
+	}
+	first, err := pin()
+	if err != nil {
+		return err
+	}
+	if first == nil {
+		t, terr := svc.s.Tasks.Get(ctx, svc.s.DB.Runner(), taskID)
+		if terr != nil {
+			return mapStateError(terr, "task")
+		}
+		if t.State.Terminal() {
+			// 终态拒绝走 E_CONFLICT（ErrTaskTerminal 同款形）：等待面无
+			// 可等对象是状态冲突，不为边缘面开新 errcode。
+			return apperr.New("E_CONFLICT",
+				"task %s is terminal (%s) and has no runs to wait on", taskID, t.State)
+		}
+		subErr := svc.s.subscribeEvents(ctx, cursor, true, func(ev *telemetryv1.Event) error {
+			if ev.Aggregate != "run" || engine.RunPayloadTaskID([]byte(ev.Payload)) != taskID {
+				return nil
+			}
+			row, rerr := pin()
+			if rerr != nil {
+				return rerr
+			}
+			if row == nil {
+				return nil // 未铸出（同拍多事件竞态）：下一事件再试
+			}
+			first = row
+			return errWaitDone // 补获阶段收流（哨兵语义=阶段完成，非错误）
+		})
+		if subErr != nil && !errors.Is(subErr, errWaitDone) {
+			return subErr
+		}
+		if first == nil {
+			return ctx.Err() // 订阅被取消且未补获：按取消收场
+		}
+	}
+	return svc.waitRunByID(ctx, first.ID, stream)
 }
 
 // mapTaskVerbError 映射 Task 生命周期动词哨兵（形态/终态类错误是请求与

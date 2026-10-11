@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"time"
 
 	"github.com/lynx-go/commands"
 
@@ -54,9 +53,11 @@ func (s *stringSlice) Set(v string) error {
 }
 
 // waitRunFrames 经 WaitRun 收流至终态（F1.3 收口面）：逐帧回调，返回终态。
-// 流式长等待——调用方须以 noDeadline 拨号。
-func waitRunFrames(ctx context.Context, rc automationv1.RunsServiceClient, runID string, onFrame func(*automationv1.WaitRunResponse) error) (string, error) {
-	stream, err := rc.WaitRun(ctx, &automationv1.WaitRunRequest{Id: runID})
+// runID 与 taskID 精确一（ADR-0063：任务维度 = 服务端钉等待开始时最新 Run
+// 至终态，tasks create --wait 免轮询等首 Run）。流式长等待——调用方须以
+// noDeadline 拨号。
+func waitRunFrames(ctx context.Context, rc automationv1.RunsServiceClient, runID, taskID string, onFrame func(*automationv1.WaitRunResponse) error) (string, error) {
+	stream, err := rc.WaitRun(ctx, &automationv1.WaitRunRequest{Id: runID, TaskId: taskID})
 	if err != nil {
 		return "", err
 	}
@@ -78,8 +79,9 @@ func waitRunFrames(ctx context.Context, rc automationv1.RunsServiceClient, runID
 	}
 }
 
-// waitRunOnFrame 渲染一帧 Run 等待输出。
-func waitRunOnFrame(env *commands.Environment, jsonOut bool, runID string) func(*automationv1.WaitRunResponse) error {
+// waitRunOnFrame 渲染一帧 Run 等待输出（run id 取帧——任务维度等待下
+// CLI 预先不知道 run id，ADR-0063）。
+func waitRunOnFrame(env *commands.Environment, jsonOut bool) func(*automationv1.WaitRunResponse) error {
 	return func(frame *automationv1.WaitRunResponse) error {
 		if jsonOut {
 			data, err := protoJSONMarshal.Marshal(frame)
@@ -94,7 +96,7 @@ func waitRunOnFrame(env *commands.Environment, jsonOut bool, runID string) func(
 			return err
 		}
 		r := frame.GetRun()
-		line := fmt.Sprintf("run %s %s", runID, r.GetState())
+		line := fmt.Sprintf("run %s %s", r.GetId(), r.GetState())
 		if r.GetStopReason() != "" {
 			line += " (" + r.GetStopReason() + ")"
 		}
@@ -175,26 +177,17 @@ func newTasksCreateVerb() commands.Command {
 			}
 			t := resp.GetTask()
 			if wait {
-				// 等首个 Run 出现（补足随驱动环；WaitRun 需要 run id）。
-				runID := ""
-				for i := 0; i < 30 && runID == ""; i++ {
-					runs, rerr := c.Runs.ListRuns(ctx, &automationv1.ListRunsRequest{TaskId: t.GetId(), Limit: 1})
-					if rerr == nil && len(runs.GetRuns()) > 0 {
-						runID = runs.GetRuns()[0].GetId()
-						break
-					}
-					if !sleepCtxCLI(ctx) {
-						return ctx.Err()
-					}
-				}
-				if runID == "" {
-					return fmt.Errorf("task %s created but no run appeared within the wait window", t.GetId())
-				}
-				final, werr := waitRunFrames(ctx, c.Runs, runID, waitRunOnFrame(env2, jsonOut, runID))
+				// 任务维度等待（ADR-0063）：服务端钉等待开始时最新 Run 至
+				// 终态（首 Run 未铸出时事件驱动补获）——CLI 不再轮询。
+				var seenID string
+				final, werr := waitRunFrames(ctx, c.Runs, "", t.GetId(), func(frame *automationv1.WaitRunResponse) error {
+					seenID = frame.GetRun().GetId()
+					return waitRunOnFrame(env2, jsonOut)(frame)
+				})
 				if werr != nil {
 					return werr
 				}
-				return requireRunOK(runID, final)
+				return requireRunOK(seenID, final)
 			}
 			return renderOut(env2, jsonOut, t, func() {
 				_, _ = fmt.Fprintf(env2.Stdout, "task %s created (%s, %s)\n", t.GetId(), t.GetForm(), t.GetDnsName())
@@ -550,24 +543,12 @@ func newRunsWaitVerb() commands.Command {
 			}
 			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
-			final, werr := waitRunFrames(ctx, c.Runs, id, waitRunOnFrame(env, jsonOut, id))
+			final, werr := waitRunFrames(ctx, c.Runs, id, "", waitRunOnFrame(env, jsonOut))
 			if werr != nil {
 				return werr
 			}
 			return requireRunOK(id, final)
 		},
-	}
-}
-
-// sleepCtxCLI 是 --wait 首帧轮询的短窗睡眠（1s；ctx 取消即返 false）。
-func sleepCtxCLI(ctx context.Context) bool {
-	timer := time.NewTimer(time.Second)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return false
-	case <-timer.C:
-		return true
 	}
 }
 

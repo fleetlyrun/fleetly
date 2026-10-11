@@ -35,6 +35,12 @@ func (s State) Active() bool {
 	return s == StatePending || s == StateRunning
 }
 
+// ActiveStates 是 Active() 的集合形态——CAS from-state 集与
+// ListByTaskStates 过滤集共用（stopping 不在列：收口态不占活槽位）。
+// ADR-0063 单源收编 engine 六处字面量；共享切片只读（Transit/runStateIn
+// 均不持留不变更）。
+var ActiveStates = []State{StatePending, StateRunning}
+
 // StopReason 是停止原因七枚举（ADR-0012；终态携带，snake_case 冻结）。
 const (
 	ReasonCompleted       = "completed"        // 自然退出（退出码 0）

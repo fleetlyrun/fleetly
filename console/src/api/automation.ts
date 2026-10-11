@@ -64,6 +64,10 @@ export interface paths {
         /**
          * WaitRun 是等待原语（架构 §7）：逐状态快照帧，终态（stopped/failed）
          *     帧后收流。流面豁免 unary 超时（与 WaitDeployment/WaitBuild 同款）。
+         *     id 与 task_id 精确一（ADR-0063）：task_id = 任务维度——钉等待开始时
+         *     该 Task 的最新 Run 至终态（one-shot 即唯一 Run）；无 Run 时事件驱动
+         *     补获（run.* payload task_id 匹配即重列），Task 已终态且无 Run 诚实
+         *     拒绝不挂流。
          */
         get: operations["RunsService_WaitRun"];
         put?: never;
@@ -229,6 +233,30 @@ export interface paths {
          *     force=true 宽限停止（StopGrace 路径）。全 Run 终态后 Task → drained。
          */
         post: operations["TasksService_StopTask"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/tasks/{task_id}/runs/wait": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * WaitRun 是等待原语（架构 §7）：逐状态快照帧，终态（stopped/failed）
+         *     帧后收流。流面豁免 unary 超时（与 WaitDeployment/WaitBuild 同款）。
+         *     id 与 task_id 精确一（ADR-0063）：task_id = 任务维度——钉等待开始时
+         *     该 Task 的最新 Run 至终态（one-shot 即唯一 Run）；无 Run 时事件驱动
+         *     补获（run.* payload task_id 匹配即重列），Task 已终态且无 Run 诚实
+         *     拒绝不挂流。
+         */
+        get: operations["RunsService_WaitRun2"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -579,7 +607,9 @@ export interface operations {
     };
     RunsService_WaitRun: {
         parameters: {
-            query?: never;
+            query?: {
+                task_id?: string;
+            };
             header?: never;
             path: {
                 id: string;
@@ -995,6 +1025,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1StopTaskResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    RunsService_WaitRun2: {
+        parameters: {
+            query?: {
+                id?: string;
+            };
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response.(streaming responses) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        result?: components["schemas"]["v1WaitRunResponse"];
+                    };
                 };
             };
             /** @description An unexpected error response. */

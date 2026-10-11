@@ -399,6 +399,10 @@ type RunsServiceClient interface {
 	StopRun(ctx context.Context, in *StopRunRequest, opts ...grpc.CallOption) (*StopRunResponse, error)
 	// WaitRun 是等待原语（架构 §7）：逐状态快照帧，终态（stopped/failed）
 	// 帧后收流。流面豁免 unary 超时（与 WaitDeployment/WaitBuild 同款）。
+	// id 与 task_id 精确一（ADR-0063）：task_id = 任务维度——钉等待开始时
+	// 该 Task 的最新 Run 至终态（one-shot 即唯一 Run）；无 Run 时事件驱动
+	// 补获（run.* payload task_id 匹配即重列），Task 已终态且无 Run 诚实
+	// 拒绝不挂流。
 	WaitRun(ctx context.Context, in *WaitRunRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[WaitRunResponse], error)
 }
 
@@ -473,6 +477,10 @@ type RunsServiceServer interface {
 	StopRun(context.Context, *StopRunRequest) (*StopRunResponse, error)
 	// WaitRun 是等待原语（架构 §7）：逐状态快照帧，终态（stopped/failed）
 	// 帧后收流。流面豁免 unary 超时（与 WaitDeployment/WaitBuild 同款）。
+	// id 与 task_id 精确一（ADR-0063）：task_id = 任务维度——钉等待开始时
+	// 该 Task 的最新 Run 至终态（one-shot 即唯一 Run）；无 Run 时事件驱动
+	// 补获（run.* payload task_id 匹配即重列），Task 已终态且无 Run 诚实
+	// 拒绝不挂流。
 	WaitRun(*WaitRunRequest, grpc.ServerStreamingServer[WaitRunResponse]) error
 	mustEmbedUnimplementedRunsServiceServer()
 }

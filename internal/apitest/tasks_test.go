@@ -230,6 +230,90 @@ func TestWaitRun(t *testing.T) {
 	assert.Contains(t, states, "stopped")
 }
 
+// TestWaitRunTaskID（ADR-0063 任务维度）：精确一校验；钉等待开始时最新
+// Run（one-shot 唯一 Run）——首 Run 未铸出时事件驱动补获 → 跟随至终态
+// 收流（CLI tasks create --wait 的服务器形态）；Task 终态且无 Run 诚实
+// 拒绝不挂流。
+func TestWaitRunTaskID(t *testing.T) {
+	h := apitest.NewManual(t)
+	ctx := sdk.WithToken(context.Background(), h.Token)
+	projectID := taskFixtureProject(t, h, ctx, "automation3-wait")
+
+	tc := automationv1.NewTasksServiceClient(h.Conn)
+	created, err := tc.CreateTask(ctx, &automationv1.CreateTaskRequest{
+		ProjectId: projectID, Image: "busybox:1.37", Command: []string{"/job"},
+	})
+	require.NoError(t, err)
+	taskID := created.GetTask().GetId()
+
+	// 精确一：双填/皆空皆 E_INVALID_ARGUMENT（流面错误经 Recv 返回）。
+	rc := automationv1.NewRunsServiceClient(h.Conn)
+	stream, err := rc.WaitRun(ctx, &automationv1.WaitRunRequest{Id: "x", TaskId: taskID})
+	require.NoError(t, err)
+	_, err = stream.Recv()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "exactly one")
+	stream2, err := rc.WaitRun(ctx, &automationv1.WaitRunRequest{})
+	require.NoError(t, err)
+	_, err = stream2.Recv()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "exactly one")
+
+	// 任务维度：Run 未铸出即开始等待，驱动环铸出后补获 → 跟随至终态。
+	type frame struct{ runID, state string }
+	frames := make(chan frame, 8)
+	done := make(chan error, 1)
+	go func() {
+		stream, err := rc.WaitRun(ctx, &automationv1.WaitRunRequest{TaskId: taskID})
+		if err != nil {
+			done <- err
+			close(frames)
+			return
+		}
+		for {
+			resp, err := stream.Recv()
+			if err != nil {
+				done <- nil
+				close(frames)
+				return
+			}
+			frames <- frame{resp.GetRun().GetId(), resp.GetRun().GetState()}
+		}
+	}()
+
+	driveTaskStep(t, h, ctx) // 铸 Run（等待已订阅——补获路径）
+	runs, err := rc.ListRuns(ctx, &automationv1.ListRunsRequest{TaskId: taskID})
+	require.NoError(t, err)
+	require.Len(t, runs.GetRuns(), 1)
+	runID := runs.GetRuns()[0].GetId()
+	h.Runtime.ReportRunning(runID, capability.Generation(1))
+	h.Drive(ctx)
+	h.Runtime.ReportStopped(runID, capability.Generation(1))
+	h.Drive(ctx)
+
+	var states []string
+	for f := range frames {
+		assert.Equal(t, runID, f.runID, "frames must follow the pinned run")
+		states = append(states, f.state)
+	}
+	require.NoError(t, <-done)
+	require.NotEmpty(t, states)
+	assert.Equal(t, "stopped", states[len(states)-1], "terminal frame must close the stream")
+
+	// 终态无 Run：删除未铸 Run 的 Task → E_CONFLICT 诚实拒绝不挂流。
+	created2, err := tc.CreateTask(ctx, &automationv1.CreateTaskRequest{
+		ProjectId: projectID, Image: "busybox:1.37",
+	})
+	require.NoError(t, err)
+	_, err = tc.DeleteTask(ctx, &automationv1.DeleteTaskRequest{Id: created2.GetTask().GetId()})
+	require.NoError(t, err)
+	stream3, err := rc.WaitRun(ctx, &automationv1.WaitRunRequest{TaskId: created2.GetTask().GetId()})
+	require.NoError(t, err)
+	_, err = stream3.Recv()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "has no runs to wait on")
+}
+
 // TestTaskAcceptanceFace：父资源守卫（已删项目拒收）与 owner 缺省解析。
 func TestTaskAcceptanceFace(t *testing.T) {
 	h := apitest.NewManual(t)
