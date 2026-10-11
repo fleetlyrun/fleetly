@@ -119,7 +119,7 @@ func (o *observDomain) forget(wid string) {
 
 // readyGen 是 L1 健康门的域内实现：某 App 在指定 Generation 下发的全部
 // Workload（ensuredGen 界定）均观测到 running@gen。空集 = 本代零滚动
-//（纯 scale / 全跳过——内容锚定等价下的合法形态，ADR-0064）：
+// （纯 scale / 全跳过——内容锚定等价下的合法形态，ADR-0064）：
 // vacuously ready。调用序保证查询前 materialize 已入账（重启冷缓存由
 // 首拍全量物化重建——C17 备忘同进程内存态，冷启动首拍必全量物化），
 // 空集不可能是缓存未建。
