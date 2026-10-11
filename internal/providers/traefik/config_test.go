@@ -20,7 +20,7 @@ var update = flag.Bool("update", false, "rewrite golden files")
 // 路由可通——messageloop 形态；F3.6 增 browse 双路由——ForwardAuth
 // 门禁渲染）。
 func TestDynamicConfigGolden(t *testing.T) {
-	p, err := New("http://fleetlyd:9082/proxy/config", "ops@example.com", "")
+	p, err := New("http://fleetlyd:9082/proxy/config", "ops@example.com", "", "")
 	require.NoError(t, err)
 	require.NoError(t, p.PublishRoutes(context.Background(), []capability.Route{
 		{Host: "shop.127.0.0.1.sslip.io", Path: "/", Process: "web", Port: 8080,
@@ -132,7 +132,7 @@ func TestRouteKeyInjectiveOnNormalizedCollision(t *testing.T) {
 
 // 受管形态声明完整性（80/443 发布 + ACME storage 卷）。
 func TestManagedWorkloadDeclaration(t *testing.T) {
-	p, err := New("http://fleetlyd:9082/proxy/config", "", "")
+	p, err := New("http://fleetlyd:9082/proxy/config", "", "", "")
 	require.NoError(t, err)
 	ws := p.ManagedWorkloads()
 	require.Len(t, ws, 1)
@@ -151,10 +151,24 @@ func TestManagedWorkloadDeclaration(t *testing.T) {
 // 共享令牌开关（ADR-0036 N2 兑现）：令牌非空 → 受管命令携带同名头；空 →
 // 零新增参数（无认证现状逐位不变）。
 func TestManagedWorkloadAuthTokenHeader(t *testing.T) {
-	p, err := New("http://fleetlyd:9082/proxy/config", "", "s3cret-proxy-token")
+	p, err := New("http://fleetlyd:9082/proxy/config", "", "s3cret-proxy-token", "")
 	require.NoError(t, err)
 	cmd := joinCommand(p.ManagedWorkloads()[0].Command)
 	assert.Contains(t, cmd, "--providers.http.headers.X-Fleetly-Proxy-Token=s3cret-proxy-token")
+}
+
+// CA 目录覆盖（ADR-0061 决策 5）：env 值非空逐字下发（staging 切生产 CA
+// 的通道）；空 = staging 缺省（字节不变，升级零扰动）。
+func TestManagedWorkloadACMECAServer(t *testing.T) {
+	p, err := New("http://fleetlyd:9082/proxy/config", "", "", "https://acme-v02.api.letsencrypt.org/directory")
+	require.NoError(t, err)
+	assert.Contains(t, joinCommand(p.ManagedWorkloads()[0].Command),
+		"--certificatesresolvers.le.acme.caserver=https://acme-v02.api.letsencrypt.org/directory")
+
+	def, err := New("http://fleetlyd:9082/proxy/config", "", "", "")
+	require.NoError(t, err)
+	assert.Contains(t, joinCommand(def.ManagedWorkloads()[0].Command),
+		"--certificatesresolvers.le.acme.caserver="+DefaultACMECAServer)
 }
 
 func joinCommand(cmd []string) string {
@@ -236,7 +250,7 @@ func TestPrecheckRejectsCorruptedSnapshots(t *testing.T) {
 // 与快照保持断言承载（PublishRoutes 的拒绝路径由 UnresolvedBackend 案
 // 覆盖同一出口）。
 func TestPrecheckFailureKeepsLastGoodSnapshot(t *testing.T) {
-	p, err := New("http://fleetlyd:9082/proxy/config", "", "")
+	p, err := New("http://fleetlyd:9082/proxy/config", "", "", "")
 	require.NoError(t, err)
 	good := []capability.Route{{Host: "good.127.0.0.1.sslip.io", Process: "web", Port: 80,
 		Protocol: capability.ProtocolHTTP, BackendAddr: "10.0.0.1:80"}}

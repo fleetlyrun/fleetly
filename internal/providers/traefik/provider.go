@@ -18,6 +18,11 @@ import (
 // Image 是受管 traefik 镜像（钉版；升级经 Platform 升级序，ADR-0015）。
 const Image = "traefik:v3.5.4"
 
+// DefaultACMECAServer 是受管 ACME 的缺省 CA（LE staging——防误触发生产配
+// 额，2026-09-30 裁决；生产 CA 缺省化随安装引导批，ADR-0061 决策 5：现网
+// 经 FLEETLY_PROXY_ACME_CA_SERVER 显式覆盖，收窄/放开都是显式动作）。
+const DefaultACMECAServer = "https://acme-staging-v02.api.letsencrypt.org/directory"
+
 // acmeVolumeID 是受管 ACME 存储卷的平台 ID。fleetly- 前缀与用户 Volume
 // 名空间隔离（C5：用户卷名 "proxy-acme" 不得撞上受管卷——载体名公式只按
 // VolumeID 拼，前缀即边界）。
@@ -29,6 +34,8 @@ type Provider struct {
 	// --providers.http.endpoint 值）。
 	configEndpoint string
 	acmeEmail      string
+	// acmeCAServer 是 ACME CA 目录 URL（空 = DefaultACMECAServer）。
+	acmeCAServer string
 	// authToken 是拉取端点共享令牌（空 = 端点无认证现状；非空经
 	// --providers.http.headers 同头携带，ADR-0036 N2 兑现）。
 	authToken string
@@ -45,8 +52,9 @@ var (
 
 // New 构造 Provider。configEndpoint 形如 http://fleetlyd:9082/proxy/config；
 // authToken 非空时受管实例以 X-Fleetly-Proxy-Token 头携带（端点侧常量时间
-// 比对——空串维持无认证现状，升级零扰动）。
-func New(configEndpoint, acmeEmail, authToken string) (*Provider, error) {
+// 比对——空串维持无认证现状，升级零扰动）；acmeCAServer 空即
+// DefaultACMECAServer（staging CA），非空逐字下发（ADR-0061 决策 5）。
+func New(configEndpoint, acmeEmail, authToken, acmeCAServer string) (*Provider, error) {
 	if configEndpoint == "" {
 		return nil, fmt.Errorf("traefik provider: config endpoint is required")
 	}
@@ -57,6 +65,7 @@ func New(configEndpoint, acmeEmail, authToken string) (*Provider, error) {
 	return &Provider{
 		configEndpoint: configEndpoint,
 		acmeEmail:      acmeEmail,
+		acmeCAServer:   acmeCAServer,
 		authToken:      authToken,
 		schema:         emptyDynamicConfig(),
 	}, nil
@@ -137,11 +146,12 @@ func (p *Provider) ManagedWorkloads() []capability.Workload {
 				// HTTP provider：控制面是配置真源（poll 拉取全量配置）。
 				"--providers.http.endpoint=" + p.configEndpoint,
 				"--providers.http.pollInterval=5s",
-				// LE HTTP-01（traefik 原生；staging CA 防误触发生产配额，
-				// 生产 CA 随安装引导批切换）。email 空即不带 contact 注册
-				//（LE v2 合法形态；New 注释——不传 flag 而非传空值 flag）。
+				// LE HTTP-01（traefik 原生；缺省 staging CA 防误触发生产配
+				// 额，覆盖经 FLEETLY_PROXY_ACME_CA_SERVER——ADR-0061 决策 5）。
+				// email 空即不带 contact 注册（LE v2 合法形态；New 注释——
+				// 不传 flag 而非传空值 flag）。
 				"--certificatesresolvers.le.acme.storage=/acme/acme.json",
-				"--certificatesresolvers.le.acme.caserver=https://acme-staging-v02.api.letsencrypt.org/directory",
+				"--certificatesresolvers.le.acme.caserver=" + p.acmeCAServerOrDefault(),
 				"--certificatesresolvers.le.acme.httpchallenge=true",
 				"--certificatesresolvers.le.acme.httpchallenge.entrypoint=web",
 				// 观测面（api 只读 dashboard，随 Console 批次决定暴露）。
@@ -173,15 +183,25 @@ func (p *Provider) ManagedWorkloads() []capability.Workload {
 	}}
 }
 
+// acmeCAServerOrDefault 是 CA 目录 URL 的落定值（空回退 staging 缺省）。
+func (p *Provider) acmeCAServerOrDefault() string {
+	if p.acmeCAServer != "" {
+		return p.acmeCAServer
+	}
+	return DefaultACMECAServer
+}
+
 // init 自注册工厂（cmd/fleetlyd blank import 触发）。端点与邮箱经环境
 // 变量注入，令牌走装配 ctx（config.server.proxy_config.auth_token，唯一
-// 契约源）+ env FLEETLY_PROXY_AUTH_TOKEN 同键兜底（ADR-0036 形态）。
+// 契约源）+ env FLEETLY_PROXY_AUTH_TOKEN 同键兜底（ADR-0036 形态）；CA
+// 目录 env FLEETLY_PROXY_ACME_CA_SERVER 覆盖（空 = staging 缺省）。
 func init() {
 	capability.RegisterFactory(capability.KindProxy, "traefik", func(ctx context.Context) (capability.Provider, error) {
 		token := capability.ProxyAuthTokenFromContext(ctx)
 		if token == "" {
 			token = os.Getenv("FLEETLY_PROXY_AUTH_TOKEN")
 		}
-		return New(os.Getenv("FLEETLY_PROXY_CONFIG_ENDPOINT"), os.Getenv("FLEETLY_PROXY_ACME_EMAIL"), token)
+		return New(os.Getenv("FLEETLY_PROXY_CONFIG_ENDPOINT"), os.Getenv("FLEETLY_PROXY_ACME_EMAIL"), token,
+			os.Getenv("FLEETLY_PROXY_ACME_CA_SERVER"))
 	})
 }
