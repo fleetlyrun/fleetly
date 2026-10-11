@@ -23,7 +23,7 @@ func TestEnsureContentEquivalenceSkipsUnchangedAcrossGen(t *testing.T) {
 	nsName := "fleetly-shop"
 	w := capability.Workload{ID: "w1", Process: "api", Image: "nginx:1.27"}
 
-	report, err := p.Ensure(ctx, appNS(), []capability.Workload{w}, capability.Generation(1), capability.Materials{})
+	_, err := p.Ensure(ctx, appNS(), []capability.Workload{w}, capability.Generation(1), capability.Materials{})
 	require.NoError(t, err)
 	d, err := cli.AppsV1().Deployments(nsName).Get(ctx, "fleetly-web-api", metav1.GetOptions{})
 	require.NoError(t, err)
@@ -31,7 +31,7 @@ func TestEnsureContentEquivalenceSkipsUnchangedAcrossGen(t *testing.T) {
 	rv := d.ResourceVersion
 
 	// 拍 2（gen 2，内容零变化）：A 键命中 → 零写、代戳保留、报告 wire-gen=1。
-	report, err = p.Ensure(ctx, appNS(), []capability.Workload{w}, capability.Generation(2), capability.Materials{})
+	report, err := p.Ensure(ctx, appNS(), []capability.Workload{w}, capability.Generation(2), capability.Materials{})
 	require.NoError(t, err)
 	d, _ = cli.AppsV1().Deployments(nsName).Get(ctx, "fleetly-web-api", metav1.GetOptions{})
 	assert.Equal(t, rv, d.ResourceVersion, "unchanged workload must not be rewritten across generations")

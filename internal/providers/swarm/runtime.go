@@ -189,7 +189,7 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 			// 戳与模板恒同移（未变内容不换代），观测归因锚不漂。
 			scaleSpec := spec
 			scaleSpec.TaskTemplate = svc.Spec.TaskTemplate
-			scaleSpec.Annotations.Labels = svc.Spec.Annotations.Labels
+			scaleSpec.Labels = svc.Spec.Labels // 内嵌 Annotations 直取（staticcheck QF1008）
 			if uerr := p.updateServiceCAS(ctx, ns, scaleSpec, svc, auth); uerr != nil {
 				return report, uerr // update 失败：defer 整拍作废账本，下拍重发（C19-1）
 			}
