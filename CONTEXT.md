@@ -243,12 +243,16 @@ _Avoid_: addon, internal service（component 经 ADR-0059 复裁为在册页面�
 ### 状态语义
 
 **Generation**:
-某次已下发 Spec 的单调编号，幂等与 Drift 判定的锚。
+某次已下发 Spec 的单调编号，幂等与 Drift 判定的锚。载体代戳与内容恒同移（ADR-0064）：未变载体跨部署保留其下发代戳。
 _Avoid_: epoch, revision number
 
 **Drift**:
 实际状态偏离已下发 Spec 的信号；检测默认开启。口径（ADR-0022）：Generation 偏离与 spec 失配（人工改载体）双路径；启动按 succeeded 基线重放重建对照锚。
 _Avoid_: skew, divergence, dirty
+
+**内容锚定等价（Content-Addressed Equivalence）**:
+Ensure 的等价判定口径：modulo 载体代戳（及副本数）比较内容——跨代未变载体零触碰、仅副本异走 scale（零任务替换）、内容异才滚动；EnsureReport 逐载体回传 wire-gen 供观测归因（ADR-0064）。
+_Avoid_: in-place update, 增量部署
 
 **Converge**:
 把 Drift 拉回 Spec 的动作；默认 opt-in。

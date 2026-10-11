@@ -844,3 +844,17 @@ F3.1/F3.2/F3.3/F3.6 四批走查的浏览器级挂账在后端在场的环境（
 **门禁**：mise run test 三 module 全绿 + mise run lint 全绿。
 
 **换装**：未换装——纯 Go+proto only-add 批，随下次上站批部署。
+
+## 2026-10-11 记录·四十（ADR-0064 内容锚定等价收敛：机制批七 commit——单副本调整曾触发全服务替换的事故根因收口）
+
+**裁决**：ADR-0064——`fleetly.generation` 戳的职责解耦（观测归因锚 ≠ spec 内容成分）：等价比对剥离代戳（modulo-gen），Ensure 三分（内容等价跳过 / replicas-only 走 scale 零任务替换 / 内容异才滚动），EnsureReport 逐载体回传 wire-gen 供引擎归因，L1 空集 vacuous pass（纯 scale 是合法形态），swarm 滚动停换单次自动 resume（ForceUpdate++ + 5min 护栏），k3s 账本双键 + 写代钉住（免服务端比对）。CONTEXT.md 增「内容锚定等价」词条 + Generation 词条口径修订。
+
+**七 commit**：e332dbf 接口机械变更 → f2b7ac7 swarm 三分 + fakeDaemon 锚 ×3 → bd56987 引擎归因回路 → 1023e1d paused resume + 锚 → 5fa2a9c k3s 对齐 + fake clientset 锚 ×4 → 4ace52e L1 空集缺口补漏（写探针时咬出的第二缺口：纯 scale 部署全员 wire-gen 停旧值，旧 count>0 判假会复刻双门事故——空集 vacuous pass）→ 8c125e8 e2e 探针（dind-smoke 场景 2b：replicas-only 双进程断言目标服务 2 Running + 0 Shutdown、未触碰服务零扰动；场景 1 旧断言「同 spec 重部署替换一次任务」随新语义改写为「零替换恰一行」——e2e 实跑咬出，属预期行为变更非回归）。
+
+**e2e 实证**：dind-smoke 全绿（含场景 2b）；dind-upgrade/bluegreen 既有零扰动断言零改动（升级不触发 app Ensure、BG scoped 载体名代次化不受 modulo 影响）。
+
+**旧行为活体对照（无意的第二对照组，诚实记档）**：排查 console Rollback 端点时以 curl 直打两次（g16 即被 g17 supersede）——旧代码（457a2c5-adr62）下 g17 回滚再次全员替换：server/dispatcher/worker 堆至 5/1、6/1、2/1 paused，L1 必超时。这组残留正好作为新代码上站后的收敛验证对象（modulo-skip + paused resume 应自动收敛）。**教训：排查生产问题时的端点验证要预判副作用——回滚动词不是只读探针。**
+
+**console「Rollback app」点击未达服务端（挂账观察，非本批修复）**：gateway 日志 09:00-10:10 零 Rollback 调用；端点双向验证通过（带/不带 body 均创建回滚行）、错误展示面在位（rollback.error → ErrorLine）。客户端侧无法离线复现——不投机修，复发时以浏览器网络面板取证。
+
+**换装与验证**：随本批上站（见后续记录）。

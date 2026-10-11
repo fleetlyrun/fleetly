@@ -142,6 +142,8 @@ var skippedTokens = map[string]string{
 	"renewal":          "泛指禁用；证书/租约续期语境人工评审",
 	"provisioning":     "local-path provisioner 等存储面技术词与 skills 名沿用；Task Mint 同义词语境人工评审（ADR-0062）",
 	"spawn":            "spawnScheduleTask 机制动作与 eventcode 既有摘要沿用；Task Mint 同义词语境人工评审（ADR-0062）",
+	"in-place update":  "update in place 口语形容零动作路径；内容锚定等价是 modulo 比对三义（跳过/scale/滚动），非原地改写语义（ADR-0064）",
+	"增量部署":             "变更集是比对结果不是部署类型；部署行 Generation 语义不变（ADR-0064）",
 	"sandbox net":      "Task Network Group 同义词；短语机械扫描误伤面大，人工评审",
 	"task net":         "仅禁作标识符",
 	"execution":        "通用词；Run 同义词语境人工评审",
