@@ -437,6 +437,10 @@ func (e *Engine) publishRoutes(ctx context.Context) {
 	// Browse 会话的 ephemeral 双路由合并（ADR-0051 决策 5：entry 兑换入口
 	// + ForwardAuth 门禁的工具路由；非 route 行——会话拓扑是平台内置）。
 	publish = append(publish, e.browseCapabilityRoutes(ctx)...)
+	// Console 公网发布双路由合并（ADR-0061 决策 2：Host-only 主路由 +
+	// 登录限速路由；非 route 行——面板发布是平台内置拓扑，进程生命周期内
+	// 恒定，签名不必覆盖）。
+	publish = append(publish, e.consoleCapabilityRoutes()...)
 	if err := e.proxy.PublishRoutes(ctx, publish); err != nil {
 		e.log.Error("route publish: proxy rejected config", "err", err)
 		e.ensureForget(e.proxyMemo.pub, routesPubKey) // 发布失败：下拍强制重试全量
