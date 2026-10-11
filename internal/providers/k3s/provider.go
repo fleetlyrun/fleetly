@@ -43,12 +43,16 @@ type Provider struct {
 	// Ensure no-op 断路器账本（swarm lastIssued 同款语义：对象名 → 最近
 	// 一次确认服务端持有的期望 canonical JSON。受管域每拍重放 Ensure，
 	// 服务端 defaulted 字段漂移会让深比对恒不等，无此闸会每拍重发自激）。
-	ledgerMu   sync.Mutex
-	lastIssued map[string]string
+	// ADR-0064 起 A 键记 modulo-gen canonical（跨代未变载体账本命中零写）；
+	// lastIssuedB 是 B 键（再剥副本数——replicas-only 分流判定锚）。
+	ledgerMu    sync.Mutex
+	lastIssued  map[string]string
+	lastIssuedB map[string]string
 
 	// issuedGen 是最近下发 Generation 的账本（Watch 的 Drift 对照信号面：
 	// 载体 Generation 标记与最近下发值不一致即 drift；单进程内存态，重启
 	// 即冷——冷启动首轮全量对账不发 drift 信号，与深比对冷启动行为一致）。
+	// ADR-0064 起语义收紧为 wire-gen（跳过/scale 载体保持旧值不推进）。
 	issuedGenMu sync.Mutex
 	issuedGen   map[string]uint64
 

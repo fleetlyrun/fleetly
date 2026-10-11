@@ -298,5 +298,23 @@ func (p *Provider) forgetLastIssued(names ...string) {
 	defer p.ledgerMu.Unlock()
 	for _, n := range names {
 		delete(p.lastIssued, n)
+		delete(p.lastIssuedB, n)
 	}
+}
+
+// recordLastIssuedB 落 B 键账（modulo-gen 且 modulo-replicas 的 canonical——
+// replicas-only 分流的判定锚，ADR-0064 决策 2 的 k3s 面）。
+func (p *Provider) recordLastIssuedB(name, canonical string) {
+	p.ledgerMu.Lock()
+	defer p.ledgerMu.Unlock()
+	if p.lastIssuedB == nil {
+		p.lastIssuedB = map[string]string{}
+	}
+	p.lastIssuedB[name] = canonical
+}
+
+func (p *Provider) lastIssuedBOf(name string) string {
+	p.ledgerMu.Lock()
+	defer p.ledgerMu.Unlock()
+	return p.lastIssuedB[name]
 }

@@ -37,6 +37,7 @@ const watchPollInterval = 10 * time.Second
 // Workload create-or-update（no-op 两道闸：lastIssued 账本短路 + canonical
 // 深比对），不在期望集内的域内对象移除——同 Generation 重放安全（场景 1）。
 func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []capability.Workload, gen capability.Generation, m capability.Materials) (report capability.EnsureReport, err error) {
+	report.Gens = make(map[string]capability.Generation, len(ws))
 	// 期望集载体名 + 碰撞前置拒绝（swarm B9 同款：不同 Workload 折叠成同
 	// 载体名会让后者静默覆盖前者）。
 	desired := make(map[string]string, len(ws))
@@ -131,37 +132,46 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 
 	// 服务名集合（域内收敛对照 + Service 期望集）。
 	wantServices := map[string]bool{}
+	// wires：逐载体 wire-gen（ADR-0064 归因——跳过/scale 载体保持旧值；
+	// 缺席 = 调用 gen）。Ensure 尾统一落 issuedGen 账本 + 报告。
+	wires := map[string]uint64{}
 	for _, w := range ws {
 		secretFiles := secretFilesOf(w)
 		name := workloadName(ns, w, gen)
-		desiredJSON := ""
-		switch {
-		case w.Global:
-			ds := toDaemonSet(ns, w, gen, secretFiles, pullNames)
-			desiredJSON = canonicalJSON(ds)
-			if err := p.putObject(ctx, nsName, "daemonset", name, desiredJSON, func() error {
-				return p.putDaemonSet(ctx, nsName, ds)
-			}); err != nil {
+		// 内容寻址决策（ADR-0064 决策 1/2 的 k3s 面，免服务端内容比对）：
+		// A = modulo-gen canonical（账本 A 键比对——跨代未变零写）；B = 再
+		// 剥副本数（B 键比对——replicas-only 分流）。写代钉住 = 翻译时传
+		// writeGen 而非调用 gen：未变载体模板字节不动（服务端 defaulting
+		// 归一后 no-op），代戳与内容恒同移。
+		kind, obj := translateWorkloadObject(ns, w, gen, secretFiles, pullNames)
+		A := canonicalJSONModuloGen(obj)
+		B := canonicalSansReplicas(A)
+		key := kind + "/" + name
+		writeGen, skip := p.planContentAddressed(ctx, nsName, kind, name, A, B, w, gen)
+		if !skip {
+			if writeGen != uint64(gen) {
+				_, obj = translateWorkloadObject(ns, w, capability.Generation(writeGen), secretFiles, pullNames)
+			}
+			write := func() error {
+				switch o := obj.(type) {
+				case *appsv1.Deployment:
+					return p.putDeployment(ctx, nsName, o)
+				case *appsv1.DaemonSet:
+					return p.putDaemonSet(ctx, nsName, o)
+				case *corev1.Pod:
+					return p.putPod(ctx, nsName, o)
+				}
+				return fmt.Errorf("k3s ensure %s: unknown workload object %T", ns, obj)
+			}
+			if err := p.putObject(ctx, nsName, kind, name, A, write); err != nil {
 				return capability.EnsureReport{}, fmt.Errorf("k3s ensure %s: %w", ns, err)
 			}
-		case w.Restart == capability.RestartNever:
-			pod := toOneShotPod(ns, w, gen, secretFiles, pullNames)
-			desiredJSON = canonicalJSON(pod)
-			if err := p.putObject(ctx, nsName, "pod", name, desiredJSON, func() error {
-				return p.putPod(ctx, nsName, pod)
-			}); err != nil {
-				return capability.EnsureReport{}, fmt.Errorf("k3s ensure %s: %w", ns, err)
-			}
-		default:
-			d := toDeployment(ns, w, gen, secretFiles, pullNames)
-			desiredJSON = canonicalJSON(d)
-			if err := p.putObject(ctx, nsName, "deployment", name, desiredJSON, func() error {
-				return p.putDeployment(ctx, nsName, d)
-			}); err != nil {
-				return capability.EnsureReport{}, fmt.Errorf("k3s ensure %s: %w", ns, err)
-			}
+			p.recordLastIssuedB(key, B)
 		}
-		_ = desiredJSON
+		if writeGen != 0 && writeGen != uint64(gen) {
+			wires[w.ID] = writeGen
+			report.Gens[w.ID] = capability.Generation(writeGen)
+		}
 
 		// Addressing → Service（平台 DNS 名 = Service 名；多 Workload 同名
 		// 池级声明幂等——后写覆盖同形）。无声明端口的工作负载翻译为 headless
@@ -214,9 +224,15 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 		}
 		p.forgetLastIssued("service/" + svc.Name)
 	}
-	// Drift 对照账本落账（Watch 的 gen 对照信号面）。
+	// Drift 对照账本落账（ADR-0064：wire-gen 真源——跳过/scale 载体保持
+	// 旧值，内容变更载体记调用 gen；Watch 的 gen 对照信号面由此与载体
+	// 模板上的实际代戳一致）。
 	for _, w := range ws {
-		p.recordIssuedGen(w.ID, workloadGeneration(w, gen))
+		g := wires[w.ID]
+		if g == 0 {
+			g = uint64(workloadGeneration(w, gen))
+		}
+		p.recordIssuedGen(w.ID, g)
 	}
 	return report, nil
 }
@@ -815,6 +831,144 @@ func canonicalJSON(obj interface{}) string {
 		return ""
 	}
 	return string(raw)
+}
+
+// canonicalJSONModuloGen 在 canonicalJSON 之上剥离对象 meta labels 里的
+// fleetly.generation（ADR-0064 决策 1 的 k3s 面）：跨代未变对象的期望
+// canonical 恒等，账本 A 键不再被代戳击穿（否则任何新部署都全员改模板
+// 触发 rollout——swarm 侧 2026-10-11 事故的同族根因）。
+func canonicalJSONModuloGen(obj interface{}) string {
+	base := canonicalJSON(obj)
+	if base == "" {
+		return ""
+	}
+	var m map[string]any
+	if err := json.Unmarshal([]byte(base), &m); err != nil {
+		return ""
+	}
+	stripObjectGenLabel(m)
+	out, err := json.Marshal(m)
+	if err != nil {
+		return ""
+	}
+	return string(out)
+}
+
+// canonicalSansReplicas 在 modulo-gen canonical 之上再剥 spec.replicas
+// （B 键）：等价 = 「内容等价且仅副本数不同」——replicas-only 分流判定。
+func canonicalSansReplicas(moduloGenJSON string) string {
+	if moduloGenJSON == "" {
+		return ""
+	}
+	var m map[string]any
+	if err := json.Unmarshal([]byte(moduloGenJSON), &m); err != nil {
+		return ""
+	}
+	if spec, ok := m["spec"].(map[string]any); ok {
+		delete(spec, "replicas")
+	}
+	out, err := json.Marshal(m)
+	if err != nil {
+		return ""
+	}
+	return string(out)
+}
+
+// stripObjectGenLabel 剥对象 meta labels 与 pod 模板 labels 两处的 gen 键
+// （map 空间原地删除；Deployment/DaemonSet 的两处标签同源同值，one-shot
+// Pod 只有对象层）。
+func stripObjectGenLabel(m map[string]any) {
+	if meta, ok := m["metadata"].(map[string]any); ok {
+		if labels, ok := meta["labels"].(map[string]any); ok {
+			delete(labels, labelGeneration)
+		}
+	}
+	if spec, ok := m["spec"].(map[string]any); ok {
+		if tpl, ok := spec["template"].(map[string]any); ok {
+			stripObjectGenLabel(tpl)
+		}
+	}
+}
+
+// translateWorkloadObject 是 Workload → k8s 对象的翻译单源（Ensure 主循
+// 环与内容寻址决策共用；gen 参数承载写代钉住——跳过/scale 载体传 wire-
+// gen 使模板字节不动）。
+func translateWorkloadObject(ns capability.NamespaceRef, w capability.Workload, gen capability.Generation, secretFiles map[string]string, pullSecrets []string) (string, any) {
+	switch {
+	case w.Global:
+		return "daemonset", toDaemonSet(ns, w, gen, secretFiles, pullSecrets)
+	case w.Restart == capability.RestartNever:
+		return "pod", toOneShotPod(ns, w, gen, secretFiles, pullSecrets)
+	default:
+		return "deployment", toDeployment(ns, w, gen, secretFiles, pullSecrets)
+	}
+}
+
+// planContentAddressed 是 k3s 的内容寻址三分决策（ADR-0064 决策 1/2，免
+// 服务端内容比对——k8s 服务端对入站写自带 defaulting 归一，客户端深比
+// 对会因 defaulted 字段恒不等）：
+//   - A == 账本 A 键（modulo-gen 全等价）→ skip：零写，wire-gen = issuedGen
+//     旧值（观测归因锚不漂）。
+//   - B == 账本 B 键（modulo-gen 且 modulo-replicas 等价）→ replicas-only：
+//     写代钉在 issuedGen——模板字节不动（服务端只 scale），wire-gen 保持。
+//   - A 键缺席（冷账本——daemon 重启重放形态）→ 读现存对象 meta 代戳钉
+//     写代：内容未变则服务端归一后 no-op（重启零滚动）；已变则该载体滚
+//     动但代戳停旧值——归因自洽（pod 标签=报告=账本三方一致），L1 按报
+//     告圈集，边界记 ADR。
+//   - 其余 = 内容变更 → 写代 = 调用 gen（滚动替换，代戳随内容推进）。
+func (p *Provider) planContentAddressed(ctx context.Context, nsName, kind, name, a, b string, w capability.Workload, gen capability.Generation) (writeGen uint64, skip bool) {
+	key := kind + "/" + name
+	lastA := p.lastIssuedOf(key)
+	callGen := uint64(gen)
+	if lastA != "" && a == lastA {
+		if g, ok := p.issuedGenOf(w.ID); ok {
+			return g, true
+		}
+		return callGen, true // 账本在而 issuedGen 缺席的异常形态：保守跳过
+	}
+	if lastA != "" && b == p.lastIssuedBOf(key) {
+		if g, ok := p.issuedGenOf(w.ID); ok {
+			return g, false // replicas-only：模板钉 wire-gen，只动副本数
+		}
+		return callGen, false
+	}
+	if lastA == "" {
+		if g := p.serverObjectGen(ctx, nsName, kind, name); g > 0 {
+			return g, false // 冷账本重放：钉现存代戳（内容未变 → no-op 零滚）
+		}
+	}
+	return callGen, false
+}
+
+// serverObjectGen 读现存对象的 meta 代戳（冷账本重放的写代钉住锚；404
+// 或读失败返回 0 = create 形态）。
+func (p *Provider) serverObjectGen(ctx context.Context, nsName, kind, name string) uint64 {
+	switch kind {
+	case "deployment":
+		if d, err := p.cli.AppsV1().Deployments(nsName).Get(ctx, name, metav1.GetOptions{}); err == nil {
+			g, _ := parseUint(d.Labels[labelGeneration])
+			return g
+		}
+	case "daemonset":
+		if ds, err := p.cli.AppsV1().DaemonSets(nsName).Get(ctx, name, metav1.GetOptions{}); err == nil {
+			g, _ := parseUint(ds.Labels[labelGeneration])
+			return g
+		}
+	case "pod":
+		if pod, err := p.cli.CoreV1().Pods(nsName).Get(ctx, name, metav1.GetOptions{}); err == nil {
+			g, _ := parseUint(pod.Labels[labelGeneration])
+			return g
+		}
+	}
+	return 0
+}
+
+// issuedGenOf 读 wire-gen 账本（recordIssuedGen 的读半边）。
+func (p *Provider) issuedGenOf(workloadID string) (uint64, bool) {
+	p.issuedGenMu.Lock()
+	defer p.issuedGenMu.Unlock()
+	g, ok := p.issuedGen[workloadID]
+	return g, ok
 }
 
 func parseUint(s string) (uint64, error) {
