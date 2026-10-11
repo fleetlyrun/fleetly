@@ -140,6 +140,9 @@ type Options struct {
 	// Browse 是数据浏览器面配置（F3.6，ADR-0051；零值 = 面停用——
 	// BrowseDatabase 受理拒 E_BROWSE_DISABLED，browseLoop 零成本拍）。
 	Browse BrowseConfig
+	// Console 是面板公网发布面配置（ADR-0061；零值 = 不发布——console
+	// 公网路由零条，现状）。
+	Console ConsoleConfig
 }
 
 func (o *Options) fill() {

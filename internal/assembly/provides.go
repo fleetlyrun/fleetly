@@ -355,6 +355,13 @@ func NewEngine(
 			GatewayURL: cfg.Browse.GetGatewayUrl(),
 			TLSMode:    browseTLS,
 		},
+		// Console 面板公网发布面（ADR-0061）：config 三字段直通（host 空 =
+		// 不发布，升级零扰动）；tls 空值随渲染层口径视为 auto，不归一。
+		Console: engine.ConsoleConfig{
+			Host:       cfg.Console.GetHost(),
+			GatewayURL: cfg.Console.GetGatewayUrl(),
+			TLSMode:    cfg.Console.GetTls(),
+		},
 	}), nil
 }
 

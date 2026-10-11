@@ -25,6 +25,26 @@ message AppConfig {
   // Runtime 面（F4.1，ADR-0052）：Runtime Provider 选择——整集群声明迁移
   //（per-部署双 Runtime 否决）；缺省 "swarm"（升级零扰动）。
   Runtime runtime = 9;
+  // Console 面板公网发布面（ADR-0061）：host 空 = 不发布（现状，升级零
+  // 扰动）。
+  Console console = 10;
+}
+
+// Console 是 Console 面板公网发布面配置（ADR-0061）：受管 traefik 前置一条
+// Host 路由指回 REST gateway（Console SPA 与 /v1 REST API 同端口同源服务，
+// internal/console.Mount）——host 空 = 整面停用（现状；registry/browse
+// 同文化）。
+message Console {
+  // host 是面板公网主机名（如 console.dev.fleetly.run；须解析到受管
+  // traefik 80/443 入口）。空 = 不发布。env 形态 FLEETLY_CONSOLE_HOST。
+  string host = 1;
+  // gateway_url 是 traefik 容器可达的 REST gateway 基址（如
+  // http://10.124.0.3:9081；browse.gateway_url 同文化——traefik 容器能
+  // 拉到的地址即正确地址）。env 形态 FLEETLY_CONSOLE_GATEWAY_URL。
+  string gateway_url = 2;
+  // tls 是路由 TLS 模式："auto"（LE per-host 证书）或 "none"；空值随
+  // 渲染层口径视为 auto。env 形态 FLEETLY_CONSOLE_TLS。
+  string tls = 3;
 }
 
 // PlatformBackup 是控制面导出（CONTEXT.md 词条）的配置面：本地仓恒在
