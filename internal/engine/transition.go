@@ -1,8 +1,8 @@
 package engine
 
-// 四件一拍的唯一序列真源（engine 侧；镜像 API 侧 acceptance.go 的
-// commit——ADR-0024 受理位原语在驱动域的对应物）。2026-10-03 架构批
-// 收口：此前同一不变量在 transit/transitAndReload/transitRunFour/
+// 四件一拍的唯一序列真源（engine 侧；非迁移写段序与 API 受理位 commit
+// 同归写序列 kernel——internal/writes，ADR-0064）。2026-10-03 架构批收口：
+// 此前同一不变量在 transit/transitAndReload/transitRunFour/
 // transitTaskFour/transitBuild 五份手搓拷贝中各自演化（task 域拷贝已
 // 出现"注释承诺审计、代码无审计"的漂移），规则与顺序自此单点拥有：
 //
@@ -12,7 +12,8 @@ package engine
 //   3. 事件名/负载/审计指纹取自刷新后行（既成事实），伴生字段改写随指纹
 //      带出（"; key=value" 后缀形态）；
 //   4. 非迁移写（建行/字段更新）同构：检查先行（拒绝零副作用）→ 写居中
-//      → 事件与审计殿后，附加写步逐段重放同一序列（commitWrite）。
+//      → 事件与审计殿后——段序由 internal/writes kernel 执法（commitWrite
+//      只做归一化与 steps 编排）。
 //
 // 事务边界双形态：commit* 系列收调用方事务（组合进更大事务，如 Submit
 // 受理序）；类型化前门保留原名原签名，驱动路径自开事务。
@@ -30,6 +31,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state/deployment"
 	"github.com/fleetlyrun/fleetly/internal/state/run"
 	"github.com/fleetlyrun/fleetly/internal/state/task"
+	"github.com/fleetlyrun/fleetly/internal/writes"
 )
 
 // eventFact 是一条 Outbox 事件事实（与聚合写同生共死；概念同 API 侧
@@ -85,8 +87,15 @@ func (e *Engine) commitTransition(ctx context.Context, tx *sql.Tx, f transitionF
 	return nil
 }
 
-// appendAudit 铸 ID 与来源并落一条审计。
+// appendAudit 铸 ID 与来源并落一条审计（commitTransition 直用面；非迁移
+// 写序列的落库经 internal/writes kernel）。
 func (e *Engine) appendAudit(ctx context.Context, tx *sql.Tx, a auditFact) error {
+	return e.audits.Append(ctx, tx, e.auditEntry(ctx, a))
+}
+
+// auditEntry 铸 ID 与来源（actorCtx=true 时 actor/source 取请求 ctx——用户
+// 动词路径，默认 SourceSystem）；落库由写序列 kernel 承载。
+func (e *Engine) auditEntry(ctx context.Context, a auditFact) *audit.Entry {
 	entry := &audit.Entry{
 		ID:       ulid.Make().String(),
 		Source:   audit.SourceSystem,
@@ -97,7 +106,7 @@ func (e *Engine) appendAudit(ctx context.Context, tx *sql.Tx, a auditFact) error
 	if a.actorCtx {
 		entry.Actor, entry.Source = authn.ActorFromContext(ctx), authn.SourceFromContext(ctx)
 	}
-	return e.audits.Append(ctx, tx, entry)
+	return entry
 }
 
 // ---- 非迁移写（建行/字段更新）的序列真源 ----
@@ -122,48 +131,44 @@ type writeFact struct {
 }
 
 // commitWrite 在调用方事务内落完一次写路径：检查 → 写 → 事件 → 审计，
-// 附加写步殿后逐段重放同一序列。任何一段失败整单回滚。
+// 附加写步殿后逐段重放同一序列。段序由写序列 kernel 拥有（internal/writes，
+// ADR-0064——与 API 受理位 commit 同一序列真源）；本函数只做 engine
+// writeFact 归一化与 steps 编排（域差异段不入 kernel）。
 func (e *Engine) commitWrite(ctx context.Context, tx *sql.Tx, f writeFact) error {
-	for _, check := range f.checks {
-		if err := check(ctx, tx); err != nil {
-			return err
-		}
-	}
-	if f.write != nil {
-		if err := f.write(ctx, tx); err != nil {
-			return err
-		}
-	}
-	if err := e.appendFacts(ctx, tx, f.events, f.audits); err != nil {
+	if err := writes.Sequence(ctx, tx, e.outbox, e.audits,
+		e.writeKernelFact(f.checks, f.write, f.events, f.audits)); err != nil {
 		return err
 	}
 	for _, s := range f.steps {
-		if s.write != nil {
-			if err := s.write(ctx, tx); err != nil {
-				return err
-			}
-		}
-		if err := e.appendFacts(ctx, tx, s.events, s.audits); err != nil {
+		if err := writes.Sequence(ctx, tx, e.outbox, e.audits,
+			e.writeKernelFact(nil, s.write, s.events, s.audits)); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// appendFacts 落一组事件与审计事实。
-func (e *Engine) appendFacts(ctx context.Context, tx *sql.Tx, events []func() eventFact, audits []auditFact) error {
+// writeKernelFact 把 engine 事件/审计事实组归一化为写序列 kernel 形态
+// （主序列与 writeStep 共用；审计铸型经 auditEntry 单源——actorCtx 取
+// 请求 ctx 的语义随组求值时点保持）。
+func (e *Engine) writeKernelFact(checks []func(context.Context, *sql.Tx) error,
+	write func(context.Context, *sql.Tx) error,
+	events []func() eventFact, audits []auditFact) writes.Fact {
+	f := writes.Fact{Checks: checks, Write: write}
 	for _, ev := range events {
-		fact := ev()
-		if _, err := e.outbox.Append(ctx, tx, fact.name, fact.aggregate, fact.id, fact.payload); err != nil {
-			return err
-		}
+		ev := ev
+		f.Events = append(f.Events, func() writes.Event {
+			fact := ev()
+			return writes.Event{Name: fact.name, Aggregate: fact.aggregate, ID: fact.id, Payload: fact.payload}
+		})
 	}
 	for _, a := range audits {
-		if err := e.appendAudit(ctx, tx, a); err != nil {
-			return err
-		}
+		a := a
+		f.Audits = append(f.Audits, func(ctx context.Context) []*audit.Entry {
+			return []*audit.Entry{e.auditEntry(ctx, a)}
+		})
 	}
-	return nil
+	return f
 }
 
 // ---- 类型化前门（保留原名原签名，调用点零改动） ----

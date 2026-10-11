@@ -2,10 +2,12 @@ package fleetlygrpc
 
 // 受理位（Acceptance，ADR-0024/F1.1 阶段 3）：api 层创建型/删除型写请求
 // 的受理判定面 + 统一写原语。此前四件一拍（聚合写 + Outbox 事件 + 审计）
-// 在 api 手写 29 处、受理守卫 7 族散落各 handler；本文件是唯一序列真源：
+// 在 api 手写 29 处、受理守卫 7 族散落各 handler。段序与回滚的唯一拥有者
+// 是写序列 kernel（internal/writes，ADR-0064——与 engine 驱动域 commitWrite
+// 同一序列真源）；本文件是受理位的形态面：
 //
-//   - commit 拥有一次写路径的顺序（受理检查 → 聚合写 → 事件 → 审计）与
-//     回滚——新写面必须走本原语，手写 DB.Tx 编排在守卫
+//   - commit 拥有受理位的写路径入口（受理检查 → 聚合写 → 事件 → 审计的
+//     段序由 kernel 执法）——新写面必须走本原语，手写 DB.Tx 编排在守卫
 //     TestAcceptanceWritePathsGoThroughCommit / TestNoHandRolledTxChoreography
 //     反扫下红；
 //   - 受理检查全部事务内运行（所见即受理终局）：父资源存活、配额、删除
@@ -24,6 +26,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/engine"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/state/audit"
+	"github.com/fleetlyrun/fleetly/internal/writes"
 )
 
 // acceptanceCheck 是一条受理位检查：事务内运行，非 nil 错误即整单回滚。
@@ -49,35 +52,40 @@ type writeFact struct {
 }
 
 // commit 在单个事务内落完一次写路径：受理检查先行（拒绝零副作用）、
-// 聚合写居中、事件与审计殿后。顺序与回滚的唯一拥有者。
+// 聚合写居中、事件与审计殿后。段序与段间失败语义由写序列 kernel 拥有
+// （internal/writes，ADR-0064）；本原语是受理位入口与 writeFact 形态面。
 func (s *Services) commit(ctx context.Context, fact writeFact) error {
 	return s.DB.Tx(ctx, func(tx *sql.Tx) error {
-		for _, check := range fact.checks {
-			if err := check(ctx, tx); err != nil {
-				return err
-			}
-		}
-		if fact.write != nil {
-			if err := fact.write(ctx, tx); err != nil {
-				return err
-			}
-		}
-		for _, e := range fact.events {
-			if _, err := s.OutboxEvents.Append(ctx, tx, e.name, e.aggregate, e.id, e.payload); err != nil {
-				return err
-			}
-		}
-		entries := fact.audits
-		if fact.auditsFrom != nil {
-			entries = append(entries, fact.auditsFrom()...)
-		}
-		for _, a := range entries {
-			if err := s.Audits.Append(ctx, tx, a); err != nil {
-				return err
-			}
-		}
-		return nil
+		return writes.Sequence(ctx, tx, s.OutboxEvents, s.Audits, s.writeKernelFact(fact))
 	})
+}
+
+// writeKernelFact 把受理位 writeFact 归一化为写序列 kernel 形态：事件闭包
+// 捕获现有可变 eventFact（withPayload 就地填充在追加时读取，语义逐字节
+// 保持）；audits/auditsFrom 并为审计组——write 段后求值语义不变（组在
+// kernel 事件段后求值，auditsFrom 依赖事务内写的返回行照旧）。
+func (s *Services) writeKernelFact(fact writeFact) writes.Fact {
+	checks := make([]func(context.Context, *sql.Tx) error, len(fact.checks))
+	for i, c := range fact.checks {
+		checks[i] = c
+	}
+	f := writes.Fact{Checks: checks, Write: fact.write}
+	for _, e := range fact.events {
+		e := e
+		f.Events = append(f.Events, func() writes.Event {
+			return writes.Event{Name: e.name, Aggregate: e.aggregate, ID: e.id, Payload: e.payload}
+		})
+	}
+	if len(fact.audits) > 0 || fact.auditsFrom != nil {
+		audits, from := fact.audits, fact.auditsFrom
+		f.Audits = append(f.Audits, func(context.Context) []*audit.Entry {
+			if from == nil {
+				return audits
+			}
+			return append(append([]*audit.Entry(nil), audits...), from()...)
+		})
+	}
+	return f
 }
 
 // ---- 受理检查族（可枚举面；守卫对账对象） ----

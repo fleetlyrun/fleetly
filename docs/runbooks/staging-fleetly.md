@@ -858,3 +858,15 @@ F3.1/F3.2/F3.3/F3.6 四批走查的浏览器级挂账在后端在场的环境（
 **console「Rollback app」点击未达服务端（挂账观察，非本批修复）**：gateway 日志 09:00-10:10 零 Rollback 调用；端点双向验证通过（带/不带 body 均创建回滚行）、错误展示面在位（rollback.error → ErrorLine）。客户端侧无法离线复现——不投机修，复发时以浏览器网络面板取证。
 
 **换装与验证（cd052e4-adr64，2026-10-11 14:19）**：前置 Platform Backup `7721013c` + 卷 tar 四份 + 旧二进制留底 `/root/fleetlyd-457a2c5-adr62.bak`；干净 HEAD 构建（本批起换装前 `git status` 复核为零改动——记录·三十七教训的执法）。零迁移（goose 停 28）。**残留自动收敛**：旧代码留下的 paused 三服务（5/1、6/1、2/1 孤儿堆）+ drift 风暴在新 daemon 起 3 分钟内全部收敛（六服务 1/1 completed、drift 止息——modulo-skip + paused resume 机制的活体验证）。**复现用例回归**：server 副本 1→2（用户场景本体）→ 纯扩零替换（旧任务在服 + 新任务加入、两任务 gen 标签皆 13）、其余五服务任务行零变化、10s 过 L1（空集 vacuous）→ succeeded 零错误；tw.dev 200、console hash `index-C_a9k8uD.js`、doctor 10 ok / 2 warning（既有基线）、受管域全旧龄（6d/6d/35h/2d 零扰动）。e2e dind-smoke 全绿（含场景 2b 零替换锚）。
+
+## 2026-10-11 记录·四十一（架构评审第三轮候选 2：写序列 kernel 收编 internal/writes ADR-0066；未换装）
+
+**裁决**：ADR-0066（方案 B，共识五问全接受）——「检查→聚合写→事件→审计」段序不变量收编新叶子包 `internal/writes.Sequence`（sink 直收具体 repo——两侧同形 `*outbox.Repo`/`*audit.Repo` 不设接口；Fact 事件/审计 lazy 组形，负载可依赖写后行）；API `commit` 与 engine `commitWrite` 退归一化薄 adapter，**~37 调用点零改动**（withPayload 就地填充语义经闭包捕获逐字节保持）；steps 逐段空 Checks 形重放同一序列（编排留 engine）；`commitTransition` 不动（CAS+原地迁移抑制是 engine 自有迁移语义，评审实核已单源）。原拟号 ADR-0064/记录·四十与并行内容锚定批撞号，让为 0066/四十一。
+
+**方案取舍**：B（序列 kernel）而非 A（全量 Fact 单形统一 ~37 调用点换形）——文档在案的失败模式是序列漂移（task 域拷贝审计缺失实锤），B 零调用点风险绝根；A 化（eventFact/auditFact 类型单源、withPayload 退役、审计铸型单源）挂账为 kernel 底座上的按域增量批（ADR-0066 Consequences）。
+
+**测试与变异验证**：internal/writes 包测以 outbox LastSeq 探针钉段序（检查=write 前/事件=write 后/审计=事件后）+ 失败隔离（check/write 注入后续段零执行 + 失败事务 LastSeq 不变实锤回滚）；变异=事件段提到写前→段序断言红，还原复绿；engine transition 测试/apitest 全栈/双守卫（调用形状不变自然过）/golden 零漂移全绿。
+
+**门禁**：mise run test 三 module 全绿 + mise run lint 全绿。
+
+**换装**：未换装——纯 Go 机械批，随下次上站批部署。
