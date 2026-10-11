@@ -14,7 +14,7 @@ export function DatabaseLogsTab({ databaseId }: { databaseId: string }) {
   const [text, setText] = useState("");
   const [tailLines, setTailLines] = useState("300");
 
-  const start = () => log.start({ databaseId, process: "", tailLines, text, follow: true });
+  const start = () => log.start({ databaseId, processes: [], tailLines, text, follow: true });
 
   return (
     <div className="flex flex-col gap-3">

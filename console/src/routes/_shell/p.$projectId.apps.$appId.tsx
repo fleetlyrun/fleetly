@@ -66,6 +66,8 @@ function AppDetailLayout() {
 
   const tabs = [
     { label: "Overview", to: tabBase, exact: true },
+    // Processes（ADR-0060）：进程列表 + 实例数管理——结构面紧随 Overview。
+    { label: "Processes", to: `${tabBase}/processes`, exact: false },
     { label: "Deployments", to: `${tabBase}/deployments`, exact: false },
     { label: "Metrics", to: `${tabBase}/metrics`, exact: false },
     { label: "Logs", to: `${tabBase}/logs`, exact: false },

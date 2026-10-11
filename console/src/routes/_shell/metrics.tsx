@@ -7,6 +7,7 @@ import { useProjectId } from "@/lib/project";
 import { METRIC_PRESETS } from "@/features/metrics/metric-presets";
 import { MetricChart } from "@/features/metrics/metric-chart";
 import { ErrorState } from "@/components/domain/error-state";
+import { PageTabs } from "@/components/domain/page-tabs";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -16,13 +17,25 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 // 指标工作台（Workbench 原型，UI v2 批 3）：预设/自定义 PromQL + 时间窗
 // （search param）+ shadcn Chart。查询经 GET /v1/metrics 透传（无 WS——
-// 前端 30s 轮询是既有契约）。
+// 前端 30s 轮询是既有契约）。批 5 模板化复裁：Metric 下拉升格为
+// PageTabs 四 tab（CPU % / Memory / CPU cores / Custom PromQL，用户裁决
+// 2026-10-11）——tab 即 preset search param，URL 契约不变。根高
+// calc(100svh-3.25rem)（顶栏 h-13）：workbench 视口定死，图区内部滚动。
 
 const metricsSearch = z.object({
   app: z.string().optional(),
   preset: z.string().optional(),
   range: z.string().optional(),
 });
+
+const METRIC_TABS = [
+  { value: "cpu_percent", label: "CPU %" },
+  { value: "memory", label: "Memory" },
+  { value: "cpu_cores", label: "CPU cores" },
+  { value: "custom", label: "Custom PromQL" },
+] as const;
+
+type MetricTab = (typeof METRIC_TABS)[number]["value"];
 
 export const Route = createFileRoute("/_shell/metrics")({
   validateSearch: metricsSearch,
@@ -35,10 +48,9 @@ function MetricsWorkbench() {
   const [projectId] = useProjectId();
   const apps = useApps(projectId);
   const [appId, setAppId] = useState(search.app ?? "");
-  const [presetKey, setPresetKey] = useState(search.preset ?? "cpu_percent");
+  const [presetKey, setPresetKey] = useState<MetricTab>(parseTab(search.preset));
   const [rangeKey, setRangeKey] = useState(search.range ?? "1h");
   const [customQuery, setCustomQuery] = useState("");
-  const [customOpen, setCustomOpen] = useState(false);
 
   // 项目目录到达后补默认 App（同日志页口径）
   useEffect(() => {
@@ -49,13 +61,14 @@ function MetricsWorkbench() {
 
   const preset = METRIC_PRESETS.find((entry) => entry.key === presetKey) ?? METRIC_PRESETS[0];
   const appLabel = (appId || (apps.data ?? [])[0]?.id || "").toLowerCase();
-  const query = customOpen ? customQuery.trim() : appId === "" ? "" : preset.build(appLabel);
-  const unit = customOpen ? "plain" : preset.unit;
+  const custom = presetKey === "custom";
+  const query = custom ? customQuery.trim() : appId === "" ? "" : preset.build(appLabel);
+  const unit = custom ? "plain" : preset.unit;
   const series = useMetricsSeries(query, rangeKey);
 
   function update(next: { app?: string; preset?: string; range?: string }) {
     if (next.app !== undefined) setAppId(next.app);
-    if (next.preset !== undefined) setPresetKey(next.preset);
+    if (next.preset !== undefined) setPresetKey(parseTab(next.preset));
     if (next.range !== undefined) {
       setRangeKey(next.range);
       void navigate({ search: { app: appId || undefined, preset: presetKey, range: next.range } });
@@ -63,7 +76,7 @@ function MetricsWorkbench() {
   }
 
   return (
-    <div className="flex h-full flex-col px-5 pt-4">
+    <div className="flex h-[calc(100svh-3.25rem)] flex-col px-5 pt-4">
       <div className="mb-1 flex items-baseline gap-3">
         <h1 className="font-heading text-[17px] font-bold tracking-tight">Metrics</h1>
         <span className="text-xs text-muted-foreground">PromQL passthrough to managed VictoriaMetrics · refreshed every 30s</span>
@@ -82,31 +95,6 @@ function MetricsWorkbench() {
                   {app.name}
                 </SelectItem>
               ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="flex flex-col gap-1">
-          <Label className="text-[11px] text-muted-foreground">Metric</Label>
-          <Select
-            value={customOpen ? "custom" : presetKey}
-            onValueChange={(value) => {
-              if (value === "custom") setCustomOpen(true);
-              else {
-                setCustomOpen(false);
-                update({ preset: value });
-              }
-            }}
-          >
-            <SelectTrigger className="w-56">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {METRIC_PRESETS.map((entry) => (
-                <SelectItem key={entry.key} value={entry.key}>
-                  {entry.label}
-                </SelectItem>
-              ))}
-              <SelectItem value="custom">Custom PromQL…</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -130,7 +118,17 @@ function MetricsWorkbench() {
         </Button>
       </div>
 
-      {customOpen ? (
+      <PageTabs
+        tabs={METRIC_TABS.map((tab) => ({ value: tab.value, label: tab.label }))}
+        current={presetKey}
+        onChange={(value) => {
+          setPresetKey(value);
+          // tab 深链（ModulePage 口径：tab 即 URL search param，可分享可回退）。
+          void navigate({ search: { app: appId || undefined, preset: value === "cpu_percent" ? undefined : value, range: rangeKey } });
+        }}
+      />
+
+      {custom ? (
         <div className="mb-3 flex flex-none flex-col gap-1">
           <Label className="text-[11px] text-muted-foreground">PromQL</Label>
           <Input
@@ -155,7 +153,7 @@ function MetricsWorkbench() {
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-[13px]">
-                {customOpen ? "Custom query" : preset.label}
+                {custom ? "Custom query" : preset.label}
                 <span className="ml-2 text-[11px] font-normal text-muted-foreground">
                   {series.data.length} series · step {Math.max(15, Math.round((METRIC_RANGES[rangeKey] ?? 3_600_000) / 1000 / 240))}s
                 </span>
@@ -169,6 +167,10 @@ function MetricsWorkbench() {
           <div className="rounded-xl border border-dashed px-6 py-10 text-center text-sm text-muted-foreground">
             No series matched — pick an app with running processes, or widen the range.
           </div>
+        ) : custom ? (
+          <div className="rounded-xl border border-dashed px-6 py-10 text-center text-sm text-muted-foreground">
+            Type a PromQL query above — series chart as you type.
+          </div>
         ) : (
           <div className="rounded-xl border border-dashed px-6 py-10 text-center text-sm text-muted-foreground">
             Pick an app to chart — CPU and memory presets come preloaded.
@@ -177,4 +179,10 @@ function MetricsWorkbench() {
       </div>
     </div>
   );
+}
+
+// parseTab 把 search param 收敛到 tab 联合（旧值/未知值落回 CPU %，URL
+// 深链诚实降级）。
+function parseTab(raw: string | undefined): MetricTab {
+  return METRIC_TABS.some((tab) => tab.value === raw) ? (raw as MetricTab) : "cpu_percent";
 }

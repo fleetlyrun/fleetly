@@ -90,7 +90,8 @@ export function AppSidebar() {
 }
 
 function isActive(item: NavItem, pathname: string): boolean {
-  if (item.to === "/overview") return pathname === "/overview" || pathname.startsWith("/p/");
+  // 判式统一前缀匹配；Overview 不再对 /p/ 域全量命中（项目域各页由
+  // 自己的导航项高亮——项目路由不落侧栏项时无高亮是诚实态，ADR-0060）。
   return pathname === item.to || pathname.startsWith(`${item.to}/`);
 }
 

@@ -1,1 +1,0 @@
-import{M as t,bg as s,N as o}from"./vendor-BNOU9k-1.js";function r({className:e,...a}){return t.jsx(s,{"data-slot":"label",className:o("flex items-center gap-2 text-sm leading-none font-medium select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50",e),...a})}export{r as L};

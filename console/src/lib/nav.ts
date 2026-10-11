@@ -73,9 +73,10 @@ export function navSections(projectId: string | undefined): NavSection[] {
       items: [
         projectItem("Databases", `${projectBase}/databases`, Database),
         projectItem("Storage", `${projectBase}/storage`, HardDrive),
-        // Variables（原 Configuration 组单项，ADR-0059 同批重组）：项目级
-        // 秘钥/配置/共享变量聚合页——与 Shared Variables / Add variable 成族。
-        projectItem("Variables", `${projectBase}/configuration`, KeyRound),
+        // Variables（原 Configuration 组单项，ADR-0059 同批重组；ADR-0060
+        // 路由对齐页名）：项目级秘钥/配置/共享变量聚合页——与 Shared
+        // Variables / Add variable 成族。
+        projectItem("Variables", `${projectBase}/variables`, KeyRound),
       ],
     },
     {
@@ -99,7 +100,7 @@ export function navSections(projectId: string | undefined): NavSection[] {
       zone: "platform",
       items: [
         { label: "Nodes", to: "/nodes", icon: Box },
-        { label: "Components", to: "/providers", icon: Boxes }, // ADR-0059：页名复裁 Components（route 保持 /providers）
+        { label: "Components", to: "/components", icon: Boxes }, // ADR-0059 定名 + ADR-0060 路由对齐页名
         { label: "Events", to: "/events", icon: Zap },
         { label: "Alerts", to: "/alerts", icon: Bell },
         { label: "Backups", to: "/backups", icon: DatabaseBackup },
@@ -110,7 +111,9 @@ export function navSections(projectId: string | undefined): NavSection[] {
       label: "Admin",
       zone: "platform",
       items: [
-        { label: "Identity", to: "/identity", icon: Users },
+        // Access（原 Identity，ADR-0060 复裁）：Users/Teams/Roles/Invitations
+        // 是"谁能访问什么"的一面——Access 覆盖全；member/account 是禁词。
+        { label: "Access", to: "/identity", icon: Users },
         { label: "Audit", to: "/audit", icon: ShieldCheck },
         { label: "Settings", to: "/settings", icon: Settings },
       ],

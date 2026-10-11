@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
-import { DownloadIcon, PlayIcon, SquareIcon, XIcon } from "lucide-react";
-import { useApps, useProjects } from "@/lib/catalog";
+import { ChevronDownIcon, DownloadIcon, PlayIcon, SquareIcon, XIcon } from "lucide-react";
+import { useApps, useProjects, useRevisions } from "@/lib/catalog";
 import { useProjectId } from "@/lib/project";
 import { decodeLine, useLogStream } from "@/features/logs/use-log-stream";
 import { LogViewer } from "@/features/logs/log-viewer";
@@ -10,12 +10,25 @@ import { ErrorState } from "@/components/domain/error-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 
 // 日志工作台（Workbench 原型，UI v2 批 3）：GET /v1/logs 的 NDJSON 帧流
 // （协议只换壳不换契约）。筛选走类型化 search params（URL 即状态——可分享
-// 可回退）；虚拟滚动 + 智能跟随在 features/logs。
+// 可回退）；process 升级为多选（ADR-0060 用户裁决：proto 增 repeated
+// processes，服务端并集收敛 Workload 集；URL param 仍为 process= 逗号形，
+// 旧单值深链兼容）；虚拟滚动 + 智能跟随在 features/logs。根高
+// calc(100svh-3.25rem)（顶栏 h-13）：workbench 视口定死，追加帧只滚日志
+// 框不再撑高页面。
 
 const logsSearch = z.object({
   app: z.string().optional(),
@@ -36,11 +49,16 @@ function LogsWorkbench() {
   const projects = useProjects();
   const apps = useApps(projectId);
   const [appId, setAppId] = useState(search.app ?? "");
-  const [process, setProcess] = useState(search.process ?? "");
+  // process= 逗号形多值（空 = 全部 process）。
+  const [processes, setProcesses] = useState<string[]>(() => parseProcesses(search.process));
   const [tailLines, setTailLines] = useState(search.tail ?? "200");
   const [text, setText] = useState(search.text ?? "");
   const [follow, setFollow] = useState(true);
   const log = useLogStream();
+  const revisions = useRevisions(appId);
+  const processOptions = (revisions.data?.[0]?.process_strategies ?? [])
+    .map((entry) => entry?.process ?? "")
+    .filter((name) => name !== "");
 
   // 项目目录到达后补默认 App（切换器语境优先，search 参数其次）
   useEffect(() => {
@@ -58,9 +76,14 @@ function LogsWorkbench() {
 
   function start() {
     if (appId === "") return;
-    log.start({ appId, process, tailLines, text, follow });
+    log.start({ appId, processes, tailLines, text, follow });
     void navigate({
-      search: { app: appId, process: process || undefined, text: text || undefined, tail: tailLines !== "200" ? tailLines : undefined },
+      search: {
+        app: appId,
+        process: processes.length > 0 ? processes.join(",") : undefined,
+        text: text || undefined,
+        tail: tailLines !== "200" ? tailLines : undefined,
+      },
     });
   }
 
@@ -80,7 +103,7 @@ function LogsWorkbench() {
   const noApp = appId === "";
 
   return (
-    <div className="flex h-full flex-col px-5 pt-4">
+    <div className="flex h-[calc(100svh-3.25rem)] flex-col px-5 pt-4">
       <div className="mb-1 flex items-baseline gap-3">
         <h1 className="font-heading text-[17px] font-bold tracking-tight">Logs</h1>
         <span className="text-xs text-muted-foreground">
@@ -106,7 +129,11 @@ function LogsWorkbench() {
         </div>
         <div className="flex flex-col gap-1">
           <Label className="text-[11px] text-muted-foreground">Process</Label>
-          <Input value={process} onChange={(event) => setProcess(event.target.value)} placeholder="web" className="h-8 w-24 font-mono text-xs" />
+          <ProcessMultiSelect
+            options={processOptions}
+            selected={processes}
+            onChange={setProcesses}
+          />
         </div>
         <div className="flex flex-col gap-1">
           <Label className="text-[11px] text-muted-foreground">Tail</Label>
@@ -175,4 +202,67 @@ function LogsWorkbench() {
       </div>
     </div>
   );
+}
+
+// ProcessMultiSelect 是 process 多选下拉（CheckboxItem 形）：空选 = 全部
+// process（服务端语义：无 workload 过滤 = 本 App 全部 Workload）。
+function ProcessMultiSelect({
+  options,
+  selected,
+  onChange,
+}: {
+  options: string[];
+  selected: string[];
+  onChange: (next: string[]) => void;
+}) {
+  const summary = selected.length === 0 ? "All processes" : selected.length <= 2 ? selected.join(", ") : `${selected[0]} +${selected.length - 1}`;
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button type="button" variant="outline" size="sm" className="mb-0 h-8 w-44 justify-between font-normal">
+          <span className="truncate font-mono text-xs">{summary}</span>
+          <ChevronDownIcon className="size-3.5 flex-none text-muted-foreground" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-44">
+        <DropdownMenuLabel className="text-[10.5px] text-muted-foreground">Filter by process</DropdownMenuLabel>
+        {options.length === 0 ? (
+          <div className="px-2 py-1.5 text-[11px] text-muted-foreground">No frozen processes yet — deploy first.</div>
+        ) : (
+          options.map((name) => (
+            <DropdownMenuCheckboxItem
+              key={name}
+              checked={selected.includes(name)}
+              onCheckedChange={(checked) => {
+                onChange(checked ? [...selected, name] : selected.filter((entry) => entry !== name));
+              }}
+              onSelect={(event) => event.preventDefault()}
+              className="font-mono text-xs"
+            >
+              {name}
+            </DropdownMenuCheckboxItem>
+          ))
+        )}
+        {selected.length > 0 ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={() => onChange([])} className="text-xs">
+              Clear selection
+            </DropdownMenuItem>
+          </>
+        ) : null}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+// parseProcesses 解析 process= 逗号形（去空、去重——深链诚实收敛）。
+function parseProcesses(raw: string | undefined): string[] {
+  if (raw === undefined) return [];
+  const seen = new Set<string>();
+  for (const part of raw.split(",")) {
+    const name = part.trim();
+    if (name !== "") seen.add(name);
+  }
+  return [...seen];
 }

@@ -1,1 +1,0 @@
-import{aP as u,aT as i}from"./vendor-BNOU9k-1.js";import{a as n}from"./index-Djv7XuOp.js";function f(e){const a=u();return i({mutationFn:()=>n(typeof e.path=="function"?e.path():e.path,e.method,e.body?.()),onSuccess:()=>{for(const t of e.invalidate??[])a.invalidateQueries({queryKey:[...t]})}})}export{f as u};

@@ -64,7 +64,7 @@ function IdentityPageV2() {
   const [createOpen, setCreateOpen] = useState(false);
   return (
     <ModulePage
-      title="Identity"
+      title="Access"
       description="Users, teams, roles and invitations — the RBAC face"
       tabs={[
         { value: "users", label: "Users" },

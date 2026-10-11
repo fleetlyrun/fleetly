@@ -832,7 +832,8 @@ interface KeyValueRow {
   version?: string;
 }
 
-// PutForm 是 put 型写面的统一弹窗（secret/config/shared variable 共用——
+// PutForm 是 Add 型写面的统一弹窗（secret/config/shared variable 共用，
+// API 动词是 PUT——组件名承动词面，按钮文案统一 Add *，用户裁决 2026-10-11）：
 // 名称 + 值（或 multiline 内容），错误信封盒披露）。
 function PutForm({
   title,
@@ -957,7 +958,7 @@ function SecretsTab({ projectId }: { projectId: string }) {
         cli={`fleetly secrets list --project ${projectId}`}
         actions={
           <PutForm
-            title="Put secret…"
+            title="Add secret…"
             nameLabel="Name"
             valueLabel="Value"
             valueHint="write-only — the list never shows values"
@@ -1038,7 +1039,7 @@ function ConfigsTab({ projectId }: { projectId: string }) {
         cli={`fleetly configs list --project ${projectId}`}
         actions={
           <PutForm
-            title="Put config…"
+            title="Add config…"
             nameLabel="Name"
             valueLabel="Content"
             valueHint="each write freezes a new version"
@@ -1129,7 +1130,7 @@ function VariablesTab({ projectId, apps }: { projectId: string; apps: Array<{ id
         cli={`fleetly shared-variables list --project ${projectId}`}
         actions={
           <PutForm
-            title="Put variable…"
+            title="Add variable…"
             nameLabel="Name"
             valueLabel="Value"
             valueHint="merged into app env at deploy freeze time"

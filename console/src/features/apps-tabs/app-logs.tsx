@@ -30,7 +30,7 @@ export function AppLogsTab({ appId }: { appId: string }) {
   const effectiveProcess = process !== "" ? process : (processes[0] ?? "");
 
   const start = () =>
-    log.start({ appId, process: effectiveProcess, tailLines, text, follow: true });
+    log.start({ appId, processes: [effectiveProcess], tailLines, text, follow: true });
 
   return (
     <div className="flex flex-col gap-3">
@@ -88,7 +88,9 @@ export function AppLogsTab({ appId }: { appId: string }) {
         <p className="text-xs text-destructive">{log.error instanceof Error ? log.error.message : String(log.error)}</p>
       ) : null}
 
-      <div className="h-[26rem] overflow-hidden rounded-lg border">
+      {/* flex-col 使 LogViewer 的 flex-1 生效：定高盒内滚，追加帧不撑页
+          （ADR-0060 高度链修复——容器根是 size-full 的滚动面）。 */}
+      <div className="flex h-[26rem] flex-col overflow-hidden rounded-lg border">
         <LogViewer frames={log.frames} streaming={log.streaming} />
       </div>
 

@@ -303,6 +303,7 @@ func TestAvoidTokensTriaged(t *testing.T) {
 var wordingExemptions = map[string]map[string]string{
 	"apply": {
 		"console/src/features/apps-tabs/app-variables.tsx": "Apply changes is the adjudicated label for the Variables tab commit action (user ruling 2026-10-10, prototype fidelity); the Deployment Avoid sense bans generic deploy-by-apply verbs, not this pinned button",
+		"console/src/features/apps-tabs/app-processes.tsx": "Apply changes is the adjudicated label for the staged-commit action (user ruling 2026-10-10 for the Variables tab; ADR-0060 Processes tab reuses the same pinned button for replica staging) — the Deployment Avoid sense bans generic deploy-by-apply verbs, not this pinned button",
 		"cmd/fleetlyd/main.go":                             "lynx boot.Bootstrap.Apply 是框架 API（钩子/服务挂载面）；ADR-0007 禁的是部署语义 apply，框架方法名不可更名",
 	},
 	// ssh（ADR-0049 入册）：git 传输 scheme 拒绝文案是技术义（hooks 面

@@ -15,13 +15,13 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as ShellAlertsRouteImport } from './routes/_shell/alerts'
 import { Route as ShellAuditRouteImport } from './routes/_shell/audit'
 import { Route as ShellBackupsRouteImport } from './routes/_shell/backups'
+import { Route as ShellComponentsRouteImport } from './routes/_shell/components'
 import { Route as ShellEventsRouteImport } from './routes/_shell/events'
 import { Route as ShellIdentityRouteImport } from './routes/_shell/identity'
 import { Route as ShellLogsRouteImport } from './routes/_shell/logs'
 import { Route as ShellMetricsRouteImport } from './routes/_shell/metrics'
 import { Route as ShellNodesRouteImport } from './routes/_shell/nodes'
 import { Route as ShellOverviewRouteImport } from './routes/_shell/overview'
-import { Route as ShellProvidersRouteImport } from './routes/_shell/providers'
 import { Route as ShellQuickstartRouteImport } from './routes/_shell/quickstart'
 import { Route as ShellSettingsRouteImport } from './routes/_shell/settings'
 import { Route as ShellTemplatesRouteImport } from './routes/_shell/templates'
@@ -29,13 +29,13 @@ import { Route as ShellTerminalRouteImport } from './routes/_shell/terminal'
 import { Route as ShellDeploymentsDeploymentIdRouteImport } from './routes/_shell/deployments.$deploymentId'
 import { Route as ShellPProjectIdRouteImport } from './routes/_shell/p.$projectId'
 import { Route as ShellPProjectIdIndexRouteImport } from './routes/_shell/p.$projectId.index'
-import { Route as ShellPProjectIdConfigurationRouteImport } from './routes/_shell/p.$projectId.configuration'
 import { Route as ShellPProjectIdDataRouteImport } from './routes/_shell/p.$projectId.data'
 import { Route as ShellPProjectIdNetworksRouteImport } from './routes/_shell/p.$projectId.networks'
 import { Route as ShellPProjectIdRegistryRouteImport } from './routes/_shell/p.$projectId.registry'
 import { Route as ShellPProjectIdRoutesRouteImport } from './routes/_shell/p.$projectId.routes'
 import { Route as ShellPProjectIdStorageRouteImport } from './routes/_shell/p.$projectId.storage'
 import { Route as ShellPProjectIdTasksRouteImport } from './routes/_shell/p.$projectId.tasks'
+import { Route as ShellPProjectIdVariablesRouteImport } from './routes/_shell/p.$projectId.variables'
 import { Route as ShellPProjectIdAppsIndexRouteImport } from './routes/_shell/p.$projectId.apps.index'
 import { Route as ShellPProjectIdAppsAppIdRouteImport } from './routes/_shell/p.$projectId.apps.$appId'
 import { Route as ShellPProjectIdDatabasesIndexRouteImport } from './routes/_shell/p.$projectId.databases.index'
@@ -45,6 +45,7 @@ import { Route as ShellPProjectIdTasksTaskIdRouteImport } from './routes/_shell/
 import { Route as ShellPProjectIdAppsAppIdIndexRouteImport } from './routes/_shell/p.$projectId.apps.$appId.index'
 import { Route as ShellPProjectIdAppsAppIdLogsRouteImport } from './routes/_shell/p.$projectId.apps.$appId.logs'
 import { Route as ShellPProjectIdAppsAppIdMetricsRouteImport } from './routes/_shell/p.$projectId.apps.$appId.metrics'
+import { Route as ShellPProjectIdAppsAppIdProcessesRouteImport } from './routes/_shell/p.$projectId.apps.$appId.processes'
 import { Route as ShellPProjectIdAppsAppIdRoutesRouteImport } from './routes/_shell/p.$projectId.apps.$appId.routes'
 import { Route as ShellPProjectIdAppsAppIdSettingsRouteImport } from './routes/_shell/p.$projectId.apps.$appId.settings'
 import { Route as ShellPProjectIdAppsAppIdTerminalRouteImport } from './routes/_shell/p.$projectId.apps.$appId.terminal'
@@ -81,6 +82,11 @@ const ShellBackupsRoute = ShellBackupsRouteImport.update({
   path: '/backups',
   getParentRoute: () => ShellRoute,
 } as any)
+const ShellComponentsRoute = ShellComponentsRouteImport.update({
+  id: '/components',
+  path: '/components',
+  getParentRoute: () => ShellRoute,
+} as any)
 const ShellEventsRoute = ShellEventsRouteImport.update({
   id: '/events',
   path: '/events',
@@ -109,11 +115,6 @@ const ShellNodesRoute = ShellNodesRouteImport.update({
 const ShellOverviewRoute = ShellOverviewRouteImport.update({
   id: '/overview',
   path: '/overview',
-  getParentRoute: () => ShellRoute,
-} as any)
-const ShellProvidersRoute = ShellProvidersRouteImport.update({
-  id: '/providers',
-  path: '/providers',
   getParentRoute: () => ShellRoute,
 } as any)
 const ShellQuickstartRoute = ShellQuickstartRouteImport.update({
@@ -152,12 +153,6 @@ const ShellPProjectIdIndexRoute = ShellPProjectIdIndexRouteImport.update({
   path: '/',
   getParentRoute: () => ShellPProjectIdRoute,
 } as any)
-const ShellPProjectIdConfigurationRoute =
-  ShellPProjectIdConfigurationRouteImport.update({
-    id: '/configuration',
-    path: '/configuration',
-    getParentRoute: () => ShellPProjectIdRoute,
-  } as any)
 const ShellPProjectIdDataRoute = ShellPProjectIdDataRouteImport.update({
   id: '/data',
   path: '/data',
@@ -188,6 +183,12 @@ const ShellPProjectIdTasksRoute = ShellPProjectIdTasksRouteImport.update({
   path: '/tasks',
   getParentRoute: () => ShellPProjectIdRoute,
 } as any)
+const ShellPProjectIdVariablesRoute =
+  ShellPProjectIdVariablesRouteImport.update({
+    id: '/variables',
+    path: '/variables',
+    getParentRoute: () => ShellPProjectIdRoute,
+  } as any)
 const ShellPProjectIdAppsIndexRoute =
   ShellPProjectIdAppsIndexRouteImport.update({
     id: '/apps/',
@@ -242,6 +243,12 @@ const ShellPProjectIdAppsAppIdMetricsRoute =
     path: '/metrics',
     getParentRoute: () => ShellPProjectIdAppsAppIdRoute,
   } as any)
+const ShellPProjectIdAppsAppIdProcessesRoute =
+  ShellPProjectIdAppsAppIdProcessesRouteImport.update({
+    id: '/processes',
+    path: '/processes',
+    getParentRoute: () => ShellPProjectIdAppsAppIdRoute,
+  } as any)
 const ShellPProjectIdAppsAppIdRoutesRoute =
   ShellPProjectIdAppsAppIdRoutesRouteImport.update({
     id: '/routes',
@@ -285,26 +292,26 @@ export interface FileRoutesByFullPath {
   '/alerts': typeof ShellAlertsRoute
   '/audit': typeof ShellAuditRoute
   '/backups': typeof ShellBackupsRoute
+  '/components': typeof ShellComponentsRoute
   '/events': typeof ShellEventsRoute
   '/identity': typeof ShellIdentityRoute
   '/logs': typeof ShellLogsRoute
   '/metrics': typeof ShellMetricsRoute
   '/nodes': typeof ShellNodesRoute
   '/overview': typeof ShellOverviewRoute
-  '/providers': typeof ShellProvidersRoute
   '/quickstart': typeof ShellQuickstartRoute
   '/settings': typeof ShellSettingsRoute
   '/templates': typeof ShellTemplatesRoute
   '/terminal': typeof ShellTerminalRoute
   '/deployments/$deploymentId': typeof ShellDeploymentsDeploymentIdRoute
   '/p/$projectId': typeof ShellPProjectIdRouteWithChildren
-  '/p/$projectId/configuration': typeof ShellPProjectIdConfigurationRoute
   '/p/$projectId/data': typeof ShellPProjectIdDataRoute
   '/p/$projectId/networks': typeof ShellPProjectIdNetworksRoute
   '/p/$projectId/registry': typeof ShellPProjectIdRegistryRoute
   '/p/$projectId/routes': typeof ShellPProjectIdRoutesRoute
   '/p/$projectId/storage': typeof ShellPProjectIdStorageRoute
   '/p/$projectId/tasks': typeof ShellPProjectIdTasksRouteWithChildren
+  '/p/$projectId/variables': typeof ShellPProjectIdVariablesRoute
   '/p/$projectId/': typeof ShellPProjectIdIndexRoute
   '/p/$projectId/apps/$appId': typeof ShellPProjectIdAppsAppIdRouteWithChildren
   '/p/$projectId/databases/$databaseId': typeof ShellPProjectIdDatabasesDatabaseIdRoute
@@ -314,6 +321,7 @@ export interface FileRoutesByFullPath {
   '/p/$projectId/deployments/': typeof ShellPProjectIdDeploymentsIndexRoute
   '/p/$projectId/apps/$appId/logs': typeof ShellPProjectIdAppsAppIdLogsRoute
   '/p/$projectId/apps/$appId/metrics': typeof ShellPProjectIdAppsAppIdMetricsRoute
+  '/p/$projectId/apps/$appId/processes': typeof ShellPProjectIdAppsAppIdProcessesRoute
   '/p/$projectId/apps/$appId/routes': typeof ShellPProjectIdAppsAppIdRoutesRoute
   '/p/$projectId/apps/$appId/settings': typeof ShellPProjectIdAppsAppIdSettingsRoute
   '/p/$projectId/apps/$appId/terminal': typeof ShellPProjectIdAppsAppIdTerminalRoute
@@ -328,25 +336,25 @@ export interface FileRoutesByTo {
   '/alerts': typeof ShellAlertsRoute
   '/audit': typeof ShellAuditRoute
   '/backups': typeof ShellBackupsRoute
+  '/components': typeof ShellComponentsRoute
   '/events': typeof ShellEventsRoute
   '/identity': typeof ShellIdentityRoute
   '/logs': typeof ShellLogsRoute
   '/metrics': typeof ShellMetricsRoute
   '/nodes': typeof ShellNodesRoute
   '/overview': typeof ShellOverviewRoute
-  '/providers': typeof ShellProvidersRoute
   '/quickstart': typeof ShellQuickstartRoute
   '/settings': typeof ShellSettingsRoute
   '/templates': typeof ShellTemplatesRoute
   '/terminal': typeof ShellTerminalRoute
   '/deployments/$deploymentId': typeof ShellDeploymentsDeploymentIdRoute
-  '/p/$projectId/configuration': typeof ShellPProjectIdConfigurationRoute
   '/p/$projectId/data': typeof ShellPProjectIdDataRoute
   '/p/$projectId/networks': typeof ShellPProjectIdNetworksRoute
   '/p/$projectId/registry': typeof ShellPProjectIdRegistryRoute
   '/p/$projectId/routes': typeof ShellPProjectIdRoutesRoute
   '/p/$projectId/storage': typeof ShellPProjectIdStorageRoute
   '/p/$projectId/tasks': typeof ShellPProjectIdTasksRouteWithChildren
+  '/p/$projectId/variables': typeof ShellPProjectIdVariablesRoute
   '/p/$projectId': typeof ShellPProjectIdIndexRoute
   '/p/$projectId/databases/$databaseId': typeof ShellPProjectIdDatabasesDatabaseIdRoute
   '/p/$projectId/tasks/$taskId': typeof ShellPProjectIdTasksTaskIdRoute
@@ -355,6 +363,7 @@ export interface FileRoutesByTo {
   '/p/$projectId/deployments': typeof ShellPProjectIdDeploymentsIndexRoute
   '/p/$projectId/apps/$appId/logs': typeof ShellPProjectIdAppsAppIdLogsRoute
   '/p/$projectId/apps/$appId/metrics': typeof ShellPProjectIdAppsAppIdMetricsRoute
+  '/p/$projectId/apps/$appId/processes': typeof ShellPProjectIdAppsAppIdProcessesRoute
   '/p/$projectId/apps/$appId/routes': typeof ShellPProjectIdAppsAppIdRoutesRoute
   '/p/$projectId/apps/$appId/settings': typeof ShellPProjectIdAppsAppIdSettingsRoute
   '/p/$projectId/apps/$appId/terminal': typeof ShellPProjectIdAppsAppIdTerminalRoute
@@ -371,26 +380,26 @@ export interface FileRoutesById {
   '/_shell/alerts': typeof ShellAlertsRoute
   '/_shell/audit': typeof ShellAuditRoute
   '/_shell/backups': typeof ShellBackupsRoute
+  '/_shell/components': typeof ShellComponentsRoute
   '/_shell/events': typeof ShellEventsRoute
   '/_shell/identity': typeof ShellIdentityRoute
   '/_shell/logs': typeof ShellLogsRoute
   '/_shell/metrics': typeof ShellMetricsRoute
   '/_shell/nodes': typeof ShellNodesRoute
   '/_shell/overview': typeof ShellOverviewRoute
-  '/_shell/providers': typeof ShellProvidersRoute
   '/_shell/quickstart': typeof ShellQuickstartRoute
   '/_shell/settings': typeof ShellSettingsRoute
   '/_shell/templates': typeof ShellTemplatesRoute
   '/_shell/terminal': typeof ShellTerminalRoute
   '/_shell/deployments/$deploymentId': typeof ShellDeploymentsDeploymentIdRoute
   '/_shell/p/$projectId': typeof ShellPProjectIdRouteWithChildren
-  '/_shell/p/$projectId/configuration': typeof ShellPProjectIdConfigurationRoute
   '/_shell/p/$projectId/data': typeof ShellPProjectIdDataRoute
   '/_shell/p/$projectId/networks': typeof ShellPProjectIdNetworksRoute
   '/_shell/p/$projectId/registry': typeof ShellPProjectIdRegistryRoute
   '/_shell/p/$projectId/routes': typeof ShellPProjectIdRoutesRoute
   '/_shell/p/$projectId/storage': typeof ShellPProjectIdStorageRoute
   '/_shell/p/$projectId/tasks': typeof ShellPProjectIdTasksRouteWithChildren
+  '/_shell/p/$projectId/variables': typeof ShellPProjectIdVariablesRoute
   '/_shell/p/$projectId/': typeof ShellPProjectIdIndexRoute
   '/_shell/p/$projectId/apps/$appId': typeof ShellPProjectIdAppsAppIdRouteWithChildren
   '/_shell/p/$projectId/databases/$databaseId': typeof ShellPProjectIdDatabasesDatabaseIdRoute
@@ -400,6 +409,7 @@ export interface FileRoutesById {
   '/_shell/p/$projectId/deployments/': typeof ShellPProjectIdDeploymentsIndexRoute
   '/_shell/p/$projectId/apps/$appId/logs': typeof ShellPProjectIdAppsAppIdLogsRoute
   '/_shell/p/$projectId/apps/$appId/metrics': typeof ShellPProjectIdAppsAppIdMetricsRoute
+  '/_shell/p/$projectId/apps/$appId/processes': typeof ShellPProjectIdAppsAppIdProcessesRoute
   '/_shell/p/$projectId/apps/$appId/routes': typeof ShellPProjectIdAppsAppIdRoutesRoute
   '/_shell/p/$projectId/apps/$appId/settings': typeof ShellPProjectIdAppsAppIdSettingsRoute
   '/_shell/p/$projectId/apps/$appId/terminal': typeof ShellPProjectIdAppsAppIdTerminalRoute
@@ -416,26 +426,26 @@ export interface FileRouteTypes {
     | '/alerts'
     | '/audit'
     | '/backups'
+    | '/components'
     | '/events'
     | '/identity'
     | '/logs'
     | '/metrics'
     | '/nodes'
     | '/overview'
-    | '/providers'
     | '/quickstart'
     | '/settings'
     | '/templates'
     | '/terminal'
     | '/deployments/$deploymentId'
     | '/p/$projectId'
-    | '/p/$projectId/configuration'
     | '/p/$projectId/data'
     | '/p/$projectId/networks'
     | '/p/$projectId/registry'
     | '/p/$projectId/routes'
     | '/p/$projectId/storage'
     | '/p/$projectId/tasks'
+    | '/p/$projectId/variables'
     | '/p/$projectId/'
     | '/p/$projectId/apps/$appId'
     | '/p/$projectId/databases/$databaseId'
@@ -445,6 +455,7 @@ export interface FileRouteTypes {
     | '/p/$projectId/deployments/'
     | '/p/$projectId/apps/$appId/logs'
     | '/p/$projectId/apps/$appId/metrics'
+    | '/p/$projectId/apps/$appId/processes'
     | '/p/$projectId/apps/$appId/routes'
     | '/p/$projectId/apps/$appId/settings'
     | '/p/$projectId/apps/$appId/terminal'
@@ -459,25 +470,25 @@ export interface FileRouteTypes {
     | '/alerts'
     | '/audit'
     | '/backups'
+    | '/components'
     | '/events'
     | '/identity'
     | '/logs'
     | '/metrics'
     | '/nodes'
     | '/overview'
-    | '/providers'
     | '/quickstart'
     | '/settings'
     | '/templates'
     | '/terminal'
     | '/deployments/$deploymentId'
-    | '/p/$projectId/configuration'
     | '/p/$projectId/data'
     | '/p/$projectId/networks'
     | '/p/$projectId/registry'
     | '/p/$projectId/routes'
     | '/p/$projectId/storage'
     | '/p/$projectId/tasks'
+    | '/p/$projectId/variables'
     | '/p/$projectId'
     | '/p/$projectId/databases/$databaseId'
     | '/p/$projectId/tasks/$taskId'
@@ -486,6 +497,7 @@ export interface FileRouteTypes {
     | '/p/$projectId/deployments'
     | '/p/$projectId/apps/$appId/logs'
     | '/p/$projectId/apps/$appId/metrics'
+    | '/p/$projectId/apps/$appId/processes'
     | '/p/$projectId/apps/$appId/routes'
     | '/p/$projectId/apps/$appId/settings'
     | '/p/$projectId/apps/$appId/terminal'
@@ -501,26 +513,26 @@ export interface FileRouteTypes {
     | '/_shell/alerts'
     | '/_shell/audit'
     | '/_shell/backups'
+    | '/_shell/components'
     | '/_shell/events'
     | '/_shell/identity'
     | '/_shell/logs'
     | '/_shell/metrics'
     | '/_shell/nodes'
     | '/_shell/overview'
-    | '/_shell/providers'
     | '/_shell/quickstart'
     | '/_shell/settings'
     | '/_shell/templates'
     | '/_shell/terminal'
     | '/_shell/deployments/$deploymentId'
     | '/_shell/p/$projectId'
-    | '/_shell/p/$projectId/configuration'
     | '/_shell/p/$projectId/data'
     | '/_shell/p/$projectId/networks'
     | '/_shell/p/$projectId/registry'
     | '/_shell/p/$projectId/routes'
     | '/_shell/p/$projectId/storage'
     | '/_shell/p/$projectId/tasks'
+    | '/_shell/p/$projectId/variables'
     | '/_shell/p/$projectId/'
     | '/_shell/p/$projectId/apps/$appId'
     | '/_shell/p/$projectId/databases/$databaseId'
@@ -530,6 +542,7 @@ export interface FileRouteTypes {
     | '/_shell/p/$projectId/deployments/'
     | '/_shell/p/$projectId/apps/$appId/logs'
     | '/_shell/p/$projectId/apps/$appId/metrics'
+    | '/_shell/p/$projectId/apps/$appId/processes'
     | '/_shell/p/$projectId/apps/$appId/routes'
     | '/_shell/p/$projectId/apps/$appId/settings'
     | '/_shell/p/$projectId/apps/$appId/terminal'
@@ -589,6 +602,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShellBackupsRouteImport
       parentRoute: typeof ShellRoute
     }
+    '/_shell/components': {
+      id: '/_shell/components'
+      path: '/components'
+      fullPath: '/components'
+      preLoaderRoute: typeof ShellComponentsRouteImport
+      parentRoute: typeof ShellRoute
+    }
     '/_shell/events': {
       id: '/_shell/events'
       path: '/events'
@@ -629,13 +649,6 @@ declare module '@tanstack/react-router' {
       path: '/overview'
       fullPath: '/overview'
       preLoaderRoute: typeof ShellOverviewRouteImport
-      parentRoute: typeof ShellRoute
-    }
-    '/_shell/providers': {
-      id: '/_shell/providers'
-      path: '/providers'
-      fullPath: '/providers'
-      preLoaderRoute: typeof ShellProvidersRouteImport
       parentRoute: typeof ShellRoute
     }
     '/_shell/quickstart': {
@@ -687,13 +700,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShellPProjectIdIndexRouteImport
       parentRoute: typeof ShellPProjectIdRoute
     }
-    '/_shell/p/$projectId/configuration': {
-      id: '/_shell/p/$projectId/configuration'
-      path: '/configuration'
-      fullPath: '/p/$projectId/configuration'
-      preLoaderRoute: typeof ShellPProjectIdConfigurationRouteImport
-      parentRoute: typeof ShellPProjectIdRoute
-    }
     '/_shell/p/$projectId/data': {
       id: '/_shell/p/$projectId/data'
       path: '/data'
@@ -734,6 +740,13 @@ declare module '@tanstack/react-router' {
       path: '/tasks'
       fullPath: '/p/$projectId/tasks'
       preLoaderRoute: typeof ShellPProjectIdTasksRouteImport
+      parentRoute: typeof ShellPProjectIdRoute
+    }
+    '/_shell/p/$projectId/variables': {
+      id: '/_shell/p/$projectId/variables'
+      path: '/variables'
+      fullPath: '/p/$projectId/variables'
+      preLoaderRoute: typeof ShellPProjectIdVariablesRouteImport
       parentRoute: typeof ShellPProjectIdRoute
     }
     '/_shell/p/$projectId/apps/': {
@@ -799,6 +812,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShellPProjectIdAppsAppIdMetricsRouteImport
       parentRoute: typeof ShellPProjectIdAppsAppIdRoute
     }
+    '/_shell/p/$projectId/apps/$appId/processes': {
+      id: '/_shell/p/$projectId/apps/$appId/processes'
+      path: '/processes'
+      fullPath: '/p/$projectId/apps/$appId/processes'
+      preLoaderRoute: typeof ShellPProjectIdAppsAppIdProcessesRouteImport
+      parentRoute: typeof ShellPProjectIdAppsAppIdRoute
+    }
     '/_shell/p/$projectId/apps/$appId/routes': {
       id: '/_shell/p/$projectId/apps/$appId/routes'
       path: '/routes'
@@ -858,6 +878,7 @@ const ShellPProjectIdTasksRouteWithChildren =
 interface ShellPProjectIdAppsAppIdRouteChildren {
   ShellPProjectIdAppsAppIdLogsRoute: typeof ShellPProjectIdAppsAppIdLogsRoute
   ShellPProjectIdAppsAppIdMetricsRoute: typeof ShellPProjectIdAppsAppIdMetricsRoute
+  ShellPProjectIdAppsAppIdProcessesRoute: typeof ShellPProjectIdAppsAppIdProcessesRoute
   ShellPProjectIdAppsAppIdRoutesRoute: typeof ShellPProjectIdAppsAppIdRoutesRoute
   ShellPProjectIdAppsAppIdSettingsRoute: typeof ShellPProjectIdAppsAppIdSettingsRoute
   ShellPProjectIdAppsAppIdTerminalRoute: typeof ShellPProjectIdAppsAppIdTerminalRoute
@@ -871,6 +892,8 @@ const ShellPProjectIdAppsAppIdRouteChildren: ShellPProjectIdAppsAppIdRouteChildr
   {
     ShellPProjectIdAppsAppIdLogsRoute: ShellPProjectIdAppsAppIdLogsRoute,
     ShellPProjectIdAppsAppIdMetricsRoute: ShellPProjectIdAppsAppIdMetricsRoute,
+    ShellPProjectIdAppsAppIdProcessesRoute:
+      ShellPProjectIdAppsAppIdProcessesRoute,
     ShellPProjectIdAppsAppIdRoutesRoute: ShellPProjectIdAppsAppIdRoutesRoute,
     ShellPProjectIdAppsAppIdSettingsRoute:
       ShellPProjectIdAppsAppIdSettingsRoute,
@@ -891,13 +914,13 @@ const ShellPProjectIdAppsAppIdRouteWithChildren =
   )
 
 interface ShellPProjectIdRouteChildren {
-  ShellPProjectIdConfigurationRoute: typeof ShellPProjectIdConfigurationRoute
   ShellPProjectIdDataRoute: typeof ShellPProjectIdDataRoute
   ShellPProjectIdNetworksRoute: typeof ShellPProjectIdNetworksRoute
   ShellPProjectIdRegistryRoute: typeof ShellPProjectIdRegistryRoute
   ShellPProjectIdRoutesRoute: typeof ShellPProjectIdRoutesRoute
   ShellPProjectIdStorageRoute: typeof ShellPProjectIdStorageRoute
   ShellPProjectIdTasksRoute: typeof ShellPProjectIdTasksRouteWithChildren
+  ShellPProjectIdVariablesRoute: typeof ShellPProjectIdVariablesRoute
   ShellPProjectIdIndexRoute: typeof ShellPProjectIdIndexRoute
   ShellPProjectIdAppsAppIdRoute: typeof ShellPProjectIdAppsAppIdRouteWithChildren
   ShellPProjectIdDatabasesDatabaseIdRoute: typeof ShellPProjectIdDatabasesDatabaseIdRoute
@@ -907,13 +930,13 @@ interface ShellPProjectIdRouteChildren {
 }
 
 const ShellPProjectIdRouteChildren: ShellPProjectIdRouteChildren = {
-  ShellPProjectIdConfigurationRoute: ShellPProjectIdConfigurationRoute,
   ShellPProjectIdDataRoute: ShellPProjectIdDataRoute,
   ShellPProjectIdNetworksRoute: ShellPProjectIdNetworksRoute,
   ShellPProjectIdRegistryRoute: ShellPProjectIdRegistryRoute,
   ShellPProjectIdRoutesRoute: ShellPProjectIdRoutesRoute,
   ShellPProjectIdStorageRoute: ShellPProjectIdStorageRoute,
   ShellPProjectIdTasksRoute: ShellPProjectIdTasksRouteWithChildren,
+  ShellPProjectIdVariablesRoute: ShellPProjectIdVariablesRoute,
   ShellPProjectIdIndexRoute: ShellPProjectIdIndexRoute,
   ShellPProjectIdAppsAppIdRoute: ShellPProjectIdAppsAppIdRouteWithChildren,
   ShellPProjectIdDatabasesDatabaseIdRoute:
@@ -931,13 +954,13 @@ interface ShellRouteChildren {
   ShellAlertsRoute: typeof ShellAlertsRoute
   ShellAuditRoute: typeof ShellAuditRoute
   ShellBackupsRoute: typeof ShellBackupsRoute
+  ShellComponentsRoute: typeof ShellComponentsRoute
   ShellEventsRoute: typeof ShellEventsRoute
   ShellIdentityRoute: typeof ShellIdentityRoute
   ShellLogsRoute: typeof ShellLogsRoute
   ShellMetricsRoute: typeof ShellMetricsRoute
   ShellNodesRoute: typeof ShellNodesRoute
   ShellOverviewRoute: typeof ShellOverviewRoute
-  ShellProvidersRoute: typeof ShellProvidersRoute
   ShellQuickstartRoute: typeof ShellQuickstartRoute
   ShellSettingsRoute: typeof ShellSettingsRoute
   ShellTemplatesRoute: typeof ShellTemplatesRoute
@@ -950,13 +973,13 @@ const ShellRouteChildren: ShellRouteChildren = {
   ShellAlertsRoute: ShellAlertsRoute,
   ShellAuditRoute: ShellAuditRoute,
   ShellBackupsRoute: ShellBackupsRoute,
+  ShellComponentsRoute: ShellComponentsRoute,
   ShellEventsRoute: ShellEventsRoute,
   ShellIdentityRoute: ShellIdentityRoute,
   ShellLogsRoute: ShellLogsRoute,
   ShellMetricsRoute: ShellMetricsRoute,
   ShellNodesRoute: ShellNodesRoute,
   ShellOverviewRoute: ShellOverviewRoute,
-  ShellProvidersRoute: ShellProvidersRoute,
   ShellQuickstartRoute: ShellQuickstartRoute,
   ShellSettingsRoute: ShellSettingsRoute,
   ShellTemplatesRoute: ShellTemplatesRoute,

@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 type AppSpec = components["schemas"]["v1AppSpec"];
 
@@ -17,6 +18,9 @@ type AppSpec = components["schemas"]["v1AppSpec"];
 // 徽标），多 process 用表内分组行承载；对话框暂存，Apply changes = 冻结 Spec 全量
 // + 暂存改动组装 spec_file 走 Deploy（第四源，零 proto）。脏态表达 =
 // Apply changes 由禁用变可用（原型口径，不另设 staged 描边）。
+// ADR-0060 组织复裁（用户裁决 2026-10-11）：工具栏 process 筛选下拉 +
+// 创建对话框内显式绑定 process——env 本就挂 process，创建即绑定；不做
+// "应用到所有 process"的隐性扇出（同名变量后续单改会分叉，语义不诚实）。
 interface ProcessEdits {
   env: Record<string, string>;
   secretRefs: string[];
@@ -26,8 +30,9 @@ export function AppVariablesTab({ projectId, appId }: { projectId: string; appId
   const queryClient = useQueryClient();
   const [staged, setStaged] = useState<Record<string, ProcessEdits>>({});
   const [editTarget, setEditTarget] = useState<{ process: string; name: string } | null>(null);
-  const [addTarget, setAddTarget] = useState<string | null>(null);
-  const [refTarget, setRefTarget] = useState<string | null>(null);
+  const [filter, setFilter] = useState("all");
+  const [addOpen, setAddOpen] = useState(false);
+  const [refOpen, setRefOpen] = useState(false);
   const spec = useQuery({
     queryKey: ["resources", "app-spec", projectId, appId],
     queryFn: async (): Promise<AppSpec | null> => {
@@ -56,6 +61,12 @@ export function AppVariablesTab({ projectId, appId }: { projectId: string; appId
       const base = frozenProcess(name);
       return JSON.stringify(edits.env) !== JSON.stringify(base.env) || JSON.stringify(edits.secretRefs) !== JSON.stringify(base.secretRefs);
     });
+  // 筛选落点："all" = 全部 process；名字已不在冻结体（切了 spec）时诚实
+  // 回落全部，避免永远筛到空集。
+  const filterName = filter !== "all" && processes.some((process) => process.name === filter) ? filter : "";
+  const visible = filterName === "" ? processes : processes.filter((process) => process.name === filterName);
+  // addDefaultProcess 是创建对话框的默认绑定（当前筛选 > 第一个 process）。
+  const addDefaultProcess = filterName !== "" ? filterName : (processes[0]?.name ?? "");
 
   const deploy = useMutation({
     mutationFn: async () => {
@@ -106,11 +117,27 @@ export function AppVariablesTab({ projectId, appId }: { projectId: string; appId
     <div className="rounded-xl border bg-card">
       <div className="flex flex-wrap items-center gap-2 border-b px-4 py-3">
         <p className="mr-auto text-xs text-muted-foreground">
-          Runtime environment for all processes · secret sources managed in project{" "}
-          <a href={`/p/${encodeURIComponent(projectId)}/configuration`} className="text-info underline-offset-2 hover:underline">
+          Runtime environment per process · secret sources managed in project{" "}
+          <a href={`/p/${encodeURIComponent(projectId)}/variables`} className="text-info underline-offset-2 hover:underline">
             Variables
           </a>
         </p>
+        <div className="flex items-center gap-1.5">
+          <Label className="text-[11px] text-muted-foreground">Process</Label>
+          <Select value={filter} onValueChange={setFilter}>
+            <SelectTrigger className="h-8 w-40 text-xs">
+              <SelectValue placeholder="All processes" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All processes</SelectItem>
+              {processes.map((process) => (
+                <SelectItem key={process.name} value={process.name ?? ""} className="font-mono">
+                  {process.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         {hasStagedEdits ? (
           <Button
             size="sm"
@@ -123,8 +150,11 @@ export function AppVariablesTab({ projectId, appId }: { projectId: string; appId
             Discard
           </Button>
         ) : null}
-        <Button size="sm" variant="outline" onClick={() => setAddTarget(processes[0]?.name ?? "web")}>
+        <Button size="sm" variant="outline" onClick={() => setAddOpen(true)}>
           + Add variable
+        </Button>
+        <Button size="sm" variant="outline" onClick={() => setRefOpen(true)}>
+          + Add secret ref
         </Button>
         <Button size="sm" disabled={!hasStagedEdits || deploy.isPending} onClick={() => deploy.mutate()}>
           {deploy.isPending ? "Deploying…" : "Apply changes"}
@@ -143,7 +173,7 @@ export function AppVariablesTab({ projectId, appId }: { projectId: string; appId
             </tr>
           </thead>
           <tbody>
-            {processes.map((process) => {
+            {visible.map((process) => {
               const name = process.name ?? "";
               const edits = staged[name] ?? frozenProcess(name);
               const envNames = Object.keys(edits.env).sort();
@@ -202,7 +232,7 @@ export function AppVariablesTab({ projectId, appId }: { projectId: string; appId
                       <span className="flex flex-wrap items-center gap-1.5 font-mono">
                         <span className="text-muted-foreground">secret ·</span>
                         <a
-                          href={`/p/${encodeURIComponent(projectId)}/configuration`}
+                          href={`/p/${encodeURIComponent(projectId)}/variables`}
                           className="text-info underline-offset-2 hover:underline"
                         >
                           {ref}
@@ -236,16 +266,20 @@ export function AppVariablesTab({ projectId, appId }: { projectId: string; appId
         </table>
       )}
 
-      {/* Add/Edit 变量对话框（keyed remount——重开不残留） */}
+      {/* Add/Edit 变量对话框（keyed remount——重开不残留）；Add 形内选
+          目标 process（默认 = 当前筛选，落住创建即绑定）。 */}
       <VariableDialog
         key={editTarget == null ? "closed" : `edit-${editTarget.process}-${editTarget.name}`}
         open={editTarget != null}
+        processes={processes.map((process) => process.name ?? "")}
+        processLocked={editTarget != null}
+        initialProcess={editTarget?.process ?? ""}
         initialName={editTarget?.name ?? ""}
         initialValue={
           editTarget ? (staged[editTarget.process] ?? frozenProcess(editTarget.process)).env[editTarget.name] ?? "" : ""
         }
         onClose={() => setEditTarget(null)}
-        onSubmit={(key, value) => {
+        onSubmit={(_process, key, value) => {
           if (editTarget == null) return;
           const base = staged[editTarget.process] ?? frozenProcess(editTarget.process);
           const next = { ...base.env, [key]: value };
@@ -254,29 +288,31 @@ export function AppVariablesTab({ projectId, appId }: { projectId: string; appId
         }}
       />
       <VariableDialog
-        key={addTarget == null ? "add-closed" : `add-${addTarget}`}
-        open={addTarget != null}
+        key={addOpen ? "add-open" : "add-closed"}
+        open={addOpen}
+        processes={processes.map((process) => process.name ?? "")}
+        processLocked={false}
+        initialProcess={addDefaultProcess}
         initialName=""
         initialValue=""
-        onClose={() => setAddTarget(null)}
-        onSubmit={(key, value) => {
-          if (addTarget == null) return;
-          const base = staged[addTarget] ?? frozenProcess(addTarget);
-          setStaged((prev) => ({ ...prev, [addTarget]: { ...base, env: { ...base.env, [key]: value } } }));
-          setAddTarget(null);
+        onClose={() => setAddOpen(false)}
+        onSubmit={(process, key, value) => {
+          const base = staged[process] ?? frozenProcess(process);
+          setStaged((prev) => ({ ...prev, [process]: { ...base, env: { ...base.env, [key]: value } } }));
+          setAddOpen(false);
         }}
       />
       <RefDialog
-        key={refTarget == null ? "ref-closed" : "ref-open"}
-        open={refTarget != null}
-        processName={refTarget ?? processes[0]?.name ?? "web"}
-        existing={refTarget != null ? (staged[refTarget] ?? frozenProcess(refTarget)).secretRefs : []}
-        onClose={() => setRefTarget(null)}
-        onSubmit={(ref) => {
-          if (refTarget == null) return;
-          const base = staged[refTarget] ?? frozenProcess(refTarget);
-          setStaged((prev) => ({ ...prev, [refTarget]: { ...base, secretRefs: [...base.secretRefs, ref] } }));
-          setRefTarget(null);
+        key={refOpen ? "ref-open" : "ref-closed"}
+        open={refOpen}
+        processes={processes.map((process) => process.name ?? "")}
+        initialProcess={addDefaultProcess}
+        refsOf={(process) => (staged[process] ?? frozenProcess(process)).secretRefs}
+        onClose={() => setRefOpen(false)}
+        onSubmit={(process, ref) => {
+          const base = staged[process] ?? frozenProcess(process);
+          setStaged((prev) => ({ ...prev, [process]: { ...base, secretRefs: [...base.secretRefs, ref] } }));
+          setRefOpen(false);
         }}
       />
     </div>
@@ -310,25 +346,33 @@ function IconAction({
   );
 }
 
-// VariableDialog 是 Add/Edit 共用面（initialName 空 = 新增）：名字与值都
-// 走暂存面，服务端叶子校验是最终防线（部署受理时执法字符集）。
+// VariableDialog 是 Add/Edit 共用面（initialName 空 = 新增；Add 形带
+// process 选择，Edit 形 process 与名字锁定）：名字与值都走暂存面，服务端
+// 叶子校验是最终防线（部署受理时执法字符集）。
 function VariableDialog({
   open,
+  processes,
+  processLocked,
+  initialProcess,
   initialName,
   initialValue,
   onClose,
   onSubmit,
 }: {
   open: boolean;
+  processes: string[];
+  processLocked: boolean;
+  initialProcess: string;
   initialName: string;
   initialValue: string;
   onClose: () => void;
-  onSubmit: (name: string, value: string) => void;
+  onSubmit: (process: string, name: string, value: string) => void;
 }) {
   // 基线由挂载参数初始化——调用方以 key 变更驱动重挂（Add 重开不残留）。
+  const [process, setProcess] = useState(initialProcess);
   const [name, setName] = useState(initialName);
   const [value, setValue] = useState(initialValue);
-  const valid = name.trim() !== "";
+  const valid = name.trim() !== "" && process !== "";
   return (
     <Dialog open={open} onOpenChange={(next) => (next ? undefined : onClose())}>
       <DialogContent className="sm:max-w-md">
@@ -340,9 +384,29 @@ function VariableDialog({
           onSubmit={(event) => {
             event.preventDefault();
             if (!valid) return;
-            onSubmit(name.trim(), value);
+            onSubmit(process, name.trim(), value);
           }}
         >
+          <Label className="flex flex-col gap-1.5">
+            <span className="text-xs font-semibold">Process</span>
+            {processLocked ? (
+              <Input value={process} readOnly className="font-mono text-xs" />
+            ) : (
+              <Select value={process} onValueChange={setProcess}>
+                <SelectTrigger className="w-full font-mono text-xs">
+                  <SelectValue placeholder={processes.length === 0 ? "no processes" : ""} />
+                </SelectTrigger>
+                <SelectContent>
+                  {processes.map((name) => (
+                    <SelectItem key={name} value={name}>
+                      {name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            <span className="text-[11px] font-normal text-muted-foreground">The variable lands on this process only.</span>
+          </Label>
           <Label className="flex flex-col gap-1.5">
             <span className="text-xs font-semibold">Name</span>
             <Input value={name} onChange={(event) => setName(event.target.value)} readOnly={initialName !== ""} autoFocus={initialName === ""} />
@@ -365,22 +429,27 @@ function VariableDialog({
   );
 }
 
-// RefDialog 是 secret ref 新增面（重复 ref 拒绝；值面在 secret 本体）。
+// RefDialog 是 secret ref 新增面（重复 ref 拒绝；值面在 secret 本体；
+// process 内选——默认当前筛选，落住创建即绑定。原实现无触发点是死 UI，
+// ADR-0060 同批修活）。
 function RefDialog({
   open,
-  processName,
-  existing,
+  processes,
+  initialProcess,
+  refsOf,
   onClose,
   onSubmit,
 }: {
   open: boolean;
-  processName: string;
-  existing: string[];
+  processes: string[];
+  initialProcess: string;
+  refsOf: (process: string) => string[];
   onClose: () => void;
-  onSubmit: (ref: string) => void;
+  onSubmit: (process: string, ref: string) => void;
 }) {
+  const [process, setProcess] = useState(initialProcess);
   const [ref, setRef] = useState("");
-  const valid = ref.trim() !== "" && !existing.includes(ref.trim());
+  const valid = ref.trim() !== "" && process !== "" && !refsOf(process).includes(ref.trim());
   return (
     <Dialog open={open} onOpenChange={(next) => (next ? undefined : onClose())}>
       <DialogContent className="sm:max-w-md">
@@ -392,16 +461,31 @@ function RefDialog({
           onSubmit={(event) => {
             event.preventDefault();
             if (!valid) return;
-            onSubmit(ref.trim());
+            onSubmit(process, ref.trim());
             setRef("");
           }}
         >
+          <Label className="flex flex-col gap-1.5">
+            <span className="text-xs font-semibold">Process</span>
+            <Select value={process} onValueChange={setProcess}>
+              <SelectTrigger className="w-full font-mono text-xs">
+                <SelectValue placeholder={processes.length === 0 ? "no processes" : ""} />
+              </SelectTrigger>
+              <SelectContent>
+                {processes.map((name) => (
+                  <SelectItem key={name} value={name}>
+                    {name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Label>
           <Label className="flex flex-col gap-1.5">
             <span className="text-xs font-semibold">Secret name</span>
             <Input value={ref} onChange={(event) => setRef(event.target.value)} autoFocus />
             <span className="text-[11px] font-normal text-muted-foreground">
               Reference form (e.g. database:orders) — the value lives in the project secret, never in the spec. Lands on process{" "}
-              {processName}.
+              {process || "…"}.
             </span>
           </Label>
           <DialogFooter>
