@@ -68,7 +68,7 @@ func TestEnsureRejectsCarrierNameCollision(t *testing.T) {
 		{ID: "wl_01A", Process: "web.1", Image: "nginx:1"},
 		{ID: "wl_01B", Process: "web-1", Image: "nginx:1"},
 	}
-	err := p.Ensure(context.Background(), ns, ws, capability.Generation(1), capability.Materials{})
+	err := ensureErr(p, context.Background(), ns, ws, capability.Generation(1), capability.Materials{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "wl_01A", "error names both colliding workloads")
 	assert.Contains(t, err.Error(), "wl_01B")
@@ -119,7 +119,7 @@ func TestInspectWorkloadsSurfacesPausedRollout(t *testing.T) {
 
 	// 真路径 Ensure 落 store，再注入 daemon 侧的 UpdateStatus=paused 形态
 	// （滚动失败是编排器行为，fake 的 update 路径不会自行产生）。
-	require.NoError(t, p.Ensure(ctx, ensureNS, []capability.Workload{ensureWorkload()}, capability.Generation(1), capability.Materials{}))
+	require.NoError(t, ensureErr(p, ctx, ensureNS, []capability.Workload{ensureWorkload()}, capability.Generation(1), capability.Materials{}))
 	name := ensureCarrierName()
 	setRollout := func(state swarm.UpdateState, msg string) {
 		d.mu.Lock()

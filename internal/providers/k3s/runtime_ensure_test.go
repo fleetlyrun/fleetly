@@ -45,7 +45,7 @@ func TestEnsureCreatesObjects(t *testing.T) {
 		EgressNetworks: []string{"isolated"},
 	}}
 	mats := capability.Materials{SecretFiles: map[string][]byte{"db-pass": []byte("secret")}}
-	require.NoError(t, p.Ensure(ctx, appNS(), ws, 5, mats))
+	require.NoError(t, ensureErr(p, ctx, appNS(), ws, 5, mats))
 
 	nsName := "fleetly-shop"
 	// Namespace。
@@ -103,12 +103,12 @@ func TestEnsureRemovesNetpolWhenNoEgressCarriers(t *testing.T) {
 		ID: "w1", Process: "api", Image: "nginx:1.27",
 		EgressNetworks: []string{"isolated"},
 	}}
-	require.NoError(t, p.Ensure(ctx, appNS(), ws, 1, capability.Materials{}))
+	require.NoError(t, ensureErr(p, ctx, appNS(), ws, 1, capability.Materials{}))
 	_, err := cli.NetworkingV1().NetworkPolicies(nsName).Get(ctx, toEgressNetpol().Name, metav1.GetOptions{})
 	require.NoError(t, err)
 
 	ws[0].EgressNetworks = nil
-	require.NoError(t, p.Ensure(ctx, appNS(), ws, 2, capability.Materials{}))
+	require.NoError(t, ensureErr(p, ctx, appNS(), ws, 2, capability.Materials{}))
 	_, err = cli.NetworkingV1().NetworkPolicies(nsName).Get(ctx, toEgressNetpol().Name, metav1.GetOptions{})
 	assert.True(t, errNotFound(err), "netpol must be removed when no egress carriers remain")
 }
@@ -123,12 +123,12 @@ func TestEnsureConvergesStaleCarriers(t *testing.T) {
 		{ID: "w1", Process: "api", Image: "nginx:1.27"},
 		{ID: "w2", Process: "worker", Image: "nginx:1.27"},
 	}
-	require.NoError(t, p.Ensure(ctx, appNS(), ws, 1, capability.Materials{}))
+	require.NoError(t, ensureErr(p, ctx, appNS(), ws, 1, capability.Materials{}))
 	_, err := cli.AppsV1().Deployments(nsName).Get(ctx, "fleetly-web-worker", metav1.GetOptions{})
 	require.NoError(t, err)
 
 	// 期望集收窄为单进程：worker 被移除。
-	require.NoError(t, p.Ensure(ctx, appNS(), ws[:1], 1, capability.Materials{}))
+	require.NoError(t, ensureErr(p, ctx, appNS(), ws[:1], 1, capability.Materials{}))
 	_, err = cli.AppsV1().Deployments(nsName).Get(ctx, "fleetly-web-worker", metav1.GetOptions{})
 	assert.True(t, errNotFound(err), "stale carrier must be removed by domain convergence")
 
@@ -137,7 +137,7 @@ func TestEnsureConvergesStaleCarriers(t *testing.T) {
 		{ID: "w1", Process: "api"},
 		{ID: "w9", Process: "api"},
 	}
-	err = p.Ensure(ctx, appNS(), collide, 1, capability.Materials{})
+	err = ensureErr(p, ctx, appNS(), collide, 1, capability.Materials{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "carrier name collision")
 }
@@ -153,7 +153,7 @@ func TestRemoveKeepsDataPlane(t *testing.T) {
 		Addressing: []capability.Address{{Name: "api.web"}},
 	}}
 	mats := capability.Materials{SecretFiles: map[string][]byte{"db-pass": []byte("s")}}
-	require.NoError(t, p.Ensure(ctx, appNS(), ws, 1, mats))
+	require.NoError(t, ensureErr(p, ctx, appNS(), ws, 1, mats))
 	require.NoError(t, p.Remove(ctx, appNS()))
 
 	_, err := cli.AppsV1().Deployments(nsName).Get(ctx, "fleetly-web-api", metav1.GetOptions{})
@@ -176,7 +176,7 @@ func TestEnsureOneShotPod(t *testing.T) {
 		ID: "01R", Process: "run", Image: "busybox:1.37", Restart: capability.RestartNever,
 		Addressing: []capability.Address{{Name: "task-01T"}, {Name: "run-01R"}},
 	}}
-	require.NoError(t, p.Ensure(ctx, ns, ws, 1, capability.Materials{}))
+	require.NoError(t, ensureErr(p, ctx, ns, ws, 1, capability.Materials{}))
 	// 独立 Pod（无 controller owner）。
 	pod, err := cli.CoreV1().Pods("fleetly-shop").Get(ctx, "fleetly-run-01r", metav1.GetOptions{})
 	require.NoError(t, err)
@@ -187,7 +187,7 @@ func TestEnsureOneShotPod(t *testing.T) {
 	_, err = cli.CoreV1().Services("fleetly-shop").Get(ctx, "run-01r", metav1.GetOptions{})
 	require.NoError(t, err)
 	// 重放幂等。
-	require.NoError(t, p.Ensure(ctx, ns, ws, 1, capability.Materials{}))
+	require.NoError(t, ensureErr(p, ctx, ns, ws, 1, capability.Materials{}))
 }
 
 // Addresses：期望集成员的 Addressing DNS × 声明端口（期望集端口注入）。
@@ -216,7 +216,7 @@ func TestInspectWorkloads(t *testing.T) {
 	ws := []capability.Workload{{
 		ID: "w1", Process: "api", Image: "nginx:1.27", Command: []string{"/app"},
 	}}
-	require.NoError(t, p.Ensure(ctx, appNS(), ws, 4, capability.Materials{}))
+	require.NoError(t, ensureErr(p, ctx, appNS(), ws, 4, capability.Materials{}))
 	obs, err := p.InspectWorkloads(ctx, appNS())
 	require.NoError(t, err)
 	require.Len(t, obs, 1)
@@ -265,7 +265,7 @@ func TestEnsurePortlessWorkloadHeadlessService(t *testing.T) {
 			Addressing: []capability.Address{{Name: "api.app"}},
 		},
 	}
-	require.NoError(t, p.Ensure(ctx, appNS(), ws, 1, capability.Materials{}))
+	require.NoError(t, ensureErr(p, ctx, appNS(), ws, 1, capability.Materials{}))
 
 	// portless：headless（ClusterIP None）+ 零端口——合法形态。
 	svc, err := cli.CoreV1().Services("fleetly-shop").Get(ctx, "worker-app", metav1.GetOptions{})
@@ -387,7 +387,7 @@ func TestEnsureSkipMaterialsCarrierOmitsProjectedVolume(t *testing.T) {
 		{ID: "w2", Process: "collector", Image: "gcr.io/cadvisor/cadvisor:v0.55.1", Replicas: 1, SkipMaterials: true},
 	}
 	mats := capability.Materials{SecretFiles: map[string][]byte{"db-pass": []byte("secret")}}
-	require.NoError(t, p.Ensure(ctx, appNS(), ws, 1, mats))
+	require.NoError(t, ensureErr(p, ctx, appNS(), ws, 1, mats))
 
 	for name, wantMount := range map[string]bool{"fleetly-web-api": true, "fleetly-web-collector": false} {
 		d, err := cli.AppsV1().Deployments("fleetly-shop").Get(ctx, name, metav1.GetOptions{})
@@ -525,4 +525,11 @@ func TestRemoveNamespaceDrainOwnedPods(t *testing.T) {
 		_, err := cli.CoreV1().Namespaces().Get(ctx, "fleetly-shop", metav1.GetOptions{})
 		assert.NoError(t, err, "ownerless one-shot pod is genuinely live and must hold the namespace")
 	})
+}
+
+// ensureErr 适配 ADR-0063 的 Ensure 双返回值：既有测试面按单错误值消费，
+// 报告面由新测试直接调用 p.Ensure 断言。
+func ensureErr(p *Provider, ctx context.Context, ns capability.NamespaceRef, ws []capability.Workload, gen capability.Generation, m capability.Materials) error {
+	_, err := p.Ensure(ctx, ns, ws, gen, m)
+	return err
 }

@@ -294,7 +294,7 @@ func TestEnsureNetMembershipLabelsLand(t *testing.T) {
 	p, cli := newFakeProvider()
 	ctx := context.Background()
 	ws := []capability.Workload{{ID: "w1", Process: "api", Image: "nginx:1.27", Networks: []string{"default"}}}
-	require.NoError(t, p.Ensure(ctx, appNS(), ws, 1, capability.Materials{}))
+	require.NoError(t, ensureErr(p, ctx, appNS(), ws, 1, capability.Materials{}))
 	d, err := cli.AppsV1().Deployments("fleetly-shop").Get(ctx, "fleetly-web-api", metav1.GetOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, "true", d.Spec.Template.Labels[netLabelKey("shop", "default")],
@@ -314,7 +314,7 @@ func TestEnsureServiceConvergenceIsDomainScoped(t *testing.T) {
 		Ports:      []capability.WorkloadPort{{Port: 80}},
 		Addressing: []capability.Address{{Name: "api.web"}},
 	}}
-	require.NoError(t, p.Ensure(ctx, appNS, ws, 1, capability.Materials{}))
+	require.NoError(t, ensureErr(p, ctx, appNS, ws, 1, capability.Materials{}))
 	_, err := cli.CoreV1().Services("fleetly-shop").Get(ctx, "api-web", metav1.GetOptions{})
 	require.NoError(t, err)
 
@@ -340,7 +340,7 @@ func TestEnsureServiceConvergenceIsDomainScoped(t *testing.T) {
 		ID: "01R", Process: "run", Image: "busybox:1.37", Restart: capability.RestartNever,
 		Addressing: []capability.Address{{Name: "task-01T"}},
 	}}
-	require.NoError(t, p.Ensure(ctx, taskNS, taskWS, 1, capability.Materials{}))
+	require.NoError(t, ensureErr(p, ctx, taskNS, taskWS, 1, capability.Materials{}))
 	for name, want := range map[string]bool{
 		"api-web":    true,  // app 域（他域视角：不删）
 		"task-01t":   true,  // 本域期望集

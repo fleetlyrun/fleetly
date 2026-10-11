@@ -174,7 +174,7 @@ func (e *Engine) reconcileDatabase(ctx context.Context, row *dbrepo.Database) {
 		e.log.Error("database reconcile: generation", "database", row.ID, "err", err)
 		return
 	}
-	if err := e.runtime.Ensure(stepCtx, ns, ws, capability.Generation(gen), materials); err != nil {
+	if _, err := e.runtime.Ensure(stepCtx, ns, ws, capability.Generation(gen), materials); err != nil {
 		e.log.Error("database reconcile: ensure", "database", row.ID, "generation", gen, "err", err)
 		e.ensureForget(e.database.ensure, row.ID) // 失败清签名：下拍重试
 		return

@@ -235,7 +235,7 @@ func (f *fakeRuntime) Describe() capability.ProviderDescriptor {
 
 func (f *fakeRuntime) Health(context.Context) capability.HealthReport { return f.health }
 
-func (f *fakeRuntime) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []capability.Workload, gen capability.Generation, materials capability.Materials) error {
+func (f *fakeRuntime) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []capability.Workload, gen capability.Generation, materials capability.Materials) (capability.EnsureReport, error) {
 	if f.ensureEntered != nil {
 		select {
 		case f.ensureEntered <- struct{}{}:
@@ -246,7 +246,7 @@ func (f *fakeRuntime) Ensure(ctx context.Context, ns capability.NamespaceRef, ws
 		select {
 		case <-f.blockPoint:
 		case <-ctx.Done():
-			return ctx.Err()
+			return capability.EnsureReport{}, ctx.Err()
 		}
 	}
 	f.mu.Lock()
@@ -265,9 +265,9 @@ func (f *fakeRuntime) Ensure(ctx context.Context, ns capability.NamespaceRef, ws
 	})
 	if f.failNext {
 		f.failNext = false
-		return fmt.Errorf("injected ensure failure")
+		return capability.EnsureReport{}, fmt.Errorf("injected ensure failure")
 	}
-	return nil
+	return capability.EnsureReport{}, nil
 }
 
 func (f *fakeRuntime) Remove(ctx context.Context, ns capability.NamespaceRef) error {

@@ -41,7 +41,7 @@ const anchoringPollInterval = 10 * time.Second
 //     对照 drift 经 InspectWorkloads 观测面仍可见，ADR-0022）。
 //   - serviceSpecEqual（inspect 回读比对）：修复前的既有闸，兜住账本作废
 //     （失败重置）后的第一拍。
-func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []capability.Workload, gen capability.Generation, m capability.Materials) (err error) {
+func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []capability.Workload, gen capability.Generation, m capability.Materials) (report capability.EnsureReport, err error) {
 	// 期望集载体名 + 碰撞前置拒绝（N1 收尾批 B9）：不同 Workload 折叠成同
 	// 载体名（进程名仅差特殊字符经 sanitize 同形，如 web.1 / web-1）会让
 	// 后者静默覆盖前者——一进程无声丢失。spec 侧字符集白名单是主防线，此
@@ -51,7 +51,7 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 	for _, w := range ws {
 		name := workloadServiceName(ns, w, gen)
 		if prev, ok := desired[name]; ok && prev != w.ID {
-			return fmt.Errorf("swarm ensure %s: workloads %s and %s both resolve to service name %q (carrier name collision; process names must be distinct DNS labels)", ns, prev, w.ID, name)
+			return capability.EnsureReport{}, fmt.Errorf("swarm ensure %s: workloads %s and %s both resolve to service name %q (carrier name collision; process names must be distinct DNS labels)", ns, prev, w.ID, name)
 		}
 		desired[name] = w.ID
 	}
@@ -70,11 +70,11 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 	// 成员持基线材料——secret 引用与拉取凭证按各自材料面解析，调用级
 	// 材料不再全域改写（旧代零扰动锚）；nil = 调用级（域默认，既有语义）。
 	if err := p.ensureNetworks(ctx, ns, ws); err != nil {
-		return fmt.Errorf("swarm ensure %s: %w", ns, err)
+		return capability.EnsureReport{}, fmt.Errorf("swarm ensure %s: %w", ns, err)
 	}
 	callCarriers, err := p.ensureSecrets(ctx, m)
 	if err != nil {
-		return fmt.Errorf("swarm ensure %s: %w", ns, err)
+		return capability.EnsureReport{}, fmt.Errorf("swarm ensure %s: %w", ns, err)
 	}
 	carrierSets := map[*capability.Materials]map[string]secretCarrier{&m: callCarriers}
 	for i := range ws {
@@ -87,7 +87,7 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 		}
 		c, cerr := p.ensureSecrets(ctx, *pm)
 		if cerr != nil {
-			return fmt.Errorf("swarm ensure %s: %w", ns, cerr)
+			return capability.EnsureReport{}, fmt.Errorf("swarm ensure %s: %w", ns, cerr)
 		}
 		carrierSets[pm] = c
 	}
@@ -100,7 +100,7 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 
 	existing, err := p.listNsServices(ctx, ns)
 	if err != nil {
-		return fmt.Errorf("swarm ensure %s: list existing: %w", ns, err)
+		return capability.EnsureReport{}, fmt.Errorf("swarm ensure %s: list existing: %w", ns, err)
 	}
 
 	// 网络目标解析的 per-Ensure 备忘（C19-3）：拍内多 Workload 引用同名
@@ -116,12 +116,12 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 		// ID 使回读形态与发送形态一致，no-op 比对的前提）。
 		spec, nerr := p.resolveNetworkTargets(ctx, spec, resolvedNets)
 		if nerr != nil {
-			return fmt.Errorf("swarm ensure %s: %w", ns, nerr)
+			return capability.EnsureReport{}, fmt.Errorf("swarm ensure %s: %w", ns, nerr)
 		}
 
 		auth, err := p.registryAuthFor(ctx, w.Image, materialsOf(w))
 		if err != nil {
-			return fmt.Errorf("swarm ensure %s: %w", ns, err)
+			return capability.EnsureReport{}, fmt.Errorf("swarm ensure %s: %w", ns, err)
 		}
 
 		// 期望 spec canonical 只算一次（C19-4）：断路器比对、等价判定、
@@ -132,13 +132,13 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 		if err != nil {
 			// 视 404 与其余错误：NotFound → create；其他错误直接上抛。
 			if !isNotFound(err) {
-				return fmt.Errorf("swarm ensure %s: inspect %s: %w", ns, spec.Name, err)
+				return capability.EnsureReport{}, fmt.Errorf("swarm ensure %s: inspect %s: %w", ns, spec.Name, err)
 			}
 			if _, err := p.cli.ServiceCreate(ctx, client.ServiceCreateOptions{
 				Spec:                spec,
 				EncodedRegistryAuth: auth,
 			}); err != nil {
-				return fmt.Errorf("swarm ensure %s: create %s: %w", ns, spec.Name, err)
+				return capability.EnsureReport{}, fmt.Errorf("swarm ensure %s: create %s: %w", ns, spec.Name, err)
 			}
 			p.recordLastIssued(spec.Name, desiredJSON) // create 即入账：服务端已持有该 spec
 			continue
@@ -160,7 +160,7 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 			continue
 		}
 		if uerr := p.updateServiceCAS(ctx, ns, spec, svc, auth); uerr != nil {
-			return uerr // update 失败：defer 整拍作废账本，下拍重发（C19-1）
+			return report, uerr // update 失败：defer 整拍作废账本，下拍重发（C19-1）
 		}
 		p.recordLastIssued(spec.Name, desiredJSON)
 	}
@@ -169,12 +169,12 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 	for _, svc := range existing {
 		if _, ok := desired[svc.Spec.Name]; !ok {
 			if _, err := p.cli.ServiceRemove(ctx, svc.ID, client.ServiceRemoveOptions{}); err != nil && !isNotFound(err) {
-				return fmt.Errorf("swarm ensure %s: remove stale %s: %w", ns, svc.Spec.Name, err)
+				return capability.EnsureReport{}, fmt.Errorf("swarm ensure %s: remove stale %s: %w", ns, svc.Spec.Name, err)
 			}
 			p.forgetLastIssued(svc.Spec.Name) // 服务删除即清账（不复活、不泄漏）
 		}
 	}
-	return nil
+	return report, nil
 }
 
 // updateServiceCAS 以版本号 CAS 更新服务，冲突时有界重试。引擎事件驱动

@@ -410,7 +410,7 @@ func (e *Engine) reconcileBrowseSession(ctx context.Context, r *browserepo.Sessi
 		return
 	}
 	ns := capability.NamespaceRef{Team: s.teamID, Project: s.projectID, Browse: s.id}
-	if err := e.runtime.Ensure(stepCtx, ns, []capability.Workload{w}, capability.Generation(1), materials); err != nil {
+	if _, err := e.runtime.Ensure(stepCtx, ns, []capability.Workload{w}, capability.Generation(1), materials); err != nil {
 		e.log.Error("browse reconcile: ensure", "session", s.id, "err", err)
 		e.ensureForget(e.browse.ensure, s.id)
 		return

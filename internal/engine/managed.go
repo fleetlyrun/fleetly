@@ -318,7 +318,7 @@ func (e *Engine) reconcileManaged(ctx context.Context) {
 			continue
 		}
 		materials := e.managedMaterials(decl, projectIDs)
-		if err := e.runtime.Ensure(ctx, ns, ws, capability.Generation(gen), materials); err != nil {
+		if _, err := e.runtime.Ensure(ctx, ns, ws, capability.Generation(gen), materials); err != nil {
 			e.log.Error("managed reconciler: ensure", "namespace", ns.String(), "err", err)
 			e.ensureForget(e.managed.ensure, ns.String()) // 失败清签名：下拍重试
 			continue                                      // 单 Provider 失败不阻断其余受管面收敛

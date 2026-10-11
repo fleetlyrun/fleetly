@@ -177,7 +177,7 @@ func (e *Engine) blueGreenWindowMaterialize(ctx context.Context, d *deployment.D
 	if err := e.applyVolumePinning(ctx, union, toSpec.GetApp().GetProject()); err != nil {
 		return fmt.Errorf("merge volume pinning: %w", err)
 	}
-	if err := e.runtime.Ensure(ctx, ns, union, capability.Generation(fromGen), materials); err != nil {
+	if _, err := e.runtime.Ensure(ctx, ns, union, capability.Generation(fromGen), materials); err != nil {
 		return fmt.Errorf("runtime ensure: %w", err)
 	}
 	// 记账走 recordEnsured 单源（逐载体锚分组：旧代成员 from_gen、新代

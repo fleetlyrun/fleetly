@@ -49,7 +49,7 @@ func TestEnsureNoopBreakerSkipsIdenticalDesired(t *testing.T) {
 	updateKey := "POST /services/srv-" + name + "/update"
 
 	run := func() error {
-		return p.Ensure(ctx, ensureNS, []capability.Workload{ensureWorkload()}, capability.Generation(1), capability.Materials{})
+		return ensureErr(p, ctx, ensureNS, []capability.Workload{ensureWorkload()}, capability.Generation(1), capability.Materials{})
 	}
 
 	// 拍 1：服务不存在 → create 落账。
@@ -67,29 +67,29 @@ func TestEnsureNoopBreakerSkipsIdenticalDesired(t *testing.T) {
 	// 拍 3：期望真变（镜像升级）→ 短路解除，update 走通。
 	changed := ensureWorkload()
 	changed.Image = "nginx:1.28"
-	require.NoError(t, p.Ensure(ctx, ensureNS, []capability.Workload{changed}, capability.Generation(2), capability.Materials{}))
+	require.NoError(t, ensureErr(p, ctx, ensureNS, []capability.Workload{changed}, capability.Generation(2), capability.Materials{}))
 	assert.Equal(t, 1, d.count(updateKey), "a real desired change must reach the daemon")
 
 	// 拍 4：期望再回稳 → 断路器在新锚上短路。
-	require.NoError(t, p.Ensure(ctx, ensureNS, []capability.Workload{changed}, capability.Generation(2), capability.Materials{}))
+	require.NoError(t, ensureErr(p, ctx, ensureNS, []capability.Workload{changed}, capability.Generation(2), capability.Materials{}))
 	assert.Equal(t, 1, d.count(updateKey), "steady state after a real change must stay quiet")
 
 	// 拍 5：期望再变 + update 注入故障 → 账本整拍作废（含本拍与此前落账）。
 	changed2 := ensureWorkload()
 	changed2.Image = "nginx:1.29"
 	d.failNext(updateKey, 1)
-	err := p.Ensure(ctx, ensureNS, []capability.Workload{changed2}, capability.Generation(3), capability.Materials{})
+	err := ensureErr(p, ctx, ensureNS, []capability.Workload{changed2}, capability.Generation(3), capability.Materials{})
 	require.Error(t, err, "injected update failure must surface")
 	assert.Empty(t, p.lastIssuedOf(name), "a failed beat must wipe the ledger (re-issue next beat)")
 
 	// 拍 6：同期望重放 → 账本已作废，update 重发成功（故障已耗尽；计数含
 	// 拍 5 的失败尝试）。
-	require.NoError(t, p.Ensure(ctx, ensureNS, []capability.Workload{changed2}, capability.Generation(3), capability.Materials{}))
+	require.NoError(t, ensureErr(p, ctx, ensureNS, []capability.Workload{changed2}, capability.Generation(3), capability.Materials{}))
 	assert.Equal(t, 3, d.count(updateKey), "the wiped ledger must re-issue the update (attempt count includes the failed beat)")
 	require.NotEmpty(t, p.lastIssuedOf(name))
 
 	// 拍 7：稳态回归静默。
-	require.NoError(t, p.Ensure(ctx, ensureNS, []capability.Workload{changed2}, capability.Generation(3), capability.Materials{}))
+	require.NoError(t, ensureErr(p, ctx, ensureNS, []capability.Workload{changed2}, capability.Generation(3), capability.Materials{}))
 	assert.Equal(t, 3, d.count(updateKey))
 
 	// 域内收敛删除清账：期望集外的存量服务被移除且账本同步清空（存量载体
@@ -109,7 +109,7 @@ func TestEnsureNoopBreakerSkipsIdenticalDesired(t *testing.T) {
 	}
 	d.addService(stale)
 	p.recordLastIssued(staleName, "stale-anchor")
-	require.NoError(t, p.Ensure(ctx, ensureNS, []capability.Workload{changed2}, capability.Generation(3), capability.Materials{}))
+	require.NoError(t, ensureErr(p, ctx, ensureNS, []capability.Workload{changed2}, capability.Generation(3), capability.Materials{}))
 	assert.Equal(t, 1, d.count("DELETE /services/srv-"+staleName), "stale service must be removed")
 	assert.Empty(t, p.lastIssuedOf(staleName), "removal must forget the ledger entry")
 }
@@ -252,7 +252,7 @@ func TestEnsureResolvesSharedNetworkOnce(t *testing.T) {
 	w2.Process = "web-2"
 	w1.Networks = []string{"proxy"}
 	w2.Networks = []string{"proxy"}
-	require.NoError(t, p.Ensure(context.Background(), ensureNS, []capability.Workload{w1, w2}, capability.Generation(1), capability.Materials{}))
+	require.NoError(t, ensureErr(p, context.Background(), ensureNS, []capability.Workload{w1, w2}, capability.Generation(1), capability.Materials{}))
 	assert.Equal(t, 2, d.count("GET /networks/"+carrier),
 		"materials inspect + one memoized resolve for two workloads sharing the network")
 	for _, name := range []string{workloadServiceName(ensureNS, w1, 1), workloadServiceName(ensureNS, w2, 1)} {
@@ -306,7 +306,7 @@ func TestEnsurePerWorkloadMaterials(t *testing.T) {
 	next := capability.Workload{ID: "wl_01-g42", Process: "web-1", Image: "nginx:1.28",
 		Generation: 42, GenerationScoped: true}
 
-	require.NoError(t, p.Ensure(ctx, ensureNS, []capability.Workload{from, next}, capability.Generation(41), newMat))
+	require.NoError(t, ensureErr(p, ctx, ensureNS, []capability.Workload{from, next}, capability.Generation(41), newMat))
 
 	oldName := workloadServiceName(ensureNS, from, 41)
 	newName := workloadServiceName(ensureNS, next, 41)
@@ -364,4 +364,11 @@ func TestAddressesMatchesByWorkloadID(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, eps, 1)
 	assert.Equal(t, "10.0.0.42", eps[0].Addr, "the expected set pins the serving generation")
+}
+
+// ensureErr 适配 ADR-0063 的 Ensure 双返回值：既有测试面按单错误值消费，
+// 报告面由新测试直接调用 p.Ensure 断言。
+func ensureErr(p *Provider, ctx context.Context, ns capability.NamespaceRef, ws []capability.Workload, gen capability.Generation, m capability.Materials) error {
+	_, err := p.Ensure(ctx, ns, ws, gen, m)
+	return err
 }

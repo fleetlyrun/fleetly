@@ -76,7 +76,7 @@ func (e *Engine) materialize(ctx context.Context, d *deployment.Deployment, revi
 	if err := e.applyVolumePinning(ctx, ws, spec.GetApp().GetProject()); err != nil {
 		return fmt.Errorf("merge volume pinning: %w", err)
 	}
-	if err := e.runtime.Ensure(ctx, ns, ws, capability.Generation(gen), materials); err != nil {
+	if _, err := e.runtime.Ensure(ctx, ns, ws, capability.Generation(gen), materials); err != nil {
 		return fmt.Errorf("runtime ensure: %w", err)
 	}
 	e.recordEnsured(d, gen, ws)

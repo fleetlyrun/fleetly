@@ -36,14 +36,14 @@ const watchPollInterval = 10 * time.Second
 // 域内收敛语义：以 ns label 选择器列出 fleetly 管辖的域内对象，逐
 // Workload create-or-update（no-op 两道闸：lastIssued 账本短路 + canonical
 // 深比对），不在期望集内的域内对象移除——同 Generation 重放安全（场景 1）。
-func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []capability.Workload, gen capability.Generation, m capability.Materials) (err error) {
+func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []capability.Workload, gen capability.Generation, m capability.Materials) (report capability.EnsureReport, err error) {
 	// 期望集载体名 + 碰撞前置拒绝（swarm B9 同款：不同 Workload 折叠成同
 	// 载体名会让后者静默覆盖前者）。
 	desired := make(map[string]string, len(ws))
 	for _, w := range ws {
 		name := workloadName(ns, w, gen)
 		if prev, ok := desired[name]; ok && prev != w.ID {
-			return fmt.Errorf("k3s ensure %s: workloads %s and %s both resolve to object name %q (carrier name collision; process names must be distinct DNS labels)", ns, prev, w.ID, name)
+			return capability.EnsureReport{}, fmt.Errorf("k3s ensure %s: workloads %s and %s both resolve to object name %q (carrier name collision; process names must be distinct DNS labels)", ns, prev, w.ID, name)
 		}
 		desired[name] = w.ID
 	}
@@ -57,17 +57,17 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 
 	nsName := namespaceName(ns)
 	if err := p.ensureNamespace(ctx, nsName); err != nil {
-		return fmt.Errorf("k3s ensure %s: %w", ns, err)
+		return capability.EnsureReport{}, fmt.Errorf("k3s ensure %s: %w", ns, err)
 	}
 	// egress 强隔离（ADR-0052 决策 6）：域内存在 egress 载体 → 域上恒有
 	// 一条 deny policy（幂等收敛；全部期望载体都不再挂 egress 网络时撤除）。
 	if err := p.reconcileEgressNetpol(ctx, nsName, ws); err != nil {
-		return fmt.Errorf("k3s ensure %s: %w", ns, err)
+		return capability.EnsureReport{}, fmt.Errorf("k3s ensure %s: %w", ns, err)
 	}
 	// 网络成员资格入站隔离（ADR-0054 决策 1）：每网一条成员 policy + 零附件
 	// deny-all + 跨域引用的接收方 grant，期望集收敛删除 stale。
 	if err := p.reconcileNetIsolation(ctx, ns, nsName, ws); err != nil {
-		return fmt.Errorf("k3s ensure %s: %w", ns, err)
+		return capability.EnsureReport{}, fmt.Errorf("k3s ensure %s: %w", ns, err)
 	}
 
 	// 材料先行（ADR-0014）：Secret 对象落盘 + 拉取凭证（imagePullSecrets），
@@ -75,11 +75,11 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 	// nil = 调用级（域默认）。
 	callSecrets, err := p.ensureSecrets(ctx, ns, nsName, m.SecretFiles)
 	if err != nil {
-		return fmt.Errorf("k3s ensure %s: %w", ns, err)
+		return capability.EnsureReport{}, fmt.Errorf("k3s ensure %s: %w", ns, err)
 	}
 	pullNames, err := p.ensureImagePullSecrets(ctx, nsName, m.RegistryAuth)
 	if err != nil {
-		return fmt.Errorf("k3s ensure %s: %w", ns, err)
+		return capability.EnsureReport{}, fmt.Errorf("k3s ensure %s: %w", ns, err)
 	}
 	carrierSets := map[*capability.Materials]map[string]string{&m: callSecrets}
 	for i := range ws {
@@ -92,7 +92,7 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 		}
 		c, cerr := p.ensureSecrets(ctx, ns, nsName, pm.SecretFiles)
 		if cerr != nil {
-			return fmt.Errorf("k3s ensure %s: %w", ns, cerr)
+			return capability.EnsureReport{}, fmt.Errorf("k3s ensure %s: %w", ns, cerr)
 		}
 		carrierSets[pm] = c
 	}
@@ -119,14 +119,14 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 	for _, w := range ws {
 		for _, v := range w.Volumes {
 			if err := p.ensurePVC(ctx, nsName, v.VolumeID); err != nil {
-				return fmt.Errorf("k3s ensure %s: %w", ns, err)
+				return capability.EnsureReport{}, fmt.Errorf("k3s ensure %s: %w", ns, err)
 			}
 		}
 	}
 
 	existing, err := p.listDomainObjects(ctx, ns)
 	if err != nil {
-		return fmt.Errorf("k3s ensure %s: list existing: %w", ns, err)
+		return capability.EnsureReport{}, fmt.Errorf("k3s ensure %s: list existing: %w", ns, err)
 	}
 
 	// 服务名集合（域内收敛对照 + Service 期望集）。
@@ -142,7 +142,7 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 			if err := p.putObject(ctx, nsName, "daemonset", name, desiredJSON, func() error {
 				return p.putDaemonSet(ctx, nsName, ds)
 			}); err != nil {
-				return fmt.Errorf("k3s ensure %s: %w", ns, err)
+				return capability.EnsureReport{}, fmt.Errorf("k3s ensure %s: %w", ns, err)
 			}
 		case w.Restart == capability.RestartNever:
 			pod := toOneShotPod(ns, w, gen, secretFiles, pullNames)
@@ -150,7 +150,7 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 			if err := p.putObject(ctx, nsName, "pod", name, desiredJSON, func() error {
 				return p.putPod(ctx, nsName, pod)
 			}); err != nil {
-				return fmt.Errorf("k3s ensure %s: %w", ns, err)
+				return capability.EnsureReport{}, fmt.Errorf("k3s ensure %s: %w", ns, err)
 			}
 		default:
 			d := toDeployment(ns, w, gen, secretFiles, pullNames)
@@ -158,7 +158,7 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 			if err := p.putObject(ctx, nsName, "deployment", name, desiredJSON, func() error {
 				return p.putDeployment(ctx, nsName, d)
 			}); err != nil {
-				return fmt.Errorf("k3s ensure %s: %w", ns, err)
+				return capability.EnsureReport{}, fmt.Errorf("k3s ensure %s: %w", ns, err)
 			}
 		}
 		_ = desiredJSON
@@ -173,7 +173,7 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 			if err := p.putObject(ctx, nsName, "service", svc.Name, svcJSON, func() error {
 				return p.putService(ctx, nsName, svc)
 			}); err != nil {
-				return fmt.Errorf("k3s ensure %s: %w", ns, err)
+				return capability.EnsureReport{}, fmt.Errorf("k3s ensure %s: %w", ns, err)
 			}
 			wantServices[svc.Name] = true
 		}
@@ -184,7 +184,7 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 	for _, obj := range existing {
 		if _, ok := desired[obj.name]; !ok {
 			if err := p.deleteDomainObject(ctx, nsName, obj); err != nil {
-				return fmt.Errorf("k3s ensure %s: remove stale %s: %w", ns, obj.name, err)
+				return capability.EnsureReport{}, fmt.Errorf("k3s ensure %s: remove stale %s: %w", ns, obj.name, err)
 			}
 			p.forgetLastIssued(obj.name)
 		}
@@ -200,7 +200,7 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 	}).String()
 	svcs, err := p.cli.CoreV1().Services(nsName).List(ctx, metav1.ListOptions{LabelSelector: svcSel})
 	if err != nil {
-		return fmt.Errorf("k3s ensure %s: list services: %w", ns, err)
+		return capability.EnsureReport{}, fmt.Errorf("k3s ensure %s: list services: %w", ns, err)
 	}
 	for _, svc := range svcs.Items {
 		if wantServices[svc.Name] {
@@ -210,7 +210,7 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 			continue
 		}
 		if err := p.cli.CoreV1().Services(nsName).Delete(ctx, svc.Name, metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
-			return fmt.Errorf("k3s ensure %s: remove stale service %s: %w", ns, svc.Name, err)
+			return capability.EnsureReport{}, fmt.Errorf("k3s ensure %s: remove stale service %s: %w", ns, svc.Name, err)
 		}
 		p.forgetLastIssued("service/" + svc.Name)
 	}
@@ -218,7 +218,7 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 	for _, w := range ws {
 		p.recordIssuedGen(w.ID, workloadGeneration(w, gen))
 	}
-	return nil
+	return report, nil
 }
 
 // putObject 是 create-or-update 的账本门：no-op 账本命中即短路（受管域

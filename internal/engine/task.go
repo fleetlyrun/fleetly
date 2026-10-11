@@ -495,7 +495,7 @@ func (e *Engine) ensureTaskWorkloads(ctx context.Context, t *task.Task, ws []cap
 		e.log.Error("task ensure: materials", "task", t.ID, "err", err)
 		return err
 	}
-	if err := e.runtime.Ensure(ctx, ns, ws, capability.Generation(1), materials); err != nil {
+	if _, err := e.runtime.Ensure(ctx, ns, ws, capability.Generation(1), materials); err != nil {
 		e.log.Error("task ensure", "task", t.ID, "err", err)
 		e.ensureForget(e.task.ensure, t.ID) // 失败清签名：下拍重试
 		return err

@@ -366,7 +366,7 @@ func (f *FakeRuntime) Health(context.Context) capability.HealthReport {
 	return capability.HealthReport{Healthy: true}
 }
 
-func (f *FakeRuntime) Ensure(_ context.Context, ns capability.NamespaceRef, ws []capability.Workload, gen capability.Generation, m capability.Materials) error {
+func (f *FakeRuntime) Ensure(_ context.Context, ns capability.NamespaceRef, ws []capability.Workload, gen capability.Generation, m capability.Materials) (capability.EnsureReport, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	spec := make(map[string]capability.Workload, len(ws))
@@ -374,7 +374,7 @@ func (f *FakeRuntime) Ensure(_ context.Context, ns capability.NamespaceRef, ws [
 		spec[w.Process] = w
 	}
 	f.ensures = append(f.ensures, EnsureCall{NS: ns, Gen: gen, Spec: spec, Materials: m})
-	return nil
+	return capability.EnsureReport{}, nil
 }
 
 func (f *FakeRuntime) Remove(ctx context.Context, ns capability.NamespaceRef) error {
