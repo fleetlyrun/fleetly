@@ -106,6 +106,14 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 	// 网络目标解析的 per-Ensure 备忘（C19-3）：拍内多 Workload 引用同名
 	// 网络只探一次 daemon；Ensure 序结束随局部变量废弃。
 	resolvedNets := map[string]netResolve{}
+	report.Gens = make(map[string]capability.Generation, len(ws))
+	// wireGen 落报告：跳过/scale 分支必须回传现存代戳（引擎按 wire-gen
+	// 记观测归因锚，缺席 = 按调用 gen——create/full-update 分支）。
+	wireGen := func(wid string, svc swarm.Service) {
+		if g := serviceWireGen(svc); g > 0 {
+			report.Gens[wid] = capability.Generation(g)
+		}
+	}
 	for _, w := range ws {
 		carriers := callCarriers
 		if w.Materials != nil {
@@ -141,13 +149,14 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 				return capability.EnsureReport{}, fmt.Errorf("swarm ensure %s: create %s: %w", ns, spec.Name, err)
 			}
 			p.recordLastIssued(spec.Name, desiredJSON) // create 即入账：服务端已持有该 spec
-			continue
+			continue                                   // wire-gen = 调用 gen（create 落的就是新戳）
 		}
 		svc := inspect.Service
 		if desiredJSON != "" && desiredJSON == p.lastIssuedOf(spec.Name) {
 			// no-op 断路器（C19-1）：期望与最近一次确认下发一致 → update
 			// 判定链整体短路。服务级 inspect 已完成，服务意外缺失仍会在
 			// 下一拍由 404 分支重建（账本只在写确认时落，不豁免存在性检查）。
+			wireGen(w.ID, svc)
 			continue
 		}
 		if serviceSpecEqualJSON(desiredJSON, svc.Spec) {
@@ -155,8 +164,25 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 			// 无条件 update 会让 identical spec 也滚替任务（update 产
 			// 事件 → Kick → 再 update 的自激环；staging 真机实证：
 			// 受管库载体 20s 内 49 次版本推进、postgres 反复优雅退出
-			// 永不停稳，2026-10-02）。
+			// 永不停稳，2026-10-02）。代戳已从等价判定剥离（ADR-0064）：
+			// 跨代未变载体走本分支，服务保留旧代戳零触碰。
 			p.recordLastIssued(spec.Name, desiredJSON) // 服务端现态即期望：回填账本（作废后重建）
+			wireGen(w.ID, svc)
+			continue
+		}
+		if canonicalContentJSON(spec) == canonicalContentJSON(svc.Spec) {
+			// scale-only（ADR-0064 决策 2）：内容等价（modulo 代戳与副本
+			// 数）仅副本数不同——保留在服任务模板与服务级标签原样回发，
+			// swarm 语义下任务模板未变 = 存量任务零替换、只增删任务；代
+			// 戳与模板恒同移（未变内容不换代），观测归因锚不漂。
+			scaleSpec := spec
+			scaleSpec.TaskTemplate = svc.Spec.TaskTemplate
+			scaleSpec.Annotations.Labels = svc.Spec.Annotations.Labels
+			if uerr := p.updateServiceCAS(ctx, ns, scaleSpec, svc, auth); uerr != nil {
+				return report, uerr // update 失败：defer 整拍作废账本，下拍重发（C19-1）
+			}
+			p.recordLastIssued(spec.Name, desiredJSON) // 账本记期望内容（modulo gen + 新副本数）
+			wireGen(w.ID, svc)
 			continue
 		}
 		if uerr := p.updateServiceCAS(ctx, ns, spec, svc, auth); uerr != nil {
@@ -276,6 +302,13 @@ func (p *Provider) forgetLastIssued(names ...string) {
 //   - RollbackConfig 整体（服务端缺省物化，平台不管理）
 //   - UpdateConfig 的 Monitor/MaxFailureRatio（服务端缺省，平台不管理）
 //
+// **代戳剥离（ADR-0064 内容锚定等价）**：fleetly.generation 是观测归因锚
+// 而非内容成分——Annotations.Labels 与 TaskTemplate.ContainerSpec.Labels
+// 两处同源剥离。剥离前，任何新部署（全员盖新代戳）都让等价判定失配、
+// 全部服务滚动替换任务（staging 实证 2026-10-11：单副本调整触发六服务
+// 替换 → DNS 断档 → 健康门双超时）。未变载体由此跳过 update、保留其
+// 现存代次（EnsureReport 回传 wire-gen）。
+//
 // Networks[].Target 的名字→ID 服务端解析在 Ensure 侧先行解析（发 ID 而非
 // 名，服务端不再改写）。
 func canonicalSpecJSON(spec swarm.ServiceSpec) string {
@@ -305,10 +338,18 @@ func canonicalSpecJSON(spec swarm.ServiceSpec) string {
 			if iso, ok := cs["Isolation"].(string); ok && (iso == "" || iso == "default") {
 				delete(cs, "Isolation")
 			}
+			if labels, ok := cs["Labels"].(map[string]any); ok {
+				delete(labels, labelGeneration)
+			}
 		}
 		if res, ok := tt["Resources"].(map[string]any); ok && len(res) == 0 {
 			delete(tt, "Resources")
 		}
+	}
+	// 服务级标签（ServiceSpec 内嵌 Annotations——marshal 后 Labels 平铺
+	// 在顶层，无 "Annotations" 包裹层）。
+	if labels, ok := m["Labels"].(map[string]any); ok {
+		delete(labels, labelGeneration)
 	}
 	delete(m, "RollbackConfig")
 	if uc, ok := m["UpdateConfig"].(map[string]any); ok {
@@ -327,6 +368,38 @@ func canonicalSpecJSON(spec swarm.ServiceSpec) string {
 		return ""
 	}
 	return string(out)
+}
+
+// canonicalContentJSON 在 canonicalSpecJSON 之上再剥离副本数：等价 =
+// 「内容等价且仅副本数不同」——Ensure 的 scale-only 决策依据（ADR-0064：
+// 纯副本数变化走 swarm scale 语义，保留在服任务模板即零任务替换）。
+func canonicalContentJSON(spec swarm.ServiceSpec) string {
+	base := canonicalSpecJSON(spec)
+	if base == "" {
+		return ""
+	}
+	var m map[string]any
+	if err := json.Unmarshal([]byte(base), &m); err != nil {
+		return ""
+	}
+	if mode, ok := m["Mode"].(map[string]any); ok {
+		if rep, ok := mode["Replicated"].(map[string]any); ok {
+			delete(rep, "Replicas")
+		}
+	}
+	out, err := json.Marshal(m)
+	if err != nil {
+		return ""
+	}
+	return string(out)
+}
+
+// serviceWireGen 读现存服务的代戳（观测归因真源——服务级 Labels 与任务
+// 模板 Labels 由本批约定恒同移，读服务级即可）。无戳（0）= 非平台管
+// 辖形态或历史行，调用方按缺席处理。
+func serviceWireGen(svc swarm.Service) uint64 {
+	gen, _ := strconv.ParseUint(svc.Spec.Labels[labelGeneration], 10, 64)
+	return gen
 }
 
 // netResolve 是网络引用的 per-Ensure 解析备忘值（C19-3）。
