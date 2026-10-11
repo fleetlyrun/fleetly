@@ -49,4 +49,4 @@ staging 实证事故（runbook 记录·三十七，2026-10-11）：用户经 Pro
 - [x] 引擎：纯 scale 部署一拍直落 observing → succeeded（空集 vacuous pass）——`TestPureScaleDeploymentPassesL1`。
 - [x] k3s：跨代零写（ResourceVersion 不动）/ replicas-only 模板字节稳定 / 真变更双锚推进 / 冷账本钉服务端代戳——`runtime_contentequiv_test.go` 四锚。
 - [x] e2e：dind-smoke 场景 2b 真 swarm 断言——replicas-only 部署目标服务 2 Running + 0 Shutdown、未触碰服务 1 Running + 0 Shutdown（旧行为必红）。
-- [ ] staging 活体复现用例回归（换装后补勾：单副本调整 → 仅该服务纯扩、其余零扰动、部署 succeeded）。
+- [x] staging 活体复现用例回归（cd052e4-adr64，2026-10-11 14:21 实录）：server 副本 1→2 → 旧任务在服 + 新任务加入（**纯扩零替换**，两任务 gen 标签皆 13——模板钉住）；其余五服务任务行零变化；部署 10s 过 L1（空集 vacuous）→ 60s 观察窗 → succeeded 零错误。旧代码残留（5/1、6/1、2/1 paused + drift 风暴）在新 daemon 3 分钟内自动收敛（modulo-skip + paused resume），风暴止息。〔runbook 记录·四十〕

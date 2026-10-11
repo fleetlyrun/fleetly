@@ -857,4 +857,4 @@ F3.1/F3.2/F3.3/F3.6 四批走查的浏览器级挂账在后端在场的环境（
 
 **console「Rollback app」点击未达服务端（挂账观察，非本批修复）**：gateway 日志 09:00-10:10 零 Rollback 调用；端点双向验证通过（带/不带 body 均创建回滚行）、错误展示面在位（rollback.error → ErrorLine）。客户端侧无法离线复现——不投机修，复发时以浏览器网络面板取证。
 
-**换装与验证**：随本批上站（见后续记录）。
+**换装与验证（cd052e4-adr64，2026-10-11 14:19）**：前置 Platform Backup `7721013c` + 卷 tar 四份 + 旧二进制留底 `/root/fleetlyd-457a2c5-adr62.bak`；干净 HEAD 构建（本批起换装前 `git status` 复核为零改动——记录·三十七教训的执法）。零迁移（goose 停 28）。**残留自动收敛**：旧代码留下的 paused 三服务（5/1、6/1、2/1 孤儿堆）+ drift 风暴在新 daemon 起 3 分钟内全部收敛（六服务 1/1 completed、drift 止息——modulo-skip + paused resume 机制的活体验证）。**复现用例回归**：server 副本 1→2（用户场景本体）→ 纯扩零替换（旧任务在服 + 新任务加入、两任务 gen 标签皆 13）、其余五服务任务行零变化、10s 过 L1（空集 vacuous）→ succeeded 零错误；tw.dev 200、console hash `index-C_a9k8uD.js`、doctor 10 ok / 2 warning（既有基线）、受管域全旧龄（6d/6d/35h/2d 零扰动）。e2e dind-smoke 全绿（含场景 2b 零替换锚）。
