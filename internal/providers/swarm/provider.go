@@ -17,6 +17,7 @@ import (
 	"io"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/client"
@@ -33,6 +34,11 @@ type Provider struct {
 	// 各部署单写者环，可并发进入同一 Provider。
 	ledgerMu   sync.Mutex
 	lastIssued map[string]string
+	// resumedAt：滚动停摆 resume 的时间窗护栏（ADR-0064 决策 5）——服务
+	// 名 → 最近一次 force-resume 时刻；窗内不重复（防 boot 崩溃类应用
+	// 的 resume flap）。与 lastIssued 同生命周期（进程内、重启即冷），
+	// 复用 ledgerMu 互斥。
+	resumedAt map[string]time.Time
 
 	// 可注入的最小 docker 面缝（hermetic 单测注入 fake，不依赖真 daemon；
 	// nil = 真实现直连 cli）。只覆盖需要无 daemon 测试的窄路径：

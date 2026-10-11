@@ -156,7 +156,13 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 			// no-op 断路器（C19-1）：期望与最近一次确认下发一致 → update
 			// 判定链整体短路。服务级 inspect 已完成，服务意外缺失仍会在
 			// 下一拍由 404 分支重建（账本只在写确认时落，不豁免存在性检查）。
-			wireGen(w.ID, svc)
+			resumed, rerr := p.resumeStalledRollout(ctx, ns, spec, svc, auth, desiredJSON)
+			if rerr != nil {
+				return report, rerr
+			}
+			if !resumed {
+				wireGen(w.ID, svc)
+			} // resume 已重发：wire-gen = 本拍 gen（报告缺席）
 			continue
 		}
 		if serviceSpecEqualJSON(desiredJSON, svc.Spec) {
@@ -167,7 +173,13 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 			// 永不停稳，2026-10-02）。代戳已从等价判定剥离（ADR-0064）：
 			// 跨代未变载体走本分支，服务保留旧代戳零触碰。
 			p.recordLastIssued(spec.Name, desiredJSON) // 服务端现态即期望：回填账本（作废后重建）
-			wireGen(w.ID, svc)
+			resumed, rerr := p.resumeStalledRollout(ctx, ns, spec, svc, auth, desiredJSON)
+			if rerr != nil {
+				return report, rerr
+			}
+			if !resumed {
+				wireGen(w.ID, svc)
+			}
 			continue
 		}
 		if canonicalContentJSON(spec) == canonicalContentJSON(svc.Spec) {
@@ -286,6 +298,46 @@ func (p *Provider) forgetLastIssued(names ...string) {
 	for _, n := range names {
 		delete(p.lastIssued, n)
 	}
+}
+
+// pausedResumeWindow 是滚动停摆 resume 的时间窗护栏（ADR-0064 决策 5）：
+// 同一服务窗内至多一次 force-resume。窗宽 > L1 ReleaseTimeout（120s）——
+// 单次部署窗内 resume 恰一拍；boot 崩溃类应用的持续失败由 L1/回滚门超时
+// 接管（回滚在内容锚定等价下是最小动作），resume 不 flap。
+const pausedResumeWindow = 5 * time.Minute
+
+// resumeStalledRollout（ADR-0064 决策 5）：期望 spec 与服务现态内容等价
+// （modulo 代戳——两个跳过分支都会路过）但 UpdateStatus=paused = 平台
+// 自己的滚动更新停摆（swarm FailureAction=pause + 新任务 boot-fatal；
+// staging 两次致害：N/1 收案与 2026-10-11 双门超时案）。此前 Ensure 对
+// 等价 spec 短路 = 永不 resume，停摆只能人工 docker service update
+// --force 解卡。本路径以 ForceUpdate 自增重发（--force 等价语义；restart
+// 面同款惯用），完成停摆滚动的收敛；时间窗护栏防 flap。
+//
+// resumed=false 且 err=nil = 无停摆或窗内已 resume 过（调用方按跳过处理，
+// 报告 wire-gen = 现存代戳）。
+func (p *Provider) resumeStalledRollout(ctx context.Context, ns capability.NamespaceRef, spec swarm.ServiceSpec, svc swarm.Service, auth, desiredJSON string) (resumed bool, err error) {
+	if svc.UpdateStatus == nil || svc.UpdateStatus.State != swarm.UpdateStatePaused {
+		return false, nil
+	}
+	now := time.Now()
+	p.ledgerMu.Lock()
+	if t, ok := p.resumedAt[spec.Name]; ok && now.Sub(t) < pausedResumeWindow {
+		p.ledgerMu.Unlock()
+		return false, nil
+	}
+	if p.resumedAt == nil {
+		p.resumedAt = map[string]time.Time{}
+	}
+	p.resumedAt[spec.Name] = now
+	p.ledgerMu.Unlock()
+	resume := spec
+	resume.TaskTemplate.ForceUpdate++
+	if uerr := p.updateServiceCAS(ctx, ns, resume, svc, auth); uerr != nil {
+		return false, fmt.Errorf("swarm ensure %s: resume stalled rollout %s: %w", ns, spec.Name, uerr)
+	}
+	p.recordLastIssued(spec.Name, desiredJSON) // canonical 剥离 ForceUpdate：账本值不变
+	return true, nil
 }
 
 // canonicalSpecJSON 把 spec 归一为可比较的 JSON 字节串。
