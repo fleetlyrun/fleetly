@@ -228,7 +228,8 @@ type FakeRuntime struct {
 	execExitCode  int
 	execBanner    string
 	execEchoStdin bool
-	execSkipStdin bool // 不读 stdin（自退出形态——WS 客户端无 half-close 的测试面）
+	execSkipStdin bool     // 不读 stdin（自退出形态——WS 客户端无 half-close 的测试面）
+	execInstances []string // ExecInstances 假实例集（空 = 单实例常量）
 }
 
 // FakeExecCall 是一次 ExecWorkload 调用记录（ResizeSeen/Stdin 是会话期
@@ -276,9 +277,29 @@ const (
 	FakeExecNode     = "01JD0NODE00000000000000000"
 )
 
-// ExecTarget 实现 RuntimeExec：恒定假解析（manager 载体上的单实例）。
-func (f *FakeRuntime) ExecTarget(context.Context, string) (capability.ExecTargetInstance, error) {
-	return capability.ExecTargetInstance{Instance: FakeExecInstance, CarrierNodeID: FakeExecCarrier}, nil
+// ExecInstances 实现 RuntimeExec：恒定假解析（manager 载体上的单实例；
+// SetExecInstances 可覆写实例集——实例锚定的测试面）。行序按面契约升序。
+func (f *FakeRuntime) ExecInstances(context.Context, string) ([]capability.ExecTargetInstance, error) {
+	f.execMu.Lock()
+	instances := slices.Clone(f.execInstances)
+	f.execMu.Unlock()
+	if len(instances) == 0 {
+		instances = []string{FakeExecInstance}
+	}
+	sort.Strings(instances)
+	rows := make([]capability.ExecTargetInstance, 0, len(instances))
+	for _, name := range instances {
+		rows = append(rows, capability.ExecTargetInstance{Instance: name, CarrierNodeID: FakeExecCarrier})
+	}
+	return rows, nil
+}
+
+// SetExecInstances 覆写假实例集（面契约升序由假面自排——测试用例任意给
+// 即可；空 = 回落单实例常量）。
+func (f *FakeRuntime) SetExecInstances(instances []string) {
+	f.execMu.Lock()
+	f.execInstances = instances
+	f.execMu.Unlock()
 }
 
 // ExecClusterToken 实现 RuntimeExec：TESTTOKEN（Enrollment 同源假材料）。

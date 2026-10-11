@@ -164,6 +164,56 @@ func TestExecCreateRejections(t *testing.T) {
 	assert.Contains(t, err.Error(), "E_NOT_FOUND")
 }
 
+// TestExecListInstances 钉实例列表面（ADR-0067）：行级授权同链、实时
+// 快照升序、node 归属回显；受理锚定命中/不中（E_NOT_FOUND 诚实失败）。
+func TestExecListInstances(t *testing.T) {
+	h := apitest.New(t)
+	ctx := sdk.WithToken(context.Background(), h.Token)
+	appID := execSeed(t, h, ctx)
+	detach := apitest.AttachFakeRelay(context.Background(), h)
+	defer detach()
+	exec := runtimev1.NewExecServiceClient(h.Conn)
+
+	// 参数校验：缺 process → E_INVALID_ARGUMENT。
+	_, err := exec.ListExecInstances(ctx, &runtimev1.ListExecInstancesRequest{AppId: appID})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "E_INVALID_ARGUMENT")
+
+	// 缺省单实例（假解析常量）+ node 反查回显。
+	resp, err := exec.ListExecInstances(ctx, &runtimev1.ListExecInstancesRequest{AppId: appID, Process: "web"})
+	require.NoError(t, err)
+	require.Len(t, resp.GetInstances(), 1)
+	assert.Equal(t, apitest.FakeExecInstance, resp.GetInstances()[0].GetInstance())
+	assert.Equal(t, apitest.FakeExecNode, resp.GetInstances()[0].GetNodeId())
+
+	// 多实例集：升序快照；锚定命中 → 会话绑该实例；锚定不中 → E_NOT_FOUND。
+	h.Runtime.SetExecInstances([]string{"fake-instance-0002", "fake-instance-0001"})
+	resp, err = exec.ListExecInstances(ctx, &runtimev1.ListExecInstancesRequest{AppId: appID, Process: "web"})
+	require.NoError(t, err)
+	require.Len(t, resp.GetInstances(), 2)
+	assert.Equal(t, "fake-instance-0001", resp.GetInstances()[0].GetInstance())
+	assert.Equal(t, "fake-instance-0002", resp.GetInstances()[1].GetInstance())
+
+	anchored, err := exec.CreateExecSession(ctx, &runtimev1.CreateExecSessionRequest{
+		AppId: appID, Process: "web", Command: []string{"true"}, Instance: "fake-instance-0002",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "fake-instance-0002", anchored.GetSession().GetInstance())
+
+	_, err = exec.CreateExecSession(ctx, &runtimev1.CreateExecSessionRequest{
+		AppId: appID, Process: "web", Command: []string{"true"}, Instance: "fake-instance-gone",
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "E_NOT_FOUND")
+
+	// auto（instance 空）语义不变：锚定面在场时代选首个（升序）。
+	auto, err := exec.CreateExecSession(ctx, &runtimev1.CreateExecSessionRequest{
+		AppId: appID, Process: "web", Command: []string{"true"},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "fake-instance-0001", auto.GetSession().GetInstance())
+}
+
 // TestExecStreamWSTicketFlow 是 Console 消费径：票据换 WS 流（单用途、
 // 绑会话）、坏票据 401、帧信封字节形态。
 func TestExecStreamWSTicketFlow(t *testing.T) {

@@ -59,6 +59,8 @@ func mapExecError(err error) error {
 		return apperr.New("E_EXEC_UNSUPPORTED", "the runtime provider does not implement exec sessions")
 	case errors.Is(err, engine.ErrExecNoInstance):
 		return apperr.New("E_NOT_FOUND", "no running instance for the requested process: %v", err)
+	case errors.Is(err, engine.ErrExecInstanceGone):
+		return apperr.New("E_NOT_FOUND", "the requested instance is not running (it may have exited or drifted): %v", err)
 	case errors.Is(err, engine.ErrExecNodeUnanchored):
 		return apperr.New("E_NODE_RELAY_OFFLINE", "the target node is not anchored yet (recently joined); retry shortly")
 	case errors.Is(err, engine.ErrExecRelayOffline):
@@ -97,7 +99,7 @@ func (svc *ExecService) CreateExecSession(ctx context.Context, req *runtimev1.Cr
 	}
 
 	info, err := svc.s.Engine.CreateSession(ctx, engine.CreateExecInput{
-		TeamID: team, AppID: a.ID, Process: req.GetProcess(), Argv: argv, TTY: req.GetTty(),
+		TeamID: team, AppID: a.ID, Process: req.GetProcess(), Instance: req.GetInstance(), Argv: argv, TTY: req.GetTty(),
 	})
 	if err != nil {
 		return nil, mapExecError(err)
@@ -134,6 +136,35 @@ func (svc *ExecService) CreateExecSession(ctx context.Context, req *runtimev1.Cr
 		Ticket:    ticket,
 		ExpiresIn: int32(ttl.Seconds()),
 	}, nil
+}
+
+// ListExecInstances 实时观测进程的在跑实例集（ADR-0067）：行级授权与
+// 受理同链（authorizeAppID）；列表面诚实空——无在跑实例是空集而非错误
+// （E_EXEC_UNSUPPORTED 例外：面缺席如实呈现）。
+func (svc *ExecService) ListExecInstances(ctx context.Context, req *runtimev1.ListExecInstancesRequest) (*runtimev1.ListExecInstancesResponse, error) {
+	if req.GetAppId() == "" || req.GetProcess() == "" {
+		return nil, apperr.New("E_INVALID_ARGUMENT", "app_id and process must not be empty")
+	}
+	a, err := svc.s.authorizeAppID(ctx, req.GetAppId())
+	if err != nil {
+		return nil, err
+	}
+	rows, err := svc.s.Engine.ExecInstances(ctx, a.ID, req.GetProcess())
+	if err != nil {
+		return nil, mapExecError(err)
+	}
+	out := &runtimev1.ListExecInstancesResponse{Instances: make([]*runtimev1.ExecInstance, 0, len(rows))}
+	for _, row := range rows {
+		n, err := svc.s.Engine.NodePlatformIDByCarrier(ctx, row.CarrierNodeID)
+		if err != nil {
+			// 锚定表未及（刚调度）的实例如实呈现：instance 在场、node 空
+			//（与受理面 ErrExecNodeUnanchored 的诚实边界同源）。
+			out.Instances = append(out.Instances, &runtimev1.ExecInstance{Instance: row.Instance})
+			continue
+		}
+		out.Instances = append(out.Instances, &runtimev1.ExecInstance{Instance: row.Instance, NodeId: n})
+	}
+	return out, nil
 }
 
 // StreamExecSession 是 gRPC 会话流（CLI 消费径）：首帧 attach 绑会话，

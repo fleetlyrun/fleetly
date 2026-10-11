@@ -453,9 +453,14 @@ func (svc *LogsService) streamDatabaseLogs(req *telemetryv1.StreamLogsRequest, s
 	if req.GetProcess() != "" || len(req.GetProcesses()) > 0 {
 		return apperr.New("E_INVALID_ARGUMENT", "process/processes: app-axis only (database carriers are single-workload)")
 	}
+	containers, err := logContainerFilter(req.GetContainers())
+	if err != nil {
+		return err
+	}
 	q := capability.LogQuery{
 		Namespace:   capability.NamespaceRef{Team: proj.TeamID, Project: dbRow.ProjectID, Database: dbRow.ID},
 		WorkloadIDs: []string{dbRow.ID},
+		Containers:  containers,
 		TailLines:   req.GetTailLines(),
 		Follow:      req.GetFollow(),
 		Text:        req.GetText(),
@@ -489,9 +494,14 @@ func (svc *LogsService) streamRunLogs(req *telemetryv1.StreamLogsRequest, stream
 	if req.GetProcess() != "" || len(req.GetProcesses()) > 0 {
 		return apperr.New("E_INVALID_ARGUMENT", "process/processes: app-axis only (run carriers are single-workload)")
 	}
+	containers, err := logContainerFilter(req.GetContainers())
+	if err != nil {
+		return err
+	}
 	q := capability.LogQuery{
 		Namespace:   capability.NamespaceRef{Team: proj.TeamID, Project: runRow.ProjectID, Task: taskRow.ID},
 		WorkloadIDs: []string{runRow.WorkloadID},
+		Containers:  containers,
 		TailLines:   req.GetTailLines(),
 		Follow:      req.GetFollow(),
 		Text:        req.GetText(),
@@ -552,9 +562,10 @@ func applyLogWindow(q *capability.LogQuery, req *telemetryv1.StreamLogsRequest) 
 
 // logQueryFromRequest 把 RPC 请求翻译为 RuntimeLogs 查询：单值 process 与
 // 多值 processes 并集去重后经投影公式合成 Workload ID 集（公式真源
-// engine.WorkloadID，不散拼；ADR-0060 多进程过滤）；时间窗 RFC3339
-// （空 = 不限，坏值精确拒绝）。team 是 App 归属 Project 的 Team 轴
-// （ADR-0028 resolveBackend 同族——调用方实取传入）。
+// engine.WorkloadID，不散拼；ADR-0060 多进程过滤）；containers 实例锚
+// 交集（ADR-0067：载体归因标识直锚，三轴通用——条目非空校验同纪律）。
+// 时间窗 RFC3339（空 = 不限，坏值精确拒绝）。team 是 App 归属 Project 的
+// Team 轴（ADR-0028 resolveBackend 同族——调用方实取传入）。
 func logQueryFromRequest(team string, appRow *app.App, req *telemetryv1.StreamLogsRequest) (capability.LogQuery, error) {
 	q := capability.LogQuery{
 		Namespace: capability.NamespaceRef{Team: team, Project: appRow.ProjectID, App: appRow.ID},
@@ -574,6 +585,11 @@ func logQueryFromRequest(team string, appRow *app.App, req *telemetryv1.StreamLo
 		}
 	}
 	q.WorkloadIDs = workloads
+	containers, err := logContainerFilter(req.GetContainers())
+	if err != nil {
+		return q, err
+	}
+	q.Containers = containers
 	if raw := req.GetSince(); raw != "" {
 		t, err := time.Parse(time.RFC3339, raw)
 		if err != nil {
@@ -590,6 +606,23 @@ func logQueryFromRequest(team string, appRow *app.App, req *telemetryv1.StreamLo
 	}
 	q.Text = req.GetText()
 	return q, nil
+}
+
+// logContainerFilter 归一 containers 实例锚（去重 + 非空精确拒绝；ADR-0067）。
+func logContainerFilter(raw []string) ([]string, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	out := make([]string, 0, len(raw))
+	for _, c := range raw {
+		if c == "" {
+			return nil, apperr.New("E_INVALID_ARGUMENT", "containers: entries must be non-empty (exact rejection over silent drop)")
+		}
+		if !slices.Contains(out, c) {
+			out = append(out, c)
+		}
+	}
+	return out, nil
 }
 
 // streamLogWriter 把 RuntimeLogs 帧转发为 RPC 流帧。
