@@ -118,9 +118,11 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 		groupVerb("events", "list and follow platform events from the outbox", newEventsListVerb(), newEventsFollowVerb()),
 		newLogsVerb(),
 		// Exec 子面（F3.2，ADR-0049）：one-shot 命令（退出码透传）与交互
-		// TTY——机器与人机同面。
+		// TTY——机器与人机同面；实例集观测是 --instance 锚定的取值源
+		//（ADR-0067）。
 		newExecVerb(),
 		newShellVerb(),
+		newExecInstancesVerb(),
 		// Metrics/Alerting 上下文（F2.5，ADR-0041）。
 		groupVerb("metrics", "query the managed metrics store (PromQL pass-through)", newMetricsQueryVerb()),
 		groupVerb("channels", "manage notification channels for alerting (credentials are write-only)",

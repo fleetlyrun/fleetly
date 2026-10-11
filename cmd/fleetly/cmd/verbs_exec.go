@@ -3,11 +3,14 @@ package cmd
 // exec 子面动词（F3.2，ADR-0049）：`fleetly exec`（one-shot 命令，退出码
 // 透传——机器编排锚）与 `fleetly shell`（交互 TTY，缺省 /bin/sh）。双形态
 // 纪律照旧：--json 输出 NDJSON 帧（stdout/stderr 帧 base64、exit 帧带码）。
+// 实例锚定（ADR-0067）：exec/shell --instance 锚定具体副本，exec-instances
+// 观测在跑实例集（锚定取值源）。
 
 import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -56,14 +59,15 @@ type execFrameJSONLine struct {
 }
 
 // runExecSession 驱动一次会话：受理 → attach →（stdin 转发/CloseSend 或
-// TTY 原始模式 + resize 传播）→ 帧收口。返回退出码透传错误。
-func runExecSession(ctx context.Context, env *commands.Environment, c runtimev1.ExecServiceClient, target string, argv []string, tty, jsonOut bool) error {
+// TTY 原始模式 + resize 传播）→ 帧收口。返回退出码透传错误。instance 是
+// 可选实例锚（ADR-0067：空 = auto——平台代选首个在跑）。
+func runExecSession(ctx context.Context, env *commands.Environment, c runtimev1.ExecServiceClient, target string, argv []string, instance string, tty, jsonOut bool) error {
 	appID, process, err := parseExecTarget(target)
 	if err != nil {
 		return err
 	}
 	resp, err := c.CreateExecSession(ctx, &runtimev1.CreateExecSessionRequest{
-		AppId: appID, Process: process, Command: argv, Tty: tty,
+		AppId: appID, Process: process, Command: argv, Tty: tty, Instance: instance,
 	})
 	if err != nil {
 		return err
@@ -202,10 +206,14 @@ func writeExecJSONLine(env *commands.Environment, line execFrameJSONLine) {
 // newExecVerb 构造 exec（one-shot 命令；退出码透传）。
 func newExecVerb() commands.Command {
 	const name = "exec"
+	var instance string
 	return &flaggedVerb{
 		name:     name,
 		synopsis: "Run a one-shot command inside a running process (exit code is passed through)",
-		usage:    "exec <app-id>/<process> -- <command> [args...]",
+		usage:    "exec <app-id>/<process> [--instance ID] -- <command> [args...]",
+		setFlags: func(fs *flag.FlagSet) {
+			fs.StringVar(&instance, "instance", "", "anchor to a specific running instance (see `fleetly exec-instances`; empty = platform picks the first running one)")
+		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			target, argv, err := splitExecArgs(args)
 			if err != nil {
@@ -220,7 +228,7 @@ func newExecVerb() commands.Command {
 			}
 			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
-			return runExecSession(ctx, env, c.Exec, target, argv, false, jsonOut)
+			return runExecSession(ctx, env, c.Exec, target, argv, instance, false, jsonOut)
 		},
 	}
 }
@@ -228,10 +236,14 @@ func newExecVerb() commands.Command {
 // newShellVerb 构造 shell（交互 TTY；缺省 /bin/sh）。
 func newShellVerb() commands.Command {
 	const name = "shell"
+	var instance string
 	return &flaggedVerb{
 		name:     name,
 		synopsis: "Open an interactive shell inside a running process (default command /bin/sh)",
-		usage:    "shell <app-id>/<process> [-- <command> [args...]]",
+		usage:    "shell <app-id>/<process> [--instance ID] [-- <command> [args...]]",
+		setFlags: func(fs *flag.FlagSet) {
+			fs.StringVar(&instance, "instance", "", "anchor to a specific running instance (see `fleetly exec-instances`; empty = platform picks the first running one)")
+		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			target, argv, err := splitExecArgs(args)
 			if err != nil {
@@ -246,7 +258,45 @@ func newShellVerb() commands.Command {
 			}
 			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
-			return runExecSession(ctx, env, c.Exec, target, argv, true, jsonOut)
+			return runExecSession(ctx, env, c.Exec, target, argv, instance, true, jsonOut)
+		},
+	}
+}
+
+// newExecInstancesVerb 构造 exec-instances（进程在跑实例集观测，ADR-0067
+// ——exec/shell --instance 的取值源；空集 = 无在跑实例）。
+func newExecInstancesVerb() commands.Command {
+	const name = "exec-instances"
+	return &flaggedVerb{
+		name:     name,
+		synopsis: "List the running instances of a process (anchors for exec/shell --instance)",
+		usage:    "exec-instances <app-id>/<process>",
+		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if len(args) != 1 {
+				return usageErr(name, "usage: exec-instances <app-id>/<process>")
+			}
+			appID, process, err := parseExecTarget(args[0])
+			if err != nil {
+				return usageErr(name, err.Error())
+			}
+			ctx, cancel, c, derr := dialFromEnv(ctx, noDeadline())
+			if derr != nil {
+				return derr
+			}
+			defer cancel()
+			defer c.Close() //nolint:errcheck // 进程退出路径
+			resp, err := c.Exec.ListExecInstances(ctx, &runtimev1.ListExecInstancesRequest{
+				AppId: appID, Process: process,
+			})
+			if err != nil {
+				return err
+			}
+			return renderOut(env, jsonOut, resp, func() {
+				_, _ = fmt.Fprintln(env.Stdout, "INSTANCE\tNODE")
+				for _, row := range resp.GetInstances() {
+					_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\n", row.GetInstance(), row.GetNodeId())
+				}
+			})
 		},
 	}
 }

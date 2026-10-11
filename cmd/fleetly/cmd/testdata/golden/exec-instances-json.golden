@@ -1,0 +1,8 @@
+{
+  "instances": [
+    {
+      "instance": "fake-instance-0001",
+      "node_id": "ID"
+    }
+  ]
+}

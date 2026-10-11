@@ -48,7 +48,11 @@ func TestGoldenExecVerbs(t *testing.T) {
 		args []string
 	}{
 		{"exec", []string{"exec", appID + "/web", "--", "echo", "hi"}},
+		// 实例锚定（ADR-0067）：旗标前置铁律——--instance 在位置参数之前；
+		// 会话头行的 instance 假常量钉死锚定语义。
+		{"exec-anchored", []string{"exec", "--instance", apitest.FakeExecInstance, appID + "/web", "--", "echo", "anchored"}},
 		{"shell", []string{"shell", appID + "/web"}},
+		{"exec-instances", []string{"exec-instances", appID + "/web"}},
 	}
 	for _, st := range steps {
 		t.Run(st.verb, func(t *testing.T) {
