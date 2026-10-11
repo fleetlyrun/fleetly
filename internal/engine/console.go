@@ -39,9 +39,10 @@ func (c ConsoleConfig) Configured() bool { return c.Host != "" && c.GatewayURL !
 
 // consoleCapabilityRoutes 铸 Console 公网发布双路由（publishRoutes 合并
 // 面；ADR-0061 决策 2）：
-//  ① 主路由 Host-only → gateway（Console SPA + /v1 REST API 整面）；
-//  ② 登录路由 Host && PathPrefix（规则更长优先级更高——browse entry 先例）
-//     带 rateLimit：PUBLIC 端点公网可达前的唯一限速面。
+//
+//	① 主路由 Host-only → gateway（Console SPA + /v1 REST API 整面）；
+//	② 登录路由 Host && PathPrefix（规则更长优先级更高——browse entry 先例）
+//	   带 rateLimit：PUBLIC 端点公网可达前的唯一限速面。
 //
 // 路由指向控制面自身而非租户载体——Target/Process/Port 零值（发布面只消费
 // host/path/protocol/tls/backend/auth/ratelimit）；gateway_url 解析失败
