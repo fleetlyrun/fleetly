@@ -243,7 +243,7 @@ function RunRow({ run }: { run: RunEntry }) {
       return;
     }
     setLogsOpen(true);
-    log.start({ runId: run.id ?? "", processes: [], tailLines: "300", text: "", follow: true });
+    log.start({ runId: run.id ?? "", processes: [], containers: [], tailLines: "300", text: "", follow: true });
   }
   const stop = useMutation({
     mutationFn: async () => apiSend(`/v1/runs/${encodeURIComponent(run.id ?? "")}/stop`, "POST", {}),

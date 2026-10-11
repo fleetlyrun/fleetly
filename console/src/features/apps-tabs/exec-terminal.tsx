@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { MinusIcon, PlusIcon, PlayIcon } from "lucide-react";
-import { createExecSession, openExecStream, sendResize, sendStdin } from "@/api/execstream";
+import { createExecSession, listExecInstances, openExecStream, sendResize, sendStdin } from "@/api/execstream";
 import { ApiError } from "@/api/client";
 import type { ServerFrame } from "@/lib/execFrames";
 import { Button } from "@/components/ui/button";
@@ -13,17 +14,33 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 type Status = "idle" | "connecting" | "open" | "closed";
 
+// shortInstance 截断编排器实例标识（swarm task ID 64 hex / k3s pod 名——
+// 下拉展示面；Connect 后的会话头行回显全值）。
+function shortInstance(id: string): string {
+  return id.length > 14 ? `${id.slice(0, 12)}…` : id;
+}
+
 // Exec 终端核心（IA v3 T2 自全局 /terminal 页抽出，ADR-0049 协议/会话
-// 语义零改动）：受理换票据 → WS 流 → xterm 双向接线；断线/退出呈现重开
-// 面（会话不迁移，重开 = 新会话新票据）。app 语境由 tab 固化，process 由
-// revisions 的 process_strategies 给定。
+// 语义零改动；实例锚定 ADR-0067）：受理换票据 → WS 流 → xterm 双向接线；
+// 断线/退出呈现重开面（会话不迁移，重开 = 新会话新票据）。app 语境由
+// tab 固化，process 由 revisions 的 process_strategies 给定，instance 由
+// 在跑实例集观测给定（auto = 平台代选首个在跑）。
 export function ExecTerminal({ appId, processes }: { appId: string; processes: string[] }) {
   const [process, setProcess] = useState("");
+  const [instance, setInstance] = useState("auto");
   const [command, setCommand] = useState("");
   const [status, setStatus] = useState<Status>("idle");
   const [banner, setBanner] = useState("");
   const [fontSize, setFontSize] = useState(13);
   const effectiveProcess = process !== "" ? process : (processes[0] ?? "");
+
+  const instances = useQuery({
+    queryKey: ["exec-instances", appId, effectiveProcess],
+    queryFn: () => listExecInstances(appId, effectiveProcess),
+    enabled: appId !== "" && effectiveProcess !== "",
+    refetchInterval: 10_000,
+  });
+  const instanceRows = instances.data?.instances ?? [];
 
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -92,7 +109,8 @@ export function ExecTerminal({ appId, processes }: { appId: string; processes: s
     setBanner("");
     setStatus("connecting");
     const argv = command.trim() === "" ? [] : command.trim().split(/\s+/);
-    createExecSession(appId, effectiveProcess, argv, true)
+    // "auto" 哨兵 → 空 instance（平台代选首个在跑——Radix Select 不收空值）。
+    createExecSession(appId, effectiveProcess, argv, true, instance === "auto" ? "" : instance)
       .then((created) => {
         const session = created.session;
         if (session?.id === "" || session?.id == null || created.ticket == null || created.ticket === "") {
@@ -120,12 +138,18 @@ export function ExecTerminal({ appId, processes }: { appId: string; processes: s
       });
   }
 
+  // 进程切换即重置实例锚（实例集是 per-process 观测——跨进程的锚必然不中）。
+  function pickProcess(name: string) {
+    setProcess(name);
+    setInstance("auto");
+  }
+
   return (
     <div className="flex h-[32rem] flex-col">
       <div className="flex flex-none flex-wrap items-end gap-2.5 pb-2.5">
         <div className="flex flex-col gap-1">
           <Label className="text-[11px] text-muted-foreground">Process</Label>
-          <Select value={effectiveProcess} onValueChange={setProcess}>
+          <Select value={effectiveProcess} onValueChange={pickProcess}>
             <SelectTrigger className="w-32">
               <SelectValue placeholder={effectiveProcess === "" ? "—" : ""} />
             </SelectTrigger>
@@ -135,6 +159,29 @@ export function ExecTerminal({ appId, processes }: { appId: string; processes: s
                   {name}
                 </SelectItem>
               ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex flex-col gap-1">
+          <Label className="text-[11px] text-muted-foreground">Instance</Label>
+          <Select value={instance} onValueChange={setInstance}>
+            <SelectTrigger className="w-48 font-mono">
+              <SelectValue placeholder="—" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="auto" className="font-mono text-xs">
+                auto <span className="text-muted-foreground">(first running)</span>
+              </SelectItem>
+              {instanceRows.map((row) => {
+                const id = row.instance ?? "";
+                const node = row.node_id ?? "";
+                return (
+                  <SelectItem key={id} value={id} className="font-mono text-xs">
+                    {shortInstance(id)}
+                    {node !== "" ? <span className="ml-1.5 text-muted-foreground">@ {shortInstance(node)}</span> : null}
+                  </SelectItem>
+                );
+              })}
             </SelectContent>
           </Select>
         </div>

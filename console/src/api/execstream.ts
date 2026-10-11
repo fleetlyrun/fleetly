@@ -1,11 +1,12 @@
-import { apiSend } from "./client";
+import { apiFetch, apiSend } from "./client";
 import { decodeServerFrame, encodeResize, encodeStdin, type ServerFrame } from "../lib/execFrames";
 
-// exec 会话消费面（F3.2，ADR-0049）：受理走注解面 REST（POST
-// /v1/exec/sessions，Bearer）换会话 + 秒级单用途票据（绑会话——浏览器 WS
-// 无自定义头，ADR-0026 exec 版）；流走原生 WS 入口 GET /v1/exec/stream
-//（不进 swagger，本文件即手写契约消费面——webhook/uploads 先例）。
-// 帧信封编解码单源 lib/execFrames.ts。
+// exec 会话消费面（F3.2，ADR-0049；实例锚定 ADR-0067）：受理走注解面
+// REST（POST /v1/exec/sessions，Bearer）换会话 + 秒级单用途票据（绑会话
+// ——浏览器 WS 无自定义头，ADR-0026 exec 版）；流走原生 WS 入口
+// GET /v1/exec/stream（不进 swagger，本文件即手写契约消费面——webhook/
+// uploads 先例）。实例集观测走注解面 REST（GET /v1/apps/{id}/exec/
+// instances——受理前副本下拉的取值源）。帧信封编解码单源 lib/execFrames.ts。
 
 export interface ExecSession {
   id?: string;
@@ -19,6 +20,11 @@ export interface ExecSession {
   created_at?: string;
 }
 
+export interface ExecInstance {
+  instance?: string;
+  node_id?: string;
+}
+
 export interface CreateResult {
   session?: ExecSession;
   ticket?: string;
@@ -26,13 +32,23 @@ export interface CreateResult {
 }
 
 // createExecSession 受理会话（argv 空 + tty = /bin/sh 服务端缺省）。
-export function createExecSession(appId: string, process: string, command: string[], tty: boolean): Promise<CreateResult> {
+// instance 是可选实例锚（ADR-0067）：非空锚定该具体在跑副本；空 = auto
+//（平台代选首个在跑）。
+export function createExecSession(appId: string, process: string, command: string[], tty: boolean, instance = ""): Promise<CreateResult> {
   return apiSend<CreateResult>("/v1/exec/sessions", "POST", {
     app_id: appId,
     process,
     command,
     tty,
+    instance,
   });
+}
+
+// listExecInstances 实时观测进程的在跑实例集（升序快照；空 = 无在跑实例
+// ——观测行，非错误）。
+export function listExecInstances(appId: string, process: string): Promise<{ instances?: ExecInstance[] }> {
+  const query = new URLSearchParams({ process });
+  return apiFetch(`/v1/apps/${encodeURIComponent(appId)}/exec/instances?${query.toString()}`);
 }
 
 // ExecStreamCallbacks 是会话流的消费回调面（onClose 收口即会话终态：

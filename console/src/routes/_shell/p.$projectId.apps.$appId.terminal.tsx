@@ -18,8 +18,8 @@ function AppTerminalRoute() {
     <div className="mx-auto max-w-7xl px-6 pb-8">
       <ExecTerminal appId={appId} processes={processes} />
       <p className="pb-3 text-[11.5px] leading-relaxed text-muted-foreground">
-        Sessions are interactive TTYs into a running replica (platform picks the first running instance). Change freeze does not
-        cover exec — it is a diagnostics face (ADR-0049).
+        Sessions are interactive TTYs into a running replica — anchor a specific one via Instance (auto = platform picks the
+        first running). Change freeze does not cover exec — it is a diagnostics face (ADR-0049).
       </p>
     </div>
   );

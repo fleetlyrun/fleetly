@@ -813,6 +813,14 @@ export interface operations {
                  *     （processes=a&processes=b）——逗号形不分裂（REST 多进程测试钉此语义）。
                  */
                 processes?: string[];
+                /**
+                 * @description containers 是多实例过滤（ADR-0067 实例锚定日志）：载体归因标识直锚
+                 *     （swarm = task ID，k3s = pod 名——StreamLogsResponse.container 同源
+                 *     词汇，无派生公式），对该寻址轴收敛出的载体集做交集；空 = 全部副本
+                 *     容器。三轴通用（载体身份过滤不依赖 App 派生）；条目非空校验与
+                 *     processes 同纪律（精确拒绝）。gateway 传形 = 重复键。
+                 */
+                containers?: string[];
             };
             header?: never;
             path?: never;

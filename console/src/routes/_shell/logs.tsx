@@ -76,7 +76,7 @@ function LogsWorkbench() {
 
   function start() {
     if (appId === "") return;
-    log.start({ appId, processes, tailLines, text, follow });
+    log.start({ appId, processes, containers: [], tailLines, text, follow });
     void navigate({
       search: {
         app: appId,

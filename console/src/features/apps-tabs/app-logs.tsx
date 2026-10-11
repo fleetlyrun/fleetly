@@ -1,7 +1,9 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useRevisions } from "@/lib/catalog";
 import { useLogStream } from "@/features/logs/use-log-stream";
 import { LogViewer } from "@/features/logs/log-viewer";
+import { listExecInstances } from "@/api/execstream";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,10 +16,16 @@ import {
 } from "@/components/ui/select";
 import { CircleStopIcon, PlayIcon } from "lucide-react";
 
+// shortReplica 截断副本标识（swarm task ID 64 hex / k3s pod 名——下拉展示面）。
+function shortReplica(id: string): string {
+  return id.length > 14 ? `${id.slice(0, 12)}…` : id;
+}
+
 // App Logs scoped tab（IA v3 T2）：全局工作台的 app 域变体——同一
 // useLogStream/LogViewer 数据面（协议零改动），过滤器在此固化 app 语境，
-// process/text/tail 由 tab 内控件给定。URL 契约不变：全局工作台深链仍走
-// /logs?app=。
+// process/text/tail 由 tab 内控件给定，replica 由在跑实例集观测给定
+//（all = 全部副本容器；ADR-0067 实例锚定）。URL 契约不变：全局工作台
+// 深链仍走 /logs?app=。
 export function AppLogsTab({ appId }: { appId: string }) {
   const log = useLogStream();
   const revisions = useRevisions(appId);
@@ -25,19 +33,41 @@ export function AppLogsTab({ appId }: { appId: string }) {
     .map((entry) => entry?.process ?? "")
     .filter((name) => name !== "");
   const [process, setProcess] = useState("");
+  const [replica, setReplica] = useState("all");
   const [text, setText] = useState("");
   const [tailLines, setTailLines] = useState("300");
   const effectiveProcess = process !== "" ? process : (processes[0] ?? "");
 
+  const instances = useQuery({
+    queryKey: ["exec-instances", appId, effectiveProcess],
+    queryFn: () => listExecInstances(appId, effectiveProcess),
+    enabled: appId !== "" && effectiveProcess !== "",
+    refetchInterval: 10_000,
+  });
+  const replicaRows = instances.data?.instances ?? [];
+
   const start = () =>
-    log.start({ appId, processes: [effectiveProcess], tailLines, text, follow: true });
+    log.start({
+      appId,
+      processes: [effectiveProcess],
+      containers: replica === "all" ? [] : [replica],
+      tailLines,
+      text,
+      follow: true,
+    });
 
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-end gap-2.5">
         <div className="flex flex-col gap-1">
           <Label className="text-[11px] text-muted-foreground">Process</Label>
-          <Select value={effectiveProcess} onValueChange={setProcess}>
+          <Select
+            value={effectiveProcess}
+            onValueChange={(name) => {
+              setProcess(name);
+              setReplica("all"); // 实例集是 per-process 观测——进程切换即重置
+            }}
+          >
             <SelectTrigger className="w-32">
               <SelectValue placeholder={effectiveProcess === "" ? "—" : ""} />
             </SelectTrigger>
@@ -47,6 +77,29 @@ export function AppLogsTab({ appId }: { appId: string }) {
                   {name}
                 </SelectItem>
               ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex flex-col gap-1">
+          <Label className="text-[11px] text-muted-foreground">Replica</Label>
+          <Select value={replica} onValueChange={setReplica}>
+            <SelectTrigger className="w-48 font-mono">
+              <SelectValue placeholder="—" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all" className="font-mono text-xs">
+                all <span className="text-muted-foreground">({replicaRows.length} running)</span>
+              </SelectItem>
+              {replicaRows.map((row) => {
+                const id = row.instance ?? "";
+                const node = row.node_id ?? "";
+                return (
+                  <SelectItem key={id} value={id} className="font-mono text-xs">
+                    {shortReplica(id)}
+                    {node !== "" ? <span className="ml-1.5 text-muted-foreground">@ {shortReplica(node)}</span> : null}
+                  </SelectItem>
+                );
+              })}
             </SelectContent>
           </Select>
         </div>
@@ -96,6 +149,7 @@ export function AppLogsTab({ appId }: { appId: string }) {
 
       <div className="flex items-center gap-3 font-mono text-[11px] text-muted-foreground">
         <span>scope: app {appId}</span>
+        {replica !== "all" ? <span>replica {shortReplica(replica)}</span> : null}
         <span>{log.frames.length} frames</span>
         {log.ended && !log.streaming ? <span>stream ended — adjust filters and restart</span> : null}
         <span className="ml-auto">GET /v1/logs?app_id=…&follow (NDJSON)</span>

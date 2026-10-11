@@ -12,11 +12,14 @@ const MAX_FRAMES = 5_000;
 export interface LogControls {
   /** appId / databaseId / runId 三轴互斥（IA v3 二期①：服务端三轴寻址）；
    * processes 仅 app 轴有意义（多选，ADR-0060 用户裁决——proto repeated
-   * processes，服务端并集收敛 Workload 集；空 = 本 App 全部 Workload）。 */
+   * processes，服务端并集收敛 Workload 集；空 = 本 App 全部 Workload）；
+   * containers 是实例锚多选（ADR-0067——载体归因标识直锚，三轴通用；
+   * 空 = 该 Workload 集全部副本容器）。 */
   appId?: string;
   databaseId?: string;
   runId?: string;
   processes: string[];
+  containers: string[];
   tailLines: string;
   text: string;
   follow: boolean;
@@ -55,6 +58,9 @@ export function useLogStream() {
     if (controls.runId) query.set("run_id", controls.runId);
     for (const process of controls.processes) {
       if (process !== "") query.append("processes", process);
+    }
+    for (const container of controls.containers) {
+      if (container !== "") query.append("containers", container);
     }
     if (controls.tailLines !== "") query.set("tail_lines", controls.tailLines);
     if (controls.text !== "") query.set("text", controls.text);

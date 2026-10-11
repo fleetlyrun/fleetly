@@ -4,6 +4,28 @@
  */
 
 export interface paths {
+    "/v1/apps/{app_id}/exec/instances": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * ListExecInstances 实时观测进程的在跑实例集（ADR-0067 实例锚定）：
+         *     受理前的锚定依据（Console 副本下拉 / CLI --instance 取值源），快照
+         *     语义（每次调用直读编排器任务/_pod 列表——观测缓存不参与决策），ID
+         *     升序确定性。空集 = 本进程无在跑实例（观测行，非错误）。
+         */
+        get: operations["ExecService_ListExecInstances"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/exec/sessions": {
         parameters: {
             query?: never;
@@ -40,6 +62,12 @@ export interface components {
              */
             command?: string[];
             tty?: boolean;
+            /**
+             * instance 是可选的实例锚（ADR-0067）：非空时受理锚定到该具体在跑实例
+             *     （编排器载体标识——ListExecInstances 观测行的 instance 值），锚不中
+             *     即 E_NOT_FOUND 诚实失败；空 = 平台代选首个在跑实例（既有语义）。
+             */
+            instance?: string;
         };
         v1CreateExecSessionResponse: {
             session?: components["schemas"]["v1ExecSession"];
@@ -58,6 +86,14 @@ export interface components {
              */
             code?: number;
         };
+        /**
+         * ExecInstance 是一行在跑实例观测（instance 与受理回显/会话 meta 的
+         *     instance 同源——编排器载体标识，平台不解析；node_id 是平台节点 ID）。
+         */
+        v1ExecInstance: {
+            instance?: string;
+            node_id?: string;
+        };
         v1ExecResize: {
             /** Format: int32 */
             cols?: number;
@@ -65,8 +101,8 @@ export interface components {
             rows?: number;
         };
         /**
-         * ExecSession 是受理后的会话元数据（instance/node 是实际命中——诚实回显，
-         *     多副本进程平台代选首个在跑实例）。
+         * ExecSession 是受理后的会话元数据（instance/node 是实际命中——诚实回显；
+         *     多副本进程由调用方锚定具体实例，未锚定时平台代选首个在跑实例）。
          */
         v1ExecSession: {
             id?: string;
@@ -91,6 +127,10 @@ export interface components {
             code?: string;
             message?: string;
         };
+        v1ListExecInstancesResponse: {
+            /** instances 是在跑实例集（ID 升序；空 = 无在跑实例）。 */
+            instances?: components["schemas"]["v1ExecInstance"][];
+        };
         v1StreamExecSessionResponse: {
             meta?: components["schemas"]["v1ExecSessionMeta"];
             /** Format: byte */
@@ -113,6 +153,40 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    ExecService_ListExecInstances: {
+        parameters: {
+            query?: {
+                /** @description process 是 App 内进程模板名（web/worker…）。 */
+                process?: string;
+            };
+            header?: never;
+            path: {
+                app_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ListExecInstancesResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     ExecService_CreateExecSession: {
         parameters: {
             query?: never;
