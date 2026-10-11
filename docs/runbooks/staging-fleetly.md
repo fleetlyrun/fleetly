@@ -507,6 +507,14 @@ ADR-0015 升级序的完整落地形态：**Platform Backup 前置 → SIGTERM �
 - **Browse 面点检（tmpl2 上复验，记录·十三锚再现）**：Console Browse 点击 → IAB 弹窗拦截器挡 window.open（记录·十四同款）→ REST 铸票等价链走通。**entry URL 形状补记**：`http://browse-<sid>.dev.fleetly.run/v1/browse/entry?session=<sid>&ticket=<one-time>`（查询参数缺席 = pgweb 侧 `bad_ticket` 明确报错；无 cookie 探假路径 401 = ForwardAuth 在位）；**铸票后即刻访问撞 traefik 轮询窗再现（traefik 纯文本 404，票未消费）——sleep 10s 再访**。pgweb 落地 21 表数据锚一致，`show default_transaction_read_only` = **on** 只读执法复证。三会话靠 10min 空闲/30min 硬 TTL 自清（配额窗 3/4）。
 - **同日二次换装 712b25b-tmpl2（UsageIndex 撤块收编，用户裁决"单独放一个没有意义"）**：Storage 独立 UsageIndex 块删除——Volume 挂载反查收编 Volumes 列表 "Mounted by" 列（carrier 卷注记/挂载 App 集/未挂载 `—`，与删除门控同源），Upload 引用反查收编 Uploads "Referenced by" 列；诚实边界注记降列表卡脚注；usage-index.tsx 删除。前置 Platform Backup `21929185`；doctor 0 failed；tw/n0 双 200（冷窗一拍）。Storage 页复验截图：反查信息全部行内可读， Mounted by 空缺行即 delete 可用行，对视路径消失。
 
+## 2026-10-11 记录·三十四（ADR-0060 UX 批换装 18a9c2b-adr60：路由对齐页名 + 多进程日志面 + Processes 页）
+
+- **换装**（712b25b-tmpl2 → **18a9c2b-adr60（现役）**，两 commit bd8283e 后端 + 18a9c2b console + 文档）：Go 侧 = proto repeated processes + capability WorkloadIDs + 三 provider 集合过滤 + 服务层并集收敛（不触 workload IR——遥测路径专属）；console 侧 = 路由对齐页名/Access/Overview 选中态/Metrics 四 tab/Logs 多选与高度链/Add 命名/Variables 筛选绑定/Processes 页。零迁移（goose 停 28）零键面。
+- **前置**：Platform Backup `b19d6fd9`（idempotency-key upgrade-18a9c2b-adr60）+ 三卷 tar（edge-acme 52K / proxy-acme 60K / zot 132M 至 /root/upgrade-18a9c2b-adr60/vols/——Go 混合批按 69d7608 先例付卷 tar，不按 console-only 先例省略）。
+- **换装**：交叉构建（ldflags 版本戳 18a9c2b-adr60）→ 本地嵌入指纹对账（grep -oa "index-[^\"]*" 二进制 = `index-DQt6ERWX.js` 与 dist 一致；**注意 grep -c 对二进制会假阴性，用 -oa 提取对账**）→ scp → 旧二进制留底 /root/fleetlyd-712b25b-tmpl2.bak → install 换装 → restart。drop-in 五件全活（10-logging/11-metrics/browse/railpack/registry）。
+- **验证全绿**：doctor 10 ok / 2 warning（bind surface 通配 + notification channels——既有基线）/ 0 failed，health 行活体回显 `server 18a9c2b-adr60`；tw.dev 200（冷窗 ~45s，先例一致）、n0.dev 200（tombstone 悬挂路由仍答 200——存量观察不变）；console 活体 index hash = `index-DQt6ERWX.js`（新 dist 上架实锤）；**零扰动实锤 = 受管域 task 全旧龄**（db 2d / VL 6d / VM 6d / cadvisor 6d / traefik 16h / zot 25h）+ 用户域 16h-5d，换装窗零滚动（遥测面变更不动 managedFingerprint，预期成立）。
+- **事故与教训（诚实记录）**：前置检查用了 `fleetlyd --version`——**daemon 二进制没有版本旗标**（版本走 ldflags 注入 + 日志行），该旗标被当默认配置引导流浪 daemon：在 /root/data（10-06 旧流浪残留）建库/跑平台备份/抢 9080 失败后干净退出。真 daemon（systemd unit，数据根 /var/lib/fleetly）全程未受扰、活跃服务中。版本查询正解 = `journalctl -u fleetlyd | grep service.version` 或 doctor health 行回显；`fleetlyd version` 一类裸动词本就经分发器拒（runbook 既有教训），但旗标形态 `--version` 不设防——**任何"看看版本"的探查一律走 journalctl，勿直接跑二进制**。
+
 ## 教训与边界
 
 - **本机（Windows 工作机）出站对该 VPS 全端口受限**（80/443/8420 全 000；node2 路径全通）——外部验证走 node2 或 check-host 类服务，勿信本机 curl。
