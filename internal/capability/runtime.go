@@ -662,6 +662,12 @@ type LogQuery struct {
 	// 域内全部——多进程合流以集合成员判定，ADR-0060；单值归约为单元素集）。
 	Namespace   NamespaceRef
 	WorkloadIDs []string
+	// Containers 是实例锚过滤（ADR-0067 实例锚定日志）：载体归因标识直锚
+	//（swarm task ID / k3s pod 名——LogFrame.Container 同源词汇），对
+	// WorkloadIDs 收敛出的载体集做交集（空 = 全部副本容器；实现须保持
+	// Workload 归属校验——实例身份过滤不豁免隔离域锚）。tail 语义随锚
+	// 下沉到具体载体（逐实例 TailLines，非先聚合后裁剪）。
+	Containers []string
 	// Since/Until 是时间窗（零值 = 不限）。
 	Since, Until time.Time
 	// TailLines 是尾部行数（0 = 全量）。

@@ -14,10 +14,12 @@ import (
 // 会话语义（受理/限额/审计/票据/路由/超时）住 engine，不经 Runtime。
 // 未实现时 exec 受理诚实失败（E_EXEC_UNSUPPORTED，无降级路径）。
 type RuntimeExec interface {
-	// ExecTarget 管理侧实时解析 Workload 的在跑实例与所在节点（快照语义：
-	// 每次调用直读任务列表——观测缓存不参与决策）。Instance 是编排器实例
-	// 标识（平台不解析）；CarrierNodeID 经平台锚定表反查平台节点 ID。
-	ExecTarget(ctx context.Context, workloadID string) (ExecTargetInstance, error)
+	// ExecInstances 管理侧实时解析 Workload 的全部在跑实例（快照语义：
+	// 每次调用直读任务/_pod 列表——观测缓存不参与决策）。行序按实例 ID
+	// 升序（确定性——auto 选首与实例锚定的共同锚）。Instance 是编排器
+	// 实例标识（平台不解析）；CarrierNodeID 经平台锚定表反查平台节点 ID。
+	// 无在跑实例返回 ErrExecNoRunning（空切片不与哨兵并存）。
+	ExecInstances(ctx context.Context, workloadID string) ([]ExecTargetInstance, error)
 
 	// ExecWorkload 节点侧执行：在本地 daemon 解析（WorkloadID, Instance）
 	// 的载体并执行 argv。tty=true 时 PTY（Resize 订阅驱动尺寸；stdout 与
@@ -37,10 +39,11 @@ type RuntimeExec interface {
 	ExecClusterToken(ctx context.Context, token string) error
 }
 
-// ExecTargetInstance 是 ExecTarget 的解析产品。
+// ExecTargetInstance 是 ExecInstances 的一行在跑实例观测（受理锚定与
+// 会话路由的解析产品）。
 type ExecTargetInstance struct {
-	// Instance 是编排器实例标识（swarm task ID 观测；exec 请求经它限定
-	// 具体载体，节点中继侧按平台标记 + 实例标记定位容器）。
+	// Instance 是编排器实例标识（swarm task ID / k3s pod 名观测；exec
+	// 请求经它限定具体载体，节点中继侧按平台标记 + 实例标记定位容器）。
 	Instance string
 	// CarrierNodeID 是实例所在节点的载体节点 ID（平台锚定表反查平台节点
 	// ID——中继连接绑定的同一张表）。

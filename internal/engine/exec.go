@@ -44,6 +44,9 @@ var (
 	ErrExecUnsupported = errors.New("runtime has no exec sub-face")
 	// ErrExecNoInstance 是解析无在跑实例。
 	ErrExecNoInstance = errors.New("no running instance for workload")
+	// ErrExecInstanceGone 是锚定实例不在跑（实例锚定受理：漂移/退出后
+	// 重放的诚实形态——会话与实例绑定，不代选替身）。
+	ErrExecInstanceGone = errors.New("requested instance is not running for workload")
 	// ErrExecNodeUnanchored 是载体节点尚未锚定（刚加入/对账未及）。
 	ErrExecNodeUnanchored = errors.New("carrier node not anchored yet")
 	// ErrExecRelayOffline 是目标节点中继不在线（E_NODE_RELAY_OFFLINE）。
@@ -73,8 +76,12 @@ type CreateExecInput struct {
 	TeamID  string
 	AppID   string
 	Process string
-	Argv    []string
-	TTY     bool
+	// Instance 是可选的实例锚（ADR-0067）：非空时锚定该具体在跑实例
+	// （ExecInstances 观测行的编排器实例标识），不中即 ErrExecInstanceGone
+	// ——会话与实例绑定，不代选替身；空 = auto（首个在跑实例）。
+	Instance string
+	Argv     []string
+	TTY      bool
 }
 
 // ExecClientFrame 是消费端上行帧（传输中立）。
@@ -166,24 +173,18 @@ func (e *Engine) ExecValidateClusterToken(ctx context.Context, token string) err
 }
 
 // CreateSession 受理会话：实时解析实例与节点 → 限额 → 注册（未附着态；
-// 消费端在票据 TTL 内附着，超时由硬 TTL 兜底收口）。解析快照语义：实例
-// 漂移不重试——会话与实例绑定，漂移即诚实失败由客户端重开。
+// 消费端在票据 TTL 内附着，超时由硬 TTL 兜底收口）。实例选择策略单源在
+// 此（ADR-0067）：Instance 空 = auto（ExecInstances 首行——provider 已按
+// ID 升序），非空 = 锚定匹配（不中即 ErrExecInstanceGone）。解析快照
+// 语义：实例漂移不重试——会话与实例绑定，漂移即诚实失败由客户端重开。
 func (e *Engine) CreateSession(ctx context.Context, in CreateExecInput) (*ExecSessionInfo, error) {
 	if e.execFace == nil {
 		return nil, ErrExecUnsupported
 	}
 	workloadID := WorkloadID(in.AppID, in.Process)
-	target, err := e.execFace.ExecTarget(ctx, workloadID)
+	target, err := e.resolveExecTarget(ctx, workloadID, in.Instance)
 	if err != nil {
-		// Provider 哨兵归一为受理位信封（跨层哨兵词汇单源 capability：
-		// engine 不 import providers）。
-		if errors.Is(err, capability.ErrExecNoRunning) {
-			return nil, fmt.Errorf("%w: %s", ErrExecNoInstance, workloadID)
-		}
 		return nil, err
-	}
-	if target.Instance == "" || target.CarrierNodeID == "" {
-		return nil, fmt.Errorf("%w: %s", ErrExecNoInstance, workloadID)
 	}
 	n, err := e.nodes.ByCarrier(ctx, e.db.Runner(), target.CarrierNodeID)
 	if err != nil {
@@ -226,6 +227,66 @@ func (e *Engine) CreateSession(ctx context.Context, in CreateExecInput) (*ExecSe
 	e.exec.sessions[s.info.ID] = s
 	e.exec.mu.Unlock()
 	return &s.info, nil
+}
+
+// resolveExecTarget 是实例选择策略的单源（auto = 首个在跑，锚定 = 匹配）。
+// Provider 哨兵归一为受理位信封（跨层哨兵词汇单源 capability：engine 不
+// import providers）。
+func (e *Engine) resolveExecTarget(ctx context.Context, workloadID, instance string) (capability.ExecTargetInstance, error) {
+	rows, err := e.execFace.ExecInstances(ctx, workloadID)
+	if err != nil {
+		if errors.Is(err, capability.ErrExecNoRunning) {
+			return capability.ExecTargetInstance{}, fmt.Errorf("%w: %s", ErrExecNoInstance, workloadID)
+		}
+		return capability.ExecTargetInstance{}, err
+	}
+	selected := capability.ExecTargetInstance{}
+	if instance == "" {
+		if len(rows) > 0 {
+			selected = rows[0] // auto：provider 升序首行（确定性）
+		}
+	} else {
+		for _, row := range rows {
+			if row.Instance == instance {
+				selected = row
+				break
+			}
+		}
+		if selected.Instance == "" {
+			return capability.ExecTargetInstance{}, fmt.Errorf("%w: workload %s instance %s", ErrExecInstanceGone, workloadID, instance)
+		}
+	}
+	if selected.Instance == "" || selected.CarrierNodeID == "" {
+		return capability.ExecTargetInstance{}, fmt.Errorf("%w: %s", ErrExecNoInstance, workloadID)
+	}
+	return selected, nil
+}
+
+// ExecInstances 返回进程的在跑实例集快照（API 列表面；列表面诚实空——
+// 无在跑实例是观测行而非错误，与受理面哨兵语义分立）。
+func (e *Engine) ExecInstances(ctx context.Context, appID, process string) ([]capability.ExecTargetInstance, error) {
+	if e.execFace == nil {
+		return nil, ErrExecUnsupported
+	}
+	rows, err := e.execFace.ExecInstances(ctx, WorkloadID(appID, process))
+	if err != nil {
+		if errors.Is(err, capability.ErrExecNoRunning) {
+			return []capability.ExecTargetInstance{}, nil
+		}
+		return nil, err
+	}
+	return rows, nil
+}
+
+// NodePlatformIDByCarrier 是载体节点 → 平台节点 ID 的反查面（实例列表
+// 回显 node 用；锚定表未及即 ErrExecNodeUnanchored——调用方按诚实边界
+// 降级呈现，与受理面同源）。
+func (e *Engine) NodePlatformIDByCarrier(ctx context.Context, carrierNodeID string) (string, error) {
+	n, err := e.nodes.ByCarrier(ctx, e.db.Runner(), carrierNodeID)
+	if err != nil {
+		return "", fmt.Errorf("%w: carrier %s", ErrExecNodeUnanchored, carrierNodeID)
+	}
+	return n.PlatformID, nil
 }
 
 // AbandonSession 是受理侧回滚（api 层 commit 失败路径：审计未落则会话
