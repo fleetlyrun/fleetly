@@ -75,3 +75,15 @@ func TestValidateRoutePath(t *testing.T) {
 		assert.Error(t, ValidateRoutePath(p), "path %q must be rejected", p)
 	}
 }
+
+func TestValidateRouteRateLimit(t *testing.T) {
+	assert.NoError(t, ValidateRouteRateLimit(nil), "nil 声明 = 不限速（App/Browse 路由恒形态）")
+	assert.NoError(t, ValidateRouteRateLimit(&RouteRateLimit{Average: 10, Burst: 20}))
+	for _, rl := range []*RouteRateLimit{
+		{Average: 0, Burst: 0},  // 均值非正
+		{Average: -1, Burst: 0}, // 负均值
+		{Average: 10, Burst: 9}, // 突发低于均值
+	} {
+		assert.Error(t, ValidateRouteRateLimit(rl), "rate limit %+v must be rejected", rl)
+	}
+}

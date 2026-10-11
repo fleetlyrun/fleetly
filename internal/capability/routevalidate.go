@@ -52,6 +52,21 @@ func ValidateRoutePath(path string) error {
 	return nil
 }
 
+// ValidateRouteRateLimit 校验 Route 限速声明（ADR-0061）：Average 必须
+// 正值、Burst 不得低于均值（低于均值的突发上限是配置错误，fail-closed）。
+func ValidateRouteRateLimit(rl *RouteRateLimit) error {
+	if rl == nil {
+		return nil
+	}
+	if rl.Average <= 0 {
+		return fmt.Errorf("rate limit: average must be positive")
+	}
+	if rl.Burst < rl.Average {
+		return fmt.Errorf("rate limit: burst %d must not be below average %d", rl.Burst, rl.Average)
+	}
+	return nil
+}
+
 // ValidateRouteAuthAddress 校验 Route 门禁地址（ADR-0051）：ForwardAuth
 // 目标必须是 http/https 绝对 URL（platform authorize 端点）——编排器把它
 // 原样递给 Proxy，非 URL 形态即配置错误，fail-closed。

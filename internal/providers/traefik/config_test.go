@@ -38,6 +38,13 @@ func TestDynamicConfigGolden(t *testing.T) {
 		{Host: "browse-01jd.test", Process: "pgweb", Port: 8080,
 			Protocol: capability.ProtocolHTTP, TLS: "none", BackendAddr: "10.0.0.6:8080",
 			Auth: &capability.RouteAuth{Address: "http://fleetlyd-host:9081/v1/browse/authorize"}},
+		// Console 公网发布双路由（ADR-0061）：主路由 Host-only + 登录路由
+		// 带 rateLimit（窗恒 1m；规则更长优先级更高——browse entry 先例）。
+		{Host: "console.dev.fleetly.run", Process: "gateway",
+			Protocol: capability.ProtocolHTTP, TLS: "auto", BackendAddr: "10.0.0.7:9081"},
+		{Host: "console.dev.fleetly.run", Path: "/v1/auth/login", Process: "gateway",
+			Protocol: capability.ProtocolHTTP, TLS: "auto", BackendAddr: "10.0.0.7:9081",
+			RateLimit: &capability.RouteRateLimit{Average: 10, Burst: 20}},
 	}))
 	got := string(p.ConfigSnapshot())
 
@@ -184,6 +191,15 @@ func TestPrecheckAcceptsGeneratedConfigs(t *testing.T) {
 				Protocol: capability.ProtocolHTTP, BackendAddr: "10.0.0.1:80"},
 			{Host: "a.b-c", Process: "api", Port: 8080,
 				Protocol: capability.ProtocolH2C, BackendAddr: "10.0.0.2:8080"},
+		},
+		// Console 发布双路由形态（ADR-0061）：Host-only 主路由 + 登录路由
+		// 带 rateLimit。
+		{
+			{Host: "console.dev.fleetly.run", Process: "gateway",
+				Protocol: capability.ProtocolHTTP, BackendAddr: "10.0.0.7:9081"},
+			{Host: "console.dev.fleetly.run", Path: "/v1/auth/login", Process: "gateway",
+				Protocol: capability.ProtocolHTTP, BackendAddr: "10.0.0.7:9081",
+				RateLimit: &capability.RouteRateLimit{Average: 10, Burst: 20}},
 		},
 	}
 	for i, routes := range corpus {

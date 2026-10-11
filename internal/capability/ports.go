@@ -133,6 +133,10 @@ type Route struct {
 	// 路由前置 ForwardAuth——每请求校验会话凭证（browse 会话路由）；
 	// App 路由恒 nil。
 	Auth *RouteAuth
+	// RateLimit 是可选的每源 IP 限速声明（ADR-0061）：非 nil 时 Proxy
+	// Provider 在该路由前置 rateLimit——限速窗恒 1 分钟，Average 是窗内
+	// 均值、Burst 是突发上限。Console 登录路由专用；App/Browse 路由恒 nil。
+	RateLimit *RouteRateLimit
 }
 
 // RouteAuth 是 Route 的请求门禁声明（ADR-0051 决策 5：launcher ticket 兑换
@@ -140,6 +144,14 @@ type Route struct {
 // + 路径），Proxy 原样作为 ForwardAuth 目标）。
 type RouteAuth struct {
 	Address string
+}
+
+// RouteRateLimit 是 Route 的限速声明（ADR-0061 决策 3）。
+type RouteRateLimit struct {
+	// Average 是限速窗内均值请求数（>0）。
+	Average int
+	// Burst 是单窗突发上限（≥ Average；低于均值即配置错误，校验拒绝）。
+	Burst int
 }
 
 // CertificateRequest 是证书申请。

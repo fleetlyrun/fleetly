@@ -24,6 +24,33 @@
         "rule": "Host(`browse-01jd.test`) && PathPrefix(`/v1/browse/entry`)",
         "service": "browse-01jd-test-v1-browse-entry-28144ffb3ead"
       },
+      "console-dev-fleetly-run-f9d7f3919a33": {
+        "rule": "Host(`console.dev.fleetly.run`)",
+        "service": "console-dev-fleetly-run-f9d7f3919a33",
+        "tls": {
+          "certResolver": "le",
+          "domains": [
+            {
+              "main": "console.dev.fleetly.run"
+            }
+          ]
+        }
+      },
+      "console-dev-fleetly-run-v1-auth-login-efd779902f26": {
+        "rule": "Host(`console.dev.fleetly.run`) && PathPrefix(`/v1/auth/login`)",
+        "service": "console-dev-fleetly-run-v1-auth-login-efd779902f26",
+        "middlewares": [
+          "console-dev-fleetly-run-v1-auth-login-efd779902f26-rl"
+        ],
+        "tls": {
+          "certResolver": "le",
+          "domains": [
+            {
+              "main": "console.dev.fleetly.run"
+            }
+          ]
+        }
+      },
       "plain-localhost-f60aa2de49cc": {
         "rule": "Host(`plain.localhost`)",
         "service": "plain-localhost-f60aa2de49cc"
@@ -69,6 +96,24 @@
           ]
         }
       },
+      "console-dev-fleetly-run-f9d7f3919a33": {
+        "loadBalancer": {
+          "servers": [
+            {
+              "url": "http://10.0.0.7:9081"
+            }
+          ]
+        }
+      },
+      "console-dev-fleetly-run-v1-auth-login-efd779902f26": {
+        "loadBalancer": {
+          "servers": [
+            {
+              "url": "http://10.0.0.7:9081"
+            }
+          ]
+        }
+      },
       "plain-localhost-f60aa2de49cc": {
         "loadBalancer": {
           "servers": [
@@ -92,6 +137,13 @@
       "browse-01jd-test-989ef22825e5-fw": {
         "forwardAuth": {
           "address": "http://fleetlyd-host:9081/v1/browse/authorize"
+        }
+      },
+      "console-dev-fleetly-run-v1-auth-login-efd779902f26-rl": {
+        "rateLimit": {
+          "average": 10,
+          "period": "1m",
+          "burst": 20
         }
       }
     }

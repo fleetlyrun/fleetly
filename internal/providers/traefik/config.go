@@ -35,16 +35,26 @@ type httpRouter struct {
 	TLS         *routerTLS `json:"tls,omitempty"`
 }
 
-// httpMiddleware 是 traefik 中间件声明的受管子集（ADR-0051：仅 forwardAuth
-// ——browse 会话路由的请求门禁；其余形态不入受管面）。
+// httpMiddleware 是 traefik 中间件声明的受管子集（ADR-0051 forwardAuth
+// ——browse 会话路由的请求门禁；ADR-0061 rateLimit——console 登录限速；
+// 其余形态不入受管面）。
 type httpMiddleware struct {
 	ForwardAuth *forwardAuth `json:"forwardAuth,omitempty"`
+	RateLimit   *rateLimit   `json:"rateLimit,omitempty"`
 }
 
 // forwardAuth 指向平台 authorize 端点（每请求校验会话 cookie；traefik
 // 透传原始请求头——含 Cookie，2026-10-07 v3.6 实证）。
 type forwardAuth struct {
 	Address string `json:"address"`
+}
+
+// rateLimit 是 traefik rateLimit 中间件的受管形态（ADR-0061）：每源 IP
+// 固定窗限速，窗恒 1 分钟。
+type rateLimit struct {
+	Average int    `json:"average"`
+	Period  string `json:"period"`
+	Burst   int    `json:"burst"`
 }
 
 type routerTLS struct {
@@ -130,6 +140,7 @@ func buildDynamicConfig(routes []capability.Route) ([]byte, error) {
 			if r.TLS == "auto" || r.TLS == "" {
 				router.TLS = &routerTLS{CertResolver: "le", Domains: []tlsDomain{{Main: r.Host}}}
 			}
+			var mws []string
 			if r.Auth != nil {
 				// ForwardAuth 门禁（ADR-0051 决策 5）：browse 会话路由每请求
 				// 校验会话 cookie；中间件与 router 同键派生（单射守卫同源）。
@@ -139,12 +150,32 @@ func buildDynamicConfig(routes []capability.Route) ([]byte, error) {
 					continue
 				}
 				mwName := name + "-fw"
-				router.Middlewares = []string{mwName}
+				mws = append(mws, mwName)
 				if cfg.HTTP.Middlewares == nil {
 					cfg.HTTP.Middlewares = map[string]httpMiddleware{}
 				}
 				cfg.HTTP.Middlewares[mwName] = httpMiddleware{ForwardAuth: &forwardAuth{Address: r.Auth.Address}}
 			}
+			if r.RateLimit != nil {
+				// 登录限速（ADR-0061 决策 3）：每源 IP 固定窗；声明非法同
+				// Auth 口径——跳过该路由并留错误日志，不阻断其余发布。
+				if err := capability.ValidateRouteRateLimit(r.RateLimit); err != nil {
+					slog.Error("traefik config: invalid route rate limit, skipping route",
+						"host", r.Host, "path", r.Path, "err", err)
+					continue
+				}
+				mwName := name + "-rl"
+				mws = append(mws, mwName)
+				if cfg.HTTP.Middlewares == nil {
+					cfg.HTTP.Middlewares = map[string]httpMiddleware{}
+				}
+				cfg.HTTP.Middlewares[mwName] = httpMiddleware{RateLimit: &rateLimit{
+					Average: r.RateLimit.Average,
+					Period:  "1m",
+					Burst:   r.RateLimit.Burst,
+				}}
+			}
+			router.Middlewares = mws
 			cfg.HTTP.Routers[name] = router
 			// 后端协议：h2c = 明文 HTTP/2（messageloop 形态），http 同为
 			// 明文；两态均经集群内网，无需 https 后端。
