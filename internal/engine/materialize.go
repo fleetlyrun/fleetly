@@ -76,8 +76,15 @@ func (e *Engine) materialize(ctx context.Context, d *deployment.Deployment, revi
 	if err := e.applyVolumePinning(ctx, ws, spec.GetApp().GetProject()); err != nil {
 		return fmt.Errorf("merge volume pinning: %w", err)
 	}
-	if _, err := e.runtime.Ensure(ctx, ns, ws, capability.Generation(gen), materials); err != nil {
+	report, err := e.runtime.Ensure(ctx, ns, ws, capability.Generation(gen), materials)
+	if err != nil {
 		return fmt.Errorf("runtime ensure: %w", err)
+	}
+	// 归因修正（ADR-0064 决策 4）：未变载体保留 wire-gen（跳过/scale 不
+	// 换代戳），观测记账按实际在服代次锚——L1 门按 wire-gen 等 running，
+	// 全员统一按部署 gen 记账会让未变载体永远凑不齐而假超时。
+	for i := range ws {
+		ws[i].Generation = uint64(report.WireGen(ws[i], capability.Generation(gen)))
 	}
 	e.recordEnsured(d, gen, ws)
 	return nil

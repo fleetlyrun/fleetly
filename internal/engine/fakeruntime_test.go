@@ -14,8 +14,10 @@ import (
 type fakeRuntime struct {
 	mu sync.Mutex
 
-	ensures     []ensureCall
-	failNext    bool // 下一次 Ensure 失败（一次性注入；消费后自动清除）
+	ensures  []ensureCall
+	failNext bool // 下一次 Ensure 失败（一次性注入；消费后自动清除）
+	// wireGens 非空时 Ensure 回执逐载体回传（ADR-0064 归因回路注入面）。
+	wireGens    map[string]capability.Generation
 	inspectFail bool // InspectWorkloads 持续失败（P1-5 观测风暴注入缝；清除即恢复）
 	removed     []capability.NamespaceRef
 	blockPoint  chan struct{} // 非空时 Ensure 阻塞直至关闭或 ctx 取消（hang 注入）
@@ -266,6 +268,11 @@ func (f *fakeRuntime) Ensure(ctx context.Context, ns capability.NamespaceRef, ws
 	if f.failNext {
 		f.failNext = false
 		return capability.EnsureReport{}, fmt.Errorf("injected ensure failure")
+	}
+	// wireGens 注入（ADR-0064）：非空时作为 EnsureReport 逐载体回执返回——
+	// 归因回路测试面（swarm 侧跳过/scale 分支的等价假体）。
+	if len(f.wireGens) > 0 {
+		return capability.EnsureReport{Gens: f.wireGens}, nil
 	}
 	return capability.EnsureReport{}, nil
 }

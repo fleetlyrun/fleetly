@@ -177,12 +177,17 @@ func (e *Engine) blueGreenWindowMaterialize(ctx context.Context, d *deployment.D
 	if err := e.applyVolumePinning(ctx, union, toSpec.GetApp().GetProject()); err != nil {
 		return fmt.Errorf("merge volume pinning: %w", err)
 	}
-	if _, err := e.runtime.Ensure(ctx, ns, union, capability.Generation(fromGen), materials); err != nil {
+	report, err := e.runtime.Ensure(ctx, ns, union, capability.Generation(fromGen), materials)
+	if err != nil {
 		return fmt.Errorf("runtime ensure: %w", err)
 	}
-	// 记账走 recordEnsured 单源（逐载体锚分组：旧代成员 from_gen、新代
-	// 成员本部署 gen——L1 门 releaseReadyGen 按 gen 过滤天然只圈新代；
-	// App 级 expect 锚 = from_gen = 服务侧代）。
+	// 归因修正（ADR-0064 决策 4，与 materialize 单源同语义）：回执优先，
+	// 缺席回落载体自身戳（新代成员 = 本部署 gen），再回落调用 gen。
+	// 记账走 recordEnsured 单源（逐载体锚分组——L1 门 releaseReadyGen
+	// 按 gen 过滤天然只圈真下发新代的成员；App 级 expect 锚 = from_gen）。
+	for i := range union {
+		union[i].Generation = uint64(report.WireGen(union[i], capability.Generation(fromGen)))
+	}
 	e.recordEnsured(d, fromGen, union)
 	return nil
 }

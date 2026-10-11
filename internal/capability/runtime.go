@@ -23,7 +23,7 @@ type Runtime interface {
 	// --with-registry-auth 等价）；凭证不落载体 label 或明文 env
 	//（ADR-0014，旧 DT-2 真机 404 教训）。
 	//
-	// 返回值是逐载体下发回执（ADR-0063 内容锚定等价）：未变载体跳过
+	// 返回值是逐载体下发回执（ADR-0064 内容锚定等价）：未变载体跳过
 	// 更新并保留现存代次，回执让调用方的观测归因按实际 wire 代次记账。
 	Ensure(ctx context.Context, ns NamespaceRef, ws []Workload, gen Generation, m Materials) (EnsureReport, error)
 
@@ -269,7 +269,7 @@ var ErrNodeNotFound = errors.New("node not found")
 // CONTEXT.md Generation 词条）。
 type Generation uint64
 
-// EnsureReport 是 Ensure 的逐载体下发回执（ADR-0063 内容锚定等价）：
+// EnsureReport 是 Ensure 的逐载体下发回执（ADR-0064 内容锚定等价）：
 // Gens 键为 Workload ID，值是该载体实际在 wire 上的代次。内容等价
 // （modulo 代戳）的未变载体跳过更新、保留其现存代次——观测归因必须
 // 按回执记账，否则 L1 门按调用 gen 等待永远不会到来的 running@gen。
@@ -278,10 +278,14 @@ type EnsureReport struct {
 	Gens map[string]Generation
 }
 
-// WireGen 返回某 Workload 的实际下发代次：回执优先，缺席回落调用 gen。
+// WireGen 返回某 Workload 的实际下发代次：回执优先，缺席回落载体自身
+// 的逐载体戳（BG 双代窗新代成员带部署代），再回落调用 gen。
 func (r EnsureReport) WireGen(w Workload, callGen Generation) Generation {
 	if g, ok := r.Gens[w.ID]; ok && g != 0 {
 		return g
+	}
+	if w.Generation != 0 {
+		return Generation(w.Generation)
 	}
 	return callGen
 }
