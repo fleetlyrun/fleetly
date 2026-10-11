@@ -136,6 +136,20 @@ func TestBuildLogSQL(t *testing.T) {
 	}
 	assert.Equal(t, `{fleetly_project="P1",fleetly_app="app1",(fleetly_workload="W1" OR fleetly_workload="W2")}`, buildLogSQL(qm))
 
+	// 实例锚（ADR-0067）：task 流字段过滤，单元素裸等值；多元素 OR 并组，
+	// 与 Workload 条件交集（{} 内 AND）。
+	qc := capability.LogQuery{
+		Namespace:  capability.NamespaceRef{Team: "t1", Project: "P1", App: "app1"},
+		Containers: []string{"task-9"},
+	}
+	assert.Equal(t, `{fleetly_project="P1",fleetly_app="app1",fleetly_task="task-9"}`, buildLogSQL(qc))
+	qcm := capability.LogQuery{
+		Namespace:   capability.NamespaceRef{Team: "t1", Project: "P1", App: "app1"},
+		WorkloadIDs: []string{"W1"},
+		Containers:  []string{"task-9", "task-8"},
+	}
+	assert.Equal(t, `{fleetly_project="P1",fleetly_app="app1",fleetly_workload="W1",(fleetly_task="task-9" OR fleetly_task="task-8")}`, buildLogSQL(qcm))
+
 	// 值内引号与反斜杠的字面量转义。
 	q2 := capability.LogQuery{Namespace: capability.NamespaceRef{Project: `a"b\c`}, Text: "x"}
 	assert.Contains(t, buildLogSQL(q2), `fleetly_project="a\"b\\c"`)

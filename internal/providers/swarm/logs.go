@@ -72,6 +72,32 @@ func (p *Provider) StreamLogs(ctx context.Context, q capability.LogQuery, w capa
 		cancel()
 	}
 	for _, svc := range targets {
+		if len(q.Containers) > 0 {
+			// 实例锚（ADR-0067）：服务标记归属已由 targets 校验，任务按
+			// ID 精确匹配后逐载体 TaskLogs（tail 语义下沉到具体载体——
+			// 逐实例 TailLines，非先聚合后裁剪）。不筛任务状态：日志面
+			// 锚定的是身份（ListExecInstances 快照后刚退出的副本，其
+			// 尾部日志仍可读——诚实面优于活性面）。
+			tasks, err := p.listServiceTasks(ctx, svc.ID)
+			if err != nil {
+				fail(fmt.Errorf("swarm logs %s: task list: %w", svc.ID, err))
+				continue
+			}
+			workloadID := svc.Spec.Labels[labelWorkload]
+			for _, t := range tasks.Items {
+				if !slices.Contains(q.Containers, t.ID) {
+					continue
+				}
+				readers.Add(1)
+				go func(taskID, workloadID string) {
+					defer readers.Done()
+					if err := p.pumpTaskLogs(sctx, taskID, workloadID, q, frames); err != nil {
+						fail(err)
+					}
+				}(t.ID, workloadID)
+			}
+			continue
+		}
 		readers.Add(1)
 		go func(svc swarm.Service) {
 			defer readers.Done()
@@ -141,6 +167,64 @@ func (p *Provider) pumpServiceLogs(ctx context.Context, svc swarm.Service, q cap
 	return nil
 }
 
+// pumpTaskLogs 读单任务日志流（实例锚路径，ADR-0067），帧发往 frames。
+// 参数与 pumpServiceLogs 同参语义（TaskLogs 同构 ServiceLogs）；Details
+// 缺席的行按请求任务 ID 兜底归因（帧身份锚不丢）。
+func (p *Provider) pumpTaskLogs(ctx context.Context, taskID, workloadID string, q capability.LogQuery, frames chan<- capability.LogFrame) error {
+	opts := client.TaskLogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+		Follow:     q.Follow,
+		Timestamps: true,
+		Details:    true,
+	}
+	if q.TailLines > 0 {
+		opts.Tail = strconv.FormatInt(q.TailLines, 10)
+	}
+	if !q.Since.IsZero() {
+		opts.Since = q.Since.Format(time.RFC3339Nano)
+	}
+	if !q.Until.IsZero() {
+		opts.Until = q.Until.Format(time.RFC3339Nano)
+	}
+	res, err := p.openTaskLogStream(ctx, taskID, opts)
+	if err != nil {
+		return fmt.Errorf("task logs %s: %w", taskID, err)
+	}
+	defer func() { _ = res.Close() }()
+
+	lw := &taskLineWriter{ctx: ctx, frames: frames, workloadID: workloadID, taskID: taskID}
+	if _, err := stdcopy.StdCopy(lw, lw, res); err != nil {
+		if ctx.Err() != nil || errors.Is(err, io.EOF) {
+			return nil // 合流收口（读端失败/写端失败/调用方取消）或流自然终点
+		}
+		return err
+	}
+	return nil
+}
+
+// taskLineWriter 是实例锚路径的行接收端（serviceLineWriter 的任务同构；
+// details 缺席时按请求任务 ID 兜底归因——逐载体开流身份已知）。
+type taskLineWriter struct {
+	ctx        context.Context
+	frames     chan<- capability.LogFrame
+	workloadID string
+	taskID     string
+}
+
+func (w *taskLineWriter) Write(buf []byte) (int, error) {
+	frame := parseServiceLogLine(w.workloadID, buf)
+	if frame.Container == "" {
+		frame.Container = w.taskID
+	}
+	select {
+	case w.frames <- frame:
+	case <-w.ctx.Done():
+		return 0, w.ctx.Err() // 合流已收口（读端失败/写端失败/调用方取消）
+	}
+	return len(buf), nil
+}
+
 // listLogServices 列出隔离域内服务（测试缝优先；集群对象——与
 // InspectWorkloads 的发现面同源）。
 func (p *Provider) listLogServices(ctx context.Context, ns capability.NamespaceRef) ([]swarm.Service, error) {
@@ -150,6 +234,16 @@ func (p *Provider) listLogServices(ctx context.Context, ns capability.NamespaceR
 	return p.listNsServices(ctx, ns)
 }
 
+// listServiceTasks 列出单服务的任务集（实例锚路径的发现面；测试缝优先）。
+func (p *Provider) listServiceTasks(ctx context.Context, serviceID string) (client.TaskListResult, error) {
+	if p.listTasks != nil {
+		return p.listTasks(ctx, serviceID)
+	}
+	return p.cli.TaskList(ctx, client.TaskListOptions{
+		Filters: client.Filters{}.Add("service", serviceID),
+	})
+}
+
 // openServiceLogStream 打开单服务日志流（测试缝优先）。缝契约：读端在
 // ctx 取消时必须解除阻塞（真实现由请求 ctx 取消响应体保证）。
 func (p *Provider) openServiceLogStream(ctx context.Context, serviceID string, opts client.ServiceLogsOptions) (io.ReadCloser, error) {
@@ -157,6 +251,14 @@ func (p *Provider) openServiceLogStream(ctx context.Context, serviceID string, o
 		return p.openServiceLog(ctx, serviceID, opts)
 	}
 	return p.cli.ServiceLogs(ctx, serviceID, opts)
+}
+
+// openTaskLogStream 打开单任务日志流（测试缝优先；缝契约同上）。
+func (p *Provider) openTaskLogStream(ctx context.Context, taskID string, opts client.TaskLogsOptions) (io.ReadCloser, error) {
+	if p.openTaskLog != nil {
+		return p.openTaskLog(ctx, taskID, opts)
+	}
+	return p.cli.TaskLogs(ctx, taskID, opts)
 }
 
 // serviceLineWriter 是 stdcopy 的行接收端：解析服务日志行形态后发帧。

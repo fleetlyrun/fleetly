@@ -37,29 +37,32 @@ func execPod(ns, name, node string, phase corev1.PodPhase) runtime.Object {
 	}
 }
 
-// TestExecTarget：Running pod 解析（多副本名字典序确定性）+ Pending 不计
+// TestExecInstances：Running pod 枚举（多副本名字典序升序）+ Pending 不计
 // + 无在跑实例哨兵。
-func TestExecTarget(t *testing.T) {
+func TestExecInstances(t *testing.T) {
 	p, _ := newFakeProvider(
 		execPod("fleetly-shop", "web-b", "node-2", corev1.PodRunning),
 		execPod("fleetly-shop", "web-a", "node-1", corev1.PodRunning),
 		execPod("fleetly-shop", "web-c", "node-1", corev1.PodPending),
 	)
-	got, err := p.ExecTarget(context.Background(), "wl-1")
+	got, err := p.ExecInstances(context.Background(), "wl-1")
 	require.NoError(t, err)
-	assert.Equal(t, "web-a", got.Instance, "multiple running pods must pick lexicographically first")
-	assert.Equal(t, "node-1", got.CarrierNodeID)
+	require.Len(t, got, 2)
+	assert.Equal(t, "web-a", got[0].Instance, "running pods must list lexicographically first")
+	assert.Equal(t, "node-1", got[0].CarrierNodeID)
+	assert.Equal(t, "web-b", got[1].Instance)
+	assert.Equal(t, "node-2", got[1].CarrierNodeID)
 }
 
-func TestExecTargetNoRunning(t *testing.T) {
+func TestExecInstancesNoRunning(t *testing.T) {
 	p, _ := newFakeProvider(execPod("fleetly-shop", "web-a", "node-1", corev1.PodPending))
-	_, err := p.ExecTarget(context.Background(), "wl-1")
+	_, err := p.ExecInstances(context.Background(), "wl-1")
 	require.ErrorIs(t, err, capability.ErrExecNoRunning)
 }
 
-func TestExecTargetWrongWorkload(t *testing.T) {
+func TestExecInstancesWrongWorkload(t *testing.T) {
 	p, _ := newFakeProvider() // 无任何 pod
-	_, err := p.ExecTarget(context.Background(), "wl-1")
+	_, err := p.ExecInstances(context.Background(), "wl-1")
 	require.ErrorIs(t, err, capability.ErrExecNoRunning)
 }
 

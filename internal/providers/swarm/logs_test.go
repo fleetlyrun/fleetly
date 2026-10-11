@@ -368,6 +368,86 @@ func TestStreamLogsWriterErrorReclaimsReaders(t *testing.T) {
 	})
 }
 
+// TestStreamLogsContainerAnchor：实例锚路径（ADR-0067）——containers 非空
+// 时服务归 Workload 校验保持，任务按 ID 精确匹配逐载体 TaskLogs（tail
+// 语义下沉）；未命中任务不开流；details 缺席的行按请求任务 ID 兜底归因。
+func TestStreamLogsContainerAnchor(t *testing.T) {
+	q := capability.LogQuery{
+		Namespace:   capability.NamespaceRef{Team: "acme", Project: "shop", App: "web"},
+		WorkloadIDs: []string{"wl_01H"},
+		Containers:  []string{"task-1a", "task-gone"},
+	}
+	f := newFanInFixture(q)
+
+	// 实例锚缝：svc-web-1 名下两任务（一命中一缺席）；svc-web-2 不该被
+	// 触达（Workload 过滤在前）。
+	f.p.listTasks = func(_ context.Context, serviceID string) (client.TaskListResult, error) {
+		require.Equal(t, "svc-web-1", serviceID)
+		return client.TaskListResult{Items: []swarm.Task{
+			{ID: "task-1a", Status: swarm.TaskStatus{State: swarm.TaskStateRunning}},
+			{ID: "task-1b", Status: swarm.TaskStatus{State: swarm.TaskStateRunning}},
+		}}, nil
+	}
+	servicePumped := false
+	f.p.openServiceLog = func(context.Context, string, client.ServiceLogsOptions) (io.ReadCloser, error) {
+		servicePumped = true // 实例锚路径不得回落服务聚合流
+		return &fakeLogStream{ctx: context.Background(), lines: make(chan string)}, nil
+	}
+	var gotTaskOpts []client.TaskLogsOptions
+	f.p.openTaskLog = func(ctx context.Context, taskID string, opts client.TaskLogsOptions) (io.ReadCloser, error) {
+		require.Equal(t, "task-1a", taskID, "only the anchored task must open a task log stream")
+		gotTaskOpts = append(gotTaskOpts, opts)
+		return &fakeLogStream{ctx: ctx, lines: feedOne(svcLogLine("node-a", "task-1a", 1))}, nil
+	}
+
+	c := &frameCollector{}
+	done := make(chan error, 1)
+	go func() { done <- f.p.StreamLogs(context.Background(), q, c) }()
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("anchored non-follow stream did not terminate")
+	}
+	assert.False(t, servicePumped, "anchored query must not fall back to aggregated service logs")
+	require.Len(t, gotTaskOpts, 1)
+	assert.True(t, gotTaskOpts[0].Details, "task details must stay on (frame attribution)")
+	assert.True(t, gotTaskOpts[0].Timestamps)
+	assert.Equal(t, 1, c.countByTask()["task-1a"])
+}
+
+// feedOne 是单行日志缝（发射后关闭——非 Follow 流的自然终点）。
+func feedOne(line string) <-chan string {
+	ch := make(chan string, 1)
+	ch <- line
+	close(ch)
+	return ch
+}
+
+// TestStreamLogsContainerAnchorFallbackAttribution：details 缺席的原始行
+// 按请求任务 ID 兜底归因（逐载体开流身份已知——帧身份锚不丢）。
+func TestStreamLogsContainerAnchorFallbackAttribution(t *testing.T) {
+	q := capability.LogQuery{
+		Namespace:   capability.NamespaceRef{Team: "acme", Project: "shop", App: "web"},
+		WorkloadIDs: []string{"wl_01H"},
+		Containers:  []string{"task-9"},
+	}
+	f := newFanInFixture(q)
+	f.p.listTasks = func(context.Context, string) (client.TaskListResult, error) {
+		return client.TaskListResult{Items: []swarm.Task{{ID: "task-9"}}}, nil
+	}
+	f.p.openTaskLog = func(ctx context.Context, taskID string, _ client.TaskLogsOptions) (io.ReadCloser, error) {
+		return &fakeLogStream{ctx: ctx, lines: feedOne("raw payload without details")}, nil
+	}
+	c := &frameCollector{}
+	err := f.p.StreamLogs(context.Background(), q, c)
+	require.NoError(t, err)
+	snap := c.snapshot()
+	require.Len(t, snap, 1)
+	assert.Equal(t, "task-9", snap[0].Container, "unattributed lines must fall back to the requested task id")
+	assert.Equal(t, "wl_01H", snap[0].WorkloadID)
+}
+
 // TestParseServiceLogLine 钉行解析契约：完整形态归因齐备；消息体含空格
 // 不拆；转义值（逗号/等号/空格）往返；畸形行（缺段/坏时间戳/坏 details）
 // 按无归因原始行发帧。

@@ -28,14 +28,14 @@ func execPodSelect(workloadID string) string {
 	return labels.Set(map[string]string{labelManaged: "true", labelWorkload: workloadID}).String()
 }
 
-// ExecTarget 实现 RuntimeExec：label 选择器实时快照（观测缓存不参与决策）
-// 取首个 Running pod（名字典序——确定性，与 swarm task ID 字典序同款）。
-// Instance = pod 名（中继侧定位锚）；CarrierNodeID = pod 所在 k8s 节点名
-// （平台锚定表反查平台节点 ID——与 Watch 锚定同源）。
-func (p *Provider) ExecTarget(ctx context.Context, workloadID string) (capability.ExecTargetInstance, error) {
+// ExecInstances 实现 RuntimeExec：label 选择器实时快照（观测缓存不参与
+// 决策）取全部 Running pod（名字典序升序——选择策略在 engine 单源：auto
+// 取首、锚定匹配）。Instance = pod 名（中继侧定位锚）；CarrierNodeID =
+// pod 所在 k8s 节点名（平台锚定表反查平台节点 ID——与 Watch 锚定同源）。
+func (p *Provider) ExecInstances(ctx context.Context, workloadID string) ([]capability.ExecTargetInstance, error) {
 	pods, err := p.cli.CoreV1().Pods("").List(ctx, metav1.ListOptions{LabelSelector: execPodSelect(workloadID)})
 	if err != nil {
-		return capability.ExecTargetInstance{}, fmt.Errorf("k3s exec target: pod list: %w", err)
+		return nil, fmt.Errorf("k3s exec target: pod list: %w", err)
 	}
 	running := make([]string, 0, len(pods.Items))
 	byName := make(map[string]*corev1.Pod, len(pods.Items))
@@ -47,11 +47,14 @@ func (p *Provider) ExecTarget(ctx context.Context, workloadID string) (capabilit
 		}
 	}
 	if len(running) == 0 {
-		return capability.ExecTargetInstance{}, fmt.Errorf("%w: %s", capability.ErrExecNoRunning, workloadID)
+		return nil, fmt.Errorf("%w: %s", capability.ErrExecNoRunning, workloadID)
 	}
 	sort.Strings(running)
-	pod := byName[running[0]]
-	return capability.ExecTargetInstance{Instance: pod.Name, CarrierNodeID: pod.Spec.NodeName}, nil
+	rows := make([]capability.ExecTargetInstance, 0, len(running))
+	for _, name := range running {
+		rows = append(rows, capability.ExecTargetInstance{Instance: name, CarrierNodeID: byName[name].Spec.NodeName})
+	}
+	return rows, nil
 }
 
 // ExecClusterToken 实现 RuntimeExec：k3s node token 对照（与 Enrollment 同

@@ -1,6 +1,6 @@
 package swarm
 
-// exec 子面的 swarm 实现（F3.2，ADR-0049）：管理侧实例解析（ExecTarget =
+// exec 子面的 swarm 实现（F3.2，ADR-0049）：管理侧实例解析（ExecInstances =
 // 服务任务实时快照）、节点侧载体执行（ExecWorkload = 本地 daemon 的
 // docker exec——exec API 只落在持有容器的 daemon 上，节点代理是唯一
 // 抵达面）、凭证校验（ExecClusterToken = swarm join token 对照）。
@@ -30,30 +30,30 @@ const labelSwarmTaskID = "com.docker.swarm.task.id"
 // 是 CLI 同款机制）。
 const execInspectPoll = 150 * time.Millisecond
 
-// ErrNoRunningTask 是 ExecTarget 无在跑实例的 Provider 侧哨兵（capability
+// ErrNoRunningTask 是 ExecInstances 无在跑实例的 Provider 侧哨兵（capability
 // 层 ErrExecNoRunning 的别名——跨层哨兵词汇单源在 capability，engine 的
 // 受理位信封映射不 import providers）。
 var ErrNoRunningTask = capability.ErrExecNoRunning
 
-// ExecTarget 实现 RuntimeExec：按 Workload 标记定位服务，任务列表实时
-// 快照取首个 running 任务（ID 字典序——swarm task ID 时间有序，确定性
-// 选择）。NodeID 是任务实际落点（载体节点 ID——与 Watch 锚定同源）。
-func (p *Provider) ExecTarget(ctx context.Context, workloadID string) (capability.ExecTargetInstance, error) {
+// ExecInstances 实现 RuntimeExec：按 Workload 标记定位服务，任务列表实时
+// 快照取全部 running 任务（ID 字典序升序——swarm task ID 时间有序，选择
+// 策略在 engine 单源：auto 取首、锚定匹配）。NodeID 是任务实际落点（载体
+// 节点 ID——与 Watch 锚定同源）。
+func (p *Provider) ExecInstances(ctx context.Context, workloadID string) ([]capability.ExecTargetInstance, error) {
 	services, err := p.cli.ServiceList(ctx, client.ServiceListOptions{
 		Filters: client.Filters{}.Add("label", labelWorkload+"="+workloadID),
 	})
 	if err != nil {
-		return capability.ExecTargetInstance{}, fmt.Errorf("swarm exec target: service list: %w", err)
+		return nil, fmt.Errorf("swarm exec target: service list: %w", err)
 	}
 	if len(services.Items) == 0 {
-		return capability.ExecTargetInstance{}, fmt.Errorf("%w: %s", ErrNoRunningTask, workloadID)
+		return nil, fmt.Errorf("%w: %s", ErrNoRunningTask, workloadID)
 	}
-	svc := services.Items[0]
 	tasks, err := p.cli.TaskList(ctx, client.TaskListOptions{
-		Filters: client.Filters{}.Add("service", svc.ID),
+		Filters: client.Filters{}.Add("service", services.Items[0].ID),
 	})
 	if err != nil {
-		return capability.ExecTargetInstance{}, fmt.Errorf("swarm exec target: task list: %w", err)
+		return nil, fmt.Errorf("swarm exec target: task list: %w", err)
 	}
 	running := make([]string, 0, len(tasks.Items))
 	byID := make(map[string]swarm.Task, len(tasks.Items))
@@ -64,11 +64,14 @@ func (p *Provider) ExecTarget(ctx context.Context, workloadID string) (capabilit
 		}
 	}
 	if len(running) == 0 {
-		return capability.ExecTargetInstance{}, fmt.Errorf("%w: %s", ErrNoRunningTask, workloadID)
+		return nil, fmt.Errorf("%w: %s", ErrNoRunningTask, workloadID)
 	}
-	sort.Strings(running) // 确定性：多副本时稳定选首个
-	t := byID[running[0]]
-	return capability.ExecTargetInstance{Instance: t.ID, CarrierNodeID: t.NodeID}, nil
+	sort.Strings(running)
+	rows := make([]capability.ExecTargetInstance, 0, len(running))
+	for _, id := range running {
+		rows = append(rows, capability.ExecTargetInstance{Instance: id, CarrierNodeID: byID[id].NodeID})
+	}
+	return rows, nil
 }
 
 // ExecClusterToken 实现 RuntimeExec：对照 swarm 活 join token（worker 与

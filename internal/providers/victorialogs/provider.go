@@ -542,6 +542,20 @@ func buildLogSQL(q capability.LogQuery) string {
 			conds = append(conds, "("+strings.Join(parts, " OR ")+")")
 		}
 	}
+	if len(q.Containers) > 0 {
+		// 实例锚（ADR-0067）：task 流字段 OR 并组，与 WorkloadIDs 的交集
+		// 语义由 {} 内多条件 AND 自然承载。task 是采集端自 LogFrame
+		// .Container 落的流字段（同源词汇——swarm task ID / k3s pod 名）。
+		parts := make([]string, 0, len(q.Containers))
+		for _, id := range q.Containers {
+			parts = append(parts, fieldTask+"="+quoteLogSQL(id))
+		}
+		if len(parts) == 1 {
+			conds = append(conds, parts[0])
+		} else {
+			conds = append(conds, "("+strings.Join(parts, " OR ")+")")
+		}
+	}
 	if q.Source != "" {
 		conds = append(conds, fieldBuild+"="+quoteLogSQL(q.Source))
 	}

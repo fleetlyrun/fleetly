@@ -44,6 +44,8 @@ type Provider struct {
 	// nil = 真实现直连 cli）。只覆盖需要无 daemon 测试的窄路径：
 	//   - listServices/openServiceLog：日志合流（Q-4/P1-15；集群面
 	//     ServiceLogs 形态，ADR-0040）。
+	//   - listTasks/openTaskLog：实例锚日志（ADR-0067；逐载体 TaskLogs
+	//     形态）。
 	//   - networkInspect/secretInspect：材料 create-or-get 分诊（Q-20）。
 	//   - nodeList/events：节点列表与事件流（Watch 初始锚定降级 B14-2 的
 	//     hermetic 面——nil cli 走真客户端会在 Events 内部 goroutine panic，
@@ -51,6 +53,8 @@ type Provider struct {
 	// 缝契约与真实现一致（如日志流读端必须在 ctx 取消时解除阻塞）。
 	listServices   func(ctx context.Context, ns capability.NamespaceRef) ([]swarm.Service, error)
 	openServiceLog func(ctx context.Context, serviceID string, opts client.ServiceLogsOptions) (io.ReadCloser, error)
+	listTasks      func(ctx context.Context, serviceID string) (client.TaskListResult, error)
+	openTaskLog    func(ctx context.Context, taskID string, opts client.TaskLogsOptions) (io.ReadCloser, error)
 	networkInspect func(ctx context.Context, name string) error
 	secretInspect  func(ctx context.Context, name string) (client.SecretInspectResult, error)
 	nodeList       func(ctx context.Context) (client.NodeListResult, error)

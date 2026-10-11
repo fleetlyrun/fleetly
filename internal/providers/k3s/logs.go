@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -40,6 +41,10 @@ func (p *Provider) StreamLogs(ctx context.Context, q capability.LogQuery, w capa
 	names := make([]string, 0, len(pods.Items))
 	workloadByPod := make(map[string]string, len(pods.Items))
 	for _, pod := range pods.Items {
+		if len(q.Containers) > 0 && !slices.Contains(q.Containers, pod.Name) {
+			continue // 实例锚（ADR-0067）：pod 名精确匹配（日志面锚定身份，
+			// 不筛相位——刚退出的副本尾部日志仍可读）
+		}
 		names = append(names, pod.Name)
 		workloadByPod[pod.Name] = pod.Labels[labelWorkload]
 	}
