@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -46,18 +47,22 @@ func (f *fakeMetrics) QuerySeries(context.Context, string, time.Time, time.Time,
 	return nil, nil
 }
 
-// cadvisorFixture 是 exposition 夹具（平台容器 + 系统噪音行混布）。
+// cadvisorFixture 是 exposition 夹具（平台容器 + 系统噪音行混布）。两个
+// 平台载体：web（app 域——进告警样本 + 词汇）、postgres（database 域——
+// 只进词汇），身份标签按 cadvisor 实测形态（container_label_* 前缀）。
 func cadvisorFixture(cpu float64, mem float64) string {
 	return fmt.Sprintf(`# HELP container_cpu_usage_seconds_total Total CPU time consumed.
 # TYPE container_cpu_usage_seconds_total counter
 container_cpu_usage_seconds_total{boot_id="b",id="/",image=""} 999999 1767225600000
-container_cpu_usage_seconds_total{boot_id="b",id="/system.slice/docker-abc123.scope",image="alpine:3.20",name="fleetly-x-web",container_label_fleetly_ns_app="01app",container_label_fleetly_ns_project="01proj"} %f 1767225600000
+container_cpu_usage_seconds_total{boot_id="b",id="/system.slice/docker-abc123.scope",image="alpine:3.20",name="fleetly-x-web",container_label_fleetly_ns_app="01app",container_label_fleetly_ns_project="01proj",container_label_fleetly_workload_id="01workload",container_label_fleetly_process="web"} %f 1767225600000
+container_cpu_usage_seconds_total{boot_id="b",id="/system.slice/docker-def456.scope",image="pgvector:17",name="fleetly-db-xyz",container_label_fleetly_ns_database="01db",container_label_fleetly_workload_id="01dbworkload",container_label_fleetly_process="postgres"} %f 1767225600000
 # TYPE container_memory_working_set_bytes gauge
 container_memory_working_set_bytes{boot_id="b",id="/"} 999999999
-container_memory_working_set_bytes{boot_id="b",id="/system.slice/docker-abc123.scope",image="alpine:3.20",container_label_fleetly_ns_app="01app"} %f
+container_memory_working_set_bytes{boot_id="b",id="/system.slice/docker-abc123.scope",image="alpine:3.20",name="fleetly-x-web",container_label_fleetly_ns_app="01app",container_label_fleetly_workload_id="01workload",container_label_fleetly_process="web"} %f
+container_memory_working_set_bytes{boot_id="b",id="/system.slice/docker-def456.scope",image="pgvector:17",name="fleetly-db-xyz",container_label_fleetly_ns_database="01db",container_label_fleetly_workload_id="01dbworkload",container_label_fleetly_process="postgres"} %f
 # TYPE machine_cpu_cores gauge
 machine_cpu_cores{} 2
-`, cpu, mem)
+`, cpu, cpu, mem, mem)
 }
 
 // TestParseCadvisor 钉解析契约：平台容器入样（CPU 率差分 + mem 直取）、
@@ -67,20 +72,95 @@ func TestParseCadvisor(t *testing.T) {
 	e := New(Deps{DB: db, Runtime: newFakeRuntime(), Logger: discardLogger()}, Options{DataRoot: t.TempDir()})
 	now := clock.Now()
 	// 首拍：建差分基面（cpu=100）。
-	s0 := e.parseCadvisor("01N1", []byte(cadvisorFixture(100, 1024)), now)
+	s0, _ := e.parseCadvisor("01N1", []byte(cadvisorFixture(100, 1024)), now)
 	require.Len(t, s0, 1)
 	assert.InDelta(t, 0, s0[0].cpuRate, 0.001, "first scrape has no rate")
 	assert.InDelta(t, 1024, s0[0].memBytes, 0.001)
 
 	clock.Advance(metricsScrapeInterval)
 	now2 := clock.Now()
-	s1 := e.parseCadvisor("01N1", []byte(cadvisorFixture(100+3, 2048)), now2)
+	s1, _ := e.parseCadvisor("01N1", []byte(cadvisorFixture(100+3, 2048)), now2)
 	require.Len(t, s1, 1)
 	// 15s 内 3 核秒 → 0.2 核 / 2 核 = 10%。
 	assert.InDelta(t, 10.0, s1[0].cpuRate, 0.01)
 	assert.InDelta(t, 2048, s1[0].memBytes, 0.001)
 	assert.Equal(t, "01app", s1[0].app, "app label value is lowercased (sanitizeNamePart downstream)")
 	assert.Equal(t, "/system.slice/docker-abc123.scope", s1[0].id)
+}
+
+// TestParseCadvisorWorkloadVocabulary 钉负载词汇契约（ADR-0065）：一切带
+// fleetly.workload.id 的载体入词汇（database 域只进词汇不进告警样本）、
+// 身份标签还原、差分率与 percent 预计算、首拍 cpu 诚实缺席、exposition
+// 金形态（指标名/标签集/行序）确定。
+func TestParseCadvisorWorkloadVocabulary(t *testing.T) {
+	db, clock := statetest.New(t)
+	e := New(Deps{DB: db, Runtime: newFakeRuntime(), Logger: discardLogger()}, Options{DataRoot: t.TempDir()})
+
+	// 首拍：memory 在场、cpu 两指标缺席（差分无基面——零值与缺席是两件事）。
+	_, vocab0 := e.parseCadvisor("01N1", []byte(cadvisorFixture(100, 1024)), clock.Now())
+	require.Len(t, vocab0, 2)
+	for _, w := range vocab0 {
+		assert.False(t, w.cpuKnown, "first scrape has no differential baseline")
+		assert.True(t, w.memKnown)
+	}
+	out0 := string(composeWorkloadExposition(vocab0))
+	assert.NotContains(t, out0, MetricWorkloadCPUPercent)
+	assert.NotContains(t, out0, MetricWorkloadCPUCores)
+	assert.Contains(t, out0, MetricWorkloadMemory)
+
+	// 二拍：率与 percent 预计算（3 核秒 / 15s = 0.2 核；/ 2 核 = 10%）。
+	clock.Advance(metricsScrapeInterval)
+	appSamples, vocab1 := e.parseCadvisor("01N1", []byte(cadvisorFixture(103, 2048)), clock.Now())
+	assert.Len(t, appSamples, 1, "database-domain carriers stay out of the alerting path")
+	require.Len(t, vocab1, 2)
+	byContainer := map[string]workloadSample{}
+	for _, w := range vocab1 {
+		byContainer[w.container] = w
+	}
+	web, ok := byContainer["fleetly-x-web"]
+	require.True(t, ok)
+	assert.Equal(t, "01app", web.app)
+	assert.Equal(t, "web", web.process)
+	assert.Equal(t, "01workload", web.workload)
+	assert.InDelta(t, 0.2, web.cpuCores, 0.001)
+	assert.True(t, web.pctKnown)
+	assert.InDelta(t, 10.0, web.cpuPercent, 0.01)
+	assert.InDelta(t, 2048, web.memBytes, 0.001)
+	pg, ok := byContainer["fleetly-db-xyz"]
+	require.True(t, ok)
+	assert.Equal(t, "", pg.app, "database domain carries no app subject")
+	assert.Equal(t, "01db", pg.database)
+	assert.Equal(t, "postgres", pg.process)
+
+	// exposition 金形态：域主体在前、身份三元组收尾、行序按容器名固定。
+	out := string(composeWorkloadExposition(vocab1))
+	wantDB := MetricWorkloadMemory + `{database="01db",process="postgres",workload="01dbworkload",container="fleetly-db-xyz"} 2048`
+	wantWeb := MetricWorkloadMemory + `{app="01app",process="web",workload="01workload",container="fleetly-x-web"} 2048`
+	assert.Contains(t, out, wantDB)
+	assert.Contains(t, out, wantWeb)
+	assert.Less(t, strings.Index(out, wantDB), strings.Index(out, wantWeb), "rows sort by container name")
+	assertLineValue(t, out, MetricWorkloadCPUCores+`{app="01app"`, 0.2)
+	assertLineValue(t, out, MetricWorkloadCPUPercent+`{app="01app"`, 10.0)
+	// 渲染幂等（同输入同字节——导入与断言都吃确定形态）。
+	assert.Equal(t, out, string(composeWorkloadExposition(vocab1)))
+}
+
+// assertLineValue 取命中前缀的首行样本值做数值断言（percent 的浮点尾差
+// 不进金形态——值域断言归 InDelta）。
+func assertLineValue(t *testing.T, exposition, prefix string, want float64) {
+	t.Helper()
+	for _, line := range strings.Split(exposition, "\n") {
+		if !strings.HasPrefix(line, prefix) {
+			continue
+		}
+		_, val, found := strings.Cut(line, "} ")
+		require.True(t, found, "line %q carries a sample value", line)
+		v, err := strconv.ParseFloat(val, 64)
+		require.NoError(t, err)
+		assert.InDelta(t, want, v, 0.01, "line %q", line)
+		return
+	}
+	t.Fatalf("exposition has no line with prefix %q", prefix)
 }
 
 // TestEvaluateRulesStateMachine 钉状态机：越限首见起窗 → for 窗满 → firing

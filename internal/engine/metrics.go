@@ -17,6 +17,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -84,6 +85,28 @@ type containerSample struct {
 	memBytes float64
 }
 
+// workloadSample 是负载词汇导出面的样本（ADR-0065）：与 containerSample
+// 同源解析、射程更宽——一切带 fleetly.workload.id 的平台载体（App/Task/
+// Database/Browse/受管系统域全收）。域主体标签恰一非空（translate.go
+// workloadLabels 同构）；cpu 率与 percent 由采集环差分面预计算，产品面
+// 查询免 rate()/group_left（F-B1 故障类从构造上消失）。
+type workloadSample struct {
+	node       string
+	app        string // 域主体（恰一非空；sanitizeNamePart 小写形态）
+	task       string
+	database   string
+	browse     string
+	process    string // fleetly.process（人读服务名—— Processes 页同源）
+	workload   string // fleetly.workload.id（载体身份，跨部署稳定）
+	container  string // docker 容器名（cadvisor name 标签，副本判别）
+	cpuCores   float64
+	cpuKnown   bool // 差分首拍/计数回零无率——cpu 指标该拍缺席（诚实断口）
+	pctKnown   bool // percent 另需节点核数观测在场
+	cpuPercent float64
+	memBytes   float64
+	memKnown   bool
+}
+
 // metricsStep 是采集环收敛步：节拍锚 → 集群视图 → 逐节点抓取/透传/解析
 // → 规则评估（含内置规则）。
 func (e *Engine) metricsStep(ctx context.Context) {
@@ -117,7 +140,19 @@ func (e *Engine) metricsStep(ctx context.Context) {
 		}); err != nil {
 			e.log.Warn("metrics step: import node samples", "node", node.NodeID, "err", err)
 		}
-		samples = append(samples, e.parseCadvisor(node.NodeID, body, now)...)
+		appSamples, vocabSamples := e.parseCadvisor(node.NodeID, body, now)
+		samples = append(samples, appSamples...)
+		// 负载词汇导出（ADR-0065）：平台归一指标随拍入仓——raw cadvisor
+		// 照旧透传（工作台面），词汇是产品面消费契约（console presets 等）。
+		// 失败下拍重试（raw 同款语义）。
+		if vocab := composeWorkloadExposition(vocabSamples); len(vocab) > 0 {
+			if err := e.metrics.ImportPrometheus(ctx, vocab, map[string]string{
+				"job":  "fleetly-workload",
+				"node": node.NodeID,
+			}); err != nil {
+				e.log.Warn("metrics step: import workload vocabulary", "node", node.NodeID, "err", err)
+			}
+		}
 	}
 	e.evaluateRules(ctx, samples, now)
 	e.evaluateSystemRules(ctx, now)
@@ -143,11 +178,16 @@ func (e *Engine) scrapeNode(ctx context.Context, addr string) ([]byte, error) {
 	return io.ReadAll(io.LimitReader(resp.Body, 32<<20)) // 32MiB 上界（超大家庭防御）
 }
 
-// parseCadvisor 解析 exposition 文本为评估样本（最小解析面：只认三个
-// metric 家族 + 平台容器标签；非 /docker/ 载体的 cgroup 聚合行跳过）。
-// 同步维护 CPU 差分基面与节点核数观测。
-func (e *Engine) parseCadvisor(nodeID string, body []byte, now time.Time) []containerSample {
+// parseCadvisor 解析 exposition 文本为双消费面样本（最小解析面：只认三个
+// metric 家族 + 平台容器标签；非 /docker/ 载体的 cgroup 聚合行跳过）：
+//   - app 域样本（告警评估面，语义自 ADR-0041 原样）；
+//   - 负载词汇样本（ADR-0065：一切 fleetly.workload.id 载体，域主体恰一）。
+//
+// 同步维护 CPU 差分基面与节点核数观测（两条消费路径共用同一差分基面——
+// 分叉两套会在同一节拍上漂移出两份真值）。
+func (e *Engine) parseCadvisor(nodeID string, body []byte, now time.Time) ([]containerSample, []workloadSample) {
 	byContainer := map[string]*containerSample{}
+	byWorkload := map[string]*workloadSample{}
 	for _, line := range strings.Split(string(body), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || line[0] == '#' {
@@ -165,30 +205,52 @@ func (e *Engine) parseCadvisor(nodeID string, body []byte, now time.Time) []cont
 		case "container_cpu_usage_seconds_total", "container_memory_working_set_bytes":
 			id := labels["id"]
 			app := strings.ToLower(labels["container_label_fleetly_ns_app"])
-			if app == "" || id == "/" {
-				// 平台 Workload 载体之外（cgroup 聚合/系统容器）——app 标签
-				// 非空即过滤器（只有平台 Workload 带 fleetly_ns_app；id 形态
-				// 因 cgroup 驱动而异：/docker/<id>（v1）或
+			workloadID := strings.ToLower(labels["container_label_fleetly_workload_id"])
+			if (app == "" && workloadID == "") || id == "/" {
+				// 平台 Workload 载体之外（cgroup 聚合/系统容器）——fleetly
+				// 归属标签非空即平台过滤器（只有平台载体带 fleetly 标签；
+				// id 形态因 cgroup 驱动而异：/docker/<id>（v1）或
 				// /system.slice/docker-<id>.scope（v2 systemd，staging 实证），
 				// 不做前缀硬编码）。label 值经 sanitizeNamePart 已小写——
-				// appID（大写 ULID）在评估面同归一。
+				// 大写 ULID 在消费面同归一。
 				continue
 			}
 			v, err := strconv.ParseFloat(value, 64)
 			if err != nil {
 				continue
 			}
-			key := nodeID + "|" + id
+			isMem := name == "container_memory_working_set_bytes"
 			s := byContainer[id]
-			if s == nil {
+			if app != "" && s == nil {
 				s = &containerSample{node: nodeID, app: app, id: id}
 				byContainer[id] = s
 			}
-			if name == "container_memory_working_set_bytes" {
-				s.memBytes = v
+			w := byWorkload[id]
+			if workloadID != "" && w == nil {
+				w = &workloadSample{
+					node:      nodeID,
+					app:       app,
+					task:      strings.ToLower(labels["container_label_fleetly_ns_task"]),
+					database:  strings.ToLower(labels["container_label_fleetly_ns_database"]),
+					browse:    strings.ToLower(labels["container_label_fleetly_ns_browse"]),
+					process:   strings.ToLower(labels["container_label_fleetly_process"]),
+					workload:  workloadID,
+					container: labels["name"],
+				}
+				byWorkload[id] = w
+			}
+			if isMem {
+				// memory 是 gauge：直取（差分基面不碰——只载 CPU counter）。
+				if s != nil {
+					s.memBytes = v
+				}
+				if w != nil {
+					w.memBytes, w.memKnown = v, true
+				}
 				continue
 			}
 			// CPU counter → 率（差分基面；首拍无率）。
+			key := nodeID + "|" + id
 			prev, had := e.metricsDom.lastCPU[key]
 			e.metricsDom.lastCPU[key] = cpuCounter{value: v, at: now}
 			if !had || now.Sub(prev.at) <= 0 {
@@ -198,18 +260,91 @@ func (e *Engine) parseCadvisor(nodeID string, body []byte, now time.Time) []cont
 			if rate < 0 {
 				continue // 容器重启计数回零
 			}
-			s.cpuRate = rate
+			if s != nil {
+				s.cpuRate = rate
+			}
+			if w != nil {
+				w.cpuCores, w.cpuKnown = rate, true
+			}
 		}
 	}
 	cores := e.metricsDom.cores[nodeID]
-	out := make([]containerSample, 0, len(byContainer))
+	appOut := make([]containerSample, 0, len(byContainer))
 	for _, s := range byContainer {
 		if cores > 0 {
 			s.cpuRate = s.cpuRate / cores * 100 // 百分比形态（docker stats 同口径）
 		}
-		out = append(out, *s)
+		appOut = append(appOut, *s)
 	}
-	return out
+	vocabOut := make([]workloadSample, 0, len(byWorkload))
+	for _, w := range byWorkload {
+		if w.cpuKnown && cores > 0 {
+			w.cpuPercent, w.pctKnown = w.cpuCores/cores*100, true
+		}
+		vocabOut = append(vocabOut, *w)
+	}
+	// 行序按容器名固定——导入幂等与测试断言都吃确定形态。
+	sort.Slice(vocabOut, func(i, j int) bool { return vocabOut[i].container < vocabOut[j].container })
+	return appOut, vocabOut
+}
+
+// 负载词汇指标名（ADR-0065 词汇注册表）：采集环归一导出的平台指标——
+// 产品面（console presets、CLI、后续 per-process 告警）一律经词汇查询；
+// cadvisor 原始序列只是工作台透传面，不是消费契约。
+const (
+	MetricWorkloadCPUPercent = "fleetly_container_cpu_percent"
+	MetricWorkloadCPUCores   = "fleetly_container_cpu_cores"
+	MetricWorkloadMemory     = "fleetly_container_memory_working_set_bytes"
+)
+
+// composeWorkloadExposition 把词汇样本渲染为 exposition 文本（VM 流式导入
+// 端点同款形态）。已知量才导出：cpu 差分首拍缺席、percent 无核数观测缺席
+// ——零值与缺席在时序库里是两件事。
+func composeWorkloadExposition(samples []workloadSample) []byte {
+	var b bytes.Buffer
+	for _, w := range samples {
+		lbl := workloadLabelSet(w)
+		if w.memKnown {
+			fmt.Fprintf(&b, "%s{%s} %s\n", MetricWorkloadMemory, lbl, expositionFloat(w.memBytes))
+		}
+		if w.cpuKnown {
+			fmt.Fprintf(&b, "%s{%s} %s\n", MetricWorkloadCPUCores, lbl, expositionFloat(w.cpuCores))
+			if w.pctKnown {
+				fmt.Fprintf(&b, "%s{%s} %s\n", MetricWorkloadCPUPercent, lbl, expositionFloat(w.cpuPercent))
+			}
+		}
+	}
+	return b.Bytes()
+}
+
+// workloadLabelSet 渲染身份标签集：域主体恰一在前 + 身份三元组收尾
+// （process/workload/container 恒在——词汇查询的身份锚）。
+func workloadLabelSet(w workloadSample) string {
+	pairs := make([]string, 0, 6)
+	for _, kv := range [...][2]string{
+		{"app", w.app}, {"task", w.task}, {"database", w.database}, {"browse", w.browse},
+	} {
+		if kv[1] != "" {
+			pairs = append(pairs, kv[0]+"="+expositionLabelValue(kv[1]))
+		}
+	}
+	pairs = append(pairs,
+		"process="+expositionLabelValue(w.process),
+		"workload="+expositionLabelValue(w.workload),
+		"container="+expositionLabelValue(w.container),
+	)
+	return strings.Join(pairs, ",")
+}
+
+// expositionLabelValue 按 Prometheus 文本格式转义并包裹标签值（载体名含
+// 点号；转义面按规范全带上，不赌标签域）。
+func expositionLabelValue(v string) string {
+	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", `\n`).Replace(v) + `"`
+}
+
+// expositionFloat 渲染样本值（最短十进制浮点——整数值不带小数尾巴）。
+func expositionFloat(v float64) string {
+	return strconv.FormatFloat(v, 'f', -1, 64)
 }
 
 // parseExpositionLine 解析一行 exposition：name{labels} value [ts]。
