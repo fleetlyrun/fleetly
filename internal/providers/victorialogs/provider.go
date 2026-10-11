@@ -528,8 +528,19 @@ func buildLogSQL(q capability.LogQuery) string {
 	if v := q.Namespace.App; v != "" {
 		conds = append(conds, fieldApp+"="+quoteLogSQL(v))
 	}
-	if q.WorkloadID != "" {
-		conds = append(conds, fieldWorkload+"="+quoteLogSQL(q.WorkloadID))
+	if len(q.WorkloadIDs) > 0 {
+		// 多 Workload = OR 并组（ADR-0060；LogsQL {} 流过滤支持 OR 组——
+		// 单元素退化为裸等值，不引入括号噪声）。workload id 是平台投影
+		// 公式产物（非用户输入），值转义仍按字面量执法。
+		parts := make([]string, 0, len(q.WorkloadIDs))
+		for _, id := range q.WorkloadIDs {
+			parts = append(parts, fieldWorkload+"="+quoteLogSQL(id))
+		}
+		if len(parts) == 1 {
+			conds = append(conds, parts[0])
+		} else {
+			conds = append(conds, "("+strings.Join(parts, " OR ")+")")
+		}
 	}
 	if q.Source != "" {
 		conds = append(conds, fieldBuild+"="+quoteLogSQL(q.Source))

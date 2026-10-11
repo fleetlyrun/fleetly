@@ -805,6 +805,14 @@ export interface operations {
                  *     .Task 轴，拒塞 .App——同款词汇纪律）。
                  */
                 run_id?: string;
+                /**
+                 * @description processes 是多进程过滤（app 轴专用；ADR-0060 用户裁决，Console 日志
+                 *     工作台多选承载）：与单值 process 并集去重后收敛为 Workload ID 集
+                 *     （投影公式 engine.WorkloadID，空 = 本 App 全部 Workload）；database/
+                 *     run 轴拒收（载体单 Workload）。gateway 传形 = 重复键
+                 *     （processes=a&processes=b）——逗号形不分裂（REST 多进程测试钉此语义）。
+                 */
+                processes?: string[];
             };
             header?: never;
             path?: never;

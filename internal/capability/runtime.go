@@ -634,9 +634,10 @@ type EnrollKit struct {
 
 // LogQuery 是日志读取查询（时间窗/tail/容器过滤/文本匹配）。
 type LogQuery struct {
-	// Namespace 限定隔离域；WorkloadID 进一步限定单个 Workload。
-	Namespace  NamespaceRef
-	WorkloadID string
+	// Namespace 限定隔离域；WorkloadIDs 进一步限定 Workload 集（空 =
+	// 域内全部——多进程合流以集合成员判定，ADR-0060；单值归约为单元素集）。
+	Namespace   NamespaceRef
+	WorkloadIDs []string
 	// Since/Until 是时间窗（零值 = 不限）。
 	Since, Until time.Time
 	// TailLines 是尾部行数（0 = 全量）。

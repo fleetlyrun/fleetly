@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -538,9 +539,16 @@ func (f *FakeRuntime) ReportFailed(workloadID string, gen capability.Generation,
 // StreamLogs 实现 RuntimeLogs 子面（固定两帧——logs golden 的确定性底座；
 // Follow 不实现：测试只用非 follow 形态）。
 func (f *FakeRuntime) StreamLogs(_ context.Context, q capability.LogQuery, w capability.LogWriter) error {
+	// WorkloadIDs 集合过滤与真 provider 同语义（ADR-0060：成员判定；
+	// 空集 = 域内全部）——REST 多进程面在此获得端到端确定性。帧归属 =
+	// 所选 Workload（集合过滤下的真 provider 归属；db/run 轴亦忠实）。
+	emitted := fakeStreamWorkload(q)
+	if len(q.WorkloadIDs) > 0 && !slices.Contains(q.WorkloadIDs, emitted) {
+		return nil
+	}
 	for i := 1; i <= 2; i++ {
 		if err := w.WriteLog(context.Background(), capability.LogFrame{
-			WorkloadID: q.Namespace.App + "-web",
+			WorkloadID: emitted,
 			Container:  "web",
 			Time:       time.Unix(1767225600, 0).UTC(),
 			Line:       []byte(fmt.Sprintf("frame-%d", i)),
@@ -711,9 +719,15 @@ func (f *FakeLogging) Query(_ context.Context, q capability.LogQuery, w capabili
 	f.mu.Lock()
 	f.queries = append(f.queries, q)
 	f.mu.Unlock()
+	// 同 FakeRuntime：WorkloadIDs 集合过滤 + 帧归属 = 所选 Workload
+	// （检索径双径一致，ADR-0060）。
+	emitted := fakeStreamWorkload(q)
+	if len(q.WorkloadIDs) > 0 && !slices.Contains(q.WorkloadIDs, emitted) {
+		return nil
+	}
 	for i := 1; i <= 2; i++ {
 		if err := w.WriteLog(context.Background(), capability.LogFrame{
-			WorkloadID: q.Namespace.App + "-web",
+			WorkloadID: emitted,
 			Container:  "task-search",
 			Node:       "node-search",
 			Time:       time.Unix(1767225700, 0).UTC(),
@@ -723,6 +737,21 @@ func (f *FakeLogging) Query(_ context.Context, q capability.LogQuery, w capabili
 		}
 	}
 	return nil
+}
+
+// fakeStreamWorkload 是 fake 的帧归属与过滤锚：App 轴 = 夹具唯一真实
+// Workload（App-web；集合不命中即诚实空流——ADR-0060 语义端到端可断言）；
+// db/run 轴 = 单 Workload 锚（载体 id = 域主键投影，Service 层把集合收敛
+// 为该锚——真 provider 语义）。App 轴集合过滤下的发帧归属恒 App-web
+// （夹具没有第二个载体，不装作有）。
+func fakeStreamWorkload(q capability.LogQuery) string {
+	if q.Namespace.App != "" {
+		return q.Namespace.App + "-web"
+	}
+	if len(q.WorkloadIDs) == 1 {
+		return q.WorkloadIDs[0]
+	}
+	return q.Namespace.App + "-web"
 }
 
 // Queries 返回收到的检索查询快照（双径路由断言面）。

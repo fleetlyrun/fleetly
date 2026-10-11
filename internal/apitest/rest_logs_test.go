@@ -78,3 +78,48 @@ func TestRESTGatewayServesLogsAsNDJSONFrames(t *testing.T) {
 		assert.NotEmpty(t, frame.Result.Time)
 	}
 }
+
+// TestRESTGatewayServesLogsMultiProcess 钉多进程过滤面（ADR-0060）：
+// repeated processes 重复键与逗号形皆可解析（grpc-gateway 反复出现/逗号
+// 分裂双通道）；单值 process 兼容面不退役；集合不命中 = 200 + 空流
+// （诚实空，非错误）。
+func TestRESTGatewayServesLogsMultiProcess(t *testing.T) {
+	h := apitest.New(t)
+	ctx := sdk.WithToken(context.Background(), h.Token)
+
+	projects := structurev1.NewProjectsServiceClient(h.Conn)
+	project, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "shop"})
+	require.NoError(t, err)
+	apps := structurev1.NewAppsServiceClient(h.Conn)
+	app, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: project.Project.Id, Name: "web"})
+	require.NoError(t, err)
+
+	handler, err := assembly.NewGatewayHandler(slog.New(slog.DiscardHandler), h.Conn, nil, nil, assembly.NewBrowseGate(h.Services))
+	require.NoError(t, err)
+
+	cases := []struct {
+		name   string
+		query  string
+		frames int
+	}{
+		{"repeated keys", "processes=web&processes=worker", 2},
+		{"single legacy process", "process=web", 2},
+		{"no hit is an honest empty stream", "processes=worker", 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/v1/logs?app_id="+app.App.Id+"&"+tc.query, nil)
+			req.Header.Set("Authorization", "Bearer "+h.Token)
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+			body := strings.TrimSpace(rec.Body.String())
+			if tc.frames == 0 {
+				assert.Empty(t, body)
+				return
+			}
+			lines := strings.Split(body, "\n")
+			assert.Len(t, lines, tc.frames, body)
+		})
+	}
+}

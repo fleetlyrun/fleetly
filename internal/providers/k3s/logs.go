@@ -13,6 +13,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/selection"
 
 	"github.com/fleetlyrun/fleetly/internal/capability"
 )
@@ -23,16 +24,24 @@ import (
 func (p *Provider) StreamLogs(ctx context.Context, q capability.LogQuery, w capability.LogWriter) error {
 	nsName := namespaceName(q.Namespace)
 	sel := labels.Set(nsSelector(q.Namespace)).AsSelector()
-	if q.WorkloadID != "" {
-		sel = labels.Set(map[string]string{labelWorkload: q.WorkloadID}).AsSelector()
+	if len(q.WorkloadIDs) > 0 {
+		// 多 Workload 过滤 = In 选择器（ADR-0060；workload id 全局唯一，
+		// 单选择器替换域选择器与单值形态同语义）。
+		in, err := labels.NewRequirement(labelWorkload, selection.In, q.WorkloadIDs)
+		if err != nil {
+			return fmt.Errorf("k3s logs: %w", err)
+		}
+		sel = labels.NewSelector().Add(*in)
 	}
 	pods, err := p.cli.CoreV1().Pods(nsName).List(ctx, metav1.ListOptions{LabelSelector: sel.String()})
 	if err != nil {
 		return fmt.Errorf("k3s logs: %w", err)
 	}
 	names := make([]string, 0, len(pods.Items))
+	workloadByPod := make(map[string]string, len(pods.Items))
 	for _, pod := range pods.Items {
 		names = append(names, pod.Name)
+		workloadByPod[pod.Name] = pod.Labels[labelWorkload]
 	}
 	sort.Strings(names)
 	if len(names) == 0 {
@@ -47,7 +56,7 @@ func (p *Provider) StreamLogs(ctx context.Context, q capability.LogQuery, w capa
 		wg.Add(1)
 		go func(podName string) {
 			defer wg.Done()
-			if err := p.pumpPodLogs(ctx, nsName, podName, q, w); err != nil {
+			if err := p.pumpPodLogs(ctx, nsName, podName, workloadByPod[podName], q, w); err != nil {
 				errCh <- err
 			}
 		}(name)
@@ -71,7 +80,9 @@ func (p *Provider) StreamLogs(ctx context.Context, q capability.LogQuery, w capa
 
 // pumpPodLogs 读取单个 pod 的日志流并转写为帧（容器名/时间戳/k8s 合流
 // 日志无 stdout/stderr 之分——诚实面：Line 即容器原始输出行）。
-func (p *Provider) pumpPodLogs(ctx context.Context, nsName, podName string, q capability.LogQuery, w capability.LogWriter) error {
+// pumpPodLogs 的 workloadID 从 pod 标记实取（域内全部形态下逐帧归属，
+// 不再退化空串——ADR-0060）；筛选集由 StreamLogs 的选择器执法。
+func (p *Provider) pumpPodLogs(ctx context.Context, nsName, podName, workloadID string, q capability.LogQuery, w capability.LogWriter) error {
 	opts := &corev1.PodLogOptions{Follow: q.Follow}
 	if q.TailLines > 0 {
 		t := q.TailLines
@@ -93,7 +104,7 @@ func (p *Provider) pumpPodLogs(ctx context.Context, nsName, podName string, q ca
 			trimmed := strings.TrimRight(string(line), "\n")
 			if q.Text == "" || strings.Contains(trimmed, q.Text) {
 				frame := capability.LogFrame{
-					WorkloadID: q.WorkloadID,
+					WorkloadID: workloadID,
 					Container:  podName,
 					Node:       "",
 					Time:       time.Now().UTC(),

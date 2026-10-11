@@ -22,7 +22,7 @@ func TestLogQueryFromRequest(t *testing.T) {
 			AppId: appRow.ID, Process: "web", TailLines: 100, Follow: true,
 		})
 		require.NoError(t, err)
-		assert.Equal(t, appRow.ID+"-web", q.WorkloadID, "process must filter by the projected workload ID")
+		assert.Equal(t, []string{appRow.ID + "-web"}, q.WorkloadIDs, "process must filter by the projected workload ID set")
 		assert.Equal(t, int64(100), q.TailLines)
 		assert.True(t, q.Follow)
 		assert.Equal(t, appRow.ProjectID, q.Namespace.Project)
@@ -32,7 +32,23 @@ func TestLogQueryFromRequest(t *testing.T) {
 	t.Run("no process leaves workload filter open", func(t *testing.T) {
 		q, err := logQueryFromRequest("acme", appRow, &telemetryv1.StreamLogsRequest{AppId: appRow.ID})
 		require.NoError(t, err)
-		assert.Empty(t, q.WorkloadID)
+		assert.Empty(t, q.WorkloadIDs)
+	})
+
+	t.Run("processes union with process and dedupe to the workload set", func(t *testing.T) {
+		q, err := logQueryFromRequest("acme", appRow, &telemetryv1.StreamLogsRequest{
+			AppId: appRow.ID, Process: "web", Processes: []string{"web", "worker"},
+		})
+		require.NoError(t, err)
+		assert.Equal(t, []string{appRow.ID + "-web", appRow.ID + "-worker"}, q.WorkloadIDs,
+			"process and processes union (deduped) into the workload set")
+	})
+
+	t.Run("empty processes entry is rejected exactly", func(t *testing.T) {
+		_, err := logQueryFromRequest("acme", appRow, &telemetryv1.StreamLogsRequest{Processes: []string{"web", ""}})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "E_INVALID_ARGUMENT")
+		assert.Contains(t, err.Error(), "processes")
 	})
 
 	t.Run("since and until parse as RFC3339", func(t *testing.T) {

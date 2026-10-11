@@ -517,7 +517,13 @@ type StreamLogsRequest struct {
 	// run_id 是 Run 域寻址（ADR-0025 决策 4 词汇分立）：单 Run 载体日志，
 	// 与 app_id/database_id 三轴互斥；归属 Task 经行链解析（NamespaceRef
 	// .Task 轴，拒塞 .App——同款词汇纪律）。
-	RunId         string `protobuf:"bytes,9,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
+	RunId string `protobuf:"bytes,9,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
+	// processes 是多进程过滤（app 轴专用；ADR-0060 用户裁决，Console 日志
+	// 工作台多选承载）：与单值 process 并集去重后收敛为 Workload ID 集
+	// （投影公式 engine.WorkloadID，空 = 本 App 全部 Workload）；database/
+	// run 轴拒收（载体单 Workload）。gateway 传形 = 重复键
+	// （processes=a&processes=b）——逗号形不分裂（REST 多进程测试钉此语义）。
+	Processes     []string `protobuf:"bytes,10,rep,name=processes,proto3" json:"processes,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -613,6 +619,13 @@ func (x *StreamLogsRequest) GetRunId() string {
 		return x.RunId
 	}
 	return ""
+}
+
+func (x *StreamLogsRequest) GetProcesses() []string {
+	if x != nil {
+		return x.Processes
+	}
+	return nil
 }
 
 // StreamLogsResponse 一帧日志（workload 标注归属；时间 RFC3339；container
@@ -1979,7 +1992,7 @@ const file_fleetly_telemetry_v1_telemetry_proto_rawDesc = "" +
 	"\x18IssueEventTicketResponse\x12\x16\n" +
 	"\x06ticket\x18\x01 \x01(\tR\x06ticket\x12\x1d\n" +
 	"\n" +
-	"expires_in\x18\x02 \x01(\x05R\texpiresIn\"\xf3\x01\n" +
+	"expires_in\x18\x02 \x01(\x05R\texpiresIn\"\x91\x02\n" +
 	"\x11StreamLogsRequest\x12\x15\n" +
 	"\x06app_id\x18\x01 \x01(\tR\x05appId\x12\x18\n" +
 	"\aprocess\x18\x02 \x01(\tR\aprocess\x12\x1d\n" +
@@ -1991,7 +2004,9 @@ const file_fleetly_telemetry_v1_telemetry_proto_rawDesc = "" +
 	"\x04text\x18\a \x01(\tR\x04text\x12\x1f\n" +
 	"\vdatabase_id\x18\b \x01(\tR\n" +
 	"databaseId\x12\x15\n" +
-	"\x06run_id\x18\t \x01(\tR\x05runId\"\x8f\x01\n" +
+	"\x06run_id\x18\t \x01(\tR\x05runId\x12\x1c\n" +
+	"\tprocesses\x18\n" +
+	" \x03(\tR\tprocesses\"\x8f\x01\n" +
 	"\x12StreamLogsResponse\x12\x1f\n" +
 	"\vworkload_id\x18\x01 \x01(\tR\n" +
 	"workloadId\x12\x1c\n" +

@@ -239,8 +239,8 @@ func TestStreamLogsFollowFanInBothServices(t *testing.T) {
 // 后的过滤层——服务级全等，不逐容器）。
 func TestStreamLogsWorkloadFilter(t *testing.T) {
 	q := capability.LogQuery{
-		Namespace:  capability.NamespaceRef{Team: "acme", Project: "shop", App: "web"},
-		WorkloadID: "wl_01H",
+		Namespace:   capability.NamespaceRef{Team: "acme", Project: "shop", App: "web"},
+		WorkloadIDs: []string{"wl_01H"},
 	}
 	f := newFanInFixture(q)
 	c := &frameCollector{}
@@ -259,6 +259,34 @@ func TestStreamLogsWorkloadFilter(t *testing.T) {
 		t.Fatal("filtered non-follow stream did not terminate at EOF")
 	}
 	assert.Equal(t, 1, c.countByTask()["task-1a"])
+}
+
+// TestStreamLogsWorkloadSetFilter：多 Workload 集合过滤（ADR-0060）——
+// 成员判定，命中集内全部服务开流合流；空集语义由合流路径既有行为承载。
+func TestStreamLogsWorkloadSetFilter(t *testing.T) {
+	q := capability.LogQuery{
+		Namespace:   capability.NamespaceRef{Team: "acme", Project: "shop", App: "web"},
+		WorkloadIDs: []string{"wl_01H", "wl_02H"},
+	}
+	f := newFanInFixture(q)
+	c := &frameCollector{}
+
+	done := make(chan error, 1)
+	go func() { done <- f.p.StreamLogs(context.Background(), q, c) }()
+	// 命中集内两个服务都开流（opened 收两个，次序不定）。
+	ids := map[string]bool{<-f.opened: true, <-f.opened: true}
+	assert.Equal(t, map[string]bool{"svc-web-1": true, "svc-web-2": true}, ids, "set filter opens every matching service")
+	for _, id := range []string{"svc-web-1", "svc-web-2"} {
+		f.feed[id] <- svcLogLine("node-a", "task-"+id, 1)
+		close(f.feed[id])
+	}
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("set-filtered non-follow stream did not terminate at EOF")
+	}
+	assert.Len(t, c.snapshot(), 2)
 }
 
 // TestStreamLogsNoFollowCompletesAcrossServices：非 Follow 与 Follow

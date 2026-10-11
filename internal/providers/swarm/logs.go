@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -40,7 +41,7 @@ func (p *Provider) StreamLogs(ctx context.Context, q capability.LogQuery, w capa
 		if labels[labelWorkload] == "" {
 			continue // 非平台 Workload 载体（防御：ns 标记在但 workload 缺席）
 		}
-		if q.WorkloadID != "" && labels[labelWorkload] != q.WorkloadID {
+		if len(q.WorkloadIDs) > 0 && !slices.Contains(q.WorkloadIDs, labels[labelWorkload]) {
 			continue
 		}
 		targets = append(targets, svc)

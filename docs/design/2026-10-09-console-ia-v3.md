@@ -60,11 +60,15 @@
 │   Alerts        规则+状态；渠道→Settings │
 │   Backups       数据安全聚合视图 ★      │
 │ ── ADMIN ────────────────────────────  │
-│   Identity / Audit / Settings          │
+│   Access / Audit / Settings            │
 └────────────────────────────────────────┘
 ```
 
 - `nav.ts` 单源延续（侧栏 + ⌘K 共用），新增 `group` 字段承载分组标签。
+- 2026-10-11 ADR-0060 复裁：路由对齐页名（`/configuration`→`/variables`、
+  `/providers`→`/components`）、Identity→Access（route 仍 `/identity`）、
+  Overview 选中态回归纯前缀匹配；工作台 process 多选（proto repeated
+  processes）与 App Detail Processes 页同批落地。
 - **导航撤下三项**（路由全部保留兼容）：Quickstart、Templates → `+ New` 入口；Terminal → App tab（`/terminal` 留深链）。
 - 项目域 MONITOR 的 Logs/Metrics 是**参数化入口**（跳全局工作台带 `?project=`），不新增路由——保住现有工作台 URL 契约与深链（App tab 的 `/logs?app=` 协议不变）。
 - 通知渠道（webhook/telegram，舰队级资源）从 Alerts 页迁到平台 Settings。

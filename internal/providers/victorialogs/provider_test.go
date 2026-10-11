@@ -120,14 +120,21 @@ func TestMaterialsStableAcrossRestarts(t *testing.T) {
 // 转义（\ 与 "）；文本子串语义（正则元字符转义）。
 func TestBuildLogSQL(t *testing.T) {
 	q := capability.LogQuery{
-		Namespace:  capability.NamespaceRef{Team: "t1", Project: "P1", App: "app1"},
-		WorkloadID: "W1",
-		Text:       "err.or",
+		Namespace:   capability.NamespaceRef{Team: "t1", Project: "P1", App: "app1"},
+		WorkloadIDs: []string{"W1"},
+		Text:        "err.or",
 	}
 	assert.Equal(t, `{fleetly_project="P1",fleetly_app="app1",fleetly_workload="W1"} _msg:~"err\.or"`, buildLogSQL(q))
 
 	q.Text = `he said "hi"\done`
 	assert.Equal(t, `{fleetly_project="P1",fleetly_app="app1",fleetly_workload="W1"} _msg:~"he said \"hi\"\\done"`, buildLogSQL(q))
+
+	// 多 Workload = OR 并组（ADR-0060）；单元素退化裸等值无括号。
+	qm := capability.LogQuery{
+		Namespace:   capability.NamespaceRef{Team: "t1", Project: "P1", App: "app1"},
+		WorkloadIDs: []string{"W1", "W2"},
+	}
+	assert.Equal(t, `{fleetly_project="P1",fleetly_app="app1",(fleetly_workload="W1" OR fleetly_workload="W2")}`, buildLogSQL(qm))
 
 	// 值内引号与反斜杠的字面量转义。
 	q2 := capability.LogQuery{Namespace: capability.NamespaceRef{Project: `a"b\c`}, Text: "x"}
@@ -251,12 +258,12 @@ func TestQueryRoundTrip(t *testing.T) {
 	p.addr = strings.TrimPrefix(srv.URL, "http://")
 	var cw collectWriter
 	err := p.Query(context.Background(), capability.LogQuery{
-		Namespace:  capability.NamespaceRef{Project: "P1", App: "app1"},
-		WorkloadID: "W1",
-		Text:       "irrelevant-server-side",
-		Since:      time.Date(2026, 10, 4, 11, 0, 0, 0, time.UTC),
-		Until:      time.Date(2026, 10, 4, 13, 0, 0, 0, time.UTC),
-		TailLines:  50,
+		Namespace:   capability.NamespaceRef{Project: "P1", App: "app1"},
+		WorkloadIDs: []string{"W1"},
+		Text:        "irrelevant-server-side",
+		Since:       time.Date(2026, 10, 4, 11, 0, 0, 0, time.UTC),
+		Until:       time.Date(2026, 10, 4, 13, 0, 0, 0, time.UTC),
+		TailLines:   50,
 	}, &cw)
 	require.NoError(t, err)
 	require.Len(t, cw.frames, 3)

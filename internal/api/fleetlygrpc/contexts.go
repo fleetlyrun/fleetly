@@ -6,6 +6,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"slices"
 	"strconv"
 	"time"
 
@@ -449,15 +450,15 @@ func (svc *LogsService) streamDatabaseLogs(req *telemetryv1.StreamLogsRequest, s
 	if err := svc.s.authorizeTeamForProject(ctx, proj); err != nil {
 		return err
 	}
-	if req.GetProcess() != "" {
-		return apperr.New("E_INVALID_ARGUMENT", "process: app-axis only (database carriers are single-workload)")
+	if req.GetProcess() != "" || len(req.GetProcesses()) > 0 {
+		return apperr.New("E_INVALID_ARGUMENT", "process/processes: app-axis only (database carriers are single-workload)")
 	}
 	q := capability.LogQuery{
-		Namespace:  capability.NamespaceRef{Team: proj.TeamID, Project: dbRow.ProjectID, Database: dbRow.ID},
-		WorkloadID: dbRow.ID,
-		TailLines:  req.GetTailLines(),
-		Follow:     req.GetFollow(),
-		Text:       req.GetText(),
+		Namespace:   capability.NamespaceRef{Team: proj.TeamID, Project: dbRow.ProjectID, Database: dbRow.ID},
+		WorkloadIDs: []string{dbRow.ID},
+		TailLines:   req.GetTailLines(),
+		Follow:      req.GetFollow(),
+		Text:        req.GetText(),
 	}
 	if err := applyLogWindow(&q, req); err != nil {
 		return err
@@ -485,19 +486,19 @@ func (svc *LogsService) streamRunLogs(req *telemetryv1.StreamLogsRequest, stream
 	if err := svc.s.authorizeTeamForProject(ctx, proj); err != nil {
 		return err
 	}
-	if req.GetProcess() != "" {
-		return apperr.New("E_INVALID_ARGUMENT", "process: app-axis only (run carriers are single-workload)")
+	if req.GetProcess() != "" || len(req.GetProcesses()) > 0 {
+		return apperr.New("E_INVALID_ARGUMENT", "process/processes: app-axis only (run carriers are single-workload)")
 	}
 	q := capability.LogQuery{
-		Namespace:  capability.NamespaceRef{Team: proj.TeamID, Project: runRow.ProjectID, Task: taskRow.ID},
-		WorkloadID: runRow.WorkloadID,
-		TailLines:  req.GetTailLines(),
-		Follow:     req.GetFollow(),
-		Text:       req.GetText(),
+		Namespace:   capability.NamespaceRef{Team: proj.TeamID, Project: runRow.ProjectID, Task: taskRow.ID},
+		WorkloadIDs: []string{runRow.WorkloadID},
+		TailLines:   req.GetTailLines(),
+		Follow:      req.GetFollow(),
+		Text:        req.GetText(),
 	}
 	if runRow.WorkloadID == "" {
 		// 观测对账锚缺席（历史行）：收敛到 Run ID（投影公式同锚）。
-		q.WorkloadID = runRow.ID
+		q.WorkloadIDs = []string{runRow.ID}
 	}
 	if err := applyLogWindow(&q, req); err != nil {
 		return err
@@ -549,9 +550,10 @@ func applyLogWindow(q *capability.LogQuery, req *telemetryv1.StreamLogsRequest) 
 	return nil
 }
 
-// logQueryFromRequest 把 RPC 请求翻译为 RuntimeLogs 查询：process 过滤经
-// 投影公式合成 Workload ID（公式真源 engine.WorkloadID，不散拼）；时间窗
-// RFC3339（空 = 不限，坏值精确拒绝）。team 是 App 归属 Project 的 Team 轴
+// logQueryFromRequest 把 RPC 请求翻译为 RuntimeLogs 查询：单值 process 与
+// 多值 processes 并集去重后经投影公式合成 Workload ID 集（公式真源
+// engine.WorkloadID，不散拼；ADR-0060 多进程过滤）；时间窗 RFC3339
+// （空 = 不限，坏值精确拒绝）。team 是 App 归属 Project 的 Team 轴
 // （ADR-0028 resolveBackend 同族——调用方实取传入）。
 func logQueryFromRequest(team string, appRow *app.App, req *telemetryv1.StreamLogsRequest) (capability.LogQuery, error) {
 	q := capability.LogQuery{
@@ -559,9 +561,19 @@ func logQueryFromRequest(team string, appRow *app.App, req *telemetryv1.StreamLo
 		TailLines: req.GetTailLines(),
 		Follow:    req.GetFollow(),
 	}
+	workloads := make([]string, 0, len(req.GetProcesses())+1)
 	if p := req.GetProcess(); p != "" {
-		q.WorkloadID = engine.WorkloadID(appRow.ID, p)
+		workloads = append(workloads, engine.WorkloadID(appRow.ID, p))
 	}
+	for _, p := range req.GetProcesses() {
+		if p == "" {
+			return q, apperr.New("E_INVALID_ARGUMENT", "processes: entries must be non-empty (exact rejection over silent drop)")
+		}
+		if id := engine.WorkloadID(appRow.ID, p); !slices.Contains(workloads, id) {
+			workloads = append(workloads, id)
+		}
+	}
+	q.WorkloadIDs = workloads
 	if raw := req.GetSince(); raw != "" {
 		t, err := time.Parse(time.RFC3339, raw)
 		if err != nil {

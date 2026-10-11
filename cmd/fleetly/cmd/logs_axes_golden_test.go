@@ -6,6 +6,7 @@ package cmd
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -41,8 +42,8 @@ func TestGoldenLogsDatabaseAxis(t *testing.T) {
 	if len(queries) != 1 {
 		t.Fatalf("expected 1 logging query, got %d", len(queries))
 	}
-	if queries[0].Namespace.Database != dbID || queries[0].WorkloadID != dbID {
-		t.Fatalf("query anchors: ns.Database=%q workload=%q (want both %q)", queries[0].Namespace.Database, queries[0].WorkloadID, dbID)
+	if queries[0].Namespace.Database != dbID || !reflect.DeepEqual(queries[0].WorkloadIDs, []string{dbID}) {
+		t.Fatalf("query anchors: ns.Database=%q workloads=%v (want both anchored to %q)", queries[0].Namespace.Database, queries[0].WorkloadIDs, dbID)
 	}
 
 	// process 在 db 轴精确拒绝（载体单 workload，语义无意义）。
@@ -94,8 +95,8 @@ func TestGoldenLogsRunAxis(t *testing.T) {
 	if len(queries) != 1 {
 		t.Fatalf("expected 1 logging query, got %d", len(queries))
 	}
-	if queries[0].Namespace.Task != taskID || queries[0].WorkloadID != runID {
-		t.Fatalf("query anchors: ns.Task=%q workload=%q (want %q/%q)", queries[0].Namespace.Task, queries[0].WorkloadID, taskID, runID)
+	if queries[0].Namespace.Task != taskID || !reflect.DeepEqual(queries[0].WorkloadIDs, []string{runID}) {
+		t.Fatalf("query anchors: ns.Task=%q workloads=%v (want %q anchored)", queries[0].Namespace.Task, queries[0].WorkloadIDs, taskID)
 	}
 }
 
