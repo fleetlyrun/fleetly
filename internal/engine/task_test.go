@@ -19,6 +19,7 @@ import (
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	"github.com/fleetlyrun/fleetly/internal/capability"
 	"github.com/fleetlyrun/fleetly/internal/state"
+	networkrepo "github.com/fleetlyrun/fleetly/internal/state/network"
 	"github.com/fleetlyrun/fleetly/internal/state/role"
 	"github.com/fleetlyrun/fleetly/internal/state/run"
 	"github.com/fleetlyrun/fleetly/internal/state/statetest"
@@ -856,6 +857,48 @@ func TestEnsureTaskWorkloadsSignatureSkip(t *testing.T) {
 	clock.Advance(e.opts.ReconcileReplayInterval + time.Second)
 	e.taskStep(ctx) // 周期强制重放
 	assert.Equal(t, n1+1, len(rt.calls()), "reconcile interval must force re-ensure")
+}
+
+// TestEnsureTaskWorkloadsEgressChangeReEnsures（候选 6 回归锚）：egress
+// 事实变化必须击穿签名跳过——网络重建 flag-day（ADR-0046 删旧建新换
+// egress 面）后投影期 EgressNetworks 变化，memo 对它盲则载体滞留旧 egress
+// 接线。2026-10-11 前五字段子集签名实证此盲区；全集签名
+// （capability.WorkloadSetSignature）落位后本测试为回归钉。
+func TestEnsureTaskWorkloadsEgressChangeReEnsures(t *testing.T) {
+	e, rt, _ := newTestEngine(t)
+	ctx := context.Background()
+	taskID := "01JD0TASK0000000000000000B"
+	runID := "01JD0RUN000000000000000000B"
+	require.NoError(t, e.networks.Create(ctx, e.db.Runner(), &networkrepo.Network{
+		ID: "net-eg-1", ProjectID: tTaskProject, Name: "workers", EgressNone: true,
+	}))
+	// process.networks 挂项目网 = firstBoot 铸造行形态（挂靠网铸时解析，
+	// 投影期 egress 从 networks 表现值过滤——taskGroup 网无 egress 属性面，
+	// Task 载体 egress 触达链只在此）。
+	spec := fmt.Sprintf(`{"schema_version":1,"task":{"id":"%s","project":"%s"},`+
+		`"process":{"name":"run","image":"busybox:1.37","command":["/worker"],"networks":["workers"]},`+
+		`"ttl_seconds":0,"desired_concurrency":1,"form":"resident"}`, taskID, tTaskProject)
+	require.NoError(t, e.tasks.Create(ctx, e.db.Runner(), &task.Task{
+		ID: taskID, ProjectID: tTaskProject, Form: task.FormResident, State: task.StateActive,
+		Spec: []byte(spec), DesiredConcurrency: 1, DNSName: TaskDNSName(taskID),
+	}))
+	require.NoError(t, e.runs.Create(ctx, e.db.Runner(), &run.Run{
+		ID: runID, TaskID: taskID, ProjectID: tTaskProject, State: run.StateRunning,
+	}))
+
+	e.taskStep(ctx)
+	n1 := len(rt.calls())
+	require.Positive(t, n1)
+	e.taskStep(ctx)
+	assert.Equal(t, n1, len(rt.calls()), "unchanged desired set must skip Ensure")
+
+	// 重建形态：旧行 tombstone（egress:none 摘除）——投影 EgressNetworks
+	// ["workers"] → nil，全集签名必须变（旧子集签名对此盲，Ensure 被跳）。
+	_, err := e.db.Runner().ExecContext(ctx,
+		"UPDATE networks SET deleted_at = '2026-10-11T00:00:00Z' WHERE id = 'net-eg-1'")
+	require.NoError(t, err)
+	e.taskStep(ctx)
+	assert.Greater(t, len(rt.calls()), n1, "egress change must invalidate the memo and re-ensure")
 }
 
 // TestGroupDrivingRunsByTask（N1 C18）：批量分组与逐 Task ListByTaskStates

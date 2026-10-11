@@ -22,10 +22,8 @@ package engine
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"sort"
 	"time"
 
 	"github.com/oklog/ulid/v2"
@@ -470,7 +468,10 @@ func (e *Engine) oneshotTerminalState(ctx context.Context, t *task.Task) task.St
 // 路径（driveTask 的镜像/排空迁移）据此决定是否落终态迁移（E29-2 收口
 // 次序：Ensure 成功才迁移），周期收敛路径忽略之（日志已记，下拍重试）。
 func (e *Engine) ensureTaskWorkloads(ctx context.Context, t *task.Task, ws []capability.Workload) error {
-	sig := workloadSetSignature(ws)
+	// 签名是全集 canonical（capability.WorkloadSetSignature）——「有没有变」
+	// 由类型自己回答，手挑字段子集对投影期解析字段（如 EgressNetworks）盲
+	// 的缺陷类已绝根（runbook 记录·三十七）。
+	sig := capability.WorkloadSetSignature(ws)
 	if _, fresh := e.ensureFresh(e.task.ensure, t.ID, sig, e.clock.Now()); fresh {
 		return nil
 	}
@@ -861,30 +862,6 @@ func loadTaskSpec(blob []byte) (*specv1.TaskSpec, error) {
 		return nil, fmt.Errorf("unmarshal task spec: %w", err)
 	}
 	return spec, nil
-}
-
-// workloadSetSignature 计算期望集签名（幂等收敛的跳过判定；逐字节稳定：
-// 按 Workload ID 排序，env 键值对排序消除 map 遍历序）。
-func workloadSetSignature(ws []capability.Workload) string {
-	sorted := append([]capability.Workload(nil), ws...)
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i].ID < sorted[j].ID })
-	type sigEntry struct {
-		ID       string            `json:"id"`
-		Image    string            `json:"image"`
-		Replicas int64             `json:"replicas"`
-		Command  []string          `json:"command,omitempty"`
-		Env      map[string]string `json:"env"`
-	}
-	out := make([]sigEntry, len(sorted))
-	for i, w := range sorted {
-		env := make(map[string]string, len(w.Env))
-		for k, v := range w.Env {
-			env[k] = v
-		}
-		out[i] = sigEntry{ID: w.ID, Image: w.Image, Replicas: w.Replicas, Command: w.Command, Env: env}
-	}
-	b, _ := json.Marshal(out) //nolint:errcheck // 纯标量结构，Marshal 不失败
-	return string(b)
 }
 
 // outboxAppend 是事件落库的便捷面（返回错误供调用方日志）。
