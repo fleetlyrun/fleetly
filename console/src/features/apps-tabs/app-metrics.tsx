@@ -25,7 +25,7 @@ export function AppMetricsTab({ appId }: { appId: string }) {
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-end gap-2.5">
         <div className="flex flex-col gap-1">
-          <Label className="text-[11px] text-muted-foreground">Process</Label>
+          <Label className="text-2xs text-muted-foreground">Process</Label>
           <Select value={process} onValueChange={setProcess}>
             <SelectTrigger className="w-44">
               <SelectValue placeholder="—" />
@@ -48,7 +48,7 @@ export function AppMetricsTab({ appId }: { appId: string }) {
           <PresetCard key={preset.key} title={preset.label} unit={preset.unit} query={preset.build(appLabel, processFilter)} />
         ))}
       </div>
-      <p className="text-[11.5px] text-muted-foreground">
+      <p className="text-2xs text-muted-foreground">
         Scope: app <span className="font-mono">{appId}</span>
         {process !== "all" ? (
           <>
@@ -79,8 +79,8 @@ function PresetCard({
   return (
     <section className="rounded-xl border bg-card p-4">
       <div className="mb-2 flex items-baseline justify-between">
-        <h3 className="text-[13px] font-semibold">{title}</h3>
-        <span className="text-[11.5px] text-muted-foreground">window 1h · refreshed 30s</span>
+        <h3 className="text-sm font-semibold">{title}</h3>
+        <span className="text-2xs text-muted-foreground">window 1h · refreshed 30s</span>
       </div>
       {series.isPending ? (
         <p className="py-10 text-center text-xs text-muted-foreground">Loading series…</p>

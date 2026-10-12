@@ -39,8 +39,8 @@ function ProjectDeploymentsPage() {
         const app = (apps.data ?? []).find((entry) => entry.id === row.original.app_id);
         return (
           <div className="flex items-center gap-2">
-            <ProjectAvatar seed={row.original.app_id} label={app?.name ?? "?"} className="size-5 rounded-md text-[10px]" />
-            <span className="text-[13px] font-medium">{app?.name ?? row.original.app_id?.slice(0, 10) + "…"}</span>
+            <ProjectAvatar seed={row.original.app_id} label={app?.name ?? "?"} className="size-5 rounded-md text-2xs" />
+            <span className="text-sm font-medium">{app?.name ?? row.original.app_id?.slice(0, 10) + "…"}</span>
           </div>
         );
       },
@@ -78,7 +78,7 @@ function ProjectDeploymentsPage() {
       header: "Error",
       cell: ({ row }) =>
         row.original.error ? (
-          <div className="max-w-56 truncate font-mono text-[11px] text-[var(--status-danger)]" title={row.original.error}>
+          <div className="max-w-56 truncate font-mono text-2xs text-[var(--status-danger)]" title={row.original.error}>
             {row.original.error}
           </div>
         ) : (

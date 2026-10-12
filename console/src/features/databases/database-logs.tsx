@@ -20,7 +20,7 @@ export function DatabaseLogsTab({ databaseId }: { databaseId: string }) {
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-end gap-2.5">
         <div className="flex flex-col gap-1">
-          <Label className="text-[11px] text-muted-foreground">Filter text (VL retrieval)</Label>
+          <Label className="text-2xs text-muted-foreground">Filter text (VL retrieval)</Label>
           <Input
             value={text}
             placeholder="checkpoint, slow query…"
@@ -29,7 +29,7 @@ export function DatabaseLogsTab({ databaseId }: { databaseId: string }) {
           />
         </div>
         <div className="flex flex-col gap-1">
-          <Label className="text-[11px] text-muted-foreground">Tail lines</Label>
+          <Label className="text-2xs text-muted-foreground">Tail lines</Label>
           <Input
             value={tailLines}
             inputMode="numeric"
@@ -61,7 +61,7 @@ export function DatabaseLogsTab({ databaseId }: { databaseId: string }) {
         <LogViewer frames={log.frames} streaming={log.streaming} />
       </div>
 
-      <div className="flex items-center gap-3 font-mono text-[11px] text-muted-foreground">
+      <div className="flex items-center gap-3 font-mono text-2xs text-muted-foreground">
         <span>scope: database carrier {databaseId}</span>
         <span>{log.frames.length} frames</span>
         {log.ended && !log.streaming ? <span>stream ended — adjust filters and restart</span> : null}

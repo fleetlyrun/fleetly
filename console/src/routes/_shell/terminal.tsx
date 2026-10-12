@@ -151,13 +151,13 @@ function TerminalWorkbench() {
   return (
     <div className="flex h-full flex-col px-5 pt-4">
       <div className="mb-1 flex items-baseline gap-3">
-        <h1 className="font-heading text-[17px] font-bold tracking-tight">Terminal</h1>
+        <h1 className="font-heading text-lg font-bold tracking-tight">Terminal</h1>
         <span className="text-xs text-muted-foreground">Exec session — one-shot ticket over WebSocket</span>
       </div>
 
       <div className="flex flex-none flex-wrap items-end gap-2.5 py-3">
         <div className="flex flex-col gap-1">
-          <Label className="text-[11px] text-muted-foreground">Project</Label>
+          <Label className="text-2xs text-muted-foreground">Project</Label>
           <Select value={projectId} onValueChange={() => undefined} disabled>
             <SelectTrigger className="w-40">
               <SelectValue placeholder={projects.data?.find((project) => project.id === projectId)?.name ?? "—"} />
@@ -172,7 +172,7 @@ function TerminalWorkbench() {
           </Select>
         </div>
         <div className="flex flex-col gap-1">
-          <Label className="text-[11px] text-muted-foreground">App</Label>
+          <Label className="text-2xs text-muted-foreground">App</Label>
           <Select
             value={effectiveApp}
             onValueChange={(value) => {
@@ -193,7 +193,7 @@ function TerminalWorkbench() {
           </Select>
         </div>
         <div className="flex flex-col gap-1">
-          <Label className="text-[11px] text-muted-foreground">Process</Label>
+          <Label className="text-2xs text-muted-foreground">Process</Label>
           <Select value={effectiveProcess} onValueChange={setProcess}>
             <SelectTrigger className="w-32">
               <SelectValue placeholder={effectiveProcess === "" ? "—" : ""} />
@@ -208,7 +208,7 @@ function TerminalWorkbench() {
           </Select>
         </div>
         <div className="flex flex-1 flex-col gap-1">
-          <Label className="text-[11px] text-muted-foreground">Command (empty = /bin/sh)</Label>
+          <Label className="text-2xs text-muted-foreground">Command (empty = /bin/sh)</Label>
           <Input
             value={command}
             placeholder="/bin/sh"
@@ -240,7 +240,7 @@ function TerminalWorkbench() {
         <div ref={termDiv} className="absolute inset-0 px-2 py-1" />
       </div>
 
-      <div className="flex flex-none items-center gap-4 py-2 font-mono text-[11px] text-muted-foreground">
+      <div className="flex flex-none items-center gap-4 py-2 font-mono text-2xs text-muted-foreground">
         <span
           className={
             status === "open"
@@ -257,7 +257,7 @@ function TerminalWorkbench() {
         {banner !== "" ? <span className="truncate">{banner} — the session has ended; press Connect to open a new one.</span> : null}
         <span className="ml-auto">POST /v1/exec/sessions → /v1/exec/stream</span>
       </div>
-      <p className="flex-none pb-3 text-[11px] leading-relaxed text-muted-foreground">
+      <p className="flex-none pb-3 text-2xs leading-relaxed text-muted-foreground">
         Sessions are interactive TTYs into a running replica (platform picks the first running instance and reports it in the session
         header). Change freeze does not cover exec — it is a diagnostics face (ADR-0049).
       </p>

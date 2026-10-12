@@ -70,7 +70,7 @@ export function AppOverviewTab({ projectId, appId }: { projectId: string; appId:
           <CardHeader>
             <CardTitle className="text-sm">Current status</CardTitle>
           </CardHeader>
-          <CardContent className="flex flex-col gap-2 text-[13px]">
+          <CardContent className="flex flex-col gap-2 text-sm">
             {deployments.isPending ? (
               <Skeleton className="h-20 w-full" />
             ) : deployments.isError ? (
@@ -134,7 +134,7 @@ export function AppOverviewTab({ projectId, appId }: { projectId: string; appId:
                 </div>
               ))
             )}
-            <p className="text-[11px] text-muted-foreground">TLS auto (ACME) · managed Traefik</p>
+            <p className="text-2xs text-muted-foreground">TLS auto (ACME) · managed Traefik</p>
           </CardContent>
         </Card>
       </div>
@@ -181,7 +181,7 @@ export function AppOverviewTab({ projectId, appId }: { projectId: string; appId:
               </TableBody>
             </Table>
           )}
-          <p className="mt-2 text-[11px] text-muted-foreground">
+          <p className="mt-2 text-2xs text-muted-foreground">
             Replicas are declared in the frozen spec; Running is the live instance count — expand the Processes tab for instance
             details.
           </p>
@@ -217,8 +217,8 @@ export function AppOverviewTab({ projectId, appId }: { projectId: string; appId:
                 {rows.slice(0, 5).map((item) => (
                   <TableRow key={item.id}>
                     <TableCell><DeploymentStatusBadge state={item.state} /></TableCell>
-                    <TableCell className="font-mono text-[11px]">{revisionLabel(seqByRevision.get(item.to_revision ?? ""), item.to_revision)}</TableCell>
-                    <TableCell className="font-mono text-[11px]">g{item.generation ?? "?"}</TableCell>
+                    <TableCell className="font-mono text-2xs">{revisionLabel(seqByRevision.get(item.to_revision ?? ""), item.to_revision)}</TableCell>
+                    <TableCell className="font-mono text-2xs">g{item.generation ?? "?"}</TableCell>
                     <TableCell className="text-muted-foreground"><RelativeTime value={item.updated_at} /></TableCell>
                   </TableRow>
                 ))}
@@ -250,13 +250,13 @@ function MetricCard({
   return (
     <Card>
       <CardContent className="flex flex-col gap-1 p-4">
-        <span className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">{label}</span>
+        <span className="text-2xs font-semibold tracking-wide text-muted-foreground uppercase">{label}</span>
         {pending ? (
           <Skeleton className="h-7 w-16" />
         ) : (
           <span className={`font-heading text-2xl font-bold ${danger ? "text-destructive" : ""}`}>{value ?? "—"}</span>
         )}
-        {hint ? <span className="truncate text-[11px] text-muted-foreground">{hint}</span> : null}
+        {hint ? <span className="truncate text-2xs text-muted-foreground">{hint}</span> : null}
       </CardContent>
     </Card>
   );

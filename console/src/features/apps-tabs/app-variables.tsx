@@ -112,7 +112,7 @@ export function AppVariablesTab({ projectId, appId }: { projectId: string; appId
     // W-3：未部署（404）= 空态面，不渲染查询内部错误。
     return (
       <div className="rounded-xl border bg-card p-6 text-center">
-        <h3 className="text-[13px] font-semibold">No frozen spec yet</h3>
+        <h3 className="text-sm font-semibold">No frozen spec yet</h3>
         <p className="mt-1 text-xs text-muted-foreground">
           The app has no deployment — its spec freezes on the first deploy. Environment can be provided at deploy time.
         </p>
@@ -139,7 +139,7 @@ export function AppVariablesTab({ projectId, appId }: { projectId: string; appId
           </a>
         </p>
         <div className="flex items-center gap-1.5">
-          <Label className="text-[11px] text-muted-foreground">Process</Label>
+          <Label className="text-2xs text-muted-foreground">Process</Label>
           <Select value={filter} onValueChange={setFilter}>
             <SelectTrigger className="h-8 w-40 text-xs">
               <SelectValue placeholder="All processes" />
@@ -181,7 +181,7 @@ export function AppVariablesTab({ projectId, appId }: { projectId: string; appId
         <p className="px-4 py-6 text-center text-xs text-muted-foreground">The frozen spec carries no processes.</p>
       ) : (
         <table className="w-full text-xs">
-          <thead className="border-b bg-muted/40 text-left text-[10.5px] font-semibold tracking-wide text-muted-foreground uppercase">
+          <thead className="border-b bg-muted/40 text-left text-2xs font-semibold tracking-wide text-muted-foreground uppercase">
             <tr>
               <th className="px-4 py-2">Name</th>
               <th className="px-4 py-2">Value</th>
@@ -199,7 +199,7 @@ export function AppVariablesTab({ projectId, appId }: { projectId: string; appId
               if (showProcessRow) {
                 rows.push(
                   <tr key={`${name}-group`} className="border-b bg-muted/20">
-                    <td colSpan={3} className="px-4 py-1.5 text-[10.5px] font-semibold tracking-wide text-muted-foreground uppercase">
+                    <td colSpan={3} className="px-4 py-1.5 text-2xs font-semibold tracking-wide text-muted-foreground uppercase">
                       process {name} · {process.replicas ?? 1} replica{Number(process.replicas ?? 1) === 1 ? "" : "s"}
                       {stagedHere ? <span className="ml-2 text-info normal-case">staged edits</span> : null}
                     </td>
@@ -253,7 +253,7 @@ export function AppVariablesTab({ projectId, appId }: { projectId: string; appId
                         >
                           {ref}
                         </a>
-                        <span className="rounded-full border border-info/30 bg-info/10 px-1.5 py-0.5 text-[10px] font-semibold text-info">
+                        <span className="rounded-full border border-info/30 bg-info/10 px-1.5 py-0.5 text-2xs font-semibold text-info">
                           secret ref
                         </span>
                       </span>
@@ -421,7 +421,7 @@ function VariableDialog({
                 </SelectContent>
               </Select>
             )}
-            <span className="text-[11px] font-normal text-muted-foreground">The variable lands on this process only.</span>
+            <span className="text-2xs font-normal text-muted-foreground">The variable lands on this process only.</span>
           </Label>
           <Label className="flex flex-col gap-1.5">
             <span className="text-xs font-semibold">Name</span>
@@ -499,7 +499,7 @@ function RefDialog({
           <Label className="flex flex-col gap-1.5">
             <span className="text-xs font-semibold">Secret name</span>
             <Input value={ref} onChange={(event) => setRef(event.target.value)} autoFocus />
-            <span className="text-[11px] font-normal text-muted-foreground">
+            <span className="text-2xs font-normal text-muted-foreground">
               Reference form (e.g. database:orders) — the value lives in the project secret, never in the spec. Lands on process{" "}
               {process || "…"}.
             </span>

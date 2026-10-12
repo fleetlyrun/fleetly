@@ -106,8 +106,8 @@ export function DatabasesListPage({ projectId }: { projectId: string }) {
         <div className="flex items-center gap-2.5">
           <ProjectAvatar seed={row.original.id ?? ""} label={row.original.name ?? ""} />
           <div className="min-w-0">
-            <div className="text-[13px] font-semibold">{row.original.name}</div>
-            <div className="flex items-center gap-0.5 font-mono text-[11px] text-muted-foreground">
+            <div className="text-sm font-semibold">{row.original.name}</div>
+            <div className="flex items-center gap-0.5 font-mono text-2xs text-muted-foreground">
               {(row.original.id ?? "").slice(0, 10)}…
               <CopyButton value={row.original.id ?? ""} />
             </div>
@@ -418,7 +418,7 @@ export function CreateDatabaseDialog({
               onChange={(event) => setForm({ ...form, restoreFrom: event.target.value })}
               placeholder="bk_01j…"
             />
-            <p className="text-[11.5px] text-muted-foreground">
+            <p className="text-2xs text-muted-foreground">
               Restore creates a new database seeded from the backup — the source is never overwritten.
             </p>
           </div>
@@ -482,7 +482,7 @@ export function DatabaseDetailPage({ projectId, databaseId }: { projectId: strin
         </span>
       }
       description={
-        <span className="flex items-center gap-1 font-mono text-[11.5px]">
+        <span className="flex items-center gap-1 font-mono text-2xs">
           {databaseId}
           <CopyButton value={databaseId} />
         </span>
@@ -561,7 +561,7 @@ function DatabaseOverview({
   return (
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
       <section className="rounded-xl border bg-card p-4">
-        <h3 className="mb-3 text-[13px] font-semibold">Connection</h3>
+        <h3 className="mb-3 text-sm font-semibold">Connection</h3>
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
           <dt className="text-muted-foreground">host</dt>
           <dd className="flex items-center gap-1 font-mono">
@@ -576,12 +576,12 @@ function DatabaseOverview({
             {database.credentials_ref ? <CopyButton value={database.credentials_ref} /> : null}
           </dd>
         </dl>
-        <p className="mt-3 text-[11.5px] text-muted-foreground">
+        <p className="mt-3 text-2xs text-muted-foreground">
           The full connection URL lives in the project secret and is never displayed. Apps receive it via secret_refs.
         </p>
       </section>
       <section className="rounded-xl border bg-card p-4">
-        <h3 className="mb-3 text-[13px] font-semibold">Engine</h3>
+        <h3 className="mb-3 text-sm font-semibold">Engine</h3>
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
           <dt className="text-muted-foreground">engine</dt>
           <dd className="font-mono">{database.engine ?? "—"}</dd>
@@ -598,7 +598,7 @@ function DatabaseOverview({
         </dl>
       </section>
       <section className="rounded-xl border bg-card p-4">
-        <h3 className="mb-3 text-[13px] font-semibold">Used by</h3>
+        <h3 className="mb-3 text-sm font-semibold">Used by</h3>
         {usedBy.length === 0 ? (
           <p className="text-xs text-muted-foreground">
             No app references this database yet — apps attach via secret_refs on the credential secret{" "}
@@ -609,19 +609,19 @@ function DatabaseOverview({
             {usedBy.map((appName) => (
               <span key={appName} className="flex items-center gap-2">
                 <span className="font-mono">{appName}</span>
-                <span className="rounded-full border border-info/30 bg-info/10 px-2 py-0.5 text-[10.5px] text-info">
+                <span className="rounded-full border border-info/30 bg-info/10 px-2 py-0.5 text-2xs text-info">
                   {database.credentials_ref}
                 </span>
               </span>
             ))}
           </div>
         )}
-        <p className="mt-3 text-[11.5px] text-muted-foreground">
+        <p className="mt-3 text-2xs text-muted-foreground">
           Resolved from frozen app specs (secret_refs scan) — live after the next deploy.
         </p>
       </section>
       <section className="rounded-xl border bg-card p-4">
-        <h3 className="mb-3 text-[13px] font-semibold">Backup</h3>
+        <h3 className="mb-3 text-sm font-semibold">Backup</h3>
         <div className="mb-2 flex items-center gap-2">
           <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${statusToneClass(health.tone)}`}>
             <span className="inline-block size-1.5 rounded-full bg-current" />
@@ -635,9 +635,9 @@ function DatabaseOverview({
         {database.restore_from_backup ? (
           <div className="mt-3 rounded-md border border-info/30 bg-info/10 p-2.5 text-xs">
             <p className="font-medium">Restore in progress</p>
-            <p className="mt-1 font-mono text-[11px] text-muted-foreground">from {database.restore_from_backup}</p>
+            <p className="mt-1 font-mono text-2xs text-muted-foreground">from {database.restore_from_backup}</p>
             {database.restore_error ? (
-              <p className="mt-1 text-[11px] text-destructive">last error: {database.restore_error}</p>
+              <p className="mt-1 text-2xs text-destructive">last error: {database.restore_error}</p>
             ) : null}
           </div>
         ) : null}
@@ -657,7 +657,7 @@ function DatabaseMetrics({ databaseId, projectId }: { databaseId: string; projec
         <MetricCard title="Memory working set" unit="bytes" series={memorySeries} />
         <MetricCard title="CPU (cores)" unit="plain" series={cpuSeries} />
       </div>
-      <p className="text-[11.5px] text-muted-foreground">
+      <p className="text-2xs text-muted-foreground">
         Carrier addressing (IA v3 T8): docker label <span className="font-mono">fleetly_workload_id</span> with a k3s
         namespace/pod fallback arm — both runtimes covered by one query.
       </p>
@@ -677,8 +677,8 @@ function MetricCard({
   return (
     <section className="rounded-xl border bg-card p-4">
       <div className="mb-2 flex items-baseline justify-between">
-        <h3 className="text-[13px] font-semibold">{title}</h3>
-        <span className="text-[11.5px] text-muted-foreground">window 1h · refreshed 30s</span>
+        <h3 className="text-sm font-semibold">{title}</h3>
+        <span className="text-2xs text-muted-foreground">window 1h · refreshed 30s</span>
       </div>
       {series.isPending ? (
         <p className="py-10 text-center text-xs text-muted-foreground">Loading series…</p>
@@ -714,7 +714,7 @@ function DatabaseBackups({
       </div>
       <div className="overflow-hidden rounded-xl border">
         <table className="w-full text-sm">
-          <thead className="border-b bg-muted/40 text-left text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+          <thead className="border-b bg-muted/40 text-left text-2xs font-semibold tracking-wide text-muted-foreground uppercase">
             <tr>
               <th className="px-3 py-2">Backup</th>
               <th className="px-3 py-2">Status</th>
@@ -743,7 +743,7 @@ function DatabaseBackups({
           </tbody>
         </table>
       </div>
-      <p className="text-[11.5px] text-muted-foreground">
+      <p className="text-2xs text-muted-foreground">
         Restore always creates a new database — the source is never overwritten (ADR-0039).
       </p>
     </div>
@@ -753,9 +753,9 @@ function DatabaseBackups({
 function InfoTile({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div className="rounded-xl border bg-card p-3.5">
-      <div className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">{label}</div>
+      <div className="text-2xs font-medium tracking-wide text-muted-foreground uppercase">{label}</div>
       <div className="mt-1 text-sm font-semibold">{value}</div>
-      {hint ? <div className="mt-0.5 text-[11px] text-muted-foreground">{hint}</div> : null}
+      {hint ? <div className="mt-0.5 text-2xs text-muted-foreground">{hint}</div> : null}
     </div>
   );
 }
@@ -833,7 +833,7 @@ function BackupRow({
         <StatusBadge tone={backup.status === "succeeded" ? "success" : backup.status === "failed" ? "danger" : "info"} pulse={backup.status === "running"}>
           {backup.status ?? "unknown"}
         </StatusBadge>
-        {backup.error ? <div className="mt-1 max-w-56 truncate text-[11px] text-destructive" title={backup.error}>{backup.error}</div> : null}
+        {backup.error ? <div className="mt-1 max-w-56 truncate text-2xs text-destructive" title={backup.error}>{backup.error}</div> : null}
       </td>
       <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
         {backup.size_bytes ? `${(Number(backup.size_bytes) / 1048576).toFixed(2)} MiB` : "—"}
@@ -847,7 +847,7 @@ function BackupRow({
       <td className="px-3 py-2">
         <div className="flex items-center justify-end gap-1.5">
           {verifyResult != null ? (
-            <span className={`text-[11px] ${verifyResult.ok ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"}`}>
+            <span className={`text-2xs ${verifyResult.ok ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"}`}>
               {verifyResult.ok ? `ok — ${verifyResult.detail}` : `failed — ${verifyResult.detail}`}
             </span>
           ) : null}
@@ -870,7 +870,7 @@ function BackupRow({
             }}
           >
             <div className="flex flex-col gap-1">
-              <Label htmlFor={`restore-name-${backup.id}`} className="text-[11px]">
+              <Label htmlFor={`restore-name-${backup.id}`} className="text-2xs">
                 New {engine} database name
               </Label>
               <Input
@@ -905,7 +905,7 @@ function DatabaseBrowsePanel({
 }) {
   return (
     <div className="max-w-xl rounded-xl border bg-card p-5">
-      <h3 className="mb-2 flex items-center gap-2 text-[13px] font-semibold">
+      <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold">
         <EyeIcon className="size-4 text-muted-foreground" />
         Browse session
       </h3>
@@ -918,7 +918,7 @@ function DatabaseBrowsePanel({
           <ExternalLinkIcon data-icon-start-inline />
           {pending ? "Launching…" : "Launch session"}
         </Button>
-        <span className="text-[11.5px] text-muted-foreground">read-only dialect</span>
+        <span className="text-2xs text-muted-foreground">read-only dialect</span>
       </div>
       {error != null ? <p className="mt-3 text-xs text-destructive">{fieldError(error)}</p> : null}
     </div>
@@ -967,7 +967,7 @@ function DatabaseSettings({
   return (
     <div className="flex flex-col gap-4">
       <section className="max-w-2xl rounded-xl border bg-card p-5">
-        <h3 className="mb-2 text-[13px] font-semibold">Credential</h3>
+        <h3 className="mb-2 text-sm font-semibold">Credential</h3>
         <p className="mb-4 text-xs text-muted-foreground">
           The single credential lives in the project secret{" "}
           <span className="font-mono">{database?.credentials_ref ?? "—"}</span> (full connection URL, never displayed). Rotation
@@ -1006,13 +1006,13 @@ function DatabaseSettings({
           </AlertDialogContent>
         </AlertDialog>
         {!ready ? (
-          <p className="mt-3 text-[11.5px] text-muted-foreground">
+          <p className="mt-3 text-2xs text-muted-foreground">
             Rotation needs a running database — the data-plane change requires a live target.
           </p>
         ) : null}
       </section>
       <section className="max-w-2xl rounded-xl border border-destructive/30 bg-card p-5">
-        <h3 className="mb-2 text-[13px] font-semibold text-destructive">Danger zone</h3>
+        <h3 className="mb-2 text-sm font-semibold text-destructive">Danger zone</h3>
         <p className="mb-4 text-xs text-muted-foreground">
           Deleting <span className="font-semibold text-foreground">{database?.name}</span> removes the carrier workload and its
           deploy state. The volume and the credential secret{" "}

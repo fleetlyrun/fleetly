@@ -14,11 +14,11 @@ export function PageHeader({
   actions?: ReactNode;
 }) {
   return (
-    <div className="mb-5 flex flex-wrap items-start gap-4">
+    <div className="mb-6 flex flex-wrap items-start gap-4">
       <div className="min-w-0 flex-1">
-        {breadcrumb ? <div className="mb-1">{breadcrumb}</div> : null}
-        <h1 className="font-heading text-xl font-bold tracking-tight">{title}</h1>
-        {description ? <p className="mt-0.5 text-[13px] text-muted-foreground">{description}</p> : null}
+        {breadcrumb ? <div className="mb-1.5">{breadcrumb}</div> : null}
+        <h1 className="font-heading text-2xl font-semibold tracking-tight">{title}</h1>
+        {description ? <p className="mt-1 text-sm text-muted-foreground">{description}</p> : null}
       </div>
       {actions ? <div className="flex flex-none items-center gap-2 pt-1">{actions}</div> : null}
     </div>

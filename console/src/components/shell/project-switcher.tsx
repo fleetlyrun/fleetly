@@ -32,7 +32,7 @@ export function ProjectSwitcher() {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <SidebarMenuButton className="border data-[state=open]:bg-sidebar-accent">
-          <ProjectAvatar seed={current?.id} label={current?.name ?? "?"} className="size-5 rounded-md text-[10px]" />
+          <ProjectAvatar seed={current?.id} label={current?.name ?? "?"} className="size-5 rounded-md text-2xs" />
           <span className="truncate font-semibold">{current?.name ?? (projects.isPending ? "Loading…" : "No project")}</span>
           <ChevronDownIcon className="ml-auto size-3.5 text-muted-foreground" />
         </SidebarMenuButton>
@@ -52,7 +52,7 @@ export function ProjectSwitcher() {
                 void navigate({ to: "/p/$projectId", params: { projectId: project.id } });
               }}
             >
-              <ProjectAvatar seed={project.id} label={project.name} className="size-5 rounded-md text-[10px]" />
+              <ProjectAvatar seed={project.id} label={project.name} className="size-5 rounded-md text-2xs" />
               <span className="truncate">{project.name}</span>
             </DropdownMenuItem>
           ))

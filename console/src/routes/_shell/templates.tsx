@@ -95,7 +95,7 @@ function TemplatesPageV2() {
     {
       accessorKey: "name",
       header: "Name",
-      cell: ({ row }) => <span className="font-mono text-[13px] font-semibold">{row.original.name}</span>,
+      cell: ({ row }) => <span className="font-mono text-sm font-semibold">{row.original.name}</span>,
     },
     {
       accessorKey: "version",
@@ -106,7 +106,7 @@ function TemplatesPageV2() {
       accessorKey: "description",
       header: "Description",
       cell: ({ row }) => (
-        <span className="block max-w-96 truncate text-[13px] text-muted-foreground" title={row.original.description}>
+        <span className="block max-w-96 truncate text-sm text-muted-foreground" title={row.original.description}>
           {row.original.description}
         </span>
       ),
@@ -162,7 +162,7 @@ function TemplatesPageV2() {
                   {detailQuery.data.variables.length > 0 ? (
                     <div>
                       <p className="mb-1 text-xs font-semibold">Variables</p>
-                      <ul className="space-y-1 text-[13px]">
+                      <ul className="space-y-1 text-sm">
                         {detailQuery.data.variables.map((v) => (
                           <li key={v.name}>
                             <span className="font-mono">{v.name}</span> ({v.type}
@@ -282,7 +282,7 @@ function InstantiateWizard({
                 onChange={(event) => setValues((prev) => ({ ...prev, [v.name]: event.target.value }))}
                 placeholder={v.default || (v.type === "domain" ? "host serving this app" : "")}
               />
-              {v.description ? <p className="text-[11px] text-muted-foreground">{v.description}</p> : null}
+              {v.description ? <p className="text-2xs text-muted-foreground">{v.description}</p> : null}
             </div>
           ))}
           {template.variables.some((v) => v.type === "secret") ? (
@@ -292,7 +292,7 @@ function InstantiateWizard({
             </p>
           ) : null}
           {error !== null ? (
-            <div className="rounded-lg border border-[color-mix(in_oklch,var(--status-danger)_35%,transparent)] bg-[var(--status-danger-bg)] px-3 py-2 font-mono text-[11px] break-all text-muted-foreground">
+            <div className="rounded-lg border border-[color-mix(in_oklch,var(--status-danger)_35%,transparent)] bg-[var(--status-danger-bg)] px-3 py-2 font-mono text-2xs break-all text-muted-foreground">
               {describeError(error).detail}
             </div>
           ) : null}

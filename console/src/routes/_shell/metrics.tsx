@@ -78,13 +78,13 @@ function MetricsWorkbench() {
   return (
     <div className="flex h-[calc(100svh-3.25rem)] flex-col px-5 pt-4">
       <div className="mb-1 flex items-baseline gap-3">
-        <h1 className="font-heading text-[17px] font-bold tracking-tight">Metrics</h1>
+        <h1 className="font-heading text-lg font-bold tracking-tight">Metrics</h1>
         <span className="text-xs text-muted-foreground">PromQL passthrough to managed VictoriaMetrics · refreshed every 30s</span>
       </div>
 
       <div className="flex flex-none flex-wrap items-end gap-2.5 py-3">
         <div className="flex flex-col gap-1">
-          <Label className="text-[11px] text-muted-foreground">App</Label>
+          <Label className="text-2xs text-muted-foreground">App</Label>
           <Select value={appId} onValueChange={(value) => update({ app: value })}>
             <SelectTrigger className="w-44">
               <SelectValue placeholder="select an app…" />
@@ -99,7 +99,7 @@ function MetricsWorkbench() {
           </Select>
         </div>
         <div className="flex flex-col gap-1">
-          <Label className="text-[11px] text-muted-foreground">Range</Label>
+          <Label className="text-2xs text-muted-foreground">Range</Label>
           <Select value={rangeKey} onValueChange={(value) => update({ range: value })}>
             <SelectTrigger className="w-24">
               <SelectValue />
@@ -130,7 +130,7 @@ function MetricsWorkbench() {
 
       {custom ? (
         <div className="mb-3 flex flex-none flex-col gap-1">
-          <Label className="text-[11px] text-muted-foreground">PromQL</Label>
+          <Label className="text-2xs text-muted-foreground">PromQL</Label>
           <Input
             value={customQuery}
             onChange={(event) => setCustomQuery(event.target.value)}
@@ -152,9 +152,9 @@ function MetricsWorkbench() {
         ) : series.data != null && series.data.length > 0 ? (
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-[13px]">
+              <CardTitle className="text-sm">
                 {custom ? "Custom query" : preset.label}
-                <span className="ml-2 text-[11px] font-normal text-muted-foreground">
+                <span className="ml-2 text-2xs font-normal text-muted-foreground">
                   {series.data.length} series · step {Math.max(15, Math.round((METRIC_RANGES[rangeKey] ?? 3_600_000) / 1000 / 240))}s
                 </span>
               </CardTitle>

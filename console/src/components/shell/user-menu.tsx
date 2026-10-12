@@ -28,10 +28,10 @@ export function UserMenu() {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" className="h-9 gap-2 px-2">
-          <ProjectAvatar seed={name} label={name} className="rounded-full text-[10px]" />
+          <ProjectAvatar seed={name} label={name} className="rounded-full text-2xs" />
           <span className="hidden flex-col items-start leading-tight sm:flex">
             <span className="text-xs font-semibold">{name}</span>
-            <span className="text-[10px] text-muted-foreground">{role}</span>
+            <span className="text-2xs text-muted-foreground">{role}</span>
           </span>
         </Button>
       </DropdownMenuTrigger>
@@ -39,7 +39,7 @@ export function UserMenu() {
         <DropdownMenuLabel className="font-normal">
           <span className="block text-xs font-semibold">{name}</span>
           {whoami.data?.tokenName ? (
-            <span className="block text-[11px] text-muted-foreground">token: {whoami.data.tokenName}</span>
+            <span className="block text-2xs text-muted-foreground">token: {whoami.data.tokenName}</span>
           ) : null}
         </DropdownMenuLabel>
         <DropdownMenuSeparator />

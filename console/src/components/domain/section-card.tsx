@@ -19,12 +19,12 @@ export function SectionCard({
 }) {
   return (
     <section className={cn("rounded-xl border bg-card", className)}>
-      <div className="flex items-center gap-2 border-b px-4 py-3">
+      <div className="flex items-center gap-2 border-b px-5 py-3.5">
         {Icon ? <Icon className="size-4 text-muted-foreground" /> : null}
-        <h2 className="text-[13.5px] font-semibold">{title}</h2>
+        <h2 className="text-sm font-semibold">{title}</h2>
         {action ? <div className="ml-auto">{action}</div> : null}
       </div>
-      <div className="px-4 py-3.5">{children}</div>
+      <div className="px-5 py-4">{children}</div>
     </section>
   );
 }

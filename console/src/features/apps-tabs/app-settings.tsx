@@ -47,7 +47,7 @@ export function AppSettingsTab({
     <div className="flex flex-col gap-4">
       <div className="grid gap-4 md:grid-cols-2">
         <section className="rounded-xl border bg-card p-4">
-          <h3 className="mb-3 text-[13px] font-semibold">General</h3>
+          <h3 className="mb-3 text-sm font-semibold">General</h3>
           <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
             <dt className="text-muted-foreground">name</dt>
             <dd className="font-semibold">{appName}</dd>
@@ -63,7 +63,7 @@ export function AppSettingsTab({
               <RelativeTime value={createdAt} />
             </dd>
           </dl>
-          <p className="mt-3 text-[11.5px] text-muted-foreground">
+          <p className="mt-3 text-2xs text-muted-foreground">
             Build &amp; process settings (source, builder, replicas, health gate) land here once the app spec read path ships
             (IA v3 §8 二期) — until then configure them via deploy.
           </p>
@@ -127,7 +127,7 @@ function GitHookCard({ appId }: { appId: string }) {
   const configured = hook.data != null;
   return (
     <section className="rounded-xl border bg-card p-4">
-      <h3 className="mb-3 text-[13px] font-semibold">Git deploy hook</h3>
+      <h3 className="mb-3 text-sm font-semibold">Git deploy hook</h3>
       {hook.isPending ? (
         <p className="text-xs text-muted-foreground">Loading hook…</p>
       ) : configured ? (
@@ -188,7 +188,7 @@ function GitHookCard({ appId }: { appId: string }) {
       {revealedSecret != null ? (
         <div className="mt-3 rounded-md border border-warning/40 bg-warning/10 p-2.5 text-xs">
           <p className="font-semibold">Webhook secret — shown once, copy it now</p>
-          <p className="mt-1 flex items-center gap-1 font-mono text-[11px]">
+          <p className="mt-1 flex items-center gap-1 font-mono text-2xs">
             {revealedSecret}
             <CopyButton value={revealedSecret} />
           </p>
@@ -212,7 +212,7 @@ function DangerZone({ appId, appName, projectId, onDeleted }: { appId: string; a
   });
   return (
     <section className="max-w-2xl rounded-xl border border-destructive/30 bg-card p-5">
-      <h3 className="mb-2 text-[13px] font-semibold text-destructive">Danger zone</h3>
+      <h3 className="mb-2 text-sm font-semibold text-destructive">Danger zone</h3>
       <p className="mb-4 text-xs text-muted-foreground">
         Deleting <span className="font-semibold text-foreground">{appName}</span> removes its deployments history, routes and exec
         sessions. Databases and volumes are kept. Recent revisions stay in the registry and must be cleaned up separately.

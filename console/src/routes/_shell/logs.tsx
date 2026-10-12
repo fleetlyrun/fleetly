@@ -105,7 +105,7 @@ function LogsWorkbench() {
   return (
     <div className="flex h-[calc(100svh-3.25rem)] flex-col px-5 pt-4">
       <div className="mb-1 flex items-baseline gap-3">
-        <h1 className="font-heading text-[17px] font-bold tracking-tight">Logs</h1>
+        <h1 className="font-heading text-lg font-bold tracking-tight">Logs</h1>
         <span className="text-xs text-muted-foreground">
           {projects.data?.find((project) => project.id === projectId)?.name ?? "—"} — live stream or stored search
         </span>
@@ -113,7 +113,7 @@ function LogsWorkbench() {
 
       <div className="flex flex-none flex-wrap items-end gap-2.5 py-3">
         <div className="flex flex-col gap-1">
-          <Label className="text-[11px] text-muted-foreground">App</Label>
+          <Label className="text-2xs text-muted-foreground">App</Label>
           <Select value={appId} onValueChange={setAppId}>
             <SelectTrigger className="w-44">
               <SelectValue placeholder={noApp ? "select an app…" : ""} />
@@ -128,7 +128,7 @@ function LogsWorkbench() {
           </Select>
         </div>
         <div className="flex flex-col gap-1">
-          <Label className="text-[11px] text-muted-foreground">Process</Label>
+          <Label className="text-2xs text-muted-foreground">Process</Label>
           <ProcessMultiSelect
             options={processOptions}
             selected={processes}
@@ -136,7 +136,7 @@ function LogsWorkbench() {
           />
         </div>
         <div className="flex flex-col gap-1">
-          <Label className="text-[11px] text-muted-foreground">Tail</Label>
+          <Label className="text-2xs text-muted-foreground">Tail</Label>
           <Input
             value={tailLines}
             onChange={(event) => setTailLines(event.target.value.replace(/[^0-9]/g, ""))}
@@ -145,7 +145,7 @@ function LogsWorkbench() {
           />
         </div>
         <div className="flex flex-1 flex-col gap-1">
-          <Label className="text-[11px] text-muted-foreground">Text filter</Label>
+          <Label className="text-2xs text-muted-foreground">Text filter</Label>
           <Input
             value={text}
             onChange={(event) => setText(event.target.value)}
@@ -192,7 +192,7 @@ function LogsWorkbench() {
 
       <LogViewer frames={log.frames} streaming={log.streaming} />
 
-      <div className="flex flex-none items-center gap-4 py-2 font-mono text-[11px] text-muted-foreground">
+      <div className="flex flex-none items-center gap-4 py-2 font-mono text-2xs text-muted-foreground">
         <span>
           {log.frames.length} frame{log.frames.length === 1 ? "" : "s"}
           {log.streaming ? " · streaming" : log.ended ? " · ended" : ""}
@@ -225,9 +225,9 @@ function ProcessMultiSelect({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-44">
-        <DropdownMenuLabel className="text-[10.5px] text-muted-foreground">Filter by process</DropdownMenuLabel>
+        <DropdownMenuLabel className="text-2xs text-muted-foreground">Filter by process</DropdownMenuLabel>
         {options.length === 0 ? (
-          <div className="px-2 py-1.5 text-[11px] text-muted-foreground">No frozen processes yet — deploy first.</div>
+          <div className="px-2 py-1.5 text-2xs text-muted-foreground">No frozen processes yet — deploy first.</div>
         ) : (
           options.map((name) => (
             <DropdownMenuCheckboxItem

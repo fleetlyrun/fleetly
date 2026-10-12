@@ -102,7 +102,7 @@ export function AppProcessesTab({ projectId, appId }: { projectId: string; appId
   if (frozen == null) {
     return (
       <div className="rounded-xl border bg-card p-6 text-center">
-        <h3 className="text-[13px] font-semibold">No frozen spec yet</h3>
+        <h3 className="text-sm font-semibold">No frozen spec yet</h3>
         <p className="mt-1 text-xs text-muted-foreground">
           The app has no deployment — its spec freezes on the first deploy, and its processes show up here.
         </p>
@@ -208,7 +208,7 @@ export function AppProcessesTab({ projectId, appId }: { projectId: string; appId
                         >
                           <PlusIcon />
                         </Button>
-                        {stagedHere ? <span className="ml-1 text-[10.5px] font-semibold text-info">staged</span> : null}
+                        {stagedHere ? <span className="ml-1 text-2xs font-semibold text-info">staged</span> : null}
                       </div>
                     </TableCell>
                     <TableCell className="font-mono text-xs">
@@ -231,7 +231,7 @@ export function AppProcessesTab({ projectId, appId }: { projectId: string; appId
           </TableBody>
         </Table>
       )}
-      <p className="border-t px-4 py-2 text-[11px] text-muted-foreground">
+      <p className="border-t px-4 py-2 text-2xs text-muted-foreground">
         Replicas 0 suspends the process. Strategy comes from the frozen spec — change it at deploy time. Running is the live
         instance count (10s refresh); expand a row for instance details.
       </p>

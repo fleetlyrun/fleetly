@@ -177,7 +177,7 @@ function EventsPageV2() {
           window.
         </div>
       ) : null}
-      <div className="mb-3 flex items-center gap-3 font-mono text-[11px] text-muted-foreground">
+      <div className="mb-3 flex items-center gap-3 font-mono text-2xs text-muted-foreground">
         <span className={following ? "text-[var(--status-success)]" : ""}>{following ? "● following" : "○ paused"}</span>
         <span>cursor seq {cursor ?? "—"}</span>
         <span>
@@ -223,7 +223,7 @@ function EventsPageV2() {
                     {event.payload && event.payload !== "{}" ? (
                       <details className="mt-0.5">
                         <summary className="cursor-pointer hover:text-foreground">payload</summary>
-                        <pre className="mt-1 max-w-lg overflow-auto rounded border bg-muted/40 p-2 font-mono text-[11px]">
+                        <pre className="mt-1 max-w-lg overflow-auto rounded border bg-muted/40 p-2 font-mono text-2xs">
                           {prettyPayload(event.payload)}
                         </pre>
                       </details>

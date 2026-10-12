@@ -26,7 +26,7 @@ export function PageTabs<T extends string>({
             type="button"
             onClick={() => onChange(tab.value)}
             aria-current={active ? "page" : undefined}
-            className={`-mb-px rounded-t-md border-b-2 px-3.5 py-2 text-[13px] font-medium transition-colors ${
+            className={`-mb-px rounded-t-md border-b-2 px-3.5 py-2 text-sm font-medium transition-colors ${
               active
                 ? "border-primary text-primary"
                 : "border-transparent text-muted-foreground hover:bg-muted hover:text-foreground"

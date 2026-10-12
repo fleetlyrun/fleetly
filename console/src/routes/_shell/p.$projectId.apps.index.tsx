@@ -65,8 +65,8 @@ function AppsListPage() {
         <div className="flex items-center gap-2.5">
           <ProjectAvatar seed={row.original.id} label={row.original.name} />
           <div className="min-w-0">
-            <div className="text-[13px] font-semibold">{row.original.name}</div>
-            <div className="flex items-center gap-0.5 font-mono text-[11px] text-muted-foreground">
+            <div className="text-sm font-semibold">{row.original.name}</div>
+            <div className="flex items-center gap-0.5 font-mono text-2xs text-muted-foreground">
               {row.original.id.slice(0, 10)}…
               <CopyButton value={row.original.id ?? ""} />
             </div>
@@ -233,7 +233,7 @@ function NewAppDialog({
           <Label className="flex flex-col gap-1.5">
             <span className="text-xs font-semibold">Name</span>
             <Input value={name} onChange={(event) => setName(event.target.value)} autoFocus />
-            <span className="text-[11px] font-normal text-muted-foreground">
+            <span className="text-2xs font-normal text-muted-foreground">
               Source and configuration land on the app's tabs after creation — deploy to freeze the first spec.
             </span>
           </Label>
@@ -273,7 +273,7 @@ function LatestDetailCell({ appId }: { appId: string }) {
         {latest.to_revision ? `→ R…${latest.to_revision.slice(-6)}` : "—"}
       </div>
       {latest.error ? (
-        <div className="max-w-72 truncate text-[11.5px] text-[var(--status-danger)]" title={latest.error}>
+        <div className="max-w-72 truncate text-2xs text-[var(--status-danger)]" title={latest.error}>
           {latest.error}
         </div>
       ) : null}

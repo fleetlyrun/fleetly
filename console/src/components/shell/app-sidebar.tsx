@@ -41,7 +41,7 @@ export function AppSidebar() {
             className="size-7 flex-none rounded-lg shadow-[0_0_12px_color-mix(in_oklch,var(--primary)_35%,transparent)]"
             style={{ backgroundImage: "var(--brand-gradient)" }}
           />
-          <span className="font-heading text-[15px] font-bold tracking-tight group-data-[collapsible=icon]:hidden">
+          <span className="font-heading text-base font-bold tracking-tight group-data-[collapsible=icon]:hidden">
             fleetly
           </span>
           <NewMenu />
@@ -54,7 +54,7 @@ export function AppSidebar() {
             {section.zone === "platform" && sections[index - 1]?.zone !== "platform" ? (
               <div className="group-data-[collapsible=icon]:hidden">
                 <SidebarSeparator className="mx-2" />
-                <p className="px-4 pt-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/70">
+                <p className="px-4 pt-2 text-2xs font-semibold uppercase tracking-[0.12em] text-muted-foreground/70">
                   Platform
                 </p>
               </div>
@@ -80,7 +80,7 @@ export function AppSidebar() {
         ))}
       </SidebarContent>
       <SidebarFooter>
-        <div className="flex items-center gap-1.5 px-2 py-1 text-[11px] text-muted-foreground group-data-[collapsible=icon]:hidden">
+        <div className="flex items-center gap-1.5 px-2 py-1 text-2xs text-muted-foreground group-data-[collapsible=icon]:hidden">
           <BoxIcon className="size-3" />
           <span>console v2</span>
         </div>

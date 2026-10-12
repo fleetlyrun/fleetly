@@ -196,7 +196,7 @@ export function MetricChart({
         ))}
       </div>
       {hidden > 0 ? (
-        <p className="px-1 pb-1 text-[11px] text-muted-foreground">
+        <p className="px-1 pb-1 text-2xs text-muted-foreground">
           +{hidden} more series not shown — stopped replicas from earlier generations stay queryable in the workbench.
         </p>
       ) : null}

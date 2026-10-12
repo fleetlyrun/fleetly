@@ -53,7 +53,7 @@ export function AppLogsTab({ appId }: { appId: string }) {
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-end gap-2.5">
         <div className="flex flex-col gap-1">
-          <Label className="text-[11px] text-muted-foreground">Process</Label>
+          <Label className="text-2xs text-muted-foreground">Process</Label>
           <Select
             value={effectiveProcess}
             onValueChange={(name) => {
@@ -74,7 +74,7 @@ export function AppLogsTab({ appId }: { appId: string }) {
           </Select>
         </div>
         <div className="flex flex-col gap-1">
-          <Label className="text-[11px] text-muted-foreground">Instance</Label>
+          <Label className="text-2xs text-muted-foreground">Instance</Label>
           <Select value={instance} onValueChange={setInstance}>
             <SelectTrigger className="w-48 font-mono">
               <SelectValue placeholder="—" />
@@ -97,7 +97,7 @@ export function AppLogsTab({ appId }: { appId: string }) {
           </Select>
         </div>
         <div className="flex flex-col gap-1">
-          <Label className="text-[11px] text-muted-foreground">Filter text (VL retrieval)</Label>
+          <Label className="text-2xs text-muted-foreground">Filter text (VL retrieval)</Label>
           <Input
             value={text}
             placeholder="error, timeout…"
@@ -106,7 +106,7 @@ export function AppLogsTab({ appId }: { appId: string }) {
           />
         </div>
         <div className="flex flex-col gap-1">
-          <Label className="text-[11px] text-muted-foreground">Tail lines</Label>
+          <Label className="text-2xs text-muted-foreground">Tail lines</Label>
           <Input
             value={tailLines}
             inputMode="numeric"
@@ -140,14 +140,14 @@ export function AppLogsTab({ appId }: { appId: string }) {
         <LogViewer frames={log.frames} streaming={log.streaming} />
       </div>
 
-      <div className="flex items-center gap-3 font-mono text-[11px] text-muted-foreground">
+      <div className="flex items-center gap-3 font-mono text-2xs text-muted-foreground">
         <span>scope: app {appId}</span>
         {instance !== "all" ? <span>instance {shortInstance(instance)}</span> : null}
         <span>{log.frames.length} frames</span>
         {log.ended && !log.streaming ? <span>stream ended — adjust filters and restart</span> : null}
         <span className="ml-auto">GET /v1/logs?app_id=…&follow (NDJSON)</span>
       </div>
-      <p className="text-[11.5px] text-muted-foreground">
+      <p className="text-2xs text-muted-foreground">
         Full workbench (history window, export, cross-app filters):{" "}
         <a className="text-info underline-offset-2 hover:underline" href={`/logs?app=${encodeURIComponent(appId)}`}>
           open in Logs workbench

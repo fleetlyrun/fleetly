@@ -38,7 +38,7 @@ export function ListToolbar({
         aria-label={`Filter ${label}`}
       />
       {children}
-      <span className="ml-auto text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+      <span className="ml-auto text-2xs font-semibold tracking-wide text-muted-foreground uppercase">
         {shown} of {total}
       </span>
       {actions ? <div className="flex flex-none items-center gap-2">{actions}</div> : null}
@@ -99,7 +99,7 @@ export function ListPagination({
 // 命令文本 + 一键复制。命令里的项目/资源锚由调用方注入（真实可执行）。
 export function CliEquivalent({ command }: { command: string }) {
   return (
-    <p className="mt-2.5 flex items-center gap-1.5 font-mono text-[11.5px] text-muted-foreground">
+    <p className="mt-2.5 flex items-center gap-1.5 font-mono text-2xs text-muted-foreground">
       <span aria-hidden>❯</span>
       <span className="text-foreground/80">CLI equivalent:</span>
       <span>{command}</span>

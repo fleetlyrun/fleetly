@@ -24,7 +24,7 @@ export function PageFrame({
 }) {
   const maxW = width === "narrow" ? "max-w-5xl" : width === "flow" ? "max-w-3xl" : "max-w-7xl";
   return (
-    <div className={cn("mx-auto px-6 pt-6 pb-8", maxW)}>
+    <div className={cn("mx-auto px-7 pt-7 pb-10", maxW)}>
       {title != null ? (
         <PageHeader breadcrumb={breadcrumb} title={title} description={description} actions={actions} />
       ) : null}

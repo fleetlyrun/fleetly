@@ -64,7 +64,7 @@ const columns: LegacyColumnDef<AuditEntry, any>[] = [
     id: "fingerprints",
     header: "Before → After",
     cell: ({ row }) => (
-      <span className="font-mono text-[11px] text-muted-foreground opacity-80">
+      <span className="font-mono text-2xs text-muted-foreground opacity-80">
         {row.original.before_fp ? <span title={row.original.before_fp}>{row.original.before_fp.slice(0, 8)}…</span> : "∅"} →{" "}
         {row.original.after_fp ? <span title={row.original.after_fp}>{row.original.after_fp.slice(0, 8)}…</span> : "∅"}
       </span>

@@ -177,8 +177,8 @@ function UserRow({ user }: { user: User }) {
   return (
     <>
       <TableRow>
-        <TableCell className="text-[13px] font-medium">{user.name}</TableCell>
-        <TableCell className="font-mono text-[11px] text-muted-foreground">
+        <TableCell className="text-sm font-medium">{user.name}</TableCell>
+        <TableCell className="font-mono text-2xs text-muted-foreground">
           {user.id?.slice(0, 10)}…<CopyButton value={user.id ?? ""} />
         </TableCell>
         <TableCell className="text-xs text-muted-foreground"><RelativeTime value={user.created_at} /></TableCell>
@@ -236,7 +236,7 @@ function SetPasswordRow({ userId, onDone }: { userId: string; onDone: () => void
           <Button type="submit" size="sm" disabled={pending || password === ""} className="mb-0.5">
             {pending ? "Setting…" : "Set password"}
           </Button>
-          <p className="mb-1.5 text-[11px] text-muted-foreground">admin reset — the user signs in with this on the password tab</p>
+          <p className="mb-1.5 text-2xs text-muted-foreground">admin reset — the user signs in with this on the password tab</p>
         </form>
       </TableCell>
     </TableRow>
@@ -289,7 +289,7 @@ function CreateUserDialog({ open, onClose }: { open: boolean; onClose: () => voi
                 ))}
               </SelectContent>
             </Select>
-            <p className="text-[11px] text-muted-foreground">defaults to the default team</p>
+            <p className="text-2xs text-muted-foreground">defaults to the default team</p>
           </div>
           <div className="flex flex-col gap-1.5">
             <Label className="text-xs">Role</Label>
@@ -301,12 +301,12 @@ function CreateUserDialog({ open, onClose }: { open: boolean; onClose: () => voi
                 ))}
               </SelectContent>
             </Select>
-            <p className="text-[11px] text-muted-foreground">the role granted within the team</p>
+            <p className="text-2xs text-muted-foreground">the role granted within the team</p>
           </div>
           <div className="flex flex-col gap-1.5">
             <Label className="text-xs">Initial password (optional)</Label>
             <Input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="••••••••" />
-            <p className="text-[11px] text-muted-foreground">empty means no password login (set one later from the users row)</p>
+            <p className="text-2xs text-muted-foreground">empty means no password login (set one later from the users row)</p>
           </div>
         </form>
         <DialogFooter>
@@ -347,12 +347,12 @@ function TeamsTab() {
   }
 
   const columns: LegacyColumnDef<Team, any>[] = [
-    { accessorKey: "name", header: "Name", cell: ({ row }) => <span className="text-[13px] font-medium">{row.original.name}</span> },
+    { accessorKey: "name", header: "Name", cell: ({ row }) => <span className="text-sm font-medium">{row.original.name}</span> },
     {
       accessorKey: "id",
       header: "ID",
       cell: ({ row }) => (
-        <span className="font-mono text-[11px] text-muted-foreground">
+        <span className="font-mono text-2xs text-muted-foreground">
           {row.original.id?.slice(0, 10)}…<CopyButton value={row.original.id ?? ""} />
         </span>
       ),
@@ -453,11 +453,11 @@ function RolesTab({ createOpen, onCreateOpenChange }: { createOpen: boolean; onC
   }
 
   const columns: LegacyColumnDef<Role, any>[] = [
-    { accessorKey: "name", header: "Name", cell: ({ row }) => <span className="text-[13px] font-medium">{row.original.name}</span> },
+    { accessorKey: "name", header: "Name", cell: ({ row }) => <span className="text-sm font-medium">{row.original.name}</span> },
     {
       accessorKey: "team_id",
       header: "Team",
-      cell: ({ row }) => <span className="font-mono text-[11px] text-muted-foreground">{row.original.team_id?.slice(0, 10) ?? "—"}</span>,
+      cell: ({ row }) => <span className="font-mono text-2xs text-muted-foreground">{row.original.team_id?.slice(0, 10) ?? "—"}</span>,
     },
     {
       accessorKey: "builtin",
@@ -471,7 +471,7 @@ function RolesTab({ createOpen, onCreateOpenChange }: { createOpen: boolean; onC
       header: "Scopes",
       cell: ({ row }) => (
         <span
-          className="block max-w-md truncate font-mono text-[11px] text-muted-foreground"
+          className="block max-w-md truncate font-mono text-2xs text-muted-foreground"
           title={(row.original.scopes ?? []).join(" ")}
         >
           {(row.original.scopes ?? []).join(" ")}
@@ -574,7 +574,7 @@ function CreateRoleDialog({ open, onClose, teams }: { open: boolean; onClose: ()
                 ))}
               </SelectContent>
             </Select>
-            <p className="text-[11px] text-muted-foreground">custom roles belong to a team</p>
+            <p className="text-2xs text-muted-foreground">custom roles belong to a team</p>
           </div>
           <div className="flex flex-col gap-1.5">
             <Label className="text-xs">Scopes</Label>
@@ -604,7 +604,7 @@ function InvitationsTab({ createOpen, onCreateOpenChange }: { createOpen: boolea
       accessorKey: "id",
       header: "ID",
       cell: ({ row }) => (
-        <span className="font-mono text-[11px] text-muted-foreground">
+        <span className="font-mono text-2xs text-muted-foreground">
           {row.original.id?.slice(0, 10)}…<CopyButton value={row.original.id ?? ""} />
         </span>
       ),
@@ -612,12 +612,12 @@ function InvitationsTab({ createOpen, onCreateOpenChange }: { createOpen: boolea
     {
       accessorKey: "team_id",
       header: "Team",
-      cell: ({ row }) => <span className="font-mono text-[11px] text-muted-foreground">{row.original.team_id?.slice(0, 10)}</span>,
+      cell: ({ row }) => <span className="font-mono text-2xs text-muted-foreground">{row.original.team_id?.slice(0, 10)}</span>,
     },
     {
       accessorKey: "role_id",
       header: "Role",
-      cell: ({ row }) => <span className="font-mono text-[11px] text-muted-foreground">{row.original.role_id?.slice(0, 10)}</span>,
+      cell: ({ row }) => <span className="font-mono text-2xs text-muted-foreground">{row.original.role_id?.slice(0, 10)}</span>,
     },
     {
       accessorKey: "created_by",
@@ -749,7 +749,7 @@ function CreateInvitationDialog({ open, onClose, teams, roles }: { open: boolean
           <div className="flex flex-col gap-1.5">
             <Label className="text-xs">TTL</Label>
             <Input value={ttl} onChange={(event) => setTtl(event.target.value)} placeholder="24h" />
-            <p className="text-[11px] text-muted-foreground">duration form (default 24h, cap 168h)</p>
+            <p className="text-2xs text-muted-foreground">duration form (default 24h, cap 168h)</p>
           </div>
         </form>
         <DialogFooter>

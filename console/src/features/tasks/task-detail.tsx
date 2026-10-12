@@ -81,12 +81,12 @@ export function TaskDetailPage({ projectId, taskId }: { projectId: string; taskI
           {task?.name ?? taskId}
           <StatusBadge tone={taskTone(task?.state)}>{task?.state ?? "unknown"}</StatusBadge>
           {task?.form ? (
-            <span className="rounded-full border px-2 py-0.5 text-[11.5px] font-semibold text-muted-foreground">{task.form}</span>
+            <span className="rounded-full border px-2 py-0.5 text-2xs font-semibold text-muted-foreground">{task.form}</span>
           ) : null}
         </span>
       }
       description={
-        <span className="flex items-center gap-1 font-mono text-[11.5px]">
+        <span className="flex items-center gap-1 font-mono text-2xs">
           {taskId}
           <CopyButton value={taskId} />
         </span>
@@ -130,7 +130,7 @@ function TaskOverview({
   return (
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
       <section className="rounded-xl border bg-card p-4">
-        <h3 className="mb-3 text-[13px] font-semibold">Definition</h3>
+        <h3 className="mb-3 text-sm font-semibold">Definition</h3>
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
           <dt className="text-muted-foreground">image</dt>
           <dd className="break-all font-mono">{task.image ?? "—"}</dd>
@@ -143,7 +143,7 @@ function TaskOverview({
         </dl>
       </section>
       <section className="rounded-xl border bg-card p-4">
-        <h3 className="mb-3 text-[13px] font-semibold">Pool &amp; lease</h3>
+        <h3 className="mb-3 text-sm font-semibold">Pool &amp; lease</h3>
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
           <dt className="text-muted-foreground">form</dt>
           <dd className="font-mono">{task.form ?? "—"}</dd>
@@ -160,7 +160,7 @@ function TaskOverview({
         </dl>
       </section>
       <section className="rounded-xl border bg-card p-4">
-        <h3 className="mb-3 text-[13px] font-semibold">Timing &amp; source</h3>
+        <h3 className="mb-3 text-sm font-semibold">Timing &amp; source</h3>
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
           <dt className="text-muted-foreground">dns</dt>
           <dd className="break-all font-mono">{task.dns_name || "—"}</dd>
@@ -184,7 +184,7 @@ function TaskOverview({
                   {sourceScheduleName || sourceScheduleId}
                   {sourceScheduleCron ? ` · ${sourceScheduleCron}` : ""}
                 </span>
-                <span className="text-[11px] text-muted-foreground">last beat spawned this task</span>
+                <span className="text-2xs text-muted-foreground">last beat spawned this task</span>
               </span>
             ) : (
               <span className="text-muted-foreground">—</span>
@@ -208,7 +208,7 @@ function TaskRuns({ taskId }: { taskId: string }) {
       ) : (
         <div className="overflow-hidden rounded-xl border">
           <table className="w-full text-sm">
-            <thead className="border-b bg-muted/40 text-left text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+            <thead className="border-b bg-muted/40 text-left text-2xs font-semibold tracking-wide text-muted-foreground uppercase">
               <tr>
                 <th className="px-3 py-2">Run</th>
                 <th className="px-3 py-2">State</th>
@@ -226,7 +226,7 @@ function TaskRuns({ taskId }: { taskId: string }) {
           </table>
         </div>
       )}
-      <p className="text-[11.5px] text-muted-foreground">
+      <p className="text-2xs text-muted-foreground">
         Run logs need the database/run addressing axis (IA v3 §8 二期 proto) — states and stop reasons are shown here until then.
       </p>
     </div>
@@ -295,7 +295,7 @@ function RunRow({ run }: { run: RunEntry }) {
             <div className="h-64 overflow-hidden rounded-lg border">
               <LogViewer frames={log.frames} streaming={log.streaming} />
             </div>
-            <div className="mt-1.5 flex items-center gap-3 font-mono text-[11px] text-muted-foreground">
+            <div className="mt-1.5 flex items-center gap-3 font-mono text-2xs text-muted-foreground">
               <span>scope: run {run.id}</span>
               <span>{log.frames.length} frames</span>
               {log.error != null ? (
@@ -348,10 +348,10 @@ function TaskSettings({ task, projectId, taskId }: { task: TaskEntry | undefined
   return (
     <div className="flex flex-col gap-4">
       <section className="max-w-2xl rounded-xl border bg-card p-5">
-        <h3 className="mb-3 text-[13px] font-semibold">Pool operations</h3>
+        <h3 className="mb-3 text-sm font-semibold">Pool operations</h3>
         <div className="flex flex-wrap items-end gap-3">
           <div className="flex flex-col gap-1">
-            <Label htmlFor="task-scale" className="text-[11px] text-muted-foreground">
+            <Label htmlFor="task-scale" className="text-2xs text-muted-foreground">
               Desired concurrency
             </Label>
             <Input
@@ -384,7 +384,7 @@ function TaskSettings({ task, projectId, taskId }: { task: TaskEntry | undefined
         </div>
       </section>
       <section className="max-w-2xl rounded-xl border border-destructive/30 bg-card p-5">
-        <h3 className="mb-2 text-[13px] font-semibold text-destructive">Danger zone</h3>
+        <h3 className="mb-2 text-sm font-semibold text-destructive">Danger zone</h3>
         <p className="mb-4 text-xs text-muted-foreground">
           Deleting the task removes its definition and pool. Terminal runs stay in the ledger; active runs are drained first.
         </p>

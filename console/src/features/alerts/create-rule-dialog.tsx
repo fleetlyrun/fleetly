@@ -119,16 +119,16 @@ export function CreateRuleDialog({ open, onOpenChange }: { open: boolean; onOpen
                 onChange={(event) => setThreshold(event.target.value)}
                 placeholder={metric === "cpu_percent" ? "90" : "1073741824"}
               />
-              <p className="text-[11px] text-muted-foreground">cpu rules are percent of node; memory rules are bytes</p>
+              <p className="text-2xs text-muted-foreground">cpu rules are percent of node; memory rules are bytes</p>
             </div>
             <div className="flex flex-col gap-1.5">
               <Label className="text-xs">For (seconds)</Label>
               <Input type="number" min="0" value={forSeconds} onChange={(event) => setForSeconds(event.target.value)} />
-              <p className="text-[11px] text-muted-foreground">consecutive breach window (0 = immediately)</p>
+              <p className="text-2xs text-muted-foreground">consecutive breach window (0 = immediately)</p>
             </div>
           </div>
           {create.isError ? (
-            <div className="rounded-lg border border-[color-mix(in_oklch,var(--status-danger)_35%,transparent)] bg-[var(--status-danger-bg)] px-3 py-2 font-mono text-[11px] break-all text-muted-foreground">
+            <div className="rounded-lg border border-[color-mix(in_oklch,var(--status-danger)_35%,transparent)] bg-[var(--status-danger-bg)] px-3 py-2 font-mono text-2xs break-all text-muted-foreground">
               {String(create.error)}
             </div>
           ) : null}

@@ -164,7 +164,7 @@ function NodeRow({ node }: { node: Node }) {
       <TableRow className={node.available ? "" : "opacity-60"}>
         <TableCell className="font-medium">
           {node.hostname}
-          <span className="ml-1.5 font-mono text-[11px] text-muted-foreground" title={node.platform_id}>
+          <span className="ml-1.5 font-mono text-2xs text-muted-foreground" title={node.platform_id}>
             {node.platform_id?.slice(0, 8)}…
           </span>
         </TableCell>

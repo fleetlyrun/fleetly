@@ -78,7 +78,7 @@ export function ManagedProvidersView() {
       title="Components"
       description="Platform-hosted provider instances — health, pins and data freshness"
       actions={
-        <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11.5px] font-semibold ${degraded ? "border-destructive/30 bg-destructive/10 text-destructive" : "border-success/30 bg-success/10 text-[var(--status-success)]"}`}>
+        <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-2xs font-semibold ${degraded ? "border-destructive/30 bg-destructive/10 text-destructive" : "border-success/30 bg-success/10 text-[var(--status-success)]"}`}>
           <span className={`inline-block size-1.5 rounded-full bg-current ${degraded ? "" : ""}`} />
           platform {degraded ? "degraded" : "healthy"}
         </span>
@@ -95,7 +95,7 @@ export function ManagedProvidersView() {
           />
         ))}
       </div>
-      <p className="mt-4 text-[11.5px] text-muted-foreground">
+      <p className="mt-4 text-2xs text-muted-foreground">
         cAdvisor runs per node for container metrics. Health is probed per provider (2s budget; timeout counts as unhealthy) and
         aggregated into the platform state. Endpoints are config-defined (config file is the single source) and not exposed over
         the API.
@@ -136,18 +136,18 @@ function ProviderCardView({
         </span>
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-[15px] font-bold">{provider.name}</span>
+            <span className="text-base font-bold">{provider.name}</span>
             {badge}
           </div>
-          <div className="text-[11.5px] text-muted-foreground">{provider.role}</div>
+          <div className="text-2xs text-muted-foreground">{provider.role}</div>
         </div>
         <div className="ml-auto text-right">
-          <div className="font-mono text-[11.5px]">{provider.pinned}</div>
-          <div className="text-[10.5px] text-muted-foreground">pinned (provider)</div>
+          <div className="font-mono text-2xs">{provider.pinned}</div>
+          <div className="text-2xs text-muted-foreground">pinned (provider)</div>
         </div>
       </div>
       {!probed || healthy ? null : (
-        <p className="rounded-md border border-destructive/30 bg-destructive/10 px-2.5 py-1.5 text-[11.5px] text-destructive">
+        <p className="rounded-md border border-destructive/30 bg-destructive/10 px-2.5 py-1.5 text-2xs text-destructive">
           {health?.details || "health check failed"}
         </p>
       )}
@@ -156,9 +156,9 @@ function ProviderCardView({
         {provider.freshness === "metrics-probe" ? (
           <MetricsFreshness />
         ) : provider.freshness === "needs-vl-proxy" ? (
-          <span className="font-mono text-[11.5px] text-muted-foreground">n/a — needs VL query proxy (phase 3)</span>
+          <span className="font-mono text-2xs text-muted-foreground">n/a — needs VL query proxy (phase 3)</span>
         ) : (
-          <span className="font-mono text-[11.5px] text-muted-foreground">n/a</span>
+          <span className="font-mono text-2xs text-muted-foreground">n/a</span>
         )}
       </div>
       {/* disk usage（原型卡内行形态，IA v3 对齐批）：数据卷所在宿主盘水位
@@ -174,10 +174,10 @@ function ProviderCardView({
             style={{ width: `${Math.min(100, Math.round(diskUsage.ratio * 100))}%` }}
           />
         </span>
-        <span className={`font-mono text-[11.5px] font-semibold ${diskUsage.tone === "danger" ? "text-destructive" : ""}`}>
+        <span className={`font-mono text-2xs font-semibold ${diskUsage.tone === "danger" ? "text-destructive" : ""}`}>
           {diskUsage.label}
         </span>
-        <span className="text-[11px] text-muted-foreground">root fs</span>
+        <span className="text-2xs text-muted-foreground">root fs</span>
       </div>
       <div className="mt-1 flex gap-2 border-t pt-3">
         {provider.workbench ? (
@@ -249,6 +249,6 @@ function MetricsFreshness() {
     neutral: "text-muted-foreground",
   };
   return (
-    <span className={`font-mono text-[11.5px] font-semibold ${toneClass[fresh.tone]}`}>{fresh.label}</span>
+    <span className={`font-mono text-2xs font-semibold ${toneClass[fresh.tone]}`}>{fresh.label}</span>
   );
 }

@@ -36,7 +36,7 @@ function OverviewPage() {
       }
     >
 
-      <div className="mb-6 grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3">
+      <div className="mb-6 grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-3.5">
         <StatCard label="Nodes" value={`${availableNodes.length}/${(nodes.data ?? []).length}`} sub="available" loading={nodes.isPending} />
         <StatCard
           label="Alerts"
@@ -48,11 +48,11 @@ function OverviewPage() {
         <StatCard label="Projects" value={String((projects.data ?? []).length)} sub="in this fleet" loading={projects.isPending} />
       </div>
 
-      <h2 className="mb-2.5 px-0.5 text-[13.5px] font-semibold">Projects</h2>
+      <h2 className="mb-2.5 px-0.5 text-sm font-semibold">Projects</h2>
       {projects.isError ? (
         <ErrorState error={projects.error} onRetry={() => void projects.refetch()} />
       ) : projects.isPending ? (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-3.5">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">
           {Array.from({ length: 3 }).map((_, index) => (
             <Skeleton key={index} className="h-28 rounded-xl" />
           ))}
@@ -68,7 +68,7 @@ function OverviewPage() {
           </Button>
         </div>
       ) : (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-3.5">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">
           {(projects.data ?? []).map((project) => (
             <ProjectTile key={project.id} projectId={project.id} projectName={project.name} onVisit={() => setProjectId(project.id)} />
           ))}
@@ -92,19 +92,19 @@ function StatCard({
   loading?: boolean;
 }) {
   return (
-    <div className="rounded-xl border bg-card px-4 py-3.5 shadow-[0_1px_2px_oklch(0_0_0/0.06)]">
+    <div className="rounded-xl border bg-card px-5 py-4">
       <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
         {tone === "danger" ? <BellIcon className="size-3" /> : <BoxesIcon className="size-3" />}
         {label}
       </div>
       {loading ? (
-        <Skeleton className="mt-1 h-7 w-16" />
+        <Skeleton className="mt-1.5 h-7 w-16" />
       ) : (
-        <div className={`mt-0.5 text-[21px] font-bold tracking-tight ${tone === "danger" && value !== "0" ? "text-[var(--status-danger)]" : ""}`}>
+        <div className={`mt-1.5 text-2xl font-semibold tracking-tight ${tone === "danger" && value !== "0" ? "text-[var(--status-danger)]" : ""}`}>
           {value}
         </div>
       )}
-      <div className="text-[11.5px] text-muted-foreground">{sub}</div>
+      <div className="mt-0.5 text-2xs text-muted-foreground">{sub}</div>
     </div>
   );
 }
@@ -126,19 +126,19 @@ function ProjectTile({
       to="/p/$projectId"
       params={{ projectId }}
       onClick={onVisit}
-      className="group rounded-xl border bg-card p-4 shadow-[0_1px_2px_oklch(0_0_0/0.06)] transition-all hover:-translate-y-px hover:border-border-strong hover:shadow-lg"
+      className="group rounded-xl border bg-card p-5 transition-all hover:-translate-y-px hover:border-border-strong"
     >
       <div className="flex items-center gap-3">
         <ProjectAvatar seed={projectId} label={projectName} className="size-9 rounded-xl text-sm" />
         <div className="min-w-0">
           <div className="truncate text-sm font-bold">{projectName}</div>
-          <div className="text-[11.5px] text-muted-foreground">
+          <div className="text-2xs text-muted-foreground">
             {apps.isPending ? "…" : `${rows.length} app${rows.length === 1 ? "" : "s"}`}
           </div>
         </div>
       </div>
       {apps.isError ? (
-        <div className="mt-3 text-[11px] text-[var(--status-danger)]">apps failed to load</div>
+        <div className="mt-3 text-2xs text-[var(--status-danger)]">apps failed to load</div>
       ) : (
         <div className="mt-3 flex items-center gap-1.5">
           {rows.slice(0, 6).map((app) => (
@@ -149,7 +149,7 @@ function ProjectTile({
               data-app={app.id}
             />
           ))}
-          <span className="ml-1 text-[11px] text-muted-foreground group-hover:text-foreground">open →</span>
+          <span className="ml-1 text-2xs text-muted-foreground group-hover:text-foreground">open →</span>
         </div>
       )}
     </Link>

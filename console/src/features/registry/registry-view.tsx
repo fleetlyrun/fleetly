@@ -61,7 +61,7 @@ export function RegistryView({
       cell: ({ row }) => (
         <div className="flex items-center gap-2.5">
           <ProjectAvatar seed={row.original.app.id} label={row.original.app.name} />
-          <div className="text-[13px] font-semibold">{row.original.app.name}</div>
+          <div className="text-sm font-semibold">{row.original.app.name}</div>
         </div>
       ),
     },
@@ -157,7 +157,7 @@ export function RegistryView({
               />
             }
           />
-          <p className="mt-3 text-[11.5px] text-muted-foreground">
+          <p className="mt-3 text-2xs text-muted-foreground">
             Digests are content-addressed — they identify exactly what is running.
           </p>
         </>
@@ -210,7 +210,7 @@ function RegistryCatalog({ projectId, apps }: { projectId: string; apps: Array<{
                   <ChevronRightIcon className="size-4 text-muted-foreground" />
                 )}
                 <span className="font-mono text-xs">{repo}</span>
-                <span className="text-[13px] font-semibold">{appName(repo)}</span>
+                <span className="text-sm font-semibold">{appName(repo)}</span>
               </button>
               {openRepo === repo ? <RegistryTags projectId={projectId} repo={repo} /> : null}
             </div>
@@ -243,7 +243,7 @@ function RegistryTags({ projectId, repo }: { projectId: string; repo: string }) 
   }
   return (
     <table className="mb-1 ml-6 w-[calc(100%-1.5rem)] text-xs">
-      <thead className="text-left text-[10.5px] font-semibold tracking-wide text-muted-foreground uppercase">
+      <thead className="text-left text-2xs font-semibold tracking-wide text-muted-foreground uppercase">
         <tr>
           <th className="px-2 py-1">Tag</th>
           <th className="px-2 py-1">Digest</th>

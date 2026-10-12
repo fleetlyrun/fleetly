@@ -76,7 +76,7 @@ function AppDeploymentsPage() {
       header: "Error",
       cell: ({ row }) =>
         row.original.error ? (
-          <div className="max-w-64 truncate font-mono text-[11px] text-[var(--status-danger)]" title={row.original.error}>
+          <div className="max-w-64 truncate font-mono text-2xs text-[var(--status-danger)]" title={row.original.error}>
             {row.original.error}
           </div>
         ) : (

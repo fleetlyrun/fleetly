@@ -84,24 +84,24 @@ function AppDetailLayout() {
     <PageFrame>
       <ContentCrumb projectId={projectId} section={{ label: "Apps", to: `${tabBase.split("/apps")[0]}/apps` }} current={appLabel} />
 
-      <section className="mb-5 flex flex-wrap items-center gap-4 rounded-xl border bg-card p-4">
+      <section className="mb-5 flex flex-wrap items-center gap-4 rounded-xl border bg-card p-5">
         <ProjectAvatar seed={appId} label={appLabel} className="size-11 rounded-xl text-base" />
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="font-heading text-lg font-bold tracking-tight">{appLabel}</h1>
+            <h1 className="font-heading text-xl font-semibold tracking-tight">{appLabel}</h1>
             {latest?.state ? <DeploymentStatusBadge state={latest.state} /> : null}
             {firing.length > 0 ? (
               <a
                 href="/alerts"
                 title={`${firing.length} alert(s) firing on this app`}
-                className="inline-flex items-center gap-1 rounded-full border border-destructive/40 bg-destructive/10 px-2 py-0.5 text-[11px] font-semibold text-destructive"
+                className="inline-flex items-center gap-1 rounded-full border border-destructive/40 bg-destructive/10 px-2 py-0.5 text-2xs font-semibold text-destructive"
               >
                 <TriangleAlertIcon className="size-3" />
                 {firing.length} alert firing
               </a>
             ) : null}
           </div>
-          <div className="flex items-center gap-1 font-mono text-[11.5px] text-muted-foreground">
+          <div className="flex items-center gap-1 font-mono text-2xs text-muted-foreground">
             {appId}
             <CopyButton value={appId} />
           </div>
@@ -177,7 +177,7 @@ function AppDetailLayout() {
             <a
               key={tab.label}
               href={tab.to}
-              className={`-mb-px rounded-t-md border-b-2 px-3.5 py-2 text-[13px] font-medium transition-colors ${
+              className={`-mb-px rounded-t-md border-b-2 px-3.5 py-2 text-sm font-medium transition-colors ${
                 active
                   ? "border-primary text-primary"
                   : "border-transparent text-muted-foreground hover:bg-muted hover:text-foreground"

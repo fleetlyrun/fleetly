@@ -86,7 +86,7 @@ function DatabasesTab({ rows, loading }: { rows: DatabaseRow[]; loading: boolean
       cell: ({ row }) => (
         <div className="flex items-center gap-2.5">
           <ProjectAvatar seed={row.original.database.id ?? ""} label={row.original.database.name ?? ""} />
-          <div className="text-[13px] font-semibold">{row.original.database.name}</div>
+          <div className="text-sm font-semibold">{row.original.database.name}</div>
         </div>
       ),
     },
@@ -125,7 +125,7 @@ function DatabasesTab({ rows, loading }: { rows: DatabaseRow[]; loading: boolean
         row.original.database.restore_from_backup ? (
           <span className="text-info">
             restoring from {row.original.database.restore_from_backup}
-            {row.original.database.restore_error ? <div className="text-[11px] text-destructive">{row.original.database.restore_error}</div> : null}
+            {row.original.database.restore_error ? <div className="text-2xs text-destructive">{row.original.database.restore_error}</div> : null}
           </span>
         ) : (
           <span className="text-muted-foreground">—</span>
@@ -181,7 +181,7 @@ function SnapshotsTab({ snapshots }: { snapshots: Array<{ id: string; hostname: 
           </p>
         ) : (
           <table className="w-full text-sm">
-            <thead className="border-b bg-muted/40 text-left text-[10.5px] font-semibold tracking-wide text-muted-foreground uppercase">
+            <thead className="border-b bg-muted/40 text-left text-2xs font-semibold tracking-wide text-muted-foreground uppercase">
               <tr>
                 <th className="px-3 py-2">Snapshot</th>
                 <th className="px-3 py-2">Host</th>
@@ -204,7 +204,7 @@ function SnapshotsTab({ snapshots }: { snapshots: Array<{ id: string; hostname: 
         {snapshots.length > 0 ? <ListPagination page={page} pageCount={pageCount} setPage={setPage} total={snapshots.length} /> : null}
       </div>
       <CliEquivalent command="fleetly platform backups" />
-      <p className="mt-3 flex items-center gap-1.5 text-[11.5px] text-muted-foreground">
+      <p className="mt-3 flex items-center gap-1.5 text-2xs text-muted-foreground">
         <HardDriveDownloadIcon className="size-3.5" />
         Snapshot cadence and retention follow the platform backup config; the local store is same-node — not disaster recovery.
       </p>

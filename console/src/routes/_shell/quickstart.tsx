@@ -138,12 +138,12 @@ function QuickstartPageV2() {
           <div className="flex flex-col gap-1.5">
             <Label className="text-xs">Project</Label>
             <Input value={form.project} onChange={(event) => setForm({ ...form, project: event.target.value })} />
-            <p className="text-[11px] text-muted-foreground">reused if it already exists</p>
+            <p className="text-2xs text-muted-foreground">reused if it already exists</p>
           </div>
           <div className="flex flex-col gap-1.5">
             <Label className="text-xs">App name</Label>
             <Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
-            <p className="text-[11px] text-muted-foreground">reused if it already exists</p>
+            <p className="text-2xs text-muted-foreground">reused if it already exists</p>
           </div>
         </div>
         <div className="grid grid-cols-3 gap-3">
@@ -175,7 +175,7 @@ function QuickstartPageV2() {
             onChange={(event) => setForm({ ...form, host: event.target.value })}
             placeholder={`${form.name}.127.0.0.1.sslip.io`}
           />
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-2xs text-muted-foreground">
             route hostname; default {"<app>"}.127.0.0.1.sslip.io (local trial form — use your server IP for external access)
           </p>
         </div>
@@ -208,7 +208,7 @@ function QuickstartPageV2() {
           {running ? <li className="animate-pulse text-[var(--status-info)]">steps in progress…</li> : null}
         </ol>
       ) : null}
-      <p className="mt-3 text-[11px] text-muted-foreground">Every step is idempotent — re-running reuses what exists.</p>
+      <p className="mt-3 text-2xs text-muted-foreground">Every step is idempotent — re-running reuses what exists.</p>
     </PageFrame>
   );
 }

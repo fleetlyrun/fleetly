@@ -74,7 +74,7 @@ function IdentityCard() {
       ) : whoami.isError ? (
         <ErrorState error={whoami.error} onRetry={() => void whoami.refetch()} />
       ) : (
-        <dl className="grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-1.5 text-[13px]">
+        <dl className="grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-1.5 text-sm">
           <dt className="text-muted-foreground">token</dt>
           <dd className="font-medium">{whoami.data.tokenName || "—"}</dd>
           <dt className="text-muted-foreground">user</dt>
@@ -111,7 +111,7 @@ function TokensCard() {
       ) : (tokens.data ?? []).length === 0 ? (
         <EmptyState icon={KeyRound} title="No tokens visible to this role" description="Token administration needs elevated scope." />
       ) : (
-        <Table className="text-[13px]">
+        <Table className="text-sm">
           <TableHeader>
             <TableRow>
               <TableHead>Name</TableHead>
@@ -148,11 +148,11 @@ function TokenRow({ token }: { token: { id?: string; name?: string; role_id?: st
   return (
     <>
       <TableRow className={token.revoked_at ? "opacity-50" : ""}>
-        <TableCell className="text-[13px] font-medium">
+        <TableCell className="text-sm font-medium">
           {token.name}
           {token.revoked_at ? <span className="ml-2 text-xs text-muted-foreground">revoked</span> : null}
         </TableCell>
-        <TableCell className="font-mono text-[11px] text-muted-foreground">{token.role_id?.slice(0, 10)}…</TableCell>
+        <TableCell className="font-mono text-2xs text-muted-foreground">{token.role_id?.slice(0, 10)}…</TableCell>
         <TableCell className="text-xs text-muted-foreground"><RelativeTime value={token.created_at} /></TableCell>
         <TableCell className="text-xs text-muted-foreground"><RelativeTime value={token.last_used_at} /></TableCell>
         <TableCell className="text-right">
@@ -341,7 +341,7 @@ function GovernanceCard() {
           <div className="flex flex-col gap-1">
             <Label className="text-xs">Set change freeze</Label>
             <Input value={reason} onChange={(event) => setReason(event.target.value)} placeholder="maintenance window" className="h-8 w-56" />
-            <p className="text-[11px] text-muted-foreground">platform-wide (all teams); change verbs are refused until lifted</p>
+            <p className="text-2xs text-muted-foreground">platform-wide (all teams); change verbs are refused until lifted</p>
           </div>
           <Button type="submit" size="sm" disabled={freeze.isPending || reason === ""} className="mb-4.5">
             set freeze
@@ -393,7 +393,7 @@ function PlatformBackupsTable() {
     );
   }
   return (
-    <Table className="text-[13px]">
+    <Table className="text-sm">
       <TableHeader>
         <TableRow>
           <TableHead>Snapshot</TableHead>

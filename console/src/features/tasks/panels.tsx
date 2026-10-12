@@ -43,7 +43,7 @@ function kvLines(text: string): Array<string> {
 // FormError 是弹窗表单的提交错误面（danger 信封盒，describeError 单源）。
 function FormError({ error }: { error: unknown }) {
   return (
-    <div className="rounded-lg border border-[color-mix(in_oklch,var(--status-danger)_35%,transparent)] bg-[var(--status-danger-bg)] px-3 py-2 font-mono text-[11px] break-all text-muted-foreground">
+    <div className="rounded-lg border border-[color-mix(in_oklch,var(--status-danger)_35%,transparent)] bg-[var(--status-danger-bg)] px-3 py-2 font-mono text-2xs break-all text-muted-foreground">
       {describeError(error).detail}
     </div>
   );
@@ -53,7 +53,7 @@ function FormError({ error }: { error: unknown }) {
 function RowError({ error }: { error: unknown }) {
   const described = describeError(error);
   return (
-    <div className="mt-1 text-[11px] text-[var(--status-danger)]">
+    <div className="mt-1 text-2xs text-[var(--status-danger)]">
       {described.title} — <span className="font-mono">{described.detail}</span>
     </div>
   );
@@ -126,7 +126,7 @@ export function NewTaskButton({ projectId }: { projectId: string }) {
               <Label className="flex flex-col gap-1.5">
                 <span className="text-xs font-semibold">Name</span>
                 <Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
-                <span className="text-[11px] font-normal text-muted-foreground">optional</span>
+                <span className="text-2xs font-normal text-muted-foreground">optional</span>
               </Label>
             </div>
             <div className="grid grid-cols-3 gap-3">
@@ -151,28 +151,28 @@ export function NewTaskButton({ projectId }: { projectId: string }) {
               <Label className="flex flex-col gap-1.5">
                 <span className="text-xs font-semibold">TTL seconds</span>
                 <Input value={form.ttl} onChange={(event) => setForm({ ...form, ttl: event.target.value })} inputMode="numeric" />
-                <span className="text-[11px] font-normal text-muted-foreground">lease lifetime</span>
+                <span className="text-2xs font-normal text-muted-foreground">lease lifetime</span>
               </Label>
             </div>
             <Label className="flex flex-col gap-1.5">
               <span className="text-xs font-semibold">Network group</span>
               <Input value={form.networkGroup} onChange={(event) => setForm({ ...form, networkGroup: event.target.value })} placeholder="dispatcher" />
-              <span className="text-[11px] font-normal text-muted-foreground">optional dedicated network group (cross-attach via taskGroup:&lt;name&gt;)</span>
+              <span className="text-2xs font-normal text-muted-foreground">optional dedicated network group (cross-attach via taskGroup:&lt;name&gt;)</span>
             </Label>
             <Label className="flex flex-col gap-1.5">
               <span className="text-xs font-semibold">Command</span>
               <Input value={form.command} onChange={(event) => setForm({ ...form, command: event.target.value })} placeholder="sh -c migrate up" />
-              <span className="text-[11px] font-normal text-muted-foreground">argv elements separated by spaces</span>
+              <span className="text-2xs font-normal text-muted-foreground">argv elements separated by spaces</span>
             </Label>
             <Label className="flex flex-col gap-1.5">
               <span className="text-xs font-semibold">Env</span>
               <Textarea rows={2} value={form.env} onChange={(event) => setForm({ ...form, env: event.target.value })} />
-              <span className="text-[11px] font-normal text-muted-foreground">one KEY=VALUE per line</span>
+              <span className="text-2xs font-normal text-muted-foreground">one KEY=VALUE per line</span>
             </Label>
             <Label className="flex flex-col gap-1.5">
               <span className="text-xs font-semibold">Secret refs</span>
               <Input value={form.secretRefs} onChange={(event) => setForm({ ...form, secretRefs: event.target.value })} />
-              <span className="text-[11px] font-normal text-muted-foreground">comma-separated project secret names</span>
+              <span className="text-2xs font-normal text-muted-foreground">comma-separated project secret names</span>
             </Label>
             <div className="grid grid-cols-2 gap-3">
               <Label className="flex flex-col gap-1.5">
@@ -484,12 +484,12 @@ export function NewScheduleButton({ projectId }: { projectId: string }) {
               <Label className="flex flex-col gap-1.5">
                 <span className="text-xs font-semibold">Cron</span>
                 <Input value={form.cron} onChange={(event) => setForm({ ...form, cron: event.target.value })} autoFocus />
-                <span className="text-[11px] font-normal text-muted-foreground">5-field, in the schedule's timezone</span>
+                <span className="text-2xs font-normal text-muted-foreground">5-field, in the schedule's timezone</span>
               </Label>
               <Label className="flex flex-col gap-1.5">
                 <span className="text-xs font-semibold">Timezone</span>
                 <Input value={form.timezone} onChange={(event) => setForm({ ...form, timezone: event.target.value })} />
-                <span className="text-[11px] font-normal text-muted-foreground">IANA name</span>
+                <span className="text-2xs font-normal text-muted-foreground">IANA name</span>
               </Label>
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -505,12 +505,12 @@ export function NewScheduleButton({ projectId }: { projectId: string }) {
             <Label className="flex flex-col gap-1.5">
               <span className="text-xs font-semibold">Command</span>
               <Input value={form.command} onChange={(event) => setForm({ ...form, command: event.target.value })} />
-              <span className="text-[11px] font-normal text-muted-foreground">argv elements separated by spaces</span>
+              <span className="text-2xs font-normal text-muted-foreground">argv elements separated by spaces</span>
             </Label>
             <Label className="flex flex-col gap-1.5">
               <span className="text-xs font-semibold">Env</span>
               <Textarea rows={2} value={form.env} onChange={(event) => setForm({ ...form, env: event.target.value })} />
-              <span className="text-[11px] font-normal text-muted-foreground">one KEY=VALUE per line</span>
+              <span className="text-2xs font-normal text-muted-foreground">one KEY=VALUE per line</span>
             </Label>
             <Label className="flex flex-col gap-1.5">
               <span className="text-xs font-semibold">TTL seconds</span>

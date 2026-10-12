@@ -48,7 +48,7 @@ export function AppRoutesTab({ projectId, appId }: { projectId: string; appId: s
       ) : (
         <div className="overflow-hidden rounded-xl border">
           <table className="w-full text-sm">
-            <thead className="border-b bg-muted/40 text-left text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+            <thead className="border-b bg-muted/40 text-left text-2xs font-semibold tracking-wide text-muted-foreground uppercase">
               <tr>
                 <th className="px-3 py-2">Host</th>
                 <th className="px-3 py-2">Path</th>

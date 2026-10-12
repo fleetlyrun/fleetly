@@ -63,7 +63,7 @@ function ProjectOverviewPage() {
       description="Project overview — apps and their latest deployments"
     >
       {apps.isPending ? (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-3.5">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">
           {Array.from({ length: 3 }).map((_, index) => (
             <Skeleton key={index} className="h-28 rounded-xl" />
           ))}
@@ -78,7 +78,7 @@ function ProjectOverviewPage() {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-3.5">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">
           {(apps.data ?? []).map((app) => (
             <AppTile key={app.id} projectId={projectId} appId={app.id} appName={app.name} />
           ))}
@@ -106,13 +106,13 @@ function AppTile({ projectId, appId, appName }: { projectId: string; appId: stri
   return (
     <a
       href={base}
-      className="group rounded-xl border bg-card p-4 shadow-[0_1px_2px_oklch(0_0_0/0.06)] transition-all hover:-translate-y-px hover:border-border-strong hover:shadow-lg"
+      className="group rounded-xl border bg-card p-5 transition-all hover:-translate-y-px hover:border-border-strong"
     >
       <div className="flex items-center gap-3">
         <ProjectAvatar seed={appId} label={appName} className="size-9 rounded-xl text-sm" />
         <div className="min-w-0">
           <div className="truncate text-sm font-bold">{appName}</div>
-          <div className="font-mono text-[11px] text-muted-foreground">{appId.slice(0, 10)}…</div>
+          <div className="font-mono text-2xs text-muted-foreground">{appId.slice(0, 10)}…</div>
         </div>
         <ArrowUpRightIcon className="ml-auto size-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
       </div>
@@ -123,11 +123,11 @@ function AppTile({ projectId, appId, appName }: { projectId: string; appId: stri
           <>
             <DeploymentStatusBadge state={latest.state} />
             {latest.updated_at ? (
-              <RelativeTime value={latest.updated_at} className="text-[11px] text-muted-foreground" />
+              <RelativeTime value={latest.updated_at} className="text-2xs text-muted-foreground" />
             ) : null}
           </>
         ) : (
-          <span className="inline-flex items-center gap-1 text-[11.5px] text-muted-foreground">
+          <span className="inline-flex items-center gap-1 text-2xs text-muted-foreground">
             <LayersIcon className="size-3" />
             no deployments yet
           </span>

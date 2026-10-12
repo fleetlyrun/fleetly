@@ -64,7 +64,7 @@ import { Textarea } from "@/components/ui/textarea";
 function RowError({ error }: { error: unknown }) {
   const described = describeError(error);
   return (
-    <div className="mt-1 text-[11px] text-[var(--status-danger)]">
+    <div className="mt-1 text-2xs text-[var(--status-danger)]">
       {described.title} — <span className="font-mono">{described.detail}</span>
     </div>
   );
@@ -73,7 +73,7 @@ function RowError({ error }: { error: unknown }) {
 // FormError 是弹窗表单的提交错误面（danger 信封盒，describeError 单源）。
 function FormError({ error }: { error: unknown }) {
   return (
-    <div className="rounded-lg border border-[color-mix(in_oklch,var(--status-danger)_35%,transparent)] bg-[var(--status-danger-bg)] px-3 py-2 font-mono text-[11px] break-all text-muted-foreground">
+    <div className="rounded-lg border border-[color-mix(in_oklch,var(--status-danger)_35%,transparent)] bg-[var(--status-danger-bg)] px-3 py-2 font-mono text-2xs break-all text-muted-foreground">
       {describeError(error).detail}
     </div>
   );
@@ -433,13 +433,13 @@ export function NewRouteButton({ projectId, apps }: { projectId: string; apps: A
             <Label className="flex flex-col gap-1.5">
               <span className="text-xs font-semibold">Host</span>
               <Input value={form.host} onChange={(event) => setForm({ ...form, host: event.target.value })} autoFocus />
-              <span className="text-[11px] font-normal text-muted-foreground">e.g. shop.203.0.113.10.sslip.io</span>
+              <span className="text-2xs font-normal text-muted-foreground">e.g. shop.203.0.113.10.sslip.io</span>
             </Label>
             <div className="grid grid-cols-2 gap-3">
               <Label className="flex flex-col gap-1.5">
                 <span className="text-xs font-semibold">Path</span>
                 <Input value={form.path} onChange={(event) => setForm({ ...form, path: event.target.value })} placeholder="/" />
-                <span className="text-[11px] font-normal text-muted-foreground">optional prefix</span>
+                <span className="text-2xs font-normal text-muted-foreground">optional prefix</span>
               </Label>
               <Label className="flex flex-col gap-1.5">
                 <span className="text-xs font-semibold">TLS</span>
@@ -712,7 +712,7 @@ function VolumesTab({ projectId }: { projectId: string }) {
             <Label className="flex flex-col gap-1.5">
               <span className="text-xs font-semibold">Pinned node</span>
               <Input value={pinnedNode} onChange={(event) => setPinnedNode(event.target.value)} />
-              <span className="text-[11px] font-normal text-muted-foreground">optional platform node id — volume stays on that node</span>
+              <span className="text-2xs font-normal text-muted-foreground">optional platform node id — volume stays on that node</span>
             </Label>
             {create.isError ? <FormError error={create.error} /> : null}
             <DialogFooter>
@@ -901,7 +901,7 @@ function PutForm({
               ) : (
                 <Input type="password" value={value} onChange={(event) => setValue(event.target.value)} />
               )}
-              {valueHint ? <span className="text-[11px] font-normal text-muted-foreground">{valueHint}</span> : null}
+              {valueHint ? <span className="text-2xs font-normal text-muted-foreground">{valueHint}</span> : null}
             </Label>
             {error !== null ? <FormError error={error} /> : null}
             <DialogFooter>
@@ -1170,7 +1170,7 @@ function VariableActionsCell({
       >
         delete
       </Button>
-      {result ? <div className="mt-1 text-[11px] text-[var(--status-success)]">{result}</div> : null}
+      {result ? <div className="mt-1 text-2xs text-[var(--status-success)]">{result}</div> : null}
       {error != null ? <RowError error={error} /> : null}
       <ConfirmDialog
         open={deleting}

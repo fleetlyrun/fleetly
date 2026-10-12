@@ -287,7 +287,7 @@ function Timeline({
             <div className="flex w-full items-center">
               <span className={`h-0.5 flex-1 ${index === 0 ? "invisible" : isDone ? "bg-[var(--status-success)]" : "bg-border"}`} />
               <span
-                className={`grid size-5 flex-none place-items-center rounded-full border-2 text-[10px] ${
+                className={`grid size-5 flex-none place-items-center rounded-full border-2 text-2xs ${
                   isDone
                     ? "border-[var(--status-success)] bg-[var(--status-success)] text-white"
                     : isCurrent
@@ -307,11 +307,11 @@ function Timeline({
                 }`}
               />
             </div>
-            <span className={`mt-1.5 text-[11.5px] font-semibold ${isDone || isCurrent ? "" : "text-muted-foreground"}`}>
+            <span className={`mt-1.5 text-2xs font-semibold ${isDone || isCurrent ? "" : "text-muted-foreground"}`}>
               {stage === "succeeded" && aborted ? "outcome" : stage}
             </span>
             {aborted && index === STAGES.length - 1 ? (
-              <span className="font-mono text-[10.5px] text-[var(--status-danger)]">{state}</span>
+              <span className="font-mono text-2xs text-[var(--status-danger)]">{state}</span>
             ) : null}
           </div>
         );
@@ -403,7 +403,7 @@ function ProcessStrategiesCard({ deployment, toRevision }: { deployment: Deploym
           No strategy catalog on the target revision (older revision or data unavailable).
         </p>
       ) : (
-        <Table className="mt-2 text-[12.5px]">
+        <Table className="mt-2 text-xs">
           <TableHeader>
             <TableRow>
               <TableHead>process</TableHead>
@@ -432,7 +432,7 @@ function ProcessStrategiesCard({ deployment, toRevision }: { deployment: Deploym
           </TableBody>
         </Table>
       )}
-      <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+      <p className="mt-2 text-2xs leading-relaxed text-muted-foreground">
         Bare and fully-qualified names are stable references; the generation name targets one generation for debugging and
         moves with each deploy.
       </p>

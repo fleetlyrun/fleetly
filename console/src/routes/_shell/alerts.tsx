@@ -51,7 +51,7 @@ function AlertsPage() {
         firing.length > 0 ? (
           <Card className="mb-4 border-[color-mix(in_oklch,var(--status-danger)_40%,var(--border))] bg-[color-mix(in_oklch,var(--status-danger)_6%,var(--card))] px-4 py-3">
             {firing.map((state) => (
-              <div key={state.rule_id ?? state.app_id} className="flex flex-wrap items-center gap-2.5 text-[13px]">
+              <div key={state.rule_id ?? state.app_id} className="flex flex-wrap items-center gap-2.5 text-sm">
                 <StatusBadge tone="danger" pulse>
                   firing
                 </StatusBadge>
@@ -239,7 +239,7 @@ function ChannelsPanel() {
       accessorKey: "name",
       header: "Name",
       cell: ({ row }) => (
-        <span className="text-[13px] font-medium">
+        <span className="text-sm font-medium">
           {row.original.name}
           <CopyButton value={row.original.id ?? ""} className="ml-1" />
         </span>

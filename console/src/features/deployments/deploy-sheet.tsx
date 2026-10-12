@@ -163,7 +163,7 @@ export function DeploySheet({
                 <SelectItem value="upload">Uploaded source</SelectItem>
               </SelectContent>
             </Select>
-            <p className="text-[11.5px] text-muted-foreground">{SOURCE_HINTS[source]}</p>
+            <p className="text-2xs text-muted-foreground">{SOURCE_HINTS[source]}</p>
           </div>
 
           {source === "image" ? (
@@ -287,7 +287,7 @@ export function DeploySheet({
           {mutation.isError ? (
             <div className="rounded-lg border border-[color-mix(in_oklch,var(--status-danger)_35%,transparent)] bg-[var(--status-danger-bg)] px-3 py-2">
               <div className="text-xs font-semibold text-[var(--status-danger)]">{describeError(mutation.error).title}</div>
-              <div className="mt-0.5 font-mono text-[11px] break-all text-muted-foreground">
+              <div className="mt-0.5 font-mono text-2xs break-all text-muted-foreground">
                 {describeError(mutation.error).detail}
               </div>
             </div>
@@ -326,7 +326,7 @@ function FieldRow({ label, hint, children }: { label: string; hint?: string; chi
     <div className="flex flex-col gap-1.5">
       <Label className="text-xs">{label}</Label>
       {children}
-      {hint ? <p className="text-[11px] leading-snug text-muted-foreground">{hint}</p> : null}
+      {hint ? <p className="text-2xs leading-snug text-muted-foreground">{hint}</p> : null}
     </div>
   );
 }

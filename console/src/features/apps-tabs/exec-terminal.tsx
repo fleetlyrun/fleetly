@@ -178,7 +178,7 @@ export function ExecTerminal({ appId, processes }: { appId: string; processes: s
     <div className="flex h-[32rem] flex-col">
       <div className="flex flex-none flex-wrap items-end gap-2.5 pb-2.5">
         <div className="flex flex-col gap-1">
-          <Label className="text-[11px] text-muted-foreground">Process</Label>
+          <Label className="text-2xs text-muted-foreground">Process</Label>
           <Select value={effectiveProcess} onValueChange={pickProcess}>
             <SelectTrigger className="w-32">
               <SelectValue placeholder={effectiveProcess === "" ? "—" : ""} />
@@ -193,7 +193,7 @@ export function ExecTerminal({ appId, processes }: { appId: string; processes: s
           </Select>
         </div>
         <div className="flex flex-col gap-1">
-          <Label className="text-[11px] text-muted-foreground">Instance</Label>
+          <Label className="text-2xs text-muted-foreground">Instance</Label>
           <Select value={instance} onValueChange={pickInstance}>
             <SelectTrigger className="w-48 font-mono">
               <SelectValue placeholder="—" />
@@ -216,7 +216,7 @@ export function ExecTerminal({ appId, processes }: { appId: string; processes: s
           </Select>
         </div>
         <div className="flex flex-1 flex-col gap-1">
-          <Label className="text-[11px] text-muted-foreground">Command (empty = /bin/sh)</Label>
+          <Label className="text-2xs text-muted-foreground">Command (empty = /bin/sh)</Label>
           <Input
             value={command}
             placeholder="/bin/sh"
@@ -255,7 +255,7 @@ export function ExecTerminal({ appId, processes }: { appId: string; processes: s
         <div ref={termDiv} className="absolute inset-0 px-2 py-1" />
       </div>
 
-      <div className="flex flex-none items-center gap-4 py-2 font-mono text-[11px] text-muted-foreground">
+      <div className="flex flex-none items-center gap-4 py-2 font-mono text-2xs text-muted-foreground">
         <span
           className={
             status === "open"

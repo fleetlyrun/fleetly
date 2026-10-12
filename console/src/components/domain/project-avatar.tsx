@@ -30,7 +30,7 @@ export function ProjectAvatar({
       aria-hidden
       style={{ backgroundImage: gradientFor(seed) }}
       className={cn(
-        "grid size-7 flex-none place-items-center rounded-lg text-[11px] font-bold text-white",
+        "grid size-7 flex-none place-items-center rounded-lg text-2xs font-bold text-white",
         className,
       )}
     >
