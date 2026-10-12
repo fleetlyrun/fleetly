@@ -943,3 +943,18 @@ F3.1/F3.2/F3.3/F3.6 四批走查的浏览器级挂账在后端在场的环境（
 - **W-3（P3，挂账）**：懒加载 chunk 慢链窗口整壳全黑（Tasks 首访实录，自愈）——React.lazy Suspense fallback 空窗；建议壳级 spinner。
 
 **教训增补**：①CSS 层级执法——Tailwind v4 base 层会被 utilities 层同属性覆盖（与特异性无关），对 vendored 组件的行为修补用无层级规则；②`flex-1 w-full` 无 `min-w-0` 时内容固有宽即收缩下限，宽表页撑溢整壳（vendored 布局缺位消费侧 className 补）；③verify/vitest 全绿 ≠ 真实浏览器不咬人（W-2/W-3 为 jsdom/本地盲区，W1/W1' 同族第四、五度）。
+
+## 2026-10-12 记录·四十七（详情页一致性四批 + Task 详情可达性修复两跳换装 c14f854-w6fix + 全面走查；现役）
+
+**换装两跳**（fb75ee2-w5fix → c884d29-consfix → **c14f854-w6fix（现役）**，console-only 五 commit：16c9390 页尾窄卡通栏 / f1fd6e7 面包屑槽位 / 6e315e3 九 tab 宽度统一 + Routes tab 归队 house 模板 + 壳守卫收紧 / c884d29 DB/Task 详情英雄卡对齐 + 药丸 Tabs 退役 / c14f854 W-6 当日修）：零迁移（goose 停 28 两窗各核）、Platform Backup 硬门两跳照付（`1ee5fbdf` / `20909817`）、卷 tar 按 console-only 先例省略、旧二进制双留底、drop-in 六件全活、doctor 既有基线、嵌入指纹两连对账（`index-BzSc7mvP.js` → `index-TWgKtbNY.js`）、路由冷窗后 tw/n0 双 200。**零扰动四度成立**：两跳 task 基线 diff 唯一差异 = sec-test 既有节拍历史行滚动 + 相对时间老化，用户域/受管域 task ID 集合逐位一致。
+
+**全面走查判定 PASS-with-notes**（全录 `docs/reviews/2026-10-12-console-detailfix-walkthrough.md`）：平台域 12 页 + 项目域 9 页 + App Detail 九 tab + Database 详情六 tab + Task 详情三 tab + 双主题抽查。修复点活体：Danger zone 通栏 ×2、面包屑节奏、九 tab 全宽（量测对齐 284/1237）、Routes tab ListToolbar+DataTable、DB/Task 英雄卡 + 下划线 tab。活体锚：Logs 真流帧渲染、Events Resume 200 条积压（platform.backup_succeeded 与换装备份互证）、Nodes relay 版本戳两跳回显、Metrics 7 序列 + y 轴小数（W-4 在役）、Audit `project.delete 01M4QA9B` 在案。
+
+**Findings（1 当日修 + 3 挂账）**：
+
+- **W-6（P1，既有非本批，当日修 c14f854）**：Task 详情路由不可达——列表 `tasks.tsx` 无 index、`tasks.$taskId` 点嵌套其下而 ModulePage 不渲染 Outlet：URL 切详情、组件永不挂载（刷新亦然）。f6069a8（对齐批 5）起既有，此前走查未覆盖因不可达。修 = 列表改名 `tasks.index.tsx` 对齐 databases 先例；修复后详情英雄卡 + Definition/Pool & lease/Timing 三卡活体。
+- **W-7（P2，挂账）**：⌘K 命令面板挂载不可见（DOM 在、视觉无）；Events 页点 Search 触发整页错误边界 `Cannot read properties of undefined (reading 'subscribe')`（Logs 页不复现崩溃形态）。疑似 Slate vendored Dialog/cmdk 交换回归，root-cause 专属批。
+- **W-1（P2，挂账伞 + 新症状）**：目录加载窗内一次性整页弹回 `/overview`（一次实录、不可稳复现）；记忆已删项目双实锤在案，修复方向不变。
+- **W-3（P3→P2，挂账升级）**：Suspense 全壳黑窗（吞侧栏）本日两现（首次进站 + 切 Metrics tab），秒级自愈；另有首次进站 React 零挂载一次（刷新恢复）。壳级 spinner 建议维持。
+
+**教训增补**：①TanStack 文件式路由的点嵌套即布局——列表页收编 ModulePage 时若同目录还有 `$id` 详情路由，列表必须落 `index.tsx`（databases 是正确先例；tasks 反例在役 36h 才被走查咬出）；②jsdom 全绿盲区第 N 度（W-6 路由树形状 + W-7 面板不可见均测试不可见）；③IAB 自动化怪癖增补：locator click 偶发迟效幽灵跳转、`cua.scroll` 恒挂起（keypress End 替代）、坐标点击前须重截图。
