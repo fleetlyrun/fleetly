@@ -8,9 +8,10 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state/deployment"
 )
 
-// materialize 把一条 Revision 的期望态物化到 Runtime：装料（loadSpec/
-// appTeam/buildDigests）→ 投影（Project）→ 材料（resolveMaterials）→
-// 卷钉住（pinVolumes + applyVolumePinning）→ Ensure → 记账（recordEnsured）。
+// materialize 把一条 Revision 的期望态物化到 Runtime：投影（projectRevision——
+// 与只读渲染 RenderWorkloads 共享的投影前段单源，ADR-0071）→ 材料
+// （resolveMaterials）→ 卷钉住（pinVolumes + applyVolumePinning）→ Ensure →
+// 记账（recordEnsured）。
 //
 // 三处消费面（release / rollback / 基线重放）的唯一序列真源：此前三份
 // 手写拷贝已在 pinVolumes 上分叉过一次（rollback 与重放漏钉——今日良性
@@ -38,29 +39,9 @@ func (e *Engine) materialize(ctx context.Context, d *deployment.Deployment, revi
 	ctx, cancel := e.boundedStep(ctx)
 	defer cancel()
 
-	spec, err := e.loadSpec(ctx, revision)
+	spec, ws, ns, err := e.projectRevision(ctx, d.AppID, revision, isolate)
 	if err != nil {
-		return fmt.Errorf("load revision spec: %w", err)
-	}
-	team, appRow, err := e.appTeam(ctx, d.AppID)
-	if err != nil {
-		return fmt.Errorf("resolve app: %w", err)
-	}
-	peers, err := e.resolvePeerRefs(ctx, e.db.Runner(), spec.GetApp().GetProject(), spec, isolate)
-	if err != nil {
-		return fmt.Errorf("resolve cross-project network peers: %w", err)
-	}
-	// 产物按被物化的 revision 解析（BG 切回重放 from_revision 起走本参数
-	// ——此前钉 d.ToRevision 是回放路径的存量错源，回放 from_build spec
-	// 会拿目标 revision 的产物映射）。
-	digests, err := e.buildDigests(ctx, d.AppID, revision)
-	if err != nil {
-		return fmt.Errorf("resolve build digests: %w", err)
-	}
-	egress := e.egressNetworkMap(ctx, spec.GetApp().GetProject())
-	ws, ns, err := Project(spec, team, appRow.Name, digests, peers, egress)
-	if err != nil {
-		return fmt.Errorf("project spec: %w", err)
+		return err
 	}
 	// 部署代标记（ADR-0048：全员逐载体 gen 锚 + blue-green 进程的代次化
 	// ID/命名位——rolling spec 全员 unscoped，逐字节零漂移）。release/
