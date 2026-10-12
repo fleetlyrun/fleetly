@@ -892,3 +892,18 @@ F3.1/F3.2/F3.3/F3.6 四批走查的浏览器级挂账在后端在场的环境（
 **门禁**：mise run test 三 module 全绿 + mise run lint 全绿（vet/golangci 0/buf）。
 
 **换装**：未换装——纯测试基建批（零生产代码面；连带修面含错误文案拓扑注释），随下次上站批部署。
+
+## 2026-10-12 记录·四十四（架构评审第三轮全批换装 e993a6b-arch3 + 五步验收；现役）
+
+**换装**（cd052e4-adr64 → **e993a6b-arch3（现役）**，区间含评审第三轮六候选 457a2c5/4090126/7f0d72f/cbdf6d8/a6ca565/e993a6b + 并行批 ADR-0065/0067）：零迁移（goose 停 28，两换装窗各核一次）。前置 Platform Backup `8485e70d` + 九卷 tar（zot/torchwood-pg 双卷/双 redis/VL/VM/双 acme 至 /root/upgrade-e993a6b/vols/）+ 旧二进制留底（cd052e4-adr64 与 e993a6b 无戳版双 .bak）。**交叉构建踩坑增补**：zsh 下 `LDFLAGS="-X main.version=..."` 变量展开分词致 -X 注入静默失败（strings 计 0、status 回显 server=unknown）——**ldflags 值必须整段单引号内联**（`-ldflags "-X 'main.version=v'"`），注入验证用 `strings <bin> | grep -c <戳>` 而非 --version（流浪 daemon 陷阱既有教训 516 行，本批又实踩一次：/root/data 流浪产物已清）。二次注入后 health 行活体回显 `server e993a6b-arch3`。
+
+**验收（五步全过）**：
+1. **铸造单源（ADR-0062）**：one-shot 缺省创建 → completed（行缺省并发=1 + 自然退出判读）；resident 池 desired=2 → 恰 2 running 补足收敛；argv 用法错（逗号串单 ARG）→ failed/127 如实判读（失败链顺带验证）。缩零排空（0 活 Run、task 保持 active）→ 扩回 2 running 复活全链。
+2. **WaitRun 任务维度（ADR-0063）**：REST 新绑定 `/v1/tasks/{tid}/runs/wait` 活体（旧版 404）——pending（补获）→ stopped/completed 终态帧收流，run id 等待开始后钉定；CLI `tasks create --wait` 免轮询（帧内 id，`run <id> pending → stopped (completed)`）。
+3. **配额文案统一（ADR-0068）**：create 腿 desired 201 与 scale 腿 201 同一文案 `this request would exceed the project task quota (100 tasks / 200 desired concurrency)` + suggestion；scale 2→3 第三 Run 补足。
+4. **网络重建（ADR-0046 活体）**：`networks rebuild` 位置参数形 → `rebuilt network default (detached 0, reattached 0)`；stable 期 journal 5 分钟窗 0 error/warn（ensure 签名跳过无噪音）。
+5. **整体面**：doctor 10 ok / 2 warning / 0 failed（既有基线）；tw.dev 200；console 活体 index hash `index-CeQOZNOA.js` 与本地 HEAD dist 对账一致（=ADR-0067 批 dist 随本窗首上架）。
+
+**诚实边界（挂账）**：受管域**非零扰动**——traefik/zot 在第二换装窗（03:00 版本戳重注）各恰滚一次（UpdateStatus completed、服务活体正常）。zot 双 secret 版本并存佐证 htpasswd 值变（spec 内容异→真滚动，非 modulo-gen 误判）；判异源未精确定位（本窗叠加并行 ADR-0065/0067 批——exec/telemetry 面变更，managedFingerprint 触发链待查）。VL/VM/cadvisor 7 天旧龄零扰动。
+
+**验收面清理**：arch3probe 项目整体删除（5 任务 + 池缩零 + 载体零残留）。
