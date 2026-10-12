@@ -8,6 +8,7 @@ import { ContentCrumb } from "@/components/domain/content-crumb";
 import { CopyButton } from "@/components/domain/copy-button";
 import { EmptyState } from "@/components/domain/empty-state";
 import { PageFrame } from "@/components/domain/page-frame";
+import { PageTabs } from "@/components/domain/page-tabs";
 import { ProjectAvatar } from "@/components/domain/project-avatar";
 import { RelativeTime } from "@/components/domain/relative-time";
 import { StatusBadge, statusToneClass, type StatusTone } from "@/components/domain/status-badge";
@@ -15,7 +16,6 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { useLogStream } from "@/features/logs/use-log-stream";
 import { LogViewer } from "@/features/logs/log-viewer";
@@ -65,6 +65,7 @@ export function TaskDetailPage({ projectId, taskId }: { projectId: string; taskI
   const schedules = useSchedules(projectId);
   // 来源 Schedule 反链：schedule.last_task_id = 最近一拍铸出的 Task。
   const sourceSchedule = (schedules.data ?? []).find((schedule) => schedule.last_task_id === taskId);
+  const [tab, setTab] = useState<"overview" | "runs" | "settings">("overview");
 
   return (
     <PageFrame
@@ -75,40 +76,40 @@ export function TaskDetailPage({ projectId, taskId }: { projectId: string; taskI
           current={task?.name ?? taskId}
         />
       }
-      title={
-        <span className="flex items-center gap-3">
-          <ProjectAvatar seed={taskId} label={task?.name ?? taskId} className="size-8 rounded-xl text-sm" />
-          {task?.name ?? taskId}
-          <StatusBadge tone={taskTone(task?.state)}>{task?.state ?? "unknown"}</StatusBadge>
-          {task?.form ? (
-            <span className="rounded-full border px-2 py-0.5 text-2xs font-semibold text-muted-foreground">{task.form}</span>
-          ) : null}
-        </span>
-      }
-      description={
-        <span className="flex items-center gap-1 font-mono text-2xs">
-          {taskId}
-          <CopyButton value={taskId} />
-        </span>
-      }
     >
+      {/* 英雄卡对齐 App Detail（2026-10-12 走查：裸标题与 Apps 形态脱队——
+          头像/名称/徽标/ULID 统一收卡）。 */}
+      <section className="mb-5 flex flex-wrap items-center gap-4 rounded-xl border bg-card p-5">
+        <ProjectAvatar seed={taskId} label={task?.name ?? taskId} className="size-11 rounded-xl text-base" />
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="font-heading text-xl font-semibold tracking-tight">{task?.name ?? taskId}</h1>
+            <StatusBadge tone={taskTone(task?.state)}>{task?.state ?? "unknown"}</StatusBadge>
+            {task?.form ? (
+              <span className="rounded-full border px-2 py-0.5 text-2xs font-semibold text-muted-foreground">{task.form}</span>
+            ) : null}
+          </div>
+          <div className="flex items-center gap-1 font-mono text-2xs text-muted-foreground">
+            {taskId}
+            <CopyButton value={taskId} />
+          </div>
+        </div>
+      </section>
 
-      <Tabs defaultValue="overview">
-        <TabsList className="mb-4">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="runs">Runs</TabsTrigger>
-          <TabsTrigger value="settings">Settings</TabsTrigger>
-        </TabsList>
-        <TabsContent value="overview">
-          <TaskOverview task={task} sourceScheduleId={sourceSchedule?.id} sourceScheduleName={sourceSchedule?.name} sourceScheduleCron={sourceSchedule?.cron} />
-        </TabsContent>
-        <TabsContent value="runs">
-          <TaskRuns taskId={taskId} />
-        </TabsContent>
-        <TabsContent value="settings">
-          <TaskSettings task={task} projectId={projectId} taskId={taskId} />
-        </TabsContent>
-      </Tabs>
+      <PageTabs
+        tabs={[
+          { value: "overview", label: "Overview" },
+          { value: "runs", label: "Runs" },
+          { value: "settings", label: "Settings" },
+        ]}
+        current={tab}
+        onChange={setTab}
+      />
+      {tab === "overview" ? (
+        <TaskOverview task={task} sourceScheduleId={sourceSchedule?.id} sourceScheduleName={sourceSchedule?.name} sourceScheduleCron={sourceSchedule?.cron} />
+      ) : null}
+      {tab === "runs" ? <TaskRuns taskId={taskId} /> : null}
+      {tab === "settings" ? <TaskSettings task={task} projectId={projectId} taskId={taskId} /> : null}
     </PageFrame>
   );
 }

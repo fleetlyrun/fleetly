@@ -26,6 +26,7 @@ import { ContentCrumb } from "@/components/domain/content-crumb";
 import { EmptyState } from "@/components/domain/empty-state";
 import { ListPage } from "@/components/domain/list-page";
 import { PageFrame } from "@/components/domain/page-frame";
+import { PageTabs } from "@/components/domain/page-tabs";
 import { ProjectAvatar } from "@/components/domain/project-avatar";
 import { RelativeTime } from "@/components/domain/relative-time";
 import { StatusBadge, statusToneClass, type StatusTone } from "@/components/domain/status-badge";
@@ -40,7 +41,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -445,6 +445,7 @@ export function DatabaseDetailPage({ projectId, databaseId }: { projectId: strin
   const database = (databases.data ?? []).find((entry) => entry.id === databaseId);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const [tab, setTab] = useState<"overview" | "metrics" | "logs" | "backups" | "browse" | "settings">("overview");
   const backup = useMutation({
     mutationFn: async () => apiSend(`/v1/databases/${encodeURIComponent(databaseId)}/backups`, "POST", {}),
     onSuccess: () => {
@@ -469,26 +470,27 @@ export function DatabaseDetailPage({ projectId, databaseId }: { projectId: strin
           current={database?.name ?? databaseId}
         />
       }
-      title={
-        <span className="flex items-center gap-3">
-          <ProjectAvatar seed={databaseId} label={database?.name ?? databaseId} className="size-8 rounded-xl text-sm" />
-          {database?.name ?? databaseId}
-          <StatusBadge tone={databaseTone(database?.status)}>{database?.status ?? "unknown"}</StatusBadge>
-          {database?.restore_from_backup ? (
-            <StatusBadge tone="info" pulse>
-              restoring
-            </StatusBadge>
-          ) : null}
-        </span>
-      }
-      description={
-        <span className="flex items-center gap-1 font-mono text-2xs">
-          {databaseId}
-          <CopyButton value={databaseId} />
-        </span>
-      }
-      actions={
-        <>
+    >
+      {/* 英雄卡对齐 App Detail（2026-10-12 走查：裸标题 + 页角动作钮与 Apps
+          形态脱队——头像/名称/徽标/ULID/动作组统一收卡。 */}
+      <section className="mb-5 flex flex-wrap items-center gap-4 rounded-xl border bg-card p-5">
+        <ProjectAvatar seed={databaseId} label={database?.name ?? databaseId} className="size-11 rounded-xl text-base" />
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="font-heading text-xl font-semibold tracking-tight">{database?.name ?? databaseId}</h1>
+            <StatusBadge tone={databaseTone(database?.status)}>{database?.status ?? "unknown"}</StatusBadge>
+            {database?.restore_from_backup ? (
+              <StatusBadge tone="info" pulse>
+                restoring
+              </StatusBadge>
+            ) : null}
+          </div>
+          <div className="flex items-center gap-1 font-mono text-2xs text-muted-foreground">
+            {databaseId}
+            <CopyButton value={databaseId} />
+          </div>
+        </div>
+        <div className="ml-auto flex flex-none items-center gap-2">
           <Button size="sm" disabled={backup.isPending} onClick={() => backup.mutate()}>
             <HardDriveDownloadIcon data-icon-start-inline />
             Back up now
@@ -497,44 +499,36 @@ export function DatabaseDetailPage({ projectId, databaseId }: { projectId: strin
             <EyeIcon data-icon-start-inline />
             Browse
           </Button>
-        </>
-      }
-    >
+        </div>
+      </section>
 
-      <Tabs defaultValue="overview">
-        <TabsList className="mb-4">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="metrics">Metrics</TabsTrigger>
-          <TabsTrigger value="logs">Logs</TabsTrigger>
-          <TabsTrigger value="backups">Backups</TabsTrigger>
-          <TabsTrigger value="browse">Browse</TabsTrigger>
-          <TabsTrigger value="settings">Settings</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="overview">
-          <DatabaseOverview database={database} projectApps={apps.data ?? []} specs={specs} />
-        </TabsContent>
-        <TabsContent value="metrics">
-          <DatabaseMetrics databaseId={databaseId} projectId={projectId} />
-        </TabsContent>
-        <TabsContent value="logs">
-          <DatabaseLogsTab databaseId={databaseId} />
-        </TabsContent>
-        <TabsContent value="backups">
-          <DatabaseBackups database={database} projectId={projectId} databaseId={databaseId} />
-        </TabsContent>
-        <TabsContent value="browse">
-          <DatabaseBrowsePanel browse={() => browse.mutate()} pending={browse.isPending} error={browse.error} engine={database?.engine} />
-        </TabsContent>
-        <TabsContent value="settings">
-          <DatabaseSettings
-            database={database}
-            projectApps={apps.data ?? []}
-            specs={specs}
-            onDeleted={() => navigate({ to: "/p/$projectId/databases", params: { projectId } })}
-          />
-        </TabsContent>
-      </Tabs>
+      <PageTabs
+        tabs={[
+          { value: "overview", label: "Overview" },
+          { value: "metrics", label: "Metrics" },
+          { value: "logs", label: "Logs" },
+          { value: "backups", label: "Backups" },
+          { value: "browse", label: "Browse" },
+          { value: "settings", label: "Settings" },
+        ]}
+        current={tab}
+        onChange={setTab}
+      />
+      {tab === "overview" ? <DatabaseOverview database={database} projectApps={apps.data ?? []} specs={specs} /> : null}
+      {tab === "metrics" ? <DatabaseMetrics databaseId={databaseId} projectId={projectId} /> : null}
+      {tab === "logs" ? <DatabaseLogsTab databaseId={databaseId} /> : null}
+      {tab === "backups" ? <DatabaseBackups database={database} projectId={projectId} databaseId={databaseId} /> : null}
+      {tab === "browse" ? (
+        <DatabaseBrowsePanel browse={() => browse.mutate()} pending={browse.isPending} error={browse.error} engine={database?.engine} />
+      ) : null}
+      {tab === "settings" ? (
+        <DatabaseSettings
+          database={database}
+          projectApps={apps.data ?? []}
+          specs={specs}
+          onDeleted={() => navigate({ to: "/p/$projectId/databases", params: { projectId } })}
+        />
+      ) : null}
     </PageFrame>
   );
 }
