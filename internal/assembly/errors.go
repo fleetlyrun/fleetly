@@ -52,6 +52,7 @@ var errcodeToHTTP = map[string]int{
 	"E_CATALOG_UNAVAILABLE":      http.StatusServiceUnavailable,
 	"E_DATABASE_NOT_READY":       http.StatusServiceUnavailable,
 	"E_CHANGE_FROZEN":            http.StatusConflict,
+	"E_APP_HOOK_OWNED":           http.StatusConflict,
 	"E_CONFLICT":                 http.StatusConflict,
 	"E_EVENTS_GONE":              http.StatusGone,
 	"E_EXEC_UNSUPPORTED":         http.StatusNotImplemented,

@@ -727,6 +727,54 @@
       }
     },
     {
+      "name": "app_variable.deleted",
+      "kind": "event",
+      "summary": "An app variable was deleted.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "active_deployments": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "app_variable.updated",
+      "kind": "event",
+      "summary": "An app variable was set (values are readable via the API; redeploy the app to pick up the new value).",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "active_deployments": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    {
       "name": "build.building",
       "kind": "event",
       "summary": "Build started executing.",

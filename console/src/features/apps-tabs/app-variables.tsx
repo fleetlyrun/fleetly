@@ -41,7 +41,7 @@ export function AppVariablesTab({ projectId, appId }: { projectId: string; appId
   const [staged, setStaged] = useState<VariableRow[] | null>(null);
   const rows = staged ?? (store.data ?? []);
   const base = store.data ?? [];
-  const dirty =
+  const hasChanges =
     staged != null &&
     (staged.length !== base.length ||
       staged.some((row, i) => row.name !== base[i]?.name || row.value !== base[i]?.value));
@@ -148,7 +148,7 @@ export function AppVariablesTab({ projectId, appId }: { projectId: string; appId
                   Discard
                 </Button>
               ) : null}
-              <Button size="sm" disabled={!dirty || apply.isPending} onClick={() => void apply.mutate()}>
+              <Button size="sm" disabled={!hasChanges || apply.isPending} onClick={() => void apply.mutate()}>
                 {apply.isPending ? "Applying…" : "Apply & deploy"}
               </Button>
             </div>

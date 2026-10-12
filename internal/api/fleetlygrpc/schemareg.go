@@ -68,6 +68,8 @@ func init() {
 		eventConfigUpdated,
 		eventVariableUpdated,
 		eventVariableDeleted,
+		eventAppVarUpdated,
+		eventAppVarDeleted,
 		eventVolumeCreated,
 		eventVolumeDeleted,
 		eventNetworkCreated,

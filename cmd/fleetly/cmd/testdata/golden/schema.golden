@@ -6,6 +6,8 @@ app	spec	AppSpec: desired state of a long-running deployable unit (an app is one
 app.created	event	An app was created.
 app.deleted	event	An app was deleted (teardown per ADR-0023).
 app.teardown_aborted	event	An app delete was aborted after teardown because a deployment was admitted mid-delete; the in-flight deployment rebuilds the carriers (ADR-0023).
+app_variable.deleted	event	An app variable was deleted.
+app_variable.updated	event	An app variable was set (values are readable via the API; redeploy the app to pick up the new value).
 build.building	event	Build started executing.
 build.cancelled	event	Build cancelled.
 build.expired	event	Build expired by timeout watchdog.
