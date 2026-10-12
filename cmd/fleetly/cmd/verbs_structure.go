@@ -337,7 +337,7 @@ func newAppsVarsSetVerb() commands.Command {
 	var app, value string
 	var idem idemKeyFlag
 	return &flaggedVerb{
-		name: name, synopsis: "Create or update an app variable (value from --value or stdin; redeploy to apply)",
+		name: name, synopsis: "Create or update an app variable (value from --value or stdin; the next deploy picks up the new value)",
 		usage: "apps vars set --app APP_ID NAME [--value VALUE]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&app, "app", "", "app id (required)")
@@ -367,7 +367,7 @@ func newAppsVarsSetVerb() commands.Command {
 				return err
 			}
 			return renderOut(env, jsonOut, resp, func() {
-				_, _ = fmt.Fprintf(env.Stdout, "set app variable %s (redeploy %s to apply the new value)\n", args[0], app)
+				_, _ = fmt.Fprintf(env.Stdout, "set app variable %s (the next deploy of %s picks up the new value)\n", args[0], app)
 			})
 		},
 	}

@@ -30,8 +30,8 @@ func TestGoldenAppsVars(t *testing.T) {
 	if code != 0 || stderr != "" {
 		t.Fatalf("apps vars set: code=%d stderr=%q", code, stderr)
 	}
-	if !strings.Contains(out, "redeploy") {
-		t.Fatalf("apps vars set: expected the redeploy hint, got %q", out)
+	if !strings.Contains(out, "next deploy") {
+		t.Fatalf("apps vars set: expected the next-deploy hint, got %q", out)
 	}
 	compareGolden(t, goldenFile("apps vars set"), normalizeGolden(out))
 	code, outJSON, stderr = runCLI(t, "apps", "vars", "set", "--app", appID, "--value", "edge", "TIER", "--json")

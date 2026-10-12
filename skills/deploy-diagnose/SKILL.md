@@ -93,7 +93,7 @@ the causal chain; logs and builds are the evidence underneath.
 
    ```bash
    fleetly apps vars list --app APP_ID
-   fleetly apps vars set --app APP_ID TIER --value production
+   fleetly apps vars set --app APP_ID --value production TIER
    fleetly apps vars unset --app APP_ID TIER
    fleetly deploy --app APP_ID --image IMAGE --override-hook
    ```
