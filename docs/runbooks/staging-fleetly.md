@@ -925,3 +925,21 @@ F3.1/F3.2/F3.3/F3.6 四批走查的浏览器级挂账在后端在场的环境（
 - **操作怪癖增补**：Radix Select 弹层在自动化分步调用间收起——展开与选择必须同一调用内完成（Console 自动化走查通用）。
 
 **三 findings 同日修复换装 fa382dd-wfix（二次换装，现役）**：W-1（hero/面包屑走 appNameOf，裸全 ULID 加载窗退役）+ W-2（App Deployments 列表 Revision 列接 revisions seq，`revisionLabel` 收编 lib/format 单源；项目级跨 App 列表维持 R…hash 诚实退化）+ W-3（Variables 分组头 `· N replicas`）。vitest 105 绿（+6）、console:verify 零漂移、Platform Backup `726f5ea4` 前置；零迁移，**STABLE-NO-FURTHER-ROLLS 达成**（traefik/zot 换装窗各恰滚一次 = 记录·十四 host 面既有形态，复测无后续滚动）；路由冷窗后 200。真机复验：torchwood 部署列表全 seq 形态（R11 → R12…）、Variables 分组头新形态上屏。
+
+## 2026-10-12 记录·四十六（Slate 视觉重定稿 + 品牌 logo 三跳换装 fb75ee2-w5fix + 全路由走查；现役）
+
+**换装链**（fa382dd-wfix → 9f27dd3-slate → 513e1c9-w2fix → **fb75ee2-w5fix（现役）**，console-only 三跳 + docs）：跳 1 = Slate 重定稿（token/字号阶梯/密度，f6e949f）+ 品牌 F 叶形 logo（白底转透明 128/32 双档 + sidebar/登录/favicon 接线，9f27dd3）；跳 2/3 = 走查 findings 同日修（W-2/W-4/W-5）。三跳 Platform Backup 前置（`3ab58967`/`92cfb5bc`/`cdd8d6b6`）、零迁移（goose 停 28）、drop-in 六件全活、doctor 既有基线、**三跳零扰动实锤**（基线 diff 仅 sec-test 既有节拍 + 相对时间字符串老化，task ID 全同——记录·二十五 console-only 推论第三度成立）、路由冷窗 ~60s 后 tw/n0 双 200、嵌入指纹三连对账（`index-Dt57Vf4x.js` → `index-DWhz4SwQ.js` → `index-CSShMEFx.js`）、旧二进制双留底（fa382dd-wfix/9f27dd3-slate.bak）。
+
+**新面真机**：F logo 登录页/侧栏/favicon 三面在役（暗底无白晕）；Nodes 页 relay 版本回显 `9f27dd3-slate`（新二进制经节点注册表活体）；正文 13-14px/大写微标签表头/大数字统计卡全量上屏。
+
+**全面走查判定 PASS-with-notes**（全录 `docs/reviews/2026-10-12-console-slate-walkthrough.md`）：平台域 11 页 + 项目域 12 页 + App Detail 九 tab + 双主题抽查；活体锚 = Logs 真流 646 帧（双实例交错）、Terminal 全链（`echo slate-ok` + 真实容器主机名）、Audit exec.session 同窗落表、Deployments Revision 列 seq 形态（记录·四十五 W-2 修复在役）。走查零残留（founder 密码会话、零 token 铸造）。
+
+**五 findings（3 当日修 + 2 挂账）**：
+
+- **W-2（P2，当日修 513e1c9）**：Databases 页整壳横向溢出（scrollWidth 1536 > 1440）——vendored SidebarInset 无 `min-w-0`，flex min-content 下限把 main 钉在内容固有宽。修 = shell-layout 消费侧 `className="min-w-0"`（上游不动）；活体 overflow=false。
+- **W-4（P3，当日修 513e1c9）**：Metrics y 轴 <1% 量程刻度重复（0.0%/0.1% 打满）——formatMetricValue 固定 1 位小数。修 = <1% 自适应 2-3 位 + 去尾零，+3 测试锚；活体 0%/0.045%/0.09%/0.14%/0.18%。
+- **W-5（P4，当日修 513e1c9→fb75ee2 两段）**：固定宽 Select 触发器裁字无省略号——vendored 值槽 `flex` 工具类压过 line-clamp 的 display。修 = styles.css **无层级层**规则（block + ellipsis + min-w-0；base 层规则会被 utility 层同属性覆盖，这是本批 CSS 层级教训）；活体 "all (processes co…"。
+- **W-1（P2，挂账）**：localStorage `fleetly_console_project` 记忆已删项目（审计 `project.delete 01M4QA9B…` 实锤）→ /p/ 域导航全 "project not found in catalog"，切换器名不重校验（记录·三十一观察⑤姊妹面）。修复方向：启动时目录校验记忆 id，失配回退。
+- **W-3（P3，挂账）**：懒加载 chunk 慢链窗口整壳全黑（Tasks 首访实录，自愈）——React.lazy Suspense fallback 空窗；建议壳级 spinner。
+
+**教训增补**：①CSS 层级执法——Tailwind v4 base 层会被 utilities 层同属性覆盖（与特异性无关），对 vendored 组件的行为修补用无层级规则；②`flex-1 w-full` 无 `min-w-0` 时内容固有宽即收缩下限，宽表页撑溢整壳（vendored 布局缺位消费侧 className 补）；③verify/vitest 全绿 ≠ 真实浏览器不咬人（W-2/W-3 为 jsdom/本地盲区，W1/W1' 同族第四、五度）。
