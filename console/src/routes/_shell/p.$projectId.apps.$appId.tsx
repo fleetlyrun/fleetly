@@ -81,9 +81,15 @@ function AppDetailLayout() {
   ];
 
   return (
-    <PageFrame>
-      <ContentCrumb projectId={projectId} section={{ label: "Apps", to: `${tabBase.split("/apps")[0]}/apps` }} current={appLabel} />
-
+    <PageFrame
+      breadcrumb={
+        <ContentCrumb
+          projectId={projectId}
+          section={{ label: "Apps", to: `${tabBase.split("/apps")[0]}/apps` }}
+          current={appLabel}
+        />
+      }
+    >
       <section className="mb-5 flex flex-wrap items-center gap-4 rounded-xl border bg-card p-5">
         <ProjectAvatar seed={appId} label={appLabel} className="size-11 rounded-xl text-base" />
         <div className="min-w-0">
