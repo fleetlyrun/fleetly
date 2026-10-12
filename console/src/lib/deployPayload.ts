@@ -4,7 +4,10 @@
 
 export interface DeployFormState {
   appId: string;
-  source: "image" | "compose" | "spec" | "upload";
+  // current = "Current spec (edit & deploy)"（ADR-0072 写面）：预填冻结
+  // Spec 的可编辑形态，载荷面与 spec 同走 spec_file（服务端对 hook 应用
+  // 按运行时 overlay 受理）。
+  source: "current" | "image" | "compose" | "spec" | "upload";
   image: string;
   processName: string;
   port: string;
@@ -59,7 +62,7 @@ export function buildDeployPayload(state: DeployFormState): Record<string, unkno
         }
       : {}),
     ...(state.source === "compose" ? { compose_yaml: state.composeYaml } : {}),
-    ...(state.source === "spec" ? { spec_file: state.specJson } : {}),
+    ...(state.source === "spec" || state.source === "current" ? { spec_file: state.specJson } : {}),
     ...(state.source === "upload"
       ? {
           upload_id: state.uploadId,

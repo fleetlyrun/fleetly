@@ -1,6 +1,12 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { ActivityIcon, FileJsonIcon, LayersIcon } from "lucide-react";
+import { ActivityIcon, FileJsonIcon, LayersIcon, PencilIcon } from "lucide-react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { useSpecDeploy } from "@/lib/spec-deploy";
 import { ApiError, apiFetch } from "@/api/client";
 import type { components as Delivery } from "@/api/delivery";
 import type { components as Workloads } from "@/api/workloads";
@@ -58,6 +64,25 @@ export function AppSpecTab({ projectId, appId, seq }: { projectId: string; appId
       apiFetch<{ spec?: unknown }>(`/v1/revisions/${encodeURIComponent(appId)}/${viewSeq}`),
   });
 
+  // 编辑-部署动线（ADR-0072 写面）：冻结体预填可编辑，部署走 spec_file
+  //（hook 应用服务端按运行时 overlay 受理）。
+  const [editOpen, setEditOpen] = useState(false);
+  const [editBody, setEditBody] = useState("");
+  const deploy = useSpecDeploy(appId, (id) => {
+    void navigate({
+      to: "/p/$projectId/apps/$appId/deployments/$deploymentId",
+      params: { projectId, appId, deploymentId: id },
+    });
+  });
+  const editValid = (() => {
+    try {
+      JSON.parse(editBody);
+      return true;
+    } catch {
+      return false;
+    }
+  })();
+
   if (view.isError) {
     const message = view.error instanceof ApiError ? view.error.message : String(view.error);
     return (
@@ -85,6 +110,18 @@ export function AppSpecTab({ projectId, appId, seq }: { projectId: string; appId
           {view.data?.revision?.digest ?? "…"}
         </span>
         <CopyButton value={view.data?.revision?.digest ?? ""} />
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={frozen.data?.spec == null}
+          onClick={() => {
+            setEditBody(JSON.stringify(frozen.data?.spec, null, 2));
+            setEditOpen(true);
+          }}
+        >
+          <PencilIcon data-icon-start-inline />
+          Edit &amp; deploy
+        </Button>
         <Select
           value={explicitSeq > 0 ? String(explicitSeq) : "effective"}
           onValueChange={(value) => {
@@ -218,6 +255,44 @@ export function AppSpecTab({ projectId, appId, seq }: { projectId: string; appId
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Edit spec &amp; deploy</DialogTitle>
+          </DialogHeader>
+          <p className="text-2xs text-muted-foreground">
+            The frozen spec, prefilled — deploys as spec_file. Hook-owned apps deploy a runtime overlay (the material
+            half stays with the frozen revision); env values from app variables re-synthesize on top at freeze.
+          </p>
+          <Textarea
+            rows={16}
+            className="font-mono text-2xs"
+            value={editBody}
+            spellCheck={false}
+            onChange={(event) => setEditBody(event.target.value)}
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              disabled={!editValid || deploy.isPending}
+              onClick={() => {
+                deploy.mutate(JSON.parse(editBody), {
+                  onSuccess: () => {
+                    setEditOpen(false);
+                    toast("Deployment created — the edited spec was submitted");
+                  },
+                  onError: (cause) => toast.error(cause instanceof Error ? cause.message : String(cause)),
+                });
+              }}
+            >
+              {deploy.isPending ? "Submitting…" : "Deploy"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

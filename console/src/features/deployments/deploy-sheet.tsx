@@ -1,9 +1,9 @@
-import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { RocketIcon } from "lucide-react";
 import { toast } from "sonner";
 import type { components } from "@/api/delivery";
-import { apiSend } from "@/api/client";
+import { ApiError, apiFetch, apiSend } from "@/api/client";
 import { buildDeployPayload, type DeployFormState } from "@/lib/deployPayload";
 import { useUploads, type AppEntry } from "@/lib/catalog";
 import { Button } from "@/components/ui/button";
@@ -30,6 +30,7 @@ type DeployResponse = {
 type SourceKind = DeployFormState["source"];
 
 const SOURCE_HINTS: Record<SourceKind, string> = {
+  current: "The app's frozen spec, prefilled and editable (deploys as spec_file; hook-owned apps deploy a runtime overlay).",
   image: "Single-process image deploy (rolling strategy by default — per-process strategy needs compose or spec file).",
   compose: "Compose YAML (controlled subset). Per-process strategy: deploy.strategy: blue-green under a service.",
   spec: "Bare AppSpec in protojson (snake_case). Full spec surface incl. processes[].strategy.",
@@ -54,7 +55,9 @@ export function DeploySheet({
 }) {
   const queryClient = useQueryClient();
   const [appId, setAppId] = useState(defaultAppId);
-  const [source, setSource] = useState<SourceKind>("image");
+  // 缺省源推导（ADR-0072 写面）：已有冻结 Spec 的 App 缺省走 current
+  // （预填可编辑）；显式选择后以选择为准。
+  const [sourceChosen, setSourceChosen] = useState<SourceKind | null>(null);
   const [image, setImage] = useState("nginx:1.27");
   const [processName, setProcessName] = useState("");
   const [port, setPort] = useState("");
@@ -79,6 +82,45 @@ export function DeploySheet({
   const selectedApp = apps.find((app) => app.id === effectiveAppId);
   const uploads = useUploads(selectedApp?.project_id ?? projectId);
   const uploadRows = uploads.data ?? [];
+
+  // 生效锚 + 冻结体预填（GetAppSpec 的 Revision 锚，ADR-0071）。
+  const frozen = useQuery({
+    queryKey: ["resources", "app-spec-sheet", effectiveAppId],
+    enabled: open && effectiveAppId !== "",
+    queryFn: async () => {
+      try {
+        return await apiFetch<{ spec?: unknown; revision_seq?: string }>(`/v1/apps/${encodeURIComponent(effectiveAppId)}/spec`);
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 404) return null;
+        throw error;
+      }
+    },
+  });
+  const hasFrozen = frozen.data != null;
+  const source: SourceKind = sourceChosen ?? (hasFrozen ? "current" : "image");
+  // hook 所有权（ADR-0072）：hook 在即材料源禁用。
+  const hook = useQuery({
+    queryKey: ["resources", "app-hook", effectiveAppId],
+    enabled: open && effectiveAppId !== "",
+    queryFn: async () => {
+      try {
+        return await apiFetch<{ repo?: string }>(`/v1/apps/${encodeURIComponent(effectiveAppId)}/hook`);
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 404) return null;
+        throw error;
+      }
+    },
+  });
+  const hookOwned = hook.data != null;
+
+  // current 源预填：冻结体 pretty JSON（App 切换/冻结更新时重播，除非已
+  // 手编）。
+  const [specEdited, setSpecEdited] = useState(false);
+  useEffect(() => {
+    if (source === "current" && !specEdited && frozen.data?.spec != null) {
+      setSpecJson(JSON.stringify(frozen.data.spec, null, 2));
+    }
+  }, [source, specEdited, frozen.data]);
 
   const mutation = useMutation<DeployResponse, Error, void>({
     mutationFn: () =>
@@ -120,8 +162,20 @@ export function DeploySheet({
     },
   });
 
+  const specJsonValid = (() => {
+    if (source !== "spec" && source !== "current") return true;
+    try {
+      JSON.parse(specJson);
+      return true;
+    } catch {
+      return false;
+    }
+  })();
   const canSubmit =
-    !mutation.isPending && effectiveAppId !== "" && (source !== "upload" || uploadId !== "");
+    !mutation.isPending &&
+    effectiveAppId !== "" &&
+    specJsonValid &&
+    (source !== "upload" || uploadId !== "");
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -135,8 +189,20 @@ export function DeploySheet({
         </SheetHeader>
         <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
           <div className="flex flex-col gap-2">
-            <Label>App</Label>
-            <Select value={effectiveAppId} onValueChange={setAppId}>
+            <Label>
+              App
+              {frozen.data?.revision_seq ? (
+                <span className="ml-2 font-mono text-2xs font-normal text-muted-foreground">
+                  frozen R{frozen.data.revision_seq}
+                </span>
+              ) : null}
+            </Label>
+            <Select
+              value={effectiveAppId}
+              onValueChange={(value) => {
+                setAppId(value);
+                setSpecEdited(false);
+              }}>
               <SelectTrigger>
                 <SelectValue placeholder="select an app…" />
               </SelectTrigger>
@@ -152,18 +218,43 @@ export function DeploySheet({
 
           <div className="flex flex-col gap-2">
             <Label>Source</Label>
-            <Select value={source} onValueChange={(value) => setSource(value as SourceKind)}>
+            <Select
+              value={source}
+              onValueChange={(value) => {
+                setSourceChosen(value as SourceKind);
+                if (value !== "current") setSpecEdited(false);
+              }}
+            >
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="image">Image</SelectItem>
-                <SelectItem value="compose">Compose YAML</SelectItem>
+                {hasFrozen ? <SelectItem value="current">Current spec (edit &amp; deploy)</SelectItem> : null}
+                <SelectItem value="image" disabled={hookOwned}>
+                  Image
+                </SelectItem>
+                <SelectItem value="compose" disabled={hookOwned}>
+                  Compose YAML
+                </SelectItem>
                 <SelectItem value="spec">Spec file (AppSpec JSON)</SelectItem>
-                <SelectItem value="upload">Uploaded source</SelectItem>
+                <SelectItem value="upload" disabled={hookOwned}>
+                  Uploaded source
+                </SelectItem>
               </SelectContent>
             </Select>
-            <p className="text-2xs text-muted-foreground">{SOURCE_HINTS[source]}</p>
+            <p className="text-2xs text-muted-foreground">
+              {SOURCE_HINTS[source]}
+              {hookOwned && (source === "current" || source === "spec")
+                ? " Runtime overlay: the material half (source, build) stays with the frozen revision."
+                : ""}
+            </p>
+            {hookOwned ? (
+              <p className="rounded-lg border border-[color-mix(in_oklch,var(--status-warning)_35%,transparent)] bg-[var(--status-warning-bg)] px-3 py-2 text-2xs text-[var(--status-warning)]">
+                Material sources are owned by the git hook{hook.data?.repo ? ` (${hook.data.repo})` : ""} — pushes
+                refresh the material and keep these runtime settings. Env changes belong in Variables (app variables);
+                removing the hook returns material ownership to deploys.
+              </p>
+            ) : null}
           </div>
 
           {source === "image" ? (
@@ -204,9 +295,20 @@ export function DeploySheet({
             </FieldRow>
           ) : null}
 
-          {source === "spec" ? (
-            <FieldRow label="AppSpec (protojson)" hint="snake_case; app ref is overwritten from the selected app">
-              <Textarea rows={12} value={specJson} onChange={(event) => setSpecJson(event.target.value)} spellCheck={false} />
+          {source === "spec" || source === "current" ? (
+            <FieldRow
+              label={source === "current" ? "Current frozen spec (editable)" : "AppSpec (protojson)"}
+              hint={specJsonValid ? "snake_case; app ref is overwritten from the selected app" : "not valid JSON — fix before deploying"}
+            >
+              <Textarea
+                rows={12}
+                value={specJson}
+                onChange={(event) => {
+                  setSpecJson(event.target.value);
+                  setSpecEdited(true);
+                }}
+                spellCheck={false}
+              />
             </FieldRow>
           ) : null}
 

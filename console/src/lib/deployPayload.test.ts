@@ -91,3 +91,10 @@ describe("envMapOf", () => {
     expect(envMapOf("A=1\n\n# comment\nBAD\nB=x=y")).toEqual({ A: "1", B: "x=y" });
   });
 });
+
+// current 源（ADR-0072 写面）：载荷面与 spec 同走 spec_file——服务端对
+// hook 应用按运行时 overlay 受理。
+it("maps the current-spec source to spec_file", () => {
+  const payload = buildDeployPayload({ ...base, source: "current", specJson: '{"processes":[]}' });
+  expect(payload).toEqual({ app_id: "01M4APP", spec_file: '{"processes":[]}' });
+});

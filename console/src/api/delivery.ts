@@ -477,6 +477,14 @@ export interface components {
              *     单进程形态旗标（process_name/probe/port/env/builder 族）互斥。
              */
             spec_file?: string;
+            /**
+             * override_hook 是 hook 所有权闸门的一次性接管声明（ADR-0072 决策 4）：
+             *     配置了 git hook 的 App 携带材料源（image/compose/upload）需显式置位
+             *     才被受理（全量接管）；正规路径 = 先删 hook。spec_file 不受本旗标
+             *     约束——hook 应用的 spec_file 恒为运行时 overlay（材料半边取冻结侧，
+             *     提交件 source 被忽略）。
+             */
+            override_hook?: boolean;
         };
         v1DeployResponse: {
             deployment?: components["schemas"]["v1Deployment"];

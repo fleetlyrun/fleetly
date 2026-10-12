@@ -4,6 +4,38 @@
  */
 
 export interface paths {
+    "/v1/app-variables": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["AppVariablesService_ListAppVariables"];
+        put: operations["AppVariablesService_PutAppVariable"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/app-variables/{app_id}/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["AppVariablesService_DeleteAppVariable"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/apps": {
         parameters: {
             query?: never;
@@ -544,6 +576,13 @@ export interface components {
              */
             first_boot_jobs?: components["schemas"]["v1JobSpec"][];
         };
+        v1AppVariable: {
+            id?: string;
+            app_id?: string;
+            name?: string;
+            value?: string;
+            updated_at?: string;
+        };
         v1ApproveNetworkPeerResponse: {
             peer?: components["schemas"]["v1NetworkPeer"];
         };
@@ -718,6 +757,7 @@ export interface components {
             peer?: components["schemas"]["v1NetworkPeer"];
         };
         v1DeleteAppResponse: Record<string, never>;
+        v1DeleteAppVariableResponse: Record<string, never>;
         v1DeleteDatabaseResponse: Record<string, never>;
         v1DeleteProjectResponse: Record<string, never>;
         v1DeleteSecretResponse: Record<string, never>;
@@ -813,6 +853,9 @@ export interface components {
             /** ttl 是作业硬超时（超时即失败回滚）。 */
             ttl?: string;
             process?: components["schemas"]["v1ProcessSpec"];
+        };
+        v1ListAppVariablesResponse: {
+            variables?: components["schemas"]["v1AppVariable"][];
         };
         v1ListAppsResponse: {
             apps?: components["schemas"]["v1App"][];
@@ -937,6 +980,22 @@ export interface components {
          * @enum {string}
          */
         v1Protocol: "PROTOCOL_UNSPECIFIED" | "PROTOCOL_HTTP" | "PROTOCOL_H2C" | "PROTOCOL_TCP";
+        v1PutAppVariableRequest: {
+            app_id?: string;
+            /**
+             * name 是 env 键形态（[A-Za-z_][A-Za-z0-9_]*，≤64 字符——与共享变量
+             *     同一白名单：变量名直接成为容器 env 键）。
+             */
+            name?: string;
+            value?: string;
+        };
+        /**
+         * PutAppVariableResponse 不携带 affected_apps 提示：受影响者恒为 App
+         *     本身（重部署取新值——响应注释即提示）。
+         */
+        v1PutAppVariableResponse: {
+            variable?: components["schemas"]["v1AppVariable"];
+        };
         v1PutConfigRequest: {
             project_id?: string;
             name?: string;
@@ -1082,6 +1141,108 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    AppVariablesService_ListAppVariables: {
+        parameters: {
+            query?: {
+                app_id?: string;
+                /**
+                 * @description after_name 游标（上一页末条 name；空 = 首页）。游标轴 = App 内 name
+                 *     字典序升序（ADR-0026 after_* + limit 惯例）。
+                 */
+                after_name?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ListAppVariablesResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    AppVariablesService_PutAppVariable: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["v1PutAppVariableRequest"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1PutAppVariableResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    AppVariablesService_DeleteAppVariable: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                app_id: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1DeleteAppVariableResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     AppsService_ListApps: {
         parameters: {
             query?: {

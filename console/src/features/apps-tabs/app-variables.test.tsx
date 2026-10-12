@@ -1,14 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { AppVariablesTab } from "./app-variables";
 import { setToken } from "@/lib/token";
 
-// Apply changes 受理后的导航锚（与 app-processes 同型同锚）：部署成功必须
-// 落 typed 部署详情路由。回归锚：旧实现相对路径 window.location.assign
-// 在 /p/<pid>/apps/<aid>/variables 落点解析成 /p/<pid>/apps/deployments/<id>
-// （.. 吃掉 appId 段）——404 页。
+// Variables tab（ADR-0072 重做）：AppVariable store 编辑器——staged 行集
+// + Apply（PUT 变更键 / DELETE 移除键 + 重发冻结 Spec 走部署）+ 生效 env
+// 只读投影。Apply 受理后的导航锚与 app-processes 同型同锚（typed 部署
+// 详情路由）。
 const { navigateMock } = vi.hoisted(() => ({ navigateMock: vi.fn() }));
 
 vi.mock("@tanstack/react-router", async (importOriginal) => {
@@ -18,7 +18,10 @@ vi.mock("@tanstack/react-router", async (importOriginal) => {
 
 function withClient() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return { client, wrapper: ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider> };
+  return {
+    client,
+    wrapper: ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>,
+  };
 }
 
 const fetchMock = vi.fn();
@@ -30,71 +33,85 @@ beforeEach(() => {
   setToken("flt_test_token");
 });
 
+// vitest 未开 globals：testing-library 自动 cleanup 不生效，显式卸载。
 afterEach(() => {
+  cleanup();
   vi.unstubAllGlobals();
   setToken("");
 });
 
-describe("AppVariablesTab apply changes", () => {
-  it("navigates to the created deployment detail after staging a variable", async () => {
-    fetchMock.mockImplementation(async (path: string) => {
-      if (path.startsWith("/v1/apps/A1/spec")) {
-        return new Response(JSON.stringify({ spec: { processes: [{ name: "web", replicas: "1" }] } }), { status: 200 });
-      }
-      if (path.startsWith("/v1/routes")) return new Response(JSON.stringify({ routes: [] }), { status: 200 });
-      if (path === "/v1/deployments") return new Response(JSON.stringify({ deployment: { id: "D1" } }), { status: 200 });
-      return new Response("{}", { status: 200 });
-    });
-    const { client, wrapper } = withClient();
-    render(<AppVariablesTab projectId="P1" appId="A1" />, { wrapper });
-    // 单 process + filter=all 时 process 名只在下拉项里，等工具栏就绪。
-    await waitFor(() => expect(screen.getByRole("button", { name: "+ Add variable" })).toBeTruthy());
+const FROZEN = {
+  processes: [{ name: "web", replicas: "1", env: { TIER: "appvar", ROLE: "edge" }, secret_refs: ["db-url"] }],
+};
 
-    // Add variable 对话框：process 默认绑定当前筛选（首个 process），只填
-    // 名值两格；Stage 落暂存面 → Apply changes 由禁用变可用。
-    fireEvent.click(screen.getByRole("button", { name: "+ Add variable" }));
-    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "LOG_LEVEL" } });
-    fireEvent.change(screen.getByLabelText("Value"), { target: { value: "debug" } });
-    fireEvent.click(screen.getByRole("button", { name: "Stage" }));
-    fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
-
-    await waitFor(() =>
-      expect(navigateMock).toHaveBeenCalledWith({
-        to: "/p/$projectId/apps/$appId/deployments/$deploymentId",
-        params: { projectId: "P1", appId: "A1", deploymentId: "D1" },
-      }),
-    );
-    const [, init] = fetchMock.mock.calls.find(([p]) => p === "/v1/deployments") as [string, RequestInit];
-    expect(JSON.parse(String(init.body)).spec_file).toContain("LOG_LEVEL");
-    client.clear();
+function stubStore(vars: Array<{ name: string; value: string }>) {
+  const puts: Array<Record<string, string>> = [];
+  const deletes: string[] = [];
+  const deploys: Array<Record<string, unknown>> = [];
+  fetchMock.mockImplementation(async (path: string, init?: RequestInit) => {
+    if (path.startsWith("/v1/app-variables/A1/")) {
+      deletes.push(path);
+      return new Response(JSON.stringify({}), { status: 200 });
+    }
+    if (path.startsWith("/v1/app-variables")) {
+      if ((init?.method ?? "GET") === "PUT") puts.push(JSON.parse(String(init?.body)));
+      return new Response(JSON.stringify({ variables: vars.map((v, i) => ({ id: `av${i}`, ...v })) }), { status: 200 });
+    }
+    if (path.startsWith("/v1/apps/A1/spec")) {
+      return new Response(JSON.stringify({ spec: FROZEN }), { status: 200 });
+    }
+    if (path === "/v1/deployments") {
+      deploys.push(JSON.parse(String(init?.body)));
+      return new Response(JSON.stringify({ deployment: { id: "D1" } }), { status: 200 });
+    }
+    return new Response(JSON.stringify({}), { status: 404 });
   });
-});
+  return { puts, deletes, deploys };
+}
 
-// W-3 修复锚（2026-10-12 走查）：多进程分组头改为 `process web · 2
-// replicas`——旧 `×2` 形似变量条数，副本数语义必须可读。
-describe("AppVariablesTab process group header", () => {
-  it("labels the replica count explicitly in multi-process groups", async () => {
-    fetchMock.mockImplementation(async (path: string) => {
-      if (path.startsWith("/v1/apps/A1/spec")) {
-        return new Response(
-          JSON.stringify({
-            spec: {
-              processes: [
-                { name: "web", replicas: "2", env: { LOG_LEVEL: "info" } },
-                { name: "worker", replicas: "1" },
-              ],
-            },
-          }),
-          { status: 200 },
-        );
-      }
-      if (path.startsWith("/v1/routes")) return new Response(JSON.stringify({ routes: [] }), { status: 200 });
-      return new Response("{}", { status: 200 });
-    });
-    const { client, wrapper } = withClient();
+describe("AppVariablesTab (AppVariable store)", () => {
+  it("renders store rows and the effective-env projection", async () => {
+    stubStore([{ name: "TIER", value: "appvar" }]);
+    const { wrapper } = withClient();
     render(<AppVariablesTab projectId="P1" appId="A1" />, { wrapper });
-    await waitFor(() => expect(screen.getByText("process web · 2 replicas")).toBeTruthy());
-    expect(screen.getByText("process worker · 1 replica")).toBeTruthy();
-    client.clear();
+
+    expect(await screen.findByDisplayValue("TIER")).toBeTruthy();
+    expect(await screen.findByDisplayValue("appvar")).toBeTruthy();
+    // 生效 env 投影（冻结体合成终态 + secret refs 计数）。
+    expect(await screen.findByText("2 keys · 1 secret refs")).toBeTruthy();
+    expect(screen.getByText("ROLE")).toBeTruthy();
+  });
+
+  it("applies staged edits via PUT + redeploy and navigates to the deployment", async () => {
+    const { puts, deploys } = stubStore([{ name: "TIER", value: "appvar" }]);
+    const { wrapper } = withClient();
+    render(<AppVariablesTab projectId="P1" appId="A1" />, { wrapper });
+
+    await screen.findByDisplayValue("appvar");
+    const valueInputs = screen.getAllByDisplayValue("appvar");
+    fireEvent.change(valueInputs[valueInputs.length - 1], { target: { value: "rotated" } });
+    fireEvent.click(screen.getByRole("button", { name: "Apply & deploy" }));
+
+    await waitFor(() => expect(navigateMock).toHaveBeenCalled());
+    await waitFor(() => expect(puts).toEqual([{ app_id: "A1", name: "TIER", value: "rotated" }]));
+    expect(deploys.length).toBeGreaterThan(0);
+    expect((deploys[0] as { spec_file?: string }).spec_file).toContain("processes");
+    expect(navigateMock).toHaveBeenCalled();
+  });
+
+  it("deletes removed rows and skips unchanged keys", async () => {
+    const { puts, deletes } = stubStore([
+      { name: "TIER", value: "appvar" },
+      { name: "KEEP", value: "as-is" },
+    ]);
+    const { wrapper } = withClient();
+    render(<AppVariablesTab projectId="P1" appId="A1" />, { wrapper });
+
+    await screen.findByDisplayValue("KEEP");
+    fireEvent.click(screen.getByRole("button", { name: "Remove TIER" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply & deploy" }));
+
+    await waitFor(() => expect(deletes).toEqual([`/v1/app-variables/A1/TIER`]));
+    await waitFor(() => expect(puts).toEqual([])); // KEEP 未变不重写
   });
 });

@@ -146,6 +146,11 @@ function GitHookCard({ appId }: { appId: string }) {
               <RelativeTime value={hook.data!.updated_at} />
             </dd>
           </dl>
+          <p className="mt-3 rounded-lg border border-[color-mix(in_oklch,var(--status-info)_35%,transparent)] bg-[var(--status-info-bg)] px-3 py-2 text-2xs text-[var(--status-info)]">
+            While the hook exists, the material half of the spec (source, build) is git-owned: pushes refresh it and keep
+            your runtime settings, and image/compose/upload deploys are refused (ADR-0072). Removing the hook returns
+            material ownership to deploys.
+          </p>
           <div className="mt-3 flex gap-2">
             <Button size="sm" variant="outline" disabled={rotate.isPending} onClick={() => rotate.mutate()}>
               Rotate token…
