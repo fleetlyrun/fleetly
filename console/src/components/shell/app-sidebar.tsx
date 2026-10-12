@@ -36,11 +36,8 @@ export function AppSidebar() {
     <Sidebar collapsible="icon">
       <SidebarHeader>
         <div className="flex items-center gap-2 px-2 py-1.5">
-          <span
-            aria-hidden
-            className="size-7 flex-none rounded-lg shadow-[0_0_12px_color-mix(in_oklch,var(--primary)_35%,transparent)]"
-            style={{ backgroundImage: "var(--brand-gradient)" }}
-          />
+          {/* 品牌 logo（2026-10-12 换官方 F 叶形标；原图白底已转透明，public/logo.png 128px） */}
+          <img src="/logo.png" alt="" aria-hidden className="size-7 flex-none rounded-lg" />
           <span className="font-heading text-base font-bold tracking-tight group-data-[collapsible=icon]:hidden">
             fleetly
           </span>

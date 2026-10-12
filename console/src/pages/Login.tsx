@@ -17,11 +17,8 @@ export function LoginPage() {
     <div className="grid min-h-svh place-items-center bg-background px-4">
       <div className="w-full max-w-sm">
         <div className="mb-5 flex flex-col items-center gap-2.5">
-          <span
-            aria-hidden
-            className="size-11 rounded-2xl shadow-[0_0_24px_color-mix(in_oklch,var(--primary)_40%,transparent)]"
-            style={{ backgroundImage: "var(--brand-gradient)" }}
-          />
+          {/* 品牌 logo（2026-10-12 换官方 F 叶形标；原图白底已转透明，public/logo.png 128px） */}
+          <img src="/logo.png" alt="" aria-hidden className="size-11 rounded-2xl" />
           <h1 className="font-heading text-lg font-bold tracking-tight">fleetly console</h1>
           <p className="text-xs text-muted-foreground">Sign in with your user name and password.</p>
         </div>
