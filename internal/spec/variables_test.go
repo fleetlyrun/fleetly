@@ -107,3 +107,27 @@ func TestMergeSharedEnvByteDeterminism(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEqual(t, first, otherBody)
 }
+
+// 三级合成（ADR-0072）：AppVariable 顶层覆盖源声明 env，源声明 env 覆盖
+// SharedVariable——freeze 咽喉两层连续调用的叠加终态。
+func TestMergeAppEnvTopLayer(t *testing.T) {
+	spec := &specv1.AppSpec{Processes: []*specv1.ProcessSpec{{
+		Name: "web", Env: map[string]string{"A": "intake", "B": "intake"},
+	}}}
+
+	MergeSharedEnv(spec, map[string]string{"A": "shared", "C": "shared"})
+	MergeAppEnv(spec, map[string]string{"A": "appvar", "B": "appvar"})
+
+	assert.Equal(t, map[string]string{"A": "appvar", "B": "appvar", "C": "shared"}, spec.Processes[0].Env)
+}
+
+// first_boot_jobs 的进程同享三级合成（迁移 job 与业务进程同一喉）。
+func TestMergeAppEnvCoversFirstBootJobs(t *testing.T) {
+	spec := &specv1.AppSpec{FirstBootJobs: []*specv1.JobSpec{{
+		Process: &specv1.ProcessSpec{Name: "migrate", Env: map[string]string{"DSN": "intake"}},
+	}}}
+
+	MergeAppEnv(spec, map[string]string{"DSN": "appvar", "EXTRA": "1"})
+
+	assert.Equal(t, map[string]string{"DSN": "appvar", "EXTRA": "1"}, spec.FirstBootJobs[0].Process.Env)
+}

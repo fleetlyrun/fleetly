@@ -1,7 +1,8 @@
-// 两级变量合成（F2.9，ADR-0043）：Project 级 SharedVariable 在下、App 级
-// env（部署源直传）覆盖；归一化期合成进 AppSpec，Revision 冻结即最终
-// 生效集（ADR-0027 案 a）。本文件只持纯函数——SharedVariable 的装载是
-// API 层（freezeRevision 咽喉）的事。
+// 三级变量合成（F2.9 ADR-0043 两级 → ADR-0072 三级）：Project 级
+// SharedVariable 在下、源声明 env（AppSpec 进程字段，部署源直传）居中、
+// App 级平台变量 AppVariable 在顶（同键覆盖）；归一化期合成进 AppSpec，
+// Revision 冻结即最终生效集（ADR-0027 案 a）。本文件只持纯函数——
+// SharedVariable/AppVariable 的装载是 API 层（freezeRevision 咽喉）的事。
 package spec
 
 import (
@@ -52,7 +53,28 @@ func MergeSharedEnv(s *specv1.AppSpec, shared map[string]string) {
 	}
 }
 
-// mergeEnvLayer 合成单进程 env：shared 在下、app 层覆盖同键。
+// MergeAppEnv 把 App 级平台变量（AppVariable）合成进 AppSpec 的全部进程
+// （ADR-0072 三级合成的顶层）：源声明 env 在下、AppVariable 覆盖同键——
+// env 不写死在源/配置文件里，平台侧 store 是权威覆盖层。与
+// MergeSharedEnv 同在冻结咽喉、marshal 前调用（三级叠加：Shared 底 <
+// 源声明 env 中 < AppVariable 顶）；合成值进冻结体，digest 覆盖——
+// 变量轮换产生新内容即新 Revision，需显式部署生效。
+func MergeAppEnv(s *specv1.AppSpec, appVars map[string]string) {
+	if len(appVars) == 0 {
+		return
+	}
+	for _, p := range s.GetProcesses() {
+		p.Env = mergeEnvLayer(appVars, p.GetEnv())
+	}
+	for _, j := range s.GetFirstBootJobs() {
+		if j.GetProcess() != nil {
+			j.Process.Env = mergeEnvLayer(appVars, j.Process.GetEnv())
+		}
+	}
+}
+
+// mergeEnvLayer 合成单进程 env：app（首参）覆盖同键、shared 在下——
+// 首参恒为覆盖层（Shared 合成传进程 env、AppVariable 合成传 store 值）。
 func mergeEnvLayer(app map[string]string, shared map[string]string) map[string]string {
 	out := make(map[string]string, len(shared)+len(app))
 	for k, v := range shared {
