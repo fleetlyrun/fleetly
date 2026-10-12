@@ -51,7 +51,7 @@ App 内的进程模板（如 web、worker）。
 _Avoid_: service, container, dyno
 
 **Variable**:
-App 级变量；Project 级共享变量称 Shared Variable，注入时 Project 层在下、App 层覆盖。
+App 级变量是一等平台聚合（AppVariable，按 App 存储明文非敏感值，敏感值走 Secret）；Project 级共享变量称 Shared Variable。三级合成在冻结咽喉（ADR-0072，承 ADR-0043 两级）：Shared Variable 在下、源声明 env 居中、AppVariable 在顶（同键覆盖）——env 不写死在源/配置文件里，Revision 冻结的即最终生效集；变量轮换需显式部署生效。
 _Avoid_: env var(标识符中), parameter, setting
 
 **Task**:
@@ -89,7 +89,7 @@ _Avoid_: DB instance, service instance, addon
 _Avoid_: blueprint, recipe
 
 **Source**:
-App 的来源，三种：Git 引用、镜像引用、上传产物。
+App 的材料来源，三种：Git 引用、镜像引用、上传产物。Spec 所有权分裂（ADR-0072）：材料半边（source、build）归部署来源所有，运行时半边（processes 的形状字段）归声明方所有——配置了 Git hook 的 App 材料归 git：push 合并（新材料 + 冻结运行时），Deploy(spec_file) 是运行时 overlay（冻结材料 + 提交运行时），材料源切换需 override 或先删 hook。
 _Avoid_: repo
 
 **Build**:
