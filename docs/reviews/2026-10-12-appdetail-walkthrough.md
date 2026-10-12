@@ -35,6 +35,13 @@
 - **W-3（P3）**：Variables 分组头 `PROCESS WEB ×2` 的 ×2 是副本数，形似"变量条数"，可读性歧义（建议 `web · 2 replicas` 形态）。
 - 环境怪癖（非产品缺陷）：IAB fullPage/clip 截图伪影（既有教训）；Radix Select 弹层跨自动化调用收起——展开+选须同调用内完成。
 
+## Findings 修复（同日 fa382dd-wfix，二次换装后真机复验）
+
+- **W-1**：App Detail 布局 hero/面包屑/Rollback 确认框改走 `appNameOf`（加载窗 = 截断形态 `01M4QAC6FS…`，裸全 ULID 分支结构性退役）；appNameOf 补双锚单测。真机复验：reload 后真名即时上屏（加载窗形态由单测锚承载）。
+- **W-2**：App Deployments 列表 Revision 列接 `useRevisions` seq 对表，`revisionLabel` 单源（lib/format，收编 Overview 本地 seqLabel）。真机复验：torchwood 列表全 seq 形态（`R11 → R12`/`R11`/`R10`/…，截图在案）。项目级跨 App 列表维持 `R…hash` 诚实退化（join 需 per-app 扇出，另行评估）。
+- **W-3**：分组头改 `process server · 2 replicas`（单复数对齐仓内惯例），双进程分组锚。真机复验：torchwood Variables `process server · 2 replicas` 上屏。
+- 门禁：vitest 105 绿（+6 新锚）、console:verify 零漂移、二次换装零迁移 + STABLE-NO-FURTHER-ROLLS（traefik/zot 各恰滚一次 = 记录·十四既有形态）。
+
 ## 清理
 
 Console Delete app（Danger zone 流，顺带验删除面）→ 路由 404 / 载体 0；`projects delete walk-ad` 收口。零 token 铸造（founder 密码会话）；用户域零扰动（tw.dev 200、服务基线不变）。

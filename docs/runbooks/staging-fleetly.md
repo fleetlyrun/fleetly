@@ -923,3 +923,5 @@ F3.1/F3.2/F3.3/F3.6 四批走查的浏览器级挂账在后端在场的环境（
 - **三 findings（均不阻断）**：W-1（P2）直进 tab 目录加载窗内 hero 回落裸全 ULID（头像 "0"、数秒自愈，appNameOf 截断回落未生效）；W-2（P3）Deployments 列表 Revision 列恒 `R…hash`（未 join seq）；W-3（P3）Variables 分组头 `PROCESS WEB ×2` 的 ×2 是副本数、形似变量计数。
 - **走查物清理**：Console Delete app → 路由 404/载体 0 → `projects delete walk-ad`；零 token 铸造（founder 密码会话）；用户域零扰动。
 - **操作怪癖增补**：Radix Select 弹层在自动化分步调用间收起——展开与选择必须同一调用内完成（Console 自动化走查通用）。
+
+**三 findings 同日修复换装 fa382dd-wfix（二次换装，现役）**：W-1（hero/面包屑走 appNameOf，裸全 ULID 加载窗退役）+ W-2（App Deployments 列表 Revision 列接 revisions seq，`revisionLabel` 收编 lib/format 单源；项目级跨 App 列表维持 R…hash 诚实退化）+ W-3（Variables 分组头 `· N replicas`）。vitest 105 绿（+6）、console:verify 零漂移、Platform Backup `726f5ea4` 前置；零迁移，**STABLE-NO-FURTHER-ROLLS 达成**（traefik/zot 换装窗各恰滚一次 = 记录·十四 host 面既有形态，复测无后续滚动）；路由冷窗后 200。真机复验：torchwood 部署列表全 seq 形态（R11 → R12…）、Variables 分组头新形态上屏。
