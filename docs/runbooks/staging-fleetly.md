@@ -415,7 +415,23 @@ ADR-0042 落地（64f07f0..8b7f51d 七 commit，CI run 37218474928 六 job 全�
 - buf breaking 对 origin/main 红一次（游标字段 after_*_id → after_*_seq 改名改型），commit 上 main 后自愈——零外部消费者核证（ADR-0047 先例）。
 
 
-## 2026-10-12 记录·四十八（ADR-0070 可读实体 id 重置换装 fd49e9d + 重置重播种；现役）
+## 2026-10-12 记录·四十九（ADR-0071/0072 配置面机制换装 d19ac2f；现役）
+
+**换代内容**：三层读面（GetRevision 冻结全文 / GetAppWorkloads 投影重放缺省=生效寻址 / GetAppWorkloadObservations 在服观测 + Revision.source_kind + GetAppSpec 锚）+ Spec 所有权分裂（webhook push 合并保留运行时半边 / hook 应用 spec_file 运行时 overlay / 材料源硬闸门 E_APP_HOOK_OWNED + override_hook）+ AppVariable 三级合成（Shared 底 < 源 env 中 < AppVariable 顶，freeze 咽喉）+ console Spec tab 三段式 / Deploy 表单 Current spec 预填源 / Variables tab 重做。迁移 00029（app_variables 表）。
+
+1. 前置硬门：Platform Backup `7f4808cd`（21:14 UTC）+ 受管卷 tar（torchwood-pg 6.7M + registry-zot 138M 至 /root/upgrade-d19ac2f/）。
+2. 常规换装序（本批无 IR 形状变化——仅 only-additive，零滚动预期）：SIGTERM 排水 → fleetlyd/fleetly `d19ac2f-adr71-72` 双二进制 install → 起服 → goose 前滚 v29 一次干净 → doctor 10 ok/0 fail（2 warning 均已知良性）。
+3. 三动线走查全绿（Ubuntu 本机 ssh 直操；走查项目/app 用后即删）：
+   - 读面：`apps workloads`（投影缺省生效寻址+digest 锚）/ `--live`（在服 wire-gen=1 running）/ `revisions get`（冻结全文+source image provenance）；
+   - AppVariable：`apps vars set TIER=prod` → image 重部署 → R2 冻结体 env={"TIER":"prod"}（三级合成实证）；
+   - 所有权分裂：SetGitHook 捕获 secret → 签名 push#1 冻结 R1（ref=C1）→ spec_file overlay（提交件带 0000 陷阱 ref）→ R2 ref=C1（陷阱丢弃）+ replicas 3/EDGE/worker 全存活 → image 直投 E_APP_HOOK_OWNED 拒 → push#2 → R3 ref=C2（新材料）+ 运行时半边逐项存活。
+4. 冒烟：console.dev.fleetly.run 200（新 dist 嵌入）；/v1/apps/{id}/workloads 无凭证 401（鉴权执法）。
+
+**踩坑实录（老坑复发）**：①走查脚本 `--json` 后置被当位置参数——CLI 旗标前置铁律（教训节老条目）第三次咬人，排查信号 = 断言全空且 stderr 被吞；②webhook REST 按 delivery 派生幂等键（ADR-0024）单用途 24h——走查脚本复用 delivery 名撞 E_IDEMPOTENCY_KEY_CONFLICT，delivery 必须唯一化；③`revisions get --json` 是缩进 pretty 形态，grep 紧凑模式假阴性。
+
+**挂账承前**：应用栈重播/node2 不可达/全面走查（记录·四十八三项）继续挂——本批 Spec/Variables/Deploy 三 UI 面的浏览器级走查随应用栈重播后一并补。
+
+## 2026-10-12 记录·四十八（ADR-0070 可读实体 id 重置换装 fd49e9d + 重置重播种）
 
 **换代形态**：实体 id 全代换代 `<base>-<seq>`（web-42 / torchwood-pg-1 / web-42-d7 / web-42-r7 / aud-<n> / tok-<n> / node-<n>）；goose 基础迁移原位修订（25 聚合表 +seq + UNIQUE(seq)）→ **本批不走换装走重置**（旧库与新链同号不同体）。操作序按 runbook「ADR-0070 可读实体 id 上站序」节执行，全序零事故：
 
