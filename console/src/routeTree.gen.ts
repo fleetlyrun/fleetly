@@ -34,13 +34,13 @@ import { Route as ShellPProjectIdNetworksRouteImport } from './routes/_shell/p.$
 import { Route as ShellPProjectIdRegistryRouteImport } from './routes/_shell/p.$projectId.registry'
 import { Route as ShellPProjectIdRoutesRouteImport } from './routes/_shell/p.$projectId.routes'
 import { Route as ShellPProjectIdStorageRouteImport } from './routes/_shell/p.$projectId.storage'
-import { Route as ShellPProjectIdTasksRouteImport } from './routes/_shell/p.$projectId.tasks'
 import { Route as ShellPProjectIdVariablesRouteImport } from './routes/_shell/p.$projectId.variables'
 import { Route as ShellPProjectIdAppsIndexRouteImport } from './routes/_shell/p.$projectId.apps.index'
 import { Route as ShellPProjectIdAppsAppIdRouteImport } from './routes/_shell/p.$projectId.apps.$appId'
 import { Route as ShellPProjectIdDatabasesIndexRouteImport } from './routes/_shell/p.$projectId.databases.index'
 import { Route as ShellPProjectIdDatabasesDatabaseIdRouteImport } from './routes/_shell/p.$projectId.databases.$databaseId'
 import { Route as ShellPProjectIdDeploymentsIndexRouteImport } from './routes/_shell/p.$projectId.deployments.index'
+import { Route as ShellPProjectIdTasksIndexRouteImport } from './routes/_shell/p.$projectId.tasks.index'
 import { Route as ShellPProjectIdTasksTaskIdRouteImport } from './routes/_shell/p.$projectId.tasks.$taskId'
 import { Route as ShellPProjectIdAppsAppIdIndexRouteImport } from './routes/_shell/p.$projectId.apps.$appId.index'
 import { Route as ShellPProjectIdAppsAppIdLogsRouteImport } from './routes/_shell/p.$projectId.apps.$appId.logs'
@@ -178,11 +178,6 @@ const ShellPProjectIdStorageRoute = ShellPProjectIdStorageRouteImport.update({
   path: '/storage',
   getParentRoute: () => ShellPProjectIdRoute,
 } as any)
-const ShellPProjectIdTasksRoute = ShellPProjectIdTasksRouteImport.update({
-  id: '/tasks',
-  path: '/tasks',
-  getParentRoute: () => ShellPProjectIdRoute,
-} as any)
 const ShellPProjectIdVariablesRoute =
   ShellPProjectIdVariablesRouteImport.update({
     id: '/variables',
@@ -219,11 +214,17 @@ const ShellPProjectIdDeploymentsIndexRoute =
     path: '/deployments/',
     getParentRoute: () => ShellPProjectIdRoute,
   } as any)
+const ShellPProjectIdTasksIndexRoute =
+  ShellPProjectIdTasksIndexRouteImport.update({
+    id: '/tasks/',
+    path: '/tasks/',
+    getParentRoute: () => ShellPProjectIdRoute,
+  } as any)
 const ShellPProjectIdTasksTaskIdRoute =
   ShellPProjectIdTasksTaskIdRouteImport.update({
-    id: '/$taskId',
-    path: '/$taskId',
-    getParentRoute: () => ShellPProjectIdTasksRoute,
+    id: '/tasks/$taskId',
+    path: '/tasks/$taskId',
+    getParentRoute: () => ShellPProjectIdRoute,
   } as any)
 const ShellPProjectIdAppsAppIdIndexRoute =
   ShellPProjectIdAppsAppIdIndexRouteImport.update({
@@ -310,7 +311,6 @@ export interface FileRoutesByFullPath {
   '/p/$projectId/registry': typeof ShellPProjectIdRegistryRoute
   '/p/$projectId/routes': typeof ShellPProjectIdRoutesRoute
   '/p/$projectId/storage': typeof ShellPProjectIdStorageRoute
-  '/p/$projectId/tasks': typeof ShellPProjectIdTasksRouteWithChildren
   '/p/$projectId/variables': typeof ShellPProjectIdVariablesRoute
   '/p/$projectId/': typeof ShellPProjectIdIndexRoute
   '/p/$projectId/apps/$appId': typeof ShellPProjectIdAppsAppIdRouteWithChildren
@@ -319,6 +319,7 @@ export interface FileRoutesByFullPath {
   '/p/$projectId/apps/': typeof ShellPProjectIdAppsIndexRoute
   '/p/$projectId/databases/': typeof ShellPProjectIdDatabasesIndexRoute
   '/p/$projectId/deployments/': typeof ShellPProjectIdDeploymentsIndexRoute
+  '/p/$projectId/tasks/': typeof ShellPProjectIdTasksIndexRoute
   '/p/$projectId/apps/$appId/logs': typeof ShellPProjectIdAppsAppIdLogsRoute
   '/p/$projectId/apps/$appId/metrics': typeof ShellPProjectIdAppsAppIdMetricsRoute
   '/p/$projectId/apps/$appId/processes': typeof ShellPProjectIdAppsAppIdProcessesRoute
@@ -353,7 +354,6 @@ export interface FileRoutesByTo {
   '/p/$projectId/registry': typeof ShellPProjectIdRegistryRoute
   '/p/$projectId/routes': typeof ShellPProjectIdRoutesRoute
   '/p/$projectId/storage': typeof ShellPProjectIdStorageRoute
-  '/p/$projectId/tasks': typeof ShellPProjectIdTasksRouteWithChildren
   '/p/$projectId/variables': typeof ShellPProjectIdVariablesRoute
   '/p/$projectId': typeof ShellPProjectIdIndexRoute
   '/p/$projectId/databases/$databaseId': typeof ShellPProjectIdDatabasesDatabaseIdRoute
@@ -361,6 +361,7 @@ export interface FileRoutesByTo {
   '/p/$projectId/apps': typeof ShellPProjectIdAppsIndexRoute
   '/p/$projectId/databases': typeof ShellPProjectIdDatabasesIndexRoute
   '/p/$projectId/deployments': typeof ShellPProjectIdDeploymentsIndexRoute
+  '/p/$projectId/tasks': typeof ShellPProjectIdTasksIndexRoute
   '/p/$projectId/apps/$appId/logs': typeof ShellPProjectIdAppsAppIdLogsRoute
   '/p/$projectId/apps/$appId/metrics': typeof ShellPProjectIdAppsAppIdMetricsRoute
   '/p/$projectId/apps/$appId/processes': typeof ShellPProjectIdAppsAppIdProcessesRoute
@@ -398,7 +399,6 @@ export interface FileRoutesById {
   '/_shell/p/$projectId/registry': typeof ShellPProjectIdRegistryRoute
   '/_shell/p/$projectId/routes': typeof ShellPProjectIdRoutesRoute
   '/_shell/p/$projectId/storage': typeof ShellPProjectIdStorageRoute
-  '/_shell/p/$projectId/tasks': typeof ShellPProjectIdTasksRouteWithChildren
   '/_shell/p/$projectId/variables': typeof ShellPProjectIdVariablesRoute
   '/_shell/p/$projectId/': typeof ShellPProjectIdIndexRoute
   '/_shell/p/$projectId/apps/$appId': typeof ShellPProjectIdAppsAppIdRouteWithChildren
@@ -407,6 +407,7 @@ export interface FileRoutesById {
   '/_shell/p/$projectId/apps/': typeof ShellPProjectIdAppsIndexRoute
   '/_shell/p/$projectId/databases/': typeof ShellPProjectIdDatabasesIndexRoute
   '/_shell/p/$projectId/deployments/': typeof ShellPProjectIdDeploymentsIndexRoute
+  '/_shell/p/$projectId/tasks/': typeof ShellPProjectIdTasksIndexRoute
   '/_shell/p/$projectId/apps/$appId/logs': typeof ShellPProjectIdAppsAppIdLogsRoute
   '/_shell/p/$projectId/apps/$appId/metrics': typeof ShellPProjectIdAppsAppIdMetricsRoute
   '/_shell/p/$projectId/apps/$appId/processes': typeof ShellPProjectIdAppsAppIdProcessesRoute
@@ -444,7 +445,6 @@ export interface FileRouteTypes {
     | '/p/$projectId/registry'
     | '/p/$projectId/routes'
     | '/p/$projectId/storage'
-    | '/p/$projectId/tasks'
     | '/p/$projectId/variables'
     | '/p/$projectId/'
     | '/p/$projectId/apps/$appId'
@@ -453,6 +453,7 @@ export interface FileRouteTypes {
     | '/p/$projectId/apps/'
     | '/p/$projectId/databases/'
     | '/p/$projectId/deployments/'
+    | '/p/$projectId/tasks/'
     | '/p/$projectId/apps/$appId/logs'
     | '/p/$projectId/apps/$appId/metrics'
     | '/p/$projectId/apps/$appId/processes'
@@ -487,7 +488,6 @@ export interface FileRouteTypes {
     | '/p/$projectId/registry'
     | '/p/$projectId/routes'
     | '/p/$projectId/storage'
-    | '/p/$projectId/tasks'
     | '/p/$projectId/variables'
     | '/p/$projectId'
     | '/p/$projectId/databases/$databaseId'
@@ -495,6 +495,7 @@ export interface FileRouteTypes {
     | '/p/$projectId/apps'
     | '/p/$projectId/databases'
     | '/p/$projectId/deployments'
+    | '/p/$projectId/tasks'
     | '/p/$projectId/apps/$appId/logs'
     | '/p/$projectId/apps/$appId/metrics'
     | '/p/$projectId/apps/$appId/processes'
@@ -531,7 +532,6 @@ export interface FileRouteTypes {
     | '/_shell/p/$projectId/registry'
     | '/_shell/p/$projectId/routes'
     | '/_shell/p/$projectId/storage'
-    | '/_shell/p/$projectId/tasks'
     | '/_shell/p/$projectId/variables'
     | '/_shell/p/$projectId/'
     | '/_shell/p/$projectId/apps/$appId'
@@ -540,6 +540,7 @@ export interface FileRouteTypes {
     | '/_shell/p/$projectId/apps/'
     | '/_shell/p/$projectId/databases/'
     | '/_shell/p/$projectId/deployments/'
+    | '/_shell/p/$projectId/tasks/'
     | '/_shell/p/$projectId/apps/$appId/logs'
     | '/_shell/p/$projectId/apps/$appId/metrics'
     | '/_shell/p/$projectId/apps/$appId/processes'
@@ -735,13 +736,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShellPProjectIdStorageRouteImport
       parentRoute: typeof ShellPProjectIdRoute
     }
-    '/_shell/p/$projectId/tasks': {
-      id: '/_shell/p/$projectId/tasks'
-      path: '/tasks'
-      fullPath: '/p/$projectId/tasks'
-      preLoaderRoute: typeof ShellPProjectIdTasksRouteImport
-      parentRoute: typeof ShellPProjectIdRoute
-    }
     '/_shell/p/$projectId/variables': {
       id: '/_shell/p/$projectId/variables'
       path: '/variables'
@@ -784,12 +778,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShellPProjectIdDeploymentsIndexRouteImport
       parentRoute: typeof ShellPProjectIdRoute
     }
+    '/_shell/p/$projectId/tasks/': {
+      id: '/_shell/p/$projectId/tasks/'
+      path: '/tasks'
+      fullPath: '/p/$projectId/tasks/'
+      preLoaderRoute: typeof ShellPProjectIdTasksIndexRouteImport
+      parentRoute: typeof ShellPProjectIdRoute
+    }
     '/_shell/p/$projectId/tasks/$taskId': {
       id: '/_shell/p/$projectId/tasks/$taskId'
-      path: '/$taskId'
+      path: '/tasks/$taskId'
       fullPath: '/p/$projectId/tasks/$taskId'
       preLoaderRoute: typeof ShellPProjectIdTasksTaskIdRouteImport
-      parentRoute: typeof ShellPProjectIdTasksRoute
+      parentRoute: typeof ShellPProjectIdRoute
     }
     '/_shell/p/$projectId/apps/$appId/': {
       id: '/_shell/p/$projectId/apps/$appId/'
@@ -864,17 +865,6 @@ declare module '@tanstack/react-router' {
   }
 }
 
-interface ShellPProjectIdTasksRouteChildren {
-  ShellPProjectIdTasksTaskIdRoute: typeof ShellPProjectIdTasksTaskIdRoute
-}
-
-const ShellPProjectIdTasksRouteChildren: ShellPProjectIdTasksRouteChildren = {
-  ShellPProjectIdTasksTaskIdRoute: ShellPProjectIdTasksTaskIdRoute,
-}
-
-const ShellPProjectIdTasksRouteWithChildren =
-  ShellPProjectIdTasksRoute._addFileChildren(ShellPProjectIdTasksRouteChildren)
-
 interface ShellPProjectIdAppsAppIdRouteChildren {
   ShellPProjectIdAppsAppIdLogsRoute: typeof ShellPProjectIdAppsAppIdLogsRoute
   ShellPProjectIdAppsAppIdMetricsRoute: typeof ShellPProjectIdAppsAppIdMetricsRoute
@@ -919,14 +909,15 @@ interface ShellPProjectIdRouteChildren {
   ShellPProjectIdRegistryRoute: typeof ShellPProjectIdRegistryRoute
   ShellPProjectIdRoutesRoute: typeof ShellPProjectIdRoutesRoute
   ShellPProjectIdStorageRoute: typeof ShellPProjectIdStorageRoute
-  ShellPProjectIdTasksRoute: typeof ShellPProjectIdTasksRouteWithChildren
   ShellPProjectIdVariablesRoute: typeof ShellPProjectIdVariablesRoute
   ShellPProjectIdIndexRoute: typeof ShellPProjectIdIndexRoute
   ShellPProjectIdAppsAppIdRoute: typeof ShellPProjectIdAppsAppIdRouteWithChildren
   ShellPProjectIdDatabasesDatabaseIdRoute: typeof ShellPProjectIdDatabasesDatabaseIdRoute
+  ShellPProjectIdTasksTaskIdRoute: typeof ShellPProjectIdTasksTaskIdRoute
   ShellPProjectIdAppsIndexRoute: typeof ShellPProjectIdAppsIndexRoute
   ShellPProjectIdDatabasesIndexRoute: typeof ShellPProjectIdDatabasesIndexRoute
   ShellPProjectIdDeploymentsIndexRoute: typeof ShellPProjectIdDeploymentsIndexRoute
+  ShellPProjectIdTasksIndexRoute: typeof ShellPProjectIdTasksIndexRoute
 }
 
 const ShellPProjectIdRouteChildren: ShellPProjectIdRouteChildren = {
@@ -935,15 +926,16 @@ const ShellPProjectIdRouteChildren: ShellPProjectIdRouteChildren = {
   ShellPProjectIdRegistryRoute: ShellPProjectIdRegistryRoute,
   ShellPProjectIdRoutesRoute: ShellPProjectIdRoutesRoute,
   ShellPProjectIdStorageRoute: ShellPProjectIdStorageRoute,
-  ShellPProjectIdTasksRoute: ShellPProjectIdTasksRouteWithChildren,
   ShellPProjectIdVariablesRoute: ShellPProjectIdVariablesRoute,
   ShellPProjectIdIndexRoute: ShellPProjectIdIndexRoute,
   ShellPProjectIdAppsAppIdRoute: ShellPProjectIdAppsAppIdRouteWithChildren,
   ShellPProjectIdDatabasesDatabaseIdRoute:
     ShellPProjectIdDatabasesDatabaseIdRoute,
+  ShellPProjectIdTasksTaskIdRoute: ShellPProjectIdTasksTaskIdRoute,
   ShellPProjectIdAppsIndexRoute: ShellPProjectIdAppsIndexRoute,
   ShellPProjectIdDatabasesIndexRoute: ShellPProjectIdDatabasesIndexRoute,
   ShellPProjectIdDeploymentsIndexRoute: ShellPProjectIdDeploymentsIndexRoute,
+  ShellPProjectIdTasksIndexRoute: ShellPProjectIdTasksIndexRoute,
 }
 
 const ShellPProjectIdRouteWithChildren = ShellPProjectIdRoute._addFileChildren(
