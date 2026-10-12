@@ -59,3 +59,12 @@ export function shortId(value: string | undefined): string {
   if (!value) return "—";
   return value.length > 10 ? `${value.slice(0, 10)}…` : value;
 }
+
+// revisionLabel 呈现 revision 序号（R12；seq 对表未命中退化为 id 尾 6 位
+// 短形式——诚实降级，不伪装成序号）。单源消费方：Overview 现行/最近部署
+// 列、App Deployments 列表 Revision 列（W-2 修复：列表不再恒 R…hash）。
+export function revisionLabel(seq: string | undefined, revisionId: string | undefined): string {
+  if (seq) return `R${seq}`;
+  if (revisionId) return `R…${revisionId.slice(-6)}`;
+  return "—";
+}

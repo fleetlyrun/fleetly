@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { formatAbsolute, formatBytes, formatDuration, formatRelative, shortId } from "./format";
+import { formatAbsolute, formatBytes, formatDuration, formatRelative, revisionLabel, shortId } from "./format";
 
 // formatRelative/Absolute 依赖当前钟——钉死系统时间断言确定性。
 describe("format", () => {
@@ -67,6 +67,20 @@ describe("format", () => {
     });
     it("renders dash for empty", () => {
       expect(shortId(undefined)).toBe("—");
+    });
+  });
+
+  // W-2 修复（2026-10-12 走查）：Deployments 列表 Revision 列接 seq 对表
+  // ——R 序号优先，未命中退化 R…hash，双缺省诚实破折号。
+  describe("revisionLabel", () => {
+    it("prefers the seq form", () => {
+      expect(revisionLabel("12", "01M4QAZ2VQ7CN94VXQP1F8Z31C")).toBe("R12");
+    });
+    it("falls back to the id tail when seq is missing", () => {
+      expect(revisionLabel(undefined, "01M4QAZ2VQ7CN94VXQP1F8Z31C")).toBe("R…F8Z31C");
+    });
+    it("renders dash when both are absent", () => {
+      expect(revisionLabel(undefined, undefined)).toBe("—");
     });
   });
 });

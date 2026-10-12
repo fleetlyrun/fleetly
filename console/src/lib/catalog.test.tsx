@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { useApps, useProjects, useAlertRules, useAlertStates, useMetricsSeries, useUsers, useTeams, useInvitations, usePlatformBackups, useNodes } from "./catalog";
+import { appNameOf, useApps, useProjects, useAlertRules, useAlertStates, useMetricsSeries, useUsers, useTeams, useInvitations, usePlatformBackups, useNodes } from "./catalog";
 import { setToken } from "./token";
 
 // 目录查询消费面锚（F2.6 只读面 + F3.1 扩面共用）：REST 路径/查询串、
@@ -25,6 +25,17 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals();
   setToken("");
+});
+
+// W-1 修复锚（2026-10-12 走查）：App Detail hero/面包屑在目录加载窗内
+// （apps.data undefined）走 appNameOf 截断回落——裸全 ULID 闪现退役。
+describe("appNameOf", () => {
+  it("resolves the display name from the catalog", () => {
+    expect(appNameOf([{ id: "A1", project_id: "P1", name: "walkapp", created_at: "" }], "A1")).toBe("walkapp");
+  });
+  it("falls back to the truncated id while the catalog is loading", () => {
+    expect(appNameOf(undefined, "01M4QAC6FSR84W0N9Q5CJ9BHCY")).toBe("01M4QAC6FS…");
+  });
 });
 
 describe("useProjects", () => {

@@ -69,3 +69,32 @@ describe("AppVariablesTab apply changes", () => {
     client.clear();
   });
 });
+
+// W-3 修复锚（2026-10-12 走查）：多进程分组头改为 `process web · 2
+// replicas`——旧 `×2` 形似变量条数，副本数语义必须可读。
+describe("AppVariablesTab process group header", () => {
+  it("labels the replica count explicitly in multi-process groups", async () => {
+    fetchMock.mockImplementation(async (path: string) => {
+      if (path.startsWith("/v1/apps/A1/spec")) {
+        return new Response(
+          JSON.stringify({
+            spec: {
+              processes: [
+                { name: "web", replicas: "2", env: { LOG_LEVEL: "info" } },
+                { name: "worker", replicas: "1" },
+              ],
+            },
+          }),
+          { status: 200 },
+        );
+      }
+      if (path.startsWith("/v1/routes")) return new Response(JSON.stringify({ routes: [] }), { status: 200 });
+      return new Response("{}", { status: 200 });
+    });
+    const { client, wrapper } = withClient();
+    render(<AppVariablesTab projectId="P1" appId="A1" />, { wrapper });
+    await waitFor(() => expect(screen.getByText("process web · 2 replicas")).toBeTruthy());
+    expect(screen.getByText("process worker · 1 replica")).toBeTruthy();
+    client.clear();
+  });
+});

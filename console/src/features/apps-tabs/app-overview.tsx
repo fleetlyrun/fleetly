@@ -6,7 +6,7 @@ import { METRIC_PRESETS } from "@/features/metrics/metric-presets";
 import { firingAlerts } from "@/features/apps-tabs/alert-badges";
 import { lastPointValue } from "@/features/fleet/freshness";
 import { useAlertStates, useApps, useMetricsSeries, useRevisions, useRoutes } from "@/lib/catalog";
-import { formatBytes } from "@/lib/format";
+import { formatBytes, revisionLabel } from "@/lib/format";
 import { RunningCount } from "@/features/apps-tabs/running-instances";
 import { CopyButton } from "@/components/domain/copy-button";
 import { EmptyState } from "@/components/domain/empty-state";
@@ -88,7 +88,7 @@ export function AppOverviewTab({ projectId, appId }: { projectId: string; appId:
                 <dt className="text-muted-foreground">generation</dt>
                 <dd className="font-mono text-xs">g{rows[0]?.generation ?? "?"}{rows[0]?.from_generation && rows[0]?.from_generation !== "0" ? ` ← g${rows[0]?.from_generation}` : ""}</dd>
                 <dt className="text-muted-foreground">latest revision</dt>
-                <dd className="font-mono text-xs">{seqLabel(seqByRevision.get(rows[0]?.to_revision ?? ""), rows[0]?.to_revision)}</dd>
+                <dd className="font-mono text-xs">{revisionLabel(seqByRevision.get(rows[0]?.to_revision ?? ""), rows[0]?.to_revision)}</dd>
                 <dt className="text-muted-foreground">updated</dt>
                 <dd className="text-xs"><RelativeTime value={rows[0]?.updated_at} /></dd>
               </dl>
@@ -217,7 +217,7 @@ export function AppOverviewTab({ projectId, appId }: { projectId: string; appId:
                 {rows.slice(0, 5).map((item) => (
                   <TableRow key={item.id}>
                     <TableCell><DeploymentStatusBadge state={item.state} /></TableCell>
-                    <TableCell className="font-mono text-[11px]">{seqLabel(seqByRevision.get(item.to_revision ?? ""), item.to_revision)}</TableCell>
+                    <TableCell className="font-mono text-[11px]">{revisionLabel(seqByRevision.get(item.to_revision ?? ""), item.to_revision)}</TableCell>
                     <TableCell className="font-mono text-[11px]">g{item.generation ?? "?"}</TableCell>
                     <TableCell className="text-muted-foreground"><RelativeTime value={item.updated_at} /></TableCell>
                   </TableRow>
@@ -231,12 +231,8 @@ export function AppOverviewTab({ projectId, appId }: { projectId: string; appId:
   );
 }
 
-// seqLabel 呈现 revision 序号（R12；对表未命中退化为 id 短形式——诚实降级）。
-function seqLabel(seq: string | undefined, revisionId: string | undefined): string {
-  if (seq) return `R${seq}`;
-  if (revisionId) return `R…${revisionId.slice(-6)}`;
-  return "—";
-}
+// seqLabel 呈现 revision 序号——已收编 lib/format.revisionLabel 单源
+//（W-2 修复：Deployments 列表同口径，本地复制体退役）。
 
 function MetricCard({
   label,

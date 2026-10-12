@@ -30,7 +30,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useAlertStates, useApps } from "@/lib/catalog";
+import { appNameOf, useAlertStates, useApps } from "@/lib/catalog";
 
 // App 详情布局（Detail 原型 + IA v3 原型 screen-appdetail 对齐批）：hero
 // 卡（状态徽标 + firing + 右侧动作组含 Rollback）+ 8 tab。内容区三段
@@ -47,7 +47,10 @@ function AppDetailLayout() {
   const alerts = useAlertStates();
   const firing = firingAlerts(alerts.data, appId);
   const latest = deployments.data?.[0];
-  const app = apps.data?.find((entry) => entry.id === appId);
+  // W-1 修复（2026-10-12 走查）：目录加载窗内 apps.data 为 undefined——
+  // 裸 `?? appId` 让 hero/面包屑闪全 ULID；appNameOf 的截断回落接住窗口
+  //（`01M4QA9B56…` 形态），目录落定即换真名。
+  const appLabel = appNameOf(apps.data, appId);
   const [deployOpen, setDeployOpen] = useState(false);
   const pathname = useLocation({ select: (location) => location.pathname });
 
@@ -79,13 +82,13 @@ function AppDetailLayout() {
 
   return (
     <PageFrame>
-      <ContentCrumb projectId={projectId} section={{ label: "Apps", to: `${tabBase.split("/apps")[0]}/apps` }} current={app?.name ?? appId} />
+      <ContentCrumb projectId={projectId} section={{ label: "Apps", to: `${tabBase.split("/apps")[0]}/apps` }} current={appLabel} />
 
       <section className="mb-5 flex flex-wrap items-center gap-4 rounded-xl border bg-card p-4">
-        <ProjectAvatar seed={appId} label={app?.name ?? appId} className="size-11 rounded-xl text-base" />
+        <ProjectAvatar seed={appId} label={appLabel} className="size-11 rounded-xl text-base" />
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="font-heading text-lg font-bold tracking-tight">{app?.name ?? appId}</h1>
+            <h1 className="font-heading text-lg font-bold tracking-tight">{appLabel}</h1>
             {latest?.state ? <DeploymentStatusBadge state={latest.state} /> : null}
             {firing.length > 0 ? (
               <a
@@ -129,7 +132,7 @@ function AppDetailLayout() {
             </AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>Roll back {app?.name ?? appId}?</AlertDialogTitle>
+                <AlertDialogTitle>Roll back {appLabel}?</AlertDialogTitle>
                 <AlertDialogDescription>
                   Re-deploys the last successful baseline as a new deployment — the current generation keeps serving until the
                   rollout completes.

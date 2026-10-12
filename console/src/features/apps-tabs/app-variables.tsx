@@ -200,7 +200,7 @@ export function AppVariablesTab({ projectId, appId }: { projectId: string; appId
                 rows.push(
                   <tr key={`${name}-group`} className="border-b bg-muted/20">
                     <td colSpan={3} className="px-4 py-1.5 text-[10.5px] font-semibold tracking-wide text-muted-foreground uppercase">
-                      process {name} ×{process.replicas ?? 1}
+                      process {name} · {process.replicas ?? 1} replica{Number(process.replicas ?? 1) === 1 ? "" : "s"}
                       {stagedHere ? <span className="ml-2 text-info normal-case">staged edits</span> : null}
                     </td>
                   </tr>,

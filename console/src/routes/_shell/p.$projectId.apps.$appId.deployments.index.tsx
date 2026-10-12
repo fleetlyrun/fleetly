@@ -10,7 +10,8 @@ import { ListToolbar, useListFilter } from "@/components/domain/list-toolbar";
 import { RelativeTime } from "@/components/domain/relative-time";
 import { DeploymentStatusBadge } from "@/components/domain/status-badge";
 import { Button } from "@/components/ui/button";
-import { useApps } from "@/lib/catalog";
+import { useApps, useRevisions } from "@/lib/catalog";
+import { revisionLabel } from "@/lib/format";
 
 // 部署列表（List 原型，UI v2 批 2）：per-App 轴（API 契约，ADR-0044）+
 // 5s 轮询；Deploy Sheet 为项目语境下的主操作；行点击进叙事详情。
@@ -23,6 +24,10 @@ function AppDeploymentsPage() {
   const navigate = useNavigate();
   const deployments = useAppDeployments(appId);
   const apps = useApps(projectId);
+  // R 序号对表（W-2 修复）：revision id → seq，未命中退化为 R…hash 短形式
+  //（revisionLabel 单源，与 Overview 同口径）。
+  const revisions = useRevisions(appId);
+  const seqByRevision = new Map((revisions.data ?? []).map((rev) => [rev.id ?? "", rev.seq ?? ""]));
   const [deployOpen, setDeployOpen] = useState(false);
   const [query, setQuery] = useState("");
   const filtered = useListFilter(deployments.data ?? [], query, (d: { id?: string; state?: string; to_revision?: string }) => [d.id ?? "", d.state ?? "", d.to_revision ?? ""]);
@@ -37,8 +42,15 @@ function AppDeploymentsPage() {
       accessorKey: "to_revision",
       header: "Revision",
       cell: ({ row }) => {
-        const fromGen = row.original.from_revision ? `R…${row.original.from_revision.slice(-6)} → ` : "";
-        return <span className="font-mono text-xs">{fromGen}R…{row.original.to_revision?.slice(-6) ?? "—"}</span>;
+        const from = row.original.from_revision
+          ? `${revisionLabel(seqByRevision.get(row.original.from_revision), row.original.from_revision)} → `
+          : "";
+        return (
+          <span className="font-mono text-xs">
+            {from}
+            {revisionLabel(seqByRevision.get(row.original.to_revision ?? ""), row.original.to_revision)}
+          </span>
+        );
       },
     },
     {
