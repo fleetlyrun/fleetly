@@ -17,7 +17,7 @@ describe("METRIC_PRESETS process filter", () => {
     );
   });
 
-  it("applies the process filter to every preset", () => {
+  it("propagates the process filter to every preset", () => {
     for (const preset of METRIC_PRESETS) {
       expect(preset.build("shop", "worker")).toContain(',process="worker"}');
     }
