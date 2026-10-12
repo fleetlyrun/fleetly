@@ -337,10 +337,7 @@ func TestTaskEnsureBoundedByManagedStepTimeout(t *testing.T) {
 	require.Equal(t, 2, baseline)
 
 	// 注入 hang + 推过强制重放节拍（下一拍两 Task 都要真下发）。
-	rt.mu.Lock()
-	rt.ensureEntered = make(chan struct{}, 8)
-	rt.blockPoint = make(chan struct{})
-	rt.mu.Unlock()
+	ensureEntered, releaseEnsure := rt.ensureGate.Arm()
 	clock.Advance(e.opts.ReconcileReplayInterval + time.Second)
 
 	done := make(chan struct{})
@@ -349,7 +346,7 @@ func TestTaskEnsureBoundedByManagedStepTimeout(t *testing.T) {
 		e.taskStep(ctx) // 两次带界 Ensure：各按 ManagedStepTimeout 超时返回
 	}()
 	select {
-	case <-rt.ensureEntered:
+	case <-ensureEntered:
 	case <-time.After(2 * time.Second):
 		t.Fatal("ensure never entered the block point")
 	}
@@ -360,7 +357,7 @@ func TestTaskEnsureBoundedByManagedStepTimeout(t *testing.T) {
 	}
 
 	// hang 解除后的下一拍：失败清签名 → 两 Task 全量重 Ensure 收敛。
-	close(rt.blockPoint)
+	releaseEnsure()
 	e.taskStep(ctx)
 	assert.Equal(t, baseline+2, len(rt.calls()),
 		"both tasks re-ensure on the next tick after the bounded failure")
@@ -377,15 +374,12 @@ func TestDeleteTaskRemoveBoundedByManagedStepTimeout(t *testing.T) {
 	taskID := "01JD0TASK0000000000000000K"
 	createTaskRow(t, e, taskID, "", task.FormResident, 1, 0, "")
 
-	rt.mu.Lock()
-	rt.removeEntered = make(chan struct{}, 1)
-	rt.removeBlock = make(chan struct{})
-	rt.mu.Unlock()
+	removeEntered, releaseRemove := rt.removeGate.Arm()
 
 	done := make(chan error, 1)
 	go func() { done <- e.DeleteTask(ctx, taskID) }()
 	select {
-	case <-rt.removeEntered:
+	case <-removeEntered:
 	case <-time.After(2 * time.Second):
 		t.Fatal("remove never entered the block point")
 	}
@@ -399,7 +393,7 @@ func TestDeleteTaskRemoveBoundedByManagedStepTimeout(t *testing.T) {
 	assert.Empty(t, rt.removedSnapshot(), "a hung Remove must not record a completed removal")
 
 	// 挂死解除后的重试收口：DeleteTask 幂等重入（失败未落任何状态）。
-	close(rt.removeBlock)
+	releaseRemove()
 	require.NoError(t, e.DeleteTask(ctx, taskID))
 	assert.Equal(t, task.StateDeleted, getTaskRow(t, e, taskID).State)
 	require.Len(t, rt.removedSnapshot(), 1)

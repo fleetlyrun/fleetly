@@ -21,6 +21,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state/project"
 	"github.com/fleetlyrun/fleetly/internal/state/statertest"
 	"github.com/fleetlyrun/fleetly/internal/state/task"
+	"github.com/fleetlyrun/fleetly/internal/testruntime"
 )
 
 // seedDefaultNetworkRow 落 networks 表行（重建受理面）。
@@ -90,7 +91,7 @@ func TestRebuildNetworkAttributionAxes(t *testing.T) {
 	require.ErrorAs(t, err, &foreign)
 	assert.Equal(t, []string{"fleetly-app-ghost (app " + strings.ToLower(ghost) + " is not an active app)"}, foreign.Carriers)
 	// 拒绝即零动作：只有 inspect 流水。
-	assert.Equal(t, []string{"inspect " + fakeNetKey(ns, "default")}, rt.maintFlow())
+	assert.Equal(t, []string{"inspect " + testruntime.CarrierKey(ns, "default")}, rt.maintFlow())
 
 	// 摘掉失锚附着后重跑：两轴全通过。
 	rt.seedNetworkCarrier(ns, "default", false,
@@ -319,11 +320,11 @@ func TestRebuildNetworkRollbackReattachesDetachedCarriers(t *testing.T) {
 	// 流水：inspect → detach×2 → remove（失败，不进流水）→ 回滚 attach×2。
 	flow := rt.maintFlow()
 	assert.Equal(t, []string{
-		"inspect " + fakeNetKey(ns, "default"),
-		"detach " + fakeNetKey(ns, "default") + " fleetly-fleetly-system-registry",
-		"detach " + fakeNetKey(ns, "default") + " fleetly-run-1",
-		"attach " + fakeNetKey(ns, "default") + " fleetly-fleetly-system-registry",
-		"attach " + fakeNetKey(ns, "default") + " fleetly-run-1",
+		"inspect " + testruntime.CarrierKey(ns, "default"),
+		"detach " + testruntime.CarrierKey(ns, "default") + " fleetly-fleetly-system-registry",
+		"detach " + testruntime.CarrierKey(ns, "default") + " fleetly-run-1",
+		"attach " + testruntime.CarrierKey(ns, "default") + " fleetly-fleetly-system-registry",
+		"attach " + testruntime.CarrierKey(ns, "default") + " fleetly-run-1",
 	}, flow)
 	// 载体仍是原网（attach 幂等挂回原 attachments 集）。
 	state, err := rt.InspectNetwork(context.Background(), ns, "default")

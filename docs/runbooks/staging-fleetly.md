@@ -880,3 +880,15 @@ F3.1/F3.2/F3.3/F3.6 四批走查的浏览器级挂账在后端在场的环境（
 **门禁**：mise run test 三 module 全绿 + mise run lint 全绿。
 
 **换装**：未换装——纯 Go 机械批（错误文案变更含在内：create/scale/fire 配额拒面统一），随下次上站批部署。
+
+## 2026-10-12 记录·四十三（架构评审第三轮候选 5：测试假底座共享核 internal/testruntime——网络维护单源 + hang 门单源；未换装）
+
+**裁决**：候选 5（评审报告申报"双 fake runtime 合一"，实核后**收窄**）——两 fake 的观测通道差异（engine obsCh 手动泵 vs apitest Report* API）是分层测试哲学非重复，全量合并是伪深化；真重复两件收编新叶子包 `internal/testruntime`（仅测试消费）：①`Maintenance`＝RuntimeNetworkMaintenance 假底座（载体网假状态 + 六原语 + 调用流水 + Seed/State/Attachable 查询 + hook 卡点 + Remove 错误注入），engine fakeRuntime 与 apitest FakeRuntime 各嵌入委托，**方法名保持、两层测试断言零改动**（apitest 的 id 字段退役——无消费方）；②`BlockGate`＝hang 注入门（零值就绪：未 Arm 时 Pass 恒 false），替换双侧四件同形通道（removeBlock/removeEntered/blockPoint/ensureEntered），engine 三测试文件换 Arm/entered/release API。
+
+**连带修面（候选 4 递归环）**：mapStateError 的 Task 防御分支此前改委托 mapTaskVerbError 与其尾部 mapStateError 回退**成环**（哨兵漏进即栈溢出，apitest 活体抓到）——三分支恢复独立文案自持，拓扑注记保留（委托措辞改为"文案自持不委托"注明成环原因）。
+
+**测试与变异验证**：engine/apitest 两层全绿（重建序/维护串行化/hang 注入四测行为保持）；变异=kernel EnsureNetwork 复建丢 managed 语义 → apitest 三重建序测试红，还原复绿。过程波折：sed 批量替换造出双 Pass 重复行（手工修正）；共享树 TestVolumeDeleteCovered 瞬态假红两现（并行 exec 批，单跑即绿）。
+
+**门禁**：mise run test 三 module 全绿 + mise run lint 全绿（vet/golangci 0/buf）。
+
+**换装**：未换装——纯测试基建批（零生产代码面；连带修面含错误文案拓扑注释），随下次上站批部署。

@@ -44,17 +44,15 @@ func TestBaselineReplayRaceWithAdmission(t *testing.T) {
 	driftDeployToSucceeded(t, e, rt, clock, rev)
 
 	before := len(rt.calls())
-	rt.mu.Lock()
-	rt.ensureEntered = make(chan struct{}, 8)
-	rt.blockPoint = make(chan struct{})
-	rt.mu.Unlock()
+	ensureEntered, releaseEnsure := rt.ensureGate.Arm()
+	_ = ensureEntered
 
 	replayDone := make(chan struct{})
 	go func() {
 		defer close(replayDone)
 		e.rebuildBaselines(context.Background())
 	}()
-	<-rt.ensureEntered // 重放的 Ensure 已进入并停在 blockPoint
+	<-ensureEntered // 重放的 Ensure 已进入并停在门内
 
 	// 重放在途时受理新部署：Submit 必须等在 App 级互斥上。
 	rev2 := freezeSpec(t, e, 2, `{"schema_version":1,"app":{"id":"`+tAppID+`","project":"`+tProjectID+`"},`+
@@ -76,7 +74,7 @@ func TestBaselineReplayRaceWithAdmission(t *testing.T) {
 
 	// 放行重放：gen1 重放完成后 Submit 才落行，驱动器的 gen2 Ensure 必然
 	// 是最后一次下发（对翻不可能）。
-	close(rt.blockPoint)
+	releaseEnsure()
 	<-replayDone
 	res := <-submitCh
 	require.NoError(t, res.err)

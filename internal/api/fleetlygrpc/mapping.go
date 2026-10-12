@@ -56,12 +56,17 @@ func mapStateError(err error, what string) error {
 		return apperr.New("E_QUEUE_FULL", "deployment queue is full for this app").WithCause(err)
 	case errors.Is(err, engine.ErrNotCancellable):
 		return apperr.New("E_NOT_CANCELLABLE", "deployment already finished").WithCause(err)
-	case errors.Is(err, engine.ErrTaskTerminal), errors.Is(err, engine.ErrTaskNotRenewable), errors.Is(err, engine.ErrNotResident):
+	case errors.Is(err, engine.ErrTaskTerminal):
 		// Task 域哨兵的防御 fallback（ADR-0068 拓扑注记）：Task 哨兵的唯一
 		// owner 是 mapTaskVerbError（生命周期动词路径）；本函数的现役
 		// "task" 域调用点全为 state 读（Get/List），这三分支不可达——
-		// 新增 Task 哨兵不得落此，落 mapTaskVerbError。
-		return mapTaskVerbError(err)
+		// 新增 Task 哨兵不得落此，落 mapTaskVerbError。文案自持不委托
+		// （委托回 mapTaskVerbError 会与其尾部 mapStateError 回退成环）。
+		return apperr.New("E_CONFLICT", "task already reached a terminal state; create a new task instead").WithCause(err)
+	case errors.Is(err, engine.ErrTaskNotRenewable):
+		return apperr.New("E_INVALID_ARGUMENT", "one-shot tasks carry no owner lease; renew targets resident tasks").WithCause(err)
+	case errors.Is(err, engine.ErrNotResident):
+		return apperr.New("E_INVALID_ARGUMENT", "this verb targets resident tasks only").WithCause(err)
 	case errors.Is(err, engine.ErrCrossProjectRefNotApproved):
 		// 受理预检的 strict 拒绝（ADR-0013 附录 A.3）——可编程分支而非
 		// E_INTERNAL（staging 真机实证哨兵漏映射，2026-10-02）。

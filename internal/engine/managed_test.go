@@ -150,7 +150,7 @@ func TestManagedEnsureFailureRetriesNextTick(t *testing.T) {
 func TestManagedStepBoundedWhenRuntimeHangs(t *testing.T) {
 	db, _ := statetest.New(t)
 	rt := newFakeRuntime()
-	rt.blockPoint = make(chan struct{}) // 永不关闭 = Ensure 永久挂起
+	rt.ensureGate.Arm() // 永不放行 = Ensure 永久挂起
 	e := New(Deps{DB: db, Runtime: rt, Proxy: &fakeProxy{}, Logger: discardLogger()},
 		Options{ManagedStepTimeout: 50 * time.Millisecond})
 	ctx := context.Background()
