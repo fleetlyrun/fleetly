@@ -9,8 +9,6 @@ export const Route = createFileRoute("/_shell/p/$projectId/apps/$appId/metrics")
 function AppMetricsRoute() {
   const { appId } = Route.useParams();
   return (
-    <div className="mx-auto max-w-7xl px-6 pb-8">
-      <AppMetricsTab appId={appId} />
-    </div>
+    <AppMetricsTab appId={appId} />
   );
 }

@@ -33,7 +33,10 @@ const RULES: Array<{ pattern: RegExp; message: string; skip?: (path: string) => 
   },
   { pattern: /check the API token/i, message: "'check the API token' catch-all copy is banned — use describeError states" },
   {
-    pattern: /mx-auto max-w-\w+ px-6 pt-6/,
+    // 2026-10-12 收紧：pt-6 形态之外，pb-8 变体（App 详情七 tab 内壳实咬
+    // ——布局 PageFrame 之上再套 mx-auto max-w-7xl px-6 pb-8，内容宽比
+    // Overview/Deployments 窄 24px×2）同样在禁。
+    pattern: /mx-auto max-w-\w+ px-6/,
     message: "hand-rolled page shell is banned — the shell lives in PageFrame/ListPage/ModulePage (components/domain)",
     // 模板定义域自身合法（本规则的唯一合法宿主）
     skip: (path) => path.startsWith("src/components/domain/"),

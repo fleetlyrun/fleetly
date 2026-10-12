@@ -14,14 +14,12 @@ function AppSettingsRoute() {
   const apps = useApps(projectId);
   const app = (apps.data ?? []).find((entry) => entry.id === appId);
   return (
-    <div className="mx-auto max-w-7xl px-6 pb-8">
-      <AppSettingsTab
-        projectId={projectId}
-        appId={appId}
-        appName={app?.name ?? appId}
-        createdAt={app?.created_at}
-        onDeleted={() => navigate({ to: "/p/$projectId/apps", params: { projectId } })}
-      />
-    </div>
+    <AppSettingsTab
+      projectId={projectId}
+      appId={appId}
+      appName={app?.name ?? appId}
+      createdAt={app?.created_at}
+      onDeleted={() => navigate({ to: "/p/$projectId/apps", params: { projectId } })}
+    />
   );
 }

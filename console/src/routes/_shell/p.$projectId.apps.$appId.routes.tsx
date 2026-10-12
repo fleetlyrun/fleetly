@@ -9,8 +9,6 @@ export const Route = createFileRoute("/_shell/p/$projectId/apps/$appId/routes")(
 function AppRoutesRoute() {
   const { projectId, appId } = Route.useParams();
   return (
-    <div className="mx-auto max-w-7xl px-6 pb-8">
-      <AppRoutesTab projectId={projectId} appId={appId} />
-    </div>
+    <AppRoutesTab projectId={projectId} appId={appId} />
   );
 }

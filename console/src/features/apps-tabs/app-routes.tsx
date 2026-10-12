@@ -1,9 +1,12 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
 import { apiSend } from "@/api/client";
 import { useRoutes } from "@/lib/catalog";
 import { CopyButton } from "@/components/domain/copy-button";
+import { DataTable } from "@/components/domain/data-table";
 import { EmptyState } from "@/components/domain/empty-state";
+import { ListToolbar, useListFilter } from "@/components/domain/list-toolbar";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -18,60 +21,112 @@ function fieldError(error: unknown): string {
 }
 
 // App Routes scoped tab（IA v3 T2）：项目路由表按 app 过滤的暴露面 + 创建
-// （app 固定本 app）/删除。创建交互统一契约：入口工具栏右上 + 模态对话框。
+// （app 固定本 app）/删除。列表走 house 模板（ListToolbar + DataTable，
+// 2026-10-12 走查：手拼 table 与其他列表形态脱队）；创建交互统一契约：
+// 入口钉工具栏主动作槽 + 模态对话框。
 export function AppRoutesTab({ projectId, appId }: { projectId: string; appId: string }) {
   const routes = useRoutes(projectId);
   const queryClient = useQueryClient();
   const rows = (routes.data ?? []).filter((route) => route.app_id === appId);
   const [createOpen, setCreateOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const filtered = useListFilter(rows, query, (route: RouteEntry) => [
+    route.host ?? "",
+    route.path ?? "",
+    `${route.process ?? ""}:${route.port ?? ""}`,
+    route.protocol ?? "",
+    route.tls_mode ?? "",
+  ]);
   const invalidate = () => void queryClient.invalidateQueries({ queryKey: ["resources", "routes", projectId] });
+
+  const columns: LegacyColumnDef<RouteEntry, any>[] = [
+    {
+      accessorKey: "host",
+      header: "Host",
+      cell: ({ row }) => (
+        <span className="flex items-center gap-1 font-mono text-xs font-semibold">
+          {row.original.host ?? "—"}
+          <CopyButton value={row.original.host ?? ""} />
+        </span>
+      ),
+    },
+    {
+      accessorKey: "path",
+      header: "Path",
+      cell: ({ row }) => <span className="font-mono text-xs text-muted-foreground">{row.original.path || "/"}</span>,
+    },
+    {
+      id: "target",
+      header: "Target",
+      cell: ({ row }) => (
+        <span className="font-mono text-xs">
+          {row.original.process}:{row.original.port}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "protocol",
+      header: "Protocol",
+      cell: ({ row }) => <span className="text-xs">{row.original.protocol}</span>,
+    },
+    {
+      accessorKey: "tls_mode",
+      header: "TLS",
+      cell: ({ row }) => (
+        <span className="text-xs text-muted-foreground">
+          {row.original.tls_mode === "auto" ? "auto (ACME)" : (row.original.tls_mode ?? "—")}
+        </span>
+      ),
+    },
+    {
+      id: "actions",
+      header: () => <span className="sr-only">Actions</span>,
+      cell: ({ row }) => <RouteDeleteButton route={row.original} onDeleted={invalidate} />,
+    },
+  ];
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex items-center justify-end">
-        <Button size="sm" onClick={() => setCreateOpen(true)}>
-          Add route
-        </Button>
-      </div>
-      {routes.isPending ? (
-        <p className="py-10 text-center text-xs text-muted-foreground">Loading routes…</p>
-      ) : routes.isError ? (
-        <p className="py-10 text-center text-xs text-destructive">{fieldError(routes.error)}</p>
-      ) : rows.length === 0 ? (
-        <EmptyState
-          icon={GlobeIcon}
-          title="No routes for this app"
-          description="Expose the app by creating a host route on the managed proxy."
-          actionLabel="Add route"
-          onAction={() => setCreateOpen(true)}
-        />
-      ) : (
-        <div className="overflow-hidden rounded-xl border">
-          <table className="w-full text-sm">
-            <thead className="border-b bg-muted/40 text-left text-2xs font-semibold tracking-wide text-muted-foreground uppercase">
-              <tr>
-                <th className="px-3 py-2">Host</th>
-                <th className="px-3 py-2">Path</th>
-                <th className="px-3 py-2">Target</th>
-                <th className="px-3 py-2">Protocol</th>
-                <th className="px-3 py-2">TLS</th>
-                <th className="px-3 py-2 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((route) => (
-                <RouteRow key={route.id} route={route} onDeleted={invalidate} />
-              ))}
-            </tbody>
-          </table>
+      <div className="rounded-xl border bg-card">
+        <div className="px-3 pt-3">
+          <ListToolbar
+            label="routes"
+            value={query}
+            onChange={setQuery}
+            placeholder="Filter routes..."
+            total={rows.length}
+            shown={filtered.length}
+            actions={
+              <Button size="sm" onClick={() => setCreateOpen(true)}>
+                <GlobeIcon data-icon-start-inline />
+                Add route
+              </Button>
+            }
+          />
         </div>
-      )}
+        <DataTable
+          data={filtered}
+          columns={columns}
+          loading={routes.isPending}
+          error={routes.isError ? routes.error : null}
+          onRetry={() => void routes.refetch()}
+          empty={
+            <EmptyState
+              icon={GlobeIcon}
+              title="No routes for this app"
+              description="Expose the app by creating a host route on the managed proxy."
+              actionLabel="Add route"
+              onAction={() => setCreateOpen(true)}
+            />
+          }
+        />
+      </div>
       <CreateRouteDialog projectId={projectId} appId={appId} open={createOpen} onOpenChange={setCreateOpen} onCreated={invalidate} />
     </div>
   );
 }
 
-function RouteRow({ route, onDeleted }: { route: RouteEntry; onDeleted: () => void }) {
+function RouteDeleteButton({ route, onDeleted }: { route: RouteEntry; onDeleted: () => void }) {
   const remove = useMutation({
     mutationFn: async () => apiSend(`/v1/routes/${encodeURIComponent(route.id ?? "")}`, "DELETE"),
     onSuccess: () => {
@@ -81,25 +136,11 @@ function RouteRow({ route, onDeleted }: { route: RouteEntry; onDeleted: () => vo
     onError: (cause) => toast.error(fieldError(cause)),
   });
   return (
-    <tr className="border-b last:border-b-0">
-      <td className="px-3 py-2">
-        <span className="flex items-center gap-1 font-mono text-xs font-semibold">
-          {route.host ?? "—"}
-          <CopyButton value={route.host ?? ""} />
-        </span>
-      </td>
-      <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{route.path || "/"}</td>
-      <td className="px-3 py-2 font-mono text-xs">
-        {route.process}:{route.port}
-      </td>
-      <td className="px-3 py-2 text-xs">{route.protocol}</td>
-      <td className="px-3 py-2 text-xs text-muted-foreground">{route.tls_mode === "auto" ? "auto (ACME)" : (route.tls_mode ?? "—")}</td>
-      <td className="px-3 py-2 text-right">
-        <Button variant="outline" size="sm" disabled={remove.isPending} onClick={() => remove.mutate()}>
-          Delete
-        </Button>
-      </td>
-    </tr>
+    <div className="text-right">
+      <Button variant="outline" size="sm" disabled={remove.isPending} onClick={() => remove.mutate()}>
+        Delete
+      </Button>
+    </div>
   );
 }
 
