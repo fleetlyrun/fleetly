@@ -380,8 +380,10 @@ var DeploymentsService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	RevisionsService_ListRevisions_FullMethodName = "/fleetly.delivery.v1.RevisionsService/ListRevisions"
-	RevisionsService_DiffRevisions_FullMethodName = "/fleetly.delivery.v1.RevisionsService/DiffRevisions"
+	RevisionsService_ListRevisions_FullMethodName   = "/fleetly.delivery.v1.RevisionsService/ListRevisions"
+	RevisionsService_DiffRevisions_FullMethodName   = "/fleetly.delivery.v1.RevisionsService/DiffRevisions"
+	RevisionsService_GetRevision_FullMethodName     = "/fleetly.delivery.v1.RevisionsService/GetRevision"
+	RevisionsService_GetAppWorkloads_FullMethodName = "/fleetly.delivery.v1.RevisionsService/GetAppWorkloads"
 )
 
 // RevisionsServiceClient is the client API for RevisionsService service.
@@ -391,6 +393,18 @@ type RevisionsServiceClient interface {
 	ListRevisions(ctx context.Context, in *ListRevisionsRequest, opts ...grpc.CallOption) (*ListRevisionsResponse, error)
 	// DiffRevisions 输出两条 Revision 的字段级差异（路径字典序）。
 	DiffRevisions(ctx context.Context, in *DiffRevisionsRequest, opts ...grpc.CallOption) (*DiffRevisionsResponse, error)
+	// GetRevision 回读单条 Revision 的冻结 AppSpec 全文（ADR-0071 决策 1
+	// 冻结层）：(app_id, seq) 复合寻址，轴与 DiffRevisions 一致。与
+	// GetAppSpec 的分立：GetAppSpec 是"最新冻结"（Redeploy 数据源，
+	// ADR-0069），本面按号回读任意历史——部署详情"这次部署部署了什么"的
+	// 数据源。
+	GetRevision(ctx context.Context, in *GetRevisionRequest, opts ...grpc.CallOption) (*GetRevisionResponse, error)
+	// GetAppWorkloads 按 Revision 只读重放 Workload 投影（ADR-0071 决策 1
+	// 投影层："平台会下发什么"的正式答案）。seq 缺省 = 当前生效（最新成功
+	// 部署的 to_revision——决策 2），显式 seq 重放历史（当前侧表的近似
+	// 语义，决策 4）。渲染与部署投影单源；不透出面（载体原生形态/凭证/
+	// 代戳）见决策 5。
+	GetAppWorkloads(ctx context.Context, in *GetAppWorkloadsRequest, opts ...grpc.CallOption) (*GetAppWorkloadsResponse, error)
 }
 
 type revisionsServiceClient struct {
@@ -421,6 +435,26 @@ func (c *revisionsServiceClient) DiffRevisions(ctx context.Context, in *DiffRevi
 	return out, nil
 }
 
+func (c *revisionsServiceClient) GetRevision(ctx context.Context, in *GetRevisionRequest, opts ...grpc.CallOption) (*GetRevisionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetRevisionResponse)
+	err := c.cc.Invoke(ctx, RevisionsService_GetRevision_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *revisionsServiceClient) GetAppWorkloads(ctx context.Context, in *GetAppWorkloadsRequest, opts ...grpc.CallOption) (*GetAppWorkloadsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetAppWorkloadsResponse)
+	err := c.cc.Invoke(ctx, RevisionsService_GetAppWorkloads_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // RevisionsServiceServer is the server API for RevisionsService service.
 // All implementations must embed UnimplementedRevisionsServiceServer
 // for forward compatibility.
@@ -428,6 +462,18 @@ type RevisionsServiceServer interface {
 	ListRevisions(context.Context, *ListRevisionsRequest) (*ListRevisionsResponse, error)
 	// DiffRevisions 输出两条 Revision 的字段级差异（路径字典序）。
 	DiffRevisions(context.Context, *DiffRevisionsRequest) (*DiffRevisionsResponse, error)
+	// GetRevision 回读单条 Revision 的冻结 AppSpec 全文（ADR-0071 决策 1
+	// 冻结层）：(app_id, seq) 复合寻址，轴与 DiffRevisions 一致。与
+	// GetAppSpec 的分立：GetAppSpec 是"最新冻结"（Redeploy 数据源，
+	// ADR-0069），本面按号回读任意历史——部署详情"这次部署部署了什么"的
+	// 数据源。
+	GetRevision(context.Context, *GetRevisionRequest) (*GetRevisionResponse, error)
+	// GetAppWorkloads 按 Revision 只读重放 Workload 投影（ADR-0071 决策 1
+	// 投影层："平台会下发什么"的正式答案）。seq 缺省 = 当前生效（最新成功
+	// 部署的 to_revision——决策 2），显式 seq 重放历史（当前侧表的近似
+	// 语义，决策 4）。渲染与部署投影单源；不透出面（载体原生形态/凭证/
+	// 代戳）见决策 5。
+	GetAppWorkloads(context.Context, *GetAppWorkloadsRequest) (*GetAppWorkloadsResponse, error)
 	mustEmbedUnimplementedRevisionsServiceServer()
 }
 
@@ -443,6 +489,12 @@ func (UnimplementedRevisionsServiceServer) ListRevisions(context.Context, *ListR
 }
 func (UnimplementedRevisionsServiceServer) DiffRevisions(context.Context, *DiffRevisionsRequest) (*DiffRevisionsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DiffRevisions not implemented")
+}
+func (UnimplementedRevisionsServiceServer) GetRevision(context.Context, *GetRevisionRequest) (*GetRevisionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetRevision not implemented")
+}
+func (UnimplementedRevisionsServiceServer) GetAppWorkloads(context.Context, *GetAppWorkloadsRequest) (*GetAppWorkloadsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetAppWorkloads not implemented")
 }
 func (UnimplementedRevisionsServiceServer) mustEmbedUnimplementedRevisionsServiceServer() {}
 func (UnimplementedRevisionsServiceServer) testEmbeddedByValue()                          {}
@@ -501,6 +553,42 @@ func _RevisionsService_DiffRevisions_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _RevisionsService_GetRevision_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetRevisionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RevisionsServiceServer).GetRevision(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: RevisionsService_GetRevision_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RevisionsServiceServer).GetRevision(ctx, req.(*GetRevisionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _RevisionsService_GetAppWorkloads_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetAppWorkloadsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RevisionsServiceServer).GetAppWorkloads(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: RevisionsService_GetAppWorkloads_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RevisionsServiceServer).GetAppWorkloads(ctx, req.(*GetAppWorkloadsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // RevisionsService_ServiceDesc is the grpc.ServiceDesc for RevisionsService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -515,6 +603,14 @@ var RevisionsService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DiffRevisions",
 			Handler:    _RevisionsService_DiffRevisions_Handler,
+		},
+		{
+			MethodName: "GetRevision",
+			Handler:    _RevisionsService_GetRevision_Handler,
+		},
+		{
+			MethodName: "GetAppWorkloads",
+			Handler:    _RevisionsService_GetAppWorkloads_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -11,7 +11,8 @@
           "process": "web",
           "strategy": "DEPLOY_STRATEGY_BLUE_GREEN"
         }
-      ]
+      ],
+      "source_kind": "SOURCE_KIND_IMAGE"
     },
     {
       "id": "bgapp-5-r2",
@@ -23,7 +24,8 @@
         {
           "process": "web"
         }
-      ]
+      ],
+      "source_kind": "SOURCE_KIND_IMAGE"
     },
     {
       "id": "bgapp-5-r3",
@@ -36,7 +38,8 @@
           "process": "web",
           "strategy": "DEPLOY_STRATEGY_BLUE_GREEN"
         }
-      ]
+      ],
+      "source_kind": "SOURCE_KIND_IMAGE"
     }
   ]
 }

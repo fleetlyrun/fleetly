@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"go.yaml.in/yaml/v3"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 
@@ -413,6 +414,47 @@ func (svc *RevisionsService) ListRevisions(ctx context.Context, req *deliveryv1.
 	out := &deliveryv1.ListRevisionsResponse{}
 	for _, rev := range list {
 		out.Revisions = append(out.Revisions, revisionMsg(rev))
+	}
+	return out, nil
+}
+
+// GetRevision 回读单条 Revision 的冻结 AppSpec 全文（ADR-0071 冻结层）：
+// 行级授权与 DiffRevisions 同款（冻结体含 env/secret 引用名——跨租户读面）。
+func (svc *RevisionsService) GetRevision(ctx context.Context, req *deliveryv1.GetRevisionRequest) (*deliveryv1.GetRevisionResponse, error) {
+	if req.GetAppId() == "" {
+		return nil, apperr.New("E_INVALID_ARGUMENT", "app_id: must not be empty")
+	}
+	if err := svc.s.authorizeAppIDOnly(ctx, req.GetAppId()); err != nil {
+		return nil, err
+	}
+	row, err := svc.s.Revisions.GetBySeq(ctx, svc.s.DB.Runner(), req.GetAppId(), req.GetSeq())
+	if err != nil {
+		return nil, mapStateError(err, "revision")
+	}
+	spec := &specv1.AppSpec{}
+	if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(row.Spec, spec); err != nil {
+		return nil, mapStateError(err, "revision spec")
+	}
+	return &deliveryv1.GetRevisionResponse{Revision: revisionMsg(*row), Spec: spec}, nil
+}
+
+// GetAppWorkloads 按 Revision 只读重放 Workload 投影（ADR-0071 投影层）。
+// seq 缺省 = 当前生效（engine 侧 LatestSucceeded 解析）；渲染错误经
+// mapStateError（ErrNotFound → E_NOT_FOUND，其余侧表解析失败如实上抛）。
+func (svc *RevisionsService) GetAppWorkloads(ctx context.Context, req *deliveryv1.GetAppWorkloadsRequest) (*deliveryv1.GetAppWorkloadsResponse, error) {
+	if req.GetAppId() == "" {
+		return nil, apperr.New("E_INVALID_ARGUMENT", "app_id: must not be empty")
+	}
+	if err := svc.s.authorizeAppIDOnly(ctx, req.GetAppId()); err != nil {
+		return nil, err
+	}
+	row, ws, err := svc.s.Engine.RenderWorkloads(ctx, req.GetAppId(), req.GetSeq())
+	if err != nil {
+		return nil, mapStateError(err, "workloads")
+	}
+	out := &deliveryv1.GetAppWorkloadsResponse{Revision: revisionMsg(*row)}
+	for _, w := range ws {
+		out.Workloads = append(out.Workloads, workloadMsg(w))
 	}
 	return out, nil
 }

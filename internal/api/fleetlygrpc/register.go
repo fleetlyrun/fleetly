@@ -36,6 +36,7 @@ func RegisterAll(srv *grpc.Server, s *Services) {
 	automationv1.RegisterSchedulesServiceServer(srv, &SchedulesService{s: s})
 	runtimev1.RegisterNodesServiceServer(srv, &NodesService{s: s})
 	runtimev1.RegisterExecServiceServer(srv, &ExecService{s: s})
+	runtimev1.RegisterWorkloadsServiceServer(srv, &WorkloadsService{s: s})
 	proxyv1.RegisterRoutesServiceServer(srv, &RoutesService{s: s})
 	telemetryv1.RegisterEventsServiceServer(srv, &EventsService{s: s})
 	telemetryv1.RegisterLogsServiceServer(srv, &LogsService{s: s})

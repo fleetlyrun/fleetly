@@ -2,9 +2,11 @@ package fleetlygrpc
 
 import (
 	"errors"
+	"time"
 
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	proxyv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/proxy/v1"
@@ -169,8 +171,103 @@ func revisionMsg(rev revision.Revision) *deliveryv1.Revision {
 				Process: p.GetName(), Strategy: p.GetStrategy(),
 			})
 		}
+		msg.SourceKind = sourceKindOf(frozen.GetSource())
 	}
 	return msg
+}
+
+// sourceKindOf 从冻结体 source oneof 派生材料来源分类（ADR-0071 决策 6：
+// 逐 Revision provenance，零迁移——列表/详情同一投影）。
+func sourceKindOf(src *specv1.Source) deliveryv1.SourceKind {
+	switch src.GetKind().(type) {
+	case *specv1.Source_Git:
+		return deliveryv1.SourceKind_SOURCE_KIND_GIT
+	case *specv1.Source_Image:
+		return deliveryv1.SourceKind_SOURCE_KIND_IMAGE
+	case *specv1.Source_Upload:
+		return deliveryv1.SourceKind_SOURCE_KIND_UPLOAD
+	}
+	return deliveryv1.SourceKind_SOURCE_KIND_UNSPECIFIED
+}
+
+// workloadMsg 是 Workload 视图的单载体投影（ADR-0071 投影层）：
+// capability.Workload 用户面字段镜像——Generation（渲染非下发）、
+// Materials（凭证永不进视图）与受管域专用声明不映射。
+func workloadMsg(w capability.Workload) *deliveryv1.Workload {
+	msg := &deliveryv1.Workload{
+		Id: w.ID, Process: w.Process, Image: w.Image, Command: w.Command,
+		Env: w.Env, Replicas: w.Replicas,
+		Networks: w.Networks, EgressNetworks: w.EgressNetworks,
+		Addressing: addressNames(w.Addressing),
+		Restart:    string(w.Restart),
+		StopGrace:  durationMsg(w.StopGrace),
+	}
+	for _, p := range w.Ports {
+		msg.Ports = append(msg.Ports, &specv1.PortSpec{Port: p.Port, Protocol: protocolEnum(p.Protocol)})
+	}
+	if w.Healthcheck != nil {
+		msg.Healthcheck = &deliveryv1.WorkloadHealthcheck{
+			HttpPath: w.Healthcheck.HTTPPath, HttpPort: w.Healthcheck.HTTPPort,
+			TcpPort: w.Healthcheck.TCPPort, Exec: w.Healthcheck.Exec,
+			Interval:    durationMsg(w.Healthcheck.Interval),
+			Timeout:     durationMsg(w.Healthcheck.Timeout),
+			StartPeriod: durationMsg(w.Healthcheck.StartPeriod),
+			Retries:     w.Healthcheck.Retries,
+		}
+	}
+	if w.Resources != nil {
+		msg.Resources = &specv1.ResourcesSpec{CpuMillis: w.Resources.CPUMillis, MemoryMb: w.Resources.MemoryMB}
+	}
+	msg.Placement = &specv1.PlacementSpec{NodeIds: w.Placement.NodeIDs}
+	for _, v := range w.Volumes {
+		msg.Volumes = append(msg.Volumes, &specv1.VolumeAttachment{
+			VolumeId: v.VolumeID, Target: v.Target, ReadOnly: v.ReadOnly,
+		})
+	}
+	return msg
+}
+
+// workloadObservationMsg 是在服观测投影（ADR-0071 观测层）。
+func workloadObservationMsg(o capability.WorkloadObservation) *runtimev1.WorkloadObservation {
+	return &runtimev1.WorkloadObservation{
+		WorkloadId: o.WorkloadID, Generation: uint64(o.Generation),
+		Image: o.Image, Command: o.Command, Replicas: o.Replicas,
+		State: string(o.State), RolloutStalled: o.RolloutStalled, RolloutDetail: o.RolloutDetail,
+	}
+}
+
+// protocolEnum 把 capability 协议串映射回 spec.v1 枚举（白名单外归
+// UNSPECIFIED——未知协议只可能来自未来扩展，视图面零值诚实）。
+func protocolEnum(p capability.Protocol) specv1.Protocol {
+	switch p {
+	case capability.ProtocolHTTP:
+		return specv1.Protocol_PROTOCOL_HTTP
+	case capability.ProtocolH2C:
+		return specv1.Protocol_PROTOCOL_H2C
+	case capability.ProtocolTCP:
+		return specv1.Protocol_PROTOCOL_TCP
+	}
+	return specv1.Protocol_PROTOCOL_UNSPECIFIED
+}
+
+func addressNames(addrs []capability.Address) []string {
+	if len(addrs) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(addrs))
+	for _, a := range addrs {
+		out = append(out, a.Name)
+	}
+	return out
+}
+
+// durationMsg 是 time.Duration → proto Duration 投影（零值 = nil——
+// protojson 省略，视图面"缺省 = Provider 缺省"语义由零值承载）。
+func durationMsg(d time.Duration) *durationpb.Duration {
+	if d == 0 {
+		return nil
+	}
+	return durationpb.New(d)
 }
 
 // admissionMsg 是 Submit 判定附注的响应投影（P10；nil 安全——engine 旧

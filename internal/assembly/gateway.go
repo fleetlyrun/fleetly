@@ -65,6 +65,8 @@ func gatewayRegistrations() []gateway.RegisterFunc {
 		// Exec 受理面注解 RPC（F3.2，ADR-0049）；会话流在原生挂法
 		//（mountExecStream——WS），不在此。
 		registerClient(runtimev1.NewExecServiceClient, runtimev1.RegisterExecServiceHandlerClient),
+		// Workloads 在服观测面（ADR-0071 观测层）。
+		registerClient(runtimev1.NewWorkloadsServiceClient, runtimev1.RegisterWorkloadsServiceHandlerClient),
 		// Automation（F1.5/F1.6/F1.7）：Task/Run/Schedule 聚合面。
 		registerClient(automationv1.NewTasksServiceClient, automationv1.RegisterTasksServiceHandlerClient),
 		registerClient(automationv1.NewRunsServiceClient, automationv1.RegisterRunsServiceHandlerClient),

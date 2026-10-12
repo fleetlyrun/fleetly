@@ -215,6 +215,45 @@
         ]
       }
     },
+    "/v1/apps/{app_id}/workloads": {
+      "get": {
+        "summary": "GetAppWorkloads 按 Revision 只读重放 Workload 投影（ADR-0071 决策 1\n投影层：\"平台会下发什么\"的正式答案）。seq 缺省 = 当前生效（最新成功\n部署的 to_revision——决策 2），显式 seq 重放历史（当前侧表的近似\n语义，决策 4）。渲染与部署投影单源；不透出面（载体原生形态/凭证/\n代戳）见决策 5。",
+        "operationId": "RevisionsService_GetAppWorkloads",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetAppWorkloadsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "seq",
+            "description": "seq 缺省 0 = 当前生效（最新成功部署的 to_revision，ADR-0071 决策 2）；\n显式 seq = 历史重放（当前侧表近似，决策 4）。无成功部署的缺省寻址\n→ E_NOT_FOUND。",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          }
+        ],
+        "tags": [
+          "RevisionsService"
+        ]
+      }
+    },
     "/v1/builds": {
       "get": {
         "operationId": "BuildsService_ListBuilds",
@@ -612,6 +651,45 @@
         ]
       }
     },
+    "/v1/revisions/{app_id}/{seq}": {
+      "get": {
+        "summary": "GetRevision 回读单条 Revision 的冻结 AppSpec 全文（ADR-0071 决策 1\n冻结层）：(app_id, seq) 复合寻址，轴与 DiffRevisions 一致。与\nGetAppSpec 的分立：GetAppSpec 是\"最新冻结\"（Redeploy 数据源，\nADR-0069），本面按号回读任意历史——部署详情\"这次部署部署了什么\"的\n数据源。",
+        "operationId": "RevisionsService_GetRevision",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetRevisionResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "seq",
+            "description": "seq 是 App 内 Revision 序号（R1..Rn 对外形态）。",
+            "in": "path",
+            "required": true,
+            "type": "string",
+            "format": "int64"
+          }
+        ],
+        "tags": [
+          "RevisionsService"
+        ]
+      }
+    },
     "/v1/uploads": {
       "get": {
         "summary": "ListUploads 列项目上传产物（after_upload_id + limit 游标，ADR-0026\nList 惯例）。",
@@ -697,6 +775,14 @@
         }
       }
     },
+    "specv1UploadSource": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      }
+    },
     "v1Admission": {
       "type": "object",
       "properties": {
@@ -715,6 +801,52 @@
         }
       },
       "title": "Admission 是创建型部署受理的判定附注（P10：ADR-0016 语义的响应面显式\n化——调用方（尤其 Agent）可判定\"去重命中/排队第几位\"，UI/API/webhook\n三入口一致）。"
+    },
+    "v1AppRef": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "project": {
+          "type": "string"
+        }
+      },
+      "title": "AppRef 是 App 归属锚。"
+    },
+    "v1AppSpec": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "app": {
+          "$ref": "#/definitions/v1AppRef"
+        },
+        "source": {
+          "$ref": "#/definitions/v1Source"
+        },
+        "processes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1ProcessSpec"
+          }
+        },
+        "build": {
+          "$ref": "#/definitions/v1BuildSpec"
+        },
+        "first_boot_jobs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1JobSpec"
+          },
+          "title": "first_boot_jobs 是部署期 init job（数据库迁移等）：releasing 前串行\n执行，失败即回滚。"
+        }
+      },
+      "title": "AppSpec 是长运行可部署单元的期望状态（App = 一个或多个 Process）。"
     },
     "v1Build": {
       "type": "object",
@@ -749,6 +881,31 @@
           "type": "string"
         }
       }
+    },
+    "v1BuildSpec": {
+      "type": "object",
+      "properties": {
+        "builder": {
+          "type": "string",
+          "title": "builder 是 Builder Provider 名（dockerfile / railpack / static），与\nstrategy oneof 形态配对（叶子 ValidateBuild 执法）。"
+        },
+        "dockerfile": {
+          "type": "string"
+        },
+        "railpack": {
+          "$ref": "#/definitions/v1RailpackBuilder"
+        },
+        "static": {
+          "$ref": "#/definitions/v1StaticBuilder"
+        },
+        "cache_from": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "title": "BuildSpec 是构建声明（dockerfile / railpack 钉版 / static，ADR-0032）。"
     },
     "v1CancelDeploymentResponse": {
       "type": "object",
@@ -946,6 +1103,33 @@
         }
       }
     },
+    "v1ExecProbe": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "v1GetAppWorkloadsResponse": {
+      "type": "object",
+      "properties": {
+        "revision": {
+          "$ref": "#/definitions/v1Revision",
+          "title": "revision 锚定本次渲染寻址到的 Revision（缺省寻址时 = 当前生效）。"
+        },
+        "workloads": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Workload"
+          }
+        }
+      }
+    },
     "v1GetDeploymentResponse": {
       "type": "object",
       "properties": {
@@ -959,6 +1143,17 @@
       "properties": {
         "hook": {
           "$ref": "#/definitions/v1GitHook"
+        }
+      }
+    },
+    "v1GetRevisionResponse": {
+      "type": "object",
+      "properties": {
+        "revision": {
+          "$ref": "#/definitions/v1Revision"
+        },
+        "spec": {
+          "$ref": "#/definitions/v1AppSpec"
         }
       }
     },
@@ -999,6 +1194,98 @@
         }
       },
       "title": "GitHook 是 per-App Git 触发配置投影（secret 永不回显——完整明文只在\n铸造响应出现一次）。"
+    },
+    "v1GitSource": {
+      "type": "object",
+      "properties": {
+        "repo": {
+          "type": "string",
+          "title": "repo 是仓库 URL（部署 Token 形态，Token 不进 URL 路径段日志）。"
+        },
+        "ref": {
+          "type": "string",
+          "title": "ref 是分支/标签/commit。"
+        }
+      }
+    },
+    "v1HealthcheckSpec": {
+      "type": "object",
+      "properties": {
+        "http_path": {
+          "type": "string"
+        },
+        "tcp_port": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "exec": {
+          "$ref": "#/definitions/v1ExecProbe"
+        },
+        "interval": {
+          "type": "string"
+        },
+        "timeout": {
+          "type": "string"
+        },
+        "start_period": {
+          "type": "string"
+        },
+        "retries": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      "title": "HealthcheckSpec 是声明式探针（三选一 + 节律）。"
+    },
+    "v1ImageSource": {
+      "type": "object",
+      "properties": {
+        "ref": {
+          "type": "string",
+          "title": "ref 是镜像引用（私有仓库凭证经 Secret 解析分发）。"
+        }
+      }
+    },
+    "v1JobSpec": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "image": {
+          "type": "string"
+        },
+        "from_build": {
+          "type": "string"
+        },
+        "command": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "secret_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "ttl": {
+          "type": "string",
+          "title": "ttl 是作业硬超时（超时即失败回滚）。"
+        },
+        "process": {
+          "$ref": "#/definitions/v1ProcessSpec",
+          "title": "process 是单进程模板（重塑后的唯一读取面）。"
+        }
+      },
+      "title": "JobSpec 是部署期一次性作业（first boot jobs，ADR-0007 词汇裁决：词条归\nTask——部署期特例）。C-13 重塑：进程模板共享 ProcessSpec（process 字段，\n与 TaskSpec 同款嵌套形态）；旧标量字段（image_origin/command/env/\nsecret_refs）保留号退役（deprecated，读取面一律走 process——buf breaking\nFILE 档下零消费者字段删除亦红，彻底删除待 breaking 基线策略变更）。"
     },
     "v1ListBuildsResponse": {
       "type": "object",
@@ -1048,6 +1335,114 @@
         }
       }
     },
+    "v1PlacementSpec": {
+      "type": "object",
+      "properties": {
+        "node_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "title": "PlacementSpec 是调度意图（节点选择约束；平台节点 ID 为锚——映射为\n编排器约束语法是 Provider 私有）。"
+    },
+    "v1PortSpec": {
+      "type": "object",
+      "properties": {
+        "port": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "protocol": {
+          "$ref": "#/definitions/v1Protocol"
+        }
+      },
+      "title": "PortSpec 是进程监听端口声明（Route 投影来源）。"
+    },
+    "v1ProcessSpec": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "image": {
+          "type": "string",
+          "title": "image 是镜像直部署引用。"
+        },
+        "from_build": {
+          "type": "string",
+          "title": "from_build 引用同 Spec Build 输出（Ensure 前由平台解析为 digest）。"
+        },
+        "command": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "command 覆盖镜像入口；空 = 镜像默认。"
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "env 是非敏感环境变量（Project/App 两级合成的归一化结果）。"
+        },
+        "secret_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "secret_refs 按名引用 Project Secret（注入时解析，值不进 Spec）。"
+        },
+        "config_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "config_refs 按名引用 Project Config 版本化挂载文件。"
+        },
+        "ports": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1PortSpec"
+          }
+        },
+        "healthcheck": {
+          "$ref": "#/definitions/v1HealthcheckSpec"
+        },
+        "resources": {
+          "$ref": "#/definitions/v1ResourcesSpec"
+        },
+        "replicas": {
+          "type": "string",
+          "format": "int64"
+        },
+        "placement": {
+          "$ref": "#/definitions/v1PlacementSpec"
+        },
+        "volumes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1VolumeAttachment"
+          }
+        },
+        "networks": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "networks 是网络附件（Project 网络名或 taskGroup:\u003cname\u003e 跨挂）。"
+        },
+        "strategy": {
+          "$ref": "#/definitions/v1DeployStrategy",
+          "title": "strategy 是部署切换策略（ADR-0048 决策 1：rolling 缺省 | blue-green\n可选——Process 级，\"web 蓝绿 + worker 滚动\"的混合是真实需求）。\nUNSPECIFIED（零值）归一为 rolling：存量 Revision 无该字段重放即\nrolling，无迁移面。值域住叶子校验（spec.ValidateProcess，词条单源\n= CONTEXT.md Deployment Strategy）。Database/受管域不适用（结构性\n保证，同 ADR）。"
+        }
+      },
+      "title": "ProcessSpec 是 App 内的进程模板（web/worker…）。"
+    },
     "v1ProcessStrategy": {
       "type": "object",
       "properties": {
@@ -1060,6 +1455,26 @@
         }
       },
       "title": "ProcessStrategy 是 Revision 冻结体的单进程策略摘要（F3.1：双代窗叙事\n的最小读面——名字 + 策略，不携带 spec 全文；声明序即列表序）。"
+    },
+    "v1Protocol": {
+      "type": "string",
+      "enum": [
+        "PROTOCOL_UNSPECIFIED",
+        "PROTOCOL_HTTP",
+        "PROTOCOL_H2C",
+        "PROTOCOL_TCP"
+      ],
+      "default": "PROTOCOL_UNSPECIFIED",
+      "title": "Protocol 是 Route/端口协议（http/h2c/tcp）。"
+    },
+    "v1RailpackBuilder": {
+      "type": "object",
+      "properties": {
+        "pinned_version": {
+          "type": "string"
+        }
+      },
+      "title": "RailpackBuilder 必须钉版本（防 plan 漂移，旧 spike 教训；ADR-0032：\nbare semver，须等于平台钉版常量——Build 期执法，错误文本带平台版本）。"
     },
     "v1ReceiveWebhookResponse": {
       "type": "object",
@@ -1080,6 +1495,21 @@
           "title": "admission 在 status=accepted 时携带（push 触发部署的判定附注——\n同 commit 重复投递可见 deduplicated + existing_deployment；skipped/\nignored/pong 不携带）。"
         }
       }
+    },
+    "v1ResourcesSpec": {
+      "type": "object",
+      "properties": {
+        "cpu_millis": {
+          "type": "string",
+          "format": "int64",
+          "title": "cpu_millis 毫核（1000 = 1 CPU）。"
+        },
+        "memory_mb": {
+          "type": "string",
+          "format": "int64"
+        }
+      },
+      "title": "ResourcesSpec 是每副本资源上限（v1 仅每 Process 上限）。"
     },
     "v1RestartProcessResponse": {
       "type": "object",
@@ -1111,6 +1541,10 @@
             "$ref": "#/definitions/v1ProcessStrategy"
           },
           "title": "process_strategies 是冻结体全进程的策略目录投影（F3.1 读面裁决：\nRevision 行本就存 AppSpec 冻结体，本字段把 per-process strategy 从\n\"只能 diff 两侧才可见\"升为列表即可见——首部署无 from 侧、replay 同\n侧 diff 均为空，diff 面不构成 Console 双代窗叙事的数据源）。全进程\n在场（含 rolling——strategy 缺省零值时 protojson 省略 strategy 字段，\n消费方按 rolling 解释，与 ProcessSpec.strategy 的缺省语义同款）。"
+        },
+        "source_kind": {
+          "$ref": "#/definitions/v1SourceKind",
+          "title": "source_kind 是冻结体材料来源投影（ADR-0071 决策 6：逐 Revision\nprovenance，从 source oneof 派生，零迁移——git push 覆盖历史从此\n可读）。口径 = \"谁提供了构建材料\"，非\"谁发起的部署\"（后者属审计面）。"
         }
       }
     },
@@ -1148,6 +1582,42 @@
           "title": "secret 是完整明文（flthook_ 前缀），仅首次配置铸造时返回一次；同一串\n用作 GitHub 仓库的 webhook secret。"
         }
       }
+    },
+    "v1Source": {
+      "type": "object",
+      "properties": {
+        "git": {
+          "$ref": "#/definitions/v1GitSource"
+        },
+        "image": {
+          "$ref": "#/definitions/v1ImageSource"
+        },
+        "upload": {
+          "$ref": "#/definitions/specv1UploadSource"
+        }
+      },
+      "title": "Source 是 App 的来源三形态（Git 引用 / 镜像引用 / 上传产物）。"
+    },
+    "v1SourceKind": {
+      "type": "string",
+      "enum": [
+        "SOURCE_KIND_UNSPECIFIED",
+        "SOURCE_KIND_GIT",
+        "SOURCE_KIND_IMAGE",
+        "SOURCE_KIND_UPLOAD"
+      ],
+      "default": "SOURCE_KIND_UNSPECIFIED",
+      "title": "SourceKind 是 Revision 材料来源的分类投影（ADR-0071 决策 6；值域对齐\nspec.v1.Source oneof 三形态）。"
+    },
+    "v1StaticBuilder": {
+      "type": "object",
+      "properties": {
+        "output_dir": {
+          "type": "string",
+          "title": "output_dir 是产物目录（context 内相对路径，缺省 \".\"；拒 .. 与绝对路径）。"
+        }
+      },
+      "title": "StaticBuilder 是产物目录包装声明（ADR-0032）：上传上下文的产物子目录\n整体 COPY 进钉版 Caddy 伺服镜像；无构建步（源码构建是 railpack 的地盘）。"
     },
     "v1StreamBuildLogsResponse": {
       "type": "object",
@@ -1221,6 +1691,22 @@
       },
       "title": "UploadSourceResponse 是上传终态：id 是后续 Deploy 的 upload_id。同字节\n重传返回同一 id（deduplicated=true）。"
     },
+    "v1VolumeAttachment": {
+      "type": "object",
+      "properties": {
+        "volume_id": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "read_only": {
+          "type": "boolean",
+          "title": "read_only 是只读挂载（compose 短语法 name:/target:ro；缺省可写）。"
+        }
+      },
+      "title": "VolumeAttachment 是持久存储附件（无显式 Placement 时默认钉住节点）。"
+    },
     "v1WaitBuildResponse": {
       "type": "object",
       "properties": {
@@ -1238,6 +1724,128 @@
         }
       },
       "title": "WaitDeploymentResponse 是状态快照帧；流在终态帧后关闭（终态集见\nDeployment.state 注释）。"
+    },
+    "v1Workload": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "process": {
+          "type": "string"
+        },
+        "image": {
+          "type": "string",
+          "title": "image 是下发镜像引用（from_build 已解析为 digest 形态）。"
+        },
+        "command": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "env 是合成终态的非敏感环境变量（变量三级合成的最终形态）。"
+        },
+        "ports": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1PortSpec"
+          }
+        },
+        "replicas": {
+          "type": "string",
+          "format": "int64"
+        },
+        "healthcheck": {
+          "$ref": "#/definitions/v1WorkloadHealthcheck",
+          "title": "healthcheck 是全解析探针（投影期一次解析的终态）。"
+        },
+        "resources": {
+          "$ref": "#/definitions/v1ResourcesSpec"
+        },
+        "placement": {
+          "$ref": "#/definitions/v1PlacementSpec",
+          "title": "placement 含卷钉住合并结果（已钉卷的节点进约束集）。"
+        },
+        "volumes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1VolumeAttachment"
+          }
+        },
+        "networks": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "egress_networks": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "egress_networks 是 networks 中声明 egress:none 的子集（空 = 无出站\n限制）。"
+        },
+        "addressing": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "addressing 是平台标准 DNS 裸名声明。"
+        },
+        "restart": {
+          "type": "string",
+          "title": "restart 是生命周期声明（空 = Provider 缺省；值域 any/never/on-failure\n等——CONTEXT.md Restart 词条轴）。"
+        },
+        "stop_grace": {
+          "type": "string"
+        }
+      },
+      "title": "Workload 是 Workload 视图的单载体投影（ADR-0071 投影层）：\ncapability.Workload 的用户面字段镜像。不进视图的面：Generation（渲染\n非下发，代戳语义归 ADR-0064 的 Ensure 与观测层）、Materials（凭证永不\n进视图，ADR-0014）、受管域专用声明（global/skip_materials/host_binds/\nnetwork_refs/publish——用户 Spec 投影白名单外）。"
+    },
+    "v1WorkloadHealthcheck": {
+      "type": "object",
+      "properties": {
+        "http_path": {
+          "type": "string"
+        },
+        "http_port": {
+          "type": "integer",
+          "format": "int32",
+          "title": "http_port 是 http 探针的显式端口（投影解析终态；非 http 探针恒 0）。"
+        },
+        "tcp_port": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "exec": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "interval": {
+          "type": "string"
+        },
+        "timeout": {
+          "type": "string"
+        },
+        "start_period": {
+          "type": "string"
+        },
+        "retries": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      "title": "WorkloadHealthcheck 是全解析探针投影：与 spec.v1.HealthcheckSpec 的声明\n形态分立——oneof 装不下解析结果（http 探针的端口回退链解析后恒显式、\nexec 恒干净 argv）。"
     }
   }
 }

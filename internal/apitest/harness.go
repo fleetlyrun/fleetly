@@ -490,6 +490,29 @@ func (f *FakeRuntime) Calls() []EnsureCall {
 	return out
 }
 
+// InspectWorkloads 实现 RuntimeInspector 可选子面（ADR-0071 观测面透出）：
+// 观测 = 该域最近一次 Ensure 的 spec（engine 假底座同款语义——载体持有的
+// 是最新 spec，非下发历史首笔）；逐载体 generation = 调用 gen（无覆写形态）。
+func (f *FakeRuntime) InspectWorkloads(_ context.Context, ns capability.NamespaceRef) ([]capability.WorkloadObservation, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var obs []capability.WorkloadObservation
+	for _, c := range f.ensures {
+		if c.NS.String() != ns.String() {
+			continue
+		}
+		obs = nil
+		for _, w := range c.Spec {
+			obs = append(obs, capability.WorkloadObservation{
+				WorkloadID: w.ID, Generation: c.Gen,
+				Image: w.Image, Command: w.Command, Replicas: w.Replicas,
+				State: capability.WorkloadRunning,
+			})
+		}
+	}
+	return obs, nil
+}
+
 // Restart 实现 RuntimeRestart 可选子面（ADR-0069）：记录调用即返回。
 func (f *FakeRuntime) Restart(_ context.Context, ns capability.NamespaceRef, workloadID string) error {
 	f.mu.Lock()

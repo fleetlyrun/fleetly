@@ -1,0 +1,101 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "Workloads 观测子面（ADR-0071 观测层）：载体级在服观测的只读透出——\n\"集群里真跑着什么\"（image/replicas/state/真实 wire-gen）。与 delivery\n域的 Workload 投影视图（\"平台会下发什么\"）互补，两面对照 drift 一眼\n可见；与 ADR-0067 实例面分立：那是逐个体（instance/node）的观测，本面\n是逐载体的配置级观测。Runtime 未实现观测子面（RuntimeInspector）时\n精确拒绝（E_INTERNAL，不静默空集）。",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "WorkloadsService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/v1/apps/{app_id}/workloads/live": {
+      "get": {
+        "summary": "GetAppWorkloadObservations 返回 App 全部在服载体的观测快照（ADR-0071\n观测层）。观测是集群实况快照：滚动进行中会看到新旧行为混合，语义归\nProvider（与 drift 扫描同一数据面，ADR-0022）。",
+        "operationId": "WorkloadsService_GetAppWorkloadObservations",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetAppWorkloadObservationsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "WorkloadsService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "v1GetAppWorkloadObservationsResponse": {
+      "type": "object",
+      "properties": {
+        "observations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1WorkloadObservation"
+          }
+        }
+      }
+    },
+    "v1WorkloadObservation": {
+      "type": "object",
+      "properties": {
+        "workload_id": {
+          "type": "string"
+        },
+        "generation": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "image": {
+          "type": "string"
+        },
+        "command": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "replicas": {
+          "type": "string",
+          "format": "int64"
+        },
+        "state": {
+          "type": "string"
+        },
+        "rollout_stalled": {
+          "type": "boolean",
+          "title": "rollout_stalled 报告载体滚动更新停在中间态（编排器原话在\nrollout_detail）。"
+        },
+        "rollout_detail": {
+          "type": "string"
+        }
+      },
+      "title": "WorkloadObservation 是一条载体在服观测（capability.WorkloadObservation\n投影；ADR-0022 spec 对照面的公开只读形态——字段只增，未观测字段零值 =\n该 Runtime 无此面）。generation 是载体上的真实 wire-gen（与投影视图的\n分野锚：投影不带代戳，观测才有——ADR-0064 归因语义）。"
+    }
+  }
+}

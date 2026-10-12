@@ -934,9 +934,14 @@ type GetAppSpecResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// spec 是最新 Revision 冻结的 AppSpec（spec.proto 唯一运行时边界的
 	// 只读回读；未部署过 = E_NOT_FOUND）。
-	Spec          *v1.AppSpec `protobuf:"bytes,1,opt,name=spec,proto3" json:"spec,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Spec *v1.AppSpec `protobuf:"bytes,1,opt,name=spec,proto3" json:"spec,omitempty"`
+	// revision_seq/revision_digest 锚定本 Spec 出自哪条 Revision（ADR-0071
+	// 决策 1：最新冻结的诚实锚——与"当前生效"（最新成功部署的
+	// to_revision，delivery 域 GetAppWorkloads 缺省寻址）分野的输入）。
+	RevisionSeq    int64  `protobuf:"varint,2,opt,name=revision_seq,json=revisionSeq,proto3" json:"revision_seq,omitempty"`
+	RevisionDigest string `protobuf:"bytes,3,opt,name=revision_digest,json=revisionDigest,proto3" json:"revision_digest,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *GetAppSpecResponse) Reset() {
@@ -974,6 +979,20 @@ func (x *GetAppSpecResponse) GetSpec() *v1.AppSpec {
 		return x.Spec
 	}
 	return nil
+}
+
+func (x *GetAppSpecResponse) GetRevisionSeq() int64 {
+	if x != nil {
+		return x.RevisionSeq
+	}
+	return 0
+}
+
+func (x *GetAppSpecResponse) GetRevisionDigest() string {
+	if x != nil {
+		return x.RevisionDigest
+	}
+	return ""
 }
 
 type ListAppsRequest struct {
@@ -4986,9 +5005,11 @@ const file_fleetly_structure_v1_structure_proto_rawDesc = "" +
 	"\x16DownloadBackupResponse\x12\x12\n" +
 	"\x04data\x18\x01 \x01(\fR\x04data\"#\n" +
 	"\x11GetAppSpecRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"B\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\x8e\x01\n" +
 	"\x12GetAppSpecResponse\x12,\n" +
-	"\x04spec\x18\x01 \x01(\v2\x18.fleetly.spec.v1.AppSpecR\x04spec\"j\n" +
+	"\x04spec\x18\x01 \x01(\v2\x18.fleetly.spec.v1.AppSpecR\x04spec\x12!\n" +
+	"\frevision_seq\x18\x02 \x01(\x03R\vrevisionSeq\x12'\n" +
+	"\x0frevision_digest\x18\x03 \x01(\tR\x0erevisionDigest\"j\n" +
 	"\x0fListAppsRequest\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\"\n" +

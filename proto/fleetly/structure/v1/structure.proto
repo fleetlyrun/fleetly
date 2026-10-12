@@ -443,6 +443,11 @@ message GetAppSpecResponse {
   // spec 是最新 Revision 冻结的 AppSpec（spec.proto 唯一运行时边界的
   // 只读回读；未部署过 = E_NOT_FOUND）。
   fleetly.spec.v1.AppSpec spec = 1;
+  // revision_seq/revision_digest 锚定本 Spec 出自哪条 Revision（ADR-0071
+  // 决策 1：最新冻结的诚实锚——与"当前生效"（最新成功部署的
+  // to_revision，delivery 域 GetAppWorkloads 缺省寻址）分野的输入）。
+  int64 revision_seq = 2;
+  string revision_digest = 3;
 }
 message ListAppsRequest {
   string project_id = 1;

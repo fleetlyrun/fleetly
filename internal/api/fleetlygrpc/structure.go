@@ -382,7 +382,11 @@ func (svc *AppsService) GetAppSpec(ctx context.Context, req *structurev1.GetAppS
 	if err := protojson.Unmarshal(rev.Spec, &spec); err != nil {
 		return nil, apperr.New("E_INTERNAL", "app spec: frozen revision is not valid protojson (%v)", err)
 	}
-	return &structurev1.GetAppSpecResponse{Spec: &spec}, nil
+	// Revision 锚（ADR-0071 决策 1）：最新冻结的诚实锚——消费方据此与
+	// "当前生效"（GetAppWorkloads 缺省寻址）分野。
+	return &structurev1.GetAppSpecResponse{
+		Spec: &spec, RevisionSeq: rev.Seq, RevisionDigest: rev.Digest,
+	}, nil
 }
 
 func (svc *AppsService) ListApps(ctx context.Context, req *structurev1.ListAppsRequest) (*structurev1.ListAppsResponse, error) {

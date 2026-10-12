@@ -1,0 +1,64 @@
+syntax = "proto3";
+
+// Workloads 观测子面（ADR-0071 观测层）：载体级在服观测的只读透出——
+// "集群里真跑着什么"（image/replicas/state/真实 wire-gen）。与 delivery
+// 域的 Workload 投影视图（"平台会下发什么"）互补，两面对照 drift 一眼
+// 可见；与 ADR-0067 实例面分立：那是逐个体（instance/node）的观测，本面
+// 是逐载体的配置级观测。Runtime 未实现观测子面（RuntimeInspector）时
+// 精确拒绝（E_INTERNAL，不静默空集）。
+package fleetly.runtime.v1;
+
+option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1;runtimev1";
+
+import "google/api/annotations.proto";
+import "protoc-gen-openapiv2/options/annotations.proto";
+import "grpcapi/v1/authz.proto";
+
+option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
+  responses: {
+    key: "default"
+    value: {
+      description: "An unexpected error response."
+      schema: { json_schema: { ref: ".fleetly.shared.v1.ErrorResponse" } }
+    }
+  }
+};
+
+service WorkloadsService {
+  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+
+  // GetAppWorkloadObservations 返回 App 全部在服载体的观测快照（ADR-0071
+  // 观测层）。观测是集群实况快照：滚动进行中会看到新旧行为混合，语义归
+  // Provider（与 drift 扫描同一数据面，ADR-0022）。
+  rpc GetAppWorkloadObservations(GetAppWorkloadObservationsRequest) returns (GetAppWorkloadObservationsResponse) {
+    option (google.api.http) = { get: "/v1/apps/{app_id}/workloads/live" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "workloads" op: SCOPE_OP_READ }
+    };
+  }
+}
+
+message GetAppWorkloadObservationsRequest {
+  string app_id = 1;
+}
+message GetAppWorkloadObservationsResponse {
+  repeated WorkloadObservation observations = 1;
+}
+
+// WorkloadObservation 是一条载体在服观测（capability.WorkloadObservation
+// 投影；ADR-0022 spec 对照面的公开只读形态——字段只增，未观测字段零值 =
+// 该 Runtime 无此面）。generation 是载体上的真实 wire-gen（与投影视图的
+// 分野锚：投影不带代戳，观测才有——ADR-0064 归因语义）。
+message WorkloadObservation {
+  string workload_id = 1;
+  uint64 generation = 2;
+  string image = 3;
+  repeated string command = 4;
+  int64 replicas = 5;
+  string state = 6;
+  // rollout_stalled 报告载体滚动更新停在中间态（编排器原话在
+  // rollout_detail）。
+  bool rollout_stalled = 7;
+  string rollout_detail = 8;
+}

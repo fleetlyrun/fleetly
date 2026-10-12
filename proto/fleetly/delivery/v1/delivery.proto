@@ -9,6 +9,7 @@ package fleetly.delivery.v1;
 option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1;deliveryv1";
 
 import "google/api/annotations.proto";
+import "google/protobuf/duration.proto";
 import "protoc-gen-openapiv2/options/annotations.proto";
 import "grpcapi/v1/authz.proto";
 import "fleetly/spec/v1/spec.proto";
@@ -103,6 +104,30 @@ service RevisionsService {
   // DiffRevisions 输出两条 Revision 的字段级差异（路径字典序）。
   rpc DiffRevisions(DiffRevisionsRequest) returns (DiffRevisionsResponse) {
     option (google.api.http) = { get: "/v1/revisions/diff" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "revisions" op: SCOPE_OP_READ }
+    };
+  }
+  // GetRevision 回读单条 Revision 的冻结 AppSpec 全文（ADR-0071 决策 1
+  // 冻结层）：(app_id, seq) 复合寻址，轴与 DiffRevisions 一致。与
+  // GetAppSpec 的分立：GetAppSpec 是"最新冻结"（Redeploy 数据源，
+  // ADR-0069），本面按号回读任意历史——部署详情"这次部署部署了什么"的
+  // 数据源。
+  rpc GetRevision(GetRevisionRequest) returns (GetRevisionResponse) {
+    option (google.api.http) = { get: "/v1/revisions/{app_id}/{seq}" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "revisions" op: SCOPE_OP_READ }
+    };
+  }
+  // GetAppWorkloads 按 Revision 只读重放 Workload 投影（ADR-0071 决策 1
+  // 投影层："平台会下发什么"的正式答案）。seq 缺省 = 当前生效（最新成功
+  // 部署的 to_revision——决策 2），显式 seq 重放历史（当前侧表的近似
+  // 语义，决策 4）。渲染与部署投影单源；不透出面（载体原生形态/凭证/
+  // 代戳）见决策 5。
+  rpc GetAppWorkloads(GetAppWorkloadsRequest) returns (GetAppWorkloadsResponse) {
+    option (google.api.http) = { get: "/v1/apps/{app_id}/workloads" };
     option (grpcapi.v1.method_auth) = {
       access: ACCESS_LEVEL_SERVER
       api_key_scope: { resource: "revisions" op: SCOPE_OP_READ }
@@ -347,6 +372,19 @@ message Revision {
   // 在场（含 rolling——strategy 缺省零值时 protojson 省略 strategy 字段，
   // 消费方按 rolling 解释，与 ProcessSpec.strategy 的缺省语义同款）。
   repeated ProcessStrategy process_strategies = 6;
+  // source_kind 是冻结体材料来源投影（ADR-0071 决策 6：逐 Revision
+  // provenance，从 source oneof 派生，零迁移——git push 覆盖历史从此
+  // 可读）。口径 = "谁提供了构建材料"，非"谁发起的部署"（后者属审计面）。
+  SourceKind source_kind = 7;
+}
+
+// SourceKind 是 Revision 材料来源的分类投影（ADR-0071 决策 6；值域对齐
+// spec.v1.Source oneof 三形态）。
+enum SourceKind {
+  SOURCE_KIND_UNSPECIFIED = 0;
+  SOURCE_KIND_GIT = 1;
+  SOURCE_KIND_IMAGE = 2;
+  SOURCE_KIND_UPLOAD = 3;
 }
 
 // ProcessStrategy 是 Revision 冻结体的单进程策略摘要（F3.1：双代窗叙事
@@ -380,6 +418,79 @@ message DiffRevisionsRequest {
   int64 to_seq = 3;
 }
 message DiffRevisionsResponse { repeated DiffEntry entries = 1; }
+
+// ---- Workload 视图（ADR-0071 投影层） ----
+
+message GetRevisionRequest {
+  string app_id = 1;
+  // seq 是 App 内 Revision 序号（R1..Rn 对外形态）。
+  int64 seq = 2;
+}
+message GetRevisionResponse {
+  Revision revision = 1;
+  fleetly.spec.v1.AppSpec spec = 2;
+}
+
+message GetAppWorkloadsRequest {
+  string app_id = 1;
+  // seq 缺省 0 = 当前生效（最新成功部署的 to_revision，ADR-0071 决策 2）；
+  // 显式 seq = 历史重放（当前侧表近似，决策 4）。无成功部署的缺省寻址
+  // → E_NOT_FOUND。
+  int64 seq = 2;
+}
+message GetAppWorkloadsResponse {
+  // revision 锚定本次渲染寻址到的 Revision（缺省寻址时 = 当前生效）。
+  Revision revision = 1;
+  repeated Workload workloads = 2;
+}
+
+// Workload 是 Workload 视图的单载体投影（ADR-0071 投影层）：
+// capability.Workload 的用户面字段镜像。不进视图的面：Generation（渲染
+// 非下发，代戳语义归 ADR-0064 的 Ensure 与观测层）、Materials（凭证永不
+// 进视图，ADR-0014）、受管域专用声明（global/skip_materials/host_binds/
+// network_refs/publish——用户 Spec 投影白名单外）。
+message Workload {
+  string id = 1;
+  string process = 2;
+  // image 是下发镜像引用（from_build 已解析为 digest 形态）。
+  string image = 3;
+  repeated string command = 4;
+  // env 是合成终态的非敏感环境变量（变量三级合成的最终形态）。
+  map<string, string> env = 5;
+  repeated fleetly.spec.v1.PortSpec ports = 6;
+  int64 replicas = 7;
+  // healthcheck 是全解析探针（投影期一次解析的终态）。
+  WorkloadHealthcheck healthcheck = 8;
+  fleetly.spec.v1.ResourcesSpec resources = 9;
+  // placement 含卷钉住合并结果（已钉卷的节点进约束集）。
+  fleetly.spec.v1.PlacementSpec placement = 10;
+  repeated fleetly.spec.v1.VolumeAttachment volumes = 11;
+  repeated string networks = 12;
+  // egress_networks 是 networks 中声明 egress:none 的子集（空 = 无出站
+  // 限制）。
+  repeated string egress_networks = 13;
+  // addressing 是平台标准 DNS 裸名声明。
+  repeated string addressing = 14;
+  // restart 是生命周期声明（空 = Provider 缺省；值域 any/never/on-failure
+  // 等——CONTEXT.md Restart 词条轴）。
+  string restart = 15;
+  google.protobuf.Duration stop_grace = 16;
+}
+
+// WorkloadHealthcheck 是全解析探针投影：与 spec.v1.HealthcheckSpec 的声明
+// 形态分立——oneof 装不下解析结果（http 探针的端口回退链解析后恒显式、
+// exec 恒干净 argv）。
+message WorkloadHealthcheck {
+  string http_path = 1;
+  // http_port 是 http 探针的显式端口（投影解析终态；非 http 探针恒 0）。
+  int32 http_port = 2;
+  int32 tcp_port = 3;
+  repeated string exec = 4;
+  google.protobuf.Duration interval = 5;
+  google.protobuf.Duration timeout = 6;
+  google.protobuf.Duration start_period = 7;
+  int32 retries = 8;
+}
 
 message Build {
   string id = 1;

@@ -10,7 +10,8 @@
         {
           "process": "web"
         }
-      ]
+      ],
+      "source_kind": "SOURCE_KIND_IMAGE"
     }
   ]
 }
