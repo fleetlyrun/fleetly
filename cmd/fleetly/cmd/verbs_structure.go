@@ -20,6 +20,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
+	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 )
 
@@ -220,6 +221,64 @@ func newAppsSpecVerb() commands.Command {
 				var buf bytes.Buffer
 				_ = json.Compact(&buf, data)
 				_, _ = fmt.Fprintln(env.Stdout, buf.String())
+			})
+		},
+	}
+}
+
+// newAppsWorkloadsVerb 是 Workload 视图双形态（ADR-0071）：缺省 = 投影
+// 重放（"平台会下发什么"，--seq 取历史、缺省当前生效）；--live = 在服
+// 观测（"集群真跑着什么"，含真实 wire-gen）。两面对照即 drift 排障面。
+func newAppsWorkloadsVerb() commands.Command {
+	const name = "workloads"
+	var seq int64
+	var live bool
+	return &flaggedVerb{
+		name:     name,
+		synopsis: "Render the app's workload view: projected spec replay (default) or live in-service observation (--live)",
+		usage:    "apps workloads [--seq N] [--live] APP_ID",
+		setFlags: func(fs *flag.FlagSet) {
+			fs.Int64Var(&seq, "seq", 0, "revision seq to replay (0 = current effective: latest succeeded deployment)")
+			fs.BoolVar(&live, "live", false, "observe live in-service carriers instead of the projected spec")
+		},
+		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if len(args) != 1 {
+				return usageErr(name, "expected exactly one APP_ID argument")
+			}
+			ctx, cancel, c, err := dialFromEnv(ctx)
+			if err != nil {
+				return err
+			}
+			defer cancel()
+			defer c.Close() //nolint:errcheck // 进程退出路径
+			if live {
+				resp, rerr := c.Workloads.GetAppWorkloadObservations(ctx, &runtimev1.GetAppWorkloadObservationsRequest{AppId: args[0]})
+				if rerr != nil {
+					return rerr
+				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintln(env.Stdout, "WORKLOAD\tGEN\tIMAGE\tREPLICAS\tSTATE\tSTALLED")
+					for _, o := range resp.GetObservations() {
+						_, _ = fmt.Fprintf(env.Stdout, "%s\t%d\t%s\t%d\t%s\t%t\n",
+							o.GetWorkloadId(), o.GetGeneration(), o.GetImage(), o.GetReplicas(), o.GetState(), o.GetRolloutStalled())
+					}
+				})
+			}
+			resp, rerr := c.Revisions.GetAppWorkloads(ctx, &deliveryv1.GetAppWorkloadsRequest{AppId: args[0], Seq: seq})
+			if rerr != nil {
+				return rerr
+			}
+			return renderOut(env, jsonOut, resp, func() {
+				_, _ = fmt.Fprintf(env.Stdout, "revision R%d\t%s\n", resp.GetRevision().GetSeq(), resp.GetRevision().GetDigest())
+				_, _ = fmt.Fprintln(env.Stdout, "PROCESS\tIMAGE\tREPLICAS\tPORTS\tNETWORKS")
+				for _, w := range resp.GetWorkloads() {
+					ports := make([]string, 0, len(w.GetPorts()))
+					for _, p := range w.GetPorts() {
+						ports = append(ports, fmt.Sprintf("%d/%s", p.GetPort(), strings.ToLower(strings.TrimPrefix(p.GetProtocol().String(), "PROTOCOL_"))))
+					}
+					_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%d\t%s\t%s\n",
+						w.GetProcess(), w.GetImage(), w.GetReplicas(), strings.Join(ports, ","), strings.Join(w.GetNetworks(), ","))
+				}
 			})
 		},
 	}

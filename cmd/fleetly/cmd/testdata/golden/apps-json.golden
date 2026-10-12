@@ -3,5 +3,6 @@
   "delete",
   "list",
   "restart",
-  "spec"
+  "spec",
+  "workloads"
 ]

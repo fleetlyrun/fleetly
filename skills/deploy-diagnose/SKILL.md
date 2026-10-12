@@ -68,7 +68,21 @@ the causal chain; logs and builds are the evidence underneath.
    fleetly revisions diff --app APP_ID --from 3 --to 4
    ```
 
-6. Recovery verbs — pick per the triage table, do not stack them blindly.
+6. Read the frozen spec of one revision in full (what that deployment actually
+   shipped — the row anchor carries the digest and the material source kind),
+   or render the workload view: the projected spec replay (what the platform
+   would issue now — default is the current effective revision) and the live
+   in-service observation (what the cluster is actually running, with the real
+   per-carrier generation; compare the two to spot drift):
+
+   ```bash
+   fleetly revisions get --app APP_ID --seq 3
+   fleetly apps workloads APP_ID
+   fleetly apps workloads --seq 3 APP_ID
+   fleetly apps workloads --live APP_ID
+   ```
+
+7. Recovery verbs — pick per the triage table, do not stack them blindly.
    Cancel clears a queued or in-flight deployment first (terminal states
    refuse with E_NOT_CANCELLABLE); rollback and re-deploy submit the
    replacement. For a wedged process with a healthy spec (internal state

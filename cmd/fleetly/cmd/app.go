@@ -66,7 +66,7 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 			newFreezeSetVerb(), newFreezeLiftVerb(), newFreezeListVerb()),
 		// Structure 上下文（动词组：嵌套 Dispatch）。
 		groupVerb("projects", "manage projects", newProjectsCreateVerb(), newProjectsListVerb(), newProjectsDeleteVerb()),
-		groupVerb("apps", "manage apps", newAppsCreateVerb(), newAppsListVerb(), newAppsSpecVerb(), newAppsRestartVerb(), newAppsDeleteVerb()),
+		groupVerb("apps", "manage apps", newAppsCreateVerb(), newAppsListVerb(), newAppsSpecVerb(), newAppsWorkloadsVerb(), newAppsRestartVerb(), newAppsDeleteVerb()),
 		groupVerb("secrets", "manage project secrets (values never returned)", newSecretsPutVerb(), newSecretsListVerb()),
 		groupVerb("configs", "manage versioned config files", newConfigsPutVerb(), newConfigsListVerb()),
 		// 共享变量（F2.9，ADR-0043）：Project 级变量层——归一化期合成进
@@ -90,7 +90,7 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 		newDeployVerb(),
 		groupVerb("deployments", "inspect, wait for and cancel deployments", newDeploymentsListVerb(), newDeploymentsGetVerb(), newDeploymentsWaitVerb(), newDeploymentsCancelVerb()),
 		newRollbackVerb(),
-		groupVerb("revisions", "inspect frozen revisions", newRevisionsListVerb(), newRevisionsDiffVerb()),
+		groupVerb("revisions", "inspect frozen revisions", newRevisionsListVerb(), newRevisionsGetVerb(), newRevisionsDiffVerb()),
 		groupVerb("builds", "inspect and wait for builds, stream build logs", newBuildsListVerb(), newBuildsWaitVerb(), newBuildsLogsVerb()),
 		groupVerb("uploads", "upload and list build source directories (content-addressed; re-uploads deduplicate)",
 			newUploadsPutVerb(), newUploadsListVerb()),

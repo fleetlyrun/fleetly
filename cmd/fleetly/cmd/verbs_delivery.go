@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/lynx-go/commands"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
@@ -641,6 +642,60 @@ func newRevisionsListVerb() commands.Command {
 				for _, r := range resp.GetRevisions() {
 					_, _ = fmt.Fprintf(env.Stdout, "R%d\t%s\t%s\t%s\t%s\n", r.GetSeq(), r.GetId(), r.GetDigest(), strategySummary(r.GetProcessStrategies()), r.GetCreatedAt())
 				}
+			})
+		},
+	}
+}
+
+// newRevisionsGetVerb 回读单条 Revision 冻结全文（ADR-0071 冻结层）：
+// 行锚（seq/digest/source kind/strategy 目录）+ AppSpec protojson。
+// "这次部署部署了什么"的排障数据源（按号回读任意历史）。
+func newRevisionsGetVerb() commands.Command {
+	const name = "get"
+	var app string
+	var seq int64
+	return &flaggedVerb{
+		name:     name,
+		synopsis: "Read one frozen revision: row anchor plus the full AppSpec protojson",
+		usage:    "revisions get --app APP_ID --seq N",
+		setFlags: func(fs *flag.FlagSet) {
+			fs.StringVar(&app, "app", "", "app id (required)")
+			fs.Int64Var(&seq, "seq", 0, "revision seq within the app (R number, required)")
+		},
+		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
+			if app == "" {
+				return usageErr(name, "--app is required")
+			}
+			if seq <= 0 {
+				return usageErr(name, "--seq is required (R number)")
+			}
+			ctx, cancel, c, err := dialFromEnv(ctx)
+			if err != nil {
+				return err
+			}
+			defer cancel()
+			defer c.Close() //nolint:errcheck // 进程退出路径
+			resp, err := c.Revisions.GetRevision(ctx, &deliveryv1.GetRevisionRequest{AppId: app, Seq: seq})
+			if err != nil {
+				return err
+			}
+			return renderOut(env, jsonOut, resp, func() {
+				r := resp.GetRevision()
+				_, _ = fmt.Fprintf(env.Stdout, "R%d\t%s\t%s\n", r.GetSeq(), r.GetId(), r.GetDigest())
+				_, _ = fmt.Fprintf(env.Stdout, "created %s\tsource %s\tstrategy %s\n",
+					r.GetCreatedAt(),
+					strings.ToLower(strings.TrimPrefix(r.GetSourceKind().String(), "SOURCE_KIND_")),
+					strategySummary(r.GetProcessStrategies()))
+				data, merr := protojson.Marshal(resp.GetSpec())
+				if merr != nil {
+					return
+				}
+				var buf bytes.Buffer
+				_ = json.Compact(&buf, data)
+				_, _ = fmt.Fprintln(env.Stdout, buf.String())
 			})
 		},
 	}

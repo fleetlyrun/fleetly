@@ -1,0 +1,11 @@
+{
+  "observations": [
+    {
+      "workload_id": "web-1-web",
+      "generation": "1",
+      "image": "nginx:1.27",
+      "replicas": "1",
+      "state": "running"
+    }
+  ]
+}

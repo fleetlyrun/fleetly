@@ -1,0 +1,2 @@
+WORKLOAD	GEN	IMAGE	REPLICAS	STATE	STALLED
+web-1-web	1	nginx:1.27	1	running	false
