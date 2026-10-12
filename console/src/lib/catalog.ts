@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "../api/client";
+import { listExecInstances } from "../api/execstream";
 import type { components as structureSchemas } from "../api/structure";
 import type { components as deliverySchemas } from "../api/delivery";
 import type { components as automationSchemas } from "../api/automation";
@@ -254,6 +255,19 @@ export function useRevisions(appId: string) {
       return rowsOf(res.revisions);
     },
     refetchInterval: RESOURCE_MS,
+  });
+}
+
+// useProcessInstances 是进程在跑实例集的观测查询（ADR-0067 快照语义：
+// 直读编排器任务/pod 列表，空集 = 观测行非错误）。查询键与 Terminal/Logs
+// 下拉同源——副本下拉、Processes 页 Running 列、Overview per-process
+// 摘要共享缓存（App→Process→Instance 钻取面，2026-10-12 层级定案）。
+export function useProcessInstances(appId: string, process: string) {
+  return useQuery({
+    queryKey: ["exec-instances", appId, process],
+    enabled: appId !== "" && process !== "",
+    queryFn: () => listExecInstances(appId, process),
+    refetchInterval: 10_000,
   });
 }
 
