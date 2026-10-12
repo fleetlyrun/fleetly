@@ -21,7 +21,7 @@ import converter from "swagger2openapi";
 // Providers 健康面入列，governance 仍按需再入——消费哪些上下文就生成
 // 哪些，同 ADR-0044 口径）。F3.3 的 templates 与 exec 同为"上下文内第
 // 二 proto 文件"——按文件镜像生成。
-const CONTEXTS = ["structure", "delivery", "telemetry", "identity", "automation", "proxy", "runtime", "exec", "templates", "system"];
+const CONTEXTS = ["structure", "delivery", "telemetry", "identity", "automation", "proxy", "runtime", "exec", "workloads", "templates", "system"];
 
 const GENPROTO = "../genproto/fleetly";
 const OUT_DIR = "src/api";
@@ -67,7 +67,7 @@ try {
     // 按文件镜像的上下文（openapiv2 插件按 proto 文件产出独立 swagger——
     // exec 在 runtime/v1 下、templates 在 delivery/v1 下；其余上下文 =
     // 目录同名文件）。
-    const mirrors = { exec: join(GENPROTO, "runtime", "v1", "exec.swagger.json"), templates: join(GENPROTO, "delivery", "v1", "templates.swagger.json") };
+    const mirrors = { exec: join(GENPROTO, "runtime", "v1", "exec.swagger.json"), workloads: join(GENPROTO, "runtime", "v1", "workloads.swagger.json"), templates: join(GENPROTO, "delivery", "v1", "templates.swagger.json") };
     const specPath = mirrors[ctx] ?? join(GENPROTO, ctx, "v1", `${ctx}.swagger.json`);
     const spec = JSON.parse(readFileSync(specPath, "utf8"));
     rewriteRefs(spec);

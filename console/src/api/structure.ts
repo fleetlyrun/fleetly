@@ -751,6 +751,14 @@ export interface components {
         };
         v1GetAppSpecResponse: {
             spec?: components["schemas"]["v1AppSpec"];
+            /**
+             * revision_seq/revision_digest 锚定本 Spec 出自哪条 Revision（ADR-0071
+             *     决策 1：最新冻结的诚实锚——与"当前生效"（最新成功部署的
+             *     to_revision，delivery 域 GetAppWorkloads 缺省寻址）分野的输入）。
+             * Format: int64
+             */
+            revision_seq?: string;
+            revision_digest?: string;
         };
         v1GetConfigResponse: {
             config?: components["schemas"]["v1Config"];

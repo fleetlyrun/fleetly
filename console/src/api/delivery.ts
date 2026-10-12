@@ -85,6 +85,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/apps/{app_id}/workloads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * GetAppWorkloads 按 Revision 只读重放 Workload 投影（ADR-0071 决策 1
+         *     投影层："平台会下发什么"的正式答案）。seq 缺省 = 当前生效（最新成功
+         *     部署的 to_revision——决策 2），显式 seq 重放历史（当前侧表的近似
+         *     语义，决策 4）。渲染与部署投影单源；不透出面（载体原生形态/凭证/
+         *     代戳）见决策 5。
+         */
+        get: operations["RevisionsService_GetAppWorkloads"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/builds": {
         parameters: {
             query?: never;
@@ -244,6 +267,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/revisions/{app_id}/{seq}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * GetRevision 回读单条 Revision 的冻结 AppSpec 全文（ADR-0071 决策 1
+         *     冻结层）：(app_id, seq) 复合寻址，轴与 DiffRevisions 一致。与
+         *     GetAppSpec 的分立：GetAppSpec 是"最新冻结"（Redeploy 数据源，
+         *     ADR-0069），本面按号回读任意历史——部署详情"这次部署部署了什么"的
+         *     数据源。
+         */
+        get: operations["RevisionsService_GetRevision"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/uploads": {
         parameters: {
             query?: never;
@@ -285,6 +331,9 @@ export interface components {
             dockerfile?: string;
             watch_paths?: string[];
         };
+        specv1UploadSource: {
+            id?: string;
+        };
         /**
          * Admission 是创建型部署受理的判定附注（P10：ADR-0016 语义的响应面显式
          *     化——调用方（尤其 Agent）可判定"去重命中/排队第几位"，UI/API/webhook
@@ -312,6 +361,25 @@ export interface components {
              */
             existing_deployment?: string;
         };
+        /** AppRef 是 App 归属锚。 */
+        v1AppRef: {
+            id?: string;
+            project?: string;
+        };
+        /** AppSpec 是长运行可部署单元的期望状态（App = 一个或多个 Process）。 */
+        v1AppSpec: {
+            /** Format: int32 */
+            schema_version?: number;
+            app?: components["schemas"]["v1AppRef"];
+            source?: components["schemas"]["v1Source"];
+            processes?: components["schemas"]["v1ProcessSpec"][];
+            build?: components["schemas"]["v1BuildSpec"];
+            /**
+             * first_boot_jobs 是部署期 init job（数据库迁移等）：releasing 前串行
+             *     执行，失败即回滚。
+             */
+            first_boot_jobs?: components["schemas"]["v1JobSpec"][];
+        };
         v1Build: {
             id?: string;
             /**
@@ -326,6 +394,18 @@ export interface components {
             error?: string;
             created_at?: string;
             finished_at?: string;
+        };
+        /** BuildSpec 是构建声明（dockerfile / railpack 钉版 / static，ADR-0032）。 */
+        v1BuildSpec: {
+            /**
+             * builder 是 Builder Provider 名（dockerfile / railpack / static），与
+             *     strategy oneof 形态配对（叶子 ValidateBuild 执法）。
+             */
+            builder?: string;
+            dockerfile?: string;
+            railpack?: components["schemas"]["v1RailpackBuilder"];
+            static?: components["schemas"]["v1StaticBuilder"];
+            cache_from?: string[];
         };
         v1CancelDeploymentResponse: {
             deployment?: components["schemas"]["v1Deployment"];
@@ -460,11 +540,22 @@ export interface components {
         v1DiffRevisionsResponse: {
             entries?: components["schemas"]["v1DiffEntry"][];
         };
+        v1ExecProbe: {
+            command?: string[];
+        };
+        v1GetAppWorkloadsResponse: {
+            revision?: components["schemas"]["v1Revision"];
+            workloads?: components["schemas"]["v1Workload"][];
+        };
         v1GetDeploymentResponse: {
             deployment?: components["schemas"]["v1Deployment"];
         };
         v1GetGitHookResponse: {
             hook?: components["schemas"]["v1GitHook"];
+        };
+        v1GetRevisionResponse: {
+            revision?: components["schemas"]["v1Revision"];
+            spec?: components["schemas"]["v1AppSpec"];
         };
         /**
          * GitHook 是 per-App Git 触发配置投影（secret 永不回显——完整明文只在
@@ -485,6 +576,48 @@ export interface components {
             created_at?: string;
             updated_at?: string;
         };
+        v1GitSource: {
+            /** repo 是仓库 URL（部署 Token 形态，Token 不进 URL 路径段日志）。 */
+            repo?: string;
+            /** ref 是分支/标签/commit。 */
+            ref?: string;
+        };
+        /** HealthcheckSpec 是声明式探针（三选一 + 节律）。 */
+        v1HealthcheckSpec: {
+            http_path?: string;
+            /** Format: int32 */
+            tcp_port?: number;
+            exec?: components["schemas"]["v1ExecProbe"];
+            interval?: string;
+            timeout?: string;
+            start_period?: string;
+            /** Format: int32 */
+            retries?: number;
+        };
+        v1ImageSource: {
+            /** ref 是镜像引用（私有仓库凭证经 Secret 解析分发）。 */
+            ref?: string;
+        };
+        /**
+         * JobSpec 是部署期一次性作业（first boot jobs，ADR-0007 词汇裁决：词条归
+         *     Task——部署期特例）。C-13 重塑：进程模板共享 ProcessSpec（process 字段，
+         *     与 TaskSpec 同款嵌套形态）；旧标量字段（image_origin/command/env/
+         *     secret_refs）保留号退役（deprecated，读取面一律走 process——buf breaking
+         *     FILE 档下零消费者字段删除亦红，彻底删除待 breaking 基线策略变更）。
+         */
+        v1JobSpec: {
+            name?: string;
+            image?: string;
+            from_build?: string;
+            command?: string[];
+            env?: {
+                [key: string]: string;
+            };
+            secret_refs?: string[];
+            /** ttl 是作业硬超时（超时即失败回滚）。 */
+            ttl?: string;
+            process?: components["schemas"]["v1ProcessSpec"];
+        };
         v1ListBuildsResponse: {
             builds?: components["schemas"]["v1Build"][];
         };
@@ -498,12 +631,66 @@ export interface components {
             uploads?: components["schemas"]["v1Upload"][];
         };
         /**
+         * PlacementSpec 是调度意图（节点选择约束；平台节点 ID 为锚——映射为
+         *     编排器约束语法是 Provider 私有）。
+         */
+        v1PlacementSpec: {
+            node_ids?: string[];
+        };
+        /** PortSpec 是进程监听端口声明（Route 投影来源）。 */
+        v1PortSpec: {
+            /** Format: int32 */
+            port?: number;
+            protocol?: components["schemas"]["v1Protocol"];
+        };
+        /** ProcessSpec 是 App 内的进程模板（web/worker…）。 */
+        v1ProcessSpec: {
+            name?: string;
+            /** image 是镜像直部署引用。 */
+            image?: string;
+            /** from_build 引用同 Spec Build 输出（Ensure 前由平台解析为 digest）。 */
+            from_build?: string;
+            /** command 覆盖镜像入口；空 = 镜像默认。 */
+            command?: string[];
+            /** env 是非敏感环境变量（Project/App 两级合成的归一化结果）。 */
+            env?: {
+                [key: string]: string;
+            };
+            /** secret_refs 按名引用 Project Secret（注入时解析，值不进 Spec）。 */
+            secret_refs?: string[];
+            /** config_refs 按名引用 Project Config 版本化挂载文件。 */
+            config_refs?: string[];
+            ports?: components["schemas"]["v1PortSpec"][];
+            healthcheck?: components["schemas"]["v1HealthcheckSpec"];
+            resources?: components["schemas"]["v1ResourcesSpec"];
+            /** Format: int64 */
+            replicas?: string;
+            placement?: components["schemas"]["v1PlacementSpec"];
+            volumes?: components["schemas"]["v1VolumeAttachment"][];
+            /** networks 是网络附件（Project 网络名或 taskGroup:<name> 跨挂）。 */
+            networks?: string[];
+            strategy?: components["schemas"]["v1DeployStrategy"];
+        };
+        /**
          * ProcessStrategy 是 Revision 冻结体的单进程策略摘要（F3.1：双代窗叙事
          *     的最小读面——名字 + 策略，不携带 spec 全文；声明序即列表序）。
          */
         v1ProcessStrategy: {
             process?: string;
             strategy?: components["schemas"]["v1DeployStrategy"];
+        };
+        /**
+         * Protocol 是 Route/端口协议（http/h2c/tcp）。
+         * @default PROTOCOL_UNSPECIFIED
+         * @enum {string}
+         */
+        v1Protocol: "PROTOCOL_UNSPECIFIED" | "PROTOCOL_HTTP" | "PROTOCOL_H2C" | "PROTOCOL_TCP";
+        /**
+         * RailpackBuilder 必须钉版本（防 plan 漂移，旧 spike 教训；ADR-0032：
+         *     bare semver，须等于平台钉版常量——Build 期执法，错误文本带平台版本）。
+         */
+        v1RailpackBuilder: {
+            pinned_version?: string;
         };
         v1ReceiveWebhookResponse: {
             /**
@@ -516,6 +703,16 @@ export interface components {
             reason?: string;
             deployment_id?: string;
             admission?: components["schemas"]["v1Admission"];
+        };
+        /** ResourcesSpec 是每副本资源上限（v1 仅每 Process 上限）。 */
+        v1ResourcesSpec: {
+            /**
+             * cpu_millis 毫核（1000 = 1 CPU）。
+             * Format: int64
+             */
+            cpu_millis?: string;
+            /** Format: int64 */
+            memory_mb?: string;
         };
         /** RestartProcessResponse 空体：重启是 runtime-only 动作，无新记录可指。 */
         v1RestartProcessResponse: Record<string, never>;
@@ -535,6 +732,7 @@ export interface components {
              *     消费方按 rolling 解释，与 ProcessSpec.strategy 的缺省语义同款）。
              */
             process_strategies?: components["schemas"]["v1ProcessStrategy"][];
+            source_kind?: components["schemas"]["v1SourceKind"];
         };
         v1RollbackResponse: {
             deployment?: components["schemas"]["v1Deployment"];
@@ -552,6 +750,27 @@ export interface components {
              *     用作 GitHub 仓库的 webhook secret。
              */
             secret?: string;
+        };
+        /** Source 是 App 的来源三形态（Git 引用 / 镜像引用 / 上传产物）。 */
+        v1Source: {
+            git?: components["schemas"]["v1GitSource"];
+            image?: components["schemas"]["v1ImageSource"];
+            upload?: components["schemas"]["specv1UploadSource"];
+        };
+        /**
+         * SourceKind 是 Revision 材料来源的分类投影（ADR-0071 决策 6；值域对齐
+         *     spec.v1.Source oneof 三形态）。
+         * @default SOURCE_KIND_UNSPECIFIED
+         * @enum {string}
+         */
+        v1SourceKind: "SOURCE_KIND_UNSPECIFIED" | "SOURCE_KIND_GIT" | "SOURCE_KIND_IMAGE" | "SOURCE_KIND_UPLOAD";
+        /**
+         * StaticBuilder 是产物目录包装声明（ADR-0032）：上传上下文的产物子目录
+         *     整体 COPY 进钉版 Caddy 伺服镜像；无构建步（源码构建是 railpack 的地盘）。
+         */
+        v1StaticBuilder: {
+            /** output_dir 是产物目录（context 内相对路径，缺省 "."；拒 .. 与绝对路径）。 */
+            output_dir?: string;
         };
         /** StreamBuildLogsResponse 一帧构建日志（time RFC3339）。 */
         v1StreamBuildLogsResponse: {
@@ -593,6 +812,13 @@ export interface components {
             size_bytes?: string;
             deduplicated?: boolean;
         };
+        /** VolumeAttachment 是持久存储附件（无显式 Placement 时默认钉住节点）。 */
+        v1VolumeAttachment: {
+            volume_id?: string;
+            target?: string;
+            /** read_only 是只读挂载（compose 短语法 name:/target:ro；缺省可写）。 */
+            read_only?: boolean;
+        };
         /** WaitBuildResponse 是状态快照帧；流在终态帧后关闭。 */
         v1WaitBuildResponse: {
             build?: components["schemas"]["v1Build"];
@@ -603,6 +829,66 @@ export interface components {
          */
         v1WaitDeploymentResponse: {
             deployment?: components["schemas"]["v1Deployment"];
+        };
+        /**
+         * Workload 是 Workload 视图的单载体投影（ADR-0071 投影层）：
+         *     capability.Workload 的用户面字段镜像。不进视图的面：Generation（渲染
+         *     非下发，代戳语义归 ADR-0064 的 Ensure 与观测层）、Materials（凭证永不
+         *     进视图，ADR-0014）、受管域专用声明（global/skip_materials/host_binds/
+         *     network_refs/publish——用户 Spec 投影白名单外）。
+         */
+        v1Workload: {
+            id?: string;
+            process?: string;
+            /** image 是下发镜像引用（from_build 已解析为 digest 形态）。 */
+            image?: string;
+            command?: string[];
+            /** env 是合成终态的非敏感环境变量（变量三级合成的最终形态）。 */
+            env?: {
+                [key: string]: string;
+            };
+            ports?: components["schemas"]["v1PortSpec"][];
+            /** Format: int64 */
+            replicas?: string;
+            healthcheck?: components["schemas"]["v1WorkloadHealthcheck"];
+            resources?: components["schemas"]["v1ResourcesSpec"];
+            placement?: components["schemas"]["v1PlacementSpec"];
+            volumes?: components["schemas"]["v1VolumeAttachment"][];
+            networks?: string[];
+            /**
+             * egress_networks 是 networks 中声明 egress:none 的子集（空 = 无出站
+             *     限制）。
+             */
+            egress_networks?: string[];
+            /** addressing 是平台标准 DNS 裸名声明。 */
+            addressing?: string[];
+            /**
+             * restart 是生命周期声明（空 = Provider 缺省；值域 any/never/on-failure
+             *     等——CONTEXT.md Restart 词条轴）。
+             */
+            restart?: string;
+            stop_grace?: string;
+        };
+        /**
+         * WorkloadHealthcheck 是全解析探针投影：与 spec.v1.HealthcheckSpec 的声明
+         *     形态分立——oneof 装不下解析结果（http 探针的端口回退链解析后恒显式、
+         *     exec 恒干净 argv）。
+         */
+        v1WorkloadHealthcheck: {
+            http_path?: string;
+            /**
+             * http_port 是 http 探针的显式端口（投影解析终态；非 http 探针恒 0）。
+             * Format: int32
+             */
+            http_port?: number;
+            /** Format: int32 */
+            tcp_port?: number;
+            exec?: string[];
+            interval?: string;
+            timeout?: string;
+            start_period?: string;
+            /** Format: int32 */
+            retries?: number;
         };
         ErrorResponse: {
             code?: string;
@@ -776,6 +1062,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1RollbackResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    RevisionsService_GetAppWorkloads: {
+        parameters: {
+            query?: {
+                /**
+                 * @description seq 缺省 0 = 当前生效（最新成功部署的 to_revision，ADR-0071 决策 2）；
+                 *     显式 seq = 历史重放（当前侧表近似，决策 4）。无成功部署的缺省寻址
+                 *     → E_NOT_FOUND。
+                 */
+                seq?: string;
+            };
+            header?: never;
+            path: {
+                app_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1GetAppWorkloadsResponse"];
                 };
             };
             /** @description An unexpected error response. */
@@ -1120,6 +1444,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1DiffRevisionsResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    RevisionsService_GetRevision: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                app_id: string;
+                /** @description seq 是 App 内 Revision 序号（R1..Rn 对外形态）。 */
+                seq: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1GetRevisionResponse"];
                 };
             };
             /** @description An unexpected error response. */

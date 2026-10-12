@@ -257,6 +257,7 @@ export function AppProcessesTab({ projectId, appId }: { projectId: string; appId
                   {expanded[name] ? (
                     <TableRow>
                       <TableCell colSpan={8} className="bg-muted/30 px-4 py-0">
+                        <ProcessDetail process={process} />
                         <InstanceList appId={appId} processName={name} />
                       </TableCell>
                     </TableRow>
@@ -280,6 +281,37 @@ export function AppProcessesTab({ projectId, appId }: { projectId: string; appId
 function strategyLabel(strategy: components["schemas"]["v1DeployStrategy"] | undefined): string {
   if (strategy === "DEPLOY_STRATEGY_BLUE_GREEN") return "blue-green";
   return "rolling";
+}
+
+// ProcessDetail 是行展开的声明侧字段（冻结 Spec 已拉未渲染的补齐面——
+// 全文在 Spec tab，这里给排障就近的 image/command/探针/资源）。
+function ProcessDetail({ process }: { process: components["schemas"]["v1ProcessSpec"] }) {
+  const health = process.healthcheck;
+  const healthSummary = !health
+    ? "none"
+    : health.http_path
+      ? `http ${health.http_path}`
+      : health.tcp_port
+        ? `tcp :${health.tcp_port}`
+        : health.exec?.command?.length
+          ? `exec ${health.exec.command.join(" ")}`
+          : "none";
+  return (
+    <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 border-b py-1.5 text-2xs">
+      <dt className="text-muted-foreground">image</dt>
+      <dd className="break-all font-mono">{process.image || process.from_build || "—"}</dd>
+      <dt className="text-muted-foreground">command</dt>
+      <dd className="break-all font-mono">{process.command?.length ? process.command.join(" ") : "image default"}</dd>
+      <dt className="text-muted-foreground">healthcheck</dt>
+      <dd className="font-mono">{healthSummary}</dd>
+      <dt className="text-muted-foreground">resources</dt>
+      <dd className="font-mono">
+        {process.resources?.cpu_millis || process.resources?.memory_mb
+          ? `${process.resources?.cpu_millis ? `${process.resources.cpu_millis}m cpu` : ""}${process.resources?.cpu_millis && process.resources?.memory_mb ? " · " : ""}${process.resources?.memory_mb ? `${process.resources.memory_mb}MB mem` : ""}`
+          : "unlimited"}
+      </dd>
+    </dl>
+  );
 }
 
 // ProcessRestartButton（ADR-0069）：行级确认框——文案如实披露抖动语义

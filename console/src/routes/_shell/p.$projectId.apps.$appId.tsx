@@ -85,6 +85,8 @@ function AppDetailLayout() {
     // Processes（ADR-0060）：进程列表 + 实例数管理——结构面紧随 Overview。
     { label: "Processes", to: `${tabBase}/processes`, exact: false },
     { label: "Deployments", to: `${tabBase}/deployments`, exact: false },
+    // Spec（ADR-0071 配置可观测面）：冻结全文 / Workload 投影 / 在服观测。
+    { label: "Spec", to: `${tabBase}/spec`, exact: false },
     { label: "Metrics", to: `${tabBase}/metrics`, exact: false },
     { label: "Logs", to: `${tabBase}/logs`, exact: false },
     { label: "Terminal", to: `${tabBase}/terminal`, exact: false },

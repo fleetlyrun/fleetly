@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { ArrowLeftIcon, CopyIcon, RocketIcon } from "lucide-react";
 import { toast } from "sonner";
 import type { components } from "@/api/delivery";
@@ -246,8 +247,40 @@ export function DeploymentDetailView({
         <summary className="cursor-pointer text-sm font-semibold text-muted-foreground">Raw fields (protojson)</summary>
         <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 font-mono text-xs text-muted-foreground">
           <dt>app_id</dt><dd>{effective.app_id}</dd>
-          <dt>from_revision</dt><dd className="break-all">{effective.from_revision || "—"}</dd>
-          <dt>to_revision</dt><dd className="break-all">{effective.to_revision || "—"}</dd>
+          <dt>from_revision</dt>
+          <dd className="break-all">
+            {effective.from_revision || "—"}
+            {revisionIndex.get(effective.from_revision ?? "")?.seq ? (
+              <>
+                {" "}
+                <Link
+                  to="/p/$projectId/apps/$appId/spec"
+                  params={{ projectId, appId }}
+                  search={{ seq: Number(revisionIndex.get(effective.from_revision ?? "")?.seq) }}
+                  className="text-info underline-offset-2 hover:underline"
+                >
+                  view spec R{revisionIndex.get(effective.from_revision ?? "")?.seq}
+                </Link>
+              </>
+            ) : null}
+          </dd>
+          <dt>to_revision</dt>
+          <dd className="break-all">
+            {effective.to_revision || "—"}
+            {revisionIndex.get(effective.to_revision ?? "")?.seq ? (
+              <>
+                {" "}
+                <Link
+                  to="/p/$projectId/apps/$appId/spec"
+                  params={{ projectId, appId }}
+                  search={{ seq: Number(revisionIndex.get(effective.to_revision ?? "")?.seq) }}
+                  className="text-info underline-offset-2 hover:underline"
+                >
+                  view spec R{revisionIndex.get(effective.to_revision ?? "")?.seq}
+                </Link>
+              </>
+            ) : null}
+          </dd>
           <dt>generation</dt><dd>{effective.generation ?? "—"}</dd>
           <dt>from_generation</dt><dd>{effective.from_generation ?? "—"}</dd>
           <dt>observe_deadline</dt><dd>{effective.observe_deadline || "—"}</dd>
