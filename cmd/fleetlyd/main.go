@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"strings"
@@ -44,11 +45,30 @@ func hasVerbArgs(args []string) bool {
 }
 
 // displayVersion 返回人读版本串（ldflags 未注入时 dev 兜底）。
-func displayVersion() string {
-	if version == "" {
+func displayVersion(v string) string {
+	if v == "" {
 		return "dev"
 	}
-	return version
+	return v
+}
+
+// versionFlagArgs 判定命令行是否携带 --version/-version。全数组扫描（`--`
+// 终止符后停——其后的全是位置参数）：旗标值与动词位置参数无法在不识旗标
+// 语义的前提下区分，而 --version 不在任何动词面的旗标集里（admin/relay
+// 各自的旗标面会拒它）——全局拦截无占有冲突，语义是"带了此旗标 = 版本
+// 探查"。lynx runner 不认识该旗标且空参/纯旗标一律落 daemon 引导——
+// staging 两次实证 `fleetlyd --version` 会以默认配置引导流浪 daemon
+// （建库、抢 9080 失败后退出），故在 runner 之前拦截。
+func versionFlagArgs(args []string) bool {
+	for _, a := range args {
+		if a == "--" {
+			return false
+		}
+		if a == "--version" || a == "-version" {
+			return true
+		}
+	}
+	return false
 }
 
 // setupApp 组装依赖图：cleanup（wire 聚合的资源清理）挂 OnPostStop——
@@ -66,16 +86,33 @@ func setupApp(app lynx.App) error {
 }
 
 func main() {
-	// 动词面（commands 框架，fleetly CLI 同款）：非旗标首参进 admin/relay
-	// 分发——admin 离线维护面不进 lynx runner 与 wire 装配（数据根被守护
-	// 进程持有时禁止维护操作，见 admin.go）；relay 是节点载体容器内的前台
-	// 进程（见 relay.go）。未知首参报 unknown verb 退 2 并附 help——staging
-	// 实证 2026-10-03：`fleetlyd version` 一类笔误曾绕过参数校验、以默认配
-	// 置引导流浪 daemon（建库、铸 bootstrap token、抢端口）；该防线现由
-	// 分发器接管。空参/纯旗标（含 `--`）落回下方 daemon 引导路径。
+	info := buildinfo.BuildInfo{Version: version, Commit: commit, Date: date}
+	// 版本探查旗标（--version/-version）在任何引导路径之前拦截：打印退 0，
+	// 绝不触配置/数据根（流浪 daemon 防线的旗标半边；动词半边是 version
+	// 子命令）。
+	if versionFlagArgs(os.Args[1:]) {
+		line := "fleetlyd " + displayVersion(info.Version)
+		if info.Commit != "" {
+			line += " (commit " + info.Commit
+			if info.Date != "" {
+				line += ", built " + info.Date
+			}
+			line += ")"
+		}
+		fmt.Println(line)
+		return
+	}
+	// 动词面（commands 框架，fleetly CLI 同款）：非旗标首参进 admin/relay/
+	// version 分发——admin 离线维护面不进 lynx runner 与 wire 装配（数据根
+	// 被守护进程持有时禁止维护操作，见 admin.go）；relay 是节点载体容器内
+	// 的前台进程（见 relay.go）。未知首参报 unknown verb 退 2 并附 help——
+	// staging 实证 2026-10-03：`fleetlyd version` 一类笔误曾绕过参数校验、
+	// 以默认配置引导流浪 daemon（建库、铸 bootstrap token、抢端口）；该防
+	// 线现由分发器接管，version 已是合法动词。空参/纯旗标（含 `--`）落回
+	// 下方 daemon 引导路径。
 	if hasVerbArgs(os.Args[1:]) {
 		env := &commands.Environment{Stdout: os.Stdout, Stderr: os.Stderr}
-		os.Exit(newVerbApp(displayVersion()).Run(context.Background(), env, os.Args[1:]))
+		os.Exit(newVerbApp(info).Run(context.Background(), env, os.Args[1:]))
 	}
 	runner := lynx.NewRunner(setupApp,
 		lynx.WithName("Fleetly"),

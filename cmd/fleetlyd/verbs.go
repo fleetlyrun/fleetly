@@ -12,6 +12,8 @@ import (
 	"fmt"
 
 	"github.com/lynx-go/commands"
+
+	"github.com/fleetlyrun/fleetly/internal/buildinfo"
 )
 
 // verb 是 fleetlyd 动词的统一形态（fleetly CLI flaggedVerb 的精简版：
@@ -46,11 +48,37 @@ func usageErr(usage, format string, a ...any) error {
 
 // newVerbApp 装配 fleetlyd 动词面。退出码走框架默认（0 成功/1 命令错/
 // 2 用法错），FlagError 默认已包成 UsageError——无需定制钩子。
-func newVerbApp(ver string) *commands.App {
+func newVerbApp(info buildinfo.BuildInfo) *commands.App {
 	app := commands.New()
 	app.HelpHeader = "fleetlyd - fleetly control-plane daemon (start with flags only)"
 	app.VerbTitle = "commands:"
-	app.HelpFooter = fmt.Sprintf("fleetlyd %s (run without a subcommand to start the daemon; 'fleetlyd help <command>' for details)", ver)
-	app.Register(newAdminGroup(), newRelayVerb())
+	app.HelpFooter = fmt.Sprintf("fleetlyd %s (run without a subcommand to start the daemon; 'fleetlyd help <command>' for details)", displayVersion(info.Version))
+	app.Register(newVersionVerb(info), newAdminGroup(), newRelayVerb())
 	return app
+}
+
+// newVersionVerb 是 `fleetlyd version`：打印版本三元组退 0（staging 两次
+// 实证的版本探查正解——journalctl 之外的直接面；未知动词曾引导流浪
+// daemon，该笔误形态自 841ca20 起由分发器拒绝，本动词把它转为合法出口）。
+func newVersionVerb(info buildinfo.BuildInfo) *verb {
+	return &verb{
+		name:     "version",
+		synopsis: "Print the fleetlyd version and exit",
+		usage:    "version",
+		run: func(_ context.Context, env *commands.Environment, args []string) error {
+			if len(args) > 0 {
+				return usageErr("version", "unexpected argument %q", args[0])
+			}
+			line := "fleetlyd " + displayVersion(info.Version)
+			if info.Commit != "" {
+				line += " (commit " + info.Commit
+				if info.Date != "" {
+					line += ", built " + info.Date
+				}
+				line += ")"
+			}
+			_, err := fmt.Fprintln(env.Stdout, line)
+			return err
+		},
+	}
 }

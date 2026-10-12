@@ -7,6 +7,8 @@ import (
 
 	"github.com/lynx-go/commands"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/fleetlyrun/fleetly/internal/buildinfo"
 )
 
 // TestHasVerbArgs（staging 实证 2026-10-03 的防线形态）：非旗标首参进
@@ -21,17 +23,36 @@ func TestHasVerbArgs(t *testing.T) {
 	assert.True(t, hasVerbArgs([]string{"admin", "rewrap", "--data-root", "/var/lib/fleetly"}))
 	assert.True(t, hasVerbArgs([]string{"relay", "--manager", "http://10.0.0.3:9081"}))
 	assert.True(t, hasVerbArgs([]string{"help"}))
-	// 笔误/杂散路径形态：一律进动词面（由分发器拒绝），不得落回 runner。
-	for _, stray := range []string{"version", "serve", "/etc/fleetly"} {
+	// 杂散路径形态：一律进动词面（由分发器拒绝），不得落回 runner。
+	for _, stray := range []string{"serve", "/etc/fleetly"} {
 		assert.True(t, hasVerbArgs([]string{stray}), "stray positional %q must go through the verb dispatcher", stray)
 	}
+}
+
+// TestVersionFlagArgs（staging 2026-10-11 二次实证的流浪 daemon 旗标半边）：
+// 全数组扫描（`--` 终止符后停）——--version 不在任何动词面的旗标集，全局
+// 拦截无占有冲突；main 在 runner 之前打印退 0，不触配置/数据根。
+func TestVersionFlagArgs(t *testing.T) {
+	assert.True(t, versionFlagArgs([]string{"--version"}))
+	assert.True(t, versionFlagArgs([]string{"-version"}))
+	assert.True(t, versionFlagArgs([]string{"--config-dir", "/etc/fleetly", "--version"}),
+		"旗标值与动词位置参数无法在不识旗标语义下区分——全数组扫描兜住 daemon 命令行尾随 --version 形态")
+	assert.True(t, versionFlagArgs([]string{"admin", "rewrap", "--version"}),
+		"动词面无 --version 旗标（admin 拒它为 unknown flag）——拦截优先，探查语义不破坏动词")
+
+	assert.False(t, versionFlagArgs(nil))
+	assert.False(t, versionFlagArgs([]string{"--"}))
+	assert.False(t, versionFlagArgs([]string{"--config-dir", "/etc/fleetly"}))
+	// `--` 终止符后全是位置参数：字面 "--version" 的位置参数不拦。
+	assert.False(t, versionFlagArgs([]string{"--", "--version"}))
+	assert.False(t, versionFlagArgs([]string{"admin", "rewrap", "--", "--version"}))
 }
 
 // TestVerbAppRun 钉动词面的分发契约：未知动词退 2 并附 help（流浪 daemon
 // 防线——本面只分发，绝不引导 daemon）、用法错退 2、help 面退 0。只走
 // 校验级路径，不触真实数据根或 Provider。
 func TestVerbAppRun(t *testing.T) {
-	app := newVerbApp("test")
+	app := newVerbApp(buildinfo.BuildInfo{Version: "test-ver", Commit: "abc123", Date: "20261012"})
 	ctx := context.Background()
 
 	run := func(args ...string) (int, string, string) {
@@ -41,12 +62,25 @@ func TestVerbAppRun(t *testing.T) {
 		return code, out.String(), errOut.String()
 	}
 
-	t.Run("unknown verb rejected with help", func(t *testing.T) {
-		code, _, errOut := run("version")
+	t.Run("version verb prints triple", func(t *testing.T) {
+		code, out, _ := run("version")
+		assert.Equal(t, commands.ExitOK, code)
+		assert.Equal(t, "fleetlyd test-ver (commit abc123, built 20261012)\n", out)
+	})
+
+	t.Run("version verb rejects positionals", func(t *testing.T) {
+		code, _, errOut := run("version", "stray")
 		assert.Equal(t, commands.ExitUsage, code)
-		assert.Contains(t, errOut, `unknown verb "version"`)
+		assert.Contains(t, errOut, `unexpected argument "stray"`)
+	})
+
+	t.Run("unknown verb rejected with help", func(t *testing.T) {
+		code, _, errOut := run("serve")
+		assert.Equal(t, commands.ExitUsage, code)
+		assert.Contains(t, errOut, `unknown verb "serve"`)
 		assert.Contains(t, errOut, "admin") // help 屏列出动词面
 		assert.Contains(t, errOut, "relay")
+		assert.Contains(t, errOut, "version")
 	})
 
 	t.Run("stray path rejected", func(t *testing.T) {
