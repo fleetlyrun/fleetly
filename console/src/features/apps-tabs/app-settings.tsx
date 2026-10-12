@@ -211,7 +211,7 @@ function DangerZone({ appId, appName, projectId, onDeleted }: { appId: string; a
     onError: (cause) => toast.error(fieldError(cause)),
   });
   return (
-    <section className="max-w-2xl rounded-xl border border-destructive/30 bg-card p-5">
+    <section className="rounded-xl border border-destructive/30 bg-card p-5">
       <h3 className="mb-2 text-sm font-semibold text-destructive">Danger zone</h3>
       <p className="mb-4 text-xs text-muted-foreground">
         Deleting <span className="font-semibold text-foreground">{appName}</span> removes its deployments history, routes and exec

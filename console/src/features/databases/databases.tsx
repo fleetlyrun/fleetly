@@ -966,7 +966,7 @@ function DatabaseSettings({
   });
   return (
     <div className="flex flex-col gap-4">
-      <section className="max-w-2xl rounded-xl border bg-card p-5">
+      <section className="rounded-xl border bg-card p-5">
         <h3 className="mb-2 text-sm font-semibold">Credential</h3>
         <p className="mb-4 text-xs text-muted-foreground">
           The single credential lives in the project secret{" "}
@@ -1011,7 +1011,7 @@ function DatabaseSettings({
           </p>
         ) : null}
       </section>
-      <section className="max-w-2xl rounded-xl border border-destructive/30 bg-card p-5">
+      <section className="rounded-xl border border-destructive/30 bg-card p-5">
         <h3 className="mb-2 text-sm font-semibold text-destructive">Danger zone</h3>
         <p className="mb-4 text-xs text-muted-foreground">
           Deleting <span className="font-semibold text-foreground">{database?.name}</span> removes the carrier workload and its

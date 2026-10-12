@@ -347,7 +347,7 @@ function TaskSettings({ task, projectId, taskId }: { task: TaskEntry | undefined
   });
   return (
     <div className="flex flex-col gap-4">
-      <section className="max-w-2xl rounded-xl border bg-card p-5">
+      <section className="rounded-xl border bg-card p-5">
         <h3 className="mb-3 text-sm font-semibold">Pool operations</h3>
         <div className="flex flex-wrap items-end gap-3">
           <div className="flex flex-col gap-1">
@@ -383,7 +383,7 @@ function TaskSettings({ task, projectId, taskId }: { task: TaskEntry | undefined
           </Button>
         </div>
       </section>
-      <section className="max-w-2xl rounded-xl border border-destructive/30 bg-card p-5">
+      <section className="rounded-xl border border-destructive/30 bg-card p-5">
         <h3 className="mb-2 text-sm font-semibold text-destructive">Danger zone</h3>
         <p className="mb-4 text-xs text-muted-foreground">
           Deleting the task removes its definition and pool. Terminal runs stay in the ledger; active runs are drained first.
