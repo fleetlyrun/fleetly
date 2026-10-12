@@ -312,7 +312,13 @@ type DeployRequest struct {
 	// 缺省当前版。全部 AppSpec 字段经此成为 API 可写面（校验爆炸半径由
 	// 叶子 ValidateApp 单源承载）。与 image/compose_yaml/upload_id 及全部
 	// 单进程形态旗标（process_name/probe/port/env/builder 族）互斥。
-	SpecFile      string `protobuf:"bytes,18,opt,name=spec_file,json=specFile,proto3" json:"spec_file,omitempty"`
+	SpecFile string `protobuf:"bytes,18,opt,name=spec_file,json=specFile,proto3" json:"spec_file,omitempty"`
+	// override_hook 是 hook 所有权闸门的一次性接管声明（ADR-0072 决策 4）：
+	// 配置了 git hook 的 App 携带材料源（image/compose/upload）需显式置位
+	// 才被受理（全量接管）；正规路径 = 先删 hook。spec_file 不受本旗标
+	// 约束——hook 应用的 spec_file 恒为运行时 overlay（材料半边取冻结侧，
+	// 提交件 source 被忽略）。
+	OverrideHook  bool `protobuf:"varint,19,opt,name=override_hook,json=overrideHook,proto3" json:"override_hook,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -471,6 +477,13 @@ func (x *DeployRequest) GetSpecFile() string {
 		return x.SpecFile
 	}
 	return ""
+}
+
+func (x *DeployRequest) GetOverrideHook() bool {
+	if x != nil {
+		return x.OverrideHook
+	}
+	return false
 }
 
 // Admission 是创建型部署受理的判定附注（P10：ADR-0016 语义的响应面显式
@@ -3495,7 +3508,7 @@ const file_fleetly_delivery_v1_delivery_proto_rawDesc = "" +
 	"\vfinished_at\x18\x0e \x01(\tR\n" +
 	"finishedAt\x12+\n" +
 	"\x12first_boot_task_id\x18\x0f \x01(\tR\x0ffirstBootTaskId\x12'\n" +
-	"\x0ffrom_generation\x18\x10 \x01(\x04R\x0efromGeneration\"\x89\x05\n" +
+	"\x0ffrom_generation\x18\x10 \x01(\x04R\x0efromGeneration\"\xae\x05\n" +
 	"\rDeployRequest\x12\x15\n" +
 	"\x06app_id\x18\x01 \x01(\tR\x05appId\x12\x14\n" +
 	"\x05image\x18\x02 \x01(\tR\x05image\x12!\n" +
@@ -3520,7 +3533,8 @@ const file_fleetly_delivery_v1_delivery_proto_rawDesc = "" +
 	"\x03env\x18\x0f \x03(\v2+.fleetly.delivery.v1.DeployRequest.EnvEntryR\x03env\x12\x12\n" +
 	"\x04port\x18\x10 \x01(\x05R\x04port\x12\x1a\n" +
 	"\bprotocol\x18\x11 \x01(\tR\bprotocol\x12\x1b\n" +
-	"\tspec_file\x18\x12 \x01(\tR\bspecFile\x1a6\n" +
+	"\tspec_file\x18\x12 \x01(\tR\bspecFile\x12#\n" +
+	"\roverride_hook\x18\x13 \x01(\bR\foverrideHook\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"r\n" +

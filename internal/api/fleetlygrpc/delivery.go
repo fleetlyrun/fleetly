@@ -22,6 +22,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/capability"
 	"github.com/fleetlyrun/fleetly/internal/engine"
 	"github.com/fleetlyrun/fleetly/internal/spec"
+	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/state/app"
 	"github.com/fleetlyrun/fleetly/internal/state/audit"
 	"github.com/fleetlyrun/fleetly/internal/state/build"
@@ -89,6 +90,33 @@ func (svc *DeploymentsService) Deploy(ctx context.Context, req *deliveryv1.Deplo
 		return nil, err
 	}
 
+	// Spec 所有权分裂（ADR-0072）：配置了 git hook 的 App 材料归 git——
+	// 材料源（image/compose/upload）硬闸门（override_hook 一次性全量
+	// 接管）；spec_file 是运行时 overlay（材料半边取冻结侧，提交件
+	// source 被忽略——防旧 ref 构建旧 commit）。
+	if hookRow, herr := svc.s.Hooks.Get(ctx, svc.s.DB.Runner(), appRow.ID); herr == nil {
+		if !req.GetOverrideHook() && req.GetSpecFile() == "" {
+			return nil, apperr.New("E_APP_HOOK_OWNED",
+				"app %s is deployed from a git hook (repo %s); material sources are hook-owned — runtime changes go through spec_file, env through app variables, and material through the repo",
+				appRow.ID, hookRow.Repo)
+		}
+		if req.GetSpecFile() != "" && !req.GetOverrideHook() {
+			if latest, lerr := svc.s.Revisions.Latest(ctx, svc.s.DB.Runner(), appRow.ID); lerr == nil {
+				frozen, ferr := unmarshalFrozenSpec(latest.Spec)
+				if ferr != nil {
+					return nil, apperr.New("E_INTERNAL", "hook-owned overlay: frozen revision is not valid protojson (%v)", ferr)
+				}
+				appSpec = spec.MergeHookOwned(frozen, appSpec)
+			} else if !errors.Is(lerr, state.ErrNotFound) {
+				return nil, mapStateError(lerr, "revision")
+			}
+			// 无冻结 Revision（hook 配置后从未部署）：首部署形态，提交件
+			// 原样受理——材料自提交件建立，后续 push 按合并语义接力。
+		}
+	} else if !errors.Is(herr, state.ErrNotFound) {
+		return nil, mapStateError(herr, "hook")
+	}
+
 	// Revision 冻结（内容寻址复用：同内容只冻结一份；R1..Rn 序号 App 内单调）。
 	rev, err := freezeRevision(ctx, svc.s, appRow, appSpec)
 	if err != nil {
@@ -106,13 +134,23 @@ func (svc *DeploymentsService) Deploy(ctx context.Context, req *deliveryv1.Deplo
 	return &deliveryv1.DeployResponse{Deployment: deploymentMsg(*d), Admission: admissionMsg(adm)}, nil
 }
 
+// unmarshalFrozenSpec 反序列化冻结体（所有权合并的读侧——engine 包的
+// loadSpec 是私有件，API 层就近持一份同语义 helper）。
+func unmarshalFrozenSpec(blob []byte) (*specv1.AppSpec, error) {
+	s := &specv1.AppSpec{}
+	if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(blob, s); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
 // freezeRevision 冻结 Revision（内容寻址复用：同内容只冻结一份；R1..Rn
 // 序号 App 内单调）。Deploy 与 webhook 触发共用——审计 actor/source 取
 // ctx（webhook 路径经 WithAuditOverride 标注）。三级变量合成的唯一咽喉
-//（ADR-0043 两级 → ADR-0072 三级）：冻结前把 Project 层 SharedVariable
-//（底）与 App 层 AppVariable（顶）合成进全部进程（源声明 env 居中被
+// （ADR-0043 两级 → ADR-0072 三级）：冻结前把 Project 层 SharedVariable
+// （底）与 App 层 AppVariable（顶）合成进全部进程（源声明 env 居中被
 // 顶层覆盖），Revision 冻结的即最终生效集——所有源形态
-//（image/compose/upload/git push）经此归一。
+// （image/compose/upload/git push）经此归一。
 func freezeRevision(ctx context.Context, s *Services, appRow *app.App, appSpec *specv1.AppSpec) (*revision.Revision, error) {
 	if vars, err := s.SharedVariables.ListActive(ctx, s.DB.Runner(), appRow.ProjectID); err != nil {
 		return nil, err

@@ -76,6 +76,13 @@ var builtins = []Code{
 		GRPC:       codes.ResourceExhausted,
 	},
 	{
+		ID:         "E_APP_HOOK_OWNED",
+		Summary:    "The app is deployed from a git hook, so material sources (image, compose, upload) are hook-owned and the deploy is refused.",
+		Suggestion: "Runtime changes go through spec_file (runtime overlay), env through app variables, and material through the repo. To take material ownership back, delete the hook (fleetly hooks set/get show the app's hook) or pass override_hook for a one-shot full takeover (ADR-0072).",
+		Source:     "internal/api/fleetlygrpc/delivery.go Deploy (ADR-0072 decision 4: spec ownership split, hook-owned material gate)",
+		GRPC:       codes.FailedPrecondition,
+	},
+	{
 		ID:         "E_CHANGE_FROZEN",
 		Summary:    "A change freeze is active for the team owning this resource; the change verb is refused with the freeze reason.",
 		Suggestion: "Read-only and stop verbs stay available during the freeze. An operator lifts it with 'fleetly freeze lift <id>' (the freeze_id context names the row).",

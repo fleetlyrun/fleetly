@@ -16,6 +16,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"strings"
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
@@ -25,6 +26,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/engine"
 	"github.com/fleetlyrun/fleetly/internal/identity"
 	"github.com/fleetlyrun/fleetly/internal/spec"
+	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/state/app"
 	"github.com/fleetlyrun/fleetly/internal/state/audit"
 	"github.com/fleetlyrun/fleetly/internal/state/hook"
@@ -129,19 +131,33 @@ func (svc *HooksService) handlePush(ctx context.Context, req *deliveryv1.Receive
 		return skip("no change under the watched paths")
 	}
 
-	// 触发部署：git 源 AppSpec（ref=push 后 commit）→ Revision 冻结 →
-	// admission（CommitSHA 进去重锚；latest-wins 由 admission 收口）。
+	// 审计标注：操作者是 hook 本身（source=webhook、actor=hook:<App 名>）。
+	// 必须先于 freezeRevision 注入——冻结新 Revision 的 revision.create
+	// 审计行经同一 ctx 消费标注（此前标注在冻结之后，webhook 冻结行的
+	// source 错标为 api——ADR-0072 批修复的时序 bug）。
+	ctx = authn.WithAuditOverride(ctx, "hook:"+appRow.Name, audit.SourceWebhook)
+
+	// 触发部署：git 源 AppSpec（ref=push 后 commit）→ 所有权合并（ADR-0072
+	// 决策 2：hook 新材料 + 当前冻结 Spec 的运行时半边——console 声明的
+	// 运行时配置跨 push 存活；首 push 无冻结体 = 纯合成照旧）→ Revision
+	// 冻结 → admission（CommitSHA 进去重锚；latest-wins 由 admission 收口）。
 	appSpec, err := gitDeploySpec(appRow.ID, appRow.ProjectID, h, p.After)
 	if err != nil {
 		return nil, mapValidationError(err)
+	}
+	if latest, lerr := svc.s.Revisions.Latest(ctx, svc.s.DB.Runner(), appRow.ID); lerr == nil {
+		frozen, ferr := unmarshalFrozenSpec(latest.Spec)
+		if ferr != nil {
+			return nil, apperr.New("E_INTERNAL", "hook push merge: frozen revision is not valid protojson (%v)", ferr)
+		}
+		appSpec = spec.MergeHookOwned(appSpec, frozen)
+	} else if !errors.Is(lerr, state.ErrNotFound) {
+		return nil, mapStateError(lerr, "revision")
 	}
 	rev, err := freezeRevision(ctx, svc.s, appRow, appSpec)
 	if err != nil {
 		return nil, mapStateError(err, "revision")
 	}
-	// 审计标注：操作者是 hook 本身（source=webhook、actor=hook:<App 名>）——
-	// revision 冻结与 engine.Submit 的审计行经 ctx 消费同一标注。
-	ctx = authn.WithAuditOverride(ctx, "hook:"+appRow.Name, audit.SourceWebhook)
 	d, adm, err := svc.s.Engine.Submit(ctx, engine.SubmitRequest{
 		AppID: appRow.ID, RevisionID: rev.ID, CommitSHA: p.After,
 	})
