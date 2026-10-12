@@ -35,7 +35,7 @@
 
 ## 验收锚
 
-- [ ] spec 纯函数表驱动单测：MergeHookOwned 所有权字段表（材料/运行时逐字段）、三层合成同键覆盖序、image→git 迁移保留显式 image、from_build 保留、first_boot_jobs 归运行时半边（internal/spec）。
-- [ ] apitest：push 合并保留运行时改动（console 改 replicas/env → 模拟 push → 断言存活 + ref 更新）；spec_file overlay 只动运行时（提交件 source 被忽略）；材料源闸门 E_APP_HOOK_OWNED + override_hook 全量接管；非 hook 应用零影响；AppVariable 合成优先级（三级同键）与轮换-重发产生新 Revision；digest 去重仍成立。
-- [ ] CLI 双形态 golden：`apps vars`（list/set/unset）+ `deploy --override-hook`；skills 散文同批。
-- [ ] 守卫全绿；`generate:verify`/`console:verify` 零漂移；迁移带 goose 注记。
+- [x] spec 纯函数表驱动单测：MergeHookOwned 所有权字段表（材料/运行时逐字段）、三层合成同键覆盖序、image→git 迁移保留显式 image、from_build 保留、first_boot_jobs 归运行时半边（internal/spec）。
+- [x] apitest：push 合并保留运行时改动（console 改 replicas/env → 模拟 push → 断言存活 + ref 更新）；spec_file overlay 只动运行时（提交件 source 被忽略）；材料源闸门 E_APP_HOOK_OWNED + override_hook 全量接管；非 hook 应用零影响；AppVariable 合成优先级（三级同键）与轮换-重发产生新 Revision；digest 去重仍成立。
+- [x] CLI 双形态 golden：`apps vars`（list/set/unset）+ `deploy --override-hook`；skills 散文同批。
+- [x] 守卫全绿；`generate:verify`/`console:verify` 零漂移；迁移带 goose 注记。

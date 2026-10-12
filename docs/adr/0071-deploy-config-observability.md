@@ -33,7 +33,7 @@ Console 用户对"当前 deploy 到底跑的什么配置"没有任何可观测�
 
 ## 验收锚
 
-- [ ] engine 单测：render 与 materialize 投影一致性（共享装配单源 + 用户面字段显式断言、Generation 排除）；seq=0 无成功部署负例；isolate 剥离语义例（`internal/engine/render_test.go`）。
-- [ ] apitest 全链：GetRevision（含未知 seq E_NOT_FOUND）；GetAppWorkloads（缺省 = 生效锚、历史 seq 重放、**render 输出与 FakeRuntime Ensure 录制面用户字段逐一致**、无成功部署 E_NOT_FOUND）；GetAppWorkloadObservations（FakeRuntime inspect 录制）。
-- [ ] CLI 双形态 golden ×2 动词 + 负例；`apps spec --json` golden 随锚字段刷新；coverage 守卫自动对账。
-- [ ] 守卫全绿（freezeguard/scopeguard/grpcguard/gatewayguard/wording/实体域）；`generate:verify`/`console:verify` 零漂移。
+- [x] engine 单测：render 与 materialize 投影一致性（共享装配单源 + 用户面字段显式断言、Generation 排除）；seq=0 无成功部署负例；isolate 剥离语义例（`internal/engine/render_test.go`）。
+- [x] apitest 全链：GetRevision（含未知 seq E_NOT_FOUND）；GetAppWorkloads（缺省 = 生效锚、历史 seq 重放、**render 输出与 FakeRuntime Ensure 录制面用户字段逐一致**、无成功部署 E_NOT_FOUND）；GetAppWorkloadObservations（FakeRuntime inspect 录制）。
+- [x] CLI 双形态 golden ×2 动词 + 负例；`apps spec --json` golden 随锚字段刷新；coverage 守卫自动对账。
+- [x] 守卫全绿（freezeguard/scopeguard/grpcguard/gatewayguard/wording/实体域）；`generate:verify`/`console:verify` 零漂移。
