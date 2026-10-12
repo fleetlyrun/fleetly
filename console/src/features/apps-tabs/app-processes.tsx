@@ -1,11 +1,12 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { ApiError, apiFetch, apiSend } from "@/api/client";
 import type { components } from "@/api/structure";
-import { MinusIcon, PlusIcon } from "lucide-react";
+import { ChevronRightIcon, MinusIcon, PlusIcon } from "lucide-react";
 import { toast } from "sonner";
 import { useRoutes } from "@/lib/catalog";
+import { InstanceList, RunningCount } from "./running-instances";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -16,11 +17,15 @@ type AppSpec = components["schemas"]["v1AppSpec"];
 // 冻结 Spec 全进程一览（Replicas/Strategy/Ports/Routes 归因）+ 实例数
 // 暂存编辑——Apply changes 与 App Variables 同一暂存面（冻结 Spec 全量 +
 // 改动组装 spec_file 走 Deploy，零 proto）。实例数语义 = spec replicas
-// （0 = 挂起合法，"must not be negative" 是唯一下限——spec.go:316）。
+//（0 = 挂起合法，"must not be negative" 是唯一下限——spec.go:316）。
+// Running 列 + 行展开是 App→Process→Instance 的唯一钻取点（2026-10-12
+// 层级定案）：声明 Replicas 旁对照 live 在跑数，展开见实例明细（ADR-0067
+// 观测原语，10s 快照）。
 export function AppProcessesTab({ projectId, appId }: { projectId: string; appId: string }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [staged, setStaged] = useState<Record<string, number>>({});
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const spec = useQuery({
     queryKey: ["resources", "app-spec", projectId, appId],
     queryFn: async (): Promise<AppSpec | null> => {
@@ -143,8 +148,10 @@ export function AppProcessesTab({ projectId, appId }: { projectId: string; appId
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-10" />
               <TableHead>Process</TableHead>
               <TableHead className="w-36">Replicas</TableHead>
+              <TableHead className="w-20">Running</TableHead>
               <TableHead>Strategy</TableHead>
               <TableHead>Ports</TableHead>
               <TableHead>Routes</TableHead>
@@ -156,53 +163,77 @@ export function AppProcessesTab({ projectId, appId }: { projectId: string; appId
               const replicas = replicasOf(name);
               const stagedHere = staged[name] != null && staged[name] !== Number(process.replicas ?? 1);
               return (
-                <TableRow key={name}>
-                  <TableCell className="font-mono font-semibold">{name}</TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1">
+                <Fragment key={name}>
+                  <TableRow>
+                    <TableCell className="px-1">
                       <Button
                         type="button"
-                        variant="outline"
+                        variant="ghost"
                         size="icon-sm"
-                        aria-label={`Decrease replicas of ${name}`}
-                        disabled={replicas <= 0}
-                        onClick={() => setStaged((prev) => ({ ...prev, [name]: Math.max(0, replicas - 1) }))}
+                        aria-label={`Toggle instances of ${name}`}
+                        onClick={() => setExpanded((prev) => ({ ...prev, [name]: !prev[name] }))}
                       >
-                        <MinusIcon />
+                        <ChevronRightIcon className={`size-3.5 transition-transform ${expanded[name] ? "rotate-90" : ""}`} />
                       </Button>
-                      <Input
-                        value={String(replicas)}
-                        onChange={(event) => {
-                          const next = event.target.value.replace(/[^0-9]/g, "");
-                          setStaged((prev) => ({ ...prev, [name]: Math.min(999, Number(next === "" ? "0" : next)) }));
-                        }}
-                        inputMode="numeric"
-                        aria-label={`Replicas of ${name}`}
-                        className="h-7 w-14 text-center font-mono text-xs"
-                      />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon-sm"
-                        aria-label={`Increase replicas of ${name}`}
-                        onClick={() => setStaged((prev) => ({ ...prev, [name]: Math.min(999, replicas + 1) }))}
-                      >
-                        <PlusIcon />
-                      </Button>
-                      {stagedHere ? <span className="ml-1 text-[10.5px] font-semibold text-info">staged</span> : null}
-                    </div>
-                  </TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground">{strategyLabel(process.strategy)}</TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground">{process.ports?.length ?? 0}</TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground">{routesByProcess.get(name) ?? 0}</TableCell>
-                </TableRow>
+                    </TableCell>
+                    <TableCell className="font-mono font-semibold">{name}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon-sm"
+                          aria-label={`Decrease replicas of ${name}`}
+                          disabled={replicas <= 0}
+                          onClick={() => setStaged((prev) => ({ ...prev, [name]: Math.max(0, replicas - 1) }))}
+                        >
+                          <MinusIcon />
+                        </Button>
+                        <Input
+                          value={String(replicas)}
+                          onChange={(event) => {
+                            const next = event.target.value.replace(/[^0-9]/g, "");
+                            setStaged((prev) => ({ ...prev, [name]: Math.min(999, Number(next === "" ? "0" : next)) }));
+                          }}
+                          inputMode="numeric"
+                          aria-label={`Replicas of ${name}`}
+                          className="h-7 w-14 text-center font-mono text-xs"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon-sm"
+                          aria-label={`Increase replicas of ${name}`}
+                          onClick={() => setStaged((prev) => ({ ...prev, [name]: Math.min(999, replicas + 1) }))}
+                        >
+                          <PlusIcon />
+                        </Button>
+                        {stagedHere ? <span className="ml-1 text-[10.5px] font-semibold text-info">staged</span> : null}
+                      </div>
+                    </TableCell>
+                    <TableCell className="font-mono text-xs">
+                      <RunningCount appId={appId} processName={name} />
+                    </TableCell>
+                    <TableCell className="font-mono text-xs text-muted-foreground">{strategyLabel(process.strategy)}</TableCell>
+                    <TableCell className="font-mono text-xs text-muted-foreground">{process.ports?.length ?? 0}</TableCell>
+                    <TableCell className="font-mono text-xs text-muted-foreground">{routesByProcess.get(name) ?? 0}</TableCell>
+                  </TableRow>
+                  {expanded[name] ? (
+                    <TableRow>
+                      <TableCell colSpan={7} className="bg-muted/30 px-4 py-0">
+                        <InstanceList appId={appId} processName={name} />
+                      </TableCell>
+                    </TableRow>
+                  ) : null}
+                </Fragment>
               );
             })}
           </TableBody>
         </Table>
       )}
       <p className="border-t px-4 py-2 text-[11px] text-muted-foreground">
-        Replicas 0 suspends the process. Strategy comes from the frozen spec — change it at deploy time.
+        Replicas 0 suspends the process. Strategy comes from the frozen spec — change it at deploy time. Running is the live
+        instance count (10s refresh); expand a row for instance details.
       </p>
     </div>
   );

@@ -1,9 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { AppProcessesTab } from "./app-processes";
 import { setToken } from "@/lib/token";
+
+// 本文件多测试连渲：vitest 未开 globals，testing-library 的自动 cleanup
+// 不生效——afterEach 显式卸载，避免跨测试 DOM 残留撞查询。
 
 // Apply changes 受理后的导航锚：部署成功必须落 typed 部署详情路由。
 // 回归锚：旧实现 window.location.assign("../deployments/<id>") 相对
@@ -31,15 +34,23 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  cleanup();
   vi.unstubAllGlobals();
   setToken("");
 });
 
-// fetch 面桩：冻结 Spec（web ×1）+ 路由目录空 + Deploy 受理回 D1。
+// fetch 面桩：冻结 Spec（web ×1）+ 路由目录空 + Deploy 受理回 D1 + 在跑
+// 实例集观测（Running 列/行展开的数据源，ADR-0067）。
 function stubFetch() {
   fetchMock.mockImplementation(async (path: string) => {
     if (path.startsWith("/v1/apps/A1/spec")) {
       return new Response(JSON.stringify({ spec: { processes: [{ name: "web", replicas: "1" }] } }), { status: 200 });
+    }
+    if (path.startsWith("/v1/apps/A1/exec/instances")) {
+      return new Response(
+        JSON.stringify({ instances: [{ instance: "task-aaa1", node_id: "n1" }, { instance: "task-aaa2", node_id: "n2" }] }),
+        { status: 200 },
+      );
     }
     if (path.startsWith("/v1/routes")) return new Response(JSON.stringify({ routes: [] }), { status: 200 });
     if (path === "/v1/deployments") return new Response(JSON.stringify({ deployment: { id: "D1" } }), { status: 200 });
@@ -87,6 +98,26 @@ describe("AppProcessesTab apply changes", () => {
       to: "/p/$projectId/apps/$appId/deployments",
       params: { projectId: "P1", appId: "A1" },
     });
+    client.clear();
+  });
+});
+
+// 实例钻取面（2026-10-12 层级定案）：Running 列对照声明 Replicas，行展开
+// 见实例明细（编排器载体标识全值 + 节点）——App→Process→Instance 的唯一
+// 钻取点。
+describe("AppProcessesTab instance drill-down", () => {
+  it("shows the live running count and expands to instance rows", async () => {
+    stubFetch();
+    const { client, wrapper } = withClient();
+    render(<AppProcessesTab projectId="P1" appId="A1" />, { wrapper });
+    await waitFor(() => expect(screen.getByText("web")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("2")).toBeTruthy()); // Running 列：2 在跑
+
+    fireEvent.click(screen.getByRole("button", { name: "Toggle instances of web" }));
+
+    await waitFor(() => expect(screen.getByText("task-aaa1")).toBeTruthy());
+    expect(screen.getByText("task-aaa2")).toBeTruthy();
+    expect(screen.getByText("n1")).toBeTruthy();
     client.clear();
   });
 });
