@@ -45,6 +45,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/apps/{app_id}/processes/{process_name}/restart": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * RestartProcess 强制重排单个 Process 的载体（ADR-0069，排障动线"进程
+         *     卡死 → 就地重启"）：不动镜像不动 Spec、零 lineage（不产生 Revision/
+         *     Deployment），经 Runtime 重启子面（swarm = ForceUpdate 滚动重排；
+         *     k3s = pod 驱逐由 Deployment 自愈）逐副本替换。与 ADR-0064 内容寻址
+         *     Ensure 互补：重发未变更 Spec 零替换，本动词是显式强制面。
+         */
+        post: operations["DeploymentsService_RestartProcess"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/apps/{app_id}/rollback": {
         parameters: {
             query?: never;
@@ -246,6 +269,12 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         DeploymentsServiceCancelDeploymentBody: Record<string, never>;
+        /**
+         * RestartProcessRequest 按进程名定位（App 域内 Workload ID = app_id +
+         *     process_name，projection 单源）；进程必须存在于当前冻结 Spec（未知进程
+         *     精确拒绝——k3s pod 驱逐对零命中静默，引擎侧先行校验）。
+         */
+        DeploymentsServiceRestartProcessBody: Record<string, never>;
         DeploymentsServiceRollbackBody: {
             to_revision?: string;
         };
@@ -478,6 +507,8 @@ export interface components {
             deployment_id?: string;
             admission?: components["schemas"]["v1Admission"];
         };
+        /** RestartProcessResponse 空体：重启是 runtime-only 动作，无新记录可指。 */
+        v1RestartProcessResponse: Record<string, never>;
         v1Revision: {
             id?: string;
             app_id?: string;
@@ -659,6 +690,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1RotateHookTokenResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    DeploymentsService_RestartProcess: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                app_id: string;
+                process_name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeploymentsServiceRestartProcessBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1RestartProcessResponse"];
                 };
             };
             /** @description An unexpected error response. */

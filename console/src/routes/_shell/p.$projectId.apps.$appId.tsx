@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { Outlet, useLocation, createFileRoute } from "@tanstack/react-router";
 import { useMutation } from "@tanstack/react-query";
-import { MoreHorizontalIcon, RocketIcon, ScrollTextIcon, SquareTerminalIcon, TriangleAlertIcon, Undo2Icon } from "lucide-react";
+import { MoreHorizontalIcon, RefreshCwIcon, RocketIcon, ScrollTextIcon, SquareTerminalIcon, TriangleAlertIcon, Undo2Icon } from "lucide-react";
 import { toast } from "sonner";
 import { apiSend } from "@/api/client";
+import { redeployFrozenSpec } from "@/lib/redeploy";
 import { DeploySheet } from "@/features/deployments/deploy-sheet";
 import { useAppDeployments } from "@/features/deployments/hooks";
 import { firingAlerts } from "@/features/apps-tabs/alert-badges";
@@ -67,6 +68,18 @@ function AppDetailLayout() {
     onError: (cause) => toast.error(cause instanceof Error ? cause.message : String(cause)),
   });
 
+  // Redeploy（ADR-0069 批）：重发冻结 Spec 走 spec_file 第四源——共享变量
+  // /secret 合成拾取走这条；语义如实披露（ADR-0064 内容寻址）：内容未变的
+  // 进程零滚动，排障重启走 Processes 页的行级 Restart（RestartProcess）。
+  const redeploy = useMutation({
+    mutationFn: () => redeployFrozenSpec(appId),
+    onSuccess: (id) => {
+      toast("Redeploy queued — the frozen spec is submitted as a new deployment");
+      if (id) window.location.assign(`${tabBase}/deployments/${encodeURIComponent(id)}`);
+    },
+    onError: (cause) => toast.error(cause instanceof Error ? cause.message : String(cause)),
+  });
+
   const tabs = [
     { label: "Overview", to: tabBase, exact: true },
     // Processes（ADR-0060）：进程列表 + 实例数管理——结构面紧随 Overview。
@@ -117,6 +130,36 @@ function AppDetailLayout() {
             <RocketIcon data-icon-start-inline />
             Deploy
           </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button size="sm" variant="outline" disabled={redeploy.isPending || latest == null}>
+                <RefreshCwIcon data-icon-start-inline />
+                Redeploy
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Redeploy {appLabel}?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Submits the frozen spec as a new deployment — picks up the latest shared variables and secrets.
+                  Unchanged processes are not restarted (content-addressed rollout); to force-restart a single
+                  process, use Restart on the Processes tab.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  disabled={redeploy.isPending}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    redeploy.mutate();
+                  }}
+                >
+                  {redeploy.isPending ? "Redeploying…" : "Redeploy"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
           <Button size="sm" variant="outline" asChild>
             <a href={`${tabBase}/logs`}>
               <ScrollTextIcon data-icon-start-inline />

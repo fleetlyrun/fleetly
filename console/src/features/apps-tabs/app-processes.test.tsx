@@ -121,3 +121,33 @@ describe("AppProcessesTab instance drill-down", () => {
     client.clear();
   });
 });
+
+// 行级 Restart（ADR-0069）：确认后 POST RestartProcess 端点——零 lineage
+// 排障动线（不动 Spec、不建部署），路径按进程名分域。
+describe("AppProcessesTab process restart", () => {
+  it("confirms and posts to the process restart endpoint", async () => {
+    stubFetch();
+    const { client, wrapper } = withClient();
+    render(<AppProcessesTab projectId="P1" appId="A1" />, { wrapper });
+    await waitFor(() => expect(screen.getByText("web")).toBeTruthy());
+
+    // 触发钮与确认钮同名（触发 → 确认框 portal 渲染在末尾，取末个）。
+    fireEvent.click(screen.getByRole("button", { name: "Restart" }));
+    // 确认框披露抖动语义（滚动重排、零 lineage）。
+    expect(await screen.findByText("Restart web?")).toBeTruthy();
+    const confirm = screen.getAllByRole("button", { name: "Restart" }).at(-1)!;
+    fireEvent.click(confirm);
+
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(([p]) => p === "/v1/apps/A1/processes/web/restart"),
+      ).toBe(true),
+    );
+    const [, init] = fetchMock.mock.calls.find(([p]) => p === "/v1/apps/A1/processes/web/restart") as [
+      string,
+      RequestInit,
+    ];
+    expect(JSON.parse(String(init.body))).toEqual({});
+    client.clear();
+  });
+});

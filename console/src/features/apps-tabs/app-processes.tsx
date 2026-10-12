@@ -3,10 +3,21 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { ApiError, apiFetch, apiSend } from "@/api/client";
 import type { components } from "@/api/structure";
-import { ChevronRightIcon, MinusIcon, PlusIcon } from "lucide-react";
+import { ChevronRightIcon, MinusIcon, PlusIcon, RotateCwIcon } from "lucide-react";
 import { toast } from "sonner";
 import { useRoutes } from "@/lib/catalog";
 import { InstanceList, RunningCount } from "./running-instances";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -93,6 +104,23 @@ export function AppProcessesTab({ projectId, appId }: { projectId: string; appId
     onError: (cause) => toast.error(cause instanceof Error ? cause.message : String(cause)),
   });
 
+  // RestartProcess（ADR-0069）：行级就地强制重排——不动 Spec 零 lineage，
+  // 与"staged replicas → 新部署"的声明式路径分立（排障动线）。成功即失效
+  // 实例观测缓存，Running 列即时跟进滚动。
+  const restart = useMutation({
+    mutationFn: async (process: string) =>
+      apiSend<Record<string, never>>(
+        `/v1/apps/${encodeURIComponent(appId)}/processes/${encodeURIComponent(process)}/restart`,
+        "POST",
+        {},
+      ),
+    onSuccess: (_resp, process) => {
+      toast(`Restart requested — ${process} carriers are force-rescheduling`);
+      void queryClient.invalidateQueries({ queryKey: ["exec-instances", appId] });
+    },
+    onError: (cause) => toast.error(cause instanceof Error ? cause.message : String(cause)),
+  });
+
   if (spec.isPending) {
     return <p className="py-10 text-center text-xs text-muted-foreground">Loading spec…</p>;
   }
@@ -155,6 +183,7 @@ export function AppProcessesTab({ projectId, appId }: { projectId: string; appId
               <TableHead>Strategy</TableHead>
               <TableHead>Ports</TableHead>
               <TableHead>Routes</TableHead>
+              <TableHead className="sr-only">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -217,10 +246,17 @@ export function AppProcessesTab({ projectId, appId }: { projectId: string; appId
                     <TableCell className="font-mono text-xs text-muted-foreground">{strategyLabel(process.strategy)}</TableCell>
                     <TableCell className="font-mono text-xs text-muted-foreground">{process.ports?.length ?? 0}</TableCell>
                     <TableCell className="font-mono text-xs text-muted-foreground">{routesByProcess.get(name) ?? 0}</TableCell>
+                    <TableCell className="text-right">
+                      <ProcessRestartButton
+                        processName={name}
+                        pending={restart.isPending}
+                        onConfirm={() => restart.mutate(name)}
+                      />
+                    </TableCell>
                   </TableRow>
                   {expanded[name] ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="bg-muted/30 px-4 py-0">
+                      <TableCell colSpan={8} className="bg-muted/30 px-4 py-0">
                         <InstanceList appId={appId} processName={name} />
                       </TableCell>
                     </TableRow>
@@ -244,4 +280,49 @@ export function AppProcessesTab({ projectId, appId }: { projectId: string; appId
 function strategyLabel(strategy: components["schemas"]["v1DeployStrategy"] | undefined): string {
   if (strategy === "DEPLOY_STRATEGY_BLUE_GREEN") return "blue-green";
   return "rolling";
+}
+
+// ProcessRestartButton（ADR-0069）：行级确认框——文案如实披露抖动语义
+// （滚动重排、逐副本短抖动、镜像与 Spec 不动），与 staged 副本编辑的
+// 声明式路径在 UI 上显式分立。
+function ProcessRestartButton({
+  processName,
+  pending,
+  onConfirm,
+}: {
+  processName: string;
+  pending: boolean;
+  onConfirm: () => void;
+}) {
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger asChild>
+        <Button type="button" variant="outline" size="sm" disabled={pending}>
+          <RotateCwIcon data-icon-start-inline />
+          Restart
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Restart {processName}?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Force-reschedules the process carriers (rolling restart) — brief per-replica downtime. Image and spec are
+            unchanged; no deployment is created.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            disabled={pending}
+            onClick={(event) => {
+              event.preventDefault();
+              onConfirm();
+            }}
+          >
+            {pending ? "Restarting…" : "Restart"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
 }
