@@ -39,6 +39,7 @@ type Client struct {
 	Secrets     structurev1.SecretsServiceClient
 	Configs     structurev1.ConfigsServiceClient
 	SharedVars  structurev1.SharedVariablesServiceClient
+	AppVars     structurev1.AppVariablesServiceClient
 	Volumes     structurev1.VolumesServiceClient
 	Networks    structurev1.NetworksServiceClient
 	Databases   structurev1.DatabasesServiceClient
@@ -114,6 +115,7 @@ func newClient(conn *grpc.ClientConn) *Client {
 		Secrets:     structurev1.NewSecretsServiceClient(conn),
 		Configs:     structurev1.NewConfigsServiceClient(conn),
 		SharedVars:  structurev1.NewSharedVariablesServiceClient(conn),
+		AppVars:     structurev1.NewAppVariablesServiceClient(conn),
 		Volumes:     structurev1.NewVolumesServiceClient(conn),
 		Networks:    structurev1.NewNetworksServiceClient(conn),
 		Databases:   structurev1.NewDatabasesServiceClient(conn),

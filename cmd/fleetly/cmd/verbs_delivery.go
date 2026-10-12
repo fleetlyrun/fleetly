@@ -131,7 +131,7 @@ func newDeployVerb() commands.Command {
 	const name = "deploy"
 	var app, image, composeFile, fromDir, dockerfile, builder, railpackVersion, outputDir, process, idemKey, commit, httpProbe, portProtocol, specFile string
 	var tcpProbe, port int
-	var supersede, wait bool
+	var supersede, wait, overrideHook bool
 	var appEnv envSlice
 	return &flaggedVerb{
 		name: name, synopsis: "Deploy an app from an image, compose file, uploaded directory, or raw AppSpec file",
@@ -154,6 +154,7 @@ func newDeployVerb() commands.Command {
 			fs.StringVar(&commit, "commit", "", "commit sha (webhook dedup anchor)")
 			fs.BoolVar(&supersede, "supersede", false, "explicitly preempt any in-flight deployment")
 			fs.BoolVar(&wait, "wait", false, "wait for the deployment to reach a terminal state (streams state transitions; non-zero exit unless succeeded)")
+			fs.BoolVar(&overrideHook, "override-hook", false, "one-shot takeover of a git-hook-owned app's material source (ADR-0072; the regular path is removing the hook)")
 			fs.StringVar(&httpProbe, "http-probe", "", "http health probe path for image and upload deploys (absolute path, e.g. /healthz)")
 			fs.IntVar(&tcpProbe, "tcp-probe", 0, "tcp health probe port for image and upload deploys")
 		},
@@ -290,7 +291,7 @@ func newDeployVerb() commands.Command {
 				Protocol:       portProtocol,
 				SpecFile:       specBody,
 				Env:            appEnv.envMap(),
-				IdempotencyKey: idemKey, CommitSha: commit, Supersede: supersede,
+				IdempotencyKey: idemKey, CommitSha: commit, Supersede: supersede, OverrideHook: overrideHook,
 				HttpProbe: httpProbe, TcpProbe: int32(tcpProbe), //nolint:gosec // 端口域内
 			})
 			if err != nil {

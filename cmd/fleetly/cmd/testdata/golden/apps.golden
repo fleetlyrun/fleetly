@@ -3,4 +3,5 @@ delete
 list
 restart
 spec
+vars
 workloads

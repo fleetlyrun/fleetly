@@ -284,6 +284,129 @@ func newAppsWorkloadsVerb() commands.Command {
 	}
 }
 
+// ---- App 变量（ADR-0072 三级合成顶层：git 应用的 env 之家） ----
+
+// newAppsVarsListVerb 列 App 级平台变量（值明文回显——非敏感契约同
+// 共享变量）。
+func newAppsVarsListVerb() commands.Command {
+	const name = "list"
+	var app, after string
+	var limit int
+	return &flaggedVerb{
+		name:     name,
+		synopsis: "List app variables (top merge layer: shared < source env < app variable; values are returned)",
+		usage:    "apps vars list --app APP_ID [--after NAME] [--limit N]",
+		setFlags: func(fs *flag.FlagSet) {
+			fs.StringVar(&app, "app", "", "app id (required)")
+			fs.StringVar(&after, "after", "", "pagination cursor: the last variable name of the previous page")
+			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
+		},
+		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
+			if app == "" {
+				return usageErr(name, "--app is required")
+			}
+			ctx, cancel, c, err := dialFromEnv(ctx)
+			if err != nil {
+				return err
+			}
+			defer cancel()
+			defer c.Close() //nolint:errcheck // 进程退出路径
+			resp, err := c.AppVars.ListAppVariables(ctx, &structurev1.ListAppVariablesRequest{
+				AppId: app, AfterName: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
+			})
+			if err != nil {
+				return err
+			}
+			return renderOut(env, jsonOut, resp, func() {
+				_, _ = fmt.Fprintln(env.Stdout, "NAME\tVALUE\tUPDATED")
+				for _, v := range resp.GetVariables() {
+					_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\n", v.GetName(), v.GetValue(), v.GetUpdatedAt())
+				}
+			})
+		},
+	}
+}
+
+// newAppsVarsSetVerb 落/覆盖一条 App 变量。改变量不触发自动重部署——
+// 重部署（Redeploy/push）在冻结咽喉取新值合成。
+func newAppsVarsSetVerb() commands.Command {
+	const name = "set"
+	var app, value string
+	var idem idemKeyFlag
+	return &flaggedVerb{
+		name: name, synopsis: "Create or update an app variable (value from --value or stdin; redeploy to apply)",
+		usage: "apps vars set --app APP_ID NAME [--value VALUE]",
+		setFlags: func(fs *flag.FlagSet) {
+			fs.StringVar(&app, "app", "", "app id (required)")
+			fs.StringVar(&value, "value", "", "variable value (empty = read stdin)")
+			idem.declare(fs)
+		},
+		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if len(args) != 1 {
+				return usageErr(name, "expected exactly one NAME argument")
+			}
+			if app == "" {
+				return usageErr(name, "--app is required")
+			}
+			v, err := valueOrStdin(value, env)
+			if err != nil {
+				return err
+			}
+			ctx, cancel, c, err := dialFromEnv(ctx)
+			if err != nil {
+				return err
+			}
+			defer cancel()
+			defer c.Close() //nolint:errcheck // 进程退出路径
+			ctx = idem.bind(ctx)
+			resp, err := c.AppVars.PutAppVariable(ctx, &structurev1.PutAppVariableRequest{AppId: app, Name: args[0], Value: v})
+			if err != nil {
+				return err
+			}
+			return renderOut(env, jsonOut, resp, func() {
+				_, _ = fmt.Fprintf(env.Stdout, "set app variable %s (redeploy %s to apply the new value)\n", args[0], app)
+			})
+		},
+	}
+}
+
+func newAppsVarsUnsetVerb() commands.Command {
+	const name = "unset"
+	var app string
+	return &flaggedVerb{
+		name:     name,
+		synopsis: "Delete an app variable (the source-declared value, if any, returns on the next deploy)",
+		usage:    "apps vars unset --app APP_ID NAME",
+		setFlags: func(fs *flag.FlagSet) {
+			fs.StringVar(&app, "app", "", "app id (required)")
+		},
+		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if len(args) != 1 {
+				return usageErr(name, "expected exactly one NAME argument")
+			}
+			if app == "" {
+				return usageErr(name, "--app is required")
+			}
+			ctx, cancel, c, err := dialFromEnv(ctx)
+			if err != nil {
+				return err
+			}
+			defer cancel()
+			defer c.Close() //nolint:errcheck // 进程退出路径
+			resp, err := c.AppVars.DeleteAppVariable(ctx, &structurev1.DeleteAppVariableRequest{AppId: app, Name: args[0]})
+			if err != nil {
+				return err
+			}
+			return renderOut(env, jsonOut, resp, func() {
+				_, _ = fmt.Fprintf(env.Stdout, "unset app variable %s\n", args[0])
+			})
+		},
+	}
+}
+
 func newAppsListVerb() commands.Command {
 	const name = "list"
 	var project string

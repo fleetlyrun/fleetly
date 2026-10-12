@@ -82,7 +82,23 @@ the causal chain; logs and builds are the evidence underneath.
    fleetly apps workloads --live APP_ID
    ```
 
-7. Recovery verbs — pick per the triage table, do not stack them blindly.
+7. Git-hook apps have split spec ownership (ADR-0072): the repo owns the
+   material half (source, build — pushes refresh it and keep console-declared
+   runtime settings), spec_file deploys are runtime overlays, and material
+   sources (image/compose/upload) are refused with E_APP_HOOK_OWNED unless you
+   pass `--override-hook` (one-shot takeover; the regular path is removing the
+   hook). Env lives in app variables — the top merge layer, re-synthesized on
+   every freeze, so a push never wipes it; changing one requires a redeploy to
+   take effect:
+
+   ```bash
+   fleetly apps vars list --app APP_ID
+   fleetly apps vars set --app APP_ID TIER --value production
+   fleetly apps vars unset --app APP_ID TIER
+   fleetly deploy --app APP_ID --image IMAGE --override-hook
+   ```
+
+8. Recovery verbs — pick per the triage table, do not stack them blindly.
    Cancel clears a queued or in-flight deployment first (terminal states
    refuse with E_NOT_CANCELLABLE); rollback and re-deploy submit the
    replacement. For a wedged process with a healthy spec (internal state

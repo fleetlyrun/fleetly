@@ -4,5 +4,6 @@
   "list",
   "restart",
   "spec",
+  "vars",
   "workloads"
 ]

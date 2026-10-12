@@ -1,0 +1,18 @@
+{
+  "deployment": {
+    "id": "web-1-d3",
+    "seq": "3",
+    "app_id": "web-1",
+    "from_revision": "web-1-r1",
+    "to_revision": "web-1-r2",
+    "state": "queued",
+    "generation": "3",
+    "created_at": "2026-01-01T00:02:00Z",
+    "updated_at": "2026-01-01T00:02:00Z",
+    "from_generation": "1"
+  },
+  "admission": {
+    "outcome": "merged",
+    "position": 1
+  }
+}
