@@ -164,6 +164,12 @@
   * {
     @apply border-border outline-ring/50;
   }
+  /* Select 触发器值槽可收缩（走查 W-5）：vendored trigger 的 line-clamp-1
+     需要 min-width:0 才真省略——固定宽触发器（w-32/w-44 等）定宽裁字退役。 */
+  [data-slot="select-trigger"] > [data-slot="select-value"] {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
   body {
     @apply bg-background text-foreground;
     /* 正文基线 14px：未显式标注字号的文本不再回退到浏览器 16px 默认 */

@@ -16,7 +16,9 @@ export function ShellLayout() {
     <TooltipProvider delayDuration={0}>
       <SidebarProvider>
         <AppSidebar />
-        <SidebarInset>
+        {/* min-w-0：SidebarInset（vendored）无此位，flex min-content 下限会把
+            main 钉在内容固有宽上——Databases 等宽表页整壳横向溢出（走查 W-2）。 */}
+        <SidebarInset className="min-w-0">
           <Topbar onOpenPalette={() => setPaletteOpen(true)} />
           <main className="min-w-0 flex-1">
             <Outlet />

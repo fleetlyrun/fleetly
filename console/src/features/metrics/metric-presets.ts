@@ -46,6 +46,8 @@ export const METRIC_PRESETS: MetricPreset[] = [
 ];
 
 // formatMetricValue 是 y 轴/图例的量纲缩写（bytes 与百分制/工程计数兜底）。
+// percent 在 <1% 量程自适应加精度（走查 W-4：0-0.1% 量程下 1 位小数把
+// 全部刻度归并成重复的 0.0%/0.1%），去尾零保持刻度短。
 export function formatMetricValue(value: number, unit: "percent" | "bytes" | "plain"): string {
   if (unit === "bytes") {
     const abs = Math.abs(value);
@@ -54,6 +56,10 @@ export function formatMetricValue(value: number, unit: "percent" | "bytes" | "pl
     if (abs >= 1024) return `${(value / 1024).toFixed(0)} KiB`;
     return `${value} B`;
   }
-  if (unit === "percent") return `${value >= 100 ? value.toFixed(0) : value.toFixed(1)}%`;
+  if (unit === "percent") {
+    const abs = Math.abs(value);
+    const dp = abs >= 100 ? 0 : abs >= 1 ? 1 : abs >= 0.1 ? 2 : 3;
+    return `${parseFloat(value.toFixed(dp))}%`;
+  }
   return Math.abs(value) >= 100 ? value.toFixed(0) : value.toFixed(2);
 }
