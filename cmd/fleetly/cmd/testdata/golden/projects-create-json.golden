@@ -1,5 +1,6 @@
 {
-  "id": "<ULID>",
+  "id": "shop-json-2",
+  "seq": "2",
   "name": "shop-json",
   "team_id": "default",
   "created_at": "2026-01-01T00:00:00Z"

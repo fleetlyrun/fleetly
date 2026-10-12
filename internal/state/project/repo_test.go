@@ -91,31 +91,31 @@ func TestProjectListPagination(t *testing.T) {
 		require.NoError(t, projects.Create(ctx, db.Runner(), p))
 	}
 
-	// owner 全局面：id 升序（创建序）。
-	page1, err := projects.ListPage(ctx, db.Runner(), "", 2)
+	// owner 全局面：seq 升序（= 落序）。
+	page1, err := projects.ListPage(ctx, db.Runner(), 0, 2)
 	require.NoError(t, err)
 	require.Len(t, page1, 2)
-	assert.Equal(t, rows[1].ID, page1[0].ID, "ascending ULID creation order")
-	assert.Equal(t, rows[2].ID, page1[1].ID)
+	assert.Equal(t, rows[0].ID, page1[0].ID, "seq creation order")
+	assert.Equal(t, rows[1].ID, page1[1].ID)
 
-	page2, err := projects.ListPage(ctx, db.Runner(), page1[len(page1)-1].ID, 2)
+	page2, err := projects.ListPage(ctx, db.Runner(), page1[len(page1)-1].Seq, 2)
 	require.NoError(t, err)
 	require.Len(t, page2, 1)
-	assert.Equal(t, rows[0].ID, page2[0].ID, "cursor skips the first page")
+	assert.Equal(t, rows[2].ID, page2[0].ID, "cursor skips the first page")
 
 	// Team 过滤与分页叠加（ADR-0035 List 面过滤不回退）。
-	teamPage, err := projects.ListByTeamPage(ctx, db.Runner(), teamA, "", 1)
+	teamPage, err := projects.ListByTeamPage(ctx, db.Runner(), teamA, 0, 1)
 	require.NoError(t, err)
 	require.Len(t, teamPage, 1)
-	assert.Equal(t, rows[1].ID, teamPage[0].ID)
-	teamPage2, err := projects.ListByTeamPage(ctx, db.Runner(), teamA, teamPage[0].ID, 1)
+	assert.Equal(t, rows[0].ID, teamPage[0].ID)
+	teamPage2, err := projects.ListByTeamPage(ctx, db.Runner(), teamA, teamPage[0].Seq, 1)
 	require.NoError(t, err)
 	require.Len(t, teamPage2, 1)
-	assert.Equal(t, rows[0].ID, teamPage2[0].ID)
+	assert.Equal(t, rows[1].ID, teamPage2[0].ID)
 
 	// limit 钳制：<=0 回落缺省 50（三行全回），>200 钳上界（不截断小夹具）。
 	for _, limit := range []int{0, -3, 1000} {
-		got, err := projects.ListPage(ctx, db.Runner(), "", limit)
+		got, err := projects.ListPage(ctx, db.Runner(), 0, limit)
 		require.NoError(t, err)
 		assert.Len(t, got, 3, "limit %d clamps into range and returns all rows", limit)
 	}

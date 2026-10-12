@@ -114,7 +114,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * ListDatabases 新→旧分页（after_database_id 游标 = ULID 创建序，
+         * ListDatabases 新→旧分页（after_database_seq 游标 = seq 创建序，
          *     ADR-0026 惯例）。
          */
         get: operations["DatabasesService_ListDatabases"];
@@ -259,7 +259,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * ListNetworkPeers 新→旧分页（游标 = ULID 创建序；network_id /
+         * ListNetworkPeers 新→旧分页（游标 = seq 创建序；network_id /
          *     peer_project_id 过滤可选——接收方与挂靠方两侧视图同面）。
          */
         get: operations["NetworksService_ListNetworkPeers"];
@@ -516,6 +516,11 @@ export interface components {
         NetworksServiceRevokeNetworkPeerBody: Record<string, never>;
         v1App: {
             id?: string;
+            /**
+             * seq 是创建序（ADR-0070：id 后缀即此号；分页游标轴）。
+             * Format: int64
+             */
+            seq?: string;
             project_id?: string;
             name?: string;
             created_at?: string;
@@ -548,6 +553,11 @@ export interface components {
          */
         v1Backup: {
             id?: string;
+            /**
+             * seq 是创建序（ADR-0070：id 后缀即此号；分页游标轴）。
+             * Format: int64
+             */
+            seq?: string;
             project_id?: string;
             database_id?: string;
             engine?: string;
@@ -659,6 +669,11 @@ export interface components {
          */
         v1Database: {
             id?: string;
+            /**
+             * seq 是创建序（ADR-0070：id 后缀即此号；分页游标轴）。
+             * Format: int64
+             */
+            seq?: string;
             project_id?: string;
             name?: string;
             engine?: string;
@@ -837,6 +852,11 @@ export interface components {
          */
         v1NetworkPeer: {
             id?: string;
+            /**
+             * seq 是创建序（ADR-0070：id 后缀即此号；分页游标轴）。
+             * Format: int64
+             */
+            seq?: string;
             network_id?: string;
             network_name?: string;
             network_project_id?: string;
@@ -893,6 +913,11 @@ export interface components {
         };
         v1Project: {
             id?: string;
+            /**
+             * seq 是创建序（ADR-0070：id 后缀即此号；分页游标轴）。
+             * Format: int64
+             */
+            seq?: string;
             name?: string;
             team_id?: string;
             created_at?: string;
@@ -1054,10 +1079,10 @@ export interface operations {
             query?: {
                 project_id?: string;
                 /**
-                 * @description after_app_id 游标（上一页末条 id；空 = 首页）。游标轴 = ULID 创建序
+                 * @description after_app_seq 游标（上一页末条 seq（0 = 首页）。游标轴 = seq 创建序
                  *     升序（既有响应序不变；ADR-0026 after_* + limit 惯例）。
                  */
-                after_app_id?: string;
+                after_app_seq?: string;
                 limit?: number;
             };
             header?: never;
@@ -1355,8 +1380,8 @@ export interface operations {
         parameters: {
             query?: {
                 project_id?: string;
-                /** @description after_database_id 游标（上一页末条 id；空 = 首页）。 */
-                after_database_id?: string;
+                /** @description after_database_seq 游标（上一页末条 seq（0 = 首页）。 */
+                after_database_seq?: string;
                 limit?: number;
             };
             header?: never;
@@ -1421,8 +1446,8 @@ export interface operations {
     DatabasesService_ListBackups: {
         parameters: {
             query?: {
-                /** @description after_backup_id 游标（上一页末条 id；空 = 首页）。 */
-                after_backup_id?: string;
+                /** @description after_backup_seq 游标（上一页末条 seq（0 = 首页）。 */
+                after_backup_seq?: string;
                 limit?: number;
             };
             header?: never;
@@ -1733,8 +1758,8 @@ export interface operations {
                  */
                 network_id?: string;
                 peer_project_id?: string;
-                /** @description after_peer_id 游标（上一页末条 id；空 = 首页）。 */
-                after_peer_id?: string;
+                /** @description after_peer_seq 游标（上一页末条 seq（0 = 首页）。 */
+                after_peer_seq?: string;
                 limit?: number;
             };
             header?: never;
@@ -1934,10 +1959,10 @@ export interface operations {
         parameters: {
             query?: {
                 /**
-                 * @description after_project_id 游标（上一页末条 id；空 = 首页）。游标轴 = ULID
+                 * @description after_project_seq 游标（上一页末条 seq；0 = 首页）。游标轴 = seq
                  *     创建序升序（既有响应序不变；ADR-0026 after_* + limit 惯例）。
                  */
-                after_project_id?: string;
+                after_project_seq?: string;
                 limit?: number;
             };
             header?: never;

@@ -53,6 +53,9 @@ type DatabasesService struct {
 // Secret）+ 聚合行，一事务落账后 Kick 收敛环。同名活跃行冲突 →
 // E_ALREADY_EXISTS；engine 值域外 → E_INVALID_ARGUMENT（列合法值）。
 func (svc *DatabasesService) CreateDatabase(ctx context.Context, req *structurev1.CreateDatabaseRequest) (*structurev1.CreateDatabaseResponse, error) {
+	if err := validName("name", req.GetName()); err != nil {
+		return nil, err
+	}
 	if req.GetProjectId() == "" || req.GetName() == "" || req.GetEngine() == "" {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "project_id, name and engine: must not be empty")
 	}
@@ -68,10 +71,13 @@ func (svc *DatabasesService) CreateDatabase(ctx context.Context, req *structurev
 		return nil, err
 	}
 
-	id := newID()
-	url, err := engine.DatabaseConnectionURL(req.GetEngine(), id, mintDatabasePassword())
-	if err != nil {
-		return nil, apperr.New("E_INTERNAL", "database connection url could not be minted").WithCause(err)
+	// id 由 repo 行装配处铸造（ADR-0070）；连接 URL 内嵌 id，故 URL 铸造
+	// 与凭证信封落 Secret 一并进写闭包（行创建之后、同事务）。
+	secretName := engine.DBCredentialSecretName(req.GetName())
+	row := &dbrepo.Database{
+		ProjectID: req.GetProjectId(), Name: req.GetName(),
+		Engine: req.GetEngine(), CredentialsRef: secretName,
+		BackupIntervalSecs: 86400, BackupRetentionSecs: 604800,
 	}
 	// 恢复源受理（ADR-0039）：同 Project + 引擎一致 + 成功有产物；挂起位
 	// 与聚合行同事务落（重启安全——备份环按行重放）。
@@ -95,43 +101,48 @@ func (svc *DatabasesService) CreateDatabase(ctx context.Context, req *structurev
 		}
 		restoreSrc = src
 	}
-	sealed, err := svc.s.Cipher.Produce([]byte(url))
-	if err != nil {
-		return nil, apperr.New("E_INTERNAL", "database credential could not be sealed").WithCause(err)
-	}
-	secretName := engine.DBCredentialSecretName(req.GetName())
-	secretRow := &secret.Secret{
-		ID: newID(), ProjectID: req.GetProjectId(), Name: secretName,
-		Ciphertext: sealed.Ciphertext, Fingerprint: sealed.Fingerprint,
-	}
-	row := &dbrepo.Database{
-		ID: id, ProjectID: req.GetProjectId(), Name: req.GetName(),
-		Engine: req.GetEngine(), CredentialsRef: secretName,
-		BackupIntervalSecs: 86400, BackupRetentionSecs: 604800,
-	}
-	err = svc.s.commit(ctx, writeFact{
+	events := []eventFact{{name: eventDatabaseCreated, aggregate: "database"}}
+	err := svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{
 			svc.s.parentProjectAlive(req.GetProjectId()),
 			svc.s.databaseQuota(req.GetProjectId()),
 			svc.s.projectHasNetwork(req.GetProjectId()),
 		},
 		write: func(ctx context.Context, tx *sql.Tx) error {
-			if err := svc.s.Secrets.Upsert(ctx, tx, secretRow); err != nil {
+			if err := svc.s.Databases.Create(ctx, tx, row); err != nil {
 				return err
 			}
-			if err := svc.s.Databases.Create(ctx, tx, row); err != nil {
+			url, err := engine.DatabaseConnectionURL(req.GetEngine(), row.ID, mintDatabasePassword())
+			if err != nil {
+				return err
+			}
+			sealed, err := svc.s.Cipher.Produce([]byte(url))
+			if err != nil {
+				return err
+			}
+			if err := svc.s.Secrets.Upsert(ctx, tx, &secret.Secret{
+				ProjectID: req.GetProjectId(), Name: secretName,
+				Ciphertext: sealed.Ciphertext, Fingerprint: sealed.Fingerprint,
+			}); err != nil {
 				return err
 			}
 			if restoreSrc != nil {
 				return svc.s.Databases.SetRestorePending(ctx, tx, row.ID, restoreSrc.ID)
 			}
+			// 事件 id/payload 依赖事务内铸出的行 id：write 段后就地填充
+			// （切片元素可变语义，acceptance.go withPayload 同款）。
+			events[0].id = row.ID
+			events[0].payload, _ = json.Marshal(structureEventPayload{ID: row.ID, ProjectID: row.ProjectID}) //nolint:errcheck // 结构体字段恒可序列化
 			return nil
 		},
-		events: []eventFact{structureEvent(eventDatabaseCreated, "database", row.ID, row.ProjectID)},
-		audits: []*audit.Entry{{
-			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "database.create",
-			Resource: "database/" + row.ID, AfterFP: row.Engine + " " + row.Name,
-		}},
+		// 审计字段依赖事务内铸出的 id：auditsFrom 在 write 段后求值。
+		events: events,
+		auditsFrom: func() []*audit.Entry {
+			return []*audit.Entry{{
+				Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "database.create",
+				Resource: "database/" + row.ID, AfterFP: row.Engine + " " + row.Name,
+			}}
+		},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "database")
@@ -166,7 +177,7 @@ func (svc *DatabasesService) ListDatabases(ctx context.Context, req *structurev1
 		return nil, err
 	}
 	list, err := svc.s.Databases.ListByProject(ctx, svc.s.DB.Runner(),
-		req.GetProjectId(), req.GetAfterDatabaseId(), int(req.GetLimit()))
+		req.GetProjectId(), req.GetAfterDatabaseSeq(), int(req.GetLimit()))
 	if err != nil {
 		return nil, mapStateError(err, "database")
 	}
@@ -203,7 +214,7 @@ func (svc *DatabasesService) DeleteDatabase(ctx context.Context, req *structurev
 		},
 		events: []eventFact{structureEvent(eventDatabaseDeleted, "database", req.GetId(), row.ProjectID)},
 		audits: []*audit.Entry{{
-			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "database.delete",
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "database.delete",
 			Resource: "database/" + req.GetId(),
 		}},
 	})
@@ -246,7 +257,7 @@ func (svc *DatabasesService) RotateDatabasePassword(ctx context.Context, req *st
 	if err := svc.s.commit(ctx, writeFact{
 		events: []eventFact{structureEvent(eventDatabaseRotated, "database", row.ID, row.ProjectID)},
 		audits: []*audit.Entry{{
-			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "database.rotate_password",
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "database.rotate_password",
 			Resource: "database/" + row.ID, AfterFP: row.CredentialsRef,
 		}},
 	}); err != nil {
@@ -290,7 +301,7 @@ func (s *Services) cascadeDeleteDatabases(ctx context.Context, projectID string)
 			},
 			events: []eventFact{structureEvent(eventDatabaseDeleted, "database", db.ID, db.ProjectID)},
 			audits: []*audit.Entry{{
-				ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "database.delete",
+				Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "database.delete",
 				Resource: "database/" + db.ID,
 			}},
 		})
@@ -314,7 +325,7 @@ func (s *Services) cascadeDeleteDatabases(ctx context.Context, projectID string)
 func (s *Services) listActiveDatabases(ctx context.Context, projectID string) ([]dbrepo.Database, error) {
 	var out []dbrepo.Database
 	const page = 200 // 与 repo maxListLimit 对齐（超出值被钳回）
-	after := ""
+	var after int64
 	for {
 		rows, err := s.Databases.ListByProject(ctx, s.DB.Runner(), projectID, after, page)
 		if err != nil {
@@ -324,7 +335,7 @@ func (s *Services) listActiveDatabases(ctx context.Context, projectID string) ([
 		if len(rows) < page {
 			return out, nil
 		}
-		after = rows[len(rows)-1].ID
+		after = rows[len(rows)-1].Seq
 	}
 }
 
@@ -343,17 +354,19 @@ func (svc *DatabasesService) TriggerBackup(ctx context.Context, req *structurev1
 		return nil, err
 	}
 	row := &backup.Backup{
-		ID: newID(), ProjectID: db.ProjectID, DatabaseID: db.ID,
+		ProjectID: db.ProjectID, DatabaseID: db.ID,
 		Engine: db.Engine, RetentionSecs: db.BackupRetentionSecs,
 	}
 	err = svc.s.commit(ctx, writeFact{
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			return svc.s.Backups.Create(ctx, tx, row)
 		},
-		audits: []*audit.Entry{{
-			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "database.backup_trigger",
-			Resource: "database/" + db.ID, AfterFP: row.ID,
-		}},
+		auditsFrom: func() []*audit.Entry {
+			return []*audit.Entry{{
+				Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "database.backup_trigger",
+				Resource: "database/" + db.ID, AfterFP: row.ID,
+			}}
+		},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "backup")
@@ -375,7 +388,7 @@ func (svc *DatabasesService) ListBackups(ctx context.Context, req *structurev1.L
 		return nil, err
 	}
 	list, err := svc.s.Backups.ListByDatabase(ctx, svc.s.DB.Runner(),
-		req.GetDatabaseId(), req.GetAfterBackupId(), int(req.GetLimit()))
+		req.GetDatabaseId(), req.GetAfterBackupSeq(), int(req.GetLimit()))
 	if err != nil {
 		return nil, mapStateError(err, "backup")
 	}
@@ -418,7 +431,7 @@ func (svc *DatabasesService) VerifyBackup(ctx context.Context, req *structurev1.
 // 网内 DNS 名——诚实连接面，值/密码永不出现）。
 func databaseMsg(row *dbrepo.Database) *structurev1.Database {
 	msg := &structurev1.Database{
-		Id: row.ID, ProjectId: row.ProjectID, Name: row.Name,
+		Id: row.ID, Seq: row.Seq, ProjectId: row.ProjectID, Name: row.Name,
 		Engine: row.Engine, CredentialsRef: row.CredentialsRef, Status: row.Status,
 		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 		Host:              engine.DatabaseDNSName(row.ID),
@@ -435,7 +448,7 @@ func databaseMsg(row *dbrepo.Database) *structurev1.Database {
 // backupMsg 台账行 → proto 映射。
 func backupMsg(row *backup.Backup) *structurev1.Backup {
 	return &structurev1.Backup{
-		Id: row.ID, ProjectId: row.ProjectID, DatabaseId: row.DatabaseID, Engine: row.Engine,
+		Id: row.ID, Seq: row.Seq, ProjectId: row.ProjectID, DatabaseId: row.DatabaseID, Engine: row.Engine,
 		ObjectKey: row.ObjectKey, Digest: row.Digest, SizeBytes: row.SizeBytes,
 		Status: row.Status, Error: row.Error,
 		StartedAt: row.StartedAt, FinishedAt: row.FinishedAt, CreatedAt: row.CreatedAt,
@@ -502,30 +515,34 @@ func (svc *DatabasesService) BrowseDatabase(ctx context.Context, req *structurev
 			// 只读形态，不是清理条目。
 			WithSuggestion("Wait for a session to reach its idle or hard TTL (both reclaim automatically), or close an open browser session before opening another.")
 	}
-	sessionID := newID()
+	// 会话 id 由 repo 行装配处铸造（ADR-0070）；detail/注册/票据均用事务
+	// 内铸出的 row.ID。
 	now := svc.s.DB.Clock().Now()
 	row := &browserepo.Session{
-		ID: sessionID, ProjectID: db.ProjectID, DatabaseID: db.ID,
+		ProjectID: db.ProjectID, DatabaseID: db.ID,
 		Engine: db.Engine, ReadOnly: readOnly,
 		CreatedAt: state.FormatTime(now), ExpiresAt: state.FormatTime(now.Add(engine.BrowseHardTTL)),
 	}
-	detail, _ := json.Marshal(map[string]any{ //nolint:errcheck // 结构体字段恒可序列化
-		"session_id": sessionID, "browser": browser.Name(),
-		"read_only": readOnly, "enforcement": string(browser.ReadOnlyEnforcement()),
-	})
 	err = svc.s.commit(ctx, writeFact{
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			return svc.s.Browse.Create(ctx, tx, row)
 		},
 		events: []eventFact{structureEvent(eventDatabaseBrowserOpened, "database", db.ID, db.ProjectID)},
-		audits: []*audit.Entry{{
-			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "database.browse",
-			Resource: "database/" + db.ID, Detail: string(detail),
-		}},
+		auditsFrom: func() []*audit.Entry {
+			detail, _ := json.Marshal(map[string]any{ //nolint:errcheck // 结构体字段恒可序列化
+				"session_id": row.ID, "browser": browser.Name(),
+				"read_only": readOnly, "enforcement": string(browser.ReadOnlyEnforcement()),
+			})
+			return []*audit.Entry{{
+				Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "database.browse",
+				Resource: "database/" + db.ID, Detail: string(detail),
+			}}
+		},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "browse session")
 	}
+	sessionID := row.ID
 	info, err := svc.s.Engine.RegisterBrowseSession(engine.BrowseInput{
 		SessionID: sessionID, TeamID: team, ProjectID: db.ProjectID, DatabaseID: db.ID,
 		DatabaseName: db.Name, EngineName: db.Engine, ReadOnly: readOnly,

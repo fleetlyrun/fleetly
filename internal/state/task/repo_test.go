@@ -99,10 +99,10 @@ func TestTaskListAndOwnerScan(t *testing.T) {
 	}
 
 	// 新→旧 + after 游标 + limit。
-	page, err := tasks.ListByProject(ctx, db.Runner(), "01JD0PRJ000000000000000000", "", 2)
+	page, err := tasks.ListByProject(ctx, db.Runner(), "01JD0PRJ000000000000000000", 0, 2)
 	require.NoError(t, err)
 	assert.Equal(t, []string{ids[2], ids[1]}, []string{page[0].ID, page[1].ID})
-	next, err := tasks.ListByProject(ctx, db.Runner(), "01JD0PRJ000000000000000000", page[1].ID, 2)
+	next, err := tasks.ListByProject(ctx, db.Runner(), "01JD0PRJ000000000000000000", page[1].Seq, 2)
 	require.NoError(t, err)
 	assert.Equal(t, []string{ids[0]}, []string{next[0].ID})
 
@@ -222,11 +222,11 @@ func TestRunListByTaskAndStates(t *testing.T) {
 	}
 
 	// 新→旧 + after 游标。
-	page, err := runs.ListByTask(ctx, db.Runner(), taskID, "", 3)
+	page, err := runs.ListByTask(ctx, db.Runner(), taskID, 0, 3)
 	require.NoError(t, err)
 	assert.Len(t, page, 3)
 	assert.Equal(t, "01JD0RUN0000000000000000004", page[0].ID)
-	next, err := runs.ListByTask(ctx, db.Runner(), taskID, page[2].ID, 3)
+	next, err := runs.ListByTask(ctx, db.Runner(), taskID, page[2].Seq, 3)
 	require.NoError(t, err)
 	assert.Len(t, next, 2)
 

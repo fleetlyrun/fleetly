@@ -28,14 +28,16 @@ const (
 
 // Node 是观测缓存行（非权威；节点 ID 永不复用）。
 type Node struct {
-	state       protoimpl.MessageState `protogen:"open.v1"`
-	PlatformId  string                 `protobuf:"bytes,1,opt,name=platform_id,json=platformId,proto3" json:"platform_id,omitempty"`
-	CarrierId   string                 `protobuf:"bytes,2,opt,name=carrier_id,json=carrierId,proto3" json:"carrier_id,omitempty"`
-	Hostname    string                 `protobuf:"bytes,3,opt,name=hostname,proto3" json:"hostname,omitempty"`
-	Role        string                 `protobuf:"bytes,4,opt,name=role,proto3" json:"role,omitempty"`
-	Available   bool                   `protobuf:"varint,5,opt,name=available,proto3" json:"available,omitempty"`
-	FirstSeenAt string                 `protobuf:"bytes,6,opt,name=first_seen_at,json=firstSeenAt,proto3" json:"first_seen_at,omitempty"`
-	LastSeenAt  string                 `protobuf:"bytes,7,opt,name=last_seen_at,json=lastSeenAt,proto3" json:"last_seen_at,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	PlatformId string                 `protobuf:"bytes,1,opt,name=platform_id,json=platformId,proto3" json:"platform_id,omitempty"`
+	// seq 是锚定序（ADR-0070：id 后缀即此号；分页游标轴）。
+	Seq         int64  `protobuf:"varint,10,opt,name=seq,proto3" json:"seq,omitempty"`
+	CarrierId   string `protobuf:"bytes,2,opt,name=carrier_id,json=carrierId,proto3" json:"carrier_id,omitempty"`
+	Hostname    string `protobuf:"bytes,3,opt,name=hostname,proto3" json:"hostname,omitempty"`
+	Role        string `protobuf:"bytes,4,opt,name=role,proto3" json:"role,omitempty"`
+	Available   bool   `protobuf:"varint,5,opt,name=available,proto3" json:"available,omitempty"`
+	FirstSeenAt string `protobuf:"bytes,6,opt,name=first_seen_at,json=firstSeenAt,proto3" json:"first_seen_at,omitempty"`
+	LastSeenAt  string `protobuf:"bytes,7,opt,name=last_seen_at,json=lastSeenAt,proto3" json:"last_seen_at,omitempty"`
 	// relay_online 是节点中继在连状态（活体观测——exec 会话的路由前提，
 	// ADR-0049；false = 该节点不可 exec，重跑 enroll 的中继装载脚本恢复）。
 	RelayOnline bool `protobuf:"varint,8,opt,name=relay_online,json=relayOnline,proto3" json:"relay_online,omitempty"`
@@ -81,6 +83,13 @@ func (x *Node) GetPlatformId() string {
 		return x.PlatformId
 	}
 	return ""
+}
+
+func (x *Node) GetSeq() int64 {
+	if x != nil {
+		return x.Seq
+	}
+	return 0
 }
 
 func (x *Node) GetCarrierId() string {
@@ -141,11 +150,10 @@ func (x *Node) GetRelayVersion() string {
 
 type ListNodesRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// after_node_id 游标（上一页末条 platform_id；空 = 首页）。nodes 是
-	// 观测缓存表（非权威），无 ULID 主键——游标轴 = platform_id 字典序
-	// 升序（既有响应序不变；ADR-0026 after_* + limit 惯例）。
-	AfterNodeId   string `protobuf:"bytes,1,opt,name=after_node_id,json=afterNodeId,proto3" json:"after_node_id,omitempty"`
-	Limit         int32  `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
+	// after_node_seq 游标（上一页末条 seq；0 = 首页）。游标轴 = seq 锚定
+	// 序升序（既有响应序不变；ADR-0026 after_* + limit 惯例）。
+	AfterNodeSeq  int64 `protobuf:"varint,1,opt,name=after_node_seq,json=afterNodeSeq,proto3" json:"after_node_seq,omitempty"`
+	Limit         int32 `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -180,11 +188,11 @@ func (*ListNodesRequest) Descriptor() ([]byte, []int) {
 	return file_fleetly_runtime_v1_runtime_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *ListNodesRequest) GetAfterNodeId() string {
+func (x *ListNodesRequest) GetAfterNodeSeq() int64 {
 	if x != nil {
-		return x.AfterNodeId
+		return x.AfterNodeSeq
 	}
-	return ""
+	return 0
 }
 
 func (x *ListNodesRequest) GetLimit() int32 {
@@ -588,10 +596,12 @@ var File_fleetly_runtime_v1_runtime_proto protoreflect.FileDescriptor
 
 const file_fleetly_runtime_v1_runtime_proto_rawDesc = "" +
 	"\n" +
-	" fleetly/runtime/v1/runtime.proto\x12\x12fleetly.runtime.v1\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"\xa2\x02\n" +
+	" fleetly/runtime/v1/runtime.proto\x12\x12fleetly.runtime.v1\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"\xb4\x02\n" +
 	"\x04Node\x12\x1f\n" +
 	"\vplatform_id\x18\x01 \x01(\tR\n" +
-	"platformId\x12\x1d\n" +
+	"platformId\x12\x10\n" +
+	"\x03seq\x18\n" +
+	" \x01(\x03R\x03seq\x12\x1d\n" +
 	"\n" +
 	"carrier_id\x18\x02 \x01(\tR\tcarrierId\x12\x1a\n" +
 	"\bhostname\x18\x03 \x01(\tR\bhostname\x12\x12\n" +
@@ -601,9 +611,9 @@ const file_fleetly_runtime_v1_runtime_proto_rawDesc = "" +
 	"\flast_seen_at\x18\a \x01(\tR\n" +
 	"lastSeenAt\x12!\n" +
 	"\frelay_online\x18\b \x01(\bR\vrelayOnline\x12#\n" +
-	"\rrelay_version\x18\t \x01(\tR\frelayVersion\"L\n" +
-	"\x10ListNodesRequest\x12\"\n" +
-	"\rafter_node_id\x18\x01 \x01(\tR\vafterNodeId\x12\x14\n" +
+	"\rrelay_version\x18\t \x01(\tR\frelayVersion\"N\n" +
+	"\x10ListNodesRequest\x12$\n" +
+	"\x0eafter_node_seq\x18\x01 \x01(\x03R\fafterNodeSeq\x12\x14\n" +
 	"\x05limit\x18\x02 \x01(\x05R\x05limit\"C\n" +
 	"\x11ListNodesResponse\x12.\n" +
 	"\x05nodes\x18\x01 \x03(\v2\x18.fleetly.runtime.v1.NodeR\x05nodes\"+\n" +

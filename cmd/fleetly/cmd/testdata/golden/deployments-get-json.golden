@@ -1,8 +1,9 @@
 {
-  "id": "<ULID>",
-  "app_id": "<ULID>",
-  "from_revision": "<ULID>",
-  "to_revision": "<ULID>",
+  "id": "bgapp-5-d29",
+  "seq": "29",
+  "app_id": "bgapp-5",
+  "from_revision": "bgapp-5-r1",
+  "to_revision": "bgapp-5-r3",
   "state": "queued",
   "generation": "3",
   "idempotency_key": "compose-bg-3",

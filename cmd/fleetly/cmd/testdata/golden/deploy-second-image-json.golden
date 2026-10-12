@@ -1,9 +1,10 @@
 {
   "deployment": {
-    "id": "<ULID>",
-    "app_id": "<ULID>",
-    "from_revision": "<ULID>",
-    "to_revision": "<ULID>",
+    "id": "web-1-d6",
+    "seq": "6",
+    "app_id": "web-1",
+    "from_revision": "web-1-r1",
+    "to_revision": "web-1-r2",
     "state": "queued",
     "generation": "6",
     "created_at": "2026-01-01T00:02:00Z",

@@ -1,18 +1,18 @@
 {
   "teams": [
     {
-      "id": "<ULID>",
+      "id": "default",
+      "name": "default",
+      "created_at": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "shop-2",
       "name": "shop",
       "created_at": "2026-01-01T00:00:00Z"
     },
     {
-      "id": "<ULID>",
+      "id": "shop-json-3",
       "name": "shop-json",
-      "created_at": "2026-01-01T00:00:00Z"
-    },
-    {
-      "id": "default",
-      "name": "default",
       "created_at": "2026-01-01T00:00:00Z"
     }
   ]

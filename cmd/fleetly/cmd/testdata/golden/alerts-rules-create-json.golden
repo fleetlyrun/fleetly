@@ -1,6 +1,6 @@
 {
-  "id": "<ULID>",
-  "app_id": "<ULID>",
+  "id": "web-1-2",
+  "app_id": "web-1",
   "metric": "memory_working_set_bytes",
   "threshold": 5242880,
   "for_seconds": "300",

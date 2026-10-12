@@ -32,23 +32,24 @@ func TestValidateAppAccepts(t *testing.T) {
 	assert.NoError(t, ValidateApp(validAppSpec()))
 }
 
-// 跨 Project 引用形态（ADR-0013 附录 A.2）：ULID 项目段 + 非空名段；
-// 名字段/坏形态拒绝（叶子包只管形态——存在性与批准态在受理/投影面）。
+// 跨 Project 引用形态（ADR-0013 附录 A.2 + ADR-0070 形态修订）：平台 id
+// 项目段 + 非空名段；名字/坏形态拒绝（叶子包只管形态——存在性与批准态
+// 在受理/投影面）。
 func TestValidateAppCrossProjectNetworkRef(t *testing.T) {
 	s := validAppSpec()
-	s.Processes[0].Networks = []string{"project:01JD0PROJ00000000000000000/messaging"}
+	s.Processes[0].Networks = []string{"project:shop-42/messaging"}
 	assert.NoError(t, ValidateApp(s))
 
 	s = validAppSpec()
-	s.Processes[0].Networks = []string{"project:shop/messaging"}
+	s.Processes[0].Networks = []string{"project:Shop-42/messaging"}
 	assert.ErrorContains(t, ValidateApp(s), "platform project id")
 
 	s = validAppSpec()
-	s.Processes[0].Networks = []string{"project:01JD0PROJ00000000000000000"}
+	s.Processes[0].Networks = []string{"project:shop-42"}
 	assert.ErrorContains(t, ValidateApp(s), "project:<project-id>/<network-name>")
 
 	s = validAppSpec()
-	s.Processes[0].Networks = []string{"project:01JD0PROJ00000000000000000/"}
+	s.Processes[0].Networks = []string{"project:shop-42/"}
 	assert.ErrorContains(t, ValidateApp(s), "network name part must not be empty")
 
 	// taskGroup 形态与跨 Project 形态互不干扰（各自前缀词面）。
@@ -234,7 +235,7 @@ func TestValidateJob(t *testing.T) {
 
 	// 网络三形态与 App Process 同域（形态校验；存在性/批准态在受理与投影面）。
 	nets := validJob("migrate")
-	nets.Process.Networks = []string{"default", "taskGroup:dispatcher", "project:01JD0PROJ00000000000000000/main"}
+	nets.Process.Networks = []string{"default", "taskGroup:dispatcher", "project:shop-42/main"}
 	assert.NoError(t, ValidateJob("app.first_boot_jobs[0]", nets))
 
 	badNet := validJob("migrate")

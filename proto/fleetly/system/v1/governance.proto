@@ -58,6 +58,8 @@ service GovernanceService {
 
 message ChangeFreeze {
   string id = 1;
+  // seq 是创建序（ADR-0070：id 后缀即此号；分页游标轴）。
+  int64 seq = 7;
   // team_id 空串 = 全局冻结行（封禁全部 Team）。
   string team_id = 2;
   // reason 必填：拒绝信封回带（Agent 可读出"为何冻结/何时能再动"）。
@@ -79,8 +81,8 @@ message LiftChangeFreezeRequest { string id = 1; }
 message LiftChangeFreezeResponse { ChangeFreeze freeze = 1; }
 
 message ListChangeFreezesRequest {
-  // after_freeze_id 游标（上一页末条 id；空 = 首页）。
-  string after_freeze_id = 1;
+  // after_freeze_seq 游标（上一页末条 seq（0 = 首页）。
+  int64 after_freeze_seq = 1;
   int32 limit = 2;
 }
 message ListChangeFreezesResponse { repeated ChangeFreeze freezes = 1; }

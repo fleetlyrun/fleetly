@@ -6,12 +6,14 @@ package configrepo
 import (
 	"context"
 
+	"github.com/fleetlyrun/fleetly/internal/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
 // Config 是聚合行（不可变版本：只有 INSERT 与读）。
 type Config struct {
 	ID        string
+	Seq       int64
 	ProjectID string
 	Name      string
 	Version   int64
@@ -30,6 +32,14 @@ func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 // Create 落新版本（同 project+name 下一版本号单调递增；配额执法在 API
 // 层——本 repo 只承载版本化事实）。
 func (r *Repo) Create(ctx context.Context, run state.Runner, c *Config) error {
+	seq, err := state.NextSeq(ctx, run, "configs")
+	if err != nil {
+		return err
+	}
+	c.Seq = seq
+	if c.ID == "" {
+		c.ID = entityid.Join("cfg", seq)
+	}
 	next, err := r.NextVersion(ctx, run, c.ProjectID, c.Name)
 	if err != nil {
 		return err
@@ -37,9 +47,9 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, c *Config) error {
 	c.Version = next
 	c.CreatedAt = state.FormatTime(r.clock.Now())
 	_, err = run.ExecContext(ctx, `
-		INSERT INTO configs (id, project_id, name, version, content, created_at)
-		VALUES (?, ?, ?, ?, ?, ?)`,
-		c.ID, c.ProjectID, c.Name, c.Version, c.Content, c.CreatedAt)
+		INSERT INTO configs (id, seq, project_id, name, version, content, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		c.ID, c.Seq, c.ProjectID, c.Name, c.Version, c.Content, c.CreatedAt)
 	return err
 }
 
@@ -58,7 +68,7 @@ func (r *Repo) NextVersion(ctx context.Context, run state.Runner, projectID, nam
 // Latest 返回最新版本（无 → state.ErrNotFound）。
 func (r *Repo) Latest(ctx context.Context, run state.Runner, projectID, name string) (*Config, error) {
 	row := run.QueryRowContext(ctx, `
-		SELECT id, project_id, name, version, content, created_at
+		SELECT id, seq, project_id, name, version, content, created_at
 		FROM configs WHERE project_id = ? AND name = ?
 		ORDER BY version DESC LIMIT 1`, projectID, name)
 	return scanConfig(row.Scan)
@@ -67,7 +77,7 @@ func (r *Repo) Latest(ctx context.Context, run state.Runner, projectID, name str
 // GetVersion 返回指定版本。
 func (r *Repo) GetVersion(ctx context.Context, run state.Runner, projectID, name string, version int64) (*Config, error) {
 	row := run.QueryRowContext(ctx, `
-		SELECT id, project_id, name, version, content, created_at
+		SELECT id, seq, project_id, name, version, content, created_at
 		FROM configs WHERE project_id = ? AND name = ? AND version = ?`,
 		projectID, name, version)
 	return scanConfig(row.Scan)
@@ -77,7 +87,7 @@ func (r *Repo) GetVersion(ctx context.Context, run state.Runner, projectID, name
 // 配额执法与引擎装配面消费；API 分页读面走 LatestByProjectPage）。
 func (r *Repo) LatestByProject(ctx context.Context, run state.Runner, projectID string) ([]Config, error) {
 	rows, err := run.QueryContext(ctx, `
-		SELECT c.id, c.project_id, c.name, c.version, c.content, c.created_at
+		SELECT c.id, c.seq, c.project_id, c.name, c.version, c.content, c.created_at
 		FROM configs c
 		JOIN (SELECT name, MAX(version) AS v FROM configs WHERE project_id = ? GROUP BY name) m
 		  ON c.name = m.name AND c.version = m.v AND c.project_id = ?
@@ -105,7 +115,7 @@ func (r *Repo) LatestByProjectPage(ctx context.Context, run state.Runner, projec
 		limit = defaultListLimit
 	}
 	q := `
-		SELECT c.id, c.project_id, c.name, c.version, c.content, c.created_at
+		SELECT c.id, c.seq, c.project_id, c.name, c.version, c.content, c.created_at
 		FROM configs c
 		JOIN (SELECT name, MAX(version) AS v FROM configs WHERE project_id = ? GROUP BY name) m
 		  ON c.name = m.name AND c.version = m.v AND c.project_id = ?`
@@ -140,7 +150,7 @@ const (
 // ListVersions 返回全部版本（旧→新）。
 func (r *Repo) ListVersions(ctx context.Context, run state.Runner, projectID, name string) ([]Config, error) {
 	rows, err := run.QueryContext(ctx, `
-		SELECT id, project_id, name, version, content, created_at
+		SELECT id, seq, project_id, name, version, content, created_at
 		FROM configs WHERE project_id = ? AND name = ? ORDER BY version`,
 		projectID, name)
 	if err != nil {
@@ -160,7 +170,7 @@ func (r *Repo) ListVersions(ctx context.Context, run state.Runner, projectID, na
 
 func scanConfig(scan func(dest ...any) error) (*Config, error) {
 	var c Config
-	if err := scan(&c.ID, &c.ProjectID, &c.Name, &c.Version, &c.Content, &c.CreatedAt); err != nil {
+	if err := scan(&c.ID, &c.Seq, &c.ProjectID, &c.Name, &c.Version, &c.Content, &c.CreatedAt); err != nil {
 		return nil, state.MapScanErr(err)
 	}
 	return &c, nil

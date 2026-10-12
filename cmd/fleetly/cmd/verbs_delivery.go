@@ -510,15 +510,16 @@ func newDeploymentsCancelVerb() commands.Command {
 
 func newDeploymentsListVerb() commands.Command {
 	const name = "list"
-	var app, after string
+	var app string
+	var after int64
 	var limit int
 	return &flaggedVerb{
 		name:     name,
 		synopsis: "List deployments for an app (newest first)",
-		usage:    "deployments list --app APP_ID [--after DEPLOYMENT_ID] [--limit N]",
+		usage:    "deployments list --app APP_ID [--after SEQ] [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&app, "app", "", "app id (required)")
-			fs.StringVar(&after, "after", "", "pagination cursor: the last deployment id of the previous page")
+			fs.Int64Var(&after, "after", 0, "pagination cursor: the seq of the last row of the previous page")
 			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
@@ -535,7 +536,7 @@ func newDeploymentsListVerb() commands.Command {
 			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Deployments.ListDeployments(ctx, &deliveryv1.ListDeploymentsRequest{
-				AppId: app, AfterDeploymentId: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
+				AppId: app, AfterDeploymentSeq: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
 			})
 			if err != nil {
 				return err
@@ -697,15 +698,16 @@ func newRevisionsDiffVerb() commands.Command {
 
 func newBuildsListVerb() commands.Command {
 	const name = "list"
-	var app, after string
+	var app string
+	var after int64
 	var limit int
 	return &flaggedVerb{
 		name:     name,
 		synopsis: "List builds for an app (newest first)",
-		usage:    "builds list --app APP_ID [--after BUILD_ID] [--limit N]",
+		usage:    "builds list --app APP_ID [--after SEQ] [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&app, "app", "", "app id (required)")
-			fs.StringVar(&after, "after", "", "pagination cursor: the last build id of the previous page")
+			fs.Int64Var(&after, "after", 0, "pagination cursor: the seq of the last row of the previous page")
 			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
@@ -722,7 +724,7 @@ func newBuildsListVerb() commands.Command {
 			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Builds.ListBuilds(ctx, &deliveryv1.ListBuildsRequest{
-				AppId: app, AfterBuildId: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
+				AppId: app, AfterBuildSeq: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
 			})
 			if err != nil {
 				return err
@@ -859,15 +861,16 @@ func newRoutesCreateVerb() commands.Command {
 
 func newRoutesListVerb() commands.Command {
 	const name = "list"
-	var project, after string
+	var project string
+	var after int64
 	var limit int
 	return &flaggedVerb{
 		name:     name,
 		synopsis: "List routes",
-		usage:    "routes list [--project PROJECT_ID] [--after ROUTE_ID] [--limit N]",
+		usage:    "routes list [--project PROJECT_ID] [--after SEQ] [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&project, "project", "", "filter by project")
-			fs.StringVar(&after, "after", "", "pagination cursor: the last route id of the previous page")
+			fs.Int64Var(&after, "after", 0, "pagination cursor: the seq of the last row of the previous page")
 			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
@@ -881,7 +884,7 @@ func newRoutesListVerb() commands.Command {
 			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Routes.ListRoutes(ctx, &proxyv1.ListRoutesRequest{
-				ProjectId: project, AfterRouteId: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
+				ProjectId: project, AfterRouteSeq: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
 			})
 			if err != nil {
 				return err
@@ -899,14 +902,14 @@ func newRoutesListVerb() commands.Command {
 
 func newNodesListVerb() commands.Command {
 	const name = "list"
-	var after string
+	var after int64
 	var limit int
 	return &flaggedVerb{
 		name:     name,
 		synopsis: "List observed cluster nodes",
-		usage:    "nodes list [--after NODE_ID] [--limit N]",
+		usage:    "nodes list [--after SEQ] [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&after, "after", "", "pagination cursor: the last platform node id of the previous page")
+			fs.Int64Var(&after, "after", 0, "pagination cursor: the seq of the last row of the previous page")
 			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
@@ -920,7 +923,7 @@ func newNodesListVerb() commands.Command {
 			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Nodes.ListNodes(ctx, &runtimev1.ListNodesRequest{
-				AfterNodeId: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
+				AfterNodeSeq: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
 			})
 			if err != nil {
 				return err

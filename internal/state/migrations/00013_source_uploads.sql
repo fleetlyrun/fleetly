@@ -5,13 +5,15 @@
 -- 行数，末行删除时 blob 一并删除）。
 CREATE TABLE source_uploads (
   id TEXT PRIMARY KEY,
+  seq INTEGER NOT NULL,
   project_id TEXT NOT NULL,
   digest TEXT NOT NULL,
   size_bytes INTEGER NOT NULL,
   created_at TEXT NOT NULL
 );
+CREATE UNIQUE INDEX idx_source_uploads_seq ON source_uploads(seq);
 CREATE UNIQUE INDEX idx_source_uploads_project_digest ON source_uploads(project_id, digest);
-CREATE INDEX idx_source_uploads_project_list ON source_uploads(project_id, id);
+CREATE INDEX idx_source_uploads_project_list ON source_uploads(project_id, seq);
 
 -- +goose Down
 -- goose 只前滚（架构 §8：迁移失败 = 恢复 Platform Backup 重放）。

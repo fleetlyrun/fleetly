@@ -3,7 +3,6 @@ package fleetlygrpc
 import (
 	"errors"
 
-	"github.com/oklog/ulid/v2"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
@@ -15,6 +14,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/api/apperr"
 	"github.com/fleetlyrun/fleetly/internal/capability"
 	"github.com/fleetlyrun/fleetly/internal/engine"
+	"github.com/fleetlyrun/fleetly/internal/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/spec"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/state/app"
@@ -85,7 +85,7 @@ func mapStateError(err error, what string) error {
 		if errors.As(err, &ae) {
 			return ae
 		}
-		return apperr.New("E_INTERNAL", "internal error").WithCause(err)
+		return apperr.New("E_INTERNAL", "internal error: %s", err.Error()).WithCause(err)
 	}
 }
 
@@ -101,11 +101,11 @@ func mapValidationError(err error) error {
 // ---- 行 ↔ proto 映射（时间戳与状态原样：存储即契约） ----
 
 func projectMsg(p *project.Project) *structurev1.Project {
-	return &structurev1.Project{Id: p.ID, Name: p.Name, TeamId: p.TeamID, CreatedAt: p.CreatedAt, DeletedAt: p.DeletedAt}
+	return &structurev1.Project{Id: p.ID, Seq: p.Seq, Name: p.Name, TeamId: p.TeamID, CreatedAt: p.CreatedAt, DeletedAt: p.DeletedAt}
 }
 
 func appMsg(a *app.App) *structurev1.App {
-	return &structurev1.App{Id: a.ID, ProjectId: a.ProjectID, Name: a.Name, CreatedAt: a.CreatedAt}
+	return &structurev1.App{Id: a.ID, Seq: a.Seq, ProjectId: a.ProjectID, Name: a.Name, CreatedAt: a.CreatedAt}
 }
 
 func secretMsg(s secret.Secret) *structurev1.Secret {
@@ -136,7 +136,7 @@ func networkMsg(n networkrepo.Network) *structurev1.Network {
 
 func routeMsg(r route.Route) *proxyv1.Route {
 	return &proxyv1.Route{
-		Id: r.ID, ProjectId: r.ProjectID, Host: r.Host, Path: r.Path,
+		Id: r.ID, Seq: r.Seq, ProjectId: r.ProjectID, Host: r.Host, Path: r.Path,
 		AppId: r.AppID, Process: r.Process, Port: r.Port,
 		Protocol: string(r.Protocol), TlsMode: r.TLSMode, CreatedAt: r.CreatedAt,
 	}
@@ -144,7 +144,7 @@ func routeMsg(r route.Route) *proxyv1.Route {
 
 func deploymentMsg(d deployment.Deployment) *deliveryv1.Deployment {
 	return &deliveryv1.Deployment{
-		Id: d.ID, AppId: d.AppID, FromRevision: d.FromRevision, ToRevision: d.ToRevision,
+		Id: d.ID, Seq: d.Seq, AppId: d.AppID, FromRevision: d.FromRevision, ToRevision: d.ToRevision,
 		State: string(d.State), Generation: d.Generation, IdempotencyKey: d.IdempotencyKey,
 		CommitSha: d.CommitSHA, SupersededBy: d.SupersededBy, Error: d.Error,
 		ObserveDeadline: d.ObserveDeadline, CreatedAt: d.CreatedAt, UpdatedAt: d.UpdatedAt,
@@ -188,14 +188,14 @@ func admissionMsg(a *engine.Admission) *deliveryv1.Admission {
 
 func buildMsg(b build.Build) *deliveryv1.Build {
 	return &deliveryv1.Build{
-		Id: b.ID, AppId: b.AppID, RevisionId: b.RevisionID, State: string(b.State),
+		Id: b.ID, Seq: b.Seq, AppId: b.AppID, RevisionId: b.RevisionID, State: string(b.State),
 		Digest: b.Digest, Error: b.Error, CreatedAt: b.CreatedAt, FinishedAt: b.FinishedAt,
 	}
 }
 
 func nodeMsg(n node.Node) *runtimev1.Node {
 	return &runtimev1.Node{
-		PlatformId: n.PlatformID, CarrierId: n.CarrierID, Hostname: n.Hostname,
+		PlatformId: n.PlatformID, Seq: n.Seq, CarrierId: n.CarrierID, Hostname: n.Hostname,
 		Role: n.Role, Available: n.Available, FirstSeenAt: n.FirstSeenAt, LastSeenAt: n.LastSeenAt,
 	}
 }
@@ -210,5 +210,12 @@ func marshalSpec(m proto.Message) ([]byte, error) {
 	return protojson.MarshalOptions{EmitUnpopulated: false, UseProtoNames: true}.Marshal(m)
 }
 
-// newID 生成 ULID。
-func newID() string { return ulid.Make().String() }
+// validName 是有名实体 name 的受理校验（ADR-0070 决策 4）：dns 标签形态
+// 是可读 id base 与派生名（namespace/DNS/载体名）安全的前提。
+func validName(field, name string) error {
+	if !entityid.ValidName(name) {
+		return apperr.New("E_INVALID_ARGUMENT",
+			"%s: must be a dns label (lowercase letters, digits, hyphens; start and end alphanumeric, e.g. \"web\" or \"nightly-backup\")", field)
+	}
+	return nil
+}

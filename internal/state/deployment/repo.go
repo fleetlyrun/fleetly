@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/fleetlyrun/fleetly/internal/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
@@ -72,6 +73,7 @@ func ActiveStatesNoQueued() []State {
 // Deployment 是聚合行（部署记录永不删——审计单位）。
 type Deployment struct {
 	ID                string
+	Seq               int64
 	AppID             string
 	FromRevision      string // 上一 Revision ID（首次部署为空）
 	ToRevision        string // 目标 Revision ID
@@ -119,18 +121,27 @@ type Repo struct {
 func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 
 // Create 落一行（活跃态幂等键唯一索引防并发重复入队 → ErrAlreadyExists）。
+// ID 空则装配 "<app id>-<seq>"；Seq 零值则事务内取 MAX+1（ADR-0070）。
 func (r *Repo) Create(ctx context.Context, run state.Runner, d *Deployment) error {
 	now := state.FormatTime(r.clock.Now())
 	d.CreatedAt, d.UpdatedAt = now, now
+	seq, err := state.NextSeq(ctx, run, "deployments")
+	if err != nil {
+		return err
+	}
+	d.Seq = seq
+	if d.ID == "" {
+		d.ID = entityid.Derive(d.AppID, "d", seq)
+	}
 	// first_boot 游标随行落库（提交方直落形态：回滚部署带 done 游标——
 	// ADR-0030 决策 5；常规部署为空串 = 未开始）。
-	_, err := run.ExecContext(ctx, `
+	_, err = run.ExecContext(ctx, `
 		INSERT INTO deployments
-			(id, app_id, from_revision, to_revision, state, generation, from_generation,
+			(id, seq, app_id, from_revision, to_revision, state, generation, from_generation,
 			 idempotency_key, commit_sha, superseded_by, error, observe_deadline,
 			 first_boot, created_at, updated_at, finished_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '', '', '', ?, ?, ?, '')`,
-		d.ID, d.AppID, d.FromRevision, d.ToRevision, string(d.State), d.Generation, d.FromGeneration,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', '', '', ?, ?, ?, '')`,
+		d.ID, d.Seq, d.AppID, d.FromRevision, d.ToRevision, string(d.State), d.Generation, d.FromGeneration,
 		d.IdempotencyKey, d.CommitSHA, d.FirstBoot, d.CreatedAt, d.UpdatedAt)
 	if state.IsUniqueViolation(err) {
 		// 唯一索引作用域是 App 内（B10）：冲突 = 同 App 同键已有活跃行。
@@ -147,19 +158,19 @@ func (r *Repo) Get(ctx context.Context, run state.Runner, id string) (*Deploymen
 }
 
 // ListByApp 返回 App 全部 Deployment（新→旧 + after 游标；ADR-0026
-// after_* + limit 惯例——游标 = ULID 创建序）。limit<=0 或 >200 回落/钳制
+// after_* + limit 惯例——游标 = seq 创建序）。limit<=0 或 >200 回落/钳制
 // 缺省 50。
-func (r *Repo) ListByApp(ctx context.Context, run state.Runner, appID, afterID string, limit int) ([]Deployment, error) {
+func (r *Repo) ListByApp(ctx context.Context, run state.Runner, appID string, afterSeq int64, limit int) ([]Deployment, error) {
 	if limit <= 0 || limit > maxListLimit {
 		limit = defaultListLimit
 	}
 	q := selectCols + " WHERE app_id = ?"
 	args := []any{appID}
-	if afterID != "" {
-		q += " AND id < ?"
-		args = append(args, afterID)
+	if afterSeq > 0 {
+		q += " AND seq < ?"
+		args = append(args, afterSeq)
 	}
-	q += " ORDER BY id DESC LIMIT ?"
+	q += " ORDER BY seq DESC LIMIT ?"
 	args = append(args, limit)
 	rows, err := run.QueryContext(ctx, q, args...)
 	if err != nil {
@@ -182,7 +193,7 @@ func (r *Repo) ActiveByApp(ctx context.Context, run state.Runner, appID string) 
 	states := ActiveStateStrings()
 	args := append([]any{appID}, toAny(states)...)
 	rows, err := run.QueryContext(ctx,
-		selectCols+" WHERE app_id = ? AND state IN ("+placeholders(len(states))+") ORDER BY id",
+		selectCols+" WHERE app_id = ? AND state IN ("+placeholders(len(states))+") ORDER BY seq",
 		args...)
 	if err != nil {
 		return nil, err
@@ -207,7 +218,7 @@ func (r *Repo) FindActiveByIdempotencyKey(ctx context.Context, run state.Runner,
 	states := ActiveStateStrings()
 	args := append([]any{appID, key}, toAny(states)...)
 	row := run.QueryRowContext(ctx,
-		selectCols+" WHERE app_id = ? AND idempotency_key = ? AND state IN ("+placeholders(len(states))+") ORDER BY id LIMIT 1",
+		selectCols+" WHERE app_id = ? AND idempotency_key = ? AND state IN ("+placeholders(len(states))+") ORDER BY seq LIMIT 1",
 		args...)
 	return scanDeployment(row.Scan)
 }
@@ -222,7 +233,7 @@ func (r *Repo) ListDriving(ctx context.Context, run state.Runner) ([]Deployment,
 	rows, err := run.QueryContext(ctx,
 		selectCols+" WHERE state IN ("+placeholders(len(states))+")"+
 			" OR (state = 'failed' AND rollback_attempted = ? AND from_revision != '')"+
-			" ORDER BY id",
+			" ORDER BY seq",
 		args...)
 	if err != nil {
 		return nil, err
@@ -254,7 +265,7 @@ func (r *Repo) NextGeneration(ctx context.Context, run state.Runner, appID strin
 // 启动基线重放的锚；无成功基线 → ErrNotFound）。
 func (r *Repo) LatestSucceeded(ctx context.Context, run state.Runner, appID string) (*Deployment, error) {
 	row := run.QueryRowContext(ctx,
-		selectCols+" WHERE app_id = ? AND state = 'succeeded' ORDER BY id DESC LIMIT 1", appID)
+		selectCols+" WHERE app_id = ? AND state = 'succeeded' ORDER BY seq DESC LIMIT 1", appID)
 	return scanDeployment(row.Scan)
 }
 
@@ -304,7 +315,7 @@ func (r *Repo) Transit(ctx context.Context, run state.Runner, id string, from []
 }
 
 const selectCols = `
-	SELECT id, app_id, from_revision, to_revision, state, generation, from_generation,
+	SELECT id, seq, app_id, from_revision, to_revision, state, generation, from_generation,
 	       idempotency_key, commit_sha, superseded_by, error, observe_deadline,
 	       first_boot, rollback_attempted, created_at, updated_at, finished_at
 	FROM deployments`
@@ -313,7 +324,7 @@ func scanDeployment(scan func(dest ...any) error) (*Deployment, error) {
 	var d Deployment
 	var stateStr string
 	var rollback int
-	err := scan(&d.ID, &d.AppID, &d.FromRevision, &d.ToRevision, &stateStr, &d.Generation, &d.FromGeneration,
+	err := scan(&d.ID, &d.Seq, &d.AppID, &d.FromRevision, &d.ToRevision, &stateStr, &d.Generation, &d.FromGeneration,
 		&d.IdempotencyKey, &d.CommitSHA, &d.SupersededBy, &d.Error, &d.ObserveDeadline,
 		&d.FirstBoot, &rollback, &d.CreatedAt, &d.UpdatedAt, &d.FinishedAt)
 	if err != nil {

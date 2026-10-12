@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/fleetlyrun/fleetly/internal/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
@@ -55,6 +56,7 @@ const (
 // Run 是聚合行（Run 行不删——审计单位；终态行的载体由收敛移除）。
 type Run struct {
 	ID         string
+	Seq        int64
 	TaskID     string
 	ProjectID  string
 	State      State
@@ -79,15 +81,22 @@ func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 
 // Create 落一行。
 func (r *Repo) Create(ctx context.Context, run state.Runner, m *Run) error {
+	seq, err := state.NextSeq(ctx, run, "runs")
+	if err != nil {
+		return err
+	}
+	m.Seq = seq
+	if m.ID == "" {
+		m.ID = entityid.Derive(m.TaskID, "r", seq)
+	}
 	now := state.FormatTime(r.clock.Now())
 	m.CreatedAt, m.UpdatedAt = now, now
-	_, err := run.ExecContext(ctx, `
-		INSERT INTO runs
-			(id, task_id, project_id, state, stop_reason, exit_code,
+	_, err = run.ExecContext(ctx, `
+		INSERT INTO runs (id, seq, task_id, project_id, state, stop_reason, exit_code,
 			 workload_id, dns_name, deadline, created_at, updated_at,
 			 started_at, finished_at)
-		VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, '', '')`,
-		m.ID, m.TaskID, m.ProjectID, string(m.State), m.StopReason,
+		VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, '', '')`,
+		m.ID, m.Seq, m.TaskID, m.ProjectID, string(m.State), m.StopReason,
 		m.WorkloadID, m.DNSName, m.Deadline, m.CreatedAt, m.UpdatedAt)
 	return err
 }
@@ -99,34 +108,34 @@ func (r *Repo) Get(ctx context.Context, run state.Runner, id string) (*Run, erro
 }
 
 // ListByTask 返回 Task 名下 Run（新→旧 + after 游标；ADR-0026 惯例）。
-func (r *Repo) ListByTask(ctx context.Context, run state.Runner, taskID, afterID string, limit int) ([]Run, error) {
+func (r *Repo) ListByTask(ctx context.Context, run state.Runner, taskID string, afterSeq int64, limit int) ([]Run, error) {
 	if limit <= 0 || limit > maxListLimit {
 		limit = defaultListLimit
 	}
 	q := selectCols + " WHERE task_id = ?"
 	args := []any{taskID}
-	if afterID != "" {
-		q += " AND id < ?"
-		args = append(args, afterID)
+	if afterSeq > 0 {
+		q += " AND seq < ?"
+		args = append(args, afterSeq)
 	}
-	q += " ORDER BY id DESC LIMIT ?"
+	q += " ORDER BY seq DESC LIMIT ?"
 	args = append(args, limit)
 	return r.query(ctx, run, q, args...)
 }
 
 // ListByProject 返回 Project 内 Run（新→旧 + after 游标；ADR-0035 ListRuns
 // 的 project 过滤面——runs 行自带冗余 project_id，免二跳）。
-func (r *Repo) ListByProject(ctx context.Context, run state.Runner, projectID, afterID string, limit int) ([]Run, error) {
+func (r *Repo) ListByProject(ctx context.Context, run state.Runner, projectID string, afterSeq int64, limit int) ([]Run, error) {
 	if limit <= 0 || limit > maxListLimit {
 		limit = defaultListLimit
 	}
 	q := selectCols + " WHERE project_id = ?"
 	args := []any{projectID}
-	if afterID != "" {
-		q += " AND id < ?"
-		args = append(args, afterID)
+	if afterSeq > 0 {
+		q += " AND seq < ?"
+		args = append(args, afterSeq)
 	}
-	q += " ORDER BY id DESC LIMIT ?"
+	q += " ORDER BY seq DESC LIMIT ?"
 	args = append(args, limit)
 	return r.query(ctx, run, q, args...)
 }
@@ -134,7 +143,7 @@ func (r *Repo) ListByProject(ctx context.Context, run state.Runner, projectID, a
 // ListDriving 返回全部待驱动行（pending/running/stopping）。
 func (r *Repo) ListDriving(ctx context.Context, run state.Runner) ([]Run, error) {
 	return r.query(ctx, run,
-		selectCols+" WHERE state IN ('pending', 'running', 'stopping') ORDER BY id")
+		selectCols+" WHERE state IN ('pending', 'running', 'stopping') ORDER BY seq")
 }
 
 // ListDrivingOfTerminalTasks 返回终态 Task（completed/failed/drained/
@@ -145,7 +154,7 @@ func (r *Repo) ListDrivingOfTerminalTasks(ctx context.Context, run state.Runner)
 	return r.query(ctx, run,
 		selectCols+" WHERE state IN ('pending', 'running', 'stopping')"+
 			" AND task_id IN (SELECT id FROM tasks WHERE state IN ('completed', 'failed', 'drained', 'deleted'))"+
-			" ORDER BY id")
+			" ORDER BY seq")
 }
 
 // ListByTaskStates 返回 Task 名下指定状态的 Run（新→旧，与 ListByTask
@@ -163,7 +172,7 @@ func (r *Repo) ListByTaskStates(ctx context.Context, run state.Runner, taskID st
 		args = append(args, string(s))
 	}
 	return r.query(ctx, run,
-		selectCols+" WHERE task_id = ? AND state IN ("+placeholders(len(states))+") ORDER BY id DESC", args...)
+		selectCols+" WHERE task_id = ? AND state IN ("+placeholders(len(states))+") ORDER BY seq DESC", args...)
 }
 
 // CountActiveByTasks 返回各 Task 的活 Run 计数（pending/running；列表投影
@@ -235,7 +244,7 @@ const (
 )
 
 const selectCols = `
-	SELECT id, task_id, project_id, state, stop_reason, exit_code,
+	SELECT id, seq, task_id, project_id, state, stop_reason, exit_code,
 	       workload_id, dns_name, deadline, created_at, updated_at,
 	       started_at, finished_at
 	FROM runs`
@@ -261,7 +270,7 @@ func scanRun(scan func(dest ...any) error) (*Run, error) {
 	var m Run
 	var stateStr string
 	var exitCode any
-	err := scan(&m.ID, &m.TaskID, &m.ProjectID, &stateStr, &m.StopReason, &exitCode,
+	err := scan(&m.ID, &m.Seq, &m.TaskID, &m.ProjectID, &stateStr, &m.StopReason, &exitCode,
 		&m.WorkloadID, &m.DNSName, &m.Deadline,
 		&m.CreatedAt, &m.UpdatedAt, &m.StartedAt, &m.FinishedAt)
 	if err != nil {

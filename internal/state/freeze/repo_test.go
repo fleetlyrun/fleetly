@@ -59,10 +59,10 @@ func TestFreezeLifecycle(t *testing.T) {
 	require.NoError(t, repo.Create(ctx, db.Runner(), newFreeze("01JDQFRZ00000000000000000D", f.TeamID, "round two")))
 
 	// List 新→旧 + after 游标。
-	all, err := repo.List(ctx, db.Runner(), "", 0)
+	all, err := repo.List(ctx, db.Runner(), 0, 0)
 	require.NoError(t, err)
 	require.Len(t, all, 3)
-	page, err := repo.List(ctx, db.Runner(), all[1].ID, 0)
+	page, err := repo.List(ctx, db.Runner(), all[1].Seq, 0)
 	require.NoError(t, err)
 	assert.Len(t, page, 1)
 }

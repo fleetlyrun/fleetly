@@ -6,12 +6,14 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/fleetlyrun/fleetly/internal/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
 // Team 是聚合行。
 type Team struct {
 	ID        string
+	Seq       int64
 	Name      string
 	CreatedAt string
 }
@@ -26,10 +28,18 @@ func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 
 // Create 落一行；同名冲突返回 state.ErrAlreadyExists。
 func (r *Repo) Create(ctx context.Context, run state.Runner, t *Team) error {
+	seq, err := state.NextSeq(ctx, run, "teams")
+	if err != nil {
+		return err
+	}
+	t.Seq = seq
+	if t.ID == "" {
+		t.ID = entityid.Join(t.Name, seq)
+	}
 	t.CreatedAt = state.FormatTime(r.clock.Now())
-	_, err := run.ExecContext(ctx, `
-		INSERT INTO teams (id, name, created_at) VALUES (?, ?, ?)`,
-		t.ID, t.Name, t.CreatedAt)
+	_, err = run.ExecContext(ctx, `
+		INSERT INTO teams (id, seq, name, created_at) VALUES (?, ?, ?, ?)`,
+		t.ID, t.Seq, t.Name, t.CreatedAt)
 	if state.IsUniqueViolation(err) {
 		return fmt.Errorf("%w: team name %q already exists", state.ErrAlreadyExists, t.Name)
 	}
@@ -39,9 +49,9 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, t *Team) error {
 // Get 按 ID 直读。
 func (r *Repo) Get(ctx context.Context, run state.Runner, id string) (*Team, error) {
 	row := run.QueryRowContext(ctx, `
-		SELECT id, name, created_at FROM teams WHERE id = ?`, id)
+		SELECT id, seq, name, created_at FROM teams WHERE id = ?`, id)
 	var t Team
-	if err := row.Scan(&t.ID, &t.Name, &t.CreatedAt); err != nil {
+	if err := row.Scan(&t.ID, &t.Seq, &t.Name, &t.CreatedAt); err != nil {
 		return nil, state.MapScanErr(err)
 	}
 	return &t, nil
@@ -50,7 +60,7 @@ func (r *Repo) Get(ctx context.Context, run state.Runner, id string) (*Team, err
 // List 返回全部 Team（ID 序稳定）。
 func (r *Repo) List(ctx context.Context, run state.Runner) ([]Team, error) {
 	rows, err := run.QueryContext(ctx, `
-		SELECT id, name, created_at FROM teams ORDER BY id`)
+		SELECT id, seq, name, created_at FROM teams ORDER BY seq`)
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +68,7 @@ func (r *Repo) List(ctx context.Context, run state.Runner) ([]Team, error) {
 	var out []Team
 	for rows.Next() {
 		var t Team
-		if err := rows.Scan(&t.ID, &t.Name, &t.CreatedAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.Seq, &t.Name, &t.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, t)

@@ -1268,7 +1268,7 @@ const (
 type DatabasesServiceClient interface {
 	CreateDatabase(ctx context.Context, in *CreateDatabaseRequest, opts ...grpc.CallOption) (*CreateDatabaseResponse, error)
 	GetDatabase(ctx context.Context, in *GetDatabaseRequest, opts ...grpc.CallOption) (*GetDatabaseResponse, error)
-	// ListDatabases 新→旧分页（after_database_id 游标 = ULID 创建序，
+	// ListDatabases 新→旧分页（after_database_seq 游标 = seq 创建序，
 	// ADR-0026 惯例）。
 	ListDatabases(ctx context.Context, in *ListDatabasesRequest, opts ...grpc.CallOption) (*ListDatabasesResponse, error)
 	// DeleteDatabase 收口删除（ADR-0029 决策 8）：拆载体 → tombstone 一
@@ -1427,7 +1427,7 @@ func (c *databasesServiceClient) RotateDatabasePassword(ctx context.Context, in 
 type DatabasesServiceServer interface {
 	CreateDatabase(context.Context, *CreateDatabaseRequest) (*CreateDatabaseResponse, error)
 	GetDatabase(context.Context, *GetDatabaseRequest) (*GetDatabaseResponse, error)
-	// ListDatabases 新→旧分页（after_database_id 游标 = ULID 创建序，
+	// ListDatabases 新→旧分页（after_database_seq 游标 = seq 创建序，
 	// ADR-0026 惯例）。
 	ListDatabases(context.Context, *ListDatabasesRequest) (*ListDatabasesResponse, error)
 	// DeleteDatabase 收口删除（ADR-0029 决策 8）：拆载体 → tombstone 一
@@ -1782,7 +1782,7 @@ type NetworksServiceClient interface {
 	// App 以 isolate 模式重收敛剥离附件（断存量，ADR-0013 附录 A.4）。
 	RevokeNetworkPeer(ctx context.Context, in *RevokeNetworkPeerRequest, opts ...grpc.CallOption) (*RevokeNetworkPeerResponse, error)
 	GetNetworkPeer(ctx context.Context, in *GetNetworkPeerRequest, opts ...grpc.CallOption) (*GetNetworkPeerResponse, error)
-	// ListNetworkPeers 新→旧分页（游标 = ULID 创建序；network_id /
+	// ListNetworkPeers 新→旧分页（游标 = seq 创建序；network_id /
 	// peer_project_id 过滤可选——接收方与挂靠方两侧视图同面）。
 	ListNetworkPeers(ctx context.Context, in *ListNetworkPeersRequest, opts ...grpc.CallOption) (*ListNetworkPeersResponse, error)
 }
@@ -1901,7 +1901,7 @@ type NetworksServiceServer interface {
 	// App 以 isolate 模式重收敛剥离附件（断存量，ADR-0013 附录 A.4）。
 	RevokeNetworkPeer(context.Context, *RevokeNetworkPeerRequest) (*RevokeNetworkPeerResponse, error)
 	GetNetworkPeer(context.Context, *GetNetworkPeerRequest) (*GetNetworkPeerResponse, error)
-	// ListNetworkPeers 新→旧分页（游标 = ULID 创建序；network_id /
+	// ListNetworkPeers 新→旧分页（游标 = seq 创建序；network_id /
 	// peer_project_id 过滤可选——接收方与挂靠方两侧视图同面）。
 	ListNetworkPeers(context.Context, *ListNetworkPeersRequest) (*ListNetworkPeersResponse, error)
 	mustEmbedUnimplementedNetworksServiceServer()

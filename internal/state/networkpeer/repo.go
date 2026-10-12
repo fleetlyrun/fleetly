@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/fleetlyrun/fleetly/internal/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
@@ -24,6 +25,7 @@ const (
 // Peer 是聚合行（revoked 行不删——审批历史是审计事实）。
 type Peer struct {
 	ID            string
+	Seq           int64
 	NetworkID     string
 	PeerProjectID string
 	State         State
@@ -44,13 +46,21 @@ func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 // → ErrAlreadyExists（pending/approved 在场不可重复声明；撤销后可再来——
 // 新审批环）。
 func (r *Repo) Create(ctx context.Context, run state.Runner, p *Peer) error {
+	seq, err := state.NextSeq(ctx, run, "network_peers")
+	if err != nil {
+		return err
+	}
+	p.Seq = seq
+	if p.ID == "" {
+		p.ID = entityid.Derive(p.NetworkID, "p", seq)
+	}
 	now := state.FormatTime(r.clock.Now())
 	p.CreatedAt, p.UpdatedAt = now, now
 	p.State = StatePending
-	_, err := run.ExecContext(ctx, `
-		INSERT INTO network_peers (id, network_id, peer_project_id, state, created_at, updated_at, approved_at)
-		VALUES (?, ?, ?, ?, ?, ?, '')`,
-		p.ID, p.NetworkID, p.PeerProjectID, string(p.State), p.CreatedAt, p.UpdatedAt)
+	_, err = run.ExecContext(ctx, `
+		INSERT INTO network_peers (id, seq, network_id, peer_project_id, state, created_at, updated_at, approved_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, '')`,
+		p.ID, p.Seq, p.NetworkID, p.PeerProjectID, string(p.State), p.CreatedAt, p.UpdatedAt)
 	if state.IsUniqueViolation(err) {
 		return fmt.Errorf("%w: network %s already has an active peer declaration from project %s",
 			state.ErrAlreadyExists, p.NetworkID, p.PeerProjectID)
@@ -114,7 +124,7 @@ func (r *Repo) Revoke(ctx context.Context, run state.Runner, id string) error {
 
 // List 分页枚举（新→旧 + after 游标；ADR-0026）。network_id / peer_project_id
 // 过滤可选——接收方与挂靠方两侧视图同面。
-func (r *Repo) List(ctx context.Context, run state.Runner, networkID, peerProjectID, afterID string, limit int) ([]Peer, error) {
+func (r *Repo) List(ctx context.Context, run state.Runner, networkID, peerProjectID string, afterSeq int64, limit int) ([]Peer, error) {
 	if limit <= 0 || limit > maxListLimit {
 		limit = defaultListLimit
 	}
@@ -128,11 +138,11 @@ func (r *Repo) List(ctx context.Context, run state.Runner, networkID, peerProjec
 		q += " AND peer_project_id = ?"
 		args = append(args, peerProjectID)
 	}
-	if afterID != "" {
-		q += " AND id < ?"
-		args = append(args, afterID)
+	if afterSeq > 0 {
+		q += " AND seq < ?"
+		args = append(args, afterSeq)
 	}
-	q += " ORDER BY id DESC LIMIT ?"
+	q += " ORDER BY seq DESC LIMIT ?"
 	args = append(args, limit)
 	return r.query(ctx, run, q, args...)
 }
@@ -141,7 +151,7 @@ func (r *Repo) List(ctx context.Context, run state.Runner, networkID, peerProjec
 // 面：受影响 App 的跨域附件批准态复核）。
 func (r *Repo) ListApprovedByPeerProject(ctx context.Context, run state.Runner, peerProjectID string) ([]Peer, error) {
 	return r.query(ctx, run,
-		selectCols+" WHERE peer_project_id = ? AND state = 'approved' ORDER BY id", peerProjectID)
+		selectCols+" WHERE peer_project_id = ? AND state = 'approved' ORDER BY seq", peerProjectID)
 }
 
 const (
@@ -150,7 +160,7 @@ const (
 )
 
 const selectCols = `
-	SELECT id, network_id, peer_project_id, state, created_at, updated_at, approved_at
+	SELECT id, seq, network_id, peer_project_id, state, created_at, updated_at, approved_at
 	FROM network_peers`
 
 func (r *Repo) query(ctx context.Context, run state.Runner, q string, args ...any) ([]Peer, error) {
@@ -173,7 +183,7 @@ func (r *Repo) query(ctx context.Context, run state.Runner, q string, args ...an
 func scanPeer(scan func(dest ...any) error) (*Peer, error) {
 	var p Peer
 	var stateStr string
-	if err := scan(&p.ID, &p.NetworkID, &p.PeerProjectID, &stateStr, &p.CreatedAt, &p.UpdatedAt, &p.ApprovedAt); err != nil {
+	if err := scan(&p.ID, &p.Seq, &p.NetworkID, &p.PeerProjectID, &stateStr, &p.CreatedAt, &p.UpdatedAt, &p.ApprovedAt); err != nil {
 		return nil, state.MapScanErr(err)
 	}
 	p.State = State(stateStr)

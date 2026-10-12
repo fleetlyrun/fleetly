@@ -1,10 +1,11 @@
 {
   "routes": [
     {
-      "id": "<ULID>",
-      "project_id": "<ULID>",
+      "id": "shop-1-rt1",
+      "seq": "1",
+      "project_id": "shop-1",
       "host": "shop.127.0.0.1.sslip.io",
-      "app_id": "<ULID>",
+      "app_id": "web-1",
       "process": "web",
       "port": 8080,
       "protocol": "h2c",
@@ -12,10 +13,11 @@
       "created_at": "2026-01-01T00:02:00Z"
     },
     {
-      "id": "<ULID>",
-      "project_id": "<ULID>",
+      "id": "shop-1-rt2",
+      "seq": "2",
+      "project_id": "shop-1",
       "host": "json.127.0.0.1.sslip.io",
-      "app_id": "<ULID>",
+      "app_id": "web-1",
       "process": "web",
       "port": 8080,
       "protocol": "h2c",

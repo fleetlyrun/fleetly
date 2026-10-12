@@ -7,6 +7,7 @@
 -- 行上不另存引用）。
 CREATE TABLE databases (
   id                    TEXT PRIMARY KEY,
+  seq                   INTEGER NOT NULL,
   project_id            TEXT NOT NULL,
   name                  TEXT NOT NULL,
   engine                TEXT NOT NULL,
@@ -22,6 +23,7 @@ CREATE TABLE databases (
   updated_at TEXT NOT NULL,
   deleted_at TEXT
 );
+CREATE UNIQUE INDEX idx_databases_seq ON databases(seq);
 CREATE UNIQUE INDEX idx_databases_project_name ON databases(project_id, name) WHERE deleted_at = '';
 
 -- +goose Down

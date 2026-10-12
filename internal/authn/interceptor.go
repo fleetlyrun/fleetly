@@ -14,7 +14,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/oklog/ulid/v2"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
@@ -338,7 +337,6 @@ func (a *Authenticator) auditNarrowing(ctx context.Context, tok *tokenrepo.Token
 	a.lastNarrow[tok.ID] = now
 	a.lastMu.Unlock()
 	entry := &audit.Entry{
-		ID:       ulid.Make().String(),
 		Actor:    "token:" + tok.Name,
 		Source:   SourceFromContext(ctx),
 		Action:   "token.narrowed_denied",

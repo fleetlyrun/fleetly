@@ -1,2 +1,2 @@
-backup triggered (id <ULID>) status pending
+backup triggered (id shop-1-b1) status pending
 completion lands in database.backup_succeeded / database.backup_failed events

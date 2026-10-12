@@ -5,6 +5,7 @@ package token
 import (
 	"context"
 
+	"github.com/fleetlyrun/fleetly/internal/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
@@ -12,6 +13,7 @@ import (
 // 使用）。
 type Token struct {
 	ID         string
+	Seq        int64
 	Name       string
 	TeamID     string
 	UserID     string
@@ -34,6 +36,14 @@ func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 // Create 落一行（UserID 空串落 NULL——无属主用户的 Token：Agent/CI/
 // bootstrap）。
 func (r *Repo) Create(ctx context.Context, run state.Runner, t *Token) error {
+	seq, err := state.NextSeq(ctx, run, "tokens")
+	if err != nil {
+		return err
+	}
+	t.Seq = seq
+	if t.ID == "" {
+		t.ID = entityid.Join("tok", seq)
+	}
 	t.CreatedAt = state.FormatTime(r.clock.Now())
 	revoked := 0
 	if t.Revoked {
@@ -43,17 +53,17 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, t *Token) error {
 	if t.UserID != "" {
 		userID = t.UserID
 	}
-	_, err := run.ExecContext(ctx, `
-		INSERT INTO tokens (id, name, team_id, user_id, role_id, sha256, prefix, revoked, last_used_at, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', ?)`,
-		t.ID, t.Name, t.TeamID, userID, t.RoleID, t.SHA256, t.Prefix, revoked, t.CreatedAt)
+	_, err = run.ExecContext(ctx, `
+		INSERT INTO tokens (id, seq, name, team_id, user_id, role_id, sha256, prefix, revoked, last_used_at, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?)`,
+		t.ID, t.Seq, t.Name, t.TeamID, userID, t.RoleID, t.SHA256, t.Prefix, revoked, t.CreatedAt)
 	return err
 }
 
 // GetBySHA256 按明文摘要查行（authn 拦截器的查询键）。
 func (r *Repo) GetBySHA256(ctx context.Context, run state.Runner, sha string) (*Token, error) {
 	row := run.QueryRowContext(ctx, `
-		SELECT id, name, team_id, COALESCE(user_id, ''), role_id, sha256, prefix, revoked, last_used_at, created_at
+		SELECT id, seq, name, team_id, COALESCE(user_id, ''), role_id, sha256, prefix, revoked, last_used_at, created_at
 		FROM tokens WHERE sha256 = ?`, sha)
 	return scanOne(row.Scan)
 }
@@ -61,7 +71,7 @@ func (r *Repo) GetBySHA256(ctx context.Context, run state.Runner, sha string) (*
 // Get 按 ID 直读。
 func (r *Repo) Get(ctx context.Context, run state.Runner, id string) (*Token, error) {
 	row := run.QueryRowContext(ctx, `
-		SELECT id, name, team_id, COALESCE(user_id, ''), role_id, sha256, prefix, revoked, last_used_at, created_at
+		SELECT id, seq, name, team_id, COALESCE(user_id, ''), role_id, sha256, prefix, revoked, last_used_at, created_at
 		FROM tokens WHERE id = ?`, id)
 	return scanOne(row.Scan)
 }
@@ -78,8 +88,8 @@ func (r *Repo) HasAliveBootstrap(ctx context.Context, run state.Runner) (bool, e
 // List 返回全部 Token（ID 序稳定；含已吊销——吊销状态是可见事实）。
 func (r *Repo) List(ctx context.Context, run state.Runner) ([]Token, error) {
 	rows, err := run.QueryContext(ctx, `
-		SELECT id, name, team_id, COALESCE(user_id, ''), role_id, sha256, prefix, revoked, last_used_at, created_at
-		FROM tokens ORDER BY id`)
+		SELECT id, seq, name, team_id, COALESCE(user_id, ''), role_id, sha256, prefix, revoked, last_used_at, created_at
+		FROM tokens ORDER BY seq`)
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +127,7 @@ func (r *Repo) TouchLastUsed(ctx context.Context, run state.Runner, id string) e
 func scanOne(scan func(dest ...any) error) (*Token, error) {
 	var t Token
 	var revoked int
-	if err := scan(&t.ID, &t.Name, &t.TeamID, &t.UserID, &t.RoleID, &t.SHA256, &t.Prefix,
+	if err := scan(&t.ID, &t.Seq, &t.Name, &t.TeamID, &t.UserID, &t.RoleID, &t.SHA256, &t.Prefix,
 		&revoked, &t.LastUsedAt, &t.CreatedAt); err != nil {
 		return nil, state.MapScanErr(err)
 	}

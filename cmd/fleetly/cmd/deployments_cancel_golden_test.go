@@ -13,7 +13,7 @@ import (
 
 // deploymentQueuedRe 取 deploy 人类形态首行 "deployment X queued" 的部署
 // ID（deploy 输出不带 "(id X)" 尾注，extractTailID 不适用）。
-var deploymentQueuedRe = regexp.MustCompile(`deployment ([0-9A-HJKMNP-TV-Z]{26}) queued`)
+var deploymentQueuedRe = regexp.MustCompile(`deployment ([a-z0-9][a-z0-9-]*) queued`)
 
 // seedQueuedDeployment 在独立 app 上部署 --image 停在 queued，返回部署 ID。
 // 同 App 的 queued 行会被 latest-wins 合并（admission 判定 5），两个待取消

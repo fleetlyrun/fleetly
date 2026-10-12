@@ -1,5 +1,5 @@
 {
-  "id": "<ULID>",
+  "id": "upload-1",
   "digest": "<DIGEST>",
   "size_bytes": "3584",
   "deduplicated": true

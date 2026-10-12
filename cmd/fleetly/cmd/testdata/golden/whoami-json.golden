@@ -1,5 +1,5 @@
 {
-  "token_id": "<ULID>",
+  "token_id": "tok-1",
   "token_name": "bootstrap",
   "team_id": "default",
   "role_id": "builtin-owner",

@@ -58,9 +58,9 @@ func newPlatformBackupsVerb() commands.Command {
 	return &flaggedVerb{
 		name:     name,
 		synopsis: "List platform backup snapshots (newest first)",
-		usage:    "platform backups [--after SNAPSHOT_ID] [--limit N]",
+		usage:    "platform backups [--after SEQ] [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&after, "after", "", "pagination cursor: the last snapshot id of the previous page")
+			fs.StringVar(&after, "after", "", "pagination cursor: the snapshot id of the previous page")
 			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {

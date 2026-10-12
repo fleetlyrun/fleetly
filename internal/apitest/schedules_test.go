@@ -126,7 +126,7 @@ func TestScheduleAPILifecycle(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, listed.GetSchedules(), 3)
 	paged, err := sc.ListSchedules(ctx, &automationv1.ListSchedulesRequest{
-		ProjectId: projectID, AfterScheduleId: listed.GetSchedules()[0].GetId(),
+		ProjectId: projectID, AfterScheduleSeq: listed.GetSchedules()[0].GetSeq(),
 	})
 	require.NoError(t, err)
 	assert.Len(t, paged.GetSchedules(), 2)

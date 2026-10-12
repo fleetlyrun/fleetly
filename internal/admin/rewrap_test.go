@@ -52,7 +52,7 @@ func seedOldWorld(t *testing.T, root string) (string, *state.DB) {
 	require.NoError(t, secrets.SoftDelete(ctx, db.Runner(), "proj-b", "gone"))
 
 	// app_hooks.app_id 有 FK：插一行最小 App 载体行（projects 无 FK 链）。
-	_, err = db.Runner().ExecContext(ctx, `INSERT INTO apps (id, project_id, name, created_at, updated_at, deleted_at) VALUES ('app-1', 'proj-a', 'web', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', '')`)
+	_, err = db.Runner().ExecContext(ctx, `INSERT INTO apps (id, seq, project_id, name, created_at, updated_at, deleted_at) VALUES ('app-1', 1, 'proj-a', 'web', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', '')`)
 	require.NoError(t, err)
 	require.NoError(t, hook.New(db.Clock()).Create(ctx, db.Runner(), &hook.Hook{
 		AppID: "app-1", Repo: "acme/web", Branch: "main", Dockerfile: "Dockerfile",

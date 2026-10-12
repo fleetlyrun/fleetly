@@ -553,9 +553,10 @@ func NetworkGroupName(net string) string {
 // networks 第三形态，project 段一律平台 ID——名字跨 Team 可同名，不可作锚）。
 const crossProjectPrefix = "project:"
 
-// platformIDRe 钉死平台 ID 形态（26 位大写字母数字——newID 铸造的 ULID
-// 满足；比 Crockford 全集宽一位字母面：仓内 fixture 惯用 01JD0PROJ… 形）。
-var platformIDRe = regexp.MustCompile(`^[0-9A-Z]{26}$`)
+// platformIDRe 钉死平台 id 形态（ADR-0070 单一格式：小写字母数字段以单
+// 连字符相连——web-42 形；spec 是唯一解析 id 的叶子面，跨 Project 引用的
+// project 段按此校验，名字不可作锚的设计前提不变）。
+var platformIDRe = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)+$`)
 
 // IsCrossProjectRef 报告网络附件是否跨 Project 引用形态
 // （project:<project-id>/<network-name>）。
@@ -578,7 +579,7 @@ func validateCrossProjectRef(field, net string) error {
 		return invalidf(field, "cross-project reference must be \"project:<project-id>/<network-name>\"")
 	}
 	if !platformIDRe.MatchString(projectID) {
-		return invalidf(field, "project part must be a platform project id (26-char uppercase), not a project name (names are only unique within a team)")
+		return invalidf(field, "project part must be a platform project id (lowercase segments joined by hyphens, e.g. shop-42), not a project name (names are only unique within a team)")
 	}
 	if networkName == "" {
 		return invalidf(field, "network name part must not be empty")

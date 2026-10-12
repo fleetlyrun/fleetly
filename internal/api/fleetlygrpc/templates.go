@@ -317,7 +317,7 @@ func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliv
 		events: []eventFact{identityEvent(eventTemplateInstantiated, "app", appID,
 			templateEventPayload{Template: entry.Name, Version: entry.Version, Deployment: deploymentID})},
 		audits: []*audit.Entry{{
-			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "template.instantiate",
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "template.instantiate",
 			Resource: "app/" + appID, AfterFP: entry.Name + "@" + entry.Version,
 		}},
 	})
@@ -359,7 +359,7 @@ func (svc *TemplatesService) RefreshTemplates(ctx context.Context, _ *deliveryv1
 		events: []eventFact{identityEvent(eventTemplatesRefreshed, "templates", digest,
 			templatesRefreshedPayload{Previous: previous.digest, Digest: digest, Count: len(entries)})},
 		audits: []*audit.Entry{{
-			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "templates.refresh",
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "templates.refresh",
 			Resource: "templates/catalog", AfterFP: fmt.Sprintf("%s -> %s (%d entries)", previous.digest, digest, len(entries)),
 		}},
 	})

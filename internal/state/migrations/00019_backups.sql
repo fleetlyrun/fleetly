@@ -2,7 +2,7 @@
 -- Backup 台账 + Database 行的调度锚与恢复挂起列（F2.2，ADR-0039 决策 6）。
 -- 台账行先落（pending）再执行（执行器把产物流写 ObjectStore，成功回填
 -- object_key/digest/size）；object_key 形态
--- backups/<projectID>/<databaseID>/<utc-compact-ts>-<backupULID>（无冒号，
+-- backups/<projectID>/<databaseID>/<utc-compact-ts>-<backupID>（无冒号，
 -- Windows 控制面纪律）。retention_secs 是创建时刻的行级保留窗快照——
 -- 后续改窗不追溯已落备份（删旧备份不可逆，冻结即诚实）。
 -- databases.last_backup_at 是定时调度锚（成功才推进；行存续独立于台账
@@ -11,6 +11,7 @@
 -- 幂等，诚实留给用户重建）。
 CREATE TABLE backups (
   id          TEXT PRIMARY KEY,
+  seq         INTEGER NOT NULL,
   project_id  TEXT NOT NULL,
   database_id TEXT NOT NULL,
   engine      TEXT NOT NULL,
@@ -27,7 +28,8 @@ CREATE TABLE backups (
   finished_at TEXT NOT NULL DEFAULT '',
   created_at  TEXT NOT NULL
 );
-CREATE INDEX idx_backups_database ON backups(database_id, id);
+CREATE UNIQUE INDEX idx_backups_seq ON backups(seq);
+CREATE INDEX idx_backups_database ON backups(database_id, seq);
 
 ALTER TABLE databases ADD COLUMN last_backup_at TEXT NOT NULL DEFAULT '';
 ALTER TABLE databases ADD COLUMN restore_from_backup TEXT NOT NULL DEFAULT '';

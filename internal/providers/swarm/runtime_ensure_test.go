@@ -3,6 +3,7 @@ package swarm
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"log/slog"
 	"net/netip"
 	"testing"
@@ -276,13 +277,19 @@ func TestDescribeClusterAnchorsWithoutEventSink(t *testing.T) {
 		Spec:        swarm.NodeSpec{Role: swarm.NodeRoleWorker},
 	}}
 	p := &Provider{cli: d.newClient(t)}
+	// 锚定铸造权在平台（ADR-0070）：测试注入递增闭包。
+	var seq int
+	p.SetNodeIDMinter(func(context.Context) (string, error) {
+		seq++
+		return fmt.Sprintf("node-%d", seq), nil
+	})
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	view, err := p.DescribeCluster(ctx)
 	require.NoError(t, err, "the reconciliation anchor pass must not hang on the nil event consumer")
 	require.Len(t, view.Nodes, 1)
 	assert.Equal(t, "carrier-1", view.Nodes[0].CarrierID)
-	assert.NotEmpty(t, view.Nodes[0].NodeID, "the node must leave anchored (minted platform id visible)")
+	assert.Equal(t, "node-1", view.Nodes[0].NodeID, "the node must leave anchored (minted platform id visible)")
 	assert.Equal(t, 1, d.count("POST /nodes/carrier-1/update"))
 }
 

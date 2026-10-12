@@ -28,6 +28,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/idem"
 	"github.com/fleetlyrun/fleetly/internal/material"
 	"github.com/fleetlyrun/fleetly/internal/state"
+	"github.com/fleetlyrun/fleetly/internal/state/node"
 	"github.com/fleetlyrun/fleetly/internal/state/outbox"
 	"github.com/fleetlyrun/fleetly/internal/state/sourceupload"
 	"github.com/fleetlyrun/fleetly/internal/upload"
@@ -313,6 +314,14 @@ func NewEngine(
 	cfg *config.AppConfig,
 	info buildinfo.BuildInfo,
 ) (*engine.Engine, error) {
+	// 节点平台 ID 铸造权归平台（ADR-0070）：Provider 经可选接口拿铸造闭包
+	// （providers 不 import state，装配期接线；未实现接口的 Provider 照旧）。
+	if m, ok := rt.(capability.NodeIDMinter); ok {
+		nodes := node.New(db.Clock())
+		m.SetNodeIDMinter(func(ctx context.Context) (string, error) {
+			return nodes.MintPlatformID(ctx, db.Runner())
+		})
+	}
 	overlap, err := engine.ParseScheduleOverlap(cfg.ScheduleOverlapPolicy())
 	if err != nil {
 		return nil, err

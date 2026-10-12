@@ -44,7 +44,7 @@ type TasksServiceClient interface {
 	// Token 引用非明文）。
 	CreateTask(ctx context.Context, in *CreateTaskRequest, opts ...grpc.CallOption) (*CreateTaskResponse, error)
 	GetTask(ctx context.Context, in *GetTaskRequest, opts ...grpc.CallOption) (*GetTaskResponse, error)
-	// ListTasks 新→旧分页（游标 = ULID 创建序）。
+	// ListTasks 新→旧分页（游标 = seq 创建序）。
 	ListTasks(ctx context.Context, in *ListTasksRequest, opts ...grpc.CallOption) (*ListTasksResponse, error)
 	// ScaleTask 调整 resident 池期望并发（0 = 显式缩零；补足随下一拍）。
 	ScaleTask(ctx context.Context, in *ScaleTaskRequest, opts ...grpc.CallOption) (*ScaleTaskResponse, error)
@@ -148,7 +148,7 @@ type TasksServiceServer interface {
 	// Token 引用非明文）。
 	CreateTask(context.Context, *CreateTaskRequest) (*CreateTaskResponse, error)
 	GetTask(context.Context, *GetTaskRequest) (*GetTaskResponse, error)
-	// ListTasks 新→旧分页（游标 = ULID 创建序）。
+	// ListTasks 新→旧分页（游标 = seq 创建序）。
 	ListTasks(context.Context, *ListTasksRequest) (*ListTasksResponse, error)
 	// ScaleTask 调整 resident 池期望并发（0 = 显式缩零；补足随下一拍）。
 	ScaleTask(context.Context, *ScaleTaskRequest) (*ScaleTaskResponse, error)
@@ -393,7 +393,7 @@ const (
 // （F1.3 收口面：随 Run 实体落地）——事件流过滤实现，终态帧后收流。
 type RunsServiceClient interface {
 	GetRun(ctx context.Context, in *GetRunRequest, opts ...grpc.CallOption) (*GetRunResponse, error)
-	// ListRuns 新→旧分页（游标 = ULID 创建序；task_id 过滤可选）。
+	// ListRuns 新→旧分页（游标 = seq 创建序；task_id 过滤可选）。
 	ListRuns(ctx context.Context, in *ListRunsRequest, opts ...grpc.CallOption) (*ListRunsResponse, error)
 	// StopRun 停止单条 Run（stopped_by_user；resident 池下一拍补位）。
 	StopRun(ctx context.Context, in *StopRunRequest, opts ...grpc.CallOption) (*StopRunResponse, error)
@@ -471,7 +471,7 @@ type RunsService_WaitRunClient = grpc.ServerStreamingClient[WaitRunResponse]
 // （F1.3 收口面：随 Run 实体落地）——事件流过滤实现，终态帧后收流。
 type RunsServiceServer interface {
 	GetRun(context.Context, *GetRunRequest) (*GetRunResponse, error)
-	// ListRuns 新→旧分页（游标 = ULID 创建序；task_id 过滤可选）。
+	// ListRuns 新→旧分页（游标 = seq 创建序；task_id 过滤可选）。
 	ListRuns(context.Context, *ListRunsRequest) (*ListRunsResponse, error)
 	// StopRun 停止单条 Run（stopped_by_user；resident 池下一拍补位）。
 	StopRun(context.Context, *StopRunRequest) (*StopRunResponse, error)
@@ -644,7 +644,7 @@ type SchedulesServiceClient interface {
 	// 铸出（next_fire_at 绝对时刻落行）。
 	CreateSchedule(ctx context.Context, in *CreateScheduleRequest, opts ...grpc.CallOption) (*CreateScheduleResponse, error)
 	GetSchedule(ctx context.Context, in *GetScheduleRequest, opts ...grpc.CallOption) (*GetScheduleResponse, error)
-	// ListSchedules 新→旧分页（游标 = ULID 创建序；含 tombstone——终态
+	// ListSchedules 新→旧分页（游标 = seq 创建序；含 tombstone——终态
 	// 事实可见，与 ListTasks 同款）。
 	ListSchedules(ctx context.Context, in *ListSchedulesRequest, opts ...grpc.CallOption) (*ListSchedulesResponse, error)
 	// DeleteSchedule 删除（tombstone；幂等）。已铸出的 Task 不受影响——
@@ -729,7 +729,7 @@ type SchedulesServiceServer interface {
 	// 铸出（next_fire_at 绝对时刻落行）。
 	CreateSchedule(context.Context, *CreateScheduleRequest) (*CreateScheduleResponse, error)
 	GetSchedule(context.Context, *GetScheduleRequest) (*GetScheduleResponse, error)
-	// ListSchedules 新→旧分页（游标 = ULID 创建序；含 tombstone——终态
+	// ListSchedules 新→旧分页（游标 = seq 创建序；含 tombstone——终态
 	// 事实可见，与 ListTasks 同款）。
 	ListSchedules(context.Context, *ListSchedulesRequest) (*ListSchedulesResponse, error)
 	// DeleteSchedule 删除（tombstone；幂等）。已铸出的 Task 不受影响——

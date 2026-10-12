@@ -44,20 +44,28 @@ import (
 	"fmt"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
+	"github.com/fleetlyrun/fleetly/internal/model/entityid"
+	"github.com/fleetlyrun/fleetly/internal/state"
+
 	"github.com/fleetlyrun/fleetly/internal/spec"
 	"github.com/fleetlyrun/fleetly/internal/state/task"
-	"github.com/oklog/ulid/v2"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
 // MintTaskRow 铸一条 Task 行：TaskRef 与属主注入调用方 spec（原地变更）、
-// 行缺省、冻结并装配行。name 允许空（系统级铸造不占项目名位）；ownerTokenID
-// 允许空（匿名/机制铸造无属主，resident 无租约保温）。
-func MintTaskRow(projectID, name, ownerTokenID string, s *specv1.TaskSpec) (*task.Task, error) {
+// 行缺省、冻结并装配行。name 允许空（系统级铸造不占项目名位，base = task）；
+// ownerTokenID 允许空（匿名/机制铸造无属主，resident 无租约保温）。seq 由
+// 调用方在其写事务内取（state.NextSeq）——id = <name|task>-<seq>，身份注
+// 入先于冻结（ADR-0070；CONTEXT.md Task Mint 词条：铸造单源不动）。
+func MintTaskRow(projectID, name, ownerTokenID string, s *specv1.TaskSpec, seq int64) (*task.Task, error) {
 	if s == nil {
 		return nil, fmt.Errorf("mint task row: nil spec")
 	}
-	taskID := ulid.Make().String()
+	base := name
+	if base == "" {
+		base = "task"
+	}
+	taskID := entityid.Join(base, seq)
 	s.Task = &specv1.TaskRef{Id: taskID, Project: projectID}
 	s.OwnerToken = ownerTokenID
 	form := spec.TaskForm(s)
@@ -70,7 +78,7 @@ func MintTaskRow(projectID, name, ownerTokenID string, s *specv1.TaskSpec) (*tas
 		return nil, err
 	}
 	return &task.Task{
-		ID: taskID, ProjectID: projectID, Name: name,
+		ID: taskID, Seq: seq, ProjectID: projectID, Name: name,
 		Form: form, State: task.StateActive, Spec: body,
 		OwnerTokenID: ownerTokenID, DesiredConcurrency: desired,
 		NetworkGroup: s.GetNetworkGroup(), DNSName: TaskDNSName(taskID),
@@ -89,18 +97,23 @@ func (e *Engine) mintOneShotTask(ctx context.Context, projectID string,
 	if err != nil {
 		return nil, err
 	}
-	row, err := MintTaskRow(projectID, "", "", assembled)
-	if err != nil {
-		return nil, err
-	}
+	var row *task.Task
 	err = e.db.Tx(ctx, func(tx *sql.Tx) error {
+		// 配额检查先行（拒绝零副作用；含本单自占一位；ADR-0017 附录 A.1）：
+		// 命中返回哨兵——调用方转各自语义（到期拍 skip / firstboot 有界等待 /
+		// 手动拍诚实拒绝）。随后事务内取 seq 铸行（ADR-0070）。
+		if err := e.taskSpawnQuota(ctx, tx, projectID, 1); err != nil {
+			return err
+		}
+		seq, err := state.NextSeq(ctx, tx, "tasks")
+		if err != nil {
+			return err
+		}
+		row, err = MintTaskRow(projectID, "", "", assembled, seq)
+		if err != nil {
+			return err
+		}
 		return e.commitWrite(ctx, tx, writeFact{
-			// 配额检查（含本单自占一位；ADR-0017 附录 A.1）：命中返回哨兵——
-			// 调用方转各自语义（到期拍 skip / firstboot 有界等待 / 手动拍
-			// 诚实拒绝）。
-			checks: []func(ctx context.Context, tx *sql.Tx) error{
-				func(ctx context.Context, tx *sql.Tx) error { return e.taskSpawnQuota(ctx, tx, projectID, 1) },
-			},
 			write: func(ctx context.Context, tx *sql.Tx) error { return e.tasks.Create(ctx, tx, row) },
 			events: []func() eventFact{func() eventFact {
 				return eventFact{name: EventTaskCreated, aggregate: "task", id: row.ID, payload: TaskCreatedEventJSON(row)}

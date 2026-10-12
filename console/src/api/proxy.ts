@@ -63,6 +63,11 @@ export interface components {
         /** Route 是 host/path → Process 端口的映射（协议 http/h2c/tcp + TLS 模式）。 */
         v1Route: {
             id?: string;
+            /**
+             * seq 是创建序（ADR-0070：id 后缀即此号；分页游标轴）。
+             * Format: int64
+             */
+            seq?: string;
             project_id?: string;
             host?: string;
             path?: string;
@@ -92,11 +97,11 @@ export interface operations {
             query?: {
                 project_id?: string;
                 /**
-                 * @description after_route_id 游标（上一页末条 id；空 = 首页）。游标轴 = ULID 创建
+                 * @description after_route_seq 游标（上一页末条 seq；0 = 首页）。游标轴 = seq 创建
                  *     序升序（既有响应序不变；ADR-0026 after_* + limit 惯例——project/
                  *     Team 过滤语义不变，与游标叠加）。
                  */
-                after_route_id?: string;
+                after_route_seq?: string;
                 limit?: number;
             };
             header?: never;

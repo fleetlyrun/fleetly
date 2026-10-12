@@ -1,14 +1,16 @@
 {
   "apps": [
     {
-      "id": "<ULID>",
-      "project_id": "<ULID>",
+      "id": "web-1",
+      "seq": "1",
+      "project_id": "shop-1",
       "name": "web",
       "created_at": "2026-01-01T00:00:00Z"
     },
     {
-      "id": "<ULID>",
-      "project_id": "<ULID>",
+      "id": "web-json-2",
+      "seq": "2",
+      "project_id": "shop-1",
       "name": "web-json",
       "created_at": "2026-01-01T00:00:00Z"
     }

@@ -7,12 +7,14 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/fleetlyrun/fleetly/internal/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
 // Role 是聚合行（Builtin 行 team_id 为空——平台级模板）。
 type Role struct {
 	ID        string
+	Seq       int64
 	TeamID    string
 	Name      string
 	Builtin   bool
@@ -30,15 +32,23 @@ func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 
 // Create 落一行；同 Team 内同名冲突返回 state.ErrAlreadyExists。
 func (r *Repo) Create(ctx context.Context, run state.Runner, ro *Role) error {
+	seq, err := state.NextSeq(ctx, run, "roles")
+	if err != nil {
+		return err
+	}
+	ro.Seq = seq
+	if ro.ID == "" {
+		ro.ID = entityid.Join(ro.Name, seq)
+	}
 	ro.CreatedAt = state.FormatTime(r.clock.Now())
 	scopes, err := json.Marshal(ro.Scopes)
 	if err != nil {
 		return fmt.Errorf("role: scopes json: %w", err)
 	}
 	_, err = run.ExecContext(ctx, `
-		INSERT INTO roles (id, team_id, name, builtin, scopes, created_at)
-		VALUES (?, ?, ?, ?, ?, ?)`,
-		ro.ID, ro.TeamID, ro.Name, boolInt(ro.Builtin), string(scopes), ro.CreatedAt)
+		INSERT INTO roles (id, seq, team_id, name, builtin, scopes, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		ro.ID, ro.Seq, ro.TeamID, ro.Name, boolInt(ro.Builtin), string(scopes), ro.CreatedAt)
 	if state.IsUniqueViolation(err) {
 		return fmt.Errorf("%w: role name %q already exists", state.ErrAlreadyExists, ro.Name)
 	}
@@ -46,25 +56,38 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, ro *Role) error {
 }
 
 // UpsertBuiltin 落/刷内置角色（固定 slug ID；scopes 由代码单一源刷新——
-// 词表演进时启动即同步，不待人工迁移）。
+// 词表演进时启动即同步，不待人工迁移）。幂等刷新不耗 seq 号：先 UPDATE，
+// 零行 = 首播 → 铸 seq 落行（ADR-0070）。
 func (r *Repo) UpsertBuiltin(ctx context.Context, run state.Runner, ro *Role) error {
 	ro.CreatedAt = state.FormatTime(r.clock.Now())
 	scopes, err := json.Marshal(ro.Scopes)
 	if err != nil {
 		return fmt.Errorf("role: scopes json: %w", err)
 	}
+	res, err := run.ExecContext(ctx,
+		`UPDATE roles SET scopes = ? WHERE id = ?`, string(scopes), ro.ID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		return nil
+	}
+	seq, err := state.NextSeq(ctx, run, "roles")
+	if err != nil {
+		return err
+	}
+	ro.Seq = seq
 	_, err = run.ExecContext(ctx, `
-		INSERT INTO roles (id, team_id, name, builtin, scopes, created_at)
-		VALUES (?, '', ?, 1, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET scopes = excluded.scopes`,
-		ro.ID, ro.Name, string(scopes), ro.CreatedAt)
+		INSERT INTO roles (id, seq, team_id, name, builtin, scopes, created_at)
+		VALUES (?, ?, '', ?, 1, ?, ?)`,
+		ro.ID, ro.Seq, ro.Name, string(scopes), ro.CreatedAt)
 	return err
 }
 
 // Get 按 ID 直读。
 func (r *Repo) Get(ctx context.Context, run state.Runner, id string) (*Role, error) {
 	row := run.QueryRowContext(ctx, `
-		SELECT id, team_id, name, builtin, scopes, created_at
+		SELECT id, seq, team_id, name, builtin, scopes, created_at
 		FROM roles WHERE id = ?`, id)
 	return scanRole(row.Scan)
 }
@@ -72,7 +95,7 @@ func (r *Repo) Get(ctx context.Context, run state.Runner, id string) (*Role, err
 // List 返回全部 Role（内置在前、ID 序稳定）。
 func (r *Repo) List(ctx context.Context, run state.Runner) ([]Role, error) {
 	rows, err := run.QueryContext(ctx, `
-		SELECT id, team_id, name, builtin, scopes, created_at
+		SELECT id, seq, team_id, name, builtin, scopes, created_at
 		FROM roles ORDER BY builtin DESC, id`)
 	if err != nil {
 		return nil, err
@@ -120,7 +143,7 @@ func scanRole(scan func(dest ...any) error) (*Role, error) {
 	var ro Role
 	var builtin int
 	var scopes string
-	if err := scan(&ro.ID, &ro.TeamID, &ro.Name, &builtin, &scopes, &ro.CreatedAt); err != nil {
+	if err := scan(&ro.ID, &ro.Seq, &ro.TeamID, &ro.Name, &builtin, &scopes, &ro.CreatedAt); err != nil {
 		return nil, state.MapScanErr(err)
 	}
 	ro.Builtin = builtin != 0

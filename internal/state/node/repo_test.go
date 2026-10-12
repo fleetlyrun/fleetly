@@ -30,27 +30,27 @@ func TestNodeListPagePagination(t *testing.T) {
 		require.NoError(t, nodes.Upsert(ctx, db.Runner(), n))
 	}
 
-	// 升序首页截断（platform_id 字典序）。
-	page1, err := nodes.ListPage(ctx, db.Runner(), "", 2)
+	// 升序首页截断（seq 锚定序 = 落序）。
+	page1, err := nodes.ListPage(ctx, db.Runner(), 0, 2)
 	require.NoError(t, err)
 	require.Len(t, page1, 2)
-	assert.Equal(t, "node-a", page1[0].PlatformID)
-	assert.Equal(t, "node-b", page1[1].PlatformID)
+	assert.Equal(t, "node-c", page1[0].PlatformID)
+	assert.Equal(t, "node-a", page1[1].PlatformID)
 
 	// 游标跳过首页。
-	page2, err := nodes.ListPage(ctx, db.Runner(), page1[len(page1)-1].PlatformID, 2)
+	page2, err := nodes.ListPage(ctx, db.Runner(), page1[len(page1)-1].Seq, 2)
 	require.NoError(t, err)
 	require.Len(t, page2, 1)
-	assert.Equal(t, "node-c", page2[0].PlatformID)
+	assert.Equal(t, "node-b", page2[0].PlatformID)
 
 	// 游标越过末条 → 空页。
-	page3, err := nodes.ListPage(ctx, db.Runner(), "zzz", 2)
+	page3, err := nodes.ListPage(ctx, db.Runner(), 999999, 2)
 	require.NoError(t, err)
 	assert.Empty(t, page3)
 
 	// limit 钳制：<=0 回落缺省 50（三行全回），>200 钳上界（不截断小夹具）。
 	for _, limit := range []int{0, -1, 300} {
-		got, err := nodes.ListPage(ctx, db.Runner(), "", limit)
+		got, err := nodes.ListPage(ctx, db.Runner(), 0, limit)
 		require.NoError(t, err)
 		assert.Len(t, got, 3, "limit %d clamps into range and returns all rows", limit)
 	}
@@ -59,7 +59,7 @@ func TestNodeListPagePagination(t *testing.T) {
 	require.NoError(t, nodes.Upsert(ctx, db.Runner(), &node.Node{
 		PlatformID: "node-a", CarrierID: "carrier-a", Hostname: "a2", Role: "worker",
 	}))
-	fresh, err := nodes.ListPage(ctx, db.Runner(), "", 50)
+	fresh, err := nodes.ListPage(ctx, db.Runner(), 0, 50)
 	require.NoError(t, err)
 	assert.Len(t, fresh, 3, "upsert refreshes in place, no new row")
 

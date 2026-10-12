@@ -7,6 +7,7 @@ package alertrule
 import (
 	"context"
 
+	"github.com/fleetlyrun/fleetly/internal/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
@@ -25,6 +26,7 @@ const (
 // Rule 是一行阈值规则（含评估状态面）。
 type Rule struct {
 	ID             string
+	Seq            int64
 	AppID          string
 	Metric         string
 	Threshold      float64
@@ -46,19 +48,27 @@ type Repo struct {
 // New 构造仓储。
 func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 
-const selectCols = `id, app_id, metric, threshold, for_secs, enabled, state, state_since,
+const selectCols = `id, seq, app_id, metric, threshold, for_secs, enabled, state, state_since,
 	last_value, last_observed_at, created_at, updated_at`
 
 // Create 落一条规则（初始态 ok）。
 func (r *Repo) Create(ctx context.Context, run state.Runner, rule *Rule) error {
+	seq, err := state.NextSeq(ctx, run, "alert_rules")
+	if err != nil {
+		return err
+	}
+	rule.Seq = seq
+	if rule.ID == "" {
+		rule.ID = entityid.Join(rule.AppID, seq)
+	}
 	rule.CreatedAt = state.FormatTime(r.clock.Now())
 	rule.UpdatedAt = rule.CreatedAt
 	rule.State, rule.StateSince = StateOK, rule.CreatedAt
-	_, err := run.ExecContext(ctx, `
-		INSERT INTO alert_rules (id, app_id, metric, threshold, for_secs, enabled, state, state_since,
+	_, err = run.ExecContext(ctx, `
+		INSERT INTO alert_rules (id, seq, app_id, metric, threshold, for_secs, enabled, state, state_since,
 			last_value, last_observed_at, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, '', ?, ?)`,
-		rule.ID, rule.AppID, rule.Metric, rule.Threshold, rule.ForSecs, boolInt(rule.Enabled),
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, '', ?, ?)`,
+		rule.ID, rule.Seq, rule.AppID, rule.Metric, rule.Threshold, rule.ForSecs, boolInt(rule.Enabled),
 		rule.State, rule.StateSince, rule.CreatedAt, rule.UpdatedAt)
 	return err
 }
@@ -76,7 +86,7 @@ func (r *Repo) ListEnabled(ctx context.Context, run state.Runner) ([]Rule, error
 
 // ListByApp 列某 App 的规则（含禁用行；id 升序）。
 func (r *Repo) ListByApp(ctx context.Context, run state.Runner, appID string) ([]Rule, error) {
-	return r.listWhere(ctx, run, "WHERE app_id = ? ORDER BY id", appID)
+	return r.listWhere(ctx, run, "WHERE app_id = ? ORDER BY seq", appID)
 }
 
 // ListAll 列全部规则（alerts list 面）。
@@ -137,7 +147,7 @@ func (r *Repo) Delete(ctx context.Context, run state.Runner, id string) error {
 func scanRule(row interface{ Scan(dest ...any) error }) (*Rule, error) {
 	var rule Rule
 	var enabled int
-	err := row.Scan(&rule.ID, &rule.AppID, &rule.Metric, &rule.Threshold, &rule.ForSecs, &enabled,
+	err := row.Scan(&rule.ID, &rule.Seq, &rule.AppID, &rule.Metric, &rule.Threshold, &rule.ForSecs, &enabled,
 		&rule.State, &rule.StateSince, &rule.LastValue, &rule.LastObservedAt,
 		&rule.CreatedAt, &rule.UpdatedAt)
 	if state.MapScanErr(err) == state.ErrNotFound {

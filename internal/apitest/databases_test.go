@@ -111,7 +111,7 @@ func TestDatabaseLifecycle(t *testing.T) {
 	require.Len(t, list.GetDatabases(), 1)
 	assert.Equal(t, row.GetId(), list.GetDatabases()[0].GetId())
 	after, err := dbs.ListDatabases(ctx, &structurev1.ListDatabasesRequest{
-		ProjectId: projectID, AfterDatabaseId: row.GetId(),
+		ProjectId: projectID, AfterDatabaseSeq: row.GetSeq(),
 	})
 	require.NoError(t, err)
 	assert.Empty(t, after.GetDatabases())

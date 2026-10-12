@@ -16,7 +16,6 @@ import (
 	"github.com/moby/moby/api/types/events"
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/client"
-	"github.com/oklog/ulid/v2"
 
 	"github.com/fleetlyrun/fleetly/internal/capability"
 )
@@ -905,7 +904,13 @@ func (p *Provider) mintNodeID(ctx context.Context, node swarm.Node) (string, err
 		if id := node.Spec.Labels[labelNodeID]; id != "" {
 			return "", nil // 他方已完成
 		}
-		minted := ulid.Make().String()
+		if p.mintNodePlatformID == nil {
+			return "", fmt.Errorf("node id minter not wired (assembly must inject SetNodeIDMinter)")
+		}
+		minted, err := p.mintNodePlatformID(ctx)
+		if err != nil {
+			return "", err
+		}
 		spec := node.Spec
 		if spec.Labels == nil {
 			spec.Labels = map[string]string{}
@@ -917,7 +922,7 @@ func (p *Provider) mintNodeID(ctx context.Context, node swarm.Node) (string, err
 		}
 		labels[labelNodeID] = minted
 		spec.Labels = labels
-		_, err := p.cli.NodeUpdate(ctx, node.ID, client.NodeUpdateOptions{
+		_, err = p.cli.NodeUpdate(ctx, node.ID, client.NodeUpdateOptions{
 			Version: node.Version,
 			Spec:    spec,
 		})

@@ -83,14 +83,14 @@ func newProjectsCreateVerb() commands.Command {
 
 func newProjectsListVerb() commands.Command {
 	const name = "list"
-	var after string
+	var after int64
 	var limit int
 	return &flaggedVerb{
 		name:     name,
 		synopsis: "List projects",
-		usage:    "projects list [--after PROJECT_ID] [--limit N]",
+		usage:    "projects list [--after SEQ] [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&after, "after", "", "pagination cursor: the last project id of the previous page")
+			fs.Int64Var(&after, "after", 0, "pagination cursor: the seq of the last row of the previous page")
 			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
@@ -104,7 +104,7 @@ func newProjectsListVerb() commands.Command {
 			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Projects.ListProjects(ctx, &structurev1.ListProjectsRequest{
-				AfterProjectId: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
+				AfterProjectSeq: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
 			})
 			if err != nil {
 				return err
@@ -227,15 +227,16 @@ func newAppsSpecVerb() commands.Command {
 
 func newAppsListVerb() commands.Command {
 	const name = "list"
-	var project, after string
+	var project string
+	var after int64
 	var limit int
 	return &flaggedVerb{
 		name:     name,
 		synopsis: "List apps in a project",
-		usage:    "apps list --project PROJECT_ID [--after APP_ID] [--limit N]",
+		usage:    "apps list --project PROJECT_ID [--after SEQ] [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&project, "project", "", "project id (required)")
-			fs.StringVar(&after, "after", "", "pagination cursor: the last app id of the previous page")
+			fs.Int64Var(&after, "after", 0, "pagination cursor: the seq of the last row of the previous page")
 			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
@@ -252,7 +253,7 @@ func newAppsListVerb() commands.Command {
 			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Apps.ListApps(ctx, &structurev1.ListAppsRequest{
-				ProjectId: project, AfterAppId: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
+				ProjectId: project, AfterAppSeq: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
 			})
 			if err != nil {
 				return err
@@ -385,7 +386,8 @@ func newSecretsPutVerb() commands.Command {
 
 func newSecretsListVerb() commands.Command {
 	const name = "list"
-	var project, after string
+	var project string
+	var after string
 	var limit int
 	return &flaggedVerb{
 		name:     name,
@@ -468,7 +470,8 @@ func newConfigsPutVerb() commands.Command {
 
 func newConfigsListVerb() commands.Command {
 	const name = "list"
-	var project, after string
+	var project string
+	var after string
 	var limit int
 	return &flaggedVerb{
 		name:     name,
@@ -561,7 +564,8 @@ func newSharedVarsPutVerb() commands.Command {
 
 func newSharedVarsListVerb() commands.Command {
 	const name = "list"
-	var project, after string
+	var project string
+	var after string
 	var limit int
 	return &flaggedVerb{
 		name:     name,
@@ -749,7 +753,8 @@ func newNetworksCreateVerb() commands.Command {
 // 消息（project 过滤已含 project 维度，不重复列）。
 func newNetworksListVerb() commands.Command {
 	const name = "list"
-	var project, after string
+	var project string
+	var after string
 	var limit int
 	return &flaggedVerb{
 		name:     name,
@@ -937,16 +942,17 @@ func newNetworksRevokeVerb() commands.Command {
 
 func newNetworksPeersVerb() commands.Command {
 	const name = "peers"
-	var network, project, after string
+	var network, project string
+	var after int64
 	var limit int
 	return &flaggedVerb{
 		name:     name,
 		synopsis: "List cross-project peer declarations (filter by --network or --project)",
-		usage:    "networks peers [--network NETWORK_ID] [--project PEER_PROJECT_ID] [--after PEER_ID] [--limit N]",
+		usage:    "networks peers [--network NETWORK_ID] [--project PEER_PROJECT_ID] [--after SEQ] [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&network, "network", "", "filter by receiving network id")
 			fs.StringVar(&project, "project", "", "filter by attaching (peer) project id")
-			fs.StringVar(&after, "after", "", "pagination cursor: the last peer id of the previous page")
+			fs.Int64Var(&after, "after", 0, "pagination cursor: the seq of the last row of the previous page")
 			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
@@ -960,7 +966,7 @@ func newNetworksPeersVerb() commands.Command {
 			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Networks.ListNetworkPeers(ctx, &structurev1.ListNetworkPeersRequest{
-				NetworkId: network, PeerProjectId: project, AfterPeerId: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
+				NetworkId: network, PeerProjectId: project, AfterPeerSeq: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
 			})
 			if err != nil {
 				return err

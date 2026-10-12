@@ -59,11 +59,11 @@ func TestListByProjectPagination(t *testing.T) {
 	for i, id := range ids {
 		require.NoError(t, repo.Create(ctx, run, newRow(id, "db"+string(rune('a'+i)))))
 	}
-	page1, err := repo.ListByProject(ctx, run, "01JD0PROJ0000000000000001", "", 2)
+	page1, err := repo.ListByProject(ctx, run, "01JD0PROJ0000000000000001", 0, 2)
 	require.NoError(t, err)
 	assert.Len(t, page1, 2)
 	assert.Equal(t, "01JD0DB00000000000000000C", page1[0].ID) // 新→旧
-	page2, err := repo.ListByProject(ctx, run, "01JD0PROJ0000000000000001", page1[len(page1)-1].ID, 2)
+	page2, err := repo.ListByProject(ctx, run, "01JD0PROJ0000000000000001", page1[len(page1)-1].Seq, 2)
 	require.NoError(t, err)
 	assert.Len(t, page2, 1)
 

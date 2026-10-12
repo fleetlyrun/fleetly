@@ -36,11 +36,12 @@
         },
         "parameters": [
           {
-            "name": "after_freeze_id",
-            "description": "after_freeze_id 游标（上一页末条 id；空 = 首页）。",
+            "name": "after_freeze_seq",
+            "description": "after_freeze_seq 游标（上一页末条 seq（0 = 首页）。",
             "in": "query",
             "required": false,
-            "type": "string"
+            "type": "string",
+            "format": "int64"
           },
           {
             "name": "limit",
@@ -135,6 +136,11 @@
       "properties": {
         "id": {
           "type": "string"
+        },
+        "seq": {
+          "type": "string",
+          "format": "int64",
+          "title": "seq 是创建序（ADR-0070：id 后缀即此号；分页游标轴）。"
         },
         "team_id": {
           "type": "string",

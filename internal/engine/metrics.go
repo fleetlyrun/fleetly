@@ -22,8 +22,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/oklog/ulid/v2"
-
 	"github.com/fleetlyrun/fleetly/internal/capability"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	alertrule "github.com/fleetlyrun/fleetly/internal/state/alertrule"
@@ -715,9 +713,6 @@ func (e *Engine) SystemOffsiteAlertState() SystemAlertState {
 	}
 	return SystemAlertState{RuleID: systemOffsiteRuleID, State: st, StateSince: since, System: true}
 }
-
-// NewAlertRuleID 铸规则 ID（API 受理面用）。
-func NewAlertRuleID() string { return ulid.Make().String() }
 
 // AlertRuleRepo / NotificationChannelRepo 是告警面 repo 访问器（API 受理面
 // 经 commit 原语持 tx 写行——repo 的 Runner 参数即 tx）。

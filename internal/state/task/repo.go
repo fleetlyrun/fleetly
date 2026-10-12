@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/fleetlyrun/fleetly/internal/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
@@ -43,6 +44,7 @@ const (
 // Task 是聚合行（Task 行不删——审计单位；deleted 是 tombstone）。
 type Task struct {
 	ID                 string
+	Seq                int64
 	ProjectID          string
 	Name               string
 	Form               string // one-shot | resident（spec.Form 同值）
@@ -70,13 +72,25 @@ func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 func (r *Repo) Create(ctx context.Context, run state.Runner, t *Task) error {
 	now := state.FormatTime(r.clock.Now())
 	t.CreatedAt, t.UpdatedAt = now, now
+	// minttask 在 TaskSpec 冻结期预铸 seq/id（ADR-0070：Task Mint 词条——
+	// 身份注入先于冻结）；此处零值兜底补铸，预置则原样落行。
+	if t.Seq == 0 {
+		seq, err := state.NextSeq(ctx, run, "tasks")
+		if err != nil {
+			return err
+		}
+		t.Seq = seq
+	}
+	if t.ID == "" {
+		t.ID = entityid.Join(t.Name, t.Seq)
+	}
 	_, err := run.ExecContext(ctx, `
 		INSERT INTO tasks
-			(id, project_id, name, form, state, spec, owner_token_id,
+			(id, seq, project_id, name, form, state, spec, owner_token_id,
 			 desired_concurrency, network_group, dns_name, lease_deadline,
 			 created_at, updated_at, finished_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '')`,
-		t.ID, t.ProjectID, t.Name, t.Form, string(t.State), t.Spec, t.OwnerTokenID,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '')`,
+		t.ID, t.Seq, t.ProjectID, t.Name, t.Form, string(t.State), t.Spec, t.OwnerTokenID,
 		t.DesiredConcurrency, t.NetworkGroup, t.DNSName, t.LeaseDeadline,
 		t.CreatedAt, t.UpdatedAt)
 	if state.IsUniqueViolation(err) {
@@ -99,18 +113,18 @@ func (r *Repo) GetByName(ctx context.Context, run state.Runner, projectID, name 
 }
 
 // ListByProject 返回项目内 Task（新→旧 + after 游标；ADR-0026 after_* + limit
-// 惯例——游标 = ULID 创建序）。
-func (r *Repo) ListByProject(ctx context.Context, run state.Runner, projectID, afterID string, limit int) ([]Task, error) {
+// 惯例——游标 = seq 创建序）。
+func (r *Repo) ListByProject(ctx context.Context, run state.Runner, projectID string, afterSeq int64, limit int) ([]Task, error) {
 	if limit <= 0 || limit > maxListLimit {
 		limit = defaultListLimit
 	}
 	q := selectCols + " WHERE project_id = ?"
 	args := []any{projectID}
-	if afterID != "" {
-		q += " AND id < ?"
-		args = append(args, afterID)
+	if afterSeq > 0 {
+		q += " AND seq < ?"
+		args = append(args, afterSeq)
 	}
-	q += " ORDER BY id DESC LIMIT ?"
+	q += " ORDER BY seq DESC LIMIT ?"
 	args = append(args, limit)
 	return r.query(ctx, run, q, args...)
 }
@@ -118,7 +132,7 @@ func (r *Repo) ListByProject(ctx context.Context, run state.Runner, projectID, a
 // ListDriving 返回全部待驱动行（active/draining；tombstone 与终态不拾取）。
 func (r *Repo) ListDriving(ctx context.Context, run state.Runner) ([]Task, error) {
 	return r.query(ctx, run,
-		selectCols+" WHERE state IN ('active', 'draining') ORDER BY id")
+		selectCols+" WHERE state IN ('active', 'draining') ORDER BY seq")
 }
 
 // ListRecentlyFinished 返回收口时刻在窗内的终态 Task（收尾批 E29-2 残留
@@ -140,7 +154,7 @@ func (r *Repo) ListRecentlyFinished(ctx context.Context, run state.Runner, since
 // ListByOwner 返回属主 Token 名下活跃行（吊销排空的拉式扫描面，P1-8）。
 func (r *Repo) ListByOwner(ctx context.Context, run state.Runner, tokenID string) ([]Task, error) {
 	return r.query(ctx, run,
-		selectCols+" WHERE owner_token_id = ? AND state IN ('active', 'draining') ORDER BY id", tokenID)
+		selectCols+" WHERE owner_token_id = ? AND state IN ('active', 'draining') ORDER BY seq", tokenID)
 }
 
 // StatsByProject 返回 Project 内非终态 Task 的配额口径统计（ADR-0017
@@ -217,7 +231,7 @@ const (
 )
 
 const selectCols = `
-	SELECT id, project_id, name, form, state, spec, owner_token_id,
+	SELECT id, seq, project_id, name, form, state, spec, owner_token_id,
 	       desired_concurrency, network_group, dns_name, lease_deadline,
 	       created_at, updated_at, finished_at
 	FROM tasks`
@@ -242,7 +256,7 @@ func (r *Repo) query(ctx context.Context, run state.Runner, q string, args ...an
 func scanTask(scan func(dest ...any) error) (*Task, error) {
 	var t Task
 	var stateStr string
-	err := scan(&t.ID, &t.ProjectID, &t.Name, &t.Form, &stateStr, &t.Spec, &t.OwnerTokenID,
+	err := scan(&t.ID, &t.Seq, &t.ProjectID, &t.Name, &t.Form, &stateStr, &t.Spec, &t.OwnerTokenID,
 		&t.DesiredConcurrency, &t.NetworkGroup, &t.DNSName, &t.LeaseDeadline,
 		&t.CreatedAt, &t.UpdatedAt, &t.FinishedAt)
 	if err != nil {

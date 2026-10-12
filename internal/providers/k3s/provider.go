@@ -33,6 +33,10 @@ import (
 type Provider struct {
 	cli kubernetes.Interface
 
+	// mintNodePlatformID 是平台节点 ID 铸造闭包（装配期经 SetNodeIDMinter
+	// 注入——铸造权在平台 state 层 seq 单源，ADR-0070；nil = 锚定跳过）。
+	mintNodePlatformID func(ctx context.Context) (string, error)
+
 	// restCfg 是工作客户端的连接面（SA token 身份；ExecWorkload 的 SPDY
 	// 执行器构造消费——ADR-0053 决策 1/4）。
 	restCfg *rest.Config

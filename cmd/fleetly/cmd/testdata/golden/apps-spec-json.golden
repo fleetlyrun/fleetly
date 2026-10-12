@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "app": {
-    "id": "<ULID>",
-    "project": "<ULID>"
+    "id": "web-1",
+    "project": "shop-1"
   },
   "source": {
     "image": {

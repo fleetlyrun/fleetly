@@ -22,7 +22,6 @@ import (
 	dbrepo "github.com/fleetlyrun/fleetly/internal/state/database"
 	"github.com/fleetlyrun/fleetly/internal/state/secret"
 	"github.com/fleetlyrun/fleetly/internal/state/volume"
-	"github.com/oklog/ulid/v2"
 )
 
 // dbCredentialSecretPrefix 是数据库凭证 Secret 的命名约定（database:<name>；
@@ -273,7 +272,7 @@ func (e *Engine) ensureDatabaseVolume(ctx context.Context, row *dbrepo.Database)
 		return err
 	}
 	return e.volumes.Create(ctx, e.db.Runner(), &volume.Volume{
-		ID: ulid.Make().String(), ProjectID: row.ProjectID, Name: row.Name,
+		ProjectID: row.ProjectID, Name: row.Name,
 	})
 }
 

@@ -54,7 +54,8 @@ export function formatDuration(seconds: number | string | undefined | null): str
   return `${h}h ${String(m % 60).padStart(2, "0")}m`;
 }
 
-// shortId 取 ULID/digest 显示形态（前 10 字符），完整值由 CopyButton/	title 承载。
+// shortId 取超长 id/digest 的显示截断（可读 id 多数短于阈值原样展示），
+// 完整值由 CopyButton/title 承载。
 export function shortId(value: string | undefined): string {
   if (!value) return "—";
   return value.length > 10 ? `${value.slice(0, 10)}…` : value;

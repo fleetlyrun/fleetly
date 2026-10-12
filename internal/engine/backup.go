@@ -16,8 +16,6 @@ import (
 	"io"
 	"time"
 
-	"github.com/oklog/ulid/v2"
-
 	"github.com/fleetlyrun/fleetly/internal/capability"
 	"github.com/fleetlyrun/fleetly/internal/engine/dbtemplate"
 	"github.com/fleetlyrun/fleetly/internal/state"
@@ -158,7 +156,6 @@ func (e *Engine) schedulePass(ctx context.Context) {
 			continue
 		}
 		b := &backup.Backup{
-			ID:            ulid.Make().String(),
 			ProjectID:     row.ProjectID,
 			DatabaseID:    row.ID,
 			Engine:        row.Engine,

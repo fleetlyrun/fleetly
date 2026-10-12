@@ -8,12 +8,14 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/fleetlyrun/fleetly/internal/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
 // Upload 是上传产物行（无状态机——上传是一次性动作，流中断=tmp 丢弃无行）。
 type Upload struct {
 	ID        string
+	Seq       int64
 	ProjectID string
 	Digest    string // sha256 hex
 	SizeBytes int64
@@ -28,16 +30,24 @@ type Repo struct {
 // New 构造 repo。
 func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 
-const selectCols = "id, project_id, digest, size_bytes, created_at"
+const selectCols = "id, seq, project_id, digest, size_bytes, created_at"
 
 // Create 落行；同 (project, digest) 已有行 → ErrAlreadyExists（finalize 的
 // 去重路径先 FindByDigest，此形态只在并发同内容上传时可达）。
 func (r *Repo) Create(ctx context.Context, run state.Runner, u *Upload) error {
+	seq, err := state.NextSeq(ctx, run, "source_uploads")
+	if err != nil {
+		return err
+	}
+	u.Seq = seq
+	if u.ID == "" {
+		u.ID = entityid.Join("upload", seq)
+	}
 	u.CreatedAt = state.FormatTime(r.clock.Now())
-	_, err := run.ExecContext(ctx, `
-		INSERT INTO source_uploads (id, project_id, digest, size_bytes, created_at)
-		VALUES (?, ?, ?, ?, ?)`,
-		u.ID, u.ProjectID, u.Digest, u.SizeBytes, u.CreatedAt)
+	_, err = run.ExecContext(ctx, `
+		INSERT INTO source_uploads (id, seq, project_id, digest, size_bytes, created_at)
+		VALUES (?, ?, ?, ?, ?, ?)`,
+		u.ID, u.Seq, u.ProjectID, u.Digest, u.SizeBytes, u.CreatedAt)
 	if state.IsUniqueViolation(err) {
 		return fmt.Errorf("%w: project %q already holds an upload with digest %s", state.ErrAlreadyExists, u.ProjectID, u.Digest)
 	}
@@ -59,17 +69,17 @@ func (r *Repo) FindByDigest(ctx context.Context, run state.Runner, projectID, di
 }
 
 // ListByProject 返回项目上传行（新→旧 + after 游标；ADR-0026 惯例）。
-func (r *Repo) ListByProject(ctx context.Context, run state.Runner, projectID, afterID string, limit int) ([]Upload, error) {
+func (r *Repo) ListByProject(ctx context.Context, run state.Runner, projectID string, afterSeq int64, limit int) ([]Upload, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
 	q := "SELECT " + selectCols + " FROM source_uploads WHERE project_id = ?"
 	args := []any{projectID}
-	if afterID != "" {
-		q += " AND id < ?"
-		args = append(args, afterID)
+	if afterSeq > 0 {
+		q += " AND seq < ?"
+		args = append(args, afterSeq)
 	}
-	q += " ORDER BY id DESC LIMIT ?"
+	q += " ORDER BY seq DESC LIMIT ?"
 	args = append(args, limit)
 	rows, err := run.QueryContext(ctx, q, args...)
 	if err != nil {
@@ -120,7 +130,7 @@ func (r *Repo) SweepUnreferenced(ctx context.Context, run state.Runner, cutoff s
 		SELECT `+selectCols+` FROM source_uploads u
 		WHERE u.created_at < ?
 		  AND NOT EXISTS (SELECT 1 FROM revisions rv WHERE rv.spec LIKE '%' || u.id || '%')
-		ORDER BY u.id ASC`, cutoff)
+		ORDER BY u.seq ASC`, cutoff)
 	if err != nil {
 		return nil, err
 	}
@@ -148,7 +158,7 @@ type scanner interface{ Scan(dest ...any) error }
 
 func scanUpload(row scanner) (*Upload, error) {
 	var u Upload
-	if err := row.Scan(&u.ID, &u.ProjectID, &u.Digest, &u.SizeBytes, &u.CreatedAt); err != nil {
+	if err := row.Scan(&u.ID, &u.Seq, &u.ProjectID, &u.Digest, &u.SizeBytes, &u.CreatedAt); err != nil {
 		return nil, state.MapScanErr(err)
 	}
 	return &u, nil

@@ -83,12 +83,14 @@ func (BrowseReadOnlyEnforcement) EnumDescriptor() ([]byte, []int) {
 }
 
 type Project struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	TeamId        string                 `protobuf:"bytes,3,opt,name=team_id,json=teamId,proto3" json:"team_id,omitempty"`
-	CreatedAt     string                 `protobuf:"bytes,4,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	DeletedAt     string                 `protobuf:"bytes,5,opt,name=deleted_at,json=deletedAt,proto3" json:"deleted_at,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// seq 是创建序（ADR-0070：id 后缀即此号；分页游标轴）。
+	Seq           int64  `protobuf:"varint,6,opt,name=seq,proto3" json:"seq,omitempty"`
+	Name          string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	TeamId        string `protobuf:"bytes,3,opt,name=team_id,json=teamId,proto3" json:"team_id,omitempty"`
+	CreatedAt     string `protobuf:"bytes,4,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	DeletedAt     string `protobuf:"bytes,5,opt,name=deleted_at,json=deletedAt,proto3" json:"deleted_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -128,6 +130,13 @@ func (x *Project) GetId() string {
 		return x.Id
 	}
 	return ""
+}
+
+func (x *Project) GetSeq() int64 {
+	if x != nil {
+		return x.Seq
+	}
+	return 0
 }
 
 func (x *Project) GetName() string {
@@ -344,12 +353,12 @@ func (x *GetProjectResponse) GetProject() *Project {
 
 type ListProjectsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// after_project_id 游标（上一页末条 id；空 = 首页）。游标轴 = ULID
+	// after_project_seq 游标（上一页末条 seq；0 = 首页）。游标轴 = seq
 	// 创建序升序（既有响应序不变；ADR-0026 after_* + limit 惯例）。
-	AfterProjectId string `protobuf:"bytes,1,opt,name=after_project_id,json=afterProjectId,proto3" json:"after_project_id,omitempty"`
-	Limit          int32  `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	AfterProjectSeq int64 `protobuf:"varint,1,opt,name=after_project_seq,json=afterProjectSeq,proto3" json:"after_project_seq,omitempty"`
+	Limit           int32 `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *ListProjectsRequest) Reset() {
@@ -382,11 +391,11 @@ func (*ListProjectsRequest) Descriptor() ([]byte, []int) {
 	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{5}
 }
 
-func (x *ListProjectsRequest) GetAfterProjectId() string {
+func (x *ListProjectsRequest) GetAfterProjectSeq() int64 {
 	if x != nil {
-		return x.AfterProjectId
+		return x.AfterProjectSeq
 	}
-	return ""
+	return 0
 }
 
 func (x *ListProjectsRequest) GetLimit() int32 {
@@ -521,11 +530,13 @@ func (*DeleteProjectResponse) Descriptor() ([]byte, []int) {
 }
 
 type App struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	ProjectId     string                 `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
-	CreatedAt     string                 `protobuf:"bytes,4,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// seq 是创建序（ADR-0070：id 后缀即此号；分页游标轴）。
+	Seq           int64  `protobuf:"varint,5,opt,name=seq,proto3" json:"seq,omitempty"`
+	ProjectId     string `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	Name          string `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	CreatedAt     string `protobuf:"bytes,4,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -565,6 +576,13 @@ func (x *App) GetId() string {
 		return x.Id
 	}
 	return ""
+}
+
+func (x *App) GetSeq() int64 {
+	if x != nil {
+		return x.Seq
+	}
+	return 0
 }
 
 func (x *App) GetProjectId() string {
@@ -961,10 +979,10 @@ func (x *GetAppSpecResponse) GetSpec() *v1.AppSpec {
 type ListAppsRequest struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	ProjectId string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	// after_app_id 游标（上一页末条 id；空 = 首页）。游标轴 = ULID 创建序
+	// after_app_seq 游标（上一页末条 seq（0 = 首页）。游标轴 = seq 创建序
 	// 升序（既有响应序不变；ADR-0026 after_* + limit 惯例）。
-	AfterAppId    string `protobuf:"bytes,2,opt,name=after_app_id,json=afterAppId,proto3" json:"after_app_id,omitempty"`
-	Limit         int32  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
+	AfterAppSeq   int64 `protobuf:"varint,2,opt,name=after_app_seq,json=afterAppSeq,proto3" json:"after_app_seq,omitempty"`
+	Limit         int32 `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1006,11 +1024,11 @@ func (x *ListAppsRequest) GetProjectId() string {
 	return ""
 }
 
-func (x *ListAppsRequest) GetAfterAppId() string {
+func (x *ListAppsRequest) GetAfterAppSeq() int64 {
 	if x != nil {
-		return x.AfterAppId
+		return x.AfterAppSeq
 	}
-	return ""
+	return 0
 }
 
 func (x *ListAppsRequest) GetLimit() int32 {
@@ -2667,11 +2685,13 @@ func (*DeleteVolumeResponse) Descriptor() ([]byte, []int) {
 // Database 是托管有状态服务行（ADR-0029：模板参数创建即不可变，无
 // Revision/Deployment 面）。
 type Database struct {
-	state     protoimpl.MessageState `protogen:"open.v1"`
-	Id        string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	ProjectId string                 `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	Name      string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
-	Engine    string                 `protobuf:"bytes,4,opt,name=engine,proto3" json:"engine,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// seq 是创建序（ADR-0070：id 后缀即此号；分页游标轴）。
+	Seq       int64  `protobuf:"varint,15,opt,name=seq,proto3" json:"seq,omitempty"`
+	ProjectId string `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	Name      string `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	Engine    string `protobuf:"bytes,4,opt,name=engine,proto3" json:"engine,omitempty"`
 	// version 是模板钉版短名（版本矩阵随 F2，本批每引擎单一钉版）。
 	Version string `protobuf:"bytes,5,opt,name=version,proto3" json:"version,omitempty"`
 	// credentials_ref 是凭证 Secret 名（值 = 完整连接 URL，永不回显；App
@@ -2732,6 +2752,13 @@ func (x *Database) GetId() string {
 		return x.Id
 	}
 	return ""
+}
+
+func (x *Database) GetSeq() int64 {
+	if x != nil {
+		return x.Seq
+	}
+	return 0
 }
 
 func (x *Database) GetProjectId() string {
@@ -3032,11 +3059,11 @@ func (x *GetDatabaseResponse) GetDatabase() *Database {
 type ListDatabasesRequest struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	ProjectId string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	// after_database_id 游标（上一页末条 id；空 = 首页）。
-	AfterDatabaseId string `protobuf:"bytes,2,opt,name=after_database_id,json=afterDatabaseId,proto3" json:"after_database_id,omitempty"`
-	Limit           int32  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// after_database_seq 游标（上一页末条 seq（0 = 首页）。
+	AfterDatabaseSeq int64 `protobuf:"varint,2,opt,name=after_database_seq,json=afterDatabaseSeq,proto3" json:"after_database_seq,omitempty"`
+	Limit            int32 `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *ListDatabasesRequest) Reset() {
@@ -3076,11 +3103,11 @@ func (x *ListDatabasesRequest) GetProjectId() string {
 	return ""
 }
 
-func (x *ListDatabasesRequest) GetAfterDatabaseId() string {
+func (x *ListDatabasesRequest) GetAfterDatabaseSeq() int64 {
 	if x != nil {
-		return x.AfterDatabaseId
+		return x.AfterDatabaseSeq
 	}
-	return ""
+	return 0
 }
 
 func (x *ListDatabasesRequest) GetLimit() int32 {
@@ -3217,14 +3244,16 @@ func (*DeleteDatabaseResponse) Descriptor() ([]byte, []int) {
 // Backup 是一次备份的台账行（ADR-0039）：成功行携带 ObjectStore 回执
 // （object_key/digest/size = verify 锚）；credential 值永不出现。
 type Backup struct {
-	state      protoimpl.MessageState `protogen:"open.v1"`
-	Id         string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	ProjectId  string                 `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	DatabaseId string                 `protobuf:"bytes,3,opt,name=database_id,json=databaseId,proto3" json:"database_id,omitempty"`
-	Engine     string                 `protobuf:"bytes,4,opt,name=engine,proto3" json:"engine,omitempty"`
-	ObjectKey  string                 `protobuf:"bytes,5,opt,name=object_key,json=objectKey,proto3" json:"object_key,omitempty"`
-	Digest     string                 `protobuf:"bytes,6,opt,name=digest,proto3" json:"digest,omitempty"`
-	SizeBytes  int64                  `protobuf:"varint,7,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// seq 是创建序（ADR-0070：id 后缀即此号；分页游标轴）。
+	Seq        int64  `protobuf:"varint,13,opt,name=seq,proto3" json:"seq,omitempty"`
+	ProjectId  string `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	DatabaseId string `protobuf:"bytes,3,opt,name=database_id,json=databaseId,proto3" json:"database_id,omitempty"`
+	Engine     string `protobuf:"bytes,4,opt,name=engine,proto3" json:"engine,omitempty"`
+	ObjectKey  string `protobuf:"bytes,5,opt,name=object_key,json=objectKey,proto3" json:"object_key,omitempty"`
+	Digest     string `protobuf:"bytes,6,opt,name=digest,proto3" json:"digest,omitempty"`
+	SizeBytes  int64  `protobuf:"varint,7,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
 	// status: pending | running | succeeded | failed。
 	Status        string `protobuf:"bytes,8,opt,name=status,proto3" json:"status,omitempty"`
 	Error         string `protobuf:"bytes,9,opt,name=error,proto3" json:"error,omitempty"`
@@ -3270,6 +3299,13 @@ func (x *Backup) GetId() string {
 		return x.Id
 	}
 	return ""
+}
+
+func (x *Backup) GetSeq() int64 {
+	if x != nil {
+		return x.Seq
+	}
+	return 0
 }
 
 func (x *Backup) GetProjectId() string {
@@ -3440,11 +3476,11 @@ func (x *TriggerBackupResponse) GetBackup() *Backup {
 type ListBackupsRequest struct {
 	state      protoimpl.MessageState `protogen:"open.v1"`
 	DatabaseId string                 `protobuf:"bytes,1,opt,name=database_id,json=databaseId,proto3" json:"database_id,omitempty"`
-	// after_backup_id 游标（上一页末条 id；空 = 首页）。
-	AfterBackupId string `protobuf:"bytes,2,opt,name=after_backup_id,json=afterBackupId,proto3" json:"after_backup_id,omitempty"`
-	Limit         int32  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// after_backup_seq 游标（上一页末条 seq（0 = 首页）。
+	AfterBackupSeq int64 `protobuf:"varint,2,opt,name=after_backup_seq,json=afterBackupSeq,proto3" json:"after_backup_seq,omitempty"`
+	Limit          int32 `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *ListBackupsRequest) Reset() {
@@ -3484,11 +3520,11 @@ func (x *ListBackupsRequest) GetDatabaseId() string {
 	return ""
 }
 
-func (x *ListBackupsRequest) GetAfterBackupId() string {
+func (x *ListBackupsRequest) GetAfterBackupSeq() int64 {
 	if x != nil {
-		return x.AfterBackupId
+		return x.AfterBackupSeq
 	}
-	return ""
+	return 0
 }
 
 func (x *ListBackupsRequest) GetLimit() int32 {
@@ -4299,12 +4335,14 @@ func (x *RebuildNetworkResponse) GetReattached() int32 {
 // （revoked；重新挂靠走新声明行）。network_* 是接收方（网络归属方）读
 // 投影；peer_project_id 是挂靠方（声明方）项目。
 type NetworkPeer struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	Id               string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	NetworkId        string                 `protobuf:"bytes,2,opt,name=network_id,json=networkId,proto3" json:"network_id,omitempty"`
-	NetworkName      string                 `protobuf:"bytes,3,opt,name=network_name,json=networkName,proto3" json:"network_name,omitempty"`
-	NetworkProjectId string                 `protobuf:"bytes,4,opt,name=network_project_id,json=networkProjectId,proto3" json:"network_project_id,omitempty"`
-	PeerProjectId    string                 `protobuf:"bytes,5,opt,name=peer_project_id,json=peerProjectId,proto3" json:"peer_project_id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// seq 是创建序（ADR-0070：id 后缀即此号；分页游标轴）。
+	Seq              int64  `protobuf:"varint,10,opt,name=seq,proto3" json:"seq,omitempty"`
+	NetworkId        string `protobuf:"bytes,2,opt,name=network_id,json=networkId,proto3" json:"network_id,omitempty"`
+	NetworkName      string `protobuf:"bytes,3,opt,name=network_name,json=networkName,proto3" json:"network_name,omitempty"`
+	NetworkProjectId string `protobuf:"bytes,4,opt,name=network_project_id,json=networkProjectId,proto3" json:"network_project_id,omitempty"`
+	PeerProjectId    string `protobuf:"bytes,5,opt,name=peer_project_id,json=peerProjectId,proto3" json:"peer_project_id,omitempty"`
 	// state: pending | approved | revoked（kebab，与 Task/Schedule 状态值
 	// 拼写冻结同款）。
 	State         string `protobuf:"bytes,6,opt,name=state,proto3" json:"state,omitempty"`
@@ -4350,6 +4388,13 @@ func (x *NetworkPeer) GetId() string {
 		return x.Id
 	}
 	return ""
+}
+
+func (x *NetworkPeer) GetSeq() int64 {
+	if x != nil {
+		return x.Seq
+	}
+	return 0
 }
 
 func (x *NetworkPeer) GetNetworkId() string {
@@ -4776,9 +4821,9 @@ type ListNetworkPeersRequest struct {
 	// （挂靠方视图：我挂在哪里）；两者都空 = 全部。
 	NetworkId     string `protobuf:"bytes,1,opt,name=network_id,json=networkId,proto3" json:"network_id,omitempty"`
 	PeerProjectId string `protobuf:"bytes,2,opt,name=peer_project_id,json=peerProjectId,proto3" json:"peer_project_id,omitempty"`
-	// after_peer_id 游标（上一页末条 id；空 = 首页）。
-	AfterPeerId   string `protobuf:"bytes,3,opt,name=after_peer_id,json=afterPeerId,proto3" json:"after_peer_id,omitempty"`
-	Limit         int32  `protobuf:"varint,4,opt,name=limit,proto3" json:"limit,omitempty"`
+	// after_peer_seq 游标（上一页末条 seq（0 = 首页）。
+	AfterPeerSeq  int64 `protobuf:"varint,3,opt,name=after_peer_seq,json=afterPeerSeq,proto3" json:"after_peer_seq,omitempty"`
+	Limit         int32 `protobuf:"varint,4,opt,name=limit,proto3" json:"limit,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4827,11 +4872,11 @@ func (x *ListNetworkPeersRequest) GetPeerProjectId() string {
 	return ""
 }
 
-func (x *ListNetworkPeersRequest) GetAfterPeerId() string {
+func (x *ListNetworkPeersRequest) GetAfterPeerSeq() int64 {
 	if x != nil {
-		return x.AfterPeerId
+		return x.AfterPeerSeq
 	}
-	return ""
+	return 0
 }
 
 func (x *ListNetworkPeersRequest) GetLimit() int32 {
@@ -4889,9 +4934,10 @@ var File_fleetly_structure_v1_structure_proto protoreflect.FileDescriptor
 
 const file_fleetly_structure_v1_structure_proto_rawDesc = "" +
 	"\n" +
-	"$fleetly/structure/v1/structure.proto\x12\x14fleetly.structure.v1\x1a\x1afleetly/spec/v1/spec.proto\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"\x84\x01\n" +
+	"$fleetly/structure/v1/structure.proto\x12\x14fleetly.structure.v1\x1a\x1afleetly/spec/v1/spec.proto\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"\x96\x01\n" +
 	"\aProject\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x10\n" +
+	"\x03seq\x18\x06 \x01(\x03R\x03seq\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x17\n" +
 	"\ateam_id\x18\x03 \x01(\tR\x06teamId\x12\x1d\n" +
 	"\n" +
@@ -4906,17 +4952,18 @@ const file_fleetly_structure_v1_structure_proto_rawDesc = "" +
 	"\x11GetProjectRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"M\n" +
 	"\x12GetProjectResponse\x127\n" +
-	"\aproject\x18\x01 \x01(\v2\x1d.fleetly.structure.v1.ProjectR\aproject\"U\n" +
-	"\x13ListProjectsRequest\x12(\n" +
-	"\x10after_project_id\x18\x01 \x01(\tR\x0eafterProjectId\x12\x14\n" +
+	"\aproject\x18\x01 \x01(\v2\x1d.fleetly.structure.v1.ProjectR\aproject\"W\n" +
+	"\x13ListProjectsRequest\x12*\n" +
+	"\x11after_project_seq\x18\x01 \x01(\x03R\x0fafterProjectSeq\x12\x14\n" +
 	"\x05limit\x18\x02 \x01(\x05R\x05limit\"Q\n" +
 	"\x14ListProjectsResponse\x129\n" +
 	"\bprojects\x18\x01 \x03(\v2\x1d.fleetly.structure.v1.ProjectR\bprojects\"&\n" +
 	"\x14DeleteProjectRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"\x17\n" +
-	"\x15DeleteProjectResponse\"g\n" +
+	"\x15DeleteProjectResponse\"y\n" +
 	"\x03App\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x10\n" +
+	"\x03seq\x18\x05 \x01(\x03R\x03seq\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x02 \x01(\tR\tprojectId\x12\x12\n" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x12\x1d\n" +
@@ -4941,12 +4988,11 @@ const file_fleetly_structure_v1_structure_proto_rawDesc = "" +
 	"\x11GetAppSpecRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"B\n" +
 	"\x12GetAppSpecResponse\x12,\n" +
-	"\x04spec\x18\x01 \x01(\v2\x18.fleetly.spec.v1.AppSpecR\x04spec\"h\n" +
+	"\x04spec\x18\x01 \x01(\v2\x18.fleetly.spec.v1.AppSpecR\x04spec\"j\n" +
 	"\x0fListAppsRequest\x12\x1d\n" +
 	"\n" +
-	"project_id\x18\x01 \x01(\tR\tprojectId\x12 \n" +
-	"\fafter_app_id\x18\x02 \x01(\tR\n" +
-	"afterAppId\x12\x14\n" +
+	"project_id\x18\x01 \x01(\tR\tprojectId\x12\"\n" +
+	"\rafter_app_seq\x18\x02 \x01(\x03R\vafterAppSeq\x12\x14\n" +
 	"\x05limit\x18\x03 \x01(\x05R\x05limit\"A\n" +
 	"\x10ListAppsResponse\x12-\n" +
 	"\x04apps\x18\x01 \x03(\v2\x19.fleetly.structure.v1.AppR\x04apps\"\"\n" +
@@ -5064,9 +5110,10 @@ const file_fleetly_structure_v1_structure_proto_rawDesc = "" +
 	"\avolumes\x18\x01 \x03(\v2\x1c.fleetly.structure.v1.VolumeR\avolumes\"%\n" +
 	"\x13DeleteVolumeRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"\x16\n" +
-	"\x14DeleteVolumeResponse\"\xa1\x03\n" +
+	"\x14DeleteVolumeResponse\"\xb3\x03\n" +
 	"\bDatabase\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x10\n" +
+	"\x03seq\x18\x0f \x01(\x03R\x03seq\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x02 \x01(\tR\tprojectId\x12\x12\n" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x12\x16\n" +
@@ -5095,19 +5142,20 @@ const file_fleetly_structure_v1_structure_proto_rawDesc = "" +
 	"\x12GetDatabaseRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"Q\n" +
 	"\x13GetDatabaseResponse\x12:\n" +
-	"\bdatabase\x18\x01 \x01(\v2\x1e.fleetly.structure.v1.DatabaseR\bdatabase\"w\n" +
+	"\bdatabase\x18\x01 \x01(\v2\x1e.fleetly.structure.v1.DatabaseR\bdatabase\"y\n" +
 	"\x14ListDatabasesRequest\x12\x1d\n" +
 	"\n" +
-	"project_id\x18\x01 \x01(\tR\tprojectId\x12*\n" +
-	"\x11after_database_id\x18\x02 \x01(\tR\x0fafterDatabaseId\x12\x14\n" +
+	"project_id\x18\x01 \x01(\tR\tprojectId\x12,\n" +
+	"\x12after_database_seq\x18\x02 \x01(\x03R\x10afterDatabaseSeq\x12\x14\n" +
 	"\x05limit\x18\x03 \x01(\x05R\x05limit\"U\n" +
 	"\x15ListDatabasesResponse\x12<\n" +
 	"\tdatabases\x18\x01 \x03(\v2\x1e.fleetly.structure.v1.DatabaseR\tdatabases\"'\n" +
 	"\x15DeleteDatabaseRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"\x18\n" +
-	"\x16DeleteDatabaseResponse\"\xd3\x02\n" +
+	"\x16DeleteDatabaseResponse\"\xe5\x02\n" +
 	"\x06Backup\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x10\n" +
+	"\x03seq\x18\r \x01(\x03R\x03seq\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x02 \x01(\tR\tprojectId\x12\x1f\n" +
 	"\vdatabase_id\x18\x03 \x01(\tR\n" +
@@ -5131,11 +5179,11 @@ const file_fleetly_structure_v1_structure_proto_rawDesc = "" +
 	"\vdatabase_id\x18\x01 \x01(\tR\n" +
 	"databaseId\"M\n" +
 	"\x15TriggerBackupResponse\x124\n" +
-	"\x06backup\x18\x01 \x01(\v2\x1c.fleetly.structure.v1.BackupR\x06backup\"s\n" +
+	"\x06backup\x18\x01 \x01(\v2\x1c.fleetly.structure.v1.BackupR\x06backup\"u\n" +
 	"\x12ListBackupsRequest\x12\x1f\n" +
 	"\vdatabase_id\x18\x01 \x01(\tR\n" +
-	"databaseId\x12&\n" +
-	"\x0fafter_backup_id\x18\x02 \x01(\tR\rafterBackupId\x12\x14\n" +
+	"databaseId\x12(\n" +
+	"\x10after_backup_seq\x18\x02 \x01(\x03R\x0eafterBackupSeq\x12\x14\n" +
 	"\x05limit\x18\x03 \x01(\x05R\x05limit\"M\n" +
 	"\x13ListBackupsResponse\x126\n" +
 	"\abackups\x18\x01 \x03(\v2\x1c.fleetly.structure.v1.BackupR\abackups\"2\n" +
@@ -5199,9 +5247,11 @@ const file_fleetly_structure_v1_structure_proto_rawDesc = "" +
 	"\bdetached\x18\x02 \x01(\x05R\bdetached\x12\x1e\n" +
 	"\n" +
 	"reattached\x18\x03 \x01(\x05R\n" +
-	"reattached\"\xaa\x02\n" +
+	"reattached\"\xbc\x02\n" +
 	"\vNetworkPeer\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x10\n" +
+	"\x03seq\x18\n" +
+	" \x01(\x03R\x03seq\x12\x1d\n" +
 	"\n" +
 	"network_id\x18\x02 \x01(\tR\tnetworkId\x12!\n" +
 	"\fnetwork_name\x18\x03 \x01(\tR\vnetworkName\x12,\n" +
@@ -5231,12 +5281,12 @@ const file_fleetly_structure_v1_structure_proto_rawDesc = "" +
 	"\x15GetNetworkPeerRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"O\n" +
 	"\x16GetNetworkPeerResponse\x125\n" +
-	"\x04peer\x18\x01 \x01(\v2!.fleetly.structure.v1.NetworkPeerR\x04peer\"\x9a\x01\n" +
+	"\x04peer\x18\x01 \x01(\v2!.fleetly.structure.v1.NetworkPeerR\x04peer\"\x9c\x01\n" +
 	"\x17ListNetworkPeersRequest\x12\x1d\n" +
 	"\n" +
 	"network_id\x18\x01 \x01(\tR\tnetworkId\x12&\n" +
-	"\x0fpeer_project_id\x18\x02 \x01(\tR\rpeerProjectId\x12\"\n" +
-	"\rafter_peer_id\x18\x03 \x01(\tR\vafterPeerId\x12\x14\n" +
+	"\x0fpeer_project_id\x18\x02 \x01(\tR\rpeerProjectId\x12$\n" +
+	"\x0eafter_peer_seq\x18\x03 \x01(\x03R\fafterPeerSeq\x12\x14\n" +
 	"\x05limit\x18\x04 \x01(\x05R\x05limit\"S\n" +
 	"\x18ListNetworkPeersResponse\x127\n" +
 	"\x05peers\x18\x01 \x03(\v2!.fleetly.structure.v1.NetworkPeerR\x05peers*\xc1\x01\n" +

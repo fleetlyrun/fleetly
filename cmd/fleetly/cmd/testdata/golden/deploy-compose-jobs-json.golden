@@ -1,8 +1,9 @@
 {
   "deployment": {
-    "id": "<ULID>",
-    "app_id": "<ULID>",
-    "to_revision": "<ULID>",
+    "id": "fbjobs-3-d13",
+    "seq": "13",
+    "app_id": "fbjobs-3",
+    "to_revision": "fbjobs-3-r1",
     "state": "queued",
     "generation": "1",
     "idempotency_key": "compose-jobs-1",

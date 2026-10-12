@@ -129,6 +129,11 @@ export interface components {
         /** Node 是观测缓存行（非权威；节点 ID 永不复用）。 */
         v1Node: {
             platform_id?: string;
+            /**
+             * seq 是锚定序（ADR-0070：id 后缀即此号；分页游标轴）。
+             * Format: int64
+             */
+            seq?: string;
             carrier_id?: string;
             hostname?: string;
             role?: string;
@@ -164,11 +169,10 @@ export interface operations {
         parameters: {
             query?: {
                 /**
-                 * @description after_node_id 游标（上一页末条 platform_id；空 = 首页）。nodes 是
-                 *     观测缓存表（非权威），无 ULID 主键——游标轴 = platform_id 字典序
-                 *     升序（既有响应序不变；ADR-0026 after_* + limit 惯例）。
+                 * @description after_node_seq 游标（上一页末条 seq；0 = 首页）。游标轴 = seq 锚定
+                 *     序升序（既有响应序不变；ADR-0026 after_* + limit 惯例）。
                  */
-                after_node_id?: string;
+                after_node_seq?: string;
                 limit?: number;
             };
             header?: never;

@@ -4,20 +4,25 @@
 -- 源，随词表保鲜）幂等落行，不进迁移 SQL。
 CREATE TABLE users (
   id         TEXT PRIMARY KEY,
+  seq        INTEGER NOT NULL,
   name       TEXT NOT NULL UNIQUE,
   created_at TEXT NOT NULL
 );
+CREATE UNIQUE INDEX idx_users_seq ON users(seq);
 
 CREATE TABLE teams (
   id         TEXT PRIMARY KEY,
+  seq        INTEGER NOT NULL,
   name       TEXT NOT NULL UNIQUE,
   created_at TEXT NOT NULL
 );
+CREATE UNIQUE INDEX idx_teams_seq ON teams(seq);
 
 -- roles：命名的 Scope 集合。builtin=1 是平台级模板（team_id 空）；
 -- 自定义 Role 属于某 Team。scopes 是 JSON 数组（colon 形态 resource:action）。
 CREATE TABLE roles (
   id         TEXT PRIMARY KEY,
+  seq        INTEGER NOT NULL,
   team_id    TEXT NOT NULL DEFAULT '',
   name       TEXT NOT NULL,
   builtin    INTEGER NOT NULL DEFAULT 0,
@@ -25,16 +30,19 @@ CREATE TABLE roles (
   created_at TEXT NOT NULL,
   UNIQUE(team_id, name)
 );
+CREATE UNIQUE INDEX idx_roles_seq ON roles(seq);
 
 -- memberships：User 在 Team 内经 Role 获权（一个 Team 一个 Role）。
 CREATE TABLE memberships (
   id         TEXT PRIMARY KEY,
+  seq        INTEGER NOT NULL,
   user_id    TEXT NOT NULL REFERENCES users(id),
   team_id    TEXT NOT NULL REFERENCES teams(id),
   role_id    TEXT NOT NULL REFERENCES roles(id),
   created_at TEXT NOT NULL,
   UNIQUE(user_id, team_id)
 );
+CREATE UNIQUE INDEX idx_memberships_seq ON memberships(seq);
 
 -- tokens：sha256 存储（明文只在创建响应出现一次）；prefix 是明文前缀
 -- （泄露可扫描识别）；scopes 不落本表——Token 经 role 间接获权（CONTEXT.md
@@ -42,6 +50,7 @@ CREATE TABLE memberships (
 -- bootstrap Token = name 'bootstrap'。
 CREATE TABLE tokens (
   id           TEXT PRIMARY KEY,
+  seq          INTEGER NOT NULL,
   name         TEXT NOT NULL,
   team_id      TEXT NOT NULL REFERENCES teams(id),
   user_id      TEXT REFERENCES users(id),
@@ -52,11 +61,13 @@ CREATE TABLE tokens (
   last_used_at TEXT NOT NULL DEFAULT '',
   created_at   TEXT NOT NULL
 );
+CREATE UNIQUE INDEX idx_tokens_seq ON tokens(seq);
 CREATE INDEX idx_tokens_team ON tokens(team_id);
 
 -- invitations：一次性邀请（sha256 存储、时窗内单次有效、绑 team+role）。
 CREATE TABLE invitations (
   id          TEXT PRIMARY KEY,
+  seq         INTEGER NOT NULL,
   token_sha256 TEXT NOT NULL UNIQUE,
   team_id     TEXT NOT NULL REFERENCES teams(id),
   role_id     TEXT NOT NULL REFERENCES roles(id),
@@ -65,6 +76,7 @@ CREATE TABLE invitations (
   consumed_at TEXT NOT NULL DEFAULT '',
   created_at  TEXT NOT NULL
 );
+CREATE UNIQUE INDEX idx_invitations_seq ON invitations(seq);
 
 -- +goose Down
 -- goose 只前滚（架构 §8）。

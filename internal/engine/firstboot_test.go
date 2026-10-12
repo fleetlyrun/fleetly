@@ -587,7 +587,7 @@ func TestFirstBootLateCompletionNotL1Timeout(t *testing.T) {
 // taskCount 数项目 Task 行（零重铸断言的口径）。
 func taskCount(t *testing.T, e *Engine) int {
 	t.Helper()
-	rows, err := e.tasks.ListByProject(context.Background(), e.db.Runner(), tProjectID, "", 1000)
+	rows, err := e.tasks.ListByProject(context.Background(), e.db.Runner(), tProjectID, 0, 1000)
 	require.NoError(t, err)
 	return len(rows)
 }

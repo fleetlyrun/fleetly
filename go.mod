@@ -18,7 +18,6 @@ require (
 	github.com/moby/buildkit v0.32.2
 	github.com/moby/moby/api v1.56.0
 	github.com/moby/moby/client v0.6.0
-	github.com/oklog/ulid/v2 v2.1.1
 	github.com/pressly/goose/v3 v3.28.0
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/spf13/pflag v1.0.10

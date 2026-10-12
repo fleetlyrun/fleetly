@@ -594,6 +594,14 @@ type WorkloadEvent struct {
 	NodeJoined *NodeJoined
 }
 
+// NodeIDMinter 是节点平台 ID 铸造的注入面（可选接口）：Provider 锚定
+// 无标记载体节点时向平台取 ID——铸造权在平台（state 层 seq 单源，
+// ADR-0070），Provider 不 import state，经装配期注入闭包。未注入 =
+// 锚定跳过（下轮扫描重试）。
+type NodeIDMinter interface {
+	SetNodeIDMinter(fn func(ctx context.Context) (string, error))
+}
+
 // NodeJoined 是节点加入事实（架构 §5 节点身份锚定契约义务）。
 type NodeJoined struct {
 	// NodeID 是平台节点 ID（永不复用）。

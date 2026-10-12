@@ -24,7 +24,7 @@
   "paths": {
     "/v1/runs": {
       "get": {
-        "summary": "ListRuns 新→旧分页（游标 = ULID 创建序；task_id 过滤可选）。",
+        "summary": "ListRuns 新→旧分页（游标 = seq 创建序；task_id 过滤可选）。",
         "operationId": "RunsService_ListRuns",
         "responses": {
           "200": {
@@ -49,11 +49,12 @@
             "type": "string"
           },
           {
-            "name": "after_run_id",
-            "description": "after_run_id 游标（上一页末条 id；空 = 首页）。",
+            "name": "after_run_seq",
+            "description": "after_run_seq 游标（上一页末条 seq（0 = 首页）。",
             "in": "query",
             "required": false,
-            "type": "string"
+            "type": "string",
+            "format": "int64"
           },
           {
             "name": "limit",
@@ -189,7 +190,7 @@
     },
     "/v1/schedules": {
       "get": {
-        "summary": "ListSchedules 新→旧分页（游标 = ULID 创建序；含 tombstone——终态\n事实可见，与 ListTasks 同款）。",
+        "summary": "ListSchedules 新→旧分页（游标 = seq 创建序；含 tombstone——终态\n事实可见，与 ListTasks 同款）。",
         "operationId": "SchedulesService_ListSchedules",
         "responses": {
           "200": {
@@ -213,11 +214,12 @@
             "type": "string"
           },
           {
-            "name": "after_schedule_id",
-            "description": "after_schedule_id 游标（上一页末条 id；空 = 首页）。",
+            "name": "after_schedule_seq",
+            "description": "after_schedule_seq 游标（上一页末条 seq（0 = 首页）。",
             "in": "query",
             "required": false,
-            "type": "string"
+            "type": "string",
+            "format": "int64"
           },
           {
             "name": "limit",
@@ -363,7 +365,7 @@
     },
     "/v1/tasks": {
       "get": {
-        "summary": "ListTasks 新→旧分页（游标 = ULID 创建序）。",
+        "summary": "ListTasks 新→旧分页（游标 = seq 创建序）。",
         "operationId": "TasksService_ListTasks",
         "responses": {
           "200": {
@@ -387,11 +389,12 @@
             "type": "string"
           },
           {
-            "name": "after_task_id",
-            "description": "after_task_id 游标（上一页末条 id；空 = 首页）。",
+            "name": "after_task_seq",
+            "description": "after_task_seq 游标（上一页末条 seq（0 = 首页）。",
             "in": "query",
             "required": false,
-            "type": "string"
+            "type": "string",
+            "format": "int64"
           },
           {
             "name": "limit",
@@ -910,6 +913,11 @@
         "id": {
           "type": "string"
         },
+        "seq": {
+          "type": "string",
+          "format": "int64",
+          "title": "seq 是创建序（ADR-0070：id 后缀即此号；分页游标轴）。"
+        },
         "task_id": {
           "type": "string"
         },
@@ -962,6 +970,11 @@
       "properties": {
         "id": {
           "type": "string"
+        },
+        "seq": {
+          "type": "string",
+          "format": "int64",
+          "title": "seq 是创建序（ADR-0070：id 后缀即此号；分页游标轴）。"
         },
         "project_id": {
           "type": "string"
@@ -1032,6 +1045,11 @@
       "properties": {
         "id": {
           "type": "string"
+        },
+        "seq": {
+          "type": "string",
+          "format": "int64",
+          "title": "seq 是创建序（ADR-0070：id 后缀即此号；分页游标轴）。"
         },
         "project_id": {
           "type": "string"

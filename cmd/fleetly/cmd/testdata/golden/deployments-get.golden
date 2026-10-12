@@ -1,3 +1,3 @@
-deployment <ULID> queued
-  revision:   <ULID> → <ULID>
+deployment bgapp-5-d29 queued
+  revision:   bgapp-5-r1 → bgapp-5-r3
   generation: 3←1

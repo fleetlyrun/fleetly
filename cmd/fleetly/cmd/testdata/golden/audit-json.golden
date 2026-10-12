@@ -1,142 +1,142 @@
 {
   "entries": [
     {
-      "id": "<ULID>",
+      "id": "aud-16",
       "actor": "token:bootstrap",
       "source": "cli",
       "action": "invitation.create",
-      "resource": "invitation/<ULID>",
+      "resource": "invitation/inv-2",
       "after_fp": "2026-01-02T00:00:00Z",
       "created_at": "2026-01-01T00:00:00Z"
     },
     {
-      "id": "<ULID>",
+      "id": "aud-15",
       "actor": "token:bootstrap",
       "source": "cli",
       "action": "invitation.create",
-      "resource": "invitation/<ULID>",
+      "resource": "invitation/inv-1",
       "after_fp": "2026-01-02T00:00:00Z",
       "created_at": "2026-01-01T00:00:00Z"
     },
     {
-      "id": "<ULID>",
+      "id": "aud-14",
       "actor": "token:bootstrap",
       "source": "cli",
       "action": "token.create",
-      "resource": "token/<ULID>",
+      "resource": "token/tok-5",
       "after_fp": "alice-cli-json",
       "created_at": "2026-01-01T00:00:00Z"
     },
     {
-      "id": "<ULID>",
+      "id": "aud-13",
       "actor": "token:bootstrap",
       "source": "cli",
       "action": "token.create",
-      "resource": "token/<ULID>",
+      "resource": "token/tok-4",
       "after_fp": "alice-cli",
       "created_at": "2026-01-01T00:00:00Z"
     },
     {
-      "id": "<ULID>",
+      "id": "aud-12",
       "actor": "token:bootstrap",
       "source": "cli",
       "action": "team.create",
-      "resource": "team/<ULID>",
+      "resource": "team/shop-json-3",
       "after_fp": "shop-json",
       "created_at": "2026-01-01T00:00:00Z"
     },
     {
-      "id": "<ULID>",
+      "id": "aud-11",
       "actor": "token:bootstrap",
       "source": "cli",
       "action": "team.create",
-      "resource": "team/<ULID>",
+      "resource": "team/shop-2",
       "after_fp": "shop",
       "created_at": "2026-01-01T00:00:00Z"
     },
     {
-      "id": "<ULID>",
+      "id": "aud-10",
       "actor": "token:bootstrap",
       "source": "cli",
       "action": "role.create",
-      "resource": "role/<ULID>",
+      "resource": "role/deployer-json-5",
       "after_fp": "deployments:write",
       "created_at": "2026-01-01T00:00:00Z"
     },
     {
-      "id": "<ULID>",
+      "id": "aud-9",
       "actor": "token:bootstrap",
       "source": "cli",
       "action": "role.create",
-      "resource": "role/<ULID>",
+      "resource": "role/deployer-4",
       "after_fp": "deployments:write",
       "created_at": "2026-01-01T00:00:00Z"
     },
     {
-      "id": "<ULID>",
+      "id": "aud-8",
       "source": "api",
       "action": "user.login",
-      "resource": "user/<ULID>",
+      "resource": "user/alice-1",
       "after_fp": "alice",
       "created_at": "2026-01-01T00:00:00Z"
     },
     {
-      "id": "<ULID>",
+      "id": "aud-7",
       "source": "api",
       "action": "user.login",
-      "resource": "user/<ULID>",
+      "resource": "user/alice-1",
       "after_fp": "alice",
       "created_at": "2026-01-01T00:00:00Z"
     },
     {
-      "id": "<ULID>",
+      "id": "aud-6",
       "actor": "token:bootstrap",
       "source": "cli",
       "action": "user.password_set",
-      "resource": "user/<ULID>",
+      "resource": "user/alice-1",
       "created_at": "2026-01-01T00:00:00Z"
     },
     {
-      "id": "<ULID>",
+      "id": "aud-5",
       "actor": "token:bootstrap",
       "source": "cli",
       "action": "user.password_set",
-      "resource": "user/<ULID>",
+      "resource": "user/alice-1",
       "created_at": "2026-01-01T00:00:00Z"
     },
     {
-      "id": "<ULID>",
+      "id": "aud-4",
       "actor": "token:bootstrap",
       "source": "cli",
       "action": "user.create",
-      "resource": "user/<ULID>",
+      "resource": "user/bob-json-4",
       "after_fp": "bob-json",
       "created_at": "2026-01-01T00:00:00Z"
     },
     {
-      "id": "<ULID>",
+      "id": "aud-3",
       "actor": "token:bootstrap",
       "source": "cli",
       "action": "user.create",
-      "resource": "user/<ULID>",
+      "resource": "user/bob-3",
       "after_fp": "bob",
       "created_at": "2026-01-01T00:00:00Z"
     },
     {
-      "id": "<ULID>",
+      "id": "aud-2",
       "actor": "token:bootstrap",
       "source": "cli",
       "action": "user.create",
-      "resource": "user/<ULID>",
+      "resource": "user/alice-json-2",
       "after_fp": "alice-json",
       "created_at": "2026-01-01T00:00:00Z"
     },
     {
-      "id": "<ULID>",
+      "id": "aud-1",
       "actor": "token:bootstrap",
       "source": "cli",
       "action": "user.create",
-      "resource": "user/<ULID>",
+      "resource": "user/alice-1",
       "after_fp": "alice",
       "created_at": "2026-01-01T00:00:00Z"
     }

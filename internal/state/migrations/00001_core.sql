@@ -1,28 +1,37 @@
 -- +goose Up
 -- 核心域表（随 state 批次落地；routes/networks/volumes/secrets/configs 等
 -- 表随各自功能批次增量迁移——goose 只加法，每张表落地即有使用方）。
--- 约定：主键一律 ULID（时间有序，兼列表排序键）；时间戳一律 UTC RFC3339
--- 秒精度文本（ADR-0018）；结构资源软删（deleted_at tombstone，四件一拍
--- 同事务落），部署类记录永不删。
+-- 约定（ADR-0070）：主键一律可读实体 id（"<base>-<4位>"，铸造经
+-- internal/model/entityid 单源；id 只管身份，永不复用、永不解析）；创建
+-- 序唯一真源是各表 seq 列（插入事务内 MAX(seq)+1，游标/排序/排水锚一律
+-- 走 seq，不搭 id 字符串序）；时间戳一律 UTC RFC3339 秒精度文本
+-- （ADR-0018）；结构资源软删（deleted_at tombstone，四件一拍同事务落），
+-- 部署类记录永不删。例外：revisions 的 seq 是 per-App 修订号
+-- （UNIQUE(app_id,seq)，即修订创建序，不另设全局 seq）；outbox 的 seq 是
+-- 事件流单调队号（INTEGER PK AUTOINCREMENT）。
 
 CREATE TABLE projects (
   id         TEXT PRIMARY KEY,
+  seq        INTEGER NOT NULL,
   name       TEXT NOT NULL,
   team_id    TEXT NOT NULL DEFAULT 'default',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   deleted_at TEXT
 );
+CREATE UNIQUE INDEX idx_projects_seq ON projects(seq);
 CREATE UNIQUE INDEX idx_projects_name ON projects(name) WHERE deleted_at = '';
 
 CREATE TABLE apps (
   id         TEXT PRIMARY KEY,
+  seq        INTEGER NOT NULL,
   project_id TEXT NOT NULL,
   name       TEXT NOT NULL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   deleted_at TEXT
 );
+CREATE UNIQUE INDEX idx_apps_seq ON apps(seq);
 CREATE UNIQUE INDEX idx_apps_project_name ON apps(project_id, name) WHERE deleted_at = '';
 
 -- Revision 冻结体：spec 为 AppSpec 的 protojson 规范序列化（blob 落库
@@ -45,6 +54,7 @@ CREATE UNIQUE INDEX idx_revisions_app_digest ON revisions(app_id, digest);
 -- （ADR-0018 绝对 deadline 落库）。
 CREATE TABLE deployments (
   id               TEXT PRIMARY KEY,
+  seq              INTEGER NOT NULL,
   app_id           TEXT NOT NULL,
   from_revision    TEXT NOT NULL DEFAULT '',
   to_revision      TEXT NOT NULL,
@@ -59,6 +69,7 @@ CREATE TABLE deployments (
   updated_at       TEXT NOT NULL,
   finished_at      TEXT NOT NULL DEFAULT ''
 );
+CREATE UNIQUE INDEX idx_deployments_seq ON deployments(seq);
 CREATE INDEX idx_deployments_app ON deployments(app_id);
 CREATE INDEX idx_deployments_state ON deployments(state);
 -- 幂等键在活跃态（排队/在途/回滚中）唯一：防并发重复入队；完成态同键
@@ -69,6 +80,7 @@ CREATE UNIQUE INDEX idx_deployments_idem_active ON deployments(idempotency_key)
 
 CREATE TABLE builds (
   id          TEXT PRIMARY KEY,
+  seq         INTEGER NOT NULL,
   app_id      TEXT NOT NULL,
   revision_id TEXT NOT NULL DEFAULT '',
   state       TEXT NOT NULL,
@@ -78,6 +90,7 @@ CREATE TABLE builds (
   updated_at  TEXT NOT NULL,
   finished_at TEXT NOT NULL DEFAULT ''
 );
+CREATE UNIQUE INDEX idx_builds_seq ON builds(seq);
 CREATE INDEX idx_builds_app ON builds(app_id);
 CREATE INDEX idx_builds_state ON builds(state);
 
@@ -95,6 +108,7 @@ CREATE TABLE outbox (
 -- 前后值指纹；账号批接入完整执法，写路径四件一拍自本批起落行）。
 CREATE TABLE audit (
   id         TEXT PRIMARY KEY,
+  seq        INTEGER NOT NULL,
   actor      TEXT NOT NULL DEFAULT '',
   source     TEXT NOT NULL DEFAULT '',
   action     TEXT NOT NULL,
@@ -103,12 +117,14 @@ CREATE TABLE audit (
   after_fp   TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL
 );
+CREATE UNIQUE INDEX idx_audit_seq ON audit(seq);
 CREATE INDEX idx_audit_created ON audit(created_at);
 
 -- nodes 是观测缓存（非权威——权威归属判定永远查平台表；Provider Watch
 -- 流的 node.joined/leave 在此落观测行）。
 CREATE TABLE nodes (
   platform_id   TEXT PRIMARY KEY,
+  seq           INTEGER NOT NULL,
   carrier_id    TEXT NOT NULL DEFAULT '',
   hostname      TEXT NOT NULL DEFAULT '',
   role          TEXT NOT NULL DEFAULT '',
@@ -116,6 +132,7 @@ CREATE TABLE nodes (
   first_seen_at TEXT NOT NULL,
   last_seen_at  TEXT NOT NULL
 );
+CREATE UNIQUE INDEX idx_nodes_seq ON nodes(seq);
 
 -- +goose Down
 -- goose 只前滚（架构 §8：迁移失败 = 恢复 Platform Backup 重放）；Down

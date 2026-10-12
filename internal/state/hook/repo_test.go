@@ -19,11 +19,11 @@ func seedApp(t *testing.T, db *state.DB) {
 	err := db.Tx(ctx, func(tx *sql.Tx) error {
 		now := "2026-09-30T00:00:00Z"
 		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO projects (id, name, team_id, created_at, updated_at) VALUES ('p1', 'shop', 'default', ?, ?)`, now, now); err != nil {
+			`INSERT INTO projects (id, seq, name, team_id, created_at, updated_at) VALUES ('p1', 1, 'shop', 'default', ?, ?)`, now, now); err != nil {
 			return err
 		}
 		_, err := tx.ExecContext(ctx,
-			`INSERT INTO apps (id, project_id, name, created_at, updated_at) VALUES ('a1', 'p1', 'web', ?, ?)`, now, now)
+			`INSERT INTO apps (id, seq, project_id, name, created_at, updated_at) VALUES ('a1', 1, 'p1', 'web', ?, ?)`, now, now)
 		return err
 	})
 	if err != nil {

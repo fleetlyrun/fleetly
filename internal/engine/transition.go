@@ -23,8 +23,6 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/oklog/ulid/v2"
-
 	"github.com/fleetlyrun/fleetly/internal/authn"
 	"github.com/fleetlyrun/fleetly/internal/state/audit"
 	"github.com/fleetlyrun/fleetly/internal/state/build"
@@ -93,11 +91,11 @@ func (e *Engine) appendAudit(ctx context.Context, tx *sql.Tx, a auditFact) error
 	return e.audits.Append(ctx, tx, e.auditEntry(ctx, a))
 }
 
-// auditEntry 铸 ID 与来源（actorCtx=true 时 actor/source 取请求 ctx——用户
-// 动词路径，默认 SourceSystem）；落库由写序列 kernel 承载。
+// auditEntry 铸来源（actorCtx=true 时 actor/source 取请求 ctx——用户
+// 动词路径，默认 SourceSystem）；id 由 audit repo 行装配处铸 aud-<seq>
+// （ADR-0070），落库由写序列 kernel 承载。
 func (e *Engine) auditEntry(ctx context.Context, a auditFact) *audit.Entry {
 	entry := &audit.Entry{
-		ID:       ulid.Make().String(),
 		Source:   audit.SourceSystem,
 		Action:   a.action,
 		Resource: a.resource,

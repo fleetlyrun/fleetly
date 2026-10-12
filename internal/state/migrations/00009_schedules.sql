@@ -7,7 +7,8 @@
 -- 铸出的 Task（重叠 skip 判定锚：上一拍 Run 未终态即跳过本拍）。行
 -- tombstone 化（deleted），活跃名唯一。
 CREATE TABLE schedules (
-    id           TEXT PRIMARY KEY,      -- ULID（创建序 = 游标轴）
+    id           TEXT PRIMARY KEY,      -- 可读实体 id（ADR-0070）
+    seq          INTEGER NOT NULL,      -- 创建序 = 游标轴唯一真源
     project_id   TEXT NOT NULL,
     name         TEXT NOT NULL DEFAULT '',
     state        TEXT NOT NULL,         -- active | deleted
@@ -19,7 +20,8 @@ CREATE TABLE schedules (
     created_at   TEXT NOT NULL,
     updated_at   TEXT NOT NULL
 );
-CREATE INDEX idx_schedules_project ON schedules (project_id, id);
+CREATE UNIQUE INDEX idx_schedules_seq ON schedules(seq);
+CREATE INDEX idx_schedules_project ON schedules (project_id, seq);
 CREATE UNIQUE INDEX idx_schedules_name ON schedules (project_id, name) WHERE name != '' AND state != 'deleted';
 
 -- +goose Down

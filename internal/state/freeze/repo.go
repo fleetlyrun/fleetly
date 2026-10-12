@@ -8,12 +8,14 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/fleetlyrun/fleetly/internal/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
 // Freeze 是聚合行（lifted_at 空 = 活跃冻结）。
 type Freeze struct {
 	ID        string
+	Seq       int64
 	TeamID    string // '' = 全局冻结（封禁全部 Team）
 	Reason    string
 	CreatedBy string
@@ -32,16 +34,24 @@ type Repo struct {
 // New 构造 repo。
 func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 
-const selectCols = "id, team_id, reason, created_by, created_at, lifted_at"
+const selectCols = "id, seq, team_id, reason, created_by, created_at, lifted_at"
 
 // Create 落一条活跃冻结；同 scope 已有活跃行 → ErrAlreadyExists（部分唯一
 // 索引把守——Set 面映射 E_CONFLICT，先 lift 再 set）。
 func (r *Repo) Create(ctx context.Context, run state.Runner, f *Freeze) error {
+	seq, err := state.NextSeq(ctx, run, "change_freezes")
+	if err != nil {
+		return err
+	}
+	f.Seq = seq
+	if f.ID == "" {
+		f.ID = entityid.Join("freeze", seq)
+	}
 	f.CreatedAt, f.LiftedAt = state.FormatTime(r.clock.Now()), ""
-	_, err := run.ExecContext(ctx, `
-		INSERT INTO change_freezes (id, team_id, reason, created_by, created_at, lifted_at)
-		VALUES (?, ?, ?, ?, ?, '')`,
-		f.ID, f.TeamID, f.Reason, f.CreatedBy, f.CreatedAt)
+	_, err = run.ExecContext(ctx, `
+		INSERT INTO change_freezes (id, seq, team_id, reason, created_by, created_at, lifted_at)
+		VALUES (?, ?, ?, ?, ?, ?, '')`,
+		f.ID, f.Seq, f.TeamID, f.Reason, f.CreatedBy, f.CreatedAt)
 	if state.IsUniqueViolation(err) {
 		return fmt.Errorf("%w: an active change freeze already covers team %q", state.ErrAlreadyExists, f.TeamID)
 	}
@@ -99,17 +109,17 @@ func (r *Repo) Lift(ctx context.Context, run state.Runner, id string) error {
 }
 
 // List 返回全部冻结行（新→旧 + after 游标；ADR-0026 after_* + limit 惯例）。
-func (r *Repo) List(ctx context.Context, run state.Runner, afterID string, limit int) ([]Freeze, error) {
+func (r *Repo) List(ctx context.Context, run state.Runner, afterSeq int64, limit int) ([]Freeze, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
 	q := "SELECT " + selectCols + " FROM change_freezes"
 	args := []any{}
-	if afterID != "" {
-		q += " WHERE id < ?"
-		args = append(args, afterID)
+	if afterSeq > 0 {
+		q += " WHERE seq < ?"
+		args = append(args, afterSeq)
 	}
-	q += " ORDER BY id DESC LIMIT ?"
+	q += " ORDER BY seq DESC LIMIT ?"
 	args = append(args, limit)
 	rows, err := run.QueryContext(ctx, q, args...)
 	if err != nil {
@@ -132,7 +142,7 @@ type scanner interface{ Scan(dest ...any) error }
 
 func scanFreeze(row scanner) (*Freeze, error) {
 	var f Freeze
-	if err := row.Scan(&f.ID, &f.TeamID, &f.Reason, &f.CreatedBy, &f.CreatedAt, &f.LiftedAt); err != nil {
+	if err := row.Scan(&f.ID, &f.Seq, &f.TeamID, &f.Reason, &f.CreatedBy, &f.CreatedAt, &f.LiftedAt); err != nil {
 		return nil, state.MapScanErr(err)
 	}
 	return &f, nil

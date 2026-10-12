@@ -86,7 +86,7 @@ func (svc *HooksService) SetGitHook(ctx context.Context, req *deliveryv1.SetGitH
 				return svc.s.Hooks.Create(ctx, tx, row)
 			},
 			audits: []*audit.Entry{{
-				ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+				Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
 				Action: "hook.create", Resource: "app/" + appRow.ID, AfterFP: row.Repo + "@" + row.Branch,
 			}},
 		})
@@ -106,7 +106,7 @@ func (svc *HooksService) SetGitHook(ctx context.Context, req *deliveryv1.SetGitH
 			return svc.s.Hooks.UpdateConfig(ctx, tx, existing)
 		},
 		audits: []*audit.Entry{{
-			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
 			Action: "hook.update", Resource: "app/" + appRow.ID, AfterFP: existing.Repo + "@" + existing.Branch,
 		}},
 	})
@@ -152,7 +152,7 @@ func (svc *HooksService) RotateHookToken(ctx context.Context, req *deliveryv1.Ro
 			return svc.s.Hooks.RotateToken(ctx, tx, req.GetAppId(), material.SHA256, material.Prefix, sealed.Ciphertext)
 		},
 		audits: []*audit.Entry{{
-			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
 			Action: "hook.rotate", Resource: "app/" + req.GetAppId(),
 		}},
 	})

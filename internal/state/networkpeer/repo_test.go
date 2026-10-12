@@ -90,16 +90,16 @@ func TestPeerListFiltersAndCursor(t *testing.T) {
 	require.NoError(t, peers.Approve(ctx, db.Runner(), rows[0].ID))
 
 	// 接收方视图（network 过滤）：新→旧。
-	got, err := peers.List(ctx, db.Runner(), netA, "", "", 0)
+	got, err := peers.List(ctx, db.Runner(), netA, "", 0, 0)
 	require.NoError(t, err)
 	require.Len(t, got, 2)
 	assert.Equal(t, rows[1].ID, got[0].ID)
 
 	// 挂靠方视图（peer project 过滤）+ after 游标翻页。
-	got, err = peers.List(ctx, db.Runner(), "", projP, "", 0)
+	got, err = peers.List(ctx, db.Runner(), "", projP, 0, 0)
 	require.NoError(t, err)
 	assert.Len(t, got, 2)
-	page2, err := peers.List(ctx, db.Runner(), "", projP, got[0].ID, 0)
+	page2, err := peers.List(ctx, db.Runner(), "", projP, got[0].Seq, 0)
 	require.NoError(t, err)
 	require.Len(t, page2, 1)
 	assert.Equal(t, rows[0].ID, page2[0].ID)

@@ -91,14 +91,14 @@ func newFreezeLiftVerb() commands.Command {
 }
 
 func newFreezeListVerb() commands.Command {
-	var after string
+	var after int64
 	var limit int
 	return &flaggedVerb{
 		name:     "list",
 		synopsis: "List change freezes (active and historical)",
-		usage:    "freeze list [--after FREEZE_ID] [--limit N]",
+		usage:    "freeze list [--after SEQ] [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&after, "after", "", "pagination cursor: the last freeze id of the previous page")
+			fs.Int64Var(&after, "after", 0, "pagination cursor: the seq of the last row of the previous page")
 			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
@@ -112,7 +112,7 @@ func newFreezeListVerb() commands.Command {
 			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Governance.ListChangeFreezes(ctx, &systemv1.ListChangeFreezesRequest{
-				AfterFreezeId: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
+				AfterFreezeSeq: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
 			})
 			if err != nil {
 				return err

@@ -28,17 +28,19 @@ const (
 
 // Route 是 host/path → Process 端口的映射（协议 http/h2c/tcp + TLS 模式）。
 type Route struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	ProjectId     string                 `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	Host          string                 `protobuf:"bytes,3,opt,name=host,proto3" json:"host,omitempty"`
-	Path          string                 `protobuf:"bytes,4,opt,name=path,proto3" json:"path,omitempty"`
-	AppId         string                 `protobuf:"bytes,5,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
-	Process       string                 `protobuf:"bytes,6,opt,name=process,proto3" json:"process,omitempty"`
-	Port          int32                  `protobuf:"varint,7,opt,name=port,proto3" json:"port,omitempty"`
-	Protocol      string                 `protobuf:"bytes,8,opt,name=protocol,proto3" json:"protocol,omitempty"`
-	TlsMode       string                 `protobuf:"bytes,9,opt,name=tls_mode,json=tlsMode,proto3" json:"tls_mode,omitempty"`
-	CreatedAt     string                 `protobuf:"bytes,10,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// seq 是创建序（ADR-0070：id 后缀即此号；分页游标轴）。
+	Seq           int64  `protobuf:"varint,11,opt,name=seq,proto3" json:"seq,omitempty"`
+	ProjectId     string `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	Host          string `protobuf:"bytes,3,opt,name=host,proto3" json:"host,omitempty"`
+	Path          string `protobuf:"bytes,4,opt,name=path,proto3" json:"path,omitempty"`
+	AppId         string `protobuf:"bytes,5,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
+	Process       string `protobuf:"bytes,6,opt,name=process,proto3" json:"process,omitempty"`
+	Port          int32  `protobuf:"varint,7,opt,name=port,proto3" json:"port,omitempty"`
+	Protocol      string `protobuf:"bytes,8,opt,name=protocol,proto3" json:"protocol,omitempty"`
+	TlsMode       string `protobuf:"bytes,9,opt,name=tls_mode,json=tlsMode,proto3" json:"tls_mode,omitempty"`
+	CreatedAt     string `protobuf:"bytes,10,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -78,6 +80,13 @@ func (x *Route) GetId() string {
 		return x.Id
 	}
 	return ""
+}
+
+func (x *Route) GetSeq() int64 {
+	if x != nil {
+		return x.Seq
+	}
+	return 0
 }
 
 func (x *Route) GetProjectId() string {
@@ -292,11 +301,11 @@ func (x *CreateRouteResponse) GetRoute() *Route {
 type ListRoutesRequest struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	ProjectId string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	// after_route_id 游标（上一页末条 id；空 = 首页）。游标轴 = ULID 创建
+	// after_route_seq 游标（上一页末条 seq；0 = 首页）。游标轴 = seq 创建
 	// 序升序（既有响应序不变；ADR-0026 after_* + limit 惯例——project/
 	// Team 过滤语义不变，与游标叠加）。
-	AfterRouteId  string `protobuf:"bytes,2,opt,name=after_route_id,json=afterRouteId,proto3" json:"after_route_id,omitempty"`
-	Limit         int32  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
+	AfterRouteSeq int64 `protobuf:"varint,2,opt,name=after_route_seq,json=afterRouteSeq,proto3" json:"after_route_seq,omitempty"`
+	Limit         int32 `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -338,11 +347,11 @@ func (x *ListRoutesRequest) GetProjectId() string {
 	return ""
 }
 
-func (x *ListRoutesRequest) GetAfterRouteId() string {
+func (x *ListRoutesRequest) GetAfterRouteSeq() int64 {
 	if x != nil {
-		return x.AfterRouteId
+		return x.AfterRouteSeq
 	}
-	return ""
+	return 0
 }
 
 func (x *ListRoutesRequest) GetLimit() int32 {
@@ -480,9 +489,10 @@ var File_fleetly_proxy_v1_proxy_proto protoreflect.FileDescriptor
 
 const file_fleetly_proxy_v1_proxy_proto_rawDesc = "" +
 	"\n" +
-	"\x1cfleetly/proxy/v1/proxy.proto\x12\x10fleetly.proxy.v1\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"\xf9\x01\n" +
+	"\x1cfleetly/proxy/v1/proxy.proto\x12\x10fleetly.proxy.v1\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"\x8b\x02\n" +
 	"\x05Route\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x10\n" +
+	"\x03seq\x18\v \x01(\x03R\x03seq\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x02 \x01(\tR\tprojectId\x12\x12\n" +
 	"\x04host\x18\x03 \x01(\tR\x04host\x12\x12\n" +
@@ -506,11 +516,11 @@ const file_fleetly_proxy_v1_proxy_proto_rawDesc = "" +
 	"\bprotocol\x18\a \x01(\tR\bprotocol\x12\x19\n" +
 	"\btls_mode\x18\b \x01(\tR\atlsMode\"D\n" +
 	"\x13CreateRouteResponse\x12-\n" +
-	"\x05route\x18\x01 \x01(\v2\x17.fleetly.proxy.v1.RouteR\x05route\"n\n" +
+	"\x05route\x18\x01 \x01(\v2\x17.fleetly.proxy.v1.RouteR\x05route\"p\n" +
 	"\x11ListRoutesRequest\x12\x1d\n" +
 	"\n" +
-	"project_id\x18\x01 \x01(\tR\tprojectId\x12$\n" +
-	"\x0eafter_route_id\x18\x02 \x01(\tR\fafterRouteId\x12\x14\n" +
+	"project_id\x18\x01 \x01(\tR\tprojectId\x12&\n" +
+	"\x0fafter_route_seq\x18\x02 \x01(\x03R\rafterRouteSeq\x12\x14\n" +
 	"\x05limit\x18\x03 \x01(\x05R\x05limit\"E\n" +
 	"\x12ListRoutesResponse\x12/\n" +
 	"\x06routes\x18\x01 \x03(\v2\x17.fleetly.proxy.v1.RouteR\x06routes\"$\n" +

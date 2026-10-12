@@ -17,12 +17,12 @@ func TestGoldenRotatePasswordRejections(t *testing.T) {
 	dbID, _ := createDatabase(t, projectID, "postgres", "shop", false)
 
 	// 未知行：E_NOT_FOUND 双形态（精确动词名 golden——覆盖守卫的钉面对象）。
-	code, out, stderr := runCLI(t, "databases", "rotate-password", "01JD0BKPMISSING000000000001")
+	code, out, stderr := runCLI(t, "databases", "rotate-password", "missing-backup-9")
 	if code == 0 || out != "" || !strings.Contains(stderr, "not found") {
 		t.Fatalf("rotate-password (missing row): code=%d out=%q stderr=%q (want not found)", code, out, stderr)
 	}
 	compareGolden(t, "databases-rotate-password", normalizeGolden(stderr))
-	code, out, stderr = runCLI(t, "databases", "rotate-password", "01JD0BKPMISSING000000000001", "--json")
+	code, out, stderr = runCLI(t, "databases", "rotate-password", "missing-backup-9", "--json")
 	if code == 0 || out != "" || !strings.Contains(stderr, "not found") {
 		t.Fatalf("rotate-password --json (missing row): code=%d out=%q stderr=%q (want not found)", code, out, stderr)
 	}

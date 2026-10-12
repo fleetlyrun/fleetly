@@ -1,12 +1,13 @@
 {
-  "id": "<ULID>",
-  "project_id": "<ULID>",
+  "id": "nightly-report-1",
+  "seq": "1",
+  "project_id": "shop-1",
   "name": "nightly-report",
   "state": "active",
   "cron": "0 12 * * *",
   "timezone": "Asia/Tokyo",
   "next_fire_at": "2026-01-01T03:00:00Z",
-  "last_task_id": "<ULID>",
+  "last_task_id": "task-6",
   "image": "busybox:1.37",
   "command": [
     "sh",

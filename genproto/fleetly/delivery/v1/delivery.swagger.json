@@ -240,11 +240,12 @@
             "type": "string"
           },
           {
-            "name": "after_build_id",
-            "description": "after_build_id 游标（上一页末条 id；空 = 首页）。新→旧（ULID 创建\n序；ADR-0026 after_* + limit 惯例）。",
+            "name": "after_build_seq",
+            "description": "after_build_seq 游标（上一页末条 seq；0 = 首页）。新→旧（seq 创建\n序；ADR-0026 after_* + limit 惯例）。",
             "in": "query",
             "required": false,
-            "type": "string"
+            "type": "string",
+            "format": "int64"
           },
           {
             "name": "limit",
@@ -364,11 +365,12 @@
             "type": "string"
           },
           {
-            "name": "after_deployment_id",
-            "description": "after_deployment_id 游标（上一页末条 id；空 = 首页）。新→旧（ULID\n创建序；ADR-0026 after_* + limit 惯例）。",
+            "name": "after_deployment_seq",
+            "description": "after_deployment_seq 游标（上一页末条 seq；0 = 首页）。新→旧（seq\n创建序；ADR-0026 after_* + limit 惯例）。",
             "in": "query",
             "required": false,
-            "type": "string"
+            "type": "string",
+            "format": "int64"
           },
           {
             "name": "limit",
@@ -636,10 +638,11 @@
             "type": "string"
           },
           {
-            "name": "after_upload_id",
+            "name": "after_upload_seq",
             "in": "query",
             "required": false,
-            "type": "string"
+            "type": "string",
+            "format": "int64"
           },
           {
             "name": "limit",
@@ -718,6 +721,11 @@
       "properties": {
         "id": {
           "type": "string"
+        },
+        "seq": {
+          "type": "string",
+          "format": "int64",
+          "title": "seq 是创建序（ADR-0070：id 后缀即此号；分页游标轴）。"
         },
         "app_id": {
           "type": "string"
@@ -854,6 +862,11 @@
       "properties": {
         "id": {
           "type": "string"
+        },
+        "seq": {
+          "type": "string",
+          "format": "int64",
+          "title": "seq 是创建序（ADR-0070：id 后缀即此号；分页游标轴）。"
         },
         "app_id": {
           "type": "string"
@@ -1157,6 +1170,11 @@
       "properties": {
         "id": {
           "type": "string"
+        },
+        "seq": {
+          "type": "string",
+          "format": "int64",
+          "title": "seq 是创建序（ADR-0070：id 后缀即此号；分页游标轴）。"
         },
         "project_id": {
           "type": "string"

@@ -79,6 +79,18 @@ func MapScanErr(err error) error {
 	return err
 }
 
+// NextSeq 铸表的下一创建序号（ADR-0070：seq 是创建序唯一真源，兼任可读
+// id 后缀）。连接池收口为 1（见 Open），事务内 MAX+1 读-改-写天然串行；
+// UNIQUE(seq) 索引使违规双铸 fail-closed。table 由各 repo 以字面量传入
+// （非用户输入，无注入面）。
+func NextSeq(ctx context.Context, run Runner, table string) (int64, error) {
+	var max sql.NullInt64
+	if err := run.QueryRowContext(ctx, "SELECT MAX(seq) FROM "+table).Scan(&max); err != nil {
+		return 0, fmt.Errorf("state: next seq %s: %w", table, err)
+	}
+	return max.Int64 + 1, nil
+}
+
 // Runner 是聚合 repo 的执行面：*sql.DB 与 *sql.Tx 共同满足。方法签名带
 // Runner 使同一聚合操作既可独立执行、也可组合进四件一拍事务。
 type Runner interface {

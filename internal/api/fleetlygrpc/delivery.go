@@ -137,12 +137,12 @@ func freezeRevision(ctx context.Context, s *Services, appRow *app.App, appSpec *
 			if serr != nil {
 				return serr
 			}
-			rev = &revision.Revision{ID: newID(), AppID: appRow.ID, Seq: seq, Spec: body}
+			rev = &revision.Revision{AppID: appRow.ID, Seq: seq, Spec: body}
 			if cerr := s.Revisions.Create(ctx, tx, rev); cerr != nil {
 				return cerr
 			}
 			created = &audit.Entry{
-				ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "revision.create",
+				Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "revision.create",
 				Resource: "revision/" + rev.ID, AfterFP: rev.Digest,
 			}
 			return nil
@@ -334,7 +334,7 @@ func (svc *DeploymentsService) ListDeployments(ctx context.Context, req *deliver
 		return nil, err
 	}
 	list, err := svc.s.Deployments.ListByApp(ctx, svc.s.DB.Runner(),
-		req.GetAppId(), req.GetAfterDeploymentId(), listLimit(req.GetLimit()))
+		req.GetAppId(), req.GetAfterDeploymentSeq(), listLimit(req.GetLimit()))
 	if err != nil {
 		return nil, mapStateError(err, "deployment")
 	}
@@ -459,7 +459,7 @@ func (svc *BuildsService) ListBuilds(ctx context.Context, req *deliveryv1.ListBu
 		return nil, err
 	}
 	list, err := svc.s.Builds.ListByApp(ctx, svc.s.DB.Runner(),
-		req.GetAppId(), req.GetAfterBuildId(), listLimit(req.GetLimit()))
+		req.GetAppId(), req.GetAfterBuildSeq(), listLimit(req.GetLimit()))
 	if err != nil {
 		return nil, mapStateError(err, "build")
 	}

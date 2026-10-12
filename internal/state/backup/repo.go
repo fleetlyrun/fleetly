@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/fleetlyrun/fleetly/internal/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
@@ -27,6 +28,7 @@ const (
 // Backup 是一次备份的台账行。
 type Backup struct {
 	ID            string
+	Seq           int64
 	ProjectID     string
 	DatabaseID    string
 	Engine        string
@@ -49,12 +51,12 @@ type Repo struct {
 // New 构造 repo。
 func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 
-const selectCols = `SELECT id, project_id, database_id, engine, object_key, digest,
+const selectCols = `SELECT id, seq, project_id, database_id, engine, object_key, digest,
 	size_bytes, retention_secs, status, error, started_at, finished_at, created_at FROM backups`
 
 func scanBackup(scan func(...any) error) (*Backup, error) {
 	var b Backup
-	err := scan(&b.ID, &b.ProjectID, &b.DatabaseID, &b.Engine, &b.ObjectKey, &b.Digest,
+	err := scan(&b.ID, &b.Seq, &b.ProjectID, &b.DatabaseID, &b.Engine, &b.ObjectKey, &b.Digest,
 		&b.SizeBytes, &b.RetentionSecs, &b.Status, &b.Error, &b.StartedAt, &b.FinishedAt, &b.CreatedAt)
 	if err != nil {
 		return nil, state.MapScanErr(err)
@@ -64,13 +66,21 @@ func scanBackup(scan func(...any) error) (*Backup, error) {
 
 // Create 落一行 pending（调度与手动触发共用；object_key 执行成功后回填）。
 func (r *Repo) Create(ctx context.Context, run state.Runner, b *Backup) error {
+	seq, err := state.NextSeq(ctx, run, "backups")
+	if err != nil {
+		return err
+	}
+	b.Seq = seq
+	if b.ID == "" {
+		b.ID = entityid.Derive(b.DatabaseID, "b", seq)
+	}
 	now := state.FormatTime(r.clock.Now())
 	b.CreatedAt, b.Status = now, StatusPending
-	_, err := run.ExecContext(ctx, `
-		INSERT INTO backups (id, project_id, database_id, engine, object_key, digest,
+	_, err = run.ExecContext(ctx, `
+		INSERT INTO backups (id, seq, project_id, database_id, engine, object_key, digest,
 			size_bytes, retention_secs, status, error, started_at, finished_at, created_at)
-		VALUES (?, ?, ?, ?, '', '', 0, ?, 'pending', '', '', '', ?)`,
-		b.ID, b.ProjectID, b.DatabaseID, b.Engine, b.RetentionSecs, b.CreatedAt)
+		VALUES (?, ?, ?, ?, ?, '', '', 0, ?, 'pending', '', '', '', ?)`,
+		b.ID, b.Seq, b.ProjectID, b.DatabaseID, b.Engine, b.RetentionSecs, b.CreatedAt)
 	return err
 }
 
@@ -81,17 +91,17 @@ func (r *Repo) Get(ctx context.Context, run state.Runner, id string) (*Backup, e
 }
 
 // ListByDatabase 新→旧分页（ADR-0026 after_* + limit 惯例；含终态与在途）。
-func (r *Repo) ListByDatabase(ctx context.Context, run state.Runner, databaseID, afterID string, limit int) ([]Backup, error) {
+func (r *Repo) ListByDatabase(ctx context.Context, run state.Runner, databaseID string, afterSeq int64, limit int) ([]Backup, error) {
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
 	q := selectCols + ` WHERE database_id = ?`
 	args := []any{databaseID}
-	if afterID != "" {
-		q += ` AND id < ?`
-		args = append(args, afterID)
+	if afterSeq > 0 {
+		q += ` AND seq < ?`
+		args = append(args, afterSeq)
 	}
-	q += ` ORDER BY id DESC LIMIT ?`
+	q += ` ORDER BY seq DESC LIMIT ?`
 	args = append(args, limit)
 	return r.query(ctx, run, q, args...)
 }
@@ -109,7 +119,7 @@ func (r *Repo) OldestPending(ctx context.Context, run state.Runner) (*Backup, bo
 		return nil, false, nil
 	}
 	row := run.QueryRowContext(ctx,
-		selectCols+` WHERE status = 'pending' ORDER BY id LIMIT 1`)
+		selectCols+` WHERE status = 'pending' ORDER BY seq LIMIT 1`)
 	b, err := scanBackup(row.Scan)
 	if err != nil {
 		if errors.Is(err, state.ErrNotFound) || errors.Is(err, sql.ErrNoRows) {
@@ -136,7 +146,7 @@ func (r *Repo) HasActiveFor(ctx context.Context, run state.Runner, databaseID st
 // 索引序即时间序。无失败行即 ok=false）。
 func (r *Repo) LatestFailedFor(ctx context.Context, run state.Runner, databaseID string) (*Backup, bool, error) {
 	row := run.QueryRowContext(ctx,
-		selectCols+` WHERE database_id = ? AND status = 'failed' ORDER BY id DESC LIMIT 1`, databaseID)
+		selectCols+` WHERE database_id = ? AND status = 'failed' ORDER BY seq DESC LIMIT 1`, databaseID)
 	b, err := scanBackup(row.Scan)
 	if err != nil {
 		if errors.Is(err, state.ErrNotFound) || errors.Is(err, sql.ErrNoRows) {

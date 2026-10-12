@@ -6,6 +6,7 @@
 -- （F2.8 runbook 记录·五）。
 CREATE TABLE shared_variables (
   id         TEXT PRIMARY KEY,
+  seq        INTEGER NOT NULL,
   project_id TEXT NOT NULL,
   name       TEXT NOT NULL,
   value      TEXT NOT NULL,
@@ -13,6 +14,7 @@ CREATE TABLE shared_variables (
   updated_at TEXT NOT NULL,
   deleted_at TEXT NOT NULL DEFAULT ''
 );
+CREATE UNIQUE INDEX idx_shared_variables_seq ON shared_variables(seq);
 CREATE UNIQUE INDEX idx_shared_variables_project_name ON shared_variables(project_id, name) WHERE deleted_at = '';
 
 -- +goose Down

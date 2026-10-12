@@ -28,7 +28,7 @@ import (
 // outbox 事件经 acceptance.go 的 identityEvent 构造（写原语事实段）。
 func identityAudit(ctx context.Context, action, resource, beforeFP, afterFP string) *audit.Entry {
 	return &audit.Entry{
-		ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+		Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
 		Action: action, Resource: resource, BeforeFP: beforeFP, AfterFP: afterFP,
 	}
 }
@@ -57,6 +57,9 @@ func (svc *UsersService) WhoAmI(ctx context.Context, _ *identityv1.WhoAmIRequest
 }
 
 func (svc *UsersService) CreateUser(ctx context.Context, req *identityv1.CreateUserRequest) (*identityv1.CreateUserResponse, error) {
+	if err := validName("name", req.GetName()); err != nil {
+		return nil, err
+	}
 	if req.GetName() == "" {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "name: must not be empty")
 	}
@@ -74,7 +77,7 @@ func (svc *UsersService) CreateUser(ctx context.Context, req *identityv1.CreateU
 		return nil, err
 	}
 	teamID = resolvedTeam
-	u := &user.User{ID: newID(), Name: req.GetName()}
+	u := &user.User{Name: req.GetName()}
 	// 密码凭证第二形态（C6 第一期）：可选初始密码 bcrypt 落库（zot
 	// htpasswd 同款算法；空 = 未设密）。
 	if pw := req.GetPassword(); pw != "" {
@@ -84,17 +87,26 @@ func (svc *UsersService) CreateUser(ctx context.Context, req *identityv1.CreateU
 		}
 		u.PasswordHash = string(hash)
 	}
-	m := &membership.Membership{ID: newID(), UserID: u.ID, TeamID: teamID, RoleID: req.GetRoleId()}
+	m := &membership.Membership{UserID: u.ID, TeamID: teamID, RoleID: req.GetRoleId()}
+	userCreatedEvents := []eventFact{identityEvent("user.created", "user", u.ID, nameEventPayload{Name: u.Name})}
 	err = svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{svc.s.teamExists(teamID), svc.s.roleInTeam(req.GetRoleId(), teamID)},
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			if err := svc.s.Users.Create(ctx, tx, u); err != nil {
 				return err
 			}
-			return svc.s.Memberships.Create(ctx, tx, m)
+			// membership 归属事务内铸出的用户 id（ADR-0070）。
+			m.UserID = u.ID
+			if err := svc.s.Memberships.Create(ctx, tx, m); err != nil {
+				return err
+			}
+			userCreatedEvents[0].id = u.ID
+			return nil
 		},
-		events: []eventFact{identityEvent("user.created", "user", u.ID, nameEventPayload{Name: u.Name})},
-		audits: []*audit.Entry{identityAudit(ctx, "user.create", "user/"+u.ID, "", u.Name)},
+		events: userCreatedEvents,
+		auditsFrom: func() []*audit.Entry {
+			return []*audit.Entry{identityAudit(ctx, "user.create", "user/"+u.ID, "", u.Name)}
+		},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "user")
@@ -137,15 +149,20 @@ func (svc *UsersService) Login(ctx context.Context, req *identityv1.LoginRequest
 		return nil, apperr.New("E_INTERNAL", "token material generation failed")
 	}
 	t := &tokenrepo.Token{
-		ID: newID(), Name: "password session", TeamID: m.TeamID, UserID: u.ID,
+		Name: "password session", TeamID: m.TeamID, UserID: u.ID,
 		RoleID: m.RoleID, SHA256: material.SHA256, Prefix: material.Prefix,
 	}
+	tokenCreatedEvents := []eventFact{identityEvent("token.created", "token", t.ID, nameEventPayload{Name: t.Name})}
 	err = svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{svc.s.teamExists(m.TeamID), svc.s.roleInTeam(m.RoleID, m.TeamID), svc.s.userInTeam(u.ID, m.TeamID)},
 		write: func(ctx context.Context, tx *sql.Tx) error {
-			return svc.s.Tokens.Create(ctx, tx, t)
+			if err := svc.s.Tokens.Create(ctx, tx, t); err != nil {
+				return err
+			}
+			tokenCreatedEvents[0].id = t.ID
+			return nil
 		},
-		events: []eventFact{identityEvent("token.created", "token", t.ID, nameEventPayload{Name: t.Name})},
+		events: tokenCreatedEvents,
 		audits: []*audit.Entry{identityAudit(ctx, "user.login", "user/"+u.ID, "", u.Name)},
 	})
 	if err != nil {
@@ -227,16 +244,26 @@ type TeamsService struct {
 }
 
 func (svc *TeamsService) CreateTeam(ctx context.Context, req *identityv1.CreateTeamRequest) (*identityv1.CreateTeamResponse, error) {
+	if err := validName("name", req.GetName()); err != nil {
+		return nil, err
+	}
 	if req.GetName() == "" {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "name: must not be empty")
 	}
-	t := &team.Team{ID: newID(), Name: req.GetName()}
+	t := &team.Team{Name: req.GetName()}
+	teamCreatedEvents := []eventFact{identityEvent("team.created", "team", t.ID, nameEventPayload{Name: t.Name})}
 	err := svc.s.commit(ctx, writeFact{
 		write: func(ctx context.Context, tx *sql.Tx) error {
-			return svc.s.Teams.Create(ctx, tx, t)
+			if err := svc.s.Teams.Create(ctx, tx, t); err != nil {
+				return err
+			}
+			teamCreatedEvents[0].id = t.ID
+			return nil
 		},
-		events: []eventFact{identityEvent("team.created", "team", t.ID, nameEventPayload{Name: t.Name})},
-		audits: []*audit.Entry{identityAudit(ctx, "team.create", "team/"+t.ID, "", t.Name)},
+		events: teamCreatedEvents,
+		auditsFrom: func() []*audit.Entry {
+			return []*audit.Entry{identityAudit(ctx, "team.create", "team/"+t.ID, "", t.Name)}
+		},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "team")
@@ -291,6 +318,9 @@ type RolesService struct {
 }
 
 func (svc *RolesService) CreateRole(ctx context.Context, req *identityv1.CreateRoleRequest) (*identityv1.CreateRoleResponse, error) {
+	if err := validName("name", req.GetName()); err != nil {
+		return nil, err
+	}
 	if req.GetName() == "" {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "name: must not be empty")
 	}
@@ -312,14 +342,21 @@ func (svc *RolesService) CreateRole(ctx context.Context, req *identityv1.CreateR
 		return nil, err
 	}
 	teamID = resolvedTeam
-	ro := &role.Role{ID: newID(), TeamID: teamID, Name: req.GetName(), Scopes: identity.ScopeStrings(scopes)}
+	ro := &role.Role{TeamID: teamID, Name: req.GetName(), Scopes: identity.ScopeStrings(scopes)}
+	roleCreatedEvents := []eventFact{identityEvent("role.created", "role", ro.ID, roleEventPayload{Scopes: ro.Scopes})}
 	err = svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{svc.s.teamExists(teamID)},
 		write: func(ctx context.Context, tx *sql.Tx) error {
-			return svc.s.Roles.Create(ctx, tx, ro)
+			if err := svc.s.Roles.Create(ctx, tx, ro); err != nil {
+				return err
+			}
+			roleCreatedEvents[0].id = ro.ID
+			return nil
 		},
-		events: []eventFact{identityEvent("role.created", "role", ro.ID, roleEventPayload{Scopes: ro.Scopes})},
-		audits: []*audit.Entry{identityAudit(ctx, "role.create", "role/"+ro.ID, "", joinStrings(ro.Scopes))},
+		events: roleCreatedEvents,
+		auditsFrom: func() []*audit.Entry {
+			return []*audit.Entry{identityAudit(ctx, "role.create", "role/"+ro.ID, "", joinStrings(ro.Scopes))}
+		},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "role")
@@ -395,7 +432,7 @@ func (svc *TokensService) CreateToken(ctx context.Context, req *identityv1.Creat
 		return nil, apperr.New("E_INTERNAL", "token material generation failed")
 	}
 	t := &tokenrepo.Token{
-		ID: newID(), Name: req.GetName(), TeamID: teamID, UserID: req.GetUserId(),
+		Name: req.GetName(), TeamID: teamID, UserID: req.GetUserId(),
 		RoleID: req.GetRoleId(), SHA256: material.SHA256, Prefix: material.Prefix,
 	}
 	checks := []acceptanceCheck{svc.s.teamExists(teamID), svc.s.roleInTeam(req.GetRoleId(), teamID)}
@@ -404,13 +441,20 @@ func (svc *TokensService) CreateToken(ctx context.Context, req *identityv1.Creat
 		// 实时收窄语义下无 membership 的属主 Token 铸出即死，受理位拒绝。
 		checks = append(checks, svc.s.userExists(req.GetUserId()), svc.s.userInTeam(req.GetUserId(), teamID))
 	}
+	tokenCreatedEvents := []eventFact{identityEvent("token.created", "token", t.ID, nameEventPayload{Name: t.Name})}
 	err = svc.s.commit(ctx, writeFact{
 		checks: checks,
 		write: func(ctx context.Context, tx *sql.Tx) error {
-			return svc.s.Tokens.Create(ctx, tx, t)
+			if err := svc.s.Tokens.Create(ctx, tx, t); err != nil {
+				return err
+			}
+			tokenCreatedEvents[0].id = t.ID
+			return nil
 		},
-		events: []eventFact{identityEvent("token.created", "token", t.ID, nameEventPayload{Name: t.Name})},
-		audits: []*audit.Entry{identityAudit(ctx, "token.create", "token/"+t.ID, "", t.Name)},
+		events: tokenCreatedEvents,
+		auditsFrom: func() []*audit.Entry {
+			return []*audit.Entry{identityAudit(ctx, "token.create", "token/"+t.ID, "", t.Name)}
+		},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "token")

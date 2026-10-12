@@ -7,12 +7,14 @@ package sharedvariable
 import (
 	"context"
 
+	"github.com/fleetlyrun/fleetly/internal/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
 // SharedVariable 是聚合行。
 type SharedVariable struct {
 	ID        string
+	Seq       int64
 	ProjectID string
 	Name      string
 	Value     string
@@ -47,17 +49,25 @@ func (r *Repo) Upsert(ctx context.Context, run state.Runner, v *SharedVariable) 
 		return err
 	}
 	v.CreatedAt, v.UpdatedAt = now, now
-	_, err := run.ExecContext(ctx, `
-		INSERT INTO shared_variables (id, project_id, name, value, created_at, updated_at, deleted_at)
-		VALUES (?, ?, ?, ?, ?, ?, '')`,
-		v.ID, v.ProjectID, v.Name, v.Value, v.CreatedAt, v.UpdatedAt)
+	seq, err := state.NextSeq(ctx, run, "shared_variables")
+	if err != nil {
+		return err
+	}
+	v.Seq = seq
+	if v.ID == "" {
+		v.ID = entityid.Join("var", seq)
+	}
+	_, err = run.ExecContext(ctx, `
+		INSERT INTO shared_variables (id, seq, project_id, name, value, created_at, updated_at, deleted_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, '')`,
+		v.ID, v.Seq, v.ProjectID, v.Name, v.Value, v.CreatedAt, v.UpdatedAt)
 	return err
 }
 
 // GetByName 读活跃行（API 回显与受影响 App 计算的读面）。
 func (r *Repo) GetByName(ctx context.Context, run state.Runner, projectID, name string) (*SharedVariable, error) {
 	row := run.QueryRowContext(ctx, `
-		SELECT id, project_id, name, value, created_at, updated_at, deleted_at
+		SELECT id, seq, project_id, name, value, created_at, updated_at, deleted_at
 		FROM shared_variables WHERE project_id = ? AND name = ? AND deleted_at = ''`,
 		projectID, name)
 	return scanVariable(row.Scan)
@@ -67,7 +77,7 @@ func (r *Repo) GetByName(ctx context.Context, run state.Runner, projectID, name 
 // 项目内共享变量受配额钳制，结果集有界）。
 func (r *Repo) ListActive(ctx context.Context, run state.Runner, projectID string) ([]SharedVariable, error) {
 	rows, err := run.QueryContext(ctx, `
-		SELECT id, project_id, name, value, created_at, updated_at, deleted_at
+		SELECT id, seq, project_id, name, value, created_at, updated_at, deleted_at
 		FROM shared_variables WHERE project_id = ? AND deleted_at = ''
 		ORDER BY name ASC`, projectID)
 	if err != nil {
@@ -93,7 +103,7 @@ func (r *Repo) ListPage(ctx context.Context, run state.Runner, projectID, afterN
 		limit = defaultListLimit
 	}
 	q := `
-		SELECT id, project_id, name, value, created_at, updated_at, deleted_at
+		SELECT id, seq, project_id, name, value, created_at, updated_at, deleted_at
 		FROM shared_variables WHERE project_id = ? AND deleted_at = ''`
 	args := []any{projectID}
 	if afterName != "" {
@@ -142,7 +152,7 @@ const (
 
 func scanVariable(scan func(dest ...any) error) (*SharedVariable, error) {
 	var v SharedVariable
-	if err := scan(&v.ID, &v.ProjectID, &v.Name, &v.Value, &v.CreatedAt, &v.UpdatedAt, &v.DeletedAt); err != nil {
+	if err := scan(&v.ID, &v.Seq, &v.ProjectID, &v.Name, &v.Value, &v.CreatedAt, &v.UpdatedAt, &v.DeletedAt); err != nil {
 		return nil, state.MapScanErr(err)
 	}
 	return &v, nil

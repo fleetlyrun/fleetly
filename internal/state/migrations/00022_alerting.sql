@@ -6,6 +6,7 @@
 -- 系统内置规则 platform-offsite-backup 不落行（代码内评估，ADR-0041）。
 CREATE TABLE alert_rules (
   id          TEXT PRIMARY KEY,
+  seq         INTEGER NOT NULL,
   app_id      TEXT NOT NULL,
   metric      TEXT NOT NULL,            -- cpu_percent | memory_working_set_bytes
   threshold   REAL NOT NULL,
@@ -18,10 +19,12 @@ CREATE TABLE alert_rules (
   created_at  TEXT NOT NULL,
   updated_at  TEXT NOT NULL
 );
+CREATE UNIQUE INDEX idx_alert_rules_seq ON alert_rules(seq);
 CREATE INDEX idx_alert_rules_app ON alert_rules(app_id);
 
 CREATE TABLE notification_channels (
   id          TEXT PRIMARY KEY,
+  seq         INTEGER NOT NULL,
   name        TEXT NOT NULL UNIQUE,
   kind        TEXT NOT NULL,            -- webhook | telegram
   config_ciphertext BLOB NOT NULL,      -- age 信封：{"url"} 或 {"bot_token","chat_id"}
@@ -30,6 +33,7 @@ CREATE TABLE notification_channels (
   created_at  TEXT NOT NULL,
   updated_at  TEXT NOT NULL
 );
+CREATE UNIQUE INDEX idx_notification_channels_seq ON notification_channels(seq);
 
 -- +goose Down
 -- goose 只前滚（架构 §8）；Down 留空是有意为之。

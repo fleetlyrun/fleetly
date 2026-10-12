@@ -7,6 +7,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/fleetlyrun/fleetly/internal/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
@@ -25,6 +26,7 @@ const (
 // Entry 是一条审计记录（前后值指纹：敏感值不进审计，只留指纹）。
 type Entry struct {
 	ID       string
+	Seq      int64
 	Actor    string // 操作者（Token 名/用户名；system 动作为空）
 	Source   Source
 	Action   string // 如 "project.create"
@@ -70,16 +72,23 @@ func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 
 // Append 落一条审计（四件一拍的"审计"件）。Team 轴统一铸入点：Entry 未
 // 显式携带时从 ctx 取（ADR-0035——全部调用方（api/engine/webhook）零改动
-// 获得 Team 标注；system/无身份动作显式留空 = 平台级行）。
+// 获得 Team 标注；system/无身份动作显式留空 = 平台级行）。ID 由行装配处
+// 装配 aud-<seq>（ADR-0070——调用方不再自带 id）。
 func (r *Repo) Append(ctx context.Context, run state.Runner, e *Entry) error {
 	if e.TeamID == "" {
 		e.TeamID = TeamFromContext(ctx)
 	}
 	e.CreatedAt = state.FormatTime(r.clock.Now())
-	_, err := run.ExecContext(ctx, `
-		INSERT INTO audit (id, actor, source, action, resource, before_fp, after_fp, team_id, created_at, detail)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		e.ID, e.Actor, string(e.Source), e.Action, e.Resource, e.BeforeFP, e.AfterFP, e.TeamID, e.CreatedAt, e.Detail)
+	seq, err := state.NextSeq(ctx, run, "audit")
+	if err != nil {
+		return err
+	}
+	e.Seq = seq
+	e.ID = entityid.Audit(seq)
+	_, err = run.ExecContext(ctx, `
+		INSERT INTO audit (id, seq, actor, source, action, resource, before_fp, after_fp, team_id, created_at, detail)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		e.ID, e.Seq, e.Actor, string(e.Source), e.Action, e.Resource, e.BeforeFP, e.AfterFP, e.TeamID, e.CreatedAt, e.Detail)
 	return err
 }
 
@@ -106,7 +115,7 @@ func (r *Repo) ListFiltered(ctx context.Context, run state.Runner, f Filter) ([]
 	if f.Limit <= 0 || f.Limit > 1000 {
 		f.Limit = 1000
 	}
-	query := `SELECT id, actor, source, action, resource, before_fp, after_fp, team_id, created_at, detail FROM audit`
+	query := `SELECT id, seq, actor, source, action, resource, before_fp, after_fp, team_id, created_at, detail FROM audit`
 	var conds []string
 	var args []any
 	if f.Actor != "" {
@@ -132,7 +141,7 @@ func (r *Repo) ListFiltered(ctx context.Context, run state.Runner, f Filter) ([]
 	if len(conds) > 0 {
 		query += " WHERE " + strings.Join(conds, " AND ")
 	}
-	query += " ORDER BY id DESC LIMIT ?"
+	query += " ORDER BY seq DESC LIMIT ?"
 	args = append(args, f.Limit)
 
 	rows, err := run.QueryContext(ctx, query, args...)
@@ -144,7 +153,7 @@ func (r *Repo) ListFiltered(ctx context.Context, run state.Runner, f Filter) ([]
 	for rows.Next() {
 		var e Entry
 		var src string
-		if err := rows.Scan(&e.ID, &e.Actor, &src, &e.Action, &e.Resource, &e.BeforeFP, &e.AfterFP, &e.TeamID, &e.CreatedAt, &e.Detail); err != nil {
+		if err := rows.Scan(&e.ID, &e.Seq, &e.Actor, &src, &e.Action, &e.Resource, &e.BeforeFP, &e.AfterFP, &e.TeamID, &e.CreatedAt, &e.Detail); err != nil {
 			return nil, err
 		}
 		e.Source = Source(src)

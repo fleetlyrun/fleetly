@@ -163,7 +163,7 @@ func (svc *HooksService) handlePush(ctx context.Context, req *deliveryv1.Receive
 		},
 		events: []eventFact{{name: "hook.push_accepted", aggregate: "app", id: appRow.ID, payload: payload}},
 		audits: []*audit.Entry{{
-			ID: newID(), Actor: "hook:" + appRow.Name, Source: audit.SourceWebhook,
+			Actor: "hook:" + appRow.Name, Source: audit.SourceWebhook,
 			Action: "hook.push", Resource: "app/" + appRow.ID, AfterFP: p.After,
 		}},
 	})

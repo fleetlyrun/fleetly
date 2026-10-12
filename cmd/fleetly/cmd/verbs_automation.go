@@ -198,15 +198,16 @@ func newTasksCreateVerb() commands.Command {
 
 func newTasksListVerb() commands.Command {
 	const name = "list"
-	var project, after string
+	var project string
+	var after int64
 	var limit int
 	return &flaggedVerb{
 		name:     name,
 		synopsis: "List tasks in a project (newest first)",
-		usage:    "tasks list --project PROJECT_ID [--after TASK_ID] [--limit N]",
+		usage:    "tasks list --project PROJECT_ID [--after SEQ] [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&project, "project", "", "project id (required)")
-			fs.StringVar(&after, "after", "", "pagination cursor: the last task id of the previous page")
+			fs.Int64Var(&after, "after", 0, "pagination cursor: the seq of the last row of the previous page")
 			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
@@ -223,7 +224,7 @@ func newTasksListVerb() commands.Command {
 			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Tasks.ListTasks(ctx, &automationv1.ListTasksRequest{
-				ProjectId: project, AfterTaskId: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
+				ProjectId: project, AfterTaskSeq: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
 			})
 			if err != nil {
 				return err
@@ -414,16 +415,17 @@ func newTasksRenewVerb() commands.Command {
 
 func newRunsListVerb() commands.Command {
 	const name = "list"
-	var taskID, projectID, after string
+	var taskID, projectID string
+	var after int64
 	var limit int
 	return &flaggedVerb{
 		name:     name,
 		synopsis: "List runs (newest first; filter by task or project - one is required)",
-		usage:    "runs list (--task TASK_ID | --project PROJECT_ID) [--after RUN_ID] [--limit N]",
+		usage:    "runs list (--task TASK_ID | --project PROJECT_ID) [--after SEQ] [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&taskID, "task", "", "filter by task id (recommended for high-volume pools)")
 			fs.StringVar(&projectID, "project", "", "filter by project id (ADR-0035: an unfiltered run list spans every team's runs)")
-			fs.StringVar(&after, "after", "", "pagination cursor: the last run id of the previous page")
+			fs.Int64Var(&after, "after", 0, "pagination cursor: the seq of the last row of the previous page")
 			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
@@ -440,7 +442,7 @@ func newRunsListVerb() commands.Command {
 			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Runs.ListRuns(ctx, &automationv1.ListRunsRequest{
-				TaskId: taskID, ProjectId: projectID, AfterRunId: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
+				TaskId: taskID, ProjectId: projectID, AfterRunSeq: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
 			})
 			if err != nil {
 				return err
@@ -620,15 +622,16 @@ func newSchedulesCreateVerb() commands.Command {
 
 func newSchedulesListVerb() commands.Command {
 	const name = "list"
-	var project, after string
+	var project string
+	var after int64
 	var limit int
 	return &flaggedVerb{
 		name:     name,
 		synopsis: "List schedules in a project (newest first)",
-		usage:    "schedules list --project PROJECT_ID [--after SCHEDULE_ID] [--limit N]",
+		usage:    "schedules list --project PROJECT_ID [--after SEQ] [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&project, "project", "", "project id (required)")
-			fs.StringVar(&after, "after", "", "pagination cursor: the last schedule id of the previous page")
+			fs.Int64Var(&after, "after", 0, "pagination cursor: the seq of the last row of the previous page")
 			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
@@ -645,7 +648,7 @@ func newSchedulesListVerb() commands.Command {
 			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Schedules.ListSchedules(ctx, &automationv1.ListSchedulesRequest{
-				ProjectId: project, AfterScheduleId: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
+				ProjectId: project, AfterScheduleSeq: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
 			})
 			if err != nil {
 				return err

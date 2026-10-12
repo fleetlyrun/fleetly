@@ -26,10 +26,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/oklog/ulid/v2"
 	"google.golang.org/protobuf/encoding/protojson"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
+	"github.com/fleetlyrun/fleetly/internal/model/entityid"
+
 	"github.com/fleetlyrun/fleetly/internal/capability"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/state/run"
@@ -581,17 +582,24 @@ func (e *Engine) taskSpawnQuota(ctx context.Context, tx *sql.Tx, projectID strin
 // createRun 落一条 pending Run（四件一拍：行 + run.created 事件 + 审计）。
 // TTL 绝对 deadline 按 ADR-0018 墙钟落库。
 func (e *Engine) createRun(ctx context.Context, t *task.Task, spec *specv1.TaskSpec, now time.Time) error {
-	id := ulid.Make().String()
 	deadline := ""
 	if ttl := spec.GetTtlSeconds(); ttl > 0 {
 		deadline = state.FormatTime(now.Add(time.Duration(ttl) * time.Second))
 	}
-	m := &run.Run{
-		ID: id, TaskID: t.ID, ProjectID: t.ProjectID,
-		State: run.StatePending, WorkloadID: id, DNSName: RunDNSName(id),
-		Deadline: deadline,
-	}
+	var m *run.Run
 	return e.db.Tx(ctx, func(tx *sql.Tx) error {
+		// run id = <task id>-<seq>（ADR-0070 派生类）：WorkloadID 与 Run DNS
+		// 名随之全链可读（fleetly-run-nightly-backup-33-57）。
+		rseq, err := state.NextSeq(ctx, tx, "runs")
+		if err != nil {
+			return err
+		}
+		id := entityid.Derive(t.ID, "r", rseq)
+		m = &run.Run{
+			ID: id, Seq: rseq, TaskID: t.ID, ProjectID: t.ProjectID,
+			State: run.StatePending, WorkloadID: id, DNSName: RunDNSName(id),
+			Deadline: deadline,
+		}
 		return e.commitWrite(ctx, tx, writeFact{
 			write: func(ctx context.Context, tx *sql.Tx) error { return e.runs.Create(ctx, tx, m) },
 			events: []func() eventFact{func() eventFact {

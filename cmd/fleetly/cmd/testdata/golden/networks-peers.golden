@@ -1,2 +1,2 @@
 ID	STATE	NETWORK	NETWORK_PROJECT	PEER_PROJECT
-<ULID>	approved	bus	<ULID>	<ULID>
+bus-7-p1	approved	bus	messaging-3	shop-1

@@ -1,3 +1,3 @@
-browse session <ULID> opened (pgweb, read-only true, enforcement session)
+browse session shop-1-s1 opened (pgweb, read-only true, enforcement session)
 open within 120 seconds (one-time ticket):
-http://browse-<ULID>.browse.test/v1/browse/entry?session=<ULID>&ticket=<BROWSETICKET>
+http://browse-shop-1-s1.browse.test/v1/browse/entry?session=shop-1-s1&ticket=<BROWSETICKET>

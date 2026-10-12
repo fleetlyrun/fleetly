@@ -1,8 +1,9 @@
 {
-  "id": "<ULID>",
-  "project_id": "<ULID>",
+  "id": "shop-1-rt2",
+  "seq": "2",
+  "project_id": "shop-1",
   "host": "json.127.0.0.1.sslip.io",
-  "app_id": "<ULID>",
+  "app_id": "web-1",
   "process": "web",
   "port": 8080,
   "protocol": "h2c",

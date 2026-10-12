@@ -1,8 +1,8 @@
 {
-  "id": "<ULID>",
+  "id": "tok-4",
   "name": "alice-cli",
   "team_id": "default",
-  "user_id": "<ULID>",
+  "user_id": "alice-1",
   "role_id": "builtin-admin",
   "prefix": "<TOKEN>",
   "revoked": true,

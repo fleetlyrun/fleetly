@@ -32,6 +32,8 @@ const (
 type ChangeFreeze struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// seq 是创建序（ADR-0070：id 后缀即此号；分页游标轴）。
+	Seq int64 `protobuf:"varint,7,opt,name=seq,proto3" json:"seq,omitempty"`
 	// team_id 空串 = 全局冻结行（封禁全部 Team）。
 	TeamId string `protobuf:"bytes,2,opt,name=team_id,json=teamId,proto3" json:"team_id,omitempty"`
 	// reason 必填：拒绝信封回带（Agent 可读出"为何冻结/何时能再动"）。
@@ -79,6 +81,13 @@ func (x *ChangeFreeze) GetId() string {
 		return x.Id
 	}
 	return ""
+}
+
+func (x *ChangeFreeze) GetSeq() int64 {
+	if x != nil {
+		return x.Seq
+	}
+	return 0
 }
 
 func (x *ChangeFreeze) GetTeamId() string {
@@ -303,11 +312,11 @@ func (x *LiftChangeFreezeResponse) GetFreeze() *ChangeFreeze {
 
 type ListChangeFreezesRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// after_freeze_id 游标（上一页末条 id；空 = 首页）。
-	AfterFreezeId string `protobuf:"bytes,1,opt,name=after_freeze_id,json=afterFreezeId,proto3" json:"after_freeze_id,omitempty"`
-	Limit         int32  `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// after_freeze_seq 游标（上一页末条 seq（0 = 首页）。
+	AfterFreezeSeq int64 `protobuf:"varint,1,opt,name=after_freeze_seq,json=afterFreezeSeq,proto3" json:"after_freeze_seq,omitempty"`
+	Limit          int32 `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *ListChangeFreezesRequest) Reset() {
@@ -340,11 +349,11 @@ func (*ListChangeFreezesRequest) Descriptor() ([]byte, []int) {
 	return file_fleetly_system_v1_governance_proto_rawDescGZIP(), []int{5}
 }
 
-func (x *ListChangeFreezesRequest) GetAfterFreezeId() string {
+func (x *ListChangeFreezesRequest) GetAfterFreezeSeq() int64 {
 	if x != nil {
-		return x.AfterFreezeId
+		return x.AfterFreezeSeq
 	}
-	return ""
+	return 0
 }
 
 func (x *ListChangeFreezesRequest) GetLimit() int32 {
@@ -402,9 +411,10 @@ var File_fleetly_system_v1_governance_proto protoreflect.FileDescriptor
 
 const file_fleetly_system_v1_governance_proto_rawDesc = "" +
 	"\n" +
-	"\"fleetly/system/v1/governance.proto\x12\x11fleetly.system.v1\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"\xaa\x01\n" +
+	"\"fleetly/system/v1/governance.proto\x12\x11fleetly.system.v1\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"\xbc\x01\n" +
 	"\fChangeFreeze\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x10\n" +
+	"\x03seq\x18\a \x01(\x03R\x03seq\x12\x17\n" +
 	"\ateam_id\x18\x02 \x01(\tR\x06teamId\x12\x16\n" +
 	"\x06reason\x18\x03 \x01(\tR\x06reason\x12\x1d\n" +
 	"\n" +
@@ -420,9 +430,9 @@ const file_fleetly_system_v1_governance_proto_rawDesc = "" +
 	"\x17LiftChangeFreezeRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"S\n" +
 	"\x18LiftChangeFreezeResponse\x127\n" +
-	"\x06freeze\x18\x01 \x01(\v2\x1f.fleetly.system.v1.ChangeFreezeR\x06freeze\"X\n" +
-	"\x18ListChangeFreezesRequest\x12&\n" +
-	"\x0fafter_freeze_id\x18\x01 \x01(\tR\rafterFreezeId\x12\x14\n" +
+	"\x06freeze\x18\x01 \x01(\v2\x1f.fleetly.system.v1.ChangeFreezeR\x06freeze\"Z\n" +
+	"\x18ListChangeFreezesRequest\x12(\n" +
+	"\x10after_freeze_seq\x18\x01 \x01(\x03R\x0eafterFreezeSeq\x12\x14\n" +
 	"\x05limit\x18\x02 \x01(\x05R\x05limit\"V\n" +
 	"\x19ListChangeFreezesResponse\x129\n" +
 	"\afreezes\x18\x01 \x03(\v2\x1f.fleetly.system.v1.ChangeFreezeR\afreezes2\x91\x04\n" +

@@ -209,6 +209,8 @@ service HooksService {
 // Deployment 是受监督迁移的行形态（状态机值 kebab-case 与存储一致）。
 message Deployment {
   string id = 1;
+  // seq 是创建序（ADR-0070：id 后缀即此号；分页游标轴）。
+  int64 seq = 17;
   string app_id = 2;
   string from_revision = 3;
   string to_revision = 4;
@@ -313,9 +315,9 @@ message RollbackResponse {
 message GetDeploymentRequest { string id = 1; }
 message ListDeploymentsRequest {
   string app_id = 1;
-  // after_deployment_id 游标（上一页末条 id；空 = 首页）。新→旧（ULID
+  // after_deployment_seq 游标（上一页末条 seq；0 = 首页）。新→旧（seq
   // 创建序；ADR-0026 after_* + limit 惯例）。
-  string after_deployment_id = 2;
+  int64 after_deployment_seq = 2;
   int32 limit = 3;
 }
 message ListDeploymentsResponse { repeated Deployment deployments = 1; }
@@ -381,6 +383,8 @@ message DiffRevisionsResponse { repeated DiffEntry entries = 1; }
 
 message Build {
   string id = 1;
+  // seq 是创建序（ADR-0070：id 后缀即此号；分页游标轴）。
+  int64 seq = 9;
   string app_id = 2;
   string revision_id = 3;
   string state = 4;
@@ -392,9 +396,9 @@ message Build {
 
 message ListBuildsRequest {
   string app_id = 1;
-  // after_build_id 游标（上一页末条 id；空 = 首页）。新→旧（ULID 创建
+  // after_build_seq 游标（上一页末条 seq；0 = 首页）。新→旧（seq 创建
   // 序；ADR-0026 after_* + limit 惯例）。
-  string after_build_id = 2;
+  int64 after_build_seq = 2;
   int32 limit = 3;
 }
 message ListBuildsResponse { repeated Build builds = 1; }
@@ -444,6 +448,8 @@ message UploadSourceResponse {
 // Upload 是上传产物行投影（ListUploads 读面）。
 message Upload {
   string id = 1;
+  // seq 是创建序（ADR-0070：id 后缀即此号；分页游标轴）。
+  int64 seq = 6;
   string project_id = 2;
   string digest = 3;
   int64 size_bytes = 4;
@@ -452,7 +458,7 @@ message Upload {
 
 message ListUploadsRequest {
   string project_id = 1;
-  string after_upload_id = 2;
+  int64 after_upload_seq = 2;
   int32 limit = 3;
 }
 message ListUploadsResponse { repeated Upload uploads = 1; }

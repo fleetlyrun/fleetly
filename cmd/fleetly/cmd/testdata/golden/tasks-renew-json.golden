@@ -1,13 +1,14 @@
 {
-  "id": "<ULID>",
-  "project_id": "<ULID>",
+  "id": "dispatcher-3",
+  "seq": "3",
+  "project_id": "shop-1",
   "name": "dispatcher",
   "form": "resident",
   "state": "active",
   "image": "ghcr.io/torchwood/dispatcher:1",
   "desired_concurrency": "3",
-  "owner_token_id": "<ULID>",
-  "dns_name": "task-<ULID>",
+  "owner_token_id": "tok-1",
+  "dns_name": "task-dispatcher-3",
   "lease_deadline": "2026-01-01T00:02:30Z",
   "created_at": "2026-01-01T00:02:00Z",
   "updated_at": "2026-01-01T00:02:00Z"

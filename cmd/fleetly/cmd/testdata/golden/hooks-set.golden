@@ -1,4 +1,4 @@
-app <ULID>
+app web-1
 repo https://github.com/acme/shop.git
 branch main
 dockerfile Dockerfile

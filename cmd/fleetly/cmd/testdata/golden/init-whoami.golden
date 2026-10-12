@@ -1,4 +1,4 @@
-token alice-cli (id <ULID>)
+token alice-cli (id tok-2)
 user alice
 role admin
 team default

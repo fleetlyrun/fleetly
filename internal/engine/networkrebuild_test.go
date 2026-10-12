@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/oklog/ulid/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -28,7 +27,7 @@ import (
 func seedDefaultNetworkRow(t *testing.T, e *Engine) {
 	t.Helper()
 	require.NoError(t, networkrepo.New(e.db.Clock()).Create(context.Background(), e.db.Runner(),
-		&networkrepo.Network{ID: ulid.Make().String(), ProjectID: tProjectID, Name: "default"}))
+		&networkrepo.Network{ID: "fx-0001", ProjectID: tProjectID, Name: "default"}))
 }
 
 // lowerDomain 把域轴值小写化（模拟载体标记的 sanitizeNamePart 形态）。
@@ -70,7 +69,7 @@ func TestRebuildNetworkAttributionAxes(t *testing.T) {
 	seedDefaultNetworkRow(t, e)
 
 	// driving Task 行（Task 轴附着的期望锚；spec 冻结体最小形态）。
-	taskID := ulid.Make().String()
+	taskID := "fx-0002"
 	require.NoError(t, task.New(clock).Create(context.Background(), db.Runner(), &task.Task{
 		ID: taskID, ProjectID: tProjectID, Name: "migrate", State: task.StateActive,
 		Spec: []byte(`{"schema_version":1,"task":{"id":"` + taskID + `","project":"` + tProjectID + `"},` +
@@ -78,7 +77,7 @@ func TestRebuildNetworkAttributionAxes(t *testing.T) {
 	}))
 
 	ns := capability.NamespaceRef{Team: "default", Project: tProjectID}
-	ghost := ulid.Make().String()
+	ghost := "fx-0003"
 	rt.seedNetworkCarrier(ns, "default", false,
 		capability.NetworkAttachment{Carrier: "fleetly-run-1", Domain: lowerDomain(capability.NamespaceRef{Team: "default", Project: tProjectID, Task: taskID})},
 		capability.NetworkAttachment{Carrier: "fleetly-fleetly-system-registry", Workload: "fleetly-registry", Domain: lowerDomain(capability.NamespaceRef{Team: "fleetly", Project: "system", App: "registry"})},
@@ -301,7 +300,7 @@ func TestRebuildNetworkRollbackReattachesDetachedCarriers(t *testing.T) {
 	}))
 	seedDefaultNetworkRow(t, e)
 
-	taskID := ulid.Make().String()
+	taskID := "fx-0004"
 	require.NoError(t, task.New(clock).Create(context.Background(), db.Runner(), &task.Task{
 		ID: taskID, ProjectID: tProjectID, Name: "migrate", State: task.StateActive,
 		Spec: []byte(`{"schema_version":1,"task":{"id":"` + taskID + `","project":"` + tProjectID + `"},` +

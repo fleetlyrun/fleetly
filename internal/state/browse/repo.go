@@ -8,12 +8,14 @@ import (
 	"database/sql"
 	"time"
 
+	"github.com/fleetlyrun/fleetly/internal/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
 // Session 是一行回收台账。
 type Session struct {
 	ID         string
+	Seq        int64
 	ProjectID  string
 	DatabaseID string
 	Engine     string
@@ -30,12 +32,12 @@ type Repo struct {
 // New 构造 repo。
 func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 
-const selectCols = `SELECT id, project_id, database_id, engine, read_only, created_at, expires_at FROM browse_sessions`
+const selectCols = `SELECT id, seq, project_id, database_id, engine, read_only, created_at, expires_at FROM browse_sessions`
 
 func scanSession(scan func(...any) error) (*Session, error) {
 	var s Session
 	var readOnly int
-	err := scan(&s.ID, &s.ProjectID, &s.DatabaseID, &s.Engine, &readOnly, &s.CreatedAt, &s.ExpiresAt)
+	err := scan(&s.ID, &s.Seq, &s.ProjectID, &s.DatabaseID, &s.Engine, &readOnly, &s.CreatedAt, &s.ExpiresAt)
 	if err != nil {
 		return nil, state.MapScanErr(err)
 	}
@@ -45,20 +47,28 @@ func scanSession(scan func(...any) error) (*Session, error) {
 
 // Create 落一行台账（受理事务内——与事件/审计同拍）。
 func (r *Repo) Create(ctx context.Context, run state.Runner, s *Session) error {
+	seq, err := state.NextSeq(ctx, run, "browse_sessions")
+	if err != nil {
+		return err
+	}
+	s.Seq = seq
+	if s.ID == "" {
+		s.ID = entityid.Derive(s.DatabaseID, "s", seq)
+	}
 	ro := 0
 	if s.ReadOnly {
 		ro = 1
 	}
-	_, err := run.ExecContext(ctx,
-		`INSERT INTO browse_sessions (id, project_id, database_id, engine, read_only, created_at, expires_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		s.ID, s.ProjectID, s.DatabaseID, s.Engine, ro, s.CreatedAt, s.ExpiresAt)
+	_, err = run.ExecContext(ctx,
+		`INSERT INTO browse_sessions (id, seq, project_id, database_id, engine, read_only, created_at, expires_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		s.ID, s.Seq, s.ProjectID, s.DatabaseID, s.Engine, ro, s.CreatedAt, s.ExpiresAt)
 	return err
 }
 
 // List 返回全部在册行（到期判定在引擎域——repo 只做存取；id 升序稳定）。
 func (r *Repo) List(ctx context.Context, run state.Runner) ([]*Session, error) {
-	rows, err := run.QueryContext(ctx, selectCols+` ORDER BY id`)
+	rows, err := run.QueryContext(ctx, selectCols+` ORDER BY seq`)
 	if err != nil {
 		return nil, err
 	}

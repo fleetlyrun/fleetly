@@ -11,8 +11,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/oklog/ulid/v2"
-
 	"github.com/fleetlyrun/fleetly/internal/capability"
 )
 
@@ -238,7 +236,14 @@ func (p *Provider) anchorNodes(ctx context.Context, out chan<- capability.Worklo
 			cache[node.Name] = id
 			continue
 		}
-		id := ulid.Make().String()
+		if p.mintNodePlatformID == nil {
+			continue // minter 未注入（装配期接线缺失）：跳过，下轮扫描重试
+		}
+		id, err := p.mintNodePlatformID(ctx)
+		if err != nil {
+			// 铸造失败不阻断观测（下次扫描重试）；缓存不收未锚定节点。
+			continue
+		}
 		node.Labels[labelNodeID] = id
 		updated, err := p.cli.CoreV1().Nodes().Update(ctx, node, metav1.UpdateOptions{})
 		if err != nil {

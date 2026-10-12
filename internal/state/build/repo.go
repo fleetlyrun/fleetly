@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/fleetlyrun/fleetly/internal/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
@@ -35,6 +36,7 @@ func (s State) Terminal() bool {
 // Build 是聚合行（构建记录永不删）。
 type Build struct {
 	ID         string
+	Seq        int64
 	AppID      string
 	RevisionID string
 	State      State
@@ -57,14 +59,23 @@ type Repo struct {
 // New 构造 repo。
 func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 
-// Create 落一行。
+// Create 落一行。ID 空则装配 "<app id>-<seq>"；Seq 零值则事务内取 MAX+1
+// （ADR-0070）。
 func (r *Repo) Create(ctx context.Context, run state.Runner, b *Build) error {
 	now := state.FormatTime(r.clock.Now())
 	b.CreatedAt, b.UpdatedAt = now, now
-	_, err := run.ExecContext(ctx, `
-		INSERT INTO builds (id, app_id, revision_id, state, digest, repo, error, created_at, updated_at, finished_at)
-		VALUES (?, ?, ?, ?, '', ?, '', ?, ?, '')`,
-		b.ID, b.AppID, b.RevisionID, string(b.State), b.Repo, b.CreatedAt, b.UpdatedAt)
+	seq, err := state.NextSeq(ctx, run, "builds")
+	if err != nil {
+		return err
+	}
+	b.Seq = seq
+	if b.ID == "" {
+		b.ID = entityid.Derive(b.AppID, "b", seq)
+	}
+	_, err = run.ExecContext(ctx, `
+		INSERT INTO builds (id, seq, app_id, revision_id, state, digest, repo, error, created_at, updated_at, finished_at)
+		VALUES (?, ?, ?, ?, ?, '', ?, '', ?, ?, '')`,
+		b.ID, b.Seq, b.AppID, b.RevisionID, string(b.State), b.Repo, b.CreatedAt, b.UpdatedAt)
 	return err
 }
 
@@ -75,18 +86,18 @@ func (r *Repo) Get(ctx context.Context, run state.Runner, id string) (*Build, er
 }
 
 // ListByApp 返回 App 全部 Build（新→旧 + after 游标；ADR-0026 after_* +
-// limit 惯例——游标 = ULID 创建序）。limit<=0 或 >200 回落/钳制缺省 50。
-func (r *Repo) ListByApp(ctx context.Context, run state.Runner, appID, afterID string, limit int) ([]Build, error) {
+// limit 惯例——游标 = seq 创建序）。limit<=0 或 >200 回落/钳制缺省 50。
+func (r *Repo) ListByApp(ctx context.Context, run state.Runner, appID string, afterSeq int64, limit int) ([]Build, error) {
 	if limit <= 0 || limit > maxListLimit {
 		limit = defaultListLimit
 	}
 	q := selectCols + " WHERE app_id = ?"
 	args := []any{appID}
-	if afterID != "" {
-		q += " AND id < ?"
-		args = append(args, afterID)
+	if afterSeq > 0 {
+		q += " AND seq < ?"
+		args = append(args, afterSeq)
 	}
-	q += " ORDER BY id DESC LIMIT ?"
+	q += " ORDER BY seq DESC LIMIT ?"
 	args = append(args, limit)
 	rows, err := run.QueryContext(ctx, q, args...)
 	if err != nil {
@@ -108,7 +119,7 @@ func (r *Repo) ListByApp(ctx context.Context, run state.Runner, appID, afterID s
 // 一次，历史行应只有一条——含终态供部署驱动判定复用或失败）。
 func (r *Repo) ListByRevision(ctx context.Context, run state.Runner, revisionID string) ([]Build, error) {
 	rows, err := run.QueryContext(ctx,
-		selectCols+" WHERE revision_id = ? ORDER BY id DESC", revisionID)
+		selectCols+" WHERE revision_id = ? ORDER BY seq DESC", revisionID)
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +138,7 @@ func (r *Repo) ListByRevision(ctx context.Context, run state.Runner, revisionID 
 // ListActive 返回全部活跃 Build（构建循环拾取面）。
 func (r *Repo) ListActive(ctx context.Context, run state.Runner) ([]Build, error) {
 	rows, err := run.QueryContext(ctx,
-		selectCols+" WHERE state IN (?, ?) ORDER BY id", string(StateQueued), string(StateBuilding))
+		selectCols+" WHERE state IN (?, ?) ORDER BY seq", string(StateQueued), string(StateBuilding))
 	if err != nil {
 		return nil, err
 	}
@@ -188,13 +199,13 @@ func (r *Repo) Transit(ctx context.Context, run state.Runner, id string, from []
 }
 
 const selectCols = `
-	SELECT id, app_id, revision_id, state, digest, repo, error, created_at, updated_at, finished_at
+	SELECT id, seq, app_id, revision_id, state, digest, repo, error, created_at, updated_at, finished_at
 	FROM builds`
 
 func scanBuild(scan func(dest ...any) error) (*Build, error) {
 	var b Build
 	var stateStr string
-	err := scan(&b.ID, &b.AppID, &b.RevisionID, &stateStr, &b.Digest, &b.Repo, &b.Error,
+	err := scan(&b.ID, &b.Seq, &b.AppID, &b.RevisionID, &stateStr, &b.Digest, &b.Repo, &b.Error,
 		&b.CreatedAt, &b.UpdatedAt, &b.FinishedAt)
 	if err != nil {
 		return nil, state.MapScanErr(err)

@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"fmt"
 
+	"github.com/fleetlyrun/fleetly/internal/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
@@ -40,11 +41,15 @@ func Digest(spec []byte) string {
 
 // Create 落一行（digest 由 spec 派生；同 App 序号唯一、同 App 同内容唯一
 // ——重复冻结同内容 → state.ErrAlreadyExists，调用方应改走 FindByDigest
-// 复用）。
+// 复用）。ID 空则由 app id + per-App 序号派生（web-42-r7，ADR-0070 派生
+// 类——per-App 修订号即 UI 面既有语义，确定性无随机）。
 func (r *Repo) Create(ctx context.Context, run state.Runner, rev *Revision) error {
 	now := state.FormatTime(r.clock.Now())
 	rev.CreatedAt = now
 	rev.Digest = Digest(rev.Spec)
+	if rev.ID == "" {
+		rev.ID = entityid.Revision(rev.AppID, rev.Seq)
+	}
 	_, err := run.ExecContext(ctx, `
 		INSERT INTO revisions (id, app_id, seq, digest, spec, created_at)
 		VALUES (?, ?, ?, ?, ?, ?)`,

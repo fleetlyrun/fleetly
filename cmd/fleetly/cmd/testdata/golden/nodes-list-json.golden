@@ -1,7 +1,8 @@
 {
   "nodes": [
     {
-      "platform_id": "01JD0NODE00000000000000000",
+      "platform_id": "node-1",
+      "seq": "1",
       "carrier_id": "apimanager",
       "role": "manager",
       "available": true,

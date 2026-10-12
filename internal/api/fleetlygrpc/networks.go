@@ -29,6 +29,9 @@ type NetworksService struct {
 }
 
 func (svc *NetworksService) CreateNetwork(ctx context.Context, req *structurev1.CreateNetworkRequest) (*structurev1.CreateNetworkResponse, error) {
+	if err := validName("name", req.GetName()); err != nil {
+		return nil, err
+	}
 	if req.GetProjectId() == "" || req.GetName() == "" {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "project_id and name: must not be empty")
 	}
@@ -37,7 +40,7 @@ func (svc *NetworksService) CreateNetwork(ctx context.Context, req *structurev1.
 		return nil, err
 	}
 	row := &networkrepo.Network{
-		ID: newID(), ProjectID: req.GetProjectId(), Name: req.GetName(), EgressNone: req.GetEgressNone(),
+		ProjectID: req.GetProjectId(), Name: req.GetName(), EgressNone: req.GetEgressNone(),
 	}
 	// 父资源存活校验（批 0 复核，同族面）：Project 级材料不得落在
 	// 不存在/已删的 Project 下。
@@ -48,7 +51,7 @@ func (svc *NetworksService) CreateNetwork(ctx context.Context, req *structurev1.
 		},
 		events: []eventFact{structureEvent(eventNetworkCreated, "network", row.Name, row.ProjectID)},
 		audits: []*audit.Entry{{
-			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "network.create",
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "network.create",
 			Resource: "network/" + row.Name, AfterFP: req.String(),
 		}},
 	})
@@ -109,7 +112,7 @@ func (svc *NetworksService) RebuildNetwork(ctx context.Context, req *structurev1
 	err = svc.s.commit(ctx, writeFact{
 		events: []eventFact{{name: eventNetworkRebuilt, aggregate: "network", id: net.ID, payload: payload}},
 		audits: []*audit.Entry{{
-			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "network.rebuild",
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "network.rebuild",
 			Resource: "network/" + net.Name,
 			AfterFP:  fmt.Sprintf("project=%s detached=%d reattached=%d", net.ProjectID, res.Detached, res.Reattached),
 		}},
@@ -164,7 +167,7 @@ func networkPeerAudits(ctx context.Context, action string, p *networkpeer.Peer, 
 	fp := fmt.Sprintf("peer_project=%s network=%s state=%s", p.PeerProjectID, net.Name, p.State)
 	mk := func(resource string) *audit.Entry {
 		return &audit.Entry{
-			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
 			Action: action, Resource: resource, AfterFP: fp,
 		}
 	}
@@ -257,7 +260,7 @@ func (svc *NetworksService) DeclareNetworkPeer(ctx context.Context, req *structu
 	if err := svc.s.authorizeProjectID(ctx, req.GetPeerProjectId()); err != nil {
 		return nil, err
 	}
-	p := &networkpeer.Peer{ID: newID(), NetworkID: net.ID, PeerProjectID: req.GetPeerProjectId()}
+	p := &networkpeer.Peer{NetworkID: net.ID, PeerProjectID: req.GetPeerProjectId()}
 	err = svc.s.commit(ctx, writeFact{
 		// 双侧父资源存活（事务内）：网络归属方与挂靠方项目都必须在场。
 		checks: []acceptanceCheck{
@@ -375,7 +378,7 @@ func (svc *NetworksService) GetNetworkPeer(ctx context.Context, req *structurev1
 // （ADR-0035）：非 owner 只见本 Team 任一侧在场的声明。
 func (svc *NetworksService) ListNetworkPeers(ctx context.Context, req *structurev1.ListNetworkPeersRequest) (*structurev1.ListNetworkPeersResponse, error) {
 	list, err := svc.s.NetworkPeers.List(ctx, svc.s.DB.Runner(),
-		req.GetNetworkId(), req.GetPeerProjectId(), req.GetAfterPeerId(), int(req.GetLimit()))
+		req.GetNetworkId(), req.GetPeerProjectId(), req.GetAfterPeerSeq(), int(req.GetLimit()))
 	if err != nil {
 		return nil, mapStateError(err, "network peer")
 	}
@@ -410,7 +413,7 @@ func (svc *NetworksService) peerNetProjection(ctx context.Context, p *networkpee
 // networkPeerMsg 行 → proto 映射（网络侧便捷字段来自读投影）。
 func networkPeerMsg(p *networkpeer.Peer, net *networkrepo.Network) *structurev1.NetworkPeer {
 	msg := &structurev1.NetworkPeer{
-		Id: p.ID, PeerProjectId: p.PeerProjectID, State: string(p.State),
+		Id: p.ID, Seq: p.Seq, PeerProjectId: p.PeerProjectID, State: string(p.State),
 		CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt, ApprovedAt: p.ApprovedAt,
 	}
 	if net != nil {

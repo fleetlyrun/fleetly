@@ -86,7 +86,7 @@
       "created_at": "2026-01-01T00:00:00Z"
     },
     {
-      "id": "<ULID>",
+      "id": "deployer-4",
       "team_id": "default",
       "name": "deployer",
       "scopes": [
@@ -95,7 +95,7 @@
       "created_at": "2026-01-01T00:00:00Z"
     },
     {
-      "id": "<ULID>",
+      "id": "deployer-json-5",
       "team_id": "default",
       "name": "deployer-json",
       "scopes": [

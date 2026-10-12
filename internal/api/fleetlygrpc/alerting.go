@@ -12,12 +12,9 @@ import (
 	"errors"
 	"time"
 
-	"github.com/oklog/ulid/v2"
-
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
 	"github.com/fleetlyrun/fleetly/internal/api/apperr"
 	"github.com/fleetlyrun/fleetly/internal/authn"
-	"github.com/fleetlyrun/fleetly/internal/engine"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	alertrule "github.com/fleetlyrun/fleetly/internal/state/alertrule"
 	"github.com/fleetlyrun/fleetly/internal/state/audit"
@@ -89,6 +86,9 @@ func (svc *AlertingService) CreateNotificationChannel(ctx context.Context, req *
 	if name == "" {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "name: must not be empty")
 	}
+	if err := validName("name", name); err != nil {
+		return nil, err
+	}
 	kind := req.GetKind()
 	var cfg alertChannelConfig
 	switch kind {
@@ -117,17 +117,19 @@ func (svc *AlertingService) CreateNotificationChannel(ctx context.Context, req *
 		return nil, apperr.New("E_INTERNAL", "seal channel config").WithCause(err)
 	}
 	row := &channel.Channel{
-		ID: ulid.Make().String(), Name: name, Kind: kind,
+		Name: name, Kind: kind,
 		ConfigCiphertext: sealed, Enabled: true,
 	}
 	err = svc.s.commit(ctx, writeFact{
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			return svc.s.Engine.NotificationChannelRepo().Create(ctx, tx, row)
 		},
-		audits: []*audit.Entry{{
-			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-			Action: "channel.create", Resource: "channel/" + row.ID, AfterFP: kind + ":" + name,
-		}},
+		auditsFrom: func() []*audit.Entry {
+			return []*audit.Entry{{
+				Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+				Action: "channel.create", Resource: "channel/" + row.ID, AfterFP: kind + ":" + name,
+			}}
+		},
 	})
 	if err != nil {
 		if errors.Is(err, state.ErrAlreadyExists) {
@@ -175,7 +177,7 @@ func (svc *AlertingService) DeleteNotificationChannel(ctx context.Context, req *
 			return svc.s.Engine.NotificationChannelRepo().Delete(ctx, tx, req.GetChannelId())
 		},
 		audits: []*audit.Entry{{
-			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
 			Action: "channel.delete", Resource: "channel/" + req.GetChannelId(),
 		}},
 	})
@@ -206,7 +208,7 @@ func (svc *AlertingService) CreateAlertRule(ctx context.Context, req *telemetryv
 		return nil, apperr.New("E_INVALID_ARGUMENT", "threshold: must not be negative")
 	}
 	row := &alertrule.Rule{
-		ID: engine.NewAlertRuleID(), AppID: appRow.ID, Metric: metric,
+		AppID: appRow.ID, Metric: metric,
 		Threshold: req.GetThreshold(), ForSecs: req.GetForSeconds(), Enabled: true,
 	}
 	err = svc.s.commit(ctx, writeFact{
@@ -214,11 +216,13 @@ func (svc *AlertingService) CreateAlertRule(ctx context.Context, req *telemetryv
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			return svc.s.Engine.AlertRuleRepo().Create(ctx, tx, row)
 		},
-		audits: []*audit.Entry{{
-			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-			Action: "alert_rule.create", Resource: "alert_rule/" + row.ID,
-			AfterFP: appRow.ID + ":" + metric,
-		}},
+		auditsFrom: func() []*audit.Entry {
+			return []*audit.Entry{{
+				Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+				Action: "alert_rule.create", Resource: "alert_rule/" + row.ID,
+				AfterFP: appRow.ID + ":" + metric,
+			}}
+		},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "alert rule")
@@ -270,7 +274,7 @@ func (svc *AlertingService) DeleteAlertRule(ctx context.Context, req *telemetryv
 			return svc.s.Engine.AlertRuleRepo().Delete(ctx, tx, req.GetRuleId())
 		},
 		audits: []*audit.Entry{{
-			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
 			Action: "alert_rule.delete", Resource: "alert_rule/" + row.ID,
 		}},
 	})

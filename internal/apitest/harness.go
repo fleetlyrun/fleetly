@@ -271,7 +271,7 @@ func (f *FakeRuntime) ExecCalls() []FakeExecCall {
 const (
 	FakeExecInstance = "fake-instance-0001"
 	FakeExecCarrier  = "apimanager"
-	FakeExecNode     = "01JD0NODE00000000000000000"
+	FakeExecNode     = "node-1"
 )
 
 // ExecInstances 实现 RuntimeExec：恒定假解析（manager 载体上的单实例；
@@ -457,7 +457,7 @@ func (f *FakeRuntime) Addresses(context.Context, capability.NamespaceRef, []capa
 
 func (f *FakeRuntime) DescribeCluster(context.Context) (capability.ClusterView, error) {
 	return capability.ClusterView{Nodes: []capability.NodeView{{
-		NodeID: "01JD0NODE00000000000000000", CarrierID: "apimanager", Role: "manager", Available: true,
+		NodeID: "node-1", CarrierID: "apimanager", Role: "manager", Available: true,
 	}}}, nil
 }
 

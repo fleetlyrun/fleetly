@@ -7,12 +7,14 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/fleetlyrun/fleetly/internal/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
 // Network 是聚合行。
 type Network struct {
 	ID         string
+	Seq        int64
 	ProjectID  string
 	Name       string
 	EgressNone bool
@@ -33,16 +35,24 @@ func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 
 // Create 落一行；同 Project 同名冲突返回 state.ErrAlreadyExists。
 func (r *Repo) Create(ctx context.Context, run state.Runner, n *Network) error {
+	seq, err := state.NextSeq(ctx, run, "networks")
+	if err != nil {
+		return err
+	}
+	n.Seq = seq
+	if n.ID == "" {
+		n.ID = entityid.Join(n.Name, seq)
+	}
 	now := state.FormatTime(r.clock.Now())
 	n.CreatedAt = now
 	egress := 0
 	if n.EgressNone {
 		egress = 1
 	}
-	_, err := run.ExecContext(ctx, `
-		INSERT INTO networks (id, project_id, name, egress_none, created_at, deleted_at)
-		VALUES (?, ?, ?, ?, ?, '')`,
-		n.ID, n.ProjectID, n.Name, egress, n.CreatedAt)
+	_, err = run.ExecContext(ctx, `
+		INSERT INTO networks (id, seq, project_id, name, egress_none, created_at, deleted_at)
+		VALUES (?, ?, ?, ?, ?, ?, '')`,
+		n.ID, n.Seq, n.ProjectID, n.Name, egress, n.CreatedAt)
 	if state.IsUniqueViolation(err) {
 		return fmt.Errorf("%w: network name %q already exists in project", state.ErrAlreadyExists, n.Name)
 	}
@@ -52,7 +62,7 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, n *Network) error {
 // GetByID 按 ID 直读活跃行（peer 声明解析面：声明行只挂活跃网络）。
 func (r *Repo) GetByID(ctx context.Context, run state.Runner, id string) (*Network, error) {
 	row := run.QueryRowContext(ctx, `
-		SELECT id, project_id, name, egress_none, created_at, deleted_at
+		SELECT id, seq, project_id, name, egress_none, created_at, deleted_at
 		FROM networks WHERE id = ? AND deleted_at = ''`, id)
 	return scanNetwork(row.Scan)
 }
@@ -60,7 +70,7 @@ func (r *Repo) GetByID(ctx context.Context, run state.Runner, id string) (*Netwo
 // GetByName 读活跃行。
 func (r *Repo) GetByName(ctx context.Context, run state.Runner, projectID, name string) (*Network, error) {
 	row := run.QueryRowContext(ctx, `
-		SELECT id, project_id, name, egress_none, created_at, deleted_at
+		SELECT id, seq, project_id, name, egress_none, created_at, deleted_at
 		FROM networks WHERE project_id = ? AND name = ? AND deleted_at = ''`, projectID, name)
 	return scanNetwork(row.Scan)
 }
@@ -69,7 +79,7 @@ func (r *Repo) GetByName(ctx context.Context, run state.Runner, projectID, name 
 // 装配消费；API 分页读面走 ListByProjectPage）。
 func (r *Repo) ListByProject(ctx context.Context, run state.Runner, projectID string) ([]Network, error) {
 	rows, err := run.QueryContext(ctx, `
-		SELECT id, project_id, name, egress_none, created_at, deleted_at
+		SELECT id, seq, project_id, name, egress_none, created_at, deleted_at
 		FROM networks WHERE project_id = ? AND deleted_at = '' ORDER BY name`, projectID)
 	if err != nil {
 		return nil, err
@@ -94,7 +104,7 @@ func (r *Repo) ListByProjectPage(ctx context.Context, run state.Runner, projectI
 		limit = defaultListLimit
 	}
 	q := `
-		SELECT id, project_id, name, egress_none, created_at, deleted_at
+		SELECT id, seq, project_id, name, egress_none, created_at, deleted_at
 		FROM networks WHERE project_id = ? AND deleted_at = ''`
 	args := []any{projectID}
 	if afterName != "" {
@@ -128,7 +138,7 @@ const (
 // 批 B1）。
 func (r *Repo) List(ctx context.Context, run state.Runner) ([]Network, error) {
 	rows, err := run.QueryContext(ctx, `
-		SELECT id, project_id, name, egress_none, created_at, deleted_at
+		SELECT id, seq, project_id, name, egress_none, created_at, deleted_at
 		FROM networks WHERE deleted_at = '' ORDER BY project_id, name`)
 	if err != nil {
 		return nil, err
@@ -148,7 +158,7 @@ func (r *Repo) List(ctx context.Context, run state.Runner) ([]Network, error) {
 func scanNetwork(scan func(dest ...any) error) (*Network, error) {
 	var n Network
 	var egress int
-	err := scan(&n.ID, &n.ProjectID, &n.Name, &egress, &n.CreatedAt, &n.DeletedAt)
+	err := scan(&n.ID, &n.Seq, &n.ProjectID, &n.Name, &egress, &n.CreatedAt, &n.DeletedAt)
 	if err != nil {
 		return nil, state.MapScanErr(err)
 	}

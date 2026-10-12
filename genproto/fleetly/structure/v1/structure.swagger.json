@@ -62,11 +62,12 @@
             "type": "string"
           },
           {
-            "name": "after_app_id",
-            "description": "after_app_id 游标（上一页末条 id；空 = 首页）。游标轴 = ULID 创建序\n升序（既有响应序不变；ADR-0026 after_* + limit 惯例）。",
+            "name": "after_app_seq",
+            "description": "after_app_seq 游标（上一页末条 seq（0 = 首页）。游标轴 = seq 创建序\n升序（既有响应序不变；ADR-0026 after_* + limit 惯例）。",
             "in": "query",
             "required": false,
-            "type": "string"
+            "type": "string",
+            "format": "int64"
           },
           {
             "name": "limit",
@@ -358,7 +359,7 @@
     },
     "/v1/databases": {
       "get": {
-        "summary": "ListDatabases 新→旧分页（after_database_id 游标 = ULID 创建序，\nADR-0026 惯例）。",
+        "summary": "ListDatabases 新→旧分页（after_database_seq 游标 = seq 创建序，\nADR-0026 惯例）。",
         "operationId": "DatabasesService_ListDatabases",
         "responses": {
           "200": {
@@ -382,11 +383,12 @@
             "type": "string"
           },
           {
-            "name": "after_database_id",
-            "description": "after_database_id 游标（上一页末条 id；空 = 首页）。",
+            "name": "after_database_seq",
+            "description": "after_database_seq 游标（上一页末条 seq（0 = 首页）。",
             "in": "query",
             "required": false,
-            "type": "string"
+            "type": "string",
+            "format": "int64"
           },
           {
             "name": "limit",
@@ -457,11 +459,12 @@
             "type": "string"
           },
           {
-            "name": "after_backup_id",
-            "description": "after_backup_id 游标（上一页末条 id；空 = 首页）。",
+            "name": "after_backup_seq",
+            "description": "after_backup_seq 游标（上一页末条 seq（0 = 首页）。",
             "in": "query",
             "required": false,
-            "type": "string"
+            "type": "string",
+            "format": "int64"
           },
           {
             "name": "limit",
@@ -769,7 +772,7 @@
     },
     "/v1/networks/peers": {
       "get": {
-        "summary": "ListNetworkPeers 新→旧分页（游标 = ULID 创建序；network_id /\npeer_project_id 过滤可选——接收方与挂靠方两侧视图同面）。",
+        "summary": "ListNetworkPeers 新→旧分页（游标 = seq 创建序；network_id /\npeer_project_id 过滤可选——接收方与挂靠方两侧视图同面）。",
         "operationId": "NetworksService_ListNetworkPeers",
         "responses": {
           "200": {
@@ -800,11 +803,12 @@
             "type": "string"
           },
           {
-            "name": "after_peer_id",
-            "description": "after_peer_id 游标（上一页末条 id；空 = 首页）。",
+            "name": "after_peer_seq",
+            "description": "after_peer_seq 游标（上一页末条 seq（0 = 首页）。",
             "in": "query",
             "required": false,
-            "type": "string"
+            "type": "string",
+            "format": "int64"
           },
           {
             "name": "limit",
@@ -1010,11 +1014,12 @@
         },
         "parameters": [
           {
-            "name": "after_project_id",
-            "description": "after_project_id 游标（上一页末条 id；空 = 首页）。游标轴 = ULID\n创建序升序（既有响应序不变；ADR-0026 after_* + limit 惯例）。",
+            "name": "after_project_seq",
+            "description": "after_project_seq 游标（上一页末条 seq；0 = 首页）。游标轴 = seq\n创建序升序（既有响应序不变；ADR-0026 after_* + limit 惯例）。",
             "in": "query",
             "required": false,
-            "type": "string"
+            "type": "string",
+            "format": "int64"
           },
           {
             "name": "limit",
@@ -1462,6 +1467,11 @@
         "id": {
           "type": "string"
         },
+        "seq": {
+          "type": "string",
+          "format": "int64",
+          "title": "seq 是创建序（ADR-0070：id 后缀即此号；分页游标轴）。"
+        },
         "project_id": {
           "type": "string"
         },
@@ -1532,6 +1542,11 @@
       "properties": {
         "id": {
           "type": "string"
+        },
+        "seq": {
+          "type": "string",
+          "format": "int64",
+          "title": "seq 是创建序（ADR-0070：id 后缀即此号；分页游标轴）。"
         },
         "project_id": {
           "type": "string"
@@ -1776,6 +1791,11 @@
       "properties": {
         "id": {
           "type": "string"
+        },
+        "seq": {
+          "type": "string",
+          "format": "int64",
+          "title": "seq 是创建序（ADR-0070：id 后缀即此号；分页游标轴）。"
         },
         "project_id": {
           "type": "string"
@@ -2194,6 +2214,11 @@
         "id": {
           "type": "string"
         },
+        "seq": {
+          "type": "string",
+          "format": "int64",
+          "title": "seq 是创建序（ADR-0070：id 后缀即此号；分页游标轴）。"
+        },
         "network_id": {
           "type": "string"
         },
@@ -2335,6 +2360,11 @@
       "properties": {
         "id": {
           "type": "string"
+        },
+        "seq": {
+          "type": "string",
+          "format": "int64",
+          "title": "seq 是创建序（ADR-0070：id 后缀即此号；分页游标轴）。"
         },
         "name": {
           "type": "string"

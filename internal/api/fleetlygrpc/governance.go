@@ -8,6 +8,7 @@ package fleetlygrpc
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
 	"github.com/fleetlyrun/fleetly/internal/api/apperr"
@@ -61,24 +62,32 @@ func (svc *GovernanceService) SetChangeFreeze(ctx context.Context, req *systemv1
 		return nil, errTeamTargetMismatch(target, teamID)
 	}
 	row := &freeze.Freeze{
-		ID: newID(), TeamID: target, Reason: req.GetReason(),
+		TeamID: target, Reason: req.GetReason(),
 		CreatedBy: authn.ActorFromContext(ctx),
 	}
 	checks := []acceptanceCheck{}
 	if row.TeamID != "" {
 		checks = append(checks, svc.s.teamExists(row.TeamID))
 	}
+	freezeSetEvents := []eventFact{freezeEvent(eventFreezeSet, row)}
 	err = svc.s.commit(ctx, writeFact{
 		checks: checks,
 		write: func(ctx context.Context, tx *sql.Tx) error {
-			return svc.s.Freezes.Create(ctx, tx, row)
+			if err := svc.s.Freezes.Create(ctx, tx, row); err != nil {
+				return err
+			}
+			freezeSetEvents[0].id = row.ID
+			freezeSetEvents[0].payload, _ = json.Marshal(freezeEventPayload{ID: row.ID, TeamID: row.TeamID, Reason: row.Reason}) //nolint:errcheck // 结构体字段恒可序列化
+			return nil
 		},
-		events: []eventFact{freezeEvent(eventFreezeSet, row)},
-		audits: []*audit.Entry{{
-			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-			Action: "freeze.set", Resource: "freeze/" + row.ID,
-			AfterFP: row.TeamID + ":" + row.Reason,
-		}},
+		events: freezeSetEvents,
+		auditsFrom: func() []*audit.Entry {
+			return []*audit.Entry{{
+				Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+				Action: "freeze.set", Resource: "freeze/" + row.ID,
+				AfterFP: row.TeamID + ":" + row.Reason,
+			}}
+		},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "freeze")
@@ -109,7 +118,7 @@ func (svc *GovernanceService) LiftChangeFreeze(ctx context.Context, req *systemv
 			},
 			events: []eventFact{freezeEvent(eventFreezeLifted, row)},
 			audits: []*audit.Entry{{
-				ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+				Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
 				Action: "freeze.lift", Resource: "freeze/" + row.ID,
 				AfterFP: row.TeamID + ":" + row.Reason,
 			}},
@@ -132,7 +141,7 @@ func (svc *GovernanceService) ListChangeFreezes(ctx context.Context, req *system
 	if err != nil {
 		return nil, err
 	}
-	rows, err := svc.s.Freezes.List(ctx, svc.s.DB.Runner(), req.GetAfterFreezeId(), listLimit(req.GetLimit()))
+	rows, err := svc.s.Freezes.List(ctx, svc.s.DB.Runner(), req.GetAfterFreezeSeq(), listLimit(req.GetLimit()))
 	if err != nil {
 		return nil, mapStateError(err, "freeze")
 	}
@@ -149,7 +158,7 @@ func (svc *GovernanceService) ListChangeFreezes(ctx context.Context, req *system
 // freezeMsg 把 Freeze 行投影为 proto 消息。
 func freezeMsg(f *freeze.Freeze) *systemv1.ChangeFreeze {
 	return &systemv1.ChangeFreeze{
-		Id: f.ID, TeamId: f.TeamID, Reason: f.Reason,
+		Id: f.ID, Seq: f.Seq, TeamId: f.TeamID, Reason: f.Reason,
 		CreatedBy: f.CreatedBy, CreatedAt: f.CreatedAt, LiftedAt: f.LiftedAt,
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/fleetlyrun/fleetly/internal/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
@@ -26,6 +27,7 @@ const (
 // 删除不级联）。
 type Database struct {
 	ID             string
+	Seq            int64
 	ProjectID      string
 	Name           string
 	Engine         string
@@ -63,14 +65,22 @@ func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 
 // Create 落一行；同 Project 内同名冲突返回 state.ErrAlreadyExists。
 func (r *Repo) Create(ctx context.Context, run state.Runner, d *Database) error {
+	seq, err := state.NextSeq(ctx, run, "databases")
+	if err != nil {
+		return err
+	}
+	d.Seq = seq
+	if d.ID == "" {
+		d.ID = entityid.Join(d.Name, seq)
+	}
 	now := state.FormatTime(r.clock.Now())
 	d.CreatedAt, d.UpdatedAt, d.Status = now, now, StatusPending
 	d.Generation, d.SpecFingerprint = 0, ""
-	_, err := run.ExecContext(ctx, `
-		INSERT INTO databases (id, project_id, name, engine, credentials_ref,
+	_, err = run.ExecContext(ctx, `
+		INSERT INTO databases (id, seq, project_id, name, engine, credentials_ref,
 			generation, spec_fingerprint, backup_interval_secs, backup_retention_secs, status, created_at, updated_at, deleted_at)
-		VALUES (?, ?, ?, ?, ?, 0, '', ?, ?, ?, ?, ?, '')`,
-		d.ID, d.ProjectID, d.Name, d.Engine, d.CredentialsRef,
+		VALUES (?, ?, ?, ?, ?, ?, 0, '', ?, ?, ?, ?, ?, '')`,
+		d.ID, d.Seq, d.ProjectID, d.Name, d.Engine, d.CredentialsRef,
 		d.BackupIntervalSecs, d.BackupRetentionSecs, d.Status, d.CreatedAt, d.UpdatedAt)
 	if state.IsUniqueViolation(err) {
 		return fmt.Errorf("%w: database name %q already exists in project", state.ErrAlreadyExists, d.Name)
@@ -91,32 +101,32 @@ func (r *Repo) GetByName(ctx context.Context, run state.Runner, projectID, name 
 	return scanDatabase(row.Scan)
 }
 
-// ListByProject 新→旧分页（ADR-0026 after_* + limit；游标 = ULID 创建序）。
-func (r *Repo) ListByProject(ctx context.Context, run state.Runner, projectID, afterID string, limit int) ([]Database, error) {
+// ListByProject 新→旧分页（ADR-0026 after_* + limit；游标 = seq 创建序）。
+func (r *Repo) ListByProject(ctx context.Context, run state.Runner, projectID string, afterSeq int64, limit int) ([]Database, error) {
 	if limit <= 0 || limit > maxListLimit {
 		limit = defaultListLimit
 	}
 	q := selectCols + ` WHERE project_id = ? AND deleted_at = ''`
 	args := []any{projectID}
-	if afterID != "" {
-		q += ` AND id < ?`
-		args = append(args, afterID)
+	if afterSeq > 0 {
+		q += ` AND seq < ?`
+		args = append(args, afterSeq)
 	}
-	q += ` ORDER BY id DESC LIMIT ?`
+	q += ` ORDER BY seq DESC LIMIT ?`
 	args = append(args, limit)
 	return r.query(ctx, run, q, args...)
 }
 
 // List 返回全部活跃行（收敛环的枚举面；按 id 升序稳定遍历）。
 func (r *Repo) List(ctx context.Context, run state.Runner) ([]Database, error) {
-	return r.query(ctx, run, selectCols+` WHERE deleted_at = '' ORDER BY id`)
+	return r.query(ctx, run, selectCols+` WHERE deleted_at = '' ORDER BY seq`)
 }
 
 // ListRestorePending 返回恢复挂起中的活跃行（备份环恢复面的枚举面；
 // 挂起列在场即恢复在途，ADR-0039 决策 6）。
 func (r *Repo) ListRestorePending(ctx context.Context, run state.Runner) ([]Database, error) {
 	return r.query(ctx, run,
-		selectCols+` WHERE deleted_at = '' AND restore_from_backup != '' ORDER BY id`)
+		selectCols+` WHERE deleted_at = '' AND restore_from_backup != '' ORDER BY seq`)
 }
 
 // CountByProject 返回 Project 内活跃行数（受理位配额口径）。
@@ -230,7 +240,7 @@ const (
 )
 
 const selectCols = `
-	SELECT id, project_id, name, engine, credentials_ref,
+	SELECT id, seq, project_id, name, engine, credentials_ref,
 		generation, spec_fingerprint, backup_interval_secs, backup_retention_secs, status,
 		last_backup_at, restore_from_backup, restore_error, created_at, updated_at, deleted_at
 	FROM databases`
@@ -254,7 +264,7 @@ func (r *Repo) query(ctx context.Context, run state.Runner, q string, args ...an
 
 func scanDatabase(scan func(dest ...any) error) (*Database, error) {
 	var d Database
-	err := scan(&d.ID, &d.ProjectID, &d.Name, &d.Engine, &d.CredentialsRef,
+	err := scan(&d.ID, &d.Seq, &d.ProjectID, &d.Name, &d.Engine, &d.CredentialsRef,
 		&d.Generation, &d.SpecFingerprint, &d.BackupIntervalSecs, &d.BackupRetentionSecs, &d.Status,
 		&d.LastBackupAt, &d.RestoreFromBackup, &d.RestoreError,
 		&d.CreatedAt, &d.UpdatedAt, &d.DeletedAt)

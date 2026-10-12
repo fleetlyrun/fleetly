@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"testing"
 	"time"
 
@@ -22,15 +23,13 @@ import (
 	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
-// normalizeGolden 把非确定输出占位化（ULID 主键/短哈希指纹/内容寻址
-// digest——digest 由含 ULID 的 spec 派生，逐次不同；fake clock 时间戳
-// 确定不占位；凭证明文随机逐次不同）。
+// normalizeGolden 把非确定输出占位化（短哈希指纹/内容寻址 digest；fake
+// clock 时间戳确定不占位；凭证明文随机逐次不同。实体 id 确定性铸造落真值
+// ——ADR-0070）。
 var (
-	ulidRe      = regexp.MustCompile(`[0-9A-HJKMNP-TV-Z]{26}`)
-	lowerULIDRe = regexp.MustCompile(`[0-9a-hjkmnp-tv-z]{26}`) // engine 铸名（task-/run- DNS 名）
-	digestRe    = regexp.MustCompile(`\b[0-9a-f]{64}\b`)
-	fprRe       = regexp.MustCompile(`\b[0-9a-f]{16}\b`)
-	tokenRe     = regexp.MustCompile(`flt_[A-Za-z0-9_-]{4,}`)
+	digestRe = regexp.MustCompile(`\b[0-9a-f]{64}\b`)
+	fprRe    = regexp.MustCompile(`\b[0-9a-f]{16}\b`)
+	tokenRe  = regexp.MustCompile(`flt_[A-Za-z0-9_-]{4,}`)
 	// browseTicketRe 是 Launcher Ticket 的 base64url 43 字符形态（随机
 	// 32B；entry URL 与回显字段双落点——ADR-0051）。
 	browseTicketRe = regexp.MustCompile(`[A-Za-z0-9_-]{43}`)
@@ -46,12 +45,11 @@ func normalizeGolden(s string) string {
 	s = credPathRe.ReplaceAllString(s, "credentials saved: <CREDS>")
 	s = credJSONRe.ReplaceAllString(s, `"credentials_path": "<CREDS>"`)
 	s = tokenRe.ReplaceAllString(s, "<TOKEN>")
-	// digest/指纹先行（完整十六进制串），铸名的小写 ULID 后行——顺序颠倒
-	// 会把 digest 中恰符合 ULID 字符集的 26 长段误占位（revisions_list 实证）。
+	// digest/指纹（完整十六进制串）。实体 id 是确定性铸造（ADR-0070：
+	// 夹具顺序固定 → seq 固定），落真值不占位——golden 同时是可读 id 的
+	// 快照验收面。
 	s = digestRe.ReplaceAllString(s, "<DIGEST>")
 	s = fprRe.ReplaceAllString(s, "<FP>")
-	s = lowerULIDRe.ReplaceAllString(s, "<ULID>")
-	s = ulidRe.ReplaceAllString(s, "<ULID>")
 	// browse 票据殿后：base64url 43 字符与 hex digest/ULID 形态部分重叠
 	//（digest 前缀恰 43 hex 即误吞）——确定性更长的族先占位。
 	s = browseTicketRe.ReplaceAllString(s, "<BROWSETICKET>")
@@ -64,7 +62,7 @@ func goldenFile(verb string) string {
 
 // goldenNodeID 是 FakeRuntime 集群观测里的固定平台节点 ID（apitest 夹具
 // DescribeCluster 返回值）。
-const goldenNodeID = "01JD0NODE00000000000000000"
+const goldenNodeID = "node-1"
 
 // TestGoldenBusinessVerbs 顺序跑完整业务流（同一夹具状态），每动词比较
 // 双形态 golden。
@@ -323,6 +321,7 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 	// GOLDEN_PROJECT/GOLDEN_APP 占位替换为夹具真实 ID（项目 ID 是 ULID，
 	// 归一后可预测）。
 	var projectID, project2ID, networkID, peerID, appID, app2ID, app3ID, taskID, task2ID, runID, scheduleID, freezeID, deployID, rollbackDeployID, bgDeployID string
+	var rollbackDeploySeq string
 	for _, st := range steps {
 		t.Run(st.verb, func(t *testing.T) {
 			args := st.args
@@ -352,7 +351,7 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 					args[i] = deployID
 				}
 				if a == "GOLDEN_ROLLBACK_DEPLOYMENT" {
-					args[i] = rollbackDeployID
+					args[i] = rollbackDeploySeq
 				}
 				if a == "GOLDEN_TASK" {
 					args[i] = taskID
@@ -448,14 +447,29 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 			//（Deploy RPC 内同步完成）与受影响提示，不依赖部署终态；驱动
 			// 收口会推进假时钟且迭代数随调度漂移（-race 下时间戳不稳）。
 			// 部署行留在 queued（from-dir 步同款先例——manual 夹具不驱动）。
-			// 回滚部署 ID 取自人类形态首行（deployments list after 的游标锚
-			// ——人工轮铸行，其后 --json 轮再铸的最新行被游标跳过）。
+			// 回滚部署行取自人类形态（deployments list after 的游标锚——
+			// 人工轮铸行，其后 --json 轮再铸的最新行被游标跳过）；游标轴是
+			// seq（ADR-0070），锚取行的 seq。
 			if st.verb == "rollback" {
 				m := rollbackDeploymentRe.FindStringSubmatch(out)
 				if len(m) < 2 {
 					t.Fatalf("cannot extract rollback deployment id from output: %q", out)
 				}
 				rollbackDeployID = m[1]
+				// 游标锚 = 该行 seq（--after 吃 seq，ADR-0070）：API 读回。
+				list, lerr := deliveryv1.NewDeploymentsServiceClient(h.Conn).ListDeployments(sdk.WithToken(context.Background(), h.Token), &deliveryv1.ListDeploymentsRequest{AppId: appID})
+				if lerr != nil {
+					t.Fatal(lerr)
+				}
+				for _, d := range list.GetDeployments() {
+					if d.GetId() == rollbackDeployID {
+						rollbackDeploySeq = strconv.FormatInt(d.GetSeq(), 10)
+						break
+					}
+				}
+				if rollbackDeploySeq == "" {
+					t.Fatalf("rollback deployment %s not found for cursor anchor", rollbackDeployID)
+				}
 			}
 			// compose 扩展键部署驱动到锚定即止（releasing 等 job 终态——
 			// 下一步 deployments list 的 golden 钉 first_boot_task_id 在场；
@@ -546,7 +560,7 @@ func anchorFirstBootJob(t *testing.T, h *apitest.Harness, appID string) {
 }
 
 // extractTailID 取 "... (id X)" 尾部的 ID。
-var tailIDRe = regexp.MustCompile(`\(id ([0-9A-HJKMNP-TV-Z]{26})\)`)
+var tailIDRe = regexp.MustCompile(`\(id ([a-z0-9][a-z0-9-]*)\)`)
 
 func extractTailID(out string) string {
 	m := tailIDRe.FindStringSubmatch(out)
@@ -592,10 +606,10 @@ func promoteCarrierToSucceeded(t *testing.T, h *apitest.Harness, appID, workload
 
 // rollbackDeploymentRe 取 rollback 人类形态 "rolling back via deployment X"
 // 的部署 ID（deployments list after 步的游标锚）。
-var rollbackDeploymentRe = regexp.MustCompile(`rolling back via deployment ([0-9A-HJKMNP-TV-Z]{26})`)
+var rollbackDeploymentRe = regexp.MustCompile(`rolling back via deployment ([a-z0-9][a-z0-9-]*)`)
 
 // taskCreatedRe 取人类形态 "task X created (...)" 的 ID。
-var taskCreatedRe = regexp.MustCompile(`task ([0-9A-HJKMNP-TV-Z]{26}) created`)
+var taskCreatedRe = regexp.MustCompile(`task ([a-z0-9][a-z0-9-]*) created`)
 
 func extractTaskID(t *testing.T, out string) string {
 	t.Helper()
@@ -607,7 +621,7 @@ func extractTaskID(t *testing.T, out string) string {
 }
 
 // scheduleCreatedRe 取人类形态 "schedule X created (...)" 的 ID。
-var scheduleCreatedRe = regexp.MustCompile(`schedule ([0-9A-HJKMNP-TV-Z]{26}) created`)
+var scheduleCreatedRe = regexp.MustCompile(`schedule ([a-z0-9][a-z0-9-]*) created`)
 
 func extractScheduleID(t *testing.T, out string) string {
 	t.Helper()
@@ -619,7 +633,7 @@ func extractScheduleID(t *testing.T, out string) string {
 }
 
 // peerDeclaredRe 取人类形态 "declared peer X on network ..." 的 ID。
-var peerDeclaredRe = regexp.MustCompile(`declared peer ([0-9A-HJKMNP-TV-Z]{26}) on network`)
+var peerDeclaredRe = regexp.MustCompile(`declared peer ([a-z0-9][a-z0-9-]*) on network`)
 
 func extractPeerID(t *testing.T, out string) string {
 	t.Helper()

@@ -1,5 +1,5 @@
 {
-  "id": "<ULID>",
+  "id": "ops-hook-json-2",
   "name": "ops-hook-json",
   "kind": "webhook",
   "enabled": true,

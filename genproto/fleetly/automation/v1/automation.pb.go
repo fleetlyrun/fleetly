@@ -30,18 +30,20 @@ const (
 
 // Task 是程序化工作负载行形态（状态值 kebab-case 与存储一致）。
 type Task struct {
-	state              protoimpl.MessageState `protogen:"open.v1"`
-	Id                 string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	ProjectId          string                 `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	Name               string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
-	Form               string                 `protobuf:"bytes,4,opt,name=form,proto3" json:"form,omitempty"`   // one-shot | resident
-	State              string                 `protobuf:"bytes,5,opt,name=state,proto3" json:"state,omitempty"` // active | draining | completed | failed | drained | deleted
-	Image              string                 `protobuf:"bytes,6,opt,name=image,proto3" json:"image,omitempty"`
-	Command            []string               `protobuf:"bytes,7,rep,name=command,proto3" json:"command,omitempty"`
-	DesiredConcurrency int64                  `protobuf:"varint,8,opt,name=desired_concurrency,json=desiredConcurrency,proto3" json:"desired_concurrency,omitempty"`
-	TtlSeconds         int64                  `protobuf:"varint,9,opt,name=ttl_seconds,json=ttlSeconds,proto3" json:"ttl_seconds,omitempty"`
-	NetworkGroup       string                 `protobuf:"bytes,10,opt,name=network_group,json=networkGroup,proto3" json:"network_group,omitempty"`
-	OwnerTokenId       string                 `protobuf:"bytes,11,opt,name=owner_token_id,json=ownerTokenId,proto3" json:"owner_token_id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// seq 是创建序（ADR-0070：id 后缀即此号；分页游标轴）。
+	Seq                int64    `protobuf:"varint,18,opt,name=seq,proto3" json:"seq,omitempty"`
+	ProjectId          string   `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	Name               string   `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	Form               string   `protobuf:"bytes,4,opt,name=form,proto3" json:"form,omitempty"`   // one-shot | resident
+	State              string   `protobuf:"bytes,5,opt,name=state,proto3" json:"state,omitempty"` // active | draining | completed | failed | drained | deleted
+	Image              string   `protobuf:"bytes,6,opt,name=image,proto3" json:"image,omitempty"`
+	Command            []string `protobuf:"bytes,7,rep,name=command,proto3" json:"command,omitempty"`
+	DesiredConcurrency int64    `protobuf:"varint,8,opt,name=desired_concurrency,json=desiredConcurrency,proto3" json:"desired_concurrency,omitempty"`
+	TtlSeconds         int64    `protobuf:"varint,9,opt,name=ttl_seconds,json=ttlSeconds,proto3" json:"ttl_seconds,omitempty"`
+	NetworkGroup       string   `protobuf:"bytes,10,opt,name=network_group,json=networkGroup,proto3" json:"network_group,omitempty"`
+	OwnerTokenId       string   `protobuf:"bytes,11,opt,name=owner_token_id,json=ownerTokenId,proto3" json:"owner_token_id,omitempty"`
 	// dns_name 是 per-Task 池级稳定 DNS（活 Run 轮询解析；engine 铸名，
 	// ADR-0025 决策 6——N4 换 Runtime 名字不变）。
 	DnsName        string `protobuf:"bytes,12,opt,name=dns_name,json=dnsName,proto3" json:"dns_name,omitempty"`
@@ -89,6 +91,13 @@ func (x *Task) GetId() string {
 		return x.Id
 	}
 	return ""
+}
+
+func (x *Task) GetSeq() int64 {
+	if x != nil {
+		return x.Seq
+	}
+	return 0
 }
 
 func (x *Task) GetProjectId() string {
@@ -205,11 +214,13 @@ func (x *Task) GetFinishedAt() string {
 
 // Run 是一次执行行形态（终态携带停止原因七枚举 + 退出码）。
 type Run struct {
-	state     protoimpl.MessageState `protogen:"open.v1"`
-	Id        string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	TaskId    string                 `protobuf:"bytes,2,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
-	ProjectId string                 `protobuf:"bytes,3,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	State     string                 `protobuf:"bytes,4,opt,name=state,proto3" json:"state,omitempty"` // pending | running | stopping | stopped | failed
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// seq 是创建序（ADR-0070：id 后缀即此号；分页游标轴）。
+	Seq       int64  `protobuf:"varint,12,opt,name=seq,proto3" json:"seq,omitempty"`
+	TaskId    string `protobuf:"bytes,2,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	ProjectId string `protobuf:"bytes,3,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	State     string `protobuf:"bytes,4,opt,name=state,proto3" json:"state,omitempty"` // pending | running | stopping | stopped | failed
 	// stop_reason 七枚举：completed | failed | stopped_by_user | ttl_expired |
 	// lease_expired | owner_revoked | platform_drained（ADR-0012/0025 附录）。
 	StopReason string `protobuf:"bytes,5,opt,name=stop_reason,json=stopReason,proto3" json:"stop_reason,omitempty"`
@@ -259,6 +270,13 @@ func (x *Run) GetId() string {
 		return x.Id
 	}
 	return ""
+}
+
+func (x *Run) GetSeq() int64 {
+	if x != nil {
+		return x.Seq
+	}
+	return 0
 }
 
 func (x *Run) GetTaskId() string {
@@ -626,9 +644,9 @@ func (x *GetTaskResponse) GetTask() *Task {
 type ListTasksRequest struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	ProjectId string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	// after_task_id 游标（上一页末条 id；空 = 首页）。
-	AfterTaskId   string `protobuf:"bytes,2,opt,name=after_task_id,json=afterTaskId,proto3" json:"after_task_id,omitempty"`
-	Limit         int32  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
+	// after_task_seq 游标（上一页末条 seq（0 = 首页）。
+	AfterTaskSeq  int64 `protobuf:"varint,2,opt,name=after_task_seq,json=afterTaskSeq,proto3" json:"after_task_seq,omitempty"`
+	Limit         int32 `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -670,11 +688,11 @@ func (x *ListTasksRequest) GetProjectId() string {
 	return ""
 }
 
-func (x *ListTasksRequest) GetAfterTaskId() string {
+func (x *ListTasksRequest) GetAfterTaskSeq() int64 {
 	if x != nil {
-		return x.AfterTaskId
+		return x.AfterTaskSeq
 	}
-	return ""
+	return 0
 }
 
 func (x *ListTasksRequest) GetLimit() int32 {
@@ -1181,9 +1199,9 @@ type ListRunsRequest struct {
 	// task_id 过滤（与 project_id 二选一——无过滤的全平台 Run 列表是跨 Team
 	// 泄漏面，ADR-0035 起强制过滤）。
 	TaskId string `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
-	// after_run_id 游标（上一页末条 id；空 = 首页）。
-	AfterRunId string `protobuf:"bytes,2,opt,name=after_run_id,json=afterRunId,proto3" json:"after_run_id,omitempty"`
-	Limit      int32  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
+	// after_run_seq 游标（上一页末条 seq（0 = 首页）。
+	AfterRunSeq int64 `protobuf:"varint,2,opt,name=after_run_seq,json=afterRunSeq,proto3" json:"after_run_seq,omitempty"`
+	Limit       int32 `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
 	// project_id 过滤（ADR-0035 only-add；与 task_id 互斥）。
 	ProjectId     string `protobuf:"bytes,4,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -1227,11 +1245,11 @@ func (x *ListRunsRequest) GetTaskId() string {
 	return ""
 }
 
-func (x *ListRunsRequest) GetAfterRunId() string {
+func (x *ListRunsRequest) GetAfterRunSeq() int64 {
 	if x != nil {
-		return x.AfterRunId
+		return x.AfterRunSeq
 	}
-	return ""
+	return 0
 }
 
 func (x *ListRunsRequest) GetLimit() int32 {
@@ -1484,11 +1502,13 @@ func (x *WaitRunResponse) GetRun() *Run {
 // image/command/ttl_seconds 是冻结 TaskSpec 模板的读投影（每拍铸出的
 // one-shot Task 继承）。
 type Schedule struct {
-	state     protoimpl.MessageState `protogen:"open.v1"`
-	Id        string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	ProjectId string                 `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	Name      string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
-	State     string                 `protobuf:"bytes,4,opt,name=state,proto3" json:"state,omitempty"` // active | deleted
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// seq 是创建序（ADR-0070：id 后缀即此号；分页游标轴）。
+	Seq       int64  `protobuf:"varint,14,opt,name=seq,proto3" json:"seq,omitempty"`
+	ProjectId string `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	Name      string `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	State     string `protobuf:"bytes,4,opt,name=state,proto3" json:"state,omitempty"` // active | deleted
 	// cron 是 5 字段表达式（minute hour day-of-month month day-of-week；
 	// 描述符不支持——区间语义非墙钟）。字段名是表达式语义，实体名仍是
 	// Schedule（CONTEXT.md Avoid: cron 作实体名）。
@@ -1545,6 +1565,13 @@ func (x *Schedule) GetId() string {
 		return x.Id
 	}
 	return ""
+}
+
+func (x *Schedule) GetSeq() int64 {
+	if x != nil {
+		return x.Seq
+	}
+	return 0
 }
 
 func (x *Schedule) GetProjectId() string {
@@ -1911,11 +1938,11 @@ func (x *GetScheduleResponse) GetSchedule() *Schedule {
 type ListSchedulesRequest struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	ProjectId string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	// after_schedule_id 游标（上一页末条 id；空 = 首页）。
-	AfterScheduleId string `protobuf:"bytes,2,opt,name=after_schedule_id,json=afterScheduleId,proto3" json:"after_schedule_id,omitempty"`
-	Limit           int32  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// after_schedule_seq 游标（上一页末条 seq（0 = 首页）。
+	AfterScheduleSeq int64 `protobuf:"varint,2,opt,name=after_schedule_seq,json=afterScheduleSeq,proto3" json:"after_schedule_seq,omitempty"`
+	Limit            int32 `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *ListSchedulesRequest) Reset() {
@@ -1955,11 +1982,11 @@ func (x *ListSchedulesRequest) GetProjectId() string {
 	return ""
 }
 
-func (x *ListSchedulesRequest) GetAfterScheduleId() string {
+func (x *ListSchedulesRequest) GetAfterScheduleSeq() int64 {
 	if x != nil {
-		return x.AfterScheduleId
+		return x.AfterScheduleSeq
 	}
-	return ""
+	return 0
 }
 
 func (x *ListSchedulesRequest) GetLimit() int32 {
@@ -2186,9 +2213,10 @@ var File_fleetly_automation_v1_automation_proto protoreflect.FileDescriptor
 
 const file_fleetly_automation_v1_automation_proto_rawDesc = "" +
 	"\n" +
-	"&fleetly/automation/v1/automation.proto\x12\x15fleetly.automation.v1\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"\x8b\x04\n" +
+	"&fleetly/automation/v1/automation.proto\x12\x15fleetly.automation.v1\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"\x9d\x04\n" +
 	"\x04Task\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x10\n" +
+	"\x03seq\x18\x12 \x01(\x03R\x03seq\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x02 \x01(\tR\tprojectId\x12\x12\n" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x12\x12\n" +
@@ -2210,9 +2238,10 @@ const file_fleetly_automation_v1_automation_proto_rawDesc = "" +
 	"\n" +
 	"updated_at\x18\x10 \x01(\tR\tupdatedAt\x12\x1f\n" +
 	"\vfinished_at\x18\x11 \x01(\tR\n" +
-	"finishedAt\"\xb7\x02\n" +
+	"finishedAt\"\xc9\x02\n" +
 	"\x03Run\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x10\n" +
+	"\x03seq\x18\f \x01(\x03R\x03seq\x12\x17\n" +
 	"\atask_id\x18\x02 \x01(\tR\x06taskId\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x03 \x01(\tR\tprojectId\x12\x14\n" +
@@ -2257,11 +2286,11 @@ const file_fleetly_automation_v1_automation_proto_rawDesc = "" +
 	"\x0eGetTaskRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"B\n" +
 	"\x0fGetTaskResponse\x12/\n" +
-	"\x04task\x18\x01 \x01(\v2\x1b.fleetly.automation.v1.TaskR\x04task\"k\n" +
+	"\x04task\x18\x01 \x01(\v2\x1b.fleetly.automation.v1.TaskR\x04task\"m\n" +
 	"\x10ListTasksRequest\x12\x1d\n" +
 	"\n" +
-	"project_id\x18\x01 \x01(\tR\tprojectId\x12\"\n" +
-	"\rafter_task_id\x18\x02 \x01(\tR\vafterTaskId\x12\x14\n" +
+	"project_id\x18\x01 \x01(\tR\tprojectId\x12$\n" +
+	"\x0eafter_task_seq\x18\x02 \x01(\x03R\fafterTaskSeq\x12\x14\n" +
 	"\x05limit\x18\x03 \x01(\x05R\x05limit\"F\n" +
 	"\x11ListTasksResponse\x121\n" +
 	"\x05tasks\x18\x01 \x03(\v2\x1b.fleetly.automation.v1.TaskR\x05tasks\"S\n" +
@@ -2285,11 +2314,10 @@ const file_fleetly_automation_v1_automation_proto_rawDesc = "" +
 	"\rGetRunRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\">\n" +
 	"\x0eGetRunResponse\x12,\n" +
-	"\x03run\x18\x01 \x01(\v2\x1a.fleetly.automation.v1.RunR\x03run\"\x81\x01\n" +
+	"\x03run\x18\x01 \x01(\v2\x1a.fleetly.automation.v1.RunR\x03run\"\x83\x01\n" +
 	"\x0fListRunsRequest\x12\x17\n" +
-	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12 \n" +
-	"\fafter_run_id\x18\x02 \x01(\tR\n" +
-	"afterRunId\x12\x14\n" +
+	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\"\n" +
+	"\rafter_run_seq\x18\x02 \x01(\x03R\vafterRunSeq\x12\x14\n" +
 	"\x05limit\x18\x03 \x01(\x05R\x05limit\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x04 \x01(\tR\tprojectId\"B\n" +
@@ -2303,9 +2331,10 @@ const file_fleetly_automation_v1_automation_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
 	"\atask_id\x18\x02 \x01(\tR\x06taskId\"?\n" +
 	"\x0fWaitRunResponse\x12,\n" +
-	"\x03run\x18\x01 \x01(\v2\x1a.fleetly.automation.v1.RunR\x03run\"\xe6\x02\n" +
+	"\x03run\x18\x01 \x01(\v2\x1a.fleetly.automation.v1.RunR\x03run\"\xf8\x02\n" +
 	"\bSchedule\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x10\n" +
+	"\x03seq\x18\x0e \x01(\x03R\x03seq\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x02 \x01(\tR\tprojectId\x12\x12\n" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x12\x14\n" +
@@ -2352,11 +2381,11 @@ const file_fleetly_automation_v1_automation_proto_rawDesc = "" +
 	"\x12GetScheduleRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"R\n" +
 	"\x13GetScheduleResponse\x12;\n" +
-	"\bschedule\x18\x01 \x01(\v2\x1f.fleetly.automation.v1.ScheduleR\bschedule\"w\n" +
+	"\bschedule\x18\x01 \x01(\v2\x1f.fleetly.automation.v1.ScheduleR\bschedule\"y\n" +
 	"\x14ListSchedulesRequest\x12\x1d\n" +
 	"\n" +
-	"project_id\x18\x01 \x01(\tR\tprojectId\x12*\n" +
-	"\x11after_schedule_id\x18\x02 \x01(\tR\x0fafterScheduleId\x12\x14\n" +
+	"project_id\x18\x01 \x01(\tR\tprojectId\x12,\n" +
+	"\x12after_schedule_seq\x18\x02 \x01(\x03R\x10afterScheduleSeq\x12\x14\n" +
 	"\x05limit\x18\x03 \x01(\x05R\x05limit\"V\n" +
 	"\x15ListSchedulesResponse\x12=\n" +
 	"\tschedules\x18\x01 \x03(\v2\x1f.fleetly.automation.v1.ScheduleR\tschedules\"'\n" +

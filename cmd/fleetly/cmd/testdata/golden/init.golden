@@ -1,6 +1,6 @@
 initialized fleetly at 127.0.0.1:9080
-admin user alice (id <ULID>)
-cli token alice-cli (id <ULID>)
+admin user alice (id alice-1)
+cli token alice-cli (id tok-2)
 secret (shown once): <TOKEN>
 credentials saved: <CREDS>
 bootstrap token revoked

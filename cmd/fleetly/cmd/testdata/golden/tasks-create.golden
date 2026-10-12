@@ -1,1 +1,1 @@
-task <ULID> created (one-shot, task-<ULID>)
+task migrate-1 created (one-shot, task-migrate-1)

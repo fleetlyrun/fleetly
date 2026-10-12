@@ -43,7 +43,7 @@ service TasksService {
       api_key_scope: { resource: "tasks" op: SCOPE_OP_READ }
     };
   }
-  // ListTasks 新→旧分页（游标 = ULID 创建序）。
+  // ListTasks 新→旧分页（游标 = seq 创建序）。
   rpc ListTasks(ListTasksRequest) returns (ListTasksResponse) {
     option (google.api.http) = { get: "/v1/tasks" };
     option (grpcapi.v1.method_auth) = {
@@ -99,7 +99,7 @@ service RunsService {
       api_key_scope: { resource: "tasks" op: SCOPE_OP_READ }
     };
   }
-  // ListRuns 新→旧分页（游标 = ULID 创建序；task_id 过滤可选）。
+  // ListRuns 新→旧分页（游标 = seq 创建序；task_id 过滤可选）。
   rpc ListRuns(ListRunsRequest) returns (ListRunsResponse) {
     option (google.api.http) = { get: "/v1/runs" };
     option (grpcapi.v1.method_auth) = {
@@ -159,7 +159,7 @@ service SchedulesService {
       api_key_scope: { resource: "tasks" op: SCOPE_OP_READ }
     };
   }
-  // ListSchedules 新→旧分页（游标 = ULID 创建序；含 tombstone——终态
+  // ListSchedules 新→旧分页（游标 = seq 创建序；含 tombstone——终态
   // 事实可见，与 ListTasks 同款）。
   rpc ListSchedules(ListSchedulesRequest) returns (ListSchedulesResponse) {
     option (google.api.http) = { get: "/v1/schedules" };
@@ -191,6 +191,8 @@ service SchedulesService {
 // Task 是程序化工作负载行形态（状态值 kebab-case 与存储一致）。
 message Task {
   string id = 1;
+  // seq 是创建序（ADR-0070：id 后缀即此号；分页游标轴）。
+  int64 seq = 18;
   string project_id = 2;
   string name = 3;
   string form = 4;   // one-shot | resident
@@ -214,6 +216,8 @@ message Task {
 // Run 是一次执行行形态（终态携带停止原因七枚举 + 退出码）。
 message Run {
   string id = 1;
+  // seq 是创建序（ADR-0070：id 后缀即此号；分页游标轴）。
+  int64 seq = 12;
   string task_id = 2;
   string project_id = 3;
   string state = 4;  // pending | running | stopping | stopped | failed
@@ -265,8 +269,8 @@ message GetTaskRequest { string id = 1; }
 message GetTaskResponse { Task task = 1; }
 message ListTasksRequest {
   string project_id = 1;
-  // after_task_id 游标（上一页末条 id；空 = 首页）。
-  string after_task_id = 2;
+  // after_task_seq 游标（上一页末条 seq（0 = 首页）。
+  int64 after_task_seq = 2;
   int32 limit = 3;
 }
 message ListTasksResponse { repeated Task tasks = 1; }
@@ -291,8 +295,8 @@ message ListRunsRequest {
   // task_id 过滤（与 project_id 二选一——无过滤的全平台 Run 列表是跨 Team
   // 泄漏面，ADR-0035 起强制过滤）。
   string task_id = 1;
-  // after_run_id 游标（上一页末条 id；空 = 首页）。
-  string after_run_id = 2;
+  // after_run_seq 游标（上一页末条 seq（0 = 首页）。
+  int64 after_run_seq = 2;
   int32 limit = 3;
   // project_id 过滤（ADR-0035 only-add；与 task_id 互斥）。
   string project_id = 4;
@@ -315,6 +319,8 @@ message WaitRunResponse { Run run = 1; }
 // one-shot Task 继承）。
 message Schedule {
   string id = 1;
+  // seq 是创建序（ADR-0070：id 后缀即此号；分页游标轴）。
+  int64 seq = 14;
   string project_id = 2;
   string name = 3;
   string state = 4;      // active | deleted
@@ -362,8 +368,8 @@ message GetScheduleRequest { string id = 1; }
 message GetScheduleResponse { Schedule schedule = 1; }
 message ListSchedulesRequest {
   string project_id = 1;
-  // after_schedule_id 游标（上一页末条 id；空 = 首页）。
-  string after_schedule_id = 2;
+  // after_schedule_seq 游标（上一页末条 seq（0 = 首页）。
+  int64 after_schedule_seq = 2;
   int32 limit = 3;
 }
 message ListSchedulesResponse { repeated Schedule schedules = 1; }

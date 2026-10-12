@@ -1,22 +1,24 @@
 {
   "deployments": [
     {
-      "id": "<ULID>",
-      "app_id": "<ULID>",
-      "from_revision": "<ULID>",
-      "to_revision": "<ULID>",
+      "id": "web-1-d2",
+      "seq": "2",
+      "app_id": "web-1",
+      "from_revision": "web-1-r1",
+      "to_revision": "web-1-r1",
       "state": "superseded",
       "generation": "2",
-      "superseded_by": "<ULID>",
+      "superseded_by": "web-1-d3",
       "created_at": "2026-01-01T00:02:00Z",
       "updated_at": "2026-01-01T00:02:00Z",
       "finished_at": "2026-01-01T00:02:00Z",
       "from_generation": "1"
     },
     {
-      "id": "<ULID>",
-      "app_id": "<ULID>",
-      "to_revision": "<ULID>",
+      "id": "web-1-d1",
+      "seq": "1",
+      "app_id": "web-1",
+      "to_revision": "web-1-r1",
       "state": "succeeded",
       "generation": "1",
       "observe_deadline": "2026-01-01T00:01:00Z",

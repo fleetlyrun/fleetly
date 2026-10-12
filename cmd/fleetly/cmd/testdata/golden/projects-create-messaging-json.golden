@@ -1,5 +1,6 @@
 {
-  "id": "<ULID>",
+  "id": "messaging-json-4",
+  "seq": "4",
   "name": "messaging-json",
   "team_id": "default",
   "created_at": "2026-01-01T00:02:00Z"

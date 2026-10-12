@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/oklog/ulid/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
@@ -37,7 +36,7 @@ func mintTeamToken(t *testing.T, h *apitest.Harness, name, teamID, roleID string
 	require.NoError(t, err)
 	repo := tokenrepo.New(h.DB.Clock())
 	require.NoError(t, repo.Create(context.Background(), h.DB.Runner(), &tokenrepo.Token{
-		ID: ulid.Make().String(), Name: name,
+		Name:   name,
 		TeamID: teamID, RoleID: roleID,
 		SHA256: material.SHA256, Prefix: material.Prefix,
 	}))

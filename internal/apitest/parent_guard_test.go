@@ -18,7 +18,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/oklog/ulid/v2"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -44,7 +43,7 @@ func setupParentFixtures(t *testing.T, h *apitest.Harness, ctx context.Context, 
 	projects := structurev1.NewProjectsServiceClient(h.Conn)
 	apps := structurev1.NewAppsServiceClient(h.Conn)
 
-	fx := &parentFixtures{missingID: ulid.Make().String()}
+	fx := &parentFixtures{missingID: "fx-0001"}
 
 	live, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: tag + "-live"})
 	require.NoError(t, err)
@@ -101,28 +100,28 @@ func TestCreateRequiresLiveParent(t *testing.T) {
 	}
 	kinds := []kindCase{
 		{"app", func(projectID, _ string) error {
-			_, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: projectID, Name: ulid.Make().String()})
+			_, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: projectID, Name: "fx-0002"})
 			return err
 		}},
 		{"volume", func(projectID, _ string) error {
-			_, err := volumes.CreateVolume(ctx, &structurev1.CreateVolumeRequest{ProjectId: projectID, Name: ulid.Make().String()})
+			_, err := volumes.CreateVolume(ctx, &structurev1.CreateVolumeRequest{ProjectId: projectID, Name: "fx-0003"})
 			return err
 		}},
 		{"network", func(projectID, _ string) error {
-			_, err := networks.CreateNetwork(ctx, &structurev1.CreateNetworkRequest{ProjectId: projectID, Name: ulid.Make().String()})
+			_, err := networks.CreateNetwork(ctx, &structurev1.CreateNetworkRequest{ProjectId: projectID, Name: "fx-0004"})
 			return err
 		}},
 		{"secret", func(projectID, _ string) error {
-			_, err := secrets.PutSecret(ctx, &structurev1.PutSecretRequest{ProjectId: projectID, Name: ulid.Make().String(), Value: "v"})
+			_, err := secrets.PutSecret(ctx, &structurev1.PutSecretRequest{ProjectId: projectID, Name: "fx-0005", Value: "v"})
 			return err
 		}},
 		{"config", func(projectID, _ string) error {
-			_, err := configs.PutConfig(ctx, &structurev1.PutConfigRequest{ProjectId: projectID, Name: ulid.Make().String(), Content: "k=v"})
+			_, err := configs.PutConfig(ctx, &structurev1.PutConfigRequest{ProjectId: projectID, Name: "fx-0006", Content: "k=v"})
 			return err
 		}},
 		{"route", func(projectID, appID string) error {
 			_, err := routes.CreateRoute(ctx, &proxyv1.CreateRouteRequest{
-				ProjectId: projectID, Host: fmt.Sprintf("%s.guard.test", ulid.Make().String()),
+				ProjectId: projectID, Host: fmt.Sprintf("%s.guard.test", "fx-0007"),
 				AppId: appID, Process: "web", Port: 8000,
 			})
 			return err

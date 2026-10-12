@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/oklog/ulid/v2"
-
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
+	"github.com/fleetlyrun/fleetly/internal/model/entityid"
+
 	"github.com/fleetlyrun/fleetly/internal/capability"
 	specir "github.com/fleetlyrun/fleetly/internal/spec"
 	"github.com/fleetlyrun/fleetly/internal/state"
@@ -100,15 +100,21 @@ func (e *Engine) driveBuilding(ctx context.Context, d *deployment.Deployment) (*
 	if err != nil {
 		return e.failDeployment(ctx, d, "prepare build input: "+err.Error())
 	}
-	buildID := ulid.Make().String()
-	input.BuildID = buildID
-	e.build.inputsMu.Lock()
-	e.build.inputs[buildID] = input
-	e.build.inputsMu.Unlock()
-
+	// buildID 在事务内铸（seq = builds MAX+1，ADR-0070）；input 注册随之
+	// 入内（注册即对构建循环可见的时点语义与既有一致——先于行提交）。
 	err = e.db.Tx(ctx, func(tx *sql.Tx) error {
+		bseq, err := state.NextSeq(ctx, tx, "builds")
+		if err != nil {
+			return err
+		}
+		buildID := entityid.Derive(d.AppID, "b", bseq)
+		input.BuildID = buildID
+		e.build.inputsMu.Lock()
+		e.build.inputs[buildID] = input
+		e.build.inputsMu.Unlock()
+
 		queued := &build.Build{
-			ID: buildID, AppID: d.AppID, RevisionID: d.ToRevision, State: build.StateQueued,
+			ID: buildID, Seq: bseq, AppID: d.AppID, RevisionID: d.ToRevision, State: build.StateQueued,
 			Repo: buildRepo(a.ProjectID, d.AppID),
 		}
 		return e.commitWrite(ctx, tx, writeFact{

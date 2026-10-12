@@ -1,8 +1,9 @@
 {
   "deployment": {
-    "id": "<ULID>",
-    "app_id": "<ULID>",
-    "to_revision": "<ULID>",
+    "id": "bgapp-5-d27",
+    "seq": "27",
+    "app_id": "bgapp-5",
+    "to_revision": "bgapp-5-r1",
     "state": "queued",
     "generation": "1",
     "idempotency_key": "compose-bg-1",

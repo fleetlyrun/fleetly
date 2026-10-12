@@ -1,14 +1,14 @@
 {
   "channels": [
     {
-      "id": "<ULID>",
+      "id": "ops-hook-1",
       "name": "ops-hook",
       "kind": "webhook",
       "enabled": true,
       "created_at": "2026-01-01T00:02:00Z"
     },
     {
-      "id": "<ULID>",
+      "id": "ops-hook-json-2",
       "name": "ops-hook-json",
       "kind": "webhook",
       "enabled": true,

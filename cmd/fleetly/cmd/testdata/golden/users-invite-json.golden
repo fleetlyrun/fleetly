@@ -1,6 +1,6 @@
 {
   "invitation": {
-    "id": "<ULID>",
+    "id": "inv-2",
     "team_id": "default",
     "role_id": "builtin-member",
     "created_by": "token:bootstrap",

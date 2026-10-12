@@ -5,6 +5,7 @@
 -- network_project_id 不落本表（经 network 行解析，无反范式副本）。
 CREATE TABLE network_peers (
   id              TEXT PRIMARY KEY,
+  seq             INTEGER NOT NULL,
   network_id      TEXT NOT NULL,
   peer_project_id TEXT NOT NULL,
   state           TEXT NOT NULL,
@@ -12,6 +13,7 @@ CREATE TABLE network_peers (
   updated_at      TEXT NOT NULL,
   approved_at     TEXT NOT NULL DEFAULT ''
 );
+CREATE UNIQUE INDEX idx_network_peers_seq ON network_peers(seq);
 CREATE UNIQUE INDEX idx_network_peers_active ON network_peers(network_id, peer_project_id) WHERE state != 'revoked';
 CREATE INDEX idx_network_peers_peer ON network_peers(peer_project_id);
 

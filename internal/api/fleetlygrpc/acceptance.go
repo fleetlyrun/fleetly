@@ -70,9 +70,12 @@ func (s *Services) writeKernelFact(fact writeFact) writes.Fact {
 		checks[i] = c
 	}
 	f := writes.Fact{Checks: checks, Write: fact.write}
-	for _, e := range fact.events {
-		e := e
+	for i := range fact.events {
+		// 闭包读切片元素（底层数组与调用方共享）：write 段的就地填充
+		// （withPayload/直接赋值）在追加时可见。按值拷贝会让填充静默
+		// 失效（事件落空 payload——本注释修订前正是这个形态）。
 		f.Events = append(f.Events, func() writes.Event {
+			e := fact.events[i]
 			return writes.Event{Name: e.name, Aggregate: e.aggregate, ID: e.id, Payload: e.payload}
 		})
 	}

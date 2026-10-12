@@ -7,12 +7,14 @@ import (
 	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/capability"
+	"github.com/fleetlyrun/fleetly/internal/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
 // Route 是聚合行（软删 tombstone）。
 type Route struct {
 	ID        string
+	Seq       int64
 	ProjectID string
 	Host      string
 	Path      string // 空 = /
@@ -41,12 +43,20 @@ func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 // state.ErrAlreadyExists（安全批：host 命名空间是平台级资产，唯一索引
 // 已从项目内升级为全局——idx_routes_host_path）。
 func (r *Repo) Create(ctx context.Context, run state.Runner, rt *Route) error {
+	seq, err := state.NextSeq(ctx, run, "routes")
+	if err != nil {
+		return err
+	}
+	rt.Seq = seq
+	if rt.ID == "" {
+		rt.ID = entityid.Derive(rt.ProjectID, "rt", seq)
+	}
 	now := state.FormatTime(r.clock.Now())
 	rt.CreatedAt, rt.UpdatedAt = now, now
-	_, err := run.ExecContext(ctx, `
-		INSERT INTO routes (id, project_id, host, path, app_id, process, port, protocol, tls_mode, created_at, updated_at, deleted_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '')`,
-		rt.ID, rt.ProjectID, rt.Host, normalizePath(rt.Path), rt.AppID, rt.Process,
+	_, err = run.ExecContext(ctx, `
+		INSERT INTO routes (id, seq, project_id, host, path, app_id, process, port, protocol, tls_mode, created_at, updated_at, deleted_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '')`,
+		rt.ID, rt.Seq, rt.ProjectID, rt.Host, normalizePath(rt.Path), rt.AppID, rt.Process,
 		rt.Port, string(rt.Protocol), rt.TLSMode, rt.CreatedAt, rt.UpdatedAt)
 	if state.IsUniqueViolation(err) {
 		return fmt.Errorf("%w: route %s%s already exists (host+path is globally unique across projects)", state.ErrAlreadyExists, rt.Host, rt.Path)
@@ -57,7 +67,7 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, rt *Route) error {
 // Get 按 ID 直读。
 func (r *Repo) Get(ctx context.Context, run state.Runner, id string) (*Route, error) {
 	row := run.QueryRowContext(ctx, `
-		SELECT id, project_id, host, path, app_id, process, port, protocol, tls_mode, created_at, updated_at, deleted_at
+		SELECT id, seq, project_id, host, path, app_id, process, port, protocol, tls_mode, created_at, updated_at, deleted_at
 		FROM routes WHERE id = ?`, id)
 	return scanRoute(row.Scan)
 }
@@ -65,8 +75,8 @@ func (r *Repo) Get(ctx context.Context, run state.Runner, id string) (*Route, er
 // List 返回全部活跃 Route（Proxy 全量发布面；跨 Project）。
 func (r *Repo) List(ctx context.Context, run state.Runner) ([]Route, error) {
 	rows, err := run.QueryContext(ctx, `
-		SELECT id, project_id, host, path, app_id, process, port, protocol, tls_mode, created_at, updated_at, deleted_at
-		FROM routes WHERE deleted_at = '' ORDER BY id`)
+		SELECT id, seq, project_id, host, path, app_id, process, port, protocol, tls_mode, created_at, updated_at, deleted_at
+		FROM routes WHERE deleted_at = '' ORDER BY seq`)
 	if err != nil {
 		return nil, err
 	}
@@ -82,26 +92,26 @@ func (r *Repo) List(ctx context.Context, run state.Runner) ([]Route, error) {
 	return out, rows.Err()
 }
 
-// ListPage 分页读面（ADR-0026 after_* + limit；游标轴 = ULID 创建序升序
+// ListPage 分页读面（ADR-0026 after_* + limit；游标轴 = seq 创建序升序
 // ——既有响应序不变）。projectID 过滤可选（过滤语义与既有内存过滤一致，
 // 下推 SQL 使游标分页与过滤叠加）；projectID 为空 = 全量分页。limit<=0
 // 或 >200 回落/钳制缺省 50。
-func (r *Repo) ListPage(ctx context.Context, run state.Runner, projectID, afterID string, limit int) ([]Route, error) {
+func (r *Repo) ListPage(ctx context.Context, run state.Runner, projectID string, afterSeq int64, limit int) ([]Route, error) {
 	if limit <= 0 || limit > maxListLimit {
 		limit = defaultListLimit
 	}
-	q := `SELECT id, project_id, host, path, app_id, process, port, protocol, tls_mode, created_at, updated_at, deleted_at
+	q := `SELECT id, seq, project_id, host, path, app_id, process, port, protocol, tls_mode, created_at, updated_at, deleted_at
 		FROM routes WHERE deleted_at = ''`
 	args := []any{}
 	if projectID != "" {
 		q += ` AND project_id = ?`
 		args = append(args, projectID)
 	}
-	if afterID != "" {
-		q += ` AND id > ?`
-		args = append(args, afterID)
+	if afterSeq > 0 {
+		q += ` AND seq > ?`
+		args = append(args, afterSeq)
 	}
-	q += ` ORDER BY id ASC LIMIT ?`
+	q += ` ORDER BY seq ASC LIMIT ?`
 	args = append(args, limit)
 	rows, err := run.QueryContext(ctx, q, args...)
 	if err != nil {
@@ -150,7 +160,7 @@ func normalizePath(p string) string {
 func scanRoute(scan func(dest ...any) error) (*Route, error) {
 	var rt Route
 	var proto string
-	err := scan(&rt.ID, &rt.ProjectID, &rt.Host, &rt.Path, &rt.AppID, &rt.Process,
+	err := scan(&rt.ID, &rt.Seq, &rt.ProjectID, &rt.Host, &rt.Path, &rt.AppID, &rt.Process,
 		&rt.Port, &proto, &rt.TLSMode, &rt.CreatedAt, &rt.UpdatedAt, &rt.DeletedAt)
 	if err != nil {
 		return nil, state.MapScanErr(err)

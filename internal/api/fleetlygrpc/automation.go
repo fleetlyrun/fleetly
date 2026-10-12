@@ -122,6 +122,11 @@ func (svc *TasksService) resolveOwnerToken(ctx context.Context, req *automationv
 // CreateTask 受理（行铸造经 engine.MintTaskRow 单源，ADR-0062）+ 落行
 // （四件一拍：task.created 事件 + 审计）。
 func (svc *TasksService) CreateTask(ctx context.Context, req *automationv1.CreateTaskRequest) (*automationv1.CreateTaskResponse, error) {
+	if name := req.GetName(); name != "" {
+		if err := validName("name", name); err != nil {
+			return nil, err
+		}
+	}
 	// 行级授权（ADR-0035）：写面受理前置。
 	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
@@ -134,30 +139,48 @@ func (svc *TasksService) CreateTask(ctx context.Context, req *automationv1.Creat
 	if err != nil {
 		return nil, err
 	}
-	row, err := engine.MintTaskRow(req.GetProjectId(), req.GetName(), owner, taskSpec)
-	if err != nil {
-		// 铸造错误面只有冻结 marshal（验证住 normalizeCreateTask，nil spec
-		// 不可达）——文案与收编前逐字一致。
-		return nil, apperr.New("E_INVALID_ARGUMENT", "task spec: %s", err.Error()).WithCause(err)
-	}
+	// 行铸造经 engine.MintTaskRow 单源（ADR-0062）；seq 在事务内取、铸造
+	// 在 checks 段完成（拒绝零副作用），事件/审计依赖铸出的行 id 走就地
+	// 填充与 auditsFrom（ADR-0070）。
+	var seq int64
+	var row *task.Task
+	events := []eventFact{{name: engine.EventTaskCreated, aggregate: "task"}}
 	err = svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{
 			svc.s.parentProjectAlive(req.GetProjectId()),
-			svc.s.taskQuota(req.GetProjectId(), row.DesiredConcurrency),
+			func(ctx context.Context, tx *sql.Tx) error {
+				var err error
+				if seq, err = state.NextSeq(ctx, tx, "tasks"); err != nil {
+					return err
+				}
+				row, err = engine.MintTaskRow(req.GetProjectId(), req.GetName(), owner, taskSpec, seq)
+				if err != nil {
+					// 铸造错误面只有冻结 marshal（验证住 normalizeCreateTask，
+					// nil spec 不可达）——文案与收编前逐字一致。
+					return apperr.New("E_INVALID_ARGUMENT", "task spec: %s", err.Error()).WithCause(err)
+				}
+				return nil
+			},
+			func(ctx context.Context, tx *sql.Tx) error {
+				return svc.s.taskQuota(req.GetProjectId(), row.DesiredConcurrency)(ctx, tx)
+			},
 		},
 		write: func(ctx context.Context, tx *sql.Tx) error {
-			return svc.s.Tasks.Create(ctx, tx, row)
+			if err := svc.s.Tasks.Create(ctx, tx, row); err != nil {
+				return err
+			}
+			// 事件 id/payload 依赖事务内铸出的行 id：write 段后就地填充。
+			events[0].id = row.ID
+			events[0].payload = engine.TaskCreatedEventJSON(row)
+			return nil
 		},
-		events: []eventFact{{
-			// payload 的字段全部在行上（时间戳不在 payload 面）——静态
-			// 构造与 write 后求值等价。
-			name: engine.EventTaskCreated, aggregate: "task", id: row.ID,
-			payload: engine.TaskCreatedEventJSON(row),
-		}},
-		audits: []*audit.Entry{{
-			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-			Action: "task.create", Resource: "task/" + row.ID, AfterFP: row.Form,
-		}},
+		auditsFrom: func() []*audit.Entry {
+			return []*audit.Entry{{
+				Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+				Action: "task.create", Resource: "task/" + row.ID, AfterFP: row.Form,
+			}}
+		},
+		events: events,
 	})
 	if err != nil {
 		return nil, mapStateError(err, "task")
@@ -184,7 +207,7 @@ func (svc *TasksService) ListTasks(ctx context.Context, req *automationv1.ListTa
 	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}
-	rows, err := svc.s.Tasks.ListByProject(ctx, svc.s.DB.Runner(), req.GetProjectId(), req.GetAfterTaskId(), listLimit(req.GetLimit()))
+	rows, err := svc.s.Tasks.ListByProject(ctx, svc.s.DB.Runner(), req.GetProjectId(), req.GetAfterTaskSeq(), listLimit(req.GetLimit()))
 	if err != nil {
 		return nil, mapStateError(err, "task")
 	}
@@ -282,12 +305,12 @@ func (svc *RunsService) ListRuns(ctx context.Context, req *automationv1.ListRuns
 		if aerr := svc.s.authorizeProjectID(ctx, tk.ProjectID); aerr != nil {
 			return nil, aerr
 		}
-		rows, err = svc.s.Runs.ListByTask(ctx, svc.s.DB.Runner(), req.GetTaskId(), req.GetAfterRunId(), listLimit(req.GetLimit()))
+		rows, err = svc.s.Runs.ListByTask(ctx, svc.s.DB.Runner(), req.GetTaskId(), req.GetAfterRunSeq(), listLimit(req.GetLimit()))
 	case req.GetProjectId() != "":
 		if aerr := svc.s.authorizeProjectID(ctx, req.GetProjectId()); aerr != nil {
 			return nil, aerr
 		}
-		rows, err = svc.s.Runs.ListByProject(ctx, svc.s.DB.Runner(), req.GetProjectId(), req.GetAfterRunId(), listLimit(req.GetLimit()))
+		rows, err = svc.s.Runs.ListByProject(ctx, svc.s.DB.Runner(), req.GetProjectId(), req.GetAfterRunSeq(), listLimit(req.GetLimit()))
 	default:
 		return nil, apperr.New("E_INVALID_ARGUMENT",
 			"task_id or project_id: one filter is required (an unfiltered run list spans every team's runs)")
@@ -364,7 +387,7 @@ func (svc *RunsService) waitRunByTask(ctx context.Context, taskID string, stream
 		return mapStateError(err, "events")
 	}
 	pin := func() (*run.Run, error) {
-		rows, lerr := svc.s.Runs.ListByTask(ctx, svc.s.DB.Runner(), taskID, "", 1)
+		rows, lerr := svc.s.Runs.ListByTask(ctx, svc.s.DB.Runner(), taskID, 0, 1)
 		if lerr != nil {
 			return nil, mapStateError(lerr, "run")
 		}
@@ -506,7 +529,7 @@ func normalizeCreateSchedule(req *automationv1.CreateScheduleRequest, now time.T
 // taskMsg 把 Task 行投影为 proto 消息（镜像/命令/变量从冻结 Spec 还原）。
 func (s *Services) taskMsg(row *task.Task) *automationv1.Task {
 	msg := &automationv1.Task{
-		Id: row.ID, ProjectId: row.ProjectID, Name: row.Name,
+		Id: row.ID, Seq: row.Seq, ProjectId: row.ProjectID, Name: row.Name,
 		Form: row.Form, State: string(row.State),
 		DesiredConcurrency: row.DesiredConcurrency, NetworkGroup: row.NetworkGroup,
 		OwnerTokenId: row.OwnerTokenID, DnsName: row.DNSName, LeaseDeadline: row.LeaseDeadline,
@@ -526,7 +549,7 @@ func (s *Services) taskMsg(row *task.Task) *automationv1.Task {
 // runMsg 把 Run 行投影为 proto 消息。
 func runMsg(row *run.Run) *automationv1.Run {
 	msg := &automationv1.Run{
-		Id: row.ID, TaskId: row.TaskID, ProjectId: row.ProjectID,
+		Id: row.ID, Seq: row.Seq, TaskId: row.TaskID, ProjectId: row.ProjectID,
 		State: string(row.State), StopReason: row.StopReason,
 		DnsName: row.DNSName, Deadline: row.Deadline,
 		CreatedAt: row.CreatedAt, StartedAt: row.StartedAt, FinishedAt: row.FinishedAt,
@@ -540,6 +563,11 @@ func runMsg(row *run.Run) *automationv1.Run {
 // CreateSchedule 受理 + 冻结模板 + 落行（四件一拍：schedule.created 事件
 // + 审计）+ 唤醒到期拍环。
 func (svc *SchedulesService) CreateSchedule(ctx context.Context, req *automationv1.CreateScheduleRequest) (*automationv1.CreateScheduleResponse, error) {
+	if name := req.GetName(); name != "" {
+		if err := validName("name", name); err != nil {
+			return nil, err
+		}
+	}
 	// 行级授权（ADR-0035）：写面受理前置。
 	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
@@ -553,7 +581,7 @@ func (svc *SchedulesService) CreateSchedule(ctx context.Context, req *automation
 		return nil, apperr.New("E_INVALID_ARGUMENT", "schedule template: %s", err.Error()).WithCause(err)
 	}
 	row := &schedule.Schedule{
-		ID: newID(), ProjectID: req.GetProjectId(), Name: req.GetName(),
+		ProjectID: req.GetProjectId(), Name: req.GetName(),
 		State: schedule.StateActive, CronExpr: req.GetCron(), Timezone: timezone,
 		Spec: body, NextFireAt: nextFire,
 	}
@@ -568,10 +596,12 @@ func (svc *SchedulesService) CreateSchedule(ctx context.Context, req *automation
 			name: engine.EventScheduleCreated, aggregate: "schedule", id: row.ID,
 			payload: engine.ScheduleCreatedEventJSON(row),
 		}},
-		audits: []*audit.Entry{{
-			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-			Action: "schedule.create", Resource: "schedule/" + row.ID, AfterFP: row.CronExpr,
-		}},
+		auditsFrom: func() []*audit.Entry {
+			return []*audit.Entry{{
+				Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+				Action: "schedule.create", Resource: "schedule/" + row.ID, AfterFP: row.CronExpr,
+			}}
+		},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "schedule")
@@ -598,7 +628,7 @@ func (svc *SchedulesService) ListSchedules(ctx context.Context, req *automationv
 	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}
-	rows, err := svc.s.Schedules.ListByProject(ctx, svc.s.DB.Runner(), req.GetProjectId(), req.GetAfterScheduleId(), listLimit(req.GetLimit()))
+	rows, err := svc.s.Schedules.ListByProject(ctx, svc.s.DB.Runner(), req.GetProjectId(), req.GetAfterScheduleSeq(), listLimit(req.GetLimit()))
 	if err != nil {
 		return nil, mapStateError(err, "schedule")
 	}
@@ -631,7 +661,7 @@ func (svc *SchedulesService) DeleteSchedule(ctx context.Context, req *automation
 			payload: engine.ScheduleDeletedEventJSON(row),
 		}},
 		audits: []*audit.Entry{{
-			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
 			Action: "schedule.delete", Resource: "schedule/" + row.ID,
 		}},
 	})
@@ -681,7 +711,7 @@ func mapScheduleVerbError(err error) error {
 // Spec 还原——taskMsg 同款口径）。
 func scheduleMsg(row *schedule.Schedule) *automationv1.Schedule {
 	msg := &automationv1.Schedule{
-		Id: row.ID, ProjectId: row.ProjectID, Name: row.Name, State: string(row.State),
+		Id: row.ID, Seq: row.Seq, ProjectId: row.ProjectID, Name: row.Name, State: string(row.State),
 		Cron: row.CronExpr, Timezone: row.Timezone,
 		NextFireAt: row.NextFireAt, LastTaskId: row.LastTaskID,
 		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,

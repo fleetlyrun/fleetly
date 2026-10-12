@@ -314,6 +314,11 @@ export interface components {
         };
         v1Build: {
             id?: string;
+            /**
+             * seq 是创建序（ADR-0070：id 后缀即此号；分页游标轴）。
+             * Format: int64
+             */
+            seq?: string;
             app_id?: string;
             revision_id?: string;
             state?: string;
@@ -414,6 +419,11 @@ export interface components {
         /** Deployment 是受监督迁移的行形态（状态机值 kebab-case 与存储一致）。 */
         v1Deployment: {
             id?: string;
+            /**
+             * seq 是创建序（ADR-0070：id 后缀即此号；分页游标轴）。
+             * Format: int64
+             */
+            seq?: string;
             app_id?: string;
             from_revision?: string;
             to_revision?: string;
@@ -553,6 +563,11 @@ export interface components {
         /** Upload 是上传产物行投影（ListUploads 读面）。 */
         v1Upload: {
             id?: string;
+            /**
+             * seq 是创建序（ADR-0070：id 后缀即此号；分页游标轴）。
+             * Format: int64
+             */
+            seq?: string;
             project_id?: string;
             digest?: string;
             /** Format: int64 */
@@ -779,10 +794,10 @@ export interface operations {
             query?: {
                 app_id?: string;
                 /**
-                 * @description after_build_id 游标（上一页末条 id；空 = 首页）。新→旧（ULID 创建
+                 * @description after_build_seq 游标（上一页末条 seq；0 = 首页）。新→旧（seq 创建
                  *     序；ADR-0026 after_* + limit 惯例）。
                  */
-                after_build_id?: string;
+                after_build_seq?: string;
                 limit?: number;
             };
             header?: never;
@@ -883,10 +898,10 @@ export interface operations {
             query?: {
                 app_id?: string;
                 /**
-                 * @description after_deployment_id 游标（上一页末条 id；空 = 首页）。新→旧（ULID
+                 * @description after_deployment_seq 游标（上一页末条 seq；0 = 首页）。新→旧（seq
                  *     创建序；ADR-0026 after_* + limit 惯例）。
                  */
-                after_deployment_id?: string;
+                after_deployment_seq?: string;
                 limit?: number;
             };
             header?: never;
@@ -1122,7 +1137,7 @@ export interface operations {
         parameters: {
             query?: {
                 project_id?: string;
-                after_upload_id?: string;
+                after_upload_seq?: string;
                 limit?: number;
             };
             header?: never;

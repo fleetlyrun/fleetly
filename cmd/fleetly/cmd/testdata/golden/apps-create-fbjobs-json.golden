@@ -1,6 +1,7 @@
 {
-  "id": "<ULID>",
-  "project_id": "<ULID>",
+  "id": "fbjobs-json-4",
+  "seq": "4",
+  "project_id": "shop-1",
   "name": "fbjobs-json",
   "created_at": "2026-01-01T00:02:00Z"
 }

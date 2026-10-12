@@ -8,12 +8,14 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/fleetlyrun/fleetly/internal/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
 // Project 是聚合行（软删 tombstone：deleted_at 非空即已删）。
 type Project struct {
 	ID        string
+	Seq       int64
 	Name      string
 	TeamID    string
 	CreatedAt string
@@ -34,13 +36,23 @@ func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 
 // Create 落一行；同 Team 同名活跃 Project 冲突返回 state.ErrAlreadyExists
 // （ADR-0028：唯一性口径 (team_id, name)——同名项目跨 Team 并存）。
+// ID 空则装配 "<name>-<seq>"（ADR-0070）；Seq 零值则事务内取 MAX+1（铸造
+// 单源在 repo 行装配处）。
 func (r *Repo) Create(ctx context.Context, run state.Runner, p *Project) error {
 	now := state.FormatTime(r.clock.Now())
 	p.CreatedAt, p.UpdatedAt = now, now
-	_, err := run.ExecContext(ctx, `
-		INSERT INTO projects (id, name, team_id, created_at, updated_at, deleted_at)
-		VALUES (?, ?, ?, ?, ?, '')`,
-		p.ID, p.Name, p.TeamID, p.CreatedAt, p.UpdatedAt)
+	seq, err := state.NextSeq(ctx, run, "projects")
+	if err != nil {
+		return err
+	}
+	p.Seq = seq
+	if p.ID == "" {
+		p.ID = entityid.Join(p.Name, seq)
+	}
+	_, err = run.ExecContext(ctx, `
+		INSERT INTO projects (id, seq, name, team_id, created_at, updated_at, deleted_at)
+		VALUES (?, ?, ?, ?, ?, ?, '')`,
+		p.ID, p.Seq, p.Name, p.TeamID, p.CreatedAt, p.UpdatedAt)
 	if state.IsUniqueViolation(err) {
 		return fmt.Errorf("%w: project name %q already exists in team %s", state.ErrAlreadyExists, p.Name, p.TeamID)
 	}
@@ -50,7 +62,7 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, p *Project) error {
 // Get 按 ID 直读（含已删行——tombstone 是事实，不是秘密）。
 func (r *Repo) Get(ctx context.Context, run state.Runner, id string) (*Project, error) {
 	row := run.QueryRowContext(ctx, `
-		SELECT id, name, team_id, created_at, updated_at, deleted_at
+		SELECT id, seq, name, team_id, created_at, updated_at, deleted_at
 		FROM projects WHERE id = ?`, id)
 	return scanProject(row)
 }
@@ -59,17 +71,17 @@ func (r *Repo) Get(ctx context.Context, run state.Runner, id string) (*Project, 
 // Team 内成立——跨 Team 同名并存，裸名查询语义不再成立）。
 func (r *Repo) GetByNameInTeam(ctx context.Context, run state.Runner, teamID, name string) (*Project, error) {
 	row := run.QueryRowContext(ctx, `
-		SELECT id, name, team_id, created_at, updated_at, deleted_at
+		SELECT id, seq, name, team_id, created_at, updated_at, deleted_at
 		FROM projects WHERE team_id = ? AND name = ? AND deleted_at = ''`, teamID, name)
 	return scanProject(row)
 }
 
-// List 返回全部活跃行（全量面——ULID 主键序 = 创建序；授权解析与引擎
-// 枚举消费；API 分页读面走 ListPage）。
+// List 返回全部活跃行（全量面——seq 序 = 创建序；授权解析与引擎枚举
+// 消费；API 分页读面走 ListPage）。
 func (r *Repo) List(ctx context.Context, run state.Runner) ([]Project, error) {
 	rows, err := run.QueryContext(ctx, `
-		SELECT id, name, team_id, created_at, updated_at, deleted_at
-		FROM projects WHERE deleted_at = '' ORDER BY id`)
+		SELECT id, seq, name, team_id, created_at, updated_at, deleted_at
+		FROM projects WHERE deleted_at = '' ORDER BY seq`)
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +89,7 @@ func (r *Repo) List(ctx context.Context, run state.Runner) ([]Project, error) {
 	var out []Project
 	for rows.Next() {
 		var p Project
-		if err := rows.Scan(&p.ID, &p.Name, &p.TeamID, &p.CreatedAt, &p.UpdatedAt, &p.DeletedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.Seq, &p.Name, &p.TeamID, &p.CreatedAt, &p.UpdatedAt, &p.DeletedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
@@ -85,18 +97,18 @@ func (r *Repo) List(ctx context.Context, run state.Runner) ([]Project, error) {
 	return out, rows.Err()
 }
 
-// ListPage 是 List 的分页读面（ADR-0026 after_* + limit；游标轴 = ULID
+// ListPage 是 List 的分页读面（ADR-0026 after_* + limit；游标轴 = seq
 // 创建序升序——既有响应序不变）。limit<=0 或 >200 回落/钳制缺省 50。
-func (r *Repo) ListPage(ctx context.Context, run state.Runner, afterID string, limit int) ([]Project, error) {
-	return r.page(ctx, run, "", afterID, limit)
+func (r *Repo) ListPage(ctx context.Context, run state.Runner, afterSeq int64, limit int) ([]Project, error) {
+	return r.page(ctx, run, "", afterSeq, limit)
 }
 
 // ListByTeam 返回 Team 内全部活跃行（ADR-0035 行级授权的 List 面过滤锚
 // 与 authz 解析面——全量；非 owner 的 API 分页读面走 ListByTeamPage）。
 func (r *Repo) ListByTeam(ctx context.Context, run state.Runner, teamID string) ([]Project, error) {
 	rows, err := run.QueryContext(ctx, `
-		SELECT id, name, team_id, created_at, updated_at, deleted_at
-		FROM projects WHERE deleted_at = '' AND team_id = ? ORDER BY id`, teamID)
+		SELECT id, seq, name, team_id, created_at, updated_at, deleted_at
+		FROM projects WHERE deleted_at = '' AND team_id = ? ORDER BY seq`, teamID)
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +116,7 @@ func (r *Repo) ListByTeam(ctx context.Context, run state.Runner, teamID string) 
 	var out []Project
 	for rows.Next() {
 		var p Project
-		if err := rows.Scan(&p.ID, &p.Name, &p.TeamID, &p.CreatedAt, &p.UpdatedAt, &p.DeletedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.Seq, &p.Name, &p.TeamID, &p.CreatedAt, &p.UpdatedAt, &p.DeletedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
@@ -114,29 +126,29 @@ func (r *Repo) ListByTeam(ctx context.Context, run state.Runner, teamID string) 
 
 // ListByTeamPage 是 ListByTeam 的分页读面（ADR-0026 after_* + limit；
 // Team 过滤与游标分页叠加）。
-func (r *Repo) ListByTeamPage(ctx context.Context, run state.Runner, teamID, afterID string, limit int) ([]Project, error) {
-	return r.page(ctx, run, teamID, afterID, limit)
+func (r *Repo) ListByTeamPage(ctx context.Context, run state.Runner, teamID string, afterSeq int64, limit int) ([]Project, error) {
+	return r.page(ctx, run, teamID, afterSeq, limit)
 }
 
 // page 是两种分页形态的共用体：teamID 空 = 全局（owner 面），非空 =
 // Team 过滤（ADR-0035 List 面）。
-func (r *Repo) page(ctx context.Context, run state.Runner, teamID, afterID string, limit int) ([]Project, error) {
+func (r *Repo) page(ctx context.Context, run state.Runner, teamID string, afterSeq int64, limit int) ([]Project, error) {
 	if limit <= 0 || limit > maxListLimit {
 		limit = defaultListLimit
 	}
 	q := `
-		SELECT id, name, team_id, created_at, updated_at, deleted_at
+		SELECT id, seq, name, team_id, created_at, updated_at, deleted_at
 		FROM projects WHERE deleted_at = ''`
 	args := []any{}
 	if teamID != "" {
 		q += ` AND team_id = ?`
 		args = append(args, teamID)
 	}
-	if afterID != "" {
-		q += ` AND id > ?`
-		args = append(args, afterID)
+	if afterSeq > 0 {
+		q += ` AND seq > ?`
+		args = append(args, afterSeq)
 	}
-	q += ` ORDER BY id ASC LIMIT ?`
+	q += ` ORDER BY seq ASC LIMIT ?`
 	args = append(args, limit)
 	rows, err := run.QueryContext(ctx, q, args...)
 	if err != nil {
@@ -146,7 +158,7 @@ func (r *Repo) page(ctx context.Context, run state.Runner, teamID, afterID strin
 	var out []Project
 	for rows.Next() {
 		var p Project
-		if err := rows.Scan(&p.ID, &p.Name, &p.TeamID, &p.CreatedAt, &p.UpdatedAt, &p.DeletedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.Seq, &p.Name, &p.TeamID, &p.CreatedAt, &p.UpdatedAt, &p.DeletedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
@@ -180,7 +192,7 @@ func (r *Repo) SoftDelete(ctx context.Context, run state.Runner, id string) erro
 
 func scanProject(row *sql.Row) (*Project, error) {
 	var p Project
-	err := row.Scan(&p.ID, &p.Name, &p.TeamID, &p.CreatedAt, &p.UpdatedAt, &p.DeletedAt)
+	err := row.Scan(&p.ID, &p.Seq, &p.Name, &p.TeamID, &p.CreatedAt, &p.UpdatedAt, &p.DeletedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, state.ErrNotFound
 	}

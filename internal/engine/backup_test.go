@@ -216,7 +216,7 @@ func TestBackupScheduleExecuteSucceeds(t *testing.T) {
 	clock.Advance(3601 * time.Second)
 	e.backupStep(ctx) // 到期：铸行 + 执行一件
 
-	rows, err := e.backups.ListByDatabase(ctx, e.db.Runner(), tDatabaseID, "", 10)
+	rows, err := e.backups.ListByDatabase(ctx, e.db.Runner(), tDatabaseID, 0, 10)
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
 	assert.Equal(t, backup.StatusSucceeded, rows[0].Status)
@@ -265,7 +265,7 @@ func TestBackupScheduleNotDue(t *testing.T) {
 	ctx := context.Background()
 
 	e.backupStep(ctx)
-	rows, err := e.backups.ListByDatabase(ctx, e.db.Runner(), tDatabaseID, "", 10)
+	rows, err := e.backups.ListByDatabase(ctx, e.db.Runner(), tDatabaseID, 0, 10)
 	require.NoError(t, err)
 	assert.Empty(t, rows)
 	assert.Empty(t, ut.requests())
@@ -282,7 +282,7 @@ func TestBackupUtilityFailureRecorded(t *testing.T) {
 	clock.Advance(3601 * time.Second)
 	e.backupStep(ctx)
 
-	rows, err := e.backups.ListByDatabase(ctx, e.db.Runner(), tDatabaseID, "", 10)
+	rows, err := e.backups.ListByDatabase(ctx, e.db.Runner(), tDatabaseID, 0, 10)
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
 	assert.Equal(t, backup.StatusFailed, rows[0].Status)
@@ -459,7 +459,7 @@ func TestBackupFailureBackoffWindow(t *testing.T) {
 
 	clock.Advance(2 * time.Hour) // 过 interval：到期铸行 + 执行失败
 	e.backupStep(ctx)
-	rows, err := e.backups.ListByDatabase(ctx, e.db.Runner(), tDatabaseID, "", 50)
+	rows, err := e.backups.ListByDatabase(ctx, e.db.Runner(), tDatabaseID, 0, 50)
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
 	require.Equal(t, backup.StatusFailed, rows[0].Status)
@@ -467,14 +467,14 @@ func TestBackupFailureBackoffWindow(t *testing.T) {
 
 	clock.Advance(2 * time.Minute) // 仍到期（锚未推进），但失败未满退避窗
 	e.backupStep(ctx)
-	rows, err = e.backups.ListByDatabase(ctx, e.db.Runner(), tDatabaseID, "", 50)
+	rows, err = e.backups.ListByDatabase(ctx, e.db.Runner(), tDatabaseID, 0, 50)
 	require.NoError(t, err)
 	assert.Len(t, rows, 1, "backoff window must suppress recasting")
 	assert.Len(t, ut.requests(), 1, "backoff window must suppress execution")
 
 	clock.Advance(4 * time.Minute) // 距失败 ~6min：窗外，重铸重试
 	e.backupStep(ctx)
-	rows, err = e.backups.ListByDatabase(ctx, e.db.Runner(), tDatabaseID, "", 50)
+	rows, err = e.backups.ListByDatabase(ctx, e.db.Runner(), tDatabaseID, 0, 50)
 	require.NoError(t, err)
 	assert.Len(t, rows, 2, "past the backoff window the scheduler recasts")
 	assert.Len(t, ut.requests(), 2)
@@ -504,7 +504,7 @@ func TestBackupFailedRowSweep(t *testing.T) {
 	e.backupStep(ctx) // prunePass 随步执行（库此刻也到期——step 会另铸一颗
 	// 真实成功行，断言按语义：失败行必须出清、成功种子行必须在场）
 
-	rows, err := e.backups.ListByDatabase(ctx, e.db.Runner(), tDatabaseID, "", 50)
+	rows, err := e.backups.ListByDatabase(ctx, e.db.Runner(), tDatabaseID, 0, 50)
 	require.NoError(t, err)
 	ids := make(map[string]bool, len(rows))
 	for _, r := range rows {

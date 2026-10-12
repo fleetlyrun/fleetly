@@ -80,11 +80,11 @@ func TestScheduleListDrivingAndCursor(t *testing.T) {
 	assert.Len(t, driving, 2) // tombstone 不拾取
 
 	// 新→旧 + after 游标（列表含 tombstone——终态事实可见，与 tasks 同款）。
-	page, err := repo.ListByProject(ctx, db.Runner(), "01JD0PRJ000000000000000000", "", 2)
+	page, err := repo.ListByProject(ctx, db.Runner(), "01JD0PRJ000000000000000000", 0, 2)
 	require.NoError(t, err)
 	require.Len(t, page, 2)
 	assert.Equal(t, ids[2], page[0].ID)
-	page, err = repo.ListByProject(ctx, db.Runner(), "01JD0PRJ000000000000000000", page[0].ID, 10)
+	page, err = repo.ListByProject(ctx, db.Runner(), "01JD0PRJ000000000000000000", page[0].Seq, 10)
 	require.NoError(t, err)
 	require.Len(t, page, 2)
 	assert.Equal(t, ids[1], page[0].ID)

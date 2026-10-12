@@ -197,15 +197,16 @@ func newUploadsPutVerb() commands.Command {
 // ADR-0026 惯例）。
 func newUploadsListVerb() commands.Command {
 	const name = "list"
-	var project, after string
+	var project string
+	var after int64
 	var limit int
 	return &flaggedVerb{
 		name:     name,
 		synopsis: "List uploaded sources for a project (newest first)",
-		usage:    "uploads list --project PROJECT_ID [--after UPLOAD_ID] [--limit N]",
+		usage:    "uploads list --project PROJECT_ID [--after SEQ] [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&project, "project", "", "project id (required)")
-			fs.StringVar(&after, "after", "", "pagination cursor: the last upload id of the previous page")
+			fs.Int64Var(&after, "after", 0, "pagination cursor: the seq of the last row of the previous page")
 			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
@@ -222,7 +223,7 @@ func newUploadsListVerb() commands.Command {
 			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Builds.ListUploads(ctx, &deliveryv1.ListUploadsRequest{
-				ProjectId: project, AfterUploadId: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
+				ProjectId: project, AfterUploadSeq: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
 			})
 			if err != nil {
 				return err

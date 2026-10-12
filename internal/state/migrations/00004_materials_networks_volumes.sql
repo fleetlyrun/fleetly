@@ -7,6 +7,7 @@
 --   - networks：Project 级网络；egress_none 声明（swarm v1 弱隔离明示）。
 CREATE TABLE secrets (
   id          TEXT PRIMARY KEY,
+  seq         INTEGER NOT NULL,
   project_id  TEXT NOT NULL,
   name        TEXT NOT NULL,
   ciphertext  BLOB NOT NULL,
@@ -15,10 +16,12 @@ CREATE TABLE secrets (
   updated_at  TEXT NOT NULL,
   deleted_at  TEXT
 );
+CREATE UNIQUE INDEX idx_secrets_seq ON secrets(seq);
 CREATE UNIQUE INDEX idx_secrets_project_name ON secrets(project_id, name) WHERE deleted_at = '';
 
 CREATE TABLE configs (
   id         TEXT PRIMARY KEY,
+  seq        INTEGER NOT NULL,
   project_id TEXT NOT NULL,
   name       TEXT NOT NULL,
   version    INTEGER NOT NULL,
@@ -26,9 +29,11 @@ CREATE TABLE configs (
   created_at TEXT NOT NULL,
   UNIQUE(project_id, name, version)
 );
+CREATE UNIQUE INDEX idx_configs_seq ON configs(seq);
 
 CREATE TABLE volumes (
   id             TEXT PRIMARY KEY,
+  seq            INTEGER NOT NULL,
   project_id     TEXT NOT NULL,
   name           TEXT NOT NULL,
   pinned_node_id TEXT NOT NULL DEFAULT '',
@@ -36,16 +41,19 @@ CREATE TABLE volumes (
   updated_at     TEXT NOT NULL,
   deleted_at     TEXT
 );
+CREATE UNIQUE INDEX idx_volumes_seq ON volumes(seq);
 CREATE UNIQUE INDEX idx_volumes_project_name ON volumes(project_id, name) WHERE deleted_at = '';
 
 CREATE TABLE networks (
   id          TEXT PRIMARY KEY,
+  seq         INTEGER NOT NULL,
   project_id  TEXT NOT NULL,
   name        TEXT NOT NULL,
   egress_none INTEGER NOT NULL DEFAULT 0,
   created_at  TEXT NOT NULL,
   deleted_at  TEXT
 );
+CREATE UNIQUE INDEX idx_networks_seq ON networks(seq);
 CREATE UNIQUE INDEX idx_networks_project_name ON networks(project_id, name) WHERE deleted_at = '';
 
 -- +goose Down

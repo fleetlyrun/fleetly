@@ -1,11 +1,12 @@
 {
   "runs": [
     {
-      "id": "<ULID>",
-      "task_id": "<ULID>",
-      "project_id": "<ULID>",
+      "id": "migrate-1-r1",
+      "seq": "1",
+      "task_id": "migrate-1",
+      "project_id": "shop-1",
       "state": "running",
-      "dns_name": "run-<ULID>",
+      "dns_name": "run-migrate-1-r1",
       "deadline": "2026-01-01T01:02:00Z",
       "created_at": "2026-01-01T00:02:00Z",
       "started_at": "2026-01-01T00:02:00Z"

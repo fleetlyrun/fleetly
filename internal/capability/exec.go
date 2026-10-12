@@ -164,23 +164,35 @@ type RelayFrame struct {
 	Payload   []byte
 }
 
-// ulidLen 是会话 ID 定长（26 ASCII 字节）。
-const ulidLen = 26
+// maxSessionIDLen 是会话 ID 长度上界（1B 长度前缀的域宽；畸形长度
+// fail-closed——manager 与 relay 同二进制换装，无跨版本兼容面，ADR-0070）。
+const maxSessionIDLen = 255
 
 // MarshalRelayFrame 编码一条中继帧（hello 不走此函数——文本帧独立）。
+// 线上形态 [1B kind][1B session ID 长度][session ID][payload]——ADR-0049
+// 的定长 26B 会话字段改 1B 长度前缀变长（ADR-0070：会话 id 改 exec-<n>
+// 形态；manager/relay 同二进制、升级序同批换装）。
 func MarshalRelayFrame(kind RelayFrameKind, sessionID string, payload []byte) []byte {
-	out := make([]byte, 0, 1+ulidLen+len(payload))
-	out = append(out, byte(kind))
+	if len(sessionID) > maxSessionIDLen {
+		// 会话 id 受铸面控制（exec-<seq>），超界 = 编程错误。
+		panic(fmt.Sprintf("relay frame session id too long: %d bytes", len(sessionID)))
+	}
+	out := make([]byte, 0, 2+len(sessionID)+len(payload))
+	out = append(out, byte(kind), byte(len(sessionID))) //nolint:gosec // 上界 panic 守卫（≤maxSessionIDLen）已挡溢出
 	out = append(out, sessionID...)
 	return append(out, payload...)
 }
 
 // ParseRelayFrame 解码一条二进制中继帧。
 func ParseRelayFrame(b []byte) (RelayFrame, error) {
-	if len(b) < 1+ulidLen {
+	if len(b) < 2 {
 		return RelayFrame{}, fmt.Errorf("relay frame too short: %d bytes", len(b))
 	}
-	f := RelayFrame{Kind: RelayFrameKind(b[0]), SessionID: string(b[1 : 1+ulidLen]), Payload: b[1+ulidLen:]}
+	n := int(b[1])
+	if len(b) < 2+n {
+		return RelayFrame{}, fmt.Errorf("relay frame too short: %d bytes, want %d for session id", len(b), 2+n)
+	}
+	f := RelayFrame{Kind: RelayFrameKind(b[0]), SessionID: string(b[2 : 2+n]), Payload: b[2+n:]}
 	switch f.Kind {
 	case RelayFrameOpen, RelayFrameStdin, RelayFrameResize, RelayFrameClose, RelayFrameStdinEOF,
 		RelayFrameAck, RelayFrameStdout, RelayFrameStderr, RelayFrameExit, RelayFrameError:

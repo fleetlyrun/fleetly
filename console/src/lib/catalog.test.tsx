@@ -28,7 +28,7 @@ afterEach(() => {
 });
 
 // W-1 修复锚（2026-10-12 走查）：App Detail hero/面包屑在目录加载窗内
-// （apps.data undefined）走 appNameOf 截断回落——裸全 ULID 闪现退役。
+// （apps.data undefined）走 appNameOf 截断回落——裸原始 id 闪现退役。
 describe("appNameOf", () => {
   it("resolves the display name from the catalog", () => {
     expect(appNameOf([{ id: "A1", project_id: "P1", name: "walkapp", created_at: "" }], "A1")).toBe("walkapp");

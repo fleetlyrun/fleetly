@@ -116,7 +116,7 @@ func (svc *BuildsService) UploadSource(stream deliveryv1.BuildsService_UploadSou
 		return apperr.New("E_INTERNAL", "upload lookup failed").WithCause(ferr)
 	}
 
-	row := &sourceupload.Upload{ID: newID(), ProjectID: projectID, Digest: digest, SizeBytes: size}
+	row := &sourceupload.Upload{ProjectID: projectID, Digest: digest, SizeBytes: size}
 	payload, err := json.Marshal(uploadStoredPayload{ //nolint:errcheck // 结构体字段恒可序列化
 		ID: row.ID, ProjectID: row.ProjectID, Digest: digest, SizeBytes: size, Deduplicated: false,
 	})
@@ -134,7 +134,7 @@ func (svc *BuildsService) UploadSource(stream deliveryv1.BuildsService_UploadSou
 		events: []eventFact{{name: eventUploadStored, aggregate: "project", id: projectID, payload: payload}},
 		auditsFrom: func() []*audit.Entry {
 			return []*audit.Entry{{
-				ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+				Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
 				Action: "upload.create", Resource: "upload/" + row.ID, AfterFP: digest,
 			}}
 		},
@@ -163,14 +163,14 @@ func (svc *BuildsService) ListUploads(ctx context.Context, req *deliveryv1.ListU
 	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}
-	rows, err := svc.s.Uploads.ListByProject(ctx, svc.s.DB.Runner(), req.GetProjectId(), req.GetAfterUploadId(), listLimit(req.GetLimit()))
+	rows, err := svc.s.Uploads.ListByProject(ctx, svc.s.DB.Runner(), req.GetProjectId(), req.GetAfterUploadSeq(), listLimit(req.GetLimit()))
 	if err != nil {
 		return nil, mapStateError(err, "upload")
 	}
 	out := &deliveryv1.ListUploadsResponse{}
 	for _, u := range rows {
 		out.Uploads = append(out.Uploads, &deliveryv1.Upload{
-			Id: u.ID, ProjectId: u.ProjectID, Digest: u.Digest, SizeBytes: u.SizeBytes, CreatedAt: u.CreatedAt,
+			Id: u.ID, Seq: u.Seq, ProjectId: u.ProjectID, Digest: u.Digest, SizeBytes: u.SizeBytes, CreatedAt: u.CreatedAt,
 		})
 	}
 	return out, nil

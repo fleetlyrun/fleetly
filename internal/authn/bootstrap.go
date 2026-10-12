@@ -14,8 +14,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/oklog/ulid/v2"
-
 	"github.com/fleetlyrun/fleetly/internal/identity"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	tokenrepo "github.com/fleetlyrun/fleetly/internal/state/token"
@@ -76,7 +74,7 @@ func EnsureBootstrapToken(ctx context.Context, db *state.DB, dataRoot string, re
 		return BootstrapResult{}, fmt.Errorf("authn: token material: %w", err)
 	}
 	row := &tokenrepo.Token{
-		ID: ulid.Make().String(), Name: identity.BootstrapTokenName,
+		Name:   identity.BootstrapTokenName,
 		TeamID: identity.DefaultTeamID, RoleID: identity.RoleOwnerID,
 		SHA256: material.SHA256, Prefix: material.Prefix,
 	}

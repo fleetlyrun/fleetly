@@ -5,7 +5,8 @@
 -- 控制面重启后按墙钟续算，不依赖进程内计时器）。owner_token_id 是 Token
 -- 行引用（非明文——吊销排空经 task 环周期扫 revoked 属主，P1-8 拉式口径）。
 CREATE TABLE tasks (
-    id                  TEXT PRIMARY KEY,      -- ULID（创建序 = 游标轴）
+    id                  TEXT PRIMARY KEY,      -- 可读实体 id（ADR-0070）
+    seq                 INTEGER NOT NULL,      -- 创建序 = 游标轴唯一真源
     project_id          TEXT NOT NULL,
     name                TEXT NOT NULL DEFAULT '',
     form                TEXT NOT NULL,         -- one-shot | resident
@@ -20,12 +21,14 @@ CREATE TABLE tasks (
     updated_at          TEXT NOT NULL,
     finished_at         TEXT NOT NULL DEFAULT ''
 );
-CREATE INDEX idx_tasks_project ON tasks (project_id, id);
+CREATE UNIQUE INDEX idx_tasks_seq ON tasks(seq);
+CREATE INDEX idx_tasks_project ON tasks (project_id, seq);
 CREATE INDEX idx_tasks_driving ON tasks (state);
 CREATE UNIQUE INDEX idx_tasks_name ON tasks (project_id, name) WHERE name != '' AND state != 'deleted';
 
 CREATE TABLE runs (
-    id              TEXT PRIMARY KEY,          -- ULID（创建序 = 游标轴）
+    id              TEXT PRIMARY KEY,          -- 可读实体 id（ADR-0070）
+    seq             INTEGER NOT NULL,          -- 创建序 = 游标轴唯一真源
     task_id         TEXT NOT NULL,
     project_id      TEXT NOT NULL,
     state           TEXT NOT NULL,             -- pending | running | stopping | stopped | failed
@@ -39,7 +42,8 @@ CREATE TABLE runs (
     started_at      TEXT NOT NULL DEFAULT '',
     finished_at     TEXT NOT NULL DEFAULT ''
 );
-CREATE INDEX idx_runs_task ON runs (task_id, id);
+CREATE UNIQUE INDEX idx_runs_seq ON runs(seq);
+CREATE INDEX idx_runs_task ON runs (task_id, seq);
 CREATE INDEX idx_runs_driving ON runs (state);
 CREATE INDEX idx_runs_deadline ON runs (deadline) WHERE deadline != '';
 

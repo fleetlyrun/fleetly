@@ -62,19 +62,26 @@ func (svc *InvitationsService) CreateInvitation(ctx context.Context, req *identi
 		return nil, apperr.New("E_INTERNAL", "invitation material generation failed")
 	}
 	inv := &invitation.Invitation{
-		ID: newID(), TokenSHA256: material.SHA256, TeamID: teamID, RoleID: req.GetRoleId(),
+		TokenSHA256: material.SHA256, TeamID: teamID, RoleID: req.GetRoleId(),
 		CreatedBy: authn.ActorFromContext(ctx),
 		ExpiresAt: stateFormatTime(svc.s.DB.Clock().Now().Add(ttl)),
 	}
+	invitationCreatedEvents := []eventFact{identityEvent("invitation.created", "invitation", inv.ID, invitationCreatedPayload{Role: inv.RoleID})}
 	err = svc.s.commit(ctx, writeFact{
 		// roleInTeam（Q-16 同族面）：邀请绑 team+role——不一致的邀请兑换出
 		// 跨 Team membership，同洞同修。
 		checks: []acceptanceCheck{svc.s.teamExists(teamID), svc.s.roleInTeam(req.GetRoleId(), teamID)},
 		write: func(ctx context.Context, tx *sql.Tx) error {
-			return svc.s.Invitations.Create(ctx, tx, inv)
+			if err := svc.s.Invitations.Create(ctx, tx, inv); err != nil {
+				return err
+			}
+			invitationCreatedEvents[0].id = inv.ID
+			return nil
 		},
-		events: []eventFact{identityEvent("invitation.created", "invitation", inv.ID, invitationCreatedPayload{Role: inv.RoleID})},
-		audits: []*audit.Entry{identityAudit(ctx, "invitation.create", "invitation/"+inv.ID, "", inv.ExpiresAt)},
+		events: invitationCreatedEvents,
+		auditsFrom: func() []*audit.Entry {
+			return []*audit.Entry{identityAudit(ctx, "invitation.create", "invitation/"+inv.ID, "", inv.ExpiresAt)}
+		},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "invitation")
@@ -128,13 +135,15 @@ func (svc *InvitationsService) AcceptInvitation(ctx context.Context, req *identi
 		return nil, invalidInvitation("invitation expired")
 	}
 
-	u := &user.User{ID: newID(), Name: req.GetUserName()}
-	m := &membership.Membership{ID: newID(), UserID: u.ID, TeamID: inv.TeamID, RoleID: inv.RoleID}
+	u := &user.User{Name: req.GetUserName()}
+	m := &membership.Membership{UserID: u.ID, TeamID: inv.TeamID, RoleID: inv.RoleID}
 	err = svc.s.commit(ctx, writeFact{
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			if err := svc.s.Users.Create(ctx, tx, u); err != nil {
 				return err
 			}
+			// membership 归属事务内铸出的用户 id（ADR-0070）。
+			m.UserID = u.ID
 			if err := svc.s.Memberships.Create(ctx, tx, m); err != nil {
 				return err
 			}
@@ -142,7 +151,7 @@ func (svc *InvitationsService) AcceptInvitation(ctx context.Context, req *identi
 		},
 		events: []eventFact{identityEvent("invitation.accepted", "invitation", inv.ID, invitationAcceptedPayload{User: u.Name})},
 		audits: []*audit.Entry{{
-			ID: newID(), Actor: "user:" + u.Name, Source: audit.SourceManual,
+			Actor: "user:" + u.Name, Source: audit.SourceManual,
 			Action: "invitation.accept", Resource: "invitation/" + inv.ID,
 			AfterFP: u.Name,
 		}},

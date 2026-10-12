@@ -6,12 +6,14 @@ package secret
 import (
 	"context"
 
+	"github.com/fleetlyrun/fleetly/internal/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
 // Secret 是聚合行（ciphertext 是 age 信封；fingerprint 供回显对账）。
 type Secret struct {
 	ID          string
+	Seq         int64
 	ProjectID   string
 	Name        string
 	Ciphertext  []byte
@@ -46,10 +48,18 @@ func (r *Repo) Upsert(ctx context.Context, run state.Runner, s *Secret) error {
 		return err
 	}
 	s.CreatedAt, s.UpdatedAt = now, now
-	_, err := run.ExecContext(ctx, `
-		INSERT INTO secrets (id, project_id, name, ciphertext, fingerprint, created_at, updated_at, deleted_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, '')`,
-		s.ID, s.ProjectID, s.Name, s.Ciphertext, s.Fingerprint, s.CreatedAt, s.UpdatedAt)
+	seq, err := state.NextSeq(ctx, run, "secrets")
+	if err != nil {
+		return err
+	}
+	s.Seq = seq
+	if s.ID == "" {
+		s.ID = entityid.Join("sec", seq)
+	}
+	_, err = run.ExecContext(ctx, `
+		INSERT INTO secrets (id, seq, project_id, name, ciphertext, fingerprint, created_at, updated_at, deleted_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, '')`,
+		s.ID, s.Seq, s.ProjectID, s.Name, s.Ciphertext, s.Fingerprint, s.CreatedAt, s.UpdatedAt)
 	return err
 }
 
@@ -57,7 +67,7 @@ func (r *Repo) Upsert(ctx context.Context, run state.Runner, s *Secret) error {
 // ListFingerprints）。
 func (r *Repo) GetByName(ctx context.Context, run state.Runner, projectID, name string) (*Secret, error) {
 	row := run.QueryRowContext(ctx, `
-		SELECT id, project_id, name, ciphertext, fingerprint, created_at, updated_at, deleted_at
+		SELECT id, seq, project_id, name, ciphertext, fingerprint, created_at, updated_at, deleted_at
 		FROM secrets WHERE project_id = ? AND name = ? AND deleted_at = ''`, projectID, name)
 	return scanSecret(row.Scan)
 }
@@ -71,7 +81,7 @@ func (r *Repo) ListFingerprints(ctx context.Context, run state.Runner, projectID
 		limit = defaultListLimit
 	}
 	q := `
-		SELECT id, project_id, name, NULL, fingerprint, created_at, updated_at, deleted_at
+		SELECT id, seq, project_id, name, NULL, fingerprint, created_at, updated_at, deleted_at
 		FROM secrets WHERE project_id = ? AND deleted_at = ''`
 	args := []any{projectID}
 	if afterName != "" {
@@ -101,7 +111,7 @@ func (r *Repo) ListFingerprints(ctx context.Context, run state.Runner, projectID
 // 消费。
 func (r *Repo) ListAll(ctx context.Context, run state.Runner) ([]Secret, error) {
 	rows, err := run.QueryContext(ctx, `
-		SELECT id, project_id, name, ciphertext, fingerprint, created_at, updated_at, deleted_at
+		SELECT id, seq, project_id, name, ciphertext, fingerprint, created_at, updated_at, deleted_at
 		FROM secrets`)
 	if err != nil {
 		return nil, err
@@ -146,7 +156,7 @@ func (r *Repo) SoftDelete(ctx context.Context, run state.Runner, projectID, name
 
 func scanSecret(scan func(dest ...any) error) (*Secret, error) {
 	var s Secret
-	err := scan(&s.ID, &s.ProjectID, &s.Name, &s.Ciphertext, &s.Fingerprint,
+	err := scan(&s.ID, &s.Seq, &s.ProjectID, &s.Name, &s.Ciphertext, &s.Fingerprint,
 		&s.CreatedAt, &s.UpdatedAt, &s.DeletedAt)
 	if err != nil {
 		return nil, state.MapScanErr(err)

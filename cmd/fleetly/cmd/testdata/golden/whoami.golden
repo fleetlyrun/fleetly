@@ -1,4 +1,4 @@
-token bootstrap (id <ULID>)
+token bootstrap (id tok-1)
 user (no user attached)
 role owner
 team default

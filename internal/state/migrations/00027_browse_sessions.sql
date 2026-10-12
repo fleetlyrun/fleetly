@@ -6,6 +6,7 @@
 -- 行（非 tombstone：会话非资源行，无软删语义）。
 CREATE TABLE browse_sessions (
   id          TEXT PRIMARY KEY,
+  seq         INTEGER NOT NULL,
   project_id  TEXT NOT NULL,
   database_id TEXT NOT NULL,
   engine      TEXT NOT NULL,
@@ -13,6 +14,7 @@ CREATE TABLE browse_sessions (
   created_at  TEXT NOT NULL,
   expires_at  TEXT NOT NULL
 );
+CREATE UNIQUE INDEX idx_browse_sessions_seq ON browse_sessions(seq);
 CREATE INDEX idx_browse_sessions_database ON browse_sessions (database_id);
 CREATE INDEX idx_browse_sessions_project ON browse_sessions (project_id);
 

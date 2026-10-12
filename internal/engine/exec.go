@@ -17,10 +17,12 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/fleetlyrun/fleetly/internal/model/entityid"
+
 	"github.com/fleetlyrun/fleetly/internal/capability"
-	"github.com/oklog/ulid/v2"
 )
 
 // exec 限额常量（ADR-0049 决策 4；编译期常量先例 = maxAppsPerProject 族）。
@@ -132,6 +134,7 @@ type execDomain struct {
 	mu       sync.Mutex
 	sessions map[string]*execSession
 	relays   map[string]*relayConn // 平台节点 ID → 在连中继
+	execSeq  atomic.Uint64         // 会话序号（id = exec-<n>，ADR-0070 独立类）
 }
 
 // relayConn 是一条在连节点中继。
@@ -210,7 +213,8 @@ func (e *Engine) CreateSession(ctx context.Context, in CreateExecInput) (*ExecSe
 
 	s := &execSession{
 		info: ExecSessionInfo{
-			ID:         ulid.Make().String(),
+			// 会话是内存活体（不落库）：进程内单调序号即身份（ADR-0070）。
+			ID:         entityid.Join("exec", int64(e.exec.execSeq.Add(1))), //nolint:gosec // 序号域内非负
 			TeamID:     in.TeamID,
 			AppID:      in.AppID,
 			Process:    in.Process,

@@ -6,6 +6,7 @@ package channel
 import (
 	"context"
 
+	"github.com/fleetlyrun/fleetly/internal/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
@@ -18,6 +19,7 @@ const (
 // Channel 是一行通知通道。
 type Channel struct {
 	ID               string
+	Seq              int64
 	Name             string
 	Kind             string
 	ConfigCiphertext []byte // age 信封载荷
@@ -35,16 +37,24 @@ type Repo struct {
 // New 构造仓储。
 func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 
-const selectCols = "id, name, kind, config_ciphertext, enabled, last_failure, created_at, updated_at"
+const selectCols = "id, seq, name, kind, config_ciphertext, enabled, last_failure, created_at, updated_at"
 
 // Create 落一条通道；重名 → ErrAlreadyExists（name 唯一索引把守）。
 func (r *Repo) Create(ctx context.Context, run state.Runner, c *Channel) error {
+	seq, err := state.NextSeq(ctx, run, "notification_channels")
+	if err != nil {
+		return err
+	}
+	c.Seq = seq
+	if c.ID == "" {
+		c.ID = entityid.Join(c.Name, seq)
+	}
 	c.CreatedAt = state.FormatTime(r.clock.Now())
 	c.UpdatedAt = c.CreatedAt
-	_, err := run.ExecContext(ctx, `
-		INSERT INTO notification_channels (id, name, kind, config_ciphertext, enabled, last_failure, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, '', ?, ?)`,
-		c.ID, c.Name, c.Kind, c.ConfigCiphertext, boolInt(c.Enabled), c.CreatedAt, c.UpdatedAt)
+	_, err = run.ExecContext(ctx, `
+		INSERT INTO notification_channels (id, seq, name, kind, config_ciphertext, enabled, last_failure, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, '', ?, ?)`,
+		c.ID, c.Seq, c.Name, c.Kind, c.ConfigCiphertext, boolInt(c.Enabled), c.CreatedAt, c.UpdatedAt)
 	if state.IsUniqueViolation(err) {
 		return state.ErrAlreadyExists
 	}
@@ -59,12 +69,12 @@ func (r *Repo) Get(ctx context.Context, run state.Runner, id string) (*Channel, 
 
 // ListEnabled 列启用通道（派发面）。
 func (r *Repo) ListEnabled(ctx context.Context, run state.Runner) ([]Channel, error) {
-	return r.listWhere(ctx, run, "WHERE enabled = 1 ORDER BY id")
+	return r.listWhere(ctx, run, "WHERE enabled = 1 ORDER BY seq")
 }
 
 // ListAll 列全部通道（管理面）。
 func (r *Repo) ListAll(ctx context.Context, run state.Runner) ([]Channel, error) {
-	return r.listWhere(ctx, run, "ORDER BY id")
+	return r.listWhere(ctx, run, "ORDER BY seq")
 }
 
 func (r *Repo) listWhere(ctx context.Context, run state.Runner, where string, args ...any) ([]Channel, error) {
@@ -111,7 +121,7 @@ func (r *Repo) Delete(ctx context.Context, run state.Runner, id string) error {
 func scanChannel(row interface{ Scan(dest ...any) error }) (*Channel, error) {
 	var c Channel
 	var enabled int
-	err := row.Scan(&c.ID, &c.Name, &c.Kind, &c.ConfigCiphertext, &enabled, &c.LastFailure, &c.CreatedAt, &c.UpdatedAt)
+	err := row.Scan(&c.ID, &c.Seq, &c.Name, &c.Kind, &c.ConfigCiphertext, &enabled, &c.LastFailure, &c.CreatedAt, &c.UpdatedAt)
 	if state.MapScanErr(err) == state.ErrNotFound {
 		return nil, state.ErrNotFound
 	}

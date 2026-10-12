@@ -1,6 +1,6 @@
 {
   "hook": {
-    "app_id": "<ULID>",
+    "app_id": "web-1",
     "repo": "https://github.com/acme/shop.git",
     "branch": "main",
     "dockerfile": "Dockerfile",

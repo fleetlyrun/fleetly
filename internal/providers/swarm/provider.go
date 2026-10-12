@@ -29,6 +29,10 @@ import (
 type Provider struct {
 	cli *client.Client
 
+	// mintNodePlatformID 是平台节点 ID 铸造闭包（装配期经 SetNodeIDMinter
+	// 注入——铸造权在平台 state 层 seq 单源，ADR-0070；nil = 锚定跳过）。
+	mintNodePlatformID func(ctx context.Context) (string, error)
+
 	// Ensure no-op 断路器账本（runtime.go lastIssued 组注释：服务名 →
 	// 最近确认服务端持有的 canonical spec JSON）。互斥保护：Ensure 来自
 	// 各部署单写者环，可并发进入同一 Provider。
@@ -93,6 +97,11 @@ func New(ctx context.Context, host string) (*Provider, error) {
 		return nil, fmt.Errorf("swarm provider: docker client: %w", err)
 	}
 	return &Provider{cli: cli}, nil
+}
+
+// SetNodeIDMinter 注入平台节点 ID 铸造闭包（capability.NodeIDMinter）。
+func (p *Provider) SetNodeIDMinter(fn func(ctx context.Context) (string, error)) {
+	p.mintNodePlatformID = fn
 }
 
 // Close 释放底层连接。

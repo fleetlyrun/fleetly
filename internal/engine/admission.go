@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/oklog/ulid/v2"
+	"github.com/fleetlyrun/fleetly/internal/model/entityid"
 
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/state/deployment"
@@ -165,7 +165,11 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 		if err != nil {
 			return err
 		}
-		newID := ulid.Make().String()
+		dseq, err := state.NextSeq(ctx, tx, "deployments")
+		if err != nil {
+			return err
+		}
+		newID := entityid.Derive(req.AppID, "d", dseq)
 
 		// 4. 显式 supersede 抢占在途（至多一条；观察窗与发布权即时移交——
 		// 在途 Generation 由本新 Deployment 收口）。被抢占部署锚定的

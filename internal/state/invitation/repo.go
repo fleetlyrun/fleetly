@@ -5,12 +5,14 @@ package invitation
 import (
 	"context"
 
+	"github.com/fleetlyrun/fleetly/internal/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
 // Invitation 是聚合行（ConsumedAt 空串=未使用；ExpiresAt 是 RFC3339）。
 type Invitation struct {
 	ID          string
+	Seq         int64
 	TokenSHA256 string
 	TeamID      string
 	RoleID      string
@@ -30,18 +32,26 @@ func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 
 // Create 落一行。
 func (r *Repo) Create(ctx context.Context, run state.Runner, inv *Invitation) error {
+	seq, err := state.NextSeq(ctx, run, "invitations")
+	if err != nil {
+		return err
+	}
+	inv.Seq = seq
+	if inv.ID == "" {
+		inv.ID = entityid.Join("inv", seq)
+	}
 	inv.CreatedAt = state.FormatTime(r.clock.Now())
-	_, err := run.ExecContext(ctx, `
-		INSERT INTO invitations (id, token_sha256, team_id, role_id, created_by, expires_at, consumed_at, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, '', ?)`,
-		inv.ID, inv.TokenSHA256, inv.TeamID, inv.RoleID, inv.CreatedBy, inv.ExpiresAt, inv.CreatedAt)
+	_, err = run.ExecContext(ctx, `
+		INSERT INTO invitations (id, seq, token_sha256, team_id, role_id, created_by, expires_at, consumed_at, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, '', ?)`,
+		inv.ID, inv.Seq, inv.TokenSHA256, inv.TeamID, inv.RoleID, inv.CreatedBy, inv.ExpiresAt, inv.CreatedAt)
 	return err
 }
 
 // GetBySHA256 按明文摘要查行（accept 面的查询键）。
 func (r *Repo) GetBySHA256(ctx context.Context, run state.Runner, sha string) (*Invitation, error) {
 	row := run.QueryRowContext(ctx, `
-		SELECT id, token_sha256, team_id, role_id, created_by, expires_at, consumed_at, created_at
+		SELECT id, seq, token_sha256, team_id, role_id, created_by, expires_at, consumed_at, created_at
 		FROM invitations WHERE token_sha256 = ?`, sha)
 	return scanOne(row.Scan)
 }
@@ -49,8 +59,8 @@ func (r *Repo) GetBySHA256(ctx context.Context, run state.Runner, sha string) (*
 // List 返回全部邀请（ID 序稳定；含已消费/已过期——状态是可见事实）。
 func (r *Repo) List(ctx context.Context, run state.Runner) ([]Invitation, error) {
 	rows, err := run.QueryContext(ctx, `
-		SELECT id, token_sha256, team_id, role_id, created_by, expires_at, consumed_at, created_at
-		FROM invitations ORDER BY id`)
+		SELECT id, seq, token_sha256, team_id, role_id, created_by, expires_at, consumed_at, created_at
+		FROM invitations ORDER BY seq`)
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +97,7 @@ func (r *Repo) MarkConsumed(ctx context.Context, run state.Runner, id string) er
 
 func scanOne(scan func(dest ...any) error) (*Invitation, error) {
 	var inv Invitation
-	if err := scan(&inv.ID, &inv.TokenSHA256, &inv.TeamID, &inv.RoleID, &inv.CreatedBy,
+	if err := scan(&inv.ID, &inv.Seq, &inv.TokenSHA256, &inv.TeamID, &inv.RoleID, &inv.CreatedBy,
 		&inv.ExpiresAt, &inv.ConsumedAt, &inv.CreatedAt); err != nil {
 		return nil, state.MapScanErr(err)
 	}

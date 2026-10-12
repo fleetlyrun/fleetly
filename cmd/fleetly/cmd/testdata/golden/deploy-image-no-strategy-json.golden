@@ -1,9 +1,10 @@
 {
   "deployment": {
-    "id": "<ULID>",
-    "app_id": "<ULID>",
-    "from_revision": "<ULID>",
-    "to_revision": "<ULID>",
+    "id": "bgapp-5-d28",
+    "seq": "28",
+    "app_id": "bgapp-5",
+    "from_revision": "bgapp-5-r1",
+    "to_revision": "bgapp-5-r2",
     "state": "queued",
     "generation": "2",
     "idempotency_key": "bgimg-1",

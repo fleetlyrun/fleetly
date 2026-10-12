@@ -118,37 +118,51 @@ func (svc *ProjectsService) CreateProject(ctx context.Context, req *structurev1.
 	if req.GetName() == "" {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "name: must not be empty")
 	}
+	if err := validName("name", req.GetName()); err != nil {
+		return nil, err
+	}
 	// Team 轴（ADR-0035 决策 5）：目标 Team 缺省 = 调用方 Team；显式他队
 	// 目标仅平台 owner 可（行级落子面）。
 	teamID, err := resolveTargetTeam(ctx, req.GetTeamId())
 	if err != nil {
 		return nil, err
 	}
-	p := &project.Project{ID: newID(), Name: req.GetName(), TeamID: teamID}
+	p := &project.Project{Name: req.GetName(), TeamID: teamID}
 	// default 网络随项目出生（F-C，2026-10-03 staging 实证）：compose 引用
 	// `networks: [default]` 而表行缺失时会静默半物化——swarm 侧 overlay 由
 	// workload Ensure 建了，networks 表（受管 Proxy 挂靠真源）却无行，traefik
 	// 永不挂靠该网 → 路由 502。出生即建行，引用面与挂靠面同源；overlay
 	// 本身仍随首个 workload 物化（表行不建网，无空跑）。
-	net := &networkrepo.Network{ID: newID(), ProjectID: p.ID, Name: "default"}
+	net := &networkrepo.Network{ProjectID: p.ID, Name: "default"}
 	// Team 轴接实（ADR-0028）：归属 Team 必须存在——Project 落在不存在
 	// 的 Team 上会让域解析（engine projectTeam）悬空。
+	events := []eventFact{
+		structureEvent(eventProjectCreated, "project", p.ID, ""),
+		structureEvent(eventNetworkCreated, "network", net.Name, net.ProjectID),
+	}
 	err = svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{svc.s.teamExists(p.TeamID)},
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			if err := svc.s.Projects.Create(ctx, tx, p); err != nil {
 				return err
 			}
-			return svc.s.Networks.Create(ctx, tx, net)
+			// default 网络归属事务内铸出的项目 id（ADR-0070）。
+			net.ProjectID = p.ID
+			if err := svc.s.Networks.Create(ctx, tx, net); err != nil {
+				return err
+			}
+			events[0].id = p.ID
+			events[0].payload, _ = json.Marshal(structureEventPayload{ID: p.ID})                      //nolint:errcheck // 结构体字段恒可序列化
+			events[1].payload, _ = json.Marshal(structureEventPayload{ID: net.Name, ProjectID: p.ID}) //nolint:errcheck // 结构体字段恒可序列化
+			return nil
 		},
-		events: []eventFact{
-			structureEvent(eventProjectCreated, "project", p.ID, ""),
-			structureEvent(eventNetworkCreated, "network", net.Name, net.ProjectID),
+		events: events,
+		auditsFrom: func() []*audit.Entry {
+			return []*audit.Entry{{
+				Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "project.create",
+				Resource: "project/" + p.ID, AfterFP: p.Name,
+			}}
 		},
-		audits: []*audit.Entry{{
-			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "project.create",
-			Resource: "project/" + p.ID, AfterFP: p.Name,
-		}},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "project")
@@ -181,9 +195,9 @@ func (svc *ProjectsService) ListProjects(ctx context.Context, req *structurev1.L
 	limit := listLimit(req.GetLimit())
 	var list []project.Project
 	if owner {
-		list, err = svc.s.Projects.ListPage(ctx, svc.s.DB.Runner(), req.GetAfterProjectId(), limit)
+		list, err = svc.s.Projects.ListPage(ctx, svc.s.DB.Runner(), req.GetAfterProjectSeq(), limit)
 	} else {
-		list, err = svc.s.Projects.ListByTeamPage(ctx, svc.s.DB.Runner(), teamID, req.GetAfterProjectId(), limit)
+		list, err = svc.s.Projects.ListByTeamPage(ctx, svc.s.DB.Runner(), teamID, req.GetAfterProjectSeq(), limit)
 	}
 	if err != nil {
 		return nil, mapStateError(err, "project")
@@ -243,7 +257,7 @@ func (svc *ProjectsService) DeleteProject(ctx context.Context, req *structurev1.
 		},
 		events: []eventFact{structureEvent(eventProjectDeleted, "project", req.GetId(), "")},
 		audits: []*audit.Entry{{
-			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "project.delete",
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "project.delete",
 			Resource: "project/" + req.GetId(),
 		}},
 	})
@@ -263,6 +277,9 @@ type AppsService struct {
 }
 
 func (svc *AppsService) CreateApp(ctx context.Context, req *structurev1.CreateAppRequest) (*structurev1.CreateAppResponse, error) {
+	if err := validName("name", req.GetName()); err != nil {
+		return nil, err
+	}
 	if req.GetProjectId() == "" || req.GetName() == "" {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "project_id and name: must not be empty")
 	}
@@ -271,7 +288,7 @@ func (svc *AppsService) CreateApp(ctx context.Context, req *structurev1.CreateAp
 	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}
-	a := &app.App{ID: newID(), ProjectID: req.GetProjectId(), Name: req.GetName()}
+	a := &app.App{ProjectID: req.GetProjectId(), Name: req.GetName()}
 	// 父资源存活校验（批 0 复核）：apps.project_id 无 FK，不校验则对
 	// 不存在/已删 project 建 App 直接成功，活 App 落已删项目、路由照发
 	// ——DeleteProject 守卫的"窗口闭合"承诺以此对偶守卫成立。数量配额
@@ -285,10 +302,12 @@ func (svc *AppsService) CreateApp(ctx context.Context, req *structurev1.CreateAp
 			return svc.s.Apps.Create(ctx, tx, a)
 		},
 		events: []eventFact{structureEvent(eventAppCreated, "app", a.ID, a.ProjectID)},
-		audits: []*audit.Entry{{
-			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "app.create",
-			Resource: "app/" + a.ID, AfterFP: a.Name,
-		}},
+		auditsFrom: func() []*audit.Entry {
+			return []*audit.Entry{{
+				Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "app.create",
+				Resource: "app/" + a.ID, AfterFP: a.Name,
+			}}
+		},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "app")
@@ -375,7 +394,7 @@ func (svc *AppsService) ListApps(ctx context.Context, req *structurev1.ListAppsR
 		return nil, err
 	}
 	list, err := svc.s.Apps.ListByProjectPage(ctx, svc.s.DB.Runner(),
-		req.GetProjectId(), req.GetAfterAppId(), listLimit(req.GetLimit()))
+		req.GetProjectId(), req.GetAfterAppSeq(), listLimit(req.GetLimit()))
 	if err != nil {
 		return nil, mapStateError(err, "app")
 	}
@@ -472,7 +491,7 @@ func (svc *AppsService) DeleteApp(ctx context.Context, req *structurev1.DeleteAp
 		},
 		events: []eventFact{structureEvent(eventAppDeleted, "app", req.GetId(), appRow.ProjectID)},
 		audits: []*audit.Entry{{
-			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "app.delete",
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "app.delete",
 			Resource: "app/" + req.GetId(),
 		}},
 	})
@@ -504,7 +523,7 @@ func (svc *AppsService) recordTeardownAbort(ctx context.Context, id, projectID s
 	err := svc.s.commit(ctx, writeFact{
 		events: []eventFact{{name: eventAppTeardownAborted, aggregate: "app", id: id, payload: payload}},
 		audits: []*audit.Entry{{
-			ID: newID(), Source: audit.SourceSystem, Action: "app.teardown_abort",
+			Source: audit.SourceSystem, Action: "app.teardown_abort",
 			Resource: "app/" + id, AfterFP: fmt.Sprintf("active_deployments=%d", active),
 		}},
 	})
@@ -551,7 +570,7 @@ func (svc *SecretsService) PutSecret(ctx context.Context, req *structurev1.PutSe
 		return nil, mapStateError(err, "secret")
 	}
 	row := &secret.Secret{
-		ID: newID(), ProjectID: req.GetProjectId(), Name: req.GetName(),
+		ProjectID: req.GetProjectId(), Name: req.GetName(),
 		Ciphertext: sealed.Ciphertext, Fingerprint: sealed.Fingerprint,
 	}
 	// 父资源存活校验（批 0 复核，同族面）：Project 级材料不得落在
@@ -563,7 +582,7 @@ func (svc *SecretsService) PutSecret(ctx context.Context, req *structurev1.PutSe
 		},
 		events: []eventFact{structureEvent(eventSecretUpdated, "secret", row.Name, row.ProjectID)},
 		audits: []*audit.Entry{{
-			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "secret.put",
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "secret.put",
 			Resource: "secret/" + row.Name, AfterFP: row.Fingerprint,
 		}},
 	})
@@ -601,7 +620,7 @@ func (svc *SecretsService) DeleteSecret(ctx context.Context, req *structurev1.De
 		},
 		events: []eventFact{structureEvent(eventSecretDeleted, "secret", req.GetName(), req.GetProjectId())},
 		audits: []*audit.Entry{{
-			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "secret.delete",
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "secret.delete",
 			Resource: "secret/" + req.GetName(),
 		}},
 	})
@@ -646,7 +665,7 @@ func (svc *ConfigsService) PutConfig(ctx context.Context, req *structurev1.PutCo
 	}
 	// 数量配额按"Project 内配置名数"计（新名才占新位；同名 put 是新版本）
 	// ——受理位检查（事务内读，ADR-0024：与写同事务，无先读后写 TOCTOU）。
-	row := &configrepo.Config{ID: newID(), ProjectID: req.GetProjectId(), Name: req.GetName(), Content: []byte(req.GetContent())}
+	row := &configrepo.Config{ProjectID: req.GetProjectId(), Name: req.GetName(), Content: []byte(req.GetContent())}
 	err := svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{
 			svc.s.parentProjectAlive(req.GetProjectId()),
@@ -657,7 +676,7 @@ func (svc *ConfigsService) PutConfig(ctx context.Context, req *structurev1.PutCo
 		},
 		events: []eventFact{structureEvent(eventConfigUpdated, "config", row.Name, row.ProjectID)},
 		audits: []*audit.Entry{{
-			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "config.put",
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "config.put",
 			Resource: "config/" + row.Name, AfterFP: material.Fingerprint(row.Content),
 		}},
 	})
@@ -733,7 +752,7 @@ func (svc *SharedVariablesService) PutSharedVariable(ctx context.Context, req *s
 		return nil, err
 	}
 	row := &sharedvariable.SharedVariable{
-		ID: newID(), ProjectID: req.GetProjectId(), Name: req.GetName(), Value: req.GetValue(),
+		ProjectID: req.GetProjectId(), Name: req.GetName(), Value: req.GetValue(),
 	}
 	// 数量配额按"Project 内活跃名数"计（同名 put 是覆盖不占新位）——
 	// 受理位检查（事务内读，ADR-0024 同款）。
@@ -747,7 +766,7 @@ func (svc *SharedVariablesService) PutSharedVariable(ctx context.Context, req *s
 		},
 		events: []eventFact{structureEvent(eventVariableUpdated, "variable", row.Name, row.ProjectID)},
 		audits: []*audit.Entry{{
-			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "variable.put",
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "variable.put",
 			Resource: "variable/" + row.Name, AfterFP: row.Value,
 		}},
 	})
@@ -791,7 +810,7 @@ func (svc *SharedVariablesService) DeleteSharedVariable(ctx context.Context, req
 		},
 		events: []eventFact{structureEvent(eventVariableDeleted, "variable", req.GetName(), req.GetProjectId())},
 		audits: []*audit.Entry{{
-			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "variable.delete",
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "variable.delete",
 			Resource: "variable/" + req.GetName(),
 		}},
 	})
@@ -894,6 +913,9 @@ type VolumesService struct {
 }
 
 func (svc *VolumesService) CreateVolume(ctx context.Context, req *structurev1.CreateVolumeRequest) (*structurev1.CreateVolumeResponse, error) {
+	if err := validName("name", req.GetName()); err != nil {
+		return nil, err
+	}
 	if req.GetProjectId() == "" || req.GetName() == "" {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "project_id and name: must not be empty")
 	}
@@ -902,7 +924,7 @@ func (svc *VolumesService) CreateVolume(ctx context.Context, req *structurev1.Cr
 		return nil, err
 	}
 	row := &volume.Volume{
-		ID: newID(), ProjectID: req.GetProjectId(), Name: req.GetName(),
+		ProjectID: req.GetProjectId(), Name: req.GetName(),
 		PinnedNodeID: req.GetPinnedNodeId(),
 	}
 	// 父资源存活校验（批 0 复核，同族面）：Project 级材料不得落在
@@ -914,7 +936,7 @@ func (svc *VolumesService) CreateVolume(ctx context.Context, req *structurev1.Cr
 		},
 		events: []eventFact{structureEvent(eventVolumeCreated, "volume", row.Name, row.ProjectID)},
 		audits: []*audit.Entry{{
-			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "volume.create",
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "volume.create",
 			Resource: "volume/" + row.Name, AfterFP: row.PinnedNodeID,
 		}},
 	})
@@ -955,7 +977,7 @@ func (svc *VolumesService) DeleteVolume(ctx context.Context, req *structurev1.De
 		},
 		events: []eventFact{structureEvent(eventVolumeDeleted, "volume", row.Name, row.ProjectID)},
 		audits: []*audit.Entry{{
-			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "volume.delete",
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "volume.delete",
 			Resource: "volume/" + row.Name,
 		}},
 	})
@@ -995,7 +1017,7 @@ func (s *Services) volumeReferences(ctx context.Context, vol *volume.Volume) ([]
 			}
 		}
 	}
-	databases, err := s.Databases.ListByProject(ctx, s.DB.Runner(), vol.ProjectID, "", 200)
+	databases, err := s.Databases.ListByProject(ctx, s.DB.Runner(), vol.ProjectID, 0, 200)
 	if err != nil {
 		return nil, mapStateError(err, "database")
 	}

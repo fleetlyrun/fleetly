@@ -3,6 +3,7 @@
 -- host+path 活跃唯一。
 CREATE TABLE routes (
   id         TEXT PRIMARY KEY,
+  seq        INTEGER NOT NULL,
   project_id TEXT NOT NULL,
   host       TEXT NOT NULL,
   path       TEXT NOT NULL DEFAULT '',
@@ -15,6 +16,7 @@ CREATE TABLE routes (
   updated_at TEXT NOT NULL,
   deleted_at TEXT
 );
+CREATE UNIQUE INDEX idx_routes_seq ON routes(seq);
 CREATE UNIQUE INDEX idx_routes_project_host_path ON routes(project_id, host, path) WHERE deleted_at = '';
 CREATE INDEX idx_routes_app ON routes(app_id);
 

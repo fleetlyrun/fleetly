@@ -32,7 +32,7 @@ type NodesService struct {
 
 func (svc *NodesService) ListNodes(ctx context.Context, req *runtimev1.ListNodesRequest) (*runtimev1.ListNodesResponse, error) {
 	list, err := svc.s.Nodes.ListPage(ctx, svc.s.DB.Runner(),
-		req.GetAfterNodeId(), listLimit(req.GetLimit()))
+		req.GetAfterNodeSeq(), listLimit(req.GetLimit()))
 	if err != nil {
 		return nil, mapStateError(err, "node")
 	}
@@ -64,7 +64,7 @@ func (svc *NodesService) EnrollNode(ctx context.Context, req *runtimev1.EnrollNo
 	// 后做不损失语义（读取意图本身敏感）。
 	if err := svc.s.commit(ctx, writeFact{
 		audits: []*audit.Entry{{
-			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
 			Action: action, Resource: "cluster/join-material",
 		}},
 	}); err != nil {
@@ -127,7 +127,7 @@ func (svc *NodesService) nodeAdmin(ctx context.Context, nodeID, action string, o
 	}
 	return svc.s.commit(ctx, writeFact{
 		audits: []*audit.Entry{{
-			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
 			Action: action, Resource: "node/" + nodeID,
 		}},
 	})
@@ -166,7 +166,7 @@ func (svc *RoutesService) CreateRoute(ctx context.Context, req *proxyv1.CreateRo
 		tlsMode = "auto"
 	}
 	row := &route.Route{
-		ID: newID(), ProjectID: req.GetProjectId(), Host: req.GetHost(), Path: req.GetPath(),
+		ProjectID: req.GetProjectId(), Host: req.GetHost(), Path: req.GetPath(),
 		AppID: req.GetAppId(), Process: req.GetProcess(), Port: req.GetPort(),
 		Protocol: protocol, TLSMode: tlsMode,
 	}
@@ -181,10 +181,12 @@ func (svc *RoutesService) CreateRoute(ctx context.Context, req *proxyv1.CreateRo
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			return svc.s.Routes.Create(ctx, tx, row)
 		},
-		audits: []*audit.Entry{{
-			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "route.create",
-			Resource: "route/" + row.ID, AfterFP: row.Host,
-		}},
+		auditsFrom: func() []*audit.Entry {
+			return []*audit.Entry{{
+				Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "route.create",
+				Resource: "route/" + row.ID, AfterFP: row.Host,
+			}}
+		},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "route")
@@ -203,7 +205,7 @@ func (svc *RoutesService) ListRoutes(ctx context.Context, req *proxyv1.ListRoute
 		return nil, err
 	}
 	list, err := svc.s.Routes.ListPage(ctx, svc.s.DB.Runner(),
-		req.GetProjectId(), req.GetAfterRouteId(), listLimit(req.GetLimit()))
+		req.GetProjectId(), req.GetAfterRouteSeq(), listLimit(req.GetLimit()))
 	if err != nil {
 		return nil, mapStateError(err, "route")
 	}
@@ -227,7 +229,7 @@ func (svc *RoutesService) DeleteRoute(ctx context.Context, req *proxyv1.DeleteRo
 			return svc.s.Routes.SoftDelete(ctx, tx, req.GetId())
 		},
 		audits: []*audit.Entry{{
-			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "route.delete",
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "route.delete",
 			Resource: "route/" + req.GetId(),
 		}},
 	})

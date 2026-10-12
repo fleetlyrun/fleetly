@@ -1,4 +1,4 @@
-id: <ULID>
+id: nightly-report-1
 name: nightly-report
 state: active
 cron: 0 12 * * * (Asia/Tokyo)

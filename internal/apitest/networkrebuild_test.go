@@ -11,7 +11,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/oklog/ulid/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
@@ -152,7 +151,7 @@ func TestNetworkRebuildForeignAttachmentRefused(t *testing.T) {
 
 	// 外来附着（无平台标签）+ 失锚附着（App 轴指向不存在的行）。
 	ns := rebuildNS(t, h, projectID)
-	ghost := ulid.Make().String()
+	ghost := "fx-0001"
 	h.Runtime.SeedNetworkCarrier(ns, "default", false,
 		att("foreign-service", capability.NamespaceRef{}),
 		att("fleetly-app-ghost", capabilityNS(ns, ghost, "", "")),
@@ -183,7 +182,7 @@ func TestNetworkRebuildNotFound(t *testing.T) {
 	networks := structurev1.NewNetworksServiceClient(h.Conn)
 
 	_, err := networks.RebuildNetwork(owner, &structurev1.RebuildNetworkRequest{
-		ProjectId: ulid.Make().String(), Name: "default",
+		ProjectId: "fx-0002", Name: "default",
 	})
 	wantRebuildCode(t, err, codes.NotFound, "not found")
 

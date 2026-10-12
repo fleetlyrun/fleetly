@@ -472,7 +472,7 @@ export function DatabaseDetailPage({ projectId, databaseId }: { projectId: strin
       }
     >
       {/* 英雄卡对齐 App Detail（2026-10-12 走查：裸标题 + 页角动作钮与 Apps
-          形态脱队——头像/名称/徽标/ULID/动作组统一收卡。 */}
+          形态脱队——头像/名称/徽标/可读 id/动作组统一收卡。 */}
       <section className="mb-5 flex flex-wrap items-center gap-4 rounded-xl border bg-card p-5">
         <ProjectAvatar seed={databaseId} label={database?.name ?? databaseId} className="size-11 rounded-xl text-base" />
         <div className="min-w-0">

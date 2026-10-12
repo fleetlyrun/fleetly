@@ -1,6 +1,7 @@
 {
-  "id": "<ULID>",
-  "project_id": "<ULID>",
+  "id": "nightly-report-1",
+  "seq": "1",
+  "project_id": "shop-1",
   "name": "nightly-report",
   "state": "active",
   "cron": "0 12 * * *",

@@ -384,6 +384,36 @@ ADR-0042 落地（64f07f0..8b7f51d 七 commit，CI run 37218474928 六 job 全�
 - **走查脚注**：事件尾被 `database.backup_failed` 洪水覆盖（既有面，每拍轰炸，处置另行）——台账取证走 outbox 直查（manager 有 python3 无 sqlite3 CLI，`sqlite3.connect(file:…?mode=ro)` 可用）；`events list` 大窗翻页脚本要小心 limit 页帽（after_seq 游标语义不变）。
 - 残留清理：走查项目 staging-tpl 整体删除（routes→apps→project 序；apps delete 拆载体连带路由）；`template:dash:*` secret 行随项目材料保留（database: 凭证同口径——平台级命名空间，无级联清理面）。
 
+
+## ADR-0070 可读实体 id 上站序（重置重播种；2026-10-12 批）
+
+实体 id 全代换代（`<base>-<seq>`，如 `web-42`）+ goose 基础迁移原位修订（聚合表 +seq 列 + UNIQUE(seq)）——**goose 只加法纪律对本批破例为「原位修订」，代价是只接受全新库**：旧库迁移链与修订版 00001–00028 同号不同体，前滚即语义错位。因此本批上站不走换装走**重置**。
+
+### 重置序（顺序敏感）
+
+1. **前置备份**：`fleetly platform backup` + 受管卷 tar（升级序同款硬门——重置也要能回得去）。
+2. **先拆受管载体，再停平台**（顺序不可反——平台库先没则 Drift 失去判定真源，旧载体成无人认领的孤儿）：
+   ```sh
+   fleetly apps list --json          # 受管面盘点（torchwood/messaging 双栈 + dogfooding 面）
+   fleetly databases list --json     # 库载体（卷数据按"显式数据处置"语义本批随重置丢弃）
+   # 逐 app delete（teardown 拆载体）；node2 独立平台身份不受影响（ADR-0055 双平台分立）。
+   ```
+3. **清节点标记**：swarm 节点 label `fleetly.node.id` 残留会让新库把旧节点当已锚定（ID 是旧世代）——manager 上 `docker node update --label-rm fleetly.node.id <node>`；k3s 节点同（node2 走 runbooks/k3s-runtime.md 的 label 清除节）。
+4. **停服清库**：`systemctl stop fleetlyd` → 数据根 SQLite 文件移档归档（`mv fleetly.db fleetly.db.pre-adr70`）→ 保留 keys/（KEK 延续，secrets 信封语义不变）与 restic 仓（历史备份对象键是旧 id——只读历史，不与新生代冲突）。
+5. **起新版**：`systemctl start fleetlyd` → goose 全新前滚（修订版链）→ EnsureSeed 重种 → Bootstrap Token 重铸（tok-<seq> 新世代；`fleetly login` 重新粘）。
+6. **重播种清单**（torchwood 双栈为备份演练常备锚，必须重建）：
+   - projects：`torchwood`、`messaging`（新 id 形态 torchwood-1 / messaging-2——**id 随重建换代，旧脚本/文档里的 ULID 全作废**）。
+   - torchwood-pg：数据库模板重建（新凭证 Secret 落 `database:torchwood`）+ 数据重播种（60k 行种子 dump 走 F1.12 通道——**旧备份对象键在 restic 仓仍可 restore 旧世代数据**，若需演练数据延续走此路）。
+   - messaging：Redis 栈按 F2 记录同款重建。
+   - dogfooding 面：按 2026-10-02 记录的 compose 重新 deploy。
+7. **验收**：`fleetly projects list` 全列可读 id；`nodes list` 锚定序 seq 轴；event/audit 流Resource 列全可读；备份链一轮（新对象键 `<utc-ts>-<db-id>-<n>`）；走查记录新开"记录·四十八"。
+
+### 本批诚实边界
+
+- 不做存量 id 改写工具（rewrap 只管 KEK 不管 id）；本地开发旧库作废重建（`rm -rf <数据根>/fleetly.db*`）。
+- 旧世代 ULID 残留面（restic 仓对象键、归档 tar、本 runbook 历史记录里的 ULID 字面量）是历史事实，不迁移不追改。
+- buf breaking 对 origin/main 红一次（游标字段 after_*_id → after_*_seq 改名改型），commit 上 main 后自愈——零外部消费者核证（ADR-0047 先例）。
+
 ## 平台升级操作序（F2.3 工具化，2026-10-04）
 
 ADR-0015 升级序的完整落地形态：**Platform Backup 前置 → SIGTERM 排水 → 二进制替换 → 起新版（goose 前滚 + Managed Provider 逐个 reconcile + 解除只读，全自动）**。前置动词自 75a3d31 起可用（旧版无 platform 组时按 b4cfea0 节的手工快照纪律执行）。

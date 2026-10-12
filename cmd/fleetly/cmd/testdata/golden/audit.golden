@@ -1,17 +1,17 @@
 ID	ACTOR	SOURCE	ACTION	RESOURCE	BEFORE	AFTER	CREATED
-<ULID>	token:bootstrap	cli	invitation.create	invitation/<ULID>		2026-01-02T00:00:00Z	2026-01-01T00:00:00Z
-<ULID>	token:bootstrap	cli	invitation.create	invitation/<ULID>		2026-01-02T00:00:00Z	2026-01-01T00:00:00Z
-<ULID>	token:bootstrap	cli	token.create	token/<ULID>		alice-cli-json	2026-01-01T00:00:00Z
-<ULID>	token:bootstrap	cli	token.create	token/<ULID>		alice-cli	2026-01-01T00:00:00Z
-<ULID>	token:bootstrap	cli	team.create	team/<ULID>		shop-json	2026-01-01T00:00:00Z
-<ULID>	token:bootstrap	cli	team.create	team/<ULID>		shop	2026-01-01T00:00:00Z
-<ULID>	token:bootstrap	cli	role.create	role/<ULID>		deployments:write	2026-01-01T00:00:00Z
-<ULID>	token:bootstrap	cli	role.create	role/<ULID>		deployments:write	2026-01-01T00:00:00Z
-<ULID>		api	user.login	user/<ULID>		alice	2026-01-01T00:00:00Z
-<ULID>		api	user.login	user/<ULID>		alice	2026-01-01T00:00:00Z
-<ULID>	token:bootstrap	cli	user.password_set	user/<ULID>			2026-01-01T00:00:00Z
-<ULID>	token:bootstrap	cli	user.password_set	user/<ULID>			2026-01-01T00:00:00Z
-<ULID>	token:bootstrap	cli	user.create	user/<ULID>		bob-json	2026-01-01T00:00:00Z
-<ULID>	token:bootstrap	cli	user.create	user/<ULID>		bob	2026-01-01T00:00:00Z
-<ULID>	token:bootstrap	cli	user.create	user/<ULID>		alice-json	2026-01-01T00:00:00Z
-<ULID>	token:bootstrap	cli	user.create	user/<ULID>		alice	2026-01-01T00:00:00Z
+aud-16	token:bootstrap	cli	invitation.create	invitation/inv-2		2026-01-02T00:00:00Z	2026-01-01T00:00:00Z
+aud-15	token:bootstrap	cli	invitation.create	invitation/inv-1		2026-01-02T00:00:00Z	2026-01-01T00:00:00Z
+aud-14	token:bootstrap	cli	token.create	token/tok-5		alice-cli-json	2026-01-01T00:00:00Z
+aud-13	token:bootstrap	cli	token.create	token/tok-4		alice-cli	2026-01-01T00:00:00Z
+aud-12	token:bootstrap	cli	team.create	team/shop-json-3		shop-json	2026-01-01T00:00:00Z
+aud-11	token:bootstrap	cli	team.create	team/shop-2		shop	2026-01-01T00:00:00Z
+aud-10	token:bootstrap	cli	role.create	role/deployer-json-5		deployments:write	2026-01-01T00:00:00Z
+aud-9	token:bootstrap	cli	role.create	role/deployer-4		deployments:write	2026-01-01T00:00:00Z
+aud-8		api	user.login	user/alice-1		alice	2026-01-01T00:00:00Z
+aud-7		api	user.login	user/alice-1		alice	2026-01-01T00:00:00Z
+aud-6	token:bootstrap	cli	user.password_set	user/alice-1			2026-01-01T00:00:00Z
+aud-5	token:bootstrap	cli	user.password_set	user/alice-1			2026-01-01T00:00:00Z
+aud-4	token:bootstrap	cli	user.create	user/bob-json-4		bob-json	2026-01-01T00:00:00Z
+aud-3	token:bootstrap	cli	user.create	user/bob-3		bob	2026-01-01T00:00:00Z
+aud-2	token:bootstrap	cli	user.create	user/alice-json-2		alice-json	2026-01-01T00:00:00Z
+aud-1	token:bootstrap	cli	user.create	user/alice-1		alice	2026-01-01T00:00:00Z

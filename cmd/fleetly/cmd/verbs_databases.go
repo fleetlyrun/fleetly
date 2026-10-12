@@ -69,14 +69,15 @@ func newDatabasesCreateVerb() commands.Command {
 
 func newDatabasesListVerb() commands.Command {
 	const name = "list"
-	var project, after string
+	var project string
+	var after int64
 	var limit int
 	return &flaggedVerb{
 		name: name, synopsis: "List databases in a project (newest first)",
-		usage: "databases list --project PROJECT_ID [--after DATABASE_ID] [--limit N]",
+		usage: "databases list --project PROJECT_ID [--after SEQ] [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&project, "project", "", "project id (required)")
-			fs.StringVar(&after, "after", "", "pagination cursor: the last database id of the previous page")
+			fs.Int64Var(&after, "after", 0, "pagination cursor: the seq of the last row of the previous page")
 			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
@@ -93,7 +94,7 @@ func newDatabasesListVerb() commands.Command {
 			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Databases.ListDatabases(ctx, &structurev1.ListDatabasesRequest{
-				ProjectId: project, AfterDatabaseId: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
+				ProjectId: project, AfterDatabaseSeq: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
 			})
 			if err != nil {
 				return err
@@ -202,13 +203,13 @@ func newDatabasesBackupVerb() commands.Command {
 // databases backups（F2.2，ADR-0039）：台账列举，新→旧分页。
 func newDatabasesBackupsVerb() commands.Command {
 	const name = "backups"
-	var after string
+	var after int64
 	var limit int
 	return &flaggedVerb{
 		name: name, synopsis: "List backups of a database (newest first)",
-		usage: "databases backups DATABASE_ID [--after BACKUP_ID] [--limit N]",
+		usage: "databases backups DATABASE_ID [--after SEQ] [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&after, "after", "", "pagination cursor: the last backup id of the previous page")
+			fs.Int64Var(&after, "after", 0, "pagination cursor: the seq of the last row of the previous page")
 			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
@@ -222,7 +223,7 @@ func newDatabasesBackupsVerb() commands.Command {
 			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Databases.ListBackups(ctx, &structurev1.ListBackupsRequest{
-				DatabaseId: args[0], AfterBackupId: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
+				DatabaseId: args[0], AfterBackupSeq: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
 			})
 			if err != nil {
 				return err

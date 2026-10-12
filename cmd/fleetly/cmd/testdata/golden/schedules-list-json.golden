@@ -1,8 +1,9 @@
 {
   "schedules": [
     {
-      "id": "<ULID>",
-      "project_id": "<ULID>",
+      "id": "nightly-report-json-2",
+      "seq": "2",
+      "project_id": "shop-1",
       "name": "nightly-report-json",
       "state": "active",
       "cron": "0 12 * * *",
@@ -19,8 +20,9 @@
       "updated_at": "2026-01-01T00:02:00Z"
     },
     {
-      "id": "<ULID>",
-      "project_id": "<ULID>",
+      "id": "nightly-report-1",
+      "seq": "1",
+      "project_id": "shop-1",
       "name": "nightly-report",
       "state": "active",
       "cron": "0 12 * * *",

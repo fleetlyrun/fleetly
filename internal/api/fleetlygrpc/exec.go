@@ -117,7 +117,7 @@ func (svc *ExecService) CreateExecSession(ctx context.Context, req *runtimev1.Cr
 	if err := svc.s.commit(ctx, writeFact{
 		events: []eventFact{{name: "exec.session_opened", aggregate: "app", id: info.AppID, payload: mustJSON(payload)}},
 		audits: []*audit.Entry{{
-			ID: newID(), Actor: payload.Actor, Source: authn.SourceFromContext(ctx),
+			Actor: payload.Actor, Source: authn.SourceFromContext(ctx),
 			Action: "exec.session", Resource: "app/" + info.AppID,
 			Detail: execDetailJSON(payload),
 		}},

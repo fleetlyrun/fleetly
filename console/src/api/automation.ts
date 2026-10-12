@@ -11,7 +11,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** ListRuns 新→旧分页（游标 = ULID 创建序；task_id 过滤可选）。 */
+        /** ListRuns 新→旧分页（游标 = seq 创建序；task_id 过滤可选）。 */
         get: operations["RunsService_ListRuns"];
         put?: never;
         post?: never;
@@ -86,7 +86,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * ListSchedules 新→旧分页（游标 = ULID 创建序；含 tombstone——终态
+         * ListSchedules 新→旧分页（游标 = seq 创建序；含 tombstone——终态
          *     事实可见，与 ListTasks 同款）。
          */
         get: operations["SchedulesService_ListSchedules"];
@@ -150,7 +150,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** ListTasks 新→旧分页（游标 = ULID 创建序）。 */
+        /** ListTasks 新→旧分页（游标 = seq 创建序）。 */
         get: operations["TasksService_ListTasks"];
         put?: never;
         /**
@@ -380,6 +380,11 @@ export interface components {
         /** Run 是一次执行行形态（终态携带停止原因七枚举 + 退出码）。 */
         v1Run: {
             id?: string;
+            /**
+             * seq 是创建序（ADR-0070：id 后缀即此号；分页游标轴）。
+             * Format: int64
+             */
+            seq?: string;
             task_id?: string;
             project_id?: string;
             /** pending | running | stopping | stopped | failed */
@@ -414,6 +419,11 @@ export interface components {
          */
         v1Schedule: {
             id?: string;
+            /**
+             * seq 是创建序（ADR-0070：id 后缀即此号；分页游标轴）。
+             * Format: int64
+             */
+            seq?: string;
             project_id?: string;
             name?: string;
             /** active | deleted */
@@ -452,6 +462,11 @@ export interface components {
         /** Task 是程序化工作负载行形态（状态值 kebab-case 与存储一致）。 */
         v1Task: {
             id?: string;
+            /**
+             * seq 是创建序（ADR-0070：id 后缀即此号；分页游标轴）。
+             * Format: int64
+             */
+            seq?: string;
             project_id?: string;
             name?: string;
             /** one-shot | resident */
@@ -507,8 +522,8 @@ export interface operations {
                  *     泄漏面，ADR-0035 起强制过滤）。
                  */
                 task_id?: string;
-                /** @description after_run_id 游标（上一页末条 id；空 = 首页）。 */
-                after_run_id?: string;
+                /** @description after_run_seq 游标（上一页末条 seq（0 = 首页）。 */
+                after_run_seq?: string;
                 limit?: number;
                 /** @description project_id 过滤（ADR-0035 only-add；与 task_id 互斥）。 */
                 project_id?: string;
@@ -644,8 +659,8 @@ export interface operations {
         parameters: {
             query?: {
                 project_id?: string;
-                /** @description after_schedule_id 游标（上一页末条 id；空 = 首页）。 */
-                after_schedule_id?: string;
+                /** @description after_schedule_seq 游标（上一页末条 seq（0 = 首页）。 */
+                after_schedule_seq?: string;
                 limit?: number;
             };
             header?: never;
@@ -808,8 +823,8 @@ export interface operations {
         parameters: {
             query?: {
                 project_id?: string;
-                /** @description after_task_id 游标（上一页末条 id；空 = 首页）。 */
-                after_task_id?: string;
+                /** @description after_task_seq 游标（上一页末条 seq（0 = 首页）。 */
+                after_task_seq?: string;
                 limit?: number;
             };
             header?: never;

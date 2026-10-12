@@ -49,7 +49,7 @@ function AppDetailLayout() {
   const firing = firingAlerts(alerts.data, appId);
   const latest = deployments.data?.[0];
   // W-1 修复（2026-10-12 走查）：目录加载窗内 apps.data 为 undefined——
-  // 裸 `?? appId` 让 hero/面包屑闪全 ULID；appNameOf 的截断回落接住窗口
+  // 裸 `?? appId` 让 hero/面包屑闪原始 id；appNameOf 的截断回落接住窗口
   //（`01M4QA9B56…` 形态），目录落定即换真名。
   const appLabel = appNameOf(apps.data, appId);
   const [deployOpen, setDeployOpen] = useState(false);

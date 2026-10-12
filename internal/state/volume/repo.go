@@ -7,12 +7,14 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/fleetlyrun/fleetly/internal/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
 // Volume 是聚合行。
 type Volume struct {
 	ID           string
+	Seq          int64
 	ProjectID    string
 	Name         string
 	PinnedNodeID string
@@ -35,12 +37,20 @@ func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 // Create 落一行；同 Project 同名冲突返回 state.ErrAlreadyExists。
 // pinnedNodeID 为空表示待钉住（首次挂载时由引擎分配——分配后不可变）。
 func (r *Repo) Create(ctx context.Context, run state.Runner, v *Volume) error {
+	seq, err := state.NextSeq(ctx, run, "volumes")
+	if err != nil {
+		return err
+	}
+	v.Seq = seq
+	if v.ID == "" {
+		v.ID = entityid.Join(v.Name, seq)
+	}
 	now := state.FormatTime(r.clock.Now())
 	v.CreatedAt, v.UpdatedAt = now, now
-	_, err := run.ExecContext(ctx, `
-		INSERT INTO volumes (id, project_id, name, pinned_node_id, created_at, updated_at, deleted_at)
-		VALUES (?, ?, ?, ?, ?, ?, '')`,
-		v.ID, v.ProjectID, v.Name, v.PinnedNodeID, v.CreatedAt, v.UpdatedAt)
+	_, err = run.ExecContext(ctx, `
+		INSERT INTO volumes (id, seq, project_id, name, pinned_node_id, created_at, updated_at, deleted_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, '')`,
+		v.ID, v.Seq, v.ProjectID, v.Name, v.PinnedNodeID, v.CreatedAt, v.UpdatedAt)
 	if state.IsUniqueViolation(err) {
 		return fmt.Errorf("%w: volume %q already exists in project", state.ErrAlreadyExists, v.Name)
 	}
@@ -50,7 +60,7 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, v *Volume) error {
 // GetByName 读活跃行。
 func (r *Repo) GetByName(ctx context.Context, run state.Runner, projectID, name string) (*Volume, error) {
 	row := run.QueryRowContext(ctx, `
-		SELECT id, project_id, name, pinned_node_id, created_at, updated_at, deleted_at
+		SELECT id, seq, project_id, name, pinned_node_id, created_at, updated_at, deleted_at
 		FROM volumes WHERE project_id = ? AND name = ? AND deleted_at = ''`, projectID, name)
 	return scanVolume(row.Scan)
 }
@@ -58,7 +68,7 @@ func (r *Repo) GetByName(ctx context.Context, run state.Runner, projectID, name 
 // Get 读活跃行（按 ID；anchor 解析链与 API 单体读面共用）。
 func (r *Repo) Get(ctx context.Context, run state.Runner, id string) (*Volume, error) {
 	row := run.QueryRowContext(ctx, `
-		SELECT id, project_id, name, pinned_node_id, created_at, updated_at, deleted_at
+		SELECT id, seq, project_id, name, pinned_node_id, created_at, updated_at, deleted_at
 		FROM volumes WHERE id = ? AND deleted_at = ''`, id)
 	return scanVolume(row.Scan)
 }
@@ -92,7 +102,7 @@ func (r *Repo) Pin(ctx context.Context, run state.Runner, projectID, name, nodeI
 // ListByProject 返回 Project 全部活跃卷。
 func (r *Repo) ListByProject(ctx context.Context, run state.Runner, projectID string) ([]Volume, error) {
 	rows, err := run.QueryContext(ctx, `
-		SELECT id, project_id, name, pinned_node_id, created_at, updated_at, deleted_at
+		SELECT id, seq, project_id, name, pinned_node_id, created_at, updated_at, deleted_at
 		FROM volumes WHERE project_id = ? AND deleted_at = '' ORDER BY name`, projectID)
 	if err != nil {
 		return nil, err
@@ -111,7 +121,7 @@ func (r *Repo) ListByProject(ctx context.Context, run state.Runner, projectID st
 
 func scanVolume(scan func(dest ...any) error) (*Volume, error) {
 	var v Volume
-	err := scan(&v.ID, &v.ProjectID, &v.Name, &v.PinnedNodeID, &v.CreatedAt, &v.UpdatedAt, &v.DeletedAt)
+	err := scan(&v.ID, &v.Seq, &v.ProjectID, &v.Name, &v.PinnedNodeID, &v.CreatedAt, &v.UpdatedAt, &v.DeletedAt)
 	if err != nil {
 		return nil, state.MapScanErr(err)
 	}

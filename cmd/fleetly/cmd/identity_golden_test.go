@@ -12,7 +12,7 @@ import (
 
 var (
 	secretRe  = regexp.MustCompile(`(flt_|fltinv_)[A-Za-z0-9_-]+`)
-	tailIDRef = regexp.MustCompile(`\(id ([0-9A-HJKMNP-TV-Z]{26})\)`)
+	tailIDRef = regexp.MustCompile(`\(id ([a-z0-9][a-z0-9-]*)\)`)
 )
 
 func TestGoldenIdentityVerbs(t *testing.T) {

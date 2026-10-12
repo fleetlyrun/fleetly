@@ -1,15 +1,15 @@
 {
   "states": [
     {
-      "rule_id": "<ULID>",
-      "app_id": "<ULID>",
+      "rule_id": "web-1-1",
+      "app_id": "web-1",
       "metric": "memory_working_set_bytes",
       "state": "ok",
       "state_since": "2026-01-01T00:02:00Z"
     },
     {
-      "rule_id": "<ULID>",
-      "app_id": "<ULID>",
+      "rule_id": "web-1-2",
+      "app_id": "web-1",
       "metric": "memory_working_set_bytes",
       "state": "ok",
       "state_since": "2026-01-01T00:02:00Z"

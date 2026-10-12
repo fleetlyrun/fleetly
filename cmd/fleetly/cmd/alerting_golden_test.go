@@ -146,7 +146,7 @@ func extractAlertRuleID(t *testing.T, out string) string {
 }
 
 // extractProtoJSONID 从 protojson 输出提取 ULID 形 id（"id": "X"）。
-var protoJSONIDRe = regexp.MustCompile(`"id":\s*"([0-9A-HJKMNP-TV-Z]{26})"`)
+var protoJSONIDRe = regexp.MustCompile(`"id":\s*"([a-z0-9][a-z0-9-]*)"`)
 
 func extractProtoJSONID(t *testing.T, out string) string {
 	t.Helper()

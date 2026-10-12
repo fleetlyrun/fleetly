@@ -16,8 +16,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/oklog/ulid/v2"
-
 	"github.com/fleetlyrun/fleetly/internal/capability"
 	"github.com/fleetlyrun/fleetly/internal/engine/dbtemplate"
 	dbrepo "github.com/fleetlyrun/fleetly/internal/state/database"
@@ -72,7 +70,7 @@ func (e *Engine) RotateDatabasePassword(ctx context.Context, databaseID string) 
 		return fmt.Errorf("seal rotated credential: %w", err)
 	}
 	sec := &secret.Secret{
-		ID: ulid.Make().String(), ProjectID: row.ProjectID, Name: row.CredentialsRef,
+		ProjectID: row.ProjectID, Name: row.CredentialsRef,
 		Ciphertext: sealed.Ciphertext, Fingerprint: sealed.Fingerprint,
 	}
 	if err := e.secrets.Upsert(ctx, e.db.Runner(), sec); err != nil {

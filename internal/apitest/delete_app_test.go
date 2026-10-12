@@ -7,7 +7,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/oklog/ulid/v2"
 	"github.com/stretchr/testify/require"
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
@@ -321,7 +320,7 @@ func TestDeleteAppTeardownAbortKeepsRoute(t *testing.T) {
 	}()
 	<-entered
 	planted := &deployment.Deployment{
-		ID: ulid.Make().String(), AppID: appID,
+		ID: "fx-0001", AppID: appID,
 		ToRevision: revID, State: deployment.StateQueued, Generation: 2,
 	}
 	require.NoError(t, h.DB.Tx(ctx, func(tx *sql.Tx) error {

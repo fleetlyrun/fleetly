@@ -17,6 +17,7 @@ import (
 
 	"github.com/robfig/cron/v3"
 
+	"github.com/fleetlyrun/fleetly/internal/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
@@ -35,6 +36,7 @@ func (s State) Terminal() bool { return s == StateDeleted }
 // Schedule 是聚合行。
 type Schedule struct {
 	ID         string
+	Seq        int64
 	ProjectID  string
 	Name       string
 	State      State
@@ -57,14 +59,21 @@ func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 
 // Create 落一行（活跃名唯一索引防项目内重名 → ErrAlreadyExists）。
 func (r *Repo) Create(ctx context.Context, run state.Runner, s *Schedule) error {
+	seq, err := state.NextSeq(ctx, run, "schedules")
+	if err != nil {
+		return err
+	}
+	s.Seq = seq
+	if s.ID == "" {
+		s.ID = entityid.Join(s.Name, seq)
+	}
 	now := state.FormatTime(r.clock.Now())
 	s.CreatedAt, s.UpdatedAt = now, now
-	_, err := run.ExecContext(ctx, `
-		INSERT INTO schedules
-			(id, project_id, name, state, cron_expr, timezone, spec,
+	_, err = run.ExecContext(ctx, `
+		INSERT INTO schedules (id, seq, project_id, name, state, cron_expr, timezone, spec,
 			 next_fire_at, last_task_id, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		s.ID, s.ProjectID, s.Name, string(s.State), s.CronExpr, s.Timezone, s.Spec,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		s.ID, s.Seq, s.ProjectID, s.Name, string(s.State), s.CronExpr, s.Timezone, s.Spec,
 		s.NextFireAt, s.LastTaskID, s.CreatedAt, s.UpdatedAt)
 	if state.IsUniqueViolation(err) {
 		return fmt.Errorf("%w: an active schedule named %q already exists in project %s", state.ErrAlreadyExists, s.Name, s.ProjectID)
@@ -86,25 +95,25 @@ func (r *Repo) GetByName(ctx context.Context, run state.Runner, projectID, name 
 }
 
 // ListByProject 返回项目内 Schedule（新→旧 + after 游标；ADR-0026 after_* +
-// limit 惯例——游标 = ULID 创建序）。
-func (r *Repo) ListByProject(ctx context.Context, run state.Runner, projectID, afterID string, limit int) ([]Schedule, error) {
+// limit 惯例——游标 = seq 创建序）。
+func (r *Repo) ListByProject(ctx context.Context, run state.Runner, projectID string, afterSeq int64, limit int) ([]Schedule, error) {
 	if limit <= 0 || limit > maxListLimit {
 		limit = defaultListLimit
 	}
 	q := selectCols + " WHERE project_id = ?"
 	args := []any{projectID}
-	if afterID != "" {
-		q += " AND id < ?"
-		args = append(args, afterID)
+	if afterSeq > 0 {
+		q += " AND seq < ?"
+		args = append(args, afterSeq)
 	}
-	q += " ORDER BY id DESC LIMIT ?"
+	q += " ORDER BY seq DESC LIMIT ?"
 	args = append(args, limit)
 	return r.query(ctx, run, q, args...)
 }
 
 // ListDriving 返回全部活跃行（到期判定由调用方按墙钟解析比较）。
 func (r *Repo) ListDriving(ctx context.Context, run state.Runner) ([]Schedule, error) {
-	return r.query(ctx, run, selectCols+" WHERE state = 'active' ORDER BY id")
+	return r.query(ctx, run, selectCols+" WHERE state = 'active' ORDER BY seq")
 }
 
 // Fire 是到期拍/跳过后推进 next_fire_at 的 CAS：仅当行活跃且 next_fire_at
@@ -178,7 +187,7 @@ const (
 )
 
 const selectCols = `
-	SELECT id, project_id, name, state, cron_expr, timezone, spec,
+	SELECT id, seq, project_id, name, state, cron_expr, timezone, spec,
 	       next_fire_at, last_task_id, created_at, updated_at
 	FROM schedules`
 
@@ -202,7 +211,7 @@ func (r *Repo) query(ctx context.Context, run state.Runner, q string, args ...an
 func scanSchedule(scan func(dest ...any) error) (*Schedule, error) {
 	var s Schedule
 	var stateStr string
-	err := scan(&s.ID, &s.ProjectID, &s.Name, &stateStr, &s.CronExpr, &s.Timezone, &s.Spec,
+	err := scan(&s.ID, &s.Seq, &s.ProjectID, &s.Name, &stateStr, &s.CronExpr, &s.Timezone, &s.Spec,
 		&s.NextFireAt, &s.LastTaskID, &s.CreatedAt, &s.UpdatedAt)
 	if err != nil {
 		return nil, state.MapScanErr(err)

@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/fleetlyrun/fleetly/internal/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
@@ -13,6 +14,7 @@ import (
 // 空 = 未设密——密码登录诚实拒绝）。
 type User struct {
 	ID           string
+	Seq          int64
 	Name         string
 	CreatedAt    string
 	PasswordHash string
@@ -28,10 +30,18 @@ func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 
 // Create 落一行；同名冲突返回 state.ErrAlreadyExists。
 func (r *Repo) Create(ctx context.Context, run state.Runner, u *User) error {
+	seq, err := state.NextSeq(ctx, run, "users")
+	if err != nil {
+		return err
+	}
+	u.Seq = seq
+	if u.ID == "" {
+		u.ID = entityid.Join(u.Name, seq)
+	}
 	u.CreatedAt = state.FormatTime(r.clock.Now())
-	_, err := run.ExecContext(ctx, `
-		INSERT INTO users (id, name, created_at, password_hash) VALUES (?, ?, ?, ?)`,
-		u.ID, u.Name, u.CreatedAt, u.PasswordHash)
+	_, err = run.ExecContext(ctx, `
+		INSERT INTO users (id, seq, name, created_at, password_hash) VALUES (?, ?, ?, ?, ?)`,
+		u.ID, u.Seq, u.Name, u.CreatedAt, u.PasswordHash)
 	if state.IsUniqueViolation(err) {
 		return fmt.Errorf("%w: user name %q already exists", state.ErrAlreadyExists, u.Name)
 	}
@@ -41,9 +51,9 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, u *User) error {
 // Get 按 ID 直读。
 func (r *Repo) Get(ctx context.Context, run state.Runner, id string) (*User, error) {
 	row := run.QueryRowContext(ctx, `
-		SELECT id, name, created_at, password_hash FROM users WHERE id = ?`, id)
+		SELECT id, seq, name, created_at, password_hash FROM users WHERE id = ?`, id)
 	var u User
-	if err := row.Scan(&u.ID, &u.Name, &u.CreatedAt, &u.PasswordHash); err != nil {
+	if err := row.Scan(&u.ID, &u.Seq, &u.Name, &u.CreatedAt, &u.PasswordHash); err != nil {
 		return nil, state.MapScanErr(err)
 	}
 	return &u, nil
@@ -52,9 +62,9 @@ func (r *Repo) Get(ctx context.Context, run state.Runner, id string) (*User, err
 // GetByName 按名直读（Login 密码自证的入口；用户名全局唯一）。
 func (r *Repo) GetByName(ctx context.Context, run state.Runner, name string) (*User, error) {
 	row := run.QueryRowContext(ctx, `
-		SELECT id, name, created_at, password_hash FROM users WHERE name = ?`, name)
+		SELECT id, seq, name, created_at, password_hash FROM users WHERE name = ?`, name)
 	var u User
-	if err := row.Scan(&u.ID, &u.Name, &u.CreatedAt, &u.PasswordHash); err != nil {
+	if err := row.Scan(&u.ID, &u.Seq, &u.Name, &u.CreatedAt, &u.PasswordHash); err != nil {
 		return nil, state.MapScanErr(err)
 	}
 	return &u, nil
@@ -82,7 +92,7 @@ func (r *Repo) Count(ctx context.Context, run state.Runner) (int, error) {
 // List 返回全部用户（ID 序稳定）。
 func (r *Repo) List(ctx context.Context, run state.Runner) ([]User, error) {
 	rows, err := run.QueryContext(ctx, `
-		SELECT id, name, created_at, password_hash FROM users ORDER BY id`)
+		SELECT id, seq, name, created_at, password_hash FROM users ORDER BY seq`)
 	if err != nil {
 		return nil, err
 	}
@@ -90,7 +100,7 @@ func (r *Repo) List(ctx context.Context, run state.Runner) ([]User, error) {
 	var out []User
 	for rows.Next() {
 		var u User
-		if err := rows.Scan(&u.ID, &u.Name, &u.CreatedAt, &u.PasswordHash); err != nil {
+		if err := rows.Scan(&u.ID, &u.Seq, &u.Name, &u.CreatedAt, &u.PasswordHash); err != nil {
 			return nil, err
 		}
 		out = append(out, u)

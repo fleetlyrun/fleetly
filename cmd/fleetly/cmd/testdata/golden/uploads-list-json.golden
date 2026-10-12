@@ -1,8 +1,9 @@
 {
   "uploads": [
     {
-      "id": "<ULID>",
-      "project_id": "<ULID>",
+      "id": "upload-1",
+      "seq": "1",
+      "project_id": "shop-1",
       "digest": "<DIGEST>",
       "size_bytes": "3584",
       "created_at": "2026-01-01T00:02:00Z"

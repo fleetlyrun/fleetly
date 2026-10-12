@@ -235,7 +235,7 @@ service DatabasesService {
       api_key_scope: { resource: "databases" op: SCOPE_OP_READ }
     };
   }
-  // ListDatabases 新→旧分页（after_database_id 游标 = ULID 创建序，
+  // ListDatabases 新→旧分页（after_database_seq 游标 = seq 创建序，
   // ADR-0026 惯例）。
   rpc ListDatabases(ListDatabasesRequest) returns (ListDatabasesResponse) {
     option (google.api.http) = { get: "/v1/databases" };
@@ -381,7 +381,7 @@ service NetworksService {
       api_key_scope: { resource: "networks" op: SCOPE_OP_READ }
     };
   }
-  // ListNetworkPeers 新→旧分页（游标 = ULID 创建序；network_id /
+  // ListNetworkPeers 新→旧分页（游标 = seq 创建序；network_id /
   // peer_project_id 过滤可选——接收方与挂靠方两侧视图同面）。
   rpc ListNetworkPeers(ListNetworkPeersRequest) returns (ListNetworkPeersResponse) {
     option (google.api.http) = { get: "/v1/networks/peers" };
@@ -394,6 +394,8 @@ service NetworksService {
 
 message Project {
   string id = 1;
+  // seq 是创建序（ADR-0070：id 后缀即此号；分页游标轴）。
+  int64 seq = 6;
   string name = 2;
   string team_id = 3;
   string created_at = 4;
@@ -405,9 +407,9 @@ message CreateProjectResponse { Project project = 1; }
 message GetProjectRequest { string id = 1; }
 message GetProjectResponse { Project project = 1; }
 message ListProjectsRequest {
-  // after_project_id 游标（上一页末条 id；空 = 首页）。游标轴 = ULID
+  // after_project_seq 游标（上一页末条 seq；0 = 首页）。游标轴 = seq
   // 创建序升序（既有响应序不变；ADR-0026 after_* + limit 惯例）。
-  string after_project_id = 1;
+  int64 after_project_seq = 1;
   int32 limit = 2;
 }
 message ListProjectsResponse { repeated Project projects = 1; }
@@ -416,6 +418,8 @@ message DeleteProjectResponse {}
 
 message App {
   string id = 1;
+  // seq 是创建序（ADR-0070：id 后缀即此号；分页游标轴）。
+  int64 seq = 5;
   string project_id = 2;
   string name = 3;
   string created_at = 4;
@@ -442,9 +446,9 @@ message GetAppSpecResponse {
 }
 message ListAppsRequest {
   string project_id = 1;
-  // after_app_id 游标（上一页末条 id；空 = 首页）。游标轴 = ULID 创建序
+  // after_app_seq 游标（上一页末条 seq（0 = 首页）。游标轴 = seq 创建序
   // 升序（既有响应序不变；ADR-0026 after_* + limit 惯例）。
-  string after_app_id = 2;
+  int64 after_app_seq = 2;
   int32 limit = 3;
 }
 message ListAppsResponse { repeated App apps = 1; }
@@ -555,6 +559,8 @@ message DeleteVolumeResponse {}
 // Revision/Deployment 面）。
 message Database {
   string id = 1;
+  // seq 是创建序（ADR-0070：id 后缀即此号；分页游标轴）。
+  int64 seq = 15;
   string project_id = 2;
   string name = 3;
   string engine = 4;
@@ -596,8 +602,8 @@ message GetDatabaseRequest { string id = 1; }
 message GetDatabaseResponse { Database database = 1; }
 message ListDatabasesRequest {
   string project_id = 1;
-  // after_database_id 游标（上一页末条 id；空 = 首页）。
-  string after_database_id = 2;
+  // after_database_seq 游标（上一页末条 seq（0 = 首页）。
+  int64 after_database_seq = 2;
   int32 limit = 3;
 }
 message ListDatabasesResponse { repeated Database databases = 1; }
@@ -608,6 +614,8 @@ message DeleteDatabaseResponse {}
 // （object_key/digest/size = verify 锚）；credential 值永不出现。
 message Backup {
   string id = 1;
+  // seq 是创建序（ADR-0070：id 后缀即此号；分页游标轴）。
+  int64 seq = 13;
   string project_id = 2;
   string database_id = 3;
   string engine = 4;
@@ -625,8 +633,8 @@ message TriggerBackupRequest { string database_id = 1; }
 message TriggerBackupResponse { Backup backup = 1; }
 message ListBackupsRequest {
   string database_id = 1;
-  // after_backup_id 游标（上一页末条 id；空 = 首页）。
-  string after_backup_id = 2;
+  // after_backup_seq 游标（上一页末条 seq（0 = 首页）。
+  int64 after_backup_seq = 2;
   int32 limit = 3;
 }
 message ListBackupsResponse { repeated Backup backups = 1; }
@@ -711,6 +719,8 @@ message RebuildNetworkResponse {
 // 投影；peer_project_id 是挂靠方（声明方）项目。
 message NetworkPeer {
   string id = 1;
+  // seq 是创建序（ADR-0070：id 后缀即此号；分页游标轴）。
+  int64 seq = 10;
   string network_id = 2;
   string network_name = 3;
   string network_project_id = 4;
@@ -741,8 +751,8 @@ message ListNetworkPeersRequest {
   //（挂靠方视图：我挂在哪里）；两者都空 = 全部。
   string network_id = 1;
   string peer_project_id = 2;
-  // after_peer_id 游标（上一页末条 id；空 = 首页）。
-  string after_peer_id = 3;
+  // after_peer_seq 游标（上一页末条 seq（0 = 首页）。
+  int64 after_peer_seq = 3;
   int32 limit = 4;
 }
 message ListNetworkPeersResponse { repeated NetworkPeer peers = 1; }

@@ -53,11 +53,11 @@ func TestUploadLifecycle(t *testing.T) {
 	// List：新→旧 + after 游标。
 	clock.Advance(time.Minute)
 	require.NoError(t, repo.Create(ctx, db.Runner(), newUpload("01JDUPLD00000000000000000D", u.ProjectID, "cc33", 50)))
-	list, err := repo.ListByProject(ctx, db.Runner(), u.ProjectID, "", 50)
+	list, err := repo.ListByProject(ctx, db.Runner(), u.ProjectID, 0, 50)
 	require.NoError(t, err)
 	require.Len(t, list, 2)
 	assert.Equal(t, "01JDUPLD00000000000000000D", list[0].ID)
-	list, err = repo.ListByProject(ctx, db.Runner(), u.ProjectID, list[0].ID, 50)
+	list, err = repo.ListByProject(ctx, db.Runner(), u.ProjectID, list[0].Seq, 50)
 	require.NoError(t, err)
 	require.Len(t, list, 1)
 	assert.Equal(t, u.ID, list[0].ID)
