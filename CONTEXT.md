@@ -135,7 +135,7 @@ _Avoid_: maintenance window, block, lock
 _Avoid_: manifest, config(泛指), template
 
 **Workload**:
-Runtime 接受的最小执行单元，由 Spec 投影而来；平台不感知其载体形态（容器、pod、task）。
+Runtime 接受的最小执行单元，由 Spec 投影而来；平台不感知其载体形态（容器、pod、task）。可观测面：Workload 视图按 Revision 只读重放（与部署投影单源）+ 载体级在服观测（ADR-0071）；编排器原生对象不透出。
 _Avoid_: service, container, pod, unit
 
 **Exec Session**:
