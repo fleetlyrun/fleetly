@@ -414,6 +414,21 @@ ADR-0042 落地（64f07f0..8b7f51d 七 commit，CI run 37218474928 六 job 全�
 - 旧世代 ULID 残留面（restic 仓对象键、归档 tar、本 runbook 历史记录里的 ULID 字面量）是历史事实，不迁移不追改。
 - buf breaking 对 origin/main 红一次（游标字段 after_*_id → after_*_seq 改名改型），commit 上 main 后自愈——零外部消费者核证（ADR-0047 先例）。
 
+
+## 2026-10-12 记录·四十八（ADR-0070 可读实体 id 重置换装 fd49e9d + 重置重播种；现役）
+
+**换代形态**：实体 id 全代换代 `<base>-<seq>`（web-42 / torchwood-pg-1 / web-42-d7 / web-42-r7 / aud-<n> / tok-<n> / node-<n>）；goose 基础迁移原位修订（25 聚合表 +seq + UNIQUE(seq)）→ **本批不走换装走重置**（旧库与新链同号不同体）。操作序按 runbook「ADR-0070 可读实体 id 上站序」节执行，全序零事故：
+
+1. 前置硬门全过：Platform Backup `0f7fd0de` + 受管卷 11 个 tar 至 `/root/adr70-reset/`（torchwood-pg 卷 13M 在档）。
+2. 受管载体全拆：5 项目 6 app（n0reg/n0probe/quickstart/torchwood/messaging）+ torchwood-pg；sec-test 手工 swarm 服务一并清除；受管系统域（traefik/zot/victorialogs/victoriametrics/cadvisor）保留跨代收敛。
+3. 节点标记清除：manager `fleetly.node.id` label-rm ✓。**咬出缝隙一**：清标记时旧 daemon（c14f854）仍在跑，其锚定环秒级重锚 ULID——新 daemon 起来后收养了旧世代标签。**解**：新 daemon 在跑状态下再清一次，新锚定环经 minter 重锚 → `node-2`（seq 2；缝隙期 ULID 幽灵行 seq 1 由 sqlite 手工摘除——三分钟龄无引用，诚实清理）。**教训入档：清节点标记必须在旧 daemon 停止之后执行（本 runbook 上站序第 2/3 步顺序以此勘误）**。
+4. 换装：fleetlyd/fleetly fd49e9d 双二进制 install → 数据根 `fleetly.db` → `fleetly.db.pre-adr70`（190MB 归档）→ 起新版 → goose 全新前滚 v28 一次干净。
+5. **咬出缝隙二**：bootstrap 被数据根 journal（append-only 去重锚）挡住不再重铸——journal 移档 `journal.pre-adr70` 后重启即重铸（新 tok-<n> 世代，CLI `fleetly login` 重粘）。
+6. 重播种：projects `torchwood-1` / `messaging-2`；torchwood-pg 重建 = **torchwood-pg-1**（host `db-torchwood-pg-1`；陈旧卷五枚显式删除——旧 pgdata 密码与新凭证必失配，卷 tar 在档可回）；备份链一轮全绿：`torchwood-pg-1-b1` succeeded，对象键 `backups/torchwood-1/torchwood-pg-1/20261012T160725Z-torchwood-pg-1-b1` 全段可读。
+7. 验收：projects/nodes/databases/backups/events 列表 id 与 Resource 列全可读（`project.created / torchwood-1`）；doctor ok；`fleetlyd fd49e9d` 现役。
+
+**挂账**：①应用栈重播——torchwood 六常驻 + firstBootJobs、messageloop 三服务 + 跨 Project peer、n0reg/n0probe/quickstart 验收应用，部署源在各 git 仓（本机无源，需各仓 owner 重放 `fleetly deploy`）；②node2（10.124.0.5）本批不可达（公网/VPC 均超时）——其 k3s 平台身份独立不受影响，可达后自查锚定标记世代；③全面走查（Console 九 tab / exec / 备份恢复演练）随应用栈重播后补。
+
 ## 平台升级操作序（F2.3 工具化，2026-10-04）
 
 ADR-0015 升级序的完整落地形态：**Platform Backup 前置 → SIGTERM 排水 → 二进制替换 → 起新版（goose 前滚 + Managed Provider 逐个 reconcile + 解除只读，全自动）**。前置动词自 75a3d31 起可用（旧版无 platform 组时按 b4cfea0 节的手工快照纪律执行）。
