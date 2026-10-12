@@ -13,6 +13,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/material"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/state/app"
+	"github.com/fleetlyrun/fleetly/internal/state/appvariable"
 	"github.com/fleetlyrun/fleetly/internal/state/audit"
 	"github.com/fleetlyrun/fleetly/internal/state/backup"
 	browserepo "github.com/fleetlyrun/fleetly/internal/state/browse"
@@ -73,20 +74,23 @@ type Services struct {
 	// SharedVariables 是 SharedVariable 聚合 repo（F2.9，ADR-0043：Project
 	// 级共享变量——归一化期合成进 Revision 的 Project 层）。
 	SharedVariables *sharedvariable.Repo
-	Volumes         *volume.Repo
-	Networks        *networkrepo.Repo
-	NetworkPeers    *networkpeer.Repo
-	Freezes         *freeze.Repo
-	Routes          *route.Repo
-	Nodes           *node.Repo
-	Audits          *audit.Repo
-	Users           *user.Repo
-	Teams           *team.Repo
-	Roles           *role.Repo
-	Memberships     *membership.Repo
-	Tokens          *tokenrepo.Repo
-	Invitations     *invitation.Repo
-	Hooks           *hook.Repo
+	// AppVariables 是 AppVariable 聚合 repo（ADR-0072 三级合成顶层：
+	// App 级平台变量——冻结咽喉合成，同键覆盖源声明 env 与 SharedVariable）。
+	AppVariables *appvariable.Repo
+	Volumes      *volume.Repo
+	Networks     *networkrepo.Repo
+	NetworkPeers *networkpeer.Repo
+	Freezes      *freeze.Repo
+	Routes       *route.Repo
+	Nodes        *node.Repo
+	Audits       *audit.Repo
+	Users        *user.Repo
+	Teams        *team.Repo
+	Roles        *role.Repo
+	Memberships  *membership.Repo
+	Tokens       *tokenrepo.Repo
+	Invitations  *invitation.Repo
+	Hooks        *hook.Repo
 
 	// Uploads 是上传产物行 repo；UploadStore 是 blob 面（内容寻址落盘，
 	// ADR-0019 附录 A）。限额走缺省（512MiB/4GiB，ADR 钉值）。
@@ -155,6 +159,7 @@ func NewServices(db *state.DB, e *engine.Engine, c *material.Cipher, rt capabili
 		Secrets:         secret.New(clock),
 		Configs:         configrepo.New(clock),
 		SharedVariables: sharedvariable.New(clock),
+		AppVariables:    appvariable.New(clock),
 		Volumes:         volume.New(clock),
 		Networks:        networkrepo.New(clock),
 		NetworkPeers:    networkpeer.New(clock),

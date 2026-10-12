@@ -21,6 +21,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/spec"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/state/app"
+	"github.com/fleetlyrun/fleetly/internal/state/appvariable"
 	"github.com/fleetlyrun/fleetly/internal/state/audit"
 	configrepo "github.com/fleetlyrun/fleetly/internal/state/config"
 	networkrepo "github.com/fleetlyrun/fleetly/internal/state/network"
@@ -47,6 +48,8 @@ const (
 	// 审计 + golden）；aggregate=variable（事件名 <聚合>.<事实> 惯例）。
 	eventVariableUpdated = "variable.updated"
 	eventVariableDeleted = "variable.deleted"
+	eventAppVarUpdated   = "app_variable.updated"
+	eventAppVarDeleted   = "app_variable.deleted"
 	eventVolumeCreated   = "volume.created"
 	eventVolumeDeleted   = "volume.deleted"
 	eventNetworkCreated  = "network.created"
@@ -649,6 +652,7 @@ const (
 	// SharedVariable 配额（F2.9，ADR-0043 决策 5）：Configs 先例同口径；
 	// 值面按 env 值量级收一档（env 是进程环境面不是文件面）。
 	maxSharedVariablesPerProject = 100
+	maxAppVariablesPerApp        = 100
 	maxVariableBytes             = 16 * 1024
 	// maxAppsPerProject 是 per-Project 活跃 App 数上限（ADR-0017 附录 A.1，
 	// F1.9）：Workload 的 App 来源面。Task 轴两枚配额住 engine（域拥有者，
@@ -850,6 +854,120 @@ func (s *Services) sharedVariableQuota(projectID, name string) acceptanceCheck {
 		if len(active) >= maxSharedVariablesPerProject {
 			return apperr.New("E_QUOTA_EXCEEDED",
 				"project %s already holds %d shared variables (limit %d)", projectID, len(active), maxSharedVariablesPerProject)
+		}
+		return nil
+	}
+}
+
+// ---- AppVariable（ADR-0072 三级合成顶层）----
+
+type AppVariablesService struct {
+	structurev1.UnimplementedAppVariablesServiceServer
+	s *Services
+}
+
+// PutAppVariable 落/覆盖一条 App 级平台变量。改变量不触发自动重部署——
+// 重部署（Redeploy/Deploy/push）在冻结咽喉取新值合成。
+func (svc *AppVariablesService) PutAppVariable(ctx context.Context, req *structurev1.PutAppVariableRequest) (*structurev1.PutAppVariableResponse, error) {
+	if req.GetAppId() == "" || req.GetName() == "" {
+		return nil, apperr.New("E_INVALID_ARGUMENT", "app_id and name: must not be empty")
+	}
+	if !spec.ValidEnvName(req.GetName()) {
+		return nil, apperr.New("E_INVALID_ARGUMENT",
+			"name: variable names must match %q (variable names become environment keys; got %q)",
+			spec.EnvNamePattern, req.GetName())
+	}
+	if len(req.GetValue()) > maxVariableBytes {
+		return nil, apperr.New("E_INVALID_ARGUMENT", "value: exceeds the %d-byte per-variable limit", maxVariableBytes)
+	}
+	// 行级授权（ADR-0035）：App 域写面前置（含 App 存在性——变量不挂
+	// 幽灵 App）。
+	a, err := svc.s.Apps.Get(ctx, svc.s.DB.Runner(), req.GetAppId())
+	if err != nil {
+		return nil, mapStateError(err, "app")
+	}
+	if err := svc.s.authorizeAppRow(ctx, a); err != nil {
+		return nil, err
+	}
+	row := &appvariable.AppVariable{AppID: req.GetAppId(), Name: req.GetName(), Value: req.GetValue()}
+	err = svc.s.commit(ctx, writeFact{
+		checks: []acceptanceCheck{svc.s.appVariableQuota(req.GetAppId(), req.GetName())},
+		write:  func(ctx context.Context, tx *sql.Tx) error { return svc.s.AppVariables.Upsert(ctx, tx, row) },
+		events: []eventFact{structureEvent(eventAppVarUpdated, "app_variable", a.ID+"/"+row.Name, a.ProjectID)},
+		audits: []*audit.Entry{{
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "app_variable.put",
+			Resource: "app_variable/" + a.ID + "/" + row.Name, AfterFP: row.Value,
+		}},
+	})
+	if err != nil {
+		return nil, mapStateError(err, "variable")
+	}
+	return &structurev1.PutAppVariableResponse{Variable: appVariableMsg(*row)}, nil
+}
+
+func (svc *AppVariablesService) ListAppVariables(ctx context.Context, req *structurev1.ListAppVariablesRequest) (*structurev1.ListAppVariablesResponse, error) {
+	if req.GetAppId() == "" {
+		return nil, apperr.New("E_INVALID_ARGUMENT", "app_id: must not be empty")
+	}
+	// 行级授权（ADR-0035）：值明文回显（非敏感契约）——跨租户读面。
+	if err := svc.s.authorizeAppIDOnly(ctx, req.GetAppId()); err != nil {
+		return nil, err
+	}
+	list, err := svc.s.AppVariables.ListPage(ctx, svc.s.DB.Runner(),
+		req.GetAppId(), req.GetAfterName(), listLimit(req.GetLimit()))
+	if err != nil {
+		return nil, mapStateError(err, "variable")
+	}
+	out := &structurev1.ListAppVariablesResponse{}
+	for _, row := range list {
+		out.Variables = append(out.Variables, appVariableMsg(row))
+	}
+	return out, nil
+}
+
+func (svc *AppVariablesService) DeleteAppVariable(ctx context.Context, req *structurev1.DeleteAppVariableRequest) (*structurev1.DeleteAppVariableResponse, error) {
+	if req.GetAppId() == "" || req.GetName() == "" {
+		return nil, apperr.New("E_INVALID_ARGUMENT", "app_id and name: must not be empty")
+	}
+	a, err := svc.s.Apps.Get(ctx, svc.s.DB.Runner(), req.GetAppId())
+	if err != nil {
+		return nil, mapStateError(err, "app")
+	}
+	if err := svc.s.authorizeAppRow(ctx, a); err != nil {
+		return nil, err
+	}
+	err = svc.s.commit(ctx, writeFact{
+		write: func(ctx context.Context, tx *sql.Tx) error {
+			return svc.s.AppVariables.SoftDelete(ctx, tx, req.GetAppId(), req.GetName())
+		},
+		events: []eventFact{structureEvent(eventAppVarDeleted, "app_variable", a.ID+"/"+req.GetName(), a.ProjectID)},
+		audits: []*audit.Entry{{
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "app_variable.delete",
+			Resource: "app_variable/" + a.ID + "/" + req.GetName(),
+		}},
+	})
+	if err != nil {
+		return nil, mapStateError(err, "variable")
+	}
+	return &structurev1.DeleteAppVariableResponse{}, nil
+}
+
+// appVariableQuota 是 per-App 变量数配额检查（共享变量同款：新名才占
+// 新位）。
+func (s *Services) appVariableQuota(appID, name string) acceptanceCheck {
+	return func(ctx context.Context, tx *sql.Tx) error {
+		if _, err := s.AppVariables.GetByName(ctx, tx, appID, name); err == nil {
+			return nil
+		} else if !errors.Is(err, state.ErrNotFound) {
+			return err
+		}
+		active, err := s.AppVariables.ListActive(ctx, tx, appID)
+		if err != nil {
+			return err
+		}
+		if len(active) >= maxAppVariablesPerApp {
+			return apperr.New("E_QUOTA_EXCEEDED",
+				"app %s already holds %d variables (limit %d)", appID, len(active), maxAppVariablesPerApp)
 		}
 		return nil
 	}

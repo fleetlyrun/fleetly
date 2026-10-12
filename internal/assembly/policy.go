@@ -43,7 +43,7 @@ func authzFiles() []protoreflect.FileDescriptor {
 // 独立于 nodes 运维面（drain/cordon 可逆，join 材料不可逆——白送即失守）。
 func ScopeResources() []string {
 	return []string{
-		"projects", "apps", "secrets", "configs", "shared_variables", "volumes", "networks", "databases",
+		"projects", "apps", "secrets", "configs", "shared_variables", "app_variables", "volumes", "networks", "databases",
 		"deployments", "revisions", "builds", "tasks", "nodes", "routes", "events", "logs",
 		"metrics", "alerts", "channels", "exec", "templates", "registry",
 		"workloads",

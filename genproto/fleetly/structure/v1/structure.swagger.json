@@ -21,6 +21,9 @@
       "name": "SharedVariablesService"
     },
     {
+      "name": "AppVariablesService"
+    },
+    {
       "name": "VolumesService"
     },
     {
@@ -37,6 +40,116 @@
     "application/json"
   ],
   "paths": {
+    "/v1/app-variables": {
+      "get": {
+        "operationId": "AppVariablesService_ListAppVariables",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListAppVariablesResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "after_name",
+            "description": "after_name 游标（上一页末条 name；空 = 首页）。游标轴 = App 内 name\n字典序升序（ADR-0026 after_* + limit 惯例）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "AppVariablesService"
+        ]
+      },
+      "put": {
+        "operationId": "AppVariablesService_PutAppVariable",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1PutAppVariableResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1PutAppVariableRequest"
+            }
+          }
+        ],
+        "tags": [
+          "AppVariablesService"
+        ]
+      }
+    },
+    "/v1/app-variables/{app_id}/{name}": {
+      "delete": {
+        "operationId": "AppVariablesService_DeleteAppVariable",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1DeleteAppVariableResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "AppVariablesService"
+        ]
+      }
+    },
     "/v1/apps": {
       "get": {
         "operationId": "AppsService_ListApps",
@@ -1529,6 +1642,26 @@
       },
       "title": "AppSpec 是长运行可部署单元的期望状态（App = 一个或多个 Process）。"
     },
+    "v1AppVariable": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "app_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        },
+        "updated_at": {
+          "type": "string"
+        }
+      }
+    },
     "v1ApproveNetworkPeerResponse": {
       "type": "object",
       "properties": {
@@ -1872,6 +2005,9 @@
     "v1DeleteAppResponse": {
       "type": "object"
     },
+    "v1DeleteAppVariableResponse": {
+      "type": "object"
+    },
     "v1DeleteDatabaseResponse": {
       "type": "object"
     },
@@ -2074,6 +2210,18 @@
         }
       },
       "title": "JobSpec 是部署期一次性作业（first boot jobs，ADR-0007 词汇裁决：词条归\nTask——部署期特例）。C-13 重塑：进程模板共享 ProcessSpec（process 字段，\n与 TaskSpec 同款嵌套形态）；旧标量字段（image_origin/command/env/\nsecret_refs）保留号退役（deprecated，读取面一律走 process——buf breaking\nFILE 档下零消费者字段删除亦红，彻底删除待 breaking 基线策略变更）。"
+    },
+    "v1ListAppVariablesResponse": {
+      "type": "object",
+      "properties": {
+        "variables": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1AppVariable"
+          }
+        }
+      }
     },
     "v1ListAppsResponse": {
       "type": "object",
@@ -2398,6 +2546,30 @@
       ],
       "default": "PROTOCOL_UNSPECIFIED",
       "title": "Protocol 是 Route/端口协议（http/h2c/tcp）。"
+    },
+    "v1PutAppVariableRequest": {
+      "type": "object",
+      "properties": {
+        "app_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string",
+          "title": "name 是 env 键形态（[A-Za-z_][A-Za-z0-9_]*，≤64 字符——与共享变量\n同一白名单：变量名直接成为容器 env 键）。"
+        },
+        "value": {
+          "type": "string"
+        }
+      }
+    },
+    "v1PutAppVariableResponse": {
+      "type": "object",
+      "properties": {
+        "variable": {
+          "$ref": "#/definitions/v1AppVariable"
+        }
+      },
+      "title": "PutAppVariableResponse 不携带 affected_apps 提示：受影响者恒为 App\n本身（重部署取新值——响应注释即提示）。"
     },
     "v1PutConfigRequest": {
       "type": "object",

@@ -52,6 +52,7 @@ var EnforcedMethods = map[string]bool{
 	"/fleetly.structure.v1.ConfigsService/PutConfig":      true,
 	// 共享变量 upsert（F2.9，ADR-0043）：同名 put 是覆盖，重放安全。
 	"/fleetly.structure.v1.SharedVariablesService/PutSharedVariable": true,
+	"/fleetly.structure.v1.AppVariablesService/PutAppVariable":       true,
 	"/fleetly.structure.v1.VolumesService/CreateVolume":              true,
 	"/fleetly.structure.v1.NetworksService/CreateNetwork":            true,
 	"/fleetly.structure.v1.DatabasesService/CreateDatabase":          true,

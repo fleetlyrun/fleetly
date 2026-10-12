@@ -67,6 +67,10 @@ var builtins = []Event{
 	// 与审计行同口径。
 	{Name: "variable.updated", Summary: "A project shared variable was set (values are readable via the API; redeploy affected apps to pick up the new value).", Source: "internal/api/fleetlygrpc/structure.go PutSharedVariable"},
 	{Name: "variable.deleted", Summary: "A project shared variable was deleted.", Source: "internal/api/fleetlygrpc/structure.go DeleteSharedVariable"},
+	// App 级变量（ADR-0072 三级合成顶层）：事件只记事实不带值——与
+	// 共享变量/审计同口径。
+	{Name: "app_variable.updated", Summary: "An app variable was set (values are readable via the API; redeploy the app to pick up the new value).", Source: "internal/api/fleetlygrpc/structure.go PutAppVariable"},
+	{Name: "app_variable.deleted", Summary: "An app variable was deleted.", Source: "internal/api/fleetlygrpc/structure.go DeleteAppVariable"},
 	{Name: "volume.created", Summary: "A volume was created.", Source: "internal/api/fleetlygrpc/structure.go CreateVolume"},
 	{Name: "volume.deleted", Summary: "An unreferenced volume row was deleted (the platform tombstones the row; the runtime-side volume is left for manual hygiene).", Source: "internal/api/fleetlygrpc/structure.go DeleteVolume"},
 	{Name: "network.created", Summary: "A project network was created.", Source: "internal/api/fleetlygrpc/networks.go CreateNetwork"},

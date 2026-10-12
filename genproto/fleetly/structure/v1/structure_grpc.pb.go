@@ -1058,6 +1058,192 @@ var SharedVariablesService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
+	AppVariablesService_PutAppVariable_FullMethodName    = "/fleetly.structure.v1.AppVariablesService/PutAppVariable"
+	AppVariablesService_ListAppVariables_FullMethodName  = "/fleetly.structure.v1.AppVariablesService/ListAppVariables"
+	AppVariablesService_DeleteAppVariable_FullMethodName = "/fleetly.structure.v1.AppVariablesService/DeleteAppVariable"
+)
+
+// AppVariablesServiceClient is the client API for AppVariablesService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// AppVariable 面（ADR-0072 变量三级合成顶层）：App 级平台变量——git 应用
+// 的 env 之家（push 合并与 overlay 都过冻结咽喉，store 值每次重合成）。
+// 改变量不触发自动重部署；重部署（Redeploy/Deploy/push）取新值。
+type AppVariablesServiceClient interface {
+	PutAppVariable(ctx context.Context, in *PutAppVariableRequest, opts ...grpc.CallOption) (*PutAppVariableResponse, error)
+	ListAppVariables(ctx context.Context, in *ListAppVariablesRequest, opts ...grpc.CallOption) (*ListAppVariablesResponse, error)
+	DeleteAppVariable(ctx context.Context, in *DeleteAppVariableRequest, opts ...grpc.CallOption) (*DeleteAppVariableResponse, error)
+}
+
+type appVariablesServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewAppVariablesServiceClient(cc grpc.ClientConnInterface) AppVariablesServiceClient {
+	return &appVariablesServiceClient{cc}
+}
+
+func (c *appVariablesServiceClient) PutAppVariable(ctx context.Context, in *PutAppVariableRequest, opts ...grpc.CallOption) (*PutAppVariableResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PutAppVariableResponse)
+	err := c.cc.Invoke(ctx, AppVariablesService_PutAppVariable_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *appVariablesServiceClient) ListAppVariables(ctx context.Context, in *ListAppVariablesRequest, opts ...grpc.CallOption) (*ListAppVariablesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListAppVariablesResponse)
+	err := c.cc.Invoke(ctx, AppVariablesService_ListAppVariables_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *appVariablesServiceClient) DeleteAppVariable(ctx context.Context, in *DeleteAppVariableRequest, opts ...grpc.CallOption) (*DeleteAppVariableResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteAppVariableResponse)
+	err := c.cc.Invoke(ctx, AppVariablesService_DeleteAppVariable_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// AppVariablesServiceServer is the server API for AppVariablesService service.
+// All implementations must embed UnimplementedAppVariablesServiceServer
+// for forward compatibility.
+//
+// AppVariable 面（ADR-0072 变量三级合成顶层）：App 级平台变量——git 应用
+// 的 env 之家（push 合并与 overlay 都过冻结咽喉，store 值每次重合成）。
+// 改变量不触发自动重部署；重部署（Redeploy/Deploy/push）取新值。
+type AppVariablesServiceServer interface {
+	PutAppVariable(context.Context, *PutAppVariableRequest) (*PutAppVariableResponse, error)
+	ListAppVariables(context.Context, *ListAppVariablesRequest) (*ListAppVariablesResponse, error)
+	DeleteAppVariable(context.Context, *DeleteAppVariableRequest) (*DeleteAppVariableResponse, error)
+	mustEmbedUnimplementedAppVariablesServiceServer()
+}
+
+// UnimplementedAppVariablesServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedAppVariablesServiceServer struct{}
+
+func (UnimplementedAppVariablesServiceServer) PutAppVariable(context.Context, *PutAppVariableRequest) (*PutAppVariableResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PutAppVariable not implemented")
+}
+func (UnimplementedAppVariablesServiceServer) ListAppVariables(context.Context, *ListAppVariablesRequest) (*ListAppVariablesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListAppVariables not implemented")
+}
+func (UnimplementedAppVariablesServiceServer) DeleteAppVariable(context.Context, *DeleteAppVariableRequest) (*DeleteAppVariableResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteAppVariable not implemented")
+}
+func (UnimplementedAppVariablesServiceServer) mustEmbedUnimplementedAppVariablesServiceServer() {}
+func (UnimplementedAppVariablesServiceServer) testEmbeddedByValue()                             {}
+
+// UnsafeAppVariablesServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to AppVariablesServiceServer will
+// result in compilation errors.
+type UnsafeAppVariablesServiceServer interface {
+	mustEmbedUnimplementedAppVariablesServiceServer()
+}
+
+func RegisterAppVariablesServiceServer(s grpc.ServiceRegistrar, srv AppVariablesServiceServer) {
+	// If the following call panics, it indicates UnimplementedAppVariablesServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&AppVariablesService_ServiceDesc, srv)
+}
+
+func _AppVariablesService_PutAppVariable_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PutAppVariableRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AppVariablesServiceServer).PutAppVariable(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AppVariablesService_PutAppVariable_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AppVariablesServiceServer).PutAppVariable(ctx, req.(*PutAppVariableRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AppVariablesService_ListAppVariables_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListAppVariablesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AppVariablesServiceServer).ListAppVariables(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AppVariablesService_ListAppVariables_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AppVariablesServiceServer).ListAppVariables(ctx, req.(*ListAppVariablesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AppVariablesService_DeleteAppVariable_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteAppVariableRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AppVariablesServiceServer).DeleteAppVariable(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AppVariablesService_DeleteAppVariable_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AppVariablesServiceServer).DeleteAppVariable(ctx, req.(*DeleteAppVariableRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// AppVariablesService_ServiceDesc is the grpc.ServiceDesc for AppVariablesService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var AppVariablesService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "fleetly.structure.v1.AppVariablesService",
+	HandlerType: (*AppVariablesServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "PutAppVariable",
+			Handler:    _AppVariablesService_PutAppVariable_Handler,
+		},
+		{
+			MethodName: "ListAppVariables",
+			Handler:    _AppVariablesService_ListAppVariables_Handler,
+		},
+		{
+			MethodName: "DeleteAppVariable",
+			Handler:    _AppVariablesService_DeleteAppVariable_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "fleetly/structure/v1/structure.proto",
+}
+
+const (
 	VolumesService_CreateVolume_FullMethodName = "/fleetly.structure.v1.VolumesService/CreateVolume"
 	VolumesService_ListVolumes_FullMethodName  = "/fleetly.structure.v1.VolumesService/ListVolumes"
 	VolumesService_DeleteVolume_FullMethodName = "/fleetly.structure.v1.VolumesService/DeleteVolume"

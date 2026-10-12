@@ -50,6 +50,8 @@ var FrozenVerbs = map[string]freezeScope{
 	"/fleetly.structure.v1.ConfigsService/PutConfig":                    {field: "project_id", kind: anchor.KindProject},
 	"/fleetly.structure.v1.SharedVariablesService/PutSharedVariable":    {field: "project_id", kind: anchor.KindProject},
 	"/fleetly.structure.v1.SharedVariablesService/DeleteSharedVariable": {field: "project_id", kind: anchor.KindProject},
+	"/fleetly.structure.v1.AppVariablesService/PutAppVariable":          {field: "app_id", kind: anchor.KindApp},
+	"/fleetly.structure.v1.AppVariablesService/DeleteAppVariable":       {field: "app_id", kind: anchor.KindApp},
 	"/fleetly.structure.v1.VolumesService/CreateVolume":                 {field: "project_id", kind: anchor.KindProject},
 	"/fleetly.structure.v1.VolumesService/DeleteVolume":                 {field: "id", kind: anchor.KindVolume},
 	"/fleetly.structure.v1.NetworksService/CreateNetwork":               {field: "project_id", kind: anchor.KindProject},

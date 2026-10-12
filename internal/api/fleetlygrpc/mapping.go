@@ -20,6 +20,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/spec"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/state/app"
+	"github.com/fleetlyrun/fleetly/internal/state/appvariable"
 	"github.com/fleetlyrun/fleetly/internal/state/build"
 	configrepo "github.com/fleetlyrun/fleetly/internal/state/config"
 	"github.com/fleetlyrun/fleetly/internal/state/deployment"
@@ -126,6 +127,10 @@ func configMsg(c configrepo.Config, withContent bool) *structurev1.Config {
 // 是 Secrets 的面，共享变量是 Configs 桶）。
 func sharedVariableMsg(v sharedvariable.SharedVariable) *structurev1.SharedVariable {
 	return &structurev1.SharedVariable{Id: v.ID, ProjectId: v.ProjectID, Name: v.Name, Value: v.Value, UpdatedAt: v.UpdatedAt}
+}
+
+func appVariableMsg(v appvariable.AppVariable) *structurev1.AppVariable {
+	return &structurev1.AppVariable{Id: v.ID, AppId: v.AppID, Name: v.Name, Value: v.Value, UpdatedAt: v.UpdatedAt}
 }
 
 func volumeMsg(v volume.Volume) *structurev1.Volume {

@@ -49,6 +49,8 @@ func gatewayRegistrations() []gateway.RegisterFunc {
 		registerClient(structurev1.NewSecretsServiceClient, structurev1.RegisterSecretsServiceHandlerClient),
 		registerClient(structurev1.NewConfigsServiceClient, structurev1.RegisterConfigsServiceHandlerClient),
 		registerClient(structurev1.NewSharedVariablesServiceClient, structurev1.RegisterSharedVariablesServiceHandlerClient),
+		// AppVariable 面（ADR-0072 三级合成顶层）。
+		registerClient(structurev1.NewAppVariablesServiceClient, structurev1.RegisterAppVariablesServiceHandlerClient),
 		registerClient(structurev1.NewVolumesServiceClient, structurev1.RegisterVolumesServiceHandlerClient),
 		registerClient(structurev1.NewNetworksServiceClient, structurev1.RegisterNetworksServiceHandlerClient),
 		registerClient(structurev1.NewDatabasesServiceClient, structurev1.RegisterDatabasesServiceHandlerClient),

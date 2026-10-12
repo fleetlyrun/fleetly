@@ -184,6 +184,35 @@ service SharedVariablesService {
   }
 }
 
+// AppVariable 面（ADR-0072 变量三级合成顶层）：App 级平台变量——git 应用
+// 的 env 之家（push 合并与 overlay 都过冻结咽喉，store 值每次重合成）。
+// 改变量不触发自动重部署；重部署（Redeploy/Deploy/push）取新值。
+service AppVariablesService {
+  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+
+  rpc PutAppVariable(PutAppVariableRequest) returns (PutAppVariableResponse) {
+    option (google.api.http) = { put: "/v1/app-variables" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "app_variables" op: SCOPE_OP_WRITE }
+    };
+  }
+  rpc ListAppVariables(ListAppVariablesRequest) returns (ListAppVariablesResponse) {
+    option (google.api.http) = { get: "/v1/app-variables" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "app_variables" op: SCOPE_OP_READ }
+    };
+  }
+  rpc DeleteAppVariable(DeleteAppVariableRequest) returns (DeleteAppVariableResponse) {
+    option (google.api.http) = { delete: "/v1/app-variables/{app_id}/{name}" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "app_variables" op: SCOPE_OP_ADMIN }
+    };
+  }
+}
+
 service VolumesService {
   option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
 
@@ -544,6 +573,34 @@ message ListSharedVariablesRequest {
 message ListSharedVariablesResponse { repeated SharedVariable variables = 1; }
 message DeleteSharedVariableRequest { string project_id = 1; string name = 2; }
 message DeleteSharedVariableResponse { repeated string affected_apps = 1; }
+
+message AppVariable {
+  string id = 1;
+  string app_id = 2;
+  string name = 3;
+  string value = 4;
+  string updated_at = 5;
+}
+message PutAppVariableRequest {
+  string app_id = 1;
+  // name 是 env 键形态（[A-Za-z_][A-Za-z0-9_]*，≤64 字符——与共享变量
+  // 同一白名单：变量名直接成为容器 env 键）。
+  string name = 2;
+  string value = 3;
+}
+// PutAppVariableResponse 不携带 affected_apps 提示：受影响者恒为 App
+// 本身（重部署取新值——响应注释即提示）。
+message PutAppVariableResponse { AppVariable variable = 1; }
+message ListAppVariablesRequest {
+  string app_id = 1;
+  // after_name 游标（上一页末条 name；空 = 首页）。游标轴 = App 内 name
+  // 字典序升序（ADR-0026 after_* + limit 惯例）。
+  string after_name = 2;
+  int32 limit = 3;
+}
+message ListAppVariablesResponse { repeated AppVariable variables = 1; }
+message DeleteAppVariableRequest { string app_id = 1; string name = 2; }
+message DeleteAppVariableResponse {}
 
 message Volume {
   string id = 1;

@@ -32,6 +32,8 @@ var memberWriteResources = map[string]bool{
 	"tasks":       true,
 	"secrets":     true,
 	"configs":     true,
+	// App 级变量是部署材料（ADR-0072）：与共享变量同桶。
+	"app_variables": true,
 	// 共享变量是部署材料（ADR-0043）：与 secrets/configs 同桶——member
 	// 可写不可拆家（project/app 建删仍不开放）。
 	"shared_variables": true,
