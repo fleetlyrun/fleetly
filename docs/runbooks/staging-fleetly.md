@@ -909,3 +909,17 @@ F3.1/F3.2/F3.3/F3.6 四批走查的浏览器级挂账在后端在场的环境（
 **验收面清理**：arch3probe 项目整体删除（5 任务 + 池缩零 + 载体零残留）。
 
 **版本探查正解落成（2026-10-12 记录·四十四补，8150725-verflag 现役）**：`fleetlyd version` 动词与 `--version`/`-version` 旗标拦截同批落地（runner 前打印退 0，绝不触配置/数据根；`--` 后位置参数字面不拦）——runbook 115/516 行两次踩坑的根治。换装实录：Backup `51182ed4` 前置 + e993a6b-arch3 留底 → 真机三形态活体（两形态同输出 `fleetlyd 8150725-verflag (commit …, built …)`）+ 无流浪产物 + doctor 10 ok / 2 warning / 0 failed。**自此版本核对首选 `fleetlyd version` 或 `fleetlyd --version`**（journalctl/doctor 行仍为备选）；"勿直接跑二进制"教训随之退役。
+
+## 2026-10-12 记录·四十五（层级钻取批换装 13e0aca-appdetail + App Detail 九 tab 完整走查；现役）
+
+**换装**（8150725-verflag → **13e0aca-appdetail（现役）**，console-only 批 4ab9bbe Terminal 收口 + 13e0aca 层级钻取 + docs）：零迁移（goose 停 28）、卷 tar 按记录·三十三 console-only 先例省略、Platform Backup `17b64d53` 硬门照付。干净 HEAD 构建版本戳 `13e0aca-appdetail`（ldflags 单引号内联），嵌入指纹 `index-DVvpuQsH.js` 二进制↔dist 对账一致。**零扰动实锤**：task 基线 diff 唯一差异 = sec-test 既有节拍任务时间戳推移、SERVICES-IDENTICAL、doctor 既有基线、三路由 200。
+
+**走查判定 PASS-with-notes**（全录 `docs/reviews/2026-10-12-appdetail-walkthrough.md`）：
+
+- **Terminal 三修活体**：Disconnect 红钮 → `# disconnected` + `ws: closed` + 重开面；连接期切实例 = 断旧开新（新 session 锚新实例）；连接期切 process 同构。xterm 数据面 `echo` 回显+输出+提示符全渲染（本 IAB 构建渲染 OK——记录·十四的 rAF 挂起未复现）。
+- **层级钻取四处活体**：Processes Running 列 + 行展开（**扩容零替换 UI 可见**：原 task 保留 + 新 task 加入）；Metrics Process 选择器（all 3 序列 → web 2 序列、scope 行 `process web`）；Logs Instance 文案 + scope 行 `instance …`；Overview Processes 摘要卡。
+- **Rollback 挂账（排查案卷在案项）本轮端到端全通未复现**：确认框 → 网关 `DeploymentsService/Rollback` 4.5ms + 新部署 g4←g3（replay）succeeded——在案项保持开放，本轮记"通过"样本。
+- **全操作面**：New app 瘦对话框 → Deploy compose 双进程 → Processes 扩容 staged→Apply（typed 路由跳转在役）→ Variables FOO=bar → R3 → Terminal `foo=bar` 注入全链 → Routes 建删（200 "Welcome to nginx" → 删 App 后 404 级联）→ Danger zone Delete app 全链。
+- **三 findings（均不阻断）**：W-1（P2）直进 tab 目录加载窗内 hero 回落裸全 ULID（头像 "0"、数秒自愈，appNameOf 截断回落未生效）；W-2（P3）Deployments 列表 Revision 列恒 `R…hash`（未 join seq）；W-3（P3）Variables 分组头 `PROCESS WEB ×2` 的 ×2 是副本数、形似变量计数。
+- **走查物清理**：Console Delete app → 路由 404/载体 0 → `projects delete walk-ad`；零 token 铸造（founder 密码会话）；用户域零扰动。
+- **操作怪癖增补**：Radix Select 弹层在自动化分步调用间收起——展开与选择必须同一调用内完成（Console 自动化走查通用）。
