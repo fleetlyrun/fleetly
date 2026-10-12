@@ -19,6 +19,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
+	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 )
 
@@ -261,6 +262,48 @@ func newAppsListVerb() commands.Command {
 				for _, a := range resp.GetApps() {
 					_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\n", a.GetId(), a.GetName(), a.GetCreatedAt())
 				}
+			})
+		},
+	}
+}
+
+// newAppsRestartVerb 强制重排单个进程的载体（ADR-0069，排障动线"进程卡死
+// → 就地重启"）：零 lineage（不产生 Revision/Deployment），经 Runtime 重启
+// 子面滚动重排；与 components restart（平台受管域）分立——本动词作用于
+// 用户 App 的 Process。
+func newAppsRestartVerb() commands.Command {
+	const name = "restart"
+	var app, process string
+	return &flaggedVerb{
+		name:     name,
+		synopsis: "Restart a single process of an app (force-reschedule its carriers; image and spec unchanged)",
+		usage:    "apps restart --app APP_ID --process NAME",
+		setFlags: func(fs *flag.FlagSet) {
+			fs.StringVar(&app, "app", "", "app id (required)")
+			fs.StringVar(&process, "process", "", "process name (required)")
+		},
+		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
+			if app == "" {
+				return usageErr(name, "--app is required")
+			}
+			if process == "" {
+				return usageErr(name, "--process is required")
+			}
+			ctx, cancel, c, err := dialFromEnv(ctx)
+			if err != nil {
+				return err
+			}
+			defer cancel()
+			defer c.Close() //nolint:errcheck // 进程退出路径
+			_, err = c.Deployments.RestartProcess(ctx, &deliveryv1.RestartProcessRequest{AppId: app, ProcessName: process})
+			if err != nil {
+				return err
+			}
+			return renderOut(env, jsonOut, &deliveryv1.RestartProcessResponse{}, func() {
+				_, _ = fmt.Fprintf(env.Stdout, "restart requested for process %s of app %s (carriers force-rescheduled)\n", process, app)
 			})
 		},
 	}

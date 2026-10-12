@@ -205,7 +205,7 @@ Workbench（logs/metrics/terminal）与 Dashboard 磁贴墙内容异构不强行
 
 ### 三期
 
-VL/VM 原生查询 ticket 代理；DB 账号/参数/扩容；App restart/scale 专用动词；对象存储（战略位，独立 ADR 立项时启动）。
+VL/VM 原生查询 ticket 代理；DB 账号/参数/扩容；App ~~restart~~（✅ ADR-0069：`POST /v1/apps/{app}/processes/{process}/restart` + `fleetly apps restart` + Process 行 Restart 按钮；App 级整体重启不做专用动词，Redeploy 覆盖）/scale 专用动词（scale 半边维持挂账）；对象存储（战略位，独立 ADR 立项时启动）。
 
 ## 9. 动线验证
 

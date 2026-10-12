@@ -2,5 +2,6 @@
   "create",
   "delete",
   "list",
+  "restart",
   "spec"
 ]

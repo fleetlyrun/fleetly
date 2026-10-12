@@ -200,6 +200,7 @@ type FakeRuntime struct {
 	enrollCalls []bool                    // Enrollment 调用记录（rotate 序列，C3）
 	adminErr    error                     // RuntimeAdmin 动词注入错误（SetAdminErr 设置）
 	adminOps    []AdminCall
+	restarts    []RestartCall // RuntimeRestart 动词记录（ADR-0069 断言面）
 	obs         chan capability.WorkloadEvent
 
 	// removeGate 是 Remove hang 注入门（teardown 竞态注入；与 engine 测试
@@ -375,6 +376,12 @@ type EnsureCall struct {
 	Materials capability.Materials // secret 文件注入等分发材料（job 面断言用）
 }
 
+// RestartCall 是一次 RuntimeRestart 动词记录（ADR-0069）。
+type RestartCall struct {
+	NS         capability.NamespaceRef
+	WorkloadID string
+}
+
 func (f *FakeRuntime) Describe() capability.ProviderDescriptor {
 	return capability.ProviderDescriptor{Name: "apitest", Capability: capability.KindRuntime, Version: "test"}
 }
@@ -480,6 +487,23 @@ func (f *FakeRuntime) Calls() []EnsureCall {
 	defer f.mu.Unlock()
 	out := make([]EnsureCall, len(f.ensures))
 	copy(out, f.ensures)
+	return out
+}
+
+// Restart 实现 RuntimeRestart 可选子面（ADR-0069）：记录调用即返回。
+func (f *FakeRuntime) Restart(_ context.Context, ns capability.NamespaceRef, workloadID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.restarts = append(f.restarts, RestartCall{NS: ns, WorkloadID: workloadID})
+	return nil
+}
+
+// RestartCalls 返回 RuntimeRestart 动词记录快照。
+func (f *FakeRuntime) RestartCalls() []RestartCall {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]RestartCall, len(f.restarts))
+	copy(out, f.restarts)
 	return out
 }
 

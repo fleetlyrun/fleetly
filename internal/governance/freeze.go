@@ -62,18 +62,21 @@ var FrozenVerbs = map[string]freezeScope{
 	"/fleetly.structure.v1.DatabasesService/RotateDatabasePassword":     {field: "database_id", kind: anchor.KindDatabase},
 	"/fleetly.delivery.v1.DeploymentsService/Deploy":                    {field: "app_id", kind: anchor.KindApp},
 	"/fleetly.delivery.v1.DeploymentsService/Rollback":                  {field: "app_id", kind: anchor.KindApp},
-	"/fleetly.delivery.v1.TemplatesService/InstantiateTemplate":         {field: "project_id", kind: anchor.KindProject},
-	"/fleetly.delivery.v1.HooksService/SetGitHook":                      {field: "app_id", kind: anchor.KindApp},
-	"/fleetly.delivery.v1.HooksService/RotateHookToken":                 {field: "app_id", kind: anchor.KindApp},
-	"/fleetly.delivery.v1.HooksService/ReceiveWebhook":                  {field: "token", kind: anchor.KindHookToken},
-	"/fleetly.automation.v1.TasksService/CreateTask":                    {field: "project_id", kind: anchor.KindProject},
-	"/fleetly.automation.v1.TasksService/ScaleTask":                     {field: "id", kind: anchor.KindTask},
-	"/fleetly.automation.v1.TasksService/DeleteTask":                    {field: "id", kind: anchor.KindTask},
-	"/fleetly.automation.v1.SchedulesService/CreateSchedule":            {field: "project_id", kind: anchor.KindProject},
-	"/fleetly.automation.v1.SchedulesService/DeleteSchedule":            {field: "id", kind: anchor.KindSchedule},
-	"/fleetly.automation.v1.SchedulesService/TriggerSchedule":           {field: "id", kind: anchor.KindSchedule},
-	"/fleetly.proxy.v1.RoutesService/CreateRoute":                       {field: "project_id", kind: anchor.KindProject},
-	"/fleetly.proxy.v1.RoutesService/DeleteRoute":                       {field: "id", kind: anchor.KindRoute},
+	// RestartProcess 是运行态变更（ADR-0069）：虽不动 Spec/lineage，载体
+	// 重排即 Workload 变更族，冻结期照拒。
+	"/fleetly.delivery.v1.DeploymentsService/RestartProcess":    {field: "app_id", kind: anchor.KindApp},
+	"/fleetly.delivery.v1.TemplatesService/InstantiateTemplate": {field: "project_id", kind: anchor.KindProject},
+	"/fleetly.delivery.v1.HooksService/SetGitHook":              {field: "app_id", kind: anchor.KindApp},
+	"/fleetly.delivery.v1.HooksService/RotateHookToken":         {field: "app_id", kind: anchor.KindApp},
+	"/fleetly.delivery.v1.HooksService/ReceiveWebhook":          {field: "token", kind: anchor.KindHookToken},
+	"/fleetly.automation.v1.TasksService/CreateTask":            {field: "project_id", kind: anchor.KindProject},
+	"/fleetly.automation.v1.TasksService/ScaleTask":             {field: "id", kind: anchor.KindTask},
+	"/fleetly.automation.v1.TasksService/DeleteTask":            {field: "id", kind: anchor.KindTask},
+	"/fleetly.automation.v1.SchedulesService/CreateSchedule":    {field: "project_id", kind: anchor.KindProject},
+	"/fleetly.automation.v1.SchedulesService/DeleteSchedule":    {field: "id", kind: anchor.KindSchedule},
+	"/fleetly.automation.v1.SchedulesService/TriggerSchedule":   {field: "id", kind: anchor.KindSchedule},
+	"/fleetly.proxy.v1.RoutesService/CreateRoute":               {field: "project_id", kind: anchor.KindProject},
+	"/fleetly.proxy.v1.RoutesService/DeleteRoute":               {field: "id", kind: anchor.KindRoute},
 	// 上传产物接入（F1.10，ADR-0019 附录 A.2）：client-streaming 写面——
 	// Team 锚在首帧 meta.project_id（流式拦截器首帧 RecvMsg 执法；点路径
 	// 读嵌套字段）。

@@ -372,6 +372,28 @@ func (svc *DeploymentsService) Rollback(ctx context.Context, req *deliveryv1.Rol
 	return &deliveryv1.RollbackResponse{Deployment: deploymentMsg(*d), Admission: admissionMsg(adm)}, nil
 }
 
+// RestartProcess 强制重排单个进程的载体（ADR-0069）：授权面与 Rollback
+// 同款（app 域写面）；engine 哨兵 map 为精确错误码（仿 systemgrpc 组件
+// 重启面——未部署与未知进程同归 E_NOT_FOUND，运行时缺子面是平台形态问题
+// 归 E_INTERNAL）。
+func (svc *DeploymentsService) RestartProcess(ctx context.Context, req *deliveryv1.RestartProcessRequest) (*deliveryv1.RestartProcessResponse, error) {
+	if err := svc.s.authorizeAppIDOnly(ctx, req.GetAppId()); err != nil {
+		return nil, err
+	}
+	if err := svc.s.Engine.RestartProcess(ctx, req.GetAppId(), req.GetProcessName()); err != nil {
+		switch {
+		case errors.Is(err, engine.ErrProcessUnknown):
+			return nil, apperr.New("E_NOT_FOUND",
+				"process %q not found in app %s (unknown name or never deployed)",
+				req.GetProcessName(), req.GetAppId()).WithCause(err)
+		case errors.Is(err, engine.ErrRuntimeNoRestart):
+			return nil, apperr.New("E_INTERNAL", "the runtime provider does not implement carrier restart").WithCause(err)
+		}
+		return nil, mapStateError(err, "app")
+	}
+	return &deliveryv1.RestartProcessResponse{}, nil
+}
+
 // ---- Revisions ----
 
 type RevisionsService struct {

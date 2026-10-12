@@ -71,16 +71,20 @@ the causal chain; logs and builds are the evidence underneath.
 6. Recovery verbs — pick per the triage table, do not stack them blindly.
    Cancel clears a queued or in-flight deployment first (terminal states
    refuse with E_NOT_CANCELLABLE); rollback and re-deploy submit the
-   replacement. To attach to a deployment or build already in flight
-   (webhook-triggered chains submit outside your session), use the standalone
-   wait verbs — they stream state transitions and exit non-zero unless the
-   row ends `succeeded`:
+   replacement. For a wedged process with a healthy spec (internal state
+   rotted, carriers need a fresh start), `apps restart` force-reschedules
+   that process's carriers in place — no new revision or deployment, brief
+   per-replica downtime (ADR-0069). To attach to a deployment or build
+   already in flight (webhook-triggered chains submit outside your session),
+   use the standalone wait verbs — they stream state transitions and exit
+   non-zero unless the row ends `succeeded`:
 
    ```bash
    fleetly deployments cancel DEPLOYMENT_ID
    fleetly deployments wait --deployment DEPLOYMENT_ID
    fleetly builds wait --build BUILD_ID
    fleetly rollback --app APP_ID --wait
+   fleetly apps restart --app APP_ID --process PROCESS
    fleetly deploy --app APP_ID --image IMAGE --wait
    fleetly deploy --app APP_ID --from-dir DIR --wait
    fleetly deploy --app APP_ID --from-dir DIR --builder railpack --railpack-version RAILPACK_VERSION --wait
@@ -98,7 +102,7 @@ the causal chain; logs and builds are the evidence underneath.
 | `failed` + `railpack: pinned version mismatch` or `railpack binary ... is not runnable` | The error text names the platform's pinned version and the `--railpack-version` form | Redeploy with the exact pinned version; a missing/mismatched binary is an operator task on the control-plane node (install.sh pins it). |
 | `failed` + `cross-project network reference ... is not approved` | `fleetly networks peers --project PROJECT_ID --json` | Have the receiving project approve the peer declaration, or drop the reference from the spec. |
 | `releasing` / `observing` for minutes, no failure | `fleetly events follow --replay --json` (are `workload` observations arriving at all?) | If observations stalled, suspect the runtime/provider; if L1 legitimately waits, the window (default 120s) will fail the deployment on its own — do not preempt it. |
-| `workload.stopped` on a `succeeded` app (steady state) | `fleetly logs --app APP_ID --process PROCESS --tail 100`, `fleetly events list --limit 20 --json` | The watchdog only reports. If the process exits are a crash loop, fix and deploy; a stopped row with no deployment in flight may need a no-op redeploy to reconverge. |
+| `workload.stopped` on a `succeeded` app (steady state) | `fleetly logs --app APP_ID --process PROCESS --tail 100`, `fleetly events list --limit 20 --json` | The watchdog only reports. If the process exits are a crash loop, fix and deploy; a stopped row with no deployment in flight reconverges with `fleetly apps restart --app APP_ID --process PROCESS` (in-place force-reschedule; a redeploy of unchanged content does not roll carriers). |
 | `E_QUEUE_FULL` on submit | `fleetly deployments list --app APP_ID --json` (queued rows pile-up) | Wait for the in-flight deployment to drain; do not retry-loop the submit. |
 | `E_CHANGE_FROZEN` on any change verb | `fleetly freeze list --json` | A change freeze is active for the team/resource. Lift it (`fleetly freeze lift FREEZE_ID`) only if the change is intended. |
 

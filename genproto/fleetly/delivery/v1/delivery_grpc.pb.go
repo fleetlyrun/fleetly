@@ -29,6 +29,7 @@ const (
 	DeploymentsService_ListDeployments_FullMethodName  = "/fleetly.delivery.v1.DeploymentsService/ListDeployments"
 	DeploymentsService_CancelDeployment_FullMethodName = "/fleetly.delivery.v1.DeploymentsService/CancelDeployment"
 	DeploymentsService_Rollback_FullMethodName         = "/fleetly.delivery.v1.DeploymentsService/Rollback"
+	DeploymentsService_RestartProcess_FullMethodName   = "/fleetly.delivery.v1.DeploymentsService/RestartProcess"
 	DeploymentsService_WaitDeployment_FullMethodName   = "/fleetly.delivery.v1.DeploymentsService/WaitDeployment"
 )
 
@@ -44,6 +45,12 @@ type DeploymentsServiceClient interface {
 	CancelDeployment(ctx context.Context, in *CancelDeploymentRequest, opts ...grpc.CallOption) (*CancelDeploymentResponse, error)
 	// Rollback 是一等动词（F0.11）：Revision Replay——空目标回上一成功基线。
 	Rollback(ctx context.Context, in *RollbackRequest, opts ...grpc.CallOption) (*RollbackResponse, error)
+	// RestartProcess 强制重排单个 Process 的载体（ADR-0069，排障动线"进程
+	// 卡死 → 就地重启"）：不动镜像不动 Spec、零 lineage（不产生 Revision/
+	// Deployment），经 Runtime 重启子面（swarm = ForceUpdate 滚动重排；
+	// k3s = pod 驱逐由 Deployment 自愈）逐副本替换。与 ADR-0064 内容寻址
+	// Ensure 互补：重发未变更 Spec 零替换，本动词是显式强制面。
+	RestartProcess(ctx context.Context, in *RestartProcessRequest, opts ...grpc.CallOption) (*RestartProcessResponse, error)
 	// WaitDeployment 是等待原语（F1.3，架构 §7）：事件流过滤实现——逐状态
 	// 快照帧，终态帧后收流。Agent/Console 的"部署-等待-验证"循环不必自写
 	// 轮询。WaitRun 随 Run 实体（F1.5/6）落地，不预发空面。
@@ -108,6 +115,16 @@ func (c *deploymentsServiceClient) Rollback(ctx context.Context, in *RollbackReq
 	return out, nil
 }
 
+func (c *deploymentsServiceClient) RestartProcess(ctx context.Context, in *RestartProcessRequest, opts ...grpc.CallOption) (*RestartProcessResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RestartProcessResponse)
+	err := c.cc.Invoke(ctx, DeploymentsService_RestartProcess_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *deploymentsServiceClient) WaitDeployment(ctx context.Context, in *WaitDeploymentRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[WaitDeploymentResponse], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &DeploymentsService_ServiceDesc.Streams[0], DeploymentsService_WaitDeployment_FullMethodName, cOpts...)
@@ -139,6 +156,12 @@ type DeploymentsServiceServer interface {
 	CancelDeployment(context.Context, *CancelDeploymentRequest) (*CancelDeploymentResponse, error)
 	// Rollback 是一等动词（F0.11）：Revision Replay——空目标回上一成功基线。
 	Rollback(context.Context, *RollbackRequest) (*RollbackResponse, error)
+	// RestartProcess 强制重排单个 Process 的载体（ADR-0069，排障动线"进程
+	// 卡死 → 就地重启"）：不动镜像不动 Spec、零 lineage（不产生 Revision/
+	// Deployment），经 Runtime 重启子面（swarm = ForceUpdate 滚动重排；
+	// k3s = pod 驱逐由 Deployment 自愈）逐副本替换。与 ADR-0064 内容寻址
+	// Ensure 互补：重发未变更 Spec 零替换，本动词是显式强制面。
+	RestartProcess(context.Context, *RestartProcessRequest) (*RestartProcessResponse, error)
 	// WaitDeployment 是等待原语（F1.3，架构 §7）：事件流过滤实现——逐状态
 	// 快照帧，终态帧后收流。Agent/Console 的"部署-等待-验证"循环不必自写
 	// 轮询。WaitRun 随 Run 实体（F1.5/6）落地，不预发空面。
@@ -167,6 +190,9 @@ func (UnimplementedDeploymentsServiceServer) CancelDeployment(context.Context, *
 }
 func (UnimplementedDeploymentsServiceServer) Rollback(context.Context, *RollbackRequest) (*RollbackResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Rollback not implemented")
+}
+func (UnimplementedDeploymentsServiceServer) RestartProcess(context.Context, *RestartProcessRequest) (*RestartProcessResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RestartProcess not implemented")
 }
 func (UnimplementedDeploymentsServiceServer) WaitDeployment(*WaitDeploymentRequest, grpc.ServerStreamingServer[WaitDeploymentResponse]) error {
 	return status.Error(codes.Unimplemented, "method WaitDeployment not implemented")
@@ -282,6 +308,24 @@ func _DeploymentsService_Rollback_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DeploymentsService_RestartProcess_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RestartProcessRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeploymentsServiceServer).RestartProcess(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DeploymentsService_RestartProcess_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeploymentsServiceServer).RestartProcess(ctx, req.(*RestartProcessRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _DeploymentsService_WaitDeployment_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(WaitDeploymentRequest)
 	if err := stream.RecvMsg(m); err != nil {
@@ -319,6 +363,10 @@ var DeploymentsService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Rollback",
 			Handler:    _DeploymentsService_Rollback_Handler,
+		},
+		{
+			MethodName: "RestartProcess",
+			Handler:    _DeploymentsService_RestartProcess_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

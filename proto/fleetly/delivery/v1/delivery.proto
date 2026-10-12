@@ -65,6 +65,19 @@ service DeploymentsService {
     };
   }
 
+  // RestartProcess 强制重排单个 Process 的载体（ADR-0069，排障动线"进程
+  // 卡死 → 就地重启"）：不动镜像不动 Spec、零 lineage（不产生 Revision/
+  // Deployment），经 Runtime 重启子面（swarm = ForceUpdate 滚动重排；
+  // k3s = pod 驱逐由 Deployment 自愈）逐副本替换。与 ADR-0064 内容寻址
+  // Ensure 互补：重发未变更 Spec 零替换，本动词是显式强制面。
+  rpc RestartProcess(RestartProcessRequest) returns (RestartProcessResponse) {
+    option (google.api.http) = { post: "/v1/apps/{app_id}/processes/{process_name}/restart" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "deployments" op: SCOPE_OP_WRITE }
+    };
+  }
+
   // WaitDeployment 是等待原语（F1.3，架构 §7）：事件流过滤实现——逐状态
   // 快照帧，终态帧后收流。Agent/Console 的"部署-等待-验证"循环不必自写
   // 轮询。WaitRun 随 Run 实体（F1.5/6）落地，不预发空面。
@@ -308,6 +321,12 @@ message ListDeploymentsRequest {
 message ListDeploymentsResponse { repeated Deployment deployments = 1; }
 message CancelDeploymentRequest { string id = 1; }
 message RollbackRequest { string app_id = 1; string to_revision = 2; }
+// RestartProcessRequest 按进程名定位（App 域内 Workload ID = app_id +
+// process_name，projection 单源）；进程必须存在于当前冻结 Spec（未知进程
+// 精确拒绝——k3s pod 驱逐对零命中静默，引擎侧先行校验）。
+message RestartProcessRequest { string app_id = 1; string process_name = 2; }
+// RestartProcessResponse 空体：重启是 runtime-only 动作，无新记录可指。
+message RestartProcessResponse {}
 message WaitDeploymentRequest { string deployment_id = 1; }
 // WaitDeploymentResponse 是状态快照帧；流在终态帧后关闭（终态集见
 // Deployment.state 注释）。
