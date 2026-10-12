@@ -907,3 +907,5 @@ F3.1/F3.2/F3.3/F3.6 四批走查的浏览器级挂账在后端在场的环境（
 **诚实边界（挂账）**：受管域**非零扰动**——traefik/zot 在第二换装窗（03:00 版本戳重注）各恰滚一次（UpdateStatus completed、服务活体正常）。zot 双 secret 版本并存佐证 htpasswd 值变（spec 内容异→真滚动，非 modulo-gen 误判）；判异源未精确定位（本窗叠加并行 ADR-0065/0067 批——exec/telemetry 面变更，managedFingerprint 触发链待查）。VL/VM/cadvisor 7 天旧龄零扰动。
 
 **验收面清理**：arch3probe 项目整体删除（5 任务 + 池缩零 + 载体零残留）。
+
+**版本探查正解落成（2026-10-12 记录·四十四补，8150725-verflag 现役）**：`fleetlyd version` 动词与 `--version`/`-version` 旗标拦截同批落地（runner 前打印退 0，绝不触配置/数据根；`--` 后位置参数字面不拦）——runbook 115/516 行两次踩坑的根治。换装实录：Backup `51182ed4` 前置 + e993a6b-arch3 留底 → 真机三形态活体（两形态同输出 `fleetlyd 8150725-verflag (commit …, built …)`）+ 无流浪产物 + doctor 10 ok / 2 warning / 0 failed。**自此版本核对首选 `fleetlyd version` 或 `fleetlyd --version`**（journalctl/doctor 行仍为备选）；"勿直接跑二进制"教训随之退役。
