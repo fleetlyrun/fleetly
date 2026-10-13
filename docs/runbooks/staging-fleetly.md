@@ -537,6 +537,16 @@ ADR-0015 升级序的完整落地形态：**Platform Backup 前置 → SIGTERM �
 3. **dry-run**（解封全量验证 + 报告将重封条数，不落库）：`fleetlyd admin rewrap --data-root /var/lib/fleetly`。输出 secrets / hooks / github apps 三族的 total / to rewrap / already current / failed 列（ADR-0073 起 github_apps 私钥信封一并重封，Global 行 Key 冠 `global/` 前缀）；`failed > 0`（报 `cannot be opened`）= 有行连退役 key 都解不开（key 全损或外来行）——先停下核对，执行模式整体拒跑、不写任何行。
 4. **执行**：`fleetlyd admin rewrap --data-root /var/lib/fleetly --execute`。单事务全量重封（secrets 全表含 tombstone + app_hooks 的 webhook secret 信封 + github_apps 两态行的私钥信封；指纹不变，任一行失败整体回滚）。幂等：已封到现役 key 的行跳过，重跑零重写。`--json` 形态供自动化核账。
 
+## 2026-10-13 记录·五十一（ADR-0073 GitHub App 接入材料换装 0a32dfb-adr73 + A 段userinfo 收紧）
+
+**换代内容**：github_apps 聚合（迁移 00030）+ GitHubAppsService 四 RPC（受理即验证/双作用域/E_GITHUB_UPSTREAM）+ engine clone 材料解析（Project App → Global → `git:<host>` Secret → 匿名）+ CLI `github-apps` 四动词 + console Registry 第三 tab / Fleet 段管理页。A 段同批：两写面拒 URL 内嵌访问材料。
+
+1. 前置硬门：Platform Backup `d28ee86b`（06:14 UTC）+ 卷 tar（torchwood-pg 48M + registry-zot 139M 至 /root/upgrade-0a32dfb-adr73/）。
+2. 换装序：SIGTERM 排水 → fleetlyd/fleetly `0a32dfb-adr73` 双二进制 install（旧版留底 /root/*-7c865ec-adr71-72.bak）→ 起服 → goose 前滚 v30 一次干净。
+3. 健康全绿：doctor 10 ok / 2 warning（已知良性）/ 0 fail；`fleetly github-apps list --global` 空清单（新面活体）；console 200 且 asset `index-DjkYJvLT.css`（新 dist 嵌入实证）；六服务 1/1 零滚动（db 载体 14h 未触——数据面零扰动实证；torchwood-pg 空库为重置后既有态，torchwood-14 建而未部署，与换装无关）。
+
+**挂账**：真机全链（GitHub 建 App → put → push → clone → build）待用户 GitHub 侧操作，操作序见上节。
+
 ## GitHub App 接入（私有 Git 仓库，ADR-0073 阶段 B）
 
 私有仓构建期材料面：repo 干净 URL 冻结，clone 前按 host+属主解析 GitHub App（Project 级 → Global → 匿名；命中即现铸 1h installation token）。操作序：
