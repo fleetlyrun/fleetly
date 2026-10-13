@@ -33,7 +33,7 @@ const defaultGitHost = "github.com"
 // age 信封、读面只回指纹全套既有执法；username 空 = defaultGitUser）。
 const gitSecretPrefix = "git:"
 
-// defaultGitUser 是材料 username 缺省（GitHub PAT 对任意非空用户名合法；
+// defaultGitUser 是材料 username 缺省（GitHub 对任意非空用户名合法；
 // GitLab 惯用 oauth2）。
 const defaultGitUser = "oauth2"
 

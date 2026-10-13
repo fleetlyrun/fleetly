@@ -23,9 +23,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/fleetlyrun/fleetly/internal/github"
-	"github.com/fleetlyrun/fleetly/internal/state/secret"
 	"github.com/fleetlyrun/fleetly/internal/material"
 	"github.com/fleetlyrun/fleetly/internal/state/githubapp"
+	"github.com/fleetlyrun/fleetly/internal/state/secret"
 	"github.com/fleetlyrun/fleetly/internal/state/statetest"
 )
 

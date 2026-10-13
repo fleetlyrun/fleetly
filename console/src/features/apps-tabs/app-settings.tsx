@@ -139,8 +139,8 @@ function GitHookCard({ appId, projectId }: { appId: string; projectId: string })
         >
           Connect a GitHub App
         </Link>{" "}
-        (project or global) instead of a token-URL — fleetly mints a short-lived installation token per build; nothing lands in
-        revisions, and rotating the key needs no redeploy.
+        (project or global) — or put a <span className="font-mono">git:&lt;host&gt;</span> project secret for other hosts — instead
+        of a token-URL: access material resolves at build time, nothing lands in revisions, and rotating needs no redeploy.
       </p>
       {hook.isPending ? (
         <p className="text-xs text-muted-foreground">Loading hook…</p>

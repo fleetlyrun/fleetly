@@ -604,7 +604,7 @@ func validateGitRepoURL(field, repo string) error {
 	u, err := url.Parse(repo)
 	switch {
 	case err != nil || !strings.HasPrefix(repo, "https://") || u.Host == "":
-		return invalidf(field, "must be a clean https:// repository URL (got %q); http, ssh, file and local paths are rejected", repo)
+		return invalidf(field, "must be a clean https:// repository URL (got %q); other transports and local paths are rejected", repo)
 	case u.User != nil:
 		return invalidf(field, "must not embed access material in the URL — it freezes into revisions and shows up in read faces; configure a github app or a git:<host> project secret instead")
 	}
