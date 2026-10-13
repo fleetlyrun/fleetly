@@ -1,0 +1,11 @@
+{
+  "repos": [
+    {
+      "full_name": "acme/web",
+      "private": true
+    },
+    {
+      "full_name": "acme/oss-templates"
+    }
+  ]
+}

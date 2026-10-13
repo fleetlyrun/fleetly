@@ -1,0 +1,8 @@
+app ghapp-2
+scope global
+owner acme
+app id 182345
+installation 51790921
+api base <GITHUBFAKE>
+private key fingerprint <FP>
+verified against github (owner resolved automatically)

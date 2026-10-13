@@ -1,0 +1,14 @@
+{
+  "apps": [
+    {
+      "id": "ghapp-2",
+      "app_id": "182345",
+      "installation_id": "51790921",
+      "account_login": "acme",
+      "api_base": "<GITHUBFAKE>",
+      "private_key_fingerprint": "<FP>",
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z"
+    }
+  ]
+}

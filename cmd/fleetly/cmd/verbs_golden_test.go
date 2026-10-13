@@ -36,10 +36,14 @@ var (
 	invitationRe   = regexp.MustCompile(`fltinv_[A-Za-z0-9_-]{4,}`)
 	hookTokenRe    = regexp.MustCompile(`flthook_[A-Za-z0-9_-]{4,}`)
 	credPathRe     = regexp.MustCompile(`(?m)^credentials saved: .*$`)
-	credJSONRe     = regexp.MustCompile(`"credentials_path": ".*?"`)
+	// ghFakeBaseRe 是 GitHub App golden 夹具的假上游基址（TLS httptest 的
+	// 临时端口——ADR-0073；窄形态 127.0.0.1 显式端口，不吞其他 URL）。
+	ghFakeBaseRe = regexp.MustCompile(`https://127\.0\.0\.1:[0-9]+`)
+	credJSONRe   = regexp.MustCompile(`"credentials_path": ".*?"`)
 )
 
 func normalizeGolden(s string) string {
+	s = ghFakeBaseRe.ReplaceAllString(s, "<GITHUBFAKE>")
 	s = invitationRe.ReplaceAllString(s, "<INVITATION>")
 	s = hookTokenRe.ReplaceAllString(s, "<HOOKTOKEN>")
 	s = credPathRe.ReplaceAllString(s, "credentials saved: <CREDS>")
