@@ -426,7 +426,10 @@ A_BODY=$(dual_probe 'wget -q -O - http://web.alpha:8080/ 2>/dev/null' || true)
 B_BODY=$(dual_probe 'wget -q -O - http://web.beta:8080/ 2>/dev/null' || true)
 case "$A_BODY" in *BG-VERSION\ dual-alpha*) ;; *) echo "web.alpha did not serve the alpha app (body: $A_BODY)" >&2; exit 1 ;; esac
 case "$B_BODY" in *BG-VERSION\ dual-beta*) ;; *) echo "web.beta did not serve the beta app (body: $B_BODY)" >&2; exit 1 ;; esac
-BARE=$(dual_probe 'nslookup web 2>/dev/null' | sed -n 's/^Address:[[:space:]]*\([0-9.]*\)$/\1/p' | grep -c . || true)
+# 尾点 = 绝对查询：宿主 Tailscale 搜索域会泄进容器 resolv.conf，裸名单标签
+# 被 nslookup 先展开成 web.<ts.net> → NXDOMAIN 假红（2026-10-13 环境咬出，
+# 与平台 DNS 无关——同日 ADR-0074 蓝绿腿其余全绿）。
+BARE=$(dual_probe 'nslookup web. 2>/dev/null' | sed -n 's/^Address:[[:space:]]*\([0-9.]*\)$/\1/p' | grep -c . || true)
 [ "${BARE:-0}" -ge 2 ] || { echo "bare name did not round-robin across both apps (addresses: $BARE)" >&2; dual_probe 'nslookup web' >&2 || true; exit 1; }
 log "bare name resolves to both apps (DNS round-robin face); full names disambiguate"
 
