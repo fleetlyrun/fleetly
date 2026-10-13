@@ -88,6 +88,10 @@ _Avoid_: DB instance, service instance, addon
 一键部署蓝图：变量声明 + compose 受控子集 + 平台扩展键；实例化（Instantiate）产出 App 部署与伴生 Secret/Database/Route。平台全局目录文档（内嵌 + 刷新快照），非资源行。与 Database 模板（引擎钉版知识，dbtemplate）、Spec（规范化 IR）分立（ADR-0050）。
 _Avoid_: blueprint, recipe
 
+**Compose Intake**:
+App 部署声明的受理语言：compose-spec 官方语法 + `x-fleetly-*` 扩展键（`deploy.x-fleetly-strategy`、`healthcheck.x-fleetly-http-path`/`x-fleetly-tcp-port`、顶层 `x-fleetly-first-boot-jobs`），compose-go 官方解析与 schema 校验（非 x- 自定义键拒）；引用 secrets/volumes 走官方 external 声明（名即平台实体名）；官方插值环境 = 平台变量（Shared ∪ AppVariable，未消解即拒）。归一化产物 = Spec（ADR-0074）。
+_Avoid_: Procfile
+
 **Source**:
 App 的材料来源，三种：Git 引用、镜像引用、上传产物。Spec 所有权分裂（ADR-0072）：材料半边（source、build）归部署来源所有，运行时半边（processes 的形状字段）归声明方所有——配置了 Git hook 的 App 材料归 git：push 合并（新材料 + 冻结运行时），Deploy(spec_file) 是运行时 overlay（冻结材料 + 提交运行时），材料源切换需 override 或先删 hook。
 _Avoid_: repo

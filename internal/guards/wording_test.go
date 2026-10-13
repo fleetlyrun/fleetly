@@ -98,6 +98,10 @@ var bannedPatterns = map[string]*regexp.Regexp{
 	"launch token":  wordRe(`launch[ _-]?tokens?`),
 	"magic link":    wordRe(`magic[ _-]?links?`),
 	"access url":    wordRe(`access[ _-]?urls?`),
+	// Compose Intake 词条（ADR-0074 入册）：Procfile 是评估后显式拒绝的
+	// Heroku 系规范形态（进程命令清单，表达力不足）；机械无歧义、扫描面
+	// 零命中。
+	"procfile": wordRe(`procfile|procfiles`),
 }
 
 // wordRe 构造大小写不敏感、词边界的匹配器（多形态以 | 预展开）。
