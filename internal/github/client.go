@@ -157,9 +157,10 @@ type Repo struct {
 }
 
 // ListRepos 列 installation 可达仓库（分页拉全；受理验证面与 console
-// Repos 面板共用）。
+// Repos 面板共用）。鉴权 = installation token（/installation/repositories
+// 不认 App JWT——401 Bad credentials；真机咬出后修正）。
 func (c *Client) ListRepos(ctx context.Context, app *App) ([]Repo, error) {
-	jwtToken, err := c.signAppJWT(app)
+	token, err := c.InstallationToken(ctx, app)
 	if err != nil {
 		return nil, err
 	}
@@ -172,7 +173,7 @@ func (c *Client) ListRepos(ctx context.Context, app *App) ([]Repo, error) {
 			} `json:"repositories"`
 		}
 		path := "/installation/repositories?per_page=100&page=" + strconv.Itoa(page)
-		if err := c.do(ctx, http.MethodGet, app, path, jwtToken, nil, &pageResp); err != nil {
+		if err := c.do(ctx, http.MethodGet, app, path, token, nil, &pageResp); err != nil {
 			return nil, err
 		}
 		for _, r := range pageResp.Repositories {

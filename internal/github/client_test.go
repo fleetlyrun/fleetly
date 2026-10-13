@@ -71,6 +71,12 @@ func (f *fakeGitHub) server(t *testing.T) *httptest.Server {
 		})
 	})
 	mux.HandleFunc("GET /installation/repositories", func(w http.ResponseWriter, r *http.Request) {
+		// 执法（真机咬出口）：该端点只认 installation token（ghs_ 前缀）——
+		// App JWT 打上来 = GitHub 401 Bad credentials 的形态。
+		if auth := r.Header.Get("Authorization"); auth != "Bearer ghs_installation_token" {
+			http.Error(w, `{"message":"Bad credentials"}`, http.StatusUnauthorized)
+			return
+		}
 		page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 		w.Header().Set("Content-Type", "application/json")
 		if page == 1 {
