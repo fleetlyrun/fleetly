@@ -97,8 +97,20 @@ function GitHookCard({ appId, projectId }: { appId: string; projectId: string })
   const queryClient = useQueryClient();
   const hook = useGitHook(appId);
   const [form, setForm] = useState({ repo: "", branch: "main", dockerfile: "", watchPaths: "" });
+  const [editing, setEditing] = useState(false);
   const [revealedSecret, setRevealedSecret] = useState<string | null>(null);
   const invalidate = () => void queryClient.invalidateQueries({ queryKey: ["apps", "hook", appId] });
+  // 编辑入口（SetGitHook 是全量 upsert：改配置不换 Token）——表单按现值
+  // 预填，保存即回展示态。
+  const startEdit = () => {
+    setForm({
+      repo: hook.data?.repo ?? "",
+      branch: hook.data?.branch ?? "main",
+      dockerfile: hook.data?.dockerfile ?? "",
+      watchPaths: (hook.data?.watch_paths ?? []).join(", "),
+    });
+    setEditing(true);
+  };
 
   const save = useMutation({
     mutationFn: async () =>
@@ -110,6 +122,7 @@ function GitHookCard({ appId, projectId }: { appId: string; projectId: string })
       }),
     onSuccess: (resp) => {
       invalidate();
+      setEditing(false);
       toast("Git deploy hook configured");
       if (resp?.secret) setRevealedSecret(resp.secret);
     },
@@ -160,7 +173,7 @@ function GitHookCard({ appId, projectId }: { appId: string; projectId: string })
       </p>
       {hook.isPending ? (
         <p className="text-xs text-muted-foreground">Loading hook…</p>
-      ) : configured ? (
+      ) : configured && !editing ? (
         <>
           <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
             <dt className="text-muted-foreground">repo</dt>
@@ -185,6 +198,9 @@ function GitHookCard({ appId, projectId }: { appId: string; projectId: string })
             <Button size="sm" disabled={refresh.isPending} onClick={() => refresh.mutate()}>
               {refresh.isPending ? "Pulling…" : "Deploy now"}
             </Button>
+            <Button size="sm" variant="outline" onClick={startEdit}>
+              Edit
+            </Button>
             <Button size="sm" variant="outline" disabled={rotate.isPending} onClick={() => rotate.mutate()}>
               Rotate token…
             </Button>
@@ -205,6 +221,12 @@ function GitHookCard({ appId, projectId }: { appId: string; projectId: string })
             save.mutate();
           }}
         >
+          {editing ? (
+            <p className="rounded-lg border bg-muted/40 px-3 py-2 text-2xs text-muted-foreground">
+              Editing the existing hook — SetGitHook is a full upsert: fields become this save&apos;s values, the token stays
+              unchanged. Repo URL must keep its scheme (https).
+            </p>
+          ) : null}
           <div className="flex flex-col gap-2">
             <Label htmlFor="hook-repo">Repo</Label>
             <Input id="hook-repo" className="font-mono text-xs" value={form.repo} onChange={(event) => setForm({ ...form, repo: event.target.value })} placeholder="github.com/acme/web" />
@@ -223,10 +245,15 @@ function GitHookCard({ appId, projectId }: { appId: string; projectId: string })
             <Label htmlFor="hook-watch">Watch paths (optional, comma separated)</Label>
             <Input id="hook-watch" className="font-mono text-xs" value={form.watchPaths} onChange={(event) => setForm({ ...form, watchPaths: event.target.value })} placeholder="web/, libs/" />
           </div>
-          <div>
+          <div className="flex gap-2">
             <Button type="submit" size="sm" disabled={save.isPending || form.repo === ""}>
-              {save.isPending ? "Configuring…" : "Configure hook"}
+              {save.isPending ? "Saving…" : editing ? "Save changes" : "Configure hook"}
             </Button>
+            {editing ? (
+              <Button type="button" size="sm" variant="outline" onClick={() => setEditing(false)}>
+                Cancel
+              </Button>
+            ) : null}
           </div>
         </form>
       )}

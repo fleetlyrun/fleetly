@@ -97,14 +97,16 @@ export function DeploySheet({
     },
   });
   const hasFrozen = frozen.data != null;
-  const source: SourceKind = sourceChosen ?? (hasFrozen ? "current" : "image");
-  // hook 所有权（ADR-0072）：hook 在即材料源禁用。
+  // hook 所有权（ADR-0072）：hook 在即整张四源表单退场（Deploy from git
+  // 分支接管），source 归 null 让各源条件段全部跳过。
   const hook = useQuery({
     queryKey: ["resources", "app-hook", effectiveAppId],
     enabled: open && effectiveAppId !== "",
     queryFn: async () => {
       try {
-        return await apiFetch<{ repo?: string }>(`/v1/apps/${encodeURIComponent(effectiveAppId)}/hook`);
+        const res = await apiFetch<{ hook?: { repo?: string; branch?: string; dockerfile?: string } }>(
+          `/v1/apps/${encodeURIComponent(effectiveAppId)}/hook`);
+        return res?.hook ?? null;
       } catch (error) {
         if (error instanceof ApiError && error.status === 404) return null;
         throw error;
@@ -112,6 +114,27 @@ export function DeploySheet({
     },
   });
   const hookOwned = hook.data != null;
+  const source: SourceKind | null = hookOwned ? null : (sourceChosen ?? (hasFrozen ? "current" : "image"));
+
+  // 拉取通道（RefreshGitHook）：hook 托管 App 的部署主操作——不依赖
+  // GitHub 侧 webhook,HEAD 现解析;admission 同链（同 HEAD deduplicated）。
+  const refresh = useMutation({
+    mutationFn: async () =>
+      apiSend<{ deployment_id?: string; commit?: string; admission?: { outcome?: string } }>(
+        `/v1/apps/${encodeURIComponent(effectiveAppId)}/hook/refresh`,
+        "POST",
+        {},
+      ),
+    onSuccess: (resp) => {
+      queryClient.invalidateQueries({ queryKey: ["deployments"] });
+      const suffix = resp?.admission?.outcome === "deduplicated" ? " (deduplicated — same commit already in the pipeline)" : "";
+      toast(`Deployment ${resp?.deployment_id ?? "?"} queued @ ${resp?.commit?.slice(0, 7) ?? "?"}${suffix}`, {
+        action: resp?.deployment_id ? { label: "View", onClick: () => onDeployed?.(resp.deployment_id!) } : undefined,
+      });
+      onOpenChange(false);
+    },
+    onError: (cause) => toast.error(`${describeError(cause).title} — ${describeError(cause).detail}`),
+  });
 
   // current 源预填：冻结体 pretty JSON（App 切换/冻结更新时重播，除非已
   // 手编）。
@@ -129,7 +152,7 @@ export function DeploySheet({
         "POST",
         buildDeployPayload({
           appId: effectiveAppId,
-          source,
+          source: source ?? "image",
           image,
           processName,
           port,
@@ -185,7 +208,11 @@ export function DeploySheet({
             <RocketIcon className="size-4" />
             Deploy
           </SheetTitle>
-          <SheetDescription>Create a deployment — the server queues and supersedes by generation.</SheetDescription>
+          <SheetDescription>
+            {hookOwned
+              ? "Deploy from git — pulls the branch HEAD now; pushes trigger automatically once the webhook is configured."
+              : "Create a deployment — the server queues and supersedes by generation."}
+          </SheetDescription>
         </SheetHeader>
         <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
           <div className="flex flex-col gap-2">
@@ -216,10 +243,33 @@ export function DeploySheet({
             </Select>
           </div>
 
+          {hookOwned ? (
+            <div className="flex flex-col gap-2">
+              <Label>Git material</Label>
+              <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
+                <dt className="text-muted-foreground">repo</dt>
+                <dd className="break-all font-mono">{hook.data?.repo ?? "—"}</dd>
+                <dt className="text-muted-foreground">branch</dt>
+                <dd className="font-mono">{hook.data?.branch || "every branch"}</dd>
+                <dt className="text-muted-foreground">compose / dockerfile</dt>
+                <dd className="break-all font-mono">{hook.data?.dockerfile || "Dockerfile"}</dd>
+              </dl>
+              <p className="text-2xs leading-snug text-muted-foreground">
+                <span className="font-semibold text-foreground">Deploy now</span> pulls the branch HEAD and deploys immediately —
+                no webhook required. A <span className="font-mono">.yml/.yaml</span> file becomes processes (images deploy
+                directly); anything else builds as a Dockerfile. Pushes trigger automatically once the GitHub webhook is configured
+                (URL on the hook card in Settings).
+              </p>
+              <p className="text-2xs leading-snug text-muted-foreground">
+                Runtime settings live in Variables — the next pull bakes them. Material-source deploys (image/compose/upload) are
+                refused while the hook owns the spec; removing the hook returns ownership to this sheet.
+              </p>
+            </div>
+          ) : (
           <div className="flex flex-col gap-2">
             <Label>Source</Label>
             <Select
-              value={source}
+              value={source ?? undefined}
               onValueChange={(value) => {
                 setSourceChosen(value as SourceKind);
                 if (value !== "current") setSpecEdited(false);
@@ -243,19 +293,20 @@ export function DeploySheet({
               </SelectContent>
             </Select>
             <p className="text-2xs text-muted-foreground">
-              {SOURCE_HINTS[source]}
+              {source != null ? SOURCE_HINTS[source] : ""}
               {hookOwned && (source === "current" || source === "spec")
                 ? " Runtime overlay: the material half (source, build) stays with the frozen revision."
                 : ""}
             </p>
-            {hookOwned ? (
-              <p className="rounded-lg border border-[color-mix(in_oklch,var(--status-warning)_35%,transparent)] bg-[var(--status-warning-bg)] px-3 py-2 text-2xs text-[var(--status-warning)]">
-                Material sources are owned by the git hook{hook.data?.repo ? ` (${hook.data.repo})` : ""} — pushes
-                refresh the material and keep these runtime settings. Env changes belong in Variables (app variables);
-                removing the hook returns material ownership to deploys.
-              </p>
-            ) : null}
           </div>
+          )}
+
+          {hookOwned ? (
+            <div className="rounded-lg border border-[color-mix(in_oklch,var(--status-info)_35%,transparent)] bg-[var(--status-info-bg)] px-3 py-2 text-2xs text-[var(--status-info)]">
+              The git hook owns the material half of the spec (source, build) — pulls refresh it and keep your runtime settings
+              (ADR-0072).
+            </div>
+          ) : null}
 
           {source === "image" ? (
             <>
@@ -371,6 +422,8 @@ export function DeploySheet({
             </>
           ) : null}
 
+          {!hookOwned ? (
+          <>
           <Separator />
 
           <div className="grid grid-cols-2 gap-3">
@@ -385,6 +438,8 @@ export function DeploySheet({
             <Switch checked={supersede} onCheckedChange={setSupersede} />
             Supersede in-flight deployments (take over the queue)
           </label>
+          </>
+          ) : null}
 
           {mutation.isError ? (
             <div className="rounded-lg border border-[color-mix(in_oklch,var(--status-danger)_35%,transparent)] bg-[var(--status-danger-bg)] px-3 py-2">
@@ -394,14 +449,28 @@ export function DeploySheet({
               </div>
             </div>
           ) : null}
+          {refresh.isError ? (
+            <div className="rounded-lg border border-[color-mix(in_oklch,var(--status-danger)_35%,transparent)] bg-[var(--status-danger-bg)] px-3 py-2">
+              <div className="text-xs font-semibold text-[var(--status-danger)]">{describeError(refresh.error).title}</div>
+              <div className="mt-0.5 font-mono text-2xs break-all text-muted-foreground">
+                {describeError(refresh.error).detail}
+              </div>
+            </div>
+          ) : null}
         </div>
         <div className="flex justify-end gap-2 border-t px-4 py-3">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button disabled={!canSubmit} onClick={() => void mutation.mutate()}>
-            {mutation.isPending ? "Submitting…" : "Deploy"}
-          </Button>
+          {hookOwned ? (
+            <Button disabled={refresh.isPending} onClick={() => refresh.mutate()}>
+              {refresh.isPending ? "Pulling…" : "Deploy now"}
+            </Button>
+          ) : (
+            <Button disabled={!canSubmit} onClick={() => void mutation.mutate()}>
+              {mutation.isPending ? "Submitting…" : "Deploy"}
+            </Button>
+          )}
         </div>
       </SheetContent>
     </Sheet>
