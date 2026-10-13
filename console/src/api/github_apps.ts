@@ -27,6 +27,68 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/github-apps/manifest/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * CompleteManifestFlow 以 setup 回调的 installation_id 落行（走既有受
+         *     理即验证 + 密封 upsert；project_id 回传供冻结锚，须与 start 作用域一
+         *     致，谎言即拒）。流一次性：complete 后 nonce 作废。
+         */
+        post: operations["GitHubAppsService_CompleteManifestFlow"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/github-apps/manifest/consume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * ConsumeManifestCode 用一次性 code 换 App 凭据（私钥即收即封、暂存于
+         *     流存储，15 分钟时效），返回安装页 URL——installation 在下一步落定。
+         */
+        post: operations["GitHubAppsService_ConsumeManifestCode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/github-apps/manifest/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * StartManifestFlow 生成 GitHub manifest 跳转 URL（state = HMAC 签名，
+         *     绑作用域 + 15 分钟时效）。未配置公网 console 基址时精确失败（手动表
+         *     单兜底）。
+         */
+        post: operations["GitHubAppsService_StartManifestFlow"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/github-apps/{id}": {
         parameters: {
             query?: never;
@@ -68,6 +130,37 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        v1CompleteManifestFlowRequest: {
+            state?: string;
+            /**
+             * installation_id 来自 setup 回调查询参数。
+             * Format: int64
+             */
+            installation_id?: string;
+            /**
+             * project_id 回传 start 时的作用域（冻结锚与作用域一致性校验；global
+             *     流留空）。
+             */
+            project_id?: string;
+        };
+        v1CompleteManifestFlowResponse: {
+            app?: components["schemas"]["v1GitHubApp"];
+        };
+        v1ConsumeManifestCodeRequest: {
+            /** code 是 GitHub 回调 redirect_url 携带的一次性兑换码（10 分钟有效）。 */
+            code?: string;
+            /** state 是 start 返回流跳转链里原样带回的签名态（与 start 作用域绑定）。 */
+            state?: string;
+        };
+        v1ConsumeManifestCodeResponse: {
+            /**
+             * install_url 是该 App 的安装页地址（勾选仓库后 GitHub 回跳 setup_url
+             *     并携带 installation_id）。
+             */
+            install_url?: string;
+            /** app_name 是创建时的 App 名（GitHub 表单里用户可改）。 */
+            app_name?: string;
+        };
         v1DeleteGitHubAppResponse: Record<string, never>;
         v1GitHubApp: {
             id?: string;
@@ -113,6 +206,19 @@ export interface components {
         };
         v1SetGitHubAppResponse: {
             app?: components["schemas"]["v1GitHubApp"];
+        };
+        v1StartManifestFlowRequest: {
+            project_id?: string;
+            global?: boolean;
+        };
+        v1StartManifestFlowResponse: {
+            /**
+             * redirect_url 是 github.com 的 manifest 创建页地址（含编码 manifest），
+             *     调用方整页跳转。
+             */
+            redirect_url?: string;
+            /** state 是签名流态（consume/complete 原样回传；调用方透明）。 */
+            state?: string;
         };
         ErrorResponse: {
             code?: string;
@@ -179,6 +285,105 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1SetGitHubAppResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    GitHubAppsService_CompleteManifestFlow: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["v1CompleteManifestFlowRequest"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1CompleteManifestFlowResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    GitHubAppsService_ConsumeManifestCode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["v1ConsumeManifestCodeRequest"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ConsumeManifestCodeResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    GitHubAppsService_StartManifestFlow: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["v1StartManifestFlowRequest"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1StartManifestFlowResponse"];
                 };
             };
             /** @description An unexpected error response. */

@@ -293,6 +293,21 @@ function AddGitHubAppDialog({
   const [advanced, setAdvanced] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // startFlow 发起 manifest 自动建流（ADR-0073 决策 8）：整页跳转 GitHub，
+  // 创建/安装完成后经 /github-apps/connect 回跳落行。公网 console 基址未
+  // 配置时服务端精确报错——手动表单即兜底路径。
+  const startFlow = useMutation({
+    mutationFn: () => {
+      const body = projectId != null ? { project_id: projectId } : { global: true };
+      return apiSend<{ redirect_url?: string }>("/v1/github-apps/manifest/start", "POST", body);
+    },
+    onSuccess: (res) => {
+      if (res.redirect_url != null && res.redirect_url !== "") {
+        window.location.href = res.redirect_url;
+      }
+    },
+  });
+
   const put = useMutation({
     mutationFn: async () => {
       const body: Record<string, unknown> = {
@@ -329,6 +344,28 @@ function AddGitHubAppDialog({
             revisions.
           </DialogDescription>
         </DialogHeader>
+        <div className="flex flex-col gap-2 rounded-lg border bg-muted/30 p-3">
+          <div className="text-xs font-semibold">Recommended — create it on GitHub automatically</div>
+          <p className="text-2xs text-muted-foreground">
+            GitHub generates the key and delivers it to fleetly (sealed, never shown) — nothing to copy by hand.
+          </p>
+          <Button
+            size="sm"
+            className="self-start"
+            disabled={startFlow.isPending}
+            onClick={() =>
+              startFlow.mutate(undefined, {
+                onError: (cause) => toast.error(`${describeError(cause).title} — ${describeError(cause).detail}`),
+              })
+            }
+          >
+            <FingerprintIcon data-icon-start-inline />
+            {startFlow.isPending ? "Preparing…" : "Continue to GitHub →"}
+          </Button>
+          <div className="pt-1 text-2xs text-muted-foreground">
+            or configure manually below (GitHub Enterprise Server / restricted environments)
+          </div>
+        </div>
         <div className="flex flex-col gap-3">
           <label className="flex flex-col gap-1.5">
             <span className="text-xs font-semibold">App ID</span>

@@ -28,6 +28,7 @@ import { Route as ShellSettingsRouteImport } from './routes/_shell/settings'
 import { Route as ShellTemplatesRouteImport } from './routes/_shell/templates'
 import { Route as ShellTerminalRouteImport } from './routes/_shell/terminal'
 import { Route as ShellDeploymentsDeploymentIdRouteImport } from './routes/_shell/deployments.$deploymentId'
+import { Route as ShellGithubAppsConnectRouteImport } from './routes/_shell/github-apps.connect'
 import { Route as ShellPProjectIdRouteImport } from './routes/_shell/p.$projectId'
 import { Route as ShellPProjectIdIndexRouteImport } from './routes/_shell/p.$projectId.index'
 import { Route as ShellPProjectIdDataRouteImport } from './routes/_shell/p.$projectId.data'
@@ -150,6 +151,11 @@ const ShellDeploymentsDeploymentIdRoute =
     path: '/deployments/$deploymentId',
     getParentRoute: () => ShellRoute,
   } as any)
+const ShellGithubAppsConnectRoute = ShellGithubAppsConnectRouteImport.update({
+  id: '/connect',
+  path: '/connect',
+  getParentRoute: () => ShellGithubAppsRoute,
+} as any)
 const ShellPProjectIdRoute = ShellPProjectIdRouteImport.update({
   id: '/p/$projectId',
   path: '/p/$projectId',
@@ -308,7 +314,7 @@ export interface FileRoutesByFullPath {
   '/backups': typeof ShellBackupsRoute
   '/components': typeof ShellComponentsRoute
   '/events': typeof ShellEventsRoute
-  '/github-apps': typeof ShellGithubAppsRoute
+  '/github-apps': typeof ShellGithubAppsRouteWithChildren
   '/identity': typeof ShellIdentityRoute
   '/logs': typeof ShellLogsRoute
   '/metrics': typeof ShellMetricsRoute
@@ -319,6 +325,7 @@ export interface FileRoutesByFullPath {
   '/templates': typeof ShellTemplatesRoute
   '/terminal': typeof ShellTerminalRoute
   '/deployments/$deploymentId': typeof ShellDeploymentsDeploymentIdRoute
+  '/github-apps/connect': typeof ShellGithubAppsConnectRoute
   '/p/$projectId': typeof ShellPProjectIdRouteWithChildren
   '/p/$projectId/data': typeof ShellPProjectIdDataRoute
   '/p/$projectId/networks': typeof ShellPProjectIdNetworksRoute
@@ -354,7 +361,7 @@ export interface FileRoutesByTo {
   '/backups': typeof ShellBackupsRoute
   '/components': typeof ShellComponentsRoute
   '/events': typeof ShellEventsRoute
-  '/github-apps': typeof ShellGithubAppsRoute
+  '/github-apps': typeof ShellGithubAppsRouteWithChildren
   '/identity': typeof ShellIdentityRoute
   '/logs': typeof ShellLogsRoute
   '/metrics': typeof ShellMetricsRoute
@@ -365,6 +372,7 @@ export interface FileRoutesByTo {
   '/templates': typeof ShellTemplatesRoute
   '/terminal': typeof ShellTerminalRoute
   '/deployments/$deploymentId': typeof ShellDeploymentsDeploymentIdRoute
+  '/github-apps/connect': typeof ShellGithubAppsConnectRoute
   '/p/$projectId/data': typeof ShellPProjectIdDataRoute
   '/p/$projectId/networks': typeof ShellPProjectIdNetworksRoute
   '/p/$projectId/registry': typeof ShellPProjectIdRegistryRoute
@@ -400,7 +408,7 @@ export interface FileRoutesById {
   '/_shell/backups': typeof ShellBackupsRoute
   '/_shell/components': typeof ShellComponentsRoute
   '/_shell/events': typeof ShellEventsRoute
-  '/_shell/github-apps': typeof ShellGithubAppsRoute
+  '/_shell/github-apps': typeof ShellGithubAppsRouteWithChildren
   '/_shell/identity': typeof ShellIdentityRoute
   '/_shell/logs': typeof ShellLogsRoute
   '/_shell/metrics': typeof ShellMetricsRoute
@@ -411,6 +419,7 @@ export interface FileRoutesById {
   '/_shell/templates': typeof ShellTemplatesRoute
   '/_shell/terminal': typeof ShellTerminalRoute
   '/_shell/deployments/$deploymentId': typeof ShellDeploymentsDeploymentIdRoute
+  '/_shell/github-apps/connect': typeof ShellGithubAppsConnectRoute
   '/_shell/p/$projectId': typeof ShellPProjectIdRouteWithChildren
   '/_shell/p/$projectId/data': typeof ShellPProjectIdDataRoute
   '/_shell/p/$projectId/networks': typeof ShellPProjectIdNetworksRoute
@@ -459,6 +468,7 @@ export interface FileRouteTypes {
     | '/templates'
     | '/terminal'
     | '/deployments/$deploymentId'
+    | '/github-apps/connect'
     | '/p/$projectId'
     | '/p/$projectId/data'
     | '/p/$projectId/networks'
@@ -505,6 +515,7 @@ export interface FileRouteTypes {
     | '/templates'
     | '/terminal'
     | '/deployments/$deploymentId'
+    | '/github-apps/connect'
     | '/p/$projectId/data'
     | '/p/$projectId/networks'
     | '/p/$projectId/registry'
@@ -550,6 +561,7 @@ export interface FileRouteTypes {
     | '/_shell/templates'
     | '/_shell/terminal'
     | '/_shell/deployments/$deploymentId'
+    | '/_shell/github-apps/connect'
     | '/_shell/p/$projectId'
     | '/_shell/p/$projectId/data'
     | '/_shell/p/$projectId/networks'
@@ -718,6 +730,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/deployments/$deploymentId'
       preLoaderRoute: typeof ShellDeploymentsDeploymentIdRouteImport
       parentRoute: typeof ShellRoute
+    }
+    '/_shell/github-apps/connect': {
+      id: '/_shell/github-apps/connect'
+      path: '/connect'
+      fullPath: '/github-apps/connect'
+      preLoaderRoute: typeof ShellGithubAppsConnectRouteImport
+      parentRoute: typeof ShellGithubAppsRoute
     }
     '/_shell/p/$projectId': {
       id: '/_shell/p/$projectId'
@@ -904,6 +923,18 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface ShellGithubAppsRouteChildren {
+  ShellGithubAppsConnectRoute: typeof ShellGithubAppsConnectRoute
+}
+
+const ShellGithubAppsRouteChildren: ShellGithubAppsRouteChildren = {
+  ShellGithubAppsConnectRoute: ShellGithubAppsConnectRoute,
+}
+
+const ShellGithubAppsRouteWithChildren = ShellGithubAppsRoute._addFileChildren(
+  ShellGithubAppsRouteChildren,
+)
+
 interface ShellPProjectIdAppsAppIdRouteChildren {
   ShellPProjectIdAppsAppIdLogsRoute: typeof ShellPProjectIdAppsAppIdLogsRoute
   ShellPProjectIdAppsAppIdMetricsRoute: typeof ShellPProjectIdAppsAppIdMetricsRoute
@@ -989,7 +1020,7 @@ interface ShellRouteChildren {
   ShellBackupsRoute: typeof ShellBackupsRoute
   ShellComponentsRoute: typeof ShellComponentsRoute
   ShellEventsRoute: typeof ShellEventsRoute
-  ShellGithubAppsRoute: typeof ShellGithubAppsRoute
+  ShellGithubAppsRoute: typeof ShellGithubAppsRouteWithChildren
   ShellIdentityRoute: typeof ShellIdentityRoute
   ShellLogsRoute: typeof ShellLogsRoute
   ShellMetricsRoute: typeof ShellMetricsRoute
@@ -1009,7 +1040,7 @@ const ShellRouteChildren: ShellRouteChildren = {
   ShellBackupsRoute: ShellBackupsRoute,
   ShellComponentsRoute: ShellComponentsRoute,
   ShellEventsRoute: ShellEventsRoute,
-  ShellGithubAppsRoute: ShellGithubAppsRoute,
+  ShellGithubAppsRoute: ShellGithubAppsRouteWithChildren,
   ShellIdentityRoute: ShellIdentityRoute,
   ShellLogsRoute: ShellLogsRoute,
   ShellMetricsRoute: ShellMetricsRoute,
