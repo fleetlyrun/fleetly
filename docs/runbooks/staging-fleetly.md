@@ -547,6 +547,8 @@ ADR-0015 升级序的完整落地形态：**Platform Backup 前置 → SIGTERM �
 
 **挂账**：真机全链（GitHub 建 App → put → push → clone → build）待用户 GitHub 侧操作，操作序见上节。
 
+**平台账号注记**：Global 行写面要求平台 owner——walker（builtin-admin）按律被拒后，建 owner 用户 `platform`（`fleetly users create --role builtin-owner --password … platform`，REST 登录 whoami 实证 role=owner/team=default）。注意 CLI 旗标前置铁律第四次咬人：`users create` 的 NAME 是位置参数，flags 必须全数前置。
+
 ## GitHub App 接入（私有 Git 仓库，ADR-0073 阶段 B）
 
 私有仓构建期材料面：repo 干净 URL 冻结，clone 前按 host+属主解析 GitHub App（Project 级 → Global → 匿名；命中即现铸 1h installation token）。操作序：
