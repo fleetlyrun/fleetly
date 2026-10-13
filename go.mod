@@ -8,6 +8,7 @@ require (
 	github.com/containerd/errdefs v1.0.0
 	github.com/fleetlyrun/fleetly/genproto v0.0.0
 	github.com/fleetlyrun/fleetly/sdk/go v0.0.0
+	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/wire v0.7.0
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0
 	github.com/lynx-go/commands v0.3.0
