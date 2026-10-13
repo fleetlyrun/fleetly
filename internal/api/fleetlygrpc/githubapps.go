@@ -447,12 +447,16 @@ func (svc *GitHubAppsService) StartManifestFlow(ctx context.Context, req *delive
 		return nil, apperr.New("E_INTERNAL", "manifest flow state signing failed: %v", err)
 	}
 	manifest := map[string]any{
-		"name":                "fleetly-" + fmt.Sprintf("%x", nonce)[:6],
-		"url":                 base,
-		"hook_attributes":     map[string]any{"url": base + manifestHookPath, "active": false},
-		"redirect_url":        base + manifestConnectPath,
-		"setup_url":           base + manifestConnectPath,
-		"public":              false,
+		"name":            "fleetly-" + fmt.Sprintf("%x", nonce)[:6],
+		"url":             base,
+		"hook_attributes": map[string]any{"url": base + manifestHookPath, "active": false},
+		"redirect_url":    base + manifestConnectPath,
+		"setup_url":       base + manifestConnectPath,
+		// public 必须为 true：用户名下的私有 App 只能装在属主个人账号——
+		// 安装页连组织选择器都不出现（真机咬出：Owner 多组织全缺席）；
+		// public = 任何人可装，但铸 token 需平台封存的 PEM、setup 回调落
+		// 我们域名且无流态即精确报错——第三方安装无所得（dokploy 同款）。
+		"public":              true,
 		"default_permissions": map[string]string{"contents": "read", "metadata": "read"},
 	}
 	raw, err := json.Marshal(manifest)

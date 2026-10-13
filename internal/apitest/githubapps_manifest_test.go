@@ -57,6 +57,7 @@ func TestGitHubAppManifestFlow(t *testing.T) {
 	assert.Equal(t, base+"/github-apps/connect", manifest["redirect_url"], "callback lands on the console connect route")
 	assert.Equal(t, "read", manifest["default_permissions"].(map[string]any)["contents"])
 	assert.Equal(t, false, manifest["hook_attributes"].(map[string]any)["active"], "push trigger stays on the flthook channel")
+	assert.Equal(t, true, manifest["public"], "public app = installable on any account incl. GitHub organizations (user-owned private apps are personal-only)")
 
 	// consume：一次性 code 换凭据（假 GitHub 的 conversions 单次有效），
 	// 安装页 URL 返回、行未落。
