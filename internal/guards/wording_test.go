@@ -16,6 +16,10 @@ import (
 //   - skipped：语境限定词（机械扫描不可判定，人工评审把关），每条带理由；
 //   - adrDirect：ADR-0007 点名但 CONTEXT.md 未列的禁词（如 duty）。
 //
+// 禁词只执法 fleetly 域内语义混用（同义词绕开冻结命名）；第三方专有词
+// 汇按本义使用不在禁列——如 GitHub 的 Organization 实体（安装目标/属主
+// 名），经 wordingExemptions 带理由豁免（2026-10-13 用户裁定）。
+//
 // 双向保鲜：新增 _Avoid_ 词条未进 banned/skipped 即红（强制分诊）；
 // skipped/banned 里的词条从 CONTEXT.md 消失也红（清走死条目）。
 var bannedPatterns = map[string]*regexp.Regexp{
@@ -309,6 +313,12 @@ func TestAvoidTokensTriaged(t *testing.T) {
 // 白名单内不红；白名单条目不再命中（对应文件已无该词）也红——双向保鲜。
 // 扩白名单前先确认命中确属框架契约等不可更名的外部 API。
 var wordingExemptions = map[string]map[string]string{
+	// organization（用户裁定 2026-10-13）：GitHub 的 Organization 是第三方
+	// 专有实体（GitHub App 的安装目标/属主解析回组织名），按本义使用不在
+	// 禁列——禁的是 fleetly 域内 Team/Project 同义混用。
+	"organization": {
+		"internal/apitest/githubapps_manifest_test.go": "GitHub organizations 是 App 安装目标（第三方专有实体本义）；manifest public=true 契约断言的语境",
+	},
 	"apply": {
 		"console/src/features/apps-tabs/app-variables.tsx":      "Apply changes is the adjudicated label for the Variables tab commit action (user ruling 2026-10-10, prototype fidelity); the Deployment Avoid sense bans generic deploy-by-apply verbs, not this pinned button",
 		"console/src/features/apps-tabs/app-processes.tsx":      "Apply changes is the adjudicated label for the staged-commit action (user ruling 2026-10-10 for the Variables tab; ADR-0060 Processes tab reuses the same pinned button for replica staging) — the Deployment Avoid sense bans generic deploy-by-apply verbs, not this pinned button",

@@ -48,7 +48,7 @@ model / spec：不 import 任何 internal 包（叶子）
 
 ## 守卫文化（架构由测试承载，`internal/guards`）
 
-- 禁词扫描以 CONTEXT.md 的 _Avoid_ 表为源，覆盖全仓含 proto、测试夹具与 `skills/` 散文；例外条目带理由注释，不再命中即红（白名单双向保鲜）。
+- 禁词扫描以 CONTEXT.md 的 _Avoid_ 表为源，覆盖全仓含 proto、测试夹具与 `skills/` 散文；例外条目带理由注释，不再命中即红（白名单双向保鲜）。禁词只执法 **fleetly 域内语义混用**——第三方专有词汇按本义使用不在禁列（如 GitHub 的 Organization 实体），走同一白名单机制带理由豁免（2026-10-13 用户裁定）。
 - errcode/eventcode 注册表只增：新码带 Source 锚点 + suggestion，golden 与 usage 反扫同步更新。
 - 新测试与功能同批落地，不事后补；门禁必跑全套，不可只跑触碰包。
 

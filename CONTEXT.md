@@ -6,6 +6,8 @@ fleetly 是一个轻量 PaaS：把源码或镜像变成运行在可插拔运行�
 
 ## Language
 
+_Avoid_ 词条执法的是 **fleetly 域内语义混用**（同义词绕开冻结命名）。第三方专有词汇不在禁列——按其本义使用合法，如 GitHub 的 Organization 实体（安装目标、属主名）。此类用法经守卫白名单（`internal/guards` wordingExemptions）带理由豁免，双向保鲜。
+
 ### 组织与访问
 
 **Team**:
