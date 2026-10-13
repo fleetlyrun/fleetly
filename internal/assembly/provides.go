@@ -407,6 +407,11 @@ func NewAPIServices(db *state.DB, e *engine.Engine, cipher *material.Cipher, rt 
 	if cfg.Server != nil {
 		s.TemplatesCatalogURL = cfg.Server.TemplatesCatalogUrl
 	}
+	// manifest 自动建流的公网基址（ADR-0073 决策 8）：console.host 非空才
+	// 启用（redirect_url 必须 https——console 面按部署形态恒经 ACME/反代）。
+	if cfg.Console != nil && cfg.Console.GetHost() != "" {
+		s.GitHubManifestBase = "https://" + cfg.Console.GetHost()
+	}
 	return s
 }
 

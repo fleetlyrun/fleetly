@@ -175,6 +175,87 @@ func local_request_GitHubAppsService_ListGitHubAppRepos_0(ctx context.Context, m
 	return msg, metadata, err
 }
 
+func request_GitHubAppsService_StartManifestFlow_0(ctx context.Context, marshaler runtime.Marshaler, client GitHubAppsServiceClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var (
+		protoReq StartManifestFlowRequest
+		metadata runtime.ServerMetadata
+	)
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
+	msg, err := client.StartManifestFlow(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	return msg, metadata, err
+}
+
+func local_request_GitHubAppsService_StartManifestFlow_0(ctx context.Context, marshaler runtime.Marshaler, server GitHubAppsServiceServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var (
+		protoReq StartManifestFlowRequest
+		metadata runtime.ServerMetadata
+	)
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	msg, err := server.StartManifestFlow(ctx, &protoReq)
+	return msg, metadata, err
+}
+
+func request_GitHubAppsService_ConsumeManifestCode_0(ctx context.Context, marshaler runtime.Marshaler, client GitHubAppsServiceClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var (
+		protoReq ConsumeManifestCodeRequest
+		metadata runtime.ServerMetadata
+	)
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
+	msg, err := client.ConsumeManifestCode(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	return msg, metadata, err
+}
+
+func local_request_GitHubAppsService_ConsumeManifestCode_0(ctx context.Context, marshaler runtime.Marshaler, server GitHubAppsServiceServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var (
+		protoReq ConsumeManifestCodeRequest
+		metadata runtime.ServerMetadata
+	)
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	msg, err := server.ConsumeManifestCode(ctx, &protoReq)
+	return msg, metadata, err
+}
+
+func request_GitHubAppsService_CompleteManifestFlow_0(ctx context.Context, marshaler runtime.Marshaler, client GitHubAppsServiceClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var (
+		protoReq CompleteManifestFlowRequest
+		metadata runtime.ServerMetadata
+	)
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
+	msg, err := client.CompleteManifestFlow(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	return msg, metadata, err
+}
+
+func local_request_GitHubAppsService_CompleteManifestFlow_0(ctx context.Context, marshaler runtime.Marshaler, server GitHubAppsServiceServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var (
+		protoReq CompleteManifestFlowRequest
+		metadata runtime.ServerMetadata
+	)
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	msg, err := server.CompleteManifestFlow(ctx, &protoReq)
+	return msg, metadata, err
+}
+
 // RegisterGitHubAppsServiceHandlerServer registers the http handlers for service GitHubAppsService to "mux".
 // UnaryRPC     :call GitHubAppsServiceServer directly.
 // StreamingRPC :currently unsupported pending https://github.com/grpc/grpc-go/issues/906.
@@ -260,6 +341,66 @@ func RegisterGitHubAppsServiceHandlerServer(ctx context.Context, mux *runtime.Se
 			return
 		}
 		forward_GitHubAppsService_ListGitHubAppRepos_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
+	mux.Handle(http.MethodPost, pattern_GitHubAppsService_StartManifestFlow_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		var stream runtime.ServerTransportStream
+		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/fleetly.delivery.v1.GitHubAppsService/StartManifestFlow", runtime.WithHTTPPathPattern("/v1/github-apps/manifest/start"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := local_request_GitHubAppsService_StartManifestFlow_0(annotatedContext, inboundMarshaler, server, req, pathParams)
+		md.HeaderMD, md.TrailerMD = metadata.Join(md.HeaderMD, stream.Header()), metadata.Join(md.TrailerMD, stream.Trailer())
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_GitHubAppsService_StartManifestFlow_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
+	mux.Handle(http.MethodPost, pattern_GitHubAppsService_ConsumeManifestCode_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		var stream runtime.ServerTransportStream
+		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/fleetly.delivery.v1.GitHubAppsService/ConsumeManifestCode", runtime.WithHTTPPathPattern("/v1/github-apps/manifest/consume"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := local_request_GitHubAppsService_ConsumeManifestCode_0(annotatedContext, inboundMarshaler, server, req, pathParams)
+		md.HeaderMD, md.TrailerMD = metadata.Join(md.HeaderMD, stream.Header()), metadata.Join(md.TrailerMD, stream.Trailer())
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_GitHubAppsService_ConsumeManifestCode_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
+	mux.Handle(http.MethodPost, pattern_GitHubAppsService_CompleteManifestFlow_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		var stream runtime.ServerTransportStream
+		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/fleetly.delivery.v1.GitHubAppsService/CompleteManifestFlow", runtime.WithHTTPPathPattern("/v1/github-apps/manifest/complete"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := local_request_GitHubAppsService_CompleteManifestFlow_0(annotatedContext, inboundMarshaler, server, req, pathParams)
+		md.HeaderMD, md.TrailerMD = metadata.Join(md.HeaderMD, stream.Header()), metadata.Join(md.TrailerMD, stream.Trailer())
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_GitHubAppsService_CompleteManifestFlow_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
 	})
 
 	return nil
@@ -369,19 +510,76 @@ func RegisterGitHubAppsServiceHandlerClient(ctx context.Context, mux *runtime.Se
 		}
 		forward_GitHubAppsService_ListGitHubAppRepos_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
 	})
+	mux.Handle(http.MethodPost, pattern_GitHubAppsService_StartManifestFlow_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/fleetly.delivery.v1.GitHubAppsService/StartManifestFlow", runtime.WithHTTPPathPattern("/v1/github-apps/manifest/start"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := request_GitHubAppsService_StartManifestFlow_0(annotatedContext, inboundMarshaler, client, req, pathParams)
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_GitHubAppsService_StartManifestFlow_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
+	mux.Handle(http.MethodPost, pattern_GitHubAppsService_ConsumeManifestCode_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/fleetly.delivery.v1.GitHubAppsService/ConsumeManifestCode", runtime.WithHTTPPathPattern("/v1/github-apps/manifest/consume"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := request_GitHubAppsService_ConsumeManifestCode_0(annotatedContext, inboundMarshaler, client, req, pathParams)
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_GitHubAppsService_ConsumeManifestCode_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
+	mux.Handle(http.MethodPost, pattern_GitHubAppsService_CompleteManifestFlow_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/fleetly.delivery.v1.GitHubAppsService/CompleteManifestFlow", runtime.WithHTTPPathPattern("/v1/github-apps/manifest/complete"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := request_GitHubAppsService_CompleteManifestFlow_0(annotatedContext, inboundMarshaler, client, req, pathParams)
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_GitHubAppsService_CompleteManifestFlow_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
 	return nil
 }
 
 var (
-	pattern_GitHubAppsService_SetGitHubApp_0       = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"v1", "github-apps"}, ""))
-	pattern_GitHubAppsService_ListGitHubApps_0     = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"v1", "github-apps"}, ""))
-	pattern_GitHubAppsService_DeleteGitHubApp_0    = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2}, []string{"v1", "github-apps", "id"}, ""))
-	pattern_GitHubAppsService_ListGitHubAppRepos_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "github-apps", "id", "repos"}, ""))
+	pattern_GitHubAppsService_SetGitHubApp_0         = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"v1", "github-apps"}, ""))
+	pattern_GitHubAppsService_ListGitHubApps_0       = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"v1", "github-apps"}, ""))
+	pattern_GitHubAppsService_DeleteGitHubApp_0      = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2}, []string{"v1", "github-apps", "id"}, ""))
+	pattern_GitHubAppsService_ListGitHubAppRepos_0   = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "github-apps", "id", "repos"}, ""))
+	pattern_GitHubAppsService_StartManifestFlow_0    = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3}, []string{"v1", "github-apps", "manifest", "start"}, ""))
+	pattern_GitHubAppsService_ConsumeManifestCode_0  = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3}, []string{"v1", "github-apps", "manifest", "consume"}, ""))
+	pattern_GitHubAppsService_CompleteManifestFlow_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3}, []string{"v1", "github-apps", "manifest", "complete"}, ""))
 )
 
 var (
-	forward_GitHubAppsService_SetGitHubApp_0       = runtime.ForwardResponseMessage
-	forward_GitHubAppsService_ListGitHubApps_0     = runtime.ForwardResponseMessage
-	forward_GitHubAppsService_DeleteGitHubApp_0    = runtime.ForwardResponseMessage
-	forward_GitHubAppsService_ListGitHubAppRepos_0 = runtime.ForwardResponseMessage
+	forward_GitHubAppsService_SetGitHubApp_0         = runtime.ForwardResponseMessage
+	forward_GitHubAppsService_ListGitHubApps_0       = runtime.ForwardResponseMessage
+	forward_GitHubAppsService_DeleteGitHubApp_0      = runtime.ForwardResponseMessage
+	forward_GitHubAppsService_ListGitHubAppRepos_0   = runtime.ForwardResponseMessage
+	forward_GitHubAppsService_StartManifestFlow_0    = runtime.ForwardResponseMessage
+	forward_GitHubAppsService_ConsumeManifestCode_0  = runtime.ForwardResponseMessage
+	forward_GitHubAppsService_CompleteManifestFlow_0 = runtime.ForwardResponseMessage
 )

@@ -76,7 +76,10 @@ var FrozenVerbs = map[string]freezeScope{
 	// 刹车之外。
 	"/fleetly.delivery.v1.GitHubAppsService/SetGitHubApp":     {field: "project_id", kind: anchor.KindProject},
 	"/fleetly.delivery.v1.GitHubAppsService/DeleteGitHubApp":  {field: "id", kind: anchor.KindGitHubApp},
-	"/fleetly.automation.v1.TasksService/CreateTask":          {field: "project_id", kind: anchor.KindProject},
+	// manifest 自动建流的落行步（ADR-0073 决策 8）：project_id 由请求回
+	// 传并经流态一致性校验（谎言即拒）；Global 行无 Team 轴照旧放行。
+	"/fleetly.delivery.v1.GitHubAppsService/CompleteManifestFlow": {field: "project_id", kind: anchor.KindProject},
+	"/fleetly.automation.v1.TasksService/CreateTask":              {field: "project_id", kind: anchor.KindProject},
 	"/fleetly.automation.v1.TasksService/ScaleTask":           {field: "id", kind: anchor.KindTask},
 	"/fleetly.automation.v1.TasksService/DeleteTask":          {field: "id", kind: anchor.KindTask},
 	"/fleetly.automation.v1.SchedulesService/CreateSchedule":  {field: "project_id", kind: anchor.KindProject},

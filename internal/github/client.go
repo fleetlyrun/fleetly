@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"sync"
 	"time"
@@ -258,6 +259,36 @@ func (c *Client) do(ctx context.Context, method string, app *App, path, bearer s
 		}
 	}
 	return nil
+}
+
+// ConvertedApp 是 manifest code 兑换回的 App 事实（ADR-0073 决策 8）：
+// 私钥由 GitHub 生成、经本兑换一次性送达——调用方即收即封，不落日志。
+type ConvertedApp struct {
+	AppID int64
+	Slug  string // 安装页地址段（install_url = github.com/apps/<slug>/installations/new）
+	Name  string
+	PEM   []byte
+}
+
+// ConvertManifestCode 用一次性 code 兑换 manifest 创建的 App 凭据（无鉴权
+// 端点——code 本身即秘密，单次有效；apiBase 空 = github.com 缺省，测试经
+// 注入指向假件）。错误归一 UpstreamError。
+func (c *Client) ConvertManifestCode(ctx context.Context, apiBase, code string) (*ConvertedApp, error) {
+	var resp struct {
+		ID   int64  `json:"id"`
+		Slug string `json:"slug"`
+		Name string `json:"name"`
+		PEM  string `json:"pem"`
+	}
+	app := &App{APIBase: apiBase} // conversions 端点无鉴权；base 空 = 缺省
+	if err := c.do(ctx, http.MethodPost, app,
+		"/app-manifests/"+url.PathEscape(code)+"/conversions", "", nil, &resp); err != nil {
+		return nil, err
+	}
+	if resp.ID == 0 || resp.PEM == "" {
+		return nil, fmt.Errorf("github: manifest conversion returned an incomplete payload")
+	}
+	return &ConvertedApp{AppID: resp.ID, Slug: resp.Slug, Name: resp.Name, PEM: []byte(resp.PEM)}, nil
 }
 
 // installationJSON 是 GET /app/installations/{id} 的响应切片。

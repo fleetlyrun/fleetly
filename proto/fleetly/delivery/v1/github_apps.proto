@@ -62,6 +62,42 @@ service GitHubAppsService {
       api_key_scope: { resource: "github_app" op: SCOPE_OP_READ }
     };
   }
+
+  // ---- Manifest 自动建流（ADR-0073 决策 8：跳转 GitHub 创建 App，私钥/
+  // App ID 由 GitHub 回传，用户不手抄）——三步：start 签名跳转 URL → 用户
+  // 在 GitHub 创建后回调带 code → consume 换凭据并暂存、给安装页 URL →
+  // 用户安装后 setup 回调带 installation_id → complete 落行（复用受理即
+  // 验证与密封）。手动表单保留为 fallback（GHES/CLI/受限环境）----
+
+  // StartManifestFlow 生成 GitHub manifest 跳转 URL（state = HMAC 签名，
+  // 绑作用域 + 15 分钟时效）。未配置公网 console 基址时精确失败（手动表
+  // 单兜底）。
+  rpc StartManifestFlow(StartManifestFlowRequest) returns (StartManifestFlowResponse) {
+    option (google.api.http) = { post: "/v1/github-apps/manifest/start" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "github_app" op: SCOPE_OP_WRITE }
+    };
+  }
+  // ConsumeManifestCode 用一次性 code 换 App 凭据（私钥即收即封、暂存于
+  // 流存储，15 分钟时效），返回安装页 URL——installation 在下一步落定。
+  rpc ConsumeManifestCode(ConsumeManifestCodeRequest) returns (ConsumeManifestCodeResponse) {
+    option (google.api.http) = { post: "/v1/github-apps/manifest/consume" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "github_app" op: SCOPE_OP_WRITE }
+    };
+  }
+  // CompleteManifestFlow 以 setup 回调的 installation_id 落行（走既有受
+  // 理即验证 + 密封 upsert；project_id 回传供冻结锚，须与 start 作用域一
+  // 致，谎言即拒）。流一次性：complete 后 nonce 作废。
+  rpc CompleteManifestFlow(CompleteManifestFlowRequest) returns (CompleteManifestFlowResponse) {
+    option (google.api.http) = { post: "/v1/github-apps/manifest/complete" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "github_app" op: SCOPE_OP_WRITE }
+    };
+  }
 }
 
 message GitHubApp {
@@ -126,4 +162,47 @@ message GitHubAppRepo {
   // full_name 是 "owner/repo" 全名。
   string full_name = 1;
   bool private = 2;
+}
+
+message StartManifestFlowRequest {
+  oneof scope {
+    string project_id = 1;
+    bool global = 2;
+  }
+}
+
+message StartManifestFlowResponse {
+  // redirect_url 是 github.com 的 manifest 创建页地址（含编码 manifest），
+  // 调用方整页跳转。
+  string redirect_url = 1;
+  // state 是签名流态（consume/complete 原样回传；调用方透明）。
+  string state = 2;
+}
+
+message ConsumeManifestCodeRequest {
+  // code 是 GitHub 回调 redirect_url 携带的一次性兑换码（10 分钟有效）。
+  string code = 1;
+  // state 是 start 返回流跳转链里原样带回的签名态（与 start 作用域绑定）。
+  string state = 2;
+}
+
+message ConsumeManifestCodeResponse {
+  // install_url 是该 App 的安装页地址（勾选仓库后 GitHub 回跳 setup_url
+  // 并携带 installation_id）。
+  string install_url = 1;
+  // app_name 是创建时的 App 名（GitHub 表单里用户可改）。
+  string app_name = 2;
+}
+
+message CompleteManifestFlowRequest {
+  string state = 1;
+  // installation_id 来自 setup 回调查询参数。
+  int64 installation_id = 2;
+  // project_id 回传 start 时的作用域（冻结锚与作用域一致性校验；global
+  // 流留空）。
+  string project_id = 3;
+}
+
+message CompleteManifestFlowResponse {
+  GitHubApp app = 1;
 }

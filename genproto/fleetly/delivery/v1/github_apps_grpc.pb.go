@@ -25,10 +25,13 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	GitHubAppsService_SetGitHubApp_FullMethodName       = "/fleetly.delivery.v1.GitHubAppsService/SetGitHubApp"
-	GitHubAppsService_ListGitHubApps_FullMethodName     = "/fleetly.delivery.v1.GitHubAppsService/ListGitHubApps"
-	GitHubAppsService_DeleteGitHubApp_FullMethodName    = "/fleetly.delivery.v1.GitHubAppsService/DeleteGitHubApp"
-	GitHubAppsService_ListGitHubAppRepos_FullMethodName = "/fleetly.delivery.v1.GitHubAppsService/ListGitHubAppRepos"
+	GitHubAppsService_SetGitHubApp_FullMethodName         = "/fleetly.delivery.v1.GitHubAppsService/SetGitHubApp"
+	GitHubAppsService_ListGitHubApps_FullMethodName       = "/fleetly.delivery.v1.GitHubAppsService/ListGitHubApps"
+	GitHubAppsService_DeleteGitHubApp_FullMethodName      = "/fleetly.delivery.v1.GitHubAppsService/DeleteGitHubApp"
+	GitHubAppsService_ListGitHubAppRepos_FullMethodName   = "/fleetly.delivery.v1.GitHubAppsService/ListGitHubAppRepos"
+	GitHubAppsService_StartManifestFlow_FullMethodName    = "/fleetly.delivery.v1.GitHubAppsService/StartManifestFlow"
+	GitHubAppsService_ConsumeManifestCode_FullMethodName  = "/fleetly.delivery.v1.GitHubAppsService/ConsumeManifestCode"
+	GitHubAppsService_CompleteManifestFlow_FullMethodName = "/fleetly.delivery.v1.GitHubAppsService/CompleteManifestFlow"
 )
 
 // GitHubAppsServiceClient is the client API for GitHubAppsService service.
@@ -47,6 +50,17 @@ type GitHubAppsServiceClient interface {
 	// ListGitHubAppRepos 现铸 token 列 installation 可达仓库（安装健康验证
 	// 面；授权随行作用域）。
 	ListGitHubAppRepos(ctx context.Context, in *ListGitHubAppReposRequest, opts ...grpc.CallOption) (*ListGitHubAppReposResponse, error)
+	// StartManifestFlow 生成 GitHub manifest 跳转 URL（state = HMAC 签名，
+	// 绑作用域 + 15 分钟时效）。未配置公网 console 基址时精确失败（手动表
+	// 单兜底）。
+	StartManifestFlow(ctx context.Context, in *StartManifestFlowRequest, opts ...grpc.CallOption) (*StartManifestFlowResponse, error)
+	// ConsumeManifestCode 用一次性 code 换 App 凭据（私钥即收即封、暂存于
+	// 流存储，15 分钟时效），返回安装页 URL——installation 在下一步落定。
+	ConsumeManifestCode(ctx context.Context, in *ConsumeManifestCodeRequest, opts ...grpc.CallOption) (*ConsumeManifestCodeResponse, error)
+	// CompleteManifestFlow 以 setup 回调的 installation_id 落行（走既有受
+	// 理即验证 + 密封 upsert；project_id 回传供冻结锚，须与 start 作用域一
+	// 致，谎言即拒）。流一次性：complete 后 nonce 作废。
+	CompleteManifestFlow(ctx context.Context, in *CompleteManifestFlowRequest, opts ...grpc.CallOption) (*CompleteManifestFlowResponse, error)
 }
 
 type gitHubAppsServiceClient struct {
@@ -97,6 +111,36 @@ func (c *gitHubAppsServiceClient) ListGitHubAppRepos(ctx context.Context, in *Li
 	return out, nil
 }
 
+func (c *gitHubAppsServiceClient) StartManifestFlow(ctx context.Context, in *StartManifestFlowRequest, opts ...grpc.CallOption) (*StartManifestFlowResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StartManifestFlowResponse)
+	err := c.cc.Invoke(ctx, GitHubAppsService_StartManifestFlow_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *gitHubAppsServiceClient) ConsumeManifestCode(ctx context.Context, in *ConsumeManifestCodeRequest, opts ...grpc.CallOption) (*ConsumeManifestCodeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ConsumeManifestCodeResponse)
+	err := c.cc.Invoke(ctx, GitHubAppsService_ConsumeManifestCode_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *gitHubAppsServiceClient) CompleteManifestFlow(ctx context.Context, in *CompleteManifestFlowRequest, opts ...grpc.CallOption) (*CompleteManifestFlowResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CompleteManifestFlowResponse)
+	err := c.cc.Invoke(ctx, GitHubAppsService_CompleteManifestFlow_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // GitHubAppsServiceServer is the server API for GitHubAppsService service.
 // All implementations must embed UnimplementedGitHubAppsServiceServer
 // for forward compatibility.
@@ -113,6 +157,17 @@ type GitHubAppsServiceServer interface {
 	// ListGitHubAppRepos 现铸 token 列 installation 可达仓库（安装健康验证
 	// 面；授权随行作用域）。
 	ListGitHubAppRepos(context.Context, *ListGitHubAppReposRequest) (*ListGitHubAppReposResponse, error)
+	// StartManifestFlow 生成 GitHub manifest 跳转 URL（state = HMAC 签名，
+	// 绑作用域 + 15 分钟时效）。未配置公网 console 基址时精确失败（手动表
+	// 单兜底）。
+	StartManifestFlow(context.Context, *StartManifestFlowRequest) (*StartManifestFlowResponse, error)
+	// ConsumeManifestCode 用一次性 code 换 App 凭据（私钥即收即封、暂存于
+	// 流存储，15 分钟时效），返回安装页 URL——installation 在下一步落定。
+	ConsumeManifestCode(context.Context, *ConsumeManifestCodeRequest) (*ConsumeManifestCodeResponse, error)
+	// CompleteManifestFlow 以 setup 回调的 installation_id 落行（走既有受
+	// 理即验证 + 密封 upsert；project_id 回传供冻结锚，须与 start 作用域一
+	// 致，谎言即拒）。流一次性：complete 后 nonce 作废。
+	CompleteManifestFlow(context.Context, *CompleteManifestFlowRequest) (*CompleteManifestFlowResponse, error)
 	mustEmbedUnimplementedGitHubAppsServiceServer()
 }
 
@@ -134,6 +189,15 @@ func (UnimplementedGitHubAppsServiceServer) DeleteGitHubApp(context.Context, *De
 }
 func (UnimplementedGitHubAppsServiceServer) ListGitHubAppRepos(context.Context, *ListGitHubAppReposRequest) (*ListGitHubAppReposResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListGitHubAppRepos not implemented")
+}
+func (UnimplementedGitHubAppsServiceServer) StartManifestFlow(context.Context, *StartManifestFlowRequest) (*StartManifestFlowResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method StartManifestFlow not implemented")
+}
+func (UnimplementedGitHubAppsServiceServer) ConsumeManifestCode(context.Context, *ConsumeManifestCodeRequest) (*ConsumeManifestCodeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ConsumeManifestCode not implemented")
+}
+func (UnimplementedGitHubAppsServiceServer) CompleteManifestFlow(context.Context, *CompleteManifestFlowRequest) (*CompleteManifestFlowResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CompleteManifestFlow not implemented")
 }
 func (UnimplementedGitHubAppsServiceServer) mustEmbedUnimplementedGitHubAppsServiceServer() {}
 func (UnimplementedGitHubAppsServiceServer) testEmbeddedByValue()                           {}
@@ -228,6 +292,60 @@ func _GitHubAppsService_ListGitHubAppRepos_Handler(srv interface{}, ctx context.
 	return interceptor(ctx, in, info, handler)
 }
 
+func _GitHubAppsService_StartManifestFlow_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StartManifestFlowRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GitHubAppsServiceServer).StartManifestFlow(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GitHubAppsService_StartManifestFlow_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GitHubAppsServiceServer).StartManifestFlow(ctx, req.(*StartManifestFlowRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _GitHubAppsService_ConsumeManifestCode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ConsumeManifestCodeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GitHubAppsServiceServer).ConsumeManifestCode(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GitHubAppsService_ConsumeManifestCode_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GitHubAppsServiceServer).ConsumeManifestCode(ctx, req.(*ConsumeManifestCodeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _GitHubAppsService_CompleteManifestFlow_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CompleteManifestFlowRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GitHubAppsServiceServer).CompleteManifestFlow(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GitHubAppsService_CompleteManifestFlow_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GitHubAppsServiceServer).CompleteManifestFlow(ctx, req.(*CompleteManifestFlowRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // GitHubAppsService_ServiceDesc is the grpc.ServiceDesc for GitHubAppsService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -250,6 +368,18 @@ var GitHubAppsService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListGitHubAppRepos",
 			Handler:    _GitHubAppsService_ListGitHubAppRepos_Handler,
+		},
+		{
+			MethodName: "StartManifestFlow",
+			Handler:    _GitHubAppsService_StartManifestFlow_Handler,
+		},
+		{
+			MethodName: "ConsumeManifestCode",
+			Handler:    _GitHubAppsService_ConsumeManifestCode_Handler,
+		},
+		{
+			MethodName: "CompleteManifestFlow",
+			Handler:    _GitHubAppsService_CompleteManifestFlow_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

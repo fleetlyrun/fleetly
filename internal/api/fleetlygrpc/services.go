@@ -125,6 +125,15 @@ type Services struct {
 	// 内嵌目录即全部；装配期从 server.templates_catalog_url 注入）。
 	TemplatesCatalogURL string
 
+	// GitHubManifestBase 是 manifest 自动建流的公网 console 基址（ADR-0073
+	// 决策 8：redirect_url/setup_url 由此派生；空 = 流禁用，手动表单兜底；
+	// 装配期从 console.host 注入）。
+	GitHubManifestBase string
+
+	// GitHubManifestAPIBase 是 conversions 兑换的 GitHub API 基址（空 =
+	// github.com 缺省；测试注入假件基址）。
+	GitHubManifestAPIBase string
+
 	// Anchor 是「聚合行 → Project → Team」归属解析图（freeze 与行级授权
 	// 共用单源，架构评审第二轮候选 3；ADR-0017 附录 A.3 / ADR-0035）。
 	Anchor *anchor.Anchor

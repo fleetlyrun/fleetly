@@ -39,8 +39,9 @@ import (
 type ghFake struct {
 	mu         sync.Mutex
 	installApp map[int64]int64 // installation id → 所属 app id（错配注入点）
-	srv        *httptest.Server
+	codes      map[string]bool // manifest 兑换码（一次性语义）
 	pem        []byte
+	srv        *httptest.Server
 }
 
 func newFakeGitHub(t *testing.T, h *apitest.Harness) *ghFake {
@@ -49,9 +50,25 @@ func newFakeGitHub(t *testing.T, h *apitest.Harness) *ghFake {
 	require.NoError(t, err)
 	f := &ghFake{
 		installApp: map[int64]int64{51790921: 182345, 51887734: 201884},
+		codes:      map[string]bool{"good-code": true},
 		pem:        pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}),
 	}
 	mux := http.NewServeMux()
+	mux.HandleFunc("POST /app-manifests/{code}/conversions", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		code := r.PathValue("code")
+		valid := f.codes[code]
+		delete(f.codes, code) // 一次性
+		f.mu.Unlock()
+		if !valid {
+			http.Error(w, `{"message":"Not Found"}`, http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"id": 182345, "slug": "fleetly-abc123", "name": "fleetly-abc123", "pem": string(f.pem),
+		})
+	})
 	mux.HandleFunc("GET /app/installations/{id}", func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		appID := f.installApp

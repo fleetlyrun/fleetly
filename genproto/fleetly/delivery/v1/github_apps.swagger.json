@@ -84,6 +84,105 @@
         ]
       }
     },
+    "/v1/github-apps/manifest/complete": {
+      "post": {
+        "summary": "CompleteManifestFlow 以 setup 回调的 installation_id 落行（走既有受\n理即验证 + 密封 upsert；project_id 回传供冻结锚，须与 start 作用域一\n致，谎言即拒）。流一次性：complete 后 nonce 作废。",
+        "operationId": "GitHubAppsService_CompleteManifestFlow",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1CompleteManifestFlowResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1CompleteManifestFlowRequest"
+            }
+          }
+        ],
+        "tags": [
+          "GitHubAppsService"
+        ]
+      }
+    },
+    "/v1/github-apps/manifest/consume": {
+      "post": {
+        "summary": "ConsumeManifestCode 用一次性 code 换 App 凭据（私钥即收即封、暂存于\n流存储，15 分钟时效），返回安装页 URL——installation 在下一步落定。",
+        "operationId": "GitHubAppsService_ConsumeManifestCode",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ConsumeManifestCodeResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1ConsumeManifestCodeRequest"
+            }
+          }
+        ],
+        "tags": [
+          "GitHubAppsService"
+        ]
+      }
+    },
+    "/v1/github-apps/manifest/start": {
+      "post": {
+        "summary": "StartManifestFlow 生成 GitHub manifest 跳转 URL（state = HMAC 签名，\n绑作用域 + 15 分钟时效）。未配置公网 console 基址时精确失败（手动表\n单兜底）。",
+        "operationId": "GitHubAppsService_StartManifestFlow",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1StartManifestFlowResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1StartManifestFlowRequest"
+            }
+          }
+        ],
+        "tags": [
+          "GitHubAppsService"
+        ]
+      }
+    },
     "/v1/github-apps/{id}": {
       "delete": {
         "summary": "DeleteGitHubApp 软删（tombstone；解析面即时失效）。",
@@ -148,6 +247,57 @@
     }
   },
   "definitions": {
+    "v1CompleteManifestFlowRequest": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "string"
+        },
+        "installation_id": {
+          "type": "string",
+          "format": "int64",
+          "title": "installation_id 来自 setup 回调查询参数。"
+        },
+        "project_id": {
+          "type": "string",
+          "title": "project_id 回传 start 时的作用域（冻结锚与作用域一致性校验；global\n流留空）。"
+        }
+      }
+    },
+    "v1CompleteManifestFlowResponse": {
+      "type": "object",
+      "properties": {
+        "app": {
+          "$ref": "#/definitions/v1GitHubApp"
+        }
+      }
+    },
+    "v1ConsumeManifestCodeRequest": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "title": "code 是 GitHub 回调 redirect_url 携带的一次性兑换码（10 分钟有效）。"
+        },
+        "state": {
+          "type": "string",
+          "title": "state 是 start 返回流跳转链里原样带回的签名态（与 start 作用域绑定）。"
+        }
+      }
+    },
+    "v1ConsumeManifestCodeResponse": {
+      "type": "object",
+      "properties": {
+        "install_url": {
+          "type": "string",
+          "title": "install_url 是该 App 的安装页地址（勾选仓库后 GitHub 回跳 setup_url\n并携带 installation_id）。"
+        },
+        "app_name": {
+          "type": "string",
+          "title": "app_name 是创建时的 App 名（GitHub 表单里用户可改）。"
+        }
+      }
+    },
     "v1DeleteGitHubAppResponse": {
       "type": "object"
     },
@@ -256,6 +406,30 @@
       "properties": {
         "app": {
           "$ref": "#/definitions/v1GitHubApp"
+        }
+      }
+    },
+    "v1StartManifestFlowRequest": {
+      "type": "object",
+      "properties": {
+        "project_id": {
+          "type": "string"
+        },
+        "global": {
+          "type": "boolean"
+        }
+      }
+    },
+    "v1StartManifestFlowResponse": {
+      "type": "object",
+      "properties": {
+        "redirect_url": {
+          "type": "string",
+          "title": "redirect_url 是 github.com 的 manifest 创建页地址（含编码 manifest），\n调用方整页跳转。"
+        },
+        "state": {
+          "type": "string",
+          "title": "state 是签名流态（consume/complete 原样回传；调用方透明）。"
         }
       }
     }

@@ -649,6 +649,359 @@ func (x *GitHubAppRepo) GetPrivate() bool {
 	return false
 }
 
+type StartManifestFlowRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Scope:
+	//
+	//	*StartManifestFlowRequest_ProjectId
+	//	*StartManifestFlowRequest_Global
+	Scope         isStartManifestFlowRequest_Scope `protobuf_oneof:"scope"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StartManifestFlowRequest) Reset() {
+	*x = StartManifestFlowRequest{}
+	mi := &file_fleetly_delivery_v1_github_apps_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StartManifestFlowRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StartManifestFlowRequest) ProtoMessage() {}
+
+func (x *StartManifestFlowRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_delivery_v1_github_apps_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StartManifestFlowRequest.ProtoReflect.Descriptor instead.
+func (*StartManifestFlowRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_delivery_v1_github_apps_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *StartManifestFlowRequest) GetScope() isStartManifestFlowRequest_Scope {
+	if x != nil {
+		return x.Scope
+	}
+	return nil
+}
+
+func (x *StartManifestFlowRequest) GetProjectId() string {
+	if x != nil {
+		if x, ok := x.Scope.(*StartManifestFlowRequest_ProjectId); ok {
+			return x.ProjectId
+		}
+	}
+	return ""
+}
+
+func (x *StartManifestFlowRequest) GetGlobal() bool {
+	if x != nil {
+		if x, ok := x.Scope.(*StartManifestFlowRequest_Global); ok {
+			return x.Global
+		}
+	}
+	return false
+}
+
+type isStartManifestFlowRequest_Scope interface {
+	isStartManifestFlowRequest_Scope()
+}
+
+type StartManifestFlowRequest_ProjectId struct {
+	ProjectId string `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3,oneof"`
+}
+
+type StartManifestFlowRequest_Global struct {
+	Global bool `protobuf:"varint,2,opt,name=global,proto3,oneof"`
+}
+
+func (*StartManifestFlowRequest_ProjectId) isStartManifestFlowRequest_Scope() {}
+
+func (*StartManifestFlowRequest_Global) isStartManifestFlowRequest_Scope() {}
+
+type StartManifestFlowResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// redirect_url 是 github.com 的 manifest 创建页地址（含编码 manifest），
+	// 调用方整页跳转。
+	RedirectUrl string `protobuf:"bytes,1,opt,name=redirect_url,json=redirectUrl,proto3" json:"redirect_url,omitempty"`
+	// state 是签名流态（consume/complete 原样回传；调用方透明）。
+	State         string `protobuf:"bytes,2,opt,name=state,proto3" json:"state,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StartManifestFlowResponse) Reset() {
+	*x = StartManifestFlowResponse{}
+	mi := &file_fleetly_delivery_v1_github_apps_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StartManifestFlowResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StartManifestFlowResponse) ProtoMessage() {}
+
+func (x *StartManifestFlowResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_delivery_v1_github_apps_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StartManifestFlowResponse.ProtoReflect.Descriptor instead.
+func (*StartManifestFlowResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_delivery_v1_github_apps_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *StartManifestFlowResponse) GetRedirectUrl() string {
+	if x != nil {
+		return x.RedirectUrl
+	}
+	return ""
+}
+
+func (x *StartManifestFlowResponse) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+type ConsumeManifestCodeRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// code 是 GitHub 回调 redirect_url 携带的一次性兑换码（10 分钟有效）。
+	Code string `protobuf:"bytes,1,opt,name=code,proto3" json:"code,omitempty"`
+	// state 是 start 返回流跳转链里原样带回的签名态（与 start 作用域绑定）。
+	State         string `protobuf:"bytes,2,opt,name=state,proto3" json:"state,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ConsumeManifestCodeRequest) Reset() {
+	*x = ConsumeManifestCodeRequest{}
+	mi := &file_fleetly_delivery_v1_github_apps_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConsumeManifestCodeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConsumeManifestCodeRequest) ProtoMessage() {}
+
+func (x *ConsumeManifestCodeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_delivery_v1_github_apps_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConsumeManifestCodeRequest.ProtoReflect.Descriptor instead.
+func (*ConsumeManifestCodeRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_delivery_v1_github_apps_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *ConsumeManifestCodeRequest) GetCode() string {
+	if x != nil {
+		return x.Code
+	}
+	return ""
+}
+
+func (x *ConsumeManifestCodeRequest) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+type ConsumeManifestCodeResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// install_url 是该 App 的安装页地址（勾选仓库后 GitHub 回跳 setup_url
+	// 并携带 installation_id）。
+	InstallUrl string `protobuf:"bytes,1,opt,name=install_url,json=installUrl,proto3" json:"install_url,omitempty"`
+	// app_name 是创建时的 App 名（GitHub 表单里用户可改）。
+	AppName       string `protobuf:"bytes,2,opt,name=app_name,json=appName,proto3" json:"app_name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ConsumeManifestCodeResponse) Reset() {
+	*x = ConsumeManifestCodeResponse{}
+	mi := &file_fleetly_delivery_v1_github_apps_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConsumeManifestCodeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConsumeManifestCodeResponse) ProtoMessage() {}
+
+func (x *ConsumeManifestCodeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_delivery_v1_github_apps_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConsumeManifestCodeResponse.ProtoReflect.Descriptor instead.
+func (*ConsumeManifestCodeResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_delivery_v1_github_apps_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *ConsumeManifestCodeResponse) GetInstallUrl() string {
+	if x != nil {
+		return x.InstallUrl
+	}
+	return ""
+}
+
+func (x *ConsumeManifestCodeResponse) GetAppName() string {
+	if x != nil {
+		return x.AppName
+	}
+	return ""
+}
+
+type CompleteManifestFlowRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	State string                 `protobuf:"bytes,1,opt,name=state,proto3" json:"state,omitempty"`
+	// installation_id 来自 setup 回调查询参数。
+	InstallationId int64 `protobuf:"varint,2,opt,name=installation_id,json=installationId,proto3" json:"installation_id,omitempty"`
+	// project_id 回传 start 时的作用域（冻结锚与作用域一致性校验；global
+	// 流留空）。
+	ProjectId     string `protobuf:"bytes,3,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CompleteManifestFlowRequest) Reset() {
+	*x = CompleteManifestFlowRequest{}
+	mi := &file_fleetly_delivery_v1_github_apps_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CompleteManifestFlowRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CompleteManifestFlowRequest) ProtoMessage() {}
+
+func (x *CompleteManifestFlowRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_delivery_v1_github_apps_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CompleteManifestFlowRequest.ProtoReflect.Descriptor instead.
+func (*CompleteManifestFlowRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_delivery_v1_github_apps_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *CompleteManifestFlowRequest) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *CompleteManifestFlowRequest) GetInstallationId() int64 {
+	if x != nil {
+		return x.InstallationId
+	}
+	return 0
+}
+
+func (x *CompleteManifestFlowRequest) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+type CompleteManifestFlowResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	App           *GitHubApp             `protobuf:"bytes,1,opt,name=app,proto3" json:"app,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CompleteManifestFlowResponse) Reset() {
+	*x = CompleteManifestFlowResponse{}
+	mi := &file_fleetly_delivery_v1_github_apps_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CompleteManifestFlowResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CompleteManifestFlowResponse) ProtoMessage() {}
+
+func (x *CompleteManifestFlowResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_delivery_v1_github_apps_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CompleteManifestFlowResponse.ProtoReflect.Descriptor instead.
+func (*CompleteManifestFlowResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_delivery_v1_github_apps_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *CompleteManifestFlowResponse) GetApp() *GitHubApp {
+	if x != nil {
+		return x.App
+	}
+	return nil
+}
+
 var File_fleetly_delivery_v1_github_apps_proto protoreflect.FileDescriptor
 
 const file_fleetly_delivery_v1_github_apps_proto_rawDesc = "" +
@@ -694,7 +1047,29 @@ const file_fleetly_delivery_v1_github_apps_proto_rawDesc = "" +
 	"\x05repos\x18\x01 \x03(\v2\".fleetly.delivery.v1.GitHubAppRepoR\x05repos\"F\n" +
 	"\rGitHubAppRepo\x12\x1b\n" +
 	"\tfull_name\x18\x01 \x01(\tR\bfullName\x12\x18\n" +
-	"\aprivate\x18\x02 \x01(\bR\aprivate2\xa3\x05\n" +
+	"\aprivate\x18\x02 \x01(\bR\aprivate\"^\n" +
+	"\x18StartManifestFlowRequest\x12\x1f\n" +
+	"\n" +
+	"project_id\x18\x01 \x01(\tH\x00R\tprojectId\x12\x18\n" +
+	"\x06global\x18\x02 \x01(\bH\x00R\x06globalB\a\n" +
+	"\x05scope\"T\n" +
+	"\x19StartManifestFlowResponse\x12!\n" +
+	"\fredirect_url\x18\x01 \x01(\tR\vredirectUrl\x12\x14\n" +
+	"\x05state\x18\x02 \x01(\tR\x05state\"F\n" +
+	"\x1aConsumeManifestCodeRequest\x12\x12\n" +
+	"\x04code\x18\x01 \x01(\tR\x04code\x12\x14\n" +
+	"\x05state\x18\x02 \x01(\tR\x05state\"Y\n" +
+	"\x1bConsumeManifestCodeResponse\x12\x1f\n" +
+	"\vinstall_url\x18\x01 \x01(\tR\n" +
+	"installUrl\x12\x19\n" +
+	"\bapp_name\x18\x02 \x01(\tR\aappName\"{\n" +
+	"\x1bCompleteManifestFlowRequest\x12\x14\n" +
+	"\x05state\x18\x01 \x01(\tR\x05state\x12'\n" +
+	"\x0finstallation_id\x18\x02 \x01(\x03R\x0einstallationId\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x03 \x01(\tR\tprojectId\"P\n" +
+	"\x1cCompleteManifestFlowResponse\x120\n" +
+	"\x03app\x18\x01 \x01(\v2\x1e.fleetly.delivery.v1.GitHubAppR\x03app2\xd9\t\n" +
 	"\x11GitHubAppsService\x12\x95\x01\n" +
 	"\fSetGitHubApp\x12(.fleetly.delivery.v1.SetGitHubAppRequest\x1a).fleetly.delivery.v1.SetGitHubAppResponse\"0\xea\xc4\x19\x12\b\x03\"\x0e\n" +
 	"\n" +
@@ -707,7 +1082,16 @@ const file_fleetly_delivery_v1_github_apps_proto_rawDesc = "" +
 	"github_app\x10\x02\x82\xd3\xe4\x93\x02\x16*\x14/v1/github-apps/{id}\x12\xaf\x01\n" +
 	"\x12ListGitHubAppRepos\x12..fleetly.delivery.v1.ListGitHubAppReposRequest\x1a/.fleetly.delivery.v1.ListGitHubAppReposResponse\"8\xea\xc4\x19\x12\b\x03\"\x0e\n" +
 	"\n" +
-	"github_app\x10\x01\x82\xd3\xe4\x93\x02\x1c\x12\x1a/v1/github-apps/{id}/repos\x1a\x06\xf2\xc4\x19\x02\b\x03B\x9c\x01\x92ARRP\n" +
+	"github_app\x10\x01\x82\xd3\xe4\x93\x02\x1c\x12\x1a/v1/github-apps/{id}/repos\x12\xb3\x01\n" +
+	"\x11StartManifestFlow\x12-.fleetly.delivery.v1.StartManifestFlowRequest\x1a..fleetly.delivery.v1.StartManifestFlowResponse\"?\xea\xc4\x19\x12\b\x03\"\x0e\n" +
+	"\n" +
+	"github_app\x10\x02\x82\xd3\xe4\x93\x02#:\x01*\"\x1e/v1/github-apps/manifest/start\x12\xbb\x01\n" +
+	"\x13ConsumeManifestCode\x12/.fleetly.delivery.v1.ConsumeManifestCodeRequest\x1a0.fleetly.delivery.v1.ConsumeManifestCodeResponse\"A\xea\xc4\x19\x12\b\x03\"\x0e\n" +
+	"\n" +
+	"github_app\x10\x02\x82\xd3\xe4\x93\x02%:\x01*\" /v1/github-apps/manifest/consume\x12\xbf\x01\n" +
+	"\x14CompleteManifestFlow\x120.fleetly.delivery.v1.CompleteManifestFlowRequest\x1a1.fleetly.delivery.v1.CompleteManifestFlowResponse\"B\xea\xc4\x19\x12\b\x03\"\x0e\n" +
+	"\n" +
+	"github_app\x10\x02\x82\xd3\xe4\x93\x02&:\x01*\"!/v1/github-apps/manifest/complete\x1a\x06\xf2\xc4\x19\x02\b\x03B\x9c\x01\x92ARRP\n" +
 	"\adefault\x12E\n" +
 	"\x1dAn unexpected error response.\x12$\n" +
 	"\"\x1a .fleetly.shared.v1.ErrorResponseZEgithub.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1;deliveryv1b\x06proto3"
@@ -724,36 +1108,49 @@ func file_fleetly_delivery_v1_github_apps_proto_rawDescGZIP() []byte {
 	return file_fleetly_delivery_v1_github_apps_proto_rawDescData
 }
 
-var file_fleetly_delivery_v1_github_apps_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_fleetly_delivery_v1_github_apps_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_fleetly_delivery_v1_github_apps_proto_goTypes = []any{
-	(*GitHubApp)(nil),                  // 0: fleetly.delivery.v1.GitHubApp
-	(*SetGitHubAppRequest)(nil),        // 1: fleetly.delivery.v1.SetGitHubAppRequest
-	(*SetGitHubAppResponse)(nil),       // 2: fleetly.delivery.v1.SetGitHubAppResponse
-	(*ListGitHubAppsRequest)(nil),      // 3: fleetly.delivery.v1.ListGitHubAppsRequest
-	(*ListGitHubAppsResponse)(nil),     // 4: fleetly.delivery.v1.ListGitHubAppsResponse
-	(*DeleteGitHubAppRequest)(nil),     // 5: fleetly.delivery.v1.DeleteGitHubAppRequest
-	(*DeleteGitHubAppResponse)(nil),    // 6: fleetly.delivery.v1.DeleteGitHubAppResponse
-	(*ListGitHubAppReposRequest)(nil),  // 7: fleetly.delivery.v1.ListGitHubAppReposRequest
-	(*ListGitHubAppReposResponse)(nil), // 8: fleetly.delivery.v1.ListGitHubAppReposResponse
-	(*GitHubAppRepo)(nil),              // 9: fleetly.delivery.v1.GitHubAppRepo
+	(*GitHubApp)(nil),                    // 0: fleetly.delivery.v1.GitHubApp
+	(*SetGitHubAppRequest)(nil),          // 1: fleetly.delivery.v1.SetGitHubAppRequest
+	(*SetGitHubAppResponse)(nil),         // 2: fleetly.delivery.v1.SetGitHubAppResponse
+	(*ListGitHubAppsRequest)(nil),        // 3: fleetly.delivery.v1.ListGitHubAppsRequest
+	(*ListGitHubAppsResponse)(nil),       // 4: fleetly.delivery.v1.ListGitHubAppsResponse
+	(*DeleteGitHubAppRequest)(nil),       // 5: fleetly.delivery.v1.DeleteGitHubAppRequest
+	(*DeleteGitHubAppResponse)(nil),      // 6: fleetly.delivery.v1.DeleteGitHubAppResponse
+	(*ListGitHubAppReposRequest)(nil),    // 7: fleetly.delivery.v1.ListGitHubAppReposRequest
+	(*ListGitHubAppReposResponse)(nil),   // 8: fleetly.delivery.v1.ListGitHubAppReposResponse
+	(*GitHubAppRepo)(nil),                // 9: fleetly.delivery.v1.GitHubAppRepo
+	(*StartManifestFlowRequest)(nil),     // 10: fleetly.delivery.v1.StartManifestFlowRequest
+	(*StartManifestFlowResponse)(nil),    // 11: fleetly.delivery.v1.StartManifestFlowResponse
+	(*ConsumeManifestCodeRequest)(nil),   // 12: fleetly.delivery.v1.ConsumeManifestCodeRequest
+	(*ConsumeManifestCodeResponse)(nil),  // 13: fleetly.delivery.v1.ConsumeManifestCodeResponse
+	(*CompleteManifestFlowRequest)(nil),  // 14: fleetly.delivery.v1.CompleteManifestFlowRequest
+	(*CompleteManifestFlowResponse)(nil), // 15: fleetly.delivery.v1.CompleteManifestFlowResponse
 }
 var file_fleetly_delivery_v1_github_apps_proto_depIdxs = []int32{
-	0, // 0: fleetly.delivery.v1.SetGitHubAppResponse.app:type_name -> fleetly.delivery.v1.GitHubApp
-	0, // 1: fleetly.delivery.v1.ListGitHubAppsResponse.apps:type_name -> fleetly.delivery.v1.GitHubApp
-	9, // 2: fleetly.delivery.v1.ListGitHubAppReposResponse.repos:type_name -> fleetly.delivery.v1.GitHubAppRepo
-	1, // 3: fleetly.delivery.v1.GitHubAppsService.SetGitHubApp:input_type -> fleetly.delivery.v1.SetGitHubAppRequest
-	3, // 4: fleetly.delivery.v1.GitHubAppsService.ListGitHubApps:input_type -> fleetly.delivery.v1.ListGitHubAppsRequest
-	5, // 5: fleetly.delivery.v1.GitHubAppsService.DeleteGitHubApp:input_type -> fleetly.delivery.v1.DeleteGitHubAppRequest
-	7, // 6: fleetly.delivery.v1.GitHubAppsService.ListGitHubAppRepos:input_type -> fleetly.delivery.v1.ListGitHubAppReposRequest
-	2, // 7: fleetly.delivery.v1.GitHubAppsService.SetGitHubApp:output_type -> fleetly.delivery.v1.SetGitHubAppResponse
-	4, // 8: fleetly.delivery.v1.GitHubAppsService.ListGitHubApps:output_type -> fleetly.delivery.v1.ListGitHubAppsResponse
-	6, // 9: fleetly.delivery.v1.GitHubAppsService.DeleteGitHubApp:output_type -> fleetly.delivery.v1.DeleteGitHubAppResponse
-	8, // 10: fleetly.delivery.v1.GitHubAppsService.ListGitHubAppRepos:output_type -> fleetly.delivery.v1.ListGitHubAppReposResponse
-	7, // [7:11] is the sub-list for method output_type
-	3, // [3:7] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	0,  // 0: fleetly.delivery.v1.SetGitHubAppResponse.app:type_name -> fleetly.delivery.v1.GitHubApp
+	0,  // 1: fleetly.delivery.v1.ListGitHubAppsResponse.apps:type_name -> fleetly.delivery.v1.GitHubApp
+	9,  // 2: fleetly.delivery.v1.ListGitHubAppReposResponse.repos:type_name -> fleetly.delivery.v1.GitHubAppRepo
+	0,  // 3: fleetly.delivery.v1.CompleteManifestFlowResponse.app:type_name -> fleetly.delivery.v1.GitHubApp
+	1,  // 4: fleetly.delivery.v1.GitHubAppsService.SetGitHubApp:input_type -> fleetly.delivery.v1.SetGitHubAppRequest
+	3,  // 5: fleetly.delivery.v1.GitHubAppsService.ListGitHubApps:input_type -> fleetly.delivery.v1.ListGitHubAppsRequest
+	5,  // 6: fleetly.delivery.v1.GitHubAppsService.DeleteGitHubApp:input_type -> fleetly.delivery.v1.DeleteGitHubAppRequest
+	7,  // 7: fleetly.delivery.v1.GitHubAppsService.ListGitHubAppRepos:input_type -> fleetly.delivery.v1.ListGitHubAppReposRequest
+	10, // 8: fleetly.delivery.v1.GitHubAppsService.StartManifestFlow:input_type -> fleetly.delivery.v1.StartManifestFlowRequest
+	12, // 9: fleetly.delivery.v1.GitHubAppsService.ConsumeManifestCode:input_type -> fleetly.delivery.v1.ConsumeManifestCodeRequest
+	14, // 10: fleetly.delivery.v1.GitHubAppsService.CompleteManifestFlow:input_type -> fleetly.delivery.v1.CompleteManifestFlowRequest
+	2,  // 11: fleetly.delivery.v1.GitHubAppsService.SetGitHubApp:output_type -> fleetly.delivery.v1.SetGitHubAppResponse
+	4,  // 12: fleetly.delivery.v1.GitHubAppsService.ListGitHubApps:output_type -> fleetly.delivery.v1.ListGitHubAppsResponse
+	6,  // 13: fleetly.delivery.v1.GitHubAppsService.DeleteGitHubApp:output_type -> fleetly.delivery.v1.DeleteGitHubAppResponse
+	8,  // 14: fleetly.delivery.v1.GitHubAppsService.ListGitHubAppRepos:output_type -> fleetly.delivery.v1.ListGitHubAppReposResponse
+	11, // 15: fleetly.delivery.v1.GitHubAppsService.StartManifestFlow:output_type -> fleetly.delivery.v1.StartManifestFlowResponse
+	13, // 16: fleetly.delivery.v1.GitHubAppsService.ConsumeManifestCode:output_type -> fleetly.delivery.v1.ConsumeManifestCodeResponse
+	15, // 17: fleetly.delivery.v1.GitHubAppsService.CompleteManifestFlow:output_type -> fleetly.delivery.v1.CompleteManifestFlowResponse
+	11, // [11:18] is the sub-list for method output_type
+	4,  // [4:11] is the sub-list for method input_type
+	4,  // [4:4] is the sub-list for extension type_name
+	4,  // [4:4] is the sub-list for extension extendee
+	0,  // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_fleetly_delivery_v1_github_apps_proto_init() }
@@ -769,13 +1166,17 @@ func file_fleetly_delivery_v1_github_apps_proto_init() {
 		(*ListGitHubAppsRequest_ProjectId)(nil),
 		(*ListGitHubAppsRequest_Global)(nil),
 	}
+	file_fleetly_delivery_v1_github_apps_proto_msgTypes[10].OneofWrappers = []any{
+		(*StartManifestFlowRequest_ProjectId)(nil),
+		(*StartManifestFlowRequest_Global)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fleetly_delivery_v1_github_apps_proto_rawDesc), len(file_fleetly_delivery_v1_github_apps_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   10,
+			NumMessages:   16,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

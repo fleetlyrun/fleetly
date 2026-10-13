@@ -18,6 +18,11 @@ import (
 // freezeExemptions 是"变更型但显式不冻结"的豁免表（FullMethod → 理由，
 // ADR-0017 附录 A.3 豁免面）。
 var freezeExemptions = map[string]string{
+	// Manifest 自动建流的编排动词（ADR-0073 决策 8）：start 只签发跳转
+	// URL、consume 只兑换一次性 code 到进程内流存储——均不落任何平台行，
+	// 冻结面无意义；complete（落行）进 FrozenVerbs 按作用域冻结。
+	"/fleetly.delivery.v1.GitHubAppsService/StartManifestFlow":   "signs a redirect URL and binds a signed state; no platform rows are written (ADR-0073 decision 8)",
+	"/fleetly.delivery.v1.GitHubAppsService/ConsumeManifestCode": "exchanges a one-time code into the in-memory flow store; no platform rows are written (ADR-0073 decision 8)",
 	// 停止族：冻结期间安全收口必须可用（拦停不是变更）。
 	"/fleetly.automation.v1.TasksService/StopTask":             "stop family: safety stops stay available during a freeze",
 	"/fleetly.automation.v1.RunsService/StopRun":               "stop family: safety stops stay available during a freeze",

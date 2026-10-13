@@ -23,7 +23,7 @@ var mutatingVerbs = []string{
 	"Create", "Delete", "Put", "Deploy", "Rollback", "Revoke", "Enroll",
 	"Drain", "Cordon", "Uncordon", "Scale", "Stop", "Cancel", "Renew",
 	"Trigger", "Rotate", "Upload", "Set", "Lift", "Approve", "Accept",
-	"Declare", "Rebuild", "Instantiate", "Refresh", "Restart",
+	"Declare", "Rebuild", "Instantiate", "Refresh", "Restart", "Complete",
 }
 
 // readVerbs 是读型动词前缀（op 必须 READ）。
@@ -44,6 +44,11 @@ var scopeOpExemptions = map[string]string{
 	// exec 会话流（F3.2，ADR-0049）：Stream 前缀按读动词命名惯例误判——
 	// 双向流携 stdin，是 exec:write 会话能力的传输本体。
 	"/fleetly.runtime.v1.ExecService/StreamExecSession": "bidirectional session transport carrying stdin; exec:write matches the session capability being exercised (ADR-0049)",
+	// manifest 自动建流编排动词（ADR-0073 决策 8）：start 签发跳转 URL、
+	// consume 兑换一次性 code 到进程内流存储——均不落平台行；write 表达
+	// 接入材料创建意图（complete 落行走 WRITE 自然分类）。
+	"/fleetly.delivery.v1.GitHubAppsService/StartManifestFlow":   "signs a redirect URL binding a signed state; declares the material-creation intent, writes no rows (ADR-0073 decision 8)",
+	"/fleetly.delivery.v1.GitHubAppsService/ConsumeManifestCode": "exchanges a one-time code into the in-memory flow store; writes no rows (ADR-0073 decision 8)",
 }
 
 // methodVerb 从 FullMethod 取动词段（"/pkg.Svc/CreateApp" → "CreateApp"）。
