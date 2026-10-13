@@ -60,7 +60,9 @@ network of the project, and seals one project secret per database:
 
 4. Wire the app. In the compose file, inject the URL by secret reference and
    join the project network (the file lands at
-   `/run/secrets/database:NAME` at runtime):
+   `/run/secrets/database:NAME` at runtime). Secret and network entities are
+   referenced via official `external` declarations — the database secret name
+   carries a colon, so it rides the `name` override (ADR-0074):
 
    ```yaml
    services:
@@ -69,7 +71,14 @@ network of the project, and seals one project secret per database:
        networks:
          - default
        secrets:
-         - database:NAME
+         - dbcred
+   networks:
+     default:
+       external: true
+   secrets:
+     dbcred:
+       external: true
+       name: "database:NAME"
    ```
 
    Then deploy it:

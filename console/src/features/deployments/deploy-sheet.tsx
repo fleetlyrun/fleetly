@@ -17,7 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { describeError } from "@/lib/api-errors";
 
 // DeploySheet（List 原型的主操作，UI v2 批 2）：四源部署表单的 Sheet 形态
-// ——image 直投 / compose 受控子集 / spec_file 裸 AppSpec / upload 产物。
+// ——image 直投 / compose 受理语言 / spec_file 裸 AppSpec / upload 产物。
 // 载荷构造单源仍是 lib/deployPayload（纯函数已测，语义保真）；策略声明
 // 走 compose/spec 扩展键（ADR-0048 决策 6），不设独立控件。
 // 成功反馈走 toast 带动作链接（"View"跳详情）——MutationBanner 退役。
@@ -32,7 +32,7 @@ type SourceKind = DeployFormState["source"];
 const SOURCE_HINTS: Record<SourceKind, string> = {
   current: "The app's frozen spec, prefilled and editable (deploys as spec_file; hook-owned apps deploy a runtime overlay).",
   image: "Single-process image deploy (rolling strategy by default — per-process strategy needs compose or spec file).",
-  compose: "Compose YAML (controlled subset). Per-process strategy: deploy.strategy: blue-green under a service.",
+  compose: "Compose YAML (compose-spec syntax, x-fleetly extensions). Per-process strategy: deploy.x-fleetly-strategy: blue-green under a service.",
   spec: "Bare AppSpec in protojson (snake_case). Full spec surface incl. processes[].strategy.",
   upload: "Build from a previously uploaded source directory (Data → Uploads creates them).",
 };
@@ -290,7 +290,7 @@ export function DeploySheet({
           ) : null}
 
           {source === "compose" ? (
-            <FieldRow label="Compose YAML" hint="x-fleetly-first-boot-jobs and deploy.strategy extension keys are honored">
+            <FieldRow label="Compose YAML" hint="x-fleetly-first-boot-jobs and deploy.x-fleetly-strategy extension keys are honored">
               <Textarea rows={10} value={composeYaml} onChange={(event) => setComposeYaml(event.target.value)} spellCheck={false} />
             </FieldRow>
           ) : null}
