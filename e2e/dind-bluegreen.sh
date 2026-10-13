@@ -392,6 +392,9 @@ services:
       BG_VERSION: dual-$name
     ports: ["8080"]
     networks: [default]
+networks:
+  default:
+    external: true
 YAML
   cli deploy --app "$([ "$name" = alpha ] && echo "$ALPHA_ID" || echo "$BETA_ID")" \
     --compose-file "/root/dual-$name.yaml" >/dev/null
