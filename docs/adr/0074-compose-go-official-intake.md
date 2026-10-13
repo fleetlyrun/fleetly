@@ -121,6 +121,8 @@ JSON Schema 编辑器生态、Renovate docker-compose manager 免费镜像升级
   （VM 外网拉取挂 = 当日本机网络劣化，railpack/restic 同轮下载失败
   为证）；两处 e2e 环境加固随批（宿主 Tailscale 搜索域泄进容器致裸名
   假红 → 尾点绝对查询）
-- [ ] staging 上站（挂账：runbook 升级序换装；dogfood 仓 compose 迁新
-  方言同批——torchwood/messageloop 的 stack 声明补 external 声明与新
-  扩展键拼写）
+- [x] staging 上站（37b7b49-adr74，2026-10-13 记录·五十二：迁移 00031
+  前滚 + 零扰动 + 验收矩阵七项全绿——新方言部署/source_text 读面/插值
+  落值/secret 注入/四拒绝面/Route 200/console Compose Source 卡走查）
+- [ ] dogfood 仓 compose 迁新方言（torchwood/messageloop 的 stack 声明补
+  external 声明与新扩展键拼写——随应用栈重播批）

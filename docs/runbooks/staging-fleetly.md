@@ -537,6 +537,17 @@ ADR-0015 升级序的完整落地形态：**Platform Backup 前置 → SIGTERM �
 3. **dry-run**（解封全量验证 + 报告将重封条数，不落库）：`fleetlyd admin rewrap --data-root /var/lib/fleetly`。输出 secrets / hooks / github apps 三族的 total / to rewrap / already current / failed 列（ADR-0073 起 github_apps 私钥信封一并重封，Global 行 Key 冠 `global/` 前缀）；`failed > 0`（报 `cannot be opened`）= 有行连退役 key 都解不开（key 全损或外来行）——先停下核对，执行模式整体拒跑、不写任何行。
 4. **执行**：`fleetlyd admin rewrap --data-root /var/lib/fleetly --execute`。单事务全量重封（secrets 全表含 tombstone + app_hooks 的 webhook secret 信封 + github_apps 两态行的私钥信封；指纹不变，任一行失败整体回滚）。幂等：已封到现役 key 的行跳过，重跑零重写。`--json` 形态供自动化核账。
 
+## 2026-10-13 记录·五十二（ADR-0074 compose-go 官方受理换装 37b7b49-adr74 + 全面验收）
+
+**换代内容**：compose 受理语言切 compose-go 官方实现（internal/composeintake——官方 loader/schema/一致性检查三通道 + external 声明律 + 平台变量插值 fail-closed + 反射白名单）+ Revision 原文冻结（迁移 00031 source_text 列，不参与 digest）+ Revision proto +8 + console Spec tab Compose Source 卡（W-9 收口）+ 方言契约发布 docs/reference/compose-dialect.{md,schema.json}。扩展键新拼写：`deploy.x-fleetly-strategy` / `healthcheck.x-fleetly-http-path|x-fleetly-tcp-port`；引用走官方 external 声明（冒号平台名经 `name:` 覆盖）；路由协议走官方 `app_protocol`（缺省 http）。
+
+1. 前置硬门：Platform Backup `4c7a3c91` + 卷 tar ×4（torchwood-pg 13M/6.6M + registry 61M/138M 双形态至 /root/upgrade-37b7b49-adr74/vols/）+ 任务基线 16 行。
+2. 换装序：SIGTERM 排水 → fleetlyd/fleetly `37b7b49-adr74` 双二进制（旧版留底 /root/*-e7878e7-adr73p.bak）→ 起服 → **goose 前滚 v31 一次干净**；doctor 10 ok / 2 warning（既有基线）/ 0 fail；**零扰动实锤**（task ID 逐位一致——纯受理面批次，Workload IR 不变指纹不漂）；console 200 且活体 asset `index-BGopmk4F.js` 与二进制嵌入指纹对账一致。
+3. **验收矩阵（全绿）**：①新方言全要素 compose 部署 → blue-green 窗过 → succeeded（strategy+http-path 探针+app_protocol h2c+external secret+共享变量插值全在一文件）；②source_text 读面（revisions list --json 逐字透出，`${GREETING}` 原文孔保形）；③插值落值（载体 env `GREET=hello-adr74`——SharedVariable 受理期消解冻结）；④secret 注入（external 声明 name 覆盖 → `/run/secrets/adr74-token`）；⑤四拒绝面精确（旧拼写 deploy.strategy=官方 schema 拒 / host 端口映射=platform 文案 / 未声明 secret=官方一致性 / 未消解插值=fail-closed 文案）；⑥Route 200 端到端（app_protocol 声明 → Route 后端解析 → traefik）；⑦console Spec tab 浏览器走查（walker）——Compose Source 卡逐字渲染亲笔原文 + Frozen Spec 卡 IR 消解态（GREET 已消解/GREETING 三级合成注入/PROTOCOL_H2C）+ 投影 + 在服观测。
+4. **夹具踩坑三连（健康门诚实拦截，零假绿）**：whoami=v1.10 distroless 无 /bin/sh（探针 exec 失败）→ nginx:1.27 Debian 无 wget（探针工具缺）→ busybox httpd 空根 `/` 404（需 index.html）。**h2c Route 对 busybox httpd 500**（HTTP/1.1-only 后端不吃 h2c 拨号——e2e 用自建 Go h2c server 同口径，非缺陷；http 路由 200 验链）。
+5. **存量缺口独立在案（非本批）**：蓝绿代次载体（-gN 后缀服务）exec/exec-instances 解析无实例（E_NOT_FOUND workload web-16-web），rolling 载体正常——ADR-0074 批零触碰 engine/providers，蓝绿 exec 面历史无 e2e 覆盖（smoke=rolling、bluegreen 腿无 exec 段）；挂账待查。
+6. 残留清理：adr74check 项目（web-16 应用 + 双路由）已删，回到六服务基态。
+
 ## 2026-10-13 记录·五十一（ADR-0073 GitHub App 接入材料换装 0a32dfb-adr73 + A 段userinfo 收紧）
 
 **换代内容**：github_apps 聚合（迁移 00030）+ GitHubAppsService 四 RPC（受理即验证/双作用域/E_GITHUB_UPSTREAM）+ engine clone 材料解析（Project App → Global → `git:<host>` Secret → 匿名）+ CLI `github-apps` 四动词 + console Registry 第三 tab / Fleet 段管理页。A 段同批：两写面拒 URL 内嵌访问材料。
