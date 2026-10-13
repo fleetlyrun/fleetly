@@ -479,6 +479,11 @@ func (svc *AppsService) DeleteApp(ctx context.Context, req *structurev1.DeleteAp
 			if err := svc.s.Apps.SoftDelete(ctx, tx, req.GetId()); err != nil {
 				return err
 			}
+			// git hook 行与 tombstone 同逝（级联）：配置面对已删 App 即刻
+			// 404，与接收面的活跃行拒绝同语义（无孤儿子女）。
+			if err := svc.s.Hooks.DeleteByApp(ctx, tx, req.GetId()); err != nil {
+				return err
+			}
 			// 撤路由与 tombstone 同事务（ADR-0023 修订）：复查通过前路由
 			// 不得消失——拒绝路径不碰路由（managedStep 的周期发布因此只
 			// 可能见到"App 与路由同逝"的一致状态）。

@@ -3338,6 +3338,123 @@ func (x *RotateHookTokenResponse) GetSecret() string {
 	return ""
 }
 
+type RefreshGitHookRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	AppId string                 `protobuf:"bytes,1,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
+	// commit 缺省 = branch HEAD 现解析（ls-remote）；非空 = 钉住该 commit
+	// 同步（apitest/重放锚）。
+	Commit        string `protobuf:"bytes,2,opt,name=commit,proto3" json:"commit,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RefreshGitHookRequest) Reset() {
+	*x = RefreshGitHookRequest{}
+	mi := &file_fleetly_delivery_v1_delivery_proto_msgTypes[49]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RefreshGitHookRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RefreshGitHookRequest) ProtoMessage() {}
+
+func (x *RefreshGitHookRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_delivery_v1_delivery_proto_msgTypes[49]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RefreshGitHookRequest.ProtoReflect.Descriptor instead.
+func (*RefreshGitHookRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_delivery_v1_delivery_proto_rawDescGZIP(), []int{49}
+}
+
+func (x *RefreshGitHookRequest) GetAppId() string {
+	if x != nil {
+		return x.AppId
+	}
+	return ""
+}
+
+func (x *RefreshGitHookRequest) GetCommit() string {
+	if x != nil {
+		return x.Commit
+	}
+	return ""
+}
+
+type RefreshGitHookResponse struct {
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	DeploymentId string                 `protobuf:"bytes,1,opt,name=deployment_id,json=deploymentId,proto3" json:"deployment_id,omitempty"`
+	// commit 是本次拉取锚定的 HEAD（或调用方钉住的 commit）。
+	Commit string `protobuf:"bytes,2,opt,name=commit,proto3" json:"commit,omitempty"`
+	// admission 携带受理判定附注（accepted/deduplicated，与 webhook 面同
+	// 口径——同 commit 重放回既有部署引用）。
+	Admission     *Admission `protobuf:"bytes,3,opt,name=admission,proto3" json:"admission,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RefreshGitHookResponse) Reset() {
+	*x = RefreshGitHookResponse{}
+	mi := &file_fleetly_delivery_v1_delivery_proto_msgTypes[50]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RefreshGitHookResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RefreshGitHookResponse) ProtoMessage() {}
+
+func (x *RefreshGitHookResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_delivery_v1_delivery_proto_msgTypes[50]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RefreshGitHookResponse.ProtoReflect.Descriptor instead.
+func (*RefreshGitHookResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_delivery_v1_delivery_proto_rawDescGZIP(), []int{50}
+}
+
+func (x *RefreshGitHookResponse) GetDeploymentId() string {
+	if x != nil {
+		return x.DeploymentId
+	}
+	return ""
+}
+
+func (x *RefreshGitHookResponse) GetCommit() string {
+	if x != nil {
+		return x.Commit
+	}
+	return ""
+}
+
+func (x *RefreshGitHookResponse) GetAdmission() *Admission {
+	if x != nil {
+		return x.Admission
+	}
+	return nil
+}
+
 type ReceiveWebhookRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Token         string                 `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`         // URL token 明文
@@ -3351,7 +3468,7 @@ type ReceiveWebhookRequest struct {
 
 func (x *ReceiveWebhookRequest) Reset() {
 	*x = ReceiveWebhookRequest{}
-	mi := &file_fleetly_delivery_v1_delivery_proto_msgTypes[49]
+	mi := &file_fleetly_delivery_v1_delivery_proto_msgTypes[51]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3363,7 +3480,7 @@ func (x *ReceiveWebhookRequest) String() string {
 func (*ReceiveWebhookRequest) ProtoMessage() {}
 
 func (x *ReceiveWebhookRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_delivery_v1_delivery_proto_msgTypes[49]
+	mi := &file_fleetly_delivery_v1_delivery_proto_msgTypes[51]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3376,7 +3493,7 @@ func (x *ReceiveWebhookRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReceiveWebhookRequest.ProtoReflect.Descriptor instead.
 func (*ReceiveWebhookRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_delivery_v1_delivery_proto_rawDescGZIP(), []int{49}
+	return file_fleetly_delivery_v1_delivery_proto_rawDescGZIP(), []int{51}
 }
 
 func (x *ReceiveWebhookRequest) GetToken() string {
@@ -3432,7 +3549,7 @@ type ReceiveWebhookResponse struct {
 
 func (x *ReceiveWebhookResponse) Reset() {
 	*x = ReceiveWebhookResponse{}
-	mi := &file_fleetly_delivery_v1_delivery_proto_msgTypes[50]
+	mi := &file_fleetly_delivery_v1_delivery_proto_msgTypes[52]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3444,7 +3561,7 @@ func (x *ReceiveWebhookResponse) String() string {
 func (*ReceiveWebhookResponse) ProtoMessage() {}
 
 func (x *ReceiveWebhookResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_delivery_v1_delivery_proto_msgTypes[50]
+	mi := &file_fleetly_delivery_v1_delivery_proto_msgTypes[52]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3457,7 +3574,7 @@ func (x *ReceiveWebhookResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReceiveWebhookResponse.ProtoReflect.Descriptor instead.
 func (*ReceiveWebhookResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_delivery_v1_delivery_proto_rawDescGZIP(), []int{50}
+	return file_fleetly_delivery_v1_delivery_proto_rawDescGZIP(), []int{52}
 }
 
 func (x *ReceiveWebhookResponse) GetStatus() string {
@@ -3765,7 +3882,14 @@ const file_fleetly_delivery_v1_delivery_proto_rawDesc = "" +
 	"\x06app_id\x18\x01 \x01(\tR\x05appId\"c\n" +
 	"\x17RotateHookTokenResponse\x120\n" +
 	"\x04hook\x18\x01 \x01(\v2\x1c.fleetly.delivery.v1.GitHookR\x04hook\x12\x16\n" +
-	"\x06secret\x18\x02 \x01(\tR\x06secret\"\x97\x01\n" +
+	"\x06secret\x18\x02 \x01(\tR\x06secret\"F\n" +
+	"\x15RefreshGitHookRequest\x12\x15\n" +
+	"\x06app_id\x18\x01 \x01(\tR\x05appId\x12\x16\n" +
+	"\x06commit\x18\x02 \x01(\tR\x06commit\"\x93\x01\n" +
+	"\x16RefreshGitHookResponse\x12#\n" +
+	"\rdeployment_id\x18\x01 \x01(\tR\fdeploymentId\x12\x16\n" +
+	"\x06commit\x18\x02 \x01(\tR\x06commit\x12<\n" +
+	"\tadmission\x18\x03 \x01(\v2\x1e.fleetly.delivery.v1.AdmissionR\tadmission\"\x97\x01\n" +
 	"\x15ReceiveWebhookRequest\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\x12\x18\n" +
 	"\apayload\x18\x02 \x01(\fR\apayload\x12\x14\n" +
@@ -3824,7 +3948,7 @@ const file_fleetly_delivery_v1_delivery_proto_rawDesc = "" +
 	"\x06builds\x10\x02(\x01\x12\x87\x01\n" +
 	"\vListUploads\x12'.fleetly.delivery.v1.ListUploadsRequest\x1a(.fleetly.delivery.v1.ListUploadsResponse\"%\xea\xc4\x19\x0e\b\x03\"\n" +
 	"\n" +
-	"\x06builds\x10\x01\x82\xd3\xe4\x93\x02\r\x12\v/v1/uploads\x1a\x06\xf2\xc4\x19\x02\b\x032\xd5\x04\n" +
+	"\x06builds\x10\x01\x82\xd3\xe4\x93\x02\r\x12\v/v1/uploads\x1a\x06\xf2\xc4\x19\x02\b\x032\xfc\x05\n" +
 	"\fHooksService\x12\x90\x01\n" +
 	"\n" +
 	"SetGitHook\x12&.fleetly.delivery.v1.SetGitHookRequest\x1a'.fleetly.delivery.v1.SetGitHookResponse\"1\xea\xc4\x19\f\b\x03\"\b\n" +
@@ -3833,7 +3957,9 @@ const file_fleetly_delivery_v1_delivery_proto_rawDesc = "" +
 	"GetGitHook\x12&.fleetly.delivery.v1.GetGitHookRequest\x1a'.fleetly.delivery.v1.GetGitHookResponse\".\xea\xc4\x19\f\b\x03\"\b\n" +
 	"\x04apps\x10\x01\x82\xd3\xe4\x93\x02\x18\x12\x16/v1/apps/{app_id}/hook\x12\xa6\x01\n" +
 	"\x0fRotateHookToken\x12+.fleetly.delivery.v1.RotateHookTokenRequest\x1a,.fleetly.delivery.v1.RotateHookTokenResponse\"8\xea\xc4\x19\f\b\x03\"\b\n" +
-	"\x04apps\x10\x02\x82\xd3\xe4\x93\x02\":\x01*\"\x1d/v1/apps/{app_id}/hook/rotate\x12q\n" +
+	"\x04apps\x10\x02\x82\xd3\xe4\x93\x02\":\x01*\"\x1d/v1/apps/{app_id}/hook/rotate\x12\xa4\x01\n" +
+	"\x0eRefreshGitHook\x12*.fleetly.delivery.v1.RefreshGitHookRequest\x1a+.fleetly.delivery.v1.RefreshGitHookResponse\"9\xea\xc4\x19\f\b\x03\"\b\n" +
+	"\x04apps\x10\x02\x82\xd3\xe4\x93\x02#:\x01*\"\x1e/v1/apps/{app_id}/hook/refresh\x12q\n" +
 	"\x0eReceiveWebhook\x12*.fleetly.delivery.v1.ReceiveWebhookRequest\x1a+.fleetly.delivery.v1.ReceiveWebhookResponse\"\x06\xea\xc4\x19\x02\b\x01\x1a\x06\xf2\xc4\x19\x02\b\x03B\x9c\x01\x92ARRP\n" +
 	"\adefault\x12E\n" +
 	"\x1dAn unexpected error response.\x12$\n" +
@@ -3852,7 +3978,7 @@ func file_fleetly_delivery_v1_delivery_proto_rawDescGZIP() []byte {
 }
 
 var file_fleetly_delivery_v1_delivery_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_fleetly_delivery_v1_delivery_proto_msgTypes = make([]protoimpl.MessageInfo, 53)
+var file_fleetly_delivery_v1_delivery_proto_msgTypes = make([]protoimpl.MessageInfo, 55)
 var file_fleetly_delivery_v1_delivery_proto_goTypes = []any{
 	(SourceKind)(0),                  // 0: fleetly.delivery.v1.SourceKind
 	(*Deployment)(nil),               // 1: fleetly.delivery.v1.Deployment
@@ -3904,20 +4030,22 @@ var file_fleetly_delivery_v1_delivery_proto_goTypes = []any{
 	(*GetGitHookResponse)(nil),       // 47: fleetly.delivery.v1.GetGitHookResponse
 	(*RotateHookTokenRequest)(nil),   // 48: fleetly.delivery.v1.RotateHookTokenRequest
 	(*RotateHookTokenResponse)(nil),  // 49: fleetly.delivery.v1.RotateHookTokenResponse
-	(*ReceiveWebhookRequest)(nil),    // 50: fleetly.delivery.v1.ReceiveWebhookRequest
-	(*ReceiveWebhookResponse)(nil),   // 51: fleetly.delivery.v1.ReceiveWebhookResponse
-	nil,                              // 52: fleetly.delivery.v1.DeployRequest.EnvEntry
-	nil,                              // 53: fleetly.delivery.v1.Workload.EnvEntry
-	(v1.DeployStrategy)(0),           // 54: fleetly.spec.v1.DeployStrategy
-	(*v1.AppSpec)(nil),               // 55: fleetly.spec.v1.AppSpec
-	(*v1.PortSpec)(nil),              // 56: fleetly.spec.v1.PortSpec
-	(*v1.ResourcesSpec)(nil),         // 57: fleetly.spec.v1.ResourcesSpec
-	(*v1.PlacementSpec)(nil),         // 58: fleetly.spec.v1.PlacementSpec
-	(*v1.VolumeAttachment)(nil),      // 59: fleetly.spec.v1.VolumeAttachment
-	(*durationpb.Duration)(nil),      // 60: google.protobuf.Duration
+	(*RefreshGitHookRequest)(nil),    // 50: fleetly.delivery.v1.RefreshGitHookRequest
+	(*RefreshGitHookResponse)(nil),   // 51: fleetly.delivery.v1.RefreshGitHookResponse
+	(*ReceiveWebhookRequest)(nil),    // 52: fleetly.delivery.v1.ReceiveWebhookRequest
+	(*ReceiveWebhookResponse)(nil),   // 53: fleetly.delivery.v1.ReceiveWebhookResponse
+	nil,                              // 54: fleetly.delivery.v1.DeployRequest.EnvEntry
+	nil,                              // 55: fleetly.delivery.v1.Workload.EnvEntry
+	(v1.DeployStrategy)(0),           // 56: fleetly.spec.v1.DeployStrategy
+	(*v1.AppSpec)(nil),               // 57: fleetly.spec.v1.AppSpec
+	(*v1.PortSpec)(nil),              // 58: fleetly.spec.v1.PortSpec
+	(*v1.ResourcesSpec)(nil),         // 59: fleetly.spec.v1.ResourcesSpec
+	(*v1.PlacementSpec)(nil),         // 60: fleetly.spec.v1.PlacementSpec
+	(*v1.VolumeAttachment)(nil),      // 61: fleetly.spec.v1.VolumeAttachment
+	(*durationpb.Duration)(nil),      // 62: google.protobuf.Duration
 }
 var file_fleetly_delivery_v1_delivery_proto_depIdxs = []int32{
-	52, // 0: fleetly.delivery.v1.DeployRequest.env:type_name -> fleetly.delivery.v1.DeployRequest.EnvEntry
+	54, // 0: fleetly.delivery.v1.DeployRequest.env:type_name -> fleetly.delivery.v1.DeployRequest.EnvEntry
 	1,  // 1: fleetly.delivery.v1.DeployResponse.deployment:type_name -> fleetly.delivery.v1.Deployment
 	3,  // 2: fleetly.delivery.v1.DeployResponse.admission:type_name -> fleetly.delivery.v1.Admission
 	1,  // 3: fleetly.delivery.v1.GetDeploymentResponse.deployment:type_name -> fleetly.delivery.v1.Deployment
@@ -3928,23 +4056,23 @@ var file_fleetly_delivery_v1_delivery_proto_depIdxs = []int32{
 	1,  // 8: fleetly.delivery.v1.WaitDeploymentResponse.deployment:type_name -> fleetly.delivery.v1.Deployment
 	18, // 9: fleetly.delivery.v1.Revision.process_strategies:type_name -> fleetly.delivery.v1.ProcessStrategy
 	0,  // 10: fleetly.delivery.v1.Revision.source_kind:type_name -> fleetly.delivery.v1.SourceKind
-	54, // 11: fleetly.delivery.v1.ProcessStrategy.strategy:type_name -> fleetly.spec.v1.DeployStrategy
+	56, // 11: fleetly.delivery.v1.ProcessStrategy.strategy:type_name -> fleetly.spec.v1.DeployStrategy
 	17, // 12: fleetly.delivery.v1.ListRevisionsResponse.revisions:type_name -> fleetly.delivery.v1.Revision
 	21, // 13: fleetly.delivery.v1.DiffRevisionsResponse.entries:type_name -> fleetly.delivery.v1.DiffEntry
 	17, // 14: fleetly.delivery.v1.GetRevisionResponse.revision:type_name -> fleetly.delivery.v1.Revision
-	55, // 15: fleetly.delivery.v1.GetRevisionResponse.spec:type_name -> fleetly.spec.v1.AppSpec
+	57, // 15: fleetly.delivery.v1.GetRevisionResponse.spec:type_name -> fleetly.spec.v1.AppSpec
 	17, // 16: fleetly.delivery.v1.GetAppWorkloadsResponse.revision:type_name -> fleetly.delivery.v1.Revision
 	28, // 17: fleetly.delivery.v1.GetAppWorkloadsResponse.workloads:type_name -> fleetly.delivery.v1.Workload
-	53, // 18: fleetly.delivery.v1.Workload.env:type_name -> fleetly.delivery.v1.Workload.EnvEntry
-	56, // 19: fleetly.delivery.v1.Workload.ports:type_name -> fleetly.spec.v1.PortSpec
+	55, // 18: fleetly.delivery.v1.Workload.env:type_name -> fleetly.delivery.v1.Workload.EnvEntry
+	58, // 19: fleetly.delivery.v1.Workload.ports:type_name -> fleetly.spec.v1.PortSpec
 	29, // 20: fleetly.delivery.v1.Workload.healthcheck:type_name -> fleetly.delivery.v1.WorkloadHealthcheck
-	57, // 21: fleetly.delivery.v1.Workload.resources:type_name -> fleetly.spec.v1.ResourcesSpec
-	58, // 22: fleetly.delivery.v1.Workload.placement:type_name -> fleetly.spec.v1.PlacementSpec
-	59, // 23: fleetly.delivery.v1.Workload.volumes:type_name -> fleetly.spec.v1.VolumeAttachment
-	60, // 24: fleetly.delivery.v1.Workload.stop_grace:type_name -> google.protobuf.Duration
-	60, // 25: fleetly.delivery.v1.WorkloadHealthcheck.interval:type_name -> google.protobuf.Duration
-	60, // 26: fleetly.delivery.v1.WorkloadHealthcheck.timeout:type_name -> google.protobuf.Duration
-	60, // 27: fleetly.delivery.v1.WorkloadHealthcheck.start_period:type_name -> google.protobuf.Duration
+	59, // 21: fleetly.delivery.v1.Workload.resources:type_name -> fleetly.spec.v1.ResourcesSpec
+	60, // 22: fleetly.delivery.v1.Workload.placement:type_name -> fleetly.spec.v1.PlacementSpec
+	61, // 23: fleetly.delivery.v1.Workload.volumes:type_name -> fleetly.spec.v1.VolumeAttachment
+	62, // 24: fleetly.delivery.v1.Workload.stop_grace:type_name -> google.protobuf.Duration
+	62, // 25: fleetly.delivery.v1.WorkloadHealthcheck.interval:type_name -> google.protobuf.Duration
+	62, // 26: fleetly.delivery.v1.WorkloadHealthcheck.timeout:type_name -> google.protobuf.Duration
+	62, // 27: fleetly.delivery.v1.WorkloadHealthcheck.start_period:type_name -> google.protobuf.Duration
 	30, // 28: fleetly.delivery.v1.ListBuildsResponse.builds:type_name -> fleetly.delivery.v1.Build
 	30, // 29: fleetly.delivery.v1.WaitBuildResponse.build:type_name -> fleetly.delivery.v1.Build
 	38, // 30: fleetly.delivery.v1.UploadSourceRequest.meta:type_name -> fleetly.delivery.v1.UploadSourceMeta
@@ -3952,52 +4080,55 @@ var file_fleetly_delivery_v1_delivery_proto_depIdxs = []int32{
 	43, // 32: fleetly.delivery.v1.SetGitHookResponse.hook:type_name -> fleetly.delivery.v1.GitHook
 	43, // 33: fleetly.delivery.v1.GetGitHookResponse.hook:type_name -> fleetly.delivery.v1.GitHook
 	43, // 34: fleetly.delivery.v1.RotateHookTokenResponse.hook:type_name -> fleetly.delivery.v1.GitHook
-	3,  // 35: fleetly.delivery.v1.ReceiveWebhookResponse.admission:type_name -> fleetly.delivery.v1.Admission
-	2,  // 36: fleetly.delivery.v1.DeploymentsService.Deploy:input_type -> fleetly.delivery.v1.DeployRequest
-	8,  // 37: fleetly.delivery.v1.DeploymentsService.GetDeployment:input_type -> fleetly.delivery.v1.GetDeploymentRequest
-	9,  // 38: fleetly.delivery.v1.DeploymentsService.ListDeployments:input_type -> fleetly.delivery.v1.ListDeploymentsRequest
-	11, // 39: fleetly.delivery.v1.DeploymentsService.CancelDeployment:input_type -> fleetly.delivery.v1.CancelDeploymentRequest
-	12, // 40: fleetly.delivery.v1.DeploymentsService.Rollback:input_type -> fleetly.delivery.v1.RollbackRequest
-	13, // 41: fleetly.delivery.v1.DeploymentsService.RestartProcess:input_type -> fleetly.delivery.v1.RestartProcessRequest
-	15, // 42: fleetly.delivery.v1.DeploymentsService.WaitDeployment:input_type -> fleetly.delivery.v1.WaitDeploymentRequest
-	19, // 43: fleetly.delivery.v1.RevisionsService.ListRevisions:input_type -> fleetly.delivery.v1.ListRevisionsRequest
-	22, // 44: fleetly.delivery.v1.RevisionsService.DiffRevisions:input_type -> fleetly.delivery.v1.DiffRevisionsRequest
-	24, // 45: fleetly.delivery.v1.RevisionsService.GetRevision:input_type -> fleetly.delivery.v1.GetRevisionRequest
-	26, // 46: fleetly.delivery.v1.RevisionsService.GetAppWorkloads:input_type -> fleetly.delivery.v1.GetAppWorkloadsRequest
-	31, // 47: fleetly.delivery.v1.BuildsService.ListBuilds:input_type -> fleetly.delivery.v1.ListBuildsRequest
-	33, // 48: fleetly.delivery.v1.BuildsService.StreamBuildLogs:input_type -> fleetly.delivery.v1.StreamBuildLogsRequest
-	35, // 49: fleetly.delivery.v1.BuildsService.WaitBuild:input_type -> fleetly.delivery.v1.WaitBuildRequest
-	37, // 50: fleetly.delivery.v1.BuildsService.UploadSource:input_type -> fleetly.delivery.v1.UploadSourceRequest
-	41, // 51: fleetly.delivery.v1.BuildsService.ListUploads:input_type -> fleetly.delivery.v1.ListUploadsRequest
-	44, // 52: fleetly.delivery.v1.HooksService.SetGitHook:input_type -> fleetly.delivery.v1.SetGitHookRequest
-	46, // 53: fleetly.delivery.v1.HooksService.GetGitHook:input_type -> fleetly.delivery.v1.GetGitHookRequest
-	48, // 54: fleetly.delivery.v1.HooksService.RotateHookToken:input_type -> fleetly.delivery.v1.RotateHookTokenRequest
-	50, // 55: fleetly.delivery.v1.HooksService.ReceiveWebhook:input_type -> fleetly.delivery.v1.ReceiveWebhookRequest
-	4,  // 56: fleetly.delivery.v1.DeploymentsService.Deploy:output_type -> fleetly.delivery.v1.DeployResponse
-	5,  // 57: fleetly.delivery.v1.DeploymentsService.GetDeployment:output_type -> fleetly.delivery.v1.GetDeploymentResponse
-	10, // 58: fleetly.delivery.v1.DeploymentsService.ListDeployments:output_type -> fleetly.delivery.v1.ListDeploymentsResponse
-	6,  // 59: fleetly.delivery.v1.DeploymentsService.CancelDeployment:output_type -> fleetly.delivery.v1.CancelDeploymentResponse
-	7,  // 60: fleetly.delivery.v1.DeploymentsService.Rollback:output_type -> fleetly.delivery.v1.RollbackResponse
-	14, // 61: fleetly.delivery.v1.DeploymentsService.RestartProcess:output_type -> fleetly.delivery.v1.RestartProcessResponse
-	16, // 62: fleetly.delivery.v1.DeploymentsService.WaitDeployment:output_type -> fleetly.delivery.v1.WaitDeploymentResponse
-	20, // 63: fleetly.delivery.v1.RevisionsService.ListRevisions:output_type -> fleetly.delivery.v1.ListRevisionsResponse
-	23, // 64: fleetly.delivery.v1.RevisionsService.DiffRevisions:output_type -> fleetly.delivery.v1.DiffRevisionsResponse
-	25, // 65: fleetly.delivery.v1.RevisionsService.GetRevision:output_type -> fleetly.delivery.v1.GetRevisionResponse
-	27, // 66: fleetly.delivery.v1.RevisionsService.GetAppWorkloads:output_type -> fleetly.delivery.v1.GetAppWorkloadsResponse
-	32, // 67: fleetly.delivery.v1.BuildsService.ListBuilds:output_type -> fleetly.delivery.v1.ListBuildsResponse
-	34, // 68: fleetly.delivery.v1.BuildsService.StreamBuildLogs:output_type -> fleetly.delivery.v1.StreamBuildLogsResponse
-	36, // 69: fleetly.delivery.v1.BuildsService.WaitBuild:output_type -> fleetly.delivery.v1.WaitBuildResponse
-	39, // 70: fleetly.delivery.v1.BuildsService.UploadSource:output_type -> fleetly.delivery.v1.UploadSourceResponse
-	42, // 71: fleetly.delivery.v1.BuildsService.ListUploads:output_type -> fleetly.delivery.v1.ListUploadsResponse
-	45, // 72: fleetly.delivery.v1.HooksService.SetGitHook:output_type -> fleetly.delivery.v1.SetGitHookResponse
-	47, // 73: fleetly.delivery.v1.HooksService.GetGitHook:output_type -> fleetly.delivery.v1.GetGitHookResponse
-	49, // 74: fleetly.delivery.v1.HooksService.RotateHookToken:output_type -> fleetly.delivery.v1.RotateHookTokenResponse
-	51, // 75: fleetly.delivery.v1.HooksService.ReceiveWebhook:output_type -> fleetly.delivery.v1.ReceiveWebhookResponse
-	56, // [56:76] is the sub-list for method output_type
-	36, // [36:56] is the sub-list for method input_type
-	36, // [36:36] is the sub-list for extension type_name
-	36, // [36:36] is the sub-list for extension extendee
-	0,  // [0:36] is the sub-list for field type_name
+	3,  // 35: fleetly.delivery.v1.RefreshGitHookResponse.admission:type_name -> fleetly.delivery.v1.Admission
+	3,  // 36: fleetly.delivery.v1.ReceiveWebhookResponse.admission:type_name -> fleetly.delivery.v1.Admission
+	2,  // 37: fleetly.delivery.v1.DeploymentsService.Deploy:input_type -> fleetly.delivery.v1.DeployRequest
+	8,  // 38: fleetly.delivery.v1.DeploymentsService.GetDeployment:input_type -> fleetly.delivery.v1.GetDeploymentRequest
+	9,  // 39: fleetly.delivery.v1.DeploymentsService.ListDeployments:input_type -> fleetly.delivery.v1.ListDeploymentsRequest
+	11, // 40: fleetly.delivery.v1.DeploymentsService.CancelDeployment:input_type -> fleetly.delivery.v1.CancelDeploymentRequest
+	12, // 41: fleetly.delivery.v1.DeploymentsService.Rollback:input_type -> fleetly.delivery.v1.RollbackRequest
+	13, // 42: fleetly.delivery.v1.DeploymentsService.RestartProcess:input_type -> fleetly.delivery.v1.RestartProcessRequest
+	15, // 43: fleetly.delivery.v1.DeploymentsService.WaitDeployment:input_type -> fleetly.delivery.v1.WaitDeploymentRequest
+	19, // 44: fleetly.delivery.v1.RevisionsService.ListRevisions:input_type -> fleetly.delivery.v1.ListRevisionsRequest
+	22, // 45: fleetly.delivery.v1.RevisionsService.DiffRevisions:input_type -> fleetly.delivery.v1.DiffRevisionsRequest
+	24, // 46: fleetly.delivery.v1.RevisionsService.GetRevision:input_type -> fleetly.delivery.v1.GetRevisionRequest
+	26, // 47: fleetly.delivery.v1.RevisionsService.GetAppWorkloads:input_type -> fleetly.delivery.v1.GetAppWorkloadsRequest
+	31, // 48: fleetly.delivery.v1.BuildsService.ListBuilds:input_type -> fleetly.delivery.v1.ListBuildsRequest
+	33, // 49: fleetly.delivery.v1.BuildsService.StreamBuildLogs:input_type -> fleetly.delivery.v1.StreamBuildLogsRequest
+	35, // 50: fleetly.delivery.v1.BuildsService.WaitBuild:input_type -> fleetly.delivery.v1.WaitBuildRequest
+	37, // 51: fleetly.delivery.v1.BuildsService.UploadSource:input_type -> fleetly.delivery.v1.UploadSourceRequest
+	41, // 52: fleetly.delivery.v1.BuildsService.ListUploads:input_type -> fleetly.delivery.v1.ListUploadsRequest
+	44, // 53: fleetly.delivery.v1.HooksService.SetGitHook:input_type -> fleetly.delivery.v1.SetGitHookRequest
+	46, // 54: fleetly.delivery.v1.HooksService.GetGitHook:input_type -> fleetly.delivery.v1.GetGitHookRequest
+	48, // 55: fleetly.delivery.v1.HooksService.RotateHookToken:input_type -> fleetly.delivery.v1.RotateHookTokenRequest
+	50, // 56: fleetly.delivery.v1.HooksService.RefreshGitHook:input_type -> fleetly.delivery.v1.RefreshGitHookRequest
+	52, // 57: fleetly.delivery.v1.HooksService.ReceiveWebhook:input_type -> fleetly.delivery.v1.ReceiveWebhookRequest
+	4,  // 58: fleetly.delivery.v1.DeploymentsService.Deploy:output_type -> fleetly.delivery.v1.DeployResponse
+	5,  // 59: fleetly.delivery.v1.DeploymentsService.GetDeployment:output_type -> fleetly.delivery.v1.GetDeploymentResponse
+	10, // 60: fleetly.delivery.v1.DeploymentsService.ListDeployments:output_type -> fleetly.delivery.v1.ListDeploymentsResponse
+	6,  // 61: fleetly.delivery.v1.DeploymentsService.CancelDeployment:output_type -> fleetly.delivery.v1.CancelDeploymentResponse
+	7,  // 62: fleetly.delivery.v1.DeploymentsService.Rollback:output_type -> fleetly.delivery.v1.RollbackResponse
+	14, // 63: fleetly.delivery.v1.DeploymentsService.RestartProcess:output_type -> fleetly.delivery.v1.RestartProcessResponse
+	16, // 64: fleetly.delivery.v1.DeploymentsService.WaitDeployment:output_type -> fleetly.delivery.v1.WaitDeploymentResponse
+	20, // 65: fleetly.delivery.v1.RevisionsService.ListRevisions:output_type -> fleetly.delivery.v1.ListRevisionsResponse
+	23, // 66: fleetly.delivery.v1.RevisionsService.DiffRevisions:output_type -> fleetly.delivery.v1.DiffRevisionsResponse
+	25, // 67: fleetly.delivery.v1.RevisionsService.GetRevision:output_type -> fleetly.delivery.v1.GetRevisionResponse
+	27, // 68: fleetly.delivery.v1.RevisionsService.GetAppWorkloads:output_type -> fleetly.delivery.v1.GetAppWorkloadsResponse
+	32, // 69: fleetly.delivery.v1.BuildsService.ListBuilds:output_type -> fleetly.delivery.v1.ListBuildsResponse
+	34, // 70: fleetly.delivery.v1.BuildsService.StreamBuildLogs:output_type -> fleetly.delivery.v1.StreamBuildLogsResponse
+	36, // 71: fleetly.delivery.v1.BuildsService.WaitBuild:output_type -> fleetly.delivery.v1.WaitBuildResponse
+	39, // 72: fleetly.delivery.v1.BuildsService.UploadSource:output_type -> fleetly.delivery.v1.UploadSourceResponse
+	42, // 73: fleetly.delivery.v1.BuildsService.ListUploads:output_type -> fleetly.delivery.v1.ListUploadsResponse
+	45, // 74: fleetly.delivery.v1.HooksService.SetGitHook:output_type -> fleetly.delivery.v1.SetGitHookResponse
+	47, // 75: fleetly.delivery.v1.HooksService.GetGitHook:output_type -> fleetly.delivery.v1.GetGitHookResponse
+	49, // 76: fleetly.delivery.v1.HooksService.RotateHookToken:output_type -> fleetly.delivery.v1.RotateHookTokenResponse
+	51, // 77: fleetly.delivery.v1.HooksService.RefreshGitHook:output_type -> fleetly.delivery.v1.RefreshGitHookResponse
+	53, // 78: fleetly.delivery.v1.HooksService.ReceiveWebhook:output_type -> fleetly.delivery.v1.ReceiveWebhookResponse
+	58, // [58:79] is the sub-list for method output_type
+	37, // [37:58] is the sub-list for method input_type
+	37, // [37:37] is the sub-list for extension type_name
+	37, // [37:37] is the sub-list for extension extendee
+	0,  // [0:37] is the sub-list for field type_name
 }
 
 func init() { file_fleetly_delivery_v1_delivery_proto_init() }
@@ -4015,7 +4146,7 @@ func file_fleetly_delivery_v1_delivery_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fleetly_delivery_v1_delivery_proto_rawDesc), len(file_fleetly_delivery_v1_delivery_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   53,
+			NumMessages:   55,
 			NumExtensions: 0,
 			NumServices:   4,
 		},

@@ -100,6 +100,14 @@ func (r *Repo) RotateToken(ctx context.Context, run state.Runner, appID, sha, pr
 	return nil
 }
 
+// DeleteByApp 随 App tombstone 级联移除 hook 行（与 tombstone 同事务）：
+// 孤儿 hook 会让配置面对已删 App 继续成功、接收面却按活跃行拒绝——两面
+// 语义分裂（ADR-0072 批真机咬出：删除 App 后 rotate 仍成功、webhook 401）。
+func (r *Repo) DeleteByApp(ctx context.Context, run state.Runner, appID string) error {
+	_, err := run.ExecContext(ctx, `DELETE FROM app_hooks WHERE app_id = ?`, appID)
+	return err
+}
+
 // ListAll 读全表行：离线维护面（KEK 重封）专用（含 webhook secret 信封
 // 列，禁止回显面消费）。
 func (r *Repo) ListAll(ctx context.Context, run state.Runner) ([]Hook, error) {

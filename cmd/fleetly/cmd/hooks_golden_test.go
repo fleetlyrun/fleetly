@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"regexp"
+	"strings"
 	"testing"
 )
 
@@ -49,6 +50,33 @@ func TestGoldenHooksVerbs(t *testing.T) {
 			t.Fatalf("re-configuring must not mint a new token: %q", out)
 		}
 		compareGolden(t, "hooks-set-update", normalizeGolden(out))
+	})
+
+	// refresh 拉取通道（显式 commit 锚——离线；HEAD 现解析的失败与跟随由
+	// engine 单测覆盖）：部署创建 + commit 回显 + admission accepted；同
+	// commit 二刷 deduplicated 回同一部署。
+	t.Run("hooks refresh", func(t *testing.T) {
+		code, out, stderr := runCLI(t, "hooks", "refresh", "--app", appID, "--commit", "1111111111111111111111111111111111111111")
+		if code != 0 || stderr != "" {
+			t.Fatalf("hooks refresh: code=%d stderr=%q", code, stderr)
+		}
+		compareGolden(t, "hooks-refresh", normalizeGolden(out))
+
+		code, out, stderr = runCLI(t, "hooks", "refresh", "--app", appID,
+			"--commit", "1111111111111111111111111111111111111111", "--json")
+		if code != 0 || stderr != "" {
+			t.Fatalf("hooks refresh --json: code=%d stderr=%q", code, stderr)
+		}
+		compareGolden(t, "hooks-refresh-json", normalizeGolden(out))
+
+		code, out, stderr = runCLI(t, "hooks", "refresh", "--app", appID,
+			"--commit", "1111111111111111111111111111111111111111")
+		if code != 0 || stderr != "" {
+			t.Fatalf("hooks refresh dedup: code=%d stderr=%q", code, stderr)
+		}
+		if !strings.Contains(out, "deduplicated") {
+			t.Fatalf("same-commit refresh must report deduplicated: %q", out)
+		}
 	})
 
 	t.Run("hooks rotate", func(t *testing.T) {

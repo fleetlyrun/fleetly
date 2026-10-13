@@ -1,0 +1,9 @@
+{
+  "deployment_id": "web-1-d2",
+  "commit": "1111111111111111111111111111111111111111",
+  "admission": {
+    "outcome": "deduplicated",
+    "position": 1,
+    "existing_deployment": "web-1-d2"
+  }
+}

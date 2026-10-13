@@ -92,6 +92,45 @@
         ]
       }
     },
+    "/v1/apps/{app_id}/hook/refresh": {
+      "post": {
+        "summary": "RefreshGitHook 立即拉取 hook 材料并触发部署（push 通道的一等孪生：\n控制面拉取，不依赖 GitHub 侧 webhook 配置——App Templates 第三方模板\n仓无法配 webhook 的前提原语）。缺省拉 branch HEAD（commit 锚经\nls-remote 现解析，私有仓走同一材料解析面）；commit 非空时钉住该次\n同步。admission 与 push 同链（CommitSHA 去重——同 HEAD 重放回\ndeduplicated 既有部署）。",
+        "operationId": "HooksService_RefreshGitHook",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1RefreshGitHookResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/HooksServiceRefreshGitHookBody"
+            }
+          }
+        ],
+        "tags": [
+          "HooksService"
+        ]
+      }
+    },
     "/v1/apps/{app_id}/hook/rotate": {
       "post": {
         "summary": "RotateHookToken 吊销旧 Token 铸新（URL token 与 GitHub webhook secret\n同源双换；旧 Token 即刻失效）。",
@@ -749,6 +788,15 @@
       "properties": {
         "to_revision": {
           "type": "string"
+        }
+      }
+    },
+    "HooksServiceRefreshGitHookBody": {
+      "type": "object",
+      "properties": {
+        "commit": {
+          "type": "string",
+          "title": "commit 缺省 = branch HEAD 现解析（ls-remote）；非空 = 钉住该 commit\n同步（apitest/重放锚）。"
         }
       }
     },
@@ -1497,6 +1545,22 @@
         "admission": {
           "$ref": "#/definitions/v1Admission",
           "title": "admission 在 status=accepted 时携带（push 触发部署的判定附注——\n同 commit 重复投递可见 deduplicated + existing_deployment；skipped/\nignored/pong 不携带）。"
+        }
+      }
+    },
+    "v1RefreshGitHookResponse": {
+      "type": "object",
+      "properties": {
+        "deployment_id": {
+          "type": "string"
+        },
+        "commit": {
+          "type": "string",
+          "title": "commit 是本次拉取锚定的 HEAD（或调用方钉住的 commit）。"
+        },
+        "admission": {
+          "$ref": "#/definitions/v1Admission",
+          "title": "admission 携带受理判定附注（accepted/deduplicated，与 webhook 面同\n口径——同 commit 重放回既有部署引用）。"
         }
       }
     },

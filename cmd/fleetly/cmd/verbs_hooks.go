@@ -141,6 +141,42 @@ func newHooksRotateVerb() commands.Command {
 	}
 }
 
+func newHooksRefreshVerb() commands.Command {
+	const name = "refresh"
+	var app, commit string
+	return &flaggedVerb{
+		name:     name,
+		synopsis: "Pull the hook material now and deploy it (no webhook or push needed; commit anchors the sync)",
+		usage:    "hooks refresh --app APP_ID [--commit SHA]",
+		setFlags: func(fs *flag.FlagSet) {
+			fs.StringVar(&app, "app", "", "app id (required)")
+			fs.StringVar(&commit, "commit", "", "commit to pin (default: branch HEAD resolved now)")
+		},
+		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
+			if app == "" {
+				return usageErr(name, "--app is required")
+			}
+			ctx, cancel, c, err := dialFromEnv(ctx)
+			if err != nil {
+				return err
+			}
+			defer cancel()
+			defer c.Close() //nolint:errcheck // 进程退出路径
+			resp, err := c.Hooks.RefreshGitHook(ctx, &deliveryv1.RefreshGitHookRequest{AppId: app, Commit: commit})
+			if err != nil {
+				return err
+			}
+			return renderOut(env, jsonOut, resp, func() {
+				_, _ = fmt.Fprintf(env.Stdout, "deployment %s\ncommit %s\nadmission %s\n",
+					resp.GetDeploymentId(), resp.GetCommit(), resp.GetAdmission().GetOutcome())
+			})
+		},
+	}
+}
+
 // printHookConfig 渲染配置面（人类形态共用段）。
 func printHookConfig(env *commands.Environment, h *deliveryv1.GitHook) {
 	watch := "(every change triggers)"

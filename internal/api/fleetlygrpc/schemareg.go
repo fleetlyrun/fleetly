@@ -34,6 +34,10 @@ type invitationAcceptedPayload struct {
 	User string `json:"user"`
 }
 
+// hookRefreshAcceptedPayload 是 hook.refresh_accepted 的载荷（与 push 同形——
+// 触发面不同[控制面拉取 vs webhook 投递]，锚面一致）。
+type hookRefreshAcceptedPayload = hookPushAcceptedPayload
+
 // hookPushAcceptedPayload 是 hook.push_accepted 的载荷（触发的部署锚）。
 type hookPushAcceptedPayload struct {
 	Branch     string `json:"branch"`
@@ -96,6 +100,7 @@ func init() {
 	registerEventPayload("invitation.accepted", invitationAcceptedPayload{})
 	// 触发面。
 	registerEventPayload("hook.push_accepted", hookPushAcceptedPayload{})
+	registerEventPayload("hook.refresh_accepted", hookRefreshAcceptedPayload{})
 	// 治理面（freezeEventPayload，governance.go 单源）。
 	registerEventPayload(eventFreezeSet, freezeEventPayload{})
 	registerEventPayload(eventFreezeLifted, freezeEventPayload{})

@@ -35,6 +35,7 @@ exec.session_opened	An exec session was accepted into a running workload (actor,
 freeze.lifted	A change freeze was lifted; change verbs in scope are accepted again.	internal/api/fleetlygrpc/governance.go LiftChangeFreeze
 freeze.set	A change freeze was set for a team (or globally); change verbs in scope are refused with the reason.	internal/api/fleetlygrpc/governance.go SetChangeFreeze
 hook.push_accepted	A verified webhook push triggered a deployment.	internal/api/fleetlygrpc/webhook.go handlePush
+hook.refresh_accepted	A control-plane hook refresh pulled the branch head and triggered a deployment.	internal/api/fleetlygrpc/webhook.go RefreshGitHook
 invitation.accepted	An invitation was redeemed; the invitee became a user.	added during implementation
 invitation.created	An invitation was issued (single-use, time-boxed, role-bound).	added during implementation
 lease.expired	A task's owner lease expired past grace; the pool drains.	internal/engine/task.go driveTask

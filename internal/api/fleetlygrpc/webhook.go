@@ -12,6 +12,7 @@ package fleetlygrpc
 import (
 	"context"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
@@ -55,21 +56,23 @@ type commitEntry struct {
 	Removed  []string `json:"removed"`
 }
 
-// ReceiveWebhook 是接收面主体（PUBLIC：HMAC 签名即凭证）。
+// ReceiveWebhook 是接收面主体（PUBLIC：HMAC 签名即凭证）。三处拒绝在
+// envelope context 带 reject 站点码（token_kind/token_lookup/app_lookup）
+// ——对外不泄细节（措辞恒同），只给排障一个可区分锚点。
 func (svc *HooksService) ReceiveWebhook(ctx context.Context, req *deliveryv1.ReceiveWebhookRequest) (*deliveryv1.ReceiveWebhookResponse, error) {
 	token := req.GetToken()
 	if identity.TokenKind(token) != "hook" {
-		return nil, apperr.New("E_UNAUTHENTICATED", "invalid hook token")
+		return nil, apperr.New("E_UNAUTHENTICATED", "invalid hook token").WithContext("reject", "token_kind")
 	}
 	h, err := svc.s.Hooks.GetByTokenSHA256(ctx, svc.s.DB.Runner(), identity.HashToken(token))
 	if err != nil {
 		// 不区分"行不存在"与"App 已删"——对发送方只呈现"凭证无效"。
-		return nil, apperr.New("E_UNAUTHENTICATED", "invalid hook token")
+		return nil, apperr.New("E_UNAUTHENTICATED", "invalid hook token").WithContext("reject", "token_lookup")
 	}
 	// App 已删（Get 活跃行口径）与行不存在同形——对发送方只呈现"凭证无效"。
 	appRow, err := svc.s.Apps.Get(ctx, svc.s.DB.Runner(), h.AppID)
 	if err != nil {
-		return nil, apperr.New("E_UNAUTHENTICATED", "invalid hook token")
+		return nil, apperr.New("E_UNAUTHENTICATED", "invalid hook token").WithContext("reject", "app_lookup:"+h.AppID)
 	}
 	// 审计 Team 轴（ADR-0035 决策 6）：PUBLIC 面无调用方身份——按 App 归属
 	// Project 的 Team 标注（hook 触发的部署/冻结审计行归属资源 Team）。
@@ -137,58 +140,113 @@ func (svc *HooksService) handlePush(ctx context.Context, req *deliveryv1.Receive
 	// source 错标为 api——ADR-0072 批修复的时序 bug）。
 	ctx = authn.WithAuditOverride(ctx, "hook:"+appRow.Name, audit.SourceWebhook)
 
-	// 触发部署：git 源 AppSpec（ref=push 后 commit）→ 所有权合并（ADR-0072
-	// 决策 2：hook 新材料 + 当前冻结 Spec 的运行时半边——console 声明的
-	// 运行时配置跨 push 存活；首 push 无冻结体 = 纯合成照旧）→ Revision
-	// 冻结 → admission（CommitSHA 进去重锚；latest-wins 由 admission 收口）。
-	appSpec, err := gitDeploySpec(appRow.ID, appRow.ProjectID, h, p.After)
+	// 摄取核（push/sync 共用链）：ctx 已带 hook:<App>/webhook 审计覆写。
+	return svc.wrapIngest(svc.ingestGitMaterial(ctx, appRow, h, branch, p.After, req.GetDelivery(),
+		"hook.push_accepted", "hook.push"))
+}
+
+// ingestGitMaterial 是 hook 材料摄取核（push 与 RefreshGitHook 双入口共用，
+// 机制单源）：git 源 AppSpec（ref=commit）→ 所有权合并（ADR-0072 决策 2：
+// hook 新材料 + 当前冻结 Spec 的运行时半边——console 声明的运行时配置跨
+// 触发存活；首触发无冻结体 = 纯合成照旧）→ Revision 冻结 → admission
+// （CommitSHA 进去重锚；latest-wins 由 admission 收口）→ 台账/审计/outbox
+// 事件一拍落库（重投不产生第二行事实；无键重投的去重由 admission 承担）。
+// ctx 的审计标注由触发面先行注入（push=hook:<App>/webhook 覆写；sync=
+// 调用方真实身份）。
+func (svc *HooksService) ingestGitMaterial(ctx context.Context, appRow *app.App, h *hook.Hook,
+	branch, commit, delivery, eventName, auditAction string,
+) (string, *deliveryv1.Admission, error) {
+	appSpec, err := gitDeploySpec(appRow.ID, appRow.ProjectID, h, commit)
 	if err != nil {
-		return nil, mapValidationError(err)
+		return "", nil, mapValidationError(err)
 	}
 	if latest, lerr := svc.s.Revisions.Latest(ctx, svc.s.DB.Runner(), appRow.ID); lerr == nil {
 		frozen, ferr := unmarshalFrozenSpec(latest.Spec)
 		if ferr != nil {
-			return nil, apperr.New("E_INTERNAL", "hook push merge: frozen revision is not valid protojson (%v)", ferr)
+			return "", nil, apperr.New("E_INTERNAL", "hook merge: frozen revision is not valid protojson (%v)", ferr)
 		}
 		appSpec = spec.MergeHookOwned(appSpec, frozen)
 	} else if !errors.Is(lerr, state.ErrNotFound) {
-		return nil, mapStateError(lerr, "revision")
+		return "", nil, mapStateError(lerr, "revision")
 	}
 	rev, err := freezeRevision(ctx, svc.s, appRow, appSpec, "")
 	if err != nil {
-		return nil, mapStateError(err, "revision")
+		return "", nil, mapStateError(err, "revision")
 	}
 	d, adm, err := svc.s.Engine.Submit(ctx, engine.SubmitRequest{
-		AppID: appRow.ID, RevisionID: rev.ID, CommitSHA: p.After,
+		AppID: appRow.ID, RevisionID: rev.ID, CommitSHA: commit,
 	})
 	if err != nil {
-		return nil, mapStateError(err, "deployment")
+		return "", nil, mapStateError(err, "deployment")
 	}
-
-	// hook 受理事实（delivery 台账 + 审计行 + outbox 事件）一拍落库——台账
-	// 与效果同事务，重投不产生第二行事实（幂等键重放根本不达此处；无键
-	// 重投的部署侧去重由 admission CommitSHA 承担）。
-	payload, err := json.Marshal(hookPushAcceptedPayload{Branch: branch, Commit: p.After, Deployment: d.ID})
+	payload, err := json.Marshal(hookPushAcceptedPayload{Branch: branch, Commit: commit, Deployment: d.ID})
 	if err != nil {
-		return nil, mapStateError(err, "hook push")
+		return "", nil, mapStateError(err, "hook")
 	}
 	err = svc.s.commit(ctx, writeFact{
 		write: func(ctx context.Context, tx *sql.Tx) error {
-			_, err := svc.s.Hooks.RecordDelivery(ctx, tx, h.AppID, req.GetDelivery())
+			_, err := svc.s.Hooks.RecordDelivery(ctx, tx, h.AppID, delivery)
 			return err
 		},
-		events: []eventFact{{name: "hook.push_accepted", aggregate: "app", id: appRow.ID, payload: payload}},
+		events: []eventFact{{name: eventName, aggregate: "app", id: appRow.ID, payload: payload}},
 		audits: []*audit.Entry{{
-			Actor: "hook:" + appRow.Name, Source: audit.SourceWebhook,
-			Action: "hook.push", Resource: "app/" + appRow.ID, AfterFP: p.After,
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+			Action: auditAction, Resource: "app/" + appRow.ID, AfterFP: commit,
 		}},
 	})
 	if err != nil {
-		return nil, mapStateError(err, "hook push")
+		return "", nil, mapStateError(err, "hook")
 	}
-	// admission 附注随 accepted 携带（P10 三入口一致）：同 commit 重复投递
-	// 可见 deduplicated + 既有引用。
-	return &deliveryv1.ReceiveWebhookResponse{Status: "accepted", DeploymentId: d.ID, Admission: admissionMsg(adm)}, nil
+	return d.ID, admissionMsg(adm), nil
+}
+
+// RefreshGitHook 立即拉取 hook 材料并部署（push 的一等孪生：控制面拉取，不
+// 依赖 GitHub 侧 webhook 配置——App Templates 第三方仓无法配 webhook 的
+// 前提原语）。commit 缺省经 ls-remote 现解析（私有仓走同一材料解析面）；
+// admission 与 push 同链（同 HEAD 重放回 deduplicated）。审计/事件带调用
+// 方真实身份（source=api），与 webhook 面的 hook:<App> 覆写分野。
+func (svc *HooksService) RefreshGitHook(ctx context.Context, req *deliveryv1.RefreshGitHookRequest) (*deliveryv1.RefreshGitHookResponse, error) {
+	if req.GetAppId() == "" {
+		return nil, apperr.New("E_INVALID_ARGUMENT", "app_id: must not be empty")
+	}
+	appRow, err := svc.s.authorizeAppID(ctx, req.GetAppId())
+	if err != nil {
+		return nil, err
+	}
+	h, err := svc.s.Hooks.Get(ctx, svc.s.DB.Runner(), req.GetAppId())
+	if err != nil {
+		return nil, mapStateError(err, "hook")
+	}
+	branch := h.Branch
+	if branch == "" {
+		branch = "HEAD"
+	}
+	commit := strings.TrimSpace(req.GetCommit())
+	if commit == "" {
+		commit, err = svc.s.Engine.ResolveGitHead(ctx, appRow.ProjectID, h.Repo, branch)
+		if err != nil {
+			return nil, apperr.New("E_INTERNAL", "resolve %s @%s HEAD: %v", h.Repo, branch, err).WithCause(err)
+		}
+	}
+	nonce := make([]byte, 8)
+	if _, err := rand.Read(nonce); err != nil {
+		return nil, apperr.New("E_INTERNAL", "sync delivery id generation failed")
+	}
+	dID, adm, err := svc.ingestGitMaterial(ctx, appRow, h, branch, commit,
+		"sync-"+hex.EncodeToString(nonce), "hook.refresh_accepted", "hook.refresh")
+	if err != nil {
+		return nil, err
+	}
+	return &deliveryv1.RefreshGitHookResponse{DeploymentId: dID, Commit: commit, Admission: adm}, nil
+}
+
+// wrapIngest 把摄取核产物包装成 webhook 应答（accepted + admission 附注；
+// P10 三入口一致：同 commit 重复投递可见 deduplicated + 既有引用）。
+func (svc *HooksService) wrapIngest(dID string, adm *deliveryv1.Admission, err error) (*deliveryv1.ReceiveWebhookResponse, error) {
+	if err != nil {
+		return nil, err
+	}
+	return &deliveryv1.ReceiveWebhookResponse{Status: "accepted", DeploymentId: dID, Admission: adm}, nil
 }
 
 // verifyHMAC 校验 X-Hub-Signature-256 形态（"sha256=<hex>"；timing-safe）。

@@ -13,7 +13,9 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/github"
 	"github.com/fleetlyrun/fleetly/internal/state"
@@ -187,4 +189,41 @@ func (e *Engine) prepareCloneURL(ctx context.Context, projectID, repoURL string)
 		return "", nil, err
 	}
 	return u, []string{u, mat.token}, nil
+}
+
+// ResolveGitHead 解析分支当前 HEAD（SyncGitHook 控制面拉取通道的 commit
+// 锚）：与 clone 同一材料解析面（私有仓 URL 内嵌访问材料，argv 单点；
+// 失败走同一脱敏收口）。branch 为 "HEAD" 时取仓库缺省分支现值。
+func (e *Engine) ResolveGitHead(ctx context.Context, projectID, repoURL, branch string) (string, error) {
+	cloneCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	url, secrets, err := e.prepareCloneURL(ctx, projectID, repoURL)
+	if err != nil {
+		return "", err
+	}
+	pattern := "refs/heads/" + branch
+	if branch == "HEAD" {
+		pattern = "HEAD"
+	}
+	// nolint:gosec // G204 同 cloneSource：repo 受理面已 https 白名单+控制
+	// 字符拒绝，argv 常量构造非注入面。
+	args := []string{
+		"-c", "protocol.ext.allow=never",
+		"-c", "protocol.file.allow=never",
+		"ls-remote", url, pattern,
+	}
+	//nolint:gosec // G204 同 cloneSource：变离子进程的信任域在受理面
+	//（repo https 白名单 + argv 常量构造，58f901d 防线延续）。
+	cmd := exec.CommandContext(cloneCtx, "git", args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", cloneErr(err, out, url, secrets)
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 2 && fields[1] == pattern && isHexSHA(fields[0]) {
+			return fields[0], nil
+		}
+	}
+	return "", fmt.Errorf("git ls-remote: %s not found in %s", pattern, repoURL)
 }

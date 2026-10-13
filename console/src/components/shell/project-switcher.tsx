@@ -23,8 +23,14 @@ export function ProjectSwitcher() {
   const list = projects.data ?? [];
   // store 空时落首个项目——导航语境（navSections）以 store 为准，切换器
   // 展示与导航置灰必须一致（走查发现：显示 n0reg 但 Apps 全灰）。
+  // 陈旧记忆校正（W-1，真机咬点）：localStorage 缓存的 id 会随重建/更名
+  // 消亡（ADR-0070 可读 id 重生成后旧 ULID 全域 E_NOT_FOUND）——缓存只是
+  // 提示，合法性唯一来源是服务端项目面；不在册即回落首个项目。
   useEffect(() => {
-    if (projectId === "" && list.length > 0) setProjectId(list[0].id);
+    if (list.length === 0) return;
+    if (projectId === "" || !list.some((project) => project.id === projectId)) {
+      setProjectId(list[0].id);
+    }
   }, [projectId, list, setProjectId]);
   const current = list.find((project) => project.id === projectId) ?? list[0];
 

@@ -38,6 +38,7 @@ exec.session_opened	event	An exec session was accepted into a running workload (
 freeze.lifted	event	A change freeze was lifted; change verbs in scope are accepted again.
 freeze.set	event	A change freeze was set for a team (or globally); change verbs in scope are refused with the reason.
 hook.push_accepted	event	A verified webhook push triggered a deployment.
+hook.refresh_accepted	event	A control-plane hook refresh pulled the branch head and triggered a deployment.
 invitation.accepted	event	An invitation was redeemed; the invitee became a user.
 invitation.created	event	An invitation was issued (single-use, time-boxed, role-bound).
 lease.expired	event	A task's owner lease expired past grace; the pool drains.

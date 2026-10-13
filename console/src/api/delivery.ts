@@ -25,6 +25,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/apps/{app_id}/hook/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * RefreshGitHook 立即拉取 hook 材料并触发部署（push 通道的一等孪生：
+         *     控制面拉取，不依赖 GitHub 侧 webhook 配置——App Templates 第三方模板
+         *     仓无法配 webhook 的前提原语）。缺省拉 branch HEAD（commit 锚经
+         *     ls-remote 现解析，私有仓走同一材料解析面）；commit 非空时钉住该次
+         *     同步。admission 与 push 同链（CommitSHA 去重——同 HEAD 重放回
+         *     deduplicated 既有部署）。
+         */
+        post: operations["HooksService_RefreshGitHook"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/apps/{app_id}/hook/rotate": {
         parameters: {
             query?: never;
@@ -323,6 +347,13 @@ export interface components {
         DeploymentsServiceRestartProcessBody: Record<string, never>;
         DeploymentsServiceRollbackBody: {
             to_revision?: string;
+        };
+        HooksServiceRefreshGitHookBody: {
+            /**
+             * commit 缺省 = branch HEAD 现解析（ls-remote）；非空 = 钉住该 commit
+             *     同步（apitest/重放锚）。
+             */
+            commit?: string;
         };
         HooksServiceRotateHookTokenBody: Record<string, never>;
         HooksServiceSetGitHookBody: {
@@ -712,6 +743,12 @@ export interface components {
             deployment_id?: string;
             admission?: components["schemas"]["v1Admission"];
         };
+        v1RefreshGitHookResponse: {
+            deployment_id?: string;
+            /** commit 是本次拉取锚定的 HEAD（或调用方钉住的 commit）。 */
+            commit?: string;
+            admission?: components["schemas"]["v1Admission"];
+        };
         /** ResourcesSpec 是每副本资源上限（v1 仅每 Process 上限）。 */
         v1ResourcesSpec: {
             /**
@@ -970,6 +1007,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1SetGitHookResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    HooksService_RefreshGitHook: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                app_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HooksServiceRefreshGitHookBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1RefreshGitHookResponse"];
                 };
             };
             /** @description An unexpected error response. */

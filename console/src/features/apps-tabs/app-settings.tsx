@@ -124,6 +124,22 @@ function GitHookCard({ appId, projectId }: { appId: string; projectId: string })
     },
     onError: (cause) => toast.error(fieldError(cause)),
   });
+  // Deploy now：拉取通道（RefreshGitHook）——不依赖 GitHub 侧 webhook 配置
+  // 即可立即部署（首配验证 / App Templates 第三方模板仓的前提原语）。
+  const refresh = useMutation({
+    mutationFn: async () =>
+      apiSend<{ deployment_id?: string; commit?: string; admission?: { outcome?: string } }>(
+        `/v1/apps/${encodeURIComponent(appId)}/hook/refresh`,
+        "POST",
+        {},
+      ),
+    onSuccess: (resp) => {
+      void queryClient.invalidateQueries({ queryKey: ["deployments"] });
+      const suffix = resp?.admission?.outcome === "deduplicated" ? " (deduplicated — same commit already in the pipeline)" : "";
+      toast(`Deployment ${resp?.deployment_id ?? "?"} queued @ ${resp?.commit?.slice(0, 7) ?? "?"}${suffix}`);
+    },
+    onError: (cause) => toast.error(fieldError(cause)),
+  });
 
   const configured = hook.data != null;
   return (
@@ -166,10 +182,18 @@ function GitHookCard({ appId, projectId }: { appId: string; projectId: string })
             material ownership to deploys.
           </p>
           <div className="mt-3 flex gap-2">
+            <Button size="sm" disabled={refresh.isPending} onClick={() => refresh.mutate()}>
+              {refresh.isPending ? "Pulling…" : "Deploy now"}
+            </Button>
             <Button size="sm" variant="outline" disabled={rotate.isPending} onClick={() => rotate.mutate()}>
               Rotate token…
             </Button>
           </div>
+          <p className="mt-2 text-2xs text-muted-foreground">
+            <span className="font-semibold text-foreground">Deploy now</span> pulls the branch HEAD and deploys immediately — no
+            webhook required (template repos, first config). For push triggers, paste the webhook URL (revealed at configure/rotate
+            time) into GitHub → Webhooks; the secret doubles as the signing key.
+          </p>
         </>
       ) : (
         <form
@@ -206,10 +230,14 @@ function GitHookCard({ appId, projectId }: { appId: string; projectId: string })
       )}
       {revealedSecret != null ? (
         <div className="mt-3 rounded-md border border-warning/40 bg-warning/10 p-2.5 text-xs">
-          <p className="font-semibold">Webhook secret — shown once, copy it now</p>
+          <p className="font-semibold">Webhook URL — shown once, paste it into GitHub (repo or GitHub App → Webhooks)</p>
           <p className="mt-1 flex items-center gap-1 font-mono text-2xs">
-            {revealedSecret}
-            <CopyButton value={revealedSecret} />
+            {`${window.location.origin}/v1/hooks/${revealedSecret}`}
+            <CopyButton value={`${window.location.origin}/v1/hooks/${revealedSecret}`} />
+          </p>
+          <p className="mt-1 text-2xs text-muted-foreground">
+            The token doubles as the webhook signing key (secret field). Rotating revokes the old URL immediately. Or skip
+            webhooks entirely — Deploy now above pulls and deploys without GitHub-side configuration.
           </p>
         </div>
       ) : null}

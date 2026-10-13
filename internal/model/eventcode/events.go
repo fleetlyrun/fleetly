@@ -88,6 +88,7 @@ var builtins = []Event{
 
 	// Git 触发（F0.13 webhook 接收链）。
 	{Name: "hook.push_accepted", Summary: "A verified webhook push triggered a deployment.", Source: "internal/api/fleetlygrpc/webhook.go handlePush"},
+	{Name: "hook.refresh_accepted", Summary: "A control-plane hook refresh pulled the branch head and triggered a deployment.", Source: "internal/api/fleetlygrpc/webhook.go RefreshGitHook"},
 
 	// Task 状态机（F1.5/F1.6，ADR-0012/0025：双形态程序化工作负载）。
 	{Name: "task.created", Summary: "A task was created (one-shot or resident form).", Source: "internal/engine/events.go EventTaskCreated (emitted by the acceptance surface)"},

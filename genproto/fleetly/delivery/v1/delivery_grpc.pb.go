@@ -895,6 +895,7 @@ const (
 	HooksService_SetGitHook_FullMethodName      = "/fleetly.delivery.v1.HooksService/SetGitHook"
 	HooksService_GetGitHook_FullMethodName      = "/fleetly.delivery.v1.HooksService/GetGitHook"
 	HooksService_RotateHookToken_FullMethodName = "/fleetly.delivery.v1.HooksService/RotateHookToken"
+	HooksService_RefreshGitHook_FullMethodName  = "/fleetly.delivery.v1.HooksService/RefreshGitHook"
 	HooksService_ReceiveWebhook_FullMethodName  = "/fleetly.delivery.v1.HooksService/ReceiveWebhook"
 )
 
@@ -916,6 +917,13 @@ type HooksServiceClient interface {
 	// RotateHookToken 吊销旧 Token 铸新（URL token 与 GitHub webhook secret
 	// 同源双换；旧 Token 即刻失效）。
 	RotateHookToken(ctx context.Context, in *RotateHookTokenRequest, opts ...grpc.CallOption) (*RotateHookTokenResponse, error)
+	// RefreshGitHook 立即拉取 hook 材料并触发部署（push 通道的一等孪生：
+	// 控制面拉取，不依赖 GitHub 侧 webhook 配置——App Templates 第三方模板
+	// 仓无法配 webhook 的前提原语）。缺省拉 branch HEAD（commit 锚经
+	// ls-remote 现解析，私有仓走同一材料解析面）；commit 非空时钉住该次
+	// 同步。admission 与 push 同链（CommitSHA 去重——同 HEAD 重放回
+	// deduplicated 既有部署）。
+	RefreshGitHook(ctx context.Context, in *RefreshGitHookRequest, opts ...grpc.CallOption) (*RefreshGitHookResponse, error)
 	// ReceiveWebhook 是 GitHub webhook 接收面（PUBLIC；gRPC-only——HTTP 侧由
 	// gateway 原生 handler 直挂）。token 取 URL 段、payload 是原始请求体、
 	// event/delivery/signature 对应 X-GitHub-Event / X-GitHub-Delivery /
@@ -961,6 +969,16 @@ func (c *hooksServiceClient) RotateHookToken(ctx context.Context, in *RotateHook
 	return out, nil
 }
 
+func (c *hooksServiceClient) RefreshGitHook(ctx context.Context, in *RefreshGitHookRequest, opts ...grpc.CallOption) (*RefreshGitHookResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RefreshGitHookResponse)
+	err := c.cc.Invoke(ctx, HooksService_RefreshGitHook_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *hooksServiceClient) ReceiveWebhook(ctx context.Context, in *ReceiveWebhookRequest, opts ...grpc.CallOption) (*ReceiveWebhookResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ReceiveWebhookResponse)
@@ -989,6 +1007,13 @@ type HooksServiceServer interface {
 	// RotateHookToken 吊销旧 Token 铸新（URL token 与 GitHub webhook secret
 	// 同源双换；旧 Token 即刻失效）。
 	RotateHookToken(context.Context, *RotateHookTokenRequest) (*RotateHookTokenResponse, error)
+	// RefreshGitHook 立即拉取 hook 材料并触发部署（push 通道的一等孪生：
+	// 控制面拉取，不依赖 GitHub 侧 webhook 配置——App Templates 第三方模板
+	// 仓无法配 webhook 的前提原语）。缺省拉 branch HEAD（commit 锚经
+	// ls-remote 现解析，私有仓走同一材料解析面）；commit 非空时钉住该次
+	// 同步。admission 与 push 同链（CommitSHA 去重——同 HEAD 重放回
+	// deduplicated 既有部署）。
+	RefreshGitHook(context.Context, *RefreshGitHookRequest) (*RefreshGitHookResponse, error)
 	// ReceiveWebhook 是 GitHub webhook 接收面（PUBLIC；gRPC-only——HTTP 侧由
 	// gateway 原生 handler 直挂）。token 取 URL 段、payload 是原始请求体、
 	// event/delivery/signature 对应 X-GitHub-Event / X-GitHub-Delivery /
@@ -1012,6 +1037,9 @@ func (UnimplementedHooksServiceServer) GetGitHook(context.Context, *GetGitHookRe
 }
 func (UnimplementedHooksServiceServer) RotateHookToken(context.Context, *RotateHookTokenRequest) (*RotateHookTokenResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RotateHookToken not implemented")
+}
+func (UnimplementedHooksServiceServer) RefreshGitHook(context.Context, *RefreshGitHookRequest) (*RefreshGitHookResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RefreshGitHook not implemented")
 }
 func (UnimplementedHooksServiceServer) ReceiveWebhook(context.Context, *ReceiveWebhookRequest) (*ReceiveWebhookResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ReceiveWebhook not implemented")
@@ -1091,6 +1119,24 @@ func _HooksService_RotateHookToken_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _HooksService_RefreshGitHook_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RefreshGitHookRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(HooksServiceServer).RefreshGitHook(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: HooksService_RefreshGitHook_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(HooksServiceServer).RefreshGitHook(ctx, req.(*RefreshGitHookRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _HooksService_ReceiveWebhook_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ReceiveWebhookRequest)
 	if err := dec(in); err != nil {
@@ -1127,6 +1173,10 @@ var HooksService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RotateHookToken",
 			Handler:    _HooksService_RotateHookToken_Handler,
+		},
+		{
+			MethodName: "RefreshGitHook",
+			Handler:    _HooksService_RefreshGitHook_Handler,
 		},
 		{
 			MethodName: "ReceiveWebhook",

@@ -12,8 +12,13 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"os/exec"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -262,4 +267,76 @@ func TestResolveGitSecretMaterial(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, mat)
 	assert.Equal(t, installTokenUser, mat.username, "the matched github app shadows the secret channel")
+}
+
+// TestResolveGitHead：拉取通道（RefreshGitHook）的 commit 锚解析——本地
+// bare 夹具走 file:// 匿名面（无材料路径），锚定 HEAD 跟随与缺分支精确
+// 失败。ls-remote 与 clone 同一材料入口（私有仓形态由 gitmaterial 主测
+// 覆盖，此处不重复假 GitHub 面）。
+func TestResolveGitHead(t *testing.T) {
+	dir := t.TempDir()
+	// gitOut 收拢子进程调用面（单点 nolint：noctx/G204——夹具全常量 argv，
+	// 测试进程生命周期内即完成，无需 ctx 传播）。
+	gitOut := func(args ...string) (string, error) {
+		//nolint:gosec,noctx // G204 夹具 argv 全常量；测试短命进程免 ctx
+		out, err := exec.Command("git", args...).CombinedOutput()
+		return string(out), err
+	}
+	run := func(args ...string) {
+		t.Helper()
+		out, err := gitOut(args...)
+		require.NoError(t, err, "git %v: %s", args, out)
+	}
+	bare := filepath.Join(dir, "fix.git")
+	run("init", "--bare", "-b", "main", bare)
+	// git:// 匿名传输夹具：argv 防线显式拒绝 ext/file，生产放行面是 https
+	//——夹具取 git:// 走同一 ls-remote 代码路径（无材料命中即匿名）。
+	var lc net.ListenConfig
+	ln, err := lc.Listen(context.Background(), "tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	port := ln.Addr().(*net.TCPAddr).Port
+	require.NoError(t, ln.Close())
+	//nolint:gosec,noctx // G204 夹具常量 argv + 本机端口；清理走 Kill
+	daemon := exec.Command("git", "daemon", "--reuseaddr", "--export-all",
+		"--port="+strconv.Itoa(port), "--base-path="+dir)
+	require.NoError(t, daemon.Start())
+	t.Cleanup(func() {
+		_ = daemon.Process.Kill()
+		_, _ = daemon.Process.Wait()
+	})
+	repoURL := fmt.Sprintf("git://127.0.0.1:%d/fix.git", port)
+	// daemon 就绪重试（后台监听与首 clone 的竞态窗）。
+	require.Eventually(t, func() bool {
+		_, err := gitOut("ls-remote", repoURL)
+		return err == nil
+	}, 5*time.Second, 100*time.Millisecond)
+	work := filepath.Join(dir, "work")
+	run("clone", repoURL, work)
+	run("-C", work, "config", "user.email", "t@fleetly.dev")
+	run("-C", work, "config", "user.name", "t")
+	run("-C", work, "commit", "--allow-empty", "-m", "one")
+	run("-C", work, "push", bare, "HEAD:refs/heads/main")
+	out, err := gitOut("-C", work, "rev-parse", "HEAD")
+	require.NoError(t, err)
+	sha := strings.TrimSpace(out)
+	require.Len(t, sha, 40)
+
+	e := &Engine{}
+	got, err := e.ResolveGitHead(context.Background(), "p1", repoURL, "main")
+	require.NoError(t, err)
+	require.Equal(t, sha, got)
+
+	// HEAD 跟随：新 commit 推送后再解析 = 新值。
+	run("-C", work, "commit", "--allow-empty", "-m", "two")
+	run("-C", work, "push", bare, "HEAD:refs/heads/main")
+	out2, err := gitOut("-C", work, "rev-parse", "HEAD")
+	require.NoError(t, err)
+	got2, err := e.ResolveGitHead(context.Background(), "p1", repoURL, "main")
+	require.NoError(t, err)
+	require.Equal(t, strings.TrimSpace(out2), got2)
+	require.NotEqual(t, sha, got2)
+
+	// 缺分支 = 精确失败（不静默回退默认分支）。
+	_, err = e.ResolveGitHead(context.Background(), "p1", repoURL, "nope")
+	require.Error(t, err)
 }
