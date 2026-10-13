@@ -72,9 +72,21 @@ func TestGitHubAppManifestFlow(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, list.GetApps(), "no row lands before installation")
 
-	// code 单次有效：同一 code 再 consume = 上游 404 → E_GITHUB_UPSTREAM。
-	_, err = ghApps.ConsumeManifestCode(ctx, &deliveryv1.ConsumeManifestCodeRequest{
+	// code 一次性：已耗 code 再 consume = 流内幂等重放（页面刷新安全）。
+	replayed, err := ghApps.ConsumeManifestCode(ctx, &deliveryv1.ConsumeManifestCodeRequest{
 		Code: "good-code", State: start.GetState(),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, consumed.GetInstallUrl(), replayed.GetInstallUrl())
+	assert.Equal(t, consumed.GetAppName(), replayed.GetAppName())
+
+	// 无在册流的坏 code = 上游 404 → E_GITHUB_UPSTREAM。
+	start2, err := ghApps.StartManifestFlow(ctx, &deliveryv1.StartManifestFlowRequest{
+		Scope: &deliveryv1.StartManifestFlowRequest_ProjectId{ProjectId: projectID},
+	})
+	require.NoError(t, err)
+	_, err = ghApps.ConsumeManifestCode(ctx, &deliveryv1.ConsumeManifestCodeRequest{
+		Code: "never-issued", State: start2.GetState(),
 	})
 	require.Error(t, err)
 	assert.Equal(t, codes.Unavailable, status.Code(err))

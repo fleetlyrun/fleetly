@@ -81,6 +81,7 @@ type manifestFlow struct {
 	pem       []byte
 	appID     int64
 	slug      string
+	name      string // GitHub 表单显示名（重放 consume 时回显）
 	projectID string // 空 = global
 	exp       time.Time
 }
@@ -152,6 +153,18 @@ func (f *manifestFlows) put(nonce string, flow *manifestFlow) {
 	f.mu.Lock()
 	f.flows[nonce] = flow
 	f.mu.Unlock()
+}
+
+// peek 在册即取不消费（consume 幂等重放用：code 在 GitHub 侧一次性，刷新
+// 页面带已耗 code 再来时，凭据已在流内则直接回放安装页）。
+func (f *manifestFlows) peek(nonce string, now time.Time) *manifestFlow {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	flow, ok := f.flows[nonce]
+	if !ok || flow.exp.Before(now) {
+		return nil
+	}
+	return flow
 }
 
 func (f *manifestFlows) take(nonce string, now time.Time) (*manifestFlow, error) {
@@ -475,10 +488,18 @@ func (svc *GitHubAppsService) ConsumeManifestCode(ctx context.Context, req *deli
 	}
 	converted, err := svc.s.GitHub.ConvertManifestCode(ctx, svc.s.GitHubManifestAPIBase, req.GetCode())
 	if err != nil {
+		// code 是一次性的：成功兑换后刷新页面带已耗 code 再来 = 上游 404。
+		// 凭据已在流内则幂等重放安装页；无在册流才升级为上游错误。
+		if flow := svc.flows.peek(payload.Nonce, time.Now()); flow != nil {
+			return &deliveryv1.ConsumeManifestCodeResponse{
+				InstallUrl: "https://github.com/apps/" + flow.slug + "/installations/new",
+				AppName:    flow.name,
+			}, nil
+		}
 		return nil, apperr.New("E_GITHUB_UPSTREAM", "manifest conversion: %v", err)
 	}
 	svc.flows.put(payload.Nonce, &manifestFlow{
-		pem: converted.PEM, appID: converted.AppID, slug: converted.Slug,
+		pem: converted.PEM, appID: converted.AppID, slug: converted.Slug, name: converted.Name,
 		projectID: payload.ProjectID, exp: time.Now().Add(manifestFlowTTL),
 	})
 	return &deliveryv1.ConsumeManifestCodeResponse{

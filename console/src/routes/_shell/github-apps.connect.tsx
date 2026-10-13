@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { ArrowRightIcon, CheckCircle2Icon, FingerprintIcon } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
 import { apiSend } from "@/api/client";
@@ -83,6 +83,23 @@ function ConnectPage() {
       }
     },
   });
+
+  // useMutation 不会自跑——落地即自动兑换/落行（ref 挡 StrictMode 双发；
+  // code 兑换在 GitHub 侧一次性，服务端对已耗 code 做流内幂等重放，刷新
+  // 页面安全）。
+  const firedRef = useRef(false);
+  useEffect(() => {
+    if (firedRef.current) return;
+    if (state == null || state === "") return;
+    if (installation_id != null && installation_id !== "") {
+      firedRef.current = true;
+      void complete.mutate();
+    } else if (code != null && code !== "") {
+      firedRef.current = true;
+      void consume.mutate();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 挂载即判段触发一次，参数由路由 search 固定
+  }, []);
 
   if (state == null || state === "") {
     return (
