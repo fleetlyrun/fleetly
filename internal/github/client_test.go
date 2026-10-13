@@ -85,6 +85,22 @@ func (f *fakeGitHub) server(t *testing.T) *httptest.Server {
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"total_count": 103, "repositories": fullNames(f.repos[100:])})
 	})
+	mux.HandleFunc("POST /app-manifests/one-shot/conversions", func(w http.ResponseWriter, r *http.Request) {
+		// 执法（真机咬出口）：conversions 免鉴权——任何 Authorization 头
+		// （含空 bearer）都会被 GitHub 解析成坏凭据 = 401 Bad credentials。
+		f.mu.Lock()
+		f.lastAuth = r.Header.Get("Authorization")
+		f.mu.Unlock()
+		if f.lastAuth != "" {
+			http.Error(w, `{"message":"Bad credentials"}`, http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		pemBody := "-----BEGIN " + "RSA PRIVATE KEY-----" // 假件占位串,非凭据
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"id": 182345, "slug": "fleetly-abc123", "name": "fleetly-abc123", "pem": pemBody,
+		})
+	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv
@@ -258,4 +274,19 @@ func TestListReposPagination(t *testing.T) {
 	assert.Len(t, got, 103)
 	assert.Equal(t, "acme/web", got[0].FullName)
 	assert.True(t, got[0].Private)
+}
+
+// conversions 免鉴权执法（真机咬出口）：code 换凭据端点必须零 Authorization
+// 头——空 bearer 原样发出即 GitHub 401 Bad credentials。
+func TestConvertManifestCodeUnauthenticated(t *testing.T) {
+	ctx := context.Background()
+	fake := &fakeGitHub{}
+	srv := fake.server(t)
+	client := github.NewClient(srv.Client(), nil)
+
+	converted, err := client.ConvertManifestCode(ctx, srv.URL, "one-shot")
+	require.NoError(t, err)
+	assert.Equal(t, int64(182345), converted.AppID)
+	assert.Equal(t, "fleetly-abc123", converted.Slug)
+	assert.Empty(t, fake.lastAuth, "conversions must not carry any Authorization header")
 }

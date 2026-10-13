@@ -231,7 +231,12 @@ func (c *Client) do(ctx context.Context, method string, app *App, path, bearer s
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+bearer)
+	// 鉴权头仅在持票时附上：空 bearer 会以 "Authorization: Bearer" 原样
+	// 发出，免鉴权的 conversions 端点照解析不误 = 401 Bad credentials
+	// （真机咬出）。
+	if bearer != "" {
+		req.Header.Set("Authorization", "Bearer "+bearer)
+	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 	req.Header.Set("User-Agent", "fleetly")
