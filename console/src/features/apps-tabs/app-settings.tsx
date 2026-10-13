@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "@tanstack/react-router";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { apiFetch, apiSend, ApiError } from "@/api/client";
 import { CopyButton } from "@/components/domain/copy-button";
@@ -68,7 +69,7 @@ export function AppSettingsTab({
             (IA v3 §8 二期) — until then configure them via deploy.
           </p>
         </section>
-        <GitHookCard appId={appId} />
+        <GitHookCard appId={appId} projectId={projectId} />
       </div>
 
       <DangerZone appId={appId} appName={appName} projectId={projectId} onDeleted={onDeleted} />
@@ -92,7 +93,7 @@ function useGitHook(appId: string) {
   });
 }
 
-function GitHookCard({ appId }: { appId: string }) {
+function GitHookCard({ appId, projectId }: { appId: string; projectId: string }) {
   const queryClient = useQueryClient();
   const hook = useGitHook(appId);
   const [form, setForm] = useState({ repo: "", branch: "main", dockerfile: "", watchPaths: "" });
@@ -128,6 +129,19 @@ function GitHookCard({ appId }: { appId: string }) {
   return (
     <section className="rounded-xl border bg-card p-4">
       <h3 className="mb-3 text-sm font-semibold">Git deploy hook</h3>
+      <p className="mb-3 rounded-lg border bg-muted/40 px-3 py-2 text-2xs text-muted-foreground">
+        Private repository?{" "}
+        <Link
+          to="/p/$projectId/registry"
+          params={{ projectId }}
+          search={{ tab: "github" }}
+          className="font-medium text-info underline-offset-2 hover:underline"
+        >
+          Connect a GitHub App
+        </Link>{" "}
+        (project or global) instead of a token-URL — fleetly mints a short-lived installation token per build; nothing lands in
+        revisions, and rotating the key needs no redeploy.
+      </p>
       {hook.isPending ? (
         <p className="text-xs text-muted-foreground">Loading hook…</p>
       ) : configured ? (

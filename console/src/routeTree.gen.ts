@@ -17,6 +17,7 @@ import { Route as ShellAuditRouteImport } from './routes/_shell/audit'
 import { Route as ShellBackupsRouteImport } from './routes/_shell/backups'
 import { Route as ShellComponentsRouteImport } from './routes/_shell/components'
 import { Route as ShellEventsRouteImport } from './routes/_shell/events'
+import { Route as ShellGithubAppsRouteImport } from './routes/_shell/github-apps'
 import { Route as ShellIdentityRouteImport } from './routes/_shell/identity'
 import { Route as ShellLogsRouteImport } from './routes/_shell/logs'
 import { Route as ShellMetricsRouteImport } from './routes/_shell/metrics'
@@ -91,6 +92,11 @@ const ShellComponentsRoute = ShellComponentsRouteImport.update({
 const ShellEventsRoute = ShellEventsRouteImport.update({
   id: '/events',
   path: '/events',
+  getParentRoute: () => ShellRoute,
+} as any)
+const ShellGithubAppsRoute = ShellGithubAppsRouteImport.update({
+  id: '/github-apps',
+  path: '/github-apps',
   getParentRoute: () => ShellRoute,
 } as any)
 const ShellIdentityRoute = ShellIdentityRouteImport.update({
@@ -302,6 +308,7 @@ export interface FileRoutesByFullPath {
   '/backups': typeof ShellBackupsRoute
   '/components': typeof ShellComponentsRoute
   '/events': typeof ShellEventsRoute
+  '/github-apps': typeof ShellGithubAppsRoute
   '/identity': typeof ShellIdentityRoute
   '/logs': typeof ShellLogsRoute
   '/metrics': typeof ShellMetricsRoute
@@ -347,6 +354,7 @@ export interface FileRoutesByTo {
   '/backups': typeof ShellBackupsRoute
   '/components': typeof ShellComponentsRoute
   '/events': typeof ShellEventsRoute
+  '/github-apps': typeof ShellGithubAppsRoute
   '/identity': typeof ShellIdentityRoute
   '/logs': typeof ShellLogsRoute
   '/metrics': typeof ShellMetricsRoute
@@ -392,6 +400,7 @@ export interface FileRoutesById {
   '/_shell/backups': typeof ShellBackupsRoute
   '/_shell/components': typeof ShellComponentsRoute
   '/_shell/events': typeof ShellEventsRoute
+  '/_shell/github-apps': typeof ShellGithubAppsRoute
   '/_shell/identity': typeof ShellIdentityRoute
   '/_shell/logs': typeof ShellLogsRoute
   '/_shell/metrics': typeof ShellMetricsRoute
@@ -439,6 +448,7 @@ export interface FileRouteTypes {
     | '/backups'
     | '/components'
     | '/events'
+    | '/github-apps'
     | '/identity'
     | '/logs'
     | '/metrics'
@@ -484,6 +494,7 @@ export interface FileRouteTypes {
     | '/backups'
     | '/components'
     | '/events'
+    | '/github-apps'
     | '/identity'
     | '/logs'
     | '/metrics'
@@ -528,6 +539,7 @@ export interface FileRouteTypes {
     | '/_shell/backups'
     | '/_shell/components'
     | '/_shell/events'
+    | '/_shell/github-apps'
     | '/_shell/identity'
     | '/_shell/logs'
     | '/_shell/metrics'
@@ -628,6 +640,13 @@ declare module '@tanstack/react-router' {
       path: '/events'
       fullPath: '/events'
       preLoaderRoute: typeof ShellEventsRouteImport
+      parentRoute: typeof ShellRoute
+    }
+    '/_shell/github-apps': {
+      id: '/_shell/github-apps'
+      path: '/github-apps'
+      fullPath: '/github-apps'
+      preLoaderRoute: typeof ShellGithubAppsRouteImport
       parentRoute: typeof ShellRoute
     }
     '/_shell/identity': {
@@ -970,6 +989,7 @@ interface ShellRouteChildren {
   ShellBackupsRoute: typeof ShellBackupsRoute
   ShellComponentsRoute: typeof ShellComponentsRoute
   ShellEventsRoute: typeof ShellEventsRoute
+  ShellGithubAppsRoute: typeof ShellGithubAppsRoute
   ShellIdentityRoute: typeof ShellIdentityRoute
   ShellLogsRoute: typeof ShellLogsRoute
   ShellMetricsRoute: typeof ShellMetricsRoute
@@ -989,6 +1009,7 @@ const ShellRouteChildren: ShellRouteChildren = {
   ShellBackupsRoute: ShellBackupsRoute,
   ShellComponentsRoute: ShellComponentsRoute,
   ShellEventsRoute: ShellEventsRoute,
+  ShellGithubAppsRoute: ShellGithubAppsRoute,
   ShellIdentityRoute: ShellIdentityRoute,
   ShellLogsRoute: ShellLogsRoute,
   ShellMetricsRoute: ShellMetricsRoute,

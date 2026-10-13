@@ -401,7 +401,7 @@ details.adv summary:hover{color:var(--t1)}
 
           <div class="infobox">
             <svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v4h1"/></svg>
-            <div>Global rows serve every project at clone time. Adding <span class="mono">acme</span> as a project-scoped app inside <b>torchwood</b> takes precedence for that project only — nothing else changes. Write access requires a platform-admin token; project members see these rows read-only.<br>
+            <div>Global rows serve every project at clone time. Adding <span class="mono">acme</span> as a project-scoped app inside <b>torchwood</b> takes precedence for that project only — nothing else changes. These rows are platform-admin material — visible and writable only with a platform-admin token; project-scoped rows are the member-managed path.<br>
             <span class="cli" style="display:inline-block;margin-top:6px"><b>CLI</b> · fleetly github-apps put --global --app-id 201884 --installation-id 51887734 --private-key-file ./fleetly.pem</span></div>
           </div>
         </div>

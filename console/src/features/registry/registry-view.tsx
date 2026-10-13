@@ -14,6 +14,7 @@ import { ListCard } from "@/components/domain/list-page";
 import { ModulePage } from "@/components/domain/module-page";
 import { ProjectAvatar } from "@/components/domain/project-avatar";
 import { RelativeTime } from "@/components/domain/relative-time";
+import { GitHubAppsView } from "@/features/githubapps/github-apps-view";
 import { useApps } from "@/lib/catalog";
 import { useProjectDeployments } from "@/features/deployments/hooks";
 import { formatBytes } from "@/lib/format";
@@ -30,8 +31,8 @@ export function RegistryView({
   onTabChange,
 }: {
   projectId: string;
-  tab: "apps" | "catalog";
-  onTabChange: (value: "apps" | "catalog") => void;
+  tab: "apps" | "catalog" | "github";
+  onTabChange: (value: "apps" | "catalog" | "github") => void;
 }) {
   const apps = useApps(projectId);
   const appIds = (apps.data ?? []).map((app) => app.id);
@@ -132,11 +133,14 @@ export function RegistryView({
       tabs={[
         { value: "apps", label: "Apps" },
         { value: "catalog", label: "Image catalog" },
+        { value: "github", label: "GitHub Apps" },
       ]}
       current={tab}
       onTabChange={onTabChange}
     >
-      {tab === "catalog" ? (
+      {tab === "github" ? (
+        <GitHubAppsView projectId={projectId} />
+      ) : tab === "catalog" ? (
         <RegistryCatalog projectId={projectId} apps={apps.data ?? []} />
       ) : (
         <>

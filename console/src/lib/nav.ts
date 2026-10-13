@@ -6,6 +6,7 @@ import {
   Clock,
   Database,
   DatabaseBackup,
+  Fingerprint,
   Globe,
   HardDrive,
   KeyRound,
@@ -101,6 +102,7 @@ export function navSections(projectId: string | undefined): NavSection[] {
       items: [
         { label: "Nodes", to: "/nodes", icon: Box },
         { label: "Components", to: "/components", icon: Boxes }, // ADR-0059 定名 + ADR-0060 路由对齐页名
+        { label: "GitHub Apps", to: "/github-apps", icon: Fingerprint }, // ADR-0073：平台级接入材料（Global 行）
         { label: "Events", to: "/events", icon: Zap },
         { label: "Alerts", to: "/alerts", icon: Bell },
         { label: "Backups", to: "/backups", icon: DatabaseBackup },
