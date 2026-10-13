@@ -98,16 +98,29 @@ JSON Schema 编辑器生态、Renovate docker-compose manager 免费镜像升级
 
 ## 验收锚
 
-- [ ] compose-go 是唯一 compose 解析器（spec 包无 compose 手走查残留）
-- [ ] 官方 schema 执法：非 x- 自定义键被拒（测试钉死）
-- [ ] 引用必经官方 external 声明（未声明拒；grafana 模板带声明过
-  dryRender）
-- [ ] 官方插值：`${VAR}` 经平台变量消解、未消解即错（正/负例钉死）
-- [ ] ports published/host 形态显式拒；target-only 长语法收（截断/
-  跳过两洞死掉）
-- [ ] networks map+aliases 显式拒（名单收）
-- [ ] `deploy.x-fleetly-strategy` / `healthcheck.x-fleetly-http-path` /
-  `x-fleetly-tcp-port` golden 双形态钉死
-- [ ] Revision 原文冻结 + GetRevision 读面 + console 渲染
-- [ ] 双 verify 零漂移（generate:verify + console:verify）；e2e:dind
-  过；staging 上站
+- [x] compose-go 是唯一 compose 解析器（spec 包无 compose 手走查残留；
+  normalize.go compose 半边删除，~500 行）
+- [x] 官方 schema 执法：非 x- 自定义键被拒（deploy.strategy/http_path 旧
+  拼法由官方 schema 拒，测试钉死）
+- [x] 引用必经官方 external 声明（未声明拒；渲染管线声明铸位——grafana
+  模板体零改动过 dryRender）
+- [x] 官方插值：`${VAR}` 经平台变量消解、未消解即错（正/负例钉死；
+  LookupValue=平台变量 + Substitute 包 fail-closed 预检）
+- [x] ports published/host 形态显式拒；target-only 长语法收（截断/跳过
+  两洞死掉；路由协议缺省 http、app_protocol 显式声明）
+- [x] networks map+aliases 显式拒（名单收）
+- [x] `deploy.x-fleetly-strategy` / `healthcheck.x-fleetly-http-path` /
+  `x-fleetly-tcp-port` golden 双形态钉死（deploy-compose-strategy 族 +
+  apitest REST 面三例）
+- [x] Revision 原文冻结 + GetRevision 读面 + console 渲染（00031 迁移；
+  apitest REST 锚 + Spec tab Compose Source 卡，收 W-9）
+- [x] 双 verify 零漂移（generate:verify + console:verify）
+- [x] e2e:bluegreen 全绿（新方言全链腿：零 5xx 切换/双代窗/L1 失败隔离/
+  rollback/supersede/双节点 Placement/P16 双别名——x-fleetly-strategy +
+  external 声明在真 swarm 端到端）；dind-smoke 段全绿至受管域自举
+  （VM 外网拉取挂 = 当日本机网络劣化，railpack/restic 同轮下载失败
+  为证）；两处 e2e 环境加固随批（宿主 Tailscale 搜索域泄进容器致裸名
+  假红 → 尾点绝对查询）
+- [ ] staging 上站（挂账：runbook 升级序换装；dogfood 仓 compose 迁新
+  方言同批——torchwood/messageloop 的 stack 声明补 external 声明与新
+  扩展键拼写）
