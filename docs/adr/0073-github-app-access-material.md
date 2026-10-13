@@ -39,4 +39,5 @@
 - [x] apitest:SetGitHubApp 受理即验证(TLS httptest api_base;错配/404 E_INVALID_ARGUMENT 精确原因;上游不可达 E_GITHUB_UPSTREAM → REST 502 映射,errcodeToHTTP 覆盖守卫钉死);Global 行非平台授权精确拒;List/ListRepos 授权随作用域;冻结/scope 分诊回归(freezeguard/scopeguard 自动对账)。
 - [x] engine 解析单测:两态命中 / Project 遮蔽 Global / host 失配 / 无匹配匿名 / 铸造失败精确失败 / argv 与错误输出无明文泄漏(gitmaterial_test 表驱动 + cloneErr 脱敏端到端)。
 - [x] CLI golden 双形态 ×4 动词 + 组帮助(github-apps*.golden 十三件);`generate:verify` / `console:verify` 零漂移(提交门禁复绿)。
-- [ ] staging 真机:GitHub 建 App → 安装 → put(双态各一)→ hook push → 现铸 token → clone → build → deploy 全链绿;读面(GetRevision / apps spec / console)repo 恒为干净 URL。〔挂账:需用户在 GitHub 侧建 App/安装——操作序已入 runbook「GitHub App 接入」节;代码面锚全绿(cff7887/edce1b0/8226734/00b15a9)。〕
+- [x] 阶段 A 补锚:engine `git:<host>` Secret 解析单测(命中/username 缺省/坏 JSON 精确失败/被 GitHub App 遮蔽);apitest 两写面 userinfo 拒(hooks 合法形态翻转 + spec_file git 源负例/正例)。
+- [ ] staging 真机:GitHub 建 App → 安装 → put(双态各一)→ hook push → 现铸 token → clone → build → deploy 全链绿;读面(GetRevision / apps spec / console)repo 恒为干净 URL。〔挂账:需用户在 GitHub 侧建 App/安装——操作序已入 runbook「GitHub App 接入」节;代码面锚全绿(cff7887/edce1b0/8226734/00b15a9 + A 段 6a65372/5bc0fdc)。〕

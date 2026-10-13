@@ -545,6 +545,8 @@ ADR-0015 升级序的完整落地形态：**Platform Backup 前置 → SIGTERM �
 2. **落行**：`fleetly github-apps put --project PROJECT_ID --app-id N --installation-id N --private-key-file key.pem`（平台级加 `--global`、平台管理 token）。受理即验证：三元组错值当场 `E_INVALID_ARGUMENT`，属主自动解析入库。GHES 加 `--api-base https://ghe.example.com/api/v3`。
 3. **验证**：`fleetly github-apps repos --id ID` 现铸列仓（挂起/卸载在此以 `E_GITHUB_UPSTREAM` 诚实呈现）；私有仓 push → hook → clone → build 全链绿即通。读面（GetRevision / apps spec / console）repo 恒为干净 URL，无材料形态。
 4. **轮换**：GitHub 侧重生成私钥后重放同一条 put（同属主覆盖更新，指纹即变，token 缓存键随之失效）——无需重部署。
+
+非 github.com 主机（或不想走 App）：`fleetly secrets put --project P --value '{"username":"ci","secret":"TOKEN"}' git:HOST`（flags 前置于 NAME 位置参数；值 JSON，age 信封只回指纹）——解析序在 GitHub App 之后、匿名之前；URL 内嵌 token 形态两写面（hooks set / spec_file git 源）一律拒绝。
 5. **重启 fleetlyd**——daemon 装载面与 rewrap 同源：现役加密 + 退役兜底解封，轮换窗口内重启不破坏旧密文注入路径。
 6. **退役旧 key**：报告全 0 重封且平台 Secret 注入正常后，删除 `master-retired-*.agekey`（Platform Backup 含密封密钥，恢复走解封闭环；KEK 本体单独保管）。
 
