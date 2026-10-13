@@ -415,7 +415,7 @@ ADR-0042 落地（64f07f0..8b7f51d 七 commit，CI run 37218474928 六 job 全�
 - buf breaking 对 origin/main 红一次（游标字段 after_*_id → after_*_seq 改名改型），commit 上 main 后自愈——零外部消费者核证（ADR-0047 先例）。
 
 
-## 2026-10-12 记录·四十九（ADR-0071/0072 配置面机制换装 d19ac2f；现役）
+## 2026-10-12 记录·四十九（ADR-0071/0072 配置面机制换装 d19ac2f）
 
 **换代内容**：三层读面（GetRevision 冻结全文 / GetAppWorkloads 投影重放缺省=生效寻址 / GetAppWorkloadObservations 在服观测 + Revision.source_kind + GetAppSpec 锚）+ Spec 所有权分裂（webhook push 合并保留运行时半边 / hook 应用 spec_file 运行时 overlay / 材料源硬闸门 E_APP_HOOK_OWNED + override_hook）+ AppVariable 三级合成（Shared 底 < 源 env 中 < AppVariable 顶，freeze 咽喉）+ console Spec tab 三段式 / Deploy 表单 Current spec 预填源 / Variables tab 重做。迁移 00029（app_variables 表）。
 
@@ -444,6 +444,33 @@ ADR-0042 落地（64f07f0..8b7f51d 七 commit，CI run 37218474928 六 job 全�
 7. 验收：projects/nodes/databases/backups/events 列表 id 与 Resource 列全可读（`project.created / torchwood-1`）；doctor ok；`fleetlyd fd49e9d` 现役。
 
 **挂账**：①应用栈重播——torchwood 六常驻 + firstBootJobs、messageloop 三服务 + 跨 Project peer、n0reg/n0probe/quickstart 验收应用，部署源在各 git 仓（本机无源，需各仓 owner 重放 `fleetly deploy`）；②node2（10.124.0.5）本批不可达（公网/VPC 均超时）——其 k3s 平台身份独立不受影响，可达后自查锚定标记世代；③全面走查（Console 九 tab / exec / 备份恢复演练）随应用栈重播后补。
+
+## 2026-10-13 记录·五十（ADR-0071/0072 全面深查 + 浏览器级走查；W-8/W-9 新发现；现役）
+
+**换代**：d19ac2f → `7c865ec-adr71-72`（HEAD 对齐；backup 硬门 `2a20b9d5` + 受管卷 tar /root/upgrade-d19ac2f/；doctor 10 ok/0 fail；console 新 dist 嵌入经 chunk 逐字验证）。node2 仍不可达（No route to host，挂账维持）。
+
+**后端深查（全绿）**：
+- 读面四端点 + 分野：缺省寻址=生效、`--seq` 历史重放（R1 1.27 vs R2 1.28）、未知 seq E_NOT_FOUND；幽灵镜像 R6 冻结→failed→自动回滚后 **REST 锚=最新冻结 R6 vs workloads 缺省=生效 R5** 分野实证，live gen 链 1→9 单调。
+- 三层合成全集：R4 env = {S:appvar(顶), INTAKE_ONLY:mid(源), SHARED_ONLY:yes(共享), APP_ONLY:1(顶独占)} 逐键精确；删 store 键回落 intake；bad-name 白名单拒；101st 变量 E_QUOTA_EXCEEDED（limit 100）；审计 app_variable.put source=cli + 事件 app_variable.updated/deleted 在册。
+- 所有权分裂：image/compose 双源拒 E_APP_HOOK_OWNED；`--override-hook` 接管（source_kind=image）；**override 后 push 合并保留显式 image 进程**（决策 6 边界：ref=C4 更新 + proc0 image 保留 from_build=NONE）；审计修复锚实证（webhook 冻结 revision.create source=webhook actor=hook:<app>，aud-67/74）。
+- 受控探针咬出并撤销 W-10 候选：**failed 部署行不丢——failed→rolling-back 是同骑行内状态转换**（重放换代同行推进，列表完整；此前"行消失"是同行模型 + UPDATED 列的考古误读）。
+- drift 可视性：swarm 手工 scale 4 → 投影 replicas=1 vs live replicas=4 诚实分野。
+- exec 演练：`fleetly exec app/web -- nginx -v` exit 0（relay 路由正常）。
+- 备份链：platform backup 2a20b9d5 + torchwood-pg-1-b2 全新备份 + verify digest 与台账对账 ✓（整恢复演练维持 e2e/dind 承载）。
+- console REST 契约（SPA 同款六项）：workloads/live/revision 锚/spec 锚/app-variables/无凭证 401 全对。
+
+**浏览器级走查（IAB 真浏览器，首次在本环境跑通）**：登录（用户名+密码表单）→ Spec tab 三段式全渲染（R1+image 徽标+digest 锚+Edit & deploy+seq 选择器；Frozen Spec pretty JSON；Projected Workloads 全字段卡含 DNS 别名；Live Carriers 表）→ Variables tab（store 编辑器两行 + Apply 门禁 + 生效 env 诚实 0 keys）→ Deploy 表单（**Current spec 缺省源** + frozen R1 徽 + overlay 披露文案）→ 部署详情 Raw fields 展开出 **view spec R1** 链接（typed href `spec?seq=1`）。
+
+**发现台账**：
+- **W-8（新，P2）hook 无删除通道**：无 DeleteGitHook RPC/CLI `hooks delete`/console 移除按钮（SetGitHook 校验 repo 非空）——ADR-0072 suggestion 与 GitHookCard 文案承诺的"删 hook 解除材料所有权"无实现，材料闸门成单向门（唯一出口 override_hook）。修复方向：DeleteGitHook RPC + CLI + console 三件套。
+- **W-9（新，P3）CLI apps spec 丢锚**：`renderOut(resp.GetSpec())` 只渲染 Spec 本体，响应层 revision_seq/digest 不出 CLI 面（REST/Console 有）。修复：human 形态加锚头行（revisions get 同款）+ golden。
+- **W-7（复核仍在，机制精化）**：⌘K 面板开进**文档流页底**（a11y 树可见、视口不可见、无浮层 portal）——按钮点击与 Ctrl+K 均在切换但不成立对话浮层。
+- **W-1（复核仍在）**：侧栏项目上下文为重置前 torchwood（ULID id `/p/01M3Y8V…/apps` 死链）——localStorage 陈旧记忆，重置后失配形态。
+- **W-3（闭）**：全壳黑窗未复现，登录与全页渲染正常。
+- 观察（非应用 bug）：本 IAB 对该应用全域 Playwright click actionability 失败（fixed 侧栏坐标系），坐标/键盘/evaluate 通道均可用；真人浏览器不受影响。
+- 账号注记：ADR-0070 重置清空用户表（founder 消失）；本轮建 `walker-1`（builtin-admin，演练密码 c6-live-pw-2，正式使用前轮换）。
+
+**走查夹具即建即删**（deep/deep2/deep3/deep4/deep5/uiwalk 五项目零残留）；app 栈重播挂账维持（部署源在各仓）。
 
 ## 平台升级操作序（F2.3 工具化，2026-10-04）
 
