@@ -9,6 +9,7 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -26,6 +27,22 @@ const installTokenUser = "x-access-token"
 // defaultGitHost 是 github.com 面的仓库名（GHES 行的 git host 从 api_base
 // 派生）。
 const defaultGitHost = "github.com"
+
+// gitSecretPrefix 是 Git 访问材料 Secret 的命名约定（ADR-0073 阶段 A：
+// `git:<host>`；镜像 registry:<host> 定律——值 JSON username/secret，
+// age 信封、读面只回指纹全套既有执法；username 空 = defaultGitUser）。
+const gitSecretPrefix = "git:"
+
+// defaultGitUser 是材料 username 缺省（GitHub PAT 对任意非空用户名合法；
+// GitLab 惯用 oauth2）。
+const defaultGitUser = "oauth2"
+
+// gitCredentialJSON 是 `git:<host>` Secret 值的形态（镜像
+// registryCredentialJSON——registry:<host> 同族命名约定）。
+type gitCredentialJSON struct {
+	Username string `json:"username"`
+	Secret   string `json:"secret"`
+}
 
 // gitMaterial 是解析出的 clone 材料（token 明文，只进 argv 与脱敏面）。
 type gitMaterial struct {
@@ -76,7 +93,38 @@ func (e *Engine) resolveGitMaterial(ctx context.Context, projectID, repoURL stri
 	case !errors.Is(err, state.ErrNotFound):
 		return nil, fmt.Errorf("lookup global github app material for %s: %w", owner, err)
 	}
-	return nil, nil
+	return e.resolveGitSecretMaterial(ctx, projectID, host)
+}
+
+// resolveGitSecretMaterial 是解析序第三位（ADR-0073 阶段 A 决策 6）：
+// Project Secret 保留名 `git:<host>`，值 JSON username/secret——镜像
+// registry:<host> 定律（materials.go）：ErrNotFound = 匿名合法，库故障/
+// 解封失败/坏 JSON 精确失败上抛。
+func (e *Engine) resolveGitSecretMaterial(ctx context.Context, projectID, host string) (*gitMaterial, error) {
+	name := gitSecretPrefix + host
+	row, err := e.secrets.GetByName(ctx, e.db.Runner(), projectID, name)
+	if errors.Is(err, state.ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("lookup git access material for %s: %w", host, err)
+	}
+	if e.cipher == nil {
+		return nil, fmt.Errorf("git access material %s present but the master key is not available", name)
+	}
+	plain, err := e.cipher.Open(row.Ciphertext)
+	if err != nil {
+		return nil, fmt.Errorf("decrypt git access material %s: %w", name, err)
+	}
+	var cred gitCredentialJSON
+	if err := json.Unmarshal(plain, &cred); err != nil {
+		return nil, fmt.Errorf("git access material secret %s: bad JSON: %w", name, err)
+	}
+	username := cred.Username
+	if username == "" {
+		username = defaultGitUser
+	}
+	return &gitMaterial{username: username, token: cred.Secret}, nil
 }
 
 // gitHostOwner 拆 https 仓库 URL 的 host 与首段路径（owner；.git 后缀可

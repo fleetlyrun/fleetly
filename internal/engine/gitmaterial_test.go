@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/fleetlyrun/fleetly/internal/github"
+	"github.com/fleetlyrun/fleetly/internal/state/secret"
 	"github.com/fleetlyrun/fleetly/internal/material"
 	"github.com/fleetlyrun/fleetly/internal/state/githubapp"
 	"github.com/fleetlyrun/fleetly/internal/state/statetest"
@@ -194,3 +195,71 @@ func TestCloneErrRedaction(t *testing.T) {
 type errFake struct{}
 
 func (errFake) Error() string { return "exit status 128" }
+
+// TestResolveGitSecretMaterial：解析序第三位（ADR-0073 阶段 A）——
+// `git:<host>` Project Secret（镜像 registry:<host> 定律）。GitHub App
+// 两态命中时 Secret 被遮蔽；Secret 值 JSON username 缺省 oauth2；坏 JSON
+// 精确失败；Secret 名防逃逸白名单天然容住 host 形态（字母数字点冒号）。
+func TestResolveGitSecretMaterial(t *testing.T) {
+	ctx := context.Background()
+	db, clock := statetest.New(t)
+	root := t.TempDir()
+	cipher, err := material.LoadCipher(root)
+	require.NoError(t, err)
+	fake := newGhFake(t)
+
+	e := &Engine{db: db, cipher: cipher, secrets: secret.New(clock), ghApps: githubapp.New(clock), ghClient: github.NewClient(fake.srv.Client(), nil)}
+	proj := "proj-s"
+	repo := fake.srv.URL + "/acme/web" // host = 127.0.0.1:<port>
+	host, _, ok := gitHostOwner(repo)
+	require.True(t, ok)
+
+	mustPutSecret := func(name, value string) {
+		sealed, serr := cipher.Produce([]byte(value))
+		require.NoError(t, serr)
+		require.NoError(t, e.secrets.Upsert(ctx, db.Runner(), &secret.Secret{
+			ID: "sec-" + name, ProjectID: proj, Name: name,
+			Ciphertext: sealed.Ciphertext, Fingerprint: sealed.Fingerprint,
+		}))
+	}
+
+	// 无材料 = 匿名。
+	mat, err := e.resolveGitMaterial(ctx, proj, repo)
+	require.NoError(t, err)
+	assert.Nil(t, mat)
+
+	// Secret 命中：username/secret 进材料；username 空 → oauth2 兜底。
+	mustPutSecret(gitSecretPrefix+host, `{"username":"","secret":"glpat-x"}`)
+	mat, err = e.resolveGitMaterial(ctx, proj, repo)
+	require.NoError(t, err)
+	require.NotNil(t, mat)
+	assert.Equal(t, defaultGitUser, mat.username)
+	assert.Equal(t, "glpat-x", mat.token)
+
+	// username 在场原样用。
+	mustPutSecret(gitSecretPrefix+host, `{"username":"gitlab+ci","secret":"glpat-y"}`)
+	mat, err = e.resolveGitMaterial(ctx, proj, repo)
+	require.NoError(t, err)
+	require.NotNil(t, mat)
+	assert.Equal(t, "gitlab+ci", mat.username)
+
+	// 坏 JSON = 精确失败（不静默匿名——私有仓会死在无诊断 401 上）。
+	mustPutSecret(gitSecretPrefix+host, `not json`)
+	_, err = e.resolveGitMaterial(ctx, proj, repo)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "bad JSON")
+
+	// GitHub App 遮蔽 Secret：命中的行先返回，Secret 不参与。
+	sealed, serr := cipher.Produce(ghKeyPEM(t))
+	require.NoError(t, serr)
+	require.NoError(t, e.ghApps.Upsert(ctx, db.Runner(), &githubapp.App{
+		ProjectID: proj, AppID: 182345, InstallationID: 51790921,
+		AccountLogin: "acme", APIBase: fake.srv.URL,
+		PrivateKeyCiphertext: sealed.Ciphertext, PrivateKeyFingerprint: sealed.Fingerprint,
+	}))
+	mustPutSecret(gitSecretPrefix+host, `{"username":"gitlab+ci","secret":"glpat-y"}`)
+	mat, err = e.resolveGitMaterial(ctx, proj, repo)
+	require.NoError(t, err)
+	require.NotNil(t, mat)
+	assert.Equal(t, installTokenUser, mat.username, "the matched github app shadows the secret channel")
+}
