@@ -304,23 +304,23 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 	// put 步预置——材料面缺行即 Run 不可铸）。
 	composeFile := filepath.Join(t.TempDir(), "compose-firstboot.yaml")
 	require.NoError(t, os.WriteFile(composeFile, []byte(
-		"services:\n  web:\n    image: nginx:1.27\nx-fleetly-first-boot-jobs:\n  - name: migrate\n    image: migrate/migrate:v4.18.1\n    command: [\"sh\", \"-c\", \"migrate -database \\\"$(cat /run/secrets/api-token)\\\" up\"]\n    secrets:\n      - api-token\n    ttl: 300s\n"), 0o600))
+		"services:\n  web:\n    image: nginx:1.27\nx-fleetly-first-boot-jobs:\n  - name: migrate\n    image: migrate/migrate:v4.18.1\n    command: [\"sh\", \"-c\", \"migrate -database \\\"$(cat /run/secrets/api-token)\\\" up\"]\n    secrets:\n      - api-token\n    ttl: 300s\nsecrets:\n  api-token:\n    external: true\n"), 0o600))
 	// GOLDEN_SPECFILE 是裸 AppSpec 的固定 spec（F3.5 第四源；protojson
 	// 规范形——枚举名与 Revision 冻结体同形；AppRef 缺席 = 服务端覆写）。
 	specFile := filepath.Join(t.TempDir(), "appspec.json")
 	require.NoError(t, os.WriteFile(specFile, []byte(
 		`{"source":{"image":{"ref":"nginx:1.22"}},"processes":[{"name":"web","image":"nginx:1.22","ports":[{"port":8080,"protocol":"PROTOCOL_HTTP"}],"networks":["default"]},{"name":"worker","image":"busybox:1.37"}]}`), 0o600))
 	// GOLDEN_COMPOSE_BG 是部署策略扩展键的固定 compose（ADR-0048：
-	// deploy.strategy: blue-green——app3 的 R1 冻结源；独立目录同
-	// GOLDEN_COMPOSE 先例）。
+	// deploy.x-fleetly-strategy: blue-green——app3 的 R1 冻结源；独立目录同
+	// GOLDEN_COMPOSE 先例；拼写走官方 #extensions 通道，ADR-0074）。
 	composeBGFile := filepath.Join(t.TempDir(), "compose-bg.yaml")
 	require.NoError(t, os.WriteFile(composeBGFile, []byte(
-		"services:\n  web:\n    image: nginx:1.27\n    deploy:\n      strategy: blue-green\n"), 0o600))
+		"services:\n  web:\n    image: nginx:1.27\n    deploy:\n      x-fleetly-strategy: blue-green\n"), 0o600))
 	// GOLDEN_COMPOSE_BG_BUMP 是基线之上的第二笔 blue-green（换镜像 →
 	// 内容寻址新冻结 R3；strategy 同键——from_generation golden 的载体）。
 	composeBGBumpFile := filepath.Join(t.TempDir(), "compose-bg-bump.yaml")
 	require.NoError(t, os.WriteFile(composeBGBumpFile, []byte(
-		"services:\n  web:\n    image: nginx:1.28\n    deploy:\n      strategy: blue-green\n"), 0o600))
+		"services:\n  web:\n    image: nginx:1.28\n    deploy:\n      x-fleetly-strategy: blue-green\n"), 0o600))
 
 	// GOLDEN_PROJECT/GOLDEN_APP 占位替换为夹具真实 ID（项目 ID 是 ULID，
 	// 归一后可预测）。

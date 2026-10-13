@@ -8,11 +8,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/fleetlyrun/fleetly/internal/spec"
+	"go.yaml.in/yaml/v3"
+
+	"github.com/fleetlyrun/fleetly/internal/composeintake"
 )
 
 // renderString 从渲染产物取嵌套字符串（测试探针）。
-func renderString(t *testing.T, compose spec.ComposeDoc, path ...string) string {
+func renderString(t *testing.T, compose ComposeDoc, path ...string) string {
 	t.Helper()
 	var node any = compose
 	for _, key := range path[:len(path)-1] {
@@ -31,7 +33,7 @@ func renderString(t *testing.T, compose spec.ComposeDoc, path ...string) string 
 }
 
 // renderList 从渲染产物取字符串列表（测试探针）。
-func renderList(t *testing.T, compose spec.ComposeDoc, path ...string) []string {
+func renderList(t *testing.T, compose ComposeDoc, path ...string) []string {
 	t.Helper()
 	node := renderAny(t, compose, path...)
 	list, ok := node.([]any)
@@ -46,7 +48,7 @@ func renderList(t *testing.T, compose spec.ComposeDoc, path ...string) []string 
 	return out
 }
 
-func renderAny(t *testing.T, compose spec.ComposeDoc, path ...string) any {
+func renderAny(t *testing.T, compose ComposeDoc, path ...string) any {
 	t.Helper()
 	var node any = compose
 	for _, key := range path {
@@ -140,16 +142,31 @@ services:
 		t.Fatalf("secret path interpolation: got %q", got)
 	}
 	// secrets 列表：变量名重写真名；字面引用（database:db）原样。
+	// secrets 列表重写真名 → external 声明铸位改写为安全键（真名带冒号
+	// 进不了 compose 声明键字符集，ADR-0074）；真名经声明的 name 覆盖
+	// 承载，AppSpec 解析回真名（见下方 SecretRefs 断言）。
 	secrets := renderList(t, rendered.Compose, "services", "web", "secrets")
-	if len(secrets) != 2 || secrets[0] != "template:myapp:admin_password" || secrets[1] != "database:db" {
+	if len(secrets) != 2 || secrets[0] != "template-myapp-admin_password" || secrets[1] != "database-db" {
 		t.Fatalf("secrets rewriting: got %v", secrets)
+	}
+	declared := renderAny(t, rendered.Compose, "secrets").(map[string]any)
+	if m := declared["template-myapp-admin_password"].(map[string]any); m["name"] != "template:myapp:admin_password" || m["external"] != true {
+		t.Fatalf("external declaration minting: got %v", declared)
+	}
+	if m := declared["database-db"].(map[string]any); m["name"] != "database:db" || m["external"] != true {
+		t.Fatalf("external declaration minting (database): got %v", declared)
 	}
 	// domain 变量驱动 Route。
 	if len(rendered.Routes) != 1 || rendered.Routes[0].Host != "demo.example.org" {
 		t.Fatalf("route resolution: got %+v", rendered.Routes)
 	}
-	// 渲染产物经 NormalizeCompose 喉（白名单 + 校验叶子单源）。
-	appSpec, err := spec.NormalizeCompose(rendered.Compose, "app-1", "proj-1")
+	// 渲染产物经 composeintake 官方受理喉（schema + 方言执法 + 校验叶子
+	// 单源，ADR-0074）。
+	composeBody, err := yaml.Marshal(rendered.Compose)
+	if err != nil {
+		t.Fatal(err)
+	}
+	appSpec, err := composeintake.FromYAML(composeBody, "app-1", "proj-1", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -301,7 +318,11 @@ func TestBuiltinCatalogHealthy(t *testing.T) {
 		if err != nil {
 			t.Fatalf("builtin %s render: %v", e.Name, err)
 		}
-		if _, err := spec.NormalizeCompose(rendered.Compose, "preview-app", "preview-project"); err != nil {
+		composeBody, err := yaml.Marshal(rendered.Compose)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := composeintake.FromYAML(composeBody, "preview-app", "preview-project", nil); err != nil {
 			t.Fatalf("builtin %s normalize: %v", e.Name, err)
 		}
 	}

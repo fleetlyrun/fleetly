@@ -129,8 +129,12 @@ services:
     volumes: ["data:/usr/share/nginx/html"]
     networks: [default]
     deploy: {replicas: 2}
+networks:
+  default:
+    external: true
 volumes:
   data:
+    external: true
 YAML
 cli deploy --app "$APP_ID" --compose-file /root/compose.yaml >/dev/null
 

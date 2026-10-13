@@ -58,7 +58,7 @@ func TestRESTDeploymentReadSurface(t *testing.T) {
 
 	// R1 = blue-green compose（首代无基线：from_generation 零值省略）。
 	first, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{
-		AppId: appID, ComposeYaml: "services:\n  web:\n    image: nginx:1.27\n    deploy:\n      strategy: blue-green\n",
+		AppId: appID, ComposeYaml: "services:\n  web:\n    image: nginx:1.27\n    deploy:\n      x-fleetly-strategy: blue-green\n",
 	})
 	require.NoError(t, err)
 

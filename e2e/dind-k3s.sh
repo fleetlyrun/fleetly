@@ -466,11 +466,10 @@ log "rollback green"
 #     - 活体：跨 ns（shop2 的 nginx）不可达；DNS（kube-system）放行
 log "egress:none strong isolation drill"
 cli networks create --project "$PROJECT_ID" --egress-none isolated >/dev/null
-# compose 受控子集：顶层 networks 声明被拒（白名单只收 services/volumes，
-# 网络实体走平台 API——cli networks create 在先）；service 级 networks
-# 按名引用平台网络（egress 属性真源在 networks 表，投影期解析——ADR-0052
-# 决策 6）。web 服务保进夹具：deploy 是整 App 新 Revision，只带 worker
-# 会把 web 收敛掉（应用语义连续性 + 终态完整性）。
+# compose 方言（ADR-0074）：平台网络实体经官方 external 声明引用
+#（cli networks create 在先——egress 属性真源在 networks 表，投影期解析，
+# ADR-0052 决策 6）。web 服务保进夹具：deploy 是整 App 新 Revision，只带
+# worker 会把 web 收敛掉（应用语义连续性 + 终态完整性）。
 cat > "$WORKDIR/egress-compose.yaml" <<'EOF'
 services:
   web:
@@ -480,6 +479,9 @@ services:
     image: busybox:1.37
     command: ["sleep", "3600"]
     networks: [isolated]
+networks:
+  isolated:
+    external: true
 EOF
 docker exec -i "$DIND_CID" sh -c 'cat > /tmp/egress-compose.yaml' < "$WORKDIR/egress-compose.yaml"
 EGRESS_DEP=$(cli --json deploy --app "$APP_ID" --compose-file /tmp/egress-compose.yaml | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | head -1)

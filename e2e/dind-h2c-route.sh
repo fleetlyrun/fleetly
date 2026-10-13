@@ -249,7 +249,7 @@ if [ -z "$H2C_APP_ID" ]; then
   exit 1
 fi
 docker exec "$DIND_CID" sh -c \
-  'printf "services:\n  web:\n    image: h2cbackend:local\n    ports:\n      - \"8080\"\n    networks:\n      - default\n" > /root/h2c-compose.yml'
+  'printf "services:\n  web:\n    image: h2cbackend:local\n    ports:\n      - \"8080\"\n    networks:\n      - default\nnetworks:\n  default:\n    external: true\n" > /root/h2c-compose.yml'
 cli deploy --app "$H2C_APP_ID" --compose-file /root/h2c-compose.yml >/dev/null
 APP_ID_SAVE="$APP_ID"; APP_ID="$H2C_APP_ID"
 wait_state succeeded

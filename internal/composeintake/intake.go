@@ -424,8 +424,8 @@ func servicePorts(field string, ports []types.ServicePortConfig) ([]*specv1.Port
 		if port.Name != "" {
 			return nil, invalidf(f+".name", "port names are not translated")
 		}
-		// Mode 是官方短语法解析器恒填的 swarm 发布模式缺省（ingress）——
-		// 发布本身已被拒，缺省值不构成声明；host 模式显式拒。
+		// Mode 是官方短语法解析器恒填的 swarm 发布模式缺省——发布本身
+		// 已被拒，缺省值不构成声明；host 模式显式拒。
 		if port.Mode == "host" {
 			return nil, invalidf(f+".mode", "host-mode publishing is not supported")
 		}

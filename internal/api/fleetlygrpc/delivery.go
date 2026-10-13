@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"go.yaml.in/yaml/v3"
 	"google.golang.org/protobuf/encoding/protojson"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
@@ -20,6 +19,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/api/apperr"
 	"github.com/fleetlyrun/fleetly/internal/authn"
 	"github.com/fleetlyrun/fleetly/internal/capability"
+	"github.com/fleetlyrun/fleetly/internal/composeintake"
 	"github.com/fleetlyrun/fleetly/internal/engine"
 	"github.com/fleetlyrun/fleetly/internal/spec"
 	"github.com/fleetlyrun/fleetly/internal/state"
@@ -35,7 +35,7 @@ type DeploymentsService struct {
 	s *Services
 }
 
-// Deploy 归一化四源（image 直投 / Compose 受控子集 / 上传产物 / 裸
+// Deploy 归一化四源（image 直投 / compose 受理语言 / 上传产物 / 裸
 // AppSpec spec_file）并受理部署（admission 判定全在 engine.Submit）。
 func (svc *DeploymentsService) Deploy(ctx context.Context, req *deliveryv1.DeployRequest) (*deliveryv1.DeployResponse, error) {
 	if req.GetAppId() == "" {
@@ -85,7 +85,7 @@ func (svc *DeploymentsService) Deploy(ctx context.Context, req *deliveryv1.Deplo
 		uploadRow = row
 	}
 
-	appSpec, err := normalizeDeploySource(req, appRow, uploadRow, specFile)
+	appSpec, err := normalizeDeploySource(req, appRow, uploadRow, specFile, deployVarLookup(ctx, svc.s, appRow))
 	if err != nil {
 		return nil, err
 	}
@@ -209,12 +209,34 @@ func freezeRevision(ctx context.Context, s *Services, appRow *app.App, appSpec *
 	return rev, nil
 }
 
-// normalizeDeploySource 归一化四源：image 直投 / Compose 受控子集 / 上传
+// deployVarLookup 合成 compose 官方插值的平台变量环境：Project 层
+// SharedVariable 为底、App 层 AppVariable 顶（App 胜出——与 freezeRevision
+// 的三级分层同向；compose 形态的 env 值在受理期消解冻结，ADR-0074）。
+// 环境一次性物化（两次列表查询），闭包查表。
+func deployVarLookup(ctx context.Context, s *Services, appRow *app.App) composeintake.VariableLookup {
+	env := map[string]string{}
+	if vars, err := s.SharedVariables.ListActive(ctx, s.DB.Runner(), appRow.ProjectID); err == nil {
+		for _, v := range vars {
+			env[v.Name] = v.Value
+		}
+	}
+	if vars, err := s.AppVariables.ListActive(ctx, s.DB.Runner(), appRow.ID); err == nil {
+		for _, v := range vars {
+			env[v.Name] = v.Value
+		}
+	}
+	return func(name string) (string, bool) {
+		v, ok := env[name]
+		return v, ok
+	}
+}
+
+// normalizeDeploySource 归一化四源：image 直投 / compose 受理语言 / 上传
 // 产物 / 裸 AppSpec（spec_file，F3.5）。直投与上传形态的探针声明
 // （http_probe/tcp_probe，B2）互斥；compose 形态的探针经 healthcheck 扩展键
 // （直投/上传旗标与 compose 互斥）。specFile 是 spec_file 形态在 Deploy
 // 受理前置已解析的产物（Source.upload 归属执法需先行），此处直通。
-func normalizeDeploySource(req *deliveryv1.DeployRequest, appRow *app.App, uploadRow *sourceupload.Upload, specFile *specv1.AppSpec) (*specv1.AppSpec, error) {
+func normalizeDeploySource(req *deliveryv1.DeployRequest, appRow *app.App, uploadRow *sourceupload.Upload, specFile *specv1.AppSpec, varLookup composeintake.VariableLookup) (*specv1.AppSpec, error) {
 	sources := 0
 	for _, v := range []string{req.GetImage(), req.GetComposeYaml(), req.GetUploadId(), req.GetSpecFile()} {
 		if v != "" {
@@ -275,13 +297,12 @@ func normalizeDeploySource(req *deliveryv1.DeployRequest, appRow *app.App, uploa
 		return s, nil
 	case req.GetComposeYaml() != "":
 		if req.GetHttpProbe() != "" || req.GetTcpProbe() != 0 {
-			return nil, apperr.New("E_INVALID_ARGUMENT", "http_probe/tcp_probe are for image or upload deploys; compose declares probes via healthcheck.http_path/tcp_port")
+			return nil, apperr.New("E_INVALID_ARGUMENT", "http_probe/tcp_probe are for image or upload deploys; compose declares probes via healthcheck.x-fleetly-http-path/x-fleetly-tcp-port")
 		}
-		var doc spec.ComposeDoc
-		if err := yaml.Unmarshal([]byte(req.GetComposeYaml()), &doc); err != nil {
-			return nil, apperr.New("E_INVALID_ARGUMENT", "compose_yaml: invalid YAML: %s", err.Error()).WithCause(err)
-		}
-		s, err := spec.NormalizeCompose(doc, appRow.ID, appRow.ProjectID)
+		// compose 受理语言 = compose-go 官方解析 + fleetly 方言执法
+		// （ADR-0074）；官方插值环境 = 平台变量（Shared ∪ AppVariable，
+		// App 胜出——与 freezeRevision 分层同向，未消解即拒）。
+		s, err := composeintake.FromYAML([]byte(req.GetComposeYaml()), appRow.ID, appRow.ProjectID, varLookup)
 		if err != nil {
 			return nil, mapValidationError(err)
 		}

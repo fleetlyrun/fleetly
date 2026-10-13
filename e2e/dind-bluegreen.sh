@@ -160,7 +160,10 @@ services:
     ports: ["8080"]
     networks: [default]
     deploy:
-      strategy: blue-green$cmd
+      x-fleetly-strategy: blue-green$cmd
+networks:
+  default:
+    external: true
 YAML
 }
 
@@ -268,7 +271,10 @@ services:
     ports: ["8080"]
     networks: [default]
     deploy:
-      strategy: blue-green
+      x-fleetly-strategy: blue-green
+networks:
+  default:
+    external: true
 YAML
 cli deploy --app "$APP_ID" --compose-file /root/bg-v3.yaml >/dev/null
 wait_state failed 300

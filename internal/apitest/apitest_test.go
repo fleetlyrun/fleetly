@@ -164,7 +164,7 @@ func TestComposeRejectedField(t *testing.T) {
 		ComposeYaml: "services:\n  web:\n    image: nginx\n    privileged: true\n",
 	})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "unsupported field")
+	assert.Contains(t, err.Error(), "official compose field \"privileged\" is not enabled")
 }
 
 func TestNodesAndEnroll(t *testing.T) {

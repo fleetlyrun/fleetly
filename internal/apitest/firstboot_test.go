@@ -50,7 +50,10 @@ func TestComposeFirstBootDeployEndToEnd(t *testing.T) {
 		"    command: [\"sh\", \"-c\", \"migrate -database \\\"$(cat /run/secrets/db-url)\\\" up\"]\n" +
 		"    secrets:\n" +
 		"      - db-url\n" +
-		"    ttl: 300s\n"
+		"    ttl: 300s\n" +
+		"secrets:\n" +
+		"  db-url:\n" +
+		"    external: true\n"
 	dep, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: app.GetApp().GetId(), ComposeYaml: compose})
 	require.NoError(t, err)
 	depID := dep.GetDeployment().GetId()

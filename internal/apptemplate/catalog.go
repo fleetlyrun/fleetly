@@ -18,7 +18,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/fleetlyrun/fleetly/internal/spec"
+	"github.com/fleetlyrun/fleetly/internal/composeintake"
+	"go.yaml.in/yaml/v3"
 )
 
 //go:embed catalog/*.yaml
@@ -87,7 +88,7 @@ func validatedEntry(body string) (Entry, error) {
 	return Entry{Name: doc.Name, Version: doc.Version, Digest: DigestOf(body), Body: body}, nil
 }
 
-// dryRender 用合成值整链预校验（渲染 → NormalizeCompose 白名单喉 →
+// dryRender 用合成值整链预校验（渲染 → composeintake 官方解析喉 →
 // ValidateApp 叶子执法——占位 AppRef 只需非空）。刷新预校验与测试消费。
 func dryRender(doc *Doc) error {
 	values := map[string]string{}
@@ -111,7 +112,11 @@ func dryRender(doc *Doc) error {
 	if err != nil {
 		return err
 	}
-	if _, err := spec.NormalizeCompose(rendered.Compose, "catalog-preview-app", "catalog-preview-project"); err != nil {
+	body, err := yaml.Marshal(rendered.Compose)
+	if err != nil {
+		return err
+	}
+	if _, err := composeintake.FromYAML(body, "catalog-preview-app", "catalog-preview-project", nil); err != nil {
 		return err
 	}
 	return nil

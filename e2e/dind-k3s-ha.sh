@@ -295,7 +295,8 @@ services:
     ports: ["8080"]
     volumes: ["workervol:/www"]
 volumes:
-  workervol: {}
+  workervol:
+    external: true
 EOF
 docker exec -i "$S1_CID" sh -c 'cat > /tmp/ha-compose.yaml' < "$WORKDIR/ha-compose.yaml"
 cli --json deploy --app "$APP_ID" --compose-file /tmp/ha-compose.yaml >/dev/null || fail "compose deploy failed"

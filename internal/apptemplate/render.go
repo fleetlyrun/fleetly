@@ -15,8 +15,8 @@ import (
 // Rendered 是一次渲染的产物。
 type Rendered struct {
 	// Compose 是插值后的 compose 受控子集（平台键已剥、secret 列表已重写），
-	// 形态恰是 spec.ComposeDoc——直通 NormalizeCompose 喉。
-	Compose spec.ComposeDoc
+	// 形态恰是 ComposeDoc——序列化后经 Deploy 喉走 composeintake 官方解析。
+	Compose ComposeDoc
 	// SecretNames 是 secret 变量名 → 铸造 Secret 实体名（template:<app>:<var>）。
 	// 实例化方按此铸造/复用 Secret 并获得 create-or-reuse 报告锚。
 	SecretNames map[string]string
@@ -100,6 +100,12 @@ func (d *Doc) Render(values map[string]string, appName string) (*Rendered, error
 	compose, ok := composeAny.(map[string]any)
 	if !ok {
 		return nil, verr(templateKey, "rendered compose is not a mapping (internal error)")
+	}
+	// external 声明铸位（ADR-0074）：secrets 真名带冒号（template:<app>:<var>、
+	// database:<name>），进不了 compose schema 的声明键字符集——按真名铸
+	// 安全键 + name 覆盖的顶层 external 声明，并把引用改写到键。
+	if err := declareExternalSecrets(compose); err != nil {
+		return nil, err
 	}
 	out.Compose = compose
 
@@ -208,7 +214,7 @@ func renderCompose(node any, interpolated, secretNames map[string]string) (any, 
 func rewriteSecrets(raw any, secretNames map[string]string) (any, error) {
 	list, ok := raw.([]any)
 	if !ok {
-		return raw, nil // 形态错误留给 NormalizeCompose 的 composeSecretRefs 精确报
+		return raw, nil // 形态错误留给受理喉的 secret 执法精确报
 	}
 	out := make([]any, 0, len(list))
 	for i, entry := range list {
@@ -225,6 +231,89 @@ func rewriteSecrets(raw any, secretNames map[string]string) (any, error) {
 		out = append(out, entry)
 	}
 	return out, nil
+}
+
+// declareExternalSecrets 为渲染产物里的 secret 引用铸顶层 external 声明：
+// 平台真名带冒号（template:<app>:<var> / database:<name>），compose schema
+// 的声明键只容 [a-zA-Z0-9._-]——键 = 真名净化（冒号折叠成连字符），声明
+// 携 name 覆盖承载真名，引用（services 与 first-boot-jobs）改写到键。
+// 用户自带的安全键声明原样保留（值形态错误由受理喉执法）。
+func declareExternalSecrets(compose ComposeDoc) error {
+	references := func() [][]any {
+		var lists [][]any
+		if services, ok := compose["services"].(map[string]any); ok {
+			for _, rawSvc := range services {
+				if svc, ok := rawSvc.(map[string]any); ok {
+					if secs, ok := svc["secrets"].([]any); ok {
+						lists = append(lists, secs)
+					}
+				}
+			}
+		}
+		if jobs, ok := compose["x-fleetly-first-boot-jobs"].([]any); ok {
+			for _, rawJob := range jobs {
+				if job, ok := rawJob.(map[string]any); ok {
+					if secs, ok := job["secrets"].([]any); ok {
+						lists = append(lists, secs)
+					}
+				}
+			}
+		}
+		return lists
+	}()
+	declared, _ := compose["secrets"].(map[string]any)
+	if declared == nil && len(references) == 0 {
+		return nil
+	}
+	if declared == nil {
+		declared = map[string]any{}
+	}
+	keyFor := func(name string) string {
+		var b strings.Builder
+		for _, r := range name {
+			switch {
+			case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '_', r == '.', r == '-':
+				b.WriteRune(r)
+			default:
+				b.WriteByte('-')
+			}
+		}
+		return b.String()
+	}
+	rewrite := func(secs []any) error {
+		for i, entry := range secs {
+			s, ok := entry.(string)
+			if !ok {
+				continue // 长语法形态留给受理喉精确执法
+			}
+			// 已声明的安全键引用（模板作者自带声明）不重写。
+			if _, ok := declared[s]; ok {
+				continue
+			}
+			if !strings.ContainsAny(s, ":/") {
+				continue // 键形态已安全且未声明——受理喉一致性检查会精确报
+			}
+			key := keyFor(s)
+			if clash, ok := declared[key]; ok {
+				if m, ok := clash.(map[string]any); ok && m["name"] == s {
+					continue // 同真名已铸（多服务引用同一 secret）
+				}
+				return verr("secrets", "rendered secret %q clashes with a declared key %q", s, key)
+			}
+			declared[key] = map[string]any{"external": true, "name": s}
+			secs[i] = key
+		}
+		return nil
+	}
+	for _, secs := range references {
+		if err := rewrite(secs); err != nil {
+			return err
+		}
+	}
+	if len(declared) > 0 {
+		compose["secrets"] = declared
+	}
+	return nil
 }
 
 // interpolate 解析字符串内的全部 ${name} 孔（未声明变量即拒——错误带孔
@@ -252,7 +341,7 @@ func interpolate(s string, interpolated map[string]string) (string, error) {
 
 // declaredPorts 从 compose 树提取各服务的声明端口集（短语法 "N[/proto]"，
 // 与 spec.composePort 同认形态——Route 校验的期望集供给面）。
-func declaredPorts(compose spec.ComposeDoc) (map[string]map[int32]bool, error) {
+func declaredPorts(compose ComposeDoc) (map[string]map[int32]bool, error) {
 	out := map[string]map[int32]bool{}
 	services, ok := compose["services"].(map[string]any)
 	if !ok {

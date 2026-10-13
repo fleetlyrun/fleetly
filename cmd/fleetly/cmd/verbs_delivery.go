@@ -139,7 +139,7 @@ func newDeployVerb() commands.Command {
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&app, "app", "", "app id (required)")
 			fs.StringVar(&image, "image", "", "image reference (direct image deploy)")
-			fs.StringVar(&composeFile, "compose-file", "", "compose file path (controlled subset)")
+			fs.StringVar(&composeFile, "compose-file", "", "compose file path (compose-spec syntax with x-fleetly extensions)")
 			fs.StringVar(&fromDir, "from-dir", "", "local directory to tar and upload as build source (F1.10; .git is never uploaded)")
 			fs.StringVar(&specFile, "spec-file", "", "path to a normalized AppSpec JSON file (protojson snake_case; full spec surface, excludes single-process flags)")
 			fs.StringVar(&builder, "builder", "", "builder for --from-dir deploys: dockerfile (default), railpack (zero-config source builds, version-pinned) or static (serve an artifact directory)")
@@ -185,7 +185,7 @@ func newDeployVerb() commands.Command {
 				return usageErr(name, "--http-probe and --tcp-probe are mutually exclusive")
 			}
 			if (httpProbe != "" || tcpProbe != 0) && composeFile != "" {
-				return usageErr(name, "--http-probe/--tcp-probe are for image or upload deploys; compose declares probes via healthcheck.http_path/tcp_port")
+				return usageErr(name, "--http-probe/--tcp-probe are for image or upload deploys; compose declares probes via healthcheck.x-fleetly-http-path/x-fleetly-tcp-port")
 			}
 			if len(appEnv) > 0 && composeFile != "" {
 				return usageErr(name, "--env is for image or upload deploys; compose declares variables via each service's environment")

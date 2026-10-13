@@ -1,5 +1,7 @@
 // Package apptemplate 是 App 模板库的叶子实现（ADR-0050）：模板文档 =
-// compose 受控子集 + 两个平台扩展键（x-fleetly-template / x-fleetly-databases）。
+// compose 受理语言 + 两个平台扩展键（x-fleetly-template / x-fleetly-databases）。
+// （ADR-0074：受理语言 = compose-spec 官方语法 + x-fleetly-* 扩展，官方解析住
+// internal/composeintake。）
 // 解析 fail-closed（扩展键内未知字段即拒）、渲染单源（语义变量三型：string
 // 插值 / secret 铸造引用 / domain 驱动 Route）——secret 值永不进渲染产物
 // （ADR-0014 红线），渲染产物经 spec.NormalizeCompose 白名单喉（与手写
@@ -68,7 +70,14 @@ type DatabaseDecl struct {
 }
 
 // Doc 是解析后的模板文档：两个平台扩展键已剥离，Compose 恰是
-// spec.ComposeDoc 形态（services/volumes/x-fleetly-first-boot-jobs）。
+// ComposeDoc 形态（services/volumes/secrets/x-fleetly-first-boot-jobs）——
+// 与 compose 受理语言的解码面同构（原生 map；ADR-0074 后官方解析住
+// internal/composeintake，本包仅做模板剥离/插值操作，产物经 yaml 序列化
+// 回流 Deploy 喉）。
+// ComposeDoc 是模板剥离平台键后的 compose 基座（原生 map——yaml.v3 对
+// 命名 map 类型会递归复用该类型填充嵌套 map 的坑同旧注记）。
+type ComposeDoc = map[string]any
+
 type Doc struct {
 	Name        string
 	Version     string
@@ -76,7 +85,7 @@ type Doc struct {
 	Variables   []Variable
 	Routes      []RouteDecl
 	Databases   []DatabaseDecl
-	Compose     spec.ComposeDoc
+	Compose     ComposeDoc
 }
 
 // TemplateNamePattern 钉死模板名与数据库名形态（目录键，kebab-case）。
@@ -269,7 +278,7 @@ func Parse(body []byte) (*Doc, error) {
 
 	// compose 子集剥离平台键后成为渲染基座；services 在场由 NormalizeCompose
 	// 喉执法（此处不重复，坏文档零可用产物的预检面已在顶层键域）。
-	compose := spec.ComposeDoc{}
+	compose := ComposeDoc{}
 	for key, val := range doc {
 		if key == templateKey || key == databasesKey {
 			continue
