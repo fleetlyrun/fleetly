@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FingerprintIcon, InfoIcon, PlusIcon } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { components as ghSchemas } from "@/api/github_apps";
 import { apiFetch, apiSend } from "@/api/client";
@@ -293,17 +293,24 @@ function AddGitHubAppDialog({
   const [advanced, setAdvanced] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // startFlow 发起 manifest 自动建流（ADR-0073 决策 8）：整页跳转 GitHub，
-  // 创建/安装完成后经 /github-apps/connect 回跳落行。公网 console 基址未
-  // 配置时服务端精确报错——手动表单即兜底路径。
+  // startFlow 发起 manifest 自动建流（ADR-0073 决策 8）。提交形态（GitHub
+  // 官方文档口径）：浏览器以 HTML form **POST** 到 apps/new（字段名
+  // manifest、值为 JSON 字符串）——GET 跳转带 query 会被 GitHub 静默忽略、
+  // 表单全空（真机两连咬的根因）。创建/安装完成后经 /github-apps/connect
+  // 回跳落行。公网 console 基址未配置时服务端精确报错——手动表单即兜底。
+  const [ghFlow, setGhFlow] = useState<{ actionUrl: string; manifest: string } | null>(null);
+  const flowFormRef = useRef<HTMLFormElement>(null);
+  useEffect(() => {
+    if (ghFlow != null) flowFormRef.current?.submit();
+  }, [ghFlow]);
   const startFlow = useMutation({
     mutationFn: () => {
       const body = projectId != null ? { project_id: projectId } : { global: true };
-      return apiSend<{ redirect_url?: string }>("/v1/github-apps/manifest/start", "POST", body);
+      return apiSend<{ action_url?: string; manifest?: string }>("/v1/github-apps/manifest/start", "POST", body);
     },
     onSuccess: (res) => {
-      if (res.redirect_url != null && res.redirect_url !== "") {
-        window.location.href = res.redirect_url;
+      if (res.action_url != null && res.action_url !== "" && res.manifest != null && res.manifest !== "") {
+        setGhFlow({ actionUrl: res.action_url, manifest: res.manifest });
       }
     },
   });
@@ -333,6 +340,19 @@ function AddGitHubAppDialog({
   });
 
   const valid = appId.trim() !== "" && installationId.trim() !== "" && privateKey.trim() !== "";
+
+  // 表单材料就绪 = 渲染自动提交页（整页 POST 导航到 GitHub 创建表单，
+  // 预填 name/权限/回跳；用户确认后 GitHub 302 回 /github-apps/connect）。
+  if (ghFlow != null) {
+    return (
+      <div className="flex min-h-svh flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
+        <p>Redirecting to GitHub…</p>
+        <form ref={flowFormRef} method="POST" action={ghFlow.actionUrl}>
+          <input type="hidden" name="manifest" value={ghFlow.manifest} />
+        </form>
+      </div>
+    );
+  }
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>

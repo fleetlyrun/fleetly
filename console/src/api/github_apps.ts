@@ -213,11 +213,25 @@ export interface components {
         };
         v1StartManifestFlowResponse: {
             /**
-             * redirect_url 是 github.com 的 manifest 创建页地址（含编码 manifest），
-             *     调用方整页跳转。
+             * Deprecated: GET 跳转形态废弃——manifest 必须经 HTML form POST 提交，
+             *     GET query 形态被 GitHub 静默忽略（决策 8 修订）。编号保留防破坏，服务
+             *     端恒空。
              */
             redirect_url?: string;
-            /** state 是签名流态（consume/complete 原样回传；调用方透明）。 */
+            /**
+             * action_url 是 github.com 的 manifest 创建页地址；manifest 字段经 HTML
+             *     form POST 提交（method=post、字段名 manifest、值为 JSON 字符串）。
+             */
+            action_url?: string;
+            /**
+             * manifest 是创建参数 JSON 字符串（名字/权限/回跳地址——私钥由 GitHub
+             *     生成并经回调回传平台）。调用方渲染隐藏表单自动提交。
+             */
+            manifest?: string;
+            /**
+             * state 是签名流态（consume/complete 原样回传；GitHub 在 redirect_url
+             *     上原样回显——兼 CSRF）。调用方透明。
+             */
             state?: string;
         };
         ErrorResponse: {

@@ -733,10 +733,20 @@ func (*StartManifestFlowRequest_Global) isStartManifestFlowRequest_Scope() {}
 
 type StartManifestFlowResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// redirect_url 是 github.com 的 manifest 创建页地址（含编码 manifest），
-	// 调用方整页跳转。
+	// Deprecated: GET 跳转形态废弃——manifest 必须经 HTML form POST 提交，
+	// GET query 形态被 GitHub 静默忽略（决策 8 修订）。编号保留防破坏，服务
+	// 端恒空。
+	//
+	// Deprecated: Marked as deprecated in fleetly/delivery/v1/github_apps.proto.
 	RedirectUrl string `protobuf:"bytes,1,opt,name=redirect_url,json=redirectUrl,proto3" json:"redirect_url,omitempty"`
-	// state 是签名流态（consume/complete 原样回传；调用方透明）。
+	// action_url 是 github.com 的 manifest 创建页地址；manifest 字段经 HTML
+	// form POST 提交（method=post、字段名 manifest、值为 JSON 字符串）。
+	ActionUrl string `protobuf:"bytes,3,opt,name=action_url,json=actionUrl,proto3" json:"action_url,omitempty"`
+	// manifest 是创建参数 JSON 字符串（名字/权限/回跳地址——私钥由 GitHub
+	// 生成并经回调回传平台）。调用方渲染隐藏表单自动提交。
+	Manifest string `protobuf:"bytes,4,opt,name=manifest,proto3" json:"manifest,omitempty"`
+	// state 是签名流态（consume/complete 原样回传；GitHub 在 redirect_url
+	// 上原样回显——兼 CSRF）。调用方透明。
 	State         string `protobuf:"bytes,2,opt,name=state,proto3" json:"state,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -772,9 +782,24 @@ func (*StartManifestFlowResponse) Descriptor() ([]byte, []int) {
 	return file_fleetly_delivery_v1_github_apps_proto_rawDescGZIP(), []int{11}
 }
 
+// Deprecated: Marked as deprecated in fleetly/delivery/v1/github_apps.proto.
 func (x *StartManifestFlowResponse) GetRedirectUrl() string {
 	if x != nil {
 		return x.RedirectUrl
+	}
+	return ""
+}
+
+func (x *StartManifestFlowResponse) GetActionUrl() string {
+	if x != nil {
+		return x.ActionUrl
+	}
+	return ""
+}
+
+func (x *StartManifestFlowResponse) GetManifest() string {
+	if x != nil {
+		return x.Manifest
 	}
 	return ""
 }
@@ -1052,9 +1077,12 @@ const file_fleetly_delivery_v1_github_apps_proto_rawDesc = "" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tH\x00R\tprojectId\x12\x18\n" +
 	"\x06global\x18\x02 \x01(\bH\x00R\x06globalB\a\n" +
-	"\x05scope\"T\n" +
-	"\x19StartManifestFlowResponse\x12!\n" +
-	"\fredirect_url\x18\x01 \x01(\tR\vredirectUrl\x12\x14\n" +
+	"\x05scope\"\x93\x01\n" +
+	"\x19StartManifestFlowResponse\x12%\n" +
+	"\fredirect_url\x18\x01 \x01(\tB\x02\x18\x01R\vredirectUrl\x12\x1d\n" +
+	"\n" +
+	"action_url\x18\x03 \x01(\tR\tactionUrl\x12\x1a\n" +
+	"\bmanifest\x18\x04 \x01(\tR\bmanifest\x12\x14\n" +
 	"\x05state\x18\x02 \x01(\tR\x05state\"F\n" +
 	"\x1aConsumeManifestCodeRequest\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\tR\x04code\x12\x14\n" +

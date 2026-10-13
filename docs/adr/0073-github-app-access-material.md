@@ -24,7 +24,7 @@
 
 7. **词汇**:实体定名 **GitHub App**(CONTEXT.md 新词条,零 Avoid 变更)——Provider 词条已被"Capability 的具体实现"占用,更名即设计缺陷。
 
-8. **Manifest 自动建流(阶段 C,2026-10-13 同日拉回落地)**:GitHub App Manifest 流(dokploy 同款)——`StartManifestFlow`(生成 github.com 创建页跳转 URL;state = HMAC 签名绑作用域,15 分钟时效)→ 用户在 GitHub 表单只填名字创建(私钥由 GitHub 生成并 **POST 回平台回调**,一次性 code)→ `ConsumeManifestCode`(code 换 App ID/PEM,即收即封暂存进程内流存储,给安装页 URL)→ 用户安装 → setup 回调带 installation_id → `CompleteManifestFlow`(受理即验证 + upsert 落行,nonce 单用;project_id 回传并经流态一致性校验,冻结锚不可骗)。前提 = 公网 console 基址(console.host 注入,空 = 流禁用手动表单兜底);手动表单保留为 fallback(GHES/CLI/受限环境)。start/consume 不落任何平台行(冻结面豁免),complete 落行进 FrozenVerbs。
+8. **Manifest 自动建流(阶段 C,2026-10-13 同日拉回落地)**:GitHub App Manifest 流(dokploy 同款)——`StartManifestFlow`(生成 **POST 表单材料**:action_url=`https://github.com/settings/apps/new?state=<签名态>` + manifest JSON 字符串;state = HMAC 签名绑作用域兼 GitHub 回显 CSRF,15 分钟时效;调用方渲染隐藏表单整页 POST)→ 用户在 GitHub 表单只填名字创建(私钥由 GitHub 生成并 **POST 回平台回调**,一次性 code)→ `ConsumeManifestCode`(code 换 App ID/PEM,即收即封暂存进程内流存储,给安装页 URL)→ 用户安装 → setup 回调带 installation_id → `CompleteManifestFlow`(受理即验证 + upsert 落行,nonce 单用;project_id 回传并经流态一致性校验,冻结锚不可骗)。前提 = 公网 console 基址(console.host 注入,空 = 流禁用手动表单兜底);手动表单保留为 fallback(GHES/CLI/受限环境)。start/consume 不落任何平台行(冻结面豁免),complete 落行进 FrozenVerbs。**提交形态勘误(真机两连咬)**:manifest 必须经 HTML form POST(字段名 `manifest`、值为 JSON 字符串)——GET 跳转带 query 参数(无论 base64url 还是标准 Base64 编码)都被 GitHub 静默忽略、表单全空;两次编码修正后经官方文档取证方定位根因为形态而非编码。
 
 ## Consequences
 

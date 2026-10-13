@@ -547,7 +547,7 @@ ADR-0015 升级序的完整落地形态：**Platform Backup 前置 → SIGTERM �
 
 **挂账**：真机全链（GitHub 建 App → put → push → clone → build）待用户 GitHub 侧操作，操作序见上节。
 
-**同日两次热修换装**：`59d2882-adr73fix`（ListRepos 鉴权修正——App JWT 直打 installation 端点=401，真机 Repos 面板咬出；假 GitHub 补 Bearer 执法）→ `bc95bc4-adr73m`（manifest 编码口径修正——GitHub 要求标准 Base64+URL 编码，base64url 被静默忽略=跳转后表单全空，用户真机咬出；apitest 解码回 JSON 逐字段钉契约）。各自 Platform Backup 前置（30d64f8f / 快照随 bc95bc4 批）。已知非门禁闪失：apitest `delete_volume_coverage` 在 `-count=2` 下有 db 卷异步物化竞态（受管库同名卷先落地=E_ALREADY_EXISTS），`-count=1` 门禁恒绿，与本批无关，独立在案。
+**同日两次热修换装**：`59d2882-adr73fix`（ListRepos 鉴权修正——App JWT 直打 installation 端点=401，真机 Repos 面板咬出；假 GitHub 补 Bearer 执法）→ `bc95bc4-adr73m`（manifest 编码口径修正——当时误判为编码问题，后被官方文档证伪）。各自 Platform Backup 前置（30d64f8f / 快照随 bc95bc4 批）。已知非门禁闪失：apitest `delete_volume_coverage` 在 `-count=2` 下有 db 卷异步物化竞态（受管库同名卷先落地=E_ALREADY_EXISTS），`-count=1` 门禁恒绿，与本批无关，独立在案。
 
 **平台账号注记**：Global 行写面要求平台 owner——walker（builtin-admin）按律被拒后，建 owner 用户 `platform`（`fleetly users create --role builtin-owner --password … platform`，REST 登录 whoami 实证 role=owner/team=default）。注意 CLI 旗标前置铁律第四次咬人：`users create` 的 NAME 是位置参数，flags 必须全数前置。
 
@@ -562,7 +562,7 @@ ADR-0015 升级序的完整落地形态：**Platform Backup 前置 → SIGTERM �
 
 非 github.com 主机（或不想走 App）：`fleetly secrets put --project P --value '{"username":"ci","secret":"TOKEN"}' git:HOST`（flags 前置于 NAME 位置参数；值 JSON，age 信封只回指纹）——解析序在 GitHub App 之后、匿名之前；URL 内嵌 token 形态两写面（hooks set / spec_file git 源）一律拒绝。
 
-**console 跳转自动建流（ADR-0073 决策 8，0a32dfb 后批上线）**：GitHub Apps 页 Add 对话框首选路径「Continue to GitHub」——manifest 流三步跳转（创建页只填名字 → 私钥由 GitHub 回传平台 → 安装页勾仓库 → 自动回跳落行），用户零手抄。前提 = console.host 已配置（redirect_url 必须 https）。手动表单保留为 fallback。注意：App 本体不声明 webhook——推送触发仍走 per-App 的 flthook_ 手工配置（上节第 3 步不变）。
+**console 跳转自动建流（ADR-0073 决策 8，0a32dfb 后批上线）**：GitHub Apps 页 Add 对话框首选路径「Continue to GitHub」——浏览器整页 **form POST** 到 github.com/settings/apps/new（字段名 manifest = 预填 JSON；GET 跳转带 query 被 GitHub 静默忽略、表单全空——真机两连咬实录见 ADR 决策 8 勘误），manifest 流三步跳转（创建页只填名字 → 私钥由 GitHub 回传平台 → 安装页勾仓库 → 自动回跳落行），用户零手抄。前提 = console.host 已配置（redirect_url 必须 https）。手动表单保留为 fallback。注意：App 本体不声明 webhook——推送触发仍走 per-App 的 flthook_ 手工配置（上节第 3 步不变）。
 5. **重启 fleetlyd**——daemon 装载面与 rewrap 同源：现役加密 + 退役兜底解封，轮换窗口内重启不破坏旧密文注入路径。
 6. **退役旧 key**：报告全 0 重封且平台 Secret 注入正常后，删除 `master-retired-*.agekey`（Platform Backup 含密封密钥，恢复走解封闭环；KEK 本体单独保管）。
 

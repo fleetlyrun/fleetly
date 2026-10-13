@@ -402,8 +402,9 @@ func ghManifestScope(project string, global bool) (string, bool, error) {
 	return project, global, nil
 }
 
-// StartManifestFlow 生成 manifest 跳转 URL（state 签名绑作用域，15 分钟
-// 时效）。未配置公网 console 基址 = 精确失败（手动表单兜底）。
+// StartManifestFlow 生成 manifest POST 表单材料（action_url + manifest JSON
+// + 签名 state；state 绑作用域，15 分钟时效）。调用方渲染隐藏表单自动提交。
+// 未配置公网 console 基址 = 精确失败（手动表单兜底）。
 func (svc *GitHubAppsService) StartManifestFlow(ctx context.Context, req *deliveryv1.StartManifestFlowRequest) (*deliveryv1.StartManifestFlowResponse, error) {
 	projectID, isGlobal, err := ghManifestScope(req.GetProjectId(), req.GetGlobal())
 	if err != nil {
@@ -445,11 +446,13 @@ func (svc *GitHubAppsService) StartManifestFlow(ctx context.Context, req *delive
 	if err != nil {
 		return nil, apperr.New("E_INTERNAL", "manifest encoding failed: %v", err)
 	}
-	// manifest 编码口径（GitHub 文档 "Creating a GitHub App from a manifest"）：
-	// 标准 Base64 再 URL 编码——base64url 会被 GitHub 静默忽略，表单全空
-	// （真机咬出：跳转后字段全空即此根因）。
-	redirect := "https://github.com/settings/apps/new?state=" + url.QueryEscape(base64.StdEncoding.EncodeToString(raw))
-	return &deliveryv1.StartManifestFlowResponse{RedirectUrl: redirect, State: state}, nil
+	// 提交形态（GitHub 文档 "Creating a GitHub App from a manifest"）：浏览器
+	// 以 HTML form **POST** 提交到 apps/new，字段名 manifest、值为 JSON 字符
+	// 串；action 上的 state 查询参数是 GitHub 原样回显的 CSRF 串。GET 跳转
+	// 带 query 一律被静默忽略（真机两连咬：base64url 与 std-base64 编码都修
+	// 不好空表单——根因是形态而非编码）。
+	action := "https://github.com/settings/apps/new?state=" + url.QueryEscape(state)
+	return &deliveryv1.StartManifestFlowResponse{ActionUrl: action, Manifest: string(raw), State: state}, nil
 }
 
 // ConsumeManifestCode 用一次性 code 换 App 凭据：私钥即收即封暂存流存储
