@@ -7,6 +7,9 @@ package apitest_test
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -27,8 +30,9 @@ func TestGitHubAppManifestFlow(t *testing.T) {
 	projects := structurev1.NewProjectsServiceClient(h.Conn)
 	ghApps := deliveryv1.NewGitHubAppsServiceClient(h.Conn)
 
+	const base = "https://console.dev.fleetly.run"
 	fake := newFakeGitHub(t, h)
-	h.Services.GitHubManifestBase = "https://console.dev.fleetly.run"
+	h.Services.GitHubManifestBase = base
 	h.Services.GitHubManifestAPIBase = fake.srv.URL
 	p, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "manifest"})
 	require.NoError(t, err)
@@ -39,8 +43,22 @@ func TestGitHubAppManifestFlow(t *testing.T) {
 		Scope: &deliveryv1.StartManifestFlowRequest_ProjectId{ProjectId: projectID},
 	})
 	require.NoError(t, err)
-	assert.Contains(t, start.GetRedirectUrl(), "https://github.com/settings/apps/new?state=")
+	require.Contains(t, start.GetRedirectUrl(), "https://github.com/settings/apps/new?state=")
 	require.NotEmpty(t, start.GetState())
+
+	// manifest 编码契约（GitHub 文档口径）：标准 Base64 再 URL 编码——解码
+	// 回 JSON 并逐字段断言（base64url 会被 GitHub 静默忽略、表单全空）。
+	parsed, perr := url.Parse(start.GetRedirectUrl())
+	require.NoError(t, perr)
+	encoded := parsed.Query().Get("state")
+	require.NotEmpty(t, encoded)
+	decoded, derr := base64.StdEncoding.DecodeString(encoded)
+	require.NoError(t, derr, "manifest must be standard base64 (GitHub ignores base64url)")
+	var manifest map[string]any
+	require.NoError(t, json.Unmarshal(decoded, &manifest))
+	assert.Equal(t, base+"/github-apps/connect", manifest["redirect_url"], "callback lands on the console connect route")
+	assert.Equal(t, "read", manifest["default_permissions"].(map[string]any)["contents"])
+	assert.Equal(t, false, manifest["hook_attributes"].(map[string]any)["active"], "push trigger stays on the flthook channel")
 
 	// consume：一次性 code 换凭据（假 GitHub 的 conversions 单次有效），
 	// 安装页 URL 返回、行未落。

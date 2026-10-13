@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -444,7 +445,10 @@ func (svc *GitHubAppsService) StartManifestFlow(ctx context.Context, req *delive
 	if err != nil {
 		return nil, apperr.New("E_INTERNAL", "manifest encoding failed: %v", err)
 	}
-	redirect := "https://github.com/settings/apps/new?state=" + base64.RawURLEncoding.EncodeToString(raw)
+	// manifest 编码口径（GitHub 文档 "Creating a GitHub App from a manifest"）：
+	// 标准 Base64 再 URL 编码——base64url 会被 GitHub 静默忽略，表单全空
+	// （真机咬出：跳转后字段全空即此根因）。
+	redirect := "https://github.com/settings/apps/new?state=" + url.QueryEscape(base64.StdEncoding.EncodeToString(raw))
 	return &deliveryv1.StartManifestFlowResponse{RedirectUrl: redirect, State: state}, nil
 }
 
