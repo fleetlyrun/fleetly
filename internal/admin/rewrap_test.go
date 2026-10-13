@@ -16,6 +16,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/material"
 	"github.com/fleetlyrun/fleetly/internal/state"
+	"github.com/fleetlyrun/fleetly/internal/state/githubapp"
 	"github.com/fleetlyrun/fleetly/internal/state/hook"
 	"github.com/fleetlyrun/fleetly/internal/state/secret"
 )
@@ -58,6 +59,17 @@ func seedOldWorld(t *testing.T, root string) (string, *state.DB) {
 		AppID: "app-1", Repo: "acme/web", Branch: "main", Dockerfile: "Dockerfile",
 		TokenSHA256: "abc", TokenPrefix: "abcd",
 		SecretCiphertext: mustSeal("hook-secret"),
+	}))
+
+	// GitHub App 两态行各一（ADR-0073）：Global + Project 级。
+	ghApps := githubapp.New(db.Clock())
+	require.NoError(t, ghApps.Upsert(ctx, db.Runner(), &githubapp.App{
+		ProjectID: "", AppID: 201884, InstallationID: 51887734, AccountLogin: "giant-robots",
+		PrivateKeyCiphertext: mustSeal("gh-key-global"), PrivateKeyFingerprint: material.Fingerprint([]byte("gh-key-global")),
+	}))
+	require.NoError(t, ghApps.Upsert(ctx, db.Runner(), &githubapp.App{
+		ProjectID: "proj-a", AppID: 182345, InstallationID: 51790921, AccountLogin: "acme",
+		PrivateKeyCiphertext: mustSeal("gh-key-proj"), PrivateKeyFingerprint: material.Fingerprint([]byte("gh-key-proj")),
 	}))
 
 	oldKey, err := os.ReadFile(filepath.Join(root, "keys", "master.agekey")) //nolint:gosec // 测试夹具读测试自铸的 KEK
@@ -105,14 +117,27 @@ func listHookCT(t *testing.T, db *state.DB) map[string][]byte {
 	return out
 }
 
+func listGitHubCT(t *testing.T, db *state.DB) map[string][]byte {
+	t.Helper()
+	rows, err := githubapp.New(db.Clock()).ListAll(context.Background(), db.Runner())
+	require.NoError(t, err)
+	out := map[string][]byte{}
+	for _, r := range rows {
+		out[r.ID] = r.PrivateKeyCiphertext
+	}
+	return out
+}
+
 func TestRewrapRotationFlow(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
 	oldKey, db := seedOldWorld(t, root)
 	oldCTSecrets := listSecretCT(t, db)
 	oldCTHooks := listHookCT(t, db)
+	oldCTGitHub := listGitHubCT(t, db)
 	require.Len(t, oldCTSecrets, 3)
 	require.Len(t, oldCTHooks, 1)
+	require.Len(t, oldCTGitHub, 2)
 
 	cipher := rotateKeyFiles(t, root, oldKey)
 
@@ -124,6 +149,9 @@ func TestRewrapRotationFlow(t *testing.T) {
 	assert.Equal(t, 0, rep.SecretsCurrent)
 	assert.Equal(t, 1, rep.HooksTotal)
 	assert.Equal(t, 1, rep.HooksRewrapped)
+	assert.Equal(t, 2, rep.GitHubAppsTotal, "both scopes are covered")
+	assert.Equal(t, 2, rep.GitHubAppsRewrapped)
+	assert.Equal(t, 0, rep.GitHubAppsCurrent)
 	assert.Empty(t, rep.Failures)
 	for id, ct := range listSecretCT(t, db) {
 		assert.Equal(t, oldCTSecrets[id], ct, "dry run must not rewrite secret %s", id)
@@ -131,12 +159,16 @@ func TestRewrapRotationFlow(t *testing.T) {
 	for id, ct := range listHookCT(t, db) {
 		assert.Equal(t, oldCTHooks[id], ct, "dry run must not rewrite hook %s", id)
 	}
+	for id, ct := range listGitHubCT(t, db) {
+		assert.Equal(t, oldCTGitHub[id], ct, "dry run must not rewrite github app %s", id)
+	}
 
 	// 执行：单事务全量重封。
 	rep, err = RewrapSecrets(ctx, db, cipher, false)
 	require.NoError(t, err)
 	assert.Equal(t, 3, rep.SecretsRewrapped)
 	assert.Equal(t, 1, rep.HooksRewrapped)
+	assert.Equal(t, 2, rep.GitHubAppsRewrapped)
 
 	// 轮换生效断言：全部行现役（新）key 可解；新 key 单独在场可解；
 	// 旧 key 单独在场不再可解（旧 key 退役前提成立）。
@@ -149,6 +181,9 @@ func TestRewrapRotationFlow(t *testing.T) {
 	}
 	for id, ct := range listHookCT(t, db) {
 		assert.True(t, cipher.OpensWithActive(ct), "hook %s must be sealed to the active key", id)
+	}
+	for id, ct := range listGitHubCT(t, db) {
+		assert.True(t, cipher.OpensWithActive(ct), "github app %s must be sealed to the active key", id)
 	}
 	require.NoError(t, os.Remove(filepath.Join(root, "keys", "master-retired-2026-10.agekey")))
 	retiredDone, err := material.LoadExistingCipher(root)
@@ -170,17 +205,23 @@ func TestRewrapRotationFlow(t *testing.T) {
 	// 幂等重跑：全部已现行 → 零重写（密文逐字节不变）。
 	currentCTSecrets := listSecretCT(t, db)
 	currentCTHooks := listHookCT(t, db)
+	currentCTGitHub := listGitHubCT(t, db)
 	rep, err = RewrapSecrets(ctx, db, cipher, false)
 	require.NoError(t, err)
 	assert.Equal(t, 0, rep.SecretsRewrapped)
 	assert.Equal(t, 3, rep.SecretsCurrent)
 	assert.Equal(t, 0, rep.HooksRewrapped)
 	assert.Equal(t, 1, rep.HooksCurrent)
+	assert.Equal(t, 0, rep.GitHubAppsRewrapped)
+	assert.Equal(t, 2, rep.GitHubAppsCurrent)
 	for id, ct := range listSecretCT(t, db) {
 		assert.Equal(t, currentCTSecrets[id], ct, "idempotent rerun must not rewrite secret %s", id)
 	}
 	for id, ct := range listHookCT(t, db) {
 		assert.Equal(t, currentCTHooks[id], ct, "idempotent rerun must not rewrite hook %s", id)
+	}
+	for id, ct := range listGitHubCT(t, db) {
+		assert.Equal(t, currentCTGitHub[id], ct, "idempotent rerun must not rewrite github app %s", id)
 	}
 }
 
@@ -195,19 +236,28 @@ func TestRewrapRefusesUnopenableRows(t *testing.T) {
 	}))
 	hooks := hook.New(db.Clock())
 	require.NoError(t, hooks.UpdateSecretCiphertext(ctx, db.Runner(), "app-1", []byte("garbage")))
+	// GitHub App 不可解行：Global 行直改密文（Key 面 = global/<login>）。
+	ghApps := githubapp.New(db.Clock())
+	ghRow, err := ghApps.GetGlobalByOwner(ctx, db.Runner(), "giant-robots")
+	require.NoError(t, err)
+	require.NoError(t, ghApps.UpdatePrivateKeyCiphertext(ctx, db.Runner(), ghRow.ID, []byte("garbage")))
 
 	cipher := rotateKeyFiles(t, root, oldKey)
 
 	// dry-run：逐条报不可解，不落库。
 	rep, err := RewrapSecrets(ctx, db, cipher, true)
-	require.ErrorContains(t, err, "2 row(s) cannot be opened")
+	require.ErrorContains(t, err, "3 row(s) cannot be opened")
 	require.NotNil(t, rep)
-	assert.Len(t, rep.Failures, 2)
-	assert.Contains(t, []string{rep.Failures[0].Key, rep.Failures[1].Key}, "proj-a/corrupt")
-	assert.Contains(t, []string{rep.Failures[0].Key, rep.Failures[1].Key}, "app-1")
+	assert.Len(t, rep.Failures, 3)
+	assert.Contains(t, []string{rep.Failures[0].Key, rep.Failures[1].Key, rep.Failures[2].Key}, "proj-a/corrupt")
+	assert.Contains(t, []string{rep.Failures[0].Key, rep.Failures[1].Key, rep.Failures[2].Key}, "app-1")
+	assert.Contains(t, []string{rep.Failures[0].Key, rep.Failures[1].Key, rep.Failures[2].Key}, "global/giant-robots")
 	assert.Equal(t, 3, rep.SecretsRewrapped, "openable rows are still counted for the report")
 	assert.Equal(t, 1, rep.HooksTotal)
 	assert.Equal(t, 0, rep.HooksRewrapped, "the only hook row is the corrupt one")
+	assert.Equal(t, 2, rep.GitHubAppsTotal)
+	assert.Equal(t, 1, rep.GitHubAppsRewrapped)
+	assert.Equal(t, 0, rep.GitHubAppsCurrent, "the corrupt row is neither current nor rewrapped")
 	secretsAfter := listSecretCT(t, db)
 	assert.Equal(t, []byte("garbage"), secretsAfter["s-x"], "dry run must not write")
 
@@ -237,8 +287,10 @@ func TestRewrapEmptyDatabase(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 0, rep.SecretsTotal)
 	assert.Equal(t, 0, rep.HooksTotal)
+	assert.Equal(t, 0, rep.GitHubAppsTotal)
 	rep, err = RewrapSecrets(ctx, db, cipher, false)
 	require.NoError(t, err)
 	assert.Equal(t, 0, rep.SecretsTotal)
 	assert.Equal(t, 0, rep.HooksTotal)
+	assert.Equal(t, 0, rep.GitHubAppsTotal)
 }

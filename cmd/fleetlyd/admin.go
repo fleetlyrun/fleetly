@@ -111,6 +111,8 @@ func printRewrapReport(w io.Writer, rep *admin.RewrapReport, executed bool) {
 		rep.SecretsTotal, rep.SecretsRewrapped, action, rep.SecretsCurrent, countFailures(rep, "secret"))
 	_, _ = fmt.Fprintf(w, "hooks:   %d total, %d %s, %d already current, %d failed\n",
 		rep.HooksTotal, rep.HooksRewrapped, action, rep.HooksCurrent, countFailures(rep, "hook"))
+	_, _ = fmt.Fprintf(w, "github apps: %d total, %d %s, %d already current, %d failed\n",
+		rep.GitHubAppsTotal, rep.GitHubAppsRewrapped, action, rep.GitHubAppsCurrent, countFailures(rep, "github_app"))
 	for _, f := range rep.Failures {
 		_, _ = fmt.Fprintf(w, "failed %s %s: %s\n", f.Kind, f.Key, f.Err)
 	}

@@ -11,15 +11,17 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/material"
 	"github.com/fleetlyrun/fleetly/internal/state"
+	"github.com/fleetlyrun/fleetly/internal/state/githubapp"
 	"github.com/fleetlyrun/fleetly/internal/state/hook"
 	"github.com/fleetlyrun/fleetly/internal/state/secret"
 )
 
 // RewrapFailure 是一条不可解密文行的报告面（rewrap 拒执行时逐条列出）。
 type RewrapFailure struct {
-	// Kind 是行类别（"secret" | "hook"）。
+	// Kind 是行类别（"secret" | "hook" | "github_app"）。
 	Kind string `json:"kind"`
-	// Key 是行标识（secret: <project_id>/<name>；hook: <app_id>）。
+	// Key 是行标识（secret: <project_id>/<name>；hook: <app_id>；
+	// github_app: global/<login> 或 <project_id>/<login>）。
 	Key string `json:"key"`
 	// Err 是解封错误文本（不含明文）。
 	Err string `json:"error"`
@@ -28,13 +30,16 @@ type RewrapFailure struct {
 // RewrapReport 是一次 KEK 重封的报告面（人类与 JSON 双形态消费）。
 // total = current + rewrapped + failed。
 type RewrapReport struct {
-	SecretsTotal     int             `json:"secrets_total"`
-	SecretsRewrapped int             `json:"secrets_rewrapped"`
-	SecretsCurrent   int             `json:"secrets_current"`
-	HooksTotal       int             `json:"hooks_total"`
-	HooksRewrapped   int             `json:"hooks_rewrapped"`
-	HooksCurrent     int             `json:"hooks_current"`
-	Failures         []RewrapFailure `json:"failures,omitempty"`
+	SecretsTotal        int             `json:"secrets_total"`
+	SecretsRewrapped    int             `json:"secrets_rewrapped"`
+	SecretsCurrent      int             `json:"secrets_current"`
+	HooksTotal          int             `json:"hooks_total"`
+	HooksRewrapped      int             `json:"hooks_rewrapped"`
+	HooksCurrent        int             `json:"hooks_current"`
+	GitHubAppsTotal     int             `json:"github_apps_total"`
+	GitHubAppsRewrapped int             `json:"github_apps_rewrapped"`
+	GitHubAppsCurrent   int             `json:"github_apps_current"`
+	Failures            []RewrapFailure `json:"failures,omitempty"`
 }
 
 // sealClass 是密文行的钥匙分类（rewrap 的幂等判定轴）。
@@ -47,8 +52,9 @@ const (
 )
 
 // RewrapSecrets 用现役 KEK 重封全部密文行：secrets 表全部行（含
-// tombstone——undelete 路径依赖密文可解）与 app_hooks 的 webhook secret
-// 信封。dryRun=true 只做全量解封验证并报告将重封条数，不落任何库。
+// tombstone——undelete 路径依赖密文可解）、app_hooks 的 webhook secret
+// 信封与 github_apps 的私钥信封（ADR-0073，两态行统一）。
+// dryRun=true 只做全量解封验证并报告将重封条数，不落任何库。
 //
 // 原子性形态 = 单事务全量重封：SQLite 单写者（连接池已收口 1），行规模
 // 是团队级小集合；任一行不可解先全量报错拒执行，事务内不存在半途失败
@@ -59,6 +65,7 @@ func RewrapSecrets(ctx context.Context, db *state.DB, cipher *material.Cipher, d
 	rep := &RewrapReport{}
 	secrets := secret.New(db.Clock())
 	hooks := hook.New(db.Clock())
+	ghApps := githubapp.New(db.Clock())
 	run := db.Runner()
 
 	// 阶段一：全量解封分类，铸重封写单（不落库）。
@@ -121,6 +128,39 @@ func RewrapSecrets(ctx context.Context, db *state.DB, cipher *material.Cipher, d
 		default:
 			_, oerr := cipher.Open(row.SecretCiphertext)
 			rep.Failures = append(rep.Failures, RewrapFailure{Kind: "hook", Key: row.AppID, Err: oerr.Error()})
+		}
+	}
+
+	// GitHub App 私钥信封（ADR-0073）：两态行统一重封（Global 行的 Key
+	// 冠 global/ 前缀与 Project 域行区分）。
+	ghRows, err := ghApps.ListAll(ctx, run)
+	if err != nil {
+		return nil, fmt.Errorf("admin: list github apps: %w", err)
+	}
+	for i := range ghRows {
+		row := &ghRows[i]
+		rep.GitHubAppsTotal++
+		key := row.ProjectID + "/" + row.AccountLogin
+		if row.ProjectID == "" {
+			key = "global/" + row.AccountLogin
+		}
+		switch classify(cipher, row.PrivateKeyCiphertext) {
+		case classCurrent:
+			rep.GitHubAppsCurrent++
+		case classRetired:
+			ct, werr := reseal(cipher, row.PrivateKeyCiphertext)
+			if werr != nil {
+				rep.Failures = append(rep.Failures, RewrapFailure{Kind: "github_app", Key: key, Err: werr.Error()})
+				continue
+			}
+			id := row.ID
+			writes = append(writes, write{kind: "github_app", key: key, run: func(ctx context.Context, tx *sql.Tx) error {
+				return ghApps.UpdatePrivateKeyCiphertext(ctx, tx, id, ct)
+			}})
+			rep.GitHubAppsRewrapped++
+		default:
+			_, oerr := cipher.Open(row.PrivateKeyCiphertext)
+			rep.Failures = append(rep.Failures, RewrapFailure{Kind: "github_app", Key: key, Err: oerr.Error()})
 		}
 	}
 
