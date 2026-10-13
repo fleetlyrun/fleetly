@@ -154,7 +154,7 @@ func (svc *HooksService) handlePush(ctx context.Context, req *deliveryv1.Receive
 	} else if !errors.Is(lerr, state.ErrNotFound) {
 		return nil, mapStateError(lerr, "revision")
 	}
-	rev, err := freezeRevision(ctx, svc.s, appRow, appSpec)
+	rev, err := freezeRevision(ctx, svc.s, appRow, appSpec, "")
 	if err != nil {
 		return nil, mapStateError(err, "revision")
 	}

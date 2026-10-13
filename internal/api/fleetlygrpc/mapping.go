@@ -167,6 +167,7 @@ func deploymentMsg(d deployment.Deployment) *deliveryv1.Deployment {
 func revisionMsg(rev revision.Revision) *deliveryv1.Revision {
 	msg := &deliveryv1.Revision{
 		Id: rev.ID, AppId: rev.AppID, Seq: rev.Seq, Digest: rev.Digest, CreatedAt: rev.CreatedAt,
+		SourceText: rev.SourceText,
 	}
 	var frozen specv1.AppSpec
 	if err := protojson.Unmarshal(rev.Spec, &frozen); err == nil {

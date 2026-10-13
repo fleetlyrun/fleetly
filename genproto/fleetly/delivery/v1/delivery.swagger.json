@@ -1549,6 +1549,10 @@
         "source_kind": {
           "$ref": "#/definitions/v1SourceKind",
           "title": "source_kind 是冻结体材料来源投影（ADR-0071 决策 6：逐 Revision\nprovenance，从 source oneof 派生，零迁移——git push 覆盖历史从此\n可读）。口径 = \"谁提供了构建材料\"，非\"谁发起的部署\"（后者属审计面）。"
+        },
+        "source_text": {
+          "type": "string",
+          "title": "source_text 是受理原文（ADR-0074 决策 7）：compose 源的用户亲笔文件\n原样冻结；其他源（image/upload/git/spec_file）为空。不参与 digest\n（内容寻址以 IR protojson 为锚）；读面按非空渲染 compose 源卡。"
         }
       }
     },

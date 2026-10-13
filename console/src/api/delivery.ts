@@ -741,6 +741,12 @@ export interface components {
              */
             process_strategies?: components["schemas"]["v1ProcessStrategy"][];
             source_kind?: components["schemas"]["v1SourceKind"];
+            /**
+             * source_text 是受理原文（ADR-0074 决策 7）：compose 源的用户亲笔文件
+             *     原样冻结；其他源（image/upload/git/spec_file）为空。不参与 digest
+             *     （内容寻址以 IR protojson 为锚）；读面按非空渲染 compose 源卡。
+             */
+            source_text?: string;
         };
         v1RollbackResponse: {
             deployment?: components["schemas"]["v1Deployment"];

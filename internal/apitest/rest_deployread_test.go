@@ -121,4 +121,10 @@ func TestRESTDeploymentReadSurface(t *testing.T) {
 	assert.Equal(t, "web", entry2["process"])
 	_, hasStrategy := entry2["strategy"]
 	assert.False(t, hasStrategy, "the rolling revision omits the zero-value strategy field")
+
+	// 受理原文冻结读面（ADR-0074 决策 7）：R1 是 compose 源——用户亲笔
+	// 文件原样透出；R2 是 image 直投——source_text 零值省略。
+	assert.Contains(t, r1["source_text"], "x-fleetly-strategy: blue-green", "the compose revision carries its verbatim source")
+	_, hasSource := r2["source_text"]
+	assert.False(t, hasSource, "non-compose revisions omit the zero-value source_text field")
 }

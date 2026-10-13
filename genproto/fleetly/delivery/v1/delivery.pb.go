@@ -1196,7 +1196,11 @@ type Revision struct {
 	// source_kind 是冻结体材料来源投影（ADR-0071 决策 6：逐 Revision
 	// provenance，从 source oneof 派生，零迁移——git push 覆盖历史从此
 	// 可读）。口径 = "谁提供了构建材料"，非"谁发起的部署"（后者属审计面）。
-	SourceKind    SourceKind `protobuf:"varint,7,opt,name=source_kind,json=sourceKind,proto3,enum=fleetly.delivery.v1.SourceKind" json:"source_kind,omitempty"`
+	SourceKind SourceKind `protobuf:"varint,7,opt,name=source_kind,json=sourceKind,proto3,enum=fleetly.delivery.v1.SourceKind" json:"source_kind,omitempty"`
+	// source_text 是受理原文（ADR-0074 决策 7）：compose 源的用户亲笔文件
+	// 原样冻结；其他源（image/upload/git/spec_file）为空。不参与 digest
+	// （内容寻址以 IR protojson 为锚）；读面按非空渲染 compose 源卡。
+	SourceText    string `protobuf:"bytes,8,opt,name=source_text,json=sourceText,proto3" json:"source_text,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1278,6 +1282,13 @@ func (x *Revision) GetSourceKind() SourceKind {
 		return x.SourceKind
 	}
 	return SourceKind_SOURCE_KIND_UNSPECIFIED
+}
+
+func (x *Revision) GetSourceText() string {
+	if x != nil {
+		return x.SourceText
+	}
+	return ""
 }
 
 // ProcessStrategy 是 Revision 冻结体的单进程策略摘要（F3.1：双代窗叙事
@@ -3583,7 +3594,7 @@ const file_fleetly_delivery_v1_delivery_proto_rawDesc = "" +
 	"\x16WaitDeploymentResponse\x12?\n" +
 	"\n" +
 	"deployment\x18\x01 \x01(\v2\x1f.fleetly.delivery.v1.DeploymentR\n" +
-	"deployment\"\x91\x02\n" +
+	"deployment\"\xb2\x02\n" +
 	"\bRevision\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x15\n" +
 	"\x06app_id\x18\x02 \x01(\tR\x05appId\x12\x10\n" +
@@ -3593,7 +3604,9 @@ const file_fleetly_delivery_v1_delivery_proto_rawDesc = "" +
 	"created_at\x18\x05 \x01(\tR\tcreatedAt\x12S\n" +
 	"\x12process_strategies\x18\x06 \x03(\v2$.fleetly.delivery.v1.ProcessStrategyR\x11processStrategies\x12@\n" +
 	"\vsource_kind\x18\a \x01(\x0e2\x1f.fleetly.delivery.v1.SourceKindR\n" +
-	"sourceKind\"h\n" +
+	"sourceKind\x12\x1f\n" +
+	"\vsource_text\x18\b \x01(\tR\n" +
+	"sourceText\"h\n" +
 	"\x0fProcessStrategy\x12\x18\n" +
 	"\aprocess\x18\x01 \x01(\tR\aprocess\x12;\n" +
 	"\bstrategy\x18\x02 \x01(\x0e2\x1f.fleetly.spec.v1.DeployStrategyR\bstrategy\"`\n" +

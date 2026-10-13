@@ -15,14 +15,16 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
-// Revision 是聚合行（不可变）。
+// Revision 是聚合行（不可变）。SourceText 是受理原文（compose 源的用户
+// 亲笔文件；其他源空串——ADR-0074；不参与 digest，见 00031 迁移注记）。
 type Revision struct {
-	ID        string
-	AppID     string
-	Seq       int64
-	Digest    string
-	Spec      []byte
-	CreatedAt string
+	ID         string
+	AppID      string
+	Seq        int64
+	Digest     string
+	Spec       []byte
+	SourceText string
+	CreatedAt  string
 }
 
 // Repo 是 Revision 聚合存取。
@@ -51,9 +53,9 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, rev *Revision) erro
 		rev.ID = entityid.Revision(rev.AppID, rev.Seq)
 	}
 	_, err := run.ExecContext(ctx, `
-		INSERT INTO revisions (id, app_id, seq, digest, spec, created_at)
-		VALUES (?, ?, ?, ?, ?, ?)`,
-		rev.ID, rev.AppID, rev.Seq, rev.Digest, rev.Spec, rev.CreatedAt)
+		INSERT INTO revisions (id, app_id, seq, digest, spec, source_text, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		rev.ID, rev.AppID, rev.Seq, rev.Digest, rev.Spec, rev.SourceText, rev.CreatedAt)
 	if state.IsUniqueViolation(err) {
 		return fmt.Errorf("%w: revision with identical spec already frozen for app", state.ErrAlreadyExists)
 	}
@@ -64,7 +66,7 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, rev *Revision) erro
 // 部署复用 Rn 而非新冻结 Rn+1）。
 func (r *Repo) FindByDigest(ctx context.Context, run state.Runner, appID, digest string) (*Revision, error) {
 	row := run.QueryRowContext(ctx, `
-		SELECT id, app_id, seq, digest, spec, created_at
+		SELECT id, app_id, seq, digest, spec, source_text, created_at
 		FROM revisions WHERE app_id = ? AND digest = ?`, appID, digest)
 	return scanRevision(row.Scan)
 }
@@ -72,7 +74,7 @@ func (r *Repo) FindByDigest(ctx context.Context, run state.Runner, appID, digest
 // Get 按 ID 直读。
 func (r *Repo) Get(ctx context.Context, run state.Runner, id string) (*Revision, error) {
 	row := run.QueryRowContext(ctx, `
-		SELECT id, app_id, seq, digest, spec, created_at
+		SELECT id, app_id, seq, digest, spec, source_text, created_at
 		FROM revisions WHERE id = ?`, id)
 	return scanRevision(row.Scan)
 }
@@ -80,7 +82,7 @@ func (r *Repo) Get(ctx context.Context, run state.Runner, id string) (*Revision,
 // GetBySeq 按 App 内序号读（R1..Rn 对外形态）。
 func (r *Repo) GetBySeq(ctx context.Context, run state.Runner, appID string, seq int64) (*Revision, error) {
 	row := run.QueryRowContext(ctx, `
-		SELECT id, app_id, seq, digest, spec, created_at
+		SELECT id, app_id, seq, digest, spec, source_text, created_at
 		FROM revisions WHERE app_id = ? AND seq = ?`, appID, seq)
 	return scanRevision(row.Scan)
 }
@@ -89,7 +91,7 @@ func (r *Repo) GetBySeq(ctx context.Context, run state.Runner, appID string, seq
 // 调用方结合 Deployment 终态判定，本 repo 不持部署语义）。
 func (r *Repo) Latest(ctx context.Context, run state.Runner, appID string) (*Revision, error) {
 	row := run.QueryRowContext(ctx, `
-		SELECT id, app_id, seq, digest, spec, created_at
+		SELECT id, app_id, seq, digest, spec, source_text, created_at
 		FROM revisions WHERE app_id = ? ORDER BY seq DESC LIMIT 1`, appID)
 	return scanRevision(row.Scan)
 }
@@ -113,7 +115,7 @@ func (r *Repo) ListByApp(ctx context.Context, run state.Runner, appID string, af
 		limit = defaultListLimit
 	}
 	q := `
-		SELECT id, app_id, seq, digest, spec, created_at
+		SELECT id, app_id, seq, digest, spec, source_text, created_at
 		FROM revisions WHERE app_id = ?`
 	args := []any{appID}
 	if afterSeq > 0 {
@@ -145,7 +147,7 @@ const (
 
 func scanRevision(scan func(dest ...any) error) (*Revision, error) {
 	var rev Revision
-	if err := scan(&rev.ID, &rev.AppID, &rev.Seq, &rev.Digest, &rev.Spec, &rev.CreatedAt); err != nil {
+	if err := scan(&rev.ID, &rev.AppID, &rev.Seq, &rev.Digest, &rev.Spec, &rev.SourceText, &rev.CreatedAt); err != nil {
 		return nil, state.MapScanErr(err)
 	}
 	return &rev, nil

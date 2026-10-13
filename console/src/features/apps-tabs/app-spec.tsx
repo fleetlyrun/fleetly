@@ -61,7 +61,7 @@ export function AppSpecTab({ projectId, appId, seq }: { projectId: string; appId
     queryKey: ["app-revision-spec", appId, viewSeq ?? -1],
     enabled: viewSeq != null && viewSeq > 0,
     queryFn: async () =>
-      apiFetch<{ spec?: unknown }>(`/v1/revisions/${encodeURIComponent(appId)}/${viewSeq}`),
+      apiFetch<{ spec?: unknown; revision?: { source_text?: string } }>(`/v1/revisions/${encodeURIComponent(appId)}/${viewSeq}`),
   });
 
   // 编辑-部署动线（ADR-0072 写面）：冻结体预填可编辑，部署走 spec_file
@@ -155,6 +155,28 @@ export function AppSpecTab({ projectId, appId, seq }: { projectId: string; appId
         <p className="rounded-lg border border-[color-mix(in_oklch,var(--status-warning)_35%,transparent)] bg-[var(--status-warning-bg)] px-3 py-2 text-xs text-[var(--status-warning)]">
           Latest frozen R{latestFrozenSeq} is not effective yet — the cluster is running R{viewSeq} (the newest deployment failed or was rolled back).
         </p>
+      ) : null}
+
+      {/* ⓪ 受理原文（ADR-0074 决策 7，收 W-9）：compose 源的用户亲笔文件
+          原样冻结——IR 之上的可读层；非 compose 源无此卡。 */}
+      {frozen.data?.revision?.source_text ? (
+        <Card>
+          <CardHeader className="flex-row items-center">
+            <CardTitle className="flex items-center gap-1.5 text-sm">
+              <FileJsonIcon className="size-3.5 text-muted-foreground" />
+              Compose Source
+            </CardTitle>
+            <span className="ml-auto flex items-center gap-2">
+              <span className="text-2xs text-muted-foreground">verbatim as accepted · frozen with the revision</span>
+              <CopyButton value={frozen.data.revision.source_text} />
+            </span>
+          </CardHeader>
+          <CardContent>
+            <pre className="max-h-96 overflow-auto rounded-lg bg-muted/50 p-3 font-mono text-2xs leading-relaxed">
+              {frozen.data.revision.source_text}
+            </pre>
+          </CardContent>
+        </Card>
       ) : null}
 
       {/* ① 冻结 Spec：全文 JSON */}

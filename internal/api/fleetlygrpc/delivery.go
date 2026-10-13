@@ -118,7 +118,7 @@ func (svc *DeploymentsService) Deploy(ctx context.Context, req *deliveryv1.Deplo
 	}
 
 	// Revision 冻结（内容寻址复用：同内容只冻结一份；R1..Rn 序号 App 内单调）。
-	rev, err := freezeRevision(ctx, svc.s, appRow, appSpec)
+	rev, err := freezeRevision(ctx, svc.s, appRow, appSpec, req.GetComposeYaml())
 	if err != nil {
 		return nil, mapStateError(err, "revision")
 	}
@@ -151,7 +151,7 @@ func unmarshalFrozenSpec(blob []byte) (*specv1.AppSpec, error) {
 // （底）与 App 层 AppVariable（顶）合成进全部进程（源声明 env 居中被
 // 顶层覆盖），Revision 冻结的即最终生效集——所有源形态
 // （image/compose/upload/git push）经此归一。
-func freezeRevision(ctx context.Context, s *Services, appRow *app.App, appSpec *specv1.AppSpec) (*revision.Revision, error) {
+func freezeRevision(ctx context.Context, s *Services, appRow *app.App, appSpec *specv1.AppSpec, sourceText string) (*revision.Revision, error) {
 	if vars, err := s.SharedVariables.ListActive(ctx, s.DB.Runner(), appRow.ProjectID); err != nil {
 		return nil, err
 	} else if len(vars) > 0 {
@@ -186,7 +186,7 @@ func freezeRevision(ctx context.Context, s *Services, appRow *app.App, appSpec *
 			if serr != nil {
 				return serr
 			}
-			rev = &revision.Revision{AppID: appRow.ID, Seq: seq, Spec: body}
+			rev = &revision.Revision{AppID: appRow.ID, Seq: seq, Spec: body, SourceText: sourceText}
 			if cerr := s.Revisions.Create(ctx, tx, rev); cerr != nil {
 				return cerr
 			}
