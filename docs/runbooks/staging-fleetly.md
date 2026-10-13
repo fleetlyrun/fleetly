@@ -547,6 +547,8 @@ ADR-0015 升级序的完整落地形态：**Platform Backup 前置 → SIGTERM �
 
 **挂账**：真机全链（GitHub 建 App → put → push → clone → build）待用户 GitHub 侧操作，操作序见上节。
 
+**同日两次热修换装**：`59d2882-adr73fix`（ListRepos 鉴权修正——App JWT 直打 installation 端点=401，真机 Repos 面板咬出；假 GitHub 补 Bearer 执法）→ `bc95bc4-adr73m`（manifest 编码口径修正——GitHub 要求标准 Base64+URL 编码，base64url 被静默忽略=跳转后表单全空，用户真机咬出；apitest 解码回 JSON 逐字段钉契约）。各自 Platform Backup 前置（30d64f8f / 快照随 bc95bc4 批）。已知非门禁闪失：apitest `delete_volume_coverage` 在 `-count=2` 下有 db 卷异步物化竞态（受管库同名卷先落地=E_ALREADY_EXISTS），`-count=1` 门禁恒绿，与本批无关，独立在案。
+
 **平台账号注记**：Global 行写面要求平台 owner——walker（builtin-admin）按律被拒后，建 owner 用户 `platform`（`fleetly users create --role builtin-owner --password … platform`，REST 登录 whoami 实证 role=owner/team=default）。注意 CLI 旗标前置铁律第四次咬人：`users create` 的 NAME 是位置参数，flags 必须全数前置。
 
 ## GitHub App 接入（私有 Git 仓库，ADR-0073 阶段 B）
