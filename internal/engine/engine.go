@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/capability"
+	"github.com/fleetlyrun/fleetly/internal/github"
 	"github.com/fleetlyrun/fleetly/internal/material"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	alertrule "github.com/fleetlyrun/fleetly/internal/state/alertrule"
@@ -22,6 +23,7 @@ import (
 	configrepo "github.com/fleetlyrun/fleetly/internal/state/config"
 	dbrepo "github.com/fleetlyrun/fleetly/internal/state/database"
 	"github.com/fleetlyrun/fleetly/internal/state/deployment"
+	"github.com/fleetlyrun/fleetly/internal/state/githubapp"
 	"github.com/fleetlyrun/fleetly/internal/state/logcursor"
 	networkrepo "github.com/fleetlyrun/fleetly/internal/state/network"
 	"github.com/fleetlyrun/fleetly/internal/state/networkpeer"
@@ -495,6 +497,11 @@ type Engine struct {
 	volumes  *volume.Repo
 	networks *networkrepo.Repo // 受管 Proxy 挂网真源（活跃 Project 网络全量）
 
+	// GitHub App 接入材料（ADR-0073 阶段 B）：聚合 repo + 最小客户端——
+	// clone 前按 host+属主解析并现铸 installation token（gitmaterial.go）。
+	ghApps   *githubapp.Repo
+	ghClient *github.Client
+
 	// rotateMu 串行化 Database 凭证轮换（IA v3 二期⑤b）：并发轮换的
 	// utility/Secret 写交错可能落下 Secret 与数据面不一致的终态——全域
 	// 单飞是罕见运维动作的最小诚实防线（rotate.go 注）。
@@ -571,6 +578,8 @@ func New(deps Deps, opts Options) *Engine {
 		configs:      configrepo.New(clock),
 		volumes:      volume.New(clock),
 		networks:     networkrepo.New(clock),
+		ghApps:       githubapp.New(clock),
+		ghClient:     github.NewClient(nil, nil),
 		buildOpts:    buildOptions{Concurrency: opts.BuildConcurrency, Timeout: opts.BuildTimeout},
 	}
 	e.build.logs = newLogBuffer(500)

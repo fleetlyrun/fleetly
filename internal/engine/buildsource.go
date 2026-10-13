@@ -192,8 +192,14 @@ func (e *Engine) prepareBuildInput(ctx context.Context, d *deployment.Deployment
 		}
 		dir := filepath.Join(e.opts.DataRoot, "contexts", d.ToRevision)
 		if _, err := os.Stat(dir); os.IsNotExist(err) {
-			if err := e.cloneSource(ctx, origin.Git.GetRepo(), origin.Git.GetRef(), dir); err != nil {
-				return capability.BuildRequest{}, err
+			// 材料解析（ADR-0073 决策 1）：Project 级 GitHub App → Global →
+			// 匿名；命中而铸造失败 = 精确失败（不静默降级匿名）。
+			cloneURL, secrets, rerr := e.prepareCloneURL(ctx, projectID, origin.Git.GetRepo())
+			if rerr != nil {
+				return capability.BuildRequest{}, rerr
+			}
+			if cerr := e.cloneSource(ctx, cloneURL, origin.Git.GetRef(), dir, secrets); cerr != nil {
+				return capability.BuildRequest{}, cerr
 			}
 		}
 		contextDir = dir
@@ -345,8 +351,10 @@ func (e *Engine) extractUploadContext(ctx context.Context, uploadID, revisionID 
 }
 
 // cloneSource 浅检出（ref 为分支/tag；commit 精确检出用 checkout 二段式）。
-// Token 材料只进命令参数不进日志（ADR-0009：Token 不进日志路径段）。
-func (e *Engine) cloneSource(ctx context.Context, repo, ref, dir string) error {
+// repo 是待发送的 argv URL（可能内嵌访问材料 userinfo，ADR-0073）；secrets
+// 是错误输出中的字面脱敏清单（URL 整体剥除 + token 字面替换——Token 材料
+// 只进命令参数不进日志，ADR-0009）。
+func (e *Engine) cloneSource(ctx context.Context, repo, ref, dir string, secrets []string) error {
 	cloneCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 	if err := os.MkdirAll(filepath.Dir(dir), 0o750); err != nil {
@@ -358,17 +366,36 @@ func (e *Engine) cloneSource(ctx context.Context, repo, ref, dir string) error {
 	// .allow=never 双防线（58f901d）——此处非注入面。
 	cmd := exec.CommandContext(cloneCtx, "git", args...)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		// 输出可能含 URL（带 token）——剥离 repo 串后再入错误文本。
-		return fmt.Errorf("git clone: %v: %s", err, stripSecret(out, repo))
+		return cloneErr(err, out, repo, secrets)
 	}
 	if isHexSHA(ref) {
 		// ref 取自 Revision 冻结体（已冻结的不可变输入，非调用方实时注入）。
 		co := exec.CommandContext(cloneCtx, "git", "-C", dir, "checkout", "--quiet", ref) //nolint:gosec // ref 来自冻结体
 		if out, err := co.CombinedOutput(); err != nil {
-			return fmt.Errorf("git checkout %s: %v: %s", ref, err, stripSecret(out, repo))
+			return cloneErr(err, out, repo, secrets)
 		}
 	}
 	return nil
+}
+
+// cloneErr 收口 clone 的失败面：URL 剥除（从 https:// 起到空白占位——
+// 内嵌 userinfo 形态一并覆盖）+ 材料字面替换；认证类失败按材料命中与否
+// 给出指向性提示（私有仓无材料 → 指向 GitHub App 配置；有材料被拒 →
+// 指向安装状态）。
+func cloneErr(err error, out []byte, repo string, secrets []string) error {
+	stripped := stripSecret(out, repo)
+	for _, v := range secrets {
+		if v != "" {
+			stripped = strings.ReplaceAll(stripped, v, "<clone-material>")
+		}
+	}
+	if strings.Contains(stripped, "Authentication failed") || strings.Contains(stripped, "403") {
+		if len(secrets) > 0 {
+			return fmt.Errorf("git clone: %v: %s (the github app material was used but rejected — check the installation state and key)", err, stripped)
+		}
+		return fmt.Errorf("git clone: %v: %s (hint: private repository? configure a github app for this owner — 'fleetly github-apps put' or the console registry page)", err, stripped)
+	}
+	return fmt.Errorf("git clone: %v: %s", err, stripped)
 }
 
 // gitCloneArgs 组装 `git` 的 clone argv（单测钉死的执行面防线；两个 ref

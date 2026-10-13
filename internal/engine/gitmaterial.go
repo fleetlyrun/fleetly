@@ -1,0 +1,142 @@
+package engine
+
+// 构建期 Git 访问材料解析（ADR-0073 阶段 B 决策 1）：repo 以干净 URL 冻
+// 结，材料在 clone 前按 host+属主解析——Project 级 GitHub App → Global
+// （Project 遮蔽 Global）→ 无材料（nil = 匿名 clone，公有仓合法形态）。
+// 实体命中而材料不可用（解封/铸造失败）= 精确失败上抛，不静默降级匿名
+// （与 ADR-0036 凭证铸造失败不降级同口径）。明文只进 clone argv，错误
+// 输出经脱敏（cloneSource 侧）。
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net/url"
+	"strings"
+
+	"github.com/fleetlyrun/fleetly/internal/github"
+	"github.com/fleetlyrun/fleetly/internal/state"
+	"github.com/fleetlyrun/fleetly/internal/state/githubapp"
+)
+
+// installTokenUser 是 installation token 的 clone 用户名（GitHub App
+// installation token 的官方口径）；token 作为 password 进 userinfo。
+const installTokenUser = "x-access-token"
+
+// defaultGitHost 是 github.com 面的仓库名（GHES 行的 git host 从 api_base
+// 派生）。
+const defaultGitHost = "github.com"
+
+// gitMaterial 是解析出的 clone 材料（token 明文，只进 argv 与脱敏面）。
+type gitMaterial struct {
+	username string
+	token    string
+}
+
+// resolveGitMaterial 解析仓库的构建期访问材料。repo 解析失败（非 https/
+// 畸形 URL）返回无材料——受理面已拦新写入，存量冻结行走防御轨（clone
+// 原样失败并给出诚实错误）。
+func (e *Engine) resolveGitMaterial(ctx context.Context, projectID, repoURL string) (*gitMaterial, error) {
+	host, owner, ok := gitHostOwner(repoURL)
+	if !ok {
+		return nil, nil
+	}
+	use := func(row *githubapp.App) (*gitMaterial, error) {
+		if gitHostOf(row.APIBase) != host {
+			return nil, nil // host 失配（如 github.com 行对 GHES 仓）= 无材料
+		}
+		if e.cipher == nil {
+			return nil, fmt.Errorf("github app material for %s present but the master key is not available", owner)
+		}
+		plain, err := e.cipher.Open(row.PrivateKeyCiphertext)
+		if err != nil {
+			return nil, fmt.Errorf("decrypt github app material for %s: %w", owner, err)
+		}
+		token, err := e.ghClient.InstallationToken(ctx, &github.App{
+			EntityID: row.ID, KeyFingerprint: row.PrivateKeyFingerprint,
+			AppID: row.AppID, InstallationID: row.InstallationID,
+			APIBase: row.APIBase, PrivateKeyPEM: plain,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("mint installation token for %s: %w", owner, err)
+		}
+		return &gitMaterial{username: installTokenUser, token: token}, nil
+	}
+	row, err := e.ghApps.GetByProjectAndOwner(ctx, e.db.Runner(), projectID, owner)
+	switch {
+	case err == nil:
+		return use(row)
+	case !errors.Is(err, state.ErrNotFound):
+		return nil, fmt.Errorf("lookup github app material for %s: %w", owner, err)
+	}
+	row, err = e.ghApps.GetGlobalByOwner(ctx, e.db.Runner(), owner)
+	switch {
+	case err == nil:
+		return use(row)
+	case !errors.Is(err, state.ErrNotFound):
+		return nil, fmt.Errorf("lookup global github app material for %s: %w", owner, err)
+	}
+	return nil, nil
+}
+
+// gitHostOwner 拆 https 仓库 URL 的 host 与首段路径（owner；.git 后缀可
+// 有可无——匹配只在 owner 段）。非 https/畸形 URL 返回 false。
+func gitHostOwner(repoURL string) (host, owner string, ok bool) {
+	u, err := url.Parse(strings.TrimSpace(repoURL))
+	if err != nil || u.Scheme != "https" || u.Host == "" {
+		return "", "", false
+	}
+	seg := strings.TrimPrefix(u.Path, "/")
+	for i := 0; i < len(seg); i++ {
+		if seg[i] == '/' {
+			owner = seg[:i]
+			break
+		}
+	}
+	if owner == "" {
+		return "", "", false
+	}
+	return u.Host, strings.TrimSuffix(owner, ".git"), true
+}
+
+// gitHostOf 派生实体的 git host（api_base host；空 = github.com；畸形
+// api_base 原样返回——host 匹配自然失配，clone 走匿名）。
+func gitHostOf(apiBase string) string {
+	if strings.TrimSpace(apiBase) == "" {
+		return defaultGitHost
+	}
+	if u, err := url.Parse(strings.TrimSpace(apiBase)); err == nil && u.Host != "" {
+		return u.Host
+	}
+	return strings.TrimSpace(apiBase)
+}
+
+// assembleCloneURL 组装带凭据的 clone URL：userinfo 经 url.UserPassword
+// 转义（token 含保留字符安全），明文只进本返回值——调用方原样送 argv，
+// 错误输出由 cloneSource 脱敏。
+func assembleCloneURL(repoURL, username, token string) (string, error) {
+	u, err := url.Parse(strings.TrimSpace(repoURL))
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return "", fmt.Errorf("assemble clone URL: %q is not an absolute URL", repoURL)
+	}
+	u.User = url.UserPassword(username, token)
+	return u.String(), nil
+}
+
+// prepareCloneURL 解析访问材料并组装 clone argv URL：返回值原样进 argv；
+// secrets 是错误输出的字面脱敏清单（带凭据 URL 整体 + token）。无材料
+// 命中 = 原 URL + 空清单（匿名 clone）。
+func (e *Engine) prepareCloneURL(ctx context.Context, projectID, repoURL string) (string, []string, error) {
+	mat, err := e.resolveGitMaterial(ctx, projectID, repoURL)
+	if err != nil {
+		return "", nil, err
+	}
+	if mat == nil {
+		return repoURL, nil, nil
+	}
+	u, err := assembleCloneURL(repoURL, mat.username, mat.token)
+	if err != nil {
+		return "", nil, err
+	}
+	return u, []string{u, mat.token}, nil
+}
