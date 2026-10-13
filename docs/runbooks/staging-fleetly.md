@@ -534,8 +534,17 @@ ADR-0015 升级序的完整落地形态：**Platform Backup 前置 → SIGTERM �
    mv master.agekey master-retired-<日期>.agekey      # 旧 key 退役（保留解封）
    age-keygen | grep -v '^#' > master.agekey          # 新 key 就位现役名（chmod 600）
    ```
-3. **dry-run**（解封全量验证 + 报告将重封条数，不落库）：`fleetlyd admin rewrap --data-root /var/lib/fleetly`。输出 secrets/hooks 的 total / to rewrap / already current / failed 四列；`failed > 0`（报 `cannot be opened`）= 有行连退役 key 都解不开（key 全损或外来行）——先停下核对，执行模式整体拒跑、不写任何行。
-4. **执行**：`fleetlyd admin rewrap --data-root /var/lib/fleetly --execute`。单事务全量重封（secrets 全表含 tombstone + app_hooks 的 webhook secret 信封；指纹不变，任一行失败整体回滚）。幂等：已封到现役 key 的行跳过，重跑零重写。`--json` 形态供自动化核账。
+3. **dry-run**（解封全量验证 + 报告将重封条数，不落库）：`fleetlyd admin rewrap --data-root /var/lib/fleetly`。输出 secrets / hooks / github apps 三族的 total / to rewrap / already current / failed 列（ADR-0073 起 github_apps 私钥信封一并重封，Global 行 Key 冠 `global/` 前缀）；`failed > 0`（报 `cannot be opened`）= 有行连退役 key 都解不开（key 全损或外来行）——先停下核对，执行模式整体拒跑、不写任何行。
+4. **执行**：`fleetlyd admin rewrap --data-root /var/lib/fleetly --execute`。单事务全量重封（secrets 全表含 tombstone + app_hooks 的 webhook secret 信封 + github_apps 两态行的私钥信封；指纹不变，任一行失败整体回滚）。幂等：已封到现役 key 的行跳过，重跑零重写。`--json` 形态供自动化核账。
+
+## GitHub App 接入（私有 Git 仓库，ADR-0073 阶段 B）
+
+私有仓构建期材料面：repo 干净 URL 冻结，clone 前按 host+属主解析 GitHub App（Project 级 → Global → 匿名；命中即现铸 1h installation token）。操作序：
+
+1. **GitHub 侧**：Settings → Developer settings → GitHub Apps → New GitHub App（callback 留空、webhook 不勾——fleetly 的推送触发走自有 flthook_ 通道）→ 生成私钥下载 PEM → Install 到目标账号/组织（选仓库，Contents: Read-only 即够）→ 记下 App ID 与 installation 页 URL 里的 Installation ID。
+2. **落行**：`fleetly github-apps put --project PROJECT_ID --app-id N --installation-id N --private-key-file key.pem`（平台级加 `--global`、平台管理 token）。受理即验证：三元组错值当场 `E_INVALID_ARGUMENT`，属主自动解析入库。GHES 加 `--api-base https://ghe.example.com/api/v3`。
+3. **验证**：`fleetly github-apps repos --id ID` 现铸列仓（挂起/卸载在此以 `E_GITHUB_UPSTREAM` 诚实呈现）；私有仓 push → hook → clone → build 全链绿即通。读面（GetRevision / apps spec / console）repo 恒为干净 URL，无材料形态。
+4. **轮换**：GitHub 侧重生成私钥后重放同一条 put（同属主覆盖更新，指纹即变，token 缓存键随之失效）——无需重部署。
 5. **重启 fleetlyd**——daemon 装载面与 rewrap 同源：现役加密 + 退役兜底解封，轮换窗口内重启不破坏旧密文注入路径。
 6. **退役旧 key**：报告全 0 重封且平台 Secret 注入正常后，删除 `master-retired-*.agekey`（Platform Backup 含密封密钥，恢复走解封闭环；KEK 本体单独保管）。
 

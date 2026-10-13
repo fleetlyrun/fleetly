@@ -144,7 +144,7 @@ func TestResolveInstallation(t *testing.T) {
 	corrupt := newApp(srv.URL, []byte("not a pem"))
 	corrupt.InstallationID = 1 // 命中不存在路径也不会触网
 	_, err = client.ResolveInstallation(ctx, corrupt)
-	assert.ErrorContains(t, err, "private key PEM")
+	assert.ErrorContains(t, err, "must be a valid RSA PEM")
 	_ = key
 }
 
