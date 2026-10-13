@@ -60,8 +60,11 @@ var EnforcedMethods = map[string]bool{
 	"/fleetly.delivery.v1.DeploymentsService/Deploy":                 true,
 	"/fleetly.delivery.v1.DeploymentsService/Rollback":               true,
 	"/fleetly.delivery.v1.HooksService/SetGitHook":                   true,
-	"/fleetly.automation.v1.TasksService/CreateTask":                 true,
-	"/fleetly.automation.v1.SchedulesService/CreateSchedule":         true,
+	// GitHub App 受理即验证 + upsert 落库（ADR-0073）：同 key 重放返回首次
+	// 结果——不重复打上游 API，也不重复换私钥信封（SetGitHook 同款先例）。
+	"/fleetly.delivery.v1.GitHubAppsService/SetGitHubApp":    true,
+	"/fleetly.automation.v1.TasksService/CreateTask":         true,
+	"/fleetly.automation.v1.SchedulesService/CreateSchedule": true,
 	// peer 声明是创建型动词（落 pending 行；动词名不在创建型前缀集，显式
 	// 纳入——与 ReceiveWebhook 同款先例）。
 	"/fleetly.structure.v1.NetworksService/DeclareNetworkPeer": true,

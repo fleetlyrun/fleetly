@@ -55,6 +55,21 @@ func teamAuthorized(ctx context.Context, resourceTeam string) error {
 	return nil
 }
 
+// requirePlatformAdmin 是平台级行的写门（Global GitHub App 等）：builtin-
+// owner（default Team 的 owner）之外一律 E_FORBIDDEN——平台行无 Team 轴，
+// 行级授权不可达，此处是唯一门。
+func (s *Services) requirePlatformAdmin(ctx context.Context) error {
+	_, owner, err := callerTeam(ctx)
+	if err != nil {
+		return err
+	}
+	if !owner {
+		return apperr.New("E_FORBIDDEN",
+			"this operation manages platform-scoped material; a platform-admin token (default team owner) is required")
+	}
+	return nil
+}
+
 // authorizeTeamForProject 校验 Project 行的归属 Team。tombstone 行保持可
 // 授权（ADR-0035）：GetProject 按设计可读已删行（"tombstone 是事实不是
 // 秘密"），归属判定对已删行同样成立；活跃性拒绝由各写面事务内的

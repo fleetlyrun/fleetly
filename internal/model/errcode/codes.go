@@ -83,6 +83,13 @@ var builtins = []Code{
 		GRPC:       codes.FailedPrecondition,
 	},
 	{
+		ID:         "E_GITHUB_UPSTREAM",
+		Summary:    "The GitHub API call behind this operation failed (token minting, installation lookup, or repo listing).",
+		Suggestion: "Check network reachability of the configured api_base and the GitHub App installation state (suspended or uninstalled rows fail precise). Deployments retry on the next trigger once GitHub is reachable (ADR-0073).",
+		Source:     "internal/api/fleetlygrpc/githubapps.go + engine clone material path (ADR-0073 decision 3/4: verify-at-intake and build-time token minting)",
+		GRPC:       codes.Unavailable,
+	},
+	{
 		ID:         "E_CHANGE_FROZEN",
 		Summary:    "A change freeze is active for the team owning this resource; the change verb is refused with the freeze reason.",
 		Suggestion: "Read-only and stop verbs stay available during the freeze. An operator lifts it with 'fleetly freeze lift <id>' (the freeze_id context names the row).",

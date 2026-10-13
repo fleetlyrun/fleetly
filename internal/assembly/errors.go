@@ -57,6 +57,7 @@ var errcodeToHTTP = map[string]int{
 	"E_EVENTS_GONE":              http.StatusGone,
 	"E_EXEC_UNSUPPORTED":         http.StatusNotImplemented,
 	"E_FORBIDDEN":                http.StatusForbidden,
+	"E_GITHUB_UPSTREAM":          http.StatusBadGateway,
 	"E_IDEMPOTENCY_KEY_CONFLICT": http.StatusConflict,
 	"E_INTERNAL":                 http.StatusInternalServerError,
 	"E_INVALID_ARGUMENT":         http.StatusBadRequest,

@@ -1,0 +1,263 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "GitHub App 接入材料面（ADR-0073 阶段 B）：私有 Git 仓库的一等接入体。\n私钥 age 信封只写不读——读面只回指纹；Owner 受理即经 GitHub API 验证\n并自动解析（请求不携带属主）。双作用域：project_id（Project 级，行级\n授权）或 global（平台级，平台管理授权，全项目可用）；解析时 Project\n级遮蔽 Global。",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "GitHubAppsService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/v1/github-apps": {
+      "get": {
+        "summary": "ListGitHubApps 按作用域列指纹面（project_id 或 global 二选一必填）。",
+        "operationId": "GitHubAppsService_ListGitHubApps",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListGitHubAppsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "global",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
+          }
+        ],
+        "tags": [
+          "GitHubAppsService"
+        ]
+      },
+      "post": {
+        "summary": "SetGitHubApp 受理即验证：私钥签 JWT 读 installation 对象，校验三元\n组并解析属主后落库（错值精确报错，不等到首次构建）；同作用域同属主\n重复调用 = 覆盖更新（私钥轮换 = 重放 put）。明文只进受理与验证，\n响应与读面只回指纹。",
+        "operationId": "GitHubAppsService_SetGitHubApp",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1SetGitHubAppResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1SetGitHubAppRequest"
+            }
+          }
+        ],
+        "tags": [
+          "GitHubAppsService"
+        ]
+      }
+    },
+    "/v1/github-apps/{id}": {
+      "delete": {
+        "summary": "DeleteGitHubApp 软删（tombstone；解析面即时失效）。",
+        "operationId": "GitHubAppsService_DeleteGitHubApp",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1DeleteGitHubAppResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "GitHubAppsService"
+        ]
+      }
+    },
+    "/v1/github-apps/{id}/repos": {
+      "get": {
+        "summary": "ListGitHubAppRepos 现铸 token 列 installation 可达仓库（安装健康验证\n面；授权随行作用域）。",
+        "operationId": "GitHubAppsService_ListGitHubAppRepos",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListGitHubAppReposResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "GitHubAppsService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "v1DeleteGitHubAppResponse": {
+      "type": "object"
+    },
+    "v1GitHubApp": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "project_id": {
+          "type": "string",
+          "title": "project_id 空 = 平台级 Global。"
+        },
+        "app_id": {
+          "type": "string",
+          "format": "int64"
+        },
+        "installation_id": {
+          "type": "string",
+          "format": "int64"
+        },
+        "account_login": {
+          "type": "string",
+          "title": "account_login 受理时经 GitHub API 解析（系统填充，请求不携带）。"
+        },
+        "api_base": {
+          "type": "string",
+          "title": "api_base 空 = 缺省 github.com（GHES 携带完整基址）。"
+        },
+        "private_key_fingerprint": {
+          "type": "string",
+          "title": "private_key_fingerprint 是私钥指纹（sha256 前 16 hex）——明文永不回显。"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "updated_at": {
+          "type": "string"
+        }
+      }
+    },
+    "v1GitHubAppRepo": {
+      "type": "object",
+      "properties": {
+        "full_name": {
+          "type": "string",
+          "title": "full_name 是 \"owner/repo\" 全名。"
+        },
+        "private": {
+          "type": "boolean"
+        }
+      }
+    },
+    "v1ListGitHubAppReposResponse": {
+      "type": "object",
+      "properties": {
+        "repos": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1GitHubAppRepo"
+          }
+        }
+      }
+    },
+    "v1ListGitHubAppsResponse": {
+      "type": "object",
+      "properties": {
+        "apps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1GitHubApp"
+          }
+        }
+      }
+    },
+    "v1SetGitHubAppRequest": {
+      "type": "object",
+      "properties": {
+        "project_id": {
+          "type": "string"
+        },
+        "global": {
+          "type": "boolean"
+        },
+        "app_id": {
+          "type": "string",
+          "format": "int64"
+        },
+        "installation_id": {
+          "type": "string",
+          "format": "int64"
+        },
+        "private_key_pem": {
+          "type": "string",
+          "title": "private_key_pem 是 App 私钥 PEM 原文（PKCS#1/PKCS#8）——只进受理与\n验证，落库前密封，响应不回显。"
+        },
+        "api_base": {
+          "type": "string"
+        }
+      }
+    },
+    "v1SetGitHubAppResponse": {
+      "type": "object",
+      "properties": {
+        "app": {
+          "$ref": "#/definitions/v1GitHubApp"
+        }
+      }
+    }
+  }
+}

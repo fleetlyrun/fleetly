@@ -10,6 +10,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/anchor"
 	"github.com/fleetlyrun/fleetly/internal/capability"
 	"github.com/fleetlyrun/fleetly/internal/engine"
+	"github.com/fleetlyrun/fleetly/internal/github"
 	"github.com/fleetlyrun/fleetly/internal/material"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/state/app"
@@ -23,6 +24,7 @@ import (
 	dbrepo "github.com/fleetlyrun/fleetly/internal/state/database"
 	"github.com/fleetlyrun/fleetly/internal/state/deployment"
 	"github.com/fleetlyrun/fleetly/internal/state/freeze"
+	"github.com/fleetlyrun/fleetly/internal/state/githubapp"
 	"github.com/fleetlyrun/fleetly/internal/state/hook"
 	"github.com/fleetlyrun/fleetly/internal/state/invitation"
 	"github.com/fleetlyrun/fleetly/internal/state/membership"
@@ -91,6 +93,12 @@ type Services struct {
 	Tokens       *tokenrepo.Repo
 	Invitations  *invitation.Repo
 	Hooks        *hook.Repo
+
+	// GitHubApps 是 GitHub App 接入材料聚合 repo（ADR-0073 阶段 B）；
+	// GitHub 是最小客户端（installation token 现铸/受理验证/列仓，零
+	// 持久配置——api_base 逐行携带，测试指 httptest 即可）。
+	GitHubApps *githubapp.Repo
+	GitHub     *github.Client
 
 	// Uploads 是上传产物行 repo；UploadStore 是 blob 面（内容寻址落盘，
 	// ADR-0019 附录 A）。限额走缺省（512MiB/4GiB，ADR 钉值）。
@@ -174,6 +182,8 @@ func NewServices(db *state.DB, e *engine.Engine, c *material.Cipher, rt capabili
 		Tokens:          tokenrepo.New(clock),
 		Invitations:     invitation.New(clock),
 		Hooks:           hook.New(clock),
+		GitHubApps:      githubapp.New(clock),
+		GitHub:          github.NewClient(nil, nil),
 		Uploads:         sourceupload.New(clock),
 		UploadStore:     upload.NewStore(dataRoot, 0, 0),
 		Databases:       dbrepo.New(clock),

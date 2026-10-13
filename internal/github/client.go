@@ -187,7 +187,7 @@ func (c *Client) ListRepos(ctx context.Context, app *App) ([]Repo, error) {
 // signAppJWT 解析 PEM 并签 App JWT（iss=app_id 文本形态；每次现签——
 // RSA 解析亚毫秒级，不值得第二个缓存面）。
 func (c *Client) signAppJWT(app *App) (string, error) {
-	key, err := parsePrivateKey(app.PrivateKeyPEM)
+	key, err := ParsePrivateKeyPEM(app.PrivateKeyPEM)
 	if err != nil {
 		return "", err
 	}
@@ -200,11 +200,12 @@ func (c *Client) signAppJWT(app *App) (string, error) {
 	return token.SignedString(key)
 }
 
-// parsePrivateKey 吃 PKCS#1（GitHub App 导出缺省）与 PKCS#8 两种 PEM。
-func parsePrivateKey(pem []byte) (*rsa.PrivateKey, error) {
-	k, err := jwt.ParseRSAPrivateKeyFromPEM(pem)
+// ParsePrivateKeyPEM 吃 PKCS#1（GitHub App 导出缺省）与 PKCS#8 两种 PEM；
+// 受理面预校验与本包签名单源。
+func ParsePrivateKeyPEM(pemBytes []byte) (*rsa.PrivateKey, error) {
+	k, err := jwt.ParseRSAPrivateKeyFromPEM(pemBytes)
 	if err != nil {
-		return nil, fmt.Errorf("github: private key PEM: %w", err)
+		return nil, fmt.Errorf("private key: must be a valid RSA PEM (PKCS#1 or PKCS#8): %v", err)
 	}
 	return k, nil
 }

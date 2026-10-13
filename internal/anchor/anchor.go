@@ -19,6 +19,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state/build"
 	dbrepo "github.com/fleetlyrun/fleetly/internal/state/database"
 	"github.com/fleetlyrun/fleetly/internal/state/deployment"
+	"github.com/fleetlyrun/fleetly/internal/state/githubapp"
 	"github.com/fleetlyrun/fleetly/internal/state/hook"
 	networkrepo "github.com/fleetlyrun/fleetly/internal/state/network"
 	"github.com/fleetlyrun/fleetly/internal/state/networkpeer"
@@ -49,6 +50,7 @@ const (
 	KindDeployment             // deployment id → Deployment → App（Any 档）→ Project
 	KindBuild                  // build id → Build → App（Any 档）→ Project
 	KindHookToken              // hook token 明文 → hash → Hook → App（活跃档）→ Project
+	KindGitHubApp              // github app id → 行 → Project（Global 行 project_id 空 → NotFound，冻结放行）
 )
 
 // NotFoundError 是解析链任一跳的行缺失：Resource 是该跳的资源名（API 面
@@ -87,6 +89,7 @@ type Anchor struct {
 	runs        *run.Repo
 	deployments *deployment.Repo
 	builds      *build.Repo
+	ghApps      *githubapp.Repo
 }
 
 // New 构造解析器。
@@ -105,6 +108,7 @@ func New(clock state.Clock) *Anchor {
 		runs:        run.New(clock),
 		deployments: deployment.New(clock),
 		builds:      build.New(clock),
+		ghApps:      githubapp.New(clock),
 	}
 }
 
@@ -129,6 +133,7 @@ var resolvers = map[Kind]resolver{
 	KindDeployment: (*Anchor).deploymentProject,
 	KindBuild:      (*Anchor).buildProject,
 	KindHookToken:  (*Anchor).hookTokenProject,
+	KindGitHubApp:  (*Anchor).gitHubAppProject,
 }
 
 // TeamOf 解析 ref 的归属 Team（全链：Kind 链 → projectID → Project 行的
@@ -302,6 +307,17 @@ func (a *Anchor) buildProject(ctx context.Context, r state.Runner, ref string) (
 		return "", err
 	}
 	return a.anyAppProject(ctx, r, b.AppID)
+}
+
+func (a *Anchor) gitHubAppProject(ctx context.Context, r state.Runner, ref string) (string, error) {
+	row, err := a.ghApps.Get(ctx, r, ref)
+	if err != nil {
+		if errors.Is(err, state.ErrNotFound) {
+			return "", notFound("github app", ref)
+		}
+		return "", err
+	}
+	return a.TeamOfProjectID(ctx, r, row.ProjectID)
 }
 
 func (a *Anchor) hookTokenProject(ctx context.Context, r state.Runner, ref string) (string, error) {
