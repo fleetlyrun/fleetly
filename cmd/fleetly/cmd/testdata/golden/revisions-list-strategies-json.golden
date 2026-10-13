@@ -12,7 +12,8 @@
           "strategy": "DEPLOY_STRATEGY_BLUE_GREEN"
         }
       ],
-      "source_kind": "SOURCE_KIND_IMAGE"
+      "source_kind": "SOURCE_KIND_IMAGE",
+      "source_text": "services:\n  web:\n    image: nginx:1.27\n    deploy:\n      x-fleetly-strategy: blue-green\n"
     },
     {
       "id": "bgapp-5-r2",
@@ -39,7 +40,8 @@
           "strategy": "DEPLOY_STRATEGY_BLUE_GREEN"
         }
       ],
-      "source_kind": "SOURCE_KIND_IMAGE"
+      "source_kind": "SOURCE_KIND_IMAGE",
+      "source_text": "services:\n  web:\n    image: nginx:1.28\n    deploy:\n      x-fleetly-strategy: blue-green\n"
     }
   ]
 }
