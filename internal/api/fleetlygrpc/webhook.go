@@ -18,12 +18,17 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
+
+	"go.yaml.in/yaml/v3"
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	"github.com/fleetlyrun/fleetly/internal/api/apperr"
 	"github.com/fleetlyrun/fleetly/internal/authn"
+	"github.com/fleetlyrun/fleetly/internal/composeintake"
 	"github.com/fleetlyrun/fleetly/internal/engine"
 	"github.com/fleetlyrun/fleetly/internal/identity"
 	"github.com/fleetlyrun/fleetly/internal/spec"
@@ -156,9 +161,9 @@ func (svc *HooksService) handlePush(ctx context.Context, req *deliveryv1.Receive
 func (svc *HooksService) ingestGitMaterial(ctx context.Context, appRow *app.App, h *hook.Hook,
 	branch, commit, delivery, eventName, auditAction string,
 ) (string, *deliveryv1.Admission, error) {
-	appSpec, err := gitDeploySpec(appRow.ID, appRow.ProjectID, h, commit)
+	appSpec, err := svc.gitBatchSpec(ctx, appRow, h, commit)
 	if err != nil {
-		return "", nil, mapValidationError(err)
+		return "", nil, err
 	}
 	if latest, lerr := svc.s.Revisions.Latest(ctx, svc.s.DB.Runner(), appRow.ID); lerr == nil {
 		frozen, ferr := unmarshalFrozenSpec(latest.Spec)
@@ -302,6 +307,71 @@ func watchPathsHit(changed, watch []string) bool {
 
 // gitDeploySpec 合成 git 源 AppSpec（单 web 进程引用构建产物；端口/探针
 // 等运行时配置不进 webhook 面——需要时经 API 声明）。
+// gitBatchSpec 构建摄取 spec：hook 文件字段按扩展名双语义——.yml/.yaml =
+// compose 文件（git 批 compose 摄取：按 commit 克隆 → composeintake 同一
+// 摄取面（镜像服务 → processes；顶层 name 剥除——平台管辖项目名，模板
+// 仓常携带）；部署直拉镜像零构建）；其余 = Dockerfile 骨架（遗留形态，
+// builder 以该路径构建）。
+func (svc *HooksService) gitBatchSpec(ctx context.Context, appRow *app.App, h *hook.Hook, commit string) (*specv1.AppSpec, error) {
+	base := strings.ToLower(h.Dockerfile)
+	if !strings.HasSuffix(base, ".yml") && !strings.HasSuffix(base, ".yaml") {
+		return gitDeploySpec(appRow.ID, appRow.ProjectID, h, commit)
+	}
+	dir, err := os.MkdirTemp("", "hookpull-")
+	if err != nil {
+		return nil, apperr.New("E_INTERNAL", "hook pull staging failed: %v", err)
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
+	if err := svc.s.Engine.CloneAt(ctx, appRow.ProjectID, h.Repo, commit, dir); err != nil {
+		return nil, apperr.New("E_INTERNAL", "pull %s @%s: %v", h.Repo, shortSHA(commit), err).WithCause(err)
+	}
+	// 路径围栏：hook 文件路径必须落在检出目录内（../../../etc/passwd 形态
+	// 的控制面文件探查在此拒绝——受理面 validateDockerfile 之外的纵深）。
+	path := filepath.Join(dir, filepath.FromSlash(h.Dockerfile))
+	if rel, rerr := filepath.Rel(dir, path); rerr != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return nil, apperr.New("E_INVALID_ARGUMENT", "dockerfile: path escapes the checkout (%s)", h.Dockerfile)
+	}
+	//nolint:gosec // G304 围栏已执法；读取对象本就是检出内的仓库文件
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return nil, apperr.New("E_INVALID_ARGUMENT", "compose file %s not found at %s @%s", h.Dockerfile, h.Repo, shortSHA(commit))
+	}
+	out, err := composeintake.FromYAML(stripComposeProjectName(body), appRow.ID, appRow.ProjectID,
+		deployVarLookup(ctx, svc.s, appRow))
+	if err != nil {
+		return nil, mapValidationError(err)
+	}
+	return out, nil
+}
+
+// stripComposeProjectName 剥除顶层 name（平台管辖项目名；composeintake
+// 对 name 显式拒收——控制台粘贴面是政策面，git 批模板仓文件常按上游
+// compose 惯例携带 name，剥除而非拒收）。非 YAML 原样交还（错误措辞由
+// composeintake 统一给出）。
+func stripComposeProjectName(body []byte) []byte {
+	var doc map[string]any
+	if err := yaml.Unmarshal(body, &doc); err != nil {
+		return body
+	}
+	if _, ok := doc["name"]; !ok {
+		return body
+	}
+	delete(doc, "name")
+	out, err := yaml.Marshal(doc)
+	if err != nil {
+		return body
+	}
+	return out
+}
+
+// shortSHA 是错误信息里的 commit 展示形态（材料与锚不进日志面）。
+func shortSHA(commit string) string {
+	if len(commit) > 7 {
+		return commit[:7]
+	}
+	return commit
+}
+
 func gitDeploySpec(appID, projectID string, h *hook.Hook, commitSHA string) (*specv1.AppSpec, error) {
 	s := &specv1.AppSpec{
 		SchemaVersion: spec.SchemaVersion,

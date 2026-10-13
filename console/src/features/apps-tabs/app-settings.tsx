@@ -191,8 +191,10 @@ function GitHookCard({ appId, projectId }: { appId: string; projectId: string })
           </div>
           <p className="mt-2 text-2xs text-muted-foreground">
             <span className="font-semibold text-foreground">Deploy now</span> pulls the branch HEAD and deploys immediately — no
-            webhook required (template repos, first config). For push triggers, paste the webhook URL (revealed at configure/rotate
-            time) into GitHub → Webhooks; the secret doubles as the signing key.
+            webhook required (template repos, first config). A <span className="font-mono">.yml/.yaml</span> path is taken as a
+            compose file (its services become processes; images deploy directly); anything else builds as a Dockerfile. For push
+            triggers, paste the webhook URL (revealed at configure/rotate time) into GitHub → Webhooks; the secret doubles as the
+            signing key.
           </p>
         </>
       ) : (
@@ -213,8 +215,8 @@ function GitHookCard({ appId, projectId }: { appId: string; projectId: string })
               <Input id="hook-branch" className="font-mono text-xs" value={form.branch} onChange={(event) => setForm({ ...form, branch: event.target.value })} />
             </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="hook-dockerfile">Dockerfile path (optional)</Label>
-              <Input id="hook-dockerfile" className="font-mono text-xs" value={form.dockerfile} onChange={(event) => setForm({ ...form, dockerfile: event.target.value })} placeholder="./Dockerfile" />
+              <Label htmlFor="hook-dockerfile">Compose file or Dockerfile path (optional)</Label>
+              <Input id="hook-dockerfile" className="font-mono text-xs" value={form.dockerfile} onChange={(event) => setForm({ ...form, dockerfile: event.target.value })} placeholder="docker/compose.yml or ./Dockerfile" />
             </div>
           </div>
           <div className="flex flex-col gap-2">

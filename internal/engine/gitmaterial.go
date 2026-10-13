@@ -227,3 +227,14 @@ func (e *Engine) ResolveGitHead(ctx context.Context, projectID, repoURL, branch 
 	}
 	return "", fmt.Errorf("git ls-remote: %s not found in %s", pattern, repoURL)
 }
+
+// CloneAt 检出 repo@ref 到 dir（控制面拉取通道的材料前置：git 批 compose
+// 摄取需要 commit 处的文件内容）。材料解析与 clone 同一面（私有仓 URL
+// 内嵌材料、失败同脱敏收口）；ref 为 sha 时走全量 clone + checkout 二段。
+func (e *Engine) CloneAt(ctx context.Context, projectID, repoURL, ref, dir string) error {
+	cloneURL, secrets, err := e.prepareCloneURL(ctx, projectID, repoURL)
+	if err != nil {
+		return err
+	}
+	return e.cloneSource(ctx, cloneURL, ref, dir, secrets)
+}
