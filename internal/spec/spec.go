@@ -5,6 +5,7 @@ package spec
 
 import (
 	"fmt"
+	"net/url"
 	"path"
 	"regexp"
 	"strings"
@@ -386,8 +387,13 @@ func validateHealthcheck(field string, h *specv1.HealthcheckSpec) error {
 func validateSource(src *specv1.Source) error {
 	switch origin := src.GetKind().(type) {
 	case *specv1.Source_Git:
-		if origin.Git.GetRepo() == "" {
-			return invalidf("app.source.git.repo", "must not be empty")
+		// repo 受理律（ADR-0073 阶段 A 决策 6，与 hook 面 validateGitRepo
+		// 同口径）：repo 冻结进 Revision 并出现在读面——只收干净 https://
+		// 直连 URL，内嵌 userinfo（token 形态）一律拒绝：材料会明文冻结进
+		// 每条 Revision 并泄入四个读面。访问材料走 GitHub App 或
+		// `git:<host>` Project Secret（构建期解析）。
+		if err := validateGitRepoURL("app.source.git.repo", origin.Git.GetRepo()); err != nil {
+			return err
 		}
 		if origin.Git.GetRef() == "" {
 			return invalidf("app.source.git.ref", "must not be empty")
@@ -583,6 +589,29 @@ func validateCrossProjectRef(field, net string) error {
 	}
 	if networkName == "" {
 		return invalidf(field, "network name part must not be empty")
+	}
+	return nil
+}
+
+// validateGitRepoURL 是 Git 仓库 URL 的受理律单源（hook 面 validateGitRepo
+// 同口径；本函数供 spec 校验——app.source.git.repo）：https:// 直连、无
+// userinfo、无空白/控制字符。
+func validateGitRepoURL(field, repo string) error {
+	repo = strings.TrimSpace(repo)
+	if repo == "" {
+		return invalidf(field, "must not be empty")
+	}
+	u, err := url.Parse(repo)
+	switch {
+	case err != nil || !strings.HasPrefix(repo, "https://") || u.Host == "":
+		return invalidf(field, "must be a clean https:// repository URL (got %q); http, ssh, file and local paths are rejected", repo)
+	case u.User != nil:
+		return invalidf(field, "must not embed access material in the URL — it freezes into revisions and shows up in read faces; configure a github app or a git:<host> project secret instead")
+	}
+	for i := 0; i < len(repo); i++ {
+		if c := rune(repo[i]); c == ' ' || c == '\t' || c == '\n' || c == '\r' || c < 0x20 || c == 0x7f {
+			return invalidf(field, "must not contain whitespace or control characters (byte offset %d)", i)
+		}
 	}
 	return nil
 }

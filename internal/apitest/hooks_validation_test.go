@@ -55,9 +55,10 @@ func TestSetGitHookRepoValidation(t *testing.T) {
 		assert.Contains(t, err.Error(), "E_INVALID_ARGUMENT", "repo %q", repo)
 	}
 
-	// 合法形态（含带凭证的 https URL）照常受理。
+	// 合法形态（干净 https URL——材料经 github app / git:<host> secret
+	// 构建期解析）照常受理。
 	legal, err := hooks.SetGitHook(ctx, &deliveryv1.SetGitHookRequest{
-		AppId: appID, Repo: "https://token@github.com/acme/shop.git", Branch: "main",
+		AppId: appID, Repo: "https://github.com/acme/shop.git", Branch: "main",
 	})
 	require.NoError(t, err)
 	require.NotEmpty(t, legal.GetSecret())
@@ -100,4 +101,39 @@ func TestSetGitHookBranchValidation(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "main", ok.GetHook().GetBranch())
+}
+
+// TestGitSourceSpecIntakeCleanURL：spec 面 git 仓库受理律（ADR-0073 阶段
+// A 决策 6）与 hook 面同口径——内嵌 userinfo 的 spec_file 部署在受理位
+// 拒绝（材料会明文冻结进 Revision）；干净 URL 照常受理（webhook 合成 spec
+// 同形，freeze 全链的既负 example）。
+func TestGitSourceSpecIntakeCleanURL(t *testing.T) {
+	h := apitest.New(t)
+	ctx := sdk.WithToken(context.Background(), h.Token)
+	projects := structurev1.NewProjectsServiceClient(h.Conn)
+	apps := structurev1.NewAppsServiceClient(h.Conn)
+	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
+
+	p, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "gitspec"})
+	require.NoError(t, err)
+	a, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: p.GetProject().GetId(), Name: "web"})
+	require.NoError(t, err)
+	appID := a.GetApp().GetId()
+
+	specFor := func(repo string) string {
+		return `{"source":{"git":{"repo":"` + repo + `","ref":"main"}},"build":{"builder":"dockerfile","dockerfile":"Dockerfile"},"processes":[{"name":"web","from_build":"/"}]}`
+	}
+
+	_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{
+		AppId: appID, SpecFile: specFor("https://user:ghp_x@github.com/acme/web"),
+	})
+	require.Error(t, err, "a materialized git URL must be refused at spec intake")
+	assert.Contains(t, err.Error(), "access material")
+	assert.Equal(t, codes.InvalidArgument, status.Code(err), "spec intake rejects map to invalid argument")
+
+	ok, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{
+		AppId: appID, SpecFile: specFor("https://github.com/acme/web"),
+	})
+	require.NoError(t, err)
+	assert.NotEmpty(t, ok.GetDeployment().GetId(), "a clean https git source freezes normally")
 }

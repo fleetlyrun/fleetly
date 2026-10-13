@@ -12,6 +12,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"net/url"
 	"strings"
 	"unicode"
 
@@ -240,6 +241,13 @@ func validateGitRepo(repo string) error {
 	if !strings.HasPrefix(r, "https://") {
 		return apperr.New("E_INVALID_ARGUMENT",
 			"repo: only https:// direct repository URLs are supported (got %q); http, git, ssh, file and ext transports are rejected", r)
+	}
+	// 内嵌访问材料拒绝（ADR-0073 阶段 A 决策 6）：repo 冻结进 Revision 并
+	// 出现在读面——token 形态 URL 会把材料明文泄入四个读面。访问材料走
+	// GitHub App 或 git:<host> Project Secret（构建期解析）。
+	if u, perr := url.Parse(r); perr == nil && u.User != nil {
+		return apperr.New("E_INVALID_ARGUMENT",
+			"repo: must not embed access material in the URL — it freezes into revisions and shows up in read faces; configure a github app or a git:<host> project secret instead")
 	}
 	for i := 0; i < len(r); i++ {
 		if c := rune(r[i]); unicode.IsSpace(c) || unicode.IsControl(c) {
