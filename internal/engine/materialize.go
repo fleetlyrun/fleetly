@@ -57,6 +57,11 @@ func (e *Engine) materialize(ctx context.Context, d *deployment.Deployment, revi
 	if err := e.applyVolumePinning(ctx, ws, spec.GetApp().GetProject()); err != nil {
 		return fmt.Errorf("merge volume pinning: %w", err)
 	}
+	// 托管库引用注入（database_refs → FLEETLY_DB_* env；值不进 Spec——
+	// Ensure 前解析，缺失精确失败）。
+	if err := e.injectDatabaseEnv(ctx, spec, ws, spec.GetApp().GetProject()); err != nil {
+		return fmt.Errorf("inject database env: %w", err)
+	}
 	report, err := e.runtime.Ensure(ctx, ns, ws, capability.Generation(gen), materials)
 	if err != nil {
 		return fmt.Errorf("runtime ensure: %w", err)

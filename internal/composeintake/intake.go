@@ -61,6 +61,7 @@ var serviceAllowedKeys = map[string]bool{
 	"networks":    true,
 	"volumes":     true,
 	"secrets":     true,
+	"labels":      true, // 消费面仅 fleetly.databases（database_refs）；其余 label 名拒收（运行时不消费，静默丢即静默失败）
 }
 
 // deployAllowedKeys / healthcheckAllowedKeys 是嵌套块白名单（deploy 与
@@ -201,13 +202,52 @@ func loaderOptions(vars VariableLookup) func(*loader.Options) {
 	}
 }
 
-// lookupFunc 把平台变量接进官方插值的 LookupValue 槽。
+// lookupFunc 把平台变量接进官方插值的 LookupValue 槽。FLEETLY_DB_* 是
+// 运行时注入变量集（服务 label fleetly.databases → database_refs，Ensure
+// 期解析注入容器 env）——插值期透传原形态（shell 上下文运行时展开）；
+// 烤空/报错都会把活引用冻死（真机咬出：${FLEETLY_DB_*:-} 被烤成空串）。
 func lookupFunc(vars VariableLookup) func(string) (string, bool) {
-	if vars == nil {
-		return func(string) (string, bool) { return "", false }
+	base := vars
+	if base == nil {
+		base = func(string) (string, bool) { return "", false }
 	}
-	return vars
+	return func(name string) (string, bool) {
+		if strings.HasPrefix(name, "FLEETLY_DB_") {
+			return "${" + name + "}", true
+		}
+		return base(name)
+	}
 }
+
+// parseDatabaseRefs 解析 label 值（逗号分隔多名，trim/去重/kebab 校验）。
+func parseDatabaseRefs(field, lbl string) ([]string, error) {
+	seen := map[string]bool{}
+	var refs []string
+	for _, part := range strings.Split(lbl, ",") {
+		ref := strings.TrimSpace(part)
+		if ref == "" {
+			continue
+		}
+		if !databaseRefRe.MatchString(ref) {
+			return nil, invalidf(field, "database reference %q must match %q (the managed database name; comma-separated for several)", ref, databaseRefPattern)
+		}
+		if seen[ref] {
+			continue
+		}
+		seen[ref] = true
+		refs = append(refs, ref)
+	}
+	if len(refs) == 0 {
+		return nil, invalidf(field, "must carry at least one database name")
+	}
+	return refs, nil
+}
+
+// databaseRefPattern / databaseRefRe 钉死托管库引用名形态（kebab，与
+// 模板/数据库名同域）。
+const databaseRefPattern = `[a-z][a-z0-9-]{0,62}`
+
+var databaseRefRe = regexp.MustCompile(`^` + databaseRefPattern + `$`)
 
 // bracedHoleRe / shortHoleRe 钉死插值孔形态（预检用）：braced 精确闭合
 // （`${VAR}`——带 :- 等修饰符的形态不匹配，它们自带回退语义不属 fail-
@@ -306,6 +346,30 @@ func serviceProcess(project *types.Project, name string, svc types.ServiceConfig
 		return nil, "", err
 	}
 	p.Env = env
+
+	// 服务 label 面的消费政策：fleetly.databases → database_refs（托管库
+	// 引用，Ensure 期注入 FLEETLY_DB_<NAME>_* env；逗号分隔多名，引用在
+	// 册性留给引擎部署期精确失败——与 secret_refs 同口径）；fleetly.job*
+	// 拒收并指向顶层扩展键（一次性作业方言的真源载体）；其余 label 拒收
+	//（运行时不消费，静默丢即静默失败）。
+	for k := range svc.Labels {
+		switch {
+		case k == "fleetly.databases":
+		case k == "fleetly.job" || strings.HasPrefix(k, "fleetly.job."):
+			return nil, "", invalidf(field+".labels."+k,
+				"one-shot jobs are declared via the top-level x-fleetly-first-boot-jobs key (fleetly.job labels are not a supported dialect)")
+		default:
+			return nil, "", invalidf(field+".labels."+k,
+				"label %q is not consumed by the runtime (only fleetly.databases is honored)", k)
+		}
+	}
+	if lbl := strings.TrimSpace(svc.Labels["fleetly.databases"]); lbl != "" {
+		refs, rerr := parseDatabaseRefs(field+".labels[fleetly.databases]", lbl)
+		if rerr != nil {
+			return nil, "", rerr
+		}
+		p.DatabaseRefs = refs
+	}
 
 	ports, err := servicePorts(field+".ports", svc.Ports)
 	if err != nil {

@@ -291,6 +291,18 @@ func ValidateProcess(field string, p *specv1.ProcessSpec) error {
 		return invalidf(field+".name",
 			"process name %q must match %q (names become swarm service names; use lowercase letters, digits and inner hyphens)", p.GetName(), processNamePattern)
 	}
+	// database_refs 名形态 + 去重（引用在册性由引擎部署期精确失败——
+	// 受理期不做存在性绑定，与 secret_refs 同口径）。
+	seenDBRefs := map[string]bool{}
+	for _, ref := range p.GetDatabaseRefs() {
+		if !databaseRefRe.MatchString(ref) {
+			return invalidf(field+".database_refs", "database reference %q must match %q", ref, databaseRefPattern)
+		}
+		if seenDBRefs[ref] {
+			return invalidf(field+".database_refs", "database reference %q is duplicated", ref)
+		}
+		seenDBRefs[ref] = true
+	}
 	switch origin := p.GetImageOrigin().(type) {
 	case *specv1.ProcessSpec_Image:
 		if err := validateImageRef(field+".image", origin.Image); err != nil {
@@ -507,6 +519,12 @@ func validNetworkGroupName(g string) bool { return networkGroupNameRe.MatchStrin
 const processNamePattern = networkGroupNamePattern
 
 var processNameRe = regexp.MustCompile(`^` + processNamePattern + `$`)
+
+// databaseRefPattern / databaseRefRe 钉死托管库引用名形态（kebab，与模板
+// /数据库名同域；composeintake 侧同形复制——叶子互不 import）。
+const databaseRefPattern = `[a-z][a-z0-9-]{0,62}`
+
+var databaseRefRe = regexp.MustCompile(`^` + databaseRefPattern + `$`)
 
 // SecretNamePattern 钉死 Secret 名字符集（N1 收尾批 A3：防路径逃逸——
 // 引用名原样成为容器内 /run/secrets/<名> 文件目标与 swarm 载体名成分，

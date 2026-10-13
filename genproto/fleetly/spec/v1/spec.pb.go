@@ -551,7 +551,13 @@ type ProcessSpec struct {
 	// rolling，无迁移面。值域住叶子校验（spec.ValidateProcess，词条单源
 	// = CONTEXT.md Deployment Strategy）。Database/受管域不适用（结构性
 	// 保证，同 ADR）。
-	Strategy      DeployStrategy `protobuf:"varint,15,opt,name=strategy,proto3,enum=fleetly.spec.v1.DeployStrategy" json:"strategy,omitempty"`
+	Strategy DeployStrategy `protobuf:"varint,15,opt,name=strategy,proto3,enum=fleetly.spec.v1.DeployStrategy" json:"strategy,omitempty"`
+	// database_refs 按名引用 Project 托管 Database（Ensure 期解析注入
+	// FLEETLY_DB_<NAME>_* env——值不进 Spec/Revision，ADR-0014 同
+	// secret_refs 纪律）。compose 面 = 服务级注记 fleetly.databases（逗号
+	// 分隔多名）。名字形态 = 模板 kebab（引用在册实例；缺失 = 部署期精确
+	// 失败）。
+	DatabaseRefs  []string `protobuf:"bytes,16,rep,name=database_refs,json=databaseRefs,proto3" json:"database_refs,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -700,6 +706,13 @@ func (x *ProcessSpec) GetStrategy() DeployStrategy {
 		return x.Strategy
 	}
 	return DeployStrategy_DEPLOY_STRATEGY_UNSPECIFIED
+}
+
+func (x *ProcessSpec) GetDatabaseRefs() []string {
+	if x != nil {
+		return x.DatabaseRefs
+	}
+	return nil
 }
 
 type isProcessSpec_ImageOrigin interface {
@@ -1862,7 +1875,7 @@ const file_fleetly_spec_v1_spec_proto_rawDesc = "" +
 	"\vImageSource\x12\x10\n" +
 	"\x03ref\x18\x01 \x01(\tR\x03ref\"\x1e\n" +
 	"\fUploadSource\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\xda\x05\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\xff\x05\n" +
 	"\vProcessSpec\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
 	"\x05image\x18\x02 \x01(\tH\x00R\x05image\x12\x1f\n" +
@@ -1882,7 +1895,8 @@ const file_fleetly_spec_v1_spec_proto_rawDesc = "" +
 	"\tplacement\x18\f \x01(\v2\x1e.fleetly.spec.v1.PlacementSpecR\tplacement\x12;\n" +
 	"\avolumes\x18\r \x03(\v2!.fleetly.spec.v1.VolumeAttachmentR\avolumes\x12\x1a\n" +
 	"\bnetworks\x18\x0e \x03(\tR\bnetworks\x12;\n" +
-	"\bstrategy\x18\x0f \x01(\x0e2\x1f.fleetly.spec.v1.DeployStrategyR\bstrategy\x1a6\n" +
+	"\bstrategy\x18\x0f \x01(\x0e2\x1f.fleetly.spec.v1.DeployStrategyR\bstrategy\x12#\n" +
+	"\rdatabase_refs\x18\x10 \x03(\tR\fdatabaseRefs\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01B\x0e\n" +

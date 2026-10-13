@@ -522,3 +522,39 @@ networks:
 	}
 	assert.Equal(t, "api", first.GetProcesses()[0].GetName(), "processes are sorted by service name")
 }
+
+// 服务 label fleetly.databases → database_refs（托管库引用——Ensure 期注入
+// FLEETLY_DB_*）；FLEETLY_DB_* 插值孔透传原形态（运行时 shell/容器 env 展
+// 开——烤空即冻死活引用，真机咬出）。
+func TestFromYAMLDatabasesLabel(t *testing.T) {
+	body := `
+services:
+  server:
+    image: ghcr.io/acme/server:1
+    labels:
+      fleetly.databases: "torchwood-pg"
+    command:
+      - sh
+      - -c
+      - 'migrate -database "${FLEETLY_DB_TORCHWOOD_PG_URL}?sslmode=disable" up'
+  sidecar:
+    image: busybox:1.36
+`
+	s, err := composeintake.FromYAML([]byte(body), "app-1", "prj-1", nil)
+	require.NoError(t, err)
+	server := procByName(t, s, "server")
+	assert.Equal(t, []string{"torchwood-pg"}, server.GetDatabaseRefs())
+	sidecar := procByName(t, s, "sidecar")
+	assert.Empty(t, sidecar.GetDatabaseRefs(), "unlabeled services carry no refs")
+
+	// 多名 + 去重 + 空段容忍。
+	multi, err := composeintake.FromYAML([]byte(`
+services:
+  web:
+    image: nginx:1.27
+    labels:
+      fleetly.databases: "alpha, beta ,alpha,,gamma"
+`), "app-1", "prj-1", nil)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"alpha", "beta", "gamma"}, multi.GetProcesses()[0].GetDatabaseRefs())
+}

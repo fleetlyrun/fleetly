@@ -333,6 +333,19 @@ func TestValidateProcessSecretRefs(t *testing.T) {
 	assert.ErrorContains(t, ValidateProcess("p", base([]string{""})), "secret_refs[0]")
 }
 
+// DatabaseRefs 入口校验（compose label 面共用）：kebab 形态 + 去重。
+func TestValidateProcessDatabaseRefs(t *testing.T) {
+	base := func(refs []string) *specv1.ProcessSpec {
+		return &specv1.ProcessSpec{Name: "web", ImageOrigin: &specv1.ProcessSpec_Image{Image: "nginx:1.27"}, DatabaseRefs: refs}
+	}
+	assert.NoError(t, ValidateProcess("p", base([]string{"torchwood-pg"})))
+	assert.NoError(t, ValidateProcess("p", base([]string{"alpha", "beta"})))
+	assert.ErrorContains(t, ValidateProcess("p", base([]string{"../etc/passwd"})), "database_refs")
+	assert.ErrorContains(t, ValidateProcess("p", base([]string{"Torchwood"})), "database_refs")
+	assert.ErrorContains(t, ValidateProcess("p", base([]string{"", "alpha"})), "database_refs")
+	assert.ErrorContains(t, ValidateProcess("p", base([]string{"alpha", "alpha"})), "duplicated")
+}
+
 func TestValidateDatabase(t *testing.T) {
 	base := &specv1.DatabaseSpec{
 		SchemaVersion:  SchemaVersion,

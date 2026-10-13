@@ -961,6 +961,14 @@ export interface components {
             /** networks 是网络附件（Project 网络名或 taskGroup:<name> 跨挂）。 */
             networks?: string[];
             strategy?: components["schemas"]["v1DeployStrategy"];
+            /**
+             * database_refs 按名引用 Project 托管 Database（Ensure 期解析注入
+             *     FLEETLY_DB_<NAME>_* env——值不进 Spec/Revision，ADR-0014 同
+             *     secret_refs 纪律）。compose 面 = 服务级注记 fleetly.databases（逗号
+             *     分隔多名）。名字形态 = 模板 kebab（引用在册实例；缺失 = 部署期精确
+             *     失败）。
+             */
+            database_refs?: string[];
         };
         v1Project: {
             id?: string;

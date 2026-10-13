@@ -229,6 +229,12 @@
                       },
                       "type": "array"
                     },
+                    "database_refs": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
                     "env": {
                       "additionalProperties": {
                         "type": "string"
@@ -427,6 +433,12 @@
                   "type": "array"
                 },
                 "config_refs": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "database_refs": {
                   "items": {
                     "type": "string"
                   },
@@ -2799,6 +2811,12 @@
                 "type": "array"
               },
               "config_refs": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "database_refs": {
                 "items": {
                   "type": "string"
                 },
