@@ -1,0 +1,601 @@
+<!doctype html>
+<!--
+  fleetly console — GitHub App 接入材料原型（ADR-0073 阶段 B 视觉真源）
+
+  定位：私有 Git 仓库的一等集成——GitHub App（per-Project / Global 双作用域）。
+        构建期按仓库 host+owner 解析，现铸 1h installation token 注入 clone；
+        私钥 age 信封存储，读面只回指纹；材料永不进 Revision 冻结体。
+  四屏：
+    1  Project · Registry — per-Project 管理卡（列表 + Repos 验证面板；添加表单默认收起）
+    2  Platform · GitHub Apps — Global 管理卡（PLATFORM 段新页）
+    3  App · Settings — Git deploy hook 卡的私有仓提示行
+    4  States — 空态 / 受理即验证 / 铸造失败 / 安装吊销 / 授权边界
+  规则要点（继承 slate 令牌）：
+    - 明度阶梯 + 1px 发丝线 + 单一靛蓝强调；状态以「色点+文字」出现，不做彩色底 badge
+    - 私钥永不回显：任何界面只出现 sealed:<指纹前 16 hex>；CLI equivalent 同口径
+    - Owner 不进表单：受理时经 GitHub API 解析 installation 属主并即验三元组
+      （App ID + Installation ID + 私钥，错值当场精确报错，不等到首次构建）
+    - 词汇冻结：GitHub App（实体名；Provider 词条已被 Capability 实现占用）
+  自包含单文件：零外部依赖；底部胶囊或 ←/→/1-4 键切换。数据均为虚构。
+-->
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fleetly console — GitHub App access material · ADR-0073</title>
+<style>
+/* ---------- tokens（与 2026-10-12-console-restyle-a-slate 同源） ---------- */
+:root{
+  --bg:#0a0a0b; --s1:#121214; --s2:#17171b; --s3:#1d1d22;
+  --line:rgba(255,255,255,.07); --line2:rgba(255,255,255,.13);
+  --t1:#f2f2f4; --t2:#a4a4af; --t3:#6b6b76;
+  --acc:#6e7bf2; --acc-h:#808cf5; --acc-dim:rgba(110,123,242,.13);
+  --ok:#43b581; --warn:#d9a13b; --err:#e0606a; --info:#5ca8e8; --mut:#8a8a94;
+  --r-lg:12px; --r-md:8px;
+  --sans:"Inter",-apple-system,"Segoe UI",system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{background:var(--bg);color:var(--t1);font:400 14px/1.5 var(--sans);
+  font-feature-settings:"cv11","ss01"; -webkit-font-smoothing:antialiased;overflow:hidden}
+svg.ic{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+::selection{background:var(--acc-dim)}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:rgba(255,255,255,.10);border-radius:5px;border:2px solid var(--bg)}
+::-webkit-scrollbar-track{background:transparent}
+
+/* ---------- 原型切换胶囊（非产品 UI） ---------- */
+.proto{position:fixed;z-index:99;bottom:14px;left:50%;transform:translateX(-50%);
+  display:flex;align-items:center;gap:2px;padding:5px;border-radius:999px;
+  background:rgba(20,20,24,.92);border:1px solid var(--line2);backdrop-filter:blur(12px);
+  box-shadow:0 8px 32px rgba(0,0,0,.5);white-space:nowrap}
+.proto .tag{font:600 11px/1 var(--mono);letter-spacing:.4px;color:var(--acc);padding:0 10px 0 8px;border-right:1px solid var(--line);margin-right:4px}
+.proto button{appearance:none;border:0;background:transparent;color:var(--t2);cursor:pointer;
+  font:500 12px/1 var(--sans);padding:8px 11px;border-radius:999px;transition:.12s}
+.proto button:hover{color:var(--t1);background:rgba(255,255,255,.06)}
+.proto button.on{color:var(--t1);background:var(--acc-dim)}
+.proto .hint{font:400 10.5px/1 var(--mono);color:var(--t3);padding:0 10px}
+
+/* ---------- 应用壳 ---------- */
+.app{display:grid;grid-template-columns:236px 1fr;height:100vh}
+.sidebar{border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0;background:var(--bg)}
+.side-head{padding:14px 14px 10px;display:flex;flex-direction:column;gap:10px}
+.brand{display:flex;align-items:center;gap:10px;padding:2px 2px}
+.brand .tile{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;
+  background:linear-gradient(135deg,#6e7bf2,#9a6ef0 55%,#c46ee0);color:#fff;
+  font:700 13px/1 var(--sans)}
+.brand .wm{font:650 14.5px/1.2 var(--sans);letter-spacing:-.1px}
+.pswitch{display:flex;align-items:center;gap:9px;padding:8px 9px;border-radius:9px;border:1px solid var(--line);background:var(--s1);cursor:pointer}
+.pswitch:hover{border-color:var(--line2)}
+.pswitch .av{width:24px;height:24px;border-radius:6px;background:linear-gradient(135deg,#3d3f4d,#565a75);
+  display:grid;place-items:center;font:700 11px/1 var(--sans);color:#e6e6ef}
+.pswitch .pn{font:550 13px/1.2 var(--sans)}
+.pswitch .pe{font:400 11px/1.2 var(--sans);color:var(--t3);margin-top:1px}
+.pswitch .ch{margin-left:auto;color:var(--t3)}
+.nav{flex:1;overflow-y:auto;padding:4px 10px 14px}
+.ngroup{margin-top:16px}
+.ngroup>label{display:block;font:600 10.5px/1 var(--sans);letter-spacing:.9px;text-transform:uppercase;
+  color:var(--t3);padding:0 10px;margin-bottom:6px}
+.nitem{display:flex;align-items:center;gap:9px;width:100%;padding:7px 10px;border-radius:8px;border:0;
+  background:transparent;color:var(--t2);font:500 13.5px/1 var(--sans);cursor:pointer;text-align:left}
+.nitem:hover{color:var(--t1);background:rgba(255,255,255,.04)}
+.nitem.on{color:var(--t1);background:var(--s2)}
+.ndiv{margin:16px 10px 0;border-top:1px solid var(--line);padding-top:14px}
+.side-foot{border-top:1px solid var(--line);padding:10px 16px;font:400 11px/1 var(--mono);color:var(--t3)}
+
+.main{display:flex;flex-direction:column;min-width:0;min-height:0}
+.topbar{height:54px;flex:none;display:flex;align-items:center;gap:12px;padding:0 20px;
+  border-bottom:1px solid var(--line);background:rgba(10,10,11,.86);backdrop-filter:blur(8px)}
+.crumb{display:flex;align-items:center;gap:7px;font:500 13.5px/1 var(--sans);color:var(--t2)}
+.crumb b{color:var(--t1);font-weight:600}
+.crumb .sep{color:var(--t3)}
+.tb-actions{margin-left:auto;display:flex;align-items:center;gap:8px}
+.searchbox{display:flex;align-items:center;gap:8px;width:220px;height:32px;padding:0 10px;
+  border:1px solid var(--line);border-radius:8px;background:var(--s1);color:var(--t3);font:400 13px/1 var(--sans);cursor:pointer}
+.searchbox kbd{margin-left:auto;font:500 10.5px/1 var(--mono);color:var(--t3);border:1px solid var(--line);
+  border-radius:5px;padding:3px 5px;background:var(--s2)}
+.avatar{width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#3d3f4d,#565a75);
+  display:grid;place-items:center;font:650 11.5px/1 var(--sans);color:#e6e6ef}
+
+.content{flex:1;overflow-y:auto;min-height:0}
+.screen{display:none}
+.screen.active{display:block}
+
+/* ---------- 通用组件 ---------- */
+.page{max-width:1280px;margin:0 auto;padding:26px 28px 72px}
+.page-head{display:flex;align-items:flex-start;gap:16px;margin-bottom:22px}
+.page-head h1{font:650 22px/1.25 var(--sans);letter-spacing:-.3px}
+.page-head .sub{margin-top:5px;font:400 13.5px/1.5 var(--sans);color:var(--t2);max-width:640px}
+.card{background:var(--s1);border:1px solid var(--line);border-radius:var(--r-lg)}
+.card-h{display:flex;align-items:center;gap:10px;padding:15px 20px;border-bottom:1px solid var(--line)}
+.card-h h3{font:600 14px/1.3 var(--sans);letter-spacing:-.1px}
+.card-h .desc{font:400 12.5px/1.4 var(--sans);color:var(--t3)}
+.card-h .acts{margin-left:auto;display:flex;gap:8px;flex:none}
+.card-b{padding:20px}
+.card-b.tight{padding:0}
+
+.btn{display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 13px;border-radius:var(--r-md);
+  border:1px solid var(--line2);background:var(--s2);color:var(--t1);font:550 13px/1 var(--sans);cursor:pointer;transition:.12s}
+.btn:hover{background:var(--s3);border-color:rgba(255,255,255,.18)}
+.btn.pri{background:var(--acc);border-color:transparent;color:#fff}
+.btn.pri:hover{background:var(--acc-h)}
+.btn.ghost{background:transparent;border-color:transparent;color:var(--t2)}
+.btn.ghost:hover{background:var(--s2);color:var(--t1)}
+.btn.danger{color:var(--err);border-color:rgba(224,96,106,.3);background:rgba(224,96,106,.07)}
+.btn.danger:hover{background:rgba(224,96,106,.13)}
+.btn.sm{height:29px;padding:0 10px;font-size:12.5px}
+
+.badge{display:inline-flex;align-items:center;gap:7px;font:500 12.5px/1 var(--sans);color:var(--t2)}
+.badge i{width:6.5px;height:6.5px;border-radius:50%;background:var(--mut);flex:none}
+.badge.ok{color:var(--ok)} .badge.ok i{background:var(--ok)}
+.badge.warn{color:var(--warn)} .badge.warn i{background:var(--warn)}
+.badge.err{color:var(--err)} .badge.err i{background:var(--err)}
+.badge.info{color:var(--info)} .badge.info i{background:var(--info)}
+.scopetag{font:550 10.5px/1 var(--mono);letter-spacing:.4px;padding:3px 7px;border-radius:5px;border:1px solid var(--line)}
+.scopetag.proj{color:#aab3f8;border-color:rgba(110,123,242,.35);background:var(--acc-dim)}
+.scopetag.glob{color:#8fd6b7;border-color:rgba(67,181,129,.3);background:rgba(67,181,129,.08)}
+.mono{font-family:var(--mono);font-feature-settings:"zero"}
+.dim{color:var(--t2)} .faint{color:var(--t3)}
+
+/* 表格 */
+.tbl{width:100%;border-collapse:collapse;font-size:14px}
+.tbl th{font:600 11px/1 var(--sans);letter-spacing:.8px;text-transform:uppercase;color:var(--t3);
+  text-align:left;padding:11px 16px;border-bottom:1px solid var(--line);white-space:nowrap}
+.tbl td{padding:13px 16px;border-bottom:1px solid var(--line);vertical-align:middle}
+.tbl tr:last-child td{border-bottom:0}
+.cell-main{display:flex;align-items:center;gap:11px}
+.owav{width:28px;height:28px;border-radius:7px;flex:none;display:grid;place-items:center;
+  font:700 12px/1 var(--sans);color:#e8e8f2}
+.cell-main .nm{font-weight:550}
+.cell-main .ds{font-size:12.5px;color:var(--t3);margin-top:1px}
+.rowact{display:flex;gap:6px;justify-content:flex-end}
+
+/* Repos 展开面板 */
+.subrow td{background:rgba(255,255,255,.015);padding:0}
+.repopanel{padding:14px 16px 16px 55px}
+.repopanel .rp-h{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.repopanel .rp-h .t{font:600 12px/1 var(--sans);letter-spacing:.4px;text-transform:uppercase;color:var(--t3)}
+.repopanel .rp-h .when{font:400 11.5px/1 var(--mono);color:var(--t3);margin-left:auto}
+.rptbl{width:100%;border-collapse:collapse;font-size:13px;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.rptbl td{padding:9px 12px;border-bottom:1px solid var(--line)}
+.rptbl tr:last-child td{border-bottom:0}
+.rptbl .vis{font:550 10.5px/1 var(--mono);padding:3px 7px;border-radius:5px;border:1px solid var(--line);color:var(--t3)}
+.rptbl .vis.priv{color:var(--warn);border-color:rgba(217,161,59,.3)}
+.visib{margin-top:14px;font:400 12px/1.5 var(--sans);color:var(--t3)}
+
+/* 表单 */
+.formgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.sect{font:600 10.5px/1 var(--sans);letter-spacing:.9px;text-transform:uppercase;color:var(--t3);margin-bottom:14px}
+details.adv{margin-top:4px}
+details.adv summary{cursor:pointer;font:550 12px/1 var(--sans);color:var(--t2);width:max-content;list-style:none}
+details.adv summary::before{content:"▸ ";color:var(--t3)}
+details.adv[open] summary::before{content:"▾ "}
+details.adv summary:hover{color:var(--t1)}
+.fw{grid-column:1/-1}
+.field label{display:block;font:550 12px/1 var(--sans);color:var(--t2);margin-bottom:7px}
+.field label .opt{color:var(--t3);font-weight:400}
+.field .in{display:flex;align-items:center;gap:8px;height:36px;padding:0 11px;border:1px solid var(--line);
+  border-radius:var(--r-md);background:var(--bg);color:var(--t1);font:400 13.5px/1 var(--sans)}
+.field .in:focus-within{border-color:var(--acc)}
+.field .in input{border:0;outline:0;background:transparent;color:var(--t1);font:inherit;width:100%}
+.field .in input::placeholder{color:var(--t3)}
+.field .hint{margin-top:6px;font:400 11.5px/1.5 var(--sans);color:var(--t3)}
+.field textarea{width:100%;min-height:74px;padding:10px 11px;border:1px solid var(--line);border-radius:var(--r-md);
+  background:var(--bg);color:var(--t2);font:400 12px/1.6 var(--mono);resize:vertical;outline:0}
+.field textarea:focus{border-color:var(--acc)}
+.formfoot{display:flex;align-items:center;gap:10px;margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
+.formfoot .cli{font:400 11.5px/1.5 var(--mono);color:var(--t3)}
+.formfoot .cli b{color:var(--t2);font-weight:500}
+.formfoot .btns{margin-left:auto;display:flex;gap:8px}
+
+/* 信息条 / 错误条 */
+.infobox{display:flex;gap:10px;align-items:flex-start;padding:11px 13px;border:1px solid var(--line);
+  border-radius:var(--r-md);background:var(--s2);font:400 12.5px/1.55 var(--sans);color:var(--t2)}
+.infobox svg.ic{margin-top:2px;color:var(--info)}
+.infobox a{color:var(--acc);text-decoration:none;font-weight:550}
+.infobox a:hover{color:var(--acc-h)}
+.errbox{display:flex;gap:10px;align-items:flex-start;padding:11px 13px;border:1px solid rgba(224,96,106,.3);
+  border-radius:var(--r-md);background:rgba(224,96,106,.07);font:400 12.5px/1.55 var(--sans);color:#f0a3a9}
+.errbox svg.ic{margin-top:2px;color:var(--err)}
+.errbox code{font:500 11.5px/1 var(--mono);color:#f0a3a9;background:rgba(224,96,106,.12);
+  padding:2px 6px;border-radius:5px}
+
+/* 空态 */
+.empty{display:flex;flex-direction:column;align-items:center;gap:6px;padding:52px 20px;text-align:center}
+.empty .eic{width:44px;height:44px;border-radius:11px;border:1px solid var(--line);background:var(--s2);
+  display:grid;place-items:center;color:var(--t3);margin-bottom:8px}
+.empty h4{font:600 14.5px/1.3 var(--sans)}
+.empty p{font:400 13px/1.55 var(--sans);color:var(--t3);max-width:440px}
+.empty .btn{margin-top:12px}
+
+/* tabs（App Detail） */
+.hero{display:flex;align-items:center;gap:14px;background:var(--s1);border:1px solid var(--line);
+  border-radius:var(--r-lg);padding:18px 20px;margin-bottom:14px}
+.hero .av{width:42px;height:42px;border-radius:10px;display:grid;place-items:center;font:700 17px/1 var(--sans);color:#fff}
+.hero h1{font:650 19px/1.3 var(--sans);letter-spacing:-.2px;display:flex;align-items:center;gap:11px}
+.hero .metaline{margin-top:4px;font:400 12.5px/1 var(--mono);color:var(--t3)}
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);margin-bottom:20px}
+.tabs button{appearance:none;border:0;background:transparent;color:var(--t2);font:500 13.5px/1 var(--sans);
+  padding:11px 13px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
+.tabs button:hover{color:var(--t1)}
+.tabs button.on{color:var(--t1);font-weight:600;border-bottom-color:var(--acc)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}
+.kv{display:grid;grid-template-columns:110px 1fr;gap:8px 14px;font:400 13.5px/1.5 var(--sans)}
+.kv dt{color:var(--t3)}
+.kv dd{color:var(--t1)}
+.kv dd.mono{font-size:13px}
+.danger{border-color:rgba(224,96,106,.25)}
+.danger .card-h h3{color:#f0a3a9}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- 侧栏（镜像现役 IA；GitHub Apps 挂 Fleet 段） -->
+  <aside class="sidebar">
+    <div class="side-head">
+      <div class="brand"><div class="tile">f</div><div class="wm">fleetly</div></div>
+      <div class="pswitch"><div class="av">T</div><div><div class="pn">torchwood</div><div class="pe">Project</div></div><span class="ch">▾</span></div>
+    </div>
+    <nav class="nav">
+      <div class="ngroup"><label>Project</label>
+        <button class="nitem">◈ Overview</button></div>
+      <div class="ngroup"><label>Build</label>
+        <button class="nitem" id="nav-apps">▦ Apps</button>
+        <button class="nitem">⇅ Deployments</button>
+        <button class="nitem">◷ Tasks</button>
+        <button class="nitem navreg" id="nav-reg">▥ Registry</button></div>
+      <div class="ngroup"><label>Data &amp; Storage</label>
+        <button class="nitem">▤ Databases</button>
+        <button class="nitem">▣ Storage</button>
+        <button class="nitem">⌀ Variables</button></div>
+      <div class="ngroup"><label>Network</label>
+        <button class="nitem">⤳ Routes</button>
+        <button class="nitem">◎ Networks</button></div>
+      <div class="ngroup"><label>Monitor</label>
+        <button class="nitem">▤ Logs</button>
+        <button class="nitem">◭ Metrics</button></div>
+      <div class="ndiv"></div>
+      <div class="ngroup"><label>Platform · Fleet</label>
+        <button class="nitem">⬡ Nodes</button>
+        <button class="nitem">◇ Components</button>
+        <button class="nitem">⚡ Events</button>
+        <button class="nitem" id="nav-gh">◌ GitHub Apps</button></div>
+    </nav>
+    <div class="side-foot">console v2 · ADR-0073</div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div class="crumb" id="crumb"><span>torchwood</span><span class="sep">/</span><b>Registry</b></div>
+      <div class="tb-actions">
+        <div class="searchbox">⌕ Search…<kbd>⌘K</kbd></div>
+        <div class="avatar">w</div>
+      </div>
+    </div>
+
+    <div class="content">
+
+      <!-- ═══════════ 屏 1 · Registry 页 · per-Project 管理卡 ═══════════ -->
+      <section class="screen active" id="s1">
+        <div class="page">
+          <div class="page-head">
+            <div><h1>Registry</h1>
+            <div class="sub">Build sources and build outputs for this project — private-repo access material lives here too.</div></div>
+          </div>
+          <div class="tabs">
+            <button>Apps</button><button>Image catalog</button><button class="on">GitHub Apps</button>
+          </div>
+
+          <div class="card">
+            <div class="card-h">
+              <div><h3>GitHub Apps</h3>
+              <div class="desc">Private-repo material for builds — a short-lived installation token is minted per clone, never stored in revisions.</div></div>
+              <div class="acts"><button class="btn pri sm" onclick="toggleAdd(this)">＋ Add GitHub App</button></div>
+            </div>
+            <div class="card-b tight">
+              <table class="tbl">
+                <thead><tr><th style="width:34%">Owner</th><th>App ID</th><th>Installation</th><th>Private key</th><th>Added</th><th></th></tr></thead>
+                <tbody>
+                  <tr>
+                    <td><div class="cell-main">
+                      <div class="owav" style="background:linear-gradient(135deg,#4a4f6b,#6b6f96)">A</div>
+                      <div><div class="nm">acme <span class="scopetag proj">PROJECT</span></div>
+                      <div class="ds">api.github.com · 3 repos resolved</div></div>
+                    </div></td>
+                    <td class="mono num">182345</td>
+                    <td class="mono num">51790921</td>
+                    <td><span class="badge ok"><i></i><span class="mono">sealed:3f9c2a1b8d4e7f06</span></span></td>
+                    <td class="dim">2 d ago</td>
+                    <td><div class="rowact">
+                      <button class="btn sm ghost" onclick="toggleRepos(this)">Repos ▾</button>
+                      <button class="btn sm danger">Delete</button>
+                    </div></td>
+                  </tr>
+                  <tr class="subrow" id="repos-row" style="display:none"><td colspan="6">
+                    <div class="repopanel">
+                      <div class="rp-h"><span class="t">Repositories reachable via this installation</span>
+                        <span class="badge ok"><i></i>verified 4 m ago</span>
+                        <span class="when">resolved live from GitHub · not stored</span></div>
+                      <table class="rptbl">
+                        <tr><td class="mono">acme/web</td><td><span class="vis priv">private</span></td><td class="dim">torchwood · torchwood-14 builds from here</td></tr>
+                        <tr><td class="mono">acme/web-libs</td><td><span class="vis priv">private</span></td><td class="dim">—</td></tr>
+                        <tr><td class="mono">acme/oss-templates</td><td><span class="vis">public</span></td><td class="dim">—</td></tr>
+                      </table>
+                      <div class="visib">Clone resolution: repo host + owner match this row → token minted for the build → anonymous if no row matches.</div>
+                    </div>
+                  </td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="card-b" id="addform" style="border-top:1px solid var(--line);display:none">
+              <div class="sect">Add a GitHub App</div>
+              <div class="formgrid">
+                <div class="field"><label>App ID</label>
+                  <div class="in"><input placeholder="182345"></div>
+                  <div class="hint">GitHub App → General → About → App ID (numeric).</div></div>
+                <div class="field"><label>Installation ID</label>
+                  <div class="in"><input placeholder="51790921"></div>
+                  <div class="hint">Install the app on your account, then take the ID from the installation URL.</div></div>
+                <div class="field fw"><label>Private key <span class="opt">(PEM — write-only)</span></label>
+                  <textarea placeholder="-----BEGIN RSA PRIVATE KEY-----&#10;…&#10;-----END RSA PRIVATE KEY-----"></textarea>
+                  <div class="hint">Sealed with the platform master key at rest. Never returned by the API — only a fingerprint stays visible.</div></div>
+              </div>
+              <details class="adv">
+                <summary>Advanced · API base for GitHub Enterprise Server</summary>
+                <div class="field" style="margin-top:12px">
+                  <div class="in"><input placeholder="https://api.github.com"></div>
+                  <div class="hint">Leave empty for github.com. GHES example: <span class="mono">https://ghe.example.com/api/v3</span>.</div></div>
+              </details>
+              <div class="visib" style="margin-top:14px">On save, fleetly verifies the app + installation + key against GitHub and fills in the owner automatically — repos under that owner resolve to this app (project rows shadow global rows). Build-time order: project app → global app → <span class="mono">git:&lt;host&gt;</span> secret (phase A) → anonymous.</div>
+              <div class="formfoot">
+                <div class="cli"><b>CLI</b> · fleetly github-apps put --project torchwood --app-id 182345 --installation-id 51790921 --private-key-file ./fleetly.pem</div>
+                <div class="btns">
+                  <button class="btn ghost sm">Install guide ↗</button>
+                  <button class="btn pri sm">Add app</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════════ 屏 2 · Platform 段 · Global 管理卡 ═══════════ -->
+      <section class="screen" id="s2">
+        <div class="page">
+          <div class="page-head">
+            <div><h1>GitHub Apps <span class="scopetag glob" style="vertical-align:3px">GLOBAL</span></h1>
+            <div class="sub">Platform-wide installations — available to every project. Managed by platform admins; project-scoped apps shadow these for the same owner.</div></div>
+          </div>
+
+          <div class="card" style="margin-bottom:14px">
+            <div class="card-h">
+              <div><h3>Installations</h3>
+              <div class="desc">One installation per owner. Applies to all projects until a project defines its own row for that owner.</div></div>
+              <div class="acts"><button class="btn pri sm">＋ Add global app</button></div>
+            </div>
+            <div class="card-b tight">
+              <table class="tbl">
+                <thead><tr><th style="width:34%">Owner</th><th>App ID</th><th>Installation</th><th>Private key</th><th>Added</th><th></th></tr></thead>
+                <tbody>
+                  <tr>
+                    <td><div class="cell-main">
+                      <div class="owav" style="background:linear-gradient(135deg,#3f5a4d,#5d8272)">G</div>
+                      <div><div class="nm">giant-robots</div>
+                      <div class="ds">api.github.com · global fallback for 4 projects</div></div>
+                    </div></td>
+                    <td class="mono num">201884</td>
+                    <td class="mono num">51887734</td>
+                    <td><span class="badge ok"><i></i><span class="mono">sealed:91b4d0ee6c2a5f83</span></span></td>
+                    <td class="dim">6 d ago</td>
+                    <td><div class="rowact">
+                      <button class="btn sm ghost">Repos ▾</button>
+                      <button class="btn sm danger">Delete</button>
+                    </div></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="infobox">
+            <svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v4h1"/></svg>
+            <div>Global rows serve every project at clone time. Adding <span class="mono">acme</span> as a project-scoped app inside <b>torchwood</b> takes precedence for that project only — nothing else changes. Write access requires a platform-admin token; project members see these rows read-only.<br>
+            <span class="cli" style="display:inline-block;margin-top:6px"><b>CLI</b> · fleetly github-apps put --global --app-id 201884 --installation-id 51887734 --private-key-file ./fleetly.pem</span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════════ 屏 3 · App Settings · GitHookCard 提示行 ═══════════ -->
+      <section class="screen" id="s3">
+        <div class="page">
+          <div class="hero">
+            <div class="av" style="background:linear-gradient(135deg,#b0558e,#8e55b0)">t</div>
+            <div><h1>torchwood <span class="scopetag proj">R14 LIVE</span></h1>
+            <div class="metaline">torchwood-14</div></div>
+            <div class="acts"><button class="btn pri sm">↻ Deploy</button><button class="btn sm">Logs</button><button class="btn sm">Terminal</button></div>
+          </div>
+          <div class="tabs">
+            <button>Overview</button><button>Processes</button><button>Deployments</button><button>Metrics</button><button>Logs</button>
+            <button>Variables</button><button>Routes</button><button class="on">Settings</button>
+          </div>
+
+          <div class="grid2">
+            <div class="card">
+              <div class="card-h"><h3>General</h3></div>
+              <div class="card-b">
+                <dl class="kv">
+                  <dt>name</dt><dd>torchwood</dd>
+                  <dt>app id</dt><dd class="mono">torchwood-14 <span class="faint">⧉</span></dd>
+                  <dt>project</dt><dd class="mono">torchwood-1</dd>
+                  <dt>created</dt><dd>14 s ago</dd>
+                </dl>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-h">
+                <div><h3>Git deploy hook</h3>
+                <div class="desc">Pushes to the repo trigger a build from the pushed commit.</div></div>
+              </div>
+              <div class="card-b">
+                <div class="infobox" style="margin-bottom:14px">
+                  <svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v4h1"/></svg>
+                  <div><b>Private repository?</b> Connect a <a href="#">GitHub App</a> (project or global) instead of a token-URL — fleetly mints a short-lived installation token per build; nothing lands in revisions, and rotating the key needs no redeploy.</div>
+                </div>
+                <div class="formgrid">
+                  <div class="field fw"><label>Repo</label>
+                    <div class="in"><input value="https://github.com/acme/web"></div>
+                    <div class="hint">Clean https URL only — no embedded tokens (rejected at intake; tokens never enter read faces).</div></div>
+                  <div class="field"><label>Branch</label>
+                    <div class="in"><input value="main"></div></div>
+                  <div class="field"><label>Dockerfile path <span class="opt">(optional)</span></label>
+                    <div class="in"><input placeholder="./Dockerfile"></div></div>
+                  <div class="field fw"><label>Watch paths <span class="opt">(optional, comma separated)</span></label>
+                    <div class="in"><input value="web/, libs/"></div></div>
+                </div>
+                <div class="formfoot">
+                  <div class="cli">webhook secret <span class="badge ok"><i></i><span class="mono">flthook_9x…</span></span> shown once at configure · <a href="#" style="color:var(--acc)">rotate</a></div>
+                  <div class="btns"><button class="btn pri sm">Configure hook</button></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ═══════════ 屏 4 · 状态面 ═══════════ -->
+      <section class="screen" id="s4">
+        <div class="page">
+          <div class="page-head">
+            <div><h1>States</h1>
+            <div class="sub">Empty · upstream failure · installation suspended · authorization boundary. Errors are precise — no silent fallback to anonymous on a matched app.</div></div>
+          </div>
+
+          <!-- 空态 -->
+          <div class="card" style="margin-bottom:14px">
+            <div class="card-h"><div><h3>GitHub Apps — empty</h3><div class="desc">No material configured for this project.</div></div></div>
+            <div class="empty">
+              <div class="eic"><svg class="ic" style="width:20px;height:20px" viewBox="0 0 24 24"><path d="M12 2l8 4.5v9L12 20l-8-4.5v-9L12 2z"/><path d="M12 11v9M12 11l8-4.5M12 11L4 6.5"/></svg></div>
+              <h4>No GitHub Apps in this project</h4>
+              <p>Private repositories resolve anonymous clones today — builds fail with an auth error and a pointer here. Add a project-scoped app, or rely on a global one if your platform provides it.</p>
+              <button class="btn pri sm">＋ Add GitHub App</button>
+            </div>
+          </div>
+
+          <!-- 受理即验证 -->
+          <div class="card" style="margin-bottom:14px">
+            <div class="card-h"><div><h3>Add-time verification</h3><div class="desc">Save runs a live check against GitHub — wrong values fail here, not at first build. Owner is resolved automatically.</div></div></div>
+            <div class="card-b">
+              <div class="errbox">
+                <svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+                <div><code>E_INVALID_ARGUMENT</code> &nbsp;installation 51790921 not found for app 182345 — install the app on your account first, then copy the installation ID from its URL (<span class="mono">…/settings/installations/&lt;id&gt;</span>).</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 铸造失败 -->
+          <div class="card" style="margin-bottom:14px">
+            <div class="card-h"><div><h3>Upstream failure — token minting</h3><div class="desc">Matched app exists; GitHub API unreachable at clone time.</div></div></div>
+            <div class="card-b">
+              <div class="errbox">
+                <svg class="ic" viewBox="0 0 24 24"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>
+                <div><code>E_GITHUB_UPSTREAM</code> &nbsp;mint installation token for <span class="mono">acme</span>: Post <span class="mono">https://api.github.com/app/installations/51790921/access_tokens</span>: dial tcp: connection refused.<br>
+                The deployment fails with this reason — no silent anonymous fallback while a matching app exists. Builds retry on the next trigger once the network recovers.</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 安装吊销 -->
+          <div class="card" style="margin-bottom:14px">
+            <div class="card-h"><div><h3>Installation suspended</h3><div class="desc">The app is suspended on the GitHub side; rows stay until deleted.</div></div></div>
+            <div class="card-b tight">
+              <table class="tbl">
+                <thead><tr><th style="width:34%">Owner</th><th>App ID</th><th>Installation</th><th>Private key</th><th>Added</th><th></th></tr></thead>
+                <tbody>
+                  <tr>
+                    <td><div class="cell-main">
+                      <div class="owav" style="background:linear-gradient(135deg,#4a4f6b,#6b6f96)">A</div>
+                      <div><div class="nm">acme <span class="scopetag proj">PROJECT</span></div>
+                      <div class="ds">api.github.com</div></div>
+                    </div></td>
+                    <td class="mono num">182345</td>
+                    <td class="mono num">51790921</td>
+                    <td><span class="badge ok"><i></i><span class="mono">sealed:3f9c2a1b8d4e7f06</span></span></td>
+                    <td class="dim">2 d ago</td>
+                    <td><span class="badge err"><i></i>installation suspended</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="card-b" style="border-top:1px solid var(--line)">
+              <div class="errbox">
+                <svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg>
+                <div><code>E_GITHUB_UPSTREAM</code> &nbsp;installation 51790921 is suspended on GitHub — re-install or unsuspend the app at <span class="mono">github.com/organizations/acme/settings/installations</span> to restore token minting.</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 授权边界 -->
+          <div class="card">
+            <div class="card-h"><div><h3>Authorization boundary</h3><div class="desc">Global rows are platform-admin material.</div></div></div>
+            <div class="card-b">
+              <div class="errbox">
+                <svg class="ic" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 018 0v3"/></svg>
+                <div><code>E_PERMISSION_DENIED</code> &nbsp;writing global GitHub Apps requires a platform-admin token — this token is scoped to project <span class="mono">torchwood</span>. Project-scoped rows are the member-managed path.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+</div>
+
+<!-- 原型切换胶囊（非产品 UI） -->
+<div class="proto">
+  <span class="tag">ADR-0073</span>
+  <button class="on" data-v="1">1 · Registry · Project</button>
+  <button data-v="2">2 · GitHub Apps · Global</button>
+  <button data-v="3">3 · App Settings</button>
+  <button data-v="4">4 · States</button>
+  <span class="hint">←/→ · 1-4</span>
+</div>
+
+<script>
+// 屏切换：胶囊按钮 + 方向键 + 数字键（与仓内原型惯例一致）。
+const views=['1','2','3','4'];let cur='1';
+function go(v){cur=v;
+  document.querySelectorAll('.screen').forEach(s=>s.classList.toggle('active',s.id==='s'+v));
+  document.querySelectorAll('.proto button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
+  // 侧栏高亮随屏联动:屏1=Registry,屏2/4=GitHub Apps,屏3=Apps。
+  document.querySelectorAll('.nitem').forEach(n=>n.classList.remove('on'));
+  const nav={ '1':'nav-reg','2':'nav-gh','3':'nav-apps','4':'nav-gh' }[v];
+  if(nav){const el=document.getElementById(nav);if(el)el.classList.add('on');}
+  const cr=document.getElementById('crumb');
+  if(v==='1')cr.innerHTML='<span>torchwood</span><span class="sep">/</span><b>Registry</b>';
+  if(v==='2')cr.innerHTML='<span>Platform</span><span class="sep">/</span><b>GitHub Apps</b>';
+  if(v==='3')cr.innerHTML='<span>torchwood</span><span class="sep">/</span><span>Apps</span><span class="sep">/</span><b>torchwood · Settings</b>';
+  if(v==='4')cr.innerHTML='<span>Platform</span><span class="sep">/</span><b>GitHub Apps · states</b>';
+}
+document.querySelectorAll('.proto button').forEach(b=>b.onclick=()=>go(b.dataset.v));
+addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA')return;
+  if(e.key==='ArrowRight')go(views[(views.indexOf(cur)+1)%views.length]);
+  if(e.key==='ArrowLeft')go(views[(views.indexOf(cur)+views.length-1)%views.length]);
+  if(views.includes(e.key))go(e.key);
+});
+go('1');
+// Repos 展开面板（屏 1 行内交互演示）。
+function toggleRepos(btn){const r=document.getElementById('repos-row');
+  const open=r.style.display!=='none';r.style.display=open?'none':'';
+  btn.textContent=open?'Repos ▾':'Repos ▴';}
+// 添加表单开合（默认收起——默认页收紧到列表 + 按钮）。
+function toggleAdd(btn){const f=document.getElementById('addform');
+  const open=f.style.display!=='none';f.style.display=open?'none':'';
+  btn.innerHTML=open?'＋ Add GitHub App':'× Close form';}
+</script>
+</body>
+</html>

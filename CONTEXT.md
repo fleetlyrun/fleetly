@@ -92,6 +92,10 @@ _Avoid_: blueprint, recipe
 App 的材料来源，三种：Git 引用、镜像引用、上传产物。Spec 所有权分裂（ADR-0072）：材料半边（source、build）归部署来源所有，运行时半边（processes 的形状字段）归声明方所有——配置了 Git hook 的 App 材料归 git：push 合并（新材料 + 冻结运行时），Deploy(spec_file) 是运行时 overlay（冻结材料 + 提交运行时），材料源切换需 override 或先删 hook。
 _Avoid_: repo
 
+**GitHub App**:
+私有 Git 仓库的一等接入材料（ADR-0073）：GitHub App 安装三元组（App ID / Installation ID / PEM 私钥）与 API 基址（支持 GHES）。私钥 age 信封只写不读，读面只回指纹；受理即经 GitHub API 验证并自动解析安装属主。双作用域：Project 级或平台级（Global），构建期按仓库 host+属主解析，Project 级遮蔽 Global；命中即现铸短时效 installation token 供 clone，材料永不进 Revision 冻结体与任何读面。
+_Avoid_: credential(GitHub 侧)
+
 **Build**:
 从 Source 产出镜像的过程记录，输出不可变 digest。
 _Avoid_: compile, pipeline, ci
