@@ -1,0 +1,175 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fleetly.dev/schemas/compose-dialect.json",
+  "title": "fleetly compose dialect",
+  "description": "Editor aid for the fleetly compose intake language (ADR-0074): compose-spec official syntax + x-fleetly extensions. Closedness is enforced at intake, not here — fields outside this schema may be legal compose for other tools but are rejected by fleetly at deploy time.",
+  "type": "object",
+  "properties": {
+    "services": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/service" }
+    },
+    "networks": { "$ref": "#/$defs/externalDecls" },
+    "volumes": { "$ref": "#/$defs/externalDecls" },
+    "secrets": { "$ref": "#/$defs/externalDecls" },
+    "x-fleetly-first-boot-jobs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "image"],
+        "properties": {
+          "name": { "type": "string", "pattern": "^[a-z0-9]([a-z0-9-]{0,36}[a-z0-9])?$" },
+          "image": { "type": "string", "minLength": 1 },
+          "command": {
+            "oneOf": [
+              { "type": "string" },
+              { "type": "array", "items": { "type": "string" } }
+            ]
+          },
+          "environment": {
+            "oneOf": [
+              { "type": "object" },
+              { "type": "array", "items": { "type": "string", "pattern": "^.+=.*$" } }
+            ]
+          },
+          "secrets": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                { "type": "string" },
+                { "type": "object", "properties": { "source": { "type": "string" } }, "required": ["source"] }
+              ]
+            }
+          },
+          "ttl": { "type": "string", "pattern": "^[0-9]+(ns|us|ms|s|m|h)$" }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["services"],
+  "$defs": {
+    "externalDecls": {
+      "type": "object",
+      "description": "Platform entities are referenced via official external declarations; the key is schema-safe, `name` overrides carry platform names (colons ride here).",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "external": { "const": true },
+          "name": { "type": "string" }
+        },
+        "required": ["external"]
+      }
+    },
+    "service": {
+      "type": "object",
+      "properties": {
+        "image": { "type": "string", "minLength": 1 },
+        "command": {
+          "oneOf": [
+            { "type": "string" },
+            { "type": "array", "items": { "type": "string" } }
+          ]
+        },
+        "environment": {
+          "oneOf": [
+            { "type": "object", "not": { "required": [] } },
+            { "type": "array", "items": { "type": "string", "pattern": "^[^=]+=" } }
+          ]
+        },
+        "ports": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "string",
+                "description": "Container port only (e.g. \"8080\"). Host mapping syntax (\"9090:80\") is rejected — traffic enters through routes.",
+                "pattern": "^([0-9]{1,5})(/(tcp|udp))?$"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "target": { "type": "integer", "minimum": 1, "maximum": 65535 },
+                  "app_protocol": { "enum": ["http", "h2c", "tcp"], "description": "Route protocol declaration; default http." }
+                },
+                "required": ["target"],
+                "additionalProperties": false
+              }
+            ]
+          }
+        },
+        "deploy": {
+          "type": "object",
+          "properties": {
+            "replicas": { "type": "integer", "minimum": 1 },
+            "resources": {
+              "type": "object",
+              "properties": {
+                "limits": {
+                  "type": "object",
+                  "properties": {
+                    "cpus": { "type": ["string", "number"] },
+                    "memory": { "type": "string", "pattern": "^[0-9]+[bkmgt]$" }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "additionalProperties": false
+            },
+            "x-fleetly-strategy": { "enum": ["rolling", "blue-green"] }
+          },
+          "additionalProperties": false
+        },
+        "healthcheck": {
+          "type": "object",
+          "properties": {
+            "test": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Exec probe; first element must be CMD or CMD-SHELL."
+            },
+            "interval": { "type": "string" },
+            "timeout": { "type": "string" },
+            "retries": { "type": "integer", "minimum": 0 },
+            "start_period": { "type": "string" },
+            "x-fleetly-http-path": { "type": "string", "pattern": "^/" },
+            "x-fleetly-tcp-port": { "type": "integer", "minimum": 1, "maximum": 65535 }
+          },
+          "additionalProperties": false,
+          "oneOf": [
+            { "required": ["test"] },
+            { "required": ["x-fleetly-http-path"] },
+            { "required": ["x-fleetly-tcp-port"] }
+          ]
+        },
+        "networks": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Name-only attachments; declared top-level with external: true."
+        },
+        "volumes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[^:/]+:/[^:]+(:ro|:rw)?$",
+            "description": "Short syntax name:/target[:ro|rw]; platform volumes are external declarations."
+          }
+        },
+        "secrets": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              { "type": "string" },
+              {
+                "type": "object",
+                "properties": { "source": { "type": "string" } },
+                "required": ["source"],
+                "additionalProperties": false
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}
