@@ -24,6 +24,8 @@
 
 7. **词汇**:实体定名 **GitHub App**(CONTEXT.md 新词条,零 Avoid 变更)——Provider 词条已被"Capability 的具体实现"占用,更名即设计缺陷。
 
+8. **Manifest 自动建流(阶段 C,2026-10-13 同日拉回落地)**:GitHub App Manifest 流(dokploy 同款)——`StartManifestFlow`(生成 github.com 创建页跳转 URL;state = HMAC 签名绑作用域,15 分钟时效)→ 用户在 GitHub 表单只填名字创建(私钥由 GitHub 生成并 **POST 回平台回调**,一次性 code)→ `ConsumeManifestCode`(code 换 App ID/PEM,即收即封暂存进程内流存储,给安装页 URL)→ 用户安装 → setup 回调带 installation_id → `CompleteManifestFlow`(受理即验证 + upsert 落行,nonce 单用;project_id 回传并经流态一致性校验,冻结锚不可骗)。前提 = 公网 console 基址(console.host 注入,空 = 流禁用手动表单兜底);手动表单保留为 fallback(GHES/CLI/受限环境)。start/consume 不落任何平台行(冻结面豁免),complete 落行进 FrozenVerbs。
+
 ## Consequences
 
 - 构建期新增对 api.github.com(或 GHES api_base)的运行时依赖:命中实体而上游不可达 = 部署精确失败(E_GITHUB_UPSTREAM 带原因);未命中实体的仓库行为与今天完全一致。
@@ -40,4 +42,5 @@
 - [x] engine 解析单测:两态命中 / Project 遮蔽 Global / host 失配 / 无匹配匿名 / 铸造失败精确失败 / argv 与错误输出无明文泄漏(gitmaterial_test 表驱动 + cloneErr 脱敏端到端)。
 - [x] CLI golden 双形态 ×4 动词 + 组帮助(github-apps*.golden 十三件);`generate:verify` / `console:verify` 零漂移(提交门禁复绿)。
 - [x] 阶段 A 补锚:engine `git:<host>` Secret 解析单测(命中/username 缺省/坏 JSON 精确失败/被 GitHub App 遮蔽);apitest 两写面 userinfo 拒(hooks 合法形态翻转 + spec_file git 源负例/正例)。
+- [x] 阶段 C 补锚(manifest 流):apitest 三步全链(start 签名 URL/consume 单次 code/complete 落行 + nonce 单用 + 作用域一致性拒 + 未配基址精确失败 + 畸形 state 拒)(githubapps_manifest_test);真机锚 = ListRepos 鉴权修正(59d2882,staging 实测真实仓库列表面世)。
 - [ ] staging 真机:GitHub 建 App → 安装 → put(双态各一)→ hook push → 现铸 token → clone → build → deploy 全链绿;读面(GetRevision / apps spec / console)repo 恒为干净 URL。〔挂账:需用户在 GitHub 侧建 App/安装——操作序已入 runbook「GitHub App 接入」节;代码面锚全绿(cff7887/edce1b0/8226734/00b15a9 + A 段 6a65372/5bc0fdc)。〕
