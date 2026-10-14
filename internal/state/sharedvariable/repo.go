@@ -6,6 +6,7 @@ package sharedvariable
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/state"
@@ -61,6 +62,11 @@ func (r *Repo) Upsert(ctx context.Context, run state.Runner, v *SharedVariable) 
 		INSERT INTO shared_variables (id, seq, project_id, name, value, created_at, updated_at, deleted_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, '')`,
 		v.ID, v.Seq, v.ProjectID, v.Name, v.Value, v.CreatedAt, v.UpdatedAt)
+	// 并发同名 PUT 交错撞部分唯一索引时归一为 ErrAlreadyExists——secrets/
+	// app_variables 同款两步形态。
+	if state.IsUniqueViolation(err) {
+		return fmt.Errorf("%w: shared variable %q already exists in project", state.ErrAlreadyExists, v.Name)
+	}
 	return err
 }
 

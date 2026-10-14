@@ -12,6 +12,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -188,7 +189,14 @@ func (e *Engine) executeOneBackup(ctx context.Context) {
 	execCtx, cancel := context.WithTimeout(ctx, e.opts.BackupTimeout)
 	defer cancel()
 	fail := func(errMsg string) {
-		if ferr := e.backups.FinishFailed(ctx, e.db.Runner(), b.ID, errMsg); ferr != nil {
+		ferr := e.backups.FinishFailed(ctx, e.db.Runner(), b.ID, errMsg)
+		if errors.Is(ferr, state.ErrConflict) {
+			// 迟到失败回执：行已被启动清扫落终态（终态是事实），安静
+			// 丢弃——不覆写、不重复发事件。
+			e.log.Warn("backup step: late failure receipt dropped, backup already terminal", "backup", b.ID)
+			return
+		}
+		if ferr != nil {
 			e.log.Error("backup step: record failure", "backup", b.ID, "err", ferr)
 		}
 		e.emitBackupEvent(ctx, eventBackupFailed, b, errMsg)
@@ -265,6 +273,12 @@ func (e *Engine) executeOneBackup(ctx context.Context) {
 		return
 	}
 	if err := e.backups.FinishSucceeded(ctx, e.db.Runner(), b.ID, key, info.Digest, info.Size); err != nil {
+		if errors.Is(err, state.ErrConflict) {
+			// 迟到成功回执：行已被启动清扫落终态（终态是事实），安静
+			// 丢弃——不覆写、不推进锚、不发事件。
+			e.log.Warn("backup step: late success receipt dropped, backup already terminal", "backup", b.ID)
+			return
+		}
 		e.log.Error("backup step: record success", "backup", b.ID, "err", err)
 		return
 	}

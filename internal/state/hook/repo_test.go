@@ -6,6 +6,7 @@ package hook
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"testing"
 	"time"
 
@@ -112,6 +113,48 @@ func TestHookConfigRoundTrip(t *testing.T) {
 	}
 	if err := repo.RotateToken(ctx, db.Runner(), "missing", "x", "y", nil); err != state.ErrNotFound {
 		t.Fatalf("rotate missing = %v", err)
+	}
+}
+
+// TestHookCreateConflictNormalization：双唯一键（app_id 主键 / token_
+// sha256 UNIQUE）命中归一为 ErrAlreadyExists——并发首配交错的裸
+// "constraint failed: UNIQUE" 不得上抛成 E_INTERNAL（SetGitHook 重试即走
+// UpdateConfig 臂）。
+func TestHookCreateConflictNormalization(t *testing.T) {
+	db, clock := statetest.New(t)
+	seedApp(t, db)
+	// 第二 App 行（token 查找键冲突臂的载体）。
+	ctx := context.Background()
+	_, err := db.Runner().ExecContext(ctx,
+		`INSERT INTO apps (id, seq, project_id, name, created_at, updated_at) VALUES ('a2', 2, 'p1', 'worker', '2026-09-30T00:00:00Z', '2026-09-30T00:00:00Z')`)
+	if err != nil {
+		t.Fatalf("seed a2: %v", err)
+	}
+	repo := New(clock)
+
+	if err := repo.Create(ctx, db.Runner(), &Hook{
+		AppID: "a1", Repo: "https://example.com/repo.git",
+		TokenSHA256: "sha-a", SecretCiphertext: []byte("ct"),
+	}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	// 同 App 重复首配 → 主键冲突。
+	err = repo.Create(ctx, db.Runner(), &Hook{
+		AppID: "a1", Repo: "https://example.com/other.git",
+		TokenSHA256: "sha-b", SecretCiphertext: []byte("ct"),
+	})
+	if !errors.Is(err, state.ErrAlreadyExists) {
+		t.Fatalf("duplicate app create = %v, want ErrAlreadyExists", err)
+	}
+
+	// 异 App 撞 token 查找键 → UNIQUE(token_sha256) 冲突。
+	err = repo.Create(ctx, db.Runner(), &Hook{
+		AppID: "a2", Repo: "https://example.com/repo.git",
+		TokenSHA256: "sha-a", SecretCiphertext: []byte("ct"),
+	})
+	if !errors.Is(err, state.ErrAlreadyExists) {
+		t.Fatalf("token collision create = %v, want ErrAlreadyExists", err)
 	}
 }
 

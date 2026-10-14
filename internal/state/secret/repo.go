@@ -5,6 +5,7 @@ package secret
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/state"
@@ -60,6 +61,11 @@ func (r *Repo) Upsert(ctx context.Context, run state.Runner, s *Secret) error {
 		INSERT INTO secrets (id, seq, project_id, name, ciphertext, fingerprint, created_at, updated_at, deleted_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, '')`,
 		s.ID, s.Seq, s.ProjectID, s.Name, s.Ciphertext, s.Fingerprint, s.CreatedAt, s.UpdatedAt)
+	// 并发同名 PUT 交错（GetByName 未命中 ↔ 对端已落活跃行）撞部分唯一
+	// 索引时归一为 ErrAlreadyExists——apps/volumes 同款两步形态。
+	if state.IsUniqueViolation(err) {
+		return fmt.Errorf("%w: secret name %q already exists in project", state.ErrAlreadyExists, s.Name)
+	}
 	return err
 }
 

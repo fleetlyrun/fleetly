@@ -7,6 +7,7 @@ package appvariable
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/state"
@@ -62,6 +63,11 @@ func (r *Repo) Upsert(ctx context.Context, run state.Runner, v *AppVariable) err
 		INSERT INTO app_variables (id, seq, app_id, name, value, created_at, updated_at, deleted_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, '')`,
 		v.ID, v.Seq, v.AppID, v.Name, v.Value, v.CreatedAt, v.UpdatedAt)
+	// 并发同名 PUT 交错撞部分唯一索引时归一为 ErrAlreadyExists——secrets/
+	// shared_variables 同款两步形态。
+	if state.IsUniqueViolation(err) {
+		return fmt.Errorf("%w: app variable %q already exists in app", state.ErrAlreadyExists, v.Name)
+	}
 	return err
 }
 

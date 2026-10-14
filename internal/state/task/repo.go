@@ -35,6 +35,22 @@ func (s State) Terminal() bool {
 	return false
 }
 
+// TerminalStates 是全部终态（deployment.ActiveStates 同款集合形态）。
+func TerminalStates() []State {
+	return []State{StateCompleted, StateFailed, StateDrained, StateDeleted}
+}
+
+// TerminalStateStrings 是终态的 SQL IN 参数形态（deployment.
+// ActiveStateStrings 同款先例）：run 聚合的僵尸收口子查询与本包配额
+// 口径共用——词表单源，task 状态词变更不再手抄腐化。
+func TerminalStateStrings() []string {
+	out := make([]string, len(TerminalStates()))
+	for i, s := range TerminalStates() {
+		out[i] = string(s)
+	}
+	return out
+}
+
 // Form 是双形态值（CONTEXT.md Task 词条；kebab-case 与存储一致）。
 const (
 	FormOneShot  = "one-shot"
@@ -137,7 +153,8 @@ func (r *Repo) ListDriving(ctx context.Context, run state.Runner) ([]Task, error
 
 // ListRecentlyFinished 返回收口时刻在窗内的终态 Task（收尾批 E29-2 残留
 // 载体清扫的候选集）。deleted 不在列——其载体拆除是 DeleteTask 自身的
-// Remove 步（先收口后落账），tombstone 无残留面。finished_at 是 RFC3339
+// Remove 步（先收口后落账），tombstone 无残留面（词引用类型常量单源，
+// 状态词变更不腐化）。finished_at 是 RFC3339
 // UTC 串（state.FormatTime），字典序即时序。limit 钳制与 ListByProject
 // 同口径（<=0 或超上限回落/钳缺省）。新→旧序（finished_at DESC）：近期
 // 收口的行才是残留的实际所在（崩溃/失败窗口），旧行近乎必然已收敛。
@@ -145,10 +162,11 @@ func (r *Repo) ListRecentlyFinished(ctx context.Context, run state.Runner, since
 	if limit <= 0 || limit > maxListLimit {
 		limit = defaultListLimit
 	}
+	states := []string{string(StateCompleted), string(StateFailed), string(StateDrained)}
 	return r.query(ctx, run,
-		selectCols+" WHERE state IN ('completed', 'failed', 'drained')"+
+		selectCols+" WHERE state IN ("+placeholders(len(states))+")"+
 			" AND finished_at != '' AND finished_at >= ?"+
-			" ORDER BY finished_at DESC LIMIT ?", since, limit)
+			" ORDER BY finished_at DESC LIMIT ?", append(toAny(states), since, limit)...)
 }
 
 // ListByOwner 返回属主 Token 名下活跃行（吊销排空的拉式扫描面，P1-8）。
@@ -159,13 +177,14 @@ func (r *Repo) ListByOwner(ctx context.Context, run state.Runner, tokenID string
 
 // StatsByProject 返回 Project 内非终态 Task 的配额口径统计（ADR-0017
 // 附录 A.1）：活跃行数与 desired_concurrency 之和（受理位与引擎配额检查
-// 共用，事务内读）。
+// 共用，事务内读）。非终态 = 终态词表取反（TerminalStateStrings 单源）。
 func (r *Repo) StatsByProject(ctx context.Context, run state.Runner, projectID string) (active int, desiredSum int64, err error) {
+	states := TerminalStateStrings()
 	row := run.QueryRowContext(ctx, `
 		SELECT COUNT(*), COALESCE(SUM(desired_concurrency), 0)
 		FROM tasks
-		WHERE project_id = ? AND state NOT IN ('completed', 'failed', 'drained', 'deleted')`,
-		projectID)
+		WHERE project_id = ? AND state NOT IN (`+placeholders(len(states))+`)`,
+		append([]any{projectID}, toAny(states)...)...)
 	if err := row.Scan(&active, &desiredSum); err != nil {
 		return 0, 0, state.MapScanErr(err)
 	}
@@ -281,4 +300,16 @@ func joinStates(set []State) string {
 		parts[i] = string(s)
 	}
 	return strings.Join(parts, "|")
+}
+
+func toAny(ss []string) []any {
+	out := make([]any, len(ss))
+	for i, s := range ss {
+		out[i] = s
+	}
+	return out
+}
+
+func placeholders(n int) string {
+	return strings.TrimSuffix(strings.Repeat("?,", n), ",")
 }

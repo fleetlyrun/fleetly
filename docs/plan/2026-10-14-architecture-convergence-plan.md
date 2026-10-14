@@ -61,7 +61,7 @@
 - **验收锚**：对齐 swarm 同款；断流可诊断；优雅退出真退出
 - **预估**：0.5 天
 
-### P0-6 state 写路径三件 — [ ]
+### P0-6 state 写路径三件 — [x]
 - **改动面**：`state/{secret,appvariable,sharedvariable}/repo.go`（唯一冲突归一 ErrAlreadyExists）；`backup/repo.go`（终态 CAS）；`run/repo.go`+`task/`（TerminalStateStrings 单源）
 - **验收锚**：并发同名 PUT → 409 语义；二次软删幂等口径统一；终态不可覆写
 - **验证**：statetest 新用例
@@ -111,6 +111,7 @@ P4-3 "未配置"族码律收尾 + G17 守卫 — [ ]
 P4-4 SDK FromError + apitest builder 三件 — [ ]
 
 ## P5 statekit + 测试长跑（增量）
+P5-0 夹具去重：internal/state/statertest 与 statetest 一字母双包合并（审查中新发现，10-12 事故复制）
 P5-1 statekit 共享件（TransitWhere/ClampLimit/Placeholders/软删幂等/冲突归一）+ G7/G8 — [ ]
 P5-2 升级前进测试（旧 schema 快照→Up）+ 换装 hermetic 测试 — [ ]
 P5-3 G19（state 聚合带测试，volume/run/user/audit 先补）+ G20（e2e↔CI 对账 + coverageguard 补 k3s）— [ ]

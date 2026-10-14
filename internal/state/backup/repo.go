@@ -187,21 +187,46 @@ func (r *Repo) MarkRunning(ctx context.Context, run state.Runner, id string) err
 	return nil
 }
 
-// FinishSucceeded 回填成功（ObjectStore 回执三元组 + 终态）。
+// FinishSucceeded 回填成功（ObjectStore 回执三元组 + 终态；CAS：仅
+// running 行命中——终态是事实，启动清扫 SweepInterrupted 落 failed 后的
+// 迟到成功回执按 ErrConflict 拒绝，不得覆写）。
 func (r *Repo) FinishSucceeded(ctx context.Context, run state.Runner, id, objectKey, digest string, size int64) error {
 	now := state.FormatTime(r.clock.Now())
-	_, err := run.ExecContext(ctx, `
+	res, err := run.ExecContext(ctx, `
 		UPDATE backups SET status = 'succeeded', object_key = ?, digest = ?, size_bytes = ?,
-			finished_at = ? WHERE id = ?`, objectKey, digest, size, now, id)
-	return err
+			finished_at = ? WHERE id = ? AND status = 'running'`, objectKey, digest, size, now, id)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return state.ErrConflict
+	}
+	return nil
 }
 
-// FinishFailed 落失败终态（error 用户可见文本英文）。
+// FinishFailed 落失败终态（error 用户可见文本英文；CAS：pending/running
+// 行命中——失败回执在 MarkRunning 前后都合法，唯终态不可覆写，同
+// FinishSucceeded 口径）。
 func (r *Repo) FinishFailed(ctx context.Context, run state.Runner, id, errMsg string) error {
 	now := state.FormatTime(r.clock.Now())
-	_, err := run.ExecContext(ctx, `
-		UPDATE backups SET status = 'failed', error = ?, finished_at = ? WHERE id = ?`, errMsg, now, id)
-	return err
+	res, err := run.ExecContext(ctx, `
+		UPDATE backups SET status = 'failed', error = ?, finished_at = ?
+		WHERE id = ? AND status IN ('pending', 'running')`, errMsg, now, id)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return state.ErrConflict
+	}
+	return nil
 }
 
 // SweepInterrupted 把重启打断的 running 行落 failed（引擎启动清扫；返回

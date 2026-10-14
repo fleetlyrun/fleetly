@@ -298,3 +298,21 @@ func TestTaskListRecentlyFinished(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, none)
 }
+
+// TestTaskTerminalVocabularySingleSource：词表守卫——TerminalStateStrings
+// 与 State.Terminal() 谓词必须逐词咬合（run 僵尸收口子查询与配额口径的
+// SQL 面都消费该词表；新增终态词两处不同步即红）。
+func TestTaskTerminalVocabularySingleSource(t *testing.T) {
+	terminal := map[string]bool{}
+	for _, s := range task.TerminalStateStrings() {
+		terminal[s] = true
+	}
+	assert.Len(t, terminal, 4, "ADR-0012 freezes four terminal task states; a fifth means this guard and every SQL consumer need a conscious look")
+	for _, s := range []task.State{
+		task.StateActive, task.StateDraining,
+		task.StateCompleted, task.StateFailed, task.StateDrained, task.StateDeleted,
+	} {
+		assert.Equal(t, s.Terminal(), terminal[string(s)],
+			"state %q: Terminal() predicate and TerminalStateStrings disagree", s)
+	}
+}

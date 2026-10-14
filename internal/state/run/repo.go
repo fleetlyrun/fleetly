@@ -12,6 +12,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/state"
+	"github.com/fleetlyrun/fleetly/internal/state/task"
 )
 
 // State 是 Run 状态机值（ADR-0012）。
@@ -146,15 +147,21 @@ func (r *Repo) ListDriving(ctx context.Context, run state.Runner) ([]Run, error)
 		selectCols+" WHERE state IN ('pending', 'running', 'stopping') ORDER BY seq")
 }
 
-// ListDrivingOfTerminalTasks 返回终态 Task（completed/failed/drained/
-// deleted）名下的 driving 态 Run（僵尸收口面：正常链路不产生，pre-fix
-// 存量行在此显形——Schedule 重叠判定以 Run 行为真源，僵尸行会让该
-// Schedule 永久 skip）。
+// ListDrivingOfTerminalTasks 返回终态 Task 名下的 driving 态 Run（僵尸
+// 收口面：正常链路不产生，pre-fix 存量行在此显形——Schedule 重叠判定以
+// Run 行为真源，僵尸行会让该 Schedule 永久 skip）。终态词表单源引用
+// task.TerminalStateStrings（deployment.ActiveStateStrings 同款先例——
+// 词表变更编译期咬合，不再手抄腐化）。
 func (r *Repo) ListDrivingOfTerminalTasks(ctx context.Context, run state.Runner) ([]Run, error) {
+	states := task.TerminalStateStrings()
+	args := make([]any, len(states))
+	for i, s := range states {
+		args[i] = s
+	}
 	return r.query(ctx, run,
 		selectCols+" WHERE state IN ('pending', 'running', 'stopping')"+
-			" AND task_id IN (SELECT id FROM tasks WHERE state IN ('completed', 'failed', 'drained', 'deleted'))"+
-			" ORDER BY seq")
+			" AND task_id IN (SELECT id FROM tasks WHERE state IN ("+placeholders(len(states))+"))"+
+			" ORDER BY seq", args...)
 }
 
 // ListByTaskStates 返回 Task 名下指定状态的 Run（新→旧，与 ListByTask
