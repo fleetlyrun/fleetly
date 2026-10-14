@@ -278,7 +278,10 @@ func (p *Provider) anchorNodes(ctx context.Context, out chan<- capability.Worklo
 			// 铸造失败不阻断观测（下次扫描重试）；缓存不收未锚定节点。
 			continue
 		}
-		node.Labels[labelNodeID] = id
+		// 无 labels 节点的 nil map 直接赋值即 panic（P0-5 recover 护栏的
+		// 单测实测暴露——修复前该形态会击穿整个 fleetlyd）；SetMetaDataLabel
+		// 自带 nil map 初始化。
+		metav1.SetMetaDataLabel(&node.ObjectMeta, labelNodeID, id)
 		updated, err := p.cli.CoreV1().Nodes().Update(ctx, node, metav1.UpdateOptions{})
 		if err != nil {
 			// 锚定失败不阻断观测（下次扫描重试）；缓存不收未写回节点。

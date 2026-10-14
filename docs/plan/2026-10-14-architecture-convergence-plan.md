@@ -56,7 +56,7 @@
 - **验证**：composeintake 新负例+正例 + e2e first-boot 腿
 - **预估**：0.5 天
 
-### P0-5 k3s Watch 韧性三件 — [ ]
+### P0-5 k3s Watch 韧性三件 — [x]
 - **改动面**：`internal/providers/k3s/runtime.go`（静默失败三处补 Warn；watchLoop recover+重开；退避 select+ctx.Done）
 - **验收锚**：对齐 swarm 同款；断流可诊断；优雅退出真退出
 - **预估**：0.5 天

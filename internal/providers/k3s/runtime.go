@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/url"
+	"runtime/debug"
 	"sort"
 	"strconv"
 	"time"
@@ -533,10 +535,51 @@ func (p *Provider) Watch(ctx context.Context) (<-chan capability.WorkloadEvent, 
 	return out, nil
 }
 
+// watchLoop 是 Watch 的外层循环：轮次重开面（swarm watchLoop 同款形态，
+// 收敛批 P0-5）。watchRound 内任何 panic 由其 recover 护栏接住（返回
+// normal=false），此处退避后重开下一轮——观测流保命不永久消失；ctx 取消
+// 或轮正常收口即退出关流（消费方只感知 channel 关闭 = ctx 取消，既有
+// 语义不变）。
 func (p *Provider) watchLoop(ctx context.Context, out chan<- capability.WorkloadEvent) {
 	defer close(out)
-	// 首轮锚定（DescribeCluster 前置）+ 周期扫描。
-	_ = p.anchorNodes(ctx, out) // 首拍锚定失败不阻断观测（DescribeCluster 同语义，下拍重试）
+	for {
+		if p.watchRound(ctx, out) {
+			return
+		}
+		if ctx.Err() != nil {
+			return
+		}
+		// panic 后退避再重开（避免错误形态零间隔自激）。ctx 感知退避
+		// （swarm Q-19 同款）：time.Sleep 不看 ctx，停机/取消期间会白等
+		// 一秒才退出。
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(time.Second):
+		}
+	}
+}
+
+// watchRound 跑一轮观测循环（首轮锚定 + pod 事件流消费 + 周期锚定与全量
+// 对账）。返回 normal = 正常收口（ctx 取消）；false = panic 击穿——
+// mapPodEvent/锚定/对账路径的任何 panic 都不该击穿 fleetlyd（进程崩溃
+// 循环），recover 记 Error 后由调用方退避重开（swarm watchRound 的 P0 级
+// 护栏同款）。
+func (p *Provider) watchRound(ctx context.Context, out chan<- capability.WorkloadEvent) (normal bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("k3s watch: recovered from panic; restarting the watch loop",
+				"panic", r, "stack", string(debug.Stack()))
+			normal = false
+		}
+	}()
+	// 首轮锚定（DescribeCluster 前置）+ 周期扫描。失败不阻断观测（下拍
+	// 重试）但绝不静默（swarm B14-2/Q-19 同款纪律：静默降级 = 观测开天窗
+	// 无诊断线索）。panic 重开会再次锚定：锚定幂等（已锚定节点直接入缓存，
+	// 不重复铸造上报）。
+	if err := p.anchorNodes(ctx, out); err != nil {
+		slog.Warn("k3s watch: initial node anchoring failed; degraded to periodic rescan", "error", err)
+	}
 	ticker := time.NewTicker(watchPollInterval)
 	defer ticker.Stop()
 	watchCtx, cancel := context.WithCancel(ctx)
@@ -545,15 +588,24 @@ func (p *Provider) watchLoop(ctx context.Context, out chan<- capability.Workload
 	for {
 		select {
 		case <-ctx.Done():
-			return
+			return true
 		case <-ticker.C:
-			_ = p.anchorNodes(ctx, out) // 周期锚定失败不阻断观测（下拍重试）
-
-			p.reconcileAllPods(ctx, out)
+			if err := p.anchorNodes(ctx, out); err != nil {
+				slog.Warn("k3s watch: node anchoring scan failed", "error", err)
+			}
+			if err := p.reconcileAllPods(ctx, out); err != nil {
+				slog.Warn("k3s watch: pod reconciliation failed; workload observation degraded until next tick", "error", err)
+			}
 		case ev, ok := <-podEvents:
 			if !ok {
-				// watch 断流：重建（退避由 client-go watch retry 语义承载）。
-				time.Sleep(time.Second)
+				// watch 断流：退避后重建（重建节奏对齐 client-go watch
+				// retry 语义）。ctx 感知退避（swarm Q-19 同款）：time.Sleep
+				// 不看 ctx，优雅退出会被整段退避拖住。
+				select {
+				case <-ctx.Done():
+					return true
+				case <-time.After(time.Second):
+				}
 				podEvents = p.podWatchStream(watchCtx)
 				continue
 			}
@@ -584,7 +636,11 @@ func (p *Provider) podWatchStream(ctx context.Context) <-chan *capability.Worklo
 			LabelSelector: labels.Set(map[string]string{labelManaged: "true"}).String(),
 		})
 		if err != nil {
-			return // 断流重建由调用方承载
+			// 建流失败不静默（收敛批 P0-5，swarm 逐点 Warn 纪律同款）：断流
+			// 重建由调用方退避承载，但无日志 = apiserver 不可达窗口观测开
+			// 天窗且无诊断线索。
+			slog.Warn("k3s watch: pod watch stream setup failed; caller will retry after backoff", "error", err)
+			return
 		}
 		defer w.Stop()
 		for {
@@ -700,14 +756,18 @@ func (p *Provider) isDrifted(workloadID string, observed uint64) bool {
 	defer p.issuedGenMu.Unlock()
 	want, ok := p.issuedGen[workloadID]
 	return ok && want != observed
-} // reconcileAllPods 全量对账（watch 断流兜底 + 启动首轮快照——重启后
-// 观测面立即可用，不依赖事件）。
-func (p *Provider) reconcileAllPods(ctx context.Context, out chan<- capability.WorkloadEvent) {
+}
+
+// reconcileAllPods 全量对账（watch 断流兜底 + 启动首轮快照——重启后
+// 观测面立即可用，不依赖事件）。list 失败返回错误（调用方记 Warn——
+// 对账是断流期观测的权威兜底路径，静默失败 = 兜底失灵无诊断线索，
+// swarm pollTasks 同款纪律）。
+func (p *Provider) reconcileAllPods(ctx context.Context, out chan<- capability.WorkloadEvent) error {
 	pods, err := p.cli.CoreV1().Pods("").List(ctx, metav1.ListOptions{
 		LabelSelector: labels.Set(map[string]string{labelManaged: "true"}).String(),
 	})
 	if err != nil {
-		return
+		return fmt.Errorf("list pods: %w", err)
 	}
 	sort.Slice(pods.Items, func(i, j int) bool { return pods.Items[i].Name < pods.Items[j].Name })
 	for i := range pods.Items {
@@ -715,6 +775,7 @@ func (p *Provider) reconcileAllPods(ctx context.Context, out chan<- capability.W
 			p.sendEvent(ctx, out, *ev)
 		}
 	}
+	return nil
 }
 
 // Addresses 返回隔离域的可达地址：期望集成员的 Addressing Service DNS 名
