@@ -1,10 +1,10 @@
-package apperr
+package apperrstatus
 
-// 出口纪律单点（P0-3 E_INTERNAL 三面统一）：E_INTERNAL 且仅 E_INTERNAL 在
-// 出口处收口——message 统一脱敏文案、铸造 error_id、原始 cause 全文只进
-// 服务端日志（slog，error_id 关联）。gRPC 拦截器与 REST gateway 错误路由
-// 共用本单点；非 E_INTERNAL 错误（哨兵/业务码的 message 本就面向用户）
-// 原样放行、零影响。
+// 出口纪律单点（P0-3 E_INTERNAL 三面统一；P1a-3a 随传输承接面整体移入
+// 本包）：E_INTERNAL 且仅 E_INTERNAL 在出口处收口——message 统一脱敏文案、
+// 铸造 error_id、原始 cause 全文只进服务端日志（slog，error_id 关联）。
+// gRPC 拦截器与 REST gateway 错误路由共用本单点；非 E_INTERNAL 错误（哨兵/
+// 业务码的 message 本就面向用户）以等价 status 形态放行、wire 零漂移。
 
 import (
 	"context"
@@ -18,6 +18,8 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 )
 
 // RedactedInternalMessage 是 E_INTERNAL 的对外统一文案（原始消息只落服务
@@ -41,7 +43,7 @@ func NewErrorID() string {
 }
 
 // SanitizeExit 应用内部错误出口纪律并返回对外错误与 error_id（非内部错误
-// errorID 为空串、err 原样返回；error 殿后从 ST1008）：
+// errorID 为空串、err 以等价 status 形态上线；error 殿后从 ST1008）：
 //
 //   - 在册 E_INTERNAL（本地 *Error 或 status detail 还原）：message 换脱敏
 //     文案、error_id 入信封 context、cause 全文落 Error 级日志；
@@ -51,20 +53,25 @@ func NewErrorID() string {
 //     放行（机械语义，非内部错误）；
 //   - 幂等：错误已带 error_id（前一出口已收口——REST 面经 gRPC 段转发的
 //     常态）时原样放行并复用该 id，不重复铸造、不重复落日志。
+//
+// 传输承接契约（*apperr.Error 不再自带 GRPCStatus 方法后）：本单点是离服
+// 错误的 status 化最后一站——非 E_INTERNAL 分支经 ToGRPCStatus 投影为同
+// code/同 message/同 detail 的 status error（与既有 GRPCStatus() 方法产出
+// 逐字段一致），调用方直接返回即可。
 func SanitizeExit(ctx context.Context, logger *slog.Logger, err error, where string) (errorID string, out error) {
 	if err == nil {
 		return "", nil
 	}
 	if e, ok := FromError(err); ok {
 		if e.Code() != "E_INTERNAL" {
-			return "", err
+			return "", ToGRPCStatus(e).Err()
 		}
 		if id := e.ErrorID(); id != "" {
 			return id, err
 		}
 		id := NewErrorID()
 		logInternalExit(ctx, logger, where, id, e.Error(), e.Unwrap())
-		return id, e.sanitizedStatus(id).Err()
+		return id, sanitizedStatus(e, id).Err()
 	}
 	// 机械错误：ctx 取消/超时是诚实传输语义，不吞成 E_INTERNAL。
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
@@ -83,9 +90,9 @@ func SanitizeExit(ctx context.Context, logger *slog.Logger, err error, where str
 // "E_INTERNAL: internal server error"（与其余码 "CODE: message" 形态一致），
 // 信封 detail 保留 code/suggestion/docs/context 并携带 error_id。retryAfter
 // 不携带：429 族的 Retry-After 语义与 500 内部错误无交集。
-func (e *Error) sanitizedStatus(errorID string) *status.Status {
-	st := status.New(e.code.GRPC, e.code.ID+": "+RedactedInternalMessage)
-	envelope := e.Envelope(errorID)
+func sanitizedStatus(e *apperr.Error, errorID string) *status.Status {
+	st := status.New(grpcCodeFor(e), e.Code()+": "+RedactedInternalMessage)
+	envelope := Envelope(e, errorID)
 	envelope.Message = RedactedInternalMessage
 	if withDetail, err := st.WithDetails(envelope); err == nil {
 		return withDetail
@@ -96,7 +103,7 @@ func (e *Error) sanitizedStatus(errorID string) *status.Status {
 // degenerateInternalStatus 构造无信封机械错误的 E_INTERNAL 退化上线形态
 // （在册回落：suggestion/docs 来自注册表，机械失败不发明文档外码）。
 func degenerateInternalStatus(errorID string) *status.Status {
-	return New("E_INTERNAL", RedactedInternalMessage).sanitizedStatus(errorID)
+	return sanitizedStatus(apperr.New("E_INTERNAL", RedactedInternalMessage), errorID)
 }
 
 // logInternalExit 在服务端落 Error 级日志：cause 全文（message + 底层错误

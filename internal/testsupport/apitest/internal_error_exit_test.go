@@ -24,12 +24,12 @@ import (
 
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/assembly"
-	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/apperrstatus"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
 	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
-// errorIDHexRe 与 apperr.NewErrorID 的 128 位十六进制形态对齐。
+// errorIDHexRe 与 apperrstatus.NewErrorID 的 128 位十六进制形态对齐。
 var errorIDHexRe = regexp.MustCompile(`^[0-9a-f]{32}$`)
 
 // dropSharedVariables 制造存储层内部故障（表缺席 → SQL 失败 → mapStateError
@@ -64,7 +64,7 @@ func TestInternalErrorExitGRPCFace(t *testing.T) {
 		"gRPC face must carry the redacted message, never the cause text")
 	assert.NotContains(t, st.Message(), "shared_variables", "SQL cause text must not leak")
 
-	env, ok := apperr.FromError(err)
+	env, ok := apperrstatus.FromError(err)
 	require.True(t, ok, "envelope detail must survive the wire")
 	assert.Equal(t, "E_INTERNAL", env.Code())
 	require.Regexp(t, errorIDHexRe, env.ErrorID(), "envelope context must carry the minted error_id")
@@ -76,9 +76,9 @@ func TestInternalErrorExitGRPCFace(t *testing.T) {
 		&structurev1.ListSharedVariablesRequest{ProjectId: projectID},
 		&structurev1.ListSharedVariablesResponse{}, grpc.Trailer(&trailer))
 	require.Error(t, err)
-	trailerEnv, ok := apperr.FromError(err)
+	trailerEnv, ok := apperrstatus.FromError(err)
 	require.True(t, ok)
-	got := trailer.Get(apperr.ErrorIDHeader)
+	got := trailer.Get(apperrstatus.ErrorIDHeader)
 	require.Len(t, got, 1, "trailer must carry exactly one x-fleetly-error-id entry")
 	assert.Equal(t, trailerEnv.ErrorID(), got[0], "trailer id must match the envelope id of the same call")
 	assert.Regexp(t, errorIDHexRe, got[0])
@@ -88,7 +88,7 @@ func TestInternalErrorExitGRPCFace(t *testing.T) {
 		&structurev1.CreateProjectRequest{Name: "e-internal-exit"})
 	require.Error(t, err)
 	assert.Contains(t, status.Convert(err).Message(), "already exists")
-	dupeEnv, ok := apperr.FromError(err)
+	dupeEnv, ok := apperrstatus.FromError(err)
 	require.True(t, ok)
 	assert.Equal(t, "E_ALREADY_EXISTS", dupeEnv.Code())
 	assert.Empty(t, dupeEnv.ErrorID(), "error_id is minted at the E_INTERNAL exit only")
@@ -96,7 +96,7 @@ func TestInternalErrorExitGRPCFace(t *testing.T) {
 	require.Error(t, h.Conn.Invoke(ctx, "/fleetly.structure.v1.ProjectsService/CreateProject",
 		&structurev1.CreateProjectRequest{Name: "e-internal-exit"},
 		&structurev1.CreateProjectResponse{}, grpc.Trailer(&dupeTrailer)))
-	assert.Empty(t, dupeTrailer.Get(apperr.ErrorIDHeader), "non-E_INTERNAL exits carry no error-id trailer")
+	assert.Empty(t, dupeTrailer.Get(apperrstatus.ErrorIDHeader), "non-E_INTERNAL exits carry no error-id trailer")
 }
 
 // TestInternalErrorExitRESTFace：REST 面（gateway 经 gRPC 段转发）复用同一
@@ -128,9 +128,9 @@ func TestInternalErrorExitRESTFace(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &envelope))
 	assert.Equal(t, "E_INTERNAL", envelope.Code)
-	assert.Equal(t, apperr.RedactedInternalMessage, envelope.Message)
+	assert.Equal(t, apperrstatus.RedactedInternalMessage, envelope.Message)
 	require.Regexp(t, errorIDHexRe, envelope.Context["error_id"])
 
 	// 响应头与信封同键同值（与 gRPC trailer 形态统一）。
-	require.Equal(t, envelope.Context["error_id"], rec.Header().Get(apperr.ErrorIDHeader))
+	require.Equal(t, envelope.Context["error_id"], rec.Header().Get(apperrstatus.ErrorIDHeader))
 }

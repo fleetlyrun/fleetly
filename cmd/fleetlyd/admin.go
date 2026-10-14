@@ -16,7 +16,7 @@ import (
 	"github.com/lynx-go/commands"
 
 	"github.com/fleetlyrun/fleetly/internal/config"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/keyring"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/admin"
 )
@@ -77,7 +77,7 @@ func (v *rewrapVerb) Run(ctx context.Context, env *commands.Environment, args []
 	if len(args) > 0 {
 		return usageErr(v.Usage(), "unexpected argument %q", args[0])
 	}
-	cipher, err := material.LoadExistingCipher(*v.dataRoot)
+	cipher, err := keyring.LoadExistingCipher(*v.dataRoot)
 	if err != nil {
 		return err
 	}

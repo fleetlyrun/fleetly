@@ -29,9 +29,9 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/idem"
 	"github.com/fleetlyrun/fleetly/internal/assembly"
 	"github.com/fleetlyrun/fleetly/internal/buildinfo"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	specir "github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/keyring"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statertest"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/fleetlygrpc"
@@ -97,7 +97,7 @@ func newHarness(t testing.TB, autostart bool, mutators ...EngineOption) *Harness
 	t.Helper()
 	ctx := context.Background()
 	db, clock := statertest.New(t)
-	cipher, err := material.LoadCipher(t.TempDir())
+	cipher, err := keyring.LoadCipher(t.TempDir())
 	if err != nil {
 		t.Fatalf("apitest: master key: %v", err)
 	}

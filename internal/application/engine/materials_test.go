@@ -12,6 +12,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/keyring"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/secret"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/volume"
@@ -35,7 +36,7 @@ func putSecret(t *testing.T, e *Engine, projectID, name string, value []byte) {
 // 引用不存在的 Secret → 精确错误。
 func TestResolveMaterials(t *testing.T) {
 	db, _ := statetest.New(t)
-	cipher, err := material.LoadCipher(t.TempDir())
+	cipher, err := keyring.LoadCipher(t.TempDir())
 	require.NoError(t, err)
 	rt := newFakeRuntime()
 	e := New(Deps{DB: db, Runtime: rt, Cipher: cipher, Logger: discardLogger()}, Options{})
@@ -64,7 +65,7 @@ func TestResolveMaterials(t *testing.T) {
 
 func TestResolveMaterialsMissingSecretFails(t *testing.T) {
 	db, _ := statetest.New(t)
-	cipher, _ := material.LoadCipher(t.TempDir())
+	cipher, _ := keyring.LoadCipher(t.TempDir())
 	e := New(Deps{DB: db, Runtime: newFakeRuntime(), Cipher: cipher, Logger: discardLogger()}, Options{})
 	spec, err := e.loadSpec(context.Background(), freezeSpec(t, e, 2, `{"schema_version":1,`+
 		`"app":{"id":"`+tAppID+`","project":"`+tProjectID+`"},`+
@@ -112,7 +113,7 @@ func TestVolumePinning(t *testing.T) {
 // （无凭证）仍是合法匿名形态（TestResolveMaterials 已覆盖）。
 func TestResolveMaterialsRegistryLookupErrorPropagates(t *testing.T) {
 	db, _ := statetest.New(t)
-	cipher, err := material.LoadCipher(t.TempDir())
+	cipher, err := keyring.LoadCipher(t.TempDir())
 	require.NoError(t, err)
 	e := New(Deps{DB: db, Runtime: newFakeRuntime(), Cipher: cipher, Logger: discardLogger()}, Options{})
 	spec, err := e.loadSpec(context.Background(), freezeSpec(t, e, 3, `{"schema_version":1,`+

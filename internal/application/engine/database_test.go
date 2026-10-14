@@ -16,6 +16,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/keyring"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 	dbrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/database"
 	networkrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
@@ -34,7 +35,7 @@ func newDatabaseFixture(t *testing.T, engine, connectURL string) (*Engine, *fake
 	t.Helper()
 	db, clock := statertest.New(t)
 	rt := newFakeRuntime()
-	cipher, err := material.LoadCipher(t.TempDir())
+	cipher, err := keyring.LoadCipher(t.TempDir())
 	require.NoError(t, err)
 	e := New(Deps{DB: db, Runtime: rt, Cipher: cipher, Logger: discardLogger()}, Options{})
 	ctx := context.Background()

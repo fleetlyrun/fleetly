@@ -27,8 +27,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/github"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/keyring"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/githubapp"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/secret"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
@@ -91,7 +91,7 @@ func TestResolveGitMaterialShadowing(t *testing.T) {
 	ctx := context.Background()
 	db, clock := statetest.New(t)
 	root := t.TempDir()
-	cipher, err := material.LoadCipher(root)
+	cipher, err := keyring.LoadCipher(root)
 	require.NoError(t, err)
 	fake := newGhFake(t)
 	ghes := newGhFake(t)
@@ -209,7 +209,7 @@ func TestResolveGitSecretMaterial(t *testing.T) {
 	ctx := context.Background()
 	db, clock := statetest.New(t)
 	root := t.TempDir()
-	cipher, err := material.LoadCipher(root)
+	cipher, err := keyring.LoadCipher(root)
 	require.NoError(t, err)
 	fake := newGhFake(t)
 

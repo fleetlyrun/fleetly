@@ -25,6 +25,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/team"
 	tokenrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/token"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/user"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/apperrstatus"
 )
 
 func quietLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
@@ -70,7 +71,7 @@ func reasonOf(t *testing.T, err error) string {
 	t.Helper()
 	var e *apperr.Error
 	require.ErrorAs(t, err, &e)
-	return e.Envelope("").GetContext()["reason"]
+	return apperrstatus.Envelope(e, "").GetContext()["reason"]
 }
 
 func TestNarrowingLadderAndPassThrough(t *testing.T) {

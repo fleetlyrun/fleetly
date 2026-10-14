@@ -1,7 +1,7 @@
-package apperr
+package apperrstatus
 
-// 出口纪律单点测试（P0-3）：E_INTERNAL 脱敏 + error_id 在场 + cause 只进
-// 日志；非 E_INTERNAL 零影响；转发链幂等；机械内部错误同款收口。
+// 传输承接面测试（P1a-3a 自 domain/shared/apperr 平移，断言零漂移）：
+// 信封构造/status 投影/detail 往返与出口纪律单点。
 
 import (
 	"bytes"
@@ -15,7 +15,55 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/errcode"
 )
+
+func TestEnvelopeRoundTrip(t *testing.T) {
+	e := apperr.New("E_INTERNAL", "disk on fire at %s", "/data")
+	_ = e.WithContext("path", "/data").WithSuggestion("free up disk space")
+
+	st := ToGRPCStatus(e)
+	assert.Equal(t, codes.Internal, st.Code())
+	assert.Equal(t, "E_INTERNAL: disk on fire at /data", st.Message())
+
+	env := Envelope(e, "err-123")
+	assert.Equal(t, "E_INTERNAL", env.GetCode())
+	assert.Equal(t, "disk on fire at /data", env.GetMessage())
+	assert.Equal(t, "free up disk space", env.GetSuggestion())
+	assert.Equal(t, errcode.DocsURL("E_INTERNAL"), env.GetDocs())
+	assert.Equal(t, "err-123", env.GetContext()["error_id"])
+	assert.Equal(t, "/data", env.GetContext()["path"])
+
+	// detail 还原：注册表默认 suggestion 在覆盖后保持覆盖值。
+	back, ok := FromGRPCStatus(st)
+	require.True(t, ok)
+	assert.Equal(t, "E_INTERNAL", back.Code())
+	assert.Equal(t, "free up disk space", back.Suggestion())
+	assert.True(t, errors.Is(back, apperr.New("E_INTERNAL", "other message")))
+}
+
+func TestStatusFromLocalError(t *testing.T) {
+	// handler 裸返回路径（出口单点承接后）：grpc.FromError 对 status error 采信。
+	st, ok := status.FromError(ToGRPCStatus(apperr.New("E_INTERNAL", "x")).Err())
+	require.True(t, ok)
+	assert.Equal(t, codes.Internal, st.Code())
+	restored, found := FromError(st.Err())
+	require.True(t, found)
+	assert.Equal(t, "E_INTERNAL", restored.Code())
+}
+
+func TestEnvelopeFromGRPCStatusDegenerate(t *testing.T) {
+	// 无 detail 的机械 NotFound：code 诚实留空；Internal 回落在册 E_INTERNAL。
+	env := EnvelopeFromGRPCStatus(status.New(codes.NotFound, "nope"), "id-1")
+	assert.Empty(t, env.GetCode())
+	assert.Equal(t, "id-1", env.GetContext()["error_id"])
+
+	env = EnvelopeFromGRPCStatus(status.New(codes.Internal, "secret"), "id-2")
+	assert.Equal(t, "E_INTERNAL", env.GetCode())
+	assert.Equal(t, errcode.DocsURL("E_INTERNAL"), env.GetDocs())
+}
 
 // errorIDRe 钉 error_id 形态：32 字符十六进制（128 位随机）。
 var errorIDRe = regexp.MustCompile(`^[0-9a-f]{32}$`)
@@ -29,7 +77,7 @@ func captureLogger() (*slog.Logger, func() string) {
 func TestSanitizeExitInternalRedactsAndMints(t *testing.T) {
 	logger, logText := captureLogger()
 	cause := errors.New("sql: no rows in result set (rolling back tx 42)")
-	err := New("E_INTERNAL", "internal error: %s", "state write failed").WithCause(cause)
+	err := apperr.New("E_INTERNAL", "internal error: %s", "state write failed").WithCause(cause)
 
 	errorID, sanitized := SanitizeExit(context.Background(), logger, err, "grpc /fleetly.test/Echo")
 	require.NotEmpty(t, errorID)
@@ -57,11 +105,19 @@ func TestSanitizeExitInternalRedactsAndMints(t *testing.T) {
 
 func TestSanitizeExitNonInternalPassesThrough(t *testing.T) {
 	logger, logText := captureLogger()
-	err := New("E_NOT_FOUND", "app %s not found", "web").WithCause(errors.New("row miss"))
+	err := apperr.New("E_NOT_FOUND", "app %s not found", "web").WithCause(errors.New("row miss"))
 
 	errorID, sanitized := SanitizeExit(context.Background(), logger, err, "grpc /x/Y")
 	assert.Empty(t, errorID)
-	assert.Same(t, err, sanitized, "non-E_INTERNAL errors must pass through untouched")
+	// 放行语义（wire 零漂移）：code/message/detail 与 ToGRPCStatus 投影一致
+	//——*Error 不再自带 GRPCStatus 方法，出口单点以等价 status 形态承接。
+	st := status.Convert(sanitized)
+	assert.Equal(t, codes.NotFound, st.Code())
+	assert.Equal(t, "E_NOT_FOUND: app web not found", st.Message())
+	want := ToGRPCStatus(apperr.New("E_NOT_FOUND", "app %s not found", "web"))
+	assert.Equal(t, want.Code(), st.Code())
+	assert.Equal(t, want.Message(), st.Message())
+	assert.Len(t, st.Details(), len(want.Details()))
 	assert.NotContains(t, logText(), "row miss")
 }
 
@@ -69,7 +125,7 @@ func TestSanitizeExitIdempotentOnForwardedStatus(t *testing.T) {
 	// REST 面经 gRPC 段转发的常态：错误已在 gRPC 出口收口（信封带
 	// error_id），二次收口必须复用同一 id、不重复落日志。
 	logger, logText := captureLogger()
-	id, first := SanitizeExit(context.Background(), nil, New("E_INTERNAL", "boom"), "grpc /x/Y")
+	id, first := SanitizeExit(context.Background(), nil, apperr.New("E_INTERNAL", "boom"), "grpc /x/Y")
 
 	id2, second := SanitizeExit(context.Background(), logger, first, "http GET /v1/x")
 	assert.Equal(t, id, id2)

@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/keyring"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/githubapp"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/hook"
@@ -31,7 +32,7 @@ func seedOldWorld(t *testing.T, root string) (string, *state.DB) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
-	cipher, err := material.LoadCipher(root)
+	cipher, err := keyring.LoadCipher(root)
 	require.NoError(t, err)
 
 	secrets := secret.New(db.Clock())
@@ -89,7 +90,7 @@ func rotateKeyFiles(t *testing.T, root, oldKeyContent string) *material.Cipher {
 	fresh, err := age.GenerateX25519Identity()
 	require.NoError(t, err)
 	writeFile("master.agekey", fresh.String())
-	c, err := material.LoadExistingCipher(root)
+	c, err := keyring.LoadExistingCipher(root)
 	require.NoError(t, err)
 	return c
 }
@@ -186,7 +187,7 @@ func TestRewrapRotationFlow(t *testing.T) {
 		assert.True(t, cipher.OpensWithActive(ct), "github app %s must be sealed to the active key", id)
 	}
 	require.NoError(t, os.Remove(filepath.Join(root, "keys", "master-retired-2026-10.agekey")))
-	retiredDone, err := material.LoadExistingCipher(root)
+	retiredDone, err := keyring.LoadExistingCipher(root)
 	require.NoError(t, err)
 	for id, ct := range listSecretCT(t, db) {
 		_, err := retiredDone.Open(ct)
@@ -195,7 +196,7 @@ func TestRewrapRotationFlow(t *testing.T) {
 	oldOnlyRoot := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(oldOnlyRoot, "keys"), 0o700))
 	require.NoError(t, os.WriteFile(filepath.Join(oldOnlyRoot, "keys", "master.agekey"), []byte(oldKey), 0o600))
-	oldOnly, err := material.LoadExistingCipher(oldOnlyRoot)
+	oldOnly, err := keyring.LoadExistingCipher(oldOnlyRoot)
 	require.NoError(t, err)
 	for id, ct := range listSecretCT(t, db) {
 		_, err := oldOnly.Open(ct)
@@ -275,12 +276,12 @@ func TestRewrapRefusesUnopenableRows(t *testing.T) {
 func TestRewrapEmptyDatabase(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
-	_, err := material.LoadCipher(root)
+	_, err := keyring.LoadCipher(root)
 	require.NoError(t, err)
 	db, err := state.Open(ctx, filepath.Join(root, "fleetly.db"), state.WallClock())
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
-	cipher, err := material.LoadExistingCipher(root)
+	cipher, err := keyring.LoadExistingCipher(root)
 	require.NoError(t, err)
 
 	rep, err := RewrapSecrets(ctx, db, cipher, true)

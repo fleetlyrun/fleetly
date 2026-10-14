@@ -15,8 +15,8 @@ import (
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
-	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/apperrstatus"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
 	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
@@ -38,7 +38,7 @@ func waitCodeOf(t *testing.T, err error) string {
 	t.Helper()
 	st, ok := status.FromError(err)
 	require.True(t, ok)
-	if e, ok := apperr.FromGRPCStatus(st); ok {
+	if e, ok := apperrstatus.FromGRPCStatus(st); ok {
 		return e.Code()
 	}
 	return "grpc:" + st.Code().String()

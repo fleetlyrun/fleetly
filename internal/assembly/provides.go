@@ -25,6 +25,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/config"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/keyring"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/node"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/outbox"
@@ -256,7 +257,7 @@ func NewMetricsProvider(app lynx.App, cfg *config.AppConfig) (capability.Metrics
 
 // NewMaterialCipher 打开数据根 KEK（首启生成；ADR-0014 信封加密根）。
 func NewMaterialCipher(cfg *config.AppConfig) (*material.Cipher, func(), error) {
-	c, err := material.LoadCipher(cfg.DataRoot())
+	c, err := keyring.LoadCipher(cfg.DataRoot())
 	if err != nil {
 		return nil, nil, err
 	}

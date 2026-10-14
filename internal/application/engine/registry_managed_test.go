@@ -12,9 +12,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	specir "github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/keyring"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/app"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/deployment"
 	networkrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
@@ -51,7 +51,7 @@ func TestBuildSourceWithoutRegistryFailsAtPrepare(t *testing.T) {
 // 通道不变。
 func TestManagedHostCredentialInjection(t *testing.T) {
 	db, clock := statetest.New(t)
-	cipher, err := material.LoadCipher(t.TempDir())
+	cipher, err := keyring.LoadCipher(t.TempDir())
 	require.NoError(t, err)
 	reg := newFakeRegistry()
 	e := New(Deps{DB: db, Runtime: newFakeRuntime(), Cipher: cipher, Registry: reg, Logger: discardLogger()}, Options{})

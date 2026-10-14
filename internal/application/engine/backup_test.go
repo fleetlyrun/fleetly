@@ -25,6 +25,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/keyring"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/backup"
 	dbrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/database"
 	networkrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
@@ -162,7 +163,7 @@ func newBackupFixture(t *testing.T, engineName, connectURL string) (*Engine, *fa
 	rt := newFakeRuntime()
 	ut := &fakeUtility{stdout: []byte("BACKUP-BYTES-0123456789")}
 	store := newFakeObjectStore()
-	cipher, err := material.LoadCipher(t.TempDir())
+	cipher, err := keyring.LoadCipher(t.TempDir())
 	require.NoError(t, err)
 	e := New(Deps{DB: db, Runtime: runtimeWithUtility{rt, ut}, ObjectStore: store, Cipher: cipher, Logger: discardLogger()}, Options{})
 	ctx := context.Background()

@@ -14,7 +14,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	sharedv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/shared/v1"
-	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/apperrstatus"
 )
 
 // errcodeToHTTP 是 REST 面错误码级 HTTP 状态映射（显式钉扎，全量覆盖在册
@@ -91,9 +91,9 @@ func resolveHTTPStatus(st *status.Status, envelope *sharedv1.ErrorResponse) int 
 // gateway.NewErrorHandler，错误体换为 apperr 信封）：
 //
 //   - 内部错误出口纪律（P0-3）：E_INTERNAL（及 Internal/Unknown 机械错误）
-//     经 apperr.SanitizeExit 单点收口——与 gRPC 拦截器同源（REST 面经 gRPC
+//     经 apperrstatus.SanitizeExit 单点收口——与 gRPC 拦截器同源（REST 面经 gRPC
 //     段转发时错误已在 gRPC 出口收口，error_id 复用，幂等不重复落日志）；
-//   - 信封还原：*apperr.Error 经 status detail 携带完整信封（errcode、
+//   - 信封还原：apperr 错误经 status detail 携带完整信封（errcode、
 //     处置提示、docs、context）；无 detail 的机械错误走退化信封
 //     （Internal/Unknown 回落在册 E_INTERNAL，其余 code 诚实留空）；
 //   - HTTP 状态：在册错误码走 errcodeToHTTP 显式映射，无信封机械错误
@@ -109,17 +109,17 @@ func newGatewayErrorHandler(logger *slog.Logger) runtime.ErrorHandlerFunc {
 		// 单点收口：内部错误在此（或 gRPC 出口已）脱敏 + 铸 id；非内部错误
 		// 原样放行（errorID 空串）。where 只进日志（见 SanitizeExit），不
 		// 进响应体——r 派生值经此调用不构成响应 taint。
-		errorID, sanitized := apperr.SanitizeExit(ctx, logger, err, "http "+r.Method+" "+r.URL.Path)
+		errorID, sanitized := apperrstatus.SanitizeExit(ctx, logger, err, "http "+r.Method+" "+r.URL.Path)
 		st, ok := status.FromError(sanitized)
 		if !ok || st == nil {
 			// 防御分支：SanitizeExit 已把裸错误收成 status 形态，正常不可达。
-			st = status.New(codes.Internal, apperr.RedactedInternalMessage)
+			st = status.New(codes.Internal, apperrstatus.RedactedInternalMessage)
 		}
 		if errorID == "" {
 			// REST 面全错误带 error_id（既有行为，非内部错误也铸）。
-			errorID = apperr.NewErrorID()
+			errorID = apperrstatus.NewErrorID()
 		}
-		envelope := apperr.EnvelopeFromGRPCStatus(st, errorID)
+		envelope := apperrstatus.EnvelopeFromGRPCStatus(st, errorID)
 
 		httpStatus := resolveHTTPStatus(st, envelope)
 		if httpStatus == http.StatusTooManyRequests {
@@ -128,7 +128,7 @@ func newGatewayErrorHandler(logger *slog.Logger) runtime.ErrorHandlerFunc {
 			}
 		}
 
-		w.Header().Set(apperr.ErrorIDHeader, errorID)
+		w.Header().Set(apperrstatus.ErrorIDHeader, errorID)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(httpStatus)
 		m := marshaler

@@ -15,8 +15,8 @@ import (
 
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
-	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/outbox"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/apperrstatus"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
 	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
@@ -26,7 +26,7 @@ func eventsCodeOf(t *testing.T, err error) string {
 	t.Helper()
 	st, ok := status.FromError(err)
 	require.True(t, ok)
-	if e, ok := apperr.FromGRPCStatus(st); ok {
+	if e, ok := apperrstatus.FromGRPCStatus(st); ok {
 		return e.Code()
 	}
 	return "grpc:" + st.Code().String()

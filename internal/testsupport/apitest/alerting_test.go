@@ -16,8 +16,8 @@ import (
 
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
-	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/apperrstatus"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
 	"github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
@@ -119,7 +119,7 @@ func TestMetricsQueryDisabledFace(t *testing.T) {
 	require.Error(t, err)
 	assert.Equal(t, "E_INTERNAL: internal server error", status.Convert(err).Message())
 	assert.NotContains(t, err.Error(), "metrics store")
-	env, ok := apperr.FromError(err)
+	env, ok := apperrstatus.FromError(err)
 	require.True(t, ok)
 	assert.Equal(t, "E_INTERNAL", env.Code())
 	assert.Regexp(t, `^[0-9a-f]{32}$`, env.ErrorID(), "the log correlation id must ride the envelope")

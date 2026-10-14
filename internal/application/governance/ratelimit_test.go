@@ -10,8 +10,8 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
-	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/apperrstatus"
 )
 
 // withToken 把身份注入 ctx（拦截器消费 authn.FromContext）。
@@ -44,10 +44,10 @@ func TestRateLimiterFixedWindow(t *testing.T) {
 	// 第 4 次 → E_RATE_LIMITED（信封 retry_after_seconds + RetryInfo）。
 	err := invoke(t, lim, ctx, createTask)
 	require.Error(t, err)
-	ae, ok := apperr.FromError(err)
+	ae, ok := apperrstatus.FromError(err)
 	require.True(t, ok)
 	assert.Equal(t, "E_RATE_LIMITED", ae.Code())
-	st := ae.ToGRPCStatus()
+	st := apperrstatus.ToGRPCStatus(ae)
 	require.Len(t, st.Details(), 2, "envelope detail + RetryInfo detail")
 
 	// 窗口翻转 → 计数复位。

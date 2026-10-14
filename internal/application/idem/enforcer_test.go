@@ -19,10 +19,10 @@ import (
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
-	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/idempotency"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statertest"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/apperrstatus"
 )
 
 const createProjectMethod = "/fleetly.structure.v1.ProjectsService/CreateProject"
@@ -45,14 +45,14 @@ func projResp(id string) *structurev1.CreateProjectResponse {
 	return &structurev1.CreateProjectResponse{Project: &structurev1.Project{Id: id, Name: "shop"}}
 }
 
-// codeOf 提取 apperr 信封错误码（无信封时给 gRPC code 兜底标签）。
+// codeOf 提取 apperr 信封错误码（本地 *Error 或 status 形态皆可——出口
+// 拦截器之外单测驱动时是本地形态；无信封时给 gRPC code 兜底标签）。
 func codeOf(t *testing.T, err error) string {
 	t.Helper()
-	st, ok := status.FromError(err)
-	require.True(t, ok)
-	if e, ok := apperr.FromGRPCStatus(st); ok {
+	if e, ok := apperrstatus.FromError(err); ok {
 		return e.Code()
 	}
+	st, _ := status.FromError(err)
 	return "grpc:" + st.Code().String()
 }
 

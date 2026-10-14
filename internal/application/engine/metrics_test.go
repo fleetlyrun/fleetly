@@ -20,6 +20,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/keyring"
 	alertrule "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/alertrule"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/channel"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
@@ -280,7 +281,7 @@ func TestParseExpositionLabels(t *testing.T) {
 // 辅助构造：测试通道行（webhook 指向接收端 URL）与 cipher。
 func testCipher(t *testing.T) *material.Cipher {
 	t.Helper()
-	c, err := material.LoadCipher(t.TempDir())
+	c, err := keyring.LoadCipher(t.TempDir())
 	require.NoError(t, err)
 	return c
 }

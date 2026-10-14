@@ -12,8 +12,8 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/fleetlyrun/fleetly/internal/buildinfo"
-	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/errcode"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/apperrstatus"
 )
 
 // 渲染单点（render 单点约定）：人类形态与 --json 形态的输出全部经本文件
@@ -60,6 +60,8 @@ func displayVersion(info buildinfo.BuildInfo) string {
 
 // renderErrorFor 是 CLI 错误信封 stderr 渲染（render 单点的一部分）：
 // apperr 信封还原成功时输出多行可行动提示；否则退回 err.Error() 单行。
+// 解码经 apperrstatus（P1a-3a 归层：status detail 还原在传输适配层）——
+// CLI 是输入适配器，依赖 interfaces 层共享件与拦截器同一解码源。
 // E_INTERNAL 面向用户只显示 code/脱敏 message/suggestion/error_id（出口
 // 纪律的 CLI 镜像：cause 文本不进终端；error_id 关联服务端日志，P0-3）。
 // errChanges 不是错误（diff 类动词的有变化信号，退出码 2 已承载语义），
@@ -68,11 +70,11 @@ func renderErrorFor(err error) string {
 	if errors.Is(err, errChanges) {
 		return ""
 	}
-	if env, ok := apperr.FromError(err); ok {
+	if env, ok := apperrstatus.FromError(err); ok {
 		var b strings.Builder
 		if env.Code() == "E_INTERNAL" {
 			b.WriteString("E_INTERNAL: ")
-			b.WriteString(apperr.RedactedInternalMessage)
+			b.WriteString(apperrstatus.RedactedInternalMessage)
 		} else {
 			b.WriteString(env.Error())
 		}

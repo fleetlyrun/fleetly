@@ -20,8 +20,8 @@ import (
 	identityv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/identity/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
-	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/apperrstatus"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
 	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
@@ -156,7 +156,7 @@ func TestDeleteProjectCascadeFailureRetriesConverge(t *testing.T) {
 	assert.Equal(t, "E_INTERNAL: internal server error", status.Convert(err).Message())
 	assert.NotContains(t, err.Error(), first, "the failing database id must not leak to the wire")
 	assert.NotContains(t, err.Error(), "first", "the failing database name must not leak to the wire")
-	env, ok := apperr.FromError(err)
+	env, ok := apperrstatus.FromError(err)
 	require.True(t, ok)
 	assert.Regexp(t, `^[0-9a-f]{32}$`, env.ErrorID(), "the log correlation id must ride the envelope")
 

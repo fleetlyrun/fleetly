@@ -31,6 +31,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/idem"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statertest"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/apperrstatus"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/fleetlygrpc"
 )
 
@@ -106,7 +107,7 @@ func TestNewInterceptorsSanitizeAtChainHead(t *testing.T) {
 	require.Error(t, err)
 	st := status.Convert(err)
 	assert.Equal(t, "E_INTERNAL: internal server error", st.Message(), "chain head must serve the redacted message")
-	env, ok := apperr.FromError(err)
+	env, ok := apperrstatus.FromError(err)
 	require.True(t, ok)
 	assert.Regexp(t, `^[0-9a-f]{32}$`, env.ErrorID())
 	logs := logBuf.String()
@@ -114,11 +115,19 @@ func TestNewInterceptorsSanitizeAtChainHead(t *testing.T) {
 	assert.Contains(t, logs, "sql: tx rolled back")
 	assert.Contains(t, logs, "driver: bad conn")
 
-	// 非 E_INTERNAL：原样放行（同一错误对象穿透）。
+	// 非 E_INTERNAL：零收口放行——*Error 不再自带 GRPCStatus 方法，出口
+	// 单点以等价 status 形态承接（同 code/同 message/同信封 detail，wire
+	// 零漂移）。
 	notFound := apperr.New("E_NOT_FOUND", "app web not found")
 	_, err = unary[0](context.Background(), nil, &grpc.UnaryServerInfo{FullMethod: "/assembly.test/Miss"},
 		func(context.Context, any) (any, error) { return nil, notFound })
-	assert.Equal(t, notFound, err)
+	passed := status.Convert(err)
+	assert.Equal(t, codes.NotFound, passed.Code())
+	assert.Equal(t, "E_NOT_FOUND: app web not found", passed.Message())
+	passedEnv, ok := apperrstatus.FromError(err)
+	require.True(t, ok)
+	assert.Equal(t, "E_NOT_FOUND", passedEnv.Code())
+	assert.Empty(t, passedEnv.ErrorID(), "non-E_INTERNAL exits carry no minted id")
 }
 
 // lockedBuffer 是 slog 的并发安全缓冲（TextHandler 仅在 handler 内加锁，

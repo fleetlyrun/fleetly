@@ -21,7 +21,7 @@ import (
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/assembly"
-	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/apperrstatus"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
 	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
@@ -40,7 +40,7 @@ func TestRegistryUnavailableFamily(t *testing.T) {
 		&deliveryv1.ListRegistryCatalogRequest{ProjectId: projectID})
 	require.Error(t, err)
 	assert.Equal(t, "Unavailable", status.Code(err).String())
-	env, ok := apperr.FromError(err)
+	env, ok := apperrstatus.FromError(err)
 	require.True(t, ok)
 	assert.Equal(t, "E_REGISTRY_UNAVAILABLE", env.Code())
 	assert.Contains(t, status.Convert(err).Message(), "does not offer the content face",

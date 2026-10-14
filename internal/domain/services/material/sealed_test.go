@@ -14,8 +14,7 @@ import (
 // 指纹 = 明文指纹、密文解回同一明文（此前四处手搓两连调，配对一致性
 // 只靠相邻调用自觉）。
 func TestProducePairsCiphertextWithSamePlaintextFingerprint(t *testing.T) {
-	c, err := LoadCipher(t.TempDir())
-	require.NoError(t, err)
+	c := newTestCipher(t)
 
 	v, err := c.Produce([]byte("wombat-quarrel-4f7d"))
 	require.NoError(t, err)

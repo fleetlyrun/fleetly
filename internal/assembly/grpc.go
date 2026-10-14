@@ -18,7 +18,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/application/idem"
 	"github.com/fleetlyrun/fleetly/internal/config"
-	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/apperrstatus"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/fleetlygrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/systemgrpc"
 )
@@ -127,7 +127,7 @@ func NewGRPCServer(
 
 // newErrorExitInterceptor 构造出口纪律拦截器（P0-3，unary + 流式同款）：
 // 链头挂载（一切离服错误的最后一站）。E_INTERNAL（及 Internal/Unknown
-// 机械错误）经 apperr.SanitizeExit 单点收口——message 脱敏、铸造 error_id
+// 机械错误）经 apperrstatus.SanitizeExit 单点收口——message 脱敏、铸造 error_id
 // （outgoing trailer metadata x-fleetly-error-id 承载，信封 context 同步
 // 携带）、cause 全文落服务端日志（error_id 关联）。非 E_INTERNAL 原样
 // 放行（REST gateway 的错误路由共用同一单点，转发链幂等复用 id）。
@@ -146,9 +146,9 @@ func newStreamErrorExitInterceptor(logger *slog.Logger) grpc.StreamServerInterce
 		if err == nil {
 			return nil
 		}
-		errorID, sanitized := apperr.SanitizeExit(ss.Context(), logger, err, info.FullMethod)
+		errorID, sanitized := apperrstatus.SanitizeExit(ss.Context(), logger, err, info.FullMethod)
 		if errorID != "" {
-			ss.SetTrailer(metadata.Pairs(apperr.ErrorIDHeader, errorID))
+			ss.SetTrailer(metadata.Pairs(apperrstatus.ErrorIDHeader, errorID))
 		}
 		return sanitized
 	}
@@ -159,11 +159,11 @@ func sanitizeExitError(ctx context.Context, logger *slog.Logger, err error, meth
 	if err == nil {
 		return nil
 	}
-	errorID, sanitized := apperr.SanitizeExit(ctx, logger, err, method)
+	errorID, sanitized := apperrstatus.SanitizeExit(ctx, logger, err, method)
 	if errorID != "" {
 		// trailer 与 status 同批上线（guaranteed delivery 面），非 status 元
 		// 素消费方（grpcurl 等）可直读；proto 消费方走信封 detail。
-		_ = grpc.SetTrailer(ctx, metadata.Pairs(apperr.ErrorIDHeader, errorID)) //nolint:errcheck // trailer 失败不掩盖业务错误
+		_ = grpc.SetTrailer(ctx, metadata.Pairs(apperrstatus.ErrorIDHeader, errorID)) //nolint:errcheck // trailer 失败不掩盖业务错误
 	}
 	return sanitized
 }

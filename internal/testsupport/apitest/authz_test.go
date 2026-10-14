@@ -17,8 +17,8 @@ import (
 	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
-	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	tokenrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/token"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/apperrstatus"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
 	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
@@ -43,7 +43,7 @@ func wantCode(t *testing.T, err error, grpcCode codes.Code, envelope string) {
 	t.Helper()
 	require.Error(t, err)
 	assert.Equal(t, grpcCode, status.Code(err), "grpc code for %v", err)
-	e, ok := apperr.FromError(err)
+	e, ok := apperrstatus.FromError(err)
 	require.True(t, ok, "envelope should decode")
 	assert.Equal(t, envelope, e.Code())
 }

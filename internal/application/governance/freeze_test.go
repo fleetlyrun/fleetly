@@ -12,7 +12,6 @@ import (
 
 	automationv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/automation/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
-	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/app"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/freeze"
 	networkrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
@@ -20,6 +19,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/task"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/apperrstatus"
 )
 
 // call 经拦截器跑一次 handler（fullMethod 决定执法面）。
@@ -38,7 +38,7 @@ func call(t *testing.T, g *FreezeGuard, method string, req proto.Message) error 
 func wantFrozen(t *testing.T, err error, reason string) {
 	t.Helper()
 	require.Error(t, err)
-	ae, ok := apperr.FromError(err)
+	ae, ok := apperrstatus.FromError(err)
 	require.True(t, ok)
 	assert.Equal(t, "E_CHANGE_FROZEN", ae.Code())
 	assert.Contains(t, ae.Message(), reason)
