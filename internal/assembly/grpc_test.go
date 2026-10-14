@@ -5,7 +5,9 @@ package assembly
 // payload 跨 gRPC 段到达 ReceiveWebhook（及缺省 4MiB 的反面病灶）。
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"log/slog"
 	"net"
 	"strings"
@@ -24,6 +26,7 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
+	"github.com/fleetlyrun/fleetly/internal/api/apperr"
 	"github.com/fleetlyrun/fleetly/internal/api/fleetlygrpc"
 	"github.com/fleetlyrun/fleetly/internal/authn"
 	"github.com/fleetlyrun/fleetly/internal/governance"
@@ -54,7 +57,7 @@ func TestNewInterceptorsBoundsUnaryHandler(t *testing.T) {
 	db, _ := statertest.New(t)
 	policySet, err := NewPolicySet()
 	require.NoError(t, err)
-	unary, stream, err := NewInterceptors(policySet,
+	unary, stream, err := NewInterceptors(slog.New(slog.DiscardHandler), policySet,
 		authn.NewAuthenticator(db, policySet, ScopeResources(), slog.New(slog.DiscardHandler)),
 		idem.NewEnforcer(db, slog.New(slog.DiscardHandler)),
 		governance.NewRateLimiter(db.Clock(), 0, 0),
@@ -76,6 +79,65 @@ func TestNewInterceptorsBoundsUnaryHandler(t *testing.T) {
 		})
 	require.NoError(t, err)
 	assert.True(t, sawDeadline, "the innermost chain item must impose the unary request deadline")
+}
+
+// TestNewInterceptorsSanitizeAtChainHead：出口纪律拦截器挂链头（unary[0]）
+// ——handler 返回的 E_INTERNAL 在拦截器层脱敏 + 铸 error_id，cause 全文落
+// 服务端日志（error_id 关联）；非 E_INTERNAL 原样放行（三面行为回归在
+// apitest，本用例钉链形与单点日志）。
+func TestNewInterceptorsSanitizeAtChainHead(t *testing.T) {
+	db, _ := statertest.New(t)
+	policySet, err := NewPolicySet()
+	require.NoError(t, err)
+	var logBuf lockedBuffer
+	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
+	unary, _, err := NewInterceptors(logger, policySet,
+		authn.NewAuthenticator(db, policySet, ScopeResources(), slog.New(slog.DiscardHandler)),
+		idem.NewEnforcer(db, slog.New(slog.DiscardHandler)),
+		governance.NewRateLimiter(db.Clock(), 0, 0),
+		governance.NewFreezeGuard(db, slog.New(slog.DiscardHandler)))
+	require.NoError(t, err)
+	require.NotEmpty(t, unary)
+
+	internalErr := apperr.New("E_INTERNAL", "internal error: %s", "sql: tx rolled back").
+		WithCause(errors.New("driver: bad conn"))
+	_, err = unary[0](context.Background(), nil, &grpc.UnaryServerInfo{FullMethod: "/assembly.test/Boom"},
+		func(context.Context, any) (any, error) { return nil, internalErr })
+	require.Error(t, err)
+	st := status.Convert(err)
+	assert.Equal(t, "E_INTERNAL: internal server error", st.Message(), "chain head must serve the redacted message")
+	env, ok := apperr.FromError(err)
+	require.True(t, ok)
+	assert.Regexp(t, `^[0-9a-f]{32}$`, env.ErrorID())
+	logs := logBuf.String()
+	assert.Contains(t, logs, env.ErrorID())
+	assert.Contains(t, logs, "sql: tx rolled back")
+	assert.Contains(t, logs, "driver: bad conn")
+
+	// 非 E_INTERNAL：原样放行（同一错误对象穿透）。
+	notFound := apperr.New("E_NOT_FOUND", "app web not found")
+	_, err = unary[0](context.Background(), nil, &grpc.UnaryServerInfo{FullMethod: "/assembly.test/Miss"},
+		func(context.Context, any) (any, error) { return nil, notFound })
+	assert.Equal(t, notFound, err)
+}
+
+// lockedBuffer 是 slog 的并发安全缓冲（TextHandler 仅在 handler 内加锁，
+// 跨 goroutine 读快照需自带互斥）。
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
 
 // TestUnaryTimeoutEndToEnd 经 bufconn 线级验证：挂死的 unary handler 在

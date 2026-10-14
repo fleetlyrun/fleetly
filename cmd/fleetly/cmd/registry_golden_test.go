@@ -3,8 +3,9 @@ package cmd
 // registry 组 golden（IA v3 二期⑤b）：golden harness 无受管仓装配
 //（catalog/tags 的真机面在 zot provider 单测与 dind 演练承载）——精确拒
 // 绝面双形态钉死：越纲仓名 E_NOT_FOUND（归属校验先于上游调用）+ 前纲内
-// 上游面缺席 E_INTERNAL（harness 假仓无 content 面）；happy 流由 provider
-// 单测（httptest 上游）钉。
+// 上游面缺席 E_INTERNAL（harness 假仓无 content 面；P0-3 起走出口纪律：
+// 脱敏文案 + error_id，cause 文本 "does not offer the content face" 只落
+// 服务端日志）；happy 流由 provider 单测（httptest 上游）钉。
 
 import (
 	"strings"
@@ -15,15 +16,18 @@ func TestGoldenRegistryRejections(t *testing.T) {
 	_ = newGoldenHarness(t)
 	projectID := seedDatabaseProject(t, "regcat")
 
-	// catalog：上游面缺席 → E_INTERNAL 精确报文双形态。
+	// catalog：上游面缺席 → E_INTERNAL 出口纪律形态（脱敏 + error_id）双形态。
 	code, out, stderr := runCLI(t, "registry", "catalog", "--project", projectID)
-	if code == 0 || out != "" || !strings.Contains(stderr, "does not offer the content face") {
-		t.Fatalf("registry catalog: code=%d out=%q stderr=%q (want no content face)", code, out, stderr)
+	if code == 0 || out != "" || !strings.Contains(stderr, "E_INTERNAL: internal server error") {
+		t.Fatalf("registry catalog: code=%d out=%q stderr=%q (want redacted internal error)", code, out, stderr)
+	}
+	if strings.Contains(stderr, "content face") {
+		t.Fatalf("registry catalog: cause text must not reach the CLI: %q", stderr)
 	}
 	compareGolden(t, "registry-catalog", normalizeGolden(stderr))
 	code, out, stderr = runCLI(t, "registry", "catalog", "--project", projectID, "--json")
-	if code == 0 || out != "" || !strings.Contains(stderr, "does not offer the content face") {
-		t.Fatalf("registry catalog --json: code=%d out=%q stderr=%q (want no content face)", code, out, stderr)
+	if code == 0 || out != "" || !strings.Contains(stderr, "E_INTERNAL: internal server error") {
+		t.Fatalf("registry catalog --json: code=%d out=%q stderr=%q (want redacted internal error)", code, out, stderr)
 	}
 	compareGolden(t, "registry-catalog-json", normalizeGolden(stderr))
 
@@ -40,17 +44,17 @@ func TestGoldenRegistryRejections(t *testing.T) {
 	}
 	compareGolden(t, "registry-tags-json", normalizeGolden(stderr))
 
-	// tags 前纲内但上游面缺席（harness 假仓无 content 面）：E_INTERNAL 双
-	// 形态——归属通过后的精确配置失败。
+	// tags 前纲内但上游面缺席（harness 假仓无 content 面）：E_INTERNAL 出口
+	// 纪律形态双形态——归属通过后的内部失败（脱敏 + error_id）。
 	inScope := strings.ToLower(projectID) + "/app"
 	code, out, stderr = runCLI(t, "registry", "tags", "--project", projectID, inScope)
-	if code == 0 || out != "" || !strings.Contains(stderr, "does not offer the content face") {
-		t.Fatalf("registry tags (in-scope): code=%d out=%q stderr=%q (want no content face)", code, out, stderr)
+	if code == 0 || out != "" || !strings.Contains(stderr, "E_INTERNAL: internal server error") {
+		t.Fatalf("registry tags (in-scope): code=%d out=%q stderr=%q (want redacted internal error)", code, out, stderr)
 	}
 	compareGolden(t, "registry-tags-upstream", normalizeGolden(stderr))
 	code, out, stderr = runCLI(t, "registry", "tags", "--project", projectID, inScope, "--json")
-	if code == 0 || out != "" || !strings.Contains(stderr, "does not offer the content face") {
-		t.Fatalf("registry tags --json (in-scope): code=%d out=%q stderr=%q (want no content face)", code, out, stderr)
+	if code == 0 || out != "" || !strings.Contains(stderr, "E_INTERNAL: internal server error") {
+		t.Fatalf("registry tags --json (in-scope): code=%d out=%q stderr=%q (want redacted internal error)", code, out, stderr)
 	}
 	compareGolden(t, "registry-tags-upstream-json", normalizeGolden(stderr))
 }

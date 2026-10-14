@@ -12,9 +12,11 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/status"
 
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
+	"github.com/fleetlyrun/fleetly/internal/api/apperr"
 	"github.com/fleetlyrun/fleetly/internal/apitest"
 	"github.com/fleetlyrun/fleetly/internal/capability"
 	"github.com/fleetlyrun/fleetly/sdk/go/fleetly"
@@ -110,10 +112,17 @@ func TestAlertingRulesLifecycle(t *testing.T) {
 func TestMetricsQueryDisabledFace(t *testing.T) {
 	h := apitest.New(t)
 	c, ctx := alertingClient(t, h)
-	// 夹具未配置 metrics.addr → 精确失败（E_INTERNAL 信封）。
+	// 夹具未配置 metrics.addr → 精确失败（E_INTERNAL 信封；P0-3 出口纪律：
+	// 脱敏文案 + error_id 上线，"metrics store" 细节只进服务端日志——
+	// 未配置族 503 码分流归 P0-7）。
 	_, err := c.Metrics.QueryMetrics(ctx, &telemetryv1.QueryMetricsRequest{Query: "up"})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "metrics store")
+	assert.Equal(t, "E_INTERNAL: internal server error", status.Convert(err).Message())
+	assert.NotContains(t, err.Error(), "metrics store")
+	env, ok := apperr.FromError(err)
+	require.True(t, ok)
+	assert.Equal(t, "E_INTERNAL", env.Code())
+	assert.Regexp(t, `^[0-9a-f]{32}$`, env.ErrorID(), "the log correlation id must ride the envelope")
 }
 
 // TestMetricsQueryUpstreamRejection 钉上游 4xx 的信封分流（F-B1）：假

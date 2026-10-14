@@ -2,9 +2,11 @@ package assembly
 
 import (
 	"context"
+	"log/slog"
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 
 	"github.com/lynx-go/grpcapi/authz"
 	grpcapiinterceptor "github.com/lynx-go/grpcapi/interceptor"
@@ -12,6 +14,7 @@ import (
 	lynxgrpc "github.com/lynx-go/lynx/server/grpc"
 
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
+	"github.com/fleetlyrun/fleetly/internal/api/apperr"
 	"github.com/fleetlyrun/fleetly/internal/api/fleetlygrpc"
 	"github.com/fleetlyrun/fleetly/internal/api/systemgrpc"
 	"github.com/fleetlyrun/fleetly/internal/authn"
@@ -95,7 +98,7 @@ func NewGRPCServer(
 	system *systemgrpc.Service,
 	services *fleetlygrpc.Services,
 ) (*lynxgrpc.Server, error) {
-	unary, stream, err := NewInterceptors(policySet, authenticator, enforcer, limiter, freeze)
+	unary, stream, err := NewInterceptors(app.Logger(), policySet, authenticator, enforcer, limiter, freeze)
 	if err != nil {
 		return nil, err
 	}
@@ -122,16 +125,60 @@ func NewGRPCServer(
 	return srv, nil
 }
 
+// newErrorExitInterceptor 构造出口纪律拦截器（P0-3，unary + 流式同款）：
+// 链头挂载（一切离服错误的最后一站）。E_INTERNAL（及 Internal/Unknown
+// 机械错误）经 apperr.SanitizeExit 单点收口——message 脱敏、铸造 error_id
+// （outgoing trailer metadata x-fleetly-error-id 承载，信封 context 同步
+// 携带）、cause 全文落服务端日志（error_id 关联）。非 E_INTERNAL 原样
+// 放行（REST gateway 的错误路由共用同一单点，转发链幂等复用 id）。
+func newErrorExitInterceptor(logger *slog.Logger) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+		resp, err := handler(ctx, req)
+		return resp, sanitizeExitError(ctx, logger, err, info.FullMethod)
+	}
+}
+
+// newStreamErrorExitInterceptor 是流式面的出口纪律拦截器（语义同 unary 款；
+// trailer 经 ServerStream 直设）。
+func newStreamErrorExitInterceptor(logger *slog.Logger) grpc.StreamServerInterceptor {
+	return func(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		err := handler(srv, ss)
+		if err == nil {
+			return nil
+		}
+		errorID, sanitized := apperr.SanitizeExit(ss.Context(), logger, err, info.FullMethod)
+		if errorID != "" {
+			ss.SetTrailer(metadata.Pairs(apperr.ErrorIDHeader, errorID))
+		}
+		return sanitized
+	}
+}
+
+// sanitizeExitError 是 unary 出口的收口辅助：单点脱敏 + trailer 承载。
+func sanitizeExitError(ctx context.Context, logger *slog.Logger, err error, method string) error {
+	if err == nil {
+		return nil
+	}
+	errorID, sanitized := apperr.SanitizeExit(ctx, logger, err, method)
+	if errorID != "" {
+		// trailer 与 status 同批上线（guaranteed delivery 面），非 status 元
+		// 素消费方（grpcurl 等）可直读；proto 消费方走信封 detail。
+		_ = grpc.SetTrailer(ctx, metadata.Pairs(apperr.ErrorIDHeader, errorID)) //nolint:errcheck // trailer 失败不掩盖业务错误
+	}
+	return sanitized
+}
+
 // NewInterceptors 构造完整拦截器链（unary + 流式）——assembly 服务器与
 // apitest 夹具共用（夹具不经 lynx，但必须走同一条执法链，否则测试面与
-// 生产面漂移）。链序（ADR-0017/0024）：执法链（clientinfo/auth/validate）
-// → 冻结拦截器（拒绝不占幂等记录）→ 幂等执法器（重放不消耗业务超时
-// 预算、鉴权失败不占幂等记录）→ 创建速率限制器（仅实际执行计数——
-// 重放不消耗预算）→ 请求超时。流式链：authn → 冻结（首帧 RecvMsg 执法，
-// F1.10 起 client-streaming 写面在封禁面——ADR-0019 附录 A.2）；幂等/
-// 速率/超时保持 unary 面（上传的自然幂等=内容寻址，限额刹车=大小上限与
-// 项目存量配额，流生命周期由取消信号管理）。
-func NewInterceptors(policySet *authz.PolicySet, authenticator *authn.Authenticator, enforcer *idem.Enforcer, limiter *governance.RateLimiter, freeze *governance.FreezeGuard) ([]grpc.UnaryServerInterceptor, []grpc.StreamServerInterceptor, error) {
+// 生产面漂移）。链序（ADR-0017/0024）：出口纪律（链头，P0-3——E_INTERNAL
+// 三面统一收口）→ 执法链（clientinfo/auth/validate）→ 冻结拦截器（拒绝
+// 不占幂等记录）→ 幂等执法器（重放不消耗业务超时预算、鉴权失败不占幂等
+// 记录）→ 创建速率限制器（仅实际执行计数——重放不消耗预算）→ 请求超时。
+// 流式链：出口纪律 → authn → 冻结（首帧 RecvMsg 执法，F1.10 起
+// client-streaming 写面在封禁面——ADR-0019 附录 A.2）；幂等/速率/超时保持
+// unary 面（上传的自然幂等=内容寻址，限额刹车=大小上限与项目存量配额，
+// 流生命周期由取消信号管理）。
+func NewInterceptors(logger *slog.Logger, policySet *authz.PolicySet, authenticator *authn.Authenticator, enforcer *idem.Enforcer, limiter *governance.RateLimiter, freeze *governance.FreezeGuard) ([]grpc.UnaryServerInterceptor, []grpc.StreamServerInterceptor, error) {
 	chain, err := grpcapiinterceptor.Assemble(
 		grpcapiinterceptor.ChainItem{
 			Slot:        grpcapiinterceptor.SlotClientInfo,
@@ -149,6 +196,9 @@ func NewInterceptors(policySet *authz.PolicySet, authenticator *authn.Authentica
 	if err != nil {
 		return nil, nil, err
 	}
+	// 出口纪律挂链头（最外层）：执法链自身的失败（幂等查询失败等）与
+	// handler 失败同走收口面，不漏内部细节。
+	chain = append([]grpc.UnaryServerInterceptor{newErrorExitInterceptor(logger)}, chain...)
 	if freeze != nil {
 		chain = append(chain, freeze.Unary())
 	}
@@ -159,7 +209,7 @@ func NewInterceptors(policySet *authz.PolicySet, authenticator *authn.Authentica
 	// 面，且鉴权查询不被请求 deadline 误杀；流式链不加超时（follow 面与
 	// 上传流面豁免——生命周期由取消信号管理，上传另有 15m 流硬上限）。
 	chain = append(chain, newUnaryTimeoutInterceptor(grpcUnaryTimeout))
-	stream := []grpc.StreamServerInterceptor{authenticator.Stream()}
+	stream := []grpc.StreamServerInterceptor{newStreamErrorExitInterceptor(logger), authenticator.Stream()}
 	if freeze != nil {
 		stream = append(stream, freeze.Stream())
 	}

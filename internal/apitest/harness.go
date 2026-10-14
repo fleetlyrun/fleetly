@@ -144,7 +144,7 @@ func newHarness(t testing.TB, autostart bool, mutators ...EngineOption) *Harness
 	enforcer := idem.NewEnforcer(db, log)
 	limiter := governance.NewRateLimiter(db.Clock(), governance.DefaultRateWindow, governance.DefaultRateBudget)
 	freeze := governance.NewFreezeGuard(db, log)
-	unary, stream, err := assembly.NewInterceptors(policySet, authenticator, enforcer, limiter, freeze)
+	unary, stream, err := assembly.NewInterceptors(log, policySet, authenticator, enforcer, limiter, freeze)
 	if err != nil {
 		t.Fatalf("apitest: interceptors: %v", err)
 	}

@@ -45,7 +45,7 @@
 - **验证**：apitest events 面 + golden（多队矩阵新增）
 - **预估**：0.5-1 天 · **依赖**：无（刀 1 在 P2 会重写 kernel 面，本件是最小止血）
 
-### P0-3 E_INTERNAL 三面统一（E0）— [ ]
+### P0-3 E_INTERNAL 三面统一（E0）— [x]
 - **改动面**：`internal/api/apperr/`（error_id 铸造+脱敏下沉信封层）、`internal/assembly/errors.go`、gRPC 出口拦截器、`cmd/fleetly/cmd/render.go`
 - **验收锚**：gRPC/CLI 面 E_INTERNAL message 不含 cause 文本；error_id 三面在场；服务端落日志；golden 断言（G15 雏形）
 - **预估**：0.5-1 天

@@ -60,6 +60,8 @@ func displayVersion(info buildinfo.BuildInfo) string {
 
 // renderErrorFor 是 CLI 错误信封 stderr 渲染（render 单点的一部分）：
 // apperr 信封还原成功时输出多行可行动提示；否则退回 err.Error() 单行。
+// E_INTERNAL 面向用户只显示 code/脱敏 message/suggestion/error_id（出口
+// 纪律的 CLI 镜像：cause 文本不进终端；error_id 关联服务端日志，P0-3）。
 // errChanges 不是错误（diff 类动词的有变化信号，退出码 2 已承载语义），
 // 渲染为空——stdout 的 diff 输出才是内容面。
 func renderErrorFor(err error) string {
@@ -68,7 +70,12 @@ func renderErrorFor(err error) string {
 	}
 	if env, ok := apperr.FromError(err); ok {
 		var b strings.Builder
-		b.WriteString(env.Error())
+		if env.Code() == "E_INTERNAL" {
+			b.WriteString("E_INTERNAL: ")
+			b.WriteString(apperr.RedactedInternalMessage)
+		} else {
+			b.WriteString(env.Error())
+		}
 		if s := env.Suggestion(); s != "" {
 			b.WriteString("\nsuggestion: ")
 			b.WriteString(s)
@@ -76,6 +83,10 @@ func renderErrorFor(err error) string {
 		if docs := errcode.DocsURL(env.Code()); docs != "" {
 			b.WriteString("\ndocs: ")
 			b.WriteString(docs)
+		}
+		if id := env.ErrorID(); id != "" {
+			b.WriteString("\nerror_id: ")
+			b.WriteString(id)
 		}
 		return b.String()
 	}

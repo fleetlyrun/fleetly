@@ -15,10 +15,12 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/status"
 
 	identityv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/identity/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
+	"github.com/fleetlyrun/fleetly/internal/api/apperr"
 	"github.com/fleetlyrun/fleetly/internal/apitest"
 	"github.com/fleetlyrun/fleetly/internal/capability"
 	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
@@ -149,8 +151,14 @@ func TestDeleteProjectCascadeFailureRetriesConverge(t *testing.T) {
 	_, err := projects.DeleteProject(ctx, &structurev1.DeleteProjectRequest{Id: projectID})
 	require.Error(t, err)
 	assert.Equal(t, "E_INTERNAL", appErrCode(t, err))
-	require.Contains(t, err.Error(), first, "the failure must name the database that failed to tear down")
-	require.Contains(t, err.Error(), "first", "the failure must carry the database name")
+	// P0-3 出口纪律：失败库身份（first/first-1）只进服务端日志（error_id
+	// 关联），上线面脱敏——wire 契约从"带库名"改为"带可关联的 error_id"。
+	assert.Equal(t, "E_INTERNAL: internal server error", status.Convert(err).Message())
+	assert.NotContains(t, err.Error(), first, "the failing database id must not leak to the wire")
+	assert.NotContains(t, err.Error(), "first", "the failing database name must not leak to the wire")
+	env, ok := apperr.FromError(err)
+	require.True(t, ok)
+	assert.Regexp(t, `^[0-9a-f]{32}$`, env.ErrorID(), "the log correlation id must ride the envelope")
 
 	// 已拆的库保持 tombstone（幂等收敛的锚）——事件与 404 在册。
 	assert.Equal(t, []string{"database.created", "database.deleted"},

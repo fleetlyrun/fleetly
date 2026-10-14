@@ -17,10 +17,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/api/apperr"
 )
 
-// redactedInternalMessage 是 Internal/Unknown 的对外统一文案（原始消息只
-// 落服务端日志，不泄内部细节）。
-const redactedInternalMessage = "internal server error"
-
 // errcodeToHTTP 是 REST 面错误码级 HTTP 状态映射（显式钉扎，全量覆盖在册
 // 注册表；assembly 守卫测试钉住"新码必须显式决策"）。为什么不用 gRPC code
 // 机械映射兜底全部：HTTP 状态的语义真源是错误码语义，不是传输层 gRPC code
@@ -93,32 +89,36 @@ func resolveHTTPStatus(st *status.Status, envelope *sharedv1.ErrorResponse) int 
 // newGatewayErrorHandler 构造 REST 错误统一出口（语义对齐 grpcapi
 // gateway.NewErrorHandler，错误体换为 apperr 信封）：
 //
+//   - 内部错误出口纪律（P0-3）：E_INTERNAL（及 Internal/Unknown 机械错误）
+//     经 apperr.SanitizeExit 单点收口——与 gRPC 拦截器同源（REST 面经 gRPC
+//     段转发时错误已在 gRPC 出口收口，error_id 复用，幂等不重复落日志）；
 //   - 信封还原：*apperr.Error 经 status detail 携带完整信封（errcode、
 //     处置提示、docs、context）；无 detail 的机械错误走退化信封
 //     （Internal/Unknown 回落在册 E_INTERNAL，其余 code 诚实留空）；
 //   - HTTP 状态：在册错误码走 errcodeToHTTP 显式映射，无信封机械错误
 //     回落 gRPC code 机械映射（gateway.DefaultCodeToHTTP）；
-//   - Internal/Unknown 脱敏：message 替换为通用文案，原文随 error_id 记日志；
+//   - error_id 经响应头 x-fleetly-error-id 同步承载（与 gRPC trailer 同键；
+//     信封 context 仍为主面）；
 //   - 429 从 RetryInfo detail 提取 Retry-After（向上取整，至少 1s）。
 func newGatewayErrorHandler(logger *slog.Logger) runtime.ErrorHandlerFunc {
 	return func(ctx context.Context, mux *runtime.ServeMux, marshaler runtime.Marshaler, w http.ResponseWriter, r *http.Request, err error) {
 		if logger == nil {
 			logger = slog.Default()
 		}
-		st, ok := status.FromError(err)
+		// 单点收口：内部错误在此（或 gRPC 出口已）脱敏 + 铸 id；非内部错误
+		// 原样放行（errorID 空串）。where 只进日志（见 SanitizeExit），不
+		// 进响应体——r 派生值经此调用不构成响应 taint。
+		errorID, sanitized := apperr.SanitizeExit(ctx, logger, err, "http "+r.Method+" "+r.URL.Path)
+		st, ok := status.FromError(sanitized)
 		if !ok || st == nil {
-			logger.ErrorContext(ctx, "http error: non-status error converted to internal", "error", err)
-			st = status.New(codes.Internal, redactedInternalMessage)
+			// 防御分支：SanitizeExit 已把裸错误收成 status 形态，正常不可达。
+			st = status.New(codes.Internal, apperr.RedactedInternalMessage)
 		}
-
-		errorID := gateway.NewErrorID()
+		if errorID == "" {
+			// REST 面全错误带 error_id（既有行为，非内部错误也铸）。
+			errorID = apperr.NewErrorID()
+		}
 		envelope := apperr.EnvelopeFromGRPCStatus(st, errorID)
-		if st.Code() == codes.Internal || st.Code() == codes.Unknown {
-			logger.ErrorContext(ctx, "http response: internal error sanitized",
-				"code", st.Code().String(), "original_message", st.Message(),
-				"error_id", errorID, "path", r.URL.Path)
-			envelope.Message = redactedInternalMessage
-		}
 
 		httpStatus := resolveHTTPStatus(st, envelope)
 		if httpStatus == http.StatusTooManyRequests {
@@ -127,6 +127,7 @@ func newGatewayErrorHandler(logger *slog.Logger) runtime.ErrorHandlerFunc {
 			}
 		}
 
+		w.Header().Set(apperr.ErrorIDHeader, errorID)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(httpStatus)
 		m := marshaler
@@ -138,6 +139,7 @@ func newGatewayErrorHandler(logger *slog.Logger) runtime.ErrorHandlerFunc {
 			logger.ErrorContext(ctx, "failed to encode error response", "error", merr, "error_id", errorID)
 			return
 		}
+		//nolint:gosec // G705 误报：gosec 把 SanitizeExit 的 where 参数（r.Method/r.URL.Path，仅落服务端日志）保守汇入返回值污点；data 实为 err 信封的 JSON 序列化（Content-Type: application/json），非 HTML 注入面
 		if _, werr := w.Write(append(data, '\n')); werr != nil {
 			logger.ErrorContext(ctx, "failed to write error response", "error", werr, "error_id", errorID)
 		}

@@ -27,6 +27,7 @@ type Error struct {
 	context    []kv   // 保序键值对（含 error_id 等运行时锚）
 	cause      error
 	retryAfter *time.Duration // 非 nil 时 status 附加 RetryInfo detail（REST 429 的 Retry-After 源）
+	errorID    string         // 出口收口铸造的追踪 id（E_INTERNAL 专用；转发链还原复用，不重铸）
 }
 
 type kv struct{ Key, Value string }
@@ -87,6 +88,10 @@ func (e *Error) Suggestion() string {
 // Unwrap 还原底层错误（WithCause 链）。
 func (e *Error) Unwrap() error { return e.cause }
 
+// ErrorID 返回出口收口铸造的错误追踪 id（信封 context error_id 的还原值；
+// 未收口/非 E_INTERNAL 为空串）。
+func (e *Error) ErrorID() string { return e.errorID }
+
 // Is 支持按码判等：apperr.New("E_X", ...) 之间 errors.Is 为真。
 func (e *Error) Is(target error) bool {
 	t, ok := target.(*Error)
@@ -117,7 +122,8 @@ func (e *Error) ToGRPCStatus() *status.Status {
 	return st
 }
 
-// Envelope 构造对外错误信封（errorID 为空时不落 error_id 键）。
+// Envelope 构造对外错误信封（errorID 为空时回落自身还原值——转发链复用
+// 同一 id；两者皆空不落 error_id 键）。
 func (e *Error) Envelope(errorID string) *sharedv1.ErrorResponse {
 	envelope := &sharedv1.ErrorResponse{
 		Code:       e.code.ID,
@@ -128,6 +134,9 @@ func (e *Error) Envelope(errorID string) *sharedv1.ErrorResponse {
 	}
 	for _, p := range e.context {
 		envelope.Context[p.Key] = p.Value
+	}
+	if errorID == "" {
+		errorID = e.errorID
 	}
 	if errorID != "" {
 		envelope.Context["error_id"] = errorID
@@ -157,6 +166,7 @@ func FromGRPCStatus(st *status.Status) (*Error, bool) {
 		}
 		for k, v := range env.GetContext() {
 			if k == "error_id" {
+				e.errorID = v // 追踪锚还原（出口收口的 id 经 detail 往返保持）
 				continue
 			}
 			e.context = append(e.context, kv{k, v})
@@ -182,8 +192,8 @@ func FromError(err error) (*Error, bool) {
 
 // EnvelopeFromGRPCStatus 是 gateway 统一出口：优先还原信封 detail；无
 // detail 时输出退化信封——code 仅在 Internal/Unknown 时回落 "E_INTERNAL"
-// （机械失败不发明文档外码），message 原样（Internal/Unknown 的脱敏由
-// 调用方 gateway 错误处理完成）。
+// （机械失败不发明文档外码），message 原样（Internal/Unknown 的脱敏与
+// error_id 铸造由 SanitizeExit 单点在出口先行完成，本函数只投影）。
 func EnvelopeFromGRPCStatus(st *status.Status, errorID string) *sharedv1.ErrorResponse {
 	if e, ok := FromGRPCStatus(st); ok {
 		return e.Envelope(errorID)

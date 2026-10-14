@@ -1,3 +1,4 @@
-E_INTERNAL: registry: the registry provider does not offer the content face
+E_INTERNAL: internal server error
 suggestion: Check fleetlyd logs for the matching error_id. If the error persists, report it with the error_id attached.
 docs: https://docs.fleetly.dev/errors/E_INTERNAL
+error_id: <ERRORID>

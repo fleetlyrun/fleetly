@@ -40,6 +40,9 @@ var (
 	// 临时端口——ADR-0073；窄形态 127.0.0.1 显式端口，不吞其他 URL）。
 	ghFakeBaseRe = regexp.MustCompile(`https://127\.0\.0\.1:[0-9]+`)
 	credJSONRe   = regexp.MustCompile(`"credentials_path": ".*?"`)
+	// errorIDRe 是出口纪律铸造的 error_id（crypto/rand 128 位十六进制；
+	// P0-3——CLI error_id 行逐请求随机，占位化保 golden 确定性）。
+	errorIDRe = regexp.MustCompile(`(?m)^error_id: [0-9a-f]{32}$`)
 )
 
 func normalizeGolden(s string) string {
@@ -49,6 +52,8 @@ func normalizeGolden(s string) string {
 	s = credPathRe.ReplaceAllString(s, "credentials saved: <CREDS>")
 	s = credJSONRe.ReplaceAllString(s, `"credentials_path": "<CREDS>"`)
 	s = tokenRe.ReplaceAllString(s, "<TOKEN>")
+	// error_id（P0-3 出口纪律）：逐请求随机，占位化。
+	s = errorIDRe.ReplaceAllString(s, "error_id: <ERRORID>")
 	// digest/指纹（完整十六进制串）。实体 id 是确定性铸造（ADR-0070：
 	// 夹具顺序固定 → seq 固定），落真值不占位——golden 同时是可读 id 的
 	// 快照验收面。
