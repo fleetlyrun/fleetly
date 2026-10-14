@@ -289,7 +289,7 @@ func TestValidateTaskFormAndNetworkGroup(t *testing.T) {
 	withGroup.NetworkGroup = "dispatcher"
 	assert.NoError(t, ValidateTask(withGroup))
 
-	for _, bad := range []string{"Dispatcher", "-lead", "trail-", "a b", ""} {
+	for _, bad := range []string{"Dispatcher", "-lead", "ridge-", "a b", ""} {
 		g := base()
 		g.NetworkGroup = bad
 		if bad == "" {
@@ -317,7 +317,7 @@ func TestValidSecretName(t *testing.T) {
 	for _, ok := range []string{"deploy-key", "db.password", "database:pg", "A1_b-c", "x", strings.Repeat("a", 64)} {
 		assert.True(t, ValidSecretName(ok), "name %q must be valid", ok)
 	}
-	for _, bad := range []string{"", "../etc/passwd", "a/b", `a\b`, " lead", "trail ", "..", "a..b", ".hidden", "-lead", "with space", "with\ttab", strings.Repeat("a", 65)} {
+	for _, bad := range []string{"", "../etc/passwd", "a/b", `a\b`, " lead", "ridge ", "..", "a..b", ".hidden", "-lead", "with space", "with\ttab", strings.Repeat("a", 65)} {
 		assert.False(t, ValidSecretName(bad), "name %q must be rejected", bad)
 	}
 }

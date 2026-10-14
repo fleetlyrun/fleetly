@@ -77,12 +77,12 @@
 
 ### P1a-1 搬移主体 — [x]
 `git mv` 重组为四环 + 八上下文（对齐 proto 服务族；映射表开工时与 proto 目录对照定稿）；全仓 import 重写；wire 再生成；三 module 编译绿。**移动不改名**（composeintake/state→persistence 例外）。
-### P1a-2 立法 — [ ]
+### P1a-2 立法 — [x]
 §2 重写为四环树 + 5 行依赖规则 + 三条例外；新 ADR（分层立法 + XxxKernel 废除与命名法则 + 例外三条）；CONTEXT.md Audit 词条入册 + Event/Audit 双轴注记。
-### P1a-3 守卫换装 — [ ]
+### P1a-3 守卫换装 — [x]
 dep_matrix 数据表 5 行化；domain 三红线守卫（无 I/O/genproto/框架）；capability 纯度守卫；scanModulePrefixes/sizeguard/wording/statefacade/entityid 路径面修缮；apperr 纯化（status 构建器移 interfaces/grpc）；material 拆分（keyring 入 infrastructure）。
-### P1a-4 e2e 扫面 — [ ] scanModulePrefixes + e2e/。
-### P1a-5 零漂移验证 — [ ] golden 全集零漂移 + mise 全套。
+### P1a-4 e2e 扫面 — [x] scanModulePrefixes + e2e/。
+### P1a-5 零漂移验证 — [x] golden 全集零漂移 + mise 全套。
 
 ## P1b Repo 接口抽取（3-5 天，按聚合增量）
 

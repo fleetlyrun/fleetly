@@ -51,6 +51,7 @@ var scanModulePrefixes = []string{
 	"cmd/",
 	"sdk/go/",
 	"genproto/",
+	"e2e/", // P1a-4（ADR-0075 验收锚）：dind helper 的 main 包进 Go 执法面
 }
 
 // scanGoModulePath 报告 rel（斜杠分隔）是否落 Go 执法面（scanGoFiles 与

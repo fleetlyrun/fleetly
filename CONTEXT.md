@@ -289,5 +289,9 @@ _Avoid_: state backup, full backup
 _Avoid_: initial password, admin key
 
 **Event**:
-状态迁移的既成事实，单调 seq，Agent 与 Console 的订阅面。
+状态迁移的既成事实，单调 seq，Agent 与 Console 的订阅面。事件行携资源轴 team_id（P0-2）：订阅/列表按 本队 OR 平台级（''）过滤；与 Audit 的双轴分野见 Audit 词条（ADR-0075）。
 _Avoid_: notification, webhook(通知通道另指)
+
+**Audit**:
+一切写操作的留痕（取证面）：操作者轴 Team（ADR-0035 决策 6，ctx 铸入）、行严格只增、不随保留窗裁剪。与 Event 分立：Event 面向订阅与重同步（资源轴 Team——资源所属 Project 的 Team，跨队 owner 写入亦归资源方）且保留窗可裁；Audit 面向取证与追责，永不裁剪。写路径 kernel 双拍同事务，事件/审计配对由 kernel 扇出保证（ADR-0066 A 化路线，ADR-0075）。
+_Avoid_: log(泛指), trail, history(泛指), activity feed

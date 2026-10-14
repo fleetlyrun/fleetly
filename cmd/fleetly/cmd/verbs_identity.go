@@ -475,7 +475,7 @@ func newAuditVerb() commands.Command {
 	var limit int64
 	return &flaggedVerb{
 		name:     name,
-		synopsis: "Read the audit trail (who changed what, from where)",
+		synopsis: "Read the audit records (who changed what, from where)",
 		usage:    "audit [--source api|cli|manual|webhook|schedule|system] [--action PREFIX] [--actor ACTOR] [--resource RES] [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&source, "source", "", "filter by source enum")

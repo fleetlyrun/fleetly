@@ -3,7 +3,7 @@
 对人与 AI Agent 同一生效。
 
 - 词汇真源：根目录 `CONTEXT.md`（ADR-0007 词汇冻结：**更名即设计缺陷**，发现词条不合适走显式 ADR，不接受局部混用）。
-- 结构真源：`docs/design/2026-09-30-architecture.md`（§2 分层树与依赖方向，§11 守卫清单）。
+- 结构真源：`docs/design/2026-09-30-architecture.md`（§2 分层树与依赖方向，§11 守卫清单）；分层形态以 ADR-0075（Clean 四环）为准。
 - 决策真源：`docs/adr/`；进度真源：`docs/plan/2026-09-30-feature-checklist.md`。
 
 ## 语言约定
@@ -23,7 +23,7 @@ mise run test             # go test -race 三 module（根 + genproto + sdk/go�
 mise run lint             # go vet/gofmt + golangci + buf lint + buf breaking（对 origin/main）
 ```
 
-console 前端（F2.6/ADR-0044，node 24/pnpm 钉版入 mise）：`console:install`/`console:gen`（openapi-typescript 从 genproto swagger 再生成 src/api）/`console:build`（产物进 internal/console/dist）/`console:verify`（再生成 + 再构建 + 零漂移，与 CI console job 同口径；dist 是提交进仓的生成物，改 proto/前端后必须 `console:gen && console:build` 同 commit）。
+console 前端（F2.6/ADR-0044，node 24/pnpm 钉版入 mise）：`console:install`/`console:gen`（openapi-typescript 从 genproto swagger 再生成 src/api）/`console:build`（产物进 internal/interfaces/console/dist）/`console:verify`（再生成 + 再构建 + 零漂移，与 CI console job 同口径；dist 是提交进仓的生成物，改 proto/前端后必须 `console:gen && console:build` 同 commit）。
 
 e2e dind 套件（CI 常态跑 upgrade/backup 两矩阵）：`e2e:dind`（单节点冒烟）/ `e2e:h2c`（受管 traefik Route）/ `e2e:twonode`（enroll + 双节点 + 卷钉住）/ `e2e:upgrade`（升级零扰动）/ `e2e:backup`（四引擎恢复演练 + 平台仓 roundtrip）。
 
@@ -33,18 +33,20 @@ e2e dind 套件（CI 常态跑 upgrade/backup 两矩阵）：`e2e:dind`（单节
 - proto 是唯一契约源：改 API 先改 `proto/`，再 `buf generate`；buf breaking 门禁在 CI 与 `lint:proto`。
 - golden 再生成：`go test <包> -update`，与对应变更同 commit 提交。
 
-## 分层与依赖方向（违反即守卫红，架构文档 §2）
+## 分层与依赖方向（违反即守卫红，ADR-0075 四环 + 架构文档 §2）
 
 ```
-api → engine → { model, state, capability, spec }
-providers → { capability, spec, model }
-state → { model, spec }
-model / spec：不 import 任何 internal 包（叶子）
+domain      → （零外向；三红线：无 I/O、无 genproto、无 RPC 框架）
+application → domain
+infrastructure → domain（实现接口）
+interfaces  → application + domain（读径；写必经 application——读写分离律）
+assembly    → 全部（组合根）
 ```
 
-- 编排器/基础设施 SDK 只准出现在 `internal/providers/**`（builders/swarm/traefik/zot/victorialogs/victoriametrics/localobjectstore）。
-- providers 互不 import；除 cmd 外无人 import providers（经注册表间接装配）。
-- state 按聚合分包，各聚合自己的 repo，禁止门面 `store.go`。
+- internal/ 四环 = `domain`（shared：spec/model/apperr/capability；identity；services：anchor/material/dbtemplate/dbbrowser/writes）、`application`（engine/authn/idem/governance/composeintake/apptemplate/schema）、`infrastructure`（persistence/providers/github/upload/keyring）、`interfaces`（grpc/admin/console）；assembly/config/buildinfo 组合根，guards/testsupport 元层（ADR-0075）。
+- 编排器/基础设施 SDK 只准出现在 `internal/infrastructure/providers/**`（builders/swarm/traefik/zot/victorialogs/victoriametrics/localobjectstore）。
+- providers 互不 import；除 cmd/assembly 外无人 import providers（经注册表间接装配）。
+- persistence 按聚合分包，各聚合自己的 repo，禁止门面 `store.go`；Repo 接口随 P1b 上移 domain（ADR-0075 决策 3）。
 
 ## 守卫文化（架构由测试承载，`internal/guards`）
 

@@ -84,7 +84,7 @@ function AuditPage() {
   return (
     <ListPage
       title="Audit"
-      description="Server-written audit trail (GET /v1/audit) — the console observes, never writes"
+      description="Server-written audit records (GET /v1/audit) — the console observes, never writes"
       label="audit entries"
       placeholder="Filter audit..."
       rows={entries}
@@ -123,7 +123,7 @@ function AuditPage() {
         <EmptyState
           icon={ScrollTextIcon}
           title="No audit entries match"
-          description="Widen the filters, or act on the platform to populate the trail."
+          description="Widen the filters, or act on the platform to populate the audit view."
         />
       }
       cli="fleetly audit --limit 100"

@@ -23,41 +23,39 @@
 
 ## 2. 分层与依赖规则
 
-```
-cmd/fleetlyd/            # 装配入口（wire 在 internal/assembly：注册 Provider、选 Capability、启动引擎）
-cmd/fleetly/             # CLI（API 客户端；全部动词经 internal/api 的 proto 契约）
-internal/spec/           # IR：AppSpec/TaskSpec/DatabaseSpec + schemaVersion + 归一化 + 校验（叶子，纯类型）
-internal/model/          # errcode/eventcode 注册表（叶子，纯类型；实体与状态机随 N0 实况落在 spec/state/engine）
-internal/state/          # SQLite 持久化 + Outbox。按聚合分包（project/ app/ deployment/ build/ …），
-                         #   禁止门面 store.go；每个聚合包自己的 repo；statetest/ 是 hermetic 夹具
-internal/capability/     # Capability 端口：Go interface，消费 spec 与 model 类型（叶子接口层）
-internal/providers/      # Provider 实现：swarm/ traefik/ dockerbuild/…
-                         #   全仓唯一允许 import 编排器/基础设施 SDK 的地方
-internal/engine/         # 单写者收敛循环：deployment/ build/ managed/ drift/ teardown/ + 共享循环骨架（唯一一份）
-internal/identity/       # 身份域内核（角色/Token/邀请的纯类型；叶子）
-internal/authn/          # 身份执法应用层（种子、Bootstrap、拦截器 scope 执法）
-internal/material/       # Secret 信封加密（age；指纹与 Cipher）
-internal/config/         # fleetlyd 运行配置（config.proto → config.pb.go）
-internal/api/            # gRPC 服务 + gateway REST + apperr 信封（fleetlygrpc/ systemgrpc/）
-internal/apitest/        # bufconn 全链测试夹具（引擎真库 + FakeRuntime/Builder）
-internal/guards/         # 架构守卫测试（import/IR/词汇/循环骨架/门面）
-```
-
-依赖方向（违反即 CI 红，守卫见 §11）：
+**2026-10-14 四环化重构（ADR-0075）**：internal/ 由 30 顶层包收敛为 Clean 四环 + 组合根 + 元层；本文其余章节的历史路径引述按 ADR-0075 现树理解。
 
 ```
-api → engine → { model, state, capability, spec }
-providers → { capability, spec, model }
-state → { model, spec }
-model / spec：不 import 任何 internal 包（叶子）
-providers 之间互不 import；除 cmd 外无人 import providers（经注册表间接装配）
+cmd/fleetlyd/             # 装配入口（wire 在 internal/assembly）
+cmd/fleetly/              # CLI（API 客户端；全部动词经 proto 契约）
+internal/domain/          # 领域层（零外向；守卫三红线：无 I/O、无 genproto、无 RPC 框架）
+  shared/                 #   spec(IR)/model(errcode·eventcode·entityid)/apperr(纯信封)/capability(端口)
+  identity/               #   身份上下文种子（P1b 起各限界上下文在此扩容聚合）
+  services/               #   跨聚合领域服务：anchor/material(纯密码学)/dbtemplate/dbbrowser/writes(FactRow·Sequence)
+internal/application/     # 应用层（用例编排）：engine(壳+九域内核)/authn/idem/governance/composeintake(ACL)/apptemplate/schema
+internal/infrastructure/  # 适配器：persistence(SQLite 聚合 repo+migrations)/providers(九 Provider)/github/upload/keyring
+internal/interfaces/      # 输入面：grpc(fleetlygrpc/systemgrpc/apperrstatus)/admin/console(SPA embed)
+internal/assembly|config|buildinfo   # 组合根
+internal/guards|testsupport          # 元层与测试资产
 ```
+
+依赖规则（dep_matrix 守卫执法，终态五行）：
+
+```
+domain      → （零外向）
+application → domain
+infrastructure → domain（实现接口）
+interfaces  → application + domain（读径；写必经 application——读写分离律）
+assembly    → 全部（组合根）
+```
+
+现状登记豁免（P1b Repo 接口抽取后清零）：application→persistence、interfaces→persistence（读径）、anchor/writes→persistence、github/upload 客户端注入。三条显式例外（ADR-0075）：①贫血聚合+状态机集中（writes kernel/engine 单写者收敛）②admin 离线写绕 kernel ③读写分离律。冻结面（重构不动）：loop 唯一环骨架、transition 唯写序列、ensureMemo、词汇冻结、capability 核心 6 方法窄面。
 
 ## 3. Capability 系统（插件模型）
 
 **七类 Capability 端口**：Runtime、Builder、Registry、Proxy、Logging、Metrics、ObjectStore。
 
-- **机制（ADR-0003）**：编译期 Go interface + 注册表；Provider 自注册（init），配置选定每 Capability 同期唯一在册 Provider。**先不做进程外插件协议**（deletion test：当前没有第三方插件作者，gRPC 插件协议是 porter 生态规模才配付的成本）；但契约类型全部定义在 proto（经 genproto 落 `internal/spec`），未来抽进程外插件是机械工作，不需要改语义。
+- **机制（ADR-0003）**：编译期 Go interface + 注册表；Provider 自注册（init），配置选定每 Capability 同期唯一在册 Provider。**先不做进程外插件协议**（deletion test：当前没有第三方插件作者，gRPC 插件协议是 porter 生态规模才配付的成本）；未来抽进程外插件需先将 capability 端口契约类型 proto 化——它们是 `internal/domain/shared/capability` 手写 Go 型（spec IR 类型住 genproto/spec/v1），非纯机械工作（2026-10-14 勘误：原"契约类型全部定义在 proto"失实）。
 - **版本化**：Spec 带 `schemaVersion`，读入时按 check-strategy（默认：可读旧版+提示，拒绝跳代）——继承 porter 的演进教训。
 - **Provider 契约三件套**：①能力接口（做事）；②`Describe() ProviderDescriptor`（名称、版本、所需配置 schema、部署形态——若是 Managed Provider 则返回自己的部署 Spec）；③`Health()`（供降级矩阵）。
 - **配置**：`fleetlyd` 配置文件按 Capability 名给 Provider 与参数；换 Provider = 声明迁移（Runtime 更换的验收场景见领域模型 §5 场景 3 与 §12 N4）。
@@ -87,7 +85,7 @@ DatabaseSpec { engine, version, credentialsRef, storage, backupPolicy }
 
 ## 5. Runtime 契约（保持窄面）
 
-tsuru 的 17 方法 Provisioner 是反面教材；核心面 6 个方法 + 三个可选子面：
+tsuru 的 17 方法 Provisioner 是反面教材；核心面 6 个方法不动，可选子面随域扩展（2026-10 实况：8 子面 + 6 跨面，FacesOf 单点探测 13 面——核心窄面纪律未破）：
 
 ```go
 type Runtime interface {

@@ -40,6 +40,9 @@ var bannedPatterns = map[string]*regexp.Regexp{
 	// Owner Lease 词条。
 	"heartbeat": wordRe(`heartbeat|heartbeats`),
 	"keepalive": wordRe(`keepalive|keepalives`),
+	// Audit 词条（ADR-0075 入册）：零现役命中起直扫，双向保鲜。
+	"trail":         wordRe(`trail|trails`),
+	"activity feed": wordRe(`activity feed|activity feeds`),
 	// Task 词条。
 	"one-off": wordRe(`one-off`),
 	// Drift/Converge/Replay/Backup/Generation 词条。
@@ -240,6 +243,10 @@ var skippedTokens = map[string]string{
 	"admin key":        "短语；人工评审",
 	"notification":     "N2 告警通知通道为契约语汇；Event 同义词语境禁",
 	"webhook":          "GitHub webhook（F0.13）为契约语汇；仅 Event 通知通道语境禁",
+	// Audit 词条（ADR-0075 入册）：log/history 本义高频零执法价值，审计
+	// 同义语境人工评审；trail/activity feed 入 bannedPatterns 直扫。
+	"log":     "Logging 能力面/Go 标准库 slog 为本义高频；Audit 同义词语境（audit log 措辞）人工评审",
+	"history": "通用英文（注释叙事/git history/router history）零执法价值；Audit 同义词语境人工评审",
 	// Deployment Strategy 词条（ADR-0048）：slot 禁的是 zane 的 slot 别名
 	// 机制义；占位泛义（free a slot/实例池 slot）为通用英文在用。
 	"slot": "通用占位义（free a slot/task slot）合法；zane slot 别名机制义人工评审",
@@ -356,6 +363,7 @@ var wordingExemptions = map[string]map[string]string{
 	// 非平台 Backup 词汇面使用（ADR-0007 禁的是把 dump 当 Backup 同义词）。
 	// 新引擎工具名继续在此追加（强制分诊不静默）。
 	"dump": {
+		"e2e/webhookrecv/main.go":                                "GET /dump 回显已收 webhook 载荷（调试端点本义，P1a-4 扩面命中）；Backup 同义词语境不受此豁免",
 		"internal/domain/shared/capability/runtime.go":           "dump.rdb 是 redis 数据文件名（预置卷恢复挂载注释，ADR-0039），非平台词汇面",
 		"internal/domain/services/dbtemplate/dbtemplate.go":      "pg_dump 等 dump 工具是引擎原生命令名（ADR-0039 备份执行链），非平台词汇面",
 		"internal/domain/services/dbtemplate/dbtemplate_test.go": "渲染钉板断言引擎原生命令名（pg_dump/mysqldump/mongodump/dump.rdb），非平台词汇面",
