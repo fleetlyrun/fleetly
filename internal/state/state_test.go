@@ -37,7 +37,7 @@ func TestFourWriteSameTransaction(t *testing.T) {
 			return err
 		}
 		var err error
-		seq, err = events.Append(ctx, tx, "deployment.queued", "deployment", d.ID, []byte(`{}`))
+		seq, err = events.Append(ctx, tx, "default", "deployment.queued", "deployment", d.ID, []byte(`{}`))
 		if err != nil {
 			return err
 		}
@@ -58,7 +58,7 @@ func TestFourWriteSameTransaction(t *testing.T) {
 		if err := deployments.Create(ctx, tx, bad); err != nil {
 			return err
 		}
-		_, err := events.Append(ctx, tx, "not.registered", "deployment", bad.ID, nil)
+		_, err := events.Append(ctx, tx, "", "not.registered", "deployment", bad.ID, nil)
 		return err
 	})
 	require.Error(t, err)

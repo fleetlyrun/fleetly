@@ -25,12 +25,14 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state/outbox"
 )
 
-// Event 是一条 Outbox 事件事实（与聚合写同生共死）。
+// Event 是一条 Outbox 事件事实（与聚合写同生共死）。Team 是资源轴归属
+// Team（P0-2）：” = 平台级事件（对全部 Team 可见）。
 type Event struct {
 	Name      string
 	Aggregate string
 	ID        string
 	Payload   []byte
+	Team      string
 }
 
 // Fact 是一次非迁移写路径的归一化形态；零值段合法。Events/Audits 取 lazy
@@ -60,7 +62,7 @@ func Sequence(ctx context.Context, tx *sql.Tx, outbox *outbox.Repo, audits *audi
 	}
 	for _, ev := range f.Events {
 		e := ev()
-		if _, err := outbox.Append(ctx, tx, e.Name, e.Aggregate, e.ID, e.Payload); err != nil {
+		if _, err := outbox.Append(ctx, tx, e.Team, e.Name, e.Aggregate, e.ID, e.Payload); err != nil {
 			return err
 		}
 	}

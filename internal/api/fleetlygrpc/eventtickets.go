@@ -83,6 +83,27 @@ func (s *eventTicketStore) redeem(purpose, payload, token string) bool {
 	return true
 }
 
+// redeemPayload 单用途兑换并回带面内绑定锚（events 票据把 Team 可见域
+// 铸在 payload——兑换面无身份 ctx，过滤锚以铸造时烙印为准，P0-2）：命中、
+// 未过期、purpose 匹配即删并放行；其余一律拒绝（语义同 redeem，对匿名面
+// 只呈现"票据无效"）。
+func (s *eventTicketStore) redeemPayload(purpose, token string) (string, bool) {
+	if token == "" {
+		return "", false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	e, ok := s.tickets[token]
+	if !ok {
+		return "", false
+	}
+	if e.purpose != purpose || !s.clock.Now().Before(e.expiry) {
+		return "", false
+	}
+	delete(s.tickets, token)
+	return e.payload, true
+}
+
 // sweepLocked 顺带清理过期票据（铸造路径惰性执行，无独立 janitor 面）。
 func (s *eventTicketStore) sweepLocked() {
 	now := s.clock.Now()

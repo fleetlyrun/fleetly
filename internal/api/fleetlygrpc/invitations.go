@@ -67,6 +67,7 @@ func (svc *InvitationsService) CreateInvitation(ctx context.Context, req *identi
 		ExpiresAt: stateFormatTime(svc.s.DB.Clock().Now().Add(ttl)),
 	}
 	invitationCreatedEvents := []eventFact{identityEvent("invitation.created", "invitation", inv.ID, invitationCreatedPayload{Role: inv.RoleID})}
+	invitationCreatedEvents[0].team = inv.TeamID // 资源轴（P0-2）
 	err = svc.s.commit(ctx, writeFact{
 		// roleInTeam（Q-16 同族面）：邀请绑 team+role——不一致的邀请兑换出
 		// 跨 Team membership，同洞同修。
@@ -137,6 +138,8 @@ func (svc *InvitationsService) AcceptInvitation(ctx context.Context, req *identi
 
 	u := &user.User{Name: req.GetUserName()}
 	m := &membership.Membership{UserID: u.ID, TeamID: inv.TeamID, RoleID: inv.RoleID}
+	accepted := identityEvent("invitation.accepted", "invitation", inv.ID, invitationAcceptedPayload{User: u.Name})
+	accepted.team = inv.TeamID // 资源轴（P0-2）
 	err = svc.s.commit(ctx, writeFact{
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			if err := svc.s.Users.Create(ctx, tx, u); err != nil {
@@ -149,7 +152,7 @@ func (svc *InvitationsService) AcceptInvitation(ctx context.Context, req *identi
 			}
 			return svc.s.Invitations.MarkConsumed(ctx, tx, inv.ID)
 		},
-		events: []eventFact{identityEvent("invitation.accepted", "invitation", inv.ID, invitationAcceptedPayload{User: u.Name})},
+		events: []eventFact{accepted},
 		audits: []*audit.Entry{{
 			Actor: "user:" + u.Name, Source: audit.SourceManual,
 			Action: "invitation.accept", Resource: "invitation/" + inv.ID,

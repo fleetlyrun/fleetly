@@ -121,7 +121,7 @@ func (e *Engine) driveBuilding(ctx context.Context, d *deployment.Deployment) (*
 			write: func(ctx context.Context, tx *sql.Tx) error { return e.builds.Create(ctx, tx, queued) },
 			events: []func() eventFact{func() eventFact {
 				return eventFact{name: eventBuildState(build.StateQueued), aggregate: "build", id: buildID,
-					payload: buildEventPayloadJSON(queued)}
+					payload: buildEventPayloadJSON(queued), team: e.eventTeamOfProject(ctx, tx, a.ProjectID)}
 			}},
 			audits: []auditFact{{action: "build.create", resource: "build/" + buildID}},
 		})

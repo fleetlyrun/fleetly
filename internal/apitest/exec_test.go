@@ -119,7 +119,7 @@ func TestExecSessionGRPCLink(t *testing.T) {
 	assert.True(t, found, "exec.session audit row must exist")
 
 	// 事件：exec.session_opened 载荷带命令面。
-	evts, err := h.Services.OutboxEvents.ListAfter(context.Background(), h.DB.Runner(), 0, 50)
+	evts, err := h.Services.OutboxEvents.ListAfter(context.Background(), h.DB.Runner(), 0, 50, "")
 	require.NoError(t, err)
 	seen := false
 	for _, ev := range evts {

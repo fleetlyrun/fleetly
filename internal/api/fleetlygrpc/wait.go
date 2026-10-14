@@ -112,13 +112,19 @@ func waitOnAggregate(ctx context.Context, s *Services, aggregate, id string, sen
 	if err != nil {
 		return mapStateError(err, "events")
 	}
+	// 订阅按调用方 Team 过滤（P0-2）：等待对象已过行级授权，本队/平台级
+	// 事件照常命中，他队事件不再流经等待面。
+	team, terr := eventsTeamFilterOf(ctx)
+	if terr != nil {
+		return terr
+	}
 	if err := send(); err != nil {
 		if errors.Is(err, errWaitDone) {
 			return nil
 		}
 		return err
 	}
-	err = s.subscribeEvents(ctx, cursor, true, func(ev *telemetryv1.Event) error {
+	err = s.subscribeEvents(ctx, team, cursor, true, func(ev *telemetryv1.Event) error {
 		if ev.Aggregate != aggregate || ev.AggregateId != id {
 			return nil
 		}

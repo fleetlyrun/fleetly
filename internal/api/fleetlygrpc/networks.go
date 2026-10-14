@@ -110,7 +110,7 @@ func (svc *NetworksService) RebuildNetwork(ctx context.Context, req *structurev1
 		Detached: int32(res.Detached), Reattached: int32(res.Reattached), //nolint:gosec // 计数域内（载体数）
 	})
 	err = svc.s.commit(ctx, writeFact{
-		events: []eventFact{{name: eventNetworkRebuilt, aggregate: "network", id: net.ID, payload: payload}},
+		events: []eventFact{{name: eventNetworkRebuilt, aggregate: "network", id: net.ID, payload: payload, projectID: net.ProjectID}},
 		audits: []*audit.Entry{{
 			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "network.rebuild",
 			Resource: "network/" + net.Name,
@@ -152,12 +152,13 @@ type networkPeerEventPayload struct {
 }
 
 // networkPeerEvent 构造 peer 事件事实（aggregate=network，id=网络行）。
+// projectID 是资源轴 Team 解析锚（P0-2；peer 双项目——锚网络侧归属）。
 func networkPeerEvent(name string, p *networkpeer.Peer, net *networkrepo.Network) eventFact {
 	payload, _ := json.Marshal(networkPeerEventPayload{ //nolint:errcheck // 结构体字段恒可序列化
 		ID: p.ID, NetworkID: p.NetworkID, NetworkName: net.Name,
 		NetworkProjectID: net.ProjectID, PeerProjectID: p.PeerProjectID,
 	})
-	return eventFact{name: name, aggregate: "network", id: p.NetworkID, payload: payload}
+	return eventFact{name: name, aggregate: "network", id: p.NetworkID, payload: payload, projectID: net.ProjectID}
 }
 
 // networkPeerAudits 是双方审计（ADR-0013：挂靠计入两侧）：网络侧 +

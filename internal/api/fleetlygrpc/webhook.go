@@ -191,7 +191,9 @@ func (svc *HooksService) ingestGitMaterial(ctx context.Context, appRow *app.App,
 			_, err := svc.s.Hooks.RecordDelivery(ctx, tx, h.AppID, delivery)
 			return err
 		},
-		events: []eventFact{{name: eventName, aggregate: "app", id: appRow.ID, payload: payload}},
+		// 事件 Team 铸入取 ctx 标注（P0-2）：本函数上文已按 App 归属
+		// Project 的 Team 标注（资源轴，与审计同锚）。
+		events: []eventFact{{name: eventName, aggregate: "app", id: appRow.ID, payload: payload, team: audit.TeamFromContext(ctx)}},
 		audits: []*audit.Entry{{
 			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
 			Action: auditAction, Resource: "app/" + appRow.ID, AfterFP: commit,

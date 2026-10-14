@@ -228,7 +228,7 @@ func TestInstantiateTemplateSecretChain(t *testing.T) {
 
 	// template.instantiated 事件落账（app 聚合；outbox 直查——events list
 	// 是 after_seq 游标语义，见 exec_test 同款）。
-	evts, err := h.Services.OutboxEvents.ListAfter(context.Background(), h.DB.Runner(), 0, 50)
+	evts, err := h.Services.OutboxEvents.ListAfter(context.Background(), h.DB.Runner(), 0, 50, "")
 	require.NoError(t, err)
 	seen := false
 	for _, ev := range evts {
@@ -346,7 +346,7 @@ func TestRefreshTemplatesFailClosed(t *testing.T) {
 	assert.Len(t, list2.GetTemplates(), 1)
 
 	// templates.refreshed 事件落账（digest 前后对照）。
-	evts, err := h.Services.OutboxEvents.ListAfter(context.Background(), h.DB.Runner(), 0, 50)
+	evts, err := h.Services.OutboxEvents.ListAfter(context.Background(), h.DB.Runner(), 0, 50, "")
 	require.NoError(t, err)
 	seen := false
 	for _, ev := range evts {

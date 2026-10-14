@@ -143,6 +143,11 @@ func (svc *ProjectsService) CreateProject(ctx context.Context, req *structurev1.
 		structureEvent(eventProjectCreated, "project", p.ID, ""),
 		structureEvent(eventNetworkCreated, "network", net.Name, net.ProjectID),
 	}
+	// 资源轴 Team 在手直接铸（P0-2）：project.created 的聚合即项目本体、
+	// default 网络与项目同队——projectID 锚要等 write 段才铸出，不能走
+	// 解析锚路径。
+	events[0].team = teamID
+	events[1].team = teamID
 	err = svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{svc.s.teamExists(p.TeamID)},
 		write: func(ctx context.Context, tx *sql.Tx) error {
@@ -248,6 +253,8 @@ func (svc *ProjectsService) DeleteProject(ctx context.Context, req *structurev1.
 	if err := svc.s.cascadeDeleteDatabases(ctx, req.GetId()); err != nil {
 		return nil, err
 	}
+	deleted := structureEvent(eventProjectDeleted, "project", req.GetId(), "")
+	deleted.projectID = req.GetId() // 聚合即项目本体：自身充当 Team 解析锚（P0-2）
 	err := svc.s.commit(ctx, writeFact{
 		// 删除守卫与 tombstone 同事务：并发建 App 的窗口由两侧守卫对偶
 		// 闭合（本侧拒绝"删除时仍有 App"；CreateApp 侧受理检查拒绝"删除
@@ -258,7 +265,7 @@ func (svc *ProjectsService) DeleteProject(ctx context.Context, req *structurev1.
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			return svc.s.Projects.SoftDelete(ctx, tx, req.GetId())
 		},
-		events: []eventFact{structureEvent(eventProjectDeleted, "project", req.GetId(), "")},
+		events: []eventFact{deleted},
 		audits: []*audit.Entry{{
 			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "project.delete",
 			Resource: "project/" + req.GetId(),
@@ -295,16 +302,24 @@ func (svc *AppsService) CreateApp(ctx context.Context, req *structurev1.CreateAp
 	// 父资源存活校验（批 0 复核）：apps.project_id 无 FK，不校验则对
 	// 不存在/已删 project 建 App 直接成功，活 App 落已删项目、路由照发
 	// ——DeleteProject 守卫的"窗口闭合"承诺以此对偶守卫成立。数量配额
-	// （ADR-0017 附录 A.1）与存活校验同住受理位（事务内读）。
+	//（ADR-0017 附录 A.1）与存活校验同住受理位（事务内读）。
+	events := []eventFact{structureEvent(eventAppCreated, "app", a.ID, a.ProjectID)}
 	err := svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{
 			svc.s.parentProjectAlive(req.GetProjectId()),
 			svc.s.appQuota(req.GetProjectId()),
 		},
 		write: func(ctx context.Context, tx *sql.Tx) error {
-			return svc.s.Apps.Create(ctx, tx, a)
+			if err := svc.s.Apps.Create(ctx, tx, a); err != nil {
+				return err
+			}
+			// 事件 id/payload 依赖事务内铸出的行 id：write 段后就地填充
+			//（task/database 同款；P0-2 补齐——此前 aggregate_id 恒空）。
+			events[0].id = a.ID
+			events[0].payload, _ = json.Marshal(structureEventPayload{ID: a.ID, ProjectID: a.ProjectID}) //nolint:errcheck // 结构体字段恒可序列化
+			return nil
 		},
-		events: []eventFact{structureEvent(eventAppCreated, "app", a.ID, a.ProjectID)},
+		events: events,
 		auditsFrom: func() []*audit.Entry {
 			return []*audit.Entry{{
 				Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "app.create",

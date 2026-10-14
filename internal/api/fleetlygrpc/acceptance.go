@@ -32,12 +32,17 @@ import (
 // acceptanceCheck 是一条受理位检查：事务内运行，非 nil 错误即整单回滚。
 type acceptanceCheck func(ctx context.Context, tx *sql.Tx) error
 
-// eventFact 是一条 Outbox 事件事实（与聚合写同生共死）。
+// eventFact 是一条 Outbox 事件事实（与聚合写同生共死）。team 是资源轴
+// 归属 Team（P0-2）：” = 平台级事件（对全部 Team 可见）。projectID 是
+// 资源轴解析锚——team 未显式铸入时由 commit 依 Project 行解析（Project
+// 的 Team 归属不可变，受理解析与事务写入无 TOCTOU 面）。
 type eventFact struct {
 	name      string
 	aggregate string
 	id        string
 	payload   []byte
+	team      string
+	projectID string
 }
 
 // writeFact 声明一次写路径的全部事实；零值段（无受理检查/无事件）合法。
@@ -54,10 +59,29 @@ type writeFact struct {
 // commit 在单个事务内落完一次写路径：受理检查先行（拒绝零副作用）、
 // 聚合写居中、事件与审计殿后。段序与段间失败语义由写序列 kernel 拥有
 // （internal/writes，ADR-0064）；本原语是受理位入口与 writeFact 形态面。
+// 进事务前先补铸事件的资源轴 Team（P0-2）。
 func (s *Services) commit(ctx context.Context, fact writeFact) error {
+	s.resolveEventTeams(ctx, fact.events)
 	return s.DB.Tx(ctx, func(tx *sql.Tx) error {
 		return writes.Sequence(ctx, tx, s.OutboxEvents, s.Audits, s.writeKernelFact(fact))
 	})
+}
+
+// resolveEventTeams 补铸事件的资源轴 Team（P0-2）：显式 team 优先；其余
+// 按 projectID 锚经 Project 行解析（行缺失/存储故障 → ” 平台级可见，
+// 不为归属解析新增失败面；全量补齐由 P2 事实 kernel 承载）。就地写切片
+// 元素——kernel 闭包按同一底层数组读取（writeKernelFact 注释同款契约）。
+func (s *Services) resolveEventTeams(ctx context.Context, events []eventFact) {
+	for i := range events {
+		if events[i].team != "" || events[i].projectID == "" {
+			continue
+		}
+		p, err := s.Projects.Get(ctx, s.DB.Runner(), events[i].projectID)
+		if err != nil {
+			continue // 解析失败降级 ''：事件可见面不窄于止血前行为
+		}
+		events[i].team = p.TeamID
+	}
 }
 
 // writeKernelFact 把受理位 writeFact 归一化为写序列 kernel 形态：事件闭包
@@ -76,7 +100,7 @@ func (s *Services) writeKernelFact(fact writeFact) writes.Fact {
 		// 失效（事件落空 payload——本注释修订前正是这个形态）。
 		f.Events = append(f.Events, func() writes.Event {
 			e := fact.events[i]
-			return writes.Event{Name: e.name, Aggregate: e.aggregate, ID: e.id, Payload: e.payload}
+			return writes.Event{Name: e.name, Aggregate: e.aggregate, ID: e.id, Payload: e.payload, Team: e.team}
 		})
 	}
 	if len(fact.audits) > 0 || fact.auditsFrom != nil {
@@ -251,10 +275,11 @@ func (s *Services) projectHasNetwork(projectID string) acceptanceCheck {
 	}
 }
 
-// structureEvent 构造结构面事件的 Outbox 事实（负载字段只增）。
+// structureEvent 构造结构面事件的 Outbox 事实（负载字段只增）。projectID
+// 同时充当资源轴 Team 的解析锚（P0-2，resolveEventTeams）。
 func structureEvent(name, aggregate, id, projectID string) eventFact {
 	payload, _ := json.Marshal(structureEventPayload{ID: id, ProjectID: projectID}) //nolint:errcheck // 结构体字段恒可序列化
-	return eventFact{name: name, aggregate: aggregate, id: id, payload: payload}
+	return eventFact{name: name, aggregate: aggregate, id: id, payload: payload, projectID: projectID}
 }
 
 // identityEvent 构造身份面事件的 Outbox 事实（payload 是最小 JSON 面）。

@@ -97,6 +97,9 @@ func (e *Engine) mintOneShotTask(ctx context.Context, projectID string,
 	if err != nil {
 		return nil, err
 	}
+	// 资源轴 Team 先行解析（P0-2）：Project 的 Team 归属不可变，事务外
+	// 解析无 TOCTOU 面。
+	team := e.eventTeamOfProject(ctx, e.db.Runner(), projectID)
 	var row *task.Task
 	err = e.db.Tx(ctx, func(tx *sql.Tx) error {
 		// 配额检查先行（拒绝零副作用；含本单自占一位；ADR-0017 附录 A.1）：
@@ -116,7 +119,7 @@ func (e *Engine) mintOneShotTask(ctx context.Context, projectID string,
 		return e.commitWrite(ctx, tx, writeFact{
 			write: func(ctx context.Context, tx *sql.Tx) error { return e.tasks.Create(ctx, tx, row) },
 			events: []func() eventFact{func() eventFact {
-				return eventFact{name: EventTaskCreated, aggregate: "task", id: row.ID, payload: TaskCreatedEventJSON(row)}
+				return eventFact{name: EventTaskCreated, aggregate: "task", id: row.ID, payload: TaskCreatedEventJSON(row), team: team}
 			}},
 			audits: []auditFact{{action: "task.create", resource: "task/" + row.ID, afterFP: row.Form, actorCtx: actorCtx}},
 			steps:  domainSteps(row.ID),

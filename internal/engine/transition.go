@@ -24,6 +24,7 @@ import (
 	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/authn"
+	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/state/audit"
 	"github.com/fleetlyrun/fleetly/internal/state/build"
 	"github.com/fleetlyrun/fleetly/internal/state/deployment"
@@ -33,12 +34,37 @@ import (
 )
 
 // eventFact 是一条 Outbox 事件事实（与聚合写同生共死；概念同 API 侧
-// acceptance.go，engine 本地形态）。
+// acceptance.go，engine 本地形态）。team 是资源轴归属 Team（P0-2）：
+// ” = 平台级事件（对全部 Team 可见）。
 type eventFact struct {
 	name      string
 	aggregate string
 	id        string
 	payload   []byte
+	team      string
+}
+
+// eventTeamOfProject 解析 Project 轴的资源 Team（P0-2 事件 Team 铸入）：
+// 行缺失/存储故障 → ”（平台级可见——不劣于止血前行为，不为归属解析
+// 新增失败面；全量补齐由 P2 事实 kernel 承载）。
+func (e *Engine) eventTeamOfProject(ctx context.Context, run state.Runner, projectID string) string {
+	p, err := e.projects.Get(ctx, run, projectID)
+	if err != nil {
+		e.log.Warn("events: resolve project team", "project", projectID, "err", err)
+		return ""
+	}
+	return p.TeamID
+}
+
+// eventTeamOfApp 解析 App 轴的资源 Team（deployment/build 聚合两跳：
+// App → Project）。走 Any 档——App 删除后的收尾迁移事件仍可归属。
+func (e *Engine) eventTeamOfApp(ctx context.Context, run state.Runner, appID string) string {
+	a, err := e.apps.GetAnyByID(ctx, run, appID)
+	if err != nil {
+		e.log.Warn("events: resolve app team", "app", appID, "err", err)
+		return ""
+	}
+	return e.eventTeamOfProject(ctx, run, a.ProjectID)
 }
 
 // auditFact 是一条审计事实（ID/时间由脊柱铸造；actorCtx=true 时
@@ -51,12 +77,15 @@ type auditFact struct {
 }
 
 // transitionFact 声明一次状态迁移的全部事实。move 承担 CAS+刷新并判定
-// 原地迁移（抑制事件）；event/audit 在其后按序求值。
+// 原地迁移（抑制事件）；event/audit 在其后按序求值；team 是事件落库前
+// 资源轴 Team 的解析面（nil = 平台级事件——node/platform 等无 Team 轴
+// 聚合；解析失败由 helper 内部降级 ”，P0-2）。
 type transitionFact struct {
 	aggregate string
 	id        string
 	move      func(ctx context.Context, tx *sql.Tx) (freshState string, inPlace bool, err error)
 	event     func() eventFact
+	team      func(ctx context.Context, tx *sql.Tx) string
 	audit     func(freshState string) auditFact
 	extras    []func(ctx context.Context, tx *sql.Tx) error
 }
@@ -70,7 +99,11 @@ func (e *Engine) commitTransition(ctx context.Context, tx *sql.Tx, f transitionF
 	}
 	if !inPlace {
 		ev := f.event()
-		if _, err := e.outbox.Append(ctx, tx, ev.name, ev.aggregate, ev.id, ev.payload); err != nil {
+		team := ""
+		if f.team != nil {
+			team = f.team(ctx, tx)
+		}
+		if _, err := e.outbox.Append(ctx, tx, team, ev.name, ev.aggregate, ev.id, ev.payload); err != nil {
 			return err
 		}
 	}
@@ -157,7 +190,7 @@ func (e *Engine) writeKernelFact(checks []func(context.Context, *sql.Tx) error,
 		ev := ev
 		f.Events = append(f.Events, func() writes.Event {
 			fact := ev()
-			return writes.Event{Name: fact.name, Aggregate: fact.aggregate, ID: fact.id, Payload: fact.payload}
+			return writes.Event{Name: fact.name, Aggregate: fact.aggregate, ID: fact.id, Payload: fact.payload, Team: fact.team}
 		})
 	}
 	for _, a := range audits {
@@ -190,6 +223,9 @@ func (e *Engine) transit(ctx context.Context, tx *sql.Tx, d *deployment.Deployme
 		},
 		event: func() eventFact {
 			return eventFact{name: eventStateName(fresh.State), aggregate: "deployment", id: d.ID, payload: deploymentEventPayloadJSON(fresh)}
+		},
+		team: func(ctx context.Context, tx *sql.Tx) string {
+			return e.eventTeamOfApp(ctx, tx, fresh.AppID)
 		},
 		audit: func(freshState string) auditFact {
 			// 审计 AfterFP（C5）：回放收口会把 to_revision 改写为实际运行的
@@ -253,6 +289,9 @@ func (e *Engine) transitRunTx(ctx context.Context, tx *sql.Tx, m *run.Run, from 
 		event: func() eventFact {
 			return eventFact{name: eventRunState(fresh.State), aggregate: "run", id: m.ID, payload: runEventPayloadJSON(fresh)}
 		},
+		team: func(ctx context.Context, tx *sql.Tx) string {
+			return e.eventTeamOfProject(ctx, tx, fresh.ProjectID)
+		},
 		audit: func(freshState string) auditFact {
 			return auditFact{action: "run.transit", resource: "run/" + m.ID, afterFP: freshState}
 		},
@@ -295,6 +334,9 @@ func (e *Engine) transitBuild(ctx context.Context, b *build.Build, from []build.
 			},
 			event: func() eventFact {
 				return eventFact{name: eventBuildState(fresh.State), aggregate: "build", id: b.ID, payload: buildEventPayloadJSON(fresh)}
+			},
+			team: func(ctx context.Context, tx *sql.Tx) string {
+				return e.eventTeamOfApp(ctx, tx, fresh.AppID)
 			},
 			audit: func(freshState string) auditFact {
 				return auditFact{action: "build.transit", resource: "build/" + b.ID, afterFP: freshState}
@@ -364,6 +406,9 @@ func (e *Engine) transitTaskTx(ctx context.Context, tx *sql.Tx, t *task.Task, fr
 				name = opts.updateEvent
 			}
 			return eventFact{name: name, aggregate: "task", id: t.ID, payload: taskEventPayloadJSON(fresh, opts.reason)}
+		},
+		team: func(ctx context.Context, tx *sql.Tx) string {
+			return e.eventTeamOfProject(ctx, tx, fresh.ProjectID)
 		},
 		audit: func(freshState string) auditFact {
 			action := opts.auditAction

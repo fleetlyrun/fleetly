@@ -12,7 +12,8 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
-// Event 是一条已落库事件（payload 是 JSON 字节）。
+// Event 是一条已落库事件（payload 是 JSON 字节）。TeamID 不在返回形态
+// ——team 是读面过滤的内部列，不进 Event 消息（proto 契约不动，P0-2）。
 type Event struct {
 	Seq         int64
 	Name        string
@@ -30,30 +31,41 @@ type Repo struct {
 // New 构造 repo。
 func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 
-// Append 落一条事件并返回其单调 seq。事件名未注册 → 明确报错（fail-fast
+// Append 落一条事件并返回其单调 seq。team 是资源轴归属 Team（P0-2）：
+// ” = 平台级事件（对全部 Team 可见）。事件名未注册 → 明确报错（fail-fast
 // 于调用方测试，而非静默落库污染订阅面）。
-func (r *Repo) Append(ctx context.Context, run state.Runner, name, aggregate, aggregateID string, payload []byte) (int64, error) {
+func (r *Repo) Append(ctx context.Context, run state.Runner, team, name, aggregate, aggregateID string, payload []byte) (int64, error) {
 	if _, ok := eventcode.Get(name); !ok {
 		return 0, fmt.Errorf("outbox: event name %q is not registered in eventcode registry", name)
 	}
 	res, err := run.ExecContext(ctx, `
-		INSERT INTO outbox (name, aggregate, aggregate_id, payload, created_at)
-		VALUES (?, ?, ?, ?, ?)`,
-		name, aggregate, aggregateID, payload, state.FormatTime(r.clock.Now()))
+		INSERT INTO outbox (name, aggregate, aggregate_id, payload, created_at, team_id)
+		VALUES (?, ?, ?, ?, ?, ?)`,
+		name, aggregate, aggregateID, payload, state.FormatTime(r.clock.Now()), team)
 	if err != nil {
 		return 0, err
 	}
 	return res.LastInsertId()
 }
 
-// ListAfter 返回 seq 之后的事件（升序；limit 上界钳制）。
-func (r *Repo) ListAfter(ctx context.Context, run state.Runner, afterSeq int64, limit int) ([]Event, error) {
+// ListAfter 返回 seq 之后的事件（升序；limit 上界钳制）。team 非空 =
+// 行级过滤（team_id = team 或 ”平台级行——与 audit 面 ADR-0035 决策 6
+// 同口径）；team 空 = 不过滤（平台 owner / 内部消费面，P0-2）。
+func (r *Repo) ListAfter(ctx context.Context, run state.Runner, afterSeq int64, limit int, team string) ([]Event, error) {
 	if limit <= 0 || limit > 1000 {
 		limit = 1000
 	}
-	rows, err := run.QueryContext(ctx, `
+	query := `
 		SELECT seq, name, aggregate, aggregate_id, payload, created_at
-		FROM outbox WHERE seq > ? ORDER BY seq LIMIT ?`, afterSeq, limit)
+		FROM outbox WHERE seq > ?`
+	args := []any{afterSeq}
+	if team != "" {
+		query += ` AND (team_id = ? OR team_id = '')`
+		args = append(args, team)
+	}
+	query += ` ORDER BY seq LIMIT ?`
+	args = append(args, limit)
+	rows, err := run.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}

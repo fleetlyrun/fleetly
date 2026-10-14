@@ -101,7 +101,7 @@ func (svc *DatabasesService) CreateDatabase(ctx context.Context, req *structurev
 		}
 		restoreSrc = src
 	}
-	events := []eventFact{{name: eventDatabaseCreated, aggregate: "database"}}
+	events := []eventFact{{name: eventDatabaseCreated, aggregate: "database", projectID: req.GetProjectId()}}
 	err := svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{
 			svc.s.parentProjectAlive(req.GetProjectId()),

@@ -106,7 +106,7 @@ func (e *Engine) skipSchedule(ctx context.Context, s *schedule.Schedule, next, r
 				skipped := *s
 				skipped.NextFireAt = next
 				return eventFact{name: eventScheduleSkipped, aggregate: "schedule", id: s.ID,
-					payload: scheduleEventPayloadJSON(&skipped, "", reason)}
+					payload: scheduleEventPayloadJSON(&skipped, "", reason), team: e.eventTeamOfProject(ctx, tx, s.ProjectID)}
 			}},
 		})
 	})
@@ -169,6 +169,9 @@ func (e *Engine) scheduleOverlapping(ctx context.Context, lastTaskID string) (bo
 // 推进）或 RecordFire（手动拍：只记 last_task_id）+ schedule.fired 事件。
 // CAS 失败整单回滚（双发防御——Task 行不落孤账，B12 P3-4 手动拍锚）。
 func (e *Engine) spawnScheduleTask(ctx context.Context, s *schedule.Schedule, source, nextFireAt string) (*task.Task, error) {
+	// 队轴 Team 先行解析（P0-2）：steps 回调不携 ctx/tx，事务外解析
+	//（Project 的 Team 归属不可变，无 TOCTOU 面）。
+	team := e.eventTeamOfProject(ctx, e.db.Runner(), s.ProjectID)
 	return e.mintOneShotTask(ctx, s.ProjectID,
 		func() (*specv1.TaskSpec, error) {
 			tmpl, err := loadTaskSpec(s.Spec)
@@ -192,7 +195,7 @@ func (e *Engine) spawnScheduleTask(ctx context.Context, s *schedule.Schedule, so
 				},
 				events: []func() eventFact{func() eventFact {
 					return eventFact{name: eventScheduleFired, aggregate: "schedule", id: s.ID,
-						payload: scheduleEventPayloadJSON(&fired, source, "")}
+						payload: scheduleEventPayloadJSON(&fired, source, ""), team: team}
 				}},
 				audits: []auditFact{{action: "schedule.fire", resource: "schedule/" + s.ID, afterFP: taskID, actorCtx: true}},
 			}}

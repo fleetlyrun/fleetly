@@ -269,15 +269,17 @@ func (e *Engine) compareSpecs(ctx context.Context, appID string, obs []capabilit
 		})
 	}
 
+	// 本扫描按 App 圈定（appID 在手）：资源轴 Team 一次解析，两类事件共用。
+	team := e.eventTeamOfApp(ctx, e.db.Runner(), appID)
 	for _, p := range pending {
-		if _, err := e.outbox.Append(ctx, e.db.Runner(),
+		if _, err := e.outbox.Append(ctx, e.db.Runner(), team,
 			eventWorkloadDrift, "workload", p.wid,
 			driftEventPayloadJSON(p.ev, appOwner(appID), p.anchor)); err != nil {
 			e.log.Error("drift scan: event", "workload", p.wid, "err", err)
 		}
 	}
 	for _, p := range rollout {
-		if _, err := e.outbox.Append(ctx, e.db.Runner(),
+		if _, err := e.outbox.Append(ctx, e.db.Runner(), team,
 			eventWorkloadRolloutStall, "workload", p.wid,
 			rolloutStalledEventPayloadJSON(p.wid, appID, p.gen, p.detail)); err != nil {
 			e.log.Error("drift scan: rollout event", "workload", p.wid, "err", err)
@@ -316,7 +318,9 @@ func (e *Engine) emitSteadyStateStopped(ctx context.Context, wid string, ev capa
 	if owner, ok := e.obs.ownerOf(wid); ok && owner.domain == ownerApp {
 		appID = owner.id
 	}
-	_, err := e.outbox.Append(ctx, e.db.Runner(), eventWorkloadStopped, "workload", wid,
+	// 平台级可见（P0-2）：载体归属域 app/database/managed 三态分叉，Team
+	// 轴解析统一留 '' 待 P2 事实 kernel 按 owner 域补齐。
+	_, err := e.outbox.Append(ctx, e.db.Runner(), "", eventWorkloadStopped, "workload", wid,
 		stoppedEventPayloadJSON(wid, appID, ev))
 	if err != nil {
 		e.log.Error("steady-state watchdog: event", "workload", wid, "err", err)

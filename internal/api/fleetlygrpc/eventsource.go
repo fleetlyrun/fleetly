@@ -20,9 +20,15 @@ func NewEventStreamSource(s *Services) *EventStreamSource {
 	return &EventStreamSource{s: s}
 }
 
-// RedeemTicket 兑换一次性票据（单用途：命中即删；过期/未知一律拒绝）。
-func (src *EventStreamSource) RedeemTicket(ticket string) bool {
-	return src.s.eventTickets.redeem(ticketPurposeEvents, "", ticket)
+// RedeemTicket 兑换一次性票据（单用途：命中即删；过期/未知一律拒绝），
+// 回带铸造时烙印的 Team 可见域（P0-2：SSE 入口无 authn ctx，票据与身份
+// 解绑的收口锚——归属以铸造时烙印为准）。
+func (src *EventStreamSource) RedeemTicket(ticket string) (string, bool) {
+	payload, ok := src.s.eventTickets.redeemPayload(ticketPurposeEvents, ticket)
+	if !ok {
+		return "", false
+	}
+	return eventsTeamFromScope(payload), true
 }
 
 // Gone 断档预检（SSE 入口必须在写出 200/SSE 头之前判定——状态行一旦
@@ -31,7 +37,8 @@ func (src *EventStreamSource) Gone(ctx context.Context, afterSeq int64) error {
 	return (&EventsService{s: src.s}).eventsGoneCheck(ctx, afterSeq)
 }
 
-// Subscribe 订阅事件（与 gRPC StreamEvents 同一核心）。
-func (src *EventStreamSource) Subscribe(ctx context.Context, afterSeq int64, follow bool, send func(*telemetryv1.Event) error) error {
-	return src.s.subscribeEvents(ctx, afterSeq, follow, send)
+// Subscribe 订阅事件（与 gRPC StreamEvents 同一核心）。team 是行级过滤
+// 锚（P0-2）：” = 平台 owner 全量；” 之外的 Team ID → 本队 + 平台级。
+func (src *EventStreamSource) Subscribe(ctx context.Context, team string, afterSeq int64, follow bool, send func(*telemetryv1.Event) error) error {
+	return src.s.subscribeEvents(ctx, team, afterSeq, follow, send)
 }

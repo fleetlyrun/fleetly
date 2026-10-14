@@ -38,7 +38,9 @@ func newEventsSSEHandler(src *fleetlygrpc.EventStreamSource) http.Handler {
 			return
 		}
 		// 票据即凭证（单用途）：缺失/无效/已用统一 401（对匿名面不区分）。
-		if !src.RedeemTicket(r.URL.Query().Get("ticket")) {
+		// 兑换回带铸造时烙印的 Team 可见域（P0-2），订阅据此行级过滤。
+		team, ok := src.RedeemTicket(r.URL.Query().Get("ticket"))
+		if !ok {
 			writeHookStatus(w, http.StatusUnauthorized, "bad_ticket",
 				"mint a fresh one-time ticket via POST /v1/events/ticket (Bearer) and pass it as ?ticket=")
 			return
@@ -74,7 +76,7 @@ func newEventsSSEHandler(src *fleetlygrpc.EventStreamSource) http.Handler {
 		subCtx, cancel := context.WithCancel(r.Context())
 		defer cancel()
 		go func() {
-			done <- src.Subscribe(subCtx, afterSeq, follow, func(ev *telemetryv1.Event) error {
+			done <- src.Subscribe(subCtx, team, afterSeq, follow, func(ev *telemetryv1.Event) error {
 				select {
 				case events <- ev:
 					return nil
@@ -102,6 +104,22 @@ func newEventsSSEHandler(src *fleetlygrpc.EventStreamSource) http.Handler {
 				}
 				flusher.Flush()
 			case err := <-done:
+				// 订阅已收流：先排空通道缓冲里的尾帧再收场（done 先赢 select
+				// 时缓冲帧不得丢失——Subscribe 返回后不再有新发送，排空有界；
+				// P0-2 验收锚：SSE 重放径的帧完整性）。
+				draining := true
+				for draining {
+					select {
+					case ev := <-events:
+						if werr := writeSSEEvent(w, ev); werr != nil {
+							return
+						}
+						wrote = true
+						flusher.Flush()
+					default:
+						draining = false
+					}
+				}
 				if err == nil {
 					return
 				}

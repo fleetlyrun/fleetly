@@ -131,7 +131,7 @@ func (svc *BuildsService) UploadSource(stream deliveryv1.BuildsService_UploadSou
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			return svc.s.Uploads.Create(ctx, tx, row)
 		},
-		events: []eventFact{{name: eventUploadStored, aggregate: "project", id: projectID, payload: payload}},
+		events: []eventFact{{name: eventUploadStored, aggregate: "project", id: projectID, payload: payload, projectID: projectID}},
 		auditsFrom: func() []*audit.Entry {
 			return []*audit.Entry{{
 				Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),

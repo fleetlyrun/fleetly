@@ -308,7 +308,7 @@ func TestSpecDriftDetectedOnManualCommandEdit(t *testing.T) {
 	require.Equal(t, []string{"workload.drift_detected"}, eventNames(t, e, tAppID+"-web"),
 		"a manual command edit must raise drift")
 	var payload string
-	evs, err := e.outbox.ListAfter(context.Background(), e.db.Runner(), 0, 100)
+	evs, err := e.outbox.ListAfter(context.Background(), e.db.Runner(), 0, 100, "")
 	require.NoError(t, err)
 	for _, ev := range evs {
 		if ev.AggregateID == tAppID+"-web" {

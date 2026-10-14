@@ -245,7 +245,7 @@ func TestBackupScheduleExecuteSucceeds(t *testing.T) {
 	fresh, err := e.databases.Get(ctx, e.db.Runner(), tDatabaseID)
 	require.NoError(t, err)
 	assert.NotEmpty(t, fresh.LastBackupAt)
-	events, err := outbox.New(clock).ListAfter(ctx, e.db.Runner(), 0, 10)
+	events, err := outbox.New(clock).ListAfter(ctx, e.db.Runner(), 0, 10, "")
 	require.NoError(t, err)
 	found := false
 	for _, ev := range events {
@@ -312,7 +312,7 @@ func TestRestoreStreamFlow(t *testing.T) {
 	fresh, err := e.databases.Get(ctx, e.db.Runner(), tDatabaseID)
 	require.NoError(t, err)
 	assert.Empty(t, fresh.RestoreFromBackup, "pending flag cleared after successful restore")
-	events, err := outbox.New(clock).ListAfter(ctx, e.db.Runner(), 0, 10)
+	events, err := outbox.New(clock).ListAfter(ctx, e.db.Runner(), 0, 10, "")
 	require.NoError(t, err)
 	restored := false
 	for _, ev := range events {

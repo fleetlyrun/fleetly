@@ -144,7 +144,7 @@ func (svc *TasksService) CreateTask(ctx context.Context, req *automationv1.Creat
 	// 填充与 auditsFrom（ADR-0070）。
 	var seq int64
 	var row *task.Task
-	events := []eventFact{{name: engine.EventTaskCreated, aggregate: "task"}}
+	events := []eventFact{{name: engine.EventTaskCreated, aggregate: "task", projectID: req.GetProjectId()}}
 	err = svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{
 			svc.s.parentProjectAlive(req.GetProjectId()),
@@ -411,7 +411,13 @@ func (svc *RunsService) waitRunByTask(ctx context.Context, taskID string, stream
 			return apperr.New("E_CONFLICT",
 				"task %s is terminal (%s) and has no runs to wait on", taskID, t.State)
 		}
-		subErr := svc.s.subscribeEvents(ctx, cursor, true, func(ev *telemetryv1.Event) error {
+		// 订阅按调用方 Team 过滤（P0-2）：Run 事件已铸资源轴 Team，本队资源
+		// 照常命中；平台级事件（''）不受影响。
+		subTeam, terr := eventsTeamFilterOf(ctx)
+		if terr != nil {
+			return terr
+		}
+		subErr := svc.s.subscribeEvents(ctx, subTeam, cursor, true, func(ev *telemetryv1.Event) error {
 			if ev.Aggregate != "run" || engine.RunPayloadTaskID([]byte(ev.Payload)) != taskID {
 				return nil
 			}
@@ -594,7 +600,7 @@ func (svc *SchedulesService) CreateSchedule(ctx context.Context, req *automation
 			// payload 字段全部在行上（时间戳不在 payload 面）——静态构造
 			// 与 write 后求值等价（task.created 同款口径）。
 			name: engine.EventScheduleCreated, aggregate: "schedule", id: row.ID,
-			payload: engine.ScheduleCreatedEventJSON(row),
+			payload: engine.ScheduleCreatedEventJSON(row), projectID: row.ProjectID,
 		}},
 		auditsFrom: func() []*audit.Entry {
 			return []*audit.Entry{{
@@ -658,7 +664,7 @@ func (svc *SchedulesService) DeleteSchedule(ctx context.Context, req *automation
 		},
 		events: []eventFact{{
 			name: "schedule.deleted", aggregate: "schedule", id: row.ID,
-			payload: engine.ScheduleDeletedEventJSON(row),
+			payload: engine.ScheduleDeletedEventJSON(row), projectID: row.ProjectID,
 		}},
 		audits: []*audit.Entry{{
 			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),

@@ -202,6 +202,9 @@ func (e *Engine) mintFirstBootJob(ctx context.Context, d *deployment.Deployment,
 	// Config 挂载声明随铸面透传（任务域材料解析 Config 内容 → 目标路径挂载）。
 	minted.Process.ConfigMounts = p.GetConfigMounts()
 	wait := state.FormatTime(e.clock.Now().Add(job.GetTtl().AsDuration() + e.opts.FirstBootWaitGrace))
+	// 部署轴 Team 先行解析（P0-2）：steps 回调不携 ctx/tx，事务外解析
+	//（App 轴 Team 不可变，无 TOCTOU 面）。
+	depTeam := e.eventTeamOfApp(ctx, e.db.Runner(), d.AppID)
 	return e.mintOneShotTask(ctx, spec.GetApp().GetProject(),
 		func() (*specv1.TaskSpec, error) { return minted, nil },
 		func(taskID string) []writeStep {
@@ -216,7 +219,7 @@ func (e *Engine) mintFirstBootJob(ctx context.Context, d *deployment.Deployment,
 				},
 				events: []func() eventFact{func() eventFact {
 					return eventFact{name: eventFirstBootJobFired, aggregate: "deployment", id: d.ID,
-						payload: firstBootJobEventPayloadJSON(d, idx, job.GetName(), taskID)}
+						payload: firstBootJobEventPayloadJSON(d, idx, job.GetName(), taskID), team: depTeam}
 				}},
 			}}
 		},

@@ -242,6 +242,46 @@ func (svc *RoutesService) DeleteRoute(ctx context.Context, req *proxyv1.DeleteRo
 
 // ---- Events（F0.23 读路径；流式 follow N1） ----
 
+// eventsScopeAll 是 SSE 票据 payload 的平台 owner 可见域标记（全量；
+// Team ID 不取 "*" 形，无歧义）。
+const eventsScopeAll = "*"
+
+// eventsTeamFilterOf 解析调用方在事件面的 Team 过滤锚（P0-2，S2 止血）：
+// 平台 owner（default Team 的 builtin-owner）→ ""（全量不过滤）；其余 →
+// 本 Team（outbox 行级过滤 team_id = ? OR team_id = ”，” 行是平台级
+// 事件、全员可见）。无 Team 的 Token fail-closed。
+func eventsTeamFilterOf(ctx context.Context) (string, error) {
+	teamID, owner, err := callerTeam(ctx)
+	if err != nil {
+		return "", err
+	}
+	if owner {
+		return "", nil
+	}
+	if teamID == "" {
+		return "", apperr.New("E_FORBIDDEN",
+			"the caller's token carries no team; the events surface requires a team-scoped token")
+	}
+	return teamID, nil
+}
+
+// eventsTicketScope 把可见域铸为票据 payload（P0-2：SSE 票据与身份解绑
+// 是已知缺口——兑换面无 authn ctx，Team 归属以铸造时烙印为准）。
+func eventsTicketScope(team string) string {
+	if team == "" {
+		return eventsScopeAll // owner 全量
+	}
+	return team
+}
+
+// eventsTeamFromScope 反解票据 payload 的可见域（"*" → "" 全量）。
+func eventsTeamFromScope(scope string) string {
+	if scope == eventsScopeAll {
+		return ""
+	}
+	return scope
+}
+
 type EventsService struct {
 	telemetryv1.UnimplementedEventsServiceServer
 	s *Services
@@ -251,11 +291,15 @@ func (svc *EventsService) ListEvents(ctx context.Context, req *telemetryv1.ListE
 	if err := svc.eventsGoneCheck(ctx, req.GetAfterSeq()); err != nil {
 		return nil, err
 	}
+	team, err := eventsTeamFilterOf(ctx)
+	if err != nil {
+		return nil, err
+	}
 	limit := req.GetLimit()
 	if limit <= 0 || limit > 1000 {
 		limit = 100
 	}
-	events, err := svc.s.OutboxEvents.ListAfter(ctx, svc.s.DB.Runner(), req.GetAfterSeq(), int(limit))
+	events, err := svc.s.OutboxEvents.ListAfter(ctx, svc.s.DB.Runner(), req.GetAfterSeq(), int(limit), team)
 	if err != nil {
 		return nil, mapStateError(err, "events")
 	}
@@ -304,9 +348,14 @@ func (svc *EventsService) eventsGoneCheck(ctx context.Context, afterSeq int64) e
 
 // StreamEvents 是订阅面（gRPC server-streaming）：重放保留窗（after_seq
 // 起升序），follow 时持续跟随直至客户端取消（流面不经 unary 超时拦截器，
-// 生命周期由取消信号管理——架构 §7 等待原语的数据源）。
+// 生命周期由取消信号管理——架构 §7 等待原语的数据源）。Team 行级过滤
+// 与 ListEvents 同锚（P0-2）。
 func (svc *EventsService) StreamEvents(req *telemetryv1.StreamEventsRequest, stream telemetryv1.EventsService_StreamEventsServer) error {
-	return svc.s.subscribeEvents(stream.Context(), req.GetAfterSeq(), req.GetFollow(), func(ev *telemetryv1.Event) error {
+	team, err := eventsTeamFilterOf(stream.Context())
+	if err != nil {
+		return err
+	}
+	return svc.s.subscribeEvents(stream.Context(), team, req.GetAfterSeq(), req.GetFollow(), func(ev *telemetryv1.Event) error {
 		return stream.Send(&telemetryv1.StreamEventsResponse{Event: ev})
 	})
 }
@@ -325,12 +374,14 @@ func (svc *EventsService) GetEventStatus(ctx context.Context, _ *telemetryv1.Get
 }
 
 // IssueEventTicket 为 SSE 订阅路径换一次性短时票据（ADR-0026：浏览器
-// EventSource 不能设自定义头）。
+// EventSource 不能设自定义头）。payload 绑调用方 Team 可见域（P0-2）：
+// 兑换面无 authn ctx，过滤锚以铸造时烙印为准。
 func (svc *EventsService) IssueEventTicket(ctx context.Context, _ *telemetryv1.IssueEventTicketRequest) (*telemetryv1.IssueEventTicketResponse, error) {
-	if _, ok := authn.FromContext(ctx); !ok {
-		return nil, apperr.New("E_UNAUTHENTICATED", "present a valid token to mint an event ticket")
+	team, err := eventsTeamFilterOf(ctx)
+	if err != nil {
+		return nil, err
 	}
-	ticket, ttl, err := svc.s.eventTickets.issue(ticketPurposeEvents, "")
+	ticket, ttl, err := svc.s.eventTickets.issue(ticketPurposeEvents, eventsTicketScope(team))
 	if err != nil {
 		return nil, apperr.New("E_INTERNAL", "ticket generation failed").WithCause(err)
 	}
@@ -338,14 +389,16 @@ func (svc *EventsService) IssueEventTicket(ctx context.Context, _ *telemetryv1.I
 }
 
 // subscribeEvents 是订阅核心（gRPC 流与 SSE 原生入口同源同口径）：断档
-// 判定 → 批次重放 → follow 轮询（ctx 取消收口）。send 返回错误即收流。
-func (s *Services) subscribeEvents(ctx context.Context, afterSeq int64, follow bool, send func(*telemetryv1.Event) error) error {
+// 判定 → 批次重放 → follow 轮询（ctx 取消收口）。team 是行级过滤锚
+// （P0-2）：” = 平台 owner 全量；否则 team_id = ? OR team_id = ”。
+// send 返回错误即收流。
+func (s *Services) subscribeEvents(ctx context.Context, team string, afterSeq int64, follow bool, send func(*telemetryv1.Event) error) error {
 	if err := (&EventsService{s: s}).eventsGoneCheck(ctx, afterSeq); err != nil {
 		return err
 	}
 	cursor := afterSeq
 	for {
-		batch, err := s.OutboxEvents.ListAfter(ctx, s.DB.Runner(), cursor, 1000)
+		batch, err := s.OutboxEvents.ListAfter(ctx, s.DB.Runner(), cursor, 1000, team)
 		if err != nil {
 			return mapStateError(err, "events")
 		}

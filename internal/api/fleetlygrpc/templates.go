@@ -312,10 +312,12 @@ func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliv
 	}
 
 	// 8. 摘要事件 + 审计一拍（伴生资源的事件已由各服务步骤发射）。
+	instantiated := identityEvent(eventTemplateInstantiated, "app", appID,
+		templateEventPayload{Template: entry.Name, Version: entry.Version, Deployment: deploymentID})
+	instantiated.projectID = req.GetProjectId() // 资源轴 Team 解析锚（P0-2）
 	err = svc.s.commit(ctx, writeFact{
-		write: nil,
-		events: []eventFact{identityEvent(eventTemplateInstantiated, "app", appID,
-			templateEventPayload{Template: entry.Name, Version: entry.Version, Deployment: deploymentID})},
+		write:  nil,
+		events: []eventFact{instantiated},
 		audits: []*audit.Entry{{
 			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "template.instantiate",
 			Resource: "app/" + appID, AfterFP: entry.Name + "@" + entry.Version,
@@ -356,6 +358,7 @@ func (svc *TemplatesService) RefreshTemplates(ctx context.Context, _ *deliveryv1
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			return svc.s.Catalog.Put(ctx, tx, snap)
 		},
+		// 平台级事件（模板目录无 Team 轴）：team 留 '' = 全员可见（P0-2）。
 		events: []eventFact{identityEvent(eventTemplatesRefreshed, "templates", digest,
 			templatesRefreshedPayload{Previous: previous.digest, Digest: digest, Count: len(entries)})},
 		audits: []*audit.Entry{{

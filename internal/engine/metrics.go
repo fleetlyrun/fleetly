@@ -513,24 +513,27 @@ func (e *Engine) evaluateSystemRules(ctx context.Context, now time.Time) {
 	e.dispatchSystemAlert(ctx, alertrule.StateFiring, now)
 }
 
-// emitAlertEvent 落用户规则事件（outbox）。
+// emitAlertEvent 落用户规则事件（outbox）。资源轴 Team 经 App → Project
+// 解析（P0-2）。
 func (e *Engine) emitAlertEvent(ctx context.Context, name string, rule *alertrule.Rule, value float64) {
 	payload, _ := json.Marshal(alertEventPayload{
 		RuleID: rule.ID, AppID: rule.AppID, Metric: rule.Metric,
 		Threshold: rule.Threshold, Value: value, State: rule.State,
 	})
-	if _, err := e.outbox.Append(ctx, e.db.Runner(), name, "app", rule.AppID, payload); err != nil {
+	if _, err := e.outbox.Append(ctx, e.db.Runner(), e.eventTeamOfApp(ctx, e.db.Runner(), rule.AppID),
+		name, "app", rule.AppID, payload); err != nil {
 		e.log.Error("metrics step: emit event", "rule", rule.ID, "err", err)
 	}
 }
 
-// emitSystemAlertEvent 落内置规则事件（aggregate=platform）。
+// emitSystemAlertEvent 落内置规则事件（aggregate=platform）。平台级事件：
+// team 留 ” = 全员可见。
 func (e *Engine) emitSystemAlertEvent(ctx context.Context, name string) {
 	payload, _ := json.Marshal(alertEventPayload{
 		RuleID: systemOffsiteRuleID, Metric: "platform_offsite_backup",
 		State: name,
 	})
-	if _, err := e.outbox.Append(ctx, e.db.Runner(), name, "platform", "platform-backup", payload); err != nil {
+	if _, err := e.outbox.Append(ctx, e.db.Runner(), "", name, "platform", "platform-backup", payload); err != nil {
 		e.log.Error("metrics step: emit system event", "err", err)
 	}
 }
@@ -610,7 +613,8 @@ func (e *Engine) deliverOne(ctx context.Context, ch *channel.Channel, n alertNot
 	if err != nil {
 		failure = err.Error()
 		if payload, merr := json.Marshal(alertChannelFailedPayload{ChannelID: ch.ID, Error: failure}); merr == nil {
-			if _, aerr := e.outbox.Append(ctx, e.db.Runner(), eventAlertChannelFail, "channel", ch.ID, payload); aerr != nil {
+			// 通知通道是平台级资源（channel 行无 Team 轴）：team 留 '' = 全员可见。
+			if _, aerr := e.outbox.Append(ctx, e.db.Runner(), "", eventAlertChannelFail, "channel", ch.ID, payload); aerr != nil {
 				e.log.Error("metrics step: emit channel failure", "channel", ch.ID, "err", aerr)
 			}
 		}

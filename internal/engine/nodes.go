@@ -43,7 +43,8 @@ func (e *Engine) reconcileNodes(ctx context.Context) {
 			continue
 		}
 		e.nodeLeftSeen[n.PlatformID] = true
-		if _, err := e.outbox.Append(ctx, e.db.Runner(), "node.left", "node", n.PlatformID,
+		// 平台级事件（node 聚合无 Team 轴）：team 留 '' = 全员可见。
+		if _, err := e.outbox.Append(ctx, e.db.Runner(), "", "node.left", "node", n.PlatformID,
 			nodeLeftPayloadJSON(n.PlatformID, n.CarrierID)); err != nil {
 			e.log.Error("node reconcile: node.left event", "node", n.PlatformID, "err", err)
 			continue

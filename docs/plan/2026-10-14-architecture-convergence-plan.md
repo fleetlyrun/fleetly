@@ -38,7 +38,7 @@
 - **验证**：`go test -race ./internal/engine/ ./internal/api/...` → 全量 `mise run test`
 - **预估**：0.5 天 · **依赖**：无
 
-### P0-2 events 面 Team 过滤最小修（S2 最小面）— [ ]
+### P0-2 events 面 Team 过滤最小修（S2 最小面）— [x]
 - **改动面**：`internal/state/migrations/`（outbox +team_id 列，00032）、`internal/state/outbox/`、`internal/api/fleetlygrpc/contexts.go`、`eventtickets.go`
 - ListEvents/StreamEvents/SSE 按 `team_id=? OR team_id=''` 过滤；写点（transition.go/writes kernel）补 team 铸入；票据 payload 绑 Team
 - **验收锚**：他队 member 订阅只见本队+平台事件；apitest 双队矩阵；410 语义不变

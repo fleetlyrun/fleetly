@@ -2,7 +2,7 @@ last_seq=8
 SEQ	NAME	AGGREGATE	ID	CREATED
 1	project.created	project	shop-1	2026-01-01T00:00:00Z
 2	network.created	network	default	2026-01-01T00:00:00Z
-3	app.created	app		2026-01-01T00:00:00Z
+3	app.created	app	web-1	2026-01-01T00:00:00Z
 4	deployment.queued	deployment	web-1-d1	2026-01-01T00:00:00Z
 5	deployment.preparing	deployment	web-1-d1	2026-01-01T00:00:00Z
 6	deployment.releasing	deployment	web-1-d1	2026-01-01T00:00:00Z

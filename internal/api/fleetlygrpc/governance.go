@@ -36,7 +36,9 @@ type freezeEventPayload struct {
 }
 
 func freezeEvent(name string, f *freeze.Freeze) eventFact {
-	return identityEvent(name, "freeze", f.ID, freezeEventPayload{ID: f.ID, TeamID: f.TeamID, Reason: f.Reason})
+	ev := identityEvent(name, "freeze", f.ID, freezeEventPayload{ID: f.ID, TeamID: f.TeamID, Reason: f.Reason})
+	ev.team = f.TeamID // 资源轴（P0-2）：全局冻结 TeamID='' → 平台级可见
+	return ev
 }
 
 // SetChangeFreeze 落一条活跃冻结（team_id 空串 = 全局；reason 必填——拒绝

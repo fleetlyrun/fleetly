@@ -2,8 +2,8 @@
 2	network.created	network	default	2026-01-01T00:00:00Z
 3	project.created	project	shop-json-2	2026-01-01T00:00:00Z
 4	network.created	network	default	2026-01-01T00:00:00Z
-5	app.created	app		2026-01-01T00:00:00Z
-6	app.created	app		2026-01-01T00:00:00Z
+5	app.created	app	web-1	2026-01-01T00:00:00Z
+6	app.created	app	web-json-2	2026-01-01T00:00:00Z
 7	deployment.queued	deployment	web-1-d1	2026-01-01T00:00:00Z
 8	deployment.preparing	deployment	web-1-d1	2026-01-01T00:00:00Z
 9	deployment.releasing	deployment	web-1-d1	2026-01-01T00:00:00Z

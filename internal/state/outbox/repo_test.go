@@ -21,7 +21,7 @@ func TestOutboxMonotonicSeq(t *testing.T) {
 
 	var last int64
 	for i := 0; i < 3; i++ {
-		seq, err := events.Append(ctx, db.Runner(), "deployment.queued", "deployment",
+		seq, err := events.Append(ctx, db.Runner(), "team-a", "deployment.queued", "deployment",
 			"01JD0DEPLOY0000000000000000"+string(rune('0'+i)), []byte(`{}`))
 		require.NoError(t, err)
 		require.Greater(t, seq, last, "seq must be monotonically increasing")
@@ -29,10 +29,10 @@ func TestOutboxMonotonicSeq(t *testing.T) {
 	}
 
 	// 未注册事件名落库即拒绝（注册表三链咬合的运行时面）。
-	_, err := events.Append(ctx, db.Runner(), "deployment.nope", "deployment", "x", nil)
+	_, err := events.Append(ctx, db.Runner(), "team-a", "deployment.nope", "deployment", "x", nil)
 	require.ErrorContains(t, err, "not registered")
 
-	after, err := events.ListAfter(ctx, db.Runner(), 1, 10)
+	after, err := events.ListAfter(ctx, db.Runner(), 1, 10, "")
 	require.NoError(t, err)
 	assert.Len(t, after, 2)
 	assert.Equal(t, int64(2), after[0].Seq)
@@ -40,6 +40,21 @@ func TestOutboxMonotonicSeq(t *testing.T) {
 	seq, err := events.LastSeq(ctx, db.Runner())
 	require.NoError(t, err)
 	assert.Equal(t, int64(3), seq)
+
+	// Team 行级过滤（P0-2）：本队 + 平台级（''）行可见，他队行不可见。
+	_, err = events.Append(ctx, db.Runner(), "", "node.joined", "node", "01JD0NODE0000000000000000N", []byte(`{}`))
+	require.NoError(t, err)
+	_, err = events.Append(ctx, db.Runner(), "team-b", "deployment.queued", "deployment", "01JD0DEPLOY0000000000000009", []byte(`{}`))
+	require.NoError(t, err)
+	teamA, err := events.ListAfter(ctx, db.Runner(), 0, 10, "team-a")
+	require.NoError(t, err)
+	assert.Len(t, teamA, 4, "team-a sees its own rows plus the platform-level ('') row")
+	for _, ev := range teamA {
+		assert.NotEqual(t, "01JD0DEPLOY0000000000000009", ev.AggregateID, "team-b rows must not leak")
+	}
+	unfiltered, err := events.ListAfter(ctx, db.Runner(), 0, 10, "")
+	require.NoError(t, err)
+	assert.Len(t, unfiltered, 5, "empty team = no row-level filter (platform owner / internal consumers)")
 
 	// 保留窗（ADR-0026）：earliest_seq 划界 + 窗外回收（"只增"修订为
 	// "窗内只增"）；窗内行不受 trim 影响。
@@ -50,7 +65,7 @@ func TestOutboxMonotonicSeq(t *testing.T) {
 	clock.Advance(8 * 24 * time.Hour)
 	n, err := events.TrimBefore(ctx, db.Runner(), clock.Now().Add(-7*24*time.Hour))
 	require.NoError(t, err)
-	assert.Equal(t, int64(3), n, "all three rows are outside the 7d window")
+	assert.Equal(t, int64(5), n, "all five rows are outside the 7d window")
 	earliest, err = events.EarliestSeq(ctx, db.Runner())
 	require.NoError(t, err)
 	assert.Zero(t, earliest, "empty table reports earliest 0 (not a gap)")

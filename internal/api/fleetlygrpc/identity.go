@@ -89,6 +89,7 @@ func (svc *UsersService) CreateUser(ctx context.Context, req *identityv1.CreateU
 	}
 	m := &membership.Membership{UserID: u.ID, TeamID: teamID, RoleID: req.GetRoleId()}
 	userCreatedEvents := []eventFact{identityEvent("user.created", "user", u.ID, nameEventPayload{Name: u.Name})}
+	userCreatedEvents[0].team = teamID // 资源轴：用户随 membership 落队（P0-2）
 	err = svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{svc.s.teamExists(teamID), svc.s.roleInTeam(req.GetRoleId(), teamID)},
 		write: func(ctx context.Context, tx *sql.Tx) error {
@@ -153,6 +154,7 @@ func (svc *UsersService) Login(ctx context.Context, req *identityv1.LoginRequest
 		RoleID: m.RoleID, SHA256: material.SHA256, Prefix: material.Prefix,
 	}
 	tokenCreatedEvents := []eventFact{identityEvent("token.created", "token", t.ID, nameEventPayload{Name: t.Name})}
+	tokenCreatedEvents[0].team = m.TeamID // 资源轴（P0-2）
 	err = svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{svc.s.teamExists(m.TeamID), svc.s.roleInTeam(m.RoleID, m.TeamID), svc.s.userInTeam(u.ID, m.TeamID)},
 		write: func(ctx context.Context, tx *sql.Tx) error {
@@ -258,6 +260,8 @@ func (svc *TeamsService) CreateTeam(ctx context.Context, req *identityv1.CreateT
 				return err
 			}
 			teamCreatedEvents[0].id = t.ID
+			// 资源轴（P0-2）：聚合即 Team 本体——id 事务内铸出后就地铸 team。
+			teamCreatedEvents[0].team = t.ID
 			return nil
 		},
 		events: teamCreatedEvents,
@@ -344,6 +348,7 @@ func (svc *RolesService) CreateRole(ctx context.Context, req *identityv1.CreateR
 	teamID = resolvedTeam
 	ro := &role.Role{TeamID: teamID, Name: req.GetName(), Scopes: identity.ScopeStrings(scopes)}
 	roleCreatedEvents := []eventFact{identityEvent("role.created", "role", ro.ID, roleEventPayload{Scopes: ro.Scopes})}
+	roleCreatedEvents[0].team = ro.TeamID // 资源轴（内置角色 TeamID='' → 平台级可见，P0-2）
 	err = svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{svc.s.teamExists(teamID)},
 		write: func(ctx context.Context, tx *sql.Tx) error {
@@ -442,6 +447,7 @@ func (svc *TokensService) CreateToken(ctx context.Context, req *identityv1.Creat
 		checks = append(checks, svc.s.userExists(req.GetUserId()), svc.s.userInTeam(req.GetUserId(), teamID))
 	}
 	tokenCreatedEvents := []eventFact{identityEvent("token.created", "token", t.ID, nameEventPayload{Name: t.Name})}
+	tokenCreatedEvents[0].team = t.TeamID // 资源轴（P0-2）
 	err = svc.s.commit(ctx, writeFact{
 		checks: checks,
 		write: func(ctx context.Context, tx *sql.Tx) error {
@@ -498,15 +504,18 @@ func (svc *TokensService) ListTokens(ctx context.Context, _ *identityv1.ListToke
 // 经切片元素就地填充（write 先于 events/audits 段执行）。行级授权
 // （ADR-0035）：吊销他队 Token 是提权面。
 func (svc *TokensService) RevokeToken(ctx context.Context, req *identityv1.RevokeTokenRequest) (*identityv1.RevokeTokenResponse, error) {
+	team := "" // 资源轴 Team（P0-2）：授权行在手即取
 	if row, err := svc.s.Tokens.Get(ctx, svc.s.DB.Runner(), req.GetId()); err == nil {
 		if aerr := svc.s.authorizeTokenRow(ctx, row); aerr != nil {
 			return nil, aerr
 		}
+		team = row.TeamID
 	} else {
 		return nil, mapStateError(err, "token")
 	}
 	var revoked *tokenrepo.Token
 	events := []eventFact{identityEvent("token.revoked", "token", req.GetId(), nil)}
+	events[0].team = team
 	entry := identityAudit(ctx, "token.revoke", "token/"+req.GetId(), "", "")
 	err := svc.s.commit(ctx, writeFact{
 		write: func(ctx context.Context, tx *sql.Tx) error {

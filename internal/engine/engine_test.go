@@ -82,7 +82,7 @@ func getDeployment(t *testing.T, e *Engine, id string) *deployment.Deployment {
 
 func eventNames(t *testing.T, e *Engine, aggregateID string) []string {
 	t.Helper()
-	evs, err := e.outbox.ListAfter(context.Background(), e.db.Runner(), 0, 1000)
+	evs, err := e.outbox.ListAfter(context.Background(), e.db.Runner(), 0, 1000, "")
 	require.NoError(t, err)
 	var names []string
 	for _, ev := range evs {

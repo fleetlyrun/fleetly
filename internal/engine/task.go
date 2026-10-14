@@ -200,7 +200,8 @@ func (e *Engine) driveLeaseExpiry(ctx context.Context, t *task.Task, now time.Ti
 	}
 	if deadline := parseDeadline(t.LeaseDeadline); deadline != nil && now.After(deadline.Add(e.opts.TaskLeaseGrace)) {
 		e.drainTask(ctx, t, run.ReasonLeaseExpired)
-		if err := e.outboxAppend(ctx, eventLeaseExpired, "task", t.ID,
+		if err := e.outboxAppend(ctx, e.eventTeamOfProject(ctx, e.db.Runner(), t.ProjectID),
+			eventLeaseExpired, "task", t.ID,
 			leaseEventPayloadJSON(t, "lease deadline exceeded grace")); err != nil {
 			e.log.Error("task drive: lease.expired event", "task", t.ID, "err", err)
 		}
@@ -611,7 +612,8 @@ func (e *Engine) createRun(ctx context.Context, t *task.Task, spec *specv1.TaskS
 		return e.commitWrite(ctx, tx, writeFact{
 			write: func(ctx context.Context, tx *sql.Tx) error { return e.runs.Create(ctx, tx, m) },
 			events: []func() eventFact{func() eventFact {
-				return eventFact{name: eventRunState(run.StatePending), aggregate: "run", id: m.ID, payload: runEventPayloadJSON(m)}
+				return eventFact{name: eventRunState(run.StatePending), aggregate: "run", id: m.ID, payload: runEventPayloadJSON(m),
+					team: e.eventTeamOfProject(ctx, tx, m.ProjectID)}
 			}},
 			audits: []auditFact{{action: "run.create", resource: "run/" + m.ID}},
 		})
@@ -657,7 +659,8 @@ func (e *Engine) RenewTask(ctx context.Context, id string) (*task.Task, error) {
 				return err
 			},
 			events: []func() eventFact{func() eventFact {
-				return eventFact{name: eventLeaseRenewed, aggregate: "task", id: id, payload: leaseEventPayloadJSON(fresh, "")}
+				return eventFact{name: eventLeaseRenewed, aggregate: "task", id: id, payload: leaseEventPayloadJSON(fresh, ""),
+					team: e.eventTeamOfProject(ctx, tx, t.ProjectID)}
 			}},
 		})
 		if err != nil {
@@ -896,8 +899,9 @@ func loadTaskSpec(blob []byte) (*specv1.TaskSpec, error) {
 	return spec, nil
 }
 
-// outboxAppend 是事件落库的便捷面（返回错误供调用方日志）。
-func (e *Engine) outboxAppend(ctx context.Context, name, aggregate, id string, payload []byte) error {
-	_, err := e.outbox.Append(ctx, e.db.Runner(), name, aggregate, id, payload)
+// outboxAppend 是事件落库的便捷面（返回错误供调用方日志）。team 是资源
+// 轴归属 Team（P0-2；” = 平台级事件）。
+func (e *Engine) outboxAppend(ctx context.Context, team, name, aggregate, id string, payload []byte) error {
+	_, err := e.outbox.Append(ctx, e.db.Runner(), team, name, aggregate, id, payload)
 	return err
 }

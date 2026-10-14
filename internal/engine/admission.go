@@ -227,7 +227,8 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 				return e.deployments.Create(ctx, tx, d)
 			},
 			events: []func() eventFact{func() eventFact {
-				return eventFact{name: eventStateName(d.State), aggregate: "deployment", id: d.ID, payload: deploymentEventPayloadJSON(d)}
+				return eventFact{name: eventStateName(d.State), aggregate: "deployment", id: d.ID, payload: deploymentEventPayloadJSON(d),
+					team: e.eventTeamOfApp(ctx, tx, d.AppID)}
 			}},
 			audits: []auditFact{{action: "deployment.create", resource: "deployment/" + d.ID, afterFP: afterFP, actorCtx: true}},
 		}); err != nil {

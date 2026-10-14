@@ -54,14 +54,14 @@ func runSequence(t *testing.T, db *state.DB, ctx context.Context, fail string) (
 					return errBoom
 				}
 				p.ranWrite = true
-				_, aerr := outboxRepo.Append(ctx, tx, "task.created", "task", "id1", []byte("{}"))
+				_, aerr := outboxRepo.Append(ctx, tx, "", "task.created", "task", "id1", []byte("{}"))
 				return aerr
 			},
 			Events: []func() writes.Event{
 				func() writes.Event {
 					p.ranEvent = true
 					p.seqAtEvent, _ = outboxRepo.LastSeq(ctx, tx)
-					return writes.Event{Name: "task.updated", Aggregate: "task", ID: "id1", Payload: []byte(`{}`)}
+					return writes.Event{Name: "task.updated", Aggregate: "task", ID: "id1", Payload: []byte(`{}`), Team: "t1"}
 				},
 			},
 			Audits: []func(context.Context) []*audit.Entry{
