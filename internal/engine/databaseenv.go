@@ -33,46 +33,53 @@ func (e *Engine) injectDatabaseEnv(ctx context.Context, spec *specv1.AppSpec, ws
 	}
 	for i := range ws {
 		w := &ws[i] // 指针就地改（gosec G602 对 range 索引误报；applyVolumePinning 同形态）
-		p := byName[w.Process]
-		if p == nil || len(p.GetDatabaseRefs()) == 0 {
-			continue
+		if err := e.applyDatabaseEnv(ctx, w, byName[w.Process], projectID); err != nil {
+			return err
 		}
-		for _, ref := range p.GetDatabaseRefs() {
-			row, err := e.databases.GetByName(ctx, e.db.Runner(), projectID, ref)
-			if err != nil {
-				return fmt.Errorf("database %q (database_refs): not found — create the managed database first (%w)", ref, err)
-			}
-			password, err := e.databasePassword(ctx, row)
-			if err != nil {
-				return fmt.Errorf("database %q (database_refs): %w", ref, err)
-			}
-			tpl, ok := dbtemplate.For(row.Engine)
-			if !ok {
-				return fmt.Errorf("database %q (database_refs): unknown engine %q", ref, row.Engine)
-			}
-			connURL, err := DatabaseConnectionURL(row.Engine, row.ID, password)
-			if err != nil {
-				return fmt.Errorf("database %q (database_refs): %w", ref, err)
-			}
-			host := DatabaseDNSName(row.ID)
-			user, database := "", ""
-			if u, perr := url.Parse(connURL); perr == nil {
-				if u.User != nil {
-					user = u.User.Username()
-				}
-				database = strings.TrimPrefix(u.Path, "/")
-			}
-			tok := dbEnvToken(ref)
-			if w.Env == nil {
-				w.Env = map[string]string{}
-			}
-			w.Env["FLEETLY_DB_"+tok+"_URL"] = connURL
-			w.Env["FLEETLY_DB_"+tok+"_HOST"] = host
-			w.Env["FLEETLY_DB_"+tok+"_PORT"] = strconv.Itoa(int(tpl.Meta().Port))
-			w.Env["FLEETLY_DB_"+tok+"_USER"] = user
-			w.Env["FLEETLY_DB_"+tok+"_PASSWORD"] = password
-			w.Env["FLEETLY_DB_"+tok+"_DATABASE"] = database
+	}
+	return nil
+}
+
+// applyDatabaseEnv 对单 Workload 合并其进程声明的 FLEETLY_DB_* env。
+func (e *Engine) applyDatabaseEnv(ctx context.Context, w *capability.Workload, p *specv1.ProcessSpec, projectID string) error {
+	if p == nil || len(p.GetDatabaseRefs()) == 0 {
+		return nil
+	}
+	for _, ref := range p.GetDatabaseRefs() {
+		row, err := e.databases.GetByName(ctx, e.db.Runner(), projectID, ref)
+		if err != nil {
+			return fmt.Errorf("database %q (database_refs): not found — create the managed database first (%w)", ref, err)
 		}
+		password, err := e.databasePassword(ctx, row)
+		if err != nil {
+			return fmt.Errorf("database %q (database_refs): %w", ref, err)
+		}
+		tpl, ok := dbtemplate.For(row.Engine)
+		if !ok {
+			return fmt.Errorf("database %q (database_refs): unknown engine %q", ref, row.Engine)
+		}
+		connURL, err := DatabaseConnectionURL(row.Engine, row.ID, password)
+		if err != nil {
+			return fmt.Errorf("database %q (database_refs): %w", ref, err)
+		}
+		host := DatabaseDNSName(row.ID)
+		user, database := "", ""
+		if u, perr := url.Parse(connURL); perr == nil {
+			if u.User != nil {
+				user = u.User.Username()
+			}
+			database = strings.TrimPrefix(u.Path, "/")
+		}
+		tok := dbEnvToken(ref)
+		if w.Env == nil {
+			w.Env = map[string]string{}
+		}
+		w.Env["FLEETLY_DB_"+tok+"_URL"] = connURL
+		w.Env["FLEETLY_DB_"+tok+"_HOST"] = host
+		w.Env["FLEETLY_DB_"+tok+"_PORT"] = strconv.Itoa(int(tpl.Meta().Port))
+		w.Env["FLEETLY_DB_"+tok+"_USER"] = user
+		w.Env["FLEETLY_DB_"+tok+"_PASSWORD"] = password
+		w.Env["FLEETLY_DB_"+tok+"_DATABASE"] = database
 	}
 	return nil
 }

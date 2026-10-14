@@ -391,6 +391,14 @@ func (e *Engine) driveEnsure(ctx context.Context, t *task.Task, spec *specv1.Tas
 		w.StopGrace = e.opts.TaskStopGrace
 		ws = append(ws, w)
 	}
+	// 托管库引用注入（first-boot job 铸面透传的 database_refs——值不进
+	// TaskSpec 存储，Ensure 前解析）。
+	for i := range ws {
+		if err := e.applyDatabaseEnv(ctx, &ws[i], spec.GetProcess(), t.ProjectID); err != nil {
+			e.log.Error("task drive: inject database env", "task", t.ID, "err", err)
+			return
+		}
+	}
 	// 周期收敛路径：失败日志已记、签名已清，下拍重试（终态收口路径见
 	// driveOneshotMirror/driveDrainCompletion，以返回值门控迁移）。
 	_ = e.ensureTaskWorkloads(ctx, t, ws)

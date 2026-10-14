@@ -22,6 +22,8 @@ import (
 	"strings"
 	"time"
 
+	"go.yaml.in/yaml/v3"
+
 	"github.com/compose-spec/compose-go/v2/loader"
 	"github.com/compose-spec/compose-go/v2/template"
 	"github.com/compose-spec/compose-go/v2/types"
@@ -104,7 +106,7 @@ var firstBootJobRejections = map[string]string{
 // dokploy 迁移、console、CLI --compose-file 全经此函数）。
 func FromYAML(body []byte, appID, projectID string, vars VariableLookup) (*specv1.AppSpec, error) {
 	details := types.ConfigDetails{
-		ConfigFiles: []types.ConfigFile{{Filename: "compose.yaml", Content: body}},
+		ConfigFiles: []types.ConfigFile{{Filename: "compose.yaml", Content: escapeCommandDollars(body)}},
 	}
 	opts := loaderOptions(vars)
 	raw, err := loader.LoadModelWithContext(context.Background(), details, opts)
@@ -146,8 +148,23 @@ func FromYAML(body []byte, appID, projectID string, vars VariableLookup) (*specv
 	// 服务的选取本就不可预测；排序即确定）。
 	firstImage := ""
 
+	jobs, err := firstBootJobs(project, jobsRaw)
+	if err != nil {
+		return nil, err
+	}
+
 	for _, name := range project.ServiceNames() {
-		p, image, err := serviceProcess(project, name, project.Services[name])
+		svc := project.Services[name]
+		// 服务 label 方言：fleetly.job: init = 一次性作业（不落 processes）。
+		if svc.Labels["fleetly.job"] != "" {
+			j, jerr := initJobFromService(project, fmt.Sprintf("compose.services.%s", name), name, svc)
+			if jerr != nil {
+				return nil, jerr
+			}
+			jobs = append(jobs, j)
+			continue
+		}
+		p, image, err := serviceProcess(project, name, svc)
 		if err != nil {
 			return nil, err
 		}
@@ -161,16 +178,63 @@ func FromYAML(body []byte, appID, projectID string, vars VariableLookup) (*specv
 	}
 	app.Source = &specv1.Source{Kind: &specv1.Source_Image{Image: &specv1.ImageSource{Ref: firstImage}}}
 
-	jobs, err := firstBootJobs(project, jobsRaw)
-	if err != nil {
-		return nil, err
-	}
 	app.FirstBootJobs = jobs
 
 	if err := spec.ValidateApp(app); err != nil {
 		return nil, err
 	}
 	return app, nil
+}
+
+// escapeCommandDollars 预逃逸 command 面（services[].command 与
+// x-fleetly-first-boot-jobs[].command）的 $ → $$：官方插值 $$→$ 还原原文
+// ——command 是运行时 shell 语境，$ 语义属 shell（真机咬出：脚本循环变量
+// $n 被 fail-closed 插值当未声明孔硬拒；dokploy 系模板仓的 command 脚本
+// 普遍不逃逸，模板库使命要求原样承接）。平台变量经进程 env 在运行时可见
+// （ADR-0072 合成面），无需插值烘焙。非 YAML 原样交还（canonical 错误由
+// 官方管线给出）。
+func escapeCommandDollars(body []byte) []byte {
+	var doc map[string]any
+	if err := yaml.Unmarshal(body, &doc); err != nil {
+		return body
+	}
+	var escape func(v any) any
+	escape = func(v any) any {
+		switch t := v.(type) {
+		case string:
+			return strings.ReplaceAll(t, "$", "$$")
+		case []any:
+			out := make([]any, len(t))
+			for i, item := range t {
+				out[i] = escape(item)
+			}
+			return out
+		}
+		return v
+	}
+	if services, ok := doc["services"].(map[string]any); ok {
+		for _, raw := range services {
+			if svc, ok := raw.(map[string]any); ok {
+				if cmd, present := svc["command"]; present {
+					svc["command"] = escape(cmd)
+				}
+			}
+		}
+	}
+	if jobs, ok := doc["x-fleetly-first-boot-jobs"].([]any); ok {
+		for _, raw := range jobs {
+			if job, ok := raw.(map[string]any); ok {
+				if cmd, present := job["command"]; present {
+					job["command"] = escape(cmd)
+				}
+			}
+		}
+	}
+	out, err := yaml.Marshal(doc)
+	if err != nil {
+		return body
+	}
+	return out
 }
 
 // loaderOptions 是官方管线的装载选项：插值 + 官方 schema 校验发生在
@@ -325,6 +389,113 @@ func externalDeclarations(project *types.Project) error {
 }
 
 // serviceProcess 把单个官方 ServiceConfig 执法并映射为 ProcessSpec。
+// escapedShellDollars 是 command 面的 $ 透传（预逃逸：官方插值 $$→$ 还原
+// 原文）。nil/空安全。
+func escapedShellDollars(cmd []string) []string {
+	if len(cmd) == 0 {
+		return cmd
+	}
+	out := make([]string, len(cmd))
+	for i, c := range cmd {
+		out[i] = strings.ReplaceAll(c, "$", "$$")
+	}
+	return out
+}
+
+// initJobFromService 翻译一次性作业的服务 label 方言（fleetly.job: init）：
+// image/command（$ 透传）/environment/secrets/fleetly.databases → JobSpec；
+// fleetly.job.timeout → ttl；healthcheck 仅工具面自检不入作业；其余键走
+// 各自拒绝面（volumes → 平台 configs/secrets 迁移面，ports 对一次性作业
+// 无意义——firstBootJobRejections 同措辞）。
+func initJobFromService(project *types.Project, field, name string, svc types.ServiceConfig) (*specv1.JobSpec, error) {
+	for key := range svc.Labels {
+		switch key {
+		case "fleetly.job", "fleetly.job.timeout", "fleetly.databases":
+		default:
+			return nil, invalidf(field+".labels."+key,
+				"label %q is not consumed (honored: fleetly.job=init, fleetly.job.timeout, fleetly.databases)", key)
+		}
+	}
+	if v := svc.Labels["fleetly.job"]; v != "init" {
+		return nil, invalidf(field+".labels[fleetly.job]", "only the init dialect is supported (got %q)", v)
+	}
+	if svc.Image == "" {
+		return nil, invalidf(field+".image", "service %q has no image", name)
+	}
+	p := &specv1.ProcessSpec{Name: name, ImageOrigin: &specv1.ProcessSpec_Image{Image: svc.Image}}
+	p.Command = escapedShellDollars(svc.Command)
+	env, err := serviceEnv(field+".environment", svc.Environment)
+	if err != nil {
+		return nil, err
+	}
+	p.Env = env
+	refs, err := jobSecretRefs(field+".secrets", svc.Secrets, project.Secrets)
+	if err != nil {
+		return nil, err
+	}
+	p.SecretRefs = refs
+	if lbl := strings.TrimSpace(svc.Labels["fleetly.databases"]); lbl != "" {
+		dbRefs, derr := parseDatabaseRefs(field+".labels[fleetly.databases]", lbl)
+		if derr != nil {
+			return nil, derr
+		}
+		p.DatabaseRefs = dbRefs
+	}
+	j := &specv1.JobSpec{Name: name, Process: p}
+	if raw := strings.TrimSpace(svc.Labels["fleetly.job.timeout"]); raw != "" {
+		d, perr := time.ParseDuration(raw)
+		if perr != nil || d <= 0 {
+			return nil, invalidf(field+".labels[fleetly.job.timeout]", "duration %q must be positive (e.g. \"10m\")", raw)
+		}
+		j.Ttl = durationpb.New(d)
+	}
+	if svc.HealthCheck != nil {
+		// 探针仅工具面自检（一次性作业无长驻监听面）——不入 JobSpec。
+		_ = svc.HealthCheck
+	}
+	// 其余键（volumes/ports/networks/depends_on/restart/deploy）不在方言
+	// 消费面且各有指向性拒绝面（volumes → 平台 configs/secrets 迁移；
+	// ports 对一次性作业无意义）——显式拒绝防静默丢。
+	for key, banned := range firstBootJobRejections {
+		_ = key
+		_ = banned
+		break
+	}
+	for key := range map[string]bool{"volumes": true, "ports": true, "networks": true, "depends_on": true, "restart": true, "deploy": true, "build": true} {
+		switch key {
+		case "volumes":
+			if len(svc.Volumes) > 0 {
+				return nil, invalidf(field+".volumes", "file mounts are not supported on the job dialect; pass materials via platform configs/secrets (the compose migration surface)")
+			}
+		case "ports":
+			if len(svc.Ports) > 0 {
+				return nil, invalidf(field+".ports", "ports are not meaningful on a one-shot job")
+			}
+		case "networks":
+			if len(svc.Networks) > 0 {
+				return nil, invalidf(field+".networks", "jobs attach the project default network automatically; explicit networks are not supported on the job dialect")
+			}
+		case "depends_on":
+			if len(svc.DependsOn) > 0 {
+				return nil, invalidf(field+".depends_on", "orchestration ordering is owned by the platform pipeline (jobs run in parallel; use bounded retry loops)")
+			}
+		case "restart":
+			if svc.Restart != "" {
+				return nil, invalidf(field+".restart", "restart policy is owned by the platform (jobs are single one-shot runs)")
+			}
+		case "deploy":
+			if svc.Deploy != nil {
+				return nil, invalidf(field+".deploy", "deploy blocks are not consumed on the job dialect")
+			}
+		case "build":
+			if svc.Build != nil {
+				return nil, invalidf(field+".build", "build source lands with the git batch (jobs reference images)")
+			}
+		}
+	}
+	return j, nil
+}
+
 func serviceProcess(project *types.Project, name string, svc types.ServiceConfig) (*specv1.ProcessSpec, string, error) {
 	field := "compose.services." + name
 	if err := rejectUnsupportedFields(field, svc, serviceAllowedKeys); err != nil {
@@ -334,7 +505,6 @@ func serviceProcess(project *types.Project, name string, svc types.ServiceConfig
 		return nil, "", invalidf(field, "extension keys are not enabled at the service level (fleetly extensions live under deploy.x-fleetly-* and healthcheck.x-fleetly-*)")
 	}
 	p := &specv1.ProcessSpec{Name: name, Replicas: 1}
-
 	if svc.Image == "" {
 		return nil, "", invalidf(field+".image", "service %q has no image (build source lands with the git batch)", name)
 	}

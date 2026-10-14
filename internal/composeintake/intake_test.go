@@ -1,6 +1,7 @@
 package composeintake_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -456,8 +457,8 @@ func TestFromYAMLRejections(t *testing.T) {
 			"\"MISSING_VAR\" is not set",
 		},
 		{
-			"unresolved short-form hole fails closed",
-			"services:\n  web:\n    image: nginx\n    command: $MISSING_CMD\n",
+			"unresolved short-form hole in environment fails closed",
+			"services:\n  web:\n    image: nginx\n    environment:\n      URL: $MISSING_CMD\n",
 			"\"MISSING_CMD\" is not set",
 		},
 	}
@@ -487,6 +488,27 @@ services:
 	assert.Equal(t, "https://example.com/api", env["URL"])
 	assert.Equal(t, "none", env["FALLBACK"])
 	assert.Equal(t, "${ESCAPED}", env["LITERAL"])
+}
+
+// command 面的 $ 透传（预逃逸）：shell 语境原样保留——脚本变量与平台
+// 变量（进程 env 携带）都在运行时展开；env 值面维持 fail-closed 插值。
+func TestFromYAMLCommandDollarPassthrough(t *testing.T) {
+	body := `
+services:
+  web:
+    image: nginx:1.27
+    command:
+      - sh
+      - -c
+      - 'n=$((n+1)); echo "retry $n"; migrate -database "${FLEETLY_DB_TORCHWOOD_PG_URL}?sslmode=disable"'
+`
+	s, err := composeintake.FromYAML([]byte(body), "app-1", "prj-1", nil)
+	require.NoError(t, err)
+	cmd := procByName(t, s, "web").GetCommand()
+	require.NotEmpty(t, cmd)
+	joined := strings.Join(cmd, " ")
+	assert.Contains(t, joined, "$n", "shell loop variables pass through untouched")
+	assert.Contains(t, joined, "${FLEETLY_DB_TORCHWOOD_PG_URL}", "platform-injected variables pass through for runtime expansion")
 }
 
 // 进程名/secret 名的叶子校验收尾（spec.ValidateApp 单源）。

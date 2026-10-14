@@ -105,6 +105,17 @@ func ValidateJob(field string, j *specv1.JobSpec) error {
 	default:
 		return invalidf(field+".process", "image or from_build is required")
 	}
+	// database_refs 名形态 + 去重（与 ProcessSpec 面同口径）。
+	seenJobDBRefs := map[string]bool{}
+	for _, ref := range p.GetDatabaseRefs() {
+		if !databaseRefRe.MatchString(ref) {
+			return invalidf(field+".process.database_refs", "database reference %q must match %q", ref, databaseRefPattern)
+		}
+		if seenJobDBRefs[ref] {
+			return invalidf(field+".process.database_refs", "database reference %q is duplicated", ref)
+		}
+		seenJobDBRefs[ref] = true
+	}
 	// process.name 空 = 铸造时落 job.name（单一名字真源）；非空须相等，
 	// 静默分叉比拒绝更糟。
 	if n := p.GetName(); n != "" && n != j.GetName() {
