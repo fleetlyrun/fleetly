@@ -120,7 +120,10 @@ func FromYAML(body []byte, appID, projectID string, vars VariableLookup) (*specv
 			continue
 		}
 		if key == "name" {
-			return nil, invalidf("compose.name", "the project name is managed by the platform and cannot be set from compose")
+			// 顶层 name 剥除容错（决策 3，2026-10-14）：项目名平台管辖，
+			// compose 侧该字段无消费者——模板仓/dokploy 导出普遍携带，
+			// 剥除而非拒收（git 批与控制台粘贴面同口径）。
+			continue
 		}
 		if strings.HasPrefix(key, "x-") {
 			return nil, invalidf("compose."+key, "unknown extension namespace (fleetly extensions are x-fleetly-* and live under services.<name>.deploy / healthcheck / the top-level first-boot-jobs key)")

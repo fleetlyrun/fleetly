@@ -22,7 +22,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"go.yaml.in/yaml/v3"
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
@@ -336,32 +335,12 @@ func (svc *HooksService) gitBatchSpec(ctx context.Context, appRow *app.App, h *h
 	if err != nil {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "compose file %s not found at %s @%s", h.Dockerfile, h.Repo, shortSHA(commit))
 	}
-	out, err := composeintake.FromYAML(stripComposeProjectName(body), appRow.ID, appRow.ProjectID,
+	out, err := composeintake.FromYAML(body, appRow.ID, appRow.ProjectID,
 		deployVarLookup(ctx, svc.s, appRow))
 	if err != nil {
 		return nil, mapValidationError(err)
 	}
 	return out, nil
-}
-
-// stripComposeProjectName 剥除顶层 name（平台管辖项目名；composeintake
-// 对 name 显式拒收——控制台粘贴面是政策面，git 批模板仓文件常按上游
-// compose 惯例携带 name，剥除而非拒收）。非 YAML 原样交还（错误措辞由
-// composeintake 统一给出）。
-func stripComposeProjectName(body []byte) []byte {
-	var doc map[string]any
-	if err := yaml.Unmarshal(body, &doc); err != nil {
-		return body
-	}
-	if _, ok := doc["name"]; !ok {
-		return body
-	}
-	delete(doc, "name")
-	out, err := yaml.Marshal(doc)
-	if err != nil {
-		return body
-	}
-	return out
 }
 
 // shortSHA 是错误信息里的 commit 展示形态（材料与锚不进日志面）。

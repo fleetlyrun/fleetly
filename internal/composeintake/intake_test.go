@@ -580,3 +580,12 @@ services:
 	require.NoError(t, err)
 	assert.Equal(t, []string{"alpha", "beta", "gamma"}, multi.GetProcesses()[0].GetDatabaseRefs())
 }
+
+// 顶层 name 剥除容错（决策 3）：项目名平台管辖、compose 侧字段无消费者
+// ——模板仓/dokploy 导出普遍携带，两面（git 批/控制台粘贴）剥除而非拒收。
+func TestFromYAMLTopLevelNameTolerated(t *testing.T) {
+	s, err := composeintake.FromYAML([]byte("name: torchwood\nservices:\n  web:\n    image: nginx:1.27\n"),
+		"app-1", "prj-1", nil)
+	require.NoError(t, err)
+	assert.NotNil(t, procByName(t, s, "web"))
+}
