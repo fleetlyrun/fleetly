@@ -507,6 +507,114 @@ services:
 	assert.Contains(t, joined, "${FLEETLY_DB_TORCHWOOD_PG_URL}", "platform-injected variables pass through for runtime expansion")
 }
 
+// job 双面的 $ 透传（红→绿锚：label 方言曾双重逃逸——官方加载前预逃逸
+// $→$$、官方插值还原后 initJobFromService 再逃一次，`echo $n` 落 IR 为
+// `$$n`；修后与服务面/顶层 job 面同口径，IR 里是 $n 不是 $$n）。
+func TestFromYAMLJobCommandDollarPassthrough(t *testing.T) {
+	s, err := fromYAML(t, `
+services:
+  web:
+    image: nginx:1.27
+  migrate:
+    image: migrate/migrate:v4.18.1
+    labels:
+      fleetly.job: "init"
+      fleetly.job.timeout: "5m"
+    command: ["sh", "-c", "n=$((n+1)); echo \"retry $n\""]
+`)
+	require.NoError(t, err)
+	require.Len(t, s.GetFirstBootJobs(), 1)
+	cmd := s.GetFirstBootJobs()[0].GetProcess().GetCommand()
+	require.Len(t, cmd, 3)
+	assert.Contains(t, cmd[2], "retry $n", "shell variables reach the job IR untouched")
+	assert.NotContains(t, cmd[2], "$$n", "no double escape: the label dialect matches the service and top-level job faces")
+	assert.Equal(t, []string{"sh", "-c", `n=$((n+1)); echo "retry $n"`}, cmd)
+
+	// 顶层 x-fleetly-first-boot-jobs 同款断言（防回归双保险）。
+	s2, err := fromYAML(t, `
+services:
+  web:
+    image: nginx:1.27
+x-fleetly-first-boot-jobs:
+  - name: migrate
+    image: migrate/migrate:v4.18.1
+    ttl: 5m
+    command: ["sh", "-c", "n=$((n+1)); echo \"retry $n\""]
+`)
+	require.NoError(t, err)
+	require.Len(t, s2.GetFirstBootJobs(), 1)
+	cmd2 := s2.GetFirstBootJobs()[0].GetProcess().GetCommand()
+	require.Len(t, cmd2, 3)
+	assert.Contains(t, cmd2[2], "retry $n", "shell variables reach the job IR untouched")
+	assert.NotContains(t, cmd2[2], "$$n", "no double escape on the top-level job face")
+	assert.Equal(t, []string{"sh", "-c", `n=$((n+1)); echo "retry $n"`}, cmd2)
+}
+
+// job label 方言白名单收口（ADR-0074：静默丢即静默失败）：未开放官方面
+// 与服务级 x- 扩展键显式拒——entrypoint/user/working_dir/privileged/
+// cap_add/healthcheck 与扩展键此前均静默丢。
+func TestFromYAMLJobDialectRejections(t *testing.T) {
+	jobSvc := func(extra string) string {
+		return "services:\n" +
+			"  web:\n" +
+			"    image: nginx:1.27\n" +
+			"  bootstrap:\n" +
+			"    image: busybox:1.37\n" +
+			"    labels:\n" +
+			"      fleetly.job: \"init\"\n" +
+			"      fleetly.job.timeout: \"5m\"\n" +
+			extra
+	}
+	cases := []struct {
+		name string
+		body string
+		want string
+	}{
+		{
+			"job entrypoint rejected",
+			jobSvc("    entrypoint: [\"/docker-entrypoint.sh\"]\n"),
+			"official compose field \"entrypoint\" is not enabled",
+		},
+		{
+			"job user rejected",
+			jobSvc("    user: \"1000:1000\"\n"),
+			"official compose field \"user\" is not enabled",
+		},
+		{
+			"job working_dir rejected",
+			jobSvc("    working_dir: /app\n"),
+			"official compose field \"working_dir\" is not enabled",
+		},
+		{
+			"job privileged rejected",
+			jobSvc("    privileged: true\n"),
+			"official compose field \"privileged\" is not enabled",
+		},
+		{
+			"job cap_add rejected",
+			jobSvc("    cap_add: [NET_ADMIN]\n"),
+			"official compose field \"cap_add\" is not enabled",
+		},
+		{
+			"job healthcheck rejected (no silent probe drop)",
+			jobSvc("    healthcheck:\n      test: [CMD, \"true\"]\n"),
+			"official compose field \"healthcheck\" is not enabled",
+		},
+		{
+			"job service-level extension key rejected",
+			jobSvc("    x-fleetly-strategy: blue-green\n"),
+			"extension keys are not enabled on the job dialect",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := fromYAML(t, tc.body)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+		})
+	}
+}
+
 // 进程名/secret 名的叶子校验收尾（spec.ValidateApp 单源）。
 func TestFromYAMLLeafValidation(t *testing.T) {
 	_, err := fromYAML(t, "services:\n  Web.App:\n    image: nginx\n")

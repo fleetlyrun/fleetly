@@ -50,7 +50,7 @@
 - **验收锚**：gRPC/CLI 面 E_INTERNAL message 不含 cause 文本；error_id 三面在场；服务端落日志；golden 断言（G15 雏形）
 - **预估**：0.5-1 天
 
-### P0-4 job 方言收口（含双重逃逸）— [ ]
+### P0-4 job 方言收口（含双重逃逸）— [x]
 - **改动面**：`internal/composeintake/intake.go`（initJobFromService 换 rejectUnsupportedFields 专属白名单；删 :448 二次逃逸；清 :499-503 死代码；修注释错挂）
 - **验收锚**：entrypoint/user/服务级 x- 键显式拒；job 面 `$` 与普通 service/顶层 job 同口径透传
 - **验证**：composeintake 新负例+正例 + e2e first-boot 腿

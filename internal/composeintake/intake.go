@@ -83,6 +83,24 @@ var healthcheckAllowedKeys = map[string]bool{
 	"start_period": true,
 }
 
+// jobDialectAllowedKeys 是服务 label 作业方言（fleetly.job: init）的服务面
+// 白名单（只增）：消费面 = image/command/environment/secrets/configs 五族 +
+// labels（方言载体：fleetly.job/fleetly.job.timeout/fleetly.databases）+
+// name（Transform 自动填充的键名镜像，放行零值判定）。指向性拒绝面七键
+// （volumes/ports/networks/depends_on/restart/deploy/build）在白名单前先行
+// 执法——supported 名单只列真消费面；其余官方面（entrypoint/user/
+// working_dir/privileged/cap_add/healthcheck 等）显式拒，静默丢即静默失败
+// （ADR-0074）。
+var jobDialectAllowedKeys = map[string]bool{
+	"name":        true,
+	"image":       true,
+	"command":     true,
+	"environment": true,
+	"secrets":     true,
+	"configs":     true,
+	"labels":      true,
+}
+
 // firstBootJobWhitelist 与 firstBootJobRejections 沿 ADR-0033 原面迁移
 // （composeFirstBootJobs 的键白名单与禁面理由）。
 var firstBootJobWhitelist = map[string]bool{
@@ -410,25 +428,12 @@ func externalDeclarations(project *types.Project) error {
 	return nil
 }
 
-// serviceProcess 把单个官方 ServiceConfig 执法并映射为 ProcessSpec。
-// escapedShellDollars 是 command 面的 $ 透传（预逃逸：官方插值 $$→$ 还原
-// 原文）。nil/空安全。
-func escapedShellDollars(cmd []string) []string {
-	if len(cmd) == 0 {
-		return cmd
-	}
-	out := make([]string, len(cmd))
-	for i, c := range cmd {
-		out[i] = strings.ReplaceAll(c, "$", "$$")
-	}
-	return out
-}
-
 // initJobFromService 翻译一次性作业的服务 label 方言（fleetly.job: init）：
-// image/command（$ 透传）/environment/secrets/fleetly.databases → JobSpec；
-// fleetly.job.timeout → ttl；healthcheck 仅工具面自检不入作业；其余键走
-// 各自拒绝面（volumes → 平台 configs/secrets 迁移面，ports 对一次性作业
-// 无意义——firstBootJobRejections 同措辞）。
+// image/command（$ 透传，预逃逸统一在官方加载前，与服务面同口径）/
+// environment/secrets/configs/fleetly.databases → JobSpec；fleetly.job.timeout
+// → ttl。拒绝面：volumes/ports/networks/depends_on/restart/deploy/build 各带
+// 指向性文案（firstBootJobRejections 同措辞）；其余官方面与服务级 x- 扩展
+// 键经白名单收口显式拒（静默丢即静默失败，ADR-0074）。
 func initJobFromService(field, name string, svc types.ServiceConfig) (*specv1.JobSpec, error) {
 	for key := range svc.Labels {
 		switch key {
@@ -441,11 +446,42 @@ func initJobFromService(field, name string, svc types.ServiceConfig) (*specv1.Jo
 	if v := svc.Labels["fleetly.job"]; v != "init" {
 		return nil, invalidf(field+".labels[fleetly.job]", "only the init dialect is supported (got %q)", v)
 	}
+	// 指向性拒绝面（firstBootJobRejections 同措辞；直接罗列保确定性序，
+	// 不经 map 遍历）。
+	if len(svc.Volumes) > 0 {
+		return nil, invalidf(field+".volumes", "file mounts are not supported on the job dialect; pass materials via platform configs/secrets (the compose migration surface)")
+	}
+	if len(svc.Ports) > 0 {
+		return nil, invalidf(field+".ports", "ports are not meaningful on a one-shot job")
+	}
+	if len(svc.Networks) > 0 {
+		return nil, invalidf(field+".networks", "jobs attach the project default network automatically; explicit networks are not supported on the job dialect")
+	}
+	if len(svc.DependsOn) > 0 {
+		return nil, invalidf(field+".depends_on", "orchestration ordering is owned by the platform pipeline (jobs run in parallel; use bounded retry loops)")
+	}
+	if svc.Restart != "" {
+		return nil, invalidf(field+".restart", "restart policy is owned by the platform (jobs are single one-shot runs)")
+	}
+	if svc.Deploy != nil {
+		return nil, invalidf(field+".deploy", "deploy blocks are not consumed on the job dialect")
+	}
+	if svc.Build != nil {
+		return nil, invalidf(field+".build", "build source lands with the git batch (jobs reference images)")
+	}
+	// 白名单收口：其余官方面显式拒（fail-closed，上游新增字段默认落入
+	// 拒绝面）；服务级 x- 扩展键同拒——job 方言无扩展载体。
+	if err := rejectUnsupportedFields(field, svc, jobDialectAllowedKeys); err != nil {
+		return nil, err
+	}
+	if len(svc.Extensions) > 0 {
+		return nil, invalidf(field, "extension keys are not enabled on the job dialect (fleetly extensions live under deploy.x-fleetly-* and healthcheck.x-fleetly-* on long-running services)")
+	}
 	if svc.Image == "" {
 		return nil, invalidf(field+".image", "service %q has no image", name)
 	}
 	p := &specv1.ProcessSpec{Name: name, ImageOrigin: &specv1.ProcessSpec_Image{Image: svc.Image}}
-	p.Command = escapedShellDollars(svc.Command)
+	p.Command = svc.Command
 	env, err := serviceEnv(field+".environment", svc.Environment)
 	if err != nil {
 		return nil, err
@@ -489,53 +525,11 @@ func initJobFromService(field, name string, svc types.ServiceConfig) (*specv1.Jo
 		}
 		j.Ttl = durationpb.New(d)
 	}
-	if svc.HealthCheck != nil {
-		// 探针仅工具面自检（一次性作业无长驻监听面）——不入 JobSpec。
-		_ = svc.HealthCheck
-	}
-	// 其余键（volumes/ports/networks/depends_on/restart/deploy）不在方言
-	// 消费面且各有指向性拒绝面（volumes → 平台 configs/secrets 迁移；
-	// ports 对一次性作业无意义）——显式拒绝防静默丢。
-	for key, banned := range firstBootJobRejections {
-		_ = key
-		_ = banned
-		break
-	}
-	for key := range map[string]bool{"volumes": true, "ports": true, "networks": true, "depends_on": true, "restart": true, "deploy": true, "build": true} {
-		switch key {
-		case "volumes":
-			if len(svc.Volumes) > 0 {
-				return nil, invalidf(field+".volumes", "file mounts are not supported on the job dialect; pass materials via platform configs/secrets (the compose migration surface)")
-			}
-		case "ports":
-			if len(svc.Ports) > 0 {
-				return nil, invalidf(field+".ports", "ports are not meaningful on a one-shot job")
-			}
-		case "networks":
-			if len(svc.Networks) > 0 {
-				return nil, invalidf(field+".networks", "jobs attach the project default network automatically; explicit networks are not supported on the job dialect")
-			}
-		case "depends_on":
-			if len(svc.DependsOn) > 0 {
-				return nil, invalidf(field+".depends_on", "orchestration ordering is owned by the platform pipeline (jobs run in parallel; use bounded retry loops)")
-			}
-		case "restart":
-			if svc.Restart != "" {
-				return nil, invalidf(field+".restart", "restart policy is owned by the platform (jobs are single one-shot runs)")
-			}
-		case "deploy":
-			if svc.Deploy != nil {
-				return nil, invalidf(field+".deploy", "deploy blocks are not consumed on the job dialect")
-			}
-		case "build":
-			if svc.Build != nil {
-				return nil, invalidf(field+".build", "build source lands with the git batch (jobs reference images)")
-			}
-		}
-	}
 	return j, nil
 }
 
+// serviceProcess 把单个官方 ServiceConfig 执法并映射为 ProcessSpec
+// （command 的 $ 透传由官方加载前的预逃逸统一承载，见 escapeCommandDollars）。
 func serviceProcess(project *types.Project, name string, svc types.ServiceConfig) (*specv1.ProcessSpec, string, error) {
 	field := "compose.services." + name
 	if err := rejectUnsupportedFields(field, svc, serviceAllowedKeys); err != nil {
