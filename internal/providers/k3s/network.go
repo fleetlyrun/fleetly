@@ -116,6 +116,40 @@ func serviceAxis(labels, mine map[string]string) int {
 // 0053 决策 3 值轮换面）：已存在且值不同即更新——域内材料值轮换（密码
 // 轮换）到达载体；值相同跳过（幂等重放零写）。返回平台名 → Secret 对象
 // 名的解析集（翻译层引用）。
+// ensureConfigMaps 把 Materials.ConfigFiles 落为 ConfigMap 对象（平台名 →
+// 对象名；Provider 按 Workload.ConfigMounts 的目标路径挂载）。
+func (p *Provider) ensureConfigMaps(ctx context.Context, ns capability.NamespaceRef, nsName string, files map[string][]byte) (map[string]string, error) {
+	out := make(map[string]string, len(files))
+	for platformName, value := range files {
+		objName := domainSecretObjectName(ns, platformName)
+		cm := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   objName,
+				Labels: map[string]string{labelManaged: "true"},
+			},
+			Data: map[string]string{secretDataKey: string(value)},
+		}
+		_, err := p.cli.CoreV1().ConfigMaps(nsName).Create(ctx, cm, metav1.CreateOptions{})
+		if apierrors.IsAlreadyExists(err) {
+			cur, gerr := p.cli.CoreV1().ConfigMaps(nsName).Get(ctx, objName, metav1.GetOptions{})
+			if gerr != nil {
+				return nil, fmt.Errorf("ensure config %s: %w", objName, gerr)
+			}
+			if cur.Data[secretDataKey] != string(value) {
+				cur.Data[secretDataKey] = string(value)
+				cur.Labels[labelManaged] = "true"
+				if _, uerr := p.cli.CoreV1().ConfigMaps(nsName).Update(ctx, cur, metav1.UpdateOptions{}); uerr != nil {
+					return nil, fmt.Errorf("ensure config %s: rotate value: %w", objName, uerr)
+				}
+			}
+		} else if err != nil {
+			return nil, fmt.Errorf("ensure config %s: %w", objName, err)
+		}
+		out[platformName] = objName
+	}
+	return out, nil
+}
+
 func (p *Provider) ensureSecrets(ctx context.Context, ns capability.NamespaceRef, nsName string, files map[string][]byte) (map[string]string, error) {
 	out := make(map[string]string, len(files))
 	for platformName, value := range files {

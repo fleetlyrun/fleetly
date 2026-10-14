@@ -1810,6 +1810,18 @@
         }
       }
     },
+    "v1ConfigMount": {
+      "type": "object",
+      "properties": {
+        "config": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        }
+      },
+      "title": "DeployStrategy 是部署切换策略（CONTEXT.md Deployment Strategy 词条：\nrolling | blue-green；Avoid 表两词条不引入——渐进分流与代次槽位机制\n均显式不做，ADR-0048）。blue-green = engine 的编排变体（Runtime 契约\n不变，ADR-0048）：双代窗期间两代载体并存，新代 L1 全就绪才切换流量。\nUNSPECIFIED（零值）语义归一为 rolling——存量 Revision 无该字段重放即\nrolling，无迁移面。\nConfigMount 是单条 Config 挂载（名引用 + 容器内目标路径）。"
+    },
     "v1CreateAppRequest": {
       "type": "object",
       "properties": {
@@ -2039,8 +2051,7 @@
         "DEPLOY_STRATEGY_BLUE_GREEN"
       ],
       "default": "DEPLOY_STRATEGY_UNSPECIFIED",
-      "description": "- DEPLOY_STRATEGY_UNSPECIFIED: 缺省 = rolling（归一面：投影/引擎按 rolling 语义消费）。\n - DEPLOY_STRATEGY_ROLLING: 滚动替换（与既有语义逐字节相同——存量零变化）。\n - DEPLOY_STRATEGY_BLUE_GREEN: 蓝绿：旧代∪新代双代窗 → 新代 L1 门 → 切换 → 观察窗 → 收口。",
-      "title": "DeployStrategy 是部署切换策略（CONTEXT.md Deployment Strategy 词条：\nrolling | blue-green；Avoid 表两词条不引入——渐进分流与代次槽位机制\n均显式不做，ADR-0048）。blue-green = engine 的编排变体（Runtime 契约\n不变，ADR-0048）：双代窗期间两代载体并存，新代 L1 全就绪才切换流量。\nUNSPECIFIED（零值）语义归一为 rolling——存量 Revision 无该字段重放即\nrolling，无迁移面。"
+      "title": "- DEPLOY_STRATEGY_UNSPECIFIED: 缺省 = rolling（归一面：投影/引擎按 rolling 语义消费）。\n - DEPLOY_STRATEGY_ROLLING: 滚动替换（与既有语义逐字节相同——存量零变化）。\n - DEPLOY_STRATEGY_BLUE_GREEN: 蓝绿：旧代∪新代双代窗 → 新代 L1 门 → 切换 → 观察窗 → 收口。"
     },
     "v1DownloadBackupResponse": {
       "type": "object",
@@ -2514,6 +2525,14 @@
             "type": "string"
           },
           "title": "database_refs 按名引用 Project 托管 Database（Ensure 期解析注入\nFLEETLY_DB_\u003cNAME\u003e_* env——值不进 Spec/Revision，ADR-0014 同\nsecret_refs 纪律）。compose 面 = 服务级注记 fleetly.databases（逗号\n分隔多名）。名字形态 = 模板 kebab（引用在册实例；缺失 = 部署期精确\n失败）。"
+        },
+        "config_mounts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1ConfigMount"
+          },
+          "title": "config_mounts 是 Config 挂载声明（config 按名引用 Project Config 当前\n版本；target 是容器内绝对路径）。内容经材料面 Ensure 期下发（值不进\nSpec/Revision，ADR-0014 附录 A.2 同源纪律）。compose 面 = 服务\nconfigs（long-form source/target；顶层声明须 external: true）。"
         }
       },
       "title": "ProcessSpec 是 App 内的进程模板（web/worker…）。"

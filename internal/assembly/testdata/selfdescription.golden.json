@@ -223,6 +223,21 @@
                       },
                       "type": "array"
                     },
+                    "config_mounts": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "config": {
+                            "type": "string"
+                          },
+                          "target": {
+                            "type": "string"
+                          }
+                        },
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
                     "config_refs": {
                       "items": {
                         "type": "string"
@@ -429,6 +444,21 @@
                 "command": {
                   "items": {
                     "type": "string"
+                  },
+                  "type": "array"
+                },
+                "config_mounts": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "config": {
+                        "type": "string"
+                      },
+                      "target": {
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
                   },
                   "type": "array"
                 },
@@ -2807,6 +2837,21 @@
               "command": {
                 "items": {
                   "type": "string"
+                },
+                "type": "array"
+              },
+              "config_mounts": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "config": {
+                      "type": "string"
+                    },
+                    "target": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
                 },
                 "type": "array"
               },

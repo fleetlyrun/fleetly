@@ -78,7 +78,7 @@ func TestToDeployment(t *testing.T) {
 		Volumes:   []capability.VolumeMount{{VolumeID: "01V", Target: "/data"}},
 		StopGrace: 30 * time.Second,
 	}
-	d := toDeployment(ns, w, 7, map[string]string{"db-pass": "fleetly-mat-db-pass"}, nil) //nolint:gosec // 测试载荷：材料名→对象名映射断言，非凭证本体
+	d := toDeployment(ns, w, 7, map[string]string{"db-pass": "fleetly-mat-db-pass"}, nil, nil) //nolint:gosec // 测试载荷：材料名→对象名映射断言，非凭证本体
 	assert.Equal(t, "fleetly-web-api", d.Name)
 	require.Len(t, d.Spec.Template.Spec.Containers, 1)
 	c := d.Spec.Template.Spec.Containers[0]
@@ -131,25 +131,25 @@ func TestToDeployment(t *testing.T) {
 // 发布同样 Recreate。
 func TestDeploymentStrategy(t *testing.T) {
 	ns := capability.NamespaceRef{Team: "acme", Project: "shop", App: "web"}
-	plain := toDeployment(ns, capability.Workload{ID: "w1", Process: "api"}, 1, nil, nil)
+	plain := toDeployment(ns, capability.Workload{ID: "w1", Process: "api"}, 1, nil, nil, nil)
 	assert.Empty(t, plain.Spec.Strategy.Type, "no-strategy carriers defer to k8s default (RollingUpdate)")
 	hostPub := toDeployment(ns, capability.Workload{
 		ID: "w2", Process: "edge",
 		Publish: []capability.PortPublish{{PublishedPort: 80, TargetPort: 8080, Mode: capability.PublishModeHost}},
-	}, 1, nil, nil)
+	}, 1, nil, nil, nil)
 	assert.Equal(t, appsv1.RecreateDeploymentStrategyType, hostPub.Spec.Strategy.Type)
 }
 
 // Global → DaemonSet；one-shot RestartNever → 独立 Pod（Never）。
 func TestCarrierTypes(t *testing.T) {
 	ns := capability.NamespaceRef{Team: "acme", Project: "shop", App: "web"}
-	ds := toDaemonSet(ns, capability.Workload{ID: "w1", Process: "collect", Global: true}, 1, nil, nil)
+	ds := toDaemonSet(ns, capability.Workload{ID: "w1", Process: "collect", Global: true}, 1, nil, nil, nil)
 	assert.Equal(t, "fleetly-web-collect", ds.Name)
 	require.Len(t, ds.Spec.Template.Spec.Containers, 1)
 	assert.Equal(t, corev1.RestartPolicyAlways, ds.Spec.Template.Spec.RestartPolicy)
 	pod := toOneShotPod(capability.NamespaceRef{Team: "acme", Project: "shop", Task: "01T"}, capability.Workload{
 		ID: "01R", Process: "run", Restart: capability.RestartNever,
-	}, 1, nil, nil)
+	}, 1, nil, nil, nil)
 	assert.Equal(t, corev1.RestartPolicyNever, pod.Spec.RestartPolicy)
 	assert.Equal(t, "true", pod.Labels[labelManaged])
 	assert.Equal(t, "fleetly-run-01r", pod.Name)
@@ -195,8 +195,8 @@ func TestToPVC(t *testing.T) {
 
 // canonicalJSON：相同输入稳定（map 键排序内建）。
 func TestCanonicalJSONStable(t *testing.T) {
-	a := toDeployment(capability.NamespaceRef{Project: "p", App: "a"}, capability.Workload{ID: "w", Process: "x"}, 1, nil, nil)
-	b := toDeployment(capability.NamespaceRef{Project: "p", App: "a"}, capability.Workload{ID: "w", Process: "x"}, 1, nil, nil)
+	a := toDeployment(capability.NamespaceRef{Project: "p", App: "a"}, capability.Workload{ID: "w", Process: "x"}, 1, nil, nil, nil)
+	b := toDeployment(capability.NamespaceRef{Project: "p", App: "a"}, capability.Workload{ID: "w", Process: "x"}, 1, nil, nil, nil)
 	assert.Equal(t, canonicalJSON(a), canonicalJSON(b))
 }
 

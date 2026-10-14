@@ -98,7 +98,7 @@ func TestToServiceSpec(t *testing.T) {
 	}
 	spec := toServiceSpec(ns, w, capability.Generation(2), map[string]secretCarrier{ //nolint:gosec // 载体名样本（非凭据值）
 		"api-token": {id: "secid01", name: "fleetly-sec-api-token-ab12cd34"},
-	})
+	}, nil)
 
 	assert.Equal(t, "fleetly-acme-shop-web-web", spec.Name)
 	assert.Equal(t, uint64(3), *spec.Mode.Replicated.Replicas)
@@ -182,7 +182,7 @@ func TestToServiceSpecDeterministic(t *testing.T) {
 	ns, w, gen, carriers := deterministicFixture()
 
 	marshal := func() []byte {
-		b, err := json.Marshal(toServiceSpec(ns, w, gen, carriers))
+		b, err := json.Marshal(toServiceSpec(ns, w, gen, carriers, nil))
 		require.NoError(t, err)
 		return b
 	}
@@ -199,7 +199,7 @@ func TestToServiceSpecDeterministic(t *testing.T) {
 	}
 
 	// 排序结果本身符合先例（platformName 升序），钉死排序键的选择。
-	spec := toServiceSpec(ns, w, gen, carriers)
+	spec := toServiceSpec(ns, w, gen, carriers, nil)
 	names := make([]string, 0, len(spec.TaskTemplate.ContainerSpec.Secrets))
 	for _, s := range spec.TaskTemplate.ContainerSpec.Secrets {
 		names = append(names, s.File.Name)
@@ -212,7 +212,7 @@ func TestToServiceSpecDeterministic(t *testing.T) {
 func TestVolumeReadOnlyMountTranslation(t *testing.T) {
 	w := capability.Workload{ID: "wl_01H", Process: "web", Image: "nginx:1",
 		Volumes: []capability.VolumeMount{{VolumeID: "01VOL", Target: "/data", ReadOnly: true}}}
-	spec := toServiceSpec(capability.NamespaceRef{Team: "t", Project: "p", App: "a"}, w, capability.Generation(1), nil)
+	spec := toServiceSpec(capability.NamespaceRef{Team: "t", Project: "p", App: "a"}, w, capability.Generation(1), nil, nil)
 	require.Len(t, spec.TaskTemplate.ContainerSpec.Mounts, 1)
 	assert.Equal(t, "/data", spec.TaskTemplate.ContainerSpec.Mounts[0].Target)
 	assert.True(t, spec.TaskTemplate.ContainerSpec.Mounts[0].ReadOnly)
@@ -230,7 +230,7 @@ func TestRolloutOrderByVolumePresence(t *testing.T) {
 		StopGrace: 60e9, // 60s
 		Volumes:   []capability.VolumeMount{{VolumeID: "pg", Target: "/var/lib/postgresql/data"}},
 	}
-	spec := toServiceSpec(ns, stateful, capability.Generation(1), nil)
+	spec := toServiceSpec(ns, stateful, capability.Generation(1), nil, nil)
 	require.NotNil(t, spec.UpdateConfig)
 	assert.Equal(t, swarm.UpdateOrderStopFirst, spec.UpdateConfig.Order,
 		"volume-backed workloads must roll stop-first (start-first races the single-writer volume and gets the old task hard-killed)")
@@ -238,7 +238,7 @@ func TestRolloutOrderByVolumePresence(t *testing.T) {
 	assert.Equal(t, 60*time.Second, *spec.TaskTemplate.ContainerSpec.StopGracePeriod)
 
 	stateless := capability.Workload{ID: "wl_01H", Process: "web", Image: "nginx:1"}
-	spec = toServiceSpec(ns, stateless, capability.Generation(1), nil)
+	spec = toServiceSpec(ns, stateless, capability.Generation(1), nil, nil)
 	require.NotNil(t, spec.UpdateConfig)
 	assert.Equal(t, swarm.UpdateOrderStartFirst, spec.UpdateConfig.Order)
 	assert.Nil(t, spec.TaskTemplate.ContainerSpec.StopGracePeriod, "zero StopGrace must stay unset (engine default, not provider-invented)")
@@ -259,7 +259,7 @@ func TestRolloutOrderHostPublishForcesStopFirst(t *testing.T) {
 		Global: true, Replicas: 1,
 		Publish: []capability.PortPublish{{PublishedPort: 8080, TargetPort: 8080, Mode: capability.PublishModeHost}},
 	}
-	spec := toServiceSpec(ns, globalCollector, capability.Generation(1), nil)
+	spec := toServiceSpec(ns, globalCollector, capability.Generation(1), nil, nil)
 	require.NotNil(t, spec.UpdateConfig)
 	assert.Equal(t, swarm.UpdateOrderStopFirst, spec.UpdateConfig.Order,
 		"host-published workloads must roll stop-first (start-first co-locates old+new tasks fighting for the same node port; global form guarantees the co-location)")
@@ -270,7 +270,7 @@ func TestRolloutOrderHostPublishForcesStopFirst(t *testing.T) {
 		ID: "wl_01H", Process: "agent", Image: "nginx:1", Replicas: 1,
 		Publish: []capability.PortPublish{{PublishedPort: 9100, TargetPort: 9100, Mode: capability.PublishModeHost}},
 	}
-	spec = toServiceSpec(ns, replicated, capability.Generation(1), nil)
+	spec = toServiceSpec(ns, replicated, capability.Generation(1), nil, nil)
 	require.NotNil(t, spec.UpdateConfig)
 	assert.Equal(t, swarm.UpdateOrderStopFirst, spec.UpdateConfig.Order,
 		"host publish alone must force stop-first regardless of global/replicated form")
@@ -281,7 +281,7 @@ func TestRolloutOrderHostPublishForcesStopFirst(t *testing.T) {
 		Replicas: 1,
 		Publish:  []capability.PortPublish{{PublishedPort: 8428, TargetPort: 8428}},
 	}
-	spec = toServiceSpec(ns, mesh, capability.Generation(1), nil)
+	spec = toServiceSpec(ns, mesh, capability.Generation(1), nil, nil)
 	require.NotNil(t, spec.UpdateConfig)
 	assert.Equal(t, swarm.UpdateOrderStartFirst, spec.UpdateConfig.Order)
 }
@@ -306,7 +306,7 @@ func TestNetworkRefsResolveUnderTheirOwnNamespace(t *testing.T) {
 			{Namespace: capability.NamespaceRef{Team: "default", Project: "01JD0PROJ00000000000000000"}, Name: "internal"},
 		},
 	}
-	spec := toServiceSpec(systemNS, w, capability.Generation(1), nil)
+	spec := toServiceSpec(systemNS, w, capability.Generation(1), nil, nil)
 	require.Len(t, spec.TaskTemplate.Networks, 2)
 	// sanitizeNamePart 小写化（swarm 名词表约束）。
 	assert.Equal(t, "fleetly-net-01jd0proj00000000000000000-default", spec.TaskTemplate.Networks[0].Target,
@@ -338,7 +338,7 @@ func TestRegistryAuthNeverEntersCarrierSpec(t *testing.T) {
 		"registry.example.com:5000": cred,
 	}}
 
-	spec := toServiceSpec(ns, w, capability.Generation(3), nil)
+	spec := toServiceSpec(ns, w, capability.Generation(3), nil, nil)
 	blob, err := json.Marshal(spec)
 	require.NoError(t, err)
 

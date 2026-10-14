@@ -130,7 +130,7 @@ func ValidateJob(field string, j *specv1.JobSpec) error {
 		return invalidf(field+".process.volumes", "deploy-time jobs cannot mount volumes; use a Task for volume-mounting jobs")
 	}
 	if len(p.GetConfigRefs()) > 0 {
-		return invalidf(field+".process.config_refs", "deploy-time jobs cannot mount configs; pass what the job needs via env or secret_refs")
+		return invalidf(field+".process.config_refs", "legacy string refs are not consumable; declare config_mounts (config + target) instead")
 	}
 	if len(p.GetPorts()) > 0 {
 		return invalidf(field+".process.ports", "ports are not meaningful on a one-shot job")
@@ -313,6 +313,27 @@ func ValidateProcess(field string, p *specv1.ProcessSpec) error {
 			return invalidf(field+".database_refs", "database reference %q is duplicated", ref)
 		}
 		seenDBRefs[ref] = true
+	}
+	// config_mounts：config 名非空、target 容器内绝对路径（clean，无 ..段）、
+	// (config,target) 对去重。内容存在性由引擎部署期精确失败（Configs.Latest）。
+	seenMounts := map[string]bool{}
+	for i, m := range p.GetConfigMounts() {
+		mf := fmt.Sprintf("%s.config_mounts[%d]", field, i)
+		if m.GetConfig() == "" {
+			return invalidf(mf+".config", "must not be empty")
+		}
+		if !strings.HasPrefix(m.GetTarget(), "/") {
+			return invalidf(mf+".target", "target %q must be an absolute container path", m.GetTarget())
+		}
+		clean := path.Clean(m.GetTarget())
+		if clean == "/" || strings.HasPrefix(clean, "/../") || strings.Contains(clean, "/../") {
+			return invalidf(mf+".target", "target %q must stay inside the container filesystem", m.GetTarget())
+		}
+		key := m.GetConfig() + "\x00" + clean
+		if seenMounts[key] {
+			return invalidf(mf, "config mount %q -> %s is duplicated", m.GetConfig(), clean)
+		}
+		seenMounts[key] = true
 	}
 	switch origin := p.GetImageOrigin().(type) {
 	case *specv1.ProcessSpec_Image:

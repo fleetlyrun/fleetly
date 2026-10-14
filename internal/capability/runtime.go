@@ -346,6 +346,9 @@ type Workload struct {
 	Command []string
 	// Env 是已解析的非敏感环境变量（变量两级合成的最终形态）。
 	Env map[string]string
+	// ConfigMounts 是 Config 挂载声明（内容经 Materials.ConfigFiles 下发，
+	// Provider 挂载到目标路径——投影期只携带引用，ADR-0014 附录 A.2）。
+	ConfigMounts []ConfigMount
 	// Ports 是进程声明的监听端口与协议（Route 投影的来源）。
 	Ports []WorkloadPort
 	// Replicas 是期望副本数。
@@ -537,6 +540,15 @@ type Materials struct {
 	// SecretFiles 是 Secret 注入材料（名 → 值；Provider 翻译为文件注入
 	//（swarm: /run/secrets/<name>），值不落 label 或明文 env）。
 	SecretFiles map[string][]byte
+	// ConfigFiles 是 Config 挂载材料（名 → 当前版本内容；Provider 按
+	// Workload.ConfigMounts 声明挂载到目标路径，ADR-0014 附录 A.2）。
+	ConfigFiles map[string][]byte
+}
+
+// ConfigMount 是单条 Config 挂载声明（名引用 + 容器内目标路径）。
+type ConfigMount struct {
+	Name   string
+	Target string
 }
 
 // RegistryCredential 是一个 registry 的拉取凭证。

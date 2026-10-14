@@ -327,15 +327,11 @@ func TestFromYAMLRejections(t *testing.T) {
 			"official compose field \"include\" is not enabled",
 		},
 		{
-			"top-level configs rejected",
-			"services:\n  web:\n    image: nginx\nconfigs:\n  c:\n    external: true\n",
-			"official compose field \"configs\" is not enabled",
+			"top-level configs inline file rejected (platform Configs are the content source)",
+			"services:\n  web:\n    image: nginx\nconfigs:\n  c:\n    file: ./app.conf\n",
+			"inline file content is not supported",
 		},
-		{
-			"top-level project name rejected",
-			"name: my-project\nservices:\n  web:\n    image: nginx\n",
-			"project name is managed by the platform",
-		},
+
 		{
 			"unknown extension namespace rejected",
 			"services:\n  web:\n    image: nginx\nx-vendor-thing: 1\n",
@@ -588,4 +584,64 @@ func TestFromYAMLTopLevelNameTolerated(t *testing.T) {
 		"app-1", "prj-1", nil)
 	require.NoError(t, err)
 	assert.NotNil(t, procByName(t, s, "web"))
+}
+
+// 服务 configs（long-form）→ config_mounts + 顶层 external 声明容忍；作业
+// 方言同面（bootstrap SQL 类材料的正当消费面——旧"作业不能挂 configs"的
+// 拒绝随挂载机制落地反转）。
+func TestFromYAMLConfigMounts(t *testing.T) {
+	body := `
+configs:
+  config.yaml:
+    external: true
+  bootstrap-roles.sql:
+    external: true
+services:
+  web:
+    image: ghcr.io/acme/server:1
+    configs:
+      - source: config.yaml
+        target: /app/configs/config.yaml
+  db-bootstrap:
+    image: percona:18
+    labels:
+      fleetly.job: "init"
+      fleetly.job.timeout: "10m"
+      fleetly.databases: "torchwood-pg"
+    configs:
+      - source: bootstrap-roles.sql
+        target: /etc/torchwood/bootstrap-roles.sql
+`
+	s, err := composeintake.FromYAML([]byte(body), "app-1", "prj-1", nil)
+	require.NoError(t, err)
+	assert.Equal(t, []*specv1.ConfigMount{
+		{Config: "config.yaml", Target: "/app/configs/config.yaml"},
+	}, procByName(t, s, "web").GetConfigMounts())
+
+	var job *specv1.JobSpec
+	for _, j := range s.GetFirstBootJobs() {
+		if j.GetName() == "db-bootstrap" {
+			job = j
+		}
+	}
+	require.NotNil(t, job, "label-dialect job must land in first-boot jobs")
+	assert.Equal(t, []*specv1.ConfigMount{
+		{Config: "bootstrap-roles.sql", Target: "/etc/torchwood/bootstrap-roles.sql"},
+	}, job.GetProcess().GetConfigMounts())
+	assert.Equal(t, []string{"torchwood-pg"}, job.GetProcess().GetDatabaseRefs())
+
+	// 短形态（无 target）拒收——挂载目标语义是本面的存在理由。
+	_, err = composeintake.FromYAML([]byte(`
+configs:
+  config.yaml:
+    external: true
+  bootstrap-roles.sql:
+    external: true
+services:
+  web:
+    image: nginx:1.27
+    configs: [config.yaml]
+`), "app-1", "prj-1", nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "long-form source/target is required")
 }

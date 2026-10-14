@@ -49,7 +49,54 @@ func (e *Engine) resolveMaterials(ctx context.Context, spec *specv1.AppSpec, pro
 			hosts = append(hosts, endpoint.Addr)
 		}
 	}
-	return e.materialsFor(ctx, refs, hosts, projectID)
+	materials, err := e.materialsFor(ctx, refs, hosts, projectID)
+	if err != nil {
+		return materials, err
+	}
+	// Config 挂载材料：config_mounts 按名解析为当前版本内容（缺失精确
+	// 失败带创建提示——与 secret_refs 同口径）。
+	if err := e.resolveConfigFiles(ctx, collectConfigMounts(spec), projectID, &materials); err != nil {
+		return capability.Materials{}, err
+	}
+	return materials, nil
+}
+
+// resolveConfigFiles 按名解析 Config 当前版本内容进材料（幂等：同名单
+// 引用去重由调用面收集保证；此处对已解析名跳过）。
+func (e *Engine) resolveConfigFiles(ctx context.Context, names []string, projectID string, materials *capability.Materials) error {
+	if len(names) == 0 {
+		return nil
+	}
+	if materials.ConfigFiles == nil {
+		materials.ConfigFiles = map[string][]byte{}
+	}
+	for _, name := range names {
+		if _, ok := materials.ConfigFiles[name]; ok {
+			continue
+		}
+		row, err := e.configs.Latest(ctx, e.db.Runner(), projectID, name)
+		if err != nil {
+			return fmt.Errorf("config %q (config_mounts): not found — create it via the configs API first (%w)", name, err)
+		}
+		materials.ConfigFiles[name] = row.Content
+	}
+	return nil
+}
+
+// collectConfigMounts 收集 spec 的全部 Config 挂载名（排序稳定，去重）。
+func collectConfigMounts(spec *specv1.AppSpec) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, p := range spec.GetProcesses() {
+		for _, m := range p.GetConfigMounts() {
+			if !seen[m.GetConfig()] {
+				seen[m.GetConfig()] = true
+				out = append(out, m.GetConfig())
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // materialsForProcess 装配单进程材料面（Task 域消费：TaskSpec.process 的
@@ -70,7 +117,28 @@ func (e *Engine) materialsForProcess(ctx context.Context, p *specv1.ProcessSpec,
 			hosts = []string{host}
 		}
 	}
-	return e.materialsFor(ctx, refs, hosts, projectID)
+	materials, err := e.materialsFor(ctx, refs, hosts, projectID)
+	if err != nil {
+		return capability.Materials{}, err
+	}
+	if err := e.resolveConfigFiles(ctx, collectProcessConfigMounts(p), projectID, &materials); err != nil {
+		return capability.Materials{}, err
+	}
+	return materials, nil
+}
+
+// collectProcessConfigMounts 收集单进程的 Config 挂载名（排序稳定）。
+func collectProcessConfigMounts(p *specv1.ProcessSpec) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, m := range p.GetConfigMounts() {
+		if !seen[m.GetConfig()] {
+			seen[m.GetConfig()] = true
+			out = append(out, m.GetConfig())
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // materialsFor 是材料解析的共用实现（registry 凭证 + Secret 文件注入）。

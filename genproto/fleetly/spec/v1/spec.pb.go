@@ -27,12 +27,6 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// DeployStrategy 是部署切换策略（CONTEXT.md Deployment Strategy 词条：
-// rolling | blue-green；Avoid 表两词条不引入——渐进分流与代次槽位机制
-// 均显式不做，ADR-0048）。blue-green = engine 的编排变体（Runtime 契约
-// 不变，ADR-0048）：双代窗期间两代载体并存，新代 L1 全就绪才切换流量。
-// UNSPECIFIED（零值）语义归一为 rolling——存量 Revision 无该字段重放即
-// rolling，无迁移面。
 type DeployStrategy int32
 
 const (
@@ -557,7 +551,12 @@ type ProcessSpec struct {
 	// secret_refs 纪律）。compose 面 = 服务级注记 fleetly.databases（逗号
 	// 分隔多名）。名字形态 = 模板 kebab（引用在册实例；缺失 = 部署期精确
 	// 失败）。
-	DatabaseRefs  []string `protobuf:"bytes,16,rep,name=database_refs,json=databaseRefs,proto3" json:"database_refs,omitempty"`
+	DatabaseRefs []string `protobuf:"bytes,16,rep,name=database_refs,json=databaseRefs,proto3" json:"database_refs,omitempty"`
+	// config_mounts 是 Config 挂载声明（config 按名引用 Project Config 当前
+	// 版本；target 是容器内绝对路径）。内容经材料面 Ensure 期下发（值不进
+	// Spec/Revision，ADR-0014 附录 A.2 同源纪律）。compose 面 = 服务
+	// configs（long-form source/target；顶层声明须 external: true）。
+	ConfigMounts  []*ConfigMount `protobuf:"bytes,17,rep,name=config_mounts,json=configMounts,proto3" json:"config_mounts,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -715,6 +714,13 @@ func (x *ProcessSpec) GetDatabaseRefs() []string {
 	return nil
 }
 
+func (x *ProcessSpec) GetConfigMounts() []*ConfigMount {
+	if x != nil {
+		return x.ConfigMounts
+	}
+	return nil
+}
+
 type isProcessSpec_ImageOrigin interface {
 	isProcessSpec_ImageOrigin()
 }
@@ -733,6 +739,65 @@ func (*ProcessSpec_Image) isProcessSpec_ImageOrigin() {}
 
 func (*ProcessSpec_FromBuild) isProcessSpec_ImageOrigin() {}
 
+// DeployStrategy 是部署切换策略（CONTEXT.md Deployment Strategy 词条：
+// rolling | blue-green；Avoid 表两词条不引入——渐进分流与代次槽位机制
+// 均显式不做，ADR-0048）。blue-green = engine 的编排变体（Runtime 契约
+// 不变，ADR-0048）：双代窗期间两代载体并存，新代 L1 全就绪才切换流量。
+// UNSPECIFIED（零值）语义归一为 rolling——存量 Revision 无该字段重放即
+// rolling，无迁移面。
+// ConfigMount 是单条 Config 挂载（名引用 + 容器内目标路径）。
+type ConfigMount struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Config        string                 `protobuf:"bytes,1,opt,name=config,proto3" json:"config,omitempty"`
+	Target        string                 `protobuf:"bytes,2,opt,name=target,proto3" json:"target,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ConfigMount) Reset() {
+	*x = ConfigMount{}
+	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConfigMount) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConfigMount) ProtoMessage() {}
+
+func (x *ConfigMount) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConfigMount.ProtoReflect.Descriptor instead.
+func (*ConfigMount) Descriptor() ([]byte, []int) {
+	return file_fleetly_spec_v1_spec_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *ConfigMount) GetConfig() string {
+	if x != nil {
+		return x.Config
+	}
+	return ""
+}
+
+func (x *ConfigMount) GetTarget() string {
+	if x != nil {
+		return x.Target
+	}
+	return ""
+}
+
 // PortSpec 是进程监听端口声明（Route 投影来源）。
 type PortSpec struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -744,7 +809,7 @@ type PortSpec struct {
 
 func (x *PortSpec) Reset() {
 	*x = PortSpec{}
-	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[7]
+	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -756,7 +821,7 @@ func (x *PortSpec) String() string {
 func (*PortSpec) ProtoMessage() {}
 
 func (x *PortSpec) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[7]
+	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -769,7 +834,7 @@ func (x *PortSpec) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PortSpec.ProtoReflect.Descriptor instead.
 func (*PortSpec) Descriptor() ([]byte, []int) {
-	return file_fleetly_spec_v1_spec_proto_rawDescGZIP(), []int{7}
+	return file_fleetly_spec_v1_spec_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *PortSpec) GetPort() int32 {
@@ -805,7 +870,7 @@ type HealthcheckSpec struct {
 
 func (x *HealthcheckSpec) Reset() {
 	*x = HealthcheckSpec{}
-	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[8]
+	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -817,7 +882,7 @@ func (x *HealthcheckSpec) String() string {
 func (*HealthcheckSpec) ProtoMessage() {}
 
 func (x *HealthcheckSpec) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[8]
+	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -830,7 +895,7 @@ func (x *HealthcheckSpec) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HealthcheckSpec.ProtoReflect.Descriptor instead.
 func (*HealthcheckSpec) Descriptor() ([]byte, []int) {
-	return file_fleetly_spec_v1_spec_proto_rawDescGZIP(), []int{8}
+	return file_fleetly_spec_v1_spec_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *HealthcheckSpec) GetProbe() isHealthcheckSpec_Probe {
@@ -926,7 +991,7 @@ type ExecProbe struct {
 
 func (x *ExecProbe) Reset() {
 	*x = ExecProbe{}
-	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[9]
+	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -938,7 +1003,7 @@ func (x *ExecProbe) String() string {
 func (*ExecProbe) ProtoMessage() {}
 
 func (x *ExecProbe) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[9]
+	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -951,7 +1016,7 @@ func (x *ExecProbe) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecProbe.ProtoReflect.Descriptor instead.
 func (*ExecProbe) Descriptor() ([]byte, []int) {
-	return file_fleetly_spec_v1_spec_proto_rawDescGZIP(), []int{9}
+	return file_fleetly_spec_v1_spec_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ExecProbe) GetCommand() []string {
@@ -973,7 +1038,7 @@ type ResourcesSpec struct {
 
 func (x *ResourcesSpec) Reset() {
 	*x = ResourcesSpec{}
-	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[10]
+	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -985,7 +1050,7 @@ func (x *ResourcesSpec) String() string {
 func (*ResourcesSpec) ProtoMessage() {}
 
 func (x *ResourcesSpec) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[10]
+	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -998,7 +1063,7 @@ func (x *ResourcesSpec) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResourcesSpec.ProtoReflect.Descriptor instead.
 func (*ResourcesSpec) Descriptor() ([]byte, []int) {
-	return file_fleetly_spec_v1_spec_proto_rawDescGZIP(), []int{10}
+	return file_fleetly_spec_v1_spec_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ResourcesSpec) GetCpuMillis() int64 {
@@ -1026,7 +1091,7 @@ type PlacementSpec struct {
 
 func (x *PlacementSpec) Reset() {
 	*x = PlacementSpec{}
-	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[11]
+	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1038,7 +1103,7 @@ func (x *PlacementSpec) String() string {
 func (*PlacementSpec) ProtoMessage() {}
 
 func (x *PlacementSpec) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[11]
+	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1051,7 +1116,7 @@ func (x *PlacementSpec) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlacementSpec.ProtoReflect.Descriptor instead.
 func (*PlacementSpec) Descriptor() ([]byte, []int) {
-	return file_fleetly_spec_v1_spec_proto_rawDescGZIP(), []int{11}
+	return file_fleetly_spec_v1_spec_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *PlacementSpec) GetNodeIds() []string {
@@ -1074,7 +1139,7 @@ type VolumeAttachment struct {
 
 func (x *VolumeAttachment) Reset() {
 	*x = VolumeAttachment{}
-	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[12]
+	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1086,7 +1151,7 @@ func (x *VolumeAttachment) String() string {
 func (*VolumeAttachment) ProtoMessage() {}
 
 func (x *VolumeAttachment) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[12]
+	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1099,7 +1164,7 @@ func (x *VolumeAttachment) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VolumeAttachment.ProtoReflect.Descriptor instead.
 func (*VolumeAttachment) Descriptor() ([]byte, []int) {
-	return file_fleetly_spec_v1_spec_proto_rawDescGZIP(), []int{12}
+	return file_fleetly_spec_v1_spec_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *VolumeAttachment) GetVolumeId() string {
@@ -1142,7 +1207,7 @@ type BuildSpec struct {
 
 func (x *BuildSpec) Reset() {
 	*x = BuildSpec{}
-	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[13]
+	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1154,7 +1219,7 @@ func (x *BuildSpec) String() string {
 func (*BuildSpec) ProtoMessage() {}
 
 func (x *BuildSpec) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[13]
+	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1167,7 +1232,7 @@ func (x *BuildSpec) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BuildSpec.ProtoReflect.Descriptor instead.
 func (*BuildSpec) Descriptor() ([]byte, []int) {
-	return file_fleetly_spec_v1_spec_proto_rawDescGZIP(), []int{13}
+	return file_fleetly_spec_v1_spec_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *BuildSpec) GetBuilder() string {
@@ -1251,7 +1316,7 @@ type RailpackBuilder struct {
 
 func (x *RailpackBuilder) Reset() {
 	*x = RailpackBuilder{}
-	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[14]
+	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1263,7 +1328,7 @@ func (x *RailpackBuilder) String() string {
 func (*RailpackBuilder) ProtoMessage() {}
 
 func (x *RailpackBuilder) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[14]
+	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1276,7 +1341,7 @@ func (x *RailpackBuilder) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RailpackBuilder.ProtoReflect.Descriptor instead.
 func (*RailpackBuilder) Descriptor() ([]byte, []int) {
-	return file_fleetly_spec_v1_spec_proto_rawDescGZIP(), []int{14}
+	return file_fleetly_spec_v1_spec_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *RailpackBuilder) GetPinnedVersion() string {
@@ -1298,7 +1363,7 @@ type StaticBuilder struct {
 
 func (x *StaticBuilder) Reset() {
 	*x = StaticBuilder{}
-	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[15]
+	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1310,7 +1375,7 @@ func (x *StaticBuilder) String() string {
 func (*StaticBuilder) ProtoMessage() {}
 
 func (x *StaticBuilder) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[15]
+	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1323,7 +1388,7 @@ func (x *StaticBuilder) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StaticBuilder.ProtoReflect.Descriptor instead.
 func (*StaticBuilder) Descriptor() ([]byte, []int) {
-	return file_fleetly_spec_v1_spec_proto_rawDescGZIP(), []int{15}
+	return file_fleetly_spec_v1_spec_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *StaticBuilder) GetOutputDir() string {
@@ -1362,7 +1427,7 @@ type JobSpec struct {
 
 func (x *JobSpec) Reset() {
 	*x = JobSpec{}
-	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[16]
+	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1374,7 +1439,7 @@ func (x *JobSpec) String() string {
 func (*JobSpec) ProtoMessage() {}
 
 func (x *JobSpec) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[16]
+	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1387,7 +1452,7 @@ func (x *JobSpec) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobSpec.ProtoReflect.Descriptor instead.
 func (*JobSpec) Descriptor() ([]byte, []int) {
-	return file_fleetly_spec_v1_spec_proto_rawDescGZIP(), []int{16}
+	return file_fleetly_spec_v1_spec_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *JobSpec) GetName() string {
@@ -1507,7 +1572,7 @@ type TaskSpec struct {
 
 func (x *TaskSpec) Reset() {
 	*x = TaskSpec{}
-	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[17]
+	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1519,7 +1584,7 @@ func (x *TaskSpec) String() string {
 func (*TaskSpec) ProtoMessage() {}
 
 func (x *TaskSpec) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[17]
+	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1532,7 +1597,7 @@ func (x *TaskSpec) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskSpec.ProtoReflect.Descriptor instead.
 func (*TaskSpec) Descriptor() ([]byte, []int) {
-	return file_fleetly_spec_v1_spec_proto_rawDescGZIP(), []int{17}
+	return file_fleetly_spec_v1_spec_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *TaskSpec) GetSchemaVersion() int32 {
@@ -1602,7 +1667,7 @@ type TaskRef struct {
 
 func (x *TaskRef) Reset() {
 	*x = TaskRef{}
-	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[18]
+	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1614,7 +1679,7 @@ func (x *TaskRef) String() string {
 func (*TaskRef) ProtoMessage() {}
 
 func (x *TaskRef) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[18]
+	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1627,7 +1692,7 @@ func (x *TaskRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskRef.ProtoReflect.Descriptor instead.
 func (*TaskRef) Descriptor() ([]byte, []int) {
-	return file_fleetly_spec_v1_spec_proto_rawDescGZIP(), []int{18}
+	return file_fleetly_spec_v1_spec_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *TaskRef) GetId() string {
@@ -1664,7 +1729,7 @@ type DatabaseSpec struct {
 
 func (x *DatabaseSpec) Reset() {
 	*x = DatabaseSpec{}
-	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[19]
+	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1676,7 +1741,7 @@ func (x *DatabaseSpec) String() string {
 func (*DatabaseSpec) ProtoMessage() {}
 
 func (x *DatabaseSpec) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[19]
+	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1689,7 +1754,7 @@ func (x *DatabaseSpec) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DatabaseSpec.ProtoReflect.Descriptor instead.
 func (*DatabaseSpec) Descriptor() ([]byte, []int) {
-	return file_fleetly_spec_v1_spec_proto_rawDescGZIP(), []int{19}
+	return file_fleetly_spec_v1_spec_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *DatabaseSpec) GetSchemaVersion() int32 {
@@ -1752,7 +1817,7 @@ type DatabaseRef struct {
 
 func (x *DatabaseRef) Reset() {
 	*x = DatabaseRef{}
-	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[20]
+	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1764,7 +1829,7 @@ func (x *DatabaseRef) String() string {
 func (*DatabaseRef) ProtoMessage() {}
 
 func (x *DatabaseRef) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[20]
+	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1777,7 +1842,7 @@ func (x *DatabaseRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DatabaseRef.ProtoReflect.Descriptor instead.
 func (*DatabaseRef) Descriptor() ([]byte, []int) {
-	return file_fleetly_spec_v1_spec_proto_rawDescGZIP(), []int{20}
+	return file_fleetly_spec_v1_spec_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *DatabaseRef) GetId() string {
@@ -1807,7 +1872,7 @@ type BackupPolicySpec struct {
 
 func (x *BackupPolicySpec) Reset() {
 	*x = BackupPolicySpec{}
-	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[21]
+	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1819,7 +1884,7 @@ func (x *BackupPolicySpec) String() string {
 func (*BackupPolicySpec) ProtoMessage() {}
 
 func (x *BackupPolicySpec) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[21]
+	mi := &file_fleetly_spec_v1_spec_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1832,7 +1897,7 @@ func (x *BackupPolicySpec) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BackupPolicySpec.ProtoReflect.Descriptor instead.
 func (*BackupPolicySpec) Descriptor() ([]byte, []int) {
-	return file_fleetly_spec_v1_spec_proto_rawDescGZIP(), []int{21}
+	return file_fleetly_spec_v1_spec_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *BackupPolicySpec) GetInterval() *durationpb.Duration {
@@ -1875,7 +1940,7 @@ const file_fleetly_spec_v1_spec_proto_rawDesc = "" +
 	"\vImageSource\x12\x10\n" +
 	"\x03ref\x18\x01 \x01(\tR\x03ref\"\x1e\n" +
 	"\fUploadSource\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\xff\x05\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\xc2\x06\n" +
 	"\vProcessSpec\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
 	"\x05image\x18\x02 \x01(\tH\x00R\x05image\x12\x1f\n" +
@@ -1896,11 +1961,15 @@ const file_fleetly_spec_v1_spec_proto_rawDesc = "" +
 	"\avolumes\x18\r \x03(\v2!.fleetly.spec.v1.VolumeAttachmentR\avolumes\x12\x1a\n" +
 	"\bnetworks\x18\x0e \x03(\tR\bnetworks\x12;\n" +
 	"\bstrategy\x18\x0f \x01(\x0e2\x1f.fleetly.spec.v1.DeployStrategyR\bstrategy\x12#\n" +
-	"\rdatabase_refs\x18\x10 \x03(\tR\fdatabaseRefs\x1a6\n" +
+	"\rdatabase_refs\x18\x10 \x03(\tR\fdatabaseRefs\x12A\n" +
+	"\rconfig_mounts\x18\x11 \x03(\v2\x1c.fleetly.spec.v1.ConfigMountR\fconfigMounts\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01B\x0e\n" +
-	"\fimage_origin\"U\n" +
+	"\fimage_origin\"=\n" +
+	"\vConfigMount\x12\x16\n" +
+	"\x06config\x18\x01 \x01(\tR\x06config\x12\x16\n" +
+	"\x06target\x18\x02 \x01(\tR\x06target\"U\n" +
 	"\bPortSpec\x12\x12\n" +
 	"\x04port\x18\x01 \x01(\x05R\x04port\x125\n" +
 	"\bprotocol\x18\x02 \x01(\x0e2\x19.fleetly.spec.v1.ProtocolR\bprotocol\"\xcc\x02\n" +
@@ -2007,7 +2076,7 @@ func file_fleetly_spec_v1_spec_proto_rawDescGZIP() []byte {
 }
 
 var file_fleetly_spec_v1_spec_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_fleetly_spec_v1_spec_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
+var file_fleetly_spec_v1_spec_proto_msgTypes = make([]protoimpl.MessageInfo, 25)
 var file_fleetly_spec_v1_spec_proto_goTypes = []any{
 	(DeployStrategy)(0),         // 0: fleetly.spec.v1.DeployStrategy
 	(Protocol)(0),               // 1: fleetly.spec.v1.Protocol
@@ -2018,63 +2087,65 @@ var file_fleetly_spec_v1_spec_proto_goTypes = []any{
 	(*ImageSource)(nil),         // 6: fleetly.spec.v1.ImageSource
 	(*UploadSource)(nil),        // 7: fleetly.spec.v1.UploadSource
 	(*ProcessSpec)(nil),         // 8: fleetly.spec.v1.ProcessSpec
-	(*PortSpec)(nil),            // 9: fleetly.spec.v1.PortSpec
-	(*HealthcheckSpec)(nil),     // 10: fleetly.spec.v1.HealthcheckSpec
-	(*ExecProbe)(nil),           // 11: fleetly.spec.v1.ExecProbe
-	(*ResourcesSpec)(nil),       // 12: fleetly.spec.v1.ResourcesSpec
-	(*PlacementSpec)(nil),       // 13: fleetly.spec.v1.PlacementSpec
-	(*VolumeAttachment)(nil),    // 14: fleetly.spec.v1.VolumeAttachment
-	(*BuildSpec)(nil),           // 15: fleetly.spec.v1.BuildSpec
-	(*RailpackBuilder)(nil),     // 16: fleetly.spec.v1.RailpackBuilder
-	(*StaticBuilder)(nil),       // 17: fleetly.spec.v1.StaticBuilder
-	(*JobSpec)(nil),             // 18: fleetly.spec.v1.JobSpec
-	(*TaskSpec)(nil),            // 19: fleetly.spec.v1.TaskSpec
-	(*TaskRef)(nil),             // 20: fleetly.spec.v1.TaskRef
-	(*DatabaseSpec)(nil),        // 21: fleetly.spec.v1.DatabaseSpec
-	(*DatabaseRef)(nil),         // 22: fleetly.spec.v1.DatabaseRef
-	(*BackupPolicySpec)(nil),    // 23: fleetly.spec.v1.BackupPolicySpec
-	nil,                         // 24: fleetly.spec.v1.ProcessSpec.EnvEntry
-	nil,                         // 25: fleetly.spec.v1.JobSpec.EnvEntry
-	(*durationpb.Duration)(nil), // 26: google.protobuf.Duration
+	(*ConfigMount)(nil),         // 9: fleetly.spec.v1.ConfigMount
+	(*PortSpec)(nil),            // 10: fleetly.spec.v1.PortSpec
+	(*HealthcheckSpec)(nil),     // 11: fleetly.spec.v1.HealthcheckSpec
+	(*ExecProbe)(nil),           // 12: fleetly.spec.v1.ExecProbe
+	(*ResourcesSpec)(nil),       // 13: fleetly.spec.v1.ResourcesSpec
+	(*PlacementSpec)(nil),       // 14: fleetly.spec.v1.PlacementSpec
+	(*VolumeAttachment)(nil),    // 15: fleetly.spec.v1.VolumeAttachment
+	(*BuildSpec)(nil),           // 16: fleetly.spec.v1.BuildSpec
+	(*RailpackBuilder)(nil),     // 17: fleetly.spec.v1.RailpackBuilder
+	(*StaticBuilder)(nil),       // 18: fleetly.spec.v1.StaticBuilder
+	(*JobSpec)(nil),             // 19: fleetly.spec.v1.JobSpec
+	(*TaskSpec)(nil),            // 20: fleetly.spec.v1.TaskSpec
+	(*TaskRef)(nil),             // 21: fleetly.spec.v1.TaskRef
+	(*DatabaseSpec)(nil),        // 22: fleetly.spec.v1.DatabaseSpec
+	(*DatabaseRef)(nil),         // 23: fleetly.spec.v1.DatabaseRef
+	(*BackupPolicySpec)(nil),    // 24: fleetly.spec.v1.BackupPolicySpec
+	nil,                         // 25: fleetly.spec.v1.ProcessSpec.EnvEntry
+	nil,                         // 26: fleetly.spec.v1.JobSpec.EnvEntry
+	(*durationpb.Duration)(nil), // 27: google.protobuf.Duration
 }
 var file_fleetly_spec_v1_spec_proto_depIdxs = []int32{
 	3,  // 0: fleetly.spec.v1.AppSpec.app:type_name -> fleetly.spec.v1.AppRef
 	4,  // 1: fleetly.spec.v1.AppSpec.source:type_name -> fleetly.spec.v1.Source
 	8,  // 2: fleetly.spec.v1.AppSpec.processes:type_name -> fleetly.spec.v1.ProcessSpec
-	15, // 3: fleetly.spec.v1.AppSpec.build:type_name -> fleetly.spec.v1.BuildSpec
-	18, // 4: fleetly.spec.v1.AppSpec.first_boot_jobs:type_name -> fleetly.spec.v1.JobSpec
+	16, // 3: fleetly.spec.v1.AppSpec.build:type_name -> fleetly.spec.v1.BuildSpec
+	19, // 4: fleetly.spec.v1.AppSpec.first_boot_jobs:type_name -> fleetly.spec.v1.JobSpec
 	5,  // 5: fleetly.spec.v1.Source.git:type_name -> fleetly.spec.v1.GitSource
 	6,  // 6: fleetly.spec.v1.Source.image:type_name -> fleetly.spec.v1.ImageSource
 	7,  // 7: fleetly.spec.v1.Source.upload:type_name -> fleetly.spec.v1.UploadSource
-	24, // 8: fleetly.spec.v1.ProcessSpec.env:type_name -> fleetly.spec.v1.ProcessSpec.EnvEntry
-	9,  // 9: fleetly.spec.v1.ProcessSpec.ports:type_name -> fleetly.spec.v1.PortSpec
-	10, // 10: fleetly.spec.v1.ProcessSpec.healthcheck:type_name -> fleetly.spec.v1.HealthcheckSpec
-	12, // 11: fleetly.spec.v1.ProcessSpec.resources:type_name -> fleetly.spec.v1.ResourcesSpec
-	13, // 12: fleetly.spec.v1.ProcessSpec.placement:type_name -> fleetly.spec.v1.PlacementSpec
-	14, // 13: fleetly.spec.v1.ProcessSpec.volumes:type_name -> fleetly.spec.v1.VolumeAttachment
+	25, // 8: fleetly.spec.v1.ProcessSpec.env:type_name -> fleetly.spec.v1.ProcessSpec.EnvEntry
+	10, // 9: fleetly.spec.v1.ProcessSpec.ports:type_name -> fleetly.spec.v1.PortSpec
+	11, // 10: fleetly.spec.v1.ProcessSpec.healthcheck:type_name -> fleetly.spec.v1.HealthcheckSpec
+	13, // 11: fleetly.spec.v1.ProcessSpec.resources:type_name -> fleetly.spec.v1.ResourcesSpec
+	14, // 12: fleetly.spec.v1.ProcessSpec.placement:type_name -> fleetly.spec.v1.PlacementSpec
+	15, // 13: fleetly.spec.v1.ProcessSpec.volumes:type_name -> fleetly.spec.v1.VolumeAttachment
 	0,  // 14: fleetly.spec.v1.ProcessSpec.strategy:type_name -> fleetly.spec.v1.DeployStrategy
-	1,  // 15: fleetly.spec.v1.PortSpec.protocol:type_name -> fleetly.spec.v1.Protocol
-	11, // 16: fleetly.spec.v1.HealthcheckSpec.exec:type_name -> fleetly.spec.v1.ExecProbe
-	26, // 17: fleetly.spec.v1.HealthcheckSpec.interval:type_name -> google.protobuf.Duration
-	26, // 18: fleetly.spec.v1.HealthcheckSpec.timeout:type_name -> google.protobuf.Duration
-	26, // 19: fleetly.spec.v1.HealthcheckSpec.start_period:type_name -> google.protobuf.Duration
-	16, // 20: fleetly.spec.v1.BuildSpec.railpack:type_name -> fleetly.spec.v1.RailpackBuilder
-	17, // 21: fleetly.spec.v1.BuildSpec.static:type_name -> fleetly.spec.v1.StaticBuilder
-	25, // 22: fleetly.spec.v1.JobSpec.env:type_name -> fleetly.spec.v1.JobSpec.EnvEntry
-	26, // 23: fleetly.spec.v1.JobSpec.ttl:type_name -> google.protobuf.Duration
-	8,  // 24: fleetly.spec.v1.JobSpec.process:type_name -> fleetly.spec.v1.ProcessSpec
-	20, // 25: fleetly.spec.v1.TaskSpec.task:type_name -> fleetly.spec.v1.TaskRef
-	8,  // 26: fleetly.spec.v1.TaskSpec.process:type_name -> fleetly.spec.v1.ProcessSpec
-	22, // 27: fleetly.spec.v1.DatabaseSpec.database:type_name -> fleetly.spec.v1.DatabaseRef
-	12, // 28: fleetly.spec.v1.DatabaseSpec.resources:type_name -> fleetly.spec.v1.ResourcesSpec
-	23, // 29: fleetly.spec.v1.DatabaseSpec.backup_policy:type_name -> fleetly.spec.v1.BackupPolicySpec
-	26, // 30: fleetly.spec.v1.BackupPolicySpec.interval:type_name -> google.protobuf.Duration
-	26, // 31: fleetly.spec.v1.BackupPolicySpec.retention:type_name -> google.protobuf.Duration
-	32, // [32:32] is the sub-list for method output_type
-	32, // [32:32] is the sub-list for method input_type
-	32, // [32:32] is the sub-list for extension type_name
-	32, // [32:32] is the sub-list for extension extendee
-	0,  // [0:32] is the sub-list for field type_name
+	9,  // 15: fleetly.spec.v1.ProcessSpec.config_mounts:type_name -> fleetly.spec.v1.ConfigMount
+	1,  // 16: fleetly.spec.v1.PortSpec.protocol:type_name -> fleetly.spec.v1.Protocol
+	12, // 17: fleetly.spec.v1.HealthcheckSpec.exec:type_name -> fleetly.spec.v1.ExecProbe
+	27, // 18: fleetly.spec.v1.HealthcheckSpec.interval:type_name -> google.protobuf.Duration
+	27, // 19: fleetly.spec.v1.HealthcheckSpec.timeout:type_name -> google.protobuf.Duration
+	27, // 20: fleetly.spec.v1.HealthcheckSpec.start_period:type_name -> google.protobuf.Duration
+	17, // 21: fleetly.spec.v1.BuildSpec.railpack:type_name -> fleetly.spec.v1.RailpackBuilder
+	18, // 22: fleetly.spec.v1.BuildSpec.static:type_name -> fleetly.spec.v1.StaticBuilder
+	26, // 23: fleetly.spec.v1.JobSpec.env:type_name -> fleetly.spec.v1.JobSpec.EnvEntry
+	27, // 24: fleetly.spec.v1.JobSpec.ttl:type_name -> google.protobuf.Duration
+	8,  // 25: fleetly.spec.v1.JobSpec.process:type_name -> fleetly.spec.v1.ProcessSpec
+	21, // 26: fleetly.spec.v1.TaskSpec.task:type_name -> fleetly.spec.v1.TaskRef
+	8,  // 27: fleetly.spec.v1.TaskSpec.process:type_name -> fleetly.spec.v1.ProcessSpec
+	23, // 28: fleetly.spec.v1.DatabaseSpec.database:type_name -> fleetly.spec.v1.DatabaseRef
+	13, // 29: fleetly.spec.v1.DatabaseSpec.resources:type_name -> fleetly.spec.v1.ResourcesSpec
+	24, // 30: fleetly.spec.v1.DatabaseSpec.backup_policy:type_name -> fleetly.spec.v1.BackupPolicySpec
+	27, // 31: fleetly.spec.v1.BackupPolicySpec.interval:type_name -> google.protobuf.Duration
+	27, // 32: fleetly.spec.v1.BackupPolicySpec.retention:type_name -> google.protobuf.Duration
+	33, // [33:33] is the sub-list for method output_type
+	33, // [33:33] is the sub-list for method input_type
+	33, // [33:33] is the sub-list for extension type_name
+	33, // [33:33] is the sub-list for extension extendee
+	0,  // [0:33] is the sub-list for field type_name
 }
 
 func init() { file_fleetly_spec_v1_spec_proto_init() }
@@ -2091,17 +2162,17 @@ func file_fleetly_spec_v1_spec_proto_init() {
 		(*ProcessSpec_Image)(nil),
 		(*ProcessSpec_FromBuild)(nil),
 	}
-	file_fleetly_spec_v1_spec_proto_msgTypes[8].OneofWrappers = []any{
+	file_fleetly_spec_v1_spec_proto_msgTypes[9].OneofWrappers = []any{
 		(*HealthcheckSpec_HttpPath)(nil),
 		(*HealthcheckSpec_TcpPort)(nil),
 		(*HealthcheckSpec_Exec)(nil),
 	}
-	file_fleetly_spec_v1_spec_proto_msgTypes[13].OneofWrappers = []any{
+	file_fleetly_spec_v1_spec_proto_msgTypes[14].OneofWrappers = []any{
 		(*BuildSpec_Dockerfile)(nil),
 		(*BuildSpec_Railpack)(nil),
 		(*BuildSpec_Static)(nil),
 	}
-	file_fleetly_spec_v1_spec_proto_msgTypes[16].OneofWrappers = []any{
+	file_fleetly_spec_v1_spec_proto_msgTypes[17].OneofWrappers = []any{
 		(*JobSpec_Image)(nil),
 		(*JobSpec_FromBuild)(nil),
 	}
@@ -2111,7 +2182,7 @@ func file_fleetly_spec_v1_spec_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fleetly_spec_v1_spec_proto_rawDesc), len(file_fleetly_spec_v1_spec_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   24,
+			NumMessages:   25,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

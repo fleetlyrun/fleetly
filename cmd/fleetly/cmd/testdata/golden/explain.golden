@@ -126,6 +126,21 @@ app (spec) — AppSpec: desired state of a long-running deployable unit (an app 
                 },
                 "type": "array"
               },
+              "config_mounts": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "config": {
+                      "type": "string"
+                    },
+                    "target": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              },
               "config_refs": {
                 "items": {
                   "type": "string"
@@ -332,6 +347,21 @@ app (spec) — AppSpec: desired state of a long-running deployable unit (an app 
           "command": {
             "items": {
               "type": "string"
+            },
+            "type": "array"
+          },
+          "config_mounts": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "config": {
+                  "type": "string"
+                },
+                "target": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
             },
             "type": "array"
           },

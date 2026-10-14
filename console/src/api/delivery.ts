@@ -442,6 +442,19 @@ export interface components {
             deployment?: components["schemas"]["v1Deployment"];
         };
         /**
+         * DeployStrategy 是部署切换策略（CONTEXT.md Deployment Strategy 词条：
+         *     rolling | blue-green；Avoid 表两词条不引入——渐进分流与代次槽位机制
+         *     均显式不做，ADR-0048）。blue-green = engine 的编排变体（Runtime 契约
+         *     不变，ADR-0048）：双代窗期间两代载体并存，新代 L1 全就绪才切换流量。
+         *     UNSPECIFIED（零值）语义归一为 rolling——存量 Revision 无该字段重放即
+         *     rolling，无迁移面。
+         *     ConfigMount 是单条 Config 挂载（名引用 + 容器内目标路径）。
+         */
+        v1ConfigMount: {
+            config?: string;
+            target?: string;
+        };
+        /**
          * DeployRequest 四源互斥（image 直投 / compose_yaml 受控子集 / upload_id
          *     上传产物 / spec_file 裸 AppSpec，F3.5）。
          */
@@ -522,13 +535,7 @@ export interface components {
             admission?: components["schemas"]["v1Admission"];
         };
         /**
-         * DeployStrategy 是部署切换策略（CONTEXT.md Deployment Strategy 词条：
-         *     rolling | blue-green；Avoid 表两词条不引入——渐进分流与代次槽位机制
-         *     均显式不做，ADR-0048）。blue-green = engine 的编排变体（Runtime 契约
-         *     不变，ADR-0048）：双代窗期间两代载体并存，新代 L1 全就绪才切换流量。
-         *     UNSPECIFIED（零值）语义归一为 rolling——存量 Revision 无该字段重放即
-         *     rolling，无迁移面。
-         * @description - DEPLOY_STRATEGY_UNSPECIFIED: 缺省 = rolling（归一面：投影/引擎按 rolling 语义消费）。
+         * - DEPLOY_STRATEGY_UNSPECIFIED: 缺省 = rolling（归一面：投影/引擎按 rolling 语义消费）。
          *      - DEPLOY_STRATEGY_ROLLING: 滚动替换（与既有语义逐字节相同——存量零变化）。
          *      - DEPLOY_STRATEGY_BLUE_GREEN: 蓝绿：旧代∪新代双代窗 → 新代 L1 门 → 切换 → 观察窗 → 收口。
          * @default DEPLOY_STRATEGY_UNSPECIFIED
@@ -717,6 +724,13 @@ export interface components {
              *     失败）。
              */
             database_refs?: string[];
+            /**
+             * config_mounts 是 Config 挂载声明（config 按名引用 Project Config 当前
+             *     版本；target 是容器内绝对路径）。内容经材料面 Ensure 期下发（值不进
+             *     Spec/Revision，ADR-0014 附录 A.2 同源纪律）。compose 面 = 服务
+             *     configs（long-form source/target；顶层声明须 external: true）。
+             */
+            config_mounts?: components["schemas"]["v1ConfigMount"][];
         };
         /**
          * ProcessStrategy 是 Revision 冻结体的单进程策略摘要（F3.1：双代窗叙事

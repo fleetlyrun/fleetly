@@ -125,6 +125,38 @@ type secretCarrier struct {
 // ensureSecrets 把 Materials.SecretFiles 落为 swarm secret 载体（值不落
 // label 或明文 env——容器内以 /run/secrets/<平台名> 文件注入，ADR-0014）。
 // 返回平台名 → 载体引用映射（ContainerSpec.Secrets 引用）。
+// ensureConfigs 把 Materials.ConfigFiles 落为 swarm config 载体（内容寻址
+// 命名同 secret 形态；容器内按 Workload.ConfigMounts 的目标路径挂载）。
+func (p *Provider) ensureConfigs(ctx context.Context, m capability.Materials) (map[string]secretCarrier, error) {
+	out := map[string]secretCarrier{}
+	for name, value := range m.ConfigFiles {
+		carrier := secretCarrierName(name, fingerprintHex(value))
+		if res, err := p.inspectConfigCarrier(ctx, carrier); err == nil {
+			out[name] = secretCarrier{id: res.Config.ID, name: carrier}
+			continue
+		} else if !isNotFound(err) {
+			return nil, fmt.Errorf("swarm ensure config %s: inspect: %w", carrier, err)
+		}
+		resp, err := p.cli.ConfigCreate(ctx, client.ConfigCreateOptions{
+			Spec: swarm.ConfigSpec{
+				Annotations: swarm.Annotations{
+					Name: carrier,
+					Labels: map[string]string{
+						labelManaged: "true",
+						labelProcess: sanitizeNamePart(name),
+					},
+				},
+				Data: value,
+			},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("swarm ensure config %s: create: %w", carrier, err)
+		}
+		out[name] = secretCarrier{id: resp.ID, name: carrier}
+	}
+	return out, nil
+}
+
 func (p *Provider) ensureSecrets(ctx context.Context, m capability.Materials) (map[string]secretCarrier, error) {
 	out := map[string]secretCarrier{}
 	for name, value := range m.SecretFiles {
@@ -165,6 +197,15 @@ func (p *Provider) inspectSecretCarrier(ctx context.Context, name string) (clien
 		return p.secretInspect(ctx, name)
 	}
 	return p.cli.SecretInspect(ctx, name, client.SecretInspectOptions{})
+}
+
+// inspectConfigCarrier 是 config 载体的在册探针（ensureConfigs 的 get 半边；
+// 测试经 configInspect 注入假 daemon 面）。
+func (p *Provider) inspectConfigCarrier(ctx context.Context, name string) (client.ConfigInspectResult, error) {
+	if p.configInspect != nil {
+		return p.configInspect(ctx, name)
+	}
+	return p.cli.ConfigInspect(ctx, name, client.ConfigInspectOptions{})
 }
 
 // fingerprintHex 是材料值的短指纹（载体版本名用；非对账指纹）。

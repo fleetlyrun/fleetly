@@ -75,20 +75,31 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 	if err != nil {
 		return capability.EnsureReport{}, fmt.Errorf("swarm ensure %s: %w", ns, err)
 	}
+	callConfigs, err := p.ensureConfigs(ctx, m)
+	if err != nil {
+		return capability.EnsureReport{}, fmt.Errorf("swarm ensure %s: %w", ns, err)
+	}
 	carrierSets := map[*capability.Materials]map[string]secretCarrier{&m: callCarriers}
+	configSets := map[*capability.Materials]map[string]secretCarrier{&m: callConfigs}
 	for i := range ws {
 		pm := ws[i].Materials
 		if pm == nil {
 			continue
 		}
-		if _, seen := carrierSets[pm]; seen {
-			continue
+		if _, seen := carrierSets[pm]; !seen {
+			c, cerr := p.ensureSecrets(ctx, *pm)
+			if cerr != nil {
+				return capability.EnsureReport{}, fmt.Errorf("swarm ensure %s: %w", ns, cerr)
+			}
+			carrierSets[pm] = c
 		}
-		c, cerr := p.ensureSecrets(ctx, *pm)
-		if cerr != nil {
-			return capability.EnsureReport{}, fmt.Errorf("swarm ensure %s: %w", ns, cerr)
+		if _, seen := configSets[pm]; !seen {
+			c, cerr := p.ensureConfigs(ctx, *pm)
+			if cerr != nil {
+				return capability.EnsureReport{}, fmt.Errorf("swarm ensure %s: %w", ns, cerr)
+			}
+			configSets[pm] = c
 		}
-		carrierSets[pm] = c
 	}
 	materialsOf := func(w capability.Workload) capability.Materials {
 		if w.Materials != nil {
@@ -118,7 +129,11 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 		if w.Materials != nil {
 			carriers = carrierSets[w.Materials]
 		}
-		spec := toServiceSpec(ns, w, gen, carriers)
+		configs := callConfigs
+		if w.Materials != nil {
+			configs = configSets[w.Materials]
+		}
+		spec := toServiceSpec(ns, w, gen, carriers, configs)
 		// 网络引用名→ID 先行解析（服务端对名字输入会改写为 ID——发送
 		// ID 使回读形态与发送形态一致，no-op 比对的前提）。
 		spec, nerr := p.resolveNetworkTargets(ctx, spec, resolvedNets)

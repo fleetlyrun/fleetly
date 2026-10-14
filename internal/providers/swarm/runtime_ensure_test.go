@@ -347,7 +347,7 @@ func TestAddressesMatchesByWorkloadID(t *testing.T) {
 	ctx := context.Background()
 
 	makeSvc := func(name, wlid string, vip string) swarm.Service {
-		spec := toServiceSpec(ensureNS, capability.Workload{ID: wlid, Process: "web-1"}, 41, nil)
+		spec := toServiceSpec(ensureNS, capability.Workload{ID: wlid, Process: "web-1"}, 41, nil, nil)
 		spec.Name = name
 		spec.Labels[labelWorkload] = wlid
 		svc := swarm.Service{ID: "srv-" + name, Spec: spec}

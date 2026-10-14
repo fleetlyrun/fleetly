@@ -354,7 +354,7 @@ func TestBuildUtilityPodNetMembershipLabels(t *testing.T) {
 func TestPutDeploymentRetriesOnConflict(t *testing.T) {
 	p, cli := newFakeProvider()
 	ctx := context.Background()
-	seed := toDeployment(appNS(), capability.Workload{ID: "w1", Process: "api", Image: "nginx:1.27"}, 1, nil, nil)
+	seed := toDeployment(appNS(), capability.Workload{ID: "w1", Process: "api", Image: "nginx:1.27"}, 1, nil, nil, nil)
 	seed.ResourceVersion = "10"
 	_, err := cli.AppsV1().Deployments("fleetly-shop").Create(ctx, seed, metav1.CreateOptions{})
 	require.NoError(t, err)

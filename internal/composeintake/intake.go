@@ -46,6 +46,7 @@ var topAllowedKeys = map[string]bool{
 	"volumes":                   true, // external 声明律
 	"secrets":                   true, // external 声明律
 	"x-fleetly-first-boot-jobs": true, // ADR-0033 形态不动
+	"configs":                   true, // external 形态（平台 Configs 的引用声明；inline file 拒）
 }
 
 // serviceAllowedKeys 是 service 面白名单（compose 官方键名；只增）。反射
@@ -64,6 +65,7 @@ var serviceAllowedKeys = map[string]bool{
 	"volumes":     true,
 	"secrets":     true,
 	"labels":      true, // 消费面仅 fleetly.databases（database_refs）；其余 label 名拒收（运行时不消费，静默丢即静默失败）
+	"configs":     true, // 消费面仅 long-form source/target（config_mounts）；短形态拒收
 }
 
 // deployAllowedKeys / healthcheckAllowedKeys 是嵌套块白名单（deploy 与
@@ -130,6 +132,23 @@ func FromYAML(body []byte, appID, projectID string, vars VariableLookup) (*specv
 		}
 		return nil, invalidf("compose."+key, "official compose field %q is not enabled on fleetly (supported: services, networks, volumes, secrets)", key)
 	}
+	if rawConfigs, present := raw["configs"]; present && rawConfigs != nil {
+		cfgs, ok := rawConfigs.(map[string]any)
+		if !ok {
+			return nil, invalidf("compose.configs", "must be a mapping of config name to declaration")
+		}
+		for cname, decl := range cfgs {
+			d, ok := decl.(map[string]any)
+			if !ok {
+				return nil, invalidf("compose.configs."+cname, "config declaration must be a mapping")
+			}
+			if ext, present := d["external"]; !present {
+				return nil, invalidf("compose.configs."+cname, "inline file content is not supported — upload the file via the configs API and declare it external: true")
+			} else if b, isBool := ext.(bool); !isBool || !b {
+				return nil, invalidf("compose.configs."+cname, "external must be true (platform Configs are the content source; upload via the configs API)")
+			}
+		}
+	}
 	jobsRaw := raw["x-fleetly-first-boot-jobs"]
 	project, err := loader.ModelToProject(raw, loader.ToOptions(&details, []func(*loader.Options){opts}), details)
 	if err != nil {
@@ -160,7 +179,7 @@ func FromYAML(body []byte, appID, projectID string, vars VariableLookup) (*specv
 		svc := project.Services[name]
 		// 服务 label 方言：fleetly.job: init = 一次性作业（不落 processes）。
 		if svc.Labels["fleetly.job"] != "" {
-			j, jerr := initJobFromService(project, fmt.Sprintf("compose.services.%s", name), name, svc)
+			j, jerr := initJobFromService(fmt.Sprintf("compose.services.%s", name), name, svc)
 			if jerr != nil {
 				return nil, jerr
 			}
@@ -410,7 +429,7 @@ func escapedShellDollars(cmd []string) []string {
 // fleetly.job.timeout → ttl；healthcheck 仅工具面自检不入作业；其余键走
 // 各自拒绝面（volumes → 平台 configs/secrets 迁移面，ports 对一次性作业
 // 无意义——firstBootJobRejections 同措辞）。
-func initJobFromService(project *types.Project, field, name string, svc types.ServiceConfig) (*specv1.JobSpec, error) {
+func initJobFromService(field, name string, svc types.ServiceConfig) (*specv1.JobSpec, error) {
 	for key := range svc.Labels {
 		switch key {
 		case "fleetly.job", "fleetly.job.timeout", "fleetly.databases":
@@ -432,17 +451,35 @@ func initJobFromService(project *types.Project, field, name string, svc types.Se
 		return nil, err
 	}
 	p.Env = env
-	refs, err := jobSecretRefs(field+".secrets", svc.Secrets, project.Secrets)
-	if err != nil {
-		return nil, err
+	// secrets：typed 面直接取名（external 声明律同服务面；原始 any 形态
+	// 的 jobSecretRefs 不吃 typed 切片）。
+	if len(svc.Secrets) > 0 {
+		secretRefs := make([]string, 0, len(svc.Secrets))
+		for _, sr := range svc.Secrets {
+			secretRefs = append(secretRefs, sr.Source)
+		}
+		p.SecretRefs = secretRefs
 	}
-	p.SecretRefs = refs
 	if lbl := strings.TrimSpace(svc.Labels["fleetly.databases"]); lbl != "" {
 		dbRefs, derr := parseDatabaseRefs(field+".labels[fleetly.databases]", lbl)
 		if derr != nil {
 			return nil, derr
 		}
 		p.DatabaseRefs = dbRefs
+	}
+	// 作业 configs（long-form）→ config_mounts（bootstrap SQL 类材料的
+	// 正当消费面——deploy-time jobs cannot mount 的旧拒绝随挂载机制落地
+	// 反转）。
+	if len(svc.Configs) > 0 {
+		mounts := make([]*specv1.ConfigMount, 0, len(svc.Configs))
+		for i, c := range svc.Configs {
+			cf := field + ".configs[" + fmt.Sprintf("%d", i) + "]"
+			if c.Target == "" {
+				return nil, invalidf(cf, "long-form source/target is required (target is the container path the file mounts at; got source %q without target)", c.Source)
+			}
+			mounts = append(mounts, &specv1.ConfigMount{Config: c.Source, Target: c.Target})
+		}
+		p.ConfigMounts = mounts
 	}
 	j := &specv1.JobSpec{Name: name, Process: p}
 	if raw := strings.TrimSpace(svc.Labels["fleetly.job.timeout"]); raw != "" {
@@ -542,6 +579,21 @@ func serviceProcess(project *types.Project, name string, svc types.ServiceConfig
 			return nil, "", rerr
 		}
 		p.DatabaseRefs = refs
+	}
+
+	// 服务 configs（long-form source/target）→ config_mounts：内容由平台
+	// Configs 当前版本经材料面下发（external 声明律已在顶层执法）。短形态
+	//（无 target）拒收——挂载目标语义是本面的存在理由。
+	if len(svc.Configs) > 0 {
+		mounts := make([]*specv1.ConfigMount, 0, len(svc.Configs))
+		for i, c := range svc.Configs {
+			cf := field + ".configs[" + fmt.Sprintf("%d", i) + "]"
+			if c.Target == "" {
+				return nil, "", invalidf(cf, "long-form source/target is required (target is the container path the file mounts at; got source %q without target)", c.Source)
+			}
+			mounts = append(mounts, &specv1.ConfigMount{Config: c.Source, Target: c.Target})
+		}
+		p.ConfigMounts = mounts
 	}
 
 	ports, err := servicePorts(field+".ports", svc.Ports)

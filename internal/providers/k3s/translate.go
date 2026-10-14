@@ -308,7 +308,7 @@ func sortedKeys[V any](m map[string]V) []string {
 //     注入同语义；defaultMode 0444——非 root USER 镜像可读，staging 实证
 //     口径）。
 //   - HostBinds → hostPath 只读。
-func toContainer(w capability.Workload, secretFiles map[string]string) corev1.Container {
+func toContainer(w capability.Workload, secretFiles map[string]string, configFiles map[string]string) corev1.Container {
 	c := corev1.Container{
 		Name:    "main",
 		Image:   w.Image,
@@ -441,10 +441,10 @@ func secretObjectName(platformName string) string {
 
 // podTemplate 构造 Pod 模板（Deployment/DaemonSet 共用）。restart 由载体
 // 类型承载（Deployment=Always 语义；one-shot Pod=Never）。
-func podTemplate(ns capability.NamespaceRef, w capability.Workload, gen capability.Generation, secretFiles map[string]string, restart corev1.RestartPolicy) corev1.PodTemplateSpec {
+func podTemplate(ns capability.NamespaceRef, w capability.Workload, gen capability.Generation, secretFiles map[string]string, configFiles map[string]string, restart corev1.RestartPolicy) corev1.PodTemplateSpec {
 	labels := workloadLabels(ns, w, gen)
 	spec := corev1.PodSpec{
-		Containers: []corev1.Container{toContainer(w, secretFiles)},
+		Containers: []corev1.Container{toContainer(w, secretFiles, configFiles)},
 		// 载体不消费 k8s API：SA token 自动挂载关闭。双因：kubelet 的
 		// kube-api-access 投影卷要在 /run/secrets/kubernetes.io 建挂载点，
 		// 与材料 projected 卷的 /run/secrets 只读挂载冲突（runc "read-only
@@ -522,8 +522,8 @@ func podTemplate(ns capability.NamespaceRef, w capability.Workload, gen capabili
 func ptr[T any](v T) *T { return &v }
 
 // toDeployment 把长运行 Workload 翻译为 Deployment。
-func toDeployment(ns capability.NamespaceRef, w capability.Workload, gen capability.Generation, secretFiles map[string]string, pullSecrets []string) *appsv1.Deployment {
-	template := podTemplate(ns, w, gen, secretFiles, corev1.RestartPolicyAlways)
+func toDeployment(ns capability.NamespaceRef, w capability.Workload, gen capability.Generation, secretFiles map[string]string, configFiles map[string]string, pullSecrets []string) *appsv1.Deployment {
+	template := podTemplate(ns, w, gen, secretFiles, configFiles, corev1.RestartPolicyAlways)
 	for _, name := range pullSecrets {
 		template.Spec.ImagePullSecrets = append(template.Spec.ImagePullSecrets,
 			corev1.LocalObjectReference{Name: name})
@@ -560,8 +560,8 @@ func toDeployment(ns capability.NamespaceRef, w capability.Workload, gen capabil
 
 // toDaemonSet 把 Global 声明（受管采集面每节点一载体，ADR-0041）翻译为
 // DaemonSet（Workload.Global 的 k8s 原语，架构 §5 契约注释的既定映射）。
-func toDaemonSet(ns capability.NamespaceRef, w capability.Workload, gen capability.Generation, secretFiles map[string]string, pullSecrets []string) *appsv1.DaemonSet {
-	template := podTemplate(ns, w, gen, secretFiles, corev1.RestartPolicyAlways)
+func toDaemonSet(ns capability.NamespaceRef, w capability.Workload, gen capability.Generation, secretFiles map[string]string, configFiles map[string]string, pullSecrets []string) *appsv1.DaemonSet {
+	template := podTemplate(ns, w, gen, secretFiles, configFiles, corev1.RestartPolicyAlways)
 	for _, name := range pullSecrets {
 		template.Spec.ImagePullSecrets = append(template.Spec.ImagePullSecrets,
 			corev1.LocalObjectReference{Name: name})
@@ -582,8 +582,8 @@ func toDaemonSet(ns capability.NamespaceRef, w capability.Workload, gen capabili
 
 // toOneShotPod 把 one-shot Run Workload（RestartNever，ADR-0025 决策 1：
 // 退出即终态、补足由平台池语义承担）翻译为独立 Pod。
-func toOneShotPod(ns capability.NamespaceRef, w capability.Workload, gen capability.Generation, secretFiles map[string]string, pullSecrets []string) *corev1.Pod {
-	template := podTemplate(ns, w, gen, secretFiles, corev1.RestartPolicyNever)
+func toOneShotPod(ns capability.NamespaceRef, w capability.Workload, gen capability.Generation, secretFiles map[string]string, configFiles map[string]string, pullSecrets []string) *corev1.Pod {
+	template := podTemplate(ns, w, gen, secretFiles, configFiles, corev1.RestartPolicyNever)
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   workloadName(ns, w, gen),

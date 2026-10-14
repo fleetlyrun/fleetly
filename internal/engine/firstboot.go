@@ -199,6 +199,8 @@ func (e *Engine) mintFirstBootJob(ctx context.Context, d *deployment.Deployment,
 	}
 	// 托管库引用随铸面透传（任务域 Ensure 前注入 FLEETLY_DB_* env）。
 	minted.Process.DatabaseRefs = p.GetDatabaseRefs()
+	// Config 挂载声明随铸面透传（任务域材料解析 Config 内容 → 目标路径挂载）。
+	minted.Process.ConfigMounts = p.GetConfigMounts()
 	wait := state.FormatTime(e.clock.Now().Add(job.GetTtl().AsDuration() + e.opts.FirstBootWaitGrace))
 	return e.mintOneShotTask(ctx, spec.GetApp().GetProject(),
 		func() (*specv1.TaskSpec, error) { return minted, nil },

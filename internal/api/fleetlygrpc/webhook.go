@@ -22,7 +22,6 @@ import (
 	"path/filepath"
 	"strings"
 
-
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	"github.com/fleetlyrun/fleetly/internal/api/apperr"

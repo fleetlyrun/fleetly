@@ -29,7 +29,7 @@ func TestTaskDomainLifecycleMapping(t *testing.T) {
 			{Name: "run-01JRUN0000000000000000000"},
 		},
 	}
-	spec := toServiceSpec(ns, w, capability.Generation(1), nil)
+	spec := toServiceSpec(ns, w, capability.Generation(1), nil, nil)
 
 	// Task 域命名：fleetly-run-<run id>。
 	assert.Equal(t, "fleetly-run-01jrun0000000000000000000", spec.Name)
@@ -58,7 +58,7 @@ func TestDefaultRestartPolicyIsAny(t *testing.T) {
 	ns := capability.NamespaceRef{Team: "acme", Project: "shop", App: "web"}
 	for _, restart := range []capability.RestartPolicy{capability.RestartDefault, "", capability.RestartAlways} {
 		w := capability.Workload{ID: "wl_01H", Process: "web", Image: "nginx:1", Restart: restart}
-		spec := toServiceSpec(ns, w, capability.Generation(1), nil)
+		spec := toServiceSpec(ns, w, capability.Generation(1), nil, nil)
 		require.NotNil(t, spec.TaskTemplate.RestartPolicy)
 		assert.Equal(t, swarm.RestartPolicyConditionAny, spec.TaskTemplate.RestartPolicy.Condition,
 			"restart %q must map to any", restart)

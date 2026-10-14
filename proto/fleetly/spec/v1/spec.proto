@@ -90,7 +90,12 @@ message ProcessSpec {
   // secret_refs 纪律）。compose 面 = 服务级注记 fleetly.databases（逗号
   // 分隔多名）。名字形态 = 模板 kebab（引用在册实例；缺失 = 部署期精确
   // 失败）。
-  repeated string database_refs = 16;}
+  repeated string database_refs = 16;
+  // config_mounts 是 Config 挂载声明（config 按名引用 Project Config 当前
+  // 版本；target 是容器内绝对路径）。内容经材料面 Ensure 期下发（值不进
+  // Spec/Revision，ADR-0014 附录 A.2 同源纪律）。compose 面 = 服务
+  // configs（long-form source/target；顶层声明须 external: true）。
+  repeated ConfigMount config_mounts = 17;}
 
 // DeployStrategy 是部署切换策略（CONTEXT.md Deployment Strategy 词条：
 // rolling | blue-green；Avoid 表两词条不引入——渐进分流与代次槽位机制
@@ -98,6 +103,12 @@ message ProcessSpec {
 // 不变，ADR-0048）：双代窗期间两代载体并存，新代 L1 全就绪才切换流量。
 // UNSPECIFIED（零值）语义归一为 rolling——存量 Revision 无该字段重放即
 // rolling，无迁移面。
+// ConfigMount 是单条 Config 挂载（名引用 + 容器内目标路径）。
+message ConfigMount {
+  string config = 1;
+  string target = 2;
+}
+
 enum DeployStrategy {
   // 缺省 = rolling（归一面：投影/引擎按 rolling 语义消费）。
   DEPLOY_STRATEGY_UNSPECIFIED = 0;

@@ -183,7 +183,9 @@ func nsSelector(ns capability.NamespaceRef) map[string]string {
 //     ADR-0025 决策 1）；StopGrace → StopGracePeriod。
 //   - Addressing → 网络别名（平台标准 DNS 名的 swarm 原语映射，ADR-0025
 //     决策 6；跨服务 alias 的 DNS RR 行为 e2e 实证后定稿）。
-func toServiceSpec(ns capability.NamespaceRef, w capability.Workload, gen capability.Generation, secretCarriers map[string]secretCarrier) swarm.ServiceSpec {
+func toServiceSpec(ns capability.NamespaceRef, w capability.Workload, gen capability.Generation,
+	secretCarriers map[string]secretCarrier, configCarriers map[string]secretCarrier,
+) swarm.ServiceSpec {
 	container := &swarm.ContainerSpec{
 		Image:    w.Image,
 		Labels:   workloadLabels(ns, w, gen),
@@ -239,6 +241,25 @@ func toServiceSpec(ns capability.NamespaceRef, w capability.Workload, gen capabi
 			SecretName: c.name,
 			File: &swarm.SecretReferenceFileTarget{
 				Name: platformName,
+				UID:  "0",
+				GID:  "0",
+				Mode: 0o444,
+			},
+		})
+	}
+	// Config 挂载（Workload.ConfigMounts 声明面）：内容已落 config 载体，
+	// 容器内按声明目标路径挂载（swarm 原生 config target 语义）。排序遍历
+	// 同 secrets（spec 逐字节稳定）。
+	for _, mount := range sortedConfigMounts(w.ConfigMounts) {
+		c, ok := configCarriers[mount.Name]
+		if !ok {
+			continue // 声明无材料 = 材料解析面已失败，此处防御性跳过
+		}
+		container.Configs = append(container.Configs, &swarm.ConfigReference{
+			ConfigID:   c.id,
+			ConfigName: c.name,
+			File: &swarm.ConfigReferenceFileTarget{
+				Name: mount.Target,
 				UID:  "0",
 				GID:  "0",
 				Mode: 0o444,
@@ -504,3 +525,16 @@ func cpuMillisToNano(millis int64) int64 {
 
 // encodeRegistryAuth 已单源化至 capability.EncodeRegistryAuth（拉取凭证
 // 的 X-Registry-Auth 形态三面共用；2026-10-03 架构评审候选 5 收口）。
+
+// sortedConfigMounts 是 Config 挂载声明的稳定排序（secrets sortedKeys 同
+// 理由：spec 逐字节稳定——幂等重放 diff 不产生假变更）。
+func sortedConfigMounts(mounts []capability.ConfigMount) []capability.ConfigMount {
+	out := append([]capability.ConfigMount(nil), mounts...)
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Name != out[j].Name {
+			return out[i].Name < out[j].Name
+		}
+		return out[i].Target < out[j].Target
+	})
+	return out
+}

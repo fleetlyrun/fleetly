@@ -65,6 +65,20 @@ func normalizeProbeExec(exec []string) []string {
 	}
 }
 
+// configMountDecls 把 spec 的 Config 挂载声明投影为 capability 形态
+// （名引用 + 容器内目标路径；内容由材料面 Ensure 期下发）。
+func configMountDecls(p *specv1.ProcessSpec) []capability.ConfigMount {
+	decls := p.GetConfigMounts()
+	if len(decls) == 0 {
+		return nil
+	}
+	out := make([]capability.ConfigMount, 0, len(decls))
+	for _, m := range decls {
+		out = append(out, capability.ConfigMount{Name: m.GetConfig(), Target: m.GetTarget()})
+	}
+	return out
+}
+
 // PeerRefs 是跨 Project 引用的解析结果（ADR-0013 附录 A.3）：spec 引用串
 // （project:<id>/<name>）→ 解析后的跨域引用。缺席语义由模式决定：
 // strict（Isolate=false）缺席 = fail-closed 错误；isolate 缺席 = 剥离
@@ -97,11 +111,12 @@ func Project(spec *specv1.AppSpec, team, appName string, buildDigests map[string
 		w := capability.Workload{
 			// Workload ID 是确定性合成串（领域模型 §3：ULID 或等价——唯一
 			// 且跨 Deployment 稳定，Ensure 走 update 路径而非重建）。
-			ID:      WorkloadID(spec.GetApp().GetId(), p.GetName()),
-			Process: p.GetName(),
-			Image:   image,
-			Command: p.GetCommand(),
-			Env:     p.GetEnv(),
+			ID:           WorkloadID(spec.GetApp().GetId(), p.GetName()),
+			Process:      p.GetName(),
+			Image:        image,
+			Command:      p.GetCommand(),
+			Env:          p.GetEnv(),
+			ConfigMounts: configMountDecls(p),
 			Replicas: func() int64 {
 				if r := p.GetReplicas(); r > 0 {
 					return r
@@ -199,6 +214,8 @@ func ProjectTask(t *specv1.TaskSpec, team string, runID string, running bool, eg
 		Env:      p.GetEnv(),
 		Replicas: 1,
 		Restart:  capability.RestartNever,
+
+		ConfigMounts: configMountDecls(p),
 	}
 	if !running {
 		w.Replicas = 0 // 排空中：缩零承载 SIGTERM+StopGrace 停止路径

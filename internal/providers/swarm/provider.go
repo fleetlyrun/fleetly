@@ -61,6 +61,7 @@ type Provider struct {
 	openTaskLog    func(ctx context.Context, taskID string, opts client.TaskLogsOptions) (io.ReadCloser, error)
 	networkInspect func(ctx context.Context, name string) error
 	secretInspect  func(ctx context.Context, name string) (client.SecretInspectResult, error)
+	configInspect  func(ctx context.Context, name string) (client.ConfigInspectResult, error)
 	nodeList       func(ctx context.Context) (client.NodeListResult, error)
 	events         func(ctx context.Context, opts client.EventsListOptions) client.EventsResult
 	// utilityExec 是工具容器 daemon 生命周期的函数值缝（ADR-0039；nil =
