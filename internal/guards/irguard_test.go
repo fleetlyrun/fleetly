@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// irOrchestratorTokens 是 IR（proto/fleetly/spec/** 与 internal/model/**
+// irOrchestratorTokens 是 IR（proto/fleetly/spec/** 与 internal/domain/shared/model/**
 // 的 proto 契约形态——ADR-0001 原文即 spec+model）禁用的编排器语义词
 // （架构 §4：IR 不含编排器 label、载体命名、约束语法、namespace、探针的
 // 编排器方言；平台自有实体名如 Task/TaskSpec 不在此列）。
@@ -30,7 +30,7 @@ var irSubtrees = []struct {
 	ext string
 }{
 	{filepath.Join("proto", "fleetly", "spec"), ".proto"},
-	{filepath.Join("internal", "model"), ".go"},
+	{filepath.Join("internal", "domain", "shared", "model"), ".go"},
 }
 
 // TestSpecIRHasNoOrchestratorVocabulary：Spec IR 的 proto 源与 model 的

@@ -21,7 +21,7 @@ import (
 func TestEngineAssemblyNoDefaultTeamLiteral(t *testing.T) {
 	root := repoRoot(t)
 	scanned := 0
-	for _, pkg := range []string{filepath.Join("internal", "engine"), filepath.Join("internal", "assembly")} {
+	for _, pkg := range []string{filepath.Join("internal", "application", "engine"), filepath.Join("internal", "assembly")} {
 		err := filepath.WalkDir(filepath.Join(root, pkg), func(path string, d fs.DirEntry, walkErr error) error {
 			if walkErr != nil {
 				return walkErr

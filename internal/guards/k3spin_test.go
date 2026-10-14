@@ -59,10 +59,10 @@ func TestK3sPinConstantAndE2EAgree(t *testing.T) {
 // 在线拉 digest 不稳（12 分钟窗超时实证，2026-10-07），预载是 db 段的
 // 确定性前提；模板换版不同步 e2e 即红（同 commit 纪律）。
 func TestPostgresDigestPinAgreement(t *testing.T) {
-	tplSrc := readFileLF(t, "internal/engine/dbtemplate/postgres.go")
+	tplSrc := readFileLF(t, "internal/domain/services/dbtemplate/postgres.go")
 	tpl := regexp.MustCompile(`postgresImageDigest = "(sha256:[0-9a-f]{64})"`).FindStringSubmatch(tplSrc)
 	if len(tpl) != 2 {
-		t.Fatal("internal/engine/dbtemplate/postgres.go no longer declares the postgresImageDigest constant — the pin moved; update this guard with it")
+		t.Fatal("internal/domain/services/dbtemplate/postgres.go no longer declares the postgresImageDigest constant — the pin moved; update this guard with it")
 	}
 	for _, f := range []string{"e2e/dind-k3s.sh", "e2e/dind-runtimeswitch.sh"} {
 		if !strings.Contains(readFileLF(t, f), tpl[1]) {

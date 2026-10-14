@@ -18,7 +18,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/fleetlyrun/fleetly/internal/api/fleetlygrpc"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/fleetlygrpc"
 )
 
 // browseCookieName 是会话 cookie 的常量名（entry 铸 / authorize 读——

@@ -19,8 +19,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/fleetlyrun/fleetly/internal/model/eventcode"
-	"github.com/fleetlyrun/fleetly/internal/schema"
+	"github.com/fleetlyrun/fleetly/internal/application/schema"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/eventcode"
 )
 
 var schemaGoldenUpdate = flag.Bool("update", false, "rewrite golden snapshot files")

@@ -6,7 +6,7 @@ import (
 )
 
 // orchestratorSDKPrefixes 是编排器/基础设施 SDK 的 import 前缀清单
-// （ADR-0001：领域与引擎零编排器概念；架构 §2：internal/providers 是全仓
+// （ADR-0001：领域与引擎零编排器概念；架构 §2：internal/infrastructure/providers 是全仓
 // 唯一允许 import 编排器/基础设施 SDK 的地方）。新增第二运行时的 SDK
 // （k8s.io/*、nomad 等）时在此登记。
 //
@@ -22,10 +22,10 @@ var orchestratorSDKPrefixes = []string{
 	"github.com/containous/",
 }
 
-const providersDir = "internal/providers/"
+const providersDir = "internal/infrastructure/providers/"
 
 // TestOrchestratorSDKConfinedToProviders：编排器 SDK 只准出现在
-// internal/providers/**（含测试文件——测试同样不得泄漏 SDK 到领域层）。
+// internal/infrastructure/providers/**（含测试文件——测试同样不得泄漏 SDK 到领域层）。
 func TestOrchestratorSDKConfinedToProviders(t *testing.T) {
 	for _, f := range scanGoFiles(t) {
 		for _, imp := range f.imports {
@@ -33,7 +33,7 @@ func TestOrchestratorSDKConfinedToProviders(t *testing.T) {
 				continue
 			}
 			if !strings.HasPrefix(f.rel, providersDir) {
-				t.Errorf("%s imports orchestrator SDK %q — only internal/providers/** may (ADR-0001)", f.rel, imp)
+				t.Errorf("%s imports orchestrator SDK %q — only internal/infrastructure/providers/** may (ADR-0001)", f.rel, imp)
 			}
 		}
 	}
@@ -45,11 +45,11 @@ func TestOrchestratorSDKConfinedToProviders(t *testing.T) {
 // 违例属裁决项：报修不走守卫豁免）；schema 是 F1.4 自描述真源（只 import
 // genproto 与标准库，engine/api 层反向注入注册——保持叶子防层析下沉）。
 var leafSubtrees = []string{
-	"internal/model/",
-	"internal/spec/",
-	"internal/capability/",
-	"internal/identity/",
-	"internal/schema/",
+	"internal/domain/shared/model/",
+	"internal/domain/shared/spec/",
+	"internal/domain/shared/capability/",
+	"internal/domain/identity/",
+	"internal/application/schema/",
 }
 
 // fleetlyInternal 报告 import 是否 fleetly 主 module 的 internal 包。
@@ -85,9 +85,9 @@ func TestLeafPackagesPurity(t *testing.T) {
 // （架构 §2 依赖方向：providers → {capability, spec, model}）。
 func TestProvidersImportBoundary(t *testing.T) {
 	allowed := []string{
-		"github.com/fleetlyrun/fleetly/internal/capability",
-		"github.com/fleetlyrun/fleetly/internal/model",
-		"github.com/fleetlyrun/fleetly/internal/spec",
+		"github.com/fleetlyrun/fleetly/internal/domain/shared/capability",
+		"github.com/fleetlyrun/fleetly/internal/domain/shared/model",
+		"github.com/fleetlyrun/fleetly/internal/domain/shared/spec",
 	}
 	for _, f := range scanGoFiles(t) {
 		if !strings.HasPrefix(f.rel, providersDir) {
@@ -109,7 +109,7 @@ func TestProvidersImportBoundary(t *testing.T) {
 func TestProvidersOnlyImportedByCmd(t *testing.T) {
 	for _, f := range scanGoFiles(t) {
 		for _, imp := range f.imports {
-			if !strings.HasPrefix(imp, "github.com/fleetlyrun/fleetly/internal/providers/") {
+			if !strings.HasPrefix(imp, "github.com/fleetlyrun/fleetly/internal/infrastructure/providers/") {
 				continue
 			}
 			if !strings.HasPrefix(f.rel, "cmd/") && !strings.HasPrefix(f.rel, providersDir) {

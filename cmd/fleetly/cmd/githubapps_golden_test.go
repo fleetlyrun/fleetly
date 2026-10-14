@@ -24,8 +24,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/fleetlyrun/fleetly/internal/apitest"
-	"github.com/fleetlyrun/fleetly/internal/github"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/github"
+	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
 )
 
 // ghGoldenFake 是 golden 夹具的假 GitHub（TLS——validateAPIBase 只收

@@ -20,9 +20,9 @@ import (
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
-	"github.com/fleetlyrun/fleetly/internal/api/fleetlygrpc"
 	"github.com/fleetlyrun/fleetly/internal/config"
-	"github.com/fleetlyrun/fleetly/internal/console"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/console"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/fleetlygrpc"
 )
 
 // httpReadHeaderTimeout 慢握手/Slowloris 上限；SSE 长连接落地（events

@@ -9,7 +9,7 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/fleetlyrun/fleetly/internal/apitest"
+	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
 )
 
 // goldenExecULID 归一全部 26 位 ULID（会话 ID 与 App ID 皆时间派生不稳；

@@ -2,7 +2,7 @@ package guards
 
 // 守卫 A 的 gRPC 镜像（批 0.5 裁决 C4，2026-10-01）：genproto 服务面 ↔
 // 注册清单一一对应。生产面以生成物为单源（*_grpc.pb.go 每个服务一个
-// Register*Server 函数声明）；消费面扫 internal/api 与 internal/assembly
+// Register*Server 函数声明）；消费面扫 internal/interfaces/grpc 与 internal/assembly
 // 的 Register*Server 引用（register.go 的 RegisterAll 清单 + assembly 对
 // SystemService 的直挂）。两侧 go/parser 提取真实代码符号（AST 级，注释
 // 免疫）。"proto 服务加了、忘进 RegisterAll"（identity REST 六服务整面
@@ -38,7 +38,7 @@ func grpcServiceSurface(t *testing.T) map[string]bool {
 	return services
 }
 
-// grpcRegisteredSurface 枚举 internal/api 与 internal/assembly 非生成物、
+// grpcRegisteredSurface 枚举 internal/interfaces/grpc 与 internal/assembly 非生成物、
 // 非测试 .go 里引用的 Register*Server 服务名（RegisterAll 清单成员与
 // assembly 的直挂）。
 func grpcRegisteredSurface(t *testing.T) map[string]bool {
@@ -51,7 +51,7 @@ func grpcRegisteredSurface(t *testing.T) map[string]bool {
 			}
 		}
 	}
-	for _, root := range []string{filepath.Join("internal", "api"), filepath.Join("internal", "assembly")} {
+	for _, root := range []string{filepath.Join("internal", "interfaces", "grpc"), filepath.Join("internal", "assembly")} {
 		if err := walkGoDecls(t, root, ".go", true, collect); err != nil {
 			t.Fatal(err)
 		}

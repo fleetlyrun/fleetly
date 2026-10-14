@@ -1,6 +1,6 @@
 package guards
 
-// 守卫 B（审计 §10.2 / 元类 M-1+M-6：错误契约字符串化）：internal/api 的
+// 守卫 B（审计 §10.2 / 元类 M-1+M-6：错误契约字符串化）：internal/interfaces 的
 // 生产代码禁止用 strings.Contains(err.Error(), …) 做错误映射分支。文案匹配
 // 的错误契约一改文案就静默退化 E_INTERNAL——上游（state/engine）已有哨兵
 // （state.ErrNotFound/ErrConflict、engine 哨兵区），API 层一律 errors.Is /
@@ -18,16 +18,16 @@ import (
 const errTextMappingNeedle = "strings.Contains(err.Error()"
 
 // errMappingExemptions 是豁免表（文件 → 理由）。当前零条目——Q-13 修复
-// 后 internal/api 已无文案匹配分支。条目不再命中即红（清走死条目）。
+// 后 internal/interfaces 已无文案匹配分支。条目不再命中即红（清走死条目）。
 var errMappingExemptions = map[string]string{}
 
-// TestAPINoErrorTextMapping：internal/api/** 非测试 .go 出现
+// TestAPINoErrorTextMapping：internal/interfaces/** 非测试 .go 出现
 // strings.Contains(err.Error() 即红（err 为最常见变量名；其他拼写的
 // err 检测由 go vet 风格评审承载，本守卫拦主流形态）。
 func TestAPINoErrorTextMapping(t *testing.T) {
 	usedExemptions := map[string]bool{}
 	for _, f := range scanGoFiles(t) {
-		if !strings.HasPrefix(f.rel, "internal/api/") || strings.HasSuffix(f.rel, "_test.go") {
+		if !strings.HasPrefix(f.rel, "internal/interfaces/") || strings.HasSuffix(f.rel, "_test.go") {
 			continue
 		}
 		if !strings.Contains(readFileLF(t, f.rel), errTextMappingNeedle) {

@@ -376,7 +376,7 @@ fi
 # 只对比 postgres.go 自身的 digest 集（常量形态是裸 "sha256:<64hex>" 无
 # @ 前缀；旧实现的 '@sha256' 全仓 grep 命中的是测试文件里的全形态引用串，
 # 把集合差放大到了无关引擎——redis-only 变更也会给 postgres 预算）。
-db_engine_digest() { grep -hoE 'sha256:[0-9a-f]{64}' "$1"/internal/engine/dbtemplate/postgres.go 2>/dev/null | sort; }
+db_engine_digest() { grep -hoE 'sha256:[0-9a-f]{64}' "$1"/internal/domain/services/dbtemplate/postgres.go 2>/dev/null | sort; }
 DB_ROLL_BUDGET=0
 if [ "$(db_engine_digest "$OLDWT")" != "$(db_engine_digest ".")" ]; then
   DB_ROLL_BUDGET=1

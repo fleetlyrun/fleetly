@@ -13,7 +13,7 @@ import (
 	"github.com/lynx-go/commands"
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
-	"github.com/fleetlyrun/fleetly/internal/api/fleetlygrpc"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/fleetlygrpc"
 )
 
 // watchSlice 是可重复 --watch 旗标的值形态（repeatable string flag）。

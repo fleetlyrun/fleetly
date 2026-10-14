@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/fleetlyrun/fleetly/internal/governance"
+	"github.com/fleetlyrun/fleetly/internal/application/governance"
 )
 
 // freezeExemptions 是"变更型但显式不冻结"的豁免表（FullMethod → 理由，

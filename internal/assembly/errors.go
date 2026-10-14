@@ -14,7 +14,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	sharedv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/shared/v1"
-	"github.com/fleetlyrun/fleetly/internal/api/apperr"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 )
 
 // errcodeToHTTP 是 REST 面错误码级 HTTP 状态映射（显式钉扎，全量覆盖在册

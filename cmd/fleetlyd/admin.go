@@ -3,7 +3,7 @@ package main
 // admin.go 是 fleetlyd 的离线维护面（`fleetlyd admin <verb>`，commands 框
 // 架分发）：停机窗口操作，不经 lynx runner 与 wire 装配——数据根被守护
 // 进程持有时禁止执行（SQLite 单写者 + KEK 轮换窗口）。动词集保持极小，
-// 逻辑在 internal/admin；输出人类形态默认 + --json（双形态惯例）。
+// 逻辑在 internal/interfaces/admin；输出人类形态默认 + --json（双形态惯例）。
 
 import (
 	"context"
@@ -15,10 +15,10 @@ import (
 
 	"github.com/lynx-go/commands"
 
-	"github.com/fleetlyrun/fleetly/internal/admin"
 	"github.com/fleetlyrun/fleetly/internal/config"
-	"github.com/fleetlyrun/fleetly/internal/material"
-	"github.com/fleetlyrun/fleetly/internal/state"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/admin"
 )
 
 // newAdminGroup 装配 admin 动词组（嵌套 Dispatch：内层未命中原生上抛

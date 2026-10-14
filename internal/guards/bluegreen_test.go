@@ -24,18 +24,18 @@ import (
 
 // removeCallAllowlist 是 engine 内 runtime.Remove 的合法调用面（域级拆除）。
 var removeCallAllowlist = map[string]string{
-	"internal/engine/teardown.go": "DeleteApp 整域拆除（App 删除动词）",
-	"internal/engine/database.go": "Database 拆除（ADR-0029 域删除动词）",
-	"internal/engine/task.go":     "DeleteTask 整域拆除（Task 域删除动词）",
-	"internal/engine/hygiene.go":  "Task 终态载体清扫（janitor 面）",
-	"internal/engine/browse.go":   "Browse 会话回收（ADR-0051：per-会话独立命名空间即独立收敛单元——Remove 拆单会话域，不经 App 期望集）",
+	"internal/application/engine/teardown.go": "DeleteApp 整域拆除（App 删除动词）",
+	"internal/application/engine/database.go": "Database 拆除（ADR-0029 域删除动词）",
+	"internal/application/engine/task.go":     "DeleteTask 整域拆除（Task 域删除动词）",
+	"internal/application/engine/hygiene.go":  "Task 终态载体清扫（janitor 面）",
+	"internal/application/engine/browse.go":   "Browse 会话回收（ADR-0051：per-会话独立命名空间即独立收敛单元——Remove 拆单会话域，不经 App 期望集）",
 }
 
 var runtimeRemoveRe = regexp.MustCompile(`runtime\.Remove\(`)
 
 func TestBlueGreenCollectionUsesExpectationSetsOnly(t *testing.T) {
 	root := repoRoot(t)
-	engineDir := filepath.Join(root, "internal", "engine")
+	engineDir := filepath.Join(root, "internal", "application", "engine")
 	err := filepath.WalkDir(engineDir, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -77,10 +77,10 @@ func TestBlueGreenCollectionUsesExpectationSetsOnly(t *testing.T) {
 var genSuffixRe = regexp.MustCompile(`"-g|%s-g|-g"|g%d`)
 
 var genNameAllowlist = map[string]string{
-	"internal/engine/bluegreen.go":                                   "genScopedWorkloadID 铸名公式单源（平台 Workload ID 面）",
-	"internal/providers/swarm/translate.go":                          "workloadServiceName 的 scoped 分支（Provider 私有载体名公式）",
-	"internal/state/migrations/00024_deployment_from_generation.sql": "迁移列名（非拼接）",
-	"internal/guards/bluegreen_test.go":                              "本守卫的模式定义",
+	"internal/application/engine/bluegreen.go":                                            "genScopedWorkloadID 铸名公式单源（平台 Workload ID 面）",
+	"internal/infrastructure/providers/swarm/translate.go":                                "workloadServiceName 的 scoped 分支（Provider 私有载体名公式）",
+	"internal/infrastructure/persistence/migrations/00024_deployment_from_generation.sql": "迁移列名（非拼接）",
+	"internal/guards/bluegreen_test.go":                                                   "本守卫的模式定义",
 }
 
 func TestBlueGreenGenerationNamingSingleSource(t *testing.T) {

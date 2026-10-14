@@ -7,7 +7,7 @@ package cmd
 import (
 	"testing"
 
-	"github.com/fleetlyrun/fleetly/internal/apitest"
+	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
 )
 
 func TestGoldenTelemetryVerbs(t *testing.T) {

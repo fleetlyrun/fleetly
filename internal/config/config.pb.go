@@ -153,7 +153,7 @@ func (x *AppConfig) GetConsole() *Console {
 
 // Console 是 Console 面板公网发布面配置（ADR-0061）：受管 traefik 前置一条
 // Host 路由指回 REST gateway（Console SPA 与 /v1 REST API 同端口同源服务，
-// internal/console.Mount）——host 空 = 整面停用（现状；registry/browse
+// internal/interfaces/console.Mount）——host 空 = 整面停用（现状；registry/browse
 // 同文化）。
 type Console struct {
 	state protoimpl.MessageState `protogen:"open.v1"`

@@ -7,7 +7,7 @@ import (
 	"context"
 	"testing"
 
-	buildrepo "github.com/fleetlyrun/fleetly/internal/state/build"
+	buildrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/build"
 )
 
 func TestGoldenBuildsLogs(t *testing.T) {

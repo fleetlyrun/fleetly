@@ -1,5 +1,5 @@
 // dokploy 导出解析的 TypeScript 移植（C3：竞品迁移钩子的 Console 半边）。
-// 真源 = internal/spec/dokploy.go（F3.3，ADR-0050 决策 5）——本移植是
+// 真源 = internal/domain/shared/spec/dokploy.go（F3.3，ADR-0050 决策 5）——本移植是
 // 叶子拷贝，语义由 dokploy.test.ts 用 CLI golden 同款夹具钉死（parity
 // 断言：同一份导出，两侧计划一致）。映射面 fail-closed：compose 插值孔
 // 未消解即整条 skip，不静默落字面 "${...}" 值。

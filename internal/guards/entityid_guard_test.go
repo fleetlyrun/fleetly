@@ -43,7 +43,7 @@ var seqExemptTables = map[string]string{
 
 func TestStateLayerNeverOrdersByID(t *testing.T) {
 	root := repoRoot(t)
-	dir := filepath.Join(root, "internal", "state")
+	dir := filepath.Join(root, "internal", "infrastructure", "persistence")
 	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -104,7 +104,7 @@ var createTableRe = regexp.MustCompile(`(?s)CREATE TABLE (\w+) \((.*?)\n\);`)
 
 func TestMigrationsAggregateTablesCarrySeq(t *testing.T) {
 	root := repoRoot(t)
-	dir := filepath.Join(root, "internal", "state", "migrations")
+	dir := filepath.Join(root, "internal", "infrastructure", "persistence", "migrations")
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		t.Fatal(err)

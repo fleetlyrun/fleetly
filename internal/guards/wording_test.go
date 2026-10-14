@@ -185,7 +185,7 @@ var skippedTokens = map[string]string{
 	"template":        "Template（App 模板，ADR-0050）与 Database 模板（dbtemplate）均为契约语汇；Spec 同义词语境人工评审",
 	"pod":             "k8s 载体词仅 Provider 内部合法（当前无引用）；Workload 同义词语境禁",
 	"unit":            "通用词；Workload 同义词语境人工评审",
-	"engine":          "internal/engine 为架构 §2 包名（收敛循环）；Runtime 同义词语境禁",
+	"engine":          "internal/application/engine 为架构 §2 包名（收敛循环）；Runtime 同义词语境禁",
 	"docker":          "仅禁指平台概念；Docker/BuildKit/moby 技术语合法",
 	"fleet":           "词内包含安全（fleetly 不命中词边界）；Cluster 同义词语境人工评审",
 	"pool":            "连接池/实例池通用词；Cluster 同义词语境人工评审",
@@ -317,7 +317,7 @@ var wordingExemptions = map[string]map[string]string{
 	// 专有实体（GitHub App 的安装目标/属主解析回组织名），按本义使用不在
 	// 禁列——禁的是 fleetly 域内 Team/Project 同义混用。
 	"organization": {
-		"internal/apitest/githubapps_manifest_test.go": "GitHub organizations 是 App 安装目标（第三方专有实体本义）；manifest public=true 契约断言的语境",
+		"internal/testsupport/apitest/githubapps_manifest_test.go": "GitHub organizations 是 App 安装目标（第三方专有实体本义）；manifest public=true 契约断言的语境",
 	},
 	"apply": {
 		"console/src/features/apps-tabs/app-variables.tsx":      "Apply changes is the adjudicated label for the Variables tab commit action (user ruling 2026-10-10, prototype fidelity); the Deployment Avoid sense bans generic deploy-by-apply verbs, not this pinned button",
@@ -329,8 +329,8 @@ var wordingExemptions = map[string]map[string]string{
 	// ssh（ADR-0049 入册）：git 传输 scheme 拒绝文案是技术义（hooks 面
 	// 只收 https 直连仓库），非把 exec 面叫 ssh 的命名缺陷。
 	"ssh": {
-		"internal/api/fleetlygrpc/hooks.go":         "git ssh:// 是被拒绝的仓库传输 scheme（技术义文案），非 exec 面命名（ADR-0049）",
-		"internal/apitest/hooks_validation_test.go": "git ssh:// scheme 拒绝面的夹具（技术义），非 exec 面命名（ADR-0049）",
+		"internal/interfaces/grpc/fleetlygrpc/hooks.go":         "git ssh:// 是被拒绝的仓库传输 scheme（技术义文案），非 exec 面命名（ADR-0049）",
+		"internal/testsupport/apitest/hooks_validation_test.go": "git ssh:// scheme 拒绝面的夹具（技术义），非 exec 面命名（ADR-0049）",
 	},
 	// addon（Database 词条 _Avoid_）：xterm 库 API 标识符（@xterm/addon-fit
 	// 包名 / FitAddon 类 / loadAddon 方法）不可更名——终端页（F3.2，ADR-
@@ -348,19 +348,19 @@ var wordingExemptions = map[string]map[string]string{
 	// 不可更名——成员资格入站隔离（ADR-0054）的编排器原语，非平台 Proxy
 	// 同义词；散文面一律用"入站"（Notes 措辞已避开该词）。
 	"ingress": {
-		"internal/providers/k3s/netisolate.go":      "k8s NetworkPolicy API identifiers (Spec.Ingress, PolicyTypeIngress, NetworkPolicyIngressRule) cannot be renamed; direction primitive of membership isolation (ADR-0054), not the platform Proxy term",
-		"internal/providers/k3s/netisolate_test.go": "assertions over the k8s NetworkPolicy API ingress field (ADR-0054), not the platform Proxy term",
+		"internal/infrastructure/providers/k3s/netisolate.go":      "k8s NetworkPolicy API identifiers (Spec.Ingress, PolicyTypeIngress, NetworkPolicyIngressRule) cannot be renamed; direction primitive of membership isolation (ADR-0054), not the platform Proxy term",
+		"internal/infrastructure/providers/k3s/netisolate_test.go": "assertions over the k8s NetworkPolicy API ingress field (ADR-0054), not the platform Proxy term",
 	},
 	// dbtemplate 备份执行链（F2.2，ADR-0039）：pg_dump/mysqldump/mongodump
 	// 是引擎原生命令名、dump.rdb 是 redis 数据文件名——外部工具专有名，
 	// 非平台 Backup 词汇面使用（ADR-0007 禁的是把 dump 当 Backup 同义词）。
 	// 新引擎工具名继续在此追加（强制分诊不静默）。
 	"dump": {
-		"internal/capability/runtime.go":                "dump.rdb 是 redis 数据文件名（预置卷恢复挂载注释，ADR-0039），非平台词汇面",
-		"internal/engine/dbtemplate/dbtemplate.go":      "pg_dump 等 dump 工具是引擎原生命令名（ADR-0039 备份执行链），非平台词汇面",
-		"internal/engine/dbtemplate/dbtemplate_test.go": "渲染钉板断言引擎原生命令名（pg_dump/mysqldump/mongodump/dump.rdb），非平台词汇面",
-		"internal/engine/dbtemplate/mysql.go":           "mysqldump 是 mysql 引擎原生命令名（ADR-0039），非平台词汇面",
-		"internal/engine/dbtemplate/redis.go":           "dump.rdb 是 redis 数据文件名（RDB 恢复预置路径，ADR-0039），非平台词汇面",
+		"internal/domain/shared/capability/runtime.go":           "dump.rdb 是 redis 数据文件名（预置卷恢复挂载注释，ADR-0039），非平台词汇面",
+		"internal/domain/services/dbtemplate/dbtemplate.go":      "pg_dump 等 dump 工具是引擎原生命令名（ADR-0039 备份执行链），非平台词汇面",
+		"internal/domain/services/dbtemplate/dbtemplate_test.go": "渲染钉板断言引擎原生命令名（pg_dump/mysqldump/mongodump/dump.rdb），非平台词汇面",
+		"internal/domain/services/dbtemplate/mysql.go":           "mysqldump 是 mysql 引擎原生命令名（ADR-0039），非平台词汇面",
+		"internal/domain/services/dbtemplate/redis.go":           "dump.rdb 是 redis 数据文件名（RDB 恢复预置路径，ADR-0039），非平台词汇面",
 	},
 	// genproto 的 .pb.gw.go（批 D 扩面裁决：生成物入扫面后的唯一命中族，
 	// 逐条豁免）：protoc-gen-grpc-gateway 生成模板的固定注释——
@@ -385,7 +385,7 @@ var wordingExemptions = map[string]map[string]string{
 		// traefik 动态配置 schema 自有键（middlewares 是 traefik 官方动态配置
 		// 的 router 字段名与集合键——Provider 私有翻译产物的库契约词，非
 		// 平台受理位命名；ADR-0051 browse 门禁面引入）。
-		"internal/providers/traefik/config.go": "traefik dynamic-config schema's own middlewares key (library contract term in the provider translation layer), not platform admission naming (ADR-0051)",
+		"internal/infrastructure/providers/traefik/config.go": "traefik dynamic-config schema's own middlewares key (library contract term in the provider translation layer), not platform admission naming (ADR-0051)",
 	},
 }
 

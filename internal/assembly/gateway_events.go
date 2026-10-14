@@ -19,8 +19,8 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
-	"github.com/fleetlyrun/fleetly/internal/api/apperr"
-	"github.com/fleetlyrun/fleetly/internal/api/fleetlygrpc"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/fleetlygrpc"
 )
 
 // eventsSSEPath 是原生 SSE 挂载路径（精确匹配，先于 gateway 的 /v1/...）。

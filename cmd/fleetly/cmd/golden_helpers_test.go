@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fleetlyrun/fleetly/internal/apitest"
-	"github.com/fleetlyrun/fleetly/internal/engine"
+	"github.com/fleetlyrun/fleetly/internal/application/engine"
+	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
 	"github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 

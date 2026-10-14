@@ -8,9 +8,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/fleetlyrun/fleetly/internal/apitest"
-	"github.com/fleetlyrun/fleetly/internal/capability"
-	"github.com/fleetlyrun/fleetly/internal/engine"
+	"github.com/fleetlyrun/fleetly/internal/application/engine"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
+	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
 	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 

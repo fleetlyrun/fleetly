@@ -21,7 +21,7 @@
 #                           构建链——镜像直投部署不受影响）
 #
 # railpack 构建器（零配置源码构建）随脚本钉版安装（F1.14，ADR-0032）；
-# 版段与 internal/providers/builders 的 railpackPinnedVersion 同 commit 纪律。
+# 版段与 internal/infrastructure/providers/builders 的 railpackPinnedVersion 同 commit 纪律。
 set -eu
 
 log() { printf '==> %s\n' "$1"; }
@@ -127,7 +127,7 @@ if [ -n "$REGISTRY_ADDR" ]; then
 fi
 
 # ---- 4c. railpack 构建器钉版安装（F1.14，ADR-0032）----
-# 平台钉版常量的 shell 面（与 internal/providers/builders 的
+# 平台钉版常量的 shell 面（与 internal/infrastructure/providers/builders 的
 # railpackPinnedVersion 同 commit 纪律——guards 静态断言两处一致）。
 # 失败不阻断安装：railpack 部署会精确失败，其余能力不受影响。
 RAILPACK_VERSION="0.39.0"
@@ -151,7 +151,7 @@ else
 fi
 
 # ---- 4d. restic（Platform Backup，F2.2/ADR-0039）钉版安装 ----
-# 平台钉版常量的 shell 面（与 internal/engine 的 PinnedResticVersion 同
+# 平台钉版常量的 shell 面（与 internal/application/engine 的 PinnedResticVersion 同
 # commit 纪律——guards 静态断言两处一致）。失败不阻断安装：Platform
 # Backup 停用并精确提示，Database 备份轨不受影响。
 RESTIC_VERSION="0.19.1"

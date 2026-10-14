@@ -27,9 +27,9 @@ import (
 
 	"github.com/coder/websocket"
 
-	"github.com/fleetlyrun/fleetly/internal/api/fleetlygrpc"
-	"github.com/fleetlyrun/fleetly/internal/capability"
-	"github.com/fleetlyrun/fleetly/internal/engine"
+	"github.com/fleetlyrun/fleetly/internal/application/engine"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/fleetlygrpc"
 )
 
 // 原生入口路径常量（挂载清单真源）。

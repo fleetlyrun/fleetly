@@ -14,7 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/fleetlyrun/fleetly/internal/engine/dbtemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
 )
 
 // 数据库引擎枚举的三处锚点（失配即 fatal：文案形态是冻结面，改形态须

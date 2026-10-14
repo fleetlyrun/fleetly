@@ -75,7 +75,7 @@
 
 ## P1a 四环搬移 + 立法（2-3 天）
 
-### P1a-1 搬移主体 — [ ]
+### P1a-1 搬移主体 — [x]
 `git mv` 重组为四环 + 八上下文（对齐 proto 服务族；映射表开工时与 proto 目录对照定稿）；全仓 import 重写；wire 再生成；三 module 编译绿。**移动不改名**（composeintake/state→persistence 例外）。
 ### P1a-2 立法 — [ ]
 §2 重写为四环树 + 5 行依赖规则 + 三条例外；新 ADR（分层立法 + XxxKernel 废除与命名法则 + 例外三条）；CONTEXT.md Audit 词条入册 + Event/Audit 双轴注记。

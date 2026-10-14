@@ -1,8 +1,8 @@
 package guards
 
 // builder 名对账守卫（ADR-0007 Builder 词条 + ADR-0032 Builder 家族）：
-// builder 名有两处真源——internal/spec 叶子常量集（BuilderNames 值域，受理
-// 校验的唯一依据）与 internal/providers/builders 的 RegisterFactory 注册
+// builder 名有两处真源——internal/domain/shared/spec 叶子常量集（BuilderNames 值域，受理
+// 校验的唯一依据）与 internal/infrastructure/providers/builders 的 RegisterFactory 注册
 // 字面量集（运行时装配的唯一依据）。两集漂移的形态都是静默坏：spec 有而
 // 注册无 = 受理放行、运行时永不解析（executeBuild 终态 failed）；注册有而
 // spec 无 = 每个 carrying spec 都被受理拒绝。本守卫对源文本对账两集，
@@ -50,10 +50,10 @@ func reconcileBuilderNames(specNames, registered []string) []string {
 		return out
 	}
 	for _, n := range missing(regSet, specSet) {
-		errs = append(errs, fmt.Sprintf("builder %q is declared in internal/spec (BuilderNames value domain) but no providers/builders factory registers it — admission would accept specs that never resolve at runtime; register a factory or retire the constant via ADR (ADR-0007 wording freeze / ADR-0032)", n))
+		errs = append(errs, fmt.Sprintf("builder %q is declared in internal/domain/shared/spec (BuilderNames value domain) but no providers/builders factory registers it — admission would accept specs that never resolve at runtime; register a factory or retire the constant via ADR (ADR-0007 wording freeze / ADR-0032)", n))
 	}
 	for _, n := range missing(specSet, regSet) {
-		errs = append(errs, fmt.Sprintf("builder %q is registered by internal/providers/builders but the spec leaf declares no such constant — admission (ValidateBuild) rejects every spec carrying it; align the registration name with the frozen value domain (CONTEXT.md Builder entry, ADR-0007)", n))
+		errs = append(errs, fmt.Sprintf("builder %q is registered by internal/infrastructure/providers/builders but the spec leaf declares no such constant — admission (ValidateBuild) rejects every spec carrying it; align the registration name with the frozen value domain (CONTEXT.md Builder entry, ADR-0007)", n))
 	}
 	return errs
 }
@@ -61,16 +61,16 @@ func reconcileBuilderNames(specNames, registered []string) []string {
 // TestBuilderNamesSpecAndRegistrationAgree：spec 叶子常量集 × builders
 // 注册字面量集逐字对账。
 func TestBuilderNamesSpecAndRegistrationAgree(t *testing.T) {
-	specSrc := readFileLF(t, "internal/spec/spec.go")
+	specSrc := readFileLF(t, "internal/domain/shared/spec/spec.go")
 	var specNames []string
 	for _, m := range specBuilderNameRe.FindAllStringSubmatch(specSrc, -1) {
 		specNames = append(specNames, m[1])
 	}
 	if len(specNames) == 0 {
-		t.Fatal("no Builder* string constants found in internal/spec/spec.go — the value domain moved; update this guard with it")
+		t.Fatal("no Builder* string constants found in internal/domain/shared/spec/spec.go — the value domain moved; update this guard with it")
 	}
 
-	entries, err := os.ReadDir(filepath.Join(repoRoot(t), filepath.FromSlash("internal/providers/builders")))
+	entries, err := os.ReadDir(filepath.Join(repoRoot(t), filepath.FromSlash("internal/infrastructure/providers/builders")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,13 +79,13 @@ func TestBuilderNamesSpecAndRegistrationAgree(t *testing.T) {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") {
 			continue
 		}
-		src := readFileLF(t, "internal/providers/builders/"+e.Name())
+		src := readFileLF(t, "internal/infrastructure/providers/builders/"+e.Name())
 		for _, m := range registeredBuilderNameRe.FindAllStringSubmatch(src, -1) {
 			registered = append(registered, m[1])
 		}
 	}
 	if len(registered) == 0 {
-		t.Fatal("no capability.KindBuilder registration literal found under internal/providers/builders — the registration surface moved; update this guard with it")
+		t.Fatal("no capability.KindBuilder registration literal found under internal/infrastructure/providers/builders — the registration surface moved; update this guard with it")
 	}
 
 	for _, e := range reconcileBuilderNames(specNames, registered) {
@@ -107,13 +107,13 @@ func TestBuilderNamesGuardRedLight(t *testing.T) {
 			name:       "spec-only-drift",
 			spec:       []string{"dockerfile", "railpack", "static", "ko"},
 			registered: []string{"dockerfile", "railpack", "static"},
-			want:       `builder "ko" is declared in internal/spec`,
+			want:       `builder "ko" is declared in internal/domain/shared/spec`,
 		},
 		{
 			name:       "registration-only-drift",
 			spec:       []string{"dockerfile", "railpack", "static"},
 			registered: []string{"dockerfile", "railpack", "static", "kaniko"},
-			want:       `builder "kaniko" is registered by internal/providers/builders`,
+			want:       `builder "kaniko" is registered by internal/infrastructure/providers/builders`,
 		},
 		{
 			name:       "agree",

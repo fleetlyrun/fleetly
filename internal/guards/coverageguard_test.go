@@ -26,19 +26,19 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/fleetlyrun/fleetly/internal/capability"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 )
 
 // runtimeTestTrees 是 Runtime 端口覆盖的扫描树（假底座、真 Provider、
 // 服务面三处）。
 var runtimeTestTrees = []string{
-	filepath.Join("internal", "engine"),
-	filepath.Join("internal", "providers", "swarm"),
-	filepath.Join("internal", "apitest"),
+	filepath.Join("internal", "application", "engine"),
+	filepath.Join("internal", "infrastructure", "providers", "swarm"),
+	filepath.Join("internal", "testsupport", "apitest"),
 }
 
 // apitestTree 是 RPC 契约覆盖的扫描树。
-var apitestTree = filepath.Join("internal", "apitest")
+var apitestTree = filepath.Join("internal", "testsupport", "apitest")
 
 // testCorpus 拼接一棵树下全部 *_test.go 的源码文本（CRLF 归一）。
 func testCorpus(t *testing.T, tree string) string {
@@ -188,7 +188,7 @@ func TestDeleteRPCCoverage(t *testing.T) {
 		missing = append(missing, rpc)
 	}
 	for _, rpc := range missing {
-		t.Errorf("Delete RPC %s has no coverage reference in internal/apitest tests — add a case (active-subordinate rejection or explicit delete/cascade assertion) or register an exemption with a reason (audit §10.2 guard C)", rpc)
+		t.Errorf("Delete RPC %s has no coverage reference in internal/testsupport/apitest tests — add a case (active-subordinate rejection or explicit delete/cascade assertion) or register an exemption with a reason (audit §10.2 guard C)", rpc)
 	}
 	for rpc, reason := range deleteCoverageExemptions {
 		if reason == "" {

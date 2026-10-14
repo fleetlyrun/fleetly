@@ -45,7 +45,7 @@ func fleetlygrpcHandlers(t *testing.T) map[string]bool {
 	t.Helper()
 	handlers := map[string]bool{}
 	fset := token.NewFileSet()
-	root := filepath.Join(repoRoot(t), filepath.Join("internal", "api", "fleetlygrpc"))
+	root := filepath.Join(repoRoot(t), filepath.Join("internal", "interfaces", "grpc", "fleetlygrpc"))
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -122,7 +122,7 @@ func TestAcceptanceWritePathsGoThroughCommit(t *testing.T) {
 // TestNoHandRolledTxChoreography：fleetlygrpc 包内 DB.Tx 直调只许出现在
 // acceptance.go（原语本体）——手写四件一拍编排不得回潮。
 func TestNoHandRolledTxChoreography(t *testing.T) {
-	root := filepath.Join(repoRoot(t), filepath.Join("internal", "api", "fleetlygrpc"))
+	root := filepath.Join(repoRoot(t), filepath.Join("internal", "interfaces", "grpc", "fleetlygrpc"))
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -131,7 +131,7 @@ func TestNoHandRolledTxChoreography(t *testing.T) {
 			return nil
 		}
 		rel := filepath.ToSlash(path[len(repoRoot(t))+1:])
-		if rel == "internal/api/fleetlygrpc/acceptance.go" {
+		if rel == "internal/interfaces/grpc/fleetlygrpc/acceptance.go" {
 			return nil // 原语本体：唯一允许的 DB.Tx 直调点
 		}
 		content, rerr := os.ReadFile(path)

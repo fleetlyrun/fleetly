@@ -1,7 +1,7 @@
 package guards
 
 // 引擎名反扫守卫（架构评审第二轮候选 1，2026-10-03）：数据库引擎值域的
-// 唯一真源 = internal/engine/dbtemplate 注册表（dbtemplate.Engines()）。
+// 唯一真源 = internal/domain/services/dbtemplate 注册表（dbtemplate.Engines()）。
 // 引擎名字符串字面量出现在子包之外的 internal/ 代码（注释与测试夹具
 // 除外）即红——per-engine 知识必须住在模板 adapter 里，别处长出硬拷贝
 // 就是 locality 破口（先例：CLI 帮助文案硬编码曾无守卫漂移）。cmd/ 面由
@@ -17,7 +17,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/fleetlyrun/fleetly/internal/engine/dbtemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
 )
 
 // engineNameLiteralAllowlist 是反扫例外（路径前缀 → 理由）。条目不再命中
@@ -28,13 +28,13 @@ var engineNameLiteralAllowlist = map[string]string{
 	// 的是"竞品词汇 → fleetly 词汇"的翻译面，不携带任何引擎知识（无镜像/
 	// 端口/命令）；值侧在册性由 CreateDatabase 受理位以 dbtemplate 注册表
 	// 单源执法（未知词在解析期即 skip 进报告，见 dokploy.go）。
-	"internal/spec/dokploy.go": "dokploy type-word to fleetly engine-word translation (ADR-0050 migration hook); carries no engine knowledge — registry membership is enforced at CreateDatabase acceptance",
+	"internal/domain/shared/spec/dokploy.go": "dokploy type-word to fleetly engine-word translation (ADR-0050 migration hook); carries no engine knowledge — registry membership is enforced at CreateDatabase acceptance",
 	// dbbrowser 注册表（F3.6，ADR-0051 决策 3）：engine 名作为映射键出现——
 	// 值侧是浏览器方言 adapter（与 dbtemplate 的引擎知识分立：无镜像/端口/
 	// 凭证渲染）。映射的 totality（对 dbtemplate.Engines 全覆盖）由
 	// dbbrowser_test 的 TestRegistryCoversDbtemplateEngines 双向钉死；值域
 	// 外的引擎键走 E_BROWSER_UNSUPPORTED 诚实失败。
-	"internal/engine/dbbrowser/dbbrowser.go": "engine-to-browser registry keys (ADR-0051 decision 3); totality over dbtemplate.Engines() is pinned by dbbrowser_test and unknown engines fail with E_BROWSER_UNSUPPORTED",
+	"internal/domain/services/dbbrowser/dbbrowser.go": "engine-to-browser registry keys (ADR-0051 decision 3); totality over dbtemplate.Engines() is pinned by dbbrowser_test and unknown engines fail with E_BROWSER_UNSUPPORTED",
 }
 
 // scanEngineNameLiterals 是反扫纯核（红灯实验直测）：files 是路径→源文本，
@@ -49,7 +49,7 @@ func scanEngineNameLiterals(files map[string]string, engines []string) []string 
 		for path, src := range files {
 			if strings.Contains(src, needle) {
 				errs = append(errs, fmt.Sprintf(
-					"%s: engine name %q appears as a string literal outside internal/engine/dbtemplate — per-engine knowledge must live in the template adapter (dbtemplate registry is the single source)", path, engine))
+					"%s: engine name %q appears as a string literal outside internal/domain/services/dbtemplate — per-engine knowledge must live in the template adapter (dbtemplate registry is the single source)", path, engine))
 			}
 		}
 	}
@@ -82,7 +82,7 @@ func TestEngineNamesStayInTemplatePackage(t *testing.T) {
 		if d.Name() == "testdata" {
 			return filepath.SkipDir
 		}
-		if d.Name() == "dbtemplate" && filepath.Dir(path) == filepath.Join(root, "engine") {
+		if d.Name() == "dbtemplate" && filepath.Dir(path) == filepath.Join(root, "domain", "services") {
 			return filepath.SkipDir
 		}
 		return nil
@@ -120,7 +120,7 @@ func TestEngineNameLiteralAllowlistFresh(t *testing.T) {
 // TestEngineNameScanRedLight：反扫核的常驻红灯实验（守卫自身失明即红）。
 func TestEngineNameScanRedLight(t *testing.T) {
 	files := map[string]string{
-		"internal/api/fleetlygrpc/databases.go": `x := "postgres"`,
+		"internal/interfaces/grpc/fleetlygrpc/databases.go": `x := "postgres"`,
 	}
 	hits := scanEngineNameLiterals(files, []string{"postgres", "redis"})
 	if len(hits) != 1 || !strings.Contains(hits[0], `"postgres"`) {
@@ -129,7 +129,7 @@ func TestEngineNameScanRedLight(t *testing.T) {
 
 	// 前缀撞车不误伤：URL 与镜像引用不含闭合引号形态。
 	clean := map[string]string{
-		"internal/engine/projection.go": `url := "postgresql://fleetly:x@db-1:5432/fleetly"` + "\n" +
+		"internal/application/engine/projection.go": `url := "postgresql://fleetly:x@db-1:5432/fleetly"` + "\n" +
 			`image := "pgvector/pgvector:0.8.6-pg17-bookworm"`,
 	}
 	if hits := scanEngineNameLiterals(clean, []string{"postgres", "pgvector"}); len(hits) != 0 {

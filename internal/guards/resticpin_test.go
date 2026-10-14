@@ -13,7 +13,7 @@ import (
 // TestResticPinConstantAndInstallerAgree：install.sh 含
 // restic_<常量> 资产下载；常量本体在 engine 单源在位。
 func TestResticPinConstantAndInstallerAgree(t *testing.T) {
-	const engineFile = "internal/engine/platformbackup.go"
+	const engineFile = "internal/application/engine/platformbackup.go"
 	src := readFileLF(t, engineFile)
 	decl := regexp.MustCompile(`const PinnedResticVersion = "([0-9]+\.[0-9]+\.[0-9]+)"`).FindStringSubmatch(src)
 	if len(decl) != 2 {

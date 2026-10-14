@@ -11,9 +11,9 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/fleetlyrun/fleetly/internal/api/apperr"
 	"github.com/fleetlyrun/fleetly/internal/buildinfo"
-	"github.com/fleetlyrun/fleetly/internal/model/errcode"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/errcode"
 )
 
 // 渲染单点（render 单点约定）：人类形态与 --json 形态的输出全部经本文件

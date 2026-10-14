@@ -12,7 +12,7 @@ import (
 	"github.com/lynx-go/commands"
 
 	identityv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/identity/v1"
-	"github.com/fleetlyrun/fleetly/internal/identity"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity"
 	"github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 

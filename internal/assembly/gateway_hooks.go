@@ -20,8 +20,8 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
-	"github.com/fleetlyrun/fleetly/internal/api/fleetlygrpc"
-	"github.com/fleetlyrun/fleetly/internal/idem"
+	"github.com/fleetlyrun/fleetly/internal/application/idem"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/fleetlygrpc"
 )
 
 // hooksReceiver 是接收面最小客户端面（adapter 只消费 ReceiveWebhook；

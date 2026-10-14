@@ -24,15 +24,15 @@ import (
 	// providers 只准经注册表间接装配，全仓唯此一处）。builders 是 Builder
 	// 家族单包三 Provider（ADR-0032）；k3s 与 swarm 双 Runtime 在册候选，
 	// config runtime.provider 装配期恰选一（ADR-0052 决策 1）。
-	_ "github.com/fleetlyrun/fleetly/internal/providers/builders"
-	_ "github.com/fleetlyrun/fleetly/internal/providers/k3s"
-	_ "github.com/fleetlyrun/fleetly/internal/providers/localobjectstore"
-	_ "github.com/fleetlyrun/fleetly/internal/providers/s3objectstore"
-	_ "github.com/fleetlyrun/fleetly/internal/providers/swarm"
-	_ "github.com/fleetlyrun/fleetly/internal/providers/traefik"
-	_ "github.com/fleetlyrun/fleetly/internal/providers/victorialogs"
-	_ "github.com/fleetlyrun/fleetly/internal/providers/victoriametrics"
-	_ "github.com/fleetlyrun/fleetly/internal/providers/zot"
+	_ "github.com/fleetlyrun/fleetly/internal/infrastructure/providers/builders"
+	_ "github.com/fleetlyrun/fleetly/internal/infrastructure/providers/k3s"
+	_ "github.com/fleetlyrun/fleetly/internal/infrastructure/providers/localobjectstore"
+	_ "github.com/fleetlyrun/fleetly/internal/infrastructure/providers/s3objectstore"
+	_ "github.com/fleetlyrun/fleetly/internal/infrastructure/providers/swarm"
+	_ "github.com/fleetlyrun/fleetly/internal/infrastructure/providers/traefik"
+	_ "github.com/fleetlyrun/fleetly/internal/infrastructure/providers/victorialogs"
+	_ "github.com/fleetlyrun/fleetly/internal/infrastructure/providers/victoriametrics"
+	_ "github.com/fleetlyrun/fleetly/internal/infrastructure/providers/zot"
 )
 
 // version/commit/date 由 mise build 的 ldflags 注入。

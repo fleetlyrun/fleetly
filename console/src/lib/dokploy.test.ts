@@ -36,7 +36,7 @@ const dokployExportFixture = JSON.stringify({
 });
 
 describe("parseDokploy", () => {
-  it("parses the CLI golden fixture into the same plan (parity with internal/spec/dokploy.go)", () => {
+  it("parses the CLI golden fixture into the same plan (parity with internal/domain/shared/spec/dokploy.go)", () => {
     const plan = parseDokploy(dokployExportFixture);
     expect(plan.apps).toHaveLength(2);
     expect(plan.apps[0]).toMatchObject({

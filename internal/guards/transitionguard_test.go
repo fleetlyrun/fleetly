@@ -50,7 +50,7 @@ var engineFourInOneExemptions = map[string]string{
 	"handleNodeJoined": "observation cache upsert + mint-only event, independently tolerated; nodes table is not authoritative",
 }
 
-// engineFuncScan 解析 internal/engine 全部非测试 .go，产出：
+// engineFuncScan 解析 internal/application/engine 全部非测试 .go，产出：
 // 文件相对路径 → 函数名 → 该函数体含 Transit 直调/行写/事实发射位。
 type engineFuncFacts struct {
 	file     string // 仓库相对路径
@@ -63,7 +63,7 @@ func scanEngineFuncs(t *testing.T) map[string]engineFuncFacts {
 	t.Helper()
 	funcs := map[string]engineFuncFacts{}
 	fset := token.NewFileSet()
-	root := filepath.Join(repoRoot(t), filepath.Join("internal", "engine"))
+	root := filepath.Join(repoRoot(t), filepath.Join("internal", "application", "engine"))
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -132,7 +132,7 @@ func scanEngineFuncs(t *testing.T) map[string]engineFuncFacts {
 	}
 	sawTransitFront := false
 	for _, f := range funcs {
-		if f.transit && f.file == "internal/engine/transition.go" {
+		if f.transit && f.file == "internal/application/engine/transition.go" {
 			sawTransitFront = true
 		}
 	}
@@ -148,7 +148,7 @@ func TestTransitCASLivesOnlyInTransition(t *testing.T) {
 	funcs := scanEngineFuncs(t)
 	var bad []string
 	for key, f := range funcs {
-		if f.transit && f.file != "internal/engine/transition.go" {
+		if f.transit && f.file != "internal/application/engine/transition.go" {
 			bad = append(bad, key)
 		}
 	}
@@ -168,7 +168,7 @@ func TestNoHandRolledFourInOneChoreography(t *testing.T) {
 		if !f.rowWrite || !f.factEmit {
 			continue
 		}
-		if f.file == "internal/engine/transition.go" {
+		if f.file == "internal/application/engine/transition.go" {
 			continue
 		}
 		name := key[:strings.Index(key, "@")]

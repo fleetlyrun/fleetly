@@ -11,7 +11,7 @@ import (
 
 	"google.golang.org/grpc/metadata"
 
-	"github.com/fleetlyrun/fleetly/internal/authn"
+	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 

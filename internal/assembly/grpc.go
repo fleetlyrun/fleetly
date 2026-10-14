@@ -14,13 +14,13 @@ import (
 	lynxgrpc "github.com/lynx-go/lynx/server/grpc"
 
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
-	"github.com/fleetlyrun/fleetly/internal/api/apperr"
-	"github.com/fleetlyrun/fleetly/internal/api/fleetlygrpc"
-	"github.com/fleetlyrun/fleetly/internal/api/systemgrpc"
-	"github.com/fleetlyrun/fleetly/internal/authn"
+	"github.com/fleetlyrun/fleetly/internal/application/authn"
+	"github.com/fleetlyrun/fleetly/internal/application/governance"
+	"github.com/fleetlyrun/fleetly/internal/application/idem"
 	"github.com/fleetlyrun/fleetly/internal/config"
-	"github.com/fleetlyrun/fleetly/internal/governance"
-	"github.com/fleetlyrun/fleetly/internal/idem"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/fleetlygrpc"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/systemgrpc"
 )
 
 // grpcShutdownTimeout 是 gRPC 优雅关停上限（在途请求的排水窗口）。注意

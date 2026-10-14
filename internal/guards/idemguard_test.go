@@ -1,7 +1,7 @@
 package guards
 
 // 幂等覆盖反扫（ADR-0024 同批守卫 ②）：proto 契约源里的创建型动词
-//（Create/Deploy/Submit/Put/Set/Rollback 前缀）必须落在 internal/idem 的
+//（Create/Deploy/Submit/Put/Set/Rollback 前缀）必须落在 internal/application/idem 的
 // 执法面 EnforcedMethods，或带理由豁免；反向死条目（执法面引用 proto 不
 // 存在的方法）同样红。失效类同 guard A：proto 加了创建型 RPC、忘进执法
 // 清单 → 幂等承诺静默缺一块，本守卫在 CI 红并列缺口方法名。
@@ -16,7 +16,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/fleetlyrun/fleetly/internal/idem"
+	"github.com/fleetlyrun/fleetly/internal/application/idem"
 )
 
 // idemExemptions 是创建型动词 → 不入执法面的豁免表（FullMethod → 理由）。
@@ -152,7 +152,7 @@ func TestIdempotencyCoversCreateVerbs(t *testing.T) {
 	}
 	sort.Strings(missing)
 	for _, m := range missing {
-		t.Errorf("create-type RPC %s is not covered by idem.EnforcedMethods and carries no exemption — a create verb outside idempotency enforcement silently drops the replay guarantee; add it to internal/idem or exempt with a reason (ADR-0024 guard)", m)
+		t.Errorf("create-type RPC %s is not covered by idem.EnforcedMethods and carries no exemption — a create verb outside idempotency enforcement silently drops the replay guarantee; add it to internal/application/idem or exempt with a reason (ADR-0024 guard)", m)
 	}
 
 	// 反向：执法面出现 proto 不存在的方法 = 死条目（方法改名/删除后残留）。

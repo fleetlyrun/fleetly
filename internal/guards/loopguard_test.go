@@ -12,7 +12,7 @@ import (
 // engine 树内 time.NewTicker 只准出现在 loop.go（骨架本体）与测试。
 func TestEngineLoopSkeletonSingular(t *testing.T) {
 	root := repoRoot(t)
-	engineDir := filepath.Join(root, "internal", "engine")
+	engineDir := filepath.Join(root, "internal", "application", "engine")
 	err := filepath.WalkDir(engineDir, func(path string, d os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr

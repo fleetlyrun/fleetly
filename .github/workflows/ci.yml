@@ -51,7 +51,7 @@ jobs:
         run: go test -race ./... ./genproto/... ./sdk/go/...
 
   # Console（F2.6/ADR-0044）：类型再生成 + 构建 + 零漂移断言（src/api
-  # 类型 + internal/console/dist 产物双钉）；node/pnpm 走 mise.toml 钉版
+  # 类型 + internal/interfaces/console/dist 产物双钉）；node/pnpm 走 mise.toml 钉版
   #（与本地同源）。构建产物 committed 进仓（纪律同 genproto），漂移在此
   # 红即"改了 proto/前端没再生成"。
   console:

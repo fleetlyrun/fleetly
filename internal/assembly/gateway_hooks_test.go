@@ -2,7 +2,7 @@ package assembly
 
 // webhook 原生入口 adapter 单测：token/头/体的搬运、路径归拒、protojson
 // 归一输出、错误信封出口。假客户端锚定 adapter 行为（服务面场景在
-// internal/apitest，HTTP 端到端在 e2e dind smoke）。
+// internal/testsupport/apitest，HTTP 端到端在 e2e dind smoke）。
 
 import (
 	"context"
@@ -18,7 +18,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
-	"github.com/fleetlyrun/fleetly/internal/api/fleetlygrpc"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/fleetlygrpc"
 )
 
 // fakeHookClient 记录最近一次请求并回放配置的响应（窄接口满足

@@ -9,7 +9,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	sharedv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/shared/v1"
-	"github.com/fleetlyrun/fleetly/internal/model/errcode"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/errcode"
 )
 
 // TestErrcodeToHTTPCoversRegistry（批 0 复核回归守卫）：REST 面错误码级

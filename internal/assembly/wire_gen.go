@@ -7,8 +7,8 @@
 package assembly
 
 import (
-	"github.com/fleetlyrun/fleetly/internal/api/systemgrpc"
 	"github.com/fleetlyrun/fleetly/internal/buildinfo"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/systemgrpc"
 	"github.com/lynx-go/lynx"
 	"github.com/lynx-go/lynx/boot"
 )

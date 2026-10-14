@@ -8,7 +8,7 @@ package guards
 // 手搓一份，Form 推导已分叉出两种写法）。
 //
 // 判定按 go/ast 复合字面类型精判（`map[string][]*task.Task{}` 之类的元素
-// 类型字面不误报），包名按各文件对 internal/state/task 的真实 import 别名
+// 类型字面不误报），包名按各文件对 internal/infrastructure/persistence/task 的真实 import 别名
 // 解析——改别名不静默漏扫。
 
 import (
@@ -25,7 +25,7 @@ import (
 // rowMintAllowances 是允许 Task 行复合字面的非测试文件 → 理由。豁免不再
 // 命中即红（与受理面豁免表同款双向保鲜）。
 var rowMintAllowances = map[string]string{
-	"internal/engine/minttask.go": "铸造 module 本体：MintTaskRow 是行装配唯一所在（ADR-0062）",
+	"internal/application/engine/minttask.go": "铸造 module 本体：MintTaskRow 是行装配唯一所在（ADR-0062）",
 }
 
 func TestTaskRowMintingSingleSite(t *testing.T) {
@@ -58,7 +58,7 @@ func TestTaskRowMintingSingleSite(t *testing.T) {
 		local := ""
 		for _, imp := range f.Imports {
 			path, _ := strconv.Unquote(imp.Path.Value)
-			if strings.HasSuffix(path, "/internal/state/task") {
+			if strings.HasSuffix(path, "/internal/infrastructure/persistence/task") {
 				local = "task"
 				if imp.Name != nil {
 					local = imp.Name.Name

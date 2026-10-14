@@ -26,12 +26,12 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
-	"github.com/fleetlyrun/fleetly/internal/api/apperr"
-	"github.com/fleetlyrun/fleetly/internal/api/fleetlygrpc"
-	"github.com/fleetlyrun/fleetly/internal/authn"
-	"github.com/fleetlyrun/fleetly/internal/governance"
-	"github.com/fleetlyrun/fleetly/internal/idem"
-	"github.com/fleetlyrun/fleetly/internal/state/statertest"
+	"github.com/fleetlyrun/fleetly/internal/application/authn"
+	"github.com/fleetlyrun/fleetly/internal/application/governance"
+	"github.com/fleetlyrun/fleetly/internal/application/idem"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statertest"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/fleetlygrpc"
 )
 
 // TestUnaryTimeoutInterceptorCancelsHandler 直接驱动拦截器：挂死形态的

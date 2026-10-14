@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/fleetlyrun/fleetly/internal/apitest"
-	runrepo "github.com/fleetlyrun/fleetly/internal/state/run"
-	taskrepo "github.com/fleetlyrun/fleetly/internal/state/task"
+	runrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/run"
+	taskrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/task"
+	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
 )
 
 func TestGoldenLogsDatabaseAxis(t *testing.T) {

@@ -13,7 +13,7 @@ import (
 // TestRailpackPinConstantAndInstallerAgree：install.sh 含
 // railpack-v<常量> 资产下载；常量本体在 providers/builders 单源在位。
 func TestRailpackPinConstantAndInstallerAgree(t *testing.T) {
-	const providerFile = "internal/providers/builders/railpack.go"
+	const providerFile = "internal/infrastructure/providers/builders/railpack.go"
 	src := readFileLF(t, providerFile)
 	decl := regexp.MustCompile(`const railpackPinnedVersion = "([0-9]+\.[0-9]+\.[0-9]+)"`).FindStringSubmatch(src)
 	if len(decl) != 2 {

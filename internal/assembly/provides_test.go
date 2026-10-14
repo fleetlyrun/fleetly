@@ -13,8 +13,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/fleetlyrun/fleetly/internal/buildinfo"
-	"github.com/fleetlyrun/fleetly/internal/capability"
 	"github.com/fleetlyrun/fleetly/internal/config"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 )
 
 // TestNewEngineOverlapPolicyFailsFast（ADR-0017 附录 A.4）：无效重叠策略

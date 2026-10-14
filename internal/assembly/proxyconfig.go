@@ -10,8 +10,8 @@ import (
 	"github.com/lynx-go/lynx"
 	lynxhttp "github.com/lynx-go/lynx/server/http"
 
-	"github.com/fleetlyrun/fleetly/internal/capability"
 	"github.com/fleetlyrun/fleetly/internal/config"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 )
 
 // NewProxyConfigServer 装配受管 Proxy 配置拉取端点（GET /proxy/config 返回

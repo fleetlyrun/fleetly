@@ -19,7 +19,7 @@ import (
 
 	"github.com/lynx-go/commands"
 
-	"github.com/fleetlyrun/fleetly/internal/capability"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 )
 
 // relayVerb 是节点中继入口动词。信号自持（NotifyContext 在 Run 内建，

@@ -11,7 +11,7 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
-	"github.com/fleetlyrun/fleetly/internal/api/systemgrpc"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/systemgrpc"
 	"github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
