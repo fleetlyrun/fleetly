@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>fleetly 终态架构设计 v4（定稿） · 2026-10-14</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+  mermaid.initialize({ startOnLoad: true, theme: "neutral", securityLevel: "loose" });
+</script>
+<style>
+  .leak { color:#dc2626; }
+  .deep { background: linear-gradient(135deg, #0f172a, #1e293b); }
+  .band { border-left: 4px solid #94a3b8; }
+</style>
+</head>
+<body class="bg-stone-50 text-slate-900 font-sans">
+<main class="max-w-5xl mx-auto px-6 py-12 space-y-14">
+
+<header class="space-y-3">
+  <h1 class="text-3xl font-serif font-bold">fleetly · 终态架构设计 <span class="text-emerald-600">v4（定稿）</span></h1>
+  <p class="text-sm text-slate-500 font-mono">main @ 82b9777 基线 · 2026-10-14 · 四轮迭代收敛：v1 七模块审查 → v2 六域深研+执法手册 → v3 激进六刀 → v4 Clean 四环+严格审查修正。执行计划见仓内 docs/plan/2026-10-14-architecture-convergence-plan.md。</p>
+  <p class="text-sm text-slate-600">四轮用户裁决链：无兼容负担/可推翻约定 → 严格执法 → 适当激进 → Clean(DDD) 四环分层 + Repo 接口层 + 去方法论命名 → 本轮严格自审修正 6 处违反。累计 15 只读子代理 + 2 次 design-it-twice，承重结论全部主会话复核。</p>
+</header>
+
+<!-- VERDICT -->
+<section class="deep text-stone-100 rounded-xl p-8 space-y-3">
+  <h2 class="text-xl font-serif font-bold text-emerald-300">终局判词</h2>
+  <p class="text-sm leading-6">骨架依赖倒置本已成立（两波实证），本方案做的是三件事：<strong class="text-emerald-300">①把已成立的分层写进目录</strong>（四环 Clean，依赖规则从 30 行守卫矩阵缩成 5 行）；<strong class="text-emerald-300">②补齐两条结构性欠账</strong>（Repo 接口层让 37 条缝变真；事实发射单源让配对 bug 类灭绝）；<strong class="text-red-400">③先还安全与并发债</strong>（exec 跨队注入、events 跨队泄漏、会话生命周期三件，P0 最前）。冻结面一行不动：loop 唯一骨架、transition 唯写序列、ensureMemo、词汇冻结、level-triggered 收敛、capability 窄面。</p>
+</section>
+
+<!-- LAYERING -->
+<section class="space-y-5">
+  <h2 class="text-xl font-serif font-bold">一、终态分层（严格 Clean 四环 + 三条 ADR 例外）</h2>
+  <div class="rounded-lg border border-slate-200 bg-white p-4">
+    <pre class="mermaid">
+flowchart BT
+  DOM["domain 零外向 · 三红线：无 I/O / 无 genproto / 无框架"]
+  APP["application 用例编排（只见 domain 接口）"]
+  INF["infrastructure 适配器（实现 domain 接口）"]
+  IF["interfaces 输入面"]
+  ASM["assembly 组合根"]
+  IF --> APP
+  APP --> DOM
+  INF --> DOM
+  ASM -.-> IF & APP & INF
+  classDef d fill:#0f172a,color:#e2e8f0
+  class DOM d
+    </pre>
+  </div>
+  <div class="grid md:grid-cols-2 gap-4 text-xs">
+    <div class="rounded-lg border border-slate-200 bg-slate-900 text-stone-200 p-4 font-mono whitespace-pre overflow-x-auto">internal/
+├─ domain/                # 守卫三红线执法
+│  ├─ shared/             # spec(IR) · model(errcode/eventcode/entityid)
+│  │                      # · apperr(纯信封，status 构建器移 interfaces)
+│  │                      # · capability(端口，纯类型+纯函数纪律)
+│  ├─ identity/           # User Team Role Token Invitation …
+│  ├─ structure/          # Project App Secret Config Var×2 Volume Net…
+│  ├─ delivery/           # Deployment Revision Build Upload Hook GHApp…
+│  ├─ automation/         # Task Run Schedule …
+│  ├─ data/               # Database Backup Browse …
+│  ├─ runtimeops/         # Node Route NetworkPeer Freeze …
+│  ├─ telemetry/          # AlertRule Channel Logcursor …
+│  └─ services/           # anchor · material(纯密码学) · dbtemplate
+│                         # · dbbrowser · writes(FactRow+Sequence+Runner 端口)
+├─ application/
+│  ├─ engine/  authn/  idem/  governance/
+│  ├─ composeintake/(ACL)  apptemplate/  schema/
+├─ infrastructure/
+│  ├─ persistence/        # 37 Repo 实现+migrations+statekit+statetest
+│  ├─ providers/          # 九 Provider 互不 import
+│  └─ github/  upload/  keyring/
+├─ interfaces/            # grpc · admin · console
+├─ assembly/  config/  buildinfo/
+└─ guards/  testsupport/</div>
+    <div class="space-y-3">
+      <div class="rounded-lg border border-emerald-300 bg-emerald-50/40 p-4">
+        <p class="uppercase tracking-wider text-slate-400 text-xs mb-2">命名定稿：导出面零后缀</p>
+        <ul class="space-y-1.5 text-slate-700 text-sm">
+          <li>▪ 聚合仓储：<code>project.Repo</code> / <code>deployment.Repo</code>（包名限定 + 裸 Repo，37 同构）；实现不导出，wire.Bind 绑定</li>
+          <li>▪ 引擎：<code>engine.Engine</code> 唯一导出协调类型（冻结词条）</li>
+          <li>▪ 九域内核<strong>不导出</strong>：<code>type tasks struct</code> <code>type execs struct</code>…（复数普通名词掌管状态；同包白盒测试直接构造）</li>
+          <li>▪ 消费侧接口不导出：<code>type gitClient interface</code>（accept interfaces 惯用法）</li>
+          <li>▪ gRPC 35 个 <code>XxxService</code> 维持（proto 生成契约强制）</li>
+          <li>▪ 检验标准：导出类型 grep 后缀近零；方法论只存在于四个目录名</li>
+        </ul>
+      </div>
+      <div class="rounded-lg border border-amber-300 bg-amber-50/50 p-4">
+        <p class="uppercase tracking-wider text-slate-500 text-xs mb-2">三条 ADR 例外（显式记录，不伪装合规）</p>
+        <ul class="space-y-1 text-slate-700 text-sm">
+          <li>① 贫血聚合 + 状态机集中在 writes kernel/engine（单写者收敛是第一设计决策）</li>
+          <li>② admin 离线写绕过 kernel（控制面已停的维护语义）</li>
+          <li>③ 读写分离律：interfaces 可直读 domain.Repo；一切写必经 application</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <div class="rounded-lg border border-red-200 bg-red-50/40 p-4 text-sm">
+    <p class="font-semibold text-red-700 mb-1">自审修正的 6 处违反（v3→v4 变更）</p>
+    <p class="text-slate-700">① apperr 引 genproto → 信封纯化入 domain，status 构建器移 interfaces；② material 含文件 I/O → 纯密码学留 domain，keyring 装载入 infrastructure；③ "零豁免"言过其实 → 读写分离律立法；④ capability 混装 → 纯类型+纯函数纪律守卫；⑤ anchor/writes 留 application 是保守 → 下沉 domain（writes 自带 Runner 端口）；⑥ domain 平铺 37 聚合 → 按八限界上下文嵌套（对齐 proto 服务族）。</p>
+  </div>
+</section>
+
+<!-- SIX CUTS -->
+<section class="space-y-4">
+  <h2 class="text-xl font-serif font-bold">二、六刀（每刀杀一整类 bug / 一族样板）</h2>
+  <div class="overflow-x-auto">
+  <table class="w-full text-sm border-collapse">
+    <thead><tr class="text-left text-xs uppercase tracking-wider text-slate-400 border-b border-slate-200"><th class="py-2 pr-3">刀</th><th class="py-2 pr-3">形态</th><th class="py-2 pr-3">杀死什么</th><th class="py-2">否决过的更激进形态</th></tr></thead>
+    <tbody class="divide-y divide-slate-100 align-top">
+      <tr><td class="py-2 pr-3 font-semibold">1 事实发射单源</td><td class="py-2 pr-3"><code>writes.FactRow</code> 单声明 → kernel 扇出 outbox(资源轴 team_id)+audit(操作者轴) 双行；默认双真，LedgerOnly/StreamOnly 须注释理由</td><td class="py-2 pr-3">配对 bug 类（四族 CRUD 审计无事件）+ S2 跨队事件泄漏 + 8 处 best-effort 口径分叉</td><td class="py-2">facts 单表（破只增/双 team 轴/词汇冻结三硬伤）</td></tr>
+      <tr><td class="py-2 pr-3 font-semibold">2 engine 域化</td><td class="py-2 pr-3">九个未导出域 struct（tasks/execs/deploys…）+ 壳收至 &lt;300 行；四冻结面不动；同包白盒测试</td><td class="py-2 pr-3">engine.go 每加域必触碰 / exec 构造纠缠零测试 / metrics·task 文件内聚 / god files 族</td><td class="py-2">服务组装独立包（必搬冻结面+浅接口族）</td></tr>
+      <tr><td class="py-2 pr-3 font-semibold">3 错误契约单源</td><td class="py-2 pr-3">信封纯化入 domain；error_id 铸造+脱敏下沉信封层三面统一；"未配置"族 503 码律</td><td class="py-2 pr-3">E0 三面割裂（gRPC/CLI 泄 SQL、suggestion 引用不存在的 error_id 面）</td><td class="py-2">—</td></tr>
+      <tr><td class="py-2 pr-3 font-semibold">4 校验单源</td><td class="py-2 pr-3">protovalidate 注解 → descriptor → gateway 400 / CLI 客户端校验 / Console schema 三面消费</td><td class="py-2 pr-3">71 处手写校验 + CLI 复刻服务端互斥 55 行</td><td class="py-2">—</td></tr>
+      <tr><td class="py-2 pr-3 font-semibold">5 statekit</td><td class="py-2 pr-3">TransitWhere/ClampLimit/Placeholders/软删幂等/冲突归一 generics 化入 persistence 共享件</td><td class="py-2 pr-3">分页钳 20 份、CAS 模板 6 份（已分叉）、CLI 样板 126 处（另批）</td><td class="py-2">—</td></tr>
+      <tr><td class="py-2 pr-3 font-semibold">6 会话域终态</td><td class="py-2 pr-3">受理即起 hardTTL + closeSession 单闸 + attach Team 比对 + 票据绑身份 + 会话 ID 随机化（ADR-0070 适用范围修订）</td><td class="py-2 pr-3">S1 跨队注入 / K1 配额锁死 / K2 panic 杀中继</td><td class="py-2">—</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- P0 DOSSIER -->
+<section class="space-y-4">
+  <h2 class="text-xl font-serif font-bold">三、P0 案卷（安全/并发/正确性，全部主会话复核实证）</h2>
+  <ul class="text-sm space-y-1.5 text-slate-700 list-disc list-inside">
+    <li><strong>S1</strong> StreamExecSession 无行级授权 + 会话 ID 单调可枚举（exec.go:173-190 / engine exec.go:217）→ 跨队容器命令注入</li>
+    <li><strong>S2</strong> events 三读面零 Team 过滤、outbox 无 team 列（contexts.go:250-370）→ 跨队事件流泄漏（刀 1 终态修复，P0 先做最小修）</li>
+    <li><strong>K1</strong> 未附着 exec 会话零回收（timer 只在 AttachClient 装）→ 8 次锁死 team 配额；exec.go 全文件零测试</li>
+    <li><strong>K2</strong> deliverRelayFrame 非阻塞 send 无 closed 复查 ⇄ finishSession close(s.out) → panic 杀整条节点中继</li>
+    <li><strong>E0</strong> E_INTERNAL 三面割裂（error_id 只在 REST；gRPC/CLI 原样泄 SQL）</li>
+    <li><strong>job 方言</strong> 白名单旁路静默丢键 + command 双重逃逸（intake.go:448,499-503）——同语义三面两口径</li>
+    <li><strong>Q1</strong> managedStep 每秒无条件 UPDATE last_seen_at（空闲 WAL churn）；<strong>Q2</strong> CLI 按名查重只拉首页 50 条（&gt;50 误判不存在重复创建）</li>
+    <li><strong>k3s Watch</strong> 静默失败族 / 无 recover / 退避不看 ctx（swarm 已修同族）</li>
+    <li><strong>state 写路径</strong> INSERT 无唯一冲突归一（裸 E_INTERNAL）/ backup 终态无 CAS / run 手抄 task 终态字面量</li>
+    <li><strong>api_base SSRF</strong> 私网/环回不拒 + 上游 message 回显</li>
+  </ul>
+</section>
+
+<!-- ROADMAP -->
+<section class="space-y-4">
+  <h2 class="text-xl font-serif font-bold">四、路线图（P0-P5，任务分解见执行计划文档）</h2>
+  <div class="overflow-x-auto">
+  <table class="w-full text-sm border-collapse">
+    <thead><tr class="text-left text-xs uppercase tracking-wider text-slate-400 border-b border-slate-200"><th class="py-2 pr-3">阶段</th><th class="py-2 pr-3">内容</th><th class="py-2 pr-3">量级</th><th class="py-2">验证门</th></tr></thead>
+    <tbody class="divide-y divide-slate-100 align-top">
+      <tr class="bg-red-50/40"><td class="py-2 pr-3 font-mono">P0</td><td class="py-2 pr-3">止血十件（上节案卷）</td><td class="py-2 pr-3">2-3 天</td><td class="py-2">apitest 正/负例 + -race + golden 同 commit</td></tr>
+      <tr><td class="py-2 pr-3 font-mono">P1a</td><td class="py-2 pr-3">四环搬移 + 八上下文嵌套 + §2/ADR 立法 + 5 行守卫表 + domain 三红线守卫</td><td class="py-2 pr-3">2-3 天</td><td class="py-2">纯搬移 golden 零漂移 + guards 先红后绿</td></tr>
+      <tr><td class="py-2 pr-3 font-mono">P1b</td><td class="py-2 pr-3">Repo 接口按聚合增量抽取（37 个，行类型上移 domain）</td><td class="py-2 pr-3">3-5 天</td><td class="py-2">每聚合一 commit；wire.Bind；statetest 返接口</td></tr>
+      <tr><td class="py-2 pr-3 font-mono">P2</td><td class="py-2 pr-3">刀 1 事实 kernel（outbox+team_id → FactRow 扇出 → 按域 A 化 → Append 白名单守卫）</td><td class="py-2 pr-3">4-5 天</td><td class="py-2">owner 跨队矩阵 apitest + golden 随批</td></tr>
+      <tr><td class="py-2 pr-3 font-mono">P3</td><td class="py-2 pr-3">刀 2 域化九批（批1 exec 三修正式收编+首测；批7 并入 SubmitSpec）</td><td class="py-2 pr-3">6-9 天</td><td class="py-2">每批 golden 零漂移 + 守卫接收者泛化</td></tr>
+      <tr><td class="py-2 pr-3 font-mono">P4</td><td class="py-2 pr-3">刀 3+4：错误三面 + protovalidate + CLI descriptor 校验 + runRPC 骨架</td><td class="py-2 pr-3">4-6 天</td><td class="py-2">REST 400 契约 + CLI golden 重钉</td></tr>
+      <tr><td class="py-2 pr-3 font-mono">P5</td><td class="py-2 pr-3">刀 5 statekit + 升级前进/换装测试 + G5/G13/G19/G20 + repo 补测 + SDK FromError</td><td class="py-2 pr-3">增量</td><td class="py-2">三 module -race + golden 零漂移</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- REJECTED -->
+<section class="space-y-3">
+  <h2 class="text-lg font-serif font-bold">五、否决清单（防再来议）</h2>
+  <p class="text-sm text-slate-600">facts 单表合流（三硬伤）· Engine 服务组装（必搬冻结面）· 教科书目录重排为重排而重排（本轮已被"有依据的四环"取代）· 事件溯源/CQRS 全家桶（level-triggered + Revision 冻结已是正确形态）· edge-triggered 调度（余量 50×）· 进程外插件协议（ADR-0003）· 37 个仓储接口的上帝汇总包（环风险）。</p>
+</section>
+
+<section id="top-recommendation" class="deep text-stone-100 rounded-xl p-8">
+  <p class="text-xs uppercase tracking-wider text-emerald-300 mb-2">Top recommendation</p>
+  <h2 class="text-xl font-serif font-bold">P0-1 exec 三修今日落；P1a 四环搬移是下一结构动作</h2>
+  <p class="text-sm mt-2 text-stone-300">S1 是全案卷唯一可直接导致跨队容器内命令执行的路径（修复一小时级）。四环搬移趁 P0 完成后立即做——它让后续每一刀都在显式分层与 5 行守卫表的保护下进行。</p>
+</section>
+
+<footer class="text-xs text-slate-400 font-mono pt-4 border-t border-slate-200">
+  v4 定稿 · 执行计划：docs/plan/2026-10-14-architecture-convergence-plan.md · 底稿 v1/v2/v3 同目录 /tmp/ · 词汇遵循 codebase-design：module · interface · depth · seam · adapter · leverage · locality
+</footer>
+
+</main>
+</body>
+</html>
