@@ -36,9 +36,10 @@ var (
 	invitationRe   = regexp.MustCompile(`fltinv_[A-Za-z0-9_-]{4,}`)
 	hookTokenRe    = regexp.MustCompile(`flthook_[A-Za-z0-9_-]{4,}`)
 	credPathRe     = regexp.MustCompile(`(?m)^credentials saved: .*$`)
-	// ghFakeBaseRe 是 GitHub App golden 夹具的假上游基址（TLS httptest 的
-	// 临时端口——ADR-0073；窄形态 127.0.0.1 显式端口，不吞其他 URL）。
-	ghFakeBaseRe = regexp.MustCompile(`https://127\.0\.0\.1:[0-9]+`)
+	// ghFakeBaseRe 是 GitHub App golden 夹具的假上游基址（DNS 名形态
+	// ghe.test——P0-7.3 起夹具 api_base 不走环回字面，见 ghGoldenFake；
+	// 窄形态不吞其他 URL）。
+	ghFakeBaseRe = regexp.MustCompile(`https://ghe\.test`)
 	credJSONRe   = regexp.MustCompile(`"credentials_path": ".*?"`)
 	// errorIDRe 是出口纪律铸造的 error_id（crypto/rand 128 位十六进制；
 	// P0-3——CLI error_id 行逐请求随机，占位化保 golden 确定性）。

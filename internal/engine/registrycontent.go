@@ -60,15 +60,24 @@ func (e *Engine) RegistryTags(ctx context.Context, projectID, repository string)
 	return tags, nil
 }
 
+// ErrRegistryUnavailable 是 Registry 读代理的"面缺席"哨兵族（P0-7.2）：
+// Registry 未装配（registry.addr 未配）或 provider 无 content 子面——配置
+// 级显式 off 态而非内部故障，经 API 映射 E_REGISTRY_UNAVAILABLE（503 档，
+// E_BROWSE_DISABLED"显式 off 态"同款先例；此前裸 fmt.Errorf 落 E_INTERNAL
+// 500，把配置事实伪装成内部故障）。
+var ErrRegistryUnavailable = errors.New("the managed registry read proxy is unavailable")
+
 // registryContentFor 解析内容子面与端点凭证（per-Project 面优先，平台
 // 凭证回退）。
 func (e *Engine) registryContentFor(ctx context.Context, projectID string) (capability.RegistryContent, capability.RegistryEndpoint, error) {
 	if e.registry == nil {
-		return nil, capability.RegistryEndpoint{}, fmt.Errorf("registry: the managed registry is not configured (set config registry.addr to enable it)")
+		return nil, capability.RegistryEndpoint{}, fmt.Errorf(
+			"%w: the managed registry is not configured (set registry.addr in the fleetlyd config to enable it)", ErrRegistryUnavailable)
 	}
 	content := capability.FacesOf(e.registry).Content
 	if content == nil {
-		return nil, capability.RegistryEndpoint{}, fmt.Errorf("registry: the registry provider does not offer the content face")
+		return nil, capability.RegistryEndpoint{}, fmt.Errorf(
+			"%w: the registry provider does not offer the content face", ErrRegistryUnavailable)
 	}
 	ep, err := e.registryEndpointFor(ctx, projectID)
 	if err != nil {

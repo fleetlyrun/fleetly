@@ -163,22 +163,20 @@ func newTemplatesShowVerb() commands.Command {
 // 要求显式 --set——同缺省会互撞）。
 func sslipDefaultHost(addr, appName string) string { return sslipHost(addr, appName) }
 
-// ensureProjectByName 按名 create-or-reuse 项目（quickstart 同款幂等链）。
-func ensureProjectByName(ctx context.Context, c *sdk.Client, name string) (string, error) {
-	plist, err := c.Projects.ListProjects(ctx, &structurev1.ListProjectsRequest{})
-	if err != nil {
-		return "", err
-	}
-	for _, p := range plist.GetProjects() {
-		if p.GetName() == name {
-			return p.GetId(), nil
-		}
+// ensureProjectByName 按名 create-or-reuse 项目（quickstart 同款幂等链；
+// 查重走 findProjectByName 游标全量收敛——首页 50 假阴性止血，P0-7.5。
+// 返回 reused 标记供迁移报告如实区分 created/reused）。
+func ensureProjectByName(ctx context.Context, c *sdk.Client, name string) (string, bool, error) {
+	if id, found, err := findProjectByName(ctx, c, name); err != nil {
+		return "", false, err
+	} else if found {
+		return id, true, nil
 	}
 	created, err := c.Projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: name})
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
-	return created.GetProject().GetId(), nil
+	return created.GetProject().GetId(), false, nil
 }
 
 func newTemplatesInstantiateVerb() commands.Command {
@@ -216,7 +214,7 @@ func newTemplatesInstantiateVerb() commands.Command {
 			serverAddr := envOr(envAddr, defaultAddr)
 
 			// project create-or-reuse（按名，quickstart 同款）。
-			projectID, err := ensureProjectByName(ctx, c, project)
+			projectID, _, err := ensureProjectByName(ctx, c, project)
 			if err != nil {
 				return err
 			}

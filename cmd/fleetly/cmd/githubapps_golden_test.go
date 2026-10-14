@@ -6,12 +6,14 @@ package cmd
 // 夹具 PEM 固定，golden 逐字稳定；fprRe 归一兜底。
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -27,11 +29,19 @@ import (
 )
 
 // ghGoldenFake 是 golden 夹具的假 GitHub（TLS——validateAPIBase 只收
-// https；两套 installation id 各归各 app，错配不触发）。
+// https；两套 installation id 各归各 app，错配不触发）。基址用 DNS 名
+// ghe.test（P0-7.3 起 validateAPIBase 拒环回/私网字面——控制面 SSRF
+// 防线；夹具走 DNS 名形态 + 自定义 DialContext 重定向到 httptest 监听，
+// 同时保持夹具 hermetic）。
 type ghGoldenFake struct {
-	srv *httptest.Server
-	pem []byte
+	srv  *httptest.Server
+	base string
+	pem  []byte
 }
+
+// ghFakeHost 是夹具 api_base 的 DNS 名形态（非字面 IP——私网拒绝只判
+// 字面段与 localhost，DNS 名放行是明文口径）。
+const ghFakeHost = "ghe.test"
 
 func newGoldenFakeGitHub(t *testing.T, h *apitest.Harness) *ghGoldenFake {
 	t.Helper()
@@ -61,10 +71,19 @@ func newGoldenFakeGitHub(t *testing.T, h *apitest.Harness) *ghGoldenFake {
 		}})
 	})
 	f.srv = httptest.NewTLSServer(mux)
+	f.base = "https://" + ghFakeHost
 	// 夹具信任自签证书：换装 Services.GitHub（api_base 指向夹具即端到端；
-	// 生产客户端零改动）。
+	// 生产客户端零改动）。DialContext 把任意 host 重定向到 httptest 监听
+	//（DNS 名不解析——夹具 hermetic）。
+	srvAddr := f.srv.Listener.Addr().String()
 	h.Services.GitHub = github.NewClient(&http.Client{
-		Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}, //nolint:gosec // 测试夹具自签证书
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // 测试夹具自签证书
+			DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
+				var d net.Dialer
+				return d.DialContext(ctx, network, srvAddr)
+			},
+		},
 	}, nil)
 	t.Cleanup(f.srv.Close)
 	return f
@@ -91,11 +110,11 @@ func TestGoldenGitHubAppsVerbs(t *testing.T) {
 	var ghappID string
 	steps := []step{
 		{"github-apps put", []string{"github-apps", "put", "--project", projectID, "--app-id", "182345",
-			"--installation-id", "51790921", "--private-key-file", keyFile, "--api-base", fake.srv.URL}},
+			"--installation-id", "51790921", "--private-key-file", keyFile, "--api-base", fake.base}},
 		{"github-apps list", []string{"github-apps", "list", "--project", projectID}},
 		{"github-apps repos", []string{"github-apps", "repos", "--id", "GOLDEN_GHAPP"}},
 		{"github-apps put global", []string{"github-apps", "put", "--global", "--app-id", "182345",
-			"--installation-id", "51790921", "--private-key-file", keyFile, "--api-base", fake.srv.URL}},
+			"--installation-id", "51790921", "--private-key-file", keyFile, "--api-base", fake.base}},
 		{"github-apps list global", []string{"github-apps", "list", "--global"}},
 		{"github-apps delete", []string{"github-apps", "delete", "--id", "GOLDEN_GHAPP"}},
 	}

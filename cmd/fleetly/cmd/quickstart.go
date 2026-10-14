@@ -87,18 +87,13 @@ func newQuickstartVerb() commands.Command {
 			// flag > env > 默认；凭据文件的 addr 不参与）。
 			serverAddr := envOr(envAddr, defaultAddr)
 
-			// 1. project（重跑幂等：存在即复用）。
+			// 1. project（重跑幂等：存在即复用；查重游标全量收敛，P0-7.5）。
 			var projectID string
-			plist, err := c.Projects.ListProjects(ctx, &structurev1.ListProjectsRequest{})
-			if err != nil {
+			if id, found, err := findProjectByName(ctx, c, "quickstart"); err != nil {
 				return err
-			}
-			for _, p := range plist.GetProjects() {
-				if p.GetName() == "quickstart" {
-					projectID = p.GetId()
-				}
-			}
-			if projectID == "" {
+			} else if found {
+				projectID = id
+			} else {
 				p, err := c.Projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "quickstart"})
 				if err != nil {
 					return err
@@ -106,18 +101,13 @@ func newQuickstartVerb() commands.Command {
 				projectID = p.GetProject().GetId()
 			}
 
-			// 2. app（同款幂等）。
+			// 2. app（同款幂等；查重游标全量收敛——首页 50 之外不再误判）。
 			var appID string
-			alist, err := c.Apps.ListApps(ctx, &structurev1.ListAppsRequest{ProjectId: projectID})
-			if err != nil {
+			if id, found, err := findAppByName(ctx, c, projectID, appName); err != nil {
 				return err
-			}
-			for _, a := range alist.GetApps() {
-				if a.GetName() == appName {
-					appID = a.GetId()
-				}
-			}
-			if appID == "" {
+			} else if found {
+				appID = id
+			} else {
 				a, err := c.Apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: projectID, Name: appName})
 				if err != nil {
 					return err

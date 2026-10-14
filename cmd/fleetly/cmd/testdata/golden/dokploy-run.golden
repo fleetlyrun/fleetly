@@ -4,7 +4,7 @@ app landing (image nginx:1.27)
 app echo-app (compose)
   route echo.127.0.0.1.sslip.io -> web:5678
 skipped application "builder": build type "dockerfile" with repository "github.com/acme/builder" is a build-source app; re-deploy it from fleetly source intake (uploads or git push) and migrate only its configuration here
-skipped compose "holey": compose references variables absent from the dokploy env panel (MISSING); fleetly compose intake lands unresolved holes as literal values, so this app is skipped rather than silently corrupted
+skipped compose "holey": compose references variables absent from the dokploy env panel (MISSING); fleetly compose intake rejects unresolved variables at admission (fail-closed), so this app is skipped rather than submitted to a certain rejection
 skipped database "maria": dokploy engine "mariadb" has no fleetly mapping (engines: postgres, mysql, mongo, redis)
 project mig created (mig-1)
 database shop created (shop-1)

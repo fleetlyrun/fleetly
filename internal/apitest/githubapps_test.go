@@ -9,9 +9,11 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -42,7 +44,17 @@ type ghFake struct {
 	codes      map[string]bool // manifest 兑换码（一次性语义）
 	pem        []byte
 	srv        *httptest.Server
+	// base 是 api_base 用的 DNS 名基址（P0-7.3 起 validateAPIBase 拒
+	// 环回/私网字面——夹具 DialContext 把该名重定向到 httptest 监听）。
+	base string
 }
+
+// ghFakeHost / ghDeadHost 是夹具 api_base 的 DNS 名形态（非字面 IP——
+// 私网拒绝只判字面段与 localhost；dead 名重定向到关闭端口得确定性拒连）。
+const (
+	ghFakeHost = "ghe.test"
+	ghDeadHost = "ghe-dead.test"
+)
 
 func newFakeGitHub(t *testing.T, h *apitest.Harness) *ghFake {
 	t.Helper()
@@ -93,7 +105,29 @@ func newFakeGitHub(t *testing.T, h *apitest.Harness) *ghFake {
 		}})
 	})
 	f.srv = httptest.NewTLSServer(mux)
-	h.Services.GitHub = github.NewClient(f.srv.Client(), nil)
+	f.base = "https://" + ghFakeHost
+	// 夹具信任自签证书；DialContext 按 host 分流（P0-7.3）：夹具名 →
+	// httptest 监听（DNS 名不解析——hermetic），dead 名 → 关闭端口。
+	srvAddr := f.srv.Listener.Addr().String()
+	h.Services.GitHub = github.NewClient(&http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // 测试夹具自签证书
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				host, _, serr := net.SplitHostPort(addr)
+				if serr != nil {
+					host = addr
+				}
+				var d net.Dialer
+				switch host {
+				case ghFakeHost:
+					return d.DialContext(ctx, network, srvAddr)
+				case ghDeadHost:
+					return d.DialContext(ctx, network, "127.0.0.1:1") // 关闭端口：确定性拒连
+				}
+				return d.DialContext(ctx, network, addr)
+			},
+		},
+	}, nil)
 	t.Cleanup(f.srv.Close)
 	return f
 }
@@ -121,7 +155,7 @@ func TestGitHubAppIntakeVerification(t *testing.T) {
 
 	// 受理即验证：落库前实调 GitHub——属主自动解析（请求不携带），响应只
 	// 回指纹不回明文。
-	req := putReq(projectID, fake.srv.URL)
+	req := putReq(projectID, fake.base)
 	req.PrivateKeyPem = string(fake.pem)
 	out, err := apps.SetGitHubApp(ctx, req)
 	require.NoError(t, err)
@@ -157,7 +191,7 @@ func TestGitHubAppIntakeVerification(t *testing.T) {
 	key2, err := rsa.GenerateKey(rand.Reader, 2048)
 	require.NoError(t, err)
 	pem2 := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key2)})
-	rotated := putReq(projectID, fake.srv.URL)
+	rotated := putReq(projectID, fake.base)
 	rotated.PrivateKeyPem = string(pem2)
 	replay2, err := apps.SetGitHubApp(ctx, rotated)
 	require.NoError(t, err)
@@ -168,7 +202,7 @@ func TestGitHubAppIntakeVerification(t *testing.T) {
 	fake.mu.Lock()
 	fake.installApp[51790921] = 999
 	fake.mu.Unlock()
-	bad := putReq(projectID, fake.srv.URL)
+	bad := putReq(projectID, fake.base)
 	bad.PrivateKeyPem = string(fake.pem)
 	_, err = apps.SetGitHubApp(ctx, bad)
 	require.Error(t, err)
@@ -180,7 +214,7 @@ func TestGitHubAppIntakeVerification(t *testing.T) {
 
 	// 坏 PEM → E_INVALID_ARGUMENT；api_base 明文 http → E_INVALID_ARGUMENT；
 	// scope 双缺 → E_INVALID_ARGUMENT。
-	noPEM := putReq(projectID, fake.srv.URL)
+	noPEM := putReq(projectID, fake.base)
 	noPEM.PrivateKeyPem = "not a pem"
 	_, err = apps.SetGitHubApp(ctx, noPEM)
 	require.Error(t, err)
@@ -198,7 +232,7 @@ func TestGitHubAppIntakeVerification(t *testing.T) {
 	assert.Equal(t, codes.InvalidArgument, status.Code(err))
 
 	// 上游不可达 → E_GITHUB_UPSTREAM（Available；REST 面 502 映射）。
-	dead := putReq(projectID, "https://127.0.0.1:1")
+	dead := putReq(projectID, "https://"+ghDeadHost)
 	dead.PrivateKeyPem = string(fake.pem)
 	_, err = apps.SetGitHubApp(ctx, dead)
 	require.Error(t, err)
@@ -259,7 +293,7 @@ func TestGitHubAppAuthz(t *testing.T) {
 	greq := &deliveryv1.SetGitHubAppRequest{
 		Scope: &deliveryv1.SetGitHubAppRequest_Global{Global: true},
 		AppId: 201884, InstallationId: 51887734,
-		PrivateKeyPem: string(fake.pem), ApiBase: fake.srv.URL,
+		PrivateKeyPem: string(fake.pem), ApiBase: fake.base,
 	}
 	gapp, err := ghApps.SetGitHubApp(ownerCtx, greq)
 	require.NoError(t, err)
@@ -281,11 +315,11 @@ func TestGitHubAppAuthz(t *testing.T) {
 
 	// Project 级行：本队（owner）可写；他队 token 对他队项目可写（行级自
 	// 治），对他队项目（mine）E_FORBIDDEN。
-	oreq := putReq(theirs.GetProject().GetId(), fake.srv.URL)
+	oreq := putReq(theirs.GetProject().GetId(), fake.base)
 	oreq.PrivateKeyPem = string(fake.pem)
 	_, err = ghApps.SetGitHubApp(otherCtx, oreq)
 	require.NoError(t, err)
-	mreq := putReq(mine.GetProject().GetId(), fake.srv.URL)
+	mreq := putReq(mine.GetProject().GetId(), fake.base)
 	mreq.PrivateKeyPem = string(fake.pem)
 	_, err = ghApps.SetGitHubApp(otherCtx, mreq)
 	require.Error(t, err)
@@ -302,7 +336,7 @@ func TestGitHubAppGlobalListedByPlatformAdminOnly(t *testing.T) {
 	greq := &deliveryv1.SetGitHubAppRequest{
 		Scope: &deliveryv1.SetGitHubAppRequest_Global{Global: true},
 		AppId: 201884, InstallationId: 51887734,
-		PrivateKeyPem: string(fake.pem), ApiBase: fake.srv.URL,
+		PrivateKeyPem: string(fake.pem), ApiBase: fake.base,
 	}
 	_, err := ghApps.SetGitHubApp(ownerCtx, greq)
 	require.NoError(t, err)

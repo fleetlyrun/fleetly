@@ -7,9 +7,11 @@ package fleetlygrpc
 
 import (
 	"context"
+	"errors"
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	"github.com/fleetlyrun/fleetly/internal/api/apperr"
+	"github.com/fleetlyrun/fleetly/internal/engine"
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
@@ -29,6 +31,11 @@ func (svc *RegistryService) ListRegistryCatalog(ctx context.Context, req *delive
 	}
 	repos, err := svc.s.Engine.RegistryCatalog(ctx, req.GetProjectId())
 	if err != nil {
+		if errors.Is(err, engine.ErrRegistryUnavailable) {
+			// 面缺席族 → 503（P0-7.2）：配置级 off 态不是内部故障——
+			// engine 文案即用户面文案（含 set registry.addr 处置提示）。
+			return nil, apperr.New("E_REGISTRY_UNAVAILABLE", "%s", err.Error()).WithCause(err)
+		}
 		return nil, apperr.New("E_INTERNAL", "%s", err.Error())
 	}
 	return &deliveryv1.ListRegistryCatalogResponse{Repositories: repos}, nil
@@ -45,8 +52,11 @@ func (svc *RegistryService) ListRegistryTags(ctx context.Context, req *deliveryv
 	}
 	tags, err := svc.s.Engine.RegistryTags(ctx, req.GetProjectId(), req.GetRepository())
 	if err != nil {
-		if err == state.ErrNotFound {
+		switch {
+		case errors.Is(err, state.ErrNotFound):
 			return nil, apperr.New("E_NOT_FOUND", "repository %s not found in project scope", req.GetRepository())
+		case errors.Is(err, engine.ErrRegistryUnavailable):
+			return nil, apperr.New("E_REGISTRY_UNAVAILABLE", "%s", err.Error()).WithCause(err)
 		}
 		return nil, apperr.New("E_INTERNAL", "%s", err.Error())
 	}

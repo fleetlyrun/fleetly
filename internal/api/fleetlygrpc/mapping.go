@@ -2,6 +2,8 @@ package fleetlygrpc
 
 import (
 	"errors"
+	"net"
+	"strings"
 	"time"
 
 	"google.golang.org/protobuf/encoding/protojson"
@@ -319,6 +321,39 @@ func validName(field, name string) error {
 	if !entityid.ValidName(name) {
 		return apperr.New("E_INVALID_ARGUMENT",
 			"%s: must be a dns label (lowercase letters, digits, hyphens; start and end alphanumeric, e.g. \"web\" or \"nightly-backup\")", field)
+	}
+	return nil
+}
+
+// rejectPrivateHost 拒绝指向环回/私网/链路本地/未指定段的 URL host
+// （P0-7.3，validateAPIBase 与 validateGitRepo 的单源 SSRF 防线）：两者都
+// 以控制面身份向 URL host 发起出站请求——写权者可配 https://10.x 形态
+// 让控制面探测内网且上游 message 原样回显。只判字面 IP 与 localhost 名
+// （校验位不做 DNS 解析——解析即 TOCTOU，且受理面无解析依赖）；DNS 名
+// 形态的内网指向不在此列。GHES 部署在内网是真实场景：显式豁免配置项
+// 留待真需求，落地时必须同时作用于本 helper 的两处调用（单源不豁开）。
+func rejectPrivateHost(field, host string) error {
+	h := strings.ToLower(host)
+	if h == "" {
+		return apperr.New("E_INVALID_ARGUMENT", "%s: URL host must not be empty", field)
+	}
+	if h == "localhost" || strings.HasSuffix(h, ".localhost") {
+		return apperr.New("E_INVALID_ARGUMENT",
+			"%s: must not point at localhost (got %q)", field, host)
+	}
+	ip := net.ParseIP(h)
+	if ip == nil {
+		// 纯数字/点字面（"2130706433"、"0177.0.0.1"）不是合法 IP 词法但
+		// libc 解析器可能按十进制/八进制 IPv4 拨号——字面数字面一律拒。
+		if !strings.ContainsAny(h, ":") && strings.Trim(h, "0123456789.") == "" {
+			return apperr.New("E_INVALID_ARGUMENT",
+				"%s: numeric host forms are not accepted (got %q); use a DNS name or a dotted IPv4 literal", field, host)
+		}
+		return nil
+	}
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
+		return apperr.New("E_INVALID_ARGUMENT",
+			"%s: must not point at loopback, private, link-local or unspecified addresses (got %q)", field, host)
 	}
 	return nil
 }

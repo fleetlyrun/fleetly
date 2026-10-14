@@ -256,6 +256,14 @@ func validateGitRepo(repo string) error {
 				"repo: must not contain whitespace or control characters (byte offset %d)", i)
 		}
 	}
+	// 私网/环回/链路本地段拒绝（rejectPrivateHost 单源，P0-7.3）：repo 由
+	// 控制面以 root 拉取——与 api_base 同一 SSRF 防线（只判字面 IP 与
+	// localhost 名；内网 DNS 名的显式豁免与 api_base 同期留待真需求）。
+	if u, perr := url.Parse(r); perr == nil {
+		if err := rejectPrivateHost("repo", u.Hostname()); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

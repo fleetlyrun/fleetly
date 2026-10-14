@@ -85,7 +85,12 @@ func (svc *DeploymentsService) Deploy(ctx context.Context, req *deliveryv1.Deplo
 		uploadRow = row
 	}
 
-	appSpec, err := normalizeDeploySource(req, appRow, uploadRow, specFile, deployVarLookup(ctx, svc.s, appRow))
+	// 变量环境装载失败上抛（P0-7.1）：不吞错——mapStateError 兜 E_INTERNAL。
+	varLookup, err := deployVarLookup(ctx, svc.s, appRow)
+	if err != nil {
+		return nil, mapStateError(err, "variables")
+	}
+	appSpec, err := normalizeDeploySource(req, appRow, uploadRow, specFile, varLookup)
 	if err != nil {
 		return nil, err
 	}
@@ -212,23 +217,30 @@ func freezeRevision(ctx context.Context, s *Services, appRow *app.App, appSpec *
 // deployVarLookup 合成 compose 官方插值的平台变量环境：Project 层
 // SharedVariable 为底、App 层 AppVariable 顶（App 胜出——与 freezeRevision
 // 的三级分层同向；compose 形态的 env 值在受理期消解冻结，ADR-0074）。
-// 环境一次性物化（两次列表查询），闭包查表。
-func deployVarLookup(ctx context.Context, s *Services, appRow *app.App) composeintake.VariableLookup {
+// 环境一次性物化（两次列表查询），闭包查表。装载失败上抛（P0-7.1）：
+// DB 瞬断不得静默吞成空环境——那会把内部故障伪装成"compose 变量不可
+// 消解"的 E_INVALID_ARGUMENT（fail-closed 消解律的用户面失真）；与
+// freezeRevision 的 ListActive 同纪律，经 mapStateError 落 E_INTERNAL。
+func deployVarLookup(ctx context.Context, s *Services, appRow *app.App) (composeintake.VariableLookup, error) {
 	env := map[string]string{}
-	if vars, err := s.SharedVariables.ListActive(ctx, s.DB.Runner(), appRow.ProjectID); err == nil {
-		for _, v := range vars {
-			env[v.Name] = v.Value
-		}
+	vars, err := s.SharedVariables.ListActive(ctx, s.DB.Runner(), appRow.ProjectID)
+	if err != nil {
+		return nil, err
 	}
-	if vars, err := s.AppVariables.ListActive(ctx, s.DB.Runner(), appRow.ID); err == nil {
-		for _, v := range vars {
-			env[v.Name] = v.Value
-		}
+	for _, v := range vars {
+		env[v.Name] = v.Value
+	}
+	appVars, err := s.AppVariables.ListActive(ctx, s.DB.Runner(), appRow.ID)
+	if err != nil {
+		return nil, err
+	}
+	for _, v := range appVars {
+		env[v.Name] = v.Value
 	}
 	return func(name string) (string, bool) {
 		v, ok := env[name]
 		return v, ok
-	}
+	}, nil
 }
 
 // normalizeDeploySource 归一化四源：image 直投 / compose 受理语言 / 上传

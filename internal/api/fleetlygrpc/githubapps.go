@@ -384,7 +384,9 @@ func mapGitHubVerifyError(err error) error {
 
 // validateAPIBase 校验 api_base（GHES 基址；空 = 缺省 github.com 合法）。
 // 基址会拼进 GitHub API 请求 URL——https-only + 空白/控制字符拒绝（与
-// validateGitRepo 同口径）。
+// validateGitRepo 同口径）+ 私网/环回/链路本地段拒绝（rejectPrivateHost
+// 单源，P0-7.3：控制面以该基址出站探测，写权者不得借 api_base 扫内网；
+// GHES 内网部署的显式豁免配置项留待真需求）。
 func validateAPIBase(b string) error {
 	v := strings.TrimSpace(b)
 	if v == "" {
@@ -400,7 +402,11 @@ func validateAPIBase(b string) error {
 				"api_base: must not contain whitespace or control characters (byte offset %d)", i)
 		}
 	}
-	return nil
+	u, err := url.Parse(v)
+	if err != nil {
+		return apperr.New("E_INVALID_ARGUMENT", "api_base: not a parsable URL (got %q)", v)
+	}
+	return rejectPrivateHost("api_base", u.Hostname())
 }
 
 // ghManifestScope 解析 manifest 三动词的 (--project|--global) 互斥必一；

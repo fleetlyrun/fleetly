@@ -3,8 +3,9 @@
 // （docs.dokploy.com/docs/api：applications/compose/domains/databases 分立
 // 资源），接受手组或截取自其 API 的 JSON。产物是迁移计划（部署意图 +
 // 逐条 skip 报告），不在此搬移数据（Volume/数据库内容仍走 Backup/Restore
-// 面）。映射面 fail-closed：compose 插值孔未消解即整条 skip，不静默落
-// 字面 "${...}" 值。
+// 面）。映射面 fail-closed：compose 插值孔未消解即整条 skip——fleetly
+// compose 受理面未消解 ${VAR} = 受理错误（ADR-0074 决策 5，原"落字面值"
+// 口径已废除），提交必拒不如迁移期诚实 skip。
 package spec
 
 import (
@@ -157,7 +158,7 @@ func ParseDokploy(body []byte) (*DokployPlan, error) {
 			plan.Skipped = append(plan.Skipped, DokploySkip{
 				Kind: "compose", Item: c.Name,
 				Reason: fmt.Sprintf(
-					"compose references variables absent from the dokploy env panel (%s); fleetly compose intake lands unresolved holes as literal values, so this app is skipped rather than silently corrupted",
+					"compose references variables absent from the dokploy env panel (%s); fleetly compose intake rejects unresolved variables at admission (fail-closed), so this app is skipped rather than submitted to a certain rejection",
 					strings.Join(unresolved, ", ")),
 			})
 			continue

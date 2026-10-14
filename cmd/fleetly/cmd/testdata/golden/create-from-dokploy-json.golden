@@ -47,7 +47,7 @@
       {
         "Item": "holey",
         "Kind": "compose",
-        "Reason": "compose references variables absent from the dokploy env panel (MISSING); fleetly compose intake lands unresolved holes as literal values, so this app is skipped rather than silently corrupted"
+        "Reason": "compose references variables absent from the dokploy env panel (MISSING); fleetly compose intake rejects unresolved variables at admission (fail-closed), so this app is skipped rather than submitted to a certain rejection"
       },
       {
         "Item": "maria",

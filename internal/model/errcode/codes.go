@@ -222,4 +222,11 @@ var builtins = []Code{
 		Source:     "internal/engine/rotate.go runRotateUtility (IA v3 二期⑤b: utility-first ordering — a failed data-plane change leaves zero state behind; the secret rewrite only follows success)",
 		GRPC:       codes.FailedPrecondition,
 	},
+	{
+		ID:         "E_REGISTRY_UNAVAILABLE",
+		Summary:    "The managed registry read proxy is unavailable (registry not configured, or the provider has no content face).",
+		Suggestion: "Set registry.addr in the fleetlyd config and restart to enable the managed registry; if it is already set, the configured registry provider does not serve the catalog/tags content face. Absence is an explicit off state, not a degraded mode (E_BROWSE_DISABLED precedent).",
+		Source:     "internal/engine/registrycontent.go registryContentFor (IA v3 二期⑤b/P0-7: unconfigured face = precise 503, not a masked 500)",
+		GRPC:       codes.Unavailable,
+	},
 }

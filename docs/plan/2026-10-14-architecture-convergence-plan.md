@@ -67,7 +67,7 @@
 - **验证**：statetest 新用例
 - **预估**：0.5-1 天
 
-### P0-7 杂项止血 — [ ]
+### P0-7 杂项止血 — [x]
 - deployVarLookup 吞错上抛（delivery.go:218-227）；registry"未配置"族入册 503（registrycontent.go + errcode + golden）；api_base 私网拒绝单源（githubapps validateAPIBase）；Q1 节点条件写（nodes.go 值变化才写）；Q2 按名点查（dokploy/quickstart GetByName）；dokploy 文案失真修正
 - **预估**：0.5-1 天
 

@@ -336,8 +336,13 @@ func (svc *HooksService) gitBatchSpec(ctx context.Context, appRow *app.App, h *h
 	if err != nil {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "compose file %s not found at %s @%s", h.Dockerfile, h.Repo, shortSHA(commit))
 	}
-	out, err := composeintake.FromYAML(body, appRow.ID, appRow.ProjectID,
-		deployVarLookup(ctx, svc.s, appRow))
+	// 变量环境装载失败上抛（P0-7.1）：不吞错——DB 瞬断不得伪装成
+	// "compose 变量不可消解"的受理失败。
+	varLookup, err := deployVarLookup(ctx, svc.s, appRow)
+	if err != nil {
+		return nil, mapStateError(err, "variables")
+	}
+	out, err := composeintake.FromYAML(body, appRow.ID, appRow.ProjectID, varLookup)
 	if err != nil {
 		return nil, mapValidationError(err)
 	}

@@ -3,9 +3,10 @@ package apitest_test
 // E_INTERNAL 出口纪律三面回归（P0-3）：gRPC 面 message 无 cause 复合文本、
 // trailer metadata 携带 x-fleetly-error-id、信封 context 同步落 id；REST 面
 // 复用同一单点（经 gRPC 段转发的错误幂等复用 id）且响应头同键承载；非
-// E_INTERNAL 零影响。触发面：ListRegistryCatalog——harness 假仓无内容子面，
-// engine 产 "does not offer the content face"，handler 落 E_INTERNAL（消息
-// 含 cause 文本，正是出口纪律要拦下的形态）。
+// E_INTERNAL 零影响。触发面（P0-7.2 起换装）：ListSharedVariables + DROP
+// TABLE——受管仓面缺席族已分流 E_REGISTRY_UNAVAILABLE（registry_
+// unavailable_test.go），E_INTERNAL 的真实形态是存储层故障（SQL 错误复合
+// 文本经 handler 进 message，正是出口纪律要拦下的形态）。
 
 import (
 	"context"
@@ -21,7 +22,6 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
-	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/api/apperr"
 	"github.com/fleetlyrun/fleetly/internal/apitest"
@@ -31,6 +31,15 @@ import (
 
 // errorIDHexRe 与 apperr.NewErrorID 的 128 位十六进制形态对齐。
 var errorIDHexRe = regexp.MustCompile(`^[0-9a-f]{32}$`)
+
+// dropSharedVariables 制造存储层内部故障（表缺席 → SQL 失败 → mapStateError
+// 兜 E_INTERNAL，消息含 SQL cause 文本）。
+func dropSharedVariables(t *testing.T, h *apitest.Harness) {
+	t.Helper()
+	if _, err := h.DB.Runner().ExecContext(context.Background(), "DROP TABLE shared_variables"); err != nil {
+		t.Fatalf("drop shared_variables: %v", err)
+	}
+}
 
 // TestInternalErrorExitGRPCFace：gRPC 面 E_INTERNAL 全链（bufconn 真装配
 // 拦截器链）——message 脱敏、error_id 入信封 context、trailer 同键承载；
@@ -44,15 +53,16 @@ func TestInternalErrorExitGRPCFace(t *testing.T) {
 	require.NoError(t, err)
 	projectID := proj.GetProject().GetId()
 
-	// E_INTERNAL：假仓无内容子面 → handler 落 E_INTERNAL（消息含 cause 文本）。
-	_, err = deliveryv1.NewRegistryServiceClient(h.Conn).ListRegistryCatalog(ctx,
-		&deliveryv1.ListRegistryCatalogRequest{ProjectId: projectID})
+	// E_INTERNAL：存储层故障（表缺席）→ handler 兜 E_INTERNAL（消息含 cause 文本）。
+	dropSharedVariables(t, h)
+	_, err = structurev1.NewSharedVariablesServiceClient(h.Conn).ListSharedVariables(ctx,
+		&structurev1.ListSharedVariablesRequest{ProjectId: projectID})
 	require.Error(t, err)
 	st := status.Convert(err)
 	assert.Equal(t, status.Code(err).String(), "Internal")
 	assert.Equal(t, "E_INTERNAL: internal server error", st.Message(),
 		"gRPC face must carry the redacted message, never the cause text")
-	assert.NotContains(t, st.Message(), "content face")
+	assert.NotContains(t, st.Message(), "shared_variables", "SQL cause text must not leak")
 
 	env, ok := apperr.FromError(err)
 	require.True(t, ok, "envelope detail must survive the wire")
@@ -62,9 +72,9 @@ func TestInternalErrorExitGRPCFace(t *testing.T) {
 
 	// trailer 承载：同一 id 经 x-fleetly-error-id 上线（非 proto 消费方可直读）。
 	var trailer metadata.MD
-	err = h.Conn.Invoke(ctx, "/fleetly.delivery.v1.RegistryService/ListRegistryCatalog",
-		&deliveryv1.ListRegistryCatalogRequest{ProjectId: projectID},
-		&deliveryv1.ListRegistryCatalogResponse{}, grpc.Trailer(&trailer))
+	err = h.Conn.Invoke(ctx, "/fleetly.structure.v1.SharedVariablesService/ListSharedVariables",
+		&structurev1.ListSharedVariablesRequest{ProjectId: projectID},
+		&structurev1.ListSharedVariablesResponse{}, grpc.Trailer(&trailer))
 	require.Error(t, err)
 	trailerEnv, ok := apperr.FromError(err)
 	require.True(t, ok)
@@ -99,16 +109,17 @@ func TestInternalErrorExitRESTFace(t *testing.T) {
 	proj, err := structurev1.NewProjectsServiceClient(h.Conn).CreateProject(ctx,
 		&structurev1.CreateProjectRequest{Name: "e-internal-rest"})
 	require.NoError(t, err)
+	dropSharedVariables(t, h)
 
 	handler, err := assembly.NewGatewayHandler(nil, h.Conn, nil, nil, assembly.NewBrowseGate(h.Services))
 	require.NoError(t, err)
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/v1/registry/catalog?project_id="+proj.GetProject().GetId(), nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/v1/shared-variables?project_id="+proj.GetProject().GetId(), nil)
 	req.Header.Set("Authorization", "Bearer "+h.Token)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusInternalServerError, rec.Code, rec.Body.String())
-	assert.NotContains(t, rec.Body.String(), "content face", "REST body must not leak the cause text")
+	assert.NotContains(t, rec.Body.String(), "shared_variables", "REST body must not leak the cause text")
 
 	var envelope struct {
 		Code    string            `json:"code"`

@@ -2,10 +2,10 @@ package cmd
 
 // registry 组 golden（IA v3 二期⑤b）：golden harness 无受管仓装配
 //（catalog/tags 的真机面在 zot provider 单测与 dind 演练承载）——精确拒
-// 绝面双形态钉死：越纲仓名 E_NOT_FOUND（归属校验先于上游调用）+ 前纲内
-// 上游面缺席 E_INTERNAL（harness 假仓无 content 面；P0-3 起走出口纪律：
-// 脱敏文案 + error_id，cause 文本 "does not offer the content face" 只落
-// 服务端日志）；happy 流由 provider 单测（httptest 上游）钉。
+// 绝面双形态钉死：越纲仓名 E_NOT_FOUND（归属校验先于上游调用）+ 面缺席
+// 族 E_REGISTRY_UNAVAILABLE 503（P0-7.2：harness 假仓无 content 面——
+// 配置级 off 态，message 即用户面处置提示，非 E_INTERNAL 脱敏形态）；
+// happy 流由 provider 单测（httptest 上游）钉。
 
 import (
 	"strings"
@@ -16,18 +16,19 @@ func TestGoldenRegistryRejections(t *testing.T) {
 	_ = newGoldenHarness(t)
 	projectID := seedDatabaseProject(t, "regcat")
 
-	// catalog：上游面缺席 → E_INTERNAL 出口纪律形态（脱敏 + error_id）双形态。
+	// catalog：面缺席 → E_REGISTRY_UNAVAILABLE 503 双形态（P0-7.2 起，
+	// 此前经 E_INTERNAL 出口纪律脱敏——配置事实不再是内部故障）。
 	code, out, stderr := runCLI(t, "registry", "catalog", "--project", projectID)
-	if code == 0 || out != "" || !strings.Contains(stderr, "E_INTERNAL: internal server error") {
-		t.Fatalf("registry catalog: code=%d out=%q stderr=%q (want redacted internal error)", code, out, stderr)
+	if code == 0 || out != "" || !strings.Contains(stderr, "E_REGISTRY_UNAVAILABLE: the managed registry read proxy is unavailable") {
+		t.Fatalf("registry catalog: code=%d out=%q stderr=%q (want registry unavailable)", code, out, stderr)
 	}
-	if strings.Contains(stderr, "content face") {
-		t.Fatalf("registry catalog: cause text must not reach the CLI: %q", stderr)
+	if !strings.Contains(stderr, "does not offer the content face") {
+		t.Fatalf("registry catalog: config-level message must name the absent face: %q", stderr)
 	}
 	compareGolden(t, "registry-catalog", normalizeGolden(stderr))
 	code, out, stderr = runCLI(t, "registry", "catalog", "--project", projectID, "--json")
-	if code == 0 || out != "" || !strings.Contains(stderr, "E_INTERNAL: internal server error") {
-		t.Fatalf("registry catalog --json: code=%d out=%q stderr=%q (want redacted internal error)", code, out, stderr)
+	if code == 0 || out != "" || !strings.Contains(stderr, "E_REGISTRY_UNAVAILABLE: the managed registry read proxy is unavailable") {
+		t.Fatalf("registry catalog --json: code=%d out=%q stderr=%q (want registry unavailable)", code, out, stderr)
 	}
 	compareGolden(t, "registry-catalog-json", normalizeGolden(stderr))
 
@@ -44,17 +45,17 @@ func TestGoldenRegistryRejections(t *testing.T) {
 	}
 	compareGolden(t, "registry-tags-json", normalizeGolden(stderr))
 
-	// tags 前纲内但上游面缺席（harness 假仓无 content 面）：E_INTERNAL 出口
-	// 纪律形态双形态——归属通过后的内部失败（脱敏 + error_id）。
+	// tags 前纲内但面缺席（harness 假仓无 content 面）：
+	// E_REGISTRY_UNAVAILABLE 503 双形态——归属通过后的配置级拒绝。
 	inScope := strings.ToLower(projectID) + "/app"
 	code, out, stderr = runCLI(t, "registry", "tags", "--project", projectID, inScope)
-	if code == 0 || out != "" || !strings.Contains(stderr, "E_INTERNAL: internal server error") {
-		t.Fatalf("registry tags (in-scope): code=%d out=%q stderr=%q (want redacted internal error)", code, out, stderr)
+	if code == 0 || out != "" || !strings.Contains(stderr, "E_REGISTRY_UNAVAILABLE: the managed registry read proxy is unavailable") {
+		t.Fatalf("registry tags (in-scope): code=%d out=%q stderr=%q (want registry unavailable)", code, out, stderr)
 	}
 	compareGolden(t, "registry-tags-upstream", normalizeGolden(stderr))
 	code, out, stderr = runCLI(t, "registry", "tags", "--project", projectID, inScope, "--json")
-	if code == 0 || out != "" || !strings.Contains(stderr, "E_INTERNAL: internal server error") {
-		t.Fatalf("registry tags --json (in-scope): code=%d out=%q stderr=%q (want redacted internal error)", code, out, stderr)
+	if code == 0 || out != "" || !strings.Contains(stderr, "E_REGISTRY_UNAVAILABLE: the managed registry read proxy is unavailable") {
+		t.Fatalf("registry tags --json (in-scope): code=%d out=%q stderr=%q (want registry unavailable)", code, out, stderr)
 	}
 	compareGolden(t, "registry-tags-upstream-json", normalizeGolden(stderr))
 }

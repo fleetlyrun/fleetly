@@ -68,6 +68,7 @@ var errcodeToHTTP = map[string]int{
 	"E_QUEUE_FULL":               http.StatusTooManyRequests,
 	"E_QUOTA_EXCEEDED":           http.StatusTooManyRequests,
 	"E_RATE_LIMITED":             http.StatusTooManyRequests,
+	"E_REGISTRY_UNAVAILABLE":     http.StatusServiceUnavailable,
 	"E_SECRET_UNAVAILABLE":       http.StatusConflict,
 	"E_TEMPLATE_INVALID":         http.StatusBadRequest,
 	"E_UNAUTHENTICATED":          http.StatusUnauthorized,

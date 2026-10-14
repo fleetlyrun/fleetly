@@ -113,11 +113,11 @@ func newCreateFromDokployVerb() commands.Command {
 			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 
-			projectID, err := ensureProjectByName(ctx, c, project)
+			projectID, reused, err := ensureProjectByName(ctx, c, project)
 			if err != nil {
 				return err
 			}
-			report.Steps = append(report.Steps, dokployStep{Kind: "project", Name: project, Detail: projectID})
+			report.Steps = append(report.Steps, dokployStep{Kind: "project", Name: project, Detail: projectID, Reused: reused})
 
 			// databases create-or-reuse（按名——重跑收敛）。
 			for _, db := range plan.Databases {
@@ -209,17 +209,13 @@ func newCreateFromDokployVerb() commands.Command {
 	}
 }
 
-// ensureDatabaseByName 按名 create-or-reuse（引擎一致性不校验——同名不同
-// 引擎由服务端拒绝，诚实错误）。
+// ensureDatabaseByName 按名 create-or-reuse（查重游标全量收敛，P0-7.5；
+// 引擎一致性不校验——同名不同引擎由服务端拒绝，诚实错误）。
 func ensureDatabaseByName(ctx context.Context, c *sdk.Client, projectID, dbName, engine string) (string, bool, error) {
-	list, err := c.Databases.ListDatabases(ctx, &structurev1.ListDatabasesRequest{ProjectId: projectID})
-	if err != nil {
+	if id, found, err := findDatabaseByName(ctx, c, projectID, dbName); err != nil {
 		return "", false, err
-	}
-	for _, d := range list.GetDatabases() {
-		if d.GetName() == dbName {
-			return d.GetId(), true, nil
-		}
+	} else if found {
+		return id, true, nil
 	}
 	created, err := c.Databases.CreateDatabase(ctx, &structurev1.CreateDatabaseRequest{
 		ProjectId: projectID, Name: dbName, Engine: engine,
@@ -230,16 +226,13 @@ func ensureDatabaseByName(ctx context.Context, c *sdk.Client, projectID, dbName,
 	return created.GetDatabase().GetId(), false, nil
 }
 
-// ensureAppByName 按名 create-or-reuse。
+// ensureAppByName 按名 create-or-reuse（查重游标全量收敛，P0-7.5——
+// 首页 50 之外的同名 App 不再误判不存在）。
 func ensureAppByName(ctx context.Context, c *sdk.Client, projectID, appName string) (string, bool, error) {
-	list, err := c.Apps.ListApps(ctx, &structurev1.ListAppsRequest{ProjectId: projectID})
-	if err != nil {
+	if id, found, err := findAppByName(ctx, c, projectID, appName); err != nil {
 		return "", false, err
-	}
-	for _, a := range list.GetApps() {
-		if a.GetName() == appName {
-			return a.GetId(), true, nil
-		}
+	} else if found {
+		return id, true, nil
 	}
 	created, err := c.Apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: projectID, Name: appName})
 	if err != nil {
