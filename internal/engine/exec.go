@@ -31,8 +31,9 @@ const (
 	execMaxSessionsPerTeam = 8
 	// execIdleTimeout 是无帧空闲超时（任一方向帧活动即重置）。
 	execIdleTimeout = 10 * time.Minute
-	// execHardTTL 是会话硬时效（受理起算；未附着会话同样受管——票据
-	// TTL 后无附着即由此收口）。
+	// execHardTTL 是会话硬时效（受理起算——CreateSession 即装配；未附着
+	// 会话同样受管：票据清扫只删票据无回调，回收路径只有这里。2026-10-14
+	// P0-1 K1 修正——此前只在 AttachClient 装，未附着会话永占 team 限额）。
 	execHardTTL = 30 * time.Minute
 	// execOutboundCap 是下行帧缓冲上限（慢消费端防内存膨胀——满即收口）。
 	execOutboundCap = 256
@@ -135,6 +136,9 @@ type execDomain struct {
 	sessions map[string]*execSession
 	relays   map[string]*relayConn // 平台节点 ID → 在连中继
 	execSeq  atomic.Uint64         // 会话序号（id = exec-<n>，ADR-0070 独立类）
+	// after 是 TTL 计时器缝（默认 time.AfterFunc；测试捕获回调手动触发
+	// ——FakeClock 驱不动真实 timer，返回 nil 计时器由各 nil 守卫兜住）。
+	after func(d time.Duration, f func()) *time.Timer
 }
 
 // relayConn 是一条在连节点中继。
@@ -161,6 +165,7 @@ type execSession struct {
 func (d *execDomain) init() {
 	d.sessions = make(map[string]*execSession)
 	d.relays = make(map[string]*relayConn)
+	d.after = time.AfterFunc
 }
 
 // ExecUnsupported 报告 Runtime 是否缺 exec 子面（api 受理面诚实失败锚）。
@@ -228,6 +233,13 @@ func (e *Engine) CreateSession(ctx context.Context, in CreateExecInput) (*ExecSe
 		out:   make(chan ExecServerFrame, execOutboundCap),
 		relay: relay,
 	}
+	// 受理即起硬 TTL（K1，2026-10-14 P0-1）：未附着会话的回收路径。计时
+	// 器字段读写一律持 s.mu（装配/触碰/收口三面同锁，防 timer 字段竞态）。
+	s.mu.Lock()
+	s.hardTimer = e.exec.after(execHardTTL, func() {
+		e.finishSession(s, &ExecErrFrame{Code: "session_expired", Message: "session hard TTL exceeded"})
+	})
+	s.mu.Unlock()
 	e.exec.sessions[s.info.ID] = s
 	e.exec.mu.Unlock()
 	return &s.info, nil
@@ -341,16 +353,19 @@ func (e *Engine) AttachClient(ctx context.Context, sessionID string, pipe ExecCl
 		return nil
 	}
 
-	// 空闲/硬 TTL 计时。
-	s.idleTimer = time.AfterFunc(execIdleTimeout, func() {
+	// 空闲计时（attach 起算）；硬 TTL 已在受理起算（CreateSession），不重
+	// 复装配——重复装配会漏停旧计时器。装配持 s.mu。
+	s.mu.Lock()
+	s.idleTimer = e.exec.after(execIdleTimeout, func() {
 		e.finishSession(s, &ExecErrFrame{Code: "idle_timeout", Message: "no session traffic within the idle window"})
 	})
-	s.hardTimer = time.AfterFunc(execHardTTL, func() {
-		e.finishSession(s, &ExecErrFrame{Code: "session_expired", Message: "session hard TTL exceeded"})
-	})
+	s.mu.Unlock()
 	defer func() {
-		s.idleTimer.Stop()
-		s.hardTimer.Stop()
+		s.mu.Lock()
+		if s.idleTimer != nil {
+			s.idleTimer.Stop()
+		}
+		s.mu.Unlock()
 	}()
 
 	// 上行泵：消费端帧 → 中继。EOF = stdin 关闭（StdinEOF 帧转达），
@@ -455,9 +470,19 @@ func (e *Engine) deliverRelayFrame(f capability.RelayFrame) {
 	default:
 		return
 	}
+	// 发送与 closed 复查同临界区（K2，2026-10-14 P0-1）：finishSession 置
+	// closed 后才 close(s.out)，发送方持锁复查即被排除——close 恒独占，
+	// send-on-closed 竞态结构性消除。
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return // 会话已收口（迟到帧丢弃）
+	}
 	select {
 	case s.out <- out:
+		s.mu.Unlock()
 	default:
+		s.mu.Unlock()
 		// 慢消费端：缓冲满即收口（内存膨胀防护，ADR-0049 决策 4 注记）。
 		e.finishSession(s, &ExecErrFrame{Code: "client_stalled", Message: "client is not draining session output"})
 	}
@@ -472,8 +497,11 @@ func (e *Engine) sendRelay(a *relayConn, kind capability.RelayFrameKind, session
 	return nil
 }
 
-// touchSession 重置空闲计时。
+// touchSession 重置空闲计时（idleTimer 读写持 s.mu——timer 字段三面同锁
+// 的触碰半边）。
 func (e *Engine) touchSession(s *execSession) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if s.idleTimer != nil {
 		s.idleTimer.Reset(execIdleTimeout)
 	}
@@ -488,14 +516,15 @@ func (e *Engine) finishSession(s *execSession, last *ExecErrFrame) {
 		return
 	}
 	s.closed = true
-	s.mu.Unlock()
-
+	// 计时器停在与 closed 同临界区（timer 字段三面同锁的收口半边）。
 	if s.idleTimer != nil {
 		s.idleTimer.Stop()
 	}
 	if s.hardTimer != nil {
 		s.hardTimer.Stop()
 	}
+	s.mu.Unlock()
+
 	e.exec.mu.Lock()
 	relay := s.relay
 	if e.exec.sessions[s.info.ID] == s {
@@ -506,6 +535,8 @@ func (e *Engine) finishSession(s *execSession, last *ExecErrFrame) {
 		// 尽力终止（中继断线时静默；中继侧 exec 收口尽力而为）。
 		_ = relay.w.WriteRelayFrame(capability.MarshalRelayFrame(capability.RelayFrameClose, s.info.ID, nil))
 	}
+	// 终结帧：closed 已置位，deliverRelayFrame 持锁复查即被排除——此处
+	// 是唯一发送方，随后的 close 恒独占（K2 的另一半保证）。
 	if last != nil {
 		select {
 		case s.out <- ExecServerFrame{Err: last}:

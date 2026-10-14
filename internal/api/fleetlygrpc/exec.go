@@ -179,8 +179,16 @@ func (svc *ExecService) StreamExecSession(stream runtimev1.ExecService_StreamExe
 	if first.GetAttachSessionId() == "" {
 		return apperr.New("E_INVALID_ARGUMENT", "first frame must attach a session id")
 	}
-	if _, ok := svc.s.Engine.ExecSessionByID(first.GetAttachSessionId()); !ok {
+	info, ok := svc.s.Engine.ExecSessionByID(first.GetAttachSessionId())
+	if !ok {
 		return apperr.New("E_NOT_FOUND", "exec session %s not found", first.GetAttachSessionId())
+	}
+	// 行级授权（S1，2026-10-14 P0-1）：会话绑定受理时的 Team，gRPC 直连
+	// 消费径与 Console 票据径同律（票据在签发时已鉴权）。会话 ID 是进程内
+	// 单调序号可枚举——此比对是跨队抢附着的唯一闸（他队 owner 不豁免，
+	// 判定与 authz.go 单源同律）。
+	if err := teamAuthorized(ctx, info.TeamID); err != nil {
+		return err
 	}
 	pipe := &execGRPCPipe{stream: stream, attached: true}
 	if err := svc.s.Engine.AttachClient(ctx, first.GetAttachSessionId(), pipe); err != nil {
