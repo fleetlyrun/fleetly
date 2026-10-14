@@ -24,11 +24,27 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/errcode"
 )
 
+// grpcCodeByName 是 grpc 码名→codes.Code 的反查表（P1a-3b：errcode.Code.GRPC
+// 改字符串形态在册后，grpc-go 类型面收口到传输适配层——domain/shared/model
+// 零 grpc import）。码名与 codes.Code.String() 逐字一致（golden 钉同一形态），
+// 全枚举反查保证新 grpc 码零登记成本；未知名兜底 Unknown（errcode 注册纪律
+// 下正常不可达，防御注册表漂移）。
+var grpcCodeByName = func() map[string]codes.Code {
+	m := make(map[string]codes.Code)
+	for c := codes.Code(0); c <= codes.Unauthenticated; c++ {
+		m[c.String()] = c
+	}
+	return m
+}()
+
 // grpcCodeFor 返回错误码的 gRPC 传输码（注册表真源；New/Restore 均保证
 // 在册，回落 Unknown 分支正常不可达）。
 func grpcCodeFor(e *apperr.Error) codes.Code {
 	if c, ok := errcode.Get(e.Code()); ok {
-		return c.GRPC
+		if code, ok := grpcCodeByName[c.GRPC]; ok {
+			return code
+		}
+		return codes.Unknown
 	}
 	return codes.Unknown
 }

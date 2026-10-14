@@ -7,6 +7,11 @@
 //
 // HTTP 状态经 gRPC code 由 gateway 机械映射派生（grpcapi DefaultCodeToHTTP），
 // 注册表不单独维护 HTTP int。
+//
+// P1a-3b 起 domain/shared/model 零 grpc-go 依赖：Code.GRPC 以 grpc 码名字符串
+// 在册（与 codes.Code.String() 逐字一致，如 "FailedPrecondition"，golden 钉死
+// 同一形态零漂移）；string→codes.Code 的反查表落传输适配层
+// interfaces/grpc/apperrstatus（未知名兜底 Unknown）。
 package errcode
 
 import (
@@ -14,8 +19,6 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-
-	"google.golang.org/grpc/codes"
 )
 
 // idPattern 钉死码格式：E_ 前缀 + 大写蛇形（E_INVALID_ARGUMENT）。
@@ -35,8 +38,10 @@ type Code struct {
 	// Source 来源锚点：docs §anchor 或 "added during implementation"
 	//（三链 usage 反扫豁免预留码时同加注释）。
 	Source string
-	// GRPC 是该码的 gRPC status code（错误族门禁；HTTP 由 gateway 派生）。
-	GRPC codes.Code
+	// GRPC 是该码的 gRPC status code 名（错误族门禁；HTTP 由 gateway 派生）。
+	// 形态是 codes.Code.String() 的字符串（"FailedPrecondition"），注册表
+	// 因此不依赖 grpc-go；反查成 codes.Code 在传输适配层 apperrstatus。
+	GRPC string
 }
 
 // Registry 是注册表；构造后不可变。
@@ -47,8 +52,8 @@ type Registry struct {
 // NewRegistry 构造空注册表。
 func NewRegistry() *Registry { return &Registry{m: map[string]Code{}} }
 
-// MustRegister 登记一条码；格式非法、重复、Source 为空、GRPC 非错误族
-// 均为编程错误，直接 panic（fail-fast：坏码不该等到首个请求才暴露）。
+// MustRegister 登记一条码；格式非法、重复、Source 为空、GRPC 码名缺失或
+// OK 均为编程错误，直接 panic（fail-fast：坏码不该等到首个请求才暴露）。
 func (r *Registry) MustRegister(c Code) {
 	if !idPattern.MatchString(c.ID) {
 		panic(fmt.Sprintf("errcode: invalid id %q (want %s)", c.ID, idPattern.String()))
@@ -59,8 +64,8 @@ func (r *Registry) MustRegister(c Code) {
 	if strings.TrimSpace(c.Source) == "" {
 		panic(fmt.Sprintf("errcode: %s missing Source (docs anchor or \"added during implementation\")", c.ID))
 	}
-	if c.GRPC == codes.OK {
-		panic(fmt.Sprintf("errcode: %s maps to codes.OK", c.ID))
+	if c.GRPC == "" || c.GRPC == "OK" {
+		panic(fmt.Sprintf("errcode: %s has empty or OK grpc code %q", c.ID, c.GRPC))
 	}
 	r.m[c.ID] = c
 }
@@ -98,7 +103,7 @@ func (r *Registry) All() []Code {
 func (r *Registry) Snapshot() string {
 	var b strings.Builder
 	for _, c := range r.All() {
-		fmt.Fprintf(&b, "%s\t%s\t%s\t%s\t%s\n", c.ID, c.GRPC.String(), c.Summary, c.Suggestion, c.Source)
+		fmt.Fprintf(&b, "%s\t%s\t%s\t%s\t%s\n", c.ID, c.GRPC, c.Summary, c.Suggestion, c.Source)
 	}
 	return b.String()
 }

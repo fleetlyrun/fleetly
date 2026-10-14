@@ -8,7 +8,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc/codes"
 )
 
 var update = flag.Bool("update", false, "rewrite golden files")
@@ -32,21 +31,22 @@ func TestRegistryInvariants(t *testing.T) {
 	for _, c := range All() {
 		assert.NotEmpty(t, c.Summary, "%s missing Summary", c.ID)
 		assert.NotEmpty(t, c.Suggestion, "%s missing Suggestion", c.ID)
-		assert.NotEqual(t, codes.OK, c.GRPC, "%s maps to OK", c.ID)
+		assert.NotEqual(t, "OK", c.GRPC, "%s maps to OK", c.ID)
 		assert.Equal(t, DocsURLPrefix+c.ID, DocsURL(c.ID))
 	}
 }
 
-// 链 A：构造期 fail-fast（格式/重复/Source 缺失/OK 映射）。
+// 链 A：构造期 fail-fast（格式/重复/Source 缺失/OK 或空码名映射）。
 func TestMustRegisterRejects(t *testing.T) {
 	newReg := func() *Registry { return NewRegistry() }
-	assert.Panics(t, func() { newReg().MustRegister(Code{ID: "lowercase", Source: "x", GRPC: codes.Internal}) })
-	assert.Panics(t, func() { newReg().MustRegister(Code{ID: "E_X", GRPC: codes.Internal}) }) // 缺 Source
-	assert.Panics(t, func() { newReg().MustRegister(Code{ID: "E_X", Source: "x", GRPC: codes.OK}) })
+	assert.Panics(t, func() { newReg().MustRegister(Code{ID: "lowercase", Source: "x", GRPC: "Internal"}) })
+	assert.Panics(t, func() { newReg().MustRegister(Code{ID: "E_X", GRPC: "Internal"}) }) // 缺 Source
+	assert.Panics(t, func() { newReg().MustRegister(Code{ID: "E_X", Source: "x", GRPC: "OK"}) })
+	assert.Panics(t, func() { newReg().MustRegister(Code{ID: "E_X", Source: "x", GRPC: ""}) }) // 空码名同样是坏码
 
 	r := newReg()
-	r.MustRegister(Code{ID: "E_X", Source: "s", Summary: "m", Suggestion: "sug", GRPC: codes.NotFound})
+	r.MustRegister(Code{ID: "E_X", Source: "s", Summary: "m", Suggestion: "sug", GRPC: "NotFound"})
 	assert.Panics(t, func() {
-		r.MustRegister(Code{ID: "E_X", Source: "s", GRPC: codes.NotFound})
+		r.MustRegister(Code{ID: "E_X", Source: "s", GRPC: "NotFound"})
 	}, "duplicate must panic")
 }
