@@ -103,7 +103,7 @@ P3-1 exec（P0-1 修复正式收编 + 会话 ID 随机化 + ADR-0070 修订 + �
 P3-2 observ（metrics 拆 exposition/alerting/channelnotify）— [x]（metricsDomain→metrics 改名，字段 metricsDom 零 churn 留批 8；729 行拆四：metrics 采集环/exposition 纯函数/alerting 评估发射/channelnotify 派发；14 函数搬移逐字核实，零接收者迁移——跨依赖编排留 *Engine）
 P3-3 task/run（动词拆 taskverbs）— [x]（taskDomain→tasks 改名字段零 churn；task.go 908→576 拆出 taskverbs.go 动词面（五动词+配额单源+哨兵）；recycleObs/observation/drainObs 三纯状态机下放 *tasks；bluegreen 守卫 allowlist 随迁保鲜）
 P3-4 data — [x]（browseDomain→browses + databaseDomain→databases 改名字段零 churn；browse.go 615→339 拆出 browseloop.go 收敛环面；has/teamOf 两纯注册表读下放 *browses；bluegreen allowlist 随迁；backup/database 文件面已分组不动）
-P3-5 managed — [ ]
+P3-5 managed — [x]（managedDomain→manageds + managedGenState→managedGen 改名字段零 churn；managed.go 578→402 拆出 routepublish.go Route 发布面 F0.15；gensFor 留守 *Engine——与 ensureMemo 协议族同栖不拆锁配对；发布面整块逐字搬移）
 P3-6 build/material — [ ]
 P3-7 deploy 域 + SubmitSpec（v2 §4 九条不变式逐条 apitest 断言；ADR-0072/0074 追记咽喉新址）— [ ]
 P3-8 browse + 壳收口（engine.go <300 行 + Options 按域切片 + config 面同批）— [ ]

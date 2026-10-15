@@ -287,14 +287,16 @@ type expectDomain struct {
 	expected map[workloadOwner]uint64
 }
 
-// managedDomain 是受管域状态（Generation 实例态（C5：多 Engine 实例互不
-// 污染）+ Ensure 备忘）。
-type managedDomain struct {
+// manageds 是受管域状态（Generation 实例态（C5：多 Engine 实例互不
+// 污染）+ Ensure 备忘）。P3 批 5 收编：managedDomain → manageds（受管域
+// 实体名词的机械复数，ADR-0075 命名法则）；Engine 字段名 managed 保持
+// 不变（域字段壳收口留批 8）。
+type manageds struct {
 	// gens 是 per-受管域 Generation 计数（F2.5 修复：全局单计数把任一
 	// Provider 指纹变化放大成全部受管域滚动——新增受管 Provider 或 zot
 	// 材料随 Project 集变化都会把 Proxy 滚一遍（traefik stop-first = 路由
 	// 中断，升级零扰动锚实证）。键 = ManagedNamespace().String()。
-	gens   map[string]*managedGenState
+	gens   map[string]*managedGen
 	ensure map[string]ensureMemo // namespace → 上次成功 Ensure（managedFingerprint 全量保守口径）
 }
 
@@ -434,7 +436,7 @@ type Engine struct {
 	obs       observDomain
 	drift     driftDomain
 	expect    expectDomain
-	managed   managedDomain
+	managed   manageds
 	database  databases
 	delivery  deliveryDomain
 	proxyMemo proxyState
@@ -669,7 +671,7 @@ func New(deps Deps, opts Options) *Engine {
 	e.task.runObs = make(map[string]capability.WorkloadEvent)
 	e.task.ensure = make(map[string]ensureMemo)
 	e.managed.ensure = make(map[string]ensureMemo)
-	e.managed.gens = make(map[string]*managedGenState)
+	e.managed.gens = make(map[string]*managedGen)
 	e.database.ensure = make(map[string]ensureMemo)
 	e.delivery.release = make(map[string]ensureMemo)
 	e.proxyMemo.pub = make(map[string]ensureMemo)
