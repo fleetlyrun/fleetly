@@ -181,6 +181,11 @@ func (e *Engine) SubmitSpec(ctx context.Context, req SubmitSpecRequest) (*revisi
 	// marshalSpec 同参（digest 关键——文件头铁律）；内容寻址复用命中即
 	// 哨兵回滚（复用零写零事实，不变式①④）；facts 的双真偏离注记随迁
 	//（见声明处）。
+	//
+	// 性能阈值锚(P5-5)：冻结 blob 分析容量 ≈3k task/冻结 Spec（分析容量
+	// 锚，评审容量结论非实测上限）。形态：blob 整体单行物化，读回与
+	// diff 均为全量操作，代价随单 Spec 进程数线性走。重估触发：单 Spec
+	// 进程数常态逼近 3k 量级。
 	body, merr := protojson.MarshalOptions{EmitUnpopulated: false, UseProtoNames: true}.Marshal(req.Spec)
 	if merr != nil {
 		return nil, nil, nil, merr

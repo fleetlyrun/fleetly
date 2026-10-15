@@ -346,6 +346,11 @@ func (svc *EventsService) ListEvents(ctx context.Context, req *telemetryv1.ListE
 
 // streamEventsPollInterval 是 follow 模式的轮询拍（outbox 单调 seq 是权威
 // 源；拍取舍：Console/Agent 人机尺度下 250ms 足够即时，DB 压力可忽略）。
+//
+// 性能阈值锚(P5-5)：follow 流面分析容量 ≈50 并发跟随流（分析容量锚，评
+// 审容量结论非实测上限）。形态：拍轮询——每流每 250ms 拍一发 outbox 点
+// 查；余量按单写者 SQLite 形态的拍间隔均摊估计，未经压测证实。重估触发：
+// 常驻跟随流数常态逼近 50 量级。
 const streamEventsPollInterval = 250 * time.Millisecond
 
 // eventsGoneCheck 断档判定（ADR-0026）：after_seq 落在保留窗外 → 410 带

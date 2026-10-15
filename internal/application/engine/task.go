@@ -48,6 +48,11 @@ var taskDrivingStates = []run.State{run.StatePending, run.StateRunning, run.Stat
 // Task 分组，行集与逐 Task 查询完全一致——同状态集、同组内 id DESC 方向
 // 锚，僵尸 Run（终态 Task 名下）随分组丢弃，其收口是 sweepZombieRuns 的
 // 专属路径）。
+//
+// 性能阈值锚(P5-5)：taskStep 轮询面分析容量 ≈500 driving task（分析容量
+// 锚，评审容量结论非实测上限）。形态：每拍 ListDriving 全量单查询加逐行
+// 收口，代价随 driving 行数线性走。重估触发：driving 行数常态逼近 500
+// 量级。
 func (e *Engine) taskStep(ctx context.Context) {
 	tasks, err := e.tasks.ListDriving(ctx, e.db.Runner())
 	if err != nil {
