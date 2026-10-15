@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/build"
 )
 
 // 构建循环参数（Options 扩展；BuildConcurrency 上限可配，F0.9）。

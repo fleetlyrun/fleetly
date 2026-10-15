@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/build"
 )
 
 // restartEngine 模拟进程重启：有界排空旧实例（Stop：构建 goroutine 经

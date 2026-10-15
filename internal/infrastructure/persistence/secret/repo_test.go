@@ -10,8 +10,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/secret"
+	secretrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/secret"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
 
@@ -28,7 +29,7 @@ func newSecret(id, projectID, name string) *secret.Secret {
 func TestSecretListFingerprintsPagination(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	secrets := secret.New(clock)
+	secrets := secretrepo.New(clock)
 
 	const projA = "01JD0PROJ0000000000000000A"
 	const projB = "01JD0PROJ0000000000000000B"
@@ -130,7 +131,7 @@ func TestSecretUpsertConcurrentSameNameConflict(t *testing.T) {
 	}
 	upsertErr := make(chan error, 1)
 	go func() {
-		upsertErr <- secret.New(clock).Upsert(ctx, gate, &secret.Secret{
+		upsertErr <- secretrepo.New(clock).Upsert(ctx, gate, &secret.Secret{
 			ProjectID: projID, Name: "raced",
 			Ciphertext: []byte("ct"), Fingerprint: "0123456789abcdef",
 		})
@@ -150,7 +151,7 @@ func TestSecretUpsertConcurrentSameNameConflict(t *testing.T) {
 		"concurrent same-name PUT must normalize the unique violation, got: %v", err)
 
 	// 落库行仍是 A 的那颗（B 的 INSERT 失败即整体无效果）。
-	got, err := secret.New(clock).GetByName(ctx, dbB.Runner(), projID, "raced")
+	got, err := secretrepo.New(clock).GetByName(ctx, dbB.Runner(), projID, "raced")
 	require.NoError(t, err)
 	assert.Equal(t, "01JD0SECR0000000000000000R", got.ID)
 }

@@ -8,9 +8,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/automation/run"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/run"
+	runrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/run"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 	taskrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/task"
 )
@@ -157,7 +158,7 @@ func TestTaskStatsByProject(t *testing.T) {
 func TestRunStateMachine(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	runs := run.New(clock)
+	runs := runrepo.New(clock)
 
 	m := &run.Run{
 		ID: "01JD0RUN0000000000000000000", TaskID: "01JD0TASK00000000000000000",
@@ -210,7 +211,7 @@ func TestRunStateMachine(t *testing.T) {
 func TestRunListByTaskAndStates(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	runs := run.New(clock)
+	runs := runrepo.New(clock)
 
 	taskID := "01JD0TASK00000000000000000"
 	states := []run.State{run.StatePending, run.StateRunning, run.StateStopping, run.StateStopped, run.StateFailed}

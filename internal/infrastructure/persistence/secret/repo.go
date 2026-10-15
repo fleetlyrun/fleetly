@@ -1,6 +1,6 @@
-// Package secret 是 Secret 聚合 repo（CONTEXT.md Secret 词条：Project 级
-// 敏感值实体，age 信封加密存储，值永不回显只回指纹；注入 App/Task/
-// Database）。密文由 internal/material 加解密，本 repo 只管存取。
+// Package secret 是 Secret 聚合 repo 的 SQLite 实现：行类型与 Repo 接口住
+// domain/structure/secret（ADR-0075 Repo 接口层），本包只持不导出实现与
+// 构造。
 package secret
 
 import (
@@ -9,36 +9,21 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
-// Secret 是聚合行（ciphertext 是 age 信封；fingerprint 供回显对账）。
-type Secret struct {
-	ID          string
-	Seq         int64
-	ProjectID   string
-	Name        string
-	Ciphertext  []byte
-	Fingerprint string
-	CreatedAt   string
-	UpdatedAt   string
-	DeletedAt   string
-}
-
-// Deleted 报告 tombstone 状态。
-func (s *Secret) Deleted() bool { return s.DeletedAt != "" }
-
-// Repo 是 Secret 聚合存取。
-type Repo struct {
+// repo 是 domain secret.Repo 的 SQLite 实现。
+type repo struct {
 	clock state.Clock
 }
 
-// New 构造 repo。
-func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
+// New 构造 repo（直接返回接口——消费面只见 domain secret.Repo）。
+func New(clock state.Clock) secret.Repo { return &repo{clock: clock} }
 
 // Upsert 写入（同名活跃行覆盖：fingerprint 变更即新值；四件一拍的审计
 // 由调用方同事务组合）。
-func (r *Repo) Upsert(ctx context.Context, run state.Runner, s *Secret) error {
+func (r *repo) Upsert(ctx context.Context, run state.Runner, s *secret.Secret) error {
 	now := state.FormatTime(r.clock.Now())
 	if existing, err := r.GetByName(ctx, run, s.ProjectID, s.Name); err == nil {
 		_, err := run.ExecContext(ctx, `
@@ -72,7 +57,7 @@ func (r *Repo) Upsert(ctx context.Context, run state.Runner, s *Secret) error {
 
 // GetByName 读活跃行（含密文——仅注入/分发路径调用；API 回显面只用
 // ListFingerprints）。
-func (r *Repo) GetByName(ctx context.Context, run state.Runner, projectID, name string) (*Secret, error) {
+func (r *repo) GetByName(ctx context.Context, run state.Runner, projectID, name string) (*secret.Secret, error) {
 	row := run.QueryRowContext(ctx, `
 		SELECT id, seq, project_id, name, ciphertext, fingerprint, created_at, updated_at, deleted_at
 		FROM secrets WHERE project_id = ? AND name = ? AND deleted_at = ''`, projectID, name)
@@ -83,7 +68,7 @@ func (r *Repo) GetByName(ctx context.Context, run state.Runner, projectID, name 
 // 出现）。name 字典序升序 + after 游标（ADR-0026 after_* + limit 惯例
 // ——游标轴 = 既有排序轴 name，分页只动行集不改每行形态）。limit<=0 或
 // >200 回落/钳制缺省 50。
-func (r *Repo) ListFingerprints(ctx context.Context, run state.Runner, projectID, afterName string, limit int) ([]Secret, error) {
+func (r *repo) ListFingerprints(ctx context.Context, run state.Runner, projectID, afterName string, limit int) ([]secret.Secret, error) {
 	if limit <= 0 || limit > maxListLimit {
 		limit = defaultListLimit
 	}
@@ -102,7 +87,7 @@ func (r *Repo) ListFingerprints(ctx context.Context, run state.Runner, projectID
 		return nil, err
 	}
 	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []Secret
+	var out []secret.Secret
 	for rows.Next() {
 		s, err := scanSecret(rows.Scan)
 		if err != nil {
@@ -116,7 +101,7 @@ func (r *Repo) ListFingerprints(ctx context.Context, run state.Runner, projectID
 // ListAll 读全表行（含 tombstone）：离线维护面（KEK 重封）专用——墓碑
 // 行的密文同样要可解（undelete 路径依赖），含密文列故禁止 API 回显面
 // 消费。
-func (r *Repo) ListAll(ctx context.Context, run state.Runner) ([]Secret, error) {
+func (r *repo) ListAll(ctx context.Context, run state.Runner) ([]secret.Secret, error) {
 	rows, err := run.QueryContext(ctx, `
 		SELECT id, seq, project_id, name, ciphertext, fingerprint, created_at, updated_at, deleted_at
 		FROM secrets`)
@@ -124,7 +109,7 @@ func (r *Repo) ListAll(ctx context.Context, run state.Runner) ([]Secret, error) 
 		return nil, err
 	}
 	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []Secret
+	var out []secret.Secret
 	for rows.Next() {
 		s, err := scanSecret(rows.Scan)
 		if err != nil {
@@ -138,7 +123,7 @@ func (r *Repo) ListAll(ctx context.Context, run state.Runner) ([]Secret, error) 
 // UpdateCiphertext 重写密文（KEK 重封专用：fingerprint 是明文的函数，
 // 重封不变；updated_at 随写推进）。行不存在不报错——调用方（rewrap）的
 // 行列表与本写同窗口，无并发删除面。
-func (r *Repo) UpdateCiphertext(ctx context.Context, run state.Runner, id string, ciphertext []byte) error {
+func (r *repo) UpdateCiphertext(ctx context.Context, run state.Runner, id string, ciphertext []byte) error {
 	_, err := run.ExecContext(ctx, `
 		UPDATE secrets SET ciphertext = ?, updated_at = ? WHERE id = ?`,
 		ciphertext, state.FormatTime(r.clock.Now()), id)
@@ -146,7 +131,7 @@ func (r *Repo) UpdateCiphertext(ctx context.Context, run state.Runner, id string
 }
 
 // SoftDelete 落 tombstone（幂等）。
-func (r *Repo) SoftDelete(ctx context.Context, run state.Runner, projectID, name string) error {
+func (r *repo) SoftDelete(ctx context.Context, run state.Runner, projectID, name string) error {
 	now := state.FormatTime(r.clock.Now())
 	res, err := run.ExecContext(ctx, `
 		UPDATE secrets SET deleted_at = ?, updated_at = ?
@@ -161,8 +146,8 @@ func (r *Repo) SoftDelete(ctx context.Context, run state.Runner, projectID, name
 	return nil
 }
 
-func scanSecret(scan func(dest ...any) error) (*Secret, error) {
-	var s Secret
+func scanSecret(scan func(dest ...any) error) (*secret.Secret, error) {
+	var s secret.Secret
 	err := scan(&s.ID, &s.Seq, &s.ProjectID, &s.Name, &s.Ciphertext, &s.Fingerprint,
 		&s.CreatedAt, &s.UpdatedAt, &s.DeletedAt)
 	if err != nil {

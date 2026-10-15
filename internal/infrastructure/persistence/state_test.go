@@ -11,11 +11,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/audit"
+	auditrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/audit"
 	deploymentrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/deployment"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/outbox"
+	outboxrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/outbox"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
 
@@ -25,8 +26,8 @@ func TestFourWriteSameTransaction(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
 	deployments := deploymentrepo.New(clock)
-	events := outbox.New(clock)
-	audits := audit.New(clock)
+	events := outboxrepo.New(clock)
+	audits := auditrepo.New(clock)
 
 	d := &deployment.Deployment{
 		ID: "01JD0DEPLOY0000000000000000", AppID: "01JD0APP000000000000000000",

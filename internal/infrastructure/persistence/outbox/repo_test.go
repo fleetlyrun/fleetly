@@ -8,16 +8,17 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/audit"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
+	auditrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/audit"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/node"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/outbox"
+	outboxrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/outbox"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statertest"
 )
 
 func TestOutboxMonotonicSeq(t *testing.T) {
 	db, clock := statertest.New(t)
 	ctx := context.Background()
-	events := outbox.New(clock)
+	events := outboxrepo.New(clock)
 
 	var last int64
 	for i := 0; i < 3; i++ {
@@ -74,7 +75,7 @@ func TestOutboxMonotonicSeq(t *testing.T) {
 func TestAuditAppendList(t *testing.T) {
 	db, clock := statertest.New(t)
 	ctx := context.Background()
-	audits := audit.New(clock)
+	audits := auditrepo.New(clock)
 
 	require.NoError(t, audits.Append(ctx, db.Runner(), &audit.Entry{
 		ID: "01JD0AUDIT00000000000000000", Actor: "ops", Source: audit.SourceCLI,

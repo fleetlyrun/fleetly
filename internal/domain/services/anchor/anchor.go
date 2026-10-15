@@ -13,14 +13,16 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/automation/run"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
 	apprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/app"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/build"
+	buildrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/build"
 	dbrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/database"
 	deploymentrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/deployment"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/githubapp"
@@ -29,7 +31,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/networkpeer"
 	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/route"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/run"
+	runrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/run"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/schedule"
 	taskrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/task"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/volume"
@@ -90,9 +92,9 @@ type Anchor struct {
 	routes      *route.Repo
 	databases   *dbrepo.Repo
 	volumes     *volume.Repo
-	runs        *run.Repo
+	runs        run.Repo
 	deployments deployment.Repo
-	builds      *build.Repo
+	builds      build.Repo
 	ghApps      *githubapp.Repo
 }
 
@@ -109,9 +111,9 @@ func New(clock state.Clock) *Anchor {
 		routes:      route.New(clock),
 		databases:   dbrepo.New(clock),
 		volumes:     volume.New(clock),
-		runs:        run.New(clock),
+		runs:        runrepo.New(clock),
 		deployments: deploymentrepo.New(clock),
-		builds:      build.New(clock),
+		builds:      buildrepo.New(clock),
 		ghApps:      githubapp.New(clock),
 	}
 }

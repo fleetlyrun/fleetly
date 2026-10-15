@@ -26,13 +26,14 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/keyring"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/backup"
 	dbrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/database"
 	networkrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/outbox"
+	outboxrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/outbox"
 	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/secret"
+	secretrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/secret"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statertest"
 )
 
@@ -178,7 +179,7 @@ func newBackupFixture(t *testing.T, engineName, connectURL string) (*Engine, *fa
 	secName := DBCredentialSecretName(tDatabaseName)
 	ct, err := cipher.Seal([]byte(connectURL))
 	require.NoError(t, err)
-	require.NoError(t, secret.New(clock).Upsert(ctx, db.Runner(), &secret.Secret{
+	require.NoError(t, secretrepo.New(clock).Upsert(ctx, db.Runner(), &secret.Secret{
 		ID: "01JD0SEC000000000000000001", ProjectID: tProjectID, Name: secName,
 		Ciphertext: ct, Fingerprint: material.Fingerprint([]byte(connectURL)),
 	}))
@@ -247,7 +248,7 @@ func TestBackupScheduleExecuteSucceeds(t *testing.T) {
 	fresh, err := e.databases.Get(ctx, e.db.Runner(), tDatabaseID)
 	require.NoError(t, err)
 	assert.NotEmpty(t, fresh.LastBackupAt)
-	events, err := outbox.New(clock).ListAfter(ctx, e.db.Runner(), 0, 10, "")
+	events, err := outboxrepo.New(clock).ListAfter(ctx, e.db.Runner(), 0, 10, "")
 	require.NoError(t, err)
 	found := false
 	for _, ev := range events {
@@ -314,7 +315,7 @@ func TestRestoreStreamFlow(t *testing.T) {
 	fresh, err := e.databases.Get(ctx, e.db.Runner(), tDatabaseID)
 	require.NoError(t, err)
 	assert.Empty(t, fresh.RestoreFromBackup, "pending flag cleared after successful restore")
-	events, err := outbox.New(clock).ListAfter(ctx, e.db.Runner(), 0, 10, "")
+	events, err := outboxrepo.New(clock).ListAfter(ctx, e.db.Runner(), 0, 10, "")
 	require.NoError(t, err)
 	restored := false
 	for _, ev := range events {

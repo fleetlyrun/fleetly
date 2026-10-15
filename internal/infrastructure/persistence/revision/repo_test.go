@@ -8,15 +8,16 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/revision"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/revision"
+	revisionrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/revision"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
 
 func TestRevisionImmutableSequence(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	revisions := revision.New(clock)
+	revisions := revisionrepo.New(clock)
 
 	const appID = "01JD0APP000000000000000000"
 	for i, spec := range []string{`{"a":1}`, `{"a":2}`} {
@@ -61,7 +62,7 @@ func TestRevisionImmutableSequence(t *testing.T) {
 func TestRevisionListByAppPagination(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	revisions := revision.New(clock)
+	revisions := revisionrepo.New(clock)
 
 	const appID = "01JD0APP000000000000000000"
 	for i := 0; i < 3; i++ {

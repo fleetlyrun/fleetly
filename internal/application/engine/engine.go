@@ -9,23 +9,30 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/automation/run"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/revision"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
+	configrepo "github.com/fleetlyrun/fleetly/internal/domain/structure/config"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
+	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/outbox"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/github"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 	alertrule "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/alertrule"
 	apprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/app"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/audit"
+	auditrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/audit"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/backup"
 	browserepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/browse"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/build"
+	buildrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/build"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/channel"
-	configrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/config"
+	cfgrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/config"
 	dbrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/database"
 	deploymentrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/deployment"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/githubapp"
@@ -33,13 +40,13 @@ import (
 	networkrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/networkpeer"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/node"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/outbox"
+	outboxrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/outbox"
 	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/revision"
+	revisionrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/revision"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/route"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/run"
+	runrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/run"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/schedule"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/secret"
+	secretrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/secret"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/sourceupload"
 	taskrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/task"
 	tokenrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/token"
@@ -357,17 +364,17 @@ type Engine struct {
 
 	projects    project.Repo
 	apps        app.Repo
-	revisions   *revision.Repo
+	revisions   revision.Repo
 	deployments deployment.Repo
-	builds      *build.Repo
-	outbox      *outbox.Repo
+	builds      build.Repo
+	outbox      outbox.Repo
 	nodes       *node.Repo
-	audits      *audit.Repo
+	audits      audit.Repo
 
 	// Task 域（F1.5/F1.6）：聚合 repo + 单写者环 + 属主 Token 行引用面
 	//（吊销排空拉式扫描，P1-8）。
 	tasks  task.Repo
-	runs   *run.Repo
+	runs   run.Repo
 	tokens *tokenrepo.Repo
 
 	// Schedule 域（F1.7）：聚合 repo + 到期拍环（fire 铸 one-shot Task 后
@@ -497,8 +504,8 @@ type Engine struct {
 
 	// 材料面（F0.17/18，ADR-0014）：Secret/Config/Volume repo 与 age 信封。
 	cipher   *material.Cipher
-	secrets  *secret.Repo
-	configs  *configrepo.Repo
+	secrets  secret.Repo
+	configs  configrepo.Repo
 	volumes  *volume.Repo
 	networks *networkrepo.Repo // 受管 Proxy 挂网真源（活跃 Project 网络全量）
 
@@ -551,14 +558,14 @@ func New(deps Deps, opts Options) *Engine {
 		opts:         opts,
 		projects:     projectrepo.New(clock),
 		apps:         apprepo.New(clock),
-		revisions:    revision.New(clock),
+		revisions:    revisionrepo.New(clock),
 		deployments:  deploymentrepo.New(clock),
-		builds:       build.New(clock),
-		outbox:       outbox.New(clock),
+		builds:       buildrepo.New(clock),
+		outbox:       outboxrepo.New(clock),
 		nodes:        node.New(clock),
-		audits:       audit.New(clock),
+		audits:       auditrepo.New(clock),
 		tasks:        taskrepo.New(clock),
-		runs:         run.New(clock),
+		runs:         runrepo.New(clock),
 		tokens:       tokenrepo.New(clock),
 		schedules:    schedule.New(clock),
 		peerDecls:    networkpeer.New(clock),
@@ -579,8 +586,8 @@ func New(deps Deps, opts Options) *Engine {
 		browseLoop:   NewLoop("browse", log),
 		nodeLeftSeen: map[string]bool{},
 		routes:       route.New(clock),
-		secrets:      secret.New(clock),
-		configs:      configrepo.New(clock),
+		secrets:      secretrepo.New(clock),
+		configs:      cfgrepo.New(clock),
 		volumes:      volume.New(clock),
 		networks:     networkrepo.New(clock),
 		ghApps:       githubapp.New(clock),

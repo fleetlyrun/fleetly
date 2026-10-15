@@ -9,9 +9,9 @@ import (
 	"context"
 	"errors"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/automation/run"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/run"
 )
 
 // handleRunObservation 是 Run 观测的裁决入口：观测缓存刷新 → Run 状态机

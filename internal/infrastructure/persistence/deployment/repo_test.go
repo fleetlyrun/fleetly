@@ -9,9 +9,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/build"
+	buildrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/build"
 	deploymentrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/deployment"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
@@ -192,7 +193,7 @@ func TestDeploymentListByAppPagination(t *testing.T) {
 func TestBuildTransit(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	builds := build.New(clock)
+	builds := buildrepo.New(clock)
 
 	b := &build.Build{ID: "01JD0BUILD00000000000000000", AppID: "01JD0APP000000000000000000", State: build.StateQueued}
 	require.NoError(t, builds.Create(ctx, db.Runner(), b))

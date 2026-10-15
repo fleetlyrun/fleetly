@@ -16,11 +16,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	specir "github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/audit"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/build"
 	networkrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
 )
 

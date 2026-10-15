@@ -1,8 +1,6 @@
-// Package run 是 Run 聚合 repo（CONTEXT.md Run 词条：Task 的一次执行，
-// 产出结果、日志与停止原因）。状态机 pending → running → stopping →
-// stopped | failed（ADR-0012）；终态携带停止原因七枚举。TTL 与停止收口
-// 兜底共用绝对 deadline 列（ADR-0018 墙钟续算；stopping 迁移时覆写为
-// 停止收口截止）。
+// Package run 是 Run 聚合 repo 的 SQLite 实现：行类型、状态机词表与 Repo
+// 接口住 domain/automation/run（ADR-0075 Repo 接口层），本包只持不导出
+// 实现与构造。
 package run
 
 import (
@@ -10,79 +8,23 @@ import (
 	"fmt"
 	"strings"
 
+	domainrun "github.com/fleetlyrun/fleetly/internal/domain/automation/run"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
-// State 是 Run 状态机值（ADR-0012）。
-type State string
-
-const (
-	StatePending  State = "pending"  // 行已落，载体未下发
-	StateRunning  State = "running"  // 载体观测 running
-	StateStopping State = "stopping" // 停止已请求（SIGTERM + StopGrace 路径）
-	StateStopped  State = "stopped"  // 终态（携带起因）
-	StateFailed   State = "failed"   // 终态（进程失败）
-)
-
-// Terminal 报告是否终态。
-func (s State) Terminal() bool {
-	return s == StateStopped || s == StateFailed
-}
-
-// Active 报告是否活跃态（pending/running；stopping 是收口态——不再计入
-// 期望并发的活槽位，但仍在驱动集合内）。
-func (s State) Active() bool {
-	return s == StatePending || s == StateRunning
-}
-
-// ActiveStates 是 Active() 的集合形态——CAS from-state 集与
-// ListByTaskStates 过滤集共用（stopping 不在列：收口态不占活槽位）。
-// ADR-0063 单源收编 engine 六处字面量；共享切片只读（Transit/runStateIn
-// 均不持留不变更）。
-var ActiveStates = []State{StatePending, StateRunning}
-
-// StopReason 是停止原因七枚举（ADR-0012；终态携带，snake_case 冻结）。
-const (
-	ReasonCompleted       = "completed"        // 自然退出（退出码 0）
-	ReasonFailed          = "failed"           // 进程失败（退出码非 0）
-	ReasonStoppedByUser   = "stopped_by_user"  // 用户/API 停止
-	ReasonTTLExpired      = "ttl_expired"      // TTL 到期
-	ReasonLeaseExpired    = "lease_expired"    // Owner Lease 失联超宽限
-	ReasonOwnerRevoked    = "owner_revoked"    // 属主 Token 吊销 → 宽限排空
-	ReasonPlatformDrained = "platform_drained" // 平台排空（节点排空/载体被平台移除）
-)
-
-// Run 是聚合行（Run 行不删——审计单位；终态行的载体由收敛移除）。
-type Run struct {
-	ID         string
-	Seq        int64
-	TaskID     string
-	ProjectID  string
-	State      State
-	StopReason string // 七枚举；stopping 起因即写入，终态携带
-	ExitCode   *int   // 终态退出码（nil = 未观测）
-	WorkloadID string // Run 载体 Workload ID（观测对账锚）
-	DNSName    string // per-Run 稳定 DNS（engine 铸名）
-	Deadline   string // 双语义绝对 deadline：活跃 = TTL 截止；stopping = 停止收口兜底截止
-	CreatedAt  string
-	UpdatedAt  string
-	StartedAt  string
-	FinishedAt string
-}
-
-// Repo 是 Run 聚合存取。
-type Repo struct {
+// repo 是 domain run.Repo 的 SQLite 实现。
+type repo struct {
 	clock state.Clock
 }
 
-// New 构造 repo。
-func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
+// New 构造 repo（直接返回接口——消费面只见 domain run.Repo）。
+func New(clock state.Clock) domainrun.Repo { return &repo{clock: clock} }
 
 // Create 落一行。
-func (r *Repo) Create(ctx context.Context, run state.Runner, m *Run) error {
+func (r *repo) Create(ctx context.Context, run state.Runner, m *domainrun.Run) error {
 	seq, err := persistence.NextSeq(ctx, run, "runs")
 	if err != nil {
 		return err
@@ -104,13 +46,13 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, m *Run) error {
 }
 
 // Get 按 ID 直读。
-func (r *Repo) Get(ctx context.Context, run state.Runner, id string) (*Run, error) {
+func (r *repo) Get(ctx context.Context, run state.Runner, id string) (*domainrun.Run, error) {
 	row := run.QueryRowContext(ctx, selectCols+" WHERE id = ?", id)
 	return scanRun(row.Scan)
 }
 
 // ListByTask 返回 Task 名下 Run（新→旧 + after 游标；ADR-0026 惯例）。
-func (r *Repo) ListByTask(ctx context.Context, run state.Runner, taskID string, afterSeq int64, limit int) ([]Run, error) {
+func (r *repo) ListByTask(ctx context.Context, run state.Runner, taskID string, afterSeq int64, limit int) ([]domainrun.Run, error) {
 	if limit <= 0 || limit > maxListLimit {
 		limit = defaultListLimit
 	}
@@ -127,7 +69,7 @@ func (r *Repo) ListByTask(ctx context.Context, run state.Runner, taskID string, 
 
 // ListByProject 返回 Project 内 Run（新→旧 + after 游标；ADR-0035 ListRuns
 // 的 project 过滤面——runs 行自带冗余 project_id，免二跳）。
-func (r *Repo) ListByProject(ctx context.Context, run state.Runner, projectID string, afterSeq int64, limit int) ([]Run, error) {
+func (r *repo) ListByProject(ctx context.Context, run state.Runner, projectID string, afterSeq int64, limit int) ([]domainrun.Run, error) {
 	if limit <= 0 || limit > maxListLimit {
 		limit = defaultListLimit
 	}
@@ -143,7 +85,7 @@ func (r *Repo) ListByProject(ctx context.Context, run state.Runner, projectID st
 }
 
 // ListDriving 返回全部待驱动行（pending/running/stopping）。
-func (r *Repo) ListDriving(ctx context.Context, run state.Runner) ([]Run, error) {
+func (r *repo) ListDriving(ctx context.Context, run state.Runner) ([]domainrun.Run, error) {
 	return r.query(ctx, run,
 		selectCols+" WHERE state IN ('pending', 'running', 'stopping') ORDER BY seq")
 }
@@ -153,7 +95,7 @@ func (r *Repo) ListDriving(ctx context.Context, run state.Runner) ([]Run, error)
 // Run 行为真源，僵尸行会让该 Schedule 永久 skip）。终态词表单源引用
 // task.TerminalStateStrings（deployment.ActiveStateStrings 同款先例——
 // 词表变更编译期咬合，不再手抄腐化）。
-func (r *Repo) ListDrivingOfTerminalTasks(ctx context.Context, run state.Runner) ([]Run, error) {
+func (r *repo) ListDrivingOfTerminalTasks(ctx context.Context, run state.Runner) ([]domainrun.Run, error) {
 	states := task.TerminalStateStrings()
 	args := make([]any, len(states))
 	for i, s := range states {
@@ -168,7 +110,7 @@ func (r *Repo) ListDrivingOfTerminalTasks(ctx context.Context, run state.Runner)
 // ListByTaskStates 返回 Task 名下指定状态的 Run（新→旧，与 ListByTask
 // 同一惯例；顺序是过量排空的方向锚——升序会把"停新保老"倒置成停老保新，
 // 2026-10-02 实证缺陷）。
-func (r *Repo) ListByTaskStates(ctx context.Context, run state.Runner, taskID string, states []State) ([]Run, error) {
+func (r *repo) ListByTaskStates(ctx context.Context, run state.Runner, taskID string, states []domainrun.State) ([]domainrun.Run, error) {
 	if len(states) == 0 {
 		return nil, nil
 	}
@@ -185,7 +127,7 @@ func (r *Repo) ListByTaskStates(ctx context.Context, run state.Runner, taskID st
 
 // CountActiveByTasks 返回各 Task 的活 Run 计数（pending/running；列表投影
 // 的 active_run_count 单查询面——避免 N+1）。
-func (r *Repo) CountActiveByTasks(ctx context.Context, run state.Runner) (map[string]int, error) {
+func (r *repo) CountActiveByTasks(ctx context.Context, run state.Runner) (map[string]int, error) {
 	rows, err := run.QueryContext(ctx, `
 		SELECT task_id, COUNT(*) FROM runs
 		WHERE state IN ('pending', 'running') GROUP BY task_id`)
@@ -208,7 +150,7 @@ func (r *Repo) CountActiveByTasks(ctx context.Context, run state.Runner) (map[st
 // Transit 是状态 CAS：仅当当前状态 ∈ from 时迁移到 to（mut 可补充落
 // stop_reason/exit_code/deadline 等字段）。前置不符 → ErrConflict；行不
 // 存在 → ErrNotFound。UPDATE 带 state 前置条件作并发防御纵深。
-func (r *Repo) Transit(ctx context.Context, run state.Runner, id string, from []State, to State, mut func(*Run)) error {
+func (r *repo) Transit(ctx context.Context, run state.Runner, id string, from []domainrun.State, to domainrun.State, mut func(*domainrun.Run)) error {
 	cur, err := r.Get(ctx, run, id)
 	if err != nil {
 		return err
@@ -225,7 +167,7 @@ func (r *Repo) Transit(ctx context.Context, run state.Runner, id string, from []
 	if to.Terminal() && cur.FinishedAt == "" {
 		cur.FinishedAt = cur.UpdatedAt
 	}
-	if to == StateRunning && cur.StartedAt == "" {
+	if to == domainrun.StateRunning && cur.StartedAt == "" {
 		cur.StartedAt = cur.UpdatedAt
 	}
 	res, err := run.ExecContext(ctx, `
@@ -257,13 +199,13 @@ const selectCols = `
 	       started_at, finished_at
 	FROM runs`
 
-func (r *Repo) query(ctx context.Context, run state.Runner, q string, args ...any) ([]Run, error) {
+func (r *repo) query(ctx context.Context, run state.Runner, q string, args ...any) ([]domainrun.Run, error) {
 	rows, err := run.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []Run
+	var out []domainrun.Run
 	for rows.Next() {
 		m, err := scanRun(rows.Scan)
 		if err != nil {
@@ -274,8 +216,8 @@ func (r *Repo) query(ctx context.Context, run state.Runner, q string, args ...an
 	return out, rows.Err()
 }
 
-func scanRun(scan func(dest ...any) error) (*Run, error) {
-	var m Run
+func scanRun(scan func(dest ...any) error) (*domainrun.Run, error) {
+	var m domainrun.Run
 	var stateStr string
 	var exitCode any
 	err := scan(&m.ID, &m.Seq, &m.TaskID, &m.ProjectID, &stateStr, &m.StopReason, &exitCode,
@@ -284,7 +226,7 @@ func scanRun(scan func(dest ...any) error) (*Run, error) {
 	if err != nil {
 		return nil, persistence.MapScanErr(err)
 	}
-	m.State = State(stateStr)
+	m.State = domainrun.State(stateStr)
 	if exitCode != nil {
 		if code, ok := exitCode.(int64); ok {
 			c := int(code)
@@ -294,7 +236,7 @@ func scanRun(scan func(dest ...any) error) (*Run, error) {
 	return &m, nil
 }
 
-func stateIn(set []State, s State) bool {
+func stateIn(set []domainrun.State, s domainrun.State) bool {
 	for _, v := range set {
 		if v == s {
 			return true
@@ -303,7 +245,7 @@ func stateIn(set []State, s State) bool {
 	return false
 }
 
-func joinStates(set []State) string {
+func joinStates(set []domainrun.State) string {
 	parts := make([]string, len(set))
 	for i, s := range set {
 		parts[i] = string(s)

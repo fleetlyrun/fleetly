@@ -1,6 +1,7 @@
-// Package configrepo 是 Config 聚合 repo（CONTEXT.md Config 词条：版本化
-// 的非敏感挂载文件实体，可回读、有配额——OT-3）。包名 configrepo 避开
-// 与 internal/config（平台配置）的同名混淆。
+// Package configrepo 是 Config 聚合 repo 的 SQLite 实现：行类型与 Repo
+// 接口住 domain/structure/config（ADR-0075 Repo 接口层），本包只持不导出
+// 实现与构造。包名 configrepo 避开与 internal/config（平台配置）的同名
+// 混淆。
 package configrepo
 
 import (
@@ -8,31 +9,21 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
+	configrepo "github.com/fleetlyrun/fleetly/internal/domain/structure/config"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
-// Config 是聚合行（不可变版本：只有 INSERT 与读）。
-type Config struct {
-	ID        string
-	Seq       int64
-	ProjectID string
-	Name      string
-	Version   int64
-	Content   []byte
-	CreatedAt string
-}
-
-// Repo 是 Config 聚合存取。
-type Repo struct {
+// repo 是 domain configrepo.Repo 的 SQLite 实现。
+type repo struct {
 	clock state.Clock
 }
 
-// New 构造 repo。
-func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
+// New 构造 repo（直接返回接口——消费面只见 domain configrepo.Repo）。
+func New(clock state.Clock) configrepo.Repo { return &repo{clock: clock} }
 
 // Create 落新版本（同 project+name 下一版本号单调递增；配额执法在 API
 // 层——本 repo 只承载版本化事实）。
-func (r *Repo) Create(ctx context.Context, run state.Runner, c *Config) error {
+func (r *repo) Create(ctx context.Context, run state.Runner, c *configrepo.Config) error {
 	seq, err := persistence.NextSeq(ctx, run, "configs")
 	if err != nil {
 		return err
@@ -55,7 +46,7 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, c *Config) error {
 }
 
 // NextVersion 返回下一版本号（首版 1）。
-func (r *Repo) NextVersion(ctx context.Context, run state.Runner, projectID, name string) (int64, error) {
+func (r *repo) NextVersion(ctx context.Context, run state.Runner, projectID, name string) (int64, error) {
 	var v int64
 	err := run.QueryRowContext(ctx,
 		`SELECT COALESCE(MAX(version), 0) FROM configs WHERE project_id = ? AND name = ?`,
@@ -67,7 +58,7 @@ func (r *Repo) NextVersion(ctx context.Context, run state.Runner, projectID, nam
 }
 
 // Latest 返回最新版本（无 → state.ErrNotFound）。
-func (r *Repo) Latest(ctx context.Context, run state.Runner, projectID, name string) (*Config, error) {
+func (r *repo) Latest(ctx context.Context, run state.Runner, projectID, name string) (*configrepo.Config, error) {
 	row := run.QueryRowContext(ctx, `
 		SELECT id, seq, project_id, name, version, content, created_at
 		FROM configs WHERE project_id = ? AND name = ?
@@ -76,7 +67,7 @@ func (r *Repo) Latest(ctx context.Context, run state.Runner, projectID, name str
 }
 
 // GetVersion 返回指定版本。
-func (r *Repo) GetVersion(ctx context.Context, run state.Runner, projectID, name string, version int64) (*Config, error) {
+func (r *repo) GetVersion(ctx context.Context, run state.Runner, projectID, name string, version int64) (*configrepo.Config, error) {
 	row := run.QueryRowContext(ctx, `
 		SELECT id, seq, project_id, name, version, content, created_at
 		FROM configs WHERE project_id = ? AND name = ? AND version = ?`,
@@ -86,7 +77,7 @@ func (r *Repo) GetVersion(ctx context.Context, run state.Runner, projectID, name
 
 // LatestByProject 返回 Project 内每个 name 的最新版本（全量列表面——
 // 配额执法与引擎装配面消费；API 分页读面走 LatestByProjectPage）。
-func (r *Repo) LatestByProject(ctx context.Context, run state.Runner, projectID string) ([]Config, error) {
+func (r *repo) LatestByProject(ctx context.Context, run state.Runner, projectID string) ([]configrepo.Config, error) {
 	rows, err := run.QueryContext(ctx, `
 		SELECT c.id, c.seq, c.project_id, c.name, c.version, c.content, c.created_at
 		FROM configs c
@@ -97,7 +88,7 @@ func (r *Repo) LatestByProject(ctx context.Context, run state.Runner, projectID 
 		return nil, err
 	}
 	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []Config
+	var out []configrepo.Config
 	for rows.Next() {
 		c, err := scanConfig(rows.Scan)
 		if err != nil {
@@ -111,7 +102,7 @@ func (r *Repo) LatestByProject(ctx context.Context, run state.Runner, projectID 
 // LatestByProjectPage 是 List 的分页读面（ADR-0026 after_* + limit；游标
 // 轴 = 既有排序轴 name 字典序升序）。每行仍是该 name 的最新版本（分页只
 // 动行集不改每行形态）。limit<=0 或 >200 回落/钳制缺省 50。
-func (r *Repo) LatestByProjectPage(ctx context.Context, run state.Runner, projectID, afterName string, limit int) ([]Config, error) {
+func (r *repo) LatestByProjectPage(ctx context.Context, run state.Runner, projectID, afterName string, limit int) ([]configrepo.Config, error) {
 	if limit <= 0 || limit > maxListLimit {
 		limit = defaultListLimit
 	}
@@ -132,7 +123,7 @@ func (r *Repo) LatestByProjectPage(ctx context.Context, run state.Runner, projec
 		return nil, err
 	}
 	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []Config
+	var out []configrepo.Config
 	for rows.Next() {
 		c, err := scanConfig(rows.Scan)
 		if err != nil {
@@ -149,7 +140,7 @@ const (
 )
 
 // ListVersions 返回全部版本（旧→新）。
-func (r *Repo) ListVersions(ctx context.Context, run state.Runner, projectID, name string) ([]Config, error) {
+func (r *repo) ListVersions(ctx context.Context, run state.Runner, projectID, name string) ([]configrepo.Config, error) {
 	rows, err := run.QueryContext(ctx, `
 		SELECT id, seq, project_id, name, version, content, created_at
 		FROM configs WHERE project_id = ? AND name = ? ORDER BY version`,
@@ -158,7 +149,7 @@ func (r *Repo) ListVersions(ctx context.Context, run state.Runner, projectID, na
 		return nil, err
 	}
 	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []Config
+	var out []configrepo.Config
 	for rows.Next() {
 		c, err := scanConfig(rows.Scan)
 		if err != nil {
@@ -169,8 +160,8 @@ func (r *Repo) ListVersions(ctx context.Context, run state.Runner, projectID, na
 	return out, rows.Err()
 }
 
-func scanConfig(scan func(dest ...any) error) (*Config, error) {
-	var c Config
+func scanConfig(scan func(dest ...any) error) (*configrepo.Config, error) {
+	var c configrepo.Config
 	if err := scan(&c.ID, &c.Seq, &c.ProjectID, &c.Name, &c.Version, &c.Content, &c.CreatedAt); err != nil {
 		return nil, persistence.MapScanErr(err)
 	}

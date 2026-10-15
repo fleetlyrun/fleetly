@@ -7,8 +7,9 @@ package writes
 // 序列各自演化是真实失败模式；本 kernel 收编后两层只做各自 writeFact 形态
 // 的归一化。
 //
-// 分层：叶子包，只依赖 state/outbox 与 state/audit（两侧落库句柄同形，
-// 直收具体 repo 不设接口抽象）。状态迁移四件一（CAS + 原地迁移抑制事件）
+// 分层：domain 环内包，只依赖 domain/telemetry/outbox 与 domain/identity/
+// audit 的 Repo 接口（P1b 批二起两侧句柄上移 domain——此前直收 persistence
+// 具体 repo 的豁免随之消解）。状态迁移四件一（CAS + 原地迁移抑制事件）
 // 不在此——那是 engine 自有的 transition 语义（transition.go 单源），本
 // kernel 只承载非迁移写序列。steps 域差异段由 engine commitWrite 编排、
 // 逐段以空 Checks 形重放同一序列。
@@ -21,8 +22,8 @@ import (
 	"context"
 	"database/sql"
 
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/audit"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/outbox"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
+	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/outbox"
 )
 
 // Event 是一条 Outbox 事件事实（与聚合写同生共死）。Team 是资源轴归属
@@ -49,7 +50,7 @@ type Fact struct {
 // Sequence 在调用方事务内落完一次写路径：检查先行（拒绝零副作用）、聚合
 // 写居中、事件与审计殿后。任一段失败即返回，后续段零执行（调用方事务
 // 整单回滚）。
-func Sequence(ctx context.Context, tx *sql.Tx, outbox *outbox.Repo, audits *audit.Repo, f Fact) error {
+func Sequence(ctx context.Context, tx *sql.Tx, outbox outbox.Repo, audits audit.Repo, f Fact) error {
 	for _, check := range f.Checks {
 		if err := check(ctx, tx); err != nil {
 			return err

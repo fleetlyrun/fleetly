@@ -18,11 +18,12 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/keyring"
 	dbrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/database"
 	networkrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
 	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/secret"
+	secretrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/secret"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statertest"
 )
 
@@ -51,7 +52,7 @@ func newDatabaseFixture(t *testing.T, engine, connectURL string) (*Engine, *fake
 	secName := DBCredentialSecretName(tDatabaseName)
 	ct, err := cipher.Seal([]byte(connectURL))
 	require.NoError(t, err)
-	require.NoError(t, secret.New(clock).Upsert(ctx, db.Runner(), &secret.Secret{
+	require.NoError(t, secretrepo.New(clock).Upsert(ctx, db.Runner(), &secret.Secret{
 		ID: "01JD0SEC000000000000000001", ProjectID: tProjectID, Name: secName,
 		Ciphertext: ct, Fingerprint: material.Fingerprint([]byte(connectURL)),
 	}))
@@ -174,7 +175,7 @@ func TestDatabaseShortCircuitKeepsStatusAdvancing(t *testing.T) {
 	cipher := e.cipher
 	ct, err := cipher.Seal([]byte("postgresql://fleetly:newpw@db-01jd0db000000000000000000:5432/fleetly"))
 	require.NoError(t, err)
-	require.NoError(t, secret.New(e.db.Clock()).Upsert(ctx, e.db.Runner(), &secret.Secret{
+	require.NoError(t, secretrepo.New(e.db.Clock()).Upsert(ctx, e.db.Runner(), &secret.Secret{
 		ID: "01JD0SEC000000000000000001", ProjectID: tProjectID,
 		Name: DBCredentialSecretName(tDatabaseName), Ciphertext: ct,
 		Fingerprint: material.Fingerprint([]byte("postgresql://fleetly:newpw@db-01jd0db000000000000000000:5432/fleetly")),
@@ -196,7 +197,7 @@ func TestDatabaseCredentialFailureClearsSignature(t *testing.T) {
 	require.Len(t, rt.calls(), 1)
 
 	// 软删凭证 → 短路拍预读失败 → 不 Ensure。
-	require.NoError(t, secret.New(e.db.Clock()).SoftDelete(ctx, e.db.Runner(), tProjectID, row.CredentialsRef))
+	require.NoError(t, secretrepo.New(e.db.Clock()).SoftDelete(ctx, e.db.Runner(), tProjectID, row.CredentialsRef))
 	e.databaseStep(ctx)
 	assert.Len(t, rt.calls(), 1, "credential lookup failure must not reach Ensure")
 
@@ -204,7 +205,7 @@ func TestDatabaseCredentialFailureClearsSignature(t *testing.T) {
 	// ID（Upsert 走 GetByName 活跃行判定，旧 ID 已占主键）。
 	ct, err := e.cipher.Seal([]byte(url))
 	require.NoError(t, err)
-	require.NoError(t, secret.New(e.db.Clock()).Upsert(ctx, e.db.Runner(), &secret.Secret{
+	require.NoError(t, secretrepo.New(e.db.Clock()).Upsert(ctx, e.db.Runner(), &secret.Secret{
 		ID: "01JD0SEC0000000000000000R1", ProjectID: tProjectID,
 		Name: row.CredentialsRef, Ciphertext: ct, Fingerprint: material.Fingerprint([]byte(url)),
 	}))
@@ -251,7 +252,7 @@ func TestDatabasePgvectorTemplateRenders(t *testing.T) {
 func TestDatabaseCredentialMissingBlocksEnsure(t *testing.T) {
 	e, rt, row := newDatabaseFixture(t, "postgres", "postgresql://u:p@h:5432/d")
 	ctx := context.Background()
-	require.NoError(t, secret.New(e.db.Clock()).SoftDelete(ctx, e.db.Runner(), tProjectID, row.CredentialsRef))
+	require.NoError(t, secretrepo.New(e.db.Clock()).SoftDelete(ctx, e.db.Runner(), tProjectID, row.CredentialsRef))
 
 	e.databaseStep(ctx)
 	assert.Empty(t, rt.calls(), "credential failure must not reach Ensure")

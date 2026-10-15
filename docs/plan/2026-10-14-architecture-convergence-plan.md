@@ -86,9 +86,9 @@ dep_matrix 数据表 5 行化；domain 三红线守卫（无 I/O/genproto/框架
 
 ## P1b Repo 接口抽取（3-5 天，按聚合增量）
 
-### P1b-1 模板立定 — [ ]
+### P1b-1 模板立定 — [x]
 每聚合循环模板：`domain/<ctx>/<agg>/`（行类型+`Repo` 接口）→ `infrastructure/persistence/<agg>/`（不导出实现+New）→ 消费面改接口 → wire.Bind → statertest 返接口。每聚合一 commit，golden 零漂移为界。
-### P1b-2 高频十聚合先行 — [ ] deployment/task/run/app/revision/project/secret/config/audit/outbox。
+### P1b-2 高频十聚合先行 — [x] deployment/task/app/project/revision/run/secret/config/build/audit/outbox 十一聚合已上移（c5c3108/74277a5/批二）；根包契约面已迁 domain/shared/state、domain→persistence 豁免行已删、writes 豁免行已去冷删行。
 ### P1b-3 其余聚合 + 守卫收紧 — [ ] 全量完成後启用红线：application/** 禁 import infrastructure；interfaces 写面必经 application（读写分离律）。
 
 ## P2 事实发射 kernel（4-5 天）

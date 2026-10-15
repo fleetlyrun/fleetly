@@ -7,7 +7,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/build"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
+	buildrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/build"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statertest"
 )
 
@@ -16,7 +17,7 @@ import (
 func TestBuildRepoColumnRoundTrip(t *testing.T) {
 	db, clock := statertest.New(t)
 	ctx := context.Background()
-	builds := build.New(clock)
+	builds := buildrepo.New(clock)
 
 	b := &build.Build{
 		ID: "01JD0BUILD00000000000000000", AppID: "01JD0APP000000000000000000",

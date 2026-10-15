@@ -34,7 +34,7 @@ var depMatrix = []depRow{
 	{
 		subtree: "internal/domain/",
 		allow:   nil,
-		note:    "终态零外依赖（纯领域）；根包契约面已上移 domain/shared/state（P1b 根包拆分），残留豁免见 depExemptions（anchor/writes 直引具体 repo，后续批次清零）",
+		note:    "终态零外依赖（纯领域）；根包契约面已上移 domain/shared/state（P1b 根包拆分），残留豁免见 depExemptions（anchor 直引具体 repo，后续批次清零——writes 豁免已随批二 outbox/audit 上移消解删行）",
 	},
 	{
 		subtree: "internal/application/",
@@ -98,12 +98,7 @@ var depExemptions = []depExemption{
 	{
 		subtree: "internal/domain/services/anchor",
 		allow:   "internal/infrastructure/persistence/",
-		reason:  "anchor 聚合仍直引 repo 具体类型（P1b Repo 接口抽取后收紧，届时删本行）",
-	},
-	{
-		subtree: "internal/domain/services/writes",
-		allow:   "internal/infrastructure/persistence/",
-		reason:  "writes 聚合直引 outbox/audit repo（P1b Repo 接口抽取后收紧，届时删本行）",
+		reason:  "anchor 聚合仍直引 8 个未上移 repo 具体类型（database/githubapp/hook/network/networkpeer/route/schedule/volume——批一/批二已上移 app/build/deployment/project/run/task 改走 domain 接口；全量上移后删本行）",
 	},
 	{
 		subtree: "internal/interfaces/grpc/fleetlygrpc",

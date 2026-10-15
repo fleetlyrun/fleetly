@@ -15,11 +15,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/keyring"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/githubapp"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/hook"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/secret"
+	secretrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/secret"
 )
 
 // seedOldWorld 用旧 KEK 播种数据根：两行活跃 secret + 一行 tombstone +
@@ -35,7 +36,7 @@ func seedOldWorld(t *testing.T, root string) (string, *persistence.DB) {
 	cipher, err := keyring.LoadCipher(root)
 	require.NoError(t, err)
 
-	secrets := secret.New(db.Clock())
+	secrets := secretrepo.New(db.Clock())
 	mustSeal := func(v string) []byte {
 		ct, err := cipher.Seal([]byte(v))
 		require.NoError(t, err)
@@ -98,7 +99,7 @@ func rotateKeyFiles(t *testing.T, root, oldKeyContent string) *material.Cipher {
 // listSecretCT / listHookCT 读全部密文（断言比对用）。
 func listSecretCT(t *testing.T, db *persistence.DB) map[string][]byte {
 	t.Helper()
-	rows, err := secret.New(db.Clock()).ListAll(context.Background(), db.Runner())
+	rows, err := secretrepo.New(db.Clock()).ListAll(context.Background(), db.Runner())
 	require.NoError(t, err)
 	out := map[string][]byte{}
 	for _, r := range rows {
@@ -231,7 +232,7 @@ func TestRewrapRefusesUnopenableRows(t *testing.T) {
 	root := t.TempDir()
 	oldKey, db := seedOldWorld(t, root)
 	// 不可解行：垃圾密文直插两表（模拟 key 全损/外来行）。
-	secrets := secret.New(db.Clock())
+	secrets := secretrepo.New(db.Clock())
 	require.NoError(t, secrets.Upsert(ctx, db.Runner(), &secret.Secret{
 		ID: "s-x", ProjectID: "proj-a", Name: "corrupt", Ciphertext: []byte("garbage"), Fingerprint: "ff",
 	}))

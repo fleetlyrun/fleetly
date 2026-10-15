@@ -20,10 +20,11 @@ import (
 	"github.com/lynx-go/grpcapi/authz"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/audit"
+	auditrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/audit"
 	membershiprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/membership"
 	rolerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/role"
 	tokenrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/token"
@@ -91,7 +92,7 @@ type Authenticator struct {
 	users       *user.Repo
 	tokens      *tokenrepo.Repo
 	memberships *membershiprepo.Repo
-	audits      *audit.Repo
+	audits      audit.Repo
 	vocab       []string
 	lastMu      sync.Mutex
 	lastUsed    map[string]time.Time
@@ -106,7 +107,7 @@ func NewAuthenticator(db *persistence.DB, policy *authz.PolicySet, vocab []strin
 		users:       user.New(db.Clock()),
 		tokens:      tokenrepo.New(db.Clock()),
 		memberships: membershiprepo.New(db.Clock()),
-		audits:      audit.New(db.Clock()),
+		audits:      auditrepo.New(db.Clock()),
 		vocab:       vocab, lastUsed: map[string]time.Time{}, lastNarrow: map[string]time.Time{},
 	}
 }

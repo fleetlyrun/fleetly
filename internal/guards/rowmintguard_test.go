@@ -8,9 +8,10 @@ package guards
 // 手搓一份，Form 推导已分叉出两种写法）。
 //
 // 判定按 go/ast 复合字面类型精判（`map[string][]*task.Task{}` 之类的元素
-// 类型字面不误报），包名按各文件对 task 包（P1b 起行类型住
-// domain/automation/task，旧 persistence/task 路径已不再持行类型，双路径
-// 匹配防搬迁漏扫）的真实 import 别名解析——改别名不静默漏扫。
+// 类型字面不误报），包名按各文件对 task 包（P1b 起行类型单源住
+// domain/automation/task——persistence/task 已不持行类型，批一迁移期的
+// 旧路径双匹配随批二收口，"迁完即收"）的真实 import 别名解析——改别名
+// 不静默漏扫。
 
 import (
 	"go/ast"
@@ -60,8 +61,7 @@ func TestTaskRowMintingSingleSite(t *testing.T) {
 		local := ""
 		for _, imp := range f.Imports {
 			path, _ := strconv.Unquote(imp.Path.Value)
-			if strings.HasSuffix(path, "/internal/domain/automation/task") ||
-				strings.HasSuffix(path, "/internal/infrastructure/persistence/task") {
+			if strings.HasSuffix(path, "/internal/domain/automation/task") {
 				local = "task"
 				if imp.Name != nil {
 					local = imp.Name.Name

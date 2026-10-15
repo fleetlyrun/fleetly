@@ -1,68 +1,29 @@
-// Package build 是 Build 聚合 repo（CONTEXT.md Build 词条：从 Source 产出
-// 镜像的过程记录，输出不可变 digest）。状态机 queued → building →
-// succeeded | failed | cancelled | expired（超时看门狗）由 engine 持有，
-// 本 repo 只承接持久化与 CAS。
+// Package build 是 Build 聚合 repo 的 SQLite 实现：行类型、状态机词表与
+// Repo 接口住 domain/delivery/build（ADR-0075 Repo 接口层），本包只持
+// 不导出实现与构造。
 package build
 
 import (
 	"context"
 	"fmt"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
-// State 是 Build 状态机值（领域模型 §4）。
-type State string
-
-const (
-	StateQueued    State = "queued"
-	StateBuilding  State = "building"
-	StateSucceeded State = "succeeded"
-	StateFailed    State = "failed"
-	StateCancelled State = "cancelled"
-	StateExpired   State = "expired" // 超时看门狗收口
-)
-
-// Terminal 报告是否终态。
-func (s State) Terminal() bool {
-	switch s {
-	case StateSucceeded, StateFailed, StateCancelled, StateExpired:
-		return true
-	}
-	return false
-}
-
-// Build 是聚合行（构建记录永不删）。
-type Build struct {
-	ID         string
-	Seq        int64
-	AppID      string
-	RevisionID string
-	State      State
-	Digest     string
-	// Repo 是产物所在仓库名（不含 registry 地址，<projectID>/<appID> 前
-	// 纲；空 = 存量扁平布局 <appID>——投影期回退，ADR-0036 N2 兑现节 2）。
-	// 创建时定型不可变：与 digest 同为产物定位事实。
-	Repo       string
-	Error      string
-	CreatedAt  string
-	UpdatedAt  string
-	FinishedAt string
-}
-
-// Repo 是 Build 聚合存取。
-type Repo struct {
+// repo 是 domain build.Repo 的 SQLite 实现。
+type repo struct {
 	clock state.Clock
 }
 
-// New 构造 repo。
-func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
+// New 构造 repo（直接返回接口——消费面只见 domain build.Repo）。
+func New(clock state.Clock) build.Repo { return &repo{clock: clock} }
 
 // Create 落一行。ID 空则装配 "<app id>-<seq>"；Seq 零值则事务内取 MAX+1
 // （ADR-0070）。
-func (r *Repo) Create(ctx context.Context, run state.Runner, b *Build) error {
+func (r *repo) Create(ctx context.Context, run state.Runner, b *build.Build) error {
 	now := state.FormatTime(r.clock.Now())
 	b.CreatedAt, b.UpdatedAt = now, now
 	seq, err := persistence.NextSeq(ctx, run, "builds")
@@ -81,14 +42,14 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, b *Build) error {
 }
 
 // Get 按 ID 直读。
-func (r *Repo) Get(ctx context.Context, run state.Runner, id string) (*Build, error) {
+func (r *repo) Get(ctx context.Context, run state.Runner, id string) (*build.Build, error) {
 	row := run.QueryRowContext(ctx, selectCols+" WHERE id = ?", id)
 	return scanBuild(row.Scan)
 }
 
 // ListByApp 返回 App 全部 Build（新→旧 + after 游标；ADR-0026 after_* +
 // limit 惯例——游标 = seq 创建序）。limit<=0 或 >200 回落/钳制缺省 50。
-func (r *Repo) ListByApp(ctx context.Context, run state.Runner, appID string, afterSeq int64, limit int) ([]Build, error) {
+func (r *repo) ListByApp(ctx context.Context, run state.Runner, appID string, afterSeq int64, limit int) ([]build.Build, error) {
 	if limit <= 0 || limit > maxListLimit {
 		limit = defaultListLimit
 	}
@@ -105,7 +66,7 @@ func (r *Repo) ListByApp(ctx context.Context, run state.Runner, appID string, af
 		return nil, err
 	}
 	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []Build
+	var out []build.Build
 	for rows.Next() {
 		b, err := scanBuild(rows.Scan)
 		if err != nil {
@@ -118,14 +79,14 @@ func (r *Repo) ListByApp(ctx context.Context, run state.Runner, appID string, af
 
 // ListByRevision 返回 Revision 的全部 Build 行（新→旧；Revision 级构建
 // 一次，历史行应只有一条——含终态供部署驱动判定复用或失败）。
-func (r *Repo) ListByRevision(ctx context.Context, run state.Runner, revisionID string) ([]Build, error) {
+func (r *repo) ListByRevision(ctx context.Context, run state.Runner, revisionID string) ([]build.Build, error) {
 	rows, err := run.QueryContext(ctx,
 		selectCols+" WHERE revision_id = ? ORDER BY seq DESC", revisionID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []Build
+	var out []build.Build
 	for rows.Next() {
 		b, err := scanBuild(rows.Scan)
 		if err != nil {
@@ -137,14 +98,14 @@ func (r *Repo) ListByRevision(ctx context.Context, run state.Runner, revisionID 
 }
 
 // ListActive 返回全部活跃 Build（构建循环拾取面）。
-func (r *Repo) ListActive(ctx context.Context, run state.Runner) ([]Build, error) {
+func (r *repo) ListActive(ctx context.Context, run state.Runner) ([]build.Build, error) {
 	rows, err := run.QueryContext(ctx,
-		selectCols+" WHERE state IN (?, ?) ORDER BY seq", string(StateQueued), string(StateBuilding))
+		selectCols+" WHERE state IN (?, ?) ORDER BY seq", string(build.StateQueued), string(build.StateBuilding))
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []Build
+	var out []build.Build
 	for rows.Next() {
 		b, err := scanBuild(rows.Scan)
 		if err != nil {
@@ -158,14 +119,14 @@ func (r *Repo) ListActive(ctx context.Context, run state.Runner) ([]Build, error
 // StampRepo 给存量在途行补章 repo（前纲切换的兼容面：升级时点 queued/
 // building 的行按新公式重放输入，产物将落前缀仓——repo 必须与之一致；
 // WHERE repo=” 使补章幂等一次性，已章行不受扰）。
-func (r *Repo) StampRepo(ctx context.Context, run state.Runner, id, repo string) error {
+func (r *repo) StampRepo(ctx context.Context, run state.Runner, id, repo string) error {
 	_, err := run.ExecContext(ctx,
 		`UPDATE builds SET repo = ? WHERE id = ? AND repo = ''`, repo, id)
 	return err
 }
 
 // Transit 是状态 CAS（同 deployment.Transit 口径；mut 补充 digest/error）。
-func (r *Repo) Transit(ctx context.Context, run state.Runner, id string, from []State, to State, mut func(*Build)) error {
+func (r *repo) Transit(ctx context.Context, run state.Runner, id string, from []build.State, to build.State, mut func(*build.Build)) error {
 	cur, err := r.Get(ctx, run, id)
 	if err != nil {
 		return err
@@ -203,19 +164,19 @@ const selectCols = `
 	SELECT id, seq, app_id, revision_id, state, digest, repo, error, created_at, updated_at, finished_at
 	FROM builds`
 
-func scanBuild(scan func(dest ...any) error) (*Build, error) {
-	var b Build
+func scanBuild(scan func(dest ...any) error) (*build.Build, error) {
+	var b build.Build
 	var stateStr string
 	err := scan(&b.ID, &b.Seq, &b.AppID, &b.RevisionID, &stateStr, &b.Digest, &b.Repo, &b.Error,
 		&b.CreatedAt, &b.UpdatedAt, &b.FinishedAt)
 	if err != nil {
 		return nil, persistence.MapScanErr(err)
 	}
-	b.State = State(stateStr)
+	b.State = build.State(stateStr)
 	return &b, nil
 }
 
-func stateIn(set []State, s State) bool {
+func stateIn(set []build.State, s build.State) bool {
 	for _, v := range set {
 		if v == s {
 			return true

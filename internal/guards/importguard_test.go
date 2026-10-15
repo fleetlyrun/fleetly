@@ -39,17 +39,25 @@ func TestOrchestratorSDKConfinedToProviders(t *testing.T) {
 	}
 }
 
-// leafSubtrees 是叶子包子树（架构 §2：叶子不 import 任何其他 internal
+// leafSubtree 是叶子包子树登记（架构 §2：叶子不 import 任何其他 internal
 // 包）。model/spec 自架构 §2 起即叶子；capability/identity 是 C-12 扩面
 // （capability 只 import 标准库，identity 只加 lynx 外部库——现况干净，
 // 违例属裁决项：报修不走守卫豁免）；schema 是 F1.4 自描述真源（只 import
 // genproto 与标准库，engine/api 层反向注入注册——保持叶子防层析下沉）。
-var leafSubtrees = []string{
-	"internal/domain/shared/model/",
-	"internal/domain/shared/spec/",
-	"internal/domain/shared/capability/",
-	"internal/domain/identity/",
-	"internal/application/schema/",
+// identity 是上下文种子根包（架构 §2：P1b 起各限界上下文在此扩容聚合）：
+// 叶子面只执法根包文件（rootOnly），聚合子包（audit，P1b 批二）按 domain
+// 聚合规则执法（dep_matrix domain 行 + 三红线），种子叶纯度不外溢子包。
+type leafSubtree struct {
+	prefix   string
+	rootOnly bool // true = 只执法目录直接子文件（上下文种子根包），聚合子包不在叶面
+}
+
+var leafSubtrees = []leafSubtree{
+	{prefix: "internal/domain/shared/model/"},
+	{prefix: "internal/domain/shared/spec/"},
+	{prefix: "internal/domain/shared/capability/"},
+	{prefix: "internal/domain/identity/", rootOnly: true},
+	{prefix: "internal/application/schema/"},
 }
 
 // fleetlyInternal 报告 import 是否 fleetly 主 module 的 internal 包。
@@ -57,18 +65,23 @@ func fleetlyInternal(imp string) bool {
 	return strings.HasPrefix(imp, "github.com/fleetlyrun/fleetly/internal/")
 }
 
-// TestLeafPackagesPurity：叶子子树（model/spec/capability/identity）不得
-// import 子树之外的任何 fleetly internal 包（叶子纯度；子树内部互引合法，
-// 如 model/errcode 平级协作）。
+// TestLeafPackagesPurity：叶子子树（model/spec/capability/identity 根包）
+// 不得 import 子树之外的任何 fleetly internal 包（叶子纯度；子树内部互引
+// 合法，如 model/errcode 平级协作）。rootOnly 子树（identity）的聚合子包
+// 不在叶面——它们按 domain 聚合规则另行执法。
 func TestLeafPackagesPurity(t *testing.T) {
 	for _, f := range scanGoFiles(t) {
 		var own string
 		isLeaf := false
 		for _, sub := range leafSubtrees {
-			if strings.HasPrefix(f.rel, sub) {
-				own, isLeaf = sub, true
-				break
+			if !strings.HasPrefix(f.rel, sub.prefix) {
+				continue
 			}
+			if sub.rootOnly && strings.Contains(strings.TrimPrefix(f.rel, sub.prefix), "/") {
+				continue // 聚合子包（如 identity/audit）不在种子叶面
+			}
+			own, isLeaf = sub.prefix, true
+			break
 		}
 		if !isLeaf {
 			continue

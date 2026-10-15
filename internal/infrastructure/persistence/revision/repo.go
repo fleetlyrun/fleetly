@@ -1,55 +1,34 @@
-// Package revision 是 Revision 聚合 repo（CONTEXT.md Revision 词条：冻结
-// 且不可变的规范化 Spec 快照，回滚与审计的单位）。存储形态 = blob 落库
-// 裁决（2026-09-30）：spec 列存 AppSpec 的 protojson 规范序列化，digest
-// 列存其 sha256——Platform Backup = 单 SQLite 文件 + 密钥即全部，无第二
-// 棵状态树。不可变：无 UPDATE 路径，只有 INSERT 与读。
+// Package revision 是 Revision 聚合 repo 的 SQLite 实现：行类型与 Repo
+// 接口住 domain/delivery/revision（ADR-0075 Repo 接口层），本包只持不导出
+// 实现与构造。
 package revision
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/revision"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
-// Revision 是聚合行（不可变）。SourceText 是受理原文（compose 源的用户
-// 亲笔文件；其他源空串——ADR-0074；不参与 digest，见 00031 迁移注记）。
-type Revision struct {
-	ID         string
-	AppID      string
-	Seq        int64
-	Digest     string
-	Spec       []byte
-	SourceText string
-	CreatedAt  string
-}
-
-// Repo 是 Revision 聚合存取。
-type Repo struct {
+// repo 是 domain revision.Repo 的 SQLite 实现。
+type repo struct {
 	clock state.Clock
 }
 
-// New 构造 repo。
-func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
-
-// Digest 计算 spec 规范序列化的冻结指纹（sha256 hex）。
-func Digest(spec []byte) string {
-	sum := sha256.Sum256(spec)
-	return hex.EncodeToString(sum[:])
-}
+// New 构造 repo（直接返回接口——消费面只见 domain revision.Repo）。
+func New(clock state.Clock) revision.Repo { return &repo{clock: clock} }
 
 // Create 落一行（digest 由 spec 派生；同 App 序号唯一、同 App 同内容唯一
 // ——重复冻结同内容 → state.ErrAlreadyExists，调用方应改走 FindByDigest
 // 复用）。ID 空则由 app id + per-App 序号派生（web-42-r7，ADR-0070 派生
 // 类——per-App 修订号即 UI 面既有语义，确定性无随机）。
-func (r *Repo) Create(ctx context.Context, run state.Runner, rev *Revision) error {
+func (r *repo) Create(ctx context.Context, run state.Runner, rev *revision.Revision) error {
 	now := state.FormatTime(r.clock.Now())
 	rev.CreatedAt = now
-	rev.Digest = Digest(rev.Spec)
+	rev.Digest = revision.Digest(rev.Spec)
 	if rev.ID == "" {
 		rev.ID = entityid.Revision(rev.AppID, rev.Seq)
 	}
@@ -65,7 +44,7 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, rev *Revision) erro
 
 // FindByDigest 按 App + 内容指纹找既有冻结体（内容寻址复用：无变化重
 // 部署复用 Rn 而非新冻结 Rn+1）。
-func (r *Repo) FindByDigest(ctx context.Context, run state.Runner, appID, digest string) (*Revision, error) {
+func (r *repo) FindByDigest(ctx context.Context, run state.Runner, appID, digest string) (*revision.Revision, error) {
 	row := run.QueryRowContext(ctx, `
 		SELECT id, app_id, seq, digest, spec, source_text, created_at
 		FROM revisions WHERE app_id = ? AND digest = ?`, appID, digest)
@@ -73,7 +52,7 @@ func (r *Repo) FindByDigest(ctx context.Context, run state.Runner, appID, digest
 }
 
 // Get 按 ID 直读。
-func (r *Repo) Get(ctx context.Context, run state.Runner, id string) (*Revision, error) {
+func (r *repo) Get(ctx context.Context, run state.Runner, id string) (*revision.Revision, error) {
 	row := run.QueryRowContext(ctx, `
 		SELECT id, app_id, seq, digest, spec, source_text, created_at
 		FROM revisions WHERE id = ?`, id)
@@ -81,7 +60,7 @@ func (r *Repo) Get(ctx context.Context, run state.Runner, id string) (*Revision,
 }
 
 // GetBySeq 按 App 内序号读（R1..Rn 对外形态）。
-func (r *Repo) GetBySeq(ctx context.Context, run state.Runner, appID string, seq int64) (*Revision, error) {
+func (r *repo) GetBySeq(ctx context.Context, run state.Runner, appID string, seq int64) (*revision.Revision, error) {
 	row := run.QueryRowContext(ctx, `
 		SELECT id, app_id, seq, digest, spec, source_text, created_at
 		FROM revisions WHERE app_id = ? AND seq = ?`, appID, seq)
@@ -90,7 +69,7 @@ func (r *Repo) GetBySeq(ctx context.Context, run state.Runner, appID string, seq
 
 // Latest 返回 App 最新 Revision（无 → state.ErrNotFound；"上一成功"由
 // 调用方结合 Deployment 终态判定，本 repo 不持部署语义）。
-func (r *Repo) Latest(ctx context.Context, run state.Runner, appID string) (*Revision, error) {
+func (r *repo) Latest(ctx context.Context, run state.Runner, appID string) (*revision.Revision, error) {
 	row := run.QueryRowContext(ctx, `
 		SELECT id, app_id, seq, digest, spec, source_text, created_at
 		FROM revisions WHERE app_id = ? ORDER BY seq DESC LIMIT 1`, appID)
@@ -98,7 +77,7 @@ func (r *Repo) Latest(ctx context.Context, run state.Runner, appID string) (*Rev
 }
 
 // NextSeq 返回 App 下一序号（首条 = 1；单调推进）。
-func (r *Repo) NextSeq(ctx context.Context, run state.Runner, appID string) (int64, error) {
+func (r *repo) NextSeq(ctx context.Context, run state.Runner, appID string) (int64, error) {
 	var seq int64
 	err := run.QueryRowContext(ctx, `
 		SELECT COALESCE(MAX(seq), 0) FROM revisions WHERE app_id = ?`, appID).Scan(&seq)
@@ -111,7 +90,7 @@ func (r *Repo) NextSeq(ctx context.Context, run state.Runner, appID string) (int
 // ListByApp 返回 App 全部 Revision（R1..Rn 序号升序 + after 游标；
 // ADR-0026 after_* + limit 惯例——游标轴 = App 内单调 seq，升序即既有
 // 响应序，events 面同款形态）。limit<=0 或 >200 回落/钳制缺省 50。
-func (r *Repo) ListByApp(ctx context.Context, run state.Runner, appID string, afterSeq int64, limit int) ([]Revision, error) {
+func (r *repo) ListByApp(ctx context.Context, run state.Runner, appID string, afterSeq int64, limit int) ([]revision.Revision, error) {
 	if limit <= 0 || limit > maxListLimit {
 		limit = defaultListLimit
 	}
@@ -130,7 +109,7 @@ func (r *Repo) ListByApp(ctx context.Context, run state.Runner, appID string, af
 		return nil, err
 	}
 	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []Revision
+	var out []revision.Revision
 	for rows.Next() {
 		rev, err := scanRevision(rows.Scan)
 		if err != nil {
@@ -146,8 +125,8 @@ const (
 	maxListLimit     = 200
 )
 
-func scanRevision(scan func(dest ...any) error) (*Revision, error) {
-	var rev Revision
+func scanRevision(scan func(dest ...any) error) (*revision.Revision, error) {
+	var rev revision.Revision
 	if err := scan(&rev.ID, &rev.AppID, &rev.Seq, &rev.Digest, &rev.Spec, &rev.SourceText, &rev.CreatedAt); err != nil {
 		return nil, persistence.MapScanErr(err)
 	}

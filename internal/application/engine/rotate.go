@@ -18,8 +18,8 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
 	dbrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/database"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/secret"
 )
 
 // ErrRotateRejected 是"数据面改密被数据库拒绝"的哨兵（API 层 map 为

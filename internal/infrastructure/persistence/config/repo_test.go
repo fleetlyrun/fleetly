@@ -8,7 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
-	configrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/config"
+	configrepo "github.com/fleetlyrun/fleetly/internal/domain/structure/config"
+	cfgrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/config"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
 
@@ -18,7 +19,7 @@ import (
 func TestConfigLatestByProjectPagePagination(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	configs := configrepo.New(clock)
+	configs := cfgrepo.New(clock)
 
 	const projA = "01JD0PROJ0000000000000000A"
 	const projB = "01JD0PROJ0000000000000000B"
@@ -70,7 +71,7 @@ func TestConfigLatestByProjectPagePagination(t *testing.T) {
 func TestConfigVersions(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	configs := configrepo.New(clock)
+	configs := cfgrepo.New(clock)
 
 	const projA = "01JD0PROJ0000000000000000A"
 	for i := 0; i < 2; i++ {

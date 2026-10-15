@@ -17,8 +17,9 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/audit"
+	auditrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/audit"
 	membershiprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/membership"
 	rolerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/role"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
@@ -96,7 +97,7 @@ func TestNarrowingEmptyIntersectionIs403WithReasonAndAudit(t *testing.T) {
 	assert.Contains(t, e.Suggestion(), "ADR-0038")
 
 	// 审计行落在库（action=token.narrowed_denied；Team 轴=Token 行 Team）。
-	rows, rerr := audit.New(a.db.Clock()).ListFiltered(context.Background(), a.db.Runner(),
+	rows, rerr := auditrepo.New(a.db.Clock()).ListFiltered(context.Background(), a.db.Runner(),
 		audit.Filter{Resource: "token/tok1"})
 	require.NoError(t, rerr)
 	require.Len(t, rows, 1)
@@ -107,7 +108,7 @@ func TestNarrowingEmptyIntersectionIs403WithReasonAndAudit(t *testing.T) {
 	// 节流：同 Token 60s 内重复拒绝不再落第二行。
 	_, err = resolveWith(t, a, secret)
 	require.Error(t, err)
-	rows, rerr = audit.New(a.db.Clock()).ListFiltered(context.Background(), a.db.Runner(),
+	rows, rerr = auditrepo.New(a.db.Clock()).ListFiltered(context.Background(), a.db.Runner(),
 		audit.Filter{Resource: "token/tok1"})
 	require.NoError(t, rerr)
 	assert.Len(t, rows, 1)

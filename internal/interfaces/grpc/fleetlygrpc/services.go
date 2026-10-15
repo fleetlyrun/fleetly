@@ -8,23 +8,30 @@ import (
 	"log/slog"
 
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
+	"github.com/fleetlyrun/fleetly/internal/domain/automation/run"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/revision"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/anchor"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
+	configrepo "github.com/fleetlyrun/fleetly/internal/domain/structure/config"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
+	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/outbox"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/github"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 	apprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/app"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/appvariable"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/audit"
+	auditrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/audit"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/backup"
 	browserepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/browse"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/build"
+	buildrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/build"
 	catalogrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/catalog"
-	configrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/config"
+	cfgrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/config"
 	dbrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/database"
 	deploymentrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/deployment"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/freeze"
@@ -35,14 +42,14 @@ import (
 	networkrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/networkpeer"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/node"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/outbox"
+	outboxrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/outbox"
 	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/revision"
+	revisionrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/revision"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/role"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/route"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/run"
+	runrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/run"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/schedule"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/secret"
+	secretrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/secret"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/sharedvariable"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/sourceupload"
 	taskrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/task"
@@ -69,14 +76,14 @@ type Services struct {
 	Projects     project.Repo
 	Apps         app.Repo
 	Deployments  deployment.Repo
-	Revisions    *revision.Repo
-	Builds       *build.Repo
+	Revisions    revision.Repo
+	Builds       build.Repo
 	Tasks        task.Repo
-	Runs         *run.Repo
+	Runs         run.Repo
 	Schedules    *schedule.Repo
-	OutboxEvents *outbox.Repo
-	Secrets      *secret.Repo
-	Configs      *configrepo.Repo
+	OutboxEvents outbox.Repo
+	Secrets      secret.Repo
+	Configs      configrepo.Repo
 	// SharedVariables 是 SharedVariable 聚合 repo（F2.9，ADR-0043：Project
 	// 级共享变量——归一化期合成进 Revision 的 Project 层）。
 	SharedVariables *sharedvariable.Repo
@@ -89,7 +96,7 @@ type Services struct {
 	Freezes      *freeze.Repo
 	Routes       *route.Repo
 	Nodes        *node.Repo
-	Audits       *audit.Repo
+	Audits       audit.Repo
 	Users        *user.Repo
 	Teams        *team.Repo
 	Roles        *role.Repo
@@ -171,14 +178,14 @@ func NewServices(db *persistence.DB, e *engine.Engine, c *material.Cipher, rt ca
 		Projects:        projectrepo.New(clock),
 		Apps:            apprepo.New(clock),
 		Deployments:     deploymentrepo.New(clock),
-		Revisions:       revision.New(clock),
-		Builds:          build.New(clock),
+		Revisions:       revisionrepo.New(clock),
+		Builds:          buildrepo.New(clock),
 		Tasks:           taskrepo.New(clock),
-		Runs:            run.New(clock),
+		Runs:            runrepo.New(clock),
 		Schedules:       schedule.New(clock),
-		OutboxEvents:    outbox.New(clock),
-		Secrets:         secret.New(clock),
-		Configs:         configrepo.New(clock),
+		OutboxEvents:    outboxrepo.New(clock),
+		Secrets:         secretrepo.New(clock),
+		Configs:         cfgrepo.New(clock),
 		SharedVariables: sharedvariable.New(clock),
 		AppVariables:    appvariable.New(clock),
 		Volumes:         volume.New(clock),
@@ -187,7 +194,7 @@ func NewServices(db *persistence.DB, e *engine.Engine, c *material.Cipher, rt ca
 		Freezes:         freeze.New(clock),
 		Routes:          route.New(clock),
 		Nodes:           node.New(clock),
-		Audits:          audit.New(clock),
+		Audits:          auditrepo.New(clock),
 		Users:           user.New(clock),
 		Teams:           team.New(clock),
 		Roles:           role.New(clock),

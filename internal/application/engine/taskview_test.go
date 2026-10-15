@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/automation/run"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/run"
 )
 
 // TestNewRunsByTaskEnforcesDirection：序由构造保证——输入顺序任意

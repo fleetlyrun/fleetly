@@ -15,10 +15,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/audit"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/outbox"
+	auditrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/audit"
+	outboxrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/outbox"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
 
@@ -34,7 +35,7 @@ type probes struct {
 // fail 指定在哪一段注入失败（"" = 全绿路径）。
 func runSequence(t *testing.T, db *persistence.DB, ctx context.Context, fail string) (*probes, error) {
 	t.Helper()
-	outboxRepo, auditRepo := outbox.New(statetest.NewFakeClock()), audit.New(statetest.NewFakeClock())
+	outboxRepo, auditRepo := outboxrepo.New(statetest.NewFakeClock()), auditrepo.New(statetest.NewFakeClock())
 	p := &probes{}
 
 	err := db.Tx(ctx, func(tx *sql.Tx) error {
@@ -89,7 +90,7 @@ func TestSequenceOrder(t *testing.T) {
 	assert.True(t, p.ranWrite, "聚合写执行")
 	assert.True(t, p.ranEvent && p.ranAudit, "事件与审计段全执行")
 
-	after, err := outbox.New(statetest.NewFakeClock()).LastSeq(ctx, db.Runner())
+	after, err := outboxrepo.New(statetest.NewFakeClock()).LastSeq(ctx, db.Runner())
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), after, "探针 + 事实事件两条落账")
 	assert.Equal(t, int64(0), p.seqAtCheck, "检查先于聚合写（拒绝零副作用——检查时 探针未落）")
@@ -100,7 +101,7 @@ func TestSequenceOrder(t *testing.T) {
 func TestSequenceFailureIsolation(t *testing.T) {
 	db, _ := statetest.New(t)
 	ctx := context.Background()
-	outboxRepo := outbox.New(statetest.NewFakeClock())
+	outboxRepo := outboxrepo.New(statetest.NewFakeClock())
 	before, err := outboxRepo.LastSeq(ctx, db.Runner())
 	require.NoError(t, err)
 
