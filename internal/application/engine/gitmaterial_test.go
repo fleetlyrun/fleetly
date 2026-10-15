@@ -27,10 +27,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/githubapp"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/github"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/keyring"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/githubapp"
+	githubapprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/githubapp"
 	secretrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/secret"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
@@ -97,7 +98,7 @@ func TestResolveGitMaterialShadowing(t *testing.T) {
 	fake := newGhFake(t)
 	ghes := newGhFake(t)
 
-	e := &Engine{db: db, cipher: cipher, secrets: secretrepo.New(clock), ghApps: githubapp.New(clock), ghClient: github.NewClient(&http.Client{Transport: &http.Transport{TLSClientConfig: insecureTLS()}}, nil)}
+	e := &Engine{db: db, cipher: cipher, secrets: secretrepo.New(clock), ghApps: githubapprepo.New(clock), ghClient: github.NewClient(&http.Client{Transport: &http.Transport{TLSClientConfig: insecureTLS()}}, nil)}
 	sealed, err := cipher.Produce(ghKeyPEM(t))
 	require.NoError(t, err)
 	require.NoError(t, e.ghApps.Upsert(ctx, db.Runner(), &githubapp.App{
@@ -214,7 +215,7 @@ func TestResolveGitSecretMaterial(t *testing.T) {
 	require.NoError(t, err)
 	fake := newGhFake(t)
 
-	e := &Engine{db: db, cipher: cipher, secrets: secretrepo.New(clock), ghApps: githubapp.New(clock), ghClient: github.NewClient(fake.srv.Client(), nil)}
+	e := &Engine{db: db, cipher: cipher, secrets: secretrepo.New(clock), ghApps: githubapprepo.New(clock), ghClient: github.NewClient(fake.srv.Client(), nil)}
 	proj := "proj-s"
 	repo := fake.srv.URL + "/acme/web" // host = 127.0.0.1:<port>
 	host, _, ok := gitHostOwner(repo)

@@ -6,6 +6,8 @@
 // 两消费面各自的策略留在消费面：冻结把 NotFound 放行交受理位拒绝、
 // 授权把 NotFound 报 E_NOT_FOUND（404 不掩蔽为 403）；App 的 tombstone
 // 读档分双档（生命周期动词走活跃档、审计型读面走 Any 档）。
+// repo 族经 Repos 注入（P1b 批三 A-2 全量聚合上移后构造收进组合根，
+// 本包零持久化依赖）。
 package anchor
 
 import (
@@ -14,9 +16,13 @@ import (
 	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/run"
+	"github.com/fleetlyrun/fleetly/internal/domain/automation/schedule"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
+	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/githubapp"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/hook"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
@@ -25,20 +31,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/route"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/volume"
-	apprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/app"
-	buildrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/build"
-	dbrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/database"
-	deploymentrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/deployment"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/githubapp"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/hook"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
-	networkpeerrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/networkpeer"
-	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
-	routerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/route"
-	runrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/run"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/schedule"
-	taskrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/task"
-	volumerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/volume"
 )
 
 // Kind 是归属解析链的判别（freeze 冻结表与行级授权共用的值域）。
@@ -84,41 +76,60 @@ func notFound(resource, id string) error {
 	return &NotFoundError{Resource: resource, ID: id, cause: state.ErrNotFound}
 }
 
-// Anchor 是解析器（repo 族从 DB 时钟派生；无状态，并发安全）。
+// Repos 是解析图的 repo 依赖集（组合根构造注入——图消费聚合读面，不
+// 自持持久化）。
+type Repos struct {
+	Projects    project.Repo
+	Apps        app.Repo
+	Tasks       task.Repo
+	Schedules   schedule.Repo
+	Networks    network.Repo
+	Peers       networkpeer.Repo
+	Hooks       hook.Repo
+	Routes      route.Repo
+	Databases   database.Repo
+	Volumes     volume.Repo
+	Runs        run.Repo
+	Deployments deployment.Repo
+	Builds      build.Repo
+	GitHubApps  githubapp.Repo
+}
+
+// Anchor 是解析器（无状态，并发安全；repo 族经 Repos 注入）。
 type Anchor struct {
 	projects    project.Repo
 	apps        app.Repo
 	tasks       task.Repo
-	schedules   *schedule.Repo
+	schedules   schedule.Repo
 	networks    network.Repo
 	peers       networkpeer.Repo
-	hooks       *hook.Repo
+	hooks       hook.Repo
 	routes      route.Repo
-	databases   *dbrepo.Repo
+	databases   database.Repo
 	volumes     volume.Repo
 	runs        run.Repo
 	deployments deployment.Repo
 	builds      build.Repo
-	ghApps      *githubapp.Repo
+	ghApps      githubapp.Repo
 }
 
-// New 构造解析器。
-func New(clock state.Clock) *Anchor {
+// New 构造解析器（repo 族由组合根构造注入）。
+func New(repos Repos) *Anchor {
 	return &Anchor{
-		projects:    projectrepo.New(clock),
-		apps:        apprepo.New(clock),
-		tasks:       taskrepo.New(clock),
-		schedules:   schedule.New(clock),
-		networks:    networkrepo.New(clock),
-		peers:       networkpeerrepo.New(clock),
-		hooks:       hook.New(clock),
-		routes:      routerepo.New(clock),
-		databases:   dbrepo.New(clock),
-		volumes:     volumerepo.New(clock),
-		runs:        runrepo.New(clock),
-		deployments: deploymentrepo.New(clock),
-		builds:      buildrepo.New(clock),
-		ghApps:      githubapp.New(clock),
+		projects:    repos.Projects,
+		apps:        repos.Apps,
+		tasks:       repos.Tasks,
+		schedules:   repos.Schedules,
+		networks:    repos.Networks,
+		peers:       repos.Peers,
+		hooks:       repos.Hooks,
+		routes:      repos.Routes,
+		databases:   repos.Databases,
+		volumes:     repos.Volumes,
+		runs:        repos.Runs,
+		deployments: repos.Deployments,
+		builds:      repos.Builds,
+		ghApps:      repos.GitHubApps,
 	}
 }
 

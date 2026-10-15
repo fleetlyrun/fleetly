@@ -13,13 +13,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/data/browse"
+	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/network"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/keyring"
-	browserepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/browse"
 	dbrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/database"
 	networkrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
 	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
@@ -32,7 +33,7 @@ const tBrowseSessionID = "01JDBRWSE000000000000000"
 // newBrowseFixture 组装 browse 收敛夹具：项目/网络/凭证 Secret +
 // browse 台账行（database 行本体不必须——库名经 databaseNameOf 点查，
 // 缺行时名字空但渲染走 Secret URL 的 host——方言断言面足够）。
-func newBrowseFixture(t *testing.T, engineName, connectURL string, readOnly bool) (*Engine, *fakeRuntime, *browserepo.Session, *statertest.FakeClock) {
+func newBrowseFixture(t *testing.T, engineName, connectURL string, readOnly bool) (*Engine, *fakeRuntime, *browse.Session, *statertest.FakeClock) {
 	t.Helper()
 	db, clock := statertest.New(t)
 	rt := newFakeRuntime()
@@ -58,12 +59,12 @@ func newBrowseFixture(t *testing.T, engineName, connectURL string, readOnly bool
 		Ciphertext: ct, Fingerprint: material.Fingerprint([]byte(connectURL)),
 	}))
 	// database 行（databaseNameOf 的点查目标——凭证 Secret 名的输入）。
-	require.NoError(t, dbrepo.New(clock).Create(ctx, db.Runner(), &dbrepo.Database{
+	require.NoError(t, dbrepo.New(clock).Create(ctx, db.Runner(), &database.Database{
 		ID: tDatabaseID, ProjectID: tProjectID, Name: tDatabaseName,
 		Engine: engineName, CredentialsRef: secName,
 		BackupIntervalSecs: 86400, BackupRetentionSecs: 604800,
 	}))
-	row := &browserepo.Session{
+	row := &browse.Session{
 		ID: tBrowseSessionID, ProjectID: tProjectID, DatabaseID: tDatabaseID,
 		Engine: engineName, ReadOnly: readOnly,
 		CreatedAt: clock.Now().Format(time.RFC3339),

@@ -8,8 +8,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/data/backup"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/backup"
+	backuprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/backup"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
 
@@ -27,7 +28,7 @@ func newBackup(id string) *backup.Backup {
 func TestBackupTerminalStateIsFinal(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	repo := backup.New(clock)
+	repo := backuprepo.New(clock)
 
 	// running → succeeded 后：迟到失败回执被拒，终态与回执三元组不变。
 	b := newBackup("01JD0BKPC00000000000000001")

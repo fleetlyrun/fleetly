@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/hook"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
@@ -39,7 +40,7 @@ func TestHookConfigRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	repo := New(clock)
 
-	h := &Hook{ //nolint:gosec // 测试夹具的假材料（占位密文/前缀），非真实凭据
+	h := &hook.Hook{ //nolint:gosec // 测试夹具的假材料（占位密文/前缀），非真实凭据
 		AppID: "a1", Repo: "https://github.com/acme/shop.git", Branch: "main",
 		Dockerfile: "Dockerfile", WatchPaths: []string{"web/", "libs/core"},
 		TokenSHA256: "sha-a", TokenPrefix: "flthook_ab", SecretCiphertext: []byte("ciphertext"),
@@ -109,7 +110,7 @@ func TestHookConfigRoundTrip(t *testing.T) {
 	}
 
 	// 未存在行的更新/换材料是 NotFound。
-	if err := repo.UpdateConfig(ctx, db.Runner(), &Hook{AppID: "missing"}); err != state.ErrNotFound {
+	if err := repo.UpdateConfig(ctx, db.Runner(), &hook.Hook{AppID: "missing"}); err != state.ErrNotFound {
 		t.Fatalf("update missing = %v", err)
 	}
 	if err := repo.RotateToken(ctx, db.Runner(), "missing", "x", "y", nil); err != state.ErrNotFound {
@@ -133,7 +134,7 @@ func TestHookCreateConflictNormalization(t *testing.T) {
 	}
 	repo := New(clock)
 
-	if err := repo.Create(ctx, db.Runner(), &Hook{
+	if err := repo.Create(ctx, db.Runner(), &hook.Hook{
 		AppID: "a1", Repo: "https://example.com/repo.git",
 		TokenSHA256: "sha-a", SecretCiphertext: []byte("ct"),
 	}); err != nil {
@@ -141,7 +142,7 @@ func TestHookCreateConflictNormalization(t *testing.T) {
 	}
 
 	// 同 App 重复首配 → 主键冲突。
-	err = repo.Create(ctx, db.Runner(), &Hook{
+	err = repo.Create(ctx, db.Runner(), &hook.Hook{
 		AppID: "a1", Repo: "https://example.com/other.git",
 		TokenSHA256: "sha-b", SecretCiphertext: []byte("ct"),
 	})
@@ -150,7 +151,7 @@ func TestHookCreateConflictNormalization(t *testing.T) {
 	}
 
 	// 异 App 撞 token 查找键 → UNIQUE(token_sha256) 冲突。
-	err = repo.Create(ctx, db.Runner(), &Hook{
+	err = repo.Create(ctx, db.Runner(), &hook.Hook{
 		AppID: "a2", Repo: "https://example.com/repo.git",
 		TokenSHA256: "sha-a", SecretCiphertext: []byte("ct"),
 	})
@@ -164,7 +165,7 @@ func TestRecordDeliveryDedup(t *testing.T) {
 	seedApp(t, db)
 	ctx := context.Background()
 	repo := New(clock)
-	if err := repo.Create(ctx, db.Runner(), &Hook{
+	if err := repo.Create(ctx, db.Runner(), &hook.Hook{
 		AppID: "a1", Repo: "https://example.com/repo.git", TokenSHA256: "sha-a", SecretCiphertext: []byte("ct"),
 	}); err != nil {
 		t.Fatalf("create: %v", err)

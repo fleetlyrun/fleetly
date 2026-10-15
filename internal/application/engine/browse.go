@@ -23,9 +23,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/data/browse"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbbrowser"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
-	browserepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/browse"
 )
 
 // browse 限额常量（ADR-0051 决策 1；编译期常量先例 = execMaxSessionsPerTeam 族）。
@@ -252,7 +252,7 @@ func (e *Engine) browseStep(ctx context.Context) {
 		return
 	}
 	now := e.clock.Now()
-	byID := map[string]*browserepo.Session{}
+	byID := map[string]*browse.Session{}
 	for _, r := range rows {
 		byID[r.ID] = r
 	}
@@ -299,7 +299,7 @@ func (e *Engine) hasBrowseSession(id string) bool {
 
 // adoptBrowseRow 从台账行恢复注册态（重启路径；grant 重铸——旧 cookie
 // 全部失效，用户重开会话）。
-func (e *Engine) adoptBrowseRow(ctx context.Context, r *browserepo.Session, now time.Time) {
+func (e *Engine) adoptBrowseRow(ctx context.Context, r *browse.Session, now time.Time) {
 	b, ok := dbbrowser.For(r.Engine)
 	if !ok {
 		e.log.Error("browse step: engine left the browser registry", "session", r.ID, "engine", r.Engine)
@@ -331,7 +331,7 @@ func (e *Engine) adoptBrowseRow(ctx context.Context, r *browserepo.Session, now 
 }
 
 // browseSessionDone 判定回收条件：行到期（硬 TTL）或注册表空闲超窗。
-func (e *Engine) browseSessionDone(r *browserepo.Session, now time.Time) bool {
+func (e *Engine) browseSessionDone(r *browse.Session, now time.Time) bool {
 	if exp, err := r.ExpiryTime(); err == nil && now.After(exp) {
 		return true
 	}
@@ -345,7 +345,7 @@ func (e *Engine) browseSessionDone(r *browserepo.Session, now time.Time) bool {
 }
 
 // teardownBrowseSession 收口：拆载体 → 删行 → 清注册态 + Kick 路由发布。
-func (e *Engine) teardownBrowseSession(ctx context.Context, r *browserepo.Session) {
+func (e *Engine) teardownBrowseSession(ctx context.Context, r *browse.Session) {
 	stepCtx, cancel := context.WithTimeout(ctx, e.opts.ManagedStepTimeout)
 	defer cancel()
 	unlockMaintenance := e.lockMaintenance()
@@ -389,7 +389,7 @@ func (e *Engine) databaseNameOf(ctx context.Context, databaseID string) string {
 
 // reconcileBrowseSession 收敛单会话：方言投影（Secret 解封）→ 签名短路
 // → Ensure → 归属/期望登记。
-func (e *Engine) reconcileBrowseSession(ctx context.Context, r *browserepo.Session, now time.Time) {
+func (e *Engine) reconcileBrowseSession(ctx context.Context, r *browse.Session, now time.Time) {
 	e.browse.mu.Lock()
 	s, ok := e.browse.sessions[r.ID]
 	e.browse.mu.Unlock()

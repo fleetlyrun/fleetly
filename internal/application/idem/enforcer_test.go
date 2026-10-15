@@ -20,7 +20,7 @@ import (
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/idempotency"
+	idemrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/idempotency"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statertest"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/apperrstatus"
 )
@@ -179,7 +179,7 @@ func TestClaimExpiryRecoversOrphan(t *testing.T) {
 	db, clock := statertest.New(t)
 	e := NewEnforcer(db, slog.New(slog.DiscardHandler))
 	// 模拟崩溃遗留：直接落一条 inflight 行（handler 从未完成）。
-	require.NoError(t, idempotency.New(db.Clock()).
+	require.NoError(t, idemrepo.New(db.Clock()).
 		Claim(context.Background(), db.Runner(), "k1", createProjectMethod, "stale-fp", ClaimTTL))
 	clock.Advance(ClaimTTL + time.Second)
 

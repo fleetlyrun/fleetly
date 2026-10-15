@@ -9,8 +9,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/runtimeops/node"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/node"
+	noderepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/node"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
 
@@ -31,7 +32,7 @@ func (c *countingRunner) ExecContext(ctx context.Context, q string, args ...any)
 func TestNodeListPagePagination(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	nodes := node.New(clock)
+	nodes := noderepo.New(clock)
 
 	// 字典序与落序交错落三行。
 	rows := []*node.Node{
@@ -91,7 +92,7 @@ func TestNodeListPagePagination(t *testing.T) {
 func TestUpsertWriteGuard(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	nodes := node.New(clock)
+	nodes := noderepo.New(clock)
 	run := &countingRunner{Runner: db.Runner()}
 
 	first := &node.Node{PlatformID: "node-1", CarrierID: "c-1", Hostname: "h", Role: "worker", Available: true}

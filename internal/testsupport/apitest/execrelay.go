@@ -13,8 +13,8 @@ import (
 	"io"
 	"sync"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/runtimeops/node"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/node"
 )
 
 // fakeRelay 是进程内中继活体。

@@ -1,7 +1,6 @@
-// Package hook 是 per-App Git 触发配置聚合 repo（F0.13）：URL token 与
-// GitHub webhook secret 同源——token_sha256 是 URL 查找键，secret_
-// ciphertext 是 age 信封（HMAC 验签需原串，纯摘要不可逆）；明文只在
-// 铸造响应出现一次。
+// Package hook 是 Git 触发配置聚合 repo 的 SQLite 实现：行类型与 Repo
+// 接口住 domain/delivery/hook（ADR-0075 Repo 接口层），本包只持不导出
+// 实现与构造。
 package hook
 
 import (
@@ -9,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/hook"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
@@ -16,30 +16,16 @@ import (
 // deliveryRetention 是重投去重行的保留窗（收侧顺带清理，防无界增长）。
 const deliveryRetention = 7 * 24 * 3600 // 秒
 
-// Hook 是聚合行（WatchPaths 以 JSON 数组落库；SecretCiphertext 是 age 信封）。
-type Hook struct {
-	AppID            string
-	Repo             string
-	Branch           string
-	Dockerfile       string
-	WatchPaths       []string
-	TokenSHA256      string
-	TokenPrefix      string
-	SecretCiphertext []byte
-	CreatedAt        string
-	UpdatedAt        string
-}
-
-// Repo 是 Git 触发配置聚合存取。
-type Repo struct {
+// repo 是 domain hook.Repo 的 SQLite 实现。
+type repo struct {
 	clock state.Clock
 }
 
-// New 构造 repo。
-func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
+// New 构造 repo（直接返回接口——消费面只见 domain hook.Repo）。
+func New(clock state.Clock) hook.Repo { return &repo{clock: clock} }
 
 // Create 落一行（首配铸造路径：Token 材料随行落）。
-func (r *Repo) Create(ctx context.Context, run state.Runner, h *Hook) error {
+func (r *repo) Create(ctx context.Context, run state.Runner, h *hook.Hook) error {
 	now := state.FormatTime(r.clock.Now())
 	h.CreatedAt, h.UpdatedAt = now, now
 	paths, err := marshalPaths(h.WatchPaths)
@@ -60,7 +46,7 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, h *Hook) error {
 }
 
 // UpdateConfig 只改配置字段（已配置过的 Set 路径：不换 Token 材料）。
-func (r *Repo) UpdateConfig(ctx context.Context, run state.Runner, h *Hook) error {
+func (r *repo) UpdateConfig(ctx context.Context, run state.Runner, h *hook.Hook) error {
 	h.UpdatedAt = state.FormatTime(r.clock.Now())
 	paths, err := marshalPaths(h.WatchPaths)
 	if err != nil {
@@ -80,20 +66,20 @@ func (r *Repo) UpdateConfig(ctx context.Context, run state.Runner, h *Hook) erro
 }
 
 // Get 按 App 直读。
-func (r *Repo) Get(ctx context.Context, run state.Runner, appID string) (*Hook, error) {
+func (r *repo) Get(ctx context.Context, run state.Runner, appID string) (*hook.Hook, error) {
 	row := run.QueryRowContext(ctx, selectColumns+` WHERE app_id = ?`, appID)
 	return scanOne(row.Scan)
 }
 
 // GetByTokenSHA256 按 URL token 查找（接收面的入口查询键）。
-func (r *Repo) GetByTokenSHA256(ctx context.Context, run state.Runner, sha string) (*Hook, error) {
+func (r *repo) GetByTokenSHA256(ctx context.Context, run state.Runner, sha string) (*hook.Hook, error) {
 	row := run.QueryRowContext(ctx, selectColumns+` WHERE token_sha256 = ?`, sha)
 	return scanOne(row.Scan)
 }
 
 // RotateToken 双换 Token 材料（URL token 与 webhook secret 同源；旧行即
 // 刻失效——查询键已换）。
-func (r *Repo) RotateToken(ctx context.Context, run state.Runner, appID, sha, prefix string, ciphertext []byte) error {
+func (r *repo) RotateToken(ctx context.Context, run state.Runner, appID, sha, prefix string, ciphertext []byte) error {
 	now := state.FormatTime(r.clock.Now())
 	res, err := run.ExecContext(ctx, `
 		UPDATE app_hooks SET token_sha256 = ?, token_prefix = ?, secret_ciphertext = ?, updated_at = ?
@@ -110,20 +96,20 @@ func (r *Repo) RotateToken(ctx context.Context, run state.Runner, appID, sha, pr
 // DeleteByApp 随 App tombstone 级联移除 hook 行（与 tombstone 同事务）：
 // 孤儿 hook 会让配置面对已删 App 继续成功、接收面却按活跃行拒绝——两面
 // 语义分裂（ADR-0072 批真机咬出：删除 App 后 rotate 仍成功、webhook 401）。
-func (r *Repo) DeleteByApp(ctx context.Context, run state.Runner, appID string) error {
+func (r *repo) DeleteByApp(ctx context.Context, run state.Runner, appID string) error {
 	_, err := run.ExecContext(ctx, `DELETE FROM app_hooks WHERE app_id = ?`, appID)
 	return err
 }
 
 // ListAll 读全表行：离线维护面（KEK 重封）专用（含 webhook secret 信封
 // 列，禁止回显面消费）。
-func (r *Repo) ListAll(ctx context.Context, run state.Runner) ([]Hook, error) {
+func (r *repo) ListAll(ctx context.Context, run state.Runner) ([]hook.Hook, error) {
 	rows, err := run.QueryContext(ctx, selectColumns)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []Hook
+	var out []hook.Hook
 	for rows.Next() {
 		h, err := scanOne(rows.Scan)
 		if err != nil {
@@ -136,7 +122,7 @@ func (r *Repo) ListAll(ctx context.Context, run state.Runner) ([]Hook, error) {
 
 // UpdateSecretCiphertext 重封 webhook secret 信封（KEK 重封专用；URL
 // token 材料与信封无关，不动）。
-func (r *Repo) UpdateSecretCiphertext(ctx context.Context, run state.Runner, appID string, ciphertext []byte) error {
+func (r *repo) UpdateSecretCiphertext(ctx context.Context, run state.Runner, appID string, ciphertext []byte) error {
 	_, err := run.ExecContext(ctx, `
 		UPDATE app_hooks SET secret_ciphertext = ?, updated_at = ? WHERE app_id = ?`,
 		ciphertext, state.FormatTime(r.clock.Now()), appID)
@@ -145,7 +131,7 @@ func (r *Repo) UpdateSecretCiphertext(ctx context.Context, run state.Runner, app
 
 // RecordDelivery 落一行重投去重锚；返回 true = 该 delivery 已出现过
 // （重投）。顺带清理保留窗外的旧行。
-func (r *Repo) RecordDelivery(ctx context.Context, run state.Runner, appID, delivery string) (bool, error) {
+func (r *repo) RecordDelivery(ctx context.Context, run state.Runner, appID, delivery string) (bool, error) {
 	now := r.clock.Now()
 	cutoff := state.FormatTime(now.Add(-deliveryRetention * 1e9))
 	if _, err := run.ExecContext(ctx,
@@ -166,8 +152,8 @@ const selectColumns = `
 	SELECT app_id, repo, branch, dockerfile, watch_paths, token_sha256, token_prefix, secret_ciphertext, created_at, updated_at
 	FROM app_hooks`
 
-func scanOne(scan func(dest ...any) error) (*Hook, error) {
-	var h Hook
+func scanOne(scan func(dest ...any) error) (*hook.Hook, error) {
+	var h hook.Hook
 	var paths string
 	if err := scan(&h.AppID, &h.Repo, &h.Branch, &h.Dockerfile, &paths,
 		&h.TokenSHA256, &h.TokenPrefix, &h.SecretCiphertext, &h.CreatedAt, &h.UpdatedAt); err != nil {

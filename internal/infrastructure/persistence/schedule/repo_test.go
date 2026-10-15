@@ -8,8 +8,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/automation/schedule"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/schedule"
+	schedulerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/schedule"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
 
@@ -34,7 +35,7 @@ func newSchedule(id, name string) *schedule.Schedule {
 func TestScheduleCRUDAndNameUnique(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	repo := schedule.New(clock)
+	repo := schedulerepo.New(clock)
 
 	s := newSchedule("01JD0SCH00000000000000000", "nightly-migrate")
 	require.NoError(t, repo.Create(ctx, db.Runner(), s))
@@ -64,7 +65,7 @@ func TestScheduleCRUDAndNameUnique(t *testing.T) {
 func TestScheduleListDrivingAndCursor(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	repo := schedule.New(clock)
+	repo := schedulerepo.New(clock)
 
 	ids := []string{"01JD0SCH00000000000000000", "01JD0SCH00000000000000001", "01JD0SCH00000000000000002"}
 	for i, id := range ids {
@@ -94,7 +95,7 @@ func TestScheduleListDrivingAndCursor(t *testing.T) {
 func TestScheduleFireCAS(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	repo := schedule.New(clock)
+	repo := schedulerepo.New(clock)
 
 	s := newSchedule("01JD0SCH00000000000000000", "migrate")
 	require.NoError(t, repo.Create(ctx, db.Runner(), s))

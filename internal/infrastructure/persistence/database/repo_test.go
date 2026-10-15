@@ -7,18 +7,19 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statertest"
 )
 
-func fixture(t *testing.T) (*Repo, state.Runner) {
+func fixture(t *testing.T) (database.Repo, state.Runner) {
 	t.Helper()
 	db, _ := statertest.New(t)
 	return New(db.Clock()), db.Runner()
 }
 
-func newRow(id, name string) *Database {
-	return &Database{
+func newRow(id, name string) *database.Database {
+	return &database.Database{
 		ID: id, ProjectID: "01JD0PROJ0000000000000001",
 		Name: name, Engine: "postgres", CredentialsRef: "database:" + name,
 		BackupIntervalSecs: 86400, BackupRetentionSecs: 604800,
@@ -30,7 +31,7 @@ func TestCreateGetAndNameConflict(t *testing.T) {
 	ctx := context.Background()
 	row := newRow("01JD0DB000000000000000001", "shop")
 	require.NoError(t, repo.Create(ctx, run, row))
-	assert.Equal(t, StatusPending, row.Status)
+	assert.Equal(t, database.StatusPending, row.Status)
 	assert.Equal(t, uint64(0), row.Generation)
 	assert.Equal(t, "", row.SpecFingerprint)
 
@@ -108,12 +109,12 @@ func TestStatusAdvance(t *testing.T) {
 	row := newRow("01JD0DB000000000000000001", "shop")
 	require.NoError(t, repo.Create(ctx, run, row))
 
-	require.NoError(t, repo.SetStatus(ctx, run, row.ID, StatusRunning))
+	require.NoError(t, repo.SetStatus(ctx, run, row.ID, database.StatusRunning))
 	got, err := repo.Get(ctx, run, row.ID)
 	require.NoError(t, err)
-	assert.Equal(t, StatusRunning, got.Status)
+	assert.Equal(t, database.StatusRunning, got.Status)
 	// 幂等写入（同值 WHERE 守卫不迁 updated_at）不报错。
-	require.NoError(t, repo.SetStatus(ctx, run, row.ID, StatusRunning))
+	require.NoError(t, repo.SetStatus(ctx, run, row.ID, database.StatusRunning))
 }
 
 func TestSoftDeleteHidesRows(t *testing.T) {

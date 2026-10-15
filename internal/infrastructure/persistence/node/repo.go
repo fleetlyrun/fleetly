@@ -1,6 +1,6 @@
-// Package node 是 Node 观测缓存 repo（架构 §5：nodes 表只是观测缓存，
-// 非权威——权威归属判定永远查平台表；Provider Watch 流的 node.joined/
-// leave 事实在此落行，节点 ID 永不复用）。
+// Package node 是 Node 观测缓存 repo 的 SQLite 实现：行类型与 Repo 接口
+// 住 domain/runtimeops/node（ADR-0075 Repo 接口层），本包只持不导出实现
+// 与构造。
 package node
 
 import (
@@ -8,35 +8,24 @@ import (
 	"errors"
 	"time"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/runtimeops/node"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
-// Node 是一行观测缓存。
-type Node struct {
-	PlatformID  string
-	Seq         int64
-	CarrierID   string
-	Hostname    string
-	Role        string
-	Available   bool
-	FirstSeenAt string
-	LastSeenAt  string
-}
-
-// Repo 是观测缓存存取（Upsert 语义：观测刷新非状态机迁移）。
-type Repo struct {
+// repo 是 domain node.Repo 的 SQLite 实现。
+type repo struct {
 	clock state.Clock
 }
 
-// New 构造 repo。
-func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
+// New 构造 repo（直接返回接口——消费面只见 domain node.Repo）。
+func New(clock state.Clock) node.Repo { return &repo{clock: clock} }
 
 // MintPlatformID 铸下一平台节点 ID（node-<seq>；ADR-0070 独立类）。锚定
 // 环先铸 ID → Provider 写回载体标记 → Upsert 落行（ID 是锚，铸造与落行
 // 同事务由调用方组合；seq 构造性单调 = 节点 ID 永不复用）。
-func (r *Repo) MintPlatformID(ctx context.Context, run state.Runner) (string, error) {
+func (r *repo) MintPlatformID(ctx context.Context, run state.Runner) (string, error) {
 	seq, err := persistence.NextSeq(ctx, run, "nodes")
 	if err != nil {
 		return "", err
@@ -54,7 +43,7 @@ const seenRefreshInterval = 30 * time.Second
 // seenRefreshInterval——"值未变也恒写"与观测缓存语义不符（本注释曾宣称
 // "available 变化即刷新"，代码却恒写，P0-7.4 对齐）。先 UPDATE（观测刷新
 // 不耗 seq 号），零行 = 首见 → 铸 seq 落行（ADR-0070）。
-func (r *Repo) Upsert(ctx context.Context, run state.Runner, n *Node) error {
+func (r *repo) Upsert(ctx context.Context, run state.Runner, n *node.Node) error {
 	var firstSeen string
 	if existing, err := r.Get(ctx, run, n.PlatformID); err == nil {
 		firstSeen = existing.FirstSeenAt
@@ -105,7 +94,7 @@ func freshSeen(lastSeen string, now time.Time) bool {
 
 // List 返回全部观测行（seq 序 = 锚定序；引擎观测对账全量面——API 分页
 // 读面走 ListPage）。
-func (r *Repo) List(ctx context.Context, run state.Runner) ([]Node, error) {
+func (r *repo) List(ctx context.Context, run state.Runner) ([]node.Node, error) {
 	rows, err := run.QueryContext(ctx, `
 		SELECT platform_id, seq, carrier_id, hostname, role, available, first_seen_at, last_seen_at
 		FROM nodes ORDER BY seq`)
@@ -113,7 +102,7 @@ func (r *Repo) List(ctx context.Context, run state.Runner) ([]Node, error) {
 		return nil, err
 	}
 	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []Node
+	var out []node.Node
 	for rows.Next() {
 		n, err := scanNode(rows.Scan)
 		if err != nil {
@@ -126,7 +115,7 @@ func (r *Repo) List(ctx context.Context, run state.Runner) ([]Node, error) {
 
 // ListPage 是 List 的分页读面（ADR-0026 after_* + limit）。游标轴 = seq
 // 锚定序升序。limit<=0 或 >200 回落/钳制缺省 50。
-func (r *Repo) ListPage(ctx context.Context, run state.Runner, afterSeq int64, limit int) ([]Node, error) {
+func (r *repo) ListPage(ctx context.Context, run state.Runner, afterSeq int64, limit int) ([]node.Node, error) {
 	if limit <= 0 || limit > maxListLimit {
 		limit = defaultListLimit
 	}
@@ -145,7 +134,7 @@ func (r *Repo) ListPage(ctx context.Context, run state.Runner, afterSeq int64, l
 		return nil, err
 	}
 	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []Node
+	var out []node.Node
 	for rows.Next() {
 		n, err := scanNode(rows.Scan)
 		if err != nil {
@@ -162,7 +151,7 @@ const (
 )
 
 // Get 按 platform_id 直读。
-func (r *Repo) Get(ctx context.Context, run state.Runner, platformID string) (*Node, error) {
+func (r *repo) Get(ctx context.Context, run state.Runner, platformID string) (*node.Node, error) {
 	row := run.QueryRowContext(ctx, `
 		SELECT platform_id, seq, carrier_id, hostname, role, available, first_seen_at, last_seen_at
 		FROM nodes WHERE platform_id = ?`, platformID)
@@ -171,15 +160,15 @@ func (r *Repo) Get(ctx context.Context, run state.Runner, platformID string) (*N
 
 // ByCarrier 按载体节点 ID 反查（ADR-0049 中继握手绑定面：中继握手携带
 // 载体节点 ID，平台锚定表反查平台节点 ID——与 Watch 锚定同一张表）。
-func (r *Repo) ByCarrier(ctx context.Context, run state.Runner, carrierID string) (*Node, error) {
+func (r *repo) ByCarrier(ctx context.Context, run state.Runner, carrierID string) (*node.Node, error) {
 	row := run.QueryRowContext(ctx, `
 		SELECT platform_id, seq, carrier_id, hostname, role, available, first_seen_at, last_seen_at
 		FROM nodes WHERE carrier_id = ?`, carrierID)
 	return scanNode(row.Scan)
 }
 
-func scanNode(scan func(dest ...any) error) (*Node, error) {
-	var n Node
+func scanNode(scan func(dest ...any) error) (*node.Node, error) {
+	var n node.Node
 	var avail int
 	if err := scan(&n.PlatformID, &n.Seq, &n.CarrierID, &n.Hostname, &n.Role, &avail, &n.FirstSeenAt, &n.LastSeenAt); err != nil {
 		return nil, persistence.MapScanErr(err)

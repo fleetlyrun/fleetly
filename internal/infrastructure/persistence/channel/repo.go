@@ -1,6 +1,6 @@
-// Package channel 是通知通道的行仓储（F2.5，ADR-0041 决策 4）：配置 age
-// 信封入库（ADR-0014——URL/bot_token 是凭证材料，只写不读）；last_failure
-// 是派发诊断面（成功清位）。
+// Package channel 是通知通道 repo 的 SQLite 实现：行类型与 Repo 接口住
+// domain/telemetry/channel（ADR-0075 Repo 接口层），本包只持不导出实现
+// 与构造（age 信封加密机械在此）。
 package channel
 
 import (
@@ -8,40 +8,22 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
+	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/channel"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
-// 通道类别值域（冻结词汇）。
-const (
-	KindWebhook  = "webhook"
-	KindTelegram = "telegram"
-)
-
-// Channel 是一行通知通道。
-type Channel struct {
-	ID               string
-	Seq              int64
-	Name             string
-	Kind             string
-	ConfigCiphertext []byte // age 信封载荷
-	Enabled          bool
-	LastFailure      string
-	CreatedAt        string
-	UpdatedAt        string
-}
-
-// Repo 是 notification_channels 表的仓储。
-type Repo struct {
+// repo 是 domain channel.Repo 的 SQLite 实现。
+type repo struct {
 	clock state.Clock
 }
 
-// New 构造仓储。
-func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
+// New 构造 repo（直接返回接口——消费面只见 domain channel.Repo）。
+func New(clock state.Clock) channel.Repo { return &repo{clock: clock} }
 
 const selectCols = "id, seq, name, kind, config_ciphertext, enabled, last_failure, created_at, updated_at"
 
 // Create 落一条通道；重名 → ErrAlreadyExists（name 唯一索引把守）。
-func (r *Repo) Create(ctx context.Context, run state.Runner, c *Channel) error {
+func (r *repo) Create(ctx context.Context, run state.Runner, c *channel.Channel) error {
 	seq, err := persistence.NextSeq(ctx, run, "notification_channels")
 	if err != nil {
 		return err
@@ -63,28 +45,28 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, c *Channel) error {
 }
 
 // Get 按 ID 读行。
-func (r *Repo) Get(ctx context.Context, run state.Runner, id string) (*Channel, error) {
+func (r *repo) Get(ctx context.Context, run state.Runner, id string) (*channel.Channel, error) {
 	row := run.QueryRowContext(ctx, "SELECT "+selectCols+" FROM notification_channels WHERE id = ?", id)
 	return scanChannel(row)
 }
 
 // ListEnabled 列启用通道（派发面）。
-func (r *Repo) ListEnabled(ctx context.Context, run state.Runner) ([]Channel, error) {
+func (r *repo) ListEnabled(ctx context.Context, run state.Runner) ([]channel.Channel, error) {
 	return r.listWhere(ctx, run, "WHERE enabled = 1 ORDER BY seq")
 }
 
 // ListAll 列全部通道（管理面）。
-func (r *Repo) ListAll(ctx context.Context, run state.Runner) ([]Channel, error) {
+func (r *repo) ListAll(ctx context.Context, run state.Runner) ([]channel.Channel, error) {
 	return r.listWhere(ctx, run, "ORDER BY seq")
 }
 
-func (r *Repo) listWhere(ctx context.Context, run state.Runner, where string, args ...any) ([]Channel, error) {
+func (r *repo) listWhere(ctx context.Context, run state.Runner, where string, args ...any) ([]channel.Channel, error) {
 	rows, err := run.QueryContext(ctx, "SELECT "+selectCols+" FROM notification_channels "+where, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []Channel
+	var out []channel.Channel
 	for rows.Next() {
 		c, err := scanChannel(rows)
 		if err != nil {
@@ -96,7 +78,7 @@ func (r *Repo) listWhere(ctx context.Context, run state.Runner, where string, ar
 }
 
 // RecordDelivery 落最近一次派发结果（空 err 文本 = 成功清位）。
-func (r *Repo) RecordDelivery(ctx context.Context, run state.Runner, id, failure string) error {
+func (r *repo) RecordDelivery(ctx context.Context, run state.Runner, id, failure string) error {
 	_, err := run.ExecContext(ctx,
 		"UPDATE notification_channels SET last_failure = ?, updated_at = ? WHERE id = ?",
 		failure, state.FormatTime(r.clock.Now()), id)
@@ -104,7 +86,7 @@ func (r *Repo) RecordDelivery(ctx context.Context, run state.Runner, id, failure
 }
 
 // Delete 删行（不存在 → ErrNotFound）。
-func (r *Repo) Delete(ctx context.Context, run state.Runner, id string) error {
+func (r *repo) Delete(ctx context.Context, run state.Runner, id string) error {
 	res, err := run.ExecContext(ctx, "DELETE FROM notification_channels WHERE id = ?", id)
 	if err != nil {
 		return err
@@ -119,8 +101,8 @@ func (r *Repo) Delete(ctx context.Context, run state.Runner, id string) error {
 	return nil
 }
 
-func scanChannel(row interface{ Scan(dest ...any) error }) (*Channel, error) {
-	var c Channel
+func scanChannel(row interface{ Scan(dest ...any) error }) (*channel.Channel, error) {
+	var c channel.Channel
 	var enabled int
 	err := row.Scan(&c.ID, &c.Seq, &c.Name, &c.Kind, &c.ConfigCiphertext, &enabled, &c.LastFailure, &c.CreatedAt, &c.UpdatedAt)
 	if persistence.MapScanErr(err) == state.ErrNotFound {

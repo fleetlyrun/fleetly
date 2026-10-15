@@ -22,6 +22,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/data/backup"
+	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -29,7 +31,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/keyring"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/backup"
 	dbrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/database"
 	networkrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
 	outboxrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/outbox"
@@ -184,12 +185,12 @@ func newBackupFixture(t *testing.T, engineName, connectURL string) (*Engine, *fa
 		ID: "01JD0SEC000000000000000001", ProjectID: tProjectID, Name: secName,
 		Ciphertext: ct, Fingerprint: material.Fingerprint([]byte(connectURL)),
 	}))
-	require.NoError(t, dbrepo.New(clock).Create(ctx, db.Runner(), &dbrepo.Database{
+	require.NoError(t, dbrepo.New(clock).Create(ctx, db.Runner(), &database.Database{
 		ID: tDatabaseID, ProjectID: tProjectID, Name: tDatabaseName,
 		Engine: engineName, CredentialsRef: secName,
 		BackupIntervalSecs: 3600, BackupRetentionSecs: 604800,
 	}))
-	require.NoError(t, dbrepo.New(clock).SetStatus(ctx, e.db.Runner(), tDatabaseID, dbrepo.StatusRunning))
+	require.NoError(t, dbrepo.New(clock).SetStatus(ctx, e.db.Runner(), tDatabaseID, database.StatusRunning))
 	return e, rt, ut, store, clock
 }
 

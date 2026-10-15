@@ -11,8 +11,8 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/githubapp"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/hook"
+	githubapprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/githubapp"
+	hookrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/hook"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/secret"
 )
 
@@ -64,8 +64,8 @@ const (
 func RewrapSecrets(ctx context.Context, db *persistence.DB, cipher *material.Cipher, dryRun bool) (*RewrapReport, error) {
 	rep := &RewrapReport{}
 	secrets := secret.New(db.Clock())
-	hooks := hook.New(db.Clock())
-	ghApps := githubapp.New(db.Clock())
+	hooks := hookrepo.New(db.Clock())
+	ghApps := githubapprepo.New(db.Clock())
 	run := db.Runner()
 
 	// 阶段一：全量解封分类，铸重封写单（不落库）。

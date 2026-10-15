@@ -18,11 +18,20 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/networkpeer"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
 	apprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/app"
+	buildrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/build"
+	dbrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/database"
+	deploymentrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/deployment"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/githubapp"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/hook"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
 	networkpeerrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/networkpeer"
 	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
+	routerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/route"
+	runrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/run"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/schedule"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statertest"
 	taskrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/task"
+	volumerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/volume"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -32,9 +41,30 @@ const (
 	tTeam    = "team-a"
 )
 
+// newAnchor 构造注入完整 repo 集的解析器（anchor 零持久化依赖，测试侧
+// 充当组合根）。
+func newAnchor(clock state.Clock) *anchor.Anchor {
+	return anchor.New(anchor.Repos{
+		Projects:    projectrepo.New(clock),
+		Apps:        apprepo.New(clock),
+		Tasks:       taskrepo.New(clock),
+		Schedules:   schedule.New(clock),
+		Networks:    networkrepo.New(clock),
+		Peers:       networkpeerrepo.New(clock),
+		Hooks:       hook.New(clock),
+		Routes:      routerepo.New(clock),
+		Databases:   dbrepo.New(clock),
+		Volumes:     volumerepo.New(clock),
+		Runs:        runrepo.New(clock),
+		Deployments: deploymentrepo.New(clock),
+		Builds:      buildrepo.New(clock),
+		GitHubApps:  githubapp.New(clock),
+	})
+}
+
 func TestAnchorTeamOfChains(t *testing.T) {
 	db, clock := statertest.New(t)
-	a := anchor.New(clock)
+	a := newAnchor(clock)
 	ctx := context.Background()
 	run := db.Runner()
 
@@ -76,7 +106,7 @@ func TestAnchorTeamOfChains(t *testing.T) {
 
 func TestAnchorNotFoundCarriesLegResource(t *testing.T) {
 	db, clock := statertest.New(t)
-	a := anchor.New(clock)
+	a := newAnchor(clock)
 	ctx := context.Background()
 	run := db.Runner()
 
@@ -107,7 +137,7 @@ func TestAnchorNotFoundCarriesLegResource(t *testing.T) {
 
 func TestAnchorAppTombstoneTiers(t *testing.T) {
 	db, clock := statertest.New(t)
-	a := anchor.New(clock)
+	a := newAnchor(clock)
 	ctx := context.Background()
 	run := db.Runner()
 

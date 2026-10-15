@@ -9,8 +9,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
+	"github.com/fleetlyrun/fleetly/internal/domain/runtimeops/node"
 	auditrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/audit"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/node"
+	noderepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/node"
 	outboxrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/outbox"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statertest"
 )
@@ -92,7 +93,7 @@ func TestAuditAppendList(t *testing.T) {
 func TestNodeObservationCache(t *testing.T) {
 	db, clock := statertest.New(t)
 	ctx := context.Background()
-	nodes := node.New(clock)
+	nodes := noderepo.New(clock)
 
 	n := &node.Node{PlatformID: "01JD0NODE00000000000000000", CarrierID: "swarmabc", Hostname: "node-1", Role: "manager", Available: true}
 	require.NoError(t, nodes.Upsert(ctx, db.Runner(), n))

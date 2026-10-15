@@ -20,9 +20,9 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
+	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/alertrule"
+	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/channel"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/keyring"
-	alertrule "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/alertrule"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/channel"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
 

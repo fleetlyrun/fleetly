@@ -24,8 +24,8 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
-	alertrule "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/alertrule"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/channel"
+	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/alertrule"
+	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/channel"
 )
 
 // 采集环参数（环本地常量；无运维面诉求——同 logging 环纪律）。
@@ -720,8 +720,8 @@ func (e *Engine) SystemOffsiteAlertState() SystemAlertState {
 
 // AlertRuleRepo / NotificationChannelRepo 是告警面 repo 访问器（API 受理面
 // 经 commit 原语持 tx 写行——repo 的 Runner 参数即 tx）。
-func (e *Engine) AlertRuleRepo() *alertrule.Repo         { return e.alertRules }
-func (e *Engine) NotificationChannelRepo() *channel.Repo { return e.channels }
+func (e *Engine) AlertRuleRepo() alertrule.Repo         { return e.alertRules }
+func (e *Engine) NotificationChannelRepo() channel.Repo { return e.channels }
 
 // MetricsProvider 返回受管指标存储（nil = Metrics 面停用；API 查询面消费，
 // ADR-0041）。

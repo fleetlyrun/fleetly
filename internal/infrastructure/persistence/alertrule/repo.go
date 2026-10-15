@@ -1,7 +1,6 @@
-// Package alertrule 是阈值告警规则的行仓储（F2.5，ADR-0041 决策 3）：
-// per-App 规则 + 评估状态机落行（ok|firing；pending 持续窗在 engine 内存，
-// 重启重置——采样近似语义的一部分）。评估写面（Observe/Transition）与
-// 配置写面（Create/Delete）分立。
+// Package alertrule 是阈值告警规则 repo 的 SQLite 实现：行类型与 Repo
+// 接口住 domain/telemetry/alertrule（ADR-0075 Repo 接口层），本包只持
+// 不导出实现与构造。
 package alertrule
 
 import (
@@ -9,51 +8,23 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
+	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/alertrule"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
-// 指标值域（冻结词汇，ADR-0041）。
-const (
-	MetricCPUPercent       = "cpu_percent"
-	MetricMemoryWorkingSet = "memory_working_set_bytes"
-)
-
-// 状态值域。
-const (
-	StateOK     = "ok"
-	StateFiring = "firing"
-)
-
-// Rule 是一行阈值规则（含评估状态面）。
-type Rule struct {
-	ID             string
-	Seq            int64
-	AppID          string
-	Metric         string
-	Threshold      float64
-	ForSecs        int64
-	Enabled        bool
-	State          string
-	StateSince     string
-	LastValue      float64
-	LastObservedAt string
-	CreatedAt      string
-	UpdatedAt      string
-}
-
-// Repo 是 alert_rules 表的仓储。
-type Repo struct {
+// repo 是 domain alertrule.Repo 的 SQLite 实现。
+type repo struct {
 	clock state.Clock
 }
 
-// New 构造仓储。
-func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
+// New 构造 repo（直接返回接口——消费面只见 domain alertrule.Repo）。
+func New(clock state.Clock) alertrule.Repo { return &repo{clock: clock} }
 
 const selectCols = `id, seq, app_id, metric, threshold, for_secs, enabled, state, state_since,
 	last_value, last_observed_at, created_at, updated_at`
 
 // Create 落一条规则（初始态 ok）。
-func (r *Repo) Create(ctx context.Context, run state.Runner, rule *Rule) error {
+func (r *repo) Create(ctx context.Context, run state.Runner, rule *alertrule.Rule) error {
 	seq, err := persistence.NextSeq(ctx, run, "alert_rules")
 	if err != nil {
 		return err
@@ -64,7 +35,7 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, rule *Rule) error {
 	}
 	rule.CreatedAt = state.FormatTime(r.clock.Now())
 	rule.UpdatedAt = rule.CreatedAt
-	rule.State, rule.StateSince = StateOK, rule.CreatedAt
+	rule.State, rule.StateSince = alertrule.StateOK, rule.CreatedAt
 	_, err = run.ExecContext(ctx, `
 		INSERT INTO alert_rules (id, seq, app_id, metric, threshold, for_secs, enabled, state, state_since,
 			last_value, last_observed_at, created_at, updated_at)
@@ -75,33 +46,33 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, rule *Rule) error {
 }
 
 // Get 按 ID 读行。
-func (r *Repo) Get(ctx context.Context, run state.Runner, id string) (*Rule, error) {
+func (r *repo) Get(ctx context.Context, run state.Runner, id string) (*alertrule.Rule, error) {
 	row := run.QueryRowContext(ctx, "SELECT "+selectCols+" FROM alert_rules WHERE id = ?", id)
 	return scanRule(row)
 }
 
 // ListEnabled 列全部启用规则（app 升序）。
-func (r *Repo) ListEnabled(ctx context.Context, run state.Runner) ([]Rule, error) {
+func (r *repo) ListEnabled(ctx context.Context, run state.Runner) ([]alertrule.Rule, error) {
 	return r.listWhere(ctx, run, "WHERE enabled = 1 ORDER BY app_id, id")
 }
 
 // ListByApp 列某 App 的规则（含禁用行；id 升序）。
-func (r *Repo) ListByApp(ctx context.Context, run state.Runner, appID string) ([]Rule, error) {
+func (r *repo) ListByApp(ctx context.Context, run state.Runner, appID string) ([]alertrule.Rule, error) {
 	return r.listWhere(ctx, run, "WHERE app_id = ? ORDER BY seq", appID)
 }
 
 // ListAll 列全部规则（alerts list 面）。
-func (r *Repo) ListAll(ctx context.Context, run state.Runner) ([]Rule, error) {
+func (r *repo) ListAll(ctx context.Context, run state.Runner) ([]alertrule.Rule, error) {
 	return r.listWhere(ctx, run, "ORDER BY app_id, id")
 }
 
-func (r *Repo) listWhere(ctx context.Context, run state.Runner, where string, args ...any) ([]Rule, error) {
+func (r *repo) listWhere(ctx context.Context, run state.Runner, where string, args ...any) ([]alertrule.Rule, error) {
 	rows, err := run.QueryContext(ctx, "SELECT "+selectCols+" FROM alert_rules "+where, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []Rule
+	var out []alertrule.Rule
 	for rows.Next() {
 		rule, err := scanRule(rows)
 		if err != nil {
@@ -113,7 +84,7 @@ func (r *Repo) listWhere(ctx context.Context, run state.Runner, where string, ar
 }
 
 // Observe 落最近评估观测（值 + 时刻；不迁态）。
-func (r *Repo) Observe(ctx context.Context, run state.Runner, id string, value float64, at string) error {
+func (r *repo) Observe(ctx context.Context, run state.Runner, id string, value float64, at string) error {
 	_, err := run.ExecContext(ctx,
 		"UPDATE alert_rules SET last_value = ?, last_observed_at = ?, updated_at = ? WHERE id = ?",
 		value, at, state.FormatTime(r.clock.Now()), id)
@@ -121,7 +92,7 @@ func (r *Repo) Observe(ctx context.Context, run state.Runner, id string, value f
 }
 
 // Transition 迁移评估态（fired/resolved 通知沿的持久锚）。
-func (r *Repo) Transition(ctx context.Context, run state.Runner, id, to, at string) error {
+func (r *repo) Transition(ctx context.Context, run state.Runner, id, to, at string) error {
 	_, err := run.ExecContext(ctx,
 		"UPDATE alert_rules SET state = ?, state_since = ?, updated_at = ? WHERE id = ?",
 		to, at, state.FormatTime(r.clock.Now()), id)
@@ -129,7 +100,7 @@ func (r *Repo) Transition(ctx context.Context, run state.Runner, id, to, at stri
 }
 
 // Delete 删行（幂等：不存在 ErrNotFound 由调用面映射 404）。
-func (r *Repo) Delete(ctx context.Context, run state.Runner, id string) error {
+func (r *repo) Delete(ctx context.Context, run state.Runner, id string) error {
 	res, err := run.ExecContext(ctx, "DELETE FROM alert_rules WHERE id = ?", id)
 	if err != nil {
 		return err
@@ -145,8 +116,8 @@ func (r *Repo) Delete(ctx context.Context, run state.Runner, id string) error {
 }
 
 // scanRule 是行扫描（*sql.Row 与 *sql.Rows 同构）。
-func scanRule(row interface{ Scan(dest ...any) error }) (*Rule, error) {
-	var rule Rule
+func scanRule(row interface{ Scan(dest ...any) error }) (*alertrule.Rule, error) {
+	var rule alertrule.Rule
 	var enabled int
 	err := row.Scan(&rule.ID, &rule.Seq, &rule.AppID, &rule.Metric, &rule.Threshold, &rule.ForSecs, &enabled,
 		&rule.State, &rule.StateSince, &rule.LastValue, &rule.LastObservedAt,

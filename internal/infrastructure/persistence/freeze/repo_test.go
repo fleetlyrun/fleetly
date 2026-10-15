@@ -8,8 +8,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/runtimeops/freeze"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/freeze"
+	freezerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/freeze"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
 
@@ -20,7 +21,7 @@ func newFreeze(id, teamID, reason string) *freeze.Freeze {
 func TestFreezeLifecycle(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	repo := freeze.New(clock)
+	repo := freezerepo.New(clock)
 
 	f := newFreeze("01JDQFRZ00000000000000000A", "01JD0TEAM00000000000000000", "upgrade window")
 	require.NoError(t, repo.Create(ctx, db.Runner(), f))

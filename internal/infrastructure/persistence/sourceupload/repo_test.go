@@ -8,8 +8,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/sourceupload"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/sourceupload"
+	sourcerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/sourceupload"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statertest"
 )
 
@@ -20,7 +21,7 @@ func newUpload(id, projectID, digest string, size int64) *sourceupload.Upload {
 func TestUploadLifecycle(t *testing.T) {
 	db, clock := statertest.New(t)
 	ctx := context.Background()
-	repo := sourceupload.New(clock)
+	repo := sourcerepo.New(clock)
 
 	u := newUpload("01JDUPLD00000000000000000A", "01JD0PROJ00000000000000000", "aa11", 100)
 	require.NoError(t, repo.Create(ctx, db.Runner(), u))
@@ -66,7 +67,7 @@ func TestUploadLifecycle(t *testing.T) {
 func TestSweepUnreferenced(t *testing.T) {
 	db, clock := statertest.New(t)
 	ctx := context.Background()
-	repo := sourceupload.New(clock)
+	repo := sourcerepo.New(clock)
 
 	proj := "01JD0PROJ00000000000000000"
 	// 未引用行（过期）与引用行（Revision spec 内含 id 字面量——即便行龄

@@ -19,15 +19,15 @@ import (
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
+	"github.com/fleetlyrun/fleetly/internal/domain/data/backup"
+	"github.com/fleetlyrun/fleetly/internal/domain/data/browse"
+	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbbrowser"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/backup"
-	browserepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/browse"
-	dbrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/database"
 )
 
 // 数据库面事件名（usage 反扫的字面量锚点）。
@@ -74,7 +74,7 @@ func (svc *DatabasesService) CreateDatabase(ctx context.Context, req *structurev
 	// id 由 repo 行装配处铸造（ADR-0070）；连接 URL 内嵌 id，故 URL 铸造
 	// 与凭证信封落 Secret 一并进写闭包（行创建之后、同事务）。
 	secretName := engine.DBCredentialSecretName(req.GetName())
-	row := &dbrepo.Database{
+	row := &database.Database{
 		ProjectID: req.GetProjectId(), Name: req.GetName(),
 		Engine: req.GetEngine(), CredentialsRef: secretName,
 		BackupIntervalSecs: 86400, BackupRetentionSecs: 604800,
@@ -241,7 +241,7 @@ func (svc *DatabasesService) RotateDatabasePassword(ctx context.Context, req *st
 	if err := svc.s.authorizeProjectID(ctx, row.ProjectID); err != nil {
 		return nil, err
 	}
-	if row.Status != dbrepo.StatusRunning && row.Status != dbrepo.StatusDegraded {
+	if row.Status != database.StatusRunning && row.Status != database.StatusDegraded {
 		return nil, apperr.New("E_DATABASE_NOT_READY",
 			"database %s is %s; rotation requires a running database (the data-plane change needs a live target)", row.Name, row.Status)
 	}
@@ -322,8 +322,8 @@ func (s *Services) cascadeDeleteDatabases(ctx context.Context, projectID string)
 // listActiveDatabases 枚举项目下全部活跃 Database（级联的枚举面；
 // ListByProject 分页循环——per-Project 配额 16 但配额可漂移，循环对
 // 任意存量面收敛）。
-func (s *Services) listActiveDatabases(ctx context.Context, projectID string) ([]dbrepo.Database, error) {
-	var out []dbrepo.Database
+func (s *Services) listActiveDatabases(ctx context.Context, projectID string) ([]database.Database, error) {
+	var out []database.Database
 	const page = 200 // 与 repo maxListLimit 对齐（超出值被钳回）
 	var after int64
 	for {
@@ -429,7 +429,7 @@ func (svc *DatabasesService) VerifyBackup(ctx context.Context, req *structurev1.
 
 // databaseMsg 行 → proto 映射（version/port 来自模板注册表单源；host 是
 // 网内 DNS 名——诚实连接面，值/密码永不出现）。
-func databaseMsg(row *dbrepo.Database) *structurev1.Database {
+func databaseMsg(row *database.Database) *structurev1.Database {
 	msg := &structurev1.Database{
 		Id: row.ID, Seq: row.Seq, ProjectId: row.ProjectID, Name: row.Name,
 		Engine: row.Engine, CredentialsRef: row.CredentialsRef, Status: row.Status,
@@ -486,7 +486,7 @@ func (svc *DatabasesService) BrowseDatabase(ctx context.Context, req *structurev
 	if err := svc.s.authorizeProjectID(ctx, db.ProjectID); err != nil {
 		return nil, err
 	}
-	if db.Status != dbrepo.StatusRunning && db.Status != dbrepo.StatusDegraded {
+	if db.Status != database.StatusRunning && db.Status != database.StatusDegraded {
 		return nil, apperr.New("E_DATABASE_NOT_READY",
 			"database %s is %s; browse requires a running database (refused over an unusable session)", db.Name, db.Status)
 	}
@@ -518,7 +518,7 @@ func (svc *DatabasesService) BrowseDatabase(ctx context.Context, req *structurev
 	// 会话 id 由 repo 行装配处铸造（ADR-0070）；detail/注册/票据均用事务
 	// 内铸出的 row.ID。
 	now := svc.s.DB.Clock().Now()
-	row := &browserepo.Session{
+	row := &browse.Session{
 		ProjectID: db.ProjectID, DatabaseID: db.ID,
 		Engine: db.Engine, ReadOnly: readOnly,
 		CreatedAt: state.FormatTime(now), ExpiresAt: state.FormatTime(now.Add(engine.BrowseHardTTL)),

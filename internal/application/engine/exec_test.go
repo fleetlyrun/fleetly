@@ -14,8 +14,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/runtimeops/node"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/node"
+	noderepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/node"
 )
 
 // fakeExecFace 实现 RuntimeExec 的引擎消费面（实例解析恒定单实例；其余
@@ -51,7 +52,7 @@ func newExecSessionEngine(t *testing.T) (*Engine, *[]func()) {
 	t.Helper()
 	e, _, _ := newTestEngine(t)
 	e.execFace = fakeExecFace{}
-	require.NoError(t, node.New(e.clock).Upsert(context.Background(), e.db.Runner(), &node.Node{
+	require.NoError(t, noderepo.New(e.clock).Upsert(context.Background(), e.db.Runner(), &node.Node{
 		PlatformID: "node-1", CarrierID: "carrier-1", Hostname: "h", Role: "manager", Available: true,
 	}))
 	var fired []func()

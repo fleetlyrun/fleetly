@@ -16,8 +16,9 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
+	"github.com/fleetlyrun/fleetly/internal/domain/runtimeops/freeze"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/freeze"
+	freezerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/freeze"
 	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statertest"
 )
@@ -74,7 +75,7 @@ func TestFreezeStreamFirstFrameEnforcement(t *testing.T) {
 
 	const pidA = "01JD0PROJA0000000000000000"
 	require.NoError(t, projectrepo.New(clock).Create(ctx, run, &project.Project{ID: pidA, TeamID: tTeamA, Name: "alpha"}))
-	freezes := freeze.New(clock)
+	freezes := freezerepo.New(clock)
 	g := NewFreezeGuard(db, slog.New(slog.DiscardHandler))
 
 	const uploadMethod = "/fleetly.delivery.v1.BuildsService/UploadSource"

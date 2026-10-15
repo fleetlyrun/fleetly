@@ -8,8 +8,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/githubapp"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/githubapp"
+	githubapprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/githubapp"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
 
@@ -27,7 +28,7 @@ func newApp(projectID, login string) *githubapp.App {
 func TestUpsertScopeUniqueness(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	apps := githubapp.New(clock)
+	apps := githubapprepo.New(clock)
 
 	// Global 行落位；同属主重放 = 覆盖更新（id/seq 不变，私钥换新）。
 	require.NoError(t, apps.Upsert(ctx, db.Runner(), newApp("", "acme")))
@@ -75,7 +76,7 @@ func TestUpsertScopeUniqueness(t *testing.T) {
 func TestResolutionShadowing(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	apps := githubapp.New(clock)
+	apps := githubapprepo.New(clock)
 	require.NoError(t, apps.Upsert(ctx, db.Runner(), newApp("", "acme")))
 	require.NoError(t, apps.Upsert(ctx, db.Runner(), newApp("proj-a", "acme")))
 	require.NoError(t, apps.Upsert(ctx, db.Runner(), newApp("", "giant-robots")))
@@ -103,7 +104,7 @@ func TestResolutionShadowing(t *testing.T) {
 func TestListFacesAndTombstones(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	apps := githubapp.New(clock)
+	apps := githubapprepo.New(clock)
 	require.NoError(t, apps.Upsert(ctx, db.Runner(), newApp("proj-a", "acme")))
 	require.NoError(t, apps.Upsert(ctx, db.Runner(), newApp("proj-a", "giant-robots")))
 	require.NoError(t, apps.Upsert(ctx, db.Runner(), newApp("", "giant-robots")))

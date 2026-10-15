@@ -23,11 +23,26 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/runtimeops/freeze"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/anchor"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/freeze"
+	apprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/app"
+	buildrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/build"
+	dbrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/database"
+	deploymentrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/deployment"
+	freezerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/freeze"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/githubapp"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/hook"
+	networkrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
+	networkpeerrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/networkpeer"
+	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
+	routerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/route"
+	runrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/run"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/schedule"
+	taskrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/task"
+	volumerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/volume"
 )
 
 // freezeScope 声明一个冻结面动词的 Team 解析方式（field 是请求字段名；
@@ -99,17 +114,34 @@ var FrozenVerbs = map[string]freezeScope{
 type FreezeGuard struct {
 	db      *persistence.DB
 	log     *slog.Logger
-	freezes *freeze.Repo
+	freezes freeze.Repo
 	anchor  *anchor.Anchor
 }
 
-// NewFreezeGuard 构造执法器（归属解析图与 repo 从 DB 时钟派生）。
+// NewFreezeGuard 构造执法器（归属解析图与 repo 从 DB 时钟派生；anchor
+// 的 repo 集在此构造注入——application 层可引 persistence，anchor 零
+// 持久化依赖）。
 func NewFreezeGuard(db *persistence.DB, log *slog.Logger) *FreezeGuard {
 	clock := db.Clock()
 	return &FreezeGuard{
 		db: db, log: log,
-		freezes: freeze.New(clock),
-		anchor:  anchor.New(clock),
+		freezes: freezerepo.New(clock),
+		anchor: anchor.New(anchor.Repos{
+			Projects:    projectrepo.New(clock),
+			Apps:        apprepo.New(clock),
+			Tasks:       taskrepo.New(clock),
+			Schedules:   schedule.New(clock),
+			Networks:    networkrepo.New(clock),
+			Peers:       networkpeerrepo.New(clock),
+			Hooks:       hook.New(clock),
+			Routes:      routerepo.New(clock),
+			Databases:   dbrepo.New(clock),
+			Volumes:     volumerepo.New(clock),
+			Runs:        runrepo.New(clock),
+			Deployments: deploymentrepo.New(clock),
+			Builds:      buildrepo.New(clock),
+			GitHubApps:  githubapp.New(clock),
+		}),
 	}
 }
 

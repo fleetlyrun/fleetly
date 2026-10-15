@@ -25,10 +25,11 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoregistry"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/automation/idempotency"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/idempotency"
+	idemrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/idempotency"
 )
 
 // HeaderKey 是幂等键的传输面名（gRPC metadata；REST 经 gateway 同名头
@@ -106,13 +107,13 @@ type dualSourceBearing interface{ GetIdempotencyKey() string }
 // Enforcer 是幂等执法器（拦截器 + janitor sweep 面）。
 type Enforcer struct {
 	db   *persistence.DB
-	repo *idempotency.Repo
+	repo idempotency.Repo
 	log  *slog.Logger
 }
 
 // NewEnforcer 构造执法器。
 func NewEnforcer(db *persistence.DB, log *slog.Logger) *Enforcer {
-	return &Enforcer{db: db, repo: idempotency.New(db.Clock()), log: log}
+	return &Enforcer{db: db, repo: idemrepo.New(db.Clock()), log: log}
 }
 
 // Unary 返回幂等拦截器：非执法面 / 无键请求原样放行（幂等是可选承诺，

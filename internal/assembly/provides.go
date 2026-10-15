@@ -23,14 +23,15 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/idem"
 	"github.com/fleetlyrun/fleetly/internal/buildinfo"
 	"github.com/fleetlyrun/fleetly/internal/config"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/sourceupload"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/keyring"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/node"
+	noderepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/node"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/outbox"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/sourceupload"
+	sourcerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/sourceupload"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/upload"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/fleetlygrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/systemgrpc"
@@ -319,7 +320,7 @@ func NewEngine(
 	// 节点平台 ID 铸造权归平台（ADR-0070）：Provider 经可选接口拿铸造闭包
 	// （providers 不 import state，装配期接线；未实现接口的 Provider 照旧）。
 	if m, ok := rt.(capability.NodeIDMinter); ok {
-		nodes := node.New(db.Clock())
+		nodes := noderepo.New(db.Clock())
 		m.SetNodeIDMinter(func(ctx context.Context) (string, error) {
 			return nodes.MintPlatformID(ctx, db.Runner())
 		})
@@ -474,7 +475,7 @@ const (
 type RetentionJanitorService struct {
 	enforcer *idem.Enforcer
 	db       *persistence.DB
-	uploads  *sourceupload.Repo
+	uploads  sourceupload.Repo
 	blobs    *upload.Store
 	engine   *engine.Engine
 	log      *slog.Logger
@@ -562,7 +563,7 @@ func (s *RetentionJanitorService) sweepUploads(ctx context.Context) {
 func NewRetentionJanitorService(enforcer *idem.Enforcer, db *persistence.DB, cfg *config.AppConfig, e *engine.Engine, app lynx.App) *RetentionJanitorService {
 	return &RetentionJanitorService{
 		enforcer: enforcer, db: db,
-		uploads: sourceupload.New(db.Clock()),
+		uploads: sourcerepo.New(db.Clock()),
 		blobs:   upload.NewStore(cfg.DataRoot(), 0, 0),
 		engine:  e,
 		log:     app.Logger(),

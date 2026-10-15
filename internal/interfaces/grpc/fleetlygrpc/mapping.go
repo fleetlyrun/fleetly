@@ -19,6 +19,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/revision"
+	"github.com/fleetlyrun/fleetly/internal/domain/runtimeops/node"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
@@ -33,7 +34,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/sharedvariable"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/volume"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/node"
 )
 
 // mapStateError 把 repo/engine 哨兵与 capability 面（指标查询拒绝等）错误

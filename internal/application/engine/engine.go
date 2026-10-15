@@ -10,12 +10,19 @@ import (
 	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/run"
+	"github.com/fleetlyrun/fleetly/internal/domain/automation/schedule"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
+	"github.com/fleetlyrun/fleetly/internal/domain/data/backup"
+	"github.com/fleetlyrun/fleetly/internal/domain/data/browse"
+	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/githubapp"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/revision"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/sourceupload"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/token"
+	"github.com/fleetlyrun/fleetly/internal/domain/runtimeops/node"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -27,32 +34,34 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/route"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/volume"
+	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/alertrule"
+	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/channel"
 	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/outbox"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/github"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
-	alertrule "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/alertrule"
+	alertrulerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/alertrule"
 	apprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/app"
 	auditrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/audit"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/backup"
+	backuprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/backup"
 	browserepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/browse"
 	buildrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/build"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/channel"
+	channelrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/channel"
 	cfgrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/config"
 	dbrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/database"
 	deploymentrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/deployment"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/githubapp"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/logcursor"
+	githubapprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/githubapp"
+	logcursorrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/logcursor"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
 	networkpeerrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/networkpeer"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/node"
+	noderepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/node"
 	outboxrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/outbox"
 	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
 	revisionrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/revision"
 	routerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/route"
 	runrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/run"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/schedule"
+	schedulerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/schedule"
 	secretrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/secret"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/sourceupload"
+	sourcerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/sourceupload"
 	taskrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/task"
 	tokenrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/token"
 	volumerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/volume"
@@ -373,7 +382,7 @@ type Engine struct {
 	deployments deployment.Repo
 	builds      build.Repo
 	outbox      outbox.Repo
-	nodes       *node.Repo
+	nodes       node.Repo
 	audits      audit.Repo
 
 	// Task 域（F1.5/F1.6）：聚合 repo + 单写者环 + 属主 Token 行引用面
@@ -384,7 +393,7 @@ type Engine struct {
 
 	// Schedule 域（F1.7）：聚合 repo + 到期拍环（fire 铸 one-shot Task 后
 	// 交 taskLoop 驱动——Schedule 只拥有"何时拍"）。
-	schedules *schedule.Repo
+	schedules schedule.Repo
 
 	// 跨 Project peer 声明（F1.8，ADR-0013 附录 A）：批准态真源——
 	// 投影翻译（strict/isolate）与撤销隔离的解析面。
@@ -392,21 +401,21 @@ type Engine struct {
 
 	// 上传产物行（F1.10，ADR-0019 附录 A）：构建输入解析面（upload id →
 	// digest → blob 解包）。
-	uploads *sourceupload.Repo
+	uploads sourceupload.Repo
 
 	// Database 域（F1.12，ADR-0029）：聚合 repo + 用户域受管收敛环
 	//（第三条部署轨——挂项目网供 App 连，与 App 部署链/受管域分立）。
-	databases *dbrepo.Repo
+	databases database.Repo
 
 	// Browse 会话域（F3.6，ADR-0051）：回收台账 repo + 收敛环（会话
 	// 注册表进程内活体——行是重启恢复锚，见 browse.go）。
-	browseRepo *browserepo.Repo
+	browseRepo browse.Repo
 	browse     browseDomain
 
 	// Backup 域（F2.2，ADR-0039）：台账 repo + 备份环 + 执行链装配面
 	//（ObjectStore 端口 = 产物承载；Utility 子面 = 工具容器执行，装配期
 	// 经 FacesOf 从 Runtime 探测）。
-	backups     *backup.Repo
+	backups     backup.Repo
 	objectStore capability.ObjectStore
 	utility     capability.RuntimeUtility
 	// execFace 是 exec 子面 typed 持有（F3.2，ADR-0049；nil = 受理诚实
@@ -424,8 +433,8 @@ type Engine struct {
 	// 抓取/透传/规则评估；通道派发面）。
 	metrics    capability.Metrics
 	metricsDom metricsDomain
-	alertRules *alertrule.Repo
-	channels   *channel.Repo
+	alertRules alertrule.Repo
+	channels   channel.Repo
 
 	loop         *Loop
 	buildLoop    *Loop
@@ -516,7 +525,7 @@ type Engine struct {
 
 	// GitHub App 接入材料（ADR-0073 阶段 B）：聚合 repo + 最小客户端——
 	// clone 前按 host+属主解析并现铸 installation token（gitmaterial.go）。
-	ghApps   *githubapp.Repo
+	ghApps   githubapp.Repo
 	ghClient *github.Client
 
 	// rotateMu 串行化 Database 凭证轮换（IA v3 二期⑤b）：并发轮换的
@@ -567,17 +576,17 @@ func New(deps Deps, opts Options) *Engine {
 		deployments:  deploymentrepo.New(clock),
 		builds:       buildrepo.New(clock),
 		outbox:       outboxrepo.New(clock),
-		nodes:        node.New(clock),
+		nodes:        noderepo.New(clock),
 		audits:       auditrepo.New(clock),
 		tasks:        taskrepo.New(clock),
 		runs:         runrepo.New(clock),
 		tokens:       tokenrepo.New(clock),
-		schedules:    schedule.New(clock),
+		schedules:    schedulerepo.New(clock),
 		peerDecls:    networkpeerrepo.New(clock),
-		uploads:      sourceupload.New(clock),
+		uploads:      sourcerepo.New(clock),
 		browseRepo:   browserepo.New(clock),
 		databases:    dbrepo.New(clock),
-		backups:      backup.New(clock),
+		backups:      backuprepo.New(clock),
 		loop:         NewLoop("deployment", log),
 		buildLoop:    NewLoop("build", log),
 		managedLoop:  NewLoop("managed", log),
@@ -595,7 +604,7 @@ func New(deps Deps, opts Options) *Engine {
 		configs:      cfgrepo.New(clock),
 		volumes:      volumerepo.New(clock),
 		networks:     networkrepo.New(clock),
-		ghApps:       githubapp.New(clock),
+		ghApps:       githubapprepo.New(clock),
 		ghClient:     github.NewClient(nil, nil),
 		buildOpts:    buildOptions{Concurrency: opts.BuildConcurrency, Timeout: opts.BuildTimeout},
 	}
@@ -603,12 +612,12 @@ func New(deps Deps, opts Options) *Engine {
 	e.build.inputs = make(map[string]capability.BuildRequest)
 	e.logpipe.streams = make(map[string]context.CancelFunc)
 	e.logpipe.batches = make(map[string]*nsBatch)
-	e.logpipe.cursors = logcursor.New(clock)
+	e.logpipe.cursors = logcursorrepo.New(clock)
 	e.metricsDom.above = make(map[string]time.Time)
 	e.metricsDom.lastCPU = make(map[string]cpuCounter)
 	e.metricsDom.cores = make(map[string]float64)
-	e.alertRules = alertrule.New(clock)
-	e.channels = channel.New(clock)
+	e.alertRules = alertrulerepo.New(clock)
+	e.channels = channelrepo.New(clock)
 	e.obs.init()
 	e.exec.init()
 	e.expect.expected = make(map[workloadOwner]uint64)

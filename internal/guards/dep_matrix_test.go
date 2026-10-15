@@ -96,11 +96,6 @@ type depExemption struct {
 
 var depExemptions = []depExemption{
 	{
-		subtree: "internal/domain/services/anchor",
-		allow:   "internal/infrastructure/persistence/",
-		reason:  "anchor 解析图直接构造 repo 族：已上移聚合（批一~批三 app/build/deployment/project/run/task + network/networkpeer/route/volume）仅剩 New 构造在此，未上移聚合（database/githubapp/hook/schedule——批四候选）仍直引具体类型；全量上移并把构造收进组合根后删本行",
-	},
-	{
 		subtree: "internal/interfaces/grpc/fleetlygrpc",
 		allow:   "internal/infrastructure/github/",
 		reason:  "gRPC 面直注 github 客户端（P1b 消费侧接口化后收紧，届时删本行）",

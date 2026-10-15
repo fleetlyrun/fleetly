@@ -17,9 +17,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/githubapp"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/github"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/githubapp"
 )
 
 // installTokenUser 是 installation token 的 clone 用户名（GitHub App

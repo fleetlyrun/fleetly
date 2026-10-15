@@ -17,12 +17,12 @@ import (
 	"io"
 	"time"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/data/backup"
+	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/volume"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/backup"
-	dbrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/database"
 )
 
 // KickBackups 唤醒 Backup 环（API 手动触发面消费）。
@@ -83,7 +83,7 @@ func (e *Engine) backupChainReady() bool {
 
 // databasePassword 解密数据库凭证回读密码（备份/恢复渲染共用；单真源
 // = Secret 里的完整连接串，ADR-0029 决策 6）。
-func (e *Engine) databasePassword(ctx context.Context, row *dbrepo.Database) (string, error) {
+func (e *Engine) databasePassword(ctx context.Context, row *database.Database) (string, error) {
 	if e.cipher == nil {
 		return "", fmt.Errorf("backup: database credentials require the master key")
 	}
@@ -125,7 +125,7 @@ func (e *Engine) schedulePass(ctx context.Context) {
 	now := e.clock.Now()
 	for i := range rows {
 		row := &rows[i]
-		if row.Status != dbrepo.StatusRunning || row.BackupIntervalSecs <= 0 {
+		if row.Status != database.StatusRunning || row.BackupIntervalSecs <= 0 {
 			continue
 		}
 		active, err := e.backups.HasActiveFor(ctx, e.db.Runner(), row.ID)
@@ -400,7 +400,7 @@ func (e *Engine) restorePass(ctx context.Context) {
 	}
 }
 
-func (e *Engine) restoreDatabase(ctx context.Context, db *dbrepo.Database) {
+func (e *Engine) restoreDatabase(ctx context.Context, db *database.Database) {
 	fail := func(format string, args ...any) {
 		msg := fmt.Sprintf(format, args...)
 		if err := e.databases.SetRestoreError(ctx, e.db.Runner(), db.ID, msg); err != nil {
@@ -463,7 +463,7 @@ func (e *Engine) restoreDatabase(ctx context.Context, db *dbrepo.Database) {
 	}
 	switch spec.Mode {
 	case dbtemplate.RestoreStream:
-		if db.Status != dbrepo.StatusRunning {
+		if db.Status != database.StatusRunning {
 			return // 目标库未在服：等下一拍（收敛环推进 status 后再来）
 		}
 	case dbtemplate.RestorePreseed:
@@ -514,7 +514,7 @@ func (e *Engine) restoreDatabase(ctx context.Context, db *dbrepo.Database) {
 // 面 daemon 跑——预置落点与库首启调度点必须同节点，swarm 无卷感知调度，
 // 平台钉住是既有唯一机制）。已钉到别处的卷 = 预置会落在错误节点，诚实
 // 拒绝（用户先解除钉住或换名重建）。
-func (e *Engine) prepareSeedVolume(ctx context.Context, db *dbrepo.Database) (*volume.Volume, error) {
+func (e *Engine) prepareSeedVolume(ctx context.Context, db *database.Database) (*volume.Volume, error) {
 	if err := e.ensureDatabaseVolume(ctx, db); err != nil {
 		return nil, err
 	}

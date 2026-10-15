@@ -16,10 +16,10 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
-	dbrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/database"
 )
 
 // ErrRotateRejected 是"数据面改密被数据库拒绝"的哨兵（API 层 map 为
@@ -85,7 +85,7 @@ func (e *Engine) RotateDatabasePassword(ctx context.Context, databaseID string) 
 
 // runRotateUtility 执行数据面改密（一次性工具容器，与备份/恢复同纪律：
 // 维护互斥读半边 + 带界 + stderr/stdout 尾部入错误报文）。
-func (e *Engine) runRotateUtility(ctx context.Context, row *dbrepo.Database, tpl dbtemplate.Template, spec dbtemplate.RotateSpec) error {
+func (e *Engine) runRotateUtility(ctx context.Context, row *database.Database, tpl dbtemplate.Template, spec dbtemplate.RotateSpec) error {
 	if e.utility == nil {
 		return fmt.Errorf("credential rotation requires the utility face (not assembled)")
 	}

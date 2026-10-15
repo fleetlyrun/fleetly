@@ -3,7 +3,7 @@ package engine
 import (
 	"context"
 
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/node"
+	"github.com/fleetlyrun/fleetly/internal/domain/runtimeops/node"
 )
 
 // reconcileNodes 节点观测对账（F0.20 观测面）：DescribeCluster 快照 →

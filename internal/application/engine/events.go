@@ -5,13 +5,13 @@ import (
 	"strings"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/run"
+	"github.com/fleetlyrun/fleetly/internal/domain/automation/schedule"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
+	"github.com/fleetlyrun/fleetly/internal/domain/data/backup"
+	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/backup"
-	dbrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/database"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/schedule"
 )
 
 // 事件 payload schema（Outbox payload 列；JSON、字段只增）。
@@ -335,7 +335,7 @@ func scheduleEventPayloadJSON(s *schedule.Schedule, source, reason string) []byt
 }
 
 // databaseRestoredEventJSON 构造 database.restored payload（恢复面单源）。
-func databaseRestoredEventJSON(db *dbrepo.Database, src *backup.Backup) []byte {
+func databaseRestoredEventJSON(db *database.Database, src *backup.Backup) []byte {
 	b, _ := json.Marshal(databaseRestoredEventPayload{
 		DatabaseID: db.ID,
 		ProjectID:  db.ProjectID,

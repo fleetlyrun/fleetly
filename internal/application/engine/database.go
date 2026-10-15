@@ -15,13 +15,13 @@ import (
 	"strings"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
+	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	specir "github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/volume"
-	dbrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/database"
 )
 
 // dbCredentialSecretPrefix 是数据库凭证 Secret 的命名约定（database:<name>；
@@ -88,7 +88,7 @@ func (e *Engine) databaseStep(ctx context.Context) {
 // 重活，仅保留观测驱动的状态推进（观测缓存与 Ensure 无关，短路拍照常收
 // 敛状态）。凭证以 Secret 行密文摘要为材料指纹的代理——轮换/重封装改变
 // 密文即短路失效，无需解密（宁重下发不漏变更）。
-func (e *Engine) reconcileDatabase(ctx context.Context, row *dbrepo.Database) {
+func (e *Engine) reconcileDatabase(ctx context.Context, row *database.Database) {
 	// 恢复挂起中的预置卷形态（redis）：载体首启前不 Ensure——空卷首启即
 	// 数据丢失，预置完成由 backup 环清位后收敛（ADR-0039 决策 6；探测只
 	// 消费 Mode，密码传占位值过渲染闸）。
@@ -193,7 +193,7 @@ func (e *Engine) reconcileDatabase(ctx context.Context, row *dbrepo.Database) {
 // advanceDatabaseStatus 从观测缓存推进行状态（gen 匹配才采信——旧 gen 的
 // 迟到观测不翻状态）。Ensure 成功拍与签名短路拍共用（短路拍 Ensure 不发，
 // 状态收敛不停——观测经 Watch 流独立到达）。
-func (e *Engine) advanceDatabaseStatus(ctx context.Context, row *dbrepo.Database, gen uint64) {
+func (e *Engine) advanceDatabaseStatus(ctx context.Context, row *database.Database, gen uint64) {
 	// 观测缓存键 = 投影 Workload ID = 数据库行 ID（ProjectDatabase 铸造式；
 	// database_test 以行 ID 注入观测即依赖此恒等）。
 	ev, seen := e.observationOf(row.ID)
@@ -224,13 +224,13 @@ func dbStatusFromObservation(ev capability.WorkloadEvent, gen uint64) (string, b
 	}
 	switch ev.State {
 	case capability.WorkloadRunning:
-		return dbrepo.StatusRunning, true
+		return database.StatusRunning, true
 	case capability.WorkloadPending:
-		return dbrepo.StatusPending, true
+		return database.StatusPending, true
 	case capability.WorkloadDegraded:
-		return dbrepo.StatusDegraded, true
+		return database.StatusDegraded, true
 	case capability.WorkloadStopped:
-		return dbrepo.StatusStopped, true
+		return database.StatusStopped, true
 	default:
 		return "", false // completed/failed：长运行库不落在一次性终态
 	}
@@ -241,7 +241,7 @@ func dbStatusFromObservation(ev capability.WorkloadEvent, gen uint64) (string, b
 // 不进 env/label/argv（ADR-0014 材料纪律；值经载体按值指纹命名随 spec
 // diff 分发——轮换 Secret 即滚动替换，zot 附录 B 同款机制）。sec 由调用方
 // 预读传入（短路签名的同一次读取——不做二次点查）。
-func (e *Engine) databaseMaterials(ctx context.Context, row *dbrepo.Database, tpl dbtemplate.Template, sec *secret.Secret) (capability.Materials, error) {
+func (e *Engine) databaseMaterials(ctx context.Context, row *database.Database, tpl dbtemplate.Template, sec *secret.Secret) (capability.Materials, error) {
 	if e.cipher == nil {
 		return capability.Materials{}, fmt.Errorf("database credentials require the master key (data root keys/ missing)")
 	}
@@ -265,7 +265,7 @@ func (e *Engine) databaseMaterials(ctx context.Context, row *dbrepo.Database, tp
 // ensureDatabaseVolume 幂等补建挂靠卷行（名 = 数据库名；NotFound 即建，
 // 其余错误上抛）。预创建的同名卷被复用（用户可借 CreateVolume 预先钉
 // 住节点——数据库收敛尊重既有 Placement）。
-func (e *Engine) ensureDatabaseVolume(ctx context.Context, row *dbrepo.Database) error {
+func (e *Engine) ensureDatabaseVolume(ctx context.Context, row *database.Database) error {
 	if _, err := e.volumes.GetByName(ctx, e.db.Runner(), row.ProjectID, row.Name); err == nil {
 		return nil
 	} else if !errors.Is(err, state.ErrNotFound) {
@@ -306,7 +306,7 @@ func (e *Engine) egressNetworkMap(ctx context.Context, projectID string) map[str
 
 // databaseSpecFromRow 由行 + 模板组装 DatabaseSpec（IR 单真源：投影输入
 // 恒经 spec 形态，叶子校验可用）。
-func databaseSpecFromRow(row *dbrepo.Database, tpl dbtemplate.Template) *specv1.DatabaseSpec {
+func databaseSpecFromRow(row *database.Database, tpl dbtemplate.Template) *specv1.DatabaseSpec {
 	return &specv1.DatabaseSpec{
 		SchemaVersion:  specir.SchemaVersion,
 		Database:       &specv1.DatabaseRef{Id: row.ID, Project: row.ProjectID},

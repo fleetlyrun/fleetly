@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -34,7 +35,7 @@ const (
 )
 
 // newDatabaseFixture 组装单库收敛夹具：项目/网络/凭证 Secret/数据库行。
-func newDatabaseFixture(t *testing.T, engine, connectURL string) (*Engine, *fakeRuntime, *dbrepo.Database) {
+func newDatabaseFixture(t *testing.T, engine, connectURL string) (*Engine, *fakeRuntime, *database.Database) {
 	t.Helper()
 	db, clock := statertest.New(t)
 	rt := newFakeRuntime()
@@ -58,7 +59,7 @@ func newDatabaseFixture(t *testing.T, engine, connectURL string) (*Engine, *fake
 		Ciphertext: ct, Fingerprint: material.Fingerprint([]byte(connectURL)),
 	}))
 
-	row := &dbrepo.Database{
+	row := &database.Database{
 		ID: tDatabaseID, ProjectID: tProjectID, Name: tDatabaseName,
 		Engine: engine, CredentialsRef: secName,
 		BackupIntervalSecs: 86400, BackupRetentionSecs: 604800,
@@ -119,7 +120,7 @@ func TestDatabaseReconcileConverges(t *testing.T) {
 	e.databaseStep(ctx)
 	fresh, err = e.databases.Get(ctx, e.db.Runner(), tDatabaseID)
 	require.NoError(t, err)
-	assert.Equal(t, dbrepo.StatusRunning, fresh.Status)
+	assert.Equal(t, database.StatusRunning, fresh.Status)
 }
 
 // gen 重启安全语义：指纹未变多 tick 不重下发（载体不滚；N1 C16 短路——
@@ -170,7 +171,7 @@ func TestDatabaseShortCircuitKeepsStatusAdvancing(t *testing.T) {
 	assert.Len(t, rt.calls(), 1, "the short-circuited tick must not re-Ensure")
 	fresh, err := e.databases.Get(ctx, e.db.Runner(), tDatabaseID)
 	require.NoError(t, err)
-	assert.Equal(t, dbrepo.StatusRunning, fresh.Status, "status must advance on the skipped tick")
+	assert.Equal(t, database.StatusRunning, fresh.Status, "status must advance on the skipped tick")
 
 	// 凭证轮换（密文变化）→ 短路失效重下发（新密码材料随 Ensure）。
 	cipher := e.cipher
@@ -261,7 +262,7 @@ func TestDatabaseCredentialMissingBlocksEnsure(t *testing.T) {
 	fresh, err := e.databases.Get(ctx, e.db.Runner(), tDatabaseID)
 	require.NoError(t, err)
 	assert.Equal(t, uint64(0), fresh.Generation)
-	assert.Equal(t, dbrepo.StatusPending, fresh.Status)
+	assert.Equal(t, database.StatusPending, fresh.Status)
 }
 
 // 收口：Runtime.Remove 到 Database 域 + 归属/期望/观测缓存清理。

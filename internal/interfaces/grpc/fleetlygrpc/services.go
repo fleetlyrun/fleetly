@@ -9,11 +9,18 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/run"
+	"github.com/fleetlyrun/fleetly/internal/domain/automation/schedule"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
+	"github.com/fleetlyrun/fleetly/internal/domain/data/backup"
+	"github.com/fleetlyrun/fleetly/internal/domain/data/browse"
+	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/catalog"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/githubapp"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/hook"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/revision"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/sourceupload"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/invitation"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/membership"
@@ -21,6 +28,8 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/team"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/token"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/user"
+	"github.com/fleetlyrun/fleetly/internal/domain/runtimeops/freeze"
+	"github.com/fleetlyrun/fleetly/internal/domain/runtimeops/node"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/anchor"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -40,31 +49,31 @@ import (
 	apprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/app"
 	appvariablerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/appvariable"
 	auditrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/audit"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/backup"
+	backuprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/backup"
 	browserepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/browse"
 	buildrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/build"
 	catalogrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/catalog"
 	cfgrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/config"
 	dbrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/database"
 	deploymentrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/deployment"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/freeze"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/githubapp"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/hook"
+	freezerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/freeze"
+	githubapprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/githubapp"
+	hookrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/hook"
 	invitationrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/invitation"
 	membershiprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/membership"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
+	networkrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
 	networkpeerrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/networkpeer"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/node"
+	noderepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/node"
 	outboxrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/outbox"
 	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
 	revisionrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/revision"
 	rolerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/role"
 	routerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/route"
 	runrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/run"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/schedule"
+	schedulerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/schedule"
 	secretrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/secret"
 	sharedvariablerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/sharedvariable"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/sourceupload"
+	sourcerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/sourceupload"
 	taskrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/task"
 	teamrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/team"
 	tokenrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/token"
@@ -93,7 +102,7 @@ type Services struct {
 	Builds       build.Repo
 	Tasks        task.Repo
 	Runs         run.Repo
-	Schedules    *schedule.Repo
+	Schedules    schedule.Repo
 	OutboxEvents outbox.Repo
 	Secrets      secret.Repo
 	Configs      configrepo.Repo
@@ -106,9 +115,9 @@ type Services struct {
 	Volumes      volume.Repo
 	Networks     network.Repo
 	NetworkPeers networkpeer.Repo
-	Freezes      *freeze.Repo
+	Freezes      freeze.Repo
 	Routes       route.Repo
-	Nodes        *node.Repo
+	Nodes        node.Repo
 	Audits       audit.Repo
 	Users        user.Repo
 	Teams        team.Repo
@@ -116,30 +125,30 @@ type Services struct {
 	Memberships  membership.Repo
 	Tokens       token.Repo
 	Invitations  invitation.Repo
-	Hooks        *hook.Repo
+	Hooks        hook.Repo
 
 	// GitHubApps 是 GitHub App 接入材料聚合 repo（ADR-0073 阶段 B）；
 	// GitHub 是最小客户端（installation token 现铸/受理验证/列仓，零
 	// 持久配置——api_base 逐行携带，测试指 httptest 即可）。
-	GitHubApps *githubapp.Repo
+	GitHubApps githubapp.Repo
 	GitHub     *github.Client
 
 	// Uploads 是上传产物行 repo；UploadStore 是 blob 面（内容寻址落盘，
 	// ADR-0019 附录 A）。限额走缺省（512MiB/4GiB，ADR 钉值）。
-	Uploads     *sourceupload.Repo
+	Uploads     sourceupload.Repo
 	UploadStore *upload.Store
 
 	// Databases 是 Database 聚合 repo（F1.12，ADR-0029）。
-	Databases *dbrepo.Repo
+	Databases database.Repo
 
 	// Browse 是 Browse 会话回收台账 repo（F3.6，ADR-0051 决策 1：受理
 	// 事务落行；engine browseLoop 消费——注册表是进程内活体，行是
 	// 重启恢复与到点回收的锚）。
-	Browse *browserepo.Repo
+	Browse browse.Repo
 
 	// Backups 是 Backup 台账 repo（F2.2，ADR-0039；对象面经 Engine——
 	// ObjectStore 端口是 engine 执行链的装配物）。
-	Backups *backup.Repo
+	Backups backup.Repo
 
 	// Catalog 是 App 模板目录快照 repo（F3.3，ADR-0050：RefreshTemplates
 	// 的单行快照；解析序 = 快照在场优先、内嵌目录兜底）。
@@ -178,9 +187,29 @@ type Services struct {
 }
 
 // NewServices 构造（repos 从 DB 时钟派生；vocab 是 scope 词表单一源；
-// dataRoot 是上传产物 blob 根）。
+// dataRoot 是上传产物 blob 根；anchor 的 repo 集在此构造注入——组合根
+// 落位，anchor 零持久化依赖）。
 func NewServices(db *persistence.DB, e *engine.Engine, c *material.Cipher, rt capability.Runtime, dataRoot string, vocab []string, log *slog.Logger) *Services {
 	clock := db.Clock()
+	schedules := schedulerepo.New(clock)
+	freezes := freezerepo.New(clock)
+	nodes := noderepo.New(clock)
+	hooks := hookrepo.New(clock)
+	ghApps := githubapprepo.New(clock)
+	uploads := sourcerepo.New(clock)
+	databases := dbrepo.New(clock)
+	browseSessions := browserepo.New(clock)
+	backups := backuprepo.New(clock)
+	projects := projectrepo.New(clock)
+	apps := apprepo.New(clock)
+	tasks := taskrepo.New(clock)
+	networks := networkrepo.New(clock)
+	peers := networkpeerrepo.New(clock)
+	routes := routerepo.New(clock)
+	volumes := volumerepo.New(clock)
+	runs := runrepo.New(clock)
+	deployments := deploymentrepo.New(clock)
+	builds := buildrepo.New(clock)
 	return &Services{
 		DB:              db,
 		Engine:          e,
@@ -188,25 +217,25 @@ func NewServices(db *persistence.DB, e *engine.Engine, c *material.Cipher, rt ca
 		Runtime:         rt,
 		Logging:         e.LoggingProvider(),
 		Metrics:         e.MetricsProvider(),
-		Projects:        projectrepo.New(clock),
-		Apps:            apprepo.New(clock),
-		Deployments:     deploymentrepo.New(clock),
+		Projects:        projects,
+		Apps:            apps,
+		Deployments:     deployments,
 		Revisions:       revisionrepo.New(clock),
-		Builds:          buildrepo.New(clock),
-		Tasks:           taskrepo.New(clock),
-		Runs:            runrepo.New(clock),
-		Schedules:       schedule.New(clock),
+		Builds:          builds,
+		Tasks:           tasks,
+		Runs:            runs,
+		Schedules:       schedules,
 		OutboxEvents:    outboxrepo.New(clock),
 		Secrets:         secretrepo.New(clock),
 		Configs:         cfgrepo.New(clock),
 		SharedVariables: sharedvariablerepo.New(clock),
 		AppVariables:    appvariablerepo.New(clock),
-		Volumes:         volumerepo.New(clock),
-		Networks:        networkrepo.New(clock),
-		NetworkPeers:    networkpeerrepo.New(clock),
-		Freezes:         freeze.New(clock),
-		Routes:          routerepo.New(clock),
-		Nodes:           node.New(clock),
+		Volumes:         volumes,
+		Networks:        networks,
+		NetworkPeers:    peers,
+		Freezes:         freezes,
+		Routes:          routes,
+		Nodes:           nodes,
 		Audits:          auditrepo.New(clock),
 		Users:           userrepo.New(clock),
 		Teams:           teamrepo.New(clock),
@@ -214,16 +243,31 @@ func NewServices(db *persistence.DB, e *engine.Engine, c *material.Cipher, rt ca
 		Memberships:     membershiprepo.New(clock),
 		Tokens:          tokenrepo.New(clock),
 		Invitations:     invitationrepo.New(clock),
-		Hooks:           hook.New(clock),
-		GitHubApps:      githubapp.New(clock),
+		Hooks:           hooks,
+		GitHubApps:      ghApps,
 		GitHub:          github.NewClient(nil, nil),
-		Uploads:         sourceupload.New(clock),
+		Uploads:         uploads,
 		UploadStore:     upload.NewStore(dataRoot, 0, 0),
-		Databases:       dbrepo.New(clock),
-		Browse:          browserepo.New(clock),
-		Backups:         backup.New(clock),
+		Databases:       databases,
+		Browse:          browseSessions,
+		Backups:         backups,
 		Catalog:         catalogrepo.New(clock),
-		Anchor:          anchor.New(clock),
+		Anchor: anchor.New(anchor.Repos{
+			Projects:    projects,
+			Apps:        apps,
+			Tasks:       tasks,
+			Schedules:   schedules,
+			Networks:    networks,
+			Peers:       peers,
+			Hooks:       hooks,
+			Routes:      routes,
+			Databases:   databases,
+			Volumes:     volumes,
+			Runs:        runs,
+			Deployments: deployments,
+			Builds:      builds,
+			GitHubApps:  ghApps,
+		}),
 		eventTickets:    newEventTicketStore(clock),
 		ScopeVocabulary: vocab,
 		Log:             log,

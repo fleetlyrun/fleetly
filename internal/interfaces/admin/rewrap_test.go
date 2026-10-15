@@ -14,12 +14,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/githubapp"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/hook"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/keyring"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/githubapp"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/hook"
+	githubapprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/githubapp"
+	hookrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/hook"
 	secretrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/secret"
 )
 
@@ -57,14 +59,14 @@ func seedOldWorld(t *testing.T, root string) (string, *persistence.DB) {
 	// app_hooks.app_id 有 FK：插一行最小 App 载体行（projects 无 FK 链）。
 	_, err = db.Runner().ExecContext(ctx, `INSERT INTO apps (id, seq, project_id, name, created_at, updated_at, deleted_at) VALUES ('app-1', 1, 'proj-a', 'web', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', '')`)
 	require.NoError(t, err)
-	require.NoError(t, hook.New(db.Clock()).Create(ctx, db.Runner(), &hook.Hook{
+	require.NoError(t, hookrepo.New(db.Clock()).Create(ctx, db.Runner(), &hook.Hook{
 		AppID: "app-1", Repo: "acme/web", Branch: "main", Dockerfile: "Dockerfile",
 		TokenSHA256: "abc", TokenPrefix: "abcd",
 		SecretCiphertext: mustSeal("hook-secret"),
 	}))
 
 	// GitHub App 两态行各一（ADR-0073）：Global + Project 级。
-	ghApps := githubapp.New(db.Clock())
+	ghApps := githubapprepo.New(db.Clock())
 	require.NoError(t, ghApps.Upsert(ctx, db.Runner(), &githubapp.App{
 		ProjectID: "", AppID: 201884, InstallationID: 51887734, AccountLogin: "giant-robots",
 		PrivateKeyCiphertext: mustSeal("gh-key-global"), PrivateKeyFingerprint: material.Fingerprint([]byte("gh-key-global")),
@@ -110,7 +112,7 @@ func listSecretCT(t *testing.T, db *persistence.DB) map[string][]byte {
 
 func listHookCT(t *testing.T, db *persistence.DB) map[string][]byte {
 	t.Helper()
-	rows, err := hook.New(db.Clock()).ListAll(context.Background(), db.Runner())
+	rows, err := hookrepo.New(db.Clock()).ListAll(context.Background(), db.Runner())
 	require.NoError(t, err)
 	out := map[string][]byte{}
 	for _, r := range rows {
@@ -121,7 +123,7 @@ func listHookCT(t *testing.T, db *persistence.DB) map[string][]byte {
 
 func listGitHubCT(t *testing.T, db *persistence.DB) map[string][]byte {
 	t.Helper()
-	rows, err := githubapp.New(db.Clock()).ListAll(context.Background(), db.Runner())
+	rows, err := githubapprepo.New(db.Clock()).ListAll(context.Background(), db.Runner())
 	require.NoError(t, err)
 	out := map[string][]byte{}
 	for _, r := range rows {
@@ -236,10 +238,10 @@ func TestRewrapRefusesUnopenableRows(t *testing.T) {
 	require.NoError(t, secrets.Upsert(ctx, db.Runner(), &secret.Secret{
 		ID: "s-x", ProjectID: "proj-a", Name: "corrupt", Ciphertext: []byte("garbage"), Fingerprint: "ff",
 	}))
-	hooks := hook.New(db.Clock())
+	hooks := hookrepo.New(db.Clock())
 	require.NoError(t, hooks.UpdateSecretCiphertext(ctx, db.Runner(), "app-1", []byte("garbage")))
 	// GitHub App 不可解行：Global 行直改密文（Key 面 = global/<login>）。
-	ghApps := githubapp.New(db.Clock())
+	ghApps := githubapprepo.New(db.Clock())
 	ghRow, err := ghApps.GetGlobalByOwner(ctx, db.Runner(), "giant-robots")
 	require.NoError(t, err)
 	require.NoError(t, ghApps.UpdatePrivateKeyCiphertext(ctx, db.Runner(), ghRow.ID, []byte("garbage")))

@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/logcursor"
+	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/logcursor"
 )
 
 // 采集参数（环本地常量；不进 Options——无运维面诉求）。
@@ -328,5 +328,5 @@ type logpipeState struct {
 	mu      sync.Mutex
 	streams map[string]context.CancelFunc // ns 键 → 域流 cancel（Stop/域消失收口）
 	batches map[string]*nsBatch           // ns 键 → 在飞批（step 空闲冲刷面）
-	cursors *logcursor.Repo
+	cursors logcursor.Repo
 }
