@@ -1894,7 +1894,8 @@
       "type": "object",
       "properties": {
         "name": {
-          "type": "string"
+          "type": "string",
+          "title": "name 的形态约束（required + dns 标签）走 protovalidate CEL 注解：\nshape 规则以空值短路（`size() == 0 || ...`）保证坏输入恰好一条违规。\n正则字面与长度界（63）是 entityid.NamePatternSource / MaxNameLen 的\n镜像（proto 无法引用 Go 常量），字节一致由 entityid 包的 descriptor\n对齐测试执法。"
         },
         "team_id": {
           "type": "string"

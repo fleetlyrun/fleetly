@@ -3,6 +3,8 @@ module github.com/fleetlyrun/fleetly
 go 1.26.6
 
 require (
+	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.12-20260825204119-511051f7f437.2
+	buf.build/go/protovalidate v1.4.0
 	filippo.io/age v1.3.2
 	github.com/coder/websocket v1.8.15
 	github.com/compose-spec/compose-go/v2 v2.16.1
@@ -40,8 +42,6 @@ require (
 )
 
 require (
-	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.12-20260825204119-511051f7f437.1 // indirect
-	buf.build/go/protovalidate v1.4.0 // indirect
 	cel.dev/cel-go v0.32.0 // indirect
 	cel.dev/expr v0.25.3 // indirect
 	filippo.io/hpke v0.4.0 // indirect

@@ -6,18 +6,22 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 
 	"github.com/lynx-go/grpcapi/authz"
 	grpcapiinterceptor "github.com/lynx-go/grpcapi/interceptor"
 	"github.com/lynx-go/lynx"
 	lynxgrpc "github.com/lynx-go/lynx/server/grpc"
 
+	sharedv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/shared/v1"
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/application/idem"
 	"github.com/fleetlyrun/fleetly/internal/config"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/apperrstatus"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/fleetlygrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/systemgrpc"
@@ -80,6 +84,45 @@ func newUnaryTimeoutInterceptor(timeout time.Duration) grpc.UnaryServerIntercept
 		ctx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
 		return handler(ctx, req)
+	}
+}
+
+// newValidateInterceptor 构造执法链 validate 槽位拦截器（P4-1 批 1）：
+// 内嵌 lynx-go grpcapi 的 protovalidate 执法（violations → codes.
+// InvalidArgument，多条以 "; " 连接，<fieldPath>: <message> 形态），在其
+// 错误上做信封包装——status.FromError 后码为 InvalidArgument 且 detail
+// 中无 ErrorResponse 信封（防重复包装）时，以 E_INVALID_ARGUMENT 铸信封
+// 返回（"%s" 格式化：message 中的 % 不走格式化语义）；非 InvalidArgument
+// 或已带信封的错误原样放行。
+//
+// 语义：validate 拒绝与链上一切裸 InvalidArgument（unary 面 handler 直返
+// 的 status.Error 同路）统一入 apperr 信封——REST gateway 读信封 detail
+// 出错误 body、CLI FromError 解码同一 detail，三面零改动继承信封契约。
+// 手写校验时代同码错误本就经出口纪律投影为信封（"CODE: message" 形态逐
+// 字节不变），本拦截器把该形态收敛到链上单点；既有裸 InvalidArgument 文案
+// （如 fleetlygrpc/exec.go:219 的 "session already attached"）顺带入册属
+// 有意收编——message 原样进信封，不二次加工。
+func newValidateInterceptor() grpc.UnaryServerInterceptor {
+	inner := grpcapiinterceptor.NewValidate().Unary()
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+		resp, err := inner(ctx, req, info, handler)
+		if err == nil {
+			return resp, nil
+		}
+		st, ok := status.FromError(err)
+		if !ok || st.Code() != codes.InvalidArgument {
+			return resp, err
+		}
+		for _, d := range st.Details() {
+			if _, ok := d.(*sharedv1.ErrorResponse); ok {
+				// 已带信封（apperr 投影的错误），不重复包装。
+				return resp, err
+			}
+		}
+		// E_INVALID_ARGUMENT 在册（注册表只增纪律），构造不可失败；
+		// ToGRPCStatus 以 "CODE: message" 为 status message，与手写时代
+		// 出口投影的 wire 形态逐字节一致。
+		return resp, apperrstatus.ToGRPCStatus(apperr.New("E_INVALID_ARGUMENT", "%s", st.Message())).Err()
 	}
 }
 
@@ -190,7 +233,7 @@ func NewInterceptors(logger *slog.Logger, policySet *authz.PolicySet, authentica
 		},
 		grpcapiinterceptor.ChainItem{
 			Slot:        grpcapiinterceptor.SlotValidate,
-			Interceptor: grpcapiinterceptor.NewValidate().Unary(),
+			Interceptor: newValidateInterceptor(),
 		},
 	)
 	if err != nil {

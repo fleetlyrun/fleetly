@@ -19,10 +19,18 @@ const MaxLen = 128
 // 连字符、无连续连字符）。
 var pattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)+$`)
 
+// NamePatternSource 是 namePattern 的正则字面源（P4-1 批 1 单源对齐）：
+// proto 面的 protovalidate CEL 注解无法引用 Go 常量，正则在 structure.v1
+// CreateProjectRequest 注解与本包各存一份，字节一致由本包 descriptor 对
+// 齐测试执法（从生成的请求 descriptor 反读 cel 选项，断言 shape 表达式
+// 包含本字面与 MaxNameLen）。改形态必须 proto 与本包同 commit 同改——
+// 对齐测试即红提示。
+const NamePatternSource = `^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`
+
 // namePattern 是 id base 的形态（= 有名实体 name 的 dns 标签形态，
 // ADR-0070 决策 4）：字符集安全是 fleetly-<projectID> 命名空间、
 // db-<id> DNS 名等派生名的前提。
-var namePattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
+var namePattern = regexp.MustCompile(NamePatternSource)
 
 // MaxNameLen 是 base（= 有名实体 name）长度上限：dns 标签惯例 63。
 const MaxNameLen = 63

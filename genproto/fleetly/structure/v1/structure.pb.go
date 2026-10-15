@@ -11,6 +11,7 @@
 package structurev1
 
 import (
+	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
 	v1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	_ "github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2/options"
 	_ "github.com/lynx-go/grpcapi/genproto/grpcapi/v1"
@@ -168,9 +169,14 @@ func (x *Project) GetDeletedAt() string {
 }
 
 type CreateProjectRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	TeamId        string                 `protobuf:"bytes,2,opt,name=team_id,json=teamId,proto3" json:"team_id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// name 的形态约束（required + dns 标签）走 protovalidate CEL 注解：
+	// shape 规则以空值短路（`size() == 0 || ...`）保证坏输入恰好一条违规。
+	// 正则字面与长度界（63）是 entityid.NamePatternSource / MaxNameLen 的
+	// 镜像（proto 无法引用 Go 常量），字节一致由 entityid 包的 descriptor
+	// 对齐测试执法。
+	Name          string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	TeamId        string `protobuf:"bytes,2,opt,name=team_id,json=teamId,proto3" json:"team_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5331,7 +5337,7 @@ var File_fleetly_structure_v1_structure_proto protoreflect.FileDescriptor
 
 const file_fleetly_structure_v1_structure_proto_rawDesc = "" +
 	"\n" +
-	"$fleetly/structure/v1/structure.proto\x12\x14fleetly.structure.v1\x1a\x1afleetly/spec/v1/spec.proto\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"\x96\x01\n" +
+	"$fleetly/structure/v1/structure.proto\x12\x14fleetly.structure.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1afleetly/spec/v1/spec.proto\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"\x96\x01\n" +
 	"\aProject\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x10\n" +
 	"\x03seq\x18\x06 \x01(\x03R\x03seq\x12\x12\n" +
@@ -5340,9 +5346,11 @@ const file_fleetly_structure_v1_structure_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\x04 \x01(\tR\tcreatedAt\x12\x1d\n" +
 	"\n" +
-	"deleted_at\x18\x05 \x01(\tR\tdeletedAt\"C\n" +
-	"\x14CreateProjectRequest\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\x12\x17\n" +
+	"deleted_at\x18\x05 \x01(\tR\tdeletedAt\"\xeb\x02\n" +
+	"\x14CreateProjectRequest\x12\xb9\x02\n" +
+	"\x04name\x18\x01 \x01(\tB\xa4\x02\xbaH\xa0\x02\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0\xba\x01\xe4\x01\n" +
+	"\x10string.dns_label\x12tmust be a dns label (lowercase letters, digits, hyphens; start and end alphanumeric, e.g. \"web\" or \"nightly-backup\")\x1aZthis.size() == 0 || (this.matches('^[a-z0-9]([a-z0-9-]*[a-z0-9])?$') && this.size() <= 63)R\x04name\x12\x17\n" +
 	"\ateam_id\x18\x02 \x01(\tR\x06teamId\"P\n" +
 	"\x15CreateProjectResponse\x127\n" +
 	"\aproject\x18\x01 \x01(\v2\x1d.fleetly.structure.v1.ProjectR\aproject\"#\n" +

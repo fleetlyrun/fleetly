@@ -3,6 +3,7 @@ module github.com/fleetlyrun/fleetly/genproto
 go 1.26.6
 
 require (
+	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.12-20260825204119-511051f7f437.2
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0
 	github.com/lynx-go/grpcapi/genproto v0.1.0
 	google.golang.org/genproto/googleapis/api v0.0.0-20260928230214-8a89bd6388cc

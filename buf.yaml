@@ -1,9 +1,11 @@
 version: v2
-# protovalidate 依赖随首个带 validate 注解的 proto 引入（N0 后续批次）。
+# protovalidate 依赖已随首个带 validate 注解的 proto（structure.v1
+# CreateProjectRequest，P4-1 批 1）引入并兑现。
 deps:
   - buf.build/googleapis/googleapis
   - buf.build/grpc-ecosystem/grpc-gateway
   - buf.build/lynx-go/grpcapi
+  - buf.build/bufbuild/protovalidate
 modules:
   - path: proto
 # 书面豁免（N0 修复批 C4）：internal/config/config.proto 不在本门禁内——

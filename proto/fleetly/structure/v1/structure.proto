@@ -7,6 +7,7 @@ package fleetly.structure.v1;
 
 option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1;structurev1";
 
+import "buf/validate/validate.proto";
 import "fleetly/spec/v1/spec.proto";
 import "google/api/annotations.proto";
 import "protoc-gen-openapiv2/options/annotations.proto";
@@ -431,7 +432,27 @@ message Project {
   string deleted_at = 5;
 }
 
-message CreateProjectRequest { string name = 1; string team_id = 2; }
+message CreateProjectRequest {
+  // name 的形态约束（required + dns 标签）走 protovalidate CEL 注解：
+  // shape 规则以空值短路（`size() == 0 || ...`）保证坏输入恰好一条违规。
+  // 正则字面与长度界（63）是 entityid.NamePatternSource / MaxNameLen 的
+  // 镜像（proto 无法引用 Go 常量），字节一致由 entityid 包的 descriptor
+  // 对齐测试执法。
+  string name = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    },
+    (buf.validate.field).cel = {
+      id: "string.dns_label"
+      message: "must be a dns label (lowercase letters, digits, hyphens; start and end alphanumeric, e.g. \"web\" or \"nightly-backup\")"
+      // 括号显式写清 && 与 || 的结合（CEL 中 && 优先级高于 ||）。
+      expression: "this.size() == 0 || (this.matches('^[a-z0-9]([a-z0-9-]*[a-z0-9])?$') && this.size() <= 63)"
+    }
+  ];
+  string team_id = 2;
+}
 message CreateProjectResponse { Project project = 1; }
 message GetProjectRequest { string id = 1; }
 message GetProjectResponse { Project project = 1; }

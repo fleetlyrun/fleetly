@@ -116,12 +116,9 @@ func (s *Services) requireProjectApp(ctx context.Context, run state.Runner, proj
 }
 
 func (svc *ProjectsService) CreateProject(ctx context.Context, req *structurev1.CreateProjectRequest) (*structurev1.CreateProjectResponse, error) {
-	if req.GetName() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "name: must not be empty")
-	}
-	if err := validName("name", req.GetName()); err != nil {
-		return nil, err
-	}
+	// name 的 required/dns 标签形态检查已退役为 CreateProjectRequest 的
+	// protovalidate CEL 注解（P4-1 批 1）：validate 拦截器在 handler 之前
+	// 执法，文案与手写时代逐字节一致（单源见 entityid.NamePatternSource）。
 	// Team 轴（ADR-0035 决策 5）：目标 Team 缺省 = 调用方 Team；显式他队
 	// 目标仅平台 owner 可（行级落子面）。
 	teamID, err := resolveTargetTeam(ctx, req.GetTeamId())
