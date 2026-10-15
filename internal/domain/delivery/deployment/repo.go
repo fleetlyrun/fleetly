@@ -3,7 +3,7 @@ package deployment
 import (
 	"context"
 
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
 
 // Repo 是 Deployment 聚合存取。方法集机械平移自既有 repo 导出面；Runner

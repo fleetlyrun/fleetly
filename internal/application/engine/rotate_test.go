@@ -16,7 +16,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
 
 // rotateCapturedPassword 从 postgres 改密 argv 尾段提取目标密码（argv 是

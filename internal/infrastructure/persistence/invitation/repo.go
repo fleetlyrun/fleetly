@@ -6,6 +6,7 @@ import (
 	"context"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
@@ -32,7 +33,7 @@ func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 
 // Create 落一行。
 func (r *Repo) Create(ctx context.Context, run state.Runner, inv *Invitation) error {
-	seq, err := state.NextSeq(ctx, run, "invitations")
+	seq, err := persistence.NextSeq(ctx, run, "invitations")
 	if err != nil {
 		return err
 	}
@@ -99,7 +100,7 @@ func scanOne(scan func(dest ...any) error) (*Invitation, error) {
 	var inv Invitation
 	if err := scan(&inv.ID, &inv.Seq, &inv.TokenSHA256, &inv.TeamID, &inv.RoleID, &inv.CreatedBy,
 		&inv.ExpiresAt, &inv.ConsumedAt, &inv.CreatedAt); err != nil {
-		return nil, state.MapScanErr(err)
+		return nil, persistence.MapScanErr(err)
 	}
 	return &inv, nil
 }

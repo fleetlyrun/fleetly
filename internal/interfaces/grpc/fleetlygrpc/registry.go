@@ -12,7 +12,7 @@ import (
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
 
 type RegistryService struct {

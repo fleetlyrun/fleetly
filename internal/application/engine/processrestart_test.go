@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
 
 // processRestartRecorder 是 RuntimeRestart 子面的记录假件（ns + workloadID

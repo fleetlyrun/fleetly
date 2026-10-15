@@ -33,6 +33,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/run"
 )
@@ -599,7 +600,7 @@ func (e *Engine) createRun(ctx context.Context, t *task.Task, spec *specv1.TaskS
 	return e.db.Tx(ctx, func(tx *sql.Tx) error {
 		// run id = <task id>-<seq>（ADR-0070 派生类）：WorkloadID 与 Run DNS
 		// 名随之全链可读（fleetly-run-nightly-backup-33-57）。
-		rseq, err := state.NextSeq(ctx, tx, "runs")
+		rseq, err := persistence.NextSeq(ctx, tx, "runs")
 		if err != nil {
 			return err
 		}

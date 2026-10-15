@@ -10,6 +10,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
@@ -26,7 +27,7 @@ func New(clock state.Clock) deployment.Repo { return &repo{clock: clock} }
 func (r *repo) Create(ctx context.Context, run state.Runner, d *deployment.Deployment) error {
 	now := state.FormatTime(r.clock.Now())
 	d.CreatedAt, d.UpdatedAt = now, now
-	seq, err := state.NextSeq(ctx, run, "deployments")
+	seq, err := persistence.NextSeq(ctx, run, "deployments")
 	if err != nil {
 		return err
 	}
@@ -44,7 +45,7 @@ func (r *repo) Create(ctx context.Context, run state.Runner, d *deployment.Deplo
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', '', '', ?, ?, ?, '')`,
 		d.ID, d.Seq, d.AppID, d.FromRevision, d.ToRevision, string(d.State), d.Generation, d.FromGeneration,
 		d.IdempotencyKey, d.CommitSHA, d.FirstBoot, d.CreatedAt, d.UpdatedAt)
-	if state.IsUniqueViolation(err) {
+	if persistence.IsUniqueViolation(err) {
 		// 唯一索引作用域是 App 内（B10）：冲突 = 同 App 同键已有活跃行。
 		return fmt.Errorf("%w: an active deployment in app %s already holds idempotency key %q",
 			state.ErrAlreadyExists, d.AppID, d.IdempotencyKey)
@@ -229,7 +230,7 @@ func scanDeployment(scan func(dest ...any) error) (*deployment.Deployment, error
 		&d.IdempotencyKey, &d.CommitSHA, &d.SupersededBy, &d.Error, &d.ObserveDeadline,
 		&d.FirstBoot, &rollback, &d.CreatedAt, &d.UpdatedAt, &d.FinishedAt)
 	if err != nil {
-		return nil, state.MapScanErr(err)
+		return nil, persistence.MapScanErr(err)
 	}
 	d.State = deployment.State(stateStr)
 	d.RollbackAttempted = rollback != 0

@@ -23,7 +23,7 @@ import (
 	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	alertrule "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/alertrule"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/channel"
 )

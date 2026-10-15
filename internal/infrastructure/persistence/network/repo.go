@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
@@ -35,7 +36,7 @@ func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 
 // Create 落一行；同 Project 同名冲突返回 state.ErrAlreadyExists。
 func (r *Repo) Create(ctx context.Context, run state.Runner, n *Network) error {
-	seq, err := state.NextSeq(ctx, run, "networks")
+	seq, err := persistence.NextSeq(ctx, run, "networks")
 	if err != nil {
 		return err
 	}
@@ -53,7 +54,7 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, n *Network) error {
 		INSERT INTO networks (id, seq, project_id, name, egress_none, created_at, deleted_at)
 		VALUES (?, ?, ?, ?, ?, ?, '')`,
 		n.ID, n.Seq, n.ProjectID, n.Name, egress, n.CreatedAt)
-	if state.IsUniqueViolation(err) {
+	if persistence.IsUniqueViolation(err) {
 		return fmt.Errorf("%w: network name %q already exists in project", state.ErrAlreadyExists, n.Name)
 	}
 	return err
@@ -160,7 +161,7 @@ func scanNetwork(scan func(dest ...any) error) (*Network, error) {
 	var egress int
 	err := scan(&n.ID, &n.Seq, &n.ProjectID, &n.Name, &egress, &n.CreatedAt, &n.DeletedAt)
 	if err != nil {
-		return nil, state.MapScanErr(err)
+		return nil, persistence.MapScanErr(err)
 	}
 	n.EgressNone = egress != 0
 	return &n, nil

@@ -12,6 +12,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
@@ -82,7 +83,7 @@ func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 
 // Create 落一行。
 func (r *Repo) Create(ctx context.Context, run state.Runner, m *Run) error {
-	seq, err := state.NextSeq(ctx, run, "runs")
+	seq, err := persistence.NextSeq(ctx, run, "runs")
 	if err != nil {
 		return err
 	}
@@ -281,7 +282,7 @@ func scanRun(scan func(dest ...any) error) (*Run, error) {
 		&m.WorkloadID, &m.DNSName, &m.Deadline,
 		&m.CreatedAt, &m.UpdatedAt, &m.StartedAt, &m.FinishedAt)
 	if err != nil {
-		return nil, state.MapScanErr(err)
+		return nil, persistence.MapScanErr(err)
 	}
 	m.State = State(stateStr)
 	if exitCode != nil {

@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
@@ -35,7 +36,7 @@ const selectCols = "id, seq, project_id, digest, size_bytes, created_at"
 // Create 落行；同 (project, digest) 已有行 → ErrAlreadyExists（finalize 的
 // 去重路径先 FindByDigest，此形态只在并发同内容上传时可达）。
 func (r *Repo) Create(ctx context.Context, run state.Runner, u *Upload) error {
-	seq, err := state.NextSeq(ctx, run, "source_uploads")
+	seq, err := persistence.NextSeq(ctx, run, "source_uploads")
 	if err != nil {
 		return err
 	}
@@ -48,7 +49,7 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, u *Upload) error {
 		INSERT INTO source_uploads (id, seq, project_id, digest, size_bytes, created_at)
 		VALUES (?, ?, ?, ?, ?, ?)`,
 		u.ID, u.Seq, u.ProjectID, u.Digest, u.SizeBytes, u.CreatedAt)
-	if state.IsUniqueViolation(err) {
+	if persistence.IsUniqueViolation(err) {
 		return fmt.Errorf("%w: project %q already holds an upload with digest %s", state.ErrAlreadyExists, u.ProjectID, u.Digest)
 	}
 	return err
@@ -159,7 +160,7 @@ type scanner interface{ Scan(dest ...any) error }
 func scanUpload(row scanner) (*Upload, error) {
 	var u Upload
 	if err := row.Scan(&u.ID, &u.Seq, &u.ProjectID, &u.Digest, &u.SizeBytes, &u.CreatedAt); err != nil {
-		return nil, state.MapScanErr(err)
+		return nil, persistence.MapScanErr(err)
 	}
 	return &u, nil
 }

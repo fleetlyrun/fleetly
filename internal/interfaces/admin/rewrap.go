@@ -61,7 +61,7 @@ const (
 // 面，无需分批续跑。幂等 = 现役 key 可解的行跳过不重写（age 加密非确
 // 定，重写无害但徒增 churn，且让重复执行不可比对）。两阶段之间无并发
 // 写者（停机窗口），阶段一读到的分类在事务内依然成立。
-func RewrapSecrets(ctx context.Context, db *state.DB, cipher *material.Cipher, dryRun bool) (*RewrapReport, error) {
+func RewrapSecrets(ctx context.Context, db *persistence.DB, cipher *material.Cipher, dryRun bool) (*RewrapReport, error) {
 	rep := &RewrapReport{}
 	secrets := secret.New(db.Clock())
 	hooks := hook.New(db.Clock())

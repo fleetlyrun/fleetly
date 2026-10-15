@@ -20,6 +20,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/audit"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/run"
@@ -150,7 +151,7 @@ func (svc *TasksService) CreateTask(ctx context.Context, req *automationv1.Creat
 			svc.s.parentProjectAlive(req.GetProjectId()),
 			func(ctx context.Context, tx *sql.Tx) error {
 				var err error
-				if seq, err = state.NextSeq(ctx, tx, "tasks"); err != nil {
+				if seq, err = persistence.NextSeq(ctx, tx, "tasks"); err != nil {
 					return err
 				}
 				row, err = engine.MintTaskRow(req.GetProjectId(), req.GetName(), owner, taskSpec, seq)

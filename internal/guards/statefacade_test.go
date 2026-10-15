@@ -13,7 +13,7 @@ import (
 // store.go——旧仓 state=2.9 万行门面的教训）。新增根级文件必须在此登记
 // 并说明为什么它不是门面；白名单条目删除后文件移走即绿（双向保鲜）。
 var stateRootFiles = map[string]string{
-	"state.go":      "connection, pragmas, goose wiring, Tx boundary, shared error sentinels — no aggregate queries",
+	"state.go":      "connection, pragmas, goose wiring, Tx boundary, driver error predicates — no aggregate queries; contract sentinels live in internal/domain/shared/state",
 	"state_test.go": "four-write transaction composition test for the root Tx boundary",
 }
 

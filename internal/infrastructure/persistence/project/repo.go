@@ -10,6 +10,7 @@ import (
 	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
@@ -29,7 +30,7 @@ func New(clock state.Clock) project.Repo { return &repo{clock: clock} }
 func (r *repo) Create(ctx context.Context, run state.Runner, p *project.Project) error {
 	now := state.FormatTime(r.clock.Now())
 	p.CreatedAt, p.UpdatedAt = now, now
-	seq, err := state.NextSeq(ctx, run, "projects")
+	seq, err := persistence.NextSeq(ctx, run, "projects")
 	if err != nil {
 		return err
 	}
@@ -41,7 +42,7 @@ func (r *repo) Create(ctx context.Context, run state.Runner, p *project.Project)
 		INSERT INTO projects (id, seq, name, team_id, created_at, updated_at, deleted_at)
 		VALUES (?, ?, ?, ?, ?, ?, '')`,
 		p.ID, p.Seq, p.Name, p.TeamID, p.CreatedAt, p.UpdatedAt)
-	if state.IsUniqueViolation(err) {
+	if persistence.IsUniqueViolation(err) {
 		return fmt.Errorf("%w: project name %q already exists in team %s", state.ErrAlreadyExists, p.Name, p.TeamID)
 	}
 	return err

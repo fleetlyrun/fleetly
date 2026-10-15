@@ -10,6 +10,7 @@ import (
 	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
@@ -51,7 +52,7 @@ func (r *Repo) Upsert(ctx context.Context, run state.Runner, v *AppVariable) err
 		return err
 	}
 	v.CreatedAt, v.UpdatedAt = now, now
-	seq, err := state.NextSeq(ctx, run, "app_variables")
+	seq, err := persistence.NextSeq(ctx, run, "app_variables")
 	if err != nil {
 		return err
 	}
@@ -65,7 +66,7 @@ func (r *Repo) Upsert(ctx context.Context, run state.Runner, v *AppVariable) err
 		v.ID, v.Seq, v.AppID, v.Name, v.Value, v.CreatedAt, v.UpdatedAt)
 	// 并发同名 PUT 交错撞部分唯一索引时归一为 ErrAlreadyExists——secrets/
 	// shared_variables 同款两步形态。
-	if state.IsUniqueViolation(err) {
+	if persistence.IsUniqueViolation(err) {
 		return fmt.Errorf("%w: app variable %q already exists in app", state.ErrAlreadyExists, v.Name)
 	}
 	return err
@@ -159,7 +160,7 @@ const (
 func scanVariable(scan func(dest ...any) error) (*AppVariable, error) {
 	var v AppVariable
 	if err := scan(&v.ID, &v.Seq, &v.AppID, &v.Name, &v.Value, &v.CreatedAt, &v.UpdatedAt, &v.DeletedAt); err != nil {
-		return nil, state.MapScanErr(err)
+		return nil, persistence.MapScanErr(err)
 	}
 	return &v, nil
 }

@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
@@ -49,7 +50,7 @@ func (r *Repo) Upsert(ctx context.Context, run state.Runner, s *Secret) error {
 		return err
 	}
 	s.CreatedAt, s.UpdatedAt = now, now
-	seq, err := state.NextSeq(ctx, run, "secrets")
+	seq, err := persistence.NextSeq(ctx, run, "secrets")
 	if err != nil {
 		return err
 	}
@@ -63,7 +64,7 @@ func (r *Repo) Upsert(ctx context.Context, run state.Runner, s *Secret) error {
 		s.ID, s.Seq, s.ProjectID, s.Name, s.Ciphertext, s.Fingerprint, s.CreatedAt, s.UpdatedAt)
 	// 并发同名 PUT 交错（GetByName 未命中 ↔ 对端已落活跃行）撞部分唯一
 	// 索引时归一为 ErrAlreadyExists——apps/volumes 同款两步形态。
-	if state.IsUniqueViolation(err) {
+	if persistence.IsUniqueViolation(err) {
 		return fmt.Errorf("%w: secret name %q already exists in project", state.ErrAlreadyExists, s.Name)
 	}
 	return err
@@ -165,7 +166,7 @@ func scanSecret(scan func(dest ...any) error) (*Secret, error) {
 	err := scan(&s.ID, &s.Seq, &s.ProjectID, &s.Name, &s.Ciphertext, &s.Fingerprint,
 		&s.CreatedAt, &s.UpdatedAt, &s.DeletedAt)
 	if err != nil {
-		return nil, state.MapScanErr(err)
+		return nil, persistence.MapScanErr(err)
 	}
 	return &s, nil
 }

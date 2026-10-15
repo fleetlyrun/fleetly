@@ -6,6 +6,7 @@ import (
 	"context"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
@@ -36,7 +37,7 @@ func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 // Create 落一行（UserID 空串落 NULL——无属主用户的 Token：Agent/CI/
 // bootstrap）。
 func (r *Repo) Create(ctx context.Context, run state.Runner, t *Token) error {
-	seq, err := state.NextSeq(ctx, run, "tokens")
+	seq, err := persistence.NextSeq(ctx, run, "tokens")
 	if err != nil {
 		return err
 	}
@@ -129,7 +130,7 @@ func scanOne(scan func(dest ...any) error) (*Token, error) {
 	var revoked int
 	if err := scan(&t.ID, &t.Seq, &t.Name, &t.TeamID, &t.UserID, &t.RoleID, &t.SHA256, &t.Prefix,
 		&revoked, &t.LastUsedAt, &t.CreatedAt); err != nil {
-		return nil, state.MapScanErr(err)
+		return nil, persistence.MapScanErr(err)
 	}
 	t.Revoked = revoked != 0
 	return &t, nil

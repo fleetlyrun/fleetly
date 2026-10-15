@@ -13,7 +13,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
 
 // SweepOrphanSecretCarriers 清扫非现役的受管 Secret 载体（RuntimeHygiene

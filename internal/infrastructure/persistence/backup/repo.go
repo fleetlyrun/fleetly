@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
@@ -59,14 +60,14 @@ func scanBackup(scan func(...any) error) (*Backup, error) {
 	err := scan(&b.ID, &b.Seq, &b.ProjectID, &b.DatabaseID, &b.Engine, &b.ObjectKey, &b.Digest,
 		&b.SizeBytes, &b.RetentionSecs, &b.Status, &b.Error, &b.StartedAt, &b.FinishedAt, &b.CreatedAt)
 	if err != nil {
-		return nil, state.MapScanErr(err)
+		return nil, persistence.MapScanErr(err)
 	}
 	return &b, nil
 }
 
 // Create 落一行 pending（调度与手动触发共用；object_key 执行成功后回填）。
 func (r *Repo) Create(ctx context.Context, run state.Runner, b *Backup) error {
-	seq, err := state.NextSeq(ctx, run, "backups")
+	seq, err := persistence.NextSeq(ctx, run, "backups")
 	if err != nil {
 		return err
 	}

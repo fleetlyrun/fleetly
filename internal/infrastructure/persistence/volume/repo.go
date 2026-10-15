@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
@@ -37,7 +38,7 @@ func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 // Create 落一行；同 Project 同名冲突返回 state.ErrAlreadyExists。
 // pinnedNodeID 为空表示待钉住（首次挂载时由引擎分配——分配后不可变）。
 func (r *Repo) Create(ctx context.Context, run state.Runner, v *Volume) error {
-	seq, err := state.NextSeq(ctx, run, "volumes")
+	seq, err := persistence.NextSeq(ctx, run, "volumes")
 	if err != nil {
 		return err
 	}
@@ -51,7 +52,7 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, v *Volume) error {
 		INSERT INTO volumes (id, seq, project_id, name, pinned_node_id, created_at, updated_at, deleted_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, '')`,
 		v.ID, v.Seq, v.ProjectID, v.Name, v.PinnedNodeID, v.CreatedAt, v.UpdatedAt)
-	if state.IsUniqueViolation(err) {
+	if persistence.IsUniqueViolation(err) {
 		return fmt.Errorf("%w: volume %q already exists in project", state.ErrAlreadyExists, v.Name)
 	}
 	return err
@@ -123,7 +124,7 @@ func scanVolume(scan func(dest ...any) error) (*Volume, error) {
 	var v Volume
 	err := scan(&v.ID, &v.Seq, &v.ProjectID, &v.Name, &v.PinnedNodeID, &v.CreatedAt, &v.UpdatedAt, &v.DeletedAt)
 	if err != nil {
-		return nil, state.MapScanErr(err)
+		return nil, persistence.MapScanErr(err)
 	}
 	return &v, nil
 }

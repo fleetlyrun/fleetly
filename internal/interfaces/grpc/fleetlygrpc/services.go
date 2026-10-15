@@ -55,7 +55,7 @@ import (
 
 // Services 聚合全部 API 依赖（装配注入；Runtime 面收窄为 Enrollment 消费）。
 type Services struct {
-	DB      *state.DB
+	DB      *persistence.DB
 	Engine  *engine.Engine
 	Cipher  *material.Cipher
 	Runtime capability.Runtime
@@ -159,7 +159,7 @@ type Services struct {
 
 // NewServices 构造（repos 从 DB 时钟派生；vocab 是 scope 词表单一源；
 // dataRoot 是上传产物 blob 根）。
-func NewServices(db *state.DB, e *engine.Engine, c *material.Cipher, rt capability.Runtime, dataRoot string, vocab []string, log *slog.Logger) *Services {
+func NewServices(db *persistence.DB, e *engine.Engine, c *material.Cipher, rt capability.Runtime, dataRoot string, vocab []string, log *slog.Logger) *Services {
 	clock := db.Clock()
 	return &Services{
 		DB:              db,

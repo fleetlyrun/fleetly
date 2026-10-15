@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
@@ -25,7 +26,7 @@ func New(clock state.Clock) app.Repo { return &repo{clock: clock} }
 func (r *repo) Create(ctx context.Context, run state.Runner, a *app.App) error {
 	now := state.FormatTime(r.clock.Now())
 	a.CreatedAt, a.UpdatedAt = now, now
-	seq, err := state.NextSeq(ctx, run, "apps")
+	seq, err := persistence.NextSeq(ctx, run, "apps")
 	if err != nil {
 		return err
 	}
@@ -37,7 +38,7 @@ func (r *repo) Create(ctx context.Context, run state.Runner, a *app.App) error {
 		INSERT INTO apps (id, seq, project_id, name, created_at, updated_at, deleted_at)
 		VALUES (?, ?, ?, ?, ?, ?, '')`,
 		a.ID, a.Seq, a.ProjectID, a.Name, a.CreatedAt, a.UpdatedAt)
-	if state.IsUniqueViolation(err) {
+	if persistence.IsUniqueViolation(err) {
 		return fmt.Errorf("%w: app name %q already exists in project", state.ErrAlreadyExists, a.Name)
 	}
 	return err
@@ -136,7 +137,7 @@ func (r *repo) CountByProject(ctx context.Context, run state.Runner, projectID s
 	err := run.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM apps WHERE project_id = ? AND deleted_at = ''`, projectID).Scan(&n)
 	if err != nil {
-		return 0, state.MapScanErr(err)
+		return 0, persistence.MapScanErr(err)
 	}
 	return n, nil
 }
@@ -185,7 +186,7 @@ func scanApp(row *sql.Row) (*app.App, error) {
 	var a app.App
 	err := row.Scan(&a.ID, &a.Seq, &a.ProjectID, &a.Name, &a.CreatedAt, &a.UpdatedAt, &a.DeletedAt)
 	if err != nil {
-		return nil, state.MapScanErr(err)
+		return nil, persistence.MapScanErr(err)
 	}
 	return &a, nil
 }

@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	configrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/config"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )

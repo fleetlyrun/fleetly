@@ -16,7 +16,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
 
 // eventTicketTTL 是票据存活窗（秒级；兑换即删）。

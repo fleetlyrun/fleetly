@@ -7,6 +7,7 @@ import (
 	"context"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
@@ -41,7 +42,7 @@ const selectCols = "id, seq, name, kind, config_ciphertext, enabled, last_failur
 
 // Create 落一条通道；重名 → ErrAlreadyExists（name 唯一索引把守）。
 func (r *Repo) Create(ctx context.Context, run state.Runner, c *Channel) error {
-	seq, err := state.NextSeq(ctx, run, "notification_channels")
+	seq, err := persistence.NextSeq(ctx, run, "notification_channels")
 	if err != nil {
 		return err
 	}
@@ -55,7 +56,7 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, c *Channel) error {
 		INSERT INTO notification_channels (id, seq, name, kind, config_ciphertext, enabled, last_failure, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, '', ?, ?)`,
 		c.ID, c.Seq, c.Name, c.Kind, c.ConfigCiphertext, boolInt(c.Enabled), c.CreatedAt, c.UpdatedAt)
-	if state.IsUniqueViolation(err) {
+	if persistence.IsUniqueViolation(err) {
 		return state.ErrAlreadyExists
 	}
 	return err
@@ -122,7 +123,7 @@ func scanChannel(row interface{ Scan(dest ...any) error }) (*Channel, error) {
 	var c Channel
 	var enabled int
 	err := row.Scan(&c.ID, &c.Seq, &c.Name, &c.Kind, &c.ConfigCiphertext, &enabled, &c.LastFailure, &c.CreatedAt, &c.UpdatedAt)
-	if state.MapScanErr(err) == state.ErrNotFound {
+	if persistence.MapScanErr(err) == state.ErrNotFound {
 		return nil, state.ErrNotFound
 	}
 	if err != nil {

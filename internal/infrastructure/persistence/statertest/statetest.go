@@ -51,11 +51,11 @@ func MustParse(s string) time.Time {
 }
 
 // New 打开 temp 真库（假时钟注入）并完成迁移；t.Cleanup 自动关闭。
-func New(t testing.TB) (*state.DB, *FakeClock) {
+func New(t testing.TB) (*persistence.DB, *FakeClock) {
 	t.Helper()
 	clock := NewFakeClock()
 	path := filepath.Join(t.TempDir(), "fleetly.db")
-	db, err := state.Open(context.Background(), path, clock)
+	db, err := persistence.Open(context.Background(), path, clock)
 	if err != nil {
 		t.Fatalf("statetest: open: %v", err)
 	}

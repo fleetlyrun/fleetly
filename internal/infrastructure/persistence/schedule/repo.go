@@ -18,6 +18,7 @@ import (
 	"github.com/robfig/cron/v3"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
@@ -59,7 +60,7 @@ func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 
 // Create 落一行（活跃名唯一索引防项目内重名 → ErrAlreadyExists）。
 func (r *Repo) Create(ctx context.Context, run state.Runner, s *Schedule) error {
-	seq, err := state.NextSeq(ctx, run, "schedules")
+	seq, err := persistence.NextSeq(ctx, run, "schedules")
 	if err != nil {
 		return err
 	}
@@ -75,7 +76,7 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, s *Schedule) error 
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		s.ID, s.Seq, s.ProjectID, s.Name, string(s.State), s.CronExpr, s.Timezone, s.Spec,
 		s.NextFireAt, s.LastTaskID, s.CreatedAt, s.UpdatedAt)
-	if state.IsUniqueViolation(err) {
+	if persistence.IsUniqueViolation(err) {
 		return fmt.Errorf("%w: an active schedule named %q already exists in project %s", state.ErrAlreadyExists, s.Name, s.ProjectID)
 	}
 	return err
@@ -214,7 +215,7 @@ func scanSchedule(scan func(dest ...any) error) (*Schedule, error) {
 	err := scan(&s.ID, &s.Seq, &s.ProjectID, &s.Name, &stateStr, &s.CronExpr, &s.Timezone, &s.Spec,
 		&s.NextFireAt, &s.LastTaskID, &s.CreatedAt, &s.UpdatedAt)
 	if err != nil {
-		return nil, state.MapScanErr(err)
+		return nil, persistence.MapScanErr(err)
 	}
 	s.State = State(stateStr)
 	return &s, nil

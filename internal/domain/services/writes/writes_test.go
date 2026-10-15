@@ -32,7 +32,7 @@ type probes struct {
 
 // runSequence 跑一次探针 Fact：write 段落 探针事件使 LastSeq 前进一位；
 // fail 指定在哪一段注入失败（"" = 全绿路径）。
-func runSequence(t *testing.T, db *state.DB, ctx context.Context, fail string) (*probes, error) {
+func runSequence(t *testing.T, db *persistence.DB, ctx context.Context, fail string) (*probes, error) {
 	t.Helper()
 	outboxRepo, auditRepo := outbox.New(statetest.NewFakeClock()), audit.New(statetest.NewFakeClock())
 	p := &probes{}

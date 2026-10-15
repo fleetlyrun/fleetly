@@ -10,6 +10,7 @@ import (
 	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
@@ -46,7 +47,7 @@ func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 // → ErrAlreadyExists（pending/approved 在场不可重复声明；撤销后可再来——
 // 新审批环）。
 func (r *Repo) Create(ctx context.Context, run state.Runner, p *Peer) error {
-	seq, err := state.NextSeq(ctx, run, "network_peers")
+	seq, err := persistence.NextSeq(ctx, run, "network_peers")
 	if err != nil {
 		return err
 	}
@@ -61,7 +62,7 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, p *Peer) error {
 		INSERT INTO network_peers (id, seq, network_id, peer_project_id, state, created_at, updated_at, approved_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, '')`,
 		p.ID, p.Seq, p.NetworkID, p.PeerProjectID, string(p.State), p.CreatedAt, p.UpdatedAt)
-	if state.IsUniqueViolation(err) {
+	if persistence.IsUniqueViolation(err) {
 		return fmt.Errorf("%w: network %s already has an active peer declaration from project %s",
 			state.ErrAlreadyExists, p.NetworkID, p.PeerProjectID)
 	}
@@ -184,7 +185,7 @@ func scanPeer(scan func(dest ...any) error) (*Peer, error) {
 	var p Peer
 	var stateStr string
 	if err := scan(&p.ID, &p.Seq, &p.NetworkID, &p.PeerProjectID, &stateStr, &p.CreatedAt, &p.UpdatedAt, &p.ApprovedAt); err != nil {
-		return nil, state.MapScanErr(err)
+		return nil, persistence.MapScanErr(err)
 	}
 	p.State = State(stateStr)
 	return &p, nil

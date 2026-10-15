@@ -19,7 +19,7 @@ import (
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/idempotency"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statertest"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/apperrstatus"

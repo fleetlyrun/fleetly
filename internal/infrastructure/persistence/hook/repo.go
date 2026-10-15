@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
@@ -52,7 +53,7 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, h *Hook) error {
 	// 双唯一键（app_id 主键 / token_sha256）命中归一为 ErrAlreadyExists：
 	// SetGitHook 的 Get 先行是读面判定，并发交错（首配竞态）落此处——
 	// 调用方重试即走 UpdateConfig 臂。githubapp 同款形态。
-	if state.IsUniqueViolation(err) {
+	if persistence.IsUniqueViolation(err) {
 		return fmt.Errorf("%w: hook for app %q already exists", state.ErrAlreadyExists, h.AppID)
 	}
 	return err
@@ -170,7 +171,7 @@ func scanOne(scan func(dest ...any) error) (*Hook, error) {
 	var paths string
 	if err := scan(&h.AppID, &h.Repo, &h.Branch, &h.Dockerfile, &paths,
 		&h.TokenSHA256, &h.TokenPrefix, &h.SecretCiphertext, &h.CreatedAt, &h.UpdatedAt); err != nil {
-		return nil, state.MapScanErr(err)
+		return nil, persistence.MapScanErr(err)
 	}
 	if err := unmarshalPaths(paths, &h.WatchPaths); err != nil {
 		return nil, err

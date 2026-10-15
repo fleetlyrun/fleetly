@@ -9,6 +9,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
@@ -165,7 +166,7 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 		if err != nil {
 			return err
 		}
-		dseq, err := state.NextSeq(ctx, tx, "deployments")
+		dseq, err := persistence.NextSeq(ctx, tx, "deployments")
 		if err != nil {
 			return err
 		}

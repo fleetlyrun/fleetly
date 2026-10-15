@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
@@ -30,7 +31,7 @@ func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 
 // Create 落一行；同名冲突返回 state.ErrAlreadyExists。
 func (r *Repo) Create(ctx context.Context, run state.Runner, u *User) error {
-	seq, err := state.NextSeq(ctx, run, "users")
+	seq, err := persistence.NextSeq(ctx, run, "users")
 	if err != nil {
 		return err
 	}
@@ -42,7 +43,7 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, u *User) error {
 	_, err = run.ExecContext(ctx, `
 		INSERT INTO users (id, seq, name, created_at, password_hash) VALUES (?, ?, ?, ?, ?)`,
 		u.ID, u.Seq, u.Name, u.CreatedAt, u.PasswordHash)
-	if state.IsUniqueViolation(err) {
+	if persistence.IsUniqueViolation(err) {
 		return fmt.Errorf("%w: user name %q already exists", state.ErrAlreadyExists, u.Name)
 	}
 	return err
@@ -54,7 +55,7 @@ func (r *Repo) Get(ctx context.Context, run state.Runner, id string) (*User, err
 		SELECT id, seq, name, created_at, password_hash FROM users WHERE id = ?`, id)
 	var u User
 	if err := row.Scan(&u.ID, &u.Seq, &u.Name, &u.CreatedAt, &u.PasswordHash); err != nil {
-		return nil, state.MapScanErr(err)
+		return nil, persistence.MapScanErr(err)
 	}
 	return &u, nil
 }
@@ -65,7 +66,7 @@ func (r *Repo) GetByName(ctx context.Context, run state.Runner, name string) (*U
 		SELECT id, seq, name, created_at, password_hash FROM users WHERE name = ?`, name)
 	var u User
 	if err := row.Scan(&u.ID, &u.Seq, &u.Name, &u.CreatedAt, &u.PasswordHash); err != nil {
-		return nil, state.MapScanErr(err)
+		return nil, persistence.MapScanErr(err)
 	}
 	return &u, nil
 }
@@ -114,7 +115,7 @@ func (r *Repo) List(ctx context.Context, run state.Runner) ([]User, error) {
 func (r *Repo) Delete(ctx context.Context, run state.Runner, id string) error {
 	res, err := run.ExecContext(ctx, `DELETE FROM users WHERE id = ?`, id)
 	if err != nil {
-		if state.IsForeignKeyViolation(err) {
+		if persistence.IsForeignKeyViolation(err) {
 			return fmt.Errorf("%w: user %s is still referenced by tokens; revoke or delete them first", state.ErrConflict, id)
 		}
 		return err

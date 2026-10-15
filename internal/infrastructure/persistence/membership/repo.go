@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
@@ -30,7 +31,7 @@ func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 
 // Create 落一行；同 User 同 Team 重复授权返回 state.ErrAlreadyExists。
 func (r *Repo) Create(ctx context.Context, run state.Runner, m *Membership) error {
-	seq, err := state.NextSeq(ctx, run, "memberships")
+	seq, err := persistence.NextSeq(ctx, run, "memberships")
 	if err != nil {
 		return err
 	}
@@ -43,10 +44,10 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, m *Membership) erro
 		INSERT INTO memberships (id, seq, user_id, team_id, role_id, created_at)
 		VALUES (?, ?, ?, ?, ?, ?)`,
 		m.ID, m.Seq, m.UserID, m.TeamID, m.RoleID, m.CreatedAt)
-	if state.IsUniqueViolation(err) {
+	if persistence.IsUniqueViolation(err) {
 		return fmt.Errorf("%w: user %s already has a role in team %s", state.ErrAlreadyExists, m.UserID, m.TeamID)
 	}
-	if state.IsForeignKeyViolation(err) {
+	if persistence.IsForeignKeyViolation(err) {
 		return fmt.Errorf("fk: user=%s team=%s role=%s: %w", m.UserID, m.TeamID, m.RoleID, err)
 	}
 	return err
@@ -70,7 +71,7 @@ func (r *Repo) DeleteByUser(ctx context.Context, run state.Runner, userID, teamI
 func scanOne(scan func(dest ...any) error) (*Membership, error) {
 	var m Membership
 	if err := scan(&m.ID, &m.Seq, &m.UserID, &m.TeamID, &m.RoleID, &m.CreatedAt); err != nil {
-		return nil, state.MapScanErr(err)
+		return nil, persistence.MapScanErr(err)
 	}
 	return &m, nil
 }

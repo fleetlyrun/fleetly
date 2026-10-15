@@ -1,12 +1,16 @@
-// Package state 是控制面 SQLite 持久化（架构 §6）：内嵌 WAL 单文件 +
-// goose 只前滚迁移、原生 SQL 不用 ORM（CAS 与四件一拍要显式 SQL）。按
-// 聚合分包 repo（project/ app/ deployment/ …），本根包只承载连接、事务
-// 边界与时间语义——禁止聚合门面（守卫见 internal/guards）。
+// Package persistence 是控制面 SQLite 持久化的机械面（架构 §6）：内嵌 WAL
+// 单文件 + goose 只前滚迁移、原生 SQL 不用 ORM（CAS 与四件一拍要显式
+// SQL）。按聚合分包 repo（project/ app/ deployment/ …），本根包只承载
+// 连接、事务边界、驱动错误判定与装配机械——禁止聚合门面（守卫见
+// internal/guards）。契约面（Runner/Clock/哨兵/FormatTime，包名 state）住
+// internal/domain/shared/state（ADR-0075 P1b 根包拆分：契约上移 domain，
+// 机械留 infrastructure）。
 //
 // 四件一拍（ADR-0005）：状态 CAS + tombstone + Outbox 事件 + 审计在同
 // 事务落库。事务边界由调用方（engine/API）经 Tx 收口；聚合 repo 方法一律
-// 接受 Runner（*sql.DB 或 *sql.Tx 均满足），可独立执行也可组合进事务。
-package state
+// 接受 state.Runner（*sql.DB 或 *sql.Tx 均满足），可独立执行也可组合进
+// 事务。
+package persistence
 
 import (
 	"context"
@@ -21,30 +25,12 @@ import (
 
 	"github.com/pressly/goose/v3"
 	_ "modernc.org/sqlite" // 驱动注册（纯 Go 零 cgo，交叉编译/容器形态友好）
+
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
 
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
-
-// 哨兵错误（repo 层共用；聚合包转 apperr 的映射在 api 层收口）。
-var (
-	// ErrNotFound 是目标行不存在（读路径）。
-	ErrNotFound = fmt.Errorf("state: not found")
-	// ErrAlreadyExists 是唯一约束命中（同唯一键的活跃行已存在）。与
-	// ErrConflict 分立：唯一冲突对外是 E_ALREADY_EXISTS（gRPC
-	// AlreadyExists → REST 409），CAS 前置不符与 FK RESTRICT 是 E_CONFLICT
-	// ——REST/SDK 消费方按 409 写的"重名重试"逻辑不得静默退化（批 0
-	// 复核回归：IsUniqueViolation 归一点不变，只是分类更诚实）。
-	ErrAlreadyExists = fmt.Errorf("state: already exists")
-	// ErrConflict 是乐观并发冲突（CAS 前置状态不符 / FK RESTRICT 拒删）。
-	ErrConflict = fmt.Errorf("state: conflict")
-)
-
-// Clock 是时间接缝（生产 wall clock；hermetic 测试注入假时钟，架构 §11
-// 自制 hermetic 夹具）。
-type Clock interface {
-	Now() time.Time
-}
 
 type wallClock struct{}
 
@@ -52,29 +38,26 @@ type wallClock struct{}
 func (wallClock) Now() time.Time { return time.Now().UTC() }
 
 // WallClock 返回生产时钟。
-func WallClock() Clock { return wallClock{} }
-
-// FormatTime 规范化落库时间戳（UTC RFC3339 秒精度文本）。
-func FormatTime(t time.Time) string { return t.UTC().Format(time.RFC3339) }
+func WallClock() state.Clock { return wallClock{} }
 
 // IsUniqueViolation 报告 sqlite 唯一约束命中（modernc 驱动以
 // SQLITE_CONSTRAINT 文本承载约束错误，类型面不完整；聚合 repo 据此把
-// 唯一冲突归一为 ErrAlreadyExists）。
+// 唯一冲突归一为 state.ErrAlreadyExists）。
 func IsUniqueViolation(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "constraint failed: UNIQUE")
 }
 
 // IsForeignKeyViolation 报告 sqlite 外键约束命中（RESTRICT 拒删等形态；
-// 聚合 repo 据此把"仍被引用"归一为 ErrConflict——提示先解绑）。
+// 聚合 repo 据此把"仍被引用"归一为 state.ErrConflict——提示先解绑）。
 func IsForeignKeyViolation(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "constraint failed: FOREIGN KEY")
 }
 
-// MapScanErr 把 *sql.Row.Scan 的 ErrNoRows 归一为 ErrNotFound（聚合 repo
-// 共用）。
+// MapScanErr 把 *sql.Row.Scan 的 ErrNoRows 归一为 state.ErrNotFound（聚合
+// repo 共用）。
 func MapScanErr(err error) error {
 	if errors.Is(err, sql.ErrNoRows) {
-		return ErrNotFound
+		return state.ErrNotFound
 	}
 	return err
 }
@@ -83,7 +66,7 @@ func MapScanErr(err error) error {
 // id 后缀）。连接池收口为 1（见 Open），事务内 MAX+1 读-改-写天然串行；
 // UNIQUE(seq) 索引使违规双铸 fail-closed。table 由各 repo 以字面量传入
 // （非用户输入，无注入面）。
-func NextSeq(ctx context.Context, run Runner, table string) (int64, error) {
+func NextSeq(ctx context.Context, run state.Runner, table string) (int64, error) {
 	var max sql.NullInt64
 	if err := run.QueryRowContext(ctx, "SELECT MAX(seq) FROM "+table).Scan(&max); err != nil {
 		return 0, fmt.Errorf("state: next seq %s: %w", table, err)
@@ -91,23 +74,15 @@ func NextSeq(ctx context.Context, run Runner, table string) (int64, error) {
 	return max.Int64 + 1, nil
 }
 
-// Runner 是聚合 repo 的执行面：*sql.DB 与 *sql.Tx 共同满足。方法签名带
-// Runner 使同一聚合操作既可独立执行、也可组合进四件一拍事务。
-type Runner interface {
-	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
-	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
-	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
-}
-
 // DB 是打开的数据库句柄。非门面：不暴露任何聚合查询。
 type DB struct {
 	db    *sql.DB
-	clock Clock
+	clock state.Clock
 }
 
 // Open 打开（或创建）path 处的 SQLite 库：WAL + busy timeout + 外键 +
 // NORMAL 同步（WAL 推荐档），随后执行 goose 前滚迁移。
-func Open(ctx context.Context, path string, clock Clock) (*DB, error) {
+func Open(ctx context.Context, path string, clock state.Clock) (*DB, error) {
 	if clock == nil {
 		clock = WallClock()
 	}
@@ -141,11 +116,11 @@ func Open(ctx context.Context, path string, clock Clock) (*DB, error) {
 func (d *DB) Close() error { return d.db.Close() }
 
 // Clock 返回注入的时钟。
-func (d *DB) Clock() Clock { return d.clock }
+func (d *DB) Clock() state.Clock { return d.clock }
 
 // Runner 暴露底层执行面（供聚合 repo 独立执行形态使用；*sql.DB 满足
-// Runner，不新增查询语义）。
-func (d *DB) Runner() Runner { return d.db }
+// state.Runner，不新增查询语义）。
+func (d *DB) Runner() state.Runner { return d.db }
 
 // VacuumInto 铸在线一致快照到 target（Platform Backup 的 SQLite 面，
 // ADR-0039：VACUUM INTO 不阻塞并发写、产出独立完整库文件；live 库三件
@@ -171,8 +146,9 @@ func migrate(ctx context.Context, db *sql.DB) error {
 }
 
 // Tx 在单个写事务内执行 fn：四件一拍的组合点。fn 收到的 *sql.Tx 满足
-// Runner，聚合 repo 的事务形态据此完成 CAS + Outbox + 审计 (+tombstone)。
-// 返回 fn 的错误时自动回滚；事务内错误原样上抛（调用方转 apperr）。
+// state.Runner，聚合 repo 的事务形态据此完成 CAS + Outbox + 审计
+// (+tombstone)。返回 fn 的错误时自动回滚；事务内错误原样上抛（调用方转
+// apperr）。
 func (d *DB) Tx(ctx context.Context, fn func(tx *sql.Tx) error) error {
 	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {

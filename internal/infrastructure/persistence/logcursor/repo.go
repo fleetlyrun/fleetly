@@ -7,6 +7,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
@@ -25,7 +26,7 @@ func (r *Repo) Get(ctx context.Context, run state.Runner, namespace string) (tim
 	var ts string
 	err := run.QueryRowContext(ctx, `SELECT last_ts FROM log_cursors WHERE namespace = ?`, namespace).Scan(&ts)
 	if err != nil {
-		if state.MapScanErr(err) == state.ErrNotFound {
+		if persistence.MapScanErr(err) == state.ErrNotFound {
 			return time.Time{}, nil
 		}
 		return time.Time{}, err

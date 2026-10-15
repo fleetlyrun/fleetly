@@ -42,7 +42,7 @@ import (
 
 // Harness 是进程内全链夹具。
 type Harness struct {
-	DB       *state.DB
+	DB       *persistence.DB
 	Engine   *engine.Engine
 	Runtime  *FakeRuntime
 	Builder  *FakeBuilder

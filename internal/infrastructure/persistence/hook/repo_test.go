@@ -10,11 +10,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
 
-func seedApp(t *testing.T, db *state.DB) {
+func seedApp(t *testing.T, db *persistence.DB) {
 	t.Helper()
 	ctx := context.Background()
 	err := db.Tx(ctx, func(tx *sql.Tx) error {

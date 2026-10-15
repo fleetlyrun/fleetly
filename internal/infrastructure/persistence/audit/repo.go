@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
@@ -79,7 +80,7 @@ func (r *Repo) Append(ctx context.Context, run state.Runner, e *Entry) error {
 		e.TeamID = TeamFromContext(ctx)
 	}
 	e.CreatedAt = state.FormatTime(r.clock.Now())
-	seq, err := state.NextSeq(ctx, run, "audit")
+	seq, err := persistence.NextSeq(ctx, run, "audit")
 	if err != nil {
 		return err
 	}

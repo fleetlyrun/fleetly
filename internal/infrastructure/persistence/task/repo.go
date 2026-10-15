@@ -10,6 +10,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
@@ -28,7 +29,7 @@ func (r *repo) Create(ctx context.Context, run state.Runner, t *task.Task) error
 	// minttask 在 TaskSpec 冻结期预铸 seq/id（ADR-0070：Task Mint 词条——
 	// 身份注入先于冻结）；此处零值兜底补铸，预置则原样落行。
 	if t.Seq == 0 {
-		seq, err := state.NextSeq(ctx, run, "tasks")
+		seq, err := persistence.NextSeq(ctx, run, "tasks")
 		if err != nil {
 			return err
 		}
@@ -46,7 +47,7 @@ func (r *repo) Create(ctx context.Context, run state.Runner, t *task.Task) error
 		t.ID, t.Seq, t.ProjectID, t.Name, t.Form, string(t.State), t.Spec, t.OwnerTokenID,
 		t.DesiredConcurrency, t.NetworkGroup, t.DNSName, t.LeaseDeadline,
 		t.CreatedAt, t.UpdatedAt)
-	if state.IsUniqueViolation(err) {
+	if persistence.IsUniqueViolation(err) {
 		return fmt.Errorf("%w: an active task named %q already exists in project %s", state.ErrAlreadyExists, t.Name, t.ProjectID)
 	}
 	return err
@@ -123,7 +124,7 @@ func (r *repo) StatsByProject(ctx context.Context, run state.Runner, projectID s
 		WHERE project_id = ? AND state NOT IN (`+placeholders(len(states))+`)`,
 		append([]any{projectID}, toAny(states)...)...)
 	if err := row.Scan(&active, &desiredSum); err != nil {
-		return 0, 0, state.MapScanErr(err)
+		return 0, 0, persistence.MapScanErr(err)
 	}
 	return active, desiredSum, nil
 }
@@ -216,7 +217,7 @@ func scanTask(scan func(dest ...any) error) (*task.Task, error) {
 		&t.DesiredConcurrency, &t.NetworkGroup, &t.DNSName, &t.LeaseDeadline,
 		&t.CreatedAt, &t.UpdatedAt, &t.FinishedAt)
 	if err != nil {
-		return nil, state.MapScanErr(err)
+		return nil, persistence.MapScanErr(err)
 	}
 	t.State = task.State(stateStr)
 	return &t, nil

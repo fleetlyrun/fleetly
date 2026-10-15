@@ -6,7 +6,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	specir "github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
 
 // step 是收敛循环的单次推进（单写者；N0 全局一遍，单节点规模足够）：

@@ -24,7 +24,7 @@ import (
 	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
 
 // NetworkRebuildResult 是一次重建执行的载体计数（响应面直读）。

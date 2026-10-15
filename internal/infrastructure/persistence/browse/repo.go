@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
@@ -39,7 +40,7 @@ func scanSession(scan func(...any) error) (*Session, error) {
 	var readOnly int
 	err := scan(&s.ID, &s.Seq, &s.ProjectID, &s.DatabaseID, &s.Engine, &readOnly, &s.CreatedAt, &s.ExpiresAt)
 	if err != nil {
-		return nil, state.MapScanErr(err)
+		return nil, persistence.MapScanErr(err)
 	}
 	s.ReadOnly = readOnly != 0
 	return &s, nil
@@ -47,7 +48,7 @@ func scanSession(scan func(...any) error) (*Session, error) {
 
 // Create 落一行台账（受理事务内——与事件/审计同拍）。
 func (r *Repo) Create(ctx context.Context, run state.Runner, s *Session) error {
-	seq, err := state.NextSeq(ctx, run, "browse_sessions")
+	seq, err := persistence.NextSeq(ctx, run, "browse_sessions")
 	if err != nil {
 		return err
 	}

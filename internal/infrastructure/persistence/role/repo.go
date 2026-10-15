@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
@@ -32,7 +33,7 @@ func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 
 // Create 落一行；同 Team 内同名冲突返回 state.ErrAlreadyExists。
 func (r *Repo) Create(ctx context.Context, run state.Runner, ro *Role) error {
-	seq, err := state.NextSeq(ctx, run, "roles")
+	seq, err := persistence.NextSeq(ctx, run, "roles")
 	if err != nil {
 		return err
 	}
@@ -49,7 +50,7 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, ro *Role) error {
 		INSERT INTO roles (id, seq, team_id, name, builtin, scopes, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		ro.ID, ro.Seq, ro.TeamID, ro.Name, boolInt(ro.Builtin), string(scopes), ro.CreatedAt)
-	if state.IsUniqueViolation(err) {
+	if persistence.IsUniqueViolation(err) {
 		return fmt.Errorf("%w: role name %q already exists", state.ErrAlreadyExists, ro.Name)
 	}
 	return err
@@ -72,7 +73,7 @@ func (r *Repo) UpsertBuiltin(ctx context.Context, run state.Runner, ro *Role) er
 	if n, _ := res.RowsAffected(); n > 0 {
 		return nil
 	}
-	seq, err := state.NextSeq(ctx, run, "roles")
+	seq, err := persistence.NextSeq(ctx, run, "roles")
 	if err != nil {
 		return err
 	}
@@ -124,7 +125,7 @@ func (r *Repo) Delete(ctx context.Context, run state.Runner, id string) error {
 	}
 	res, err := run.ExecContext(ctx, `DELETE FROM roles WHERE id = ?`, id)
 	if err != nil {
-		if state.IsUniqueViolation(err) || state.IsForeignKeyViolation(err) {
+		if persistence.IsUniqueViolation(err) || persistence.IsForeignKeyViolation(err) {
 			return fmt.Errorf("%w: role %s is still referenced by tokens or users", state.ErrConflict, id)
 		}
 		return err
@@ -144,7 +145,7 @@ func scanRole(scan func(dest ...any) error) (*Role, error) {
 	var builtin int
 	var scopes string
 	if err := scan(&ro.ID, &ro.Seq, &ro.TeamID, &ro.Name, &builtin, &scopes, &ro.CreatedAt); err != nil {
-		return nil, state.MapScanErr(err)
+		return nil, persistence.MapScanErr(err)
 	}
 	ro.Builtin = builtin != 0
 	if scopes != "" {

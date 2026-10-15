@@ -13,6 +13,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/github"
@@ -348,7 +349,7 @@ type ring struct {
 // Watch 消费。写路径全部四件一拍（CAS + Outbox + 审计；部署记录无
 // tombstone）；决策读平台权威表，观测缓存仅作信号（架构 §6）。
 type Engine struct {
-	db      *state.DB
+	db      *persistence.DB
 	log     *slog.Logger
 	runtime capability.Runtime
 	clock   state.Clock
@@ -515,7 +516,7 @@ type Engine struct {
 // Deps 是引擎依赖（装配注入；可选依赖为 nil 时对应能力停用并给出精确
 // 反馈，不静默）。
 type Deps struct {
-	DB          *state.DB
+	DB          *persistence.DB
 	Runtime     capability.Runtime
 	Builders    map[string]capability.Builder // 可空/空 map：构建链停用（镜像直投不受影响；ADR-0032 spec 路由家族）
 	Proxy       capability.Proxy              // 可空：Route 发布与受管自宿停用

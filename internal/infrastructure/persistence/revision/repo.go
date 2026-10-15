@@ -12,6 +12,7 @@ import (
 	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
@@ -56,7 +57,7 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, rev *Revision) erro
 		INSERT INTO revisions (id, app_id, seq, digest, spec, source_text, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		rev.ID, rev.AppID, rev.Seq, rev.Digest, rev.Spec, rev.SourceText, rev.CreatedAt)
-	if state.IsUniqueViolation(err) {
+	if persistence.IsUniqueViolation(err) {
 		return fmt.Errorf("%w: revision with identical spec already frozen for app", state.ErrAlreadyExists)
 	}
 	return err
@@ -148,7 +149,7 @@ const (
 func scanRevision(scan func(dest ...any) error) (*Revision, error) {
 	var rev Revision
 	if err := scan(&rev.ID, &rev.AppID, &rev.Seq, &rev.Digest, &rev.Spec, &rev.SourceText, &rev.CreatedAt); err != nil {
-		return nil, state.MapScanErr(err)
+		return nil, persistence.MapScanErr(err)
 	}
 	return &rev, nil
 }

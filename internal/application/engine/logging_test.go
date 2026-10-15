@@ -17,6 +17,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	specir "github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
@@ -305,7 +306,7 @@ func waitForLogCond(t *testing.T, cond func() bool) {
 }
 
 // seedProjectApp 播 project/app 夹具行（logging 域测试的权威表种子）。
-func seedProjectApp(t *testing.T, clock state.Clock, db *state.DB) error {
+func seedProjectApp(t *testing.T, clock state.Clock, db *persistence.DB) error {
 	t.Helper()
 	ctx := context.Background()
 	if err := projectrepo.New(clock).Create(ctx, db.Runner(), &project.Project{ID: tProjectID, Name: "shop", TeamID: "default"}); err != nil {

@@ -25,6 +25,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/domain/services/anchor"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/freeze"
 )
@@ -96,14 +97,14 @@ var FrozenVerbs = map[string]freezeScope{
 
 // FreezeGuard 是冻结执法器（拦截器一份实现覆盖全部封禁面动词）。
 type FreezeGuard struct {
-	db      *state.DB
+	db      *persistence.DB
 	log     *slog.Logger
 	freezes *freeze.Repo
 	anchor  *anchor.Anchor
 }
 
 // NewFreezeGuard 构造执法器（归属解析图与 repo 从 DB 时钟派生）。
-func NewFreezeGuard(db *state.DB, log *slog.Logger) *FreezeGuard {
+func NewFreezeGuard(db *persistence.DB, log *slog.Logger) *FreezeGuard {
 	clock := db.Clock()
 	return &FreezeGuard{
 		db: db, log: log,

@@ -21,6 +21,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/audit"
 	membershiprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/membership"
@@ -83,7 +84,7 @@ func FromContext(ctx context.Context) (*Identity, bool) {
 
 // Authenticator 是拦截器依赖集（assembly 与 apitest 夹具共用构造）。
 type Authenticator struct {
-	db          *state.DB
+	db          *persistence.DB
 	policy      *authz.PolicySet
 	log         *slog.Logger
 	roles       *rolerepo.Repo
@@ -98,7 +99,7 @@ type Authenticator struct {
 }
 
 // NewAuthenticator 构造（vocab 是 scope 词表——assembly 单一源注入）。
-func NewAuthenticator(db *state.DB, policy *authz.PolicySet, vocab []string, log *slog.Logger) *Authenticator {
+func NewAuthenticator(db *persistence.DB, policy *authz.PolicySet, vocab []string, log *slog.Logger) *Authenticator {
 	return &Authenticator{
 		db: db, policy: policy, log: log,
 		roles:       rolerepo.New(db.Clock()),

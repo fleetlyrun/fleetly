@@ -25,6 +25,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/config"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/keyring"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/node"
@@ -75,14 +76,14 @@ var ProviderSet = wire.NewSet(
 )
 
 // NewAuthenticator 构造身份执法器（authn 拦截器依赖集；词表单一源注入）。
-func NewAuthenticator(db *state.DB, policySet *authz.PolicySet, app lynx.App) *authn.Authenticator {
+func NewAuthenticator(db *persistence.DB, policySet *authz.PolicySet, app lynx.App) *authn.Authenticator {
 	return authn.NewAuthenticator(db, policySet, ScopeResources(), app.Logger())
 }
 
 // NewStateDB 打开数据根下的控制面库（WAL + goose 前滚迁移在 Open 内完成；
 // 关闭经 wire cleanup 聚合到 OnPostStop）。engine/API 批次按聚合 repo 消费。
-func NewStateDB(app lynx.App, cfg *config.AppConfig) (*state.DB, func(), error) {
-	db, err := state.Open(context.Background(), filepath.Join(cfg.DataRoot(), "fleetly.db"), state.WallClock())
+func NewStateDB(app lynx.App, cfg *config.AppConfig) (*persistence.DB, func(), error) {
+	db, err := persistence.Open(context.Background(), filepath.Join(cfg.DataRoot(), "fleetly.db"), persistence.WallClock())
 	if err != nil {
 		return nil, nil, err
 	}
@@ -302,7 +303,7 @@ func objectStoreSelection(cfg *config.AppConfig) (string, context.Context) {
 // 校验——ADR-0017 附录 A.4；其余参数当前取默认，配置面接入后从 AppConfig
 // 继续透传 queue 容量/观察窗/构建并发）。
 func NewEngine(
-	db *state.DB,
+	db *persistence.DB,
 	rt capability.Runtime,
 	b map[string]capability.Builder,
 	proxy capability.Proxy,
@@ -400,7 +401,7 @@ func gatewayPort(httpAddr string) string {
 // NewAPIServices 构造六上下文 API 服务依赖集（scope 词表单一源注入；
 // dataRoot 透传给上传产物 blob 面；gateway 端口 = EnrollNode 的
 // RelayCommand 拼装锚，ADR-0049）。
-func NewAPIServices(db *state.DB, e *engine.Engine, cipher *material.Cipher, rt capability.Runtime, cfg *config.AppConfig, app lynx.App) *fleetlygrpc.Services {
+func NewAPIServices(db *persistence.DB, e *engine.Engine, cipher *material.Cipher, rt capability.Runtime, cfg *config.AppConfig, app lynx.App) *fleetlygrpc.Services {
 	s := fleetlygrpc.NewServices(db, e, cipher, rt, cfg.DataRoot(), ScopeResources(), app.Logger())
 	s.GatewayPort = gatewayPort(cfg.HTTPAddr())
 	// App 模板目录刷新源（F3.3，ADR-0050 决策 4：空 = 刷新停用，内嵌目录
@@ -417,20 +418,20 @@ func NewAPIServices(db *state.DB, e *engine.Engine, cipher *material.Cipher, rt 
 }
 
 // NewIdemEnforcer 构造通用幂等执法器（ADR-0024：拦截器 + janitor sweep 面）。
-func NewIdemEnforcer(db *state.DB, app lynx.App) *idem.Enforcer {
+func NewIdemEnforcer(db *persistence.DB, app lynx.App) *idem.Enforcer {
 	return idem.NewEnforcer(db, app.Logger())
 }
 
 // NewRateLimiter 构造创建速率限制器（ADR-0017 附录 A.2 缺省：60s 固定窗 /
 // 每 Token 120 次，内存计数——控制面单进程）。配置面接入后从 AppConfig
 // 透传窗与预算。
-func NewRateLimiter(db *state.DB) *governance.RateLimiter {
+func NewRateLimiter(db *persistence.DB) *governance.RateLimiter {
 	return governance.NewRateLimiter(db.Clock(), governance.DefaultRateWindow, governance.DefaultRateBudget)
 }
 
 // NewFreezeGuard 构造变更冻结执法器（ADR-0017 附录 A.3：拦截器 + Team
 // 逐级回行解析）。
-func NewFreezeGuard(db *state.DB, app lynx.App) *governance.FreezeGuard {
+func NewFreezeGuard(db *persistence.DB, app lynx.App) *governance.FreezeGuard {
 	return governance.NewFreezeGuard(db, app.Logger())
 }
 
@@ -472,7 +473,7 @@ const (
 // 需可区分。
 type RetentionJanitorService struct {
 	enforcer *idem.Enforcer
-	db       *state.DB
+	db       *persistence.DB
 	uploads  *sourceupload.Repo
 	blobs    *upload.Store
 	engine   *engine.Engine
@@ -558,7 +559,7 @@ func (s *RetentionJanitorService) sweepUploads(ctx context.Context) {
 // NewRetentionJanitorService 构造 janitor 托管服务（engine 注入 = 载体
 // 卫生面的消费口：engine 拥有 Task 域 ns 解析真源与 RuntimeHygiene 子面
 // 判定，本服务只供节拍与预算）。
-func NewRetentionJanitorService(enforcer *idem.Enforcer, db *state.DB, cfg *config.AppConfig, e *engine.Engine, app lynx.App) *RetentionJanitorService {
+func NewRetentionJanitorService(enforcer *idem.Enforcer, db *persistence.DB, cfg *config.AppConfig, e *engine.Engine, app lynx.App) *RetentionJanitorService {
 	return &RetentionJanitorService{
 		enforcer: enforcer, db: db,
 		uploads: sourceupload.New(db.Clock()),
@@ -603,7 +604,7 @@ func NewServiceFactories() []lynx.ServiceFactory { return nil }
 
 // NewPreStartHooks 启动前钩子（OnPreStart，先于监听）：identity 种子 +
 // Bootstrap Token 首启流（无用户时生成一次、journal 去重；F0.2/F0.6）。
-func NewPreStartHooks(db *state.DB, cfg *config.AppConfig, app lynx.App) boot.PreStartHooks {
+func NewPreStartHooks(db *persistence.DB, cfg *config.AppConfig, app lynx.App) boot.PreStartHooks {
 	return boot.PreStartHooks{func(ctx context.Context) error {
 		_, err := authn.EnsureBootstrapToken(ctx, db, cfg.DataRoot(), ScopeResources(), app.Logger())
 		return err

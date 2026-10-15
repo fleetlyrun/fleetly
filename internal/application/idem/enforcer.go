@@ -26,6 +26,7 @@ import (
 	"google.golang.org/protobuf/reflect/protoregistry"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/idempotency"
 )
@@ -104,13 +105,13 @@ type dualSourceBearing interface{ GetIdempotencyKey() string }
 
 // Enforcer 是幂等执法器（拦截器 + janitor sweep 面）。
 type Enforcer struct {
-	db   *state.DB
+	db   *persistence.DB
 	repo *idempotency.Repo
 	log  *slog.Logger
 }
 
 // NewEnforcer 构造执法器。
-func NewEnforcer(db *state.DB, log *slog.Logger) *Enforcer {
+func NewEnforcer(db *persistence.DB, log *slog.Logger) *Enforcer {
 	return &Enforcer{db: db, repo: idempotency.New(db.Clock()), log: log}
 }
 

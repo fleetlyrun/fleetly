@@ -3,7 +3,7 @@ package project
 import (
 	"context"
 
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
 
 // Repo 是 Project 聚合存取（无门面：仅本聚合查询）。方法集机械平移自

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
@@ -38,12 +39,12 @@ func (r *Repo) Put(ctx context.Context, run state.Runner, s *Snapshot) error {
 	return err
 }
 
-// Get 读快照（缺席 → ErrNoSnapshot；Scan 归一哨兵由 state.MapScanErr）。
+// Get 读快照（缺席 → ErrNoSnapshot；Scan 归一哨兵由 persistence.MapScanErr）。
 func (r *Repo) Get(ctx context.Context, run state.Runner) (*Snapshot, error) {
 	row := run.QueryRowContext(ctx, `SELECT digest, body, fetched_at FROM template_catalog WHERE id = 1`)
 	s := &Snapshot{}
 	if err := row.Scan(&s.Digest, &s.Body, &s.FetchedAt); err != nil {
-		if errors.Is(state.MapScanErr(err), state.ErrNotFound) {
+		if errors.Is(persistence.MapScanErr(err), state.ErrNotFound) {
 			return nil, ErrNoSnapshot
 		}
 		return nil, err

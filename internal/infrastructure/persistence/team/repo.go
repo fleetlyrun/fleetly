@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
@@ -28,7 +29,7 @@ func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 
 // Create 落一行；同名冲突返回 state.ErrAlreadyExists。
 func (r *Repo) Create(ctx context.Context, run state.Runner, t *Team) error {
-	seq, err := state.NextSeq(ctx, run, "teams")
+	seq, err := persistence.NextSeq(ctx, run, "teams")
 	if err != nil {
 		return err
 	}
@@ -40,7 +41,7 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, t *Team) error {
 	_, err = run.ExecContext(ctx, `
 		INSERT INTO teams (id, seq, name, created_at) VALUES (?, ?, ?, ?)`,
 		t.ID, t.Seq, t.Name, t.CreatedAt)
-	if state.IsUniqueViolation(err) {
+	if persistence.IsUniqueViolation(err) {
 		return fmt.Errorf("%w: team name %q already exists", state.ErrAlreadyExists, t.Name)
 	}
 	return err
@@ -52,7 +53,7 @@ func (r *Repo) Get(ctx context.Context, run state.Runner, id string) (*Team, err
 		SELECT id, seq, name, created_at FROM teams WHERE id = ?`, id)
 	var t Team
 	if err := row.Scan(&t.ID, &t.Seq, &t.Name, &t.CreatedAt); err != nil {
-		return nil, state.MapScanErr(err)
+		return nil, persistence.MapScanErr(err)
 	}
 	return &t, nil
 }
@@ -81,7 +82,7 @@ func (r *Repo) List(ctx context.Context, run state.Runner) ([]Team, error) {
 func (r *Repo) Delete(ctx context.Context, run state.Runner, id string) error {
 	res, err := run.ExecContext(ctx, `DELETE FROM teams WHERE id = ?`, id)
 	if err != nil {
-		if state.IsUniqueViolation(err) || state.IsForeignKeyViolation(err) {
+		if persistence.IsUniqueViolation(err) || persistence.IsForeignKeyViolation(err) {
 			return fmt.Errorf("%w: team %s is still referenced", state.ErrConflict, id)
 		}
 		return err

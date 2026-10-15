@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/eventcode"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
 
 // Event 是一条已落库事件（payload 是 JSON 字节）。TeamID 不在返回形态

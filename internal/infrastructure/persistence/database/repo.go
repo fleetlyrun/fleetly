@@ -10,6 +10,7 @@ import (
 	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
@@ -65,7 +66,7 @@ func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 
 // Create 落一行；同 Project 内同名冲突返回 state.ErrAlreadyExists。
 func (r *Repo) Create(ctx context.Context, run state.Runner, d *Database) error {
-	seq, err := state.NextSeq(ctx, run, "databases")
+	seq, err := persistence.NextSeq(ctx, run, "databases")
 	if err != nil {
 		return err
 	}
@@ -82,7 +83,7 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, d *Database) error 
 		VALUES (?, ?, ?, ?, ?, ?, 0, '', ?, ?, ?, ?, ?, '')`,
 		d.ID, d.Seq, d.ProjectID, d.Name, d.Engine, d.CredentialsRef,
 		d.BackupIntervalSecs, d.BackupRetentionSecs, d.Status, d.CreatedAt, d.UpdatedAt)
-	if state.IsUniqueViolation(err) {
+	if persistence.IsUniqueViolation(err) {
 		return fmt.Errorf("%w: database name %q already exists in project", state.ErrAlreadyExists, d.Name)
 	}
 	return err
@@ -135,7 +136,7 @@ func (r *Repo) CountByProject(ctx context.Context, run state.Runner, projectID s
 	err := run.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM databases WHERE project_id = ? AND deleted_at = ''`, projectID).Scan(&n)
 	if err != nil {
-		return 0, state.MapScanErr(err)
+		return 0, persistence.MapScanErr(err)
 	}
 	return n, nil
 }
@@ -160,11 +161,11 @@ func (r *Repo) EnsureGeneration(ctx context.Context, run state.Runner, id, finge
 		row := run.QueryRowContext(ctx,
 			`SELECT generation FROM databases WHERE id = ? AND deleted_at = ''`, id)
 		if serr := row.Scan(&gen); serr != nil {
-			return 0, state.MapScanErr(serr)
+			return 0, persistence.MapScanErr(serr)
 		}
 		return gen, nil
 	}
-	return 0, state.MapScanErr(err)
+	return 0, persistence.MapScanErr(err)
 }
 
 // SetStatus 落观测状态（收敛环从观测缓存推进；WHERE 带 status != ? 守卫
@@ -255,7 +256,7 @@ func (r *Repo) query(ctx context.Context, run state.Runner, q string, args ...an
 	for rows.Next() {
 		d, err := scanDatabase(rows.Scan)
 		if err != nil {
-			return nil, state.MapScanErr(err)
+			return nil, persistence.MapScanErr(err)
 		}
 		out = append(out, *d)
 	}
@@ -269,7 +270,7 @@ func scanDatabase(scan func(dest ...any) error) (*Database, error) {
 		&d.LastBackupAt, &d.RestoreFromBackup, &d.RestoreError,
 		&d.CreatedAt, &d.UpdatedAt, &d.DeletedAt)
 	if err != nil {
-		return nil, state.MapScanErr(err)
+		return nil, persistence.MapScanErr(err)
 	}
 	return &d, nil
 }

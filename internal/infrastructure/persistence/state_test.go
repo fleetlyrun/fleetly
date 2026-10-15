@@ -1,4 +1,4 @@
-package state_test
+package persistence_test
 
 import (
 	"context"
@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/audit"
 	deploymentrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/deployment"
@@ -71,7 +72,7 @@ func TestFourWriteSameTransaction(t *testing.T) {
 func TestOpenIdempotentAndWAL(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "fleetly.db")
-	db, err := state.Open(ctx, path, nil)
+	db, err := persistence.Open(ctx, path, nil)
 	require.NoError(t, err)
 
 	var mode string
@@ -79,7 +80,7 @@ func TestOpenIdempotentAndWAL(t *testing.T) {
 	assert.Equal(t, "wal", mode, "WAL must be enabled")
 	require.NoError(t, db.Close())
 
-	db2, err := state.Open(ctx, path, nil)
+	db2, err := persistence.Open(ctx, path, nil)
 	require.NoError(t, err)
 	require.NoError(t, db2.Close())
 }

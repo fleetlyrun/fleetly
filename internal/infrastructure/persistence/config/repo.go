@@ -7,6 +7,7 @@ import (
 	"context"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
@@ -32,7 +33,7 @@ func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 // Create 落新版本（同 project+name 下一版本号单调递增；配额执法在 API
 // 层——本 repo 只承载版本化事实）。
 func (r *Repo) Create(ctx context.Context, run state.Runner, c *Config) error {
-	seq, err := state.NextSeq(ctx, run, "configs")
+	seq, err := persistence.NextSeq(ctx, run, "configs")
 	if err != nil {
 		return err
 	}
@@ -171,7 +172,7 @@ func (r *Repo) ListVersions(ctx context.Context, run state.Runner, projectID, na
 func scanConfig(scan func(dest ...any) error) (*Config, error) {
 	var c Config
 	if err := scan(&c.ID, &c.Seq, &c.ProjectID, &c.Name, &c.Version, &c.Content, &c.CreatedAt); err != nil {
-		return nil, state.MapScanErr(err)
+		return nil, persistence.MapScanErr(err)
 	}
 	return &c, nil
 }

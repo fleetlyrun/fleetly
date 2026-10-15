@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
@@ -64,7 +65,7 @@ func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 func (r *Repo) Create(ctx context.Context, run state.Runner, b *Build) error {
 	now := state.FormatTime(r.clock.Now())
 	b.CreatedAt, b.UpdatedAt = now, now
-	seq, err := state.NextSeq(ctx, run, "builds")
+	seq, err := persistence.NextSeq(ctx, run, "builds")
 	if err != nil {
 		return err
 	}
@@ -208,7 +209,7 @@ func scanBuild(scan func(dest ...any) error) (*Build, error) {
 	err := scan(&b.ID, &b.Seq, &b.AppID, &b.RevisionID, &stateStr, &b.Digest, &b.Repo, &b.Error,
 		&b.CreatedAt, &b.UpdatedAt, &b.FinishedAt)
 	if err != nil {
-		return nil, state.MapScanErr(err)
+		return nil, persistence.MapScanErr(err)
 	}
 	b.State = State(stateStr)
 	return &b, nil

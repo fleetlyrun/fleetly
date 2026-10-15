@@ -25,10 +25,10 @@ import (
 // seedOldWorld 用旧 KEK 播种数据根：两行活跃 secret + 一行 tombstone +
 // 一行 hook webhook secret。返回旧 KEK 文件内容（构造"旧 key 单独在场"
 // 断言用）与打开的库。
-func seedOldWorld(t *testing.T, root string) (string, *state.DB) {
+func seedOldWorld(t *testing.T, root string) (string, *persistence.DB) {
 	t.Helper()
 	ctx := context.Background()
-	db, err := state.Open(ctx, filepath.Join(root, "fleetly.db"), state.WallClock())
+	db, err := persistence.Open(ctx, filepath.Join(root, "fleetly.db"), persistence.WallClock())
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
@@ -96,7 +96,7 @@ func rotateKeyFiles(t *testing.T, root, oldKeyContent string) *material.Cipher {
 }
 
 // listSecretCT / listHookCT 读全部密文（断言比对用）。
-func listSecretCT(t *testing.T, db *state.DB) map[string][]byte {
+func listSecretCT(t *testing.T, db *persistence.DB) map[string][]byte {
 	t.Helper()
 	rows, err := secret.New(db.Clock()).ListAll(context.Background(), db.Runner())
 	require.NoError(t, err)
@@ -107,7 +107,7 @@ func listSecretCT(t *testing.T, db *state.DB) map[string][]byte {
 	return out
 }
 
-func listHookCT(t *testing.T, db *state.DB) map[string][]byte {
+func listHookCT(t *testing.T, db *persistence.DB) map[string][]byte {
 	t.Helper()
 	rows, err := hook.New(db.Clock()).ListAll(context.Background(), db.Runner())
 	require.NoError(t, err)
@@ -118,7 +118,7 @@ func listHookCT(t *testing.T, db *state.DB) map[string][]byte {
 	return out
 }
 
-func listGitHubCT(t *testing.T, db *state.DB) map[string][]byte {
+func listGitHubCT(t *testing.T, db *persistence.DB) map[string][]byte {
 	t.Helper()
 	rows, err := githubapp.New(db.Clock()).ListAll(context.Background(), db.Runner())
 	require.NoError(t, err)
@@ -278,7 +278,7 @@ func TestRewrapEmptyDatabase(t *testing.T) {
 	root := t.TempDir()
 	_, err := keyring.LoadCipher(root)
 	require.NoError(t, err)
-	db, err := state.Open(ctx, filepath.Join(root, "fleetly.db"), state.WallClock())
+	db, err := persistence.Open(ctx, filepath.Join(root, "fleetly.db"), persistence.WallClock())
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 	cipher, err := keyring.LoadExistingCipher(root)

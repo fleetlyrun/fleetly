@@ -10,6 +10,7 @@ import (
 	"errors"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/role"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/team"
@@ -17,7 +18,7 @@ import (
 
 // EnsureSeed 幂等落 default Team 与三条内置角色（scopes 由代码单一源刷新
 // ——词表演进时启动即同步）。启动链与测试夹具共用。
-func EnsureSeed(ctx context.Context, db *state.DB, resources []string) error {
+func EnsureSeed(ctx context.Context, db *persistence.DB, resources []string) error {
 	teams, roles := team.New(db.Clock()), role.New(db.Clock())
 	return db.Tx(ctx, func(tx *sql.Tx) error {
 		if err := teams.Create(ctx, tx, &team.Team{

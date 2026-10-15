@@ -10,6 +10,7 @@ import (
 	"context"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
@@ -60,7 +61,7 @@ func (r *Repo) Upsert(ctx context.Context, run state.Runner, a *App) error {
 		return err
 	}
 	a.CreatedAt, a.UpdatedAt = now, now
-	seq, err := state.NextSeq(ctx, run, "github_apps")
+	seq, err := persistence.NextSeq(ctx, run, "github_apps")
 	if err != nil {
 		return err
 	}
@@ -74,7 +75,7 @@ func (r *Repo) Upsert(ctx context.Context, run state.Runner, a *App) error {
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '')`,
 		a.ID, a.Seq, a.ProjectID, a.AppID, a.InstallationID, a.AccountLogin,
 		a.APIBase, a.PrivateKeyCiphertext, a.PrivateKeyFingerprint, a.CreatedAt, a.UpdatedAt); err != nil {
-		if state.IsUniqueViolation(err) {
+		if persistence.IsUniqueViolation(err) {
 			return state.ErrAlreadyExists
 		}
 		return err
@@ -204,7 +205,7 @@ func scanOne(scan func(dest ...any) error) (*App, error) {
 	err := scan(&a.ID, &a.Seq, &a.ProjectID, &a.AppID, &a.InstallationID, &a.AccountLogin,
 		&a.APIBase, &a.PrivateKeyCiphertext, &a.PrivateKeyFingerprint, &a.CreatedAt, &a.UpdatedAt, &a.DeletedAt)
 	if err != nil {
-		return nil, state.MapScanErr(err)
+		return nil, persistence.MapScanErr(err)
 	}
 	return &a, nil
 }

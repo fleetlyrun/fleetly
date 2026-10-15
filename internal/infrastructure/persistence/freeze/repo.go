@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
@@ -39,7 +40,7 @@ const selectCols = "id, seq, team_id, reason, created_by, created_at, lifted_at"
 // Create 落一条活跃冻结；同 scope 已有活跃行 → ErrAlreadyExists（部分唯一
 // 索引把守——Set 面映射 E_CONFLICT，先 lift 再 set）。
 func (r *Repo) Create(ctx context.Context, run state.Runner, f *Freeze) error {
-	seq, err := state.NextSeq(ctx, run, "change_freezes")
+	seq, err := persistence.NextSeq(ctx, run, "change_freezes")
 	if err != nil {
 		return err
 	}
@@ -52,7 +53,7 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, f *Freeze) error {
 		INSERT INTO change_freezes (id, seq, team_id, reason, created_by, created_at, lifted_at)
 		VALUES (?, ?, ?, ?, ?, ?, '')`,
 		f.ID, f.Seq, f.TeamID, f.Reason, f.CreatedBy, f.CreatedAt)
-	if state.IsUniqueViolation(err) {
+	if persistence.IsUniqueViolation(err) {
 		return fmt.Errorf("%w: an active change freeze already covers team %q", state.ErrAlreadyExists, f.TeamID)
 	}
 	return err
@@ -143,7 +144,7 @@ type scanner interface{ Scan(dest ...any) error }
 func scanFreeze(row scanner) (*Freeze, error) {
 	var f Freeze
 	if err := row.Scan(&f.ID, &f.Seq, &f.TeamID, &f.Reason, &f.CreatedBy, &f.CreatedAt, &f.LiftedAt); err != nil {
-		return nil, state.MapScanErr(err)
+		return nil, persistence.MapScanErr(err)
 	}
 	return &f, nil
 }

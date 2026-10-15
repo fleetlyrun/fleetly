@@ -8,6 +8,7 @@ import (
 	"context"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
@@ -53,7 +54,7 @@ const selectCols = `id, seq, app_id, metric, threshold, for_secs, enabled, state
 
 // Create 落一条规则（初始态 ok）。
 func (r *Repo) Create(ctx context.Context, run state.Runner, rule *Rule) error {
-	seq, err := state.NextSeq(ctx, run, "alert_rules")
+	seq, err := persistence.NextSeq(ctx, run, "alert_rules")
 	if err != nil {
 		return err
 	}
@@ -150,7 +151,7 @@ func scanRule(row interface{ Scan(dest ...any) error }) (*Rule, error) {
 	err := row.Scan(&rule.ID, &rule.Seq, &rule.AppID, &rule.Metric, &rule.Threshold, &rule.ForSecs, &enabled,
 		&rule.State, &rule.StateSince, &rule.LastValue, &rule.LastObservedAt,
 		&rule.CreatedAt, &rule.UpdatedAt)
-	if state.MapScanErr(err) == state.ErrNotFound {
+	if persistence.MapScanErr(err) == state.ErrNotFound {
 		return nil, state.ErrNotFound
 	}
 	if err != nil {

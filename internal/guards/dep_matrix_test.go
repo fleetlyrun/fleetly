@@ -34,7 +34,7 @@ var depMatrix = []depRow{
 	{
 		subtree: "internal/domain/",
 		allow:   nil,
-		note:    "终态零外依赖（纯领域）；现状残留见 depExemptions（P1b Repo 接口抽取后清零）",
+		note:    "终态零外依赖（纯领域）；根包契约面已上移 domain/shared/state（P1b 根包拆分），残留豁免见 depExemptions（anchor/writes 直引具体 repo，后续批次清零）",
 	},
 	{
 		subtree: "internal/application/",
@@ -95,11 +95,6 @@ type depExemption struct {
 }
 
 var depExemptions = []depExemption{
-	{
-		subtree: "internal/domain/",
-		allow:   "internal/infrastructure/persistence/",
-		reason:  "Repo 接口层过渡期（ADR-0075 P1b）：domain 聚合的 Repo 接口按原签名引用根包 state.Runner/Clock/哨兵——根包随 statekit 批（P5）迁入 domain 后删本行；合法命中面仅各聚合 repo.go 接口文件对根包的引用，聚合实现包互引应走 domain 聚合包不经本行",
-	},
 	{
 		subtree: "internal/domain/services/anchor",
 		allow:   "internal/infrastructure/persistence/",

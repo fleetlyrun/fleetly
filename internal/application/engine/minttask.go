@@ -55,7 +55,7 @@ import (
 // MintTaskRow 铸一条 Task 行：TaskRef 与属主注入调用方 spec（原地变更）、
 // 行缺省、冻结并装配行。name 允许空（系统级铸造不占项目名位，base = task）；
 // ownerTokenID 允许空（匿名/机制铸造无属主，resident 无租约保温）。seq 由
-// 调用方在其写事务内取（state.NextSeq）——id = <name|task>-<seq>，身份注
+// 调用方在其写事务内取（persistence.NextSeq）——id = <name|task>-<seq>，身份注
 // 入先于冻结（ADR-0070；CONTEXT.md Task Mint 词条：铸造单源不动）。
 func MintTaskRow(projectID, name, ownerTokenID string, s *specv1.TaskSpec, seq int64) (*task.Task, error) {
 	if s == nil {
@@ -108,7 +108,7 @@ func (e *Engine) mintOneShotTask(ctx context.Context, projectID string,
 		if err := e.taskSpawnQuota(ctx, tx, projectID, 1); err != nil {
 			return err
 		}
-		seq, err := state.NextSeq(ctx, tx, "tasks")
+		seq, err := persistence.NextSeq(ctx, tx, "tasks")
 		if err != nil {
 			return err
 		}

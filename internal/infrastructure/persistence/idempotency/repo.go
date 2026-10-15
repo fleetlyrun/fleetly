@@ -7,6 +7,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
@@ -45,7 +46,7 @@ func (r *Repo) Get(ctx context.Context, run state.Runner, key string) (*Record, 
 	var createdAt, expiresAt string
 	if err := row.Scan(&rec.Key, &rec.Method, &rec.Fingerprint, &rec.State,
 		&rec.ResponseType, &rec.ResponseBody, &createdAt, &expiresAt); err != nil {
-		return nil, state.MapScanErr(err)
+		return nil, persistence.MapScanErr(err)
 	}
 	var err error
 	if rec.CreatedAt, err = time.Parse(time.RFC3339, createdAt); err != nil {
@@ -66,7 +67,7 @@ func (r *Repo) Claim(ctx context.Context, run state.Runner, key, method, fingerp
 		VALUES (?, ?, ?, ?, ?, ?)`,
 		key, method, fingerprint, StateInflight,
 		state.FormatTime(now), state.FormatTime(now.Add(claimTTL)))
-	if state.IsUniqueViolation(err) {
+	if persistence.IsUniqueViolation(err) {
 		return state.ErrAlreadyExists
 	}
 	return err

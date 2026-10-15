@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
@@ -36,7 +37,7 @@ func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 // 环先铸 ID → Provider 写回载体标记 → Upsert 落行（ID 是锚，铸造与落行
 // 同事务由调用方组合；seq 构造性单调 = 节点 ID 永不复用）。
 func (r *Repo) MintPlatformID(ctx context.Context, run state.Runner) (string, error) {
-	seq, err := state.NextSeq(ctx, run, "nodes")
+	seq, err := persistence.NextSeq(ctx, run, "nodes")
 	if err != nil {
 		return "", err
 	}
@@ -82,7 +83,7 @@ func (r *Repo) Upsert(ctx context.Context, run state.Runner, n *Node) error {
 		n.FirstSeenAt = firstSeen
 		return nil
 	}
-	seq, err := state.NextSeq(ctx, run, "nodes")
+	seq, err := persistence.NextSeq(ctx, run, "nodes")
 	if err != nil {
 		return err
 	}
@@ -181,7 +182,7 @@ func scanNode(scan func(dest ...any) error) (*Node, error) {
 	var n Node
 	var avail int
 	if err := scan(&n.PlatformID, &n.Seq, &n.CarrierID, &n.Hostname, &n.Role, &avail, &n.FirstSeenAt, &n.LastSeenAt); err != nil {
-		return nil, state.MapScanErr(err)
+		return nil, persistence.MapScanErr(err)
 	}
 	n.Available = avail != 0
 	return &n, nil

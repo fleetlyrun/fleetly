@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/sharedvariable"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statertest"
@@ -121,10 +122,10 @@ func TestSharedVariableUpsertConcurrentSameNameConflict(t *testing.T) {
 	ctx := context.Background()
 	clock := statertest.NewFakeClock()
 	path := filepath.Join(t.TempDir(), "fleetly.db")
-	dbA, err := state.Open(ctx, path, clock)
+	dbA, err := persistence.Open(ctx, path, clock)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, dbA.Close()) })
-	dbB, err := state.Open(ctx, path, clock)
+	dbB, err := persistence.Open(ctx, path, clock)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, dbB.Close()) })
 

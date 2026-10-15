@@ -13,7 +13,7 @@ import (
 	"strings"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
 
 // RegistryCatalog 列项目前纲下的仓名（升序）。Registry 面或内容子面未

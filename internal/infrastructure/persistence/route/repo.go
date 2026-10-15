@@ -8,6 +8,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
@@ -43,7 +44,7 @@ func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 // state.ErrAlreadyExists（安全批：host 命名空间是平台级资产，唯一索引
 // 已从项目内升级为全局——idx_routes_host_path）。
 func (r *Repo) Create(ctx context.Context, run state.Runner, rt *Route) error {
-	seq, err := state.NextSeq(ctx, run, "routes")
+	seq, err := persistence.NextSeq(ctx, run, "routes")
 	if err != nil {
 		return err
 	}
@@ -58,7 +59,7 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, rt *Route) error {
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '')`,
 		rt.ID, rt.Seq, rt.ProjectID, rt.Host, normalizePath(rt.Path), rt.AppID, rt.Process,
 		rt.Port, string(rt.Protocol), rt.TLSMode, rt.CreatedAt, rt.UpdatedAt)
-	if state.IsUniqueViolation(err) {
+	if persistence.IsUniqueViolation(err) {
 		return fmt.Errorf("%w: route %s%s already exists (host+path is globally unique across projects)", state.ErrAlreadyExists, rt.Host, rt.Path)
 	}
 	return err
@@ -163,7 +164,7 @@ func scanRoute(scan func(dest ...any) error) (*Route, error) {
 	err := scan(&rt.ID, &rt.Seq, &rt.ProjectID, &rt.Host, &rt.Path, &rt.AppID, &rt.Process,
 		&rt.Port, &proto, &rt.TLSMode, &rt.CreatedAt, &rt.UpdatedAt, &rt.DeletedAt)
 	if err != nil {
-		return nil, state.MapScanErr(err)
+		return nil, persistence.MapScanErr(err)
 	}
 	rt.Protocol = capability.Protocol(proto)
 	return &rt, nil
