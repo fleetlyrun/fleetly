@@ -91,9 +91,7 @@ func (r *repo) ListActive(ctx context.Context, run state.Runner, projectID strin
 // 字典序升序）。limit<=0 或 >200 回落/钳制缺省 50（与 secrets/configs
 // 同款）。
 func (r *repo) ListPage(ctx context.Context, run state.Runner, projectID, afterName string, limit int) ([]sharedvariable.SharedVariable, error) {
-	if limit <= 0 || limit > maxListLimit {
-		limit = defaultListLimit
-	}
+	limit = persistence.ClampLimit(limit, defaultListLimit, maxListLimit)
 	q := `
 		SELECT id, seq, project_id, name, value, created_at, updated_at, deleted_at
 		FROM shared_variables WHERE project_id = ? AND deleted_at = ''`

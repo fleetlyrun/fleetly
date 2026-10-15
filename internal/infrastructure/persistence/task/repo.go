@@ -6,7 +6,6 @@ package task
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
@@ -69,9 +68,7 @@ func (r *repo) GetByName(ctx context.Context, run state.Runner, projectID, name 
 // ListByProject 返回项目内 Task（新→旧 + after 游标；ADR-0026 after_* + limit
 // 惯例——游标 = seq 创建序）。
 func (r *repo) ListByProject(ctx context.Context, run state.Runner, projectID string, afterSeq int64, limit int) ([]task.Task, error) {
-	if limit <= 0 || limit > maxListLimit {
-		limit = defaultListLimit
-	}
+	limit = persistence.ClampLimit(limit, defaultListLimit, maxListLimit)
 	q := selectCols + " WHERE project_id = ?"
 	args := []any{projectID}
 	if afterSeq > 0 {
@@ -97,14 +94,12 @@ func (r *repo) ListDriving(ctx context.Context, run state.Runner) ([]task.Task, 
 // 同口径（<=0 或超上限回落/钳缺省）。新→旧序（finished_at DESC）：近期
 // 收口的行才是残留的实际所在（崩溃/失败窗口），旧行近乎必然已收敛。
 func (r *repo) ListRecentlyFinished(ctx context.Context, run state.Runner, since string, limit int) ([]task.Task, error) {
-	if limit <= 0 || limit > maxListLimit {
-		limit = defaultListLimit
-	}
+	limit = persistence.ClampLimit(limit, defaultListLimit, maxListLimit)
 	states := []string{string(task.StateCompleted), string(task.StateFailed), string(task.StateDrained)}
 	return r.query(ctx, run,
-		selectCols+" WHERE state IN ("+placeholders(len(states))+")"+
+		selectCols+" WHERE state IN ("+persistence.Placeholders(len(states))+")"+
 			" AND finished_at != '' AND finished_at >= ?"+
-			" ORDER BY finished_at DESC LIMIT ?", append(toAny(states), since, limit)...)
+			" ORDER BY finished_at DESC LIMIT ?", append(persistence.ToAny(states), since, limit)...)
 }
 
 // ListByOwner 返回属主 Token 名下活跃行（吊销排空的拉式扫描面，P1-8）。
@@ -121,8 +116,8 @@ func (r *repo) StatsByProject(ctx context.Context, run state.Runner, projectID s
 	row := run.QueryRowContext(ctx, `
 		SELECT COUNT(*), COALESCE(SUM(desired_concurrency), 0)
 		FROM tasks
-		WHERE project_id = ? AND state NOT IN (`+placeholders(len(states))+`)`,
-		append([]any{projectID}, toAny(states)...)...)
+		WHERE project_id = ? AND state NOT IN (`+persistence.Placeholders(len(states))+`)`,
+		append([]any{projectID}, persistence.ToAny(states)...)...)
 	if err := row.Scan(&active, &desiredSum); err != nil {
 		return 0, 0, persistence.MapScanErr(err)
 	}
@@ -137,8 +132,8 @@ func (r *repo) Transit(ctx context.Context, run state.Runner, id string, from []
 	if err != nil {
 		return err
 	}
-	if !stateIn(from, cur.State) {
-		return fmt.Errorf("%w: task %s is %s, want one of %s", state.ErrConflict, id, cur.State, joinStates(from))
+	if !persistence.StateIn(from, cur.State) {
+		return fmt.Errorf("%w: task %s is %s, want one of %s", state.ErrConflict, id, cur.State, persistence.JoinStates(from))
 	}
 	origState := cur.State
 	if mut != nil {
@@ -153,7 +148,7 @@ func (r *repo) Transit(ctx context.Context, run state.Runner, id string, from []
 		UPDATE tasks SET
 			state = ?, lease_deadline = ?, desired_concurrency = ?,
 			updated_at = ?, finished_at = ?
-		WHERE id = ? AND state = ?`,
+		`+persistence.TransitWhere,
 		string(cur.State), cur.LeaseDeadline, cur.DesiredConcurrency,
 		cur.UpdatedAt, cur.FinishedAt,
 		id, string(origState))
@@ -162,7 +157,7 @@ func (r *repo) Transit(ctx context.Context, run state.Runner, id string, from []
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return fmt.Errorf("%w: task %s state changed concurrently, want one of %s",
-			state.ErrConflict, id, joinStates(from))
+			state.ErrConflict, id, persistence.JoinStates(from))
 	}
 	return nil
 }
@@ -221,33 +216,4 @@ func scanTask(scan func(dest ...any) error) (*task.Task, error) {
 	}
 	t.State = task.State(stateStr)
 	return &t, nil
-}
-
-func stateIn(set []task.State, s task.State) bool {
-	for _, v := range set {
-		if v == s {
-			return true
-		}
-	}
-	return false
-}
-
-func joinStates(set []task.State) string {
-	parts := make([]string, len(set))
-	for i, s := range set {
-		parts[i] = string(s)
-	}
-	return strings.Join(parts, "|")
-}
-
-func toAny(ss []string) []any {
-	out := make([]any, len(ss))
-	for i, s := range ss {
-		out[i] = s
-	}
-	return out
-}
-
-func placeholders(n int) string {
-	return strings.TrimSuffix(strings.Repeat("?,", n), ",")
 }

@@ -61,9 +61,7 @@ func (r *repo) FindByDigest(ctx context.Context, run state.Runner, projectID, di
 
 // ListByProject 返回项目上传行（新→旧 + after 游标；ADR-0026 惯例）。
 func (r *repo) ListByProject(ctx context.Context, run state.Runner, projectID string, afterSeq int64, limit int) ([]sourceupload.Upload, error) {
-	if limit <= 0 || limit > 200 {
-		limit = 50
-	}
+	limit = persistence.ClampLimit(limit, 50, 200)
 	q := "SELECT " + selectCols + " FROM source_uploads WHERE project_id = ?"
 	args := []any{projectID}
 	if afterSeq > 0 {

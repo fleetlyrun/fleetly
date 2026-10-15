@@ -63,9 +63,7 @@ func (r *repo) GetByName(ctx context.Context, run state.Runner, projectID, name 
 
 // ListByProject 新→旧分页（ADR-0026 after_* + limit；游标 = seq 创建序）。
 func (r *repo) ListByProject(ctx context.Context, run state.Runner, projectID string, afterSeq int64, limit int) ([]database.Database, error) {
-	if limit <= 0 || limit > maxListLimit {
-		limit = defaultListLimit
-	}
+	limit = persistence.ClampLimit(limit, defaultListLimit, maxListLimit)
 	q := selectCols + ` WHERE project_id = ? AND deleted_at = ''`
 	args := []any{projectID}
 	if afterSeq > 0 {

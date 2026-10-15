@@ -91,9 +91,7 @@ func (r *repo) NextSeq(ctx context.Context, run state.Runner, appID string) (int
 // ADR-0026 after_* + limit 惯例——游标轴 = App 内单调 seq，升序即既有
 // 响应序，events 面同款形态）。limit<=0 或 >200 回落/钳制缺省 50。
 func (r *repo) ListByApp(ctx context.Context, run state.Runner, appID string, afterSeq int64, limit int) ([]revision.Revision, error) {
-	if limit <= 0 || limit > maxListLimit {
-		limit = defaultListLimit
-	}
+	limit = persistence.ClampLimit(limit, defaultListLimit, maxListLimit)
 	q := `
 		SELECT id, app_id, seq, digest, spec, source_text, created_at
 		FROM revisions WHERE app_id = ?`

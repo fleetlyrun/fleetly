@@ -96,9 +96,7 @@ func (r *repo) ListByProject(ctx context.Context, run state.Runner, projectID st
 // 游标轴 = seq 创建序升序——既有响应序不变）。limit<=0 或 >200 回落/
 // 钳制缺省 50。
 func (r *repo) ListByProjectPage(ctx context.Context, run state.Runner, projectID string, afterSeq int64, limit int) ([]app.App, error) {
-	if limit <= 0 || limit > maxListLimit {
-		limit = defaultListLimit
-	}
+	limit = persistence.ClampLimit(limit, defaultListLimit, maxListLimit)
 	q := `
 		SELECT id, seq, project_id, name, created_at, updated_at, deleted_at
 		FROM apps WHERE project_id = ? AND deleted_at = ''`

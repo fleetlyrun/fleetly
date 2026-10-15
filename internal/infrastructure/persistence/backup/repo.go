@@ -67,9 +67,7 @@ func (r *repo) Get(ctx context.Context, run state.Runner, id string) (*backup.Ba
 
 // ListByDatabase 新→旧分页（ADR-0026 after_* + limit 惯例；含终态与在途）。
 func (r *repo) ListByDatabase(ctx context.Context, run state.Runner, databaseID string, afterSeq int64, limit int) ([]backup.Backup, error) {
-	if limit <= 0 || limit > 200 {
-		limit = 50
-	}
+	limit = persistence.ClampLimit(limit, 50, 200)
 	q := selectCols + ` WHERE database_id = ?`
 	args := []any{databaseID}
 	if afterSeq > 0 {
@@ -136,9 +134,7 @@ func (r *repo) LatestFailedFor(ctx context.Context, run state.Runner, databaseID
 // ——错误文本的诊断价值短命，48h 窗后由保留滚动同环清扫；created_at 升序
 // 限量分拍，DueForPrune 同款形态）。
 func (r *repo) DueForFailedRowSweep(ctx context.Context, run state.Runner, now time.Time, retention time.Duration, limit int) ([]backup.Backup, error) {
-	if limit <= 0 || limit > 500 {
-		limit = 100
-	}
+	limit = persistence.ClampLimit(limit, 100, 500)
 	cutoff := now.Add(-retention).UTC().Format(time.RFC3339)
 	return r.query(ctx, run,
 		selectCols+` WHERE status = 'failed' AND created_at < ? ORDER BY created_at LIMIT ?`, cutoff, limit)
@@ -222,9 +218,7 @@ func (r *repo) SweepInterrupted(ctx context.Context, run state.Runner) (int64, e
 // 行上逐行不同，SQL 单 cutoff 表达不了；升序保证到期行必在前沿，清扫
 // 跟得上即 O(到期行+前瞻)，积压窗拖不垮环——限量分拍）。
 func (r *repo) DueForPrune(ctx context.Context, run state.Runner, now time.Time, lookahead int) ([]backup.Backup, error) {
-	if lookahead <= 0 || lookahead > 500 {
-		lookahead = 100
-	}
+	lookahead = persistence.ClampLimit(lookahead, 100, 500)
 	rows, err := r.query(ctx, run,
 		selectCols+` ORDER BY created_at LIMIT ?`, lookahead)
 	if err != nil {

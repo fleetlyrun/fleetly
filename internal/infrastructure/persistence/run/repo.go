@@ -6,7 +6,6 @@ package run
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	domainrun "github.com/fleetlyrun/fleetly/internal/domain/automation/run"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
@@ -53,9 +52,7 @@ func (r *repo) Get(ctx context.Context, run state.Runner, id string) (*domainrun
 
 // ListByTask 返回 Task 名下 Run（新→旧 + after 游标；ADR-0026 惯例）。
 func (r *repo) ListByTask(ctx context.Context, run state.Runner, taskID string, afterSeq int64, limit int) ([]domainrun.Run, error) {
-	if limit <= 0 || limit > maxListLimit {
-		limit = defaultListLimit
-	}
+	limit = persistence.ClampLimit(limit, defaultListLimit, maxListLimit)
 	q := selectCols + " WHERE task_id = ?"
 	args := []any{taskID}
 	if afterSeq > 0 {
@@ -70,9 +67,7 @@ func (r *repo) ListByTask(ctx context.Context, run state.Runner, taskID string, 
 // ListByProject 返回 Project 内 Run（新→旧 + after 游标；ADR-0035 ListRuns
 // 的 project 过滤面——runs 行自带冗余 project_id，免二跳）。
 func (r *repo) ListByProject(ctx context.Context, run state.Runner, projectID string, afterSeq int64, limit int) ([]domainrun.Run, error) {
-	if limit <= 0 || limit > maxListLimit {
-		limit = defaultListLimit
-	}
+	limit = persistence.ClampLimit(limit, defaultListLimit, maxListLimit)
 	q := selectCols + " WHERE project_id = ?"
 	args := []any{projectID}
 	if afterSeq > 0 {
@@ -103,7 +98,7 @@ func (r *repo) ListDrivingOfTerminalTasks(ctx context.Context, run state.Runner)
 	}
 	return r.query(ctx, run,
 		selectCols+" WHERE state IN ('pending', 'running', 'stopping')"+
-			" AND task_id IN (SELECT id FROM tasks WHERE state IN ("+placeholders(len(states))+"))"+
+			" AND task_id IN (SELECT id FROM tasks WHERE state IN ("+persistence.Placeholders(len(states))+"))"+
 			" ORDER BY seq", args...)
 }
 
@@ -122,7 +117,7 @@ func (r *repo) ListByTaskStates(ctx context.Context, run state.Runner, taskID st
 		args = append(args, string(s))
 	}
 	return r.query(ctx, run,
-		selectCols+" WHERE task_id = ? AND state IN ("+placeholders(len(states))+") ORDER BY seq DESC", args...)
+		selectCols+" WHERE task_id = ? AND state IN ("+persistence.Placeholders(len(states))+") ORDER BY seq DESC", args...)
 }
 
 // CountActiveByTasks 返回各 Task 的活 Run 计数（pending/running；列表投影
@@ -155,8 +150,8 @@ func (r *repo) Transit(ctx context.Context, run state.Runner, id string, from []
 	if err != nil {
 		return err
 	}
-	if !stateIn(from, cur.State) {
-		return fmt.Errorf("%w: run %s is %s, want one of %s", state.ErrConflict, id, cur.State, joinStates(from))
+	if !persistence.StateIn(from, cur.State) {
+		return fmt.Errorf("%w: run %s is %s, want one of %s", state.ErrConflict, id, cur.State, persistence.JoinStates(from))
 	}
 	origState := cur.State
 	if mut != nil {
@@ -174,7 +169,7 @@ func (r *repo) Transit(ctx context.Context, run state.Runner, id string, from []
 		UPDATE runs SET
 			state = ?, stop_reason = ?, exit_code = ?, deadline = ?,
 			updated_at = ?, started_at = ?, finished_at = ?
-		WHERE id = ? AND state = ?`,
+		`+persistence.TransitWhere,
 		string(cur.State), cur.StopReason, cur.ExitCode, cur.Deadline,
 		cur.UpdatedAt, cur.StartedAt, cur.FinishedAt,
 		id, string(origState))
@@ -183,7 +178,7 @@ func (r *repo) Transit(ctx context.Context, run state.Runner, id string, from []
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return fmt.Errorf("%w: run %s state changed concurrently, want one of %s",
-			state.ErrConflict, id, joinStates(from))
+			state.ErrConflict, id, persistence.JoinStates(from))
 	}
 	return nil
 }
@@ -234,25 +229,4 @@ func scanRun(scan func(dest ...any) error) (*domainrun.Run, error) {
 		}
 	}
 	return &m, nil
-}
-
-func stateIn(set []domainrun.State, s domainrun.State) bool {
-	for _, v := range set {
-		if v == s {
-			return true
-		}
-	}
-	return false
-}
-
-func joinStates(set []domainrun.State) string {
-	parts := make([]string, len(set))
-	for i, s := range set {
-		parts[i] = string(s)
-	}
-	return strings.Join(parts, "|")
-}
-
-func placeholders(n int) string {
-	return strings.TrimSuffix(strings.Repeat("?,", n), ",")
 }

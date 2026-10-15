@@ -6,7 +6,6 @@ package deployment
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
@@ -63,9 +62,7 @@ func (r *repo) Get(ctx context.Context, run state.Runner, id string) (*deploymen
 // after_* + limit 惯例——游标 = seq 创建序）。limit<=0 或 >200 回落/钳制
 // 缺省 50。
 func (r *repo) ListByApp(ctx context.Context, run state.Runner, appID string, afterSeq int64, limit int) ([]deployment.Deployment, error) {
-	if limit <= 0 || limit > maxListLimit {
-		limit = defaultListLimit
-	}
+	limit = persistence.ClampLimit(limit, defaultListLimit, maxListLimit)
 	q := selectCols + " WHERE app_id = ?"
 	args := []any{appID}
 	if afterSeq > 0 {
@@ -93,9 +90,9 @@ func (r *repo) ListByApp(ctx context.Context, run state.Runner, appID string, af
 // ActiveByApp 返回 App 全部活跃态 Deployment（应至多一条在途 + 任意排队）。
 func (r *repo) ActiveByApp(ctx context.Context, run state.Runner, appID string) ([]deployment.Deployment, error) {
 	states := deployment.ActiveStateStrings()
-	args := append([]any{appID}, toAny(states)...)
+	args := append([]any{appID}, persistence.ToAny(states)...)
 	rows, err := run.QueryContext(ctx,
-		selectCols+" WHERE app_id = ? AND state IN ("+placeholders(len(states))+") ORDER BY seq",
+		selectCols+" WHERE app_id = ? AND state IN ("+persistence.Placeholders(len(states))+") ORDER BY seq",
 		args...)
 	if err != nil {
 		return nil, err
@@ -118,9 +115,9 @@ func (r *repo) ActiveByApp(ctx context.Context, run state.Runner, appID string) 
 // 跨 App 同键活跃行，对本 App 亦视同无键。
 func (r *repo) FindActiveByIdempotencyKey(ctx context.Context, run state.Runner, appID, key string) (*deployment.Deployment, error) {
 	states := deployment.ActiveStateStrings()
-	args := append([]any{appID, key}, toAny(states)...)
+	args := append([]any{appID, key}, persistence.ToAny(states)...)
 	row := run.QueryRowContext(ctx,
-		selectCols+" WHERE app_id = ? AND idempotency_key = ? AND state IN ("+placeholders(len(states))+") ORDER BY seq LIMIT 1",
+		selectCols+" WHERE app_id = ? AND idempotency_key = ? AND state IN ("+persistence.Placeholders(len(states))+") ORDER BY seq LIMIT 1",
 		args...)
 	return scanDeployment(row.Scan)
 }
@@ -130,10 +127,10 @@ func (r *repo) FindActiveByIdempotencyKey(ctx context.Context, run state.Runner,
 // 的 failed 是终态，不拾取）。
 func (r *repo) ListDriving(ctx context.Context, run state.Runner) ([]deployment.Deployment, error) {
 	states := deployment.ActiveStateStrings()
-	args := toAny(states)
+	args := persistence.ToAny(states)
 	args = append(args, false)
 	rows, err := run.QueryContext(ctx,
-		selectCols+" WHERE state IN ("+placeholders(len(states))+")"+
+		selectCols+" WHERE state IN ("+persistence.Placeholders(len(states))+")"+
 			" OR (state = 'failed' AND rollback_attempted = ? AND from_revision != '')"+
 			" ORDER BY seq",
 		args...)
@@ -180,8 +177,8 @@ func (r *repo) Transit(ctx context.Context, run state.Runner, id string, from []
 	if err != nil {
 		return err
 	}
-	if !stateIn(from, cur.State) {
-		return fmt.Errorf("%w: deployment %s is %s, want one of %s", state.ErrConflict, id, cur.State, joinStates(from))
+	if !persistence.StateIn(from, cur.State) {
+		return fmt.Errorf("%w: deployment %s is %s, want one of %s", state.ErrConflict, id, cur.State, persistence.JoinStates(from))
 	}
 	origState := cur.State
 	if mut != nil {
@@ -197,7 +194,7 @@ func (r *repo) Transit(ctx context.Context, run state.Runner, id string, from []
 			state = ?, generation = ?, from_generation = ?, error = ?, superseded_by = ?,
 			observe_deadline = ?, first_boot = ?, rollback_attempted = ?,
 			to_revision = ?, updated_at = ?, finished_at = ?
-		WHERE id = ? AND state = ?`,
+		`+persistence.TransitWhere,
 		string(cur.State), cur.Generation, cur.FromGeneration, cur.Error, cur.SupersededBy,
 		cur.ObserveDeadline, cur.FirstBoot, cur.RollbackAttempted, cur.ToRevision,
 		cur.UpdatedAt, cur.FinishedAt,
@@ -211,7 +208,7 @@ func (r *repo) Transit(ctx context.Context, run state.Runner, id string, from []
 	// 连接池后是最后防线）。
 	if n, _ := res.RowsAffected(); n == 0 {
 		return fmt.Errorf("%w: deployment %s state changed concurrently, want one of %s",
-			state.ErrConflict, id, joinStates(from))
+			state.ErrConflict, id, persistence.JoinStates(from))
 	}
 	return nil
 }
@@ -237,36 +234,7 @@ func scanDeployment(scan func(dest ...any) error) (*deployment.Deployment, error
 	return &d, nil
 }
 
-func stateIn(set []deployment.State, s deployment.State) bool {
-	for _, v := range set {
-		if v == s {
-			return true
-		}
-	}
-	return false
-}
-
 const (
 	defaultListLimit = 50
 	maxListLimit     = 200
 )
-
-func joinStates(set []deployment.State) string {
-	parts := make([]string, len(set))
-	for i, s := range set {
-		parts[i] = string(s)
-	}
-	return strings.Join(parts, "|")
-}
-
-func toAny(ss []string) []any {
-	out := make([]any, len(ss))
-	for i, s := range ss {
-		out[i] = s
-	}
-	return out
-}
-
-func placeholders(n int) string {
-	return strings.TrimSuffix(strings.Repeat("?,", n), ",")
-}

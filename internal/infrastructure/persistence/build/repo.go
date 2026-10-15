@@ -50,9 +50,7 @@ func (r *repo) Get(ctx context.Context, run state.Runner, id string) (*build.Bui
 // ListByApp 返回 App 全部 Build（新→旧 + after 游标；ADR-0026 after_* +
 // limit 惯例——游标 = seq 创建序）。limit<=0 或 >200 回落/钳制缺省 50。
 func (r *repo) ListByApp(ctx context.Context, run state.Runner, appID string, afterSeq int64, limit int) ([]build.Build, error) {
-	if limit <= 0 || limit > maxListLimit {
-		limit = defaultListLimit
-	}
+	limit = persistence.ClampLimit(limit, defaultListLimit, maxListLimit)
 	q := selectCols + " WHERE app_id = ?"
 	args := []any{appID}
 	if afterSeq > 0 {
@@ -131,7 +129,7 @@ func (r *repo) Transit(ctx context.Context, run state.Runner, id string, from []
 	if err != nil {
 		return err
 	}
-	if !stateIn(from, cur.State) {
+	if !persistence.StateIn(from, cur.State) {
 		return fmt.Errorf("%w: build %s is %s", state.ErrConflict, id, cur.State)
 	}
 	origState := cur.State
@@ -145,7 +143,7 @@ func (r *repo) Transit(ctx context.Context, run state.Runner, id string, from []
 	}
 	res, err := run.ExecContext(ctx, `
 		UPDATE builds SET state = ?, digest = ?, error = ?, updated_at = ?, finished_at = ?
-		WHERE id = ? AND state = ?`,
+		`+persistence.TransitWhere,
 		string(cur.State), cur.Digest, cur.Error, cur.UpdatedAt, cur.FinishedAt,
 		id, string(origState))
 	if err != nil {
@@ -174,15 +172,6 @@ func scanBuild(scan func(dest ...any) error) (*build.Build, error) {
 	}
 	b.State = build.State(stateStr)
 	return &b, nil
-}
-
-func stateIn(set []build.State, s build.State) bool {
-	for _, v := range set {
-		if v == s {
-			return true
-		}
-	}
-	return false
 }
 
 const (

@@ -51,9 +51,7 @@ func (r *repo) List(ctx context.Context, run state.Runner, limit int) ([]audit.E
 // ListFiltered 按过滤返回审计（新→旧；limit 上界钳制；条件动态拼接但
 // 占位符参数化——无字符串拼接 SQL）。
 func (r *repo) ListFiltered(ctx context.Context, run state.Runner, f audit.Filter) ([]audit.Entry, error) {
-	if f.Limit <= 0 || f.Limit > 1000 {
-		f.Limit = 1000
-	}
+	f.Limit = persistence.ClampLimit(f.Limit, 1000, 1000)
 	query := `SELECT id, seq, actor, source, action, resource, before_fp, after_fp, team_id, created_at, detail FROM audit`
 	var conds []string
 	var args []any

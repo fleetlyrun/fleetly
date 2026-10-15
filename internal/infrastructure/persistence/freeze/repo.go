@@ -97,9 +97,7 @@ func (r *repo) Lift(ctx context.Context, run state.Runner, id string) error {
 
 // List 返回全部冻结行（新→旧 + after 游标；ADR-0026 after_* + limit 惯例）。
 func (r *repo) List(ctx context.Context, run state.Runner, afterSeq int64, limit int) ([]freeze.Freeze, error) {
-	if limit <= 0 || limit > 200 {
-		limit = 50
-	}
+	limit = persistence.ClampLimit(limit, 50, 200)
 	q := "SELECT " + selectCols + " FROM change_freezes"
 	args := []any{}
 	if afterSeq > 0 {

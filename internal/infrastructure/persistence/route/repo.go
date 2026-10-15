@@ -80,9 +80,7 @@ func (r *repo) List(ctx context.Context, run state.Runner) ([]route.Route, error
 // 下推 SQL 使游标分页与过滤叠加）；projectID 为空 = 全量分页。limit<=0
 // 或 >200 回落/钳制缺省 50。
 func (r *repo) ListPage(ctx context.Context, run state.Runner, projectID string, afterSeq int64, limit int) ([]route.Route, error) {
-	if limit <= 0 || limit > maxListLimit {
-		limit = defaultListLimit
-	}
+	limit = persistence.ClampLimit(limit, defaultListLimit, maxListLimit)
 	q := `SELECT id, seq, project_id, host, path, app_id, process, port, protocol, tls_mode, created_at, updated_at, deleted_at
 		FROM routes WHERE deleted_at = ''`
 	args := []any{}

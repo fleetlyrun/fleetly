@@ -103,9 +103,7 @@ func (r *repo) LatestByProject(ctx context.Context, run state.Runner, projectID 
 // 轴 = 既有排序轴 name 字典序升序）。每行仍是该 name 的最新版本（分页只
 // 动行集不改每行形态）。limit<=0 或 >200 回落/钳制缺省 50。
 func (r *repo) LatestByProjectPage(ctx context.Context, run state.Runner, projectID, afterName string, limit int) ([]configrepo.Config, error) {
-	if limit <= 0 || limit > maxListLimit {
-		limit = defaultListLimit
-	}
+	limit = persistence.ClampLimit(limit, defaultListLimit, maxListLimit)
 	q := `
 		SELECT c.id, c.seq, c.project_id, c.name, c.version, c.content, c.created_at
 		FROM configs c

@@ -116,9 +116,7 @@ func (r *repo) List(ctx context.Context, run state.Runner) ([]node.Node, error) 
 // ListPage 是 List 的分页读面（ADR-0026 after_* + limit）。游标轴 = seq
 // 锚定序升序。limit<=0 或 >200 回落/钳制缺省 50。
 func (r *repo) ListPage(ctx context.Context, run state.Runner, afterSeq int64, limit int) ([]node.Node, error) {
-	if limit <= 0 || limit > maxListLimit {
-		limit = defaultListLimit
-	}
+	limit = persistence.ClampLimit(limit, defaultListLimit, maxListLimit)
 	q := `
 		SELECT platform_id, seq, carrier_id, hostname, role, available, first_seen_at, last_seen_at
 		FROM nodes`

@@ -116,7 +116,7 @@ P4-4 SDK FromError + apitest builder 三件 — [x]（2026-10-16 4e273c9：sdk/g
 
 ## P5 statekit + 测试长跑（增量）
 P5-0 夹具去重：internal/state/statertest 与 statetest 一字母双包合并（审查中新发现，10-12 事故复制）— [x]（2026-10-16 落地：statetest 为原生包（d33a2f8），statertest 系 10-01 37b280f「fix build」事故复制（grpc_test.go 拼错包名后以补包代替修 import，F1.1 条目在案）；合并方向保留 statetest（原包+39 消费面+httptest 命名法），退役 statertest（22 消费文件 52 处限定引用机械改写），全仓 .go 面零残留）
-P5-1 statekit 共享件（TransitWhere/ClampLimit/Placeholders/软删幂等/冲突归一）+ G7/G8 — [ ]
+P5-1 statekit 共享件（TransitWhere/ClampLimit/Placeholders/软删幂等/冲突归一）+ G7/G8 — [x]（2026-10-16 落地：statekit.go 六原子入 persistence 根包（ClampLimit/Placeholders/StateIn/JoinStates/ToAny/TransitWhere，循 NextSeq 共享机械先例）；迁移 26 处手写钳位 + 12 处本地 helper 定义（stateIn×4/joinStates×3/toAny×2/placeholders×3，22 调用点）+ 6 处 CAS WHERE 拼接（四 Transit+networkpeer+schedule），SQL 逐字节保真脚本证明；软删幂等与冲突归一普查已收敛零迁移（九聚合 deleted_at 卫兵全在场/IsUniqueViolation 24 包全覆盖）；G7 页宽钳位律 + G8 机械件律反推落地（条目名失考同 G17 先例，AST 扫描+防盲自检+空豁免表双向保鲜+shapes 8 例），红灯实验双证（G7 一红/G8 三红/移除复绿）；statefacade 根级白名单随批登记）
 P5-2 升级前进测试（旧 schema 快照→Up）+ 换装 hermetic 测试 — [ ]
 P5-3 G19（state 聚合带测试，volume/run/user/audit 先补）+ G20（e2e↔CI 对账 + coverageguard 补 k3s）— [ ]
 P5-4 中继退出路径族（writeLoop done 通道/resize close/k3s logs cancel-同伴/metricsDom 加锁）— [ ]

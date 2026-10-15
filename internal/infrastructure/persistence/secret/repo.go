@@ -69,9 +69,7 @@ func (r *repo) GetByName(ctx context.Context, run state.Runner, projectID, name 
 // ——游标轴 = 既有排序轴 name，分页只动行集不改每行形态）。limit<=0 或
 // >200 回落/钳制缺省 50。
 func (r *repo) ListFingerprints(ctx context.Context, run state.Runner, projectID, afterName string, limit int) ([]secret.Secret, error) {
-	if limit <= 0 || limit > maxListLimit {
-		limit = defaultListLimit
-	}
+	limit = persistence.ClampLimit(limit, defaultListLimit, maxListLimit)
 	q := `
 		SELECT id, seq, project_id, name, NULL, fingerprint, created_at, updated_at, deleted_at
 		FROM secrets WHERE project_id = ? AND deleted_at = ''`

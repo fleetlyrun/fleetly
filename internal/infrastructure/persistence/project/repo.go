@@ -122,9 +122,7 @@ func (r *repo) ListByTeamPage(ctx context.Context, run state.Runner, teamID stri
 // page 是两种分页形态的共用体：teamID 空 = 全局（owner 面），非空 =
 // Team 过滤（ADR-0035 List 面）。
 func (r *repo) page(ctx context.Context, run state.Runner, teamID string, afterSeq int64, limit int) ([]project.Project, error) {
-	if limit <= 0 || limit > maxListLimit {
-		limit = defaultListLimit
-	}
+	limit = persistence.ClampLimit(limit, defaultListLimit, maxListLimit)
 	q := `
 		SELECT id, seq, name, team_id, created_at, updated_at, deleted_at
 		FROM projects WHERE deleted_at = ''`

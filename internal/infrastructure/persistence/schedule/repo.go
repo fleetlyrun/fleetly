@@ -61,9 +61,7 @@ func (r *repo) GetByName(ctx context.Context, run state.Runner, projectID, name 
 // ListByProject 返回项目内 Schedule（新→旧 + after 游标；ADR-0026 after_* +
 // limit 惯例——游标 = seq 创建序）。
 func (r *repo) ListByProject(ctx context.Context, run state.Runner, projectID string, afterSeq int64, limit int) ([]schedule.Schedule, error) {
-	if limit <= 0 || limit > maxListLimit {
-		limit = defaultListLimit
-	}
+	limit = persistence.ClampLimit(limit, defaultListLimit, maxListLimit)
 	q := selectCols + " WHERE project_id = ?"
 	args := []any{projectID}
 	if afterSeq > 0 {
@@ -131,7 +129,7 @@ func (r *repo) RecordFire(ctx context.Context, run state.Runner, id, fromLastTas
 func (r *repo) Transit(ctx context.Context, run state.Runner, id string, from, to schedule.State) error {
 	res, err := run.ExecContext(ctx, `
 		UPDATE schedules SET state = ?, updated_at = ?
-		WHERE id = ? AND state = ?`,
+		`+persistence.TransitWhere,
 		string(to), state.FormatTime(r.clock.Now()), id, string(from))
 	if err != nil {
 		return err

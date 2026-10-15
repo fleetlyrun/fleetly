@@ -68,7 +68,7 @@ func (r *repo) Approve(ctx context.Context, run state.Runner, id string) error {
 	now := state.FormatTime(r.clock.Now())
 	res, err := run.ExecContext(ctx, `
 		UPDATE network_peers SET state = ?, approved_at = ?, updated_at = ?
-		WHERE id = ? AND state = ?`,
+		`+persistence.TransitWhere,
 		string(networkpeer.StateApproved), now, now, id, string(networkpeer.StatePending))
 	if err != nil {
 		return err
@@ -104,9 +104,7 @@ func (r *repo) Revoke(ctx context.Context, run state.Runner, id string) error {
 // List 分页枚举（新→旧 + after 游标；ADR-0026）。network_id / peer_project_id
 // 过滤可选——接收方与挂靠方两侧视图同面。
 func (r *repo) List(ctx context.Context, run state.Runner, networkID, peerProjectID string, afterSeq int64, limit int) ([]networkpeer.Peer, error) {
-	if limit <= 0 || limit > maxListLimit {
-		limit = defaultListLimit
-	}
+	limit = persistence.ClampLimit(limit, defaultListLimit, maxListLimit)
 	q := selectCols + " WHERE 1=1"
 	var args []any
 	if networkID != "" {

@@ -89,9 +89,7 @@ func (r *repo) ListByProject(ctx context.Context, run state.Runner, projectID st
 // 游标轴 = 既有排序轴 name 字典序升序——既有响应序不变）。limit<=0 或
 // >200 回落/钳制缺省 50。
 func (r *repo) ListByProjectPage(ctx context.Context, run state.Runner, projectID, afterName string, limit int) ([]network.Network, error) {
-	if limit <= 0 || limit > maxListLimit {
-		limit = defaultListLimit
-	}
+	limit = persistence.ClampLimit(limit, defaultListLimit, maxListLimit)
 	q := `
 		SELECT id, seq, project_id, name, egress_none, created_at, deleted_at
 		FROM networks WHERE project_id = ? AND deleted_at = ''`

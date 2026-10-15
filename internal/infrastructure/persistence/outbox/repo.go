@@ -11,6 +11,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/eventcode"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/outbox"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
 // repo 是 domain outbox.Repo 的 SQLite 实现。
@@ -42,9 +43,7 @@ func (r *repo) Append(ctx context.Context, run state.Runner, team, name, aggrega
 // 行级过滤（team_id = team 或 ”平台级行——与 audit 面 ADR-0035 决策 6
 // 同口径）；team 空 = 不过滤（平台 owner / 内部消费面，P0-2）。
 func (r *repo) ListAfter(ctx context.Context, run state.Runner, afterSeq int64, limit int, team string) ([]outbox.Event, error) {
-	if limit <= 0 || limit > 1000 {
-		limit = 1000
-	}
+	limit = persistence.ClampLimit(limit, 1000, 1000)
 	query := `
 		SELECT seq, name, aggregate, aggregate_id, payload, created_at
 		FROM outbox WHERE seq > ?`

@@ -15,6 +15,7 @@ import (
 var stateRootFiles = map[string]string{
 	"state.go":      "connection, pragmas, goose wiring, Tx boundary, driver error predicates — no aggregate queries; contract sentinels live in internal/domain/shared/state",
 	"state_test.go": "four-write transaction composition test for the root Tx boundary",
+	"statekit.go":   "shared mechanical atoms consumed by aggregate repos (page-width clamp, IN placeholders, state-set text, []any casting, CAS WHERE fragment) — no aggregate queries; single-entry-point law enforced by internal/guards/statekitlaw_test.go (G7/G8, P5-1)",
 }
 
 // aggregateTables 是聚合表名集（根级文件不得出现对这些表的 DML 引用；
