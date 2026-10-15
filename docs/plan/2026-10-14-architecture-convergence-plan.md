@@ -112,7 +112,7 @@ P3-8 browse + 壳收口（engine.go <300 行 + Options 按域切片 + config 面
 P4-1 protovalidate 引入 + 71 处手写退役 + config_refs 删除（buf breaking 开发期基线追认）— [x]（2026-10-16 三 commit 落地：68ed077 基础设施+试点/1fde8d1+3828727 两波主退役（86 站点 CEL 化，46+40 逐 commit 实数）/本 commit config_refs 删除+基线追认；CEL 自定义 message 逐字节保文案，负例矩阵 descriptor 形态 91 案（主矩阵 89+试点 2，另有正例 34 案））
 P4-2 CLI descriptor 客户端校验（deploy 互斥手拷贝 55 行退役）+ runRPC/pageFlags/connFlags 骨架 — [x]（2026-10-16 d15973b：DeployRequest 执法全量注解化（message 级 CEL 13 条 + field 级 4 条，四源互斥文案逐字节=不变式⑦零重钉；builder 族/protocol 的 %q 回显静态化在案）；delivery.go normalizeDeploySource 形状/互斥面退役；CLI 手拷贝块退役为 preValidateUsage descriptor 预检（exit 64，13 条旗标名文案变化在案）；runRPC/pageFlags 骨架+3 exemplar——126 处样板全量迁移明确另批）
 P4-3 "未配置"族码律收尾 + G17 守卫 — [x]（2026-10-16 ff8537b：注册表只增四码（E_MASTER_KEY_UNAVAILABLE/E_LOG_STORE_UNAVAILABLE/E_METRICS_STORE_UNAVAILABLE→503 族 + E_RUNTIME_FACE_UNSUPPORTED→501 族），E_SECRET_UNAVAILABLE 据实收窄为 seal/open 运算失败语义；nil 面重接线 11 点、E_INTERNAL 脱敏 500 清零；G17 反推形态=nilfacelaw 守卫（族白名单 10 码+豁免表双向保鲜，红灯双证）；三裁决项（cipher 拆分/两码分立/子面收 501）2026-10-16 用户裁定）
-P4-4 SDK FromError + apitest builder 三件 — [ ]
+P4-4 SDK FromError + apitest builder 三件 — [x]（2026-10-16 4e273c9：sdk/go FromError 信封投影（公开 module 零 internal 依赖，wire 自足，未注册码原样投影=与 apperrstatus 唯一差异注记在案）+ sdk module 首个测试文件；apitest builder 三件（Ctx/CreateProject·CreateApp/REST Gateway——失考归纳提案，普查实数 60 文件/135 ctx 样板/132 CreateProject/74 CreateApp）exemplar 六文件迁移，约 54 文件全量迁移另批）
 
 ## P5 statekit + 测试长跑（增量）
 P5-0 夹具去重：internal/state/statertest 与 statetest 一字母双包合并（审查中新发现，10-12 事故复制）

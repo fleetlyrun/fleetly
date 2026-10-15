@@ -2,13 +2,12 @@ package apitest_test
 
 // UploadSource REST 面冒烟（F3.5，ADR-0019 附录 A 留白收口）：POST
 // /v1/uploads?project_id=<id>（raw body tar 流）——与生产 NewGatewayServer
-// 同一清单与错误信封（assembly.NewGatewayHandler）。断言面：上传/内容寻址
-// 去重/ListUploads 注解面不被同路径原生挂法遮蔽/未授权 401/冻结拒绝/
-// 超限 413 诚实信封。
+// 同一清单与错误信封（h.REST()，assembly.NewGatewayHandler 同参）。断言
+// 面：上传/内容寻址去重/ListUploads 注解面不被同路径原生挂法遮蔽/未授权
+// 401/冻结拒绝/超限 413 诚实信封。
 
 import (
 	"context"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -20,22 +19,15 @@ import (
 	identityv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/identity/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
-	"github.com/fleetlyrun/fleetly/internal/assembly"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/upload"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
-	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 func TestRESTUploadSourceLifecycle(t *testing.T) {
 	h := apitest.New(t)
-	handler, err := assembly.NewGatewayHandler(slog.New(slog.DiscardHandler), h.Conn, nil, nil, assembly.NewBrowseGate(h.Services))
-	require.NoError(t, err)
+	rest := h.REST() // tar 上传腿走非 JSON 默认形态，经 ServeHTTP 直驱
 
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
-	proj, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "rest-upload"})
-	require.NoError(t, err)
-	projID := proj.GetProject().GetId()
+	projID := h.CreateProject(t, "rest-upload").GetId()
 
 	post := func(body string, token string) *httptest.ResponseRecorder {
 		req := httptest.NewRequestWithContext(context.Background(), http.MethodPost,
@@ -45,7 +37,7 @@ func TestRESTUploadSourceLifecycle(t *testing.T) {
 			req.Header.Set("Authorization", "Bearer "+token)
 		}
 		rec := httptest.NewRecorder()
-		handler.ServeHTTP(rec, req)
+		rest.ServeHTTP(rec, req)
 		return rec
 	}
 
@@ -72,7 +64,7 @@ func TestRESTUploadSourceLifecycle(t *testing.T) {
 		"/v1/uploads?project_id="+projID, nil)
 	get.Header.Set("Authorization", "Bearer "+h.Token)
 	grec := httptest.NewRecorder()
-	handler.ServeHTTP(grec, get)
+	rest.ServeHTTP(grec, get)
 	require.Equal(t, http.StatusOK, grec.Code, grec.Body.String())
 	assert.Contains(t, grec.Body.String(), `"uploads"`)
 
@@ -80,7 +72,7 @@ func TestRESTUploadSourceLifecycle(t *testing.T) {
 	bad := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/v1/uploads", strings.NewReader("x"))
 	bad.Header.Set("Authorization", "Bearer "+h.Token)
 	brec := httptest.NewRecorder()
-	handler.ServeHTTP(brec, bad)
+	rest.ServeHTTP(brec, bad)
 	assert.Equal(t, http.StatusBadRequest, brec.Code)
 }
 
@@ -88,19 +80,17 @@ func TestRESTUploadSourceEnforcement(t *testing.T) {
 	// 超限：413 诚实信封（E_UPLOAD_TOO_LARGE，非不透明形态——Q-11 教训）。
 	h := apitest.New(t)
 	h.Services.UploadStore = upload.NewStore(h.DataRoot, 64, 1<<20)
-	handler, err := assembly.NewGatewayHandler(slog.New(slog.DiscardHandler), h.Conn, nil, nil, assembly.NewBrowseGate(h.Services))
-	require.NoError(t, err)
+	rest := h.REST() // Services 覆写之后新铸（UploadStore 进 gateway 面）
 
-	ctx := sdk.WithToken(context.Background(), h.Token)
+	ctx := h.Ctx()
 	projects := structurev1.NewProjectsServiceClient(h.Conn)
-	proj, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "rest-upload-lim"})
-	require.NoError(t, err)
+	projID := h.CreateProject(t, "rest-upload-lim").GetId()
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost,
-		"/v1/uploads?project_id="+proj.GetProject().GetId(), strings.NewReader(strings.Repeat("x", 65)))
+		"/v1/uploads?project_id="+projID, strings.NewReader(strings.Repeat("x", 65)))
 	req.Header.Set("Authorization", "Bearer "+h.Token)
 	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
+	rest.ServeHTTP(rec, req)
 	assert.Equal(t, http.StatusRequestEntityTooLarge, rec.Code)
 	assert.Contains(t, rec.Body.String(), "E_UPLOAD_TOO_LARGE")
 
@@ -109,6 +99,8 @@ func TestRESTUploadSourceEnforcement(t *testing.T) {
 	gov := systemv1.NewGovernanceServiceClient(h.Conn)
 	team, err := teams.CreateTeam(ctx, &identityv1.CreateTeamRequest{Name: "rest-upload-frozen"})
 	require.NoError(t, err)
+	// 带 TeamId 的建面不在 builder 形态内（CreateProject(t, name) 只收名），
+	// 保持内联。
 	fproj, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "frozen", TeamId: team.GetTeam().GetId()})
 	require.NoError(t, err)
 	_, err = gov.SetChangeFreeze(ctx, &systemv1.SetChangeFreezeRequest{TeamId: team.GetTeam().GetId(), Reason: "rest freeze"})
@@ -118,7 +110,7 @@ func TestRESTUploadSourceEnforcement(t *testing.T) {
 		"/v1/uploads?project_id="+fproj.GetProject().GetId(), strings.NewReader("x"))
 	freq.Header.Set("Authorization", "Bearer "+h.Token)
 	frec := httptest.NewRecorder()
-	handler.ServeHTTP(frec, freq)
+	rest.ServeHTTP(frec, freq)
 	assert.NotEqual(t, http.StatusOK, frec.Code)
 	assert.Contains(t, frec.Body.String(), "E_CHANGE_FROZEN")
 }

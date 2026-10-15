@@ -10,6 +10,8 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"slices"
 	"sort"
 	"strings"
@@ -22,6 +24,9 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
 
+	"github.com/stretchr/testify/require"
+
+	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
@@ -193,6 +198,106 @@ func dialBufconn(t testing.TB, l *bufconn.Listener) *grpc.ClientConn {
 	}
 	t.Cleanup(func() { _ = conn.Close() })
 	return conn
+}
+
+// ---- 夹具 builder 三件（P4-4 批 4「三件归纳」：token-ctx 样板、
+// CreateProject/CreateApp 内联铸造链与 restGateway 局部 helper 的收口）----
+//
+// 普查实数（提案明细失考，2026-10-16 全包重数）：60 个 *_test.go，
+// WithToken(context.Background(), h.Token) 135 处、CreateProject 调用
+// 132 处、CreateApp 调用 74 处、restGateway 困在 rest_errors_test.go 局部。
+// 本批只落 builder 与 exemplar 六文件（rest_errors/rest_validation/
+// rest_logs/rest_uploads/alerting/specfile）示范形态；其余存量文件的全量
+// 迁移另批推进（同 cmd/fleetly runRPC 收口先例——builder 在先，逐批换
+// 调用点）。负例面（窄 token 拒创等断言 NoError 反面的用例）不适用本组
+// builder，保持内联。
+//
+// Ctx：token 已附的背景 ctx（owner 全权）——SDK 调用默认背景。
+// CreateProject/CreateApp：require.NoError 的实体铸造，返回行指针；名字
+// 显式传入（各测试用名各异——spec-file-legacy 等，唯一性面由调用方把握，
+// 不发明默认名生成器，显式优于隐式）。
+// REST：REST 面客户端（Post/Del/Get 便捷形态 + ServeHTTP 直驱非默认形态）。
+
+// Ctx 返回已附 Bootstrap Token 的背景 context（等价
+// sdk.WithToken(context.Background(), h.Token)，owner 全权）。
+func (h *Harness) Ctx() context.Context {
+	return sdk.WithToken(context.Background(), h.Token)
+}
+
+// CreateProject 铸 Project 行（require.NoError 收口内联链；返回行指针）。
+func (h *Harness) CreateProject(t testing.TB, name string) *structurev1.Project {
+	t.Helper()
+	proj, err := structurev1.NewProjectsServiceClient(h.Conn).CreateProject(h.Ctx(),
+		&structurev1.CreateProjectRequest{Name: name})
+	require.NoError(t, err)
+	return proj.GetProject()
+}
+
+// CreateApp 铸 App 行（ProjectId 显式传入——归属面不为省两行而隐藏）。
+func (h *Harness) CreateApp(t testing.TB, projectID, name string) *structurev1.App {
+	t.Helper()
+	app, err := structurev1.NewAppsServiceClient(h.Conn).CreateApp(h.Ctx(),
+		&structurev1.CreateAppRequest{ProjectId: projectID, Name: name})
+	require.NoError(t, err)
+	return app.GetApp()
+}
+
+// Gateway 是 Harness 的 REST 面客户端：与生产 NewGatewayHandler 同清单同
+// 错误出口（原 rest_errors_test.go 局部 helper restGateway 升级为 Harness
+// 方法后的承接形态，Post/Del 消费形态逐字段保留）。
+type Gateway struct {
+	handler http.Handler
+	token   string
+}
+
+// REST 铸 REST 面客户端（events/exec 源 nil 的冒烟形态；logger 钉
+// Discard——断言不掺日志噪音）。每次调用新铸：UploadStore 等 Services
+// 覆写须先行、再调本方法。装配失败是夹具编程错误，直接 panic（方法面
+// 无 t 可 Fatalf）。
+func (h *Harness) REST() *Gateway {
+	handler, err := assembly.NewGatewayHandler(slog.New(slog.DiscardHandler), h.Conn, nil, nil, assembly.NewBrowseGate(h.Services))
+	if err != nil {
+		panic("apitest: gateway handler: " + err.Error())
+	}
+	return &Gateway{handler: handler, token: h.Token}
+}
+
+// ServeHTTP 直驱底层 handler（非默认形态请求——裸 401 腿、tar
+// Content-Type 上传等完全控制形态经此走；凭证不自动附）。
+func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	g.handler.ServeHTTP(w, r)
+}
+
+// Post 发 JSON POST（Bearer 恒附；body 非空时带 application/json 头）。
+func (g *Gateway) Post(path, body string) *httptest.ResponseRecorder {
+	return g.do(http.MethodPost, path, body)
+}
+
+// Del 发 DELETE（Bearer 恒附）。
+func (g *Gateway) Del(path string) *httptest.ResponseRecorder {
+	return g.do(http.MethodDelete, path, "")
+}
+
+// Get 发 GET（Bearer 恒附；query 并入 path）。
+func (g *Gateway) Get(path string) *httptest.ResponseRecorder {
+	return g.do(http.MethodGet, path, "")
+}
+
+// do 是 Post/Del/Get 的公共执行核（restGateway 原 do 逐行保留：
+// context.Background + body 条件带 Content-Type + Bearer 头）。
+func (g *Gateway) do(method, path, body string) *httptest.ResponseRecorder {
+	var reader io.Reader
+	if body != "" {
+		reader = strings.NewReader(body)
+	}
+	req := httptest.NewRequestWithContext(context.Background(), method, path, reader)
+	if body != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	req.Header.Set("Authorization", "Bearer "+g.token)
+	rec := httptest.NewRecorder()
+	g.handler.ServeHTTP(rec, req)
+	return rec
 }
 
 // FakeRuntime 是假 Runtime 底座（Ensure 记录、观测事件由测试注入）。

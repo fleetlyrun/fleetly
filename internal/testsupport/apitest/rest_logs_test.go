@@ -9,7 +9,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -18,12 +17,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
-	"github.com/fleetlyrun/fleetly/internal/assembly"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/apperrstatus"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
-	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 	"google.golang.org/grpc/status"
 )
 
@@ -41,27 +37,15 @@ type logFrame struct {
 
 func TestRESTGatewayServesLogsAsNDJSONFrames(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
-	project, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "shop"})
-	require.NoError(t, err)
-	apps := structurev1.NewAppsServiceClient(h.Conn)
-	app, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: project.Project.Id, Name: "web"})
-	require.NoError(t, err)
-
-	handler, err := assembly.NewGatewayHandler(slog.New(slog.DiscardHandler), h.Conn, nil, nil, assembly.NewBrowseGate(h.Services))
-	require.NoError(t, err)
+	rest := h.REST()
+	app := h.CreateApp(t, h.CreateProject(t, "shop").GetId(), "web").GetId()
 
 	// 未带凭证：401（Bearer 面照常拦截流式注解面）。
 	bare := httptest.NewRecorder()
-	handler.ServeHTTP(bare, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/v1/logs?app_id="+app.App.Id, nil))
+	rest.ServeHTTP(bare, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/v1/logs?app_id="+app, nil))
 	assert.Equal(t, http.StatusUnauthorized, bare.Code)
 
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/v1/logs?app_id="+app.App.Id+"&tail_lines=100", nil)
-	req.Header.Set("Authorization", "Bearer "+h.Token)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
+	rec := rest.Get("/v1/logs?app_id=" + app + "&tail_lines=100")
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 
 	// FakeRuntime 固定两帧（frame-1/frame-2）——逐行解帧钉 NDJSON 契约。
@@ -89,18 +73,12 @@ func TestRESTGatewayServesLogsAsNDJSONFrames(t *testing.T) {
 // 双径的分界。
 func TestRESTLogSearchDisabledFace(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
-	project, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "log-off"})
-	require.NoError(t, err)
-	apps := structurev1.NewAppsServiceClient(h.Conn)
-	app, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: project.Project.Id, Name: "web"})
-	require.NoError(t, err)
+	ctx := h.Ctx()
+	app := h.CreateApp(t, h.CreateProject(t, "log-off").GetId(), "web").GetId()
 
 	// gRPC 面：Unavailable + 信封 E_LOG_STORE_UNAVAILABLE + 配置级 message。
 	stream, serr := telemetryv1.NewLogsServiceClient(h.Conn).StreamLogs(ctx,
-		&telemetryv1.StreamLogsRequest{AppId: app.App.Id, Text: "boom"})
+		&telemetryv1.StreamLogsRequest{AppId: app, Text: "boom"})
 	require.NoError(t, serr, "stream header opens; failure surfaces on Recv")
 	_, serr = stream.Recv()
 	require.Error(t, serr)
@@ -115,19 +93,13 @@ func TestRESTLogSearchDisabledFace(t *testing.T) {
 
 	// 实时径不受停用影响：无 text 过滤照常出 FakeRuntime 固定两帧。
 	live, lerr := telemetryv1.NewLogsServiceClient(h.Conn).StreamLogs(ctx,
-		&telemetryv1.StreamLogsRequest{AppId: app.App.Id})
+		&telemetryv1.StreamLogsRequest{AppId: app})
 	require.NoError(t, lerr)
 	_, lerr = live.Recv()
 	require.NoError(t, lerr, "the live path must not depend on the managed log store")
 
 	// REST 面：503 + 同信封（errcodeToHTTP 显式映射）。
-	handler, herr := assembly.NewGatewayHandler(nil, h.Conn, nil, nil, assembly.NewBrowseGate(h.Services))
-	require.NoError(t, herr)
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet,
-		"/v1/logs?app_id="+app.App.Id+"&text=boom", nil)
-	req.Header.Set("Authorization", "Bearer "+h.Token)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
+	rec := h.REST().Get("/v1/logs?app_id=" + app + "&text=boom")
 	require.Equal(t, http.StatusServiceUnavailable, rec.Code, rec.Body.String())
 	assert.Contains(t, rec.Body.String(), `"code":"E_LOG_STORE_UNAVAILABLE"`)
 }
@@ -138,17 +110,8 @@ func TestRESTLogSearchDisabledFace(t *testing.T) {
 // （诚实空，非错误）。
 func TestRESTGatewayServesLogsMultiProcess(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
-	project, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "shop"})
-	require.NoError(t, err)
-	apps := structurev1.NewAppsServiceClient(h.Conn)
-	app, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: project.Project.Id, Name: "web"})
-	require.NoError(t, err)
-
-	handler, err := assembly.NewGatewayHandler(slog.New(slog.DiscardHandler), h.Conn, nil, nil, assembly.NewBrowseGate(h.Services))
-	require.NoError(t, err)
+	rest := h.REST()
+	app := h.CreateApp(t, h.CreateProject(t, "shop").GetId(), "web").GetId()
 
 	cases := []struct {
 		name   string
@@ -161,10 +124,7 @@ func TestRESTGatewayServesLogsMultiProcess(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/v1/logs?app_id="+app.App.Id+"&"+tc.query, nil)
-			req.Header.Set("Authorization", "Bearer "+h.Token)
-			rec := httptest.NewRecorder()
-			handler.ServeHTTP(rec, req)
+			rec := rest.Get("/v1/logs?app_id=" + app + "&" + tc.query)
 			require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 			body := strings.TrimSpace(rec.Body.String())
 			if tc.frames == 0 {

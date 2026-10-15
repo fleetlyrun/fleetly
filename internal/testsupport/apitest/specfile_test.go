@@ -1,7 +1,6 @@
 package apitest_test
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -9,10 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
-	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
-	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 // TestDeploySpecFileFullChain（F3.5 第四源）：裸 AppSpec 全字段 intake——
@@ -22,15 +19,10 @@ import (
 // engine.SubmitSpec）。
 func TestDeploySpecFileFullChain(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
-	apps := structurev1.NewAppsServiceClient(h.Conn)
+	ctx := h.Ctx()
 	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
 
-	proj, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "spec-file"})
-	require.NoError(t, err)
-	app, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: proj.GetProject().GetId(), Name: "fullspec"})
-	require.NoError(t, err)
+	app := h.CreateApp(t, h.CreateProject(t, "spec-file").GetId(), "fullspec")
 
 	// 文件内 app ref 故意错写（覆写语义的断言面）；schema_version 缺席。
 	body := `{
@@ -49,7 +41,7 @@ func TestDeploySpecFileFullChain(t *testing.T) {
 		]
 	}`
 	dep, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{
-		AppId: app.GetApp().GetId(), SpecFile: body,
+		AppId: app.GetId(), SpecFile: body,
 	})
 	require.NoError(t, err)
 
@@ -58,7 +50,7 @@ func TestDeploySpecFileFullChain(t *testing.T) {
 	}, 2e9, 1e7)
 	calls := h.Runtime.Calls()
 	// AppRef 覆写：期望集落在目标 App 的 ns（而非文件内声明的假 id）。
-	assert.Equal(t, app.GetApp().GetId(), calls[0].NS.App)
+	assert.Equal(t, app.GetId(), calls[0].NS.App)
 	web := calls[0].Spec["web"]
 	require.Len(t, web.Ports, 1)
 	assert.Equal(t, int32(8080), web.Ports[0].Port)
@@ -71,8 +63,8 @@ func TestDeploySpecFileFullChain(t *testing.T) {
 	// schema_version 缺省当前版（冻结体经 Revision 复用链不回读——以部署
 	// 受理成功 + 期望集形态为断言面）。
 
-	h.Runtime.ReportRunning(app.GetApp().GetId()+"-web", capability.Generation(dep.GetDeployment().GetGeneration()))
-	h.Runtime.ReportRunning(app.GetApp().GetId()+"-worker", capability.Generation(dep.GetDeployment().GetGeneration()))
+	h.Runtime.ReportRunning(app.GetId()+"-web", capability.Generation(dep.GetDeployment().GetGeneration()))
+	h.Runtime.ReportRunning(app.GetId()+"-worker", capability.Generation(dep.GetDeployment().GetGeneration()))
 	require.Eventually(t, func() bool {
 		got, err := deployments.GetDeployment(ctx, &deliveryv1.GetDeploymentRequest{Id: dep.GetDeployment().GetId()})
 		return err == nil && got.GetDeployment().GetState() == "observing"
@@ -88,16 +80,10 @@ func TestDeploySpecFileFullChain(t *testing.T) {
 // 跳代拒、缺源拒、四源互斥、单进程旗标互斥。
 func TestDeploySpecFileValidation(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
-	apps := structurev1.NewAppsServiceClient(h.Conn)
+	ctx := h.Ctx()
 	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
 
-	proj, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "spec-file-val"})
-	require.NoError(t, err)
-	app, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: proj.GetProject().GetId(), Name: "web"})
-	require.NoError(t, err)
-	appID := app.GetApp().GetId()
+	appID := h.CreateApp(t, h.CreateProject(t, "spec-file-val").GetId(), "web").GetId()
 
 	cases := []struct {
 		name string
@@ -153,18 +139,13 @@ func TestDeploySpecFileValidation(t *testing.T) {
 // 这是删除后该键的替代守卫（原 ValidateJob legacy 拒收分支同步退役）。
 func TestDeploySpecFileRetiredConfigRefsKey(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
-	apps := structurev1.NewAppsServiceClient(h.Conn)
+	ctx := h.Ctx()
 	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
 
-	proj, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "spec-file-legacy"})
-	require.NoError(t, err)
-	app, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: proj.GetProject().GetId(), Name: "web"})
-	require.NoError(t, err)
+	app := h.CreateApp(t, h.CreateProject(t, "spec-file-legacy").GetId(), "web")
 
-	_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{
-		AppId: app.GetApp().GetId(),
+	_, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{
+		AppId: app.GetId(),
 		SpecFile: `{"source":{"image":{"ref":"nginx:1.27"}},` +
 			`"processes":[{"name":"web","image":"nginx:1.27","config_refs":["app.conf"]}]}`,
 	})
@@ -180,25 +161,20 @@ func TestDeploySpecFileRetiredConfigRefsKey(t *testing.T) {
 // 声明 Build/from_build 的首个 intake 通道）。
 func TestDeploySpecFileUploadSource(t *testing.T) {
 	h := apitest.NewManual(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
-	apps := structurev1.NewAppsServiceClient(h.Conn)
+	ctx := h.Ctx()
 	builds := deliveryv1.NewBuildsServiceClient(h.Conn)
 	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
 
-	projA, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "sf-upload-a"})
-	require.NoError(t, err)
-	projB, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "sf-upload-b"})
-	require.NoError(t, err)
-	appB, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: projB.GetProject().GetId(), Name: "web"})
-	require.NoError(t, err)
+	projA := h.CreateProject(t, "sf-upload-a")
+	projB := h.CreateProject(t, "sf-upload-b")
+	appB := h.CreateApp(t, projB.GetId(), "web")
 
-	up, err := uploadTar(ctx, builds, projA.GetProject().GetId(), buildFixtureTar(), 8)
+	up, err := uploadTar(ctx, builds, projA.GetId(), buildFixtureTar(), 8)
 	require.NoError(t, err)
 
 	// 跨项目引用（文件内声明）拒绝。
 	_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{
-		AppId: appB.GetApp().GetId(),
+		AppId: appB.GetId(),
 		SpecFile: `{"source":{"upload":{"id":"` + up.GetId() + `"}},"build":{"builder":"dockerfile","dockerfile":"Dockerfile"},` +
 			`"processes":[{"name":"web","from_build":"web"}]}`,
 	})
@@ -206,10 +182,9 @@ func TestDeploySpecFileUploadSource(t *testing.T) {
 	assert.Contains(t, err.Error(), "belongs to project")
 
 	// 同项目引用：app 建在 A 项目，全链到 succeeded（FakeBuilder 构建链）。
-	appA, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: projA.GetProject().GetId(), Name: "builder"})
-	require.NoError(t, err)
+	appA := h.CreateApp(t, projA.GetId(), "builder")
 	dep, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{
-		AppId: appA.GetApp().GetId(),
+		AppId: appA.GetId(),
 		SpecFile: `{"source":{"upload":{"id":"` + up.GetId() + `"}},"build":{"builder":"dockerfile","dockerfile":"Dockerfile"},` +
 			`"processes":[{"name":"web","from_build":"web"}]}`,
 	})
@@ -218,7 +193,7 @@ func TestDeploySpecFileUploadSource(t *testing.T) {
 	succeeded := false
 	for i := 0; i < 30 && !succeeded; i++ {
 		h.Drive(ctx)
-		h.Runtime.ReportRunning(appA.GetApp().GetId()+"-web", 1)
+		h.Runtime.ReportRunning(appA.GetId()+"-web", 1)
 		h.Clock.Advance(120 * time.Second)
 		h.Drive(ctx)
 		got, gerr := deployments.GetDeployment(ctx, &deliveryv1.GetDeploymentRequest{Id: dep.GetDeployment().GetId()})

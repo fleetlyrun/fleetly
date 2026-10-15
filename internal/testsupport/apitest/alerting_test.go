@@ -7,7 +7,6 @@ package apitest_test
 import (
 	"context"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -15,9 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/status"
 
-	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
-	"github.com/fleetlyrun/fleetly/internal/assembly"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/apperrstatus"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
@@ -131,12 +128,7 @@ func TestMetricsQueryDisabledFace(t *testing.T) {
 
 	// REST 面：503 + 同信封（errcodeToHTTP 显式映射；与 registry 503 同款
 	// 断言形态——语义真源在错误码，不在传输层机械映射）。
-	handler, err := assembly.NewGatewayHandler(nil, h.Conn, nil, nil, assembly.NewBrowseGate(h.Services))
-	require.NoError(t, err)
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/v1/metrics?query=up", nil)
-	req.Header.Set("Authorization", "Bearer "+h.Token)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
+	rec := h.REST().Get("/v1/metrics?query=up")
 	require.Equal(t, http.StatusServiceUnavailable, rec.Code, rec.Body.String())
 	assert.Contains(t, rec.Body.String(), `"code":"E_METRICS_STORE_UNAVAILABLE"`)
 }
@@ -188,25 +180,11 @@ func alertingClient(t *testing.T, h *apitest.Harness) (*fleetly.Client, context.
 		t.Fatalf("dial: %v", err)
 	}
 	t.Cleanup(func() { _ = c.Close() })
-	return c, fleetly.WithToken(context.Background(), h.Token)
+	return c, h.Ctx()
 }
 
-// alertingSeedApp 播 project/app 夹具行，返回 appID。
+// alertingSeedApp 播 project/app 夹具行，返回 appID（builder 三件收口）。
 func alertingSeedApp(t *testing.T, h *apitest.Harness) string {
 	t.Helper()
-	c, err := fleetly.Dial("passthrough:///bufnet", h.DialOpts()...)
-	if err != nil {
-		t.Fatalf("dial: %v", err)
-	}
-	t.Cleanup(func() { _ = c.Close() })
-	ctx := fleetly.WithToken(context.Background(), h.Token)
-	proj, err := c.Projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "alerting"})
-	if err != nil {
-		t.Fatalf("seed project: %v", err)
-	}
-	app, err := c.Apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: proj.GetProject().GetId(), Name: "web"})
-	if err != nil {
-		t.Fatalf("seed app: %v", err)
-	}
-	return app.GetApp().GetId()
+	return h.CreateApp(t, h.CreateProject(t, "alerting").GetId(), "web").GetId()
 }

@@ -8,7 +8,6 @@ package apitest_test
 // 对齐测试）；gRPC 面同步断言 InvalidArgument + 信封 detail 可还原。
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"testing"
@@ -22,7 +21,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/errcode"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/apperrstatus"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
-	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 // dnsLabelMessage 是 string.dns_label 规则的注册文案（与 structure.proto
@@ -54,12 +52,12 @@ func requireEnvelope(t *testing.T, body string, message string) {
 // detail 还原，message 逐字节一致）。
 func TestRESTCreateProjectValidationReturns400(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	post, _ := restGateway(t, h)
+	ctx := h.Ctx()
+	rest := h.REST()
 	projects := structurev1.NewProjectsServiceClient(h.Conn)
 
 	// 空名（显式 ""）：required 规则拒绝，REST 400 + 信封原文。
-	rec := post("/v1/projects", `{"name":""}`)
+	rec := rest.Post("/v1/projects", `{"name":""}`)
 	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
 	assert.Contains(t, rec.Body.String(), `"code":"E_INVALID_ARGUMENT"`)
 	requireEnvelope(t, rec.Body.String(), "name: must not be empty")
@@ -74,7 +72,7 @@ func TestRESTCreateProjectValidationReturns400(t *testing.T) {
 	assert.Equal(t, "name: must not be empty", e.Message())
 
 	// 坏形态：shape（dns label）规则拒绝，文案逐字节。
-	rec = post("/v1/projects", `{"name":"Bad_Name"}`)
+	rec = rest.Post("/v1/projects", `{"name":"Bad_Name"}`)
 	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
 	requireEnvelope(t, rec.Body.String(), dnsLabelMessage)
 	assert.NotEmpty(t, rec.Header().Get(apperrstatus.ErrorIDHeader))
