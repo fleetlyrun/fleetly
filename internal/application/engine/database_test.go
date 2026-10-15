@@ -26,7 +26,7 @@ import (
 	networkrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
 	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
 	secretrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/secret"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statertest"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
 
 const (
@@ -37,7 +37,7 @@ const (
 // newDatabaseFixture 组装单库收敛夹具：项目/网络/凭证 Secret/数据库行。
 func newDatabaseFixture(t *testing.T, engine, connectURL string) (*Engine, *fakeRuntime, *database.Database) {
 	t.Helper()
-	db, clock := statertest.New(t)
+	db, clock := statetest.New(t)
 	rt := newFakeRuntime()
 	cipher, err := keyring.LoadCipher(t.TempDir())
 	require.NoError(t, err)

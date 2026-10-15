@@ -21,7 +21,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
 	networkrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
 	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statertest"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 	taskrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/task"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/testruntime"
 )
@@ -61,7 +61,7 @@ func ensureCountOf(t *testing.T, rt *fakeRuntime, appID string) int {
 // 归属裁决的域轴面：受管域载体（在册 Managed Provider 命名空间）与
 // Task 轴载体（driving 行）通过；App 轴失锚（行不存在）拒绝并列出。
 func TestRebuildNetworkAttributionAxes(t *testing.T) {
-	db, clock := statertest.New(t)
+	db, clock := statetest.New(t)
 	rt := newFakeRuntime()
 	// 受管 reconciler 在册（fakeRegistry 的命名空间 = fleetly/system）。
 	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Registry: newFakeRegistry(), Logger: discardLogger()}, Options{})
@@ -294,7 +294,7 @@ func TestRebuildNetworkSerializesWithDatabaseTeardown(t *testing.T) {
 // 周期 ensure 重放面，不回滚会把服务留在网外直到下次部署；AttachNetwork
 // 幂等使回滚对已挂回载体安全。
 func TestRebuildNetworkRollbackReattachesDetachedCarriers(t *testing.T) {
-	db, clock := statertest.New(t)
+	db, clock := statetest.New(t)
 	rt := newFakeRuntime()
 	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Registry: newFakeRegistry(), Logger: discardLogger()}, Options{})
 	t.Cleanup(func() { _ = e.Stop(context.Background()) })

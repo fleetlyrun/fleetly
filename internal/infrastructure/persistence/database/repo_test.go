@@ -9,12 +9,12 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statertest"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
 
 func fixture(t *testing.T) (database.Repo, state.Runner) {
 	t.Helper()
-	db, _ := statertest.New(t)
+	db, _ := statetest.New(t)
 	return New(db.Clock()), db.Runner()
 }
 

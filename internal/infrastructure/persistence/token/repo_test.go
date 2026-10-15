@@ -21,13 +21,13 @@ import (
 	invitationrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/invitation"
 	membershiprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/membership"
 	rolerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/role"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statertest"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 	teamrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/team"
 	userrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/user"
 )
 
 func TestTokenRoundTrip(t *testing.T) {
-	db, clock := statertest.New(t)
+	db, clock := statetest.New(t)
 	ctx := context.Background()
 	repos := newRepos(clock)
 
@@ -98,7 +98,7 @@ func TestTokenRoundTrip(t *testing.T) {
 }
 
 func TestIdentityFlow(t *testing.T) {
-	db, clock := statertest.New(t)
+	db, clock := statetest.New(t)
 	ctx := context.Background()
 	repos := newRepos(clock)
 

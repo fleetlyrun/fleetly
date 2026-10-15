@@ -29,7 +29,7 @@ import (
 	routerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/route"
 	runrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/run"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/schedule"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statertest"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 	taskrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/task"
 	volumerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/volume"
 	"github.com/stretchr/testify/assert"
@@ -63,7 +63,7 @@ func newAnchor(clock state.Clock) *anchor.Anchor {
 }
 
 func TestAnchorTeamOfChains(t *testing.T) {
-	db, clock := statertest.New(t)
+	db, clock := statetest.New(t)
 	a := newAnchor(clock)
 	ctx := context.Background()
 	run := db.Runner()
@@ -105,7 +105,7 @@ func TestAnchorTeamOfChains(t *testing.T) {
 }
 
 func TestAnchorNotFoundCarriesLegResource(t *testing.T) {
-	db, clock := statertest.New(t)
+	db, clock := statetest.New(t)
 	a := newAnchor(clock)
 	ctx := context.Background()
 	run := db.Runner()
@@ -136,7 +136,7 @@ func TestAnchorNotFoundCarriesLegResource(t *testing.T) {
 }
 
 func TestAnchorAppTombstoneTiers(t *testing.T) {
-	db, clock := statertest.New(t)
+	db, clock := statetest.New(t)
 	a := newAnchor(clock)
 	ctx := context.Background()
 	run := db.Runner()

@@ -115,7 +115,7 @@ P4-3 "未配置"族码律收尾 + G17 守卫 — [x]（2026-10-16 ff8537b：注�
 P4-4 SDK FromError + apitest builder 三件 — [x]（2026-10-16 4e273c9：sdk/go FromError 信封投影（公开 module 零 internal 依赖，wire 自足，未注册码原样投影=与 apperrstatus 唯一差异注记在案）+ sdk module 首个测试文件；apitest builder 三件（Ctx/CreateProject·CreateApp/REST Gateway——失考归纳提案，普查实数 60 文件/135 ctx 样板/132 CreateProject/74 CreateApp）exemplar 六文件迁移，约 54 文件全量迁移另批）
 
 ## P5 statekit + 测试长跑（增量）
-P5-0 夹具去重：internal/state/statertest 与 statetest 一字母双包合并（审查中新发现，10-12 事故复制）
+P5-0 夹具去重：internal/state/statertest 与 statetest 一字母双包合并（审查中新发现，10-12 事故复制）— [x]（2026-10-16 落地：statetest 为原生包（d33a2f8），statertest 系 10-01 37b280f「fix build」事故复制（grpc_test.go 拼错包名后以补包代替修 import，F1.1 条目在案）；合并方向保留 statetest（原包+39 消费面+httptest 命名法），退役 statertest（22 消费文件 52 处限定引用机械改写），全仓 .go 面零残留）
 P5-1 statekit 共享件（TransitWhere/ClampLimit/Placeholders/软删幂等/冲突归一）+ G7/G8 — [ ]
 P5-2 升级前进测试（旧 schema 快照→Up）+ 换装 hermetic 测试 — [ ]
 P5-3 G19（state 聚合带测试，volume/run/user/audit 先补）+ G20（e2e↔CI 对账 + coverageguard 补 k3s）— [ ]

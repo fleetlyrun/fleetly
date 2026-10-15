@@ -13,11 +13,11 @@ import (
 	auditrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/audit"
 	noderepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/node"
 	outboxrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/outbox"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statertest"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
 
 func TestOutboxMonotonicSeq(t *testing.T) {
-	db, clock := statertest.New(t)
+	db, clock := statetest.New(t)
 	ctx := context.Background()
 	events := outboxrepo.New(clock)
 
@@ -74,7 +74,7 @@ func TestOutboxMonotonicSeq(t *testing.T) {
 }
 
 func TestAuditAppendList(t *testing.T) {
-	db, clock := statertest.New(t)
+	db, clock := statetest.New(t)
 	ctx := context.Background()
 	audits := auditrepo.New(clock)
 
@@ -91,7 +91,7 @@ func TestAuditAppendList(t *testing.T) {
 }
 
 func TestNodeObservationCache(t *testing.T) {
-	db, clock := statertest.New(t)
+	db, clock := statetest.New(t)
 	ctx := context.Background()
 	nodes := noderepo.New(clock)
 

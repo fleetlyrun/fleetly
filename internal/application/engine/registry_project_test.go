@@ -17,7 +17,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
 	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statertest"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
 
 // projectFakeRegistry 在 fakeRegistry 上加 per-Project 双子面（记录喂入集，
@@ -61,7 +61,7 @@ func newProjectFakeRegistry() *projectFakeRegistry {
 // 面在场：managed host 的拉取凭证按 Project 分发（用户名 = projectID），
 // 平台凭证不再是 workload 拉取面。
 func TestManagedHostCredentialPerProject(t *testing.T) {
-	db, clock := statertest.New(t)
+	db, clock := statetest.New(t)
 	reg := newProjectFakeRegistry()
 	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: newFakeRuntime(), Registry: reg, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
@@ -122,7 +122,7 @@ func TestProjectPushCredRidesBuildInput(t *testing.T) {
 // 集不变签名短路（不重复 Ensure）；Project 创建即一次受管滚动（材料变更
 // → 新 Ensure）。
 func TestReconcileManagedFeedsActiveProjects(t *testing.T) {
-	db, clock := statertest.New(t)
+	db, clock := statetest.New(t)
 	rt := newFakeRuntime()
 	reg := newProjectFakeRegistry()
 	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Proxy: &fakeProxy{}, Registry: reg, Logger: discardLogger()}, Options{})
@@ -161,7 +161,7 @@ func TestReconcileManagedFeedsActiveProjects(t *testing.T) {
 
 // 集序契约（activeProjectIDs）：多 Project 排序稳定（材料字节稳定的输入面）。
 func TestActiveProjectIDsSorted(t *testing.T) {
-	db, clock := statertest.New(t)
+	db, clock := statetest.New(t)
 	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: newFakeRuntime(), Registry: newFakeRegistry(), Logger: discardLogger()}, Options{})
 	ctx := context.Background()
 	for _, id := range []string{tProjectID2, "01JD0PROJ00000000000000003", tProjectID} {

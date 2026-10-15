@@ -36,7 +36,7 @@ import (
 	outboxrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/outbox"
 	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
 	secretrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/secret"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statertest"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
 
 // fakeObjectStore 是 ObjectStore 端口的内存假面（Put 流式铸 sha256——
@@ -161,9 +161,9 @@ type runtimeWithUtility struct {
 
 // newBackupFixture 组装备份环夹具：内存 ObjectStore 假面 + 假 Utility +
 // 单库（running、interval 3600s 起步）。
-func newBackupFixture(t *testing.T, engineName, connectURL string) (*Engine, *fakeRuntime, *fakeUtility, *fakeObjectStore, *statertest.FakeClock) {
+func newBackupFixture(t *testing.T, engineName, connectURL string) (*Engine, *fakeRuntime, *fakeUtility, *fakeObjectStore, *statetest.FakeClock) {
 	t.Helper()
-	db, clock := statertest.New(t)
+	db, clock := statetest.New(t)
 	rt := newFakeRuntime()
 	ut := &fakeUtility{stdout: []byte("BACKUP-BYTES-0123456789")}
 	store := newFakeObjectStore()
@@ -448,7 +448,7 @@ func TestBackupSweepInterrupted(t *testing.T) {
 
 // 对象键形态：无冒号紧凑 UTC（Windows 控制面纪律）+ 段序。
 func TestBackupKeyMint(t *testing.T) {
-	key := backup.KeyMint("01JPROJ", "01JDB", "01JBKP", statertest.MustParse("2026-10-04T12:34:56Z"))
+	key := backup.KeyMint("01JPROJ", "01JDB", "01JBKP", statetest.MustParse("2026-10-04T12:34:56Z"))
 	assert.Equal(t, "backups/01JPROJ/01JDB/20261004T123456Z-01JBKP", key)
 	assert.NotContains(t, key, ":", "key must stay colon-free for windows control planes")
 }

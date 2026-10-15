@@ -17,12 +17,12 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/sharedvariable"
 	appvariablerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/appvariable"
 	sharedvariablerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/sharedvariable"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statertest"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
 
 func testVarServices(t *testing.T) *Services {
 	t.Helper()
-	db, _ := statertest.New(t)
+	db, _ := statetest.New(t)
 	return &Services{
 		DB:              db,
 		SharedVariables: sharedvariablerepo.New(db.Clock()),

@@ -9,11 +9,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statertest"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
 
 func TestEventTicketSingleUse(t *testing.T) {
-	db, _ := statertest.New(t)
+	db, _ := statetest.New(t)
 	store := newEventTicketStore(db.Clock())
 
 	ticket, ttl, err := store.issue(ticketPurposeEvents, "")
@@ -28,8 +28,8 @@ func TestEventTicketSingleUse(t *testing.T) {
 }
 
 func TestEventTicketExpiry(t *testing.T) {
-	db, _ := statertest.New(t)
-	clock := db.Clock().(*statertest.FakeClock)
+	db, _ := statetest.New(t)
+	clock := db.Clock().(*statetest.FakeClock)
 	store := newEventTicketStore(db.Clock())
 
 	ticket, _, err := store.issue(ticketPurposeEvents, "")

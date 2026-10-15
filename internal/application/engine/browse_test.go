@@ -25,7 +25,7 @@ import (
 	networkrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
 	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
 	secretrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/secret"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statertest"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
 
 const tBrowseSessionID = "01JDBRWSE000000000000000"
@@ -33,9 +33,9 @@ const tBrowseSessionID = "01JDBRWSE000000000000000"
 // newBrowseFixture 组装 browse 收敛夹具：项目/网络/凭证 Secret +
 // browse 台账行（database 行本体不必须——库名经 databaseNameOf 点查，
 // 缺行时名字空但渲染走 Secret URL 的 host——方言断言面足够）。
-func newBrowseFixture(t *testing.T, engineName, connectURL string, readOnly bool) (*Engine, *fakeRuntime, *browse.Session, *statertest.FakeClock) {
+func newBrowseFixture(t *testing.T, engineName, connectURL string, readOnly bool) (*Engine, *fakeRuntime, *browse.Session, *statetest.FakeClock) {
 	t.Helper()
-	db, clock := statertest.New(t)
+	db, clock := statetest.New(t)
 	rt := newFakeRuntime()
 	cipher, err := keyring.LoadCipher(t.TempDir())
 	require.NoError(t, err)

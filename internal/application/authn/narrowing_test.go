@@ -27,7 +27,7 @@ import (
 	auditrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/audit"
 	membershiprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/membership"
 	rolerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/role"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statertest"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 	teamrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/team"
 	tokenrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/token"
 	userrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/user"
@@ -40,7 +40,7 @@ func quietLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard
 // (creatorRole) + user + membership + 有属主 Token；返回明文凭证。
 func seedNarrowingWorld(t *testing.T, tokScopes, creatorScopes []string) (string, *Authenticator) {
 	t.Helper()
-	db, _ := statertest.New(t)
+	db, _ := statetest.New(t)
 	a := NewAuthenticator(db, testAuthnRepos(db.Clock()), nil, testVocab, quietLogger())
 	ctx := context.Background()
 	run := db.Runner()
@@ -155,7 +155,7 @@ func TestNarrowingCreatorDeletedIsTerminal(t *testing.T) {
 
 func TestNarrowingUserlessTokenStaysDeclared(t *testing.T) {
 	// 无属主 Token（bootstrap/Agent/CI 形态）不参与收窄——声明即有效。
-	db, _ := statertest.New(t)
+	db, _ := statetest.New(t)
 	a := NewAuthenticator(db, testAuthnRepos(db.Clock()), nil, testVocab, quietLogger())
 	ctx := context.Background()
 	run := db.Runner()

@@ -17,14 +17,14 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statertest"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
 
 func TestManagedVolumeWorkloadPinnedToControlPlane(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("volume-bearing workload pins the manager, volumeless stays free", func(t *testing.T) {
-		db, _ := statertest.New(t)
+		db, _ := statetest.New(t)
 		rt := newFakeRuntime()
 		proxy := &fakeProxy{ws: []capability.Workload{
 			{ID: "fleetly-vol", Process: "vol", Image: "fake/vol:1", Replicas: 1,
@@ -42,7 +42,7 @@ func TestManagedVolumeWorkloadPinnedToControlPlane(t *testing.T) {
 	})
 
 	t.Run("unresolvable control-plane anchor skips the whole pass", func(t *testing.T) {
-		db, _ := statertest.New(t)
+		db, _ := statetest.New(t)
 		rt := newFakeRuntime()
 		rt.clusterOverride = true // 可编程视图（空 = 无可用 manager）
 		proxy := &fakeProxy{ws: []capability.Workload{

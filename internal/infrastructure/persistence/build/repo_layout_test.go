@@ -9,13 +9,13 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	buildrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/build"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statertest"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
 
 // repo 列往返（ADR-0036 N2 兑现节 2）：创建定型、读回原样；StampRepo 幂等
 // 一次性（空值补章、已章行不受扰——前纲切换的存量在途行兼容面）。
 func TestBuildRepoColumnRoundTrip(t *testing.T) {
-	db, clock := statertest.New(t)
+	db, clock := statetest.New(t)
 	ctx := context.Background()
 	builds := buildrepo.New(clock)
 

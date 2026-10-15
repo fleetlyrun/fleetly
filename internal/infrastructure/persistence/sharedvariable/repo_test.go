@@ -13,7 +13,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/sharedvariable"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 	sharedvariablerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/sharedvariable"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statertest"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
 
 func newVar(id, projectID, name, value string) *sharedvariable.SharedVariable {
@@ -27,7 +27,7 @@ const (
 
 // upsert 语义（secrets 同款）：同名覆盖值、tombstone 行复活、时间戳推进。
 func TestSharedVariableUpsertLifecycle(t *testing.T) {
-	db, clock := statertest.New(t)
+	db, clock := statetest.New(t)
 	ctx := context.Background()
 	vars := sharedvariablerepo.New(clock)
 
@@ -63,7 +63,7 @@ func TestSharedVariableUpsertLifecycle(t *testing.T) {
 // ADR-0026 List 分页：name 字典序升序、after_name 游标、limit 钳制；项目
 // 隔离（异项目行不可见）。
 func TestSharedVariableListPage(t *testing.T) {
-	db, clock := statertest.New(t)
+	db, clock := statetest.New(t)
 	ctx := context.Background()
 	vars := sharedvariablerepo.New(clock)
 
@@ -121,7 +121,7 @@ func (g *insertGateRunner) ExecContext(ctx context.Context, q string, args ...an
 // 读面不可见），B 停在 INSERT 前等待——A 提交后放行，B 必然撞索引。
 func TestSharedVariableUpsertConcurrentSameNameConflict(t *testing.T) {
 	ctx := context.Background()
-	clock := statertest.NewFakeClock()
+	clock := statetest.NewFakeClock()
 	path := filepath.Join(t.TempDir(), "fleetly.db")
 	dbA, err := persistence.Open(ctx, path, clock)
 	require.NoError(t, err)

@@ -11,7 +11,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/sourceupload"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	sourcerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/sourceupload"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statertest"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
 
 func newUpload(id, projectID, digest string, size int64) *sourceupload.Upload {
@@ -19,7 +19,7 @@ func newUpload(id, projectID, digest string, size int64) *sourceupload.Upload {
 }
 
 func TestUploadLifecycle(t *testing.T) {
-	db, clock := statertest.New(t)
+	db, clock := statetest.New(t)
 	ctx := context.Background()
 	repo := sourcerepo.New(clock)
 
@@ -65,7 +65,7 @@ func TestUploadLifecycle(t *testing.T) {
 }
 
 func TestSweepUnreferenced(t *testing.T) {
-	db, clock := statertest.New(t)
+	db, clock := statetest.New(t)
 	ctx := context.Background()
 	repo := sourcerepo.New(clock)
 

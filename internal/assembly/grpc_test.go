@@ -32,7 +32,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	freezerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/freeze"
 	idemrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/idempotency"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statertest"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/apperrstatus"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/fleetlygrpc"
 )
@@ -57,7 +57,7 @@ func TestUnaryTimeoutInterceptorCancelsHandler(t *testing.T) {
 // 量级对齐 grpcUnaryTimeout（assembly 服务器与 apitest 夹具共用本构造，
 // 链尾挂载对两面同时生效）。
 func TestNewInterceptorsBoundsUnaryHandler(t *testing.T) {
-	db, _ := statertest.New(t)
+	db, _ := statetest.New(t)
 	policySet, err := NewPolicySet()
 	require.NoError(t, err)
 	unary, stream, err := NewInterceptors(slog.New(slog.DiscardHandler), policySet,
@@ -89,7 +89,7 @@ func TestNewInterceptorsBoundsUnaryHandler(t *testing.T) {
 // 服务端日志（error_id 关联）；非 E_INTERNAL 原样放行（三面行为回归在
 // apitest，本用例钉链形与单点日志）。
 func TestNewInterceptorsSanitizeAtChainHead(t *testing.T) {
-	db, _ := statertest.New(t)
+	db, _ := statetest.New(t)
 	policySet, err := NewPolicySet()
 	require.NoError(t, err)
 	var logBuf lockedBuffer

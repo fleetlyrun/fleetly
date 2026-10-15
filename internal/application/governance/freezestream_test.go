@@ -19,7 +19,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
 	freezerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/freeze"
 	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statertest"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
 
 // fakeRecvStream 是最小 ServerStream 假底座（帧队列，尽则 io.EOF）。
@@ -68,7 +68,7 @@ func callStream(t *testing.T, g *FreezeGuard, method string, frames ...proto.Mes
 }
 
 func TestFreezeStreamFirstFrameEnforcement(t *testing.T) {
-	db, clock := statertest.New(t)
+	db, clock := statetest.New(t)
 	ctx := context.Background()
 	run := db.Runner()
 

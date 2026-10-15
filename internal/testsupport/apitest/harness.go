@@ -40,7 +40,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 	freezerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/freeze"
 	idemrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/idempotency"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statertest"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/fleetlygrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/systemgrpc"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/testruntime"
@@ -54,7 +54,7 @@ type Harness struct {
 	Runtime  *FakeRuntime
 	Builder  *FakeBuilder
 	Registry *FakeRegistry
-	Clock    *statertest.FakeClock
+	Clock    *statetest.FakeClock
 	Conn     *grpc.ClientConn      // bufconn 连接（类型化客户端的底座）
 	Token    string                // Bootstrap Token 明文（owner 全权；CLI golden 夹具经 FLEETLY_TOKEN 注入）
 	DataRoot string                // 数据根（构建上下文预置等夹具操作用）
@@ -103,7 +103,7 @@ func (h *Harness) Drive(ctx context.Context) {
 func newHarness(t testing.TB, autostart bool, mutators ...EngineOption) *Harness {
 	t.Helper()
 	ctx := context.Background()
-	db, clock := statertest.New(t)
+	db, clock := statetest.New(t)
 	cipher, err := keyring.LoadCipher(t.TempDir())
 	if err != nil {
 		t.Fatalf("apitest: master key: %v", err)

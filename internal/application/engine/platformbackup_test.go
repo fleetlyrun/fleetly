@@ -20,7 +20,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statertest"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
 
 // fakeRestic 是 restic 子进程假面（记录调用；snapshots 可编程）。
@@ -32,7 +32,7 @@ type fakeRestic struct {
 	snapsOut string
 }
 
-func withFakeRestic(t *testing.T, cfg *PlatformBackupConfig) (*Engine, *fakeRestic, *statertest.FakeClock) {
+func withFakeRestic(t *testing.T, cfg *PlatformBackupConfig) (*Engine, *fakeRestic, *statetest.FakeClock) {
 	t.Helper()
 	fr := &fakeRestic{snapsOut: "[]"}
 	orig := resticExec
@@ -59,7 +59,7 @@ func withFakeRestic(t *testing.T, cfg *PlatformBackupConfig) (*Engine, *fakeRest
 	}
 	t.Cleanup(func() { resticExec = orig })
 
-	db, clock := statertest.New(t)
+	db, clock := statetest.New(t)
 	dataRoot := t.TempDir()
 	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: newFakeRuntime(), Logger: discardLogger()}, Options{
 		Data: DataOptions{
@@ -168,7 +168,7 @@ func TestPlatformBackupFailureRecorded(t *testing.T) {
 // 缺席降级：restic 二进制不在（ResticPath 空 + LookPath 失败环境）→
 // Available=false，due 恒假（停用非报错——数据库轨不受影响）。
 func TestPlatformBackupUnavailableDegrades(t *testing.T) {
-	db, _ := statertest.New(t)
+	db, _ := statetest.New(t)
 	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: newFakeRuntime(), Logger: discardLogger()}, Options{
 		Data: DataOptions{
 			DataRoot: t.TempDir(),
