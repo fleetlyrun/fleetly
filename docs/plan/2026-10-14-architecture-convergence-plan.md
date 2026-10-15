@@ -105,7 +105,7 @@ P3-3 task/run（动词拆 taskverbs）— [x]（taskDomain→tasks 改名字段�
 P3-4 data — [x]（browseDomain→browses + databaseDomain→databases 改名字段零 churn；browse.go 615→339 拆出 browseloop.go 收敛环面；has/teamOf 两纯注册表读下放 *browses；bluegreen allowlist 随迁；backup/database 文件面已分组不动）
 P3-5 managed — [x]（managedDomain→manageds + managedGenState→managedGen 改名字段零 churn；managed.go 578→402 拆出 routepublish.go Route 发布面 F0.15；gensFor 留守 *Engine——与 ensureMemo 协议族同栖不拆锁配对；发布面整块逐字搬移）
 P3-6 build/material — [x]（buildDomain→builds 改名零 churn；builder.go 拆出日志面归 buildlog.go；**enginebackref 豁免表清空**——bufferWriter/buildLogIngester/nsBatch 三处 *Engine 回引显式化为最小依赖（logging 侧 nsBatch 归本批，修正批 0 注记的批次指向）；material 侧已核实无状态 struct、文件已分组不动）
-P3-7 deploy 域 + SubmitSpec（v2 §4 九条不变式逐条 apitest 断言；ADR-0072/0074 追记咽喉新址）— [ ]
+P3-7 deploy 域 + SubmitSpec（v2 §4 九条不变式逐条 apitest 断言；ADR-0072/0074 追记咽喉新址）— [x]（四步落地序四 commit：d70de8d 咽喉新增旧链不动/7b3e1fd delivery 切换/6dc7111 webhook 切换+api 冻结位退役/收官不变式钉死；MergeMode 方向参数化承载两向合并；FrozenSpecError+AdmissionError 双类型化错误保不变式⑦文案逐字节；deliveryDomain→deploys；九条不变式 submit_spec_invariants_test.go 八 Test 钉死+负样本双证）
 P3-8 browse + 壳收口（engine.go <300 行 + Options 按域切片 + config 面同批）— [ ]
 
 ## P4 校验/错误三面（4-6 天）

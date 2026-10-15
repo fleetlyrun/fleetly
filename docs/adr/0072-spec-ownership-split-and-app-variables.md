@@ -39,3 +39,17 @@
 - [x] apitest：push 合并保留运行时改动（console 改 replicas/env → 模拟 push → 断言存活 + ref 更新）；spec_file overlay 只动运行时（提交件 source 被忽略）；材料源闸门 E_APP_HOOK_OWNED + override_hook 全量接管；非 hook 应用零影响；AppVariable 合成优先级（三级同键）与轮换-重发产生新 Revision；digest 去重仍成立。
 - [x] CLI 双形态 golden：`apps vars`（list/set/unset）+ `deploy --override-hook`；skills 散文同批。
 - [x] 守卫全绿；`generate:verify`/`console:verify` 零漂移；迁移带 goose 注记。
+
+## 追记：咽喉新址（2026-10-15，P3 架构收敛批 7）
+
+冻结咽喉自落地时的 api 层 `freezeRevision` 下沉为 `engine.SubmitSpec`
+（application 单咽喉）：所有权合并按 `MergeMode` 方向参数化（push =
+MergeMaterial 新材料 + 冻结运行时；overlay = MergeOverlay 冻结材料 +
+提交件运行时），三级变量合成、内容寻址复用冻结与 admission 随行；webhook
+摄取核与 Deploy 全部切换。职责分野不变：请求形状执法、四源旗标互斥、
+hook 闸门（E_APP_HOOK_OWNED/override_hook/spec_file 判向）与
+deployVarLookup 留在 api；webhook 的 delivery 台账 Tx 留在 api
+（RecordDelivery + hook 事件一拍，ADR-0072 语义不受迁移影响）。审计语义
+随 ctx 走：WithAuditOverride 先于 SubmitSpec 注入，revision.create 与
+deployment.create 审计行 actor/source 逐字节同形。九条受理不变式由
+apitest（submit_spec_invariants_test）逐条钉死。

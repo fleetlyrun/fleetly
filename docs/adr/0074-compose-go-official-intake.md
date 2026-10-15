@@ -126,3 +126,13 @@ JSON Schema 编辑器生态、Renovate docker-compose manager 免费镜像升级
   落值/secret 注入/四拒绝面/Route 200/console Compose Source 卡走查）
 - [ ] dogfood 仓 compose 迁新方言（torchwood/messageloop 的 stack 声明补
   external 声明与新扩展键拼写——随应用栈重播批）
+
+## 追记：冻结段新址（2026-10-15，P3 架构收敛批 7）
+
+决策 9 的受理链在此细化归位：compose 受理（`composeintake.FromYAML` 官方
+解析/方言执法/插值）与其插值环境装载（`deployVarLookup`）留在 api 归一化
+位，而决策 5/7 的"受理期消解后冻结"落点自 api `freezeRevision` 下沉为
+`engine.SubmitSpec`——三级变量合成、Revision 冻结（含 `source_text` 原文
+冻结）与 admission 收进 application 单咽喉，Deploy 与 webhook/refresh 共
+用（冻结 Tx 与受理 Tx 分立的行为语义随之定准）。用户可见面零变化：
+E_* 码与文案、冻结体 protojson 形态（digest 内容寻址）逐字节保持。
