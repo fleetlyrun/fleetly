@@ -108,6 +108,7 @@
         "parameters": [
           {
             "name": "node_id",
+            "description": "node_id 必填：运维动词的锚点。",
             "in": "path",
             "required": true,
             "type": "string"
@@ -147,7 +148,7 @@
         "parameters": [
           {
             "name": "node_id",
-            "description": "node_id 是平台节点 ID（永不复用）。",
+            "description": "node_id 是平台节点 ID（永不复用）——必填：运维动词的锚点。",
             "in": "path",
             "required": true,
             "type": "string"
@@ -186,6 +187,7 @@
         "parameters": [
           {
             "name": "node_id",
+            "description": "node_id 必填：运维动词的锚点。",
             "in": "path",
             "required": true,
             "type": "string"

@@ -12,6 +12,7 @@
 package deliveryv1
 
 import (
+	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
 	v1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	_ "github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2/options"
 	_ "github.com/lynx-go/grpcapi/genproto/grpcapi/v1"
@@ -269,7 +270,8 @@ func (x *Deployment) GetFromGeneration() uint64 {
 // 上传产物 / spec_file 裸 AppSpec，F3.5）。
 type DeployRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	AppId string                 `protobuf:"bytes,1,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
+	// app_id 必填：目标 App 行（行级授权锚）。
+	AppId string `protobuf:"bytes,1,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
 	// image 直投形态（如 nginx:1.27）。
 	Image string `protobuf:"bytes,2,opt,name=image,proto3" json:"image,omitempty"`
 	// compose_yaml 受控子集形态（白名单执法、受管字段显式拒绝）。
@@ -1515,7 +1517,8 @@ func (x *DiffEntry) GetNewValue() string {
 
 type DiffRevisionsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	AppId string                 `protobuf:"bytes,1,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
+	// app_id 必填：diff 所在 App（行级授权锚）。
+	AppId string `protobuf:"bytes,1,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
 	// from/to 是 App 内 Revision 序号（R1..Rn 对外形态）。
 	FromSeq       int64 `protobuf:"varint,2,opt,name=from_seq,json=fromSeq,proto3" json:"from_seq,omitempty"`
 	ToSeq         int64 `protobuf:"varint,3,opt,name=to_seq,json=toSeq,proto3" json:"to_seq,omitempty"`
@@ -1620,7 +1623,8 @@ func (x *DiffRevisionsResponse) GetEntries() []*DiffEntry {
 
 type GetRevisionRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	AppId string                 `protobuf:"bytes,1,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
+	// app_id 必填：Revision 所在 App（行级授权锚）。
+	AppId string `protobuf:"bytes,1,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
 	// seq 是 App 内 Revision 序号（R1..Rn 对外形态）。
 	Seq           int64 `protobuf:"varint,2,opt,name=seq,proto3" json:"seq,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -1725,7 +1729,8 @@ func (x *GetRevisionResponse) GetSpec() *v1.AppSpec {
 
 type GetAppWorkloadsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	AppId string                 `protobuf:"bytes,1,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
+	// app_id 必填：Workload 视图所属 App（行级授权锚）。
+	AppId string `protobuf:"bytes,1,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
 	// seq 缺省 0 = 当前生效（最新成功部署的 to_revision，ADR-0071 决策 2）；
 	// 显式 seq = 历史重放（当前侧表近似，决策 4）。无成功部署的缺省寻址
 	// → E_NOT_FOUND。
@@ -2819,10 +2824,11 @@ func (x *Upload) GetCreatedAt() string {
 }
 
 type ListUploadsRequest struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	ProjectId      string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	AfterUploadSeq int64                  `protobuf:"varint,2,opt,name=after_upload_seq,json=afterUploadSeq,proto3" json:"after_upload_seq,omitempty"`
-	Limit          int32                  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// project_id 必填：List 面的项目锚（行级授权沿此轴，ADR-0035）。
+	ProjectId      string `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	AfterUploadSeq int64  `protobuf:"varint,2,opt,name=after_upload_seq,json=afterUploadSeq,proto3" json:"after_upload_seq,omitempty"`
+	Limit          int32  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -3025,12 +3031,16 @@ func (x *GitHook) GetUpdatedAt() string {
 }
 
 type SetGitHookRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	AppId         string                 `protobuf:"bytes,1,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
-	Repo          string                 `protobuf:"bytes,2,opt,name=repo,proto3" json:"repo,omitempty"`
-	Branch        string                 `protobuf:"bytes,3,opt,name=branch,proto3" json:"branch,omitempty"`
-	Dockerfile    string                 `protobuf:"bytes,4,opt,name=dockerfile,proto3" json:"dockerfile,omitempty"`
-	WatchPaths    []string               `protobuf:"bytes,5,rep,name=watch_paths,json=watchPaths,proto3" json:"watch_paths,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// app_id 必填：hook 挂靠的 App 行（行级授权锚）。
+	AppId string `protobuf:"bytes,1,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
+	// repo 必填：https:// 直连仓库 URL（构建检出源）；URL 形态执法
+	// （https 白名单/嵌入材料/空白控制字符/私网段）在服务内——本面只钉
+	// 在场性。
+	Repo          string   `protobuf:"bytes,2,opt,name=repo,proto3" json:"repo,omitempty"`
+	Branch        string   `protobuf:"bytes,3,opt,name=branch,proto3" json:"branch,omitempty"`
+	Dockerfile    string   `protobuf:"bytes,4,opt,name=dockerfile,proto3" json:"dockerfile,omitempty"`
+	WatchPaths    []string `protobuf:"bytes,5,rep,name=watch_paths,json=watchPaths,proto3" json:"watch_paths,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3340,7 +3350,8 @@ func (x *RotateHookTokenResponse) GetSecret() string {
 
 type RefreshGitHookRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	AppId string                 `protobuf:"bytes,1,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
+	// app_id 必填：目标 hook 的 App 行（行级授权锚）。
+	AppId string `protobuf:"bytes,1,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
 	// commit 缺省 = branch HEAD 现解析（ls-remote）；非空 = 钉住该 commit
 	// 同步（apitest/重放锚）。
 	Commit        string `protobuf:"bytes,2,opt,name=commit,proto3" json:"commit,omitempty"`
@@ -3609,7 +3620,7 @@ var File_fleetly_delivery_v1_delivery_proto protoreflect.FileDescriptor
 
 const file_fleetly_delivery_v1_delivery_proto_rawDesc = "" +
 	"\n" +
-	"\"fleetly/delivery/v1/delivery.proto\x12\x13fleetly.delivery.v1\x1a\x1cgoogle/api/annotations.proto\x1a\x1egoogle/protobuf/duration.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\x1a\x1afleetly/spec/v1/spec.proto\"\xa4\x04\n" +
+	"\"fleetly/delivery/v1/delivery.proto\x12\x13fleetly.delivery.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1egoogle/protobuf/duration.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\x1a\x1afleetly/spec/v1/spec.proto\"\xa4\x04\n" +
 	"\n" +
 	"Deployment\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x10\n" +
@@ -3636,9 +3647,10 @@ const file_fleetly_delivery_v1_delivery_proto_rawDesc = "" +
 	"\vfinished_at\x18\x0e \x01(\tR\n" +
 	"finishedAt\x12+\n" +
 	"\x12first_boot_task_id\x18\x0f \x01(\tR\x0ffirstBootTaskId\x12'\n" +
-	"\x0ffrom_generation\x18\x10 \x01(\x04R\x0efromGeneration\"\xae\x05\n" +
-	"\rDeployRequest\x12\x15\n" +
-	"\x06app_id\x18\x01 \x01(\tR\x05appId\x12\x14\n" +
+	"\x0ffrom_generation\x18\x10 \x01(\x04R\x0efromGeneration\"\xeb\x05\n" +
+	"\rDeployRequest\x12R\n" +
+	"\x06app_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\x05appId\x12\x14\n" +
 	"\x05image\x18\x02 \x01(\tR\x05image\x12!\n" +
 	"\fcompose_yaml\x18\x03 \x01(\tR\vcomposeYaml\x12'\n" +
 	"\x0fidempotency_key\x18\x04 \x01(\tR\x0eidempotencyKey\x12\x1d\n" +
@@ -3736,21 +3748,24 @@ const file_fleetly_delivery_v1_delivery_proto_rawDesc = "" +
 	"\tDiffEntry\x12\x12\n" +
 	"\x04path\x18\x01 \x01(\tR\x04path\x12\x1b\n" +
 	"\told_value\x18\x02 \x01(\tR\boldValue\x12\x1b\n" +
-	"\tnew_value\x18\x03 \x01(\tR\bnewValue\"_\n" +
-	"\x14DiffRevisionsRequest\x12\x15\n" +
-	"\x06app_id\x18\x01 \x01(\tR\x05appId\x12\x19\n" +
+	"\tnew_value\x18\x03 \x01(\tR\bnewValue\"\x9c\x01\n" +
+	"\x14DiffRevisionsRequest\x12R\n" +
+	"\x06app_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\x05appId\x12\x19\n" +
 	"\bfrom_seq\x18\x02 \x01(\x03R\afromSeq\x12\x15\n" +
 	"\x06to_seq\x18\x03 \x01(\x03R\x05toSeq\"Q\n" +
 	"\x15DiffRevisionsResponse\x128\n" +
-	"\aentries\x18\x01 \x03(\v2\x1e.fleetly.delivery.v1.DiffEntryR\aentries\"=\n" +
-	"\x12GetRevisionRequest\x12\x15\n" +
-	"\x06app_id\x18\x01 \x01(\tR\x05appId\x12\x10\n" +
+	"\aentries\x18\x01 \x03(\v2\x1e.fleetly.delivery.v1.DiffEntryR\aentries\"z\n" +
+	"\x12GetRevisionRequest\x12R\n" +
+	"\x06app_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\x05appId\x12\x10\n" +
 	"\x03seq\x18\x02 \x01(\x03R\x03seq\"~\n" +
 	"\x13GetRevisionResponse\x129\n" +
 	"\brevision\x18\x01 \x01(\v2\x1d.fleetly.delivery.v1.RevisionR\brevision\x12,\n" +
-	"\x04spec\x18\x02 \x01(\v2\x18.fleetly.spec.v1.AppSpecR\x04spec\"A\n" +
-	"\x16GetAppWorkloadsRequest\x12\x15\n" +
-	"\x06app_id\x18\x01 \x01(\tR\x05appId\x12\x10\n" +
+	"\x04spec\x18\x02 \x01(\v2\x18.fleetly.spec.v1.AppSpecR\x04spec\"~\n" +
+	"\x16GetAppWorkloadsRequest\x12R\n" +
+	"\x06app_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\x05appId\x12\x10\n" +
 	"\x03seq\x18\x02 \x01(\x03R\x03seq\"\x91\x01\n" +
 	"\x17GetAppWorkloadsResponse\x129\n" +
 	"\brevision\x18\x01 \x01(\v2\x1d.fleetly.delivery.v1.RevisionR\brevision\x12;\n" +
@@ -3840,10 +3855,11 @@ const file_fleetly_delivery_v1_delivery_proto_rawDesc = "" +
 	"\n" +
 	"size_bytes\x18\x04 \x01(\x03R\tsizeBytes\x12\x1d\n" +
 	"\n" +
-	"created_at\x18\x05 \x01(\tR\tcreatedAt\"s\n" +
-	"\x12ListUploadsRequest\x12\x1d\n" +
+	"created_at\x18\x05 \x01(\tR\tcreatedAt\"\xb0\x01\n" +
+	"\x12ListUploadsRequest\x12Z\n" +
 	"\n" +
-	"project_id\x18\x01 \x01(\tR\tprojectId\x12(\n" +
+	"project_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\tprojectId\x12(\n" +
 	"\x10after_upload_seq\x18\x02 \x01(\x03R\x0eafterUploadSeq\x12\x14\n" +
 	"\x05limit\x18\x03 \x01(\x05R\x05limit\"L\n" +
 	"\x13ListUploadsResponse\x125\n" +
@@ -3861,10 +3877,12 @@ const file_fleetly_delivery_v1_delivery_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\a \x01(\tR\tcreatedAt\x12\x1d\n" +
 	"\n" +
-	"updated_at\x18\b \x01(\tR\tupdatedAt\"\x97\x01\n" +
-	"\x11SetGitHookRequest\x12\x15\n" +
-	"\x06app_id\x18\x01 \x01(\tR\x05appId\x12\x12\n" +
-	"\x04repo\x18\x02 \x01(\tR\x04repo\x12\x16\n" +
+	"updated_at\x18\b \x01(\tR\tupdatedAt\"\xbb\x02\n" +
+	"\x11SetGitHookRequest\x12R\n" +
+	"\x06app_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\x05appId\x12y\n" +
+	"\x04repo\x18\x02 \x01(\tBe\xbaHb\xba\x01_\n" +
+	"\x0fstring.required\x12;must not be empty (the git URL builds are checked out from)\x1a\x0fthis.size() > 0R\x04repo\x12\x16\n" +
 	"\x06branch\x18\x03 \x01(\tR\x06branch\x12\x1e\n" +
 	"\n" +
 	"dockerfile\x18\x04 \x01(\tR\n" +
@@ -3882,9 +3900,10 @@ const file_fleetly_delivery_v1_delivery_proto_rawDesc = "" +
 	"\x06app_id\x18\x01 \x01(\tR\x05appId\"c\n" +
 	"\x17RotateHookTokenResponse\x120\n" +
 	"\x04hook\x18\x01 \x01(\v2\x1c.fleetly.delivery.v1.GitHookR\x04hook\x12\x16\n" +
-	"\x06secret\x18\x02 \x01(\tR\x06secret\"F\n" +
-	"\x15RefreshGitHookRequest\x12\x15\n" +
-	"\x06app_id\x18\x01 \x01(\tR\x05appId\x12\x16\n" +
+	"\x06secret\x18\x02 \x01(\tR\x06secret\"\x83\x01\n" +
+	"\x15RefreshGitHookRequest\x12R\n" +
+	"\x06app_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\x05appId\x12\x16\n" +
 	"\x06commit\x18\x02 \x01(\tR\x06commit\"\x93\x01\n" +
 	"\x16RefreshGitHookResponse\x12#\n" +
 	"\rdeployment_id\x18\x01 \x01(\tR\fdeploymentId\x12\x16\n" +

@@ -256,7 +256,7 @@
         "installation_id": {
           "type": "string",
           "format": "int64",
-          "title": "installation_id 来自 setup 回调查询参数。"
+          "title": "installation_id 来自 setup 回调查询参数（正整数；0 = 回调未携带）。"
         },
         "project_id": {
           "type": "string",
@@ -386,11 +386,13 @@
         },
         "app_id": {
           "type": "string",
-          "format": "int64"
+          "format": "int64",
+          "title": "app_id 必填：数字形态的 GitHub App ID（正整数；scope 互斥与 api_base/\n私钥 PEM 形态执法在服务内）。"
         },
         "installation_id": {
           "type": "string",
-          "format": "int64"
+          "format": "int64",
+          "title": "installation_id 必填：数字形态的 installation ID（正整数）。"
         },
         "private_key_pem": {
           "type": "string",

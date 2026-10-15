@@ -14,6 +14,7 @@
 package runtimev1
 
 import (
+	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
 	_ "github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2/options"
 	_ "github.com/lynx-go/grpcapi/genproto/grpcapi/v1"
 	_ "google.golang.org/genproto/googleapis/api/annotations"
@@ -32,8 +33,9 @@ const (
 )
 
 type GetAppWorkloadObservationsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	AppId         string                 `protobuf:"bytes,1,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// app_id 必填：观测目标 App（行级授权锚）。
+	AppId         string `protobuf:"bytes,1,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -229,9 +231,10 @@ var File_fleetly_runtime_v1_workloads_proto protoreflect.FileDescriptor
 
 const file_fleetly_runtime_v1_workloads_proto_rawDesc = "" +
 	"\n" +
-	"\"fleetly/runtime/v1/workloads.proto\x12\x12fleetly.runtime.v1\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\":\n" +
-	"!GetAppWorkloadObservationsRequest\x12\x15\n" +
-	"\x06app_id\x18\x01 \x01(\tR\x05appId\"q\n" +
+	"\"fleetly/runtime/v1/workloads.proto\x12\x12fleetly.runtime.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"w\n" +
+	"!GetAppWorkloadObservationsRequest\x12R\n" +
+	"\x06app_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\x05appId\"q\n" +
 	"\"GetAppWorkloadObservationsResponse\x12K\n" +
 	"\fobservations\x18\x01 \x03(\v2'.fleetly.runtime.v1.WorkloadObservationR\fobservations\"\x88\x02\n" +
 	"\x13WorkloadObservation\x12\x1f\n" +

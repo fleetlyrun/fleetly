@@ -207,9 +207,9 @@ func (svc *HooksService) ingestGitMaterial(ctx context.Context, appRow *app.App,
 // admission 与 push 同链（同 HEAD 重放回 deduplicated）。审计/事件带调用
 // 方真实身份（source=api），与 webhook 面的 hook:<App> 覆写分野。
 func (svc *HooksService) RefreshGitHook(ctx context.Context, req *deliveryv1.RefreshGitHookRequest) (*deliveryv1.RefreshGitHookResponse, error) {
-	if req.GetAppId() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "app_id: must not be empty")
-	}
+	// app_id 必填已退役 descriptor 注解（P4-1 批 1 Run B2）：空值由
+	// protovalidate 拦截器在受理面拦截，文案与退役前逐字节一致；token/
+	// signature/payload 校验是动态面，保留手写。
 	appRow, err := svc.s.authorizeAppID(ctx, req.GetAppId())
 	if err != nil {
 		return nil, err

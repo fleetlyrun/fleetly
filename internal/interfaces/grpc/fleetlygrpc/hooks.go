@@ -51,9 +51,10 @@ type HooksService struct {
 // SetGitHook 建/改配置：无既有行时铸造 Token（明文仅本次响应返回），
 // 既有行只改配置字段（换 Token 走 RotateHookToken）。
 func (svc *HooksService) SetGitHook(ctx context.Context, req *deliveryv1.SetGitHookRequest) (*deliveryv1.SetGitHookResponse, error) {
-	if req.GetAppId() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "app_id: must not be empty")
-	}
+	// app_id/repo 必填已退役 descriptor 注解（P4-1 批 1 Run B2）：空值由
+	// protovalidate 拦截器在受理面拦截（repo 空值文案随字段原文逐字节上
+	// 注解）；validateGitRepo 的 https 白名单/嵌入材料/空白控制字符/私网
+	// 段是动态形态，保留手写。
 	// 受理面防线（安全批）：repo 会冻结进 GitSource 并由控制面原样送进
 	// `git clone` 的 argv——ext::/--upload-pack= 等传输形态在 root 控制面
 	// 上等价任意命令执行（P0）。create 与 update 两路径都在此处拦截。
@@ -270,11 +271,12 @@ func normalizeWatchPaths(paths []string) []string {
 // `ext::sh -c ...`、`--upload-pack=` 等传输形态等价任意命令执行。因此只
 // 接受 https:// 直连仓库：明文 http、git、ssh、file、本地路径与 ext 一律
 // 拒绝；控制字符与空白逐字节拒绝（防 argv 拼接注入与日志走私）。
+//
+// 空值分支已退役 descriptor 注解（P4-1 批 1 Run B2）：SetGitHookRequest
+// .repo 的 required 规则随字段原文上注解，空值由 protovalidate 拦截器在
+// 受理面拦截（文案逐字节一致）——本函数只剩形态执法。
 func validateGitRepo(repo string) error {
 	r := strings.TrimSpace(repo)
-	if r == "" {
-		return apperr.New("E_INVALID_ARGUMENT", "repo: must not be empty (the git URL builds are checked out from)")
-	}
 	if !strings.HasPrefix(r, "https://") {
 		return apperr.New("E_INVALID_ARGUMENT",
 			"repo: only https:// direct repository URLs are supported (got %q); http, git, ssh, file and ext transports are rejected", r)

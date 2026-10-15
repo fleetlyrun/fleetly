@@ -271,21 +271,36 @@ export interface components {
         SchedulesServiceTriggerScheduleBody: Record<string, never>;
         TasksServiceRenewTaskBody: Record<string, never>;
         TasksServiceScaleTaskBody: {
-            /** Format: int64 */
+            /**
+             * desired_concurrency 非负（0 = 合法缩零初态；上限由项目并发总量配额
+             *     承载）。
+             * Format: int64
+             */
             desired_concurrency?: string;
         };
         TasksServiceStopTaskBody: {
             force?: boolean;
         };
         v1CreateScheduleRequest: {
+            /** project_id 必填：Schedule 的父 Project（受理位父存活校验的锚）。 */
             project_id?: string;
-            /** name 是项目内人读名（可选；活跃期唯一）。 */
+            /**
+             * name 是项目内人读名（可选；活跃期唯一）——可空字段的 dns 标签形状，
+             *     同 CreateTaskRequest.name（对齐测试执法）；空名合法放行。
+             */
             name?: string;
-            /** cron 是 5 字段表达式（必填）。 */
+            /**
+             * cron 是 5 字段表达式（必填；表达式合法性由服务内解析执法——文案带
+             *     解析器原话回显）。
+             */
             cron?: string;
             /** timezone 是 IANA 时区名（空 = UTC）。 */
             timezone?: string;
-            /** 以下为冻结 TaskSpec 模板字段（每拍铸 one-shot Task 继承）。 */
+            /**
+             * 以下为冻结 TaskSpec 模板字段（每拍铸 one-shot Task 继承）。
+             *     image 必填：Schedule 每拍直投镜像铸 one-shot Task，build sources 是
+             *     App 面。
+             */
             image?: string;
             command?: string[];
             env?: {
@@ -308,12 +323,24 @@ export interface components {
             schedule?: components["schemas"]["v1Schedule"];
         };
         v1CreateTaskRequest: {
+            /** project_id 必填：Task 的父 Project（受理位父存活/配额校验的锚）。 */
             project_id?: string;
-            /** name 是项目内人读名（可选；活跃期唯一）。 */
+            /**
+             * name 是项目内人读名（可选；活跃期唯一）——可空字段的 dns 标签形状：
+             *     正则字面与长度界是 entityid.NamePatternSource / MaxNameLen 的镜像
+             *     （proto 无法引用 Go 常量），字节一致由 entityid 包的 descriptor 对齐
+             *     测试执法；空名合法放行（本字段无 required 规则）。
+             */
             name?: string;
-            /** form 双形态：one-shot | resident（空 = 按 desired_concurrency 推导）。 */
+            /**
+             * form 双形态：one-shot | resident（空 = 按 desired_concurrency 推导；
+             *     值域外拒绝——值域执法在 descriptor 注解，空值短路放行推导语义）。
+             */
             form?: string;
-            /** image 镜像直部署引用（私有仓库凭证经 Secret "registry:<host>" 解析）。 */
+            /**
+             * image 镜像直部署引用（私有仓库凭证经 Secret "registry:<host>" 解析）。
+             *     必填：Task 直投镜像部署，build sources 是 App 面。
+             */
             image?: string;
             command?: string[];
             /** env 是非敏感环境变量（归一化结果；敏感值走 secret_refs）。 */
@@ -322,7 +349,7 @@ export interface components {
             };
             secret_refs?: string[];
             /**
-             * resources 是每 Run 资源上限。
+             * resources 是每 Run 资源上限（非负；0 = 平台缺省）。
              * Format: int64
              */
             cpu_millis?: string;
@@ -335,7 +362,8 @@ export interface components {
              */
             ttl_seconds?: string;
             /**
-             * desired_concurrency 是 resident 期望并发 Run 数（one-shot 恒 1）。
+             * desired_concurrency 是 resident 期望并发 Run 数（one-shot 恒 1；非负，
+             *     上限由项目并发总量配额承载）。
              * Format: int64
              */
             desired_concurrency?: string;
@@ -658,6 +686,7 @@ export interface operations {
     SchedulesService_ListSchedules: {
         parameters: {
             query?: {
+                /** @description project_id 必填：List 面的项目锚（行级授权沿此轴，ADR-0035）。 */
                 project_id?: string;
                 /** @description after_schedule_seq 游标（上一页末条 seq（0 = 首页）。 */
                 after_schedule_seq?: string;
@@ -822,6 +851,7 @@ export interface operations {
     TasksService_ListTasks: {
         parameters: {
             query?: {
+                /** @description project_id 必填：List 面的项目锚（行级授权沿此轴，ADR-0035）。 */
                 project_id?: string;
                 /** @description after_task_seq 游标（上一页末条 seq（0 = 首页）。 */
                 after_task_seq?: string;

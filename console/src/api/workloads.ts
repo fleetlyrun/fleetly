@@ -72,6 +72,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description app_id 必填：观测目标 App（行级授权锚）。 */
                 app_id: string;
             };
             cookie?: never;

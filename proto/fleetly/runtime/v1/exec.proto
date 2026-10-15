@@ -10,6 +10,7 @@ package fleetly.runtime.v1;
 
 option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1;runtimev1";
 
+import "buf/validate/validate.proto";
 import "google/api/annotations.proto";
 import "protoc-gen-openapiv2/options/annotations.proto";
 import "grpcapi/v1/authz.proto";
@@ -61,9 +62,22 @@ service ExecService {
 }
 
 message CreateExecSessionRequest {
-  string app_id = 1;
-  // process 是 App 内进程模板名（web/worker…）。
-  string process = 2;
+  // app_id 必填：exec 会话的宿主 App（行级授权锚）。
+  string app_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  // process 必填：App 内进程模板名（web/worker…）。
+  string process = 2 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
   // command 是完整 argv（数组形态；零 shell——shellguard 射程延续）。
   // 空且 tty=true 时缺省 ["/bin/sh"]；空且 tty=false 拒绝（服务端校验）。
   repeated string command = 3;
@@ -76,9 +90,22 @@ message CreateExecSessionRequest {
 
 // ListExecInstancesRequest 是进程在跑实例集的观测请求。
 message ListExecInstancesRequest {
-  string app_id = 1;
-  // process 是 App 内进程模板名（web/worker…）。
-  string process = 2;
+  // app_id 必填：观测目标 App（行级授权锚）。
+  string app_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  // process 必填：App 内进程模板名（web/worker…）。
+  string process = 2 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
 }
 
 message ListExecInstancesResponse {

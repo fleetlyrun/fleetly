@@ -56,9 +56,9 @@ func (svc *MetricsService) QueryMetrics(ctx context.Context, req *telemetryv1.Qu
 	if svc.s.Metrics == nil {
 		return nil, apperr.New("E_INTERNAL", "metrics queries require the managed metrics store; set config metrics.addr to enable it")
 	}
-	if req.GetQuery() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "query: must not be empty")
-	}
+	// query 必填已退役 descriptor 注解（P4-1 批 1 Run B2）：空值由
+	// protovalidate 拦截器在受理面拦截，文案与退役前逐字节一致；start/end
+	// 时间窗是动态文案（RFC3339 解析带 got 回显），保留手写。
 	end := time.Now().UTC()
 	if raw := req.GetEnd(); raw != "" {
 		t, err := time.Parse(time.RFC3339, raw)
@@ -106,13 +106,11 @@ type AlertingService struct {
 // CreateNotificationChannel 登记通道（配置 age 信封入库——URL/token 只写
 // 不读；重名 E_ALREADY_EXISTS）。
 func (svc *AlertingService) CreateNotificationChannel(ctx context.Context, req *telemetryv1.CreateNotificationChannelRequest) (*telemetryv1.CreateNotificationChannelResponse, error) {
+	// name 必填 + dns 标签形态已退役 descriptor 注解（P4-1 批 1 Run B2）：
+	// 空值报 required、坏形态报形状（空名短路不进形状），protovalidate
+	// 拦截器受理面执法，文案与退役前逐字节一致；kind 值域与 url/bot_token
+	// 条件必填是动态/条件文案，保留手写。
 	name := req.GetName()
-	if name == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "name: must not be empty")
-	}
-	if err := validName("name", name); err != nil {
-		return nil, err
-	}
 	kind := req.GetKind()
 	var cfg alertChannelConfig
 	switch kind {
@@ -172,9 +170,8 @@ func (svc *AlertingService) CreateNotificationChannel(ctx context.Context, req *
 
 // TestNotificationChannel 即时派发测试载荷（验收锚；失败原文回显）。
 func (svc *AlertingService) TestNotificationChannel(ctx context.Context, req *telemetryv1.TestNotificationChannelRequest) (*telemetryv1.TestNotificationChannelResponse, error) {
-	if req.GetChannelId() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "channel_id: must not be empty")
-	}
+	// channel_id 必填已退役 descriptor 注解（P4-1 批 1 Run B2）：空值由
+	// protovalidate 拦截器在受理面拦截，文案与退役前逐字节一致。
 	if err := svc.s.Engine.TestNotificationChannel(ctx, req.GetChannelId()); err != nil {
 		if errors.Is(err, state.ErrNotFound) {
 			return nil, apperr.New("E_NOT_FOUND", "notification channel %s not found", req.GetChannelId())
@@ -199,9 +196,8 @@ func (svc *AlertingService) ListNotificationChannels(ctx context.Context, _ *tel
 
 // DeleteNotificationChannel 删通道（受理：行在场）。
 func (svc *AlertingService) DeleteNotificationChannel(ctx context.Context, req *telemetryv1.DeleteNotificationChannelRequest) (*telemetryv1.DeleteNotificationChannelResponse, error) {
-	if req.GetChannelId() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "channel_id: must not be empty")
-	}
+	// channel_id 必填已退役 descriptor 注解（P4-1 批 1 Run B2）：空值由
+	// protovalidate 拦截器在受理面拦截，文案与退役前逐字节一致。
 	err := svc.s.commit(ctx, writeFact{
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			return svc.s.Engine.NotificationChannelRepo().Delete(ctx, tx, req.GetChannelId())
@@ -232,9 +228,9 @@ func (svc *AlertingService) DeleteNotificationChannel(ctx context.Context, req *
 
 // CreateAlertRule 登记规则（App 行级授权 + metric 值域执法）。
 func (svc *AlertingService) CreateAlertRule(ctx context.Context, req *telemetryv1.CreateAlertRuleRequest) (*telemetryv1.CreateAlertRuleResponse, error) {
-	if req.GetAppId() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "app_id: must not be empty")
-	}
+	// app_id 必填与 threshold 非负已退役 descriptor 注解（P4-1 批 1 Run
+	// B2）：空值/负值由 protovalidate 拦截器在受理面拦截，文案与退役前逐
+	// 字节一致；metric 值域是动态文案（got 回显），保留手写。
 	appRow, err := svc.s.authorizeAppID(ctx, req.GetAppId())
 	if err != nil {
 		return nil, err
@@ -243,9 +239,6 @@ func (svc *AlertingService) CreateAlertRule(ctx context.Context, req *telemetryv
 	if metric != alertrule.MetricCPUPercent && metric != alertrule.MetricMemoryWorkingSet {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "metric: must be %s or %s (got %q)",
 			alertrule.MetricCPUPercent, alertrule.MetricMemoryWorkingSet, metric)
-	}
-	if req.GetThreshold() < 0 {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "threshold: must not be negative")
 	}
 	row := &alertrule.Rule{
 		AppID: appRow.ID, Metric: metric,
@@ -301,9 +294,8 @@ func (svc *AlertingService) ListAlertRules(ctx context.Context, req *telemetryv1
 
 // DeleteAlertRule 删规则（行级授权——App 归属比对；受理：行在场）。
 func (svc *AlertingService) DeleteAlertRule(ctx context.Context, req *telemetryv1.DeleteAlertRuleRequest) (*telemetryv1.DeleteAlertRuleResponse, error) {
-	if req.GetRuleId() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "rule_id: must not be empty")
-	}
+	// rule_id 必填已退役 descriptor 注解（P4-1 批 1 Run B2）：空值由
+	// protovalidate 拦截器在受理面拦截，文案与退役前逐字节一致。
 	row, err := svc.s.Engine.AlertRuleRepo().Get(ctx, svc.s.DB.Runner(), req.GetRuleId())
 	if err != nil {
 		if errors.Is(err, state.ErrNotFound) {

@@ -151,10 +151,10 @@ func (s *Service) GetSchema(context.Context, *systemv1.GetSchemaRequest) (*syste
 
 // Explain 返回单个资源的自描述（寻址名裁决在 schema 注册表单源）。
 func (s *Service) Explain(_ context.Context, req *systemv1.ExplainRequest) (*systemv1.ExplainResponse, error) {
+	// resource 必填已退役 descriptor 注解（P4-1 批 1 Run B2）：空值由
+	// protovalidate 拦截器在受理面拦截（文案随字段原文逐字节上注解）；
+	// TrimSpace 归一保留——未知名裁决在注册表单源。
 	resource := strings.TrimSpace(req.GetResource())
-	if resource == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "resource: must not be empty (a spec kind like \"app\" or an event name like \"deployment.succeeded\")")
-	}
 	e, ok := schema.Lookup(resource)
 	if !ok {
 		return nil, apperr.New("E_NOT_FOUND", "resource %q is not explainable; run 'fleetly schema' to list every name", resource)

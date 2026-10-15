@@ -16,8 +16,10 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 
+	automationv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/automation/v1"
 	identityv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/identity/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
+	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
 )
 
@@ -60,6 +62,45 @@ func TestIdentityNameAnnotationMatchesEntityIDSource(t *testing.T) {
 		{"CreateUserRequest", (&identityv1.CreateUserRequest{}).ProtoReflect().Descriptor()},
 		{"CreateTeamRequest", (&identityv1.CreateTeamRequest{}).ProtoReflect().Descriptor()},
 		{"CreateRoleRequest", (&identityv1.CreateRoleRequest{}).ProtoReflect().Descriptor()},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fd := tc.md.Fields().ByName("name")
+			require.NotNil(t, fd, "%s.name 字段缺席——proto 漂移", tc.name)
+			opts := fd.Options()
+			fieldRules := proto.GetExtension(opts, bufvalidate.E_Field).(*bufvalidate.FieldRules)
+			celRules := fieldRules.GetCel()
+			require.NotEmpty(t, celRules, "%s.name 字段缺 cel 注解——退役族注解被移除", tc.name)
+
+			var shape *bufvalidate.Rule
+			for _, r := range celRules {
+				if r.GetId() == "string.dns_label" {
+					shape = r
+					break
+				}
+			}
+			require.NotNil(t, shape, "%s.name 字段缺 string.dns_label 规则", tc.name)
+			assert.Contains(t, shape.GetExpression(), entityid.NamePatternSource,
+				"shape 表达式与 entityid.NamePatternSource 漂移——proto 与本包必须同 commit 同改")
+			assert.Contains(t, shape.GetExpression(), "this.size() <= "+strconv.Itoa(entityid.MaxNameLen),
+				"shape 表达式与 entityid.MaxNameLen 漂移——proto 与本包必须同 commit 同改")
+		})
+	}
+}
+
+// TestTelemetryAutomationNameAnnotationMatchesEntityIDSource 扩段（P4-1 批 1
+// Run B2）：telemetry 面（CreateNotificationChannelRequest——required 先行 +
+// 形状短路基）与 automation 面（CreateTaskRequest / CreateScheduleRequest
+// ——可空字段的形状短路基）的 name 形状注解与结构/身份面同源——同一正则
+// 字面与长度界（CreateTask 模板经 TaskSpec 冻结为派生名/载体名的 id base，
+// 形状即派生安全的前提）。
+func TestTelemetryAutomationNameAnnotationMatchesEntityIDSource(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		md   protoreflect.MessageDescriptor
+	}{
+		{"CreateNotificationChannelRequest", (&telemetryv1.CreateNotificationChannelRequest{}).ProtoReflect().Descriptor()},
+		{"CreateTaskRequest", (&automationv1.CreateTaskRequest{}).ProtoReflect().Descriptor()},
+		{"CreateScheduleRequest", (&automationv1.CreateScheduleRequest{}).ProtoReflect().Descriptor()},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fd := tc.md.Fields().ByName("name")

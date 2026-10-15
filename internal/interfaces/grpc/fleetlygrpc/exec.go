@@ -76,9 +76,10 @@ func mapExecError(err error) error {
 // （解析/限额/注册）→ 四件一拍（审计 + 事件；失败即回滚会话活体）→
 // 铸造票据（绑会话）。
 func (svc *ExecService) CreateExecSession(ctx context.Context, req *runtimev1.CreateExecSessionRequest) (*runtimev1.CreateExecSessionResponse, error) {
-	if req.GetAppId() == "" || req.GetProcess() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "app_id and process must not be empty")
-	}
+	// app_id/process 必填已退役 descriptor 注解（P4-1 批 1 Run B2）：拆
+	// per-field（原 "app_id and process must not be empty" 单句无冒号 →
+	// 各字段独立报 "app_id: must not be empty" 等，文案契约变化在案），由
+	// protovalidate 拦截器在受理面拦截；command×tty 条件面保留手写。
 	argv := req.GetCommand()
 	if len(argv) == 0 {
 		if !req.GetTty() {
@@ -147,9 +148,9 @@ func (svc *ExecService) CreateExecSession(ctx context.Context, req *runtimev1.Cr
 // 受理同链（authorizeAppID）；列表面诚实空——无在跑实例是空集而非错误
 // （E_EXEC_UNSUPPORTED 例外：面缺席如实呈现）。
 func (svc *ExecService) ListExecInstances(ctx context.Context, req *runtimev1.ListExecInstancesRequest) (*runtimev1.ListExecInstancesResponse, error) {
-	if req.GetAppId() == "" || req.GetProcess() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "app_id and process must not be empty")
-	}
+	// app_id/process 必填已退役 descriptor 注解（P4-1 批 1 Run B2）：拆
+	// per-field（原 "app_id and process must not be empty" → 各字段独立
+	// 报缺，文案契约变化在案），由 protovalidate 拦截器在受理面拦截。
 	a, err := svc.s.authorizeAppID(ctx, req.GetAppId())
 	if err != nil {
 		return nil, err

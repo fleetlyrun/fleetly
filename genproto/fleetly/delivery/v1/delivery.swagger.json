@@ -74,6 +74,7 @@
         "parameters": [
           {
             "name": "app_id",
+            "description": "app_id 必填：hook 挂靠的 App 行（行级授权锚）。",
             "in": "path",
             "required": true,
             "type": "string"
@@ -113,6 +114,7 @@
         "parameters": [
           {
             "name": "app_id",
+            "description": "app_id 必填：目标 hook 的 App 行（行级授权锚）。",
             "in": "path",
             "required": true,
             "type": "string"
@@ -275,6 +277,7 @@
         "parameters": [
           {
             "name": "app_id",
+            "description": "app_id 必填：Workload 视图所属 App（行级授权锚）。",
             "in": "path",
             "required": true,
             "type": "string"
@@ -665,6 +668,7 @@
         "parameters": [
           {
             "name": "app_id",
+            "description": "app_id 必填：diff 所在 App（行级授权锚）。",
             "in": "query",
             "required": false,
             "type": "string"
@@ -711,6 +715,7 @@
         "parameters": [
           {
             "name": "app_id",
+            "description": "app_id 必填：Revision 所在 App（行级授权锚）。",
             "in": "path",
             "required": true,
             "type": "string"
@@ -750,6 +755,7 @@
         "parameters": [
           {
             "name": "project_id",
+            "description": "project_id 必填：List 面的项目锚（行级授权沿此轴，ADR-0035）。",
             "in": "query",
             "required": false,
             "type": "string"
@@ -807,7 +813,8 @@
       "type": "object",
       "properties": {
         "repo": {
-          "type": "string"
+          "type": "string",
+          "title": "repo 必填：https:// 直连仓库 URL（构建检出源）；URL 形态执法\n（https 白名单/嵌入材料/空白控制字符/私网段）在服务内——本面只钉\n在场性。"
         },
         "branch": {
           "type": "string"
@@ -979,7 +986,8 @@
       "type": "object",
       "properties": {
         "app_id": {
-          "type": "string"
+          "type": "string",
+          "title": "app_id 必填：目标 App 行（行级授权锚）。"
         },
         "image": {
           "type": "string",

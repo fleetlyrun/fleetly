@@ -11,6 +11,7 @@
 package automationv1
 
 import (
+	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
 	_ "github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2/options"
 	_ "github.com/lynx-go/grpcapi/genproto/grpcapi/v1"
 	_ "google.golang.org/genproto/googleapis/api/annotations"
@@ -350,25 +351,32 @@ func (x *Run) GetFinishedAt() string {
 }
 
 type CreateTaskRequest struct {
-	state     protoimpl.MessageState `protogen:"open.v1"`
-	ProjectId string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	// name 是项目内人读名（可选；活跃期唯一）。
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// project_id 必填：Task 的父 Project（受理位父存活/配额校验的锚）。
+	ProjectId string `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	// name 是项目内人读名（可选；活跃期唯一）——可空字段的 dns 标签形状：
+	// 正则字面与长度界是 entityid.NamePatternSource / MaxNameLen 的镜像
+	// （proto 无法引用 Go 常量），字节一致由 entityid 包的 descriptor 对齐
+	// 测试执法；空名合法放行（本字段无 required 规则）。
 	Name string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	// form 双形态：one-shot | resident（空 = 按 desired_concurrency 推导）。
+	// form 双形态：one-shot | resident（空 = 按 desired_concurrency 推导；
+	// 值域外拒绝——值域执法在 descriptor 注解，空值短路放行推导语义）。
 	Form string `protobuf:"bytes,3,opt,name=form,proto3" json:"form,omitempty"`
 	// image 镜像直部署引用（私有仓库凭证经 Secret "registry:<host>" 解析）。
+	// 必填：Task 直投镜像部署，build sources 是 App 面。
 	Image   string   `protobuf:"bytes,4,opt,name=image,proto3" json:"image,omitempty"`
 	Command []string `protobuf:"bytes,5,rep,name=command,proto3" json:"command,omitempty"`
 	// env 是非敏感环境变量（归一化结果；敏感值走 secret_refs）。
 	Env        map[string]string `protobuf:"bytes,6,rep,name=env,proto3" json:"env,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	SecretRefs []string          `protobuf:"bytes,7,rep,name=secret_refs,json=secretRefs,proto3" json:"secret_refs,omitempty"`
-	// resources 是每 Run 资源上限。
+	// resources 是每 Run 资源上限（非负；0 = 平台缺省）。
 	CpuMillis int64 `protobuf:"varint,8,opt,name=cpu_millis,json=cpuMillis,proto3" json:"cpu_millis,omitempty"`
 	MemoryMb  int64 `protobuf:"varint,9,opt,name=memory_mb,json=memoryMb,proto3" json:"memory_mb,omitempty"`
 	// ttl_seconds 是 Run 生命周期上限（绝对 deadline 落库，ADR-0018；上限
 	// 86400；0 = 无 TTL）。
 	TtlSeconds int64 `protobuf:"varint,10,opt,name=ttl_seconds,json=ttlSeconds,proto3" json:"ttl_seconds,omitempty"`
-	// desired_concurrency 是 resident 期望并发 Run 数（one-shot 恒 1）。
+	// desired_concurrency 是 resident 期望并发 Run 数（one-shot 恒 1；非负，
+	// 上限由项目并发总量配额承载）。
 	DesiredConcurrency int64 `protobuf:"varint,11,opt,name=desired_concurrency,json=desiredConcurrency,proto3" json:"desired_concurrency,omitempty"`
 	// network_group 是 Task Network Group 名（Run 创建时刻挂靠；App Process
 	// 经 taskGroup:<name> 跨挂）。
@@ -642,8 +650,9 @@ func (x *GetTaskResponse) GetTask() *Task {
 }
 
 type ListTasksRequest struct {
-	state     protoimpl.MessageState `protogen:"open.v1"`
-	ProjectId string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// project_id 必填：List 面的项目锚（行级授权沿此轴，ADR-0035）。
+	ProjectId string `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
 	// after_task_seq 游标（上一页末条 seq（0 = 首页）。
 	AfterTaskSeq  int64 `protobuf:"varint,2,opt,name=after_task_seq,json=afterTaskSeq,proto3" json:"after_task_seq,omitempty"`
 	Limit         int32 `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
@@ -747,9 +756,11 @@ func (x *ListTasksResponse) GetTasks() []*Task {
 }
 
 type ScaleTaskRequest struct {
-	state              protoimpl.MessageState `protogen:"open.v1"`
-	Id                 string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	DesiredConcurrency int64                  `protobuf:"varint,2,opt,name=desired_concurrency,json=desiredConcurrency,proto3" json:"desired_concurrency,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// desired_concurrency 非负（0 = 合法缩零初态；上限由项目并发总量配额
+	// 承载）。
+	DesiredConcurrency int64 `protobuf:"varint,2,opt,name=desired_concurrency,json=desiredConcurrency,proto3" json:"desired_concurrency,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -1659,15 +1670,20 @@ func (x *Schedule) GetUpdatedAt() string {
 }
 
 type CreateScheduleRequest struct {
-	state     protoimpl.MessageState `protogen:"open.v1"`
-	ProjectId string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	// name 是项目内人读名（可选；活跃期唯一）。
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// project_id 必填：Schedule 的父 Project（受理位父存活校验的锚）。
+	ProjectId string `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	// name 是项目内人读名（可选；活跃期唯一）——可空字段的 dns 标签形状，
+	// 同 CreateTaskRequest.name（对齐测试执法）；空名合法放行。
 	Name string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	// cron 是 5 字段表达式（必填）。
+	// cron 是 5 字段表达式（必填；表达式合法性由服务内解析执法——文案带
+	// 解析器原话回显）。
 	Cron string `protobuf:"bytes,3,opt,name=cron,proto3" json:"cron,omitempty"`
 	// timezone 是 IANA 时区名（空 = UTC）。
 	Timezone string `protobuf:"bytes,4,opt,name=timezone,proto3" json:"timezone,omitempty"`
 	// 以下为冻结 TaskSpec 模板字段（每拍铸 one-shot Task 继承）。
+	// image 必填：Schedule 每拍直投镜像铸 one-shot Task，build sources 是
+	// App 面。
 	Image      string            `protobuf:"bytes,5,opt,name=image,proto3" json:"image,omitempty"`
 	Command    []string          `protobuf:"bytes,6,rep,name=command,proto3" json:"command,omitempty"`
 	Env        map[string]string `protobuf:"bytes,7,rep,name=env,proto3" json:"env,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
@@ -1936,8 +1952,9 @@ func (x *GetScheduleResponse) GetSchedule() *Schedule {
 }
 
 type ListSchedulesRequest struct {
-	state     protoimpl.MessageState `protogen:"open.v1"`
-	ProjectId string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// project_id 必填：List 面的项目锚（行级授权沿此轴，ADR-0035）。
+	ProjectId string `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
 	// after_schedule_seq 游标（上一页末条 seq（0 = 首页）。
 	AfterScheduleSeq int64 `protobuf:"varint,2,opt,name=after_schedule_seq,json=afterScheduleSeq,proto3" json:"after_schedule_seq,omitempty"`
 	Limit            int32 `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
@@ -2213,7 +2230,7 @@ var File_fleetly_automation_v1_automation_proto protoreflect.FileDescriptor
 
 const file_fleetly_automation_v1_automation_proto_rawDesc = "" +
 	"\n" +
-	"&fleetly/automation/v1/automation.proto\x12\x15fleetly.automation.v1\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"\x9d\x04\n" +
+	"&fleetly/automation/v1/automation.proto\x12\x15fleetly.automation.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"\x9d\x04\n" +
 	"\x04Task\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x10\n" +
 	"\x03seq\x18\x12 \x01(\x03R\x03seq\x12\x1d\n" +
@@ -2257,24 +2274,33 @@ const file_fleetly_automation_v1_automation_proto_rawDesc = "" +
 	"started_at\x18\n" +
 	" \x01(\tR\tstartedAt\x12\x1f\n" +
 	"\vfinished_at\x18\v \x01(\tR\n" +
-	"finishedAt\"\xaa\x04\n" +
-	"\x11CreateTaskRequest\x12\x1d\n" +
+	"finishedAt\"\xd1\n" +
 	"\n" +
-	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\x12\x12\n" +
-	"\x04form\x18\x03 \x01(\tR\x04form\x12\x14\n" +
-	"\x05image\x18\x04 \x01(\tR\x05image\x12\x18\n" +
+	"\x11CreateTaskRequest\x12Z\n" +
+	"\n" +
+	"project_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\tprojectId\x12\x81\x02\n" +
+	"\x04name\x18\x02 \x01(\tB\xec\x01\xbaH\xe8\x01\xba\x01\xe4\x01\n" +
+	"\x10string.dns_label\x12tmust be a dns label (lowercase letters, digits, hyphens; start and end alphanumeric, e.g. \"web\" or \"nightly-backup\")\x1aZthis.size() == 0 || (this.matches('^[a-z0-9]([a-z0-9-]*[a-z0-9])?$') && this.size() <= 63)R\x04name\x12\x86\x01\n" +
+	"\x04form\x18\x03 \x01(\tBr\xbaHo\xba\x01l\n" +
+	"\vstring.enum\x12'must be one of \"one-shot\" or \"resident\"\x1a4this.size() == 0 || this in ['one-shot', 'resident']R\x04form\x12\x92\x01\n" +
+	"\x05image\x18\x04 \x01(\tB|\xbaHy\xba\x01v\n" +
+	"\x0fstring.required\x12Rmust not be empty (tasks deploy images directly; build sources are an app surface)\x1a\x0fthis.size() > 0R\x05image\x12\x18\n" +
 	"\acommand\x18\x05 \x03(\tR\acommand\x12C\n" +
 	"\x03env\x18\x06 \x03(\v21.fleetly.automation.v1.CreateTaskRequest.EnvEntryR\x03env\x12\x1f\n" +
 	"\vsecret_refs\x18\a \x03(\tR\n" +
-	"secretRefs\x12\x1d\n" +
+	"secretRefs\x12X\n" +
 	"\n" +
-	"cpu_millis\x18\b \x01(\x03R\tcpuMillis\x12\x1b\n" +
-	"\tmemory_mb\x18\t \x01(\x03R\bmemoryMb\x12\x1f\n" +
+	"cpu_millis\x18\b \x01(\x03B9\xbaH6\xba\x013\n" +
+	"\x10num.non_negative\x12\x14must not be negative\x1a\tthis >= 0R\tcpuMillis\x12V\n" +
+	"\tmemory_mb\x18\t \x01(\x03B9\xbaH6\xba\x013\n" +
+	"\x10num.non_negative\x12\x14must not be negative\x1a\tthis >= 0R\bmemoryMb\x12t\n" +
 	"\vttl_seconds\x18\n" +
-	" \x01(\x03R\n" +
-	"ttlSeconds\x12/\n" +
-	"\x13desired_concurrency\x18\v \x01(\x03R\x12desiredConcurrency\x12#\n" +
+	" \x01(\x03BS\xbaHP\xba\x01M\n" +
+	"\tnum.range\x12$must be within [0, 86400] (ADR-0018)\x1a\x1athis >= 0 && this <= 86400R\n" +
+	"ttlSeconds\x12j\n" +
+	"\x13desired_concurrency\x18\v \x01(\x03B9\xbaH6\xba\x013\n" +
+	"\x10num.non_negative\x12\x14must not be negative\x1a\tthis >= 0R\x12desiredConcurrency\x12#\n" +
 	"\rnetwork_group\x18\f \x01(\tR\fnetworkGroup\x12$\n" +
 	"\x0eowner_token_id\x18\r \x01(\tR\fownerTokenId\x12'\n" +
 	"\x0fidempotency_key\x18\x0e \x01(\tR\x0eidempotencyKey\x1a6\n" +
@@ -2286,17 +2312,19 @@ const file_fleetly_automation_v1_automation_proto_rawDesc = "" +
 	"\x0eGetTaskRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"B\n" +
 	"\x0fGetTaskResponse\x12/\n" +
-	"\x04task\x18\x01 \x01(\v2\x1b.fleetly.automation.v1.TaskR\x04task\"m\n" +
-	"\x10ListTasksRequest\x12\x1d\n" +
+	"\x04task\x18\x01 \x01(\v2\x1b.fleetly.automation.v1.TaskR\x04task\"\xaa\x01\n" +
+	"\x10ListTasksRequest\x12Z\n" +
 	"\n" +
-	"project_id\x18\x01 \x01(\tR\tprojectId\x12$\n" +
+	"project_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\tprojectId\x12$\n" +
 	"\x0eafter_task_seq\x18\x02 \x01(\x03R\fafterTaskSeq\x12\x14\n" +
 	"\x05limit\x18\x03 \x01(\x05R\x05limit\"F\n" +
 	"\x11ListTasksResponse\x121\n" +
-	"\x05tasks\x18\x01 \x03(\v2\x1b.fleetly.automation.v1.TaskR\x05tasks\"S\n" +
+	"\x05tasks\x18\x01 \x03(\v2\x1b.fleetly.automation.v1.TaskR\x05tasks\"\x8e\x01\n" +
 	"\x10ScaleTaskRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\x12/\n" +
-	"\x13desired_concurrency\x18\x02 \x01(\x03R\x12desiredConcurrency\"D\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12j\n" +
+	"\x13desired_concurrency\x18\x02 \x01(\x03B9\xbaH6\xba\x013\n" +
+	"\x10num.non_negative\x12\x14must not be negative\x1a\tthis >= 0R\x12desiredConcurrency\"D\n" +
 	"\x11ScaleTaskResponse\x12/\n" +
 	"\x04task\x18\x01 \x01(\v2\x1b.fleetly.automation.v1.TaskR\x04task\"7\n" +
 	"\x0fStopTaskRequest\x12\x0e\n" +
@@ -2353,23 +2381,29 @@ const file_fleetly_automation_v1_automation_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\f \x01(\tR\tcreatedAt\x12\x1d\n" +
 	"\n" +
-	"updated_at\x18\r \x01(\tR\tupdatedAt\"\xf7\x03\n" +
-	"\x15CreateScheduleRequest\x12\x1d\n" +
+	"updated_at\x18\r \x01(\tR\tupdatedAt\"\xef\b\n" +
+	"\x15CreateScheduleRequest\x12Z\n" +
 	"\n" +
-	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\x12\x12\n" +
+	"project_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\tprojectId\x12\x81\x02\n" +
+	"\x04name\x18\x02 \x01(\tB\xec\x01\xbaH\xe8\x01\xba\x01\xe4\x01\n" +
+	"\x10string.dns_label\x12tmust be a dns label (lowercase letters, digits, hyphens; start and end alphanumeric, e.g. \"web\" or \"nightly-backup\")\x1aZthis.size() == 0 || (this.matches('^[a-z0-9]([a-z0-9-]*[a-z0-9])?$') && this.size() <= 63)R\x04name\x12\x12\n" +
 	"\x04cron\x18\x03 \x01(\tR\x04cron\x12\x1a\n" +
-	"\btimezone\x18\x04 \x01(\tR\btimezone\x12\x14\n" +
-	"\x05image\x18\x05 \x01(\tR\x05image\x12\x18\n" +
+	"\btimezone\x18\x04 \x01(\tR\btimezone\x12\x93\x01\n" +
+	"\x05image\x18\x05 \x01(\tB}\xbaHz\xba\x01w\n" +
+	"\x0fstring.required\x12Smust not be empty (schedules fire one-shot tasks; build sources are an app surface)\x1a\x0fthis.size() > 0R\x05image\x12\x18\n" +
 	"\acommand\x18\x06 \x03(\tR\acommand\x12G\n" +
 	"\x03env\x18\a \x03(\v25.fleetly.automation.v1.CreateScheduleRequest.EnvEntryR\x03env\x12\x1f\n" +
 	"\vsecret_refs\x18\b \x03(\tR\n" +
-	"secretRefs\x12\x1d\n" +
+	"secretRefs\x12X\n" +
 	"\n" +
-	"cpu_millis\x18\t \x01(\x03R\tcpuMillis\x12\x1b\n" +
+	"cpu_millis\x18\t \x01(\x03B9\xbaH6\xba\x013\n" +
+	"\x10num.non_negative\x12\x14must not be negative\x1a\tthis >= 0R\tcpuMillis\x12V\n" +
 	"\tmemory_mb\x18\n" +
-	" \x01(\x03R\bmemoryMb\x12\x1f\n" +
-	"\vttl_seconds\x18\v \x01(\x03R\n" +
+	" \x01(\x03B9\xbaH6\xba\x013\n" +
+	"\x10num.non_negative\x12\x14must not be negative\x1a\tthis >= 0R\bmemoryMb\x12t\n" +
+	"\vttl_seconds\x18\v \x01(\x03BS\xbaHP\xba\x01M\n" +
+	"\tnum.range\x12$must be within [0, 86400] (ADR-0018)\x1a\x1athis >= 0 && this <= 86400R\n" +
 	"ttlSeconds\x12#\n" +
 	"\rnetwork_group\x18\f \x01(\tR\fnetworkGroup\x12'\n" +
 	"\x0fidempotency_key\x18\r \x01(\tR\x0eidempotencyKey\x1a6\n" +
@@ -2381,10 +2415,11 @@ const file_fleetly_automation_v1_automation_proto_rawDesc = "" +
 	"\x12GetScheduleRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"R\n" +
 	"\x13GetScheduleResponse\x12;\n" +
-	"\bschedule\x18\x01 \x01(\v2\x1f.fleetly.automation.v1.ScheduleR\bschedule\"y\n" +
-	"\x14ListSchedulesRequest\x12\x1d\n" +
+	"\bschedule\x18\x01 \x01(\v2\x1f.fleetly.automation.v1.ScheduleR\bschedule\"\xb6\x01\n" +
+	"\x14ListSchedulesRequest\x12Z\n" +
 	"\n" +
-	"project_id\x18\x01 \x01(\tR\tprojectId\x12,\n" +
+	"project_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\tprojectId\x12,\n" +
 	"\x12after_schedule_seq\x18\x02 \x01(\x03R\x10afterScheduleSeq\x12\x14\n" +
 	"\x05limit\x18\x03 \x01(\x05R\x05limit\"V\n" +
 	"\x15ListSchedulesResponse\x12=\n" +

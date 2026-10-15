@@ -161,9 +161,8 @@ func (svc *BuildsService) UploadSource(stream deliveryv1.BuildsService_UploadSou
 
 // ListUploads 列项目上传产物（新→旧 + after 游标；ADR-0026 惯例）。
 func (svc *BuildsService) ListUploads(ctx context.Context, req *deliveryv1.ListUploadsRequest) (*deliveryv1.ListUploadsResponse, error) {
-	if req.GetProjectId() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "project_id: must not be empty")
-	}
+	// project_id 必填已退役 descriptor 注解（P4-1 批 1 Run B2）：空值由
+	// protovalidate 拦截器在受理面拦截，文案与退役前逐字节一致。
 	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}

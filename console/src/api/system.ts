@@ -331,8 +331,9 @@ export interface operations {
         parameters: {
             query?: {
                 /**
-                 * @description resource 命名一条自描述条目（空或未知名 → E_INVALID_ARGUMENT /
-                 *     E_NOT_FOUND，报错信息给出清单入口）。
+                 * @description resource 必填：命名一条自描述条目（spec kind 如 "app"、事件名如
+                 *     "deployment.succeeded"；空值报必填，未知名 → E_NOT_FOUND，报错信息
+                 *     给出清单入口）。
                  */
                 resource?: string;
             };

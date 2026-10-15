@@ -1,4 +1,4 @@
-package spec_test
+package spec
 
 // descriptor 对齐测试（P4-1 批 1 Run B1 单源执法）：proto 面的 protovalidate
 // CEL 注解无法引用 Go 常量，structure.v1 PutSecretRequest.name 的 secret 名
@@ -18,7 +18,6 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
-	"github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
 )
 
 // celRuleByID 从字段的 cel 规则集中按 id 取规则。
@@ -50,8 +49,8 @@ func TestPutSecretNameAnnotationMatchesSecretNamePattern(t *testing.T) {
 	// shape 规则（id string.secret_name）：表达式须包含本包导出的正则字面
 	// 与 ".." 拒子句（ValidSecretName 的两半）。
 	shape := celRuleByID(t, rules, "string.secret_name")
-	assert.Contains(t, shape.GetExpression(), spec.SecretNamePattern,
-		"shape 表达式与 spec.SecretNamePattern 漂移——proto 与本包必须同 commit 同改")
+	assert.Contains(t, shape.GetExpression(), SecretNamePattern,
+		"shape 表达式与 SecretNamePattern 漂移——proto 与本包必须同 commit 同改")
 	assert.Contains(t, shape.GetExpression(), `!this.contains('..')`,
 		"shape 表达式缺 \"..\" 拒子句——与 ValidSecretName 漂移")
 }
@@ -68,8 +67,8 @@ func TestVariableNameAnnotationMatchesEnvNamePattern(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			rules := fieldCEL(t, tc.md, "name")
 			shape := celRuleByID(t, rules, "string.env_name")
-			assert.Contains(t, shape.GetExpression(), spec.EnvNamePattern,
-				"shape 表达式与 spec.EnvNamePattern 漂移——proto 与本包必须同 commit 同改")
+			assert.Contains(t, shape.GetExpression(), EnvNamePattern,
+				"shape 表达式与 EnvNamePattern 漂移——proto 与本包必须同 commit 同改")
 		})
 	}
 }

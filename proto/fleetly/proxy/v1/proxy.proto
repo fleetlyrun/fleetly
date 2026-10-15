@@ -5,6 +5,7 @@ package fleetly.proxy.v1;
 
 option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/proxy/v1;proxyv1";
 
+import "buf/validate/validate.proto";
 import "google/api/annotations.proto";
 import "protoc-gen-openapiv2/options/annotations.proto";
 import "grpcapi/v1/authz.proto";
@@ -62,12 +63,47 @@ message Route {
 }
 
 message CreateRouteRequest {
-  string project_id = 1;
-  string host = 2;
+  // 五要素必填：路由 = Project 内 host(+path) → App Process 端口的映射，
+  // 缺一即无完整发布目标（各字段独立报缺，组合检查拆 per-field）。
+  string project_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  // host/path 语义校验（白名单字符集，traefik 规则反引号定界注入防线）
+  // 在服务内执法——本面只钉在场性。
+  string host = 2 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
   string path = 3;
-  string app_id = 4;
-  string process = 5;
-  int32 port = 6;
+  string app_id = 4 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  string process = 5 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  // port 必填（正整数；0 = 未声明，负值一并拒绝）。
+  int32 port = 6 [
+    (buf.validate.field).cel = {
+      id: "num.required"
+      message: "must not be empty"
+      expression: "this > 0"
+    }
+  ];
   // protocol: http | h2c | tcp（默认 http）。
   string protocol = 7;
   // tls_mode: auto（ACME）| none。

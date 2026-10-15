@@ -9,6 +9,7 @@
 package proxyv1
 
 import (
+	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
 	_ "github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2/options"
 	_ "github.com/lynx-go/grpcapi/genproto/grpcapi/v1"
 	_ "google.golang.org/genproto/googleapis/api/annotations"
@@ -153,13 +154,18 @@ func (x *Route) GetCreatedAt() string {
 }
 
 type CreateRouteRequest struct {
-	state     protoimpl.MessageState `protogen:"open.v1"`
-	ProjectId string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	Host      string                 `protobuf:"bytes,2,opt,name=host,proto3" json:"host,omitempty"`
-	Path      string                 `protobuf:"bytes,3,opt,name=path,proto3" json:"path,omitempty"`
-	AppId     string                 `protobuf:"bytes,4,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
-	Process   string                 `protobuf:"bytes,5,opt,name=process,proto3" json:"process,omitempty"`
-	Port      int32                  `protobuf:"varint,6,opt,name=port,proto3" json:"port,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 五要素必填：路由 = Project 内 host(+path) → App Process 端口的映射，
+	// 缺一即无完整发布目标（各字段独立报缺，组合检查拆 per-field）。
+	ProjectId string `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	// host/path 语义校验（白名单字符集，traefik 规则反引号定界注入防线）
+	// 在服务内执法——本面只钉在场性。
+	Host    string `protobuf:"bytes,2,opt,name=host,proto3" json:"host,omitempty"`
+	Path    string `protobuf:"bytes,3,opt,name=path,proto3" json:"path,omitempty"`
+	AppId   string `protobuf:"bytes,4,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
+	Process string `protobuf:"bytes,5,opt,name=process,proto3" json:"process,omitempty"`
+	// port 必填（正整数；0 = 未声明，负值一并拒绝）。
+	Port int32 `protobuf:"varint,6,opt,name=port,proto3" json:"port,omitempty"`
 	// protocol: http | h2c | tcp（默认 http）。
 	Protocol string `protobuf:"bytes,7,opt,name=protocol,proto3" json:"protocol,omitempty"`
 	// tls_mode: auto（ACME）| none。
@@ -489,7 +495,7 @@ var File_fleetly_proxy_v1_proxy_proto protoreflect.FileDescriptor
 
 const file_fleetly_proxy_v1_proxy_proto_rawDesc = "" +
 	"\n" +
-	"\x1cfleetly/proxy/v1/proxy.proto\x12\x10fleetly.proxy.v1\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"\x8b\x02\n" +
+	"\x1cfleetly/proxy/v1/proxy.proto\x12\x10fleetly.proxy.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"\x8b\x02\n" +
 	"\x05Route\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x10\n" +
 	"\x03seq\x18\v \x01(\x03R\x03seq\x12\x1d\n" +
@@ -504,15 +510,20 @@ const file_fleetly_proxy_v1_proxy_proto_rawDesc = "" +
 	"\btls_mode\x18\t \x01(\tR\atlsMode\x12\x1d\n" +
 	"\n" +
 	"created_at\x18\n" +
-	" \x01(\tR\tcreatedAt\"\xd7\x01\n" +
-	"\x12CreateRouteRequest\x12\x1d\n" +
+	" \x01(\tR\tcreatedAt\"\xfe\x03\n" +
+	"\x12CreateRouteRequest\x12Z\n" +
 	"\n" +
-	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x12\n" +
-	"\x04host\x18\x02 \x01(\tR\x04host\x12\x12\n" +
-	"\x04path\x18\x03 \x01(\tR\x04path\x12\x15\n" +
-	"\x06app_id\x18\x04 \x01(\tR\x05appId\x12\x18\n" +
-	"\aprocess\x18\x05 \x01(\tR\aprocess\x12\x12\n" +
-	"\x04port\x18\x06 \x01(\x05R\x04port\x12\x1a\n" +
+	"project_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\tprojectId\x12O\n" +
+	"\x04host\x18\x02 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\x04host\x12\x12\n" +
+	"\x04path\x18\x03 \x01(\tR\x04path\x12R\n" +
+	"\x06app_id\x18\x04 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\x05appId\x12U\n" +
+	"\aprocess\x18\x05 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\aprocess\x12E\n" +
+	"\x04port\x18\x06 \x01(\x05B1\xbaH.\xba\x01+\n" +
+	"\fnum.required\x12\x11must not be empty\x1a\bthis > 0R\x04port\x12\x1a\n" +
 	"\bprotocol\x18\a \x01(\tR\bprotocol\x12\x19\n" +
 	"\btls_mode\x18\b \x01(\tR\atlsMode\"D\n" +
 	"\x13CreateRouteResponse\x12-\n" +

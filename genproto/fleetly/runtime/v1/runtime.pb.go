@@ -9,6 +9,7 @@
 package runtimev1
 
 import (
+	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
 	_ "github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2/options"
 	_ "github.com/lynx-go/grpcapi/genproto/grpcapi/v1"
 	_ "google.golang.org/genproto/googleapis/api/annotations"
@@ -353,7 +354,7 @@ func (x *EnrollNodeResponse) GetRelayCommand() string {
 // 节点运维动词以平台节点 ID 为锚（响应无数据面：结果即动作本身）。
 type DrainNodeRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// node_id 是平台节点 ID（永不复用）。
+	// node_id 是平台节点 ID（永不复用）——必填：运维动词的锚点。
 	NodeId        string `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -433,8 +434,9 @@ func (*DrainNodeResponse) Descriptor() ([]byte, []int) {
 }
 
 type CordonNodeRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// node_id 必填：运维动词的锚点。
+	NodeId        string `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -513,8 +515,9 @@ func (*CordonNodeResponse) Descriptor() ([]byte, []int) {
 }
 
 type UncordonNodeRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// node_id 必填：运维动词的锚点。
+	NodeId        string `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -596,7 +599,7 @@ var File_fleetly_runtime_v1_runtime_proto protoreflect.FileDescriptor
 
 const file_fleetly_runtime_v1_runtime_proto_rawDesc = "" +
 	"\n" +
-	" fleetly/runtime/v1/runtime.proto\x12\x12fleetly.runtime.v1\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"\xb4\x02\n" +
+	" fleetly/runtime/v1/runtime.proto\x12\x12fleetly.runtime.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"\xb4\x02\n" +
 	"\x04Node\x12\x1f\n" +
 	"\vplatform_id\x18\x01 \x01(\tR\n" +
 	"platformId\x12\x10\n" +
@@ -621,15 +624,18 @@ const file_fleetly_runtime_v1_runtime_proto_rawDesc = "" +
 	"\x06rotate\x18\x01 \x01(\bR\x06rotate\"\\\n" +
 	"\x12EnrollNodeResponse\x12!\n" +
 	"\fjoin_command\x18\x01 \x01(\tR\vjoinCommand\x12#\n" +
-	"\rrelay_command\x18\x02 \x01(\tR\frelayCommand\"+\n" +
-	"\x10DrainNodeRequest\x12\x17\n" +
-	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"\x13\n" +
-	"\x11DrainNodeResponse\",\n" +
-	"\x11CordonNodeRequest\x12\x17\n" +
-	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"\x14\n" +
-	"\x12CordonNodeResponse\".\n" +
-	"\x13UncordonNodeRequest\x12\x17\n" +
-	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"\x16\n" +
+	"\rrelay_command\x18\x02 \x01(\tR\frelayCommand\"h\n" +
+	"\x10DrainNodeRequest\x12T\n" +
+	"\anode_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\x06nodeId\"\x13\n" +
+	"\x11DrainNodeResponse\"i\n" +
+	"\x11CordonNodeRequest\x12T\n" +
+	"\anode_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\x06nodeId\"\x14\n" +
+	"\x12CordonNodeResponse\"k\n" +
+	"\x13UncordonNodeRequest\x12T\n" +
+	"\anode_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\x06nodeId\"\x16\n" +
 	"\x14UncordonNodeResponse2\xe9\x05\n" +
 	"\fNodesService\x12|\n" +
 	"\tListNodes\x12$.fleetly.runtime.v1.ListNodesRequest\x1a%.fleetly.runtime.v1.ListNodesResponse\"\"\xea\xc4\x19\r\b\x03\"\t\n" +

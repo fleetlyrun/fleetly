@@ -14,6 +14,7 @@
 package runtimev1
 
 import (
+	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
 	_ "github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2/options"
 	_ "github.com/lynx-go/grpcapi/genproto/grpcapi/v1"
 	_ "google.golang.org/genproto/googleapis/api/annotations"
@@ -33,8 +34,9 @@ const (
 
 type CreateExecSessionRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	AppId string                 `protobuf:"bytes,1,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
-	// process 是 App 内进程模板名（web/worker…）。
+	// app_id 必填：exec 会话的宿主 App（行级授权锚）。
+	AppId string `protobuf:"bytes,1,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
+	// process 必填：App 内进程模板名（web/worker…）。
 	Process string `protobuf:"bytes,2,opt,name=process,proto3" json:"process,omitempty"`
 	// command 是完整 argv（数组形态；零 shell——shellguard 射程延续）。
 	// 空且 tty=true 时缺省 ["/bin/sh"]；空且 tty=false 拒绝（服务端校验）。
@@ -116,8 +118,9 @@ func (x *CreateExecSessionRequest) GetInstance() string {
 // ListExecInstancesRequest 是进程在跑实例集的观测请求。
 type ListExecInstancesRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	AppId string                 `protobuf:"bytes,1,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
-	// process 是 App 内进程模板名（web/worker…）。
+	// app_id 必填：观测目标 App（行级授权锚）。
+	AppId string `protobuf:"bytes,1,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
+	// process 必填：App 内进程模板名（web/worker…）。
 	Process       string `protobuf:"bytes,2,opt,name=process,proto3" json:"process,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -875,16 +878,20 @@ var File_fleetly_runtime_v1_exec_proto protoreflect.FileDescriptor
 
 const file_fleetly_runtime_v1_exec_proto_rawDesc = "" +
 	"\n" +
-	"\x1dfleetly/runtime/v1/exec.proto\x12\x12fleetly.runtime.v1\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"\x93\x01\n" +
-	"\x18CreateExecSessionRequest\x12\x15\n" +
-	"\x06app_id\x18\x01 \x01(\tR\x05appId\x12\x18\n" +
-	"\aprocess\x18\x02 \x01(\tR\aprocess\x12\x18\n" +
+	"\x1dfleetly/runtime/v1/exec.proto\x12\x12fleetly.runtime.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"\x8d\x02\n" +
+	"\x18CreateExecSessionRequest\x12R\n" +
+	"\x06app_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\x05appId\x12U\n" +
+	"\aprocess\x18\x02 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\aprocess\x12\x18\n" +
 	"\acommand\x18\x03 \x03(\tR\acommand\x12\x10\n" +
 	"\x03tty\x18\x04 \x01(\bR\x03tty\x12\x1a\n" +
-	"\binstance\x18\x05 \x01(\tR\binstance\"K\n" +
-	"\x18ListExecInstancesRequest\x12\x15\n" +
-	"\x06app_id\x18\x01 \x01(\tR\x05appId\x12\x18\n" +
-	"\aprocess\x18\x02 \x01(\tR\aprocess\"[\n" +
+	"\binstance\x18\x05 \x01(\tR\binstance\"\xc5\x01\n" +
+	"\x18ListExecInstancesRequest\x12R\n" +
+	"\x06app_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\x05appId\x12U\n" +
+	"\aprocess\x18\x02 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\aprocess\"[\n" +
 	"\x19ListExecInstancesResponse\x12>\n" +
 	"\tinstances\x18\x01 \x03(\v2 .fleetly.runtime.v1.ExecInstanceR\tinstances\"C\n" +
 	"\fExecInstance\x12\x1a\n" +

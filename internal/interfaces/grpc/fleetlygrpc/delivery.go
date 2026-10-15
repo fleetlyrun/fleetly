@@ -35,9 +35,9 @@ type DeploymentsService struct {
 // AppSpec spec_file）并受理部署（合并/冻结/admission 全在
 // engine.SubmitSpec 单咽喉——P3-7 下沉批；hook 闸门留 api）。
 func (svc *DeploymentsService) Deploy(ctx context.Context, req *deliveryv1.DeployRequest) (*deliveryv1.DeployResponse, error) {
-	if req.GetAppId() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "app_id: must not be empty")
-	}
+	// app_id 必填已退役 descriptor 注解（P4-1 批 1 Run B2）：空值由
+	// protovalidate 拦截器在受理面拦截，文案与退役前逐字节一致；四源互斥/
+	// probe/port/protocol/builder 族归 P4-2，仍住手写。
 	// 行级授权（ADR-0035）：App 归属 Team 比对（载行供归一化复用）。
 	appRow, err := svc.s.authorizeAppID(ctx, req.GetAppId())
 	if err != nil {
@@ -421,9 +421,8 @@ func (svc *RevisionsService) ListRevisions(ctx context.Context, req *deliveryv1.
 // GetRevision 回读单条 Revision 的冻结 AppSpec 全文（ADR-0071 冻结层）：
 // 行级授权与 DiffRevisions 同款（冻结体含 env/secret 引用名——跨租户读面）。
 func (svc *RevisionsService) GetRevision(ctx context.Context, req *deliveryv1.GetRevisionRequest) (*deliveryv1.GetRevisionResponse, error) {
-	if req.GetAppId() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "app_id: must not be empty")
-	}
+	// app_id 必填已退役 descriptor 注解（P4-1 批 1 Run B2）：空值由
+	// protovalidate 拦截器在受理面拦截，文案与退役前逐字节一致。
 	if err := svc.s.authorizeAppIDOnly(ctx, req.GetAppId()); err != nil {
 		return nil, err
 	}
@@ -442,9 +441,8 @@ func (svc *RevisionsService) GetRevision(ctx context.Context, req *deliveryv1.Ge
 // seq 缺省 = 当前生效（engine 侧 LatestSucceeded 解析）；渲染错误经
 // mapStateError（ErrNotFound → E_NOT_FOUND，其余侧表解析失败如实上抛）。
 func (svc *RevisionsService) GetAppWorkloads(ctx context.Context, req *deliveryv1.GetAppWorkloadsRequest) (*deliveryv1.GetAppWorkloadsResponse, error) {
-	if req.GetAppId() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "app_id: must not be empty")
-	}
+	// app_id 必填已退役 descriptor 注解（P4-1 批 1 Run B2）：空值由
+	// protovalidate 拦截器在受理面拦截，文案与退役前逐字节一致。
 	if err := svc.s.authorizeAppIDOnly(ctx, req.GetAppId()); err != nil {
 		return nil, err
 	}
@@ -460,9 +458,8 @@ func (svc *RevisionsService) GetAppWorkloads(ctx context.Context, req *deliveryv
 }
 
 func (svc *RevisionsService) DiffRevisions(ctx context.Context, req *deliveryv1.DiffRevisionsRequest) (*deliveryv1.DiffRevisionsResponse, error) {
-	if req.GetAppId() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "app_id: must not be empty")
-	}
+	// app_id 必填已退役 descriptor 注解（P4-1 批 1 Run B2）：空值由
+	// protovalidate 拦截器在受理面拦截，文案与退役前逐字节一致。
 	// 行级授权（ADR-0035）：diff 回读两侧冻结 spec 全文（含 env/secret 引用
 	// 名）——跨租户读面。
 	if err := svc.s.authorizeAppIDOnly(ctx, req.GetAppId()); err != nil {

@@ -10,6 +10,7 @@
 package telemetryv1
 
 import (
+	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
 	_ "github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2/options"
 	_ "github.com/lynx-go/grpcapi/genproto/grpcapi/v1"
 	_ "google.golang.org/genproto/googleapis/api/annotations"
@@ -722,7 +723,7 @@ func (x *StreamLogsResponse) GetLine() []byte {
 type QueryMetricsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// query 是 PromQL（透传；App 域过滤经 container_label_fleetly_ns_*
-	// 序列标签——CLI/Console 侧构造）。
+	// 序列标签——CLI/Console 侧构造）。必填：空查询无从起查。
 	Query string `protobuf:"bytes,1,opt,name=query,proto3" json:"query,omitempty"`
 	// start/end 是时间窗（RFC3339；空 end = 现在，空 start = end 前 1h）。
 	Start string `protobuf:"bytes,2,opt,name=start,proto3" json:"start,omitempty"`
@@ -1028,8 +1029,14 @@ func (x *NotificationChannel) GetCreatedAt() string {
 
 type CreateNotificationChannelRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// name 是通道名（全局唯一；人类引用锚）。
+	// name 是通道名（全局唯一；人类引用锚）——dns 标签形态（小写字母数字
+	// 与连字符，首尾字母数字，≤63 字符）是可读 id base 与派生名安全的前提。
+	// 正则字面与长度界是 entityid.NamePatternSource / MaxNameLen 的镜像
+	// （proto 无法引用 Go 常量），字节一致由 entityid 包的 descriptor 对齐
+	// 测试执法；空值报 required（本字段必填）。
 	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// kind: webhook | telegram（值域见 CONTEXT.md Notification Channel 词条；
+	// 值域执法在服务内——文案带收到的原值回显）。
 	Kind string `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
 	// webhook 形态：url 是接收端点（可含凭证查询串——age 信封入库）。
 	Url string `protobuf:"bytes,3,opt,name=url,proto3" json:"url,omitempty"`
@@ -1150,8 +1157,9 @@ func (x *CreateNotificationChannelResponse) GetChannel() *NotificationChannel {
 }
 
 type TestNotificationChannelRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ChannelId     string                 `protobuf:"bytes,1,opt,name=channel_id,json=channelId,proto3" json:"channel_id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// channel_id 必填：目标通道行。
+	ChannelId     string `protobuf:"bytes,1,opt,name=channel_id,json=channelId,proto3" json:"channel_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1327,8 +1335,9 @@ func (x *ListNotificationChannelsResponse) GetChannels() []*NotificationChannel 
 }
 
 type DeleteNotificationChannelRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ChannelId     string                 `protobuf:"bytes,1,opt,name=channel_id,json=channelId,proto3" json:"channel_id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// channel_id 必填：目标通道行。
+	ChannelId     string `protobuf:"bytes,1,opt,name=channel_id,json=channelId,proto3" json:"channel_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1519,11 +1528,17 @@ func (x *AlertRule) GetCreatedAt() string {
 }
 
 type CreateAlertRuleRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	AppId         string                 `protobuf:"bytes,1,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
-	Metric        string                 `protobuf:"bytes,2,opt,name=metric,proto3" json:"metric,omitempty"`
-	Threshold     float64                `protobuf:"fixed64,3,opt,name=threshold,proto3" json:"threshold,omitempty"`
-	ForSeconds    int64                  `protobuf:"varint,4,opt,name=for_seconds,json=forSeconds,proto3" json:"for_seconds,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// app_id 必填：规则挂靠的 App（行级授权锚）。
+	AppId string `protobuf:"bytes,1,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
+	// metric: cpu_percent | memory_working_set_bytes（值域冻结；值域执法
+	// 在服务内——文案带收到的原值回显）。
+	Metric string `protobuf:"bytes,2,opt,name=metric,proto3" json:"metric,omitempty"`
+	// threshold 是越限阈值（非负；0 = 任何达标观测即越限）。
+	Threshold float64 `protobuf:"fixed64,3,opt,name=threshold,proto3" json:"threshold,omitempty"`
+	// for_seconds 是持续窗（连续越限 ≥ 本值才迁移 firing；0 = 立即；
+	// 采样近似语义见 ADR-0041）。
+	ForSeconds    int64 `protobuf:"varint,4,opt,name=for_seconds,json=forSeconds,proto3" json:"for_seconds,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1720,8 +1735,9 @@ func (x *ListAlertRulesResponse) GetRules() []*AlertRule {
 }
 
 type DeleteAlertRuleRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	RuleId        string                 `protobuf:"bytes,1,opt,name=rule_id,json=ruleId,proto3" json:"rule_id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// rule_id 必填：目标规则行。
+	RuleId        string `protobuf:"bytes,1,opt,name=rule_id,json=ruleId,proto3" json:"rule_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1977,7 +1993,7 @@ var File_fleetly_telemetry_v1_telemetry_proto protoreflect.FileDescriptor
 
 const file_fleetly_telemetry_v1_telemetry_proto_rawDesc = "" +
 	"\n" +
-	"$fleetly/telemetry/v1/telemetry.proto\x12\x14fleetly.telemetry.v1\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"\xa7\x01\n" +
+	"$fleetly/telemetry/v1/telemetry.proto\x12\x14fleetly.telemetry.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"\xa7\x01\n" +
 	"\x05Event\x12\x10\n" +
 	"\x03seq\x18\x01 \x01(\x03R\x03seq\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1c\n" +
@@ -2029,9 +2045,10 @@ const file_fleetly_telemetry_v1_telemetry_proto_rawDesc = "" +
 	"\tcontainer\x18\x02 \x01(\tR\tcontainer\x12\x12\n" +
 	"\x04node\x18\x03 \x01(\tR\x04node\x12\x12\n" +
 	"\x04time\x18\x04 \x01(\tR\x04time\x12\x12\n" +
-	"\x04line\x18\x05 \x01(\fR\x04line\"v\n" +
-	"\x13QueryMetricsRequest\x12\x14\n" +
-	"\x05query\x18\x01 \x01(\tR\x05query\x12\x14\n" +
+	"\x04line\x18\x05 \x01(\fR\x04line\"\xb3\x01\n" +
+	"\x13QueryMetricsRequest\x12Q\n" +
+	"\x05query\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\x05query\x12\x14\n" +
 	"\x05start\x18\x02 \x01(\tR\x05start\x12\x10\n" +
 	"\x03end\x18\x03 \x01(\tR\x03end\x12!\n" +
 	"\fstep_seconds\x18\x04 \x01(\x03R\vstepSeconds\"R\n" +
@@ -2053,27 +2070,31 @@ const file_fleetly_telemetry_v1_telemetry_proto_rawDesc = "" +
 	"\aenabled\x18\x04 \x01(\bR\aenabled\x12!\n" +
 	"\flast_failure\x18\x05 \x01(\tR\vlastFailure\x12\x1d\n" +
 	"\n" +
-	"created_at\x18\x06 \x01(\tR\tcreatedAt\"\x92\x01\n" +
-	" CreateNotificationChannelRequest\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
+	"created_at\x18\x06 \x01(\tR\tcreatedAt\"\xba\x03\n" +
+	" CreateNotificationChannelRequest\x12\xb9\x02\n" +
+	"\x04name\x18\x01 \x01(\tB\xa4\x02\xbaH\xa0\x02\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0\xba\x01\xe4\x01\n" +
+	"\x10string.dns_label\x12tmust be a dns label (lowercase letters, digits, hyphens; start and end alphanumeric, e.g. \"web\" or \"nightly-backup\")\x1aZthis.size() == 0 || (this.matches('^[a-z0-9]([a-z0-9-]*[a-z0-9])?$') && this.size() <= 63)R\x04name\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x10\n" +
 	"\x03url\x18\x03 \x01(\tR\x03url\x12\x1b\n" +
 	"\tbot_token\x18\x04 \x01(\tR\bbotToken\x12\x17\n" +
 	"\achat_id\x18\x05 \x01(\tR\x06chatId\"h\n" +
 	"!CreateNotificationChannelResponse\x12C\n" +
-	"\achannel\x18\x01 \x01(\v2).fleetly.telemetry.v1.NotificationChannelR\achannel\"?\n" +
-	"\x1eTestNotificationChannelRequest\x12\x1d\n" +
+	"\achannel\x18\x01 \x01(\v2).fleetly.telemetry.v1.NotificationChannelR\achannel\"|\n" +
+	"\x1eTestNotificationChannelRequest\x12Z\n" +
 	"\n" +
-	"channel_id\x18\x01 \x01(\tR\tchannelId\"U\n" +
+	"channel_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\tchannelId\"U\n" +
 	"\x1fTestNotificationChannelResponse\x12\x1c\n" +
 	"\tdelivered\x18\x01 \x01(\bR\tdelivered\x12\x14\n" +
 	"\x05error\x18\x02 \x01(\tR\x05error\"!\n" +
 	"\x1fListNotificationChannelsRequest\"i\n" +
 	" ListNotificationChannelsResponse\x12E\n" +
-	"\bchannels\x18\x01 \x03(\v2).fleetly.telemetry.v1.NotificationChannelR\bchannels\"A\n" +
-	" DeleteNotificationChannelRequest\x12\x1d\n" +
+	"\bchannels\x18\x01 \x03(\v2).fleetly.telemetry.v1.NotificationChannelR\bchannels\"~\n" +
+	" DeleteNotificationChannelRequest\x12Z\n" +
 	"\n" +
-	"channel_id\x18\x01 \x01(\tR\tchannelId\"#\n" +
+	"channel_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\tchannelId\"#\n" +
 	"!DeleteNotificationChannelResponse\"\xf9\x01\n" +
 	"\tAlertRule\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x15\n" +
@@ -2087,11 +2108,13 @@ const file_fleetly_telemetry_v1_telemetry_proto_rawDesc = "" +
 	"\vstate_since\x18\b \x01(\tR\n" +
 	"stateSince\x12\x1d\n" +
 	"\n" +
-	"created_at\x18\t \x01(\tR\tcreatedAt\"\x86\x01\n" +
-	"\x16CreateAlertRuleRequest\x12\x15\n" +
-	"\x06app_id\x18\x01 \x01(\tR\x05appId\x12\x16\n" +
-	"\x06metric\x18\x02 \x01(\tR\x06metric\x12\x1c\n" +
-	"\tthreshold\x18\x03 \x01(\x01R\tthreshold\x12\x1f\n" +
+	"created_at\x18\t \x01(\tR\tcreatedAt\"\xfe\x01\n" +
+	"\x16CreateAlertRuleRequest\x12R\n" +
+	"\x06app_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\x05appId\x12\x16\n" +
+	"\x06metric\x18\x02 \x01(\tR\x06metric\x12W\n" +
+	"\tthreshold\x18\x03 \x01(\x01B9\xbaH6\xba\x013\n" +
+	"\x10num.non_negative\x12\x14must not be negative\x1a\tthis >= 0R\tthreshold\x12\x1f\n" +
 	"\vfor_seconds\x18\x04 \x01(\x03R\n" +
 	"forSeconds\"N\n" +
 	"\x17CreateAlertRuleResponse\x123\n" +
@@ -2099,9 +2122,10 @@ const file_fleetly_telemetry_v1_telemetry_proto_rawDesc = "" +
 	"\x15ListAlertRulesRequest\x12\x15\n" +
 	"\x06app_id\x18\x01 \x01(\tR\x05appId\"O\n" +
 	"\x16ListAlertRulesResponse\x125\n" +
-	"\x05rules\x18\x01 \x03(\v2\x1f.fleetly.telemetry.v1.AlertRuleR\x05rules\"1\n" +
-	"\x16DeleteAlertRuleRequest\x12\x17\n" +
-	"\arule_id\x18\x01 \x01(\tR\x06ruleId\"\x19\n" +
+	"\x05rules\x18\x01 \x03(\v2\x1f.fleetly.telemetry.v1.AlertRuleR\x05rules\"n\n" +
+	"\x16DeleteAlertRuleRequest\x12T\n" +
+	"\arule_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\x06ruleId\"\x19\n" +
 	"\x17DeleteAlertRuleResponse\"\xca\x01\n" +
 	"\n" +
 	"AlertState\x12\x17\n" +

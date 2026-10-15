@@ -239,6 +239,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description node_id 必填：运维动词的锚点。 */
                 node_id: string;
             };
             cookie?: never;
@@ -274,7 +275,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description node_id 是平台节点 ID（永不复用）。 */
+                /** @description node_id 是平台节点 ID（永不复用）——必填：运维动词的锚点。 */
                 node_id: string;
             };
             cookie?: never;
@@ -310,6 +311,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description node_id 必填：运维动词的锚点。 */
                 node_id: string;
             };
             cookie?: never;

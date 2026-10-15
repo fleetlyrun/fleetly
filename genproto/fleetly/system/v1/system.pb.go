@@ -11,6 +11,7 @@
 package systemv1
 
 import (
+	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
 	_ "github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2/options"
 	_ "github.com/lynx-go/grpcapi/genproto/grpcapi/v1"
 	_ "google.golang.org/genproto/googleapis/api/annotations"
@@ -592,8 +593,9 @@ func (x *GetSchemaResponse) GetEntries() []*SchemaEntry {
 
 type ExplainRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// resource 命名一条自描述条目（空或未知名 → E_INVALID_ARGUMENT /
-	// E_NOT_FOUND，报错信息给出清单入口）。
+	// resource 必填：命名一条自描述条目（spec kind 如 "app"、事件名如
+	// "deployment.succeeded"；空值报必填，未知名 → E_NOT_FOUND，报错信息
+	// 给出清单入口）。
 	Resource      string `protobuf:"bytes,1,opt,name=resource,proto3" json:"resource,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -924,7 +926,7 @@ var File_fleetly_system_v1_system_proto protoreflect.FileDescriptor
 
 const file_fleetly_system_v1_system_proto_rawDesc = "" +
 	"\n" +
-	"\x1efleetly/system/v1/system.proto\x12\x11fleetly.system.v1\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"\x13\n" +
+	"\x1efleetly/system/v1/system.proto\x12\x11fleetly.system.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"\x13\n" +
 	"\x11GetVersionRequest\"Z\n" +
 	"\x12GetVersionResponse\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12\x16\n" +
@@ -956,9 +958,10 @@ const file_fleetly_system_v1_system_proto_rawDesc = "" +
 	"schemaJson\"\x12\n" +
 	"\x10GetSchemaRequest\"M\n" +
 	"\x11GetSchemaResponse\x128\n" +
-	"\aentries\x18\x01 \x03(\v2\x1e.fleetly.system.v1.SchemaEntryR\aentries\",\n" +
-	"\x0eExplainRequest\x12\x1a\n" +
-	"\bresource\x18\x01 \x01(\tR\bresource\"G\n" +
+	"\aentries\x18\x01 \x03(\v2\x1e.fleetly.system.v1.SchemaEntryR\aentries\"\xb1\x01\n" +
+	"\x0eExplainRequest\x12\x9e\x01\n" +
+	"\bresource\x18\x01 \x01(\tB\x81\x01\xbaH~\xba\x01{\n" +
+	"\x0fstring.required\x12Wmust not be empty (a spec kind like \"app\" or an event name like \"deployment.succeeded\")\x1a\x0fthis.size() > 0R\bresource\"G\n" +
 	"\x0fExplainResponse\x124\n" +
 	"\x05entry\x18\x01 \x01(\v2\x1e.fleetly.system.v1.SchemaEntryR\x05entry\"\x1e\n" +
 	"\x1cTriggerPlatformBackupRequest\"`\n" +

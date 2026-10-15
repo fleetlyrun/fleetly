@@ -150,7 +150,7 @@
         "parameters": [
           {
             "name": "resource",
-            "description": "resource 命名一条自描述条目（空或未知名 → E_INVALID_ARGUMENT /\nE_NOT_FOUND，报错信息给出清单入口）。",
+            "description": "resource 必填：命名一条自描述条目（spec kind 如 \"app\"、事件名如\n\"deployment.succeeded\"；空值报必填，未知名 → E_NOT_FOUND，报错信息\n给出清单入口）。",
             "in": "query",
             "required": false,
             "type": "string"

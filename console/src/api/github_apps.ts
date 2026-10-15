@@ -133,7 +133,7 @@ export interface components {
         v1CompleteManifestFlowRequest: {
             state?: string;
             /**
-             * installation_id 来自 setup 回调查询参数。
+             * installation_id 来自 setup 回调查询参数（正整数；0 = 回调未携带）。
              * Format: int64
              */
             installation_id?: string;
@@ -193,9 +193,16 @@ export interface components {
         v1SetGitHubAppRequest: {
             project_id?: string;
             global?: boolean;
-            /** Format: int64 */
+            /**
+             * app_id 必填：数字形态的 GitHub App ID（正整数；scope 互斥与 api_base/
+             *     私钥 PEM 形态执法在服务内）。
+             * Format: int64
+             */
             app_id?: string;
-            /** Format: int64 */
+            /**
+             * installation_id 必填：数字形态的 installation ID（正整数）。
+             * Format: int64
+             */
             installation_id?: string;
             /**
              * private_key_pem 是 App 私钥 PEM 原文（PKCS#1/PKCS#8）——只进受理与

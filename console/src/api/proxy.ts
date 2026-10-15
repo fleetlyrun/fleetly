@@ -41,12 +41,23 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         v1CreateRouteRequest: {
+            /**
+             * 五要素必填：路由 = Project 内 host(+path) → App Process 端口的映射，
+             *     缺一即无完整发布目标（各字段独立报缺，组合检查拆 per-field）。
+             */
             project_id?: string;
+            /**
+             * host/path 语义校验（白名单字符集，traefik 规则反引号定界注入防线）
+             *     在服务内执法——本面只钉在场性。
+             */
             host?: string;
             path?: string;
             app_id?: string;
             process?: string;
-            /** Format: int32 */
+            /**
+             * port 必填（正整数；0 = 未声明，负值一并拒绝）。
+             * Format: int32
+             */
             port?: number;
             /** protocol: http | h2c | tcp（默认 http）。 */
             protocol?: string;

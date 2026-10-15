@@ -13,6 +13,7 @@
 package deliveryv1
 
 import (
+	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
 	_ "github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2/options"
 	_ "github.com/lynx-go/grpcapi/genproto/grpcapi/v1"
 	_ "google.golang.org/genproto/googleapis/api/annotations"
@@ -148,9 +149,12 @@ type SetGitHubAppRequest struct {
 	//
 	//	*SetGitHubAppRequest_ProjectId
 	//	*SetGitHubAppRequest_Global
-	Scope          isSetGitHubAppRequest_Scope `protobuf_oneof:"scope"`
-	AppId          int64                       `protobuf:"varint,3,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
-	InstallationId int64                       `protobuf:"varint,4,opt,name=installation_id,json=installationId,proto3" json:"installation_id,omitempty"`
+	Scope isSetGitHubAppRequest_Scope `protobuf_oneof:"scope"`
+	// app_id 必填：数字形态的 GitHub App ID（正整数；scope 互斥与 api_base/
+	// 私钥 PEM 形态执法在服务内）。
+	AppId int64 `protobuf:"varint,3,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
+	// installation_id 必填：数字形态的 installation ID（正整数）。
+	InstallationId int64 `protobuf:"varint,4,opt,name=installation_id,json=installationId,proto3" json:"installation_id,omitempty"`
 	// private_key_pem 是 App 私钥 PEM 原文（PKCS#1/PKCS#8）——只进受理与
 	// 验证，落库前密封，响应不回显。
 	PrivateKeyPem string `protobuf:"bytes,5,opt,name=private_key_pem,json=privateKeyPem,proto3" json:"private_key_pem,omitempty"`
@@ -923,7 +927,7 @@ func (x *ConsumeManifestCodeResponse) GetAppName() string {
 type CompleteManifestFlowRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	State string                 `protobuf:"bytes,1,opt,name=state,proto3" json:"state,omitempty"`
-	// installation_id 来自 setup 回调查询参数。
+	// installation_id 来自 setup 回调查询参数（正整数；0 = 回调未携带）。
 	InstallationId int64 `protobuf:"varint,2,opt,name=installation_id,json=installationId,proto3" json:"installation_id,omitempty"`
 	// project_id 回传 start 时的作用域（冻结锚与作用域一致性校验；global
 	// 流留空）。
@@ -1031,7 +1035,7 @@ var File_fleetly_delivery_v1_github_apps_proto protoreflect.FileDescriptor
 
 const file_fleetly_delivery_v1_github_apps_proto_rawDesc = "" +
 	"\n" +
-	"%fleetly/delivery/v1/github_apps.proto\x12\x13fleetly.delivery.v1\x1a\x1cgoogle/api/annotations.proto\x1a\x16grpcapi/v1/authz.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\"\xb0\x02\n" +
+	"%fleetly/delivery/v1/github_apps.proto\x12\x13fleetly.delivery.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x16grpcapi/v1/authz.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\"\xb0\x02\n" +
 	"\tGitHubApp\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
 	"\n" +
@@ -1044,13 +1048,15 @@ const file_fleetly_delivery_v1_github_apps_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\b \x01(\tR\tcreatedAt\x12\x1d\n" +
 	"\n" +
-	"updated_at\x18\t \x01(\tR\tupdatedAt\"\xdc\x01\n" +
+	"updated_at\x18\t \x01(\tR\tupdatedAt\"\xfa\x02\n" +
 	"\x13SetGitHubAppRequest\x12\x1f\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tH\x00R\tprojectId\x12\x18\n" +
-	"\x06global\x18\x02 \x01(\bH\x00R\x06global\x12\x15\n" +
-	"\x06app_id\x18\x03 \x01(\x03R\x05appId\x12'\n" +
-	"\x0finstallation_id\x18\x04 \x01(\x03R\x0einstallationId\x12&\n" +
+	"\x06global\x18\x02 \x01(\bH\x00R\x06global\x12c\n" +
+	"\x06app_id\x18\x03 \x01(\x03BL\xbaHI\xba\x01F\n" +
+	"\fnum.positive\x12,must be the numeric GitHub App ID (positive)\x1a\bthis > 0R\x05appId\x12w\n" +
+	"\x0finstallation_id\x18\x04 \x01(\x03BN\xbaHK\xba\x01H\n" +
+	"\fnum.positive\x12.must be the numeric installation ID (positive)\x1a\bthis > 0R\x0einstallationId\x12&\n" +
 	"\x0fprivate_key_pem\x18\x05 \x01(\tR\rprivateKeyPem\x12\x19\n" +
 	"\bapi_base\x18\x06 \x01(\tR\aapiBaseB\a\n" +
 	"\x05scope\"H\n" +
@@ -1083,17 +1089,19 @@ const file_fleetly_delivery_v1_github_apps_proto_rawDesc = "" +
 	"\n" +
 	"action_url\x18\x03 \x01(\tR\tactionUrl\x12\x1a\n" +
 	"\bmanifest\x18\x04 \x01(\tR\bmanifest\x12\x14\n" +
-	"\x05state\x18\x02 \x01(\tR\x05state\"F\n" +
-	"\x1aConsumeManifestCodeRequest\x12\x12\n" +
-	"\x04code\x18\x01 \x01(\tR\x04code\x12\x14\n" +
+	"\x05state\x18\x02 \x01(\tR\x05state\"\x83\x01\n" +
+	"\x1aConsumeManifestCodeRequest\x12O\n" +
+	"\x04code\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\x04code\x12\x14\n" +
 	"\x05state\x18\x02 \x01(\tR\x05state\"Y\n" +
 	"\x1bConsumeManifestCodeResponse\x12\x1f\n" +
 	"\vinstall_url\x18\x01 \x01(\tR\n" +
 	"installUrl\x12\x19\n" +
-	"\bapp_name\x18\x02 \x01(\tR\aappName\"{\n" +
+	"\bapp_name\x18\x02 \x01(\tR\aappName\"\xc7\x01\n" +
 	"\x1bCompleteManifestFlowRequest\x12\x14\n" +
-	"\x05state\x18\x01 \x01(\tR\x05state\x12'\n" +
-	"\x0finstallation_id\x18\x02 \x01(\x03R\x0einstallationId\x12\x1d\n" +
+	"\x05state\x18\x01 \x01(\tR\x05state\x12s\n" +
+	"\x0finstallation_id\x18\x02 \x01(\x03BJ\xbaHG\xba\x01D\n" +
+	"\fnum.positive\x12*must be positive (from the setup callback)\x1a\bthis > 0R\x0einstallationId\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x03 \x01(\tR\tprojectId\"P\n" +
 	"\x1cCompleteManifestFlowResponse\x120\n" +

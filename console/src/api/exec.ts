@@ -53,8 +53,9 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         v1CreateExecSessionRequest: {
+            /** app_id 必填：exec 会话的宿主 App（行级授权锚）。 */
             app_id?: string;
-            /** process 是 App 内进程模板名（web/worker…）。 */
+            /** process 必填：App 内进程模板名（web/worker…）。 */
             process?: string;
             /**
              * command 是完整 argv（数组形态；零 shell——shellguard 射程延续）。
@@ -156,11 +157,12 @@ export interface operations {
     ExecService_ListExecInstances: {
         parameters: {
             query?: {
-                /** @description process 是 App 内进程模板名（web/worker…）。 */
+                /** @description process 必填：App 内进程模板名（web/worker…）。 */
                 process?: string;
             };
             header?: never;
             path: {
+                /** @description app_id 必填：观测目标 App（行级授权锚）。 */
                 app_id: string;
             };
             cookie?: never;

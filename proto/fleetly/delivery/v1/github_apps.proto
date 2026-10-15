@@ -9,6 +9,7 @@ package fleetly.delivery.v1;
 
 option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1;deliveryv1";
 
+import "buf/validate/validate.proto";
 import "google/api/annotations.proto";
 import "grpcapi/v1/authz.proto";
 import "protoc-gen-openapiv2/options/annotations.proto";
@@ -121,8 +122,23 @@ message SetGitHubAppRequest {
     string project_id = 1;
     bool global = 2;
   }
-  int64 app_id = 3;
-  int64 installation_id = 4;
+  // app_id 必填：数字形态的 GitHub App ID（正整数；scope 互斥与 api_base/
+  // 私钥 PEM 形态执法在服务内）。
+  int64 app_id = 3 [
+    (buf.validate.field).cel = {
+      id: "num.positive"
+      message: "must be the numeric GitHub App ID (positive)"
+      expression: "this > 0"
+    }
+  ];
+  // installation_id 必填：数字形态的 installation ID（正整数）。
+  int64 installation_id = 4 [
+    (buf.validate.field).cel = {
+      id: "num.positive"
+      message: "must be the numeric installation ID (positive)"
+      expression: "this > 0"
+    }
+  ];
   // private_key_pem 是 App 私钥 PEM 原文（PKCS#1/PKCS#8）——只进受理与
   // 验证，落库前密封，响应不回显。
   string private_key_pem = 5;
@@ -189,7 +205,13 @@ message StartManifestFlowResponse {
 
 message ConsumeManifestCodeRequest {
   // code 是 GitHub 回调 redirect_url 携带的一次性兑换码（10 分钟有效）。
-  string code = 1;
+  string code = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
   // state 是 start 返回流跳转链里原样带回的签名态（与 start 作用域绑定）。
   string state = 2;
 }
@@ -204,8 +226,14 @@ message ConsumeManifestCodeResponse {
 
 message CompleteManifestFlowRequest {
   string state = 1;
-  // installation_id 来自 setup 回调查询参数。
-  int64 installation_id = 2;
+  // installation_id 来自 setup 回调查询参数（正整数；0 = 回调未携带）。
+  int64 installation_id = 2 [
+    (buf.validate.field).cel = {
+      id: "num.positive"
+      message: "must be positive (from the setup callback)"
+      expression: "this > 0"
+    }
+  ];
   // project_id 回传 start 时的作用域（冻结锚与作用域一致性校验；global
   // 流留空）。
   string project_id = 3;

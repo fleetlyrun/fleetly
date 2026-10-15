@@ -118,10 +118,11 @@ func (svc *NodesService) UncordonNode(ctx context.Context, req *runtimev1.Uncord
 // 执行 → 落审计行。副作用在编排器侧、不可与审计同事务：先变更后留痕，
 // 审计失败如实报错（F0.7 全部写操作留痕契约）；结果即动作本身，无前后
 // 值指纹可记。
+//
+// node_id 必填已退役 descriptor 注解（P4-1 批 1 Run B2）：三请求
+// DrainNode/CordonNode/UncordonNode 的 node_id 由 protovalidate 拦截器在
+// 受理面拦截，文案与退役前逐字节一致。
 func (svc *NodesService) nodeAdmin(ctx context.Context, nodeID, action string, op func(capability.RuntimeAdmin, string) error) error {
-	if nodeID == "" {
-		return apperr.New("E_INVALID_ARGUMENT", "node_id: must not be empty")
-	}
 	admin := capability.FacesOf(svc.s.Runtime).Admin // 节点管理子面（FacesOf 协商点）
 	if admin == nil {
 		return apperr.New("E_INTERNAL", "the runtime provider does not expose node administration")
@@ -155,9 +156,10 @@ type RoutesService struct {
 }
 
 func (svc *RoutesService) CreateRoute(ctx context.Context, req *proxyv1.CreateRouteRequest) (*proxyv1.CreateRouteResponse, error) {
-	if req.GetProjectId() == "" || req.GetHost() == "" || req.GetAppId() == "" || req.GetProcess() == "" || req.GetPort() == 0 {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "project_id, host, app_id, process and port: must not be empty")
-	}
+	// 五要素组合必填已退役 descriptor 注解（P4-1 批 1 Run B2）：拆 per-field
+	// required（原 "project_id, host, app_id, process and port: must not
+	// be empty" → 各字段独立报缺，文案契约变化在案），由 protovalidate
+	// 拦截器在受理面拦截。host/path 语义校验是白名单动态面，保留手写。
 	// 受理面校验（安全批 P0）：host/path 原样内插进 traefik 规则的反引号
 	// 定界符内（Host(`%s`)），反引号等元字符可注入/劫持路由规则；白名单
 	// 与 Proxy Provider 纵深面共用同一真源（capability.ValidateRouteHost）。

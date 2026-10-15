@@ -43,25 +43,14 @@ type TasksService struct {
 // ValidateTask 同款（身份锚由铸造注入，project_id 非空已在头部受理面拒绝），
 // 可观察文案逐字不变。本函数只管请求形状（E_INVALID_ARGUMENT 受理面）与
 // spec 组装。
+//
+// project_id/image 必填、form 值域、cpu_millis/memory_mb/desired_concurrency
+// 非负、ttl_seconds [0, 86400] 已退役 descriptor 注解（P4-1 批 1 Run B2）：
+// 空值/越界由 protovalidate 拦截器在受理面拦截；cpu_millis/memory_mb 的
+// 组合检查拆 per-field（原 "cpu_millis/memory_mb: must not be negative"
+// → 字段各报，文案契约变化在案）；form 空 = 推导语义由注解空值短路放行。
+// image 必填文案随字段原文逐字节上注解。
 func normalizeCreateTask(req *automationv1.CreateTaskRequest) (*specv1.TaskSpec, error) {
-	if req.GetProjectId() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "project_id: must not be empty")
-	}
-	if req.GetImage() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "image: must not be empty (tasks deploy images directly; build sources are an app surface)")
-	}
-	if req.GetForm() != "" && req.GetForm() != spec.FormOneShot && req.GetForm() != spec.FormResident {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "form: must be one of \"one-shot\" or \"resident\"")
-	}
-	if req.GetCpuMillis() < 0 || req.GetMemoryMb() < 0 {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "cpu_millis/memory_mb: must not be negative")
-	}
-	if req.GetDesiredConcurrency() < 0 {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "desired_concurrency: must not be negative")
-	}
-	if req.GetTtlSeconds() < 0 || req.GetTtlSeconds() > 86400 {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "ttl_seconds: must be within [0, 86400] (ADR-0018)")
-	}
 	p := &specv1.ProcessSpec{
 		Name:        "run",
 		ImageOrigin: &specv1.ProcessSpec_Image{Image: req.GetImage()},
@@ -122,11 +111,9 @@ func (svc *TasksService) resolveOwnerToken(ctx context.Context, req *automationv
 // CreateTask 受理（行铸造经 engine.MintTaskRow 单源，ADR-0062）+ 落行
 // （四件一拍：task.created 事件 + 审计）。
 func (svc *TasksService) CreateTask(ctx context.Context, req *automationv1.CreateTaskRequest) (*automationv1.CreateTaskResponse, error) {
-	if name := req.GetName(); name != "" {
-		if err := validName("name", name); err != nil {
-			return nil, err
-		}
-	}
+	// name 可空字段的 dns 标签形状已退役 descriptor 注解（P4-1 批 1 Run
+	// B2）：空名放行、坏形态由 protovalidate 拦截器在受理面拦截（文案与
+	// 退役前逐字节一致）。
 	// 行级授权（ADR-0035）：写面受理前置。
 	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
@@ -198,9 +185,8 @@ func (svc *TasksService) GetTask(ctx context.Context, req *automationv1.GetTaskR
 }
 
 func (svc *TasksService) ListTasks(ctx context.Context, req *automationv1.ListTasksRequest) (*automationv1.ListTasksResponse, error) {
-	if req.GetProjectId() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "project_id: must not be empty")
-	}
+	// project_id 必填已退役 descriptor 注解（P4-1 批 1 Run B2）：空值由
+	// protovalidate 拦截器在受理面拦截，文案与退役前逐字节一致。
 	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}
@@ -222,9 +208,8 @@ func (svc *TasksService) ListTasks(ctx context.Context, req *automationv1.ListTa
 }
 
 func (svc *TasksService) ScaleTask(ctx context.Context, req *automationv1.ScaleTaskRequest) (*automationv1.ScaleTaskResponse, error) {
-	if req.GetDesiredConcurrency() < 0 {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "desired_concurrency: must not be negative")
-	}
+	// desired_concurrency 非负已退役 descriptor 注解（P4-1 批 1 Run B2）：
+	// 负值由 protovalidate 拦截器在受理面拦截，文案与退役前逐字节一致。
 	// 行级授权（ADR-0035）：engine 动词在 handler 前置。
 	if err := svc.s.authorizeTaskID(ctx, req.GetId()); err != nil {
 		return nil, err
@@ -484,19 +469,12 @@ type SchedulesService struct {
 // 字段 → 冻结 TaskSpec 模板（task ref 留空——fire 时铸新 Task；form 恒
 // one-shot：Schedule 的每一拍都是一次 one-shot 执行）与首拍绝对时刻
 // （now 由调用方注入时钟提供）。
+//
+// project_id/image 必填、cpu_millis/memory_mb 非负、ttl_seconds [0, 86400]
+// 已退役 descriptor 注解（P4-1 批 1 Run B2）：空值/越界由 protovalidate
+// 拦截器在受理面拦截；cpu_millis/memory_mb 的组合检查拆 per-field（文案
+// 契约变化在案）；cron 表达式合法性是动态文案（解析器回显），保留手写。
 func normalizeCreateSchedule(req *automationv1.CreateScheduleRequest, now time.Time) (*specv1.TaskSpec, string, string, error) {
-	if req.GetProjectId() == "" {
-		return nil, "", "", apperr.New("E_INVALID_ARGUMENT", "project_id: must not be empty")
-	}
-	if req.GetImage() == "" {
-		return nil, "", "", apperr.New("E_INVALID_ARGUMENT", "image: must not be empty (schedules fire one-shot tasks; build sources are an app surface)")
-	}
-	if req.GetCpuMillis() < 0 || req.GetMemoryMb() < 0 {
-		return nil, "", "", apperr.New("E_INVALID_ARGUMENT", "cpu_millis/memory_mb: must not be negative")
-	}
-	if req.GetTtlSeconds() < 0 || req.GetTtlSeconds() > 86400 {
-		return nil, "", "", apperr.New("E_INVALID_ARGUMENT", "ttl_seconds: must be within [0, 86400] (ADR-0018)")
-	}
 	sched, err := schedule.ParseCron(req.GetCron(), req.GetTimezone())
 	if err != nil {
 		return nil, "", "", apperr.New("E_INVALID_ARGUMENT", "cron: %s", err.Error())
@@ -566,11 +544,9 @@ func runMsg(row *run.Run) *automationv1.Run {
 // CreateSchedule 受理 + 冻结模板 + 落行（四件一拍：schedule.created 事件
 // + 审计）+ 唤醒到期拍环。
 func (svc *SchedulesService) CreateSchedule(ctx context.Context, req *automationv1.CreateScheduleRequest) (*automationv1.CreateScheduleResponse, error) {
-	if name := req.GetName(); name != "" {
-		if err := validName("name", name); err != nil {
-			return nil, err
-		}
-	}
+	// name 可空字段的 dns 标签形状已退役 descriptor 注解（P4-1 批 1 Run
+	// B2）：空名放行、坏形态由 protovalidate 拦截器在受理面拦截（文案与
+	// 退役前逐字节一致）。
 	// 行级授权（ADR-0035）：写面受理前置。
 	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
@@ -626,9 +602,8 @@ func (svc *SchedulesService) GetSchedule(ctx context.Context, req *automationv1.
 }
 
 func (svc *SchedulesService) ListSchedules(ctx context.Context, req *automationv1.ListSchedulesRequest) (*automationv1.ListSchedulesResponse, error) {
-	if req.GetProjectId() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "project_id: must not be empty")
-	}
+	// project_id 必填已退役 descriptor 注解（P4-1 批 1 Run B2）：空值由
+	// protovalidate 拦截器在受理面拦截，文案与退役前逐字节一致。
 	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}

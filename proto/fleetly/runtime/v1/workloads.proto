@@ -10,6 +10,7 @@ package fleetly.runtime.v1;
 
 option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1;runtimev1";
 
+import "buf/validate/validate.proto";
 import "google/api/annotations.proto";
 import "protoc-gen-openapiv2/options/annotations.proto";
 import "grpcapi/v1/authz.proto";
@@ -40,7 +41,14 @@ service WorkloadsService {
 }
 
 message GetAppWorkloadObservationsRequest {
-  string app_id = 1;
+  // app_id 必填：观测目标 App（行级授权锚）。
+  string app_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
 }
 message GetAppWorkloadObservationsResponse {
   repeated WorkloadObservation observations = 1;

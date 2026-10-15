@@ -224,12 +224,9 @@ func (svc *GitHubAppsService) SetGitHubApp(ctx context.Context, req *deliveryv1.
 	} else if err := svc.s.requirePlatformAdmin(ctx); err != nil {
 		return nil, err
 	}
-	if req.GetAppId() <= 0 {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "app_id: must be the numeric GitHub App ID (positive)")
-	}
-	if req.GetInstallationId() <= 0 {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "installation_id: must be the numeric installation ID (positive)")
-	}
+	// app_id/installation_id 正整数已退役 descriptor 注解（P4-1 批 1 Run
+	// B2）：非正值由 protovalidate 拦截器在受理面拦截，文案与退役前逐字节
+	// 一致；scope 互斥/api_base/私钥 PEM 形态是动态或组合面，保留手写。
 	if err := validateAPIBase(req.GetApiBase()); err != nil {
 		return nil, err
 	}
@@ -520,9 +517,9 @@ func (svc *GitHubAppsService) StartManifestFlow(ctx context.Context, req *delive
 // （15 分钟 + 一次性 nonce），返回安装页 URL。流态签名先验、作用域授权
 // 复核（防御纵深）。
 func (svc *GitHubAppsService) ConsumeManifestCode(ctx context.Context, req *deliveryv1.ConsumeManifestCodeRequest) (*deliveryv1.ConsumeManifestCodeResponse, error) {
-	if strings.TrimSpace(req.GetCode()) == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "code: must not be empty")
-	}
+	// code 必填已退役 descriptor 注解（P4-1 批 1 Run B2）：空值由
+	// protovalidate 拦截器在受理面拦截，文案与退役前逐字节一致；state 签名
+	// 验证是动态面，保留手写。
 	payload, err := svc.flows.verifyState(req.GetState(), time.Now())
 	if err != nil {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "%v", err)
@@ -578,9 +575,8 @@ func (svc *GitHubAppsService) CompleteManifestFlow(ctx context.Context, req *del
 	} else if err := svc.s.requirePlatformAdmin(ctx); err != nil {
 		return nil, err
 	}
-	if req.GetInstallationId() <= 0 {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "installation_id: must be positive (from the setup callback)")
-	}
+	// installation_id 正整数已退役 descriptor 注解（P4-1 批 1 Run B2）：
+	// 非正值由 protovalidate 拦截器在受理面拦截，文案与退役前逐字节一致。
 	if svc.s.Cipher == nil {
 		return nil, apperr.New("E_SECRET_UNAVAILABLE", "the master key is not available")
 	}

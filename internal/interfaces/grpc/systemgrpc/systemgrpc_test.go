@@ -103,12 +103,12 @@ func TestExplainResolvesSpecKind(t *testing.T) {
 	assert.Contains(t, resp.GetEntry().GetSchemaJson(), `"type":"object"`)
 }
 
-func TestExplainRejectsUnknownAndEmpty(t *testing.T) {
-	_, err := testService().Explain(context.Background(), &systemv1.ExplainRequest{})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "E_INVALID_ARGUMENT")
-
-	_, err = testService().Explain(context.Background(), &systemv1.ExplainRequest{Resource: "definitely.not-a-name"})
+func TestExplainRejectsUnknownName(t *testing.T) {
+	// 空 resource 的 E_INVALID_ARGUMENT 面已退役 descriptor 注解（P4-1 批 1
+	// Run B2）：由 protovalidate 拦截器在受理面执法（文案逐字节钉在
+	// apivalidate 负例矩阵 "ExplainRequest empty resource"），本 handler 级
+	// 单测不经拦截器，只覆盖在案服务内检查。
+	_, err := testService().Explain(context.Background(), &systemv1.ExplainRequest{Resource: "definitely.not-a-name"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "E_NOT_FOUND")
 	assert.Contains(t, err.Error(), "fleetly schema")

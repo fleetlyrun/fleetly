@@ -357,6 +357,11 @@ export interface components {
         };
         HooksServiceRotateHookTokenBody: Record<string, never>;
         HooksServiceSetGitHookBody: {
+            /**
+             * repo 必填：https:// 直连仓库 URL（构建检出源）；URL 形态执法
+             *     （https 白名单/嵌入材料/空白控制字符/私网段）在服务内——本面只钉
+             *     在场性。
+             */
             repo?: string;
             branch?: string;
             dockerfile?: string;
@@ -459,6 +464,7 @@ export interface components {
          *     上传产物 / spec_file 裸 AppSpec，F3.5）。
          */
         v1DeployRequest: {
+            /** app_id 必填：目标 App 行（行级授权锚）。 */
             app_id?: string;
             /** image 直投形态（如 nginx:1.27）。 */
             image?: string;
@@ -1012,6 +1018,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description app_id 必填：hook 挂靠的 App 行（行级授权锚）。 */
                 app_id: string;
             };
             cookie?: never;
@@ -1047,6 +1054,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description app_id 必填：目标 hook 的 App 行（行级授权锚）。 */
                 app_id: string;
             };
             cookie?: never;
@@ -1195,6 +1203,7 @@ export interface operations {
             };
             header?: never;
             path: {
+                /** @description app_id 必填：Workload 视图所属 App（行级授权锚）。 */
                 app_id: string;
             };
             cookie?: never;
@@ -1534,6 +1543,7 @@ export interface operations {
     RevisionsService_DiffRevisions: {
         parameters: {
             query?: {
+                /** @description app_id 必填：diff 所在 App（行级授权锚）。 */
                 app_id?: string;
                 /** @description from/to 是 App 内 Revision 序号（R1..Rn 对外形态）。 */
                 from_seq?: string;
@@ -1570,6 +1580,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description app_id 必填：Revision 所在 App（行级授权锚）。 */
                 app_id: string;
                 /** @description seq 是 App 内 Revision 序号（R1..Rn 对外形态）。 */
                 seq: string;
@@ -1601,6 +1612,7 @@ export interface operations {
     BuildsService_ListUploads: {
         parameters: {
             query?: {
+                /** @description project_id 必填：List 面的项目锚（行级授权沿此轴，ADR-0035）。 */
                 project_id?: string;
                 after_upload_seq?: string;
                 limit?: number;

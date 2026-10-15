@@ -259,19 +259,41 @@ export interface components {
             system?: boolean;
         };
         v1CreateAlertRuleRequest: {
+            /** app_id 必填：规则挂靠的 App（行级授权锚）。 */
             app_id?: string;
+            /**
+             * metric: cpu_percent | memory_working_set_bytes（值域冻结；值域执法
+             *     在服务内——文案带收到的原值回显）。
+             */
             metric?: string;
-            /** Format: double */
+            /**
+             * threshold 是越限阈值（非负；0 = 任何达标观测即越限）。
+             * Format: double
+             */
             threshold?: number;
-            /** Format: int64 */
+            /**
+             * for_seconds 是持续窗（连续越限 ≥ 本值才迁移 firing；0 = 立即；
+             *     采样近似语义见 ADR-0041）。
+             * Format: int64
+             */
             for_seconds?: string;
         };
         v1CreateAlertRuleResponse: {
             rule?: components["schemas"]["v1AlertRule"];
         };
         v1CreateNotificationChannelRequest: {
-            /** name 是通道名（全局唯一；人类引用锚）。 */
+            /**
+             * name 是通道名（全局唯一；人类引用锚）——dns 标签形态（小写字母数字
+             *     与连字符，首尾字母数字，≤63 字符）是可读 id base 与派生名安全的前提。
+             *     正则字面与长度界是 entityid.NamePatternSource / MaxNameLen 的镜像
+             *     （proto 无法引用 Go 常量），字节一致由 entityid 包的 descriptor 对齐
+             *     测试执法；空值报 required（本字段必填）。
+             */
             name?: string;
+            /**
+             * kind: webhook | telegram（值域见 CONTEXT.md Notification Channel 词条；
+             *     值域执法在服务内——文案带收到的原值回显）。
+             */
             kind?: string;
             /** webhook 形态：url 是接收端点（可含凭证查询串——age 信封入库）。 */
             url?: string;
@@ -489,6 +511,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description rule_id 必填：目标规则行。 */
                 rule_id: string;
             };
             cookie?: never;
@@ -582,6 +605,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description channel_id 必填：目标通道行。 */
                 channel_id: string;
             };
             cookie?: never;
@@ -613,6 +637,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description channel_id 必填：目标通道行。 */
                 channel_id: string;
             };
             cookie?: never;
@@ -855,7 +880,7 @@ export interface operations {
             query?: {
                 /**
                  * @description query 是 PromQL（透传；App 域过滤经 container_label_fleetly_ns_*
-                 *     序列标签——CLI/Console 侧构造）。
+                 *     序列标签——CLI/Console 侧构造）。必填：空查询无从起查。
                  */
                 query?: string;
                 /** @description start/end 是时间窗（RFC3339；空 end = 现在，空 start = end 前 1h）。 */

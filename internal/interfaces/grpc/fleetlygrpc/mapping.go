@@ -22,7 +22,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/runtimeops/node"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
-	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
@@ -327,15 +326,10 @@ func marshalSpec(m proto.Message) ([]byte, error) {
 	return protojson.MarshalOptions{EmitUnpopulated: false, UseProtoNames: true}.Marshal(m)
 }
 
-// validName 是有名实体 name 的受理校验（ADR-0070 决策 4）：dns 标签形态
-// 是可读 id base 与派生名（namespace/DNS/载体名）安全的前提。
-func validName(field, name string) error {
-	if !entityid.ValidName(name) {
-		return apperr.New("E_INVALID_ARGUMENT",
-			"%s: must be a dns label (lowercase letters, digits, hyphens; start and end alphanumeric, e.g. \"web\" or \"nightly-backup\")", field)
-	}
-	return nil
-}
+// validName 已删除（P4-1 批 1 Run B2）：最后三个调用点
+//（CreateNotificationChannel/CreateTask/CreateSchedule 的 name）退役后
+// 零调用——dns 标签形状执法单源住 descriptor 注解，字节一致由 entityid
+// 包的 descriptor 对齐测试执法。
 
 // rejectPrivateHost 拒绝指向环回/私网/链路本地/未指定段的 URL host
 // （P0-7.3，validateAPIBase 与 validateGitRepo 的单源 SSRF 防线）：两者都
