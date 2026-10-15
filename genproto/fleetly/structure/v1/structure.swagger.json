@@ -60,6 +60,7 @@
         "parameters": [
           {
             "name": "app_id",
+            "description": "app_id 必填：List 面的 App 锚（行级授权沿此轴，ADR-0035）。",
             "in": "query",
             "required": false,
             "type": "string"
@@ -134,12 +135,14 @@
         "parameters": [
           {
             "name": "app_id",
+            "description": "app_id 必填：变量归属 App。",
             "in": "path",
             "required": true,
             "type": "string"
           },
           {
             "name": "name",
+            "description": "name 必填：目标变量键。",
             "in": "path",
             "required": true,
             "type": "string"
@@ -170,6 +173,7 @@
         "parameters": [
           {
             "name": "project_id",
+            "description": "project_id 必填：List 面的项目锚（行级授权沿此轴，ADR-0035）。",
             "in": "query",
             "required": false,
             "type": "string"
@@ -273,6 +277,7 @@
         "parameters": [
           {
             "name": "id",
+            "description": "id 必填：目标 App 行。",
             "in": "path",
             "required": true,
             "type": "string"
@@ -335,6 +340,7 @@
         "parameters": [
           {
             "name": "backup_id",
+            "description": "backup_id 必填：待验证的 Backup 台账行。",
             "in": "path",
             "required": true,
             "type": "string"
@@ -491,6 +497,7 @@
         "parameters": [
           {
             "name": "project_id",
+            "description": "project_id 必填：List 面的项目锚（行级授权沿此轴，ADR-0035）。",
             "in": "query",
             "required": false,
             "type": "string"
@@ -567,6 +574,7 @@
         "parameters": [
           {
             "name": "database_id",
+            "description": "database_id 必填：备份台账的 Database 锚。",
             "in": "path",
             "required": true,
             "type": "string"
@@ -611,6 +619,7 @@
         "parameters": [
           {
             "name": "database_id",
+            "description": "database_id 必填：备份目标 Database 行。",
             "in": "path",
             "required": true,
             "type": "string"
@@ -693,6 +702,7 @@
         "parameters": [
           {
             "name": "database_id",
+            "description": "database_id 必填：浏览目标 Database 行。",
             "in": "path",
             "required": true,
             "type": "string"
@@ -732,6 +742,7 @@
         "parameters": [
           {
             "name": "database_id",
+            "description": "database_id 必填：轮换目标 Database 行。",
             "in": "path",
             "required": true,
             "type": "string"
@@ -799,6 +810,7 @@
         "parameters": [
           {
             "name": "id",
+            "description": "id 必填：目标 Database 行。",
             "in": "path",
             "required": true,
             "type": "string"
@@ -1439,12 +1451,14 @@
         "parameters": [
           {
             "name": "project_id",
+            "description": "project_id 必填：变量归属 Project。",
             "in": "path",
             "required": true,
             "type": "string"
           },
           {
             "name": "name",
+            "description": "name 必填：目标变量键。",
             "in": "path",
             "required": true,
             "type": "string"
@@ -1536,6 +1550,7 @@
         "parameters": [
           {
             "name": "id",
+            "description": "id 必填：目标 Volume 行。",
             "in": "path",
             "required": true,
             "type": "string"
@@ -1826,10 +1841,12 @@
       "type": "object",
       "properties": {
         "project_id": {
-          "type": "string"
+          "type": "string",
+          "title": "project_id 必填：App 的父 Project（受理位父存活/配额校验的锚）。"
         },
         "name": {
-          "type": "string"
+          "type": "string",
+          "title": "name 是 dns 标签（小写字母数字与连字符，首尾字母数字，≤63 字符，\nADR-0070 决策 4）——可读 id base 与派生名安全的前提。正则字面与长度\n界是 entityid.NamePatternSource / MaxNameLen 的镜像（proto 无法引用\nGo 常量），字节一致由 entityid 包的 descriptor 对齐测试执法；空值\n同报形状（本字段无 required 规则，空名不接受）。"
         }
       }
     },
@@ -1845,14 +1862,16 @@
       "type": "object",
       "properties": {
         "project_id": {
-          "type": "string"
+          "type": "string",
+          "title": "project_id 必填：Database 的父 Project（受理位父存活/配额/网络校验\n的锚）。"
         },
         "name": {
-          "type": "string"
+          "type": "string",
+          "title": "name 是 dns 标签（小写字母数字与连字符，首尾字母数字，≤63 字符，\nADR-0070 决策 4）——db-\u003cid\u003e 网内 DNS 名与凭证 Secret 名派生的前提。\n正则字面与长度界是 entityid.NamePatternSource / MaxNameLen 的镜像，\n字节一致由 entityid 包的 descriptor 对齐测试执法；空值同报形状\n（本字段无 required 规则，空名不接受）。"
         },
         "engine": {
           "type": "string",
-          "title": "engine 值域 = 模板注册表（postgres / pgvector / redis，ADR-0029）。"
+          "title": "engine 必填且值域 = 模板注册表（postgres / pgvector / redis，\nADR-0029）——值域外由服务内注册表检查拒绝并列出合法值。"
         },
         "restore_from_backup": {
           "type": "string",
@@ -1872,13 +1891,16 @@
       "type": "object",
       "properties": {
         "project_id": {
-          "type": "string"
+          "type": "string",
+          "title": "project_id 必填：Network 的父 Project（受理位父存活校验的锚）。"
         },
         "name": {
-          "type": "string"
+          "type": "string",
+          "title": "name 是 dns 标签（小写字母数字与连字符，首尾字母数字，≤63 字符，\nADR-0070 决策 4）——编排器网络名与受管挂靠面安全的前提。正则字面\n与长度界是 entityid.NamePatternSource / MaxNameLen 的镜像，字节一致\n由 entityid 包的 descriptor 对齐测试执法；空值同报形状（本字段无\nrequired 规则，空名不接受）。"
         },
         "egress_none": {
-          "type": "boolean"
+          "type": "boolean",
+          "title": "egress_none 是弱隔离声明（swarm v1：出网不阻断，明示）。"
         }
       }
     },
@@ -1914,10 +1936,12 @@
       "type": "object",
       "properties": {
         "project_id": {
-          "type": "string"
+          "type": "string",
+          "title": "project_id 必填：Volume 的父 Project（受理位父存活校验的锚）。"
         },
         "name": {
-          "type": "string"
+          "type": "string",
+          "title": "name 是 dns 标签（小写字母数字与连字符，首尾字母数字，≤63 字符，\nADR-0070 决策 4）——平台卷名与派生名安全的前提。正则字面与长度界\n是 entityid.NamePatternSource / MaxNameLen 的镜像，字节一致由\nentityid 包的 descriptor 对齐测试执法；空值同报形状（本字段无\nrequired 规则，空名不接受）。"
         },
         "pinned_node_id": {
           "type": "string"
@@ -1999,11 +2023,11 @@
       "properties": {
         "network_id": {
           "type": "string",
-          "title": "network_id 是目标网络行（接收方 Project 的活跃网络）。"
+          "title": "network_id 必填：目标网络行（接收方 Project 的活跃网络）。"
         },
         "peer_project_id": {
           "type": "string",
-          "title": "peer_project_id 是挂靠方项目（声明方）。"
+          "title": "peer_project_id 必填：挂靠方项目（声明方）。同项目挂靠由服务内交叉\n检查拒绝（项目内挂靠走 project-local 网络名）。"
         }
       }
     },
@@ -2578,14 +2602,16 @@
       "type": "object",
       "properties": {
         "app_id": {
-          "type": "string"
+          "type": "string",
+          "title": "app_id 必填：变量归属 App。"
         },
         "name": {
           "type": "string",
-          "title": "name 是 env 键形态（[A-Za-z_][A-Za-z0-9_]*，≤64 字符——与共享变量\n同一白名单：变量名直接成为容器 env 键）。"
+          "title": "name 是 env 键形态（[A-Za-z_][A-Za-z0-9_]*，≤64 字符——与共享变量\n同一白名单：变量名直接成为容器 env 键，ADR-0072）。正则字面是\nspec.EnvNamePattern 的镜像（proto 无法引用 Go 常量），字节一致由\nspec 包的 descriptor 对齐测试执法。"
         },
         "value": {
-          "type": "string"
+          "type": "string",
+          "title": "value 是变量值，单值上限 16384 字节（与共享变量同档；\nbytes().size() 数字节）。"
         }
       }
     },
@@ -2602,13 +2628,16 @@
       "type": "object",
       "properties": {
         "project_id": {
-          "type": "string"
+          "type": "string",
+          "title": "project_id 必填：Config 归属 Project。"
         },
         "name": {
-          "type": "string"
+          "type": "string",
+          "title": "name 必填：项目内配置名（同名 put 是新版本）。"
         },
         "content": {
-          "type": "string"
+          "type": "string",
+          "title": "content 是配置内容，单值上限 262144 字节（bytes().size() 数字节，\n非 UTF-8 码点）。"
         }
       }
     },
@@ -2624,10 +2653,12 @@
       "type": "object",
       "properties": {
         "project_id": {
-          "type": "string"
+          "type": "string",
+          "title": "project_id 必填：Secret 归属 Project。"
         },
         "name": {
-          "type": "string"
+          "type": "string",
+          "title": "name 是 Secret 名：字符集白名单 [A-Za-z0-9][A-Za-z0-9:._-]{0,63} 且\n不含 \"..\"——引用名原样成为容器内 /run/secrets/\u003c名\u003e 文件目标与 swarm\n载体名成分，拒路径逃逸。正则字面是 spec.SecretNamePattern 的镜像\n（proto 无法引用 Go 常量），字节一致由 spec 包的 descriptor 对齐测试\n执法。平台保留前缀（database:\u003cname\u003e，ADR-0029 决策 6）由服务内检查\n以 E_CONFLICT 拒绝。"
         },
         "value": {
           "type": "string",
@@ -2647,14 +2678,16 @@
       "type": "object",
       "properties": {
         "project_id": {
-          "type": "string"
+          "type": "string",
+          "title": "project_id 必填：变量归属 Project。"
         },
         "name": {
           "type": "string",
-          "title": "name 是 env 键形态（[A-Za-z_][A-Za-z0-9_]*，≤64 字符）。"
+          "title": "name 是 env 键形态（[A-Za-z_][A-Za-z0-9_]*，≤64 字符，ADR-0043 决策\n2）——变量名直接成为容器 env 键。正则字面是 spec.EnvNamePattern 的\n镜像（proto 无法引用 Go 常量），字节一致由 spec 包的 descriptor 对齐\n测试执法。"
         },
         "value": {
-          "type": "string"
+          "type": "string",
+          "title": "value 是变量值，单值上限 16384 字节（env 是进程环境面不是文件面；\nbytes().size() 数字节）。"
         }
       }
     },
@@ -2686,10 +2719,12 @@
       "type": "object",
       "properties": {
         "project_id": {
-          "type": "string"
+          "type": "string",
+          "title": "project_id 必填：重建目标网络的归属 Project。"
         },
         "name": {
-          "type": "string"
+          "type": "string",
+          "title": "name 必填：项目内目标网络名。"
         }
       },
       "title": "RebuildNetworkResponse 携带网络引用与本次执行的载体计数（幂等重跑的\n快速路径两者为 0——已 attachable 且标签在位即零扰动返回）。"

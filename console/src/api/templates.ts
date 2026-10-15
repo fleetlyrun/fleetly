@@ -97,12 +97,16 @@ export interface components {
             body?: string;
         };
         v1InstantiateTemplateRequest: {
+            /** project_id 必填：实例化目标 Project（行级授权沿此轴，ADR-0035）。 */
             project_id?: string;
-            /** template 是目录键（如 "nginx"）。 */
+            /** template 必填：目录键（如 "nginx"）。 */
             template?: string;
             /**
-             * app_name 是目标 App 名（create-or-reuse：同名活跃 App 直接复用——
-             *     重跑即重部署，latest-wins）。
+             * app_name 必填且是 dns 标签（小写字母数字与连字符，首尾字母数字，
+             *     ≤63 字符，ADR-0070 决策 4）：create-or-reuse 序内经 App/网络创建链
+             *     落子（进程内直调不经 validate 拦截器），形状约束必须在边界自足。
+             *     正则字面与长度界是 entityid.NamePatternSource / MaxNameLen 的镜像，
+             *     字节一致由 entityid 包的 descriptor 对齐测试执法。
              */
             app_name?: string;
             /** values 是 string/domain 型变量值（secret 型携带即拒——平台铸造）。 */
@@ -278,6 +282,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description name 必填：目录键（如 "nginx"；目录外的名按 E_NOT_FOUND 拒绝）。 */
                 name: string;
             };
             cookie?: never;

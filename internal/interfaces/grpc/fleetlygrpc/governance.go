@@ -39,9 +39,8 @@ type freezeEventPayload struct {
 // Team 轴（ADR-0035 决策 7）：team 冻结限本队；全局冻结（空 team_id）是
 // 跨 Team 平台动作，仅平台 owner 可设。
 func (svc *GovernanceService) SetChangeFreeze(ctx context.Context, req *systemv1.SetChangeFreezeRequest) (*systemv1.SetChangeFreezeResponse, error) {
-	if req.GetReason() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "reason: must not be empty (the refusal carries it to callers)")
-	}
+	// reason 必填检查已退役为 SetChangeFreezeRequest 的 protovalidate CEL
+	// 注解（P4-1 批 1 Run B1）：validate 拦截器在 handler 之前执法。
 	teamID, owner, err := callerTeam(ctx)
 	if err != nil {
 		return nil, err

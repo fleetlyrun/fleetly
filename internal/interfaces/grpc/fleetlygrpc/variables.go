@@ -17,7 +17,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
-	"github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/appvariable"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/sharedvariable"
@@ -34,18 +33,11 @@ type SharedVariablesService struct {
 // 口径，ADR-0043 决策 4——改共享变量不触发任何自动重部署，提示"哪些 App
 // 重部署会取新值"）。
 func (svc *SharedVariablesService) PutSharedVariable(ctx context.Context, req *structurev1.PutSharedVariableRequest) (*structurev1.PutSharedVariableResponse, error) {
-	if req.GetProjectId() == "" || req.GetName() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "project_id and name: must not be empty")
-	}
-	// 名 = env 键形态（ADR-0043 决策 2）：变量名直接成为容器 env 键。
-	if !spec.ValidEnvName(req.GetName()) {
-		return nil, apperr.New("E_INVALID_ARGUMENT",
-			"name: variable names must match %q (variable names become environment keys; got %q)",
-			spec.EnvNamePattern, req.GetName())
-	}
-	if len(req.GetValue()) > maxVariableBytes {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "value: exceeds the %d-byte per-variable limit", maxVariableBytes)
-	}
+	// project_id/name 必填组合、name 的 env 键形态检查（spec.ValidEnvName）
+	// 与 value 单值上限检查（16KiB）已退役为 PutSharedVariableRequest 的
+	// protovalidate CEL 注解（P4-1 批 1 Run B1）：validate 拦截器在 handler
+	// 之前执法，组合必填拆 per-field 文案；正则字面单源见
+	// spec.EnvNamePattern（spec 包 descriptor 对齐测试执法）。
 	// 行级授权（ADR-0035）：写面受理前置。
 	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
@@ -103,9 +95,9 @@ func (svc *SharedVariablesService) ListSharedVariables(ctx context.Context, req 
 }
 
 func (svc *SharedVariablesService) DeleteSharedVariable(ctx context.Context, req *structurev1.DeleteSharedVariableRequest) (*structurev1.DeleteSharedVariableResponse, error) {
-	if req.GetProjectId() == "" || req.GetName() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "project_id and name: must not be empty")
-	}
+	// project_id/name 必填组合检查已退役为 DeleteSharedVariableRequest 的
+	// protovalidate CEL 注解（P4-1 批 1 Run B1）：validate 拦截器在 handler
+	// 之前执法，拆 per-field 文案。
 	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}
@@ -172,17 +164,11 @@ type AppVariablesService struct {
 // PutAppVariable 落/覆盖一条 App 级平台变量。改变量不触发自动重部署——
 // 重部署（Redeploy/Deploy/push）在冻结咽喉取新值合成。
 func (svc *AppVariablesService) PutAppVariable(ctx context.Context, req *structurev1.PutAppVariableRequest) (*structurev1.PutAppVariableResponse, error) {
-	if req.GetAppId() == "" || req.GetName() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "app_id and name: must not be empty")
-	}
-	if !spec.ValidEnvName(req.GetName()) {
-		return nil, apperr.New("E_INVALID_ARGUMENT",
-			"name: variable names must match %q (variable names become environment keys; got %q)",
-			spec.EnvNamePattern, req.GetName())
-	}
-	if len(req.GetValue()) > maxVariableBytes {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "value: exceeds the %d-byte per-variable limit", maxVariableBytes)
-	}
+	// app_id/name 必填组合、name 的 env 键形态检查（spec.ValidEnvName）与
+	// value 单值上限检查（16KiB）已退役为 PutAppVariableRequest 的
+	// protovalidate CEL 注解（P4-1 批 1 Run B1）：validate 拦截器在 handler
+	// 之前执法，组合必填拆 per-field 文案；正则字面单源见
+	// spec.EnvNamePattern（spec 包 descriptor 对齐测试执法）。
 	// 行级授权（ADR-0035）：App 域写面前置（含 App 存在性——变量不挂
 	// 幽灵 App）。
 	a, err := svc.s.Apps.Get(ctx, svc.s.DB.Runner(), req.GetAppId())
@@ -215,9 +201,8 @@ func (svc *AppVariablesService) PutAppVariable(ctx context.Context, req *structu
 }
 
 func (svc *AppVariablesService) ListAppVariables(ctx context.Context, req *structurev1.ListAppVariablesRequest) (*structurev1.ListAppVariablesResponse, error) {
-	if req.GetAppId() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "app_id: must not be empty")
-	}
+	// app_id 必填检查已退役为 ListAppVariablesRequest 的 protovalidate CEL
+	// 注解（P4-1 批 1 Run B1）：validate 拦截器在 handler 之前执法。
 	// 行级授权（ADR-0035）：值明文回显（非敏感契约）——跨租户读面。
 	if err := svc.s.authorizeAppIDOnly(ctx, req.GetAppId()); err != nil {
 		return nil, err
@@ -235,9 +220,9 @@ func (svc *AppVariablesService) ListAppVariables(ctx context.Context, req *struc
 }
 
 func (svc *AppVariablesService) DeleteAppVariable(ctx context.Context, req *structurev1.DeleteAppVariableRequest) (*structurev1.DeleteAppVariableResponse, error) {
-	if req.GetAppId() == "" || req.GetName() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "app_id and name: must not be empty")
-	}
+	// app_id/name 必填组合检查已退役为 DeleteAppVariableRequest 的
+	// protovalidate CEL 注解（P4-1 批 1 Run B1）：validate 拦截器在 handler
+	// 之前执法，拆 per-field 文案。
 	a, err := svc.s.Apps.Get(ctx, svc.s.DB.Runner(), req.GetAppId())
 	if err != nil {
 		return nil, mapStateError(err, "app")

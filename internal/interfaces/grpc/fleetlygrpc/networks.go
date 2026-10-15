@@ -28,12 +28,11 @@ type NetworksService struct {
 }
 
 func (svc *NetworksService) CreateNetwork(ctx context.Context, req *structurev1.CreateNetworkRequest) (*structurev1.CreateNetworkResponse, error) {
-	if err := validName("name", req.GetName()); err != nil {
-		return nil, err
-	}
-	if req.GetProjectId() == "" || req.GetName() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "project_id and name: must not be empty")
-	}
+	// name 的 dns 标签形态检查（validName）与 project_id/name 必填组合检查
+	// 已退役为 CreateNetworkRequest 的 protovalidate CEL 注解（P4-1 批 1
+	// Run B1）：validate 拦截器在 handler 之前执法，组合必填拆 per-field
+	// 文案；正则字面单源见 entityid.NamePatternSource（descriptor 对齐
+	// 测试执法）。
 	// 行级授权（ADR-0035）：写面受理前置。
 	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
@@ -95,9 +94,9 @@ type networkRebuiltEventPayload struct {
 // 失败无事件（重试风暴自放大防护），错误信封携带 engine 的中断点与
 // 收敛指引；外来附着拒绝（E_CONFLICT）列出载体名。
 func (svc *NetworksService) RebuildNetwork(ctx context.Context, req *structurev1.RebuildNetworkRequest) (*structurev1.RebuildNetworkResponse, error) {
-	if req.GetProjectId() == "" || req.GetName() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "project_id and name: must not be empty")
-	}
+	// project_id/name 必填组合检查已退役为 RebuildNetworkRequest 的
+	// protovalidate CEL 注解（P4-1 批 1 Run B1）：validate 拦截器在 handler
+	// 之前执法，拆 per-field 文案。
 	// 行级授权（ADR-0035）：写面受理前置。
 	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
@@ -264,9 +263,10 @@ func (svc *NetworksService) authorizePeerSide(ctx context.Context, p *networkpee
 // DeclareNetworkPeer 是挂靠方声明（pending 行）：peer 项目请求挂靠目标
 // 网络。双向声明的第一拍；批准前引用不可投影（strict fail-closed）。
 func (svc *NetworksService) DeclareNetworkPeer(ctx context.Context, req *structurev1.DeclareNetworkPeerRequest) (*structurev1.DeclareNetworkPeerResponse, error) {
-	if req.GetNetworkId() == "" || req.GetPeerProjectId() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "network_id and peer_project_id: must not be empty")
-	}
+	// network_id/peer_project_id 必填组合检查已退役为
+	// DeclareNetworkPeerRequest 的 protovalidate CEL 注解（P4-1 批 1 Run
+	// B1）：validate 拦截器在 handler 之前执法，拆 per-field 文案。
+	// 同项目挂靠交叉检查（动态文案）留在服务内。
 	net, err := svc.loadPeerNetwork(ctx, req.GetNetworkId())
 	if err != nil {
 		return nil, err

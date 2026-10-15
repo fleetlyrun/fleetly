@@ -52,12 +52,11 @@ type DatabasesService struct {
 // Secret）+ 聚合行，一事务落账后 Kick 收敛环。同名活跃行冲突 →
 // E_ALREADY_EXISTS；engine 值域外 → E_INVALID_ARGUMENT（列合法值）。
 func (svc *DatabasesService) CreateDatabase(ctx context.Context, req *structurev1.CreateDatabaseRequest) (*structurev1.CreateDatabaseResponse, error) {
-	if err := validName("name", req.GetName()); err != nil {
-		return nil, err
-	}
-	if req.GetProjectId() == "" || req.GetName() == "" || req.GetEngine() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "project_id, name and engine: must not be empty")
-	}
+	// name 的 dns 标签形态检查（validName）与 project_id/name/engine 必填
+	// 组合检查已退役为 CreateDatabaseRequest 的 protovalidate CEL 注解
+	//（P4-1 批 1 Run B1）：validate 拦截器在 handler 之前执法，组合必填拆
+	// per-field 文案；正则字面单源见 entityid.NamePatternSource（descriptor
+	// 对齐测试执法）。engine 值域查模板注册表（动态文案）留在服务内。
 	if _, ok := dbtemplate.InfoFor(req.GetEngine()); !ok {
 		return nil, apperr.New("E_INVALID_ARGUMENT",
 			"engine: %q is not a registered template (available: %v)", req.GetEngine(), dbtemplate.Engines())
@@ -167,10 +166,9 @@ func (svc *DatabasesService) GetDatabase(ctx context.Context, req *structurev1.G
 func (svc *DatabasesService) ListDatabases(ctx context.Context, req *structurev1.ListDatabasesRequest) (*structurev1.ListDatabasesResponse, error) {
 	// 空 project_id 先拒（E_INVALID_ARGUMENT）——与 ListApps 同口径；此前
 	// 落到行级授权的 E_NOT_FOUND（404），调用方把"缺参"误判为"项目不存在"
-	//（N3 交接 O1 收口，2026-10-06）。
-	if req.GetProjectId() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "project_id: must not be empty")
-	}
+	//（N3 交接 O1 收口，2026-10-06）。（该检查已退役为 ListDatabasesRequest
+	// 的 protovalidate CEL 注解——P4-1 批 1 Run B1，拦截器在 handler 之前
+	// 执法。）
 	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}
@@ -190,9 +188,8 @@ func (svc *DatabasesService) ListDatabases(ctx context.Context, req *structurev1
 // tombstone + 事件 + 审计一事务。数据卷与凭证 Secret 不随删（Project 级
 // 材料，备份保留义——重建同名库复用卷、覆写凭证）。
 func (svc *DatabasesService) DeleteDatabase(ctx context.Context, req *structurev1.DeleteDatabaseRequest) (*structurev1.DeleteDatabaseResponse, error) {
-	if req.GetId() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "id: must not be empty")
-	}
+	// id 必填检查已退役为 DeleteDatabaseRequest 的 protovalidate CEL 注解
+	//（P4-1 批 1 Run B1）：validate 拦截器在 handler 之前执法。
 	row, err := svc.s.Databases.Get(ctx, svc.s.DB.Runner(), req.GetId())
 	if err != nil {
 		return nil, mapStateError(err, "database")
@@ -235,9 +232,9 @@ func (svc *DatabasesService) DeleteDatabase(ctx context.Context, req *structurev
 // 重写事实）；级联披露由调用方承担（Console 确认页/CLI 回执明示"引用库
 // 的 App 须重新部署取新值"）。新连接串只进 Secret，响应永不回显。
 func (svc *DatabasesService) RotateDatabasePassword(ctx context.Context, req *structurev1.RotateDatabasePasswordRequest) (*structurev1.RotateDatabasePasswordResponse, error) {
-	if req.GetDatabaseId() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "database_id: must not be empty")
-	}
+	// database_id 必填检查已退役为 RotateDatabasePasswordRequest 的
+	// protovalidate CEL 注解（P4-1 批 1 Run B1）：validate 拦截器在 handler
+	// 之前执法。
 	row, err := svc.s.Databases.Get(ctx, svc.s.DB.Runner(), req.GetDatabaseId())
 	if err != nil {
 		return nil, mapStateError(err, "database")
@@ -359,9 +356,8 @@ func (s *Services) listActiveDatabases(ctx context.Context, projectID string) ([
 // 备份环；执行完成事实由事件与 ListBackups 观测（触发不等执行——
 // 备份时长无上界承诺，同步面不成立）。
 func (svc *DatabasesService) TriggerBackup(ctx context.Context, req *structurev1.TriggerBackupRequest) (*structurev1.TriggerBackupResponse, error) {
-	if req.GetDatabaseId() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "database_id: must not be empty")
-	}
+	// database_id 必填检查已退役为 TriggerBackupRequest 的 protovalidate
+	// CEL 注解（P4-1 批 1 Run B1）：validate 拦截器在 handler 之前执法。
 	db, err := svc.s.Databases.Get(ctx, svc.s.DB.Runner(), req.GetDatabaseId())
 	if err != nil {
 		return nil, mapStateError(err, "database")
@@ -399,9 +395,8 @@ func (svc *DatabasesService) TriggerBackup(ctx context.Context, req *structurev1
 
 // ListBackups 新→旧分页（ADR-0026 after_* + limit）。
 func (svc *DatabasesService) ListBackups(ctx context.Context, req *structurev1.ListBackupsRequest) (*structurev1.ListBackupsResponse, error) {
-	if req.GetDatabaseId() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "database_id: must not be empty")
-	}
+	// database_id 必填检查已退役为 ListBackupsRequest 的 protovalidate CEL
+	// 注解（P4-1 批 1 Run B1）：validate 拦截器在 handler 之前执法。
 	db, err := svc.s.Databases.Get(ctx, svc.s.DB.Runner(), req.GetDatabaseId())
 	if err != nil {
 		return nil, mapStateError(err, "database")
@@ -424,9 +419,9 @@ func (svc *DatabasesService) ListBackups(ctx context.Context, req *structurev1.L
 // VerifyBackup 重算摘要比对回执（ADR-0039 决策 8；执行链未装配时精确
 // 失败——不做"永远 ok"的假验证）。
 func (svc *DatabasesService) VerifyBackup(ctx context.Context, req *structurev1.VerifyBackupRequest) (*structurev1.VerifyBackupResponse, error) {
-	if req.GetBackupId() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "backup_id: must not be empty")
-	}
+	// backup_id 必填检查已退役为 VerifyBackupRequest 的 protovalidate CEL
+	// 注解（P4-1 批 1 Run B1）：validate 拦截器在 handler 之前执法。
+	// 成功行才可验的台账检查（动态文案）留在服务内。
 	row, err := svc.s.Backups.Get(ctx, svc.s.DB.Runner(), req.GetBackupId())
 	if err != nil {
 		return nil, mapStateError(err, "backup")
@@ -494,9 +489,9 @@ const browseTicketTTL = 120 * time.Second
 // 可写控制台）在服务内要求 databases:write。freeze 豁免（诊断面同 exec
 // 语义，ADR-0017 边界注记）。
 func (svc *DatabasesService) BrowseDatabase(ctx context.Context, req *structurev1.BrowseDatabaseRequest) (*structurev1.BrowseDatabaseResponse, error) {
-	if req.GetDatabaseId() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "database_id: must not be empty")
-	}
+	// database_id 必填检查已退役为 BrowseDatabaseRequest 的 protovalidate
+	// CEL 注解（P4-1 批 1 Run B1）：validate 拦截器在 handler 之前执法。
+	// 配置缺席/浏览器映射/动态提权门（各自动态文案）留在服务内。
 	if !svc.s.Engine.BrowseConfigured() {
 		return nil, apperr.New("E_BROWSE_DISABLED",
 			"the database browse face is not configured on this platform (browse.host_suffix is empty)")

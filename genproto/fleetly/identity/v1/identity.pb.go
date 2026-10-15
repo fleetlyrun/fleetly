@@ -11,6 +11,7 @@
 package identityv1
 
 import (
+	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
 	_ "github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2/options"
 	_ "github.com/lynx-go/grpcapi/genproto/grpcapi/v1"
 	_ "google.golang.org/genproto/googleapis/api/annotations"
@@ -226,10 +227,16 @@ func (x *User) GetCreatedAt() string {
 }
 
 type CreateUserRequest struct {
-	state  protoimpl.MessageState `protogen:"open.v1"`
-	Name   string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	TeamId string                 `protobuf:"bytes,2,opt,name=team_id,json=teamId,proto3" json:"team_id,omitempty"` // 归属 Team（缺省 default）
-	RoleId string                 `protobuf:"bytes,3,opt,name=role_id,json=roleId,proto3" json:"role_id,omitempty"` // Team 内授予的 Role
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// name 是 dns 标签（小写字母数字与连字符，首尾字母数字，≤63 字符，
+	// ADR-0070 决策 4）。正则字面与长度界是 entityid.NamePatternSource /
+	// MaxNameLen 的镜像（proto 无法引用 Go 常量），字节一致由 entityid 包
+	// 的 descriptor 对齐测试执法；空值同报形状（本字段无 required 规则，
+	// 空名不接受）。
+	Name   string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	TeamId string `protobuf:"bytes,2,opt,name=team_id,json=teamId,proto3" json:"team_id,omitempty"` // 归属 Team（缺省 default）
+	// role_id 必填：Team 内授予的 Role（User 的权限轴经 membership 挂 Role）。
+	RoleId string `protobuf:"bytes,3,opt,name=role_id,json=roleId,proto3" json:"role_id,omitempty"`
 	// password 是可选初始密码（bcrypt 落库；空 = 未设密，密码登录诚实拒绝）。
 	// C6 密码会话第一期。
 	Password      string `protobuf:"bytes,4,opt,name=password,proto3" json:"password,omitempty"`
@@ -342,9 +349,12 @@ func (x *CreateUserResponse) GetUser() *User {
 // Login（C6 密码会话第一期）：密码自证铸常规 API Token（复用 tokens 面
 // 执法/审计/吊销——不引入独立会话表；secret 只在本响应出现一次）。
 type LoginRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Password      string                 `protobuf:"bytes,2,opt,name=password,proto3" json:"password,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// name 必填：登录用户名。
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// password 必填：登录口令（缺失与错配同报 E_UNAUTHENTICATED——用户名
+	// 枚举面收窄）。
+	Password      string `protobuf:"bytes,2,opt,name=password,proto3" json:"password,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -478,9 +488,10 @@ func (x *LoginResponse) GetRoleId() string {
 }
 
 type SetUserPasswordRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
-	Password      string                 `protobuf:"bytes,2,opt,name=password,proto3" json:"password,omitempty"`
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	UserId string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	// password 必填：新口令（bcrypt 落库）。
+	Password      string `protobuf:"bytes,2,opt,name=password,proto3" json:"password,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -874,8 +885,13 @@ func (x *Team) GetCreatedAt() string {
 }
 
 type CreateTeamRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// name 是 dns 标签（小写字母数字与连字符，首尾字母数字，≤63 字符，
+	// ADR-0070 决策 4）。正则字面与长度界是 entityid.NamePatternSource /
+	// MaxNameLen 的镜像（proto 无法引用 Go 常量），字节一致由 entityid 包
+	// 的 descriptor 对齐测试执法；空值同报形状（本字段无 required 规则，
+	// 空名不接受）。
+	Name          string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1294,10 +1310,17 @@ func (x *Role) GetCreatedAt() string {
 }
 
 type CreateRoleRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	TeamId        string                 `protobuf:"bytes,2,opt,name=team_id,json=teamId,proto3" json:"team_id,omitempty"` // 自定义 Role 属于某 Team
-	Scopes        []string               `protobuf:"bytes,3,rep,name=scopes,proto3" json:"scopes,omitempty"`               // colon 形态；write⇒read 在执法点展开
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// name 是 dns 标签（小写字母数字与连字符，首尾字母数字，≤63 字符，
+	// ADR-0070 决策 4）。正则字面与长度界是 entityid.NamePatternSource /
+	// MaxNameLen 的镜像（proto 无法引用 Go 常量），字节一致由 entityid 包
+	// 的 descriptor 对齐测试执法；空值同报形状（本字段无 required 规则，
+	// 空名不接受）。
+	Name   string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	TeamId string `protobuf:"bytes,2,opt,name=team_id,json=teamId,proto3" json:"team_id,omitempty"` // 自定义 Role 属于某 Team
+	// scopes 必填：Role 是命名的 Scope 集合（元素值域 `resource:action` 的
+	// 解析由服务内 ParseScopes 执法——动态文案留在服务内）。
+	Scopes        []string `protobuf:"bytes,3,rep,name=scopes,proto3" json:"scopes,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1754,11 +1777,13 @@ func (x *Token) GetCreatedAt() string {
 }
 
 type CreateTokenRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	TeamId        string                 `protobuf:"bytes,2,opt,name=team_id,json=teamId,proto3" json:"team_id,omitempty"`
-	RoleId        string                 `protobuf:"bytes,3,opt,name=role_id,json=roleId,proto3" json:"role_id,omitempty"`
-	UserId        string                 `protobuf:"bytes,4,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"` // 可空
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// name 必填：Token 名（保留名 bootstrap 由服务内检查拒绝）。
+	Name   string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	TeamId string `protobuf:"bytes,2,opt,name=team_id,json=teamId,proto3" json:"team_id,omitempty"`
+	// role_id 必填：Token 的权限经 Team 内 Role 获得 Scope。
+	RoleId        string `protobuf:"bytes,3,opt,name=role_id,json=roleId,proto3" json:"role_id,omitempty"`
+	UserId        string `protobuf:"bytes,4,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"` // 可空
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2223,10 +2248,14 @@ func (x *Invitation) GetCreatedAt() string {
 }
 
 type CreateInvitationRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	TeamId        string                 `protobuf:"bytes,1,opt,name=team_id,json=teamId,proto3" json:"team_id,omitempty"`
-	RoleId        string                 `protobuf:"bytes,2,opt,name=role_id,json=roleId,proto3" json:"role_id,omitempty"`
-	Ttl           string                 `protobuf:"bytes,3,opt,name=ttl,proto3" json:"ttl,omitempty"` // 时长（如 "24h"；缺省 24h，上限 168h）
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	TeamId string                 `protobuf:"bytes,1,opt,name=team_id,json=teamId,proto3" json:"team_id,omitempty"`
+	// role_id 必填：邀请兑换出的 membership 绑定该 Role（roleInTeam 同事务
+	// 校验——不一致的邀请兑换出跨 Team membership）。
+	RoleId string `protobuf:"bytes,2,opt,name=role_id,json=roleId,proto3" json:"role_id,omitempty"`
+	// ttl 是时长字面（如 "24h"；缺省 24h，上限 168h）——格式与范围由服务
+	// 内解析执法（动态文案）。
+	Ttl           string `protobuf:"bytes,3,opt,name=ttl,proto3" json:"ttl,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2416,9 +2445,12 @@ func (x *ListInvitationsResponse) GetInvitations() []*Invitation {
 }
 
 type AcceptInvitationRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Secret        string                 `protobuf:"bytes,1,opt,name=secret,proto3" json:"secret,omitempty"` // 邀请 Token 明文（被邀请者持信物）
-	UserName      string                 `protobuf:"bytes,2,opt,name=user_name,json=userName,proto3" json:"user_name,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// secret 必填：邀请 Token 明文（被邀请者持信物；有效性由服务内校验，
+	// 无效统一 E_INVALID_INVITATION——枚举探测面收窄）。
+	Secret string `protobuf:"bytes,1,opt,name=secret,proto3" json:"secret,omitempty"`
+	// user_name 必填：兑换时建户的用户名。
+	UserName      string `protobuf:"bytes,2,opt,name=user_name,json=userName,proto3" json:"user_name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2745,7 +2777,7 @@ var File_fleetly_identity_v1_identity_proto protoreflect.FileDescriptor
 
 const file_fleetly_identity_v1_identity_proto_rawDesc = "" +
 	"\n" +
-	"\"fleetly/identity/v1/identity.proto\x12\x13fleetly.identity.v1\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"\x0f\n" +
+	"\"fleetly/identity/v1/identity.proto\x12\x13fleetly.identity.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"\x0f\n" +
 	"\rWhoAmIRequest\"\xe7\x01\n" +
 	"\x0eWhoAmIResponse\x12\x19\n" +
 	"\btoken_id\x18\x01 \x01(\tR\atokenId\x12\x1d\n" +
@@ -2761,17 +2793,21 @@ const file_fleetly_identity_v1_identity_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1d\n" +
 	"\n" +
-	"created_at\x18\x03 \x01(\tR\tcreatedAt\"u\n" +
-	"\x11CreateUserRequest\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\x12\x17\n" +
-	"\ateam_id\x18\x02 \x01(\tR\x06teamId\x12\x17\n" +
-	"\arole_id\x18\x03 \x01(\tR\x06roleId\x12\x1a\n" +
+	"created_at\x18\x03 \x01(\tR\tcreatedAt\"\xab\x03\n" +
+	"\x11CreateUserRequest\x12\xeb\x01\n" +
+	"\x04name\x18\x01 \x01(\tB\xd6\x01\xbaH\xd2\x01\xba\x01\xce\x01\n" +
+	"\x10string.dns_label\x12tmust be a dns label (lowercase letters, digits, hyphens; start and end alphanumeric, e.g. \"web\" or \"nightly-backup\")\x1aDthis.matches('^[a-z0-9]([a-z0-9-]*[a-z0-9])?$') && this.size() <= 63R\x04name\x12\x17\n" +
+	"\ateam_id\x18\x02 \x01(\tR\x06teamId\x12s\n" +
+	"\arole_id\x18\x03 \x01(\tBZ\xbaHW\xba\x01T\n" +
+	"\x0fstring.required\x120must not be empty (grant a role within the team)\x1a\x0fthis.size() > 0R\x06roleId\x12\x1a\n" +
 	"\bpassword\x18\x04 \x01(\tR\bpassword\"C\n" +
 	"\x12CreateUserResponse\x12-\n" +
-	"\x04user\x18\x01 \x01(\v2\x19.fleetly.identity.v1.UserR\x04user\">\n" +
-	"\fLoginRequest\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1a\n" +
-	"\bpassword\x18\x02 \x01(\tR\bpassword\"\xb0\x01\n" +
+	"\x04user\x18\x01 \x01(\v2\x19.fleetly.identity.v1.UserR\x04user\"\xb8\x01\n" +
+	"\fLoginRequest\x12O\n" +
+	"\x04name\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\x04name\x12W\n" +
+	"\bpassword\x18\x02 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\bpassword\"\xb0\x01\n" +
 	"\rLoginResponse\x12\x19\n" +
 	"\btoken_id\x18\x01 \x01(\tR\atokenId\x12\x16\n" +
 	"\x06secret\x18\x02 \x01(\tR\x06secret\x12\x1d\n" +
@@ -2779,10 +2815,11 @@ const file_fleetly_identity_v1_identity_proto_rawDesc = "" +
 	"token_name\x18\x03 \x01(\tR\ttokenName\x12\x1b\n" +
 	"\tuser_name\x18\x04 \x01(\tR\buserName\x12\x17\n" +
 	"\ateam_id\x18\x05 \x01(\tR\x06teamId\x12\x17\n" +
-	"\arole_id\x18\x06 \x01(\tR\x06roleId\"M\n" +
+	"\arole_id\x18\x06 \x01(\tR\x06roleId\"\x8a\x01\n" +
 	"\x16SetUserPasswordRequest\x12\x17\n" +
-	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x1a\n" +
-	"\bpassword\x18\x02 \x01(\tR\bpassword\"\x19\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x12W\n" +
+	"\bpassword\x18\x02 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\bpassword\"\x19\n" +
 	"\x17SetUserPasswordResponse\" \n" +
 	"\x0eGetUserRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"@\n" +
@@ -2798,9 +2835,10 @@ const file_fleetly_identity_v1_identity_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1d\n" +
 	"\n" +
-	"created_at\x18\x03 \x01(\tR\tcreatedAt\"'\n" +
-	"\x11CreateTeamRequest\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\"C\n" +
+	"created_at\x18\x03 \x01(\tR\tcreatedAt\"\x81\x02\n" +
+	"\x11CreateTeamRequest\x12\xeb\x01\n" +
+	"\x04name\x18\x01 \x01(\tB\xd6\x01\xbaH\xd2\x01\xba\x01\xce\x01\n" +
+	"\x10string.dns_label\x12tmust be a dns label (lowercase letters, digits, hyphens; start and end alphanumeric, e.g. \"web\" or \"nightly-backup\")\x1aDthis.matches('^[a-z0-9]([a-z0-9-]*[a-z0-9])?$') && this.size() <= 63R\x04name\"C\n" +
 	"\x12CreateTeamResponse\x12-\n" +
 	"\x04team\x18\x01 \x01(\v2\x19.fleetly.identity.v1.TeamR\x04team\" \n" +
 	"\x0eGetTeamRequest\x12\x0e\n" +
@@ -2820,11 +2858,13 @@ const file_fleetly_identity_v1_identity_proto_rawDesc = "" +
 	"\abuiltin\x18\x04 \x01(\bR\abuiltin\x12\x16\n" +
 	"\x06scopes\x18\x05 \x03(\tR\x06scopes\x12\x1d\n" +
 	"\n" +
-	"created_at\x18\x06 \x01(\tR\tcreatedAt\"X\n" +
-	"\x11CreateRoleRequest\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\x12\x17\n" +
-	"\ateam_id\x18\x02 \x01(\tR\x06teamId\x12\x16\n" +
-	"\x06scopes\x18\x03 \x03(\tR\x06scopes\"C\n" +
+	"created_at\x18\x06 \x01(\tR\tcreatedAt\"\x8d\x03\n" +
+	"\x11CreateRoleRequest\x12\xeb\x01\n" +
+	"\x04name\x18\x01 \x01(\tB\xd6\x01\xbaH\xd2\x01\xba\x01\xce\x01\n" +
+	"\x10string.dns_label\x12tmust be a dns label (lowercase letters, digits, hyphens; start and end alphanumeric, e.g. \"web\" or \"nightly-backup\")\x1aDthis.matches('^[a-z0-9]([a-z0-9-]*[a-z0-9])?$') && this.size() <= 63R\x04name\x12\x17\n" +
+	"\ateam_id\x18\x02 \x01(\tR\x06teamId\x12q\n" +
+	"\x06scopes\x18\x03 \x03(\tBY\xbaHV\xba\x01S\n" +
+	"\x0fstring.required\x12/must not be empty (a role is a named scope set)\x1a\x0fthis.size() > 0R\x06scopes\"C\n" +
 	"\x12CreateRoleResponse\x12-\n" +
 	"\x04role\x18\x01 \x01(\v2\x19.fleetly.identity.v1.RoleR\x04role\" \n" +
 	"\x0eGetRoleRequest\x12\x0e\n" +
@@ -2848,11 +2888,13 @@ const file_fleetly_identity_v1_identity_proto_rawDesc = "" +
 	"\flast_used_at\x18\b \x01(\tR\n" +
 	"lastUsedAt\x12\x1d\n" +
 	"\n" +
-	"created_at\x18\t \x01(\tR\tcreatedAt\"s\n" +
-	"\x12CreateTokenRequest\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\x12\x17\n" +
-	"\ateam_id\x18\x02 \x01(\tR\x06teamId\x12\x17\n" +
-	"\arole_id\x18\x03 \x01(\tR\x06roleId\x12\x17\n" +
+	"created_at\x18\t \x01(\tR\tcreatedAt\"\x91\x02\n" +
+	"\x12CreateTokenRequest\x12O\n" +
+	"\x04name\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\x04name\x12\x17\n" +
+	"\ateam_id\x18\x02 \x01(\tR\x06teamId\x12x\n" +
+	"\arole_id\x18\x03 \x01(\tB_\xbaH\\\xba\x01Y\n" +
+	"\x0fstring.required\x125must not be empty (tokens get scopes via a team role)\x1a\x0fthis.size() > 0R\x06roleId\x12\x17\n" +
 	"\auser_id\x18\x04 \x01(\tR\x06userId\"_\n" +
 	"\x13CreateTokenResponse\x120\n" +
 	"\x05token\x18\x01 \x01(\v2\x1a.fleetly.identity.v1.TokenR\x05token\x12\x16\n" +
@@ -2880,10 +2922,11 @@ const file_fleetly_identity_v1_identity_proto_rawDesc = "" +
 	"\vconsumed_at\x18\x06 \x01(\tR\n" +
 	"consumedAt\x12\x1d\n" +
 	"\n" +
-	"created_at\x18\a \x01(\tR\tcreatedAt\"]\n" +
+	"created_at\x18\a \x01(\tR\tcreatedAt\"\x9a\x01\n" +
 	"\x17CreateInvitationRequest\x12\x17\n" +
-	"\ateam_id\x18\x01 \x01(\tR\x06teamId\x12\x17\n" +
-	"\arole_id\x18\x02 \x01(\tR\x06roleId\x12\x10\n" +
+	"\ateam_id\x18\x01 \x01(\tR\x06teamId\x12T\n" +
+	"\arole_id\x18\x02 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\x06roleId\x12\x10\n" +
 	"\x03ttl\x18\x03 \x01(\tR\x03ttl\"s\n" +
 	"\x18CreateInvitationResponse\x12?\n" +
 	"\n" +
@@ -2892,10 +2935,12 @@ const file_fleetly_identity_v1_identity_proto_rawDesc = "" +
 	"\x06secret\x18\x02 \x01(\tR\x06secret\"\x18\n" +
 	"\x16ListInvitationsRequest\"\\\n" +
 	"\x17ListInvitationsResponse\x12A\n" +
-	"\vinvitations\x18\x01 \x03(\v2\x1f.fleetly.identity.v1.InvitationR\vinvitations\"N\n" +
-	"\x17AcceptInvitationRequest\x12\x16\n" +
-	"\x06secret\x18\x01 \x01(\tR\x06secret\x12\x1b\n" +
-	"\tuser_name\x18\x02 \x01(\tR\buserName\"I\n" +
+	"\vinvitations\x18\x01 \x03(\v2\x1f.fleetly.identity.v1.InvitationR\vinvitations\"\xc8\x01\n" +
+	"\x17AcceptInvitationRequest\x12S\n" +
+	"\x06secret\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\x06secret\x12X\n" +
+	"\tuser_name\x18\x02 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\buserName\"I\n" +
 	"\x18AcceptInvitationResponse\x12-\n" +
 	"\x04user\x18\x01 \x01(\v2\x19.fleetly.identity.v1.UserR\x04user\"\xed\x01\n" +
 	"\n" +

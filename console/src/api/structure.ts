@@ -671,16 +671,38 @@ export interface components {
             target?: string;
         };
         v1CreateAppRequest: {
+            /** project_id 必填：App 的父 Project（受理位父存活/配额校验的锚）。 */
             project_id?: string;
+            /**
+             * name 是 dns 标签（小写字母数字与连字符，首尾字母数字，≤63 字符，
+             *     ADR-0070 决策 4）——可读 id base 与派生名安全的前提。正则字面与长度
+             *     界是 entityid.NamePatternSource / MaxNameLen 的镜像（proto 无法引用
+             *     Go 常量），字节一致由 entityid 包的 descriptor 对齐测试执法；空值
+             *     同报形状（本字段无 required 规则，空名不接受）。
+             */
             name?: string;
         };
         v1CreateAppResponse: {
             app?: components["schemas"]["v1App"];
         };
         v1CreateDatabaseRequest: {
+            /**
+             * project_id 必填：Database 的父 Project（受理位父存活/配额/网络校验
+             *     的锚）。
+             */
             project_id?: string;
+            /**
+             * name 是 dns 标签（小写字母数字与连字符，首尾字母数字，≤63 字符，
+             *     ADR-0070 决策 4）——db-<id> 网内 DNS 名与凭证 Secret 名派生的前提。
+             *     正则字面与长度界是 entityid.NamePatternSource / MaxNameLen 的镜像，
+             *     字节一致由 entityid 包的 descriptor 对齐测试执法；空值同报形状
+             *     （本字段无 required 规则，空名不接受）。
+             */
             name?: string;
-            /** engine 值域 = 模板注册表（postgres / pgvector / redis，ADR-0029）。 */
+            /**
+             * engine 必填且值域 = 模板注册表（postgres / pgvector / redis，
+             *     ADR-0029）——值域外由服务内注册表检查拒绝并列出合法值。
+             */
             engine?: string;
             /**
              * restore_from_backup 是可选恢复源（ADR-0039）：成功备份行 id；在场 =
@@ -693,14 +715,30 @@ export interface components {
             database?: components["schemas"]["v1Database"];
         };
         v1CreateNetworkRequest: {
+            /** project_id 必填：Network 的父 Project（受理位父存活校验的锚）。 */
             project_id?: string;
+            /**
+             * name 是 dns 标签（小写字母数字与连字符，首尾字母数字，≤63 字符，
+             *     ADR-0070 决策 4）——编排器网络名与受管挂靠面安全的前提。正则字面
+             *     与长度界是 entityid.NamePatternSource / MaxNameLen 的镜像，字节一致
+             *     由 entityid 包的 descriptor 对齐测试执法；空值同报形状（本字段无
+             *     required 规则，空名不接受）。
+             */
             name?: string;
+            /** egress_none 是弱隔离声明（swarm v1：出网不阻断，明示）。 */
             egress_none?: boolean;
         };
         v1CreateNetworkResponse: {
             network?: components["schemas"]["v1Network"];
         };
         v1CreateProjectRequest: {
+            /**
+             * name 的形态约束（required + dns 标签）走 protovalidate CEL 注解：
+             *     shape 规则以空值短路（`size() == 0 || ...`）保证坏输入恰好一条违规。
+             *     正则字面与长度界（63）是 entityid.NamePatternSource / MaxNameLen 的
+             *     镜像（proto 无法引用 Go 常量），字节一致由 entityid 包的 descriptor
+             *     对齐测试执法。
+             */
             name?: string;
             team_id?: string;
         };
@@ -708,7 +746,15 @@ export interface components {
             project?: components["schemas"]["v1Project"];
         };
         v1CreateVolumeRequest: {
+            /** project_id 必填：Volume 的父 Project（受理位父存活校验的锚）。 */
             project_id?: string;
+            /**
+             * name 是 dns 标签（小写字母数字与连字符，首尾字母数字，≤63 字符，
+             *     ADR-0070 决策 4）——平台卷名与派生名安全的前提。正则字面与长度界
+             *     是 entityid.NamePatternSource / MaxNameLen 的镜像，字节一致由
+             *     entityid 包的 descriptor 对齐测试执法；空值同报形状（本字段无
+             *     required 规则，空名不接受）。
+             */
             name?: string;
             pinned_node_id?: string;
         };
@@ -761,9 +807,12 @@ export interface components {
             restore_error?: string;
         };
         v1DeclareNetworkPeerRequest: {
-            /** network_id 是目标网络行（接收方 Project 的活跃网络）。 */
+            /** network_id 必填：目标网络行（接收方 Project 的活跃网络）。 */
             network_id?: string;
-            /** peer_project_id 是挂靠方项目（声明方）。 */
+            /**
+             * peer_project_id 必填：挂靠方项目（声明方）。同项目挂靠由服务内交叉
+             *     检查拒绝（项目内挂靠走 project-local 网络名）。
+             */
             peer_project_id?: string;
         };
         v1DeclareNetworkPeerResponse: {
@@ -1003,12 +1052,19 @@ export interface components {
          */
         v1Protocol: "PROTOCOL_UNSPECIFIED" | "PROTOCOL_HTTP" | "PROTOCOL_H2C" | "PROTOCOL_TCP";
         v1PutAppVariableRequest: {
+            /** app_id 必填：变量归属 App。 */
             app_id?: string;
             /**
              * name 是 env 键形态（[A-Za-z_][A-Za-z0-9_]*，≤64 字符——与共享变量
-             *     同一白名单：变量名直接成为容器 env 键）。
+             *     同一白名单：变量名直接成为容器 env 键，ADR-0072）。正则字面是
+             *     spec.EnvNamePattern 的镜像（proto 无法引用 Go 常量），字节一致由
+             *     spec 包的 descriptor 对齐测试执法。
              */
             name?: string;
+            /**
+             * value 是变量值，单值上限 16384 字节（与共享变量同档；
+             *     bytes().size() 数字节）。
+             */
             value?: string;
         };
         /**
@@ -1019,15 +1075,30 @@ export interface components {
             variable?: components["schemas"]["v1AppVariable"];
         };
         v1PutConfigRequest: {
+            /** project_id 必填：Config 归属 Project。 */
             project_id?: string;
+            /** name 必填：项目内配置名（同名 put 是新版本）。 */
             name?: string;
+            /**
+             * content 是配置内容，单值上限 262144 字节（bytes().size() 数字节，
+             *     非 UTF-8 码点）。
+             */
             content?: string;
         };
         v1PutConfigResponse: {
             config?: components["schemas"]["v1Config"];
         };
         v1PutSecretRequest: {
+            /** project_id 必填：Secret 归属 Project。 */
             project_id?: string;
+            /**
+             * name 是 Secret 名：字符集白名单 [A-Za-z0-9][A-Za-z0-9:._-]{0,63} 且
+             *     不含 ".."——引用名原样成为容器内 /run/secrets/<名> 文件目标与 swarm
+             *     载体名成分，拒路径逃逸。正则字面是 spec.SecretNamePattern 的镜像
+             *     （proto 无法引用 Go 常量），字节一致由 spec 包的 descriptor 对齐测试
+             *     执法。平台保留前缀（database:<name>，ADR-0029 决策 6）由服务内检查
+             *     以 E_CONFLICT 拒绝。
+             */
             name?: string;
             /** value 只进不回（请求侧明文；响应只回指纹）。 */
             value?: string;
@@ -1036,9 +1107,19 @@ export interface components {
             secret?: components["schemas"]["v1Secret"];
         };
         v1PutSharedVariableRequest: {
+            /** project_id 必填：变量归属 Project。 */
             project_id?: string;
-            /** name 是 env 键形态（[A-Za-z_][A-Za-z0-9_]*，≤64 字符）。 */
+            /**
+             * name 是 env 键形态（[A-Za-z_][A-Za-z0-9_]*，≤64 字符，ADR-0043 决策
+             *     2）——变量名直接成为容器 env 键。正则字面是 spec.EnvNamePattern 的
+             *     镜像（proto 无法引用 Go 常量），字节一致由 spec 包的 descriptor 对齐
+             *     测试执法。
+             */
             name?: string;
+            /**
+             * value 是变量值，单值上限 16384 字节（env 是进程环境面不是文件面；
+             *     bytes().size() 数字节）。
+             */
             value?: string;
         };
         /**
@@ -1062,7 +1143,9 @@ export interface components {
          *     快速路径两者为 0——已 attachable 且标签在位即零扰动返回）。
          */
         v1RebuildNetworkRequest: {
+            /** project_id 必填：重建目标网络的归属 Project。 */
             project_id?: string;
+            /** name 必填：项目内目标网络名。 */
             name?: string;
         };
         v1RebuildNetworkResponse: {
@@ -1166,6 +1249,7 @@ export interface operations {
     AppVariablesService_ListAppVariables: {
         parameters: {
             query?: {
+                /** @description app_id 必填：List 面的 App 锚（行级授权沿此轴，ADR-0035）。 */
                 app_id?: string;
                 /**
                  * @description after_name 游标（上一页末条 name；空 = 首页）。游标轴 = App 内 name
@@ -1238,7 +1322,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description app_id 必填：变量归属 App。 */
                 app_id: string;
+                /** @description name 必填：目标变量键。 */
                 name: string;
             };
             cookie?: never;
@@ -1268,6 +1354,7 @@ export interface operations {
     AppsService_ListApps: {
         parameters: {
             query?: {
+                /** @description project_id 必填：List 面的项目锚（行级授权沿此轴，ADR-0035）。 */
                 project_id?: string;
                 /**
                  * @description after_app_seq 游标（上一页末条 seq（0 = 首页）。游标轴 = seq 创建序
@@ -1371,6 +1458,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description id 必填：目标 App 行。 */
                 id: string;
             };
             cookie?: never;
@@ -1433,6 +1521,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description backup_id 必填：待验证的 Backup 台账行。 */
                 backup_id: string;
             };
             cookie?: never;
@@ -1570,6 +1659,7 @@ export interface operations {
     DatabasesService_ListDatabases: {
         parameters: {
             query?: {
+                /** @description project_id 必填：List 面的项目锚（行级授权沿此轴，ADR-0035）。 */
                 project_id?: string;
                 /** @description after_database_seq 游标（上一页末条 seq（0 = 首页）。 */
                 after_database_seq?: string;
@@ -1643,6 +1733,7 @@ export interface operations {
             };
             header?: never;
             path: {
+                /** @description database_id 必填：备份台账的 Database 锚。 */
                 database_id: string;
             };
             cookie?: never;
@@ -1674,6 +1765,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description database_id 必填：备份目标 Database 行。 */
                 database_id: string;
             };
             cookie?: never;
@@ -1743,6 +1835,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description database_id 必填：浏览目标 Database 行。 */
                 database_id: string;
             };
             cookie?: never;
@@ -1778,6 +1871,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description database_id 必填：轮换目标 Database 行。 */
                 database_id: string;
             };
             cookie?: never;
@@ -1844,6 +1938,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description id 必填：目标 Database 行。 */
                 id: string;
             };
             cookie?: never;
@@ -2454,7 +2549,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description project_id 必填：变量归属 Project。 */
                 project_id: string;
+                /** @description name 必填：目标变量键。 */
                 name: string;
             };
             cookie?: never;
@@ -2550,6 +2647,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description id 必填：目标 Volume 行。 */
                 id: string;
             };
             cookie?: never;

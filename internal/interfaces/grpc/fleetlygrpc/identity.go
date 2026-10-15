@@ -49,15 +49,10 @@ func (svc *UsersService) WhoAmI(ctx context.Context, _ *identityv1.WhoAmIRequest
 }
 
 func (svc *UsersService) CreateUser(ctx context.Context, req *identityv1.CreateUserRequest) (*identityv1.CreateUserResponse, error) {
-	if err := validName("name", req.GetName()); err != nil {
-		return nil, err
-	}
-	if req.GetName() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "name: must not be empty")
-	}
-	if req.GetRoleId() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "role_id: must not be empty (grant a role within the team)")
-	}
+	// name 的 dns 标签形态检查（validName 先行，显式空名检查是死分支）与
+	// role_id 必填检查已退役为 CreateUserRequest 的 protovalidate CEL 注解
+	//（P4-1 批 1 Run B1）：validate 拦截器在 handler 之前执法；正则字面
+	// 单源见 entityid.NamePatternSource（descriptor 对齐测试执法）。
 	teamID := req.GetTeamId()
 	if teamID == "" {
 		teamID = identity.DefaultTeamID
@@ -123,9 +118,9 @@ func (svc *UsersService) GetUser(ctx context.Context, req *identityv1.GetUserReq
 // 哪半边错（用户名枚举面收窄）；PUBLIC 端点无限速是多租户前诚实边界
 // （控制面 9080/9081 均 VPC-only，端口暴露矩阵承载边界）。
 func (svc *UsersService) Login(ctx context.Context, req *identityv1.LoginRequest) (*identityv1.LoginResponse, error) {
-	if req.GetName() == "" || req.GetPassword() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "name and password: must not be empty")
-	}
+	// name/password 必填组合检查已退役为 LoginRequest 的 protovalidate CEL
+	// 注解（P4-1 批 1 Run B1）：validate 拦截器在 handler 之前执法，拆
+	// per-field 文案。
 	u, err := svc.s.Users.GetByName(ctx, svc.s.DB.Runner(), req.GetName())
 	if err != nil || u.PasswordHash == "" ||
 		bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(req.GetPassword())) != nil {
@@ -177,9 +172,8 @@ func (svc *UsersService) Login(ctx context.Context, req *identityv1.LoginRequest
 // SetUserPassword 设置/重置密码（admin 面；users:write scope——与
 // CreateUser 同档）。自助改密（带旧密码自证）随 SSO 批的认证面裁决。
 func (svc *UsersService) SetUserPassword(ctx context.Context, req *identityv1.SetUserPasswordRequest) (*identityv1.SetUserPasswordResponse, error) {
-	if req.GetPassword() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "password: must not be empty")
-	}
+	// password 必填检查已退役为 SetUserPasswordRequest 的 protovalidate CEL
+	// 注解（P4-1 批 1 Run B1）：validate 拦截器在 handler 之前执法。
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.GetPassword()), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, apperr.New("E_INTERNAL", "password hashing failed").WithCause(err)
@@ -263,12 +257,10 @@ type TeamsService struct {
 }
 
 func (svc *TeamsService) CreateTeam(ctx context.Context, req *identityv1.CreateTeamRequest) (*identityv1.CreateTeamResponse, error) {
-	if err := validName("name", req.GetName()); err != nil {
-		return nil, err
-	}
-	if req.GetName() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "name: must not be empty")
-	}
+	// name 的 dns 标签形态检查（validName 先行，显式空名检查是死分支）已
+	// 退役为 CreateTeamRequest 的 protovalidate CEL 注解（P4-1 批 1 Run
+	// B1）：validate 拦截器在 handler 之前执法；正则字面单源见
+	// entityid.NamePatternSource（descriptor 对齐测试执法）。
 	t := &team.Team{Name: req.GetName()}
 	err := svc.s.commit(ctx, writeFact{
 		write: func(ctx context.Context, tx *sql.Tx) error {
@@ -351,15 +343,11 @@ type RolesService struct {
 }
 
 func (svc *RolesService) CreateRole(ctx context.Context, req *identityv1.CreateRoleRequest) (*identityv1.CreateRoleResponse, error) {
-	if err := validName("name", req.GetName()); err != nil {
-		return nil, err
-	}
-	if req.GetName() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "name: must not be empty")
-	}
-	if len(req.GetScopes()) == 0 {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "scopes: must not be empty (a role is a named scope set)")
-	}
+	// name 的 dns 标签形态检查（validName 先行，显式空名检查是死分支）与
+	// scopes 非空检查已退役为 CreateRoleRequest 的 protovalidate CEL 注解
+	//（P4-1 批 1 Run B1）：validate 拦截器在 handler 之前执法；正则字面
+	// 单源见 entityid.NamePatternSource（descriptor 对齐测试执法）。scopes
+	// 元素值域解析（ParseScopes，动态文案）留在服务内。
 	scopes, err := identity.ParseScopes(req.GetScopes(), svc.s.ScopeVocabulary)
 	if err != nil {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "scopes: %v", err)
@@ -458,14 +446,11 @@ type TokensService struct {
 
 // CreateToken 铸 Token（明文只在本响应出现一次；存储 sha256）。
 func (svc *TokensService) CreateToken(ctx context.Context, req *identityv1.CreateTokenRequest) (*identityv1.CreateTokenResponse, error) {
-	if req.GetName() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "name: must not be empty")
-	}
+	// name/role_id 必填检查已退役为 CreateTokenRequest 的 protovalidate CEL
+	// 注解（P4-1 批 1 Run B1）：validate 拦截器在 handler 之前执法。
+	// 保留名（bootstrap）检查留在服务内（E_INVALID_ARGUMENT 动态文案）。
 	if req.GetName() == identity.BootstrapTokenName {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "name %q is reserved", identity.BootstrapTokenName)
-	}
-	if req.GetRoleId() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "role_id: must not be empty (tokens get scopes via a team role)")
 	}
 	// Team 轴（ADR-0035 决策 5）：铸 Token 的目标 Team 缺省 = 调用方 Team
 	//（此前缺省 default——跨队铸造零校验是提权面）；显式他队仅平台 owner。

@@ -13,6 +13,7 @@
 package deliveryv1
 
 import (
+	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
 	_ "github.com/lynx-go/grpcapi/genproto/grpcapi/v1"
 	_ "google.golang.org/genproto/googleapis/api/annotations"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
@@ -30,8 +31,9 @@ const (
 )
 
 type ListRegistryCatalogRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ProjectId     string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// project_id 必填：catalog 按项目前纲过滤。
+	ProjectId     string `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -190,9 +192,10 @@ func (x *RegistryTag) GetPushedAt() string {
 }
 
 type ListRegistryTagsRequest struct {
-	state     protoimpl.MessageState `protogen:"open.v1"`
-	ProjectId string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	// repository 是仓名（须落在该项目前纲下——越纲按 not found 拒绝）。
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// project_id 必填：tag 校验前纲归属。
+	ProjectId string `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	// repository 必填：仓名（须落在该项目前纲下——越纲按 not found 拒绝）。
 	Repository    string `protobuf:"bytes,2,opt,name=repository,proto3" json:"repository,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -298,10 +301,11 @@ var File_fleetly_delivery_v1_registry_proto protoreflect.FileDescriptor
 
 const file_fleetly_delivery_v1_registry_proto_rawDesc = "" +
 	"\n" +
-	"\"fleetly/delivery/v1/registry.proto\x12\x13fleetly.delivery.v1\x1a\x1cgoogle/api/annotations.proto\x1a\x16grpcapi/v1/authz.proto\";\n" +
-	"\x1aListRegistryCatalogRequest\x12\x1d\n" +
+	"\"fleetly/delivery/v1/registry.proto\x12\x13fleetly.delivery.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"x\n" +
+	"\x1aListRegistryCatalogRequest\x12Z\n" +
 	"\n" +
-	"project_id\x18\x01 \x01(\tR\tprojectId\"A\n" +
+	"project_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\tprojectId\"A\n" +
 	"\x1bListRegistryCatalogResponse\x12\"\n" +
 	"\frepositories\x18\x01 \x03(\tR\frepositories\"u\n" +
 	"\vRegistryTag\x12\x12\n" +
@@ -309,12 +313,14 @@ const file_fleetly_delivery_v1_registry_proto_rawDesc = "" +
 	"\x06digest\x18\x02 \x01(\tR\x06digest\x12\x1d\n" +
 	"\n" +
 	"size_bytes\x18\x03 \x01(\x03R\tsizeBytes\x12\x1b\n" +
-	"\tpushed_at\x18\x04 \x01(\tR\bpushedAt\"X\n" +
-	"\x17ListRegistryTagsRequest\x12\x1d\n" +
+	"\tpushed_at\x18\x04 \x01(\tR\bpushedAt\"\xd2\x01\n" +
+	"\x17ListRegistryTagsRequest\x12Z\n" +
 	"\n" +
-	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x1e\n" +
+	"project_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\tprojectId\x12[\n" +
 	"\n" +
-	"repository\x18\x02 \x01(\tR\n" +
+	"repository\x18\x02 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\n" +
 	"repository\"p\n" +
 	"\x18ListRegistryTagsResponse\x12\x1e\n" +
 	"\n" +

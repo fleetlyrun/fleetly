@@ -613,9 +613,15 @@ func (x *App) GetCreatedAt() string {
 }
 
 type CreateAppRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ProjectId     string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// project_id 必填：App 的父 Project（受理位父存活/配额校验的锚）。
+	ProjectId string `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	// name 是 dns 标签（小写字母数字与连字符，首尾字母数字，≤63 字符，
+	// ADR-0070 决策 4）——可读 id base 与派生名安全的前提。正则字面与长度
+	// 界是 entityid.NamePatternSource / MaxNameLen 的镜像（proto 无法引用
+	// Go 常量），字节一致由 entityid 包的 descriptor 对齐测试执法；空值
+	// 同报形状（本字段无 required 规则，空名不接受）。
+	Name          string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1002,8 +1008,9 @@ func (x *GetAppSpecResponse) GetRevisionDigest() string {
 }
 
 type ListAppsRequest struct {
-	state     protoimpl.MessageState `protogen:"open.v1"`
-	ProjectId string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// project_id 必填：List 面的项目锚（行级授权沿此轴，ADR-0035）。
+	ProjectId string `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
 	// after_app_seq 游标（上一页末条 seq（0 = 首页）。游标轴 = seq 创建序
 	// 升序（既有响应序不变；ADR-0026 after_* + limit 惯例）。
 	AfterAppSeq   int64 `protobuf:"varint,2,opt,name=after_app_seq,json=afterAppSeq,proto3" json:"after_app_seq,omitempty"`
@@ -1108,8 +1115,9 @@ func (x *ListAppsResponse) GetApps() []*App {
 }
 
 type DeleteAppRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// id 必填：目标 App 行。
+	Id            string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1265,9 +1273,16 @@ func (x *Secret) GetUpdatedAt() string {
 }
 
 type PutSecretRequest struct {
-	state     protoimpl.MessageState `protogen:"open.v1"`
-	ProjectId string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	Name      string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// project_id 必填：Secret 归属 Project。
+	ProjectId string `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	// name 是 Secret 名：字符集白名单 [A-Za-z0-9][A-Za-z0-9:._-]{0,63} 且
+	// 不含 ".."——引用名原样成为容器内 /run/secrets/<名> 文件目标与 swarm
+	// 载体名成分，拒路径逃逸。正则字面是 spec.SecretNamePattern 的镜像
+	// （proto 无法引用 Go 常量），字节一致由 spec 包的 descriptor 对齐测试
+	// 执法。平台保留前缀（database:<name>，ADR-0029 决策 6）由服务内检查
+	// 以 E_CONFLICT 拒绝。
+	Name string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
 	// value 只进不回（请求侧明文；响应只回指纹）。
 	Value         string `protobuf:"bytes,3,opt,name=value,proto3" json:"value,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -1649,10 +1664,14 @@ func (x *Config) GetContent() string {
 }
 
 type PutConfigRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ProjectId     string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Content       string                 `protobuf:"bytes,3,opt,name=content,proto3" json:"content,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// project_id 必填：Config 归属 Project。
+	ProjectId string `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	// name 必填：项目内配置名（同名 put 是新版本）。
+	Name string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	// content 是配置内容，单值上限 262144 字节（bytes().size() 数字节，
+	// 非 UTF-8 码点）。
+	Content       string `protobuf:"bytes,3,opt,name=content,proto3" json:"content,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2042,10 +2061,16 @@ func (x *SharedVariable) GetUpdatedAt() string {
 }
 
 type PutSharedVariableRequest struct {
-	state     protoimpl.MessageState `protogen:"open.v1"`
-	ProjectId string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	// name 是 env 键形态（[A-Za-z_][A-Za-z0-9_]*，≤64 字符）。
-	Name          string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// project_id 必填：变量归属 Project。
+	ProjectId string `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	// name 是 env 键形态（[A-Za-z_][A-Za-z0-9_]*，≤64 字符，ADR-0043 决策
+	// 2）——变量名直接成为容器 env 键。正则字面是 spec.EnvNamePattern 的
+	// 镜像（proto 无法引用 Go 常量），字节一致由 spec 包的 descriptor 对齐
+	// 测试执法。
+	Name string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	// value 是变量值，单值上限 16384 字节（env 是进程环境面不是文件面；
+	// bytes().size() 数字节）。
 	Value         string `protobuf:"bytes,3,opt,name=value,proto3" json:"value,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -2264,9 +2289,11 @@ func (x *ListSharedVariablesResponse) GetVariables() []*SharedVariable {
 }
 
 type DeleteSharedVariableRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ProjectId     string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// project_id 必填：变量归属 Project。
+	ProjectId string `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	// name 必填：目标变量键。
+	Name          string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2437,10 +2464,15 @@ func (x *AppVariable) GetUpdatedAt() string {
 
 type PutAppVariableRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	AppId string                 `protobuf:"bytes,1,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
+	// app_id 必填：变量归属 App。
+	AppId string `protobuf:"bytes,1,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
 	// name 是 env 键形态（[A-Za-z_][A-Za-z0-9_]*，≤64 字符——与共享变量
-	// 同一白名单：变量名直接成为容器 env 键）。
-	Name          string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	// 同一白名单：变量名直接成为容器 env 键，ADR-0072）。正则字面是
+	// spec.EnvNamePattern 的镜像（proto 无法引用 Go 常量），字节一致由
+	// spec 包的 descriptor 对齐测试执法。
+	Name string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	// value 是变量值，单值上限 16384 字节（与共享变量同档；
+	// bytes().size() 数字节）。
 	Value         string `protobuf:"bytes,3,opt,name=value,proto3" json:"value,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -2545,7 +2577,8 @@ func (x *PutAppVariableResponse) GetVariable() *AppVariable {
 
 type ListAppVariablesRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	AppId string                 `protobuf:"bytes,1,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
+	// app_id 必填：List 面的 App 锚（行级授权沿此轴，ADR-0035）。
+	AppId string `protobuf:"bytes,1,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
 	// after_name 游标（上一页末条 name；空 = 首页）。游标轴 = App 内 name
 	// 字典序升序（ADR-0026 after_* + limit 惯例）。
 	AfterName     string `protobuf:"bytes,2,opt,name=after_name,json=afterName,proto3" json:"after_name,omitempty"`
@@ -2650,9 +2683,11 @@ func (x *ListAppVariablesResponse) GetVariables() []*AppVariable {
 }
 
 type DeleteAppVariableRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	AppId         string                 `protobuf:"bytes,1,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// app_id 必填：变量归属 App。
+	AppId string `protobuf:"bytes,1,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
+	// name 必填：目标变量键。
+	Name          string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2814,10 +2849,16 @@ func (x *Volume) GetCreatedAt() string {
 }
 
 type CreateVolumeRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ProjectId     string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	PinnedNodeId  string                 `protobuf:"bytes,3,opt,name=pinned_node_id,json=pinnedNodeId,proto3" json:"pinned_node_id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// project_id 必填：Volume 的父 Project（受理位父存活校验的锚）。
+	ProjectId string `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	// name 是 dns 标签（小写字母数字与连字符，首尾字母数字，≤63 字符，
+	// ADR-0070 决策 4）——平台卷名与派生名安全的前提。正则字面与长度界
+	// 是 entityid.NamePatternSource / MaxNameLen 的镜像，字节一致由
+	// entityid 包的 descriptor 对齐测试执法；空值同报形状（本字段无
+	// required 规则，空名不接受）。
+	Name          string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	PinnedNodeId  string `protobuf:"bytes,3,opt,name=pinned_node_id,json=pinnedNodeId,proto3" json:"pinned_node_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3006,8 +3047,9 @@ func (x *ListVolumesResponse) GetVolumes() []*Volume {
 }
 
 type DeleteVolumeRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// id 必填：目标 Volume 行。
+	Id            string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3256,10 +3298,18 @@ func (x *Database) GetRestoreError() string {
 }
 
 type CreateDatabaseRequest struct {
-	state     protoimpl.MessageState `protogen:"open.v1"`
-	ProjectId string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	Name      string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	// engine 值域 = 模板注册表（postgres / pgvector / redis，ADR-0029）。
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// project_id 必填：Database 的父 Project（受理位父存活/配额/网络校验
+	// 的锚）。
+	ProjectId string `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	// name 是 dns 标签（小写字母数字与连字符，首尾字母数字，≤63 字符，
+	// ADR-0070 决策 4）——db-<id> 网内 DNS 名与凭证 Secret 名派生的前提。
+	// 正则字面与长度界是 entityid.NamePatternSource / MaxNameLen 的镜像，
+	// 字节一致由 entityid 包的 descriptor 对齐测试执法；空值同报形状
+	// （本字段无 required 规则，空名不接受）。
+	Name string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	// engine 必填且值域 = 模板注册表（postgres / pgvector / redis，
+	// ADR-0029）——值域外由服务内注册表检查拒绝并列出合法值。
 	Engine string `protobuf:"bytes,3,opt,name=engine,proto3" json:"engine,omitempty"`
 	// restore_from_backup 是可选恢复源（ADR-0039）：成功备份行 id；在场 =
 	// 新库挂起恢复（备份环执行：流式注入或卷预置）。engine 仍必填且须与
@@ -3460,8 +3510,9 @@ func (x *GetDatabaseResponse) GetDatabase() *Database {
 }
 
 type ListDatabasesRequest struct {
-	state     protoimpl.MessageState `protogen:"open.v1"`
-	ProjectId string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// project_id 必填：List 面的项目锚（行级授权沿此轴，ADR-0035）。
+	ProjectId string `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
 	// after_database_seq 游标（上一页末条 seq（0 = 首页）。
 	AfterDatabaseSeq int64 `protobuf:"varint,2,opt,name=after_database_seq,json=afterDatabaseSeq,proto3" json:"after_database_seq,omitempty"`
 	Limit            int32 `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
@@ -3565,8 +3616,9 @@ func (x *ListDatabasesResponse) GetDatabases() []*Database {
 }
 
 type DeleteDatabaseRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// id 必填：目标 Database 行。
+	Id            string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3789,8 +3841,9 @@ func (x *Backup) GetCreatedAt() string {
 }
 
 type TriggerBackupRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	DatabaseId    string                 `protobuf:"bytes,1,opt,name=database_id,json=databaseId,proto3" json:"database_id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// database_id 必填：备份目标 Database 行。
+	DatabaseId    string `protobuf:"bytes,1,opt,name=database_id,json=databaseId,proto3" json:"database_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3877,8 +3930,9 @@ func (x *TriggerBackupResponse) GetBackup() *Backup {
 }
 
 type ListBackupsRequest struct {
-	state      protoimpl.MessageState `protogen:"open.v1"`
-	DatabaseId string                 `protobuf:"bytes,1,opt,name=database_id,json=databaseId,proto3" json:"database_id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// database_id 必填：备份台账的 Database 锚。
+	DatabaseId string `protobuf:"bytes,1,opt,name=database_id,json=databaseId,proto3" json:"database_id,omitempty"`
 	// after_backup_seq 游标（上一页末条 seq（0 = 首页）。
 	AfterBackupSeq int64 `protobuf:"varint,2,opt,name=after_backup_seq,json=afterBackupSeq,proto3" json:"after_backup_seq,omitempty"`
 	Limit          int32 `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
@@ -3984,8 +4038,9 @@ func (x *ListBackupsResponse) GetBackups() []*Backup {
 // VerifyBackup 重算对象 sha256 比对 Put 回执（ADR-0039 决策 8：静态完整
 // 性——腐损/截断可检出；可恢复性由恢复演练承担）。
 type VerifyBackupRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	BackupId      string                 `protobuf:"bytes,1,opt,name=backup_id,json=backupId,proto3" json:"backup_id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// backup_id 必填：待验证的 Backup 台账行。
+	BackupId      string `protobuf:"bytes,1,opt,name=backup_id,json=backupId,proto3" json:"backup_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4090,9 +4145,10 @@ func (x *VerifyBackupResponse) GetError() string {
 // BrowseDatabase 铸造数据浏览器会话（ADR-0051）。read_write 缺省 false =
 // 只读档；true 解锁写（动态要求 databases:write——静态注解只能表达最低门）。
 type BrowseDatabaseRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	DatabaseId    string                 `protobuf:"bytes,1,opt,name=database_id,json=databaseId,proto3" json:"database_id,omitempty"`
-	ReadWrite     bool                   `protobuf:"varint,2,opt,name=read_write,json=readWrite,proto3" json:"read_write,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// database_id 必填：浏览目标 Database 行。
+	DatabaseId    string `protobuf:"bytes,1,opt,name=database_id,json=databaseId,proto3" json:"database_id,omitempty"`
+	ReadWrite     bool   `protobuf:"varint,2,opt,name=read_write,json=readWrite,proto3" json:"read_write,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4244,8 +4300,9 @@ func (x *BrowseDatabaseResponse) GetEnforcement() BrowseReadOnlyEnforcement {
 // （与创建同口径，永不回显）；响应是轮换后的 Database 行（status 载体
 // 重下发的观测面）。
 type RotateDatabasePasswordRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	DatabaseId    string                 `protobuf:"bytes,1,opt,name=database_id,json=databaseId,proto3" json:"database_id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// database_id 必填：轮换目标 Database 行。
+	DatabaseId    string `protobuf:"bytes,1,opt,name=database_id,json=databaseId,proto3" json:"database_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4409,10 +4466,17 @@ func (x *Network) GetCreatedAt() string {
 }
 
 type CreateNetworkRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ProjectId     string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	EgressNone    bool                   `protobuf:"varint,3,opt,name=egress_none,json=egressNone,proto3" json:"egress_none,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// project_id 必填：Network 的父 Project（受理位父存活校验的锚）。
+	ProjectId string `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	// name 是 dns 标签（小写字母数字与连字符，首尾字母数字，≤63 字符，
+	// ADR-0070 决策 4）——编排器网络名与受管挂靠面安全的前提。正则字面
+	// 与长度界是 entityid.NamePatternSource / MaxNameLen 的镜像，字节一致
+	// 由 entityid 包的 descriptor 对齐测试执法；空值同报形状（本字段无
+	// required 规则，空名不接受）。
+	Name string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	// egress_none 是弱隔离声明（swarm v1：出网不阻断，明示）。
+	EgressNone    bool `protobuf:"varint,3,opt,name=egress_none,json=egressNone,proto3" json:"egress_none,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4621,9 +4685,11 @@ func (x *ListNetworksResponse) GetNetworks() []*Network {
 // RebuildNetworkResponse 携带网络引用与本次执行的载体计数（幂等重跑的
 // 快速路径两者为 0——已 attachable 且标签在位即零扰动返回）。
 type RebuildNetworkRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ProjectId     string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// project_id 必填：重建目标网络的归属 Project。
+	ProjectId string `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	// name 必填：项目内目标网络名。
+	Name          string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4858,9 +4924,10 @@ func (x *NetworkPeer) GetApprovedAt() string {
 
 type DeclareNetworkPeerRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// network_id 是目标网络行（接收方 Project 的活跃网络）。
+	// network_id 必填：目标网络行（接收方 Project 的活跃网络）。
 	NetworkId string `protobuf:"bytes,1,opt,name=network_id,json=networkId,proto3" json:"network_id,omitempty"`
-	// peer_project_id 是挂靠方项目（声明方）。
+	// peer_project_id 必填：挂靠方项目（声明方）。同项目挂靠由服务内交叉
+	// 检查拒绝（项目内挂靠走 project-local 网络名）。
 	PeerProjectId string `protobuf:"bytes,2,opt,name=peer_project_id,json=peerProjectId,proto3" json:"peer_project_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -5373,11 +5440,13 @@ const file_fleetly_structure_v1_structure_proto_rawDesc = "" +
 	"project_id\x18\x02 \x01(\tR\tprojectId\x12\x12\n" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x12\x1d\n" +
 	"\n" +
-	"created_at\x18\x04 \x01(\tR\tcreatedAt\"E\n" +
-	"\x10CreateAppRequest\x12\x1d\n" +
+	"created_at\x18\x04 \x01(\tR\tcreatedAt\"\xdc\x02\n" +
+	"\x10CreateAppRequest\x12Z\n" +
 	"\n" +
-	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\"@\n" +
+	"project_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\tprojectId\x12\xeb\x01\n" +
+	"\x04name\x18\x02 \x01(\tB\xd6\x01\xbaH\xd2\x01\xba\x01\xce\x01\n" +
+	"\x10string.dns_label\x12tmust be a dns label (lowercase letters, digits, hyphens; start and end alphanumeric, e.g. \"web\" or \"nightly-backup\")\x1aDthis.matches('^[a-z0-9]([a-z0-9-]*[a-z0-9])?$') && this.size() <= 63R\x04name\"@\n" +
 	"\x11CreateAppResponse\x12+\n" +
 	"\x03app\x18\x01 \x01(\v2\x19.fleetly.structure.v1.AppR\x03app\"\x1f\n" +
 	"\rGetAppRequest\x12\x0e\n" +
@@ -5395,16 +5464,18 @@ const file_fleetly_structure_v1_structure_proto_rawDesc = "" +
 	"\x12GetAppSpecResponse\x12,\n" +
 	"\x04spec\x18\x01 \x01(\v2\x18.fleetly.spec.v1.AppSpecR\x04spec\x12!\n" +
 	"\frevision_seq\x18\x02 \x01(\x03R\vrevisionSeq\x12'\n" +
-	"\x0frevision_digest\x18\x03 \x01(\tR\x0erevisionDigest\"j\n" +
-	"\x0fListAppsRequest\x12\x1d\n" +
+	"\x0frevision_digest\x18\x03 \x01(\tR\x0erevisionDigest\"\xa7\x01\n" +
+	"\x0fListAppsRequest\x12Z\n" +
 	"\n" +
-	"project_id\x18\x01 \x01(\tR\tprojectId\x12\"\n" +
+	"project_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\tprojectId\x12\"\n" +
 	"\rafter_app_seq\x18\x02 \x01(\x03R\vafterAppSeq\x12\x14\n" +
 	"\x05limit\x18\x03 \x01(\x05R\x05limit\"A\n" +
 	"\x10ListAppsResponse\x12-\n" +
-	"\x04apps\x18\x01 \x03(\v2\x19.fleetly.structure.v1.AppR\x04apps\"\"\n" +
-	"\x10DeleteAppRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\x13\n" +
+	"\x04apps\x18\x01 \x03(\v2\x19.fleetly.structure.v1.AppR\x04apps\"_\n" +
+	"\x10DeleteAppRequest\x12K\n" +
+	"\x02id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\x02id\"\x13\n" +
 	"\x11DeleteAppResponse\"\x8c\x01\n" +
 	"\x06Secret\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
@@ -5413,11 +5484,14 @@ const file_fleetly_structure_v1_structure_proto_rawDesc = "" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x12 \n" +
 	"\vfingerprint\x18\x04 \x01(\tR\vfingerprint\x12\x1d\n" +
 	"\n" +
-	"updated_at\x18\x05 \x01(\tR\tupdatedAt\"[\n" +
-	"\x10PutSecretRequest\x12\x1d\n" +
+	"updated_at\x18\x05 \x01(\tR\tupdatedAt\"\xf8\x03\n" +
+	"\x10PutSecretRequest\x12Z\n" +
 	"\n" +
-	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\x12\x14\n" +
+	"project_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\tprojectId\x12\xf1\x02\n" +
+	"\x04name\x18\x02 \x01(\tB\xdc\x02\xbaH\xd8\x02\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0\xba\x01\x9c\x02\n" +
+	"\x12string.secret_name\x12\xa3\x01secret names must match \"[A-Za-z0-9][A-Za-z0-9:._-]{0,63}\", start with a letter or digit, and must not contain \"..\" (secret names become /run/secrets/<name> paths)\x1a`this.size() == 0 || (this.matches('^[A-Za-z0-9][A-Za-z0-9:._-]{0,63}$') && !this.contains('..'))R\x04name\x12\x14\n" +
 	"\x05value\x18\x03 \x01(\tR\x05value\"I\n" +
 	"\x11PutSecretResponse\x124\n" +
 	"\x06secret\x18\x01 \x01(\v2\x1c.fleetly.structure.v1.SecretR\x06secret\"h\n" +
@@ -5442,12 +5516,15 @@ const file_fleetly_structure_v1_structure_proto_rawDesc = "" +
 	"\aversion\x18\x04 \x01(\x03R\aversion\x12\x1d\n" +
 	"\n" +
 	"created_at\x18\x05 \x01(\tR\tcreatedAt\x12\x18\n" +
-	"\acontent\x18\x06 \x01(\tR\acontent\"_\n" +
-	"\x10PutConfigRequest\x12\x1d\n" +
+	"\acontent\x18\x06 \x01(\tR\acontent\"\xbb\x02\n" +
+	"\x10PutConfigRequest\x12Z\n" +
 	"\n" +
-	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\x12\x18\n" +
-	"\acontent\x18\x03 \x01(\tR\acontent\"I\n" +
+	"project_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\tprojectId\x12O\n" +
+	"\x04name\x18\x02 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\x04name\x12z\n" +
+	"\acontent\x18\x03 \x01(\tB`\xbaH]\xba\x01Z\n" +
+	"\x10string.max_bytes\x12(exceeds the 262144-byte per-config limit\x1a\x1cbytes(this).size() <= 262144R\acontent\"I\n" +
 	"\x11PutConfigResponse\x124\n" +
 	"\x06config\x18\x01 \x01(\v2\x1c.fleetly.structure.v1.ConfigR\x06config\"_\n" +
 	"\x10GetConfigRequest\x12\x1d\n" +
@@ -5472,12 +5549,16 @@ const file_fleetly_structure_v1_structure_proto_rawDesc = "" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x12\x14\n" +
 	"\x05value\x18\x04 \x01(\tR\x05value\x12\x1d\n" +
 	"\n" +
-	"updated_at\x18\x05 \x01(\tR\tupdatedAt\"c\n" +
-	"\x18PutSharedVariableRequest\x12\x1d\n" +
+	"updated_at\x18\x05 \x01(\tR\tupdatedAt\"\xfc\x03\n" +
+	"\x18PutSharedVariableRequest\x12Z\n" +
 	"\n" +
-	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\x12\x14\n" +
-	"\x05value\x18\x03 \x01(\tR\x05value\"\x82\x01\n" +
+	"project_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\tprojectId\x12\x8b\x02\n" +
+	"\x04name\x18\x02 \x01(\tB\xf6\x01\xbaH\xf2\x01\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0\xba\x01\xb6\x01\n" +
+	"\x0fstring.env_name\x12`variable names must match \"[A-Za-z_][A-Za-z0-9_]{0,63}\" (variable names become environment keys)\x1aAthis.size() == 0 || this.matches('^[A-Za-z_][A-Za-z0-9_]{0,63}$')R\x04name\x12v\n" +
+	"\x05value\x18\x03 \x01(\tB`\xbaH]\xba\x01Z\n" +
+	"\x10string.max_bytes\x12)exceeds the 16384-byte per-variable limit\x1a\x1bbytes(this).size() <= 16384R\x05value\"\x82\x01\n" +
 	"\x19PutSharedVariableResponse\x12@\n" +
 	"\bvariable\x18\x01 \x01(\v2$.fleetly.structure.v1.SharedVariableR\bvariable\x12#\n" +
 	"\raffected_apps\x18\x02 \x03(\tR\faffectedApps\"p\n" +
@@ -5488,11 +5569,13 @@ const file_fleetly_structure_v1_structure_proto_rawDesc = "" +
 	"after_name\x18\x02 \x01(\tR\tafterName\x12\x14\n" +
 	"\x05limit\x18\x03 \x01(\x05R\x05limit\"a\n" +
 	"\x1bListSharedVariablesResponse\x12B\n" +
-	"\tvariables\x18\x01 \x03(\v2$.fleetly.structure.v1.SharedVariableR\tvariables\"P\n" +
-	"\x1bDeleteSharedVariableRequest\x12\x1d\n" +
+	"\tvariables\x18\x01 \x03(\v2$.fleetly.structure.v1.SharedVariableR\tvariables\"\xca\x01\n" +
+	"\x1bDeleteSharedVariableRequest\x12Z\n" +
 	"\n" +
-	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\"C\n" +
+	"project_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\tprojectId\x12O\n" +
+	"\x04name\x18\x02 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\x04name\"C\n" +
 	"\x1cDeleteSharedVariableResponse\x12#\n" +
 	"\raffected_apps\x18\x01 \x03(\tR\faffectedApps\"}\n" +
 	"\vAppVariable\x12\x0e\n" +
@@ -5501,23 +5584,30 @@ const file_fleetly_structure_v1_structure_proto_rawDesc = "" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x12\x14\n" +
 	"\x05value\x18\x04 \x01(\tR\x05value\x12\x1d\n" +
 	"\n" +
-	"updated_at\x18\x05 \x01(\tR\tupdatedAt\"X\n" +
-	"\x15PutAppVariableRequest\x12\x15\n" +
-	"\x06app_id\x18\x01 \x01(\tR\x05appId\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\x12\x14\n" +
-	"\x05value\x18\x03 \x01(\tR\x05value\"W\n" +
+	"updated_at\x18\x05 \x01(\tR\tupdatedAt\"\xf1\x03\n" +
+	"\x15PutAppVariableRequest\x12R\n" +
+	"\x06app_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\x05appId\x12\x8b\x02\n" +
+	"\x04name\x18\x02 \x01(\tB\xf6\x01\xbaH\xf2\x01\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0\xba\x01\xb6\x01\n" +
+	"\x0fstring.env_name\x12`variable names must match \"[A-Za-z_][A-Za-z0-9_]{0,63}\" (variable names become environment keys)\x1aAthis.size() == 0 || this.matches('^[A-Za-z_][A-Za-z0-9_]{0,63}$')R\x04name\x12v\n" +
+	"\x05value\x18\x03 \x01(\tB`\xbaH]\xba\x01Z\n" +
+	"\x10string.max_bytes\x12)exceeds the 16384-byte per-variable limit\x1a\x1bbytes(this).size() <= 16384R\x05value\"W\n" +
 	"\x16PutAppVariableResponse\x12=\n" +
-	"\bvariable\x18\x01 \x01(\v2!.fleetly.structure.v1.AppVariableR\bvariable\"e\n" +
-	"\x17ListAppVariablesRequest\x12\x15\n" +
-	"\x06app_id\x18\x01 \x01(\tR\x05appId\x12\x1d\n" +
+	"\bvariable\x18\x01 \x01(\v2!.fleetly.structure.v1.AppVariableR\bvariable\"\xa2\x01\n" +
+	"\x17ListAppVariablesRequest\x12R\n" +
+	"\x06app_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\x05appId\x12\x1d\n" +
 	"\n" +
 	"after_name\x18\x02 \x01(\tR\tafterName\x12\x14\n" +
 	"\x05limit\x18\x03 \x01(\x05R\x05limit\"[\n" +
 	"\x18ListAppVariablesResponse\x12?\n" +
-	"\tvariables\x18\x01 \x03(\v2!.fleetly.structure.v1.AppVariableR\tvariables\"E\n" +
-	"\x18DeleteAppVariableRequest\x12\x15\n" +
-	"\x06app_id\x18\x01 \x01(\tR\x05appId\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\"\x1b\n" +
+	"\tvariables\x18\x01 \x03(\v2!.fleetly.structure.v1.AppVariableR\tvariables\"\xbf\x01\n" +
+	"\x18DeleteAppVariableRequest\x12R\n" +
+	"\x06app_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\x05appId\x12O\n" +
+	"\x04name\x18\x02 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\x04name\"\x1b\n" +
 	"\x19DeleteAppVariableResponse\"\x90\x01\n" +
 	"\x06Volume\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
@@ -5526,11 +5616,13 @@ const file_fleetly_structure_v1_structure_proto_rawDesc = "" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x12$\n" +
 	"\x0epinned_node_id\x18\x04 \x01(\tR\fpinnedNodeId\x12\x1d\n" +
 	"\n" +
-	"created_at\x18\x05 \x01(\tR\tcreatedAt\"n\n" +
-	"\x13CreateVolumeRequest\x12\x1d\n" +
+	"created_at\x18\x05 \x01(\tR\tcreatedAt\"\x85\x03\n" +
+	"\x13CreateVolumeRequest\x12Z\n" +
 	"\n" +
-	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\x12$\n" +
+	"project_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\tprojectId\x12\xeb\x01\n" +
+	"\x04name\x18\x02 \x01(\tB\xd6\x01\xbaH\xd2\x01\xba\x01\xce\x01\n" +
+	"\x10string.dns_label\x12tmust be a dns label (lowercase letters, digits, hyphens; start and end alphanumeric, e.g. \"web\" or \"nightly-backup\")\x1aDthis.matches('^[a-z0-9]([a-z0-9-]*[a-z0-9])?$') && this.size() <= 63R\x04name\x12$\n" +
 	"\x0epinned_node_id\x18\x03 \x01(\tR\fpinnedNodeId\"L\n" +
 	"\x14CreateVolumeResponse\x124\n" +
 	"\x06volume\x18\x01 \x01(\v2\x1c.fleetly.structure.v1.VolumeR\x06volume\"3\n" +
@@ -5538,9 +5630,10 @@ const file_fleetly_structure_v1_structure_proto_rawDesc = "" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\"M\n" +
 	"\x13ListVolumesResponse\x126\n" +
-	"\avolumes\x18\x01 \x03(\v2\x1c.fleetly.structure.v1.VolumeR\avolumes\"%\n" +
-	"\x13DeleteVolumeRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\x16\n" +
+	"\avolumes\x18\x01 \x03(\v2\x1c.fleetly.structure.v1.VolumeR\avolumes\"b\n" +
+	"\x13DeleteVolumeRequest\x12K\n" +
+	"\x02id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\x02id\"\x16\n" +
 	"\x14DeleteVolumeResponse\"\xb3\x03\n" +
 	"\bDatabase\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x10\n" +
@@ -5561,28 +5654,33 @@ const file_fleetly_structure_v1_structure_proto_rawDesc = "" +
 	"updated_at\x18\v \x01(\tR\tupdatedAt\x12$\n" +
 	"\x0elast_backup_at\x18\f \x01(\tR\flastBackupAt\x12.\n" +
 	"\x13restore_from_backup\x18\r \x01(\tR\x11restoreFromBackup\x12#\n" +
-	"\rrestore_error\x18\x0e \x01(\tR\frestoreError\"\x92\x01\n" +
-	"\x15CreateDatabaseRequest\x12\x1d\n" +
+	"\rrestore_error\x18\x0e \x01(\tR\frestoreError\"\xe6\x03\n" +
+	"\x15CreateDatabaseRequest\x12Z\n" +
 	"\n" +
-	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\x12\x16\n" +
-	"\x06engine\x18\x03 \x01(\tR\x06engine\x12.\n" +
+	"project_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\tprojectId\x12\xeb\x01\n" +
+	"\x04name\x18\x02 \x01(\tB\xd6\x01\xbaH\xd2\x01\xba\x01\xce\x01\n" +
+	"\x10string.dns_label\x12tmust be a dns label (lowercase letters, digits, hyphens; start and end alphanumeric, e.g. \"web\" or \"nightly-backup\")\x1aDthis.matches('^[a-z0-9]([a-z0-9-]*[a-z0-9])?$') && this.size() <= 63R\x04name\x12S\n" +
+	"\x06engine\x18\x03 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\x06engine\x12.\n" +
 	"\x13restore_from_backup\x18\x04 \x01(\tR\x11restoreFromBackup\"T\n" +
 	"\x16CreateDatabaseResponse\x12:\n" +
 	"\bdatabase\x18\x01 \x01(\v2\x1e.fleetly.structure.v1.DatabaseR\bdatabase\"$\n" +
 	"\x12GetDatabaseRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"Q\n" +
 	"\x13GetDatabaseResponse\x12:\n" +
-	"\bdatabase\x18\x01 \x01(\v2\x1e.fleetly.structure.v1.DatabaseR\bdatabase\"y\n" +
-	"\x14ListDatabasesRequest\x12\x1d\n" +
+	"\bdatabase\x18\x01 \x01(\v2\x1e.fleetly.structure.v1.DatabaseR\bdatabase\"\xb6\x01\n" +
+	"\x14ListDatabasesRequest\x12Z\n" +
 	"\n" +
-	"project_id\x18\x01 \x01(\tR\tprojectId\x12,\n" +
+	"project_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\tprojectId\x12,\n" +
 	"\x12after_database_seq\x18\x02 \x01(\x03R\x10afterDatabaseSeq\x12\x14\n" +
 	"\x05limit\x18\x03 \x01(\x05R\x05limit\"U\n" +
 	"\x15ListDatabasesResponse\x12<\n" +
-	"\tdatabases\x18\x01 \x03(\v2\x1e.fleetly.structure.v1.DatabaseR\tdatabases\"'\n" +
-	"\x15DeleteDatabaseRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\x18\n" +
+	"\tdatabases\x18\x01 \x03(\v2\x1e.fleetly.structure.v1.DatabaseR\tdatabases\"d\n" +
+	"\x15DeleteDatabaseRequest\x12K\n" +
+	"\x02id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\x02id\"\x18\n" +
 	"\x16DeleteDatabaseResponse\"\xe5\x02\n" +
 	"\x06Backup\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x10\n" +
@@ -5605,27 +5703,31 @@ const file_fleetly_structure_v1_structure_proto_rawDesc = "" +
 	"\vfinished_at\x18\v \x01(\tR\n" +
 	"finishedAt\x12\x1d\n" +
 	"\n" +
-	"created_at\x18\f \x01(\tR\tcreatedAt\"7\n" +
-	"\x14TriggerBackupRequest\x12\x1f\n" +
-	"\vdatabase_id\x18\x01 \x01(\tR\n" +
+	"created_at\x18\f \x01(\tR\tcreatedAt\"t\n" +
+	"\x14TriggerBackupRequest\x12\\\n" +
+	"\vdatabase_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\n" +
 	"databaseId\"M\n" +
 	"\x15TriggerBackupResponse\x124\n" +
-	"\x06backup\x18\x01 \x01(\v2\x1c.fleetly.structure.v1.BackupR\x06backup\"u\n" +
-	"\x12ListBackupsRequest\x12\x1f\n" +
-	"\vdatabase_id\x18\x01 \x01(\tR\n" +
+	"\x06backup\x18\x01 \x01(\v2\x1c.fleetly.structure.v1.BackupR\x06backup\"\xb2\x01\n" +
+	"\x12ListBackupsRequest\x12\\\n" +
+	"\vdatabase_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\n" +
 	"databaseId\x12(\n" +
 	"\x10after_backup_seq\x18\x02 \x01(\x03R\x0eafterBackupSeq\x12\x14\n" +
 	"\x05limit\x18\x03 \x01(\x05R\x05limit\"M\n" +
 	"\x13ListBackupsResponse\x126\n" +
-	"\abackups\x18\x01 \x03(\v2\x1c.fleetly.structure.v1.BackupR\abackups\"2\n" +
-	"\x13VerifyBackupRequest\x12\x1b\n" +
-	"\tbackup_id\x18\x01 \x01(\tR\bbackupId\"T\n" +
+	"\abackups\x18\x01 \x03(\v2\x1c.fleetly.structure.v1.BackupR\abackups\"o\n" +
+	"\x13VerifyBackupRequest\x12X\n" +
+	"\tbackup_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\bbackupId\"T\n" +
 	"\x14VerifyBackupResponse\x12\x0e\n" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x16\n" +
 	"\x06digest\x18\x02 \x01(\tR\x06digest\x12\x14\n" +
-	"\x05error\x18\x03 \x01(\tR\x05error\"W\n" +
-	"\x15BrowseDatabaseRequest\x12\x1f\n" +
-	"\vdatabase_id\x18\x01 \x01(\tR\n" +
+	"\x05error\x18\x03 \x01(\tR\x05error\"\x94\x01\n" +
+	"\x15BrowseDatabaseRequest\x12\\\n" +
+	"\vdatabase_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\n" +
 	"databaseId\x12\x1d\n" +
 	"\n" +
 	"read_write\x18\x02 \x01(\bR\treadWrite\"\x8a\x02\n" +
@@ -5638,9 +5740,10 @@ const file_fleetly_structure_v1_structure_proto_rawDesc = "" +
 	"expires_in\x18\x04 \x01(\x05R\texpiresIn\x12\x18\n" +
 	"\abrowser\x18\x05 \x01(\tR\abrowser\x12\x1b\n" +
 	"\tread_only\x18\x06 \x01(\bR\breadOnly\x12Q\n" +
-	"\venforcement\x18\a \x01(\x0e2/.fleetly.structure.v1.BrowseReadOnlyEnforcementR\venforcement\"@\n" +
-	"\x1dRotateDatabasePasswordRequest\x12\x1f\n" +
-	"\vdatabase_id\x18\x01 \x01(\tR\n" +
+	"\venforcement\x18\a \x01(\x0e2/.fleetly.structure.v1.BrowseReadOnlyEnforcementR\venforcement\"}\n" +
+	"\x1dRotateDatabasePasswordRequest\x12\\\n" +
+	"\vdatabase_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\n" +
 	"databaseId\"\\\n" +
 	"\x1eRotateDatabasePasswordResponse\x12:\n" +
 	"\bdatabase\x18\x01 \x01(\v2\x1e.fleetly.structure.v1.DatabaseR\bdatabase\"\x8c\x01\n" +
@@ -5652,11 +5755,13 @@ const file_fleetly_structure_v1_structure_proto_rawDesc = "" +
 	"\vegress_none\x18\x04 \x01(\bR\n" +
 	"egressNone\x12\x1d\n" +
 	"\n" +
-	"created_at\x18\x05 \x01(\tR\tcreatedAt\"j\n" +
-	"\x14CreateNetworkRequest\x12\x1d\n" +
+	"created_at\x18\x05 \x01(\tR\tcreatedAt\"\x81\x03\n" +
+	"\x14CreateNetworkRequest\x12Z\n" +
 	"\n" +
-	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1f\n" +
+	"project_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\tprojectId\x12\xeb\x01\n" +
+	"\x04name\x18\x02 \x01(\tB\xd6\x01\xbaH\xd2\x01\xba\x01\xce\x01\n" +
+	"\x10string.dns_label\x12tmust be a dns label (lowercase letters, digits, hyphens; start and end alphanumeric, e.g. \"web\" or \"nightly-backup\")\x1aDthis.matches('^[a-z0-9]([a-z0-9-]*[a-z0-9])?$') && this.size() <= 63R\x04name\x12\x1f\n" +
 	"\vegress_none\x18\x03 \x01(\bR\n" +
 	"egressNone\"P\n" +
 	"\x15CreateNetworkResponse\x127\n" +
@@ -5668,11 +5773,13 @@ const file_fleetly_structure_v1_structure_proto_rawDesc = "" +
 	"after_name\x18\x02 \x01(\tR\tafterName\x12\x14\n" +
 	"\x05limit\x18\x03 \x01(\x05R\x05limit\"Q\n" +
 	"\x14ListNetworksResponse\x129\n" +
-	"\bnetworks\x18\x01 \x03(\v2\x1d.fleetly.structure.v1.NetworkR\bnetworks\"J\n" +
-	"\x15RebuildNetworkRequest\x12\x1d\n" +
+	"\bnetworks\x18\x01 \x03(\v2\x1d.fleetly.structure.v1.NetworkR\bnetworks\"\xc4\x01\n" +
+	"\x15RebuildNetworkRequest\x12Z\n" +
 	"\n" +
-	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\"\x8d\x01\n" +
+	"project_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\tprojectId\x12O\n" +
+	"\x04name\x18\x02 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\x04name\"\x8d\x01\n" +
 	"\x16RebuildNetworkResponse\x127\n" +
 	"\anetwork\x18\x01 \x01(\v2\x1d.fleetly.structure.v1.NetworkR\anetwork\x12\x1a\n" +
 	"\bdetached\x18\x02 \x01(\x05R\bdetached\x12\x1e\n" +
@@ -5694,11 +5801,13 @@ const file_fleetly_structure_v1_structure_proto_rawDesc = "" +
 	"\n" +
 	"updated_at\x18\b \x01(\tR\tupdatedAt\x12\x1f\n" +
 	"\vapproved_at\x18\t \x01(\tR\n" +
-	"approvedAt\"b\n" +
-	"\x19DeclareNetworkPeerRequest\x12\x1d\n" +
+	"approvedAt\"\xdc\x01\n" +
+	"\x19DeclareNetworkPeerRequest\x12Z\n" +
 	"\n" +
-	"network_id\x18\x01 \x01(\tR\tnetworkId\x12&\n" +
-	"\x0fpeer_project_id\x18\x02 \x01(\tR\rpeerProjectId\"S\n" +
+	"network_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\tnetworkId\x12c\n" +
+	"\x0fpeer_project_id\x18\x02 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\rpeerProjectId\"S\n" +
 	"\x1aDeclareNetworkPeerResponse\x125\n" +
 	"\x04peer\x18\x01 \x01(\v2!.fleetly.structure.v1.NetworkPeerR\x04peer\"+\n" +
 	"\x19ApproveNetworkPeerRequest\x12\x0e\n" +

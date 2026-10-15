@@ -126,6 +126,7 @@
         "parameters": [
           {
             "name": "name",
+            "description": "name 必填：目录键（如 \"nginx\"；目录外的名按 E_NOT_FOUND 拒绝）。",
             "in": "path",
             "required": true,
             "type": "string"
@@ -154,15 +155,16 @@
       "type": "object",
       "properties": {
         "project_id": {
-          "type": "string"
+          "type": "string",
+          "title": "project_id 必填：实例化目标 Project（行级授权沿此轴，ADR-0035）。"
         },
         "template": {
           "type": "string",
-          "title": "template 是目录键（如 \"nginx\"）。"
+          "title": "template 必填：目录键（如 \"nginx\"）。"
         },
         "app_name": {
           "type": "string",
-          "title": "app_name 是目标 App 名（create-or-reuse：同名活跃 App 直接复用——\n重跑即重部署，latest-wins）。"
+          "title": "app_name 必填且是 dns 标签（小写字母数字与连字符，首尾字母数字，\n≤63 字符，ADR-0070 决策 4）：create-or-reuse 序内经 App/网络创建链\n落子（进程内直调不经 validate 拦截器），形状约束必须在边界自足。\n正则字面与长度界是 entityid.NamePatternSource / MaxNameLen 的镜像，\n字节一致由 entityid 包的 descriptor 对齐测试执法。"
         },
         "values": {
           "type": "object",

@@ -190,7 +190,8 @@
           "title": "team_id 空串 = 全局冻结（全部 Team 的变更型动词封禁）。"
         },
         "reason": {
-          "type": "string"
+          "type": "string",
+          "title": "reason 必填：拒绝信封回带（Agent 可读出\"为何冻结/何时能再动\"）。"
         }
       }
     },

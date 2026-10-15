@@ -23,9 +23,9 @@ type RegistryService struct {
 // ListRegistryCatalog 列项目前纲下的仓名（Registry 面停用 = 精确失败，
 // 与 QueryMetrics 的 metrics.addr 同口径）。
 func (svc *RegistryService) ListRegistryCatalog(ctx context.Context, req *deliveryv1.ListRegistryCatalogRequest) (*deliveryv1.ListRegistryCatalogResponse, error) {
-	if req.GetProjectId() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "project_id: must not be empty")
-	}
+	// project_id 必填检查已退役为 ListRegistryCatalogRequest 的
+	// protovalidate CEL 注解（P4-1 批 1 Run B1）：validate 拦截器在 handler
+	// 之前执法。
 	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}
@@ -44,9 +44,9 @@ func (svc *RegistryService) ListRegistryCatalog(ctx context.Context, req *delive
 // ListRegistryTags 列仓名下的 tag 事实；越纲仓名按 not found（不泄漏跨
 // 项目存在性）。
 func (svc *RegistryService) ListRegistryTags(ctx context.Context, req *deliveryv1.ListRegistryTagsRequest) (*deliveryv1.ListRegistryTagsResponse, error) {
-	if req.GetProjectId() == "" || req.GetRepository() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "project_id and repository: must not be empty")
-	}
+	// project_id/repository 必填组合检查已退役为 ListRegistryTagsRequest
+	// 的 protovalidate CEL 注解（P4-1 批 1 Run B1）：validate 拦截器在
+	// handler 之前执法，拆 per-field 文案。
 	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}

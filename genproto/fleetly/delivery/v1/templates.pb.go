@@ -13,6 +13,7 @@
 package deliveryv1
 
 import (
+	_ "buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go/buf/validate"
 	_ "github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2/options"
 	_ "github.com/lynx-go/grpcapi/genproto/grpcapi/v1"
 	_ "google.golang.org/genproto/googleapis/api/annotations"
@@ -278,8 +279,9 @@ func (x *ListTemplatesResponse) GetSource() string {
 }
 
 type GetTemplateRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// name 必填：目录键（如 "nginx"；目录外的名按 E_NOT_FOUND 拒绝）。
+	Name          string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -376,12 +378,16 @@ func (x *GetTemplateResponse) GetBody() string {
 }
 
 type InstantiateTemplateRequest struct {
-	state     protoimpl.MessageState `protogen:"open.v1"`
-	ProjectId string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	// template 是目录键（如 "nginx"）。
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// project_id 必填：实例化目标 Project（行级授权沿此轴，ADR-0035）。
+	ProjectId string `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	// template 必填：目录键（如 "nginx"）。
 	Template string `protobuf:"bytes,2,opt,name=template,proto3" json:"template,omitempty"`
-	// app_name 是目标 App 名（create-or-reuse：同名活跃 App 直接复用——
-	// 重跑即重部署，latest-wins）。
+	// app_name 必填且是 dns 标签（小写字母数字与连字符，首尾字母数字，
+	// ≤63 字符，ADR-0070 决策 4）：create-or-reuse 序内经 App/网络创建链
+	// 落子（进程内直调不经 validate 拦截器），形状约束必须在边界自足。
+	// 正则字面与长度界是 entityid.NamePatternSource / MaxNameLen 的镜像，
+	// 字节一致由 entityid 包的 descriptor 对齐测试执法。
 	AppName string `protobuf:"bytes,3,opt,name=app_name,json=appName,proto3" json:"app_name,omitempty"`
 	// values 是 string/domain 型变量值（secret 型携带即拒——平台铸造）。
 	Values        map[string]string `protobuf:"bytes,4,rep,name=values,proto3" json:"values,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
@@ -690,7 +696,7 @@ var File_fleetly_delivery_v1_templates_proto protoreflect.FileDescriptor
 
 const file_fleetly_delivery_v1_templates_proto_rawDesc = "" +
 	"\n" +
-	"#fleetly/delivery/v1/templates.proto\x12\x13fleetly.delivery.v1\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"\xb7\x01\n" +
+	"#fleetly/delivery/v1/templates.proto\x12\x13fleetly.delivery.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"\xb7\x01\n" +
 	"\bTemplate\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\tR\aversion\x12\x16\n" +
@@ -706,17 +712,22 @@ const file_fleetly_delivery_v1_templates_proto_rawDesc = "" +
 	"\x14ListTemplatesRequest\"l\n" +
 	"\x15ListTemplatesResponse\x12;\n" +
 	"\ttemplates\x18\x01 \x03(\v2\x1d.fleetly.delivery.v1.TemplateR\ttemplates\x12\x16\n" +
-	"\x06source\x18\x02 \x01(\tR\x06source\"(\n" +
-	"\x12GetTemplateRequest\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\"d\n" +
+	"\x06source\x18\x02 \x01(\tR\x06source\"e\n" +
+	"\x12GetTemplateRequest\x12O\n" +
+	"\x04name\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\x04name\"d\n" +
 	"\x13GetTemplateResponse\x129\n" +
 	"\btemplate\x18\x01 \x01(\v2\x1d.fleetly.delivery.v1.TemplateR\btemplate\x12\x12\n" +
-	"\x04body\x18\x02 \x01(\tR\x04body\"\x82\x02\n" +
-	"\x1aInstantiateTemplateRequest\x12\x1d\n" +
+	"\x04body\x18\x02 \x01(\tR\x04body\"\xa4\x05\n" +
+	"\x1aInstantiateTemplateRequest\x12Z\n" +
 	"\n" +
-	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x1a\n" +
-	"\btemplate\x18\x02 \x01(\tR\btemplate\x12\x19\n" +
-	"\bapp_name\x18\x03 \x01(\tR\aappName\x12S\n" +
+	"project_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\tprojectId\x12W\n" +
+	"\btemplate\x18\x02 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\btemplate\x12\xc0\x02\n" +
+	"\bapp_name\x18\x03 \x01(\tB\xa4\x02\xbaH\xa0\x02\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0\xba\x01\xe4\x01\n" +
+	"\x10string.dns_label\x12tmust be a dns label (lowercase letters, digits, hyphens; start and end alphanumeric, e.g. \"web\" or \"nightly-backup\")\x1aZthis.size() == 0 || (this.matches('^[a-z0-9]([a-z0-9-]*[a-z0-9])?$') && this.size() <= 63)R\aappName\x12S\n" +
 	"\x06values\x18\x04 \x03(\v2;.fleetly.delivery.v1.InstantiateTemplateRequest.ValuesEntryR\x06values\x1a9\n" +
 	"\vValuesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +

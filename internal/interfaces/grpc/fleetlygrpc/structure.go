@@ -19,7 +19,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
-	"github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
 	configrepo "github.com/fleetlyrun/fleetly/internal/domain/structure/config"
@@ -290,12 +289,10 @@ type AppsService struct {
 }
 
 func (svc *AppsService) CreateApp(ctx context.Context, req *structurev1.CreateAppRequest) (*structurev1.CreateAppResponse, error) {
-	if err := validName("name", req.GetName()); err != nil {
-		return nil, err
-	}
-	if req.GetProjectId() == "" || req.GetName() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "project_id and name: must not be empty")
-	}
+	// name 的 dns 标签形态检查（validName）与 project_id/name 必填组合检查
+	// 已退役为 CreateAppRequest 的 protovalidate CEL 注解（P4-1 批 1 Run
+	// B1）：validate 拦截器在 handler 之前执法，组合必填拆 per-field 文案；
+	// 正则字面单源见 entityid.NamePatternSource（descriptor 对齐测试执法）。
 	// 行级授权（ADR-0035）：创建在他队 Project 下 = 越权落子，受理前置拒
 	//（Project 的 Team 归属不可变，无 TOCTOU 面）。
 	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
@@ -409,9 +406,8 @@ func (svc *AppsService) GetAppSpec(ctx context.Context, req *structurev1.GetAppS
 }
 
 func (svc *AppsService) ListApps(ctx context.Context, req *structurev1.ListAppsRequest) (*structurev1.ListAppsResponse, error) {
-	if req.GetProjectId() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "project_id: must not be empty")
-	}
+	// project_id 必填检查已退役为 ListAppsRequest 的 protovalidate CEL 注解
+	//（P4-1 批 1 Run B1）：validate 拦截器在 handler 之前执法。
 	// 行级授权（ADR-0035 List 面）：project 锚先授权再查询。
 	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
@@ -441,9 +437,8 @@ func (svc *AppsService) ListApps(ctx context.Context, req *structurev1.ListAppsR
 //     已拆载体由在途部署的 Ensure/回滚重放自愈，teardown-aborted 事件 +
 //     审计留痕（不静默）。
 func (svc *AppsService) DeleteApp(ctx context.Context, req *structurev1.DeleteAppRequest) (*structurev1.DeleteAppResponse, error) {
-	if req.GetId() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "id: must not be empty")
-	}
+	// id 必填检查已退役为 DeleteAppRequest 的 protovalidate CEL 注解
+	//（P4-1 批 1 Run B1）：validate 拦截器在 handler 之前执法。
 	appRow, err := svc.s.Apps.Get(ctx, svc.s.DB.Runner(), req.GetId())
 	if err != nil {
 		return nil, mapStateError(err, "app")
@@ -582,9 +577,11 @@ type SecretsService struct {
 }
 
 func (svc *SecretsService) PutSecret(ctx context.Context, req *structurev1.PutSecretRequest) (*structurev1.PutSecretResponse, error) {
-	if req.GetProjectId() == "" || req.GetName() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "project_id and name: must not be empty")
-	}
+	// project_id/name 必填组合与 name 字符集白名单检查（spec.ValidSecretName，
+	// 含 ".." 拒）已退役为 PutSecretRequest 的 protovalidate CEL 注解
+	//（P4-1 批 1 Run B1）：validate 拦截器在 handler 之前执法，组合必填拆
+	// per-field 文案；正则字面单源见 spec.SecretNamePattern（spec 包
+	// descriptor 对齐测试执法）。保留前缀与字符集的拒绝次序随之外移到边界。
 	if svc.s.Cipher == nil {
 		return nil, apperr.New("E_SECRET_UNAVAILABLE", "the secret facility is unavailable (no master key)")
 	}
@@ -598,13 +595,6 @@ func (svc *SecretsService) PutSecret(ctx context.Context, req *structurev1.PutSe
 		return nil, apperr.New("E_CONFLICT",
 			"secret name %q is reserved for platform-managed database credentials; database secrets are minted by 'fleetly databases create'",
 			req.GetName())
-	}
-	// 名字符集白名单（N1 收尾批 A3）：secret 名成为容器内 /run/secrets/<名>
-	// 文件目标——受理面拒路径逃逸形态（/、\、空白、控制字符与 ".."）。
-	if !spec.ValidSecretName(req.GetName()) {
-		return nil, apperr.New("E_INVALID_ARGUMENT",
-			"name: secret names must match %q, start with a letter or digit, and must not contain \"..\" (got %q; secret names become /run/secrets/<name> paths)",
-			spec.SecretNamePattern, req.GetName())
 	}
 	sealed, err := svc.s.Cipher.Produce([]byte(req.GetValue()))
 	if err != nil {
@@ -690,16 +680,16 @@ type ConfigsService struct {
 	s *Services
 }
 
-// Config 配额（F0.17 执法面，B2 落地）：per-Project 配置数上限与单值
-// 大小上限。N0 小团队口径的保守缺省；配置面接入 config.proto 后可覆盖。
+// Config 配额（F0.17 执法面，B2 落地）：per-Project 配置数上限。N0 小团队
+// 口径的保守缺省；配置面接入 config.proto 后可覆盖。（单值大小上限已退役
+// 为 PutConfigRequest 的 protovalidate CEL 注解——P4-1 批 1 Run B1。）
 const (
 	maxConfigsPerProject = 100
-	maxConfigBytes       = 256 * 1024
 	// SharedVariable 配额（F2.9，ADR-0043 决策 5）：Configs 先例同口径；
-	// 值面按 env 值量级收一档（env 是进程环境面不是文件面）。
+	// 值面按 env 值量级收一档（env 是进程环境面不是文件面）。（单值大小
+	// 上限同退役为变量请求注解。）
 	maxSharedVariablesPerProject = 100
 	maxAppVariablesPerApp        = 100
-	maxVariableBytes             = 16 * 1024
 	// maxAppsPerProject 是 per-Project 活跃 App 数上限（ADR-0017 附录 A.1，
 	// F1.9）：Workload 的 App 来源面。Task 轴两枚配额住 engine（域拥有者，
 	// ScaleTask/到期拍共用）。
@@ -707,12 +697,9 @@ const (
 )
 
 func (svc *ConfigsService) PutConfig(ctx context.Context, req *structurev1.PutConfigRequest) (*structurev1.PutConfigResponse, error) {
-	if req.GetProjectId() == "" || req.GetName() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "project_id and name: must not be empty")
-	}
-	if len(req.GetContent()) > maxConfigBytes {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "content: exceeds the %d-byte per-config limit", maxConfigBytes)
-	}
+	// project_id/name 必填组合与 content 单值上限检查（256KiB）已退役为
+	// PutConfigRequest 的 protovalidate CEL 注解（P4-1 批 1 Run B1）：
+	// validate 拦截器在 handler 之前执法，组合必填拆 per-field 文案。
 	// 行级授权（ADR-0035）：写面受理前置。
 	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
@@ -792,12 +779,11 @@ type VolumesService struct {
 }
 
 func (svc *VolumesService) CreateVolume(ctx context.Context, req *structurev1.CreateVolumeRequest) (*structurev1.CreateVolumeResponse, error) {
-	if err := validName("name", req.GetName()); err != nil {
-		return nil, err
-	}
-	if req.GetProjectId() == "" || req.GetName() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "project_id and name: must not be empty")
-	}
+	// name 的 dns 标签形态检查（validName）与 project_id/name 必填组合检查
+	// 已退役为 CreateVolumeRequest 的 protovalidate CEL 注解（P4-1 批 1
+	// Run B1）：validate 拦截器在 handler 之前执法，组合必填拆 per-field
+	// 文案；正则字面单源见 entityid.NamePatternSource（descriptor 对齐
+	// 测试执法）。
 	// 行级授权（ADR-0035）：写面受理前置。
 	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
@@ -837,9 +823,8 @@ func (svc *VolumesService) CreateVolume(ctx context.Context, req *structurev1.Cr
 // 卷不随删（swarm 命名卷残留是文档化文化、k3s PVC 卡 ns 排空——数据兜底
 // 永不级联；调用方在确认页披露）。
 func (svc *VolumesService) DeleteVolume(ctx context.Context, req *structurev1.DeleteVolumeRequest) (*structurev1.DeleteVolumeResponse, error) {
-	if req.GetId() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "id: must not be empty")
-	}
+	// id 必填检查已退役为 DeleteVolumeRequest 的 protovalidate CEL 注解
+	//（P4-1 批 1 Run B1）：validate 拦截器在 handler 之前执法。
 	row, err := svc.s.Volumes.Get(ctx, svc.s.DB.Runner(), req.GetId())
 	if err != nil {
 		return nil, mapStateError(err, "volume")

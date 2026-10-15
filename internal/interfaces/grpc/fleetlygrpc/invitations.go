@@ -33,9 +33,9 @@ const (
 )
 
 func (svc *InvitationsService) CreateInvitation(ctx context.Context, req *identityv1.CreateInvitationRequest) (*identityv1.CreateInvitationResponse, error) {
-	if req.GetRoleId() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "role_id: must not be empty")
-	}
+	// role_id 必填检查已退役为 CreateInvitationRequest 的 protovalidate CEL
+	// 注解（P4-1 批 1 Run B1）：validate 拦截器在 handler 之前执法。ttl 的
+	// 格式/范围检查（动态文案）留在服务内。
 	ttl := defaultInvitationTTL
 	if s := req.GetTtl(); s != "" {
 		d, err := time.ParseDuration(s)
@@ -118,12 +118,10 @@ func (svc *InvitationsService) ListInvitations(ctx context.Context, _ *identityv
 // 角色（单事务；MarkConsumed 条件更新保证并发双兑只有一个成功）。
 // 审计来源是 manual（持信物的人当面操作；无 gRPC 凭证语境）。
 func (svc *InvitationsService) AcceptInvitation(ctx context.Context, req *identityv1.AcceptInvitationRequest) (*identityv1.AcceptInvitationResponse, error) {
-	if req.GetSecret() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "secret: must not be empty")
-	}
-	if req.GetUserName() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "user_name: must not be empty")
-	}
+	// secret/user_name 必填组合检查已退役为 AcceptInvitationRequest 的
+	// protovalidate CEL 注解（P4-1 批 1 Run B1）：validate 拦截器在 handler
+	// 之前执法，拆 per-field 文案。信物有效性检查（统一
+	// E_INVALID_INVITATION，防枚举探测）留在服务内。
 	if identity.TokenKind(req.GetSecret()) != "invitation" {
 		return nil, invalidInvitation("invitation token required")
 	}

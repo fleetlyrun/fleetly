@@ -259,11 +259,16 @@ export interface components {
     schemas: {
         TokensServiceRevokeTokenBody: Record<string, never>;
         UsersServiceSetUserPasswordBody: {
+            /** password 必填：新口令（bcrypt 落库）。 */
             password?: string;
         };
         v1AcceptInvitationRequest: {
-            /** 邀请 Token 明文（被邀请者持信物） */
+            /**
+             * secret 必填：邀请 Token 明文（被邀请者持信物；有效性由服务内校验，
+             *     无效统一 E_INVALID_INVITATION——枚举探测面收窄）。
+             */
             secret?: string;
+            /** user_name 必填：兑换时建户的用户名。 */
             user_name?: string;
         };
         v1AcceptInvitationResponse: {
@@ -287,8 +292,15 @@ export interface components {
         };
         v1CreateInvitationRequest: {
             team_id?: string;
+            /**
+             * role_id 必填：邀请兑换出的 membership 绑定该 Role（roleInTeam 同事务
+             *     校验——不一致的邀请兑换出跨 Team membership）。
+             */
             role_id?: string;
-            /** 时长（如 "24h"；缺省 24h，上限 168h） */
+            /**
+             * ttl 是时长字面（如 "24h"；缺省 24h，上限 168h）——格式与范围由服务
+             *     内解析执法（动态文案）。
+             */
             ttl?: string;
         };
         /** CreateInvitationResponse 同 Token：邀请明文仅此一次。 */
@@ -297,24 +309,43 @@ export interface components {
             secret?: string;
         };
         v1CreateRoleRequest: {
+            /**
+             * name 是 dns 标签（小写字母数字与连字符，首尾字母数字，≤63 字符，
+             *     ADR-0070 决策 4）。正则字面与长度界是 entityid.NamePatternSource /
+             *     MaxNameLen 的镜像（proto 无法引用 Go 常量），字节一致由 entityid 包
+             *     的 descriptor 对齐测试执法；空值同报形状（本字段无 required 规则，
+             *     空名不接受）。
+             */
             name?: string;
             /** 自定义 Role 属于某 Team */
             team_id?: string;
-            /** colon 形态；write⇒read 在执法点展开 */
+            /**
+             * scopes 必填：Role 是命名的 Scope 集合（元素值域 `resource:action` 的
+             *     解析由服务内 ParseScopes 执法——动态文案留在服务内）。
+             */
             scopes?: string[];
         };
         v1CreateRoleResponse: {
             role?: components["schemas"]["v1Role"];
         };
         v1CreateTeamRequest: {
+            /**
+             * name 是 dns 标签（小写字母数字与连字符，首尾字母数字，≤63 字符，
+             *     ADR-0070 决策 4）。正则字面与长度界是 entityid.NamePatternSource /
+             *     MaxNameLen 的镜像（proto 无法引用 Go 常量），字节一致由 entityid 包
+             *     的 descriptor 对齐测试执法；空值同报形状（本字段无 required 规则，
+             *     空名不接受）。
+             */
             name?: string;
         };
         v1CreateTeamResponse: {
             team?: components["schemas"]["v1Team"];
         };
         v1CreateTokenRequest: {
+            /** name 必填：Token 名（保留名 bootstrap 由服务内检查拒绝）。 */
             name?: string;
             team_id?: string;
+            /** role_id 必填：Token 的权限经 Team 内 Role 获得 Scope。 */
             role_id?: string;
             /** 可空 */
             user_id?: string;
@@ -326,10 +357,17 @@ export interface components {
             secret?: string;
         };
         v1CreateUserRequest: {
+            /**
+             * name 是 dns 标签（小写字母数字与连字符，首尾字母数字，≤63 字符，
+             *     ADR-0070 决策 4）。正则字面与长度界是 entityid.NamePatternSource /
+             *     MaxNameLen 的镜像（proto 无法引用 Go 常量），字节一致由 entityid 包
+             *     的 descriptor 对齐测试执法；空值同报形状（本字段无 required 规则，
+             *     空名不接受）。
+             */
             name?: string;
             /** 归属 Team（缺省 default） */
             team_id?: string;
-            /** Team 内授予的 Role */
+            /** role_id 必填：Team 内授予的 Role（User 的权限轴经 membership 挂 Role）。 */
             role_id?: string;
             /**
              * password 是可选初始密码（bcrypt 落库；空 = 未设密，密码登录诚实拒绝）。
@@ -388,7 +426,12 @@ export interface components {
          *     执法/审计/吊销——不引入独立会话表；secret 只在本响应出现一次）。
          */
         v1LoginRequest: {
+            /** name 必填：登录用户名。 */
             name?: string;
+            /**
+             * password 必填：登录口令（缺失与错配同报 E_UNAUTHENTICATED——用户名
+             *     枚举面收窄）。
+             */
             password?: string;
         };
         v1LoginResponse: {

@@ -9,6 +9,7 @@ package fleetly.delivery.v1;
 
 option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1;deliveryv1";
 
+import "buf/validate/validate.proto";
 import "google/api/annotations.proto";
 import "grpcapi/v1/authz.proto";
 
@@ -35,7 +36,14 @@ service RegistryService {
 }
 
 message ListRegistryCatalogRequest {
-  string project_id = 1;
+  // project_id 必填：catalog 按项目前纲过滤。
+  string project_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
 }
 message ListRegistryCatalogResponse {
   // repositories 是项目前纲下的仓名（全名含前纲，<project>/<app> 小写）。
@@ -52,9 +60,22 @@ message RegistryTag {
   string pushed_at = 4;
 }
 message ListRegistryTagsRequest {
-  string project_id = 1;
-  // repository 是仓名（须落在该项目前纲下——越纲按 not found 拒绝）。
-  string repository = 2;
+  // project_id 必填：tag 校验前纲归属。
+  string project_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  // repository 必填：仓名（须落在该项目前纲下——越纲按 not found 拒绝）。
+  string repository = 2 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
 }
 message ListRegistryTagsResponse {
   string repository = 1;

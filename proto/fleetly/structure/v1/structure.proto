@@ -475,7 +475,28 @@ message App {
   string created_at = 4;
 }
 
-message CreateAppRequest { string project_id = 1; string name = 2; }
+message CreateAppRequest {
+  // project_id 必填：App 的父 Project（受理位父存活/配额校验的锚）。
+  string project_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  // name 是 dns 标签（小写字母数字与连字符，首尾字母数字，≤63 字符，
+  // ADR-0070 决策 4）——可读 id base 与派生名安全的前提。正则字面与长度
+  // 界是 entityid.NamePatternSource / MaxNameLen 的镜像（proto 无法引用
+  // Go 常量），字节一致由 entityid 包的 descriptor 对齐测试执法；空值
+  // 同报形状（本字段无 required 规则，空名不接受）。
+  string name = 2 [
+    (buf.validate.field).cel = {
+      id: "string.dns_label"
+      message: "must be a dns label (lowercase letters, digits, hyphens; start and end alphanumeric, e.g. \"web\" or \"nightly-backup\")"
+      expression: "this.matches('^[a-z0-9]([a-z0-9-]*[a-z0-9])?$') && this.size() <= 63"
+    }
+  ];
+}
 message CreateAppResponse { App app = 1; }
 message GetAppRequest { string id = 1; }
 message GetAppResponse { App app = 1; }
@@ -500,14 +521,30 @@ message GetAppSpecResponse {
   string revision_digest = 3;
 }
 message ListAppsRequest {
-  string project_id = 1;
+  // project_id 必填：List 面的项目锚（行级授权沿此轴，ADR-0035）。
+  string project_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
   // after_app_seq 游标（上一页末条 seq（0 = 首页）。游标轴 = seq 创建序
   // 升序（既有响应序不变；ADR-0026 after_* + limit 惯例）。
   int64 after_app_seq = 2;
   int32 limit = 3;
 }
 message ListAppsResponse { repeated App apps = 1; }
-message DeleteAppRequest { string id = 1; }
+message DeleteAppRequest {
+  // id 必填：目标 App 行。
+  string id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+}
 message DeleteAppResponse {}
 
 message Secret {
@@ -520,8 +557,32 @@ message Secret {
 }
 
 message PutSecretRequest {
-  string project_id = 1;
-  string name = 2;
+  // project_id 必填：Secret 归属 Project。
+  string project_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  // name 是 Secret 名：字符集白名单 [A-Za-z0-9][A-Za-z0-9:._-]{0,63} 且
+  // 不含 ".."——引用名原样成为容器内 /run/secrets/<名> 文件目标与 swarm
+  // 载体名成分，拒路径逃逸。正则字面是 spec.SecretNamePattern 的镜像
+  //（proto 无法引用 Go 常量），字节一致由 spec 包的 descriptor 对齐测试
+  // 执法。平台保留前缀（database:<name>，ADR-0029 决策 6）由服务内检查
+  // 以 E_CONFLICT 拒绝。
+  string name = 2 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    },
+    (buf.validate.field).cel = {
+      id: "string.secret_name"
+      message: "secret names must match \"[A-Za-z0-9][A-Za-z0-9:._-]{0,63}\", start with a letter or digit, and must not contain \"..\" (secret names become /run/secrets/<name> paths)"
+      expression: "this.size() == 0 || (this.matches('^[A-Za-z0-9][A-Za-z0-9:._-]{0,63}$') && !this.contains('..'))"
+    }
+  ];
   // value 只进不回（请求侧明文；响应只回指纹）。
   string value = 3;
 }
@@ -547,7 +608,33 @@ message Config {
   string content = 6;
 }
 
-message PutConfigRequest { string project_id = 1; string name = 2; string content = 3; }
+message PutConfigRequest {
+  // project_id 必填：Config 归属 Project。
+  string project_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  // name 必填：项目内配置名（同名 put 是新版本）。
+  string name = 2 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  // content 是配置内容，单值上限 262144 字节（bytes().size() 数字节，
+  // 非 UTF-8 码点）。
+  string content = 3 [
+    (buf.validate.field).cel = {
+      id: "string.max_bytes"
+      message: "exceeds the 262144-byte per-config limit"
+      expression: "bytes(this).size() <= 262144"
+    }
+  ];
+}
 message PutConfigResponse { Config config = 1; }
 message GetConfigRequest { string project_id = 1; string name = 2; int64 version = 3; }
 message GetConfigResponse { Config config = 1; }
@@ -572,10 +659,39 @@ message SharedVariable {
 }
 
 message PutSharedVariableRequest {
-  string project_id = 1;
-  // name 是 env 键形态（[A-Za-z_][A-Za-z0-9_]*，≤64 字符）。
-  string name = 2;
-  string value = 3;
+  // project_id 必填：变量归属 Project。
+  string project_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  // name 是 env 键形态（[A-Za-z_][A-Za-z0-9_]*，≤64 字符，ADR-0043 决策
+  // 2）——变量名直接成为容器 env 键。正则字面是 spec.EnvNamePattern 的
+  // 镜像（proto 无法引用 Go 常量），字节一致由 spec 包的 descriptor 对齐
+  // 测试执法。
+  string name = 2 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    },
+    (buf.validate.field).cel = {
+      id: "string.env_name"
+      message: "variable names must match \"[A-Za-z_][A-Za-z0-9_]{0,63}\" (variable names become environment keys)"
+      expression: "this.size() == 0 || this.matches('^[A-Za-z_][A-Za-z0-9_]{0,63}$')"
+    }
+  ];
+  // value 是变量值，单值上限 16384 字节（env 是进程环境面不是文件面；
+  // bytes().size() 数字节）。
+  string value = 3 [
+    (buf.validate.field).cel = {
+      id: "string.max_bytes"
+      message: "exceeds the 16384-byte per-variable limit"
+      expression: "bytes(this).size() <= 16384"
+    }
+  ];
 }
 // affected_apps 是受影响 App 提示（近似口径，ADR-0043 决策 4）：项目内
 // 已有 Revision 且最新冻结 env 会因本次变更而不同的 App——重部署取新值；
@@ -592,7 +708,24 @@ message ListSharedVariablesRequest {
   int32 limit = 3;
 }
 message ListSharedVariablesResponse { repeated SharedVariable variables = 1; }
-message DeleteSharedVariableRequest { string project_id = 1; string name = 2; }
+message DeleteSharedVariableRequest {
+  // project_id 必填：变量归属 Project。
+  string project_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  // name 必填：目标变量键。
+  string name = 2 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+}
 message DeleteSharedVariableResponse { repeated string affected_apps = 1; }
 
 message AppVariable {
@@ -603,24 +736,76 @@ message AppVariable {
   string updated_at = 5;
 }
 message PutAppVariableRequest {
-  string app_id = 1;
+  // app_id 必填：变量归属 App。
+  string app_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
   // name 是 env 键形态（[A-Za-z_][A-Za-z0-9_]*，≤64 字符——与共享变量
-  // 同一白名单：变量名直接成为容器 env 键）。
-  string name = 2;
-  string value = 3;
+  // 同一白名单：变量名直接成为容器 env 键，ADR-0072）。正则字面是
+  // spec.EnvNamePattern 的镜像（proto 无法引用 Go 常量），字节一致由
+  // spec 包的 descriptor 对齐测试执法。
+  string name = 2 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    },
+    (buf.validate.field).cel = {
+      id: "string.env_name"
+      message: "variable names must match \"[A-Za-z_][A-Za-z0-9_]{0,63}\" (variable names become environment keys)"
+      expression: "this.size() == 0 || this.matches('^[A-Za-z_][A-Za-z0-9_]{0,63}$')"
+    }
+  ];
+  // value 是变量值，单值上限 16384 字节（与共享变量同档；
+  // bytes().size() 数字节）。
+  string value = 3 [
+    (buf.validate.field).cel = {
+      id: "string.max_bytes"
+      message: "exceeds the 16384-byte per-variable limit"
+      expression: "bytes(this).size() <= 16384"
+    }
+  ];
 }
 // PutAppVariableResponse 不携带 affected_apps 提示：受影响者恒为 App
 // 本身（重部署取新值——响应注释即提示）。
 message PutAppVariableResponse { AppVariable variable = 1; }
 message ListAppVariablesRequest {
-  string app_id = 1;
+  // app_id 必填：List 面的 App 锚（行级授权沿此轴，ADR-0035）。
+  string app_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
   // after_name 游标（上一页末条 name；空 = 首页）。游标轴 = App 内 name
   // 字典序升序（ADR-0026 after_* + limit 惯例）。
   string after_name = 2;
   int32 limit = 3;
 }
 message ListAppVariablesResponse { repeated AppVariable variables = 1; }
-message DeleteAppVariableRequest { string app_id = 1; string name = 2; }
+message DeleteAppVariableRequest {
+  // app_id 必填：变量归属 App。
+  string app_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  // name 必填：目标变量键。
+  string name = 2 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+}
 message DeleteAppVariableResponse {}
 
 message Volume {
@@ -631,11 +816,42 @@ message Volume {
   string created_at = 5;
 }
 
-message CreateVolumeRequest { string project_id = 1; string name = 2; string pinned_node_id = 3; }
+message CreateVolumeRequest {
+  // project_id 必填：Volume 的父 Project（受理位父存活校验的锚）。
+  string project_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  // name 是 dns 标签（小写字母数字与连字符，首尾字母数字，≤63 字符，
+  // ADR-0070 决策 4）——平台卷名与派生名安全的前提。正则字面与长度界
+  // 是 entityid.NamePatternSource / MaxNameLen 的镜像，字节一致由
+  // entityid 包的 descriptor 对齐测试执法；空值同报形状（本字段无
+  // required 规则，空名不接受）。
+  string name = 2 [
+    (buf.validate.field).cel = {
+      id: "string.dns_label"
+      message: "must be a dns label (lowercase letters, digits, hyphens; start and end alphanumeric, e.g. \"web\" or \"nightly-backup\")"
+      expression: "this.matches('^[a-z0-9]([a-z0-9-]*[a-z0-9])?$') && this.size() <= 63"
+    }
+  ];
+  string pinned_node_id = 3;
+}
 message CreateVolumeResponse { Volume volume = 1; }
 message ListVolumesRequest { string project_id = 1; }
 message ListVolumesResponse { repeated Volume volumes = 1; }
-message DeleteVolumeRequest { string id = 1; }
+message DeleteVolumeRequest {
+  // id 必填：目标 Volume 行。
+  string id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+}
 message DeleteVolumeResponse {}
 
 // Database 是托管有状态服务行（ADR-0029：模板参数创建即不可变，无
@@ -671,10 +887,36 @@ message Database {
 }
 
 message CreateDatabaseRequest {
-  string project_id = 1;
-  string name = 2;
-  // engine 值域 = 模板注册表（postgres / pgvector / redis，ADR-0029）。
-  string engine = 3;
+  // project_id 必填：Database 的父 Project（受理位父存活/配额/网络校验
+  // 的锚）。
+  string project_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  // name 是 dns 标签（小写字母数字与连字符，首尾字母数字，≤63 字符，
+  // ADR-0070 决策 4）——db-<id> 网内 DNS 名与凭证 Secret 名派生的前提。
+  // 正则字面与长度界是 entityid.NamePatternSource / MaxNameLen 的镜像，
+  // 字节一致由 entityid 包的 descriptor 对齐测试执法；空值同报形状
+  //（本字段无 required 规则，空名不接受）。
+  string name = 2 [
+    (buf.validate.field).cel = {
+      id: "string.dns_label"
+      message: "must be a dns label (lowercase letters, digits, hyphens; start and end alphanumeric, e.g. \"web\" or \"nightly-backup\")"
+      expression: "this.matches('^[a-z0-9]([a-z0-9-]*[a-z0-9])?$') && this.size() <= 63"
+    }
+  ];
+  // engine 必填且值域 = 模板注册表（postgres / pgvector / redis，
+  // ADR-0029）——值域外由服务内注册表检查拒绝并列出合法值。
+  string engine = 3 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
   // restore_from_backup 是可选恢复源（ADR-0039）：成功备份行 id；在场 =
   // 新库挂起恢复（备份环执行：流式注入或卷预置）。engine 仍必填且须与
   // 源备份引擎一致（跨引擎恢复拒绝）。
@@ -684,13 +926,29 @@ message CreateDatabaseResponse { Database database = 1; }
 message GetDatabaseRequest { string id = 1; }
 message GetDatabaseResponse { Database database = 1; }
 message ListDatabasesRequest {
-  string project_id = 1;
+  // project_id 必填：List 面的项目锚（行级授权沿此轴，ADR-0035）。
+  string project_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
   // after_database_seq 游标（上一页末条 seq（0 = 首页）。
   int64 after_database_seq = 2;
   int32 limit = 3;
 }
 message ListDatabasesResponse { repeated Database databases = 1; }
-message DeleteDatabaseRequest { string id = 1; }
+message DeleteDatabaseRequest {
+  // id 必填：目标 Database 行。
+  string id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+}
 message DeleteDatabaseResponse {}
 
 // Backup 是一次备份的台账行（ADR-0039）：成功行携带 ObjectStore 回执
@@ -712,10 +970,26 @@ message Backup {
   string finished_at = 11;
   string created_at = 12;
 }
-message TriggerBackupRequest { string database_id = 1; }
+message TriggerBackupRequest {
+  // database_id 必填：备份目标 Database 行。
+  string database_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+}
 message TriggerBackupResponse { Backup backup = 1; }
 message ListBackupsRequest {
-  string database_id = 1;
+  // database_id 必填：备份台账的 Database 锚。
+  string database_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
   // after_backup_seq 游标（上一页末条 seq（0 = 首页）。
   int64 after_backup_seq = 2;
   int32 limit = 3;
@@ -723,7 +997,16 @@ message ListBackupsRequest {
 message ListBackupsResponse { repeated Backup backups = 1; }
 // VerifyBackup 重算对象 sha256 比对 Put 回执（ADR-0039 决策 8：静态完整
 // 性——腐损/截断可检出；可恢复性由恢复演练承担）。
-message VerifyBackupRequest { string backup_id = 1; }
+message VerifyBackupRequest {
+  // backup_id 必填：待验证的 Backup 台账行。
+  string backup_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+}
 message VerifyBackupResponse {
   bool ok = 1;
   string digest = 2;
@@ -733,7 +1016,14 @@ message VerifyBackupResponse {
 // BrowseDatabase 铸造数据浏览器会话（ADR-0051）。read_write 缺省 false =
 // 只读档；true 解锁写（动态要求 databases:write——静态注解只能表达最低门）。
 message BrowseDatabaseRequest {
-  string database_id = 1;
+  // database_id 必填：浏览目标 Database 行。
+  string database_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
   bool read_write = 2;
 }
 message BrowseDatabaseResponse {
@@ -763,7 +1053,16 @@ enum BrowseReadOnlyEnforcement {
 // RotateDatabasePassword 轮换凭证（IA v3 二期⑤b）。新连接串只进 Secret
 //（与创建同口径，永不回显）；响应是轮换后的 Database 行（status 载体
 // 重下发的观测面）。
-message RotateDatabasePasswordRequest { string database_id = 1; }
+message RotateDatabasePasswordRequest {
+  // database_id 必填：轮换目标 Database 行。
+  string database_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+}
 message RotateDatabasePasswordResponse { Database database = 1; }
 
 message Network {
@@ -775,7 +1074,30 @@ message Network {
   string created_at = 5;
 }
 
-message CreateNetworkRequest { string project_id = 1; string name = 2; bool egress_none = 3; }
+message CreateNetworkRequest {
+  // project_id 必填：Network 的父 Project（受理位父存活校验的锚）。
+  string project_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  // name 是 dns 标签（小写字母数字与连字符，首尾字母数字，≤63 字符，
+  // ADR-0070 决策 4）——编排器网络名与受管挂靠面安全的前提。正则字面
+  // 与长度界是 entityid.NamePatternSource / MaxNameLen 的镜像，字节一致
+  // 由 entityid 包的 descriptor 对齐测试执法；空值同报形状（本字段无
+  // required 规则，空名不接受）。
+  string name = 2 [
+    (buf.validate.field).cel = {
+      id: "string.dns_label"
+      message: "must be a dns label (lowercase letters, digits, hyphens; start and end alphanumeric, e.g. \"web\" or \"nightly-backup\")"
+      expression: "this.matches('^[a-z0-9]([a-z0-9-]*[a-z0-9])?$') && this.size() <= 63"
+    }
+  ];
+  // egress_none 是弱隔离声明（swarm v1：出网不阻断，明示）。
+  bool egress_none = 3;
+}
 message CreateNetworkResponse { Network network = 1; }
 message ListNetworksRequest {
   string project_id = 1;
@@ -788,7 +1110,24 @@ message ListNetworksResponse { repeated Network networks = 1; }
 
 // RebuildNetworkResponse 携带网络引用与本次执行的载体计数（幂等重跑的
 // 快速路径两者为 0——已 attachable 且标签在位即零扰动返回）。
-message RebuildNetworkRequest { string project_id = 1; string name = 2; }
+message RebuildNetworkRequest {
+  // project_id 必填：重建目标网络的归属 Project。
+  string project_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  // name 必填：项目内目标网络名。
+  string name = 2 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+}
 message RebuildNetworkResponse {
   Network network = 1;
   // detached/reattached 是本次被摘除又加回的附着载体数。
@@ -817,10 +1156,23 @@ message NetworkPeer {
 }
 
 message DeclareNetworkPeerRequest {
-  // network_id 是目标网络行（接收方 Project 的活跃网络）。
-  string network_id = 1;
-  // peer_project_id 是挂靠方项目（声明方）。
-  string peer_project_id = 2;
+  // network_id 必填：目标网络行（接收方 Project 的活跃网络）。
+  string network_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  // peer_project_id 必填：挂靠方项目（声明方）。同项目挂靠由服务内交叉
+  // 检查拒绝（项目内挂靠走 project-local 网络名）。
+  string peer_project_id = 2 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
 }
 message DeclareNetworkPeerResponse { NetworkPeer peer = 1; }
 message ApproveNetworkPeerRequest { string id = 1; }

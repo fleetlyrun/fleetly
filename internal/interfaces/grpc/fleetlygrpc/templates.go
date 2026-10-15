@@ -136,9 +136,8 @@ func (svc *TemplatesService) ListTemplates(ctx context.Context, _ *deliveryv1.Li
 }
 
 func (svc *TemplatesService) GetTemplate(ctx context.Context, req *deliveryv1.GetTemplateRequest) (*deliveryv1.GetTemplateResponse, error) {
-	if req.GetName() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "name: must not be empty")
-	}
+	// name 必填检查已退役为 GetTemplateRequest 的 protovalidate CEL 注解
+	//（P4-1 批 1 Run B1）：validate 拦截器在 handler 之前执法。
 	view, err := svc.s.resolveCatalog(ctx)
 	if err != nil {
 		return nil, err
@@ -158,9 +157,13 @@ func (svc *TemplatesService) GetTemplate(ctx context.Context, req *deliveryv1.Ge
 // 部分失败诚实语义：失败即停带精确错误；重跑按 create-or-reuse 收敛
 // （不旋转密码、不重建库/路由）。
 func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliveryv1.InstantiateTemplateRequest) (*deliveryv1.InstantiateTemplateResponse, error) {
-	if req.GetProjectId() == "" || req.GetTemplate() == "" || req.GetAppName() == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "project_id, template and app_name: must not be empty")
-	}
+	// project_id/template/app_name 必填组合检查已退役为
+	// InstantiateTemplateRequest 的 protovalidate CEL 注解（P4-1 批 1 Run
+	// B1）：validate 拦截器在 handler 之前执法，拆 per-field 文案。
+	// app_name 的 dns 标签形状也在该注解上（create-or-reuse 序内进程内
+	// 直调 CreateApp/CreateNetwork 不经 validate 拦截器，形状约束必须在
+	// 边界自足——单源 entityid.NamePatternSource 的 descriptor 对齐测试
+	// 执法）。RefreshTemplates 的目录配置检查（业务面）留在服务内。
 	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}

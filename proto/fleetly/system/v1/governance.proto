@@ -8,6 +8,7 @@ package fleetly.system.v1;
 
 option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1;systemv1";
 
+import "buf/validate/validate.proto";
 import "google/api/annotations.proto";
 import "protoc-gen-openapiv2/options/annotations.proto";
 import "grpcapi/v1/authz.proto";
@@ -73,7 +74,14 @@ message ChangeFreeze {
 message SetChangeFreezeRequest {
   // team_id 空串 = 全局冻结（全部 Team 的变更型动词封禁）。
   string team_id = 1;
-  string reason = 2;
+  // reason 必填：拒绝信封回带（Agent 可读出"为何冻结/何时能再动"）。
+  string reason = 2 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty (the refusal carries it to callers)"
+      expression: "this.size() > 0"
+    }
+  ];
 }
 message SetChangeFreezeResponse { ChangeFreeze freeze = 1; }
 

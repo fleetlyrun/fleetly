@@ -31,6 +31,7 @@
         "parameters": [
           {
             "name": "project_id",
+            "description": "project_id 必填：catalog 按项目前纲过滤。",
             "in": "query",
             "required": false,
             "type": "string"
@@ -56,13 +57,14 @@
         "parameters": [
           {
             "name": "repository",
-            "description": "repository 是仓名（须落在该项目前纲下——越纲按 not found 拒绝）。",
+            "description": "repository 必填：仓名（须落在该项目前纲下——越纲按 not found 拒绝）。",
             "in": "path",
             "required": true,
             "type": "string"
           },
           {
             "name": "project_id",
+            "description": "project_id 必填：tag 校验前纲归属。",
             "in": "query",
             "required": false,
             "type": "string"

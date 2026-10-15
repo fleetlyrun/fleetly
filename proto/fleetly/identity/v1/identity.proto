@@ -7,6 +7,7 @@ package fleetly.identity.v1;
 
 option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/identity/v1;identityv1";
 
+import "buf/validate/validate.proto";
 import "google/api/annotations.proto";
 import "protoc-gen-openapiv2/options/annotations.proto";
 import "grpcapi/v1/authz.proto";
@@ -243,9 +244,27 @@ message User {
 }
 
 message CreateUserRequest {
-  string name = 1;
+  // name 是 dns 标签（小写字母数字与连字符，首尾字母数字，≤63 字符，
+  // ADR-0070 决策 4）。正则字面与长度界是 entityid.NamePatternSource /
+  // MaxNameLen 的镜像（proto 无法引用 Go 常量），字节一致由 entityid 包
+  // 的 descriptor 对齐测试执法；空值同报形状（本字段无 required 规则，
+  // 空名不接受）。
+  string name = 1 [
+    (buf.validate.field).cel = {
+      id: "string.dns_label"
+      message: "must be a dns label (lowercase letters, digits, hyphens; start and end alphanumeric, e.g. \"web\" or \"nightly-backup\")"
+      expression: "this.matches('^[a-z0-9]([a-z0-9-]*[a-z0-9])?$') && this.size() <= 63"
+    }
+  ];
   string team_id = 2;  // 归属 Team（缺省 default）
-  string role_id = 3;  // Team 内授予的 Role
+  // role_id 必填：Team 内授予的 Role（User 的权限轴经 membership 挂 Role）。
+  string role_id = 3 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty (grant a role within the team)"
+      expression: "this.size() > 0"
+    }
+  ];
   // password 是可选初始密码（bcrypt 落库；空 = 未设密，密码登录诚实拒绝）。
   // C6 密码会话第一期。
   string password = 4;
@@ -258,8 +277,23 @@ message CreateUserResponse {
 // Login（C6 密码会话第一期）：密码自证铸常规 API Token（复用 tokens 面
 // 执法/审计/吊销——不引入独立会话表；secret 只在本响应出现一次）。
 message LoginRequest {
-  string name = 1;
-  string password = 2;
+  // name 必填：登录用户名。
+  string name = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  // password 必填：登录口令（缺失与错配同报 E_UNAUTHENTICATED——用户名
+  // 枚举面收窄）。
+  string password = 2 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
 }
 
 message LoginResponse {
@@ -273,7 +307,14 @@ message LoginResponse {
 
 message SetUserPasswordRequest {
   string user_id = 1;
-  string password = 2;
+  // password 必填：新口令（bcrypt 落库）。
+  string password = 2 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
 }
 
 message SetUserPasswordResponse {}
@@ -305,7 +346,18 @@ message Team {
 }
 
 message CreateTeamRequest {
-  string name = 1;
+  // name 是 dns 标签（小写字母数字与连字符，首尾字母数字，≤63 字符，
+  // ADR-0070 决策 4）。正则字面与长度界是 entityid.NamePatternSource /
+  // MaxNameLen 的镜像（proto 无法引用 Go 常量），字节一致由 entityid 包
+  // 的 descriptor 对齐测试执法；空值同报形状（本字段无 required 规则，
+  // 空名不接受）。
+  string name = 1 [
+    (buf.validate.field).cel = {
+      id: "string.dns_label"
+      message: "must be a dns label (lowercase letters, digits, hyphens; start and end alphanumeric, e.g. \"web\" or \"nightly-backup\")"
+      expression: "this.matches('^[a-z0-9]([a-z0-9-]*[a-z0-9])?$') && this.size() <= 63"
+    }
+  ];
 }
 
 message CreateTeamResponse {
@@ -342,9 +394,28 @@ message Role {
 }
 
 message CreateRoleRequest {
-  string name = 1;
+  // name 是 dns 标签（小写字母数字与连字符，首尾字母数字，≤63 字符，
+  // ADR-0070 决策 4）。正则字面与长度界是 entityid.NamePatternSource /
+  // MaxNameLen 的镜像（proto 无法引用 Go 常量），字节一致由 entityid 包
+  // 的 descriptor 对齐测试执法；空值同报形状（本字段无 required 规则，
+  // 空名不接受）。
+  string name = 1 [
+    (buf.validate.field).cel = {
+      id: "string.dns_label"
+      message: "must be a dns label (lowercase letters, digits, hyphens; start and end alphanumeric, e.g. \"web\" or \"nightly-backup\")"
+      expression: "this.matches('^[a-z0-9]([a-z0-9-]*[a-z0-9])?$') && this.size() <= 63"
+    }
+  ];
   string team_id = 2;          // 自定义 Role 属于某 Team
-  repeated string scopes = 3;  // colon 形态；write⇒read 在执法点展开
+  // scopes 必填：Role 是命名的 Scope 集合（元素值域 `resource:action` 的
+  // 解析由服务内 ParseScopes 执法——动态文案留在服务内）。
+  repeated string scopes = 3 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty (a role is a named scope set)"
+      expression: "this.size() > 0"
+    }
+  ];
 }
 
 message CreateRoleResponse {
@@ -384,9 +455,23 @@ message Token {
 }
 
 message CreateTokenRequest {
-  string name = 1;
+  // name 必填：Token 名（保留名 bootstrap 由服务内检查拒绝）。
+  string name = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
   string team_id = 2;
-  string role_id = 3;
+  // role_id 必填：Token 的权限经 Team 内 Role 获得 Scope。
+  string role_id = 3 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty (tokens get scopes via a team role)"
+      expression: "this.size() > 0"
+    }
+  ];
   string user_id = 4; // 可空
 }
 
@@ -430,8 +515,18 @@ message Invitation {
 
 message CreateInvitationRequest {
   string team_id = 1;
-  string role_id = 2;
-  string ttl = 3; // 时长（如 "24h"；缺省 24h，上限 168h）
+  // role_id 必填：邀请兑换出的 membership 绑定该 Role（roleInTeam 同事务
+  // 校验——不一致的邀请兑换出跨 Team membership）。
+  string role_id = 2 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  // ttl 是时长字面（如 "24h"；缺省 24h，上限 168h）——格式与范围由服务
+  // 内解析执法（动态文案）。
+  string ttl = 3;
 }
 
 // CreateInvitationResponse 同 Token：邀请明文仅此一次。
@@ -447,8 +542,23 @@ message ListInvitationsResponse {
 }
 
 message AcceptInvitationRequest {
-  string secret = 1;  // 邀请 Token 明文（被邀请者持信物）
-  string user_name = 2;
+  // secret 必填：邀请 Token 明文（被邀请者持信物；有效性由服务内校验，
+  // 无效统一 E_INVALID_INVITATION——枚举探测面收窄）。
+  string secret = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+  // user_name 必填：兑换时建户的用户名。
+  string user_name = 2 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
 }
 
 message AcceptInvitationResponse {

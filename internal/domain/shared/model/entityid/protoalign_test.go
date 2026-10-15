@@ -14,7 +14,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
 
+	identityv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/identity/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
 )
@@ -44,4 +46,41 @@ func TestCreateProjectNameAnnotationMatchesEntityIDSource(t *testing.T) {
 		"shape 表达式与 entityid.NamePatternSource 漂移——proto 与本包必须同 commit 同改")
 	assert.Contains(t, shape.GetExpression(), "this.size() <= "+strconv.Itoa(entityid.MaxNameLen),
 		"shape 表达式与 entityid.MaxNameLen 漂移——proto 与本包必须同 commit 同改")
+}
+
+// TestIdentityNameAnnotationMatchesEntityIDSource 扩段（P4-1 批 1 Run B1）：
+// identity 面（CreateUserRequest / CreateTeamRequest / CreateRoleRequest）的
+// name 形状注解与结构面同源——同一正则字面与长度界（Run A 只覆盖
+// CreateProjectRequest，Run B1 把有名实体族的剩余面纳入执法）。
+func TestIdentityNameAnnotationMatchesEntityIDSource(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		md   protoreflect.MessageDescriptor
+	}{
+		{"CreateUserRequest", (&identityv1.CreateUserRequest{}).ProtoReflect().Descriptor()},
+		{"CreateTeamRequest", (&identityv1.CreateTeamRequest{}).ProtoReflect().Descriptor()},
+		{"CreateRoleRequest", (&identityv1.CreateRoleRequest{}).ProtoReflect().Descriptor()},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fd := tc.md.Fields().ByName("name")
+			require.NotNil(t, fd, "%s.name 字段缺席——proto 漂移", tc.name)
+			opts := fd.Options()
+			fieldRules := proto.GetExtension(opts, bufvalidate.E_Field).(*bufvalidate.FieldRules)
+			celRules := fieldRules.GetCel()
+			require.NotEmpty(t, celRules, "%s.name 字段缺 cel 注解——退役族注解被移除", tc.name)
+
+			var shape *bufvalidate.Rule
+			for _, r := range celRules {
+				if r.GetId() == "string.dns_label" {
+					shape = r
+					break
+				}
+			}
+			require.NotNil(t, shape, "%s.name 字段缺 string.dns_label 规则", tc.name)
+			assert.Contains(t, shape.GetExpression(), entityid.NamePatternSource,
+				"shape 表达式与 entityid.NamePatternSource 漂移——proto 与本包必须同 commit 同改")
+			assert.Contains(t, shape.GetExpression(), "this.size() <= "+strconv.Itoa(entityid.MaxNameLen),
+				"shape 表达式与 entityid.MaxNameLen 漂移——proto 与本包必须同 commit 同改")
+		})
+	}
 }
