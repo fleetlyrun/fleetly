@@ -1,19 +1,21 @@
 package engine
 
-// 四件一拍的唯一序列真源（engine 侧；非迁移写段序与 API 受理位 commit
-// 同归写序列 kernel——internal/writes，ADR-0064）。2026-10-03 架构批收口：
-// 此前同一不变量在 transit/transitAndReload/transitRunFour/
-// transitTaskFour/transitBuild 五份手搓拷贝中各自演化（task 域拷贝已
-// 出现"注释承诺审计、代码无审计"的漂移），规则与顺序自此单点拥有：
+// 四件一拍的唯一序列真源（engine 侧；事实双行落库自 P2 刀 1 起同归
+// 事实发射 kernel——internal/domain/services/writes 的 FactRow 扇出，
+// ADR-0064 →收敛报告 §刀1）。2026-10-03 架构批收口：此前同一不变量在
+// transit/transitAndReload/transitRunFour/transitTaskFour/transitBuild
+// 五份手搓拷贝中各自演化（task 域拷贝已出现"注释承诺审计、代码无审计"
+// 的漂移），规则与顺序自此单点拥有：
 //
 //   1. 状态迁移四件一 = CAS 迁移 + 刷新行 + Outbox 事件 + 审计，同一事务；
 //   2. 原地迁移（落定状态仍在 from 集）不发事件——事件是状态迁移的既成
-//      事实，状态未变不是迁移；审计照落；
+//      事实，状态未变不是迁移；审计照落（kernel 形态 = LedgerOnly 单行
+//      事实，偏离理由在此注释）；
 //   3. 事件名/负载/审计指纹取自刷新后行（既成事实），伴生字段改写随指纹
 //      带出（"; key=value" 后缀形态）；
 //   4. 非迁移写（建行/字段更新）同构：检查先行（拒绝零副作用）→ 写居中
-//      → 事件与审计殿后——段序由 internal/writes kernel 执法（commitWrite
-//      只做归一化与 steps 编排）。
+//      → 事实扇出殿后——双行配对与段间失败语义由 kernel 执法（commitWrite
+//      编排检查/写段与 steps，只做归一化）。
 //
 // 事务边界双形态：commit* 系列收调用方事务（组合进更大事务，如 Submit
 // 受理序）；类型化前门保留原名原签名，驱动路径自开事务。
@@ -28,7 +30,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
-	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
@@ -91,23 +92,33 @@ type transitionFact struct {
 }
 
 // commitTransition 在调用方事务内落完一次状态迁移四件一：
-// CAS+刷新 → 事件（原地抑制）→ 审计 → 附加事实。任何一段失败整单回滚。
+// CAS+刷新 → 事实扇出（事件（原地抑制）+ 审计经 kernel 单声明 FactRow
+// 双行落库）→ 附加事实。任何一段失败整单回滚。
 func (e *Engine) commitTransition(ctx context.Context, tx *sql.Tx, f transitionFact) error {
 	freshState, inPlace, err := f.move(ctx, tx)
 	if err != nil {
 		return err
 	}
-	if !inPlace {
+	a := f.audit(freshState)
+	row := writes.FactRow{
+		Aggregate: f.aggregate, ID: f.id,
+		Action: a.action, Resource: a.resource, AfterFP: a.afterFP,
+	}
+	if a.actorCtx {
+		row.Actor, row.Source = authn.ActorFromContext(ctx), authn.SourceFromContext(ctx)
+	}
+	if inPlace {
+		// LedgerOnly：原地迁移（落定状态仍在 from 集）不发事件——事件是
+		// 状态迁移的既成事实，状态未变不是迁移；审计照落。
+		row.LedgerOnly = true
+	} else {
 		ev := f.event()
-		team := ""
+		row.Name, row.Payload = ev.name, ev.payload
 		if f.team != nil {
-			team = f.team(ctx, tx)
-		}
-		if _, err := e.outbox.Append(ctx, tx, team, ev.name, ev.aggregate, ev.id, ev.payload); err != nil {
-			return err
+			row.TeamID = f.team(ctx, tx)
 		}
 	}
-	if err := e.appendAudit(ctx, tx, f.audit(freshState)); err != nil {
+	if err := writes.Sequence(ctx, tx, e.factRepos(), func() writes.FactRow { return row }); err != nil {
 		return err
 	}
 	for _, extra := range f.extras {
@@ -116,28 +127,6 @@ func (e *Engine) commitTransition(ctx context.Context, tx *sql.Tx, f transitionF
 		}
 	}
 	return nil
-}
-
-// appendAudit 铸 ID 与来源并落一条审计（commitTransition 直用面；非迁移
-// 写序列的落库经 internal/writes kernel）。
-func (e *Engine) appendAudit(ctx context.Context, tx *sql.Tx, a auditFact) error {
-	return e.audits.Append(ctx, tx, e.auditEntry(ctx, a))
-}
-
-// auditEntry 铸来源（actorCtx=true 时 actor/source 取请求 ctx——用户
-// 动词路径，默认 SourceSystem）；id 由 audit repo 行装配处铸 aud-<seq>
-// （ADR-0070），落库由写序列 kernel 承载。
-func (e *Engine) auditEntry(ctx context.Context, a auditFact) *audit.Entry {
-	entry := &audit.Entry{
-		Source:   audit.SourceSystem,
-		Action:   a.action,
-		Resource: a.resource,
-		AfterFP:  a.afterFP,
-	}
-	if a.actorCtx {
-		entry.Actor, entry.Source = authn.ActorFromContext(ctx), authn.SourceFromContext(ctx)
-	}
-	return entry
 }
 
 // ---- 非迁移写（建行/字段更新）的序列真源 ----
@@ -161,45 +150,90 @@ type writeFact struct {
 	steps  []writeStep
 }
 
-// commitWrite 在调用方事务内落完一次写路径：检查 → 写 → 事件 → 审计，
-// 附加写步殿后逐段重放同一序列。段序由写序列 kernel 拥有（internal/writes，
-// ADR-0064——与 API 受理位 commit 同一序列真源）；本函数只做 engine
+// commitWrite 在调用方事务内落完一次写路径：检查 → 写 → 事实扇出，
+// 附加写步殿后逐段重放同一序列。事实扇出与双行配对由事实发射 kernel
+// 拥有（internal/writes，ADR-0064→收敛报告 §刀1）；本函数只做 engine
 // writeFact 归一化与 steps 编排（域差异段不入 kernel）。
 func (e *Engine) commitWrite(ctx context.Context, tx *sql.Tx, f writeFact) error {
-	if err := writes.Sequence(ctx, tx, e.outbox, e.audits,
-		e.writeKernelFact(f.checks, f.write, f.events, f.audits)); err != nil {
+	for _, check := range f.checks {
+		if err := check(ctx, tx); err != nil {
+			return err
+		}
+	}
+	if f.write != nil {
+		if err := f.write(ctx, tx); err != nil {
+			return err
+		}
+	}
+	if err := writes.Sequence(ctx, tx, e.factRepos(), e.writeKernelRows(ctx, f.events, f.audits)...); err != nil {
 		return err
 	}
 	for _, s := range f.steps {
-		if err := writes.Sequence(ctx, tx, e.outbox, e.audits,
-			e.writeKernelFact(nil, s.write, s.events, s.audits)); err != nil {
+		if s.write != nil {
+			if err := s.write(ctx, tx); err != nil {
+				return err
+			}
+		}
+		if err := writes.Sequence(ctx, tx, e.factRepos(), e.writeKernelRows(ctx, s.events, s.audits)...); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// writeKernelFact 把 engine 事件/审计事实组归一化为写序列 kernel 形态
-// （主序列与 writeStep 共用；审计铸型经 auditEntry 单源——actorCtx 取
-// 请求 ctx 的语义随组求值时点保持）。
-func (e *Engine) writeKernelFact(checks []func(context.Context, *sql.Tx) error,
-	write func(context.Context, *sql.Tx) error,
-	events []func() eventFact, audits []auditFact) writes.Fact {
-	f := writes.Fact{Checks: checks, Write: write}
+// factRepos 是 kernel 落库面的注入形态（engine 双 repo 句柄直装）。
+func (e *Engine) factRepos() writes.Repos {
+	return writes.Repos{Outbox: e.outbox, Audits: e.audits}
+}
+
+// writeKernelRows 把 engine 事件/审计事实组归一化为 kernel 单声明形态
+// （主序列与 writeStep 共用）。迁移注记：双段声明（events/audits 各自
+// 独立）是按域 A 化（ADR-0066 挂账）的收编对象——批二逐域并成默认
+// 双真单声明；当前机械映射为单行事实（事件 → StreamOnly、审计 →
+// LedgerOnly），落库序与既有 kernel 形态逐字节一致（事件行全先、审计
+// 行殿后）。
+func (e *Engine) writeKernelRows(ctx context.Context, events []func() eventFact, audits []auditFact) []func() writes.FactRow {
+	var rows []func() writes.FactRow
 	for _, ev := range events {
 		ev := ev
-		f.Events = append(f.Events, func() writes.Event {
+		rows = append(rows, func() writes.FactRow {
 			fact := ev()
-			return writes.Event{Name: fact.name, Aggregate: fact.aggregate, ID: fact.id, Payload: fact.payload, Team: fact.team}
+			return writes.FactRow{
+				Name: fact.name, Aggregate: fact.aggregate, ID: fact.id,
+				Payload: fact.payload, TeamID: fact.team,
+				StreamOnly: true, // 迁移面：取证孪生由 audits 段独立声明（A 化前形态）
+			}
 		})
 	}
 	for _, a := range audits {
 		a := a
-		f.Audits = append(f.Audits, func(ctx context.Context) []*audit.Entry {
-			return []*audit.Entry{e.auditEntry(ctx, a)}
+		rows = append(rows, func() writes.FactRow {
+			row := writes.FactRow{
+				Action: a.action, Resource: a.resource, AfterFP: a.afterFP,
+				LedgerOnly: true, // 迁移面：流面孪生由 events 段独立声明（A 化前形态）
+			}
+			if a.actorCtx {
+				// actor/source 取请求 ctx——用户动词路径（默认 SourceSystem
+				// 由 kernel 缺省铸型；求值时点随本闭包保持在扇出段）。
+				row.Actor, row.Source = authn.ActorFromContext(ctx), authn.SourceFromContext(ctx)
+			}
+			return row
 		})
 	}
-	return f
+	return rows
+}
+
+// emitObservation 是观测事实的 best-effort 发射面（kernel Emit 的便捷
+// 形态；非事务——无聚合写伴生，错误由调用方自记日志）。StreamOnly：
+// 观测事实只落流面（保留窗内），取证面不落——节点观测/漂移检测/平台
+// 备份节拍等自治观测动作无操作者动词可审计。team 是资源轴归属 Team
+// （"" = 平台级事件）。
+func (e *Engine) emitObservation(ctx context.Context, team, name, aggregate, id string, payload []byte) error {
+	return writes.Emit(ctx, e.db.Runner(), e.factRepos(), writes.FactRow{
+		Name: name, Aggregate: aggregate, ID: id,
+		Payload: payload, TeamID: team,
+		StreamOnly: true, // 观测事实：仅流面（best-effort，无事务伴生）
+	})
 }
 
 // ---- 类型化前门（保留原名原签名，调用点零改动） ----

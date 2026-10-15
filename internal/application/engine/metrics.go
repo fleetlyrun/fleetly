@@ -520,7 +520,7 @@ func (e *Engine) emitAlertEvent(ctx context.Context, name string, rule *alertrul
 		RuleID: rule.ID, AppID: rule.AppID, Metric: rule.Metric,
 		Threshold: rule.Threshold, Value: value, State: rule.State,
 	})
-	if _, err := e.outbox.Append(ctx, e.db.Runner(), e.eventTeamOfApp(ctx, e.db.Runner(), rule.AppID),
+	if err := e.emitObservation(ctx, e.eventTeamOfApp(ctx, e.db.Runner(), rule.AppID),
 		name, "app", rule.AppID, payload); err != nil {
 		e.log.Error("metrics step: emit event", "rule", rule.ID, "err", err)
 	}
@@ -533,7 +533,7 @@ func (e *Engine) emitSystemAlertEvent(ctx context.Context, name string) {
 		RuleID: systemOffsiteRuleID, Metric: "platform_offsite_backup",
 		State: name,
 	})
-	if _, err := e.outbox.Append(ctx, e.db.Runner(), "", name, "platform", "platform-backup", payload); err != nil {
+	if err := e.emitObservation(ctx, "", name, "platform", "platform-backup", payload); err != nil {
 		e.log.Error("metrics step: emit system event", "err", err)
 	}
 }
@@ -614,7 +614,7 @@ func (e *Engine) deliverOne(ctx context.Context, ch *channel.Channel, n alertNot
 		failure = err.Error()
 		if payload, merr := json.Marshal(alertChannelFailedPayload{ChannelID: ch.ID, Error: failure}); merr == nil {
 			// 通知通道是平台级资源（channel 行无 Team 轴）：team 留 '' = 全员可见。
-			if _, aerr := e.outbox.Append(ctx, e.db.Runner(), "", eventAlertChannelFail, "channel", ch.ID, payload); aerr != nil {
+			if aerr := e.emitObservation(ctx, "", eventAlertChannelFail, "channel", ch.ID, payload); aerr != nil {
 				e.log.Error("metrics step: emit channel failure", "channel", ch.ID, "err", aerr)
 			}
 		}

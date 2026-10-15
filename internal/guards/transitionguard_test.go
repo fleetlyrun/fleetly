@@ -56,7 +56,7 @@ type engineFuncFacts struct {
 	file     string // 仓库相对路径
 	transit  bool   // e.<repo>.Transit 直调
 	rowWrite bool   // e.<repo>.<行写方法>
-	factEmit bool   // outbox.Append / audits.Append
+	factEmit bool   // e.outbox.Append / e.audits.Append / writes.Emit / writes.Sequence
 }
 
 func scanEngineFuncs(t *testing.T) map[string]engineFuncFacts {
@@ -100,6 +100,20 @@ func scanEngineFuncs(t *testing.T) map[string]engineFuncFacts {
 						}
 					}
 					return true
+				}
+				// P2 刀 1 起事实发射收编进 writes kernel（writes.Emit /
+				// writes.Sequence——本体住 transition.go/acceptance.go；engine
+				// 侧便捷前门 emitObservation 一并入发射位匹配），守卫不因
+				// API 换形失明。
+				if sel.Sel.Name == "Emit" || sel.Sel.Name == "Sequence" {
+					if id, ok := sel.X.(*ast.Ident); ok && id.Name == "writes" {
+						facts.factEmit = true
+					}
+				}
+				if sel.Sel.Name == "emitObservation" {
+					if id, ok := sel.X.(*ast.Ident); ok && id.Name == "e" {
+						facts.factEmit = true
+					}
 				}
 				inner, ok := sel.X.(*ast.SelectorExpr)
 				if !ok {

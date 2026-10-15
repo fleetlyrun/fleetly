@@ -25,6 +25,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/role"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/token"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/user"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
@@ -337,7 +338,8 @@ func (a *Authenticator) narrowingErr(tok *token.Token, reason, detail string) er
 }
 
 // auditNarrowing 落"收窄生效"审计行（节流：同 Token 60s 一条——重试循环
-// 不刷屏；audit.Append 的 Team 轴由 ctx 注入，拦截器已带调用方 Team）。
+// 不刷屏；经事实发射 kernel 的 best-effort 面，audit Team 轴由 ctx 注入，
+// 拦截器已带调用方 Team）。
 func (a *Authenticator) auditNarrowing(ctx context.Context, tok *token.Token, reason string) {
 	now := time.Now()
 	a.lastMu.Lock()
@@ -347,14 +349,17 @@ func (a *Authenticator) auditNarrowing(ctx context.Context, tok *token.Token, re
 	}
 	a.lastNarrow[tok.ID] = now
 	a.lastMu.Unlock()
-	entry := &audit.Entry{
-		Actor:    "token:" + tok.Name,
-		Source:   SourceFromContext(ctx),
-		Action:   "token.narrowed_denied",
-		Resource: "token/" + tok.ID,
-		AfterFP:  reason,
-	}
-	if err := a.audits.Append(audit.WithTeam(ctx, tok.TeamID), a.db.Runner(), entry); err != nil {
+	// LedgerOnly：认证拒绝路径只有取证面——拒绝不是既成事实，无流面
+	// 事件可发（outbox 不触碰，Repos.Outbox 零值即不装配）。
+	err := writes.Emit(audit.WithTeam(ctx, tok.TeamID), a.db.Runner(), writes.Repos{Audits: a.audits}, writes.FactRow{
+		Aggregate: "token", ID: tok.ID,
+		Actor:      "token:" + tok.Name,
+		Source:     SourceFromContext(ctx),
+		Action:     "token.narrowed_denied",
+		AfterFP:    reason,
+		LedgerOnly: true, // 认证拒绝：仅取证面（无事件孪生）
+	})
+	if err != nil {
 		a.log.Warn("authn: narrowing audit append failed", "token", tok.Name, "err", err)
 	}
 }

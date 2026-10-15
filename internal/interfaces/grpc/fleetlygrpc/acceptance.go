@@ -2,12 +2,13 @@ package fleetlygrpc
 
 // 受理位（Acceptance，ADR-0024/F1.1 阶段 3）：api 层创建型/删除型写请求
 // 的受理判定面 + 统一写原语。此前四件一拍（聚合写 + Outbox 事件 + 审计）
-// 在 api 手写 29 处、受理守卫 7 族散落各 handler。段序与回滚的唯一拥有者
-// 是写序列 kernel（internal/writes，ADR-0064——与 engine 驱动域 commitWrite
-// 同一序列真源）；本文件是受理位的形态面：
+// 在 api 手写 29 处、受理守卫 7 族散落各 handler。事实双行落库的唯一
+// 拥有者是事实发射 kernel（internal/domain/services/writes，P2 刀 1）；
+// 本文件是受理位的形态面：
 //
-//   - commit 拥有受理位的写路径入口（受理检查 → 聚合写 → 事件 → 审计的
-//     段序由 kernel 执法）——新写面必须走本原语，手写 DB.Tx 编排在守卫
+//   - commit 拥有受理位的写路径入口（检查 → 聚合写 → 事实扇出：检查
+//     拒绝零副作用、任一段失败整单回滚；事实的双行配对与段间失败语义
+//     由 kernel 执法）——新写面必须走本原语，手写 DB.Tx 编排在守卫
 //     TestAcceptanceWritePathsGoThroughCommit / TestNoHandRolledTxChoreography
 //     反扫下红；
 //   - 受理检查全部事务内运行（所见即受理终局）：父资源存活、配额、删除
@@ -57,20 +58,36 @@ type writeFact struct {
 }
 
 // commit 在单个事务内落完一次写路径：受理检查先行（拒绝零副作用）、
-// 聚合写居中、事件与审计殿后。段序与段间失败语义由写序列 kernel 拥有
-// （internal/writes，ADR-0064）；本原语是受理位入口与 writeFact 形态面。
+// 聚合写居中、事实扇出殿后（双行配对与段间失败语义由事实发射 kernel
+// 拥有，internal/writes）；本原语是受理位入口与 writeFact 形态面。
 // 进事务前先补铸事件的资源轴 Team（P0-2）。
 func (s *Services) commit(ctx context.Context, fact writeFact) error {
 	s.resolveEventTeams(ctx, fact.events)
 	return s.DB.Tx(ctx, func(tx *sql.Tx) error {
-		return writes.Sequence(ctx, tx, s.OutboxEvents, s.Audits, s.writeKernelFact(fact))
+		for _, check := range fact.checks {
+			if err := check(ctx, tx); err != nil {
+				return err
+			}
+		}
+		if fact.write != nil {
+			if err := fact.write(ctx, tx); err != nil {
+				return err
+			}
+		}
+		return writes.Sequence(ctx, tx, s.factRepos(), s.writeFactRows(ctx, fact)...)
 	})
+}
+
+// factRepos 是 kernel 落库面的注入形态（Services 双 repo 句柄直装）。
+func (s *Services) factRepos() writes.Repos {
+	return writes.Repos{Outbox: s.OutboxEvents, Audits: s.Audits}
 }
 
 // resolveEventTeams 补铸事件的资源轴 Team（P0-2）：显式 team 优先；其余
 // 按 projectID 锚经 Project 行解析（行缺失/存储故障 → ” 平台级可见，
-// 不为归属解析新增失败面；全量补齐由 P2 事实 kernel 承载）。就地写切片
-// 元素——kernel 闭包按同一底层数组读取（writeKernelFact 注释同款契约）。
+// 不为归属解析新增失败面；全量补齐由按域 A 化承接）。就地写切片
+// 元素——后续归一化闭包按同一底层数组读取（writeFactRows 注释同款
+// 契约）。
 func (s *Services) resolveEventTeams(ctx context.Context, events []eventFact) {
 	for i := range events {
 		if events[i].team != "" || events[i].projectID == "" {
@@ -84,35 +101,48 @@ func (s *Services) resolveEventTeams(ctx context.Context, events []eventFact) {
 	}
 }
 
-// writeKernelFact 把受理位 writeFact 归一化为写序列 kernel 形态：事件闭包
-// 捕获现有可变 eventFact（withPayload 就地填充在追加时读取，语义逐字节
-// 保持）；audits/auditsFrom 并为审计组——write 段后求值语义不变（组在
-// kernel 事件段后求值，auditsFrom 依赖事务内写的返回行照旧）。
-func (s *Services) writeKernelFact(fact writeFact) writes.Fact {
-	checks := make([]func(context.Context, *sql.Tx) error, len(fact.checks))
-	for i, c := range fact.checks {
-		checks[i] = c
-	}
-	f := writes.Fact{Checks: checks, Write: fact.write}
+// writeFactRows 把受理位 writeFact 归一化为 kernel 单声明事实，在聚合
+// 写之后求值（调用点位于 commit 的写段之后）：事件段在前、审计段殿后
+// ——落库序与既有 kernel 形态逐字节一致。迁移注记：双段声明（events/
+// audits 各自独立、配对靠人肉——四族 CRUD 曾漏声明事件）是按域 A 化
+// （ADR-0066 挂账）的收编对象，批二逐域并成默认双真单声明；当前机械
+// 映射为单行事实，行为不变式（落库行集合逐字节等价）由此保持。
+func (s *Services) writeFactRows(ctx context.Context, fact writeFact) []func() writes.FactRow {
+	var rows []func() writes.FactRow
 	for i := range fact.events {
 		// 闭包读切片元素（底层数组与调用方共享）：write 段的就地填充
-		// （withPayload/直接赋值）在追加时可见。按值拷贝会让填充静默
+		//（withPayload/直接赋值）在求值时可见。按值拷贝会让填充静默
 		// 失效（事件落空 payload——本注释修订前正是这个形态）。
-		f.Events = append(f.Events, func() writes.Event {
+		rows = append(rows, func() writes.FactRow {
 			e := fact.events[i]
-			return writes.Event{Name: e.name, Aggregate: e.aggregate, ID: e.id, Payload: e.payload, Team: e.team}
+			return writes.FactRow{
+				Name: e.name, Aggregate: e.aggregate, ID: e.id,
+				Payload: e.payload, TeamID: e.team,
+				StreamOnly: true, // 迁移面：取证孪生由 audits 段独立声明（A 化前形态）
+			}
 		})
 	}
 	if len(fact.audits) > 0 || fact.auditsFrom != nil {
+		// 审计组在此（写段之后）一次求值摊平——组内 0/N 条各成一事实，
+		// 与既有 kernel 审计段的求值产物同集合同顺序。
 		audits, from := fact.audits, fact.auditsFrom
-		f.Audits = append(f.Audits, func(context.Context) []*audit.Entry {
-			if from == nil {
-				return audits
-			}
-			return append(append([]*audit.Entry(nil), audits...), from()...)
-		})
+		entries := audits
+		if from != nil {
+			entries = append(append([]*audit.Entry(nil), audits...), from()...)
+		}
+		for _, entry := range entries {
+			entry := entry
+			rows = append(rows, func() writes.FactRow {
+				return writes.FactRow{
+					Action: entry.Action, Resource: entry.Resource,
+					Actor: entry.Actor, Source: entry.Source, Detail: entry.Detail,
+					BeforeFP: entry.BeforeFP, AfterFP: entry.AfterFP,
+					LedgerOnly: true, // 迁移面：流面孪生由 events 段独立声明（A 化前形态）
+				}
+			})
+		}
 	}
-	return f
+	return rows
 }
 
 // ---- 受理检查族（可枚举面；守卫对账对象） ----

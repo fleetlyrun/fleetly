@@ -200,7 +200,7 @@ func (e *Engine) driveLeaseExpiry(ctx context.Context, t *task.Task, now time.Ti
 	}
 	if deadline := parseDeadline(t.LeaseDeadline); deadline != nil && now.After(deadline.Add(e.opts.TaskLeaseGrace)) {
 		e.drainTask(ctx, t, run.ReasonLeaseExpired)
-		if err := e.outboxAppend(ctx, e.eventTeamOfProject(ctx, e.db.Runner(), t.ProjectID),
+		if err := e.emitObservation(ctx, e.eventTeamOfProject(ctx, e.db.Runner(), t.ProjectID),
 			eventLeaseExpired, "task", t.ID,
 			leaseEventPayloadJSON(t, "lease deadline exceeded grace")); err != nil {
 			e.log.Error("task drive: lease.expired event", "task", t.ID, "err", err)
@@ -897,11 +897,4 @@ func loadTaskSpec(blob []byte) (*specv1.TaskSpec, error) {
 		return nil, fmt.Errorf("unmarshal task spec: %w", err)
 	}
 	return spec, nil
-}
-
-// outboxAppend 是事件落库的便捷面（返回错误供调用方日志）。team 是资源
-// 轴归属 Team（P0-2；” = 平台级事件）。
-func (e *Engine) outboxAppend(ctx context.Context, team, name, aggregate, id string, payload []byte) error {
-	_, err := e.outbox.Append(ctx, e.db.Runner(), team, name, aggregate, id, payload)
-	return err
 }

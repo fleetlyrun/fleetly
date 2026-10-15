@@ -61,17 +61,17 @@ func (e *Engine) platformBackupPass(ctx context.Context) {
 	if err := e.runPlatformBackup(execCtx, *cfg); err != nil {
 		e.log.Error("platform backup failed", "err", err)
 		// 平台级事件（platform 聚合无 Team 轴）：team 留 '' = 全员可见。
-		if _, aerr := e.outbox.Append(ctx, e.db.Runner(), "", eventPlatformBackupFail, "platform", "platform-backup",
-			platformBackupEventJSON("", err.Error())); aerr != nil {
-			e.log.Error("platform backup: emit event", "err", aerr)
+		if err := e.emitObservation(ctx, "", eventPlatformBackupFail, "platform", "platform-backup",
+			platformBackupEventJSON("", err.Error())); err != nil {
+			e.log.Error("platform backup: emit event", "err", err)
 		}
 		return
 	}
 	e.log.Info("platform backup completed", "retention", cfg.Retention.String())
 	// 平台级事件（platform 聚合无 Team 轴）：team 留 '' = 全员可见。
-	if _, aerr := e.outbox.Append(ctx, e.db.Runner(), "", eventPlatformBackupOK, "platform", "platform-backup",
-		platformBackupEventJSON(cfg.Retention.String(), "")); aerr != nil {
-		e.log.Error("platform backup: emit event", "err", aerr)
+	if err := e.emitObservation(ctx, "", eventPlatformBackupOK, "platform", "platform-backup",
+		platformBackupEventJSON(cfg.Retention.String(), "")); err != nil {
+		e.log.Error("platform backup: emit event", "err", err)
 	}
 }
 
@@ -503,7 +503,7 @@ func (e *Engine) restoreDatabase(ctx context.Context, db *database.Database) {
 		return
 	}
 	e.KickDatabases() // preseed 完成 → 立即收敛首启（装载预置数据）
-	if _, err := e.outbox.Append(ctx, e.db.Runner(), e.eventTeamOfProject(ctx, e.db.Runner(), db.ProjectID),
+	if err := e.emitObservation(ctx, e.eventTeamOfProject(ctx, e.db.Runner(), db.ProjectID),
 		eventDatabaseRestored, "database", db.ID,
 		databaseRestoredEventJSON(db, src)); err != nil {
 		e.log.Error("restore: emit event", "database", db.ID, "err", err)
@@ -587,7 +587,7 @@ func (e *Engine) prunePass(ctx context.Context) {
 }
 
 // emitBackupEvent 落备份事件（成功/失败统一形态）。资源轴 Team 经
-// Database → Project 链解析（行缺失/存储故障 → ”，P2 事实 kernel 补齐）。
+// Database → Project 链解析（行缺失/存储故障 → ”，按域 A 化补齐）。
 func (e *Engine) emitBackupEvent(ctx context.Context, name string, b *backup.Backup, errMsg string) {
 	team := ""
 	if db, err := e.databases.Get(ctx, e.db.Runner(), b.DatabaseID); err == nil {
@@ -595,7 +595,7 @@ func (e *Engine) emitBackupEvent(ctx context.Context, name string, b *backup.Bac
 	} else {
 		e.log.Warn("events: resolve database team", "database", b.DatabaseID, "err", err)
 	}
-	if _, err := e.outbox.Append(ctx, e.db.Runner(), team, name, "database", b.DatabaseID,
+	if err := e.emitObservation(ctx, team, name, "database", b.DatabaseID,
 		backupEventPayloadJSON(b, errMsg)); err != nil {
 		e.log.Error("backup: emit event", "backup", b.ID, "err", err)
 	}

@@ -234,9 +234,8 @@ func (e *Engine) handleNodeJoined(ctx context.Context, nj *capability.NodeJoined
 		return
 	}
 	// 平台级事件（node 聚合无 Team 轴）：team 留 '' = 全员可见。
-	_, err = e.outbox.Append(ctx, e.db.Runner(), "", eventNodeJoined, "node", nj.NodeID,
-		nodeJoinedPayloadJSON(nj.NodeID, nj.CarrierID, nj.Minted))
-	if err != nil {
+	if err := e.emitObservation(ctx, "", eventNodeJoined, "node", nj.NodeID,
+		nodeJoinedPayloadJSON(nj.NodeID, nj.CarrierID, nj.Minted)); err != nil {
 		e.log.Error("engine watch: node.joined event", "node", nj.NodeID, "err", err)
 	}
 }
@@ -280,10 +279,9 @@ func (e *Engine) detectDrift(ctx context.Context, ev capability.WorkloadEvent) {
 	e.drift.mu.Unlock()
 
 	// 平台级可见（P0-2）：载体归属域为 app/database/managed 三态，Team 轴
-	// 解析按域分叉——统一留 '' 待 P2 事实 kernel 按 owner 域全量补齐。
-	_, err := e.outbox.Append(ctx, e.db.Runner(), "", eventWorkloadDrift, "workload", ev.WorkloadID,
-		driftEventPayloadJSON(ev, owner, expected))
-	if err != nil {
+	// 解析按域分叉——统一留 ''，按域 A 化（ADR-0066 挂账）时按 owner 域补齐。
+	if err := e.emitObservation(ctx, "", eventWorkloadDrift, "workload", ev.WorkloadID,
+		driftEventPayloadJSON(ev, owner, expected)); err != nil {
 		e.log.Error("engine watch: drift event", "workload", ev.WorkloadID, "err", err)
 	}
 }
