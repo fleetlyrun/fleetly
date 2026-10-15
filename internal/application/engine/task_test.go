@@ -132,7 +132,7 @@ func TestTaskOneShotLifecycle(t *testing.T) {
 		eventNames(t, e, runs[0].ID))
 	assert.Contains(t, eventNames(t, e, taskID), "task.completed")
 	// 观测缓存回收（P1-7）。
-	_, cached := e.runObservation(runs[0].ID)
+	_, cached := e.task.observation(runs[0].ID)
 	assert.False(t, cached, "terminal run observation must be recycled")
 }
 

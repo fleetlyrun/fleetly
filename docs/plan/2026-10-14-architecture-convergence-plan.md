@@ -101,7 +101,7 @@ P2-4 守卫 — [x]（factappend 白名单 + factdual 双真纪律；红灯双�
 P3-0 守卫前置（transitionguard 接收者泛化 + 域 struct 禁回引 Engine）— [x]（红灯双证：复核者独立探针嵌入/匿名/多级链三形态四命中；现树三处回引 nsBatch/buildLogIngester/bufferWriter 入豁免带理由，随批 2/批 6 去除）
 P3-1 exec（P0-1 修复正式收编 + 会话 ID 随机化 + ADR-0070 修订 + 单测扩充）— [x]（execDomain→execs 收编 + execrelay.go 文件内聚，导出面零变化；会话 ID crypto 随机 exec-<32hex> 消枚举探面，golden 掩码同批；ADR-0070 增「适用范围」节 + 决策 3 表 exec session 出律；六项新单测 -race 绿）
 P3-2 observ（metrics 拆 exposition/alerting/channelnotify）— [x]（metricsDomain→metrics 改名，字段 metricsDom 零 churn 留批 8；729 行拆四：metrics 采集环/exposition 纯函数/alerting 评估发射/channelnotify 派发；14 函数搬移逐字核实，零接收者迁移——跨依赖编排留 *Engine）
-P3-3 task/run（动词拆 taskverbs）— [ ]
+P3-3 task/run（动词拆 taskverbs）— [x]（taskDomain→tasks 改名字段零 churn；task.go 908→576 拆出 taskverbs.go 动词面（五动词+配额单源+哨兵）；recycleObs/observation/drainObs 三纯状态机下放 *tasks；bluegreen 守卫 allowlist 随迁保鲜）
 P3-4 data — [ ]
 P3-5 managed — [ ]
 P3-6 build/material — [ ]

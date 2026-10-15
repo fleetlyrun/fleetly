@@ -39,7 +39,7 @@ func (e *Engine) handleRunObservation(ctx context.Context, runID string, ev capa
 		return // 行不在（删除收口后的迟到观测）：丢弃
 	}
 	if m.State.Terminal() {
-		e.recycleRunObs(runID) // 终态回收（迟到观测不重开状态机）
+		e.task.recycleObs(runID) // 终态回收（迟到观测不重开状态机）
 		return
 	}
 
@@ -54,14 +54,14 @@ func (e *Engine) handleRunObservation(ctx context.Context, runID string, ev capa
 			func(r *run.Run) { r.StopReason = run.ReasonCompleted; r.ExitCode = ev.ExitCode }); err != nil {
 			e.log.Error("run observe: completed", "run", runID, "err", err)
 		}
-		e.recycleRunObs(runID)
+		e.task.recycleObs(runID)
 	case ev.State == capability.WorkloadFailed && m.State.Active():
 		if err := e.transitRunFour(ctx, m,
 			run.ActiveStates, run.StateFailed,
 			func(r *run.Run) { r.StopReason = run.ReasonFailed; r.ExitCode = ev.ExitCode }); err != nil {
 			e.log.Error("run observe: failed", "run", runID, "err", err)
 		}
-		e.recycleRunObs(runID)
+		e.task.recycleObs(runID)
 	case ev.State == capability.WorkloadStopped && m.State == run.StateStopping:
 		// stopping 起因已在行上（stopRunRow 写入）；观测确认即终态。
 		if err := e.transitRunFour(ctx, m,
@@ -69,44 +69,44 @@ func (e *Engine) handleRunObservation(ctx context.Context, runID string, ev capa
 			func(r *run.Run) { r.ExitCode = ev.ExitCode }); err != nil {
 			e.log.Error("run observe: stopped", "run", runID, "err", err)
 		}
-		e.recycleRunObs(runID)
+		e.task.recycleObs(runID)
 	case ev.State == capability.WorkloadStopped && m.State.Active():
 		if err := e.transitRunFour(ctx, m,
 			run.ActiveStates, run.StateStopped,
 			func(r *run.Run) { r.StopReason = run.ReasonPlatformDrained; r.ExitCode = ev.ExitCode }); err != nil {
 			e.log.Error("run observe: platform drained", "run", runID, "err", err)
 		}
-		e.recycleRunObs(runID)
+		e.task.recycleObs(runID)
 	}
 	e.taskLoop.Kick()
 }
 
-// recycleRunObs 回收终态 Run 的观测缓存条目（P1-7：per-Run 终态回收随
+// recycleObs 回收终态 Run 的观测缓存条目（P1-7：per-Run 终态回收随
 // 裁决，不等 janitor 扫描；归属映射保留至 Task 收口——期间迟到观测按
 // 终态行幂等丢弃）。
-func (e *Engine) recycleRunObs(runID string) {
-	e.task.obsMu.Lock()
-	delete(e.task.runObs, runID)
-	e.task.obsMu.Unlock()
+func (x *tasks) recycleObs(runID string) {
+	x.obsMu.Lock()
+	delete(x.runObs, runID)
+	x.obsMu.Unlock()
 }
 
-// runObservation 返回 Run 的最新观测（诊断/测试面；不存在返回零值）。
-func (e *Engine) runObservation(runID string) (capability.WorkloadEvent, bool) {
-	e.task.obsMu.RLock()
-	defer e.task.obsMu.RUnlock()
-	ev, ok := e.task.runObs[runID]
+// observation 返回 Run 的最新观测（诊断/测试面；不存在返回零值）。
+func (x *tasks) observation(runID string) (capability.WorkloadEvent, bool) {
+	x.obsMu.RLock()
+	defer x.obsMu.RUnlock()
+	ev, ok := x.runObs[runID]
 	return ev, ok
 }
 
-// drainRunObsForTask 清理 Task 名下全部观测缓存（workloadRun 归属映射 +
+// drainObs 清理 Task 名下全部观测缓存（workloadRun 归属映射 +
 // runObs 观测槽；DeleteTask 消费——workload ID 即 run ID，一键双清）。
-func (e *Engine) drainRunObsForTask(taskID string) {
-	e.task.obsMu.Lock()
-	for wid, owner := range e.task.workloadRun {
+func (x *tasks) drainObs(taskID string) {
+	x.obsMu.Lock()
+	for wid, owner := range x.workloadRun {
 		if owner == taskID {
-			delete(e.task.workloadRun, wid)
-			delete(e.task.runObs, wid)
+			delete(x.workloadRun, wid)
+			delete(x.runObs, wid)
 		}
 	}
-	e.task.obsMu.Unlock()
+	x.obsMu.Unlock()
 }

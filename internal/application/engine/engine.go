@@ -230,10 +230,12 @@ func ParseScheduleOverlap(s string) (string, error) {
 // 族仍共用 Engine.ensureMu 单锁（五张 memo map 分住各域子结构）；观测/
 // 漂移/期望各域锁照旧。 ----
 
-// taskDomain 是 Task 域状态（行为 task.go/taskobs.go/taskview.go；P1-7
-// 缓存分家口径不变；per-Run 终态回收随 handleRunObservation——恢复真源
-// 是 Task/Run 行，不抄 rebuildBaselines）。
-type taskDomain struct {
+// tasks 是 Task 域状态（行为 task.go/taskverbs.go/taskobs.go/taskview.go；
+// P1-7 缓存分家口径不变；per-Run 终态回收随 handleRunObservation——恢复
+// 真源是 Task/Run 行，不抄 rebuildBaselines）。P3 批 3 收编：taskDomain →
+// tasks（复数普通名词零后缀，ADR-0075 命名法则）；Engine 字段名 task 保持
+// 不变（域字段壳收口留批 8）。
+type tasks struct {
 	obsMu       sync.RWMutex
 	workloadRun map[string]string                   // workloadID(=runID) → taskID（观测路由/归属）
 	runObs      map[string]capability.WorkloadEvent // runID → 最新观测
@@ -426,7 +428,7 @@ type Engine struct {
 	wg           sync.WaitGroup
 
 	// 域状态（各域行为文件就近消费；域类型注释见上）。
-	task      taskDomain
+	task      tasks
 	obs       observDomain
 	drift     driftDomain
 	expect    expectDomain
