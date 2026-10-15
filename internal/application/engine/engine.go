@@ -36,35 +36,9 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/volume"
 	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/alertrule"
 	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/channel"
+	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/logcursor"
 	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/outbox"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/github"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
-	alertrulerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/alertrule"
-	apprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/app"
-	auditrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/audit"
-	backuprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/backup"
-	browserepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/browse"
-	buildrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/build"
-	channelrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/channel"
-	cfgrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/config"
-	dbrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/database"
-	deploymentrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/deployment"
-	githubapprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/githubapp"
-	logcursorrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/logcursor"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
-	networkpeerrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/networkpeer"
-	noderepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/node"
-	outboxrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/outbox"
-	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
-	revisionrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/revision"
-	routerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/route"
-	runrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/run"
-	schedulerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/schedule"
-	secretrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/secret"
-	sourcerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/sourceupload"
-	taskrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/task"
-	tokenrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/token"
-	volumerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/volume"
 )
 
 // 哨兵错误（API 层映射 errcode；engine 自身不依赖 apperr）。
@@ -370,7 +344,7 @@ type ring struct {
 // Watch 消费。写路径全部四件一拍（CAS + Outbox + 审计；部署记录无
 // tombstone）；决策读平台权威表，观测缓存仅作信号（架构 §6）。
 type Engine struct {
-	db      *persistence.DB
+	db      state.DB
 	log     *slog.Logger
 	runtime capability.Runtime
 	clock   state.Clock
@@ -534,10 +508,71 @@ type Engine struct {
 	rotateMu sync.Mutex
 }
 
+// Repos 是引擎的聚合 repo 集（组合根构造注入——P1b C 批构造上提：engine
+// 包零持久化构造，repo 实现选择住 assembly；字段分组与 Engine 同名消费面
+// 对齐，时钟注入在组合根完成——各 repo 以同一 DB 时钟构造）。
+type Repos struct {
+	// 部署链主干（F0.x）：结构/交付聚合 + Outbox 事件 + 审计 + 节点。
+	Projects    project.Repo
+	Apps        app.Repo
+	Revisions   revision.Repo
+	Deployments deployment.Repo
+	Builds      build.Repo
+	Outbox      outbox.Repo
+	Nodes       node.Repo
+	Audits      audit.Repo
+
+	// Task 域（F1.5/F1.6）：聚合 repo 与属主 Token 行引用面（吊销排空
+	// 拉式扫描，P1-8）。
+	Tasks  task.Repo
+	Runs   run.Repo
+	Tokens token.Repo
+
+	// Schedule 域（F1.7）：到期拍环的消费面（fire 铸 one-shot Task）。
+	Schedules schedule.Repo
+
+	// 跨 Project peer 声明（F1.8，ADR-0013 附录 A）：批准态真源。
+	PeerDecls networkpeer.Repo
+
+	// 上传产物行（F1.10，ADR-0019 附录 A）：构建输入解析面。
+	Uploads sourceupload.Repo
+
+	// Database 域（F1.12，ADR-0029）：第三条部署轨的台账。
+	Databases database.Repo
+
+	// Browse 会话域（F3.6，ADR-0051）：回收台账 repo。
+	Browse browse.Repo
+
+	// Backup 域（F2.2，ADR-0039）：备份台账 repo。
+	Backups backup.Repo
+
+	// 日志采集游标（F2.4，ADR-0040）：域流对账锚。
+	LogCursors logcursor.Repo
+
+	// 告警面（F2.5，ADR-0041）：规则与通道。
+	AlertRules alertrule.Repo
+	Channels   channel.Repo
+
+	// Proxy 面（F0.15）：Route 全量发布真源。
+	Routes route.Repo
+
+	// 材料面（F0.17/18，ADR-0014）：Secret/Config/Volume/Network。
+	Secrets  secret.Repo
+	Configs  configrepo.Repo
+	Volumes  volume.Repo
+	Networks network.Repo
+
+	// GitHub App 接入材料（ADR-0073 阶段 B）。
+	GitHubApps githubapp.Repo
+}
+
 // Deps 是引擎依赖（装配注入；可选依赖为 nil 时对应能力停用并给出精确
 // 反馈，不静默）。
 type Deps struct {
-	DB          *persistence.DB
+	DB state.DB
+	// Repos 是聚合 repo 集（组合根构造注入；P1b C 批起构造上提 assembly，
+	// 本包不再引任何 persistence 子包）。
+	Repos       Repos
 	Runtime     capability.Runtime
 	Builders    map[string]capability.Builder // 可空/空 map：构建链停用（镜像直投不受影响；ADR-0032 spec 路由家族）
 	Proxy       capability.Proxy              // 可空：Route 发布与受管自宿停用
@@ -555,6 +590,7 @@ func New(deps Deps, opts Options) *Engine {
 	db := deps.DB
 	log := deps.Logger
 	clock := db.Clock()
+	repos := deps.Repos
 	e := &Engine{
 		builders:     deps.Builders,
 		proxy:        deps.Proxy,
@@ -570,23 +606,23 @@ func New(deps Deps, opts Options) *Engine {
 		log:          log,
 		clock:        clock,
 		opts:         opts,
-		projects:     projectrepo.New(clock),
-		apps:         apprepo.New(clock),
-		revisions:    revisionrepo.New(clock),
-		deployments:  deploymentrepo.New(clock),
-		builds:       buildrepo.New(clock),
-		outbox:       outboxrepo.New(clock),
-		nodes:        noderepo.New(clock),
-		audits:       auditrepo.New(clock),
-		tasks:        taskrepo.New(clock),
-		runs:         runrepo.New(clock),
-		tokens:       tokenrepo.New(clock),
-		schedules:    schedulerepo.New(clock),
-		peerDecls:    networkpeerrepo.New(clock),
-		uploads:      sourcerepo.New(clock),
-		browseRepo:   browserepo.New(clock),
-		databases:    dbrepo.New(clock),
-		backups:      backuprepo.New(clock),
+		projects:     repos.Projects,
+		apps:         repos.Apps,
+		revisions:    repos.Revisions,
+		deployments:  repos.Deployments,
+		builds:       repos.Builds,
+		outbox:       repos.Outbox,
+		nodes:        repos.Nodes,
+		audits:       repos.Audits,
+		tasks:        repos.Tasks,
+		runs:         repos.Runs,
+		tokens:       repos.Tokens,
+		schedules:    repos.Schedules,
+		peerDecls:    repos.PeerDecls,
+		uploads:      repos.Uploads,
+		browseRepo:   repos.Browse,
+		databases:    repos.Databases,
+		backups:      repos.Backups,
 		loop:         NewLoop("deployment", log),
 		buildLoop:    NewLoop("build", log),
 		managedLoop:  NewLoop("managed", log),
@@ -599,12 +635,12 @@ func New(deps Deps, opts Options) *Engine {
 		driftLoop:    NewLoop("drift", log),
 		browseLoop:   NewLoop("browse", log),
 		nodeLeftSeen: map[string]bool{},
-		routes:       routerepo.New(clock),
-		secrets:      secretrepo.New(clock),
-		configs:      cfgrepo.New(clock),
-		volumes:      volumerepo.New(clock),
-		networks:     networkrepo.New(clock),
-		ghApps:       githubapprepo.New(clock),
+		routes:       repos.Routes,
+		secrets:      repos.Secrets,
+		configs:      repos.Configs,
+		volumes:      repos.Volumes,
+		networks:     repos.Networks,
+		ghApps:       repos.GitHubApps,
 		ghClient:     github.NewClient(nil, nil),
 		buildOpts:    buildOptions{Concurrency: opts.BuildConcurrency, Timeout: opts.BuildTimeout},
 	}
@@ -612,12 +648,12 @@ func New(deps Deps, opts Options) *Engine {
 	e.build.inputs = make(map[string]capability.BuildRequest)
 	e.logpipe.streams = make(map[string]context.CancelFunc)
 	e.logpipe.batches = make(map[string]*nsBatch)
-	e.logpipe.cursors = logcursorrepo.New(clock)
+	e.logpipe.cursors = repos.LogCursors
 	e.metricsDom.above = make(map[string]time.Time)
 	e.metricsDom.lastCPU = make(map[string]cpuCounter)
 	e.metricsDom.cores = make(map[string]float64)
-	e.alertRules = alertrulerepo.New(clock)
-	e.channels = channelrepo.New(clock)
+	e.alertRules = repos.AlertRules
+	e.channels = repos.Channels
 	e.obs.init()
 	e.exec.init()
 	e.expect.expected = make(map[workloadOwner]uint64)

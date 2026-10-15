@@ -27,12 +27,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/user"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
-	auditrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/audit"
-	membershiprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/membership"
-	rolerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/role"
-	tokenrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/token"
-	userrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/user"
 )
 
 // HeaderClientSource 是 CLI 自标识头（值 "cli"）：审计来源 api/cli 区分的
@@ -89,7 +83,7 @@ func FromContext(ctx context.Context) (*Identity, bool) {
 
 // Authenticator 是拦截器依赖集（assembly 与 apitest 夹具共用构造）。
 type Authenticator struct {
-	db          *persistence.DB
+	db          state.DB
 	policy      *authz.PolicySet
 	log         *slog.Logger
 	roles       role.Repo
@@ -103,15 +97,26 @@ type Authenticator struct {
 	lastNarrow  map[string]time.Time
 }
 
-// NewAuthenticator 构造（vocab 是 scope 词表——assembly 单一源注入）。
-func NewAuthenticator(db *persistence.DB, policy *authz.PolicySet, vocab []string, log *slog.Logger) *Authenticator {
+// Repos 是身份执法面的聚合 repo 集（组合根构造注入——P1b C 批构造上提：
+// 本包零持久化构造；时钟注入在组合根完成）。
+type Repos struct {
+	Roles       role.Repo
+	Users       user.Repo
+	Tokens      token.Repo
+	Memberships membership.Repo
+	Audits      audit.Repo
+}
+
+// NewAuthenticator 构造（repos 由组合根注入；vocab 是 scope 词表——
+// assembly 单一源注入）。
+func NewAuthenticator(db state.DB, repos Repos, policy *authz.PolicySet, vocab []string, log *slog.Logger) *Authenticator {
 	return &Authenticator{
 		db: db, policy: policy, log: log,
-		roles:       rolerepo.New(db.Clock()),
-		users:       userrepo.New(db.Clock()),
-		tokens:      tokenrepo.New(db.Clock()),
-		memberships: membershiprepo.New(db.Clock()),
-		audits:      auditrepo.New(db.Clock()),
+		roles:       repos.Roles,
+		users:       repos.Users,
+		tokens:      repos.Tokens,
+		memberships: repos.Memberships,
+		audits:      repos.Audits,
 		vocab:       vocab, lastUsed: map[string]time.Time{}, lastNarrow: map[string]time.Time{},
 	}
 }

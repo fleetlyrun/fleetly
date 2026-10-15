@@ -14,19 +14,42 @@ import (
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
 	"github.com/fleetlyrun/fleetly/internal/domain/runtimeops/freeze"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/anchor"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/network"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/networkpeer"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
 	apprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/app"
+	buildrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/build"
+	databaserepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/database"
+	deploymentrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/deployment"
 	freezerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/freeze"
+	githubapprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/githubapp"
+	hookrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/hook"
 	networkrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
 	networkpeerrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/networkpeer"
 	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
+	routerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/route"
+	runrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/run"
+	schedulerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/schedule"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 	taskrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/task"
+	volumerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/volume"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/apperrstatus"
 )
+
+// testGuard 构造带真 repo 的执法器（hermetic 夹具可引 persistence——生产
+// 构造面在组合根，P1b C 批；freeze repo 与 anchor 归属解析图全量真件）。
+func testGuard(db state.DB, clock state.Clock) *FreezeGuard {
+	return NewFreezeGuard(db, freezerepo.New(clock), anchor.New(anchor.Repos{
+		Projects: projectrepo.New(clock), Apps: apprepo.New(clock), Tasks: taskrepo.New(clock),
+		Schedules: schedulerepo.New(clock), Networks: networkrepo.New(clock), Peers: networkpeerrepo.New(clock),
+		Hooks: hookrepo.New(clock), Routes: routerepo.New(clock), Databases: databaserepo.New(clock),
+		Volumes: volumerepo.New(clock), Runs: runrepo.New(clock), Deployments: deploymentrepo.New(clock),
+		Builds: buildrepo.New(clock), GitHubApps: githubapprepo.New(clock),
+	}), slog.New(slog.DiscardHandler))
+}
 
 // call 经拦截器跑一次 handler（fullMethod 决定执法面）。
 func call(t *testing.T, g *FreezeGuard, method string, req proto.Message) error {
@@ -81,7 +104,7 @@ func TestFreezeGuardTeamAxis(t *testing.T) {
 		ID: peerA, NetworkID: nidA, PeerProjectID: pidB, State: networkpeer.StatePending,
 	}))
 
-	g := NewFreezeGuard(db, slog.New(slog.DiscardHandler))
+	g := testGuard(db, clock)
 	const (
 		createApp  = "/fleetly.structure.v1.AppsService/CreateApp"
 		createProj = "/fleetly.structure.v1.ProjectsService/CreateProject"
@@ -114,8 +137,8 @@ func TestFreezeGuardTeamAxis(t *testing.T) {
 }
 
 func TestFreezeGuardPassThroughOnMissingRows(t *testing.T) {
-	db, _ := statetest.New(t)
-	g := NewFreezeGuard(db, slog.New(slog.DiscardHandler))
+	db, clock := statetest.New(t)
+	g := testGuard(db, clock)
 
 	// 行不存在（task/app/peer 未知）：放行交受理位拒绝；非封禁面动词放行。
 	require.NoError(t, call(t, g, "/fleetly.automation.v1.TasksService/ScaleTask",

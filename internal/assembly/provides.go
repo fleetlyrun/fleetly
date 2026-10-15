@@ -24,14 +24,50 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/buildinfo"
 	"github.com/fleetlyrun/fleetly/internal/config"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/sourceupload"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/anchor"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/github"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/keyring"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
+	alertrulerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/alertrule"
+	apprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/app"
+	appvariablerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/appvariable"
+	auditrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/audit"
+	backuprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/backup"
+	browserepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/browse"
+	buildrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/build"
+	catalogrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/catalog"
+	channelrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/channel"
+	cfgrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/config"
+	dbrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/database"
+	deploymentrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/deployment"
+	freezerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/freeze"
+	githubapprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/githubapp"
+	hookrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/hook"
+	idemrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/idempotency"
+	invitationrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/invitation"
+	logcursorrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/logcursor"
+	membershiprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/membership"
+	networkrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
+	networkpeerrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/networkpeer"
 	noderepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/node"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/outbox"
+	outbox "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/outbox"
+	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
+	revisionrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/revision"
+	rolerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/role"
+	routerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/route"
+	runrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/run"
+	schedulerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/schedule"
+	secretrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/secret"
+	sharedvariablerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/sharedvariable"
 	sourcerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/sourceupload"
+	taskrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/task"
+	teamrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/team"
+	tokenrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/token"
+	userrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/user"
+	volumerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/volume"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/upload"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/fleetlygrpc"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/systemgrpc"
@@ -47,6 +83,9 @@ var ProviderSet = wire.NewSet(
 	NewAppConfig,
 	NewPolicySet,
 	NewStateDB,
+	NewEngineRepos,
+	NewAuthnRepos,
+	NewSeedRepos,
 	NewAuthenticator,
 	NewRuntimeProvider,
 	NewBuilderProviders,
@@ -76,9 +115,89 @@ var ProviderSet = wire.NewSet(
 	NewPostStopHooks,
 )
 
+// NewEngineRepos 构造引擎的聚合 repo 集（P1b C 批构造上提：repo 实现选择
+// 集中组合根，engine 包零持久化构造；各 repo 以同一 DB 时钟构造）。
+func NewEngineRepos(db *persistence.DB) engine.Repos {
+	clock := db.Clock()
+	return engine.Repos{
+		Projects:    projectrepo.New(clock),
+		Apps:        apprepo.New(clock),
+		Revisions:   revisionrepo.New(clock),
+		Deployments: deploymentrepo.New(clock),
+		Builds:      buildrepo.New(clock),
+		Outbox:      outbox.New(clock),
+		Nodes:       noderepo.New(clock),
+		Audits:      auditrepo.New(clock),
+		Tasks:       taskrepo.New(clock),
+		Runs:        runrepo.New(clock),
+		Tokens:      tokenrepo.New(clock),
+		Schedules:   schedulerepo.New(clock),
+		PeerDecls:   networkpeerrepo.New(clock),
+		Uploads:     sourcerepo.New(clock),
+		Browse:      browserepo.New(clock),
+		Databases:   dbrepo.New(clock),
+		Backups:     backuprepo.New(clock),
+		LogCursors:  logcursorrepo.New(clock),
+		AlertRules:  alertrulerepo.New(clock),
+		Channels:    channelrepo.New(clock),
+		Routes:      routerepo.New(clock),
+		Secrets:     secretrepo.New(clock),
+		Configs:     cfgrepo.New(clock),
+		Volumes:     volumerepo.New(clock),
+		Networks:    networkrepo.New(clock),
+		GitHubApps:  githubapprepo.New(clock),
+	}
+}
+
+// NewAuthnRepos 构造身份执法面的 repo 集（P1b C 批构造上提）。
+func NewAuthnRepos(db *persistence.DB) authn.Repos {
+	clock := db.Clock()
+	return authn.Repos{
+		Roles:       rolerepo.New(clock),
+		Users:       userrepo.New(clock),
+		Tokens:      tokenrepo.New(clock),
+		Memberships: membershiprepo.New(clock),
+		Audits:      auditrepo.New(clock),
+	}
+}
+
+// NewSeedRepos 构造种子与 Bootstrap Token 首启面的 repo 集（P1b C 批
+// 构造上提）。
+func NewSeedRepos(db *persistence.DB) authn.SeedRepos {
+	clock := db.Clock()
+	return authn.SeedRepos{
+		Teams:  teamrepo.New(clock),
+		Roles:  rolerepo.New(clock),
+		Tokens: tokenrepo.New(clock),
+		Users:  userrepo.New(clock),
+	}
+}
+
+// NewAnchor 构造「聚合行 → Project → Team」归属解析图（freeze 与行级
+// 授权共用单源，架构评审第二轮候选 3；组装在组合根——anchor 零持久化
+// 依赖，P1b C 批构造上提）。
+func NewAnchor(clock state.Clock) *anchor.Anchor {
+	return anchor.New(anchor.Repos{
+		Projects:    projectrepo.New(clock),
+		Apps:        apprepo.New(clock),
+		Tasks:       taskrepo.New(clock),
+		Schedules:   schedulerepo.New(clock),
+		Networks:    networkrepo.New(clock),
+		Peers:       networkpeerrepo.New(clock),
+		Hooks:       hookrepo.New(clock),
+		Routes:      routerepo.New(clock),
+		Databases:   dbrepo.New(clock),
+		Volumes:     volumerepo.New(clock),
+		Runs:        runrepo.New(clock),
+		Deployments: deploymentrepo.New(clock),
+		Builds:      buildrepo.New(clock),
+		GitHubApps:  githubapprepo.New(clock),
+	})
+}
+
 // NewAuthenticator 构造身份执法器（authn 拦截器依赖集；词表单一源注入）。
-func NewAuthenticator(db *persistence.DB, policySet *authz.PolicySet, app lynx.App) *authn.Authenticator {
-	return authn.NewAuthenticator(db, policySet, ScopeResources(), app.Logger())
+func NewAuthenticator(db *persistence.DB, repos authn.Repos, policySet *authz.PolicySet, app lynx.App) *authn.Authenticator {
+	return authn.NewAuthenticator(db, repos, policySet, ScopeResources(), app.Logger())
 }
 
 // NewStateDB 打开数据根下的控制面库（WAL + goose 前滚迁移在 Open 内完成；
@@ -305,6 +424,7 @@ func objectStoreSelection(cfg *config.AppConfig) (string, context.Context) {
 // 继续透传 queue 容量/观察窗/构建并发）。
 func NewEngine(
 	db *persistence.DB,
+	repos engine.Repos,
 	rt capability.Runtime,
 	b map[string]capability.Builder,
 	proxy capability.Proxy,
@@ -320,7 +440,7 @@ func NewEngine(
 	// 节点平台 ID 铸造权归平台（ADR-0070）：Provider 经可选接口拿铸造闭包
 	// （providers 不 import state，装配期接线；未实现接口的 Provider 照旧）。
 	if m, ok := rt.(capability.NodeIDMinter); ok {
-		nodes := noderepo.New(db.Clock())
+		nodes := repos.Nodes
 		m.SetNodeIDMinter(func(ctx context.Context) (string, error) {
 			return nodes.MintPlatformID(ctx, db.Runner())
 		})
@@ -348,7 +468,7 @@ func NewEngine(
 		browseTLS = "none"
 	}
 	return engine.New(engine.Deps{
-		DB: db, Runtime: rt, Builders: b, Proxy: proxy, Registry: reg, Logging: logs,
+		DB: db, Repos: repos, Runtime: rt, Builders: b, Proxy: proxy, Registry: reg, Logging: logs,
 		Metrics: mtr, ObjectStore: store, Cipher: cipher, Logger: app.Logger(),
 	}, engine.Options{
 		DataRoot:        cfg.DataRoot(),
@@ -399,11 +519,83 @@ func gatewayPort(httpAddr string) string {
 	return port
 }
 
+// NewAPIDeps 构造六上下文 API 服务依赖集（P1b C 批构造上提：repo 构造
+// 与 anchor 组装集中组合根，fleetlygrpc 零持久化构造；生产 assembly 与
+// apitest 夹具共用本构造——测试面与生产面同源）。scope 词表单一源注入；
+// dataRoot 透传给上传产物 blob 面。
+func NewAPIDeps(db *persistence.DB, e *engine.Engine, cipher *material.Cipher, rt capability.Runtime, dataRoot string, vocab []string, log *slog.Logger) fleetlygrpc.Deps {
+	clock := db.Clock()
+	projects := projectrepo.New(clock)
+	apps := apprepo.New(clock)
+	tasks := taskrepo.New(clock)
+	schedules := schedulerepo.New(clock)
+	networks := networkrepo.New(clock)
+	peers := networkpeerrepo.New(clock)
+	routes := routerepo.New(clock)
+	volumes := volumerepo.New(clock)
+	runs := runrepo.New(clock)
+	deployments := deploymentrepo.New(clock)
+	builds := buildrepo.New(clock)
+	hooks := hookrepo.New(clock)
+	ghApps := githubapprepo.New(clock)
+	databases := dbrepo.New(clock)
+	return fleetlygrpc.Deps{
+		DB: db, Engine: e, Cipher: cipher, Runtime: rt,
+		Logging:     e.LoggingProvider(),
+		Metrics:     e.MetricsProvider(),
+		Vocab:       vocab,
+		Log:         log,
+		GitHub:      github.NewClient(nil, nil),
+		UploadStore: upload.NewStore(dataRoot, 0, 0),
+
+		Projects:        projects,
+		Apps:            apps,
+		Deployments:     deployments,
+		Revisions:       revisionrepo.New(clock),
+		Builds:          builds,
+		Tasks:           tasks,
+		Runs:            runs,
+		Schedules:       schedules,
+		OutboxEvents:    outbox.New(clock),
+		Secrets:         secretrepo.New(clock),
+		Configs:         cfgrepo.New(clock),
+		SharedVariables: sharedvariablerepo.New(clock),
+		AppVariables:    appvariablerepo.New(clock),
+		Volumes:         volumes,
+		Networks:        networks,
+		NetworkPeers:    peers,
+		Freezes:         freezerepo.New(clock),
+		Routes:          routes,
+		Nodes:           noderepo.New(clock),
+		Audits:          auditrepo.New(clock),
+		Users:           userrepo.New(clock),
+		Teams:           teamrepo.New(clock),
+		Roles:           rolerepo.New(clock),
+		Memberships:     membershiprepo.New(clock),
+		Tokens:          tokenrepo.New(clock),
+		Invitations:     invitationrepo.New(clock),
+		Hooks:           hooks,
+		GitHubApps:      ghApps,
+		Uploads:         sourcerepo.New(clock),
+		Databases:       databases,
+		Browse:          browserepo.New(clock),
+		Backups:         backuprepo.New(clock),
+		Catalog:         catalogrepo.New(clock),
+		// anchor 与 Services 字段共用同一批 repo 实例（构造期共享，与
+		// 构造上提前的 NewServices 形态一致）。
+		Anchor: anchor.New(anchor.Repos{
+			Projects: projects, Apps: apps, Tasks: tasks, Schedules: schedules,
+			Networks: networks, Peers: peers, Hooks: hooks, Routes: routes,
+			Databases: databases, Volumes: volumes, Runs: runs,
+			Deployments: deployments, Builds: builds, GitHubApps: ghApps,
+		}),
+	}
+}
+
 // NewAPIServices 构造六上下文 API 服务依赖集（scope 词表单一源注入；
-// dataRoot 透传给上传产物 blob 面；gateway 端口 = EnrollNode 的
-// RelayCommand 拼装锚，ADR-0049）。
+// gateway 端口 = EnrollNode 的 RelayCommand 拼装锚，ADR-0049）。
 func NewAPIServices(db *persistence.DB, e *engine.Engine, cipher *material.Cipher, rt capability.Runtime, cfg *config.AppConfig, app lynx.App) *fleetlygrpc.Services {
-	s := fleetlygrpc.NewServices(db, e, cipher, rt, cfg.DataRoot(), ScopeResources(), app.Logger())
+	s := fleetlygrpc.NewServices(NewAPIDeps(db, e, cipher, rt, cfg.DataRoot(), ScopeResources(), app.Logger()))
 	s.GatewayPort = gatewayPort(cfg.HTTPAddr())
 	// App 模板目录刷新源（F3.3，ADR-0050 决策 4：空 = 刷新停用，内嵌目录
 	// 即全部）。
@@ -420,7 +612,7 @@ func NewAPIServices(db *persistence.DB, e *engine.Engine, cipher *material.Ciphe
 
 // NewIdemEnforcer 构造通用幂等执法器（ADR-0024：拦截器 + janitor sweep 面）。
 func NewIdemEnforcer(db *persistence.DB, app lynx.App) *idem.Enforcer {
-	return idem.NewEnforcer(db, app.Logger())
+	return idem.NewEnforcer(db, idemrepo.New(db.Clock()), app.Logger())
 }
 
 // NewRateLimiter 构造创建速率限制器（ADR-0017 附录 A.2 缺省：60s 固定窗 /
@@ -431,9 +623,9 @@ func NewRateLimiter(db *persistence.DB) *governance.RateLimiter {
 }
 
 // NewFreezeGuard 构造变更冻结执法器（ADR-0017 附录 A.3：拦截器 + Team
-// 逐级回行解析）。
+// 逐级回行解析；repo 与归属解析图在组合根构造——P1b C 批构造上提）。
 func NewFreezeGuard(db *persistence.DB, app lynx.App) *governance.FreezeGuard {
-	return governance.NewFreezeGuard(db, app.Logger())
+	return governance.NewFreezeGuard(db, freezerepo.New(db.Clock()), NewAnchor(db.Clock()), app.Logger())
 }
 
 // retentionSweepInterval 是保留窗清扫节拍（幂等记录 24h/认领 90s、事件
@@ -605,9 +797,9 @@ func NewServiceFactories() []lynx.ServiceFactory { return nil }
 
 // NewPreStartHooks 启动前钩子（OnPreStart，先于监听）：identity 种子 +
 // Bootstrap Token 首启流（无用户时生成一次、journal 去重；F0.2/F0.6）。
-func NewPreStartHooks(db *persistence.DB, cfg *config.AppConfig, app lynx.App) boot.PreStartHooks {
+func NewPreStartHooks(db *persistence.DB, seedRepos authn.SeedRepos, cfg *config.AppConfig, app lynx.App) boot.PreStartHooks {
 	return boot.PreStartHooks{func(ctx context.Context) error {
-		_, err := authn.EnsureBootstrapToken(ctx, db, cfg.DataRoot(), ScopeResources(), app.Logger())
+		_, err := authn.EnsureBootstrapToken(ctx, db, seedRepos, cfg.DataRoot(), ScopeResources(), app.Logger())
 		return err
 	}}
 }

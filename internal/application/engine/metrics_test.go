@@ -70,7 +70,7 @@ machine_cpu_cores{} 2
 // 非 /docker/ 聚合行跳过、核数观测、率百分比换算。
 func TestParseCadvisor(t *testing.T) {
 	db, clock := statetest.New(t)
-	e := New(Deps{DB: db, Runtime: newFakeRuntime(), Logger: discardLogger()}, Options{DataRoot: t.TempDir()})
+	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: newFakeRuntime(), Logger: discardLogger()}, Options{DataRoot: t.TempDir()})
 	now := clock.Now()
 	// 首拍：建差分基面（cpu=100）。
 	s0, _ := e.parseCadvisor("01N1", []byte(cadvisorFixture(100, 1024)), now)
@@ -95,7 +95,7 @@ func TestParseCadvisor(t *testing.T) {
 // 金形态（指标名/标签集/行序）确定。
 func TestParseCadvisorWorkloadVocabulary(t *testing.T) {
 	db, clock := statetest.New(t)
-	e := New(Deps{DB: db, Runtime: newFakeRuntime(), Logger: discardLogger()}, Options{DataRoot: t.TempDir()})
+	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: newFakeRuntime(), Logger: discardLogger()}, Options{DataRoot: t.TempDir()})
 
 	// 首拍：memory 在场、cpu 两指标缺席（差分无基面——零值与缺席是两件事）。
 	_, vocab0 := e.parseCadvisor("01N1", []byte(cadvisorFixture(100, 1024)), clock.Now())
@@ -177,7 +177,7 @@ func TestEvaluateRulesStateMachine(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	e := New(Deps{DB: db, Runtime: newFakeRuntime(), Metrics: fm, Cipher: testCipher(t), Logger: discardLogger()},
+	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: newFakeRuntime(), Metrics: fm, Cipher: testCipher(t), Logger: discardLogger()},
 		Options{DataRoot: t.TempDir()})
 	ctx := context.Background()
 	require.NoError(t, seedProjectApp(t, clock, db))
@@ -226,7 +226,7 @@ func TestEvaluateRulesStateMachine(t *testing.T) {
 // TestEvaluateSystemRules 钉内置规则：s3 缺席 24h → firing；配置 s3 → 归位。
 func TestEvaluateSystemRules(t *testing.T) {
 	db, clock := statetest.New(t)
-	e := New(Deps{DB: db, Runtime: newFakeRuntime(), Logger: discardLogger()},
+	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: newFakeRuntime(), Logger: discardLogger()},
 		Options{DataRoot: t.TempDir(), PlatformBackup: &PlatformBackupConfig{Interval: time.Hour}})
 	ctx := context.Background()
 
@@ -246,7 +246,7 @@ func TestEvaluateSystemRules(t *testing.T) {
 func TestMetricsStepCadence(t *testing.T) {
 	db, clock := statetest.New(t)
 	fm := &fakeMetrics{}
-	e := New(Deps{DB: db, Runtime: newFakeRuntime(), Metrics: fm, Logger: discardLogger()},
+	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: newFakeRuntime(), Metrics: fm, Logger: discardLogger()},
 		Options{DataRoot: t.TempDir()})
 	e.metricsStep(context.Background())
 	n1 := len(fm.imports)

@@ -33,6 +33,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/services/anchor"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/appvariable"
 	configrepo "github.com/fleetlyrun/fleetly/internal/domain/structure/config"
@@ -45,46 +46,12 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/volume"
 	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/outbox"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/github"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
-	apprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/app"
-	appvariablerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/appvariable"
-	auditrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/audit"
-	backuprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/backup"
-	browserepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/browse"
-	buildrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/build"
-	catalogrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/catalog"
-	cfgrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/config"
-	dbrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/database"
-	deploymentrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/deployment"
-	freezerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/freeze"
-	githubapprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/githubapp"
-	hookrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/hook"
-	invitationrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/invitation"
-	membershiprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/membership"
-	networkrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
-	networkpeerrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/networkpeer"
-	noderepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/node"
-	outboxrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/outbox"
-	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
-	revisionrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/revision"
-	rolerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/role"
-	routerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/route"
-	runrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/run"
-	schedulerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/schedule"
-	secretrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/secret"
-	sharedvariablerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/sharedvariable"
-	sourcerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/sourceupload"
-	taskrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/task"
-	teamrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/team"
-	tokenrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/token"
-	userrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/user"
-	volumerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/volume"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/upload"
 )
 
 // Services 聚合全部 API 依赖（装配注入；Runtime 面收窄为 Enrollment 消费）。
 type Services struct {
-	DB      *persistence.DB
+	DB      state.DB
 	Engine  *engine.Engine
 	Cipher  *material.Cipher
 	Runtime capability.Runtime
@@ -186,90 +153,115 @@ type Services struct {
 	Log *slog.Logger
 }
 
-// NewServices 构造（repos 从 DB 时钟派生；vocab 是 scope 词表单一源；
-// dataRoot 是上传产物 blob 根；anchor 的 repo 集在此构造注入——组合根
-// 落位，anchor 零持久化依赖）。
-func NewServices(db *persistence.DB, e *engine.Engine, c *material.Cipher, rt capability.Runtime, dataRoot string, vocab []string, log *slog.Logger) *Services {
-	clock := db.Clock()
-	schedules := schedulerepo.New(clock)
-	freezes := freezerepo.New(clock)
-	nodes := noderepo.New(clock)
-	hooks := hookrepo.New(clock)
-	ghApps := githubapprepo.New(clock)
-	uploads := sourcerepo.New(clock)
-	databases := dbrepo.New(clock)
-	browseSessions := browserepo.New(clock)
-	backups := backuprepo.New(clock)
-	projects := projectrepo.New(clock)
-	apps := apprepo.New(clock)
-	tasks := taskrepo.New(clock)
-	networks := networkrepo.New(clock)
-	peers := networkpeerrepo.New(clock)
-	routes := routerepo.New(clock)
-	volumes := volumerepo.New(clock)
-	runs := runrepo.New(clock)
-	deployments := deploymentrepo.New(clock)
-	builds := buildrepo.New(clock)
+// Deps 是 Services 的装配依赖（组合根构造注入——P1b C 批构造上提：本包
+// 零持久化构造，repo 实现选择住 assembly；vocab 是 scope 词表单一源，
+// GitHub/UploadStore 是客户端注入面）。字段与 Services 同名消费面对齐。
+type Deps struct {
+	DB          state.DB
+	Engine      *engine.Engine
+	Cipher      *material.Cipher
+	Runtime     capability.Runtime
+	Logging     capability.Logging
+	Metrics     capability.Metrics
+	Vocab       []string
+	Log         *slog.Logger
+	GitHub      *github.Client
+	UploadStore *upload.Store
+
+	Projects     project.Repo
+	Apps         app.Repo
+	Deployments  deployment.Repo
+	Revisions    revision.Repo
+	Builds       build.Repo
+	Tasks        task.Repo
+	Runs         run.Repo
+	Schedules    schedule.Repo
+	OutboxEvents outbox.Repo
+	Secrets      secret.Repo
+	Configs      configrepo.Repo
+	// SharedVariables 是 SharedVariable 聚合 repo（F2.9，ADR-0043）。
+	SharedVariables sharedvariable.Repo
+	// AppVariables 是 AppVariable 聚合 repo（ADR-0072）。
+	AppVariables appvariable.Repo
+	Volumes      volume.Repo
+	Networks     network.Repo
+	NetworkPeers networkpeer.Repo
+	Freezes      freeze.Repo
+	Routes       route.Repo
+	Nodes        node.Repo
+	Audits       audit.Repo
+	Users        user.Repo
+	Teams        team.Repo
+	Roles        role.Repo
+	Memberships  membership.Repo
+	Tokens       token.Repo
+	Invitations  invitation.Repo
+	Hooks        hook.Repo
+	// GitHubApps 是 GitHub App 接入材料聚合 repo（ADR-0073 阶段 B）。
+	GitHubApps githubapp.Repo
+	// Uploads 是上传产物行 repo（ADR-0019 附录 A）。
+	Uploads sourceupload.Repo
+	// Databases 是 Database 聚合 repo（F1.12，ADR-0029）。
+	Databases database.Repo
+	// Browse 是 Browse 会话回收台账 repo（F3.6，ADR-0051）。
+	Browse browse.Repo
+	// Backups 是 Backup 台账 repo（F2.2，ADR-0039）。
+	Backups backup.Repo
+	// Catalog 是 App 模板目录快照 repo（F3.3，ADR-0050）。
+	Catalog catalog.Repo
+	// Anchor 是「聚合行 → Project → Team」归属解析图（freeze 与行级授权
+	// 共用单源；组装在组合根，anchor 零持久化依赖）。
+	Anchor *anchor.Anchor
+}
+
+// NewServices 构造（deps 全量由组合根注入——repo 构造与 anchor 组装上提
+// assembly，P1b C 批；eventTickets 以注入 DB 的时钟铸造）。
+func NewServices(deps Deps) *Services {
 	return &Services{
-		DB:              db,
-		Engine:          e,
-		Cipher:          c,
-		Runtime:         rt,
-		Logging:         e.LoggingProvider(),
-		Metrics:         e.MetricsProvider(),
-		Projects:        projects,
-		Apps:            apps,
-		Deployments:     deployments,
-		Revisions:       revisionrepo.New(clock),
-		Builds:          builds,
-		Tasks:           tasks,
-		Runs:            runs,
-		Schedules:       schedules,
-		OutboxEvents:    outboxrepo.New(clock),
-		Secrets:         secretrepo.New(clock),
-		Configs:         cfgrepo.New(clock),
-		SharedVariables: sharedvariablerepo.New(clock),
-		AppVariables:    appvariablerepo.New(clock),
-		Volumes:         volumes,
-		Networks:        networks,
-		NetworkPeers:    peers,
-		Freezes:         freezes,
-		Routes:          routes,
-		Nodes:           nodes,
-		Audits:          auditrepo.New(clock),
-		Users:           userrepo.New(clock),
-		Teams:           teamrepo.New(clock),
-		Roles:           rolerepo.New(clock),
-		Memberships:     membershiprepo.New(clock),
-		Tokens:          tokenrepo.New(clock),
-		Invitations:     invitationrepo.New(clock),
-		Hooks:           hooks,
-		GitHubApps:      ghApps,
-		GitHub:          github.NewClient(nil, nil),
-		Uploads:         uploads,
-		UploadStore:     upload.NewStore(dataRoot, 0, 0),
-		Databases:       databases,
-		Browse:          browseSessions,
-		Backups:         backups,
-		Catalog:         catalogrepo.New(clock),
-		Anchor: anchor.New(anchor.Repos{
-			Projects:    projects,
-			Apps:        apps,
-			Tasks:       tasks,
-			Schedules:   schedules,
-			Networks:    networks,
-			Peers:       peers,
-			Hooks:       hooks,
-			Routes:      routes,
-			Databases:   databases,
-			Volumes:     volumes,
-			Runs:        runs,
-			Deployments: deployments,
-			Builds:      builds,
-			GitHubApps:  ghApps,
-		}),
-		eventTickets:    newEventTicketStore(clock),
-		ScopeVocabulary: vocab,
-		Log:             log,
+		DB:              deps.DB,
+		Engine:          deps.Engine,
+		Cipher:          deps.Cipher,
+		Runtime:         deps.Runtime,
+		Logging:         deps.Logging,
+		Metrics:         deps.Metrics,
+		Projects:        deps.Projects,
+		Apps:            deps.Apps,
+		Deployments:     deps.Deployments,
+		Revisions:       deps.Revisions,
+		Builds:          deps.Builds,
+		Tasks:           deps.Tasks,
+		Runs:            deps.Runs,
+		Schedules:       deps.Schedules,
+		OutboxEvents:    deps.OutboxEvents,
+		Secrets:         deps.Secrets,
+		Configs:         deps.Configs,
+		SharedVariables: deps.SharedVariables,
+		AppVariables:    deps.AppVariables,
+		Volumes:         deps.Volumes,
+		Networks:        deps.Networks,
+		NetworkPeers:    deps.NetworkPeers,
+		Freezes:         deps.Freezes,
+		Routes:          deps.Routes,
+		Nodes:           deps.Nodes,
+		Audits:          deps.Audits,
+		Users:           deps.Users,
+		Teams:           deps.Teams,
+		Roles:           deps.Roles,
+		Memberships:     deps.Memberships,
+		Tokens:          deps.Tokens,
+		Invitations:     deps.Invitations,
+		Hooks:           deps.Hooks,
+		GitHubApps:      deps.GitHubApps,
+		GitHub:          deps.GitHub,
+		Uploads:         deps.Uploads,
+		UploadStore:     deps.UploadStore,
+		Databases:       deps.Databases,
+		Browse:          deps.Browse,
+		Backups:         deps.Backups,
+		Catalog:         deps.Catalog,
+		Anchor:          deps.Anchor,
+		eventTickets:    newEventTicketStore(deps.DB.Clock()),
+		ScopeVocabulary: deps.Vocab,
+		Log:             deps.Log,
 	}
 }

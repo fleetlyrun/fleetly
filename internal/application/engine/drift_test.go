@@ -122,7 +122,7 @@ func TestStartupBaselineReplayRebuildsDriftCache(t *testing.T) {
 	driftDeployToSucceeded(t, e, rt, clock, rev)
 
 	// "重启"：新引擎实例（内存缓存清空），同库同 runtime。
-	e2 := New(Deps{DB: e.db, Runtime: rt, Logger: e.log}, Options{})
+	e2 := New(Deps{DB: e.db, Repos: testRepos(e.db), Runtime: rt, Logger: e.log}, Options{})
 	e2.rebuildBaselines(context.Background())
 
 	calls := rt.calls()

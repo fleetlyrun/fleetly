@@ -47,6 +47,7 @@ func TestRestartComponentRoutesByProviderName(t *testing.T) {
 	db, _ := statetest.New(t)
 	e := New(Deps{
 		DB:      db,
+		Repos:   testRepos(db),
 		Runtime: rt,
 		Metrics: &managedFake{fakeMetrics: &fakeMetrics{}, name: "victoriametrics",
 			namespace: capability.NamespaceRef{Team: "fleetly", Project: "system", App: "metrics"},
@@ -64,6 +65,7 @@ func TestRestartComponentUnknownAndUnsupported(t *testing.T) {
 	db, _ := statetest.New(t)
 	e := New(Deps{
 		DB:      db,
+		Repos:   testRepos(db),
 		Runtime: newFakeRuntime(),
 		// 在册但不声明受管部署形态（无载体可重启）。
 		Metrics: &unmanagedNamedFake{fakeMetrics: &fakeMetrics{}, name: "victoriametrics"},
@@ -96,6 +98,7 @@ func TestRestartComponentRequiresRuntimeSubface(t *testing.T) {
 	db, _ := statetest.New(t)
 	e := New(Deps{
 		DB:      db,
+		Repos:   testRepos(db),
 		Runtime: newFakeRuntime(),
 		Metrics: &managedFake{fakeMetrics: &fakeMetrics{}, name: "victoriametrics", workloads: []capability.Workload{{ID: "vm"}}},
 		Logger:  discardLogger(),

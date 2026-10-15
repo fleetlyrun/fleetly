@@ -46,3 +46,29 @@ type Runner interface {
 	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
+
+// DB 是控制面库的消费侧契约（ADR-0075 P1b 消费侧窄面）：application/
+// interfaces 生产面只依赖本接口；打开/迁移/关闭等机械住在 infrastructure/
+// persistence（生产实现 *persistence.DB，装配于组合根）。方法面是生产消费
+// 实测清单，不臆造扩面：Runner/Clock/Tx/NextSeq/VacuumInto；Close 只被
+// 组合根（wire cleanup）与离线 admin 面消费，留机械面不入契约。
+type DB interface {
+	// Clock 返回注入的时钟（repo 构造的时间接缝）。
+	Clock() Clock
+	// Runner 暴露独立执行面（聚合 repo 的非事务形态；*sql.DB 满足
+	// Runner，不新增查询语义）。
+	Runner() Runner
+	// Tx 在单个写事务内执行 fn：四件一拍的组合点。fn 收到的 *sql.Tx 满足
+	// Runner，聚合 repo 的事务形态据此完成 CAS + Outbox + 审计
+	// (+tombstone)；返回 fn 的错误时自动回滚。
+	Tx(ctx context.Context, fn func(tx *sql.Tx) error) error
+	// NextSeq 铸表的下一创建序号（ADR-0070 单源语义：seq 是创建序唯一
+	// 真源，兼任可读 id 后缀——id = <name>-<seq>；事务内 MAX+1 读-改-写，
+	// UNIQUE(seq) 索引使违规双铸 fail-closed）。table 由各 repo 以字面量
+	// 传入（非用户输入，无注入面）。
+	NextSeq(ctx context.Context, run Runner, table string) (int64, error)
+	// VacuumInto 铸在线一致快照到 target（Platform Backup 的 SQLite 面，
+	// ADR-0039：VACUUM INTO 不阻塞并发写、产出独立完整库文件；target 已
+	// 存在时报错，调用方先清）。
+	VacuumInto(ctx context.Context, target string) error
+}

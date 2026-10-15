@@ -10,7 +10,6 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
 // SubmitRequest 是 admission 输入（Revision 已由 API 层冻结；engine 只接
@@ -166,7 +165,7 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 		if err != nil {
 			return err
 		}
-		dseq, err := persistence.NextSeq(ctx, tx, "deployments")
+		dseq, err := e.db.NextSeq(ctx, tx, "deployments")
 		if err != nil {
 			return err
 		}

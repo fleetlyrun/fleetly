@@ -63,7 +63,7 @@ func newProjectFakeRegistry() *projectFakeRegistry {
 func TestManagedHostCredentialPerProject(t *testing.T) {
 	db, clock := statertest.New(t)
 	reg := newProjectFakeRegistry()
-	e := New(Deps{DB: db, Runtime: newFakeRuntime(), Registry: reg, Logger: discardLogger()}, Options{})
+	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: newFakeRuntime(), Registry: reg, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
 	require.NoError(t, projectrepo.New(clock).Create(ctx, db.Runner(), &project.Project{ID: tProjectID, Name: "shop", TeamID: "default"}))
 
@@ -125,7 +125,7 @@ func TestReconcileManagedFeedsActiveProjects(t *testing.T) {
 	db, clock := statertest.New(t)
 	rt := newFakeRuntime()
 	reg := newProjectFakeRegistry()
-	e := New(Deps{DB: db, Runtime: rt, Proxy: &fakeProxy{}, Registry: reg, Logger: discardLogger()}, Options{})
+	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Proxy: &fakeProxy{}, Registry: reg, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
 	require.NoError(t, projectrepo.New(clock).Create(ctx, db.Runner(), &project.Project{ID: tProjectID2, Name: "b", TeamID: "default"}))
 	require.NoError(t, projectrepo.New(clock).Create(ctx, db.Runner(), &project.Project{ID: tProjectID, Name: "a", TeamID: "default"}))
@@ -162,7 +162,7 @@ func TestReconcileManagedFeedsActiveProjects(t *testing.T) {
 // 集序契约（activeProjectIDs）：多 Project 排序稳定（材料字节稳定的输入面）。
 func TestActiveProjectIDsSorted(t *testing.T) {
 	db, clock := statertest.New(t)
-	e := New(Deps{DB: db, Runtime: newFakeRuntime(), Registry: newFakeRegistry(), Logger: discardLogger()}, Options{})
+	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: newFakeRuntime(), Registry: newFakeRegistry(), Logger: discardLogger()}, Options{})
 	ctx := context.Background()
 	for _, id := range []string{tProjectID2, "01JD0PROJ00000000000000003", tProjectID} {
 		require.NoError(t, projectrepo.New(clock).Create(ctx, db.Runner(), &project.Project{ID: id, Name: "p-" + id, TeamID: "default"}))

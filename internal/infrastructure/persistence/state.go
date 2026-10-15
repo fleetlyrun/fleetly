@@ -65,7 +65,8 @@ func MapScanErr(err error) error {
 // NextSeq 铸表的下一创建序号（ADR-0070：seq 是创建序唯一真源，兼任可读
 // id 后缀）。连接池收口为 1（见 Open），事务内 MAX+1 读-改-写天然串行；
 // UNIQUE(seq) 索引使违规双铸 fail-closed。table 由各 repo 以字面量传入
-// （非用户输入，无注入面）。
+// （非用户输入，无注入面）。包内聚合 repo 共用本包函数；消费侧经
+// (*DB).NextSeq 契约方法（state.DB 接口面），语义同一实现。
 func NextSeq(ctx context.Context, run state.Runner, table string) (int64, error) {
 	var max sql.NullInt64
 	if err := run.QueryRowContext(ctx, "SELECT MAX(seq) FROM "+table).Scan(&max); err != nil {
@@ -74,11 +75,16 @@ func NextSeq(ctx context.Context, run state.Runner, table string) (int64, error)
 	return max.Int64 + 1, nil
 }
 
-// DB 是打开的数据库句柄。非门面：不暴露任何聚合查询。
+// DB 是打开的数据库句柄。非门面：不暴露任何聚合查询。实现 state.DB 消费
+// 侧契约（ADR-0075 P1b：application/interfaces 生产面经接口消费，本类型
+// 只在组合根与离线 admin 面以具体形态出现）。
 type DB struct {
 	db    *sql.DB
 	clock state.Clock
 }
+
+// 编译期断言：*DB 满足 state.DB 契约面（方法集漂移即编译红）。
+var _ state.DB = (*DB)(nil)
 
 // Open 打开（或创建）path 处的 SQLite 库：WAL + busy timeout + 外键 +
 // NORMAL 同步（WAL 推荐档），随后执行 goose 前滚迁移。
@@ -130,6 +136,12 @@ func (d *DB) VacuumInto(ctx context.Context, target string) error {
 		return fmt.Errorf("state: vacuum into %s: %w", target, err)
 	}
 	return nil
+}
+
+// NextSeq 是消费侧契约方法（state.DB 接口面；ADR-0070 单源语义注记在
+// 契约处）：委托包函数，persistence 内部聚合 repo 仍共用包函数形态。
+func (d *DB) NextSeq(ctx context.Context, run state.Runner, table string) (int64, error) {
+	return NextSeq(ctx, run, table)
 }
 
 // migrate 执行 goose 前滚（只加法；失败=恢复 Platform Backup 重放，

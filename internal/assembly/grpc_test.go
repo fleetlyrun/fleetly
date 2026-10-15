@@ -30,6 +30,8 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/application/idem"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
+	freezerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/freeze"
+	idemrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/idempotency"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statertest"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/apperrstatus"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/fleetlygrpc"
@@ -59,10 +61,10 @@ func TestNewInterceptorsBoundsUnaryHandler(t *testing.T) {
 	policySet, err := NewPolicySet()
 	require.NoError(t, err)
 	unary, stream, err := NewInterceptors(slog.New(slog.DiscardHandler), policySet,
-		authn.NewAuthenticator(db, policySet, ScopeResources(), slog.New(slog.DiscardHandler)),
-		idem.NewEnforcer(db, slog.New(slog.DiscardHandler)),
+		authn.NewAuthenticator(db, NewAuthnRepos(db), policySet, ScopeResources(), slog.New(slog.DiscardHandler)),
+		idem.NewEnforcer(db, idemrepo.New(db.Clock()), slog.New(slog.DiscardHandler)),
 		governance.NewRateLimiter(db.Clock(), 0, 0),
-		governance.NewFreezeGuard(db, slog.New(slog.DiscardHandler)))
+		governance.NewFreezeGuard(db, freezerepo.New(db.Clock()), NewAnchor(db.Clock()), slog.New(slog.DiscardHandler)))
 	require.NoError(t, err)
 	require.NotEmpty(t, unary)
 	require.NotEmpty(t, stream)
@@ -93,10 +95,10 @@ func TestNewInterceptorsSanitizeAtChainHead(t *testing.T) {
 	var logBuf lockedBuffer
 	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
 	unary, _, err := NewInterceptors(logger, policySet,
-		authn.NewAuthenticator(db, policySet, ScopeResources(), slog.New(slog.DiscardHandler)),
-		idem.NewEnforcer(db, slog.New(slog.DiscardHandler)),
+		authn.NewAuthenticator(db, NewAuthnRepos(db), policySet, ScopeResources(), slog.New(slog.DiscardHandler)),
+		idem.NewEnforcer(db, idemrepo.New(db.Clock()), slog.New(slog.DiscardHandler)),
 		governance.NewRateLimiter(db.Clock(), 0, 0),
-		governance.NewFreezeGuard(db, slog.New(slog.DiscardHandler)))
+		governance.NewFreezeGuard(db, freezerepo.New(db.Clock()), NewAnchor(db.Clock()), slog.New(slog.DiscardHandler)))
 	require.NoError(t, err)
 	require.NotEmpty(t, unary)
 

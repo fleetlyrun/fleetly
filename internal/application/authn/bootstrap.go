@@ -17,9 +17,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/token"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
-	tokenrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/token"
-	userrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/user"
 )
 
 const (
@@ -38,14 +35,14 @@ type BootstrapResult struct {
 }
 
 // EnsureBootstrapToken 幂等执行首启流：种子 → 在册检查 → journal 检查 →
-// 生成（库 + 文件 + journal 同批落）。resources 是 scope 词表（assembly
-// 单一源注入——本包不复制词表）。
-func EnsureBootstrapToken(ctx context.Context, db *persistence.DB, dataRoot string, resources []string, log *slog.Logger) (BootstrapResult, error) {
-	if err := EnsureSeed(ctx, db, resources); err != nil {
+// 生成（库 + 文件 + journal 同批落）。repos 由组合根注入；resources 是
+// scope 词表（assembly 单一源注入——本包不复制词表）。
+func EnsureBootstrapToken(ctx context.Context, db state.DB, repos SeedRepos, dataRoot string, resources []string, log *slog.Logger) (BootstrapResult, error) {
+	if err := EnsureSeed(ctx, db, repos, resources); err != nil {
 		return BootstrapResult{}, fmt.Errorf("authn: seed: %w", err)
 	}
-	tokens := tokenrepo.New(db.Clock())
-	users := userrepo.New(db.Clock())
+	tokens := repos.Tokens
+	users := repos.Users
 
 	alive, err := tokens.HasAliveBootstrap(ctx, db.Runner())
 	if err != nil {

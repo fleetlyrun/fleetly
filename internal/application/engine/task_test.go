@@ -729,7 +729,7 @@ func TestScaleTaskDrainingRejected(t *testing.T) {
 func TestSweepRevokedOwnersStorageFaultContinues(t *testing.T) {
 	var logs bytes.Buffer
 	db, _ := statetest.New(t)
-	e := New(Deps{DB: db, Runtime: newFakeRuntime(), Logger: slog.New(slog.NewTextHandler(&logs, nil))}, Options{})
+	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: newFakeRuntime(), Logger: slog.New(slog.NewTextHandler(&logs, nil))}, Options{})
 	t.Cleanup(func() { _ = e.Stop(context.Background()) })
 	ctx := context.Background()
 

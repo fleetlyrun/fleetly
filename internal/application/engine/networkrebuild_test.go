@@ -64,7 +64,7 @@ func TestRebuildNetworkAttributionAxes(t *testing.T) {
 	db, clock := statertest.New(t)
 	rt := newFakeRuntime()
 	// 受管 reconciler 在册（fakeRegistry 的命名空间 = fleetly/system）。
-	e := New(Deps{DB: db, Runtime: rt, Registry: newFakeRegistry(), Logger: discardLogger()}, Options{})
+	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Registry: newFakeRegistry(), Logger: discardLogger()}, Options{})
 	t.Cleanup(func() { _ = e.Stop(context.Background()) })
 	require.NoError(t, projectrepo.New(clock).Create(context.Background(), db.Runner(), &project.Project{
 		ID: tProjectID, Name: "shop", TeamID: "default",
@@ -296,7 +296,7 @@ func TestRebuildNetworkSerializesWithDatabaseTeardown(t *testing.T) {
 func TestRebuildNetworkRollbackReattachesDetachedCarriers(t *testing.T) {
 	db, clock := statertest.New(t)
 	rt := newFakeRuntime()
-	e := New(Deps{DB: db, Runtime: rt, Registry: newFakeRegistry(), Logger: discardLogger()}, Options{})
+	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Registry: newFakeRegistry(), Logger: discardLogger()}, Options{})
 	t.Cleanup(func() { _ = e.Stop(context.Background()) })
 	require.NoError(t, projectrepo.New(clock).Create(context.Background(), db.Runner(), &project.Project{
 		ID: tProjectID, Name: "shop", TeamID: "default",

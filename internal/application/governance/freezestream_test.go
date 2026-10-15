@@ -7,7 +7,6 @@ package governance
 import (
 	"context"
 	"io"
-	"log/slog"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -76,7 +75,7 @@ func TestFreezeStreamFirstFrameEnforcement(t *testing.T) {
 	const pidA = "01JD0PROJA0000000000000000"
 	require.NoError(t, projectrepo.New(clock).Create(ctx, run, &project.Project{ID: pidA, TeamID: tTeamA, Name: "alpha"}))
 	freezes := freezerepo.New(clock)
-	g := NewFreezeGuard(db, slog.New(slog.DiscardHandler))
+	g := testGuard(db, clock)
 
 	const uploadMethod = "/fleetly.delivery.v1.BuildsService/UploadSource"
 	meta := func(pid string) *deliveryv1.UploadSourceRequest {

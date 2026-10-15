@@ -86,7 +86,7 @@ func TestScenario1KilledMidReleaseReplay(t *testing.T) {
 
 	// "被杀"：引擎停止（观测/Ensure 缓存清空语义）→ 新实例恢复。
 	require.NoError(t, e.Stop(context.Background()))
-	e2 := New(Deps{DB: e.db, Runtime: rt, Logger: e.log}, Options{})
+	e2 := New(Deps{DB: e.db, Repos: testRepos(e.db), Runtime: rt, Logger: e.log}, Options{})
 	e2.step(ctx) // 幂等重放同 Generation
 	e2.handleObservation(ctx, workloadEventRunning(tAppID+"-web", d.Generation))
 	e2.step(ctx)

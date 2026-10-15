@@ -39,7 +39,7 @@ func newBrowseFixture(t *testing.T, engineName, connectURL string, readOnly bool
 	rt := newFakeRuntime()
 	cipher, err := keyring.LoadCipher(t.TempDir())
 	require.NoError(t, err)
-	e := New(Deps{DB: db, Runtime: rt, Cipher: cipher, Logger: discardLogger()}, Options{
+	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Cipher: cipher, Logger: discardLogger()}, Options{
 		Browse: BrowseConfig{
 			HostSuffix: "browse.test", GatewayURL: "http://127.0.0.1:9081", TLSMode: "none",
 		},

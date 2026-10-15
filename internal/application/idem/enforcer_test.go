@@ -59,7 +59,7 @@ func codeOf(t *testing.T, err error) string {
 // 同键同体重放返回同一响应，handler 只执行一次。
 func TestReplaySameBodyReturnsSameResponse(t *testing.T) {
 	db, _ := statertest.New(t)
-	e := NewEnforcer(db, slog.New(slog.DiscardHandler))
+	e := NewEnforcer(db, idemrepo.New(db.Clock()), slog.New(slog.DiscardHandler))
 	count := 0
 	handler := func(context.Context, any) (any, error) {
 		count++
@@ -76,7 +76,7 @@ func TestReplaySameBodyReturnsSameResponse(t *testing.T) {
 // 同键异体 → E_IDEMPOTENCY_KEY_CONFLICT。
 func TestConflictDifferentBody(t *testing.T) {
 	db, _ := statertest.New(t)
-	e := NewEnforcer(db, slog.New(slog.DiscardHandler))
+	e := NewEnforcer(db, idemrepo.New(db.Clock()), slog.New(slog.DiscardHandler))
 	count := 0
 	handler := func(context.Context, any) (any, error) {
 		count++
@@ -93,7 +93,7 @@ func TestConflictDifferentBody(t *testing.T) {
 // 在途同键 → 冲突（in progress）；完成后同键重试 → 重放。
 func TestInflightConflictThenReplay(t *testing.T) {
 	db, _ := statertest.New(t)
-	e := NewEnforcer(db, slog.New(slog.DiscardHandler))
+	e := NewEnforcer(db, idemrepo.New(db.Clock()), slog.New(slog.DiscardHandler))
 	// entered 必须缓冲 1：handler 内是非阻塞 send——无缓冲形态下 spawn 的
 	// goroutine 在主测试抵达 <-entered 前跑到 select 即信号被 default 吞，
 	// 主测试永久阻塞（CI 慢调度实证挂起 600s，2026-10-07；本地快调度侥幸）。
@@ -139,7 +139,7 @@ func TestInflightConflictThenReplay(t *testing.T) {
 // handler 失败 → 释放认领：同键干净重试（第二次真执行）。
 func TestHandlerFailureReleasesClaim(t *testing.T) {
 	db, _ := statertest.New(t)
-	e := NewEnforcer(db, slog.New(slog.DiscardHandler))
+	e := NewEnforcer(db, idemrepo.New(db.Clock()), slog.New(slog.DiscardHandler))
 	count := 0
 	fail := true
 	handler := func(context.Context, any) (any, error) {
@@ -160,7 +160,7 @@ func TestHandlerFailureReleasesClaim(t *testing.T) {
 // 保留窗过期：完成态行过期后同键按新请求受理。
 func TestRetentionExpiry(t *testing.T) {
 	db, clock := statertest.New(t)
-	e := NewEnforcer(db, slog.New(slog.DiscardHandler))
+	e := NewEnforcer(db, idemrepo.New(db.Clock()), slog.New(slog.DiscardHandler))
 	count := 0
 	handler := func(context.Context, any) (any, error) {
 		count++
@@ -177,7 +177,7 @@ func TestRetentionExpiry(t *testing.T) {
 // 认领过期（崩溃遗留 inflight）：过期即重新认领，不永久 409。
 func TestClaimExpiryRecoversOrphan(t *testing.T) {
 	db, clock := statertest.New(t)
-	e := NewEnforcer(db, slog.New(slog.DiscardHandler))
+	e := NewEnforcer(db, idemrepo.New(db.Clock()), slog.New(slog.DiscardHandler))
 	// 模拟崩溃遗留：直接落一条 inflight 行（handler 从未完成）。
 	require.NoError(t, idemrepo.New(db.Clock()).
 		Claim(context.Background(), db.Runner(), "k1", createProjectMethod, "stale-fp", ClaimTTL))
@@ -196,7 +196,7 @@ func TestClaimExpiryRecoversOrphan(t *testing.T) {
 // 无键放行：不落记录，语义不受影响。
 func TestNoKeyPassthrough(t *testing.T) {
 	db, _ := statertest.New(t)
-	e := NewEnforcer(db, slog.New(slog.DiscardHandler))
+	e := NewEnforcer(db, idemrepo.New(db.Clock()), slog.New(slog.DiscardHandler))
 	count := 0
 	handler := func(context.Context, any) (any, error) {
 		count++
@@ -214,7 +214,7 @@ func TestNoKeyPassthrough(t *testing.T) {
 // 双源一致性：body 自带幂等键与头不一致 → 冲突；一致 → 正常。
 func TestDualSourceConsistency(t *testing.T) {
 	db, _ := statertest.New(t)
-	e := NewEnforcer(db, slog.New(slog.DiscardHandler))
+	e := NewEnforcer(db, idemrepo.New(db.Clock()), slog.New(slog.DiscardHandler))
 	count := 0
 	handler := func(context.Context, any) (any, error) {
 		count++
@@ -236,7 +236,7 @@ func TestDualSourceConsistency(t *testing.T) {
 // Sweep 清理保留窗外行（janitor 观测面）。
 func TestSweepRemovesExpired(t *testing.T) {
 	db, clock := statertest.New(t)
-	e := NewEnforcer(db, slog.New(slog.DiscardHandler))
+	e := NewEnforcer(db, idemrepo.New(db.Clock()), slog.New(slog.DiscardHandler))
 	handler := func(context.Context, any) (any, error) { return projResp("01JD0P"), nil }
 	_, err := call(t, e, "k1", projReq("shop"), handler)
 	require.NoError(t, err)

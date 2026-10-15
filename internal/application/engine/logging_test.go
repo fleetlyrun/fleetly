@@ -109,7 +109,7 @@ func TestBuildLogRedactionSecretZeroOccurrence(t *testing.T) {
 	}}
 	db, clock := statetest.New(t)
 	fl := &fakeLogging{}
-	e := New(Deps{DB: db, Runtime: newFakeRuntime(),
+	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: newFakeRuntime(),
 		Builders: map[string]capability.Builder{specir.BuilderDockerfile: fb},
 		Registry: newFakeRegistry(),
 		Logging:  fl,
@@ -169,7 +169,7 @@ func TestBuildLogRedactionWithoutLogging(t *testing.T) {
 	const pushSecret = "push-only-secret-abcdef012345"
 	fb := &fakeBuilder{digest: "sha256:built", logs: []string{"auth " + pushSecret}}
 	db, clock := statetest.New(t)
-	e := New(Deps{DB: db, Runtime: newFakeRuntime(),
+	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: newFakeRuntime(),
 		Builders: map[string]capability.Builder{specir.BuilderDockerfile: fb},
 		Registry: newFakeRegistry(),
 		Logger:   discardLogger()}, Options{DataRoot: t.TempDir()})
@@ -209,7 +209,7 @@ func TestRedactTableOrdering(t *testing.T) {
 func TestNSBatchStampsAndFlush(t *testing.T) {
 	db, clock := statetest.New(t)
 	fl := &fakeLogging{}
-	e := New(Deps{DB: db, Runtime: newFakeRuntime(), Logging: fl, Logger: discardLogger()},
+	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: newFakeRuntime(), Logging: fl, Logger: discardLogger()},
 		Options{DataRoot: t.TempDir()})
 	ns := capability.NamespaceRef{Team: "t1", Project: "P1", App: "A1"}
 	b := &nsBatch{e: e, ns: ns}
@@ -260,7 +260,7 @@ func TestNSBatchStampsAndFlush(t *testing.T) {
 func TestLoggingStepStreamLifecycle(t *testing.T) {
 	db, clock := statetest.New(t)
 	rt := newLogStreamRuntime()
-	e := New(Deps{DB: db, Runtime: rt, Logging: &fakeLogging{}, Logger: discardLogger()},
+	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Logging: &fakeLogging{}, Logger: discardLogger()},
 		Options{DataRoot: t.TempDir()})
 	ctx := context.Background()
 	require.NoError(t, seedProjectApp(t, clock, db))

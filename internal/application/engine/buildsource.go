@@ -19,7 +19,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	specir "github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/upload"
 )
 
@@ -104,7 +103,7 @@ func (e *Engine) driveBuilding(ctx context.Context, d *deployment.Deployment) (*
 	// buildID 在事务内铸（seq = builds MAX+1，ADR-0070）；input 注册随之
 	// 入内（注册即对构建循环可见的时点语义与既有一致——先于行提交）。
 	err = e.db.Tx(ctx, func(tx *sql.Tx) error {
-		bseq, err := persistence.NextSeq(ctx, tx, "builds")
+		bseq, err := e.db.NextSeq(ctx, tx, "builds")
 		if err != nil {
 			return err
 		}

@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/application/engine"
 	"github.com/fleetlyrun/fleetly/internal/buildinfo"
 	"github.com/fleetlyrun/fleetly/internal/config"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -23,7 +24,7 @@ import (
 func TestNewEngineOverlapPolicyFailsFast(t *testing.T) {
 	cfg := config.WithDefaults(&config.AppConfig{})
 	cfg.Engine = &config.Engine{ScheduleOverlapPolicy: "queue"}
-	_, err := NewEngine(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, cfg, buildinfo.BuildInfo{})
+	_, err := NewEngine(nil, engine.Repos{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, cfg, buildinfo.BuildInfo{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "schedule_overlap_policy")
 	assert.Contains(t, err.Error(), "queue")

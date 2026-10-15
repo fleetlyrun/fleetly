@@ -14,11 +14,36 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/revision"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
+	alertrulerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/alertrule"
 	apprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/app"
+	auditrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/audit"
+	backuprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/backup"
+	browserepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/browse"
+	buildrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/build"
+	channelrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/channel"
+	cfgrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/config"
+	dbrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/database"
+	deploymentrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/deployment"
+	githubapprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/githubapp"
+	logcursorrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/logcursor"
+	networkrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
+	networkpeerrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/networkpeer"
+	noderepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/node"
+	outboxrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/outbox"
 	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
+	revisionrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/revision"
+	routerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/route"
+	runrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/run"
+	schedulerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/schedule"
+	secretrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/secret"
+	sourcerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/sourceupload"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
+	taskrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/task"
+	tokenrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/token"
+	volumerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/volume"
 )
 
 // 测试常量（固定 ID/时间，事件断言确定性）。
@@ -42,7 +67,7 @@ func newTestEngineOpts(t *testing.T, opts Options) (*Engine, *fakeRuntime, *stat
 	t.Helper()
 	db, clock := statetest.New(t)
 	rt := newFakeRuntime()
-	e := New(Deps{DB: db, Runtime: rt, Logger: discardLogger()}, opts)
+	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Logger: discardLogger()}, opts)
 	t.Cleanup(func() { _ = e.Stop(context.Background()) })
 
 	ctx := context.Background()
@@ -53,6 +78,23 @@ func newTestEngineOpts(t *testing.T, opts Options) (*Engine, *fakeRuntime, *stat
 		ID: tAppID, ProjectID: tProjectID, Name: "web",
 	}))
 	return e, rt, clock
+}
+
+// testRepos 构造引擎全量 repo 集（hermetic 夹具可引 persistence——生产构造
+// 面在组合根 assembly，P1b C 批；时钟取注入 DB 的时钟）。
+func testRepos(db state.DB) Repos {
+	clock := db.Clock()
+	return Repos{
+		Projects: projectrepo.New(clock), Apps: apprepo.New(clock), Revisions: revisionrepo.New(clock),
+		Deployments: deploymentrepo.New(clock), Builds: buildrepo.New(clock), Outbox: outboxrepo.New(clock),
+		Nodes: noderepo.New(clock), Audits: auditrepo.New(clock), Tasks: taskrepo.New(clock),
+		Runs: runrepo.New(clock), Tokens: tokenrepo.New(clock), Schedules: schedulerepo.New(clock),
+		PeerDecls: networkpeerrepo.New(clock), Uploads: sourcerepo.New(clock), Browse: browserepo.New(clock),
+		Databases: dbrepo.New(clock), Backups: backuprepo.New(clock), LogCursors: logcursorrepo.New(clock),
+		AlertRules: alertrulerepo.New(clock), Channels: channelrepo.New(clock), Routes: routerepo.New(clock),
+		Secrets: secretrepo.New(clock), Configs: cfgrepo.New(clock), Volumes: volumerepo.New(clock),
+		Networks: networkrepo.New(clock), GitHubApps: githubapprepo.New(clock),
+	}
 }
 
 // freezeSpec 冻结一条 Revision 并返回其 ID（n 保证跨调用唯一）。
@@ -313,7 +355,7 @@ func TestEngineRestartReplaysInFlightGeneration(t *testing.T) {
 	require.Equal(t, deployment.StateReleasing, getDeployment(t, e, d.ID).State)
 
 	// "重启"：新引擎实例（观测/Ensure 内存缓存清空），同库同 runtime。
-	e2 := New(Deps{DB: e.db, Runtime: rt, Logger: e.log}, Options{})
+	e2 := New(Deps{DB: e.db, Repos: testRepos(e.db), Runtime: rt, Logger: e.log}, Options{})
 	e2.step(ctx)
 
 	still := getDeployment(t, e2, d.ID)

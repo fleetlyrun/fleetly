@@ -30,7 +30,7 @@ func TestBuildSourceWithoutRegistryFailsAtPrepare(t *testing.T) {
 	fb := &fakeBuilder{digest: "sha256:built"}
 	db, clock := statetest.New(t)
 	rt := newFakeRuntime()
-	e := New(Deps{DB: db, Runtime: rt,
+	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt,
 		Builders: map[string]capability.Builder{specir.BuilderDockerfile: fb},
 		Logger:   discardLogger()}, Options{DataRoot: t.TempDir()})
 	ctx := context.Background()
@@ -56,7 +56,7 @@ func TestManagedHostCredentialInjection(t *testing.T) {
 	cipher, err := keyring.LoadCipher(t.TempDir())
 	require.NoError(t, err)
 	reg := newFakeRegistry()
-	e := New(Deps{DB: db, Runtime: newFakeRuntime(), Cipher: cipher, Registry: reg, Logger: discardLogger()}, Options{})
+	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: newFakeRuntime(), Cipher: cipher, Registry: reg, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
 	require.NoError(t, projectrepo.New(clock).Create(ctx, db.Runner(), &project.Project{ID: tProjectID, Name: "shop", TeamID: "default"}))
 
@@ -84,7 +84,7 @@ func TestReconcileManagedDualProviders(t *testing.T) {
 	reg := newFakeRegistry()
 	reg.managed = true
 	reg.materials = capability.Materials{SecretFiles: map[string][]byte{"zot-config": []byte(`{"http":{}}`)}}
-	e := New(Deps{DB: db, Runtime: rt, Proxy: proxy, Registry: reg, Logger: discardLogger()}, Options{})
+	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Proxy: proxy, Registry: reg, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
 	require.NoError(t, projectrepo.New(clock).Create(ctx, db.Runner(), &project.Project{ID: tProjectID, Name: "shop", TeamID: "default"}))
 	require.NoError(t, e.networks.Create(ctx, db.Runner(), &network.Network{

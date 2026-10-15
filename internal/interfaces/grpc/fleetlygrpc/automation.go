@@ -24,7 +24,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
 // Task 配额缺省住 internal/engine（域拥有者：受理位、ScaleTask、Schedule
@@ -151,7 +150,7 @@ func (svc *TasksService) CreateTask(ctx context.Context, req *automationv1.Creat
 			svc.s.parentProjectAlive(req.GetProjectId()),
 			func(ctx context.Context, tx *sql.Tx) error {
 				var err error
-				if seq, err = persistence.NextSeq(ctx, tx, "tasks"); err != nil {
+				if seq, err = svc.s.DB.NextSeq(ctx, tx, "tasks"); err != nil {
 					return err
 				}
 				row, err = engine.MintTaskRow(req.GetProjectId(), req.GetName(), owner, taskSpec, seq)

@@ -15,14 +15,13 @@ import (
 // 终态五行（架构收敛计划 P1）：
 //
 //	domain/** → 零 external（纯领域，repo 经接口反转）
-//	application/** → domain + persistence（消费侧接口化后 github/upload 收进）
+//	application/** → domain（P1b B/C 批已收：DB 契约接口化 + 构造上提组合根）
 //	infrastructure/** → domain
-//	interfaces/** → application + domain + persistence（读写分离）
+//	interfaces/** → application + domain（读写分离；admin 离线面例外行）
 //	assembly/config/buildinfo/testsupport/guards → 全部（组合根/元层）
 //
-// 本表是现状登记：与终态的差距全部以豁免行落位并带理由，收紧（P1b Repo
-// 接口抽取、消费侧接口化）完成后删行——删行后本守卫不改自绿，豁免残留
-// 不再命中即红（双向保鲜）。
+// 本表是现状登记：与终态的差距全部以豁免行落位并带理由，收紧完成后删行
+// ——删行后本守卫不改自绿，豁免残留不再命中即红（双向保鲜）。
 type depRow struct {
 	subtree  string   // internal/ 下的子树前缀（斜杠分隔，含尾斜杠）
 	allow    []string // 允许的 internal import 前缀（internal/ 相对形态）
@@ -40,13 +39,8 @@ var depMatrix = []depRow{
 		subtree: "internal/application/",
 		allow: []string{
 			"internal/domain/",
-			// 客户端注入豁免：github API 客户端与 upload blob 存取仍是具体
-			// 类型直注（P1b 消费侧接口化后从本行删除，改走接口落 domain）。
-			"internal/infrastructure/persistence/",
-			"internal/infrastructure/github/",
-			"internal/infrastructure/upload/",
 		},
-		note: "application → domain + persistence；github/upload 是 P1b 前的登记豁免",
+		note: "application → domain only（P1b B/C 批收口：persistence 经 state.DB 契约消费、repo 构造上提 assembly）；github/upload 客户端注入走豁免行（P3 锚）",
 	},
 	{
 		subtree: "internal/infrastructure/",
@@ -58,9 +52,8 @@ var depMatrix = []depRow{
 		allow: []string{
 			"internal/application/",
 			"internal/domain/",
-			"internal/infrastructure/persistence/",
 		},
-		note: "读写分离律：读径 repo 直读允许（读侧无需经 application 转手）；写面纪律（写路径必经 application/engine）由 acceptanceguard 承载，本行只执法依赖方向",
+		note: "读写分离律：读径 repo 直读经 domain repo 接口（P1b B/C 批后零 persistence 引用）；admin 离线维护面例外行（ADR-0075 例外②）；写面纪律（写路径必经 application/engine）由 acceptanceguard 承载，本行只执法依赖方向",
 	},
 	{
 		subtree:  "internal/assembly/",
@@ -96,14 +89,29 @@ type depExemption struct {
 
 var depExemptions = []depExemption{
 	{
+		subtree: "internal/application/engine",
+		allow:   "internal/infrastructure/github/",
+		reason:  "engine 直注 github 客户端（客户端注入面；P3 客户端接口化后收进 domain，届时删本行）",
+	},
+	{
+		subtree: "internal/application/engine",
+		allow:   "internal/infrastructure/upload/",
+		reason:  "engine 消费 upload blob 路径/解包纯函数（客户端注入面；P3 客户端接口化后收进 domain，届时删本行）",
+	},
+	{
 		subtree: "internal/interfaces/grpc/fleetlygrpc",
 		allow:   "internal/infrastructure/github/",
-		reason:  "gRPC 面直注 github 客户端（P1b 消费侧接口化后收紧，届时删本行）",
+		reason:  "gRPC 面直注 github 客户端（客户端注入面；P3 客户端接口化后收进 domain，届时删本行）",
 	},
 	{
 		subtree: "internal/interfaces/grpc/fleetlygrpc",
 		allow:   "internal/infrastructure/upload/",
-		reason:  "gRPC 面直注 upload blob 存取（P1b 消费侧接口化后收紧，届时删本行）",
+		reason:  "gRPC 面直注 upload blob 存取（客户端注入面；P3 客户端接口化后收进 domain，届时删本行）",
+	},
+	{
+		subtree: "internal/interfaces/admin",
+		allow:   "internal/infrastructure/persistence/",
+		reason:  "admin 离线维护面直开库（ADR-0075 例外②：不经运行时装配，persistence.Open 直连 + 自管生命周期；常驻矩阵不放宽）",
 	},
 }
 

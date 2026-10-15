@@ -39,7 +39,7 @@ func TestResolveMaterials(t *testing.T) {
 	cipher, err := keyring.LoadCipher(t.TempDir())
 	require.NoError(t, err)
 	rt := newFakeRuntime()
-	e := New(Deps{DB: db, Runtime: rt, Cipher: cipher, Logger: discardLogger()}, Options{})
+	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Cipher: cipher, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
 
 	const ghcrSpec = `{"schema_version":1,"app":{"id":"` + tAppID + `","project":"` + tProjectID + `"},` +
@@ -66,7 +66,7 @@ func TestResolveMaterials(t *testing.T) {
 func TestResolveMaterialsMissingSecretFails(t *testing.T) {
 	db, _ := statetest.New(t)
 	cipher, _ := keyring.LoadCipher(t.TempDir())
-	e := New(Deps{DB: db, Runtime: newFakeRuntime(), Cipher: cipher, Logger: discardLogger()}, Options{})
+	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: newFakeRuntime(), Cipher: cipher, Logger: discardLogger()}, Options{})
 	spec, err := e.loadSpec(context.Background(), freezeSpec(t, e, 2, `{"schema_version":1,`+
 		`"app":{"id":"`+tAppID+`","project":"`+tProjectID+`"},`+
 		`"source":{"image":{"ref":"nginx:1"}},"processes":[`+
@@ -80,7 +80,7 @@ func TestResolveMaterialsMissingSecretFails(t *testing.T) {
 func TestVolumePinning(t *testing.T) {
 	db, _ := statetest.New(t)
 	rt := newFakeRuntime()
-	e := New(Deps{DB: db, Runtime: rt, Logger: discardLogger()}, Options{})
+	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
 	require.NoError(t, e.volumes.Create(ctx, db.Runner(), &volume.Volume{
 		ID: "01JD0VOL00000000000000000", ProjectID: tProjectID, Name: "data",
@@ -115,7 +115,7 @@ func TestResolveMaterialsRegistryLookupErrorPropagates(t *testing.T) {
 	db, _ := statetest.New(t)
 	cipher, err := keyring.LoadCipher(t.TempDir())
 	require.NoError(t, err)
-	e := New(Deps{DB: db, Runtime: newFakeRuntime(), Cipher: cipher, Logger: discardLogger()}, Options{})
+	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: newFakeRuntime(), Cipher: cipher, Logger: discardLogger()}, Options{})
 	spec, err := e.loadSpec(context.Background(), freezeSpec(t, e, 3, `{"schema_version":1,`+
 		`"app":{"id":"`+tAppID+`","project":"`+tProjectID+`"},`+
 		`"source":{"image":{"ref":"ghcr.io/acme/web:1"}},"processes":[`+
@@ -134,7 +134,7 @@ func TestResolveMaterialsRegistryLookupErrorPropagates(t *testing.T) {
 // 无钉住调度（卷可能落到别的节点），比部署失败更糟。
 func TestApplyVolumePinningLookupErrorFails(t *testing.T) {
 	db, _ := statetest.New(t)
-	e := New(Deps{DB: db, Runtime: newFakeRuntime(), Logger: discardLogger()}, Options{})
+	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: newFakeRuntime(), Logger: discardLogger()}, Options{})
 
 	// 引用不存在的卷：GetByName → ErrNotFound（此前被静默 continue）。
 	ws := []capability.Workload{{

@@ -89,7 +89,7 @@ dep_matrix 数据表 5 行化；domain 三红线守卫（无 I/O/genproto/框架
 ### P1b-1 模板立定 — [x]
 每聚合循环模板：`domain/<ctx>/<agg>/`（行类型+`Repo` 接口）→ `infrastructure/persistence/<agg>/`（不导出实现+New）→ 消费面改接口 → wire.Bind → statertest 返接口。每聚合一 commit，golden 零漂移为界。
 ### P1b-2 高频十聚合先行 — [x] deployment/task/app/project/revision/run/secret/config/build/audit/outbox 十一聚合已上移（c5c3108/74277a5/批二）；根包契约面已迁 domain/shared/state、domain→persistence 豁免行已删、writes 豁免行已去冷删行。
-### P1b-3 其余聚合 + 守卫收紧 — [ ] 全量完成後启用红线：application/** 禁 import infrastructure；interfaces 写面必经 application（读写分离律）。
+### P1b-3 其余聚合 + 守卫收紧 — [x] 37/37 聚合上移；DB 契约（state.DB 窄面）+ NextSeq 方法化；构造上提 assembly（engine.Repos 26 字段组结构注入）；application 行收紧 domain only、interfaces 行 application+domain；豁免全集 5 行（github/upload×4 带 P3 锚 + admin 离线 ADR-0075 例外②）；红灯实验双份自证（代理+主会话）。
 
 ## P2 事实发射 kernel（4-5 天）
 P2-1 outbox team_id 全量铸入（若 P0-2 已做则收尾）+ `writes.Runner` 端口定稿 — [ ]

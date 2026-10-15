@@ -31,7 +31,7 @@ func TestManagedVolumeWorkloadPinnedToControlPlane(t *testing.T) {
 				Volumes: []capability.VolumeMount{{VolumeID: "fleetly-data", Target: "/data"}}},
 			{ID: "fleetly-novol", Process: "novol", Image: "fake/novol:1", Replicas: 1},
 		}}
-		e := New(Deps{DB: db, Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
+		e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
 		e.managedStep(ctx)
 
 		last := rt.calls()[len(rt.calls())-1]
@@ -49,7 +49,7 @@ func TestManagedVolumeWorkloadPinnedToControlPlane(t *testing.T) {
 			{ID: "fleetly-vol", Process: "vol", Image: "fake/vol:1", Replicas: 1,
 				Volumes: []capability.VolumeMount{{VolumeID: "fleetly-data", Target: "/data"}}},
 		}}
-		e := New(Deps{DB: db, Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
+		e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
 		e.managedStep(ctx)
 		assert.Empty(t, rt.calls(), "no ensure may go out without the pinning anchor")
 

@@ -169,7 +169,7 @@ func newBackupFixture(t *testing.T, engineName, connectURL string) (*Engine, *fa
 	store := newFakeObjectStore()
 	cipher, err := keyring.LoadCipher(t.TempDir())
 	require.NoError(t, err)
-	e := New(Deps{DB: db, Runtime: runtimeWithUtility{rt, ut}, ObjectStore: store, Cipher: cipher, Logger: discardLogger()}, Options{})
+	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: runtimeWithUtility{rt, ut}, ObjectStore: store, Cipher: cipher, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
 
 	require.NoError(t, projectrepo.New(clock).Create(ctx, db.Runner(), &project.Project{

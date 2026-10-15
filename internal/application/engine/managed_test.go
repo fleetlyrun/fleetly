@@ -58,7 +58,7 @@ func TestManagedReconcilerEnsuresSystemNamespace(t *testing.T) {
 	db, _ := statetest.New(t)
 	rt := newFakeRuntime()
 	proxy := &fakeProxy{}
-	e := New(Deps{DB: db, Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
+	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
 
 	e.managedStep(ctx)
@@ -83,7 +83,7 @@ func TestManagedGenerationStableAcrossTicks(t *testing.T) {
 	db, _ := statetest.New(t)
 	rt := newFakeRuntime()
 	proxy := &fakeProxy{}
-	e := New(Deps{DB: db, Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
+	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
 
 	for i := 0; i < 5; i++ {
@@ -112,7 +112,7 @@ func TestManagedEnsureMaterialsChangeForcesEnsure(t *testing.T) {
 	reg := newFakeRegistry()
 	reg.managed = true
 	reg.materials = capability.Materials{SecretFiles: map[string][]byte{"zot-config": []byte(`{"v":1}`)}}
-	e := New(Deps{DB: db, Runtime: rt, Proxy: &fakeProxy{}, Registry: reg, Logger: discardLogger()}, Options{})
+	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Proxy: &fakeProxy{}, Registry: reg, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
 	// 双 Provider（proxy+registry）：首轮各一次 Ensure。
 	e.managedStep(ctx)
@@ -135,7 +135,7 @@ func TestManagedEnsureFailureRetriesNextTick(t *testing.T) {
 	db, _ := statetest.New(t)
 	rt := newFakeRuntime()
 	rt.failNext = true
-	e := New(Deps{DB: db, Runtime: rt, Proxy: &fakeProxy{}, Logger: discardLogger()}, Options{})
+	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Proxy: &fakeProxy{}, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
 
 	e.managedStep(ctx) // Ensure 失败
@@ -152,7 +152,7 @@ func TestManagedStepBoundedWhenRuntimeHangs(t *testing.T) {
 	db, _ := statetest.New(t)
 	rt := newFakeRuntime()
 	rt.ensureGate.Arm() // 永不放行 = Ensure 永久挂起
-	e := New(Deps{DB: db, Runtime: rt, Proxy: &fakeProxy{}, Logger: discardLogger()},
+	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Proxy: &fakeProxy{}, Logger: discardLogger()},
 		Options{ManagedStepTimeout: 50 * time.Millisecond})
 	ctx := context.Background()
 
@@ -175,7 +175,7 @@ func TestRoutePublishResolvesBackends(t *testing.T) {
 	db, clock := statetest.New(t)
 	rt := newFakeRuntime()
 	proxy := &fakeProxy{}
-	e := New(Deps{DB: db, Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
+	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
 	// Team 轴接实（ADR-0028）：后端域解析从 Project 行实取团队。
 	require.NoError(t, projectrepo.New(clock).Create(ctx, db.Runner(), &project.Project{
@@ -215,7 +215,7 @@ func TestPublishRoutesShortCircuitsWhenUnchanged(t *testing.T) {
 	db, clock := statetest.New(t)
 	rt := newFakeRuntime()
 	proxy := &fakeProxy{}
-	e := New(Deps{DB: db, Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
+	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
 	require.NoError(t, projectrepo.New(clock).Create(ctx, db.Runner(), &project.Project{
 		ID: tProjectID, Name: "shop", TeamID: "default",
@@ -257,7 +257,7 @@ func TestPublishRoutesForcedBypassResolvesFreshBackends(t *testing.T) {
 	db, clock := statetest.New(t)
 	rt := newFakeRuntime()
 	proxy := &fakeProxy{}
-	e := New(Deps{DB: db, Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
+	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
 	require.NoError(t, projectrepo.New(clock).Create(ctx, db.Runner(), &project.Project{
 		ID: tProjectID, Name: "shop", TeamID: "default",
@@ -298,7 +298,7 @@ func TestPublishRoutesReplayWindowDropsDeadBackend(t *testing.T) {
 	db, clock := statetest.New(t)
 	rt := newFakeRuntime()
 	proxy := &fakeProxy{}
-	e := New(Deps{DB: db, Runtime: rt, Proxy: proxy, Logger: discardLogger()},
+	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Proxy: proxy, Logger: discardLogger()},
 		Options{ReconcileReplayInterval: 30 * time.Second})
 	ctx := context.Background()
 	require.NoError(t, projectrepo.New(clock).Create(ctx, db.Runner(), &project.Project{

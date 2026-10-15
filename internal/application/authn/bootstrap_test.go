@@ -13,11 +13,34 @@ import (
 	"testing"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
+	auditrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/audit"
+	membershiprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/membership"
+	rolerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/role"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
+	teamrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/team"
 	tokenrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/token"
+	userrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/user"
 )
 
 var testVocab = []string{"projects", "apps", "deployments", "users", "tokens", "audit"}
+
+// testSeedRepos 构造首启面真 repo 集（hermetic 夹具可引 persistence——
+// 生产构造面在组合根，P1b C 批）。
+func testSeedRepos(clock state.Clock) SeedRepos {
+	return SeedRepos{
+		Teams: teamrepo.New(clock), Roles: rolerepo.New(clock),
+		Tokens: tokenrepo.New(clock), Users: userrepo.New(clock),
+	}
+}
+
+// testAuthnRepos 构造身份执法面真 repo 集（同上）。
+func testAuthnRepos(clock state.Clock) Repos {
+	return Repos{
+		Roles: rolerepo.New(clock), Users: userrepo.New(clock), Tokens: tokenrepo.New(clock),
+		Memberships: membershiprepo.New(clock), Audits: auditrepo.New(clock),
+	}
+}
 
 func TestEnsureBootstrapToken(t *testing.T) {
 	db, _ := statetest.New(t)
@@ -25,7 +48,7 @@ func TestEnsureBootstrapToken(t *testing.T) {
 	root := t.TempDir()
 	log := slog.New(slog.DiscardHandler)
 
-	res, err := EnsureBootstrapToken(ctx, db, root, testVocab, log)
+	res, err := EnsureBootstrapToken(ctx, db, testSeedRepos(db.Clock()), root, testVocab, log)
 	if err != nil {
 		t.Fatalf("first run: %v", err)
 	}
@@ -58,7 +81,7 @@ func TestEnsureBootstrapToken(t *testing.T) {
 	}
 
 	// 第二次运行：库内在册 → 不生成。
-	again, err := EnsureBootstrapToken(ctx, db, root, testVocab, log)
+	again, err := EnsureBootstrapToken(ctx, db, testSeedRepos(db.Clock()), root, testVocab, log)
 	if err != nil {
 		t.Fatalf("second run: %v", err)
 	}
@@ -77,7 +100,7 @@ func TestEnsureBootstrapToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("purge: %v", err)
 	}
-	purge, err := EnsureBootstrapToken(ctx, db, root, testVocab, log)
+	purge, err := EnsureBootstrapToken(ctx, db, testSeedRepos(db.Clock()), root, testVocab, log)
 	if err != nil {
 		t.Fatalf("post-purge run: %v", err)
 	}
