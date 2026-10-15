@@ -158,9 +158,9 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 		}
 
 		// 3. 排队容量（在途不占排队位）。
-		if len(queued) >= e.opts.QueueCapacity {
+		if len(queued) >= e.opts.Deploy.QueueCapacity {
 			return fmt.Errorf("%w: %d queued for app %s (capacity %d)",
-				ErrQueueFull, len(queued), req.AppID, e.opts.QueueCapacity)
+				ErrQueueFull, len(queued), req.AppID, e.opts.Deploy.QueueCapacity)
 		}
 
 		gen, err := e.deployments.NextGeneration(ctx, tx, req.AppID)

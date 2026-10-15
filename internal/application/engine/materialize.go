@@ -8,6 +8,14 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 )
 
+// deploys 是部署域状态（releasing 物化备忘，Deployment 行锚）。P3 批 7
+// 收编：deliveryDomain → deploys（复数普通名词零后缀，ADR-0075 命名法则）；
+// Engine 字段名 delivery 保持不变。P3 收官批 8 收编：类型体自 engine.go
+// 归位 materialize.go（releasing 物化备忘的消费面）。
+type deploys struct {
+	release map[string]ensureMemo
+}
+
 // materialize 把一条 Revision 的期望态物化到 Runtime：投影（projectRevision——
 // 与只读渲染 RenderWorkloads 共享的投影前段单源，ADR-0071）→ 材料
 // （resolveMaterials）→ 卷钉住（pinVolumes + applyVolumePinning）→ Ensure →

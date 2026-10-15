@@ -153,7 +153,7 @@ func TestManagedStepBoundedWhenRuntimeHangs(t *testing.T) {
 	rt := newFakeRuntime()
 	rt.ensureGate.Arm() // 永不放行 = Ensure 永久挂起
 	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Proxy: &fakeProxy{}, Logger: discardLogger()},
-		Options{ManagedStepTimeout: 50 * time.Millisecond})
+		Options{Ring: RingOptions{ManagedStepTimeout: 50 * time.Millisecond}})
 	ctx := context.Background()
 
 	done := make(chan struct{})
@@ -299,7 +299,7 @@ func TestPublishRoutesReplayWindowDropsDeadBackend(t *testing.T) {
 	rt := newFakeRuntime()
 	proxy := &fakeProxy{}
 	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Proxy: proxy, Logger: discardLogger()},
-		Options{ReconcileReplayInterval: 30 * time.Second})
+		Options{Ring: RingOptions{ReconcileReplayInterval: 30 * time.Second}})
 	ctx := context.Background()
 	require.NoError(t, projectrepo.New(clock).Create(ctx, db.Runner(), &project.Project{
 		ID: tProjectID, Name: "shop", TeamID: "default",

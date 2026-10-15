@@ -40,7 +40,7 @@ func TestWireGenAttributionUnchangedWorkloadsDontBlockL1(t *testing.T) {
 	e.handleObservation(ctx, workloadEventRunning(tAppID+"-web", 1))
 	e.handleObservation(ctx, workloadEventRunning(tAppID+"-sidecar", 1))
 	e.step(ctx)
-	clock.Advance(e.opts.ObserveWindow + time.Second)
+	clock.Advance(e.opts.Deploy.ObserveWindow + time.Second)
 	e.step(ctx)
 	require.Equal(t, deployment.StateSucceeded, getDeployment(t, e, d1.ID).State)
 
@@ -70,7 +70,7 @@ func TestWireGenAttributionUnchangedWorkloadsDontBlockL1(t *testing.T) {
 		"L1 must pass on the changed set only — unchanged workloads must not block on a running@deploy-gen that never arrives")
 
 	// L3 收口。
-	clock.Advance(e.opts.ObserveWindow + time.Second)
+	clock.Advance(e.opts.Deploy.ObserveWindow + time.Second)
 	e.step(ctx)
 	require.Equal(t, deployment.StateSucceeded, getDeployment(t, e, d2.ID).State)
 }
@@ -90,7 +90,7 @@ func TestPureScaleDeploymentPassesL1(t *testing.T) {
 	e.handleObservation(ctx, workloadEventRunning(tAppID+"-web", 1))
 	e.handleObservation(ctx, workloadEventRunning(tAppID+"-sidecar", 1))
 	e.step(ctx)
-	clock.Advance(e.opts.ObserveWindow + time.Second)
+	clock.Advance(e.opts.Deploy.ObserveWindow + time.Second)
 	e.step(ctx)
 	require.Equal(t, deployment.StateSucceeded, getDeployment(t, e, d1.ID).State)
 
@@ -111,7 +111,7 @@ func TestPureScaleDeploymentPassesL1(t *testing.T) {
 	require.Equal(t, deployment.StateObserving, getDeployment(t, e, d2.ID).State,
 		"pure-scale deployments must pass L1 vacuously (no workload rolled at the deployment gen)")
 
-	clock.Advance(e.opts.ObserveWindow + time.Second)
+	clock.Advance(e.opts.Deploy.ObserveWindow + time.Second)
 	e.step(ctx)
 	require.Equal(t, deployment.StateSucceeded, getDeployment(t, e, d2.ID).State)
 }

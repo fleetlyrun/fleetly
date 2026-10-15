@@ -8,11 +8,25 @@ package engine
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
 )
+
+// drifts 是漂移扫描域的去抖签名（spec 对照签名 + 滚动停摆签名 +
+// 稳态 stopped 签名，ADR-0022；rollout 面见 runbook 记录·二十七）。
+// P3 收官批 8 收编：driftDomain → drifts（复数普通名词零后缀，ADR-0075
+// 命名法则）；Engine 字段名 drift 保持不变；类型体自 engine.go 归位
+// drift.go。
+type drifts struct {
+	mu         sync.Mutex
+	sig        map[string]string // workloadID → 最后 drift 签名
+	rolloutSig map[string]string // workloadID → 滚动停摆签名（rollout|detail）
+	stoppedMu  sync.Mutex
+	stoppedSig map[string]string // workloadID → 稳态 stopped 签名
+}
 
 // rebuildBaselines 按 succeeded 基线幂等重放 Ensure（启动一次）：每个
 // "最近部署为 succeeded"的 App 以行上 Generation 重下发——载体未变即
@@ -71,7 +85,7 @@ func (e *Engine) replayAppBaseline(ctx context.Context, a *app.App, d *deploymen
 	if len(active) > 0 {
 		return // 快照后受理：驱动器拥有该 App 的 Ensure 权
 	}
-	stepCtx, cancel := context.WithTimeout(ctx, e.opts.ManagedStepTimeout)
+	stepCtx, cancel := context.WithTimeout(ctx, e.opts.Ring.ManagedStepTimeout)
 	if err := e.materialize(stepCtx, d, d.ToRevision, d.Generation, true); err != nil {
 		e.log.Error("baseline replay: ensure", "app", a.ID, "generation", d.Generation, "err", err)
 	}
@@ -123,7 +137,7 @@ func (e *Engine) driftScan(ctx context.Context) {
 			continue
 		}
 		ns := capability.NamespaceRef{Team: team, Project: a.ProjectID, App: appID}
-		scanCtx, cancel := context.WithTimeout(ctx, e.opts.ManagedStepTimeout)
+		scanCtx, cancel := context.WithTimeout(ctx, e.opts.Ring.ManagedStepTimeout)
 		obs, err := inspector.InspectWorkloads(scanCtx, ns)
 		cancel()
 		if err != nil {
@@ -341,7 +355,7 @@ func (e *Engine) clearStoppedSig(wid string) {
 // ManagedStepTimeout÷N 的总预算语义让多 App 拍随规模劣化）——每 App 的
 // Inspect 各自带 ManagedStepTimeout 界，拍间由 ctx 取消收口。
 func (e *Engine) driftScanLoop(ctx context.Context) {
-	e.driftLoop.Run(ctx, e.opts.DriftScanInterval, func(ctx context.Context) {
+	e.driftLoop.Run(ctx, e.opts.Ring.DriftScanInterval, func(ctx context.Context) {
 		e.driftScan(ctx)
 	})
 }

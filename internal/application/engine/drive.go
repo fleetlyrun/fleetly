@@ -203,7 +203,7 @@ func (e *Engine) release(ctx context.Context, d *deployment.Deployment) (*deploy
 
 	deadline := parseDeadline(d.ObserveDeadline)
 	if deadline == nil {
-		l1 := state.FormatTime(e.clock.Now().Add(e.opts.ReleaseTimeout))
+		l1 := state.FormatTime(e.clock.Now().Add(e.opts.Deploy.ReleaseTimeout))
 		// 原地迁移（state 不变）：只落 L1 截止，四件一拍照走（无事件）。
 		return e.transitAndReload(ctx, d,
 			[]deployment.State{deployment.StateReleasing}, deployment.StateReleasing,
@@ -211,7 +211,7 @@ func (e *Engine) release(ctx context.Context, d *deployment.Deployment) (*deploy
 	}
 	if e.releaseReady(d) {
 		e.ensureForget(e.delivery.release, d.ID) // 离开 releasing：物化备忘随相位作废
-		window := state.FormatTime(e.clock.Now().Add(e.opts.ObserveWindow))
+		window := state.FormatTime(e.clock.Now().Add(e.opts.Deploy.ObserveWindow))
 		next, terr := e.transitAndReload(ctx, d,
 			[]deployment.State{deployment.StateReleasing}, deployment.StateObserving,
 			func(m *deployment.Deployment) { m.ObserveDeadline = window })
@@ -267,7 +267,7 @@ func (e *Engine) observe(ctx context.Context, d *deployment.Deployment) (*deploy
 		// 观察窗缺失（崩溃窗口/半途行）：补设观察窗——与 release 的 nil L1
 		// 截止补设对称（原地迁移，state 不变无事件）。不补设则 nil 被读作
 		// "窗内"，该行永久滞留 observing，无外部事件可收敛。
-		window := state.FormatTime(e.clock.Now().Add(e.opts.ObserveWindow))
+		window := state.FormatTime(e.clock.Now().Add(e.opts.Deploy.ObserveWindow))
 		return e.transitAndReload(ctx, d,
 			[]deployment.State{deployment.StateObserving}, deployment.StateObserving,
 			func(m *deployment.Deployment) { m.ObserveDeadline = window })
@@ -341,7 +341,7 @@ func (e *Engine) rollback(ctx context.Context, d *deployment.Deployment) (*deplo
 		return e.rollbackFailed(ctx, d, err.Error())
 	}
 	if e.releaseReadyGen(d, gen) {
-		window := state.FormatTime(e.clock.Now().Add(e.opts.ObserveWindow))
+		window := state.FormatTime(e.clock.Now().Add(e.opts.Deploy.ObserveWindow))
 		return e.transitAndReload(ctx, d,
 			[]deployment.State{deployment.StateRollingBack}, deployment.StateObserving,
 			func(m *deployment.Deployment) {
@@ -353,7 +353,7 @@ func (e *Engine) rollback(ctx context.Context, d *deployment.Deployment) (*deplo
 			})
 	}
 	if deadline == nil {
-		l1 := state.FormatTime(e.clock.Now().Add(e.opts.ReleaseTimeout))
+		l1 := state.FormatTime(e.clock.Now().Add(e.opts.Deploy.ReleaseTimeout))
 		return e.transitAndReload(ctx, d,
 			[]deployment.State{deployment.StateRollingBack}, deployment.StateRollingBack,
 			func(m *deployment.Deployment) { m.Generation, m.ObserveDeadline = gen, l1 })

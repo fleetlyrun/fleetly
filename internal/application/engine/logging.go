@@ -334,8 +334,10 @@ func (b *nsBatch) flush(ctx context.Context) error {
 	return nil
 }
 
-// logpipeState 是采集环的实例态（C5：实例内聚合，不进包级全局）。
-type logpipeState struct {
+// logpipes 是采集环的实例态（C5：实例内聚合，不进包级全局）。P3 收官
+// 批 8 收编：logpipeState → logpipes（复数普通名词零后缀，ADR-0075 命名
+// 法则）；Engine 字段名 logpipe 保持不变。
+type logpipes struct {
 	mu      sync.Mutex
 	streams map[string]context.CancelFunc // ns 键 → 域流 cancel（Stop/域消失收口）
 	batches map[string]*nsBatch           // ns 键 → 在飞批（step 空闲冲刷面）

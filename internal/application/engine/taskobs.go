@@ -8,11 +8,25 @@ package engine
 import (
 	"context"
 	"errors"
+	"sync"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/run"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
+
+// tasks 是 Task 域状态（行为 task.go/taskverbs.go/taskobs.go/taskview.go；
+// P1-7 缓存分家口径不变；per-Run 终态回收随 handleRunObservation——恢复
+// 真源是 Task/Run 行，不抄 rebuildBaselines）。P3 批 3 收编：taskDomain →
+// tasks（复数普通名词零后缀，ADR-0075 命名法则）；Engine 字段名 task 保持
+// 不变。P3 收官批 8 收编：类型体自 engine.go 归位 taskobs.go（壳收口）。
+type tasks struct {
+	obsMu       sync.RWMutex
+	workloadRun map[string]string                   // workloadID(=runID) → taskID（观测路由/归属）
+	runObs      map[string]capability.WorkloadEvent // runID → 最新观测
+	ensure      map[string]ensureMemo               // taskID → 期望集签名备忘（2026-10-03 收编通用 ensureMemo）
+	locks       sync.Map                            // taskID → *sync.Mutex（驱动环/DeleteTask 收口共享；appLocks 同款不清退裁决 E30）
+}
 
 // handleRunObservation 是 Run 观测的裁决入口：观测缓存刷新 → Run 状态机
 // 迁移（观测两轨的 Instance 级，ADR-0025 决策 3）→ 终态回收（P1-7）→

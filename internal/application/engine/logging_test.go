@@ -113,7 +113,7 @@ func TestBuildLogRedactionSecretZeroOccurrence(t *testing.T) {
 		Builders: map[string]capability.Builder{specir.BuilderDockerfile: fb},
 		Registry: newFakeRegistry(),
 		Logging:  fl,
-		Logger:   discardLogger()}, Options{DataRoot: t.TempDir()})
+		Logger:   discardLogger()}, Options{Data: DataOptions{DataRoot: t.TempDir()}})
 	ctx := context.Background()
 	require.NoError(t, seedProjectApp(t, clock, db))
 	revID, _, _ := freezeGitBuildSpec(t, e, "01JD0REV0000000000000000C1")
@@ -172,7 +172,7 @@ func TestBuildLogRedactionWithoutLogging(t *testing.T) {
 	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: newFakeRuntime(),
 		Builders: map[string]capability.Builder{specir.BuilderDockerfile: fb},
 		Registry: newFakeRegistry(),
-		Logger:   discardLogger()}, Options{DataRoot: t.TempDir()})
+		Logger:   discardLogger()}, Options{Data: DataOptions{DataRoot: t.TempDir()}})
 	ctx := context.Background()
 	require.NoError(t, seedProjectApp(t, clock, db))
 	revID, _, _ := freezeGitBuildSpec(t, e, "01JD0REV0000000000000000C2")
@@ -210,7 +210,7 @@ func TestNSBatchStampsAndFlush(t *testing.T) {
 	db, clock := statetest.New(t)
 	fl := &fakeLogging{}
 	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: newFakeRuntime(), Logging: fl, Logger: discardLogger()},
-		Options{DataRoot: t.TempDir()})
+		Options{Data: DataOptions{DataRoot: t.TempDir()}})
 	ns := capability.NamespaceRef{Team: "t1", Project: "P1", App: "A1"}
 	b := &nsBatch{db: e.db, logging: e.logging, log: e.log, clock: e.clock, cursors: e.logpipe.cursors, ns: ns}
 	ts := clock.Now()
@@ -261,7 +261,7 @@ func TestLoggingStepStreamLifecycle(t *testing.T) {
 	db, clock := statetest.New(t)
 	rt := newLogStreamRuntime()
 	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Logging: &fakeLogging{}, Logger: discardLogger()},
-		Options{DataRoot: t.TempDir()})
+		Options{Data: DataOptions{DataRoot: t.TempDir()}})
 	ctx := context.Background()
 	require.NoError(t, seedProjectApp(t, clock, db))
 

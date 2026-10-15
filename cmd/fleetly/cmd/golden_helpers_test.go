@@ -24,8 +24,8 @@ func newGoldenHarness(t *testing.T) *apitest.Harness {
 		t.Fatalf("resolve test binary for the fake restic seam: %v", err)
 	}
 	h := apitest.NewManualOpts(t, func(o *engine.Options) {
-		o.ResticPath = self
-		o.PlatformBackup = &engine.PlatformBackupConfig{
+		o.Backup.ResticPath = self
+		o.Backup.PlatformBackup = &engine.PlatformBackupConfig{
 			Interval: time.Hour, Retention: 24 * time.Hour,
 		}
 	})

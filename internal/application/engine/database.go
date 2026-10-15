@@ -28,6 +28,14 @@ import (
 // registry:<host> 先例。值 = 完整连接 URL，ADR-0029 决策 6）。
 const dbCredentialSecretPrefix = "database:"
 
+// databases 是 Database 域状态（ADR-0029 用户域收敛环）。P3 批 4 收编：
+// databaseDomain → databases（复数普通名词零后缀，ADR-0075 命名法则）；
+// Engine 字段名 database 保持不变。P3 收官批 8 收编：类型体自 engine.go
+// 归位 database.go（壳收口）。
+type databases struct {
+	ensure map[string]ensureMemo // databaseID → 上次成功 Ensure
+}
+
 // DBCredentialSecretName 铸凭证 Secret 名（API 创建面与投影共用的单源
 // 公式）。
 func DBCredentialSecretName(databaseName string) string {
@@ -104,7 +112,7 @@ func (e *Engine) reconcileDatabase(ctx context.Context, row *database.Database) 
 	// hang 卡死单写者循环）。
 	unlockMaintenance := e.lockMaintenance()
 	defer unlockMaintenance()
-	stepCtx, cancel := context.WithTimeout(ctx, e.opts.ManagedStepTimeout)
+	stepCtx, cancel := context.WithTimeout(ctx, e.opts.Ring.ManagedStepTimeout)
 	defer cancel()
 
 	tpl, ok := dbtemplate.For(row.Engine)

@@ -114,7 +114,7 @@ func (e *Engine) firstBootBoundedWait(ctx context.Context, d *deployment.Deploym
 		return false, fmt.Errorf("first boot job %q could not be minted within its wait window (project task quota; deadline %s)", job.GetName(), d.ObserveDeadline)
 	}
 	if deadline == nil {
-		wait := state.FormatTime(e.clock.Now().Add(job.GetTtl().AsDuration() + e.opts.FirstBootWaitGrace))
+		wait := state.FormatTime(e.clock.Now().Add(job.GetTtl().AsDuration() + e.opts.Deploy.FirstBootWaitGrace))
 		if _, err := e.transitAndReload(ctx, d,
 			[]deployment.State{deployment.StateReleasing}, deployment.StateReleasing,
 			func(m *deployment.Deployment) { m.ObserveDeadline = wait }); err != nil {
@@ -202,7 +202,7 @@ func (e *Engine) mintFirstBootJob(ctx context.Context, d *deployment.Deployment,
 	minted.Process.DatabaseRefs = p.GetDatabaseRefs()
 	// Config 挂载声明随铸面透传（任务域材料解析 Config 内容 → 目标路径挂载）。
 	minted.Process.ConfigMounts = p.GetConfigMounts()
-	wait := state.FormatTime(e.clock.Now().Add(job.GetTtl().AsDuration() + e.opts.FirstBootWaitGrace))
+	wait := state.FormatTime(e.clock.Now().Add(job.GetTtl().AsDuration() + e.opts.Deploy.FirstBootWaitGrace))
 	// 部署轴 Team 先行解析（P0-2）：steps 回调不携 ctx/tx，事务外解析
 	//（App 轴 Team 不可变，无 TOCTOU 面）。
 	depTeam := e.eventTeamOfApp(ctx, e.db.Runner(), d.AppID)

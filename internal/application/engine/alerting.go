@@ -96,7 +96,7 @@ func (e *Engine) transitionRule(ctx context.Context, rule *alertrule.Rule, to st
 
 // evaluateSystemRules 评估内置规则（F2.2 挂账：s3 未配持续 24h → firing）。
 func (e *Engine) evaluateSystemRules(ctx context.Context, now time.Time) {
-	offsiteAbsent := e.opts.PlatformBackup == nil || e.opts.PlatformBackup.S3 == nil
+	offsiteAbsent := e.opts.Backup.PlatformBackup == nil || e.opts.Backup.PlatformBackup.S3 == nil
 	if !offsiteAbsent {
 		e.metricsDom.sysOffsiteAbove = time.Time{}
 		if e.metricsDom.sysOffsiteFiring {

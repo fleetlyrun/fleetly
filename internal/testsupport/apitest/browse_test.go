@@ -29,7 +29,7 @@ import (
 func browseHarness(t *testing.T) *apitest.Harness {
 	t.Helper()
 	return apitest.NewManualOpts(t, func(o *engine.Options) {
-		o.Browse = engine.BrowseConfig{
+		o.Data.Browse = engine.BrowseConfig{
 			HostSuffix: "browse.test", GatewayURL: "http://127.0.0.1:9081", TLSMode: "none",
 		}
 	})

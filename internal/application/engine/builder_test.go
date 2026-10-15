@@ -111,7 +111,7 @@ func newBuildEngine(t *testing.T, fb *fakeBuilder) (*Engine, *fakeRuntime) {
 	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt,
 		Builders: map[string]capability.Builder{specir.BuilderDockerfile: fb},
 		Registry: newFakeRegistry(),
-		Logger:   discardLogger()}, Options{DataRoot: t.TempDir()})
+		Logger:   discardLogger()}, Options{Data: DataOptions{DataRoot: t.TempDir()}})
 	ctx := context.Background()
 	require.NoError(t, projectrepo.New(clock).Create(ctx, db.Runner(), &project.Project{ID: tProjectID, Name: "shop", TeamID: "default"}))
 	require.NoError(t, apprepo.New(clock).Create(ctx, db.Runner(), &app.App{ID: tAppID, ProjectID: tProjectID, Name: "web"}))
@@ -128,7 +128,7 @@ func freezeGitBuildSpec(t *testing.T, e *Engine, id string) (string, int64, stri
 	require.NoError(t, e.revisions.Create(ctx, e.db.Runner(), &revision.Revision{
 		ID: id, AppID: tAppID, Seq: seq, Spec: []byte(gitBuildSpec()),
 	}))
-	dir := filepath.Join(e.opts.DataRoot, "contexts", id)
+	dir := filepath.Join(e.opts.Data.DataRoot, "contexts", id)
 	require.NoError(t, os.MkdirAll(dir, 0o750))
 	return id, seq, dir
 }

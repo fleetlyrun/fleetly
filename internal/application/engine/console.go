@@ -48,18 +48,18 @@ func (c ConsoleConfig) Configured() bool { return c.Host != "" && c.GatewayURL !
 // host/path/protocol/tls/backend/auth/ratelimit）；gateway_url 解析失败
 // 返回 nil（装配错误诚实降级为不发布，错误日志留痕）。
 func (e *Engine) consoleCapabilityRoutes() []capability.Route {
-	if !e.opts.Console.Configured() {
+	if !e.opts.Data.Console.Configured() {
 		return nil
 	}
-	gwURL, err := url.Parse(e.opts.Console.GatewayURL)
+	gwURL, err := url.Parse(e.opts.Data.Console.GatewayURL)
 	if err != nil || gwURL.Host == "" {
-		e.log.Error("console route: gateway url malformed", "url", e.opts.Console.GatewayURL)
+		e.log.Error("console route: gateway url malformed", "url", e.opts.Data.Console.GatewayURL)
 		return nil
 	}
 	main := capability.Route{
-		Host:        e.opts.Console.Host,
+		Host:        e.opts.Data.Console.Host,
 		Protocol:    capability.ProtocolHTTP,
-		TLS:         e.opts.Console.TLSMode,
+		TLS:         e.opts.Data.Console.TLSMode,
 		BackendAddr: gwURL.Host,
 	}
 	login := main

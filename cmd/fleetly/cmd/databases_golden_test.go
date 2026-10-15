@@ -153,7 +153,7 @@ func TestGoldenDatabasesBackup(t *testing.T) {
 // 库推到 running 后受理。URL/票据/会话 id 均随机——normalize 掩码钉形。
 func TestGoldenDatabasesBrowse(t *testing.T) {
 	h := apitest.NewManualOpts(t, func(o *engine.Options) {
-		o.Browse = engine.BrowseConfig{
+		o.Data.Browse = engine.BrowseConfig{
 			HostSuffix: "browse.test", GatewayURL: "http://127.0.0.1:9081", TLSMode: "none",
 		}
 	})

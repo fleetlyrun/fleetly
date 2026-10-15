@@ -52,11 +52,11 @@ func (e *Engine) backupStep(ctx context.Context) {
 // platformBackupPass 到点执行 Platform Backup（restic 链；ADR-0039 决策 9）
 // ——事件按整体成败落，节拍锚只在全链成功推进。
 func (e *Engine) platformBackupPass(ctx context.Context) {
-	cfg := e.opts.PlatformBackup
+	cfg := e.opts.Backup.PlatformBackup
 	if cfg == nil || !e.platformBackupDue(*cfg) {
 		return
 	}
-	execCtx, cancel := context.WithTimeout(ctx, e.opts.BackupTimeout)
+	execCtx, cancel := context.WithTimeout(ctx, e.opts.Backup.BackupTimeout)
 	defer cancel()
 	if err := e.runPlatformBackup(execCtx, *cfg); err != nil {
 		e.log.Error("platform backup failed", "err", err)
@@ -186,7 +186,7 @@ func (e *Engine) executeOneBackup(ctx context.Context) {
 	// （排队语义，BackupTimeout 只量执行本体）。
 	unlockMaintenance := e.lockMaintenance()
 	defer unlockMaintenance()
-	execCtx, cancel := context.WithTimeout(ctx, e.opts.BackupTimeout)
+	execCtx, cancel := context.WithTimeout(ctx, e.opts.Backup.BackupTimeout)
 	defer cancel()
 	fail := func(errMsg string) {
 		ferr := e.backups.FinishFailed(ctx, e.db.Runner(), b.ID, errMsg)
@@ -440,7 +440,7 @@ func (e *Engine) restoreDatabase(ctx context.Context, db *database.Database) {
 	// 与网络重建串行化；锁等待不占执行预算（排队语义）。
 	unlockMaintenance := e.lockMaintenance()
 	defer unlockMaintenance()
-	execCtx, cancel := context.WithTimeout(ctx, e.opts.BackupTimeout)
+	execCtx, cancel := context.WithTimeout(ctx, e.opts.Backup.BackupTimeout)
 	defer cancel()
 	object, err := e.objectStore.Get(execCtx, src.ObjectKey)
 	if err != nil {

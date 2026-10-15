@@ -328,7 +328,7 @@ func TestStopTaskConcurrentWithDrive(t *testing.T) {
 // 回（失败清签名下拍重试），下一拍恢复收敛。staging 实证形态：docker API
 // hang 卡死环，TTL janitor/租约排空/停止兜底全失明。
 func TestTaskEnsureBoundedByManagedStepTimeout(t *testing.T) {
-	e, rt, clock := newTestEngineOpts(t, Options{ManagedStepTimeout: 100 * time.Millisecond})
+	e, rt, clock := newTestEngineOpts(t, Options{Ring: RingOptions{ManagedStepTimeout: 100 * time.Millisecond}})
 	ctx := context.Background()
 	taskA := "01JD0TASK0000000000000000G"
 	taskB := "01JD0TASK0000000000000000H"
@@ -341,7 +341,7 @@ func TestTaskEnsureBoundedByManagedStepTimeout(t *testing.T) {
 
 	// 注入 hang + 推过强制重放节拍（下一拍两 Task 都要真下发）。
 	ensureEntered, releaseEnsure := rt.ensureGate.Arm()
-	clock.Advance(e.opts.ReconcileReplayInterval + time.Second)
+	clock.Advance(e.opts.Ring.ReconcileReplayInterval + time.Second)
 
 	done := make(chan struct{})
 	go func() {
@@ -372,7 +372,7 @@ func TestTaskEnsureBoundedByManagedStepTimeout(t *testing.T) {
 // Remove 挂死 = API 调用挂死 + lockTask 被握死堵住驱动环，与收敛环卡死
 // 同害）。失败不落半途状态：载体拆不掉则 tombstone 不落，解除后重试收口。
 func TestDeleteTaskRemoveBoundedByManagedStepTimeout(t *testing.T) {
-	e, rt, _ := newTestEngineOpts(t, Options{ManagedStepTimeout: 100 * time.Millisecond})
+	e, rt, _ := newTestEngineOpts(t, Options{Ring: RingOptions{ManagedStepTimeout: 100 * time.Millisecond}})
 	ctx := context.Background()
 	taskID := "01JD0TASK0000000000000000K"
 	createTaskRow(t, e, taskID, "", task.FormResident, 1, 0, "")
@@ -420,7 +420,7 @@ func TestTaskLeaseExpiryDrainAndRevive(t *testing.T) {
 	require.NotEmpty(t, renewed.LeaseDeadline)
 
 	// 时钟推过 deadline + 宽限 → 排空（deadline = 续期时刻 + interval）。
-	clock.Advance(e.opts.TaskLeaseInterval + e.opts.TaskLeaseGrace + time.Second)
+	clock.Advance(e.opts.Task.TaskLeaseInterval + e.opts.Task.TaskLeaseGrace + time.Second)
 
 	e.taskStep(ctx)
 	assert.Equal(t, task.StateDraining, getTaskRow(t, e, taskID).State)
@@ -508,7 +508,7 @@ func TestTaskOneShotStoppingNoReplenish(t *testing.T) {
 		"stopping occupies the one-shot slot: no second run may be minted")
 
 	// 停止兜底（观测缺位）：推过收口截止 → stopped → 同拍镜像 completed。
-	clock.Advance(2*e.opts.TaskStopGrace + 11*time.Second)
+	clock.Advance(2*e.opts.Task.TaskStopGrace + 11*time.Second)
 	e.taskStep(ctx)
 	got := getRunRow(t, e, runs[0].ID)
 	assert.Equal(t, run.StateStopped, got.State)
@@ -870,7 +870,7 @@ func TestEnsureTaskWorkloadsSignatureSkip(t *testing.T) {
 	e.taskStep(ctx) // 签名未变 → 跳过
 	assert.Equal(t, n1, len(rt.calls()), "unchanged desired set must skip Ensure")
 
-	clock.Advance(e.opts.ReconcileReplayInterval + time.Second)
+	clock.Advance(e.opts.Ring.ReconcileReplayInterval + time.Second)
 	e.taskStep(ctx) // 周期强制重放
 	assert.Equal(t, n1+1, len(rt.calls()), "reconcile interval must force re-ensure")
 }

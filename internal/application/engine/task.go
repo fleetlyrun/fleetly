@@ -170,7 +170,7 @@ func (e *Engine) driveLeaseExpiry(ctx context.Context, t *task.Task, now time.Ti
 	if t.State != task.StateActive || t.Form != task.FormResident || t.LeaseDeadline == "" {
 		return
 	}
-	if deadline := parseDeadline(t.LeaseDeadline); deadline != nil && now.After(deadline.Add(e.opts.TaskLeaseGrace)) {
+	if deadline := parseDeadline(t.LeaseDeadline); deadline != nil && now.After(deadline.Add(e.opts.Task.TaskLeaseGrace)) {
 		e.drainTask(ctx, t, run.ReasonLeaseExpired)
 		if err := e.emitObservation(ctx, e.eventTeamOfProject(ctx, e.db.Runner(), t.ProjectID),
 			eventLeaseExpired, "task", t.ID,
@@ -327,7 +327,7 @@ func (e *Engine) driveReplenish(ctx context.Context, t *task.Task, spec *specv1.
 		occupied = runs.occupiedFor(t.Form)
 	}
 	created := false
-	for n := occupied; n < int(want) && n-occupied < e.opts.TaskReplenishBurst; n++ {
+	for n := occupied; n < int(want) && n-occupied < e.opts.Task.TaskReplenishBurst; n++ {
 		if err := e.createRun(ctx, t, spec, now); err != nil {
 			e.log.Error("task drive: replenish", "task", t.ID, "err", err)
 			break
@@ -361,7 +361,7 @@ func (e *Engine) driveEnsure(ctx context.Context, t *task.Task, spec *specv1.Tas
 			e.log.Error("task drive: project run", "run", runs[i].ID, "err", err)
 			continue
 		}
-		w.StopGrace = e.opts.TaskStopGrace
+		w.StopGrace = e.opts.Task.TaskStopGrace
 		ws = append(ws, w)
 	}
 	// 托管库引用注入（first-boot job 铸面透传的 database_refs——值不进
@@ -503,7 +503,7 @@ func (e *Engine) drainTask(ctx context.Context, t *task.Task, reason string) {
 		e.log.Error("task drain", "task", t.ID, "err", err)
 		return
 	}
-	if reason == run.ReasonOwnerRevoked && e.opts.TaskOwnerRevokedRunToTTL {
+	if reason == run.ReasonOwnerRevoked && e.opts.Task.TaskOwnerRevokedRunToTTL {
 		return // 跑完 TTL 模式：存量 Run 自然收口
 	}
 	now := e.clock.Now()
@@ -522,7 +522,7 @@ func (e *Engine) drainTask(ctx context.Context, t *task.Task, reason string) {
 // stopRunRow 把一条活跃 Run 迁入 stopping（起因即写入，终态携带；deadline
 // 覆写为停止收口兜底 = StopGrace × 2 + 观测余量）。
 func (e *Engine) stopRunRow(ctx context.Context, m *run.Run, reason string, now time.Time) error {
-	fallback := state.FormatTime(now.Add(2 * e.opts.TaskStopGrace).Add(10 * time.Second))
+	fallback := state.FormatTime(now.Add(2 * e.opts.Task.TaskStopGrace).Add(10 * time.Second))
 	return e.transitRunFour(ctx, m,
 		run.ActiveStates, run.StateStopping,
 		func(r *run.Run) { r.StopReason, r.Deadline = reason, fallback })

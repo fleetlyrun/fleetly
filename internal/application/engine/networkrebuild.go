@@ -78,7 +78,7 @@ func (e *Engine) RebuildNetwork(ctx context.Context, projectID, name string) (Ne
 	e.maintenanceMu.Lock()
 	defer e.maintenanceMu.Unlock()
 
-	bctx, cancel := context.WithTimeout(ctx, e.opts.NetworkRebuildTimeout)
+	bctx, cancel := context.WithTimeout(ctx, e.opts.Ring.NetworkRebuildTimeout)
 	defer cancel()
 
 	state0, err := ops.InspectNetwork(bctx, ns, name)

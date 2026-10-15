@@ -95,7 +95,7 @@ func (e *Engine) RenewTask(ctx context.Context, id string) (*task.Task, error) {
 		if t.State.Terminal() && t.State != task.StateDrained {
 			return fmt.Errorf("%w: task %s is %s", ErrTaskTerminal, id, t.State)
 		}
-		deadline := state.FormatTime(e.clock.Now().Add(e.opts.TaskLeaseInterval))
+		deadline := state.FormatTime(e.clock.Now().Add(e.opts.Task.TaskLeaseInterval))
 		if t.State != task.StateActive {
 			// 复活：draining/drained → active（四件一走唯一序列真源——
 			// task.active 事件与 task.renew 用户动词审计随行）。

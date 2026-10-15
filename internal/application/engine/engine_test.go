@@ -307,7 +307,7 @@ func TestAdmissionSemantics(t *testing.T) {
 
 	t.Run("queue full is explicit feedback", func(t *testing.T) {
 		e, _, _ := newTestEngine(t)
-		e.opts.QueueCapacity = 1
+		e.opts.Deploy.QueueCapacity = 1
 		rev := freezeSpec(t, e, 1, tImageSpec)
 		_, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev})
 		require.NoError(t, err)

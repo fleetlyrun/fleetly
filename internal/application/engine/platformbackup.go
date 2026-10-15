@@ -81,7 +81,7 @@ var resticExec = func(ctx context.Context, bin string, args []string, env []stri
 
 // PlatformBackupAvailable 报告 restic 二进制在场（doctor/装配期观测面）。
 func (e *Engine) PlatformBackupAvailable() bool {
-	if e.opts.ResticPath != "" {
+	if e.opts.Backup.ResticPath != "" {
 		return true
 	}
 	_, err := resticBinary()
@@ -145,13 +145,13 @@ func (e *Engine) runPlatformBackup(ctx context.Context, cfg PlatformBackupConfig
 			}
 			continue
 		}
-		if err := e.resticRun(ctx, repo, "backup", e.opts.DataRoot,
-			"--exclude", filepath.Join(e.opts.DataRoot, "fleetly.db"),
-			"--exclude", filepath.Join(e.opts.DataRoot, "fleetly.db-wal"),
-			"--exclude", filepath.Join(e.opts.DataRoot, "fleetly.db-shm"),
+		if err := e.resticRun(ctx, repo, "backup", e.opts.Data.DataRoot,
+			"--exclude", filepath.Join(e.opts.Data.DataRoot, "fleetly.db"),
+			"--exclude", filepath.Join(e.opts.Data.DataRoot, "fleetly.db-wal"),
+			"--exclude", filepath.Join(e.opts.Data.DataRoot, "fleetly.db-shm"),
 			// 仓密排除（决策 9：仓密进仓自锁的循环依赖——恢复所需的密在
 			// 仓外，runbook 提示离机保管）。
-			"--exclude", filepath.Join(e.opts.DataRoot, "keys", platformRepoKeyFile),
+			"--exclude", filepath.Join(e.opts.Data.DataRoot, "keys", platformRepoKeyFile),
 			"--exclude", e.platformBackupPath(platformRepoSubdir),
 			"--exclude", e.platformBackupPath(resticCacheSubdir)); err != nil {
 			if firstErr == nil {
@@ -224,7 +224,7 @@ func (e *Engine) snapshotState(ctx context.Context) error {
 
 // platformBackupPath 解析 platform-backups 域内路径。
 func (e *Engine) platformBackupPath(rel string) string {
-	return filepath.Join(e.opts.DataRoot, platformBackupDir, rel)
+	return filepath.Join(e.opts.Data.DataRoot, platformBackupDir, rel)
 }
 
 // resticRepo 是一个 restic 仓的端点面（env 形态经子进程环境传递——
@@ -247,7 +247,7 @@ func (e *Engine) platformRepos() ([]resticRepo, error) {
 	if err := os.MkdirAll(local.repo, 0o700); err != nil {
 		return nil, err
 	}
-	s3 := e.opts.PlatformBackup.S3
+	s3 := e.opts.Backup.PlatformBackup.S3
 	if s3 == nil {
 		return []resticRepo{local}, nil
 	}
@@ -268,7 +268,7 @@ func (e *Engine) platformRepos() ([]resticRepo, error) {
 // platformRepoPassword 铸/读仓密（32 字节 hex；0600；首启生成）。仓密在
 // 备份集外（keys/ 排除见 runPlatformBackup 的 exclude 集——仓密进仓自锁）。
 func (e *Engine) platformRepoPassword() (string, error) {
-	keyPath := filepath.Join(e.opts.DataRoot, "keys", platformRepoKeyFile)
+	keyPath := filepath.Join(e.opts.Data.DataRoot, "keys", platformRepoKeyFile)
 	//nolint:gosec // G304：路径段全部平台常量拼接（DataRoot 装配注入）
 	if existing, err := os.ReadFile(keyPath); err == nil && len(existing) == 64 {
 		return string(existing), nil
@@ -290,7 +290,7 @@ func (e *Engine) platformRepoPassword() (string, error) {
 // resticRun 执行一次 restic 子进程（args 数组、零 shell——shellguard 射
 // 程内延续；env 合并 os.Environ + 仓面凭证）。
 func (e *Engine) resticRun(ctx context.Context, repo resticRepo, args ...string) error {
-	bin := e.opts.ResticPath
+	bin := e.opts.Backup.ResticPath
 	if bin == "" {
 		var err error
 		if bin, err = resticBinary(); err != nil {
@@ -363,11 +363,11 @@ type PlatformSnapshot struct {
 // 底（同仓并发 backup 一方持锁一方精确失败，无半写态）。成败事件 + 审计
 // 一拍落账（节拍环同款事件面；手动面加操作者审计）。
 func (e *Engine) TriggerPlatformBackup(ctx context.Context) (*PlatformSnapshot, error) {
-	cfg := e.opts.PlatformBackup
+	cfg := e.opts.Backup.PlatformBackup
 	if cfg == nil {
 		return nil, fmt.Errorf("platform backup: not configured on this control plane")
 	}
-	execCtx, cancel := context.WithTimeout(ctx, e.opts.BackupTimeout)
+	execCtx, cancel := context.WithTimeout(ctx, e.opts.Backup.BackupTimeout)
 	defer cancel()
 	runErr := e.runPlatformBackup(execCtx, *cfg)
 
@@ -423,7 +423,7 @@ func (e *Engine) ListPlatformSnapshots(ctx context.Context) ([]PlatformSnapshot,
 		return nil, err
 	}
 	local := repos[0]
-	bin := e.opts.ResticPath
+	bin := e.opts.Backup.ResticPath
 	if bin == "" {
 		var err error
 		if bin, err = resticBinary(); err != nil {

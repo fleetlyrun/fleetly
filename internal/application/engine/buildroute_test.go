@@ -38,7 +38,7 @@ func newRoutingEngine(t *testing.T) (*Engine, *fakeBuilder, *fakeBuilder, *fakeB
 			specir.BuilderRailpack:   fbR,
 			specir.BuilderStatic:     fbS,
 		},
-		Registry: newFakeRegistry(), Logger: discardLogger()}, Options{DataRoot: t.TempDir()})
+		Registry: newFakeRegistry(), Logger: discardLogger()}, Options{Data: DataOptions{DataRoot: t.TempDir()}})
 	ctx := context.Background()
 	require.NoError(t, projectrepo.New(clock).Create(ctx, db.Runner(), &project.Project{ID: tProjectID, Name: "shop", TeamID: "default"}))
 	require.NoError(t, apprepo.New(clock).Create(ctx, db.Runner(), &app.App{ID: tAppID, ProjectID: tProjectID, Name: "web"}))
@@ -63,7 +63,7 @@ func freezeStrategySpec(t *testing.T, e *Engine, id, buildJSON string) (string, 
 	require.NoError(t, e.revisions.Create(ctx, e.db.Runner(), &revision.Revision{
 		ID: id, AppID: tAppID, Seq: seq, Spec: []byte(strategySpecJSON(buildJSON)),
 	}))
-	require.NoError(t, os.MkdirAll(filepath.Join(e.opts.DataRoot, "contexts", id), 0o750))
+	require.NoError(t, os.MkdirAll(filepath.Join(e.opts.Data.DataRoot, "contexts", id), 0o750))
 	return id, seq
 }
 

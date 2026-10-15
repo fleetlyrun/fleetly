@@ -32,7 +32,7 @@ func TestBuildSourceWithoutRegistryFailsAtPrepare(t *testing.T) {
 	rt := newFakeRuntime()
 	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt,
 		Builders: map[string]capability.Builder{specir.BuilderDockerfile: fb},
-		Logger:   discardLogger()}, Options{DataRoot: t.TempDir()})
+		Logger:   discardLogger()}, Options{Data: DataOptions{DataRoot: t.TempDir()}})
 	ctx := context.Background()
 	require.NoError(t, projectrepo.New(clock).Create(ctx, db.Runner(), &project.Project{ID: tProjectID, Name: "shop", TeamID: "default"}))
 	require.NoError(t, apprepo.New(clock).Create(ctx, db.Runner(), &app.App{ID: tAppID, ProjectID: tProjectID, Name: "web"}))

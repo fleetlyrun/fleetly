@@ -190,10 +190,10 @@ func (e *Engine) prepareBuildInput(ctx context.Context, d *deployment.Deployment
 	var contextDir string
 	switch origin := spec.GetSource().GetKind().(type) {
 	case *specv1.Source_Git:
-		if e.opts.DataRoot == "" {
+		if e.opts.Data.DataRoot == "" {
 			return capability.BuildRequest{}, fmt.Errorf("data root is not configured for source checkout")
 		}
-		dir := filepath.Join(e.opts.DataRoot, "contexts", d.ToRevision)
+		dir := filepath.Join(e.opts.Data.DataRoot, "contexts", d.ToRevision)
 		if _, err := os.Stat(dir); os.IsNotExist(err) {
 			// 材料解析（ADR-0073 决策 1）：Project 级 GitHub App → Global →
 			// 匿名；命中而铸造失败 = 精确失败（不静默降级匿名）。
@@ -314,18 +314,18 @@ func (e *Engine) projectPushCred(ctx context.Context, projectID string, platform
 // contexts/<revision>（幂等：目标已存在跳过；解包失败 tmp 全弃，不留半
 // 截上下文被后续拍误判完整）。
 func (e *Engine) extractUploadContext(ctx context.Context, uploadID, revisionID string) (string, error) {
-	if e.opts.DataRoot == "" {
+	if e.opts.Data.DataRoot == "" {
 		return "", fmt.Errorf("data root is not configured for source extraction")
 	}
 	row, err := e.uploads.Get(ctx, e.db.Runner(), uploadID)
 	if err != nil {
 		return "", fmt.Errorf("resolve upload source %s: %w", uploadID, err)
 	}
-	dir := filepath.Join(e.opts.DataRoot, "contexts", revisionID)
+	dir := filepath.Join(e.opts.Data.DataRoot, "contexts", revisionID)
 	if _, serr := os.Stat(dir); serr == nil {
 		return dir, nil // 幂等：Revision 冻结体 + 内容寻址 blob，已解包即纯函数结果
 	}
-	blob := upload.BlobPath(e.opts.DataRoot, row.Digest)
+	blob := upload.BlobPath(e.opts.Data.DataRoot, row.Digest)
 	f, err := os.Open(blob) //nolint:gosec // 数据根私有目录
 	if err != nil {
 		return "", fmt.Errorf("open upload blob for digest %s (upload %s): %w", row.Digest, uploadID, err)

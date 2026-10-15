@@ -29,7 +29,7 @@ func (e *Engine) managedStep(ctx context.Context) {
 	// 全步带界（staging 实证：无界的 docker API hang 卡死单写者循环）。
 	unlockMaintenance := e.lockMaintenance()
 	defer unlockMaintenance()
-	stepCtx, cancel := context.WithTimeout(ctx, e.opts.ManagedStepTimeout)
+	stepCtx, cancel := context.WithTimeout(ctx, e.opts.Ring.ManagedStepTimeout)
 	defer cancel()
 	e.reconcileNodes(stepCtx) // 节点对账不依赖 Proxy（观测面独立收敛）
 	// 受管面按在册 Provider 各自收敛（Proxy 缺席不阻断 Registry/Logging——
@@ -60,6 +60,19 @@ type managedGen struct {
 	// obsSkipLogged 是观测失败跳拍告警的去抖位：连续失败沿只告警一次，
 	// 观测门恢复即清（告警状态机"沿才通知"同款取向——风暴窗不逐拍刷屏）。
 	obsSkipLogged atomic.Bool
+}
+
+// manageds 是受管域状态（Generation 实例态（C5：多 Engine 实例互不
+// 污染）+ Ensure 备忘）。P3 批 5 收编：managedDomain → manageds（受管域
+// 实体名词的机械复数，ADR-0075 命名法则）；Engine 字段名 managed 保持
+// 不变。P3 收官批 8 收编：类型体自 engine.go 归位 managed.go（壳收口）。
+type manageds struct {
+	// gens 是 per-受管域 Generation 计数（F2.5 修复：全局单计数把任一
+	// Provider 指纹变化放大成全部受管域滚动——新增受管 Provider 或 zot
+	// 材料随 Project 集变化都会把 Proxy 滚一遍（traefik stop-first = 路由
+	// 中断，升级零扰动锚实证）。键 = ManagedNamespace().String()。
+	gens   map[string]*managedGen
+	ensure map[string]ensureMemo // namespace → 上次成功 Ensure（managedFingerprint 全量保守口径）
 }
 
 // managedFingerprint 返回受管 Workload 集的稳定指纹（json.Marshal 对 map

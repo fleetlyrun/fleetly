@@ -62,9 +62,13 @@ func withFakeRestic(t *testing.T, cfg *PlatformBackupConfig) (*Engine, *fakeRest
 	db, clock := statertest.New(t)
 	dataRoot := t.TempDir()
 	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: newFakeRuntime(), Logger: discardLogger()}, Options{
-		DataRoot:       dataRoot,
-		ResticPath:     "fake-restic", // 缝在场：二进制探测面恒可用
-		PlatformBackup: cfg,
+		Data: DataOptions{
+			DataRoot: dataRoot,
+		},
+		Backup: BackupOptions{
+			ResticPath:     "fake-restic", // 缝在场：二进制探测面恒可用
+			PlatformBackup: cfg,
+		},
 	})
 	return e, fr, clock
 }
@@ -73,15 +77,15 @@ func TestPlatformBackupDueAnchor(t *testing.T) {
 	e, _, clock := withFakeRestic(t, &PlatformBackupConfig{
 		Interval: time.Hour, Retention: 7 * 24 * time.Hour,
 	})
-	require.True(t, e.platformBackupDue(*e.opts.PlatformBackup), "no anchor yet: first run is due")
+	require.True(t, e.platformBackupDue(*e.opts.Backup.PlatformBackup), "no anchor yet: first run is due")
 
 	require.NoError(t, os.MkdirAll(e.platformBackupPath(""), 0o750))
 	require.NoError(t, os.WriteFile(e.platformBackupPath(platformLastRunFile),
 		[]byte(clock.Now().Format(time.RFC3339)), 0o600))
-	require.False(t, e.platformBackupDue(*e.opts.PlatformBackup), "fresh anchor: not due")
+	require.False(t, e.platformBackupDue(*e.opts.Backup.PlatformBackup), "fresh anchor: not due")
 
 	clock.Advance(2 * time.Hour)
-	require.True(t, e.platformBackupDue(*e.opts.PlatformBackup), "past the interval: due again")
+	require.True(t, e.platformBackupDue(*e.opts.Backup.PlatformBackup), "past the interval: due again")
 }
 
 // 全链：快照 → 本地仓 backup/check/forget → 锚推进 + 成功事件。
@@ -91,7 +95,7 @@ func TestPlatformBackupRunSucceeds(t *testing.T) {
 	})
 	ctx := context.Background()
 
-	require.NoError(t, e.runPlatformBackup(ctx, *e.opts.PlatformBackup))
+	require.NoError(t, e.runPlatformBackup(ctx, *e.opts.Backup.PlatformBackup))
 
 	// SQLite 一致快照真落盘（VACUUM INTO 非空文件）。
 	snapshot := e.platformBackupPath(platformSnapshotName)
@@ -103,7 +107,7 @@ func TestPlatformBackupRunSucceeds(t *testing.T) {
 	require.Len(t, calls, 4, "local repo: init + backup + check + forget")
 	// argv 前缀恒 ["-r", repo]；动作段在 [2:]。
 	assert.Equal(t, []string{"init"}, calls[0][2:], "first use initializes the repository")
-	assert.Equal(t, []string{"backup", e.opts.DataRoot}, calls[1][2:4], "backup targets the data root")
+	assert.Equal(t, []string{"backup", e.opts.Data.DataRoot}, calls[1][2:4], "backup targets the data root")
 	assert.Contains(t, strings.Join(calls[1], " "), "--exclude")
 	assert.Contains(t, strings.Join(calls[1], " "), "fleetly.db", "live sqlite files are excluded in favor of the snapshot")
 	assert.Contains(t, strings.Join(calls[1], " "), "platform-backups", "the repo directory itself is excluded")
@@ -118,7 +122,7 @@ func TestPlatformBackupRunSucceeds(t *testing.T) {
 	require.NoError(t, err)
 
 	// 仓密铸造 + env 承载（RESTIC_PASSWORD 不落 argv）。
-	keyPath := filepath.Join(e.opts.DataRoot, "keys", platformRepoKeyFile)
+	keyPath := filepath.Join(e.opts.Data.DataRoot, "keys", platformRepoKeyFile)
 	raw, err := os.ReadFile(keyPath) //nolint:gosec // G304：测试夹具路径
 	require.NoError(t, err)
 	assert.Len(t, string(raw), 64, "repo password is 32-byte hex")
@@ -136,7 +140,7 @@ func TestPlatformBackupS3SecondRepo(t *testing.T) {
 			AccessKeyID: "ak", SecretAccessKey: "sk"}, //nolint:gosec // 测试样本值
 	})
 	ctx := context.Background()
-	require.NoError(t, e.runPlatformBackup(ctx, *e.opts.PlatformBackup))
+	require.NoError(t, e.runPlatformBackup(ctx, *e.opts.Backup.PlatformBackup))
 
 	fr.mu.Lock()
 	defer fr.mu.Unlock()
@@ -154,7 +158,7 @@ func TestPlatformBackupFailureRecorded(t *testing.T) {
 	fr.execErr = context.DeadlineExceeded
 	ctx := context.Background()
 
-	err := e.runPlatformBackup(ctx, *e.opts.PlatformBackup)
+	err := e.runPlatformBackup(ctx, *e.opts.Backup.PlatformBackup)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "fake restic failure detail")
 	_, aerr := os.ReadFile(e.platformBackupPath(platformLastRunFile))
@@ -166,15 +170,19 @@ func TestPlatformBackupFailureRecorded(t *testing.T) {
 func TestPlatformBackupUnavailableDegrades(t *testing.T) {
 	db, _ := statertest.New(t)
 	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: newFakeRuntime(), Logger: discardLogger()}, Options{
-		DataRoot:       t.TempDir(),
-		ResticPath:     "", // 无缝 = 走 LookPath；测试环境无 restic
-		PlatformBackup: &PlatformBackupConfig{Interval: time.Hour, Retention: 24 * time.Hour},
+		Data: DataOptions{
+			DataRoot: t.TempDir(),
+		},
+		Backup: BackupOptions{
+			ResticPath:     "", // 无缝 = 走 LookPath；测试环境无 restic
+			PlatformBackup: &PlatformBackupConfig{Interval: time.Hour, Retention: 24 * time.Hour},
+		},
 	})
 	if _, err := resticBinary(); err == nil {
 		t.Skip("restic present on this machine; degradation path needs its absence")
 	}
 	assert.False(t, e.PlatformBackupAvailable())
-	assert.False(t, e.platformBackupDue(*e.opts.PlatformBackup), "unavailable binary: never due")
+	assert.False(t, e.platformBackupDue(*e.opts.Backup.PlatformBackup), "unavailable binary: never due")
 }
 
 // 手动触发（F2.3，ADR-0039 决策 9/10）：同步执行 + 最新快照回读 + 成败
@@ -284,7 +292,7 @@ func TestResticEnvSystemdCacheDir(t *testing.T) {
 
 	t.Run("backup excludes the cache directory", func(t *testing.T) {
 		ctx := context.Background()
-		require.NoError(t, e.runPlatformBackup(ctx, *e.opts.PlatformBackup))
+		require.NoError(t, e.runPlatformBackup(ctx, *e.opts.Backup.PlatformBackup))
 		calls := fr.snapshotCalls()
 		require.Len(t, calls, 4)
 		assert.Contains(t, strings.Join(calls[1], " "), e.platformBackupPath(resticCacheSubdir),

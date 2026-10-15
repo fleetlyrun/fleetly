@@ -112,7 +112,7 @@ func newHarness(t testing.TB, autostart bool, mutators ...EngineOption) *Harness
 	// 推进底座（检出目录由测试预置跳过真实 clone；推送目标=假受管仓库）。
 	// Builder 家族三名全在册同一 fake（ADR-0032 路由面——Calls() 捕获路由
 	// 名与 strategy 载荷，全链用例按 spec 的 builder 分派）。
-	opts := engine.Options{DataRoot: dataRoot}
+	opts := engine.Options{Data: engine.DataOptions{DataRoot: dataRoot}}
 	for _, m := range mutators {
 		m(&opts)
 	}

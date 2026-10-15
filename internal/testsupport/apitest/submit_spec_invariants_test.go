@@ -378,7 +378,7 @@ func TestInvariant5DualIdempotencyWindows(t *testing.T) {
 
 func TestInvariant6FreezeTxOutlivesSubmitTx(t *testing.T) {
 	// QueueCapacity=1 注入小容量 engine（手动驱动：首条部署恒驻 queued）。
-	h := apitest.NewManualOpts(t, func(o *engine.Options) { o.QueueCapacity = 1 })
+	h := apitest.NewManualOpts(t, func(o *engine.Options) { o.Deploy.QueueCapacity = 1 })
 	ctx := sdk.WithToken(context.Background(), h.Token)
 	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
 	revisions := deliveryv1.NewRevisionsServiceClient(h.Conn)

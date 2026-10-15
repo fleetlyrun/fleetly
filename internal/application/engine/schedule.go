@@ -80,7 +80,7 @@ func (e *Engine) fireSchedule(ctx context.Context, s *schedule.Schedule, now tim
 		e.log.Error("schedule fire: overlap check", "schedule", s.ID, "err", err)
 		return
 	}
-	if overlapping && e.opts.ScheduleOverlap != ScheduleOverlapFire {
+	if overlapping && e.opts.Task.ScheduleOverlap != ScheduleOverlapFire {
 		e.skipSchedule(ctx, s, next, scheduleSkipReasonOverlap)
 		return
 	}

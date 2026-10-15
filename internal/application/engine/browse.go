@@ -110,21 +110,21 @@ type BrowseSessionInfo struct {
 // browseHost 铸会话路由主机名（browse-<lower(id)>.<suffix>；host 字符集
 // 由 ValidateRouteHost 把守——ULID lower + 操作者后缀）。
 func (e *Engine) browseHost(sessionID string) string {
-	return "browse-" + strings.ToLower(sessionID) + "." + e.opts.Browse.HostSuffix
+	return "browse-" + strings.ToLower(sessionID) + "." + e.opts.Data.Browse.HostSuffix
 }
 
 // BrowseEntryURL 铸会话入口 URL（api 响应面；票据由调用方拼接——单用途
 // 值不进本公式）。
 func (e *Engine) BrowseEntryURL(sessionID string) string {
 	scheme := "http"
-	if e.opts.Browse.TLSMode == "auto" {
+	if e.opts.Data.Browse.TLSMode == "auto" {
 		scheme = "https"
 	}
 	return scheme + "://" + e.browseHost(sessionID) + "/v1/browse/entry"
 }
 
 // BrowseConfigured 报告 browse 面装配可用（api 受理面先拒 E_BROWSE_DISABLED）。
-func (e *Engine) BrowseConfigured() bool { return e.opts.Browse.Configured() }
+func (e *Engine) BrowseConfigured() bool { return e.opts.Data.Browse.Configured() }
 
 // browseGrantBytes 铸随机 grant 材料。
 func browseGrantBytes() (string, error) {
@@ -252,12 +252,12 @@ func BrowseDNSName(sessionID string) string {
 // browseCapabilityRoutes 铸在册会话的 ephemeral 双 Route（publishRoutes
 // 合并面；后端经 Runtime.Addresses 解析——解析不到跳过该会话的路由）。
 func (e *Engine) browseCapabilityRoutes(ctx context.Context) []capability.Route {
-	if !e.opts.Browse.Configured() {
+	if !e.opts.Data.Browse.Configured() {
 		return nil
 	}
-	gwURL, err := url.Parse(e.opts.Browse.GatewayURL)
+	gwURL, err := url.Parse(e.opts.Data.Browse.GatewayURL)
 	if err != nil || gwURL.Host == "" {
-		e.log.Error("browse routes: gateway url malformed", "url", e.opts.Browse.GatewayURL)
+		e.log.Error("browse routes: gateway url malformed", "url", e.opts.Data.Browse.GatewayURL)
 		return nil
 	}
 	e.browse.mu.Lock()
@@ -269,7 +269,7 @@ func (e *Engine) browseCapabilityRoutes(ctx context.Context) []capability.Route 
 	var out []capability.Route
 	for _, s := range sessions {
 		host := e.browseHost(s.id)
-		tls := e.opts.Browse.TLSMode
+		tls := e.opts.Data.Browse.TLSMode
 		// ① 票据兑换入口（免门禁：规则更长，优先级高于 Host-only 路由）。
 		out = append(out, capability.Route{
 			Host: host, Path: "/v1/browse/entry",
@@ -291,7 +291,7 @@ func (e *Engine) browseCapabilityRoutes(ctx context.Context) []capability.Route 
 			Protocol:    capability.ProtocolHTTP,
 			TLS:         tls,
 			BackendAddr: backend,
-			Auth:        &capability.RouteAuth{Address: e.opts.Browse.GatewayURL + "/v1/browse/authorize"},
+			Auth:        &capability.RouteAuth{Address: e.opts.Data.Browse.GatewayURL + "/v1/browse/authorize"},
 		})
 	}
 	return out

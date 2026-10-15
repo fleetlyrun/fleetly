@@ -37,7 +37,7 @@ func TestPendingObservationsNeverPassL1(t *testing.T) {
 	}
 
 	// L1 超时 → failed（不得 succeeded/observing）。
-	clock.Advance(e.opts.ReleaseTimeout + time.Second)
+	clock.Advance(e.opts.Deploy.ReleaseTimeout + time.Second)
 	e.step(ctx)
 	final := getDeployment(t, e, d.ID)
 	require.Equal(t, deployment.StateFailed, final.State,
@@ -73,7 +73,7 @@ func TestReleaseWaitMaterializeShortCircuit(t *testing.T) {
 	require.Len(t, rt.calls(), 1, "the L1 pass must not need a fresh Ensure")
 
 	// L3：时钟过窗 → succeeded。
-	clock.Advance(e.opts.ObserveWindow + time.Second)
+	clock.Advance(e.opts.Deploy.ObserveWindow + time.Second)
 	e.step(ctx)
 	require.Equal(t, deployment.StateSucceeded, getDeployment(t, e, d.ID).State)
 }
@@ -82,7 +82,7 @@ func TestReleaseWaitMaterializeShortCircuit(t *testing.T) {
 // （同 gen 幂等重放；签名外输入漂移——Secret 轮换/peer 批准/卷钉住——
 // 的收敛通道）。
 func TestReleaseWaitMaterializeReplayWindow(t *testing.T) {
-	e, rt, clock := newTestEngineOpts(t, Options{ReconcileReplayInterval: 20 * time.Millisecond})
+	e, rt, clock := newTestEngineOpts(t, Options{Ring: RingOptions{ReconcileReplayInterval: 20 * time.Millisecond}})
 	ctx := context.Background()
 	rev := freezeSpec(t, e, 2, tImageSpec)
 

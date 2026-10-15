@@ -226,7 +226,7 @@ func TestFirstBootWaitTimeoutForceStops(t *testing.T) {
 	e.taskStep(ctx)
 	require.Len(t, taskRuns(t, e, row.ID), 1, "run is pending (never completes)")
 
-	clock.Advance(600*time.Second + e.opts.FirstBootWaitGrace + time.Second)
+	clock.Advance(600*time.Second + e.opts.Deploy.FirstBootWaitGrace + time.Second)
 	e.step(ctx)
 	d = getDeployment(t, e, d.ID)
 	require.Equal(t, deployment.StateFailed, d.State)
@@ -255,7 +255,7 @@ func TestFirstBootTTLExpiryFails(t *testing.T) {
 	// 停止兜底收口 stopped/ttl_expired → Task 镜像。
 	clock.Advance(601 * time.Second)
 	e.taskStep(ctx)
-	clock.Advance(2*e.opts.TaskStopGrace + 11*time.Second)
+	clock.Advance(2*e.opts.Task.TaskStopGrace + 11*time.Second)
 	e.taskStep(ctx)
 	assert.Equal(t, task.StateCompleted, getTaskRow(t, e, row.ID).State,
 		"ttl expiry mirrors to completed on the task row")
@@ -448,7 +448,7 @@ func TestFirstBootQuotaBoundedRetry(t *testing.T) {
 	e.step(ctx) // 再拍仍在等
 	assert.Equal(t, deployment.StateReleasing, getDeployment(t, e, d.ID).State)
 
-	clock.Advance(600*time.Second + e.opts.FirstBootWaitGrace + time.Second)
+	clock.Advance(600*time.Second + e.opts.Deploy.FirstBootWaitGrace + time.Second)
 	e.step(ctx)
 	d = getDeployment(t, e, d.ID)
 	require.Equal(t, deployment.StateFailed, d.State)
@@ -557,7 +557,7 @@ func TestFirstBootLateCompletionNotL1Timeout(t *testing.T) {
 	require.Len(t, runs, 1)
 
 	// 停机跨窗：时钟推过 job 等待截止（完成观测迟到）。
-	clock.Advance(600*time.Second + e.opts.FirstBootWaitGrace + time.Minute)
+	clock.Advance(600*time.Second + e.opts.Deploy.FirstBootWaitGrace + time.Minute)
 
 	// job 实际完成：completed 观测 → Run 终态（pending 直收，不查截止）→
 	// Task 镜像——行终态先于 deploy 拍落库。

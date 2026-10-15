@@ -25,7 +25,7 @@ const browseIdleTTL = 10 * time.Minute
 // ——重启恢复；流失行拆除）→ 到期/空闲回收（Runtime.Remove + 删行）→
 // 存量会话 Ensure（签名短路）。
 func (e *Engine) browseStep(ctx context.Context) {
-	if !e.opts.Browse.Configured() {
+	if !e.opts.Data.Browse.Configured() {
 		return // 面停用：无行可收（受理已拒），零成本拍
 	}
 	rows, err := e.browseRepo.List(ctx, e.db.Runner())
@@ -129,7 +129,7 @@ func (e *Engine) browseSessionDone(r *browse.Session, now time.Time) bool {
 
 // teardownBrowseSession 收口：拆载体 → 删行 → 清注册态 + Kick 路由发布。
 func (e *Engine) teardownBrowseSession(ctx context.Context, r *browse.Session) {
-	stepCtx, cancel := context.WithTimeout(ctx, e.opts.ManagedStepTimeout)
+	stepCtx, cancel := context.WithTimeout(ctx, e.opts.Ring.ManagedStepTimeout)
 	defer cancel()
 	unlockMaintenance := e.lockMaintenance()
 	defer unlockMaintenance()
@@ -182,7 +182,7 @@ func (e *Engine) reconcileBrowseSession(ctx context.Context, r *browse.Session, 
 	}
 	unlockMaintenance := e.lockMaintenance()
 	defer unlockMaintenance()
-	stepCtx, cancel := context.WithTimeout(ctx, e.opts.ManagedStepTimeout)
+	stepCtx, cancel := context.WithTimeout(ctx, e.opts.Ring.ManagedStepTimeout)
 	defer cancel()
 	w, materials, err := e.projectBrowseWorkload(stepCtx, s)
 	if err != nil {

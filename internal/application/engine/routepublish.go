@@ -9,10 +9,20 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"sync/atomic"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/route"
 )
+
+// proxies 是 Route 发布备忘与即时发布信号（受管 Proxy 面）。P3 收官批 8
+// 收编：proxyState → proxies（复数普通名词零后缀，ADR-0075 命名法则）；
+// Engine 字段名 proxyMemo 保持不变；类型体自 engine.go 归位 routepublish.go
+// （发布单槽的消费面）。
+type proxies struct {
+	pub    map[string]ensureMemo // 发布单槽（键恒 routesPubKey；routesFingerprint 行集内容指纹）
+	pubNow atomic.Bool           // PublishRoutesNow 即时发布信号（消费即清）
+}
 
 // publishRoutes 全量发布 Route（后端地址经 Runtime.Addresses 解析；解析
 // 不到的跳过——诚实降级，不阻断其余 Route）。

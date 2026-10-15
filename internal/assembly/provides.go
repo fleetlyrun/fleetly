@@ -475,28 +475,36 @@ func NewEngine(
 		DB: db, Repos: repos, Runtime: rt, Builders: b, Proxy: proxy, Registry: reg, Logging: logs,
 		Metrics: mtr, ObjectStore: store, Cipher: cipher, Logger: app.Logger(),
 	}, engine.Options{
-		DataRoot:        cfg.DataRoot(),
-		ScheduleOverlap: overlap,
-		PlatformBackup:  pb,
+		Task: engine.TaskOptions{
+			ScheduleOverlap: overlap,
+		},
+		Backup: engine.BackupOptions{
+			PlatformBackup: pb,
+		},
 		// 回环中继代理（ADR-0049）：gateway 基址按绑定地址派生（空 host =
 		// 127.0.0.1；绑定具体 IP 时照用该 IP——staging 形态 10.124.0.3:9081
 		// 只在该地址监听）。版本取 buildinfo（回环代理握手上报）。
-		RelayLoopbackURL: relayLoopbackURL(cfg.HTTPAddr()),
-		RelayVersion:     info.Version,
+		Relay: engine.RelayOptions{
+			RelayLoopbackURL: relayLoopbackURL(cfg.HTTPAddr()),
+			RelayVersion:     info.Version,
+		},
 		// 数据浏览器面（F3.6，ADR-0051）：config 三字段直通（host_suffix 空
 		// = 面停用——BrowseDatabase 精确拒绝，升级零扰动）；TLS 缺省经
 		// browseTLS 归一 none（traefik 渲染层把空串当 auto 的既有口径）。
-		Browse: engine.BrowseConfig{
-			HostSuffix: cfg.Browse.GetHostSuffix(),
-			GatewayURL: cfg.Browse.GetGatewayUrl(),
-			TLSMode:    browseTLS,
-		},
-		// Console 面板公网发布面（ADR-0061）：config 三字段直通（host 空 =
-		// 不发布，升级零扰动）；tls 空值随渲染层口径视为 auto，不归一。
-		Console: engine.ConsoleConfig{
-			Host:       cfg.Console.GetHost(),
-			GatewayURL: cfg.Console.GetGatewayUrl(),
-			TLSMode:    cfg.Console.GetTls(),
+		Data: engine.DataOptions{
+			DataRoot: cfg.DataRoot(),
+			Browse: engine.BrowseConfig{
+				HostSuffix: cfg.Browse.GetHostSuffix(),
+				GatewayURL: cfg.Browse.GetGatewayUrl(),
+				TLSMode:    browseTLS,
+			},
+			// Console 面板公网发布面（ADR-0061）：config 三字段直通（host 空 =
+			// 不发布，升级零扰动）；tls 空值随渲染层口径视为 auto，不归一。
+			Console: engine.ConsoleConfig{
+				Host:       cfg.Console.GetHost(),
+				GatewayURL: cfg.Console.GetGatewayUrl(),
+				TLSMode:    cfg.Console.GetTls(),
+			},
 		},
 	}), nil
 }

@@ -5,14 +5,27 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 )
 
-// 构建循环参数（Options 扩展；BuildConcurrency 上限可配，F0.9）。
-type buildOptions struct {
+// builds 是构建面状态（输入登记 + 最近日志缓冲；并发/超时是 Options
+// 派生面，留在 Engine.opts/buildOpts）。P3 批 6 收编：buildDomain →
+// builds（复数普通名词零后缀，ADR-0075 命名法则）；Engine 字段名 build
+// 保持不变。P3 收官批 8 收编：类型体自 engine.go 归位 builder.go（壳收口）。
+type builds struct {
+	inputsMu sync.Mutex
+	inputs   map[string]capability.BuildRequest // buildID → 登记输入（重启丢失即回 queued 重放）
+	logs     *logBuffer
+}
+
+// 构建循环参数（Options 扩展；BuildConcurrency 上限可配，F0.9）。P3 收官
+// 批 8 更名：buildOptions → buildLimits（剥与导出切片类型 BuildOptions 的
+// 近撞名）；Engine 字段名 buildOpts 保持不变。
+type buildLimits struct {
 	Concurrency int           // 并发构建上限（默认 2）
 	Timeout     time.Duration // 单次构建硬超时（默认 15m；超时=expired）
 }

@@ -191,7 +191,7 @@ func TestTriggerScheduleOverlapRejected(t *testing.T) {
 // TestScheduleOverlapPolicyFires（ADR-0017 附录 A.4）：fire 策略下重叠时
 // 照常拍（允许并行拍）；手动触发在重叠下恒诚实拒绝（旋钮只改到期拍）。
 func TestScheduleOverlapPolicyFires(t *testing.T) {
-	e, _, clock := newTestEngineOpts(t, Options{ScheduleOverlap: ScheduleOverlapFire})
+	e, _, clock := newTestEngineOpts(t, Options{Task: TaskOptions{ScheduleOverlap: ScheduleOverlapFire}})
 	ctx := context.Background()
 	sid := "01JD0SCHD00000000000000008"
 	createScheduleRow(t, e, sid, "", "0 * * * *", "UTC", "2026-01-01T00:00:00Z")
