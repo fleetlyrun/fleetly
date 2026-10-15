@@ -44,9 +44,11 @@ import (
 	"fmt"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
+	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
 	"google.golang.org/protobuf/encoding/protojson"
 )
@@ -117,11 +119,20 @@ func (e *Engine) mintOneShotTask(ctx context.Context, projectID string,
 		}
 		return e.commitWrite(ctx, tx, writeFact{
 			write: func(ctx context.Context, tx *sql.Tx) error { return e.tasks.Create(ctx, tx, row) },
-			events: []func() eventFact{func() eventFact {
-				return eventFact{name: EventTaskCreated, aggregate: "task", id: row.ID, payload: TaskCreatedEventJSON(row), team: team}
+			facts: []func() writes.FactRow{func() writes.FactRow {
+				fr := writes.FactRow{
+					Name: EventTaskCreated, Aggregate: "task", ID: row.ID,
+					Payload: TaskCreatedEventJSON(row), TeamID: team,
+					Action: "task.create", Resource: "task/" + row.ID, AfterFP: row.Form,
+				}
+				if actorCtx {
+					// actor/source 取请求 ctx——用户动词路径（默认 SourceSystem
+					// 由 kernel 缺省铸型）。
+					fr.Actor, fr.Source = authn.ActorFromContext(ctx), authn.SourceFromContext(ctx)
+				}
+				return fr
 			}},
-			audits: []auditFact{{action: "task.create", resource: "task/" + row.ID, afterFP: row.Form, actorCtx: actorCtx}},
-			steps:  domainSteps(row.ID),
+			steps: domainSteps(row.ID),
 		})
 	})
 	if err != nil {

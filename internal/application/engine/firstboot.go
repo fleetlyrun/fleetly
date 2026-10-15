@@ -23,6 +23,7 @@ import (
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	specir "github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
@@ -217,9 +218,15 @@ func (e *Engine) mintFirstBootJob(ctx context.Context, d *deployment.Deployment,
 						[]deployment.State{deployment.StateReleasing}, deployment.StateReleasing,
 						func(m *deployment.Deployment) { m.FirstBoot, m.ObserveDeadline = cursor, wait })
 				},
-				events: []func() eventFact{func() eventFact {
-					return eventFact{name: eventFirstBootJobFired, aggregate: "deployment", id: d.ID,
-						payload: firstBootJobEventPayloadJSON(d, idx, job.GetName(), taskID), team: depTeam}
+				facts: []func() writes.FactRow{func() writes.FactRow {
+					// 双真偏离（仅流面）：first_boot_job 事实事件的取证孪生由
+					// 同步的 transit 四件一审计承载（deployment.transit 单行；
+					// A 化前亦无独立审计行，行集合零漂移）。
+					return writes.FactRow{
+						Name: eventFirstBootJobFired, Aggregate: "deployment", ID: d.ID,
+						Payload: firstBootJobEventPayloadJSON(d, idx, job.GetName(), taskID), TeamID: depTeam,
+						StreamOnly: true,
+					}
 				}},
 			}}
 		},

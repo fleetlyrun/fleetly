@@ -19,6 +19,18 @@
       "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"app_id\":{\"type\":\"string\"},\"metric\":{\"type\":\"string\"},\"rule_id\":{\"type\":\"string\"},\"state\":{\"type\":\"string\"},\"threshold\":{\"type\":\"number\"},\"value\":{\"type\":\"number\"}},\"required\":[\"rule_id\",\"metric\",\"state\"],\"type\":\"object\"}"
     },
     {
+      "name": "alert_rule.created",
+      "kind": "event",
+      "summary": "A threshold alert rule was created for an app.",
+      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"app_id\":{\"type\":\"string\"},\"metric\":{\"type\":\"string\"}},\"required\":[\"app_id\",\"metric\"],\"type\":\"object\"}"
+    },
+    {
+      "name": "alert_rule.deleted",
+      "kind": "event",
+      "summary": "A threshold alert rule was deleted.",
+      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"app_id\":{\"type\":\"string\"},\"metric\":{\"type\":\"string\"}},\"required\":[\"app_id\",\"metric\"],\"type\":\"object\"}"
+    },
+    {
       "name": "app",
       "kind": "spec",
       "summary": "AppSpec: desired state of a long-running deployable unit (an app is one or more processes).",
@@ -89,6 +101,18 @@
       "kind": "event",
       "summary": "Build produced an image digest.",
       "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"app_id\":{\"type\":\"string\"},\"build_id\":{\"type\":\"string\"},\"digest\":{\"type\":\"string\"},\"error\":{\"type\":\"string\"},\"revision_id\":{\"type\":\"string\"},\"state\":{\"type\":\"string\"}},\"required\":[\"build_id\",\"app_id\",\"state\"],\"type\":\"object\"}"
+    },
+    {
+      "name": "channel.created",
+      "kind": "event",
+      "summary": "A notification channel was registered (platform-level material; credentials sealed, never returned).",
+      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"kind\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"}},\"type\":\"object\"}"
+    },
+    {
+      "name": "channel.deleted",
+      "kind": "event",
+      "summary": "A notification channel was deleted.",
+      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"kind\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"}},\"type\":\"object\"}"
     },
     {
       "name": "config.updated",
@@ -229,6 +253,24 @@
       "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"id\":{\"type\":\"string\"},\"reason\":{\"type\":\"string\"},\"team_id\":{\"type\":\"string\"}},\"required\":[\"id\",\"team_id\",\"reason\"],\"type\":\"object\"}"
     },
     {
+      "name": "github_app.connected",
+      "kind": "event",
+      "summary": "A GitHub App installation was connected as private-repo access material (verified at admission, owner resolved; re-put with a new key replaces the sealed material).",
+      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"account_login\":{\"type\":\"string\"},\"app_id\":{\"type\":\"integer\"},\"installation_id\":{\"type\":\"integer\"}},\"required\":[\"app_id\",\"installation_id\",\"account_login\"],\"type\":\"object\"}"
+    },
+    {
+      "name": "github_app.deleted",
+      "kind": "event",
+      "summary": "A GitHub App access material was soft-deleted; resolution fails immediately while the sealed key survives for key rewrap.",
+      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"account_login\":{\"type\":\"string\"},\"app_id\":{\"type\":\"integer\"},\"installation_id\":{\"type\":\"integer\"}},\"required\":[\"app_id\",\"installation_id\",\"account_login\"],\"type\":\"object\"}"
+    },
+    {
+      "name": "hook.created",
+      "kind": "event",
+      "summary": "A git hook configuration was created for an app (token minted; the secret itself never appears).",
+      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"app_id\":{\"type\":\"string\"}},\"required\":[\"app_id\"],\"type\":\"object\"}"
+    },
+    {
       "name": "hook.push_accepted",
       "kind": "event",
       "summary": "A verified webhook push triggered a deployment.",
@@ -239,6 +281,18 @@
       "kind": "event",
       "summary": "A control-plane hook refresh pulled the branch head and triggered a deployment.",
       "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"branch\":{\"type\":\"string\"},\"commit\":{\"type\":\"string\"},\"deployment\":{\"type\":\"string\"}},\"required\":[\"branch\",\"commit\",\"deployment\"],\"type\":\"object\"}"
+    },
+    {
+      "name": "hook.rotated",
+      "kind": "event",
+      "summary": "A git hook token was rotated; the URL token and the GitHub webhook secret were both replaced (old strings invalid immediately).",
+      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"app_id\":{\"type\":\"string\"}},\"required\":[\"app_id\"],\"type\":\"object\"}"
+    },
+    {
+      "name": "hook.updated",
+      "kind": "event",
+      "summary": "A git hook configuration was updated (repo/branch/dockerfile/watch paths; token unchanged — rotation is a separate verb).",
+      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"app_id\":{\"type\":\"string\"}},\"required\":[\"app_id\"],\"type\":\"object\"}"
     },
     {
       "name": "invitation.accepted",
@@ -469,7 +523,7 @@
       "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"deployment\":{\"type\":\"string\"},\"template\":{\"type\":\"string\"},\"version\":{\"type\":\"string\"}},\"required\":[\"template\",\"version\",\"deployment\"],\"type\":\"object\"}"
     },
     {
-      "name": "templates.refreshed",
+      "name": "template.refreshed",
       "kind": "event",
       "summary": "The template catalog snapshot was refreshed (payload carries the previous and new aggregate digests and the entry count).",
       "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"count\":{\"type\":\"integer\"},\"digest\":{\"type\":\"string\"},\"previous\":{\"type\":\"string\"}},\"required\":[\"previous\",\"digest\",\"count\"],\"type\":\"object\"}"

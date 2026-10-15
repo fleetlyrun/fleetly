@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
 
@@ -226,11 +228,16 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 			write: func(ctx context.Context, tx *sql.Tx) error {
 				return e.deployments.Create(ctx, tx, d)
 			},
-			events: []func() eventFact{func() eventFact {
-				return eventFact{name: eventStateName(d.State), aggregate: "deployment", id: d.ID, payload: deploymentEventPayloadJSON(d),
-					team: e.eventTeamOfApp(ctx, tx, d.AppID)}
+			facts: []func() writes.FactRow{func() writes.FactRow {
+				fr := writes.FactRow{
+					Name: eventStateName(d.State), Aggregate: "deployment", ID: d.ID,
+					Payload: deploymentEventPayloadJSON(d), TeamID: e.eventTeamOfApp(ctx, tx, d.AppID),
+					Action: "deployment.create", Resource: "deployment/" + d.ID, AfterFP: afterFP,
+					Actor:  authn.ActorFromContext(ctx),
+					Source: authn.SourceFromContext(ctx),
+				}
+				return fr
 			}},
-			audits: []auditFact{{action: "deployment.create", resource: "deployment/" + d.ID, afterFP: afterFP, actorCtx: true}},
 		}); err != nil {
 			return err
 		}

@@ -9,13 +9,15 @@ package engine
 //
 //   1. 状态迁移四件一 = CAS 迁移 + 刷新行 + Outbox 事件 + 审计，同一事务；
 //   2. 原地迁移（落定状态仍在 from 集）不发事件——事件是状态迁移的既成
-//      事实，状态未变不是迁移；审计照落（kernel 形态 = LedgerOnly 单行
-//      事实，偏离理由在此注释）；
+//      事实，状态未变不是迁移；审计照落（前门 fact 闭包落 LedgerOnly
+//      单行事实，偏离理由在声明处注释）；
 //   3. 事件名/负载/审计指纹取自刷新后行（既成事实），伴生字段改写随指纹
 //      带出（"; key=value" 后缀形态）；
 //   4. 非迁移写（建行/字段更新）同构：检查先行（拒绝零副作用）→ 写居中
 //      → 事实扇出殿后——双行配对与段间失败语义由 kernel 执法（commitWrite
-//      编排检查/写段与 steps，只做归一化）。
+//      只做 facts 惰性编排与 steps 序列）。批三 A 化收尾：writeFact/
+//      transitionFact 均为 kernel FactRow 单声明直入（API 侧 acceptance.go
+//      同构），events/audits 双段与机械映射 writeKernelRows 退役。
 //
 // 事务边界双形态：commit* 系列收调用方事务（组合进更大事务，如 Submit
 // 受理序）；类型化前门保留原名原签名，驱动路径自开事务。
@@ -33,17 +35,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
-
-// eventFact 是一条 Outbox 事件事实（与聚合写同生共死；概念同 API 侧
-// acceptance.go，engine 本地形态）。team 是资源轴归属 Team（P0-2）：
-// ” = 平台级事件（对全部 Team 可见）。
-type eventFact struct {
-	name      string
-	aggregate string
-	id        string
-	payload   []byte
-	team      string
-}
 
 // eventTeamOfProject 解析 Project 轴的资源 Team（P0-2 事件 Team 铸入）：
 // 行缺失/存储故障 → ”（平台级可见——不劣于止血前行为，不为归属解析
@@ -89,56 +80,25 @@ func (e *Engine) ownerTeam(ctx context.Context, owner workloadOwner) string {
 	}
 }
 
-// auditFact 是一条审计事实（ID/时间由脊柱铸造；actorCtx=true 时
-// actor/source 取请求 ctx——用户动词路径，默认 SourceSystem）。
-type auditFact struct {
-	action   string
-	resource string
-	afterFP  string
-	actorCtx bool
-}
-
 // transitionFact 声明一次状态迁移的全部事实。move 承担 CAS+刷新并判定
-// 原地迁移（抑制事件）；event/audit 在其后按序求值；team 是事件落库前
-// 资源轴 Team 的解析面（nil = 平台级事件——node/platform 等无 Team 轴
-// 聚合；解析失败由 helper 内部降级 ”，P0-2）。
+// 原地迁移（inPlace）；fact 在其后求值——单声明 kernel FactRow（默认双真；
+// 原地迁移分支 = LedgerOnly 显式带旗）。team 轴解析面（eventTeamOfApp/
+// eventTeamOfProject）由各前门在 fact 闭包内调用（非迁移分支才解析）。
 type transitionFact struct {
-	aggregate string
-	id        string
-	move      func(ctx context.Context, tx *sql.Tx) (freshState string, inPlace bool, err error)
-	event     func() eventFact
-	team      func(ctx context.Context, tx *sql.Tx) string
-	audit     func(freshState string) auditFact
-	extras    []func(ctx context.Context, tx *sql.Tx) error
+	move   func(ctx context.Context, tx *sql.Tx) (freshState string, inPlace bool, err error)
+	fact   func(ctx context.Context, tx *sql.Tx, freshState string, inPlace bool) writes.FactRow
+	extras []func(ctx context.Context, tx *sql.Tx) error
 }
 
 // commitTransition 在调用方事务内落完一次状态迁移四件一：
-// CAS+刷新 → 事实扇出（事件（原地抑制）+ 审计经 kernel 单声明 FactRow
-// 双行落库）→ 附加事实。任何一段失败整单回滚。
+// CAS+刷新 → 事实扇出（kernel 单声明 FactRow 双行落库；原地迁移由
+// fact 闭包落 LedgerOnly 单行）→ 附加事实。任何一段失败整单回滚。
 func (e *Engine) commitTransition(ctx context.Context, tx *sql.Tx, f transitionFact) error {
 	freshState, inPlace, err := f.move(ctx, tx)
 	if err != nil {
 		return err
 	}
-	a := f.audit(freshState)
-	row := writes.FactRow{
-		Aggregate: f.aggregate, ID: f.id,
-		Action: a.action, Resource: a.resource, AfterFP: a.afterFP,
-	}
-	if a.actorCtx {
-		row.Actor, row.Source = authn.ActorFromContext(ctx), authn.SourceFromContext(ctx)
-	}
-	if inPlace {
-		// LedgerOnly：原地迁移（落定状态仍在 from 集）不发事件——事件是
-		// 状态迁移的既成事实，状态未变不是迁移；审计照落。
-		row.LedgerOnly = true
-	} else {
-		ev := f.event()
-		row.Name, row.Payload = ev.name, ev.payload
-		if f.team != nil {
-			row.TeamID = f.team(ctx, tx)
-		}
-	}
+	row := f.fact(ctx, tx, freshState, inPlace)
 	if err := writes.Sequence(ctx, tx, e.factRepos(), func() writes.FactRow { return row }); err != nil {
 		return err
 	}
@@ -153,28 +113,28 @@ func (e *Engine) commitTransition(ctx context.Context, tx *sql.Tx, f transitionF
 // ---- 非迁移写（建行/字段更新）的序列真源 ----
 
 // writeStep 是事务内的一段附加写（字段 CAS/派生建行）与其伴生事实；
-// 序列与主写一致（写 → 事件 → 审计）。
+// 序列与主写一致（写 → 事实扇出）。
 type writeStep struct {
-	write  func(ctx context.Context, tx *sql.Tx) error
-	events []func() eventFact
-	audits []auditFact
+	write func(ctx context.Context, tx *sql.Tx) error
+	facts []func() writes.FactRow
 }
 
 // writeFact 声明一次非迁移写路径的全部事实；零值段合法。checks 先行
-// （拒绝零副作用，语义同 API 侧受理检查）；events 在 write 之后求值
-// （负载可依赖事务内写的行）。
+// （拒绝零副作用，语义同 API 侧受理检查）；facts 在 write 之后求值
+// （载荷/指纹可依赖事务内写的行）——单声明 kernel FactRow，与 API 侧
+// acceptance.go 的 writeFact 同构（批三 A 化：events/audits 双段与机械
+// 映射 writeKernelRows 退役，落库行集合零漂移）。
 type writeFact struct {
 	checks []func(ctx context.Context, tx *sql.Tx) error
 	write  func(ctx context.Context, tx *sql.Tx) error
-	events []func() eventFact
-	audits []auditFact
+	facts  []func() writes.FactRow
 	steps  []writeStep
 }
 
 // commitWrite 在调用方事务内落完一次写路径：检查 → 写 → 事实扇出，
 // 附加写步殿后逐段重放同一序列。事实扇出与双行配对由事实发射 kernel
-// 拥有（internal/writes，ADR-0064→收敛报告 §刀1）；本函数只做 engine
-// writeFact 归一化与 steps 编排（域差异段不入 kernel）。
+// 拥有（internal/domain/services/writes，ADR-0064→收敛报告 §刀1）；
+// 本函数只做 facts 惰性编排与 steps 序列（域差异段不入 kernel）。
 func (e *Engine) commitWrite(ctx context.Context, tx *sql.Tx, f writeFact) error {
 	for _, check := range f.checks {
 		if err := check(ctx, tx); err != nil {
@@ -186,7 +146,7 @@ func (e *Engine) commitWrite(ctx context.Context, tx *sql.Tx, f writeFact) error
 			return err
 		}
 	}
-	if err := writes.Sequence(ctx, tx, e.factRepos(), e.writeKernelRows(ctx, f.events, f.audits)...); err != nil {
+	if err := writes.Sequence(ctx, tx, e.factRepos(), f.facts...); err != nil {
 		return err
 	}
 	for _, s := range f.steps {
@@ -195,7 +155,7 @@ func (e *Engine) commitWrite(ctx context.Context, tx *sql.Tx, f writeFact) error
 				return err
 			}
 		}
-		if err := writes.Sequence(ctx, tx, e.factRepos(), e.writeKernelRows(ctx, s.events, s.audits)...); err != nil {
+		if err := writes.Sequence(ctx, tx, e.factRepos(), s.facts...); err != nil {
 			return err
 		}
 	}
@@ -205,43 +165,6 @@ func (e *Engine) commitWrite(ctx context.Context, tx *sql.Tx, f writeFact) error
 // factRepos 是 kernel 落库面的注入形态（engine 双 repo 句柄直装）。
 func (e *Engine) factRepos() writes.Repos {
 	return writes.Repos{Outbox: e.outbox, Audits: e.audits}
-}
-
-// writeKernelRows 把 engine 事件/审计事实组归一化为 kernel 单声明形态
-// （主序列与 writeStep 共用）。迁移注记：双段声明（events/audits 各自
-// 独立）是按域 A 化（ADR-0066 挂账）的收编对象——批二逐域并成默认
-// 双真单声明；当前机械映射为单行事实（事件 → StreamOnly、审计 →
-// LedgerOnly），落库序与既有 kernel 形态逐字节一致（事件行全先、审计
-// 行殿后）。
-func (e *Engine) writeKernelRows(ctx context.Context, events []func() eventFact, audits []auditFact) []func() writes.FactRow {
-	var rows []func() writes.FactRow
-	for _, ev := range events {
-		ev := ev
-		rows = append(rows, func() writes.FactRow {
-			fact := ev()
-			return writes.FactRow{
-				Name: fact.name, Aggregate: fact.aggregate, ID: fact.id,
-				Payload: fact.payload, TeamID: fact.team,
-				StreamOnly: true, // 迁移面：取证孪生由 audits 段独立声明（A 化前形态）
-			}
-		})
-	}
-	for _, a := range audits {
-		a := a
-		rows = append(rows, func() writes.FactRow {
-			row := writes.FactRow{
-				Action: a.action, Resource: a.resource, AfterFP: a.afterFP,
-				LedgerOnly: true, // 迁移面：流面孪生由 events 段独立声明（A 化前形态）
-			}
-			if a.actorCtx {
-				// actor/source 取请求 ctx——用户动词路径（默认 SourceSystem
-				// 由 kernel 缺省铸型；求值时点随本闭包保持在扇出段）。
-				row.Actor, row.Source = authn.ActorFromContext(ctx), authn.SourceFromContext(ctx)
-			}
-			return row
-		})
-	}
-	return rows
 }
 
 // emitObservation 是观测事实的 best-effort 发射面（kernel Emit 的便捷
@@ -264,8 +187,6 @@ func (e *Engine) emitObservation(ctx context.Context, team, name, aggregate, id 
 func (e *Engine) transit(ctx context.Context, tx *sql.Tx, d *deployment.Deployment, from []deployment.State, to deployment.State, mut func(*deployment.Deployment)) error {
 	var fresh *deployment.Deployment
 	return e.commitTransition(ctx, tx, transitionFact{
-		aggregate: "deployment",
-		id:        d.ID,
 		move: func(ctx context.Context, tx *sql.Tx) (string, bool, error) {
 			if err := e.deployments.Transit(ctx, tx, d.ID, from, to, mut); err != nil {
 				return "", false, err
@@ -276,13 +197,7 @@ func (e *Engine) transit(ctx context.Context, tx *sql.Tx, d *deployment.Deployme
 			}
 			return string(fresh.State), fresh.State == to && depStateIn(from, to), nil
 		},
-		event: func() eventFact {
-			return eventFact{name: eventStateName(fresh.State), aggregate: "deployment", id: d.ID, payload: deploymentEventPayloadJSON(fresh)}
-		},
-		team: func(ctx context.Context, tx *sql.Tx) string {
-			return e.eventTeamOfApp(ctx, tx, fresh.AppID)
-		},
-		audit: func(freshState string) auditFact {
+		fact: func(ctx context.Context, tx *sql.Tx, freshState string, inPlace bool) writes.FactRow {
 			// 审计 AfterFP（C5）：回放收口会把 to_revision 改写为实际运行的
 			// 回放目标（终态事实修正）——该改写随审计指纹带出，消除"行上
 			// 改了、审计看不见"的弯折。
@@ -290,7 +205,20 @@ func (e *Engine) transit(ctx context.Context, tx *sql.Tx, d *deployment.Deployme
 			if fresh.ToRevision != d.ToRevision && fresh.ToRevision != "" {
 				afterFP = fmt.Sprintf("%s; to_revision=%s", freshState, fresh.ToRevision)
 			}
-			return auditFact{action: "deployment.transit", resource: "deployment/" + d.ID, afterFP: afterFP}
+			row := writes.FactRow{
+				Aggregate: "deployment", ID: d.ID,
+				Action: "deployment.transit", Resource: "deployment/" + d.ID, AfterFP: afterFP,
+			}
+			if inPlace {
+				// LedgerOnly：原地迁移（落定状态仍在 from 集）不发事件——事件是
+				// 状态迁移的既成事实，状态未变不是迁移；审计照落。
+				row.LedgerOnly = true
+				return row
+			}
+			row.Name = eventStateName(fresh.State)
+			row.Payload = deploymentEventPayloadJSON(fresh)
+			row.TeamID = e.eventTeamOfApp(ctx, tx, fresh.AppID)
+			return row
 		},
 	})
 }
@@ -328,8 +256,6 @@ func (e *Engine) transitAndReload(ctx context.Context, d *deployment.Deployment,
 func (e *Engine) transitRunTx(ctx context.Context, tx *sql.Tx, m *run.Run, from []run.State, to run.State, mut func(*run.Run)) error {
 	var fresh *run.Run
 	return e.commitTransition(ctx, tx, transitionFact{
-		aggregate: "run",
-		id:        m.ID,
 		move: func(ctx context.Context, tx *sql.Tx) (string, bool, error) {
 			if err := e.runs.Transit(ctx, tx, m.ID, from, to, mut); err != nil {
 				return "", false, err
@@ -341,14 +267,21 @@ func (e *Engine) transitRunTx(ctx context.Context, tx *sql.Tx, m *run.Run, from 
 			*m = *fresh
 			return string(fresh.State), fresh.State == to && runStateIn(from, to), nil
 		},
-		event: func() eventFact {
-			return eventFact{name: eventRunState(fresh.State), aggregate: "run", id: m.ID, payload: runEventPayloadJSON(fresh)}
-		},
-		team: func(ctx context.Context, tx *sql.Tx) string {
-			return e.eventTeamOfProject(ctx, tx, fresh.ProjectID)
-		},
-		audit: func(freshState string) auditFact {
-			return auditFact{action: "run.transit", resource: "run/" + m.ID, afterFP: freshState}
+		fact: func(ctx context.Context, tx *sql.Tx, freshState string, inPlace bool) writes.FactRow {
+			row := writes.FactRow{
+				Aggregate: "run", ID: m.ID,
+				Action: "run.transit", Resource: "run/" + m.ID, AfterFP: freshState,
+			}
+			if inPlace {
+				// LedgerOnly：原地迁移（落定状态仍在 from 集）不发事件——事件是
+				// 状态迁移的既成事实，状态未变不是迁移；审计照落。
+				row.LedgerOnly = true
+				return row
+			}
+			row.Name = eventRunState(fresh.State)
+			row.Payload = runEventPayloadJSON(fresh)
+			row.TeamID = e.eventTeamOfProject(ctx, tx, fresh.ProjectID)
+			return row
 		},
 	})
 }
@@ -375,8 +308,6 @@ func (e *Engine) transitBuild(ctx context.Context, b *build.Build, from []build.
 	var fresh *build.Build
 	err := e.db.Tx(ctx, func(tx *sql.Tx) error {
 		return e.commitTransition(ctx, tx, transitionFact{
-			aggregate: "build",
-			id:        b.ID,
 			move: func(ctx context.Context, tx *sql.Tx) (string, bool, error) {
 				if err := e.builds.Transit(ctx, tx, b.ID, from, to, mut); err != nil {
 					return "", false, err
@@ -387,14 +318,21 @@ func (e *Engine) transitBuild(ctx context.Context, b *build.Build, from []build.
 				}
 				return string(fresh.State), fresh.State == to && buildStateIn(from, to), nil
 			},
-			event: func() eventFact {
-				return eventFact{name: eventBuildState(fresh.State), aggregate: "build", id: b.ID, payload: buildEventPayloadJSON(fresh)}
-			},
-			team: func(ctx context.Context, tx *sql.Tx) string {
-				return e.eventTeamOfApp(ctx, tx, fresh.AppID)
-			},
-			audit: func(freshState string) auditFact {
-				return auditFact{action: "build.transit", resource: "build/" + b.ID, afterFP: freshState}
+			fact: func(ctx context.Context, tx *sql.Tx, freshState string, inPlace bool) writes.FactRow {
+				row := writes.FactRow{
+					Aggregate: "build", ID: b.ID,
+					Action: "build.transit", Resource: "build/" + b.ID, AfterFP: freshState,
+				}
+				if inPlace {
+					// LedgerOnly：原地迁移（落定状态仍在 from 集）不发事件——事件是
+					// 状态迁移的既成事实，状态未变不是迁移；审计照落。
+					row.LedgerOnly = true
+					return row
+				}
+				row.Name = eventBuildState(fresh.State)
+				row.Payload = buildEventPayloadJSON(fresh)
+				row.TeamID = e.eventTeamOfApp(ctx, tx, fresh.AppID)
+				return row
 			},
 		})
 	})
@@ -438,8 +376,6 @@ type taskTransitOpts struct {
 func (e *Engine) transitTaskTx(ctx context.Context, tx *sql.Tx, t *task.Task, from []task.State, to task.State, mut func(*task.Task), opts taskTransitOpts) error {
 	var fresh *task.Task
 	return e.commitTransition(ctx, tx, transitionFact{
-		aggregate: "task",
-		id:        t.ID,
 		move: func(ctx context.Context, tx *sql.Tx) (string, bool, error) {
 			if err := e.tasks.Transit(ctx, tx, t.ID, from, to, mut); err != nil {
 				return "", false, err
@@ -455,17 +391,7 @@ func (e *Engine) transitTaskTx(ctx context.Context, tx *sql.Tx, t *task.Task, fr
 			}
 			return string(fresh.State), inPlace, nil
 		},
-		event: func() eventFact {
-			name := eventTaskState(fresh.State)
-			if opts.updateEvent != "" {
-				name = opts.updateEvent
-			}
-			return eventFact{name: name, aggregate: "task", id: t.ID, payload: taskEventPayloadJSON(fresh, opts.reason)}
-		},
-		team: func(ctx context.Context, tx *sql.Tx) string {
-			return e.eventTeamOfProject(ctx, tx, fresh.ProjectID)
-		},
-		audit: func(freshState string) auditFact {
+		fact: func(ctx context.Context, tx *sql.Tx, freshState string, inPlace bool) writes.FactRow {
 			action := opts.auditAction
 			if action == "" {
 				action = "task.transit"
@@ -474,7 +400,29 @@ func (e *Engine) transitTaskTx(ctx context.Context, tx *sql.Tx, t *task.Task, fr
 			if afterFP == "" {
 				afterFP = freshState
 			}
-			return auditFact{action: action, resource: "task/" + t.ID, afterFP: afterFP, actorCtx: opts.auditActorCtx}
+			row := writes.FactRow{
+				Aggregate: "task", ID: t.ID,
+				Action: action, Resource: "task/" + t.ID, AfterFP: afterFP,
+			}
+			if opts.auditActorCtx {
+				// actor/source 取请求 ctx——用户动词路径（stop/update/renew/
+				// delete；默认 SourceSystem 由 kernel 缺省铸型）。
+				row.Actor, row.Source = authn.ActorFromContext(ctx), authn.SourceFromContext(ctx)
+			}
+			if inPlace {
+				// LedgerOnly：原地迁移（落定状态仍在 from 集）不发事件——事件是
+				// 状态迁移的既成事实，状态未变不是迁移；审计照落。
+				row.LedgerOnly = true
+				return row
+			}
+			name := eventTaskState(fresh.State)
+			if opts.updateEvent != "" {
+				name = opts.updateEvent
+			}
+			row.Name = name
+			row.Payload = taskEventPayloadJSON(fresh, opts.reason)
+			row.TeamID = e.eventTeamOfProject(ctx, tx, fresh.ProjectID)
+			return row
 		},
 	})
 }

@@ -26,6 +26,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/fleetlyrun/fleetly/internal/application/authn"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 )
 
 // PinnedResticVersion 是 restic 钉版（ADR-0021 口径；2026-10 现行稳定，
@@ -375,11 +378,15 @@ func (e *Engine) TriggerPlatformBackup(ctx context.Context) (*PlatformSnapshot, 
 	}
 	if err := e.db.Tx(ctx, func(tx *sql.Tx) error {
 		return e.commitWrite(ctx, tx, writeFact{
-			events: []func() eventFact{func() eventFact {
+			facts: []func() writes.FactRow{func() writes.FactRow {
 				// 平台级事件（platform 聚合无 Team 轴）：team 留 '' = 全员可见。
-				return eventFact{name: eventName, aggregate: "platform", id: "platform-backup", payload: payload}
+				return writes.FactRow{
+					Name: eventName, Aggregate: "platform", ID: "platform-backup",
+					Payload: payload,
+					Action:  "platform.backup_trigger", Resource: "platform/platform-backup",
+					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+				}
 			}},
-			audits: []auditFact{{action: "platform.backup_trigger", resource: "platform/platform-backup", actorCtx: true}},
 		})
 	}); err != nil {
 		e.log.Error("platform backup: record manual run", "err", err)

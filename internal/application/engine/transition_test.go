@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 )
 
 // auditActions 取审计动作列表（按资源前缀过滤；空前缀 = 全部）。
@@ -157,8 +158,8 @@ func TestCommitWriteRollsBackOnEventFailure(t *testing.T) {
 	err := e.db.Tx(ctx, func(tx *sql.Tx) error {
 		return e.commitWrite(ctx, tx, writeFact{
 			write: func(ctx context.Context, tx *sql.Tx) error { return e.tasks.Create(ctx, tx, row) },
-			events: []func() eventFact{func() eventFact {
-				return eventFact{name: "task.not-registered", aggregate: "task", id: tid}
+			facts: []func() writes.FactRow{func() writes.FactRow {
+				return writes.FactRow{Name: "task.not-registered", Aggregate: "task", ID: tid}
 			}},
 		})
 	})

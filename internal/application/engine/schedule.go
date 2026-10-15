@@ -25,8 +25,10 @@ import (
 	"time"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
+	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/schedule"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
 
@@ -102,11 +104,16 @@ func (e *Engine) skipSchedule(ctx context.Context, s *schedule.Schedule, next, r
 			write: func(ctx context.Context, tx *sql.Tx) error {
 				return e.schedules.Fire(ctx, tx, s.ID, s.NextFireAt, next, s.LastTaskID)
 			},
-			events: []func() eventFact{func() eventFact {
+			facts: []func() writes.FactRow{func() writes.FactRow {
 				skipped := *s
 				skipped.NextFireAt = next
-				return eventFact{name: eventScheduleSkipped, aggregate: "schedule", id: s.ID,
-					payload: scheduleEventPayloadJSON(&skipped, "", reason), team: e.eventTeamOfProject(ctx, tx, s.ProjectID)}
+				// 双真偏离（仅流面）：跳拍是"未发生"事实而非动作，无取证
+				// 孪生（A 化前亦无审计行，行集合零漂移）。
+				return writes.FactRow{
+					Name: eventScheduleSkipped, Aggregate: "schedule", ID: s.ID,
+					Payload: scheduleEventPayloadJSON(&skipped, "", reason), TeamID: e.eventTeamOfProject(ctx, tx, s.ProjectID),
+					StreamOnly: true,
+				}
 			}},
 		})
 	})
@@ -193,11 +200,15 @@ func (e *Engine) spawnScheduleTask(ctx context.Context, s *schedule.Schedule, so
 					//（Task 行不落孤账），至多一铸。
 					return e.schedules.RecordFire(ctx, tx, s.ID, s.LastTaskID, taskID)
 				},
-				events: []func() eventFact{func() eventFact {
-					return eventFact{name: eventScheduleFired, aggregate: "schedule", id: s.ID,
-						payload: scheduleEventPayloadJSON(&fired, source, ""), team: team}
+				facts: []func() writes.FactRow{func() writes.FactRow {
+					row := writes.FactRow{
+						Name: eventScheduleFired, Aggregate: "schedule", ID: s.ID,
+						Payload: scheduleEventPayloadJSON(&fired, source, ""), TeamID: team,
+						Action: "schedule.fire", Resource: "schedule/" + s.ID, AfterFP: taskID,
+					}
+					row.Actor, row.Source = authn.ActorFromContext(ctx), authn.SourceFromContext(ctx)
+					return row
 				}},
-				audits: []auditFact{{action: "schedule.fire", resource: "schedule/" + s.ID, afterFP: taskID, actorCtx: true}},
 			}}
 		},
 		true)

@@ -16,6 +16,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	specir "github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -119,11 +120,13 @@ func (e *Engine) driveBuilding(ctx context.Context, d *deployment.Deployment) (*
 		}
 		return e.commitWrite(ctx, tx, writeFact{
 			write: func(ctx context.Context, tx *sql.Tx) error { return e.builds.Create(ctx, tx, queued) },
-			events: []func() eventFact{func() eventFact {
-				return eventFact{name: eventBuildState(build.StateQueued), aggregate: "build", id: buildID,
-					payload: buildEventPayloadJSON(queued), team: e.eventTeamOfProject(ctx, tx, a.ProjectID)}
+			facts: []func() writes.FactRow{func() writes.FactRow {
+				return writes.FactRow{
+					Name: eventBuildState(build.StateQueued), Aggregate: "build", ID: buildID,
+					Payload: buildEventPayloadJSON(queued), TeamID: e.eventTeamOfProject(ctx, tx, a.ProjectID),
+					Action: "build.create", Resource: "build/" + buildID,
+				}
 			}},
-			audits: []auditFact{{action: "build.create", resource: "build/" + buildID}},
 		})
 	})
 	if err != nil {

@@ -2,6 +2,8 @@ NAME	KIND	SUMMARY
 alert.channel_failed	event	A notification channel delivery failed; the channel row records the error tail (diagnostics face).
 alert.fired	event	A threshold alert rule transitioned to firing (breach held for the rule's for-window); notification channels were attempted.
 alert.resolved	event	A firing threshold alert rule transitioned back to ok (observed value fell below the threshold).
+alert_rule.created	event	A threshold alert rule was created for an app.
+alert_rule.deleted	event	A threshold alert rule was deleted.
 app	spec	AppSpec: desired state of a long-running deployable unit (an app is one or more processes).
 app.created	event	An app was created.
 app.deleted	event	An app was deleted (teardown per ADR-0023).
@@ -14,6 +16,8 @@ build.expired	event	Build expired by timeout watchdog.
 build.failed	event	Build failed.
 build.queued	event	Build accepted into build queue.
 build.succeeded	event	Build produced an image digest.
+channel.created	event	A notification channel was registered (platform-level material; credentials sealed, never returned).
+channel.deleted	event	A notification channel was deleted.
 config.updated	event	A config version was written.
 database	spec	DatabaseSpec: desired state of a managed data service (template-rendered, rides the Runtime channel).
 database.backup_failed	event	A database backup failed; the payload carries the error tail (utility container stderr included).
@@ -37,8 +41,13 @@ deployment.superseded	event	Deployment superseded by a newer one.
 exec.session_opened	event	An exec session was accepted into a running workload (actor, process, instance, node and command are in the payload; change freeze is exempt — diagnostics face).
 freeze.lifted	event	A change freeze was lifted; change verbs in scope are accepted again.
 freeze.set	event	A change freeze was set for a team (or globally); change verbs in scope are refused with the reason.
+github_app.connected	event	A GitHub App installation was connected as private-repo access material (verified at admission, owner resolved; re-put with a new key replaces the sealed material).
+github_app.deleted	event	A GitHub App access material was soft-deleted; resolution fails immediately while the sealed key survives for key rewrap.
+hook.created	event	A git hook configuration was created for an app (token minted; the secret itself never appears).
 hook.push_accepted	event	A verified webhook push triggered a deployment.
 hook.refresh_accepted	event	A control-plane hook refresh pulled the branch head and triggered a deployment.
+hook.rotated	event	A git hook token was rotated; the URL token and the GitHub webhook secret were both replaced (old strings invalid immediately).
+hook.updated	event	A git hook configuration was updated (repo/branch/dockerfile/watch paths; token unchanged — rotation is a separate verb).
 invitation.accepted	event	An invitation was redeemed; the invitee became a user.
 invitation.created	event	An invitation was issued (single-use, time-boxed, role-bound).
 lease.expired	event	A task's owner lease expired past grace; the pool drains.
@@ -77,7 +86,7 @@ task.failed	event	A one-shot task's run failed.
 task.updated	event	A task's desired concurrency was updated.
 team.created	event	A team was created.
 template.instantiated	event	A template was instantiated into a deployment (payload carries the template name@version and the deployment id).
-templates.refreshed	event	The template catalog snapshot was refreshed (payload carries the previous and new aggregate digests and the entry count).
+template.refreshed	event	The template catalog snapshot was refreshed (payload carries the previous and new aggregate digests and the entry count).
 token.created	event	A token was minted (secret shown once at creation).
 token.revoked	event	A token was revoked; its next call will be rejected.
 upload.stored	event	An uploaded source was stored (content-addressed; payload carries id, digest, size and deduplicated).

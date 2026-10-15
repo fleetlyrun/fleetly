@@ -146,6 +146,7 @@ func TestSequenceRejectsBothFlags(t *testing.T) {
 	repos := kernelRepos()
 
 	err := writes.Sequence(context.Background(), db.Runner(), repos, func() writes.FactRow {
+		// 测试面：双旗同立拒绝路径探针（非法形态本身无单侧偏离理由可注）。
 		return writes.FactRow{LedgerOnly: true, StreamOnly: true}
 	})
 	require.Error(t, err)
@@ -247,5 +248,5 @@ func TestEmitNonTransactional(t *testing.T) {
 	require.ErrorIs(t, writes.Emit(ctx, db.Runner(),
 		writes.Repos{Outbox: &fakeOutbox{failOn: 1}, Audits: audits},
 		writes.FactRow{Name: "task.created", Aggregate: "task", ID: "x",
-			StreamOnly: true}), errBoom)
+			StreamOnly: true}), errBoom) // 测试面：失败注入探针（仅流面触碰 fakeOutbox）
 }

@@ -92,10 +92,10 @@ dep_matrix 数据表 5 行化；domain 三红线守卫（无 I/O/genproto/框架
 ### P1b-3 其余聚合 + 守卫收紧 — [x] 37/37 聚合上移；DB 契约（state.DB 窄面）+ NextSeq 方法化；构造上提 assembly（engine.Repos 26 字段组结构注入）；application 行收紧 domain only、interfaces 行 application+domain；豁免全集 5 行（github/upload×4 带 P3 锚 + admin 离线 ADR-0075 例外②）；红灯实验双份自证（代理+主会话）。
 
 ## P2 事实发射 kernel（4-5 天）
-P2-1 outbox team_id 全量铸入（若 P0-2 已做则收尾）+ `writes.Runner` 端口定稿 — [ ]
-P2-2 `writes.FactRow/Sequence/Emit` 落地（扇出双行；观测走 Emit；login 走 LedgerOnly 收编 interceptor 直调）— [ ]
-P2-3 按域 A 化 ~72 调用点 + transition 前门 event/audit 对归一 FactRow + 四族 CRUD 补 ~12 eventcode（hook.created/…；归一 template 单数前缀分叉）— [ ]
-P2-4 守卫换装：Append 白名单（只准 kernel 引用）+ FactRow 双真纪律 — [ ]
+P2-1 outbox team_id 全量铸入 + Runner 端口 — [x]（P0-2 奠基；domain/shared/state.Runner 承载无需另立；ownerTeam 三态分派补齐余量）
+P2-2 kernel 本体 — [x]（e647304）
+P2-3 A 化 + 四族事件 — [x]（0fb54ce + 批三收尾：acceptance 62 处 + engine 前门全量单声明；9 新事件按实际 RPC 面定数；templates.refreshed→template.refreshed 归一）
+P2-4 守卫 — [x]（factappend 白名单 + factdual 双真纪律；红灯双份自证）
 
 ## P3 engine 域化九批（6-9 天）
 P3-0 守卫前置（transitionguard 接收者泛化 + 域 struct 禁回引 Engine）— [ ]

@@ -33,6 +33,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/run"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
@@ -611,11 +612,13 @@ func (e *Engine) createRun(ctx context.Context, t *task.Task, spec *specv1.TaskS
 		}
 		return e.commitWrite(ctx, tx, writeFact{
 			write: func(ctx context.Context, tx *sql.Tx) error { return e.runs.Create(ctx, tx, m) },
-			events: []func() eventFact{func() eventFact {
-				return eventFact{name: eventRunState(run.StatePending), aggregate: "run", id: m.ID, payload: runEventPayloadJSON(m),
-					team: e.eventTeamOfProject(ctx, tx, m.ProjectID)}
+			facts: []func() writes.FactRow{func() writes.FactRow {
+				return writes.FactRow{
+					Name: eventRunState(run.StatePending), Aggregate: "run", ID: m.ID,
+					Payload: runEventPayloadJSON(m), TeamID: e.eventTeamOfProject(ctx, tx, m.ProjectID),
+					Action: "run.create", Resource: "run/" + m.ID,
+				}
 			}},
-			audits: []auditFact{{action: "run.create", resource: "run/" + m.ID}},
 		})
 	})
 }
@@ -658,9 +661,14 @@ func (e *Engine) RenewTask(ctx context.Context, id string) (*task.Task, error) {
 				fresh, err = e.tasks.Get(ctx, tx, id)
 				return err
 			},
-			events: []func() eventFact{func() eventFact {
-				return eventFact{name: eventLeaseRenewed, aggregate: "task", id: id, payload: leaseEventPayloadJSON(fresh, ""),
-					team: e.eventTeamOfProject(ctx, tx, t.ProjectID)}
+			facts: []func() writes.FactRow{func() writes.FactRow {
+				// 双真偏离（仅流面）：续 lease 无取证孪生——resident 池持续
+				// 续期，逐次留痕是噪音面（A 化前亦无审计行，行集合零漂移）。
+				return writes.FactRow{
+					Name: eventLeaseRenewed, Aggregate: "task", ID: id,
+					Payload: leaseEventPayloadJSON(fresh, ""), TeamID: e.eventTeamOfProject(ctx, tx, t.ProjectID),
+					StreamOnly: true,
+				}
 			}},
 		})
 		if err != nil {
