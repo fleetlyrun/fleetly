@@ -14,8 +14,9 @@ package guards
 // 两部分共用豁免表模式：缺口必须登记豁免并带理由；豁免不再命中（覆盖
 // 已补上或 RPC 已消失）即红——双向保鲜。
 //
-// 扫描口径：a 扫 engine/swarm/apitest 三棵测试树（Runtime 端口的全部
-// 消费面）；b 只扫 apitest（RPC 契约面的验收层）。
+// 扫描口径：a 扫 engine/swarm/k3s/apitest 四棵测试树（Runtime 端口的全部
+// 消费面——k3s 是第二运行时 Provider，与 swarm 同权入扫，P5-3 补）；
+// b 只扫 apitest（RPC 契约面的验收层）。
 
 import (
 	"io/fs"
@@ -30,10 +31,11 @@ import (
 )
 
 // runtimeTestTrees 是 Runtime 端口覆盖的扫描树（假底座、真 Provider、
-// 服务面三处）。
+// 服务面三处；P5-3 起第二运行时 Provider k3s 与 swarm 同权入扫）。
 var runtimeTestTrees = []string{
 	filepath.Join("internal", "application", "engine"),
 	filepath.Join("internal", "infrastructure", "providers", "swarm"),
+	filepath.Join("internal", "infrastructure", "providers", "k3s"),
 	filepath.Join("internal", "testsupport", "apitest"),
 }
 
@@ -121,7 +123,7 @@ func TestRuntimePortCoverage(t *testing.T) {
 	}
 	sort.Strings(missing)
 	for _, name := range missing {
-		t.Errorf("runtime port face %s has no reference in engine/swarm/apitest tests — add a test or register an exemption with a reason (audit §10.2 guard C)", name)
+		t.Errorf("runtime port face %s has no reference in engine/swarm/k3s/apitest tests — add a test or register an exemption with a reason (audit §10.2 guard C)", name)
 	}
 	for name, reason := range portCoverageExemptions {
 		if reason == "" {
