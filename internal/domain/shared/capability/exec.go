@@ -170,11 +170,12 @@ const maxSessionIDLen = 255
 
 // MarshalRelayFrame 编码一条中继帧（hello 不走此函数——文本帧独立）。
 // 线上形态 [1B kind][1B session ID 长度][session ID][payload]——ADR-0049
-// 的定长 26B 会话字段改 1B 长度前缀变长（ADR-0070：会话 id 改 exec-<n>
-// 形态；manager/relay 同二进制、升级序同批换装）。
+// 的定长 26B 会话字段改 1B 长度前缀变长（ADR-0070；2026-10-15 P3-1 起会
+// 话 id 为 crypto 随机 `exec-<32hex>`，出律依据见 ADR-0070「适用范围」；
+// manager/relay 同二进制、升级序同批换装）。
 func MarshalRelayFrame(kind RelayFrameKind, sessionID string, payload []byte) []byte {
 	if len(sessionID) > maxSessionIDLen {
-		// 会话 id 受铸面控制（exec-<seq>），超界 = 编程错误。
+		// 会话 id 受铸面控制（exec-<32hex>），超界 = 编程错误。
 		panic(fmt.Sprintf("relay frame session id too long: %d bytes", len(sessionID)))
 	}
 	out := make([]byte, 0, 2+len(sessionID)+len(payload))

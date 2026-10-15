@@ -19,14 +19,20 @@ ULID 入选无决策记录（ADR-0021 仅「归档仓沿用」）；领域模型
    | 有名 | project/app/database/volume/network/secret/config/shared_variable/task/schedule/team/user/role/notification_channel/alert_rule | name | `web-42` |
    | 派生 | revision | `<app-id>-r<seq>`（per-App 修订号，UI 面语义沿用） | `web-42-r7` |
    | 派生 | deployment/build/run/backup/browse/network_peer/route | `<父id>-<seq>` | `web-42-88` |
-   | 独立 | token/invitation/upload/exec session | `<kind>-<seq>` | `tok-15` |
+   | 独立 | token/invitation/upload | `<kind>-<seq>` | `tok-15` |
    | 独立 | audit / node | `aud-<seq>` / `node-<seq>` | |
+
+   （2026-10-15 P3-1 修订：exec session 出律——改 crypto 随机 `exec-<32hex>`，见下节「适用范围」；token/invitation/upload 不变。）
 
    task 有名用 name、无名系统 task 用 `task-<seq>`。铸造点收敛到行装配处：repo Create 为主（name/父 id/tx 同在手）；task 走 minttask（CONTEXT.md Task Mint 词条不动——TaskSpec 冻结先于行装配，minttask 事务内先取 seq 再注身份）；node 走 anchor 铸造；会话走各自装配点。
 4. **name 是 id 的 base**：有名实体 name 校验收紧 dns 标签形态（`[a-z0-9]([a-z0-9-]*[a-z0-9])?`，≤63）——否则 `fleetly-<projectID>` 命名空间、`db-<id>` DNS 等派生名不安全。API 层执法，对齐 spec 内部名 regex 先例（processNameRe/SecretNamePattern）。
 5. **单一格式，无任何 ULID 接受面**：spec.go 26 位大写正则（platformIDRe）替换为新格式校验；测试夹具/golden 掩码全量单一化；`oklog/ulid/v2` 出 go.mod，守卫禁复引。
 6. **exec 中继帧变长会话字段**：`[1B kind][26B session][payload]` → `[1B kind][1B len][session][payload]`（修订 ADR-0049 定长记载）；manager/relay 同二进制、升级序同批换装。
 7. **存量处置**：staging 重置重播种（先拆受管载体 + 清节点 `fleetly.*` 标记再重置平台库，否则 Drift 判旧载体孤儿）；不做数据改写工具。
+
+## 适用范围（2026-10-15 P3-1 修订）
+
+可读 id 律针对**持久化实体**——四要件：行有台账、跨面引用、人工排查诉求、seq 兼任创建序；缺一即出律。exec 会话不满足：它是进程内活体（注册表不落库），生命周期 ≤30min（硬 TTL 上界），ID 只在帧协议/票据/日志瞬时出现，无排查台账诉求。反向看，单调序号使会话 ID 可枚举——`exec-1`、`exec-2`…让跨队会话 ID 探测零成本，是已封堵的 S1 案卷暴露面（attach 的 Team 比对）的放大器，纯负资产。**修订：exec 会话 ID 出律，改 crypto 随机（`exec-<32hex>`，CreateSession 铸造）**；中继帧协议（决策 6 的 1B 长度前缀变长形态）本就承载任意会话 ID，零改动。
 
 ## Consequences
 

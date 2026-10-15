@@ -10,7 +10,7 @@ package k3s
 //
 // 节点生命周期：节拍列锚定节点（fleetly.node.id 在场）——新节点起连接
 //（未锚定进平台表即退避重试，锚定后自愈）、消失节点停连接（连接关闭 →
-// engine 侧 dropRelayConn 收口其名下会话）。凭证每次拨号前取 node token
+// engine 侧 dropRelay 收口其名下会话）。凭证每次拨号前取 node token
 // 文件（k3s 无 swarm rotate 面——Enrollment rotate 诚实失败，同口径）。
 
 import (

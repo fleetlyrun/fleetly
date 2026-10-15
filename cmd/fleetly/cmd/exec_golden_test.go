@@ -2,7 +2,8 @@ package cmd
 
 // Exec 动词 golden（F3.2，ADR-0049）：gRPC 全链经进程内假代理（帧流/
 // 退出码透传）；stdout 确定性（假执行 argv 回显），会话头行落 stderr
-//（ULID 归一）。shell 的非 TTY 形态同钉（stdin EOF → StdinEOF 语义）。
+//（ULID 与会话 ID 归一）。shell 的非 TTY 形态同钉（stdin EOF → StdinEOF
+// 语义）。
 
 import (
 	"context"
@@ -12,12 +13,17 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
 )
 
-// goldenExecULID 归一全部 26 位 ULID（会话 ID 与 App ID 皆时间派生不稳；
-// node/instance 假常量保留可读）。
+// goldenExecULID 归一全部 26 位 ULID（App ID 时间派生不稳；node/instance
+// 假常量保留可读）。
 var goldenExecULID = regexp.MustCompile(`[0-9A-Z]{26}`)
 
+// goldenExecSessionID 归一会话 ID（2026-10-15 P3-1 随机化后每次受理为
+// 不同的 crypto 随机值：exec-<32hex> → exec-ID）。
+var goldenExecSessionID = regexp.MustCompile(`exec-[0-9a-f]{32}`)
+
 func normalizeExecGolden(s string) string {
-	return goldenExecULID.ReplaceAllString(s, "ID")
+	// 会话 ID 先归一：32 位 hex 若纯数字会被 ULID 正则截断，顺序不可换。
+	return goldenExecULID.ReplaceAllString(goldenExecSessionID.ReplaceAllString(s, "exec-ID"), "ID")
 }
 
 // execGoldenSeed 建夹具 App（exec 受理只要求 App 行在场——实例解析是
@@ -56,7 +62,7 @@ func TestGoldenExecVerbs(t *testing.T) {
 	}
 	for _, st := range steps {
 		t.Run(st.verb, func(t *testing.T) {
-			// 会话头行（instance/node 确定性假值 + 会话 ULID 归一）。
+			// 会话头行（instance/node 确定性假值 + 会话 ID 随机化后归一）。
 			code, out, stderr := runCLI(t, st.args...)
 			if code != 0 {
 				t.Fatalf("%s: code=%d stderr=%q", st.verb, code, stderr)

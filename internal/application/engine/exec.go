@@ -1,8 +1,9 @@
 package engine
 
-// Exec 会话域（F3.2，ADR-0049）：受理（解析/限额）、路由（反向中继 hub）、
-// 生命周期（空闲/硬 TTL、单消费端附着）。会话不是资源行——注册表是进程内
-// 活体，台账 = 受理审计行（api 层四件一拍，本域零持久化）。
+// Exec 会话域（F3.2，ADR-0049）：受理（解析/限额）、生命周期（空闲/硬
+// TTL、单消费端附着）；中继路由半边（hub 握手/上行投递/下行下发）见
+// execrelay.go。会话不是资源行——注册表是进程内活体，台账 = 受理审计行
+//（api 层四件一拍，本域零持久化）。
 //
 // 数据流：消费端（CLI gRPC / Console WS 适配器，ExecClientPipe）↔ 会话泵
 // ↔ 中继 hub ↔ 节点中继 WS 连接（RelayWriter 适配器）。帧协议单源
@@ -14,13 +15,13 @@ package engine
 
 import (
 	"context"
+	cryptorand "crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
-	"sync/atomic"
 	"time"
-
-	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 )
@@ -39,6 +40,9 @@ const (
 	execOutboundCap = 256
 	// execCloseGrace 是消费端断开后等待中继收口的宽限。
 	execCloseGrace = 5 * time.Second
+	// execIDRandBytes 是会话 ID 的随机字节数（hex 后 32 字符，连前缀总长
+	// 38——P3-1 随机化铸造面，见 CreateSession 语义锚）。
+	execIDRandBytes = 16
 )
 
 // exec 会话域哨兵（api 层映射稳定 errcode）。
@@ -80,7 +84,7 @@ type CreateExecInput struct {
 	AppID   string
 	Process string
 	// Instance 是可选的实例锚（ADR-0067）：非空时锚定该具体在跑实例
-	// （ExecInstances 观测行的编排器实例标识），不中即 ErrExecInstanceGone
+	//（ExecInstances 观测行的编排器实例标识），不中即 ErrExecInstanceGone
 	// ——会话与实例绑定，不代选替身；空 = auto（首个在跑实例）。
 	Instance string
 	Argv     []string
@@ -130,15 +134,23 @@ type RelayWriter interface {
 	WriteRelayFrame(b []byte) error
 }
 
-// execDomain 是 exec 会话域实例态。
-type execDomain struct {
+// execs 是 exec 会话域实例态（P3-1 收编：显式最小依赖——logger 经 New
+// 注入，禁挂 *Engine 回引，enginebackref 守卫执法）。
+type execs struct {
 	mu       sync.Mutex
 	sessions map[string]*execSession
 	relays   map[string]*relayConn // 平台节点 ID → 在连中继
-	execSeq  atomic.Uint64         // 会话序号（id = exec-<n>，ADR-0070 独立类）
+	// log 是域内日志（中继顶替/失联两处 Info）。
+	log *slog.Logger
 	// after 是 TTL 计时器缝（默认 time.AfterFunc；测试捕获回调手动触发
 	// ——FakeClock 驱不动真实 timer，返回 nil 计时器由各 nil 守卫兜住）。
 	after func(d time.Duration, f func()) *time.Timer
+}
+
+func (x *execs) init() {
+	x.sessions = make(map[string]*execSession)
+	x.relays = make(map[string]*relayConn)
+	x.after = time.AfterFunc
 }
 
 // relayConn 是一条在连节点中继。
@@ -162,29 +174,17 @@ type execSession struct {
 	hardTimer *time.Timer
 }
 
-func (d *execDomain) init() {
-	d.sessions = make(map[string]*execSession)
-	d.relays = make(map[string]*relayConn)
-	d.after = time.AfterFunc
-}
-
-// ExecUnsupported 报告 Runtime 是否缺 exec 子面（api 受理面诚实失败锚）。
-func (e *Engine) ExecUnsupported() bool { return e.execFace == nil }
-
-// ExecValidateClusterToken 校验中继凭证（/v1/platform/binary 原生入口的
-// 鉴权面；RelayAttach 内含同一校验——单源 Provider 调用）。
-func (e *Engine) ExecValidateClusterToken(ctx context.Context, token string) error {
-	if e.execFace == nil {
-		return ErrExecUnsupported
-	}
-	return e.execFace.ExecClusterToken(ctx, token)
-}
-
 // CreateSession 受理会话：实时解析实例与节点 → 限额 → 注册（未附着态；
 // 消费端在票据 TTL 内附着，超时由硬 TTL 兜底收口）。实例选择策略单源在
 // 此（ADR-0067）：Instance 空 = auto（ExecInstances 首行——provider 已按
 // ID 升序），非空 = 锚定匹配（不中即 ErrExecInstanceGone）。解析快照
 // 语义：实例漂移不重试——会话与实例绑定，漂移即诚实失败由客户端重开。
+//
+// 会话 ID 语义锚（P3-1，2026-10-15）：会话是内存活体不落库，ADR-0070 的
+// 可读 id 律不适用（该律执法持久化实体——见 ADR-0070「适用范围」）；ID
+// 改 crypto 随机（exec-<32hex>）——单调序号使会话 ID 可枚举，是跨队会话
+// ID 探测的放大器（S1 案卷，纯负资产），随机化与 P0-1 attach 的 Team 比对
+// 纵深互补。
 func (e *Engine) CreateSession(ctx context.Context, in CreateExecInput) (*ExecSessionInfo, error) {
 	if e.execFace == nil {
 		return nil, ErrExecUnsupported
@@ -216,10 +216,24 @@ func (e *Engine) CreateSession(ctx context.Context, in CreateExecInput) (*ExecSe
 		return nil, fmt.Errorf("%w: node %s", ErrExecRelayOffline, n.PlatformID)
 	}
 
+	// ID 铸造在注册表同临界区：碰撞查重重铸（2^-128 碰撞，理论不可达，
+	// 防御性循环——注册表是唯一查重面，进程内活体无台账）。
+	var id string
+	for {
+		b := make([]byte, execIDRandBytes)
+		if _, err := cryptorand.Read(b); err != nil {
+			e.exec.mu.Unlock()
+			return nil, fmt.Errorf("mint exec session id: %w", err)
+		}
+		id = "exec-" + hex.EncodeToString(b)
+		if e.exec.sessions[id] == nil {
+			break
+		}
+	}
+
 	s := &execSession{
 		info: ExecSessionInfo{
-			// 会话是内存活体（不落库）：进程内单调序号即身份（ADR-0070）。
-			ID:         entityid.Join("exec", int64(e.exec.execSeq.Add(1))), //nolint:gosec // 序号域内非负
+			ID:         id,
 			TeamID:     in.TeamID,
 			AppID:      in.AppID,
 			Process:    in.Process,
@@ -237,7 +251,7 @@ func (e *Engine) CreateSession(ctx context.Context, in CreateExecInput) (*ExecSe
 	// 器字段读写一律持 s.mu（装配/触碰/收口三面同锁，防 timer 字段竞态）。
 	s.mu.Lock()
 	s.hardTimer = e.exec.after(execHardTTL, func() {
-		e.finishSession(s, &ExecErrFrame{Code: "session_expired", Message: "session hard TTL exceeded"})
+		e.exec.finish(s, &ExecErrFrame{Code: "session_expired", Message: "session hard TTL exceeded"})
 	})
 	s.mu.Unlock()
 	e.exec.sessions[s.info.ID] = s
@@ -278,6 +292,186 @@ func (e *Engine) resolveExecTarget(ctx context.Context, workloadID, instance str
 	return selected, nil
 }
 
+// AbandonSession 是受理侧回滚（api 层 commit 失败路径：审计未落则会话
+// 不留——注册表活体与台账一致）。
+func (e *Engine) AbandonSession(id string) {
+	e.exec.mu.Lock()
+	s := e.exec.sessions[id]
+	if s != nil {
+		delete(e.exec.sessions, id)
+	}
+	e.exec.mu.Unlock()
+	if s != nil {
+		e.exec.finish(s, &ExecErrFrame{Code: "session_abandoned", Message: "session acceptance rolled back"})
+	}
+}
+
+// AttachClient 附着消费端并驱动会话至收口（阻塞直至会话终止：exit/error
+// 帧、TTL、中继失联或消费端整流断开）。第二附着者即刻 attach_conflict。
+// 消费端收流（Recv EOF）只关载体 stdin——`fleetly exec` 形态依赖此语义
+// （attach 后 CloseSend 读退出码）。
+func (e *Engine) AttachClient(ctx context.Context, sessionID string, pipe ExecClientPipe) error {
+	e.exec.mu.Lock()
+	s := e.exec.sessions[sessionID]
+	if s == nil {
+		e.exec.mu.Unlock()
+		return ErrExecSessionNotFound
+	}
+	if s.attached {
+		e.exec.mu.Unlock()
+		_ = pipe.Send(ExecServerFrame{Err: &ExecErrFrame{Code: "attach_conflict", Message: "session already has an attached client"}})
+		return nil
+	}
+	s.attached = true
+	relay := s.relay
+	e.exec.mu.Unlock()
+
+	// 首帧元数据 + 向中继下发会话开帧（受理时已锁定路由锚）。
+	if err := pipe.Send(ExecServerFrame{Meta: &ExecMetaFrame{Instance: s.info.Instance, NodeID: s.info.NodeID}}); err != nil {
+		e.exec.finish(s, nil)
+		return nil
+	}
+	open := capability.RelaySessionOpen{
+		SessionID: s.info.ID, WorkloadID: s.info.WorkloadID,
+		Instance: s.info.Instance, Argv: s.info.Argv, TTY: s.info.TTY,
+	}
+	if err := e.exec.send(relay, capability.RelayFrameOpen, s.info.ID, capability.EncodeRelayJSON(open)); err != nil {
+		e.exec.finish(s, relayGoneFrame(err))
+		return nil
+	}
+
+	// 空闲计时（attach 起算）；硬 TTL 已在受理起算（CreateSession），不重
+	// 复装配——重复装配会漏停旧计时器。装配持 s.mu。
+	s.mu.Lock()
+	s.idleTimer = e.exec.after(execIdleTimeout, func() {
+		e.exec.finish(s, &ExecErrFrame{Code: "idle_timeout", Message: "no session traffic within the idle window"})
+	})
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		if s.idleTimer != nil {
+			s.idleTimer.Stop()
+		}
+		s.mu.Unlock()
+	}()
+
+	// 上行泵：消费端帧 → 中继。EOF = stdin 关闭（StdinEOF 帧转达），
+	// 非终止；写失败（中继断）由 deliver 路径收口兜底。
+	upDone := make(chan struct{})
+	go func() {
+		defer close(upDone)
+		for {
+			f, err := pipe.Recv()
+			if err != nil {
+				return
+			}
+			e.exec.touch(s)
+			switch {
+			case f.Resize != nil:
+				pl := capability.ExecSizeWire{Cols: f.Resize.Cols, Rows: f.Resize.Rows}
+				if e.exec.send(relay, capability.RelayFrameResize, s.info.ID, capability.EncodeRelayJSON(pl)) != nil {
+					return
+				}
+			default:
+				if e.exec.send(relay, capability.RelayFrameStdin, s.info.ID, f.Stdin) != nil {
+					return
+				}
+			}
+		}
+	}()
+
+	// 下行泵：中继帧通道 → 消费端。
+	for {
+		select {
+		case <-upDone:
+			// 消费端收流：关载体 stdin（一次性信号）；会话继续至 exit。
+			_ = e.exec.send(relay, capability.RelayFrameStdinEOF, s.info.ID, nil)
+			upDone = nil // nil 通道恒阻塞——此 case 只处理一次
+		case f, ok := <-s.out:
+			if !ok {
+				return nil // 会话已收口（终结帧已投递或消费端不可达）
+			}
+			e.exec.touch(s)
+			if err := pipe.Send(f); err != nil {
+				e.exec.finish(s, nil)
+				return nil
+			}
+			if f.Exit != nil || f.Err != nil {
+				e.exec.finish(s, nil)
+				return nil
+			}
+		case <-ctx.Done():
+			// 整流断开：尽力终止载体 exec 后收口（宽限内等 exit 帧）。
+			_ = e.exec.send(relay, capability.RelayFrameClose, s.info.ID, nil)
+			deadline := time.After(execCloseGrace)
+			for {
+				select {
+				case f, ok := <-s.out:
+					if !ok {
+						return nil
+					}
+					if f.Exit != nil || f.Err != nil {
+						e.exec.finish(s, nil)
+						return nil
+					}
+				case <-deadline:
+					e.exec.finish(s, &ExecErrFrame{Code: "client_gone", Message: "client stream ended; relay close not acknowledged"})
+					return nil
+				}
+			}
+		}
+	}
+}
+
+// touch 重置空闲计时（idleTimer 读写持 s.mu——timer 字段三面同锁的触碰
+// 半边）。
+func (x *execs) touch(s *execSession) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.idleTimer != nil {
+		s.idleTimer.Reset(execIdleTimeout)
+	}
+}
+
+// finish 收口会话（幂等）：停计时、尽力向中继发终止、清注册表、投递终
+// 结帧（有则）后关闭下行通道。
+func (x *execs) finish(s *execSession, last *ExecErrFrame) {
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return
+	}
+	s.closed = true
+	// 计时器停在与 closed 同临界区（timer 字段三面同锁的收口半边）。
+	if s.idleTimer != nil {
+		s.idleTimer.Stop()
+	}
+	if s.hardTimer != nil {
+		s.hardTimer.Stop()
+	}
+	s.mu.Unlock()
+
+	x.mu.Lock()
+	relay := s.relay
+	if x.sessions[s.info.ID] == s {
+		delete(x.sessions, s.info.ID)
+	}
+	x.mu.Unlock()
+	if relay != nil {
+		// 尽力终止（中继断线时静默；中继侧 exec 收口尽力而为）。
+		_ = relay.w.WriteRelayFrame(capability.MarshalRelayFrame(capability.RelayFrameClose, s.info.ID, nil))
+	}
+	// 终结帧：closed 已置位，deliver 持锁复查即被排除——此处是唯一发送
+	// 方，随后的 close 恒独占（K2 的另一半保证）。
+	if last != nil {
+		select {
+		case s.out <- ExecServerFrame{Err: last}:
+		default:
+		}
+	}
+	close(s.out)
+}
+
 // ExecInstances 返回进程的在跑实例集快照（API 列表面；列表面诚实空——
 // 无在跑实例是观测行而非错误，与受理面哨兵语义分立）。
 func (e *Engine) ExecInstances(ctx context.Context, appID, process string) ([]capability.ExecTargetInstance, error) {
@@ -305,336 +499,6 @@ func (e *Engine) NodePlatformIDByCarrier(ctx context.Context, carrierNodeID stri
 	return n.PlatformID, nil
 }
 
-// AbandonSession 是受理侧回滚（api 层 commit 失败路径：审计未落则会话
-// 不留——注册表活体与台账一致）。
-func (e *Engine) AbandonSession(id string) {
-	e.exec.mu.Lock()
-	s := e.exec.sessions[id]
-	if s != nil {
-		delete(e.exec.sessions, id)
-	}
-	e.exec.mu.Unlock()
-	if s != nil {
-		e.finishSession(s, &ExecErrFrame{Code: "session_abandoned", Message: "session acceptance rolled back"})
-	}
-}
-
-// AttachClient 附着消费端并驱动会话至收口（阻塞直至会话终止：exit/error
-// 帧、TTL、中继失联或消费端整流断开）。第二附着者即刻 attach_conflict。
-// 消费端收流（Recv EOF）只关载体 stdin——`fleetly exec` 形态依赖此语义
-// （attach 后 CloseSend 读退出码）。
-func (e *Engine) AttachClient(ctx context.Context, sessionID string, pipe ExecClientPipe) error {
-	e.exec.mu.Lock()
-	s := e.exec.sessions[sessionID]
-	if s == nil {
-		e.exec.mu.Unlock()
-		return ErrExecSessionNotFound
-	}
-	if s.attached {
-		e.exec.mu.Unlock()
-		_ = pipe.Send(ExecServerFrame{Err: &ExecErrFrame{Code: "attach_conflict", Message: "session already has an attached client"}})
-		return nil
-	}
-	s.attached = true
-	relay := s.relay
-	e.exec.mu.Unlock()
-
-	// 首帧元数据 + 向中继下发会话开帧（受理时已锁定路由锚）。
-	if err := pipe.Send(ExecServerFrame{Meta: &ExecMetaFrame{Instance: s.info.Instance, NodeID: s.info.NodeID}}); err != nil {
-		e.finishSession(s, nil)
-		return nil
-	}
-	open := capability.RelaySessionOpen{
-		SessionID: s.info.ID, WorkloadID: s.info.WorkloadID,
-		Instance: s.info.Instance, Argv: s.info.Argv, TTY: s.info.TTY,
-	}
-	if err := e.sendRelay(relay, capability.RelayFrameOpen, s.info.ID, capability.EncodeRelayJSON(open)); err != nil {
-		e.finishSession(s, relayGoneFrame(err))
-		return nil
-	}
-
-	// 空闲计时（attach 起算）；硬 TTL 已在受理起算（CreateSession），不重
-	// 复装配——重复装配会漏停旧计时器。装配持 s.mu。
-	s.mu.Lock()
-	s.idleTimer = e.exec.after(execIdleTimeout, func() {
-		e.finishSession(s, &ExecErrFrame{Code: "idle_timeout", Message: "no session traffic within the idle window"})
-	})
-	s.mu.Unlock()
-	defer func() {
-		s.mu.Lock()
-		if s.idleTimer != nil {
-			s.idleTimer.Stop()
-		}
-		s.mu.Unlock()
-	}()
-
-	// 上行泵：消费端帧 → 中继。EOF = stdin 关闭（StdinEOF 帧转达），
-	// 非终止；写失败（中继断）由 deliver 路径收口兜底。
-	upDone := make(chan struct{})
-	go func() {
-		defer close(upDone)
-		for {
-			f, err := pipe.Recv()
-			if err != nil {
-				return
-			}
-			e.touchSession(s)
-			switch {
-			case f.Resize != nil:
-				pl := capability.ExecSizeWire{Cols: f.Resize.Cols, Rows: f.Resize.Rows}
-				if e.sendRelay(relay, capability.RelayFrameResize, s.info.ID, capability.EncodeRelayJSON(pl)) != nil {
-					return
-				}
-			default:
-				if e.sendRelay(relay, capability.RelayFrameStdin, s.info.ID, f.Stdin) != nil {
-					return
-				}
-			}
-		}
-	}()
-
-	// 下行泵：中继帧通道 → 消费端。
-	for {
-		select {
-		case <-upDone:
-			// 消费端收流：关载体 stdin（一次性信号）；会话继续至 exit。
-			_ = e.sendRelay(relay, capability.RelayFrameStdinEOF, s.info.ID, nil)
-			upDone = nil // nil 通道恒阻塞——此 case 只处理一次
-		case f, ok := <-s.out:
-			if !ok {
-				return nil // 会话已收口（终结帧已投递或消费端不可达）
-			}
-			e.touchSession(s)
-			if err := pipe.Send(f); err != nil {
-				e.finishSession(s, nil)
-				return nil
-			}
-			if f.Exit != nil || f.Err != nil {
-				e.finishSession(s, nil)
-				return nil
-			}
-		case <-ctx.Done():
-			// 整流断开：尽力终止载体 exec 后收口（宽限内等 exit 帧）。
-			_ = e.sendRelay(relay, capability.RelayFrameClose, s.info.ID, nil)
-			deadline := time.After(execCloseGrace)
-			for {
-				select {
-				case f, ok := <-s.out:
-					if !ok {
-						return nil
-					}
-					if f.Exit != nil || f.Err != nil {
-						e.finishSession(s, nil)
-						return nil
-					}
-				case <-deadline:
-					e.finishSession(s, &ExecErrFrame{Code: "client_gone", Message: "client stream ended; relay close not acknowledged"})
-					return nil
-				}
-			}
-		}
-	}
-}
-
-// deliverRelayFrame 是 hub 上行投递（中继读循环逐帧调用）。
-func (e *Engine) deliverRelayFrame(f capability.RelayFrame) {
-	e.exec.mu.Lock()
-	s := e.exec.sessions[f.SessionID]
-	e.exec.mu.Unlock()
-	if s == nil {
-		return // 会话已收口（迟到帧丢弃）
-	}
-	var out ExecServerFrame
-	switch f.Kind {
-	case capability.RelayFrameAck:
-		return // 受理回执（instance 已在 meta 首帧回显）
-	case capability.RelayFrameStdout:
-		out.Stdout = f.Payload
-	case capability.RelayFrameStderr:
-		out.Stderr = f.Payload
-	case capability.RelayFrameExit:
-		pl, err := capability.DecodeRelayJSON[capability.RelaySessionExit](f.Payload)
-		if err != nil {
-			return
-		}
-		// 退出码透传（int→int32：POSIX 退出码值域 0-255，钳制边界是
-		// 纵深防御——代理侧是我们自己的 ExecWorkload 返回值）。
-		code := int32(clampExitCode(pl.Code))
-		out.Exit = &code
-	case capability.RelayFrameError:
-		pl, err := capability.DecodeRelayJSON[capability.RelaySessionError](f.Payload)
-		if err != nil {
-			return
-		}
-		out.Err = &ExecErrFrame{Code: pl.Code, Message: pl.Message}
-	default:
-		return
-	}
-	// 发送与 closed 复查同临界区（K2，2026-10-14 P0-1）：finishSession 置
-	// closed 后才 close(s.out)，发送方持锁复查即被排除——close 恒独占，
-	// send-on-closed 竞态结构性消除。
-	s.mu.Lock()
-	if s.closed {
-		s.mu.Unlock()
-		return // 会话已收口（迟到帧丢弃）
-	}
-	select {
-	case s.out <- out:
-		s.mu.Unlock()
-	default:
-		s.mu.Unlock()
-		// 慢消费端：缓冲满即收口（内存膨胀防护，ADR-0049 决策 4 注记）。
-		e.finishSession(s, &ExecErrFrame{Code: "client_stalled", Message: "client is not draining session output"})
-	}
-}
-
-// sendRelay 下发一帧到中继连接；失败即注销该连接并收口其名下会话。
-func (e *Engine) sendRelay(a *relayConn, kind capability.RelayFrameKind, sessionID string, payload []byte) error {
-	if err := a.w.WriteRelayFrame(capability.MarshalRelayFrame(kind, sessionID, payload)); err != nil {
-		e.dropRelayConn(a)
-		return err
-	}
-	return nil
-}
-
-// touchSession 重置空闲计时（idleTimer 读写持 s.mu——timer 字段三面同锁
-// 的触碰半边）。
-func (e *Engine) touchSession(s *execSession) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.idleTimer != nil {
-		s.idleTimer.Reset(execIdleTimeout)
-	}
-}
-
-// finishSession 收口会话（幂等）：停计时、尽力向中继发终止、清注册表、
-// 投递终结帧（有则）后关闭下行通道。
-func (e *Engine) finishSession(s *execSession, last *ExecErrFrame) {
-	s.mu.Lock()
-	if s.closed {
-		s.mu.Unlock()
-		return
-	}
-	s.closed = true
-	// 计时器停在与 closed 同临界区（timer 字段三面同锁的收口半边）。
-	if s.idleTimer != nil {
-		s.idleTimer.Stop()
-	}
-	if s.hardTimer != nil {
-		s.hardTimer.Stop()
-	}
-	s.mu.Unlock()
-
-	e.exec.mu.Lock()
-	relay := s.relay
-	if e.exec.sessions[s.info.ID] == s {
-		delete(e.exec.sessions, s.info.ID)
-	}
-	e.exec.mu.Unlock()
-	if relay != nil {
-		// 尽力终止（中继断线时静默；中继侧 exec 收口尽力而为）。
-		_ = relay.w.WriteRelayFrame(capability.MarshalRelayFrame(capability.RelayFrameClose, s.info.ID, nil))
-	}
-	// 终结帧：closed 已置位，deliverRelayFrame 持锁复查即被排除——此处
-	// 是唯一发送方，随后的 close 恒独占（K2 的另一半保证）。
-	if last != nil {
-		select {
-		case s.out <- ExecServerFrame{Err: last}:
-		default:
-		}
-	}
-	close(s.out)
-}
-
-// ---- 中继 hub（/v1/relay 服务端握手与注册面；assembly WS 适配器消费） ----
-
-// RelayAttach 是中继连接附着：校验凭证（集群成员权等价，C3）→ 载体
-// 节点 ID 反查平台节点 ID（锚定表）→ 注册写端。同节点重连顶替旧连接：
-// 未附着会话重指新连接（受理面立即可用），已附着会话收口（exec 不可迁移，
-// 客户端重开——诚实边界）。feed 供适配器上行投递；detach 在连接断开时调用。
-func (e *Engine) RelayAttach(ctx context.Context, token, carrierNodeID, relayVersion string, w RelayWriter) (feed func(capability.RelayFrame), detach func(), err error) {
-	if e.execFace == nil {
-		return nil, nil, ErrExecUnsupported
-	}
-	if err := e.execFace.ExecClusterToken(ctx, token); err != nil {
-		return nil, nil, err
-	}
-	n, err := e.nodes.ByCarrier(ctx, e.db.Runner(), carrierNodeID)
-	if err != nil {
-		return nil, nil, fmt.Errorf("%w: carrier %s", ErrExecNodeUnanchored, carrierNodeID)
-	}
-
-	a := &relayConn{nodeID: n.PlatformID, version: relayVersion, w: w}
-	e.exec.mu.Lock()
-	old := e.exec.relays[n.PlatformID]
-	e.exec.relays[n.PlatformID] = a
-	var attached []*execSession
-	for _, s := range e.exec.sessions {
-		if s.relay != old {
-			continue
-		}
-		if s.attached {
-			attached = append(attached, s) // 在途 exec 不可迁移：收口
-		} else {
-			s.relay = a // 未附着：重指新连接
-		}
-	}
-	e.exec.mu.Unlock()
-	if old != nil {
-		e.log.Info("node relay replaced", "node", n.PlatformID, "version", relayVersion)
-	} else {
-		e.log.Info("node relay connected", "node", n.PlatformID, "version", relayVersion)
-	}
-	for _, s := range attached {
-		e.finishSession(s, relayGoneFrame(nil))
-	}
-
-	feed = func(f capability.RelayFrame) { e.deliverRelayFrame(f) }
-	detach = func() { e.dropRelayConn(a) }
-	return feed, detach, nil
-}
-
-// dropRelayConn 注销中继连接（身份校验：已被顶替的连接不误删继任者）并
-// 收口其名下会话（relay_disconnected 如实告知）。
-func (e *Engine) dropRelayConn(a *relayConn) {
-	e.exec.mu.Lock()
-	current := e.exec.relays[a.nodeID]
-	if current == a {
-		delete(e.exec.relays, a.nodeID)
-	}
-	var affected []*execSession
-	for _, s := range e.exec.sessions {
-		if s.relay == a {
-			affected = append(affected, s)
-		}
-	}
-	e.exec.mu.Unlock()
-	if current != a {
-		return // 顶替路径已处理会话重指/收口
-	}
-	e.log.Info("node relay disconnected", "node", a.nodeID)
-	for _, s := range affected {
-		e.finishSession(s, relayGoneFrame(nil))
-	}
-}
-
-// RelayStatus 是节点中继在连状态（节点视图回显面）。
-type RelayStatus struct {
-	Online  bool
-	Version string
-}
-
-// RelayStatuses 返回全量在连快照（ListNodes 回显消费）。
-func (e *Engine) RelayStatuses() map[string]RelayStatus {
-	e.exec.mu.Lock()
-	defer e.exec.mu.Unlock()
-	out := make(map[string]RelayStatus, len(e.exec.relays))
-	for id, a := range e.exec.relays {
-		out[id] = RelayStatus{Online: true, Version: a.version}
-	}
-	return out
-}
-
 // ExecActiveTeamSessions 返回 Team 的在册会话数（受理面限额回显用）。
 func (e *Engine) ExecActiveTeamSessions(teamID string) int {
 	e.exec.mu.Lock()
@@ -659,12 +523,16 @@ func (e *Engine) ExecSessionByID(id string) (*ExecSessionInfo, bool) {
 	return &s.info, true
 }
 
-func relayGoneFrame(err error) *ExecErrFrame {
-	msg := "node relay connection lost"
-	if err != nil {
-		msg += ": " + err.Error()
+// ExecUnsupported 报告 Runtime 是否缺 exec 子面（api 受理面诚实失败锚）。
+func (e *Engine) ExecUnsupported() bool { return e.execFace == nil }
+
+// ExecValidateClusterToken 校验中继凭证（/v1/platform/binary 原生入口的
+// 鉴权面；RelayAttach 内含同一校验——单源 Provider 调用）。
+func (e *Engine) ExecValidateClusterToken(ctx context.Context, token string) error {
+	if e.execFace == nil {
+		return ErrExecUnsupported
 	}
-	return &ExecErrFrame{Code: "relay_disconnected", Message: msg}
+	return e.execFace.ExecClusterToken(ctx, token)
 }
 
 // clampExitCode 钳制退出码到 proto int32 值域（G115 转换收口）。

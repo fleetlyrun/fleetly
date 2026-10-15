@@ -396,7 +396,7 @@ type Engine struct {
 	// 失败 E_EXEC_UNSUPPORTED——无降级路径）。
 	execFace capability.RuntimeExec
 	// exec 是会话域实例态（受理/路由/生命周期；进程内活体，零持久化）。
-	exec execDomain
+	exec execs
 
 	// Logging 域（F2.4，ADR-0040）：受管日志存储 Provider + 采集环（域流
 	// 账本/游标 repo；build 日志出口经同 Provider 持久化——见 buildlog.go）。
@@ -656,6 +656,7 @@ func New(deps Deps, opts Options) *Engine {
 	e.channels = repos.Channels
 	e.obs.init()
 	e.exec.init()
+	e.exec.log = log
 	e.expect.expected = make(map[workloadOwner]uint64)
 	e.drift.sig = make(map[string]string)
 	e.drift.rolloutSig = make(map[string]string)

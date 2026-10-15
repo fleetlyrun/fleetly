@@ -54,7 +54,7 @@ var engineFourInOneExemptions = map[string]string{
 // 文件相对路径 → 函数名 → 该函数体含 Transit 直调/行写/事实发射位。
 //
 // P3-0 接收者泛化（2026-10-15）：两遍扫描。第一遍收集包内全部命名类型名
-// （Engine、execDomain、Loop……动态全集，后续批域 struct 改名零维护）；
+// （Engine、execs、Loop……动态全集，后续批域 struct 改名零维护）；
 // 第二遍逐函数解析 engine-self 标识符集后做调用链分析。P3 域化九批会把
 // 字段与行为收编进未导出域 struct，方法接收者随之不再是 *Engine、名字
 // 不再是 e，repo 调用链也会变多级（x.repos.tasks.Transit）——字面 e +
