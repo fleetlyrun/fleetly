@@ -362,7 +362,9 @@ func (svc *GitHubAppsService) ListGitHubAppRepos(ctx context.Context, req *deliv
 		return nil, err
 	}
 	if svc.s.Cipher == nil {
-		return nil, apperr.New("E_SECRET_UNAVAILABLE", "the master key is not available")
+		// 未配主密钥是显式关态（P4-3 批 3）：cipher 面缺席精确 503，自
+		// E_SECRET_UNAVAILABLE 双语义拆出，文案逐字节保留。
+		return nil, apperr.New("E_MASTER_KEY_UNAVAILABLE", "the master key is not available")
 	}
 	plain, err := svc.s.Cipher.Open(row.PrivateKeyCiphertext)
 	if err != nil {
@@ -578,7 +580,9 @@ func (svc *GitHubAppsService) CompleteManifestFlow(ctx context.Context, req *del
 	// installation_id 正整数已退役 descriptor 注解（P4-1 批 1 Run B2）：
 	// 非正值由 protovalidate 拦截器在受理面拦截，文案与退役前逐字节一致。
 	if svc.s.Cipher == nil {
-		return nil, apperr.New("E_SECRET_UNAVAILABLE", "the master key is not available")
+		// 未配主密钥是显式关态（P4-3 批 3）：cipher 面缺席精确 503，自
+		// E_SECRET_UNAVAILABLE 双语义拆出，文案逐字节保留。
+		return nil, apperr.New("E_MASTER_KEY_UNAVAILABLE", "the master key is not available")
 	}
 	// 受理即验证（与 SetGitHubApp 同链）：installation 配对校验 + 属主解析。
 	// APIBase = manifest 流的 GitHub 基址（生产缺省 github.com；测试注入假件）。

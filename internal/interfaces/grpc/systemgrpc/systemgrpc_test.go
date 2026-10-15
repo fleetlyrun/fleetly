@@ -10,7 +10,9 @@ import (
 
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
 	"github.com/fleetlyrun/fleetly/internal/buildinfo"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/apperrstatus"
 )
 
 // 注意：本包测试只链接 systemgrpc → schema（builtin Spec 条目），
@@ -112,4 +114,19 @@ func TestExplainRejectsUnknownName(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "E_NOT_FOUND")
 	assert.Contains(t, err.Error(), "fleetly schema")
+}
+
+// TestRestartComponentEngineAbsent 钉引擎面缺席的精确拒绝（P4-3 批 3）：
+// 重启编排经引擎面路由（capability.Managed 声明者），face 缺席是 honest
+// failure——E_RUNTIME_FACE_UNSUPPORTED / Unimplemented，不再落 E_INTERNAL
+// 脱敏 500（testService 的 engine 即 nil，直达分支）。
+func TestRestartComponentEngineAbsent(t *testing.T) {
+	_, err := testService().RestartComponent(context.Background(), &systemv1.RestartComponentRequest{Name: "traefik"})
+	require.Error(t, err)
+	ae, ok := err.(*apperr.Error)
+	require.True(t, ok, "engine-absent branch must produce an apperr envelope, got %T", err)
+	assert.Equal(t, "E_RUNTIME_FACE_UNSUPPORTED", ae.Code())
+	assert.Equal(t, "Unimplemented", apperrstatus.ToGRPCStatus(ae).Code().String())
+	assert.Contains(t, ae.Message(), "requires the engine face")
+	assert.NotEmpty(t, ae.Suggestion())
 }

@@ -183,7 +183,9 @@ func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliv
 		}
 	}
 	if hasSecrets && svc.s.Cipher == nil {
-		return nil, apperr.New("E_SECRET_UNAVAILABLE", "the secret facility is unavailable (no master key)")
+		// 未配主密钥是显式关态（P4-3 批 3）：cipher 面缺席精确 503，自
+		// E_SECRET_UNAVAILABLE 双语义拆出，文案逐字节保留。
+		return nil, apperr.New("E_MASTER_KEY_UNAVAILABLE", "the secret facility is unavailable (no master key)")
 	}
 
 	resources := []*deliveryv1.InstantiatedResource{}

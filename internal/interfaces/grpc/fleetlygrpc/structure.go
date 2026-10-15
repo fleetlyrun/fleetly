@@ -583,7 +583,9 @@ func (svc *SecretsService) PutSecret(ctx context.Context, req *structurev1.PutSe
 	// per-field 文案；正则字面单源见 spec.SecretNamePattern（spec 包
 	// descriptor 对齐测试执法）。保留前缀与字符集的拒绝次序随之外移到边界。
 	if svc.s.Cipher == nil {
-		return nil, apperr.New("E_SECRET_UNAVAILABLE", "the secret facility is unavailable (no master key)")
+		// 未配主密钥是显式关态（P4-3 批 3）：cipher 面缺席精确 503，自
+		// E_SECRET_UNAVAILABLE 双语义拆出，文案逐字节保留。
+		return nil, apperr.New("E_MASTER_KEY_UNAVAILABLE", "the secret facility is unavailable (no master key)")
 	}
 	// 行级授权（ADR-0035）：写面受理前置（Project Team 归属不可变，无 TOCTOU）。
 	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {

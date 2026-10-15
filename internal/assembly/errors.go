@@ -26,9 +26,21 @@ import (
 //
 //   - 409 Conflict（状态冲突族）：E_ALREADY_EXISTS（唯一键已存在）、
 //     E_IDEMPOTENCY_KEY_CONFLICT（幂等键异体/在途/双源不一致）、
-//     E_CONFLICT / E_NOT_CANCELLABLE / E_NO_BASELINE / E_SECRET_UNAVAILABLE /
-//     E_CHANGE_FROZEN / E_PLATFORM_BACKUP_FAILED（请求合法、当前状态不容
-//     ——cancel/解绑/补件/lift 冻结/装 restic 后可重试）；
+//     E_CONFLICT / E_NOT_CANCELLABLE / E_NO_BASELINE / E_CHANGE_FROZEN /
+//     E_PLATFORM_BACKUP_FAILED（请求合法、当前状态不容
+//     ——cancel/解绑/lift 冻结/装 restic 后可重试）与 E_SECRET_UNAVAILABLE
+//     （P4-3 批 3 收窄后只剩 seal/open 运算失败——密钥在场但运算出错，
+//     修钥后可重试；"未配主密钥" nil 面已分流 E_MASTER_KEY_UNAVAILABLE）；
+//   - 503 Service Unavailable（配置级 off 态族，absence is an explicit off
+//     state）：E_REGISTRY_UNAVAILABLE（registry.addr 空/无 content 面）、
+//     E_MASTER_KEY_UNAVAILABLE（未配主密钥，cipher 面缺席）、
+//     E_LOG_STORE_UNAVAILABLE（logging.addr 空）、
+//     E_METRICS_STORE_UNAVAILABLE（metrics.addr 空）与
+//     E_BROWSE_DISABLED / E_DATABASE_NOT_READY / E_NODE_RELAY_OFFLINE；
+//   - 501 Not Implemented（面/子面缺席族）：E_EXEC_UNSUPPORTED、
+//     E_BROWSER_UNSUPPORTED 与 E_RUNTIME_FACE_UNSUPPORTED（runtime 可选
+//     子面——node admin/container logs——或引擎面缺席；honest failure，
+//     无降级路径）；
 //   - 400/404/409/410/413/429/401/403/500 与语义对照（本就对，钉扎防漂移）：
 //     E_INVALID_ARGUMENT→400、E_NOT_FOUND→404、E_EVENTS_GONE 与
 //     E_UPLOAD_UNAVAILABLE→410（断档/产物已扫：重同步或重传）、
@@ -42,38 +54,42 @@ import (
 // gRPC code 的 gateway.DefaultCodeToHTTP 继续兜底无信封的机械错误
 // （Canceled→499、DeadlineExceeded→504 等）。
 var errcodeToHTTP = map[string]int{
-	"E_ALREADY_EXISTS":           http.StatusConflict,
-	"E_BROWSER_UNSUPPORTED":      http.StatusNotImplemented,
-	"E_BROWSE_DISABLED":          http.StatusServiceUnavailable,
-	"E_CATALOG_UNAVAILABLE":      http.StatusServiceUnavailable,
-	"E_DATABASE_NOT_READY":       http.StatusServiceUnavailable,
-	"E_CHANGE_FROZEN":            http.StatusConflict,
-	"E_APP_HOOK_OWNED":           http.StatusConflict,
-	"E_CONFLICT":                 http.StatusConflict,
-	"E_EVENTS_GONE":              http.StatusGone,
-	"E_EXEC_UNSUPPORTED":         http.StatusNotImplemented,
-	"E_FORBIDDEN":                http.StatusForbidden,
-	"E_GITHUB_UPSTREAM":          http.StatusBadGateway,
-	"E_IDEMPOTENCY_KEY_CONFLICT": http.StatusConflict,
-	"E_INTERNAL":                 http.StatusInternalServerError,
-	"E_INVALID_ARGUMENT":         http.StatusBadRequest,
-	"E_INVALID_INVITATION":       http.StatusForbidden,
-	"E_INVALID_SIGNATURE":        http.StatusUnauthorized,
-	"E_NODE_RELAY_OFFLINE":       http.StatusServiceUnavailable,
-	"E_DATABASE_ROTATE_FAILED":   http.StatusConflict,
-	"E_NOT_CANCELLABLE":          http.StatusConflict,
-	"E_NOT_FOUND":                http.StatusNotFound,
-	"E_NO_BASELINE":              http.StatusConflict,
-	"E_PLATFORM_BACKUP_FAILED":   http.StatusConflict,
-	"E_QUEUE_FULL":               http.StatusTooManyRequests,
-	"E_QUOTA_EXCEEDED":           http.StatusTooManyRequests,
-	"E_RATE_LIMITED":             http.StatusTooManyRequests,
-	"E_REGISTRY_UNAVAILABLE":     http.StatusServiceUnavailable,
-	"E_SECRET_UNAVAILABLE":       http.StatusConflict,
-	"E_TEMPLATE_INVALID":         http.StatusBadRequest,
-	"E_UNAUTHENTICATED":          http.StatusUnauthorized,
-	"E_UPLOAD_TOO_LARGE":         http.StatusRequestEntityTooLarge,
-	"E_UPLOAD_UNAVAILABLE":       http.StatusGone,
+	"E_ALREADY_EXISTS":            http.StatusConflict,
+	"E_BROWSER_UNSUPPORTED":       http.StatusNotImplemented,
+	"E_BROWSE_DISABLED":           http.StatusServiceUnavailable,
+	"E_CATALOG_UNAVAILABLE":       http.StatusServiceUnavailable,
+	"E_DATABASE_NOT_READY":        http.StatusServiceUnavailable,
+	"E_CHANGE_FROZEN":             http.StatusConflict,
+	"E_APP_HOOK_OWNED":            http.StatusConflict,
+	"E_CONFLICT":                  http.StatusConflict,
+	"E_EVENTS_GONE":               http.StatusGone,
+	"E_EXEC_UNSUPPORTED":          http.StatusNotImplemented,
+	"E_FORBIDDEN":                 http.StatusForbidden,
+	"E_GITHUB_UPSTREAM":           http.StatusBadGateway,
+	"E_IDEMPOTENCY_KEY_CONFLICT":  http.StatusConflict,
+	"E_INTERNAL":                  http.StatusInternalServerError,
+	"E_INVALID_ARGUMENT":          http.StatusBadRequest,
+	"E_INVALID_INVITATION":        http.StatusForbidden,
+	"E_INVALID_SIGNATURE":         http.StatusUnauthorized,
+	"E_LOG_STORE_UNAVAILABLE":     http.StatusServiceUnavailable,
+	"E_MASTER_KEY_UNAVAILABLE":    http.StatusServiceUnavailable,
+	"E_METRICS_STORE_UNAVAILABLE": http.StatusServiceUnavailable,
+	"E_NODE_RELAY_OFFLINE":        http.StatusServiceUnavailable,
+	"E_DATABASE_ROTATE_FAILED":    http.StatusConflict,
+	"E_NOT_CANCELLABLE":           http.StatusConflict,
+	"E_NOT_FOUND":                 http.StatusNotFound,
+	"E_NO_BASELINE":               http.StatusConflict,
+	"E_PLATFORM_BACKUP_FAILED":    http.StatusConflict,
+	"E_QUEUE_FULL":                http.StatusTooManyRequests,
+	"E_QUOTA_EXCEEDED":            http.StatusTooManyRequests,
+	"E_RATE_LIMITED":              http.StatusTooManyRequests,
+	"E_REGISTRY_UNAVAILABLE":      http.StatusServiceUnavailable,
+	"E_RUNTIME_FACE_UNSUPPORTED":  http.StatusNotImplemented,
+	"E_SECRET_UNAVAILABLE":        http.StatusConflict,
+	"E_TEMPLATE_INVALID":          http.StatusBadRequest,
+	"E_UNAUTHENTICATED":           http.StatusUnauthorized,
+	"E_UPLOAD_TOO_LARGE":          http.StatusRequestEntityTooLarge,
+	"E_UPLOAD_UNAVAILABLE":        http.StatusGone,
 }
 
 // resolveHTTPStatus 定 HTTP 状态：信封还原出在册错误码时以 errcodeToHTTP

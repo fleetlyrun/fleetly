@@ -118,7 +118,9 @@ func (s *Service) checkComponents(ctx context.Context) []*systemv1.ComponentHeal
 // 重排；哨兵错误 map 为精确错误码。
 func (s *Service) RestartComponent(ctx context.Context, req *systemv1.RestartComponentRequest) (*systemv1.RestartComponentResponse, error) {
 	if s.engine == nil {
-		return nil, apperr.New("E_INTERNAL", "component restart requires the engine face")
+		// 引擎面缺席是 honest failure（P4-3 批 3）：精确 501，不再落
+		// E_INTERNAL 脱敏 500。
+		return nil, apperr.New("E_RUNTIME_FACE_UNSUPPORTED", "component restart requires the engine face")
 	}
 	restarted, err := s.engine.RestartComponent(ctx, req.GetName())
 	if err != nil {

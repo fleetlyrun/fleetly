@@ -125,7 +125,9 @@ func (svc *NodesService) UncordonNode(ctx context.Context, req *runtimev1.Uncord
 func (svc *NodesService) nodeAdmin(ctx context.Context, nodeID, action string, op func(capability.RuntimeAdmin, string) error) error {
 	admin := capability.FacesOf(svc.s.Runtime).Admin // 节点管理子面（FacesOf 协商点）
 	if admin == nil {
-		return apperr.New("E_INTERNAL", "the runtime provider does not expose node administration")
+		// 可选子面缺席是 honest failure（P4-3 批 3）：精确 501，不再落
+		// E_INTERNAL 脱敏 500。
+		return apperr.New("E_RUNTIME_FACE_UNSUPPORTED", "the runtime provider does not expose node administration")
 	}
 	if err := op(admin, nodeID); err != nil {
 		if errors.Is(err, capability.ErrNodeNotFound) {
@@ -607,7 +609,9 @@ func (svc *LogsService) streamLogsDualPath(q capability.LogQuery, req *telemetry
 		// 检索路径（ADR-0040 决策 4）：行级隔离由查询构造执法——只携带
 		// 本域的过滤字段（VL 单租户，凭证不离开 daemon）。
 		if svc.s.Logging == nil {
-			return apperr.New("E_INTERNAL", "log search requires the managed log store; set config logging.addr to enable it")
+			// 未配 logging.addr 是显式关态（P4-3 批 3）：精确 503，不再落
+			// E_INTERNAL 脱敏 500。
+			return apperr.New("E_LOG_STORE_UNAVAILABLE", "log search requires the managed log store; set config logging.addr to enable it")
 		}
 		if err := svc.s.Logging.Query(stream.Context(), q, w); err != nil {
 			return mapStateError(err, "logs")
@@ -616,7 +620,9 @@ func (svc *LogsService) streamLogsDualPath(q capability.LogQuery, req *telemetry
 	}
 	logs := capability.FacesOf(svc.s.Runtime).Logs // 日志子面（FacesOf 协商点）
 	if logs == nil {
-		return apperr.New("E_INTERNAL", "the runtime provider does not expose container logs")
+		// 可选子面缺席是 honest failure（P4-3 批 3）：精确 501，不再落
+		// E_INTERNAL 脱敏 500。
+		return apperr.New("E_RUNTIME_FACE_UNSUPPORTED", "the runtime provider does not expose container logs")
 	}
 	if err := logs.StreamLogs(stream.Context(), q, w); err != nil {
 		return mapStateError(err, "logs")

@@ -19,9 +19,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
+	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
 	"github.com/fleetlyrun/fleetly/internal/assembly"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/apperrstatus"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
 	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
+	"google.golang.org/grpc/status"
 )
 
 // logFrame 是 gateway 流式信封的单帧形态（ForwardResponseStream 的
@@ -77,6 +80,56 @@ func TestRESTGatewayServesLogsAsNDJSONFrames(t *testing.T) {
 		assert.Equal(t, "web", frame.Result.Container)
 		assert.NotEmpty(t, frame.Result.Time)
 	}
+}
+
+// TestRESTLogSearchDisabledFace 钉检索径停用形态（P4-3 批 3 未配置族码
+// 分流）：夹具未配 Logging（logging.addr 缺省空）→ text 检索径精确失败
+// E_LOG_STORE_UNAVAILABLE 503（message 面向用户，非 E_INTERNAL 不铸
+// error_id）；实时径（无 text）不受影响照常走 Runtime 子面——ADR-0040
+// 双径的分界。
+func TestRESTLogSearchDisabledFace(t *testing.T) {
+	h := apitest.New(t)
+	ctx := sdk.WithToken(context.Background(), h.Token)
+
+	projects := structurev1.NewProjectsServiceClient(h.Conn)
+	project, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "log-off"})
+	require.NoError(t, err)
+	apps := structurev1.NewAppsServiceClient(h.Conn)
+	app, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: project.Project.Id, Name: "web"})
+	require.NoError(t, err)
+
+	// gRPC 面：Unavailable + 信封 E_LOG_STORE_UNAVAILABLE + 配置级 message。
+	stream, serr := telemetryv1.NewLogsServiceClient(h.Conn).StreamLogs(ctx,
+		&telemetryv1.StreamLogsRequest{AppId: app.App.Id, Text: "boom"})
+	require.NoError(t, serr, "stream header opens; failure surfaces on Recv")
+	_, serr = stream.Recv()
+	require.Error(t, serr)
+	assert.Equal(t, "Unavailable", status.Code(serr).String())
+	env, ok := apperrstatus.FromError(serr)
+	require.True(t, ok)
+	assert.Equal(t, "E_LOG_STORE_UNAVAILABLE", env.Code())
+	assert.Contains(t, status.Convert(serr).Message(), "requires the managed log store",
+		"config-level message is user-facing by design, not a leaked cause")
+	assert.NotEmpty(t, env.Suggestion())
+	assert.Empty(t, env.ErrorID(), "non-E_INTERNAL exits mint no error_id")
+
+	// 实时径不受停用影响：无 text 过滤照常出 FakeRuntime 固定两帧。
+	live, lerr := telemetryv1.NewLogsServiceClient(h.Conn).StreamLogs(ctx,
+		&telemetryv1.StreamLogsRequest{AppId: app.App.Id})
+	require.NoError(t, lerr)
+	_, lerr = live.Recv()
+	require.NoError(t, lerr, "the live path must not depend on the managed log store")
+
+	// REST 面：503 + 同信封（errcodeToHTTP 显式映射）。
+	handler, herr := assembly.NewGatewayHandler(nil, h.Conn, nil, nil, assembly.NewBrowseGate(h.Services))
+	require.NoError(t, herr)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet,
+		"/v1/logs?app_id="+app.App.Id+"&text=boom", nil)
+	req.Header.Set("Authorization", "Bearer "+h.Token)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusServiceUnavailable, rec.Code, rec.Body.String())
+	assert.Contains(t, rec.Body.String(), `"code":"E_LOG_STORE_UNAVAILABLE"`)
 }
 
 // TestRESTGatewayServesLogsMultiProcess 钉多进程过滤面（ADR-0060）：

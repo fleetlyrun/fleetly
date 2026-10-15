@@ -7,6 +7,7 @@ package apitest_test
 import (
 	"context"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
+	"github.com/fleetlyrun/fleetly/internal/assembly"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/apperrstatus"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
@@ -112,17 +114,31 @@ func TestAlertingRulesLifecycle(t *testing.T) {
 func TestMetricsQueryDisabledFace(t *testing.T) {
 	h := apitest.New(t)
 	c, ctx := alertingClient(t, h)
-	// 夹具未配置 metrics.addr → 精确失败（E_INTERNAL 信封；P0-3 出口纪律：
-	// 脱敏文案 + error_id 上线，"metrics store" 细节只进服务端日志——
-	// 未配置族 503 码分流归 P0-7）。
+	// 夹具未配置 metrics.addr → 精确失败（P4-3 批 3 未配置族码分流：
+	// E_METRICS_STORE_UNAVAILABLE 503 信封；message 本就面向用户（含
+	// metrics.addr 处置提示），非 E_INTERNAL 不铸 error_id——P0-3 出口
+	// 纪律零影响面；此前落 E_INTERNAL 脱敏 500）。
 	_, err := c.Metrics.QueryMetrics(ctx, &telemetryv1.QueryMetricsRequest{Query: "up"})
 	require.Error(t, err)
-	assert.Equal(t, "E_INTERNAL: internal server error", status.Convert(err).Message())
-	assert.NotContains(t, err.Error(), "metrics store")
+	assert.Equal(t, "Unavailable", status.Code(err).String())
+	assert.Contains(t, status.Convert(err).Message(), "require the managed metrics store",
+		"config-level message is user-facing by design, not a leaked cause")
 	env, ok := apperrstatus.FromError(err)
 	require.True(t, ok)
-	assert.Equal(t, "E_INTERNAL", env.Code())
-	assert.Regexp(t, `^[0-9a-f]{32}$`, env.ErrorID(), "the log correlation id must ride the envelope")
+	assert.Equal(t, "E_METRICS_STORE_UNAVAILABLE", env.Code())
+	assert.NotEmpty(t, env.Suggestion())
+	assert.Empty(t, env.ErrorID(), "non-E_INTERNAL exits mint no error_id")
+
+	// REST 面：503 + 同信封（errcodeToHTTP 显式映射；与 registry 503 同款
+	// 断言形态——语义真源在错误码，不在传输层机械映射）。
+	handler, err := assembly.NewGatewayHandler(nil, h.Conn, nil, nil, assembly.NewBrowseGate(h.Services))
+	require.NoError(t, err)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/v1/metrics?query=up", nil)
+	req.Header.Set("Authorization", "Bearer "+h.Token)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusServiceUnavailable, rec.Code, rec.Body.String())
+	assert.Contains(t, rec.Body.String(), `"code":"E_METRICS_STORE_UNAVAILABLE"`)
 }
 
 // TestMetricsQueryUpstreamRejection 钉上游 4xx 的信封分流（F-B1）：假

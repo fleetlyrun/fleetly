@@ -96,9 +96,9 @@ var builtins = []Code{
 	},
 	{
 		ID:         "E_SECRET_UNAVAILABLE",
-		Summary:    "The secret facility is unavailable or the referenced secret is missing.",
-		Suggestion: "Create the missing secret or restore the master key under the data root keys/ directory.",
-		Source:     "internal/api/fleetlygrpc/structure.go PutSecret / resolveMaterials",
+		Summary:    "A secret seal or open operation failed while the master key is configured (cipher operation error).",
+		Suggestion: "The message names the failing operation and carries the cipher error text. Check that the master key under the data root keys/ directory is the same one that sealed the payload — a replaced or rotated key cannot open old envelopes.",
+		Source:     "internal/interfaces/grpc/fleetlygrpc webhook.go ReceiveWebhook (open), hooks.go SetHook/RotateHookToken (seal), githubapps.go private-key seal/open paths (P4-3 batch 3: narrowed to cipher-operation failures — the no-master-key nil face moved to E_MASTER_KEY_UNAVAILABLE)",
 		GRPC:       "FailedPrecondition",
 	},
 	{
@@ -226,5 +226,33 @@ var builtins = []Code{
 		Suggestion: "Set registry.addr in the fleetlyd config and restart to enable the managed registry; if it is already set, the configured registry provider does not serve the catalog/tags content face. Absence is an explicit off state, not a degraded mode (E_BROWSE_DISABLED precedent).",
 		Source:     "internal/engine/registrycontent.go registryContentFor (IA v3 二期⑤b/P0-7: unconfigured face = precise 503, not a masked 500)",
 		GRPC:       "Unavailable",
+	},
+	{
+		ID:         "E_MASTER_KEY_UNAVAILABLE",
+		Summary:    "The platform has no master key configured, so the cipher face is absent and secret-backed operations are refused.",
+		Suggestion: "Provision the master key under the data root keys/ directory and restart fleetlyd. Absence is an explicit off state, not a degraded mode (E_REGISTRY_UNAVAILABLE precedent); sealed rows stay untouched, and there is nothing to retry until the key is in place.",
+		Source:     "internal/interfaces/grpc/fleetlygrpc cipher-nil points — structure.go PutSecret, databases.go CreateDatabase, templates.go InstantiateTemplate, githubapps.go ListGitHubAppRepos/CompleteManifestFlow, alerting.go CreateNotificationChannel (P4-3 batch 3: split from E_SECRET_UNAVAILABLE's dual semantics; the cipher face absent is an off state, not an internal fault)",
+		GRPC:       "Unavailable",
+	},
+	{
+		ID:         "E_LOG_STORE_UNAVAILABLE",
+		Summary:    "The managed log store is not configured (logging.addr empty), so the persisted log-search path is unavailable.",
+		Suggestion: "Set logging.addr in the fleetlyd config and restart to enable log search. Live streaming without a text filter keeps working through the runtime logs sub-face (ADR-0040 dual path); absence is an explicit off state, not a degraded mode (E_REGISTRY_UNAVAILABLE precedent).",
+		Source:     "internal/interfaces/grpc/fleetlygrpc/contexts.go LogsService streamLogsDualPath retrieval path (P4-3 batch 3: unconfigured store = precise 503, not a masked E_INTERNAL 500)",
+		GRPC:       "Unavailable",
+	},
+	{
+		ID:         "E_METRICS_STORE_UNAVAILABLE",
+		Summary:    "The managed metrics store is not configured (metrics.addr empty), so PromQL queries are unavailable.",
+		Suggestion: "Set metrics.addr in the fleetlyd config and restart to enable metrics queries; alert evaluation against the store stays off with it (ADR-0041). Absence is an explicit off state, not a degraded mode (E_REGISTRY_UNAVAILABLE precedent).",
+		Source:     "internal/interfaces/grpc/fleetlygrpc/alerting.go MetricsService QueryMetrics (P4-3 batch 3: unconfigured store = precise 503, not a masked E_INTERNAL 500)",
+		GRPC:       "Unavailable",
+	},
+	{
+		ID:         "E_RUNTIME_FACE_UNSUPPORTED",
+		Summary:    "The runtime provider does not expose the optional sub-face this operation needs (node administration or container logs), or the engine face is absent.",
+		Suggestion: "The sub-face set is provider-dependent: node drain/cordon/uncordon and live container logs need a runtime with RuntimeAdmin/RuntimeLogs implemented, and carrier restart additionally needs the engine face. There is no degraded path (E_EXEC_UNSUPPORTED precedent); serve the operation from a runtime that implements the face.",
+		Source:     "internal/interfaces/grpc/fleetlygrpc/contexts.go NodesService nodeAdmin + LogsService streamLogsDualPath; internal/interfaces/grpc/systemgrpc RestartComponent (P4-3 batch 3: absent optional face = precise 501, not a masked E_INTERNAL 500; E_EXEC_UNSUPPORTED/E_BROWSER_UNSUPPORTED precedent)",
+		GRPC:       "Unimplemented",
 	},
 }

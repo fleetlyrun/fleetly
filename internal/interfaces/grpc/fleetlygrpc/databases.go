@@ -62,7 +62,9 @@ func (svc *DatabasesService) CreateDatabase(ctx context.Context, req *structurev
 			"engine: %q is not a registered template (available: %v)", req.GetEngine(), dbtemplate.Engines())
 	}
 	if svc.s.Cipher == nil {
-		return nil, apperr.New("E_SECRET_UNAVAILABLE", "the secret facility is unavailable (no master key)")
+		// 未配主密钥是显式关态（P4-3 批 3）：cipher 面缺席精确 503，自
+		// E_SECRET_UNAVAILABLE 双语义拆出，文案逐字节保留。
+		return nil, apperr.New("E_MASTER_KEY_UNAVAILABLE", "the secret facility is unavailable (no master key)")
 	}
 	// 行级授权（ADR-0035）：写面受理前置。
 	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {

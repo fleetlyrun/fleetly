@@ -54,7 +54,9 @@ type MetricsService struct {
 // QueryMetrics 透传 PromQL 到受管 VM（Metrics 面停用时精确失败）。
 func (svc *MetricsService) QueryMetrics(ctx context.Context, req *telemetryv1.QueryMetricsRequest) (*telemetryv1.QueryMetricsResponse, error) {
 	if svc.s.Metrics == nil {
-		return nil, apperr.New("E_INTERNAL", "metrics queries require the managed metrics store; set config metrics.addr to enable it")
+		// 未配 metrics.addr 是显式关态（P4-3 批 3）：精确 503，不再落
+		// E_INTERNAL 脱敏 500。
+		return nil, apperr.New("E_METRICS_STORE_UNAVAILABLE", "metrics queries require the managed metrics store; set config metrics.addr to enable it")
 	}
 	// query 必填已退役 descriptor 注解（P4-1 批 1 Run B2）：空值由
 	// protovalidate 拦截器在受理面拦截，文案与退役前逐字节一致；start/end
@@ -128,7 +130,10 @@ func (svc *AlertingService) CreateNotificationChannel(ctx context.Context, req *
 		return nil, apperr.New("E_INVALID_ARGUMENT", "kind: must be webhook or telegram (got %q)", kind)
 	}
 	if svc.s.Cipher == nil {
-		return nil, apperr.New("E_INTERNAL", "notification channels need the secret cipher (platform misconfigured)")
+		// 未配主密钥是显式关态（P4-3 批 3）：cipher 面缺席精确 503，不再落
+		// E_INTERNAL 脱敏 500。括号注记 "(platform misconfigured)" 随码分流
+		// 退役——off 态语义由 E_MASTER_KEY_UNAVAILABLE 的 Summary 承载。
+		return nil, apperr.New("E_MASTER_KEY_UNAVAILABLE", "notification channels need the secret cipher")
 	}
 	plain, err := json.Marshal(cfg)
 	if err != nil {
