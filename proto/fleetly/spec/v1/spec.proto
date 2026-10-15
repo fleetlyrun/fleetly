@@ -68,8 +68,8 @@ message ProcessSpec {
   map<string, string> env = 5;
   // secret_refs 按名引用 Project Secret（注入时解析，值不进 Spec）。
   repeated string secret_refs = 6;
-  // config_refs 按名引用 Project Config 版本化挂载文件。
-  repeated string config_refs = 7;
+  reserved 7; // config_mounts 替代（ADR-0030），P4-1 删除；号位防复用。
+  reserved "config_refs"; // 同上：名位防复用。
   repeated PortSpec ports = 8;
   HealthcheckSpec healthcheck = 9;
   ResourcesSpec resources = 10;

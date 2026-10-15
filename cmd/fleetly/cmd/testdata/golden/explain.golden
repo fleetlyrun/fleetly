@@ -141,12 +141,6 @@ app (spec) — AppSpec: desired state of a long-running deployable unit (an app 
                 },
                 "type": "array"
               },
-              "config_refs": {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
               "database_refs": {
                 "items": {
                   "type": "string"
@@ -362,12 +356,6 @@ app (spec) — AppSpec: desired state of a long-running deployable unit (an app 
                 }
               },
               "type": "object"
-            },
-            "type": "array"
-          },
-          "config_refs": {
-            "items": {
-              "type": "string"
             },
             "type": "array"
           },

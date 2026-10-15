@@ -211,10 +211,6 @@ func TestValidateJob(t *testing.T) {
 	volumes.Process.Volumes = []*specv1.VolumeAttachment{{VolumeId: "data", Target: "/data"}}
 	assert.ErrorContains(t, ValidateJob("app.first_boot_jobs[0]", volumes), "volumes")
 
-	configs := validJob("migrate")
-	configs.Process.ConfigRefs = []string{"app.conf"}
-	assert.ErrorContains(t, ValidateJob("app.first_boot_jobs[0]", configs), "config_refs")
-
 	ports := validJob("migrate")
 	ports.Process.Ports = []*specv1.PortSpec{{Port: 8080, Protocol: specv1.Protocol_PROTOCOL_HTTP}}
 	assert.ErrorContains(t, ValidateJob("app.first_boot_jobs[0]", ports), "ports")
@@ -245,6 +241,25 @@ func TestValidateJob(t *testing.T) {
 	fromBuild := validJob("migrate")
 	fromBuild.Process.ImageOrigin = &specv1.ProcessSpec_FromBuild{FromBuild: "web"}
 	assert.NoError(t, ValidateJob("app.first_boot_jobs[0]", fromBuild))
+}
+
+// config_refs 键退役（P4-1 批 1）：字段自 proto 删除后，守卫从 ValidateJob
+// 拒收分支迁移到 ParseSpecFile 的 protojson 严格解析——spec_file 含该键即
+// unknown field 报错（fail-closed），替代原 legacy 拒收语义。
+func TestParseSpecFileRejectsRetiredConfigRefsKey(t *testing.T) {
+	body := `{
+		"schemaVersion": 1,
+		"source": {"image": {"ref": "nginx:1.27"}},
+		"processes": [{
+			"name": "web",
+			"image": "nginx:1.27",
+			"config_refs": ["app.conf"]
+		}]
+	}`
+	_, err := ParseSpecFile([]byte(body), "app_01H", "prj_01H")
+	require.Error(t, err, "retired config_refs key must fail strict protojson parsing")
+	assert.Contains(t, err.Error(), `unknown field "config_refs"`)
+	assert.Contains(t, err.Error(), "spec_file")
 }
 
 func TestValidateTaskTTLBound(t *testing.T) {

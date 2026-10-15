@@ -109,7 +109,7 @@ P3-7 deploy 域 + SubmitSpec（v2 §4 九条不变式逐条 apitest 断言；ADR
 P3-8 browse + 壳收口（engine.go <300 行 + Options 按域切片 + config 面同批）— [x]（engine.go 916→272：options/construct/lifecycle/ensure 四文件分立，lifecycle 与 ensureMemo 协议逐字迁移；Options 25 字段七域切片零丢失（Deploy/Task/Build/Backup/Ring/Relay/Data），消费面 119 处机械改写；残余五类型改名 observations/drifts/expects/proxies/logpipes + buildLimits；loop.go/transition.go/config-example 一行未动）
 
 ## P4 校验/错误三面（4-6 天）
-P4-1 protovalidate 引入 + 71 处手写退役 + config_refs 删除（buf breaking 开发期基线追认）— [ ]
+P4-1 protovalidate 引入 + 71 处手写退役 + config_refs 删除（buf breaking 开发期基线追认）— [x]（2026-10-16 三 commit 落地：68ed077 基础设施+试点/1fde8d1+3828727 两波主退役（86 站点 CEL 化，46+40 逐 commit 实数）/本 commit config_refs 删除+基线追认；CEL 自定义 message 逐字节保文案，负例矩阵 descriptor 形态 91 案（主矩阵 89+试点 2，另有正例 34 案））
 P4-2 CLI descriptor 客户端校验（deploy 互斥手拷贝 55 行退役）+ runRPC/pageFlags/connFlags 骨架 — [ ]
 P4-3 "未配置"族码律收尾 + G17 守卫 — [ ]
 P4-4 SDK FromError + apitest builder 三件 — [ ]

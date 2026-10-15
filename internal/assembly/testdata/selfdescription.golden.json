@@ -282,12 +282,6 @@
                       },
                       "type": "array"
                     },
-                    "config_refs": {
-                      "items": {
-                        "type": "string"
-                      },
-                      "type": "array"
-                    },
                     "database_refs": {
                       "items": {
                         "type": "string"
@@ -503,12 +497,6 @@
                       }
                     },
                     "type": "object"
-                  },
-                  "type": "array"
-                },
-                "config_refs": {
-                  "items": {
-                    "type": "string"
                   },
                   "type": "array"
                 },
@@ -3038,12 +3026,6 @@
                     }
                   },
                   "type": "object"
-                },
-                "type": "array"
-              },
-              "config_refs": {
-                "items": {
-                  "type": "string"
                 },
                 "type": "array"
               },

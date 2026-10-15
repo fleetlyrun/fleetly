@@ -1005,8 +1005,6 @@ export interface components {
             };
             /** secret_refs 按名引用 Project Secret（注入时解析，值不进 Spec）。 */
             secret_refs?: string[];
-            /** config_refs 按名引用 Project Config 版本化挂载文件。 */
-            config_refs?: string[];
             ports?: components["schemas"]["v1PortSpec"][];
             healthcheck?: components["schemas"]["v1HealthcheckSpec"];
             resources?: components["schemas"]["v1ResourcesSpec"];

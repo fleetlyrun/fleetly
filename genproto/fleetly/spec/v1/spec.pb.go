@@ -528,9 +528,7 @@ type ProcessSpec struct {
 	// env 是非敏感环境变量（Project/App 两级合成的归一化结果）。
 	Env map[string]string `protobuf:"bytes,5,rep,name=env,proto3" json:"env,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	// secret_refs 按名引用 Project Secret（注入时解析，值不进 Spec）。
-	SecretRefs []string `protobuf:"bytes,6,rep,name=secret_refs,json=secretRefs,proto3" json:"secret_refs,omitempty"`
-	// config_refs 按名引用 Project Config 版本化挂载文件。
-	ConfigRefs  []string            `protobuf:"bytes,7,rep,name=config_refs,json=configRefs,proto3" json:"config_refs,omitempty"`
+	SecretRefs  []string            `protobuf:"bytes,6,rep,name=secret_refs,json=secretRefs,proto3" json:"secret_refs,omitempty"`
 	Ports       []*PortSpec         `protobuf:"bytes,8,rep,name=ports,proto3" json:"ports,omitempty"`
 	Healthcheck *HealthcheckSpec    `protobuf:"bytes,9,opt,name=healthcheck,proto3" json:"healthcheck,omitempty"`
 	Resources   *ResourcesSpec      `protobuf:"bytes,10,opt,name=resources,proto3" json:"resources,omitempty"`
@@ -640,13 +638,6 @@ func (x *ProcessSpec) GetEnv() map[string]string {
 func (x *ProcessSpec) GetSecretRefs() []string {
 	if x != nil {
 		return x.SecretRefs
-	}
-	return nil
-}
-
-func (x *ProcessSpec) GetConfigRefs() []string {
-	if x != nil {
-		return x.ConfigRefs
 	}
 	return nil
 }
@@ -1940,7 +1931,7 @@ const file_fleetly_spec_v1_spec_proto_rawDesc = "" +
 	"\vImageSource\x12\x10\n" +
 	"\x03ref\x18\x01 \x01(\tR\x03ref\"\x1e\n" +
 	"\fUploadSource\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\xc2\x06\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\xb4\x06\n" +
 	"\vProcessSpec\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
 	"\x05image\x18\x02 \x01(\tH\x00R\x05image\x12\x1f\n" +
@@ -1949,9 +1940,7 @@ const file_fleetly_spec_v1_spec_proto_rawDesc = "" +
 	"\acommand\x18\x04 \x03(\tR\acommand\x127\n" +
 	"\x03env\x18\x05 \x03(\v2%.fleetly.spec.v1.ProcessSpec.EnvEntryR\x03env\x12\x1f\n" +
 	"\vsecret_refs\x18\x06 \x03(\tR\n" +
-	"secretRefs\x12\x1f\n" +
-	"\vconfig_refs\x18\a \x03(\tR\n" +
-	"configRefs\x12/\n" +
+	"secretRefs\x12/\n" +
 	"\x05ports\x18\b \x03(\v2\x19.fleetly.spec.v1.PortSpecR\x05ports\x12B\n" +
 	"\vhealthcheck\x18\t \x01(\v2 .fleetly.spec.v1.HealthcheckSpecR\vhealthcheck\x12<\n" +
 	"\tresources\x18\n" +
@@ -1966,7 +1955,7 @@ const file_fleetly_spec_v1_spec_proto_rawDesc = "" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01B\x0e\n" +
-	"\fimage_origin\"=\n" +
+	"\fimage_originJ\x04\b\a\x10\bR\vconfig_refs\"=\n" +
 	"\vConfigMount\x12\x16\n" +
 	"\x06config\x18\x01 \x01(\tR\x06config\x12\x16\n" +
 	"\x06target\x18\x02 \x01(\tR\x06target\"U\n" +

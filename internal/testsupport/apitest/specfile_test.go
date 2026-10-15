@@ -147,6 +147,33 @@ func TestDeploySpecFileValidation(t *testing.T) {
 	}
 }
 
+// TestDeploySpecFileRetiredConfigRefsKey（P4-1 批 1）：config_refs 字段自
+// proto 删除（config_mounts 替代）后，含该键的 spec_file 在受理面即被
+// protojson 严格解析拒收——E_INVALID_ARGUMENT + unknown field 语义。
+// 这是删除后该键的替代守卫（原 ValidateJob legacy 拒收分支同步退役）。
+func TestDeploySpecFileRetiredConfigRefsKey(t *testing.T) {
+	h := apitest.New(t)
+	ctx := sdk.WithToken(context.Background(), h.Token)
+	projects := structurev1.NewProjectsServiceClient(h.Conn)
+	apps := structurev1.NewAppsServiceClient(h.Conn)
+	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
+
+	proj, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "spec-file-legacy"})
+	require.NoError(t, err)
+	app, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: proj.GetProject().GetId(), Name: "web"})
+	require.NoError(t, err)
+
+	_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{
+		AppId: app.GetApp().GetId(),
+		SpecFile: `{"source":{"image":{"ref":"nginx:1.27"}},` +
+			`"processes":[{"name":"web","image":"nginx:1.27","config_refs":["app.conf"]}]}`,
+	})
+	require.Error(t, err, "retired config_refs key must be rejected")
+	assert.Contains(t, err.Error(), "E_INVALID_ARGUMENT")
+	assert.Contains(t, err.Error(), `unknown field "config_refs"`)
+	assert.Contains(t, err.Error(), "spec_file", "the rejection names the spec_file field path")
+}
+
 // TestDeploySpecFileUploadSource：spec_file 的 Source.upload 与 upload_id
 // 形态同一条归属执法（project 级材料纪律不因 intake 形态放松）——跨项目
 // 引用拒绝；同项目引用全链到 succeeded（含 build 链：spec_file 是 API 面

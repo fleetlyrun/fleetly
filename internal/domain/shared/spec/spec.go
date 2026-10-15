@@ -129,9 +129,6 @@ func ValidateJob(field string, j *specv1.JobSpec) error {
 	if len(p.GetVolumes()) > 0 {
 		return invalidf(field+".process.volumes", "deploy-time jobs cannot mount volumes; use a Task for volume-mounting jobs")
 	}
-	if len(p.GetConfigRefs()) > 0 {
-		return invalidf(field+".process.config_refs", "legacy string refs are not consumable; declare config_mounts (config + target) instead")
-	}
 	if len(p.GetPorts()) > 0 {
 		return invalidf(field+".process.ports", "ports are not meaningful on a one-shot job")
 	}

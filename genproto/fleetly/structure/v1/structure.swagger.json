@@ -2499,13 +2499,6 @@
           },
           "title": "secret_refs 按名引用 Project Secret（注入时解析，值不进 Spec）。"
         },
-        "config_refs": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "title": "config_refs 按名引用 Project Config 版本化挂载文件。"
-        },
         "ports": {
           "type": "array",
           "items": {
