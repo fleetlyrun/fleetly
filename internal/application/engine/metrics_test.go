@@ -242,6 +242,60 @@ func TestEvaluateSystemRules(t *testing.T) {
 	assert.Equal(t, alertrule.StateOK, e.SystemOffsiteAlertState().State)
 }
 
+// TestSystemOffsiteAlertStateRace 钉锁面：内置规则状态对（firing/above）
+// 由采集环 goroutine 写（evaluateSystemRules）、gRPC handler goroutine 经
+// SystemOffsiteAlertState 读——两侧无 happens-before，锁面覆盖时 -race
+// 绿；map 面（above/lastCPU/cores）不进此测（采集环单写者纪律承载）。
+func TestSystemOffsiteAlertStateRace(t *testing.T) {
+	db, clock := statetest.New(t)
+	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: newFakeRuntime(), Logger: discardLogger()},
+		Options{Data: DataOptions{DataRoot: t.TempDir()}, Backup: BackupOptions{PlatformBackup: &PlatformBackupConfig{Interval: time.Hour}}})
+	ctx := context.Background()
+
+	// 写侧先手：起窗并推到 firing（状态对双臂都建立）。
+	e.evaluateSystemRules(ctx, clock.Now())
+	clock.Advance(systemOffsiteFor + time.Minute)
+	e.evaluateSystemRules(ctx, clock.Now())
+	require.Equal(t, alertrule.StateFiring, e.SystemOffsiteAlertState().State)
+
+	// 读侧：N 个 goroutine 并发快照观测面（gRPC handler 形状）。
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+					_ = e.SystemOffsiteAlertState()
+				}
+			}
+		}()
+	}
+	// 写侧与读侧交错：归位 → 起窗 → 满窗 firing 的迁移沿反复穿越
+	//（firing 与 above 双字段都有并发写落点）。
+	for i := 0; i < 20; i++ {
+		e.opts.Backup.PlatformBackup.S3 = &S3RepoConfig{Endpoint: "s3.example", Bucket: "b"}
+		clock.Advance(time.Hour)
+		e.evaluateSystemRules(ctx, clock.Now())
+		e.opts.Backup.PlatformBackup.S3 = nil
+		clock.Advance(time.Hour)
+		e.evaluateSystemRules(ctx, clock.Now())
+		clock.Advance(systemOffsiteFor)
+		e.evaluateSystemRules(ctx, clock.Now())
+	}
+	close(stop)
+	wg.Wait()
+
+	// 末拍配 s3 → 归位（收口后的终态断言）。
+	e.opts.Backup.PlatformBackup.S3 = &S3RepoConfig{Endpoint: "s3.example", Bucket: "b"}
+	e.evaluateSystemRules(ctx, clock.Now())
+	assert.Equal(t, alertrule.StateOK, e.SystemOffsiteAlertState().State)
+}
+
 // TestMetricsStepCadence 钉粗节拍锚：15s 内第二拍跳过。
 func TestMetricsStepCadence(t *testing.T) {
 	db, clock := statetest.New(t)

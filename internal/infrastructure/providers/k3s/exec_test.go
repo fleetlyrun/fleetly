@@ -140,6 +140,7 @@ func TestRelaySessionFrameFlow(t *testing.T) {
 	a := &relayConn{
 		provider: p,
 		send:     make(chan []byte, 16),
+		done:     make(chan struct{}),
 		sessions: map[string]*relaySession{},
 	}
 	defer a.shutdown()
@@ -200,7 +201,7 @@ func TestRelaySessionErrorFrame(t *testing.T) {
 	p.execFn = func(ctx context.Context, req capability.ExecWorkloadRequest, ns, name string) (int, error) {
 		return 0, assert.AnError
 	}
-	a := &relayConn{provider: p, send: make(chan []byte, 16), sessions: map[string]*relaySession{}}
+	a := &relayConn{provider: p, send: make(chan []byte, 16), done: make(chan struct{}), sessions: map[string]*relaySession{}}
 	defer a.shutdown()
 	ctx := context.Background()
 	sid := "01H" + strings.Repeat("Z", 22) + "2"

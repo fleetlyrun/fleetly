@@ -96,12 +96,19 @@ func (p *Provider) RunUtility(ctx context.Context, req capability.UtilityRequest
 	// 零产出时在 cleanup 前做一次终态直拉兜底（e2e 取证：exit 1 报文恒无
 	// 日志尾的末位根因）。
 	counting := &countingWriter{w: stdout}
+	// cancel-同伴语义：跟随 goroutine 用派生 logsCtx 而非调用方 ctx——
+	// waitUtilityExit 返回后的有界排水（5s）排不空时，被弃 goroutine 由
+	// logsCancel 收口（defer 覆盖全部 return 路径，含 werr/退出码非零的
+	// 提前 return），不再依赖 cleanup 删 pod 的自然死亡。
+	logsCtx, logsCancel := context.WithCancel(ctx)
+	defer logsCancel()
 	logsDone := make(chan error, 1)
 	go func() {
-		logsDone <- p.followUtilityLogs(ctx, nsName, podName, counting)
+		logsDone <- p.followUtilityLogs(logsCtx, nsName, podName, counting)
 	}()
 	exitCode, werr := p.waitUtilityExit(ctx, nsName, podName)
-	// 终态后等日志流排空（容器日志此刻已终态；有界等待）。
+	// 终态后等日志流排空（容器日志此刻已终态；有界等待——排不空由
+	// logsCancel 收口）。
 	select {
 	case <-logsDone:
 	case <-time.After(5 * time.Second):

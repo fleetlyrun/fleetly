@@ -95,27 +95,21 @@ func (e *Engine) transitionRule(ctx context.Context, rule *alertrule.Rule, to st
 }
 
 // evaluateSystemRules 评估内置规则（F2.2 挂账：s3 未配持续 24h → firing）。
+// 状态对的读写收进 metrics 锁临界区（gRPC handler 并发读同一对面）；
+// 事件落库与通道派发（I/O）在锁外执行。
 func (e *Engine) evaluateSystemRules(ctx context.Context, now time.Time) {
 	offsiteAbsent := e.opts.Backup.PlatformBackup == nil || e.opts.Backup.PlatformBackup.S3 == nil
 	if !offsiteAbsent {
-		e.metricsDom.sysOffsiteAbove = time.Time{}
-		if e.metricsDom.sysOffsiteFiring {
-			e.metricsDom.sysOffsiteFiring = false
+		if e.metricsDom.sysOffsiteReset() {
 			e.emitSystemAlertEvent(ctx, eventAlertResolved)
 			e.dispatchSystemAlert(ctx, alertrule.StateOK, now)
 		}
 		return
 	}
-	if e.metricsDom.sysOffsiteAbove.IsZero() {
-		e.metricsDom.sysOffsiteAbove = now
-		return
+	if e.metricsDom.sysOffsiteObserve(now) {
+		e.emitSystemAlertEvent(ctx, eventAlertFired)
+		e.dispatchSystemAlert(ctx, alertrule.StateFiring, now)
 	}
-	if now.Sub(e.metricsDom.sysOffsiteAbove) < systemOffsiteFor || e.metricsDom.sysOffsiteFiring {
-		return // 未满窗或已 firing（不逐拍重发——迁移沿语义）
-	}
-	e.metricsDom.sysOffsiteFiring = true
-	e.emitSystemAlertEvent(ctx, eventAlertFired)
-	e.dispatchSystemAlert(ctx, alertrule.StateFiring, now)
 }
 
 // emitAlertEvent 落用户规则事件（outbox）。资源轴 Team 经 App → Project

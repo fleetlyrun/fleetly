@@ -115,6 +115,7 @@ func (p *Provider) relayOnce(ctx context.Context, o capability.NodeRelayOptions)
 	a := &relayConn{
 		provider: p, conn: conn,
 		send:     make(chan []byte, 64),
+		done:     make(chan struct{}),
 		sessions: make(map[string]*relaySession),
 	}
 	defer a.shutdown()
@@ -149,6 +150,9 @@ type relayConn struct {
 	provider *Provider
 	conn     *websocket.Conn
 	send     chan []byte
+	// done 由 writeLoop 退出时关闭（写失败路径）——post 据此快败，不再
+	// 向已死的写队列积帧（closed 旗标只覆盖 shutdown 路径）。
+	done chan struct{}
 
 	mu       sync.Mutex
 	sessions map[string]*relaySession
@@ -157,6 +161,7 @@ type relayConn struct {
 
 // writeLoop 串行化写（coder/websocket 单写者纪律）。
 func (a *relayConn) writeLoop(ctx context.Context) {
+	defer close(a.done) // 两条退出路径（写失败/ctx 结束）同此昭告
 	for {
 		select {
 		case <-ctx.Done():
@@ -180,6 +185,9 @@ func (a *relayConn) shutdown() {
 	sessions := make([]*relaySession, 0, len(a.sessions))
 	for _, s := range a.sessions {
 		sessions = append(sessions, s)
+		// 清场与 close(s.resize) 同临界区：与会话退出路径互斥——双关不可
+		// 能（会话退出只在会话仍在册时关闭，见 startSession 的 defer）。
+		close(s.resize)
 	}
 	a.sessions = make(map[string]*relaySession)
 	a.mu.Unlock()
@@ -209,15 +217,18 @@ func (a *relayConn) dispatch(ctx context.Context, f capability.RelayFrame) {
 			_ = s.stdin.Close()
 		}
 	case capability.RelayFrameResize:
-		if s := a.session(f.SessionID); s != nil {
-			pl, err := capability.DecodeRelayJSON[capability.ExecSizeWire](f.Payload)
-			if err == nil {
+		// 持锁取会话并投递：与退出路径的 close(s.resize) 同锁串行化
+		//（send-on-closed 从构造上不可能）。
+		a.mu.Lock()
+		if s := a.sessions[f.SessionID]; s != nil {
+			if pl, err := capability.DecodeRelayJSON[capability.ExecSizeWire](f.Payload); err == nil {
 				select {
 				case s.resize <- capability.ExecSize(pl):
 				default: // 最新值语义：丢旧保新（终端 resize 高频）
 				}
 			}
 		}
+		a.mu.Unlock()
 	case capability.RelayFrameClose:
 		if s := a.session(f.SessionID); s != nil {
 			s.cancel() // ExecWorkload ctx 收口 = hijack 关闭（尽力终止）
@@ -250,7 +261,12 @@ func (a *relayConn) startSession(ctx context.Context, open capability.RelaySessi
 	go func() {
 		defer func() {
 			a.mu.Lock()
-			delete(a.sessions, open.SessionID)
+			// 仍在册才摘除并关闭订阅通道：shutdown 先到时通道已由它关闭
+			//（同临界区互斥——双关不可能；消费面 Next/range 随关闭退出）。
+			if cur := a.sessions[open.SessionID]; cur == s {
+				delete(a.sessions, open.SessionID)
+				close(s.resize)
+			}
 			a.mu.Unlock()
 			cancel()
 			_ = pw.Close()
@@ -290,8 +306,10 @@ func (a *relayConn) post(b []byte) {
 	}
 	select {
 	case a.send <- b:
+	case <-a.done:
+		// writeLoop 已退出（写失败路径）：快败，不再向死队列积帧。
 	default:
-		// 写队列满：连接级异常由 writeLoop 超时收口兜底。
+		// 写队列满：有界丢弃（既有语义，写超时兜底）。
 	}
 }
 

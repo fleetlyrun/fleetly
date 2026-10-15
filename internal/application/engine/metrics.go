@@ -21,6 +21,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -48,6 +49,11 @@ const (
 // metrics 是采集环实例态（C5：实例内聚合）。P3-2 收编：metricsDomain →
 // metrics（复数普通名词零后缀，ADR-0075 命名法则）；Engine 字段名
 // metricsDom 保持不变（域字段壳收口留批 8）。
+//
+// 锁面边界：mu 只护跨 goroutine 的 sysOffsite 状态对（采集环写、gRPC
+// handler 经 SystemOffsiteAlertState 读）；map 面（above/lastCPU/cores/
+// lastScrapeAt）由采集环单写者纪律承载（metricsLoop 单 goroutine 触达），
+// 不加锁。
 type metrics struct {
 	// lastScrapeAt 是节拍锚（15s 粗节拍在 1s tick 内自持）。
 	lastScrapeAt time.Time
@@ -60,8 +66,45 @@ type metrics struct {
 	// cores 是节点核数观测（cpu_percent 的分母）。
 	cores map[string]float64
 	// sysOffsiteAbove 是内置规则的越限起始（daemon 生命期内存面）。
+	mu               sync.Mutex
 	sysOffsiteAbove  time.Time
 	sysOffsiteFiring bool
+}
+
+// sysOffsiteState 快照内置规则状态对（跨 goroutine 读面——gRPC handler）。
+func (m *metrics) sysOffsiteState() (firing bool, above time.Time) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.sysOffsiteFiring, m.sysOffsiteAbove
+}
+
+// sysOffsiteReset 配置归位：清越限窗，并原子地报告是否需要 resolved 迁移
+// 沿（firing 翻转与清窗同临界区）。
+func (m *metrics) sysOffsiteReset() (resolved bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.sysOffsiteAbove = time.Time{}
+	if m.sysOffsiteFiring {
+		m.sysOffsiteFiring = false
+		resolved = true
+	}
+	return resolved
+}
+
+// sysOffsiteObserve 推进内置规则越限窗：首见起窗；持续窗满且未 firing 时
+// 翻转 firing 并报告迁移沿。事件/派发（I/O）由调用方在锁外执行。
+func (m *metrics) sysOffsiteObserve(now time.Time) (fired bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.sysOffsiteAbove.IsZero() {
+		m.sysOffsiteAbove = now
+		return false
+	}
+	if now.Sub(m.sysOffsiteAbove) < systemOffsiteFor || m.sysOffsiteFiring {
+		return false // 未满窗或已 firing（不逐拍重发——迁移沿语义）
+	}
+	m.sysOffsiteFiring = true
+	return true
 }
 
 type cpuCounter struct {
@@ -290,14 +333,17 @@ type SystemAlertState struct {
 }
 
 // SystemOffsiteAlertState 是内置规则的观测面（server 组装 states 用）。
+// 读侧经锁快照——写侧在采集环 goroutine（evaluateSystemRules），两侧无
+// happens-before，直读即数据竞争。
 func (e *Engine) SystemOffsiteAlertState() SystemAlertState {
 	st := alertrule.StateOK
 	since := time.Time{}
-	if e.metricsDom.sysOffsiteFiring {
+	firing, above := e.metricsDom.sysOffsiteState()
+	if firing {
 		st = alertrule.StateFiring
 	}
-	if !e.metricsDom.sysOffsiteAbove.IsZero() {
-		since = e.metricsDom.sysOffsiteAbove
+	if !above.IsZero() {
+		since = above
 	}
 	return SystemAlertState{RuleID: systemOffsiteRuleID, State: st, StateSince: since, System: true}
 }
