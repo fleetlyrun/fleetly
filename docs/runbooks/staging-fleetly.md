@@ -4,6 +4,12 @@
 |---|---|---|
 | 现役：新 fleetly 单机 `fleetly-dev`（2026-10-08 用户口径：staging 收缩为一台，泛域名 `*.dev.fleetly.run`；node2 k3s 实证环境记录见 `k3s-runtime.md`） | 2026-09-30 | 功能清单 F0.18/F0.19 真机验收、F1.15 前哨；归档仓 runbook `fleetly-archived/docs/runbooks/vps-dogfooding.md`（历史教训） |
 
+## 换装构建通道（hermetic，2026-10-16）
+
+- 换装二进制一律 `mise run build:hermetic`：`git archive HEAD` 快照内构建，工作树未提交改动不可能入包（2026-10-11 工作树构建事故通道闭合）。
+- `mise run verify:hermetic` 为探针：双构建 sha256 逐字节一致 + `fleetly --json version` 的 commit 戳对账，红了即通道退化回工作树构建。
+- 版本戳纪律不变（ldflags 三件 version/commit/date；date 取 HEAD 提交时刻，保同一 HEAD 双构建可复现）。
+
 ## 拓扑与连接
 
 - **manager** = `ssh root@fleetly-dev.deeploop.net`（146.190.58.0；VPC eth1=10.124.0.3；Debian 13 / 2C / 4G）。新 fleetlyd = systemd `fleetlyd.service`（数据根 /var/lib/fleetly；unit 另注入 `FLEETLY_PROXY_CONFIG_ENDPOINT=http://10.124.0.3:9082/proxy/config` + `FLEETLY_PROXY_ACME_EMAIL` + drop-in `browse.conf`：`FLEETLY_BROWSE_HOST_SUFFIX=dev.fleetly.run` + `FLEETLY_BROWSE_GATEWAY_URL=http://10.124.0.3:9081`，2026-10-07 起）。

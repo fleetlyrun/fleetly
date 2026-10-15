@@ -112,6 +112,31 @@ go build -ldflags "$LDFLAGS" -o ./bin/ ./cmd/fleetlyd
 go build -ldflags "$LDFLAGS" -o ./bin/ ./cmd/fleetly
 '''
 
+# 换装 hermetic 通道（P5-2，闭合 2026-10-11 事故：工作树构建把未提交 Go
+# 改动带进部署二进制）。git archive HEAD 快照内构建——工作树未提交改动
+# 物理不可入包。版本戳三件纪律不变，但 DATE 取 HEAD 提交时刻而非墙钟
+# （墙钟使同一 HEAD 两次构建产物不同，verify:hermetic 的 sha256 探针即
+# 红）；-trimpath 消除 mktemp 构建目录路径差——同一 HEAD 逐字节可复现。
+[tasks."build:hermetic"]
+description = "git archive HEAD 快照构建 fleetlyd + fleetly 到 ./bin/（换装 hermetic 通道，工作树未提交改动不入包）"
+run = '''
+VERSION="$(git describe --tags --always)"
+COMMIT="$(git rev-parse --short HEAD)"
+DATE="$(date -u -d "@$(git log -1 --format=%ct HEAD)" +%Y%m%d%H%M%S)"
+LDFLAGS="-X main.version=$VERSION -X main.commit=$COMMIT -X main.date=$DATE"
+SNAP="$(mktemp -d)"
+trap 'rm -rf "$SNAP"' EXIT INT TERM
+git archive HEAD | tar -x -C "$SNAP"
+mkdir -p ./bin
+go build -C "$SNAP" -trimpath -ldflags "$LDFLAGS" -o "$SNAP/fleetlyd" ./cmd/fleetlyd
+go build -C "$SNAP" -trimpath -ldflags "$LDFLAGS" -o "$SNAP/fleetly" ./cmd/fleetly
+mv "$SNAP/fleetlyd" "$SNAP/fleetly" ./bin/
+'''
+
+[tasks."verify:hermetic"]
+description = "换装通道 hermeticity 探针（双构建 sha256 一致 + fleetly --json version 的 commit 戳对账）"
+run = "sh e2e/hermetic-build.sh"
+
 [tasks.test]
 description = "全量测试：go test -race 三 module"
 run = "go test -race ./... ./genproto/... ./sdk/go/..."

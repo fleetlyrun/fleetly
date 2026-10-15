@@ -46,14 +46,22 @@ trap cleanup EXIT INT TERM
 
 log() { printf '==> %s\n' "$1"; }
 
-# 1. 编译两代二进制：新版 = 当前工作树；旧版 = HEAD~1 的临时 worktree
-#    （worktree 不动当前工作树；go build -C 进旧树编译）。
-log "cross-compiling NEW binaries at HEAD (linux/amd64)"
+# 1. 编译两代二进制：新版 = HEAD 归档快照（P5-2 hermetic 化——2026-10-11
+#    换装事故通道闭合：工作树未提交改动物理不可入包；-trimpath 消目录
+#    路径差，快照目录在 $WORKDIR 内、由既有 cleanup trap 随 WORKDIR 清）；
+#    旧版 = HEAD~1 的临时 worktree（worktree 不动当前工作树；go build -C
+#    进旧树编译，维持原模式不动）。
+NEWSRC="$WORKDIR/new-src"
+mkdir -p "$NEWSRC"
+git archive HEAD | tar -x -C "$NEWSRC"
+log "cross-compiling NEW binaries at HEAD snapshot (linux/amd64, hermetic)"
 mkdir -p "$WORKDIR/bins-new" "$WORKDIR/bins-old"
 for b in fleetlyd fleetly; do
-  GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o "$WORKDIR/bins-new/$b" "./cmd/$b"
+  GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -C "$NEWSRC" -trimpath -o "$WORKDIR/bins-new/$b" "./cmd/$b"
 done
-GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o "$WORKDIR/bins-new/h2cclient" ./e2e/h2cclient
+# h2cclient（e2e 探针客户端）在 HEAD 归档内路径在场（git 在册），快照内
+# 同法构建。
+GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -C "$NEWSRC" -trimpath -o "$WORKDIR/bins-new/h2cclient" ./e2e/h2cclient
 
 log "cross-compiling OLD binaries at HEAD~1 via worktree"
 git worktree add --detach "$OLDWT" HEAD~1 >/dev/null 2>&1
@@ -378,7 +386,9 @@ fi
 # 把集合差放大到了无关引擎——redis-only 变更也会给 postgres 预算）。
 db_engine_digest() { grep -hoE 'sha256:[0-9a-f]{64}' "$1"/internal/domain/services/dbtemplate/postgres.go 2>/dev/null | sort; }
 DB_ROLL_BUDGET=0
-if [ "$(db_engine_digest "$OLDWT")" != "$(db_engine_digest ".")" ]; then
+# 新代 digest 读 HEAD 快照（hermetic 同口径：工作树的未提交 digest 改动
+# 不是"新代"的一部分，读工作树会把未提交态泄漏进预算判定）。
+if [ "$(db_engine_digest "$OLDWT")" != "$(db_engine_digest "$NEWSRC")" ]; then
   DB_ROLL_BUDGET=1
   log "postgres template digest changed across upgrade; allowing one supervised db roll (ADR-0045)"
 fi
