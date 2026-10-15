@@ -27,12 +27,14 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
+	appvariable "github.com/fleetlyrun/fleetly/internal/domain/structure/appvariable"
 	configrepo "github.com/fleetlyrun/fleetly/internal/domain/structure/config"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/network"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/networkpeer"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/route"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
+	sharedvariable "github.com/fleetlyrun/fleetly/internal/domain/structure/sharedvariable"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/volume"
 	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/alertrule"
 	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/channel"
@@ -307,8 +309,10 @@ type databases struct {
 	ensure map[string]ensureMemo // databaseID → 上次成功 Ensure
 }
 
-// deliveryDomain 是部署链 releasing 物化备忘（Deployment 行锚）。
-type deliveryDomain struct {
+// deploys 是部署域状态（releasing 物化备忘，Deployment 行锚）。P3 批 7
+// 收编：deliveryDomain → deploys（复数普通名词零后缀，ADR-0075 命名法则）；
+// Engine 字段名 delivery 保持不变（域字段壳收口留批 8）。
+type deploys struct {
 	release map[string]ensureMemo
 }
 
@@ -366,6 +370,11 @@ type Engine struct {
 	outbox      outbox.Repo
 	nodes       node.Repo
 	audits      audit.Repo
+
+	// 规格受理咽喉的三级合成消费面（P3-7 下沉批）：冻结前的平台变量
+	// 装载（Shared 底 < 源 env 中 < AppVariable 顶）。
+	sharedVariables sharedvariable.Repo
+	appVariables    appvariable.Repo
 
 	// Task 域（F1.5/F1.6）：聚合 repo + 单写者环 + 属主 Token 行引用面
 	//（吊销排空拉式扫描，P1-8）。
@@ -440,7 +449,7 @@ type Engine struct {
 	expect    expectDomain
 	managed   manageds
 	database  databases
-	delivery  deliveryDomain
+	delivery  deploys
 	proxyMemo proxyState
 	build     builds
 
@@ -530,6 +539,11 @@ type Repos struct {
 	Nodes       node.Repo
 	Audits      audit.Repo
 
+	// 规格受理咽喉的三级合成消费面（P3-7 下沉批）：SharedVariable/
+	// AppVariable 的冻结前装载。
+	SharedVariables sharedvariable.Repo
+	AppVariables    appvariable.Repo
+
 	// Task 域（F1.5/F1.6）：聚合 repo 与属主 Token 行引用面（吊销排空
 	// 拉式扫描，P1-8）。
 	Tasks  task.Repo
@@ -600,57 +614,59 @@ func New(deps Deps, opts Options) *Engine {
 	clock := db.Clock()
 	repos := deps.Repos
 	e := &Engine{
-		builders:     deps.Builders,
-		proxy:        deps.Proxy,
-		registry:     deps.Registry,
-		logging:      deps.Logging,
-		metrics:      deps.Metrics,
-		objectStore:  deps.ObjectStore,
-		utility:      capability.FacesOf(deps.Runtime).Utility,
-		execFace:     capability.FacesOf(deps.Runtime).Exec,
-		cipher:       deps.Cipher,
-		runtime:      deps.Runtime,
-		db:           db,
-		log:          log,
-		clock:        clock,
-		opts:         opts,
-		projects:     repos.Projects,
-		apps:         repos.Apps,
-		revisions:    repos.Revisions,
-		deployments:  repos.Deployments,
-		builds:       repos.Builds,
-		outbox:       repos.Outbox,
-		nodes:        repos.Nodes,
-		audits:       repos.Audits,
-		tasks:        repos.Tasks,
-		runs:         repos.Runs,
-		tokens:       repos.Tokens,
-		schedules:    repos.Schedules,
-		peerDecls:    repos.PeerDecls,
-		uploads:      repos.Uploads,
-		browseRepo:   repos.Browse,
-		databases:    repos.Databases,
-		backups:      repos.Backups,
-		loop:         NewLoop("deployment", log),
-		buildLoop:    NewLoop("build", log),
-		managedLoop:  NewLoop("managed", log),
-		databaseLoop: NewLoop("database", log),
-		backupLoop:   NewLoop("backup", log),
-		loggingLoop:  NewLoop("logging", log),
-		metricsLoop:  NewLoop("metrics", log),
-		taskLoop:     NewLoop("task", log),
-		scheduleLoop: NewLoop("schedule", log),
-		driftLoop:    NewLoop("drift", log),
-		browseLoop:   NewLoop("browse", log),
-		nodeLeftSeen: map[string]bool{},
-		routes:       repos.Routes,
-		secrets:      repos.Secrets,
-		configs:      repos.Configs,
-		volumes:      repos.Volumes,
-		networks:     repos.Networks,
-		ghApps:       repos.GitHubApps,
-		ghClient:     github.NewClient(nil, nil),
-		buildOpts:    buildOptions{Concurrency: opts.BuildConcurrency, Timeout: opts.BuildTimeout},
+		builders:        deps.Builders,
+		proxy:           deps.Proxy,
+		registry:        deps.Registry,
+		logging:         deps.Logging,
+		metrics:         deps.Metrics,
+		objectStore:     deps.ObjectStore,
+		utility:         capability.FacesOf(deps.Runtime).Utility,
+		execFace:        capability.FacesOf(deps.Runtime).Exec,
+		cipher:          deps.Cipher,
+		runtime:         deps.Runtime,
+		db:              db,
+		log:             log,
+		clock:           clock,
+		opts:            opts,
+		projects:        repos.Projects,
+		apps:            repos.Apps,
+		revisions:       repos.Revisions,
+		deployments:     repos.Deployments,
+		builds:          repos.Builds,
+		outbox:          repos.Outbox,
+		nodes:           repos.Nodes,
+		audits:          repos.Audits,
+		tasks:           repos.Tasks,
+		runs:            repos.Runs,
+		tokens:          repos.Tokens,
+		schedules:       repos.Schedules,
+		peerDecls:       repos.PeerDecls,
+		uploads:         repos.Uploads,
+		browseRepo:      repos.Browse,
+		databases:       repos.Databases,
+		backups:         repos.Backups,
+		sharedVariables: repos.SharedVariables,
+		appVariables:    repos.AppVariables,
+		loop:            NewLoop("deployment", log),
+		buildLoop:       NewLoop("build", log),
+		managedLoop:     NewLoop("managed", log),
+		databaseLoop:    NewLoop("database", log),
+		backupLoop:      NewLoop("backup", log),
+		loggingLoop:     NewLoop("logging", log),
+		metricsLoop:     NewLoop("metrics", log),
+		taskLoop:        NewLoop("task", log),
+		scheduleLoop:    NewLoop("schedule", log),
+		driftLoop:       NewLoop("drift", log),
+		browseLoop:      NewLoop("browse", log),
+		nodeLeftSeen:    map[string]bool{},
+		routes:          repos.Routes,
+		secrets:         repos.Secrets,
+		configs:         repos.Configs,
+		volumes:         repos.Volumes,
+		networks:        repos.Networks,
+		ghApps:          repos.GitHubApps,
+		ghClient:        github.NewClient(nil, nil),
+		buildOpts:       buildOptions{Concurrency: opts.BuildConcurrency, Timeout: opts.BuildTimeout},
 	}
 	e.build.logs = newLogBuffer(500)
 	e.build.inputs = make(map[string]capability.BuildRequest)

@@ -146,6 +146,10 @@ func NewEngineRepos(db *persistence.DB) engine.Repos {
 		Volumes:     volumerepo.New(clock),
 		Networks:    networkrepo.New(clock),
 		GitHubApps:  githubapprepo.New(clock),
+		// 规格受理咽喉的三级合成消费面（P3-7 下沉批）：SharedVariable/
+		// AppVariable 的冻结前装载。
+		SharedVariables: sharedvariablerepo.New(clock),
+		AppVariables:    appvariablerepo.New(clock),
 	}
 }
 

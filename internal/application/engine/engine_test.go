@@ -19,6 +19,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
 	alertrulerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/alertrule"
 	apprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/app"
+	appvariablerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/appvariable"
 	auditrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/audit"
 	backuprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/backup"
 	browserepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/browse"
@@ -39,6 +40,7 @@ import (
 	runrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/run"
 	schedulerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/schedule"
 	secretrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/secret"
+	sharedvariablerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/sharedvariable"
 	sourcerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/sourceupload"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 	taskrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/task"
@@ -94,6 +96,7 @@ func testRepos(db state.DB) Repos {
 		AlertRules: alertrulerepo.New(clock), Channels: channelrepo.New(clock), Routes: routerepo.New(clock),
 		Secrets: secretrepo.New(clock), Configs: cfgrepo.New(clock), Volumes: volumerepo.New(clock),
 		Networks: networkrepo.New(clock), GitHubApps: githubapprepo.New(clock),
+		SharedVariables: sharedvariablerepo.New(clock), AppVariables: appvariablerepo.New(clock),
 	}
 }
 
