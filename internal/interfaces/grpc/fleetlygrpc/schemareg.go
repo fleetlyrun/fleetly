@@ -117,7 +117,20 @@ func init() {
 	// Exec 会话受理（execEventPayload，exec.go 单源；F3.2/ADR-0049——
 	// 安全可见性：谁在何时进入了哪个进程）。
 	registerEventPayload("exec.session_opened", execEventPayload{})
-	// App 模板面（templates.go 单源；F3.3，ADR-0050——实例化摘要与目录刷新台账）。
+	// App 模板面（templates.go 单源；F3.3，ADR-0050——实例化摘要与目录刷新台账。
+	// refreshed 前缀归一：templates → template，P2 批二裁决）。
 	registerEventPayload(eventTemplateInstantiated, templateEventPayload{})
-	registerEventPayload(eventTemplatesRefreshed, templatesRefreshedPayload{})
+	registerEventPayload(eventTemplateRefreshed, templateRefreshedPayload{})
+
+	// 四族 CRUD 补事件（P2 批二，声明级遗漏收口）：hook/github_app/
+	// alert_rule/channel 的写面此前只有审计无事件——payload 各自单源。
+	registerEventPayload(eventHookCreated, hookEventPayload{})
+	registerEventPayload(eventHookUpdated, hookEventPayload{})
+	registerEventPayload(eventHookRotated, hookEventPayload{})
+	registerEventPayload(eventGitHubAppConnected, githubAppEventPayload{})
+	registerEventPayload(eventGitHubAppDeleted, githubAppEventPayload{})
+	registerEventPayload(eventAlertRuleCreated, alertRuleEventPayload{})
+	registerEventPayload(eventAlertRuleDeleted, alertRuleEventPayload{})
+	registerEventPayload(eventChannelCreated, channelEventPayload{})
+	registerEventPayload(eventChannelDeleted, channelEventPayload{})
 }

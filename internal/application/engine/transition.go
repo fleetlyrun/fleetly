@@ -68,6 +68,27 @@ func (e *Engine) eventTeamOfApp(ctx context.Context, run state.Runner, appID str
 	return e.eventTeamOfProject(ctx, run, a.ProjectID)
 }
 
+// ownerTeam 按观测归属域解析载体事件的资源轴 Team（P2 批二补齐，
+// ADR-0066 A 化挂账收口——P0-2 止血时三态统一留 ”）：app 域走
+// App→Project；database 域走 Database→Project（ADR-0029 载体）；managed/
+// browse 是平台域——无 owner Team，返回 ”（平台级事件，终态口径）。
+// 解析失败降级 ”（resolveEventTeams 同款契约：不为归属解析新增失败面）。
+func (e *Engine) ownerTeam(ctx context.Context, owner workloadOwner) string {
+	switch owner.domain {
+	case ownerApp:
+		return e.eventTeamOfApp(ctx, e.db.Runner(), owner.id)
+	case ownerDatabase:
+		db, err := e.databases.Get(ctx, e.db.Runner(), owner.id)
+		if err != nil {
+			e.log.Warn("events: resolve database team", "database", owner.id, "err", err)
+			return ""
+		}
+		return e.eventTeamOfProject(ctx, e.db.Runner(), db.ProjectID)
+	default:
+		return "" // managed/browse：平台域载体，无 owner Team（平台级可见）
+	}
+}
+
 // auditFact 是一条审计事实（ID/时间由脊柱铸造；actorCtx=true 时
 // actor/source 取请求 ctx——用户动词路径，默认 SourceSystem）。
 type auditFact struct {

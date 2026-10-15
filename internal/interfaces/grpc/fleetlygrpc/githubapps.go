@@ -30,7 +30,7 @@ import (
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/githubapp"
-	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/github"
@@ -40,6 +40,23 @@ type GitHubAppsService struct {
 	deliveryv1.UnimplementedGitHubAppsServiceServer
 	s     *Services
 	flows *manifestFlows
+}
+
+// github_app 面事件名（usage 反扫的字面量锚点；四族 CRUD 补事件批——P2
+// 批二声明级遗漏收口：put/delete 此前只有审计无事件）。connected 是 put
+// 的域事实名：同作用域同属主重复 put 是覆盖更新（私钥轮换），"接入材料
+// 在场"在两种形态下同为真——created/updated 二分反而失真。
+const (
+	eventGitHubAppConnected = "github_app.connected"
+	eventGitHubAppDeleted   = "github_app.deleted"
+)
+
+// githubAppEventPayload 是 github_app.* 事件的载荷（字段只增；私钥材料
+// 永不出现——指纹只在审计行）。
+type githubAppEventPayload struct {
+	AppID          int64  `json:"app_id"`
+	InstallationID int64  `json:"installation_id"`
+	AccountLogin   string `json:"account_login"`
 }
 
 // newGitHubAppsService 构造服务并铸流态签名钥（进程内随机——流不跨重启，
@@ -243,10 +260,21 @@ func (svc *GitHubAppsService) SetGitHubApp(ctx context.Context, req *deliveryv1.
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			return svc.s.GitHubApps.Upsert(ctx, tx, row)
 		},
-		audits: []*audit.Entry{{
-			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-			Action: "github_app.put", Resource: "github_app/" + row.AccountLogin, AfterFP: sealed.Fingerprint,
-		}},
+		facts: []func() writes.FactRow{
+			svc.s.factOf(ctx, projectID, func(team string) writes.FactRow {
+				return writes.FactRow{
+					Name: eventGitHubAppConnected, Aggregate: "github_app", ID: row.ID,
+					Payload: mustJSON(githubAppEventPayload{
+						AppID: row.AppID, InstallationID: row.InstallationID, AccountLogin: row.AccountLogin,
+					}),
+					// 平台级行（Global）无 Team 轴：factOf 对空 projectID 留 ''
+					// = 全员可见（平台材料，P0-2 口径）。
+					TeamID: team,
+					Action: "github_app.put", Resource: "github_app/" + row.AccountLogin, AfterFP: sealed.Fingerprint,
+					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+				}
+			}),
+		},
 	})
 	if txErr != nil {
 		return nil, mapStateError(txErr, "github app")
@@ -297,10 +325,20 @@ func (svc *GitHubAppsService) DeleteGitHubApp(ctx context.Context, req *delivery
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			return svc.s.GitHubApps.SoftDelete(ctx, tx, row.ID)
 		},
-		audits: []*audit.Entry{{
-			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-			Action: "github_app.delete", Resource: "github_app/" + row.AccountLogin,
-		}},
+		facts: []func() writes.FactRow{
+			svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {
+				return writes.FactRow{
+					Name: eventGitHubAppDeleted, Aggregate: "github_app", ID: row.ID,
+					Payload: mustJSON(githubAppEventPayload{
+						AppID: row.AppID, InstallationID: row.InstallationID, AccountLogin: row.AccountLogin,
+					}),
+					// 平台级行（Global）无 Team 轴：'' = 全员可见（同 put）。
+					TeamID: team,
+					Action: "github_app.delete", Resource: "github_app/" + row.AccountLogin,
+					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+				}
+			}),
+		},
 	})
 	if txErr != nil {
 		return nil, mapStateError(txErr, "github app")
@@ -568,10 +606,21 @@ func (svc *GitHubAppsService) CompleteManifestFlow(ctx context.Context, req *del
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			return svc.s.GitHubApps.Upsert(ctx, tx, row)
 		},
-		audits: []*audit.Entry{{
-			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-			Action: "github_app.put", Resource: "github_app/" + row.AccountLogin, AfterFP: sealed.Fingerprint,
-		}},
+		facts: []func() writes.FactRow{
+			svc.s.factOf(ctx, flow.projectID, func(team string) writes.FactRow {
+				return writes.FactRow{
+					Name: eventGitHubAppConnected, Aggregate: "github_app", ID: row.ID,
+					Payload: mustJSON(githubAppEventPayload{
+						AppID: row.AppID, InstallationID: row.InstallationID, AccountLogin: row.AccountLogin,
+					}),
+					// 平台级行（Global）无 Team 轴：factOf 对空 projectID 留 ''
+					// = 全员可见（平台材料，P0-2 口径）。
+					TeamID: team,
+					Action: "github_app.put", Resource: "github_app/" + row.AccountLogin, AfterFP: sealed.Fingerprint,
+					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+				}
+			}),
+		},
 	})
 	if txErr != nil {
 		return nil, mapStateError(txErr, "github app")

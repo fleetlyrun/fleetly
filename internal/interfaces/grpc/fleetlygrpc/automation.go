@@ -20,7 +20,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/run"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/schedule"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
-	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -140,11 +140,10 @@ func (svc *TasksService) CreateTask(ctx context.Context, req *automationv1.Creat
 		return nil, err
 	}
 	// 行铸造经 engine.MintTaskRow 单源（ADR-0062）；seq 在事务内取、铸造
-	// 在 checks 段完成（拒绝零副作用），事件/审计依赖铸出的行 id 走就地
-	// 填充与 auditsFrom（ADR-0070）。
+	// 在 checks 段完成（拒绝零副作用），事件/审计依赖铸出的行 id 经闭包
+	// 求值自然可见（ADR-0070）。
 	var seq int64
 	var row *task.Task
-	events := []eventFact{{name: engine.EventTaskCreated, aggregate: "task", projectID: req.GetProjectId()}}
 	err = svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{
 			svc.s.parentProjectAlive(req.GetProjectId()),
@@ -166,21 +165,19 @@ func (svc *TasksService) CreateTask(ctx context.Context, req *automationv1.Creat
 			},
 		},
 		write: func(ctx context.Context, tx *sql.Tx) error {
-			if err := svc.s.Tasks.Create(ctx, tx, row); err != nil {
-				return err
-			}
-			// 事件 id/payload 依赖事务内铸出的行 id：write 段后就地填充。
-			events[0].id = row.ID
-			events[0].payload = engine.TaskCreatedEventJSON(row)
-			return nil
+			return svc.s.Tasks.Create(ctx, tx, row)
 		},
-		auditsFrom: func() []*audit.Entry {
-			return []*audit.Entry{{
-				Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-				Action: "task.create", Resource: "task/" + row.ID, AfterFP: row.Form,
-			}}
+		facts: []func() writes.FactRow{
+			svc.s.factOf(ctx, req.GetProjectId(), func(team string) writes.FactRow {
+				return writes.FactRow{
+					Name: engine.EventTaskCreated, Aggregate: "task", ID: row.ID,
+					Payload: engine.TaskCreatedEventJSON(row),
+					TeamID:  team,
+					Action:  "task.create", Resource: "task/" + row.ID, AfterFP: row.Form,
+					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+				}
+			}),
 		},
-		events: events,
 	})
 	if err != nil {
 		return nil, mapStateError(err, "task")
@@ -596,17 +593,18 @@ func (svc *SchedulesService) CreateSchedule(ctx context.Context, req *automation
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			return svc.s.Schedules.Create(ctx, tx, row)
 		},
-		events: []eventFact{{
-			// payload 字段全部在行上（时间戳不在 payload 面）——静态构造
-			// 与 write 后求值等价（task.created 同款口径）。
-			name: engine.EventScheduleCreated, aggregate: "schedule", id: row.ID,
-			payload: engine.ScheduleCreatedEventJSON(row), projectID: row.ProjectID,
-		}},
-		auditsFrom: func() []*audit.Entry {
-			return []*audit.Entry{{
-				Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-				Action: "schedule.create", Resource: "schedule/" + row.ID, AfterFP: row.CronExpr,
-			}}
+		facts: []func() writes.FactRow{
+			svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {
+				return writes.FactRow{
+					// payload 字段全部在行上（时间戳不在 payload 面）——静态
+					// 构造与 write 后求值等价（task.created 同款口径）。
+					Name: engine.EventScheduleCreated, Aggregate: "schedule", ID: row.ID,
+					Payload: engine.ScheduleCreatedEventJSON(row),
+					TeamID:  team,
+					Action:  "schedule.create", Resource: "schedule/" + row.ID, AfterFP: row.CronExpr,
+					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+				}
+			}),
 		},
 	})
 	if err != nil {
@@ -662,14 +660,17 @@ func (svc *SchedulesService) DeleteSchedule(ctx context.Context, req *automation
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			return svc.s.Schedules.Transit(ctx, tx, row.ID, schedule.StateActive, schedule.StateDeleted)
 		},
-		events: []eventFact{{
-			name: "schedule.deleted", aggregate: "schedule", id: row.ID,
-			payload: engine.ScheduleDeletedEventJSON(row), projectID: row.ProjectID,
-		}},
-		audits: []*audit.Entry{{
-			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-			Action: "schedule.delete", Resource: "schedule/" + row.ID,
-		}},
+		facts: []func() writes.FactRow{
+			svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {
+				return writes.FactRow{
+					Name: "schedule.deleted", Aggregate: "schedule", ID: row.ID,
+					Payload: engine.ScheduleDeletedEventJSON(row),
+					TeamID:  team,
+					Action:  "schedule.delete", Resource: "schedule/" + row.ID,
+					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+				}
+			}),
+		},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "schedule")

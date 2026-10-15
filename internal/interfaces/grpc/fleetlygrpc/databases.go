@@ -9,7 +9,6 @@ package fleetlygrpc
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"net/url"
 	"time"
@@ -22,9 +21,9 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/data/backup"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/browse"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
-	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbbrowser"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
@@ -101,7 +100,6 @@ func (svc *DatabasesService) CreateDatabase(ctx context.Context, req *structurev
 		}
 		restoreSrc = src
 	}
-	events := []eventFact{{name: eventDatabaseCreated, aggregate: "database", projectID: req.GetProjectId()}}
 	err := svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{
 			svc.s.parentProjectAlive(req.GetProjectId()),
@@ -129,19 +127,19 @@ func (svc *DatabasesService) CreateDatabase(ctx context.Context, req *structurev
 			if restoreSrc != nil {
 				return svc.s.Databases.SetRestorePending(ctx, tx, row.ID, restoreSrc.ID)
 			}
-			// 事件 id/payload 依赖事务内铸出的行 id：write 段后就地填充
-			// （切片元素可变语义，acceptance.go withPayload 同款）。
-			events[0].id = row.ID
-			events[0].payload, _ = json.Marshal(structureEventPayload{ID: row.ID, ProjectID: row.ProjectID}) //nolint:errcheck // 结构体字段恒可序列化
 			return nil
 		},
-		// 审计字段依赖事务内铸出的 id：auditsFrom 在 write 段后求值。
-		events: events,
-		auditsFrom: func() []*audit.Entry {
-			return []*audit.Entry{{
-				Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "database.create",
-				Resource: "database/" + row.ID, AfterFP: row.Engine + " " + row.Name,
-			}}
+		// 行 id 由事务内铸出（ADR-0070）：闭包求值在聚合写后自然可见。
+		facts: []func() writes.FactRow{
+			svc.s.factOf(ctx, req.GetProjectId(), func(team string) writes.FactRow {
+				return writes.FactRow{
+					Name: eventDatabaseCreated, Aggregate: "database", ID: row.ID,
+					Payload: mustJSON(structureEventPayload{ID: row.ID, ProjectID: row.ProjectID}),
+					TeamID:  team,
+					Action:  "database.create", Resource: "database/" + row.ID, AfterFP: row.Engine + " " + row.Name,
+					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+				}
+			}),
 		},
 	})
 	if err != nil {
@@ -212,11 +210,17 @@ func (svc *DatabasesService) DeleteDatabase(ctx context.Context, req *structurev
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			return svc.s.Databases.SoftDelete(ctx, tx, req.GetId())
 		},
-		events: []eventFact{structureEvent(eventDatabaseDeleted, "database", req.GetId(), row.ProjectID)},
-		audits: []*audit.Entry{{
-			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "database.delete",
-			Resource: "database/" + req.GetId(),
-		}},
+		facts: []func() writes.FactRow{
+			svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {
+				return writes.FactRow{
+					Name: eventDatabaseDeleted, Aggregate: "database", ID: req.GetId(),
+					Payload: mustJSON(structureEventPayload{ID: req.GetId(), ProjectID: row.ProjectID}),
+					TeamID:  team,
+					Action:  "database.delete", Resource: "database/" + req.GetId(),
+					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+				}
+			}),
+		},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "database")
@@ -255,11 +259,17 @@ func (svc *DatabasesService) RotateDatabasePassword(ctx context.Context, req *st
 		return nil, apperr.New("E_INTERNAL", "credential rotation failed").WithCause(err)
 	}
 	if err := svc.s.commit(ctx, writeFact{
-		events: []eventFact{structureEvent(eventDatabaseRotated, "database", row.ID, row.ProjectID)},
-		audits: []*audit.Entry{{
-			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "database.rotate_password",
-			Resource: "database/" + row.ID, AfterFP: row.CredentialsRef,
-		}},
+		facts: []func() writes.FactRow{
+			svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {
+				return writes.FactRow{
+					Name: eventDatabaseRotated, Aggregate: "database", ID: row.ID,
+					Payload: mustJSON(structureEventPayload{ID: row.ID, ProjectID: row.ProjectID}),
+					TeamID:  team,
+					Action:  "database.rotate_password", Resource: "database/" + row.ID, AfterFP: row.CredentialsRef,
+					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+				}
+			}),
+		},
 	}); err != nil {
 		return nil, mapStateError(err, "database")
 	}
@@ -299,11 +309,17 @@ func (s *Services) cascadeDeleteDatabases(ctx context.Context, projectID string)
 			write: func(ctx context.Context, tx *sql.Tx) error {
 				return s.Databases.SoftDelete(ctx, tx, db.ID)
 			},
-			events: []eventFact{structureEvent(eventDatabaseDeleted, "database", db.ID, db.ProjectID)},
-			audits: []*audit.Entry{{
-				Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "database.delete",
-				Resource: "database/" + db.ID,
-			}},
+			facts: []func() writes.FactRow{
+				s.factOf(ctx, db.ProjectID, func(team string) writes.FactRow {
+					return writes.FactRow{
+						Name: eventDatabaseDeleted, Aggregate: "database", ID: db.ID,
+						Payload: mustJSON(structureEventPayload{ID: db.ID, ProjectID: db.ProjectID}),
+						TeamID:  team,
+						Action:  "database.delete", Resource: "database/" + db.ID,
+						Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+					}
+				}),
+			},
 		})
 		if err != nil {
 			if errors.Is(err, state.ErrNotFound) {
@@ -361,11 +377,17 @@ func (svc *DatabasesService) TriggerBackup(ctx context.Context, req *structurev1
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			return svc.s.Backups.Create(ctx, tx, row)
 		},
-		auditsFrom: func() []*audit.Entry {
-			return []*audit.Entry{{
-				Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "database.backup_trigger",
-				Resource: "database/" + db.ID, AfterFP: row.ID,
-			}}
+		facts: []func() writes.FactRow{
+			// 双真偏离（仅取证面）：触发动词未入事件流（执行完成事实由
+			// database.backup_succeeded/failed 事件承载——ADR-0039"触发不等
+			// 执行"；A 化前亦无事件行，行集合零漂移）。
+			func() writes.FactRow {
+				return writes.FactRow{
+					Action: "database.backup_trigger", Resource: "database/" + db.ID, AfterFP: row.ID,
+					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+					LedgerOnly: true,
+				}
+			},
 		},
 	})
 	if err != nil {
@@ -527,16 +549,20 @@ func (svc *DatabasesService) BrowseDatabase(ctx context.Context, req *structurev
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			return svc.s.Browse.Create(ctx, tx, row)
 		},
-		events: []eventFact{structureEvent(eventDatabaseBrowserOpened, "database", db.ID, db.ProjectID)},
-		auditsFrom: func() []*audit.Entry {
-			detail, _ := json.Marshal(map[string]any{ //nolint:errcheck // 结构体字段恒可序列化
-				"session_id": row.ID, "browser": browser.Name(),
-				"read_only": readOnly, "enforcement": string(browser.ReadOnlyEnforcement()),
-			})
-			return []*audit.Entry{{
-				Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "database.browse",
-				Resource: "database/" + db.ID, Detail: string(detail),
-			}}
+		facts: []func() writes.FactRow{
+			svc.s.factOf(ctx, db.ProjectID, func(team string) writes.FactRow {
+				detail := mustJSON(map[string]any{
+					"session_id": row.ID, "browser": browser.Name(),
+					"read_only": readOnly, "enforcement": string(browser.ReadOnlyEnforcement()),
+				})
+				return writes.FactRow{
+					Name: eventDatabaseBrowserOpened, Aggregate: "database", ID: db.ID,
+					Payload: mustJSON(structureEventPayload{ID: db.ID, ProjectID: db.ProjectID}),
+					TeamID:  team,
+					Action:  "database.browse", Resource: "database/" + db.ID, Detail: string(detail),
+					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+				}
+			}),
 		},
 	})
 	if err != nil {

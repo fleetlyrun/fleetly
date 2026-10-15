@@ -7,14 +7,13 @@ package fleetlygrpc
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
-	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/network"
@@ -49,11 +48,17 @@ func (svc *NetworksService) CreateNetwork(ctx context.Context, req *structurev1.
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			return svc.s.Networks.Create(ctx, tx, row)
 		},
-		events: []eventFact{structureEvent(eventNetworkCreated, "network", row.Name, row.ProjectID)},
-		audits: []*audit.Entry{{
-			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "network.create",
-			Resource: "network/" + row.Name, AfterFP: req.String(),
-		}},
+		facts: []func() writes.FactRow{
+			svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {
+				return writes.FactRow{
+					Name: eventNetworkCreated, Aggregate: "network", ID: row.Name,
+					Payload: mustJSON(structureEventPayload{ID: row.Name, ProjectID: row.ProjectID}),
+					TeamID:  team,
+					Action:  "network.create", Resource: "network/" + row.Name, AfterFP: req.String(),
+					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+				}
+			}),
+		},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "network")
@@ -105,17 +110,23 @@ func (svc *NetworksService) RebuildNetwork(ctx context.Context, req *structurev1
 	if err != nil {
 		return nil, mapStateError(err, "network")
 	}
-	payload, _ := json.Marshal(networkRebuiltEventPayload{ //nolint:errcheck // 结构体字段恒可序列化
+	payload := mustJSON(networkRebuiltEventPayload{
 		ProjectID: net.ProjectID, Network: net.Name,
 		Detached: int32(res.Detached), Reattached: int32(res.Reattached), //nolint:gosec // 计数域内（载体数）
 	})
 	err = svc.s.commit(ctx, writeFact{
-		events: []eventFact{{name: eventNetworkRebuilt, aggregate: "network", id: net.ID, payload: payload, projectID: net.ProjectID}},
-		audits: []*audit.Entry{{
-			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "network.rebuild",
-			Resource: "network/" + net.Name,
-			AfterFP:  fmt.Sprintf("project=%s detached=%d reattached=%d", net.ProjectID, res.Detached, res.Reattached),
-		}},
+		facts: []func() writes.FactRow{
+			svc.s.factOf(ctx, net.ProjectID, func(team string) writes.FactRow {
+				return writes.FactRow{
+					Name: eventNetworkRebuilt, Aggregate: "network", ID: net.ID,
+					Payload: payload,
+					TeamID:  team,
+					Action:  "network.rebuild", Resource: "network/" + net.Name,
+					AfterFP: fmt.Sprintf("project=%s detached=%d reattached=%d", net.ProjectID, res.Detached, res.Reattached),
+					Actor:   authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+				}
+			}),
+		},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "network")
@@ -151,30 +162,39 @@ type networkPeerEventPayload struct {
 	PeerProjectID    string `json:"peer_project_id"`
 }
 
-// networkPeerEvent 构造 peer 事件事实（aggregate=network，id=网络行）。
-// projectID 是资源轴 Team 解析锚（P0-2；peer 双项目——锚网络侧归属）。
-func networkPeerEvent(name string, p *networkpeer.Peer, net *network.Network) eventFact {
-	payload, _ := json.Marshal(networkPeerEventPayload{ //nolint:errcheck // 结构体字段恒可序列化
+// networkPeerEventPayloadOf 构造 peer 事件载荷（aggregate=network，id=网络行）。
+func networkPeerEventPayloadOf(p *networkpeer.Peer, net *network.Network) []byte {
+	return mustJSON(networkPeerEventPayload{
 		ID: p.ID, NetworkID: p.NetworkID, NetworkName: net.Name,
 		NetworkProjectID: net.ProjectID, PeerProjectID: p.PeerProjectID,
 	})
-	return eventFact{name: name, aggregate: "network", id: p.NetworkID, payload: payload, projectID: net.ProjectID}
 }
 
-// networkPeerAudits 是双方审计（ADR-0013：挂靠计入两侧）：网络侧 +
-// 挂靠项目侧各一行，action 同名（ListAudit 的 action/resource 过滤面
-// 两侧各自可答"谁挂在我的网上/我挂在哪里"）。
-func networkPeerAudits(ctx context.Context, action string, p *networkpeer.Peer, net *network.Network) []*audit.Entry {
+// networkPeerFacts 构造 peer 三拍的写事实（单声明双真 + 双侧审计）：
+// 首行 = 事件 + 网络侧审计（双真）；次行 = 挂靠项目侧审计（仅取证面——
+// 双侧记账是 ADR-0013 的审计面形状，流面孪生只此一条）。projectID 是
+// 资源轴 Team 解析锚（P0-2；peer 双项目——锚网络侧归属）。
+func (s *Services) networkPeerFacts(ctx context.Context, name, action string, p *networkpeer.Peer, net *network.Network) []func() writes.FactRow {
 	fp := fmt.Sprintf("peer_project=%s network=%s state=%s", p.PeerProjectID, net.Name, p.State)
-	mk := func(resource string) *audit.Entry {
-		return &audit.Entry{
-			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-			Action: action, Resource: resource, AfterFP: fp,
-		}
-	}
-	return []*audit.Entry{
-		mk("network/" + net.Name + "/peers/" + p.ID),
-		mk("project/" + p.PeerProjectID + "/peers/" + p.ID),
+	return []func() writes.FactRow{
+		s.factOf(ctx, net.ProjectID, func(team string) writes.FactRow {
+			return writes.FactRow{
+				Name: name, Aggregate: "network", ID: p.NetworkID,
+				Payload: networkPeerEventPayloadOf(p, net),
+				TeamID:  team,
+				Action:  action, Resource: "network/" + net.Name + "/peers/" + p.ID, AfterFP: fp,
+				Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+			}
+		}),
+		func() writes.FactRow {
+			// 双真偏离（仅取证面）：挂靠项目侧的镜像审计（ADR-0013 双侧
+			// 记账），无独立流面孪生——A 化前亦只此一条审计行。
+			return writes.FactRow{
+				Action: action, Resource: "project/" + p.PeerProjectID + "/peers/" + p.ID, AfterFP: fp,
+				Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+				LedgerOnly: true,
+			}
+		},
 	}
 }
 
@@ -271,8 +291,7 @@ func (svc *NetworksService) DeclareNetworkPeer(ctx context.Context, req *structu
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			return svc.s.NetworkPeers.Create(ctx, tx, p)
 		},
-		events: []eventFact{networkPeerEvent(eventNetworkPeerDeclared, p, net)},
-		audits: networkPeerAudits(ctx, "network.peer_declare", p, net),
+		facts: svc.s.networkPeerFacts(ctx, eventNetworkPeerDeclared, "network.peer_declare", p, net),
 	})
 	if err != nil {
 		return nil, mapStateError(err, "network peer")
@@ -306,8 +325,7 @@ func (svc *NetworksService) ApproveNetworkPeer(ctx context.Context, req *structu
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			return svc.s.NetworkPeers.Approve(ctx, tx, p.ID)
 		},
-		events: []eventFact{networkPeerEvent(eventNetworkPeerApproved, p, net)},
-		audits: networkPeerAudits(ctx, "network.peer_approve", p, net),
+		facts: svc.s.networkPeerFacts(ctx, eventNetworkPeerApproved, "network.peer_approve", p, net),
 	})
 	if err != nil {
 		return nil, mapStateError(err, "network peer")
@@ -344,8 +362,7 @@ func (svc *NetworksService) RevokeNetworkPeer(ctx context.Context, req *structur
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			return svc.s.NetworkPeers.Revoke(ctx, tx, p.ID)
 		},
-		events: []eventFact{networkPeerEvent(eventNetworkPeerRevoked, p, net)},
-		audits: networkPeerAudits(ctx, "network.peer_revoke", p, net),
+		facts: svc.s.networkPeerFacts(ctx, eventNetworkPeerRevoked, "network.peer_revoke", p, net),
 	})
 	if err != nil {
 		return nil, mapStateError(err, "network peer")

@@ -3,7 +3,8 @@ package fleetlygrpc
 // Alerting/Metrics 上下文服务（F2.5，ADR-0041）：MetricsService 查询面
 //（PromQL 透传——行级过滤责任在调用方的查询构造，本面持平台凭证）与
 // AlertingService 配置面（通道平台级 + 规则 per-App 行级授权链；写面走
-// commit 原语——事件面留给告警状态迁移沿，配置 CRUD 是审计面，ADR-0041）。
+// commit 原语。配置 CRUD 事件面：四族补事件批（P2 批二）起 CRUD 事实
+// 默认进流——与 alert.fired/resolved 的状态迁移沿分立，ADR-0041）。
 
 import (
 	"context"
@@ -14,12 +15,35 @@ import (
 
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
-	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/alertrule"
 	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/channel"
 )
+
+// 告警配置面事件名（usage 反扫的字面量锚点；四族 CRUD 补事件批——P2 批二
+// 声明级遗漏收口：配置 CRUD 此前只有审计无事件。通道是平台级材料（无
+// owner Team 域）——” 全员可见；规则随 App 归属解析资源轴 Team）。
+const (
+	eventAlertRuleCreated = "alert_rule.created"
+	eventAlertRuleDeleted = "alert_rule.deleted"
+	eventChannelCreated   = "channel.created"
+	eventChannelDeleted   = "channel.deleted"
+)
+
+// alertRuleEventPayload 是 alert_rule.* 事件的载荷（字段只增）。
+type alertRuleEventPayload struct {
+	AppID  string `json:"app_id"`
+	Metric string `json:"metric"`
+}
+
+// channelEventPayload 是 channel.* 事件的载荷（字段只增；凭证材料永不
+// 出现——配置 age 信封只写不读。deleted 时不载荷——删除面无行读）。
+type channelEventPayload struct {
+	Name string `json:"name,omitempty"`
+	Kind string `json:"kind,omitempty"`
+}
 
 // MetricsService 是指标查询面。
 type MetricsService struct {
@@ -124,11 +148,17 @@ func (svc *AlertingService) CreateNotificationChannel(ctx context.Context, req *
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			return svc.s.Engine.NotificationChannelRepo().Create(ctx, tx, row)
 		},
-		auditsFrom: func() []*audit.Entry {
-			return []*audit.Entry{{
-				Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-				Action: "channel.create", Resource: "channel/" + row.ID, AfterFP: kind + ":" + name,
-			}}
+		facts: []func() writes.FactRow{
+			// 资源轴 ''（无 owner 域——平台级材料，全员可见）：通道是平台级
+			// 配置（ADR-0041），行无 Team 轴。
+			func() writes.FactRow {
+				return writes.FactRow{
+					Name: eventChannelCreated, Aggregate: "channel", ID: row.ID,
+					Payload: mustJSON(channelEventPayload{Name: row.Name, Kind: row.Kind}),
+					Action:  "channel.create", Resource: "channel/" + row.ID, AfterFP: kind + ":" + name,
+					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+				}
+			},
 		},
 	})
 	if err != nil {
@@ -176,10 +206,20 @@ func (svc *AlertingService) DeleteNotificationChannel(ctx context.Context, req *
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			return svc.s.Engine.NotificationChannelRepo().Delete(ctx, tx, req.GetChannelId())
 		},
-		audits: []*audit.Entry{{
-			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-			Action: "channel.delete", Resource: "channel/" + req.GetChannelId(),
-		}},
+		facts: []func() writes.FactRow{
+			// 资源轴 ''（无 owner 域——平台级材料，全员可见）：通道是平台级
+			// 配置（ADR-0041），行无 Team 轴。删除面无行读（ErrNotFound 映射
+			// 由调用侧承担）——载荷留空。
+			func() writes.FactRow {
+				return writes.FactRow{
+					Name: eventChannelDeleted, Aggregate: "channel", ID: req.GetChannelId(),
+					// outbox.payload 非空约束：删除面无行读，载荷为空对象。
+					Payload: mustJSON(channelEventPayload{}),
+					Action:  "channel.delete", Resource: "channel/" + req.GetChannelId(),
+					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+				}
+			},
+		},
 	})
 	if err != nil {
 		if errors.Is(err, state.ErrNotFound) {
@@ -216,12 +256,17 @@ func (svc *AlertingService) CreateAlertRule(ctx context.Context, req *telemetryv
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			return svc.s.Engine.AlertRuleRepo().Create(ctx, tx, row)
 		},
-		auditsFrom: func() []*audit.Entry {
-			return []*audit.Entry{{
-				Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-				Action: "alert_rule.create", Resource: "alert_rule/" + row.ID,
-				AfterFP: appRow.ID + ":" + metric,
-			}}
+		facts: []func() writes.FactRow{
+			svc.s.factOf(ctx, appRow.ProjectID, func(team string) writes.FactRow {
+				return writes.FactRow{
+					Name: eventAlertRuleCreated, Aggregate: "alert_rule", ID: row.ID,
+					Payload: mustJSON(alertRuleEventPayload{AppID: row.AppID, Metric: row.Metric}),
+					TeamID:  team,
+					Action:  "alert_rule.create", Resource: "alert_rule/" + row.ID,
+					AfterFP: appRow.ID + ":" + metric,
+					Actor:   authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+				}
+			}),
 		},
 	})
 	if err != nil {
@@ -266,17 +311,25 @@ func (svc *AlertingService) DeleteAlertRule(ctx context.Context, req *telemetryv
 		}
 		return nil, mapStateError(err, "alert rule")
 	}
-	if _, err := svc.s.authorizeAppID(ctx, row.AppID); err != nil {
+	appRow, err := svc.s.authorizeAppID(ctx, row.AppID)
+	if err != nil {
 		return nil, err
 	}
 	err = svc.s.commit(ctx, writeFact{
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			return svc.s.Engine.AlertRuleRepo().Delete(ctx, tx, req.GetRuleId())
 		},
-		audits: []*audit.Entry{{
-			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-			Action: "alert_rule.delete", Resource: "alert_rule/" + row.ID,
-		}},
+		facts: []func() writes.FactRow{
+			svc.s.factOf(ctx, appRow.ProjectID, func(team string) writes.FactRow {
+				return writes.FactRow{
+					Name: eventAlertRuleDeleted, Aggregate: "alert_rule", ID: row.ID,
+					Payload: mustJSON(alertRuleEventPayload{AppID: row.AppID, Metric: row.Metric}),
+					TeamID:  team,
+					Action:  "alert_rule.delete", Resource: "alert_rule/" + row.ID,
+					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+				}
+			}),
+		},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "alert rule")

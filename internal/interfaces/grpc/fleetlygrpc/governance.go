@@ -8,12 +8,11 @@ package fleetlygrpc
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
-	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
 	"github.com/fleetlyrun/fleetly/internal/domain/runtimeops/freeze"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 )
 
@@ -33,12 +32,6 @@ type freezeEventPayload struct {
 	ID     string `json:"id"`
 	TeamID string `json:"team_id"` // 空串 = 全局冻结
 	Reason string `json:"reason"`
-}
-
-func freezeEvent(name string, f *freeze.Freeze) eventFact {
-	ev := identityEvent(name, "freeze", f.ID, freezeEventPayload{ID: f.ID, TeamID: f.TeamID, Reason: f.Reason})
-	ev.team = f.TeamID // 资源轴（P0-2）：全局冻结 TeamID='' → 平台级可见
-	return ev
 }
 
 // SetChangeFreeze 落一条活跃冻结（team_id 空串 = 全局；reason 必填——拒绝
@@ -71,24 +64,23 @@ func (svc *GovernanceService) SetChangeFreeze(ctx context.Context, req *systemv1
 	if row.TeamID != "" {
 		checks = append(checks, svc.s.teamExists(row.TeamID))
 	}
-	freezeSetEvents := []eventFact{freezeEvent(eventFreezeSet, row)}
 	err = svc.s.commit(ctx, writeFact{
 		checks: checks,
 		write: func(ctx context.Context, tx *sql.Tx) error {
-			if err := svc.s.Freezes.Create(ctx, tx, row); err != nil {
-				return err
-			}
-			freezeSetEvents[0].id = row.ID
-			freezeSetEvents[0].payload, _ = json.Marshal(freezeEventPayload{ID: row.ID, TeamID: row.TeamID, Reason: row.Reason}) //nolint:errcheck // 结构体字段恒可序列化
-			return nil
+			return svc.s.Freezes.Create(ctx, tx, row)
 		},
-		events: freezeSetEvents,
-		auditsFrom: func() []*audit.Entry {
-			return []*audit.Entry{{
-				Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-				Action: "freeze.set", Resource: "freeze/" + row.ID,
-				AfterFP: row.TeamID + ":" + row.Reason,
-			}}
+		facts: []func() writes.FactRow{
+			// 资源轴（P0-2）：全局冻结 TeamID='' → 平台级可见。
+			func() writes.FactRow {
+				return writes.FactRow{
+					Name: eventFreezeSet, Aggregate: "freeze", ID: row.ID,
+					Payload: mustJSON(freezeEventPayload{ID: row.ID, TeamID: row.TeamID, Reason: row.Reason}),
+					TeamID:  row.TeamID,
+					Action:  "freeze.set", Resource: "freeze/" + row.ID,
+					AfterFP: row.TeamID + ":" + row.Reason,
+					Actor:   authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+				}
+			},
 		},
 	})
 	if err != nil {
@@ -118,12 +110,19 @@ func (svc *GovernanceService) LiftChangeFreeze(ctx context.Context, req *systemv
 			write: func(ctx context.Context, tx *sql.Tx) error {
 				return svc.s.Freezes.Lift(ctx, tx, row.ID)
 			},
-			events: []eventFact{freezeEvent(eventFreezeLifted, row)},
-			audits: []*audit.Entry{{
-				Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-				Action: "freeze.lift", Resource: "freeze/" + row.ID,
-				AfterFP: row.TeamID + ":" + row.Reason,
-			}},
+			facts: []func() writes.FactRow{
+				// 资源轴（P0-2）：全局冻结 TeamID='' → 平台级可见。
+				func() writes.FactRow {
+					return writes.FactRow{
+						Name: eventFreezeLifted, Aggregate: "freeze", ID: row.ID,
+						Payload: mustJSON(freezeEventPayload{ID: row.ID, TeamID: row.TeamID, Reason: row.Reason}),
+						TeamID:  row.TeamID,
+						Action:  "freeze.lift", Resource: "freeze/" + row.ID,
+						AfterFP: row.TeamID + ":" + row.Reason,
+						Actor:   authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+					}
+				},
+			},
 		})
 		if err != nil {
 			return nil, mapStateError(err, "freeze")

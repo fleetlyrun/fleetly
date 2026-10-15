@@ -17,7 +17,7 @@ import (
 	"github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
-	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -115,12 +115,17 @@ func (svc *ExecService) CreateExecSession(ctx context.Context, req *runtimev1.Cr
 		TTY:       info.TTY,
 	}
 	if err := svc.s.commit(ctx, writeFact{
-		events: []eventFact{{name: "exec.session_opened", aggregate: "app", id: info.AppID, payload: mustJSON(payload), team: team}},
-		audits: []*audit.Entry{{
-			Actor: payload.Actor, Source: authn.SourceFromContext(ctx),
-			Action: "exec.session", Resource: "app/" + info.AppID,
-			Detail: execDetailJSON(payload),
-		}},
+		facts: []func() writes.FactRow{
+			func() writes.FactRow {
+				return writes.FactRow{
+					Name: "exec.session_opened", Aggregate: "app", ID: info.AppID,
+					Payload: mustJSON(payload), TeamID: team,
+					Action: "exec.session", Resource: "app/" + info.AppID,
+					Detail: execDetailJSON(payload),
+					Actor:  payload.Actor, Source: authn.SourceFromContext(ctx),
+				}
+			},
+		},
 	}); err != nil {
 		svc.s.Engine.AbandonSession(info.ID)
 		return nil, err

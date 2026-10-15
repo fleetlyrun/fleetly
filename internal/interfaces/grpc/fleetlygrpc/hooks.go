@@ -20,7 +20,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/hook"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
-	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
@@ -28,6 +28,20 @@ import (
 // HooksURLPrefix 是接收面 REST 入口前缀（gateway 原生 handler 挂载点；
 // CLI 展示 URL 时拼接）。
 const HooksURLPrefix = "/v1/hooks/"
+
+// hook 面事件名（usage 反扫的字面量锚点；四族 CRUD 补事件批——P2 批二
+// 声明级遗漏收口：SetGitHook/Rotate 此前只有审计无事件）。
+const (
+	eventHookCreated = "hook.created"
+	eventHookUpdated = "hook.updated"
+	eventHookRotated = "hook.rotated"
+)
+
+// hookEventPayload 是 hook.* 事件的载荷（字段只增；token 材料永不出现——
+// URL token 与 webhook secret 同源，明文只在铸造/再生成响应出现一次）。
+type hookEventPayload struct {
+	AppID string `json:"app_id"`
+}
 
 type HooksService struct {
 	deliveryv1.UnimplementedHooksServiceServer
@@ -86,10 +100,17 @@ func (svc *HooksService) SetGitHook(ctx context.Context, req *deliveryv1.SetGitH
 			write: func(ctx context.Context, tx *sql.Tx) error {
 				return svc.s.Hooks.Create(ctx, tx, row)
 			},
-			audits: []*audit.Entry{{
-				Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-				Action: "hook.create", Resource: "app/" + appRow.ID, AfterFP: row.Repo + "@" + row.Branch,
-			}},
+			facts: []func() writes.FactRow{
+				svc.s.factOf(ctx, appRow.ProjectID, func(team string) writes.FactRow {
+					return writes.FactRow{
+						Name: eventHookCreated, Aggregate: "hook", ID: appRow.ID,
+						Payload: mustJSON(hookEventPayload{AppID: appRow.ID}),
+						TeamID:  team,
+						Action:  "hook.create", Resource: "app/" + appRow.ID, AfterFP: row.Repo + "@" + row.Branch,
+						Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+					}
+				}),
+			},
 		})
 		if txErr != nil {
 			return nil, mapStateError(txErr, "hook")
@@ -106,10 +127,17 @@ func (svc *HooksService) SetGitHook(ctx context.Context, req *deliveryv1.SetGitH
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			return svc.s.Hooks.UpdateConfig(ctx, tx, existing)
 		},
-		audits: []*audit.Entry{{
-			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-			Action: "hook.update", Resource: "app/" + appRow.ID, AfterFP: existing.Repo + "@" + existing.Branch,
-		}},
+		facts: []func() writes.FactRow{
+			svc.s.factOf(ctx, appRow.ProjectID, func(team string) writes.FactRow {
+				return writes.FactRow{
+					Name: eventHookUpdated, Aggregate: "hook", ID: appRow.ID,
+					Payload: mustJSON(hookEventPayload{AppID: appRow.ID}),
+					TeamID:  team,
+					Action:  "hook.update", Resource: "app/" + appRow.ID, AfterFP: existing.Repo + "@" + existing.Branch,
+					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+				}
+			}),
+		},
 	})
 	if txErr != nil {
 		return nil, mapStateError(txErr, "hook")
@@ -135,7 +163,8 @@ func (svc *HooksService) GetGitHook(ctx context.Context, req *deliveryv1.GetGitH
 // 行比对归属——顺带闭合批 1 记档的"不校验 App 存活"：Apps.Get 活跃行口
 // 径，tombstone App 即 404（此前 rotate 对已删 App 静默换串成功）。
 func (svc *HooksService) RotateHookToken(ctx context.Context, req *deliveryv1.RotateHookTokenRequest) (*deliveryv1.RotateHookTokenResponse, error) {
-	if _, err := svc.s.authorizeAppID(ctx, req.GetAppId()); err != nil {
+	appRow, err := svc.s.authorizeAppID(ctx, req.GetAppId())
+	if err != nil {
 		return nil, err
 	}
 	if _, err := svc.s.Hooks.Get(ctx, svc.s.DB.Runner(), req.GetAppId()); err != nil {
@@ -153,10 +182,17 @@ func (svc *HooksService) RotateHookToken(ctx context.Context, req *deliveryv1.Ro
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			return svc.s.Hooks.RotateToken(ctx, tx, req.GetAppId(), material.SHA256, material.Prefix, sealed.Ciphertext)
 		},
-		audits: []*audit.Entry{{
-			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-			Action: "hook.rotate", Resource: "app/" + req.GetAppId(),
-		}},
+		facts: []func() writes.FactRow{
+			svc.s.factOf(ctx, appRow.ProjectID, func(team string) writes.FactRow {
+				return writes.FactRow{
+					Name: eventHookRotated, Aggregate: "hook", ID: req.GetAppId(),
+					Payload: mustJSON(hookEventPayload{AppID: req.GetAppId()}),
+					TeamID:  team,
+					Action:  "hook.rotate", Resource: "app/" + req.GetAppId(),
+					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+				}
+			}),
+		},
 	})
 	if txErr != nil {
 		return nil, mapStateError(txErr, "hook")

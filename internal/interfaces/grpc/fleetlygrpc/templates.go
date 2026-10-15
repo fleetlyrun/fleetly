@@ -24,16 +24,19 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/apptemplate"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/catalog"
-	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
 
-// 模板面事件名（usage 反扫的字面量锚点）。
+// 模板面事件名（usage 反扫的字面量锚点）。refreshed 前缀归一（P2 批二
+// 裁决）：templates.refreshed → template.refreshed——事件名单数域前缀统一
+// （template.instantiated 同族）；eventcode 只增纪律的例外：改名即删旧
+// 注册加新注册，golden 与 usage 反扫同批。
 const (
 	eventTemplateInstantiated = "template.instantiated"
-	eventTemplatesRefreshed   = "templates.refreshed"
+	eventTemplateRefreshed    = "template.refreshed"
 )
 
 // templateEventPayload 是 template.instantiated 的载荷（字段只增）。
@@ -43,8 +46,8 @@ type templateEventPayload struct {
 	Deployment string `json:"deployment"`
 }
 
-// templatesRefreshedPayload 是 templates.refreshed 的载荷（字段只增）。
-type templatesRefreshedPayload struct {
+// templateRefreshedPayload 是 template.refreshed 的载荷（字段只增）。
+type templateRefreshedPayload struct {
 	Previous string `json:"previous"`
 	Digest   string `json:"digest"`
 	Count    int    `json:"count"`
@@ -312,16 +315,19 @@ func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliv
 	}
 
 	// 8. 摘要事件 + 审计一拍（伴生资源的事件已由各服务步骤发射）。
-	instantiated := identityEvent(eventTemplateInstantiated, "app", appID,
-		templateEventPayload{Template: entry.Name, Version: entry.Version, Deployment: deploymentID})
-	instantiated.projectID = req.GetProjectId() // 资源轴 Team 解析锚（P0-2）
 	err = svc.s.commit(ctx, writeFact{
-		write:  nil,
-		events: []eventFact{instantiated},
-		audits: []*audit.Entry{{
-			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "template.instantiate",
-			Resource: "app/" + appID, AfterFP: entry.Name + "@" + entry.Version,
-		}},
+		write: nil,
+		facts: []func() writes.FactRow{
+			svc.s.factOf(ctx, req.GetProjectId(), func(team string) writes.FactRow {
+				return writes.FactRow{
+					Name: eventTemplateInstantiated, Aggregate: "app", ID: appID,
+					Payload: mustJSON(templateEventPayload{Template: entry.Name, Version: entry.Version, Deployment: deploymentID}),
+					TeamID:  team,
+					Action:  "template.instantiate", Resource: "app/" + appID, AfterFP: entry.Name + "@" + entry.Version,
+					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+				}
+			}),
+		},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "template instantiation")
@@ -358,13 +364,20 @@ func (svc *TemplatesService) RefreshTemplates(ctx context.Context, _ *deliveryv1
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			return svc.s.Catalog.Put(ctx, tx, snap)
 		},
-		// 平台级事件（模板目录无 Team 轴）：team 留 '' = 全员可见（P0-2）。
-		events: []eventFact{identityEvent(eventTemplatesRefreshed, "templates", digest,
-			templatesRefreshedPayload{Previous: previous.digest, Digest: digest, Count: len(entries)})},
-		audits: []*audit.Entry{{
-			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "templates.refresh",
-			Resource: "templates/catalog", AfterFP: fmt.Sprintf("%s -> %s (%d entries)", previous.digest, digest, len(entries)),
-		}},
+		facts: []func() writes.FactRow{
+			// 平台级事件（模板目录无 owner 域——平台级，全员可见）：team
+			// 留 ''（P0-2 终态口径）。aggregate 随前缀归一：templates →
+			// template（单数域，P2 批二裁决——见事件名常量注释）。
+			func() writes.FactRow {
+				return writes.FactRow{
+					Name: eventTemplateRefreshed, Aggregate: "template", ID: digest,
+					Payload: mustJSON(templateRefreshedPayload{Previous: previous.digest, Digest: digest, Count: len(entries)}),
+					Action:  "templates.refresh", Resource: "templates/catalog",
+					AfterFP: fmt.Sprintf("%s -> %s (%d entries)", previous.digest, digest, len(entries)),
+					Actor:   authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+				}
+			},
+		},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "template catalog")

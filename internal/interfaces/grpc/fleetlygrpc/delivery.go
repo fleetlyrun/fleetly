@@ -22,7 +22,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/revision"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/sourceupload"
-	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
@@ -149,6 +149,11 @@ func unmarshalFrozenSpec(blob []byte) (*specv1.AppSpec, error) {
 	return s, nil
 }
 
+// errRevisionReused 是 Revision 冻结受理命中内容寻址复用的哨兵（事务内
+// 错误只触发回滚——复用路径零写零事实；对外形态由 freezeRevision 映射
+// 为复用成功，errDeleteAborted 同款模式）。
+var errRevisionReused = errors.New("revision: content-addressed reuse (identical spec already frozen)")
+
 // freezeRevision 冻结 Revision（内容寻址复用：同内容只冻结一份；R1..Rn
 // 序号 App 内单调）。Deploy 与 webhook 触发共用——审计 actor/source 取
 // ctx（webhook 路径经 WithAuditOverride 标注）。三级变量合成的唯一咽喉
@@ -180,34 +185,42 @@ func freezeRevision(ctx context.Context, s *Services, appRow *app.App, appSpec *
 		return nil, err
 	}
 	var rev *revision.Revision
-	var created *audit.Entry
 	err = s.commit(ctx, writeFact{
-		write: func(ctx context.Context, tx *sql.Tx) error {
-			if existing, ferr := s.Revisions.FindByDigest(ctx, tx, appRow.ID, revision.Digest(body)); ferr == nil {
+		checks: []acceptanceCheck{func(ctx context.Context, tx *sql.Tx) error {
+			existing, ferr := s.Revisions.FindByDigest(ctx, tx, appRow.ID, revision.Digest(body))
+			if ferr == nil {
 				rev = existing
-				return nil // 内容寻址复用：不冻结新行、不落新审计
+				return errRevisionReused // 复用即受理终态：零冻结零事实
 			}
+			if !errors.Is(ferr, state.ErrNotFound) {
+				return ferr
+			}
+			return nil
+		}},
+		write: func(ctx context.Context, tx *sql.Tx) error {
 			seq, serr := s.Revisions.NextSeq(ctx, tx, appRow.ID)
 			if serr != nil {
 				return serr
 			}
 			rev = &revision.Revision{AppID: appRow.ID, Seq: seq, Spec: body, SourceText: sourceText}
-			if cerr := s.Revisions.Create(ctx, tx, rev); cerr != nil {
-				return cerr
-			}
-			created = &audit.Entry{
-				Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "revision.create",
-				Resource: "revision/" + rev.ID, AfterFP: rev.Digest,
-			}
-			return nil
+			return s.Revisions.Create(ctx, tx, rev)
 		},
-		auditsFrom: func() []*audit.Entry {
-			if created == nil {
-				return nil
-			}
-			return []*audit.Entry{created}
+		facts: []func() writes.FactRow{
+			// 双真偏离（仅取证面）：Revision 冻结无流面孪生——材料面不是
+			// 状态机，部署/构建的迁移事件由 engine 沿发射（A 化前亦只此
+			// 一条审计行，行集合零漂移）。
+			func() writes.FactRow {
+				return writes.FactRow{
+					Action: "revision.create", Resource: "revision/" + rev.ID, AfterFP: rev.Digest,
+					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+					LedgerOnly: true,
+				}
+			},
 		},
 	})
+	if errors.Is(err, errRevisionReused) {
+		return rev, nil // 内容寻址复用：同内容只冻结一份、不落新审计
+	}
 	if err != nil {
 		return nil, err
 	}

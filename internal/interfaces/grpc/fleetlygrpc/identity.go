@@ -21,17 +21,9 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/team"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/token"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/user"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 )
-
-// identityAudit 是 identity 写路径的审计行构造（actor + 来源从 authn ctx）。
-// outbox 事件经 acceptance.go 的 identityEvent 构造（写原语事实段）。
-func identityAudit(ctx context.Context, action, resource, beforeFP, afterFP string) *audit.Entry {
-	return &audit.Entry{
-		Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-		Action: action, Resource: resource, BeforeFP: beforeFP, AfterFP: afterFP,
-	}
-}
 
 // ---- Users ----
 
@@ -88,8 +80,6 @@ func (svc *UsersService) CreateUser(ctx context.Context, req *identityv1.CreateU
 		u.PasswordHash = string(hash)
 	}
 	m := &membership.Membership{UserID: u.ID, TeamID: teamID, RoleID: req.GetRoleId()}
-	userCreatedEvents := []eventFact{identityEvent("user.created", "user", u.ID, nameEventPayload{Name: u.Name})}
-	userCreatedEvents[0].team = teamID // 资源轴：用户随 membership 落队（P0-2）
 	err = svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{svc.s.teamExists(teamID), svc.s.roleInTeam(req.GetRoleId(), teamID)},
 		write: func(ctx context.Context, tx *sql.Tx) error {
@@ -98,15 +88,19 @@ func (svc *UsersService) CreateUser(ctx context.Context, req *identityv1.CreateU
 			}
 			// membership 归属事务内铸出的用户 id（ADR-0070）。
 			m.UserID = u.ID
-			if err := svc.s.Memberships.Create(ctx, tx, m); err != nil {
-				return err
-			}
-			userCreatedEvents[0].id = u.ID
-			return nil
+			return svc.s.Memberships.Create(ctx, tx, m)
 		},
-		events: userCreatedEvents,
-		auditsFrom: func() []*audit.Entry {
-			return []*audit.Entry{identityAudit(ctx, "user.create", "user/"+u.ID, "", u.Name)}
+		facts: []func() writes.FactRow{
+			// 资源轴：用户随 membership 落队（P0-2）。
+			func() writes.FactRow {
+				return writes.FactRow{
+					Name: "user.created", Aggregate: "user", ID: u.ID,
+					Payload: mustJSON(nameEventPayload{Name: u.Name}),
+					TeamID:  teamID,
+					Action:  "user.create", Resource: "user/" + u.ID, AfterFP: u.Name,
+					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+				}
+			},
 		},
 	})
 	if err != nil {
@@ -153,19 +147,23 @@ func (svc *UsersService) Login(ctx context.Context, req *identityv1.LoginRequest
 		Name: "password session", TeamID: m.TeamID, UserID: u.ID,
 		RoleID: m.RoleID, SHA256: material.SHA256, Prefix: material.Prefix,
 	}
-	tokenCreatedEvents := []eventFact{identityEvent("token.created", "token", t.ID, nameEventPayload{Name: t.Name})}
-	tokenCreatedEvents[0].team = m.TeamID // 资源轴（P0-2）
 	err = svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{svc.s.teamExists(m.TeamID), svc.s.roleInTeam(m.RoleID, m.TeamID), svc.s.userInTeam(u.ID, m.TeamID)},
 		write: func(ctx context.Context, tx *sql.Tx) error {
-			if err := svc.s.Tokens.Create(ctx, tx, t); err != nil {
-				return err
-			}
-			tokenCreatedEvents[0].id = t.ID
-			return nil
+			return svc.s.Tokens.Create(ctx, tx, t)
 		},
-		events: tokenCreatedEvents,
-		audits: []*audit.Entry{identityAudit(ctx, "user.login", "user/"+u.ID, "", u.Name)},
+		facts: []func() writes.FactRow{
+			// 资源轴（P0-2）。
+			func() writes.FactRow {
+				return writes.FactRow{
+					Name: "token.created", Aggregate: "token", ID: t.ID,
+					Payload: mustJSON(nameEventPayload{Name: t.Name}),
+					TeamID:  m.TeamID,
+					Action:  "user.login", Resource: "user/" + u.ID, AfterFP: u.Name,
+					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+				}
+			},
+		},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "token")
@@ -186,13 +184,22 @@ func (svc *UsersService) SetUserPassword(ctx context.Context, req *identityv1.Se
 	if err != nil {
 		return nil, apperr.New("E_INTERNAL", "password hashing failed").WithCause(err)
 	}
-	entry := identityAudit(ctx, "user.password_set", "user/"+req.GetUserId(), "", "")
 	err = svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{svc.s.userExists(req.GetUserId())},
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			return svc.s.Users.SetPassword(ctx, tx, req.GetUserId(), string(hash))
 		},
-		audits: []*audit.Entry{entry},
+		facts: []func() writes.FactRow{
+			// 双真偏离（仅取证面）：改密动词未入事件流（identity 事件面铺
+			// 创建沿，A 化前亦无事件行——行集合零漂移）。
+			func() writes.FactRow {
+				return writes.FactRow{
+					Action: "user.password_set", Resource: "user/" + req.GetUserId(),
+					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+					LedgerOnly: true,
+				}
+			},
+		},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "user")
@@ -217,20 +224,30 @@ func (svc *UsersService) ListUsers(ctx context.Context, _ *identityv1.ListUsersR
 func (svc *UsersService) DeleteUser(ctx context.Context, req *identityv1.DeleteUserRequest) (*identityv1.DeleteUserResponse, error) {
 	// 审计的行读随写路径（事务内读-删同生共死）；裸 memberships 清理的
 	// FK 归一（repo 的 DeleteByUser 带 team 过滤、语义不同）随 ADR-0028 批。
-	entry := identityAudit(ctx, "user.delete", "user/"+req.GetId(), "", "")
+	name := "" // BeforeFP 依赖事务内读到的行（闭包求值在 write 后可见）
 	err := svc.s.commit(ctx, writeFact{
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			u, err := svc.s.Users.Get(ctx, tx, req.GetId())
 			if err != nil {
 				return err
 			}
-			entry.BeforeFP = u.Name
+			name = u.Name
 			if _, err := tx.ExecContext(ctx, `DELETE FROM memberships WHERE user_id = ?`, req.GetId()); err != nil {
 				return err
 			}
 			return svc.s.Users.Delete(ctx, tx, req.GetId())
 		},
-		audits: []*audit.Entry{entry},
+		facts: []func() writes.FactRow{
+			// 双真偏离（仅取证面）：删除动词未入事件流（identity 事件面铺
+			// 创建沿，A 化前亦无事件行——行集合零漂移）。
+			func() writes.FactRow {
+				return writes.FactRow{
+					Action: "user.delete", Resource: "user/" + req.GetId(), BeforeFP: name,
+					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+					LedgerOnly: true,
+				}
+			},
+		},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "user")
@@ -253,20 +270,22 @@ func (svc *TeamsService) CreateTeam(ctx context.Context, req *identityv1.CreateT
 		return nil, apperr.New("E_INVALID_ARGUMENT", "name: must not be empty")
 	}
 	t := &team.Team{Name: req.GetName()}
-	teamCreatedEvents := []eventFact{identityEvent("team.created", "team", t.ID, nameEventPayload{Name: t.Name})}
 	err := svc.s.commit(ctx, writeFact{
 		write: func(ctx context.Context, tx *sql.Tx) error {
-			if err := svc.s.Teams.Create(ctx, tx, t); err != nil {
-				return err
-			}
-			teamCreatedEvents[0].id = t.ID
-			// 资源轴（P0-2）：聚合即 Team 本体——id 事务内铸出后就地铸 team。
-			teamCreatedEvents[0].team = t.ID
-			return nil
+			return svc.s.Teams.Create(ctx, tx, t)
 		},
-		events: teamCreatedEvents,
-		auditsFrom: func() []*audit.Entry {
-			return []*audit.Entry{identityAudit(ctx, "team.create", "team/"+t.ID, "", t.Name)}
+		facts: []func() writes.FactRow{
+			// 资源轴（P0-2）：聚合即 Team 本体——行 id 由事务内铸出，闭包
+			// 求值在聚合写后自然可见。
+			func() writes.FactRow {
+				return writes.FactRow{
+					Name: "team.created", Aggregate: "team", ID: t.ID,
+					Payload: mustJSON(nameEventPayload{Name: t.Name}),
+					TeamID:  t.ID,
+					Action:  "team.create", Resource: "team/" + t.ID, AfterFP: t.Name,
+					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+				}
+			},
 		},
 	})
 	if err != nil {
@@ -296,17 +315,27 @@ func (svc *TeamsService) ListTeams(ctx context.Context, _ *identityv1.ListTeamsR
 }
 
 func (svc *TeamsService) DeleteTeam(ctx context.Context, req *identityv1.DeleteTeamRequest) (*identityv1.DeleteTeamResponse, error) {
-	entry := identityAudit(ctx, "team.delete", "team/"+req.GetId(), "", "")
+	name := "" // BeforeFP 依赖事务内读到的行（闭包求值在 write 后可见）
 	err := svc.s.commit(ctx, writeFact{
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			t, err := svc.s.Teams.Get(ctx, tx, req.GetId())
 			if err != nil {
 				return err
 			}
-			entry.BeforeFP = t.Name
+			name = t.Name
 			return svc.s.Teams.Delete(ctx, tx, req.GetId())
 		},
-		audits: []*audit.Entry{entry},
+		facts: []func() writes.FactRow{
+			// 双真偏离（仅取证面）：删除动词未入事件流（A 化前亦无事件行
+			// ——行集合零漂移）。
+			func() writes.FactRow {
+				return writes.FactRow{
+					Action: "team.delete", Resource: "team/" + req.GetId(), BeforeFP: name,
+					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+					LedgerOnly: true,
+				}
+			},
+		},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "team")
@@ -347,20 +376,22 @@ func (svc *RolesService) CreateRole(ctx context.Context, req *identityv1.CreateR
 	}
 	teamID = resolvedTeam
 	ro := &role.Role{TeamID: teamID, Name: req.GetName(), Scopes: identity.ScopeStrings(scopes)}
-	roleCreatedEvents := []eventFact{identityEvent("role.created", "role", ro.ID, roleEventPayload{Scopes: ro.Scopes})}
-	roleCreatedEvents[0].team = ro.TeamID // 资源轴（内置角色 TeamID='' → 平台级可见，P0-2）
 	err = svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{svc.s.teamExists(teamID)},
 		write: func(ctx context.Context, tx *sql.Tx) error {
-			if err := svc.s.Roles.Create(ctx, tx, ro); err != nil {
-				return err
-			}
-			roleCreatedEvents[0].id = ro.ID
-			return nil
+			return svc.s.Roles.Create(ctx, tx, ro)
 		},
-		events: roleCreatedEvents,
-		auditsFrom: func() []*audit.Entry {
-			return []*audit.Entry{identityAudit(ctx, "role.create", "role/"+ro.ID, "", joinStrings(ro.Scopes))}
+		facts: []func() writes.FactRow{
+			// 资源轴（P0-2）：内置角色 TeamID='' → 平台级可见。
+			func() writes.FactRow {
+				return writes.FactRow{
+					Name: "role.created", Aggregate: "role", ID: ro.ID,
+					Payload: mustJSON(roleEventPayload{Scopes: ro.Scopes}),
+					TeamID:  ro.TeamID,
+					Action:  "role.create", Resource: "role/" + ro.ID, AfterFP: joinStrings(ro.Scopes),
+					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+				}
+			},
 		},
 	})
 	if err != nil {
@@ -390,17 +421,27 @@ func (svc *RolesService) ListRoles(ctx context.Context, _ *identityv1.ListRolesR
 }
 
 func (svc *RolesService) DeleteRole(ctx context.Context, req *identityv1.DeleteRoleRequest) (*identityv1.DeleteRoleResponse, error) {
-	entry := identityAudit(ctx, "role.delete", "role/"+req.GetId(), "", "")
+	scopes := "" // BeforeFP 依赖事务内读到的行（闭包求值在 write 后可见）
 	err := svc.s.commit(ctx, writeFact{
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			ro, err := svc.s.Roles.Get(ctx, tx, req.GetId())
 			if err != nil {
 				return err
 			}
-			entry.BeforeFP = joinStrings(ro.Scopes)
+			scopes = joinStrings(ro.Scopes)
 			return svc.s.Roles.Delete(ctx, tx, req.GetId())
 		},
-		audits: []*audit.Entry{entry},
+		facts: []func() writes.FactRow{
+			// 双真偏离（仅取证面）：删除动词未入事件流（A 化前亦无事件行
+			// ——行集合零漂移）。
+			func() writes.FactRow {
+				return writes.FactRow{
+					Action: "role.delete", Resource: "role/" + req.GetId(), BeforeFP: scopes,
+					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+					LedgerOnly: true,
+				}
+			},
+		},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "role")
@@ -446,20 +487,22 @@ func (svc *TokensService) CreateToken(ctx context.Context, req *identityv1.Creat
 		// 实时收窄语义下无 membership 的属主 Token 铸出即死，受理位拒绝。
 		checks = append(checks, svc.s.userExists(req.GetUserId()), svc.s.userInTeam(req.GetUserId(), teamID))
 	}
-	tokenCreatedEvents := []eventFact{identityEvent("token.created", "token", t.ID, nameEventPayload{Name: t.Name})}
-	tokenCreatedEvents[0].team = t.TeamID // 资源轴（P0-2）
 	err = svc.s.commit(ctx, writeFact{
 		checks: checks,
 		write: func(ctx context.Context, tx *sql.Tx) error {
-			if err := svc.s.Tokens.Create(ctx, tx, t); err != nil {
-				return err
-			}
-			tokenCreatedEvents[0].id = t.ID
-			return nil
+			return svc.s.Tokens.Create(ctx, tx, t)
 		},
-		events: tokenCreatedEvents,
-		auditsFrom: func() []*audit.Entry {
-			return []*audit.Entry{identityAudit(ctx, "token.create", "token/"+t.ID, "", t.Name)}
+		facts: []func() writes.FactRow{
+			// 资源轴（P0-2）。
+			func() writes.FactRow {
+				return writes.FactRow{
+					Name: "token.created", Aggregate: "token", ID: t.ID,
+					Payload: mustJSON(nameEventPayload{Name: t.Name}),
+					TeamID:  t.TeamID,
+					Action:  "token.create", Resource: "token/" + t.ID, AfterFP: t.Name,
+					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+				}
+			},
 		},
 	})
 	if err != nil {
@@ -514,9 +557,6 @@ func (svc *TokensService) RevokeToken(ctx context.Context, req *identityv1.Revok
 		return nil, mapStateError(err, "token")
 	}
 	var revoked *token.Token
-	events := []eventFact{identityEvent("token.revoked", "token", req.GetId(), nil)}
-	events[0].team = team
-	entry := identityAudit(ctx, "token.revoke", "token/"+req.GetId(), "", "")
 	err := svc.s.commit(ctx, writeFact{
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			t, err := svc.s.Tokens.Revoke(ctx, tx, req.GetId())
@@ -524,12 +564,21 @@ func (svc *TokensService) RevokeToken(ctx context.Context, req *identityv1.Revok
 				return err
 			}
 			revoked = t
-			events[0] = events[0].withPayload(map[string]string{"name": t.Name})
-			entry.BeforeFP = t.Name
 			return nil
 		},
-		events: events,
-		audits: []*audit.Entry{entry},
+		facts: []func() writes.FactRow{
+			// 载荷/BeforeFP 来自事务内 Revoke 的返回行（闭包求值在聚合写
+			// 后可见）。
+			func() writes.FactRow {
+				return writes.FactRow{
+					Name: "token.revoked", Aggregate: "token", ID: req.GetId(),
+					Payload: mustJSON(map[string]string{"name": revoked.Name}),
+					TeamID:  team,
+					Action:  "token.revoke", Resource: "token/" + req.GetId(), BeforeFP: revoked.Name,
+					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+				}
+			},
+		},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "token")

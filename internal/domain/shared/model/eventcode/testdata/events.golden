@@ -1,6 +1,8 @@
 alert.channel_failed	A notification channel delivery failed; the channel row records the error tail (diagnostics face).	internal/engine/metrics.go dispatchAlert
 alert.fired	A threshold alert rule transitioned to firing (breach held for the rule's for-window); notification channels were attempted.	internal/engine/metrics.go evaluateRules
 alert.resolved	A firing threshold alert rule transitioned back to ok (observed value fell below the threshold).	internal/engine/metrics.go evaluateRules
+alert_rule.created	A threshold alert rule was created for an app.	internal/api/fleetlygrpc/alerting.go CreateAlertRule
+alert_rule.deleted	A threshold alert rule was deleted.	internal/api/fleetlygrpc/alerting.go DeleteAlertRule
 app.created	An app was created.	internal/api/fleetlygrpc/structure.go CreateApp
 app.deleted	An app was deleted (teardown per ADR-0023).	internal/api/fleetlygrpc/structure.go DeleteApp
 app.teardown_aborted	An app delete was aborted after teardown because a deployment was admitted mid-delete; the in-flight deployment rebuilds the carriers (ADR-0023).	internal/api/fleetlygrpc/structure.go DeleteApp (recordTeardownAbort)
@@ -12,6 +14,8 @@ build.expired	Build expired by timeout watchdog.	added during implementation
 build.failed	Build failed.	added during implementation
 build.queued	Build accepted into build queue.	added during implementation
 build.succeeded	Build produced an image digest.	added during implementation
+channel.created	A notification channel was registered (platform-level material; credentials sealed, never returned).	internal/api/fleetlygrpc/alerting.go CreateNotificationChannel
+channel.deleted	A notification channel was deleted.	internal/api/fleetlygrpc/alerting.go DeleteNotificationChannel
 config.updated	A config version was written.	internal/api/fleetlygrpc/structure.go PutConfig
 database.backup_failed	A database backup failed; the payload carries the error tail (utility container stderr included).	internal/engine/backup.go executeOneBackup
 database.backup_succeeded	A database backup completed; the payload carries the object key, sha256 digest and size (the restore-verification anchors).	internal/engine/backup.go executeOneBackup
@@ -34,8 +38,13 @@ deployment.superseded	Deployment superseded by a newer one.	added during impleme
 exec.session_opened	An exec session was accepted into a running workload (actor, process, instance, node and command are in the payload; change freeze is exempt — diagnostics face).	internal/api/fleetlygrpc/exec.go CreateExecSession
 freeze.lifted	A change freeze was lifted; change verbs in scope are accepted again.	internal/api/fleetlygrpc/governance.go LiftChangeFreeze
 freeze.set	A change freeze was set for a team (or globally); change verbs in scope are refused with the reason.	internal/api/fleetlygrpc/governance.go SetChangeFreeze
+github_app.connected	A GitHub App installation was connected as private-repo access material (verified at admission, owner resolved; re-put with a new key replaces the sealed material).	internal/api/fleetlygrpc/githubapps.go SetGitHubApp/CompleteManifestFlow
+github_app.deleted	A GitHub App access material was soft-deleted; resolution fails immediately while the sealed key survives for key rewrap.	internal/api/fleetlygrpc/githubapps.go DeleteGitHubApp
+hook.created	A git hook configuration was created for an app (token minted; the secret itself never appears).	internal/api/fleetlygrpc/hooks.go SetGitHook
 hook.push_accepted	A verified webhook push triggered a deployment.	internal/api/fleetlygrpc/webhook.go handlePush
 hook.refresh_accepted	A control-plane hook refresh pulled the branch head and triggered a deployment.	internal/api/fleetlygrpc/webhook.go RefreshGitHook
+hook.rotated	A git hook token was rotated; the URL token and the GitHub webhook secret were both replaced (old strings invalid immediately).	internal/api/fleetlygrpc/hooks.go RotateHookToken
+hook.updated	A git hook configuration was updated (repo/branch/dockerfile/watch paths; token unchanged — rotation is a separate verb).	internal/api/fleetlygrpc/hooks.go SetGitHook
 invitation.accepted	An invitation was redeemed; the invitee became a user.	added during implementation
 invitation.created	An invitation was issued (single-use, time-boxed, role-bound).	added during implementation
 lease.expired	A task's owner lease expired past grace; the pool drains.	internal/engine/task.go driveTask
@@ -73,7 +82,7 @@ task.failed	A one-shot task's run failed.	internal/engine/task.go oneshotTermina
 task.updated	A task's desired concurrency was updated.	internal/engine/task.go ScaleTask
 team.created	A team was created.	added during implementation
 template.instantiated	A template was instantiated into a deployment (payload carries the template name@version and the deployment id).	internal/api/fleetlygrpc/templates.go InstantiateTemplate
-templates.refreshed	The template catalog snapshot was refreshed (payload carries the previous and new aggregate digests and the entry count).	internal/api/fleetlygrpc/templates.go RefreshTemplates
+template.refreshed	The template catalog snapshot was refreshed (payload carries the previous and new aggregate digests and the entry count).	internal/api/fleetlygrpc/templates.go RefreshTemplates
 token.created	A token was minted (secret shown once at creation).	added during implementation
 token.revoked	A token was revoked; its next call will be rejected.	added during implementation
 upload.stored	An uploaded source was stored (content-addressed; payload carries id, digest, size and deduplicated).	internal/api/fleetlygrpc/uploads.go UploadSource

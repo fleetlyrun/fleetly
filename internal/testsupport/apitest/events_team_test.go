@@ -86,6 +86,31 @@ func TestEventsTeamFilterMatrix(t *testing.T) {
 	appB, err := apps.CreateApp(owner, &structurev1.CreateAppRequest{ProjectId: projB.GetProject().GetId(), Name: "api"})
 	require.NoError(t, err)
 
+	// ---- 四族 CRUD 事件夹具（P2 批二补事件批）：A/B 双队各铺 hook 与
+	// alert_rule；github_app 落 A 队项目（Project 级材料）；channel 是平台级
+	// 材料（'' 轴——双队均应可见）。 ----
+	hooks := deliveryv1.NewHooksServiceClient(h.Conn)
+	alerting := telemetryv1.NewAlertingServiceClient(h.Conn)
+	_, err = hooks.SetGitHook(owner, &deliveryv1.SetGitHookRequest{AppId: appAID, Repo: "https://github.com/acme/shop-web.git"})
+	require.NoError(t, err)
+	_, err = hooks.SetGitHook(owner, &deliveryv1.SetGitHookRequest{AppId: appB.GetApp().GetId(), Repo: "https://github.com/acme/api.git"})
+	require.NoError(t, err)
+	_, err = hooks.RotateHookToken(owner, &deliveryv1.RotateHookTokenRequest{AppId: appB.GetApp().GetId()})
+	require.NoError(t, err)
+	ruleA, err := alerting.CreateAlertRule(owner, &telemetryv1.CreateAlertRuleRequest{AppId: appAID, Metric: "cpu_percent", Threshold: 90})
+	require.NoError(t, err)
+	ruleB, err := alerting.CreateAlertRule(owner, &telemetryv1.CreateAlertRuleRequest{AppId: appB.GetApp().GetId(), Metric: "memory_working_set_bytes", Threshold: 80})
+	require.NoError(t, err)
+	fakeGH := newFakeGitHub(t, h)
+	ghReq := putReq(projAID, fakeGH.base)
+	ghReq.PrivateKeyPem = string(fakeGH.pem)
+	ghApp, err := deliveryv1.NewGitHubAppsServiceClient(h.Conn).SetGitHubApp(owner, ghReq)
+	require.NoError(t, err)
+	channel, err := alerting.CreateNotificationChannel(owner, &telemetryv1.CreateNotificationChannelRequest{
+		Name: "ops", Kind: "webhook", Url: "http://127.0.0.1:9/x",
+	})
+	require.NoError(t, err)
+
 	// ---- 平台级事件（team_id=''，白箱直落——node.* 域在生产由 engine 铸） ----
 	_, err = h.Services.OutboxEvents.Append(context.Background(), h.DB.Runner(), "",
 		"node.joined", "node", "01JD0NODE0000000000000000X", []byte(`{}`))
@@ -111,12 +136,23 @@ deployed:
 	assert.Contains(t, bView, "project.created/"+projB.GetProject().GetId(), "team B sees its own project events")
 	assert.Contains(t, bView, "app.created/"+appB.GetApp().GetId(), "team B sees its own app events")
 	assert.Contains(t, bView, "node.joined/01JD0NODE0000000000000000X", "platform-level ('') events are visible to every team")
+	// 四族双队断言（P2 批二）：本队 hook/alert_rule 事件可见；channel 是
+	// 平台级材料（'' 轴）全员可见；A 队的 hook/alert_rule/github_app 事件
+	// 不可见。
+	assert.Contains(t, bView, "hook.created/"+appB.GetApp().GetId(), "team B sees its own hook.created events")
+	assert.Contains(t, bView, "hook.rotated/"+appB.GetApp().GetId(), "team B sees its own hook.rotated events")
+	assert.Contains(t, bView, "alert_rule.created/"+ruleB.GetRule().GetId(), "team B sees its own alert_rule.created events")
+	assert.Contains(t, bView, "channel.created/"+channel.GetChannel().GetId(), "channel events are platform-level ('') and visible to every team")
 	for key := range bView {
 		assert.NotEqual(t, "project.created/"+projAID, key, "team A's project events must not leak")
 		assert.NotEqual(t, "app.created/"+appAID, key, "team A's app events must not leak")
 		assert.NotEqual(t, taskA.GetTask().GetId(), key, "team A's task events must not leak")
 		assert.NotEqual(t, depAID, key, "team A's deployment events must not leak")
 		assert.False(t, strings.HasSuffix(key, appAID), "no event of team A's app may appear")
+		assert.NotEqual(t, "hook.created/"+appAID, key, "team A's hook.created must not leak")
+		assert.NotEqual(t, "hook.rotated/"+appAID, key, "team A's hook.rotated must not leak")
+		assert.NotEqual(t, "alert_rule.created/"+ruleA.GetRule().GetId(), key, "team A's alert_rule.created must not leak")
+		assert.NotContains(t, key, "github_app.connected", "team A's project-scoped github_app material events must not leak")
 	}
 
 	// ---- A 队成员照常可见本队事件（防过紧） ----
@@ -124,6 +160,12 @@ deployed:
 	assert.Contains(t, aView, "project.created/"+projAID, "team A members keep seeing their own events")
 	assert.Contains(t, aView, "app.created/"+appAID, "team A members keep seeing their own app events")
 	assert.NotContains(t, aView, "app.created/"+appB.GetApp().GetId(), "team B's events must not leak into team A's view")
+	assert.Contains(t, aView, "hook.created/"+appAID, "team A members see their own hook.created")
+	assert.Contains(t, aView, "alert_rule.created/"+ruleA.GetRule().GetId(), "team A members see their own alert_rule.created")
+	assert.Contains(t, aView, "github_app.connected/"+ghApp.GetApp().GetId(), "team A members see their project-scoped github_app.connected")
+	assert.Contains(t, aView, "channel.created/"+channel.GetChannel().GetId(), "the platform-level channel event is visible to team A too")
+	assert.NotContains(t, aView, "hook.created/"+appB.GetApp().GetId(), "team B's hook events must not leak into team A's view")
+	assert.NotContains(t, aView, "alert_rule.created/"+ruleB.GetRule().GetId(), "team B's alert rule events must not leak into team A's view")
 	foundDep := false
 	for key := range aView {
 		if strings.HasPrefix(key, "deployment.") && strings.HasSuffix(key, depAID) {

@@ -41,7 +41,7 @@ func DigestOf(body string) string {
 }
 
 // AggregateDigest 铸一组条目的聚合 digest（排序后 name@digest 行串——
-// 快照与内嵌目录同公式；templates.refreshed 事件与 RefreshTemplates 响应
+// 快照与内嵌目录同公式；template.refreshed 事件与 RefreshTemplates 响应
 // 的前后对照锚）。
 func AggregateDigest(entries []Entry) string {
 	lines := make([]string, 0, len(entries))

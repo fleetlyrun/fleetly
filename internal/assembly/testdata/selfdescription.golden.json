@@ -93,6 +93,50 @@
       }
     },
     {
+      "name": "alert_rule.created",
+      "kind": "event",
+      "summary": "A threshold alert rule was created for an app.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "app_id": {
+            "type": "string"
+          },
+          "metric": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "app_id",
+          "metric"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "alert_rule.deleted",
+      "kind": "event",
+      "summary": "A threshold alert rule was deleted.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "app_id": {
+            "type": "string"
+          },
+          "metric": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "app_id",
+          "metric"
+        ],
+        "type": "object"
+      }
+    },
+    {
       "name": "app",
       "kind": "spec",
       "summary": "AppSpec: desired state of a long-running deployable unit (an app is one or more processes).",
@@ -1027,6 +1071,42 @@
       }
     },
     {
+      "name": "channel.created",
+      "kind": "event",
+      "summary": "A notification channel was registered (platform-level material; credentials sealed, never returned).",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "name": "channel.deleted",
+      "kind": "event",
+      "summary": "A notification channel was deleted.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
       "name": "config.updated",
       "kind": "event",
       "summary": "A config version was written.",
@@ -1937,6 +2017,76 @@
       }
     },
     {
+      "name": "github_app.connected",
+      "kind": "event",
+      "summary": "A GitHub App installation was connected as private-repo access material (verified at admission, owner resolved; re-put with a new key replaces the sealed material).",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "account_login": {
+            "type": "string"
+          },
+          "app_id": {
+            "type": "integer"
+          },
+          "installation_id": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "app_id",
+          "installation_id",
+          "account_login"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "github_app.deleted",
+      "kind": "event",
+      "summary": "A GitHub App access material was soft-deleted; resolution fails immediately while the sealed key survives for key rewrap.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "account_login": {
+            "type": "string"
+          },
+          "app_id": {
+            "type": "integer"
+          },
+          "installation_id": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "app_id",
+          "installation_id",
+          "account_login"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "hook.created",
+      "kind": "event",
+      "summary": "A git hook configuration was created for an app (token minted; the secret itself never appears).",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "app_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "app_id"
+        ],
+        "type": "object"
+      }
+    },
+    {
       "name": "hook.push_accepted",
       "kind": "event",
       "summary": "A verified webhook push triggered a deployment.",
@@ -1984,6 +2134,42 @@
           "branch",
           "commit",
           "deployment"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "hook.rotated",
+      "kind": "event",
+      "summary": "A git hook token was rotated; the URL token and the GitHub webhook secret were both replaced (old strings invalid immediately).",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "app_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "app_id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "hook.updated",
+      "kind": "event",
+      "summary": "A git hook configuration was updated (repo/branch/dockerfile/watch paths; token unchanged — rotation is a separate verb).",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "app_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "app_id"
         ],
         "type": "object"
       }
@@ -3454,7 +3640,7 @@
       }
     },
     {
-      "name": "templates.refreshed",
+      "name": "template.refreshed",
       "kind": "event",
       "summary": "The template catalog snapshot was refreshed (payload carries the previous and new aggregate digests and the entry count).",
       "schema": {

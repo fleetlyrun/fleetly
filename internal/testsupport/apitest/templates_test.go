@@ -345,17 +345,17 @@ func TestRefreshTemplatesFailClosed(t *testing.T) {
 	assert.Equal(t, "refreshed", list2.GetSource())
 	assert.Len(t, list2.GetTemplates(), 1)
 
-	// templates.refreshed 事件落账（digest 前后对照）。
+	// template.refreshed 事件落账（digest 前后对照；前缀归一：templates → template，P2 批二）。
 	evts, err := h.Services.OutboxEvents.ListAfter(context.Background(), h.DB.Runner(), 0, 50, "")
 	require.NoError(t, err)
 	seen := false
 	for _, ev := range evts {
-		if ev.Name != "templates.refreshed" {
+		if ev.Name != "template.refreshed" {
 			continue
 		}
 		seen = true
 		assert.Contains(t, string(ev.Payload), `"count":1`)
 		assert.Contains(t, string(ev.Payload), refreshed.GetDigest())
 	}
-	assert.True(t, seen, "templates.refreshed event must exist")
+	assert.True(t, seen, "template.refreshed event must exist")
 }

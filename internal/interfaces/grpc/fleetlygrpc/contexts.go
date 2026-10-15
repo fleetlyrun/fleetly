@@ -15,7 +15,7 @@ import (
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
-	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
@@ -63,10 +63,17 @@ func (svc *NodesService) EnrollNode(ctx context.Context, req *runtimev1.EnrollNo
 	// 场（意图可见，比"已轮换无痕"诚实）。普通材料生成只读，同样先记
 	// 后做不损失语义（读取意图本身敏感）。
 	if err := svc.s.commit(ctx, writeFact{
-		audits: []*audit.Entry{{
-			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-			Action: action, Resource: "cluster/join-material",
-		}},
+		facts: []func() writes.FactRow{
+			// 双真偏离（仅取证面）：集群材料动词未入事件流（node 聚合的
+			// 流面只铺 joined/left 迁移；A 化前亦无事件行，行集合零漂移）。
+			func() writes.FactRow {
+				return writes.FactRow{
+					Action: action, Resource: "cluster/join-material",
+					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+					LedgerOnly: true,
+				}
+			},
+		},
 	}); err != nil {
 		return nil, err
 	}
@@ -126,10 +133,17 @@ func (svc *NodesService) nodeAdmin(ctx context.Context, nodeID, action string, o
 		return apperr.New("E_INTERNAL", "node administration failed").WithCause(err)
 	}
 	return svc.s.commit(ctx, writeFact{
-		audits: []*audit.Entry{{
-			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-			Action: action, Resource: "node/" + nodeID,
-		}},
+		facts: []func() writes.FactRow{
+			// 双真偏离（仅取证面）：节点管理动词的副作用在编排器侧（不可与
+			// 审计同事务），流面无孪生事实（A 化前亦无事件行，行集合零漂移）。
+			func() writes.FactRow {
+				return writes.FactRow{
+					Action: action, Resource: "node/" + nodeID,
+					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+					LedgerOnly: true,
+				}
+			},
+		},
 	})
 }
 
@@ -181,11 +195,16 @@ func (svc *RoutesService) CreateRoute(ctx context.Context, req *proxyv1.CreateRo
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			return svc.s.Routes.Create(ctx, tx, row)
 		},
-		auditsFrom: func() []*audit.Entry {
-			return []*audit.Entry{{
-				Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "route.create",
-				Resource: "route/" + row.ID, AfterFP: row.Host,
-			}}
+		facts: []func() writes.FactRow{
+			// 双真偏离（仅取证面）：Route CRUD 未入事件流（路由发布事实
+			// 由 Proxy 全量发布面承载；A 化前亦无事件行，行集合零漂移）。
+			func() writes.FactRow {
+				return writes.FactRow{
+					Action: "route.create", Resource: "route/" + row.ID, AfterFP: row.Host,
+					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+					LedgerOnly: true,
+				}
+			},
 		},
 	})
 	if err != nil {
@@ -228,10 +247,17 @@ func (svc *RoutesService) DeleteRoute(ctx context.Context, req *proxyv1.DeleteRo
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			return svc.s.Routes.SoftDelete(ctx, tx, req.GetId())
 		},
-		audits: []*audit.Entry{{
-			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "route.delete",
-			Resource: "route/" + req.GetId(),
-		}},
+		facts: []func() writes.FactRow{
+			// 双真偏离（仅取证面）：Route CRUD 未入事件流（同 CreateRoute——
+			// 路由发布事实由 Proxy 全量发布面承载；行集合零漂移）。
+			func() writes.FactRow {
+				return writes.FactRow{
+					Action: "route.delete", Resource: "route/" + req.GetId(),
+					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+					LedgerOnly: true,
+				}
+			},
+		},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "route")

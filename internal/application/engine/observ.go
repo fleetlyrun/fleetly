@@ -278,9 +278,10 @@ func (e *Engine) detectDrift(ctx context.Context, ev capability.WorkloadEvent) {
 	e.drift.sig[ev.WorkloadID] = sig
 	e.drift.mu.Unlock()
 
-	// 平台级可见（P0-2）：载体归属域为 app/database/managed 三态，Team 轴
-	// 解析按域分叉——统一留 ''，按域 A 化（ADR-0066 挂账）时按 owner 域补齐。
-	if err := e.emitObservation(ctx, "", eventWorkloadDrift, "workload", ev.WorkloadID,
+	// 资源轴 Team 按归属域解析（P2 批二补齐，ownerTeam 单源）：app/
+	// database 域各有解析面；managed/browse 是平台域——无 owner Team
+	// （平台级事件，终态口径）。
+	if err := e.emitObservation(ctx, e.ownerTeam(ctx, owner), eventWorkloadDrift, "workload", ev.WorkloadID,
 		driftEventPayloadJSON(ev, owner, expected)); err != nil {
 		e.log.Error("engine watch: drift event", "workload", ev.WorkloadID, "err", err)
 	}

@@ -161,10 +161,28 @@ var builtins = []Event{
 	{Name: "template.instantiated", Summary: "A template was instantiated into a deployment (payload carries the template name@version and the deployment id).", Source: "internal/api/fleetlygrpc/templates.go InstantiateTemplate"},
 	// 目录刷新（F3.3，ADR-0050 决策 4）：操作员动词的事实面——快照 digest
 	// 前后对照是"目录何时被谁换成什么"的唯一台账。
-	{Name: "templates.refreshed", Summary: "The template catalog snapshot was refreshed (payload carries the previous and new aggregate digests and the entry count).", Source: "internal/api/fleetlygrpc/templates.go RefreshTemplates"},
+	// 前缀归一（P2 批二裁决，2026-10-15）：templates.refreshed →
+	// template.refreshed——事件名单数域前缀统一（template.instantiated
+	// 同族）。eventcode 只增纪律的例外：改名即删旧注册加新注册，golden
+	// 与 usage 反扫同批收口。
+	{Name: "template.refreshed", Summary: "The template catalog snapshot was refreshed (payload carries the previous and new aggregate digests and the entry count).", Source: "internal/api/fleetlygrpc/templates.go RefreshTemplates"},
 
 	// 数据浏览器（F3.6，ADR-0051 决策 1：安全可见性——谁在何时打开了哪个
 	// Database 的浏览器会话；会话非资源行，受理即唯一事件/审计落点，回收
 	// 不落第二行）。
 	{Name: "database.browser_opened", Summary: "A browse session was opened for a database (payload carries the browser tool, read-only flag and enforcement tier; change freeze is exempt — diagnostics face).", Source: "internal/api/fleetlygrpc/databases.go BrowseDatabase"},
+
+	// 四族 CRUD 补事件（P2 批二，声明级遗漏收口）：hook/github_app/
+	// alert_rule/channel 的写面此前只有审计无事件（events/audits 双段声明
+	// 时代的漏配对面，ADR-0066 A 化验收面）——单声明双真后 CRUD 事实默认
+	// 进流。命名向既有风格对齐：单数域前缀 + 点分层 + 过去式。
+	{Name: "hook.created", Summary: "A git hook configuration was created for an app (token minted; the secret itself never appears).", Source: "internal/api/fleetlygrpc/hooks.go SetGitHook"},
+	{Name: "hook.updated", Summary: "A git hook configuration was updated (repo/branch/dockerfile/watch paths; token unchanged — rotation is a separate verb).", Source: "internal/api/fleetlygrpc/hooks.go SetGitHook"},
+	{Name: "hook.rotated", Summary: "A git hook token was rotated; the URL token and the GitHub webhook secret were both replaced (old strings invalid immediately).", Source: "internal/api/fleetlygrpc/hooks.go RotateHookToken"},
+	{Name: "github_app.connected", Summary: "A GitHub App installation was connected as private-repo access material (verified at admission, owner resolved; re-put with a new key replaces the sealed material).", Source: "internal/api/fleetlygrpc/githubapps.go SetGitHubApp/CompleteManifestFlow"},
+	{Name: "github_app.deleted", Summary: "A GitHub App access material was soft-deleted; resolution fails immediately while the sealed key survives for key rewrap.", Source: "internal/api/fleetlygrpc/githubapps.go DeleteGitHubApp"},
+	{Name: "alert_rule.created", Summary: "A threshold alert rule was created for an app.", Source: "internal/api/fleetlygrpc/alerting.go CreateAlertRule"},
+	{Name: "alert_rule.deleted", Summary: "A threshold alert rule was deleted.", Source: "internal/api/fleetlygrpc/alerting.go DeleteAlertRule"},
+	{Name: "channel.created", Summary: "A notification channel was registered (platform-level material; credentials sealed, never returned).", Source: "internal/api/fleetlygrpc/alerting.go CreateNotificationChannel"},
+	{Name: "channel.deleted", Summary: "A notification channel was deleted.", Source: "internal/api/fleetlygrpc/alerting.go DeleteNotificationChannel"},
 }

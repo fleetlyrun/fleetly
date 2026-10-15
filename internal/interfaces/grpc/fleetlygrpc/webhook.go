@@ -30,6 +30,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/hook"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -191,13 +192,18 @@ func (svc *HooksService) ingestGitMaterial(ctx context.Context, appRow *app.App,
 			_, err := svc.s.Hooks.RecordDelivery(ctx, tx, h.AppID, delivery)
 			return err
 		},
-		// 事件 Team 铸入取 ctx 标注（P0-2）：本函数上文已按 App 归属
-		// Project 的 Team 标注（资源轴，与审计同锚）。
-		events: []eventFact{{name: eventName, aggregate: "app", id: appRow.ID, payload: payload, team: audit.TeamFromContext(ctx)}},
-		audits: []*audit.Entry{{
-			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-			Action: auditAction, Resource: "app/" + appRow.ID, AfterFP: commit,
-		}},
+		facts: []func() writes.FactRow{
+			// 事件 Team 铸入取 ctx 标注（P0-2）：本函数上文已按 App 归属
+			// Project 的 Team 标注（资源轴，与审计同锚）。
+			func() writes.FactRow {
+				return writes.FactRow{
+					Name: eventName, Aggregate: "app", ID: appRow.ID,
+					Payload: payload, TeamID: audit.TeamFromContext(ctx),
+					Action: auditAction, Resource: "app/" + appRow.ID, AfterFP: commit,
+					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+				}
+			},
+		},
 	})
 	if err != nil {
 		return "", nil, mapStateError(err, "hook")

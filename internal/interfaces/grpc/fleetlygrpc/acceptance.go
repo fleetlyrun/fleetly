@@ -14,17 +14,20 @@ package fleetlygrpc
 //   - 受理检查全部事务内运行（所见即受理终局）：父资源存活、配额、删除
 //     守卫、FK 归属。配额读由此移入事务（PutConfig TOCTOU 收口）。
 //
+// A 化（ADR-0066 兑现，P2 批二）：写事实单声明（writeFact.facts 直接铸
+// kernel 的 FactRow，默认双真——outbox 流面 + audit 取证面同源落库），
+// 过渡映射层（events/audits 双段声明 + writeFactRows 机械并单）已收壳。
+// 偏离双真（LedgerOnly/StreamOnly）在声明处显式带旗并注释理由。
+//
 // 幂等执法（internal/idem 拦截器）位于本层之外、auth 之后——受理位答
 // "收不收"，幂等答"重放还是执行"，Admission（engine）答"怎么排"。
 
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
-	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -33,36 +36,20 @@ import (
 // acceptanceCheck 是一条受理位检查：事务内运行，非 nil 错误即整单回滚。
 type acceptanceCheck func(ctx context.Context, tx *sql.Tx) error
 
-// eventFact 是一条 Outbox 事件事实（与聚合写同生共死）。team 是资源轴
-// 归属 Team（P0-2）：” = 平台级事件（对全部 Team 可见）。projectID 是
-// 资源轴解析锚——team 未显式铸入时由 commit 依 Project 行解析（Project
-// 的 Team 归属不可变，受理解析与事务写入无 TOCTOU 面）。
-type eventFact struct {
-	name      string
-	aggregate string
-	id        string
-	payload   []byte
-	team      string
-	projectID string
-}
-
-// writeFact 声明一次写路径的全部事实；零值段（无受理检查/无事件）合法。
-// auditsFrom 在 write 段之后求值——审计字段依赖事务内写的返回行、或审计
-// 本身条件性（如 Revision 内容寻址复用不落新审计）的场合。
+// writeFact 声明一次写路径的全部事实；零值段（无受理检查/无事实）合法。
+// facts 是 kernel 单声明事实（默认双真），惰性求值——Sequence 在聚合写
+// 之后逐条求值，载荷/指纹可依赖事务内写的返回行（行 id 铸出、Revoke 的
+// 返回行等经闭包捕获自然可见，无需就地填充面）。
 type writeFact struct {
-	checks     []acceptanceCheck
-	write      func(ctx context.Context, tx *sql.Tx) error
-	events     []eventFact
-	audits     []*audit.Entry
-	auditsFrom func() []*audit.Entry
+	checks []acceptanceCheck
+	write  func(ctx context.Context, tx *sql.Tx) error
+	facts  []func() writes.FactRow
 }
 
 // commit 在单个事务内落完一次写路径：受理检查先行（拒绝零副作用）、
 // 聚合写居中、事实扇出殿后（双行配对与段间失败语义由事实发射 kernel
 // 拥有，internal/writes）；本原语是受理位入口与 writeFact 形态面。
-// 进事务前先补铸事件的资源轴 Team（P0-2）。
 func (s *Services) commit(ctx context.Context, fact writeFact) error {
-	s.resolveEventTeams(ctx, fact.events)
 	return s.DB.Tx(ctx, func(tx *sql.Tx) error {
 		for _, check := range fact.checks {
 			if err := check(ctx, tx); err != nil {
@@ -74,7 +61,7 @@ func (s *Services) commit(ctx context.Context, fact writeFact) error {
 				return err
 			}
 		}
-		return writes.Sequence(ctx, tx, s.factRepos(), s.writeFactRows(ctx, fact)...)
+		return writes.Sequence(ctx, tx, s.factRepos(), fact.facts...)
 	})
 }
 
@@ -83,66 +70,19 @@ func (s *Services) factRepos() writes.Repos {
 	return writes.Repos{Outbox: s.OutboxEvents, Audits: s.Audits}
 }
 
-// resolveEventTeams 补铸事件的资源轴 Team（P0-2）：显式 team 优先；其余
-// 按 projectID 锚经 Project 行解析（行缺失/存储故障 → ” 平台级可见，
-// 不为归属解析新增失败面；全量补齐由按域 A 化承接）。就地写切片
-// 元素——后续归一化闭包按同一底层数组读取（writeFactRows 注释同款
-// 契约）。
-func (s *Services) resolveEventTeams(ctx context.Context, events []eventFact) {
-	for i := range events {
-		if events[i].team != "" || events[i].projectID == "" {
-			continue
-		}
-		p, err := s.Projects.Get(ctx, s.DB.Runner(), events[i].projectID)
-		if err != nil {
-			continue // 解析失败降级 ''：事件可见面不窄于止血前行为
-		}
-		events[i].team = p.TeamID
-	}
-}
-
-// writeFactRows 把受理位 writeFact 归一化为 kernel 单声明事实，在聚合
-// 写之后求值（调用点位于 commit 的写段之后）：事件段在前、审计段殿后
-// ——落库序与既有 kernel 形态逐字节一致。迁移注记：双段声明（events/
-// audits 各自独立、配对靠人肉——四族 CRUD 曾漏声明事件）是按域 A 化
-// （ADR-0066 挂账）的收编对象，批二逐域并成默认双真单声明；当前机械
-// 映射为单行事实，行为不变式（落库行集合逐字节等价）由此保持。
-func (s *Services) writeFactRows(ctx context.Context, fact writeFact) []func() writes.FactRow {
-	var rows []func() writes.FactRow
-	for i := range fact.events {
-		// 闭包读切片元素（底层数组与调用方共享）：write 段的就地填充
-		//（withPayload/直接赋值）在求值时可见。按值拷贝会让填充静默
-		// 失效（事件落空 payload——本注释修订前正是这个形态）。
-		rows = append(rows, func() writes.FactRow {
-			e := fact.events[i]
-			return writes.FactRow{
-				Name: e.name, Aggregate: e.aggregate, ID: e.id,
-				Payload: e.payload, TeamID: e.team,
-				StreamOnly: true, // 迁移面：取证孪生由 audits 段独立声明（A 化前形态）
-			}
-		})
-	}
-	if len(fact.audits) > 0 || fact.auditsFrom != nil {
-		// 审计组在此（写段之后）一次求值摊平——组内 0/N 条各成一事实，
-		// 与既有 kernel 审计段的求值产物同集合同顺序。
-		audits, from := fact.audits, fact.auditsFrom
-		entries := audits
-		if from != nil {
-			entries = append(append([]*audit.Entry(nil), audits...), from()...)
-		}
-		for _, entry := range entries {
-			entry := entry
-			rows = append(rows, func() writes.FactRow {
-				return writes.FactRow{
-					Action: entry.Action, Resource: entry.Resource,
-					Actor: entry.Actor, Source: entry.Source, Detail: entry.Detail,
-					BeforeFP: entry.BeforeFP, AfterFP: entry.AfterFP,
-					LedgerOnly: true, // 迁移面：流面孪生由 events 段独立声明（A 化前形态）
-				}
-			})
+// factOf 构造一条资源轴归属 Project 的事实声明：Team 在进事务前解析
+// （P0-2 契约——显式空串/行缺失/存储故障 → "" 平台级可见，不为归属
+// 解析新增失败面；事务外读与既有 resolveEventTeams 同款时序），row 闭包
+// 在求值时把解析产物铸入 FactRow.TeamID。归属 Team 在手（identity 域）
+// 或无 Team 轴（平台级材料）的场合不经本助手，直接声明闭包。
+func (s *Services) factOf(ctx context.Context, projectID string, row func(team string) writes.FactRow) func() writes.FactRow {
+	team := ""
+	if projectID != "" {
+		if p, err := s.Projects.Get(ctx, s.DB.Runner(), projectID); err == nil {
+			team = p.TeamID
 		}
 	}
-	return rows
+	return func() writes.FactRow { return row(team) }
 }
 
 // ---- 受理检查族（可枚举面；守卫对账对象） ----
@@ -303,27 +243,6 @@ func (s *Services) projectHasNetwork(projectID string) acceptanceCheck {
 		}
 		return nil
 	}
-}
-
-// structureEvent 构造结构面事件的 Outbox 事实（负载字段只增）。projectID
-// 同时充当资源轴 Team 的解析锚（P0-2，resolveEventTeams）。
-func structureEvent(name, aggregate, id, projectID string) eventFact {
-	payload, _ := json.Marshal(structureEventPayload{ID: id, ProjectID: projectID}) //nolint:errcheck // 结构体字段恒可序列化
-	return eventFact{name: name, aggregate: aggregate, id: id, payload: payload, projectID: projectID}
-}
-
-// identityEvent 构造身份面事件的 Outbox 事实（payload 是最小 JSON 面）。
-func identityEvent(name, aggregate, id string, payload any) eventFact {
-	data, _ := json.Marshal(payload) //nolint:errcheck // map 载荷恒可序列化
-	return eventFact{name: name, aggregate: aggregate, id: id, payload: data}
-}
-
-// withPayload 返回替换载荷后的事件事实（载荷字段来自事务内写的返回行时，
-// 经切片元素就地填充：write 段先于 events 段执行）。
-func (e eventFact) withPayload(v any) eventFact {
-	data, _ := json.Marshal(v) //nolint:errcheck // map 载荷恒可序列化
-	e.payload = data
-	return e
 }
 
 // ---- 归属校验族（identity FK 面；行不存在 → repo 哨兵 ErrNotFound →

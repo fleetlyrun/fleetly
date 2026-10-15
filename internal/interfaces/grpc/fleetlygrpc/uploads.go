@@ -18,7 +18,7 @@ import (
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/sourceupload"
-	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/upload"
@@ -131,12 +131,16 @@ func (svc *BuildsService) UploadSource(stream deliveryv1.BuildsService_UploadSou
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			return svc.s.Uploads.Create(ctx, tx, row)
 		},
-		events: []eventFact{{name: eventUploadStored, aggregate: "project", id: projectID, payload: payload, projectID: projectID}},
-		auditsFrom: func() []*audit.Entry {
-			return []*audit.Entry{{
-				Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-				Action: "upload.create", Resource: "upload/" + row.ID, AfterFP: digest,
-			}}
+		facts: []func() writes.FactRow{
+			svc.s.factOf(ctx, projectID, func(team string) writes.FactRow {
+				return writes.FactRow{
+					Name: eventUploadStored, Aggregate: "project", ID: projectID,
+					Payload: payload,
+					TeamID:  team,
+					Action:  "upload.create", Resource: "upload/" + row.ID, AfterFP: digest,
+					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+				}
+			}),
 		},
 	})
 	if err != nil {

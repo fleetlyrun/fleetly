@@ -613,7 +613,8 @@ func (e *Engine) deliverOne(ctx context.Context, ch *channel.Channel, n alertNot
 	if err != nil {
 		failure = err.Error()
 		if payload, merr := json.Marshal(alertChannelFailedPayload{ChannelID: ch.ID, Error: failure}); merr == nil {
-			// 通知通道是平台级资源（channel 行无 Team 轴）：team 留 '' = 全员可见。
+			// 通知通道是平台级资源（无 owner 域——平台级，全员可见）：team
+			// 留 ''，终态口径。
 			if aerr := e.emitObservation(ctx, "", eventAlertChannelFail, "channel", ch.ID, payload); aerr != nil {
 				e.log.Error("metrics step: emit channel failure", "channel", ch.ID, "err", aerr)
 			}

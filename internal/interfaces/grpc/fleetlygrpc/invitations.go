@@ -16,6 +16,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/invitation"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/membership"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/user"
+	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 )
 
@@ -66,22 +67,24 @@ func (svc *InvitationsService) CreateInvitation(ctx context.Context, req *identi
 		CreatedBy: authn.ActorFromContext(ctx),
 		ExpiresAt: stateFormatTime(svc.s.DB.Clock().Now().Add(ttl)),
 	}
-	invitationCreatedEvents := []eventFact{identityEvent("invitation.created", "invitation", inv.ID, invitationCreatedPayload{Role: inv.RoleID})}
-	invitationCreatedEvents[0].team = inv.TeamID // 资源轴（P0-2）
 	err = svc.s.commit(ctx, writeFact{
 		// roleInTeam（Q-16 同族面）：邀请绑 team+role——不一致的邀请兑换出
 		// 跨 Team membership，同洞同修。
 		checks: []acceptanceCheck{svc.s.teamExists(teamID), svc.s.roleInTeam(req.GetRoleId(), teamID)},
 		write: func(ctx context.Context, tx *sql.Tx) error {
-			if err := svc.s.Invitations.Create(ctx, tx, inv); err != nil {
-				return err
-			}
-			invitationCreatedEvents[0].id = inv.ID
-			return nil
+			return svc.s.Invitations.Create(ctx, tx, inv)
 		},
-		events: invitationCreatedEvents,
-		auditsFrom: func() []*audit.Entry {
-			return []*audit.Entry{identityAudit(ctx, "invitation.create", "invitation/"+inv.ID, "", inv.ExpiresAt)}
+		facts: []func() writes.FactRow{
+			// 资源轴（P0-2）：邀请随目标 Team 落队。
+			func() writes.FactRow {
+				return writes.FactRow{
+					Name: "invitation.created", Aggregate: "invitation", ID: inv.ID,
+					Payload: mustJSON(invitationCreatedPayload{Role: inv.RoleID}),
+					TeamID:  inv.TeamID,
+					Action:  "invitation.create", Resource: "invitation/" + inv.ID, AfterFP: inv.ExpiresAt,
+					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+				}
+			},
 		},
 	})
 	if err != nil {
@@ -138,8 +141,6 @@ func (svc *InvitationsService) AcceptInvitation(ctx context.Context, req *identi
 
 	u := &user.User{Name: req.GetUserName()}
 	m := &membership.Membership{UserID: u.ID, TeamID: inv.TeamID, RoleID: inv.RoleID}
-	accepted := identityEvent("invitation.accepted", "invitation", inv.ID, invitationAcceptedPayload{User: u.Name})
-	accepted.team = inv.TeamID // 资源轴（P0-2）
 	err = svc.s.commit(ctx, writeFact{
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			if err := svc.s.Users.Create(ctx, tx, u); err != nil {
@@ -152,12 +153,20 @@ func (svc *InvitationsService) AcceptInvitation(ctx context.Context, req *identi
 			}
 			return svc.s.Invitations.MarkConsumed(ctx, tx, inv.ID)
 		},
-		events: []eventFact{accepted},
-		audits: []*audit.Entry{{
-			Actor: "user:" + u.Name, Source: audit.SourceManual,
-			Action: "invitation.accept", Resource: "invitation/" + inv.ID,
-			AfterFP: u.Name,
-		}},
+		facts: []func() writes.FactRow{
+			// 资源轴（P0-2）；审计来源是 manual（持信物的人当面操作；无
+			// gRPC 凭证语境）。
+			func() writes.FactRow {
+				return writes.FactRow{
+					Name: "invitation.accepted", Aggregate: "invitation", ID: inv.ID,
+					Payload: mustJSON(invitationAcceptedPayload{User: u.Name}),
+					TeamID:  inv.TeamID,
+					Action:  "invitation.accept", Resource: "invitation/" + inv.ID,
+					AfterFP: u.Name,
+					Actor:   "user:" + u.Name, Source: audit.SourceManual,
+				}
+			},
+		},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "invitation")
