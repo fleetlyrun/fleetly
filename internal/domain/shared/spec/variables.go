@@ -2,7 +2,8 @@
 // SharedVariable 在下、源声明 env（AppSpec 进程字段，部署源直传）居中、
 // App 级平台变量 AppVariable 在顶（同键覆盖）；归一化期合成进 AppSpec，
 // Revision 冻结即最终生效集（ADR-0027 案 a）。本文件只持纯函数——
-// SharedVariable/AppVariable 的装载是 API 层（freezeRevision 咽喉）的事。
+// SharedVariable/AppVariable 的装载是受理咽喉（application 层
+// engine.SubmitSpec）的事。
 package spec
 
 import (
@@ -36,7 +37,7 @@ func ValidateEnvKeys(field string, env map[string]string) error {
 // MergeSharedEnv 把 Project 层共享变量合成进 AppSpec 的全部进程
 // （Processes 与 FirstBootJobs 的 Process——迁移 job 同享共享层，ADR-0043
 // 决策 3）：flat union，共享层在下、进程自身 env（App 级）覆盖同键。
-// 冻结咽喉（freezeRevision）在 marshal 前调用——Revision 冻结的即最终
+// 冻结咽喉（engine.SubmitSpec）在 marshal 前调用——Revision 冻结的即最终
 // 生效集。protojson 规范序列化 map 按键排序，合成结果确定性可复现
 // （同 Source 同变量状态两次归一化逐字节相等）。
 func MergeSharedEnv(s *specv1.AppSpec, shared map[string]string) {

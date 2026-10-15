@@ -5,7 +5,6 @@ package fleetlygrpc
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -16,13 +15,10 @@ import (
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
-	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/application/composeintake"
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
-	"github.com/fleetlyrun/fleetly/internal/domain/delivery/revision"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/sourceupload"
-	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
@@ -136,101 +132,14 @@ func (svc *DeploymentsService) Deploy(ctx context.Context, req *deliveryv1.Deplo
 	return &deliveryv1.DeployResponse{Deployment: deploymentMsg(*d), Admission: admissionMsg(adm)}, nil
 }
 
-// unmarshalFrozenSpec 反序列化冻结体（所有权合并的读侧——engine 包的
-// loadSpec 是私有件，API 层就近持一份同语义 helper）。
-func unmarshalFrozenSpec(blob []byte) (*specv1.AppSpec, error) {
-	s := &specv1.AppSpec{}
-	if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(blob, s); err != nil {
-		return nil, err
-	}
-	return s, nil
-}
-
-// errRevisionReused 是 Revision 冻结受理命中内容寻址复用的哨兵（事务内
-// 错误只触发回滚——复用路径零写零事实；对外形态由 freezeRevision 映射
-// 为复用成功，errDeleteAborted 同款模式）。
-var errRevisionReused = errors.New("revision: content-addressed reuse (identical spec already frozen)")
-
-// freezeRevision 冻结 Revision（内容寻址复用：同内容只冻结一份；R1..Rn
-// 序号 App 内单调）。Deploy 与 webhook 触发共用——审计 actor/source 取
-// ctx（webhook 路径经 WithAuditOverride 标注）。三级变量合成的唯一咽喉
-// （ADR-0043 两级 → ADR-0072 三级）：冻结前把 Project 层 SharedVariable
-// （底）与 App 层 AppVariable（顶）合成进全部进程（源声明 env 居中被
-// 顶层覆盖），Revision 冻结的即最终生效集——所有源形态
-// （image/compose/upload/git push）经此归一。
-func freezeRevision(ctx context.Context, s *Services, appRow *app.App, appSpec *specv1.AppSpec, sourceText string) (*revision.Revision, error) {
-	if vars, err := s.SharedVariables.ListActive(ctx, s.DB.Runner(), appRow.ProjectID); err != nil {
-		return nil, err
-	} else if len(vars) > 0 {
-		shared := make(map[string]string, len(vars))
-		for _, v := range vars {
-			shared[v.Name] = v.Value
-		}
-		spec.MergeSharedEnv(appSpec, shared)
-	}
-	if vars, err := s.AppVariables.ListActive(ctx, s.DB.Runner(), appRow.ID); err != nil {
-		return nil, err
-	} else if len(vars) > 0 {
-		appVars := make(map[string]string, len(vars))
-		for _, v := range vars {
-			appVars[v.Name] = v.Value
-		}
-		spec.MergeAppEnv(appSpec, appVars)
-	}
-	body, err := marshalSpec(appSpec)
-	if err != nil {
-		return nil, err
-	}
-	var rev *revision.Revision
-	err = s.commit(ctx, writeFact{
-		checks: []acceptanceCheck{func(ctx context.Context, tx *sql.Tx) error {
-			existing, ferr := s.Revisions.FindByDigest(ctx, tx, appRow.ID, revision.Digest(body))
-			if ferr == nil {
-				rev = existing
-				return errRevisionReused // 复用即受理终态：零冻结零事实
-			}
-			if !errors.Is(ferr, state.ErrNotFound) {
-				return ferr
-			}
-			return nil
-		}},
-		write: func(ctx context.Context, tx *sql.Tx) error {
-			seq, serr := s.Revisions.NextSeq(ctx, tx, appRow.ID)
-			if serr != nil {
-				return serr
-			}
-			rev = &revision.Revision{AppID: appRow.ID, Seq: seq, Spec: body, SourceText: sourceText}
-			return s.Revisions.Create(ctx, tx, rev)
-		},
-		facts: []func() writes.FactRow{
-			// 双真偏离（仅取证面）：Revision 冻结无流面孪生——材料面不是
-			// 状态机，部署/构建的迁移事件由 engine 沿发射（A 化前亦只此
-			// 一条审计行，行集合零漂移）。
-			func() writes.FactRow {
-				return writes.FactRow{
-					Action: "revision.create", Resource: "revision/" + rev.ID, AfterFP: rev.Digest,
-					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-					LedgerOnly: true,
-				}
-			},
-		},
-	})
-	if errors.Is(err, errRevisionReused) {
-		return rev, nil // 内容寻址复用：同内容只冻结一份、不落新审计
-	}
-	if err != nil {
-		return nil, err
-	}
-	return rev, nil
-}
-
 // deployVarLookup 合成 compose 官方插值的平台变量环境：Project 层
-// SharedVariable 为底、App 层 AppVariable 顶（App 胜出——与 freezeRevision
-// 的三级分层同向；compose 形态的 env 值在受理期消解冻结，ADR-0074）。
-// 环境一次性物化（两次列表查询），闭包查表。装载失败上抛（P0-7.1）：
-// DB 瞬断不得静默吞成空环境——那会把内部故障伪装成"compose 变量不可
-// 消解"的 E_INVALID_ARGUMENT（fail-closed 消解律的用户面失真）；与
-// freezeRevision 的 ListActive 同纪律，经 mapStateError 落 E_INTERNAL。
+// SharedVariable 为底、App 层 AppVariable 顶（App 胜出——与受理咽喉
+// engine.SubmitSpec 的三级合成同向；compose 形态的 env 值在受理期消解
+// 冻结，ADR-0074）。环境一次性物化（两次列表查询），闭包查表。装载失败
+// 上抛（P0-7.1）：DB 瞬断不得静默吞成空环境——那会把内部故障伪装成
+// "compose 变量不可消解"的 E_INVALID_ARGUMENT（fail-closed 消解律的用户面
+// 失真）；与 engine 侧合成的 ListActive 同纪律，经 mapStateError 落
+// E_INTERNAL。
 func deployVarLookup(ctx context.Context, s *Services, appRow *app.App) (composeintake.VariableLookup, error) {
 	env := map[string]string{}
 	vars, err := s.SharedVariables.ListActive(ctx, s.DB.Runner(), appRow.ProjectID)
@@ -323,7 +232,7 @@ func normalizeDeploySource(req *deliveryv1.DeployRequest, appRow *app.App, uploa
 		}
 		// compose 受理语言 = compose-go 官方解析 + fleetly 方言执法
 		// （ADR-0074）；官方插值环境 = 平台变量（Shared ∪ AppVariable，
-		// App 胜出——与 freezeRevision 分层同向，未消解即拒）。
+		// App 胜出——与受理咽喉的三级合成同向，未消解即拒）。
 		s, err := composeintake.FromYAML([]byte(req.GetComposeYaml()), appRow.ID, appRow.ProjectID, varLookup)
 		if err != nil {
 			return nil, mapValidationError(err)

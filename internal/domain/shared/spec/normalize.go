@@ -63,8 +63,8 @@ func portDeclNetworks(ports []*specv1.PortSpec) []string {
 // 约束由 ValidateApp 叶子单源执法）+ AppRef 权威覆写（归属锚来自
 // DeployRequest.app_id 行，文件内声明不信任、恒覆写）+ schema_version
 // 缺省当前版（0 = 未声明；>当前版由 ValidateApp 拒——读入 check-strategy
-// 的"拒绝跳代"半边）。归一化产物与三形态同喉——freezeRevision 的共享
-// 变量合成与内容寻址复用天然覆盖。
+// 的"拒绝跳代"半边）。归一化产物与三形态同喉——受理咽喉
+// engine.SubmitSpec 的共享变量合成与内容寻址复用天然覆盖。
 func ParseSpecFile(body []byte, appID, projectID string) (*specv1.AppSpec, error) {
 	s := &specv1.AppSpec{}
 	if err := protojson.Unmarshal(body, s); err != nil {

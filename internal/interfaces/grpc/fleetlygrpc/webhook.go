@@ -17,7 +17,6 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,7 +32,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
-	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
 )
 
@@ -139,9 +137,9 @@ func (svc *HooksService) handlePush(ctx context.Context, req *deliveryv1.Receive
 	}
 
 	// 审计标注：操作者是 hook 本身（source=webhook、actor=hook:<App 名>）。
-	// 必须先于 freezeRevision 注入——冻结新 Revision 的 revision.create
-	// 审计行经同一 ctx 消费标注（此前标注在冻结之后，webhook 冻结行的
-	// source 错标为 api——ADR-0072 批修复的时序 bug）。
+	// 必须先于 engine.SubmitSpec（冻结相）注入——冻结新 Revision 的
+	// revision.create 审计行经同一 ctx 消费标注（此前标注在冻结之后，
+	// webhook 冻结行的 source 错标为 api——ADR-0072 批修复的时序 bug）。
 	ctx = authn.WithAuditOverride(ctx, "hook:"+appRow.Name, audit.SourceWebhook)
 
 	// 摄取核（push/sync 共用链）：ctx 已带 hook:<App>/webhook 审计覆写。
@@ -150,13 +148,15 @@ func (svc *HooksService) handlePush(ctx context.Context, req *deliveryv1.Receive
 }
 
 // ingestGitMaterial 是 hook 材料摄取核（push 与 RefreshGitHook 双入口共用，
-// 机制单源）：git 源 AppSpec（ref=commit）→ 所有权合并（ADR-0072 决策 2：
-// hook 新材料 + 当前冻结 Spec 的运行时半边——console 声明的运行时配置跨
-// 触发存活；首触发无冻结体 = 纯合成照旧）→ Revision 冻结 → admission
-// （CommitSHA 进去重锚；latest-wins 由 admission 收口）→ 台账/审计/outbox
-// 事件一拍落库（重投不产生第二行事实；无键重投的去重由 admission 承担）。
-// ctx 的审计标注由触发面先行注入（push=hook:<App>/webhook 覆写；sync=
-// 调用方真实身份）。
+// 机制单源）：git 源 AppSpec（ref=commit）→ 受理单咽喉 engine.SubmitSpec
+// （P3-7 下沉批：所有权合并——ADR-0072 决策 2 的 push 方向 = 新材料 + 当前
+// 冻结 Spec 的运行时半边，console 声明的运行时配置跨触发存活；首触发无冻结
+// 体 = 纯合成照旧。合并/三级变量合成/Revision 冻结（内容寻址复用）/
+// admission（CommitSHA 进去重锚；latest-wins 由 admission 收口）全在 engine
+// 一处）→ 台账/审计/outbox 事件一拍落库（重投不产生第二行事实；无键重投的
+// 去重由 admission 承担）。ctx 的审计标注由触发面先行注入（push=
+// hook:<App>/webhook 覆写；sync=调用方真实身份）——revision.create 与
+// deployment.create 审计行经同一 ctx 消费标注（不变式④：覆写先于冻结）。
 func (svc *HooksService) ingestGitMaterial(ctx context.Context, appRow *app.App, h *hook.Hook,
 	branch, commit, delivery, eventName, auditAction string,
 ) (string, *deliveryv1.Admission, error) {
@@ -164,24 +164,14 @@ func (svc *HooksService) ingestGitMaterial(ctx context.Context, appRow *app.App,
 	if err != nil {
 		return "", nil, err
 	}
-	if latest, lerr := svc.s.Revisions.Latest(ctx, svc.s.DB.Runner(), appRow.ID); lerr == nil {
-		frozen, ferr := unmarshalFrozenSpec(latest.Spec)
-		if ferr != nil {
-			return "", nil, apperr.New("E_INTERNAL", "hook merge: frozen revision is not valid protojson (%v)", ferr)
-		}
-		appSpec = spec.MergeHookOwned(appSpec, frozen)
-	} else if !errors.Is(lerr, state.ErrNotFound) {
-		return "", nil, mapStateError(lerr, "revision")
-	}
-	rev, err := freezeRevision(ctx, svc.s, appRow, appSpec, "")
-	if err != nil {
-		return "", nil, mapStateError(err, "revision")
-	}
-	d, adm, err := svc.s.Engine.Submit(ctx, engine.SubmitRequest{
-		AppID: appRow.ID, RevisionID: rev.ID, CommitSHA: commit,
+	// rev 响应面不回显（与旧链一致——deployment.to_revision 已承载锚定）。
+	_, d, adm, err := svc.s.Engine.SubmitSpec(ctx, engine.SubmitSpecRequest{
+		AppID: appRow.ID, Spec: appSpec,
+		HookOwned: true, Merge: engine.MergeMaterial, // 新材料 + 冻结运行时（MergeHookOwned 参数序方向在 engine）
+		Submit: &engine.SubmitOptions{CommitSHA: commit},
 	})
 	if err != nil {
-		return "", nil, mapStateError(err, "deployment")
+		return "", nil, mapStateError(err, "revision")
 	}
 	payload, err := json.Marshal(hookPushAcceptedPayload{Branch: branch, Commit: commit, Deployment: d.ID})
 	if err != nil {

@@ -1,7 +1,7 @@
 package engine
 
-// SubmitSpec 咽喉白盒测试（P3 批 7 第 1 步）：行为自 api 层 freezeRevision
-// + hook 合并块下沉，本文件是移植语义的行为锚——内容寻址复用（零写零
+// SubmitSpec 咽喉白盒测试（P3 批 7 第 1 步）：行为自 api 层冻结位 + hook
+// 合并块下沉，本文件是移植语义的行为锚——内容寻址复用（零写零
 // 事实）、三级变量合成序、合并方向参数序、只冻结形态、admission 透传、
 // 防御断言与 FrozenSpecError 文案形态。
 

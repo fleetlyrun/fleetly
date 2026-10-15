@@ -1,11 +1,11 @@
 package engine
 
-// 部署受理咽喉（P3 批 7 第 1 步，行为自 internal/interfaces 的
-// freezeRevision + hook 合并块下沉；api 层第 2/3 步才切换）：合并（方向
-// 参数化）→ 三级变量合成 → Revision 冻结（内容寻址复用）→ admission。
-// 四源归一化/旗标互斥/hook 闸门等请求形状执法留在 api——本域只执合成/
-// 冻结/admission（engine 零 apperr：哨兵错误 + FrozenSpecError，errcode
-// 映射住 api 层）。
+// 部署受理咽喉（P3 批 7：行为自 internal/interfaces 的冻结位 + hook 合并
+// 块下沉，第 3 步起 api Deploy 与 webhook/refresh 链已全部切换本咽喉）：
+// 合并（方向参数化）→ 三级变量合成 → Revision 冻结（内容寻址复用）→
+// admission。四源归一化/旗标互斥/hook 闸门等请求形状执法留在 api——本域
+// 只执合成/冻结/admission（engine 零 apperr：哨兵错误 + FrozenSpecError，
+// errcode 映射住 api 层）。
 //
 // 序列化铁律：冻结体 marshal 与 api 层 marshalSpec 同参（protojson
 // EmitUnpopulated:false + UseProtoNames:true）——本参数决定 Revision
@@ -102,10 +102,10 @@ func frozenSpecSite(m MergeMode) string {
 	return "hook merge"
 }
 
-// errRevisionReused 是 Revision 冻结受理命中内容寻址复用的哨兵（事务内
+// errContentReused 是 Revision 冻结受理命中内容寻址复用的哨兵（事务内
 // 错误只触发回滚——复用路径零写零事实；对外形态由 SubmitSpec 映射为复用
 // 成功，errDeleteAborted 同款模式）。
-var errRevisionReused = errors.New("revision: content-addressed reuse (identical spec already frozen)")
+var errContentReused = errors.New("revision: content-addressed reuse (identical spec already frozen)")
 
 // SubmitSpec 是部署受理的唯一咽喉：合并（方向参数化）→ 三级变量合成 →
 // Revision 冻结（内容寻址复用）→ admission（独立事务——freeze Tx 与
@@ -155,7 +155,7 @@ func (e *Engine) SubmitSpec(ctx context.Context, req SubmitSpecRequest) (*revisi
 		return nil, nil, nil, fmt.Errorf("engine: submit spec: unknown merge mode %d", req.Merge)
 	}
 
-	// 3. 三级变量合成（freezeRevision 移植；顺序即合成律——Shared 底 <
+	// 3. 三级变量合成（自 api 层冻结位移植；顺序即合成律——Shared 底 <
 	// 源声明 env 中 < AppVariable 顶，不变式②）。装载失败上抛不吞
 	//（P0-7.1 fail-closed：DB 瞬断不得静默吞成空环境）。
 	if vars, verr := e.sharedVariables.ListActive(ctx, e.db.Runner(), appRow.ProjectID); verr != nil {
@@ -192,7 +192,7 @@ func (e *Engine) SubmitSpec(ctx context.Context, req SubmitSpecRequest) (*revisi
 				existing, derr := e.revisions.FindByDigest(ctx, tx, req.AppID, revision.Digest(body))
 				if derr == nil {
 					rev = existing
-					return errRevisionReused // 复用即受理终态：零冻结零事实
+					return errContentReused // 复用即受理终态：零冻结零事实
 				}
 				if !errors.Is(derr, state.ErrNotFound) {
 					return derr
@@ -223,7 +223,7 @@ func (e *Engine) SubmitSpec(ctx context.Context, req SubmitSpecRequest) (*revisi
 			},
 		})
 	})
-	if ferr != nil && !errors.Is(ferr, errRevisionReused) {
+	if ferr != nil && !errors.Is(ferr, errContentReused) {
 		return nil, nil, nil, ferr
 	}
 	// 内容寻址复用（ferr = 哨兵）：rev 已在 checks 内置行（既有冻结体）——

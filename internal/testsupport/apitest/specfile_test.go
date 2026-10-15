@@ -18,7 +18,8 @@ import (
 // TestDeploySpecFileFullChain（F3.5 第四源）：裸 AppSpec 全字段 intake——
 // 多进程/端口/网络/探针直接声明；AppRef 权威覆写（文件内 app 声明不信任，
 // 恒以 DeployRequest.app_id 行为准）；schema_version 缺省当前版。归一化
-// 产物与三形态同喉（共享变量合成 + 内容寻址复用随 freezeRevision）。
+// 产物与三形态同喉（共享变量合成 + 内容寻址复用随受理咽喉
+// engine.SubmitSpec）。
 func TestDeploySpecFileFullChain(t *testing.T) {
 	h := apitest.New(t)
 	ctx := sdk.WithToken(context.Background(), h.Token)
