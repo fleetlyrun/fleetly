@@ -52,18 +52,29 @@ var engineFourInOneExemptions = map[string]string{
 
 // engineFuncScan 解析 internal/application/engine 全部非测试 .go，产出：
 // 文件相对路径 → 函数名 → 该函数体含 Transit 直调/行写/事实发射位。
+//
+// P3-0 接收者泛化（2026-10-15）：两遍扫描。第一遍收集包内全部命名类型名
+// （Engine、execDomain、Loop……动态全集，后续批域 struct 改名零维护）；
+// 第二遍逐函数解析 engine-self 标识符集后做调用链分析。P3 域化九批会把
+// 字段与行为收编进未导出域 struct，方法接收者随之不再是 *Engine、名字
+// 不再是 e，repo 调用链也会变多级（x.repos.tasks.Transit）——字面 e +
+// 两层选择器匹配会落盲区，故按声明动态解析 self、按链匹配调用。
 type engineFuncFacts struct {
 	file     string // 仓库相对路径
-	transit  bool   // e.<repo>.Transit 直调
-	rowWrite bool   // e.<repo>.<行写方法>
-	factEmit bool   // e.outbox.Append / e.audits.Append / writes.Emit / writes.Sequence
+	transit  bool   // <self>.<repo>.Transit 直调（任意链深）
+	rowWrite bool   // <self>.<repo>.<行写方法>
+	factEmit bool   // <self>.outbox/audits.Append、emitObservation、writes.Emit/Sequence
 }
 
 func scanEngineFuncs(t *testing.T) map[string]engineFuncFacts {
 	t.Helper()
-	funcs := map[string]engineFuncFacts{}
 	fset := token.NewFileSet()
 	root := filepath.Join(repoRoot(t), filepath.Join("internal", "application", "engine"))
+
+	// 第一遍：包内命名类型全集 + 缓存解析结果供第二遍复用（单次 WalkDir）。
+	engineTypes := map[string]bool{}
+	var parsed []*ast.File
+	var rels []string
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -75,7 +86,29 @@ func scanEngineFuncs(t *testing.T) map[string]engineFuncFacts {
 		if perr != nil {
 			return perr
 		}
-		rel := filepath.ToSlash(path[len(repoRoot(t))+1:])
+		for _, decl := range file.Decls {
+			gd, ok := decl.(*ast.GenDecl)
+			if !ok {
+				continue
+			}
+			for _, spec := range gd.Specs {
+				if ts, ok := spec.(*ast.TypeSpec); ok {
+					engineTypes[ts.Name.Name] = true
+				}
+			}
+		}
+		parsed = append(parsed, file)
+		rels = append(rels, filepath.ToSlash(path[len(repoRoot(t))+1:]))
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 第二遍：逐函数解析 self 集并按调用链归类。
+	funcs := map[string]engineFuncFacts{}
+	for i, file := range parsed {
+		rel := rels[i]
 		for _, decl := range file.Decls {
 			fd, ok := decl.(*ast.FuncDecl)
 			if !ok || fd.Body == nil {
@@ -83,6 +116,7 @@ func scanEngineFuncs(t *testing.T) map[string]engineFuncFacts {
 			}
 			key := fd.Name.Name + "@" + rel
 			facts := engineFuncFacts{file: rel}
+			self := engineSelfIdents(fd, engineTypes)
 			ast.Inspect(fd.Body, func(n ast.Node) bool {
 				call, ok := n.(*ast.CallExpr)
 				if !ok {
@@ -92,52 +126,55 @@ func scanEngineFuncs(t *testing.T) map[string]engineFuncFacts {
 				if !ok {
 					return true
 				}
-				if sel.Sel.Name == "Append" {
-					if inner, ok := sel.X.(*ast.SelectorExpr); ok {
-						if id, ok := inner.X.(*ast.Ident); ok && id.Name == "e" &&
-							(inner.Sel.Name == "outbox" || inner.Sel.Name == "audits") {
-							facts.factEmit = true
+				base, segs := selectorChain(sel)
+				terminal := sel.Sel.Name
+				if base != nil && self[base.Name] {
+					// 行写：链上任一段命中聚合 repo 字段即按末端方法归类——
+					// 多级链 x.repos.tasks.Transit 与两层链 e.tasks.Transit
+					// 同权。false positive 检查：e.db.Runner 的 db、
+					// e.build.logs.write 的 build（repoFields 是 builds）均
+					// 不在 repoFields，不误伤。
+					inRepo := false
+					for _, seg := range segs {
+						if transitionRepoFields[seg] {
+							inRepo = true
+							break
 						}
 					}
-					return true
+					if inRepo {
+						switch {
+						case terminal == "Transit":
+							facts.transit = true
+							facts.rowWrite = true
+						case transitionWriteMethods[terminal]:
+							facts.rowWrite = true
+						}
+					}
+					// 事实发射：outbox/audits 的 Append（任意链深）与便捷前门
+					// emitObservation（P3 域化后接收者随域 struct 换名仍在列）。
+					switch {
+					case terminal == "Append":
+						for _, seg := range segs {
+							if seg == "outbox" || seg == "audits" {
+								facts.factEmit = true
+								break
+							}
+						}
+					case terminal == "emitObservation":
+						facts.factEmit = true
+					}
 				}
 				// P2 刀 1 起事实发射收编进 writes kernel（writes.Emit /
-				// writes.Sequence——本体住 transition.go/acceptance.go；engine
-				// 侧便捷前门 emitObservation 一并入发射位匹配），守卫不因
-				// API 换形失明。
-				if sel.Sel.Name == "Emit" || sel.Sel.Name == "Sequence" {
-					if id, ok := sel.X.(*ast.Ident); ok && id.Name == "writes" {
-						facts.factEmit = true
-					}
-				}
-				if sel.Sel.Name == "emitObservation" {
-					if id, ok := sel.X.(*ast.Ident); ok && id.Name == "e" {
-						facts.factEmit = true
-					}
-				}
-				inner, ok := sel.X.(*ast.SelectorExpr)
-				if !ok {
-					return true
-				}
-				field, ok := inner.X.(*ast.Ident)
-				if !ok || field.Name != "e" || !transitionRepoFields[inner.Sel.Name] {
-					return true
-				}
-				switch {
-				case sel.Sel.Name == "Transit":
-					facts.transit = true
-					facts.rowWrite = true
-				case transitionWriteMethods[sel.Sel.Name]:
-					facts.rowWrite = true
+				// writes.Sequence——本体住 transition.go/acceptance.go），包限
+				// 定形态 base 是包名、不必在 self 集，守卫不因 API 换形失明。
+				if base != nil && base.Name == "writes" &&
+					(terminal == "Emit" || terminal == "Sequence") {
+					facts.factEmit = true
 				}
 				return true
 			})
 			funcs[key] = facts
 		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
 	}
 	// 防盲自检：扫描面必须足够大，且 transition.go 里必须真有 Transit
 	// 直调（前门本体）——扫描器失明即红。
@@ -154,6 +191,86 @@ func scanEngineFuncs(t *testing.T) map[string]engineFuncFacts {
 		t.Fatalf("scan found no Transit call in transition.go — guard is blind, fix the scan")
 	}
 	return funcs
+}
+
+// engineSelfIdents 解析函数的 engine-self 标识符集：接收者基类型 ∈ 包内
+// 命名类型集（Engine 本体或 P3 域化后的任意域 struct）时接收者名入集；
+// Engine/*Engine 形参名入集（自由助手 func fourInOne(eng *Engine) 形态）。
+func engineSelfIdents(fd *ast.FuncDecl, engineTypes map[string]bool) map[string]bool {
+	self := map[string]bool{}
+	if fd.Recv != nil && len(fd.Recv.List) > 0 {
+		recv := fd.Recv.List[0]
+		if base := baseIdent(recv.Type); base != nil && engineTypes[base.Name] {
+			for _, name := range recv.Names {
+				self[name.Name] = true
+			}
+		}
+	}
+	if fd.Type != nil && fd.Type.Params != nil {
+		for _, param := range fd.Type.Params.List {
+			if !isEngineType(param.Type) {
+				continue
+			}
+			for _, name := range param.Names {
+				self[name.Name] = true
+			}
+		}
+	}
+	return self
+}
+
+// selectorChain 沿选择器调用链下行到基 Ident，返回基与自基向末的段名序列
+// （x.repos.tasks.Transit → base=x, segs=[repos tasks]）；链基非 Ident
+// （foo().tasks.Transit 形态）返回 nil——无 self 归属，不匹配。
+func selectorChain(sel *ast.SelectorExpr) (*ast.Ident, []string) {
+	var segs []string
+	x := ast.Expr(sel)
+	for {
+		s, ok := x.(*ast.SelectorExpr)
+		if !ok {
+			break
+		}
+		segs = append(segs, s.Sel.Name)
+		x = s.X
+	}
+	id, ok := x.(*ast.Ident)
+	if !ok {
+		return nil, nil
+	}
+	for i, j := 0, len(segs)-1; i < j; i, j = i+1, j-1 {
+		segs[i], segs[j] = segs[j], segs[i]
+	}
+	return id, segs
+}
+
+// baseIdent 解析类型表达式的基类型 Ident（剥一层 * 与泛型实例化实参）。
+func baseIdent(expr ast.Expr) *ast.Ident {
+	switch t := expr.(type) {
+	case *ast.Ident:
+		return t
+	case *ast.StarExpr:
+		return baseIdent(t.X)
+	case *ast.IndexExpr:
+		return baseIdent(t.X)
+	case *ast.IndexListExpr:
+		return baseIdent(t.X)
+	}
+	return nil
+}
+
+// isEngineType 报告类型表达式是否 Engine/*Engine 字面形态（严格字面：
+// 别名、限定名 pkg.Engine、切片/映射元素位不认——守卫语义是"递了引擎
+// 壳本体"，扩散形态各归各的守卫）。
+func isEngineType(expr ast.Expr) bool {
+	switch t := expr.(type) {
+	case *ast.Ident:
+		return t.Name == "Engine"
+	case *ast.StarExpr:
+		if id, ok := t.X.(*ast.Ident); ok {
+			return id.Name == "Engine"
+		}
+	}
+	return false
 }
 
 // TestTransitCASLivesOnlyInTransition：聚合 repo 的 Transit 直调只许在

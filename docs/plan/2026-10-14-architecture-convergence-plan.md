@@ -98,7 +98,7 @@ P2-3 A 化 + 四族事件 — [x]（0fb54ce + 批三收尾：acceptance 62 处 +
 P2-4 守卫 — [x]（factappend 白名单 + factdual 双真纪律；红灯双份自证）
 
 ## P3 engine 域化九批（6-9 天）
-P3-0 守卫前置（transitionguard 接收者泛化 + 域 struct 禁回引 Engine）— [ ]
+P3-0 守卫前置（transitionguard 接收者泛化 + 域 struct 禁回引 Engine）— [x]（红灯双证：复核者独立探针嵌入/匿名/多级链三形态四命中；现树三处回引 nsBatch/buildLogIngester/bufferWriter 入豁免带理由，随批 2/批 6 去除）
 P3-1 exec（P0-1 修复正式收编 + 会话 ID 随机化 + ADR-0070 修订 + 单测扩充）— [ ]
 P3-2 observ（metrics 拆 exposition/alerting/channelnotify）→ P3-3 task/run（动词拆 taskverbs）→ P3-4 data → P3-5 managed → P3-6 build/material — [ ]
 P3-7 deploy 域 + SubmitSpec（v2 §4 九条不变式逐条 apitest 断言；ADR-0072/0074 追记咽喉新址）— [ ]
