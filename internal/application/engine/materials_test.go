@@ -13,9 +13,9 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/volume"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/keyring"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/volume"
 )
 
 // putSecret 落一条 Secret（age 信封）。ID 从名字哈希派生（同名前缀的

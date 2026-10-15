@@ -15,13 +15,18 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/revision"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/token"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
 	configrepo "github.com/fleetlyrun/fleetly/internal/domain/structure/config"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/network"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/networkpeer"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/route"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/volume"
 	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/outbox"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/github"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
@@ -37,20 +42,20 @@ import (
 	deploymentrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/deployment"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/githubapp"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/logcursor"
-	networkrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/networkpeer"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
+	networkpeerrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/networkpeer"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/node"
 	outboxrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/outbox"
 	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
 	revisionrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/revision"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/route"
+	routerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/route"
 	runrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/run"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/schedule"
 	secretrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/secret"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/sourceupload"
 	taskrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/task"
 	tokenrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/token"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/volume"
+	volumerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/volume"
 )
 
 // 哨兵错误（API 层映射 errcode；engine 自身不依赖 apperr）。
@@ -375,7 +380,7 @@ type Engine struct {
 	//（吊销排空拉式扫描，P1-8）。
 	tasks  task.Repo
 	runs   run.Repo
-	tokens *tokenrepo.Repo
+	tokens token.Repo
 
 	// Schedule 域（F1.7）：聚合 repo + 到期拍环（fire 铸 one-shot Task 后
 	// 交 taskLoop 驱动——Schedule 只拥有"何时拍"）。
@@ -383,7 +388,7 @@ type Engine struct {
 
 	// 跨 Project peer 声明（F1.8，ADR-0013 附录 A）：批准态真源——
 	// 投影翻译（strict/isolate）与撤销隔离的解析面。
-	peerDecls *networkpeer.Repo
+	peerDecls networkpeer.Repo
 
 	// 上传产物行（F1.10，ADR-0019 附录 A）：构建输入解析面（upload id →
 	// digest → blob 解包）。
@@ -496,7 +501,7 @@ type Engine struct {
 
 	// Proxy 面（F0.15）：Route 全量发布 + 受管 Provider reconciler。
 	proxy  capability.Proxy
-	routes *route.Repo
+	routes route.Repo
 
 	// Registry 面（F1.11，ADR-0019 附录 B）：构建推送目标 + from_build
 	// 引用组合 + 平台拉取凭证 + 受管 zot 自宿。
@@ -506,8 +511,8 @@ type Engine struct {
 	cipher   *material.Cipher
 	secrets  secret.Repo
 	configs  configrepo.Repo
-	volumes  *volume.Repo
-	networks *networkrepo.Repo // 受管 Proxy 挂网真源（活跃 Project 网络全量）
+	volumes  volume.Repo
+	networks network.Repo // 受管 Proxy 挂网真源（活跃 Project 网络全量）
 
 	// GitHub App 接入材料（ADR-0073 阶段 B）：聚合 repo + 最小客户端——
 	// clone 前按 host+属主解析并现铸 installation token（gitmaterial.go）。
@@ -568,7 +573,7 @@ func New(deps Deps, opts Options) *Engine {
 		runs:         runrepo.New(clock),
 		tokens:       tokenrepo.New(clock),
 		schedules:    schedule.New(clock),
-		peerDecls:    networkpeer.New(clock),
+		peerDecls:    networkpeerrepo.New(clock),
 		uploads:      sourceupload.New(clock),
 		browseRepo:   browserepo.New(clock),
 		databases:    dbrepo.New(clock),
@@ -585,10 +590,10 @@ func New(deps Deps, opts Options) *Engine {
 		driftLoop:    NewLoop("drift", log),
 		browseLoop:   NewLoop("browse", log),
 		nodeLeftSeen: map[string]bool{},
-		routes:       route.New(clock),
+		routes:       routerepo.New(clock),
 		secrets:      secretrepo.New(clock),
 		configs:      cfgrepo.New(clock),
-		volumes:      volume.New(clock),
+		volumes:      volumerepo.New(clock),
 		networks:     networkrepo.New(clock),
 		ghApps:       githubapp.New(clock),
 		ghClient:     github.NewClient(nil, nil),

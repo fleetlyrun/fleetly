@@ -10,8 +10,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/appvariable"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/appvariable"
+	appvariablerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/appvariable"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
 
@@ -74,7 +75,7 @@ func TestAppVariableUpsertConcurrentSameNameConflict(t *testing.T) {
 	}
 	upsertErr := make(chan error, 1)
 	go func() {
-		upsertErr <- appvariable.New(clock).Upsert(ctx, gate, &appvariable.AppVariable{
+		upsertErr <- appvariablerepo.New(clock).Upsert(ctx, gate, &appvariable.AppVariable{
 			AppID: appID, Name: "raced", Value: "b-value",
 		})
 	}()
@@ -93,7 +94,7 @@ func TestAppVariableUpsertConcurrentSameNameConflict(t *testing.T) {
 		"concurrent same-name PUT must normalize the unique violation, got: %v", err)
 
 	// 落库行仍是 A 的那颗（B 的 INSERT 失败即整体无效果）。
-	got, err := appvariable.New(clock).GetByName(ctx, dbB.Runner(), appID, "raced")
+	got, err := appvariablerepo.New(clock).GetByName(ctx, dbB.Runner(), appID, "raced")
 	require.NoError(t, err)
 	assert.Equal(t, "a-value", got.Value)
 }

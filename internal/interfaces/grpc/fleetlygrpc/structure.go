@@ -22,13 +22,13 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/appvariable"
 	configrepo "github.com/fleetlyrun/fleetly/internal/domain/structure/config"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/network"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/appvariable"
-	networkrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/sharedvariable"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/volume"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/sharedvariable"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/volume"
 )
 
 // 结构面事件名（usage 反扫的字面量锚点；C5 补齐——结构写操作此前只有
@@ -136,7 +136,7 @@ func (svc *ProjectsService) CreateProject(ctx context.Context, req *structurev1.
 	// workload Ensure 建了，networks 表（受管 Proxy 挂靠真源）却无行，traefik
 	// 永不挂靠该网 → 路由 502。出生即建行，引用面与挂靠面同源；overlay
 	// 本身仍随首个 workload 物化（表行不建网，无空跑）。
-	net := &networkrepo.Network{ProjectID: p.ID, Name: "default"}
+	net := &network.Network{ProjectID: p.ID, Name: "default"}
 	// Team 轴接实（ADR-0028）：归属 Team 必须存在——Project 落在不存在
 	// 的 Team 上会让域解析（engine projectTeam）悬空。
 	events := []eventFact{

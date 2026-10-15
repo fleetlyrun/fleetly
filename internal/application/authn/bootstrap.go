@@ -15,10 +15,11 @@ import (
 	"strings"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/token"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 	tokenrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/token"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/user"
+	userrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/user"
 )
 
 const (
@@ -44,7 +45,7 @@ func EnsureBootstrapToken(ctx context.Context, db *persistence.DB, dataRoot stri
 		return BootstrapResult{}, fmt.Errorf("authn: seed: %w", err)
 	}
 	tokens := tokenrepo.New(db.Clock())
-	users := user.New(db.Clock())
+	users := userrepo.New(db.Clock())
 
 	alive, err := tokens.HasAliveBootstrap(ctx, db.Runner())
 	if err != nil {
@@ -74,7 +75,7 @@ func EnsureBootstrapToken(ctx context.Context, db *persistence.DB, dataRoot stri
 	if err != nil {
 		return BootstrapResult{}, fmt.Errorf("authn: token material: %w", err)
 	}
-	row := &tokenrepo.Token{
+	row := &token.Token{
 		Name:   identity.BootstrapTokenName,
 		TeamID: identity.DefaultTeamID, RoleID: identity.RoleOwnerID,
 		SHA256: material.SHA256, Prefix: material.Prefix,

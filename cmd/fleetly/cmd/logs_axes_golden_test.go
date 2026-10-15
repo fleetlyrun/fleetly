@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	runrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/run"
-	taskrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/task"
+	runrepo "github.com/fleetlyrun/fleetly/internal/domain/automation/run"
+	taskrepo "github.com/fleetlyrun/fleetly/internal/domain/automation/task"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
 )
 

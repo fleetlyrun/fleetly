@@ -8,12 +8,13 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/network"
 	networkrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
 
-func newNetwork(id, projectID, name string) *networkrepo.Network {
-	return &networkrepo.Network{ID: id, ProjectID: projectID, Name: name}
+func newNetwork(id, projectID, name string) *network.Network {
+	return &network.Network{ID: id, ProjectID: projectID, Name: name}
 }
 
 // ADR-0026 List 分页（after_* + limit）：name 字典序升序（既有排序轴不变）、
@@ -26,7 +27,7 @@ func TestNetworkListByProjectPagePagination(t *testing.T) {
 	const projA = "01JD0PROJ0000000000000000A"
 	const projB = "01JD0PROJ0000000000000000B"
 	// 字典序与落序交错落三行（projA）+ 异项目一行对照。
-	rows := []*networkrepo.Network{
+	rows := []*network.Network{
 		newNetwork("01JD0NETR000000000000000003", projA, "workers"),
 		newNetwork("01JD0NETR000000000000000002", projA, "default"),
 		newNetwork("01JD0NETR000000000000000001", projB, "other"),

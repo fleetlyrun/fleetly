@@ -13,10 +13,10 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/invitation"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/membership"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/user"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/invitation"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/membership"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/user"
 )
 
 type InvitationsService struct {

@@ -10,8 +10,8 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/route"
 	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/route"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
 

@@ -1,8 +1,6 @@
-// Package networkpeer 是 Network Peer 聚合 repo（ADR-0013 附录 A.1，
-// F1.8）：一条跨 Project 挂靠声明——挂靠方项目 declare（pending）→
-// 接收方 approve（approved）→ 任一侧 revoke（revoked；重新挂靠走新声明
-// 行，旧 revoked 行留作审计事实）。唯一性 (network_id, peer_project_id)
-// 只在非 revoked 行间成立（部分唯一索引）。
+// Package networkpeer 是 Network Peer 聚合 repo 的 SQLite 实现：行类型与
+// Repo 接口住 domain/structure/networkpeer（ADR-0075 Repo 接口层），本包
+// 只持不导出实现与构造。
 package networkpeer
 
 import (
@@ -11,42 +9,22 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/networkpeer"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
-// State 是声明状态机值（kebab 拼写冻结，与 Task/Schedule 同款）。
-type State string
-
-const (
-	StatePending  State = "pending"
-	StateApproved State = "approved"
-	StateRevoked  State = "revoked"
-)
-
-// Peer 是聚合行（revoked 行不删——审批历史是审计事实）。
-type Peer struct {
-	ID            string
-	Seq           int64
-	NetworkID     string
-	PeerProjectID string
-	State         State
-	CreatedAt     string
-	UpdatedAt     string
-	ApprovedAt    string
-}
-
-// Repo 是 Network Peer 聚合存取。
-type Repo struct {
+// repo 是 domain networkpeer.Repo 的 SQLite 实现。
+type repo struct {
 	clock state.Clock
 }
 
-// New 构造 repo。
-func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
+// New 构造 repo（直接返回接口——消费面只见 domain networkpeer.Repo）。
+func New(clock state.Clock) networkpeer.Repo { return &repo{clock: clock} }
 
 // Create 落声明行（挂靠方 declare）。同 (network, peer) 已有非 revoked 行
 // → ErrAlreadyExists（pending/approved 在场不可重复声明；撤销后可再来——
 // 新审批环）。
-func (r *Repo) Create(ctx context.Context, run state.Runner, p *Peer) error {
+func (r *repo) Create(ctx context.Context, run state.Runner, p *networkpeer.Peer) error {
 	seq, err := persistence.NextSeq(ctx, run, "network_peers")
 	if err != nil {
 		return err
@@ -57,7 +35,7 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, p *Peer) error {
 	}
 	now := state.FormatTime(r.clock.Now())
 	p.CreatedAt, p.UpdatedAt = now, now
-	p.State = StatePending
+	p.State = networkpeer.StatePending
 	_, err = run.ExecContext(ctx, `
 		INSERT INTO network_peers (id, seq, network_id, peer_project_id, state, created_at, updated_at, approved_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, '')`,
@@ -70,14 +48,14 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, p *Peer) error {
 }
 
 // Get 按 ID 直读（含 revoked——终态事实可见）。
-func (r *Repo) Get(ctx context.Context, run state.Runner, id string) (*Peer, error) {
+func (r *repo) Get(ctx context.Context, run state.Runner, id string) (*networkpeer.Peer, error) {
 	row := run.QueryRowContext(ctx, selectCols+" WHERE id = ?", id)
 	return scanPeer(row.Scan)
 }
 
 // FindActive 按 (network, peer project) 读非 revoked 行（无 → ErrNotFound；
 // pending/approved 均返回——批准态由调用方判定）。
-func (r *Repo) FindActive(ctx context.Context, run state.Runner, networkID, peerProjectID string) (*Peer, error) {
+func (r *repo) FindActive(ctx context.Context, run state.Runner, networkID, peerProjectID string) (*networkpeer.Peer, error) {
 	row := run.QueryRowContext(ctx,
 		selectCols+" WHERE network_id = ? AND peer_project_id = ? AND state != 'revoked'",
 		networkID, peerProjectID)
@@ -86,12 +64,12 @@ func (r *Repo) FindActive(ctx context.Context, run state.Runner, networkID, peer
 
 // Approve 是接收方批准的 CAS（pending → approved，落 approved_at）。
 // 前置不符 → ErrConflict（已批准/已撤销）。
-func (r *Repo) Approve(ctx context.Context, run state.Runner, id string) error {
+func (r *repo) Approve(ctx context.Context, run state.Runner, id string) error {
 	now := state.FormatTime(r.clock.Now())
 	res, err := run.ExecContext(ctx, `
 		UPDATE network_peers SET state = ?, approved_at = ?, updated_at = ?
 		WHERE id = ? AND state = ?`,
-		string(StateApproved), now, now, id, string(StatePending))
+		string(networkpeer.StateApproved), now, now, id, string(networkpeer.StatePending))
 	if err != nil {
 		return err
 	}
@@ -106,11 +84,11 @@ func (r *Repo) Approve(ctx context.Context, run state.Runner, id string) error {
 
 // Revoke 是撤销的 CAS（pending|approved → revoked）。已 revoked 由调用方
 // 幂等短路（Get 判态），此处只负责单拍迁移。
-func (r *Repo) Revoke(ctx context.Context, run state.Runner, id string) error {
+func (r *repo) Revoke(ctx context.Context, run state.Runner, id string) error {
 	res, err := run.ExecContext(ctx, `
 		UPDATE network_peers SET state = ?, updated_at = ?
 		WHERE id = ? AND state IN ('pending', 'approved')`,
-		string(StateRevoked), state.FormatTime(r.clock.Now()), id)
+		string(networkpeer.StateRevoked), state.FormatTime(r.clock.Now()), id)
 	if err != nil {
 		return err
 	}
@@ -125,7 +103,7 @@ func (r *Repo) Revoke(ctx context.Context, run state.Runner, id string) error {
 
 // List 分页枚举（新→旧 + after 游标；ADR-0026）。network_id / peer_project_id
 // 过滤可选——接收方与挂靠方两侧视图同面。
-func (r *Repo) List(ctx context.Context, run state.Runner, networkID, peerProjectID string, afterSeq int64, limit int) ([]Peer, error) {
+func (r *repo) List(ctx context.Context, run state.Runner, networkID, peerProjectID string, afterSeq int64, limit int) ([]networkpeer.Peer, error) {
 	if limit <= 0 || limit > maxListLimit {
 		limit = defaultListLimit
 	}
@@ -150,7 +128,7 @@ func (r *Repo) List(ctx context.Context, run state.Runner, networkID, peerProjec
 
 // ListApprovedByPeerProject 返回挂靠方项目的全部 approved 声明（隔离扫描
 // 面：受影响 App 的跨域附件批准态复核）。
-func (r *Repo) ListApprovedByPeerProject(ctx context.Context, run state.Runner, peerProjectID string) ([]Peer, error) {
+func (r *repo) ListApprovedByPeerProject(ctx context.Context, run state.Runner, peerProjectID string) ([]networkpeer.Peer, error) {
 	return r.query(ctx, run,
 		selectCols+" WHERE peer_project_id = ? AND state = 'approved' ORDER BY seq", peerProjectID)
 }
@@ -164,13 +142,13 @@ const selectCols = `
 	SELECT id, seq, network_id, peer_project_id, state, created_at, updated_at, approved_at
 	FROM network_peers`
 
-func (r *Repo) query(ctx context.Context, run state.Runner, q string, args ...any) ([]Peer, error) {
+func (r *repo) query(ctx context.Context, run state.Runner, q string, args ...any) ([]networkpeer.Peer, error) {
 	rows, err := run.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []Peer
+	var out []networkpeer.Peer
 	for rows.Next() {
 		p, err := scanPeer(rows.Scan)
 		if err != nil {
@@ -181,12 +159,12 @@ func (r *Repo) query(ctx context.Context, run state.Runner, q string, args ...an
 	return out, rows.Err()
 }
 
-func scanPeer(scan func(dest ...any) error) (*Peer, error) {
-	var p Peer
+func scanPeer(scan func(dest ...any) error) (*networkpeer.Peer, error) {
+	var p networkpeer.Peer
 	var stateStr string
 	if err := scan(&p.ID, &p.Seq, &p.NetworkID, &p.PeerProjectID, &stateStr, &p.CreatedAt, &p.UpdatedAt, &p.ApprovedAt); err != nil {
 		return nil, persistence.MapScanErr(err)
 	}
-	p.State = State(stateStr)
+	p.State = networkpeer.State(stateStr)
 	return &p, nil
 }

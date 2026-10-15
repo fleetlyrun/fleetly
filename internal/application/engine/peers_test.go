@@ -14,9 +14,9 @@ import (
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/network"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/networkpeer"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
-	networkrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/networkpeer"
 	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
 )
 
@@ -29,7 +29,7 @@ func seedCrossProjectPeer(t *testing.T, e *Engine, approve bool) string {
 	require.NoError(t, projectrepo.New(e.clock).Create(ctx, e.db.Runner(), &project.Project{
 		ID: providerID, Name: "messaging", TeamID: "platform",
 	}))
-	require.NoError(t, e.networks.Create(ctx, e.db.Runner(), &networkrepo.Network{
+	require.NoError(t, e.networks.Create(ctx, e.db.Runner(), &network.Network{
 		ID: "01JD0NET000000000000000007", ProjectID: providerID, Name: "bus",
 	}))
 	peer := &networkpeer.Peer{ID: "01JD0PEER00000000000000007", NetworkID: "01JD0NET000000000000000007", PeerProjectID: tProjectID}

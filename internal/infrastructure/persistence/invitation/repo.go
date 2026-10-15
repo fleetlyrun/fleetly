@@ -1,38 +1,27 @@
-// Package invitation 是 Invitation 聚合 repo（F0.5 邀请流：一次性、短时
-// 窗、绑 team+role；sha256 存储，明文只在创建响应出现一次）。
+// Package invitation 是 Invitation 聚合 repo 的 SQLite 实现：行类型与
+// Repo 接口住 domain/identity/invitation（ADR-0075 Repo 接口层；材质生成
+// 在 identity 种子包），本包只持不导出实现与构造。
 package invitation
 
 import (
 	"context"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/invitation"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
-// Invitation 是聚合行（ConsumedAt 空串=未使用；ExpiresAt 是 RFC3339）。
-type Invitation struct {
-	ID          string
-	Seq         int64
-	TokenSHA256 string
-	TeamID      string
-	RoleID      string
-	CreatedBy   string
-	ExpiresAt   string
-	ConsumedAt  string
-	CreatedAt   string
-}
-
-// Repo 是 Invitation 聚合存取。
-type Repo struct {
+// repo 是 domain invitation.Repo 的 SQLite 实现。
+type repo struct {
 	clock state.Clock
 }
 
-// New 构造 repo。
-func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
+// New 构造 repo（直接返回接口——消费面只见 domain invitation.Repo）。
+func New(clock state.Clock) invitation.Repo { return &repo{clock: clock} }
 
 // Create 落一行。
-func (r *Repo) Create(ctx context.Context, run state.Runner, inv *Invitation) error {
+func (r *repo) Create(ctx context.Context, run state.Runner, inv *invitation.Invitation) error {
 	seq, err := persistence.NextSeq(ctx, run, "invitations")
 	if err != nil {
 		return err
@@ -50,7 +39,7 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, inv *Invitation) er
 }
 
 // GetBySHA256 按明文摘要查行（accept 面的查询键）。
-func (r *Repo) GetBySHA256(ctx context.Context, run state.Runner, sha string) (*Invitation, error) {
+func (r *repo) GetBySHA256(ctx context.Context, run state.Runner, sha string) (*invitation.Invitation, error) {
 	row := run.QueryRowContext(ctx, `
 		SELECT id, seq, token_sha256, team_id, role_id, created_by, expires_at, consumed_at, created_at
 		FROM invitations WHERE token_sha256 = ?`, sha)
@@ -58,7 +47,7 @@ func (r *Repo) GetBySHA256(ctx context.Context, run state.Runner, sha string) (*
 }
 
 // List 返回全部邀请（ID 序稳定；含已消费/已过期——状态是可见事实）。
-func (r *Repo) List(ctx context.Context, run state.Runner) ([]Invitation, error) {
+func (r *repo) List(ctx context.Context, run state.Runner) ([]invitation.Invitation, error) {
 	rows, err := run.QueryContext(ctx, `
 		SELECT id, seq, token_sha256, team_id, role_id, created_by, expires_at, consumed_at, created_at
 		FROM invitations ORDER BY seq`)
@@ -66,7 +55,7 @@ func (r *Repo) List(ctx context.Context, run state.Runner) ([]Invitation, error)
 		return nil, err
 	}
 	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []Invitation
+	var out []invitation.Invitation
 	for rows.Next() {
 		inv, err := scanOne(rows.Scan)
 		if err != nil {
@@ -79,7 +68,7 @@ func (r *Repo) List(ctx context.Context, run state.Runner) ([]Invitation, error)
 
 // MarkConsumed 落单次使用位（条件更新：仅未消费行命中——并发双 accept
 // 只有一个成功，另一个读到的仍是未消费但重查即 NOT_FOUND 语义）。
-func (r *Repo) MarkConsumed(ctx context.Context, run state.Runner, id string) error {
+func (r *repo) MarkConsumed(ctx context.Context, run state.Runner, id string) error {
 	res, err := run.ExecContext(ctx, `
 		UPDATE invitations SET consumed_at = ? WHERE id = ? AND consumed_at = ''`,
 		state.FormatTime(r.clock.Now()), id)
@@ -96,8 +85,8 @@ func (r *Repo) MarkConsumed(ctx context.Context, run state.Runner, id string) er
 	return nil
 }
 
-func scanOne(scan func(dest ...any) error) (*Invitation, error) {
-	var inv Invitation
+func scanOne(scan func(dest ...any) error) (*invitation.Invitation, error) {
+	var inv invitation.Invitation
 	if err := scan(&inv.ID, &inv.Seq, &inv.TokenSHA256, &inv.TeamID, &inv.RoleID, &inv.CreatedBy,
 		&inv.ExpiresAt, &inv.ConsumedAt, &inv.CreatedAt); err != nil {
 		return nil, persistence.MapScanErr(err)

@@ -20,8 +20,8 @@ import (
 	specir "github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/volume"
 	dbrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/database"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/volume"
 )
 
 // dbCredentialSecretPrefix 是数据库凭证 Secret 的命名约定（database:<name>；

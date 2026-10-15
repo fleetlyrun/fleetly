@@ -23,6 +23,7 @@ import (
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/token"
 	tokenrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/token"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
 	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
@@ -35,7 +36,7 @@ func mintTeamToken(t *testing.T, h *apitest.Harness, name, teamID, roleID string
 	material, err := identity.NewToken()
 	require.NoError(t, err)
 	repo := tokenrepo.New(h.DB.Clock())
-	require.NoError(t, repo.Create(context.Background(), h.DB.Runner(), &tokenrepo.Token{
+	require.NoError(t, repo.Create(context.Background(), h.DB.Runner(), &token.Token{
 		Name:   name,
 		TeamID: teamID, RoleID: roleID,
 		SHA256: material.SHA256, Prefix: material.Prefix,

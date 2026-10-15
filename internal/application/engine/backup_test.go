@@ -25,6 +25,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/network"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/keyring"
@@ -173,7 +174,7 @@ func newBackupFixture(t *testing.T, engineName, connectURL string) (*Engine, *fa
 	require.NoError(t, projectrepo.New(clock).Create(ctx, db.Runner(), &project.Project{
 		ID: tProjectID, Name: "shop", TeamID: "default",
 	}))
-	require.NoError(t, networkrepo.New(clock).Create(ctx, db.Runner(), &networkrepo.Network{
+	require.NoError(t, networkrepo.New(clock).Create(ctx, db.Runner(), &network.Network{
 		ID: "01JD0NET000000000000000001", ProjectID: tProjectID, Name: "default",
 	}))
 	secName := DBCredentialSecretName(tDatabaseName)

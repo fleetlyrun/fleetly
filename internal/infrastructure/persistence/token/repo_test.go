@@ -11,17 +11,23 @@ import (
 	"testing"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/invitation"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/membership"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/role"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/team"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/token"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/user"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/invitation"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/membership"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/role"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/team"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/user"
+	invitationrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/invitation"
+	membershiprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/membership"
+	rolerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/role"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statertest"
+	teamrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/team"
+	userrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/user"
 )
 
 func TestTokenRoundTrip(t *testing.T) {
-	db, clock := statetest.New(t)
+	db, clock := statertest.New(t)
 	ctx := context.Background()
 	repos := newRepos(clock)
 
@@ -31,16 +37,16 @@ func TestTokenRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("material: %v", err)
 	}
-	tok := &Token{
+	tok := &token.Token{
 		ID: "01TOKEN0000000000000000000", Name: "ci", TeamID: teamRow.ID,
 		RoleID: roleRow.ID, SHA256: material.SHA256, Prefix: material.Prefix,
 	}
 
 	err = db.Tx(ctx, func(tx *sql.Tx) error {
-		if err := team.New(clock).Create(ctx, tx, teamRow); err != nil {
+		if err := teamrepo.New(clock).Create(ctx, tx, teamRow); err != nil {
 			return err
 		}
-		if err := role.New(clock).Create(ctx, tx, roleRow); err != nil {
+		if err := rolerepo.New(clock).Create(ctx, tx, roleRow); err != nil {
 			return err
 		}
 		return repos.tokens.Create(ctx, tx, tok)
@@ -92,7 +98,7 @@ func TestTokenRoundTrip(t *testing.T) {
 }
 
 func TestIdentityFlow(t *testing.T) {
-	db, clock := statetest.New(t)
+	db, clock := statertest.New(t)
 	ctx := context.Background()
 	repos := newRepos(clock)
 
@@ -208,21 +214,21 @@ func TestIdentityFlow(t *testing.T) {
 }
 
 type identityRepos struct {
-	users       *user.Repo
-	teams       *team.Repo
-	roles       *role.Repo
-	memberships *membership.Repo
-	tokens      *Repo
-	invitations *invitation.Repo
+	users       user.Repo
+	teams       team.Repo
+	roles       role.Repo
+	memberships membership.Repo
+	tokens      token.Repo
+	invitations invitation.Repo
 }
 
 func newRepos(clock state.Clock) *identityRepos {
 	return &identityRepos{
-		users:       user.New(clock),
-		teams:       team.New(clock),
-		roles:       role.New(clock),
-		memberships: membership.New(clock),
+		users:       userrepo.New(clock),
+		teams:       teamrepo.New(clock),
+		roles:       rolerepo.New(clock),
+		memberships: membershiprepo.New(clock),
 		tokens:      New(clock),
-		invitations: invitation.New(clock),
+		invitations: invitationrepo.New(clock),
 	}
 }

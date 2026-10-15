@@ -16,10 +16,10 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	specir "github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/network"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/keyring"
 	apprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/app"
-	networkrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
 	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
@@ -87,7 +87,7 @@ func TestReconcileManagedDualProviders(t *testing.T) {
 	e := New(Deps{DB: db, Runtime: rt, Proxy: proxy, Registry: reg, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
 	require.NoError(t, projectrepo.New(clock).Create(ctx, db.Runner(), &project.Project{ID: tProjectID, Name: "shop", TeamID: "default"}))
-	require.NoError(t, e.networks.Create(ctx, db.Runner(), &networkrepo.Network{
+	require.NoError(t, e.networks.Create(ctx, db.Runner(), &network.Network{
 		ID: "01JD0NET00000000000000000A", ProjectID: tProjectID, Name: "default",
 	}))
 

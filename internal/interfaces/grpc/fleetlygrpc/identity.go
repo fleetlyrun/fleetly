@@ -15,13 +15,13 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/invitation"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/membership"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/role"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/team"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/token"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/user"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/invitation"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/membership"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/role"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/team"
-	tokenrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/token"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/user"
 )
 
 // identityAudit 是 identity 写路径的审计行构造（actor + 来源从 authn ctx）。
@@ -149,7 +149,7 @@ func (svc *UsersService) Login(ctx context.Context, req *identityv1.LoginRequest
 	if err != nil {
 		return nil, apperr.New("E_INTERNAL", "token material generation failed")
 	}
-	t := &tokenrepo.Token{
+	t := &token.Token{
 		Name: "password session", TeamID: m.TeamID, UserID: u.ID,
 		RoleID: m.RoleID, SHA256: material.SHA256, Prefix: material.Prefix,
 	}
@@ -436,7 +436,7 @@ func (svc *TokensService) CreateToken(ctx context.Context, req *identityv1.Creat
 	if err != nil {
 		return nil, apperr.New("E_INTERNAL", "token material generation failed")
 	}
-	t := &tokenrepo.Token{
+	t := &token.Token{
 		Name: req.GetName(), TeamID: teamID, UserID: req.GetUserId(),
 		RoleID: req.GetRoleId(), SHA256: material.SHA256, Prefix: material.Prefix,
 	}
@@ -513,7 +513,7 @@ func (svc *TokensService) RevokeToken(ctx context.Context, req *identityv1.Revok
 	} else {
 		return nil, mapStateError(err, "token")
 	}
-	var revoked *tokenrepo.Token
+	var revoked *token.Token
 	events := []eventFact{identityEvent("token.revoked", "token", req.GetId(), nil)}
 	events[0].team = team
 	entry := identityAudit(ctx, "token.revoke", "token/"+req.GetId(), "", "")
@@ -607,7 +607,7 @@ func roleMsg(ro *role.Role) *identityv1.Role {
 	}
 }
 
-func tokenMsg(t *tokenrepo.Token) *identityv1.Token {
+func tokenMsg(t *token.Token) *identityv1.Token {
 	return &identityv1.Token{
 		Id: t.ID, Name: t.Name, TeamId: t.TeamID, UserId: t.UserID, RoleId: t.RoleID,
 		Prefix: t.Prefix, Revoked: t.Revoked, LastUsedAt: t.LastUsedAt, CreatedAt: t.CreatedAt,

@@ -20,9 +20,9 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/volume"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/backup"
 	dbrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/database"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/volume"
 )
 
 // KickBackups 唤醒 Backup 环（API 手动触发面消费）。

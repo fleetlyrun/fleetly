@@ -1,5 +1,6 @@
-// Package route 是 Route 聚合 repo（CONTEXT.md Route 词条：host/path →
-// Process 端口的映射，附协议与 TLS 模式；Proxy 上下文实体）。
+// Package route 是 Route 聚合 repo 的 SQLite 实现：行类型与 Repo 接口住
+// domain/structure/route（ADR-0075 Repo 接口层——资源归 structure，发布
+// 面 Proxy 上下文消费），本包只持不导出实现与构造。
 package route
 
 import (
@@ -9,41 +10,22 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/route"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
-// Route 是聚合行（软删 tombstone）。
-type Route struct {
-	ID        string
-	Seq       int64
-	ProjectID string
-	Host      string
-	Path      string // 空 = /
-	AppID     string
-	Process   string
-	Port      int32
-	Protocol  capability.Protocol
-	TLSMode   string // auto | none
-	CreatedAt string
-	UpdatedAt string
-	DeletedAt string
-}
-
-// Deleted 报告 tombstone 状态。
-func (r *Route) Deleted() bool { return r.DeletedAt != "" }
-
-// Repo 是 Route 聚合存取。
-type Repo struct {
+// repo 是 domain route.Repo 的 SQLite 实现。
+type repo struct {
 	clock state.Clock
 }
 
-// New 构造 repo。
-func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
+// New 构造 repo（直接返回接口——消费面只见 domain route.Repo）。
+func New(clock state.Clock) route.Repo { return &repo{clock: clock} }
 
 // Create 落一行；host+path 全局冲突（跨项目同 host 同为活跃行）返回
 // state.ErrAlreadyExists（安全批：host 命名空间是平台级资产，唯一索引
 // 已从项目内升级为全局——idx_routes_host_path）。
-func (r *Repo) Create(ctx context.Context, run state.Runner, rt *Route) error {
+func (r *repo) Create(ctx context.Context, run state.Runner, rt *route.Route) error {
 	seq, err := persistence.NextSeq(ctx, run, "routes")
 	if err != nil {
 		return err
@@ -66,7 +48,7 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, rt *Route) error {
 }
 
 // Get 按 ID 直读。
-func (r *Repo) Get(ctx context.Context, run state.Runner, id string) (*Route, error) {
+func (r *repo) Get(ctx context.Context, run state.Runner, id string) (*route.Route, error) {
 	row := run.QueryRowContext(ctx, `
 		SELECT id, seq, project_id, host, path, app_id, process, port, protocol, tls_mode, created_at, updated_at, deleted_at
 		FROM routes WHERE id = ?`, id)
@@ -74,7 +56,7 @@ func (r *Repo) Get(ctx context.Context, run state.Runner, id string) (*Route, er
 }
 
 // List 返回全部活跃 Route（Proxy 全量发布面；跨 Project）。
-func (r *Repo) List(ctx context.Context, run state.Runner) ([]Route, error) {
+func (r *repo) List(ctx context.Context, run state.Runner) ([]route.Route, error) {
 	rows, err := run.QueryContext(ctx, `
 		SELECT id, seq, project_id, host, path, app_id, process, port, protocol, tls_mode, created_at, updated_at, deleted_at
 		FROM routes WHERE deleted_at = '' ORDER BY seq`)
@@ -82,7 +64,7 @@ func (r *Repo) List(ctx context.Context, run state.Runner) ([]Route, error) {
 		return nil, err
 	}
 	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []Route
+	var out []route.Route
 	for rows.Next() {
 		rt, err := scanRoute(rows.Scan)
 		if err != nil {
@@ -97,7 +79,7 @@ func (r *Repo) List(ctx context.Context, run state.Runner) ([]Route, error) {
 // ——既有响应序不变）。projectID 过滤可选（过滤语义与既有内存过滤一致，
 // 下推 SQL 使游标分页与过滤叠加）；projectID 为空 = 全量分页。limit<=0
 // 或 >200 回落/钳制缺省 50。
-func (r *Repo) ListPage(ctx context.Context, run state.Runner, projectID string, afterSeq int64, limit int) ([]Route, error) {
+func (r *repo) ListPage(ctx context.Context, run state.Runner, projectID string, afterSeq int64, limit int) ([]route.Route, error) {
 	if limit <= 0 || limit > maxListLimit {
 		limit = defaultListLimit
 	}
@@ -119,7 +101,7 @@ func (r *Repo) ListPage(ctx context.Context, run state.Runner, projectID string,
 		return nil, err
 	}
 	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []Route
+	var out []route.Route
 	for rows.Next() {
 		rt, err := scanRoute(rows.Scan)
 		if err != nil {
@@ -136,7 +118,7 @@ const (
 )
 
 // SoftDelete 落 tombstone（幂等）。
-func (r *Repo) SoftDelete(ctx context.Context, run state.Runner, id string) error {
+func (r *repo) SoftDelete(ctx context.Context, run state.Runner, id string) error {
 	now := state.FormatTime(r.clock.Now())
 	_, err := run.ExecContext(ctx, `
 		UPDATE routes SET deleted_at = ?, updated_at = ?
@@ -158,8 +140,8 @@ func normalizePath(p string) string {
 	return p
 }
 
-func scanRoute(scan func(dest ...any) error) (*Route, error) {
-	var rt Route
+func scanRoute(scan func(dest ...any) error) (*route.Route, error) {
+	var rt route.Route
 	var proto string
 	err := scan(&rt.ID, &rt.Seq, &rt.ProjectID, &rt.Host, &rt.Path, &rt.AppID, &rt.Process,
 		&rt.Port, &proto, &rt.TLSMode, &rt.CreatedAt, &rt.UpdatedAt, &rt.DeletedAt)

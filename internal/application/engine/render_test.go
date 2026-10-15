@@ -10,7 +10,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/volume"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/volume"
 )
 
 // TestRenderWorkloadsMatchesEnsure：渲染与部署投影单源（ADR-0071 决策 3）

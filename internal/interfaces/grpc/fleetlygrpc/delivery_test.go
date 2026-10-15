@@ -13,8 +13,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/appvariable"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/sharedvariable"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/appvariable"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/sharedvariable"
+	appvariablerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/appvariable"
+	sharedvariablerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/sharedvariable"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statertest"
 )
 
@@ -23,8 +25,8 @@ func testVarServices(t *testing.T) *Services {
 	db, _ := statertest.New(t)
 	return &Services{
 		DB:              db,
-		SharedVariables: sharedvariable.New(db.Clock()),
-		AppVariables:    appvariable.New(db.Clock()),
+		SharedVariables: sharedvariablerepo.New(db.Clock()),
+		AppVariables:    appvariablerepo.New(db.Clock()),
 	}
 }
 

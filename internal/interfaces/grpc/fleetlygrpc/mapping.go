@@ -25,15 +25,15 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/appvariable"
 	configrepo "github.com/fleetlyrun/fleetly/internal/domain/structure/config"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/network"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/route"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/appvariable"
-	networkrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/sharedvariable"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/volume"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/node"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/route"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/sharedvariable"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/volume"
 )
 
 // mapStateError 把 repo/engine 哨兵与 capability 面（指标查询拒绝等）错误
@@ -139,7 +139,7 @@ func volumeMsg(v volume.Volume) *structurev1.Volume {
 	return &structurev1.Volume{Id: v.ID, ProjectId: v.ProjectID, Name: v.Name, PinnedNodeId: v.PinnedNodeID, CreatedAt: v.CreatedAt}
 }
 
-func networkMsg(n networkrepo.Network) *structurev1.Network {
+func networkMsg(n network.Network) *structurev1.Network {
 	return &structurev1.Network{Id: n.ID, ProjectId: n.ProjectID, Name: n.Name, EgressNone: n.EgressNone, CreatedAt: n.CreatedAt}
 }
 

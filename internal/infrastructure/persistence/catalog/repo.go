@@ -1,36 +1,27 @@
-// Package catalog 是 App 模板目录快照聚合（F3.3，ADR-0050 决策 4）：
-// 单行表（id=1），RefreshTemplates 成功后的整体替换语义。解析序 =
-// 快照在场优先、内嵌目录兜底（内嵌在 internal/apptemplate，不落库）。
+// Package catalog 是 App 模板目录快照聚合 repo 的 SQLite 实现：行类型、
+// ErrNoSnapshot 哨兵与 Repo 接口住 domain/delivery/catalog（ADR-0075 Repo
+// 接口层），本包只持不导出实现与构造。
 package catalog
 
 import (
 	"context"
 	"errors"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/catalog"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
-// ErrNoSnapshot 是快照缺席的哨兵（回退内嵌目录的正常态，非错误面）。
-var ErrNoSnapshot = errors.New("catalog: no refreshed snapshot stored")
-
-// Snapshot 是快照行（body 是清单 JSON 原文；条目级 digest 已在写入前核对）。
-type Snapshot struct {
-	Digest    string
-	Body      string
-	FetchedAt string
-}
-
-// Repo 是快照存取。
-type Repo struct {
+// repo 是 domain catalog.Repo 的 SQLite 实现。
+type repo struct {
 	clock state.Clock
 }
 
-// New 构造 repo。
-func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
+// New 构造 repo（直接返回接口——消费面只见 domain catalog.Repo）。
+func New(clock state.Clock) catalog.Repo { return &repo{clock: clock} }
 
 // Put 原子覆盖快照（整体替换；空 body 是编程错误由约束/调用侧承载）。
-func (r *Repo) Put(ctx context.Context, run state.Runner, s *Snapshot) error {
+func (r *repo) Put(ctx context.Context, run state.Runner, s *catalog.Snapshot) error {
 	s.FetchedAt = state.FormatTime(r.clock.Now())
 	_, err := run.ExecContext(ctx, `
 		INSERT INTO template_catalog (id, digest, body, fetched_at) VALUES (1, ?, ?, ?)
@@ -40,12 +31,12 @@ func (r *Repo) Put(ctx context.Context, run state.Runner, s *Snapshot) error {
 }
 
 // Get 读快照（缺席 → ErrNoSnapshot；Scan 归一哨兵由 persistence.MapScanErr）。
-func (r *Repo) Get(ctx context.Context, run state.Runner) (*Snapshot, error) {
+func (r *repo) Get(ctx context.Context, run state.Runner) (*catalog.Snapshot, error) {
 	row := run.QueryRowContext(ctx, `SELECT digest, body, fetched_at FROM template_catalog WHERE id = 1`)
-	s := &Snapshot{}
+	s := &catalog.Snapshot{}
 	if err := row.Scan(&s.Digest, &s.Body, &s.FetchedAt); err != nil {
 		if errors.Is(persistence.MapScanErr(err), state.ErrNotFound) {
-			return nil, ErrNoSnapshot
+			return nil, catalog.ErrNoSnapshot
 		}
 		return nil, err
 	}

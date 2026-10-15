@@ -7,7 +7,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/route"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/route"
+	routerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/route"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
 
@@ -25,7 +26,7 @@ func newRoute(id, projectID, host string) *route.Route {
 func TestRouteListPagePagination(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	routes := route.New(clock)
+	routes := routerepo.New(clock)
 
 	const projA = "01JD0PROJ0000000000000000A"
 	const projB = "01JD0PROJ0000000000000000B"
@@ -81,7 +82,7 @@ func TestRouteListPagePagination(t *testing.T) {
 func TestRouteListUnchanged(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	routes := route.New(clock)
+	routes := routerepo.New(clock)
 
 	require.NoError(t, routes.Create(ctx, db.Runner(),
 		newRoute("01JD0ROUTE00000000000000000B", "01JD0PROJ0000000000000000A", "b.example.test")))

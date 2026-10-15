@@ -19,12 +19,15 @@ import (
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/run"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/role"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/team"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/token"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
-	networkrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/role"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/network"
+	rolerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/role"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/team"
+	teamrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/team"
 	tokenrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/token"
 )
 
@@ -640,12 +643,12 @@ func TestOwnerRevokedDrainsTasks(t *testing.T) {
 	e, _, _ := newTestEngine(t)
 	ctx := context.Background()
 	// FK 地基：team + role（engine 测试库不跑账号批种子）。
-	require.NoError(t, team.New(e.db.Clock()).Create(ctx, e.db.Runner(), &team.Team{ID: "default", Name: "default"}))
-	require.NoError(t, role.New(e.db.Clock()).Create(ctx, e.db.Runner(), &role.Role{
+	require.NoError(t, teamrepo.New(e.db.Clock()).Create(ctx, e.db.Runner(), &team.Team{ID: "default", Name: "default"}))
+	require.NoError(t, rolerepo.New(e.db.Clock()).Create(ctx, e.db.Runner(), &role.Role{
 		ID: "builtin-member", Name: "member", Builtin: true, Scopes: []string{"tasks:read"},
 	}))
 	tokenID := "01JD0TOK0000000000000000000"
-	require.NoError(t, tokenrepo.New(e.db.Clock()).Create(ctx, e.db.Runner(), &tokenrepo.Token{
+	require.NoError(t, tokenrepo.New(e.db.Clock()).Create(ctx, e.db.Runner(), &token.Token{
 		ID: tokenID, TeamID: "default", Name: "worker", RoleID: "builtin-member", SHA256: "aa", Prefix: "flt_x",
 	}))
 
@@ -731,14 +734,14 @@ func TestSweepRevokedOwnersStorageFaultContinues(t *testing.T) {
 	ctx := context.Background()
 
 	// FK 地基（engine 测试库不跑账号批种子）。
-	require.NoError(t, team.New(db.Clock()).Create(ctx, db.Runner(), &team.Team{ID: "default", Name: "default"}))
-	require.NoError(t, role.New(db.Clock()).Create(ctx, db.Runner(), &role.Role{
+	require.NoError(t, teamrepo.New(db.Clock()).Create(ctx, db.Runner(), &team.Team{ID: "default", Name: "default"}))
+	require.NoError(t, rolerepo.New(db.Clock()).Create(ctx, db.Runner(), &role.Role{
 		ID: "builtin-member", Name: "member", Builtin: true, Scopes: []string{"tasks:read"},
 	}))
 	tokA := "01JD0TOK000000000000000000A"
 	tokB := "01JD0TOK000000000000000000B"
 	for i, id := range []string{tokA, tokB} {
-		require.NoError(t, tokenrepo.New(db.Clock()).Create(ctx, db.Runner(), &tokenrepo.Token{
+		require.NoError(t, tokenrepo.New(db.Clock()).Create(ctx, db.Runner(), &token.Token{
 			ID: id, TeamID: "default", Name: fmt.Sprintf("worker-%d", i), RoleID: "builtin-member",
 			SHA256: fmt.Sprintf("aa%d%d", i, i), Prefix: "flt_x",
 		}))
@@ -882,7 +885,7 @@ func TestEnsureTaskWorkloadsEgressChangeReEnsures(t *testing.T) {
 	ctx := context.Background()
 	taskID := "01JD0TASK0000000000000000B"
 	runID := "01JD0RUN000000000000000000B"
-	require.NoError(t, e.networks.Create(ctx, e.db.Runner(), &networkrepo.Network{
+	require.NoError(t, e.networks.Create(ctx, e.db.Runner(), &network.Network{
 		ID: "net-eg-1", ProjectID: tTaskProject, Name: "workers", EgressNone: true,
 	}))
 	// process.networks 挂项目网 = firstBoot 铸造行形态（挂靠网铸时解析，

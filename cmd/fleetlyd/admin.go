@@ -81,7 +81,7 @@ func (v *rewrapVerb) Run(ctx context.Context, env *commands.Environment, args []
 	if err != nil {
 		return err
 	}
-	db, err := state.Open(ctx, filepath.Join(*v.dataRoot, "fleetly.db"), state.WallClock())
+	db, err := persistence.Open(ctx, filepath.Join(*v.dataRoot, "fleetly.db"), persistence.WallClock())
 	if err != nil {
 		return err
 	}

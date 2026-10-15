@@ -8,7 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/networkpeer"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/networkpeer"
+	networkpeerrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/networkpeer"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
 
@@ -18,7 +19,7 @@ import (
 func TestPeerLifecycle(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	peers := networkpeer.New(clock)
+	peers := networkpeerrepo.New(clock)
 
 	const (
 		networkID = "01JD0NET000000000000000001"
@@ -71,7 +72,7 @@ func TestPeerLifecycle(t *testing.T) {
 func TestPeerListFiltersAndCursor(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	peers := networkpeer.New(clock)
+	peers := networkpeerrepo.New(clock)
 
 	const (
 		netA  = "01JD0NET000000000000000001"

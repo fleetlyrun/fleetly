@@ -18,14 +18,19 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/membership"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/role"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/team"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/token"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/user"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	auditrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/audit"
 	membershiprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/membership"
 	rolerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/role"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/team"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statertest"
+	teamrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/team"
 	tokenrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/token"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/user"
+	userrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/user"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/apperrstatus"
 )
 
@@ -35,25 +40,25 @@ func quietLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard
 // (creatorRole) + user + membership + 有属主 Token；返回明文凭证。
 func seedNarrowingWorld(t *testing.T, tokScopes, creatorScopes []string) (string, *Authenticator) {
 	t.Helper()
-	db, _ := statetest.New(t)
+	db, _ := statertest.New(t)
 	a := NewAuthenticator(db, nil, testVocab, quietLogger())
 	ctx := context.Background()
 	run := db.Runner()
 
 	tm := &team.Team{ID: "t1", Name: "crew"}
-	require.NoError(t, team.New(db.Clock()).Create(ctx, run, tm))
-	tokRole := &rolerepo.Role{ID: "r-tok", TeamID: "t1", Name: "tok-role", Scopes: tokScopes}
-	creatorRole := &rolerepo.Role{ID: "r-creator", TeamID: "t1", Name: "creator-role", Scopes: creatorScopes}
+	require.NoError(t, teamrepo.New(db.Clock()).Create(ctx, run, tm))
+	tokRole := &role.Role{ID: "r-tok", TeamID: "t1", Name: "tok-role", Scopes: tokScopes}
+	creatorRole := &role.Role{ID: "r-creator", TeamID: "t1", Name: "creator-role", Scopes: creatorScopes}
 	require.NoError(t, rolerepo.New(db.Clock()).Create(ctx, run, tokRole))
 	require.NoError(t, rolerepo.New(db.Clock()).Create(ctx, run, creatorRole))
 	u := &user.User{ID: "u1", Name: "alice"}
-	require.NoError(t, user.New(db.Clock()).Create(ctx, run, u))
-	m := &membershiprepo.Membership{ID: "m1", UserID: "u1", TeamID: "t1", RoleID: "r-creator"}
+	require.NoError(t, userrepo.New(db.Clock()).Create(ctx, run, u))
+	m := &membership.Membership{ID: "m1", UserID: "u1", TeamID: "t1", RoleID: "r-creator"}
 	require.NoError(t, membershiprepo.New(db.Clock()).Create(ctx, run, m))
 
 	mat, err := identity.NewToken()
 	require.NoError(t, err)
-	tok := &tokenrepo.Token{
+	tok := &token.Token{
 		ID: "tok1", Name: "alice-cli", TeamID: "t1", UserID: "u1", RoleID: "r-tok",
 		SHA256: mat.SHA256, Prefix: mat.Prefix,
 	}
@@ -150,17 +155,17 @@ func TestNarrowingCreatorDeletedIsTerminal(t *testing.T) {
 
 func TestNarrowingUserlessTokenStaysDeclared(t *testing.T) {
 	// 无属主 Token（bootstrap/Agent/CI 形态）不参与收窄——声明即有效。
-	db, _ := statetest.New(t)
+	db, _ := statertest.New(t)
 	a := NewAuthenticator(db, nil, testVocab, quietLogger())
 	ctx := context.Background()
 	run := db.Runner()
 	tm := &team.Team{ID: "t1", Name: "crew"}
-	require.NoError(t, team.New(db.Clock()).Create(ctx, run, tm))
-	ro := &rolerepo.Role{ID: "r-tok", TeamID: "t1", Name: "tok-role", Scopes: []string{"apps:write"}}
+	require.NoError(t, teamrepo.New(db.Clock()).Create(ctx, run, tm))
+	ro := &role.Role{ID: "r-tok", TeamID: "t1", Name: "tok-role", Scopes: []string{"apps:write"}}
 	require.NoError(t, rolerepo.New(db.Clock()).Create(ctx, run, ro))
 	mat, err := identity.NewToken()
 	require.NoError(t, err)
-	tok := &tokenrepo.Token{ID: "tok1", Name: "ci", TeamID: "t1", RoleID: "r-tok", SHA256: mat.SHA256, Prefix: mat.Prefix}
+	tok := &token.Token{ID: "tok1", Name: "ci", TeamID: "t1", RoleID: "r-tok", SHA256: mat.SHA256, Prefix: mat.Prefix}
 	require.NoError(t, tokenrepo.New(db.Clock()).Create(ctx, run, tok))
 
 	id, err := resolveWith(t, a, mat.Secret)

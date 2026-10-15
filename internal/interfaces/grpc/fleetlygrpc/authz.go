@@ -16,11 +16,11 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/token"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/anchor"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
-	tokenrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/token"
 )
 
 // callerTeam 解析调用方 Team 轴：owner=true 表示平台管理员（default Team
@@ -180,7 +180,7 @@ func (s *Services) authorizeAnchored(ctx context.Context, kind anchor.Kind, id s
 
 // authorizeTokenRow 校验 Token 行归属（identity 面 Get/Revoke；Token 行
 // 自带 TeamID，免二跳）。
-func (s *Services) authorizeTokenRow(ctx context.Context, t *tokenrepo.Token) error {
+func (s *Services) authorizeTokenRow(ctx context.Context, t *token.Token) error {
 	teamID, owner, err := callerTeam(ctx)
 	if err != nil {
 		return err

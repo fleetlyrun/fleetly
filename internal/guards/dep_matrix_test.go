@@ -98,7 +98,7 @@ var depExemptions = []depExemption{
 	{
 		subtree: "internal/domain/services/anchor",
 		allow:   "internal/infrastructure/persistence/",
-		reason:  "anchor 聚合仍直引 8 个未上移 repo 具体类型（database/githubapp/hook/network/networkpeer/route/schedule/volume——批一/批二已上移 app/build/deployment/project/run/task 改走 domain 接口；全量上移后删本行）",
+		reason:  "anchor 解析图直接构造 repo 族：已上移聚合（批一~批三 app/build/deployment/project/run/task + network/networkpeer/route/volume）仅剩 New 构造在此，未上移聚合（database/githubapp/hook/schedule——批四候选）仍直引具体类型；全量上移并把构造收进组合根后删本行",
 	},
 	{
 		subtree: "internal/interfaces/grpc/fleetlygrpc",

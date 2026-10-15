@@ -17,6 +17,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/network"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
 	networkrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
 	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
@@ -29,7 +30,7 @@ import (
 func seedDefaultNetworkRow(t *testing.T, e *Engine) {
 	t.Helper()
 	require.NoError(t, networkrepo.New(e.db.Clock()).Create(context.Background(), e.db.Runner(),
-		&networkrepo.Network{ID: "fx-0001", ProjectID: tProjectID, Name: "default"}))
+		&network.Network{ID: "fx-0001", ProjectID: tProjectID, Name: "default"}))
 }
 
 // lowerDomain 把域轴值小写化（模拟载体标记的 sanitizeNamePart 形态）。

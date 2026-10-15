@@ -17,6 +17,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/network"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/keyring"
@@ -45,7 +46,7 @@ func newDatabaseFixture(t *testing.T, engine, connectURL string) (*Engine, *fake
 	require.NoError(t, projectrepo.New(clock).Create(ctx, db.Runner(), &project.Project{
 		ID: tProjectID, Name: "shop", TeamID: "default",
 	}))
-	require.NoError(t, networkrepo.New(clock).Create(ctx, db.Runner(), &networkrepo.Network{
+	require.NoError(t, networkrepo.New(clock).Create(ctx, db.Runner(), &network.Network{
 		ID: "01JD0NET000000000000000001", ProjectID: tProjectID, Name: "default",
 	}))
 
@@ -137,7 +138,7 @@ func TestDatabaseGenerationStableAcrossTicks(t *testing.T) {
 	assert.Equal(t, capability.Generation(1), calls[0].Gen, "unchanged projection stays on its generation")
 
 	// 新项目网 → 网集变化 → 短路失效，恰好一次重下发（gen 推进），随后稳定。
-	require.NoError(t, networkrepo.New(e.db.Clock()).Create(ctx, e.db.Runner(), &networkrepo.Network{
+	require.NoError(t, networkrepo.New(e.db.Clock()).Create(ctx, e.db.Runner(), &network.Network{
 		ID: "01JD0NET000000000000000002", ProjectID: tProjectID, Name: "internal",
 	}))
 	for i := 0; i < 3; i++ {

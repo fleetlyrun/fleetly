@@ -21,6 +21,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	specir "github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/network"
 	networkrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
 )
 
@@ -42,7 +43,7 @@ const tMigrateJob = `{"name":"migrate","ttl":"600s","process":{"image":"busybox:
 func createProjectNetwork(t *testing.T, e *Engine, id, name string) {
 	t.Helper()
 	require.NoError(t, networkrepo.New(e.clock).Create(context.Background(), e.db.Runner(),
-		&networkrepo.Network{ID: id, ProjectID: tProjectID, Name: name}))
+		&network.Network{ID: id, ProjectID: tProjectID, Name: name}))
 }
 
 // mintedJobTask 读取部署当前锚定的 job Task 行。

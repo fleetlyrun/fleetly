@@ -19,8 +19,8 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/route"
 	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/outbox"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/route"
 )
 
 // ---- Nodes（F0.20：观测缓存 + 加入材料） ----

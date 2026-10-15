@@ -14,11 +14,13 @@ import (
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/network"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/networkpeer"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
 	apprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/app"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/freeze"
 	networkrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/networkpeer"
+	networkpeerrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/networkpeer"
 	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 	taskrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/task"
@@ -56,7 +58,7 @@ func TestFreezeGuardTeamAxis(t *testing.T) {
 
 	// 夹具：Team A（project/app/task/network/peer）与 Team B（project）。
 	projects, apps, tasks := projectrepo.New(clock), apprepo.New(clock), taskrepo.New(clock)
-	networks, peers, freezes := networkrepo.New(clock), networkpeer.New(clock), freeze.New(clock)
+	networks, peers, freezes := networkrepo.New(clock), networkpeerrepo.New(clock), freeze.New(clock)
 	const (
 		pidA    = "01JD0PROJA0000000000000000"
 		pidB    = "01JD0PROJB0000000000000000"
@@ -73,7 +75,7 @@ func TestFreezeGuardTeamAxis(t *testing.T) {
 		ID: tidA, ProjectID: pidA, Form: task.FormResident, State: task.StateActive,
 		Spec: []byte(`{}`), DesiredConcurrency: 1, DNSName: "x",
 	}))
-	require.NoError(t, networks.Create(ctx, run, &networkrepo.Network{ID: nidA, ProjectID: pidA, Name: "net"}))
+	require.NoError(t, networks.Create(ctx, run, &network.Network{ID: nidA, ProjectID: pidA, Name: "net"}))
 	require.NoError(t, peers.Create(ctx, run, &networkpeer.Peer{
 		ID: peerA, NetworkID: nidA, PeerProjectID: pidB, State: networkpeer.StatePending,
 	}))

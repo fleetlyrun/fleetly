@@ -17,8 +17,8 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
-	networkrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/networkpeer"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/network"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/networkpeer"
 )
 
 // ---- Networks ----
@@ -39,7 +39,7 @@ func (svc *NetworksService) CreateNetwork(ctx context.Context, req *structurev1.
 	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}
-	row := &networkrepo.Network{
+	row := &network.Network{
 		ProjectID: req.GetProjectId(), Name: req.GetName(), EgressNone: req.GetEgressNone(),
 	}
 	// 父资源存活校验（批 0 复核，同族面）：Project 级材料不得落在
@@ -153,7 +153,7 @@ type networkPeerEventPayload struct {
 
 // networkPeerEvent 构造 peer 事件事实（aggregate=network，id=网络行）。
 // projectID 是资源轴 Team 解析锚（P0-2；peer 双项目——锚网络侧归属）。
-func networkPeerEvent(name string, p *networkpeer.Peer, net *networkrepo.Network) eventFact {
+func networkPeerEvent(name string, p *networkpeer.Peer, net *network.Network) eventFact {
 	payload, _ := json.Marshal(networkPeerEventPayload{ //nolint:errcheck // 结构体字段恒可序列化
 		ID: p.ID, NetworkID: p.NetworkID, NetworkName: net.Name,
 		NetworkProjectID: net.ProjectID, PeerProjectID: p.PeerProjectID,
@@ -164,7 +164,7 @@ func networkPeerEvent(name string, p *networkpeer.Peer, net *networkrepo.Network
 // networkPeerAudits 是双方审计（ADR-0013：挂靠计入两侧）：网络侧 +
 // 挂靠项目侧各一行，action 同名（ListAudit 的 action/resource 过滤面
 // 两侧各自可答"谁挂在我的网上/我挂在哪里"）。
-func networkPeerAudits(ctx context.Context, action string, p *networkpeer.Peer, net *networkrepo.Network) []*audit.Entry {
+func networkPeerAudits(ctx context.Context, action string, p *networkpeer.Peer, net *network.Network) []*audit.Entry {
 	fp := fmt.Sprintf("peer_project=%s network=%s state=%s", p.PeerProjectID, net.Name, p.State)
 	mk := func(resource string) *audit.Entry {
 		return &audit.Entry{
@@ -180,7 +180,7 @@ func networkPeerAudits(ctx context.Context, action string, p *networkpeer.Peer, 
 
 // loadPeerNetwork 读 peer 声明指向的网络行（活跃口径；A.1：批准面只对
 // 活跃网络有意义——已删网络的挂靠无接收方）。
-func (svc *NetworksService) loadPeerNetwork(ctx context.Context, networkID string) (*networkrepo.Network, error) {
+func (svc *NetworksService) loadPeerNetwork(ctx context.Context, networkID string) (*network.Network, error) {
 	net, err := svc.s.Networks.GetByID(ctx, svc.s.DB.Runner(), networkID)
 	if err != nil {
 		return nil, mapStateError(err, "network")
@@ -194,7 +194,7 @@ func (svc *NetworksService) loadPeerNetwork(ctx context.Context, networkID strin
 // 行。不等即 E_FORBIDDEN——P1 修复前按行 ID 直批不比对归属，任意项目的
 // 持有者可单向自助批准跨项目挂靠（越权网络接入）。declare 侧不动：挂靠方
 // 本就任意项目发起（声明≠批准；归属校验在挂靠方自己的 Project 上）。
-func (svc *NetworksService) requirePeerReceiverTeam(ctx context.Context, net *networkrepo.Network) error {
+func (svc *NetworksService) requirePeerReceiverTeam(ctx context.Context, net *network.Network) error {
 	teamID, owner, err := callerTeam(ctx)
 	if err != nil {
 		return err
@@ -336,7 +336,7 @@ func (svc *NetworksService) RevokeNetworkPeer(ctx context.Context, req *structur
 	}
 	// 网络行可能已删（先删网络后撤声明的次序）：审计名缺失不阻断撤销——
 	// 撤销的语义就是摘除挂靠，接收网络在不在都成立。
-	net := &networkrepo.Network{ID: p.NetworkID}
+	net := &network.Network{ID: p.NetworkID}
 	if active, nerr := svc.s.Networks.GetByID(ctx, svc.s.DB.Runner(), p.NetworkID); nerr == nil {
 		net = active
 	}
@@ -403,16 +403,16 @@ func (svc *NetworksService) peerVisibleToCaller(ctx context.Context, p *networkp
 
 // peerNetProjection 读声明指向的网络行（读投影便捷字段；行已删 → 空值，
 // 不阻断列表）。
-func (svc *NetworksService) peerNetProjection(ctx context.Context, p *networkpeer.Peer) *networkrepo.Network {
+func (svc *NetworksService) peerNetProjection(ctx context.Context, p *networkpeer.Peer) *network.Network {
 	net, err := svc.s.Networks.GetByID(ctx, svc.s.DB.Runner(), p.NetworkID)
 	if err != nil {
-		return &networkrepo.Network{ID: p.NetworkID}
+		return &network.Network{ID: p.NetworkID}
 	}
 	return net
 }
 
 // networkPeerMsg 行 → proto 映射（网络侧便捷字段来自读投影）。
-func networkPeerMsg(p *networkpeer.Peer, net *networkrepo.Network) *structurev1.NetworkPeer {
+func networkPeerMsg(p *networkpeer.Peer, net *network.Network) *structurev1.NetworkPeer {
 	msg := &structurev1.NetworkPeer{
 		Id: p.ID, Seq: p.Seq, PeerProjectId: p.PeerProjectID, State: string(p.State),
 		CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt, ApprovedAt: p.ApprovedAt,

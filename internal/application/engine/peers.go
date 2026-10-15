@@ -20,7 +20,7 @@ import (
 	specir "github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/networkpeer"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/networkpeer"
 )
 
 // resolvePeerRefs 解析 spec 的全部跨 Project 引用（consumerProjectID 是

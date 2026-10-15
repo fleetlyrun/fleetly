@@ -1,8 +1,6 @@
-// Package appvariable 是 AppVariable 聚合 repo（CONTEXT.md Variable 词条：
-// App 级平台变量——三级合成的顶层，冻结咽喉合成进 AppSpec，同键覆盖
-// 源声明 env 与 SharedVariable，ADR-0072）。值是明文非敏感面（敏感值走
-// internal/state/secret 的 age 信封）；软删 tombstone 与
-// shared_variables 同款（聚合镜像先例）。
+// Package appvariable 是 AppVariable 聚合 repo 的 SQLite 实现：行类型与
+// Repo 接口住 domain/structure/appvariable（ADR-0075 Repo 接口层），本包
+// 只持不导出实现与构造。
 package appvariable
 
 import (
@@ -11,35 +9,21 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/appvariable"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
-// AppVariable 是聚合行。
-type AppVariable struct {
-	ID        string
-	Seq       int64
-	AppID     string
-	Name      string
-	Value     string
-	CreatedAt string
-	UpdatedAt string
-	DeletedAt string
-}
-
-// Deleted 报告 tombstone 状态。
-func (v *AppVariable) Deleted() bool { return v.DeletedAt != "" }
-
-// Repo 是 AppVariable 聚合存取。
-type Repo struct {
+// repo 是 domain appvariable.Repo 的 SQLite 实现。
+type repo struct {
 	clock state.Clock
 }
 
-// New 构造 repo。
-func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
+// New 构造 repo（直接返回接口——消费面只见 domain appvariable.Repo）。
+func New(clock state.Clock) appvariable.Repo { return &repo{clock: clock} }
 
 // Upsert 写入（同名活跃行覆盖值；tombstone 行复活——shared_variables
 // 同款，唯一索引只拦活跃行）。
-func (r *Repo) Upsert(ctx context.Context, run state.Runner, v *AppVariable) error {
+func (r *repo) Upsert(ctx context.Context, run state.Runner, v *appvariable.AppVariable) error {
 	now := state.FormatTime(r.clock.Now())
 	if existing, err := r.GetByName(ctx, run, v.AppID, v.Name); err == nil {
 		_, err := run.ExecContext(ctx, `
@@ -73,7 +57,7 @@ func (r *Repo) Upsert(ctx context.Context, run state.Runner, v *AppVariable) err
 }
 
 // GetByName 读活跃行（回显与配额计数的读面）。
-func (r *Repo) GetByName(ctx context.Context, run state.Runner, appID, name string) (*AppVariable, error) {
+func (r *repo) GetByName(ctx context.Context, run state.Runner, appID, name string) (*appvariable.AppVariable, error) {
 	row := run.QueryRowContext(ctx, `
 		SELECT id, seq, app_id, name, value, created_at, updated_at, deleted_at
 		FROM app_variables WHERE app_id = ? AND name = ? AND deleted_at = ''`,
@@ -82,7 +66,7 @@ func (r *Repo) GetByName(ctx context.Context, run state.Runner, appID, name stri
 }
 
 // ListActive 返回 App 内全部活跃行（冻结咽喉合成装载面 + 配额计数面）。
-func (r *Repo) ListActive(ctx context.Context, run state.Runner, appID string) ([]AppVariable, error) {
+func (r *repo) ListActive(ctx context.Context, run state.Runner, appID string) ([]appvariable.AppVariable, error) {
 	rows, err := run.QueryContext(ctx, `
 		SELECT id, seq, app_id, name, value, created_at, updated_at, deleted_at
 		FROM app_variables WHERE app_id = ? AND deleted_at = ''
@@ -91,7 +75,7 @@ func (r *Repo) ListActive(ctx context.Context, run state.Runner, appID string) (
 		return nil, err
 	}
 	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []AppVariable
+	var out []appvariable.AppVariable
 	for rows.Next() {
 		v, err := scanVariable(rows.Scan)
 		if err != nil {
@@ -105,7 +89,7 @@ func (r *Repo) ListActive(ctx context.Context, run state.Runner, appID string) (
 // ListPage 分页读（ADR-0026 after_* + limit 惯例；游标轴 = App 内 name
 // 字典序升序）。limit<=0 或 >200 回落/钳制缺省 50（与 shared_variables
 // 同款）。
-func (r *Repo) ListPage(ctx context.Context, run state.Runner, appID, afterName string, limit int) ([]AppVariable, error) {
+func (r *repo) ListPage(ctx context.Context, run state.Runner, appID, afterName string, limit int) ([]appvariable.AppVariable, error) {
 	if limit <= 0 || limit > maxListLimit {
 		limit = defaultListLimit
 	}
@@ -124,7 +108,7 @@ func (r *Repo) ListPage(ctx context.Context, run state.Runner, appID, afterName 
 		return nil, err
 	}
 	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []AppVariable
+	var out []appvariable.AppVariable
 	for rows.Next() {
 		v, err := scanVariable(rows.Scan)
 		if err != nil {
@@ -137,7 +121,7 @@ func (r *Repo) ListPage(ctx context.Context, run state.Runner, appID, afterName 
 
 // SoftDelete 落 tombstone（幂等；删除不存在/已删的名按 ErrNotFound 诚实
 // 上抛——shared_variables 同款）。
-func (r *Repo) SoftDelete(ctx context.Context, run state.Runner, appID, name string) error {
+func (r *repo) SoftDelete(ctx context.Context, run state.Runner, appID, name string) error {
 	now := state.FormatTime(r.clock.Now())
 	res, err := run.ExecContext(ctx, `
 		UPDATE app_variables SET deleted_at = ?, updated_at = ?
@@ -157,8 +141,8 @@ const (
 	maxListLimit     = 200
 )
 
-func scanVariable(scan func(dest ...any) error) (*AppVariable, error) {
-	var v AppVariable
+func scanVariable(scan func(dest ...any) error) (*appvariable.AppVariable, error) {
+	var v appvariable.AppVariable
 	if err := scan(&v.ID, &v.Seq, &v.AppID, &v.Name, &v.Value, &v.CreatedAt, &v.UpdatedAt, &v.DeletedAt); err != nil {
 		return nil, persistence.MapScanErr(err)
 	}

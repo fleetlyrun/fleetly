@@ -20,21 +20,25 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/network"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/networkpeer"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/route"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/volume"
 	apprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/app"
 	buildrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/build"
 	dbrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/database"
 	deploymentrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/deployment"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/githubapp"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/hook"
-	networkrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/networkpeer"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
+	networkpeerrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/networkpeer"
 	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/route"
+	routerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/route"
 	runrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/run"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/schedule"
 	taskrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/task"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/volume"
+	volumerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/volume"
 )
 
 // Kind 是归属解析链的判别（freeze 冻结表与行级授权共用的值域）。
@@ -86,12 +90,12 @@ type Anchor struct {
 	apps        app.Repo
 	tasks       task.Repo
 	schedules   *schedule.Repo
-	networks    *networkrepo.Repo
-	peers       *networkpeer.Repo
+	networks    network.Repo
+	peers       networkpeer.Repo
 	hooks       *hook.Repo
-	routes      *route.Repo
+	routes      route.Repo
 	databases   *dbrepo.Repo
-	volumes     *volume.Repo
+	volumes     volume.Repo
 	runs        run.Repo
 	deployments deployment.Repo
 	builds      build.Repo
@@ -106,11 +110,11 @@ func New(clock state.Clock) *Anchor {
 		tasks:       taskrepo.New(clock),
 		schedules:   schedule.New(clock),
 		networks:    networkrepo.New(clock),
-		peers:       networkpeer.New(clock),
+		peers:       networkpeerrepo.New(clock),
 		hooks:       hook.New(clock),
-		routes:      route.New(clock),
+		routes:      routerepo.New(clock),
 		databases:   dbrepo.New(clock),
-		volumes:     volume.New(clock),
+		volumes:     volumerepo.New(clock),
 		runs:        runrepo.New(clock),
 		deployments: deploymentrepo.New(clock),
 		builds:      buildrepo.New(clock),

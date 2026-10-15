@@ -8,8 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/network"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
-	networkrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
 	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
@@ -32,10 +32,10 @@ func TestManagedProxyAttachesProjectNetworks(t *testing.T) {
 	genBefore := rt.calls()[len(rt.calls())-1].Gen
 
 	// 建两个 Project 网络 → 受管 workload 的引用集挂上。
-	require.NoError(t, e.networks.Create(ctx, db.Runner(), &networkrepo.Network{
+	require.NoError(t, e.networks.Create(ctx, db.Runner(), &network.Network{
 		ID: "01JD0NET000000000000000001", ProjectID: tProjectID, Name: "default",
 	}))
-	require.NoError(t, e.networks.Create(ctx, db.Runner(), &networkrepo.Network{
+	require.NoError(t, e.networks.Create(ctx, db.Runner(), &network.Network{
 		ID: "01JD0NET000000000000000002", ProjectID: tProjectID, Name: "internal", EgressNone: true,
 	}))
 	e.managedStep(ctx)

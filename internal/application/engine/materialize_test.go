@@ -10,7 +10,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/volume"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/volume"
 )
 
 // C2 性质测试：同一 Revision 经 release / rollback / 基线重放三路物化，

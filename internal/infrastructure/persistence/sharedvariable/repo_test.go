@@ -10,8 +10,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/sharedvariable"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/sharedvariable"
+	sharedvariablerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/sharedvariable"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statertest"
 )
 
@@ -28,7 +29,7 @@ const (
 func TestSharedVariableUpsertLifecycle(t *testing.T) {
 	db, clock := statertest.New(t)
 	ctx := context.Background()
-	vars := sharedvariable.New(clock)
+	vars := sharedvariablerepo.New(clock)
 
 	row := newVar("01JD0SVAR00000000000000001", projA, "DATABASE_URL", "v1")
 	require.NoError(t, vars.Upsert(ctx, db.Runner(), row))
@@ -64,7 +65,7 @@ func TestSharedVariableUpsertLifecycle(t *testing.T) {
 func TestSharedVariableListPage(t *testing.T) {
 	db, clock := statertest.New(t)
 	ctx := context.Background()
-	vars := sharedvariable.New(clock)
+	vars := sharedvariablerepo.New(clock)
 
 	for i, n := range []string{"b-key", "a-key", "c-key"} {
 		require.NoError(t, vars.Upsert(ctx, db.Runner(), newVar(
@@ -152,7 +153,7 @@ func TestSharedVariableUpsertConcurrentSameNameConflict(t *testing.T) {
 	}
 	upsertErr := make(chan error, 1)
 	go func() {
-		upsertErr <- sharedvariable.New(clock).Upsert(ctx, gate, &sharedvariable.SharedVariable{
+		upsertErr <- sharedvariablerepo.New(clock).Upsert(ctx, gate, &sharedvariable.SharedVariable{
 			ProjectID: projA, Name: "raced", Value: "b-value",
 		})
 	}()
@@ -171,7 +172,7 @@ func TestSharedVariableUpsertConcurrentSameNameConflict(t *testing.T) {
 		"concurrent same-name PUT must normalize the unique violation, got: %v", err)
 
 	// 落库行仍是 A 的那颗（B 的 INSERT 失败即整体无效果）。
-	got, err := sharedvariable.New(clock).GetByName(ctx, dbB.Runner(), projA, "raced")
+	got, err := sharedvariablerepo.New(clock).GetByName(ctx, dbB.Runner(), projA, "raced")
 	require.NoError(t, err)
 	assert.Equal(t, "a-value", got.Value)
 }

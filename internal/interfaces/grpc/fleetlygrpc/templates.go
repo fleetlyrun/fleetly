@@ -23,11 +23,11 @@ import (
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/apptemplate"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/catalog"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
-	catalogrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/catalog"
 )
 
 // 模板面事件名（usage 反扫的字面量锚点）。
@@ -73,7 +73,7 @@ func (s *Services) resolveCatalog(ctx context.Context) (*catalogView, error) {
 		}
 		return &catalogView{entries: manifest.Templates, source: "refreshed", digest: snap.Digest}, nil
 	}
-	if !errors.Is(err, catalogrepo.ErrNoSnapshot) {
+	if !errors.Is(err, catalog.ErrNoSnapshot) {
 		return nil, mapStateError(err, "template catalog")
 	}
 	builtin, err := apptemplate.Builtin()
@@ -353,7 +353,7 @@ func (svc *TemplatesService) RefreshTemplates(ctx context.Context, _ *deliveryv1
 		return nil, apperr.New("E_INTERNAL", "refreshed catalog could not be encoded").WithCause(err)
 	}
 	digest := apptemplate.AggregateDigest(entries)
-	snap := &catalogrepo.Snapshot{Digest: digest, Body: string(body)}
+	snap := &catalog.Snapshot{Digest: digest, Body: string(body)}
 	err = svc.s.commit(ctx, writeFact{
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			return svc.s.Catalog.Put(ctx, tx, snap)

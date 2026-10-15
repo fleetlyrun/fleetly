@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/route"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/route"
 )
 
 // managedStep 是受管 Provider reconciler 的收敛步（ADR-0004：全平台唯一

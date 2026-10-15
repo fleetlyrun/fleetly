@@ -1,6 +1,7 @@
-// Package networkrepo 是 Network 聚合 repo（CONTEXT.md Network 词条：
-// Project 级互通附件；成员为 Project 进程、Task 网络组挂靠或显式跨
-// Project 引用；可声明 egress:none。包名避开内部网络实现混淆）。
+// Package networkrepo 是 Network 聚合 repo 的 SQLite 实现：行类型与 Repo
+// 接口住 domain/structure/network（ADR-0075 Repo 接口层），本包只持不
+// 导出实现与构造。实现侧包名 networkrepo 避开与内部网络实现的混淆
+// （域侧即包名 network）。
 package networkrepo
 
 import (
@@ -9,33 +10,20 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/network"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
-// Network 是聚合行。
-type Network struct {
-	ID         string
-	Seq        int64
-	ProjectID  string
-	Name       string
-	EgressNone bool
-	CreatedAt  string
-	DeletedAt  string
-}
-
-// Deleted 报告 tombstone 状态。
-func (n *Network) Deleted() bool { return n.DeletedAt != "" }
-
-// Repo 是 Network 聚合存取。
-type Repo struct {
+// repo 是 domain network.Repo 的 SQLite 实现。
+type repo struct {
 	clock state.Clock
 }
 
-// New 构造 repo。
-func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
+// New 构造 repo（直接返回接口——消费面只见 domain network.Repo）。
+func New(clock state.Clock) network.Repo { return &repo{clock: clock} }
 
 // Create 落一行；同 Project 同名冲突返回 state.ErrAlreadyExists。
-func (r *Repo) Create(ctx context.Context, run state.Runner, n *Network) error {
+func (r *repo) Create(ctx context.Context, run state.Runner, n *network.Network) error {
 	seq, err := persistence.NextSeq(ctx, run, "networks")
 	if err != nil {
 		return err
@@ -61,7 +49,7 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, n *Network) error {
 }
 
 // GetByID 按 ID 直读活跃行（peer 声明解析面：声明行只挂活跃网络）。
-func (r *Repo) GetByID(ctx context.Context, run state.Runner, id string) (*Network, error) {
+func (r *repo) GetByID(ctx context.Context, run state.Runner, id string) (*network.Network, error) {
 	row := run.QueryRowContext(ctx, `
 		SELECT id, seq, project_id, name, egress_none, created_at, deleted_at
 		FROM networks WHERE id = ? AND deleted_at = ''`, id)
@@ -69,7 +57,7 @@ func (r *Repo) GetByID(ctx context.Context, run state.Runner, id string) (*Netwo
 }
 
 // GetByName 读活跃行。
-func (r *Repo) GetByName(ctx context.Context, run state.Runner, projectID, name string) (*Network, error) {
+func (r *repo) GetByName(ctx context.Context, run state.Runner, projectID, name string) (*network.Network, error) {
 	row := run.QueryRowContext(ctx, `
 		SELECT id, seq, project_id, name, egress_none, created_at, deleted_at
 		FROM networks WHERE project_id = ? AND name = ? AND deleted_at = ''`, projectID, name)
@@ -78,7 +66,7 @@ func (r *Repo) GetByName(ctx context.Context, run state.Runner, projectID, name 
 
 // ListByProject 返回 Project 全部活跃网络（全量面——配额检查与引擎挂网
 // 装配消费；API 分页读面走 ListByProjectPage）。
-func (r *Repo) ListByProject(ctx context.Context, run state.Runner, projectID string) ([]Network, error) {
+func (r *repo) ListByProject(ctx context.Context, run state.Runner, projectID string) ([]network.Network, error) {
 	rows, err := run.QueryContext(ctx, `
 		SELECT id, seq, project_id, name, egress_none, created_at, deleted_at
 		FROM networks WHERE project_id = ? AND deleted_at = '' ORDER BY name`, projectID)
@@ -86,7 +74,7 @@ func (r *Repo) ListByProject(ctx context.Context, run state.Runner, projectID st
 		return nil, err
 	}
 	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []Network
+	var out []network.Network
 	for rows.Next() {
 		n, err := scanNetwork(rows.Scan)
 		if err != nil {
@@ -100,7 +88,7 @@ func (r *Repo) ListByProject(ctx context.Context, run state.Runner, projectID st
 // ListByProjectPage 是 ListByProject 的分页读面（ADR-0026 after_* + limit；
 // 游标轴 = 既有排序轴 name 字典序升序——既有响应序不变）。limit<=0 或
 // >200 回落/钳制缺省 50。
-func (r *Repo) ListByProjectPage(ctx context.Context, run state.Runner, projectID, afterName string, limit int) ([]Network, error) {
+func (r *repo) ListByProjectPage(ctx context.Context, run state.Runner, projectID, afterName string, limit int) ([]network.Network, error) {
 	if limit <= 0 || limit > maxListLimit {
 		limit = defaultListLimit
 	}
@@ -119,7 +107,7 @@ func (r *Repo) ListByProjectPage(ctx context.Context, run state.Runner, projectI
 		return nil, err
 	}
 	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []Network
+	var out []network.Network
 	for rows.Next() {
 		n, err := scanNetwork(rows.Scan)
 		if err != nil {
@@ -137,7 +125,7 @@ const (
 
 // List 返回全部活跃网络（跨 Project；受管 Proxy 挂网的全量真源，N0 修复
 // 批 B1）。
-func (r *Repo) List(ctx context.Context, run state.Runner) ([]Network, error) {
+func (r *repo) List(ctx context.Context, run state.Runner) ([]network.Network, error) {
 	rows, err := run.QueryContext(ctx, `
 		SELECT id, seq, project_id, name, egress_none, created_at, deleted_at
 		FROM networks WHERE deleted_at = '' ORDER BY project_id, name`)
@@ -145,7 +133,7 @@ func (r *Repo) List(ctx context.Context, run state.Runner) ([]Network, error) {
 		return nil, err
 	}
 	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []Network
+	var out []network.Network
 	for rows.Next() {
 		n, err := scanNetwork(rows.Scan)
 		if err != nil {
@@ -156,8 +144,8 @@ func (r *Repo) List(ctx context.Context, run state.Runner) ([]Network, error) {
 	return out, rows.Err()
 }
 
-func scanNetwork(scan func(dest ...any) error) (*Network, error) {
-	var n Network
+func scanNetwork(scan func(dest ...any) error) (*network.Network, error) {
+	var n network.Network
 	var egress int
 	err := scan(&n.ID, &n.Seq, &n.ProjectID, &n.Name, &egress, &n.CreatedAt, &n.DeletedAt)
 	if err != nil {

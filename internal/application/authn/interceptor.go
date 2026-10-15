@@ -21,6 +21,10 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/membership"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/role"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/token"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/user"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
@@ -28,7 +32,7 @@ import (
 	membershiprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/membership"
 	rolerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/role"
 	tokenrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/token"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/user"
+	userrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/user"
 )
 
 // HeaderClientSource 是 CLI 自标识头（值 "cli"）：审计来源 api/cli 区分的
@@ -88,10 +92,10 @@ type Authenticator struct {
 	db          *persistence.DB
 	policy      *authz.PolicySet
 	log         *slog.Logger
-	roles       *rolerepo.Repo
-	users       *user.Repo
-	tokens      *tokenrepo.Repo
-	memberships *membershiprepo.Repo
+	roles       role.Repo
+	users       user.Repo
+	tokens      token.Repo
+	memberships membership.Repo
 	audits      audit.Repo
 	vocab       []string
 	lastMu      sync.Mutex
@@ -104,7 +108,7 @@ func NewAuthenticator(db *persistence.DB, policy *authz.PolicySet, vocab []strin
 	return &Authenticator{
 		db: db, policy: policy, log: log,
 		roles:       rolerepo.New(db.Clock()),
-		users:       user.New(db.Clock()),
+		users:       userrepo.New(db.Clock()),
 		tokens:      tokenrepo.New(db.Clock()),
 		memberships: membershiprepo.New(db.Clock()),
 		audits:      auditrepo.New(db.Clock()),
@@ -273,7 +277,7 @@ func (a *Authenticator) resolve(ctx context.Context) (*Identity, error) {
 // narrowToCreator 把 Identity 的 scope 面收窄到 creator 当前授权（原地改
 // id.Scopes/scopeSet）。全失（membership 消失/交集为空）返回 403 带原因
 // （Agent 可判定"找管理员"而非"重新认证"——P6 裁决）。
-func (a *Authenticator) narrowToCreator(ctx context.Context, tok *tokenrepo.Token, id *Identity) error {
+func (a *Authenticator) narrowToCreator(ctx context.Context, tok *token.Token, id *Identity) error {
 	m, err := a.memberships.GetByUser(ctx, a.db.Runner(), tok.UserID, tok.TeamID)
 	if err != nil {
 		if !errors.Is(err, state.ErrNotFound) {
@@ -320,7 +324,7 @@ func (a *Authenticator) narrowToCreator(ctx context.Context, tok *tokenrepo.Toke
 
 // narrowingErr 铸收窄 403（带原因与去向建议——收窄是管理面事实，不是认证
 // 失败；E_UNAUTHENTICATED 会误导 Agent 走重新认证）。
-func (a *Authenticator) narrowingErr(tok *tokenrepo.Token, reason, detail string) error {
+func (a *Authenticator) narrowingErr(tok *token.Token, reason, detail string) error {
 	return apperr.New("E_FORBIDDEN", "%s (token %q)", detail, tok.Name).
 		WithContext("token", tok.Name).
 		WithContext("reason", reason).
@@ -329,7 +333,7 @@ func (a *Authenticator) narrowingErr(tok *tokenrepo.Token, reason, detail string
 
 // auditNarrowing 落"收窄生效"审计行（节流：同 Token 60s 一条——重试循环
 // 不刷屏；audit.Append 的 Team 轴由 ctx 注入，拦截器已带调用方 Team）。
-func (a *Authenticator) auditNarrowing(ctx context.Context, tok *tokenrepo.Token, reason string) {
+func (a *Authenticator) auditNarrowing(ctx context.Context, tok *token.Token, reason string) {
 	now := time.Now()
 	a.lastMu.Lock()
 	if last, ok := a.lastNarrow[tok.ID]; ok && now.Sub(last) < narrowingAuditInterval {

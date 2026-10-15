@@ -17,8 +17,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/network"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
-	networkrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
 	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
@@ -130,7 +130,7 @@ func TestManagedProxyNetworkListFailureSkipsDomainTick(t *testing.T) {
 	require.NoError(t, projectrepo.New(clock).Create(ctx, db.Runner(), &project.Project{
 		ID: tProjectID, Name: "shop", TeamID: "default",
 	}))
-	require.NoError(t, e.networks.Create(ctx, db.Runner(), &networkrepo.Network{
+	require.NoError(t, e.networks.Create(ctx, db.Runner(), &network.Network{
 		ID: "01JD0NET000000000000000001", ProjectID: tProjectID, Name: "default",
 	}))
 

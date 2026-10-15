@@ -11,21 +11,34 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/run"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/catalog"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/revision"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/invitation"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/membership"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/role"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/team"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/token"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/user"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/anchor"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/appvariable"
 	configrepo "github.com/fleetlyrun/fleetly/internal/domain/structure/config"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/network"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/networkpeer"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/route"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/sharedvariable"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/volume"
 	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/outbox"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/github"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 	apprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/app"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/appvariable"
+	appvariablerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/appvariable"
 	auditrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/audit"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/backup"
 	browserepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/browse"
@@ -37,26 +50,26 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/freeze"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/githubapp"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/hook"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/invitation"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/membership"
-	networkrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/networkpeer"
+	invitationrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/invitation"
+	membershiprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/membership"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
+	networkpeerrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/networkpeer"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/node"
 	outboxrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/outbox"
 	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
 	revisionrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/revision"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/role"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/route"
+	rolerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/role"
+	routerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/route"
 	runrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/run"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/schedule"
 	secretrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/secret"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/sharedvariable"
+	sharedvariablerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/sharedvariable"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/sourceupload"
 	taskrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/task"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/team"
+	teamrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/team"
 	tokenrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/token"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/user"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/volume"
+	userrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/user"
+	volumerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/volume"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/upload"
 )
 
@@ -86,23 +99,23 @@ type Services struct {
 	Configs      configrepo.Repo
 	// SharedVariables 是 SharedVariable 聚合 repo（F2.9，ADR-0043：Project
 	// 级共享变量——归一化期合成进 Revision 的 Project 层）。
-	SharedVariables *sharedvariable.Repo
+	SharedVariables sharedvariable.Repo
 	// AppVariables 是 AppVariable 聚合 repo（ADR-0072 三级合成顶层：
 	// App 级平台变量——冻结咽喉合成，同键覆盖源声明 env 与 SharedVariable）。
-	AppVariables *appvariable.Repo
-	Volumes      *volume.Repo
-	Networks     *networkrepo.Repo
-	NetworkPeers *networkpeer.Repo
+	AppVariables appvariable.Repo
+	Volumes      volume.Repo
+	Networks     network.Repo
+	NetworkPeers networkpeer.Repo
 	Freezes      *freeze.Repo
-	Routes       *route.Repo
+	Routes       route.Repo
 	Nodes        *node.Repo
 	Audits       audit.Repo
-	Users        *user.Repo
-	Teams        *team.Repo
-	Roles        *role.Repo
-	Memberships  *membership.Repo
-	Tokens       *tokenrepo.Repo
-	Invitations  *invitation.Repo
+	Users        user.Repo
+	Teams        team.Repo
+	Roles        role.Repo
+	Memberships  membership.Repo
+	Tokens       token.Repo
+	Invitations  invitation.Repo
 	Hooks        *hook.Repo
 
 	// GitHubApps 是 GitHub App 接入材料聚合 repo（ADR-0073 阶段 B）；
@@ -130,7 +143,7 @@ type Services struct {
 
 	// Catalog 是 App 模板目录快照 repo（F3.3，ADR-0050：RefreshTemplates
 	// 的单行快照；解析序 = 快照在场优先、内嵌目录兜底）。
-	Catalog *catalogrepo.Repo
+	Catalog catalog.Repo
 
 	// TemplatesCatalogURL 是目录刷新源（ADR-0050 决策 4：空 = 刷新停用，
 	// 内嵌目录即全部；装配期从 server.templates_catalog_url 注入）。
@@ -186,21 +199,21 @@ func NewServices(db *persistence.DB, e *engine.Engine, c *material.Cipher, rt ca
 		OutboxEvents:    outboxrepo.New(clock),
 		Secrets:         secretrepo.New(clock),
 		Configs:         cfgrepo.New(clock),
-		SharedVariables: sharedvariable.New(clock),
-		AppVariables:    appvariable.New(clock),
-		Volumes:         volume.New(clock),
+		SharedVariables: sharedvariablerepo.New(clock),
+		AppVariables:    appvariablerepo.New(clock),
+		Volumes:         volumerepo.New(clock),
 		Networks:        networkrepo.New(clock),
-		NetworkPeers:    networkpeer.New(clock),
+		NetworkPeers:    networkpeerrepo.New(clock),
 		Freezes:         freeze.New(clock),
-		Routes:          route.New(clock),
+		Routes:          routerepo.New(clock),
 		Nodes:           node.New(clock),
 		Audits:          auditrepo.New(clock),
-		Users:           user.New(clock),
-		Teams:           team.New(clock),
-		Roles:           role.New(clock),
-		Memberships:     membership.New(clock),
+		Users:           userrepo.New(clock),
+		Teams:           teamrepo.New(clock),
+		Roles:           rolerepo.New(clock),
+		Memberships:     membershiprepo.New(clock),
 		Tokens:          tokenrepo.New(clock),
-		Invitations:     invitation.New(clock),
+		Invitations:     invitationrepo.New(clock),
 		Hooks:           hook.New(clock),
 		GitHubApps:      githubapp.New(clock),
 		GitHub:          github.NewClient(nil, nil),

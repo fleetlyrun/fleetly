@@ -1,5 +1,6 @@
-// Package role 是 Role 聚合 repo（CONTEXT.md Role 词条：命名的 Scope 集合，
-// 在 Team 内授予 User 或 Token）。scopes 列是 JSON 数组（colon 形态）。
+// Package role 是 Role 聚合 repo 的 SQLite 实现：行类型与 Repo 接口住
+// domain/identity/role（ADR-0075 Repo 接口层），本包只持不导出实现与
+// 构造。
 package role
 
 import (
@@ -7,32 +8,22 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/role"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
-// Role 是聚合行（Builtin 行 team_id 为空——平台级模板）。
-type Role struct {
-	ID        string
-	Seq       int64
-	TeamID    string
-	Name      string
-	Builtin   bool
-	Scopes    []string
-	CreatedAt string
-}
-
-// Repo 是 Role 聚合存取。
-type Repo struct {
+// repo 是 domain role.Repo 的 SQLite 实现。
+type repo struct {
 	clock state.Clock
 }
 
-// New 构造 repo。
-func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
+// New 构造 repo（直接返回接口——消费面只见 domain role.Repo）。
+func New(clock state.Clock) role.Repo { return &repo{clock: clock} }
 
 // Create 落一行；同 Team 内同名冲突返回 state.ErrAlreadyExists。
-func (r *Repo) Create(ctx context.Context, run state.Runner, ro *Role) error {
+func (r *repo) Create(ctx context.Context, run state.Runner, ro *role.Role) error {
 	seq, err := persistence.NextSeq(ctx, run, "roles")
 	if err != nil {
 		return err
@@ -59,7 +50,7 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, ro *Role) error {
 // UpsertBuiltin 落/刷内置角色（固定 slug ID；scopes 由代码单一源刷新——
 // 词表演进时启动即同步，不待人工迁移）。幂等刷新不耗 seq 号：先 UPDATE，
 // 零行 = 首播 → 铸 seq 落行（ADR-0070）。
-func (r *Repo) UpsertBuiltin(ctx context.Context, run state.Runner, ro *Role) error {
+func (r *repo) UpsertBuiltin(ctx context.Context, run state.Runner, ro *role.Role) error {
 	ro.CreatedAt = state.FormatTime(r.clock.Now())
 	scopes, err := json.Marshal(ro.Scopes)
 	if err != nil {
@@ -86,7 +77,7 @@ func (r *Repo) UpsertBuiltin(ctx context.Context, run state.Runner, ro *Role) er
 }
 
 // Get 按 ID 直读。
-func (r *Repo) Get(ctx context.Context, run state.Runner, id string) (*Role, error) {
+func (r *repo) Get(ctx context.Context, run state.Runner, id string) (*role.Role, error) {
 	row := run.QueryRowContext(ctx, `
 		SELECT id, seq, team_id, name, builtin, scopes, created_at
 		FROM roles WHERE id = ?`, id)
@@ -94,7 +85,7 @@ func (r *Repo) Get(ctx context.Context, run state.Runner, id string) (*Role, err
 }
 
 // List 返回全部 Role（内置在前、ID 序稳定）。
-func (r *Repo) List(ctx context.Context, run state.Runner) ([]Role, error) {
+func (r *repo) List(ctx context.Context, run state.Runner) ([]role.Role, error) {
 	rows, err := run.QueryContext(ctx, `
 		SELECT id, seq, team_id, name, builtin, scopes, created_at
 		FROM roles ORDER BY builtin DESC, id`)
@@ -102,7 +93,7 @@ func (r *Repo) List(ctx context.Context, run state.Runner) ([]Role, error) {
 		return nil, err
 	}
 	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []Role
+	var out []role.Role
 	for rows.Next() {
 		ro, err := scanRole(rows.Scan)
 		if err != nil {
@@ -115,7 +106,7 @@ func (r *Repo) List(ctx context.Context, run state.Runner) ([]Role, error) {
 
 // Delete 按 ID 删行。内置角色拒绝删（代码单一源）；仍被 Token/membership
 // 引用时 FK RESTRICT 归一为 state.ErrConflict。
-func (r *Repo) Delete(ctx context.Context, run state.Runner, id string) error {
+func (r *repo) Delete(ctx context.Context, run state.Runner, id string) error {
 	ro, err := r.Get(ctx, run, id)
 	if err != nil {
 		return err
@@ -140,8 +131,8 @@ func (r *Repo) Delete(ctx context.Context, run state.Runner, id string) error {
 	return nil
 }
 
-func scanRole(scan func(dest ...any) error) (*Role, error) {
-	var ro Role
+func scanRole(scan func(dest ...any) error) (*role.Role, error) {
+	var ro role.Role
 	var builtin int
 	var scopes string
 	if err := scan(&ro.ID, &ro.Seq, &ro.TeamID, &ro.Name, &builtin, &scopes, &ro.CreatedAt); err != nil {

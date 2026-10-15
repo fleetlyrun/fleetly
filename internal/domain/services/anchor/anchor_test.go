@@ -14,10 +14,12 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/services/anchor"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/network"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/networkpeer"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
 	apprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/app"
-	networkrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/networkpeer"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
+	networkpeerrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/networkpeer"
 	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statertest"
 	taskrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/task"
@@ -46,10 +48,10 @@ func TestAnchorTeamOfChains(t *testing.T) {
 	require.NoError(t, apprepo.New(clock).Create(ctx, run, &app.App{
 		ID: "01JD0APP00000000000000000A", ProjectID: tProject, Name: "web",
 	}))
-	require.NoError(t, networkrepo.New(clock).Create(ctx, run, &networkrepo.Network{
+	require.NoError(t, networkrepo.New(clock).Create(ctx, run, &network.Network{
 		ID: "01JD0NET00000000000000000A", ProjectID: tProject, Name: "default",
 	}))
-	require.NoError(t, networkpeer.New(clock).Create(ctx, run, &networkpeer.Peer{
+	require.NoError(t, networkpeerrepo.New(clock).Create(ctx, run, &networkpeer.Peer{
 		ID: "01JD0PEER0000000000000000A", NetworkID: "01JD0NET00000000000000000A",
 	}))
 
@@ -86,7 +88,7 @@ func TestAnchorNotFoundCarriesLegResource(t *testing.T) {
 	assert.True(t, errors.Is(err, state.ErrNotFound), "freeze 面据此放行")
 
 	// 二跳链：peer 在场、network 缺失 → 报 network。
-	require.NoError(t, networkpeer.New(clock).Create(ctx, run, &networkpeer.Peer{
+	require.NoError(t, networkpeerrepo.New(clock).Create(ctx, run, &networkpeer.Peer{
 		ID: "01JD0PEER0000000000000000B", NetworkID: "01JD0MISSING0000000000000N",
 	}))
 	_, err = a.TeamOf(ctx, run, anchor.KindPeer, "01JD0PEER0000000000000000B")
