@@ -81,6 +81,18 @@ func (e *FrozenSpecError) Error() string {
 
 func (e *FrozenSpecError) Unwrap() error { return e.Err }
 
+// AdmissionError 标记 SubmitSpec 的 admission 相错误（不变式⑥双事务的映
+// 射孪面）：api 按 phase 域插值——冻结相 what="revision"、admission 相
+// what="deployment"（mapStateError 的 NotFound/Conflict 文案槽），文案
+// 逐字节零漂移；哨兵判定经 Unwrap 照常穿透。
+type AdmissionError struct {
+	Err error
+}
+
+func (e *AdmissionError) Error() string { return e.Err.Error() }
+
+func (e *AdmissionError) Unwrap() error { return e.Err }
+
 // frozenSpecSite 是 FrozenSpecError 的站点词（api 原文案前缀逐字节保持：
 // overlay = Deploy(spec_file) 合并位；material = webhook push 合并位）。
 func frozenSpecSite(m MergeMode) string {
@@ -230,7 +242,7 @@ func (e *Engine) SubmitSpec(ctx context.Context, req SubmitSpecRequest) (*revisi
 		Supersede:      req.Submit.Supersede,
 	})
 	if serr != nil {
-		return nil, nil, nil, serr
+		return nil, nil, nil, &AdmissionError{Err: serr}
 	}
 	return rev, d, adm, nil
 }

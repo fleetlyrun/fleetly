@@ -36,7 +36,8 @@ type DeploymentsService struct {
 }
 
 // Deploy 归一化四源（image 直投 / compose 受理语言 / 上传产物 / 裸
-// AppSpec spec_file）并受理部署（admission 判定全在 engine.Submit）。
+// AppSpec spec_file）并受理部署（合并/冻结/admission 全在
+// engine.SubmitSpec 单咽喉——P3-7 下沉批；hook 闸门留 api）。
 func (svc *DeploymentsService) Deploy(ctx context.Context, req *deliveryv1.DeployRequest) (*deliveryv1.DeployResponse, error) {
 	if req.GetAppId() == "" {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "app_id: must not be empty")
@@ -98,43 +99,39 @@ func (svc *DeploymentsService) Deploy(ctx context.Context, req *deliveryv1.Deplo
 	// Spec 所有权分裂（ADR-0072）：配置了 git hook 的 App 材料归 git——
 	// 材料源（image/compose/upload）硬闸门（override_hook 一次性全量
 	// 接管）；spec_file 是运行时 overlay（材料半边取冻结侧，提交件
-	// source 被忽略——防旧 ref 构建旧 commit）。
+	// source 被忽略——防旧 ref 构建旧 commit）。此处只判形状：闸门留在
+	// api，合并执行随冻结/admission 下沉 engine.SubmitSpec（P3-7）。
+	hookOwned := false
+	merge := engine.MergeNone
 	if hookRow, herr := svc.s.Hooks.Get(ctx, svc.s.DB.Runner(), appRow.ID); herr == nil {
+		hookOwned = true
 		if !req.GetOverrideHook() && req.GetSpecFile() == "" {
 			return nil, apperr.New("E_APP_HOOK_OWNED",
 				"app %s is deployed from a git hook (repo %s); material sources are hook-owned — runtime changes go through spec_file, env through app variables, and material through the repo",
 				appRow.ID, hookRow.Repo)
 		}
 		if req.GetSpecFile() != "" && !req.GetOverrideHook() {
-			if latest, lerr := svc.s.Revisions.Latest(ctx, svc.s.DB.Runner(), appRow.ID); lerr == nil {
-				frozen, ferr := unmarshalFrozenSpec(latest.Spec)
-				if ferr != nil {
-					return nil, apperr.New("E_INTERNAL", "hook-owned overlay: frozen revision is not valid protojson (%v)", ferr)
-				}
-				appSpec = spec.MergeHookOwned(frozen, appSpec)
-			} else if !errors.Is(lerr, state.ErrNotFound) {
-				return nil, mapStateError(lerr, "revision")
-			}
-			// 无冻结 Revision（hook 配置后从未部署）：首部署形态，提交件
-			// 原样受理——材料自提交件建立，后续 push 按合并语义接力。
+			// 冻结材料 + 提交件运行时（提交件 source 忽略）——执行在 engine。
+			merge = engine.MergeOverlay
 		}
 	} else if !errors.Is(herr, state.ErrNotFound) {
 		return nil, mapStateError(herr, "hook")
 	}
 
-	// Revision 冻结（内容寻址复用：同内容只冻结一份；R1..Rn 序号 App 内单调）。
-	rev, err := freezeRevision(ctx, svc.s, appRow, appSpec, req.GetComposeYaml())
-	if err != nil {
-		return nil, mapStateError(err, "revision")
-	}
-
-	d, adm, err := svc.s.Engine.Submit(ctx, engine.SubmitRequest{
-		AppID: appRow.ID, RevisionID: rev.ID,
-		IdempotencyKey: req.GetIdempotencyKey(), CommitSHA: req.GetCommitSha(),
-		Supersede: req.GetSupersede(),
+	// 受理单咽喉（P3-7）：合并（方向参数化）→ 三级变量合成 → Revision
+	// 冻结（内容寻址复用）→ admission 全在 engine.SubmitSpec；无冻结
+	// Revision（hook 配置后从未部署）= 首部署原样受理的语义在 engine 同形。
+	// rev 响应面不回显（与现行一致——deployment.to_revision 已承载锚定）。
+	_, d, adm, err := svc.s.Engine.SubmitSpec(ctx, engine.SubmitSpecRequest{
+		AppID: appRow.ID, Spec: appSpec, SourceText: req.GetComposeYaml(),
+		HookOwned: hookOwned, Merge: merge,
+		Submit: &engine.SubmitOptions{
+			IdempotencyKey: req.GetIdempotencyKey(), CommitSHA: req.GetCommitSha(),
+			Supersede: req.GetSupersede(),
+		},
 	})
 	if err != nil {
-		return nil, mapStateError(err, "deployment")
+		return nil, mapStateError(err, "revision")
 	}
 	return &deliveryv1.DeployResponse{Deployment: deploymentMsg(*d), Admission: admissionMsg(adm)}, nil
 }

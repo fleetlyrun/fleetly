@@ -42,9 +42,16 @@ import (
 // 之类吞成 E_INTERNAL）。
 func mapStateError(err error, what string) error {
 	var qe *capability.MetricsQueryError
+	var fse *engine.FrozenSpecError
+	var sub *engine.AdmissionError
 	switch {
 	case err == nil:
 		return nil
+	case errors.As(err, &sub):
+		// SubmitSpec 的 admission 相错误（P3-7 下沉批）：what 按 phase 归位
+		// "deployment"（冻结相 "revision"）——哨兵穿透 Unwrap 照常命中，
+		// 仅 NotFound/Conflict 的域插值槽归位，文案逐字节零漂移。
+		return mapStateError(sub.Err, "deployment")
 	case errors.Is(err, state.ErrNotFound):
 		return apperr.New("E_NOT_FOUND", "%s not found", what).WithCause(err)
 	case errors.Is(err, state.ErrAlreadyExists):
@@ -79,6 +86,11 @@ func mapStateError(err error, what string) error {
 	case errors.Is(err, engine.ErrFirstBootNetworkUnknown):
 		// firstBootJobs 裸网名受理预检（B12 P3-5）——同上可编程分支。
 		return apperr.New("E_INVALID_ARGUMENT", "%s", err.Error()).WithCause(err)
+	case errors.As(err, &fse): // *engine.FrozenSpecError
+		// 冻结体损坏（P3-7 下沉批）：文案逐字节保持 engine 原形态
+		//（"<site>: frozen revision is not valid protojson (<err>)"——api 直产的
+		// 原文案随合并执行下沉，经此分支零漂移上信封）。
+		return apperr.New("E_INTERNAL", "%s", err.Error()).WithCause(err)
 	case errors.As(err, &qe):
 		// 指标存储上游 4xx（capability.MetricsQueryError，F-B1）：查询
 		// 语法/语义错属调用方错——透传上游原文落 E_INVALID_ARGUMENT，
