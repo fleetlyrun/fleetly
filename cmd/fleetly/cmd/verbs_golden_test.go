@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -73,6 +74,29 @@ func goldenFile(verb string) string {
 // goldenNodeID 是 FakeRuntime 集群观测里的固定平台节点 ID（apitest 夹具
 // DescribeCluster 返回值）。
 const goldenNodeID = "node-1"
+
+// TestGoldenDeployMisuse 钉 deploy 预检的误用形态（P4-2 批 2）：四源双填
+// 经 provisional 请求的 descriptor 执法在拨号前拒绝——人类与 --json 双形态
+// 同 stderr（usage 错误信封与输出形态无关；exit 64 机器契约）。旗标名文本
+// （--image 等）随手拷贝退役，统一报 descriptor 文案（proto 字段名）。
+func TestGoldenDeployMisuse(t *testing.T) {
+	// 四源双填形态（--image × --compose-file）：compose 文件须真实存在
+	//（runtime 读取先于预检——误用执法链的文件面保留）。
+	composeFile := filepath.Join(t.TempDir(), "compose.yaml")
+	require.NoError(t, os.WriteFile(composeFile, []byte("services:\n  web:\n    image: nginx:1.27\n"), 0o600))
+	for _, name := range []string{"deploy misuse", "deploy misuse-json"} {
+		t.Run(name, func(t *testing.T) {
+			args := []string{"deploy", "--app", "app-golden", "--image", "nginx:1.27", "--compose-file", composeFile}
+			if strings.HasSuffix(name, "-json") {
+				args = append(args, "--json")
+			}
+			code, stdout, stderr := runCLI(t, args...)
+			require.Equal(t, exitUsage, code, "usage error must exit 64")
+			require.Empty(t, stdout, "misuse writes nothing to stdout")
+			compareGolden(t, goldenFile(name), normalizeGolden(stderr))
+		})
+	}
+}
 
 // TestGoldenBusinessVerbs 顺序跑完整业务流（同一夹具状态），每动词比较
 // 双形态 golden。

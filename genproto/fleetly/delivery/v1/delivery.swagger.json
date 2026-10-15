@@ -485,6 +485,7 @@
         "parameters": [
           {
             "name": "body",
+            "description": "受理面的字段形状与跨字段互斥执法全量住 descriptor（P4-2 批 2 上移，\nhandler 手写检查同步退役）：message 级 CEL 承载跨字段互斥/至少一源，\nfield 级承载单字段值域。文案与退役前手写逐字节（含 %q 动态回显的\n静态化，逐案在 P4-2 批 2 报告列明）；四源互斥全文案被\napitest/submit_spec_invariants 不变式⑦逐字节钉死——改文案即设计缺陷。",
             "in": "body",
             "required": true,
             "schema": {
@@ -1028,11 +1029,11 @@
         },
         "builder": {
           "type": "string",
-          "title": "builder 是上传形态的构建器选择（dockerfile|railpack|static，ADR-0032；\n缺省 dockerfile；image/compose 形态携带即拒）。"
+          "title": "builder 是上传形态的构建器选择（dockerfile|railpack|static，ADR-0032；\n缺省 dockerfile；image/compose 形态携带即拒）。值域执法在本 message\n的 CEL 块（deployrequest.builder_enum，以 upload 源为锚）。"
         },
         "railpack_version": {
           "type": "string",
-          "title": "railpack_version 是 railpack 形态的钉版声明（builder=railpack 必填，\nbare semver，须等于平台钉版）。"
+          "title": "railpack_version 是 railpack 形态的钉版声明（builder=railpack 必填，\nbare semver，须等于平台钉版；semver 形态执法仍在归一化叶子——\n注解只钉在场性配对）。"
         },
         "output_dir": {
           "type": "string",
@@ -1051,17 +1052,19 @@
           "title": "port/protocol 是直投与上传形态的端口声明（F3.5）：Route 后端解析的\n期望集供给面——单进程形态此前无 ports 声明通道（static Route 404 的\n根因）。protocol 缺省 http（http|h2c|tcp，Route 同词汇）；声明端口时\n进程同时挂靠项目 default 网络（Proxy 可达性）。compose/spec_file 形态\n自带 ports/networks 声明面，携带即拒。"
         },
         "protocol": {
-          "type": "string"
+          "type": "string",
+          "title": "protocol 值域原文 \"protocol %q must be http, h2c or tcp\" 的动态回显\ndescriptor 化后静态化（portdecl 测试按新形态重钉，契约变化在案）。"
         },
         "spec_file": {
           "type": "string",
-          "title": "spec_file 是裸 AppSpec 部署面（第四源，F3.5）：protojson（snake_case）\n的归一化 AppSpec——AppRef 由服务端按 app_id 权威覆写；schema_version\n缺省当前版。全部 AppSpec 字段经此成为 API 可写面（校验爆炸半径由\n叶子 ValidateApp 单源承载）。与 image/compose_yaml/upload_id 及全部\n单进程形态旗标（process_name/probe/port/env/builder 族）互斥。"
+          "title": "spec_file 是裸 AppSpec 部署面（第四源，F3.5）：protojson（snake_case）\n的归一化 AppSpec——AppRef 由服务端按 app_id 权威覆写；schema_version\n缺省当前版。全部 AppSpec 字段经此成为 API 可写面（校验爆炸半径由\n叶子 ValidateApp 单源承载）。与 image/compose_yaml/upload_id 及全部\n单进程形态旗标（process_name/probe/port/env；builder 族由 upload 专属\n执法盖住）互斥——互斥执法在本 message 的 CEL 块。"
         },
         "override_hook": {
           "type": "boolean",
           "title": "override_hook 是 hook 所有权闸门的一次性接管声明（ADR-0072 决策 4）：\n配置了 git hook 的 App 携带材料源（image/compose/upload）需显式置位\n才被受理（全量接管）；正规路径 = 先删 hook。spec_file 不受本旗标\n约束——hook 应用的 spec_file 恒为运行时 overlay（材料半边取冻结侧，\n提交件 source 被忽略）。"
         }
       },
+      "description": "受理面的字段形状与跨字段互斥执法全量住 descriptor（P4-2 批 2 上移，\nhandler 手写检查同步退役）：message 级 CEL 承载跨字段互斥/至少一源，\nfield 级承载单字段值域。文案与退役前手写逐字节（含 %q 动态回显的\n静态化，逐案在 P4-2 批 2 报告列明）；四源互斥全文案被\napitest/submit_spec_invariants 不变式⑦逐字节钉死——改文案即设计缺陷。",
       "title": "DeployRequest 四源互斥（image 直投 / compose_yaml 受控子集 / upload_id\n上传产物 / spec_file 裸 AppSpec，F3.5）。"
     },
     "v1DeployResponse": {

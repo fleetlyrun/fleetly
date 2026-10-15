@@ -232,8 +232,12 @@ func TestValidateRetiredFamilyNegativeMatrix(t *testing.T) {
 		{"CordonNodeRequest empty node_id", &runtimev1.CordonNodeRequest{}, "node_id: " + reqMsg},
 		{"UncordonNodeRequest empty node_id", &runtimev1.UncordonNodeRequest{}, "node_id: " + reqMsg},
 
-		// ---- M 组 delivery（Run B2；四源互斥/probe/port/builder 族归 P4-2）----
-		{"DeployRequest empty app_id", &deliveryv1.DeployRequest{}, "app_id: " + reqMsg},
+		// ---- M 组 delivery（Run B2；四源互斥/probe/port/builder 族归
+		// P4-2 批 2 全规则，见 TestValidateDeployRequestRuleMatrix）----
+		// 全空请求 = at-least-one（message 级，先评）+ app_id（field 级）
+		// 双违规聚合——P4-2 批 2 起的新形态（退役前单报 app_id）。
+		{"DeployRequest empty app_id", &deliveryv1.DeployRequest{},
+			deploySourceRequired + "; app_id: " + reqMsg},
 		{"GetRevisionRequest empty app_id", &deliveryv1.GetRevisionRequest{}, "app_id: " + reqMsg},
 		{"GetAppWorkloadsRequest empty app_id", &deliveryv1.GetAppWorkloadsRequest{}, "app_id: " + reqMsg},
 		{"DiffRevisionsRequest empty app_id", &deliveryv1.DiffRevisionsRequest{}, "app_id: " + reqMsg},
@@ -272,6 +276,115 @@ func TestValidateRetiredFamilyNegativeMatrix(t *testing.T) {
 			assert.Equal(t, tc.want, e.Message())
 		})
 	}
+}
+
+// DeployRequest 全规则文案（P4-2 批 2 descriptor 化，与 proto 注解逐字节
+// 同源）：原文为退役前 handler/CLI 手写文案——%q 动态回显的静态化在案
+// （protocol/builder 枚举/builder 配对族），其余逐字节不变。
+const (
+	deploySourceMutexText   = `image, compose_yaml, upload_id and spec_file are mutually exclusive; exactly one source form per deploy`
+	deploySourceRequired    = `one of image, compose_yaml, upload_id or spec_file is required`
+	deploySpecFileExclusive = `process_name, probe, port, protocol and env flags are for image or upload deploys; spec_file carries the full process declaration`
+	deployProbeMutexText    = `http_probe and tcp_probe are mutually exclusive`
+	deployProbeComposeText  = `http_probe/tcp_probe are for image or upload deploys; compose declares probes via healthcheck.x-fleetly-http-path/x-fleetly-tcp-port`
+	deployEnvComposeText    = `env is for image or upload deploys; compose declares variables via each service's environment`
+	deployPortsComposeText  = `port and protocol are for image or upload deploys; compose declares ports per service ("8080" or "8080/h2c")`
+	deployProtocolNeedsPort = `protocol is only meaningful together with a declared port`
+	deployBuilderUploadOnly = `builder, railpack_version and output_dir are for upload deploys only; image and compose deploys do not carry a builder`
+	deployBuilderEnumText   = `builder: unknown builder (supported: dockerfile, railpack, static)`
+	deployDockerfilePair    = `dockerfile is only set with the dockerfile builder; railpack builds detect the source, static serves an artifact directory`
+	deployRailpackVerPair   = `railpack_version is only set with the railpack builder`
+	deployOutputDirPair     = `output_dir is only set with the static builder`
+	deployRailpackNeedVer   = `railpack_version is required for railpack builds (a bare semver like "0.39.0"; the platform's version appears in the build error if they mismatch)`
+	deployProtocolEnumText  = `protocol: must be http, h2c or tcp`
+)
+
+// TestValidateDeployRequestRuleMatrix 钉 DeployRequest descriptor 化的全
+// 规则负例/正例（P4-2 批 2）：四源双填/皆空/spec_file×单进程旗标/probe 组/
+// env×compose/port×compose/protocol（含静态化新文案）/port 域（0 放行、
+// 70000 拒）/builder 族组合。每案恰一违规（组合触发多违规的形态由服务端
+// 拦截器聚合语义承载，不在此钉）。
+func TestValidateDeployRequestRuleMatrix(t *testing.T) {
+	v, err := apivalidate.NewValidator()
+	require.NoError(t, err, "protovalidate 构造常态不可达（CEL 环境配置级故障才失败）")
+
+	t.Run("negative matrix", func(t *testing.T) {
+		for _, tc := range []struct {
+			name string
+			msg  *deliveryv1.DeployRequest
+			want string
+		}{
+			{"four-source double fill", &deliveryv1.DeployRequest{AppId: "a", Image: "nginx:1.27", SpecFile: `{"processes":[]}`},
+				deploySourceMutexText},
+			{"four-source all empty", &deliveryv1.DeployRequest{AppId: "a"},
+				deploySourceRequired},
+			{"spec_file plus port flag", &deliveryv1.DeployRequest{AppId: "a", SpecFile: `{"processes":[]}`, Port: 8080},
+				deploySpecFileExclusive},
+			{"spec_file plus env flag", &deliveryv1.DeployRequest{AppId: "a", SpecFile: `{"processes":[]}`, Env: map[string]string{"A": "b"}},
+				deploySpecFileExclusive},
+			{"http and tcp probe", &deliveryv1.DeployRequest{AppId: "a", Image: "nginx:1.27", HttpProbe: "/healthz", TcpProbe: 8080},
+				deployProbeMutexText},
+			{"probe on compose", &deliveryv1.DeployRequest{AppId: "a", ComposeYaml: "services:\n  web:\n    image: nginx\n", HttpProbe: "/healthz"},
+				deployProbeComposeText},
+			{"env on compose", &deliveryv1.DeployRequest{AppId: "a", ComposeYaml: "services:\n  web:\n    image: nginx\n", Env: map[string]string{"A": "b"}},
+				deployEnvComposeText},
+			{"port on compose", &deliveryv1.DeployRequest{AppId: "a", ComposeYaml: "services:\n  web:\n    image: nginx\n", Port: 8080},
+				deployPortsComposeText},
+			{"protocol without port", &deliveryv1.DeployRequest{AppId: "a", Image: "nginx:1.27", Protocol: "h2c"},
+				deployProtocolNeedsPort},
+			{"protocol out of enum (static new text)", &deliveryv1.DeployRequest{AppId: "a", Image: "nginx:1.27", Port: 8080, Protocol: "grpc"},
+				deployProtocolEnumText},
+			{"port over range", &deliveryv1.DeployRequest{AppId: "a", Image: "nginx:1.27", Port: 70000},
+				"port: out of range (1-65535)"},
+			{"tcp probe over range", &deliveryv1.DeployRequest{AppId: "a", Image: "nginx:1.27", TcpProbe: 70000},
+				"tcp_probe: port out of range (1-65535)"},
+			{"http probe relative path", &deliveryv1.DeployRequest{AppId: "a", Image: "nginx:1.27", HttpProbe: "healthz"},
+				"http_probe: must be an absolute path starting with '/'"},
+			{"builder on image deploy", &deliveryv1.DeployRequest{AppId: "a", Image: "nginx:1.27", Builder: "railpack"},
+				deployBuilderUploadOnly},
+			{"builder on compose deploy", &deliveryv1.DeployRequest{AppId: "a", ComposeYaml: "services:\n  web:\n    image: nginx\n", Builder: "static"},
+				deployBuilderUploadOnly},
+			{"railpack_version without railpack builder", &deliveryv1.DeployRequest{AppId: "a", UploadId: "u", RailpackVersion: "0.39.0"},
+				deployRailpackVerPair},
+			{"output_dir without static builder", &deliveryv1.DeployRequest{AppId: "a", UploadId: "u", OutputDir: "dist"},
+				deployOutputDirPair},
+			{"dockerfile with railpack builder", &deliveryv1.DeployRequest{AppId: "a", UploadId: "u", Builder: "railpack", RailpackVersion: "0.39.0", Dockerfile: "Dockerfile"},
+				deployDockerfilePair},
+			{"railpack builder without version", &deliveryv1.DeployRequest{AppId: "a", UploadId: "u", Builder: "railpack"},
+				deployRailpackNeedVer},
+			{"unknown builder value", &deliveryv1.DeployRequest{AppId: "a", UploadId: "u", Builder: "makeimg"},
+				deployBuilderEnumText},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				err := v.Validate(tc.msg)
+				require.Error(t, err, "坏实例必须被 descriptor 注解拒绝")
+				var e *apperr.Error
+				require.ErrorAs(t, err, &e)
+				assert.Equal(t, "E_INVALID_ARGUMENT", e.Code())
+				assert.Equal(t, tc.want, e.Message())
+			})
+		}
+	})
+
+	t.Run("positive matrix", func(t *testing.T) {
+		// port 0 缺省放行（== 0 短路）；65535 上界恰达；protocol 缺省空值
+		// 放行（'' 在枚举集内）；tcp_probe 上界恰达。
+		assert.NoError(t, v.Validate(&deliveryv1.DeployRequest{AppId: "a", Image: "nginx:1.27"}))
+		assert.NoError(t, v.Validate(&deliveryv1.DeployRequest{AppId: "a", Image: "nginx:1.27", Port: 65535, Protocol: "h2c"}),
+			"端口域上界 65535 必须放行")
+		assert.NoError(t, v.Validate(&deliveryv1.DeployRequest{AppId: "a", Image: "nginx:1.27", TcpProbe: 65535}),
+			"tcp 探针上界 65535 必须放行")
+		assert.NoError(t, v.Validate(&deliveryv1.DeployRequest{AppId: "a", UploadId: "u", Builder: "static", OutputDir: "dist", Port: 8080}),
+			"upload 形态 builder 族合法配对必须放行")
+		assert.NoError(t, v.Validate(&deliveryv1.DeployRequest{AppId: "a", UploadId: "u", Dockerfile: "deploy/Dockerfile"}),
+			"缺省 dockerfile 轨携带 dockerfile 路径必须放行")
+		assert.NoError(t, v.Validate(&deliveryv1.DeployRequest{AppId: "a", UploadId: "u", Builder: "railpack", RailpackVersion: "0.39.0"}),
+			"railpack 钉版合法形态必须放行")
+		assert.NoError(t, v.Validate(&deliveryv1.DeployRequest{AppId: "a", ComposeYaml: "services:\n  web:\n    image: nginx\n"}),
+			"compose 形态零单进程旗标必须放行")
+		assert.NoError(t, v.Validate(&deliveryv1.DeployRequest{AppId: "a", SpecFile: `{"processes":[]}`}),
+			"spec_file 形态零单进程旗标必须放行")
+	})
 }
 
 // TestValidateRetiredFamilyPositiveMatrix 钉合法输入不受注解误伤：边界值

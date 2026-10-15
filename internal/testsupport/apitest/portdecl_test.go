@@ -75,7 +75,9 @@ func TestDeployImagePortDeclaration(t *testing.T) {
 		AppId: app.GetApp().GetId(), Image: "nginx:1.27", Port: 8080, Protocol: "grpc",
 	})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), `protocol "grpc" must be http, h2c or tcp`)
+	// P4-2 批 2 descriptor 化：原文 "protocol %q must be http, h2c or tcp"
+	// 的 %q 动态回显静态化——新文案逐字节钉死（契约变化在案）。
+	assert.Contains(t, err.Error(), `protocol: must be http, h2c or tcp`)
 
 	_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{
 		AppId: app.GetApp().GetId(), Image: "nginx:1.27", Port: 70000,

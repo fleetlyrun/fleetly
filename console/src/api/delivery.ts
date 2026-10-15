@@ -462,6 +462,11 @@ export interface components {
         /**
          * DeployRequest 四源互斥（image 直投 / compose_yaml 受控子集 / upload_id
          *     上传产物 / spec_file 裸 AppSpec，F3.5）。
+         * @description 受理面的字段形状与跨字段互斥执法全量住 descriptor（P4-2 批 2 上移，
+         *     handler 手写检查同步退役）：message 级 CEL 承载跨字段互斥/至少一源，
+         *     field 级承载单字段值域。文案与退役前手写逐字节（含 %q 动态回显的
+         *     静态化，逐案在 P4-2 批 2 报告列明）；四源互斥全文案被
+         *     apitest/submit_spec_invariants 不变式⑦逐字节钉死——改文案即设计缺陷。
          */
         v1DeployRequest: {
             /** app_id 必填：目标 App 行（行级授权锚）。 */
@@ -491,12 +496,14 @@ export interface components {
             dockerfile?: string;
             /**
              * builder 是上传形态的构建器选择（dockerfile|railpack|static，ADR-0032；
-             *     缺省 dockerfile；image/compose 形态携带即拒）。
+             *     缺省 dockerfile；image/compose 形态携带即拒）。值域执法在本 message
+             *     的 CEL 块（deployrequest.builder_enum，以 upload 源为锚）。
              */
             builder?: string;
             /**
              * railpack_version 是 railpack 形态的钉版声明（builder=railpack 必填，
-             *     bare semver，须等于平台钉版）。
+             *     bare semver，须等于平台钉版；semver 形态执法仍在归一化叶子——
+             *     注解只钉在场性配对）。
              */
             railpack_version?: string;
             /** output_dir 是 static 形态的产物目录（builder=static 可选，缺省 "."）。 */
@@ -518,13 +525,18 @@ export interface components {
              * Format: int32
              */
             port?: number;
+            /**
+             * protocol 值域原文 "protocol %q must be http, h2c or tcp" 的动态回显
+             *     descriptor 化后静态化（portdecl 测试按新形态重钉，契约变化在案）。
+             */
             protocol?: string;
             /**
              * spec_file 是裸 AppSpec 部署面（第四源，F3.5）：protojson（snake_case）
              *     的归一化 AppSpec——AppRef 由服务端按 app_id 权威覆写；schema_version
              *     缺省当前版。全部 AppSpec 字段经此成为 API 可写面（校验爆炸半径由
              *     叶子 ValidateApp 单源承载）。与 image/compose_yaml/upload_id 及全部
-             *     单进程形态旗标（process_name/probe/port/env/builder 族）互斥。
+             *     单进程形态旗标（process_name/probe/port/env；builder 族由 upload 专属
+             *     执法盖住）互斥——互斥执法在本 message 的 CEL 块。
              */
             spec_file?: string;
             /**
@@ -1376,6 +1388,13 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
+        /**
+         * @description 受理面的字段形状与跨字段互斥执法全量住 descriptor（P4-2 批 2 上移，
+         *     handler 手写检查同步退役）：message 级 CEL 承载跨字段互斥/至少一源，
+         *     field 级承载单字段值域。文案与退役前手写逐字节（含 %q 动态回显的
+         *     静态化，逐案在 P4-2 批 2 报告列明）；四源互斥全文案被
+         *     apitest/submit_spec_invariants 不变式⑦逐字节钉死——改文案即设计缺陷。
+         */
         requestBody: {
             content: {
                 "application/json": components["schemas"]["v1DeployRequest"];

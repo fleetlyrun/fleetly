@@ -1,0 +1,2 @@
+image, compose_yaml, upload_id and spec_file are mutually exclusive; exactly one source form per deploy
+usage: deploy

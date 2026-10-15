@@ -199,16 +199,14 @@ func newTasksCreateVerb() commands.Command {
 func newTasksListVerb() commands.Command {
 	const name = "list"
 	var project string
-	var after int64
-	var limit int
+	var pages pageFlags // 游标分页旗标收敛共享 struct（P4-2 批 2 exemplar）
 	return &flaggedVerb{
 		name:     name,
 		synopsis: "List tasks in a project (newest first)",
 		usage:    "tasks list --project PROJECT_ID [--after SEQ] [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&project, "project", "", "project id (required)")
-			fs.Int64Var(&after, "after", 0, "pagination cursor: the seq of the last row of the previous page")
-			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
+			pages.register(fs, "after")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if err := noArgs(name, args); err != nil {
@@ -224,7 +222,7 @@ func newTasksListVerb() commands.Command {
 			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Tasks.ListTasks(ctx, &automationv1.ListTasksRequest{
-				ProjectId: project, AfterTaskSeq: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
+				ProjectId: project, AfterTaskSeq: pages.cursor(), Limit: pages.limit32(),
 			})
 			if err != nil {
 				return err

@@ -127,6 +127,12 @@ func waitBuildOnFrame(env *commands.Environment, jsonOut bool, buildID string) f
 	}
 }
 
+// uploadPendingPlaceholder 是 deploy 预检 provisional 请求的 upload_id 占位
+// 值（P4-2 批 2）：--from-dir 形态的 upload id 在拨号上传后才取得，预检时
+// 以非空占位使四源 at-least-one 语义成立（descriptor 执法以字段非空为锚）；
+// 实发前以真实 id 原位覆写——占位值只存在于本地预检面，从不上线。
+const uploadPendingPlaceholder = "cli-upload-pending"
+
 func newDeployVerb() commands.Command {
 	const name = "deploy"
 	var app, image, composeFile, fromDir, dockerfile, builder, railpackVersion, outputDir, process, idemKey, commit, httpProbe, portProtocol, specFile string
@@ -162,70 +168,16 @@ func newDeployVerb() commands.Command {
 			if err := noArgs(name, args); err != nil {
 				return err
 			}
-			if app == "" {
-				return usageErr(name, "--app is required")
-			}
-			sources := 0
-			for _, v := range []string{image, composeFile, fromDir, specFile} {
-				if v != "" {
-					sources++
+			// runtime 形状检查先于 descriptor 预检（目录判定/文件读取是本地
+			// 事实，与旗标互斥无关——退役前同款报错语义保留）。
+			if fromDir != "" {
+				info, serr := os.Stat(fromDir) //nolint:gosec // 用户显式指定的输入路径
+				if serr != nil {
+					return fmt.Errorf("stat %s: %w", fromDir, serr)
 				}
-			}
-			if sources != 1 {
-				return usageErr(name, "exactly one of --image, --compose-file, --from-dir or --spec-file is required")
-			}
-			// spec_file 自带全部声明面：单进程形态旗标互斥（服务端同款执法，
-			// CLI 先拒省一轮往返）。
-			if specFile != "" && (process != "" || httpProbe != "" || tcpProbe != 0 || port != 0 ||
-				portProtocol != "" || len(appEnv) > 0 || builder != "" || dockerfile != "" ||
-				railpackVersion != "" || outputDir != "") {
-				return usageErr(name, "process/probe/port/protocol/env/builder flags are for image or upload deploys; --spec-file carries the full process declaration")
-			}
-			if httpProbe != "" && tcpProbe != 0 {
-				return usageErr(name, "--http-probe and --tcp-probe are mutually exclusive")
-			}
-			if (httpProbe != "" || tcpProbe != 0) && composeFile != "" {
-				return usageErr(name, "--http-probe/--tcp-probe are for image or upload deploys; compose declares probes via healthcheck.x-fleetly-http-path/x-fleetly-tcp-port")
-			}
-			if len(appEnv) > 0 && composeFile != "" {
-				return usageErr(name, "--env is for image or upload deploys; compose declares variables via each service's environment")
-			}
-			if (port != 0 || portProtocol != "") && composeFile != "" {
-				return usageErr(name, "--port/--protocol are for image or upload deploys; compose declares ports per service (\"8080\" or \"8080/h2c\")")
-			}
-			if port == 0 && portProtocol != "" {
-				return usageErr(name, "--protocol is only meaningful together with --port")
-			}
-			switch portProtocol {
-			case "", "http", "h2c", "tcp":
-			default:
-				return usageErr(name, fmt.Sprintf("unknown --protocol %q (supported: http, h2c, tcp)", portProtocol))
-			}
-			if fromDir == "" && (builder != "" || dockerfile != "" || railpackVersion != "" || outputDir != "") {
-				return usageErr(name, "--builder/--dockerfile/--railpack-version/--output-dir are for --from-dir deploys only")
-			}
-			switch builder {
-			case "":
-			case "dockerfile":
-				if railpackVersion != "" || outputDir != "" {
-					return usageErr(name, "--railpack-version/--output-dir are for the railpack/static builders")
+				if !info.IsDir() {
+					return usageErr(name, "--from-dir must be a directory")
 				}
-			case "railpack":
-				if railpackVersion == "" {
-					return usageErr(name, "--railpack-version is required with --builder railpack (a bare semver; a mismatched pin fails the build with the platform's version)")
-				}
-				if dockerfile != "" {
-					return usageErr(name, "--dockerfile is for the dockerfile builder; railpack detects the source")
-				}
-			case "static":
-				if railpackVersion != "" {
-					return usageErr(name, "--railpack-version is for the railpack builder")
-				}
-				if dockerfile != "" {
-					return usageErr(name, "--dockerfile is for the dockerfile builder; static serves an artifact directory")
-				}
-			default:
-				return usageErr(name, fmt.Sprintf("unknown --builder %q (supported: dockerfile, railpack, static)", builder))
 			}
 			compose := ""
 			if composeFile != "" {
@@ -243,47 +195,17 @@ func newDeployVerb() commands.Command {
 				}
 				specBody = string(data)
 			}
-			// --wait 与 --from-dir 的上传流都是流式长面：豁免请求级 deadline。
-			var dialOpts []dialOption
-			if wait || fromDir != "" {
-				dialOpts = append(dialOpts, noDeadline())
-			}
-			ctx, cancel, c, err := dialFromEnv(ctx, dialOpts...)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			var uploadID string
+			// 预检（P4-2 批 2）：provisional 请求全量旗标填入，descriptor
+			// 形状执法单源（与服务端拦截器同一法源）——app 必填/四源互斥/
+			// spec_file 互斥/probe 组/builder 三态 switch 等手拷贝块整体退役。
+			// --from-dir 形态 upload_id 尚未取得（上传在拨号后完成），以占位
+			// 非空值填 UploadId 使四源 at-least-one 语义成立；实发前以真实
+			// id 原位覆写（请求本体即 provisional，形状一致）。
+			uploadID := ""
 			if fromDir != "" {
-				info, serr := os.Stat(fromDir) //nolint:gosec // 用户显式指定的输入路径
-				if serr != nil {
-					return fmt.Errorf("stat %s: %w", fromDir, serr)
-				}
-				if !info.IsDir() {
-					return usageErr(name, "--from-dir must be a directory")
-				}
-				projectID, perr := appProjectID(ctx, c, app)
-				if perr != nil {
-					return perr
-				}
-				up, uerr := uploadDir(ctx, c, projectID, fromDir)
-				if uerr != nil {
-					return uerr
-				}
-				uploadID = up.GetId()
+				uploadID = uploadPendingPlaceholder
 			}
-			// 头（通用幂等）与 body 字段（部署去重锚）同值下发——ADR-0024
-			// 双源一致性：不一致即 409。--from-dir 形态上传先行完成，Deploy
-			// 仍按普通 unary 走（ctx 无 deadline 时显式附 120s 上限）。
-			if _, ok := ctx.Deadline(); !ok {
-				var dctx context.Context
-				dctx, cancel2 := context.WithTimeout(ctx, cliRequestTimeout)
-				defer cancel2()
-				ctx = dctx
-			}
-			ctx = fleetly.WithIdempotencyKey(ctx, idemKey)
-			resp, err := c.Deployments.Deploy(ctx, &deliveryv1.DeployRequest{
+			req := &deliveryv1.DeployRequest{
 				AppId: app, Image: image, ComposeYaml: compose, UploadId: uploadID, Dockerfile: dockerfile,
 				Builder: builder, RailpackVersion: railpackVersion, OutputDir: outputDir,
 				ProcessName:    process,
@@ -293,43 +215,75 @@ func newDeployVerb() commands.Command {
 				Env:            appEnv.envMap(),
 				IdempotencyKey: idemKey, CommitSha: commit, Supersede: supersede, OverrideHook: overrideHook,
 				HttpProbe: httpProbe, TcpProbe: int32(tcpProbe), //nolint:gosec // 端口域内
-			})
-			if err != nil {
+			}
+			if err := preValidateUsage(name, req); err != nil {
 				return err
 			}
-			depID := resp.GetDeployment().GetId()
-			if wait {
-				final, werr := waitDeploymentFrames(ctx, c, depID, waitOnFrame(env, jsonOut, depID))
-				if werr != nil {
-					return werr
-				}
-				return requireSucceeded("deployment", depID, final)
+			// --wait 与 --from-dir 的上传流都是流式长面：豁免请求级 deadline。
+			var dialOpts []dialOption
+			if wait || fromDir != "" {
+				dialOpts = append(dialOpts, noDeadline())
 			}
-			// 响应直渲染（P10）：admission 判定附注与 deployment 同体输出
-			//（uploads put 同款先例——响应携带实体外字段时渲染响应本体）。
-			return renderOut(env, jsonOut, resp, func() {
-				d := resp.GetDeployment()
-				a := resp.GetAdmission()
-				// 人类形态打印判定："并入队列第 N 位/与既有部署去重"
-				//（P10 提案原文锚）；merged/superseded 追加归因后缀。
-				switch a.GetOutcome() {
-				case "deduplicated":
-					_, _ = fmt.Fprintf(env.Stdout,
-						"deployment %s %s (revision %s, generation %d; deduplicated: matched the existing deployment)\n",
-						d.GetId(), d.GetState(), d.GetToRevision(), d.GetGeneration())
-				case "merged":
-					_, _ = fmt.Fprintf(env.Stdout,
-						"deployment %s %s (revision %s, generation %d, queue position %d; merged earlier queued requests)\n",
-						d.GetId(), d.GetState(), d.GetToRevision(), d.GetGeneration(), a.GetPosition())
-				case "superseded":
-					_, _ = fmt.Fprintf(env.Stdout,
-						"deployment %s %s (revision %s, generation %d, queue position %d; superseded the in-flight deployment)\n",
-						d.GetId(), d.GetState(), d.GetToRevision(), d.GetGeneration(), a.GetPosition())
-				default:
-					_, _ = fmt.Fprintf(env.Stdout,
-						"deployment %s %s (revision %s, generation %d, queue position %d)\n",
-						d.GetId(), d.GetState(), d.GetToRevision(), d.GetGeneration(), a.GetPosition())
+			return runRPC(ctx, dialOpts, func(ctx context.Context, c *fleetly.Client) error {
+				if fromDir != "" {
+					projectID, perr := appProjectID(ctx, c, app)
+					if perr != nil {
+						return perr
+					}
+					up, uerr := uploadDir(ctx, c, projectID, fromDir)
+					if uerr != nil {
+						return uerr
+					}
+					req.UploadId = up.GetId()
 				}
+				// 头（通用幂等）与 body 字段（部署去重锚）同值下发——ADR-0024
+				// 双源一致性：不一致即 409。--from-dir 形态上传先行完成，Deploy
+				// 仍按普通 unary 走（ctx 无 deadline 时显式附 120s 上限）。
+				if _, ok := ctx.Deadline(); !ok {
+					var dctx context.Context
+					dctx, cancel2 := context.WithTimeout(ctx, cliRequestTimeout)
+					defer cancel2()
+					ctx = dctx
+				}
+				ctx = fleetly.WithIdempotencyKey(ctx, idemKey)
+				resp, err := c.Deployments.Deploy(ctx, req)
+				if err != nil {
+					return err
+				}
+				depID := resp.GetDeployment().GetId()
+				if wait {
+					final, werr := waitDeploymentFrames(ctx, c, depID, waitOnFrame(env, jsonOut, depID))
+					if werr != nil {
+						return werr
+					}
+					return requireSucceeded("deployment", depID, final)
+				}
+				// 响应直渲染（P10）：admission 判定附注与 deployment 同体输出
+				//（uploads put 同款先例——响应携带实体外字段时渲染响应本体）。
+				return renderOut(env, jsonOut, resp, func() {
+					d := resp.GetDeployment()
+					a := resp.GetAdmission()
+					// 人类形态打印判定："并入队列第 N 位/与既有部署去重"
+					//（P10 提案原文锚）；merged/superseded 追加归因后缀。
+					switch a.GetOutcome() {
+					case "deduplicated":
+						_, _ = fmt.Fprintf(env.Stdout,
+							"deployment %s %s (revision %s, generation %d; deduplicated: matched the existing deployment)\n",
+							d.GetId(), d.GetState(), d.GetToRevision(), d.GetGeneration())
+					case "merged":
+						_, _ = fmt.Fprintf(env.Stdout,
+							"deployment %s %s (revision %s, generation %d, queue position %d; merged earlier queued requests)\n",
+							d.GetId(), d.GetState(), d.GetToRevision(), d.GetGeneration(), a.GetPosition())
+					case "superseded":
+						_, _ = fmt.Fprintf(env.Stdout,
+							"deployment %s %s (revision %s, generation %d, queue position %d; superseded the in-flight deployment)\n",
+							d.GetId(), d.GetState(), d.GetToRevision(), d.GetGeneration(), a.GetPosition())
+					default:
+						_, _ = fmt.Fprintf(env.Stdout,
+							"deployment %s %s (revision %s, generation %d, queue position %d)\n",
+							d.GetId(), d.GetState(), d.GetToRevision(), d.GetGeneration(), a.GetPosition())
+					}
+				})
 			})
 		},
 	}
@@ -513,16 +467,14 @@ func newDeploymentsCancelVerb() commands.Command {
 func newDeploymentsListVerb() commands.Command {
 	const name = "list"
 	var app string
-	var after int64
-	var limit int
+	var pages pageFlags // 游标分页旗标收敛共享 struct（P4-2 批 2 exemplar）
 	return &flaggedVerb{
 		name:     name,
 		synopsis: "List deployments for an app (newest first)",
 		usage:    "deployments list --app APP_ID [--after SEQ] [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&app, "app", "", "app id (required)")
-			fs.Int64Var(&after, "after", 0, "pagination cursor: the seq of the last row of the previous page")
-			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
+			pages.register(fs, "after")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if err := noArgs(name, args); err != nil {
@@ -538,7 +490,7 @@ func newDeploymentsListVerb() commands.Command {
 			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Deployments.ListDeployments(ctx, &deliveryv1.ListDeploymentsRequest{
-				AppId: app, AfterDeploymentSeq: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
+				AppId: app, AfterDeploymentSeq: pages.cursor(), Limit: pages.limit32(),
 			})
 			if err != nil {
 				return err
@@ -755,16 +707,14 @@ func newRevisionsDiffVerb() commands.Command {
 func newBuildsListVerb() commands.Command {
 	const name = "list"
 	var app string
-	var after int64
-	var limit int
+	var pages pageFlags // 游标分页旗标收敛共享 struct（P4-2 批 2 exemplar）
 	return &flaggedVerb{
 		name:     name,
 		synopsis: "List builds for an app (newest first)",
 		usage:    "builds list --app APP_ID [--after SEQ] [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&app, "app", "", "app id (required)")
-			fs.Int64Var(&after, "after", 0, "pagination cursor: the seq of the last row of the previous page")
-			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
+			pages.register(fs, "after")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if err := noArgs(name, args); err != nil {
@@ -780,7 +730,7 @@ func newBuildsListVerb() commands.Command {
 			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Builds.ListBuilds(ctx, &deliveryv1.ListBuildsRequest{
-				AppId: app, AfterBuildSeq: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
+				AppId: app, AfterBuildSeq: pages.cursor(), Limit: pages.limit32(),
 			})
 			if err != nil {
 				return err

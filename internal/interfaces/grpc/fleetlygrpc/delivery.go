@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"google.golang.org/protobuf/encoding/protojson"
@@ -35,9 +34,12 @@ type DeploymentsService struct {
 // AppSpec spec_file）并受理部署（合并/冻结/admission 全在
 // engine.SubmitSpec 单咽喉——P3-7 下沉批；hook 闸门留 api）。
 func (svc *DeploymentsService) Deploy(ctx context.Context, req *deliveryv1.DeployRequest) (*deliveryv1.DeployResponse, error) {
-	// app_id 必填已退役 descriptor 注解（P4-1 批 1 Run B2）：空值由
-	// protovalidate 拦截器在受理面拦截，文案与退役前逐字节一致；四源互斥/
-	// probe/port/protocol/builder 族归 P4-2，仍住手写。
+	// 受理面形状执法（app_id 必填 + 四源互斥/至少一源/spec_file×单进程
+	// 旗标/probe 组/env×compose/port×compose/protocol/builder 族）已全量
+	// 退役 DeployRequest descriptor 注解（P4-1 批 1 + P4-2 批 2）：由
+	// protovalidate 拦截器在受理面前拦截，文案与退役前手写逐字节（含
+	// %q 回显的静态化，契约变化在 P4-2 批 2 报告列明）。此处只留业务检查
+	// （upload 归属/blob 在盘）、spec 组装与 SubmitSpec 提交。
 	// 行级授权（ADR-0035）：App 归属 Team 比对（载行供归一化复用）。
 	appRow, err := svc.s.authorizeAppID(ctx, req.GetAppId())
 	if err != nil {
@@ -164,61 +166,22 @@ func deployVarLookup(ctx context.Context, s *Services, appRow *app.App) (compose
 
 // normalizeDeploySource 归一化四源：image 直投 / compose 受理语言 / 上传
 // 产物 / 裸 AppSpec（spec_file，F3.5）。直投与上传形态的探针声明
-// （http_probe/tcp_probe，B2）互斥；compose 形态的探针经 healthcheck 扩展键
-// （直投/上传旗标与 compose 互斥）。specFile 是 spec_file 形态在 Deploy
-// 受理前置已解析的产物（Source.upload 归属执法需先行），此处直通。
+// （http_probe/tcp_probe，B2）组装为 HealthcheckSpec。形状与互斥执法
+// （四源互斥/至少一源/builder 族/env×compose/spec_file×单进程旗标/
+// probe 组/port×compose）已退役 DeployRequest descriptor 注解（P4-2 批 2，
+// 拦截器受理前拦截）；此处只做归一化组装。specFile 是 spec_file 形态在
+// Deploy 受理前置已解析的产物（Source.upload 归属执法需先行），此处直通。
 func normalizeDeploySource(req *deliveryv1.DeployRequest, appRow *app.App, uploadRow *sourceupload.Upload, specFile *specv1.AppSpec, varLookup composeintake.VariableLookup) (*specv1.AppSpec, error) {
-	sources := 0
-	for _, v := range []string{req.GetImage(), req.GetComposeYaml(), req.GetUploadId(), req.GetSpecFile()} {
-		if v != "" {
-			sources++
-		}
-	}
-	if sources > 1 {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "image, compose_yaml, upload_id and spec_file are mutually exclusive; exactly one source form per deploy")
-	}
-	// builder 面是上传形态专属（ADR-0032）：image 直投无构建、compose 受控
-	// 子集无构建源，携带即拒。
-	if req.GetUploadId() == "" && (req.GetBuilder() != "" || req.GetRailpackVersion() != "" || req.GetOutputDir() != "") {
-		return nil, apperr.New("E_INVALID_ARGUMENT",
-			"builder, railpack_version and output_dir are for upload deploys only; image and compose deploys do not carry a builder")
-	}
-	// env 是 image/upload 形态的 App 级变量直传（ADR-0043 决策 2）：compose
-	// 自带 environment 声明面，携带即拒（http_probe 旗标同款先例）。
-	if req.GetComposeYaml() != "" && len(req.GetEnv()) > 0 {
-		return nil, apperr.New("E_INVALID_ARGUMENT",
-			"env is for image or upload deploys; compose declares variables via each service's environment")
-	}
-	// spec_file 自带全部声明面：单进程形态旗标（进程名/探针/端口/变量）
-	// 与裸 spec 互斥——文件是期望状态唯一来源（builder 族已由上面的
-	// upload 专属执法盖住）。
-	if req.GetSpecFile() != "" &&
-		(req.GetProcessName() != "" || req.GetHttpProbe() != "" || req.GetTcpProbe() != 0 ||
-			req.GetPort() != 0 || req.GetProtocol() != "" || len(req.GetEnv()) > 0) {
-		return nil, apperr.New("E_INVALID_ARGUMENT",
-			"process_name, probe, port, protocol and env flags are for image or upload deploys; spec_file carries the full process declaration")
-	}
 	var probe *specv1.HealthcheckSpec
 	switch {
-	case req.GetHttpProbe() != "" && req.GetTcpProbe() != 0:
-		return nil, apperr.New("E_INVALID_ARGUMENT", "http_probe and tcp_probe are mutually exclusive")
 	case req.GetHttpProbe() != "":
-		if !strings.HasPrefix(req.GetHttpProbe(), "/") {
-			return nil, apperr.New("E_INVALID_ARGUMENT", "http_probe: must be an absolute path starting with '/'")
-		}
 		probe = &specv1.HealthcheckSpec{Probe: &specv1.HealthcheckSpec_HttpPath{HttpPath: req.GetHttpProbe()}, Retries: 3}
 	case req.GetTcpProbe() != 0:
-		if req.GetTcpProbe() < 1 || req.GetTcpProbe() > 65535 {
-			return nil, apperr.New("E_INVALID_ARGUMENT", "tcp_probe: port out of range (1-65535)")
-		}
 		probe = &specv1.HealthcheckSpec{Probe: &specv1.HealthcheckSpec_TcpPort{TcpPort: req.GetTcpProbe()}, Retries: 3}
 	}
-	// 端口声明（F3.5）：直投与上传形态的 Route-facing 面。compose 自带
-	// ports 声明（服务键），携带即拒（http_probe/env 旗标同款先例）。
-	ports, err := deployRequestPorts(req)
-	if err != nil {
-		return nil, err
-	}
+	// 端口声明（F3.5）：直投与上传形态的 Route-facing 面（形状执法已上移
+	// descriptor，此处纯组装）。
+	ports := deployRequestPorts(req)
 	switch {
 	case req.GetImage() != "":
 		s, err := spec.ImageDeploy(appRow.ID, appRow.ProjectID, req.GetImage(), req.GetProcessName(), probe, req.GetEnv(), ports)
@@ -227,9 +190,6 @@ func normalizeDeploySource(req *deliveryv1.DeployRequest, appRow *app.App, uploa
 		}
 		return s, nil
 	case req.GetComposeYaml() != "":
-		if req.GetHttpProbe() != "" || req.GetTcpProbe() != 0 {
-			return nil, apperr.New("E_INVALID_ARGUMENT", "http_probe/tcp_probe are for image or upload deploys; compose declares probes via healthcheck.x-fleetly-http-path/x-fleetly-tcp-port")
-		}
 		// compose 受理语言 = compose-go 官方解析 + fleetly 方言执法
 		// （ADR-0074）；官方插值环境 = 平台变量（Shared ∪ AppVariable，
 		// App 胜出——与受理咽喉的三级合成同向，未消解即拒）。
@@ -240,22 +200,10 @@ func normalizeDeploySource(req *deliveryv1.DeployRequest, appRow *app.App, uploa
 		return s, nil
 	case req.GetUploadId() != "":
 		// uploadRow 已在 Deploy 受理前置解析（行存在 + 归属 + blob 在盘）。
-		if req.GetBuilder() != "" && req.GetBuilder() != spec.BuilderDockerfile && req.GetDockerfile() != "" {
-			return nil, apperr.New("E_INVALID_ARGUMENT",
-				"dockerfile is only set with the dockerfile builder (got builder %q); railpack builds detect the source, static serves an artifact directory", req.GetBuilder())
-		}
-		if req.GetRailpackVersion() != "" && req.GetBuilder() != spec.BuilderRailpack {
-			return nil, apperr.New("E_INVALID_ARGUMENT",
-				"railpack_version is only set with the railpack builder (got %q)", builderOrDefault(req.GetBuilder()))
-		}
-		if req.GetOutputDir() != "" && req.GetBuilder() != spec.BuilderStatic {
-			return nil, apperr.New("E_INVALID_ARGUMENT",
-				"output_dir is only set with the static builder (got %q)", builderOrDefault(req.GetBuilder()))
-		}
-		if req.GetBuilder() == spec.BuilderRailpack && req.GetRailpackVersion() == "" {
-			return nil, apperr.New("E_INVALID_ARGUMENT",
-				"railpack_version is required for railpack builds (a bare semver like \"0.39.0\"; the platform's version appears in the build error if they mismatch)")
-		}
+		// builder 旗标配对执法（dockerfile×builder/railpack_version×builder/
+		// output_dir×builder/railpack 必版本/值域）已退役 descriptor（P4-2
+		// 批 2）；semver 形态执法仍在归一化叶子 ValidateApp（railpack 钉版
+		// 须等于平台钉版的比对在 build 侧，不在受理面）。
 		s, err := spec.UploadDeploy(spec.UploadDeployInput{
 			AppID: appRow.ID, Project: appRow.ProjectID, UploadID: uploadRow.ID,
 			ProcessName: req.GetProcessName(), Builder: req.GetBuilder(),
@@ -273,50 +221,32 @@ func normalizeDeploySource(req *deliveryv1.DeployRequest, appRow *app.App, uploa
 		// 语义 = "文件即期望状态"。
 		return specFile, nil
 	default:
+		// descriptor at-least-one 规则拦截后的兜底（常态不可达——拦截器
+		// 缺位时的纵深，文案与注解逐字节一致）。
 		return nil, apperr.New("E_INVALID_ARGUMENT", "one of image, compose_yaml, upload_id or spec_file is required")
 	}
 }
 
-// builderOrDefault 是错误文本用的 builder 缺省名（空 = dockerfile 轨）。
-func builderOrDefault(b string) string {
-	if b == "" {
-		return spec.BuilderDockerfile
-	}
-	return b
-}
-
-// deployRequestPorts 解析 DeployRequest 的端口声明（F3.5）：直投与上传
-// 形态专属（compose 自带服务键 ports，携带即拒——归一化层引用隔离在此
-// 单点收口）；protocol 缺省 http（Route 同词汇）；端口域与协议枚举的
-// 叶子级复核由 ValidateProcess 承载（归一化产物必经）。
-func deployRequestPorts(req *deliveryv1.DeployRequest) ([]*specv1.PortSpec, error) {
-	if req.GetComposeYaml() != "" && (req.GetPort() != 0 || req.GetProtocol() != "") {
-		return nil, apperr.New("E_INVALID_ARGUMENT",
-			"port and protocol are for image or upload deploys; compose declares ports per service (\"8080\" or \"8080/h2c\")")
-	}
+// deployRequestPorts 组装 DeployRequest 的端口声明（F3.5）：直投与上传
+// 形态的 Route-facing 面。形状执法（compose 互斥/protocol×port/端口域/
+// 协议枚举）已退役 DeployRequest descriptor 注解（P4-2 批 2，拦截器受理
+// 前拦截）；此处纯组装：protocol 缺省 http（Route 同词汇；descriptor
+// 保证值域内，default 分支兜底 http），端口域与协议枚举的叶子级复核由
+// ValidateProcess 承载（归一化产物必经）。
+func deployRequestPorts(req *deliveryv1.DeployRequest) []*specv1.PortSpec {
 	if req.GetPort() == 0 {
-		if req.GetProtocol() != "" {
-			return nil, apperr.New("E_INVALID_ARGUMENT", "protocol is only meaningful together with a declared port")
-		}
-		return nil, nil
-	}
-	if req.GetPort() < 1 || req.GetPort() > 65535 {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "port: out of range (1-65535)")
+		return nil
 	}
 	var proto specv1.Protocol
-	switch p := req.GetProtocol(); p {
-	case "":
-		proto = specv1.Protocol_PROTOCOL_HTTP
-	case "http":
-		proto = specv1.Protocol_PROTOCOL_HTTP
+	switch req.GetProtocol() {
 	case "h2c":
 		proto = specv1.Protocol_PROTOCOL_H2C
 	case "tcp":
 		proto = specv1.Protocol_PROTOCOL_TCP
 	default:
-		return nil, apperr.New("E_INVALID_ARGUMENT", "protocol %q must be http, h2c or tcp", p)
+		proto = specv1.Protocol_PROTOCOL_HTTP
 	}
-	return []*specv1.PortSpec{{Port: req.GetPort(), Protocol: proto}}, nil
+	return []*specv1.PortSpec{{Port: req.GetPort(), Protocol: proto}}
 }
 
 func (svc *DeploymentsService) GetDeployment(ctx context.Context, req *deliveryv1.GetDeploymentRequest) (*deliveryv1.GetDeploymentResponse, error) {

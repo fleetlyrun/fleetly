@@ -275,7 +275,91 @@ message Deployment {
 
 // DeployRequest 四源互斥（image 直投 / compose_yaml 受控子集 / upload_id
 // 上传产物 / spec_file 裸 AppSpec，F3.5）。
+//
+// 受理面的字段形状与跨字段互斥执法全量住 descriptor（P4-2 批 2 上移，
+// handler 手写检查同步退役）：message 级 CEL 承载跨字段互斥/至少一源，
+// field 级承载单字段值域。文案与退役前手写逐字节（含 %q 动态回显的
+// 静态化，逐案在 P4-2 批 2 报告列明）；四源互斥全文案被
+// apitest/submit_spec_invariants 不变式⑦逐字节钉死——改文案即设计缺陷。
 message DeployRequest {
+  // 跨字段执法（P4-2 批 2，按注解序即违规序；原文为退役前 handler 手写
+  // 文案逐字节迁移）。
+  option (buf.validate.message).cel = {
+    id: "deployrequest.source_mutex"
+    message: "image, compose_yaml, upload_id and spec_file are mutually exclusive; exactly one source form per deploy"
+    expression: "(this.image != '' ? 1 : 0) + (this.compose_yaml != '' ? 1 : 0) + (this.upload_id != '' ? 1 : 0) + (this.spec_file != '' ? 1 : 0) <= 1"
+  };
+  option (buf.validate.message).cel = {
+    id: "deployrequest.source_required"
+    message: "one of image, compose_yaml, upload_id or spec_file is required"
+    expression: "this.image != '' || this.compose_yaml != '' || this.upload_id != '' || this.spec_file != ''"
+  };
+  option (buf.validate.message).cel = {
+    id: "deployrequest.spec_file_exclusive"
+    message: "process_name, probe, port, protocol and env flags are for image or upload deploys; spec_file carries the full process declaration"
+    expression: "this.spec_file == '' || (this.process_name == '' && this.http_probe == '' && this.tcp_probe == 0 && this.port == 0 && this.protocol == '' && size(this.env) == 0)"
+  };
+  option (buf.validate.message).cel = {
+    id: "deployrequest.probe_mutex"
+    message: "http_probe and tcp_probe are mutually exclusive"
+    expression: "this.http_probe == '' || this.tcp_probe == 0"
+  };
+  option (buf.validate.message).cel = {
+    id: "deployrequest.probe_compose_exclusive"
+    message: "http_probe/tcp_probe are for image or upload deploys; compose declares probes via healthcheck.x-fleetly-http-path/x-fleetly-tcp-port"
+    expression: "this.compose_yaml == '' || (this.http_probe == '' && this.tcp_probe == 0)"
+  };
+  option (buf.validate.message).cel = {
+    id: "deployrequest.env_compose_exclusive"
+    message: "env is for image or upload deploys; compose declares variables via each service's environment"
+    expression: "this.compose_yaml == '' || size(this.env) == 0"
+  };
+  option (buf.validate.message).cel = {
+    id: "deployrequest.ports_compose_exclusive"
+    message: "port and protocol are for image or upload deploys; compose declares ports per service (\"8080\" or \"8080/h2c\")"
+    expression: "this.compose_yaml == '' || (this.port == 0 && this.protocol == '')"
+  };
+  option (buf.validate.message).cel = {
+    id: "deployrequest.protocol_requires_port"
+    message: "protocol is only meaningful together with a declared port"
+    expression: "this.protocol == '' || this.port != 0"
+  };
+  // builder 族以 upload 源为锚（退役前 handler 事实：族检查只在 upload
+  // 部署可达，非 upload 形态携带即整组拒绝）。
+  option (buf.validate.message).cel = {
+    id: "deployrequest.builder_upload_only"
+    message: "builder, railpack_version and output_dir are for upload deploys only; image and compose deploys do not carry a builder"
+    expression: "this.upload_id != '' || (this.builder == '' && this.railpack_version == '' && this.output_dir == '')"
+  };
+  // builder 值域原文 "unknown builder %q (...)" 的动态回显静态化（契约
+  // 变化在案）；以 upload 源为锚（退役前 handler 事实：值域检查只在
+  // upload 归一化可达，非 upload 形态由上一条的整组拒绝先拦）。
+  option (buf.validate.message).cel = {
+    id: "deployrequest.builder_enum"
+    message: "builder: unknown builder (supported: dockerfile, railpack, static)"
+    expression: "this.upload_id == '' || this.builder == '' || this.builder in ['dockerfile', 'railpack', 'static']"
+  };
+  option (buf.validate.message).cel = {
+    id: "deployrequest.dockerfile_builder_pair"
+    message: "dockerfile is only set with the dockerfile builder; railpack builds detect the source, static serves an artifact directory"
+    expression: "this.upload_id == '' || this.dockerfile == '' || this.builder == '' || this.builder == 'dockerfile'"
+  };
+  option (buf.validate.message).cel = {
+    id: "deployrequest.railpack_version_builder_pair"
+    message: "railpack_version is only set with the railpack builder"
+    expression: "this.upload_id == '' || this.railpack_version == '' || this.builder == 'railpack'"
+  };
+  option (buf.validate.message).cel = {
+    id: "deployrequest.output_dir_builder_pair"
+    message: "output_dir is only set with the static builder"
+    expression: "this.upload_id == '' || this.output_dir == '' || this.builder == 'static'"
+  };
+  option (buf.validate.message).cel = {
+    id: "deployrequest.railpack_version_required"
+    message: "railpack_version is required for railpack builds (a bare semver like \"0.39.0\"; the platform's version appears in the build error if they mismatch)"
+    expression: "this.upload_id == '' || this.builder != 'railpack' || this.railpack_version != ''"
+  };
+
   // app_id 必填：目标 App 行（行级授权锚）。
   string app_id = 1 [
     (buf.validate.field).cel = {
@@ -295,18 +379,32 @@ message DeployRequest {
   string process_name = 7;
   // http_probe/tcp_probe 是直投与上传形态的探针声明（B2：http/tcp 探针的
   // API 声明面，互斥；compose 形态经 healthcheck.http_path/tcp_port 扩展键）。
-  string http_probe = 8;
-  int32 tcp_probe = 9;
+  string http_probe = 8 [
+    (buf.validate.field).cel = {
+      id: "string.http_probe_path"
+      message: "must be an absolute path starting with '/'"
+      expression: "this.size() == 0 || this.startsWith('/')"
+    }
+  ];
+  int32 tcp_probe = 9 [
+    (buf.validate.field).cel = {
+      id: "int32.tcp_probe_range"
+      message: "port out of range (1-65535)"
+      expression: "this == 0 || (this >= 1 && this <= 65535)"
+    }
+  ];
   // upload_id 是上传产物形态（F1.10，ADR-0019 附录 A）：引用 UploadSource
   // 返回的 id，与 image/compose_yaml 互斥；归属项目必须与 App 一致。
   string upload_id = 10;
   // dockerfile 是上传形态的构建文件路径（tar 内相对路径，缺省 Dockerfile）。
   string dockerfile = 11;
   // builder 是上传形态的构建器选择（dockerfile|railpack|static，ADR-0032；
-  // 缺省 dockerfile；image/compose 形态携带即拒）。
+  // 缺省 dockerfile；image/compose 形态携带即拒）。值域执法在本 message
+  // 的 CEL 块（deployrequest.builder_enum，以 upload 源为锚）。
   string builder = 12;
   // railpack_version 是 railpack 形态的钉版声明（builder=railpack 必填，
-  // bare semver，须等于平台钉版）。
+  // bare semver，须等于平台钉版；semver 形态执法仍在归一化叶子——
+  // 注解只钉在场性配对）。
   string railpack_version = 13;
   // output_dir 是 static 形态的产物目录（builder=static 可选，缺省 "."）。
   string output_dir = 14;
@@ -319,13 +417,28 @@ message DeployRequest {
   // 根因）。protocol 缺省 http（http|h2c|tcp，Route 同词汇）；声明端口时
   // 进程同时挂靠项目 default 网络（Proxy 可达性）。compose/spec_file 形态
   // 自带 ports/networks 声明面，携带即拒。
-  int32 port = 16;
-  string protocol = 17;
+  int32 port = 16 [
+    (buf.validate.field).cel = {
+      id: "int32.port_range"
+      message: "out of range (1-65535)"
+      expression: "this == 0 || (this >= 1 && this <= 65535)"
+    }
+  ];
+  // protocol 值域原文 "protocol %q must be http, h2c or tcp" 的动态回显
+  // descriptor 化后静态化（portdecl 测试按新形态重钉，契约变化在案）。
+  string protocol = 17 [
+    (buf.validate.field).cel = {
+      id: "string.protocol_enum"
+      message: "must be http, h2c or tcp"
+      expression: "this in ['', 'http', 'h2c', 'tcp']"
+    }
+  ];
   // spec_file 是裸 AppSpec 部署面（第四源，F3.5）：protojson（snake_case）
   // 的归一化 AppSpec——AppRef 由服务端按 app_id 权威覆写；schema_version
   // 缺省当前版。全部 AppSpec 字段经此成为 API 可写面（校验爆炸半径由
   // 叶子 ValidateApp 单源承载）。与 image/compose_yaml/upload_id 及全部
-  // 单进程形态旗标（process_name/probe/port/env/builder 族）互斥。
+  // 单进程形态旗标（process_name/probe/port/env；builder 族由 upload 专属
+  // 执法盖住）互斥——互斥执法在本 message 的 CEL 块。
   string spec_file = 18;
   // override_hook 是 hook 所有权闸门的一次性接管声明（ADR-0072 决策 4）：
   // 配置了 git hook 的 App 携带材料源（image/compose/upload）需显式置位

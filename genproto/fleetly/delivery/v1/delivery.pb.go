@@ -268,6 +268,12 @@ func (x *Deployment) GetFromGeneration() uint64 {
 
 // DeployRequest 四源互斥（image 直投 / compose_yaml 受控子集 / upload_id
 // 上传产物 / spec_file 裸 AppSpec，F3.5）。
+//
+// 受理面的字段形状与跨字段互斥执法全量住 descriptor（P4-2 批 2 上移，
+// handler 手写检查同步退役）：message 级 CEL 承载跨字段互斥/至少一源，
+// field 级承载单字段值域。文案与退役前手写逐字节（含 %q 动态回显的
+// 静态化，逐案在 P4-2 批 2 报告列明）；四源互斥全文案被
+// apitest/submit_spec_invariants 不变式⑦逐字节钉死——改文案即设计缺陷。
 type DeployRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// app_id 必填：目标 App 行（行级授权锚）。
@@ -291,10 +297,12 @@ type DeployRequest struct {
 	// dockerfile 是上传形态的构建文件路径（tar 内相对路径，缺省 Dockerfile）。
 	Dockerfile string `protobuf:"bytes,11,opt,name=dockerfile,proto3" json:"dockerfile,omitempty"`
 	// builder 是上传形态的构建器选择（dockerfile|railpack|static，ADR-0032；
-	// 缺省 dockerfile；image/compose 形态携带即拒）。
+	// 缺省 dockerfile；image/compose 形态携带即拒）。值域执法在本 message
+	// 的 CEL 块（deployrequest.builder_enum，以 upload 源为锚）。
 	Builder string `protobuf:"bytes,12,opt,name=builder,proto3" json:"builder,omitempty"`
 	// railpack_version 是 railpack 形态的钉版声明（builder=railpack 必填，
-	// bare semver，须等于平台钉版）。
+	// bare semver，须等于平台钉版；semver 形态执法仍在归一化叶子——
+	// 注解只钉在场性配对）。
 	RailpackVersion string `protobuf:"bytes,13,opt,name=railpack_version,json=railpackVersion,proto3" json:"railpack_version,omitempty"`
 	// output_dir 是 static 形态的产物目录（builder=static 可选，缺省 "."）。
 	OutputDir string `protobuf:"bytes,14,opt,name=output_dir,json=outputDir,proto3" json:"output_dir,omitempty"`
@@ -307,13 +315,16 @@ type DeployRequest struct {
 	// 根因）。protocol 缺省 http（http|h2c|tcp，Route 同词汇）；声明端口时
 	// 进程同时挂靠项目 default 网络（Proxy 可达性）。compose/spec_file 形态
 	// 自带 ports/networks 声明面，携带即拒。
-	Port     int32  `protobuf:"varint,16,opt,name=port,proto3" json:"port,omitempty"`
+	Port int32 `protobuf:"varint,16,opt,name=port,proto3" json:"port,omitempty"`
+	// protocol 值域原文 "protocol %q must be http, h2c or tcp" 的动态回显
+	// descriptor 化后静态化（portdecl 测试按新形态重钉，契约变化在案）。
 	Protocol string `protobuf:"bytes,17,opt,name=protocol,proto3" json:"protocol,omitempty"`
 	// spec_file 是裸 AppSpec 部署面（第四源，F3.5）：protojson（snake_case）
 	// 的归一化 AppSpec——AppRef 由服务端按 app_id 权威覆写；schema_version
 	// 缺省当前版。全部 AppSpec 字段经此成为 API 可写面（校验爆炸半径由
 	// 叶子 ValidateApp 单源承载）。与 image/compose_yaml/upload_id 及全部
-	// 单进程形态旗标（process_name/probe/port/env/builder 族）互斥。
+	// 单进程形态旗标（process_name/probe/port/env；builder 族由 upload 专属
+	// 执法盖住）互斥——互斥执法在本 message 的 CEL 块。
 	SpecFile string `protobuf:"bytes,18,opt,name=spec_file,json=specFile,proto3" json:"spec_file,omitempty"`
 	// override_hook 是 hook 所有权闸门的一次性接管声明（ADR-0072 决策 4）：
 	// 配置了 git hook 的 App 携带材料源（image/compose/upload）需显式置位
@@ -3647,7 +3658,7 @@ const file_fleetly_delivery_v1_delivery_proto_rawDesc = "" +
 	"\vfinished_at\x18\x0e \x01(\tR\n" +
 	"finishedAt\x12+\n" +
 	"\x12first_boot_task_id\x18\x0f \x01(\tR\x0ffirstBootTaskId\x12'\n" +
-	"\x0ffrom_generation\x18\x10 \x01(\x04R\x0efromGeneration\"\xeb\x05\n" +
+	"\x0ffrom_generation\x18\x10 \x01(\x04R\x0efromGeneration\"\x87!\n" +
 	"\rDeployRequest\x12R\n" +
 	"\x06app_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
 	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\x05appId\x12\x14\n" +
@@ -3657,10 +3668,12 @@ const file_fleetly_delivery_v1_delivery_proto_rawDesc = "" +
 	"\n" +
 	"commit_sha\x18\x05 \x01(\tR\tcommitSha\x12\x1c\n" +
 	"\tsupersede\x18\x06 \x01(\bR\tsupersede\x12!\n" +
-	"\fprocess_name\x18\a \x01(\tR\vprocessName\x12\x1d\n" +
+	"\fprocess_name\x18\a \x01(\tR\vprocessName\x12\x93\x01\n" +
 	"\n" +
-	"http_probe\x18\b \x01(\tR\thttpProbe\x12\x1b\n" +
-	"\ttcp_probe\x18\t \x01(\x05R\btcpProbe\x12\x1b\n" +
+	"http_probe\x18\b \x01(\tBt\xbaHq\xba\x01n\n" +
+	"\x16string.http_probe_path\x12*must be an absolute path starting with '/'\x1a(this.size() == 0 || this.startsWith('/')R\thttpProbe\x12\x82\x01\n" +
+	"\ttcp_probe\x18\t \x01(\x05Be\xbaHb\xba\x01_\n" +
+	"\x15int32.tcp_probe_range\x12\x1bport out of range (1-65535)\x1a)this == 0 || (this >= 1 && this <= 65535)R\btcpProbe\x12\x1b\n" +
 	"\tupload_id\x18\n" +
 	" \x01(\tR\buploadId\x12\x1e\n" +
 	"\n" +
@@ -3670,14 +3683,30 @@ const file_fleetly_delivery_v1_delivery_proto_rawDesc = "" +
 	"\x10railpack_version\x18\r \x01(\tR\x0frailpackVersion\x12\x1d\n" +
 	"\n" +
 	"output_dir\x18\x0e \x01(\tR\toutputDir\x12=\n" +
-	"\x03env\x18\x0f \x03(\v2+.fleetly.delivery.v1.DeployRequest.EnvEntryR\x03env\x12\x12\n" +
-	"\x04port\x18\x10 \x01(\x05R\x04port\x12\x1a\n" +
-	"\bprotocol\x18\x11 \x01(\tR\bprotocol\x12\x1b\n" +
+	"\x03env\x18\x0f \x03(\v2+.fleetly.delivery.v1.DeployRequest.EnvEntryR\x03env\x12o\n" +
+	"\x04port\x18\x10 \x01(\x05B[\xbaHX\xba\x01U\n" +
+	"\x10int32.port_range\x12\x16out of range (1-65535)\x1a)this == 0 || (this >= 1 && this <= 65535)R\x04port\x12v\n" +
+	"\bprotocol\x18\x11 \x01(\tBZ\xbaHW\xba\x01T\n" +
+	"\x14string.protocol_enum\x12\x18must be http, h2c or tcp\x1a\"this in ['', 'http', 'h2c', 'tcp']R\bprotocol\x12\x1b\n" +
 	"\tspec_file\x18\x12 \x01(\tR\bspecFile\x12#\n" +
 	"\roverride_hook\x18\x13 \x01(\bR\foverrideHook\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"r\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01:\x81\x18\xbaH\xfd\x17\x1a\x8d\x02\n" +
+	"\x1adeployrequest.source_mutex\x12gimage, compose_yaml, upload_id and spec_file are mutually exclusive; exactly one source form per deploy\x1a\x85\x01(this.image != '' ? 1 : 0) + (this.compose_yaml != '' ? 1 : 0) + (this.upload_id != '' ? 1 : 0) + (this.spec_file != '' ? 1 : 0) <= 1\x1a\xbc\x01\n" +
+	"\x1ddeployrequest.source_required\x12>one of image, compose_yaml, upload_id or spec_file is required\x1a[this.image != '' || this.compose_yaml != '' || this.upload_id != '' || this.spec_file != ''\x1a\xcb\x02\n" +
+	"!deployrequest.spec_file_exclusive\x12\x81\x01process_name, probe, port, protocol and env flags are for image or upload deploys; spec_file carries the full process declaration\x1a\xa1\x01this.spec_file == '' || (this.process_name == '' && this.http_probe == '' && this.tcp_probe == 0 && this.port == 0 && this.protocol == '' && size(this.env) == 0)\x1az\n" +
+	"\x19deployrequest.probe_mutex\x12/http_probe and tcp_probe are mutually exclusive\x1a,this.http_probe == '' || this.tcp_probe == 0\x1a\xf9\x01\n" +
+	"%deployrequest.probe_compose_exclusive\x12\x84\x01http_probe/tcp_probe are for image or upload deploys; compose declares probes via healthcheck.x-fleetly-http-path/x-fleetly-tcp-port\x1aIthis.compose_yaml == '' || (this.http_probe == '' && this.tcp_probe == 0)\x1a\xb4\x01\n" +
+	"#deployrequest.env_compose_exclusive\x12]env is for image or upload deploys; compose declares variables via each service's environment\x1a.this.compose_yaml == '' || size(this.env) == 0\x1a\xd9\x01\n" +
+	"%deployrequest.ports_compose_exclusive\x12lport and protocol are for image or upload deploys; compose declares ports per service (\"8080\" or \"8080/h2c\")\x1aBthis.compose_yaml == '' || (this.port == 0 && this.protocol == '')\x1a\x88\x01\n" +
+	"$deployrequest.protocol_requires_port\x129protocol is only meaningful together with a declared port\x1a%this.protocol == '' || this.port != 0\x1a\x81\x02\n" +
+	"!deployrequest.builder_upload_only\x12vbuilder, railpack_version and output_dir are for upload deploys only; image and compose deploys do not carry a builder\x1adthis.upload_id != '' || (this.builder == '' && this.railpack_version == '' && this.output_dir == '')\x1a\xc4\x01\n" +
+	"\x1adeployrequest.builder_enum\x12Bbuilder: unknown builder (supported: dockerfile, railpack, static)\x1abthis.upload_id == '' || this.builder == '' || this.builder in ['dockerfile', 'railpack', 'static']\x1a\x88\x02\n" +
+	"%deployrequest.dockerfile_builder_pair\x12zdockerfile is only set with the dockerfile builder; railpack builds detect the source, static serves an artifact directory\x1acthis.upload_id == '' || this.dockerfile == '' || this.builder == '' || this.builder == 'dockerfile'\x1a\xb8\x01\n" +
+	"+deployrequest.railpack_version_builder_pair\x126railpack_version is only set with the railpack builder\x1aQthis.upload_id == '' || this.railpack_version == '' || this.builder == 'railpack'\x1a\xa2\x01\n" +
+	"%deployrequest.output_dir_builder_pair\x12.output_dir is only set with the static builder\x1aIthis.upload_id == '' || this.output_dir == '' || this.builder == 'static'\x1a\x91\x02\n" +
+	"'deployrequest.railpack_version_required\x12\x92\x01railpack_version is required for railpack builds (a bare semver like \"0.39.0\"; the platform's version appears in the build error if they mismatch)\x1aQthis.upload_id == '' || this.builder != 'railpack' || this.railpack_version != ''\"r\n" +
 	"\tAdmission\x12\x18\n" +
 	"\aoutcome\x18\x01 \x01(\tR\aoutcome\x12\x1a\n" +
 	"\bposition\x18\x02 \x01(\x05R\bposition\x12/\n" +
