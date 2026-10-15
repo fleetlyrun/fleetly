@@ -47,8 +47,8 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/task"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 

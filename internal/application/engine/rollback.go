@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/deployment"
 )
 
 // Rollback 是回滚的一等动词（F0.11，CONTEXT.md Replay 词条：重新应用某条

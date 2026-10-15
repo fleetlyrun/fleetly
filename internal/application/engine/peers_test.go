@@ -12,11 +12,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/deployment"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
 	networkrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/networkpeer"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
+	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
 )
 
 // seedCrossProjectPeer 跨 Project 夹具：接收方项目（platform 团队）+
@@ -25,7 +26,7 @@ func seedCrossProjectPeer(t *testing.T, e *Engine, approve bool) string {
 	t.Helper()
 	ctx := context.Background()
 	const providerID = "01JD0PROJ00000000000000007"
-	require.NoError(t, project.New(e.clock).Create(ctx, e.db.Runner(), &project.Project{
+	require.NoError(t, projectrepo.New(e.clock).Create(ctx, e.db.Runner(), &project.Project{
 		ID: providerID, Name: "messaging", TeamID: "platform",
 	}))
 	require.NoError(t, e.networks.Create(ctx, e.db.Runner(), &networkrepo.Network{

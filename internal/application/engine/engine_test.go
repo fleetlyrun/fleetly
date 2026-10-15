@@ -11,10 +11,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/app"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/deployment"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
+	apprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/app"
+	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/revision"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
@@ -44,10 +46,10 @@ func newTestEngineOpts(t *testing.T, opts Options) (*Engine, *fakeRuntime, *stat
 	t.Cleanup(func() { _ = e.Stop(context.Background()) })
 
 	ctx := context.Background()
-	require.NoError(t, project.New(clock).Create(ctx, db.Runner(), &project.Project{
+	require.NoError(t, projectrepo.New(clock).Create(ctx, db.Runner(), &project.Project{
 		ID: tProjectID, Name: "shop", TeamID: "default",
 	}))
-	require.NoError(t, app.New(clock).Create(ctx, db.Runner(), &app.App{
+	require.NoError(t, apprepo.New(clock).Create(ctx, db.Runner(), &app.App{
 		ID: tAppID, ProjectID: tProjectID, Name: "web",
 	}))
 	return e, rt, clock

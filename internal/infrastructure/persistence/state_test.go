@@ -10,9 +10,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/audit"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/deployment"
+	deploymentrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/deployment"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/outbox"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
@@ -22,7 +23,7 @@ import (
 func TestFourWriteSameTransaction(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	deployments := deployment.New(clock)
+	deployments := deploymentrepo.New(clock)
 	events := outbox.New(clock)
 	audits := audit.New(clock)
 

@@ -4,14 +4,14 @@ import (
 	"encoding/json"
 	"strings"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/backup"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/build"
 	dbrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/database"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/deployment"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/run"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/schedule"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/task"
 )
 
 // 事件 payload schema（Outbox payload 列；JSON、字段只增）。

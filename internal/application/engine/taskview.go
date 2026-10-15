@@ -18,8 +18,8 @@ package engine
 import (
 	"sort"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/run"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/task"
 )
 
 // runsByTask 本体是有序切片（新→旧；头部即最新）。

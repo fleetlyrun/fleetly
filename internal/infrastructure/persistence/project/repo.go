@@ -1,5 +1,6 @@
-// Package project 是 Project 聚合 repo（CONTEXT.md Project 词条：归属与
-// 网络隔离轴，属于一个 Team；资源名只在 Project 内唯一）。
+// Package project 是 Project 聚合 repo 的 SQLite 实现：行类型与 Repo
+// 接口住 domain/structure/project（ADR-0075 Repo 接口层），本包只持不导出
+// 实现与构造。
 package project
 
 import (
@@ -9,36 +10,23 @@ import (
 	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
-// Project 是聚合行（软删 tombstone：deleted_at 非空即已删）。
-type Project struct {
-	ID        string
-	Seq       int64
-	Name      string
-	TeamID    string
-	CreatedAt string
-	UpdatedAt string
-	DeletedAt string
-}
-
-// Deleted 报告 tombstone 状态。
-func (p *Project) Deleted() bool { return p.DeletedAt != "" }
-
-// Repo 是 Project 聚合存取（无门面：仅本聚合查询）。
-type Repo struct {
+// repo 是 domain project.Repo 的 SQLite 实现。
+type repo struct {
 	clock state.Clock
 }
 
-// New 构造 repo。
-func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
+// New 构造 repo（直接返回接口——消费面只见 domain project.Repo）。
+func New(clock state.Clock) project.Repo { return &repo{clock: clock} }
 
 // Create 落一行；同 Team 同名活跃 Project 冲突返回 state.ErrAlreadyExists
 // （ADR-0028：唯一性口径 (team_id, name)——同名项目跨 Team 并存）。
 // ID 空则装配 "<name>-<seq>"（ADR-0070）；Seq 零值则事务内取 MAX+1（铸造
 // 单源在 repo 行装配处）。
-func (r *Repo) Create(ctx context.Context, run state.Runner, p *Project) error {
+func (r *repo) Create(ctx context.Context, run state.Runner, p *project.Project) error {
 	now := state.FormatTime(r.clock.Now())
 	p.CreatedAt, p.UpdatedAt = now, now
 	seq, err := state.NextSeq(ctx, run, "projects")
@@ -60,7 +48,7 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, p *Project) error {
 }
 
 // Get 按 ID 直读（含已删行——tombstone 是事实，不是秘密）。
-func (r *Repo) Get(ctx context.Context, run state.Runner, id string) (*Project, error) {
+func (r *repo) Get(ctx context.Context, run state.Runner, id string) (*project.Project, error) {
 	row := run.QueryRowContext(ctx, `
 		SELECT id, seq, name, team_id, created_at, updated_at, deleted_at
 		FROM projects WHERE id = ?`, id)
@@ -69,7 +57,7 @@ func (r *Repo) Get(ctx context.Context, run state.Runner, id string) (*Project, 
 
 // GetByNameInTeam 在 Team 内按名读活跃行（ADR-0028：名字唯一性只在
 // Team 内成立——跨 Team 同名并存，裸名查询语义不再成立）。
-func (r *Repo) GetByNameInTeam(ctx context.Context, run state.Runner, teamID, name string) (*Project, error) {
+func (r *repo) GetByNameInTeam(ctx context.Context, run state.Runner, teamID, name string) (*project.Project, error) {
 	row := run.QueryRowContext(ctx, `
 		SELECT id, seq, name, team_id, created_at, updated_at, deleted_at
 		FROM projects WHERE team_id = ? AND name = ? AND deleted_at = ''`, teamID, name)
@@ -78,7 +66,7 @@ func (r *Repo) GetByNameInTeam(ctx context.Context, run state.Runner, teamID, na
 
 // List 返回全部活跃行（全量面——seq 序 = 创建序；授权解析与引擎枚举
 // 消费；API 分页读面走 ListPage）。
-func (r *Repo) List(ctx context.Context, run state.Runner) ([]Project, error) {
+func (r *repo) List(ctx context.Context, run state.Runner) ([]project.Project, error) {
 	rows, err := run.QueryContext(ctx, `
 		SELECT id, seq, name, team_id, created_at, updated_at, deleted_at
 		FROM projects WHERE deleted_at = '' ORDER BY seq`)
@@ -86,9 +74,9 @@ func (r *Repo) List(ctx context.Context, run state.Runner) ([]Project, error) {
 		return nil, err
 	}
 	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []Project
+	var out []project.Project
 	for rows.Next() {
-		var p Project
+		var p project.Project
 		if err := rows.Scan(&p.ID, &p.Seq, &p.Name, &p.TeamID, &p.CreatedAt, &p.UpdatedAt, &p.DeletedAt); err != nil {
 			return nil, err
 		}
@@ -99,13 +87,13 @@ func (r *Repo) List(ctx context.Context, run state.Runner) ([]Project, error) {
 
 // ListPage 是 List 的分页读面（ADR-0026 after_* + limit；游标轴 = seq
 // 创建序升序——既有响应序不变）。limit<=0 或 >200 回落/钳制缺省 50。
-func (r *Repo) ListPage(ctx context.Context, run state.Runner, afterSeq int64, limit int) ([]Project, error) {
+func (r *repo) ListPage(ctx context.Context, run state.Runner, afterSeq int64, limit int) ([]project.Project, error) {
 	return r.page(ctx, run, "", afterSeq, limit)
 }
 
 // ListByTeam 返回 Team 内全部活跃行（ADR-0035 行级授权的 List 面过滤锚
 // 与 authz 解析面——全量；非 owner 的 API 分页读面走 ListByTeamPage）。
-func (r *Repo) ListByTeam(ctx context.Context, run state.Runner, teamID string) ([]Project, error) {
+func (r *repo) ListByTeam(ctx context.Context, run state.Runner, teamID string) ([]project.Project, error) {
 	rows, err := run.QueryContext(ctx, `
 		SELECT id, seq, name, team_id, created_at, updated_at, deleted_at
 		FROM projects WHERE deleted_at = '' AND team_id = ? ORDER BY seq`, teamID)
@@ -113,9 +101,9 @@ func (r *Repo) ListByTeam(ctx context.Context, run state.Runner, teamID string) 
 		return nil, err
 	}
 	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []Project
+	var out []project.Project
 	for rows.Next() {
-		var p Project
+		var p project.Project
 		if err := rows.Scan(&p.ID, &p.Seq, &p.Name, &p.TeamID, &p.CreatedAt, &p.UpdatedAt, &p.DeletedAt); err != nil {
 			return nil, err
 		}
@@ -126,13 +114,13 @@ func (r *Repo) ListByTeam(ctx context.Context, run state.Runner, teamID string) 
 
 // ListByTeamPage 是 ListByTeam 的分页读面（ADR-0026 after_* + limit；
 // Team 过滤与游标分页叠加）。
-func (r *Repo) ListByTeamPage(ctx context.Context, run state.Runner, teamID string, afterSeq int64, limit int) ([]Project, error) {
+func (r *repo) ListByTeamPage(ctx context.Context, run state.Runner, teamID string, afterSeq int64, limit int) ([]project.Project, error) {
 	return r.page(ctx, run, teamID, afterSeq, limit)
 }
 
 // page 是两种分页形态的共用体：teamID 空 = 全局（owner 面），非空 =
 // Team 过滤（ADR-0035 List 面）。
-func (r *Repo) page(ctx context.Context, run state.Runner, teamID string, afterSeq int64, limit int) ([]Project, error) {
+func (r *repo) page(ctx context.Context, run state.Runner, teamID string, afterSeq int64, limit int) ([]project.Project, error) {
 	if limit <= 0 || limit > maxListLimit {
 		limit = defaultListLimit
 	}
@@ -155,9 +143,9 @@ func (r *Repo) page(ctx context.Context, run state.Runner, teamID string, afterS
 		return nil, err
 	}
 	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []Project
+	var out []project.Project
 	for rows.Next() {
-		var p Project
+		var p project.Project
 		if err := rows.Scan(&p.ID, &p.Seq, &p.Name, &p.TeamID, &p.CreatedAt, &p.UpdatedAt, &p.DeletedAt); err != nil {
 			return nil, err
 		}
@@ -173,7 +161,7 @@ const (
 
 // SoftDelete 落 tombstone（四件一拍的 tombstone 件；Outbox/审计由调用方
 // 同事务组合）。幂等：已删行不报错。
-func (r *Repo) SoftDelete(ctx context.Context, run state.Runner, id string) error {
+func (r *repo) SoftDelete(ctx context.Context, run state.Runner, id string) error {
 	now := state.FormatTime(r.clock.Now())
 	res, err := run.ExecContext(ctx, `
 		UPDATE projects SET deleted_at = ?, updated_at = ?
@@ -190,8 +178,8 @@ func (r *Repo) SoftDelete(ctx context.Context, run state.Runner, id string) erro
 	return nil
 }
 
-func scanProject(row *sql.Row) (*Project, error) {
-	var p Project
+func scanProject(row *sql.Row) (*project.Project, error) {
+	var p project.Project
 	err := row.Scan(&p.ID, &p.Seq, &p.Name, &p.TeamID, &p.CreatedAt, &p.UpdatedAt, &p.DeletedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, state.ErrNotFound

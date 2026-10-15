@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/deployment"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 )
 
 // TestDriveTerminalRowIsQuiet（staging 实证 2026-10-03）：终态行撞进 driving

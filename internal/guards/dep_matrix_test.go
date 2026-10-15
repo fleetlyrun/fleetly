@@ -96,6 +96,11 @@ type depExemption struct {
 
 var depExemptions = []depExemption{
 	{
+		subtree: "internal/domain/",
+		allow:   "internal/infrastructure/persistence/",
+		reason:  "Repo 接口层过渡期（ADR-0075 P1b）：domain 聚合的 Repo 接口按原签名引用根包 state.Runner/Clock/哨兵——根包随 statekit 批（P5）迁入 domain 后删本行；合法命中面仅各聚合 repo.go 接口文件对根包的引用，聚合实现包互引应走 domain 聚合包不经本行",
+	},
+	{
 		subtree: "internal/domain/services/anchor",
 		allow:   "internal/infrastructure/persistence/",
 		reason:  "anchor 聚合仍直引 repo 具体类型（P1b Repo 接口抽取后收紧，届时删本行）",

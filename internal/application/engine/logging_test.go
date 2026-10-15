@@ -17,10 +17,12 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	specir "github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/app"
+	apprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/app"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/build"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
+	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
 
@@ -306,10 +308,10 @@ func waitForLogCond(t *testing.T, cond func() bool) {
 func seedProjectApp(t *testing.T, clock state.Clock, db *state.DB) error {
 	t.Helper()
 	ctx := context.Background()
-	if err := project.New(clock).Create(ctx, db.Runner(), &project.Project{ID: tProjectID, Name: "shop", TeamID: "default"}); err != nil {
+	if err := projectrepo.New(clock).Create(ctx, db.Runner(), &project.Project{ID: tProjectID, Name: "shop", TeamID: "default"}); err != nil {
 		return err
 	}
-	return app.New(clock).Create(ctx, db.Runner(), &app.App{ID: tAppID, ProjectID: tProjectID, Name: "web"})
+	return apprepo.New(clock).Create(ctx, db.Runner(), &app.App{ID: tAppID, ProjectID: tProjectID, Name: "web"})
 }
 
 // frameLinesJoined 是帧行拼接（断言辅助）。

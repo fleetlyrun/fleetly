@@ -12,13 +12,15 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	specir "github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/keyring"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/app"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/deployment"
+	apprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/app"
 	networkrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
+	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
 
@@ -32,8 +34,8 @@ func TestBuildSourceWithoutRegistryFailsAtPrepare(t *testing.T) {
 		Builders: map[string]capability.Builder{specir.BuilderDockerfile: fb},
 		Logger:   discardLogger()}, Options{DataRoot: t.TempDir()})
 	ctx := context.Background()
-	require.NoError(t, project.New(clock).Create(ctx, db.Runner(), &project.Project{ID: tProjectID, Name: "shop", TeamID: "default"}))
-	require.NoError(t, app.New(clock).Create(ctx, db.Runner(), &app.App{ID: tAppID, ProjectID: tProjectID, Name: "web"}))
+	require.NoError(t, projectrepo.New(clock).Create(ctx, db.Runner(), &project.Project{ID: tProjectID, Name: "shop", TeamID: "default"}))
+	require.NoError(t, apprepo.New(clock).Create(ctx, db.Runner(), &app.App{ID: tAppID, ProjectID: tProjectID, Name: "web"}))
 
 	revID, _, _ := freezeGitBuildSpec(t, e, "01JD0REV0000000000000000C1")
 	d, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
@@ -56,7 +58,7 @@ func TestManagedHostCredentialInjection(t *testing.T) {
 	reg := newFakeRegistry()
 	e := New(Deps{DB: db, Runtime: newFakeRuntime(), Cipher: cipher, Registry: reg, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
-	require.NoError(t, project.New(clock).Create(ctx, db.Runner(), &project.Project{ID: tProjectID, Name: "shop", TeamID: "default"}))
+	require.NoError(t, projectrepo.New(clock).Create(ctx, db.Runner(), &project.Project{ID: tProjectID, Name: "shop", TeamID: "default"}))
 
 	// 项目级同名 registry Secret（应被平台凭证覆盖，不被读取）。
 	userCred, _ := json.Marshal(map[string]string{"username": "intruder", "secret": "wrong", "server": fakeRegistryAddr}) //nolint:gosec // 测试夹具样本值
@@ -84,7 +86,7 @@ func TestReconcileManagedDualProviders(t *testing.T) {
 	reg.materials = capability.Materials{SecretFiles: map[string][]byte{"zot-config": []byte(`{"http":{}}`)}}
 	e := New(Deps{DB: db, Runtime: rt, Proxy: proxy, Registry: reg, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
-	require.NoError(t, project.New(clock).Create(ctx, db.Runner(), &project.Project{ID: tProjectID, Name: "shop", TeamID: "default"}))
+	require.NoError(t, projectrepo.New(clock).Create(ctx, db.Runner(), &project.Project{ID: tProjectID, Name: "shop", TeamID: "default"}))
 	require.NoError(t, e.networks.Create(ctx, db.Runner(), &networkrepo.Network{
 		ID: "01JD0NET00000000000000000A", ProjectID: tProjectID, Name: "default",
 	}))

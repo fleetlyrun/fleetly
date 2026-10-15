@@ -12,8 +12,10 @@ import (
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/app"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/task"
+	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
+	apprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/app"
+	taskrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/task"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
 	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
@@ -77,7 +79,7 @@ func TestTaskAndAppQuotaEnforcement(t *testing.T) {
 	pid := proj.GetProject().GetId()
 
 	// 直接灌行到边界前一步：99 条活跃 one-shot×desired 2（active=99、sum=198）。
-	tasksRepo := task.New(h.DB.Clock())
+	tasksRepo := taskrepo.New(h.DB.Clock())
 	for i := 0; i < 99; i++ {
 		row := &task.Task{
 			ID: fmt.Sprintf("01JDQTASK0000000000000%03dQ", i), ProjectID: pid,
@@ -126,7 +128,7 @@ func TestTaskAndAppQuotaEnforcement(t *testing.T) {
 	require.Contains(t, err.Error(), "E_QUOTA_EXCEEDED")
 
 	// App 配额：50 活跃行满员后拒第 51。
-	appsRepo := app.New(h.DB.Clock())
+	appsRepo := apprepo.New(h.DB.Clock())
 	for i := 0; i < 50; i++ {
 		require.NoError(t, appsRepo.Create(ctx, h.DB.Runner(), &app.App{
 			ID: fmt.Sprintf("01JDQAPPS0000000000000%03dX", i), ProjectID: pid,

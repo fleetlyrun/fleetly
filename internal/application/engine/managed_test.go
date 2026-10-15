@@ -9,7 +9,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
+	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/route"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
@@ -177,7 +178,7 @@ func TestRoutePublishResolvesBackends(t *testing.T) {
 	e := New(Deps{DB: db, Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
 	// Team 轴接实（ADR-0028）：后端域解析从 Project 行实取团队。
-	require.NoError(t, project.New(clock).Create(ctx, db.Runner(), &project.Project{
+	require.NoError(t, projectrepo.New(clock).Create(ctx, db.Runner(), &project.Project{
 		ID: tProjectID, Name: "shop", TeamID: "default",
 	}))
 
@@ -216,7 +217,7 @@ func TestPublishRoutesShortCircuitsWhenUnchanged(t *testing.T) {
 	proxy := &fakeProxy{}
 	e := New(Deps{DB: db, Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
-	require.NoError(t, project.New(clock).Create(ctx, db.Runner(), &project.Project{
+	require.NoError(t, projectrepo.New(clock).Create(ctx, db.Runner(), &project.Project{
 		ID: tProjectID, Name: "shop", TeamID: "default",
 	}))
 	rt.mu.Lock()
@@ -258,7 +259,7 @@ func TestPublishRoutesForcedBypassResolvesFreshBackends(t *testing.T) {
 	proxy := &fakeProxy{}
 	e := New(Deps{DB: db, Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
-	require.NoError(t, project.New(clock).Create(ctx, db.Runner(), &project.Project{
+	require.NoError(t, projectrepo.New(clock).Create(ctx, db.Runner(), &project.Project{
 		ID: tProjectID, Name: "shop", TeamID: "default",
 	}))
 	rt.mu.Lock()
@@ -300,7 +301,7 @@ func TestPublishRoutesReplayWindowDropsDeadBackend(t *testing.T) {
 	e := New(Deps{DB: db, Runtime: rt, Proxy: proxy, Logger: discardLogger()},
 		Options{ReconcileReplayInterval: 30 * time.Second})
 	ctx := context.Background()
-	require.NoError(t, project.New(clock).Create(ctx, db.Runner(), &project.Project{
+	require.NoError(t, projectrepo.New(clock).Create(ctx, db.Runner(), &project.Project{
 		ID: tProjectID, Name: "shop", TeamID: "default",
 	}))
 	rt.mu.Lock()

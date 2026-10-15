@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/app"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
 )
 
 // A3 回归（N0 修复批）：logs --process 曾是死旗标（CLI 丢字段 + API 不消

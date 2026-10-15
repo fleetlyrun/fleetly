@@ -18,7 +18,8 @@ import (
 
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
+	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
 	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
@@ -164,7 +165,7 @@ func TestDatabaseCreateRequiresProjectNetwork(t *testing.T) {
 
 	// 形态一：出生面之前的存量零网项目（直插状态层）。
 	legacy := &project.Project{ID: "01JD0LEGACY000000000000000A", Name: "legacy-nonet", TeamID: "default"}
-	require.NoError(t, project.New(h.DB.Clock()).Create(ctx, h.DB.Runner(), legacy))
+	require.NoError(t, projectrepo.New(h.DB.Clock()).Create(ctx, h.DB.Runner(), legacy))
 	require.Error(t, createDB(legacy.ID), "legacy zero-network project must fail closed")
 	assert.Equal(t, codes.FailedPrecondition, status.Code(createDB(legacy.ID)))
 

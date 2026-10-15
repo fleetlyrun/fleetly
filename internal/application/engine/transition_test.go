@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/task"
+	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
 )
 
 // auditActions 取审计动作列表（按资源前缀过滤；空前缀 = 全部）。

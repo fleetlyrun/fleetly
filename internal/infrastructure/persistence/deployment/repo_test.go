@@ -9,9 +9,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/build"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/deployment"
+	deploymentrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/deployment"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
 
@@ -27,7 +28,7 @@ func newDeployment(id, key string) *deployment.Deployment {
 func TestDeploymentTransitCAS(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	deployments := deployment.New(clock)
+	deployments := deploymentrepo.New(clock)
 
 	d := newDeployment("01JD0DEPLOY0000000000000000", "")
 	require.NoError(t, deployments.Create(ctx, db.Runner(), d))
@@ -64,7 +65,7 @@ func TestDeploymentTransitCAS(t *testing.T) {
 func TestDeploymentTransitConcurrentStateReturnsConflict(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	deployments := deployment.New(clock)
+	deployments := deploymentrepo.New(clock)
 
 	d := newDeployment("01JD0DEPLOY0000000000000000", "")
 	require.NoError(t, deployments.Create(ctx, db.Runner(), d))
@@ -96,7 +97,7 @@ func TestDeploymentTransitConcurrentStateReturnsConflict(t *testing.T) {
 func TestAdmissionDedup(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	deployments := deployment.New(clock)
+	deployments := deploymentrepo.New(clock)
 
 	d := newDeployment("01JD0DEPLOY0000000000000000", "deploy-42")
 	require.NoError(t, deployments.Create(ctx, db.Runner(), d))
@@ -126,7 +127,7 @@ func TestAdmissionDedup(t *testing.T) {
 func TestIdempotencyKeyUniqueWithinAppScope(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	deployments := deployment.New(clock)
+	deployments := deploymentrepo.New(clock)
 
 	a := newDeployment("01JD0DEPLOY0000000000000000", "deploy-42")
 	require.NoError(t, deployments.Create(ctx, db.Runner(), a))
@@ -154,7 +155,7 @@ func TestIdempotencyKeyUniqueWithinAppScope(t *testing.T) {
 func TestDeploymentListByAppPagination(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	deployments := deployment.New(clock)
+	deployments := deploymentrepo.New(clock)
 
 	const appID = "01JD0APP000000000000000000"
 	// 顺序落三行（seq = 落序，验证 ORDER BY seq DESC；id 预置仅作断言锚）。

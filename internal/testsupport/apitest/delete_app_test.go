@@ -14,8 +14,9 @@ import (
 	proxyv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/proxy/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/deployment"
+	deploymentrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/deployment"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
 	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
@@ -324,7 +325,7 @@ func TestDeleteAppTeardownAbortKeepsRoute(t *testing.T) {
 		ToRevision: revID, State: deployment.StateQueued, Generation: 2,
 	}
 	require.NoError(t, h.DB.Tx(ctx, func(tx *sql.Tx) error {
-		return deployment.New(h.Clock).Create(ctx, tx, planted)
+		return deploymentrepo.New(h.Clock).Create(ctx, tx, planted)
 	}))
 	release()
 

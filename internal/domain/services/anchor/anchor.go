@@ -13,21 +13,25 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/app"
+	apprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/app"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/build"
 	dbrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/database"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/deployment"
+	deploymentrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/deployment"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/githubapp"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/hook"
 	networkrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/networkpeer"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
+	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/route"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/run"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/schedule"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/task"
+	taskrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/task"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/volume"
 )
 
@@ -76,9 +80,9 @@ func notFound(resource, id string) error {
 
 // Anchor 是解析器（repo 族从 DB 时钟派生；无状态，并发安全）。
 type Anchor struct {
-	projects    *project.Repo
-	apps        *app.Repo
-	tasks       *task.Repo
+	projects    project.Repo
+	apps        app.Repo
+	tasks       task.Repo
 	schedules   *schedule.Repo
 	networks    *networkrepo.Repo
 	peers       *networkpeer.Repo
@@ -87,7 +91,7 @@ type Anchor struct {
 	databases   *dbrepo.Repo
 	volumes     *volume.Repo
 	runs        *run.Repo
-	deployments *deployment.Repo
+	deployments deployment.Repo
 	builds      *build.Repo
 	ghApps      *githubapp.Repo
 }
@@ -95,9 +99,9 @@ type Anchor struct {
 // New 构造解析器。
 func New(clock state.Clock) *Anchor {
 	return &Anchor{
-		projects:    project.New(clock),
-		apps:        app.New(clock),
-		tasks:       task.New(clock),
+		projects:    projectrepo.New(clock),
+		apps:        apprepo.New(clock),
+		tasks:       taskrepo.New(clock),
 		schedules:   schedule.New(clock),
 		networks:    networkrepo.New(clock),
 		peers:       networkpeer.New(clock),
@@ -106,7 +110,7 @@ func New(clock state.Clock) *Anchor {
 		databases:   dbrepo.New(clock),
 		volumes:     volume.New(clock),
 		runs:        run.New(clock),
-		deployments: deployment.New(clock),
+		deployments: deploymentrepo.New(clock),
 		builds:      build.New(clock),
 		ghApps:      githubapp.New(clock),
 	}

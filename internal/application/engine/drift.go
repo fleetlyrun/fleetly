@@ -9,9 +9,9 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/app"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/deployment"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
 )
 
 // rebuildBaselines 按 succeeded 基线幂等重放 Ensure（启动一次）：每个

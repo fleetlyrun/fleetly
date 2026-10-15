@@ -7,16 +7,18 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/app"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
+	apprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/app"
+	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
 
 func TestProjectCRUD(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	projects := project.New(clock)
+	projects := projectrepo.New(clock)
 
 	p := &project.Project{ID: "01JD0PROJ00000000000000000", Name: "shop", TeamID: "default"}
 	require.NoError(t, projects.Create(ctx, db.Runner(), p))
@@ -49,7 +51,7 @@ func TestProjectCRUD(t *testing.T) {
 func TestAppCRUD(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	apps := app.New(clock)
+	apps := apprepo.New(clock)
 
 	const projectID = "01JD0PROJ00000000000000000"
 	a := &app.App{ID: "01JD0APP000000000000000000", ProjectID: projectID, Name: "web"}
@@ -78,7 +80,7 @@ func TestAppCRUD(t *testing.T) {
 func TestProjectListPagination(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	projects := project.New(clock)
+	projects := projectrepo.New(clock)
 
 	// 逆序落三行（ULID 时间序与落序相反，验证 ORDER BY id ASC 既有序不变）。
 	teamA, teamB := "01JTEAM000000000000000000A", "01JTEAM000000000000000000B"

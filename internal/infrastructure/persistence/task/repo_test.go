@@ -8,10 +8,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/run"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/task"
+	taskrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/task"
 )
 
 func newTask(id, name string) *task.Task {
@@ -27,7 +28,7 @@ func newTask(id, name string) *task.Task {
 func TestTaskLifecycleTransit(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	tasks := task.New(clock)
+	tasks := taskrepo.New(clock)
 
 	tk := newTask("01JD0TASK00000000000000000", "migrate")
 	require.NoError(t, tasks.Create(ctx, db.Runner(), tk))
@@ -66,7 +67,7 @@ func TestTaskLifecycleTransit(t *testing.T) {
 func TestTaskNameUniquePerProject(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	tasks := task.New(clock)
+	tasks := taskrepo.New(clock)
 
 	require.NoError(t, tasks.Create(ctx, db.Runner(), newTask("01JD0TASK00000000000000000", "dispatcher")))
 	err := tasks.Create(ctx, db.Runner(), newTask("01JD0TASK00000000000000001", "dispatcher"))
@@ -86,7 +87,7 @@ func TestTaskNameUniquePerProject(t *testing.T) {
 func TestTaskListAndOwnerScan(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	tasks := task.New(clock)
+	tasks := taskrepo.New(clock)
 
 	// ULID 递减构造（新→旧断言用）：后建的 id 更大。
 	ids := []string{"01JD0TASK00000000000000000", "01JD0TASK00000000000000001", "01JD0TASK00000000000000002"}
@@ -125,7 +126,7 @@ func TestTaskListAndOwnerScan(t *testing.T) {
 func TestTaskStatsByProject(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	tasks := task.New(clock)
+	tasks := taskrepo.New(clock)
 
 	active := newTask("01JD0TASK00000000000000000", "keep-a")
 	active.DesiredConcurrency = 3
@@ -248,7 +249,7 @@ func TestRunListByTaskAndStates(t *testing.T) {
 func TestTaskListRecentlyFinished(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	tasks := task.New(clock)
+	tasks := taskrepo.New(clock)
 
 	// 旧收口（窗前）→ 推进时钟 → 窗内 completed/failed/drained + deleted +
 	// 未收口（finished_at 空）。

@@ -8,8 +8,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/app"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/deployment"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
+	apprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/app"
 )
 
 // A1 回归（N0 修复批）：固定幂等键的 Agent 语义 = 活跃期去重、终态后同键
@@ -67,7 +68,7 @@ func TestIdempotencyKeyReusableAfterTerminalState(t *testing.T) {
 func TestIdempotencyKeyScopedPerApp(t *testing.T) {
 	ctx := context.Background()
 	e, _, clock := newTestEngine(t)
-	require.NoError(t, app.New(clock).Create(ctx, e.db.Runner(), &app.App{
+	require.NoError(t, apprepo.New(clock).Create(ctx, e.db.Runner(), &app.App{
 		ID: tApp2ID, ProjectID: tProjectID, Name: "api",
 	}))
 

@@ -10,14 +10,17 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/anchor"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/app"
+	apprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/app"
 	networkrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/networkpeer"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
+	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statertest"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/task"
+	taskrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/task"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -33,14 +36,14 @@ func TestAnchorTeamOfChains(t *testing.T) {
 	ctx := context.Background()
 	run := db.Runner()
 
-	require.NoError(t, project.New(clock).Create(ctx, run, &project.Project{
+	require.NoError(t, projectrepo.New(clock).Create(ctx, run, &project.Project{
 		ID: tProject, Name: "shop", TeamID: tTeam,
 	}))
-	require.NoError(t, task.New(clock).Create(ctx, run, &task.Task{
+	require.NoError(t, taskrepo.New(clock).Create(ctx, run, &task.Task{
 		ID: "01JD0TASK0000000000000000A", ProjectID: tProject, Form: "one-shot",
 		State: "active", Spec: []byte("{}"), DNSName: "t",
 	}))
-	require.NoError(t, app.New(clock).Create(ctx, run, &app.App{
+	require.NoError(t, apprepo.New(clock).Create(ctx, run, &app.App{
 		ID: "01JD0APP00000000000000000A", ProjectID: tProject, Name: "web",
 	}))
 	require.NoError(t, networkrepo.New(clock).Create(ctx, run, &networkrepo.Network{
@@ -91,7 +94,7 @@ func TestAnchorNotFoundCarriesLegResource(t *testing.T) {
 	assert.Equal(t, "network", nf.Resource)
 
 	// 首跳在场、终点腿缺失 → 报 project。
-	require.NoError(t, task.New(clock).Create(ctx, run, &task.Task{
+	require.NoError(t, taskrepo.New(clock).Create(ctx, run, &task.Task{
 		ID: "01JD0TASK0000000000000000B", ProjectID: "01JD0MISSING0000000000000P",
 		Form: "one-shot", State: "active", Spec: []byte("{}"), DNSName: "t",
 	}))
@@ -106,14 +109,14 @@ func TestAnchorAppTombstoneTiers(t *testing.T) {
 	ctx := context.Background()
 	run := db.Runner()
 
-	require.NoError(t, project.New(clock).Create(ctx, run, &project.Project{
+	require.NoError(t, projectrepo.New(clock).Create(ctx, run, &project.Project{
 		ID: tProject, Name: "shop", TeamID: tTeam,
 	}))
 	gone := "01JD0APP00000000000000000B"
-	require.NoError(t, app.New(clock).Create(ctx, run, &app.App{
+	require.NoError(t, apprepo.New(clock).Create(ctx, run, &app.App{
 		ID: gone, ProjectID: tProject, Name: "gone",
 	}))
-	require.NoError(t, app.New(clock).SoftDelete(ctx, run, gone))
+	require.NoError(t, apprepo.New(clock).SoftDelete(ctx, run, gone))
 
 	// 活跃档（生命周期动词口径）：tombstone 行 = 缺失。
 	_, err := a.TeamOf(ctx, run, anchor.KindApp, gone)

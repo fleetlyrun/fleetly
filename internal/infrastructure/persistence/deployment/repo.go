@@ -1,128 +1,29 @@
-// Package deployment 是 Deployment 聚合 repo（CONTEXT.md Deployment 词条：
-// 从旧 Revision 到新 Revision 的受监督迁移）。行本身即 admission 持久
-// 真源（state=queued，2026-09-30 裁决：库为真源 + 进程内索引，ADR-0016）；
-// 状态迁移一律经 Transit CAS（四件一拍的"状态"件，Outbox/审计由调用方
-// 同事务组合）。
+// Package deployment 是 Deployment 聚合 repo 的 SQLite 实现：行类型、
+// 状态机词表与 Repo 接口住 domain/delivery/deployment（ADR-0075 Repo 接口
+// 层），本包只持不导出实现与构造。
 package deployment
 
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
 
-// State 是 Deployment 状态机值（领域模型 §4；含 admission 排队态）。
-type State string
-
-const (
-	StateQueued      State = "queued"       // admission 已受理，等待单写者拾取
-	StatePreparing   State = "preparing"    // Spec 归一化/材料装配/前置 Job
-	StateBuilding    State = "building"     // 构建中（镜像引用可跳过）
-	StateReleasing   State = "releasing"    // 投影 Workload 下发 Runtime（L1 门）
-	StateObserving   State = "observing"    // L3 观察窗 + L2 看门狗常驻
-	StateSucceeded   State = "succeeded"    // 终态
-	StateFailed      State = "failed"       // 终态（自动触发回滚）
-	StateRollingBack State = "rolling-back" // Replay 上一成功 Revision
-	StateSuperseded  State = "superseded"   // 被显式 supersede 抢占的终态
-	StateCancelled   State = "cancelled"    // 排队中/在途被取消的终态
-)
-
-// Terminal 报告是否终态（终态行不再参与 admission 与单写者驱动）。
-func (s State) Terminal() bool {
-	switch s {
-	case StateSucceeded, StateFailed, StateSuperseded, StateCancelled:
-		return true
-	}
-	return false
-}
-
-// Active 报告是否活跃态（admission 去重窗口：排队 + 在途 + 回滚中）。
-func (s State) Active() bool {
-	return s != "" && !s.Terminal()
-}
-
-// ActiveStates 是全部活跃态。
-func ActiveStates() []State {
-	return []State{
-		StateQueued, StatePreparing, StateBuilding,
-		StateReleasing, StateObserving, StateRollingBack,
-	}
-}
-
-// ActiveStateStrings 是活跃态的 SQL IN 参数形态。
-func ActiveStateStrings() []string {
-	out := make([]string, len(ActiveStates()))
-	for i, s := range ActiveStates() {
-		out[i] = string(s)
-	}
-	return out
-}
-
-// ActiveStatesNoQueued 是在途态（admission 显式 supersede 的抢占面：
-// preparing..rolling-back；queued 由 latest-wins 合并处理）。
-func ActiveStatesNoQueued() []State {
-	return []State{
-		StatePreparing, StateBuilding, StateReleasing, StateObserving, StateRollingBack,
-	}
-}
-
-// Deployment 是聚合行（部署记录永不删——审计单位）。
-type Deployment struct {
-	ID                string
-	Seq               int64
-	AppID             string
-	FromRevision      string // 上一 Revision ID（首次部署为空）
-	ToRevision        string // 目标 Revision ID
-	State             State
-	Generation        uint64 // 本 Deployment 拟下发的 Generation（单调）
-	FromGeneration    uint64 // 基线 Generation（最近 succeeded 行的 gen；ADR-0048 双代窗的旧代锚——窗口 Ensure 调用 gen 与服务代推导共用；0 = 无基线（首次部署/存量行））
-	IdempotencyKey    string
-	CommitSHA         string
-	SupersededBy      string // 被哪个 Deployment 抢占（终态 superseded 时非空）
-	Error             string // 失败原因（英文，用户可见）
-	ObserveDeadline   string // 当前阶段绝对截止（job 等待 / L1 就绪等待 / L3 观察窗；RFC3339，空 = 不在限时阶段；消歧真源 = FirstBoot 游标，ADR-0030）
-	FirstBoot         string // firstBootJobs 游标（'' 未开始 | '<idx>:<taskID>' 等待中 | 'done' 全部完成；ADR-0030）
-	RollbackAttempted bool   // failed 自动回滚已尝试（=1 的 failed 是终态，不再自动重试）
-	CreatedAt         string
-	UpdatedAt         string
-	FinishedAt        string
-}
-
-// firstBootDone 是 first_boot 游标的完成哨兵（区分"未开始"空值）。
-const FirstBootDone = "done"
-
-// FirstBootAnchor 解析游标：返回 (job 下标, 锚定 Task ID, 是否等待中)。
-// 'done' 与非法形态返回 ok=false（等待外形态由调用方按序处理）。
-func (d *Deployment) FirstBootAnchor() (idx int, taskID string, ok bool) {
-	if d.FirstBoot == "" || d.FirstBoot == FirstBootDone {
-		return 0, "", false
-	}
-	head, tail, found := strings.Cut(d.FirstBoot, ":")
-	if !found || tail == "" {
-		return 0, "", false
-	}
-	n, err := strconv.Atoi(head)
-	if err != nil || n < 0 {
-		return 0, "", false
-	}
-	return n, tail, true
-}
-
-// Repo 是 Deployment 聚合存取。
-type Repo struct {
+// repo 是 domain deployment.Repo 的 SQLite 实现。
+type repo struct {
 	clock state.Clock
 }
 
-// New 构造 repo。
-func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
+// New 构造 repo（直接返回接口——消费面只见 domain deployment.Repo）。
+func New(clock state.Clock) deployment.Repo { return &repo{clock: clock} }
 
 // Create 落一行（活跃态幂等键唯一索引防并发重复入队 → ErrAlreadyExists）。
 // ID 空则装配 "<app id>-<seq>"；Seq 零值则事务内取 MAX+1（ADR-0070）。
-func (r *Repo) Create(ctx context.Context, run state.Runner, d *Deployment) error {
+func (r *repo) Create(ctx context.Context, run state.Runner, d *deployment.Deployment) error {
 	now := state.FormatTime(r.clock.Now())
 	d.CreatedAt, d.UpdatedAt = now, now
 	seq, err := state.NextSeq(ctx, run, "deployments")
@@ -152,7 +53,7 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, d *Deployment) erro
 }
 
 // Get 按 ID 直读。
-func (r *Repo) Get(ctx context.Context, run state.Runner, id string) (*Deployment, error) {
+func (r *repo) Get(ctx context.Context, run state.Runner, id string) (*deployment.Deployment, error) {
 	row := run.QueryRowContext(ctx, selectCols+" WHERE id = ?", id)
 	return scanDeployment(row.Scan)
 }
@@ -160,7 +61,7 @@ func (r *Repo) Get(ctx context.Context, run state.Runner, id string) (*Deploymen
 // ListByApp 返回 App 全部 Deployment（新→旧 + after 游标；ADR-0026
 // after_* + limit 惯例——游标 = seq 创建序）。limit<=0 或 >200 回落/钳制
 // 缺省 50。
-func (r *Repo) ListByApp(ctx context.Context, run state.Runner, appID string, afterSeq int64, limit int) ([]Deployment, error) {
+func (r *repo) ListByApp(ctx context.Context, run state.Runner, appID string, afterSeq int64, limit int) ([]deployment.Deployment, error) {
 	if limit <= 0 || limit > maxListLimit {
 		limit = defaultListLimit
 	}
@@ -177,7 +78,7 @@ func (r *Repo) ListByApp(ctx context.Context, run state.Runner, appID string, af
 		return nil, err
 	}
 	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []Deployment
+	var out []deployment.Deployment
 	for rows.Next() {
 		d, err := scanDeployment(rows.Scan)
 		if err != nil {
@@ -189,8 +90,8 @@ func (r *Repo) ListByApp(ctx context.Context, run state.Runner, appID string, af
 }
 
 // ActiveByApp 返回 App 全部活跃态 Deployment（应至多一条在途 + 任意排队）。
-func (r *Repo) ActiveByApp(ctx context.Context, run state.Runner, appID string) ([]Deployment, error) {
-	states := ActiveStateStrings()
+func (r *repo) ActiveByApp(ctx context.Context, run state.Runner, appID string) ([]deployment.Deployment, error) {
+	states := deployment.ActiveStateStrings()
 	args := append([]any{appID}, toAny(states)...)
 	rows, err := run.QueryContext(ctx,
 		selectCols+" WHERE app_id = ? AND state IN ("+placeholders(len(states))+") ORDER BY seq",
@@ -199,7 +100,7 @@ func (r *Repo) ActiveByApp(ctx context.Context, run state.Runner, appID string) 
 		return nil, err
 	}
 	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []Deployment
+	var out []deployment.Deployment
 	for rows.Next() {
 		d, err := scanDeployment(rows.Scan)
 		if err != nil {
@@ -214,8 +115,8 @@ func (r *Repo) ActiveByApp(ctx context.Context, run state.Runner, appID string) 
 // ErrNotFound）。键的作用域是 App（B10）：异 App 同键不命中——作用域
 // 收紧后的正确语义，异 App 的键不在本 App 作用域内；存量迁移窗口若出现
 // 跨 App 同键活跃行，对本 App 亦视同无键。
-func (r *Repo) FindActiveByIdempotencyKey(ctx context.Context, run state.Runner, appID, key string) (*Deployment, error) {
-	states := ActiveStateStrings()
+func (r *repo) FindActiveByIdempotencyKey(ctx context.Context, run state.Runner, appID, key string) (*deployment.Deployment, error) {
+	states := deployment.ActiveStateStrings()
 	args := append([]any{appID, key}, toAny(states)...)
 	row := run.QueryRowContext(ctx,
 		selectCols+" WHERE app_id = ? AND idempotency_key = ? AND state IN ("+placeholders(len(states))+") ORDER BY seq LIMIT 1",
@@ -226,8 +127,8 @@ func (r *Repo) FindActiveByIdempotencyKey(ctx context.Context, run state.Runner,
 // ListDriving 返回全部待驱动行：活跃态 + 待自动回滚的 failed（领域模型
 // §4：failed → (自动) rolling-back；rollback_attempted=1 或无 from_revision
 // 的 failed 是终态，不拾取）。
-func (r *Repo) ListDriving(ctx context.Context, run state.Runner) ([]Deployment, error) {
-	states := ActiveStateStrings()
+func (r *repo) ListDriving(ctx context.Context, run state.Runner) ([]deployment.Deployment, error) {
+	states := deployment.ActiveStateStrings()
 	args := toAny(states)
 	args = append(args, false)
 	rows, err := run.QueryContext(ctx,
@@ -239,7 +140,7 @@ func (r *Repo) ListDriving(ctx context.Context, run state.Runner) ([]Deployment,
 		return nil, err
 	}
 	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
-	var out []Deployment
+	var out []deployment.Deployment
 	for rows.Next() {
 		d, err := scanDeployment(rows.Scan)
 		if err != nil {
@@ -251,7 +152,7 @@ func (r *Repo) ListDriving(ctx context.Context, run state.Runner) ([]Deployment,
 }
 
 // NextGeneration 返回 App 下一 Generation（单调；Drift 判定与幂等重放的锚）。
-func (r *Repo) NextGeneration(ctx context.Context, run state.Runner, appID string) (uint64, error) {
+func (r *repo) NextGeneration(ctx context.Context, run state.Runner, appID string) (uint64, error) {
 	var gen uint64
 	err := run.QueryRowContext(ctx,
 		`SELECT COALESCE(MAX(generation), 0) FROM deployments WHERE app_id = ?`, appID).Scan(&gen)
@@ -263,7 +164,7 @@ func (r *Repo) NextGeneration(ctx context.Context, run state.Runner, appID strin
 
 // LatestSucceeded 返回 App 最近一次 succeeded 的 Deployment（ADR-0022
 // 启动基线重放的锚；无成功基线 → ErrNotFound）。
-func (r *Repo) LatestSucceeded(ctx context.Context, run state.Runner, appID string) (*Deployment, error) {
+func (r *repo) LatestSucceeded(ctx context.Context, run state.Runner, appID string) (*deployment.Deployment, error) {
 	row := run.QueryRowContext(ctx,
 		selectCols+" WHERE app_id = ? AND state = 'succeeded' ORDER BY seq DESC LIMIT 1", appID)
 	return scanDeployment(row.Scan)
@@ -273,7 +174,7 @@ func (r *Repo) LatestSucceeded(ctx context.Context, run state.Runner, appID stri
 // error/finished_at/generation/superseded_by/observe_deadline 等字段）。
 // 前置不符 → ErrConflict；行不存在 → ErrNotFound（四件一拍的"状态"件；
 // UPDATE 带 state 前置条件作并发防御纵深，即使未来放开连接池也安全）。
-func (r *Repo) Transit(ctx context.Context, run state.Runner, id string, from []State, to State, mut func(*Deployment)) error {
+func (r *repo) Transit(ctx context.Context, run state.Runner, id string, from []deployment.State, to deployment.State, mut func(*deployment.Deployment)) error {
 	cur, err := r.Get(ctx, run, id)
 	if err != nil {
 		return err
@@ -320,8 +221,8 @@ const selectCols = `
 	       first_boot, rollback_attempted, created_at, updated_at, finished_at
 	FROM deployments`
 
-func scanDeployment(scan func(dest ...any) error) (*Deployment, error) {
-	var d Deployment
+func scanDeployment(scan func(dest ...any) error) (*deployment.Deployment, error) {
+	var d deployment.Deployment
 	var stateStr string
 	var rollback int
 	err := scan(&d.ID, &d.Seq, &d.AppID, &d.FromRevision, &d.ToRevision, &stateStr, &d.Generation, &d.FromGeneration,
@@ -330,12 +231,12 @@ func scanDeployment(scan func(dest ...any) error) (*Deployment, error) {
 	if err != nil {
 		return nil, state.MapScanErr(err)
 	}
-	d.State = State(stateStr)
+	d.State = deployment.State(stateStr)
 	d.RollbackAttempted = rollback != 0
 	return &d, nil
 }
 
-func stateIn(set []State, s State) bool {
+func stateIn(set []deployment.State, s deployment.State) bool {
 	for _, v := range set {
 		if v == s {
 			return true
@@ -349,7 +250,7 @@ const (
 	maxListLimit     = 200
 )
 
-func joinStates(set []State) string {
+func joinStates(set []deployment.State) string {
 	parts := make([]string, len(set))
 	for i, s := range set {
 		parts[i] = string(s)

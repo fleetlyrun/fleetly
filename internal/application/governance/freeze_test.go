@@ -12,13 +12,16 @@ import (
 
 	automationv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/automation/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/app"
+	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
+	apprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/app"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/freeze"
 	networkrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/networkpeer"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
+	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/task"
+	taskrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/task"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/apperrstatus"
 )
 
@@ -52,7 +55,7 @@ func TestFreezeGuardTeamAxis(t *testing.T) {
 	run := db.Runner()
 
 	// 夹具：Team A（project/app/task/network/peer）与 Team B（project）。
-	projects, apps, tasks := project.New(clock), app.New(clock), task.New(clock)
+	projects, apps, tasks := projectrepo.New(clock), apprepo.New(clock), taskrepo.New(clock)
 	networks, peers, freezes := networkrepo.New(clock), networkpeer.New(clock), freeze.New(clock)
 	const (
 		pidA    = "01JD0PROJA0000000000000000"

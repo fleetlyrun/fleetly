@@ -8,12 +8,16 @@ import (
 	"log/slog"
 
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
+	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/anchor"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/github"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/app"
+	apprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/app"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/appvariable"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/audit"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/backup"
@@ -22,7 +26,7 @@ import (
 	catalogrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/catalog"
 	configrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/config"
 	dbrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/database"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/deployment"
+	deploymentrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/deployment"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/freeze"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/githubapp"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/hook"
@@ -32,7 +36,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/networkpeer"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/node"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/outbox"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
+	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/revision"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/role"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/route"
@@ -41,7 +45,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/secret"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/sharedvariable"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/sourceupload"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/task"
+	taskrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/task"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/team"
 	tokenrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/token"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/user"
@@ -62,12 +66,12 @@ type Services struct {
 	// 零告警——ADR-0041）。
 	Metrics capability.Metrics
 
-	Projects     *project.Repo
-	Apps         *app.Repo
-	Deployments  *deployment.Repo
+	Projects     project.Repo
+	Apps         app.Repo
+	Deployments  deployment.Repo
 	Revisions    *revision.Repo
 	Builds       *build.Repo
-	Tasks        *task.Repo
+	Tasks        task.Repo
 	Runs         *run.Repo
 	Schedules    *schedule.Repo
 	OutboxEvents *outbox.Repo
@@ -164,12 +168,12 @@ func NewServices(db *state.DB, e *engine.Engine, c *material.Cipher, rt capabili
 		Runtime:         rt,
 		Logging:         e.LoggingProvider(),
 		Metrics:         e.MetricsProvider(),
-		Projects:        project.New(clock),
-		Apps:            app.New(clock),
-		Deployments:     deployment.New(clock),
+		Projects:        projectrepo.New(clock),
+		Apps:            apprepo.New(clock),
+		Deployments:     deploymentrepo.New(clock),
 		Revisions:       revision.New(clock),
 		Builds:          build.New(clock),
-		Tasks:           task.New(clock),
+		Tasks:           taskrepo.New(clock),
 		Runs:            run.New(clock),
 		Schedules:       schedule.New(clock),
 		OutboxEvents:    outbox.New(clock),
