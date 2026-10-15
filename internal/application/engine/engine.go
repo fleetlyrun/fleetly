@@ -318,9 +318,11 @@ type proxyState struct {
 	pubNow atomic.Bool           // PublishRoutesNow 即时发布信号（消费即清）
 }
 
-// buildDomain 是构建面状态（输入登记 + 最近日志缓冲；并发/超时是 Options
-// 派生面，留在 Engine.opts/buildOpts）。
-type buildDomain struct {
+// builds 是构建面状态（输入登记 + 最近日志缓冲；并发/超时是 Options
+// 派生面，留在 Engine.opts/buildOpts）。P3 批 6 收编：buildDomain →
+// builds（复数普通名词零后缀，ADR-0075 命名法则）；Engine 字段名 build
+// 保持不变（域字段壳收口留批 8）。
+type builds struct {
 	inputsMu sync.Mutex
 	inputs   map[string]capability.BuildRequest // buildID → 登记输入（重启丢失即回 queued 重放）
 	logs     *logBuffer
@@ -440,7 +442,7 @@ type Engine struct {
 	database  databases
 	delivery  deliveryDomain
 	proxyMemo proxyState
-	build     buildDomain
+	build     builds
 
 	// ensureMu 是收敛域签名短路备忘族的共用锁（五张 memo map 分住各域
 	// 子结构，锁保持单点——拆锁随域分化需要时再裁，本批锁语义零漂移）。

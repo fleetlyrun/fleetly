@@ -212,7 +212,7 @@ func TestNSBatchStampsAndFlush(t *testing.T) {
 	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: newFakeRuntime(), Logging: fl, Logger: discardLogger()},
 		Options{DataRoot: t.TempDir()})
 	ns := capability.NamespaceRef{Team: "t1", Project: "P1", App: "A1"}
-	b := &nsBatch{e: e, ns: ns}
+	b := &nsBatch{db: e.db, logging: e.logging, log: e.log, clock: e.clock, cursors: e.logpipe.cursors, ns: ns}
 	ts := clock.Now()
 	for i := 0; i < logIngestBatchFrames; i++ {
 		require.NoError(t, b.WriteLog(context.Background(), capability.LogFrame{
@@ -239,7 +239,7 @@ func TestNSBatchStampsAndFlush(t *testing.T) {
 	fl.fail = true
 	fl.ingested = nil
 	fl.mu.Unlock()
-	b2 := &nsBatch{e: e, ns: ns, cursor: cur}
+	b2 := &nsBatch{db: e.db, logging: e.logging, log: e.log, clock: e.clock, cursors: e.logpipe.cursors, ns: ns, cursor: cur}
 	for i := 0; i < logIngestBatchFrames; i++ {
 		err := b2.WriteLog(context.Background(), capability.LogFrame{
 			Time: cur.Add(time.Duration(i+1) * time.Minute), Line: []byte("later"),

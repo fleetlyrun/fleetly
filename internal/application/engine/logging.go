@@ -7,13 +7,18 @@ package engine
 // 断流自愈：游标（log_cursors）只在 Ingest 成功后推进。VL 不可达 →
 // WriteLog 上抛 → 流中断 → 退避重启 Since=游标 → docker json-file 缓冲
 // 重放补窗（补窗深度以 docker 日志文件在场为界——诚实边界）。
+//
+// 域 struct（nsBatch）只持显式最小依赖（db/logging/log/clock/cursors），
+// 不挂 *Engine 回引——enginebackref 守卫执法。
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/logcursor"
 )
 
@@ -197,7 +202,7 @@ func (e *Engine) runLogCollector(ctx context.Context, ns capability.NamespaceRef
 		if since.IsZero() {
 			since = started.Add(-logFirstCollectLookback) // 首采：有界回看，不整灌存量
 		}
-		batch := &nsBatch{e: e, ns: ns, cursor: cursor, lastAppend: started}
+		batch := &nsBatch{db: e.db, logging: e.logging, log: e.log, clock: e.clock, cursors: e.logpipe.cursors, ns: ns, cursor: cursor, lastAppend: started}
 		key := ns.String()
 		e.logpipe.mu.Lock()
 		e.logpipe.batches[key] = batch
@@ -241,10 +246,16 @@ func (e *Engine) runLogCollector(ctx context.Context, ns capability.NamespaceRef
 // 永远到不了帧量阈值，时间面由环节拍承载，staging 真机实证 2026-10-04）。
 // 达量 flush 失败上抛给 StreamLogs（断流重启触发面——游标不推进，重放
 // 自愈）；空闲冲刷失败只告警（流不断，下一拍重试，gap 由重启重放兜底）。
+// P3 批 6 显式最小依赖：db/logging/log/clock/cursors 直持端口与活体，
+// 不挂 *Engine 回引（enginebackref 守卫执法：域活体禁挂壳回引）。
 type nsBatch struct {
-	e      *Engine
-	ns     capability.NamespaceRef
-	cursor time.Time
+	db      state.DB           // 存储面（游标落盘 Runner）
+	logging capability.Logging // 受管日志存储端口
+	log     *slog.Logger       // 丢批/落盘告警日志器
+	clock   state.Clock        // 时间面（帧时间兜底/闲置判据/节流锚）
+	cursors logcursor.Repo     // 游标 repo（Ingest 成功后推进）
+	ns      capability.NamespaceRef
+	cursor  time.Time
 
 	mu     sync.Mutex
 	frames []capability.LogFrame
@@ -257,7 +268,7 @@ type nsBatch struct {
 }
 
 func (b *nsBatch) WriteLog(_ context.Context, f capability.LogFrame) error {
-	now := b.e.clock.Now()
+	now := b.clock.Now()
 	if f.Time.IsZero() {
 		f.Time = now // docker 时间戳缺席面（诚实兜底；游标不回退）
 	}
@@ -288,7 +299,7 @@ func (b *nsBatch) flushIdle(now time.Time) {
 		return
 	}
 	if err := b.flush(context.Background()); err != nil {
-		b.e.log.Warn("log collector: idle flush failed; will retry next tick", "namespace", b.ns.String(), "err", err)
+		b.log.Warn("log collector: idle flush failed; will retry next tick", "namespace", b.ns.String(), "err", err)
 	}
 }
 
@@ -306,19 +317,19 @@ func (b *nsBatch) flush(ctx context.Context) error {
 	b.mu.Unlock()
 	ictx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	if err := b.e.logging.Ingest(ictx, frames); err != nil {
+	if err := b.logging.Ingest(ictx, frames); err != nil {
 		b.mu.Lock()
 		b.dropped += len(frames)
 		b.mu.Unlock()
-		b.e.log.Warn("log collector: ingest failed; will replay from cursor", "namespace", b.ns.String(), "dropped", b.dropped, "err", err)
+		b.log.Warn("log collector: ingest failed; will replay from cursor", "namespace", b.ns.String(), "dropped", b.dropped, "err", err)
 		return err
 	}
 	if time.Since(b.cursorPersistAt) >= logCursorPersistInterval {
-		if err := b.e.logpipe.cursors.Save(ctx, b.e.db.Runner(), b.ns.String(), cursor); err != nil {
-			b.e.log.Error("log collector: persist cursor", "namespace", b.ns.String(), "err", err)
+		if err := b.cursors.Save(ctx, b.db.Runner(), b.ns.String(), cursor); err != nil {
+			b.log.Error("log collector: persist cursor", "namespace", b.ns.String(), "err", err)
 			// 游标落盘失败不致命：内存游标继续推进，重启多重放一段（VL 同流去重兜住）
 		}
-		b.cursorPersistAt = b.e.clock.Now()
+		b.cursorPersistAt = b.clock.Now()
 	}
 	return nil
 }

@@ -32,17 +32,9 @@ import (
 // engineBackrefExemptions 是 struct 名 → 理由（现树遗留的 *Engine 回引，
 // 各自的收编批落地时必须去除并同批删条目）。R1 按字段归属 struct 名对账，
 // R2 按接收者类型名对账；匿名 inline struct 的回引无名字可豁免，一律红。
-var engineBackrefExemptions = map[string]string{
-	// 流级批汇器（logging.go）持 Engine 用 clock/logging/log，批 2 observ
-	// 收编时去除。
-	"nsBatch": "stream batcher borrows Engine for clock/logging provider/logger; remove when batch 2 absorbs the observ domain",
-	// build 日志攒批器（buildlog.go）经 e.logging/e.log 落库，批 6 build
-	// 收编时去除。
-	"buildLogIngester": "build-log batcher borrows Engine for logging provider/logger; remove when batch 6 absorbs the build domain",
-	// LogWriter → 环形缓冲适配器（builder.go）经 engine.build.logs 写环，
-	// 批 6 build 收编时去除。
-	"bufferWriter": "LogWriter-to-ring-buffer adapter writes via engine.build.logs; remove when batch 6 absorbs the build domain",
-}
+// 当前为零——三条遗留回引（nsBatch/buildLogIngester/bufferWriter）已于
+// P3 批 6 显式化并同批删条目；后续新域 struct 一律显式最小依赖，回引即红。
+var engineBackrefExemptions = map[string]string{}
 
 // engineBackrefHit 是一处 Engine/*Engine 回引命中。
 type engineBackrefHit struct {
