@@ -406,7 +406,7 @@ type Engine struct {
 	// Metrics 域（F2.5，ADR-0041）：受管指标存储 Provider + 采集环（cadvisor
 	// 抓取/透传/规则评估；通道派发面）。
 	metrics    capability.Metrics
-	metricsDom metricsDomain
+	metricsDom metrics
 	alertRules alertrule.Repo
 	channels   channel.Repo
 
