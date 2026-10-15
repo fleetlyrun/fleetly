@@ -24,11 +24,11 @@ import (
 
 // removeCallAllowlist 是 engine 内 runtime.Remove 的合法调用面（域级拆除）。
 var removeCallAllowlist = map[string]string{
-	"internal/application/engine/teardown.go":  "DeleteApp 整域拆除（App 删除动词）",
-	"internal/application/engine/database.go":  "Database 拆除（ADR-0029 域删除动词）",
-	"internal/application/engine/taskverbs.go": "DeleteTask 整域拆除（Task 域删除动词；P3 批 3 task.go 拆 taskverbs.go 随迁）",
-	"internal/application/engine/hygiene.go":   "Task 终态载体清扫（janitor 面）",
-	"internal/application/engine/browse.go":    "Browse 会话回收（ADR-0051：per-会话独立命名空间即独立收敛单元——Remove 拆单会话域，不经 App 期望集）",
+	"internal/application/engine/teardown.go":   "DeleteApp 整域拆除（App 删除动词）",
+	"internal/application/engine/database.go":   "Database 拆除（ADR-0029 域删除动词）",
+	"internal/application/engine/taskverbs.go":  "DeleteTask 整域拆除（Task 域删除动词；P3 批 3 task.go 拆 taskverbs.go 随迁）",
+	"internal/application/engine/hygiene.go":    "Task 终态载体清扫（janitor 面）",
+	"internal/application/engine/browseloop.go": "Browse 会话回收（ADR-0051：per-会话独立命名空间即独立收敛单元——Remove 拆单会话域，不经 App 期望集；P3 批 4 browse.go 拆 browseloop.go 随迁）",
 }
 
 var runtimeRemoveRe = regexp.MustCompile(`runtime\.Remove\(`)

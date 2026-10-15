@@ -298,8 +298,10 @@ type managedDomain struct {
 	ensure map[string]ensureMemo // namespace → 上次成功 Ensure（managedFingerprint 全量保守口径）
 }
 
-// databaseDomain 是 Database 域状态（ADR-0029 用户域收敛环）。
-type databaseDomain struct {
+// databases 是 Database 域状态（ADR-0029 用户域收敛环）。P3 批 4 收编：
+// databaseDomain → databases（复数普通名词零后缀，ADR-0075 命名法则）；
+// Engine 字段名 database 保持不变（域字段壳收口留批 8）。
+type databases struct {
 	ensure map[string]ensureMemo // databaseID → 上次成功 Ensure
 }
 
@@ -386,7 +388,7 @@ type Engine struct {
 	// Browse 会话域（F3.6，ADR-0051）：回收台账 repo + 收敛环（会话
 	// 注册表进程内活体——行是重启恢复锚，见 browse.go）。
 	browseRepo browse.Repo
-	browse     browseDomain
+	browse     browses
 
 	// Backup 域（F2.2，ADR-0039）：台账 repo + 备份环 + 执行链装配面
 	//（ObjectStore 端口 = 产物承载；Utility 子面 = 工具容器执行，装配期
@@ -433,7 +435,7 @@ type Engine struct {
 	drift     driftDomain
 	expect    expectDomain
 	managed   managedDomain
-	database  databaseDomain
+	database  databases
 	delivery  deliveryDomain
 	proxyMemo proxyState
 	build     buildDomain
