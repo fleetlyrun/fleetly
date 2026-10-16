@@ -26,7 +26,7 @@ import (
 // buildRepo 组装构建产物所在的仓名（不含 registry 地址；<projectID>/<appID>
 // 双段小写——docker 引用要求仓库名小写，ULID 大写形态无损小写化）。本文件
 // 是本地镜像命名的唯一真源（勿散落副本）。前纲布局是 per-Project 凭证域
-// 隔离的地基（ADR-0036 N2 兑现节 2）；存量扁平行的回退见 buildDigests。
+// 隔离的地基（ADR-0036 N2 兑现节 2）。
 func buildRepo(projectID, appID string) string {
 	return strings.ToLower(projectID) + "/" + strings.ToLower(appID)
 }
@@ -40,8 +40,8 @@ func LocalImageRef(registryAddr, projectID, appID string, revSeq int64) string {
 
 // LocalImageDigestRef 组装 from_build 的下发引用（digest 形态：绕开 tag
 // 语义的全部 docker29 真机坑——digest-pull 不落 tag、save/load 丢 tag）。
-// repo 是产物所在仓名：新构建 = buildRepo 前纲；存量行（repo 空）= 扁平
-// 回退 lower(appID)——由调用方 buildDigests 判别。
+// repo 是产物所在仓名（Build 行创建时定型的 buildRepo 前纲，恒非空——
+// 旧扁平兼容面已删，digest 引用一律走 repo 前纲）。
 func LocalImageDigestRef(registryAddr, repo, digest string) string {
 	return fmt.Sprintf("%s/%s@%s", registryAddr, repo, digest)
 }
@@ -141,8 +141,6 @@ func (e *Engine) driveBuilding(ctx context.Context, d *deployment.Deployment) (*
 // （prepareBuildInput 本身幂等：检出目录已存在即跳过 clone），重建失败
 // 走 failDeployment（调用方收口）。building 行且无登记 = 本进程没有执行
 // goroutine（崩溃遗留且未经 Start 重置）→ 回 queued 交构建循环重拾。
-// 存量在途行（repo 空，前纲切换升级窗口）按新公式重放输入——产物将落
-// 前纲仓，repo 补章与之一致（StampRepo 幂等一次性）。
 func (e *Engine) ensureBuildInput(ctx context.Context, d *deployment.Deployment, spec *specv1.AppSpec, revSeq int64, b *build.Build) error {
 	e.build.inputsMu.Lock()
 	_, ok := e.build.inputs[b.ID]
@@ -162,11 +160,6 @@ func (e *Engine) ensureBuildInput(ctx context.Context, d *deployment.Deployment,
 	e.build.inputsMu.Lock()
 	e.build.inputs[b.ID] = input
 	e.build.inputsMu.Unlock()
-	if b.Repo == "" {
-		if err := e.builds.StampRepo(ctx, e.db.Runner(), b.ID, buildRepo(a.ProjectID, d.AppID)); err != nil {
-			return fmt.Errorf("stamp legacy build repo: %w", err)
-		}
-	}
 	if b.State == build.StateBuilding {
 		// CAS 冲突 = 并发写者已迁移该行（如竞态回 queued）：容忍，下拍复查。
 		if _, err := e.transitBuild(ctx, b,

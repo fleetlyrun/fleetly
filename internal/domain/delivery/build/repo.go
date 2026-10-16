@@ -23,10 +23,6 @@ type Repo interface {
 	ListByRevision(ctx context.Context, run state.Runner, revisionID string) ([]Build, error)
 	// ListActive 返回全部活跃 Build（构建循环拾取面）。
 	ListActive(ctx context.Context, run state.Runner) ([]Build, error)
-	// StampRepo 给存量在途行补章 repo（前纲切换的兼容面：升级时点 queued/
-	// building 的行按新公式重放输入，产物将落前缀仓——repo 必须与之一致；
-	// WHERE repo=” 使补章幂等一次性，已章行不受扰）。
-	StampRepo(ctx context.Context, run state.Runner, id, repo string) error
 	// Transit 是状态 CAS（同 deployment.Transit 口径；mut 补充 digest/error）。
 	Transit(ctx context.Context, run state.Runner, id string, from []State, to State, mut func(*Build)) error
 }

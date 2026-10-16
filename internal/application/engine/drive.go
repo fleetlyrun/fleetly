@@ -134,7 +134,7 @@ func (e *Engine) prepare(ctx context.Context, d *deployment.Deployment) (*deploy
 	// 态产出；releasing 前再次投影校验）；无 Build 声明的 from_build 是
 	// 永久错误，此处精确失败。跨 Project 引用未 approved 同样 fail-closed
 	//（ADR-0013 附录 A.3——受理面已拒一次，此处是部署链内的第二道）。
-	digests, derr := e.buildDigests(ctx, d.AppID, d.ToRevision)
+	digests, derr := e.buildDigests(ctx, d.ToRevision)
 	if derr == nil && (digests != nil || spec.GetBuild() == nil) {
 		peers, perr := e.resolvePeerRefs(ctx, e.db.Runner(), spec.GetApp().GetProject(), spec, false)
 		if perr == nil {

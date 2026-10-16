@@ -8,7 +8,8 @@ package engine
 import (
 	"context"
 	"fmt"
-	"strings"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -370,60 +371,47 @@ func TestFirstBootNetworksDeclared(t *testing.T) {
 
 // TestFirstBootFromBuildDigest：from_build job 在铸时解析为完整 digest 引用
 // （Revision 级单产物 by 进程名）；引用非 from_build 进程 = 精确失败。
-// repo 判别两形态（ADR-0036 N2 兑现节 2）：新行带前纲 repo → 前纲引用；
-// 存量行（repo 空）→ 扁平回退 lower(appID)——扁平仓保持全用户可读。
+// repo 不变式（旧扁平兼容族已删）：生产构造面 driveBuilding 落的 Build 行
+// repo 恒为 buildRepo 前纲（此处执法断言 repo 非空且值定型），digest 引用
+// 一律走 repo 前纲——构造空 repo 行的路径已不存在，无扁平回退形态。
 func TestFirstBootFromBuildDigest(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		repo string // Build 行 repo 列（空 = 存量扁平）
-		want string
-	}{
-		{
-			name: "prefixed row",
-			repo: buildRepo(tProjectID, tAppID),
-			want: fakeRegistryAddr + "/" + buildRepo(tProjectID, tAppID) + "@" + tFakeDigest,
-		},
-		{
-			name: "legacy flat row",
-			repo: "",
-			want: fakeRegistryAddr + "/" + strings.ToLower(tAppID) + "@" + tFakeDigest,
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			e, _, _ := newTestEngine(t)
-			e.registry = newFakeRegistry()
-			e.builders = map[string]capability.Builder{specir.BuilderDockerfile: &fakeBuilder{digest: tFakeDigest}} // driveBuilding 前置门：builder 在册（产物行已直落，不执行）
-			ctx := context.Background()
-			spec := fmt.Sprintf(`{"schema_version":1,"app":{"id":"%s","project":"%s"},`+
-				`"source":{"git":{"repo":"https://git.test/x.git","ref":"main"}},`+
-				`"build":{"builder":"dockerfile","dockerfile":"Dockerfile"},`+
-				`"processes":[{"name":"web","from_build":"web","replicas":1}],`+
-				`"first_boot_jobs":[{"name":"migrate","ttl":"300s","process":{"from_build":"web","command":["/migrate"]}}]}`,
-				tAppID, tProjectID)
-			revID := freezeSpec(t, e, 1, spec)
+	e, _, _ := newTestEngineOpts(t, Options{Data: DataOptions{DataRoot: t.TempDir()}})
+	e.registry = newFakeRegistry()
+	e.builders = map[string]capability.Builder{specir.BuilderDockerfile: &fakeBuilder{digest: tFakeDigest}}
+	ctx := context.Background()
+	spec := fmt.Sprintf(`{"schema_version":1,"app":{"id":"%s","project":"%s"},`+
+		`"source":{"git":{"repo":"https://git.test/x.git","ref":"main"}},`+
+		`"build":{"builder":"dockerfile","dockerfile":"Dockerfile"},`+
+		`"processes":[{"name":"web","from_build":"web","replicas":1}],`+
+		`"first_boot_jobs":[{"name":"migrate","ttl":"300s","process":{"from_build":"web","command":["/migrate"]}}]}`,
+		tAppID, tProjectID)
+	revID := freezeSpec(t, e, 1, spec)
+	// 预置检出目录（prepareBuildInput 幂等跳过 clone）——driveBuilding 真正
+	// 受理 Build 行；构建循环未启，行停 queued 供直检。
+	require.NoError(t, os.MkdirAll(filepath.Join(e.opts.Data.DataRoot, "contexts", revID), 0o750))
 
-			// 构建产物行（releasing 进入条件 = build succeeded；building 落行后经
-			// Transit 携 digest 收终态——Create 不落 digest 列，真实流同款路径）。
-			b := &build.Build{
-				ID: "01JD0B00000000000000000FB", AppID: tAppID,
-				RevisionID: revID, State: build.StateBuilding, Repo: tc.repo,
-			}
-			require.NoError(t, e.builds.Create(ctx, e.db.Runner(), b))
-			require.NoError(t, e.builds.Transit(ctx, e.db.Runner(), b.ID,
-				[]build.State{build.StateBuilding}, build.StateSucceeded,
-				func(m *build.Build) { m.Digest = tFakeDigest }))
+	d, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
+	require.NoError(t, err)
+	e.step(ctx) // building：driveBuilding 受理 Build 行
+	queued, err := e.builds.ListByRevision(ctx, e.db.Runner(), revID)
+	require.NoError(t, err)
+	require.Len(t, queued, 1)
+	require.NotEmpty(t, queued[0].Repo, "every production-created build row carries its repo")
+	assert.Equal(t, buildRepo(tProjectID, tAppID), queued[0].Repo)
 
-			d, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
-			require.NoError(t, err)
-			e.step(ctx) // building → releasing（build 已成）→ 铸 job
-			d = getDeployment(t, e, d.ID)
-			require.Equal(t, deployment.StateReleasing, d.State, "deployment error: %s", d.Error)
-			row := mintedJobTask(t, e, d)
-			assert.Contains(t, string(row.Spec),
-				fmt.Sprintf(`"image":"%s"`, tc.want),
-				"from_build resolves to the full digest reference at mint")
-		})
-	}
+	// 构建产物收终态（releasing 进入条件 = build succeeded；经 Transit 携
+	// digest——Create 不落 digest 列，真实流同款路径）。
+	require.NoError(t, e.builds.Transit(ctx, e.db.Runner(), queued[0].ID,
+		[]build.State{build.StateQueued}, build.StateSucceeded,
+		func(m *build.Build) { m.Digest = tFakeDigest }))
+
+	e.step(ctx) // building → releasing（build 已成）→ 铸 job
+	d = getDeployment(t, e, d.ID)
+	require.Equal(t, deployment.StateReleasing, d.State, "deployment error: %s", d.Error)
+	row := mintedJobTask(t, e, d)
+	assert.Contains(t, string(row.Spec),
+		fmt.Sprintf(`"image":"%s"`, fakeRegistryAddr+"/"+buildRepo(tProjectID, tAppID)+"@"+tFakeDigest),
+		"from_build resolves to the full digest reference at mint")
 }
 
 // TestFirstBootQuotaBoundedRetry：项目 Task 配额满 → 铸造受阻转有界等待

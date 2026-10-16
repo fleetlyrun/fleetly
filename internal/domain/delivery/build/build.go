@@ -35,9 +35,9 @@ type Build struct {
 	RevisionID string
 	State      State
 	Digest     string
-	// Repo 是产物所在仓库名（不含 registry 地址，<projectID>/<appID> 前
-	// 纲；空 = 存量扁平布局 <appID>——投影期回退，ADR-0036 N2 兑现节 2）。
-	// 创建时定型不可变：与 digest 同为产物定位事实。
+	// Repo 是产物所在仓库名（不含 registry 地址，<projectID>/<appID> 前纲，
+	// ADR-0036 N2 兑现节 2；恒非空——生产构造面 driveBuilding 定型写入，
+	// 旧扁平兼容面已删）。创建时定型不可变：与 digest 同为产物定位事实。
 	Repo       string
 	Error      string
 	CreatedAt  string

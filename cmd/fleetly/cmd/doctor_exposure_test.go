@@ -38,20 +38,24 @@ func TestClassifyHost(t *testing.T) {
 }
 
 func TestParseEndpointTarget(t *testing.T) {
+	// 合法 URL 形（带 scheme）照常解析。
 	tgt := parseEndpointTarget("http://10.124.0.3:9082/proxy/config")
 	assert.Equal(t, "10.124.0.3", tgt.host)
 	assert.Equal(t, "9082", tgt.port)
 	assert.False(t, tgt.parseErr)
 
-	// 缺端口回退既知监听端口。
+	// URL 缺端口回退既知监听端口。
 	tgt = parseEndpointTarget("http://10.124.0.3/proxy/config")
 	assert.Equal(t, "10.124.0.3", tgt.host)
 	assert.Equal(t, "9082", tgt.port)
+	assert.False(t, tgt.parseErr)
 
-	// 裸 host:port 宽容兼容。
-	tgt = parseEndpointTarget("10.0.0.5:9082")
-	assert.Equal(t, "10.0.0.5", tgt.host)
-	assert.Equal(t, "9082", tgt.port)
+	// 裸 host:port 拒绝（旧宽容兼容面已收紧——必须纯 URL 形）。
+	assert.True(t, parseEndpointTarget("10.0.0.5:9082").parseErr)
+
+	// 缺 scheme 拒绝（纯主机形态同样不猜端口、不探测）。
+	assert.True(t, parseEndpointTarget("10.0.0.5").parseErr)
+	assert.True(t, parseEndpointTarget("10.0.0.5/proxy/config").parseErr)
 
 	// 非法形态不探测。
 	assert.True(t, parseEndpointTarget("http://").parseErr)
@@ -101,6 +105,13 @@ func TestProxyConfigExposure(t *testing.T) {
 	c = proxyConfigExposure("http://0.0.0.0:9082/proxy/config", listening)
 	assert.Equal(t, checkWarn, c.Status)
 	assert.Contains(t, c.Detail, "wildcard")
+
+	// 非 URL 形（裸 host:port，收紧后不再宽容解析）= warn 带可行动文案。
+	c = proxyConfigExposure("10.0.0.5:9082", listening)
+	assert.Equal(t, checkWarn, c.Status)
+	assert.Contains(t, c.Detail, "invalid target 10.0.0.5:9082")
+	assert.Contains(t, c.Advice, "full http URL with scheme",
+		"the warn must point at the URL form")
 }
 
 func TestRegistryExposure(t *testing.T) {

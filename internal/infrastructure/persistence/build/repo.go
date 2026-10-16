@@ -114,15 +114,6 @@ func (r *repo) ListActive(ctx context.Context, run state.Runner) ([]build.Build,
 	return out, rows.Err()
 }
 
-// StampRepo 给存量在途行补章 repo（前纲切换的兼容面：升级时点 queued/
-// building 的行按新公式重放输入，产物将落前缀仓——repo 必须与之一致；
-// WHERE repo=” 使补章幂等一次性，已章行不受扰）。
-func (r *repo) StampRepo(ctx context.Context, run state.Runner, id, repo string) error {
-	_, err := run.ExecContext(ctx,
-		`UPDATE builds SET repo = ? WHERE id = ? AND repo = ''`, repo, id)
-	return err
-}
-
 // Transit 是状态 CAS（同 deployment.Transit 口径；mut 补充 digest/error）。
 func (r *repo) Transit(ctx context.Context, run state.Runner, id string, from []build.State, to build.State, mut func(*build.Build)) error {
 	cur, err := r.Get(ctx, run, id)

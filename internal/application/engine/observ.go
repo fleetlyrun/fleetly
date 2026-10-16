@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"strings"
 	"time"
 
 	"google.golang.org/protobuf/encoding/protojson"
@@ -55,11 +54,11 @@ func (e *Engine) appTeam(ctx context.Context, appID string) (string, *app.App, e
 // 引用映射；无成功构建返回 nil → 投影期得到精确错误）。Build 是 Revision
 // 级单产物：全部 from_build 进程共用同一 digest。引用是 digest 形态完整
 // 引用（<registry>/<repo>@sha256:...——地址是平台级配置不进冻结体，
-// 投影期组合，ADR-0019 附录 B.4）。repo 判别（ADR-0036 N2 兑现节 2）：行
-// 有值 = 前纲仓；存量行（repo 空）= 扁平回退 lower(appID)——扁平仓保持
-// 全用户可读，存量 digest 引用不断流。双代窗对 from/to 两侧各调一次
-// （ADR-0048：旧代成员的 from_build 引用按其自身 Revision 解析）。
-func (e *Engine) buildDigests(ctx context.Context, appID, revision string) (map[string]string, error) {
+// 投影期组合，ADR-0019 附录 B.4）。repo 取行内创建时定型的 buildRepo 前
+// 纲仓名（恒非空——旧扁平兼容面已删，ADR-0036 N2 兑现节 2）。双代窗对
+// from/to 两侧各调一次（ADR-0048：旧代成员的 from_build 引用按其自身
+// Revision 解析）。
+func (e *Engine) buildDigests(ctx context.Context, revision string) (map[string]string, error) {
 	spec, err := e.loadSpec(ctx, revision)
 	if err != nil {
 		return nil, err
@@ -86,11 +85,7 @@ func (e *Engine) buildDigests(ctx context.Context, appID, revision string) (map[
 	for _, b := range builds {
 		if b.State == build.StateSucceeded && b.Digest != "" {
 			out := make(map[string]string, len(fromBuild))
-			repo := b.Repo
-			if repo == "" {
-				repo = strings.ToLower(appID) // 存量扁平回退（repo 列加入前的行）
-			}
-			ref := LocalImageDigestRef(endpoint.Addr, repo, b.Digest)
+			ref := LocalImageDigestRef(endpoint.Addr, b.Repo, b.Digest)
 			for _, name := range fromBuild {
 				out[name] = ref
 			}

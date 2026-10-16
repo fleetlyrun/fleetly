@@ -12,8 +12,9 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
 
-// repo 列往返（ADR-0036 N2 兑现节 2）：创建定型、读回原样；StampRepo 幂等
-// 一次性（空值补章、已章行不受扰——前纲切换的存量在途行兼容面）。
+// repo 列往返（ADR-0036 N2 兑现节 2）：创建定型、读回原样——repo 是产物
+// 定位的唯一事实（<project>/<app> 前纲；旧扁平兼容族——空 repo 投影回退
+// 与 StampRepo 补章——已删，repo 恒由生产构造面定型写入）。
 func TestBuildRepoColumnRoundTrip(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
@@ -28,15 +29,4 @@ func TestBuildRepoColumnRoundTrip(t *testing.T) {
 	got, err := builds.Get(ctx, db.Runner(), b.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "01jd0app000000000000000000/web", got.Repo)
-
-	legacy := &build.Build{
-		ID: "01JD0BUILD00000000000000001", AppID: "01JD0APP000000000000000000",
-		RevisionID: "01JD0REV000000000000000001", State: build.StateBuilding,
-	}
-	require.NoError(t, builds.Create(ctx, db.Runner(), legacy))
-	require.NoError(t, builds.StampRepo(ctx, db.Runner(), legacy.ID, "01jd0app000000000000000000/web"))
-	require.NoError(t, builds.StampRepo(ctx, db.Runner(), legacy.ID, "other/shape"))
-	got, err = builds.Get(ctx, db.Runner(), legacy.ID)
-	require.NoError(t, err)
-	assert.Equal(t, "01jd0app000000000000000000/web", got.Repo, "StampRepo is one-shot on empty, never rewrites")
 }

@@ -116,7 +116,7 @@ func (e *Engine) blueGreenWindowMaterialize(ctx context.Context, d *deployment.D
 		if err != nil {
 			return fmt.Errorf("load baseline spec: %w", err)
 		}
-		fromDigests, err := e.buildDigests(ctx, d.AppID, d.FromRevision)
+		fromDigests, err := e.buildDigests(ctx, d.FromRevision)
 		if err != nil {
 			return fmt.Errorf("resolve baseline build digests: %w", err)
 		}
@@ -140,7 +140,7 @@ func (e *Engine) blueGreenWindowMaterialize(ctx context.Context, d *deployment.D
 		}
 	}
 
-	digests, err := e.buildDigests(ctx, d.AppID, d.ToRevision)
+	digests, err := e.buildDigests(ctx, d.ToRevision)
 	if err != nil {
 		return fmt.Errorf("resolve build digests: %w", err)
 	}

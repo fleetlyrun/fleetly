@@ -54,17 +54,16 @@ func classifyHost(host string) exposeClass {
 type exposureTarget struct {
 	host     string
 	port     string
-	parseErr bool // 目标形态不合法（裸报 warn，不探测）
+	parseErr bool // 目标形态不合法（报 warn 带可行动文案，不探测）
 }
 
-// parseEndpointTarget 解析 proxy config 端点 URL（http://host[:9082]/path；
-// 裸 host:port 宽容兼容，缺端口回退既知监听端口）。
+// parseEndpointTarget 解析 proxy config 端点（纯 URL 形：必须带 scheme，
+// 如 http://host[:port]/path；URL 缺端口回退既知监听端口。裸 host:port/
+// 纯主机等非 URL 形态一律判不合法——不猜不探测，检查项报 warn 带可行动
+// 文案）。
 func parseEndpointTarget(raw string) exposureTarget {
 	u, err := url.Parse(raw)
-	if err != nil || u.Host == "" {
-		if host, port, serr := net.SplitHostPort(raw); serr == nil && host != "" && validPort(port) {
-			return exposureTarget{host: host, port: port}
-		}
+	if err != nil || u.Scheme == "" || u.Host == "" {
 		return exposureTarget{parseErr: true}
 	}
 	port := u.Port()
@@ -117,7 +116,7 @@ func exposureCheck(name, rawTarget string, tgt exposureTarget, unsetDetail, publ
 	if tgt.parseErr {
 		return doctorCheck{
 			Name: name, Status: checkWarn, Detail: "invalid target " + rawTarget,
-			Advice: "pass a host:port address (registry) or an http URL (proxy config endpoint)",
+			Advice: "pass a full http URL with scheme for the proxy config endpoint (e.g. http://10.0.0.5:9082/proxy/config); the registry address stays host:port",
 		}
 	}
 	target := net.JoinHostPort(tgt.host, tgt.port)

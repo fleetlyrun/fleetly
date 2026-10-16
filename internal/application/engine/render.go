@@ -38,7 +38,7 @@ func (e *Engine) projectRevision(ctx context.Context, appID, revisionID string, 
 	if err != nil {
 		return nil, nil, capability.NamespaceRef{}, fmt.Errorf("resolve cross-project network peers: %w", err)
 	}
-	digests, err := e.buildDigests(ctx, appID, revisionID)
+	digests, err := e.buildDigests(ctx, revisionID)
 	if err != nil {
 		return nil, nil, capability.NamespaceRef{}, fmt.Errorf("resolve build digests: %w", err)
 	}
