@@ -4,6 +4,7 @@ package apitest
 // 活跃下级拒绝（Database 挂靠卷名命中——受理位引用预检的真形态）。
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -46,10 +47,33 @@ func TestVolumeDeleteCovered(t *testing.T) {
 	}
 	_, err = databases.CreateDatabase(ctx, &structurev1.CreateDatabaseRequest{ProjectId: projectID, Name: "main", Engine: "postgres"})
 	require.NoError(t, err)
+	// Database 的数据卷行由 reconcile 环异步物化——环先到时同名行已在
+	//（CI 负载窗实证 2026-10-16，本地竞速恒赢掩蔽）。引用拒绝执法按名
+	// 公式（数据库名）不看行属主，两种归属下断言等价，环先到即取既有行。
 	data, err := volumes.CreateVolume(ctx, &structurev1.CreateVolumeRequest{ProjectId: projectID, Name: "main"})
+	if status.Code(err) == codes.AlreadyExists {
+		data, err = existingVolumeByName(t, volumes, ctx, projectID, "main")
+	}
 	require.NoError(t, err)
+	require.NotNil(t, data, "volume row named main must exist either way")
 	_, err = volumes.DeleteVolume(ctx, &structurev1.DeleteVolumeRequest{Id: data.GetVolume().GetId()})
 	require.Equal(t, codes.FailedPrecondition, status.Code(err), "referenced volume must be refused (E_CONFLICT)")
 	require.Contains(t, status.Convert(err).Message(), "still referenced")
 	require.Contains(t, status.Convert(err).Message(), "database main")
+}
+
+// existingVolumeByName 按名取项目内既有卷行（环先到归属场景的兜底取行）；
+// 找不到即测试失败（断言前提：卷行必在）。
+func existingVolumeByName(t *testing.T, volumes structurev1.VolumesServiceClient, ctx context.Context, projectID, name string) (*structurev1.CreateVolumeResponse, error) {
+	t.Helper()
+	list, err := volumes.ListVolumes(ctx, &structurev1.ListVolumesRequest{ProjectId: projectID})
+	if err != nil {
+		return nil, err
+	}
+	for _, v := range list.GetVolumes() {
+		if v.GetName() == name {
+			return &structurev1.CreateVolumeResponse{Volume: v}, nil
+		}
+	}
+	return nil, status.Errorf(codes.NotFound, "volume %q not found in project %s", name, projectID)
 }
