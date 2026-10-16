@@ -1,7 +1,6 @@
 package apitest_test
 
 import (
-	"context"
 	"database/sql"
 	"regexp"
 	"sync"
@@ -18,7 +17,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
 	deploymentrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/deployment"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
-	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 // appErrCode 从错误串提取应用码（E_XXX；gRPC 信封内嵌形态）。
@@ -47,20 +45,17 @@ func routeListed(t *testing.T, list *proxyv1.ListRoutesResponse, routeID string)
 // 同名可重建、旧 ID 不复用）。
 func TestDeleteAppSemantics(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
+	ctx := h.Ctx()
 	apps := structurev1.NewAppsServiceClient(h.Conn)
 	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
 	routes := proxyv1.NewRoutesServiceClient(h.Conn)
 
-	proj, err := structurev1.NewProjectsServiceClient(h.Conn).CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "teardown"})
-	require.NoError(t, err)
-	app, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: proj.GetProject().GetId(), Name: "web"})
-	require.NoError(t, err)
-	appID := app.GetApp().GetId()
+	projectID := h.CreateProject(t, "teardown").GetId()
+	appID := h.CreateApp(t, projectID, "web").GetId()
 
 	// 引用该 App 的路由（撤路由面的前置）。
 	route, err := routes.CreateRoute(ctx, &proxyv1.CreateRouteRequest{
-		ProjectId: proj.GetProject().GetId(), Host: "gone.teardown.test",
+		ProjectId: projectID, Host: "gone.teardown.test",
 		AppId: appID, Process: "web", Port: 8000,
 	})
 	require.NoError(t, err)
@@ -76,7 +71,7 @@ func TestDeleteAppSemantics(t *testing.T) {
 	// 拒删零副作用（ADR-0023 修订）：E_CONFLICT 路径不拆载体、不碰路由
 	// （不变式"App 存活 ⇒ 路由不得消失"的常规面）。
 	require.Empty(t, h.Runtime.Removed(), "rejected delete must not tear down carriers")
-	preRouteList, err := routes.ListRoutes(ctx, &proxyv1.ListRoutesRequest{ProjectId: proj.GetProject().GetId()})
+	preRouteList, err := routes.ListRoutes(ctx, &proxyv1.ListRoutesRequest{ProjectId: projectID})
 	require.NoError(t, err)
 	require.True(t, routeListed(t, preRouteList, route.GetRoute().GetId()),
 		"rejected delete must not touch routes")
@@ -94,14 +89,14 @@ func TestDeleteAppSemantics(t *testing.T) {
 	require.NotEmpty(t, h.Runtime.Removed(), "delete must tear down runtime carriers")
 
 	// 引用路由随删：列表不再可见。
-	routeList, err := routes.ListRoutes(ctx, &proxyv1.ListRoutesRequest{ProjectId: proj.GetProject().GetId()})
+	routeList, err := routes.ListRoutes(ctx, &proxyv1.ListRoutesRequest{ProjectId: projectID})
 	require.NoError(t, err)
 	for _, r := range routeList.GetRoutes() {
 		require.NotEqual(t, route.GetRoute().GetId(), r.GetId(), "routes referencing the app must be withdrawn on delete")
 	}
 
 	// tombstone：列表无此 App；同项目同名可重建（新 ULID，ID 永不复用）。
-	listed, err := apps.ListApps(ctx, &structurev1.ListAppsRequest{ProjectId: proj.GetProject().GetId()})
+	listed, err := apps.ListApps(ctx, &structurev1.ListAppsRequest{ProjectId: projectID})
 	require.NoError(t, err)
 	for _, a := range listed.GetApps() {
 		require.NotEqual(t, appID, a.GetId(), "deleted app must not be listed")
@@ -115,9 +110,8 @@ func TestDeleteAppSemantics(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "E_NOT_FOUND")
 
-	again, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: proj.GetProject().GetId(), Name: "web"})
-	require.NoError(t, err)
-	require.NotEqual(t, appID, again.GetApp().GetId(), "a new app gets a new id (ids are never reused)")
+	again := h.CreateApp(t, projectID, "web")
+	require.NotEqual(t, appID, again.GetId(), "a new app gets a new id (ids are never reused)")
 
 	// 旧 ID 再删 → E_NOT_FOUND。
 	_, err = apps.DeleteApp(ctx, &structurev1.DeleteAppRequest{Id: appID})
@@ -130,18 +124,15 @@ func TestDeleteAppSemantics(t *testing.T) {
 // Project 级材料不随删（各自生命周期，守卫不级联——代码面注释即边界）。
 func TestDeleteProjectSemantics(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
+	ctx := h.Ctx()
 	projects := structurev1.NewProjectsServiceClient(h.Conn)
 	apps := structurev1.NewAppsServiceClient(h.Conn)
 
-	proj, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "guarded"})
-	require.NoError(t, err)
-	projectID := proj.GetProject().GetId()
-	app, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: projectID, Name: "web"})
-	require.NoError(t, err)
+	projectID := h.CreateProject(t, "guarded").GetId()
+	app := h.CreateApp(t, projectID, "web")
 
 	// 有活 App → E_CONFLICT（先删 App 的处置提示在文案）。
-	_, err = projects.DeleteProject(ctx, &structurev1.DeleteProjectRequest{Id: projectID})
+	_, err := projects.DeleteProject(ctx, &structurev1.DeleteProjectRequest{Id: projectID})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "E_CONFLICT")
 	require.Contains(t, err.Error(), "delete them before deleting the project")
@@ -152,7 +143,7 @@ func TestDeleteProjectSemantics(t *testing.T) {
 
 	// 删净 App 后可删 Project。Project 读面语义（Get 含已删行、再删幂等）
 	// 是既有设计（tombstone 是事实不是秘密）——活跃面以 List 断言。
-	_, err = apps.DeleteApp(ctx, &structurev1.DeleteAppRequest{Id: app.GetApp().GetId()})
+	_, err = apps.DeleteApp(ctx, &structurev1.DeleteAppRequest{Id: app.GetId()})
 	require.NoError(t, err)
 	_, err = projects.DeleteProject(ctx, &structurev1.DeleteProjectRequest{Id: projectID})
 	require.NoError(t, err)
@@ -169,15 +160,14 @@ func TestDeleteProjectSemantics(t *testing.T) {
 // exists"）。REST 侧行为断言在 rest_errors_test.go；此处钉 gRPC 面分类。
 func TestErrConflictClassificationSplit(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
+	ctx := h.Ctx()
 	projects := structurev1.NewProjectsServiceClient(h.Conn)
 	teams := identityv1.NewTeamsServiceClient(h.Conn)
 	tokens := identityv1.NewTokensServiceClient(h.Conn)
 
 	// 唯一约束命中 → E_ALREADY_EXISTS。
+	h.CreateProject(t, "dupe")
 	_, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "dupe"})
-	require.NoError(t, err)
-	_, err = projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "dupe"})
 	require.Error(t, err)
 	require.Equal(t, "E_ALREADY_EXISTS", appErrCode(t, err), "unique-violation conflicts must surface E_ALREADY_EXISTS")
 
@@ -201,15 +191,11 @@ func TestErrConflictClassificationSplit(t *testing.T) {
 // 活跃部署不共存，且不出 E_INTERNAL。
 func TestDeleteDeployRaceInvariant(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
+	ctx := h.Ctx()
 	apps := structurev1.NewAppsServiceClient(h.Conn)
 	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
 
-	proj, err := structurev1.NewProjectsServiceClient(h.Conn).CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "race"})
-	require.NoError(t, err)
-	app, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: proj.GetProject().GetId(), Name: "web"})
-	require.NoError(t, err)
-	appID := app.GetApp().GetId()
+	appID := h.CreateApp(t, h.CreateProject(t, "race").GetId(), "web").GetId()
 
 	const rounds = 8
 	start := make(chan struct{})
@@ -281,20 +267,17 @@ func TestDeleteDeployRaceInvariant(t *testing.T) {
 // 同交错下 App 存活而路由已撤——活 App 零流量、无事件。
 func TestDeleteAppTeardownAbortKeepsRoute(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
+	ctx := h.Ctx()
 	apps := structurev1.NewAppsServiceClient(h.Conn)
 	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
 	routes := proxyv1.NewRoutesServiceClient(h.Conn)
 	events := telemetryv1.NewEventsServiceClient(h.Conn)
 	auditq := identityv1.NewAuditQueryServiceClient(h.Conn)
 
-	proj, err := structurev1.NewProjectsServiceClient(h.Conn).CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "abort"})
-	require.NoError(t, err)
-	app, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: proj.GetProject().GetId(), Name: "web"})
-	require.NoError(t, err)
-	appID := app.GetApp().GetId()
+	projectID := h.CreateProject(t, "abort").GetId()
+	appID := h.CreateApp(t, projectID, "web").GetId()
 	route, err := routes.CreateRoute(ctx, &proxyv1.CreateRouteRequest{
-		ProjectId: proj.GetProject().GetId(), Host: "abort.teardown.test",
+		ProjectId: projectID, Host: "abort.teardown.test",
 		AppId: appID, Process: "web", Port: 8000,
 	})
 	require.NoError(t, err)
@@ -338,7 +321,7 @@ func TestDeleteAppTeardownAbortKeepsRoute(t *testing.T) {
 	// 不变式：App 存活 ⇒ 路由仍在（拒绝路径不碰路由；可见即未软删）。
 	_, err = apps.GetApp(ctx, &structurev1.GetAppRequest{Id: appID})
 	require.NoError(t, err)
-	routeList, err := routes.ListRoutes(ctx, &proxyv1.ListRoutesRequest{ProjectId: proj.GetProject().GetId()})
+	routeList, err := routes.ListRoutes(ctx, &proxyv1.ListRoutesRequest{ProjectId: projectID})
 	require.NoError(t, err)
 	require.True(t, routeListed(t, routeList, routeID),
 		"app alive ⇒ routes referencing it must survive an aborted delete")
@@ -376,18 +359,15 @@ func TestDeleteAppTeardownAbortKeepsRoute(t *testing.T) {
 // 路径已撤路由"的静默丢流量缺陷）。
 func TestDeleteAppRoutesRaceInvariant(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
+	ctx := h.Ctx()
 	apps := structurev1.NewAppsServiceClient(h.Conn)
 	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
 	routes := proxyv1.NewRoutesServiceClient(h.Conn)
 
-	proj, err := structurev1.NewProjectsServiceClient(h.Conn).CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "route-race"})
-	require.NoError(t, err)
-	app, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: proj.GetProject().GetId(), Name: "web"})
-	require.NoError(t, err)
-	appID := app.GetApp().GetId()
+	projectID := h.CreateProject(t, "route-race").GetId()
+	appID := h.CreateApp(t, projectID, "web").GetId()
 	route, err := routes.CreateRoute(ctx, &proxyv1.CreateRouteRequest{
-		ProjectId: proj.GetProject().GetId(), Host: "race.teardown.test",
+		ProjectId: projectID, Host: "race.teardown.test",
 		AppId: appID, Process: "web", Port: 8000,
 	})
 	require.NoError(t, err)
@@ -441,7 +421,7 @@ func TestDeleteAppRoutesRaceInvariant(t *testing.T) {
 	// 未软删）。App 被删则引用路由必同逝；任一交错下"活 App 零路由"
 	// （缺陷形态）都不可出现。
 	_, getErr := apps.GetApp(ctx, &structurev1.GetAppRequest{Id: appID})
-	routeList, err := routes.ListRoutes(ctx, &proxyv1.ListRoutesRequest{ProjectId: proj.GetProject().GetId()})
+	routeList, err := routes.ListRoutes(ctx, &proxyv1.ListRoutesRequest{ProjectId: projectID})
 	require.NoError(t, err)
 	listed := routeListed(t, routeList, route.GetRoute().GetId())
 	if getErr == nil {

@@ -15,14 +15,13 @@ import (
 	"google.golang.org/grpc/status"
 
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
-	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 // 夹具引擎不带 PlatformBackup 配置：触发=精确失败 E_PLATFORM_BACKUP_FAILED
 // （升级序的硬停分支——ADR-0015 备份前置不得被降级成内部错误）。
 func TestPlatformBackupTriggerNotConfigured(t *testing.T) {
 	h := New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
+	ctx := h.Ctx()
 	platform := systemv1.NewPlatformServiceClient(h.Conn)
 
 	_, err := platform.TriggerPlatformBackup(ctx, &systemv1.TriggerPlatformBackupRequest{})

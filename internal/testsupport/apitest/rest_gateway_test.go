@@ -20,7 +20,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/fleetlygrpc"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
-	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 // TestRESTGatewayServesIdentityAnnotationSurface：identity 只读端点经 REST
@@ -49,7 +48,7 @@ func TestRESTGatewayServesIdentityAnnotationSurface(t *testing.T) {
 	// users 只读面同源可达（漏挂时同 404）；先经 gRPC 面造一个用户，
 	// 列表非空以钉 protojson 字段名。
 	users := identityv1.NewUsersServiceClient(h.Conn)
-	_, err = users.CreateUser(sdk.WithToken(context.Background(), h.Token), &identityv1.CreateUserRequest{Name: "rest-smoke", RoleId: identity.RoleMemberID})
+	_, err = users.CreateUser(h.Ctx(), &identityv1.CreateUserRequest{Name: "rest-smoke", RoleId: identity.RoleMemberID})
 	require.NoError(t, err)
 	rec = get("/v1/users")
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
@@ -69,11 +68,10 @@ func TestRESTGatewayServesIdentityAnnotationSurface(t *testing.T) {
 // 错误信封 E_NOT_FOUND。
 func TestRESTGatewayServesSelfDescription(t *testing.T) {
 	h := apitest.New(t)
-	handler, err := assembly.NewGatewayHandler(slog.New(slog.DiscardHandler), h.Conn, nil, nil, assembly.NewBrowseGate(h.Services))
-	require.NoError(t, err)
+	rest := h.REST()
 
 	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/v1/system/schema", nil))
+	rest.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/v1/system/schema", nil))
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	// 全量文档含 spec 与事件两类条目（夹具链接全部贡献方）。
 	body := rec.Body.String()
@@ -82,14 +80,14 @@ func TestRESTGatewayServesSelfDescription(t *testing.T) {
 	assert.Contains(t, body, `"schema_json"`)
 
 	rec = httptest.NewRecorder()
-	handler.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/v1/system/explain?resource=deployment.succeeded", nil))
+	rest.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/v1/system/explain?resource=deployment.succeeded", nil))
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	assert.Contains(t, rec.Body.String(), `"kind":"event"`)
 	// schema_json 内嵌为转义字符串，断言不带引号的字段名即可。
 	assert.Contains(t, rec.Body.String(), "deployment_id")
 
 	rec = httptest.NewRecorder()
-	handler.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/v1/system/explain?resource=no.such", nil))
+	rest.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/v1/system/explain?resource=no.such", nil))
 	assert.Equal(t, http.StatusNotFound, rec.Code)
 	assert.Contains(t, rec.Body.String(), "E_NOT_FOUND")
 }

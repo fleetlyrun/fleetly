@@ -23,7 +23,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/apperrstatus"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
-	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 // cascadeFixture 组装：项目 + n 个（名, engine）库，收敛驱动一轮；返回
@@ -31,12 +30,9 @@ import (
 func cascadeFixture(t *testing.T, nameEngine ...[2]string) (*apitest.Harness, context.Context, string, []string) {
 	t.Helper()
 	h := apitest.NewManual(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
+	ctx := h.Ctx()
 	dbs := structurev1.NewDatabasesServiceClient(h.Conn)
-	p, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "cascade"})
-	require.NoError(t, err)
-	projectID := p.GetProject().GetId()
+	projectID := h.CreateProject(t, "cascade").GetId()
 	ids := make([]string, 0, len(nameEngine))
 	for _, ne := range nameEngine {
 		created, err := dbs.CreateDatabase(ctx, &structurev1.CreateDatabaseRequest{
@@ -190,17 +186,16 @@ func TestDeleteProjectCascadeFailureRetriesConverge(t *testing.T) {
 // ③空项目删除行为不变：零 Remove、无级联副作用，项目 tombstone 照旧。
 func TestDeleteProjectWithoutDatabasesUnchanged(t *testing.T) {
 	h := apitest.NewManual(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
+	ctx := h.Ctx()
 	projects := structurev1.NewProjectsServiceClient(h.Conn)
-	p, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "empty"})
-	require.NoError(t, err)
+	p := h.CreateProject(t, "empty")
 
-	_, err = projects.DeleteProject(ctx, &structurev1.DeleteProjectRequest{Id: p.GetProject().GetId()})
+	_, err := projects.DeleteProject(ctx, &structurev1.DeleteProjectRequest{Id: p.GetId()})
 	require.NoError(t, err)
 	assert.Empty(t, h.Runtime.Removed(), "an empty project delete must not touch any carrier")
-	assert.False(t, projectListed(t, projects, ctx, p.GetProject().GetId()))
+	assert.False(t, projectListed(t, projects, ctx, p.GetId()))
 	assert.Equal(t, []string{"project.created", "project.deleted"},
-		peerEventNames(t, ctx, h, "project", p.GetProject().GetId()))
+		peerEventNames(t, ctx, h, "project", p.GetId()))
 }
 
 // ④冻结窗拒绝路径不变：DeleteProject 是冻结封禁面动词，拦截发生在

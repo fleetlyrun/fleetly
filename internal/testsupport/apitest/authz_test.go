@@ -52,7 +52,7 @@ func wantCode(t *testing.T, err error, grpcCode codes.Code, envelope string) {
 func TestScopeEnforcementMatrix(t *testing.T) {
 	h := apitest.New(t)
 	anon := context.Background()
-	owner := sdk.WithToken(anon, h.Token)
+	owner := h.Ctx()
 	memberTok := mintToken(t, h, "dev", identity.RoleMemberID)
 	member := sdk.WithToken(anon, memberTok)
 
@@ -72,8 +72,7 @@ func TestScopeEnforcementMatrix(t *testing.T) {
 	wantCode(t, err, codes.PermissionDenied, "E_FORBIDDEN")
 
 	// owner（bootstrap）：全权。
-	_, err = projects.CreateProject(owner, &structurev1.CreateProjectRequest{Name: "shop"})
-	require.NoError(t, err)
+	h.CreateProject(t, "shop")
 
 	// member：member 面内的写（deployments:write）拿到的是业务错误而非
 	// 401/403（App 不存在 → E_NOT_FOUND）。
@@ -108,7 +107,7 @@ func TestScopeEnforcementMatrix(t *testing.T) {
 
 func TestRevokedTokenNextCallIs401(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
+	ctx := h.Ctx()
 	projects := structurev1.NewProjectsServiceClient(h.Conn)
 
 	// 吊销前：owner 全权可用。

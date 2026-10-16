@@ -39,12 +39,10 @@ func browseHarness(t *testing.T) *apitest.Harness {
 func browseFixture(t *testing.T, engineName string) (*apitest.Harness, context.Context, string) {
 	t.Helper()
 	h := browseHarness(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	proj, err := structurev1.NewProjectsServiceClient(h.Conn).CreateProject(ctx,
-		&structurev1.CreateProjectRequest{Name: "browse-shop"})
-	require.NoError(t, err)
+	ctx := h.Ctx()
+	projID := h.CreateProject(t, "browse-shop").GetId()
 	db, err := structurev1.NewDatabasesServiceClient(h.Conn).CreateDatabase(ctx,
-		&structurev1.CreateDatabaseRequest{ProjectId: proj.GetProject().GetId(), Engine: engineName, Name: "shop"})
+		&structurev1.CreateDatabaseRequest{ProjectId: projID, Engine: engineName, Name: "shop"})
 	require.NoError(t, err)
 	// 状态推到 running（受理前置）。
 	h.Drive(ctx)
@@ -55,7 +53,7 @@ func browseFixture(t *testing.T, engineName string) (*apitest.Harness, context.C
 
 func TestBrowseDisabledWithoutConfig(t *testing.T) {
 	h := apitest.NewManual(t) // 无 BrowseConfig：面停用
-	ctx := sdk.WithToken(context.Background(), h.Token)
+	ctx := h.Ctx()
 	_, _, dbID := browseFixtureOn(t, h, "postgres")
 	_, err := structurev1.NewDatabasesServiceClient(h.Conn).BrowseDatabase(ctx,
 		&structurev1.BrowseDatabaseRequest{DatabaseId: dbID})
@@ -67,12 +65,10 @@ func TestBrowseDisabledWithoutConfig(t *testing.T) {
 // browseFixtureOn 是 browseFixture 的在册夹具变体（面停用测试复用）。
 func browseFixtureOn(t *testing.T, h *apitest.Harness, engineName string) (*apitest.Harness, context.Context, string) {
 	t.Helper()
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	proj, err := structurev1.NewProjectsServiceClient(h.Conn).CreateProject(ctx,
-		&structurev1.CreateProjectRequest{Name: "browse-flat"})
-	require.NoError(t, err)
+	ctx := h.Ctx()
+	projID := h.CreateProject(t, "browse-flat").GetId()
 	db, err := structurev1.NewDatabasesServiceClient(h.Conn).CreateDatabase(ctx,
-		&structurev1.CreateDatabaseRequest{ProjectId: proj.GetProject().GetId(), Engine: engineName, Name: "shop"})
+		&structurev1.CreateDatabaseRequest{ProjectId: projID, Engine: engineName, Name: "shop"})
 	require.NoError(t, err)
 	h.Drive(ctx)
 	h.Runtime.ReportRunning(db.GetDatabase().GetId(), capability.Generation(1))
@@ -116,12 +112,10 @@ func TestBrowseDatabaseAcceptance(t *testing.T) {
 
 func TestBrowseDatabaseNotReady(t *testing.T) {
 	h := browseHarness(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	proj, err := structurev1.NewProjectsServiceClient(h.Conn).CreateProject(ctx,
-		&structurev1.CreateProjectRequest{Name: "browse-pending"})
-	require.NoError(t, err)
+	ctx := h.Ctx()
+	projID := h.CreateProject(t, "browse-pending").GetId()
 	db, err := structurev1.NewDatabasesServiceClient(h.Conn).CreateDatabase(ctx,
-		&structurev1.CreateDatabaseRequest{ProjectId: proj.GetProject().GetId(), Engine: "postgres", Name: "shop"})
+		&structurev1.CreateDatabaseRequest{ProjectId: projID, Engine: "postgres", Name: "shop"})
 	require.NoError(t, err)
 	// 不 Drive：状态恒 pending。
 	_, err = structurev1.NewDatabasesServiceClient(h.Conn).BrowseDatabase(ctx,

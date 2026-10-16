@@ -6,7 +6,6 @@ package apitest_test
 // 单次有效；PEM 全程不出现在任何读面。
 
 import (
-	"context"
 	"encoding/json"
 	"net/url"
 	"strings"
@@ -18,24 +17,19 @@ import (
 	"google.golang.org/grpc/status"
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
-	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
-	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 func TestGitHubAppManifestFlow(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
+	ctx := h.Ctx()
 	ghApps := deliveryv1.NewGitHubAppsServiceClient(h.Conn)
 
 	const base = "https://console.dev.fleetly.run"
 	fake := newFakeGitHub(t, h)
 	h.Services.GitHubManifestBase = base
 	h.Services.GitHubManifestAPIBase = fake.srv.URL
-	p, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "manifest"})
-	require.NoError(t, err)
-	projectID := p.GetProject().GetId()
+	projectID := h.CreateProject(t, "manifest").GetId()
 
 	// start：POST 表单材料（action_url + manifest JSON + 签名态）成对返回。
 	start, err := ghApps.StartManifestFlow(ctx, &deliveryv1.StartManifestFlowRequest{
@@ -119,7 +113,7 @@ func TestGitHubAppManifestFlow(t *testing.T) {
 
 func TestGitHubAppManifestGuards(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
+	ctx := h.Ctx()
 	ghApps := deliveryv1.NewGitHubAppsServiceClient(h.Conn)
 
 	// 公网基址未配置（apitest 夹具不注入）→ 精确失败，手动表单兜底。

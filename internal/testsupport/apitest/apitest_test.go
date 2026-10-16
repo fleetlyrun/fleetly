@@ -4,7 +4,6 @@ package apitest_test
 // admission → 状态机驱动一条龙）。
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -14,28 +13,21 @@ import (
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	identityv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/identity/v1"
 	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
-	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
-	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 func TestDeployEndToEnd(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token) // owner 全权（bootstrap）
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
-	apps := structurev1.NewAppsServiceClient(h.Conn)
+	ctx := h.Ctx()
 	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
 
-	proj, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "shop"})
-	require.NoError(t, err)
-	app, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: proj.GetProject().GetId(), Name: "web"})
-	require.NoError(t, err)
+	appID := h.CreateApp(t, h.CreateProject(t, "shop").GetId(), "web").GetId()
 
 	// 镜像直投部署。
 	dep, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{
-		AppId: app.GetApp().GetId(), Image: "nginx:1.27",
+		AppId: appID, Image: "nginx:1.27",
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "queued", dep.GetDeployment().GetState())
@@ -55,7 +47,7 @@ func TestDeployEndToEnd(t *testing.T) {
 	assert.Equal(t, "nginx:1.27", calls[0].Spec["web"].Image)
 
 	// L1 观测 → succeeded。
-	h.Runtime.ReportRunning(app.GetApp().GetId()+"-web", capability.Generation(dep.GetDeployment().GetGeneration()))
+	h.Runtime.ReportRunning(appID+"-web", capability.Generation(dep.GetDeployment().GetGeneration()))
 	require.Eventually(t, func() bool {
 		got, err := deployments.GetDeployment(ctx, &deliveryv1.GetDeploymentRequest{Id: dep.GetDeployment().GetId()})
 		return err == nil && got.GetDeployment().GetState() == string(deployment.StateObserving)
@@ -71,17 +63,12 @@ func TestDeployEndToEnd(t *testing.T) {
 // （errors.Is，非文案 Contains）→ E_NO_BASELINE 稳定可编程分支。
 func TestRollbackNoBaselineMapsStable(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
-	apps := structurev1.NewAppsServiceClient(h.Conn)
+	ctx := h.Ctx()
 	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
 
-	proj, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "rollback"})
-	require.NoError(t, err)
-	app, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: proj.GetProject().GetId(), Name: "web"})
-	require.NoError(t, err)
+	appID := h.CreateApp(t, h.CreateProject(t, "rollback").GetId(), "web").GetId()
 
-	_, err = deployments.Rollback(ctx, &deliveryv1.RollbackRequest{AppId: app.GetApp().GetId()})
+	_, err := deployments.Rollback(ctx, &deliveryv1.RollbackRequest{AppId: appID})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "E_NO_BASELINE")
 	require.Contains(t, err.Error(), "no successful deployment to roll back to")
@@ -89,29 +76,26 @@ func TestRollbackNoBaselineMapsStable(t *testing.T) {
 
 func TestComposeDeployNormalizes(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token) // owner 全权（bootstrap）
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
-	apps := structurev1.NewAppsServiceClient(h.Conn)
+	ctx := h.Ctx()
 	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
 	revisions := deliveryv1.NewRevisionsServiceClient(h.Conn)
 
-	proj, _ := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "shop"})
-	app, _ := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: proj.GetProject().GetId(), Name: "compose"})
+	appID := h.CreateApp(t, h.CreateProject(t, "shop").GetId(), "compose").GetId()
 
 	compose := "services:\n  web:\n    image: nginx:1.27\n    ports:\n      - \"8080\"\n    deploy:\n      replicas: 2\n"
-	dep, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: app.GetApp().GetId(), ComposeYaml: compose})
+	dep, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: appID, ComposeYaml: compose})
 	require.NoError(t, err)
 
-	revs, err := revisions.ListRevisions(ctx, &deliveryv1.ListRevisionsRequest{AppId: app.GetApp().GetId()})
+	revs, err := revisions.ListRevisions(ctx, &deliveryv1.ListRevisionsRequest{AppId: appID})
 	require.NoError(t, err)
 	require.Len(t, revs.GetRevisions(), 1)
 
 	// 同内容重复部署：Revision 内容寻址复用；admission 附注排队于在途之后
 	//（P10：harness 自动驱动首条已 releasing，位次 2——无幂等键/commit 锚
 	// 不去重、不合并 queued）。
-	dep2, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: app.GetApp().GetId(), ComposeYaml: compose})
+	dep2, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: appID, ComposeYaml: compose})
 	require.NoError(t, err)
-	revs2, _ := revisions.ListRevisions(ctx, &deliveryv1.ListRevisionsRequest{AppId: app.GetApp().GetId()})
+	revs2, _ := revisions.ListRevisions(ctx, &deliveryv1.ListRevisionsRequest{AppId: appID})
 	require.Len(t, revs2.GetRevisions(), 1, "identical spec reuses the frozen revision")
 	assert.NotEqual(t, dep.GetDeployment().GetId(), dep2.GetDeployment().GetId(), "but deployments are distinct")
 	require.NotNil(t, dep2.GetAdmission())
@@ -123,24 +107,21 @@ func TestComposeDeployNormalizes(t *testing.T) {
 // 去重）→ 拿到既有引用而非新部署，admission 明示 deduplicated。
 func TestDeployCommitDedupAdmission(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
-	apps := structurev1.NewAppsServiceClient(h.Conn)
+	ctx := h.Ctx()
 	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
 
-	proj, _ := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "dedup"})
-	app, _ := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: proj.GetProject().GetId(), Name: "web"})
+	appID := h.CreateApp(t, h.CreateProject(t, "dedup").GetId(), "web").GetId()
 
 	commit := "2222222222222222222222222222222222222222"
 	first, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{
-		AppId: app.GetApp().GetId(), Image: "nginx:1.27", CommitSha: commit,
+		AppId: appID, Image: "nginx:1.27", CommitSha: commit,
 	})
 	require.NoError(t, err)
 	require.NotNil(t, first.GetAdmission())
 	assert.Equal(t, "queued", first.GetAdmission().GetOutcome())
 
 	again, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{
-		AppId: app.GetApp().GetId(), Image: "nginx:1.27", CommitSha: commit,
+		AppId: appID, Image: "nginx:1.27", CommitSha: commit,
 	})
 	require.NoError(t, err)
 	assert.Equal(t, first.GetDeployment().GetId(), again.GetDeployment().GetId(),
@@ -152,15 +133,12 @@ func TestDeployCommitDedupAdmission(t *testing.T) {
 
 func TestComposeRejectedField(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token) // owner 全权（bootstrap）
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
-	apps := structurev1.NewAppsServiceClient(h.Conn)
+	ctx := h.Ctx()
 	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
 
-	proj, _ := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "p"})
-	app, _ := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: proj.GetProject().GetId(), Name: "a"})
+	appID := h.CreateApp(t, h.CreateProject(t, "p").GetId(), "a").GetId()
 	_, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{
-		AppId:       app.GetApp().GetId(),
+		AppId:       appID,
 		ComposeYaml: "services:\n  web:\n    image: nginx\n    privileged: true\n",
 	})
 	require.Error(t, err)
@@ -169,7 +147,7 @@ func TestComposeRejectedField(t *testing.T) {
 
 func TestNodesAndEnroll(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token) // owner 全权（bootstrap）
+	ctx := h.Ctx()
 	nodes := runtimev1.NewNodesServiceClient(h.Conn)
 
 	kit, err := nodes.EnrollNode(ctx, &runtimev1.EnrollNodeRequest{})
@@ -187,7 +165,7 @@ func TestNodesAndEnroll(t *testing.T) {
 // 哨兵错误映射、子面调用记录与审计行（结果即动作本身）。
 func TestNodesAdminVerb(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token) // owner 全权（bootstrap）
+	ctx := h.Ctx()
 	nodes := runtimev1.NewNodesServiceClient(h.Conn)
 	auditq := identityv1.NewAuditQueryServiceClient(h.Conn)
 

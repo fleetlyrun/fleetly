@@ -6,7 +6,6 @@ package apitest_test
 // 缺口由 internal/guards 的覆盖反扫钉死（新 Delete RPC 无用例即 CI 红）。
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -17,7 +16,6 @@ import (
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
-	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 // TestIdentityDeletesCovered：DeleteUser/DeleteTeam/DeleteRole 三面——
@@ -25,7 +23,7 @@ import (
 // 无引用时删除生效（Get → E_NOT_FOUND）。
 func TestIdentityDeletesCovered(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
+	ctx := h.Ctx()
 	users := identityv1.NewUsersServiceClient(h.Conn)
 	teams := identityv1.NewTeamsServiceClient(h.Conn)
 	roles := identityv1.NewRolesServiceClient(h.Conn)
@@ -96,18 +94,14 @@ func TestIdentityDeletesCovered(t *testing.T) {
 // 生效形态。
 func TestMaterialAndRouteDeletesCovered(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
+	ctx := h.Ctx()
 	secrets := structurev1.NewSecretsServiceClient(h.Conn)
-	apps := structurev1.NewAppsServiceClient(h.Conn)
 	routes := proxyv1.NewRoutesServiceClient(h.Conn)
 
-	proj, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "materials"})
-	require.NoError(t, err)
-	projectID := proj.GetProject().GetId()
+	projectID := h.CreateProject(t, "materials").GetId()
 
 	// ---- DeleteSecret：put → delete → 指纹列表不再可见。----
-	_, err = secrets.PutSecret(ctx, &structurev1.PutSecretRequest{ProjectId: projectID, Name: "conn-string", Value: "s3cr3t"})
+	_, err := secrets.PutSecret(ctx, &structurev1.PutSecretRequest{ProjectId: projectID, Name: "conn-string", Value: "s3cr3t"})
 	require.NoError(t, err)
 	_, err = secrets.DeleteSecret(ctx, &structurev1.DeleteSecretRequest{ProjectId: projectID, Name: "conn-string"})
 	require.NoError(t, err)
@@ -118,11 +112,10 @@ func TestMaterialAndRouteDeletesCovered(t *testing.T) {
 	}
 
 	// ---- DeleteRoute：create → delete → 列表不再可见。----
-	app, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: projectID, Name: "web"})
-	require.NoError(t, err)
+	appID := h.CreateApp(t, projectID, "web").GetId()
 	route, err := routes.CreateRoute(ctx, &proxyv1.CreateRouteRequest{
 		ProjectId: projectID, Host: "gone.materials.test",
-		AppId: app.GetApp().GetId(), Process: "web", Port: 8000,
+		AppId: appID, Process: "web", Port: 8000,
 	})
 	require.NoError(t, err)
 	_, err = routes.DeleteRoute(ctx, &proxyv1.DeleteRouteRequest{Id: route.GetRoute().GetId()})

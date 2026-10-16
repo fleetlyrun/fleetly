@@ -24,7 +24,6 @@ import (
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	identityv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/identity/v1"
-	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
@@ -52,19 +51,13 @@ func pushBody(ref, after, headMsg string, paths ...string) string {
 
 func TestWebhookReceiveChain(t *testing.T) {
 	h := apitest.NewManual(t)
-	owner := sdk.WithToken(context.Background(), h.Token)
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
-	apps := structurev1.NewAppsServiceClient(h.Conn)
+	owner := h.Ctx()
 	hooks := deliveryv1.NewHooksServiceClient(h.Conn)
 	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
 	auditq := identityv1.NewAuditQueryServiceClient(h.Conn)
 	events := telemetryv1.NewEventsServiceClient(h.Conn)
 
-	p, err := projects.CreateProject(owner, &structurev1.CreateProjectRequest{Name: "shop"})
-	require.NoError(t, err)
-	a, err := apps.CreateApp(owner, &structurev1.CreateAppRequest{ProjectId: p.GetProject().GetId(), Name: "web"})
-	require.NoError(t, err)
-	appID := a.GetApp().GetId()
+	appID := h.CreateApp(t, h.CreateProject(t, "shop").GetId(), "web").GetId()
 
 	// ReceiveWebhook 是 PUBLIC 档：匿名 ctx（签名即凭证）。
 	recv := func(token, event, delivery, signature, payload string) (*deliveryv1.ReceiveWebhookResponse, error) {

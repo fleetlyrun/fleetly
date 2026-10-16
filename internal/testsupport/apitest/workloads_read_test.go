@@ -13,7 +13,6 @@ import (
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
-	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 // deployAndWaitSucceeded 部署 spec_file 并推进到 succeeded（apitest 惯例
@@ -45,21 +44,15 @@ func deployAndWaitSucceeded(t *testing.T, h *apitest.Harness, ctx context.Contex
 // E_NOT_FOUND。冻结同步于 Deploy（部署异步推进不影响读面）。
 func TestGetRevisionVerb(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
-	apps := structurev1.NewAppsServiceClient(h.Conn)
+	ctx := h.Ctx()
 	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
 	revisions := deliveryv1.NewRevisionsServiceClient(h.Conn)
 
-	proj, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "revget"})
-	require.NoError(t, err)
-	app, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: proj.GetProject().GetId(), Name: "svc"})
-	require.NoError(t, err)
-	appID := app.GetApp().GetId()
+	appID := h.CreateApp(t, h.CreateProject(t, "revget").GetId(), "svc").GetId()
 
 	body := `{"app":{"id":"X","project":"Y"},"source":{"image":{"ref":"nginx:1.27"}},"processes":[` +
 		`{"name":"web","image":"nginx:1.27","replicas":2}]}`
-	_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: appID, SpecFile: body})
+	_, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: appID, SpecFile: body})
 	require.NoError(t, err)
 
 	got, err := revisions.GetRevision(ctx, &deliveryv1.GetRevisionRequest{AppId: appID, Seq: 1})
@@ -83,20 +76,15 @@ func TestGetRevisionVerb(t *testing.T) {
 // E_NOT_FOUND；GetAppSpec 锚（最新冻结 seq/digest）齐备。
 func TestGetAppWorkloadsVerb(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
+	ctx := h.Ctx()
 	apps := structurev1.NewAppsServiceClient(h.Conn)
 	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
 	revisions := deliveryv1.NewRevisionsServiceClient(h.Conn)
 
-	proj, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "wlview"})
-	require.NoError(t, err)
-	app, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: proj.GetProject().GetId(), Name: "svc"})
-	require.NoError(t, err)
-	appID := app.GetApp().GetId()
+	appID := h.CreateApp(t, h.CreateProject(t, "wlview").GetId(), "svc").GetId()
 
 	// 冻结未部署：缺省寻址拒绝（无成功基线），显式 seq 也无从渲染。
-	_, err = revisions.GetAppWorkloads(ctx, &deliveryv1.GetAppWorkloadsRequest{AppId: appID})
+	_, err := revisions.GetAppWorkloads(ctx, &deliveryv1.GetAppWorkloadsRequest{AppId: appID})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "E_NOT_FOUND")
 
@@ -146,17 +134,11 @@ func TestGetAppWorkloadsVerb(t *testing.T) {
 // 互补（投影不带代戳，观测才有）。
 func TestGetAppWorkloadObservationsVerb(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
-	apps := structurev1.NewAppsServiceClient(h.Conn)
+	ctx := h.Ctx()
 	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
 	workloads := runtimev1.NewWorkloadsServiceClient(h.Conn)
 
-	proj, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "wlobs"})
-	require.NoError(t, err)
-	app, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: proj.GetProject().GetId(), Name: "svc"})
-	require.NoError(t, err)
-	appID := app.GetApp().GetId()
+	appID := h.CreateApp(t, h.CreateProject(t, "wlobs").GetId(), "svc").GetId()
 
 	body := `{"app":{"id":"X","project":"Y"},"source":{"image":{"ref":"nginx:1.27"}},"processes":[` +
 		`{"name":"web","image":"nginx:1.27","replicas":1}]}`

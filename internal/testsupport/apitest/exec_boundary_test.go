@@ -20,8 +20,8 @@ import (
 
 func TestExecSessionAttachTeamBoundary(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	appID := execSeed(t, h, ctx)
+	ctx := h.Ctx()
+	appID := execSeed(t, h)
 	detach := apitest.AttachFakeRelay(context.Background(), h)
 	defer detach()
 	h.Runtime.SetExecBehavior(0, "hello\n", false)

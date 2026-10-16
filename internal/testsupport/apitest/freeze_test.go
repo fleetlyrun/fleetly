@@ -15,7 +15,6 @@ import (
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
-	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 // TestChangeFreezeLifecycle（F1.9，ADR-0017 附录 A.3）：per-Team 冻结 →
@@ -24,7 +23,7 @@ import (
 // 同受冻结（无 Token 的部署触发面不得漏拦）。
 func TestChangeFreezeLifecycle(t *testing.T) {
 	h := apitest.NewManual(t)
-	owner := sdk.WithToken(context.Background(), h.Token)
+	owner := h.Ctx()
 	teams := identityv1.NewTeamsServiceClient(h.Conn)
 	projects := structurev1.NewProjectsServiceClient(h.Conn)
 	apps := structurev1.NewAppsServiceClient(h.Conn)
@@ -42,14 +41,13 @@ func TestChangeFreezeLifecycle(t *testing.T) {
 	require.NoError(t, err)
 
 	// 冻结前置事实：A 域 App + Task + Git hook。
-	appA, err := apps.CreateApp(owner, &structurev1.CreateAppRequest{ProjectId: projA.GetProject().GetId(), Name: "web"})
-	require.NoError(t, err)
+	appA := h.CreateApp(t, projA.GetProject().GetId(), "web")
 	taskA, err := tasksAPI.CreateTask(owner, &automationv1.CreateTaskRequest{
 		ProjectId: projA.GetProject().GetId(), Image: "busybox:1.37",
 	})
 	require.NoError(t, err)
 	set, err := hooks.SetGitHook(owner, &deliveryv1.SetGitHookRequest{
-		AppId: appA.GetApp().GetId(), Repo: "https://github.com/acme/alpha.git", Branch: "main",
+		AppId: appA.GetId(), Repo: "https://github.com/acme/alpha.git", Branch: "main",
 	})
 	require.NoError(t, err)
 	hookSecret := set.GetSecret()
@@ -73,7 +71,7 @@ func TestChangeFreezeLifecycle(t *testing.T) {
 	assert.Contains(t, err.Error(), "E_CHANGE_FROZEN")
 
 	_, err = deliveryv1.NewDeploymentsServiceClient(h.Conn).Deploy(owner, &deliveryv1.DeployRequest{
-		AppId: appA.GetApp().GetId(), Image: "nginx:1.27",
+		AppId: appA.GetId(), Image: "nginx:1.27",
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "E_CHANGE_FROZEN")
@@ -90,8 +88,7 @@ func TestChangeFreezeLifecycle(t *testing.T) {
 	// 豁免面：停止族在冻结期可用；其他 Team 不受影响。
 	_, err = tasksAPI.StopTask(owner, &automationv1.StopTaskRequest{Id: taskA.GetTask().GetId()})
 	require.NoError(t, err)
-	_, err = apps.CreateApp(owner, &structurev1.CreateAppRequest{ProjectId: projB.GetProject().GetId(), Name: "web"})
-	require.NoError(t, err)
+	h.CreateApp(t, projB.GetProject().GetId(), "web")
 
 	// 同 scope 重复 Set → E_ALREADY_EXISTS（先 lift）。
 	_, err = gov.SetChangeFreeze(owner, &systemv1.SetChangeFreezeRequest{TeamId: teamA.GetTeam().GetId(), Reason: "again"})
@@ -103,8 +100,7 @@ func TestChangeFreezeLifecycle(t *testing.T) {
 	require.NoError(t, err)
 	_, err = gov.LiftChangeFreeze(owner, &systemv1.LiftChangeFreezeRequest{Id: freezeID})
 	require.NoError(t, err)
-	_, err = apps.CreateApp(owner, &structurev1.CreateAppRequest{ProjectId: projA.GetProject().GetId(), Name: "worker"})
-	require.NoError(t, err)
+	h.CreateApp(t, projA.GetProject().GetId(), "worker")
 
 	// 历史行可回读（lifted_at 非空）。
 	list, err := gov.ListChangeFreezes(owner, &systemv1.ListChangeFreezesRequest{})

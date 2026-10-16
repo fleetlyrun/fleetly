@@ -9,7 +9,6 @@ package apitest_test
 
 import (
 	"context"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -19,7 +18,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
-	"github.com/fleetlyrun/fleetly/internal/assembly"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
 )
 
@@ -28,14 +26,13 @@ func TestConsoleLoginPathAnchoredToGateway(t *testing.T) {
 	assert.Equal(t, "/v1/auth/login", engine.ConsoleLoginPath)
 
 	h := apitest.New(t)
-	handler, err := assembly.NewGatewayHandler(slog.New(slog.DiscardHandler), h.Conn, nil, nil, assembly.NewBrowseGate(h.Services))
-	require.NoError(t, err)
+	rest := h.REST()
 
 	post := func(path, body string) *httptest.ResponseRecorder {
 		req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, path, strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
-		handler.ServeHTTP(rec, req)
+		rest.ServeHTTP(rec, req)
 		return rec
 	}
 

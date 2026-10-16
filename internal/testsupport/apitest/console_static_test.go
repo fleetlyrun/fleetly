@@ -7,7 +7,6 @@ package apitest_test
 
 import (
 	"context"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -15,20 +14,18 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/fleetlyrun/fleetly/internal/assembly"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
 )
 
 func TestGatewayServesConsoleAndKeepsV1Untouched(t *testing.T) {
 	h := apitest.New(t)
-	handler, err := assembly.NewGatewayHandler(slog.New(slog.DiscardHandler), h.Conn, nil, nil, assembly.NewBrowseGate(h.Services))
-	require.NoError(t, err)
+	rest := h.REST()
 
 	get := func(path string) *httptest.ResponseRecorder {
 		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, path, nil)
 		req.Header.Set("Authorization", "Bearer "+h.Token)
 		rec := httptest.NewRecorder()
-		handler.ServeHTTP(rec, req)
+		rest.ServeHTTP(rec, req)
 		return rec
 	}
 

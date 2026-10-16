@@ -19,11 +19,9 @@ import (
 )
 
 // taskFixtureProject 建项目返回 ID。
-func taskFixtureProject(t *testing.T, h *apitest.Harness, ctx context.Context, name string) string {
+func taskFixtureProject(t *testing.T, h *apitest.Harness, name string) string {
 	t.Helper()
-	p, err := structurev1.NewProjectsServiceClient(h.Conn).CreateProject(ctx, &structurev1.CreateProjectRequest{Name: name})
-	require.NoError(t, err)
-	return p.GetProject().GetId()
+	return h.CreateProject(t, name).GetId()
 }
 
 // driveTaskStep 驱动 Task 收敛环（手动形态）。
@@ -34,8 +32,8 @@ func driveTaskStep(t *testing.T, h *apitest.Harness, ctx context.Context) {
 
 func TestTaskOneShotAPILifecycle(t *testing.T) {
 	h := apitest.NewManual(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	projectID := taskFixtureProject(t, h, ctx, "automation")
+	ctx := h.Ctx()
+	projectID := taskFixtureProject(t, h, "automation")
 
 	tc := automationv1.NewTasksServiceClient(h.Conn)
 	created, err := tc.CreateTask(ctx, &automationv1.CreateTaskRequest{
@@ -133,8 +131,8 @@ func TestTaskOneShotAPILifecycle(t *testing.T) {
 
 func TestTaskResidentPoolAndScale(t *testing.T) {
 	h := apitest.NewManual(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	projectID := taskFixtureProject(t, h, ctx, "automation2")
+	ctx := h.Ctx()
+	projectID := taskFixtureProject(t, h, "automation2")
 
 	tc := automationv1.NewTasksServiceClient(h.Conn)
 	rc := automationv1.NewRunsServiceClient(h.Conn)
@@ -180,8 +178,8 @@ func TestTaskResidentPoolAndScale(t *testing.T) {
 // TestWaitRun：首帧快照 → 终态帧收流（F1.3 收口面）。
 func TestWaitRun(t *testing.T) {
 	h := apitest.NewManual(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	projectID := taskFixtureProject(t, h, ctx, "automation3")
+	ctx := h.Ctx()
+	projectID := taskFixtureProject(t, h, "automation3")
 
 	tc := automationv1.NewTasksServiceClient(h.Conn)
 	created, err := tc.CreateTask(ctx, &automationv1.CreateTaskRequest{
@@ -236,8 +234,8 @@ func TestWaitRun(t *testing.T) {
 // 拒绝不挂流。
 func TestWaitRunTaskID(t *testing.T) {
 	h := apitest.NewManual(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	projectID := taskFixtureProject(t, h, ctx, "automation3-wait")
+	ctx := h.Ctx()
+	projectID := taskFixtureProject(t, h, "automation3-wait")
 
 	tc := automationv1.NewTasksServiceClient(h.Conn)
 	created, err := tc.CreateTask(ctx, &automationv1.CreateTaskRequest{
@@ -317,25 +315,22 @@ func TestWaitRunTaskID(t *testing.T) {
 // TestTaskAcceptanceFace：父资源守卫（已删项目拒收）与 owner 缺省解析。
 func TestTaskAcceptanceFace(t *testing.T) {
 	h := apitest.NewManual(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
+	ctx := h.Ctx()
 	pc := structurev1.NewProjectsServiceClient(h.Conn)
-	p, err := pc.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "gone"})
+	p := h.CreateProject(t, "gone")
+	_, err := pc.DeleteProject(ctx, &structurev1.DeleteProjectRequest{Id: p.GetId()})
 	require.NoError(t, err)
-	_, err = pc.DeleteProject(ctx, &structurev1.DeleteProjectRequest{Id: p.GetProject().GetId()})
-	require.NoError(t, err)
-
 	tc := automationv1.NewTasksServiceClient(h.Conn)
 	_, err = tc.CreateTask(ctx, &automationv1.CreateTaskRequest{
-		ProjectId: p.GetProject().GetId(), Image: "busybox:1.37",
+		ProjectId: p.GetId(), Image: "busybox:1.37",
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not found")
 
 	// owner 缺省 = 调用方 Token（行上引用非明文）。
-	p2, err := pc.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "owners"})
-	require.NoError(t, err)
+	p2 := h.CreateProject(t, "owners")
 	created, err := tc.CreateTask(ctx, &automationv1.CreateTaskRequest{
-		ProjectId: p2.GetProject().GetId(), Form: "resident",
+		ProjectId: p2.GetId(), Form: "resident",
 		Image: "busybox:1.37", DesiredConcurrency: 1,
 	})
 	require.NoError(t, err)

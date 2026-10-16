@@ -5,7 +5,6 @@ package apitest_test
 // 手动触发与重叠拒绝、幂等键重放、删除幂等。
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -22,8 +21,8 @@ import (
 
 func TestScheduleAPILifecycle(t *testing.T) {
 	h := apitest.NewManual(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	projectID := taskFixtureProject(t, h, ctx, "sched")
+	ctx := h.Ctx()
+	projectID := taskFixtureProject(t, h, "sched")
 
 	sc := automationv1.NewSchedulesServiceClient(h.Conn)
 

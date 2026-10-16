@@ -14,23 +14,15 @@ import (
 	"google.golang.org/grpc/status"
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
-	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/apperrstatus"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
-	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 // waitFixtureApp 建项目 + App，返回 app ID。
-func waitFixtureApp(t *testing.T, h *apitest.Harness, ctx context.Context) string {
+func waitFixtureApp(t *testing.T, h *apitest.Harness) string {
 	t.Helper()
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
-	apps := structurev1.NewAppsServiceClient(h.Conn)
-	p, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "wait"})
-	require.NoError(t, err)
-	a, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: p.GetProject().GetId(), Name: "web"})
-	require.NoError(t, err)
-	return a.GetApp().GetId()
+	return h.CreateApp(t, h.CreateProject(t, "wait").GetId(), "web").GetId()
 }
 
 // waitCodeOf 提取 apperr 信封码。
@@ -49,7 +41,7 @@ func deployToSucceeded(t *testing.T, h *apitest.Harness, appID string) string {
 	t.Helper()
 	ctx := context.Background()
 	dc := deliveryv1.NewDeploymentsServiceClient(h.Conn)
-	d, err := dc.Deploy(sdk.WithToken(ctx, h.Token), &deliveryv1.DeployRequest{
+	d, err := dc.Deploy(h.Ctx(), &deliveryv1.DeployRequest{
 		AppId: appID, Image: "nginx:1.27", ProcessName: "web",
 	})
 	require.NoError(t, err)
@@ -58,7 +50,7 @@ func deployToSucceeded(t *testing.T, h *apitest.Harness, appID string) string {
 		h.Drive(ctx)
 		h.Clock.Advance(120 * time.Second)
 		h.Drive(ctx)
-		got, err := dc.GetDeployment(sdk.WithToken(ctx, h.Token), &deliveryv1.GetDeploymentRequest{Id: d.GetDeployment().GetId()})
+		got, err := dc.GetDeployment(h.Ctx(), &deliveryv1.GetDeploymentRequest{Id: d.GetDeployment().GetId()})
 		require.NoError(t, err)
 		if got.GetDeployment().GetState() == "succeeded" {
 			return d.GetDeployment().GetId()
@@ -70,8 +62,8 @@ func deployToSucceeded(t *testing.T, h *apitest.Harness, appID string) string {
 
 func TestWaitDeployment(t *testing.T) {
 	h := apitest.NewManual(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	appID := waitFixtureApp(t, h, ctx)
+	ctx := h.Ctx()
+	appID := waitFixtureApp(t, h)
 
 	dc := deliveryv1.NewDeploymentsServiceClient(h.Conn)
 	dep, err := dc.Deploy(ctx, &deliveryv1.DeployRequest{AppId: appID, Image: "nginx:1.27", ProcessName: "web"})
@@ -122,8 +114,8 @@ func TestWaitDeployment(t *testing.T) {
 // 终态行即入即收：单帧 succeeded 后关流（等待不依赖事件史）。
 func TestWaitDeploymentTerminalAtEntry(t *testing.T) {
 	h := apitest.NewManual(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	appID := waitFixtureApp(t, h, ctx)
+	ctx := h.Ctx()
+	appID := waitFixtureApp(t, h)
 
 	depID := deployToSucceeded(t, h, appID)
 	dc := deliveryv1.NewDeploymentsServiceClient(h.Conn)
@@ -139,7 +131,7 @@ func TestWaitDeploymentTerminalAtEntry(t *testing.T) {
 // 不存在的行 → E_NOT_FOUND。
 func TestWaitDeploymentNotFound(t *testing.T) {
 	h := apitest.NewManual(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
+	ctx := h.Ctx()
 	dc := deliveryv1.NewDeploymentsServiceClient(h.Conn)
 	stream, err := dc.WaitDeployment(ctx, &deliveryv1.WaitDeploymentRequest{DeploymentId: "01JD0MISSING00000000000000X"})
 	require.NoError(t, err)

@@ -19,34 +19,24 @@ import (
 	"github.com/stretchr/testify/require"
 
 	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
-	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/assembly"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/fleetlygrpc"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
-	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 // execSeed 建 project + app（exec 受理只要求 App 行在场——实例解析是
 // Provider 的假面，无需部署链）。
-func execSeed(t *testing.T, h *apitest.Harness, ctx context.Context) string {
+func execSeed(t *testing.T, h *apitest.Harness) string {
 	t.Helper()
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
-	apps := structurev1.NewAppsServiceClient(h.Conn)
-	proj, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "shop"})
-	require.NoError(t, err)
-	app, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{
-		ProjectId: proj.GetProject().GetId(), Name: "webapp",
-	})
-	require.NoError(t, err)
-	return app.GetApp().GetId()
+	return h.CreateApp(t, h.CreateProject(t, "shop").GetId(), "webapp").GetId()
 }
 
 // TestExecSessionGRPCLink 是 gRPC 消费径全链（CLI 形态）：attach →
 // CloseSend（stdin EOF）→ meta/stdout/exit 帧序 + 审计/事件落行。
 func TestExecSessionGRPCLink(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	appID := execSeed(t, h, ctx)
+	ctx := h.Ctx()
+	appID := execSeed(t, h)
 	detach := apitest.AttachFakeRelay(context.Background(), h)
 	defer detach()
 	h.Runtime.SetExecBehavior(0, "hello\n", false)
@@ -136,8 +126,8 @@ func TestExecSessionGRPCLink(t *testing.T) {
 // 空命令非 tty（E_INVALID_ARGUMENT）、未知 App（E_NOT_FOUND）。
 func TestExecCreateRejections(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	appID := execSeed(t, h, ctx)
+	ctx := h.Ctx()
+	appID := execSeed(t, h)
 	exec := runtimev1.NewExecServiceClient(h.Conn)
 
 	// 无在连中继 → E_NODE_RELAY_OFFLINE。
@@ -168,8 +158,8 @@ func TestExecCreateRejections(t *testing.T) {
 // 快照升序、node 归属回显；受理锚定命中/不中（E_NOT_FOUND 诚实失败）。
 func TestExecListInstances(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	appID := execSeed(t, h, ctx)
+	ctx := h.Ctx()
+	appID := execSeed(t, h)
 	detach := apitest.AttachFakeRelay(context.Background(), h)
 	defer detach()
 	exec := runtimev1.NewExecServiceClient(h.Conn)
@@ -218,8 +208,8 @@ func TestExecListInstances(t *testing.T) {
 // 绑会话）、坏票据 401、帧信封字节形态。
 func TestExecStreamWSTicketFlow(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	appID := execSeed(t, h, ctx)
+	ctx := h.Ctx()
+	appID := execSeed(t, h)
 	detach := apitest.AttachFakeRelay(context.Background(), h)
 	defer detach()
 	h.Runtime.SetExecBehavior(7, "", false)
@@ -300,8 +290,8 @@ func TestExecStreamWSTicketFlow(t *testing.T) {
 // 第 9 个受理 → E_QUOTA_EXCEEDED；断流收口后额度回吐。
 func TestExecTeamLimit(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	appID := execSeed(t, h, ctx)
+	ctx := h.Ctx()
+	appID := execSeed(t, h)
 	detach := apitest.AttachFakeRelay(context.Background(), h)
 	defer detach()
 	exec := runtimev1.NewExecServiceClient(h.Conn)

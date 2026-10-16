@@ -5,7 +5,6 @@ package apitest_test
 // 执行。受理位只放行 https:// 直连仓库，branch 拒控制字符/空白。
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -14,25 +13,17 @@ import (
 	"google.golang.org/grpc/status"
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
-	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
-	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 // TestSetGitHookRepoValidation：非法 repo/branch 形态在受理位拒绝（create
 // 与 update 两路径共用同一校验；此处 create 路径全覆盖 + update 路径抽样）。
 func TestSetGitHookRepoValidation(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
-	apps := structurev1.NewAppsServiceClient(h.Conn)
+	ctx := h.Ctx()
 	hooks := deliveryv1.NewHooksServiceClient(h.Conn)
 
-	p, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "hookguard"})
-	require.NoError(t, err)
-	a, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: p.GetProject().GetId(), Name: "web"})
-	require.NoError(t, err)
-	appID := a.GetApp().GetId()
+	appID := h.CreateApp(t, h.CreateProject(t, "hookguard").GetId(), "web").GetId()
 
 	illegalRepos := []string{
 		"",                                   // 空
@@ -74,16 +65,10 @@ func TestSetGitHookRepoValidation(t *testing.T) {
 // 空白由归一面清洗，属合法形态）。
 func TestSetGitHookBranchValidation(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
-	apps := structurev1.NewAppsServiceClient(h.Conn)
+	ctx := h.Ctx()
 	hooks := deliveryv1.NewHooksServiceClient(h.Conn)
 
-	p, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "branchguard"})
-	require.NoError(t, err)
-	a, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: p.GetProject().GetId(), Name: "web"})
-	require.NoError(t, err)
-	appID := a.GetApp().GetId()
+	appID := h.CreateApp(t, h.CreateProject(t, "branchguard").GetId(), "web").GetId()
 
 	for _, branch := range []string{
 		"ma\x00in",    // 嵌入 NUL（TrimSpace 剥不掉）
@@ -109,22 +94,16 @@ func TestSetGitHookBranchValidation(t *testing.T) {
 // 同形，freeze 全链的既负 example）。
 func TestGitSourceSpecIntakeCleanURL(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
-	apps := structurev1.NewAppsServiceClient(h.Conn)
+	ctx := h.Ctx()
 	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
 
-	p, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "gitspec"})
-	require.NoError(t, err)
-	a, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: p.GetProject().GetId(), Name: "web"})
-	require.NoError(t, err)
-	appID := a.GetApp().GetId()
+	appID := h.CreateApp(t, h.CreateProject(t, "gitspec").GetId(), "web").GetId()
 
 	specFor := func(repo string) string {
 		return `{"source":{"git":{"repo":"` + repo + `","ref":"main"}},"build":{"builder":"dockerfile","dockerfile":"Dockerfile"},"processes":[{"name":"web","from_build":"/"}]}`
 	}
 
-	_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{
+	_, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{
 		AppId: appID, SpecFile: specFor("https://user:ghp_x@github.com/acme/web"),
 	})
 	require.Error(t, err, "a materialized git URL must be refused at spec intake")

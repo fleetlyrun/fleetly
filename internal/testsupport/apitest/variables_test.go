@@ -18,7 +18,6 @@ import (
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
-	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 // latestSpecEnv 读 App 最新 Revision 冻结体的单进程 env（冻结即最终生效集）。
@@ -41,24 +40,19 @@ func latestSpecEnv(t *testing.T, h *apitest.Harness, ctx context.Context, appID,
 // 重复部署逐字节相等（内容寻址复用——不冻结 R2）。
 func TestSharedVariableMergeAtNormalization(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
-	apps := structurev1.NewAppsServiceClient(h.Conn)
+	ctx := h.Ctx()
 	vars := structurev1.NewSharedVariablesServiceClient(h.Conn)
 	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
 
-	proj, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "varshop"})
-	require.NoError(t, err)
-	app, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: proj.GetProject().GetId(), Name: "web"})
-	require.NoError(t, err)
-	appID := app.GetApp().GetId()
+	proj := h.CreateProject(t, "varshop")
+	appID := h.CreateApp(t, proj.GetId(), "web").GetId()
 
-	_, err = vars.PutSharedVariable(ctx, &structurev1.PutSharedVariableRequest{
-		ProjectId: proj.GetProject().GetId(), Name: "DATABASE_URL", Value: "postgres://shared",
+	_, err := vars.PutSharedVariable(ctx, &structurev1.PutSharedVariableRequest{
+		ProjectId: proj.GetId(), Name: "DATABASE_URL", Value: "postgres://shared",
 	})
 	require.NoError(t, err)
 	_, err = vars.PutSharedVariable(ctx, &structurev1.PutSharedVariableRequest{
-		ProjectId: proj.GetProject().GetId(), Name: "LOG_LEVEL", Value: "debug",
+		ProjectId: proj.GetId(), Name: "LOG_LEVEL", Value: "debug",
 	})
 	require.NoError(t, err)
 
@@ -89,20 +83,15 @@ func TestSharedVariableMergeAtNormalization(t *testing.T) {
 // compose 形态的 App 层覆盖（environment 声明面）。
 func TestSharedVariableComposeOverride(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
-	apps := structurev1.NewAppsServiceClient(h.Conn)
+	ctx := h.Ctx()
 	vars := structurev1.NewSharedVariablesServiceClient(h.Conn)
 	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
 
-	proj, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "varshop"})
-	require.NoError(t, err)
-	app, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: proj.GetProject().GetId(), Name: "web"})
-	require.NoError(t, err)
-	appID := app.GetApp().GetId()
+	proj := h.CreateProject(t, "varshop")
+	appID := h.CreateApp(t, proj.GetId(), "web").GetId()
 
-	_, err = vars.PutSharedVariable(ctx, &structurev1.PutSharedVariableRequest{
-		ProjectId: proj.GetProject().GetId(), Name: "LOG_LEVEL", Value: "debug",
+	_, err := vars.PutSharedVariable(ctx, &structurev1.PutSharedVariableRequest{
+		ProjectId: proj.GetId(), Name: "LOG_LEVEL", Value: "debug",
 	})
 	require.NoError(t, err)
 
@@ -123,28 +112,22 @@ func TestSharedVariableComposeOverride(t *testing.T) {
 // 提示受影响 App；重部署后取新值（合成在归一化期，旧 Revision 不动）。
 func TestSharedVariableChangeNoRedeployButAffectedHint(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
-	apps := structurev1.NewAppsServiceClient(h.Conn)
+	ctx := h.Ctx()
 	vars := structurev1.NewSharedVariablesServiceClient(h.Conn)
 	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
 
-	proj, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "varshop"})
-	require.NoError(t, err)
-	app, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: proj.GetProject().GetId(), Name: "web"})
-	require.NoError(t, err)
-	appID := app.GetApp().GetId()
-	other, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: proj.GetProject().GetId(), Name: "other"})
-	require.NoError(t, err)
+	proj := h.CreateProject(t, "varshop")
+	appID := h.CreateApp(t, proj.GetId(), "web").GetId()
+	other := h.CreateApp(t, proj.GetId(), "other")
 
-	_, err = vars.PutSharedVariable(ctx, &structurev1.PutSharedVariableRequest{
-		ProjectId: proj.GetProject().GetId(), Name: "DATABASE_URL", Value: "postgres://v1",
+	_, err := vars.PutSharedVariable(ctx, &structurev1.PutSharedVariableRequest{
+		ProjectId: proj.GetId(), Name: "DATABASE_URL", Value: "postgres://v1",
 	})
 	require.NoError(t, err)
 
 	// 首次 put 的受影响提示：项目内尚无任何 Revision——空集。
 	put, err := vars.PutSharedVariable(ctx, &structurev1.PutSharedVariableRequest{
-		ProjectId: proj.GetProject().GetId(), Name: "LOG_LEVEL", Value: "debug",
+		ProjectId: proj.GetId(), Name: "LOG_LEVEL", Value: "debug",
 	})
 	require.NoError(t, err)
 	assert.Empty(t, put.GetAffectedApps())
@@ -161,7 +144,7 @@ func TestSharedVariableChangeNoRedeployButAffectedHint(t *testing.T) {
 	// 改共享变量：app（冻结 env 带旧值）受影响；other（无 Revision）不在
 	// 提示集——提示是近似口径，但不部署的 App 不打扰。
 	put, err = vars.PutSharedVariable(ctx, &structurev1.PutSharedVariableRequest{
-		ProjectId: proj.GetProject().GetId(), Name: "DATABASE_URL", Value: "postgres://v2",
+		ProjectId: proj.GetId(), Name: "DATABASE_URL", Value: "postgres://v2",
 	})
 	require.NoError(t, err)
 	assert.Equal(t, []string{appID}, put.GetAffectedApps())
@@ -184,20 +167,15 @@ func TestSharedVariableChangeNoRedeployButAffectedHint(t *testing.T) {
 // 404 诚实拒绝（secrets 同款）、重部署后键从冻结体消失。
 func TestSharedVariableDelete(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
-	apps := structurev1.NewAppsServiceClient(h.Conn)
+	ctx := h.Ctx()
 	vars := structurev1.NewSharedVariablesServiceClient(h.Conn)
 	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
 
-	proj, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "varshop"})
-	require.NoError(t, err)
-	app, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: proj.GetProject().GetId(), Name: "web"})
-	require.NoError(t, err)
-	appID := app.GetApp().GetId()
-	projectID := proj.GetProject().GetId()
+	proj := h.CreateProject(t, "varshop")
+	appID := h.CreateApp(t, proj.GetId(), "web").GetId()
+	projectID := proj.GetId()
 
-	_, err = vars.PutSharedVariable(ctx, &structurev1.PutSharedVariableRequest{
+	_, err := vars.PutSharedVariable(ctx, &structurev1.PutSharedVariableRequest{
 		ProjectId: projectID, Name: "DATABASE_URL", Value: "postgres://v1",
 	})
 	require.NoError(t, err)
@@ -240,15 +218,12 @@ func TestSharedVariableDelete(t *testing.T) {
 // 受理面：名（env 键形态）与值大小；List 值明文回显 + 分页。
 func TestSharedVariableValidationAndList(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
+	ctx := h.Ctx()
 	vars := structurev1.NewSharedVariablesServiceClient(h.Conn)
 
-	proj, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "varshop"})
-	require.NoError(t, err)
-	projectID := proj.GetProject().GetId()
+	projectID := h.CreateProject(t, "varshop").GetId()
 
-	_, err = vars.PutSharedVariable(ctx, &structurev1.PutSharedVariableRequest{ProjectId: projectID, Name: "BAD-KEY", Value: "x"})
+	_, err := vars.PutSharedVariable(ctx, &structurev1.PutSharedVariableRequest{ProjectId: projectID, Name: "BAD-KEY", Value: "x"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "variable names must match")
 

@@ -1,7 +1,6 @@
 package apitest_test
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -15,7 +14,6 @@ import (
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
-	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 // TestRestartProcessVerb（ADR-0069）：进程重启 API 全链——已知进程强制重排
@@ -24,19 +22,14 @@ import (
 // 成功的唯一防线）；冻结期 E_CHANGE_FROZEN 拒绝（变更族执法）。
 func TestRestartProcessVerb(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
-	apps := structurev1.NewAppsServiceClient(h.Conn)
+	ctx := h.Ctx()
 	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
 
-	proj, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "restart"})
-	require.NoError(t, err)
-	app, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: proj.GetProject().GetId(), Name: "svc"})
-	require.NoError(t, err)
-	appID := app.GetApp().GetId()
+	projectID := h.CreateProject(t, "restart").GetId()
+	appID := h.CreateApp(t, projectID, "svc").GetId()
 
 	// 未部署（无冻结体）：同归 E_NOT_FOUND。
-	_, err = deployments.RestartProcess(ctx, &deliveryv1.RestartProcessRequest{AppId: appID, ProcessName: "web"})
+	_, err := deployments.RestartProcess(ctx, &deliveryv1.RestartProcessRequest{AppId: appID, ProcessName: "web"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "E_NOT_FOUND")
 
@@ -56,7 +49,7 @@ func TestRestartProcessVerb(t *testing.T) {
 	restarts := h.Runtime.RestartCalls()
 	require.Len(t, restarts, 1)
 	assert.Equal(t, appID+"-worker", restarts[0].WorkloadID)
-	assert.Equal(t, capability.NamespaceRef{Team: "default", Project: proj.GetProject().GetId(), App: appID}, restarts[0].NS)
+	assert.Equal(t, capability.NamespaceRef{Team: "default", Project: projectID, App: appID}, restarts[0].NS)
 	assert.Len(t, h.Runtime.Calls(), deploysBefore, "restart must not trigger a re-Ensure (zero lineage)")
 
 	// 未知进程（typo）：精确拒绝而非静默成功。
@@ -69,10 +62,9 @@ func TestRestartProcessVerb(t *testing.T) {
 // FrozenVerbs 封禁面——冻结期拒绝，与 Deploy/Rollback 同映射。
 func TestRestartProcessFrozen(t *testing.T) {
 	h := apitest.New(t)
-	owner := sdk.WithToken(context.Background(), h.Token)
+	owner := h.Ctx()
 	teams := identityv1.NewTeamsServiceClient(h.Conn)
 	projects := structurev1.NewProjectsServiceClient(h.Conn)
-	apps := structurev1.NewAppsServiceClient(h.Conn)
 	gov := systemv1.NewGovernanceServiceClient(h.Conn)
 
 	team, err := teams.CreateTeam(owner, &identityv1.CreateTeamRequest{Name: "frozen-restart"})
@@ -83,13 +75,12 @@ func TestRestartProcessFrozen(t *testing.T) {
 	require.NoError(t, err)
 	// 冻结守卫经归属解析图（App 行 → Project → Team）定位封禁面——app 行
 	// 须真实在场。
-	app, err := apps.CreateApp(owner, &structurev1.CreateAppRequest{ProjectId: proj.GetProject().GetId(), Name: "web"})
-	require.NoError(t, err)
+	app := h.CreateApp(t, proj.GetProject().GetId(), "web")
 	_, err = gov.SetChangeFreeze(owner, &systemv1.SetChangeFreezeRequest{TeamId: team.GetTeam().GetId(), Reason: "migration window"})
 	require.NoError(t, err)
 
 	_, err = deliveryv1.NewDeploymentsServiceClient(h.Conn).RestartProcess(owner,
-		&deliveryv1.RestartProcessRequest{AppId: app.GetApp().GetId(), ProcessName: "web"})
+		&deliveryv1.RestartProcessRequest{AppId: app.GetId(), ProcessName: "web"})
 	require.Error(t, err)
 	assert.Equal(t, codes.FailedPrecondition, status.Code(err))
 	assert.Contains(t, err.Error(), "E_CHANGE_FROZEN")

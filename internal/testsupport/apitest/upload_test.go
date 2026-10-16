@@ -20,7 +20,6 @@ import (
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/upload"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
-	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 // uploadTar 经 client-streaming 上传一段字节（F1.10，ADR-0019 附录 A）。
@@ -86,18 +85,12 @@ const (
 // deploy upload 形态全链（构建输入=解包后目录）→ 跨项目引用拒绝。
 func TestUploadSourceLifecycle(t *testing.T) {
 	h := apitest.NewManual(t)
-	owner := sdk.WithToken(context.Background(), h.Token)
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
-	apps := structurev1.NewAppsServiceClient(h.Conn)
+	owner := h.Ctx()
 	builds := deliveryv1.NewBuildsServiceClient(h.Conn)
 	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
 
-	proj, err := projects.CreateProject(owner, &structurev1.CreateProjectRequest{Name: "upload-main"})
-	require.NoError(t, err)
-	projID := proj.GetProject().GetId()
-	app, err := apps.CreateApp(owner, &structurev1.CreateAppRequest{ProjectId: projID, Name: "web"})
-	require.NoError(t, err)
-	appID := app.GetApp().GetId()
+	projID := h.CreateProject(t, "upload-main").GetId()
+	appID := h.CreateApp(t, projID, "web").GetId()
 
 	body := buildFixtureTar()
 	resp, err := uploadTar(owner, builds, projID, body, 4)
@@ -156,19 +149,16 @@ func TestUploadSourceLifecycle(t *testing.T) {
 // RESOURCE_EXHAUSTED）与项目存量配额（E_QUOTA_EXCEEDED）。
 func TestUploadSourceLimits(t *testing.T) {
 	h := apitest.NewManual(t)
-	owner := sdk.WithToken(context.Background(), h.Token)
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
+	owner := h.Ctx()
 	builds := deliveryv1.NewBuildsServiceClient(h.Conn)
 
-	proj, err := projects.CreateProject(owner, &structurev1.CreateProjectRequest{Name: "upload-limits"})
-	require.NoError(t, err)
-	projID := proj.GetProject().GetId()
+	projID := h.CreateProject(t, "upload-limits").GetId()
 
 	// 测试注入小限额（生产缺省 512MiB/4GiB；字段替换即生效——服务持有同
 	// 一 Services 指针）。
 	h.Services.UploadStore = upload.NewStore(h.DataRoot, 64, 96)
 
-	_, err = uploadTar(owner, builds, projID, bytes.Repeat([]byte("x"), 65), 16)
+	_, err := uploadTar(owner, builds, projID, bytes.Repeat([]byte("x"), 65), 16)
 	require.Error(t, err)
 	assert.Equal(t, codes.ResourceExhausted, status.Code(err))
 	assert.Contains(t, err.Error(), "E_UPLOAD_TOO_LARGE")
@@ -188,7 +178,7 @@ func TestUploadSourceLimits(t *testing.T) {
 // TestUploadSourceFreeze：冻结期间上传被拒（首帧执法——流式链 authn→freeze）。
 func TestUploadSourceFreeze(t *testing.T) {
 	h := apitest.NewManual(t)
-	owner := sdk.WithToken(context.Background(), h.Token)
+	owner := h.Ctx()
 	teams := identityv1.NewTeamsServiceClient(h.Conn)
 	projects := structurev1.NewProjectsServiceClient(h.Conn)
 	builds := deliveryv1.NewBuildsServiceClient(h.Conn)
@@ -211,23 +201,17 @@ func TestUploadSourceFreeze(t *testing.T) {
 // TestDeployUploadCrossProject：Upload 是 project 级材料——跨项目引用拒绝。
 func TestDeployUploadCrossProject(t *testing.T) {
 	h := apitest.NewManual(t)
-	owner := sdk.WithToken(context.Background(), h.Token)
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
-	apps := structurev1.NewAppsServiceClient(h.Conn)
+	owner := h.Ctx()
 	builds := deliveryv1.NewBuildsServiceClient(h.Conn)
 	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
 
-	projA, err := projects.CreateProject(owner, &structurev1.CreateProjectRequest{Name: "src-project"})
-	require.NoError(t, err)
-	projB, err := projects.CreateProject(owner, &structurev1.CreateProjectRequest{Name: "other-project"})
-	require.NoError(t, err)
-	appB, err := apps.CreateApp(owner, &structurev1.CreateAppRequest{ProjectId: projB.GetProject().GetId(), Name: "web"})
+	projA := h.CreateProject(t, "src-project")
+	appB := h.CreateApp(t, h.CreateProject(t, "other-project").GetId(), "web")
+
+	up, err := uploadTar(owner, builds, projA.GetId(), buildFixtureTar(), 8)
 	require.NoError(t, err)
 
-	up, err := uploadTar(owner, builds, projA.GetProject().GetId(), buildFixtureTar(), 8)
-	require.NoError(t, err)
-
-	_, err = deployments.Deploy(owner, &deliveryv1.DeployRequest{AppId: appB.GetApp().GetId(), UploadId: up.GetId()})
+	_, err = deployments.Deploy(owner, &deliveryv1.DeployRequest{AppId: appB.GetId(), UploadId: up.GetId()})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "belongs to project")
 }
@@ -236,13 +220,10 @@ func TestDeployUploadCrossProject(t *testing.T) {
 // 空流拒绝。
 func TestDeployUploadBadFrames(t *testing.T) {
 	h := apitest.NewManual(t)
-	owner := sdk.WithToken(context.Background(), h.Token)
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
+	owner := h.Ctx()
 	builds := deliveryv1.NewBuildsServiceClient(h.Conn)
 
-	proj, err := projects.CreateProject(owner, &structurev1.CreateProjectRequest{Name: "upload-bad"})
-	require.NoError(t, err)
-	projID := proj.GetProject().GetId()
+	projID := h.CreateProject(t, "upload-bad").GetId()
 
 	// 首帧是 chunk → 拒。
 	stream, err := builds.UploadSource(owner)

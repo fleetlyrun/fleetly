@@ -64,7 +64,7 @@ func waitRunUnderTask(t *testing.T, ctx context.Context, c automationv1.RunsServ
 func TestRowLevelTeamAuthorization(t *testing.T) {
 	h := apitest.New(t)
 	anon := context.Background()
-	owner := sdk.WithToken(anon, h.Token)
+	owner := h.Ctx()
 
 	// 夹具：team "acme"(B) + B 的 admin token；default(team A) 的资源由
 	// owner 铺（owner 跨队豁免通道本身即验收锚之一）。
@@ -91,12 +91,8 @@ func TestRowLevelTeamAuthorization(t *testing.T) {
 	auditQ := identityv1.NewAuditQueryServiceClient(h.Conn)
 	freezes := systemv1.NewGovernanceServiceClient(h.Conn)
 
-	projA, err := projects.CreateProject(owner, &structurev1.CreateProjectRequest{Name: "shop"})
-	require.NoError(t, err)
-	projAID := projA.GetProject().GetId()
-	appA, err := apps.CreateApp(owner, &structurev1.CreateAppRequest{ProjectId: projAID, Name: "web"})
-	require.NoError(t, err)
-	appAID := appA.GetApp().GetId()
+	projAID := h.CreateProject(t, "shop").GetId()
+	appAID := h.CreateApp(t, projAID, "web").GetId()
 	_, err = secrets.PutSecret(owner, &structurev1.PutSecretRequest{ProjectId: projAID, Name: "db-password", Value: "s3cr3t"})
 	require.NoError(t, err)
 	_, err = configs.PutConfig(owner, &structurev1.PutConfigRequest{ProjectId: projAID, Name: "env", Content: `{"LOG_LEVEL":"info"}`})

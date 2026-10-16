@@ -16,13 +16,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
 	"github.com/fleetlyrun/fleetly/internal/assembly"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/outbox"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/fleetlygrpc"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
-	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 // sseSession 打开一条 SSE 订阅（真实票据流），返回行扫描器与收尾。
@@ -43,12 +41,10 @@ func sseSession(t *testing.T, h *apitest.Harness, ticket string, query string) (
 
 func TestEventsSSETicketFlow(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
+	ctx := h.Ctx()
 	events := telemetryv1.NewEventsServiceClient(h.Conn)
 
-	_, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "shop"})
-	require.NoError(t, err)
+	h.CreateProject(t, "shop")
 
 	// 无票据 → 401（对匿名面不区分缺失/无效/已用）。
 	handler, err := assembly.NewGatewayHandler(slog.New(slog.DiscardHandler), h.Conn, fleetlygrpc.NewEventStreamSource(h.Services), fleetlygrpc.NewExecStreamSource(h.Services), assembly.NewBrowseGate(h.Services))
@@ -76,16 +72,14 @@ func TestEventsSSETicketFlow(t *testing.T) {
 
 func TestEventsSSEFollowAndGone(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
+	ctx := h.Ctx()
 	events := telemetryv1.NewEventsServiceClient(h.Conn)
 
-	_, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "shop"})
-	require.NoError(t, err)
+	h.CreateProject(t, "shop")
 
 	// 断档：游标落在窗外 → 流前 410（统一错误信封带 E_EVENTS_GONE）。
 	h.Clock.Advance(8 * 24 * time.Hour)
-	_, err = outbox.New(h.DB.Clock()).TrimBefore(context.Background(), h.DB.Runner(),
+	_, err := outbox.New(h.DB.Clock()).TrimBefore(context.Background(), h.DB.Runner(),
 		h.DB.Clock().Now().Add(-7*24*time.Hour))
 	require.NoError(t, err)
 

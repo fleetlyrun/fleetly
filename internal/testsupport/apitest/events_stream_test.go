@@ -13,12 +13,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/status"
 
-	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/outbox"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/apperrstatus"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
-	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 // codeOf 提取 apperr 信封码（无信封时给 gRPC code 兜底标签）。
@@ -34,14 +32,11 @@ func eventsCodeOf(t *testing.T, err error) string {
 
 func TestEventsStreamReplayAndFollow(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
+	ctx := h.Ctx()
 	events := telemetryv1.NewEventsServiceClient(h.Conn)
 
-	_, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "shop"})
-	require.NoError(t, err)
-	_, err = projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "lab"})
-	require.NoError(t, err)
+	h.CreateProject(t, "shop")
+	h.CreateProject(t, "lab")
 
 	// 重放（follow=false）：保留窗全量后 EOS。
 	replay, err := events.StreamEvents(ctx, &telemetryv1.StreamEventsRequest{Follow: false})
@@ -84,8 +79,7 @@ func TestEventsStreamReplayAndFollow(t *testing.T) {
 	// 等待流进入轮询拍后落新事件（轮询间隔 250ms；假时钟不影响真实墙钟
 	// 轮询——此处等真实 sleep 到位再触发）。
 	time.Sleep(2 * streamEventsPollIntervalWall)
-	_, err = projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "follow-me"})
-	require.NoError(t, err)
+	h.CreateProject(t, "follow-me")
 	var seen string
 	timeout := time.After(5 * time.Second)
 	for seen == "" {
@@ -116,14 +110,11 @@ const streamEventsPollIntervalWall = 250 * time.Millisecond
 
 func TestEventsGoneAfterRetentionTrim(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
+	ctx := h.Ctx()
 	events := telemetryv1.NewEventsServiceClient(h.Conn)
 
-	_, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "shop"})
-	require.NoError(t, err)
-	_, err = projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "lab"})
-	require.NoError(t, err)
+	h.CreateProject(t, "shop")
+	h.CreateProject(t, "lab")
 
 	// 快进时钟越过保留窗并执行 retention 清扫（janitor 的同款调用）。
 	h.Clock.Advance(8 * 24 * time.Hour)

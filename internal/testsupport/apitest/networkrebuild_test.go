@@ -62,18 +62,13 @@ func rebuildEventPayload(t *testing.T, ctx context.Context, h *apitest.Harness, 
 
 func TestNetworkRebuildLifecycle(t *testing.T) {
 	h := apitest.New(t)
-	owner := sdk.WithToken(context.Background(), h.Token)
+	owner := h.Ctx()
 
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
-	apps := structurev1.NewAppsServiceClient(h.Conn)
 	networks := structurev1.NewNetworksServiceClient(h.Conn)
 	databases := structurev1.NewDatabasesServiceClient(h.Conn)
 
-	proj, err := projects.CreateProject(owner, &structurev1.CreateProjectRequest{Name: "torchwood"})
-	require.NoError(t, err)
-	projectID := proj.GetProject().GetId()
-	app, err := apps.CreateApp(owner, &structurev1.CreateAppRequest{ProjectId: projectID, Name: "server"})
-	require.NoError(t, err)
+	projectID := h.CreateProject(t, "torchwood").GetId()
+	appID := h.CreateApp(t, projectID, "server").GetId()
 	dbRow, err := databases.CreateDatabase(owner, &structurev1.CreateDatabaseRequest{
 		ProjectId: projectID, Name: "pg", Engine: "postgres",
 	})
@@ -85,7 +80,7 @@ func TestNetworkRebuildLifecycle(t *testing.T) {
 	// 真形态小写化（载体标记是 sanitizeNamePart 产物，engine 比对大小写折叠）。
 	ns := rebuildNS(t, h, projectID)
 	h.Runtime.SeedNetworkCarrier(ns, "default", false,
-		att("fleetly-app-server", capabilityNS(ns, app.GetApp().GetId(), "", "")),
+		att("fleetly-app-server", capabilityNS(ns, appID, "", "")),
 		att("fleetly-managed-db", capabilityNS(ns, "", "", dbRow.GetDatabase().GetId())),
 	)
 
@@ -141,13 +136,10 @@ func TestNetworkRebuildLifecycle(t *testing.T) {
 
 func TestNetworkRebuildForeignAttachmentRefused(t *testing.T) {
 	h := apitest.New(t)
-	owner := sdk.WithToken(context.Background(), h.Token)
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
+	owner := h.Ctx()
 	networks := structurev1.NewNetworksServiceClient(h.Conn)
 
-	proj, err := projects.CreateProject(owner, &structurev1.CreateProjectRequest{Name: "n0reg"})
-	require.NoError(t, err)
-	projectID := proj.GetProject().GetId()
+	projectID := h.CreateProject(t, "n0reg").GetId()
 
 	// 外来附着（无平台标签）+ 失锚附着（App 轴指向不存在的行）。
 	ns := rebuildNS(t, h, projectID)
@@ -157,7 +149,7 @@ func TestNetworkRebuildForeignAttachmentRefused(t *testing.T) {
 		att("fleetly-app-ghost", capabilityNS(ns, ghost, "", "")),
 	)
 
-	_, err = networks.RebuildNetwork(owner, &structurev1.RebuildNetworkRequest{ProjectId: projectID, Name: "default"})
+	_, err := networks.RebuildNetwork(owner, &structurev1.RebuildNetworkRequest{ProjectId: projectID, Name: "default"})
 	require.Error(t, err)
 	st, ok := status.FromError(err)
 	require.True(t, ok)
@@ -178,7 +170,7 @@ func TestNetworkRebuildForeignAttachmentRefused(t *testing.T) {
 
 func TestNetworkRebuildNotFound(t *testing.T) {
 	h := apitest.New(t)
-	owner := sdk.WithToken(context.Background(), h.Token)
+	owner := h.Ctx()
 	networks := structurev1.NewNetworksServiceClient(h.Conn)
 
 	_, err := networks.RebuildNetwork(owner, &structurev1.RebuildNetworkRequest{
@@ -186,24 +178,19 @@ func TestNetworkRebuildNotFound(t *testing.T) {
 	})
 	wantRebuildCode(t, err, codes.NotFound, "not found")
 
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
-	proj, err := projects.CreateProject(owner, &structurev1.CreateProjectRequest{Name: "n0probe"})
-	require.NoError(t, err)
+	projectID := h.CreateProject(t, "n0probe").GetId()
 	_, err = networks.RebuildNetwork(owner, &structurev1.RebuildNetworkRequest{
-		ProjectId: proj.GetProject().GetId(), Name: "does-not-exist",
+		ProjectId: projectID, Name: "does-not-exist",
 	})
 	wantRebuildCode(t, err, codes.NotFound, "not found")
 }
 
 func TestNetworkRebuildIdempotencyAndFastPath(t *testing.T) {
 	h := apitest.New(t)
-	owner := sdk.WithToken(context.Background(), h.Token)
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
+	owner := h.Ctx()
 	networks := structurev1.NewNetworksServiceClient(h.Conn)
 
-	proj, err := projects.CreateProject(owner, &structurev1.CreateProjectRequest{Name: "messaging"})
-	require.NoError(t, err)
-	projectID := proj.GetProject().GetId()
+	projectID := h.CreateProject(t, "messaging").GetId()
 
 	// 幂等重放：同键同体重放拿回同一响应（执行只发生一次）。
 	kctx := sdk.WithIdempotencyKey(owner, "rebuild-default-1")
@@ -231,20 +218,17 @@ func TestNetworkRebuildIdempotencyAndFastPath(t *testing.T) {
 func TestNetworkRebuildFrozenAndAuthz(t *testing.T) {
 	h := apitest.New(t)
 	anon := context.Background()
-	owner := sdk.WithToken(anon, h.Token)
+	owner := h.Ctx()
 
 	teams := identityv1.NewTeamsServiceClient(h.Conn)
 	teamB, err := teams.CreateTeam(owner, &identityv1.CreateTeamRequest{Name: "acme"})
 	require.NoError(t, err)
 	bAdmin := sdk.WithToken(anon, mintTeamToken(t, h, "acme-admin", teamB.GetTeam().GetId(), identity.RoleAdminID))
 
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
 	networks := structurev1.NewNetworksServiceClient(h.Conn)
 	gov := systemv1.NewGovernanceServiceClient(h.Conn)
 
-	proj, err := projects.CreateProject(owner, &structurev1.CreateProjectRequest{Name: "frozen-net"})
-	require.NoError(t, err)
-	projectID := proj.GetProject().GetId()
+	projectID := h.CreateProject(t, "frozen-net").GetId()
 
 	// 行级授权（ADR-0035）：他 Team admin 写面 403。
 	_, err = networks.RebuildNetwork(bAdmin, &structurev1.RebuildNetworkRequest{ProjectId: projectID, Name: "default"})

@@ -6,7 +6,6 @@ package apitest_test
 // 第二次 Create 拒绝（此前会让 Proxy 同名 router 互覆/劫持）。
 
 import (
-	"context"
 	"strings"
 	"testing"
 
@@ -16,24 +15,17 @@ import (
 	"google.golang.org/grpc/status"
 
 	proxyv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/proxy/v1"
-	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
-	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 // TestCreateRouteHostPathValidation：非法 host/path 形态在受理位拒绝。
 func TestCreateRouteHostPathValidation(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
-	apps := structurev1.NewAppsServiceClient(h.Conn)
+	ctx := h.Ctx()
 	routes := proxyv1.NewRoutesServiceClient(h.Conn)
 
-	p, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "routeguard"})
-	require.NoError(t, err)
-	a, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: p.GetProject().GetId(), Name: "web"})
-	require.NoError(t, err)
-	projectID, appID := p.GetProject().GetId(), a.GetApp().GetId()
+	projectID := h.CreateProject(t, "routeguard").GetId()
+	appID := h.CreateApp(t, projectID, "web").GetId()
 
 	illegalHosts := []string{
 		"",                               // 空
@@ -83,21 +75,17 @@ func TestCreateRouteHostPathValidation(t *testing.T) {
 // traefik 同名 router 互覆/劫持）。项目内撞名同形拒绝、软删让位复用不变。
 func TestRouteHostGloballyUnique(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
-	apps := structurev1.NewAppsServiceClient(h.Conn)
+	ctx := h.Ctx()
 	routes := proxyv1.NewRoutesServiceClient(h.Conn)
 
 	const host = "shared.guard.test"
 	var appIDs []string
 	var projectIDs []string
 	for _, name := range []string{"first", "second"} {
-		p, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: name})
-		require.NoError(t, err)
-		a, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: p.GetProject().GetId(), Name: "web"})
-		require.NoError(t, err)
-		projectIDs = append(projectIDs, p.GetProject().GetId())
-		appIDs = append(appIDs, a.GetApp().GetId())
+		projectID := h.CreateProject(t, name).GetId()
+		appID := h.CreateApp(t, projectID, "web").GetId()
+		projectIDs = append(projectIDs, projectID)
+		appIDs = append(appIDs, appID)
 	}
 
 	// 第一项目占用 host。

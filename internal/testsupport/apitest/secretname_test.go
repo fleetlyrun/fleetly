@@ -4,7 +4,6 @@ package apitest_test
 //（hooks 面）。路径逃逸形态在受理位拒绝（/run/secrets/<名> 文件目标）。
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -14,18 +13,14 @@ import (
 
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
-	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 func TestPutSecretNameCharset(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
+	ctx := h.Ctx()
 	secrets := structurev1.NewSecretsServiceClient(h.Conn)
 
-	proj, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "charset"})
-	require.NoError(t, err)
-	pid := proj.GetProject().GetId()
+	pid := h.CreateProject(t, "charset").GetId()
 
 	ok, err := secrets.PutSecret(ctx, &structurev1.PutSecretRequest{ProjectId: pid, Name: "api.key-1", Value: "v"})
 	require.NoError(t, err, "charset-compliant names stay accepted")

@@ -49,7 +49,7 @@ func collectEvents(t *testing.T, ctx context.Context, events telemetryv1.EventsS
 func TestEventsTeamFilterMatrix(t *testing.T) {
 	h := apitest.New(t)
 	anon := context.Background()
-	owner := sdk.WithToken(anon, h.Token)
+	owner := h.Ctx()
 
 	// 夹具：A = default Team（owner 铺资源）；B = "acme" + member Token
 	//（events:read 在 member 角色的业务资源读权内）。
@@ -60,19 +60,13 @@ func TestEventsTeamFilterMatrix(t *testing.T) {
 	bMember := sdk.WithToken(anon, mintTeamToken(t, h, "acme-member", bID, identity.RoleMemberID))
 	aMember := sdk.WithToken(anon, mintTeamToken(t, h, "shop-dev", identity.DefaultTeamID, identity.RoleMemberID))
 
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
-	apps := structurev1.NewAppsServiceClient(h.Conn)
 	tasks := automationv1.NewTasksServiceClient(h.Conn)
 	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
 	events := telemetryv1.NewEventsServiceClient(h.Conn)
 
 	// ---- A 队资源（owner 代铺）：project + app + task + deployment ----
-	projA, err := projects.CreateProject(owner, &structurev1.CreateProjectRequest{Name: "shop"})
-	require.NoError(t, err)
-	projAID := projA.GetProject().GetId()
-	appA, err := apps.CreateApp(owner, &structurev1.CreateAppRequest{ProjectId: projAID, Name: "web"})
-	require.NoError(t, err)
-	appAID := appA.GetApp().GetId()
+	projAID := h.CreateProject(t, "shop").GetId()
+	appAID := h.CreateApp(t, projAID, "web").GetId()
 	taskA, err := tasks.CreateTask(owner, &automationv1.CreateTaskRequest{ProjectId: projAID, Name: "migrate", Image: "nginx:1.27"})
 	require.NoError(t, err)
 	depA, err := deployments.Deploy(owner, &deliveryv1.DeployRequest{AppId: appAID, Image: "nginx:1.27"})
@@ -80,11 +74,11 @@ func TestEventsTeamFilterMatrix(t *testing.T) {
 	depAID := depA.GetDeployment().GetId()
 
 	// ---- B 队资源：owner 显式落队（member 只持读权——订阅面验收用） ----
+	projects := structurev1.NewProjectsServiceClient(h.Conn)
 	projB, err := projects.CreateProject(owner, &structurev1.CreateProjectRequest{Name: "acme-core", TeamId: bID})
 	require.NoError(t, err)
 	require.Equal(t, bID, projB.GetProject().GetTeamId())
-	appB, err := apps.CreateApp(owner, &structurev1.CreateAppRequest{ProjectId: projB.GetProject().GetId(), Name: "api"})
-	require.NoError(t, err)
+	appB := h.CreateApp(t, projB.GetProject().GetId(), "api")
 
 	// ---- 四族 CRUD 事件夹具（P2 批二补事件批）：A/B 双队各铺 hook 与
 	// alert_rule；github_app 落 A 队项目（Project 级材料）；channel 是平台级
@@ -93,13 +87,13 @@ func TestEventsTeamFilterMatrix(t *testing.T) {
 	alerting := telemetryv1.NewAlertingServiceClient(h.Conn)
 	_, err = hooks.SetGitHook(owner, &deliveryv1.SetGitHookRequest{AppId: appAID, Repo: "https://github.com/acme/shop-web.git"})
 	require.NoError(t, err)
-	_, err = hooks.SetGitHook(owner, &deliveryv1.SetGitHookRequest{AppId: appB.GetApp().GetId(), Repo: "https://github.com/acme/api.git"})
+	_, err = hooks.SetGitHook(owner, &deliveryv1.SetGitHookRequest{AppId: appB.GetId(), Repo: "https://github.com/acme/api.git"})
 	require.NoError(t, err)
-	_, err = hooks.RotateHookToken(owner, &deliveryv1.RotateHookTokenRequest{AppId: appB.GetApp().GetId()})
+	_, err = hooks.RotateHookToken(owner, &deliveryv1.RotateHookTokenRequest{AppId: appB.GetId()})
 	require.NoError(t, err)
 	ruleA, err := alerting.CreateAlertRule(owner, &telemetryv1.CreateAlertRuleRequest{AppId: appAID, Metric: "cpu_percent", Threshold: 90})
 	require.NoError(t, err)
-	ruleB, err := alerting.CreateAlertRule(owner, &telemetryv1.CreateAlertRuleRequest{AppId: appB.GetApp().GetId(), Metric: "memory_working_set_bytes", Threshold: 80})
+	ruleB, err := alerting.CreateAlertRule(owner, &telemetryv1.CreateAlertRuleRequest{AppId: appB.GetId(), Metric: "memory_working_set_bytes", Threshold: 80})
 	require.NoError(t, err)
 	fakeGH := newFakeGitHub(t, h)
 	ghReq := putReq(projAID, fakeGH.base)
@@ -134,13 +128,13 @@ deployed:
 	// ---- B 队 member：本队 + 平台级可见；A 队 app/deployment 类不可见 ----
 	bView := collectEvents(t, bMember, events)
 	assert.Contains(t, bView, "project.created/"+projB.GetProject().GetId(), "team B sees its own project events")
-	assert.Contains(t, bView, "app.created/"+appB.GetApp().GetId(), "team B sees its own app events")
+	assert.Contains(t, bView, "app.created/"+appB.GetId(), "team B sees its own app events")
 	assert.Contains(t, bView, "node.joined/01JD0NODE0000000000000000X", "platform-level ('') events are visible to every team")
 	// 四族双队断言（P2 批二）：本队 hook/alert_rule 事件可见；channel 是
 	// 平台级材料（'' 轴）全员可见；A 队的 hook/alert_rule/github_app 事件
 	// 不可见。
-	assert.Contains(t, bView, "hook.created/"+appB.GetApp().GetId(), "team B sees its own hook.created events")
-	assert.Contains(t, bView, "hook.rotated/"+appB.GetApp().GetId(), "team B sees its own hook.rotated events")
+	assert.Contains(t, bView, "hook.created/"+appB.GetId(), "team B sees its own hook.created events")
+	assert.Contains(t, bView, "hook.rotated/"+appB.GetId(), "team B sees its own hook.rotated events")
 	assert.Contains(t, bView, "alert_rule.created/"+ruleB.GetRule().GetId(), "team B sees its own alert_rule.created events")
 	assert.Contains(t, bView, "channel.created/"+channel.GetChannel().GetId(), "channel events are platform-level ('') and visible to every team")
 	for key := range bView {
@@ -159,12 +153,12 @@ deployed:
 	aView := collectEvents(t, aMember, events)
 	assert.Contains(t, aView, "project.created/"+projAID, "team A members keep seeing their own events")
 	assert.Contains(t, aView, "app.created/"+appAID, "team A members keep seeing their own app events")
-	assert.NotContains(t, aView, "app.created/"+appB.GetApp().GetId(), "team B's events must not leak into team A's view")
+	assert.NotContains(t, aView, "app.created/"+appB.GetId(), "team B's events must not leak into team A's view")
 	assert.Contains(t, aView, "hook.created/"+appAID, "team A members see their own hook.created")
 	assert.Contains(t, aView, "alert_rule.created/"+ruleA.GetRule().GetId(), "team A members see their own alert_rule.created")
 	assert.Contains(t, aView, "github_app.connected/"+ghApp.GetApp().GetId(), "team A members see their project-scoped github_app.connected")
 	assert.Contains(t, aView, "channel.created/"+channel.GetChannel().GetId(), "the platform-level channel event is visible to team A too")
-	assert.NotContains(t, aView, "hook.created/"+appB.GetApp().GetId(), "team B's hook events must not leak into team A's view")
+	assert.NotContains(t, aView, "hook.created/"+appB.GetId(), "team B's hook events must not leak into team A's view")
 	assert.NotContains(t, aView, "alert_rule.created/"+ruleB.GetRule().GetId(), "team B's alert rule events must not leak into team A's view")
 	foundDep := false
 	for key := range aView {
@@ -177,7 +171,7 @@ deployed:
 	// ---- 平台 owner：全量可见（双队 + 平台级都在场） ----
 	ownerView := collectEvents(t, owner, events)
 	assert.Contains(t, ownerView, "project.created/"+projAID)
-	assert.Contains(t, ownerView, "app.created/"+appB.GetApp().GetId())
+	assert.Contains(t, ownerView, "app.created/"+appB.GetId())
 	assert.Contains(t, ownerView, "node.joined/01JD0NODE0000000000000000X")
 
 	// ---- StreamEvents（gRPC 订阅径）与 ListEvents 同锚 ----
@@ -210,7 +204,7 @@ deployed:
 		if strings.Contains(line, appAID) || strings.Contains(line, projAID) || strings.Contains(line, depAID) {
 			sseLeak = true
 		}
-		if strings.Contains(line, appB.GetApp().GetId()) {
+		if strings.Contains(line, appB.GetId()) {
 			sseOwn = true
 		}
 	}

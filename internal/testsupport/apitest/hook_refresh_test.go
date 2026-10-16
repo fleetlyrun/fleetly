@@ -6,7 +6,6 @@ package apitest_test
 // 接收面却按活跃行拒绝的两面分裂）。
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -17,25 +16,18 @@ import (
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
-	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 func TestGitHookRefreshPullChannel(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
-	apps := structurev1.NewAppsServiceClient(h.Conn)
+	ctx := h.Ctx()
 	hooks := deliveryv1.NewHooksServiceClient(h.Conn)
 	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
 
-	p, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "hookpull"})
-	require.NoError(t, err)
-	a, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: p.GetProject().GetId(), Name: "web"})
-	require.NoError(t, err)
-	appID := a.GetApp().GetId()
+	appID := h.CreateApp(t, h.CreateProject(t, "hookpull").GetId(), "web").GetId()
 
 	// 未配 hook 即拉取 = 精确 404（hook 行缺失）。
-	_, err = hooks.RefreshGitHook(ctx, &deliveryv1.RefreshGitHookRequest{AppId: appID})
+	_, err := hooks.RefreshGitHook(ctx, &deliveryv1.RefreshGitHookRequest{AppId: appID})
 	require.Equal(t, codes.NotFound, status.Code(err))
 
 	_, err = hooks.SetGitHook(ctx, &deliveryv1.SetGitHookRequest{
@@ -66,18 +58,13 @@ func TestGitHookRefreshPullChannel(t *testing.T) {
 
 func TestGitHookCascadeOnAppDelete(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
+	ctx := h.Ctx()
 	apps := structurev1.NewAppsServiceClient(h.Conn)
 	hooks := deliveryv1.NewHooksServiceClient(h.Conn)
 
-	p, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "hookgone"})
-	require.NoError(t, err)
-	a, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: p.GetProject().GetId(), Name: "web"})
-	require.NoError(t, err)
-	appID := a.GetApp().GetId()
+	appID := h.CreateApp(t, h.CreateProject(t, "hookgone").GetId(), "web").GetId()
 
-	_, err = hooks.SetGitHook(ctx, &deliveryv1.SetGitHookRequest{
+	_, err := hooks.SetGitHook(ctx, &deliveryv1.SetGitHookRequest{
 		AppId: appID, Repo: "https://github.com/acme/shop.git", Branch: "main",
 	})
 	require.NoError(t, err)

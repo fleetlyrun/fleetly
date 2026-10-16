@@ -1,7 +1,6 @@
 package apitest_test
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -9,7 +8,6 @@ import (
 
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
-	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 // TestProjectBirthCreatesDefaultNetwork（F-C，2026-10-03 staging 实证）：
@@ -19,14 +17,12 @@ import (
 // 静默窗口。重复显式建同名网络仍被唯一约束拒绝（出生建行不开后门）。
 func TestProjectBirthCreatesDefaultNetwork(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
+	ctx := h.Ctx()
 	networks := structurev1.NewNetworksServiceClient(h.Conn)
 
-	proj, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "shop"})
-	require.NoError(t, err)
+	proj := h.CreateProject(t, "shop")
 
-	list, err := networks.ListNetworks(ctx, &structurev1.ListNetworksRequest{ProjectId: proj.GetProject().GetId()})
+	list, err := networks.ListNetworks(ctx, &structurev1.ListNetworksRequest{ProjectId: proj.GetId()})
 	require.NoError(t, err)
 	require.Len(t, list.GetNetworks(), 1, "project birth must seed exactly the default network row")
 	assert.Equal(t, "default", list.GetNetworks()[0].GetName())
@@ -34,7 +30,7 @@ func TestProjectBirthCreatesDefaultNetwork(t *testing.T) {
 
 	// 显式重复创建同名网络仍被拒（唯一约束不开口子）。
 	_, err = networks.CreateNetwork(ctx, &structurev1.CreateNetworkRequest{
-		ProjectId: proj.GetProject().GetId(), Name: "default",
+		ProjectId: proj.GetId(), Name: "default",
 	})
 	require.Error(t, err, "duplicate default network must be rejected by the project+name unique index")
 }

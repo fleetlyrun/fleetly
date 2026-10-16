@@ -9,7 +9,6 @@ package apitest_test
 import (
 	"context"
 	"encoding/json"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -19,10 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
-	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
-	"github.com/fleetlyrun/fleetly/internal/assembly"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
-	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 // TestRESTDeploymentReadSurface：蓝绿 R1 驱动到 succeeded（代次化载体
@@ -30,31 +26,24 @@ import (
 // 携带 process_strategies（blue-green 规范枚举名 + rolling 零值省略）。
 func TestRESTDeploymentReadSurface(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	handler, err := assembly.NewGatewayHandler(slog.New(slog.DiscardHandler), h.Conn, nil, nil, assembly.NewBrowseGate(h.Services))
-	require.NoError(t, err)
+	ctx := h.Ctx()
+	rest := h.REST()
 
 	get := func(path string) map[string]any {
 		t.Helper()
 		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, path, nil)
 		req.Header.Set("Authorization", "Bearer "+h.Token)
 		rec := httptest.NewRecorder()
-		handler.ServeHTTP(rec, req)
+		rest.ServeHTTP(rec, req)
 		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 		var body map[string]any
 		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
 		return body
 	}
 
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
-	apps := structurev1.NewAppsServiceClient(h.Conn)
 	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
 
-	proj, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "deploy-read"})
-	require.NoError(t, err)
-	app, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: proj.GetProject().GetId(), Name: "web"})
-	require.NoError(t, err)
-	appID := app.GetApp().GetId()
+	appID := h.CreateApp(t, h.CreateProject(t, "deploy-read").GetId(), "web").GetId()
 
 	// R1 = blue-green compose（首代无基线：from_generation 零值省略）。
 	first, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{

@@ -6,7 +6,6 @@ package apitest_test
 
 import (
 	"context"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -17,8 +16,6 @@ import (
 	"google.golang.org/grpc/status"
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
-	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
-	"github.com/fleetlyrun/fleetly/internal/assembly"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/apperrstatus"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
 	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
@@ -39,16 +36,10 @@ func codeOf(t *testing.T, err error) string {
 // 双源（body 字段 vs 头）不一致 409。
 func TestIdempotencyDeployReplayAndConflicts(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
+	ctx := h.Ctx()
 
 	// 夹具链：项目 + App（幂等键挂部署面）。
-	pctx := structurev1.NewProjectsServiceClient(h.Conn)
-	proj, err := pctx.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "idem-proj"})
-	require.NoError(t, err)
-	pc := structurev1.NewAppsServiceClient(h.Conn)
-	app, err := pc.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: proj.GetProject().GetId(), Name: "idem-app"})
-	require.NoError(t, err)
-	appID := app.GetApp().GetId()
+	appID := h.CreateApp(t, h.CreateProject(t, "idem-proj").GetId(), "idem-app").GetId()
 	req := &deliveryv1.DeployRequest{AppId: appID, Image: "nginx:1.28", ProcessName: "web"}
 
 	dc := deliveryv1.NewDeploymentsServiceClient(h.Conn)
@@ -85,8 +76,7 @@ func TestIdempotencyDeployReplayAndConflicts(t *testing.T) {
 // 异体 409 走统一错误信封。
 func TestIdempotencyRESTHeader(t *testing.T) {
 	h := apitest.New(t)
-	handler, err := assembly.NewGatewayHandler(slog.New(slog.DiscardHandler), h.Conn, nil, nil, assembly.NewBrowseGate(h.Services))
-	require.NoError(t, err)
+	rest := h.REST()
 
 	post := func(key, body string) *httptest.ResponseRecorder {
 		req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/v1/projects", strings.NewReader(body))
@@ -96,7 +86,7 @@ func TestIdempotencyRESTHeader(t *testing.T) {
 			req.Header.Set("Idempotency-Key", key)
 		}
 		rec := httptest.NewRecorder()
-		handler.ServeHTTP(rec, req)
+		rest.ServeHTTP(rec, req)
 		return rec
 	}
 

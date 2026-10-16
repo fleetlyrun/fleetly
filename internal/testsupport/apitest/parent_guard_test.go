@@ -13,7 +13,6 @@ package apitest_test
 //	（CreateProject.team_id 是 P1-10 灰色面，审计 §8.B 另账，不在此修）。
 
 import (
-	"context"
 	"fmt"
 	"sync"
 	"testing"
@@ -25,7 +24,6 @@ import (
 	proxyv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/proxy/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
-	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 // parentFixtures 造三类父资源状态：不存在（随机 id）、已删（tombstone 在）、
@@ -38,40 +36,32 @@ type parentFixtures struct {
 	liveApp    string // 存活 App id（挂在 liveID 下）
 }
 
-func setupParentFixtures(t *testing.T, h *apitest.Harness, ctx context.Context, tag string) *parentFixtures {
+func setupParentFixtures(t *testing.T, h *apitest.Harness, tag string) *parentFixtures {
 	t.Helper()
 	projects := structurev1.NewProjectsServiceClient(h.Conn)
 	apps := structurev1.NewAppsServiceClient(h.Conn)
 
 	fx := &parentFixtures{missingID: "fx-0001"}
 
-	live, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: tag + "-live"})
-	require.NoError(t, err)
-	fx.liveID = live.GetProject().GetId()
-	app, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: fx.liveID, Name: "web"})
-	require.NoError(t, err)
-	fx.liveApp = app.GetApp().GetId()
+	fx.liveID = h.CreateProject(t, tag+"-live").GetId()
+	fx.liveApp = h.CreateApp(t, fx.liveID, "web").GetId()
 
-	gone, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: tag + "-gone"})
-	require.NoError(t, err)
-	fx.deletedID = gone.GetProject().GetId()
-	goneApp, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: fx.deletedID, Name: "web"})
-	require.NoError(t, err)
+	fx.deletedID = h.CreateProject(t, tag+"-gone").GetId()
+	goneApp := h.CreateApp(t, fx.deletedID, "web")
 	require.NoError(t, func() error {
-		_, err := apps.DeleteApp(ctx, &structurev1.DeleteAppRequest{Id: goneApp.GetApp().GetId()})
+		_, err := apps.DeleteApp(h.Ctx(), &structurev1.DeleteAppRequest{Id: goneApp.GetId()})
 		return err
 	}())
 	require.NoError(t, func() error {
-		_, err := projects.DeleteProject(ctx, &structurev1.DeleteProjectRequest{Id: fx.deletedID})
+		_, err := projects.DeleteProject(h.Ctx(), &structurev1.DeleteProjectRequest{Id: fx.deletedID})
 		return err
 	}())
 
 	// 已删 App 形态（挂在存活项目下）：建→删，行成 tombstone。
-	appGone, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: fx.liveID, Name: "gone"})
-	require.NoError(t, err)
-	fx.deletedApp = appGone.GetApp().GetId()
+	appGone := h.CreateApp(t, fx.liveID, "gone")
+	fx.deletedApp = appGone.GetId()
 	require.NoError(t, func() error {
-		_, err := apps.DeleteApp(ctx, &structurev1.DeleteAppRequest{Id: fx.deletedApp})
+		_, err := apps.DeleteApp(h.Ctx(), &structurev1.DeleteAppRequest{Id: fx.deletedApp})
 		return err
 	}())
 	return fx
@@ -82,10 +72,9 @@ func setupParentFixtures(t *testing.T, h *apitest.Harness, ctx context.Context, 
 // 钉"父 App 已删"与"跨项目 App"两形态。对照面：存活父资源可建。
 func TestCreateRequiresLiveParent(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	fx := setupParentFixtures(t, h, ctx, "guard")
+	ctx := h.Ctx()
+	fx := setupParentFixtures(t, h, "guard")
 
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
 	apps := structurev1.NewAppsServiceClient(h.Conn)
 	routes := proxyv1.NewRoutesServiceClient(h.Conn)
 	volumes := structurev1.NewVolumesServiceClient(h.Conn)
@@ -154,10 +143,9 @@ func TestCreateRequiresLiveParent(t *testing.T) {
 		require.Equal(t, "E_NOT_FOUND", appErrCode(t, err))
 	})
 	t.Run("route app cross-project", func(t *testing.T) {
-		other, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "guard-other"})
-		require.NoError(t, err)
-		_, err = routes.CreateRoute(ctx, &proxyv1.CreateRouteRequest{
-			ProjectId: other.GetProject().GetId(), Host: "cross.guard.test",
+		other := h.CreateProject(t, "guard-other")
+		_, err := routes.CreateRoute(ctx, &proxyv1.CreateRouteRequest{
+			ProjectId: other.GetId(), Host: "cross.guard.test",
 			AppId: fx.liveApp, Process: "web", Port: 8000,
 		})
 		require.Error(t, err, "route claiming an app of another project must be rejected")
@@ -187,20 +175,18 @@ func TestCreateRequiresLiveParent(t *testing.T) {
 // 设计（tombstone 是事实不是秘密）不构成创建通路。
 func TestCreateAfterProjectDeleteRejected(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
+	ctx := h.Ctx()
 	projects := structurev1.NewProjectsServiceClient(h.Conn)
 	apps := structurev1.NewAppsServiceClient(h.Conn)
 
-	proj, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "create-after-del"})
-	require.NoError(t, err)
-	projectID := proj.GetProject().GetId()
+	projectID := h.CreateProject(t, "create-after-del").GetId()
 	require.NoError(t, func() error {
 		_, err := projects.DeleteProject(ctx, &structurev1.DeleteProjectRequest{Id: projectID})
 		return err
 	}())
 
 	// 已删行仍可直读（既有读面设计），但创建面必须拒绝。
-	_, err = projects.GetProject(ctx, &structurev1.GetProjectRequest{Id: projectID})
+	_, err := projects.GetProject(ctx, &structurev1.GetProjectRequest{Id: projectID})
 	require.NoError(t, err, "tombstoned rows stay readable by design (Get is not the active-row face)")
 	_, err = apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: projectID, Name: "late"})
 	require.Error(t, err)
@@ -213,13 +199,11 @@ func TestCreateAfterProjectDeleteRejected(t *testing.T) {
 // 删除必被活跃 App 守卫拒绝）。失败只允许干净分类，不出 E_INTERNAL。
 func TestDeleteProjectCreateAppRaceInvariant(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
+	ctx := h.Ctx()
 	projects := structurev1.NewProjectsServiceClient(h.Conn)
 	apps := structurev1.NewAppsServiceClient(h.Conn)
 
-	proj, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "proj-race"})
-	require.NoError(t, err)
-	projectID := proj.GetProject().GetId()
+	projectID := h.CreateProject(t, "proj-race").GetId()
 
 	const rounds = 8
 	start := make(chan struct{})

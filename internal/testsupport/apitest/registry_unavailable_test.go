@@ -19,24 +19,19 @@ import (
 	"google.golang.org/grpc/status"
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
-	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/assembly"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/apperrstatus"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
-	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 func TestRegistryUnavailableFamily(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
+	ctx := h.Ctx()
 
-	proj, err := structurev1.NewProjectsServiceClient(h.Conn).CreateProject(ctx,
-		&structurev1.CreateProjectRequest{Name: "reg-unavailable"})
-	require.NoError(t, err)
-	projectID := proj.GetProject().GetId()
+	projectID := h.CreateProject(t, "reg-unavailable").GetId()
 
 	// gRPC 面：Unavailable + 信封 E_REGISTRY_UNAVAILABLE + 配置级 message。
-	_, err = deliveryv1.NewRegistryServiceClient(h.Conn).ListRegistryCatalog(ctx,
+	_, err := deliveryv1.NewRegistryServiceClient(h.Conn).ListRegistryCatalog(ctx,
 		&deliveryv1.ListRegistryCatalogRequest{ProjectId: projectID})
 	require.Error(t, err)
 	assert.Equal(t, "Unavailable", status.Code(err).String())

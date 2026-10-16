@@ -8,7 +8,6 @@ package apitest_test
 //     E_INTERNAL）。
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -20,30 +19,28 @@ import (
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
-	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 // 项目名唯一性口径 (team_id, name)：跨 Team 并存、同 Team 撒名 409、
 // 不存在的 Team 404。
 func TestProjectNameUniquenessPerTeam(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
+	ctx := h.Ctx()
 	projects := structurev1.NewProjectsServiceClient(h.Conn)
 	teams := identityv1.NewTeamsServiceClient(h.Conn)
 
 	other, err := teams.CreateTeam(ctx, &identityv1.CreateTeamRequest{Name: "platform"})
 	require.NoError(t, err)
 
-	first, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "shop"})
-	require.NoError(t, err)
-	assert.Equal(t, identity.DefaultTeamID, first.GetProject().GetTeamId())
+	first := h.CreateProject(t, "shop")
+	assert.Equal(t, identity.DefaultTeamID, first.GetTeamId())
 
 	// 跨 Team 同名并存（ADR-0028 验收锚）。
 	same, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{
 		Name: "shop", TeamId: other.GetTeam().GetId(),
 	})
 	require.NoError(t, err)
-	assert.NotEqual(t, first.GetProject().GetId(), same.GetProject().GetId())
+	assert.NotEqual(t, first.GetId(), same.GetProject().GetId())
 
 	// 同 Team 撞名拒。
 	_, err = projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "shop"})
@@ -62,7 +59,7 @@ func TestProjectNameUniquenessPerTeam(t *testing.T) {
 // 平台级模板任意 Team 可授）。
 func TestRoleTeamConsistencyEnforced(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
+	ctx := h.Ctx()
 	users := identityv1.NewUsersServiceClient(h.Conn)
 	tokens := identityv1.NewTokensServiceClient(h.Conn)
 	teams := identityv1.NewTeamsServiceClient(h.Conn)

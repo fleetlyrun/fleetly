@@ -25,17 +25,12 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/apptemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
-	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 func templatesFixture(t *testing.T) (*apitest.Harness, context.Context, string) {
 	t.Helper()
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
-	p, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "templates"})
-	require.NoError(t, err)
-	return h, ctx, p.GetProject().GetId()
+	return h, h.Ctx(), h.CreateProject(t, "templates").GetId()
 }
 
 func TestTemplatesCatalogRead(t *testing.T) {

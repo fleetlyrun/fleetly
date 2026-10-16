@@ -26,7 +26,7 @@ import (
 // → 有效面 = member（阶梯收窄），写面按收窄后执法。
 func TestTokenNarrowsToCreatorAuthority(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
+	ctx := h.Ctx()
 	users := identityv1.NewUsersServiceClient(h.Conn)
 	tokens := identityv1.NewTokensServiceClient(h.Conn)
 
@@ -61,7 +61,7 @@ func TestTokenNarrowsToCreatorAuthority(t *testing.T) {
 // 下一次请求 403 带原因（P6 裁决：可判定"找管理员"）+ 审计行落库。
 func TestTokenDiesWithCreatorMembership(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
+	ctx := h.Ctx()
 	users := identityv1.NewUsersServiceClient(h.Conn)
 	tokens := identityv1.NewTokensServiceClient(h.Conn)
 
@@ -110,7 +110,7 @@ func TestTokenDiesWithCreatorMembership(t *testing.T) {
 // 用户铸属主 Token 在受理位拒绝（实时收窄语义下铸出即死）。
 func TestCreateTokenRequiresCreatorMembership(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
+	ctx := h.Ctx()
 	users := identityv1.NewUsersServiceClient(h.Conn)
 	tokens := identityv1.NewTokensServiceClient(h.Conn)
 

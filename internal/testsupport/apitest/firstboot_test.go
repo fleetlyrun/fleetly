@@ -5,7 +5,6 @@ package apitest_test
 // ADR-0030 开放锚）→ Run 终态 (stopped, completed) → carrier → succeeded。
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -17,26 +16,21 @@ import (
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
-	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 func TestComposeFirstBootDeployEndToEnd(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
-	apps := structurev1.NewAppsServiceClient(h.Conn)
+	ctx := h.Ctx()
 	secrets := structurev1.NewSecretsServiceClient(h.Conn)
 	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
 	runs := automationv1.NewRunsServiceClient(h.Conn)
 
-	proj, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "fbshop"})
-	require.NoError(t, err)
-	app, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: proj.GetProject().GetId(), Name: "web"})
-	require.NoError(t, err)
+	projectID := h.CreateProject(t, "fbshop").GetId()
+	appID := h.CreateApp(t, projectID, "web").GetId()
 	// job 的 secret_refs 预置（材料面硬失败语义——缺行即 Run 不可铸）。
 	const fixtureURL = "postgres://u:p@db-1:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
-	_, err = secrets.PutSecret(ctx, &structurev1.PutSecretRequest{
-		ProjectId: proj.GetProject().GetId(), Name: "db-url", Value: fixtureURL,
+	_, err := secrets.PutSecret(ctx, &structurev1.PutSecretRequest{
+		ProjectId: projectID, Name: "db-url", Value: fixtureURL,
 	})
 	require.NoError(t, err)
 
@@ -54,7 +48,7 @@ func TestComposeFirstBootDeployEndToEnd(t *testing.T) {
 		"secrets:\n" +
 		"  db-url:\n" +
 		"    external: true\n"
-	dep, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: app.GetApp().GetId(), ComposeYaml: compose})
+	dep, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: appID, ComposeYaml: compose})
 	require.NoError(t, err)
 	depID := dep.GetDeployment().GetId()
 
@@ -106,13 +100,13 @@ func TestComposeFirstBootDeployEndToEnd(t *testing.T) {
 	h.Runtime.ReportCompleted(runID, 1)
 	require.Eventually(t, func() bool {
 		for _, c := range h.Runtime.Calls() {
-			if c.NS.App == app.GetApp().GetId() {
+			if c.NS.App == appID {
 				return true
 			}
 		}
 		return false
 	}, 3e9, 1e7, "carrier ensure must follow the job terminal state")
-	h.Runtime.ReportRunning(app.GetApp().GetId()+"-web", capability.Generation(dep.GetDeployment().GetGeneration()))
+	h.Runtime.ReportRunning(appID+"-web", capability.Generation(dep.GetDeployment().GetGeneration()))
 	require.Eventually(t, func() bool {
 		got, err := deployments.GetDeployment(ctx, &deliveryv1.GetDeploymentRequest{Id: depID})
 		return err == nil && got.GetDeployment().GetState() == "observing"

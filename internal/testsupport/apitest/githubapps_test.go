@@ -144,14 +144,11 @@ func putReq(projectID, apiBase string) *deliveryv1.SetGitHubAppRequest {
 
 func TestGitHubAppIntakeVerification(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
+	ctx := h.Ctx()
 	apps := deliveryv1.NewGitHubAppsServiceClient(h.Conn)
 
 	fake := newFakeGitHub(t, h)
-	p, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "ghapps"})
-	require.NoError(t, err)
-	projectID := p.GetProject().GetId()
+	projectID := h.CreateProject(t, "ghapps").GetId()
 
 	// 受理即验证：落库前实调 GitHub——属主自动解析（请求不携带），响应只
 	// 回指纹不回明文。
@@ -257,7 +254,7 @@ func TestGitHubAppIntakeVerification(t *testing.T) {
 // 他队 E_FORBIDDEN。
 func TestGitHubAppAuthz(t *testing.T) {
 	h := apitest.New(t)
-	ownerCtx := sdk.WithToken(context.Background(), h.Token)
+	ownerCtx := h.Ctx()
 	projects := structurev1.NewProjectsServiceClient(h.Conn)
 	teams := identityv1.NewTeamsServiceClient(h.Conn)
 	roles := identityv1.NewRolesServiceClient(h.Conn)
@@ -265,8 +262,7 @@ func TestGitHubAppAuthz(t *testing.T) {
 	ghApps := deliveryv1.NewGitHubAppsServiceClient(h.Conn)
 
 	fake := newFakeGitHub(t, h)
-	mine, err := projects.CreateProject(ownerCtx, &structurev1.CreateProjectRequest{Name: "mine"})
-	require.NoError(t, err)
+	mine := h.CreateProject(t, "mine")
 
 	// 他队：team + member token（带 github_app scope——scope 门过、行级门
 	// 才是受检对象）。
@@ -319,7 +315,7 @@ func TestGitHubAppAuthz(t *testing.T) {
 	oreq.PrivateKeyPem = string(fake.pem)
 	_, err = ghApps.SetGitHubApp(otherCtx, oreq)
 	require.NoError(t, err)
-	mreq := putReq(mine.GetProject().GetId(), fake.base)
+	mreq := putReq(mine.GetId(), fake.base)
 	mreq.PrivateKeyPem = string(fake.pem)
 	_, err = ghApps.SetGitHubApp(otherCtx, mreq)
 	require.Error(t, err)
@@ -330,7 +326,7 @@ func TestGitHubAppAuthz(t *testing.T) {
 // （ADR-0073 决策 3）——owner 双态可见，他队 member 不可见。
 func TestGitHubAppGlobalListedByPlatformAdminOnly(t *testing.T) {
 	h := apitest.New(t)
-	ownerCtx := sdk.WithToken(context.Background(), h.Token)
+	ownerCtx := h.Ctx()
 	ghApps := deliveryv1.NewGitHubAppsServiceClient(h.Conn)
 	fake := newFakeGitHub(t, h)
 	greq := &deliveryv1.SetGitHubAppRequest{

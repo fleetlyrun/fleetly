@@ -21,7 +21,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
 	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
-	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 // databaseFixture 组装：项目（default 网络随出生面自带，F-C），返回
@@ -29,11 +28,7 @@ import (
 func databaseFixture(t *testing.T) (*apitest.Harness, context.Context, string) {
 	t.Helper()
 	h := apitest.NewManual(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
-	p, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "shop"})
-	require.NoError(t, err)
-	return h, ctx, p.GetProject().GetId()
+	return h, h.Ctx(), h.CreateProject(t, "shop").GetId()
 }
 
 func TestDatabaseLifecycle(t *testing.T) {
@@ -151,10 +146,8 @@ func TestDatabaseLifecycle(t *testing.T) {
 // 写入），守卫作为 fail-closed 防线照旧有效，直插状态层构造两种形态。
 func TestDatabaseCreateRequiresProjectNetwork(t *testing.T) {
 	h := apitest.NewManual(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
-	p, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "lonely"})
-	require.NoError(t, err)
+	ctx := h.Ctx()
+	p := h.CreateProject(t, "lonely")
 
 	createDB := func(projectID string) error {
 		_, err := structurev1.NewDatabasesServiceClient(h.Conn).CreateDatabase(ctx, &structurev1.CreateDatabaseRequest{
@@ -171,11 +164,11 @@ func TestDatabaseCreateRequiresProjectNetwork(t *testing.T) {
 
 	// 形态二：出生 default 行被拆（无 API 删除面——直删复刻）。
 	require.NoError(t, h.DB.Tx(ctx, func(tx *sql.Tx) error {
-		_, err := tx.ExecContext(ctx, "DELETE FROM networks WHERE project_id = ?", p.GetProject().GetId())
+		_, err := tx.ExecContext(ctx, "DELETE FROM networks WHERE project_id = ?", p.GetId())
 		return err
 	}))
-	require.Error(t, createDB(p.GetProject().GetId()), "project with its default network removed must fail closed")
-	assert.Equal(t, codes.FailedPrecondition, status.Code(createDB(p.GetProject().GetId())))
+	require.Error(t, createDB(p.GetId()), "project with its default network removed must fail closed")
+	assert.Equal(t, codes.FailedPrecondition, status.Code(createDB(p.GetId())))
 }
 
 // 事件两拍：database.created / database.deleted（structureEvent 载荷形态）。
@@ -225,11 +218,9 @@ func TestDatabaseBackupSurfaces(t *testing.T) {
 	assert.Equal(t, codes.InvalidArgument, status.Code(err))
 
 	// 跨 Project 恢复源 → InvalidArgument（源 Project 内是唯一恢复面）。
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
-	other, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "other"})
-	require.NoError(t, err)
+	other := h.CreateProject(t, "other")
 	_, err = dbs.CreateDatabase(ctx, &structurev1.CreateDatabaseRequest{
-		ProjectId: other.GetProject().GetId(), Name: "restored", Engine: "postgres",
+		ProjectId: other.GetId(), Name: "restored", Engine: "postgres",
 		RestoreFromBackup: trig.GetBackup().GetId(),
 	})
 	require.Error(t, err)

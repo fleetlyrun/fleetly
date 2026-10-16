@@ -19,25 +19,19 @@ import (
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
-	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 func TestSpecOwnershipSplit(t *testing.T) {
 	h := apitest.NewManual(t)
-	owner := sdk.WithToken(context.Background(), h.Token)
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
-	apps := structurev1.NewAppsServiceClient(h.Conn)
+	owner := h.Ctx()
 	hooks := deliveryv1.NewHooksServiceClient(h.Conn)
 	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
 	revisions := deliveryv1.NewRevisionsServiceClient(h.Conn)
 	appVars := structurev1.NewAppVariablesServiceClient(h.Conn)
 	auditq := identityv1.NewAuditQueryServiceClient(h.Conn)
 
-	p, err := projects.CreateProject(owner, &structurev1.CreateProjectRequest{Name: "ownsplit"})
-	require.NoError(t, err)
-	a, err := apps.CreateApp(owner, &structurev1.CreateAppRequest{ProjectId: p.GetProject().GetId(), Name: "gitapp"})
-	require.NoError(t, err)
-	appID := a.GetApp().GetId()
+	p := h.CreateProject(t, "ownsplit")
+	appID := h.CreateApp(t, p.GetId(), "gitapp").GetId()
 
 	set, err := hooks.SetGitHook(owner, &deliveryv1.SetGitHookRequest{
 		AppId: appID, Repo: "https://github.com/acme/ownsplit.git", Branch: "main",
@@ -122,11 +116,9 @@ func TestSpecOwnershipSplit(t *testing.T) {
 		"override_hook takes material ownership for one deploy")
 
 	// 非 hook 应用不受闸门（材料源直投照旧）。
-	p2, err := projects.CreateProject(owner, &structurev1.CreateProjectRequest{Name: "ownsplit2"})
-	require.NoError(t, err)
-	a2, err := apps.CreateApp(owner, &structurev1.CreateAppRequest{ProjectId: p2.GetProject().GetId(), Name: "plain"})
-	require.NoError(t, err)
-	_, err = deployments.Deploy(owner, &deliveryv1.DeployRequest{AppId: a2.GetApp().GetId(), Image: "nginx:1.27"})
+	p2 := h.CreateProject(t, "ownsplit2")
+	a2 := h.CreateApp(t, p2.GetId(), "plain")
+	_, err = deployments.Deploy(owner, &deliveryv1.DeployRequest{AppId: a2.GetId(), Image: "nginx:1.27"})
 	require.NoError(t, err)
 
 	// 审计时序修复锚：webhook 冻结新 Revision 的 revision.create 审计行

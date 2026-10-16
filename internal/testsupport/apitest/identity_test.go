@@ -20,7 +20,7 @@ import (
 
 func TestIdentityServicesFlow(t *testing.T) {
 	h := apitest.New(t)
-	owner := sdk.WithToken(context.Background(), h.Token)
+	owner := h.Ctx()
 	users := identityv1.NewUsersServiceClient(h.Conn)
 	tokens := identityv1.NewTokensServiceClient(h.Conn)
 	roles := identityv1.NewRolesServiceClient(h.Conn)

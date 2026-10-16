@@ -1,7 +1,6 @@
 package apitest_test
 
 import (
-	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -17,7 +16,6 @@ import (
 	apprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/app"
 	taskrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/task"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
-	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 // B2 执法面回归（N0.1 P2-8）：Config 配额——per-Project 100 个上限
@@ -25,16 +23,14 @@ import (
 // 是新版本不占新位。
 func TestConfigQuotaEnforcement(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
+	ctx := h.Ctx()
 	configs := structurev1.NewConfigsServiceClient(h.Conn)
 
-	proj, err := structurev1.NewProjectsServiceClient(h.Conn).CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "quota"})
-	require.NoError(t, err)
-	pid := proj.GetProject().GetId()
+	pid := h.CreateProject(t, "quota").GetId()
 
 	// 单值上限：256KiB 过界即拒（精确 256KiB+1）。
 	big := strings.Repeat("a", 256*1024)
-	_, err = configs.PutConfig(ctx, &structurev1.PutConfigRequest{ProjectId: pid, Name: "big", Content: big})
+	_, err := configs.PutConfig(ctx, &structurev1.PutConfigRequest{ProjectId: pid, Name: "big", Content: big})
 	require.NoError(t, err)
 	_, err = configs.PutConfig(ctx, &structurev1.PutConfigRequest{ProjectId: pid, Name: "toobig", Content: big + "x"})
 	require.Error(t, err)
@@ -58,9 +54,8 @@ func TestConfigQuotaEnforcement(t *testing.T) {
 	require.NoError(t, err)
 
 	// 配额按 Project 计：另一 Project 不受影响。
-	proj2, err := structurev1.NewProjectsServiceClient(h.Conn).CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "quota2"})
-	require.NoError(t, err)
-	_, err = configs.PutConfig(ctx, &structurev1.PutConfigRequest{ProjectId: proj2.GetProject().GetId(), Name: "free", Content: "v"})
+	pid2 := h.CreateProject(t, "quota2").GetId()
+	_, err = configs.PutConfig(ctx, &structurev1.PutConfigRequest{ProjectId: pid2, Name: "free", Content: "v"})
 	require.NoError(t, err)
 }
 
@@ -70,13 +65,10 @@ func TestConfigQuotaEnforcement(t *testing.T) {
 // 而非 E_INVALID_ARGUMENT）。
 func TestTaskAndAppQuotaEnforcement(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
+	ctx := h.Ctx()
 	tasksAPI := automationv1.NewTasksServiceClient(h.Conn)
 
-	proj, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "brakes"})
-	require.NoError(t, err)
-	pid := proj.GetProject().GetId()
+	pid := h.CreateProject(t, "brakes").GetId()
 
 	// 直接灌行到边界前一步：99 条活跃 one-shot×desired 2（active=99、sum=198）。
 	tasksRepo := taskrepo.New(h.DB.Clock())
@@ -90,7 +82,7 @@ func TestTaskAndAppQuotaEnforcement(t *testing.T) {
 	}
 
 	// 并发总量面：198 + 3 > 200 → 配额拒。
-	_, err = tasksAPI.CreateTask(ctx, &automationv1.CreateTaskRequest{
+	_, err := tasksAPI.CreateTask(ctx, &automationv1.CreateTaskRequest{
 		ProjectId: pid, Image: "busybox:1.37", DesiredConcurrency: 3,
 	})
 	require.Error(t, err)
@@ -141,10 +133,9 @@ func TestTaskAndAppQuotaEnforcement(t *testing.T) {
 	require.Contains(t, err.Error(), "limit 50")
 
 	// 配额按 Project 计：另一 Project 的首单不受影响。
-	proj2, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "brakes2"})
-	require.NoError(t, err)
+	proj2 := h.CreateProject(t, "brakes2")
 	_, err = tasksAPI.CreateTask(ctx, &automationv1.CreateTaskRequest{
-		ProjectId: proj2.GetProject().GetId(), Image: "busybox:1.37", DesiredConcurrency: int64(engine.MaxTaskConcurrencyPerProject),
+		ProjectId: proj2.GetId(), Image: "busybox:1.37", DesiredConcurrency: int64(engine.MaxTaskConcurrencyPerProject),
 	})
 	require.NoError(t, err)
 }
@@ -153,15 +144,10 @@ func TestTaskAndAppQuotaEnforcement(t *testing.T) {
 // 直投探针、tcp 端口域、http 绝对路径。
 func TestDeployProbeDeclarationValidation(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	apps := structurev1.NewAppsServiceClient(h.Conn)
+	ctx := h.Ctx()
 	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
 
-	proj, err := structurev1.NewProjectsServiceClient(h.Conn).CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "probes"})
-	require.NoError(t, err)
-	app, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: proj.GetProject().GetId(), Name: "web"})
-	require.NoError(t, err)
-	id := app.GetApp().GetId()
+	id := h.CreateApp(t, h.CreateProject(t, "probes").GetId(), "web").GetId()
 
 	for _, tc := range []struct {
 		name string
@@ -182,6 +168,6 @@ func TestDeployProbeDeclarationValidation(t *testing.T) {
 	}
 
 	// 合法形态照常受理（http 单独声明）。
-	_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: id, Image: "nginx:1.27", HttpProbe: "/healthz"})
+	_, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: id, Image: "nginx:1.27", HttpProbe: "/healthz"})
 	require.NoError(t, err)
 }

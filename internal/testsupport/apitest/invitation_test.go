@@ -22,7 +22,7 @@ import (
 
 func TestInvitationFlow(t *testing.T) {
 	h := apitest.New(t)
-	owner := sdk.WithToken(context.Background(), h.Token)
+	owner := h.Ctx()
 	invites := identityv1.NewInvitationsServiceClient(h.Conn)
 	tokens := identityv1.NewTokensServiceClient(h.Conn)
 
@@ -87,7 +87,7 @@ func TestInvitationFlow(t *testing.T) {
 
 func TestInvitationExpiry(t *testing.T) {
 	h := apitest.New(t)
-	owner := sdk.WithToken(context.Background(), h.Token)
+	owner := h.Ctx()
 	invites := identityv1.NewInvitationsServiceClient(h.Conn)
 
 	// 最短时窗（1s）+ 假时钟推过。

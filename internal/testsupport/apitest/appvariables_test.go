@@ -1,7 +1,6 @@
 package apitest_test
 
 import (
-	"context"
 	"testing"
 
 	"google.golang.org/protobuf/encoding/protojson"
@@ -13,7 +12,6 @@ import (
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
-	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 // AppVariable 面（ADR-0072 三级合成顶层）：Put/List/Delete 聚合动词 +
@@ -21,27 +19,22 @@ import (
 // SharedVariable；变量轮换重发产生新 Revision（digest 覆盖合成值）。
 func TestAppVariablesVerb(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
-	apps := structurev1.NewAppsServiceClient(h.Conn)
+	ctx := h.Ctx()
 	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
 	revisions := deliveryv1.NewRevisionsServiceClient(h.Conn)
 	appVars := structurev1.NewAppVariablesServiceClient(h.Conn)
 	sharedVars := structurev1.NewSharedVariablesServiceClient(h.Conn)
 
-	proj, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "appvar"})
-	require.NoError(t, err)
-	app, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: proj.GetProject().GetId(), Name: "svc"})
-	require.NoError(t, err)
-	appID := app.GetApp().GetId()
+	proj := h.CreateProject(t, "appvar")
+	appID := h.CreateApp(t, proj.GetId(), "svc").GetId()
 
 	// 三层同键：Shared 底、源声明 env 中、AppVariable 顶。
-	_, err = sharedVars.PutSharedVariable(ctx, &structurev1.PutSharedVariableRequest{
-		ProjectId: proj.GetProject().GetId(), Name: "TIER", Value: "shared",
+	_, err := sharedVars.PutSharedVariable(ctx, &structurev1.PutSharedVariableRequest{
+		ProjectId: proj.GetId(), Name: "TIER", Value: "shared",
 	})
 	require.NoError(t, err)
 	_, err = sharedVars.PutSharedVariable(ctx, &structurev1.PutSharedVariableRequest{
-		ProjectId: proj.GetProject().GetId(), Name: "SHARED_ONLY", Value: "yes",
+		ProjectId: proj.GetId(), Name: "SHARED_ONLY", Value: "yes",
 	})
 	require.NoError(t, err)
 	_, err = appVars.PutAppVariable(ctx, &structurev1.PutAppVariableRequest{AppId: appID, Name: "TIER", Value: "appvar"})

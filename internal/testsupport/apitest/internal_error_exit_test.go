@@ -26,7 +26,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/assembly"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/apperrstatus"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
-	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 // errorIDHexRe 与 apperrstatus.NewErrorID 的 128 位十六进制形态对齐。
@@ -46,16 +45,13 @@ func dropSharedVariables(t *testing.T, h *apitest.Harness) {
 // 非 E_INTERNAL（E_ALREADY_EXISTS）message 原样、无 error_id。
 func TestInternalErrorExitGRPCFace(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
+	ctx := h.Ctx()
 
-	proj, err := structurev1.NewProjectsServiceClient(h.Conn).CreateProject(ctx,
-		&structurev1.CreateProjectRequest{Name: "e-internal-exit"})
-	require.NoError(t, err)
-	projectID := proj.GetProject().GetId()
+	projectID := h.CreateProject(t, "e-internal-exit").GetId()
 
 	// E_INTERNAL：存储层故障（表缺席）→ handler 兜 E_INTERNAL（消息含 cause 文本）。
 	dropSharedVariables(t, h)
-	_, err = structurev1.NewSharedVariablesServiceClient(h.Conn).ListSharedVariables(ctx,
+	_, err := structurev1.NewSharedVariablesServiceClient(h.Conn).ListSharedVariables(ctx,
 		&structurev1.ListSharedVariablesRequest{ProjectId: projectID})
 	require.Error(t, err)
 	st := status.Convert(err)
@@ -104,16 +100,13 @@ func TestInternalErrorExitGRPCFace(t *testing.T) {
 // x-fleetly-error-id 与信封 context 同值；cause 文本不上线。
 func TestInternalErrorExitRESTFace(t *testing.T) {
 	h := apitest.New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
 
-	proj, err := structurev1.NewProjectsServiceClient(h.Conn).CreateProject(ctx,
-		&structurev1.CreateProjectRequest{Name: "e-internal-rest"})
-	require.NoError(t, err)
+	proj := h.CreateProject(t, "e-internal-rest")
 	dropSharedVariables(t, h)
 
 	handler, err := assembly.NewGatewayHandler(nil, h.Conn, nil, nil, assembly.NewBrowseGate(h.Services))
 	require.NoError(t, err)
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/v1/shared-variables?project_id="+proj.GetProject().GetId(), nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/v1/shared-variables?project_id="+proj.GetId(), nil)
 	req.Header.Set("Authorization", "Bearer "+h.Token)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)

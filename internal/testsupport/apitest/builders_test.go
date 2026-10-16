@@ -5,7 +5,6 @@ package apitest_test
 //（image/compose 形态携带即拒、旗标与 builder 错配拒、railpack 缺版本拒）。
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -15,24 +14,18 @@ import (
 	"google.golang.org/grpc/status"
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
-	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
-	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 // TestDeployUploadBuilderStrategies：三 strategy 的 upload 部署全链——
 // Revision 冻结 strategy 声明，构建输入按路由名携带 strategy 载荷。
 func TestDeployUploadBuilderStrategies(t *testing.T) {
 	h := apitest.NewManual(t)
-	owner := sdk.WithToken(context.Background(), h.Token)
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
-	apps := structurev1.NewAppsServiceClient(h.Conn)
+	owner := h.Ctx()
 	builds := deliveryv1.NewBuildsServiceClient(h.Conn)
 	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
 
-	proj, err := projects.CreateProject(owner, &structurev1.CreateProjectRequest{Name: "builder-strategies"})
-	require.NoError(t, err)
-	projID := proj.GetProject().GetId()
+	projID := h.CreateProject(t, "builder-strategies").GetId()
 
 	up, err := uploadTar(owner, builds, projID, buildFixtureTar(), 8)
 	require.NoError(t, err)
@@ -86,9 +79,7 @@ func TestDeployUploadBuilderStrategies(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			// 每 case 独立 App：观测代数锚定首个部署（连续部署同 App 需要
 			// 推进的 generation 观测，与本测焦点无关）。
-			a, err := apps.CreateApp(owner, &structurev1.CreateAppRequest{ProjectId: projID, Name: "web-" + tc.name[:4]})
-			require.NoError(t, err)
-			appID := a.GetApp().GetId()
+			appID := h.CreateApp(t, projID, "web-"+tc.name[:4]).GetId()
 			dep, err := deployments.Deploy(owner, tc.req(appID))
 			require.NoError(t, err)
 			depID := dep.GetDeployment().GetId()
@@ -116,18 +107,12 @@ func TestDeployUploadBuilderStrategies(t *testing.T) {
 // TestDeployBuilderFlagEnforcement：builder 面互斥与配对执法。
 func TestDeployBuilderFlagEnforcement(t *testing.T) {
 	h := apitest.NewManual(t)
-	owner := sdk.WithToken(context.Background(), h.Token)
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
-	apps := structurev1.NewAppsServiceClient(h.Conn)
+	owner := h.Ctx()
 	builds := deliveryv1.NewBuildsServiceClient(h.Conn)
 	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
 
-	proj, err := projects.CreateProject(owner, &structurev1.CreateProjectRequest{Name: "builder-flags"})
-	require.NoError(t, err)
-	projID := proj.GetProject().GetId()
-	app, err := apps.CreateApp(owner, &structurev1.CreateAppRequest{ProjectId: projID, Name: "web"})
-	require.NoError(t, err)
-	appID := app.GetApp().GetId()
+	projID := h.CreateProject(t, "builder-flags").GetId()
+	appID := h.CreateApp(t, projID, "web").GetId()
 	up, err := uploadTar(owner, builds, projID, buildFixtureTar(), 8)
 	require.NoError(t, err)
 

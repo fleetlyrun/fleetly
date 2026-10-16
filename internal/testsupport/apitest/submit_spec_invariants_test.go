@@ -39,23 +39,19 @@ import (
 // ---- 夹具助手（inv 前缀——避免与既有用例助手重名） ----
 
 // invNewApp 建项目 + App，返回 appID 与 projectID。
-func invNewApp(t *testing.T, h *apitest.Harness, ctx context.Context, projectName, appName string) (string, string) {
+func invNewApp(t *testing.T, h *apitest.Harness, projectName, appName string) (string, string) {
 	t.Helper()
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
-	apps := structurev1.NewAppsServiceClient(h.Conn)
-	p, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: projectName})
-	require.NoError(t, err)
-	a, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: p.GetProject().GetId(), Name: appName})
-	require.NoError(t, err)
-	return a.GetApp().GetId(), p.GetProject().GetId()
+	projectID := h.CreateProject(t, projectName).GetId()
+	appID := h.CreateApp(t, projectID, appName).GetId()
+	return appID, projectID
 }
 
 // invHookApp 建项目 + App + 真 hook 链（SetGitHook），返回 appID 与 hook
 // token 明文（push 验签凭证）。
-func invHookApp(t *testing.T, h *apitest.Harness, ctx context.Context, projectName, appName, repo string) (string, string) {
+func invHookApp(t *testing.T, h *apitest.Harness, projectName, appName, repo string) (string, string) {
 	t.Helper()
-	appID, _ := invNewApp(t, h, ctx, projectName, appName)
-	set, err := deliveryv1.NewHooksServiceClient(h.Conn).SetGitHook(ctx, &deliveryv1.SetGitHookRequest{
+	appID, _ := invNewApp(t, h, projectName, appName)
+	set, err := deliveryv1.NewHooksServiceClient(h.Conn).SetGitHook(h.Ctx(), &deliveryv1.SetGitHookRequest{
 		AppId: appID, Repo: repo, Branch: "main",
 	})
 	require.NoError(t, err)
@@ -150,10 +146,10 @@ func invFrozenEnv(t *testing.T, ctx context.Context, revisions deliveryv1.Revisi
 
 func TestInvariant1ContentAddressedReuse(t *testing.T) {
 	h := apitest.NewManual(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
+	ctx := h.Ctx()
 	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
 	auditq := identityv1.NewAuditQueryServiceClient(h.Conn)
-	appID, _ := invNewApp(t, h, ctx, "inv1", "web")
+	appID, _ := invNewApp(t, h, "inv1", "web")
 
 	// 同 body 两次 deploy（无键无 commit——只考内容寻址复用本身）。
 	req := &deliveryv1.DeployRequest{AppId: appID, Image: "nginx:1.27"}
@@ -186,12 +182,12 @@ func TestInvariant1ContentAddressedReuse(t *testing.T) {
 
 func TestInvariant2SynthesisOrderAndDigestCoverage(t *testing.T) {
 	h := apitest.NewManual(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
+	ctx := h.Ctx()
 	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
 	revisions := deliveryv1.NewRevisionsServiceClient(h.Conn)
 	sharedVars := structurev1.NewSharedVariablesServiceClient(h.Conn)
 	appVars := structurev1.NewAppVariablesServiceClient(h.Conn)
-	appID, projectID := invNewApp(t, h, ctx, "inv2", "web")
+	appID, projectID := invNewApp(t, h, "inv2", "web")
 
 	// 三层同键 LAYER：SharedVariable 底、image 源 env 直传中、AppVariable 顶；
 	// 另设 Shared 独有键证共享层在场。
@@ -239,11 +235,11 @@ func TestInvariant2SynthesisOrderAndDigestCoverage(t *testing.T) {
 
 func TestInvariant3MergeDirectionsEndToEnd(t *testing.T) {
 	h := apitest.NewManual(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
+	ctx := h.Ctx()
 	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
 	revisions := deliveryv1.NewRevisionsServiceClient(h.Conn)
 	const repo = "https://github.com/acme/inv3.git"
-	appID, secret := invHookApp(t, h, ctx, "inv3", "gitapp", repo)
+	appID, secret := invHookApp(t, h, "inv3", "gitapp", repo)
 
 	revAt := func(seq int64) *specv1.AppSpec {
 		t.Helper()
@@ -299,10 +295,10 @@ func TestInvariant3MergeDirectionsEndToEnd(t *testing.T) {
 
 func TestInvariant4WebhookAuditOverrideBeforeFreeze(t *testing.T) {
 	h := apitest.NewManual(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
+	ctx := h.Ctx()
 	auditq := identityv1.NewAuditQueryServiceClient(h.Conn)
 	const repo = "https://github.com/acme/inv4.git"
-	appID, secret := invHookApp(t, h, ctx, "inv4", "audithook", repo)
+	appID, secret := invHookApp(t, h, "inv4", "audithook", repo)
 
 	const commit = "4111111111111111111111111111111111111111"
 	first := invPush(t, h, secret, "inv4-1", commit)
@@ -336,9 +332,9 @@ func TestInvariant4WebhookAuditOverrideBeforeFreeze(t *testing.T) {
 
 func TestInvariant5DualIdempotencyWindows(t *testing.T) {
 	h := apitest.NewManual(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
+	ctx := h.Ctx()
 	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
-	appID, _ := invNewApp(t, h, ctx, "inv5", "web")
+	appID, _ := invNewApp(t, h, "inv5", "web")
 
 	// 窗一（拦截器 24h 窗）：同 IdempotencyKey 同 body 两次——第二响应逐字节
 	// 重放首响应（不达受理面）。
@@ -379,10 +375,10 @@ func TestInvariant5DualIdempotencyWindows(t *testing.T) {
 func TestInvariant6FreezeTxOutlivesSubmitTx(t *testing.T) {
 	// QueueCapacity=1 注入小容量 engine（手动驱动：首条部署恒驻 queued）。
 	h := apitest.NewManualOpts(t, func(o *engine.Options) { o.Deploy.QueueCapacity = 1 })
-	ctx := sdk.WithToken(context.Background(), h.Token)
+	ctx := h.Ctx()
 	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
 	revisions := deliveryv1.NewRevisionsServiceClient(h.Conn)
-	appID, _ := invNewApp(t, h, ctx, "inv6", "web")
+	appID, _ := invNewApp(t, h, "inv6", "web")
 
 	// 占满 per-App 队列（容量 1）。
 	first, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: appID, Image: "nginx:2.0"})
@@ -423,10 +419,10 @@ func TestInvariant6FreezeTxOutlivesSubmitTx(t *testing.T) {
 func TestInvariant7UserVisibleErrorTextsByteStable(t *testing.T) {
 	t.Run("hook-owned gate", func(t *testing.T) {
 		h := apitest.NewManual(t)
-		ctx := sdk.WithToken(context.Background(), h.Token)
+		ctx := h.Ctx()
 		deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
 		const repo = "https://github.com/acme/inv7gate.git"
-		appID, _ := invHookApp(t, h, ctx, "inv7a", "gitapp", repo)
+		appID, _ := invHookApp(t, h, "inv7a", "gitapp", repo)
 
 		// 不变式⑦：E_APP_HOOK_OWNED 全文案逐字节（用户可见行为零变化）。
 		_, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: appID, Image: "nginx:1.27"})
@@ -441,9 +437,9 @@ func TestInvariant7UserVisibleErrorTextsByteStable(t *testing.T) {
 
 	t.Run("four-source mutual exclusion", func(t *testing.T) {
 		h := apitest.NewManual(t)
-		ctx := sdk.WithToken(context.Background(), h.Token)
+		ctx := h.Ctx()
 		deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
-		appID, _ := invNewApp(t, h, ctx, "inv7b", "web")
+		appID, _ := invNewApp(t, h, "inv7b", "web")
 
 		// 不变式⑦：四源互斥全文案逐字节。
 		_, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{
@@ -459,11 +455,11 @@ func TestInvariant7UserVisibleErrorTextsByteStable(t *testing.T) {
 
 	t.Run("frozen spec corruption", func(t *testing.T) {
 		h := apitest.NewManual(t)
-		ctx := sdk.WithToken(context.Background(), h.Token)
+		ctx := h.Ctx()
 		deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
 		revisions := deliveryv1.NewRevisionsServiceClient(h.Conn)
 		const repo = "https://github.com/acme/inv7c.git"
-		appID, secret := invHookApp(t, h, ctx, "inv7c", "gitapp", repo)
+		appID, secret := invHookApp(t, h, "inv7c", "gitapp", repo)
 
 		// 先冻结一份完整体并取其 protojson（spec_file 受理前置要过解析），
 		// 再直改 DB 把冻结体换成坏 protojson。
@@ -508,11 +504,11 @@ func TestInvariant7UserVisibleErrorTextsByteStable(t *testing.T) {
 
 func TestInvariant9FreezeFactsLedgerOnly(t *testing.T) {
 	h := apitest.NewManual(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
+	ctx := h.Ctx()
 	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
 	auditq := identityv1.NewAuditQueryServiceClient(h.Conn)
 	events := telemetryv1.NewEventsServiceClient(h.Conn)
-	appID, _ := invNewApp(t, h, ctx, "inv9", "web")
+	appID, _ := invNewApp(t, h, "inv9", "web")
 
 	_, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: appID, Image: "nginx:1.27"})
 	require.NoError(t, err)

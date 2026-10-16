@@ -4,7 +4,6 @@ package apitest
 // 活跃下级拒绝（Database 挂靠卷名命中——受理位引用预检的真形态）。
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -12,20 +11,16 @@ import (
 	"google.golang.org/grpc/status"
 
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
-	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 func TestVolumeDeleteCovered(t *testing.T) {
 	h := New(t)
-	ctx := sdk.WithToken(context.Background(), h.Token)
-	projects := structurev1.NewProjectsServiceClient(h.Conn)
+	ctx := h.Ctx()
 	volumes := structurev1.NewVolumesServiceClient(h.Conn)
 	networks := structurev1.NewNetworksServiceClient(h.Conn)
 	databases := structurev1.NewDatabasesServiceClient(h.Conn)
 
-	proj, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "volshift"})
-	require.NoError(t, err)
-	projectID := proj.GetProject().GetId()
+	projectID := h.CreateProject(t, "volshift").GetId()
 
 	// ---- 显式删除生效：create ×2 → delete → 列表只剩一个。----
 	first, err := volumes.CreateVolume(ctx, &structurev1.CreateVolumeRequest{ProjectId: projectID, Name: "scratch"})
