@@ -216,6 +216,90 @@ jobs:
       - name: backup drill (backup -> verify -> restore to new database -> data assertions)
         run: mise run e2e:backup
 
+  # 挂账清偿批（2026-10-16 用户裁决）：template / browse / bluegreen 三腿
+  # 进 CI（原 G20 对账白名单「时间预算本地常态跑」三条目随批删除）。镜像
+  # 按脚本实际依赖预拉——dind 内不走外网，宿侧 image save | load 注入，
+  # 与 smoke/h2c 同款。
+  e2e-template:
+    name: E2E (dind template catalog + instantiation)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: jdx/mise-action@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-${{ runner.os }}-${{ hashFiles('go.sum', 'genproto/go.sum', 'sdk/go/go.sum') }}
+          restore-keys: go-${{ runner.os }}-
+
+      - name: Pre-pull images
+        run: |
+          docker pull docker:29-dind
+          docker pull traefik:v3.5
+          docker pull traefik/whoami:v1.10
+          docker pull nginx:1.27
+
+      - name: template e2e (builtin catalog + refresh + instantiate full chain)
+        run: mise run e2e:template
+
+  e2e-browse:
+    name: E2E (dind browse gateway + pgweb sessions)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: jdx/mise-action@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-${{ runner.os }}-${{ hashFiles('go.sum', 'genproto/go.sum', 'sdk/go/go.sum') }}
+          restore-keys: go-${{ runner.os }}-
+
+      - name: Pre-pull images
+        run: |
+          docker pull docker:29-dind
+          docker pull traefik:v3.5
+          docker pull sosedoff/pgweb:0.17.0
+          docker pull postgres:17-bookworm
+
+      - name: browse e2e (session lifecycle + gateway routes)
+        run: mise run e2e:browse
+
+  e2e-bluegreen:
+    name: E2E (dind blue-green deploy dual-generation)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: jdx/mise-action@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-${{ runner.os }}-${{ hashFiles('go.sum', 'genproto/go.sum', 'sdk/go/go.sum') }}
+          restore-keys: go-${{ runner.os }}-
+
+      - name: Pre-pull images
+        run: |
+          docker pull docker:29-dind
+          docker pull traefik:v3.5
+          docker pull busybox:1.37
+
+      - name: bluegreen e2e (blue-green strategy + generation cutover)
+        run: mise run e2e:bluegreen
+
   # F4.1/ADR-0052：k3s 第二运行时两腿进 CI。snapshotter 走 fuse-overlayfs
   #（GH runner 的 dind 内同样拒 nested overlay——PR #1 实证 multiple-
   # lowerdir mount invalid argument，overlayfs 假设否决；fuse 用户态 CoW

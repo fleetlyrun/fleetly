@@ -6,8 +6,9 @@ package guards
 // CI（漏挂即红）；任务删除/改名后白名单条目悬空、或白名单任务被 CI 收编
 // 后条目过期，即红；CI 调用指向不存在的任务（改名漂移）即红。
 // 防盲：mise e2e 任务实测 12（dind/h2c/template/browse/twonode/upgrade/
-// backup/bluegreen/k3s/k3s-tw/runtimeswitch/k3s-ha）、CI e2e 调用实测 9
-// （2026-10-16 P5-3），阈值留余量——解析退化（文件挪走/改格式）在此显形。
+// backup/bluegreen/k3s/k3s-tw/runtimeswitch/k3s-ha）、CI e2e 调用实测 12
+// （2026-10-16 挂账清偿批：template/browse/bluegreen 三腿进 CI，白名单三
+// 条目随之删除），阈值留余量——解析退化（文件挪走/改格式）在此显形。
 
 import (
 	"regexp"
@@ -18,11 +19,9 @@ import (
 
 // e2eciWhitelist 是 e2e↔CI 对账白名单（任务名 → 理由，中文一句话）。
 // 理由依据各 e2e/dind-*.sh 头部"前置"段如实登记；任务进 CI 或删除即删条目。
-var e2eciWhitelist = map[string]string{
-	"e2e:template":  "需宿主机预置 traefik:v3.5、traefik/whoami:v1.10 与 nginx:1.27 三镜像（dind-template.sh 头部前置段），CI job 未挂（时间预算），本地常态跑",
-	"e2e:browse":    "需宿主机预载 sosedoff/pgweb:0.17.0、postgres:17-bookworm 与 traefik 镜像进 dind（dind-browse.sh 预载腿），CI job 未挂（时间预算），本地常态跑",
-	"e2e:bluegreen": "需宿主机预置 traefik:v3.5 与 busybox:1.37（dind-bluegreen.sh 头部前置段），CI job 未挂（时间预算），本地常态跑",
-}
+// 现树零豁免——2026-10-16 挂账清偿批裁决三腿全量进 CI（用户裁决：
+// 「时间预算」理由不再成立），白名单清空但机制保留。
+var e2eciWhitelist = map[string]string{}
 
 // miseTaskRe 匹配 mise.toml 任务头（[tasks."e2e:*"]）。
 var miseTaskRe = regexp.MustCompile(`\[tasks\."(e2e:[A-Za-z0-9._-]+)"\]`)
