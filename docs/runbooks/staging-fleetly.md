@@ -1143,3 +1143,22 @@ F3.1/F3.2/F3.3/F3.6 四批走查的浏览器级挂账在后端在场的环境（
 四腿客户端示例 `mlbridge/examples/e2e-client`（8c16df9）staging 全 PASS：①torchwood client invoke（END_USER 面，Go client SDK 登录 + InvokeString 打 client_callable 函数 `ping`）；②MessageLoop RPC `send`（写穿，应答 document_id+fanout=ok）；③RPC `history`（torchwood 文档回读含刚发消息）；④RPC `fn.*`（`messaging:fn.ping` → mlbridge 组 JSON-RPC 2.0 → torchwood → webhook-example `/fn` → 规范 JSON-RPC 应答）。函数面 = webhook-example 扩展 `/fn`（torchwood 10aa1c1e：FDK RPC 轴同款 wire 形态，FUNCTION_SECRET 二密钥，缺省不注册）。
 
 **新教训**：①`MLBRIDGE_FUNCTIONS_ENABLED` 是 mlbridge 的 **env 键**——`mlbridge.yaml` 是 messageloop 的 proxy 接线文件（`--config` 给 messageloop），mlbridge 自身配置全走 env；写错孔的形态 = 部署绿但功能面 UNIMPLEMENTED。②fn.* 的 **invoke 默认拒**：需 policies 集合 allow 规则（`channels:["fn.ping"]`/`actions:["invoke"]`/`roles:["users"]`，json 段是 JSON 编码字符串），无规则 PERMISSION_DENIED 是 fail-closed 契约。③SDK 的 RPC **JSON 应答必须 `DataAs` 解码**——`AsText()` 对 map 载荷恒空（三面应答全 JSON），第一版示例在此假阴性排查了一轮服务端。④torchwood 函数订阅串之外的第二处词表坑：functions create 的字段是 `target_url` 不是 `url`（webhooks 才是 `url`）。
+
+## 2026-10-16 记录·五十四（ADR-0078 pre_deploy_jobs 词汇改名换装 3550d37；现役）
+
+**换代**：a543bb3 → `3550d37`（挂账清偿七 commit a543bb3→e60563b + ADR-0078 改名批）。前置硬门：Platform Backup `3c94b796`（09:57 UTC）+ 受管卷五枚 tar 至 `/root/upgrade-3550d37/`（torchwood-pg 双卷 13M+11M、registry 59M+zot 141M、minio 12K）。
+
+**换装序**（CLI 本地律全程：SSH 仅隧道+系统面）：hermetic 构建（`build:hermetic`，HEAD 干净）→ scp 双二进制 sha256 对账 → `systemctl stop`（SIGTERM 排水）→ install `/usr/local/bin/` → 六 drop-in 存活核验（10-logging/11-metrics/browse/console/railpack/registry）→ 起服 → **goose 前滚 v33 一次干净（00033 RENAME COLUMN first_boot→pre_deploy，值域三态不变）** → doctor 服务器侧 3550d37 healthy（7 ok/0 fail；"not listening" 三条是本机探测形态，bind/notification 两条已知良性）。
+
+**改名链真机验收（torchwood 重放 d60）**：
+- torchwood compose **零改动**：现行 `docker/fleetly/docker-compose.yml` 用 `fleetly.job: init` **label 方言**（ADR-0074/adr80 批迁移），对顶层键改名天然免疫；`git log -S 'x-fleetly-first-boot-jobs'` 证实该键从未进过仓（runbook 记录·F1.15 的 ⑦ 行是当年部署期形态）。改名面只咬顶层 `x-fleetly-pre-deploy-jobs` 键的使用方。
+- `fleetly deploy --app torchwood-14 --compose-file ... --wait`：releasing（**三个预部署作业 task-21/22/23 串行 completed，10:00:59–10:01:15 全在换装后 = 全走改名后 JobSpec 链**）→ observing → succeeded。
+- 冻结 Revision 零扰动：proto BLOB 按号位解码，存量 R6 四常驻（minio/redis/server/worker）跨换装原地存活；`tw.dev.fleetly.run` 200。
+- API 字段换代：`pre_deploy_task_id`（等待中非空、终态清空）；eventcode `deployment.pre_deploy_job`。
+
+**坑与教训**：
+1. **会话 `grep` 是 ugrep 别名，全仓清点会漏文件**（改名批实证漏约 10 个，build 才咬出 undefined）——批量清点/sed 一律 `/usr/bin/grep` + `xargs`（zsh 不对未引号变量分词）。
+2. doctor 本机跑时 "fleetlyd grpc (:9080) not listening" 是探测形态非故障——判活看末行 `fleetlyd <addr> healthy, server <ver>`。
+3. events list `--limit` 是从头翻页不是最新——最近事件判定改用任务/部署时间戳归属。
+
+**挂账**：fleetly 3550d37 未推 origin——buf breaking 恰 4 条 FILE 红（spec/delivery 两字段 name+json_name），推送上 main 后自愈（config_refs 先例）。
