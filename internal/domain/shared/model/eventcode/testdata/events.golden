@@ -1,33 +1,33 @@
-alert.channel_failed	A notification channel delivery failed; the channel row records the error tail (diagnostics face).	internal/engine/metrics.go dispatchAlert
-alert.fired	A threshold alert rule transitioned to firing (breach held for the rule's for-window); notification channels were attempted.	internal/engine/metrics.go evaluateRules
-alert.resolved	A firing threshold alert rule transitioned back to ok (observed value fell below the threshold).	internal/engine/metrics.go evaluateRules
-alert_rule.created	A threshold alert rule was created for an app.	internal/api/fleetlygrpc/alerting.go CreateAlertRule
-alert_rule.deleted	A threshold alert rule was deleted.	internal/api/fleetlygrpc/alerting.go DeleteAlertRule
-app.created	An app was created.	internal/api/fleetlygrpc/structure.go CreateApp
-app.deleted	An app was deleted (teardown per ADR-0023).	internal/api/fleetlygrpc/structure.go DeleteApp
-app.teardown_aborted	An app delete was aborted after teardown because a deployment was admitted mid-delete; the in-flight deployment rebuilds the carriers (ADR-0023).	internal/api/fleetlygrpc/structure.go DeleteApp (recordTeardownAbort)
-app_variable.deleted	An app variable was deleted.	internal/api/fleetlygrpc/structure.go DeleteAppVariable
-app_variable.updated	An app variable was set (values are readable via the API; redeploy the app to pick up the new value).	internal/api/fleetlygrpc/structure.go PutAppVariable
+alert.channel_failed	A notification channel delivery failed; the channel row records the error tail (diagnostics face).	internal/application/engine/channelnotify.go dispatchAlert
+alert.fired	A threshold alert rule transitioned to firing (breach held for the rule's for-window); notification channels were attempted.	internal/application/engine/alerting.go evaluateRules
+alert.resolved	A firing threshold alert rule transitioned back to ok (observed value fell below the threshold).	internal/application/engine/alerting.go evaluateRules
+alert_rule.created	A threshold alert rule was created for an app.	internal/interfaces/grpc/fleetlygrpc/alerting.go CreateAlertRule
+alert_rule.deleted	A threshold alert rule was deleted.	internal/interfaces/grpc/fleetlygrpc/alerting.go DeleteAlertRule
+app.created	An app was created.	internal/interfaces/grpc/fleetlygrpc/structure.go CreateApp
+app.deleted	An app was deleted (teardown per ADR-0023).	internal/interfaces/grpc/fleetlygrpc/structure.go DeleteApp
+app.teardown_aborted	An app delete was aborted after teardown because a deployment was admitted mid-delete; the in-flight deployment rebuilds the carriers (ADR-0023).	internal/interfaces/grpc/fleetlygrpc/structure.go DeleteApp (recordTeardownAbort)
+app_variable.deleted	An app variable was deleted.	internal/interfaces/grpc/fleetlygrpc/variables.go DeleteAppVariable
+app_variable.updated	An app variable was set (values are readable via the API; redeploy the app to pick up the new value).	internal/interfaces/grpc/fleetlygrpc/variables.go PutAppVariable
 build.building	Build started executing.	added during implementation
 build.cancelled	Build cancelled.	added during implementation
 build.expired	Build expired by timeout watchdog.	added during implementation
 build.failed	Build failed.	added during implementation
 build.queued	Build accepted into build queue.	added during implementation
 build.succeeded	Build produced an image digest.	added during implementation
-channel.created	A notification channel was registered (platform-level material; credentials sealed, never returned).	internal/api/fleetlygrpc/alerting.go CreateNotificationChannel
-channel.deleted	A notification channel was deleted.	internal/api/fleetlygrpc/alerting.go DeleteNotificationChannel
-config.updated	A config version was written.	internal/api/fleetlygrpc/structure.go PutConfig
-database.backup_failed	A database backup failed; the payload carries the error tail (utility container stderr included).	internal/engine/backup.go executeOneBackup
-database.backup_succeeded	A database backup completed; the payload carries the object key, sha256 digest and size (the restore-verification anchors).	internal/engine/backup.go executeOneBackup
-database.browser_opened	A browse session was opened for a database (payload carries the browser tool, read-only flag and enforcement tier; change freeze is exempt — diagnostics face).	internal/api/fleetlygrpc/databases.go BrowseDatabase
-database.created	A database was created from a template; the platform minted its credential secret (value never returned).	internal/api/fleetlygrpc/databases.go CreateDatabase
-database.credentials_rotated	A database credential was rotated; the credential secret now holds the new connection URL and referencing apps must be redeployed to pick it up.	internal/api/fleetlygrpc/databases.go RotateDatabasePassword
-database.deleted	A database was deleted (carriers torn down, row tombstoned; volume and credential secret retained as project materials).	internal/api/fleetlygrpc/databases.go DeleteDatabase
-database.restored	A database restore completed (stream into a running target or volume pre-seeding before first start).	internal/engine/backup.go restoreDatabase
+channel.created	A notification channel was registered (platform-level material; credentials sealed, never returned).	internal/interfaces/grpc/fleetlygrpc/alerting.go CreateNotificationChannel
+channel.deleted	A notification channel was deleted.	internal/interfaces/grpc/fleetlygrpc/alerting.go DeleteNotificationChannel
+config.updated	A config version was written.	internal/interfaces/grpc/fleetlygrpc/structure.go PutConfig
+database.backup_failed	A database backup failed; the payload carries the error tail (utility container stderr included).	internal/application/engine/backup.go executeOneBackup
+database.backup_succeeded	A database backup completed; the payload carries the object key, sha256 digest and size (the restore-verification anchors).	internal/application/engine/backup.go executeOneBackup
+database.browser_opened	A browse session was opened for a database (payload carries the browser tool, read-only flag and enforcement tier; change freeze is exempt — diagnostics face).	internal/interfaces/grpc/fleetlygrpc/databases.go BrowseDatabase
+database.created	A database was created from a template; the platform minted its credential secret (value never returned).	internal/interfaces/grpc/fleetlygrpc/databases.go CreateDatabase
+database.credentials_rotated	A database credential was rotated; the credential secret now holds the new connection URL and referencing apps must be redeployed to pick it up.	internal/interfaces/grpc/fleetlygrpc/databases.go RotateDatabasePassword
+database.deleted	A database was deleted (carriers torn down, row tombstoned; volume and credential secret retained as project materials).	internal/interfaces/grpc/fleetlygrpc/databases.go DeleteDatabase
+database.restored	A database restore completed (stream into a running target or volume pre-seeding before first start).	internal/application/engine/backup.go restoreDatabase
 deployment.building	Deployment entered build stage.	added during implementation
 deployment.cancelled	Deployment cancelled while queued or in flight.	added during implementation
 deployment.failed	Deployment reached failed terminal state.	added during implementation
-deployment.first_boot_job	A deploy-time first boot job was minted as a one-shot task; the deployment waits in releasing for its terminal state before materializing carriers (ADR-0030).	internal/engine/firstboot.go mintFirstBootJob
+deployment.first_boot_job	A deploy-time first boot job was minted as a one-shot task; the deployment waits in releasing for its terminal state before materializing carriers (ADR-0030).	internal/application/engine/firstboot.go mintFirstBootJob
 deployment.observing	Deployment entered health observation window.	added during implementation
 deployment.preparing	Deployment started preparing spec and materials.	added during implementation
 deployment.queued	Deployment accepted by admission queue.	added during implementation
@@ -35,62 +35,62 @@ deployment.releasing	Deployment started releasing workloads to runtime.	added du
 deployment.rolling_back	Deployment started replaying last successful revision.	added during implementation
 deployment.succeeded	Deployment reached succeeded terminal state.	added during implementation
 deployment.superseded	Deployment superseded by a newer one.	added during implementation
-exec.session_opened	An exec session was accepted into a running workload (actor, process, instance, node and command are in the payload; change freeze is exempt — diagnostics face).	internal/api/fleetlygrpc/exec.go CreateExecSession
-freeze.lifted	A change freeze was lifted; change verbs in scope are accepted again.	internal/api/fleetlygrpc/governance.go LiftChangeFreeze
-freeze.set	A change freeze was set for a team (or globally); change verbs in scope are refused with the reason.	internal/api/fleetlygrpc/governance.go SetChangeFreeze
-github_app.connected	A GitHub App installation was connected as private-repo access material (verified at admission, owner resolved; re-put with a new key replaces the sealed material).	internal/api/fleetlygrpc/githubapps.go SetGitHubApp/CompleteManifestFlow
-github_app.deleted	A GitHub App access material was soft-deleted; resolution fails immediately while the sealed key survives for key rewrap.	internal/api/fleetlygrpc/githubapps.go DeleteGitHubApp
-hook.created	A git hook configuration was created for an app (token minted; the secret itself never appears).	internal/api/fleetlygrpc/hooks.go SetGitHook
-hook.push_accepted	A verified webhook push triggered a deployment.	internal/api/fleetlygrpc/webhook.go handlePush
-hook.refresh_accepted	A control-plane hook refresh pulled the branch head and triggered a deployment.	internal/api/fleetlygrpc/webhook.go RefreshGitHook
-hook.rotated	A git hook token was rotated; the URL token and the GitHub webhook secret were both replaced (old strings invalid immediately).	internal/api/fleetlygrpc/hooks.go RotateHookToken
-hook.updated	A git hook configuration was updated (repo/branch/dockerfile/watch paths; token unchanged — rotation is a separate verb).	internal/api/fleetlygrpc/hooks.go SetGitHook
+exec.session_opened	An exec session was accepted into a running workload (actor, process, instance, node and command are in the payload; change freeze is exempt — diagnostics face).	internal/interfaces/grpc/fleetlygrpc/exec.go CreateExecSession
+freeze.lifted	A change freeze was lifted; change verbs in scope are accepted again.	internal/interfaces/grpc/fleetlygrpc/governance.go LiftChangeFreeze
+freeze.set	A change freeze was set for a team (or globally); change verbs in scope are refused with the reason.	internal/interfaces/grpc/fleetlygrpc/governance.go SetChangeFreeze
+github_app.connected	A GitHub App installation was connected as private-repo access material (verified at admission, owner resolved; re-put with a new key replaces the sealed material).	internal/interfaces/grpc/fleetlygrpc/githubapps.go SetGitHubApp/CompleteManifestFlow
+github_app.deleted	A GitHub App access material was soft-deleted; resolution fails immediately while the sealed key survives for key rewrap.	internal/interfaces/grpc/fleetlygrpc/githubapps.go DeleteGitHubApp
+hook.created	A git hook configuration was created for an app (token minted; the secret itself never appears).	internal/interfaces/grpc/fleetlygrpc/hooks.go SetGitHook
+hook.push_accepted	A verified webhook push triggered a deployment.	internal/interfaces/grpc/fleetlygrpc/webhook.go handlePush
+hook.refresh_accepted	A control-plane hook refresh pulled the branch head and triggered a deployment.	internal/interfaces/grpc/fleetlygrpc/webhook.go RefreshGitHook
+hook.rotated	A git hook token was rotated; the URL token and the GitHub webhook secret were both replaced (old strings invalid immediately).	internal/interfaces/grpc/fleetlygrpc/hooks.go RotateHookToken
+hook.updated	A git hook configuration was updated (repo/branch/dockerfile/watch paths; token unchanged — rotation is a separate verb).	internal/interfaces/grpc/fleetlygrpc/hooks.go SetGitHook
 invitation.accepted	An invitation was redeemed; the invitee became a user.	added during implementation
 invitation.created	An invitation was issued (single-use, time-boxed, role-bound).	added during implementation
-lease.expired	A task's owner lease expired past grace; the pool drains.	internal/engine/task.go driveTask
-lease.renewed	A task's owner lease was renewed (deadline advanced).	internal/engine/task.go RenewTask
-network.created	A project network was created.	internal/api/fleetlygrpc/networks.go CreateNetwork
-network.peer_approved	The receiving project approved a peer attachment; references become projectable.	internal/api/fleetlygrpc/networks.go ApproveNetworkPeer
-network.peer_declared	A peer project declared intent to attach to a network (pending; needs receiver approval).	internal/api/fleetlygrpc/networks.go DeclareNetworkPeer
-network.peer_revoked	A peer attachment was revoked; existing attachments are isolated by an immediate isolate reconverge (ADR-0013 appendix A.4).	internal/api/fleetlygrpc/networks.go RevokeNetworkPeer
-network.rebuilt	A project network carrier was rebuilt through the platform in the attachable form; attached carriers were detached and re-attached.	internal/api/fleetlygrpc/networks.go RebuildNetwork
+lease.expired	A task's owner lease expired past grace; the pool drains.	internal/application/engine/task.go driveTask
+lease.renewed	A task's owner lease was renewed (deadline advanced).	internal/application/engine/taskverbs.go RenewTask
+network.created	A project network was created.	internal/interfaces/grpc/fleetlygrpc/networks.go CreateNetwork
+network.peer_approved	The receiving project approved a peer attachment; references become projectable.	internal/interfaces/grpc/fleetlygrpc/networks.go ApproveNetworkPeer
+network.peer_declared	A peer project declared intent to attach to a network (pending; needs receiver approval).	internal/interfaces/grpc/fleetlygrpc/networks.go DeclareNetworkPeer
+network.peer_revoked	A peer attachment was revoked; existing attachments are isolated by an immediate isolate reconverge (ADR-0013 appendix A.4).	internal/interfaces/grpc/fleetlygrpc/networks.go RevokeNetworkPeer
+network.rebuilt	A project network carrier was rebuilt through the platform in the attachable form; attached carriers were detached and re-attached.	internal/interfaces/grpc/fleetlygrpc/networks.go RebuildNetwork
 node.joined	Node joined the cluster and was anchored with a platform node ID.	added during implementation
 node.left	Node left the cluster.	added during implementation
-platform.backup_failed	A platform backup failed; the payload carries the restic error tail.	internal/engine/backup.go platformBackupPass
-platform.backup_succeeded	A platform backup (restic snapshot of the control-plane data root) completed on all configured repos.	internal/engine/backup.go platformBackupPass
-project.created	A project was created.	internal/api/fleetlygrpc/structure.go CreateProject
-project.deleted	A project was deleted (tombstoned).	internal/api/fleetlygrpc/structure.go DeleteProject
+platform.backup_failed	A platform backup failed; the payload carries the restic error tail.	internal/application/engine/backup.go platformBackupPass
+platform.backup_succeeded	A platform backup (restic snapshot of the control-plane data root) completed on all configured repos.	internal/application/engine/backup.go platformBackupPass
+project.created	A project was created.	internal/interfaces/grpc/fleetlygrpc/structure.go CreateProject
+project.deleted	A project was deleted (tombstoned).	internal/interfaces/grpc/fleetlygrpc/structure.go DeleteProject
 role.created	A custom role was created from a scope set.	added during implementation
-run.created	A run was created and queued for carrier ensure.	internal/engine/task.go createRun
-run.failed	A run reached the failed terminal state.	internal/engine/taskobs.go handleRunObservation
-run.running	A run's workload was observed running.	internal/engine/taskobs.go handleRunObservation
-run.stopped	A run reached the stopped terminal state.	internal/engine/taskobs.go handleRunObservation
-run.stopping	A run started stopping (stop reason carried on the row).	internal/engine/task.go stopRunRow
-schedule.created	A schedule was created (timezone-aware cron, first fire time computed).	internal/engine/events.go EventScheduleCreated (emitted by the acceptance surface)
-schedule.deleted	A schedule was deleted (tombstoned; already-spawned tasks run to completion).	internal/api/fleetlygrpc/automation.go DeleteSchedule
-schedule.fired	A schedule fired and spawned a one-shot task (source: cron or manual).	internal/engine/schedule.go spawnScheduleTask
-schedule.skipped	A due schedule fire was skipped (reason: overlap while the previous run is in flight, or quota_exceeded when the project is at its task quota).	internal/engine/schedule.go fireSchedule/skipSchedule
-secret.deleted	A secret was deleted.	internal/api/fleetlygrpc/structure.go DeleteSecret
-secret.updated	A secret value was set (fingerprint, never the value).	internal/api/fleetlygrpc/structure.go PutSecret
-task.active	A drained task was revived by an owner lease renewal.	internal/engine/task.go RenewTask
-task.completed	A one-shot task's run completed successfully.	internal/engine/task.go oneshotTerminal
-task.created	A task was created (one-shot or resident form).	internal/engine/events.go EventTaskCreated (emitted by the acceptance surface)
-task.deleted	A task was deleted (carriers removed, row tombstoned).	internal/engine/task.go DeleteTask
-task.drained	A draining task reached drained state (all runs terminal).	internal/engine/task.go driveTask
-task.draining	A task started draining: replenishment stopped; in-flight runs stop with grace or run out their TTL.	internal/engine/task.go drainTask
-task.failed	A one-shot task's run failed.	internal/engine/task.go oneshotTerminal
-task.updated	A task's desired concurrency was updated.	internal/engine/task.go ScaleTask
+run.created	A run was created and queued for carrier ensure.	internal/application/engine/task.go createRun
+run.failed	A run reached the failed terminal state.	internal/application/engine/taskobs.go handleRunObservation
+run.running	A run's workload was observed running.	internal/application/engine/taskobs.go handleRunObservation
+run.stopped	A run reached the stopped terminal state.	internal/application/engine/taskobs.go handleRunObservation
+run.stopping	A run started stopping (stop reason carried on the row).	internal/application/engine/task.go stopRunRow
+schedule.created	A schedule was created (timezone-aware cron, first fire time computed).	internal/application/engine/events.go EventScheduleCreated (emitted by the acceptance surface)
+schedule.deleted	A schedule was deleted (tombstoned; already-spawned tasks run to completion).	internal/interfaces/grpc/fleetlygrpc/automation.go DeleteSchedule
+schedule.fired	A schedule fired and spawned a one-shot task (source: cron or manual).	internal/application/engine/schedule.go spawnScheduleTask
+schedule.skipped	A due schedule fire was skipped (reason: overlap while the previous run is in flight, or quota_exceeded when the project is at its task quota).	internal/application/engine/schedule.go fireSchedule/skipSchedule
+secret.deleted	A secret was deleted.	internal/interfaces/grpc/fleetlygrpc/structure.go DeleteSecret
+secret.updated	A secret value was set (fingerprint, never the value).	internal/interfaces/grpc/fleetlygrpc/structure.go PutSecret
+task.active	A drained task was revived by an owner lease renewal.	internal/application/engine/taskverbs.go RenewTask
+task.completed	A one-shot task's run completed successfully.	internal/application/engine/task.go oneshotTerminalState
+task.created	A task was created (one-shot or resident form).	internal/application/engine/events.go EventTaskCreated (emitted by the acceptance surface)
+task.deleted	A task was deleted (carriers removed, row tombstoned).	internal/application/engine/taskverbs.go DeleteTask
+task.drained	A draining task reached drained state (all runs terminal).	internal/application/engine/task.go driveTask
+task.draining	A task started draining: replenishment stopped; in-flight runs stop with grace or run out their TTL.	internal/application/engine/task.go drainTask
+task.failed	A one-shot task's run failed.	internal/application/engine/task.go oneshotTerminalState
+task.updated	A task's desired concurrency was updated.	internal/application/engine/taskverbs.go ScaleTask
 team.created	A team was created.	added during implementation
-template.instantiated	A template was instantiated into a deployment (payload carries the template name@version and the deployment id).	internal/api/fleetlygrpc/templates.go InstantiateTemplate
-template.refreshed	The template catalog snapshot was refreshed (payload carries the previous and new aggregate digests and the entry count).	internal/api/fleetlygrpc/templates.go RefreshTemplates
+template.instantiated	A template was instantiated into a deployment (payload carries the template name@version and the deployment id).	internal/interfaces/grpc/fleetlygrpc/templates.go InstantiateTemplate
+template.refreshed	The template catalog snapshot was refreshed (payload carries the previous and new aggregate digests and the entry count).	internal/interfaces/grpc/fleetlygrpc/templates.go RefreshTemplates
 token.created	A token was minted (secret shown once at creation).	added during implementation
 token.revoked	A token was revoked; its next call will be rejected.	added during implementation
-upload.stored	An uploaded source was stored (content-addressed; payload carries id, digest, size and deduplicated).	internal/api/fleetlygrpc/uploads.go UploadSource
+upload.stored	An uploaded source was stored (content-addressed; payload carries id, digest, size and deduplicated).	internal/interfaces/grpc/fleetlygrpc/uploads.go UploadSource
 user.created	A user was created and granted a role in a team.	added during implementation
-variable.deleted	A project shared variable was deleted.	internal/api/fleetlygrpc/structure.go DeleteSharedVariable
-variable.updated	A project shared variable was set (values are readable via the API; redeploy affected apps to pick up the new value).	internal/api/fleetlygrpc/structure.go PutSharedVariable
-volume.created	A volume was created.	internal/api/fleetlygrpc/structure.go CreateVolume
-volume.deleted	An unreferenced volume row was deleted (the platform tombstones the row; the runtime-side volume is left for manual hygiene).	internal/api/fleetlygrpc/structure.go DeleteVolume
-workload.drift_detected	Observed workload diverged from the ensured generation or spec (ADR-0022).	internal/engine/observ.go detectDrift + internal/engine/drift.go compareSpecs
-workload.rollout_stalled	A runtime rollout is stalled mid-flight (e.g. swarm update paused by task failure); spec matches, so spec-drift cannot see it.	internal/engine/drift.go compareSpecs
-workload.stopped	A steady-state workload was observed stopped at the current generation.	internal/engine/drift.go emitSteadyStateStopped
+variable.deleted	A project shared variable was deleted.	internal/interfaces/grpc/fleetlygrpc/variables.go DeleteSharedVariable
+variable.updated	A project shared variable was set (values are readable via the API; redeploy affected apps to pick up the new value).	internal/interfaces/grpc/fleetlygrpc/variables.go PutSharedVariable
+volume.created	A volume was created.	internal/interfaces/grpc/fleetlygrpc/structure.go CreateVolume
+volume.deleted	An unreferenced volume row was deleted (the platform tombstones the row; the runtime-side volume is left for manual hygiene).	internal/interfaces/grpc/fleetlygrpc/structure.go DeleteVolume
+workload.drift_detected	Observed workload diverged from the ensured generation or spec (ADR-0022).	internal/application/engine/observ.go detectDrift + internal/application/engine/drift.go compareSpecs
+workload.rollout_stalled	A runtime rollout is stalled mid-flight (e.g. swarm update paused by task failure); spec matches, so spec-drift cannot see it.	internal/application/engine/drift.go compareSpecs
+workload.stopped	A steady-state workload was observed stopped at the current generation.	internal/application/engine/drift.go emitSteadyStateStopped

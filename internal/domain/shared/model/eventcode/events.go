@@ -16,7 +16,7 @@ var builtins = []Event{
 	{Name: "deployment.rolling_back", Summary: "Deployment started replaying last successful revision.", Source: "added during implementation"},
 	{Name: "deployment.superseded", Summary: "Deployment superseded by a newer one.", Source: "added during implementation"},
 	{Name: "deployment.cancelled", Summary: "Deployment cancelled while queued or in flight.", Source: "added during implementation"},
-	{Name: "deployment.first_boot_job", Summary: "A deploy-time first boot job was minted as a one-shot task; the deployment waits in releasing for its terminal state before materializing carriers (ADR-0030).", Source: "internal/engine/firstboot.go mintFirstBootJob"},
+	{Name: "deployment.first_boot_job", Summary: "A deploy-time first boot job was minted as a one-shot task; the deployment waits in releasing for its terminal state before materializing carriers (ADR-0030).", Source: "internal/application/engine/firstboot.go mintFirstBootJob"},
 
 	// Build 状态机迁移（领域模型 §4）。
 	{Name: "build.queued", Summary: "Build accepted into build queue.", Source: "added during implementation"},
@@ -32,17 +32,17 @@ var builtins = []Event{
 
 	// Drift 信号（per-Workload 粒度 + 去抖，2026-09-30 裁决；检测默认开、
 	// 收敛默认 opt-in，ADR-0005；ADR-0022 升级为 gen 偏离 + spec 失配双路径）。
-	{Name: "workload.drift_detected", Summary: "Observed workload diverged from the ensured generation or spec (ADR-0022).", Source: "internal/engine/observ.go detectDrift + internal/engine/drift.go compareSpecs"},
+	{Name: "workload.drift_detected", Summary: "Observed workload diverged from the ensured generation or spec (ADR-0022).", Source: "internal/application/engine/observ.go detectDrift + internal/application/engine/drift.go compareSpecs"},
 
 	// 稳态看门狗（ADR-0022：最近部署 succeeded 的 App 在当前 Generation
 	// 观测到 stopped——只观测不迁移，处置由人/Agent 决定）。
-	{Name: "workload.stopped", Summary: "A steady-state workload was observed stopped at the current generation.", Source: "internal/engine/drift.go emitSteadyStateStopped"},
+	{Name: "workload.stopped", Summary: "A steady-state workload was observed stopped at the current generation.", Source: "internal/application/engine/drift.go emitSteadyStateStopped"},
 
 	// 滚动停摆观测（runbook 记录·二十七：Ensure 已被编排器接受但滚动停在
 	// 中间态——swarm paused 形态下 spec 面恒一致，spec drift 无感；僵尸
 	// task 叠加三天无人感知的观测面收口。只观测不纠正，处置 = 人工 resume
 	// 或重部署）。
-	{Name: "workload.rollout_stalled", Summary: "A runtime rollout is stalled mid-flight (e.g. swarm update paused by task failure); spec matches, so spec-drift cannot see it.", Source: "internal/engine/drift.go compareSpecs"},
+	{Name: "workload.rollout_stalled", Summary: "A runtime rollout is stalled mid-flight (e.g. swarm update paused by task failure); spec matches, so spec-drift cannot see it.", Source: "internal/application/engine/drift.go compareSpecs"},
 
 	// Identity & Access（F0.5~F0.7 账号批）。
 	{Name: "user.created", Summary: "A user was created and granted a role in a team.", Source: "added during implementation"},
@@ -55,134 +55,134 @@ var builtins = []Event{
 
 	// 结构面写操作（C5 补齐："一切状态迁移写 Event"——此前结构面只有
 	// 审计无事件；与审计同事务落）。
-	{Name: "project.created", Summary: "A project was created.", Source: "internal/api/fleetlygrpc/structure.go CreateProject"},
-	{Name: "project.deleted", Summary: "A project was deleted (tombstoned).", Source: "internal/api/fleetlygrpc/structure.go DeleteProject"},
-	{Name: "app.created", Summary: "An app was created.", Source: "internal/api/fleetlygrpc/structure.go CreateApp"},
-	{Name: "app.deleted", Summary: "An app was deleted (teardown per ADR-0023).", Source: "internal/api/fleetlygrpc/structure.go DeleteApp"},
-	{Name: "app.teardown_aborted", Summary: "An app delete was aborted after teardown because a deployment was admitted mid-delete; the in-flight deployment rebuilds the carriers (ADR-0023).", Source: "internal/api/fleetlygrpc/structure.go DeleteApp (recordTeardownAbort)"},
-	{Name: "secret.updated", Summary: "A secret value was set (fingerprint, never the value).", Source: "internal/api/fleetlygrpc/structure.go PutSecret"},
-	{Name: "secret.deleted", Summary: "A secret was deleted.", Source: "internal/api/fleetlygrpc/structure.go DeleteSecret"},
-	{Name: "config.updated", Summary: "A config version was written.", Source: "internal/api/fleetlygrpc/structure.go PutConfig"},
+	{Name: "project.created", Summary: "A project was created.", Source: "internal/interfaces/grpc/fleetlygrpc/structure.go CreateProject"},
+	{Name: "project.deleted", Summary: "A project was deleted (tombstoned).", Source: "internal/interfaces/grpc/fleetlygrpc/structure.go DeleteProject"},
+	{Name: "app.created", Summary: "An app was created.", Source: "internal/interfaces/grpc/fleetlygrpc/structure.go CreateApp"},
+	{Name: "app.deleted", Summary: "An app was deleted (teardown per ADR-0023).", Source: "internal/interfaces/grpc/fleetlygrpc/structure.go DeleteApp"},
+	{Name: "app.teardown_aborted", Summary: "An app delete was aborted after teardown because a deployment was admitted mid-delete; the in-flight deployment rebuilds the carriers (ADR-0023).", Source: "internal/interfaces/grpc/fleetlygrpc/structure.go DeleteApp (recordTeardownAbort)"},
+	{Name: "secret.updated", Summary: "A secret value was set (fingerprint, never the value).", Source: "internal/interfaces/grpc/fleetlygrpc/structure.go PutSecret"},
+	{Name: "secret.deleted", Summary: "A secret was deleted.", Source: "internal/interfaces/grpc/fleetlygrpc/structure.go DeleteSecret"},
+	{Name: "config.updated", Summary: "A config version was written.", Source: "internal/interfaces/grpc/fleetlygrpc/structure.go PutConfig"},
 	// 共享变量（F2.9，ADR-0043）：值明文可回显，事件只记事实不带值——
 	// 与审计行同口径。
-	{Name: "variable.updated", Summary: "A project shared variable was set (values are readable via the API; redeploy affected apps to pick up the new value).", Source: "internal/api/fleetlygrpc/structure.go PutSharedVariable"},
-	{Name: "variable.deleted", Summary: "A project shared variable was deleted.", Source: "internal/api/fleetlygrpc/structure.go DeleteSharedVariable"},
+	{Name: "variable.updated", Summary: "A project shared variable was set (values are readable via the API; redeploy affected apps to pick up the new value).", Source: "internal/interfaces/grpc/fleetlygrpc/variables.go PutSharedVariable"},
+	{Name: "variable.deleted", Summary: "A project shared variable was deleted.", Source: "internal/interfaces/grpc/fleetlygrpc/variables.go DeleteSharedVariable"},
 	// App 级变量（ADR-0072 三级合成顶层）：事件只记事实不带值——与
 	// 共享变量/审计同口径。
-	{Name: "app_variable.updated", Summary: "An app variable was set (values are readable via the API; redeploy the app to pick up the new value).", Source: "internal/api/fleetlygrpc/structure.go PutAppVariable"},
-	{Name: "app_variable.deleted", Summary: "An app variable was deleted.", Source: "internal/api/fleetlygrpc/structure.go DeleteAppVariable"},
-	{Name: "volume.created", Summary: "A volume was created.", Source: "internal/api/fleetlygrpc/structure.go CreateVolume"},
-	{Name: "volume.deleted", Summary: "An unreferenced volume row was deleted (the platform tombstones the row; the runtime-side volume is left for manual hygiene).", Source: "internal/api/fleetlygrpc/structure.go DeleteVolume"},
-	{Name: "network.created", Summary: "A project network was created.", Source: "internal/api/fleetlygrpc/networks.go CreateNetwork"},
+	{Name: "app_variable.updated", Summary: "An app variable was set (values are readable via the API; redeploy the app to pick up the new value).", Source: "internal/interfaces/grpc/fleetlygrpc/variables.go PutAppVariable"},
+	{Name: "app_variable.deleted", Summary: "An app variable was deleted.", Source: "internal/interfaces/grpc/fleetlygrpc/variables.go DeleteAppVariable"},
+	{Name: "volume.created", Summary: "A volume was created.", Source: "internal/interfaces/grpc/fleetlygrpc/structure.go CreateVolume"},
+	{Name: "volume.deleted", Summary: "An unreferenced volume row was deleted (the platform tombstones the row; the runtime-side volume is left for manual hygiene).", Source: "internal/interfaces/grpc/fleetlygrpc/structure.go DeleteVolume"},
+	{Name: "network.created", Summary: "A project network was created.", Source: "internal/interfaces/grpc/fleetlygrpc/networks.go CreateNetwork"},
 
 	// 跨 Project peer 声明三拍（F1.8，ADR-0013 附录 A.1：双向声明、接收方
 	// 批准、撤销即时隔离）。
-	{Name: "network.peer_declared", Summary: "A peer project declared intent to attach to a network (pending; needs receiver approval).", Source: "internal/api/fleetlygrpc/networks.go DeclareNetworkPeer"},
-	{Name: "network.peer_approved", Summary: "The receiving project approved a peer attachment; references become projectable.", Source: "internal/api/fleetlygrpc/networks.go ApproveNetworkPeer"},
-	{Name: "network.peer_revoked", Summary: "A peer attachment was revoked; existing attachments are isolated by an immediate isolate reconverge (ADR-0013 appendix A.4).", Source: "internal/api/fleetlygrpc/networks.go RevokeNetworkPeer"},
+	{Name: "network.peer_declared", Summary: "A peer project declared intent to attach to a network (pending; needs receiver approval).", Source: "internal/interfaces/grpc/fleetlygrpc/networks.go DeclareNetworkPeer"},
+	{Name: "network.peer_approved", Summary: "The receiving project approved a peer attachment; references become projectable.", Source: "internal/interfaces/grpc/fleetlygrpc/networks.go ApproveNetworkPeer"},
+	{Name: "network.peer_revoked", Summary: "A peer attachment was revoked; existing attachments are isolated by an immediate isolate reconverge (ADR-0013 appendix A.4).", Source: "internal/interfaces/grpc/fleetlygrpc/networks.go RevokeNetworkPeer"},
 
 	// 网络重建（ADR-0046，N2 评审批 P1-4）：平台中介的载体网络重建——
 	// 存量非 attachable 项目网的 flag-day 通道（detach→rm→recreate→
 	// re-attach 计数在载荷；失败无事件，行级错误即事实面）。
-	{Name: "network.rebuilt", Summary: "A project network carrier was rebuilt through the platform in the attachable form; attached carriers were detached and re-attached.", Source: "internal/api/fleetlygrpc/networks.go RebuildNetwork"},
+	{Name: "network.rebuilt", Summary: "A project network carrier was rebuilt through the platform in the attachable form; attached carriers were detached and re-attached.", Source: "internal/interfaces/grpc/fleetlygrpc/networks.go RebuildNetwork"},
 
 	// Git 触发（F0.13 webhook 接收链）。
-	{Name: "hook.push_accepted", Summary: "A verified webhook push triggered a deployment.", Source: "internal/api/fleetlygrpc/webhook.go handlePush"},
-	{Name: "hook.refresh_accepted", Summary: "A control-plane hook refresh pulled the branch head and triggered a deployment.", Source: "internal/api/fleetlygrpc/webhook.go RefreshGitHook"},
+	{Name: "hook.push_accepted", Summary: "A verified webhook push triggered a deployment.", Source: "internal/interfaces/grpc/fleetlygrpc/webhook.go handlePush"},
+	{Name: "hook.refresh_accepted", Summary: "A control-plane hook refresh pulled the branch head and triggered a deployment.", Source: "internal/interfaces/grpc/fleetlygrpc/webhook.go RefreshGitHook"},
 
 	// Task 状态机（F1.5/F1.6，ADR-0012/0025：双形态程序化工作负载）。
-	{Name: "task.created", Summary: "A task was created (one-shot or resident form).", Source: "internal/engine/events.go EventTaskCreated (emitted by the acceptance surface)"},
-	{Name: "task.active", Summary: "A drained task was revived by an owner lease renewal.", Source: "internal/engine/task.go RenewTask"},
-	{Name: "task.updated", Summary: "A task's desired concurrency was updated.", Source: "internal/engine/task.go ScaleTask"},
-	{Name: "task.draining", Summary: "A task started draining: replenishment stopped; in-flight runs stop with grace or run out their TTL.", Source: "internal/engine/task.go drainTask"},
-	{Name: "task.completed", Summary: "A one-shot task's run completed successfully.", Source: "internal/engine/task.go oneshotTerminal"},
-	{Name: "task.failed", Summary: "A one-shot task's run failed.", Source: "internal/engine/task.go oneshotTerminal"},
-	{Name: "task.drained", Summary: "A draining task reached drained state (all runs terminal).", Source: "internal/engine/task.go driveTask"},
-	{Name: "task.deleted", Summary: "A task was deleted (carriers removed, row tombstoned).", Source: "internal/engine/task.go DeleteTask"},
+	{Name: "task.created", Summary: "A task was created (one-shot or resident form).", Source: "internal/application/engine/events.go EventTaskCreated (emitted by the acceptance surface)"},
+	{Name: "task.active", Summary: "A drained task was revived by an owner lease renewal.", Source: "internal/application/engine/taskverbs.go RenewTask"},
+	{Name: "task.updated", Summary: "A task's desired concurrency was updated.", Source: "internal/application/engine/taskverbs.go ScaleTask"},
+	{Name: "task.draining", Summary: "A task started draining: replenishment stopped; in-flight runs stop with grace or run out their TTL.", Source: "internal/application/engine/task.go drainTask"},
+	{Name: "task.completed", Summary: "A one-shot task's run completed successfully.", Source: "internal/application/engine/task.go oneshotTerminalState"},
+	{Name: "task.failed", Summary: "A one-shot task's run failed.", Source: "internal/application/engine/task.go oneshotTerminalState"},
+	{Name: "task.drained", Summary: "A draining task reached drained state (all runs terminal).", Source: "internal/application/engine/task.go driveTask"},
+	{Name: "task.deleted", Summary: "A task was deleted (carriers removed, row tombstoned).", Source: "internal/application/engine/taskverbs.go DeleteTask"},
 
 	// Run 状态机（pending → running → stopping → stopped | failed，ADR-0012）。
-	{Name: "run.created", Summary: "A run was created and queued for carrier ensure.", Source: "internal/engine/task.go createRun"},
-	{Name: "run.running", Summary: "A run's workload was observed running.", Source: "internal/engine/taskobs.go handleRunObservation"},
-	{Name: "run.stopping", Summary: "A run started stopping (stop reason carried on the row).", Source: "internal/engine/task.go stopRunRow"},
-	{Name: "run.stopped", Summary: "A run reached the stopped terminal state.", Source: "internal/engine/taskobs.go handleRunObservation"},
-	{Name: "run.failed", Summary: "A run reached the failed terminal state.", Source: "internal/engine/taskobs.go handleRunObservation"},
+	{Name: "run.created", Summary: "A run was created and queued for carrier ensure.", Source: "internal/application/engine/task.go createRun"},
+	{Name: "run.running", Summary: "A run's workload was observed running.", Source: "internal/application/engine/taskobs.go handleRunObservation"},
+	{Name: "run.stopping", Summary: "A run started stopping (stop reason carried on the row).", Source: "internal/application/engine/task.go stopRunRow"},
+	{Name: "run.stopped", Summary: "A run reached the stopped terminal state.", Source: "internal/application/engine/taskobs.go handleRunObservation"},
+	{Name: "run.failed", Summary: "A run reached the failed terminal state.", Source: "internal/application/engine/taskobs.go handleRunObservation"},
 
 	// Owner Lease（F1.6：resident 池的心跳租约事实；deadline 绝对 RFC3339）。
-	{Name: "lease.renewed", Summary: "A task's owner lease was renewed (deadline advanced).", Source: "internal/engine/task.go RenewTask"},
-	{Name: "lease.expired", Summary: "A task's owner lease expired past grace; the pool drains.", Source: "internal/engine/task.go driveTask"},
+	{Name: "lease.renewed", Summary: "A task's owner lease was renewed (deadline advanced).", Source: "internal/application/engine/taskverbs.go RenewTask"},
+	{Name: "lease.expired", Summary: "A task's owner lease expired past grace; the pool drains.", Source: "internal/application/engine/task.go driveTask"},
 
 	// Schedule 状态机（F1.7，ADR-0018 时区 cron：周期触发规则，到期拍从
 	// 冻结模板铸 one-shot Task）。
-	{Name: "schedule.created", Summary: "A schedule was created (timezone-aware cron, first fire time computed).", Source: "internal/engine/events.go EventScheduleCreated (emitted by the acceptance surface)"},
-	{Name: "schedule.fired", Summary: "A schedule fired and spawned a one-shot task (source: cron or manual).", Source: "internal/engine/schedule.go spawnScheduleTask"},
-	{Name: "schedule.skipped", Summary: "A due schedule fire was skipped (reason: overlap while the previous run is in flight, or quota_exceeded when the project is at its task quota).", Source: "internal/engine/schedule.go fireSchedule/skipSchedule"},
-	{Name: "schedule.deleted", Summary: "A schedule was deleted (tombstoned; already-spawned tasks run to completion).", Source: "internal/api/fleetlygrpc/automation.go DeleteSchedule"},
+	{Name: "schedule.created", Summary: "A schedule was created (timezone-aware cron, first fire time computed).", Source: "internal/application/engine/events.go EventScheduleCreated (emitted by the acceptance surface)"},
+	{Name: "schedule.fired", Summary: "A schedule fired and spawned a one-shot task (source: cron or manual).", Source: "internal/application/engine/schedule.go spawnScheduleTask"},
+	{Name: "schedule.skipped", Summary: "A due schedule fire was skipped (reason: overlap while the previous run is in flight, or quota_exceeded when the project is at its task quota).", Source: "internal/application/engine/schedule.go fireSchedule/skipSchedule"},
+	{Name: "schedule.deleted", Summary: "A schedule was deleted (tombstoned; already-spawned tasks run to completion).", Source: "internal/interfaces/grpc/fleetlygrpc/automation.go DeleteSchedule"},
 
 	// Change Freeze（F1.9，ADR-0017 附录 A.3：变更冻结窗 set/lift——管理
 	// 动作有界入册；命中拒绝不落事件（重试风暴自放大防护））。
-	{Name: "freeze.set", Summary: "A change freeze was set for a team (or globally); change verbs in scope are refused with the reason.", Source: "internal/api/fleetlygrpc/governance.go SetChangeFreeze"},
-	{Name: "freeze.lifted", Summary: "A change freeze was lifted; change verbs in scope are accepted again.", Source: "internal/api/fleetlygrpc/governance.go LiftChangeFreeze"},
+	{Name: "freeze.set", Summary: "A change freeze was set for a team (or globally); change verbs in scope are refused with the reason.", Source: "internal/interfaces/grpc/fleetlygrpc/governance.go SetChangeFreeze"},
+	{Name: "freeze.lifted", Summary: "A change freeze was lifted; change verbs in scope are accepted again.", Source: "internal/interfaces/grpc/fleetlygrpc/governance.go LiftChangeFreeze"},
 
 	// 上传产物（F1.10，ADR-0019 附录 A：内容寻址构建材料接入；重传去重
 	// 不落第二行事实）。
-	{Name: "upload.stored", Summary: "An uploaded source was stored (content-addressed; payload carries id, digest, size and deduplicated).", Source: "internal/api/fleetlygrpc/uploads.go UploadSource"},
+	{Name: "upload.stored", Summary: "An uploaded source was stored (content-addressed; payload carries id, digest, size and deduplicated).", Source: "internal/interfaces/grpc/fleetlygrpc/uploads.go UploadSource"},
 
 	// 托管数据服务（F1.12，ADR-0029：状态迁移只落 created/deleted——观测
 	// 状态由 status 列承载，停机告警走既有 workload.stopped 稳态看门狗）。
-	{Name: "database.created", Summary: "A database was created from a template; the platform minted its credential secret (value never returned).", Source: "internal/api/fleetlygrpc/databases.go CreateDatabase"},
-	{Name: "database.deleted", Summary: "A database was deleted (carriers torn down, row tombstoned; volume and credential secret retained as project materials).", Source: "internal/api/fleetlygrpc/databases.go DeleteDatabase"},
+	{Name: "database.created", Summary: "A database was created from a template; the platform minted its credential secret (value never returned).", Source: "internal/interfaces/grpc/fleetlygrpc/databases.go CreateDatabase"},
+	{Name: "database.deleted", Summary: "A database was deleted (carriers torn down, row tombstoned; volume and credential secret retained as project materials).", Source: "internal/interfaces/grpc/fleetlygrpc/databases.go DeleteDatabase"},
 
 	// Backup 执行链（F2.2，ADR-0039：成功携带 ObjectStore 回执三元组；
 	// 恢复失败不落事件——行 restore_error 是事实面）。
-	{Name: "database.backup_succeeded", Summary: "A database backup completed; the payload carries the object key, sha256 digest and size (the restore-verification anchors).", Source: "internal/engine/backup.go executeOneBackup"},
-	{Name: "database.backup_failed", Summary: "A database backup failed; the payload carries the error tail (utility container stderr included).", Source: "internal/engine/backup.go executeOneBackup"},
-	{Name: "database.restored", Summary: "A database restore completed (stream into a running target or volume pre-seeding before first start).", Source: "internal/engine/backup.go restoreDatabase"},
+	{Name: "database.backup_succeeded", Summary: "A database backup completed; the payload carries the object key, sha256 digest and size (the restore-verification anchors).", Source: "internal/application/engine/backup.go executeOneBackup"},
+	{Name: "database.backup_failed", Summary: "A database backup failed; the payload carries the error tail (utility container stderr included).", Source: "internal/application/engine/backup.go executeOneBackup"},
+	{Name: "database.restored", Summary: "A database restore completed (stream into a running target or volume pre-seeding before first start).", Source: "internal/application/engine/backup.go restoreDatabase"},
 	// 凭证轮换（IA v3 二期⑤b：engine 方言改密 + Secret 重写后，受理位与
 	// 审计同事务落账——payload 同 structureEventPayload，密码/连接串永不出现）。
-	{Name: "database.credentials_rotated", Summary: "A database credential was rotated; the credential secret now holds the new connection URL and referencing apps must be redeployed to pick it up.", Source: "internal/api/fleetlygrpc/databases.go RotateDatabasePassword"},
+	{Name: "database.credentials_rotated", Summary: "A database credential was rotated; the credential secret now holds the new connection URL and referencing apps must be redeployed to pick it up.", Source: "internal/interfaces/grpc/fleetlygrpc/databases.go RotateDatabasePassword"},
 
 	// Platform Backup（F2.2，ADR-0039：restic 链整体成败；快照细节在仓库自身）。
-	{Name: "platform.backup_succeeded", Summary: "A platform backup (restic snapshot of the control-plane data root) completed on all configured repos.", Source: "internal/engine/backup.go platformBackupPass"},
-	{Name: "platform.backup_failed", Summary: "A platform backup failed; the payload carries the restic error tail.", Source: "internal/engine/backup.go platformBackupPass"},
+	{Name: "platform.backup_succeeded", Summary: "A platform backup (restic snapshot of the control-plane data root) completed on all configured repos.", Source: "internal/application/engine/backup.go platformBackupPass"},
+	{Name: "platform.backup_failed", Summary: "A platform backup failed; the payload carries the restic error tail.", Source: "internal/application/engine/backup.go platformBackupPass"},
 
 	// 阈值告警（F2.5，ADR-0041 决策 3：状态迁移沿才落——不逐拍轰炸；
 	// resolved 携带同一规则锚）。
-	{Name: "alert.fired", Summary: "A threshold alert rule transitioned to firing (breach held for the rule's for-window); notification channels were attempted.", Source: "internal/engine/metrics.go evaluateRules"},
-	{Name: "alert.resolved", Summary: "A firing threshold alert rule transitioned back to ok (observed value fell below the threshold).", Source: "internal/engine/metrics.go evaluateRules"},
-	{Name: "alert.channel_failed", Summary: "A notification channel delivery failed; the channel row records the error tail (diagnostics face).", Source: "internal/engine/metrics.go dispatchAlert"},
+	{Name: "alert.fired", Summary: "A threshold alert rule transitioned to firing (breach held for the rule's for-window); notification channels were attempted.", Source: "internal/application/engine/alerting.go evaluateRules"},
+	{Name: "alert.resolved", Summary: "A firing threshold alert rule transitioned back to ok (observed value fell below the threshold).", Source: "internal/application/engine/alerting.go evaluateRules"},
+	{Name: "alert.channel_failed", Summary: "A notification channel delivery failed; the channel row records the error tail (diagnostics face).", Source: "internal/application/engine/channelnotify.go dispatchAlert"},
 
 	// Exec 会话（F3.2，ADR-0049 决策 4：安全可见性——谁在何时进入了哪个
 	// 进程；会话不是资源行，受理即唯一事件/审计落点，结束不落第二行）。
-	{Name: "exec.session_opened", Summary: "An exec session was accepted into a running workload (actor, process, instance, node and command are in the payload; change freeze is exempt — diagnostics face).", Source: "internal/api/fleetlygrpc/exec.go CreateExecSession"},
+	{Name: "exec.session_opened", Summary: "An exec session was accepted into a running workload (actor, process, instance, node and command are in the payload; change freeze is exempt — diagnostics face).", Source: "internal/interfaces/grpc/fleetlygrpc/exec.go CreateExecSession"},
 
 	// App 模板（F3.3，ADR-0050）：实例化摘要事件——伴生资源各自的
 	// app.created/secret.updated/database.created/route 事件由 create-or-reuse
 	// 步骤自然发射，本事件钉"哪个模板在哪次部署落了地"的审计锚。
-	{Name: "template.instantiated", Summary: "A template was instantiated into a deployment (payload carries the template name@version and the deployment id).", Source: "internal/api/fleetlygrpc/templates.go InstantiateTemplate"},
+	{Name: "template.instantiated", Summary: "A template was instantiated into a deployment (payload carries the template name@version and the deployment id).", Source: "internal/interfaces/grpc/fleetlygrpc/templates.go InstantiateTemplate"},
 	// 目录刷新（F3.3，ADR-0050 决策 4）：操作员动词的事实面——快照 digest
 	// 前后对照是"目录何时被谁换成什么"的唯一台账。
 	// 前缀归一（P2 批二裁决，2026-10-15）：templates.refreshed →
 	// template.refreshed——事件名单数域前缀统一（template.instantiated
 	// 同族）。eventcode 只增纪律的例外：改名即删旧注册加新注册，golden
 	// 与 usage 反扫同批收口。
-	{Name: "template.refreshed", Summary: "The template catalog snapshot was refreshed (payload carries the previous and new aggregate digests and the entry count).", Source: "internal/api/fleetlygrpc/templates.go RefreshTemplates"},
+	{Name: "template.refreshed", Summary: "The template catalog snapshot was refreshed (payload carries the previous and new aggregate digests and the entry count).", Source: "internal/interfaces/grpc/fleetlygrpc/templates.go RefreshTemplates"},
 
 	// 数据浏览器（F3.6，ADR-0051 决策 1：安全可见性——谁在何时打开了哪个
 	// Database 的浏览器会话；会话非资源行，受理即唯一事件/审计落点，回收
 	// 不落第二行）。
-	{Name: "database.browser_opened", Summary: "A browse session was opened for a database (payload carries the browser tool, read-only flag and enforcement tier; change freeze is exempt — diagnostics face).", Source: "internal/api/fleetlygrpc/databases.go BrowseDatabase"},
+	{Name: "database.browser_opened", Summary: "A browse session was opened for a database (payload carries the browser tool, read-only flag and enforcement tier; change freeze is exempt — diagnostics face).", Source: "internal/interfaces/grpc/fleetlygrpc/databases.go BrowseDatabase"},
 
 	// 四族 CRUD 补事件（P2 批二，声明级遗漏收口）：hook/github_app/
 	// alert_rule/channel 的写面此前只有审计无事件（events/audits 双段声明
 	// 时代的漏配对面，ADR-0066 A 化验收面）——单声明双真后 CRUD 事实默认
 	// 进流。命名向既有风格对齐：单数域前缀 + 点分层 + 过去式。
-	{Name: "hook.created", Summary: "A git hook configuration was created for an app (token minted; the secret itself never appears).", Source: "internal/api/fleetlygrpc/hooks.go SetGitHook"},
-	{Name: "hook.updated", Summary: "A git hook configuration was updated (repo/branch/dockerfile/watch paths; token unchanged — rotation is a separate verb).", Source: "internal/api/fleetlygrpc/hooks.go SetGitHook"},
-	{Name: "hook.rotated", Summary: "A git hook token was rotated; the URL token and the GitHub webhook secret were both replaced (old strings invalid immediately).", Source: "internal/api/fleetlygrpc/hooks.go RotateHookToken"},
-	{Name: "github_app.connected", Summary: "A GitHub App installation was connected as private-repo access material (verified at admission, owner resolved; re-put with a new key replaces the sealed material).", Source: "internal/api/fleetlygrpc/githubapps.go SetGitHubApp/CompleteManifestFlow"},
-	{Name: "github_app.deleted", Summary: "A GitHub App access material was soft-deleted; resolution fails immediately while the sealed key survives for key rewrap.", Source: "internal/api/fleetlygrpc/githubapps.go DeleteGitHubApp"},
-	{Name: "alert_rule.created", Summary: "A threshold alert rule was created for an app.", Source: "internal/api/fleetlygrpc/alerting.go CreateAlertRule"},
-	{Name: "alert_rule.deleted", Summary: "A threshold alert rule was deleted.", Source: "internal/api/fleetlygrpc/alerting.go DeleteAlertRule"},
-	{Name: "channel.created", Summary: "A notification channel was registered (platform-level material; credentials sealed, never returned).", Source: "internal/api/fleetlygrpc/alerting.go CreateNotificationChannel"},
-	{Name: "channel.deleted", Summary: "A notification channel was deleted.", Source: "internal/api/fleetlygrpc/alerting.go DeleteNotificationChannel"},
+	{Name: "hook.created", Summary: "A git hook configuration was created for an app (token minted; the secret itself never appears).", Source: "internal/interfaces/grpc/fleetlygrpc/hooks.go SetGitHook"},
+	{Name: "hook.updated", Summary: "A git hook configuration was updated (repo/branch/dockerfile/watch paths; token unchanged — rotation is a separate verb).", Source: "internal/interfaces/grpc/fleetlygrpc/hooks.go SetGitHook"},
+	{Name: "hook.rotated", Summary: "A git hook token was rotated; the URL token and the GitHub webhook secret were both replaced (old strings invalid immediately).", Source: "internal/interfaces/grpc/fleetlygrpc/hooks.go RotateHookToken"},
+	{Name: "github_app.connected", Summary: "A GitHub App installation was connected as private-repo access material (verified at admission, owner resolved; re-put with a new key replaces the sealed material).", Source: "internal/interfaces/grpc/fleetlygrpc/githubapps.go SetGitHubApp/CompleteManifestFlow"},
+	{Name: "github_app.deleted", Summary: "A GitHub App access material was soft-deleted; resolution fails immediately while the sealed key survives for key rewrap.", Source: "internal/interfaces/grpc/fleetlygrpc/githubapps.go DeleteGitHubApp"},
+	{Name: "alert_rule.created", Summary: "A threshold alert rule was created for an app.", Source: "internal/interfaces/grpc/fleetlygrpc/alerting.go CreateAlertRule"},
+	{Name: "alert_rule.deleted", Summary: "A threshold alert rule was deleted.", Source: "internal/interfaces/grpc/fleetlygrpc/alerting.go DeleteAlertRule"},
+	{Name: "channel.created", Summary: "A notification channel was registered (platform-level material; credentials sealed, never returned).", Source: "internal/interfaces/grpc/fleetlygrpc/alerting.go CreateNotificationChannel"},
+	{Name: "channel.deleted", Summary: "A notification channel was deleted.", Source: "internal/interfaces/grpc/fleetlygrpc/alerting.go DeleteNotificationChannel"},
 }
