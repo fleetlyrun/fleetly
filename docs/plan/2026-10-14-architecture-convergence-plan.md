@@ -148,3 +148,11 @@ P5-5 G5/G13 + 性能阈值锚注释（SSE 50 并发/pollTasks 500 task/spec blob
 | 8 | staging 应用栈重播 | ◐ messageloop ✅ 三服务 1/1+peer 走通+三路由在役；quickstart ✅ n0.dev 200；torchwood ◐ 平台面全绿（三 init job exit 0/DSN 修正指向模板默认库 fleetly/双卷/routes/env）、server/worker app boot 待 app 侧调试（每轮零容器输出） | staging 现役 |
 
 **残余（活清单）**：①torchwood server/worker app 侧 boot 诊断（平台面已尽）；②ml-tw e2e 凭据接线（secrets 已按占位播种，承前挂账）；③torchwood/messageloop 两仓 compose 修正未提交（在各自仓工作树）；④buf breaking 两条基线红随 push 上 main 自愈；⑤仓根未跟踪 `.zcodeignore`（工具产物，处置待用户）。AGENTS.md「CLI 一律本地执行」用户律已入约（1664965）。
+
+### 审计轮(2026-10-16,双独立子代理第三只眼)
+
+收官+清偿后加做双向独立审计,发现全数处置:
+- **遗漏/虚报核查**:八项收官声明全部独立复证通过、无虚报;文档层三项(清偿批未回写进度真源/收官汇报指针不可达/活模板 statertest 残名)已修(55e1cff);**P2 实质项=注册表 Source 锚 105 条系统性悬空**(P1a 搬移后指旧路径,无守卫执法)——已全量改写现树函数级锚+新守卫 TestRegistrySourceAnchorLaw+golden 同批再生成(abf18df);golden 停工-授权插曲在案(Source 列被 golden 逐字钉死,按 AGENTS.md 同 commit 惯例授权 -update)。
+- **兼容性代码清点**:该删未删 3 条全修(redirect_url 整删 4d50de3/builds.repo 扁平族+doctor 收紧 ebcc4bd/console 三件死过渡 e3d5ff6);有据保留 12 条依据复核在案;需裁决 6 条中 5 条随批处置,**DiscardUnknown 7 处裁为「设计面非过渡」保留**——它是 proto 字段退役免数据迁移的承重机制(本程序连删 config_refs+JobSpec 五字段即靠它),ADR-0076 验收锚已钉。
+- **审计新挂账(在案)**:①irguard 无路径指称豁免通道(注册表锚与禁词守卫张力);②zot provider 扁平仓 defaultPolicy read 凭证面(扁平族相邻遗留)待显式裁定。
+- **推送**:131 commit 上 origin/main(4ad749d→e3d5ff6),**lint 全绿**(config_refs/JobSpec 基线红随 push 精确自愈);generate:verify/console:verify HEAD 绿。
