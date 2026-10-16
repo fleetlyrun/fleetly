@@ -6,11 +6,11 @@
 
 ## 验收线（Definition of Done）
 
-- [ ] P0-P3 全部勾选；P4/P5 核心件落地（长跑项可挂账）
-- [ ] 依赖规则守卫 = 5 行数据表全绿（domain 三红线 / application 只见 domain / infrastructure 实现 / interfaces 读写分离律 / assembly 组合根）
-- [ ] 全量 `mise run test` + `lint` + `generate:verify` + `console:verify` 零漂移
-- [ ] 三条 ADR 例外成文（贫血聚合集中 / admin 离线写 / 读写分离律）+ 分层立法 ADR + ADR-0070 适用范围修订（exec 会话 ID）
-- [ ] e2e 矩阵绿
+- [x] P0-P3 全部勾选；P4/P5 核心件落地（长跑项可挂账）（2026-10-16 终核：任务项 38/38 全勾；挂账清单见收官汇报）
+- [x] 依赖规则守卫 = 5 行数据表全绿（domain 三红线 / application 只见 domain / infrastructure 实现 / interfaces 读写分离律 / assembly 组合根）（dep_matrix 守卫随全量 test 常态绿）
+- [x] 全量 `mise run test` + `lint` + `generate:verify` + `console:verify` 零漂移（2026-10-16 收官 HEAD 6b9e9e2 终证：test 零 FAIL；lint 唯一红=buf breaking 对旧 origin/main 的 config_refs 基线追认（P4-1 在案，push 后自愈）；generate/console 绿）
+- [x] 三条 ADR 例外成文（贫血聚合集中 / admin 离线写 / 读写分离律）+ 分层立法 ADR + ADR-0070 适用范围修订（exec 会话 ID）（ADR-0075 三例外在册；ADR-0070「适用范围」节 2026-10-15 P3-1 修订；附 ADR-0076 descriptor 执法律随 P5-5 成文）
+- [x] e2e 矩阵绿（2026-10-16 本机 dind：upgrade 全矩阵 PASSED（三负载零重启零滚动+pg_isready+零 drift）；backup ALL DRILLS GREEN（postgres/mysql/redis+platform restic+s3 离机腿；mongo 段本机跳过=内核 7.0.0 vs mongod 8.0 SERVER-121912 硬守卫，CI 常态绿——环境挂账在案））
 
 ## 里程碑总表
 
