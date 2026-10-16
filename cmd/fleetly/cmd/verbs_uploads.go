@@ -171,23 +171,19 @@ func newUploadsPutVerb() commands.Command {
 			}
 			// 流式动词：拨号豁免请求级 deadline（上传时长由目录大小与链路
 			// 决定，服务端另有 15m 流硬上限）。
-			ctx, cancel, c, err := dialFromEnv(ctx, noDeadline())
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := uploadDir(ctx, c, project, dir)
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				dedup := ""
-				if resp.GetDeduplicated() {
-					dedup = ", deduplicated"
+			return runRPC(ctx, []dialOption{noDeadline()}, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := uploadDir(ctx, c, project, dir)
+				if err != nil {
+					return err
 				}
-				_, _ = fmt.Fprintf(env.Stdout, "upload %s digest %s (%d bytes%s)\n",
-					resp.GetId(), resp.GetDigest(), resp.GetSizeBytes(), dedup)
+				return renderOut(env, jsonOut, resp, func() {
+					dedup := ""
+					if resp.GetDeduplicated() {
+						dedup = ", deduplicated"
+					}
+					_, _ = fmt.Fprintf(env.Stdout, "upload %s digest %s (%d bytes%s)\n",
+						resp.GetId(), resp.GetDigest(), resp.GetSizeBytes(), dedup)
+				})
 			})
 		},
 	}
@@ -198,16 +194,14 @@ func newUploadsPutVerb() commands.Command {
 func newUploadsListVerb() commands.Command {
 	const name = "list"
 	var project string
-	var after int64
-	var limit int
+	var pages pageFlags // 游标分页旗标收敛共享 struct（P4-2 批 A 全量迁移）
 	return &flaggedVerb{
 		name:     name,
 		synopsis: "List uploaded sources for a project (newest first)",
 		usage:    "uploads list --project PROJECT_ID [--after SEQ] [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&project, "project", "", "project id (required)")
-			fs.Int64Var(&after, "after", 0, "pagination cursor: the seq of the last row of the previous page")
-			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
+			pages.register(fs, "after")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if err := noArgs(name, args); err != nil {
@@ -216,23 +210,19 @@ func newUploadsListVerb() commands.Command {
 			if project == "" {
 				return usageErr(name, "--project is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Builds.ListUploads(ctx, &deliveryv1.ListUploadsRequest{
-				ProjectId: project, AfterUploadSeq: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
-			})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				_, _ = fmt.Fprintln(env.Stdout, "ID\tDIGEST\tBYTES\tCREATED")
-				for _, u := range resp.GetUploads() {
-					_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%d\t%s\n", u.GetId(), u.GetDigest(), u.GetSizeBytes(), u.GetCreatedAt())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Builds.ListUploads(ctx, &deliveryv1.ListUploadsRequest{
+					ProjectId: project, AfterUploadSeq: pages.cursor(), Limit: pages.limit32(),
+				})
+				if err != nil {
+					return err
 				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintln(env.Stdout, "ID\tDIGEST\tBYTES\tCREATED")
+					for _, u := range resp.GetUploads() {
+						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%d\t%s\n", u.GetId(), u.GetDigest(), u.GetSizeBytes(), u.GetCreatedAt())
+					}
+				})
 			})
 		},
 	}

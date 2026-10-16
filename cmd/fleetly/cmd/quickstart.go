@@ -18,6 +18,7 @@ import (
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	proxyv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/proxy/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
+	"github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 // quickstartReport 是 --json 形态。
@@ -77,136 +78,132 @@ func newQuickstartVerb() commands.Command {
 			if !noWait {
 				dialOpts = append(dialOpts, noDeadline())
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx, dialOpts...)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			// sslip host 的 IP 锚取自连接地址（与 dialFromEnv 同一解析序：
-			// flag > env > 默认；凭据文件的 addr 不参与）。
-			serverAddr := envOr(envAddr, defaultAddr)
+			return runRPC(ctx, dialOpts, func(ctx context.Context, c *fleetly.Client) error {
+				// sslip host 的 IP 锚取自连接地址（与 dialFromEnv 同一解析序：
+				// flag > env > 默认；凭据文件的 addr 不参与）。
+				serverAddr := envOr(envAddr, defaultAddr)
 
-			// 1. project（重跑幂等：存在即复用；查重游标全量收敛，P0-7.5）。
-			var projectID string
-			if id, found, err := findProjectByName(ctx, c, "quickstart"); err != nil {
-				return err
-			} else if found {
-				projectID = id
-			} else {
-				p, err := c.Projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "quickstart"})
+				// 1. project（重跑幂等：存在即复用；查重游标全量收敛，P0-7.5）。
+				var projectID string
+				if id, found, err := findProjectByName(ctx, c, "quickstart"); err != nil {
+					return err
+				} else if found {
+					projectID = id
+				} else {
+					p, err := c.Projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "quickstart"})
+					if err != nil {
+						return err
+					}
+					projectID = p.GetProject().GetId()
+				}
+
+				// 2. app（同款幂等；查重游标全量收敛——首页 50 之外不再误判）。
+				var appID string
+				if id, found, err := findAppByName(ctx, c, projectID, appName); err != nil {
+					return err
+				} else if found {
+					appID = id
+				} else {
+					a, err := c.Apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: projectID, Name: appName})
+					if err != nil {
+						return err
+					}
+					appID = a.GetApp().GetId()
+				}
+
+				// 3. Project 网络（幂等：存在即复用）。受管 Proxy 挂全部活跃
+				// Project 网络（B1）——后端与 Proxy 在同一 overlay 才互通，
+				// quickstart 一条龙必须把网络实体建出来。
+				nlist, err := c.Networks.ListNetworks(ctx, &structurev1.ListNetworksRequest{ProjectId: projectID})
 				if err != nil {
 					return err
 				}
-				projectID = p.GetProject().GetId()
-			}
-
-			// 2. app（同款幂等；查重游标全量收敛——首页 50 之外不再误判）。
-			var appID string
-			if id, found, err := findAppByName(ctx, c, projectID, appName); err != nil {
-				return err
-			} else if found {
-				appID = id
-			} else {
-				a, err := c.Apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: projectID, Name: appName})
-				if err != nil {
-					return err
+				hasDefault := false
+				for _, n := range nlist.GetNetworks() {
+					if n.GetName() == "default" {
+						hasDefault = true
+					}
 				}
-				appID = a.GetApp().GetId()
-			}
-
-			// 3. Project 网络（幂等：存在即复用）。受管 Proxy 挂全部活跃
-			// Project 网络（B1）——后端与 Proxy 在同一 overlay 才互通，
-			// quickstart 一条龙必须把网络实体建出来。
-			nlist, err := c.Networks.ListNetworks(ctx, &structurev1.ListNetworksRequest{ProjectId: projectID})
-			if err != nil {
-				return err
-			}
-			hasDefault := false
-			for _, n := range nlist.GetNetworks() {
-				if n.GetName() == "default" {
-					hasDefault = true
+				if !hasDefault {
+					if _, err := c.Networks.CreateNetwork(ctx, &structurev1.CreateNetworkRequest{
+						ProjectId: projectID, Name: "default",
+					}); err != nil {
+						return err
+					}
 				}
-			}
-			if !hasDefault {
-				if _, err := c.Networks.CreateNetwork(ctx, &structurev1.CreateNetworkRequest{
-					ProjectId: projectID, Name: "default",
-				}); err != nil {
-					return err
-				}
-			}
 
-			// 4. 部署样例镜像（image 直投 + 端口声明，F3.5：声明端口即
-			// Route-facing——进程携带 ports 并挂靠项目 default 网，Route
-			// 后端解析与 Proxy 可达性同时成立。此前 compose 绕道形态
-			// （借 compose 的 ports/networks 键携带声明）退役）。
-			dep, err := c.Deployments.Deploy(ctx, &deliveryv1.DeployRequest{
-				AppId: appID, Image: image, Port: int32(port), //nolint:gosec // 端口域内
-			})
-			if err != nil {
-				return err
-			}
-
-			// 5. Route（sslip.io host 默认拼；幂等复用：同 host 既有 Route
-			// 直接复用——重跑 quickstart 不因昨天的路由而 E_ALREADY_EXISTS）。
-			if host == "" {
-				host = sslipHost(serverAddr, appName)
-			}
-			rlist, err := c.Routes.ListRoutes(ctx, &proxyv1.ListRoutesRequest{})
-			if err != nil {
-				return err
-			}
-			var route *proxyv1.Route
-			for _, r := range rlist.GetRoutes() {
-				if r.GetHost() == host {
-					route = r // 同 host 既有 Route 直接复用（列表携带全量字段）
-				}
-			}
-			if route == nil {
-				created, err := c.Routes.CreateRoute(ctx, &proxyv1.CreateRouteRequest{
-					ProjectId: projectID, Host: host, AppId: appID,
-					Process: "web", Port: int32(port), Protocol: "http", TlsMode: tlsMode, //nolint:gosec // 端口域内
+				// 4. 部署样例镜像（image 直投 + 端口声明，F3.5：声明端口即
+				// Route-facing——进程携带 ports 并挂靠项目 default 网，Route
+				// 后端解析与 Proxy 可达性同时成立。此前 compose 绕道形态
+				// （借 compose 的 ports/networks 键携带声明）退役）。
+				dep, err := c.Deployments.Deploy(ctx, &deliveryv1.DeployRequest{
+					AppId: appID, Image: image, Port: int32(port), //nolint:gosec // 端口域内
 				})
 				if err != nil {
 					return err
 				}
-				route = created.GetRoute()
-			}
 
-			// 6. 等待 succeeded（F-15 收编：等待原语取代私有 120×1s 轮询——
-			// 帧只跟自己部署的那条，不再是"该 App 最新一条"的口径漂移）。
-			state := dep.GetDeployment().GetState()
-			if !noWait {
-				state, err = waitDeploymentFrames(ctx, c, dep.GetDeployment().GetId(), nil)
+				// 5. Route（sslip.io host 默认拼；幂等复用：同 host 既有 Route
+				// 直接复用——重跑 quickstart 不因昨天的路由而 E_ALREADY_EXISTS）。
+				if host == "" {
+					host = sslipHost(serverAddr, appName)
+				}
+				rlist, err := c.Routes.ListRoutes(ctx, &proxyv1.ListRoutesRequest{})
 				if err != nil {
 					return err
 				}
-			}
+				var route *proxyv1.Route
+				for _, r := range rlist.GetRoutes() {
+					if r.GetHost() == host {
+						route = r // 同 host 既有 Route 直接复用（列表携带全量字段）
+					}
+				}
+				if route == nil {
+					created, err := c.Routes.CreateRoute(ctx, &proxyv1.CreateRouteRequest{
+						ProjectId: projectID, Host: host, AppId: appID,
+						Process: "web", Port: int32(port), Protocol: "http", TlsMode: tlsMode, //nolint:gosec // 端口域内
+					})
+					if err != nil {
+						return err
+					}
+					route = created.GetRoute()
+				}
 
-			scheme := "http"
-			if tlsMode == "auto" {
-				scheme = "https"
-			}
-			report := quickstartReport{
-				ProjectID: projectID, AppID: appID,
-				DeploymentID: dep.GetDeployment().GetId(),
-				RouteID:      route.GetId(),
-				Host:         host, URL: scheme + "://" + host,
-				State: state,
-			}
-			if jsonOut {
-				return writeJSON(env.Stdout, report)
-			}
-			_, err = fmt.Fprintf(env.Stdout,
-				"app %s deployed from %s (deployment %s, state %s)\nroute %s -> %s:%d (tls %s)\nopen %s\n",
-				appName, image, report.DeploymentID, state, host, appName, port, tlsMode, report.URL)
-			if err != nil {
-				return err
-			}
-			if strings.HasPrefix(report.Host, appName+".127.0.0.1.") {
-				_, _ = fmt.Fprintln(env.Stdout, "note: the sslip host resolves to 127.0.0.1 — reachable from this machine only; pass --addr <public-ip>:9080 for a public host")
-			}
-			return nil
+				// 6. 等待 succeeded（F-15 收编：等待原语取代私有 120×1s 轮询——
+				// 帧只跟自己部署的那条，不再是"该 App 最新一条"的口径漂移）。
+				state := dep.GetDeployment().GetState()
+				if !noWait {
+					state, err = waitDeploymentFrames(ctx, c, dep.GetDeployment().GetId(), nil)
+					if err != nil {
+						return err
+					}
+				}
+
+				scheme := "http"
+				if tlsMode == "auto" {
+					scheme = "https"
+				}
+				report := quickstartReport{
+					ProjectID: projectID, AppID: appID,
+					DeploymentID: dep.GetDeployment().GetId(),
+					RouteID:      route.GetId(),
+					Host:         host, URL: scheme + "://" + host,
+					State: state,
+				}
+				if jsonOut {
+					return writeJSON(env.Stdout, report)
+				}
+				_, err = fmt.Fprintf(env.Stdout,
+					"app %s deployed from %s (deployment %s, state %s)\nroute %s -> %s:%d (tls %s)\nopen %s\n",
+					appName, image, report.DeploymentID, state, host, appName, port, tlsMode, report.URL)
+				if err != nil {
+					return err
+				}
+				if strings.HasPrefix(report.Host, appName+".127.0.0.1.") {
+					_, _ = fmt.Fprintln(env.Stdout, "note: the sslip host resolves to 127.0.0.1 — reachable from this machine only; pass --addr <public-ip>:9080 for a public host")
+				}
+				return nil
+			})
 		},
 	}
 }

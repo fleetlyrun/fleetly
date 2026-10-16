@@ -15,6 +15,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
+	"github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 func newEventsListVerb() commands.Command {
@@ -31,22 +32,18 @@ func newEventsListVerb() commands.Command {
 			if err := noArgs(name, args); err != nil {
 				return err
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close()                                                                                             //nolint:errcheck // 进程退出路径
-			resp, err := c.Events.ListEvents(ctx, &telemetryv1.ListEventsRequest{AfterSeq: after, Limit: int32(limit)}) //nolint:gosec // 限额在服务端钳制
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				_, _ = fmt.Fprintf(env.Stdout, "last_seq=%d\n", resp.GetLastSeq())
-				_, _ = fmt.Fprintln(env.Stdout, "SEQ\tNAME\tAGGREGATE\tID\tCREATED")
-				for _, ev := range resp.GetEvents() {
-					_, _ = fmt.Fprintf(env.Stdout, "%d\t%s\t%s\t%s\t%s\n", ev.GetSeq(), ev.GetName(), ev.GetAggregate(), ev.GetAggregateId(), ev.GetCreatedAt())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Events.ListEvents(ctx, &telemetryv1.ListEventsRequest{AfterSeq: after, Limit: int32(limit)}) //nolint:gosec // 限额在服务端钳制
+				if err != nil {
+					return err
 				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintf(env.Stdout, "last_seq=%d\n", resp.GetLastSeq())
+					_, _ = fmt.Fprintln(env.Stdout, "SEQ\tNAME\tAGGREGATE\tID\tCREATED")
+					for _, ev := range resp.GetEvents() {
+						_, _ = fmt.Fprintf(env.Stdout, "%d\t%s\t%s\t%s\t%s\n", ev.GetSeq(), ev.GetName(), ev.GetAggregate(), ev.GetAggregateId(), ev.GetCreatedAt())
+					}
+				})
 			})
 		},
 	}
@@ -71,46 +68,42 @@ func newEventsFollowVerb() commands.Command {
 				return err
 			}
 			// 流式动词：拨号豁免请求级 deadline（logs 同款纪律）。
-			ctx, cancel, c, err := dialFromEnv(ctx, noDeadline())
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			stream, err := c.Events.StreamEvents(ctx, &telemetryv1.StreamEventsRequest{AfterSeq: after, Follow: !replay})
-			if err != nil {
-				return err
-			}
-			compact := func(m proto.Message) (string, error) {
-				data, err := protoJSONMarshal.Marshal(m)
-				if err != nil {
-					return "", err
-				}
-				var buf bytes.Buffer
-				if err := json.Compact(&buf, data); err != nil {
-					return "", err
-				}
-				return buf.String(), nil
-			}
-			for {
-				frame, err := stream.Recv()
-				if err == io.EOF {
-					return nil
-				}
+			return runRPC(ctx, []dialOption{noDeadline()}, func(ctx context.Context, c *fleetly.Client) error {
+				stream, err := c.Events.StreamEvents(ctx, &telemetryv1.StreamEventsRequest{AfterSeq: after, Follow: !replay})
 				if err != nil {
 					return err
 				}
-				ev := frame.GetEvent()
-				if jsonOut {
-					line, err := compact(frame)
+				compact := func(m proto.Message) (string, error) {
+					data, err := protoJSONMarshal.Marshal(m)
+					if err != nil {
+						return "", err
+					}
+					var buf bytes.Buffer
+					if err := json.Compact(&buf, data); err != nil {
+						return "", err
+					}
+					return buf.String(), nil
+				}
+				for {
+					frame, err := stream.Recv()
+					if err == io.EOF {
+						return nil
+					}
 					if err != nil {
 						return err
 					}
-					_, _ = fmt.Fprintln(env.Stdout, line)
-					continue
+					ev := frame.GetEvent()
+					if jsonOut {
+						line, err := compact(frame)
+						if err != nil {
+							return err
+						}
+						_, _ = fmt.Fprintln(env.Stdout, line)
+						continue
+					}
+					_, _ = fmt.Fprintf(env.Stdout, "%d\t%s\t%s\t%s\t%s\n", ev.GetSeq(), ev.GetName(), ev.GetAggregate(), ev.GetAggregateId(), ev.GetCreatedAt())
 				}
-				_, _ = fmt.Fprintf(env.Stdout, "%d\t%s\t%s\t%s\t%s\n", ev.GetSeq(), ev.GetName(), ev.GetAggregate(), ev.GetAggregateId(), ev.GetCreatedAt())
-			}
+			})
 		},
 	}
 }
@@ -153,50 +146,46 @@ func newLogsVerb() commands.Command {
 			}
 			// 流式动词：拨号豁免请求级 deadline（follow 会话长存活，
 			// 客户端 deadline 会腰斩尾随流；服务端流面不经 unary 超时拦截器）。
-			ctx, cancel, c, err := dialFromEnv(ctx, noDeadline())
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			stream, err := c.Logs.StreamLogs(ctx, &telemetryv1.StreamLogsRequest{
-				AppId: app, DatabaseId: database, RunId: run, Process: process,
-				TailLines: tail, Follow: follow, Since: since, Until: until, Text: text,
-			})
-			if err != nil {
-				return err
-			}
-			// 流式行经 json.Compact 归一（protojson 的空白形态按二进制
-			// 撒种，golden 确定性必须显式归一——render 单点同款纪律）。
-			compact := func(m proto.Message) (string, error) {
-				data, err := protoJSONMarshal.Marshal(m)
-				if err != nil {
-					return "", err
-				}
-				var buf bytes.Buffer
-				if err := json.Compact(&buf, data); err != nil {
-					return "", err
-				}
-				return buf.String(), nil
-			}
-			for {
-				frame, err := stream.Recv()
-				if err == io.EOF {
-					return nil
-				}
+			return runRPC(ctx, []dialOption{noDeadline()}, func(ctx context.Context, c *fleetly.Client) error {
+				stream, err := c.Logs.StreamLogs(ctx, &telemetryv1.StreamLogsRequest{
+					AppId: app, DatabaseId: database, RunId: run, Process: process,
+					TailLines: tail, Follow: follow, Since: since, Until: until, Text: text,
+				})
 				if err != nil {
 					return err
 				}
-				if jsonOut {
-					line, err := compact(frame)
+				// 流式行经 json.Compact 归一（protojson 的空白形态按二进制
+				// 撒种，golden 确定性必须显式归一——render 单点同款纪律）。
+				compact := func(m proto.Message) (string, error) {
+					data, err := protoJSONMarshal.Marshal(m)
+					if err != nil {
+						return "", err
+					}
+					var buf bytes.Buffer
+					if err := json.Compact(&buf, data); err != nil {
+						return "", err
+					}
+					return buf.String(), nil
+				}
+				for {
+					frame, err := stream.Recv()
+					if err == io.EOF {
+						return nil
+					}
 					if err != nil {
 						return err
 					}
-					_, _ = fmt.Fprintln(env.Stdout, line)
-					continue
+					if jsonOut {
+						line, err := compact(frame)
+						if err != nil {
+							return err
+						}
+						_, _ = fmt.Fprintln(env.Stdout, line)
+						continue
+					}
+					_, _ = fmt.Fprintf(env.Stdout, "%s %s %s\n", frame.GetTime(), frame.GetWorkloadId(), string(frame.GetLine()))
 				}
-				_, _ = fmt.Fprintf(env.Stdout, "%s %s %s\n", frame.GetTime(), frame.GetWorkloadId(), string(frame.GetLine()))
-			}
+			})
 		},
 	}
 }

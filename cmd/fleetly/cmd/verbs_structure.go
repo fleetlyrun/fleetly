@@ -22,6 +22,7 @@ import (
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
+	"github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 func usageErr(verb, msg string) error {
@@ -64,19 +65,15 @@ func newProjectsCreateVerb() commands.Command {
 			if len(args) != 1 {
 				return usageErr(name, "expected exactly one NAME argument")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			ctx = idem.bind(ctx)
-			resp, err := c.Projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: args[0], TeamId: team})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp.GetProject(), func() {
-				_, _ = fmt.Fprintf(env.Stdout, "created project %s (id %s)\n", resp.GetProject().GetName(), resp.GetProject().GetId())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				ctx = idem.bind(ctx)
+				resp, err := c.Projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: args[0], TeamId: team})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp.GetProject(), func() {
+					_, _ = fmt.Fprintf(env.Stdout, "created project %s (id %s)\n", resp.GetProject().GetName(), resp.GetProject().GetId())
+				})
 			})
 		},
 	}
@@ -84,37 +81,31 @@ func newProjectsCreateVerb() commands.Command {
 
 func newProjectsListVerb() commands.Command {
 	const name = "list"
-	var after int64
-	var limit int
+	var pages pageFlags // 游标分页旗标收敛共享 struct（P4-2 批 A 全量迁移）
 	return &flaggedVerb{
 		name:     name,
 		synopsis: "List projects",
 		usage:    "projects list [--after SEQ] [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.Int64Var(&after, "after", 0, "pagination cursor: the seq of the last row of the previous page")
-			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
+			pages.register(fs, "after")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if err := noArgs(name, args); err != nil {
 				return err
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Projects.ListProjects(ctx, &structurev1.ListProjectsRequest{
-				AfterProjectSeq: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
-			})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				_, _ = fmt.Fprintln(env.Stdout, "ID\tNAME\tTEAM\tCREATED")
-				for _, p := range resp.GetProjects() {
-					_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\t%s\n", p.GetId(), p.GetName(), p.GetTeamId(), p.GetCreatedAt())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Projects.ListProjects(ctx, &structurev1.ListProjectsRequest{
+					AfterProjectSeq: pages.cursor(), Limit: pages.limit32(),
+				})
+				if err != nil {
+					return err
 				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintln(env.Stdout, "ID\tNAME\tTEAM\tCREATED")
+					for _, p := range resp.GetProjects() {
+						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\t%s\n", p.GetId(), p.GetName(), p.GetTeamId(), p.GetCreatedAt())
+					}
+				})
 			})
 		},
 	}
@@ -137,18 +128,14 @@ func newProjectsDeleteVerb() commands.Command {
 			if project == "" {
 				return usageErr(name, "--project is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Projects.DeleteProject(ctx, &structurev1.DeleteProjectRequest{Id: project})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				_, _ = fmt.Fprintf(env.Stdout, "deleted project %s\n", project)
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Projects.DeleteProject(ctx, &structurev1.DeleteProjectRequest{Id: project})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintf(env.Stdout, "deleted project %s\n", project)
+				})
 			})
 		},
 	}
@@ -171,19 +158,15 @@ func newAppsCreateVerb() commands.Command {
 			if project == "" {
 				return usageErr(name, "--project is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			ctx = idem.bind(ctx)
-			resp, err := c.Apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: project, Name: args[0]})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp.GetApp(), func() {
-				_, _ = fmt.Fprintf(env.Stdout, "created app %s (id %s)\n", resp.GetApp().GetName(), resp.GetApp().GetId())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				ctx = idem.bind(ctx)
+				resp, err := c.Apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: project, Name: args[0]})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp.GetApp(), func() {
+					_, _ = fmt.Fprintf(env.Stdout, "created app %s (id %s)\n", resp.GetApp().GetName(), resp.GetApp().GetId())
+				})
 			})
 		},
 	}
@@ -203,24 +186,20 @@ func newAppsSpecVerb() commands.Command {
 			if len(args) != 1 {
 				return usageErr(name, "expected exactly one APP_ID argument")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Apps.GetAppSpec(ctx, &structurev1.GetAppSpecRequest{Id: args[0]})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp.GetSpec(), func() {
-				data, merr := protojson.Marshal(resp.GetSpec())
-				if merr != nil {
-					return
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Apps.GetAppSpec(ctx, &structurev1.GetAppSpecRequest{Id: args[0]})
+				if err != nil {
+					return err
 				}
-				var buf bytes.Buffer
-				_ = json.Compact(&buf, data)
-				_, _ = fmt.Fprintln(env.Stdout, buf.String())
+				return renderOut(env, jsonOut, resp.GetSpec(), func() {
+					data, merr := protojson.Marshal(resp.GetSpec())
+					if merr != nil {
+						return
+					}
+					var buf bytes.Buffer
+					_ = json.Compact(&buf, data)
+					_, _ = fmt.Fprintln(env.Stdout, buf.String())
+				})
 			})
 		},
 	}
@@ -245,40 +224,36 @@ func newAppsWorkloadsVerb() commands.Command {
 			if len(args) != 1 {
 				return usageErr(name, "expected exactly one APP_ID argument")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			if live {
-				resp, rerr := c.Workloads.GetAppWorkloadObservations(ctx, &runtimev1.GetAppWorkloadObservationsRequest{AppId: args[0]})
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				if live {
+					resp, rerr := c.Workloads.GetAppWorkloadObservations(ctx, &runtimev1.GetAppWorkloadObservationsRequest{AppId: args[0]})
+					if rerr != nil {
+						return rerr
+					}
+					return renderOut(env, jsonOut, resp, func() {
+						_, _ = fmt.Fprintln(env.Stdout, "WORKLOAD\tGEN\tIMAGE\tREPLICAS\tSTATE\tSTALLED")
+						for _, o := range resp.GetObservations() {
+							_, _ = fmt.Fprintf(env.Stdout, "%s\t%d\t%s\t%d\t%s\t%t\n",
+								o.GetWorkloadId(), o.GetGeneration(), o.GetImage(), o.GetReplicas(), o.GetState(), o.GetRolloutStalled())
+						}
+					})
+				}
+				resp, rerr := c.Revisions.GetAppWorkloads(ctx, &deliveryv1.GetAppWorkloadsRequest{AppId: args[0], Seq: seq})
 				if rerr != nil {
 					return rerr
 				}
 				return renderOut(env, jsonOut, resp, func() {
-					_, _ = fmt.Fprintln(env.Stdout, "WORKLOAD\tGEN\tIMAGE\tREPLICAS\tSTATE\tSTALLED")
-					for _, o := range resp.GetObservations() {
-						_, _ = fmt.Fprintf(env.Stdout, "%s\t%d\t%s\t%d\t%s\t%t\n",
-							o.GetWorkloadId(), o.GetGeneration(), o.GetImage(), o.GetReplicas(), o.GetState(), o.GetRolloutStalled())
+					_, _ = fmt.Fprintf(env.Stdout, "revision R%d\t%s\n", resp.GetRevision().GetSeq(), resp.GetRevision().GetDigest())
+					_, _ = fmt.Fprintln(env.Stdout, "PROCESS\tIMAGE\tREPLICAS\tPORTS\tNETWORKS")
+					for _, w := range resp.GetWorkloads() {
+						ports := make([]string, 0, len(w.GetPorts()))
+						for _, p := range w.GetPorts() {
+							ports = append(ports, fmt.Sprintf("%d/%s", p.GetPort(), strings.ToLower(strings.TrimPrefix(p.GetProtocol().String(), "PROTOCOL_"))))
+						}
+						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%d\t%s\t%s\n",
+							w.GetProcess(), w.GetImage(), w.GetReplicas(), strings.Join(ports, ","), strings.Join(w.GetNetworks(), ","))
 					}
 				})
-			}
-			resp, rerr := c.Revisions.GetAppWorkloads(ctx, &deliveryv1.GetAppWorkloadsRequest{AppId: args[0], Seq: seq})
-			if rerr != nil {
-				return rerr
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				_, _ = fmt.Fprintf(env.Stdout, "revision R%d\t%s\n", resp.GetRevision().GetSeq(), resp.GetRevision().GetDigest())
-				_, _ = fmt.Fprintln(env.Stdout, "PROCESS\tIMAGE\tREPLICAS\tPORTS\tNETWORKS")
-				for _, w := range resp.GetWorkloads() {
-					ports := make([]string, 0, len(w.GetPorts()))
-					for _, p := range w.GetPorts() {
-						ports = append(ports, fmt.Sprintf("%d/%s", p.GetPort(), strings.ToLower(strings.TrimPrefix(p.GetProtocol().String(), "PROTOCOL_"))))
-					}
-					_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%d\t%s\t%s\n",
-						w.GetProcess(), w.GetImage(), w.GetReplicas(), strings.Join(ports, ","), strings.Join(w.GetNetworks(), ","))
-				}
 			})
 		},
 	}
@@ -308,23 +283,19 @@ func newAppsVarsListVerb() commands.Command {
 			if app == "" {
 				return usageErr(name, "--app is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.AppVars.ListAppVariables(ctx, &structurev1.ListAppVariablesRequest{
-				AppId: app, AfterName: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
-			})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				_, _ = fmt.Fprintln(env.Stdout, "NAME\tVALUE\tUPDATED")
-				for _, v := range resp.GetVariables() {
-					_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\n", v.GetName(), v.GetValue(), v.GetUpdatedAt())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.AppVars.ListAppVariables(ctx, &structurev1.ListAppVariablesRequest{
+					AppId: app, AfterName: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
+				})
+				if err != nil {
+					return err
 				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintln(env.Stdout, "NAME\tVALUE\tUPDATED")
+					for _, v := range resp.GetVariables() {
+						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\n", v.GetName(), v.GetValue(), v.GetUpdatedAt())
+					}
+				})
 			})
 		},
 	}
@@ -355,19 +326,15 @@ func newAppsVarsSetVerb() commands.Command {
 			if err != nil {
 				return err
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			ctx = idem.bind(ctx)
-			resp, err := c.AppVars.PutAppVariable(ctx, &structurev1.PutAppVariableRequest{AppId: app, Name: args[0], Value: v})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				_, _ = fmt.Fprintf(env.Stdout, "set app variable %s (the next deploy of %s picks up the new value)\n", args[0], app)
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				ctx = idem.bind(ctx)
+				resp, err := c.AppVars.PutAppVariable(ctx, &structurev1.PutAppVariableRequest{AppId: app, Name: args[0], Value: v})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintf(env.Stdout, "set app variable %s (the next deploy of %s picks up the new value)\n", args[0], app)
+				})
 			})
 		},
 	}
@@ -390,18 +357,14 @@ func newAppsVarsUnsetVerb() commands.Command {
 			if app == "" {
 				return usageErr(name, "--app is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.AppVars.DeleteAppVariable(ctx, &structurev1.DeleteAppVariableRequest{AppId: app, Name: args[0]})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				_, _ = fmt.Fprintf(env.Stdout, "unset app variable %s\n", args[0])
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.AppVars.DeleteAppVariable(ctx, &structurev1.DeleteAppVariableRequest{AppId: app, Name: args[0]})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintf(env.Stdout, "unset app variable %s\n", args[0])
+				})
 			})
 		},
 	}
@@ -410,16 +373,14 @@ func newAppsVarsUnsetVerb() commands.Command {
 func newAppsListVerb() commands.Command {
 	const name = "list"
 	var project string
-	var after int64
-	var limit int
+	var pages pageFlags // 游标分页旗标收敛共享 struct（P4-2 批 A 全量迁移）
 	return &flaggedVerb{
 		name:     name,
 		synopsis: "List apps in a project",
 		usage:    "apps list --project PROJECT_ID [--after SEQ] [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&project, "project", "", "project id (required)")
-			fs.Int64Var(&after, "after", 0, "pagination cursor: the seq of the last row of the previous page")
-			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
+			pages.register(fs, "after")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if err := noArgs(name, args); err != nil {
@@ -428,23 +389,19 @@ func newAppsListVerb() commands.Command {
 			if project == "" {
 				return usageErr(name, "--project is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Apps.ListApps(ctx, &structurev1.ListAppsRequest{
-				ProjectId: project, AfterAppSeq: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
-			})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				_, _ = fmt.Fprintln(env.Stdout, "ID\tNAME\tCREATED")
-				for _, a := range resp.GetApps() {
-					_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\n", a.GetId(), a.GetName(), a.GetCreatedAt())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Apps.ListApps(ctx, &structurev1.ListAppsRequest{
+					ProjectId: project, AfterAppSeq: pages.cursor(), Limit: pages.limit32(),
+				})
+				if err != nil {
+					return err
 				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintln(env.Stdout, "ID\tNAME\tCREATED")
+					for _, a := range resp.GetApps() {
+						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\n", a.GetId(), a.GetName(), a.GetCreatedAt())
+					}
+				})
 			})
 		},
 	}
@@ -475,18 +432,14 @@ func newAppsRestartVerb() commands.Command {
 			if process == "" {
 				return usageErr(name, "--process is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			_, err = c.Deployments.RestartProcess(ctx, &deliveryv1.RestartProcessRequest{AppId: app, ProcessName: process})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, &deliveryv1.RestartProcessResponse{}, func() {
-				_, _ = fmt.Fprintf(env.Stdout, "restart requested for process %s of app %s (carriers force-rescheduled)\n", process, app)
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				_, err := c.Deployments.RestartProcess(ctx, &deliveryv1.RestartProcessRequest{AppId: app, ProcessName: process})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, &deliveryv1.RestartProcessResponse{}, func() {
+					_, _ = fmt.Fprintf(env.Stdout, "restart requested for process %s of app %s (carriers force-rescheduled)\n", process, app)
+				})
 			})
 		},
 	}
@@ -508,18 +461,14 @@ func newAppsDeleteVerb() commands.Command {
 			if app == "" {
 				return usageErr(name, "--app is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Apps.DeleteApp(ctx, &structurev1.DeleteAppRequest{Id: app})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				_, _ = fmt.Fprintf(env.Stdout, "deleted app %s (carriers and routes torn down)\n", app)
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Apps.DeleteApp(ctx, &structurev1.DeleteAppRequest{Id: app})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintf(env.Stdout, "deleted app %s (carriers and routes torn down)\n", app)
+				})
 			})
 		},
 	}
@@ -548,19 +497,15 @@ func newSecretsPutVerb() commands.Command {
 			if err != nil {
 				return err
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			ctx = idem.bind(ctx)
-			resp, err := c.Secrets.PutSecret(ctx, &structurev1.PutSecretRequest{ProjectId: project, Name: args[0], Value: v})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp.GetSecret(), func() {
-				_, _ = fmt.Fprintf(env.Stdout, "stored secret %s (fingerprint %s)\n", resp.GetSecret().GetName(), resp.GetSecret().GetFingerprint())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				ctx = idem.bind(ctx)
+				resp, err := c.Secrets.PutSecret(ctx, &structurev1.PutSecretRequest{ProjectId: project, Name: args[0], Value: v})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp.GetSecret(), func() {
+					_, _ = fmt.Fprintf(env.Stdout, "stored secret %s (fingerprint %s)\n", resp.GetSecret().GetName(), resp.GetSecret().GetFingerprint())
+				})
 			})
 		},
 	}
@@ -587,23 +532,19 @@ func newSecretsListVerb() commands.Command {
 			if project == "" {
 				return usageErr(name, "--project is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Secrets.ListSecrets(ctx, &structurev1.ListSecretsRequest{
-				ProjectId: project, AfterName: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
-			})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				_, _ = fmt.Fprintln(env.Stdout, "NAME\tFINGERPRINT\tUPDATED")
-				for _, s := range resp.GetSecrets() {
-					_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\n", s.GetName(), s.GetFingerprint(), s.GetUpdatedAt())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Secrets.ListSecrets(ctx, &structurev1.ListSecretsRequest{
+					ProjectId: project, AfterName: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
+				})
+				if err != nil {
+					return err
 				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintln(env.Stdout, "NAME\tFINGERPRINT\tUPDATED")
+					for _, s := range resp.GetSecrets() {
+						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\n", s.GetName(), s.GetFingerprint(), s.GetUpdatedAt())
+					}
+				})
 			})
 		},
 	}
@@ -632,19 +573,15 @@ func newConfigsPutVerb() commands.Command {
 			if err != nil {
 				return err
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			ctx = idem.bind(ctx)
-			resp, err := c.Configs.PutConfig(ctx, &structurev1.PutConfigRequest{ProjectId: project, Name: args[0], Content: v})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp.GetConfig(), func() {
-				_, _ = fmt.Fprintf(env.Stdout, "stored config %s (version %d)\n", resp.GetConfig().GetName(), resp.GetConfig().GetVersion())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				ctx = idem.bind(ctx)
+				resp, err := c.Configs.PutConfig(ctx, &structurev1.PutConfigRequest{ProjectId: project, Name: args[0], Content: v})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp.GetConfig(), func() {
+					_, _ = fmt.Fprintf(env.Stdout, "stored config %s (version %d)\n", resp.GetConfig().GetName(), resp.GetConfig().GetVersion())
+				})
 			})
 		},
 	}
@@ -671,23 +608,19 @@ func newConfigsListVerb() commands.Command {
 			if project == "" {
 				return usageErr(name, "--project is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Configs.ListConfigs(ctx, &structurev1.ListConfigsRequest{
-				ProjectId: project, AfterName: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
-			})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				_, _ = fmt.Fprintln(env.Stdout, "NAME\tVERSION\tCREATED")
-				for _, cf := range resp.GetConfigs() {
-					_, _ = fmt.Fprintf(env.Stdout, "%s\t%d\t%s\n", cf.GetName(), cf.GetVersion(), cf.GetCreatedAt())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Configs.ListConfigs(ctx, &structurev1.ListConfigsRequest{
+					ProjectId: project, AfterName: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
+				})
+				if err != nil {
+					return err
 				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintln(env.Stdout, "NAME\tVERSION\tCREATED")
+					for _, cf := range resp.GetConfigs() {
+						_, _ = fmt.Fprintf(env.Stdout, "%s\t%d\t%s\n", cf.GetName(), cf.GetVersion(), cf.GetCreatedAt())
+					}
+				})
 			})
 		},
 	}
@@ -725,20 +658,16 @@ func newSharedVarsPutVerb() commands.Command {
 			if err != nil {
 				return err
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			ctx = idem.bind(ctx)
-			resp, err := c.SharedVars.PutSharedVariable(ctx, &structurev1.PutSharedVariableRequest{ProjectId: project, Name: args[0], Value: v})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				_, _ = fmt.Fprintf(env.Stdout, "stored shared variable %s\n", resp.GetVariable().GetName())
-				renderAffectedApps(env, resp.GetAffectedApps())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				ctx = idem.bind(ctx)
+				resp, err := c.SharedVars.PutSharedVariable(ctx, &structurev1.PutSharedVariableRequest{ProjectId: project, Name: args[0], Value: v})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintf(env.Stdout, "stored shared variable %s\n", resp.GetVariable().GetName())
+					renderAffectedApps(env, resp.GetAffectedApps())
+				})
 			})
 		},
 	}
@@ -765,23 +694,19 @@ func newSharedVarsListVerb() commands.Command {
 			if project == "" {
 				return usageErr(name, "--project is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.SharedVars.ListSharedVariables(ctx, &structurev1.ListSharedVariablesRequest{
-				ProjectId: project, AfterName: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
-			})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				_, _ = fmt.Fprintln(env.Stdout, "NAME\tVALUE\tUPDATED")
-				for _, v := range resp.GetVariables() {
-					_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\n", v.GetName(), v.GetValue(), v.GetUpdatedAt())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.SharedVars.ListSharedVariables(ctx, &structurev1.ListSharedVariablesRequest{
+					ProjectId: project, AfterName: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
+				})
+				if err != nil {
+					return err
 				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintln(env.Stdout, "NAME\tVALUE\tUPDATED")
+					for _, v := range resp.GetVariables() {
+						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\n", v.GetName(), v.GetValue(), v.GetUpdatedAt())
+					}
+				})
 			})
 		},
 	}
@@ -804,19 +729,15 @@ func newSharedVarsDeleteVerb() commands.Command {
 			if project == "" {
 				return usageErr(name, "--project is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.SharedVars.DeleteSharedVariable(ctx, &structurev1.DeleteSharedVariableRequest{ProjectId: project, Name: args[0]})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				_, _ = fmt.Fprintf(env.Stdout, "deleted shared variable %s\n", args[0])
-				renderAffectedApps(env, resp.GetAffectedApps())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.SharedVars.DeleteSharedVariable(ctx, &structurev1.DeleteSharedVariableRequest{ProjectId: project, Name: args[0]})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintf(env.Stdout, "deleted shared variable %s\n", args[0])
+					renderAffectedApps(env, resp.GetAffectedApps())
+				})
 			})
 		},
 	}
@@ -841,21 +762,17 @@ func newVolumesCreateVerb() commands.Command {
 			if project == "" {
 				return usageErr(name, "--project is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			ctx = idem.bind(ctx)
-			resp, err := c.Volumes.CreateVolume(ctx, &structurev1.CreateVolumeRequest{
-				ProjectId: project, Name: args[0], PinnedNodeId: node,
-			})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp.GetVolume(), func() {
-				_, _ = fmt.Fprintf(env.Stdout, "created volume %s (id %s)\n", resp.GetVolume().GetName(), resp.GetVolume().GetId())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				ctx = idem.bind(ctx)
+				resp, err := c.Volumes.CreateVolume(ctx, &structurev1.CreateVolumeRequest{
+					ProjectId: project, Name: args[0], PinnedNodeId: node,
+				})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp.GetVolume(), func() {
+					_, _ = fmt.Fprintf(env.Stdout, "created volume %s (id %s)\n", resp.GetVolume().GetName(), resp.GetVolume().GetId())
+				})
 			})
 		},
 	}
@@ -873,18 +790,14 @@ func newVolumesDeleteVerb() commands.Command {
 			if len(args) != 1 {
 				return usageErr(name, "expected exactly one VOLUME_ID argument")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Volumes.DeleteVolume(ctx, &structurev1.DeleteVolumeRequest{Id: args[0]})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				_, _ = fmt.Fprintf(env.Stdout, "deleted volume %s (platform row removed; the runtime-side volume stays - clean it up manually if needed)\n", args[0])
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Volumes.DeleteVolume(ctx, &structurev1.DeleteVolumeRequest{Id: args[0]})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintf(env.Stdout, "deleted volume %s (platform row removed; the runtime-side volume stays - clean it up manually if needed)\n", args[0])
+				})
 			})
 		},
 	}
@@ -910,21 +823,17 @@ func newNetworksCreateVerb() commands.Command {
 			if project == "" {
 				return usageErr(name, "--project is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			ctx = idem.bind(ctx)
-			resp, err := c.Networks.CreateNetwork(ctx, &structurev1.CreateNetworkRequest{
-				ProjectId: project, Name: args[0], EgressNone: egressNone,
-			})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp.GetNetwork(), func() {
-				_, _ = fmt.Fprintf(env.Stdout, "created network %s (id %s)\n", resp.GetNetwork().GetName(), resp.GetNetwork().GetId())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				ctx = idem.bind(ctx)
+				resp, err := c.Networks.CreateNetwork(ctx, &structurev1.CreateNetworkRequest{
+					ProjectId: project, Name: args[0], EgressNone: egressNone,
+				})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp.GetNetwork(), func() {
+					_, _ = fmt.Fprintf(env.Stdout, "created network %s (id %s)\n", resp.GetNetwork().GetName(), resp.GetNetwork().GetId())
+				})
 			})
 		},
 	}
@@ -954,23 +863,19 @@ func newNetworksListVerb() commands.Command {
 			if project == "" {
 				return usageErr(name, "--project is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Networks.ListNetworks(ctx, &structurev1.ListNetworksRequest{
-				ProjectId: project, AfterName: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
-			})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				_, _ = fmt.Fprintln(env.Stdout, "ID\tNAME\tEGRESS_NONE\tCREATED")
-				for _, n := range resp.GetNetworks() {
-					_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%t\t%s\n", n.GetId(), n.GetName(), n.GetEgressNone(), n.GetCreatedAt())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Networks.ListNetworks(ctx, &structurev1.ListNetworksRequest{
+					ProjectId: project, AfterName: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
+				})
+				if err != nil {
+					return err
 				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintln(env.Stdout, "ID\tNAME\tEGRESS_NONE\tCREATED")
+					for _, n := range resp.GetNetworks() {
+						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%t\t%s\n", n.GetId(), n.GetName(), n.GetEgressNone(), n.GetCreatedAt())
+					}
+				})
 			})
 		},
 	}
@@ -1002,22 +907,18 @@ func newNetworksRebuildVerb() commands.Command {
 			// 长执行维护动词：detach 排水（stop-first + StopGrace）+ 复建 +
 			// re-attach 是分钟级受维护窗（服务端 NetworkRebuildTimeout 硬界）
 			//——拨号豁免 120s 默认 deadline（platform backup 同款先例）。
-			ctx, cancel, c, err := dialFromEnv(ctx, noDeadline())
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			ctx = idem.bind(ctx)
-			resp, err := c.Networks.RebuildNetwork(ctx, &structurev1.RebuildNetworkRequest{
-				ProjectId: project, Name: args[0],
-			})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				_, _ = fmt.Fprintf(env.Stdout, "rebuilt network %s (detached %d, reattached %d)\n",
-					resp.GetNetwork().GetName(), resp.GetDetached(), resp.GetReattached())
+			return runRPC(ctx, []dialOption{noDeadline()}, func(ctx context.Context, c *fleetly.Client) error {
+				ctx = idem.bind(ctx)
+				resp, err := c.Networks.RebuildNetwork(ctx, &structurev1.RebuildNetworkRequest{
+					ProjectId: project, Name: args[0],
+				})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintf(env.Stdout, "rebuilt network %s (detached %d, reattached %d)\n",
+						resp.GetNetwork().GetName(), resp.GetDetached(), resp.GetReattached())
+				})
 			})
 		},
 	}
@@ -1045,22 +946,18 @@ func newNetworksDeclareVerb() commands.Command {
 			if network == "" || project == "" {
 				return usageErr(name, "--network and --project are required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			ctx = idem.bind(ctx)
-			resp, err := c.Networks.DeclareNetworkPeer(ctx, &structurev1.DeclareNetworkPeerRequest{
-				NetworkId: network, PeerProjectId: project,
-			})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp.GetPeer(), func() {
-				_, _ = fmt.Fprintf(env.Stdout, "declared peer %s on network %s (state %s)\n",
-					resp.GetPeer().GetId(), resp.GetPeer().GetNetworkName(), resp.GetPeer().GetState())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				ctx = idem.bind(ctx)
+				resp, err := c.Networks.DeclareNetworkPeer(ctx, &structurev1.DeclareNetworkPeerRequest{
+					NetworkId: network, PeerProjectId: project,
+				})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp.GetPeer(), func() {
+					_, _ = fmt.Fprintf(env.Stdout, "declared peer %s on network %s (state %s)\n",
+						resp.GetPeer().GetId(), resp.GetPeer().GetNetworkName(), resp.GetPeer().GetState())
+				})
 			})
 		},
 	}
@@ -1076,19 +973,15 @@ func newNetworksApproveVerb() commands.Command {
 			if len(args) != 1 {
 				return usageErr(name, "expected exactly one PEER_ID argument")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Networks.ApproveNetworkPeer(ctx, &structurev1.ApproveNetworkPeerRequest{Id: args[0]})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp.GetPeer(), func() {
-				_, _ = fmt.Fprintf(env.Stdout, "approved peer %s (state %s)\n",
-					resp.GetPeer().GetId(), resp.GetPeer().GetState())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Networks.ApproveNetworkPeer(ctx, &structurev1.ApproveNetworkPeerRequest{Id: args[0]})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp.GetPeer(), func() {
+					_, _ = fmt.Fprintf(env.Stdout, "approved peer %s (state %s)\n",
+						resp.GetPeer().GetId(), resp.GetPeer().GetState())
+				})
 			})
 		},
 	}
@@ -1104,19 +997,15 @@ func newNetworksRevokeVerb() commands.Command {
 			if len(args) != 1 {
 				return usageErr(name, "expected exactly one PEER_ID argument")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Networks.RevokeNetworkPeer(ctx, &structurev1.RevokeNetworkPeerRequest{Id: args[0]})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp.GetPeer(), func() {
-				_, _ = fmt.Fprintf(env.Stdout, "revoked peer %s (state %s)\n",
-					resp.GetPeer().GetId(), resp.GetPeer().GetState())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Networks.RevokeNetworkPeer(ctx, &structurev1.RevokeNetworkPeerRequest{Id: args[0]})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp.GetPeer(), func() {
+					_, _ = fmt.Fprintf(env.Stdout, "revoked peer %s (state %s)\n",
+						resp.GetPeer().GetId(), resp.GetPeer().GetState())
+				})
 			})
 		},
 	}
@@ -1125,8 +1014,7 @@ func newNetworksRevokeVerb() commands.Command {
 func newNetworksPeersVerb() commands.Command {
 	const name = "peers"
 	var network, project string
-	var after int64
-	var limit int
+	var pages pageFlags // 游标分页旗标收敛共享 struct（P4-2 批 A 全量迁移）
 	return &flaggedVerb{
 		name:     name,
 		synopsis: "List cross-project peer declarations (filter by --network or --project)",
@@ -1134,31 +1022,26 @@ func newNetworksPeersVerb() commands.Command {
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&network, "network", "", "filter by receiving network id")
 			fs.StringVar(&project, "project", "", "filter by attaching (peer) project id")
-			fs.Int64Var(&after, "after", 0, "pagination cursor: the seq of the last row of the previous page")
-			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
+			pages.register(fs, "after")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if len(args) != 0 {
 				return usageErr(name, "takes no positional arguments")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Networks.ListNetworkPeers(ctx, &structurev1.ListNetworkPeersRequest{
-				NetworkId: network, PeerProjectId: project, AfterPeerSeq: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
-			})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				_, _ = fmt.Fprintln(env.Stdout, "ID\tSTATE\tNETWORK\tNETWORK_PROJECT\tPEER_PROJECT")
-				for _, p := range resp.GetPeers() {
-					_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\t%s\t%s\n",
-						p.GetId(), p.GetState(), p.GetNetworkName(), p.GetNetworkProjectId(), p.GetPeerProjectId())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Networks.ListNetworkPeers(ctx, &structurev1.ListNetworkPeersRequest{
+					NetworkId: network, PeerProjectId: project, AfterPeerSeq: pages.cursor(), Limit: pages.limit32(),
+				})
+				if err != nil {
+					return err
 				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintln(env.Stdout, "ID\tSTATE\tNETWORK\tNETWORK_PROJECT\tPEER_PROJECT")
+					for _, p := range resp.GetPeers() {
+						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\t%s\t%s\n",
+							p.GetId(), p.GetState(), p.GetNetworkName(), p.GetNetworkProjectId(), p.GetPeerProjectId())
+					}
+				})
 			})
 		},
 	}

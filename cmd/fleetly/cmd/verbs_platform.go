@@ -12,6 +12,7 @@ import (
 	"github.com/lynx-go/commands"
 
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
+	"github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 // platform backup：同步执行（restic 链对数据根是本地操作，时长有上界——
@@ -30,21 +31,17 @@ func newPlatformBackupVerb() commands.Command {
 			}
 			// restic 链跑在请求内：豁免请求级 deadline（BackupTimeout 服务端
 			// 兜底）。
-			ctx, cancel, c, err := dialFromEnv(ctx, noDeadline())
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			ctx = idem.bind(ctx)
-			resp, err := c.Platform.TriggerPlatformBackup(ctx, &systemv1.TriggerPlatformBackupRequest{})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp.GetSnapshot(), func() {
-				s := resp.GetSnapshot()
-				_, _ = fmt.Fprintf(env.Stdout, "platform backup snapshot %s (taken %s on %s)\n",
-					s.GetId(), s.GetTime(), s.GetHostname())
+			return runRPC(ctx, []dialOption{noDeadline()}, func(ctx context.Context, c *fleetly.Client) error {
+				ctx = idem.bind(ctx)
+				resp, err := c.Platform.TriggerPlatformBackup(ctx, &systemv1.TriggerPlatformBackupRequest{})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp.GetSnapshot(), func() {
+					s := resp.GetSnapshot()
+					_, _ = fmt.Fprintf(env.Stdout, "platform backup snapshot %s (taken %s on %s)\n",
+						s.GetId(), s.GetTime(), s.GetHostname())
+				})
 			})
 		},
 	}
@@ -67,23 +64,19 @@ func newPlatformBackupsVerb() commands.Command {
 			if err := noArgs(name, args); err != nil {
 				return err
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Platform.ListPlatformBackups(ctx, &systemv1.ListPlatformBackupsRequest{
-				AfterSnapshotId: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
-			})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				_, _ = fmt.Fprintln(env.Stdout, "ID\tTIME\tHOSTNAME")
-				for _, s := range resp.GetSnapshots() {
-					_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\n", s.GetId(), s.GetTime(), s.GetHostname())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Platform.ListPlatformBackups(ctx, &systemv1.ListPlatformBackupsRequest{
+					AfterSnapshotId: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
+				})
+				if err != nil {
+					return err
 				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintln(env.Stdout, "ID\tTIME\tHOSTNAME")
+					for _, s := range resp.GetSnapshots() {
+						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\n", s.GetId(), s.GetTime(), s.GetHostname())
+					}
+				})
 			})
 		},
 	}

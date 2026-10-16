@@ -22,6 +22,7 @@ import (
 	"golang.org/x/term"
 
 	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
+	"github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 // exitCodeError 携带载体进程退出码（exit 动词退出码透传面）。
@@ -222,13 +223,9 @@ func newExecVerb() commands.Command {
 			if len(argv) == 0 {
 				return usageErr(name, "a command is required (non-tty sessions have no default)")
 			}
-			ctx, cancel, c, derr := dialFromEnv(ctx, noDeadline())
-			if derr != nil {
-				return derr
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			return runExecSession(ctx, env, c.Exec, target, argv, instance, false, jsonOut)
+			return runRPC(ctx, []dialOption{noDeadline()}, func(ctx context.Context, c *fleetly.Client) error {
+				return runExecSession(ctx, env, c.Exec, target, argv, instance, false, jsonOut)
+			})
 		},
 	}
 }
@@ -252,13 +249,9 @@ func newShellVerb() commands.Command {
 			if len(argv) == 0 {
 				argv = []string{"/bin/sh"}
 			}
-			ctx, cancel, c, derr := dialFromEnv(ctx, noDeadline())
-			if derr != nil {
-				return derr
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			return runExecSession(ctx, env, c.Exec, target, argv, instance, true, jsonOut)
+			return runRPC(ctx, []dialOption{noDeadline()}, func(ctx context.Context, c *fleetly.Client) error {
+				return runExecSession(ctx, env, c.Exec, target, argv, instance, true, jsonOut)
+			})
 		},
 	}
 }
@@ -279,23 +272,19 @@ func newExecInstancesVerb() commands.Command {
 			if err != nil {
 				return usageErr(name, err.Error())
 			}
-			ctx, cancel, c, derr := dialFromEnv(ctx, noDeadline())
-			if derr != nil {
-				return derr
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Exec.ListExecInstances(ctx, &runtimev1.ListExecInstancesRequest{
-				AppId: appID, Process: process,
-			})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				_, _ = fmt.Fprintln(env.Stdout, "INSTANCE\tNODE")
-				for _, row := range resp.GetInstances() {
-					_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\n", row.GetInstance(), row.GetNodeId())
+			return runRPC(ctx, []dialOption{noDeadline()}, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Exec.ListExecInstances(ctx, &runtimev1.ListExecInstancesRequest{
+					AppId: appID, Process: process,
+				})
+				if err != nil {
+					return err
 				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintln(env.Stdout, "INSTANCE\tNODE")
+					for _, row := range resp.GetInstances() {
+						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\n", row.GetInstance(), row.GetNodeId())
+					}
+				})
 			})
 		},
 	}

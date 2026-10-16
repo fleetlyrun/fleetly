@@ -309,17 +309,13 @@ func newDeploymentsWaitVerb() commands.Command {
 				return usageErr(name, "--deployment is required")
 			}
 			// 流式长等待：拨号豁免请求级 deadline（deploy --wait 同款纪律）。
-			ctx, cancel, c, err := dialFromEnv(ctx, noDeadline())
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			final, werr := waitDeploymentFrames(ctx, c, depID, waitOnFrame(env, jsonOut, depID))
-			if werr != nil {
-				return werr
-			}
-			return requireSucceeded("deployment", depID, final)
+			return runRPC(ctx, []dialOption{noDeadline()}, func(ctx context.Context, c *fleetly.Client) error {
+				final, werr := waitDeploymentFrames(ctx, c, depID, waitOnFrame(env, jsonOut, depID))
+				if werr != nil {
+					return werr
+				}
+				return requireSucceeded("deployment", depID, final)
+			})
 		},
 	}
 }
@@ -343,17 +339,13 @@ func newBuildsWaitVerb() commands.Command {
 				return usageErr(name, "--build is required")
 			}
 			// 流式长等待：拨号豁免请求级 deadline（wait 家族同款纪律）。
-			ctx, cancel, c, err := dialFromEnv(ctx, noDeadline())
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			final, werr := waitBuildFrames(ctx, c, buildID, waitBuildOnFrame(env, jsonOut, buildID))
-			if werr != nil {
-				return werr
-			}
-			return requireSucceeded("build", buildID, final)
+			return runRPC(ctx, []dialOption{noDeadline()}, func(ctx context.Context, c *fleetly.Client) error {
+				final, werr := waitBuildFrames(ctx, c, buildID, waitBuildOnFrame(env, jsonOut, buildID))
+				if werr != nil {
+					return werr
+				}
+				return requireSucceeded("build", buildID, final)
+			})
 		},
 	}
 }
@@ -377,30 +369,26 @@ func newDeploymentsGetVerb() commands.Command {
 			if depID == "" {
 				return usageErr(name, "--deployment is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Deployments.GetDeployment(ctx, &deliveryv1.GetDeploymentRequest{Id: depID})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp.GetDeployment(), func() {
-				d := resp.GetDeployment()
-				_, _ = fmt.Fprintf(env.Stdout, "deployment %s %s\n", d.GetId(), d.GetState())
-				_, _ = fmt.Fprintf(env.Stdout, "  revision:   %s → %s\n", d.GetFromRevision(), d.GetToRevision())
-				_, _ = fmt.Fprintf(env.Stdout, "  generation: %s\n", generationCell(d))
-				if d.GetObserveDeadline() != "" {
-					_, _ = fmt.Fprintf(env.Stdout, "  observe deadline: %s\n", d.GetObserveDeadline())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Deployments.GetDeployment(ctx, &deliveryv1.GetDeploymentRequest{Id: depID})
+				if err != nil {
+					return err
 				}
-				if d.GetFirstBootTaskId() != "" {
-					_, _ = fmt.Fprintf(env.Stdout, "  first boot task: %s\n", d.GetFirstBootTaskId())
-				}
-				if d.GetError() != "" {
-					_, _ = fmt.Fprintf(env.Stdout, "  error: %s\n", d.GetError())
-				}
+				return renderOut(env, jsonOut, resp.GetDeployment(), func() {
+					d := resp.GetDeployment()
+					_, _ = fmt.Fprintf(env.Stdout, "deployment %s %s\n", d.GetId(), d.GetState())
+					_, _ = fmt.Fprintf(env.Stdout, "  revision:   %s → %s\n", d.GetFromRevision(), d.GetToRevision())
+					_, _ = fmt.Fprintf(env.Stdout, "  generation: %s\n", generationCell(d))
+					if d.GetObserveDeadline() != "" {
+						_, _ = fmt.Fprintf(env.Stdout, "  observe deadline: %s\n", d.GetObserveDeadline())
+					}
+					if d.GetFirstBootTaskId() != "" {
+						_, _ = fmt.Fprintf(env.Stdout, "  first boot task: %s\n", d.GetFirstBootTaskId())
+					}
+					if d.GetError() != "" {
+						_, _ = fmt.Fprintf(env.Stdout, "  error: %s\n", d.GetError())
+					}
+				})
 			})
 		},
 	}
@@ -446,19 +434,15 @@ func newDeploymentsCancelVerb() commands.Command {
 			if len(args) != 1 {
 				return usageErr(name, "expected exactly one DEPLOYMENT_ID argument")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Deployments.CancelDeployment(ctx, &deliveryv1.CancelDeploymentRequest{Id: args[0]})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp.GetDeployment(), func() {
-				d := resp.GetDeployment()
-				_, _ = fmt.Fprintf(env.Stdout, "deployment %s cancelled (revision %s, generation %d)\n", d.GetId(), d.GetToRevision(), d.GetGeneration())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Deployments.CancelDeployment(ctx, &deliveryv1.CancelDeploymentRequest{Id: args[0]})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp.GetDeployment(), func() {
+					d := resp.GetDeployment()
+					_, _ = fmt.Fprintf(env.Stdout, "deployment %s cancelled (revision %s, generation %d)\n", d.GetId(), d.GetToRevision(), d.GetGeneration())
+				})
 			})
 		},
 	}
@@ -483,23 +467,19 @@ func newDeploymentsListVerb() commands.Command {
 			if app == "" {
 				return usageErr(name, "--app is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Deployments.ListDeployments(ctx, &deliveryv1.ListDeploymentsRequest{
-				AppId: app, AfterDeploymentSeq: pages.cursor(), Limit: pages.limit32(),
-			})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				_, _ = fmt.Fprintln(env.Stdout, "ID\tSTATE\tREVISION\tGENERATION\tUPDATED")
-				for _, d := range resp.GetDeployments() {
-					_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\t%s\t%s\n", d.GetId(), d.GetState(), d.GetToRevision(), generationCell(d), d.GetUpdatedAt())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Deployments.ListDeployments(ctx, &deliveryv1.ListDeploymentsRequest{
+					AppId: app, AfterDeploymentSeq: pages.cursor(), Limit: pages.limit32(),
+				})
+				if err != nil {
+					return err
 				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintln(env.Stdout, "ID\tSTATE\tREVISION\tGENERATION\tUPDATED")
+					for _, d := range resp.GetDeployments() {
+						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\t%s\t%s\n", d.GetId(), d.GetState(), d.GetToRevision(), generationCell(d), d.GetUpdatedAt())
+					}
+				})
 			})
 		},
 	}
@@ -530,28 +510,24 @@ func newRollbackVerb() commands.Command {
 			if wait {
 				dialOpts = append(dialOpts, noDeadline())
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx, dialOpts...)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			ctx = idem.bind(ctx)
-			resp, err := c.Deployments.Rollback(ctx, &deliveryv1.RollbackRequest{AppId: app, ToRevision: to})
-			if err != nil {
-				return err
-			}
-			depID := resp.GetDeployment().GetId()
-			if wait {
-				final, werr := waitDeploymentFrames(ctx, c, depID, waitOnFrame(env, jsonOut, depID))
-				if werr != nil {
-					return werr
+			return runRPC(ctx, dialOpts, func(ctx context.Context, c *fleetly.Client) error {
+				ctx = idem.bind(ctx)
+				resp, err := c.Deployments.Rollback(ctx, &deliveryv1.RollbackRequest{AppId: app, ToRevision: to})
+				if err != nil {
+					return err
 				}
-				return requireSucceeded("deployment", depID, final)
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				d := resp.GetDeployment()
-				_, _ = fmt.Fprintf(env.Stdout, "rolling back via deployment %s (target %s)\n", d.GetId(), d.GetToRevision())
+				depID := resp.GetDeployment().GetId()
+				if wait {
+					final, werr := waitDeploymentFrames(ctx, c, depID, waitOnFrame(env, jsonOut, depID))
+					if werr != nil {
+						return werr
+					}
+					return requireSucceeded("deployment", depID, final)
+				}
+				return renderOut(env, jsonOut, resp, func() {
+					d := resp.GetDeployment()
+					_, _ = fmt.Fprintf(env.Stdout, "rolling back via deployment %s (target %s)\n", d.GetId(), d.GetToRevision())
+				})
 			})
 		},
 	}
@@ -578,23 +554,19 @@ func newRevisionsListVerb() commands.Command {
 			if app == "" {
 				return usageErr(name, "--app is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Revisions.ListRevisions(ctx, &deliveryv1.ListRevisionsRequest{
-				AppId: app, AfterSeq: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
-			})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				_, _ = fmt.Fprintln(env.Stdout, "SEQ\tID\tDIGEST\tSTRATEGY\tCREATED")
-				for _, r := range resp.GetRevisions() {
-					_, _ = fmt.Fprintf(env.Stdout, "R%d\t%s\t%s\t%s\t%s\n", r.GetSeq(), r.GetId(), r.GetDigest(), strategySummary(r.GetProcessStrategies()), r.GetCreatedAt())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Revisions.ListRevisions(ctx, &deliveryv1.ListRevisionsRequest{
+					AppId: app, AfterSeq: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
+				})
+				if err != nil {
+					return err
 				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintln(env.Stdout, "SEQ\tID\tDIGEST\tSTRATEGY\tCREATED")
+					for _, r := range resp.GetRevisions() {
+						_, _ = fmt.Fprintf(env.Stdout, "R%d\t%s\t%s\t%s\t%s\n", r.GetSeq(), r.GetId(), r.GetDigest(), strategySummary(r.GetProcessStrategies()), r.GetCreatedAt())
+					}
+				})
 			})
 		},
 	}
@@ -625,30 +597,26 @@ func newRevisionsGetVerb() commands.Command {
 			if seq <= 0 {
 				return usageErr(name, "--seq is required (R number)")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Revisions.GetRevision(ctx, &deliveryv1.GetRevisionRequest{AppId: app, Seq: seq})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				r := resp.GetRevision()
-				_, _ = fmt.Fprintf(env.Stdout, "R%d\t%s\t%s\n", r.GetSeq(), r.GetId(), r.GetDigest())
-				_, _ = fmt.Fprintf(env.Stdout, "created %s\tsource %s\tstrategy %s\n",
-					r.GetCreatedAt(),
-					strings.ToLower(strings.TrimPrefix(r.GetSourceKind().String(), "SOURCE_KIND_")),
-					strategySummary(r.GetProcessStrategies()))
-				data, merr := protojson.Marshal(resp.GetSpec())
-				if merr != nil {
-					return
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Revisions.GetRevision(ctx, &deliveryv1.GetRevisionRequest{AppId: app, Seq: seq})
+				if err != nil {
+					return err
 				}
-				var buf bytes.Buffer
-				_ = json.Compact(&buf, data)
-				_, _ = fmt.Fprintln(env.Stdout, buf.String())
+				return renderOut(env, jsonOut, resp, func() {
+					r := resp.GetRevision()
+					_, _ = fmt.Fprintf(env.Stdout, "R%d\t%s\t%s\n", r.GetSeq(), r.GetId(), r.GetDigest())
+					_, _ = fmt.Fprintf(env.Stdout, "created %s\tsource %s\tstrategy %s\n",
+						r.GetCreatedAt(),
+						strings.ToLower(strings.TrimPrefix(r.GetSourceKind().String(), "SOURCE_KIND_")),
+						strategySummary(r.GetProcessStrategies()))
+					data, merr := protojson.Marshal(resp.GetSpec())
+					if merr != nil {
+						return
+					}
+					var buf bytes.Buffer
+					_ = json.Compact(&buf, data)
+					_, _ = fmt.Fprintln(env.Stdout, buf.String())
+				})
 			})
 		},
 	}
@@ -673,33 +641,29 @@ func newRevisionsDiffVerb() commands.Command {
 			if app == "" || from == 0 || to == 0 {
 				return usageErr(name, "--app, --from and --to are required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Revisions.DiffRevisions(ctx, &deliveryv1.DiffRevisionsRequest{AppId: app, FromSeq: from, ToSeq: to})
-			if err != nil {
-				return err
-			}
-			if err := renderOut(env, jsonOut, resp, func() {
-				if len(resp.GetEntries()) == 0 {
-					_, _ = fmt.Fprintln(env.Stdout, "no differences")
-					return
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Revisions.DiffRevisions(ctx, &deliveryv1.DiffRevisionsRequest{AppId: app, FromSeq: from, ToSeq: to})
+				if err != nil {
+					return err
 				}
-				_, _ = fmt.Fprintln(env.Stdout, "PATH\tOLD\tNEW")
-				for _, e := range resp.GetEntries() {
-					_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\n", e.GetPath(), e.GetOldValue(), e.GetNewValue())
+				if err := renderOut(env, jsonOut, resp, func() {
+					if len(resp.GetEntries()) == 0 {
+						_, _ = fmt.Fprintln(env.Stdout, "no differences")
+						return
+					}
+					_, _ = fmt.Fprintln(env.Stdout, "PATH\tOLD\tNEW")
+					for _, e := range resp.GetEntries() {
+						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\n", e.GetPath(), e.GetOldValue(), e.GetNewValue())
+					}
+				}); err != nil {
+					return err
 				}
-			}); err != nil {
-				return err
-			}
-			// 有变化 → 退出码 2（diff 类动词机器契约；stdout 照常是 diff 面）。
-			if len(resp.GetEntries()) > 0 {
-				return errChanges
-			}
-			return nil
+				// 有变化 → 退出码 2（diff 类动词机器契约；stdout 照常是 diff 面）。
+				if len(resp.GetEntries()) > 0 {
+					return errChanges
+				}
+				return nil
+			})
 		},
 	}
 }
@@ -723,23 +687,19 @@ func newBuildsListVerb() commands.Command {
 			if app == "" {
 				return usageErr(name, "--app is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Builds.ListBuilds(ctx, &deliveryv1.ListBuildsRequest{
-				AppId: app, AfterBuildSeq: pages.cursor(), Limit: pages.limit32(),
-			})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				_, _ = fmt.Fprintln(env.Stdout, "ID\tSTATE\tDIGEST\tCREATED")
-				for _, b := range resp.GetBuilds() {
-					_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\t%s\n", b.GetId(), b.GetState(), b.GetDigest(), b.GetCreatedAt())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Builds.ListBuilds(ctx, &deliveryv1.ListBuildsRequest{
+					AppId: app, AfterBuildSeq: pages.cursor(), Limit: pages.limit32(),
+				})
+				if err != nil {
+					return err
 				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintln(env.Stdout, "ID\tSTATE\tDIGEST\tCREATED")
+					for _, b := range resp.GetBuilds() {
+						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\t%s\n", b.GetId(), b.GetState(), b.GetDigest(), b.GetCreatedAt())
+					}
+				})
 			})
 		},
 	}
@@ -768,47 +728,43 @@ func newBuildsLogsVerb() commands.Command {
 			}
 			// 流式动词：拨号豁免请求级 deadline（follow 续流至构建终态，
 			// 时长由构建决定；服务端流面不经 unary 超时拦截器）。
-			ctx, cancel, c, err := dialFromEnv(ctx, noDeadline())
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			stream, err := c.Builds.StreamBuildLogs(ctx, &deliveryv1.StreamBuildLogsRequest{
-				BuildId: build, Follow: follow,
-			})
-			if err != nil {
-				return err
-			}
-			compact := func(m proto.Message) (string, error) {
-				data, err := protoJSONMarshal.Marshal(m)
-				if err != nil {
-					return "", err
-				}
-				var buf bytes.Buffer
-				if err := json.Compact(&buf, data); err != nil {
-					return "", err
-				}
-				return buf.String(), nil
-			}
-			for {
-				frame, err := stream.Recv()
-				if err == io.EOF {
-					return nil
-				}
+			return runRPC(ctx, []dialOption{noDeadline()}, func(ctx context.Context, c *fleetly.Client) error {
+				stream, err := c.Builds.StreamBuildLogs(ctx, &deliveryv1.StreamBuildLogsRequest{
+					BuildId: build, Follow: follow,
+				})
 				if err != nil {
 					return err
 				}
-				if jsonOut {
-					line, err := compact(frame)
+				compact := func(m proto.Message) (string, error) {
+					data, err := protoJSONMarshal.Marshal(m)
+					if err != nil {
+						return "", err
+					}
+					var buf bytes.Buffer
+					if err := json.Compact(&buf, data); err != nil {
+						return "", err
+					}
+					return buf.String(), nil
+				}
+				for {
+					frame, err := stream.Recv()
+					if err == io.EOF {
+						return nil
+					}
 					if err != nil {
 						return err
 					}
-					_, _ = fmt.Fprintln(env.Stdout, line)
-					continue
+					if jsonOut {
+						line, err := compact(frame)
+						if err != nil {
+							return err
+						}
+						_, _ = fmt.Fprintln(env.Stdout, line)
+						continue
+					}
+					_, _ = fmt.Fprintf(env.Stdout, "%s %s\n", frame.GetTime(), string(frame.GetLine()))
 				}
-				_, _ = fmt.Fprintf(env.Stdout, "%s %s\n", frame.GetTime(), string(frame.GetLine()))
-			}
+			})
 		},
 	}
 }
@@ -839,27 +795,23 @@ func newRoutesCreateVerb() commands.Command {
 			if project == "" || host == "" || app == "" || process == "" || port == 0 {
 				return usageErr(name, "--project, --host, --app, --process and --port are required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			ctx = idem.bind(ctx)
-			resp, err := c.Routes.CreateRoute(ctx, &proxyv1.CreateRouteRequest{
-				ProjectId: project, Host: host, Path: path, AppId: app, Process: process,
-				Port:     int32(port), //nolint:gosec // 端口域内
-				Protocol: protocol, TlsMode: tlsMode,
-			})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp.GetRoute(), func() {
-				r := resp.GetRoute()
-				_, _ = fmt.Fprintf(env.Stdout, "created route %s -> %s:%d (%s)\n", r.GetHost(), r.GetProcess(), r.GetPort(), r.GetProtocol())
-				if r.GetTlsMode() == "none" {
-					_, _ = fmt.Fprintf(env.Stdout, "warning: TLS is disabled for %s - traffic to this route is plaintext until you recreate it with --tls auto\n", r.GetHost())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				ctx = idem.bind(ctx)
+				resp, err := c.Routes.CreateRoute(ctx, &proxyv1.CreateRouteRequest{
+					ProjectId: project, Host: host, Path: path, AppId: app, Process: process,
+					Port:     int32(port), //nolint:gosec // 端口域内
+					Protocol: protocol, TlsMode: tlsMode,
+				})
+				if err != nil {
+					return err
 				}
+				return renderOut(env, jsonOut, resp.GetRoute(), func() {
+					r := resp.GetRoute()
+					_, _ = fmt.Fprintf(env.Stdout, "created route %s -> %s:%d (%s)\n", r.GetHost(), r.GetProcess(), r.GetPort(), r.GetProtocol())
+					if r.GetTlsMode() == "none" {
+						_, _ = fmt.Fprintf(env.Stdout, "warning: TLS is disabled for %s - traffic to this route is plaintext until you recreate it with --tls auto\n", r.GetHost())
+					}
+				})
 			})
 		},
 	}
@@ -868,39 +820,33 @@ func newRoutesCreateVerb() commands.Command {
 func newRoutesListVerb() commands.Command {
 	const name = "list"
 	var project string
-	var after int64
-	var limit int
+	var pages pageFlags // 游标分页旗标收敛共享 struct（P4-2 批 A 全量迁移）
 	return &flaggedVerb{
 		name:     name,
 		synopsis: "List routes",
 		usage:    "routes list [--project PROJECT_ID] [--after SEQ] [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&project, "project", "", "filter by project")
-			fs.Int64Var(&after, "after", 0, "pagination cursor: the seq of the last row of the previous page")
-			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
+			pages.register(fs, "after")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if err := noArgs(name, args); err != nil {
 				return err
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Routes.ListRoutes(ctx, &proxyv1.ListRoutesRequest{
-				ProjectId: project, AfterRouteSeq: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
-			})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				_, _ = fmt.Fprintln(env.Stdout, "ID\tHOST\tPATH\tAPP\tPROCESS\tPORT\tPROTO\tTLS")
-				for _, r := range resp.GetRoutes() {
-					_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\t%s\t%s\t%d\t%s\t%s\n",
-						r.GetId(), r.GetHost(), r.GetPath(), r.GetAppId(), r.GetProcess(), r.GetPort(), r.GetProtocol(), r.GetTlsMode())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Routes.ListRoutes(ctx, &proxyv1.ListRoutesRequest{
+					ProjectId: project, AfterRouteSeq: pages.cursor(), Limit: pages.limit32(),
+				})
+				if err != nil {
+					return err
 				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintln(env.Stdout, "ID\tHOST\tPATH\tAPP\tPROCESS\tPORT\tPROTO\tTLS")
+					for _, r := range resp.GetRoutes() {
+						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\t%s\t%s\t%d\t%s\t%s\n",
+							r.GetId(), r.GetHost(), r.GetPath(), r.GetAppId(), r.GetProcess(), r.GetPort(), r.GetProtocol(), r.GetTlsMode())
+					}
+				})
 			})
 		},
 	}
@@ -908,37 +854,31 @@ func newRoutesListVerb() commands.Command {
 
 func newNodesListVerb() commands.Command {
 	const name = "list"
-	var after int64
-	var limit int
+	var pages pageFlags // 游标分页旗标收敛共享 struct（P4-2 批 A 全量迁移）
 	return &flaggedVerb{
 		name:     name,
 		synopsis: "List observed cluster nodes",
 		usage:    "nodes list [--after SEQ] [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.Int64Var(&after, "after", 0, "pagination cursor: the seq of the last row of the previous page")
-			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
+			pages.register(fs, "after")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if err := noArgs(name, args); err != nil {
 				return err
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Nodes.ListNodes(ctx, &runtimev1.ListNodesRequest{
-				AfterNodeSeq: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
-			})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				_, _ = fmt.Fprintln(env.Stdout, "PLATFORM_ID\tROLE\tAVAILABLE\tHOSTNAME\tLAST_SEEN")
-				for _, n := range resp.GetNodes() {
-					_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%t\t%s\t%s\n", n.GetPlatformId(), n.GetRole(), n.GetAvailable(), n.GetHostname(), n.GetLastSeenAt())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Nodes.ListNodes(ctx, &runtimev1.ListNodesRequest{
+					AfterNodeSeq: pages.cursor(), Limit: pages.limit32(),
+				})
+				if err != nil {
+					return err
 				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintln(env.Stdout, "PLATFORM_ID\tROLE\tAVAILABLE\tHOSTNAME\tLAST_SEEN")
+					for _, n := range resp.GetNodes() {
+						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%t\t%s\t%s\n", n.GetPlatformId(), n.GetRole(), n.GetAvailable(), n.GetHostname(), n.GetLastSeenAt())
+					}
+				})
 			})
 		},
 	}
@@ -957,18 +897,14 @@ func newNodesEnrollVerb() commands.Command {
 			if err := noArgs(name, args); err != nil {
 				return err
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Nodes.EnrollNode(ctx, &runtimev1.EnrollNodeRequest{Rotate: rotate})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				_, _ = fmt.Fprintln(env.Stdout, resp.GetJoinCommand())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Nodes.EnrollNode(ctx, &runtimev1.EnrollNodeRequest{Rotate: rotate})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintln(env.Stdout, resp.GetJoinCommand())
+				})
 			})
 		},
 	}
@@ -991,18 +927,14 @@ func newNodesAdminVerb(name, past, synopsis string, call func(ctx context.Contex
 			if nodeID == "" {
 				return usageErr(name, "--node is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := call(ctx, c, nodeID)
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				_, _ = fmt.Fprintf(env.Stdout, "%s node %s\n", past, nodeID)
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := call(ctx, c, nodeID)
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintf(env.Stdout, "%s node %s\n", past, nodeID)
+				})
 			})
 		},
 	}

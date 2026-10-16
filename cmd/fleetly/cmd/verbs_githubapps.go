@@ -16,6 +16,7 @@ import (
 	"github.com/lynx-go/commands"
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
+	"github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 // ghKeyMaterial 读私钥 PEM：--private-key-file 指定文件，缺省读进程
@@ -79,20 +80,16 @@ func newGitHubAppsPutVerb() commands.Command {
 			if strings.TrimSpace(string(key)) == "" {
 				return usageErr(name, "a private key is required (--private-key-file PATH or stdin)")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			ctx = idem.bind(ctx)
-			resp, err := c.GitHubApps.SetGitHubApp(ctx, ghPutRequest(projectID, isGlobal, appID, installationID, string(key), apiBase))
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp.GetApp(), func() {
-				printGitHubApp(env, resp.GetApp())
-				_, _ = fmt.Fprintln(env.Stdout, "verified against github (owner resolved automatically)")
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				ctx = idem.bind(ctx)
+				resp, err := c.GitHubApps.SetGitHubApp(ctx, ghPutRequest(projectID, isGlobal, appID, installationID, string(key), apiBase))
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp.GetApp(), func() {
+					printGitHubApp(env, resp.GetApp())
+					_, _ = fmt.Fprintln(env.Stdout, "verified against github (owner resolved automatically)")
+				})
 			})
 		},
 	}
@@ -118,27 +115,23 @@ func newGitHubAppsListVerb() commands.Command {
 			if err != nil {
 				return err
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.GitHubApps.ListGitHubApps(ctx, ghListRequest(projectID, isGlobal))
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				if len(resp.GetApps()) == 0 {
-					_, _ = fmt.Fprintln(env.Stdout, "no github apps configured")
-					return
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.GitHubApps.ListGitHubApps(ctx, ghListRequest(projectID, isGlobal))
+				if err != nil {
+					return err
 				}
-				for i, a := range resp.GetApps() {
-					if i > 0 {
-						_, _ = fmt.Fprintln(env.Stdout)
+				return renderOut(env, jsonOut, resp, func() {
+					if len(resp.GetApps()) == 0 {
+						_, _ = fmt.Fprintln(env.Stdout, "no github apps configured")
+						return
 					}
-					printGitHubApp(env, a)
-				}
+					for i, a := range resp.GetApps() {
+						if i > 0 {
+							_, _ = fmt.Fprintln(env.Stdout)
+						}
+						printGitHubApp(env, a)
+					}
+				})
 			})
 		},
 	}
@@ -159,18 +152,14 @@ func newGitHubAppsDeleteVerb() commands.Command {
 			if id == "" {
 				return usageErr(name, "--id is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.GitHubApps.DeleteGitHubApp(ctx, &deliveryv1.DeleteGitHubAppRequest{Id: id})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				_, _ = fmt.Fprintf(env.Stdout, "deleted github app %s\n", id)
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.GitHubApps.DeleteGitHubApp(ctx, &deliveryv1.DeleteGitHubAppRequest{Id: id})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintf(env.Stdout, "deleted github app %s\n", id)
+				})
 			})
 		},
 	}
@@ -191,28 +180,24 @@ func newGitHubAppsReposVerb() commands.Command {
 			if id == "" {
 				return usageErr(name, "--id is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.GitHubApps.ListGitHubAppRepos(ctx, &deliveryv1.ListGitHubAppReposRequest{Id: id})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				if len(resp.GetRepos()) == 0 {
-					_, _ = fmt.Fprintln(env.Stdout, "no repositories reachable via this installation")
-					return
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.GitHubApps.ListGitHubAppRepos(ctx, &deliveryv1.ListGitHubAppReposRequest{Id: id})
+				if err != nil {
+					return err
 				}
-				for _, r := range resp.GetRepos() {
-					vis := "public"
-					if r.GetPrivate() {
-						vis = "private"
+				return renderOut(env, jsonOut, resp, func() {
+					if len(resp.GetRepos()) == 0 {
+						_, _ = fmt.Fprintln(env.Stdout, "no repositories reachable via this installation")
+						return
 					}
-					_, _ = fmt.Fprintf(env.Stdout, "%s (%s)\n", r.GetFullName(), vis)
-				}
+					for _, r := range resp.GetRepos() {
+						vis := "public"
+						if r.GetPrivate() {
+							vis = "private"
+						}
+						_, _ = fmt.Fprintf(env.Stdout, "%s (%s)\n", r.GetFullName(), vis)
+					}
+				})
 			})
 		},
 	}

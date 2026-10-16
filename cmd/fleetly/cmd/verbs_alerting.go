@@ -12,6 +12,7 @@ import (
 	"github.com/lynx-go/commands"
 
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
+	"github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 // metrics query：PromQL 透传（位置参数 = 查询文本）。
@@ -32,27 +33,23 @@ func newMetricsQueryVerb() commands.Command {
 			if len(args) != 1 || args[0] == "" {
 				return usageErr(name, "exactly one PromQL query argument is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Metrics.QueryMetrics(ctx, &telemetryv1.QueryMetricsRequest{
-				Query: args[0], Start: start, End: end, StepSeconds: step,
-			})
-			if err != nil {
-				return err
-			}
-			if jsonOut {
-				return renderOut(env, jsonOut, resp, func() {})
-			}
-			for _, s := range resp.GetSeries() {
-				for _, p := range s.GetPoints() {
-					_, _ = fmt.Fprintf(env.Stdout, "%s %v\n", p.GetTime(), p.GetValue())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Metrics.QueryMetrics(ctx, &telemetryv1.QueryMetricsRequest{
+					Query: args[0], Start: start, End: end, StepSeconds: step,
+				})
+				if err != nil {
+					return err
 				}
-			}
-			return nil
+				if jsonOut {
+					return renderOut(env, jsonOut, resp, func() {})
+				}
+				for _, s := range resp.GetSeries() {
+					for _, p := range s.GetPoints() {
+						_, _ = fmt.Fprintf(env.Stdout, "%s %v\n", p.GetTime(), p.GetValue())
+					}
+				}
+				return nil
+			})
 		},
 	}
 }
@@ -81,22 +78,18 @@ func newChannelsCreateVerb() commands.Command {
 			if chName == "" {
 				return usageErr(name, "--name is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			ctx = idem.bind(ctx)
-			resp, err := c.Alerting.CreateNotificationChannel(ctx, &telemetryv1.CreateNotificationChannelRequest{
-				Name: chName, Kind: kind, Url: url, BotToken: botToken, ChatId: chatID,
-			})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp.GetChannel(), func() {
-				ch := resp.GetChannel()
-				_, _ = fmt.Fprintf(env.Stdout, "created channel %s [%s] (id %s)\n", ch.GetName(), ch.GetKind(), ch.GetId())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				ctx = idem.bind(ctx)
+				resp, err := c.Alerting.CreateNotificationChannel(ctx, &telemetryv1.CreateNotificationChannelRequest{
+					Name: chName, Kind: kind, Url: url, BotToken: botToken, ChatId: chatID,
+				})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp.GetChannel(), func() {
+					ch := resp.GetChannel()
+					_, _ = fmt.Fprintf(env.Stdout, "created channel %s [%s] (id %s)\n", ch.GetName(), ch.GetKind(), ch.GetId())
+				})
 			})
 		},
 	}
@@ -120,25 +113,21 @@ func newChannelsTestVerb() commands.Command {
 			if channelID == "" {
 				return usageErr(name, "--channel is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx, noDeadline())
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Alerting.TestNotificationChannel(ctx, &telemetryv1.TestNotificationChannelRequest{ChannelId: channelID})
-			if err != nil {
-				return err
-			}
-			if jsonOut {
-				return renderOut(env, jsonOut, resp, func() {})
-			}
-			if resp.GetDelivered() {
-				_, _ = fmt.Fprintln(env.Stdout, "test payload delivered")
-				return nil
-			}
-			_, _ = fmt.Fprintf(env.Stdout, "delivery failed: %s\n", resp.GetError())
-			return fmt.Errorf("channel test failed: %s", resp.GetError())
+			return runRPC(ctx, []dialOption{noDeadline()}, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Alerting.TestNotificationChannel(ctx, &telemetryv1.TestNotificationChannelRequest{ChannelId: channelID})
+				if err != nil {
+					return err
+				}
+				if jsonOut {
+					return renderOut(env, jsonOut, resp, func() {})
+				}
+				if resp.GetDelivered() {
+					_, _ = fmt.Fprintln(env.Stdout, "test payload delivered")
+					return nil
+				}
+				_, _ = fmt.Fprintf(env.Stdout, "delivery failed: %s\n", resp.GetError())
+				return fmt.Errorf("channel test failed: %s", resp.GetError())
+			})
 		},
 	}
 }
@@ -155,27 +144,23 @@ func newChannelsListVerb() commands.Command {
 			if err := noArgs(name, args); err != nil {
 				return err
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Alerting.ListNotificationChannels(ctx, &telemetryv1.ListNotificationChannelsRequest{})
-			if err != nil {
-				return err
-			}
-			if jsonOut {
-				return renderOut(env, jsonOut, resp, func() {})
-			}
-			for _, ch := range resp.GetChannels() {
-				fail := ch.GetLastFailure()
-				if fail != "" {
-					fail = " last-failure: " + fail
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Alerting.ListNotificationChannels(ctx, &telemetryv1.ListNotificationChannelsRequest{})
+				if err != nil {
+					return err
 				}
-				_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s%s\n", ch.GetId(), ch.GetKind(), ch.GetName(), fail)
-			}
-			return nil
+				if jsonOut {
+					return renderOut(env, jsonOut, resp, func() {})
+				}
+				for _, ch := range resp.GetChannels() {
+					fail := ch.GetLastFailure()
+					if fail != "" {
+						fail = " last-failure: " + fail
+					}
+					_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s%s\n", ch.GetId(), ch.GetKind(), ch.GetName(), fail)
+				}
+				return nil
+			})
 		},
 	}
 }
@@ -198,19 +183,15 @@ func newChannelsDeleteVerb() commands.Command {
 			if channelID == "" {
 				return usageErr(name, "--channel is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			if _, err := c.Alerting.DeleteNotificationChannel(ctx, &telemetryv1.DeleteNotificationChannelRequest{ChannelId: channelID}); err != nil {
-				return err
-			}
-			if !jsonOut {
-				_, _ = fmt.Fprintf(env.Stdout, "deleted channel %s\n", channelID)
-			}
-			return nil
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				if _, err := c.Alerting.DeleteNotificationChannel(ctx, &telemetryv1.DeleteNotificationChannelRequest{ChannelId: channelID}); err != nil {
+					return err
+				}
+				if !jsonOut {
+					_, _ = fmt.Fprintf(env.Stdout, "deleted channel %s\n", channelID)
+				}
+				return nil
+			})
 		},
 	}
 }
@@ -240,22 +221,18 @@ func newAlertsRulesCreateVerb() commands.Command {
 			if appID == "" {
 				return usageErr(name, "--app is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			ctx = idem.bind(ctx)
-			resp, err := c.Alerting.CreateAlertRule(ctx, &telemetryv1.CreateAlertRuleRequest{
-				AppId: appID, Metric: metric, Threshold: threshold, ForSeconds: forSecs,
-			})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp.GetRule(), func() {
-				r := resp.GetRule()
-				_, _ = fmt.Fprintf(env.Stdout, "created alert rule %s (%s > %v, for %ds)\n", r.GetId(), r.GetMetric(), r.GetThreshold(), r.GetForSeconds())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				ctx = idem.bind(ctx)
+				resp, err := c.Alerting.CreateAlertRule(ctx, &telemetryv1.CreateAlertRuleRequest{
+					AppId: appID, Metric: metric, Threshold: threshold, ForSeconds: forSecs,
+				})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp.GetRule(), func() {
+					r := resp.GetRule()
+					_, _ = fmt.Fprintf(env.Stdout, "created alert rule %s (%s > %v, for %ds)\n", r.GetId(), r.GetMetric(), r.GetThreshold(), r.GetForSeconds())
+				})
 			})
 		},
 	}
@@ -276,24 +253,20 @@ func newAlertsRulesListVerb() commands.Command {
 			if err := noArgs(name, args); err != nil {
 				return err
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Alerting.ListAlertRules(ctx, &telemetryv1.ListAlertRulesRequest{AppId: appID})
-			if err != nil {
-				return err
-			}
-			if jsonOut {
-				return renderOut(env, jsonOut, resp, func() {})
-			}
-			for _, r := range resp.GetRules() {
-				_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\t%v\tfor %ds\t%s\n",
-					r.GetId(), r.GetAppId(), r.GetMetric(), r.GetThreshold(), r.GetForSeconds(), r.GetState())
-			}
-			return nil
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Alerting.ListAlertRules(ctx, &telemetryv1.ListAlertRulesRequest{AppId: appID})
+				if err != nil {
+					return err
+				}
+				if jsonOut {
+					return renderOut(env, jsonOut, resp, func() {})
+				}
+				for _, r := range resp.GetRules() {
+					_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\t%v\tfor %ds\t%s\n",
+						r.GetId(), r.GetAppId(), r.GetMetric(), r.GetThreshold(), r.GetForSeconds(), r.GetState())
+				}
+				return nil
+			})
 		},
 	}
 }
@@ -316,19 +289,15 @@ func newAlertsRulesDeleteVerb() commands.Command {
 			if ruleID == "" {
 				return usageErr(name, "--rule is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			if _, err := c.Alerting.DeleteAlertRule(ctx, &telemetryv1.DeleteAlertRuleRequest{RuleId: ruleID}); err != nil {
-				return err
-			}
-			if !jsonOut {
-				_, _ = fmt.Fprintf(env.Stdout, "deleted alert rule %s\n", ruleID)
-			}
-			return nil
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				if _, err := c.Alerting.DeleteAlertRule(ctx, &telemetryv1.DeleteAlertRuleRequest{RuleId: ruleID}); err != nil {
+					return err
+				}
+				if !jsonOut {
+					_, _ = fmt.Fprintf(env.Stdout, "deleted alert rule %s\n", ruleID)
+				}
+				return nil
+			})
 		},
 	}
 }
@@ -345,28 +314,24 @@ func newAlertsListVerb() commands.Command {
 			if err := noArgs(name, args); err != nil {
 				return err
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Alerting.ListAlertStates(ctx, &telemetryv1.ListAlertStatesRequest{})
-			if err != nil {
-				return err
-			}
-			if jsonOut {
-				return renderOut(env, jsonOut, resp, func() {})
-			}
-			for _, s := range resp.GetStates() {
-				sys := ""
-				if s.GetSystem() {
-					sys = "\tsystem"
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Alerting.ListAlertStates(ctx, &telemetryv1.ListAlertStatesRequest{})
+				if err != nil {
+					return err
 				}
-				_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\t%s\t%s%s\n",
-					s.GetRuleId(), s.GetAppId(), s.GetMetric(), s.GetState(), s.GetStateSince(), sys)
-			}
-			return nil
+				if jsonOut {
+					return renderOut(env, jsonOut, resp, func() {})
+				}
+				for _, s := range resp.GetStates() {
+					sys := ""
+					if s.GetSystem() {
+						sys = "\tsystem"
+					}
+					_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\t%s\t%s%s\n",
+						s.GetRuleId(), s.GetAppId(), s.GetMetric(), s.GetState(), s.GetStateSince(), sys)
+				}
+				return nil
+			})
 		},
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/lynx-go/commands"
 
 	identityv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/identity/v1"
+	"github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 // ---- tokens ----
@@ -37,22 +38,18 @@ func newTokensCreateVerb() commands.Command {
 			if role == "" {
 				return usageErr(name, "--role is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			ctx = idem.bind(ctx)
-			resp, err := c.Tokens.CreateToken(ctx, &identityv1.CreateTokenRequest{
-				Name: args[0], TeamId: team, RoleId: role, UserId: user,
-			})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				_, _ = fmt.Fprintf(env.Stdout, "created token %s (id %s)\nsecret (shown once): %s\n",
-					resp.GetToken().GetName(), resp.GetToken().GetId(), resp.GetSecret())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				ctx = idem.bind(ctx)
+				resp, err := c.Tokens.CreateToken(ctx, &identityv1.CreateTokenRequest{
+					Name: args[0], TeamId: team, RoleId: role, UserId: user,
+				})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintf(env.Stdout, "created token %s (id %s)\nsecret (shown once): %s\n",
+						resp.GetToken().GetName(), resp.GetToken().GetId(), resp.GetSecret())
+				})
 			})
 		},
 	}
@@ -68,26 +65,22 @@ func newTokensListVerb() commands.Command {
 			if err := noArgs(name, args); err != nil {
 				return err
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Tokens.ListTokens(ctx, &identityv1.ListTokensRequest{})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				_, _ = fmt.Fprintln(env.Stdout, "ID\tNAME\tPREFIX\tROLE\tREVOKED\tLAST_USED\tCREATED")
-				for _, t := range resp.GetTokens() {
-					revoked := "no"
-					if t.GetRevoked() {
-						revoked = "yes"
-					}
-					_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-						t.GetId(), t.GetName(), t.GetPrefix(), t.GetRoleId(), revoked, t.GetLastUsedAt(), t.GetCreatedAt())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Tokens.ListTokens(ctx, &identityv1.ListTokensRequest{})
+				if err != nil {
+					return err
 				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintln(env.Stdout, "ID\tNAME\tPREFIX\tROLE\tREVOKED\tLAST_USED\tCREATED")
+					for _, t := range resp.GetTokens() {
+						revoked := "no"
+						if t.GetRevoked() {
+							revoked = "yes"
+						}
+						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+							t.GetId(), t.GetName(), t.GetPrefix(), t.GetRoleId(), revoked, t.GetLastUsedAt(), t.GetCreatedAt())
+					}
+				})
 			})
 		},
 	}
@@ -103,18 +96,14 @@ func newTokensRevokeVerb() commands.Command {
 			if len(args) != 1 {
 				return usageErr(name, "expected exactly one ID argument")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Tokens.RevokeToken(ctx, &identityv1.RevokeTokenRequest{Id: args[0]})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp.GetToken(), func() {
-				_, _ = fmt.Fprintf(env.Stdout, "revoked token %s (id %s)\n", resp.GetToken().GetName(), resp.GetToken().GetId())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Tokens.RevokeToken(ctx, &identityv1.RevokeTokenRequest{Id: args[0]})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp.GetToken(), func() {
+					_, _ = fmt.Fprintf(env.Stdout, "revoked token %s (id %s)\n", resp.GetToken().GetName(), resp.GetToken().GetId())
+				})
 			})
 		},
 	}
@@ -156,21 +145,17 @@ func newUsersCreateVerb() commands.Command {
 					return usageErr(name, "--password is required (or pipe it via stdin)")
 				}
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			ctx = idem.bind(ctx)
-			resp, err := c.Users.CreateUser(ctx, &identityv1.CreateUserRequest{
-				Name: args[0], TeamId: team, RoleId: role, Password: pw,
-			})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp.GetUser(), func() {
-				_, _ = fmt.Fprintf(env.Stdout, "created user %s (id %s)\n", resp.GetUser().GetName(), resp.GetUser().GetId())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				ctx = idem.bind(ctx)
+				resp, err := c.Users.CreateUser(ctx, &identityv1.CreateUserRequest{
+					Name: args[0], TeamId: team, RoleId: role, Password: pw,
+				})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp.GetUser(), func() {
+					_, _ = fmt.Fprintf(env.Stdout, "created user %s (id %s)\n", resp.GetUser().GetName(), resp.GetUser().GetId())
+				})
 			})
 		},
 	}
@@ -200,18 +185,14 @@ func newUsersSetPasswordVerb() commands.Command {
 			if pw == "" {
 				return usageErr(name, "--password is required (or pipe it via stdin)")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			_, err = c.Users.SetUserPassword(ctx, &identityv1.SetUserPasswordRequest{UserId: args[0], Password: pw})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, &identityv1.SetUserPasswordResponse{}, func() {
-				_, _ = fmt.Fprintf(env.Stdout, "password set for user %s\n", args[0])
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				_, err = c.Users.SetUserPassword(ctx, &identityv1.SetUserPasswordRequest{UserId: args[0], Password: pw})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, &identityv1.SetUserPasswordResponse{}, func() {
+					_, _ = fmt.Fprintf(env.Stdout, "password set for user %s\n", args[0])
+				})
 			})
 		},
 	}
@@ -227,21 +208,17 @@ func newUsersListVerb() commands.Command {
 			if err := noArgs(name, args); err != nil {
 				return err
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Users.ListUsers(ctx, &identityv1.ListUsersRequest{})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				_, _ = fmt.Fprintln(env.Stdout, "ID\tNAME\tCREATED")
-				for _, u := range resp.GetUsers() {
-					_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\n", u.GetId(), u.GetName(), u.GetCreatedAt())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Users.ListUsers(ctx, &identityv1.ListUsersRequest{})
+				if err != nil {
+					return err
 				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintln(env.Stdout, "ID\tNAME\tCREATED")
+					for _, u := range resp.GetUsers() {
+						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\n", u.GetId(), u.GetName(), u.GetCreatedAt())
+					}
+				})
 			})
 		},
 	}
@@ -266,21 +243,17 @@ func newUsersInviteVerb() commands.Command {
 			if role == "" {
 				return usageErr(name, "--role is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Invitations.CreateInvitation(ctx, &identityv1.CreateInvitationRequest{
-				TeamId: team, RoleId: role, Ttl: ttl,
-			})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				_, _ = fmt.Fprintf(env.Stdout, "invitation %s expires %s\naccept with: fleetly users accept --token %s --name NAME\n",
-					resp.GetInvitation().GetId(), resp.GetInvitation().GetExpiresAt(), resp.GetSecret())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Invitations.CreateInvitation(ctx, &identityv1.CreateInvitationRequest{
+					TeamId: team, RoleId: role, Ttl: ttl,
+				})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintf(env.Stdout, "invitation %s expires %s\naccept with: fleetly users accept --token %s --name NAME\n",
+						resp.GetInvitation().GetId(), resp.GetInvitation().GetExpiresAt(), resp.GetSecret())
+				})
 			})
 		},
 	}
@@ -304,21 +277,17 @@ func newUsersAcceptVerb() commands.Command {
 			if token == "" || userName == "" {
 				return usageErr(name, "--token and --name are required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Invitations.AcceptInvitation(ctx, &identityv1.AcceptInvitationRequest{
-				Secret: token, UserName: userName,
-			})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp.GetUser(), func() {
-				_, _ = fmt.Fprintf(env.Stdout, "welcome %s (id %s) — ask an admin to mint your first token\n",
-					resp.GetUser().GetName(), resp.GetUser().GetId())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Invitations.AcceptInvitation(ctx, &identityv1.AcceptInvitationRequest{
+					Secret: token, UserName: userName,
+				})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp.GetUser(), func() {
+					_, _ = fmt.Fprintf(env.Stdout, "welcome %s (id %s) — ask an admin to mint your first token\n",
+						resp.GetUser().GetName(), resp.GetUser().GetId())
+				})
 			})
 		},
 	}
@@ -347,21 +316,17 @@ func newRolesCreateVerb() commands.Command {
 			if len(scopes) == 0 {
 				return usageErr(name, "at least one --scope is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			ctx = idem.bind(ctx)
-			resp, err := c.Roles.CreateRole(ctx, &identityv1.CreateRoleRequest{
-				Name: args[0], TeamId: team, Scopes: scopes,
-			})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp.GetRole(), func() {
-				_, _ = fmt.Fprintf(env.Stdout, "created role %s (id %s)\n", resp.GetRole().GetName(), resp.GetRole().GetId())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				ctx = idem.bind(ctx)
+				resp, err := c.Roles.CreateRole(ctx, &identityv1.CreateRoleRequest{
+					Name: args[0], TeamId: team, Scopes: scopes,
+				})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp.GetRole(), func() {
+					_, _ = fmt.Fprintf(env.Stdout, "created role %s (id %s)\n", resp.GetRole().GetName(), resp.GetRole().GetId())
+				})
 			})
 		},
 	}
@@ -377,29 +342,25 @@ func newRolesListVerb() commands.Command {
 			if err := noArgs(name, args); err != nil {
 				return err
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Roles.ListRoles(ctx, &identityv1.ListRolesRequest{})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				_, _ = fmt.Fprintln(env.Stdout, "ID\tNAME\tTEAM\tBUILTIN\tSCOPES")
-				for _, r := range resp.GetRoles() {
-					builtin := "no"
-					if r.GetBuiltin() {
-						builtin = "yes"
-					}
-					team := r.GetTeamId()
-					if team == "" {
-						team = "-"
-					}
-					_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\t%s\t%v\n", r.GetId(), r.GetName(), team, builtin, r.GetScopes())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Roles.ListRoles(ctx, &identityv1.ListRolesRequest{})
+				if err != nil {
+					return err
 				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintln(env.Stdout, "ID\tNAME\tTEAM\tBUILTIN\tSCOPES")
+					for _, r := range resp.GetRoles() {
+						builtin := "no"
+						if r.GetBuiltin() {
+							builtin = "yes"
+						}
+						team := r.GetTeamId()
+						if team == "" {
+							team = "-"
+						}
+						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\t%s\t%v\n", r.GetId(), r.GetName(), team, builtin, r.GetScopes())
+					}
+				})
 			})
 		},
 	}
@@ -419,19 +380,15 @@ func newTeamsCreateVerb() commands.Command {
 			if len(args) != 1 {
 				return usageErr(name, "expected exactly one NAME argument")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			ctx = idem.bind(ctx)
-			resp, err := c.Teams.CreateTeam(ctx, &identityv1.CreateTeamRequest{Name: args[0]})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp.GetTeam(), func() {
-				_, _ = fmt.Fprintf(env.Stdout, "created team %s (id %s)\n", resp.GetTeam().GetName(), resp.GetTeam().GetId())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				ctx = idem.bind(ctx)
+				resp, err := c.Teams.CreateTeam(ctx, &identityv1.CreateTeamRequest{Name: args[0]})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp.GetTeam(), func() {
+					_, _ = fmt.Fprintf(env.Stdout, "created team %s (id %s)\n", resp.GetTeam().GetName(), resp.GetTeam().GetId())
+				})
 			})
 		},
 	}
@@ -447,21 +404,17 @@ func newTeamsListVerb() commands.Command {
 			if err := noArgs(name, args); err != nil {
 				return err
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Teams.ListTeams(ctx, &identityv1.ListTeamsRequest{})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				_, _ = fmt.Fprintln(env.Stdout, "ID\tNAME\tCREATED")
-				for _, tm := range resp.GetTeams() {
-					_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\n", tm.GetId(), tm.GetName(), tm.GetCreatedAt())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Teams.ListTeams(ctx, &identityv1.ListTeamsRequest{})
+				if err != nil {
+					return err
 				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintln(env.Stdout, "ID\tNAME\tCREATED")
+					for _, tm := range resp.GetTeams() {
+						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\n", tm.GetId(), tm.GetName(), tm.GetCreatedAt())
+					}
+				})
 			})
 		},
 	}
@@ -488,25 +441,21 @@ func newAuditVerb() commands.Command {
 			if len(args) > 0 {
 				return usageErr(name, "unexpected argument(s)")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Audit.ListAudit(ctx, &identityv1.ListAuditRequest{
-				Source: source, Action: action, Actor: actor, Resource: resource, Limit: int32(limit), //nolint:gosec // 限额在服务端钳制
-			})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				_, _ = fmt.Fprintln(env.Stdout, "ID\tACTOR\tSOURCE\tACTION\tRESOURCE\tBEFORE\tAFTER\tCREATED")
-				for _, e := range resp.GetEntries() {
-					_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-						e.GetId(), e.GetActor(), e.GetSource(), e.GetAction(), e.GetResource(),
-						e.GetBeforeFp(), e.GetAfterFp(), e.GetCreatedAt())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Audit.ListAudit(ctx, &identityv1.ListAuditRequest{
+					Source: source, Action: action, Actor: actor, Resource: resource, Limit: int32(limit), //nolint:gosec // 限额在服务端钳制
+				})
+				if err != nil {
+					return err
 				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintln(env.Stdout, "ID\tACTOR\tSOURCE\tACTION\tRESOURCE\tBEFORE\tAFTER\tCREATED")
+					for _, e := range resp.GetEntries() {
+						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+							e.GetId(), e.GetActor(), e.GetSource(), e.GetAction(), e.GetResource(),
+							e.GetBeforeFp(), e.GetAfterFp(), e.GetCreatedAt())
+					}
+				})
 			})
 		},
 	}

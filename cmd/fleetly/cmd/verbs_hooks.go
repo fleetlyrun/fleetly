@@ -14,6 +14,7 @@ import (
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/fleetlygrpc"
+	"github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 // watchSlice 是可重复 --watch 旗标的值形态（repeatable string flag）。
@@ -49,26 +50,22 @@ func newHooksSetVerb() commands.Command {
 			if app == "" || repo == "" {
 				return usageErr(name, "--app and --repo are required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			ctx = idem.bind(ctx)
-			resp, err := c.Hooks.SetGitHook(ctx, &deliveryv1.SetGitHookRequest{
-				AppId: app, Repo: repo, Branch: branch, Dockerfile: dockerfile, WatchPaths: watch,
-			})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				printHookConfig(env, resp.GetHook())
-				if resp.GetSecret() != "" {
-					printHookSecret(env, resp.GetSecret())
-				} else {
-					_, _ = fmt.Fprintln(env.Stdout, "secret: (unchanged; rotate to get a new one)")
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				ctx = idem.bind(ctx)
+				resp, err := c.Hooks.SetGitHook(ctx, &deliveryv1.SetGitHookRequest{
+					AppId: app, Repo: repo, Branch: branch, Dockerfile: dockerfile, WatchPaths: watch,
+				})
+				if err != nil {
+					return err
 				}
+				return renderOut(env, jsonOut, resp, func() {
+					printHookConfig(env, resp.GetHook())
+					if resp.GetSecret() != "" {
+						printHookSecret(env, resp.GetSecret())
+					} else {
+						_, _ = fmt.Fprintln(env.Stdout, "secret: (unchanged; rotate to get a new one)")
+					}
+				})
 			})
 		},
 	}
@@ -89,20 +86,16 @@ func newHooksGetVerb() commands.Command {
 			if app == "" {
 				return usageErr(name, "--app is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Hooks.GetGitHook(ctx, &deliveryv1.GetGitHookRequest{AppId: app})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp.GetHook(), func() {
-				printHookConfig(env, resp.GetHook())
-				_, _ = fmt.Fprintf(env.Stdout, "webhook URL: %s<token> (token prefix %s)\n",
-					fleetlygrpc.HooksURLPrefix, resp.GetHook().GetTokenPrefix())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Hooks.GetGitHook(ctx, &deliveryv1.GetGitHookRequest{AppId: app})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp.GetHook(), func() {
+					printHookConfig(env, resp.GetHook())
+					_, _ = fmt.Fprintf(env.Stdout, "webhook URL: %s<token> (token prefix %s)\n",
+						fleetlygrpc.HooksURLPrefix, resp.GetHook().GetTokenPrefix())
+				})
 			})
 		},
 	}
@@ -123,19 +116,15 @@ func newHooksRotateVerb() commands.Command {
 			if app == "" {
 				return usageErr(name, "--app is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Hooks.RotateHookToken(ctx, &deliveryv1.RotateHookTokenRequest{AppId: app})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				printHookConfig(env, resp.GetHook())
-				printHookSecret(env, resp.GetSecret())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Hooks.RotateHookToken(ctx, &deliveryv1.RotateHookTokenRequest{AppId: app})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp, func() {
+					printHookConfig(env, resp.GetHook())
+					printHookSecret(env, resp.GetSecret())
+				})
 			})
 		},
 	}
@@ -159,19 +148,15 @@ func newHooksRefreshVerb() commands.Command {
 			if app == "" {
 				return usageErr(name, "--app is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Hooks.RefreshGitHook(ctx, &deliveryv1.RefreshGitHookRequest{AppId: app, Commit: commit})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				_, _ = fmt.Fprintf(env.Stdout, "deployment %s\ncommit %s\nadmission %s\n",
-					resp.GetDeploymentId(), resp.GetCommit(), resp.GetAdmission().GetOutcome())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Hooks.RefreshGitHook(ctx, &deliveryv1.RefreshGitHookRequest{AppId: app, Commit: commit})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintf(env.Stdout, "deployment %s\ncommit %s\nadmission %s\n",
+						resp.GetDeploymentId(), resp.GetCommit(), resp.GetAdmission().GetOutcome())
+				})
 			})
 		},
 	}

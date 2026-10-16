@@ -16,6 +16,7 @@ import (
 	"github.com/lynx-go/commands"
 
 	automationv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/automation/v1"
+	"github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 // envSlice 是可重复 --env K=V 旗标的值形态（变量注入面）。
@@ -158,39 +159,35 @@ func newTasksCreateVerb() commands.Command {
 			if wait {
 				dialOpts = append(dialOpts, noDeadline())
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx, dialOpts...)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			ctx = idem.bind(ctx)
-			resp, err := c.Tasks.CreateTask(ctx, &automationv1.CreateTaskRequest{
-				ProjectId: project, Name: taskName, Form: form, Image: image,
-				Command: command, Env: env.envMap(), SecretRefs: secretRefs,
-				CpuMillis: cpuMillis, MemoryMb: memoryMb,
-				TtlSeconds: ttl, DesiredConcurrency: concurrency,
-				NetworkGroup: networkGroup, OwnerTokenId: ownerTokenID,
-			})
-			if err != nil {
-				return err
-			}
-			t := resp.GetTask()
-			if wait {
-				// 任务维度等待（ADR-0063）：服务端钉等待开始时最新 Run 至
-				// 终态（首 Run 未铸出时事件驱动补获）——CLI 不再轮询。
-				var seenID string
-				final, werr := waitRunFrames(ctx, c.Runs, "", t.GetId(), func(frame *automationv1.WaitRunResponse) error {
-					seenID = frame.GetRun().GetId()
-					return waitRunOnFrame(env2, jsonOut)(frame)
+			return runRPC(ctx, dialOpts, func(ctx context.Context, c *fleetly.Client) error {
+				ctx = idem.bind(ctx)
+				resp, err := c.Tasks.CreateTask(ctx, &automationv1.CreateTaskRequest{
+					ProjectId: project, Name: taskName, Form: form, Image: image,
+					Command: command, Env: env.envMap(), SecretRefs: secretRefs,
+					CpuMillis: cpuMillis, MemoryMb: memoryMb,
+					TtlSeconds: ttl, DesiredConcurrency: concurrency,
+					NetworkGroup: networkGroup, OwnerTokenId: ownerTokenID,
 				})
-				if werr != nil {
-					return werr
+				if err != nil {
+					return err
 				}
-				return requireRunOK(seenID, final)
-			}
-			return renderOut(env2, jsonOut, t, func() {
-				_, _ = fmt.Fprintf(env2.Stdout, "task %s created (%s, %s)\n", t.GetId(), t.GetForm(), t.GetDnsName())
+				t := resp.GetTask()
+				if wait {
+					// 任务维度等待（ADR-0063）：服务端钉等待开始时最新 Run 至
+					// 终态（首 Run 未铸出时事件驱动补获）——CLI 不再轮询。
+					var seenID string
+					final, werr := waitRunFrames(ctx, c.Runs, "", t.GetId(), func(frame *automationv1.WaitRunResponse) error {
+						seenID = frame.GetRun().GetId()
+						return waitRunOnFrame(env2, jsonOut)(frame)
+					})
+					if werr != nil {
+						return werr
+					}
+					return requireRunOK(seenID, final)
+				}
+				return renderOut(env2, jsonOut, t, func() {
+					_, _ = fmt.Fprintf(env2.Stdout, "task %s created (%s, %s)\n", t.GetId(), t.GetForm(), t.GetDnsName())
+				})
 			})
 		},
 	}
@@ -215,25 +212,21 @@ func newTasksListVerb() commands.Command {
 			if project == "" {
 				return usageErr(name, "--project is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Tasks.ListTasks(ctx, &automationv1.ListTasksRequest{
-				ProjectId: project, AfterTaskSeq: pages.cursor(), Limit: pages.limit32(),
-			})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				_, _ = fmt.Fprintln(env.Stdout, "ID\tNAME\tFORM\tSTATE\tRUNS\tDNS\tUPDATED")
-				for _, t := range resp.GetTasks() {
-					_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\t%s\t%d/%d\t%s\t%s\n",
-						t.GetId(), t.GetName(), t.GetForm(), t.GetState(),
-						t.GetActiveRunCount(), t.GetDesiredConcurrency(), t.GetDnsName(), t.GetUpdatedAt())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Tasks.ListTasks(ctx, &automationv1.ListTasksRequest{
+					ProjectId: project, AfterTaskSeq: pages.cursor(), Limit: pages.limit32(),
+				})
+				if err != nil {
+					return err
 				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintln(env.Stdout, "ID\tNAME\tFORM\tSTATE\tRUNS\tDNS\tUPDATED")
+					for _, t := range resp.GetTasks() {
+						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\t%s\t%d/%d\t%s\t%s\n",
+							t.GetId(), t.GetName(), t.GetForm(), t.GetState(),
+							t.GetActiveRunCount(), t.GetDesiredConcurrency(), t.GetDnsName(), t.GetUpdatedAt())
+					}
+				})
 			})
 		},
 	}
@@ -254,21 +247,17 @@ func newTasksGetVerb() commands.Command {
 			if id == "" {
 				return usageErr(name, "--task is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Tasks.GetTask(ctx, &automationv1.GetTaskRequest{Id: id})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp.GetTask(), func() {
-				t := resp.GetTask()
-				_, _ = fmt.Fprintf(env.Stdout, "id: %s\nname: %s\nform: %s\nstate: %s\nimage: %s\ndns: %s\nnetwork-group: %s\nconcurrency: %d/%d\nlease-deadline: %s\n",
-					t.GetId(), t.GetName(), t.GetForm(), t.GetState(), t.GetImage(), t.GetDnsName(),
-					t.GetNetworkGroup(), t.GetActiveRunCount(), t.GetDesiredConcurrency(), t.GetLeaseDeadline())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Tasks.GetTask(ctx, &automationv1.GetTaskRequest{Id: id})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp.GetTask(), func() {
+					t := resp.GetTask()
+					_, _ = fmt.Fprintf(env.Stdout, "id: %s\nname: %s\nform: %s\nstate: %s\nimage: %s\ndns: %s\nnetwork-group: %s\nconcurrency: %d/%d\nlease-deadline: %s\n",
+						t.GetId(), t.GetName(), t.GetForm(), t.GetState(), t.GetImage(), t.GetDnsName(),
+						t.GetNetworkGroup(), t.GetActiveRunCount(), t.GetDesiredConcurrency(), t.GetLeaseDeadline())
+				})
 			})
 		},
 	}
@@ -293,18 +282,14 @@ func newTasksScaleVerb() commands.Command {
 			if id == "" {
 				return usageErr(name, "--task is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Tasks.ScaleTask(ctx, &automationv1.ScaleTaskRequest{Id: id, DesiredConcurrency: concurrency})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp.GetTask(), func() {
-				_, _ = fmt.Fprintf(env.Stdout, "task %s desired concurrency set to %d\n", id, resp.GetTask().GetDesiredConcurrency())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Tasks.ScaleTask(ctx, &automationv1.ScaleTaskRequest{Id: id, DesiredConcurrency: concurrency})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp.GetTask(), func() {
+					_, _ = fmt.Fprintf(env.Stdout, "task %s desired concurrency set to %d\n", id, resp.GetTask().GetDesiredConcurrency())
+				})
 			})
 		},
 	}
@@ -329,18 +314,14 @@ func newTasksStopVerb() commands.Command {
 			if id == "" {
 				return usageErr(name, "--task is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Tasks.StopTask(ctx, &automationv1.StopTaskRequest{Id: id, Force: force})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp.GetTask(), func() {
-				_, _ = fmt.Fprintf(env.Stdout, "task %s draining (state %s)\n", id, resp.GetTask().GetState())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Tasks.StopTask(ctx, &automationv1.StopTaskRequest{Id: id, Force: force})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp.GetTask(), func() {
+					_, _ = fmt.Fprintf(env.Stdout, "task %s draining (state %s)\n", id, resp.GetTask().GetState())
+				})
 			})
 		},
 	}
@@ -361,20 +342,16 @@ func newTasksDeleteVerb() commands.Command {
 			if id == "" {
 				return usageErr(name, "--task is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				if _, err := c.Tasks.DeleteTask(ctx, &automationv1.DeleteTaskRequest{Id: id}); err != nil {
+					return err
+				}
+				if jsonOut {
+					return writeJSON(env.Stdout, map[string]string{"deleted": id})
+				}
+				_, err := fmt.Fprintf(env.Stdout, "task %s deleted\n", id)
 				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			if _, err := c.Tasks.DeleteTask(ctx, &automationv1.DeleteTaskRequest{Id: id}); err != nil {
-				return err
-			}
-			if jsonOut {
-				return writeJSON(env.Stdout, map[string]string{"deleted": id})
-			}
-			_, err = fmt.Fprintf(env.Stdout, "task %s deleted\n", id)
-			return err
+			})
 		},
 	}
 }
@@ -394,18 +371,14 @@ func newTasksRenewVerb() commands.Command {
 			if id == "" {
 				return usageErr(name, "--task is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Tasks.RenewTask(ctx, &automationv1.RenewTaskRequest{Id: id})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp.GetTask(), func() {
-				_, _ = fmt.Fprintf(env.Stdout, "task %s lease renewed (deadline %s)\n", id, resp.GetTask().GetLeaseDeadline())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Tasks.RenewTask(ctx, &automationv1.RenewTaskRequest{Id: id})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp.GetTask(), func() {
+					_, _ = fmt.Fprintf(env.Stdout, "task %s lease renewed (deadline %s)\n", id, resp.GetTask().GetLeaseDeadline())
+				})
 			})
 		},
 	}
@@ -414,8 +387,7 @@ func newTasksRenewVerb() commands.Command {
 func newRunsListVerb() commands.Command {
 	const name = "list"
 	var taskID, projectID string
-	var after int64
-	var limit int
+	var pages pageFlags // 游标分页旗标收敛共享 struct（P4-2 批 A 全量迁移）
 	return &flaggedVerb{
 		name:     name,
 		synopsis: "List runs (newest first; filter by task or project - one is required)",
@@ -423,8 +395,7 @@ func newRunsListVerb() commands.Command {
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&taskID, "task", "", "filter by task id (recommended for high-volume pools)")
 			fs.StringVar(&projectID, "project", "", "filter by project id (ADR-0035: an unfiltered run list spans every team's runs)")
-			fs.Int64Var(&after, "after", 0, "pagination cursor: the seq of the last row of the previous page")
-			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
+			pages.register(fs, "after")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if err := noArgs(name, args); err != nil {
@@ -433,24 +404,20 @@ func newRunsListVerb() commands.Command {
 			if (taskID == "") == (projectID == "") {
 				return usageErr(name, "exactly one of --task or --project is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Runs.ListRuns(ctx, &automationv1.ListRunsRequest{
-				TaskId: taskID, ProjectId: projectID, AfterRunSeq: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
-			})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				_, _ = fmt.Fprintln(env.Stdout, "ID\tTASK\tSTATE\tSTOP_REASON\tEXIT\tDNS\tFINISHED")
-				for _, r := range resp.GetRuns() {
-					_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\t%s\t%d\t%s\t%s\n",
-						r.GetId(), r.GetTaskId(), r.GetState(), r.GetStopReason(), r.GetExitCode(), r.GetDnsName(), r.GetFinishedAt())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Runs.ListRuns(ctx, &automationv1.ListRunsRequest{
+					TaskId: taskID, ProjectId: projectID, AfterRunSeq: pages.cursor(), Limit: pages.limit32(),
+				})
+				if err != nil {
+					return err
 				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintln(env.Stdout, "ID\tTASK\tSTATE\tSTOP_REASON\tEXIT\tDNS\tFINISHED")
+					for _, r := range resp.GetRuns() {
+						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\t%s\t%d\t%s\t%s\n",
+							r.GetId(), r.GetTaskId(), r.GetState(), r.GetStopReason(), r.GetExitCode(), r.GetDnsName(), r.GetFinishedAt())
+					}
+				})
 			})
 		},
 	}
@@ -471,20 +438,16 @@ func newRunsGetVerb() commands.Command {
 			if id == "" {
 				return usageErr(name, "--run is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Runs.GetRun(ctx, &automationv1.GetRunRequest{Id: id})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp.GetRun(), func() {
-				r := resp.GetRun()
-				_, _ = fmt.Fprintf(env.Stdout, "id: %s\ntask: %s\nstate: %s\nstop_reason: %s\nexit_code: %d\ndns: %s\n",
-					r.GetId(), r.GetTaskId(), r.GetState(), r.GetStopReason(), r.GetExitCode(), r.GetDnsName())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Runs.GetRun(ctx, &automationv1.GetRunRequest{Id: id})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp.GetRun(), func() {
+					r := resp.GetRun()
+					_, _ = fmt.Fprintf(env.Stdout, "id: %s\ntask: %s\nstate: %s\nstop_reason: %s\nexit_code: %d\ndns: %s\n",
+						r.GetId(), r.GetTaskId(), r.GetState(), r.GetStopReason(), r.GetExitCode(), r.GetDnsName())
+				})
 			})
 		},
 	}
@@ -505,18 +468,14 @@ func newRunsStopVerb() commands.Command {
 			if id == "" {
 				return usageErr(name, "--run is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Runs.StopRun(ctx, &automationv1.StopRunRequest{Id: id})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp.GetRun(), func() {
-				_, _ = fmt.Fprintf(env.Stdout, "run %s %s\n", id, resp.GetRun().GetState())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Runs.StopRun(ctx, &automationv1.StopRunRequest{Id: id})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp.GetRun(), func() {
+					_, _ = fmt.Fprintf(env.Stdout, "run %s %s\n", id, resp.GetRun().GetState())
+				})
 			})
 		},
 	}
@@ -537,17 +496,13 @@ func newRunsWaitVerb() commands.Command {
 			if id == "" {
 				return usageErr(name, "--run is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx, noDeadline())
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			final, werr := waitRunFrames(ctx, c.Runs, id, "", waitRunOnFrame(env, jsonOut))
-			if werr != nil {
-				return werr
-			}
-			return requireRunOK(id, final)
+			return runRPC(ctx, []dialOption{noDeadline()}, func(ctx context.Context, c *fleetly.Client) error {
+				final, werr := waitRunFrames(ctx, c.Runs, id, "", waitRunOnFrame(env, jsonOut))
+				if werr != nil {
+					return werr
+				}
+				return requireRunOK(id, final)
+			})
 		},
 	}
 }
@@ -594,25 +549,21 @@ func newSchedulesCreateVerb() commands.Command {
 			if image == "" {
 				return usageErr(name, "--image is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			ctx = idem.bind(ctx)
-			resp, err := c.Schedules.CreateSchedule(ctx, &automationv1.CreateScheduleRequest{
-				ProjectId: project, Name: schedName, Cron: cronExpr, Timezone: timezone,
-				Image: image, Command: command, Env: env.envMap(), SecretRefs: secretRefs,
-				CpuMillis: cpuMillis, MemoryMb: memoryMb, TtlSeconds: ttl, NetworkGroup: networkGroup,
-			})
-			if err != nil {
-				return err
-			}
-			s := resp.GetSchedule()
-			return renderOut(env2, jsonOut, s, func() {
-				_, _ = fmt.Fprintf(env2.Stdout, "schedule %s created (next fire %s, %s %s)\n",
-					s.GetId(), s.GetNextFireAt(), s.GetCron(), s.GetTimezone())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				ctx = idem.bind(ctx)
+				resp, err := c.Schedules.CreateSchedule(ctx, &automationv1.CreateScheduleRequest{
+					ProjectId: project, Name: schedName, Cron: cronExpr, Timezone: timezone,
+					Image: image, Command: command, Env: env.envMap(), SecretRefs: secretRefs,
+					CpuMillis: cpuMillis, MemoryMb: memoryMb, TtlSeconds: ttl, NetworkGroup: networkGroup,
+				})
+				if err != nil {
+					return err
+				}
+				s := resp.GetSchedule()
+				return renderOut(env2, jsonOut, s, func() {
+					_, _ = fmt.Fprintf(env2.Stdout, "schedule %s created (next fire %s, %s %s)\n",
+						s.GetId(), s.GetNextFireAt(), s.GetCron(), s.GetTimezone())
+				})
 			})
 		},
 	}
@@ -621,16 +572,14 @@ func newSchedulesCreateVerb() commands.Command {
 func newSchedulesListVerb() commands.Command {
 	const name = "list"
 	var project string
-	var after int64
-	var limit int
+	var pages pageFlags // 游标分页旗标收敛共享 struct（P4-2 批 A 全量迁移）
 	return &flaggedVerb{
 		name:     name,
 		synopsis: "List schedules in a project (newest first)",
 		usage:    "schedules list --project PROJECT_ID [--after SEQ] [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&project, "project", "", "project id (required)")
-			fs.Int64Var(&after, "after", 0, "pagination cursor: the seq of the last row of the previous page")
-			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
+			pages.register(fs, "after")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if err := noArgs(name, args); err != nil {
@@ -639,25 +588,21 @@ func newSchedulesListVerb() commands.Command {
 			if project == "" {
 				return usageErr(name, "--project is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Schedules.ListSchedules(ctx, &automationv1.ListSchedulesRequest{
-				ProjectId: project, AfterScheduleSeq: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
-			})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				_, _ = fmt.Fprintln(env.Stdout, "ID\tNAME\tCRON\tTIMEZONE\tNEXT_FIRE\tSTATE\tLAST_TASK")
-				for _, s := range resp.GetSchedules() {
-					_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-						s.GetId(), s.GetName(), s.GetCron(), s.GetTimezone(),
-						s.GetNextFireAt(), s.GetState(), s.GetLastTaskId())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Schedules.ListSchedules(ctx, &automationv1.ListSchedulesRequest{
+					ProjectId: project, AfterScheduleSeq: pages.cursor(), Limit: pages.limit32(),
+				})
+				if err != nil {
+					return err
 				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintln(env.Stdout, "ID\tNAME\tCRON\tTIMEZONE\tNEXT_FIRE\tSTATE\tLAST_TASK")
+					for _, s := range resp.GetSchedules() {
+						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+							s.GetId(), s.GetName(), s.GetCron(), s.GetTimezone(),
+							s.GetNextFireAt(), s.GetState(), s.GetLastTaskId())
+					}
+				})
 			})
 		},
 	}
@@ -678,21 +623,17 @@ func newSchedulesGetVerb() commands.Command {
 			if id == "" {
 				return usageErr(name, "--schedule is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Schedules.GetSchedule(ctx, &automationv1.GetScheduleRequest{Id: id})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp.GetSchedule(), func() {
-				s := resp.GetSchedule()
-				_, _ = fmt.Fprintf(env.Stdout, "id: %s\nname: %s\nstate: %s\ncron: %s (%s)\nnext_fire: %s\nlast_task: %s\nimage: %s\n",
-					s.GetId(), s.GetName(), s.GetState(), s.GetCron(), s.GetTimezone(),
-					s.GetNextFireAt(), s.GetLastTaskId(), s.GetImage())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Schedules.GetSchedule(ctx, &automationv1.GetScheduleRequest{Id: id})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp.GetSchedule(), func() {
+					s := resp.GetSchedule()
+					_, _ = fmt.Fprintf(env.Stdout, "id: %s\nname: %s\nstate: %s\ncron: %s (%s)\nnext_fire: %s\nlast_task: %s\nimage: %s\n",
+						s.GetId(), s.GetName(), s.GetState(), s.GetCron(), s.GetTimezone(),
+						s.GetNextFireAt(), s.GetLastTaskId(), s.GetImage())
+				})
 			})
 		},
 	}
@@ -713,20 +654,16 @@ func newSchedulesTriggerVerb() commands.Command {
 			if id == "" {
 				return usageErr(name, "--schedule is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Schedules.TriggerSchedule(ctx, &automationv1.TriggerScheduleRequest{Id: id})
-			if err != nil {
-				return err
-			}
-			s := resp.GetSchedule()
-			return renderOut(env, jsonOut, s, func() {
-				_, _ = fmt.Fprintf(env.Stdout, "schedule %s fired (task %s, next fire %s)\n",
-					id, s.GetLastTaskId(), s.GetNextFireAt())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Schedules.TriggerSchedule(ctx, &automationv1.TriggerScheduleRequest{Id: id})
+				if err != nil {
+					return err
+				}
+				s := resp.GetSchedule()
+				return renderOut(env, jsonOut, s, func() {
+					_, _ = fmt.Fprintf(env.Stdout, "schedule %s fired (task %s, next fire %s)\n",
+						id, s.GetLastTaskId(), s.GetNextFireAt())
+				})
 			})
 		},
 	}
@@ -747,20 +684,16 @@ func newSchedulesDeleteVerb() commands.Command {
 			if id == "" {
 				return usageErr(name, "--schedule is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				if _, err := c.Schedules.DeleteSchedule(ctx, &automationv1.DeleteScheduleRequest{Id: id}); err != nil {
+					return err
+				}
+				if jsonOut {
+					return writeJSON(env.Stdout, map[string]string{"deleted": id})
+				}
+				_, err := fmt.Fprintf(env.Stdout, "schedule %s deleted\n", id)
 				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			if _, err := c.Schedules.DeleteSchedule(ctx, &automationv1.DeleteScheduleRequest{Id: id}); err != nil {
-				return err
-			}
-			if jsonOut {
-				return writeJSON(env.Stdout, map[string]string{"deleted": id})
-			}
-			_, err = fmt.Fprintf(env.Stdout, "schedule %s deleted\n", id)
-			return err
+			})
 		},
 	}
 }

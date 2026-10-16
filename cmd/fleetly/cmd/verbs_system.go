@@ -14,6 +14,7 @@ import (
 	"github.com/lynx-go/commands"
 
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
+	"github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 // newSchemaCmd 列出自描述全量清单（Spec 契约 + 事件 payload schema）。
@@ -27,30 +28,26 @@ func newSchemaCmd() commands.Command {
 			if err := noArgs(name, args); err != nil {
 				return err
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.System.GetSchema(ctx, &systemv1.GetSchemaRequest{})
-			if err != nil {
-				return err
-			}
-			if jsonOut {
-				return writeProtoJSON(env.Stdout, resp)
-			}
-			_, err = fmt.Fprintln(env.Stdout, "NAME\tKIND\tSUMMARY")
-			if err != nil {
-				return err
-			}
-			for _, e := range resp.GetEntries() {
-				if _, err := fmt.Fprintf(env.Stdout, "%s\t%s\t%s\n", e.GetName(), e.GetKind(), e.GetSummary()); err != nil {
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.System.GetSchema(ctx, &systemv1.GetSchemaRequest{})
+				if err != nil {
 					return err
 				}
-			}
-			_, err = fmt.Fprintln(env.Stdout, "run 'fleetly explain <name>' for the full JSON Schema")
-			return err
+				if jsonOut {
+					return writeProtoJSON(env.Stdout, resp)
+				}
+				_, err = fmt.Fprintln(env.Stdout, "NAME\tKIND\tSUMMARY")
+				if err != nil {
+					return err
+				}
+				for _, e := range resp.GetEntries() {
+					if _, err := fmt.Fprintf(env.Stdout, "%s\t%s\t%s\n", e.GetName(), e.GetKind(), e.GetSummary()); err != nil {
+						return err
+					}
+				}
+				_, err = fmt.Fprintln(env.Stdout, "run 'fleetly explain <name>' for the full JSON Schema")
+				return err
+			})
 		},
 	}
 }
@@ -69,29 +66,25 @@ func newExplainVerb() commands.Command {
 					Err:   fmt.Errorf("exactly one resource name is required (run 'fleetly schema' to list)"),
 				}
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.System.Explain(ctx, &systemv1.ExplainRequest{Resource: args[0]})
+				if err != nil {
+					return err
+				}
+				if jsonOut {
+					return writeProtoJSON(env.Stdout, resp)
+				}
+				e := resp.GetEntry()
+				if _, err := fmt.Fprintf(env.Stdout, "%s (%s) — %s\n", e.GetName(), e.GetKind(), e.GetSummary()); err != nil {
+					return err
+				}
+				var pretty bytes.Buffer
+				if err := json.Indent(&pretty, []byte(e.GetSchemaJson()), "", "  "); err != nil {
+					return fmt.Errorf("render schema for %s: %w", e.GetName(), err)
+				}
+				_, err = fmt.Fprintln(env.Stdout, pretty.String())
 				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.System.Explain(ctx, &systemv1.ExplainRequest{Resource: args[0]})
-			if err != nil {
-				return err
-			}
-			if jsonOut {
-				return writeProtoJSON(env.Stdout, resp)
-			}
-			e := resp.GetEntry()
-			if _, err := fmt.Fprintf(env.Stdout, "%s (%s) — %s\n", e.GetName(), e.GetKind(), e.GetSummary()); err != nil {
-				return err
-			}
-			var pretty bytes.Buffer
-			if err := json.Indent(&pretty, []byte(e.GetSchemaJson()), "", "  "); err != nil {
-				return fmt.Errorf("render schema for %s: %w", e.GetName(), err)
-			}
-			_, err = fmt.Fprintln(env.Stdout, pretty.String())
-			return err
+			})
 		},
 	}
 }

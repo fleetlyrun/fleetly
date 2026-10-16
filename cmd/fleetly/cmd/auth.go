@@ -169,23 +169,19 @@ func newWhoamiVerb() commands.Command {
 			if len(args) > 0 {
 				return usageErr("whoami", "unexpected argument(s)")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Users.WhoAmI(ctx, &identityv1.WhoAmIRequest{})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				who := resp.GetUserName()
-				if who == "" {
-					who = "(no user attached)"
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Users.WhoAmI(ctx, &identityv1.WhoAmIRequest{})
+				if err != nil {
+					return err
 				}
-				_, _ = fmt.Fprintf(env.Stdout, "token %s (id %s)\nuser %s\nrole %s\nteam %s\nscopes %v\n",
-					resp.GetTokenName(), resp.GetTokenId(), who, resp.GetRoleName(), resp.GetTeamId(), resp.GetScopes())
+				return renderOut(env, jsonOut, resp, func() {
+					who := resp.GetUserName()
+					if who == "" {
+						who = "(no user attached)"
+					}
+					_, _ = fmt.Fprintf(env.Stdout, "token %s (id %s)\nuser %s\nrole %s\nteam %s\nscopes %v\n",
+						resp.GetTokenName(), resp.GetTokenId(), who, resp.GetRoleName(), resp.GetTeamId(), resp.GetScopes())
+				})
 			})
 		},
 	}

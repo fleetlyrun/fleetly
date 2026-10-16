@@ -15,6 +15,7 @@ import (
 	"github.com/lynx-go/commands"
 
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
+	"github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 func newDatabasesCreateVerb() commands.Command {
@@ -39,29 +40,25 @@ func newDatabasesCreateVerb() commands.Command {
 			if project == "" || engine == "" {
 				return usageErr(name, "--project and --engine are required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			ctx = idem.bind(ctx)
-			resp, err := c.Databases.CreateDatabase(ctx, &structurev1.CreateDatabaseRequest{
-				ProjectId: project, Name: args[0], Engine: engine, RestoreFromBackup: restoreFrom,
-			})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp.GetDatabase(), func() {
-				_, _ = fmt.Fprintf(env.Stdout,
-					"created database %s (id %s)\nengine %s %s\ncredential secret %s (value never shown; reference it from app process secret_refs)\nconnect in-network at %s:%d\n",
-					resp.GetDatabase().GetName(), resp.GetDatabase().GetId(),
-					resp.GetDatabase().GetEngine(), resp.GetDatabase().GetVersion(),
-					resp.GetDatabase().GetCredentialsRef(),
-					resp.GetDatabase().GetHost(), resp.GetDatabase().GetPort())
-				if restoreFrom != "" {
-					_, _ = fmt.Fprintf(env.Stdout, "restore pending from backup %s (watch database.backup_* events)\n", restoreFrom)
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				ctx = idem.bind(ctx)
+				resp, err := c.Databases.CreateDatabase(ctx, &structurev1.CreateDatabaseRequest{
+					ProjectId: project, Name: args[0], Engine: engine, RestoreFromBackup: restoreFrom,
+				})
+				if err != nil {
+					return err
 				}
+				return renderOut(env, jsonOut, resp.GetDatabase(), func() {
+					_, _ = fmt.Fprintf(env.Stdout,
+						"created database %s (id %s)\nengine %s %s\ncredential secret %s (value never shown; reference it from app process secret_refs)\nconnect in-network at %s:%d\n",
+						resp.GetDatabase().GetName(), resp.GetDatabase().GetId(),
+						resp.GetDatabase().GetEngine(), resp.GetDatabase().GetVersion(),
+						resp.GetDatabase().GetCredentialsRef(),
+						resp.GetDatabase().GetHost(), resp.GetDatabase().GetPort())
+					if restoreFrom != "" {
+						_, _ = fmt.Fprintf(env.Stdout, "restore pending from backup %s (watch database.backup_* events)\n", restoreFrom)
+					}
+				})
 			})
 		},
 	}
@@ -70,15 +67,13 @@ func newDatabasesCreateVerb() commands.Command {
 func newDatabasesListVerb() commands.Command {
 	const name = "list"
 	var project string
-	var after int64
-	var limit int
+	var pages pageFlags // 游标分页旗标收敛共享 struct（P4-2 批 A 全量迁移）
 	return &flaggedVerb{
 		name: name, synopsis: "List databases in a project (newest first)",
 		usage: "databases list --project PROJECT_ID [--after SEQ] [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&project, "project", "", "project id (required)")
-			fs.Int64Var(&after, "after", 0, "pagination cursor: the seq of the last row of the previous page")
-			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
+			pages.register(fs, "after")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if err := noArgs(name, args); err != nil {
@@ -87,24 +82,20 @@ func newDatabasesListVerb() commands.Command {
 			if project == "" {
 				return usageErr(name, "--project is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Databases.ListDatabases(ctx, &structurev1.ListDatabasesRequest{
-				ProjectId: project, AfterDatabaseSeq: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
-			})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				_, _ = fmt.Fprintln(env.Stdout, "ID\tNAME\tENGINE\tVERSION\tSTATUS\tCREDENTIALS\tCREATED")
-				for _, d := range resp.GetDatabases() {
-					_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-						d.GetId(), d.GetName(), d.GetEngine(), d.GetVersion(), d.GetStatus(), d.GetCredentialsRef(), d.GetCreatedAt())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Databases.ListDatabases(ctx, &structurev1.ListDatabasesRequest{
+					ProjectId: project, AfterDatabaseSeq: pages.cursor(), Limit: pages.limit32(),
+				})
+				if err != nil {
+					return err
 				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintln(env.Stdout, "ID\tNAME\tENGINE\tVERSION\tSTATUS\tCREDENTIALS\tCREATED")
+					for _, d := range resp.GetDatabases() {
+						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+							d.GetId(), d.GetName(), d.GetEngine(), d.GetVersion(), d.GetStatus(), d.GetCredentialsRef(), d.GetCreatedAt())
+					}
+				})
 			})
 		},
 	}
@@ -119,22 +110,18 @@ func newDatabasesGetVerb() commands.Command {
 			if len(args) != 1 {
 				return usageErr(name, "expected exactly one DATABASE_ID argument")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Databases.GetDatabase(ctx, &structurev1.GetDatabaseRequest{Id: args[0]})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp.GetDatabase(), func() {
-				d := resp.GetDatabase()
-				_, _ = fmt.Fprintf(env.Stdout,
-					"id %s\nname %s\nengine %s %s\nstatus %s\ncredential secret %s (value never shown)\nin-network endpoint %s:%d\ncreated %s\n",
-					d.GetId(), d.GetName(), d.GetEngine(), d.GetVersion(), d.GetStatus(),
-					d.GetCredentialsRef(), d.GetHost(), d.GetPort(), d.GetCreatedAt())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Databases.GetDatabase(ctx, &structurev1.GetDatabaseRequest{Id: args[0]})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp.GetDatabase(), func() {
+					d := resp.GetDatabase()
+					_, _ = fmt.Fprintf(env.Stdout,
+						"id %s\nname %s\nengine %s %s\nstatus %s\ncredential secret %s (value never shown)\nin-network endpoint %s:%d\ncreated %s\n",
+						d.GetId(), d.GetName(), d.GetEngine(), d.GetVersion(), d.GetStatus(),
+						d.GetCredentialsRef(), d.GetHost(), d.GetPort(), d.GetCreatedAt())
+				})
 			})
 		},
 	}
@@ -151,19 +138,15 @@ func newDatabasesDeleteVerb() commands.Command {
 			if len(args) != 1 {
 				return usageErr(name, "expected exactly one DATABASE_ID argument")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Databases.DeleteDatabase(ctx, &structurev1.DeleteDatabaseRequest{Id: args[0]})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				_, _ = fmt.Fprintf(env.Stdout,
-					"deleted database %s (carriers torn down; data volume and credential secret retained)\n", args[0])
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Databases.DeleteDatabase(ctx, &structurev1.DeleteDatabaseRequest{Id: args[0]})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintf(env.Stdout,
+						"deleted database %s (carriers torn down; data volume and credential secret retained)\n", args[0])
+				})
 			})
 		},
 	}
@@ -180,21 +163,17 @@ func newDatabasesBackupVerb() commands.Command {
 			if len(args) != 1 {
 				return usageErr(name, "expected exactly one DATABASE_ID argument")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Databases.TriggerBackup(ctx, &structurev1.TriggerBackupRequest{DatabaseId: args[0]})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp.GetBackup(), func() {
-				b := resp.GetBackup()
-				_, _ = fmt.Fprintf(env.Stdout,
-					"backup triggered (id %s) status %s\ncompletion lands in database.backup_succeeded / database.backup_failed events\n",
-					b.GetId(), b.GetStatus())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Databases.TriggerBackup(ctx, &structurev1.TriggerBackupRequest{DatabaseId: args[0]})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp.GetBackup(), func() {
+					b := resp.GetBackup()
+					_, _ = fmt.Fprintf(env.Stdout,
+						"backup triggered (id %s) status %s\ncompletion lands in database.backup_succeeded / database.backup_failed events\n",
+						b.GetId(), b.GetStatus())
+				})
 			})
 		},
 	}
@@ -203,37 +182,31 @@ func newDatabasesBackupVerb() commands.Command {
 // databases backups（F2.2，ADR-0039）：台账列举，新→旧分页。
 func newDatabasesBackupsVerb() commands.Command {
 	const name = "backups"
-	var after int64
-	var limit int
+	var pages pageFlags // 游标分页旗标收敛共享 struct（P4-2 批 A 全量迁移）
 	return &flaggedVerb{
 		name: name, synopsis: "List backups of a database (newest first)",
 		usage: "databases backups DATABASE_ID [--after SEQ] [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.Int64Var(&after, "after", 0, "pagination cursor: the seq of the last row of the previous page")
-			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
+			pages.register(fs, "after")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if len(args) != 1 {
 				return usageErr(name, "expected exactly one DATABASE_ID argument")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Databases.ListBackups(ctx, &structurev1.ListBackupsRequest{
-				DatabaseId: args[0], AfterBackupSeq: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
-			})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				_, _ = fmt.Fprintln(env.Stdout, "ID\tSTATUS\tENGINE\tSIZE\tDIGEST\tOBJECT\tFINISHED")
-				for _, b := range resp.GetBackups() {
-					_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\t%d\t%s\t%s\t%s\n",
-						b.GetId(), b.GetStatus(), b.GetEngine(), b.GetSizeBytes(), b.GetDigest(), b.GetObjectKey(), b.GetFinishedAt())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Databases.ListBackups(ctx, &structurev1.ListBackupsRequest{
+					DatabaseId: args[0], AfterBackupSeq: pages.cursor(), Limit: pages.limit32(),
+				})
+				if err != nil {
+					return err
 				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintln(env.Stdout, "ID\tSTATUS\tENGINE\tSIZE\tDIGEST\tOBJECT\tFINISHED")
+					for _, b := range resp.GetBackups() {
+						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\t%d\t%s\t%s\t%s\n",
+							b.GetId(), b.GetStatus(), b.GetEngine(), b.GetSizeBytes(), b.GetDigest(), b.GetObjectKey(), b.GetFinishedAt())
+					}
+				})
 			})
 		},
 	}
@@ -249,23 +222,19 @@ func newDatabasesVerifyVerb() commands.Command {
 			if len(args) != 1 {
 				return usageErr(name, "expected exactly one BACKUP_ID argument")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Databases.VerifyBackup(ctx, &structurev1.VerifyBackupRequest{BackupId: args[0]})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				if resp.GetOk() {
-					_, _ = fmt.Fprintf(env.Stdout, "backup %s verified (digest %s matches the ledger receipt)\n",
-						args[0], resp.GetDigest())
-					return
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Databases.VerifyBackup(ctx, &structurev1.VerifyBackupRequest{BackupId: args[0]})
+				if err != nil {
+					return err
 				}
-				_, _ = fmt.Fprintf(env.Stdout, "backup %s FAILED verification: %s\n", args[0], resp.GetError())
+				return renderOut(env, jsonOut, resp, func() {
+					if resp.GetOk() {
+						_, _ = fmt.Fprintf(env.Stdout, "backup %s verified (digest %s matches the ledger receipt)\n",
+							args[0], resp.GetDigest())
+						return
+					}
+					_, _ = fmt.Fprintf(env.Stdout, "backup %s FAILED verification: %s\n", args[0], resp.GetError())
+				})
 			})
 		},
 	}
@@ -297,46 +266,42 @@ func newDatabasesDownloadBackupVerb() commands.Command {
 			if out == "" {
 				return usageErr(name, "--out is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			stream, err := c.Databases.DownloadBackup(ctx, &structurev1.DownloadBackupRequest{
-				DatabaseId: database, BackupId: args[0],
-			})
-			if err != nil {
-				return err
-			}
-			// 截断语义：先清目标文件（追加写只发生在本次下载窗口内）。
-			if err := os.WriteFile(out, []byte{}, 0o600); err != nil {
-				return err
-			}
-			var size int64
-			for {
-				frame, rerr := stream.Recv()
-				if rerr == io.EOF {
-					break
-				}
-				if rerr != nil {
-					return rerr
-				}
-				if err := appendFile(out, frame.GetData()); err != nil {
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				stream, err := c.Databases.DownloadBackup(ctx, &structurev1.DownloadBackupRequest{
+					DatabaseId: database, BackupId: args[0],
+				})
+				if err != nil {
 					return err
 				}
-				size += int64(len(frame.GetData()))
-			}
-			if jsonOut {
-				data, merr := json.Marshal(&downloadSummary{Database: database, Backup: args[0], Path: out, Bytes: size})
-				if merr != nil {
-					return merr
+				// 截断语义：先清目标文件（追加写只发生在本次下载窗口内）。
+				if err := os.WriteFile(out, []byte{}, 0o600); err != nil {
+					return err
 				}
-				_, _ = fmt.Fprintln(env.Stdout, string(data))
+				var size int64
+				for {
+					frame, rerr := stream.Recv()
+					if rerr == io.EOF {
+						break
+					}
+					if rerr != nil {
+						return rerr
+					}
+					if err := appendFile(out, frame.GetData()); err != nil {
+						return err
+					}
+					size += int64(len(frame.GetData()))
+				}
+				if jsonOut {
+					data, merr := json.Marshal(&downloadSummary{Database: database, Backup: args[0], Path: out, Bytes: size})
+					if merr != nil {
+						return merr
+					}
+					_, _ = fmt.Fprintln(env.Stdout, string(data))
+					return nil
+				}
+				_, _ = fmt.Fprintf(env.Stdout, "downloaded %s (%d bytes) → %s\n", args[0], size, out)
 				return nil
-			}
-			_, _ = fmt.Fprintf(env.Stdout, "downloaded %s (%d bytes) → %s\n", args[0], size, out)
-			return nil
+			})
 		},
 	}
 }
@@ -362,21 +327,17 @@ func newDatabasesRotatePasswordVerb() commands.Command {
 			if len(args) != 1 {
 				return usageErr(name, "expected exactly one DATABASE_ID argument")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Databases.RotateDatabasePassword(ctx, &structurev1.RotateDatabasePasswordRequest{DatabaseId: args[0]})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp.GetDatabase(), func() {
-				d := resp.GetDatabase()
-				_, _ = fmt.Fprintf(env.Stdout,
-					"rotated credential for database %s (id %s)\ncredential secret %s now holds the new connection URL (value never shown)\ncascade: apps referencing this database keep the old credential until redeployed - redeploy them now\n",
-					d.GetName(), d.GetId(), d.GetCredentialsRef())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Databases.RotateDatabasePassword(ctx, &structurev1.RotateDatabasePasswordRequest{DatabaseId: args[0]})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp.GetDatabase(), func() {
+					d := resp.GetDatabase()
+					_, _ = fmt.Fprintf(env.Stdout,
+						"rotated credential for database %s (id %s)\ncredential secret %s now holds the new connection URL (value never shown)\ncascade: apps referencing this database keep the old credential until redeployed - redeploy them now\n",
+						d.GetName(), d.GetId(), d.GetCredentialsRef())
+				})
 			})
 		},
 	}
@@ -407,23 +368,19 @@ func newDatabasesBrowseVerb() commands.Command {
 			if len(args) != 1 {
 				return usageErr(name, "expected exactly one DATABASE_ID argument")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Databases.BrowseDatabase(ctx, &structurev1.BrowseDatabaseRequest{
-				DatabaseId: args[0], ReadWrite: write,
-			})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				_, _ = fmt.Fprintf(env.Stdout,
-					"browse session %s opened (%s, read-only %t, enforcement %s)\nopen within %d seconds (one-time ticket):\n%s\n",
-					resp.GetSessionId(), resp.GetBrowser(), resp.GetReadOnly(),
-					shortEnforcement(resp.GetEnforcement()), resp.GetExpiresIn(), resp.GetUrl())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Databases.BrowseDatabase(ctx, &structurev1.BrowseDatabaseRequest{
+					DatabaseId: args[0], ReadWrite: write,
+				})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintf(env.Stdout,
+						"browse session %s opened (%s, read-only %t, enforcement %s)\nopen within %d seconds (one-time ticket):\n%s\n",
+						resp.GetSessionId(), resp.GetBrowser(), resp.GetReadOnly(),
+						shortEnforcement(resp.GetEnforcement()), resp.GetExpiresIn(), resp.GetUrl())
+				})
 			})
 		},
 	}

@@ -46,46 +46,42 @@ func newTemplatesListVerb() commands.Command {
 			if err := noArgs(name, args); err != nil {
 				return err
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			list, err := c.Templates.ListTemplates(ctx, &deliveryv1.ListTemplatesRequest{})
-			if err != nil {
-				return err
-			}
-			if jsonOut {
-				type entry struct {
-					Name        string `json:"name"`
-					Version     string `json:"version"`
-					Digest      string `json:"digest"`
-					Description string `json:"description"`
-				}
-				out := struct {
-					Source    string  `json:"source"`
-					Templates []entry `json:"templates"`
-				}{Source: list.GetSource()}
-				for _, t := range list.GetTemplates() {
-					out.Templates = append(out.Templates, entry{
-						Name: t.GetName(), Version: t.GetVersion(),
-						Digest: t.GetDigest(), Description: t.GetDescription(),
-					})
-				}
-				return writeJSON(env.Stdout, out)
-			}
-			_, err = fmt.Fprintf(env.Stdout, "source %s\n", list.GetSource())
-			if err != nil {
-				return err
-			}
-			for _, t := range list.GetTemplates() {
-				_, err = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\n", t.GetName(), t.GetVersion(), t.GetDescription())
+			return runRPC(ctx, nil, func(ctx context.Context, c *sdk.Client) error {
+				list, err := c.Templates.ListTemplates(ctx, &deliveryv1.ListTemplatesRequest{})
 				if err != nil {
 					return err
 				}
-			}
-			return nil
+				if jsonOut {
+					type entry struct {
+						Name        string `json:"name"`
+						Version     string `json:"version"`
+						Digest      string `json:"digest"`
+						Description string `json:"description"`
+					}
+					out := struct {
+						Source    string  `json:"source"`
+						Templates []entry `json:"templates"`
+					}{Source: list.GetSource()}
+					for _, t := range list.GetTemplates() {
+						out.Templates = append(out.Templates, entry{
+							Name: t.GetName(), Version: t.GetVersion(),
+							Digest: t.GetDigest(), Description: t.GetDescription(),
+						})
+					}
+					return writeJSON(env.Stdout, out)
+				}
+				_, err = fmt.Fprintf(env.Stdout, "source %s\n", list.GetSource())
+				if err != nil {
+					return err
+				}
+				for _, t := range list.GetTemplates() {
+					_, err = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\n", t.GetName(), t.GetVersion(), t.GetDescription())
+					if err != nil {
+						return err
+					}
+				}
+				return nil
+			})
 		},
 	}
 }
@@ -100,60 +96,56 @@ func newTemplatesShowVerb() commands.Command {
 			if err := exactArgs(name, 1, args); err != nil {
 				return err
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			got, err := c.Templates.GetTemplate(ctx, &deliveryv1.GetTemplateRequest{Name: args[0]})
-			if err != nil {
-				return err
-			}
-			t := got.GetTemplate()
-			if jsonOut {
-				type variable struct {
-					Name        string `json:"name"`
-					Type        string `json:"type"`
-					Description string `json:"description"`
-					Default     string `json:"default,omitempty"`
-					Required    bool   `json:"required,omitempty"`
+			return runRPC(ctx, nil, func(ctx context.Context, c *sdk.Client) error {
+				got, err := c.Templates.GetTemplate(ctx, &deliveryv1.GetTemplateRequest{Name: args[0]})
+				if err != nil {
+					return err
 				}
-				out := struct {
-					Name        string     `json:"name"`
-					Version     string     `json:"version"`
-					Digest      string     `json:"digest"`
-					Description string     `json:"description"`
-					Variables   []variable `json:"variables,omitempty"`
-					Body        string     `json:"body"`
-				}{Name: t.GetName(), Version: t.GetVersion(), Digest: t.GetDigest(), Description: t.GetDescription(), Body: got.GetBody()}
-				for _, v := range t.GetVariables() {
-					out.Variables = append(out.Variables, variable{
-						Name: v.GetName(), Type: v.GetType(), Description: v.GetDescription(),
-						Default: v.GetDefault(), Required: v.GetRequired(),
-					})
-				}
-				return writeJSON(env.Stdout, out)
-			}
-			_, err = fmt.Fprintf(env.Stdout, "%s %s (%s)\n%s\n", t.GetName(), t.GetVersion(), t.GetDigest(), t.GetDescription())
-			if err != nil {
-				return err
-			}
-			if len(t.GetVariables()) > 0 {
-				_, _ = fmt.Fprintln(env.Stdout, "variables:")
-				for _, v := range t.GetVariables() {
-					required := ""
-					if v.GetRequired() {
-						required = " (required)"
+				t := got.GetTemplate()
+				if jsonOut {
+					type variable struct {
+						Name        string `json:"name"`
+						Type        string `json:"type"`
+						Description string `json:"description"`
+						Default     string `json:"default,omitempty"`
+						Required    bool   `json:"required,omitempty"`
 					}
-					_, err = fmt.Fprintf(env.Stdout, "  %s: %s%s — %s\n", v.GetName(), v.GetType(), required, v.GetDescription())
-					if err != nil {
-						return err
+					out := struct {
+						Name        string     `json:"name"`
+						Version     string     `json:"version"`
+						Digest      string     `json:"digest"`
+						Description string     `json:"description"`
+						Variables   []variable `json:"variables,omitempty"`
+						Body        string     `json:"body"`
+					}{Name: t.GetName(), Version: t.GetVersion(), Digest: t.GetDigest(), Description: t.GetDescription(), Body: got.GetBody()}
+					for _, v := range t.GetVariables() {
+						out.Variables = append(out.Variables, variable{
+							Name: v.GetName(), Type: v.GetType(), Description: v.GetDescription(),
+							Default: v.GetDefault(), Required: v.GetRequired(),
+						})
+					}
+					return writeJSON(env.Stdout, out)
+				}
+				_, err = fmt.Fprintf(env.Stdout, "%s %s (%s)\n%s\n", t.GetName(), t.GetVersion(), t.GetDigest(), t.GetDescription())
+				if err != nil {
+					return err
+				}
+				if len(t.GetVariables()) > 0 {
+					_, _ = fmt.Fprintln(env.Stdout, "variables:")
+					for _, v := range t.GetVariables() {
+						required := ""
+						if v.GetRequired() {
+							required = " (required)"
+						}
+						_, err = fmt.Fprintf(env.Stdout, "  %s: %s%s — %s\n", v.GetName(), v.GetType(), required, v.GetDescription())
+						if err != nil {
+							return err
+						}
 					}
 				}
-			}
-			_, err = fmt.Fprintln(env.Stdout, strings.TrimRight(got.GetBody(), "\n"))
-			return err
+				_, err = fmt.Fprintln(env.Stdout, strings.TrimRight(got.GetBody(), "\n"))
+				return err
+			})
 		},
 	}
 }
@@ -205,89 +197,85 @@ func newTemplatesInstantiateVerb() commands.Command {
 			if !noWait {
 				dialOpts = append(dialOpts, noDeadline()) // 等待是流式长等待
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx, dialOpts...)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			serverAddr := envOr(envAddr, defaultAddr)
+			return runRPC(ctx, dialOpts, func(ctx context.Context, c *sdk.Client) error {
+				serverAddr := envOr(envAddr, defaultAddr)
 
-			// project create-or-reuse（按名，quickstart 同款）。
-			projectID, _, err := ensureProjectByName(ctx, c, project)
-			if err != nil {
-				return err
-			}
-
-			// 模板读面：值缺省（唯一必填 domain 变量 → sslip 缺省 host）。
-			got, err := c.Templates.GetTemplate(ctx, &deliveryv1.GetTemplateRequest{Name: args[0]})
-			if err != nil {
-				return err
-			}
-			values, err := parseTemplateSets(sets, got.GetTemplate(), serverAddr, appName)
-			if err != nil {
-				return usageErr(name, err.Error())
-			}
-
-			res, err := c.Templates.InstantiateTemplate(ctx, &deliveryv1.InstantiateTemplateRequest{
-				ProjectId: projectID, Template: args[0], AppName: appName, Values: values,
-			})
-			if err != nil {
-				return err
-			}
-			state := "queued"
-			if !noWait {
-				if state, err = waitDeploymentFrames(ctx, c, res.GetDeploymentId(), nil); err != nil {
-					return err
-				}
-			}
-			report := templateReport{
-				Template: args[0], Version: res.GetTemplateVersion(),
-				AppID: res.GetAppId(), Deployment: res.GetDeploymentId(), State: state,
-			}
-			for _, r := range res.GetResources() {
-				report.Resources = append(report.Resources, templateResource{
-					Kind: r.GetKind(), ID: r.GetId(), Name: r.GetName(), Reused: r.GetReused(),
-				})
-			}
-			if jsonOut {
-				return writeJSON(env.Stdout, report)
-			}
-			for _, r := range report.Resources {
-				tag := "created"
-				if r.Reused {
-					tag = "reused"
-				}
-				label := r.Name
-				if label == "" {
-					label = r.ID
-				}
-				_, err = fmt.Fprintf(env.Stdout, "%s %s %s\n", r.Kind, label, tag)
+				// project create-or-reuse（按名，quickstart 同款）。
+				projectID, _, err := ensureProjectByName(ctx, c, project)
 				if err != nil {
 					return err
 				}
-			}
-			_, err = fmt.Fprintf(env.Stdout, "deployment %s %s\n", report.Deployment, state)
-			if err != nil {
-				return err
-			}
-			// 有 domain 值时给出可打开的 URL 面（一键部署的收口感）。
-			var hosts []string
-			for _, v := range got.GetTemplate().GetVariables() {
-				if v.GetType() == "domain" {
-					if h := values[v.GetName()]; h != "" {
-						hosts = append(hosts, h)
+
+				// 模板读面：值缺省（唯一必填 domain 变量 → sslip 缺省 host）。
+				got, err := c.Templates.GetTemplate(ctx, &deliveryv1.GetTemplateRequest{Name: args[0]})
+				if err != nil {
+					return err
+				}
+				values, err := parseTemplateSets(sets, got.GetTemplate(), serverAddr, appName)
+				if err != nil {
+					return usageErr(name, err.Error())
+				}
+
+				res, err := c.Templates.InstantiateTemplate(ctx, &deliveryv1.InstantiateTemplateRequest{
+					ProjectId: projectID, Template: args[0], AppName: appName, Values: values,
+				})
+				if err != nil {
+					return err
+				}
+				state := "queued"
+				if !noWait {
+					if state, err = waitDeploymentFrames(ctx, c, res.GetDeploymentId(), nil); err != nil {
+						return err
 					}
 				}
-			}
-			sort.Strings(hosts)
-			for _, h := range hosts {
-				_, err = fmt.Fprintf(env.Stdout, "open http://%s\n", h)
+				report := templateReport{
+					Template: args[0], Version: res.GetTemplateVersion(),
+					AppID: res.GetAppId(), Deployment: res.GetDeploymentId(), State: state,
+				}
+				for _, r := range res.GetResources() {
+					report.Resources = append(report.Resources, templateResource{
+						Kind: r.GetKind(), ID: r.GetId(), Name: r.GetName(), Reused: r.GetReused(),
+					})
+				}
+				if jsonOut {
+					return writeJSON(env.Stdout, report)
+				}
+				for _, r := range report.Resources {
+					tag := "created"
+					if r.Reused {
+						tag = "reused"
+					}
+					label := r.Name
+					if label == "" {
+						label = r.ID
+					}
+					_, err = fmt.Fprintf(env.Stdout, "%s %s %s\n", r.Kind, label, tag)
+					if err != nil {
+						return err
+					}
+				}
+				_, err = fmt.Fprintf(env.Stdout, "deployment %s %s\n", report.Deployment, state)
 				if err != nil {
 					return err
 				}
-			}
-			return nil
+				// 有 domain 值时给出可打开的 URL 面（一键部署的收口感）。
+				var hosts []string
+				for _, v := range got.GetTemplate().GetVariables() {
+					if v.GetType() == "domain" {
+						if h := values[v.GetName()]; h != "" {
+							hosts = append(hosts, h)
+						}
+					}
+				}
+				sort.Strings(hosts)
+				for _, h := range hosts {
+					_, err = fmt.Fprintf(env.Stdout, "open http://%s\n", h)
+					if err != nil {
+						return err
+					}
+				}
+				return nil
+			})
 		},
 	}
 }
@@ -334,26 +322,22 @@ func newTemplatesRefreshVerb() commands.Command {
 			if err := noArgs(name, args); err != nil {
 				return err
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
+			return runRPC(ctx, nil, func(ctx context.Context, c *sdk.Client) error {
+				res, err := c.Templates.RefreshTemplates(ctx, &deliveryv1.RefreshTemplatesRequest{})
+				if err != nil {
+					return err
+				}
+				if jsonOut {
+					return writeJSON(env.Stdout, struct {
+						PreviousDigest string `json:"previous_digest"`
+						Digest         string `json:"digest"`
+						TemplateCount  int32  `json:"template_count"`
+					}{res.GetPreviousDigest(), res.GetDigest(), res.GetTemplateCount()})
+				}
+				_, err = fmt.Fprintf(env.Stdout, "catalog refreshed %s -> %s (%d templates)\n",
+					res.GetPreviousDigest(), res.GetDigest(), res.GetTemplateCount())
 				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			res, err := c.Templates.RefreshTemplates(ctx, &deliveryv1.RefreshTemplatesRequest{})
-			if err != nil {
-				return err
-			}
-			if jsonOut {
-				return writeJSON(env.Stdout, struct {
-					PreviousDigest string `json:"previous_digest"`
-					Digest         string `json:"digest"`
-					TemplateCount  int32  `json:"template_count"`
-				}{res.GetPreviousDigest(), res.GetDigest(), res.GetTemplateCount()})
-			}
-			_, err = fmt.Fprintf(env.Stdout, "catalog refreshed %s -> %s (%d templates)\n",
-				res.GetPreviousDigest(), res.GetDigest(), res.GetTemplateCount())
-			return err
+			})
 		},
 	}
 }

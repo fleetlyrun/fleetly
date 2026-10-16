@@ -9,6 +9,7 @@ import (
 	"github.com/lynx-go/commands"
 
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
+	"github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 // components 组（IA v3 二期④）：受管组件载体的运维动词（排障动线
@@ -24,18 +25,14 @@ func newComponentsRestartVerb() commands.Command {
 			if len(args) != 1 {
 				return usageErr(name, "expected exactly one NAME argument")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.System.RestartComponent(ctx, &systemv1.RestartComponentRequest{Name: args[0]})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				_, _ = fmt.Fprintf(env.Stdout, "restarted %s (%s carriers rescheduled)\n", args[0], strconv.Itoa(int(resp.GetRestarted())))
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.System.RestartComponent(ctx, &systemv1.RestartComponentRequest{Name: args[0]})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintf(env.Stdout, "restarted %s (%s carriers rescheduled)\n", args[0], strconv.Itoa(int(resp.GetRestarted())))
+				})
 			})
 		},
 	}

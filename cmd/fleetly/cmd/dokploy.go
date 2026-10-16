@@ -106,105 +106,101 @@ func newCreateFromDokployVerb() commands.Command {
 				return err
 			}
 
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
+			return runRPC(ctx, nil, func(ctx context.Context, c *sdk.Client) error {
 
-			projectID, reused, err := ensureProjectByName(ctx, c, project)
-			if err != nil {
-				return err
-			}
-			report.Steps = append(report.Steps, dokployStep{Kind: "project", Name: project, Detail: projectID, Reused: reused})
-
-			// databases create-or-reuse（按名——重跑收敛）。
-			for _, db := range plan.Databases {
-				id, reused, err := ensureDatabaseByName(ctx, c, projectID, db.Name, db.Engine)
+				projectID, reused, err := ensureProjectByName(ctx, c, project)
 				if err != nil {
 					return err
 				}
-				report.Steps = append(report.Steps, dokployStep{Kind: "database", Name: db.Name, Detail: id, Reused: reused})
-			}
+				report.Steps = append(report.Steps, dokployStep{Kind: "project", Name: project, Detail: projectID, Reused: reused})
 
-			// routes 全量拉取一次（host 复用判定——host 全局唯一）。
-			existingRoutes, err := c.Routes.ListRoutes(ctx, &proxyv1.ListRoutesRequest{})
-			if err != nil {
-				return err
-			}
-			routeByHost := map[string]string{}
-			for _, r := range existingRoutes.GetRoutes() {
-				routeByHost[r.GetHost()] = r.GetId()
-			}
-
-			for _, app := range plan.Apps {
-				appID, reused, err := ensureAppByName(ctx, c, projectID, app.Name)
-				if err != nil {
-					return err
-				}
-				report.Steps = append(report.Steps, dokployStep{Kind: "app", Name: app.Name, Detail: appID, Reused: reused})
-				deploy := &deliveryDeployInput{AppID: appID, Env: app.Env}
-				if app.ComposeYAML != "" {
-					deploy.ComposeYAML = app.ComposeYAML
-				} else {
-					deploy.Image = app.Image
-					// image 直投必须带端口声明（route 后端解析锚——staging
-					// 真机咬出：无声明则 route 永远 backend unresolved，
-					// 与 quickstart 直投同款教训）；取首条 route 的 port。
-					if len(app.Routes) > 0 && app.Routes[0].Port > 0 {
-						deploy.Port = app.Routes[0].Port
-					}
-				}
-				depID, err := deployViaAPI(ctx, c, deploy)
-				if err != nil {
-					return err
-				}
-				report.Steps = append(report.Steps, dokployStep{Kind: "deployment", Name: app.Name, Detail: depID})
-				for _, r := range app.Routes {
-					if _, ok := routeByHost[r.Host]; ok {
-						report.Steps = append(report.Steps, dokployStep{Kind: "route", Name: r.Host, Reused: true})
-						continue
-					}
-					created, err := c.Routes.CreateRoute(ctx, &proxyv1.CreateRouteRequest{
-						ProjectId: projectID, Host: r.Host, AppId: appID,
-						Process: r.Process, Port: r.Port, Protocol: "http",
-					})
+				// databases create-or-reuse（按名——重跑收敛）。
+				for _, db := range plan.Databases {
+					id, reused, err := ensureDatabaseByName(ctx, c, projectID, db.Name, db.Engine)
 					if err != nil {
 						return err
 					}
-					routeByHost[r.Host] = created.GetRoute().GetId()
-					report.Steps = append(report.Steps, dokployStep{Kind: "route", Name: r.Host, Detail: created.GetRoute().GetId()})
+					report.Steps = append(report.Steps, dokployStep{Kind: "database", Name: db.Name, Detail: id, Reused: reused})
 				}
-			}
-			if jsonOut {
-				return writeJSON(env.Stdout, report)
-			}
-			if err := printPlan(); err != nil {
-				return err
-			}
-			for _, s := range report.Steps {
-				tag := "created"
-				if s.Reused {
-					tag = "reused"
-				}
-				detail := s.Detail
-				if detail == "" {
-					detail = "-"
-				}
-				if _, err := fmt.Fprintf(env.Stdout, "%s %s %s (%s)\n", s.Kind, s.Name, tag, detail); err != nil {
-					return err
-				}
-			}
-			if len(plan.Databases) > 0 {
-				_, err := fmt.Fprintln(env.Stdout,
-					"note: database data was not moved; it still lives on the dokploy host — restore it via Backup/Restore or a manual export/reload")
+
+				// routes 全量拉取一次（host 复用判定——host 全局唯一）。
+				existingRoutes, err := c.Routes.ListRoutes(ctx, &proxyv1.ListRoutesRequest{})
 				if err != nil {
 					return err
 				}
-			}
-			_, err = fmt.Fprintln(env.Stdout, "migrations submitted: watch 'fleetly deployments list' for states")
-			return err
+				routeByHost := map[string]string{}
+				for _, r := range existingRoutes.GetRoutes() {
+					routeByHost[r.GetHost()] = r.GetId()
+				}
+
+				for _, app := range plan.Apps {
+					appID, reused, err := ensureAppByName(ctx, c, projectID, app.Name)
+					if err != nil {
+						return err
+					}
+					report.Steps = append(report.Steps, dokployStep{Kind: "app", Name: app.Name, Detail: appID, Reused: reused})
+					deploy := &deliveryDeployInput{AppID: appID, Env: app.Env}
+					if app.ComposeYAML != "" {
+						deploy.ComposeYAML = app.ComposeYAML
+					} else {
+						deploy.Image = app.Image
+						// image 直投必须带端口声明（route 后端解析锚——staging
+						// 真机咬出：无声明则 route 永远 backend unresolved，
+						// 与 quickstart 直投同款教训）；取首条 route 的 port。
+						if len(app.Routes) > 0 && app.Routes[0].Port > 0 {
+							deploy.Port = app.Routes[0].Port
+						}
+					}
+					depID, err := deployViaAPI(ctx, c, deploy)
+					if err != nil {
+						return err
+					}
+					report.Steps = append(report.Steps, dokployStep{Kind: "deployment", Name: app.Name, Detail: depID})
+					for _, r := range app.Routes {
+						if _, ok := routeByHost[r.Host]; ok {
+							report.Steps = append(report.Steps, dokployStep{Kind: "route", Name: r.Host, Reused: true})
+							continue
+						}
+						created, err := c.Routes.CreateRoute(ctx, &proxyv1.CreateRouteRequest{
+							ProjectId: projectID, Host: r.Host, AppId: appID,
+							Process: r.Process, Port: r.Port, Protocol: "http",
+						})
+						if err != nil {
+							return err
+						}
+						routeByHost[r.Host] = created.GetRoute().GetId()
+						report.Steps = append(report.Steps, dokployStep{Kind: "route", Name: r.Host, Detail: created.GetRoute().GetId()})
+					}
+				}
+				if jsonOut {
+					return writeJSON(env.Stdout, report)
+				}
+				if err := printPlan(); err != nil {
+					return err
+				}
+				for _, s := range report.Steps {
+					tag := "created"
+					if s.Reused {
+						tag = "reused"
+					}
+					detail := s.Detail
+					if detail == "" {
+						detail = "-"
+					}
+					if _, err := fmt.Fprintf(env.Stdout, "%s %s %s (%s)\n", s.Kind, s.Name, tag, detail); err != nil {
+						return err
+					}
+				}
+				if len(plan.Databases) > 0 {
+					_, err := fmt.Fprintln(env.Stdout,
+						"note: database data was not moved; it still lives on the dokploy host — restore it via Backup/Restore or a manual export/reload")
+					if err != nil {
+						return err
+					}
+				}
+				_, err = fmt.Fprintln(env.Stdout, "migrations submitted: watch 'fleetly deployments list' for states")
+				return err
+			})
 		},
 	}
 }

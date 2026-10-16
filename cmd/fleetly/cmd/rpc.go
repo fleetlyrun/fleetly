@@ -1,11 +1,13 @@
 package cmd
 
-// rpc.go 是 RPC 动词前奏的共享骨架（P4-2 批 2）：
+// rpc.go 是 RPC 动词前奏的共享骨架（P4-2 批 2 铸造，批 A 全量推广）：
 //   - runRPC 收敛「dialFromEnv + defer cancel + defer Close + fn」的动词
-//     四行样板（deploy 是首个整体消费者；其余动词的全量迁移明确另批——
-//     本批只随 pageFlags exemplar 迁 deployments/builds/tasks list）。
+//     四行样板（deploy 是首个整体消费者；批 A 完成其余动词的全量迁移，
+//     动词面不再直连 dialFromEnv——dial_test.go 的拨号形态测试除外）。
 //   - pageFlags 收敛 list 动词散写的 --after/--limit 游标旗标（ADR-0026
-//     after_* + limit 惯例）；exemplar 同上三个，其余另批。
+//     after_* + limit 惯例）；exemplar 为 deployments/builds/tasks list，
+//     批 A 推广至旗标文案与 register 逐字等价的 seq 轴 list 动词——
+//     StringVar 游标与异文案/异默认值站点按零行为漂移铁律保留手写形态。
 //   - preValidateUsage 是 apivalidate.Validator 的 CLI 适配：请求与服务端
 //     拦截器同一 descriptor 法源（proto 上的 buf.validate 注解），发送前
 //     预检形状——服务端拦什么，客户端先报什么（UsageError，exit 64）。
@@ -25,8 +27,8 @@ import (
 
 // runRPC 统一动词的拨号前奏：拨号（ctx 附 token/client 头/默认 deadline，
 // 可经 opts 豁免）→ fn 消费连接 → defer 归还资源。返回 fn 的错误原样上抛。
-// 全量迁移另批：存量动词的直连 dialFromEnv 形态不变（本批只迁 deploy 与
-// 三个 pageFlags exemplar，避免与文案重钉互相淹没）。
+// 批 A 全量迁移落地：动词统一经此拨号，直连 dialFromEnv 形态退役
+// （golden 双形态零漂移为界，旗标/文案/输出逐字不变）。
 func runRPC(ctx context.Context, opts []dialOption, fn func(ctx context.Context, c *fleetly.Client) error) error {
 	ctx, cancel, c, err := dialFromEnv(ctx, opts...)
 	if err != nil {

@@ -12,6 +12,7 @@ import (
 	"github.com/lynx-go/commands"
 
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
+	"github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 func newFreezeSetVerb() commands.Command {
@@ -39,24 +40,20 @@ func newFreezeSetVerb() commands.Command {
 			if all && team != "" {
 				return usageErr(name, "--all and --team are mutually exclusive")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			ctx = idem.bind(ctx)
-			resp, err := c.Governance.SetChangeFreeze(ctx, &systemv1.SetChangeFreezeRequest{TeamId: team, Reason: reason})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp.GetFreeze(), func() {
-				scope := "all teams"
-				if resp.GetFreeze().GetTeamId() != "" {
-					scope = "team " + resp.GetFreeze().GetTeamId()
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				ctx = idem.bind(ctx)
+				resp, err := c.Governance.SetChangeFreeze(ctx, &systemv1.SetChangeFreezeRequest{TeamId: team, Reason: reason})
+				if err != nil {
+					return err
 				}
-				_, _ = fmt.Fprintf(env.Stdout, "froze changes for %s (id %s): %s\n",
-					scope, resp.GetFreeze().GetId(), resp.GetFreeze().GetReason())
+				return renderOut(env, jsonOut, resp.GetFreeze(), func() {
+					scope := "all teams"
+					if resp.GetFreeze().GetTeamId() != "" {
+						scope = "team " + resp.GetFreeze().GetTeamId()
+					}
+					_, _ = fmt.Fprintf(env.Stdout, "froze changes for %s (id %s): %s\n",
+						scope, resp.GetFreeze().GetId(), resp.GetFreeze().GetReason())
+				})
 			})
 		},
 	}
@@ -72,64 +69,54 @@ func newFreezeLiftVerb() commands.Command {
 			if len(args) != 1 {
 				return usageErr(name, "expected exactly one FREEZE_ID argument")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Governance.LiftChangeFreeze(ctx, &systemv1.LiftChangeFreezeRequest{Id: args[0]})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp.GetFreeze(), func() {
-				_, _ = fmt.Fprintf(env.Stdout, "lifted freeze %s (reason was: %s)\n",
-					resp.GetFreeze().GetId(), resp.GetFreeze().GetReason())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Governance.LiftChangeFreeze(ctx, &systemv1.LiftChangeFreezeRequest{Id: args[0]})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp.GetFreeze(), func() {
+					_, _ = fmt.Fprintf(env.Stdout, "lifted freeze %s (reason was: %s)\n",
+						resp.GetFreeze().GetId(), resp.GetFreeze().GetReason())
+				})
 			})
 		},
 	}
 }
 
 func newFreezeListVerb() commands.Command {
-	var after int64
-	var limit int
+	var pages pageFlags // 游标分页旗标收敛共享 struct（P4-2 批 A 全量迁移）
 	return &flaggedVerb{
 		name:     "list",
 		synopsis: "List change freezes (active and historical)",
 		usage:    "freeze list [--after SEQ] [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.Int64Var(&after, "after", 0, "pagination cursor: the seq of the last row of the previous page")
-			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
+			pages.register(fs, "after")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if len(args) > 0 {
 				return usageErr("list", "unexpected argument(s)")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Governance.ListChangeFreezes(ctx, &systemv1.ListChangeFreezesRequest{
-				AfterFreezeSeq: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
-			})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				_, _ = fmt.Fprintln(env.Stdout, "ID\tSCOPE\tSTATE\tREASON")
-				for _, f := range resp.GetFreezes() {
-					scope := "all teams"
-					if f.GetTeamId() != "" {
-						scope = f.GetTeamId()
-					}
-					state := "lifted"
-					if f.GetLiftedAt() == "" {
-						state = "active"
-					}
-					_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\t%s\n", f.GetId(), scope, state, f.GetReason())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Governance.ListChangeFreezes(ctx, &systemv1.ListChangeFreezesRequest{
+					AfterFreezeSeq: pages.cursor(), Limit: pages.limit32(),
+				})
+				if err != nil {
+					return err
 				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintln(env.Stdout, "ID\tSCOPE\tSTATE\tREASON")
+					for _, f := range resp.GetFreezes() {
+						scope := "all teams"
+						if f.GetTeamId() != "" {
+							scope = f.GetTeamId()
+						}
+						state := "lifted"
+						if f.GetLiftedAt() == "" {
+							state = "active"
+						}
+						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\t%s\n", f.GetId(), scope, state, f.GetReason())
+					}
+				})
 			})
 		},
 	}

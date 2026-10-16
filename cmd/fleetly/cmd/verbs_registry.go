@@ -12,6 +12,7 @@ import (
 	"github.com/lynx-go/commands"
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
+	"github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 func newRegistryCatalogVerb() commands.Command {
@@ -31,20 +32,16 @@ func newRegistryCatalogVerb() commands.Command {
 			if project == "" {
 				return usageErr(name, "--project is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Registry.ListRegistryCatalog(ctx, &deliveryv1.ListRegistryCatalogRequest{ProjectId: project})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				for _, repo := range resp.GetRepositories() {
-					_, _ = fmt.Fprintln(env.Stdout, repo)
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Registry.ListRegistryCatalog(ctx, &deliveryv1.ListRegistryCatalogRequest{ProjectId: project})
+				if err != nil {
+					return err
 				}
+				return renderOut(env, jsonOut, resp, func() {
+					for _, repo := range resp.GetRepositories() {
+						_, _ = fmt.Fprintln(env.Stdout, repo)
+					}
+				})
 			})
 		},
 	}
@@ -67,22 +64,18 @@ func newRegistryTagsVerb() commands.Command {
 			if project == "" {
 				return usageErr(name, "--project is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
-			if err != nil {
-				return err
-			}
-			defer cancel()
-			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Registry.ListRegistryTags(ctx, &deliveryv1.ListRegistryTagsRequest{ProjectId: project, Repository: args[0]})
-			if err != nil {
-				return err
-			}
-			return renderOut(env, jsonOut, resp, func() {
-				_, _ = fmt.Fprintln(env.Stdout, "TAG\tDIGEST\tSIZE\tPUSHED")
-				for _, tag := range resp.GetTags() {
-					_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%d\t%s\n",
-						tag.GetName(), tag.GetDigest(), tag.GetSizeBytes(), tag.GetPushedAt())
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Registry.ListRegistryTags(ctx, &deliveryv1.ListRegistryTagsRequest{ProjectId: project, Repository: args[0]})
+				if err != nil {
+					return err
 				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintln(env.Stdout, "TAG\tDIGEST\tSIZE\tPUSHED")
+					for _, tag := range resp.GetTags() {
+						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%d\t%s\n",
+							tag.GetName(), tag.GetDigest(), tag.GetSizeBytes(), tag.GetPushedAt())
+					}
+				})
 			})
 		},
 	}
