@@ -571,10 +571,12 @@ export interface components {
             processes?: components["schemas"]["v1ProcessSpec"][];
             build?: components["schemas"]["v1BuildSpec"];
             /**
-             * first_boot_jobs 是部署期 init job（数据库迁移等）：releasing 前串行
-             *     执行，失败即回滚。
+             * pre_deploy_jobs 是部署期 init job（数据库迁移等）：releasing 前串行
+             *     执行，失败即回滚。**每次部署都执行，非仅首次**（同 Revision 再部署 =
+             *     重跑；回滚永不重跑，ADR-0030 决策 5）——原名 first_boot_jobs 与业界
+             *     "first boot = 生命周期仅一次" 固定含义相撞，ADR-0078 改名。
              */
-            first_boot_jobs?: components["schemas"]["v1JobSpec"][];
+            pre_deploy_jobs?: components["schemas"]["v1JobSpec"][];
         };
         v1AppVariable: {
             id?: string;
@@ -891,11 +893,12 @@ export interface components {
             ref?: string;
         };
         /**
-         * JobSpec 是部署期一次性作业（first boot jobs，ADR-0007 词汇裁决：词条归
-         *     Task——部署期特例）。C-13 重塑：进程模板共享 ProcessSpec（process 字段，
-         *     与 TaskSpec 同款嵌套形态）。2026-10-16 挂账清偿整删（用户裁决；写读两面
-         *     C-13 起已全走 process；buf breaking 对 origin/main 恰一条 FILE 红=开发期
-         *     基线追认，与 config_refs 先例同款，上 main 后自愈）。
+         * JobSpec 是部署期一次性作业（pre-deploy job，ADR-0007 词汇裁决：词条归
+         *     Task——部署期特例；字段名 ADR-0078 由 first_boot_jobs 改名）。C-13 重塑：
+         *     进程模板共享 ProcessSpec（process 字段，与 TaskSpec 同款嵌套形态）。
+         *     2026-10-16 挂账清偿整删（用户裁决；写读两面 C-13 起已全走 process；
+         *     buf breaking 对 origin/main 恰一条 FILE 红=开发期基线追认，与 config_refs
+         *     先例同款，上 main 后自愈）。
          */
         v1JobSpec: {
             name?: string;

@@ -169,7 +169,7 @@ func (d *Doc) variableNames() string {
 
 // renderCompose 深拷贝并插值：map 的值与 list 的元素递归；字符串值内的
 // ${name} 孔按 interpolated 解析（未声明变量即拒——fail-closed，不留
-// 残余孔）；secrets 列表（服务与 first boot job 共用键）重写 secret 变量
+// 残余孔）；secrets 列表（服务与 pre-deploy job 共用键）重写 secret 变量
 // 名为真名。键永不插值（结构面）。
 func renderCompose(node any, interpolated, secretNames map[string]string) (any, error) {
 	switch v := node.(type) {
@@ -236,7 +236,7 @@ func rewriteSecrets(raw any, secretNames map[string]string) (any, error) {
 // declareExternalSecrets 为渲染产物里的 secret 引用铸顶层 external 声明：
 // 平台真名带冒号（template:<app>:<var> / database:<name>），compose schema
 // 的声明键只容 [a-zA-Z0-9._-]——键 = 真名净化（冒号折叠成连字符），声明
-// 携 name 覆盖承载真名，引用（services 与 first-boot-jobs）改写到键。
+// 携 name 覆盖承载真名，引用（services 与 pre-deploy-jobs）改写到键。
 // 用户自带的安全键声明原样保留（值形态错误由受理喉执法）。
 func declareExternalSecrets(compose ComposeDoc) error {
 	references := func() [][]any {
@@ -250,7 +250,7 @@ func declareExternalSecrets(compose ComposeDoc) error {
 				}
 			}
 		}
-		if jobs, ok := compose["x-fleetly-first-boot-jobs"].([]any); ok {
+		if jobs, ok := compose["x-fleetly-pre-deploy-jobs"].([]any); ok {
 			for _, rawJob := range jobs {
 				if job, ok := rawJob.(map[string]any); ok {
 					if secs, ok := job["secrets"].([]any); ok {

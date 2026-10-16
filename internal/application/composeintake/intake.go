@@ -45,7 +45,7 @@ var topAllowedKeys = map[string]bool{
 	"networks":                  true, // external 声明律（见 externalDeclarations）
 	"volumes":                   true, // external 声明律
 	"secrets":                   true, // external 声明律
-	"x-fleetly-first-boot-jobs": true, // ADR-0033 形态不动
+	"x-fleetly-pre-deploy-jobs": true, // ADR-0033 形态不动
 	"configs":                   true, // external 形态（平台 Configs 的引用声明；inline file 拒）
 }
 
@@ -101,9 +101,9 @@ var jobDialectAllowedKeys = map[string]bool{
 	"labels":      true,
 }
 
-// firstBootJobWhitelist 与 firstBootJobRejections 沿 ADR-0033 原面迁移
-// （composeFirstBootJobs 的键白名单与禁面理由）。
-var firstBootJobWhitelist = map[string]bool{
+// preDeployJobWhitelist 与 preDeployJobRejections 沿 ADR-0033 原面迁移
+// （composePreDeployJobs 的键白名单与禁面理由）。
+var preDeployJobWhitelist = map[string]bool{
 	"name":        true,
 	"image":       true,
 	"command":     true,
@@ -112,7 +112,7 @@ var firstBootJobWhitelist = map[string]bool{
 	"ttl":         true,
 }
 
-var firstBootJobRejections = map[string]string{
+var preDeployJobRejections = map[string]string{
 	"volumes":     "deploy-time jobs cannot mount volumes; use a Task for volume-mounting jobs",
 	"configs":     "deploy-time jobs cannot mount configs; pass what the job needs via environment or secrets",
 	"ports":       "ports are not meaningful on a one-shot job",
@@ -146,7 +146,7 @@ func FromYAML(body []byte, appID, projectID string, vars VariableLookup) (*specv
 			continue
 		}
 		if strings.HasPrefix(key, "x-") {
-			return nil, invalidf("compose."+key, "unknown extension namespace (fleetly extensions are x-fleetly-* and live under services.<name>.deploy / healthcheck / the top-level first-boot-jobs key)")
+			return nil, invalidf("compose."+key, "unknown extension namespace (fleetly extensions are x-fleetly-* and live under services.<name>.deploy / healthcheck / the top-level pre-deploy-jobs key)")
 		}
 		return nil, invalidf("compose."+key, "official compose field %q is not enabled on fleetly (supported: services, networks, volumes, secrets)", key)
 	}
@@ -167,7 +167,7 @@ func FromYAML(body []byte, appID, projectID string, vars VariableLookup) (*specv
 			}
 		}
 	}
-	jobsRaw := raw["x-fleetly-first-boot-jobs"]
+	jobsRaw := raw["x-fleetly-pre-deploy-jobs"]
 	project, err := loader.ModelToProject(raw, loader.ToOptions(&details, []func(*loader.Options){opts}), details)
 	if err != nil {
 		return nil, invalidf("compose", "%s", err.Error())
@@ -188,7 +188,7 @@ func FromYAML(body []byte, appID, projectID string, vars VariableLookup) (*specv
 	// 服务的选取本就不可预测；排序即确定）。
 	firstImage := ""
 
-	jobs, err := firstBootJobs(project, jobsRaw)
+	jobs, err := preDeployJobs(project, jobsRaw)
 	if err != nil {
 		return nil, err
 	}
@@ -218,7 +218,7 @@ func FromYAML(body []byte, appID, projectID string, vars VariableLookup) (*specv
 	}
 	app.Source = &specv1.Source{Kind: &specv1.Source_Image{Image: &specv1.ImageSource{Ref: firstImage}}}
 
-	app.FirstBootJobs = jobs
+	app.PreDeployJobs = jobs
 
 	if err := spec.ValidateApp(app); err != nil {
 		return nil, err
@@ -227,7 +227,7 @@ func FromYAML(body []byte, appID, projectID string, vars VariableLookup) (*specv
 }
 
 // escapeCommandDollars 预逃逸 command 面（services[].command 与
-// x-fleetly-first-boot-jobs[].command）的 $ → $$：官方插值 $$→$ 还原原文
+// x-fleetly-pre-deploy-jobs[].command）的 $ → $$：官方插值 $$→$ 还原原文
 // ——command 是运行时 shell 语境，$ 语义属 shell（真机咬出：脚本循环变量
 // $n 被 fail-closed 插值当未声明孔硬拒；dokploy 系模板仓的 command 脚本
 // 普遍不逃逸，模板库使命要求原样承接）。平台变量经进程 env 在运行时可见
@@ -261,7 +261,7 @@ func escapeCommandDollars(body []byte) []byte {
 			}
 		}
 	}
-	if jobs, ok := doc["x-fleetly-first-boot-jobs"].([]any); ok {
+	if jobs, ok := doc["x-fleetly-pre-deploy-jobs"].([]any); ok {
 		for _, raw := range jobs {
 			if job, ok := raw.(map[string]any); ok {
 				if cmd, present := job["command"]; present {
@@ -432,7 +432,7 @@ func externalDeclarations(project *types.Project) error {
 // image/command（$ 透传，预逃逸统一在官方加载前，与服务面同口径）/
 // environment/secrets/configs/fleetly.databases → JobSpec；fleetly.job.timeout
 // → ttl。拒绝面：volumes/ports/networks/depends_on/restart/deploy/build 各带
-// 指向性文案（firstBootJobRejections 同措辞）；其余官方面与服务级 x- 扩展
+// 指向性文案（preDeployJobRejections 同措辞）；其余官方面与服务级 x- 扩展
 // 键经白名单收口显式拒（静默丢即静默失败，ADR-0074）。
 func initJobFromService(field, name string, svc types.ServiceConfig) (*specv1.JobSpec, error) {
 	for key := range svc.Labels {
@@ -446,7 +446,7 @@ func initJobFromService(field, name string, svc types.ServiceConfig) (*specv1.Jo
 	if v := svc.Labels["fleetly.job"]; v != "init" {
 		return nil, invalidf(field+".labels[fleetly.job]", "only the init dialect is supported (got %q)", v)
 	}
-	// 指向性拒绝面（firstBootJobRejections 同措辞；直接罗列保确定性序，
+	// 指向性拒绝面（preDeployJobRejections 同措辞；直接罗列保确定性序，
 	// 不经 map 遍历）。
 	if len(svc.Volumes) > 0 {
 		return nil, invalidf(field+".volumes", "file mounts are not supported on the job dialect; pass materials via platform configs/secrets (the compose migration surface)")
@@ -561,7 +561,7 @@ func serviceProcess(project *types.Project, name string, svc types.ServiceConfig
 		case k == "fleetly.databases":
 		case k == "fleetly.job" || strings.HasPrefix(k, "fleetly.job."):
 			return nil, "", invalidf(field+".labels."+k,
-				"one-shot jobs are declared via the top-level x-fleetly-first-boot-jobs key (fleetly.job labels are not a supported dialect)")
+				"one-shot jobs are declared via the top-level x-fleetly-pre-deploy-jobs key (fleetly.job labels are not a supported dialect)")
 		default:
 			return nil, "", invalidf(field+".labels."+k,
 				"label %q is not consumed by the runtime (only fleetly.databases is honored)", k)
@@ -961,33 +961,33 @@ func serviceSecrets(field string, secs []types.ServiceSecretConfig, declared map
 	return out, nil
 }
 
-// firstBootJobs 翻译顶层 x-fleetly-first-boot-jobs（ADR-0033 形态迁移：
+// preDeployJobs 翻译顶层 x-fleetly-pre-deploy-jobs（ADR-0033 形态迁移：
 // 键白名单 + 禁面理由 + 官方插值已消解值）。secrets 引用与 service 面
 // 同律——名必须落在顶层 external 声明集内。
-func firstBootJobs(project *types.Project, raw any) ([]*specv1.JobSpec, error) {
+func preDeployJobs(project *types.Project, raw any) ([]*specv1.JobSpec, error) {
 	if raw == nil {
 		return nil, nil
 	}
 	list, ok := raw.([]any)
 	if !ok {
-		return nil, invalidf("compose.x-fleetly-first-boot-jobs", "must be a list of job mappings")
+		return nil, invalidf("compose.x-fleetly-pre-deploy-jobs", "must be a list of job mappings")
 	}
 	jobs := make([]*specv1.JobSpec, 0, len(list))
 	for i, rawJob := range list {
-		field := fmt.Sprintf("compose.x-fleetly-first-boot-jobs[%d]", i)
+		field := fmt.Sprintf("compose.x-fleetly-pre-deploy-jobs[%d]", i)
 		m, ok := rawJob.(map[string]any)
 		if !ok {
 			return nil, invalidf(field, "job must be a mapping")
 		}
 		for key := range m {
-			if firstBootJobWhitelist[key] {
+			if preDeployJobWhitelist[key] {
 				continue
 			}
-			if reason, banned := firstBootJobRejections[key]; banned {
+			if reason, banned := preDeployJobRejections[key]; banned {
 				return nil, invalidf(field+"."+key, "%s", reason)
 			}
 			return nil, invalidf(field+"."+key,
-				"unsupported field %q for a first boot job (supported: %s)", key, whitelistKeys(firstBootJobWhitelist))
+				"unsupported field %q for a pre-deploy job (supported: %s)", key, whitelistKeys(preDeployJobWhitelist))
 		}
 		name, _ := m["name"].(string)
 		if name == "" {

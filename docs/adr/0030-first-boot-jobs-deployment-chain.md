@@ -4,6 +4,8 @@
 |---|---|---|
 | Accepted | 2026-10-02 | CONTEXT.md Task 词条（部署期特例裁决，ADR-0007）、ADR-0012（Task 双形态/Owner Lease）、ADR-0016（admission/状态机）、ADR-0018（墙钟 deadline）、ADR-0017 附录 A.1（Task 配额）、ADR-0025（决策 8 解锁条件/C-13 JobSpec 重塑）、ADR-0029 决策 5（挂全部活跃项目网先例） |
 
+> **〔2026-10-16 修订注（ADR-0078）〕**：本 ADR 标题与正文的 firstBootJobs/first_boot 命名已整族更名为 preDeployJobs/pre_deploy（spec 字段 `pre_deploy_jobs`、DB 列 `pre_deploy`、eventcode `deployment.pre_deploy_job`、引擎选项 `PreDeployWaitGrace`），无向后兼容。改名动因与新旧对照表见 ADR-0078；本篇机制裁决（releasing 前半串行、游标、回滚永不重跑）逐字有效。
+
 ## 背景
 
 F1.12 评估结论：firstBootJobs 接线需要独立的状态机设计批——observing 态等待

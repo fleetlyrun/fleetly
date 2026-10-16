@@ -521,8 +521,8 @@ func TestTaskOneShotStoppingNoReplenish(t *testing.T) {
 }
 
 // TestOneshotRunVerdictOutcomes：判读单源（oneshotRunVerdict）五档判别的
-// 直测。域映射由 firstboot/task 既有 e2e 钉死（含 ttl 在两域分叉的实锚
-// ——TestTaskTTLLifecycle 镜像 completed、TestFirstBootTTLExpiryFails 判
+// 直测。域映射由 predeploy/task 既有 e2e 钉死（含 ttl 在两域分叉的实锚
+// ——TestTaskTTLLifecycle 镜像 completed、TestPreDeployTTLExpiryFails 判
 // 失败）；此处钉读取面本身，补 StoppedEarly 与 nil 退出码两档。
 func TestOneshotRunVerdictOutcomes(t *testing.T) {
 	e, _, _ := newTestEngine(t)
@@ -888,7 +888,7 @@ func TestEnsureTaskWorkloadsEgressChangeReEnsures(t *testing.T) {
 	require.NoError(t, e.networks.Create(ctx, e.db.Runner(), &network.Network{
 		ID: "net-eg-1", ProjectID: tTaskProject, Name: "workers", EgressNone: true,
 	}))
-	// process.networks 挂项目网 = firstBoot 铸造行形态（挂靠网铸时解析，
+	// process.networks 挂项目网 = preDeploy 铸造行形态（挂靠网铸时解析，
 	// 投影期 egress 从 networks 表现值过滤——taskGroup 网无 egress 属性面，
 	// Task 载体 egress 触达链只在此）。
 	spec := fmt.Sprintf(`{"schema_version":1,"task":{"id":"%s","project":"%s"},`+

@@ -140,9 +140,11 @@ type AppSpec struct {
 	Source        *Source                `protobuf:"bytes,3,opt,name=source,proto3" json:"source,omitempty"`
 	Processes     []*ProcessSpec         `protobuf:"bytes,4,rep,name=processes,proto3" json:"processes,omitempty"`
 	Build         *BuildSpec             `protobuf:"bytes,5,opt,name=build,proto3" json:"build,omitempty"`
-	// first_boot_jobs 是部署期 init job（数据库迁移等）：releasing 前串行
-	// 执行，失败即回滚。
-	FirstBootJobs []*JobSpec `protobuf:"bytes,6,rep,name=first_boot_jobs,json=firstBootJobs,proto3" json:"first_boot_jobs,omitempty"`
+	// pre_deploy_jobs 是部署期 init job（数据库迁移等）：releasing 前串行
+	// 执行，失败即回滚。**每次部署都执行，非仅首次**（同 Revision 再部署 =
+	// 重跑；回滚永不重跑，ADR-0030 决策 5）——原名 first_boot_jobs 与业界
+	// "first boot = 生命周期仅一次" 固定含义相撞，ADR-0078 改名。
+	PreDeployJobs []*JobSpec `protobuf:"bytes,6,rep,name=pre_deploy_jobs,json=preDeployJobs,proto3" json:"pre_deploy_jobs,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -212,9 +214,9 @@ func (x *AppSpec) GetBuild() *BuildSpec {
 	return nil
 }
 
-func (x *AppSpec) GetFirstBootJobs() []*JobSpec {
+func (x *AppSpec) GetPreDeployJobs() []*JobSpec {
 	if x != nil {
-		return x.FirstBootJobs
+		return x.PreDeployJobs
 	}
 	return nil
 }
@@ -1389,11 +1391,12 @@ func (x *StaticBuilder) GetOutputDir() string {
 	return ""
 }
 
-// JobSpec 是部署期一次性作业（first boot jobs，ADR-0007 词汇裁决：词条归
-// Task——部署期特例）。C-13 重塑：进程模板共享 ProcessSpec（process 字段，
-// 与 TaskSpec 同款嵌套形态）。2026-10-16 挂账清偿整删（用户裁决；写读两面
-// C-13 起已全走 process；buf breaking 对 origin/main 恰一条 FILE 红=开发期
-// 基线追认，与 config_refs 先例同款，上 main 后自愈）。
+// JobSpec 是部署期一次性作业（pre-deploy job，ADR-0007 词汇裁决：词条归
+// Task——部署期特例；字段名 ADR-0078 由 first_boot_jobs 改名）。C-13 重塑：
+// 进程模板共享 ProcessSpec（process 字段，与 TaskSpec 同款嵌套形态）。
+// 2026-10-16 挂账清偿整删（用户裁决；写读两面 C-13 起已全走 process；
+// buf breaking 对 origin/main 恰一条 FILE 红=开发期基线追认，与 config_refs
+// 先例同款，上 main 后自愈）。
 type JobSpec struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Name  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
@@ -1836,7 +1839,7 @@ const file_fleetly_spec_v1_spec_proto_rawDesc = "" +
 	"\x06source\x18\x03 \x01(\v2\x17.fleetly.spec.v1.SourceR\x06source\x12:\n" +
 	"\tprocesses\x18\x04 \x03(\v2\x1c.fleetly.spec.v1.ProcessSpecR\tprocesses\x120\n" +
 	"\x05build\x18\x05 \x01(\v2\x1a.fleetly.spec.v1.BuildSpecR\x05build\x12@\n" +
-	"\x0ffirst_boot_jobs\x18\x06 \x03(\v2\x18.fleetly.spec.v1.JobSpecR\rfirstBootJobs\"2\n" +
+	"\x0fpre_deploy_jobs\x18\x06 \x03(\v2\x18.fleetly.spec.v1.JobSpecR\rpreDeployJobs\"2\n" +
 	"\x06AppRef\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
 	"\aproject\x18\x02 \x01(\tR\aproject\"\xaf\x01\n" +
@@ -2010,7 +2013,7 @@ var file_fleetly_spec_v1_spec_proto_depIdxs = []int32{
 	4,  // 1: fleetly.spec.v1.AppSpec.source:type_name -> fleetly.spec.v1.Source
 	8,  // 2: fleetly.spec.v1.AppSpec.processes:type_name -> fleetly.spec.v1.ProcessSpec
 	16, // 3: fleetly.spec.v1.AppSpec.build:type_name -> fleetly.spec.v1.BuildSpec
-	19, // 4: fleetly.spec.v1.AppSpec.first_boot_jobs:type_name -> fleetly.spec.v1.JobSpec
+	19, // 4: fleetly.spec.v1.AppSpec.pre_deploy_jobs:type_name -> fleetly.spec.v1.JobSpec
 	5,  // 5: fleetly.spec.v1.Source.git:type_name -> fleetly.spec.v1.GitSource
 	6,  // 6: fleetly.spec.v1.Source.image:type_name -> fleetly.spec.v1.ImageSource
 	7,  // 7: fleetly.spec.v1.Source.upload:type_name -> fleetly.spec.v1.UploadSource

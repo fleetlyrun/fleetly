@@ -90,7 +90,7 @@ func TestProjectPushCredRidesBuildInput(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			fb := &fakeBuilder{digest: "sha256:built"}
 			e, _ := newBuildEngine(t, fb)
-			e.registry = tc.reg // 装配后覆盖（firstboot_test 同款接缝）
+			e.registry = tc.reg // 装配后覆盖（predeploy_test 同款接缝）
 			ctx := context.Background()
 
 			revID, _, _ := freezeGitBuildSpec(t, e, "01JD0REV0000000000000000P1")

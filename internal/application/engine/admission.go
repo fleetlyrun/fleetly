@@ -22,7 +22,7 @@ type SubmitRequest struct {
 	IdempotencyKey string // 可选；活跃期去重
 	CommitSHA      string // 可选；git 触发的 commit 去重锚
 	Supersede      bool   // 显式抢占在途部署（ADR-0016）
-	Kind           string // 可选；来源标注（KindRollback：审计标注 + first_boot 游标直落 done——回滚永不重跑 firstBootJobs，ADR-0030 决策 5）
+	Kind           string // 可选；来源标注（KindRollback：审计标注 + pre_deploy 游标直落 done——回滚永不重跑 preDeployJobs，ADR-0030 决策 5）
 }
 
 // AdmissionOutcome 是 admission 判定形态（P10 响应显式化；取值与 proto
@@ -112,10 +112,10 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 		if err := e.CheckPeerRefs(ctx, tx, appRow.ProjectID, req.RevisionID); err != nil {
 			return err
 		}
-		// 0.6 firstBootJobs 裸网名在场性预检（B12 P3-5 fail-closed）：项目内
+		// 0.6 preDeployJobs 裸网名在场性预检（B12 P3-5 fail-closed）：项目内
 		// 无该网的裸网名拒绝入队——typo 在受理位显式失败，不冻结进 spec
 		// 等 job 超时才暴露。
-		if err := e.CheckFirstBootNetworks(ctx, tx, appRow.ProjectID, req.RevisionID); err != nil {
+		if err := e.CheckPreDeployNetworks(ctx, tx, appRow.ProjectID, req.RevisionID); err != nil {
 			return err
 		}
 
@@ -175,7 +175,7 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 
 		// 4. 显式 supersede 抢占在途（至多一条；观察窗与发布权即时移交——
 		// 在途 Generation 由本新 Deployment 收口）。被抢占部署锚定的
-		// firstBootJobs 在事务后 best-effort 强停（ADR-0030 决策 6——
+		// preDeployJobs 在事务后 best-effort 强停（ADR-0030 决策 6——
 		// StopTask 自开事务，不得嵌套）。
 		if req.Supersede {
 			for _, d := range inFlight {
@@ -213,9 +213,9 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 		}
 		if req.Kind == KindRollback {
 			// 回放部署直落 done 游标（ADR-0030 决策 5）：回滚（自动/显式）
-			// 永不重跑 firstBootJobs——迁移已应用，重跑反而破坏。release 的
-			// driveFirstBootJobs 见 done 游标直接进 carrier 子相位。
-			d.FirstBoot = deployment.FirstBootDone
+			// 永不重跑 preDeployJobs——迁移已应用，重跑反而破坏。release 的
+			// drivePreDeployJobs 见 done 游标直接进 carrier 子相位。
+			d.PreDeploy = deployment.PreDeployDone
 		}
 		// 6. 受理落行 + 事件 + 审计（commitWrite 序列真源）。审计带来源
 		// 标注（transit 的 AfterFP 后缀同款形态）：Kind 不再是死参数——
@@ -263,7 +263,7 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 	}
 	for _, id := range supersededIDs {
 		if fresh, err := e.deployments.Get(ctx, e.db.Runner(), id); err == nil {
-			e.abandonFirstBootJobs(ctx, fresh)
+			e.abandonPreDeployJobs(ctx, fresh)
 		} else {
 			e.log.Error("submit: supersede abandon lookup", "deployment", id, "err", err)
 		}
@@ -298,7 +298,7 @@ func (e *Engine) Cancel(ctx context.Context, id string) (*deployment.Deployment,
 		return nil, err
 	}
 	e.ensureForget(e.delivery.release, id) // 取消是 releasing 的另一出口：物化备忘随相位作废（C17）
-	e.abandonFirstBootJobs(ctx, out)
+	e.abandonPreDeployJobs(ctx, out)
 	e.loop.Kick()
 	return out, nil
 }

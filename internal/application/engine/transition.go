@@ -183,7 +183,7 @@ func (e *Engine) emitObservation(ctx context.Context, team, name, aggregate, id 
 // ---- 类型化前门（保留原名原签名，调用点零改动） ----
 
 // transit 是 Deployment 状态迁移四件一的类型化前门（caller-tx：Submit
-// 受理序与 firstboot 游标推进组合进更大事务；部署记录无 tombstone）。
+// 受理序与 predeploy 游标推进组合进更大事务；部署记录无 tombstone）。
 func (e *Engine) transit(ctx context.Context, tx *sql.Tx, d *deployment.Deployment, from []deployment.State, to deployment.State, mut func(*deployment.Deployment)) error {
 	var fresh *deployment.Deployment
 	return e.commitTransition(ctx, tx, transitionFact{

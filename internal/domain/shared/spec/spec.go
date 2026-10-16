@@ -66,19 +66,19 @@ func ValidateApp(s *specv1.AppSpec) error {
 		seen[p.GetName()] = true
 	}
 	jobNames := map[string]bool{}
-	for i, j := range s.GetFirstBootJobs() {
-		if err := ValidateJob(fmt.Sprintf("app.first_boot_jobs[%d]", i), j); err != nil {
+	for i, j := range s.GetPreDeployJobs() {
+		if err := ValidateJob(fmt.Sprintf("app.pre_deploy_jobs[%d]", i), j); err != nil {
 			return err
 		}
 		if jobNames[j.GetName()] {
-			return invalidf("app.first_boot_jobs[%d].name", "duplicate first boot job name %q", j.GetName())
+			return invalidf("app.pre_deploy_jobs[%d].name", "duplicate pre-deploy job name %q", j.GetName())
 		}
 		jobNames[j.GetName()] = true
 	}
 	return nil
 }
 
-// ValidateJob 校验部署期一次性作业（firstBootJobs，ADR-0030）。禁面
+// ValidateJob 校验部署期一次性作业（preDeployJobs，ADR-0030）。禁面
 // fail-closed：Task 域不渲染的面（卷/config）与一次性执行无意义的面
 // （探针/端口/placement/多副本）一律拒绝且理由精确；网络三形态与 App
 // Process 同域（缺省挂靠由引擎铸造面裁决——全部活跃项目网）。
@@ -543,7 +543,7 @@ func validNetworkGroupName(g string) bool { return networkGroupNameRe.MatchStrin
 // 服务名与平台 DNS 面——仅差特殊字符的名字（web.1 / web-1）经载体名
 // sanitize 折叠成同名载体，一进程无声丢失；白名单在 spec 入口拒绝折叠
 // 源头。形态与网络组名同款 DNS label；TaskSpec 进程名由平台铸造为
-// "run"（合法），first_boot_jobs 的进程名铸时落 job 名且走 Task 域
+// "run"（合法），pre_deploy_jobs 的进程名铸时落 job 名且走 Task 域
 // （载体名不含进程名），均不受影响。
 const processNamePattern = networkGroupNamePattern
 

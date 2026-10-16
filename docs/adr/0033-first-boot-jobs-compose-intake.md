@@ -4,6 +4,8 @@
 |---|---|
 | Accepted | 2026-10-02 | ADR-0030（firstBootJobs 部署链，决策 8 intake 挂账）、ADR-0014（Secret 材料文件面）、ADR-0009（git 源 webhook 面）、ADR-0032（builder 面 upload 专属先例） |
 
+> **〔2026-10-16 修订注（ADR-0078）〕**：compose 扩展键已由 `x-fleetly-first-boot-jobs` 更名 `x-fleetly-pre-deploy-jobs`，旧键不再受理（未知 `x-fleetly-*` 键 fail-closed 既有语义自然覆盖）。改名动因与整族对照见 ADR-0078；本篇 intake 形态裁决（list 形态、command/environment 伴随扩宽）逐字有效。
+
 ## 背景
 
 ADR-0030 落地了 firstBootJobs 的引擎链线与校验面，intake 面挂账："compose

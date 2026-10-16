@@ -196,7 +196,7 @@ func Project(spec *specv1.AppSpec, team, appName string, buildDigests map[string
 // 重启）；Addressing 携带双级稳定 DNS（池级轮询 + per-Run 稳定名）；
 // network_group 翻译为平台网络名（同决策 5）。
 //
-// process.networks 是 firstBootJobs 铸造面的挂靠通道（ADR-0030 决策 7）：
+// process.networks 是 preDeployJobs 铸造面的挂靠通道（ADR-0030 决策 7）：
 // API 受理面禁用该字段（validateTaskCommon），engine 铸造的部署期 job 例外
 // ——铸造时已解析为平台网络名（taskGroup:/project: 引用不复存在），此处
 // 原样透传。

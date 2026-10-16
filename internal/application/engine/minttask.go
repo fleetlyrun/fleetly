@@ -9,12 +9,12 @@ package engine
 // 列）——ADR-0024 受理纪律不因铸造单源而变。
 //
 // spec 验证不住铸造（2026-10-11 cmd golden 实证回退）：铸造输入的效性契约
-// 不统一——firstBoot 铸造 spec 是平台投影，携带 taskGroup:/project: 跨挂
+// 不统一——preDeploy 铸造 spec 是平台投影，携带 taskGroup:/project: 跨挂
 // networks，而 ValidateTask 的"一条轨"禁用只治用户提交面（ADR-0012 裁决
 // 面）；ValidateTask 还要求 TaskRef 在场，而身份锚恰由铸造注入。验证归各
 // 入口受理面：API = normalizeCreateTask（ValidateTaskTemplate，ref 缺席同
-// 款规则）、schedule = 模板冻结时 ValidateTaskTemplate、firstBoot = AppSpec
-// 受理位 CheckFirstBootNetworks。铸造只保证注入构造出的 ref 非空。
+// 款规则）、schedule = 模板冻结时 ValidateTaskTemplate、preDeploy = AppSpec
+// 受理位 CheckPreDeployNetworks。铸造只保证注入构造出的 ref 非空。
 //
 // 错误契约：冻结 marshal 失败原样上抛，调用方自加语境。engine 不依赖
 // apperr（engine.go 哨兵纪律）。
@@ -23,7 +23,7 @@ package engine
 // 同口径：TaskSpec 冻结体是行内唯一期望状态载体，改序列化形态 = 存量行
 // 读回漂移，只在可承受一次性数据迁移的批次变更。
 //
-// one-shot 缺省并发 1 随铸造收编（firstBoot 铸造 spec 不带 Form/Desired、
+// one-shot 缺省并发 1 随铸造收编（preDeploy 铸造 spec 不带 Form/Desired、
 // schedule 模板可声明 0）：行值此前由各调用方手补（壳硬编码 1、受理位归一
 // 化补 1），现在铸造单源负责——只缺省行值，不改写冻结体；配额检查的
 // delta 仍由调用方显式传（taskSpawnQuota），不读行值。
@@ -104,7 +104,7 @@ func (e *Engine) mintOneShotTask(ctx context.Context, projectID string,
 	var row *task.Task
 	err = e.db.Tx(ctx, func(tx *sql.Tx) error {
 		// 配额检查先行（拒绝零副作用；含本单自占一位；ADR-0017 附录 A.1）：
-		// 命中返回哨兵——调用方转各自语义（到期拍 skip / firstboot 有界等待 /
+		// 命中返回哨兵——调用方转各自语义（到期拍 skip / predeploy 有界等待 /
 		// 手动拍诚实拒绝）。随后事务内取 seq 铸行（ADR-0070）。
 		if err := e.taskSpawnQuota(ctx, tx, projectID, 1); err != nil {
 			return err

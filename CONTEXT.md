@@ -61,7 +61,7 @@ _Avoid_: env var(标识符中), parameter, setting
 _Avoid_: lambda
 
 **Task**:
-程序化工作负载，双形态：one-shot（一次性执行）与 resident（常驻实例池）；有属主 Token、TTL 与专属网络组。部署期一次性工作负载（Spec 的 firstBootJobs/JobSpec）是 Task 的部署期特例——词条归 Task，不另立 Deployment Job 实体（ADR-0007 词汇冻结裁决，2026-10-01）。
+程序化工作负载，双形态：one-shot（一次性执行）与 resident（常驻实例池）；有属主 Token、TTL 与专属网络组。部署期一次性工作负载（Spec 的 preDeployJobs/JobSpec，原名 firstBootJobs——ADR-0078 改名）是 Task 的部署期特例——词条归 Task，不另立 Deployment Job 实体（ADR-0007 词汇冻结裁决，2026-10-01）。
 _Avoid_: job, run, agent, one-off
 
 **Task Mint（铸造）**:
@@ -95,7 +95,7 @@ _Avoid_: DB instance, service instance, addon
 _Avoid_: blueprint, recipe
 
 **Compose Intake**:
-App 部署声明的受理语言：compose-spec 官方语法 + `x-fleetly-*` 扩展键（`deploy.x-fleetly-strategy`、`healthcheck.x-fleetly-http-path`/`x-fleetly-tcp-port`、顶层 `x-fleetly-first-boot-jobs`），compose-go 官方解析与 schema 校验（非 x- 自定义键拒）；引用 secrets/volumes 走官方 external 声明（名即平台实体名）；官方插值环境 = 平台变量（Shared ∪ AppVariable，未消解即拒）。归一化产物 = Spec（ADR-0074）。
+App 部署声明的受理语言：compose-spec 官方语法 + `x-fleetly-*` 扩展键（`deploy.x-fleetly-strategy`、`healthcheck.x-fleetly-http-path`/`x-fleetly-tcp-port`、顶层 `x-fleetly-pre-deploy-jobs`，原名 `x-fleetly-first-boot-jobs`——ADR-0078 改名），compose-go 官方解析与 schema 校验（非 x- 自定义键拒）；引用 secrets/volumes 走官方 external 声明（名即平台实体名）；官方插值环境 = 平台变量（Shared ∪ AppVariable，未消解即拒）。归一化产物 = Spec（ADR-0074）。
 _Avoid_: Procfile
 
 **Source**:

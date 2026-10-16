@@ -287,7 +287,7 @@ export function DeploymentDetailView({
           <dt>commit_sha</dt><dd>{effective.commit_sha || "—"}</dd>
           <dt>idempotency_key</dt><dd>{effective.idempotency_key || "—"}</dd>
           <dt>superseded_by</dt><dd>{effective.superseded_by || "—"}</dd>
-          <dt>first_boot_task_id</dt><dd>{effective.first_boot_task_id || "—"}</dd>
+          <dt>pre_deploy_task_id</dt><dd>{effective.pre_deploy_task_id || "—"}</dd>
           <dt>created_at</dt><dd>{formatAbsolute(effective.created_at)}</dd>
           <dt>updated_at</dt><dd>{formatAbsolute(effective.updated_at)}</dd>
           <dt>finished_at</dt><dd>{formatAbsolute(effective.finished_at)}</dd>

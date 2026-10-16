@@ -16,7 +16,7 @@ var builtins = []Event{
 	{Name: "deployment.rolling_back", Summary: "Deployment started replaying last successful revision.", Source: "added during implementation"},
 	{Name: "deployment.superseded", Summary: "Deployment superseded by a newer one.", Source: "added during implementation"},
 	{Name: "deployment.cancelled", Summary: "Deployment cancelled while queued or in flight.", Source: "added during implementation"},
-	{Name: "deployment.first_boot_job", Summary: "A deploy-time first boot job was minted as a one-shot task; the deployment waits in releasing for its terminal state before materializing carriers (ADR-0030).", Source: "internal/application/engine/firstboot.go mintFirstBootJob"},
+	{Name: "deployment.pre_deploy_job", Summary: "A deploy-time pre-deploy job was minted as a one-shot task; the deployment waits in releasing for its terminal state before materializing carriers (ADR-0030).", Source: "internal/application/engine/predeploy.go mintPreDeployJob"},
 
 	// Build 状态机迁移（领域模型 §4）。
 	{Name: "build.queued", Summary: "Build accepted into build queue.", Source: "added during implementation"},

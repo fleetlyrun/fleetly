@@ -56,7 +56,7 @@ func appSpecForMerge() *specv1.AppSpec {
 			{Name: "web", ImageOrigin: &specv1.ProcessSpec_Image{Image: "nginx:1.27"}, Env: map[string]string{"MODE": "app", "ONLY_APP": "1"}},
 			{Name: "worker", ImageOrigin: &specv1.ProcessSpec_Image{Image: "busybox:1.37"}},
 		},
-		FirstBootJobs: []*specv1.JobSpec{{
+		PreDeployJobs: []*specv1.JobSpec{{
 			Name: "migrate",
 			Process: &specv1.ProcessSpec{Name: "migrate", ImageOrigin: &specv1.ProcessSpec_Image{Image: "migrate:V4.18.1"},
 				Env: map[string]string{"MIGRATE_OVERRIDE": "app"}},
@@ -73,9 +73,9 @@ func TestMergeSharedEnvLayers(t *testing.T) {
 	// 的进程拿到完整共享层。
 	assert.Equal(t, map[string]string{"MODE": "app", "ONLY_APP": "1", "SHARED_ONLY": "yes", "MIGRATE_OVERRIDE": "shared-lost"}, s.GetProcesses()[0].GetEnv())
 	assert.Equal(t, map[string]string{"MODE": "shared", "SHARED_ONLY": "yes", "MIGRATE_OVERRIDE": "shared-lost"}, s.GetProcesses()[1].GetEnv())
-	// firstBootJobs 的进程同样参与合成（ADR-0043 决策 3）。
+	// preDeployJobs 的进程同样参与合成（ADR-0043 决策 3）。
 	assert.Equal(t, map[string]string{"MIGRATE_OVERRIDE": "app", "MODE": "shared", "SHARED_ONLY": "yes"},
-		s.GetFirstBootJobs()[0].GetProcess().GetEnv())
+		s.GetPreDeployJobs()[0].GetProcess().GetEnv())
 }
 
 func TestMergeSharedEnvEmptyIsNoop(t *testing.T) {
@@ -121,13 +121,13 @@ func TestMergeAppEnvTopLayer(t *testing.T) {
 	assert.Equal(t, map[string]string{"A": "appvar", "B": "appvar", "C": "shared"}, spec.Processes[0].Env)
 }
 
-// first_boot_jobs 的进程同享三级合成（迁移 job 与业务进程同一喉）。
-func TestMergeAppEnvCoversFirstBootJobs(t *testing.T) {
-	spec := &specv1.AppSpec{FirstBootJobs: []*specv1.JobSpec{{
+// pre_deploy_jobs 的进程同享三级合成（迁移 job 与业务进程同一喉）。
+func TestMergeAppEnvCoversPreDeployJobs(t *testing.T) {
+	spec := &specv1.AppSpec{PreDeployJobs: []*specv1.JobSpec{{
 		Process: &specv1.ProcessSpec{Name: "migrate", Env: map[string]string{"DSN": "intake"}},
 	}}}
 
 	MergeAppEnv(spec, map[string]string{"DSN": "appvar", "EXTRA": "1"})
 
-	assert.Equal(t, map[string]string{"DSN": "appvar", "EXTRA": "1"}, spec.FirstBootJobs[0].Process.Env)
+	assert.Equal(t, map[string]string{"DSN": "appvar", "EXTRA": "1"}, spec.PreDeployJobs[0].Process.Env)
 }

@@ -68,7 +68,7 @@ app (spec) — AppSpec: desired state of a long-running deployable unit (an app 
       },
       "type": "object"
     },
-    "first_boot_jobs": {
+    "pre_deploy_jobs": {
       "items": {
         "additionalProperties": false,
         "properties": {

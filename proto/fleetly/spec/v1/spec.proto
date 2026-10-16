@@ -17,9 +17,11 @@ message AppSpec {
   Source source = 3;
   repeated ProcessSpec processes = 4;
   BuildSpec build = 5;
-  // first_boot_jobs 是部署期 init job（数据库迁移等）：releasing 前串行
-  // 执行，失败即回滚。
-  repeated JobSpec first_boot_jobs = 6;
+  // pre_deploy_jobs 是部署期 init job（数据库迁移等）：releasing 前串行
+  // 执行，失败即回滚。**每次部署都执行，非仅首次**（同 Revision 再部署 =
+  // 重跑；回滚永不重跑，ADR-0030 决策 5）——原名 first_boot_jobs 与业界
+  // "first boot = 生命周期仅一次" 固定含义相撞，ADR-0078 改名。
+  repeated JobSpec pre_deploy_jobs = 6;
 }
 
 // AppRef 是 App 归属锚。
@@ -196,11 +198,12 @@ message StaticBuilder {
   string output_dir = 1;
 }
 
-// JobSpec 是部署期一次性作业（first boot jobs，ADR-0007 词汇裁决：词条归
-// Task——部署期特例）。C-13 重塑：进程模板共享 ProcessSpec（process 字段，
-// 与 TaskSpec 同款嵌套形态）。2026-10-16 挂账清偿整删（用户裁决；写读两面
-// C-13 起已全走 process；buf breaking 对 origin/main 恰一条 FILE 红=开发期
-// 基线追认，与 config_refs 先例同款，上 main 后自愈）。
+// JobSpec 是部署期一次性作业（pre-deploy job，ADR-0007 词汇裁决：词条归
+// Task——部署期特例；字段名 ADR-0078 由 first_boot_jobs 改名）。C-13 重塑：
+// 进程模板共享 ProcessSpec（process 字段，与 TaskSpec 同款嵌套形态）。
+// 2026-10-16 挂账清偿整删（用户裁决；写读两面 C-13 起已全走 process；
+// buf breaking 对 origin/main 恰一条 FILE 红=开发期基线追认，与 config_refs
+// 先例同款，上 main 后自愈）。
 message JobSpec {
   reserved 2, 3, 4, 5, 6;
   reserved "image", "from_build", "command", "env", "secret_refs";

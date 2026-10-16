@@ -105,17 +105,17 @@ func (e *Engine) driveOnce(ctx context.Context, d *deployment.Deployment) (*depl
 
 // prepare：Spec 归一化校验 + 投影 + 材料装配（F0.17 材料解析随材料批次
 // 接入，当前为空集）。镜像直投 → releasing；需构建 → building（build
-// engine 拾取）。firstBootJobs 的结构校验在此先行（受理面 ValidateApp
+// engine 拾取）。preDeployJobs 的结构校验在此先行（受理面 ValidateApp
 // 同规则；此处是部署链内防御 + 更早失败：坏 job 不等构建完才死）——
-// 执行在 releasing 态前半（firstboot.go，ADR-0030）。
+// 执行在 releasing 态前半（predeploy.go，ADR-0030）。
 func (e *Engine) prepare(ctx context.Context, d *deployment.Deployment) (*deployment.Deployment, error) {
 	spec, err := e.loadSpec(ctx, d.ToRevision)
 	if err != nil {
 		return e.failDeployment(ctx, d, "load revision spec: "+err.Error())
 	}
-	for i, j := range spec.GetFirstBootJobs() {
-		if verr := specir.ValidateJob(fmt.Sprintf("app.first_boot_jobs[%d]", i), j); verr != nil {
-			return e.failDeployment(ctx, d, "first boot job: "+verr.Error())
+	for i, j := range spec.GetPreDeployJobs() {
+		if verr := specir.ValidateJob(fmt.Sprintf("app.pre_deploy_jobs[%d]", i), j); verr != nil {
+			return e.failDeployment(ctx, d, "pre-deploy job: "+verr.Error())
 		}
 	}
 	team, appRow, err := e.appTeam(ctx, d.AppID)
@@ -152,7 +152,7 @@ func (e *Engine) prepare(ctx context.Context, d *deployment.Deployment) (*deploy
 	return e.transitAndReload(ctx, d, []deployment.State{deployment.StatePreparing}, deployment.StateReleasing, nil)
 }
 
-// release：jobs 子相位（firstBootJobs，ADR-0030——串行执行部署期 init
+// release：jobs 子相位（preDeployJobs，ADR-0030——串行执行部署期 init
 // job，失败即回滚；旧 Revision 载体原样在服）→ 物化（materialize 单序列）
 // 下发 Runtime（唯一写动词 Ensure，同 Generation 重放安全）；L1 健康门 =
 // 全部 Workload 观测到 running（gen 匹配）。
@@ -166,21 +166,21 @@ func (e *Engine) prepare(ctx context.Context, d *deployment.Deployment) (*deploy
 // 输入漂移（Secret 轮换、peer 批准、卷钉住、环外载体变更）由
 // ReconcileReplayInterval 强制重放兜底（滞后有界，终态同）；Ensure 失败
 // 检测窗从每拍放宽到节拍（Task 域 ensureTaskWorkloads 先例同口径）。
-// observe_deadline 在两子相位复用（job 等待 / L1），消歧真源 = first_boot
+// observe_deadline 在两子相位复用（job 等待 / L1），消歧真源 = pre_deploy
 // 游标。
 func (e *Engine) release(ctx context.Context, d *deployment.Deployment) (*deployment.Deployment, error) {
 	spec, err := e.loadSpec(ctx, d.ToRevision)
 	if err != nil {
 		return e.failDeployment(ctx, d, "load revision spec: "+err.Error())
 	}
-	jobsDone, err := e.driveFirstBootJobs(ctx, d, spec)
+	jobsDone, err := e.drivePreDeployJobs(ctx, d, spec)
 	if err != nil {
 		return e.failDeployment(ctx, d, err.Error())
 	}
 	if !jobsDone {
 		return nil, nil // 等 job 终态（tick 再进）
 	}
-	// blue-green 变体路径（ADR-0048 决策 1/2：firstBootJobs 在新代 L1 之前
+	// blue-green 变体路径（ADR-0048 决策 1/2：preDeployJobs 在新代 L1 之前
 	// ——jobs 是部署相位不是代属性，序列不变）。BG 部署走双代窗物化，
 	// rolling 部署维持单代 materialize（存量路径逐字节不变）。
 	bg := anyBlueGreen(spec)

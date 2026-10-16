@@ -341,7 +341,7 @@ export function DeploySheet({
           ) : null}
 
           {source === "compose" ? (
-            <FieldRow label="Compose YAML" hint="x-fleetly-first-boot-jobs and deploy.x-fleetly-strategy extension keys are honored">
+            <FieldRow label="Compose YAML" hint="x-fleetly-pre-deploy-jobs and deploy.x-fleetly-strategy extension keys are honored">
               <Textarea rows={10} value={composeYaml} onChange={(event) => setComposeYaml(event.target.value)} spellCheck={false} />
             </FieldRow>
           ) : null}

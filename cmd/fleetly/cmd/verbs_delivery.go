@@ -351,7 +351,7 @@ func newBuildsWaitVerb() commands.Command {
 }
 
 // newDeploymentsGetVerb 构造 deployments get（F3.1 API 可见面批）：单行
-// 读面钉双代窗叙事字段（from_generation/observe_deadline/first_boot_task_id
+// 读面钉双代窗叙事字段（from_generation/observe_deadline/pre_deploy_task_id
 // ——list 列形态不携带的行细节；REST GetDeployment 面在册，CLI 补齐同款
 // Agent 语义断裂先例 = deployments cancel）。
 func newDeploymentsGetVerb() commands.Command {
@@ -382,8 +382,8 @@ func newDeploymentsGetVerb() commands.Command {
 					if d.GetObserveDeadline() != "" {
 						_, _ = fmt.Fprintf(env.Stdout, "  observe deadline: %s\n", d.GetObserveDeadline())
 					}
-					if d.GetFirstBootTaskId() != "" {
-						_, _ = fmt.Fprintf(env.Stdout, "  first boot task: %s\n", d.GetFirstBootTaskId())
+					if d.GetPreDeployTaskId() != "" {
+						_, _ = fmt.Fprintf(env.Stdout, "  pre-deploy task: %s\n", d.GetPreDeployTaskId())
 					}
 					if d.GetError() != "" {
 						_, _ = fmt.Fprintf(env.Stdout, "  error: %s\n", d.GetError())

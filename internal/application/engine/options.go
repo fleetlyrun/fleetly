@@ -33,10 +33,10 @@ type DeployOptions struct {
 	ObserveWindow time.Duration
 	// ReleaseTimeout 是 L1 就绪等待上限（默认 120s；超时即失败回滚）。
 	ReleaseTimeout time.Duration
-	// FirstBootWaitGrace 是 firstBootJobs 等待窗在作业 ttl 之上的余量
+	// PreDeployWaitGrace 是 preDeployJobs 等待窗在作业 ttl 之上的余量
 	//（默认 2m：mint→Run 创建滞后 + 终态观测滞后；镜像拉取计入 Run 自身
 	// TTL——deadline 从 Run 创建起算，ADR-0030 决策 4）。
-	FirstBootWaitGrace time.Duration
+	PreDeployWaitGrace time.Duration
 }
 
 // TaskOptions 是 Task 域租约/补足/重叠策略参数。
@@ -145,8 +145,8 @@ func (o *Options) fill() {
 	if o.Deploy.ReleaseTimeout <= 0 {
 		o.Deploy.ReleaseTimeout = 120 * time.Second
 	}
-	if o.Deploy.FirstBootWaitGrace <= 0 {
-		o.Deploy.FirstBootWaitGrace = 2 * time.Minute
+	if o.Deploy.PreDeployWaitGrace <= 0 {
+		o.Deploy.PreDeployWaitGrace = 2 * time.Minute
 	}
 	if o.Ring.Tick <= 0 {
 		o.Ring.Tick = time.Second

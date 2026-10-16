@@ -80,24 +80,24 @@ type Deployment struct {
 	CommitSHA         string
 	SupersededBy      string // 被哪个 Deployment 抢占（终态 superseded 时非空）
 	Error             string // 失败原因（英文，用户可见）
-	ObserveDeadline   string // 当前阶段绝对截止（job 等待 / L1 就绪等待 / L3 观察窗；RFC3339，空 = 不在限时阶段；消歧真源 = FirstBoot 游标，ADR-0030）
-	FirstBoot         string // firstBootJobs 游标（'' 未开始 | '<idx>:<taskID>' 等待中 | 'done' 全部完成；ADR-0030）
+	ObserveDeadline   string // 当前阶段绝对截止（job 等待 / L1 就绪等待 / L3 观察窗；RFC3339，空 = 不在限时阶段；消歧真源 = PreDeploy 游标，ADR-0030）
+	PreDeploy         string // preDeployJobs 游标（'' 未开始 | '<idx>:<taskID>' 等待中 | 'done' 全部完成；ADR-0030）
 	RollbackAttempted bool   // failed 自动回滚已尝试（=1 的 failed 是终态，不再自动重试）
 	CreatedAt         string
 	UpdatedAt         string
 	FinishedAt        string
 }
 
-// firstBootDone 是 first_boot 游标的完成哨兵（区分"未开始"空值）。
-const FirstBootDone = "done"
+// preDeployDone 是 pre_deploy 游标的完成哨兵（区分"未开始"空值）。
+const PreDeployDone = "done"
 
-// FirstBootAnchor 解析游标：返回 (job 下标, 锚定 Task ID, 是否等待中)。
+// PreDeployAnchor 解析游标：返回 (job 下标, 锚定 Task ID, 是否等待中)。
 // 'done' 与非法形态返回 ok=false（等待外形态由调用方按序处理）。
-func (d *Deployment) FirstBootAnchor() (idx int, taskID string, ok bool) {
-	if d.FirstBoot == "" || d.FirstBoot == FirstBootDone {
+func (d *Deployment) PreDeployAnchor() (idx int, taskID string, ok bool) {
+	if d.PreDeploy == "" || d.PreDeploy == PreDeployDone {
 		return 0, "", false
 	}
-	head, tail, found := strings.Cut(d.FirstBoot, ":")
+	head, tail, found := strings.Cut(d.PreDeploy, ":")
 	if !found || tail == "" {
 		return 0, "", false
 	}

@@ -61,10 +61,10 @@ var (
 	// 引用（ADR-0013 附录 A.3 fail-closed：declare+approve 或移除引用；
 	// API 层映射 E_CONFLICT）。
 	ErrCrossProjectRefNotApproved = errors.New("engine: cross-project network reference is not approved")
-	// ErrFirstBootNetworkUnknown 是 firstBootJobs 受理命中项目内不存在的
+	// ErrPreDeployNetworkUnknown 是 preDeployJobs 受理命中项目内不存在的
 	// 裸网名（B12 P3-5 fail-closed：建网/taskGroup:/project: 引用/删附件；
 	// API 层映射 E_INVALID_ARGUMENT）。
-	ErrFirstBootNetworkUnknown = errors.New("engine: first boot job attaches an unknown network")
+	ErrPreDeployNetworkUnknown = errors.New("engine: pre-deploy job attaches an unknown network")
 )
 
 // ring 是收敛环注册项（Start/DriveOnce 表驱动：goroutine 挂载、启动

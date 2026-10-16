@@ -34,16 +34,16 @@ func (r *repo) Create(ctx context.Context, run state.Runner, d *deployment.Deplo
 	if d.ID == "" {
 		d.ID = entityid.Derive(d.AppID, "d", seq)
 	}
-	// first_boot 游标随行落库（提交方直落形态：回滚部署带 done 游标——
+	// pre_deploy 游标随行落库（提交方直落形态：回滚部署带 done 游标——
 	// ADR-0030 决策 5；常规部署为空串 = 未开始）。
 	_, err = run.ExecContext(ctx, `
 		INSERT INTO deployments
 			(id, seq, app_id, from_revision, to_revision, state, generation, from_generation,
 			 idempotency_key, commit_sha, superseded_by, error, observe_deadline,
-			 first_boot, created_at, updated_at, finished_at)
+			 pre_deploy, created_at, updated_at, finished_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', '', '', ?, ?, ?, '')`,
 		d.ID, d.Seq, d.AppID, d.FromRevision, d.ToRevision, string(d.State), d.Generation, d.FromGeneration,
-		d.IdempotencyKey, d.CommitSHA, d.FirstBoot, d.CreatedAt, d.UpdatedAt)
+		d.IdempotencyKey, d.CommitSHA, d.PreDeploy, d.CreatedAt, d.UpdatedAt)
 	if persistence.IsUniqueViolation(err) {
 		// 唯一索引作用域是 App 内（B10）：冲突 = 同 App 同键已有活跃行。
 		return fmt.Errorf("%w: an active deployment in app %s already holds idempotency key %q",
@@ -192,11 +192,11 @@ func (r *repo) Transit(ctx context.Context, run state.Runner, id string, from []
 	res, err := run.ExecContext(ctx, `
 		UPDATE deployments SET
 			state = ?, generation = ?, from_generation = ?, error = ?, superseded_by = ?,
-			observe_deadline = ?, first_boot = ?, rollback_attempted = ?,
+			observe_deadline = ?, pre_deploy = ?, rollback_attempted = ?,
 			to_revision = ?, updated_at = ?, finished_at = ?
 		`+persistence.TransitWhere,
 		string(cur.State), cur.Generation, cur.FromGeneration, cur.Error, cur.SupersededBy,
-		cur.ObserveDeadline, cur.FirstBoot, cur.RollbackAttempted, cur.ToRevision,
+		cur.ObserveDeadline, cur.PreDeploy, cur.RollbackAttempted, cur.ToRevision,
 		cur.UpdatedAt, cur.FinishedAt,
 		id, string(origState))
 	if err != nil {
@@ -216,7 +216,7 @@ func (r *repo) Transit(ctx context.Context, run state.Runner, id string, from []
 const selectCols = `
 	SELECT id, seq, app_id, from_revision, to_revision, state, generation, from_generation,
 	       idempotency_key, commit_sha, superseded_by, error, observe_deadline,
-	       first_boot, rollback_attempted, created_at, updated_at, finished_at
+	       pre_deploy, rollback_attempted, created_at, updated_at, finished_at
 	FROM deployments`
 
 func scanDeployment(scan func(dest ...any) error) (*deployment.Deployment, error) {
@@ -225,7 +225,7 @@ func scanDeployment(scan func(dest ...any) error) (*deployment.Deployment, error
 	var rollback int
 	err := scan(&d.ID, &d.Seq, &d.AppID, &d.FromRevision, &d.ToRevision, &stateStr, &d.Generation, &d.FromGeneration,
 		&d.IdempotencyKey, &d.CommitSHA, &d.SupersededBy, &d.Error, &d.ObserveDeadline,
-		&d.FirstBoot, &rollback, &d.CreatedAt, &d.UpdatedAt, &d.FinishedAt)
+		&d.PreDeploy, &rollback, &d.CreatedAt, &d.UpdatedAt, &d.FinishedAt)
 	if err != nil {
 		return nil, persistence.MapScanErr(err)
 	}

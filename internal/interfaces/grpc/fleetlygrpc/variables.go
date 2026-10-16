@@ -319,7 +319,7 @@ func revisionUsesDifferentValue(blob []byte, name, newValue string) bool {
 			return true
 		}
 	}
-	for _, j := range s.GetFirstBootJobs() {
+	for _, j := range s.GetPreDeployJobs() {
 		if differs(j.GetProcess().GetEnv()) {
 			return true
 		}

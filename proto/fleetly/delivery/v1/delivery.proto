@@ -263,9 +263,10 @@ message Deployment {
   string created_at = 12;
   string updated_at = 13;
   string finished_at = 14;
-  // first_boot_task_id 是部署当前锚定的 firstBootJobs 作业 Task（releasing
-  // 态 jobs 子相位非空；无作业或已完成为空。ADR-0030）。
-  string first_boot_task_id = 15;
+  // pre_deploy_task_id 是部署当前锚定的 pre-deploy 作业 Task（releasing
+  // 态 jobs 子相位非空；无作业或已完成为空。ADR-0030；字段名 ADR-0078
+  // 改名，旧名 first_boot_task_id）。
+  string pre_deploy_task_id = 15;
   // from_generation 是基线 Generation（最近 succeeded 行的 gen；ADR-0048
   // 双代窗的旧代锚）。0 = 无基线（首次部署/存量行——protojson 零值省略，
   // 与 generation 的首代形态一致）。Console 判"双代窗进行中"= 活跃部署

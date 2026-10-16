@@ -235,15 +235,15 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 		{"deploy from dir static", []string{"deploy", "--app", "GOLDEN_APP", "--from-dir", "GOLDEN_SRCDIR",
 			"--builder", "static", "--output-dir", "web"}, 0},
 
-		// firstBootJobs intake（F1.15 前置，ADR-0033）：独立 app（免遭本流
+		// preDeployJobs intake（F1.15 前置，ADR-0033）：独立 app（免遭本流
 		// 既有部署序列的 supersede 干扰）——compose 扩展键部署 → 驱动到
 		// 锚定（releasing 等 job 终态）→ deployments list 钉
-		// first_boot_task_id 可见（ADR-0030 开放锚的 protojson golden）。
+		// pre_deploy_task_id 可见（ADR-0030 开放锚的 protojson golden）。
 		// 幂等键让 --json 轮重放同响应（不铸第二部署抢占 job 等待）。
 		{"apps create fbjobs", []string{"apps", "create", "--project", "GOLDEN_PROJECT", "fbjobs"}, 0},
 		{"deploy compose jobs", []string{"deploy", "--app", "GOLDEN_APP2", "--compose-file", "GOLDEN_COMPOSE",
 			"--idempotency-key", "compose-jobs-1"}, 0},
-		{"deployments list first boot", []string{"deployments", "list", "--app", "GOLDEN_APP2"}, 0},
+		{"deployments list pre-deploy", []string{"deployments", "list", "--app", "GOLDEN_APP2"}, 0},
 
 		// P10 判定附注四形态收官步：superseded（app2 compose 部署已驱动到
 		// releasing 在途——显式抢占；--json 轮同参重发落在 merged）与
@@ -329,12 +329,12 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(srcDir, "web"), 0o750))
 	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "Dockerfile"), []byte("FROM alpine:3.20\n"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "web", "index.html"), []byte("golden\n"), 0o600))
-	// GOLDEN_COMPOSE 是 firstBootJobs 扩展键的固定 compose（独立目录——
+	// GOLDEN_COMPOSE 是 preDeployJobs 扩展键的固定 compose（独立目录——
 	// 不污染 GOLDEN_SRCDIR 的内容寻址 digest；api-token 已由本流 secrets
 	// put 步预置——材料面缺行即 Run 不可铸）。
-	composeFile := filepath.Join(t.TempDir(), "compose-firstboot.yaml")
+	composeFile := filepath.Join(t.TempDir(), "compose-predeploy.yaml")
 	require.NoError(t, os.WriteFile(composeFile, []byte(
-		"services:\n  web:\n    image: nginx:1.27\nx-fleetly-first-boot-jobs:\n  - name: migrate\n    image: migrate/migrate:v4.18.1\n    command: [\"sh\", \"-c\", \"migrate -database \\\"$(cat /run/secrets/api-token)\\\" up\"]\n    secrets:\n      - api-token\n    ttl: 300s\nsecrets:\n  api-token:\n    external: true\n"), 0o600))
+		"services:\n  web:\n    image: nginx:1.27\nx-fleetly-pre-deploy-jobs:\n  - name: migrate\n    image: migrate/migrate:v4.18.1\n    command: [\"sh\", \"-c\", \"migrate -database \\\"$(cat /run/secrets/api-token)\\\" up\"]\n    secrets:\n      - api-token\n    ttl: 300s\nsecrets:\n  api-token:\n    external: true\n"), 0o600))
 	// GOLDEN_SPECFILE 是裸 AppSpec 的固定 spec（F3.5 第四源；protojson
 	// 规范形——枚举名与 Revision 冻结体同形；AppRef 缺席 = 服务端覆写）。
 	specFile := filepath.Join(t.TempDir(), "appspec.json")
@@ -506,10 +506,10 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 				}
 			}
 			// compose 扩展键部署驱动到锚定即止（releasing 等 job 终态——
-			// 下一步 deployments list 的 golden 钉 first_boot_task_id 在场；
+			// 下一步 deployments list 的 golden 钉 pre_deploy_task_id 在场；
 			// 不驱动完成：done 游标下字段归空）。
 			if st.verb == "deploy compose jobs" {
-				anchorFirstBootJob(t, h, app2ID)
+				anchorPreDeployJob(t, h, app2ID)
 			}
 			// app3 蓝绿 R1 驱动到 succeeded（F3.1 from_generation 基线）：
 			// 首代无旧代（from=0，窗口退化为单代），载体是代次化 g1——
@@ -577,20 +577,20 @@ var jsonArgOverrides = map[string]map[int]string{
 	"schedules create":          {5: "nightly-report-json"},
 }
 
-// anchorFirstBootJob 驱动到 firstBootJobs 铸造锚可见（releasing 等 job
-// 终态；first_boot_task_id 非空）即止——job 完成驱动归 apitest 全链。
-func anchorFirstBootJob(t *testing.T, h *apitest.Harness, appID string) {
+// anchorPreDeployJob 驱动到 preDeployJobs 铸造锚可见（releasing 等 job
+// 终态；pre_deploy_task_id 非空）即止——job 完成驱动归 apitest 全链。
+func anchorPreDeployJob(t *testing.T, h *apitest.Harness, appID string) {
 	t.Helper()
 	ctx := sdk.WithToken(context.Background(), h.Token)
 	client := deliveryv1.NewDeploymentsServiceClient(h.Conn)
 	for i := 0; i < 40; i++ {
 		h.Drive(ctx)
 		list, err := client.ListDeployments(ctx, &deliveryv1.ListDeploymentsRequest{AppId: appID})
-		if err == nil && len(list.GetDeployments()) > 0 && list.GetDeployments()[0].GetFirstBootTaskId() != "" {
+		if err == nil && len(list.GetDeployments()) > 0 && list.GetDeployments()[0].GetPreDeployTaskId() != "" {
 			return
 		}
 	}
-	t.Fatal("first boot job was never anchored (first_boot_task_id stayed empty)")
+	t.Fatal("pre-deploy job was never anchored (pre_deploy_task_id stayed empty)")
 }
 
 // extractTailID 取 "... (id X)" 尾部的 ID。

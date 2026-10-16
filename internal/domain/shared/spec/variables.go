@@ -35,7 +35,7 @@ func ValidateEnvKeys(field string, env map[string]string) error {
 }
 
 // MergeSharedEnv 把 Project 层共享变量合成进 AppSpec 的全部进程
-// （Processes 与 FirstBootJobs 的 Process——迁移 job 同享共享层，ADR-0043
+// （Processes 与 PreDeployJobs 的 Process——迁移 job 同享共享层，ADR-0043
 // 决策 3）：flat union，共享层在下、进程自身 env（App 级）覆盖同键。
 // 冻结咽喉（engine.SubmitSpec）在 marshal 前调用——Revision 冻结的即最终
 // 生效集。protojson 规范序列化 map 按键排序，合成结果确定性可复现
@@ -47,7 +47,7 @@ func MergeSharedEnv(s *specv1.AppSpec, shared map[string]string) {
 	for _, p := range s.GetProcesses() {
 		p.Env = mergeEnvLayer(p.GetEnv(), shared)
 	}
-	for _, j := range s.GetFirstBootJobs() {
+	for _, j := range s.GetPreDeployJobs() {
 		if j.GetProcess() != nil {
 			j.Process.Env = mergeEnvLayer(j.Process.GetEnv(), shared)
 		}
@@ -67,7 +67,7 @@ func MergeAppEnv(s *specv1.AppSpec, appVars map[string]string) {
 	for _, p := range s.GetProcesses() {
 		p.Env = mergeEnvLayer(appVars, p.GetEnv())
 	}
-	for _, j := range s.GetFirstBootJobs() {
+	for _, j := range s.GetPreDeployJobs() {
 		if j.GetProcess() != nil {
 			j.Process.Env = mergeEnvLayer(appVars, j.Process.GetEnv())
 		}

@@ -36,7 +36,7 @@ const (
 	VarDomain VariableType = "domain"
 )
 
-// templateKey 与 databasesKey 是模板文档的两个平台扩展键（x-fleetly-first-boot-jobs
+// templateKey 与 databasesKey 是模板文档的两个平台扩展键（x-fleetly-pre-deploy-jobs
 // 是既有 compose 扩展键，不经本包翻译）。
 const (
 	templateKey  = "x-fleetly-template"
@@ -70,7 +70,7 @@ type DatabaseDecl struct {
 }
 
 // Doc 是解析后的模板文档：两个平台扩展键已剥离，Compose 恰是
-// ComposeDoc 形态（services/volumes/secrets/x-fleetly-first-boot-jobs）——
+// ComposeDoc 形态（services/volumes/secrets/x-fleetly-pre-deploy-jobs）——
 // 与 compose 受理语言的解码面同构（原生 map；ADR-0074 后官方解析住
 // internal/composeintake，本包仅做模板剥离/插值操作，产物经 yaml 序列化
 // 回流 Deploy 喉）。
@@ -112,10 +112,10 @@ func Parse(body []byte) (*Doc, error) {
 	}
 	for key := range doc {
 		switch key {
-		case "services", "volumes", "x-fleetly-first-boot-jobs", templateKey, databasesKey:
+		case "services", "volumes", "x-fleetly-pre-deploy-jobs", templateKey, databasesKey:
 		default:
 			return nil, verr("template."+key,
-				"unsupported top-level field %q (supported: services, volumes, x-fleetly-first-boot-jobs, %s, %s)", key, templateKey, databasesKey)
+				"unsupported top-level field %q (supported: services, volumes, x-fleetly-pre-deploy-jobs, %s, %s)", key, templateKey, databasesKey)
 		}
 	}
 	meta, ok := doc[templateKey].(map[string]any)

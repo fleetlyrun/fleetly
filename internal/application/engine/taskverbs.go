@@ -53,7 +53,7 @@ const (
 // spawn 模态计活跃行数（铸造占新行位），scale 模态只计并发净增量（原地
 // 改 desired 不占新行位）。active/sum 由调用方事务内 StatsByProject 读
 // （SQLite 单写串行，无 TOCTOU）；命中返回 ErrTaskQuota 哨兵——API 层
-// mapTaskQuotaError 统一转义，engine 域调用方转各自语义（firstboot 有界
+// mapTaskQuotaError 统一转义，engine 域调用方转各自语义（predeploy 有界
 // 等待 / 到期拍 skip / 手动拍诚实拒绝）。
 func CheckTaskQuota(projectID string, active int, sum, delta int64, spawn bool) error {
 	if spawn && active >= MaxTasksPerProject {
@@ -68,8 +68,8 @@ func CheckTaskQuota(projectID string, active int, sum, delta int64, spawn bool) 
 }
 
 // taskSpawnQuota 是铸造位的配额受理检查（含本单自占 desired 位）：命中
-// 返回哨兵——调用方转有界等待（firstboot）/skip（到期拍）/诚实拒绝（手动
-// 拍）。此前在 firstboot 与 schedule 各持一份逐字拷贝，收口为 commitWrite
+// 返回哨兵——调用方转有界等待（predeploy）/skip（到期拍）/诚实拒绝（手动
+// 拍）。此前在 predeploy 与 schedule 各持一份逐字拷贝，收口为 commitWrite
 // 的 checks 段。
 func (e *Engine) taskSpawnQuota(ctx context.Context, tx *sql.Tx, projectID string, desired int64) error {
 	active, sum, err := e.tasks.StatsByProject(ctx, tx, projectID)

@@ -225,14 +225,14 @@ networks:
 	assert.Empty(t, s.GetProcesses()[0].GetNetworks())
 }
 
-// firstBootJobs 翻译（ADR-0033 形态）：command 两形态、environment 两形态、
+// preDeployJobs 翻译（ADR-0033 形态）：command 两形态、environment 两形态、
 // secrets 引用（经 external 声明解析平台名）、ttl。
-func TestFromYAMLFirstBootJobs(t *testing.T) {
+func TestFromYAMLPreDeployJobs(t *testing.T) {
 	body := `
 services:
   web:
     image: nginx:1.27
-x-fleetly-first-boot-jobs:
+x-fleetly-pre-deploy-jobs:
   - name: migrate
     image: migrate/migrate:v4.18.1
     command: ["sh", "-c", "migrate -database \"$(cat /run/secrets/database:pg)\" up"]
@@ -252,9 +252,9 @@ secrets:
 `
 	s, err := fromYAML(t, body)
 	require.NoError(t, err)
-	require.Len(t, s.GetFirstBootJobs(), 2)
+	require.Len(t, s.GetPreDeployJobs(), 2)
 
-	migrate := s.GetFirstBootJobs()[0]
+	migrate := s.GetPreDeployJobs()[0]
 	assert.Equal(t, "migrate", migrate.GetName())
 	assert.Equal(t, "5m0s", migrate.GetTtl().AsDuration().String())
 	p := migrate.GetProcess()
@@ -263,7 +263,7 @@ secrets:
 	assert.Equal(t, []string{"database:pg"}, p.GetSecretRefs(), "job secret refs resolve external name overrides")
 	assert.Equal(t, "migrate", p.GetName())
 
-	p2 := s.GetFirstBootJobs()[1].GetProcess()
+	p2 := s.GetPreDeployJobs()[1].GetProcess()
 	assert.Equal(t, []string{"app", "admin", "sync-roles-sig"}, p2.GetCommand())
 	assert.Equal(t, map[string]string{"MODE": "deploy", "BATCH": "16"}, p2.GetEnv())
 }
@@ -429,22 +429,22 @@ func TestFromYAMLRejections(t *testing.T) {
 		},
 		{
 			"unknown job key rejected",
-			"services:\n  web:\n    image: nginx\nx-fleetly-first-boot-jobs:\n  - name: j\n    image: i\n    ttl: 1m\n    bad: 1\n",
-			"unsupported field \"bad\" for a first boot job",
+			"services:\n  web:\n    image: nginx\nx-fleetly-pre-deploy-jobs:\n  - name: j\n    image: i\n    ttl: 1m\n    bad: 1\n",
+			"unsupported field \"bad\" for a pre-deploy job",
 		},
 		{
 			"job volumes banned face",
-			"services:\n  web:\n    image: nginx\nx-fleetly-first-boot-jobs:\n  - name: j\n    image: i\n    ttl: 1m\n    volumes: [d:/d]\n",
+			"services:\n  web:\n    image: nginx\nx-fleetly-pre-deploy-jobs:\n  - name: j\n    image: i\n    ttl: 1m\n    volumes: [d:/d]\n",
 			"cannot mount volumes",
 		},
 		{
 			"job ttl missing",
-			"services:\n  web:\n    image: nginx\nx-fleetly-first-boot-jobs:\n  - name: j\n    image: i\n",
+			"services:\n  web:\n    image: nginx\nx-fleetly-pre-deploy-jobs:\n  - name: j\n    image: i\n",
 			"hard timeout",
 		},
 		{
 			"job secret not declared",
-			"services:\n  web:\n    image: nginx\nx-fleetly-first-boot-jobs:\n  - name: j\n    image: i\n    ttl: 1m\n    secrets: [nope]\n",
+			"services:\n  web:\n    image: nginx\nx-fleetly-pre-deploy-jobs:\n  - name: j\n    image: i\n    ttl: 1m\n    secrets: [nope]\n",
 			"is not declared",
 		},
 		{
@@ -523,27 +523,27 @@ services:
     command: ["sh", "-c", "n=$((n+1)); echo \"retry $n\""]
 `)
 	require.NoError(t, err)
-	require.Len(t, s.GetFirstBootJobs(), 1)
-	cmd := s.GetFirstBootJobs()[0].GetProcess().GetCommand()
+	require.Len(t, s.GetPreDeployJobs(), 1)
+	cmd := s.GetPreDeployJobs()[0].GetProcess().GetCommand()
 	require.Len(t, cmd, 3)
 	assert.Contains(t, cmd[2], "retry $n", "shell variables reach the job IR untouched")
 	assert.NotContains(t, cmd[2], "$$n", "no double escape: the label dialect matches the service and top-level job faces")
 	assert.Equal(t, []string{"sh", "-c", `n=$((n+1)); echo "retry $n"`}, cmd)
 
-	// 顶层 x-fleetly-first-boot-jobs 同款断言（防回归双保险）。
+	// 顶层 x-fleetly-pre-deploy-jobs 同款断言（防回归双保险）。
 	s2, err := fromYAML(t, `
 services:
   web:
     image: nginx:1.27
-x-fleetly-first-boot-jobs:
+x-fleetly-pre-deploy-jobs:
   - name: migrate
     image: migrate/migrate:v4.18.1
     ttl: 5m
     command: ["sh", "-c", "n=$((n+1)); echo \"retry $n\""]
 `)
 	require.NoError(t, err)
-	require.Len(t, s2.GetFirstBootJobs(), 1)
-	cmd2 := s2.GetFirstBootJobs()[0].GetProcess().GetCommand()
+	require.Len(t, s2.GetPreDeployJobs(), 1)
+	cmd2 := s2.GetPreDeployJobs()[0].GetProcess().GetCommand()
 	require.Len(t, cmd2, 3)
 	assert.Contains(t, cmd2[2], "retry $n", "shell variables reach the job IR untouched")
 	assert.NotContains(t, cmd2[2], "$$n", "no double escape on the top-level job face")
@@ -727,12 +727,12 @@ services:
 	}, procByName(t, s, "web").GetConfigMounts())
 
 	var job *specv1.JobSpec
-	for _, j := range s.GetFirstBootJobs() {
+	for _, j := range s.GetPreDeployJobs() {
 		if j.GetName() == "db-bootstrap" {
 			job = j
 		}
 	}
-	require.NotNil(t, job, "label-dialect job must land in first-boot jobs")
+	require.NotNil(t, job, "label-dialect job must land in pre-deploy jobs")
 	assert.Equal(t, []*specv1.ConfigMount{
 		{Config: "bootstrap-roles.sql", Target: "/etc/torchwood/bootstrap-roles.sql"},
 	}, job.GetProcess().GetConfigMounts())

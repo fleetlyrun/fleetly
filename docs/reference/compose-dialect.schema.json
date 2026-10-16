@@ -12,7 +12,7 @@
     "networks": { "$ref": "#/$defs/externalDecls" },
     "volumes": { "$ref": "#/$defs/externalDecls" },
     "secrets": { "$ref": "#/$defs/externalDecls" },
-    "x-fleetly-first-boot-jobs": {
+    "x-fleetly-pre-deploy-jobs": {
       "type": "array",
       "items": {
         "type": "object",

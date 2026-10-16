@@ -105,9 +105,10 @@ type Deployment struct {
 	CreatedAt       string `protobuf:"bytes,12,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt       string `protobuf:"bytes,13,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	FinishedAt      string `protobuf:"bytes,14,opt,name=finished_at,json=finishedAt,proto3" json:"finished_at,omitempty"`
-	// first_boot_task_id 是部署当前锚定的 firstBootJobs 作业 Task（releasing
-	// 态 jobs 子相位非空；无作业或已完成为空。ADR-0030）。
-	FirstBootTaskId string `protobuf:"bytes,15,opt,name=first_boot_task_id,json=firstBootTaskId,proto3" json:"first_boot_task_id,omitempty"`
+	// pre_deploy_task_id 是部署当前锚定的 pre-deploy 作业 Task（releasing
+	// 态 jobs 子相位非空；无作业或已完成为空。ADR-0030；字段名 ADR-0078
+	// 改名，旧名 first_boot_task_id）。
+	PreDeployTaskId string `protobuf:"bytes,15,opt,name=pre_deploy_task_id,json=preDeployTaskId,proto3" json:"pre_deploy_task_id,omitempty"`
 	// from_generation 是基线 Generation（最近 succeeded 行的 gen；ADR-0048
 	// 双代窗的旧代锚）。0 = 无基线（首次部署/存量行——protojson 零值省略，
 	// 与 generation 的首代形态一致）。Console 判"双代窗进行中"= 活跃部署
@@ -252,9 +253,9 @@ func (x *Deployment) GetFinishedAt() string {
 	return ""
 }
 
-func (x *Deployment) GetFirstBootTaskId() string {
+func (x *Deployment) GetPreDeployTaskId() string {
 	if x != nil {
-		return x.FirstBootTaskId
+		return x.PreDeployTaskId
 	}
 	return ""
 }
@@ -3657,7 +3658,7 @@ const file_fleetly_delivery_v1_delivery_proto_rawDesc = "" +
 	"updated_at\x18\r \x01(\tR\tupdatedAt\x12\x1f\n" +
 	"\vfinished_at\x18\x0e \x01(\tR\n" +
 	"finishedAt\x12+\n" +
-	"\x12first_boot_task_id\x18\x0f \x01(\tR\x0ffirstBootTaskId\x12'\n" +
+	"\x12pre_deploy_task_id\x18\x0f \x01(\tR\x0fpreDeployTaskId\x12'\n" +
 	"\x0ffrom_generation\x18\x10 \x01(\x04R\x0efromGeneration\"\x87!\n" +
 	"\rDeployRequest\x12R\n" +
 	"\x06app_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +

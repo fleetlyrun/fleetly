@@ -55,7 +55,7 @@ message FunctionSpec {
   BuildSpec build = 4;                      // Phase 2 构建源预留（v1 恒空）
   ProcessSpec handler = 5;                  // 嵌 ProcessSpec（TaskSpec 嵌套先例）：name 归一 "handler"、
                                            // ports 恰一且 protocol∈{http,h2c}；replicas/strategy/placement/
-                                           // volumes/networks/firstBootJobs 禁面（叶子 ValidateFunction 执法）
+                                           // volumes/networks/preDeployJobs 禁面（叶子 ValidateFunction 执法）
 }
 ```
 

@@ -22,7 +22,7 @@ schema 只做输入辅助。
 | 网络 | service 级名单引用；顶层 `external: true` 声明（见下） |
 | 卷 | 短语法 `name:/target[:ro|rw]`；顶层 external 声明 |
 | Secret | 名引用（值永不进 compose——`fleetly secrets put` 落库，注入 `/run/secrets/<名>`）；顶层 external 声明 |
-| 首启作业 | 顶层 `x-fleetly-first-boot-jobs`（ADR-0033 形态） |
+| 预部署作业（pre-deploy job，每次部署执行，非仅首次） | 顶层 `x-fleetly-pre-deploy-jobs`（ADR-0033 形态；键名 ADR-0078 改名，旧 `x-fleetly-first-boot-jobs` 不再受理） |
 
 ## external 声明律
 

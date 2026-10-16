@@ -149,7 +149,7 @@ var skippedTokens = map[string]string{
 	"env var":          "仅禁作标识符（变量名/字段名）；注释与文档语境合法",
 	"parameter":        "通用词",
 	"setting":          "通用词",
-	"job":              "firstBootJobs 为架构 §4 契约字段（部署期 init）；Task 同义词语境人工评审",
+	"job":              "preDeployJobs 为架构 §4 契约字段（部署期 init）；Task 同义词语境人工评审",
 	"run":              "Run 是 fleetly 冻结实体；仅 Task 同义词语境禁",
 	"agent":            "AI Agent 是产品核心语汇；仅 Task 命名语境禁（节点中继语境已更名收口，ADR-0049 附录 B）",
 	"renewal":          "泛指禁用；证书/租约续期语境人工评审",

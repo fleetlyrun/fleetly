@@ -56,9 +56,9 @@ func (e *Engine) resolvePeerRefs(ctx context.Context, run state.Runner, consumer
 			}
 		}
 	}
-	// firstBootJobs 的挂靠网同域（ADR-0030 决策 7）：受理预检与本解析
+	// preDeployJobs 的挂靠网同域（ADR-0030 决策 7）：受理预检与本解析
 	// 一并覆盖 job 引用（部署链恒 strict）。
-	for _, j := range spec.GetFirstBootJobs() {
+	for _, j := range spec.GetPreDeployJobs() {
 		for _, net := range j.GetProcess().GetNetworks() {
 			if err := resolve(net); err != nil {
 				return PeerRefs{}, err

@@ -30,8 +30,8 @@ database.restored	event	A database restore completed (stream into a running targ
 deployment.building	event	Deployment entered build stage.
 deployment.cancelled	event	Deployment cancelled while queued or in flight.
 deployment.failed	event	Deployment reached failed terminal state.
-deployment.first_boot_job	event	A deploy-time first boot job was minted as a one-shot task; the deployment waits in releasing for its terminal state before materializing carriers (ADR-0030).
 deployment.observing	event	Deployment entered health observation window.
+deployment.pre_deploy_job	event	A deploy-time pre-deploy job was minted as a one-shot task; the deployment waits in releasing for its terminal state before materializing carriers (ADR-0030).
 deployment.preparing	event	Deployment started preparing spec and materials.
 deployment.queued	event	Deployment accepted by admission queue.
 deployment.releasing	event	Deployment started releasing workloads to runtime.

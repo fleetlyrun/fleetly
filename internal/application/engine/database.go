@@ -363,7 +363,7 @@ func (e *Engine) TeardownDatabase(ctx context.Context, id string) error {
 }
 
 // projectNetworkFactsNamesOnly 是 projectNetworkFacts 的名列表形态（备份
-// 工具容器挂网/browse 会话挂网/firstBoot job 挂网消费面——egress 事实
+// 工具容器挂网/browse 会话挂网/preDeploy job 挂网消费面——egress 事实
 // 语义上不适用于工具容器：平台工具载体非隔离对象，ADR-0052 决策 6）。
 func (e *Engine) projectNetworkFactsNamesOnly(ctx context.Context, projectID string) []string {
 	names, _ := e.projectNetworkFacts(ctx, projectID)

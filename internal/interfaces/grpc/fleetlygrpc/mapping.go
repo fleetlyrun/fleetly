@@ -82,8 +82,8 @@ func mapStateError(err error, what string) error {
 		// 受理预检的 strict 拒绝（ADR-0013 附录 A.3）——可编程分支而非
 		// E_INTERNAL（staging 真机实证哨兵漏映射，2026-10-02）。
 		return apperr.New("E_INVALID_ARGUMENT", "%s (declare and approve the network peer, or remove the reference)", err.Error()).WithCause(err)
-	case errors.Is(err, engine.ErrFirstBootNetworkUnknown):
-		// firstBootJobs 裸网名受理预检（B12 P3-5）——同上可编程分支。
+	case errors.Is(err, engine.ErrPreDeployNetworkUnknown):
+		// preDeployJobs 裸网名受理预检（B12 P3-5）——同上可编程分支。
 		return apperr.New("E_INVALID_ARGUMENT", "%s", err.Error()).WithCause(err)
 	case errors.As(err, &fse): // *engine.FrozenSpecError
 		// 冻结体损坏（P3-7 下沉批）：文案逐字节保持 engine 原形态
@@ -168,7 +168,7 @@ func deploymentMsg(d deployment.Deployment) *deliveryv1.Deployment {
 		State: string(d.State), Generation: d.Generation, IdempotencyKey: d.IdempotencyKey,
 		CommitSha: d.CommitSHA, SupersededBy: d.SupersededBy, Error: d.Error,
 		ObserveDeadline: d.ObserveDeadline, CreatedAt: d.CreatedAt, UpdatedAt: d.UpdatedAt,
-		FinishedAt: d.FinishedAt, FirstBootTaskId: engine.FirstBootTaskID(&d),
+		FinishedAt: d.FinishedAt, PreDeployTaskId: engine.PreDeployTaskID(&d),
 		FromGeneration: d.FromGeneration,
 	}
 }

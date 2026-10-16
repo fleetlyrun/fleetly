@@ -106,6 +106,6 @@ fleetly schedules delete --schedule SCHEDULE_ID
 ## Boundaries
 
 - Tasks deploy images only (`--image`); build sources are an app surface.
-- Deploy-time init jobs (firstBootJobs) appear here as unnamed one-shot tasks;
+- Deploy-time init jobs (preDeployJobs, renamed from firstBootJobs in ADR-0078) appear here as unnamed one-shot tasks;
   they are owned by the deployment chain — stop them only when abandoning
   that deployment (cancel/supersede already force-stops them).

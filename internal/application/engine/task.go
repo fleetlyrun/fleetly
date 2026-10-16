@@ -369,7 +369,7 @@ func (e *Engine) driveEnsure(ctx context.Context, t *task.Task, spec *specv1.Tas
 		w.StopGrace = e.opts.Task.TaskStopGrace
 		ws = append(ws, w)
 	}
-	// 托管库引用注入（first-boot job 铸面透传的 database_refs——值不进
+	// 托管库引用注入（pre-deploy job 铸面透传的 database_refs——值不进
 	// TaskSpec 存储，Ensure 前解析）。
 	for i := range ws {
 		if err := e.applyDatabaseEnv(ctx, &ws[i], spec.GetProcess(), t.ProjectID); err != nil {
@@ -385,7 +385,7 @@ func (e *Engine) driveEnsure(ctx context.Context, t *task.Task, spec *specv1.Tas
 // oneshotVerdict 是 one-shot Task 唯一 Run 终态对的判读档位（Run 终态对
 // 是真源：Task 行的终态镜像随 taskStep 有拍延迟，成败判定回到 Run）。
 // 五档是原始结局的判别——域语义映射归调用方：task 环只把 RunFailed 镜像
-// 为 failed（ttl 到期是 Run 生命周期完结 → completed），firstboot 把
+// 为 failed（ttl 到期是 Run 生命周期完结 → completed），predeploy 把
 // TTLExpired/StoppedEarly 判为 job 失败（等待面语义）。判读单源收编的是
 // 「读终态对 + 判别 + 人读描述」，不是各域的成败政策。
 type oneshotVerdict int
@@ -399,10 +399,10 @@ const (
 )
 
 // oneshotRunVerdict 读 one-shot Task 唯一 Run 的终态对并判读结局（此前
-// firstBootOutcome 与 oneshotTerminalState 各持一份读取口径——读取与判别
+// preDeployOutcome 与 oneshotTerminalState 各持一份读取口径——读取与判别
 // 收编一处，F2.2 备份执行链直接消费 why）。why 文案与 deployment 失败
 // 原因同面；读失败以 err 单独返回，处置策略归调用方（task 环下拍重试、
-// firstboot 记失败）。
+// predeploy 记失败）。
 func (e *Engine) oneshotRunVerdict(ctx context.Context, taskID string) (oneshotVerdict, string, error) {
 	runs, err := e.runs.ListByTaskStates(ctx, e.db.Runner(), taskID, []run.State{run.StateStopped, run.StateFailed})
 	if err != nil {

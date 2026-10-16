@@ -28,7 +28,7 @@ func TestMergeHookOwnedOwnershipTable(t *testing.T) {
 			{Name: "web", ImageOrigin: &specv1.ProcessSpec_FromBuild{FromBuild: "default"}, Replicas: 4, Env: map[string]string{"A": "1"}, Ports: []*specv1.PortSpec{{Port: 8080}}},
 			{Name: "worker", ImageOrigin: &specv1.ProcessSpec_Image{Image: "busybox:1.37"}, Command: []string{"sleep", "3600"}}, // 额外进程（image→git 迁移保留面）
 		},
-		FirstBootJobs: []*specv1.JobSpec{{Name: "migrate", Process: &specv1.ProcessSpec{Name: "migrate", ImageOrigin: &specv1.ProcessSpec_FromBuild{FromBuild: "default"}}}},
+		PreDeployJobs: []*specv1.JobSpec{{Name: "migrate", Process: &specv1.ProcessSpec{Name: "migrate", ImageOrigin: &specv1.ProcessSpec_FromBuild{FromBuild: "default"}}}},
 	}
 
 	merged := MergeHookOwned(material, runtime)
@@ -41,7 +41,7 @@ func TestMergeHookOwnedOwnershipTable(t *testing.T) {
 	assert.Equal(t, int64(4), merged.GetProcesses()[0].GetReplicas())
 	assert.Equal(t, "1", merged.GetProcesses()[0].GetEnv()["A"])
 	assert.Equal(t, "busybox:1.37", merged.GetProcesses()[1].GetImage())
-	require.Len(t, merged.GetFirstBootJobs(), 1)
+	require.Len(t, merged.GetPreDeployJobs(), 1)
 	// material 的合成进程（单 web from_build）不进结果——运行时半边才是形状真源。
 	assert.NotContains(t, merged.GetProcesses(), material.GetProcesses()[0])
 }
