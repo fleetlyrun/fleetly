@@ -78,17 +78,19 @@ type Provider struct {
 	nodeTokenPath string
 }
 
-// 编译期契约断言：核心面 + 六个子面（Exec/Hygiene 随 ADR-0053 补齐）。
-// NetworkMaintenance 是永久语义性缺席（ADR-0053 决策 2：前置病灶在 k8s
-// 不存在——重建动词诚实失败是正确行为，非缺口）——故意不实现接口。
+// 编译期契约断言：核心面 + 六个子面（Exec/Hygiene 随 ADR-0053 补齐；
+// NodeInspect 补节点观测面）。NetworkMaintenance 是永久语义性缺席
+// （ADR-0053 决策 2：前置病灶在 k8s 不存在——重建动词诚实失败是正确行为，
+// 非缺口）——故意不实现接口。
 var (
-	_ capability.Runtime          = (*Provider)(nil)
-	_ capability.RuntimeLogs      = (*Provider)(nil)
-	_ capability.RuntimeAdmin     = (*Provider)(nil)
-	_ capability.RuntimeInspector = (*Provider)(nil)
-	_ capability.RuntimeUtility   = (*Provider)(nil)
-	_ capability.RuntimeExec      = (*Provider)(nil)
-	_ capability.RuntimeHygiene   = (*Provider)(nil)
+	_ capability.Runtime            = (*Provider)(nil)
+	_ capability.RuntimeLogs        = (*Provider)(nil)
+	_ capability.RuntimeAdmin       = (*Provider)(nil)
+	_ capability.RuntimeInspector   = (*Provider)(nil)
+	_ capability.RuntimeUtility     = (*Provider)(nil)
+	_ capability.RuntimeExec        = (*Provider)(nil)
+	_ capability.RuntimeHygiene     = (*Provider)(nil)
+	_ capability.RuntimeNodeInspect = (*Provider)(nil)
 )
 
 // New 构造 Provider：kubeconfig 为文件路径（空 = 缺省 /etc/rancher/k3s/k3s.yaml，

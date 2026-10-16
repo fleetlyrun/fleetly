@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
@@ -58,8 +59,9 @@ func TestCipherNilRefusedPrecise(t *testing.T) {
 }
 
 // TestRuntimeFaceAbsentRefusedPrecise 钉 runtime 可选子面缺席的精确拒绝
-// （两代表点位：nodeAdmin 节点管理子面、streamLogsDualPath 容器日志子面）
-// ——E_RUNTIME_FACE_UNSUPPORTED / Unimplemented，honest failure 无降级路径。
+// （三代表点位：nodeAdmin 节点管理子面、streamLogsDualPath 容器日志子面、
+// ListNodeContainers 节点观测子面）——E_RUNTIME_FACE_UNSUPPORTED /
+// Unimplemented，honest failure 无降级路径。
 func TestRuntimeFaceAbsentRefusedPrecise(t *testing.T) {
 	// Runtime 零值（FacesOf 全空）——nil 接口经 FacesOf 协商即全缺席。
 	svc := &NodesService{s: &Services{}}
@@ -77,4 +79,11 @@ func TestRuntimeFaceAbsentRefusedPrecise(t *testing.T) {
 	assert.Equal(t, "E_RUNTIME_FACE_UNSUPPORTED", ae.Code())
 	assert.Equal(t, "Unimplemented", apperrstatus.ToGRPCStatus(ae).Code().String())
 	assert.Contains(t, ae.Message(), "does not expose container logs")
+
+	_, err = svc.ListNodeContainers(context.Background(),
+		&runtimev1.ListNodeContainersRequest{NodeId: "01JD0NODE00000000000000000"})
+	ae = apperrOf(t, err)
+	assert.Equal(t, "E_RUNTIME_FACE_UNSUPPORTED", ae.Code())
+	assert.Equal(t, "Unimplemented", apperrstatus.ToGRPCStatus(ae).Code().String())
+	assert.Contains(t, ae.Message(), "does not expose node inspection")
 }

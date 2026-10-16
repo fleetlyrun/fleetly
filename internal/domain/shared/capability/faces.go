@@ -22,6 +22,9 @@ type ProviderFaces struct {
 	// Exec 是 exec 子面（F3.2，ADR-0049：会话进载体；未实现时 exec 受理
 	// 诚实失败 E_EXEC_UNSUPPORTED——无降级路径）。
 	Exec RuntimeExec
+	// NodeInspect 是节点观测子面（按平台节点 ID 实时列在跑容器；未实现时
+	// 列表面精确失败 E_RUNTIME_FACE_UNSUPPORTED）。
+	NodeInspect RuntimeNodeInspect
 	// 跨 Capability 子面（受管自宿 ADR-0004 与其材料/配置源）
 	Managed         Managed         // 受管部署声明
 	MaterialsSource MaterialsSource // 受管域材料集
@@ -58,6 +61,9 @@ func FacesOf(p Provider) ProviderFaces {
 	}
 	if v, ok := p.(RuntimeExec); ok {
 		f.Exec = v
+	}
+	if v, ok := p.(RuntimeNodeInspect); ok {
+		f.NodeInspect = v
 	}
 	if v, ok := p.(Managed); ok {
 		f.Managed = v
@@ -104,6 +110,9 @@ func (f ProviderFaces) Offered() []string {
 	}
 	if f.Exec != nil {
 		out = append(out, "exec")
+	}
+	if f.NodeInspect != nil {
+		out = append(out, "node-inspect")
 	}
 	if f.Managed != nil {
 		out = append(out, "managed")

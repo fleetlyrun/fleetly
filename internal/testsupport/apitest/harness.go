@@ -335,6 +335,36 @@ type FakeRuntime struct {
 	execEchoStdin bool
 	execSkipStdin bool     // 不读 stdin（自退出形态——WS 客户端无 half-close 的测试面）
 	execInstances []string // ExecInstances 假实例集（空 = 单实例常量）
+
+	// nodeContainers 是节点观测假底座（RuntimeNodeInspect）：按平台节点 ID
+	// 布置在跑容器行集（SetNodeContainers）；键缺席 = 节点未知
+	//（ErrNodeNotFound），键在场 = 行集如实透传（空切片 = 诚实空）。
+	nodeContainers map[string][]capability.NodeContainerObservation
+}
+
+// SetNodeContainers 布置节点在跑容器行集（按平台节点 ID 键；rows nil =
+// 节点在场无在跑容器——列表面诚实空的测试面）。
+func (f *FakeRuntime) SetNodeContainers(nodeID string, rows []capability.NodeContainerObservation) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.nodeContainers == nil {
+		f.nodeContainers = map[string][]capability.NodeContainerObservation{}
+	}
+	f.nodeContainers[nodeID] = rows
+}
+
+// NodeContainers 实现 RuntimeNodeInspect：布置集透传（行序由调用方布置——
+// 排序契约的真源在 provider 侧，假面不重复排序逻辑）。
+func (f *FakeRuntime) NodeContainers(_ context.Context, nodeID string) ([]capability.NodeContainerObservation, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	rows, ok := f.nodeContainers[nodeID]
+	if !ok {
+		return nil, capability.ErrNodeNotFound
+	}
+	out := make([]capability.NodeContainerObservation, len(rows))
+	copy(out, rows)
+	return out, nil
 }
 
 // FakeExecCall 是一次 ExecWorkload 调用记录（ResizeSeen/Stdin 是会话期
@@ -875,6 +905,7 @@ var (
 	_ capability.RuntimeLogs               = (*FakeRuntime)(nil)
 	_ capability.RuntimeAdmin              = (*FakeRuntime)(nil)
 	_ capability.RuntimeNetworkMaintenance = (*FakeRuntime)(nil)
+	_ capability.RuntimeNodeInspect        = (*FakeRuntime)(nil)
 	_ capability.Builder                   = (*FakeBuilder)(nil)
 	_ capability.Registry                  = (*FakeRegistry)(nil)
 )

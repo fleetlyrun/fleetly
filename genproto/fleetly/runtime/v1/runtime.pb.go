@@ -247,6 +247,207 @@ func (x *ListNodesResponse) GetNodes() []*Node {
 	return nil
 }
 
+// ListNodeContainersRequest 以平台节点 ID 为锚（永不复用）。
+type ListNodeContainersRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListNodeContainersRequest) Reset() {
+	*x = ListNodeContainersRequest{}
+	mi := &file_fleetly_runtime_v1_runtime_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListNodeContainersRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListNodeContainersRequest) ProtoMessage() {}
+
+func (x *ListNodeContainersRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_runtime_v1_runtime_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListNodeContainersRequest.ProtoReflect.Descriptor instead.
+func (*ListNodeContainersRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_runtime_v1_runtime_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *ListNodeContainersRequest) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
+// NodeContainer 是节点上一行在跑容器观测。归属字段是编排器载体归属标记
+// 的平台投影（Provider 私有标记；标记缺席的字段留空诚实呈现）；编排器
+// 实例标识平台不解析——exec 受理与 logs containers 过滤消费同一锚
+// （ADR-0067）。container 按 docker 本义使用（第三方专有词汇豁免，
+// 2026-10-16 用户裁定）。
+type NodeContainer struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// instance 是编排器实例标识（swarm task ID / k3s pod 名）。
+	Instance string `protobuf:"bytes,1,opt,name=instance,proto3" json:"instance,omitempty"`
+	// workload_id 是归属 Workload ID（App 域 = appID-process 投影；Task/
+	// Database/Browse 域 = 域主键投影）。
+	WorkloadId string `protobuf:"bytes,2,opt,name=workload_id,json=workloadId,proto3" json:"workload_id,omitempty"`
+	// domain 是归属域主体：app | task | database | browse（ADR-0025 决策 4；
+	// App 域之外的域 app_id 留空——workload_id 即域主体）。
+	Domain string `protobuf:"bytes,3,opt,name=domain,proto3" json:"domain,omitempty"`
+	// team/project_id/app_id/process 是隔离域与 App 域归属投影。
+	Team      string `protobuf:"bytes,4,opt,name=team,proto3" json:"team,omitempty"`
+	ProjectId string `protobuf:"bytes,5,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	AppId     string `protobuf:"bytes,6,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
+	Process   string `protobuf:"bytes,7,opt,name=process,proto3" json:"process,omitempty"`
+	// image 是载体镜像投影（观测面，非权威声明——声明真源在 Spec/Revision）。
+	Image         string `protobuf:"bytes,8,opt,name=image,proto3" json:"image,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *NodeContainer) Reset() {
+	*x = NodeContainer{}
+	mi := &file_fleetly_runtime_v1_runtime_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NodeContainer) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NodeContainer) ProtoMessage() {}
+
+func (x *NodeContainer) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_runtime_v1_runtime_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NodeContainer.ProtoReflect.Descriptor instead.
+func (*NodeContainer) Descriptor() ([]byte, []int) {
+	return file_fleetly_runtime_v1_runtime_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *NodeContainer) GetInstance() string {
+	if x != nil {
+		return x.Instance
+	}
+	return ""
+}
+
+func (x *NodeContainer) GetWorkloadId() string {
+	if x != nil {
+		return x.WorkloadId
+	}
+	return ""
+}
+
+func (x *NodeContainer) GetDomain() string {
+	if x != nil {
+		return x.Domain
+	}
+	return ""
+}
+
+func (x *NodeContainer) GetTeam() string {
+	if x != nil {
+		return x.Team
+	}
+	return ""
+}
+
+func (x *NodeContainer) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *NodeContainer) GetAppId() string {
+	if x != nil {
+		return x.AppId
+	}
+	return ""
+}
+
+func (x *NodeContainer) GetProcess() string {
+	if x != nil {
+		return x.Process
+	}
+	return ""
+}
+
+func (x *NodeContainer) GetImage() string {
+	if x != nil {
+		return x.Image
+	}
+	return ""
+}
+
+type ListNodeContainersResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Containers    []*NodeContainer       `protobuf:"bytes,1,rep,name=containers,proto3" json:"containers,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListNodeContainersResponse) Reset() {
+	*x = ListNodeContainersResponse{}
+	mi := &file_fleetly_runtime_v1_runtime_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListNodeContainersResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListNodeContainersResponse) ProtoMessage() {}
+
+func (x *ListNodeContainersResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_runtime_v1_runtime_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListNodeContainersResponse.ProtoReflect.Descriptor instead.
+func (*ListNodeContainersResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_runtime_v1_runtime_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *ListNodeContainersResponse) GetContainers() []*NodeContainer {
+	if x != nil {
+		return x.Containers
+	}
+	return nil
+}
+
 type EnrollNodeRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// rotate 先轮换全部 join token（worker+manager；泄漏处置：旧材料即刻
@@ -258,7 +459,7 @@ type EnrollNodeRequest struct {
 
 func (x *EnrollNodeRequest) Reset() {
 	*x = EnrollNodeRequest{}
-	mi := &file_fleetly_runtime_v1_runtime_proto_msgTypes[3]
+	mi := &file_fleetly_runtime_v1_runtime_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -270,7 +471,7 @@ func (x *EnrollNodeRequest) String() string {
 func (*EnrollNodeRequest) ProtoMessage() {}
 
 func (x *EnrollNodeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_runtime_v1_runtime_proto_msgTypes[3]
+	mi := &file_fleetly_runtime_v1_runtime_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -283,7 +484,7 @@ func (x *EnrollNodeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnrollNodeRequest.ProtoReflect.Descriptor instead.
 func (*EnrollNodeRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_runtime_v1_runtime_proto_rawDescGZIP(), []int{3}
+	return file_fleetly_runtime_v1_runtime_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *EnrollNodeRequest) GetRotate() bool {
@@ -309,7 +510,7 @@ type EnrollNodeResponse struct {
 
 func (x *EnrollNodeResponse) Reset() {
 	*x = EnrollNodeResponse{}
-	mi := &file_fleetly_runtime_v1_runtime_proto_msgTypes[4]
+	mi := &file_fleetly_runtime_v1_runtime_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -321,7 +522,7 @@ func (x *EnrollNodeResponse) String() string {
 func (*EnrollNodeResponse) ProtoMessage() {}
 
 func (x *EnrollNodeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_runtime_v1_runtime_proto_msgTypes[4]
+	mi := &file_fleetly_runtime_v1_runtime_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -334,7 +535,7 @@ func (x *EnrollNodeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnrollNodeResponse.ProtoReflect.Descriptor instead.
 func (*EnrollNodeResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_runtime_v1_runtime_proto_rawDescGZIP(), []int{4}
+	return file_fleetly_runtime_v1_runtime_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *EnrollNodeResponse) GetJoinCommand() string {
@@ -362,7 +563,7 @@ type DrainNodeRequest struct {
 
 func (x *DrainNodeRequest) Reset() {
 	*x = DrainNodeRequest{}
-	mi := &file_fleetly_runtime_v1_runtime_proto_msgTypes[5]
+	mi := &file_fleetly_runtime_v1_runtime_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -374,7 +575,7 @@ func (x *DrainNodeRequest) String() string {
 func (*DrainNodeRequest) ProtoMessage() {}
 
 func (x *DrainNodeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_runtime_v1_runtime_proto_msgTypes[5]
+	mi := &file_fleetly_runtime_v1_runtime_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -387,7 +588,7 @@ func (x *DrainNodeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DrainNodeRequest.ProtoReflect.Descriptor instead.
 func (*DrainNodeRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_runtime_v1_runtime_proto_rawDescGZIP(), []int{5}
+	return file_fleetly_runtime_v1_runtime_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *DrainNodeRequest) GetNodeId() string {
@@ -405,7 +606,7 @@ type DrainNodeResponse struct {
 
 func (x *DrainNodeResponse) Reset() {
 	*x = DrainNodeResponse{}
-	mi := &file_fleetly_runtime_v1_runtime_proto_msgTypes[6]
+	mi := &file_fleetly_runtime_v1_runtime_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -417,7 +618,7 @@ func (x *DrainNodeResponse) String() string {
 func (*DrainNodeResponse) ProtoMessage() {}
 
 func (x *DrainNodeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_runtime_v1_runtime_proto_msgTypes[6]
+	mi := &file_fleetly_runtime_v1_runtime_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -430,7 +631,7 @@ func (x *DrainNodeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DrainNodeResponse.ProtoReflect.Descriptor instead.
 func (*DrainNodeResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_runtime_v1_runtime_proto_rawDescGZIP(), []int{6}
+	return file_fleetly_runtime_v1_runtime_proto_rawDescGZIP(), []int{9}
 }
 
 type CordonNodeRequest struct {
@@ -443,7 +644,7 @@ type CordonNodeRequest struct {
 
 func (x *CordonNodeRequest) Reset() {
 	*x = CordonNodeRequest{}
-	mi := &file_fleetly_runtime_v1_runtime_proto_msgTypes[7]
+	mi := &file_fleetly_runtime_v1_runtime_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -455,7 +656,7 @@ func (x *CordonNodeRequest) String() string {
 func (*CordonNodeRequest) ProtoMessage() {}
 
 func (x *CordonNodeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_runtime_v1_runtime_proto_msgTypes[7]
+	mi := &file_fleetly_runtime_v1_runtime_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -468,7 +669,7 @@ func (x *CordonNodeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CordonNodeRequest.ProtoReflect.Descriptor instead.
 func (*CordonNodeRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_runtime_v1_runtime_proto_rawDescGZIP(), []int{7}
+	return file_fleetly_runtime_v1_runtime_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *CordonNodeRequest) GetNodeId() string {
@@ -486,7 +687,7 @@ type CordonNodeResponse struct {
 
 func (x *CordonNodeResponse) Reset() {
 	*x = CordonNodeResponse{}
-	mi := &file_fleetly_runtime_v1_runtime_proto_msgTypes[8]
+	mi := &file_fleetly_runtime_v1_runtime_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -498,7 +699,7 @@ func (x *CordonNodeResponse) String() string {
 func (*CordonNodeResponse) ProtoMessage() {}
 
 func (x *CordonNodeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_runtime_v1_runtime_proto_msgTypes[8]
+	mi := &file_fleetly_runtime_v1_runtime_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -511,7 +712,7 @@ func (x *CordonNodeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CordonNodeResponse.ProtoReflect.Descriptor instead.
 func (*CordonNodeResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_runtime_v1_runtime_proto_rawDescGZIP(), []int{8}
+	return file_fleetly_runtime_v1_runtime_proto_rawDescGZIP(), []int{11}
 }
 
 type UncordonNodeRequest struct {
@@ -524,7 +725,7 @@ type UncordonNodeRequest struct {
 
 func (x *UncordonNodeRequest) Reset() {
 	*x = UncordonNodeRequest{}
-	mi := &file_fleetly_runtime_v1_runtime_proto_msgTypes[9]
+	mi := &file_fleetly_runtime_v1_runtime_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -536,7 +737,7 @@ func (x *UncordonNodeRequest) String() string {
 func (*UncordonNodeRequest) ProtoMessage() {}
 
 func (x *UncordonNodeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_runtime_v1_runtime_proto_msgTypes[9]
+	mi := &file_fleetly_runtime_v1_runtime_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -549,7 +750,7 @@ func (x *UncordonNodeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UncordonNodeRequest.ProtoReflect.Descriptor instead.
 func (*UncordonNodeRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_runtime_v1_runtime_proto_rawDescGZIP(), []int{9}
+	return file_fleetly_runtime_v1_runtime_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *UncordonNodeRequest) GetNodeId() string {
@@ -567,7 +768,7 @@ type UncordonNodeResponse struct {
 
 func (x *UncordonNodeResponse) Reset() {
 	*x = UncordonNodeResponse{}
-	mi := &file_fleetly_runtime_v1_runtime_proto_msgTypes[10]
+	mi := &file_fleetly_runtime_v1_runtime_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -579,7 +780,7 @@ func (x *UncordonNodeResponse) String() string {
 func (*UncordonNodeResponse) ProtoMessage() {}
 
 func (x *UncordonNodeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_runtime_v1_runtime_proto_msgTypes[10]
+	mi := &file_fleetly_runtime_v1_runtime_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -592,7 +793,7 @@ func (x *UncordonNodeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UncordonNodeResponse.ProtoReflect.Descriptor instead.
 func (*UncordonNodeResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_runtime_v1_runtime_proto_rawDescGZIP(), []int{10}
+	return file_fleetly_runtime_v1_runtime_proto_rawDescGZIP(), []int{13}
 }
 
 var File_fleetly_runtime_v1_runtime_proto protoreflect.FileDescriptor
@@ -619,7 +820,25 @@ const file_fleetly_runtime_v1_runtime_proto_rawDesc = "" +
 	"\x0eafter_node_seq\x18\x01 \x01(\x03R\fafterNodeSeq\x12\x14\n" +
 	"\x05limit\x18\x02 \x01(\x05R\x05limit\"C\n" +
 	"\x11ListNodesResponse\x12.\n" +
-	"\x05nodes\x18\x01 \x03(\v2\x18.fleetly.runtime.v1.NodeR\x05nodes\"+\n" +
+	"\x05nodes\x18\x01 \x03(\v2\x18.fleetly.runtime.v1.NodeR\x05nodes\"q\n" +
+	"\x19ListNodeContainersRequest\x12T\n" +
+	"\anode_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
+	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\x06nodeId\"\xde\x01\n" +
+	"\rNodeContainer\x12\x1a\n" +
+	"\binstance\x18\x01 \x01(\tR\binstance\x12\x1f\n" +
+	"\vworkload_id\x18\x02 \x01(\tR\n" +
+	"workloadId\x12\x16\n" +
+	"\x06domain\x18\x03 \x01(\tR\x06domain\x12\x12\n" +
+	"\x04team\x18\x04 \x01(\tR\x04team\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x05 \x01(\tR\tprojectId\x12\x15\n" +
+	"\x06app_id\x18\x06 \x01(\tR\x05appId\x12\x18\n" +
+	"\aprocess\x18\a \x01(\tR\aprocess\x12\x14\n" +
+	"\x05image\x18\b \x01(\tR\x05image\"_\n" +
+	"\x1aListNodeContainersResponse\x12A\n" +
+	"\n" +
+	"containers\x18\x01 \x03(\v2!.fleetly.runtime.v1.NodeContainerR\n" +
+	"containers\"+\n" +
 	"\x11EnrollNodeRequest\x12\x16\n" +
 	"\x06rotate\x18\x01 \x01(\bR\x06rotate\"\\\n" +
 	"\x12EnrollNodeResponse\x12!\n" +
@@ -636,10 +855,12 @@ const file_fleetly_runtime_v1_runtime_proto_rawDesc = "" +
 	"\x13UncordonNodeRequest\x12T\n" +
 	"\anode_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
 	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\x06nodeId\"\x16\n" +
-	"\x14UncordonNodeResponse2\xe9\x05\n" +
+	"\x14UncordonNodeResponse2\x98\a\n" +
 	"\fNodesService\x12|\n" +
 	"\tListNodes\x12$.fleetly.runtime.v1.ListNodesRequest\x1a%.fleetly.runtime.v1.ListNodesResponse\"\"\xea\xc4\x19\r\b\x03\"\t\n" +
-	"\x05nodes\x10\x01\x82\xd3\xe4\x93\x02\v\x12\t/v1/nodes\x12\x8c\x01\n" +
+	"\x05nodes\x10\x01\x82\xd3\xe4\x93\x02\v\x12\t/v1/nodes\x12\xac\x01\n" +
+	"\x12ListNodeContainers\x12-.fleetly.runtime.v1.ListNodeContainersRequest\x1a..fleetly.runtime.v1.ListNodeContainersResponse\"7\xea\xc4\x19\r\b\x03\"\t\n" +
+	"\x05nodes\x10\x01\x82\xd3\xe4\x93\x02 \x12\x1e/v1/nodes/{node_id}/containers\x12\x8c\x01\n" +
 	"\n" +
 	"EnrollNode\x12%.fleetly.runtime.v1.EnrollNodeRequest\x1a&.fleetly.runtime.v1.EnrollNodeResponse\"/\xea\xc4\x19\x10\b\x03\"\f\n" +
 	"\bplatform\x10\x03\x82\xd3\xe4\x93\x02\x15:\x01*\"\x10/v1/nodes/enroll\x12\x8f\x01\n" +
@@ -666,37 +887,43 @@ func file_fleetly_runtime_v1_runtime_proto_rawDescGZIP() []byte {
 	return file_fleetly_runtime_v1_runtime_proto_rawDescData
 }
 
-var file_fleetly_runtime_v1_runtime_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_fleetly_runtime_v1_runtime_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_fleetly_runtime_v1_runtime_proto_goTypes = []any{
-	(*Node)(nil),                 // 0: fleetly.runtime.v1.Node
-	(*ListNodesRequest)(nil),     // 1: fleetly.runtime.v1.ListNodesRequest
-	(*ListNodesResponse)(nil),    // 2: fleetly.runtime.v1.ListNodesResponse
-	(*EnrollNodeRequest)(nil),    // 3: fleetly.runtime.v1.EnrollNodeRequest
-	(*EnrollNodeResponse)(nil),   // 4: fleetly.runtime.v1.EnrollNodeResponse
-	(*DrainNodeRequest)(nil),     // 5: fleetly.runtime.v1.DrainNodeRequest
-	(*DrainNodeResponse)(nil),    // 6: fleetly.runtime.v1.DrainNodeResponse
-	(*CordonNodeRequest)(nil),    // 7: fleetly.runtime.v1.CordonNodeRequest
-	(*CordonNodeResponse)(nil),   // 8: fleetly.runtime.v1.CordonNodeResponse
-	(*UncordonNodeRequest)(nil),  // 9: fleetly.runtime.v1.UncordonNodeRequest
-	(*UncordonNodeResponse)(nil), // 10: fleetly.runtime.v1.UncordonNodeResponse
+	(*Node)(nil),                       // 0: fleetly.runtime.v1.Node
+	(*ListNodesRequest)(nil),           // 1: fleetly.runtime.v1.ListNodesRequest
+	(*ListNodesResponse)(nil),          // 2: fleetly.runtime.v1.ListNodesResponse
+	(*ListNodeContainersRequest)(nil),  // 3: fleetly.runtime.v1.ListNodeContainersRequest
+	(*NodeContainer)(nil),              // 4: fleetly.runtime.v1.NodeContainer
+	(*ListNodeContainersResponse)(nil), // 5: fleetly.runtime.v1.ListNodeContainersResponse
+	(*EnrollNodeRequest)(nil),          // 6: fleetly.runtime.v1.EnrollNodeRequest
+	(*EnrollNodeResponse)(nil),         // 7: fleetly.runtime.v1.EnrollNodeResponse
+	(*DrainNodeRequest)(nil),           // 8: fleetly.runtime.v1.DrainNodeRequest
+	(*DrainNodeResponse)(nil),          // 9: fleetly.runtime.v1.DrainNodeResponse
+	(*CordonNodeRequest)(nil),          // 10: fleetly.runtime.v1.CordonNodeRequest
+	(*CordonNodeResponse)(nil),         // 11: fleetly.runtime.v1.CordonNodeResponse
+	(*UncordonNodeRequest)(nil),        // 12: fleetly.runtime.v1.UncordonNodeRequest
+	(*UncordonNodeResponse)(nil),       // 13: fleetly.runtime.v1.UncordonNodeResponse
 }
 var file_fleetly_runtime_v1_runtime_proto_depIdxs = []int32{
 	0,  // 0: fleetly.runtime.v1.ListNodesResponse.nodes:type_name -> fleetly.runtime.v1.Node
-	1,  // 1: fleetly.runtime.v1.NodesService.ListNodes:input_type -> fleetly.runtime.v1.ListNodesRequest
-	3,  // 2: fleetly.runtime.v1.NodesService.EnrollNode:input_type -> fleetly.runtime.v1.EnrollNodeRequest
-	5,  // 3: fleetly.runtime.v1.NodesService.DrainNode:input_type -> fleetly.runtime.v1.DrainNodeRequest
-	7,  // 4: fleetly.runtime.v1.NodesService.CordonNode:input_type -> fleetly.runtime.v1.CordonNodeRequest
-	9,  // 5: fleetly.runtime.v1.NodesService.UncordonNode:input_type -> fleetly.runtime.v1.UncordonNodeRequest
-	2,  // 6: fleetly.runtime.v1.NodesService.ListNodes:output_type -> fleetly.runtime.v1.ListNodesResponse
-	4,  // 7: fleetly.runtime.v1.NodesService.EnrollNode:output_type -> fleetly.runtime.v1.EnrollNodeResponse
-	6,  // 8: fleetly.runtime.v1.NodesService.DrainNode:output_type -> fleetly.runtime.v1.DrainNodeResponse
-	8,  // 9: fleetly.runtime.v1.NodesService.CordonNode:output_type -> fleetly.runtime.v1.CordonNodeResponse
-	10, // 10: fleetly.runtime.v1.NodesService.UncordonNode:output_type -> fleetly.runtime.v1.UncordonNodeResponse
-	6,  // [6:11] is the sub-list for method output_type
-	1,  // [1:6] is the sub-list for method input_type
-	1,  // [1:1] is the sub-list for extension type_name
-	1,  // [1:1] is the sub-list for extension extendee
-	0,  // [0:1] is the sub-list for field type_name
+	4,  // 1: fleetly.runtime.v1.ListNodeContainersResponse.containers:type_name -> fleetly.runtime.v1.NodeContainer
+	1,  // 2: fleetly.runtime.v1.NodesService.ListNodes:input_type -> fleetly.runtime.v1.ListNodesRequest
+	3,  // 3: fleetly.runtime.v1.NodesService.ListNodeContainers:input_type -> fleetly.runtime.v1.ListNodeContainersRequest
+	6,  // 4: fleetly.runtime.v1.NodesService.EnrollNode:input_type -> fleetly.runtime.v1.EnrollNodeRequest
+	8,  // 5: fleetly.runtime.v1.NodesService.DrainNode:input_type -> fleetly.runtime.v1.DrainNodeRequest
+	10, // 6: fleetly.runtime.v1.NodesService.CordonNode:input_type -> fleetly.runtime.v1.CordonNodeRequest
+	12, // 7: fleetly.runtime.v1.NodesService.UncordonNode:input_type -> fleetly.runtime.v1.UncordonNodeRequest
+	2,  // 8: fleetly.runtime.v1.NodesService.ListNodes:output_type -> fleetly.runtime.v1.ListNodesResponse
+	5,  // 9: fleetly.runtime.v1.NodesService.ListNodeContainers:output_type -> fleetly.runtime.v1.ListNodeContainersResponse
+	7,  // 10: fleetly.runtime.v1.NodesService.EnrollNode:output_type -> fleetly.runtime.v1.EnrollNodeResponse
+	9,  // 11: fleetly.runtime.v1.NodesService.DrainNode:output_type -> fleetly.runtime.v1.DrainNodeResponse
+	11, // 12: fleetly.runtime.v1.NodesService.CordonNode:output_type -> fleetly.runtime.v1.CordonNodeResponse
+	13, // 13: fleetly.runtime.v1.NodesService.UncordonNode:output_type -> fleetly.runtime.v1.UncordonNodeResponse
+	8,  // [8:14] is the sub-list for method output_type
+	2,  // [2:8] is the sub-list for method input_type
+	2,  // [2:2] is the sub-list for extension type_name
+	2,  // [2:2] is the sub-list for extension extendee
+	0,  // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_fleetly_runtime_v1_runtime_proto_init() }
@@ -710,7 +937,7 @@ func file_fleetly_runtime_v1_runtime_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fleetly_runtime_v1_runtime_proto_rawDesc), len(file_fleetly_runtime_v1_runtime_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   11,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

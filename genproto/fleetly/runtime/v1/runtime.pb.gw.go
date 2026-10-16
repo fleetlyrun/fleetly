@@ -70,6 +70,45 @@ func local_request_NodesService_ListNodes_0(ctx context.Context, marshaler runti
 	return msg, metadata, err
 }
 
+func request_NodesService_ListNodeContainers_0(ctx context.Context, marshaler runtime.Marshaler, client NodesServiceClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var (
+		protoReq ListNodeContainersRequest
+		metadata runtime.ServerMetadata
+		err      error
+	)
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
+	val, ok := pathParams["node_id"]
+	if !ok {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "node_id")
+	}
+	protoReq.NodeId, err = runtime.String(val)
+	if err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "node_id", err)
+	}
+	msg, err := client.ListNodeContainers(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	return msg, metadata, err
+}
+
+func local_request_NodesService_ListNodeContainers_0(ctx context.Context, marshaler runtime.Marshaler, server NodesServiceServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var (
+		protoReq ListNodeContainersRequest
+		metadata runtime.ServerMetadata
+		err      error
+	)
+	val, ok := pathParams["node_id"]
+	if !ok {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "node_id")
+	}
+	protoReq.NodeId, err = runtime.String(val)
+	if err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "node_id", err)
+	}
+	msg, err := server.ListNodeContainers(ctx, &protoReq)
+	return msg, metadata, err
+}
+
 func request_NodesService_EnrollNode_0(ctx context.Context, marshaler runtime.Marshaler, client NodesServiceClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
 	var (
 		protoReq EnrollNodeRequest
@@ -258,6 +297,26 @@ func RegisterNodesServiceHandlerServer(ctx context.Context, mux *runtime.ServeMu
 		}
 		forward_NodesService_ListNodes_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
 	})
+	mux.Handle(http.MethodGet, pattern_NodesService_ListNodeContainers_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		var stream runtime.ServerTransportStream
+		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/fleetly.runtime.v1.NodesService/ListNodeContainers", runtime.WithHTTPPathPattern("/v1/nodes/{node_id}/containers"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := local_request_NodesService_ListNodeContainers_0(annotatedContext, inboundMarshaler, server, req, pathParams)
+		md.HeaderMD, md.TrailerMD = metadata.Join(md.HeaderMD, stream.Header()), metadata.Join(md.TrailerMD, stream.Trailer())
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_NodesService_ListNodeContainers_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
 	mux.Handle(http.MethodPost, pattern_NodesService_EnrollNode_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
@@ -395,6 +454,23 @@ func RegisterNodesServiceHandlerClient(ctx context.Context, mux *runtime.ServeMu
 		}
 		forward_NodesService_ListNodes_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
 	})
+	mux.Handle(http.MethodGet, pattern_NodesService_ListNodeContainers_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/fleetly.runtime.v1.NodesService/ListNodeContainers", runtime.WithHTTPPathPattern("/v1/nodes/{node_id}/containers"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := request_NodesService_ListNodeContainers_0(annotatedContext, inboundMarshaler, client, req, pathParams)
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_NodesService_ListNodeContainers_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
 	mux.Handle(http.MethodPost, pattern_NodesService_EnrollNode_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
@@ -467,17 +543,19 @@ func RegisterNodesServiceHandlerClient(ctx context.Context, mux *runtime.ServeMu
 }
 
 var (
-	pattern_NodesService_ListNodes_0    = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"v1", "nodes"}, ""))
-	pattern_NodesService_EnrollNode_0   = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "nodes", "enroll"}, ""))
-	pattern_NodesService_DrainNode_0    = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "nodes", "node_id", "drain"}, ""))
-	pattern_NodesService_CordonNode_0   = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "nodes", "node_id", "cordon"}, ""))
-	pattern_NodesService_UncordonNode_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "nodes", "node_id", "uncordon"}, ""))
+	pattern_NodesService_ListNodes_0          = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"v1", "nodes"}, ""))
+	pattern_NodesService_ListNodeContainers_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "nodes", "node_id", "containers"}, ""))
+	pattern_NodesService_EnrollNode_0         = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "nodes", "enroll"}, ""))
+	pattern_NodesService_DrainNode_0          = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "nodes", "node_id", "drain"}, ""))
+	pattern_NodesService_CordonNode_0         = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "nodes", "node_id", "cordon"}, ""))
+	pattern_NodesService_UncordonNode_0       = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "nodes", "node_id", "uncordon"}, ""))
 )
 
 var (
-	forward_NodesService_ListNodes_0    = runtime.ForwardResponseMessage
-	forward_NodesService_EnrollNode_0   = runtime.ForwardResponseMessage
-	forward_NodesService_DrainNode_0    = runtime.ForwardResponseMessage
-	forward_NodesService_CordonNode_0   = runtime.ForwardResponseMessage
-	forward_NodesService_UncordonNode_0 = runtime.ForwardResponseMessage
+	forward_NodesService_ListNodes_0          = runtime.ForwardResponseMessage
+	forward_NodesService_ListNodeContainers_0 = runtime.ForwardResponseMessage
+	forward_NodesService_EnrollNode_0         = runtime.ForwardResponseMessage
+	forward_NodesService_DrainNode_0          = runtime.ForwardResponseMessage
+	forward_NodesService_CordonNode_0         = runtime.ForwardResponseMessage
+	forward_NodesService_UncordonNode_0       = runtime.ForwardResponseMessage
 )

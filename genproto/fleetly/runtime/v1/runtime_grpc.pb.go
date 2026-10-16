@@ -21,11 +21,12 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	NodesService_ListNodes_FullMethodName    = "/fleetly.runtime.v1.NodesService/ListNodes"
-	NodesService_EnrollNode_FullMethodName   = "/fleetly.runtime.v1.NodesService/EnrollNode"
-	NodesService_DrainNode_FullMethodName    = "/fleetly.runtime.v1.NodesService/DrainNode"
-	NodesService_CordonNode_FullMethodName   = "/fleetly.runtime.v1.NodesService/CordonNode"
-	NodesService_UncordonNode_FullMethodName = "/fleetly.runtime.v1.NodesService/UncordonNode"
+	NodesService_ListNodes_FullMethodName          = "/fleetly.runtime.v1.NodesService/ListNodes"
+	NodesService_ListNodeContainers_FullMethodName = "/fleetly.runtime.v1.NodesService/ListNodeContainers"
+	NodesService_EnrollNode_FullMethodName         = "/fleetly.runtime.v1.NodesService/EnrollNode"
+	NodesService_DrainNode_FullMethodName          = "/fleetly.runtime.v1.NodesService/DrainNode"
+	NodesService_CordonNode_FullMethodName         = "/fleetly.runtime.v1.NodesService/CordonNode"
+	NodesService_UncordonNode_FullMethodName       = "/fleetly.runtime.v1.NodesService/UncordonNode"
 )
 
 // NodesServiceClient is the client API for NodesService service.
@@ -33,6 +34,10 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type NodesServiceClient interface {
 	ListNodes(ctx context.Context, in *ListNodesRequest, opts ...grpc.CallOption) (*ListNodesResponse, error)
+	// ListNodeContainers 实时观测节点上的在跑容器（RuntimeNodeInspect 面：
+	// 每 running task/pod 对应一个容器；快照语义——直读编排器任务列表，观测
+	// 缓存不参与）。平台节点 ID 为锚（运维三动词同锚）。
+	ListNodeContainers(ctx context.Context, in *ListNodeContainersRequest, opts ...grpc.CallOption) (*ListNodeContainersResponse, error)
 	// EnrollNode 输出工作节点加入材料（F0.20：节点零平台安装物）。活 join
 	// token 等价集群成员权（不可逆），档位是 platform:admin（C3 收紧：
 	// nodes:admin 只覆盖可逆运维面，不得白送集群钥匙）；rotate 先轮换
@@ -57,6 +62,16 @@ func (c *nodesServiceClient) ListNodes(ctx context.Context, in *ListNodesRequest
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListNodesResponse)
 	err := c.cc.Invoke(ctx, NodesService_ListNodes_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *nodesServiceClient) ListNodeContainers(ctx context.Context, in *ListNodeContainersRequest, opts ...grpc.CallOption) (*ListNodeContainersResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListNodeContainersResponse)
+	err := c.cc.Invoke(ctx, NodesService_ListNodeContainers_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -108,6 +123,10 @@ func (c *nodesServiceClient) UncordonNode(ctx context.Context, in *UncordonNodeR
 // for forward compatibility.
 type NodesServiceServer interface {
 	ListNodes(context.Context, *ListNodesRequest) (*ListNodesResponse, error)
+	// ListNodeContainers 实时观测节点上的在跑容器（RuntimeNodeInspect 面：
+	// 每 running task/pod 对应一个容器；快照语义——直读编排器任务列表，观测
+	// 缓存不参与）。平台节点 ID 为锚（运维三动词同锚）。
+	ListNodeContainers(context.Context, *ListNodeContainersRequest) (*ListNodeContainersResponse, error)
 	// EnrollNode 输出工作节点加入材料（F0.20：节点零平台安装物）。活 join
 	// token 等价集群成员权（不可逆），档位是 platform:admin（C3 收紧：
 	// nodes:admin 只覆盖可逆运维面，不得白送集群钥匙）；rotate 先轮换
@@ -130,6 +149,9 @@ type UnimplementedNodesServiceServer struct{}
 
 func (UnimplementedNodesServiceServer) ListNodes(context.Context, *ListNodesRequest) (*ListNodesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListNodes not implemented")
+}
+func (UnimplementedNodesServiceServer) ListNodeContainers(context.Context, *ListNodeContainersRequest) (*ListNodeContainersResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListNodeContainers not implemented")
 }
 func (UnimplementedNodesServiceServer) EnrollNode(context.Context, *EnrollNodeRequest) (*EnrollNodeResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method EnrollNode not implemented")
@@ -178,6 +200,24 @@ func _NodesService_ListNodes_Handler(srv interface{}, ctx context.Context, dec f
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(NodesServiceServer).ListNodes(ctx, req.(*ListNodesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NodesService_ListNodeContainers_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListNodeContainersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodesServiceServer).ListNodeContainers(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NodesService_ListNodeContainers_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodesServiceServer).ListNodeContainers(ctx, req.(*ListNodeContainersRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -264,6 +304,10 @@ var NodesService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListNodes",
 			Handler:    _NodesService_ListNodes_Handler,
+		},
+		{
+			MethodName: "ListNodeContainers",
+			Handler:    _NodesService_ListNodeContainers_Handler,
 		},
 		{
 			MethodName: "EnrollNode",

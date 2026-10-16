@@ -51,6 +51,34 @@ func (svc *NodesService) ListNodes(ctx context.Context, req *runtimev1.ListNodes
 	return out, nil
 }
 
+// ListNodeContainers 实时观测节点上的在跑容器（RuntimeNodeInspect 面；
+// 平台节点 ID 为锚——运维三动词同锚约定）。读面零审计（ListNodes 同款）；
+// 列表面诚实空——无在跑容器是空集而非错误。
+func (svc *NodesService) ListNodeContainers(ctx context.Context, req *runtimev1.ListNodeContainersRequest) (*runtimev1.ListNodeContainersResponse, error) {
+	inspect := capability.FacesOf(svc.s.Runtime).NodeInspect // 节点观测子面（FacesOf 协商点）
+	if inspect == nil {
+		// 可选子面缺席是 honest failure（P4-3 批 3）：精确 501，不再落
+		// E_INTERNAL 脱敏 500。
+		return nil, apperr.New("E_RUNTIME_FACE_UNSUPPORTED", "the runtime provider does not expose node inspection")
+	}
+	rows, err := inspect.NodeContainers(ctx, req.GetNodeId())
+	if err != nil {
+		if errors.Is(err, capability.ErrNodeNotFound) {
+			return nil, apperr.New("E_NOT_FOUND", "node not found").WithCause(err)
+		}
+		return nil, apperr.New("E_INTERNAL", "node container listing failed").WithCause(err)
+	}
+	out := &runtimev1.ListNodeContainersResponse{}
+	for _, row := range rows {
+		out.Containers = append(out.Containers, &runtimev1.NodeContainer{
+			Instance: row.Instance, WorkloadId: row.WorkloadID, Domain: row.Domain,
+			Team: row.Team, ProjectId: row.Project, AppId: row.AppID, Process: row.Process,
+			Image: row.Image,
+		})
+	}
+	return out, nil
+}
+
 func (svc *NodesService) EnrollNode(ctx context.Context, req *runtimev1.EnrollNodeRequest) (*runtimev1.EnrollNodeResponse, error) {
 	// 材料生成与轮换都是集群面敏感动作：审计如实区分（EnrollNode 是
 	// platform:admin 档，C3）。

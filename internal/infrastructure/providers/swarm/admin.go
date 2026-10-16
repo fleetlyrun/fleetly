@@ -112,7 +112,7 @@ func isNodeVersionRace(err error) bool {
 // 报错——不与服务过滤方言较劲，全量列出后内存精确匹配（集群节点数
 // 量级小，全列可接受）。
 func (p *Provider) findNodeByPlatformID(ctx context.Context, nodeID string) (*swarm.Node, error) {
-	res, err := p.cli.NodeList(ctx, client.NodeListOptions{})
+	res, err := p.nodes(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("swarm node %s: list: %w", nodeID, err)
 	}

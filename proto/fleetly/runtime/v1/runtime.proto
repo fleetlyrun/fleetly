@@ -30,6 +30,16 @@ service NodesService {
       api_key_scope: { resource: "nodes" op: SCOPE_OP_READ }
     };
   }
+  // ListNodeContainers 实时观测节点上的在跑容器（RuntimeNodeInspect 面：
+  // 每 running task/pod 对应一个容器；快照语义——直读编排器任务列表，观测
+  // 缓存不参与）。平台节点 ID 为锚（运维三动词同锚）。
+  rpc ListNodeContainers(ListNodeContainersRequest) returns (ListNodeContainersResponse) {
+    option (google.api.http) = { get: "/v1/nodes/{node_id}/containers" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "nodes" op: SCOPE_OP_READ }
+    };
+  }
   // EnrollNode 输出工作节点加入材料（F0.20：节点零平台安装物）。活 join
   // token 等价集群成员权（不可逆），档位是 platform:admin（C3 收紧：
   // nodes:admin 只覆盖可逆运维面，不得白送集群钥匙）；rotate 先轮换
@@ -92,6 +102,41 @@ message ListNodesRequest {
   int32 limit = 2;
 }
 message ListNodesResponse { repeated Node nodes = 1; }
+
+// ListNodeContainersRequest 以平台节点 ID 为锚（永不复用）。
+message ListNodeContainersRequest {
+  string node_id = 1 [
+    (buf.validate.field).cel = {
+      id: "string.required"
+      message: "must not be empty"
+      expression: "this.size() > 0"
+    }
+  ];
+}
+
+// NodeContainer 是节点上一行在跑容器观测。归属字段是编排器载体归属标记
+// 的平台投影（Provider 私有标记；标记缺席的字段留空诚实呈现）；编排器
+// 实例标识平台不解析——exec 受理与 logs containers 过滤消费同一锚
+//（ADR-0067）。container 按 docker 本义使用（第三方专有词汇豁免，
+// 2026-10-16 用户裁定）。
+message NodeContainer {
+  // instance 是编排器实例标识（swarm task ID / k3s pod 名）。
+  string instance = 1;
+  // workload_id 是归属 Workload ID（App 域 = appID-process 投影；Task/
+  // Database/Browse 域 = 域主键投影）。
+  string workload_id = 2;
+  // domain 是归属域主体：app | task | database | browse（ADR-0025 决策 4；
+  // App 域之外的域 app_id 留空——workload_id 即域主体）。
+  string domain = 3;
+  // team/project_id/app_id/process 是隔离域与 App 域归属投影。
+  string team = 4;
+  string project_id = 5;
+  string app_id = 6;
+  string process = 7;
+  // image 是载体镜像投影（观测面，非权威声明——声明真源在 Spec/Revision）。
+  string image = 8;
+}
+message ListNodeContainersResponse { repeated NodeContainer containers = 1; }
 message EnrollNodeRequest {
   // rotate 先轮换全部 join token（worker+manager；泄漏处置：旧材料即刻
   // 失效）再返回新材料。

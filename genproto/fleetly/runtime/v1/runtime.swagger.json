@@ -88,6 +88,37 @@
         ]
       }
     },
+    "/v1/nodes/{node_id}/containers": {
+      "get": {
+        "summary": "ListNodeContainers 实时观测节点上的在跑容器（RuntimeNodeInspect 面：\n每 running task/pod 对应一个容器；快照语义——直读编排器任务列表，观测\n缓存不参与）。平台节点 ID 为锚（运维三动词同锚）。",
+        "operationId": "NodesService_ListNodeContainers",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListNodeContainersResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "node_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "NodesService"
+        ]
+      }
+    },
     "/v1/nodes/{node_id}/cordon": {
       "post": {
         "operationId": "NodesService_CordonNode",
@@ -246,6 +277,18 @@
         }
       }
     },
+    "v1ListNodeContainersResponse": {
+      "type": "object",
+      "properties": {
+        "containers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1NodeContainer"
+          }
+        }
+      }
+    },
     "v1ListNodesResponse": {
       "type": "object",
       "properties": {
@@ -297,6 +340,41 @@
         }
       },
       "title": "Node 是观测缓存行（非权威；节点 ID 永不复用）。"
+    },
+    "v1NodeContainer": {
+      "type": "object",
+      "properties": {
+        "instance": {
+          "type": "string",
+          "title": "instance 是编排器实例标识（swarm task ID / k3s pod 名）。"
+        },
+        "workload_id": {
+          "type": "string",
+          "title": "workload_id 是归属 Workload ID（App 域 = appID-process 投影；Task/\nDatabase/Browse 域 = 域主键投影）。"
+        },
+        "domain": {
+          "type": "string",
+          "title": "domain 是归属域主体：app | task | database | browse（ADR-0025 决策 4；\nApp 域之外的域 app_id 留空——workload_id 即域主体）。"
+        },
+        "team": {
+          "type": "string",
+          "title": "team/project_id/app_id/process 是隔离域与 App 域归属投影。"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "app_id": {
+          "type": "string"
+        },
+        "process": {
+          "type": "string"
+        },
+        "image": {
+          "type": "string",
+          "title": "image 是载体镜像投影（观测面，非权威声明——声明真源在 Spec/Revision）。"
+        }
+      },
+      "title": "NodeContainer 是节点上一行在跑容器观测。归属字段是编排器载体归属标记\n的平台投影（Provider 私有标记；标记缺席的字段留空诚实呈现）；编排器\n实例标识平台不解析——exec 受理与 logs containers 过滤消费同一锚\n（ADR-0067）。container 按 docker 本义使用（第三方专有词汇豁免，\n2026-10-16 用户裁定）。"
     },
     "v1UncordonNodeResponse": {
       "type": "object"

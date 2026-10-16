@@ -685,17 +685,13 @@ func eventAnchor(msg events.Message) string {
 // 余服务——修复前 ServiceInspect 失败 continue 但不入 memo，同服务的每个
 // 任务都重复撞一次失败调用（N+1 放大），且失败静默无诊断线索。
 func (p *Provider) pollTasks(ctx context.Context, out chan<- capability.WorkloadEvent) error {
-	services, err := p.cli.ServiceList(ctx, client.ServiceListOptions{
-		Filters: client.Filters{}.Add("label", labelManaged+"=true"),
-	})
+	services, err := p.listManagedServices(ctx)
 	if err != nil {
 		return fmt.Errorf("managed service list: %w", err)
 	}
-	for i := range services.Items {
-		svc := services.Items[i]
-		tasks, err := p.cli.TaskList(ctx, client.TaskListOptions{
-			Filters: client.Filters{}.Add("service", svc.ID),
-		})
+	for i := range services {
+		svc := services[i]
+		tasks, err := p.listServiceTasks(ctx, svc.ID)
 		if err != nil {
 			// 哨兵：单服务失败只降级该服务的本轮观测，其余服务照常。
 			slog.Warn("swarm watch: task poll skipped a service until next tick", "service", svc.Spec.Name, "error", err)
@@ -894,7 +890,8 @@ func (p *Provider) anchorNodes(ctx context.Context, out chan<- capability.Worklo
 }
 
 // nodes 列出集群节点（可注入缝；nil = 真 daemon 直连——provider.go 的
-// 缝契约：覆盖 Watch 初始锚定降级的 hermetic 测试面）。
+// 缝契约：覆盖 Watch 初始锚定降级、admin 节点定位与节点观测的 hermetic
+// 测试面）。
 func (p *Provider) nodes(ctx context.Context) (client.NodeListResult, error) {
 	if p.nodeList != nil {
 		return p.nodeList(ctx)

@@ -54,16 +54,19 @@ type Provider struct {
 	//   - nodeList/events：节点列表与事件流（Watch 初始锚定降级 B14-2 的
 	//     hermetic 面——nil cli 走真客户端会在 Events 内部 goroutine panic，
 	//     watchRound 的 recover 护栏接不住跨 goroutine panic）。
+	//   - managedServices：受管服务列表面（节点观测 NodeContainers 的
+	//     hermetic 面；pollTasks 同源发现面）。
 	// 缝契约与真实现一致（如日志流读端必须在 ctx 取消时解除阻塞）。
-	listServices   func(ctx context.Context, ns capability.NamespaceRef) ([]swarm.Service, error)
-	openServiceLog func(ctx context.Context, serviceID string, opts client.ServiceLogsOptions) (io.ReadCloser, error)
-	listTasks      func(ctx context.Context, serviceID string) (client.TaskListResult, error)
-	openTaskLog    func(ctx context.Context, taskID string, opts client.TaskLogsOptions) (io.ReadCloser, error)
-	networkInspect func(ctx context.Context, name string) error
-	secretInspect  func(ctx context.Context, name string) (client.SecretInspectResult, error)
-	configInspect  func(ctx context.Context, name string) (client.ConfigInspectResult, error)
-	nodeList       func(ctx context.Context) (client.NodeListResult, error)
-	events         func(ctx context.Context, opts client.EventsListOptions) client.EventsResult
+	listServices    func(ctx context.Context, ns capability.NamespaceRef) ([]swarm.Service, error)
+	openServiceLog  func(ctx context.Context, serviceID string, opts client.ServiceLogsOptions) (io.ReadCloser, error)
+	listTasks       func(ctx context.Context, serviceID string) (client.TaskListResult, error)
+	openTaskLog     func(ctx context.Context, taskID string, opts client.TaskLogsOptions) (io.ReadCloser, error)
+	networkInspect  func(ctx context.Context, name string) error
+	secretInspect   func(ctx context.Context, name string) (client.SecretInspectResult, error)
+	configInspect   func(ctx context.Context, name string) (client.ConfigInspectResult, error)
+	nodeList        func(ctx context.Context) (client.NodeListResult, error)
+	managedServices func(ctx context.Context) ([]swarm.Service, error)
+	events          func(ctx context.Context, opts client.EventsListOptions) client.EventsResult
 	// utilityExec 是工具容器 daemon 生命周期的函数值缝（ADR-0039；nil =
 	// 生产实现 daemonUtilityExec。attach 走 postHijacked 独立 dialer，
 	// 传输级假面够不到——builders push seam 同款理由）。
@@ -76,7 +79,8 @@ type Provider struct {
 }
 
 // 编译期契约断言：核心面 + 五个子面（F0.19 全契约；C-10 补 Inspector 面
-// ——缺此断言则接口改名时静默降级 gen-only 无红灯；ADR-0039 补 Utility）。
+// ——缺此断言则接口改名时静默降级 gen-only 无红灯；ADR-0039 补 Utility；
+// NodeInspect 补节点观测面）。
 var (
 	_ capability.Runtime                   = (*Provider)(nil)
 	_ capability.RuntimeLogs               = (*Provider)(nil)
@@ -85,6 +89,7 @@ var (
 	_ capability.RuntimeHygiene            = (*Provider)(nil)
 	_ capability.RuntimeUtility            = (*Provider)(nil)
 	_ capability.RuntimeNetworkMaintenance = (*Provider)(nil)
+	_ capability.RuntimeNodeInspect        = (*Provider)(nil)
 )
 
 // New 构造 Provider：host 为 daemon 端点（空 = DOCKER_HOST / 默认套接字）。
