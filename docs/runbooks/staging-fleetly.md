@@ -665,18 +665,18 @@ ADR-0015 升级序的完整落地形态：**Platform Backup 前置 → SIGTERM �
 
 ### 端口暴露矩阵（操作者责任 + 平台自证，ADR-0036）
 
-控制面与受管数据面的端口**全部只允许 VPC/内网可达**（云防火墙/安全组封公网入口；下表是本 runbook 拓扑的核对清单，任何新端口入网前先在此登记）。唯一公网入口 = 受管 traefik 80/443（表末行；ADR-0061 起 console 主机路由回指 9081 亦经此入口——9081 绑址仍 VPC-only）：
+控制面与受管数据面的端口**全部只允许 VPC/内网可达**（云防火墙/安全组封公网入口；下表是本 runbook 拓扑的核对清单，任何新端口入网前先在此登记）。唯一公网入口 = 受管 traefik 80/443（表末行；ADR-0061 起 console 主机路由回指 9081、ADR-0079 起 api 主机路由 h2c 回指 9080 亦经此入口——绑址仍 VPC-only）：
 
 | 端口 | 面 | 认证形态 | 暴露要求 |
 |---|---|---|---|
-| 9080 | fleetlyd gRPC（控制面 API） | Token（authn 拦截链） | 仅 VPC/内网；CLI 经 manager 本机回环或跳板访问 |
+| 9080 | fleetlyd gRPC（控制面 API） | Token（authn 拦截链） | 仅 VPC/内网（绑址不动）；ADR-0079：经受管 traefik api 主机路由公网可达（h2c 回指 + CLI/SDK `grpcs://` 直连）——主路由整面 + Login gRPC method 路径限速（与 console REST 登录同值：每源 IP 均值 10/突发 20），Token 授权语义零变化；CLI 公网接法 = `FLEETLY_ADDR=grpcs://api.dev.fleetly.run` |
 | 9081 | REST gateway（SSE/幂等等同源面） | Token | 仅 VPC/内网（绑址不动）；ADR-0061：经受管 traefik console 主机路由公网可达——主路由整面 + /v1/auth/login 限速（每源 IP 均值 10/突发 20），Token 授权语义零变化 |
 | 9082 | Proxy config 拉取端点（traefik HTTP provider） | 共享令牌头可选（`server.proxy_config.auth_token`，缺省关=升级零扰动；traefik providers.http.headers 原生通道——ADR-0036 N2 兑现节 1） | 仅 VPC/内网，**公网可达 = 任意人可改写全量路由**（置 auth_token 后未带头的拉取 401，仍建议钉内网绑址） |
 | 5000 | 受管 zot（镜像仓库） | HTTP 明文 + 单一平台凭证（htpasswd） | 仅 VPC/内网；两台 dockerd 的 `--insecure-registry` 同依赖此形态 |
 | 9428 | 受管 VictoriaLogs（日志存储，F2.4） | basic auth（keys/victorialogs.json 随机密码；VL 单租户——域隔离由平台查询构造执法） | 仅 VPC/内网；mesh 端点无凭证 401 已实证 |
 | 8428 | 受管 VictoriaMetrics（指标存储，F2.5） | basic auth（keys/victoriametrics.json 随机密码；单租户同 VL 口径） | 仅 VPC/内网 |
 | 8080 | 受管 cAdvisor（每节点指标采集端，F2.5） | **无认证**（cadvisor 无认证面；host 直绑每节点） | 仅 VPC/内网；**多租户前挂账**（前置认证代理或节点防火墙收窄） |
-| 80/443 | 受管 traefik 入口（HTTP-01 challenge + 受管路由） | ACME + 路由级（console 登录限速，ADR-0061） | **唯一公网入口**；configEndpoint 拉取仍走 VPC 9082 |
+| 80/443 | 受管 traefik 入口（HTTP-01 challenge + 受管路由） | ACME + 路由级（console 登录限速 ADR-0061；api Login method 限速 ADR-0079） | **唯一公网入口**；configEndpoint 拉取仍走 VPC 9082 |
 
 **绑面配置化（ADR-0036）**：四面绑址/引用地址全部可配置（缺省 = 上表现状，升级不静默改绑）。本拓扑的收窄配置示例（fleetlyd 配置文件，钉 VPC eth1 地址）：
 
