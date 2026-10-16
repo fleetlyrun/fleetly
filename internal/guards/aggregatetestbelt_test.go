@@ -19,20 +19,11 @@ import (
 )
 
 // aggregateTestWhitelist 是聚合测试带白名单（包名 → 理由，中文一句话）。
-// 现入白名单十件（P5-3 批次：volume/run/user/audit 四件已带测试落地，
-// 余十件薄面缓补）：条目理由如实描述 repo 面现状；测试落地即删条目。
-var aggregateTestWhitelist = map[string]string{
-	"alertrule":   "repo 面薄（规则 CRUD 直写 + Observe/Transition 观测迁移），带测试待补",
-	"browse":      "repo 面薄（会话台账 Create/List/CountByProject/Delete 直写），带测试待补",
-	"catalog":     "repo 面薄（单行快照 Put/Get 两方法，固定 id=1 覆盖写），带测试待补",
-	"channel":     "repo 面薄（通道 CRUD 直写 + RecordDelivery 失败回写），带测试待补",
-	"idempotency": "repo 面薄（Claim/Complete/Release/Sweep 幂等记录直写），带测试待补",
-	"invitation":  "repo 面薄（Create/GetBySHA256/List/MarkConsumed 直写），带测试待补",
-	"logcursor":   "repo 面薄（单游标 Get/Save 两方法，零值回落有界回看窗），带测试待补",
-	"membership":  "repo 面薄（关联 Create/GetByUser/DeleteByUser/ListByUser 直写），带测试待补",
-	"role":        "repo 面薄（CRUD + UpsertBuiltin 种子幂等直写），带测试待补",
-	"team":        "repo 面薄（Create/Get/List/Delete 直写），带测试待补",
-}
+// G19 全带已清偿（P5-3 批次：volume/run/user/audit 先行，alertrule/browse/
+// catalog/channel/idempotency/invitation/logcursor/membership/role/team 十
+// 件 2026-10-16 批 C 落地），现无豁免条目；双向保鲜：新聚合缺测试即红，
+// 新豁免必须带理由注册，测试落地即删条目。
+var aggregateTestWhitelist = map[string]string{}
 
 // aggregateBeltExcluded 是聚合带排除目录（非聚合包）。
 var aggregateBeltExcluded = map[string]bool{
