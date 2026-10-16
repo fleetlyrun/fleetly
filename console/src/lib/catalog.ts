@@ -467,3 +467,20 @@ export function useNodes() {
     refetchInterval: RESOURCE_MS,
   });
 }
+
+// useNodeContainers 是节点在跑容器集的观测查询（ListNodeContainers 快照
+// 语义：直读编排器任务/pod 列表；空集 = 观测行非错误）。节点详情页 10s
+// 轮询（useProcessInstances 同拍）。
+export function useNodeContainers(nodeId: string) {
+  return useQuery({
+    queryKey: ["node-containers", nodeId],
+    enabled: nodeId !== "",
+    queryFn: async () => {
+      const res = await apiFetch<{ containers?: Array<Runtime["v1NodeContainer"] | undefined> }>(
+        `/v1/nodes/${encodeURIComponent(nodeId)}/containers`,
+      );
+      return rowsOf(res.containers);
+    },
+    refetchInterval: 10_000,
+  });
+}

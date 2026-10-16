@@ -42,6 +42,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/nodes/{node_id}/containers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * ListNodeContainers 实时观测节点上的在跑容器（RuntimeNodeInspect 面：
+         *     每 running task/pod 对应一个容器；快照语义——直读编排器任务列表，观测
+         *     缓存不参与）。平台节点 ID 为锚（运维三动词同锚）。
+         */
+        get: operations["NodesService_ListNodeContainers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/nodes/{node_id}/cordon": {
         parameters: {
             query?: never;
@@ -123,6 +144,9 @@ export interface components {
              */
             relay_command?: string;
         };
+        v1ListNodeContainersResponse: {
+            containers?: components["schemas"]["v1NodeContainer"][];
+        };
         v1ListNodesResponse: {
             nodes?: components["schemas"]["v1Node"][];
         };
@@ -150,6 +174,34 @@ export interface components {
              *     协议只增；升级后重跑中继装载脚本即刷新）。
              */
             relay_version?: string;
+        };
+        /**
+         * NodeContainer 是节点上一行在跑容器观测。归属字段是编排器载体归属标记
+         *     的平台投影（Provider 私有标记；标记缺席的字段留空诚实呈现）；编排器
+         *     实例标识平台不解析——exec 受理与 logs containers 过滤消费同一锚
+         *     （ADR-0067）。container 按 docker 本义使用（第三方专有词汇豁免，
+         *     2026-10-16 用户裁定）。
+         */
+        v1NodeContainer: {
+            /** instance 是编排器实例标识（swarm task ID / k3s pod 名）。 */
+            instance?: string;
+            /**
+             * workload_id 是归属 Workload ID（App 域 = appID-process 投影；Task/
+             *     Database/Browse 域 = 域主键投影）。
+             */
+            workload_id?: string;
+            /**
+             * domain 是归属域主体：app | task | database | browse（ADR-0025 决策 4；
+             *     App 域之外的域 app_id 留空——workload_id 即域主体）。
+             */
+            domain?: string;
+            /** team/project_id/app_id/process 是隔离域与 App 域归属投影。 */
+            team?: string;
+            project_id?: string;
+            app_id?: string;
+            process?: string;
+            /** image 是载体镜像投影（观测面，非权威声明——声明真源在 Spec/Revision）。 */
+            image?: string;
         };
         v1UncordonNodeResponse: Record<string, never>;
         ErrorResponse: {
@@ -221,6 +273,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1EnrollNodeResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    NodesService_ListNodeContainers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                node_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ListNodeContainersResponse"];
                 };
             };
             /** @description An unexpected error response. */
