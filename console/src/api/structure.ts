@@ -893,19 +893,12 @@ export interface components {
         /**
          * JobSpec 是部署期一次性作业（first boot jobs，ADR-0007 词汇裁决：词条归
          *     Task——部署期特例）。C-13 重塑：进程模板共享 ProcessSpec（process 字段，
-         *     与 TaskSpec 同款嵌套形态）；旧标量字段（image_origin/command/env/
-         *     secret_refs）保留号退役（deprecated，读取面一律走 process——buf breaking
-         *     FILE 档下零消费者字段删除亦红，彻底删除待 breaking 基线策略变更）。
+         *     与 TaskSpec 同款嵌套形态）。2026-10-16 挂账清偿整删（用户裁决；写读两面
+         *     C-13 起已全走 process；buf breaking 对 origin/main 恰一条 FILE 红=开发期
+         *     基线追认，与 config_refs 先例同款，上 main 后自愈）。
          */
         v1JobSpec: {
             name?: string;
-            image?: string;
-            from_build?: string;
-            command?: string[];
-            env?: {
-                [key: string]: string;
-            };
-            secret_refs?: string[];
             /** ttl 是作业硬超时（超时即失败回滚）。 */
             ttl?: string;
             process?: components["schemas"]["v1ProcessSpec"];

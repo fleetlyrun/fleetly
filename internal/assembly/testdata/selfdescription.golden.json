@@ -212,37 +212,7 @@
           "first_boot_jobs": {
             "items": {
               "additionalProperties": false,
-              "oneOf": [
-                {
-                  "required": [
-                    "image"
-                  ]
-                },
-                {
-                  "required": [
-                    "from_build"
-                  ]
-                }
-              ],
               "properties": {
-                "command": {
-                  "items": {
-                    "type": "string"
-                  },
-                  "type": "array"
-                },
-                "env": {
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "type": "object"
-                },
-                "from_build": {
-                  "type": "string"
-                },
-                "image": {
-                  "type": "string"
-                },
                 "name": {
                   "type": "string"
                 },
@@ -447,12 +417,6 @@
                     }
                   },
                   "type": "object"
-                },
-                "secret_refs": {
-                  "items": {
-                    "type": "string"
-                  },
-                  "type": "array"
                 },
                 "ttl": {
                   "format": "duration",

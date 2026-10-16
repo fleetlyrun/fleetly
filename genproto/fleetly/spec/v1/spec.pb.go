@@ -1391,23 +1391,12 @@ func (x *StaticBuilder) GetOutputDir() string {
 
 // JobSpec 是部署期一次性作业（first boot jobs，ADR-0007 词汇裁决：词条归
 // Task——部署期特例）。C-13 重塑：进程模板共享 ProcessSpec（process 字段，
-// 与 TaskSpec 同款嵌套形态）；旧标量字段（image_origin/command/env/
-// secret_refs）保留号退役（deprecated，读取面一律走 process——buf breaking
-// FILE 档下零消费者字段删除亦红，彻底删除待 breaking 基线策略变更）。
+// 与 TaskSpec 同款嵌套形态）。2026-10-16 挂账清偿整删（用户裁决；写读两面
+// C-13 起已全走 process；buf breaking 对 origin/main 恰一条 FILE 红=开发期
+// 基线追认，与 config_refs 先例同款，上 main 后自愈）。
 type JobSpec struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Name  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	// Types that are valid to be assigned to ImageOrigin:
-	//
-	//	*JobSpec_Image
-	//	*JobSpec_FromBuild
-	ImageOrigin isJobSpec_ImageOrigin `protobuf_oneof:"image_origin"`
-	// Deprecated: Marked as deprecated in fleetly/spec/v1/spec.proto.
-	Command []string `protobuf:"bytes,4,rep,name=command,proto3" json:"command,omitempty"`
-	// Deprecated: Marked as deprecated in fleetly/spec/v1/spec.proto.
-	Env map[string]string `protobuf:"bytes,5,rep,name=env,proto3" json:"env,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	// Deprecated: Marked as deprecated in fleetly/spec/v1/spec.proto.
-	SecretRefs []string `protobuf:"bytes,6,rep,name=secret_refs,json=secretRefs,proto3" json:"secret_refs,omitempty"`
 	// ttl 是作业硬超时（超时即失败回滚）。
 	Ttl *durationpb.Duration `protobuf:"bytes,7,opt,name=ttl,proto3" json:"ttl,omitempty"`
 	// process 是单进程模板（重塑后的唯一读取面）。
@@ -1453,57 +1442,6 @@ func (x *JobSpec) GetName() string {
 	return ""
 }
 
-func (x *JobSpec) GetImageOrigin() isJobSpec_ImageOrigin {
-	if x != nil {
-		return x.ImageOrigin
-	}
-	return nil
-}
-
-// Deprecated: Marked as deprecated in fleetly/spec/v1/spec.proto.
-func (x *JobSpec) GetImage() string {
-	if x != nil {
-		if x, ok := x.ImageOrigin.(*JobSpec_Image); ok {
-			return x.Image
-		}
-	}
-	return ""
-}
-
-// Deprecated: Marked as deprecated in fleetly/spec/v1/spec.proto.
-func (x *JobSpec) GetFromBuild() string {
-	if x != nil {
-		if x, ok := x.ImageOrigin.(*JobSpec_FromBuild); ok {
-			return x.FromBuild
-		}
-	}
-	return ""
-}
-
-// Deprecated: Marked as deprecated in fleetly/spec/v1/spec.proto.
-func (x *JobSpec) GetCommand() []string {
-	if x != nil {
-		return x.Command
-	}
-	return nil
-}
-
-// Deprecated: Marked as deprecated in fleetly/spec/v1/spec.proto.
-func (x *JobSpec) GetEnv() map[string]string {
-	if x != nil {
-		return x.Env
-	}
-	return nil
-}
-
-// Deprecated: Marked as deprecated in fleetly/spec/v1/spec.proto.
-func (x *JobSpec) GetSecretRefs() []string {
-	if x != nil {
-		return x.SecretRefs
-	}
-	return nil
-}
-
 func (x *JobSpec) GetTtl() *durationpb.Duration {
 	if x != nil {
 		return x.Ttl
@@ -1517,24 +1455,6 @@ func (x *JobSpec) GetProcess() *ProcessSpec {
 	}
 	return nil
 }
-
-type isJobSpec_ImageOrigin interface {
-	isJobSpec_ImageOrigin()
-}
-
-type JobSpec_Image struct {
-	// Deprecated: Marked as deprecated in fleetly/spec/v1/spec.proto.
-	Image string `protobuf:"bytes,2,opt,name=image,proto3,oneof"`
-}
-
-type JobSpec_FromBuild struct {
-	// Deprecated: Marked as deprecated in fleetly/spec/v1/spec.proto.
-	FromBuild string `protobuf:"bytes,3,opt,name=from_build,json=fromBuild,proto3,oneof"`
-}
-
-func (*JobSpec_Image) isJobSpec_ImageOrigin() {}
-
-func (*JobSpec_FromBuild) isJobSpec_ImageOrigin() {}
 
 // TaskSpec 是程序化工作负载的期望状态（ADR-0012：one-shot 与 resident
 // 双形态）。
@@ -1998,22 +1918,12 @@ const file_fleetly_spec_v1_spec_proto_rawDesc = "" +
 	"\x0epinned_version\x18\x01 \x01(\tR\rpinnedVersion\".\n" +
 	"\rStaticBuilder\x12\x1d\n" +
 	"\n" +
-	"output_dir\x18\x01 \x01(\tR\toutputDir\"\x87\x03\n" +
+	"output_dir\x18\x01 \x01(\tR\toutputDir\"\xce\x01\n" +
 	"\aJobSpec\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1a\n" +
-	"\x05image\x18\x02 \x01(\tB\x02\x18\x01H\x00R\x05image\x12#\n" +
-	"\n" +
-	"from_build\x18\x03 \x01(\tB\x02\x18\x01H\x00R\tfromBuild\x12\x1c\n" +
-	"\acommand\x18\x04 \x03(\tB\x02\x18\x01R\acommand\x127\n" +
-	"\x03env\x18\x05 \x03(\v2!.fleetly.spec.v1.JobSpec.EnvEntryB\x02\x18\x01R\x03env\x12#\n" +
-	"\vsecret_refs\x18\x06 \x03(\tB\x02\x18\x01R\n" +
-	"secretRefs\x12+\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12+\n" +
 	"\x03ttl\x18\a \x01(\v2\x19.google.protobuf.DurationR\x03ttl\x126\n" +
-	"\aprocess\x18\b \x01(\v2\x1c.fleetly.spec.v1.ProcessSpecR\aprocess\x1a6\n" +
-	"\bEnvEntry\x12\x10\n" +
-	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01B\x0e\n" +
-	"\fimage_origin\"\xc3\x02\n" +
+	"\aprocess\x18\b \x01(\v2\x1c.fleetly.spec.v1.ProcessSpecR\aprocessJ\x04\b\x02\x10\x03J\x04\b\x03\x10\x04J\x04\b\x04\x10\x05J\x04\b\x05\x10\x06J\x04\b\x06\x10\aR\x05imageR\n" +
+	"from_buildR\acommandR\x03envR\vsecret_refs\"\xc3\x02\n" +
 	"\bTaskSpec\x12%\n" +
 	"\x0eschema_version\x18\x01 \x01(\x05R\rschemaVersion\x12,\n" +
 	"\x04task\x18\x02 \x01(\v2\x18.fleetly.spec.v1.TaskRefR\x04task\x126\n" +
@@ -2065,7 +1975,7 @@ func file_fleetly_spec_v1_spec_proto_rawDescGZIP() []byte {
 }
 
 var file_fleetly_spec_v1_spec_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_fleetly_spec_v1_spec_proto_msgTypes = make([]protoimpl.MessageInfo, 25)
+var file_fleetly_spec_v1_spec_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
 var file_fleetly_spec_v1_spec_proto_goTypes = []any{
 	(DeployStrategy)(0),         // 0: fleetly.spec.v1.DeployStrategy
 	(Protocol)(0),               // 1: fleetly.spec.v1.Protocol
@@ -2093,8 +2003,7 @@ var file_fleetly_spec_v1_spec_proto_goTypes = []any{
 	(*DatabaseRef)(nil),         // 23: fleetly.spec.v1.DatabaseRef
 	(*BackupPolicySpec)(nil),    // 24: fleetly.spec.v1.BackupPolicySpec
 	nil,                         // 25: fleetly.spec.v1.ProcessSpec.EnvEntry
-	nil,                         // 26: fleetly.spec.v1.JobSpec.EnvEntry
-	(*durationpb.Duration)(nil), // 27: google.protobuf.Duration
+	(*durationpb.Duration)(nil), // 26: google.protobuf.Duration
 }
 var file_fleetly_spec_v1_spec_proto_depIdxs = []int32{
 	3,  // 0: fleetly.spec.v1.AppSpec.app:type_name -> fleetly.spec.v1.AppRef
@@ -2115,26 +2024,25 @@ var file_fleetly_spec_v1_spec_proto_depIdxs = []int32{
 	9,  // 15: fleetly.spec.v1.ProcessSpec.config_mounts:type_name -> fleetly.spec.v1.ConfigMount
 	1,  // 16: fleetly.spec.v1.PortSpec.protocol:type_name -> fleetly.spec.v1.Protocol
 	12, // 17: fleetly.spec.v1.HealthcheckSpec.exec:type_name -> fleetly.spec.v1.ExecProbe
-	27, // 18: fleetly.spec.v1.HealthcheckSpec.interval:type_name -> google.protobuf.Duration
-	27, // 19: fleetly.spec.v1.HealthcheckSpec.timeout:type_name -> google.protobuf.Duration
-	27, // 20: fleetly.spec.v1.HealthcheckSpec.start_period:type_name -> google.protobuf.Duration
+	26, // 18: fleetly.spec.v1.HealthcheckSpec.interval:type_name -> google.protobuf.Duration
+	26, // 19: fleetly.spec.v1.HealthcheckSpec.timeout:type_name -> google.protobuf.Duration
+	26, // 20: fleetly.spec.v1.HealthcheckSpec.start_period:type_name -> google.protobuf.Duration
 	17, // 21: fleetly.spec.v1.BuildSpec.railpack:type_name -> fleetly.spec.v1.RailpackBuilder
 	18, // 22: fleetly.spec.v1.BuildSpec.static:type_name -> fleetly.spec.v1.StaticBuilder
-	26, // 23: fleetly.spec.v1.JobSpec.env:type_name -> fleetly.spec.v1.JobSpec.EnvEntry
-	27, // 24: fleetly.spec.v1.JobSpec.ttl:type_name -> google.protobuf.Duration
-	8,  // 25: fleetly.spec.v1.JobSpec.process:type_name -> fleetly.spec.v1.ProcessSpec
-	21, // 26: fleetly.spec.v1.TaskSpec.task:type_name -> fleetly.spec.v1.TaskRef
-	8,  // 27: fleetly.spec.v1.TaskSpec.process:type_name -> fleetly.spec.v1.ProcessSpec
-	23, // 28: fleetly.spec.v1.DatabaseSpec.database:type_name -> fleetly.spec.v1.DatabaseRef
-	13, // 29: fleetly.spec.v1.DatabaseSpec.resources:type_name -> fleetly.spec.v1.ResourcesSpec
-	24, // 30: fleetly.spec.v1.DatabaseSpec.backup_policy:type_name -> fleetly.spec.v1.BackupPolicySpec
-	27, // 31: fleetly.spec.v1.BackupPolicySpec.interval:type_name -> google.protobuf.Duration
-	27, // 32: fleetly.spec.v1.BackupPolicySpec.retention:type_name -> google.protobuf.Duration
-	33, // [33:33] is the sub-list for method output_type
-	33, // [33:33] is the sub-list for method input_type
-	33, // [33:33] is the sub-list for extension type_name
-	33, // [33:33] is the sub-list for extension extendee
-	0,  // [0:33] is the sub-list for field type_name
+	26, // 23: fleetly.spec.v1.JobSpec.ttl:type_name -> google.protobuf.Duration
+	8,  // 24: fleetly.spec.v1.JobSpec.process:type_name -> fleetly.spec.v1.ProcessSpec
+	21, // 25: fleetly.spec.v1.TaskSpec.task:type_name -> fleetly.spec.v1.TaskRef
+	8,  // 26: fleetly.spec.v1.TaskSpec.process:type_name -> fleetly.spec.v1.ProcessSpec
+	23, // 27: fleetly.spec.v1.DatabaseSpec.database:type_name -> fleetly.spec.v1.DatabaseRef
+	13, // 28: fleetly.spec.v1.DatabaseSpec.resources:type_name -> fleetly.spec.v1.ResourcesSpec
+	24, // 29: fleetly.spec.v1.DatabaseSpec.backup_policy:type_name -> fleetly.spec.v1.BackupPolicySpec
+	26, // 30: fleetly.spec.v1.BackupPolicySpec.interval:type_name -> google.protobuf.Duration
+	26, // 31: fleetly.spec.v1.BackupPolicySpec.retention:type_name -> google.protobuf.Duration
+	32, // [32:32] is the sub-list for method output_type
+	32, // [32:32] is the sub-list for method input_type
+	32, // [32:32] is the sub-list for extension type_name
+	32, // [32:32] is the sub-list for extension extendee
+	0,  // [0:32] is the sub-list for field type_name
 }
 
 func init() { file_fleetly_spec_v1_spec_proto_init() }
@@ -2161,17 +2069,13 @@ func file_fleetly_spec_v1_spec_proto_init() {
 		(*BuildSpec_Railpack)(nil),
 		(*BuildSpec_Static)(nil),
 	}
-	file_fleetly_spec_v1_spec_proto_msgTypes[17].OneofWrappers = []any{
-		(*JobSpec_Image)(nil),
-		(*JobSpec_FromBuild)(nil),
-	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fleetly_spec_v1_spec_proto_rawDesc), len(file_fleetly_spec_v1_spec_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   25,
+			NumMessages:   24,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
