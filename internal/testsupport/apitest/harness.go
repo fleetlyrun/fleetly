@@ -7,6 +7,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/test/bufconn"
 	"io"
 	"log/slog"
 	"net"
@@ -20,9 +23,7 @@ import (
 	"time"
 
 	grpcapiinterceptor "github.com/lynx-go/grpcapi/interceptor"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/test/bufconn"
+	"github.com/lynx-go/lynx/buildinfo"
 
 	"github.com/stretchr/testify/require"
 
@@ -33,7 +34,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/application/idem"
 	"github.com/fleetlyrun/fleetly/internal/assembly"
-	"github.com/fleetlyrun/fleetly/internal/buildinfo"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	specir "github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/keyring"

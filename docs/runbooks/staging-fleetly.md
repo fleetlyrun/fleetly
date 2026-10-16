@@ -243,7 +243,7 @@ staging 真机验收（14:53-14:56）：
 - 全缓存无步骤的构建（纯 FROM + CMD）VertexLog 零帧是正常形态（推送帧也少）——builds logs 空先查构建内容再怀疑管线。
 - 诊断新受管域时：服务名按命名公式拼（fleetly-<team>-<project>-<app>-<process>）；VL 行为面直查（/select/logsql/query + hits stats + /metrics 的 vl_http_requests_total/vl_rows_ingested_total 计数器）比读库表直接。
 - manager 无 sqlite3/python3——控制面库表直查不可用，走行为面（同材料核验文化）。
-- 换装二进制要带 `-ldflags "-X main.version=<commit>-<tag>"`（裸 go build 的 service.version 空，journal 排障少一个锚）。
+- 换装二进制要带 `-ldflags "-X github.com/lynx-go/lynx/buildinfo.Version=<commit>-<tag>"`（裸 go build 的 service.version 空，journal 排障少一个锚）。
 
 
 ## 2026-10-04 记录·四（F2.5 VictoriaMetrics/cAdvisor 上线：告警全链真机绿 + 三修）
@@ -383,7 +383,7 @@ ADR-0042 落地（64f07f0..8b7f51d 七 commit，CI run 37218474928 六 job 全�
 
 **换装**（05df932-f32exec2 → 9df27c9-f33tpl，七 commit 9cb011c/…/9df27c9）：前置 Platform Backup `013d0362` + 卷 tar 五份（`/root/upgrade-f33/`）；**00026 迁移随批前滚**（template_catalog 单行快照表）。零扰动：受管 db task 行零新增（Running 8h 不变）；tw.dev 200 / n0.dev 200 / ml-api 415（预期形态）；worker RelayCommand 重跑（升级序既有步）→ 双节点 relay_online=true。走查判定 PASS，详见 `docs/reviews/2026-10-06-template-walkthrough.md`。
 
-- **版本戳纪律**：本地构建换装必须带 mise build 同款 ldflags（`-X main.version=<shorthash>-<slug>`）——裸构建 `fleetly status` 显示 `server=unknown`，走查第一发即咬出（17:32 重装收口）。
+- **版本戳纪律**：本地构建换装必须带 mise build 同款 ldflags（`-X github.com/lynx-go/lynx/buildinfo.Version=<shorthash>-<slug>`）——裸构建 `fleetly status` 显示 `server=unknown`，走查第一发即咬出（17:32 重装收口）。
 - **模板面真机锚**：CLI `templates list`（source builtin）+ REST `/v1/templates[/name]`（gateway :9081，digest/变量声明规范形）；`templates refresh` 未配置 `server.templates_catalog_url` → E_INVALID_ARGUMENT 精确拒绝（内嵌目录即全部——staging 常态形态，刷新腿在 e2e dind 覆盖）。
 - **实例化全链**：nginx（string+domain 链）66s 全绿（真镜像拉取）→ Route 80 口 200 "Welcome to nginx!"——**模板 routes 声明的 tls 缺省 none**（quickstart 同款；e2e 首发踩 CreateRoute 服务端缺省 auto → dind 无 ACME 404，模板面显式收口）；grafana（secret 链）→ `template:dash:admin_password` 指纹面在场、值零回显、GF_*__FILE 文件注入 302 登录重定向（应用活体）。幂等重跑 reused 报告面真机一致。
 - **台账**：`template.instantiated` ×3（aggregate=app，payload template@version+deployment 三元组）+ audit `template.instantiate` ×3（AfterFP=模板名@版本）。
@@ -614,7 +614,7 @@ ADR-0015 升级序的完整落地形态：**Platform Backup 前置 → SIGTERM �
 - **列表页规范形态（Apps 基准，逐页落地）**：①容器一体——工具栏嵌表格卡内顶部（`px-3 pt-3` + ListToolbar），TableWrap 以 `className="rounded-none border-0"` 嵌卡削自带边框（cn 合并）；②创建钮 PageHeader 右上紫主钮 + PlusIcon（New network/route/task/schedule/user/role/invitation 自包含钮件上移页头，Tasks/Schedules 与 Identity 四 tab 随 active tab 切换）；Volumes/Uploads/PutForm 描边白小钮升默认主钮；③CLI equivalent 行按动词在案诚实落位——新增 schedules list/users list/teams list/roles list/alerts rules list/channels list/platform backups/audit/registry catalog 九处；invitations/volumes/deployments 无对应 list 动词诚实省略。
 - **双主题截图复验 PASS**（staging 真机，暗 22 幅 + 亮 9 幅，image-viewer 判读）：容器一体/钮位/CLI 行 14 页全达成，亮色可读性无白字白底。**截图管道教训**：IAB fullPage 截图会 2x2 平铺伪影——视口截图才是单幅真；浏览器 profile 的 localStorage 主题持久化会让"默认主题"假设翻车（本机存的是 light，两批主题标签曾整体颠倒）——显式 `localStorage.setItem("fleetly_console_theme", …)` + reload 后再拍；Storage 页 Tabs 非受控（defaultValue，无 URL param），深链 `?tab=` 无效须点击切换。
 - **判读观察（既有形态/批 6 范围，不属本批回归）**：①面板族空态无工具栏卡（EmptyNote 早退结构，Apps 是空态在卡内——批 6 DataTable reskin 统一）；②两代表格表头字形并存（DataTable 混排 vs ui.tsx TableHead 10.5px uppercase——同为批 6 收口）；③Alerts channels tab 页头钮不随 tab 切换（New rule 恒在，渠道创建是占位钮）；④peers 小节标题全小写；⑤侧栏项目选择器不随直连 URL 同步（显示 localStorage 记忆项目）。
-- **换装操作手顺**：本机 `go build -ldflags "-X main.version=$(git rev-parse --short HEAD)-align4 …"`（版本戳纪律，记录·十二）→ scp → `fleetly platform backup` → 卷 tar → `systemctl stop fleetlyd` → `install -m 0755` → start → doctor → 探针 `curl -sk --resolve <host>:443:127.0.0.1 https://<host>/`。数据面核对直接 `docker exec <pg 任务容器> psql -U $POSTGRES_USER`（fleetly CLI 无 databases exec 动词；torchwood-pg 载体容器名 `fleetly-db-<id>.*`）。
+- **换装操作手顺**：本机 `go build -ldflags "-X github.com/lynx-go/lynx/buildinfo.Version=$(git rev-parse --short HEAD)-align4 …"`（版本戳纪律，记录·十二）→ scp → `fleetly platform backup` → 卷 tar → `systemctl stop fleetlyd` → `install -m 0755` → start → doctor → 探针 `curl -sk --resolve <host>:443:127.0.0.1 https://<host>/`。数据面核对直接 `docker exec <pg 任务容器> psql -U $POSTGRES_USER`（fleetly CLI 无 databases exec 动词；torchwood-pg 载体容器名 `fleetly-db-<id>.*`）。
 
 ## 2026-10-10 记录·三十二（对齐批 5 换装 263ff5f-align5：Apps 模板页三裁决——顶带/钮位/分页）
 

@@ -18,7 +18,7 @@ import (
 //	application/** → domain（P1b B/C 批已收：DB 契约接口化 + 构造上提组合根）
 //	infrastructure/** → domain
 //	interfaces/** → application + domain（读写分离；admin 离线面例外行）
-//	assembly/config/buildinfo/testsupport/guards → 全部（组合根/元层）
+//	assembly/config/testsupport/guards → 全部（组合根/元层）
 //
 // 本表是现状登记：与终态的差距全部以豁免行落位并带理由，收紧完成后删行
 // ——删行后本守卫不改自绿，豁免残留不再命中即红（双向保鲜）。
@@ -64,11 +64,6 @@ var depMatrix = []depRow{
 		subtree:  "internal/config/",
 		allowAll: true,
 		note:     "配置装载（组合根同款元层）",
-	},
-	{
-		subtree:  "internal/buildinfo/",
-		allowAll: true,
-		note:     "构建元数据（版本锚点，零依赖叶子）",
 	},
 	{
 		subtree:  "internal/testsupport/",
@@ -117,10 +112,7 @@ var depExemptions = []depExemption{
 
 // globalMetaPrefixes 是全子树可消费的元层前缀（五行第 5 行的反向读法：
 // 元层不执法消费方）。每个前缀必须仍被命中，否则登记过期即红。
-var globalMetaPrefixes = []string{
-	// buildinfo：构建版本元数据（ldflags 注入的纯标量），任何层可读。
-	"internal/buildinfo/",
-}
+var globalMetaPrefixes = []string{}
 
 // depMatrixFiles 收集 internal/ 下全部生产 .go（复用 scanGoFiles：AST
 // import 解析 + 生成物排除 + 守卫自身排除 + 零文件防盲 fatal；测试文件

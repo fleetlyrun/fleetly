@@ -14,6 +14,7 @@ import (
 	"github.com/lynx-go/grpcapi/authz"
 	"github.com/lynx-go/lynx"
 	"github.com/lynx-go/lynx/boot"
+	"github.com/lynx-go/lynx/buildinfo"
 	lynxgrpc "github.com/lynx-go/lynx/server/grpc"
 	lynxhttp "github.com/lynx-go/lynx/server/http"
 
@@ -21,7 +22,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/application/idem"
-	"github.com/fleetlyrun/fleetly/internal/buildinfo"
 	"github.com/fleetlyrun/fleetly/internal/config"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/sourceupload"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/anchor"

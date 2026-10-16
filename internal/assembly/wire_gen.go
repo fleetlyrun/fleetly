@@ -7,10 +7,10 @@
 package assembly
 
 import (
-	"github.com/fleetlyrun/fleetly/internal/buildinfo"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/systemgrpc"
 	"github.com/lynx-go/lynx"
 	"github.com/lynx-go/lynx/boot"
+	"github.com/lynx-go/lynx/buildinfo"
 )
 
 // Injectors from wire.go:

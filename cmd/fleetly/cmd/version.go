@@ -6,7 +6,7 @@ import (
 
 	"github.com/lynx-go/commands"
 
-	"github.com/fleetlyrun/fleetly/internal/buildinfo"
+	"github.com/lynx-go/lynx/buildinfo"
 )
 
 // versionJSON 是 version 动词的 --json 形态（本地合成，无 RPC）。

@@ -7,8 +7,7 @@ import (
 	"github.com/google/wire"
 	"github.com/lynx-go/lynx"
 	"github.com/lynx-go/lynx/boot"
-
-	"github.com/fleetlyrun/fleetly/internal/buildinfo"
+	"github.com/lynx-go/lynx/buildinfo"
 )
 
 func wireBootstrap(app lynx.App, info buildinfo.BuildInfo) (*boot.Bootstrap, func(), error) {

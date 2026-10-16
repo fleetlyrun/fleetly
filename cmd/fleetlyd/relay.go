@@ -18,6 +18,7 @@ import (
 	"syscall"
 
 	"github.com/lynx-go/commands"
+	"github.com/lynx-go/lynx/buildinfo"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 )
@@ -71,8 +72,8 @@ func (v *relayVerb) Run(ctx context.Context, env *commands.Environment, args []s
 		GatewayURL: *v.manager,
 		JoinToken:  func(context.Context) (string, error) { return *v.joinToken, nil },
 		Version: func() string {
-			if version != "" {
-				return version
+			if v := buildinfo.Version; v != "" {
+				return v
 			}
 			return "dev"
 		}(),

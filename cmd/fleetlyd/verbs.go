@@ -13,7 +13,7 @@ import (
 
 	"github.com/lynx-go/commands"
 
-	"github.com/fleetlyrun/fleetly/internal/buildinfo"
+	"github.com/lynx-go/lynx/buildinfo"
 )
 
 // verb 是 fleetlyd 动词的统一形态（fleetly CLI flaggedVerb 的精简版：
@@ -52,7 +52,11 @@ func newVerbApp(info buildinfo.BuildInfo) *commands.App {
 	app := commands.New()
 	app.HelpHeader = "fleetlyd - fleetly control-plane daemon (start with flags only)"
 	app.VerbTitle = "commands:"
-	app.HelpFooter = fmt.Sprintf("fleetlyd %s (run without a subcommand to start the daemon; 'fleetlyd help <command>' for details)", displayVersion(info.Version))
+	version := info.Version
+	if version == "" {
+		version = "dev"
+	}
+	app.HelpFooter = fmt.Sprintf("fleetlyd %s (run without a subcommand to start the daemon; 'fleetlyd help <command>' for details)", version)
 	app.Register(newVersionVerb(info), newAdminGroup(), newRelayVerb())
 	return app
 }
@@ -69,14 +73,7 @@ func newVersionVerb(info buildinfo.BuildInfo) *verb {
 			if len(args) > 0 {
 				return usageErr("version", "unexpected argument %q", args[0])
 			}
-			line := "fleetlyd " + displayVersion(info.Version)
-			if info.Commit != "" {
-				line += " (commit " + info.Commit
-				if info.Date != "" {
-					line += ", built " + info.Date
-				}
-				line += ")"
-			}
+			line := "fleetlyd " + info.Display()
 			_, err := fmt.Fprintln(env.Stdout, line)
 			return err
 		},

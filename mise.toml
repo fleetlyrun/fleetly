@@ -107,7 +107,7 @@ run = '''
 VERSION="$(git describe --tags --always)"
 COMMIT="$(git rev-parse --short HEAD)"
 DATE="$(date +%Y%m%d%H%M%S)"
-LDFLAGS="-X main.version=$VERSION -X main.commit=$COMMIT -X main.date=$DATE"
+LDFLAGS="-X github.com/lynx-go/lynx/buildinfo.Version=$VERSION -X github.com/lynx-go/lynx/buildinfo.Commit=$COMMIT -X github.com/lynx-go/lynx/buildinfo.Date=$DATE"
 go build -ldflags "$LDFLAGS" -o ./bin/ ./cmd/fleetlyd
 go build -ldflags "$LDFLAGS" -o ./bin/ ./cmd/fleetly
 '''
@@ -123,7 +123,7 @@ run = '''
 VERSION="$(git describe --tags --always)"
 COMMIT="$(git rev-parse --short HEAD)"
 DATE="$(date -u -d "@$(git log -1 --format=%ct HEAD)" +%Y%m%d%H%M%S)"
-LDFLAGS="-X main.version=$VERSION -X main.commit=$COMMIT -X main.date=$DATE"
+LDFLAGS="-X github.com/lynx-go/lynx/buildinfo.Version=$VERSION -X github.com/lynx-go/lynx/buildinfo.Commit=$COMMIT -X github.com/lynx-go/lynx/buildinfo.Date=$DATE"
 SNAP="$(mktemp -d)"
 trap 'rm -rf "$SNAP"' EXIT INT TERM
 git archive HEAD | tar -x -C "$SNAP"

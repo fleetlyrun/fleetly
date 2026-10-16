@@ -10,7 +10,7 @@ import (
 
 	"github.com/lynx-go/commands"
 
-	"github.com/fleetlyrun/fleetly/internal/buildinfo"
+	"github.com/lynx-go/lynx/buildinfo"
 )
 
 // golden 双形态钉死：每动词至少一例人类形态 + 一例 --json 形态；再生成

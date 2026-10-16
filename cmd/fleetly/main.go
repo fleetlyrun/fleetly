@@ -9,19 +9,16 @@ import (
 	"syscall"
 
 	"github.com/lynx-go/commands"
+	"github.com/lynx-go/lynx"
 
 	"github.com/fleetlyrun/fleetly/cmd/fleetly/cmd"
-	"github.com/fleetlyrun/fleetly/internal/buildinfo"
 )
-
-// version/commit/date 由 mise build 的 ldflags 注入。
-var version, commit, date string
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	info := buildinfo.BuildInfo{Version: version, Commit: commit, Date: date}
+	info := lynx.BuildInfo()
 	env := &commands.Environment{Stdout: os.Stdout, Stderr: os.Stderr}
 	os.Exit(cmd.NewApp(info).Run(ctx, env, os.Args[1:]))
 }

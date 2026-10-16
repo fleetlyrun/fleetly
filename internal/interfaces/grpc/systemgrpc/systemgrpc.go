@@ -11,13 +11,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lynx-go/lynx/buildinfo"
+
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/schema"
-	"github.com/fleetlyrun/fleetly/internal/buildinfo"
 )
 
 // Service 满足 systemv1.SystemServiceServer。状态聚合 = 进程内在册

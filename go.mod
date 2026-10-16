@@ -16,8 +16,8 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0
 	github.com/lynx-go/commands v0.3.0
 	github.com/lynx-go/grpcapi v0.1.0
-	github.com/lynx-go/lynx v1.17.0
-	github.com/lynx-go/lynx/contrib/zap v1.17.0
+	github.com/lynx-go/lynx v1.20.0
+	github.com/lynx-go/lynx/contrib/zap v1.20.0
 	github.com/minio/minio-go/v7 v7.3.0
 	github.com/moby/buildkit v0.32.2
 	github.com/moby/moby/api v1.56.0

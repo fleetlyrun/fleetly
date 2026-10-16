@@ -35,7 +35,7 @@ internal/domain/          # 领域层（零外向；守卫三红线：无 I/O、
 internal/application/     # 应用层（用例编排）：engine(壳+九域内核)/authn/idem/governance/composeintake(ACL)/apptemplate/schema
 internal/infrastructure/  # 适配器：persistence(SQLite 聚合 repo+migrations)/providers(九 Provider)/github/upload/keyring
 internal/interfaces/      # 输入面：grpc(fleetlygrpc/systemgrpc/apperrstatus)/admin/console(SPA embed)
-internal/assembly|config|buildinfo   # 组合根
+internal/assembly\|config            # 组合根
 internal/guards|testsupport          # 元层与测试资产
 ```
 

@@ -17,7 +17,6 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/fleetlyrun/fleetly/internal/assembly"
-	"github.com/fleetlyrun/fleetly/internal/buildinfo"
 	"github.com/fleetlyrun/fleetly/internal/config"
 
 	// 编译期 Provider 注册（blank import 触发工厂自注册；架构 §2：
@@ -35,21 +34,10 @@ import (
 	_ "github.com/fleetlyrun/fleetly/internal/infrastructure/providers/zot"
 )
 
-// version/commit/date 由 mise build 的 ldflags 注入。
-var version, commit, date string
-
 // hasVerbArgs 判定是否进动词面：首参存在且非旗标形态（不带 "-" 前缀，
 // 含 "--"）。旗标值（`--config-dir /path` 的 /path）永不落首位。
 func hasVerbArgs(args []string) bool {
 	return len(args) > 0 && !strings.HasPrefix(args[0], "-")
-}
-
-// displayVersion 返回人读版本串（ldflags 未注入时 dev 兜底）。
-func displayVersion(v string) string {
-	if v == "" {
-		return "dev"
-	}
-	return v
 }
 
 // versionFlagArgs 判定命令行是否携带 --version/-version。全数组扫描（`--`
@@ -75,7 +63,7 @@ func versionFlagArgs(args []string) bool {
 // 全部服务 Stop、排水完成后、Run 返回前逆序执行（lynx v1.10 语义），
 // 不得提前到 OnPreStop（排水期在途请求仍需底层连接）。
 func setupApp(app lynx.App) error {
-	info := buildinfo.BuildInfo{Version: version, Commit: commit, Date: date}
+	info := lynx.BuildInfo()
 	bootstrap, cleanup, err := assembly.Bootstrap(app, info)
 	if err != nil {
 		return err
@@ -86,19 +74,12 @@ func setupApp(app lynx.App) error {
 }
 
 func main() {
-	info := buildinfo.BuildInfo{Version: version, Commit: commit, Date: date}
+	info := lynx.BuildInfo()
 	// 版本探查旗标（--version/-version）在任何引导路径之前拦截：打印退 0，
 	// 绝不触配置/数据根（流浪 daemon 防线的旗标半边；动词半边是 version
 	// 子命令）。
 	if versionFlagArgs(os.Args[1:]) {
-		line := "fleetlyd " + displayVersion(info.Version)
-		if info.Commit != "" {
-			line += " (commit " + info.Commit
-			if info.Date != "" {
-				line += ", built " + info.Date
-			}
-			line += ")"
-		}
+		line := "fleetlyd " + info.Display()
 		fmt.Println(line)
 		return
 	}
@@ -116,7 +97,6 @@ func main() {
 	}
 	runner := lynx.NewRunner(setupApp,
 		lynx.WithName("Fleetly"),
-		lynx.WithVersion(version),
 		lynx.WithLoggerProvider(lynxzap.NewLogger),
 		lynx.WithBindFlagsFunc(func(f *pflag.FlagSet) {
 			f.String("config-dir", "", "config file search path, default working directory")

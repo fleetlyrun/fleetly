@@ -43,7 +43,7 @@ interfaces  → application + domain（读径；写必经 application——读�
 assembly    → 全部（组合根）
 ```
 
-- internal/ 四环 = `domain`（shared：spec/model/apperr/capability；identity；services：anchor/material/dbtemplate/dbbrowser/writes）、`application`（engine/authn/idem/governance/composeintake/apptemplate/schema）、`infrastructure`（persistence/providers/github/upload/keyring）、`interfaces`（grpc/admin/console）；assembly/config/buildinfo 组合根，guards/testsupport 元层（ADR-0075）。
+- internal/ 四环 = `domain`（shared：spec/model/apperr/capability；identity；services：anchor/material/dbtemplate/dbbrowser/writes）、`application`（engine/authn/idem/governance/composeintake/apptemplate/schema）、`infrastructure`（persistence/providers/github/upload/keyring）、`interfaces`（grpc/admin/console）；assembly/config 组合根，guards/testsupport 元层（ADR-0075）。
 - 编排器/基础设施 SDK 只准出现在 `internal/infrastructure/providers/**`（builders/swarm/traefik/zot/victorialogs/victoriametrics/localobjectstore）。
 - providers 互不 import；除 cmd/assembly 外无人 import providers（经注册表间接装配）。
 - persistence 按聚合分包，各聚合自己的 repo，禁止门面 `store.go`；Repo 接口随 P1b 上移 domain（ADR-0075 决策 3）。
