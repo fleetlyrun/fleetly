@@ -1,0 +1,87 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# e2e 本地资产（出站波动环境的确定性通道；dind-backup.sh 消费，不入仓）
+.tmp-local-restic
+
+# Output of the go coverage tool
+*.out
+
+# Dependency directories
+/vendor/
+
+# go.work / go.work.sum 提交入库（三 module：主仓 + genproto + sdk/go）；
+# 勿在此忽略。
+
+# Built binaries (mise build -> ./bin/)
+/bin/
+/fleetlyd
+/fleetly
+
+# 本地开发数据根（SQLite/密钥等，随部署形态落在数据根目录）
+/data/
+
+# Local config product (config-example.yaml is the committed template)
+/config.yaml
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+
+# Console（F2.6/ADR-0044）：依赖不入仓（lockfile 复现）；构建产物在
+# internal/console/dist——提交进仓（go:embed 面，纪律同 genproto，
+# CI console job 零漂移门禁）。tsbuildinfo 是 tsc -b 增量缓存。
+console/node_modules/
+console/tsconfig.tsbuildinfo
+
+# e2e 本地工作产物（中断跑批的日志/二进制）
+.e2ebin/
+
+# 离线 proto 生成的钉版本地插件（buf.gen.local.yaml 消费；buf.build
+# remote 不可达时的生成通道——重装：go install 至 GOBIN=.tmp-bin）
+.tmp-bin/
+
+# 真机验证/升级的临时脚本与二进制（.n0-* 系列）
+.n0-*/
+
+.zcode/
+
+# ===== ↑ 以上同步自 .gitignore（「从 .gitignore 同步」只重写以上部分）=====
+.git/
+.hg/
+.svn/
+node_modules/
+bower_components/
+jspm_packages/
+__pycache__/
+site-packages/
+venv/
+coverage/
+htmlcov/
+lcov-report/
+cmakefiles/
+cmake-build-*/
+bazel-*/
+pods/
+deriveddata/
+storybook-static/
+playwright-report/
+test-results/
+allure-results/
+allure-report/
+cdk.out/
+*.egg-info/
+*.dist-info/
+eggs/
+pip-wheel-metadata/
+wheels/
+# ----- ↑ 以上为 ZCode 默认排除规则（自定义规则请写在本行下方，不会被同步/恢复改动）-----
+# 自定义规则写在下方（本行提示可删除）
