@@ -1162,3 +1162,22 @@ F3.1/F3.2/F3.3/F3.6 四批走查的浏览器级挂账在后端在场的环境（
 3. events list `--limit` 是从头翻页不是最新——最近事件判定改用任务/部署时间戳归属。
 
 **挂账**：fleetly 3550d37 未推 origin——buf breaking 恰 4 条 FILE 红（spec/delivery 两字段 name+json_name），推送上 main 后自愈（config_refs 先例）。
+
+## 2026-10-16 记录·五十五（ADR-0079 API 公网受管发布换装 66a9199；现役）
+
+**换代**：3550d37 → `66a9199`（ADR-0079 四 commit：config 三键 / engine 合成双路由 / SDK grpcs:// / ADR+runbook）。前置硬门：Platform Backup `7a012cf0`（12:19 UTC）+ 受管卷九枚 tar 至 `/root/upgrade-66a9199-adr79/vols/`。**零迁移**（config.proto 是 internal 配置面非 goose 域）；本批无 IR 形状变化。
+
+**换装序**：hermetic 构建（verify:hermetic PASS，双构建 sha256 一致 + commit 戳 66a9199）→ scp 双二进制 sha256 对账 → 旧版留底 `/root/fleetlyd-3550d37.bak` → install → 新 drop-in `api.conf`（`FLEETLY_API_HOST=api.dev.fleetly.run` + `FLEETLY_API_GRPC_URL=http://10.124.0.3:9080`；drop-in 六件→**七件**）→ `systemctl restart fleetlyd`。
+
+**验收锚（全绿）**：
+- **零滚动**：换装前后全集群 Running task 集 sha256 逐位一致（`e4c42e82…`）——合成路由不触载体，纯 additive 配置面的升级零扰动承诺兑现。
+- **路由发布**：9082 快照出 api 双路由（Host-only 主路由 + `Host && PathPrefix(/fleetly.identity.v1.UsersService/Login)` 限速路由，h2c 后端指 10.124.0.3:9080）；traefik 重启窗一过性 "cannot decode configuration data"（空快照兜底形态，下一拍自愈）非故障。
+- **证书**：`CN=api.dev.fleetly.run`，issuer Let's Encrypt **YR1（生产 CA）**，2027-01 到期——DNS 零动作（泛域名）。
+- **公网直连（本机笔记本视角，无隧道）**：`FLEETLY_ADDR=grpcs://api.dev.fleetly.run` + token → `status` HEALTHY / `projects list` 真数据回包；系统探针 `curl --resolve api.dev.fleetly.run:443:127.0.0.1 https://…` 415（gRPC 服务端在答签名，tw-grpc 同款）。
+- **登录限速活体（三面交叉）**：console REST 25 发错密码 23×401→429；api method 路径 curl h2 25 发 23×415→429；**CLI 真客户端并发 40 发 → 21×Unauthenticated + 19×Unavailable（traefik 429 的 grpc-go 形态）**——burst 20 数学精确对上。
+
+**教训（限速验证节奏）**：串行 CLI 登录打不穿令牌桶——服务端对未知用户也做 bcrypt 恒时比较（防枚举），单发 ~1.2s（新连接握手+bcrypt+进程启动）×10/min 补充率 = 35s 窗内预算 ~25，25 发恰好不溢出。**验证限速必须并发或拉长发数**；串行慢打全 401/Unauthenticated 是预算数学不是限速失效。
+
+**CLI 公网接法（现行，替代 SSH 隧道）**：`export FLEETLY_ADDR=grpcs://api.dev.fleetly.run`（token 照旧 env/凭据文件）——隧道退役为备份通道；VPC/内网直连形态（裸 host:port）零变化。
+
+**挂账**：fleetly 66a9199 随批推送 origin（记录·五十四的 buf breaking 4 红随之自愈）。
