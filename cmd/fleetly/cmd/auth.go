@@ -99,7 +99,7 @@ func newLoginVerb() commands.Command {
 			fs.StringVar(&token, "token", "", "token to validate and store (exclusive with --name)")
 			fs.StringVar(&loginName, "name", "", "user name for password login (exclusive with --token)")
 			fs.StringVar(&password, "password", "", "password for --name (empty = read stdin; avoid passing secrets in argv)")
-			fs.StringVar(&addr, "addr", "", fmt.Sprintf("fleetlyd address (default %q; env %s)", defaultAddr, envAddr))
+			fs.StringVar(&addr, "addr", "", fmt.Sprintf(addrFlagHint, envAddr, defaultAddr))
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if len(args) > 0 {

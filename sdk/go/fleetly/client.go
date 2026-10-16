@@ -8,9 +8,11 @@ package fleetly
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 
@@ -84,19 +86,33 @@ func WithDialOptions(opts ...grpc.DialOption) Option {
 	return func(o *options) { o.dialOptions = append(o.dialOptions, opts...) }
 }
 
+// 地址 scheme 前缀（架构文档 §1 约定）：grpcs:// = TLS（系统根，经
+// Proxy/反向代理的公网形态——ADR-0079 API 公网发布面）；grpc:// = 显式
+// 明文。其余形态（含无 scheme 的裸 host:port）原样透传 grpc 原生解析，
+// 保留 unix:/// 等原生 target。
+const (
+	addrSchemeTLS      = "grpcs://"
+	addrSchemeInsecure = "grpc://"
+)
+
 // Dial 建立到 fleetlyd gRPC 端点的连接（惰性建连，失败延迟到首次调用；
 // 传入 context 仅用于拨号参数构造）。
+//
+// addr 形态：grpcs://host:port（TLS）、grpc://host:port（明文）或裸
+// host:port（明文——本机/内网直连的现状缺省）。
 func Dial(addr string, opts ...Option) (*Client, error) {
 	var o options
 	for _, opt := range opts {
 		opt(&o)
 	}
-	// 默认 insecure：fleetlyd gRPC 面设计为本机/内网直连；对外暴露经
-	// Proxy TLS 或反向代理。TLS 形态随证书体系批次提供 WithDialOptions
-	// 注入（grpc:// 与 grpcs:// scheme，架构文档 §1）。
-	dialOpts := append([]grpc.DialOption{
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	}, o.dialOptions...)
+	transport := grpc.WithTransportCredentials(insecure.NewCredentials())
+	if strings.HasPrefix(addr, addrSchemeTLS) {
+		transport = grpc.WithTransportCredentials(credentials.NewTLS(nil))
+		addr = strings.TrimPrefix(addr, addrSchemeTLS)
+	} else if strings.HasPrefix(addr, addrSchemeInsecure) {
+		addr = strings.TrimPrefix(addr, addrSchemeInsecure)
+	}
+	dialOpts := append([]grpc.DialOption{transport}, o.dialOptions...)
 	conn, err := grpc.NewClient(addr, dialOpts...)
 	if err != nil {
 		return nil, err

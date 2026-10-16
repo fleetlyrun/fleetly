@@ -38,7 +38,7 @@ func newInitVerb() commands.Command {
 		usage:    "init --token BOOTSTRAP_TOKEN [--addr ADDR] [--keep-bootstrap] NAME",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&token, "token", "", "bootstrap token from the server data root (required)")
-			fs.StringVar(&addr, "addr", "", fmt.Sprintf("fleetlyd gRPC address (default %q; env %s)", defaultAddr, envAddr))
+			fs.StringVar(&addr, "addr", "", fmt.Sprintf(addrFlagHint, envAddr, defaultAddr))
 			fs.BoolVar(&keepBootstrap, "keep-bootstrap", false, "keep the bootstrap token alive (default: revoke it)")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {

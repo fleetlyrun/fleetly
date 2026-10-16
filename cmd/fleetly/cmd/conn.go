@@ -27,9 +27,13 @@ type connFlags struct {
 	token string
 }
 
+// addrFlagHint 是 --addr 旗标的形态说明（ADR-0079）：grpcs:// 走 TLS
+// （公网直连形态），grpc:// 显式明文，裸 host:port = 本机/内网直连缺省。
+const addrFlagHint = "fleetlyd gRPC address: host:port, grpc://host:port, or grpcs://host:port (TLS; env %s; default %q)"
+
 // register 把连接旗标挂到动词的 FlagSet；token 默认空串防 -h 回显。
 func (c *connFlags) register(fs *flag.FlagSet) {
-	fs.StringVar(&c.addr, "addr", "", fmt.Sprintf("fleetlyd gRPC address (default %q; env %s)", defaultAddr, envAddr))
+	fs.StringVar(&c.addr, "addr", "", fmt.Sprintf(addrFlagHint, envAddr, defaultAddr))
 	fs.StringVar(&c.token, "token", "", fmt.Sprintf("API token (env %s)", envToken))
 }
 
