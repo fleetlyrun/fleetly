@@ -188,10 +188,10 @@ message StartManifestFlowRequest {
 }
 
 message StartManifestFlowResponse {
-  // Deprecated: GET 跳转形态废弃——manifest 必须经 HTML form POST 提交，
-  // GET query 形态被 GitHub 静默忽略（决策 8 修订）。编号保留防破坏，服务
-  // 端恒空。
-  string redirect_url = 1 [deprecated = true];
+  // 2026-10-16 审计整删（ADR-0073 决策 8 勘误：GET 跳转形态从未生效；
+  // 号位防复用）：原 1 号位 deprecated redirect_url（服务端恒空）整体删除。
+  reserved 1; // redirect_url deprecated 字段整删，号位防复用。
+  reserved "redirect_url";
   // action_url 是 github.com 的 manifest 创建页地址；manifest 字段经 HTML
   // form POST 提交（method=post、字段名 manifest、值为 JSON 字符串）。
   string action_url = 3;

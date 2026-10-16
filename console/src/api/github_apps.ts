@@ -220,12 +220,6 @@ export interface components {
         };
         v1StartManifestFlowResponse: {
             /**
-             * Deprecated: GET 跳转形态废弃——manifest 必须经 HTML form POST 提交，
-             *     GET query 形态被 GitHub 静默忽略（决策 8 修订）。编号保留防破坏，服务
-             *     端恒空。
-             */
-            redirect_url?: string;
-            /**
              * action_url 是 github.com 的 manifest 创建页地址；manifest 字段经 HTML
              *     form POST 提交（method=post、字段名 manifest、值为 JSON 字符串）。
              */
