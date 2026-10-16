@@ -1181,3 +1181,18 @@ F3.1/F3.2/F3.3/F3.6 四批走查的浏览器级挂账在后端在场的环境（
 **CLI 公网接法（现行，替代 SSH 隧道）**：`export FLEETLY_ADDR=grpcs://api.dev.fleetly.run`（token 照旧 env/凭据文件）——隧道退役为备份通道；VPC/内网直连形态（裸 host:port）零变化。
 
 **挂账**：fleetly 66a9199 随批推送 origin（记录·五十四的 buf breaking 4 红随之自愈）。
+
+## 2026-10-16 记录·五十六（节点容器观测面换装 ee956a1 + 全量验收；现役）
+
+**换代**：66a9199 → `ee956a1`（区间三 commit：e922304 API 面 ListNodeContainers + ad8cb7a console 节点详情页 + ee956a1 apitest 竞速容忍）。**零迁移**（runtime.proto 是 API 面非 goose 域，起服日志 `goose: no migrations to run. current version: 33`）、无 IR 形状变化。前置硬门：Platform Backup `387bb271`（13:50 UTC）+ 受管卷九枚 tar 至 `/root/upgrade-ee956a1/vols/`（edge/proxy-acme、VL/VM、registry-zot 双卷、minio/redis/torchwood-pg）。
+
+**换装序**（记录·五十五同款）：hermetic 构建（verify:hermetic PASS——双构建 sha256 逐字节一致 `a5f1d23e…` + commit 戳 ee956a1）→ scp 双二进制双侧 sha256 对账 → 旧版留底 `/root/fleetlyd-66a9199.bak` → `systemctl stop`（32s 排水）→ install 双件 → drop-in 七件存活核验 → 起服。**零滚动实锤**：换装前后全集群 running task 集 sha256 逐位一致（`4d83cf51…`，15 服务基线）；doctor 10 ok / 2 warning（既有基线）/ 0 failed，health 行活体回显 `server ee956a1`；tw.dev 200；console 新 dist `index-BdgGbX_D.js` 上架。
+
+**验收锚（全绿）**：
+
+- **REST 面**（manager 本机 9081 直打，token 读凭据文件不出机器）：`GET /v1/nodes/node-2/containers` → 200 × **15 行，与 docker running tasks（15）一一对账**；归属投影逐行核对——用户域 `app · process` 形态（torchwood-14 · server/worker/minio/redis、messageloop-18 · messageloop/mlbridge/redis、demo-19 · web、webhook-example-20 · web）、受管载体同列（proxy · traefik / registry · zot / logging · victorialogs / metrics · cadvisor+victoriametrics）、**受管库落 database 域**（torchwood-pg-1：workload_id 即域主体、process=pgvector、app_id 空=契约原样）；负例面 unknown node → **404**、无 token → **401 E_UNAUTHENTICATED**。
+- **浏览器走查**（console.dev.fleetly.run 公网直连，walker 既有会话）：Nodes 行点击 → `/nodes/node-2` 详情页（**行点击导航生效、cordon/drain 钮不误触**）——面包屑 Nodes / node-2、英雄卡（hostname + active 徽 + manager 徽 + node-2 全 id + Copy）、Node 观测卡（relay `online · ee956a1`——**新二进制经节点注册表活体实锤**，记录·三十三口径）、Containers 卡 **15 running** 全行渲染（Container 短 ID+Copy / Workload `app · process` / Domain 徽标 / Image 含 digest 全保形）；截图在案。
+
+**诚实边界（挂账）**：CLI 无 `nodes containers` 动词（REST/gRPC 面完整，CLI 动词随需补）；容器行深链 App 详情未做（需 project 归属解析）；本面列编排器 running task（每 task 一容器）——daemon 本地一次性 utility 容器不在射程（manager 视角本就看不到全集群，设计边界非缺口）。
+
+**走查痕迹清理**：部署临时物（/tmp 双二进制 + 验收脚本）即清；留底与卷 tar 按纪律保留（`/root/fleetlyd-66a9199.bak`、`/root/upgrade-ee956a1/vols/` 九枚）。
