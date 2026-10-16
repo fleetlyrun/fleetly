@@ -28,6 +28,9 @@ message AppConfig {
   // Console 面板公网发布面（ADR-0061）：host 空 = 不发布（现状，升级零
   // 扰动）。
   Console console = 10;
+  // 平台 API（gRPC 控制面）公网发布面（ADR-0079）：host 空 = 不发布
+  //（现状，升级零扰动）。
+  Api api = 11;
 }
 
 // Console 是 Console 面板公网发布面配置（ADR-0061）：受管 traefik 前置一条
@@ -44,6 +47,23 @@ message Console {
   string gateway_url = 2;
   // tls 是路由 TLS 模式："auto"（LE per-host 证书）或 "none"；空值随
   // 渲染层口径视为 auto。env 形态 FLEETLY_CONSOLE_TLS。
+  string tls = 3;
+}
+
+// Api 是平台 API（gRPC 控制面）公网发布面配置（ADR-0079）：受管 traefik
+// 前置一条 h2c Host 路由指回 fleetlyd gRPC 监听——CLI/SDK 从公网经 TLS
+// 直连的通道（console 面同款形态）。host 空 = 整面停用（现状；registry/
+// browse/console 同文化）。
+message Api {
+  // host 是 API 公网主机名（如 api.dev.fleetly.run；须解析到受管 traefik
+  // 80/443 入口）。空 = 不发布。env 形态 FLEETLY_API_HOST。
+  string host = 1;
+  // grpc_url 是 traefik 容器可达的 fleetlyd gRPC 基址（如
+  // http://10.124.0.3:9080；console.gateway_url 同文化——traefik 容器能
+  // 拉到的地址即正确地址）。env 形态 FLEETLY_API_GRPC_URL。
+  string grpc_url = 2;
+  // tls 是路由 TLS 模式："auto"（LE per-host 证书）或 "none"；空值随
+  // 渲染层口径视为 auto。env 形态 FLEETLY_API_TLS。
   string tls = 3;
 }
 
