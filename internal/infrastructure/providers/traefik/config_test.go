@@ -45,6 +45,14 @@ func TestDynamicConfigGolden(t *testing.T) {
 		{Host: "console.dev.fleetly.run", Path: "/v1/auth/login", Process: "gateway",
 			Protocol: capability.ProtocolHTTP, TLS: "auto", BackendAddr: "10.0.0.7:9081",
 			RateLimit: &capability.RouteRateLimit{Average: 10, Burst: 20}},
+		// API 公网发布双路由（ADR-0079）：h2c 主路由 + gRPC 登录 method
+		// 路径带 rateLimit——h2c 后端与限速中间件的组合形态（gRPC method
+		// 路径含点号，顺带锚 path 白名单纵深面）。
+		{Host: "api.dev.fleetly.run",
+			Protocol: capability.ProtocolH2C, TLS: "auto", BackendAddr: "10.0.0.7:9080"},
+		{Host: "api.dev.fleetly.run", Path: "/fleetly.identity.v1.UsersService/Login",
+			Protocol: capability.ProtocolH2C, TLS: "auto", BackendAddr: "10.0.0.7:9080",
+			RateLimit: &capability.RouteRateLimit{Average: 10, Burst: 20}},
 	}))
 	got := string(p.ConfigSnapshot())
 

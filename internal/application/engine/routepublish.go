@@ -73,6 +73,9 @@ func (e *Engine) publishRoutes(ctx context.Context) {
 	// 登录限速路由；非 route 行——面板发布是平台内置拓扑，进程生命周期内
 	// 恒定，签名不必覆盖）。
 	publish = append(publish, e.consoleCapabilityRoutes()...)
+	// API 公网发布双路由合并（ADR-0079 决策 2：h2c 主路由 + 登录 method
+	// 限速路由；非 route 行——同 console 口径，签名不必覆盖）。
+	publish = append(publish, e.apiCapabilityRoutes()...)
 	if err := e.proxy.PublishRoutes(ctx, publish); err != nil {
 		e.log.Error("route publish: proxy rejected config", "err", err)
 		e.ensureForget(e.proxyMemo.pub, routesPubKey) // 发布失败：下拍强制重试全量

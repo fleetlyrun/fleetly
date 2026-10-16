@@ -133,6 +133,9 @@ type DataOptions struct {
 	// Console 是面板公网发布面配置（ADR-0061；零值 = 不发布——console
 	// 公网路由零条，现状）。
 	Console ConsoleConfig
+	// Api 是平台 API（gRPC 控制面）公网发布面配置（ADR-0079；零值 =
+	// 不发布——API 公网路由零条，现状）。
+	Api ApiConfig
 }
 
 func (o *Options) fill() {

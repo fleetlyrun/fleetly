@@ -505,6 +505,13 @@ func NewEngine(
 				GatewayURL: cfg.Console.GetGatewayUrl(),
 				TLSMode:    cfg.Console.GetTls(),
 			},
+			// API 公网发布面（ADR-0079）：config 三字段直通（host 空 =
+			// 不发布，升级零扰动）；tls 空值同 console 口径视为 auto。
+			Api: engine.ApiConfig{
+				Host:    cfg.Api.GetHost(),
+				GRPCURL: cfg.Api.GetGrpcUrl(),
+				TLSMode: cfg.Api.GetTls(),
+			},
 		},
 	}), nil
 }
