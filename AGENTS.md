@@ -62,5 +62,6 @@ ADR 含可静态执法的承诺时，须同批开守卫任务（ADR-0001→irgua
 
 ## 真机与 Agent 面
 
+- **fleetly CLI 一律本地执行**（2026-10-16 用户裁定）：CLI 以 `FLEETLY_ADDR`/`FLEETLY_TOKEN`（或凭据文件）指向目标控制面即可用——这是用户一般使用场景，不假设操作者有服务器 SSH 权限。SSH 到控制面主机仅留给 CLI 覆盖不到的面（首次读取/铸造凭据、systemd 等系统级操作）；能经 CLI 完成的平台操作（deploy/routes/secrets/databases/…）不得绕道 SSH。
 - staging 双节点集群是现役验证环境：操作前先读 `docs/runbooks/staging-fleetly.md`（升级序、flag-day、坑实录都在内）。
 - `skills/` 是面向 Agent 的仓内技能（ADR-0031 首批），与 CLI/API 同能力面；散文中的示例命令同样被守卫执法。
