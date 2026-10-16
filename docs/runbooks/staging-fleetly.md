@@ -1137,3 +1137,9 @@ F3.1/F3.2/F3.3/F3.6 四批走查的浏览器级挂账在后端在场的环境（
 2. **fleetly compose 三件套缺一不可**：镜像 ref / networks 声明 / ports 声明——分别对应「能不能跑 / 能不能互访 / 能不能被路由」，漏任何一件的失败面互不相同（exit 1 crash / DNS no such host / route publish unresolved）。
 3. **IAB 自动化怪癖再增补**：fleetly console 的 Deploy 抽屉/行内按钮 Playwright locator click 恒超时（force 亦然），`evaluate` 里 `el.click()` 通道稳定可用——点击层坏了换脚本层，别恋战 locator。
 4. **本轮网络路径抖动**（SSH banner timeout / 隧道反复断 / 443 间歇 000）自愈耗时 ~30 分钟：后台守护式隧道（断后 10s 重连循环）+ 单连接批取证脚本（scp+sh 一次跑完）是对抖动唯一正确的姿势；`pkill -f` 自匹配把自己的命令行杀掉（runbook 老坑第二次咬人，`[s]sh` 括号技巧免）。
+
+### 记录·五十三附：双平台客户端验活收官（当日二批）
+
+四腿客户端示例 `mlbridge/examples/e2e-client`（8c16df9）staging 全 PASS：①torchwood client invoke（END_USER 面，Go client SDK 登录 + InvokeString 打 client_callable 函数 `ping`）；②MessageLoop RPC `send`（写穿，应答 document_id+fanout=ok）；③RPC `history`（torchwood 文档回读含刚发消息）；④RPC `fn.*`（`messaging:fn.ping` → mlbridge 组 JSON-RPC 2.0 → torchwood → webhook-example `/fn` → 规范 JSON-RPC 应答）。函数面 = webhook-example 扩展 `/fn`（torchwood 10aa1c1e：FDK RPC 轴同款 wire 形态，FUNCTION_SECRET 二密钥，缺省不注册）。
+
+**新教训**：①`MLBRIDGE_FUNCTIONS_ENABLED` 是 mlbridge 的 **env 键**——`mlbridge.yaml` 是 messageloop 的 proxy 接线文件（`--config` 给 messageloop），mlbridge 自身配置全走 env；写错孔的形态 = 部署绿但功能面 UNIMPLEMENTED。②fn.* 的 **invoke 默认拒**：需 policies 集合 allow 规则（`channels:["fn.ping"]`/`actions:["invoke"]`/`roles:["users"]`，json 段是 JSON 编码字符串），无规则 PERMISSION_DENIED 是 fail-closed 契约。③SDK 的 RPC **JSON 应答必须 `DataAs` 解码**——`AsText()` 对 map 载荷恒空（三面应答全 JSON），第一版示例在此假阴性排查了一轮服务端。④torchwood 函数订阅串之外的第二处词表坑：functions create 的字段是 `target_url` 不是 `url`（webhooks 才是 `url`）。
