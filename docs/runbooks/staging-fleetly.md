@@ -1090,3 +1090,50 @@ F3.1/F3.2/F3.3/F3.6 四批走查的浏览器级挂账在后端在场的环境（
 - **W-3（P3→P2，挂账升级）**：Suspense 全壳黑窗（吞侧栏）本日两现（首次进站 + 切 Metrics tab），秒级自愈；另有首次进站 React 零挂载一次（刷新恢复）。壳级 spinner 建议维持。
 
 **教训增补**：①TanStack 文件式路由的点嵌套即布局——列表页收编 ModulePage 时若同目录还有 `$id` 详情路由，列表必须落 `index.tsx`（databases 是正确先例；tasks 反例在役 36h 才被走查咬出）；②jsdom 全绿盲区第 N 度（W-6 路由树形状 + W-7 面板不可见均测试不可见）；③IAB 自动化怪癖增补：locator click 偶发迟效幽灵跳转、`cua.scroll` 恒挂起（keypress End 替代）、坐标点击前须重截图。
+
+## 2026-10-16 记录·五十三（torchwood 全栈复活三根因 + Webhooks 全链 E2E + 双通道部署实录；平台 a543bb3 未换装）
+
+**背景**：ADR-0070 重置后 torchwood 栈「平台面绿、app boot 待调」断点（记忆/前档在案）当日清偿。控制面 a543bb3 全程未动，四个应用全在 torchwood-1/messaging-2 双项目内收口：torchwood（R6/d50 succeeded）+ webhook-example（R4/d54，本日新建）+ messageloop-18（R2/d56，mlbridge 同 app）+ quickstart-14 不变。
+
+### torchwood 三根因（连环，逐层咬出——排查手册式实录）
+
+1. **镜像跨代失配（boot 即死）**：compose 钉 `sha-78ea1a4`（v3 形态，boot 依赖 dispatcher），而仓内 compose 已是 v4 形态（dispatcher 整删）——server/worker 每秒 crash-loop，死因一句 `functions.dispatcher.url is required`（info 级但紧随 exit 1）。**修 = 升 GHCR `latest`（labels revision=c4d693bc 核对）+ migrate 源 ref 成对换 `#c4d693bc`（README §5 升级纪律）**。坑：GHCR 的 `sha-c4d693bc` tag 缺位（tags/list 166 枚无此枚、manifest 404），判 `latest` 靠镜像 labels 的 revision 对账——**判镜像内容用 labels，别信 tag 猜测**。
+2. **无网络声明即无 DNS 面（ADR-0034）**：v4 compose 删光 networks 假设「平台自动建 overlay」——现行 composeintake 语义是**附件以声明为准**（intake.go 只有 ports 在场才补挂 default）。抓 crash 容器实锤 `lookup db-torchwood-pg-1 ... no such host`（host DNS 10.124.15.254 兜底 = 容器没在任何 overlay 上）。**修 = 顶层 `networks: default: external:true` + 四常驻逐服务 `networks: [default]`**；init job 方言不受影响（自动挂全部活跃项目网，含 db-<id>）。
+3. **无端口声明即路由不解析**：网络修好后 L1 门过了（server healthy），但路由仍每分钟 `route publish: backend unresolved, no endpoint for process "server" port 9080`——**Route 端点解析以进程 ports 声明为准**（messageloop/quickstart 都有所以活）。**修 = server 服务补 `ports: ["9080","9060"]`**。d50 立即 succeeded，tw.dev 200 / tw-grpc 415（h2c 在答）。
+
+### 连环事故二：失败 rollout 的 paused 遗留 + VL 停摆
+
+- d48/d49 失败时（L1 门超时）**swarm update 停在 paused**（"update paused due to failure or early termination"）且 start-first 不降级旧任务 → server/worker 槽位 **5/1 任务堆积**（五枚同镜像 healthy 并存，平台观测假 STALLED）。**修 = `docker service update --force` 双服务，converged 后 1/1**。教训：**平台 L1 失败后先查 swarm UpdateStatus，5/1 是 paused 形态签名**；同 spec 重部署不清 paused，必须 force。
+- 任务风暴窗内 **VictoriaLogs（9428）被挤停**（log collector ingest failed 连环拒连、平台 `fleetly logs` 全空）——4GB 主机 10 枚 Go 容器压力 + 任务风暴连带；风暴收口后 VL 自愈（storage 完好），采集零丢失（cursor replay）。**平台日志空 ≠ 日志丢了，先查 VL 活性再怀疑管线**。
+
+### Webhooks 全链 E2E（四应用一个环，全签名 200）
+
+1. torchwood v4 bootstrap：`POST /v1/console/auth/sign-up`（setup token + project messaging + database messageloop 一步建齐，admin walker@torchwood.dev）；
+2. 接收端 = **torchwood 仓新增 `docker/fleetly/webhook-example/`**（单文件 Go 验签接收端，口径与 FDK `sdk/go/functions` 逐字一致：载荷串 `<t>.<body>`/HMAC-SHA256 hex/`t=,v1=/v2=`/±5min/常数时间比较；WEBHOOK_SECRET 缺失 fail-closed 拒启）；CLI from-dir 部署（d54，平台构建器出镜像推内部仓）+ Route `tw-hook.dev.fleetly.run`（tls auto；**webhook url 强制 https**）；
+3. webhook `staging-e2e`（REST POST /v1/server/webhooks，订阅 `databases.messageloop.collections.messages.documents.create|update` + `auth.users.*`；**订阅串 op 词表是 create|update|delete|*，不是 created**——拼错 400 点名）；
+4. 全链三投递全 `status=delivered / last_response_code=200 / attempts=1`：直写文档（curl documents API）→ `databases.documents.create`；账号登录 → `auth.users.signed_in`；**messageloop 消息 → mlbridge 写穿文档 → 同事件**。CloudEvents 1.0 structured mode 实收（specversion/type/source/twseq 扩展属性逐字段在案）。
+
+### messageloop × mlbridge 接线收口（F1.15 挂账清偿）
+
+- 跨项目网 peer `default-1-p1`（torchwood-1/default ↔ messaging-2）**前会话已 approved**；ml-tw-projects 真值 = `[{"project_id":"messaging","api_key":"sk-…"}]`（torchwood 侧项目 id 就是 bootstrap 传入的字面 id；scope 集 = e2e 十件套 users/databases/analytics/functions × read/write + runbooks）；
+- **spec_file 补挂跨项目网**：冻结 R1 spec 的 mlbridge 进程 networks 改 `["default","project:torchwood-1/default"]` → `deploy --spec-file` 重部署（d56 succeeded）——compose 方言不承载 `project:` 冒号斜杠形态（ADR-0074），此步必须走 spec_file；
+- **写穿触发面不是普通 Publish**：`send`/`history` 是 mlbridge 的保留客户端 RPC（proxyserver/rpc.go），普通发布走 broker 不过写穿——探针须 `client.RPC(ctx, channel, "send", msg, &reply)`（e2e scenario.go 同款）。频道命名 `messaging:e2e.probe`（projectId 前缀）。端侧账号 JWT 经 mlbridge 代理认证连 messageloop gRPC（ml-grpc.dev TLS + InsecureSkipVerify——LE staging CA 不在本机信任根）。
+
+### 双通道部署对账（用户点名的两条通道都实证）
+
+- **CLI 通道**：torchwood d50（compose 全栈）/ webhook-example d53-d54（from-dir 构建）——deploy --wait 全 succeeded；
+- **Console UI 通道**：fleetly console（console.dev.fleetly.run，walker 会话）App Detail「Deploy」抽屉 Current-spec 源提交 → toast `Deployment created` → **d55 queued→observing→succeeded**；torchwood 自己的 console（tw.dev/console）登录 + Webhooks 页 staging-e2e 列表/3 订阅/enabled 活体验收。
+
+### Findings 与清错
+
+- **FB-1（P2，平台 bug 立案挂账）**：`apps delete` 对配置过 GitHook 的 App 撞 `FOREIGN KEY constraint failed (787)` → E_INTERNAL——**App 删除级联删 app_hooks 但漏了 hook_deliveries.app_id**（hook 拉取通道批 8d38d13 的表没进同事务级联）。运维解：manager python3 sqlite3 直删 `hook_deliveries WHERE app_id=…` 一行后删除即净（torchwood-web-17 已如此清偿）。修复方向：DeleteApp 事务补 hook_deliveries 级联 + 守卫锚。
+- **GHCR sha tag 缺位**：c4d693bc 的 `sha-` 形态 tag 不在（latest 有）——compose 暂用 `latest`（部署期钉 digest 保 reproducibility），sha tag 传播后改回（仓 §5 裁决）。
+- **torchwood-web-17 已删**：走查样例带坏构建（dockerfile parse error line 25 `name:`）+ 占位变量，删除后 torchwood-1 只剩 torchwood + webhook-example。
+- **错误面终态**：doctor 7 ok / 5 warning（全已知良性：本机面三 warn + bind surface + 无通知通道）/ **0 failed**；journal 20 分钟窗 warn+error = 3 条（全是 FB-1 修复前的 DeleteApp 尝试）；alerts 唯 platform-offsite-backup ok；路由六面全活（tw 200 / tw-grpc 415 / tw-hook 200 / ml /ws 400=WS 在答 / ml-grpc 415 / ml-api 415）。
+
+### 教训增补
+
+1. **换栈先对镜像代际**：compose 与镜像跨代（v3 镜像 + v4 清单）的死法是「boot 即死但报错是 info 级一句话」——crash-loop 排查第一步抓 crash 容器原始日志（`docker ps -a --filter status=exited` 循环逮，swarm 秒 GC 得快）。
+2. **fleetly compose 三件套缺一不可**：镜像 ref / networks 声明 / ports 声明——分别对应「能不能跑 / 能不能互访 / 能不能被路由」，漏任何一件的失败面互不相同（exit 1 crash / DNS no such host / route publish unresolved）。
+3. **IAB 自动化怪癖再增补**：fleetly console 的 Deploy 抽屉/行内按钮 Playwright locator click 恒超时（force 亦然），`evaluate` 里 `el.click()` 通道稳定可用——点击层坏了换脚本层，别恋战 locator。
+4. **本轮网络路径抖动**（SSH banner timeout / 隧道反复断 / 443 间歇 000）自愈耗时 ~30 分钟：后台守护式隧道（断后 10s 重连循环）+ 单连接批取证脚本（scp+sh 一次跑完）是对抖动唯一正确的姿势；`pkill -f` 自匹配把自己的命令行杀掉（runbook 老坑第二次咬人，`[s]sh` 括号技巧免）。
