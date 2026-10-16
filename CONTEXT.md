@@ -56,9 +56,13 @@ _Avoid_: service, container, dyno
 App 级变量是一等平台聚合（AppVariable，按 App 存储明文非敏感值，敏感值走 Secret）；Project 级共享变量称 Shared Variable。三级合成在冻结咽喉（ADR-0072，承 ADR-0043 两级）：Shared Variable 在下、源声明 env 居中、AppVariable 在顶（同键覆盖）——env 不写死在源/配置文件里，Revision 冻结的即最终生效集；变量轮换需显式部署生效。
 _Avoid_: env var(标识符中), parameter, setting
 
+**Function**:
+请求驱动、可缩零的托管执行单元；单代码入口（一个 handler 进程形态）。走受管模式（Database 先例：FunctionSpec 为第四种 Spec，engine 直接投影 Workload，不产生 App 行）；平台语义 = URL/伸缩/唤醒/观测，exposure 双态 = private（缺省，仅网络成员资格可达）| public（合成受管 Route）；调用语义（鉴权/载荷/幂等）归函数自己（ADR-0077）。第三方产品同名实体（如 torchwood Functions）按第三方本义豁免引用。
+_Avoid_: lambda
+
 **Task**:
 程序化工作负载，双形态：one-shot（一次性执行）与 resident（常驻实例池）；有属主 Token、TTL 与专属网络组。部署期一次性工作负载（Spec 的 firstBootJobs/JobSpec）是 Task 的部署期特例——词条归 Task，不另立 Deployment Job 实体（ADR-0007 词汇冻结裁决，2026-10-01）。
-_Avoid_: job, run, function, agent, one-off
+_Avoid_: job, run, agent, one-off
 
 **Task Mint（铸造）**:
 Task 行的受控铸造点：身份（TaskRef/属主）注入、TaskSpec 冻结与行装配的唯一所在；受理位与各域铸造调用方只供组装好的 TaskSpec。铸造产行，落账仍走各自写路径（ADR-0062）。
@@ -141,7 +145,7 @@ _Avoid_: maintenance window, block, lock
 ### 运行时与中间表示
 
 **Spec**:
-规范化的期望状态中间表示，带 schemaVersion；三种：AppSpec、TaskSpec、DatabaseSpec。
+规范化的期望状态中间表示，带 schemaVersion；四种：AppSpec、TaskSpec、DatabaseSpec、FunctionSpec。
 _Avoid_: manifest, config(泛指), template
 
 **Workload**:

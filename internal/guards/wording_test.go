@@ -45,6 +45,9 @@ var bannedPatterns = map[string]*regexp.Regexp{
 	"activity feed": wordRe(`activity feed|activity feeds`),
 	// Task 词条。
 	"one-off": wordRe(`one-off`),
+	// Function 词条（ADR-0077 入册）：lambda 是 AWS 专名同义绕开冻结命
+	// 名——机械无歧义、入扫面零命中直扫（2026-10-16 实证）。
+	"lambda": wordRe(`lambda|lambdas`),
 	// Drift/Converge/Replay/Backup/Generation 词条。
 	"divergence": wordRe(`divergence`),
 	"dirty":      wordRe(`dirty`),
@@ -148,7 +151,6 @@ var skippedTokens = map[string]string{
 	"setting":          "通用词",
 	"job":              "firstBootJobs 为架构 §4 契约字段（部署期 init）；Task 同义词语境人工评审",
 	"run":              "Run 是 fleetly 冻结实体；仅 Task 同义词语境禁",
-	"function":         "通用词（函数）；FaaS 义在明确不做清单",
 	"agent":            "AI Agent 是产品核心语汇；仅 Task 命名语境禁（节点中继语境已更名收口，ADR-0049 附录 B）",
 	"renewal":          "泛指禁用；证书/租约续期语境人工评审",
 	"provisioning":     "local-path provisioner 等存储面技术词与 skills 名沿用；Task Mint 同义词语境人工评审（ADR-0062）",
