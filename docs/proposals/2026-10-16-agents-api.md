@@ -1,6 +1,6 @@
 # fleetly Agents API 提案（交互式 coding agent 托管环境，2026-10-16）
 
-> 状态：**待裁决**（本文件即裁决载体——§0 总表逐案给裁决，§9 开放问题逐条给答；裁决后实施批各自开 ADR 并携带守卫任务，按 2026-10-03 提案集同款纪律）
+> 状态：**待裁决**（本文件即裁决载体——§0 总表逐案给裁决，§10 开放问题逐条给答；裁决后实施批各自开 ADR 并携带守卫任务，按 2026-10-03 提案集同款纪律）
 > 来源：2026-10-16 Agents API 方向会话三轮收敛。**载荷澄清（本提案的成立前提）**：所指 agent 是 **Claude Code / Codex / OpenCode 这类交互式 coding agent 本体**（人在终端里使唤它干活的环境），**不是** LangGraph/CrewAI 那类 agent 框架服务——后者是 App/Function 形状的皮（长驻=App、请求驱动=Function、跑批=Task），不立实体；前者经 deletion test 重测（§2）判定为现有三执行产品 + 会话原语都不承载的空地。
 > 词汇遵守 CONTEXT.md：`Agent` 本提案中指**拟议新实体**（裁决通过则走 ADR-0007 显式修订通道：Task 词条让渡 `agent`——ADR-0077 让渡 `function` 同款先例——+ Agent 词条入册 + 守卫同步）；裁决前本文件为提案语境，非域内混用。拟议实体名恰好避开全部冻结禁词：竞品词 **workspace**（Team/Project 词条 Avoid）、**environment**（ADR-0011 否决实体 + Avoid）均不可用，`Agent` 是唯一既不撞冻结表又语义自洽的候选——且与 CONTEXT.md 开篇「人类与 AI Agent 同为一等用户」的操作者语义**同一物种**（部署的正是这等用户本身：平台两侧 = 操作侧与承载侧，居民领 Token 反向操作 fleetly，Token 词条「服务人与 Agent」直接闭环）。
 > 关联：`docs/design/2026-10-16-functions-api.md`（Functions 程序范式：三轴 deletion test → 词汇 ADR 先行 → 设计稿 → 交叉验证；本提案若获裁按同款程序走）；CONTEXT.md Task/Token/Event 词条；ADR-0049（Exec Session/Relay）、ADR-0051（Browse Session/Launcher Ticket）、ADR-0059（在册页面名词非资源行先例）、ADR-0062（Task Mint）、ADR-0077（词条让渡先例）。
@@ -13,6 +13,7 @@
 | A2 | **Network egress 白名单**原语（现仅 egress:none 布尔）——A1 安全基线前置件 | 中 | 与 A1 同批或先行 | 待裁决 |
 | A3 | **闲置回收环**（Owner Lease 语义移植：属主=用户会话，宽限后排空、工作树保留） | 中 | A1 落地后（Phase 2） | 待裁决 |
 | A4 | **Anthropic self-hosted sandbox 协议对接**（fleetly 作为官方 managed agents 的自托管载体） | 中 | Phase 2（影响 A1 API 形状，§6） | 待裁决 |
+| A5 | **ACP 统一交互面**：coding agent 进程 ACP 化（Agent Client Protocol，Zed 开放标准）+ Console 内嵌 ACP client + fleetly 纯字节桥（Relay/exec 既有传输承载）——统一 UI 通吃异构 agent | 中 | Phase 2 首项（§7） | 待裁决 |
 | 前提 | **词汇 ADR**：Task 让渡 `agent` + Agent 词条入册 + 守卫同步——A1 生效前置 | 小 | Phase 0 | 待裁决 |
 
 ## 1. 背景与动机
@@ -25,7 +26,7 @@
 
 | Agent 环境需要 | fleetly 现成面 |
 |---|---|
-| 长驻交互进程 + 终端进入 | Exec Session（tty 双形态：Console 终端页 / `fleetly shell`）+ Relay（节点中继，零入站端口） |
+| 长驻交互进程 + 终端进入 | Exec Session（tty 双形态：Console 终端页 / `fleetly shell`）+ Relay（节点中继，零入站端口）；统一 UI 走 ACP（A5） |
 | 工作树持久化（跨会话续作） | Volume（无显式 Placement 默认钉住节点） |
 | LLM key / git 凭证注入 | Secret（文件注入 /run/secrets，值永不回显）+ GitHub App（installation token 现铸） |
 | 隔离网 + 受控出站 | Network（egress:none 有；**白名单缺** = A2） |
@@ -57,7 +58,7 @@
 - **投影**：受管聚合（Database/Function 先例，engine 投影 Workload）；spec 极简（无 Revision/滚动/副本语义——环境不是服务，换镜像 = 显式 recreate 或就地换轨，实施批 design-it-twice）。
 - **API 草图**：`CreateAgent / GetAgent / ListAgents / StartAgent / StopAgent / DeleteAgent`（幂等面 + 冻结桶按 Functions 同款纪律）；进入走既有 Exec 面。CLI `fleetly agents` 动词组（双形态 golden）；Console Agents 页（列表 + 详情 + 终端页复用）。
 - **观测**：stdout 走既有 Logging；per-session 观测（在线/闲置）随 A3。
-- **配额**：MaxAgentsPerProject + 资源维度（常驻小时成本面，开放问题 §9.6）。
+- **配额**：MaxAgentsPerProject + 资源维度（常驻小时成本面，开放问题 §10.6）。
 
 **取舍**：重量大的原因是新聚合 + 安全面执法（A2 依赖）；不做的是协议理解（agent 与 LLM 供应商的通信对 fleetly 是普通出站流量——同 Functions「不定义第二协议」纪律）与 agent 内部编排（任务/会话内容平台零感知）。
 
@@ -65,7 +66,7 @@
 
 **动机**：agent 载荷 = **任意代码执行**。「egress:none 全断 + 手动开全放」之间没有中间档，「只许出 LLM API + git remote」做不出来——这不只是 agent 需求，是一切不可信代码执行载荷的共同基线（沙箱化先于 agent 立案）。
 
-**设计方向**：Network 声明从 egress 布尔扩为 allowlist（host/port 级）；两 Runtime **语义一致、强度诚实分级**（Functions §6 同款口径）：k3s 有 NetworkPolicy 原生执法；swarm 无原生 per-network egress 白名单原语，实现路径（iptables/外部执法/降级为全断+显式全开过渡）是本提案最大技术开放问题（§9.2）。
+**设计方向**：Network 声明从 egress 布尔扩为 allowlist（host/port 级）；两 Runtime **语义一致、强度诚实分级**（Functions §6 同款口径）：k3s 有 NetworkPolicy 原生执法；swarm 无原生 per-network egress 白名单原语，实现路径（iptables/外部执法/降级为全断+显式全开过渡）是本提案最大技术开放问题（§10.2）。
 
 **取舍**：若 swarm 侧真白名单代价过高，过渡形态 = A1 首批只提供 egress:none（默认）与 egress:open（显式确认）两档 + Console 确认文案披露，白名单随 k3s 腿先行——诚实降级优于假执法。
 
@@ -81,21 +82,41 @@
 
 **设计方向**：fleetly 侧 Agent ↔ 官方 environment、Exec Session ↔ 官方 session 的**文档层映射**（词汇冻结不破：environment 在域内是禁词，映射表住文档不住代码）；对接面（session 创建 API、MCP tunnel、心跳约定）待协议出 research preview 后专门调研。**对 A1 的前置影响**：两层模型 API 形状尽量同构（§3 已按此取向），避免 Phase 2 对接时二次改面。
 
-## 7. 分期
+## 7. A5：ACP 统一交互面（统一 UI，2026-10-16 补入）
+
+**动机**：拟议 Agent 环境跑的是异构 coding agent 本体（Claude Code / Codex / OpenCode / Gemini…），harness 与交互面各不相同——自建统一 UI 意味着按 agent 逐个适配，不可持续。[ACP（Agent Client Protocol）](https://agentclientprotocol.com/)是 Zed 2025 发起的开放标准（LSP 类比：标准化 client↔coding agent 通信），2026-10 生态已成面：**40+ agent 入册**（Claude Agent 经 Zed SDK 适配器、Codex 经 codex-acp 适配器、Gemini CLI / Cursor / Goose / OpenCode / Qwen Code / GitHub Copilot preview 等原生），客户端面 Zed / Neovim（CodeCompanion）/ Emacs（agent-shell）/ VS Code（vscode-acp）/ Devin desktop / OpenHands Agent Canvas 全线落地。**fleetly Console 实现一次 ACP client = 通吃全部在册 agent**；桌面编辑器用户也可直连（Zed 等 ACP client 经隧道拨入环境）。UI 投入从「逐 agent 适配」收敛为「一个协议 client」。
+
+**协议面（与 fleetly 相关的承重事实）**：
+- JSON-RPC 2.0，UTF-8、换行分帧、stdout 纯净性（不得混入非 ACP 输出）；角色 = client（编辑器/宿主）↔ agent（stdio 子进程）。
+- **传输**：stdio 为唯一规范传输；Streamable HTTP 仅为 draft；协议明文 **transport-agnostic**（自定义双向传输合法，须保 JSON-RPC 消息格式与生命周期）——fleetly 经 Relay/exec 既有通道承载 ACP 流属「自定义传输」，**不必等远程传输标准化**。
+- **生命周期**：initialize（声明 client capabilities：fs/terminal）→ session/new（cwd）→ session/prompt → session/update 通知流（agent_message_chunk / tool_call 及其状态迁移 / plan / available_commands / current_mode）→ stop_reason（end_turn | requires_action…）；session/load 续作（「离开再回」的协议原语；session-list/fork 等 RFD 演进中）。
+- **client 侧回调能力**：fs/read_text_file、fs/write_text_file、terminal/\*（仅 client 在 initialize 声明才被使用）与 session/request_permission（人工审批 allow_once/allow_always/deny）。
+
+**设计方向**：
+- **架构三段**：agent 进程以 ACP server 形态跑在环境内（stdio）↔ 环境内 shim ↔ Relay/exec 既有传输（WebSocket）↔ Console 浏览器端 ACP client（TS SDK `@zed-industries/agent-client-protocol`）。**fleetly 控制面纯字节桥，不理解 ACP 帧**——与 exec tty 同一条纪律线（控制面是搬运工；ACP 的理解发生在两端：环境内 agent 与浏览器 client）。
+- **fs/terminal capability 归属（关键裁决）**：远程托管场景这些回调由**环境内 shim 实现**（agent 与工作树同容器，shim 兜底本地 fs/pty），浏览器 client 声明零 fs/terminal capability——agent 全自含，不依赖客户端补能力。
+- **权限交互进 Console**：request_permission 渲染为确认框（allow once/always/deny）——审批动作天然落 Audit（PaaS 治理面优势，桌面 ACP client 没有的）。
+- **CLI 对应物**：`fleetly agent attach` 把本地终端变成 ACP client（复用社区实现），ssh-less 等价物。
+- **词汇**：ACP 为第三方专有名词按本义豁免引用（同 torchwood Functions 先例）；域内不引入 ACP 语义进冻结表。
+
+**纪律检查**：不定义第二协议（协议事实源在 agentclientprotocol.com + RFD 流程，fleetly 是 bridge + client 非定义方）；控制面非数据面不受破坏（字节桥不解析帧）。**取舍**：Console 会话页富渲染（tool call/plan/diff 流）是前端工程量大头；协议仍在快速演进（Streamable HTTP draft、session-list/fork RFD）——追随义务与钉版策略见开放问题 §10.8。
+
+## 8. 分期
 
 - **Phase 0**：词汇 ADR（Task 让渡 `agent` + Agent 词条入册 + 守卫同步，ADR-0077 同款三件事一批）。
 - **Phase 1（MVP）**：A1 最小面（行 + 铸造 + Start/Stop/Delete 收口级联 + Exec 进入 + CLI/Console）+ A2 过渡档（egress 两档或白名单，按 §9.2 裁决）+ e2e 腿。
-- **Phase 2**：A3 闲置回收、A2 全量白名单、A4 协议对接、环境模板（预装 OpenCode/Codex 变体进模板目录）。
+- **Phase 2**：**A5 ACP 统一交互面（首项：Console 会话页最小面——单 session 对话 + 工具调用渲染 + 权限确认框）**、A3 闲置回收、A2 全量白名单、A4 协议对接、环境模板（预装 OpenCode/Codex 变体进模板目录）。
 
-## 8. 验收锚（实施完成后逐条核）
+## 9. 验收锚（实施完成后逐条核）
 
 1. e2e 全链腿（swarm + k3s 双腿）：create → start → 进入敲命令 → 文件落工作树卷 → stop → start **续作文件还在**；delete 后载体/卷/网络挂靠/凭证引用**零孤儿**；控制面重启后 Agent 行幂等重放。
 2. 安全断言：egress 执法腿（白名单外出站被拒 / egress:none 载体出站全断）；凭证注入不回显（Secret 既有纪律外延）；进入面鉴权（scope + 行级授权沿 project 链）。
 3. 守卫批：词汇批双向保鲜、CLI 双形态 golden、配额执法、收口级联反扫（FB-1 同型）。
 4. dogfood：staging 上一个真实 Claude Code 或 OpenCode 会话全链干活（git clone → 改代码 → push），操作者 = 部署在 fleetly 上的 agent 本人（Token 反向操作闭环叙事的实证）。
-5. 每期复盘重跑 §2 deletion test。
+5. （A5 裁决做）ACP 全链腿：Console 会话页对适配器 agent（Claude Agent）与原生 agent（Gemini）各完成同一任务流（对话 + 工具调用渲染 + request_permission 确认）；**字节桥零解释断言**（控制面日志无 ACP 帧解析痕迹；stdout 纯净性由 shim 保证）。
+6. 每期复盘重跑 §2 deletion test。
 
-## 9. 开放问题（请 review 逐条给答）
+## 10. 开放问题（请 review 逐条给答）
 
 1. **词汇裁决**：Agent 词条入册 + Task 让渡 `agent`；操作者/承载双义的共存条款文案（ADR-0077 torchwood 双名条款同型）——是否随本提案裁决一并定稿？
 2. **A2 swarm 实现路径**：per-network egress 白名单在 swarm 上的执法手段（iptables per-network / 外部组件 / 不可行）——决定 Phase 1 是「两档过渡」还是「白名单全量」；建议实施前 spike 一腿。
@@ -104,3 +125,4 @@
 5. **镜像面**：平台预装镜像目录（claude-code/opencode/codex 变体，平台追随供应商版本义务）vs 用户自备任意镜像（零义务但安全面全归 A2）——或两者并存、预装仅为模板？
 6. **计量与成本维度**：agent 常驻小时计费面要不要进配额族（MaxAgentsPerProject 之外加资源总量维度），还是纯观测不执法？
 7. **与 Functions 的形状边界**：Agent 极简 spec（无 Revision）与 Function/App 的 Revision 纪律形成第三种形态——实施批是否需要「环境类聚合无冻结体」的显式 ADR 口径（防「为什么 Agent 没有 Revision」成为评审悬案）？
+8. **ACP 集成三问**（A5）：①shim 形态——环境 entrypoint 包装（agent 进程外再包一层桥）vs 独立 sidecar 进程，后者才可容纳「环境内多 agent 可切换」；②协议版本策略——ACP 演进活跃（Streamable HTTP draft、session-list/fork RFD），Console client 与 shim 钉协议版本还是跟最新（追随义务 ≈ 追随 40+ agent 生态的公共分母）；③桌面直连面——Zed 等 ACP client 经隧道拨入环境（Relay 通道复用）要不要一等支持，还是 v1 仅 Console。
