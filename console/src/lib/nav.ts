@@ -122,6 +122,3 @@ export function navSections(projectId: string | undefined): NavSection[] {
     },
   ];
 }
-
-// 批 1 兼容出口（app-sidebar/command-palette 之外不再引用；批 6 清理）。
-export const NAV_SECTIONS = navSections(undefined);

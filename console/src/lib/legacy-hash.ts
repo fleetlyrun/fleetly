@@ -22,9 +22,8 @@ export function hashToPath(hash: string): string | null {
   if (!hash.startsWith("#/")) return null;
   const segments = hash.slice(2).split("/").filter(Boolean);
   const head = segments[0] ?? "";
-  if (head === "deployments" && segments[1] !== undefined) {
-    return `/deployments/${encodeURIComponent(segments[1])}`;
-  }
+  // 详情深链（#/deployments/<id> 等）不逐一映射——落各自列表页（ADR-0060:
+  // 旧路径不做兼容重定向，列表页是诚实兜底）。
   if (LEGACY_ROUTES.has(head)) return `/${head}`;
   return null;
 }

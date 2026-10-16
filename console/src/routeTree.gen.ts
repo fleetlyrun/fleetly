@@ -26,12 +26,10 @@ import { Route as ShellQuickstartRouteImport } from './routes/_shell/quickstart'
 import { Route as ShellSettingsRouteImport } from './routes/_shell/settings'
 import { Route as ShellTemplatesRouteImport } from './routes/_shell/templates'
 import { Route as ShellTerminalRouteImport } from './routes/_shell/terminal'
-import { Route as ShellDeploymentsDeploymentIdRouteImport } from './routes/_shell/deployments.$deploymentId'
 import { Route as ShellGithubAppsIndexRouteImport } from './routes/_shell/github-apps.index'
 import { Route as ShellGithubAppsConnectRouteImport } from './routes/_shell/github-apps.connect'
 import { Route as ShellPProjectIdRouteImport } from './routes/_shell/p.$projectId'
 import { Route as ShellPProjectIdIndexRouteImport } from './routes/_shell/p.$projectId.index'
-import { Route as ShellPProjectIdDataRouteImport } from './routes/_shell/p.$projectId.data'
 import { Route as ShellPProjectIdNetworksRouteImport } from './routes/_shell/p.$projectId.networks'
 import { Route as ShellPProjectIdRegistryRouteImport } from './routes/_shell/p.$projectId.registry'
 import { Route as ShellPProjectIdRoutesRouteImport } from './routes/_shell/p.$projectId.routes'
@@ -140,12 +138,6 @@ const ShellTerminalRoute = ShellTerminalRouteImport.update({
   path: '/terminal',
   getParentRoute: () => ShellRoute,
 } as any)
-const ShellDeploymentsDeploymentIdRoute =
-  ShellDeploymentsDeploymentIdRouteImport.update({
-    id: '/deployments/$deploymentId',
-    path: '/deployments/$deploymentId',
-    getParentRoute: () => ShellRoute,
-  } as any)
 const ShellGithubAppsIndexRoute = ShellGithubAppsIndexRouteImport.update({
   id: '/github-apps/',
   path: '/github-apps/',
@@ -164,11 +156,6 @@ const ShellPProjectIdRoute = ShellPProjectIdRouteImport.update({
 const ShellPProjectIdIndexRoute = ShellPProjectIdIndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => ShellPProjectIdRoute,
-} as any)
-const ShellPProjectIdDataRoute = ShellPProjectIdDataRouteImport.update({
-  id: '/data',
-  path: '/data',
   getParentRoute: () => ShellPProjectIdRoute,
 } as any)
 const ShellPProjectIdNetworksRoute = ShellPProjectIdNetworksRouteImport.update({
@@ -323,11 +310,9 @@ export interface FileRoutesByFullPath {
   '/settings': typeof ShellSettingsRoute
   '/templates': typeof ShellTemplatesRoute
   '/terminal': typeof ShellTerminalRoute
-  '/deployments/$deploymentId': typeof ShellDeploymentsDeploymentIdRoute
   '/github-apps/connect': typeof ShellGithubAppsConnectRoute
   '/p/$projectId': typeof ShellPProjectIdRouteWithChildren
   '/github-apps/': typeof ShellGithubAppsIndexRoute
-  '/p/$projectId/data': typeof ShellPProjectIdDataRoute
   '/p/$projectId/networks': typeof ShellPProjectIdNetworksRoute
   '/p/$projectId/registry': typeof ShellPProjectIdRegistryRoute
   '/p/$projectId/routes': typeof ShellPProjectIdRoutesRoute
@@ -370,10 +355,8 @@ export interface FileRoutesByTo {
   '/settings': typeof ShellSettingsRoute
   '/templates': typeof ShellTemplatesRoute
   '/terminal': typeof ShellTerminalRoute
-  '/deployments/$deploymentId': typeof ShellDeploymentsDeploymentIdRoute
   '/github-apps/connect': typeof ShellGithubAppsConnectRoute
   '/github-apps': typeof ShellGithubAppsIndexRoute
-  '/p/$projectId/data': typeof ShellPProjectIdDataRoute
   '/p/$projectId/networks': typeof ShellPProjectIdNetworksRoute
   '/p/$projectId/registry': typeof ShellPProjectIdRegistryRoute
   '/p/$projectId/routes': typeof ShellPProjectIdRoutesRoute
@@ -417,11 +400,9 @@ export interface FileRoutesById {
   '/_shell/settings': typeof ShellSettingsRoute
   '/_shell/templates': typeof ShellTemplatesRoute
   '/_shell/terminal': typeof ShellTerminalRoute
-  '/_shell/deployments/$deploymentId': typeof ShellDeploymentsDeploymentIdRoute
   '/_shell/github-apps/connect': typeof ShellGithubAppsConnectRoute
   '/_shell/p/$projectId': typeof ShellPProjectIdRouteWithChildren
   '/_shell/github-apps/': typeof ShellGithubAppsIndexRoute
-  '/_shell/p/$projectId/data': typeof ShellPProjectIdDataRoute
   '/_shell/p/$projectId/networks': typeof ShellPProjectIdNetworksRoute
   '/_shell/p/$projectId/registry': typeof ShellPProjectIdRegistryRoute
   '/_shell/p/$projectId/routes': typeof ShellPProjectIdRoutesRoute
@@ -466,11 +447,9 @@ export interface FileRouteTypes {
     | '/settings'
     | '/templates'
     | '/terminal'
-    | '/deployments/$deploymentId'
     | '/github-apps/connect'
     | '/p/$projectId'
     | '/github-apps/'
-    | '/p/$projectId/data'
     | '/p/$projectId/networks'
     | '/p/$projectId/registry'
     | '/p/$projectId/routes'
@@ -513,10 +492,8 @@ export interface FileRouteTypes {
     | '/settings'
     | '/templates'
     | '/terminal'
-    | '/deployments/$deploymentId'
     | '/github-apps/connect'
     | '/github-apps'
-    | '/p/$projectId/data'
     | '/p/$projectId/networks'
     | '/p/$projectId/registry'
     | '/p/$projectId/routes'
@@ -559,11 +536,9 @@ export interface FileRouteTypes {
     | '/_shell/settings'
     | '/_shell/templates'
     | '/_shell/terminal'
-    | '/_shell/deployments/$deploymentId'
     | '/_shell/github-apps/connect'
     | '/_shell/p/$projectId'
     | '/_shell/github-apps/'
-    | '/_shell/p/$projectId/data'
     | '/_shell/p/$projectId/networks'
     | '/_shell/p/$projectId/registry'
     | '/_shell/p/$projectId/routes'
@@ -717,13 +692,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShellTerminalRouteImport
       parentRoute: typeof ShellRoute
     }
-    '/_shell/deployments/$deploymentId': {
-      id: '/_shell/deployments/$deploymentId'
-      path: '/deployments/$deploymentId'
-      fullPath: '/deployments/$deploymentId'
-      preLoaderRoute: typeof ShellDeploymentsDeploymentIdRouteImport
-      parentRoute: typeof ShellRoute
-    }
     '/_shell/github-apps/': {
       id: '/_shell/github-apps/'
       path: '/github-apps'
@@ -750,13 +718,6 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/p/$projectId/'
       preLoaderRoute: typeof ShellPProjectIdIndexRouteImport
-      parentRoute: typeof ShellPProjectIdRoute
-    }
-    '/_shell/p/$projectId/data': {
-      id: '/_shell/p/$projectId/data'
-      path: '/data'
-      fullPath: '/p/$projectId/data'
-      preLoaderRoute: typeof ShellPProjectIdDataRouteImport
       parentRoute: typeof ShellPProjectIdRoute
     }
     '/_shell/p/$projectId/networks': {
@@ -964,7 +925,6 @@ const ShellPProjectIdAppsAppIdRouteWithChildren =
   )
 
 interface ShellPProjectIdRouteChildren {
-  ShellPProjectIdDataRoute: typeof ShellPProjectIdDataRoute
   ShellPProjectIdNetworksRoute: typeof ShellPProjectIdNetworksRoute
   ShellPProjectIdRegistryRoute: typeof ShellPProjectIdRegistryRoute
   ShellPProjectIdRoutesRoute: typeof ShellPProjectIdRoutesRoute
@@ -981,7 +941,6 @@ interface ShellPProjectIdRouteChildren {
 }
 
 const ShellPProjectIdRouteChildren: ShellPProjectIdRouteChildren = {
-  ShellPProjectIdDataRoute: ShellPProjectIdDataRoute,
   ShellPProjectIdNetworksRoute: ShellPProjectIdNetworksRoute,
   ShellPProjectIdRegistryRoute: ShellPProjectIdRegistryRoute,
   ShellPProjectIdRoutesRoute: ShellPProjectIdRoutesRoute,
@@ -1017,7 +976,6 @@ interface ShellRouteChildren {
   ShellSettingsRoute: typeof ShellSettingsRoute
   ShellTemplatesRoute: typeof ShellTemplatesRoute
   ShellTerminalRoute: typeof ShellTerminalRoute
-  ShellDeploymentsDeploymentIdRoute: typeof ShellDeploymentsDeploymentIdRoute
   ShellGithubAppsConnectRoute: typeof ShellGithubAppsConnectRoute
   ShellPProjectIdRoute: typeof ShellPProjectIdRouteWithChildren
   ShellGithubAppsIndexRoute: typeof ShellGithubAppsIndexRoute
@@ -1038,7 +996,6 @@ const ShellRouteChildren: ShellRouteChildren = {
   ShellSettingsRoute: ShellSettingsRoute,
   ShellTemplatesRoute: ShellTemplatesRoute,
   ShellTerminalRoute: ShellTerminalRoute,
-  ShellDeploymentsDeploymentIdRoute: ShellDeploymentsDeploymentIdRoute,
   ShellGithubAppsConnectRoute: ShellGithubAppsConnectRoute,
   ShellPProjectIdRoute: ShellPProjectIdRouteWithChildren,
   ShellGithubAppsIndexRoute: ShellGithubAppsIndexRoute,

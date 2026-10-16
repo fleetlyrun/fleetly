@@ -9,8 +9,8 @@ describe("legacy-hash", () => {
     expect(hashToPath("#/")).toBeNull();
   });
 
-  it("maps deployment detail deep links", () => {
-    expect(hashToPath("#/deployments/dpl_01j9ya7c")).toBe("/deployments/dpl_01j9ya7c");
+  it("maps deployment deep links to the list page (detail ids are not remapped)", () => {
+    expect(hashToPath("#/deployments/dpl_01j9ya7c")).toBe("/deployments");
     expect(hashToPath("#/deployments")).toBe("/deployments");
   });
 

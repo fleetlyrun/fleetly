@@ -16,10 +16,10 @@ import { describe, expect, it } from "vitest";
 // 纪律天然不在扫描面。
 // 范围例外（带理由，双向保鲜）：
 // - components/ui/**：shadcn 上游手植层，按原样保留不自改（升级即 diff 干净）；
-// - lib/router.ts：旧 #/ 链接的兼容桥（legacy-hash 单源，legacy-hash.test 钉）
-//   ——hash 写面只允许在此一处；新导航一律 TanStack Router；
 // - features/fleet/backups-view.tsx：平台快照只读小表无快筛需求，分页
 //   直挂 useClientPage（ListCard 会强加快筛输入——台账形态特例）。
+// 旧 #/ 深链的一次性改写（ADR-0057）在 main.tsx 启动时经 lib/legacy-hash
+// 完成——只读 hash + history.replaceState，无直写面，不在豁免之列。
 const SCANNED_ROOTS = ["src/components/domain", "src/lib", "src/features", "src/hooks", "src/routes", "src/pages"];
 
 const RULES: Array<{ pattern: RegExp; message: string; skip?: (path: string) => boolean }> = [
@@ -28,8 +28,7 @@ const RULES: Array<{ pattern: RegExp; message: string; skip?: (path: string) => 
   { pattern: /\.toLocaleString\s*\(/, message: "local time formatting is banned — use lib/format.ts (time contract)" },
   {
     pattern: /window\.location\.hash\s*=/,
-    message: "hash writes are banned — navigate via TanStack Router (legacy bridge lives only in lib/router.ts)",
-    skip: (path) => path === "src/lib/router.ts",
+    message: "hash writes are banned — navigate via TanStack Router (legacy #/ links are rewritten once at boot via lib/legacy-hash)",
   },
   { pattern: /check the API token/i, message: "'check the API token' catch-all copy is banned — use describeError states" },
   {

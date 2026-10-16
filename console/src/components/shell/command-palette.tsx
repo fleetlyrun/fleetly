@@ -9,12 +9,13 @@ import {
   CommandList,
   CommandSeparator,
 } from "@/components/ui/command";
-import { NAV_SECTIONS } from "@/lib/nav";
+import { navSections } from "@/lib/nav";
 
 // ⌘K 命令面板（UI v2 键盘契约）：全局导航 + 动作入口。⌘K/Ctrl-K 开合，
 // Esc 关闭（Dialog 自带）；选择即导航。
 export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const navigate = useNavigate();
+  const sections = navSections(undefined);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -32,7 +33,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
       <CommandInput placeholder="Type a page or action…" />
       <CommandList>
         <CommandEmpty>No results.</CommandEmpty>
-        {NAV_SECTIONS.map((section) => (
+        {sections.map((section) => (
           <CommandGroup key={section.label} heading={section.label}>
             {section.items.map((item) => (
               <CommandItem

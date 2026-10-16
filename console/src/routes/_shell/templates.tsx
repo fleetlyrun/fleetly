@@ -187,9 +187,13 @@ function TemplatesPageV2() {
               template={wizard}
               projects={projects.data ?? []}
               onClose={() => setWizard(null)}
-              onDeployed={(deploymentId) => {
+              onDeployed={(projectId, appId, deploymentId) => {
                 setWizard(null);
-                navigate.history.push(`/deployments/${encodeURIComponent(deploymentId)}`);
+                // ADR-0060 现役详情路由（语境化三段路径）；旧 /deployments/<id>
+                // shim 已退役，实例化面自带 project/app/deployment 全语境。
+                navigate.history.push(
+                  `/p/${encodeURIComponent(projectId)}/apps/${encodeURIComponent(appId)}/deployments/${encodeURIComponent(deploymentId)}`,
+                );
               }}
             />
           ) : null}
@@ -208,7 +212,7 @@ function InstantiateWizard({
   template: TemplateEntry;
   projects: Array<{ id: string; name: string }>;
   onClose: () => void;
-  onDeployed: (deploymentId: string) => void;
+  onDeployed: (projectId: string, appId: string, deploymentId: string) => void;
 }) {
   const [projectId, setProjectId] = useState(projects[0]?.id ?? "");
   const [appName, setAppName] = useState(template.name);
@@ -233,8 +237,9 @@ function InstantiateWizard({
           values: buildTemplateValues(template.variables, values),
         },
       );
+      if (!res.app_id) throw new Error("the platform returned no app reference");
       if (!res.deployment_id) throw new Error("the platform returned no deployment reference");
-      onDeployed(res.deployment_id);
+      onDeployed(projectId, res.app_id, res.deployment_id);
     } catch (err) {
       setError(err);
     } finally {
