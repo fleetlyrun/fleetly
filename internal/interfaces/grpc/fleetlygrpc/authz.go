@@ -93,7 +93,7 @@ func mapAnchorError(err error) error {
 // authorizeProjectID 校验 project_id 的归属（行不存在 → E_NOT_FOUND）。
 // 全部"请求携带 project_id"的受理位共用（List 面授权、写面前置）。
 func (s *Services) authorizeProjectID(ctx context.Context, projectID string) error {
-	team, err := s.Anchor.TeamOf(ctx, s.DB.Runner(), anchor.KindProject, projectID)
+	team, err := s.Anchor.TeamOf(ctx, anchor.KindProject, projectID)
 	if err != nil {
 		return mapAnchorError(err)
 	}
@@ -103,7 +103,7 @@ func (s *Services) authorizeProjectID(ctx context.Context, projectID string) err
 // authorizeAppRow 校验 App 行归属（经 Project 终点腿；行已载的调用点共用，
 // 避免双读）。
 func (s *Services) authorizeAppRow(ctx context.Context, a *app.App) error {
-	team, err := s.Anchor.TeamOfProjectID(ctx, s.DB.Runner(), a.ProjectID)
+	team, err := s.Anchor.TeamOfProjectID(ctx, a.ProjectID)
 	if err != nil {
 		return mapAnchorError(err)
 	}
@@ -113,7 +113,7 @@ func (s *Services) authorizeAppRow(ctx context.Context, a *app.App) error {
 // authorizeAppID 载 App 行并校验归属（返回行供调用点复用——Deploy/Rollback
 // 等本就要 App 行；生命周期动词走活跃档 Get）。
 func (s *Services) authorizeAppID(ctx context.Context, appID string) (*app.App, error) {
-	a, err := s.Apps.Get(ctx, s.DB.Runner(), appID)
+	a, err := s.Apps.Get(ctx, appID)
 	if err != nil {
 		return nil, mapStateError(err, "app")
 	}
@@ -171,7 +171,7 @@ func (s *Services) authorizeAppIDOnly(ctx context.Context, appID string) error {
 // authorizeAnchored 是按全局 ID 直取面的共用底座：anchor 全链解析归属
 // Team → 行级比对（错误分层见 mapAnchorError）。
 func (s *Services) authorizeAnchored(ctx context.Context, kind anchor.Kind, id string) error {
-	team, err := s.Anchor.TeamOf(ctx, s.DB.Runner(), kind, id)
+	team, err := s.Anchor.TeamOf(ctx, kind, id)
 	if err != nil {
 		return mapAnchorError(err)
 	}
@@ -204,7 +204,7 @@ func (s *Services) teamProjectFilter(ctx context.Context) (map[string]bool, bool
 	if owner {
 		return nil, true, nil
 	}
-	projects, err := s.Projects.ListByTeam(ctx, s.DB.Runner(), teamID)
+	projects, err := s.Projects.ListByTeam(ctx, teamID)
 	if err != nil {
 		return nil, false, mapStateError(err, "project")
 	}

@@ -42,20 +42,20 @@ func seedTeam(t *testing.T, ctx context.Context, db *persistence.DB, id, name st
 func TestRoleCreateScopedNameConflict(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	roles := rolerepo.New(clock)
+	roles := rolerepo.New(clock, db.Runner())
 	seedTeam(t, ctx, db, teamX, "team-x", 1)
 	seedTeam(t, ctx, db, teamY, "team-y", 2)
 
 	// 首见落行：ID 由 name+seq 铸，scopes 以 JSON 数组原样读回。
 	r1 := &role.Role{TeamID: teamX, Name: "deployer", Scopes: []string{"deployments:write", "builds:read"}}
-	require.NoError(t, roles.Create(ctx, db.Runner(), r1))
+	require.NoError(t, roles.Create(ctx, r1))
 	assert.Equal(t, "deployer-1", r1.ID, "default id joins name and seq")
 	assert.Equal(t, int64(1), r1.Seq)
 	assert.False(t, r1.Builtin, "custom roles are not builtin")
 	assert.Equal(t, state.FormatTime(clock.Now()), r1.CreatedAt)
 
 	// 同 Team 同名 → ErrAlreadyExists（文案带角色名锚）。
-	err := roles.Create(ctx, db.Runner(), &role.Role{TeamID: teamX, Name: "deployer", Scopes: []string{"apps:read"}})
+	err := roles.Create(ctx, &role.Role{TeamID: teamX, Name: "deployer", Scopes: []string{"apps:read"}})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, state.ErrAlreadyExists,
 		"a duplicate name within the same team must normalize to ErrAlreadyExists")
@@ -63,14 +63,14 @@ func TestRoleCreateScopedNameConflict(t *testing.T) {
 
 	// 跨 Team 同名合法（唯一轴是 team+name）。
 	r2 := &role.Role{TeamID: teamY, Name: "deployer", Scopes: []string{"routes:write"}}
-	require.NoError(t, roles.Create(ctx, db.Runner(), r2))
+	require.NoError(t, roles.Create(ctx, r2))
 
 	// Get：命中（scopes 读回）与缺行 NotFound。
-	got, err := roles.Get(ctx, db.Runner(), r1.ID)
+	got, err := roles.Get(ctx, r1.ID)
 	require.NoError(t, err)
 	assert.Equal(t, teamX, got.TeamID)
 	assert.Equal(t, []string{"deployments:write", "builds:read"}, got.Scopes)
-	_, err = roles.Get(ctx, db.Runner(), "missing-id")
+	_, err = roles.Get(ctx, "missing-id")
 	assert.ErrorIs(t, err, state.ErrNotFound)
 }
 
@@ -78,14 +78,14 @@ func TestRoleCreateScopedNameConflict(t *testing.T) {
 func TestRoleUpsertBuiltinIdempotent(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	roles := rolerepo.New(clock)
+	roles := rolerepo.New(clock, db.Runner())
 
 	// 首播落行：固定 slug ID、team_id 空（平台级模板）、builtin=1、seq 铸造。
 	first := &role.Role{ID: identity.RoleOwnerID, Name: "owner", Scopes: []string{"*:read"}}
-	require.NoError(t, roles.UpsertBuiltin(ctx, db.Runner(), first))
+	require.NoError(t, roles.UpsertBuiltin(ctx, first))
 	assert.Equal(t, int64(1), first.Seq, "first plant mints a seq")
 	assert.Equal(t, state.FormatTime(clock.Now()), first.CreatedAt)
-	planted, err := roles.Get(ctx, db.Runner(), identity.RoleOwnerID)
+	planted, err := roles.Get(ctx, identity.RoleOwnerID)
 	require.NoError(t, err)
 	assert.Empty(t, planted.TeamID, "builtin roles carry no team")
 	assert.True(t, planted.Builtin)
@@ -95,8 +95,8 @@ func TestRoleUpsertBuiltinIdempotent(t *testing.T) {
 	// 名字与创建时刻不动，行数不变。
 	clock.Advance(30e9)
 	refreshed := &role.Role{ID: identity.RoleOwnerID, Name: "owner", Scopes: []string{"*:admin"}}
-	require.NoError(t, roles.UpsertBuiltin(ctx, db.Runner(), refreshed))
-	got, err := roles.Get(ctx, db.Runner(), identity.RoleOwnerID)
+	require.NoError(t, roles.UpsertBuiltin(ctx, refreshed))
+	got, err := roles.Get(ctx, identity.RoleOwnerID)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"*:admin"}, got.Scopes, "upsert refreshes scopes from the code-side word list")
 	assert.Equal(t, "owner", got.Name, "a second upsert must not rename the role")
@@ -105,11 +105,11 @@ func TestRoleUpsertBuiltinIdempotent(t *testing.T) {
 
 	// 刷新不耗 seq 号：下一个自定义行接着铸造（ADR-0070 单源序）。
 	custom := &role.Role{TeamID: teamX, Name: "viewer", Scopes: []string{"apps:read"}}
-	require.NoError(t, roles.Create(ctx, db.Runner(), custom))
+	require.NoError(t, roles.Create(ctx, custom))
 	assert.Equal(t, int64(2), custom.Seq, "the refresh path must not consume a seq")
 
 	// List：内置在前、ID 序稳定。
-	all, err := roles.List(ctx, db.Runner())
+	all, err := roles.List(ctx)
 	require.NoError(t, err)
 	require.Len(t, all, 2)
 	assert.True(t, all[0].Builtin, "builtin roles sort first")
@@ -120,7 +120,7 @@ func TestRoleUpsertBuiltinIdempotent(t *testing.T) {
 func TestRoleDeleteGuards(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	roles := rolerepo.New(clock)
+	roles := rolerepo.New(clock, db.Runner())
 	seedTeam(t, ctx, db, teamX, "team-x", 1)
 
 	// 夹具：user + membership 引用自定义角色（FK RESTRICT 触发面）。
@@ -130,11 +130,11 @@ func TestRoleDeleteGuards(t *testing.T) {
 	require.NoError(t, err)
 
 	builtin := &role.Role{ID: identity.RoleAdminID, Name: "admin", Scopes: []string{"apps:admin"}}
-	require.NoError(t, roles.UpsertBuiltin(ctx, db.Runner(), builtin))
+	require.NoError(t, roles.UpsertBuiltin(ctx, builtin))
 	referenced := &role.Role{TeamID: teamX, Name: "bound", Scopes: []string{"apps:read"}}
-	require.NoError(t, roles.Create(ctx, db.Runner(), referenced))
+	require.NoError(t, roles.Create(ctx, referenced))
 	free := &role.Role{TeamID: teamX, Name: "loose", Scopes: []string{"builds:read"}}
-	require.NoError(t, roles.Create(ctx, db.Runner(), free))
+	require.NoError(t, roles.Create(ctx, free))
 
 	_, err = db.Runner().ExecContext(ctx, `
 		INSERT INTO memberships (id, seq, user_id, team_id, role_id, created_at)
@@ -143,26 +143,26 @@ func TestRoleDeleteGuards(t *testing.T) {
 	require.NoError(t, err)
 
 	// 缺行 → ErrNotFound（Get 先行把守）。
-	err = roles.Delete(ctx, db.Runner(), "missing-id")
+	err = roles.Delete(ctx, "missing-id")
 	assert.ErrorIs(t, err, state.ErrNotFound)
 
 	// 内置角色拒删（代码单一源）→ ErrConflict。
-	err = roles.Delete(ctx, db.Runner(), identity.RoleAdminID)
+	err = roles.Delete(ctx, identity.RoleAdminID)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, state.ErrConflict, "builtin roles refuse deletion")
 	assert.Contains(t, err.Error(), "admin", "refusal text must carry the role name")
 
 	// 仍被 membership 引用 → FK RESTRICT 归一 ErrConflict（先解绑提示面）。
-	err = roles.Delete(ctx, db.Runner(), referenced.ID)
+	err = roles.Delete(ctx, referenced.ID)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, state.ErrConflict,
 		"a referenced role must surface ErrConflict, not a raw FK error")
 
 	// 无引用自定义角色删行即净。
-	require.NoError(t, roles.Delete(ctx, db.Runner(), free.ID))
-	_, err = roles.Get(ctx, db.Runner(), free.ID)
+	require.NoError(t, roles.Delete(ctx, free.ID))
+	_, err = roles.Get(ctx, free.ID)
 	assert.ErrorIs(t, err, state.ErrNotFound)
-	all, err := roles.List(ctx, db.Runner())
+	all, err := roles.List(ctx)
 	require.NoError(t, err)
 	assert.Len(t, all, 2, "only the free role disappears")
 }

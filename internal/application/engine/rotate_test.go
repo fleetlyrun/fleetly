@@ -39,7 +39,7 @@ func rotateCapturedPassword(t *testing.T, reqs []capability.UtilityRequest) stri
 // secretPassword 解密凭证 Secret 回读密码（轮换后的单真源读面）。
 func secretPassword(t *testing.T, e *Engine, secName string) string {
 	t.Helper()
-	sec, err := e.secrets.GetByName(context.Background(), e.db.Runner(), tProjectID, secName)
+	sec, err := e.repos.Secrets.GetByName(context.Background(), tProjectID, secName)
 	require.NoError(t, err)
 	plain, err := e.cipher.Open(sec.Ciphertext)
 	require.NoError(t, err)
@@ -98,7 +98,7 @@ func TestRotateDatabasePasswordRejectedLeavesState(t *testing.T) {
 	require.ErrorIs(t, err, ErrRotateRejected)
 	assert.Contains(t, err.Error(), "boom-detail")
 	assert.Len(t, ut.requests(), 1)
-	sec, serr := e.secrets.GetByName(context.Background(), e.db.Runner(), tProjectID, DBCredentialSecretName(tDatabaseName))
+	sec, serr := e.repos.Secrets.GetByName(context.Background(), tProjectID, DBCredentialSecretName(tDatabaseName))
 	require.NoError(t, serr)
 	plain, perr := e.cipher.Open(sec.Ciphertext)
 	require.NoError(t, perr)

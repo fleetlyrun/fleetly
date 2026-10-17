@@ -36,6 +36,13 @@ var transitionRepoFields = map[string]bool{
 	"tokens": true, "schedules": true, "peerDecls": true, "uploads": true,
 	"databases": true, "routes": true, "secrets": true, "configs": true,
 	"volumes": true, "networks": true,
+	// ADR-0080：事务作用域经 transact.Stores（大写字段）——同一聚合 repo
+	// 的 tx 绑定形态与 db 绑定形态同权执法。
+	"Projects": true, "Apps": true, "Revisions": true, "Deployments": true,
+	"Builds": true, "Nodes": true, "Audits": true, "Tasks": true, "Runs": true,
+	"Tokens": true, "Schedules": true, "NetworkPeers": true, "SourceUploads": true,
+	"Databases": true, "Routes": true, "Secrets": true, "Configs": true,
+	"Volumes": true, "Networks": true, "GitHubApps": true,
 }
 
 // engineFourInOneExemptions 是函数名 → 理由（行写 × 事实发射共存但确不
@@ -117,6 +124,9 @@ func scanEngineFuncs(t *testing.T) map[string]engineFuncFacts {
 			key := fd.Name.Name + "@" + rel
 			facts := engineFuncFacts{file: rel}
 			self := engineSelfIdents(fd, engineTypes)
+			for name := range engineStoresIdents(fd) {
+				self[name] = true
+			}
 			ast.Inspect(fd.Body, func(n ast.Node) bool {
 				call, ok := n.(*ast.CallExpr)
 				if !ok {
@@ -155,7 +165,7 @@ func scanEngineFuncs(t *testing.T) map[string]engineFuncFacts {
 					switch {
 					case terminal == "Append":
 						for _, seg := range segs {
-							if seg == "outbox" || seg == "audits" {
+							if seg == "outbox" || seg == "audits" || seg == "Outbox" || seg == "Audits" {
 								facts.factEmit = true
 								break
 							}
@@ -217,6 +227,37 @@ func engineSelfIdents(fd *ast.FuncDecl, engineTypes map[string]bool) map[string]
 		}
 	}
 	return self
+}
+
+// engineStoresIdents 收集函数体内 transact.Stores 类型的参数名（含嵌套
+// 闭包——四件一拍经 Tx.Do 的闭包 s 走事务作用域 repo，ADR-0080；这些名
+// 字与 Engine 接收者同权进入 self 集）。
+func engineStoresIdents(fd *ast.FuncDecl) map[string]bool {
+	names := map[string]bool{}
+	if fd.Body == nil {
+		return names
+	}
+	ast.Inspect(fd.Body, func(n ast.Node) bool {
+		fl, ok := n.(*ast.FuncLit)
+		if !ok || fl.Type == nil || fl.Type.Params == nil {
+			return true
+		}
+		for _, p := range fl.Type.Params.List {
+			sel, ok := p.Type.(*ast.SelectorExpr)
+			if !ok {
+				continue
+			}
+			pkg, ok := sel.X.(*ast.Ident)
+			if !ok || pkg.Name != "transact" || sel.Sel.Name != "Stores" {
+				continue
+			}
+			for _, name := range p.Names {
+				names[name.Name] = true
+			}
+		}
+		return true
+	})
+	return names
 }
 
 // selectorChain 沿选择器调用链下行到基 Ident，返回基与自基向末的段名序列

@@ -25,11 +25,11 @@ import (
 func TestAlertRuleCreateGetListFaces(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	rules := alertrulerepo.New(clock)
+	rules := alertrulerepo.New(clock, db.Runner())
 
 	// 首见落行：ID 由 app+seq 铸、初始态 ok、last 观测列缺省。
 	r1 := &alertrule.Rule{AppID: "web", Metric: alertrule.MetricCPUPercent, Threshold: 80, ForSecs: 60, Enabled: true}
-	require.NoError(t, rules.Create(ctx, db.Runner(), r1))
+	require.NoError(t, rules.Create(ctx, r1))
 	assert.Equal(t, "web-1", r1.ID, "default id joins app id and seq")
 	assert.Equal(t, int64(1), r1.Seq)
 	assert.Equal(t, alertrule.StateOK, r1.State, "fresh rule starts in ok state")
@@ -43,30 +43,30 @@ func TestAlertRuleCreateGetListFaces(t *testing.T) {
 	// 同 App 第二条规则 + 禁用行 + 异 App 行（alert_rules 无业务唯一轴，
 	// 同 App 同指标双行合法）。
 	r2 := &alertrule.Rule{AppID: "web", Metric: alertrule.MetricMemoryWorkingSet, Threshold: 1 << 28, Enabled: false}
-	require.NoError(t, rules.Create(ctx, db.Runner(), r2))
+	require.NoError(t, rules.Create(ctx, r2))
 	r3 := &alertrule.Rule{AppID: "api", Metric: alertrule.MetricCPUPercent, Threshold: 90, Enabled: true}
-	require.NoError(t, rules.Create(ctx, db.Runner(), r3))
+	require.NoError(t, rules.Create(ctx, r3))
 
 	// Get：命中与缺行 NotFound。
-	got, err := rules.Get(ctx, db.Runner(), r1.ID)
+	got, err := rules.Get(ctx, r1.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "web", got.AppID)
 	assert.Equal(t, alertrule.MetricCPUPercent, got.Metric)
 	assert.Equal(t, float64(80), got.Threshold)
 	assert.Equal(t, int64(60), got.ForSecs)
 	assert.True(t, got.Enabled)
-	_, err = rules.Get(ctx, db.Runner(), "missing-id")
+	_, err = rules.Get(ctx, "missing-id")
 	assert.ErrorIs(t, err, state.ErrNotFound)
 
 	// ListEnabled：只含启用行，app 升序（派发评估面的口径）。
-	enabled, err := rules.ListEnabled(ctx, db.Runner())
+	enabled, err := rules.ListEnabled(ctx)
 	require.NoError(t, err)
 	require.Len(t, enabled, 2)
 	assert.Equal(t, "api-3", enabled[0].ID)
 	assert.Equal(t, "web-1", enabled[1].ID)
 
 	// ListByApp：App 隔离 + 含禁用行 + seq 序。
-	byApp, err := rules.ListByApp(ctx, db.Runner(), "web")
+	byApp, err := rules.ListByApp(ctx, "web")
 	require.NoError(t, err)
 	require.Len(t, byApp, 2)
 	assert.Equal(t, r1.ID, byApp[0].ID)
@@ -74,7 +74,7 @@ func TestAlertRuleCreateGetListFaces(t *testing.T) {
 	assert.False(t, byApp[1].Enabled, "ListByApp carries disabled rows too")
 
 	// ListAll：全量行，app 升序（alerts list 面口径）。
-	all, err := rules.ListAll(ctx, db.Runner())
+	all, err := rules.ListAll(ctx)
 	require.NoError(t, err)
 	require.Len(t, all, 3)
 	assert.Equal(t, "api", all[0].AppID)
@@ -86,17 +86,17 @@ func TestAlertRuleCreateGetListFaces(t *testing.T) {
 func TestAlertRuleObserveTransitionDelete(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	rules := alertrulerepo.New(clock)
+	rules := alertrulerepo.New(clock, db.Runner())
 
 	r := &alertrule.Rule{AppID: "web", Metric: alertrule.MetricCPUPercent, Threshold: 80, Enabled: true}
-	require.NoError(t, rules.Create(ctx, db.Runner(), r))
+	require.NoError(t, rules.Create(ctx, r))
 	createdAt := r.CreatedAt
 
 	// Observe 落最近评估观测：值 + 时刻入行，updated_at 推进，态不动。
 	clock.Advance(10e9)
 	observedAt := "2026-01-01T00:00:10Z"
-	require.NoError(t, rules.Observe(ctx, db.Runner(), r.ID, 95.5, observedAt))
-	got, err := rules.Get(ctx, db.Runner(), r.ID)
+	require.NoError(t, rules.Observe(ctx, r.ID, 95.5, observedAt))
+	got, err := rules.Get(ctx, r.ID)
 	require.NoError(t, err)
 	assert.Equal(t, 95.5, got.LastValue)
 	assert.Equal(t, observedAt, got.LastObservedAt)
@@ -107,8 +107,8 @@ func TestAlertRuleObserveTransitionDelete(t *testing.T) {
 	// Transition 迁移评估态：firing 沿持久锚（state_since 取通知时刻）。
 	clock.Advance(5e9)
 	firedAt := "2026-01-01T00:00:15Z"
-	require.NoError(t, rules.Transition(ctx, db.Runner(), r.ID, alertrule.StateFiring, firedAt))
-	got, err = rules.Get(ctx, db.Runner(), r.ID)
+	require.NoError(t, rules.Transition(ctx, r.ID, alertrule.StateFiring, firedAt))
+	got, err = rules.Get(ctx, r.ID)
 	require.NoError(t, err)
 	assert.Equal(t, alertrule.StateFiring, got.State)
 	assert.Equal(t, firedAt, got.StateSince)
@@ -117,15 +117,15 @@ func TestAlertRuleObserveTransitionDelete(t *testing.T) {
 
 	// resolved 沿回 ok。
 	clock.Advance(5e9)
-	require.NoError(t, rules.Transition(ctx, db.Runner(), r.ID, alertrule.StateOK, "2026-01-01T00:00:20Z"))
-	got, err = rules.Get(ctx, db.Runner(), r.ID)
+	require.NoError(t, rules.Transition(ctx, r.ID, alertrule.StateOK, "2026-01-01T00:00:20Z"))
+	got, err = rules.Get(ctx, r.ID)
 	require.NoError(t, err)
 	assert.Equal(t, alertrule.StateOK, got.State)
 
 	// Delete 删行即净；缺行 ErrNotFound（幂等归调用面映射 404）。
-	require.NoError(t, rules.Delete(ctx, db.Runner(), r.ID))
-	_, err = rules.Get(ctx, db.Runner(), r.ID)
+	require.NoError(t, rules.Delete(ctx, r.ID))
+	_, err = rules.Get(ctx, r.ID)
 	assert.ErrorIs(t, err, state.ErrNotFound)
-	err = rules.Delete(ctx, db.Runner(), r.ID)
+	err = rules.Delete(ctx, r.ID)
 	assert.ErrorIs(t, err, state.ErrNotFound, "deleting a missing row reports ErrNotFound")
 }

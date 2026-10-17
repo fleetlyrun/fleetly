@@ -32,7 +32,7 @@ func TestGoldenBuildsLogs(t *testing.T) {
 		ID: "01M3BUILD00000000000000000", AppID: appID,
 		State: buildrepo.StateSucceeded, Digest: "sha256:" + "a1b2c3d4e5f60718293a4b5c6d7e8f90112233445566778899aabbccddeeff00",
 	}
-	if err := buildrepoimpl.New(h.Clock).Create(context.Background(), h.DB.Runner(), b); err != nil {
+	if err := buildrepoimpl.New(h.Clock, h.DB.Runner()).Create(context.Background(), b); err != nil {
 		t.Fatalf("seed build row: %v", err)
 	}
 

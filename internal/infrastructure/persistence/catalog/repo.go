@@ -15,15 +15,16 @@ import (
 // repo 是 domain catalog.Repo 的 SQLite 实现。
 type repo struct {
 	clock state.Clock
+	run   state.Runner
 }
 
 // New 构造 repo（直接返回接口——消费面只见 domain catalog.Repo）。
-func New(clock state.Clock) catalog.Repo { return &repo{clock: clock} }
+func New(clock state.Clock, run state.Runner) catalog.Repo { return &repo{clock: clock, run: run} }
 
 // Put 原子覆盖快照（整体替换；空 body 是编程错误由约束/调用侧承载）。
-func (r *repo) Put(ctx context.Context, run state.Runner, s *catalog.Snapshot) error {
+func (r *repo) Put(ctx context.Context, s *catalog.Snapshot) error {
 	s.FetchedAt = state.FormatTime(r.clock.Now())
-	_, err := run.ExecContext(ctx, `
+	_, err := r.run.ExecContext(ctx, `
 		INSERT INTO template_catalog (id, digest, body, fetched_at) VALUES (1, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET digest = excluded.digest, body = excluded.body, fetched_at = excluded.fetched_at`,
 		s.Digest, s.Body, s.FetchedAt)
@@ -31,8 +32,8 @@ func (r *repo) Put(ctx context.Context, run state.Runner, s *catalog.Snapshot) e
 }
 
 // Get 读快照（缺席 → ErrNoSnapshot；Scan 归一哨兵由 persistence.MapScanErr）。
-func (r *repo) Get(ctx context.Context, run state.Runner) (*catalog.Snapshot, error) {
-	row := run.QueryRowContext(ctx, `SELECT digest, body, fetched_at FROM template_catalog WHERE id = 1`)
+func (r *repo) Get(ctx context.Context) (*catalog.Snapshot, error) {
+	row := r.run.QueryRowContext(ctx, `SELECT digest, body, fetched_at FROM template_catalog WHERE id = 1`)
 	s := &catalog.Snapshot{}
 	if err := row.Scan(&s.Digest, &s.Body, &s.FetchedAt); err != nil {
 		if errors.Is(persistence.MapScanErr(err), state.ErrNotFound) {

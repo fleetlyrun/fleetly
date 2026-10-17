@@ -16,17 +16,18 @@ import (
 // repo 是 domain freeze.Repo 的 SQLite 实现。
 type repo struct {
 	clock state.Clock
+	run   state.Runner
 }
 
 // New 构造 repo（直接返回接口——消费面只见 domain freeze.Repo）。
-func New(clock state.Clock) freeze.Repo { return &repo{clock: clock} }
+func New(clock state.Clock, run state.Runner) freeze.Repo { return &repo{clock: clock, run: run} }
 
 const selectCols = "id, seq, team_id, reason, created_by, created_at, lifted_at"
 
 // Create 落一条活跃冻结；同 scope 已有活跃行 → ErrAlreadyExists（部分唯一
 // 索引把守——Set 面映射 E_CONFLICT，先 lift 再 set）。
-func (r *repo) Create(ctx context.Context, run state.Runner, f *freeze.Freeze) error {
-	seq, err := persistence.NextSeq(ctx, run, "change_freezes")
+func (r *repo) Create(ctx context.Context, f *freeze.Freeze) error {
+	seq, err := persistence.NextSeq(ctx, r.run, "change_freezes")
 	if err != nil {
 		return err
 	}
@@ -35,7 +36,7 @@ func (r *repo) Create(ctx context.Context, run state.Runner, f *freeze.Freeze) e
 		f.ID = entityid.Join("freeze", seq)
 	}
 	f.CreatedAt, f.LiftedAt = state.FormatTime(r.clock.Now()), ""
-	_, err = run.ExecContext(ctx, `
+	_, err = r.run.ExecContext(ctx, `
 		INSERT INTO change_freezes (id, seq, team_id, reason, created_by, created_at, lifted_at)
 		VALUES (?, ?, ?, ?, ?, ?, '')`,
 		f.ID, f.Seq, f.TeamID, f.Reason, f.CreatedBy, f.CreatedAt)
@@ -46,16 +47,16 @@ func (r *repo) Create(ctx context.Context, run state.Runner, f *freeze.Freeze) e
 }
 
 // Get 按 ID 读行（含历史行——lift 幂等面需要区分"已 lift"与"不存在"）。
-func (r *repo) Get(ctx context.Context, run state.Runner, id string) (*freeze.Freeze, error) {
-	row := run.QueryRowContext(ctx,
+func (r *repo) Get(ctx context.Context, id string) (*freeze.Freeze, error) {
+	row := r.run.QueryRowContext(ctx,
 		"SELECT "+selectCols+" FROM change_freezes WHERE id = ?", id)
 	return scanFreeze(row)
 }
 
 // ActiveForTeam 返回命中该 Team 的活跃冻结（team_id ∈ {”, teamID}）；
 // Team 特定行排前（拒绝信封优先报更具体的原因）。
-func (r *repo) ActiveForTeam(ctx context.Context, run state.Runner, teamID string) ([]freeze.Freeze, error) {
-	rows, err := run.QueryContext(ctx,
+func (r *repo) ActiveForTeam(ctx context.Context, teamID string) ([]freeze.Freeze, error) {
+	rows, err := r.run.QueryContext(ctx,
 		"SELECT "+selectCols+" FROM change_freezes WHERE lifted_at = '' AND team_id IN ('', ?)"+
 			" ORDER BY (team_id = '') ASC, created_at ASC, id ASC", teamID)
 	if err != nil {
@@ -75,8 +76,8 @@ func (r *repo) ActiveForTeam(ctx context.Context, run state.Runner, teamID strin
 
 // Lift 落 lifted_at（CAS：仅活跃行）。0 行回查：行不存在 → ErrNotFound；
 // 已 lift → nil（幂等——Lift 面对历史行直接成功）。
-func (r *repo) Lift(ctx context.Context, run state.Runner, id string) error {
-	res, err := run.ExecContext(ctx,
+func (r *repo) Lift(ctx context.Context, id string) error {
+	res, err := r.run.ExecContext(ctx,
 		`UPDATE change_freezes SET lifted_at = ? WHERE id = ? AND lifted_at = ''`,
 		state.FormatTime(r.clock.Now()), id)
 	if err != nil {
@@ -87,7 +88,7 @@ func (r *repo) Lift(ctx context.Context, run state.Runner, id string) error {
 		return err
 	}
 	if n == 0 {
-		if _, gerr := r.Get(ctx, run, id); gerr != nil {
+		if _, gerr := r.Get(ctx, id); gerr != nil {
 			return gerr // ErrNotFound
 		}
 		return nil // 已 lift：幂等成功
@@ -96,7 +97,7 @@ func (r *repo) Lift(ctx context.Context, run state.Runner, id string) error {
 }
 
 // List 返回全部冻结行（新→旧 + after 游标；ADR-0026 after_* + limit 惯例）。
-func (r *repo) List(ctx context.Context, run state.Runner, afterSeq int64, limit int) ([]freeze.Freeze, error) {
+func (r *repo) List(ctx context.Context, afterSeq int64, limit int) ([]freeze.Freeze, error) {
 	limit = persistence.ClampLimit(limit, 50, 200)
 	q := "SELECT " + selectCols + " FROM change_freezes"
 	args := []any{}
@@ -106,7 +107,7 @@ func (r *repo) List(ctx context.Context, run state.Runner, afterSeq int64, limit
 	}
 	q += " ORDER BY seq DESC LIMIT ?"
 	args = append(args, limit)
-	rows, err := run.QueryContext(ctx, q, args...)
+	rows, err := r.run.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}

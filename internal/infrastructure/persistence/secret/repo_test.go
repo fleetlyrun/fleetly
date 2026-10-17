@@ -29,44 +29,44 @@ func newSecret(id, projectID, name string) *secret.Secret {
 func TestSecretListFingerprintsPagination(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	secrets := secretrepo.New(clock)
+	secrets := secretrepo.New(clock, db.Runner())
 
 	const projA = "01JD0PROJ0000000000000000A"
 	const projB = "01JD0PROJ0000000000000000B"
 	// 字典序与落序交错落三行（projA）+ 异项目一行。
 	names := []string{"api-token", "db-url", "api-token-json"}
 	for i, n := range names {
-		require.NoError(t, secrets.Upsert(ctx, db.Runner(), newSecret(
+		require.NoError(t, secrets.Upsert(ctx, newSecret(
 			"01JD0SECR0000000000000000"+string(rune('0'+i)), projA, n)))
 	}
-	require.NoError(t, secrets.Upsert(ctx, db.Runner(), newSecret(
+	require.NoError(t, secrets.Upsert(ctx, newSecret(
 		"01JD0SECR00000000000000009", projB, "other")))
 
 	// 升序首页截断：api-token < api-token-json < db-url。
-	page1, err := secrets.ListFingerprints(ctx, db.Runner(), projA, "", 2)
+	page1, err := secrets.ListFingerprints(ctx, projA, "", 2)
 	require.NoError(t, err)
 	require.Len(t, page1, 2)
 	assert.Equal(t, "api-token", page1[0].Name)
 	assert.Equal(t, "api-token-json", page1[1].Name)
 
 	// 游标跳过首页。
-	page2, err := secrets.ListFingerprints(ctx, db.Runner(), projA, page1[len(page1)-1].Name, 2)
+	page2, err := secrets.ListFingerprints(ctx, projA, page1[len(page1)-1].Name, 2)
 	require.NoError(t, err)
 	require.Len(t, page2, 1)
 	assert.Equal(t, "db-url", page2[0].Name)
 
 	// 游标越过末条 → 空页；tombstone 不入指纹面。
-	page3, err := secrets.ListFingerprints(ctx, db.Runner(), projA, "zzz", 2)
+	page3, err := secrets.ListFingerprints(ctx, projA, "zzz", 2)
 	require.NoError(t, err)
 	assert.Empty(t, page3)
-	require.NoError(t, secrets.SoftDelete(ctx, db.Runner(), projA, "db-url"))
-	got, err := secrets.ListFingerprints(ctx, db.Runner(), projA, "", 0)
+	require.NoError(t, secrets.SoftDelete(ctx, projA, "db-url"))
+	got, err := secrets.ListFingerprints(ctx, projA, "", 0)
 	require.NoError(t, err)
 	assert.Len(t, got, 2, "deleted rows stay hidden")
 
 	// limit 钳制：<=0 回落缺省 50（两行全回），>200 钳上界（不截断小夹具）。
 	for _, limit := range []int{0, -2, 250} {
-		got, err := secrets.ListFingerprints(ctx, db.Runner(), projA, "", limit)
+		got, err := secrets.ListFingerprints(ctx, projA, "", limit)
 		require.NoError(t, err)
 		assert.Len(t, got, 2, "limit %d clamps into range and returns all rows", limit)
 	}
@@ -112,8 +112,8 @@ func TestSecretUpsertConcurrentSameNameConflict(t *testing.T) {
 	releaseA := make(chan struct{})
 	txErr := make(chan error, 1)
 	go func() {
-		txErr <- dbA.Tx(ctx, func(tx *sql.Tx) error {
-			_, err := tx.ExecContext(ctx, `
+		txErr <- dbA.Tx(ctx, func(run state.Runner) error {
+			_, err := run.ExecContext(ctx, `
 				INSERT INTO secrets (id, seq, project_id, name, ciphertext, fingerprint, created_at, updated_at, deleted_at)
 				VALUES ('01JD0SECR0000000000000000R', 99, ?, 'raced', x'00', 'fp', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', '')`, projID)
 			close(rowReady) // 落行即放行（失败亦放行——主流程在 txErr 处暴露）
@@ -131,7 +131,7 @@ func TestSecretUpsertConcurrentSameNameConflict(t *testing.T) {
 	}
 	upsertErr := make(chan error, 1)
 	go func() {
-		upsertErr <- secretrepo.New(clock).Upsert(ctx, gate, &secret.Secret{
+		upsertErr <- secretrepo.New(clock, gate).Upsert(ctx, &secret.Secret{
 			ProjectID: projID, Name: "raced",
 			Ciphertext: []byte("ct"), Fingerprint: "0123456789abcdef",
 		})
@@ -151,7 +151,7 @@ func TestSecretUpsertConcurrentSameNameConflict(t *testing.T) {
 		"concurrent same-name PUT must normalize the unique violation, got: %v", err)
 
 	// 落库行仍是 A 的那颗（B 的 INSERT 失败即整体无效果）。
-	got, err := secretrepo.New(clock).GetByName(ctx, dbB.Runner(), projID, "raced")
+	got, err := secretrepo.New(clock, dbA.Runner()).GetByName(ctx, projID, "raced")
 	require.NoError(t, err)
 	assert.Equal(t, "01JD0SECR0000000000000000R", got.ID)
 }

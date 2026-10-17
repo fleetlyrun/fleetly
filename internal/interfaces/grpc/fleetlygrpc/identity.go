@@ -7,12 +7,12 @@ package fleetlygrpc
 
 import (
 	"context"
-	"database/sql"
 
 	"golang.org/x/crypto/bcrypt"
 
 	identityv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/identity/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/invitation"
@@ -77,13 +77,13 @@ func (svc *UsersService) CreateUser(ctx context.Context, req *identityv1.CreateU
 	m := &membership.Membership{UserID: u.ID, TeamID: teamID, RoleID: req.GetRoleId()}
 	err = svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{svc.s.teamExists(teamID), svc.s.roleInTeam(req.GetRoleId(), teamID)},
-		write: func(ctx context.Context, tx *sql.Tx) error {
-			if err := svc.s.Users.Create(ctx, tx, u); err != nil {
+		write: func(ctx context.Context, st transact.Stores) error {
+			if err := st.Users.Create(ctx, u); err != nil {
 				return err
 			}
 			// membership 归属事务内铸出的用户 id（ADR-0070）。
 			m.UserID = u.ID
-			return svc.s.Memberships.Create(ctx, tx, m)
+			return st.Memberships.Create(ctx, m)
 		},
 		facts: []func() writes.FactRow{
 			// 资源轴：用户随 membership 落队（P0-2）。
@@ -105,7 +105,7 @@ func (svc *UsersService) CreateUser(ctx context.Context, req *identityv1.CreateU
 }
 
 func (svc *UsersService) GetUser(ctx context.Context, req *identityv1.GetUserRequest) (*identityv1.GetUserResponse, error) {
-	u, err := svc.s.Users.Get(ctx, svc.s.DB.Runner(), req.GetId())
+	u, err := svc.s.Users.Get(ctx, req.GetId())
 	if err != nil {
 		return nil, mapStateError(err, "user")
 	}
@@ -121,12 +121,12 @@ func (svc *UsersService) Login(ctx context.Context, req *identityv1.LoginRequest
 	// name/password 必填组合检查已退役为 LoginRequest 的 protovalidate CEL
 	// 注解（P4-1 批 1 Run B1）：validate 拦截器在 handler 之前执法，拆
 	// per-field 文案。
-	u, err := svc.s.Users.GetByName(ctx, svc.s.DB.Runner(), req.GetName())
+	u, err := svc.s.Users.GetByName(ctx, req.GetName())
 	if err != nil || u.PasswordHash == "" ||
 		bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(req.GetPassword())) != nil {
 		return nil, apperr.New("E_UNAUTHENTICATED", "name or password is incorrect")
 	}
-	memberships, err := svc.s.Memberships.ListByUser(ctx, svc.s.DB.Runner(), u.ID)
+	memberships, err := svc.s.Memberships.ListByUser(ctx, u.ID)
 	if err != nil {
 		return nil, apperr.New("E_INTERNAL", "membership lookup failed").WithCause(err)
 	}
@@ -144,8 +144,8 @@ func (svc *UsersService) Login(ctx context.Context, req *identityv1.LoginRequest
 	}
 	err = svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{svc.s.teamExists(m.TeamID), svc.s.roleInTeam(m.RoleID, m.TeamID), svc.s.userInTeam(u.ID, m.TeamID)},
-		write: func(ctx context.Context, tx *sql.Tx) error {
-			return svc.s.Tokens.Create(ctx, tx, t)
+		write: func(ctx context.Context, st transact.Stores) error {
+			return st.Tokens.Create(ctx, t)
 		},
 		facts: []func() writes.FactRow{
 			// 资源轴（P0-2）。
@@ -180,8 +180,8 @@ func (svc *UsersService) SetUserPassword(ctx context.Context, req *identityv1.Se
 	}
 	err = svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{svc.s.userExists(req.GetUserId())},
-		write: func(ctx context.Context, tx *sql.Tx) error {
-			return svc.s.Users.SetPassword(ctx, tx, req.GetUserId(), string(hash))
+		write: func(ctx context.Context, st transact.Stores) error {
+			return st.Users.SetPassword(ctx, req.GetUserId(), string(hash))
 		},
 		facts: []func() writes.FactRow{
 			// 双真偏离（仅取证面）：改密动词未入事件流（identity 事件面铺
@@ -202,7 +202,7 @@ func (svc *UsersService) SetUserPassword(ctx context.Context, req *identityv1.Se
 }
 
 func (svc *UsersService) ListUsers(ctx context.Context, _ *identityv1.ListUsersRequest) (*identityv1.ListUsersResponse, error) {
-	list, err := svc.s.Users.List(ctx, svc.s.DB.Runner())
+	list, err := svc.s.Users.List(ctx)
 	if err != nil {
 		return nil, mapStateError(err, "user")
 	}
@@ -220,16 +220,16 @@ func (svc *UsersService) DeleteUser(ctx context.Context, req *identityv1.DeleteU
 	// FK 归一（repo 的 DeleteByUser 带 team 过滤、语义不同）随 ADR-0028 批。
 	name := "" // BeforeFP 依赖事务内读到的行（闭包求值在 write 后可见）
 	err := svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, tx *sql.Tx) error {
-			u, err := svc.s.Users.Get(ctx, tx, req.GetId())
+		write: func(ctx context.Context, st transact.Stores) error {
+			u, err := st.Users.Get(ctx, req.GetId())
 			if err != nil {
 				return err
 			}
 			name = u.Name
-			if _, err := tx.ExecContext(ctx, `DELETE FROM memberships WHERE user_id = ?`, req.GetId()); err != nil {
+			if _, err := st.Memberships.DeleteAllForUser(ctx, req.GetId()); err != nil {
 				return err
 			}
-			return svc.s.Users.Delete(ctx, tx, req.GetId())
+			return st.Users.Delete(ctx, req.GetId())
 		},
 		facts: []func() writes.FactRow{
 			// 双真偏离（仅取证面）：删除动词未入事件流（identity 事件面铺
@@ -263,8 +263,8 @@ func (svc *TeamsService) CreateTeam(ctx context.Context, req *identityv1.CreateT
 	// entityid.NamePatternSource（descriptor 对齐测试执法）。
 	t := &team.Team{Name: req.GetName()}
 	err := svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, tx *sql.Tx) error {
-			return svc.s.Teams.Create(ctx, tx, t)
+		write: func(ctx context.Context, st transact.Stores) error {
+			return st.Teams.Create(ctx, t)
 		},
 		facts: []func() writes.FactRow{
 			// 资源轴（P0-2）：聚合即 Team 本体——行 id 由事务内铸出，闭包
@@ -287,7 +287,7 @@ func (svc *TeamsService) CreateTeam(ctx context.Context, req *identityv1.CreateT
 }
 
 func (svc *TeamsService) GetTeam(ctx context.Context, req *identityv1.GetTeamRequest) (*identityv1.GetTeamResponse, error) {
-	t, err := svc.s.Teams.Get(ctx, svc.s.DB.Runner(), req.GetId())
+	t, err := svc.s.Teams.Get(ctx, req.GetId())
 	if err != nil {
 		return nil, mapStateError(err, "team")
 	}
@@ -295,7 +295,7 @@ func (svc *TeamsService) GetTeam(ctx context.Context, req *identityv1.GetTeamReq
 }
 
 func (svc *TeamsService) ListTeams(ctx context.Context, _ *identityv1.ListTeamsRequest) (*identityv1.ListTeamsResponse, error) {
-	list, err := svc.s.Teams.List(ctx, svc.s.DB.Runner())
+	list, err := svc.s.Teams.List(ctx)
 	if err != nil {
 		return nil, mapStateError(err, "team")
 	}
@@ -309,13 +309,13 @@ func (svc *TeamsService) ListTeams(ctx context.Context, _ *identityv1.ListTeamsR
 func (svc *TeamsService) DeleteTeam(ctx context.Context, req *identityv1.DeleteTeamRequest) (*identityv1.DeleteTeamResponse, error) {
 	name := "" // BeforeFP 依赖事务内读到的行（闭包求值在 write 后可见）
 	err := svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, tx *sql.Tx) error {
-			t, err := svc.s.Teams.Get(ctx, tx, req.GetId())
+		write: func(ctx context.Context, st transact.Stores) error {
+			t, err := st.Teams.Get(ctx, req.GetId())
 			if err != nil {
 				return err
 			}
 			name = t.Name
-			return svc.s.Teams.Delete(ctx, tx, req.GetId())
+			return st.Teams.Delete(ctx, req.GetId())
 		},
 		facts: []func() writes.FactRow{
 			// 双真偏离（仅取证面）：删除动词未入事件流（A 化前亦无事件行
@@ -366,8 +366,8 @@ func (svc *RolesService) CreateRole(ctx context.Context, req *identityv1.CreateR
 	ro := &role.Role{TeamID: teamID, Name: req.GetName(), Scopes: identity.ScopeStrings(scopes)}
 	err = svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{svc.s.teamExists(teamID)},
-		write: func(ctx context.Context, tx *sql.Tx) error {
-			return svc.s.Roles.Create(ctx, tx, ro)
+		write: func(ctx context.Context, st transact.Stores) error {
+			return st.Roles.Create(ctx, ro)
 		},
 		facts: []func() writes.FactRow{
 			// 资源轴（P0-2）：内置角色 TeamID='' → 平台级可见。
@@ -389,7 +389,7 @@ func (svc *RolesService) CreateRole(ctx context.Context, req *identityv1.CreateR
 }
 
 func (svc *RolesService) GetRole(ctx context.Context, req *identityv1.GetRoleRequest) (*identityv1.GetRoleResponse, error) {
-	ro, err := svc.s.Roles.Get(ctx, svc.s.DB.Runner(), req.GetId())
+	ro, err := svc.s.Roles.Get(ctx, req.GetId())
 	if err != nil {
 		return nil, mapStateError(err, "role")
 	}
@@ -397,7 +397,7 @@ func (svc *RolesService) GetRole(ctx context.Context, req *identityv1.GetRoleReq
 }
 
 func (svc *RolesService) ListRoles(ctx context.Context, _ *identityv1.ListRolesRequest) (*identityv1.ListRolesResponse, error) {
-	list, err := svc.s.Roles.List(ctx, svc.s.DB.Runner())
+	list, err := svc.s.Roles.List(ctx)
 	if err != nil {
 		return nil, mapStateError(err, "role")
 	}
@@ -411,13 +411,13 @@ func (svc *RolesService) ListRoles(ctx context.Context, _ *identityv1.ListRolesR
 func (svc *RolesService) DeleteRole(ctx context.Context, req *identityv1.DeleteRoleRequest) (*identityv1.DeleteRoleResponse, error) {
 	scopes := "" // BeforeFP 依赖事务内读到的行（闭包求值在 write 后可见）
 	err := svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, tx *sql.Tx) error {
-			ro, err := svc.s.Roles.Get(ctx, tx, req.GetId())
+		write: func(ctx context.Context, st transact.Stores) error {
+			ro, err := st.Roles.Get(ctx, req.GetId())
 			if err != nil {
 				return err
 			}
 			scopes = joinStrings(ro.Scopes)
-			return svc.s.Roles.Delete(ctx, tx, req.GetId())
+			return st.Roles.Delete(ctx, req.GetId())
 		},
 		facts: []func() writes.FactRow{
 			// 双真偏离（仅取证面）：删除动词未入事件流（A 化前亦无事件行
@@ -474,8 +474,8 @@ func (svc *TokensService) CreateToken(ctx context.Context, req *identityv1.Creat
 	}
 	err = svc.s.commit(ctx, writeFact{
 		checks: checks,
-		write: func(ctx context.Context, tx *sql.Tx) error {
-			return svc.s.Tokens.Create(ctx, tx, t)
+		write: func(ctx context.Context, st transact.Stores) error {
+			return st.Tokens.Create(ctx, t)
 		},
 		facts: []func() writes.FactRow{
 			// 资源轴（P0-2）。
@@ -497,7 +497,7 @@ func (svc *TokensService) CreateToken(ctx context.Context, req *identityv1.Creat
 }
 
 func (svc *TokensService) GetToken(ctx context.Context, req *identityv1.GetTokenRequest) (*identityv1.GetTokenResponse, error) {
-	t, err := svc.s.Tokens.Get(ctx, svc.s.DB.Runner(), req.GetId())
+	t, err := svc.s.Tokens.Get(ctx, req.GetId())
 	if err != nil {
 		return nil, mapStateError(err, "token")
 	}
@@ -513,7 +513,7 @@ func (svc *TokensService) ListTokens(ctx context.Context, _ *identityv1.ListToke
 	if err != nil {
 		return nil, err
 	}
-	list, err := svc.s.Tokens.List(ctx, svc.s.DB.Runner())
+	list, err := svc.s.Tokens.List(ctx)
 	if err != nil {
 		return nil, mapStateError(err, "token")
 	}
@@ -533,7 +533,7 @@ func (svc *TokensService) ListTokens(ctx context.Context, _ *identityv1.ListToke
 // （ADR-0035）：吊销他队 Token 是提权面。
 func (svc *TokensService) RevokeToken(ctx context.Context, req *identityv1.RevokeTokenRequest) (*identityv1.RevokeTokenResponse, error) {
 	team := "" // 资源轴 Team（P0-2）：授权行在手即取
-	if row, err := svc.s.Tokens.Get(ctx, svc.s.DB.Runner(), req.GetId()); err == nil {
+	if row, err := svc.s.Tokens.Get(ctx, req.GetId()); err == nil {
 		if aerr := svc.s.authorizeTokenRow(ctx, row); aerr != nil {
 			return nil, aerr
 		}
@@ -543,8 +543,8 @@ func (svc *TokensService) RevokeToken(ctx context.Context, req *identityv1.Revok
 	}
 	var revoked *token.Token
 	err := svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, tx *sql.Tx) error {
-			t, err := svc.s.Tokens.Revoke(ctx, tx, req.GetId())
+		write: func(ctx context.Context, st transact.Stores) error {
+			t, err := st.Tokens.Revoke(ctx, req.GetId())
 			if err != nil {
 				return err
 			}
@@ -599,7 +599,7 @@ func (svc *AuditQueryService) ListAudit(ctx context.Context, req *identityv1.Lis
 		limit = 100
 	}
 	filter.Limit = limit
-	list, err := svc.s.Audits.ListFiltered(ctx, svc.s.DB.Runner(), filter)
+	list, err := svc.s.Audits.ListFiltered(ctx, filter)
 	if err != nil {
 		return nil, mapStateError(err, "audit")
 	}

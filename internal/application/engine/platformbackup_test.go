@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
 
@@ -61,7 +62,7 @@ func withFakeRestic(t *testing.T, cfg *PlatformBackupConfig) (*Engine, *fakeRest
 
 	db, clock := statetest.New(t)
 	dataRoot := t.TempDir()
-	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: newFakeRuntime(), Logger: discardLogger()}, Options{
+	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: newFakeRuntime(), Logger: discardLogger()}, Options{
 		Data: DataOptions{
 			DataRoot: dataRoot,
 		},
@@ -169,7 +170,7 @@ func TestPlatformBackupFailureRecorded(t *testing.T) {
 // Available=false，due 恒假（停用非报错——数据库轨不受影响）。
 func TestPlatformBackupUnavailableDegrades(t *testing.T) {
 	db, _ := statetest.New(t)
-	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: newFakeRuntime(), Logger: discardLogger()}, Options{
+	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: newFakeRuntime(), Logger: discardLogger()}, Options{
 		Data: DataOptions{
 			DataRoot: t.TempDir(),
 		},

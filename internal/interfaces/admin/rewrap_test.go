@@ -38,40 +38,40 @@ func seedOldWorld(t *testing.T, root string) (string, *persistence.DB) {
 	cipher, err := keyring.LoadCipher(root)
 	require.NoError(t, err)
 
-	secrets := secretrepo.New(db.Clock())
+	secrets := secretrepo.New(db.Clock(), db.Runner())
 	mustSeal := func(v string) []byte {
 		ct, err := cipher.Seal([]byte(v))
 		require.NoError(t, err)
 		return ct
 	}
-	require.NoError(t, secrets.Upsert(ctx, db.Runner(), &secret.Secret{
+	require.NoError(t, secrets.Upsert(ctx, &secret.Secret{
 		ID: "s1", ProjectID: "proj-a", Name: "key-a", Ciphertext: mustSeal("value-a1"), Fingerprint: material.Fingerprint([]byte("value-a1")),
 	}))
-	require.NoError(t, secrets.Upsert(ctx, db.Runner(), &secret.Secret{
+	require.NoError(t, secrets.Upsert(ctx, &secret.Secret{
 		ID: "s2", ProjectID: "proj-a", Name: "db_password", Ciphertext: mustSeal("value-a2"), Fingerprint: material.Fingerprint([]byte("value-a2")),
 	}))
 	// tombstone 行同样进重封面（undelete 路径依赖密文可解）。
-	require.NoError(t, secrets.Upsert(ctx, db.Runner(), &secret.Secret{
+	require.NoError(t, secrets.Upsert(ctx, &secret.Secret{
 		ID: "s3", ProjectID: "proj-b", Name: "gone", Ciphertext: mustSeal("value-b"), Fingerprint: material.Fingerprint([]byte("value-b")),
 	}))
-	require.NoError(t, secrets.SoftDelete(ctx, db.Runner(), "proj-b", "gone"))
+	require.NoError(t, secrets.SoftDelete(ctx, "proj-b", "gone"))
 
 	// app_hooks.app_id 有 FK：插一行最小 App 载体行（projects 无 FK 链）。
 	_, err = db.Runner().ExecContext(ctx, `INSERT INTO apps (id, seq, project_id, name, created_at, updated_at, deleted_at) VALUES ('app-1', 1, 'proj-a', 'web', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', '')`)
 	require.NoError(t, err)
-	require.NoError(t, hookrepo.New(db.Clock()).Create(ctx, db.Runner(), &hook.Hook{
+	require.NoError(t, hookrepo.New(db.Clock(), db.Runner()).Create(ctx, &hook.Hook{
 		AppID: "app-1", Repo: "acme/web", Branch: "main", Dockerfile: "Dockerfile",
 		TokenSHA256: "abc", TokenPrefix: "abcd",
 		SecretCiphertext: mustSeal("hook-secret"),
 	}))
 
 	// GitHub App 两态行各一（ADR-0073）：Global + Project 级。
-	ghApps := githubapprepo.New(db.Clock())
-	require.NoError(t, ghApps.Upsert(ctx, db.Runner(), &githubapp.App{
+	ghApps := githubapprepo.New(db.Clock(), db.Runner())
+	require.NoError(t, ghApps.Upsert(ctx, &githubapp.App{
 		ProjectID: "", AppID: 201884, InstallationID: 51887734, AccountLogin: "giant-robots",
 		PrivateKeyCiphertext: mustSeal("gh-key-global"), PrivateKeyFingerprint: material.Fingerprint([]byte("gh-key-global")),
 	}))
-	require.NoError(t, ghApps.Upsert(ctx, db.Runner(), &githubapp.App{
+	require.NoError(t, ghApps.Upsert(ctx, &githubapp.App{
 		ProjectID: "proj-a", AppID: 182345, InstallationID: 51790921, AccountLogin: "acme",
 		PrivateKeyCiphertext: mustSeal("gh-key-proj"), PrivateKeyFingerprint: material.Fingerprint([]byte("gh-key-proj")),
 	}))
@@ -101,7 +101,7 @@ func rotateKeyFiles(t *testing.T, root, oldKeyContent string) *material.Cipher {
 // listSecretCT / listHookCT 读全部密文（断言比对用）。
 func listSecretCT(t *testing.T, db *persistence.DB) map[string][]byte {
 	t.Helper()
-	rows, err := secretrepo.New(db.Clock()).ListAll(context.Background(), db.Runner())
+	rows, err := secretrepo.New(db.Clock(), db.Runner()).ListAll(context.Background())
 	require.NoError(t, err)
 	out := map[string][]byte{}
 	for _, r := range rows {
@@ -112,7 +112,7 @@ func listSecretCT(t *testing.T, db *persistence.DB) map[string][]byte {
 
 func listHookCT(t *testing.T, db *persistence.DB) map[string][]byte {
 	t.Helper()
-	rows, err := hookrepo.New(db.Clock()).ListAll(context.Background(), db.Runner())
+	rows, err := hookrepo.New(db.Clock(), db.Runner()).ListAll(context.Background())
 	require.NoError(t, err)
 	out := map[string][]byte{}
 	for _, r := range rows {
@@ -123,7 +123,7 @@ func listHookCT(t *testing.T, db *persistence.DB) map[string][]byte {
 
 func listGitHubCT(t *testing.T, db *persistence.DB) map[string][]byte {
 	t.Helper()
-	rows, err := githubapprepo.New(db.Clock()).ListAll(context.Background(), db.Runner())
+	rows, err := githubapprepo.New(db.Clock(), db.Runner()).ListAll(context.Background())
 	require.NoError(t, err)
 	out := map[string][]byte{}
 	for _, r := range rows {
@@ -234,17 +234,17 @@ func TestRewrapRefusesUnopenableRows(t *testing.T) {
 	root := t.TempDir()
 	oldKey, db := seedOldWorld(t, root)
 	// 不可解行：垃圾密文直插两表（模拟 key 全损/外来行）。
-	secrets := secretrepo.New(db.Clock())
-	require.NoError(t, secrets.Upsert(ctx, db.Runner(), &secret.Secret{
+	secrets := secretrepo.New(db.Clock(), db.Runner())
+	require.NoError(t, secrets.Upsert(ctx, &secret.Secret{
 		ID: "s-x", ProjectID: "proj-a", Name: "corrupt", Ciphertext: []byte("garbage"), Fingerprint: "ff",
 	}))
-	hooks := hookrepo.New(db.Clock())
-	require.NoError(t, hooks.UpdateSecretCiphertext(ctx, db.Runner(), "app-1", []byte("garbage")))
+	hooks := hookrepo.New(db.Clock(), db.Runner())
+	require.NoError(t, hooks.UpdateSecretCiphertext(ctx, "app-1", []byte("garbage")))
 	// GitHub App 不可解行：Global 行直改密文（Key 面 = global/<login>）。
-	ghApps := githubapprepo.New(db.Clock())
-	ghRow, err := ghApps.GetGlobalByOwner(ctx, db.Runner(), "giant-robots")
+	ghApps := githubapprepo.New(db.Clock(), db.Runner())
+	ghRow, err := ghApps.GetGlobalByOwner(ctx, "giant-robots")
 	require.NoError(t, err)
-	require.NoError(t, ghApps.UpdatePrivateKeyCiphertext(ctx, db.Runner(), ghRow.ID, []byte("garbage")))
+	require.NoError(t, ghApps.UpdatePrivateKeyCiphertext(ctx, ghRow.ID, []byte("garbage")))
 
 	cipher := rotateKeyFiles(t, root, oldKey)
 

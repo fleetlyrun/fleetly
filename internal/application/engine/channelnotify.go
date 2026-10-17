@@ -53,7 +53,7 @@ func (e *Engine) dispatchSystemAlert(ctx context.Context, stateStr string, now t
 
 // TestNotificationChannel 是 test 动词的 engine 面（API 调用；一次性载荷）。
 func (e *Engine) TestNotificationChannel(ctx context.Context, channelID string) error {
-	ch, err := e.channels.Get(ctx, e.db.Runner(), channelID)
+	ch, err := e.channels.Get(ctx, channelID)
 	if err != nil {
 		return err
 	}
@@ -65,7 +65,7 @@ func (e *Engine) TestNotificationChannel(ctx context.Context, channelID string) 
 
 // dispatchNotification 派发到全部启用通道。
 func (e *Engine) dispatchNotification(ctx context.Context, n alertNotification) {
-	chs, err := e.channels.ListEnabled(ctx, e.db.Runner())
+	chs, err := e.channels.ListEnabled(ctx)
 	if err != nil {
 		e.log.Error("metrics step: list channels", "err", err)
 		return
@@ -89,7 +89,7 @@ func (e *Engine) deliverOne(ctx context.Context, ch *channel.Channel, n alertNot
 			}
 		}
 	}
-	if derr := e.channels.RecordDelivery(ctx, e.db.Runner(), ch.ID, failure); derr != nil {
+	if derr := e.channels.RecordDelivery(ctx, ch.ID, failure); derr != nil {
 		e.log.Error("metrics step: record delivery", "channel", ch.ID, "err", derr)
 	}
 	return err

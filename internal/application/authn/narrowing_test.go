@@ -41,20 +41,19 @@ func quietLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard
 func seedNarrowingWorld(t *testing.T, tokScopes, creatorScopes []string) (string, *Authenticator) {
 	t.Helper()
 	db, _ := statetest.New(t)
-	a := NewAuthenticator(db, testAuthnRepos(db.Clock()), nil, testVocab, quietLogger())
+	a := NewAuthenticator(db, testAuthnRepos(db.Clock(), db.Runner()), nil, testVocab, quietLogger())
 	ctx := context.Background()
-	run := db.Runner()
 
 	tm := &team.Team{ID: "t1", Name: "crew"}
-	require.NoError(t, teamrepo.New(db.Clock()).Create(ctx, run, tm))
+	require.NoError(t, teamrepo.New(db.Clock(), db.Runner()).Create(ctx, tm))
 	tokRole := &role.Role{ID: "r-tok", TeamID: "t1", Name: "tok-role", Scopes: tokScopes}
 	creatorRole := &role.Role{ID: "r-creator", TeamID: "t1", Name: "creator-role", Scopes: creatorScopes}
-	require.NoError(t, rolerepo.New(db.Clock()).Create(ctx, run, tokRole))
-	require.NoError(t, rolerepo.New(db.Clock()).Create(ctx, run, creatorRole))
+	require.NoError(t, rolerepo.New(db.Clock(), db.Runner()).Create(ctx, tokRole))
+	require.NoError(t, rolerepo.New(db.Clock(), db.Runner()).Create(ctx, creatorRole))
 	u := &user.User{ID: "u1", Name: "alice"}
-	require.NoError(t, userrepo.New(db.Clock()).Create(ctx, run, u))
+	require.NoError(t, userrepo.New(db.Clock(), db.Runner()).Create(ctx, u))
 	m := &membership.Membership{ID: "m1", UserID: "u1", TeamID: "t1", RoleID: "r-creator"}
-	require.NoError(t, membershiprepo.New(db.Clock()).Create(ctx, run, m))
+	require.NoError(t, membershiprepo.New(db.Clock(), db.Runner()).Create(ctx, m))
 
 	mat, err := identity.NewToken()
 	require.NoError(t, err)
@@ -62,7 +61,7 @@ func seedNarrowingWorld(t *testing.T, tokScopes, creatorScopes []string) (string
 		ID: "tok1", Name: "alice-cli", TeamID: "t1", UserID: "u1", RoleID: "r-tok",
 		SHA256: mat.SHA256, Prefix: mat.Prefix,
 	}
-	require.NoError(t, tokenrepo.New(db.Clock()).Create(ctx, run, tok))
+	require.NoError(t, tokenrepo.New(db.Clock(), db.Runner()).Create(ctx, tok))
 	return mat.Secret, a
 }
 
@@ -102,7 +101,7 @@ func TestNarrowingEmptyIntersectionIs403WithReasonAndAudit(t *testing.T) {
 	assert.Contains(t, e.Suggestion(), "ADR-0038")
 
 	// 审计行落在库（action=token.narrowed_denied；Team 轴=Token 行 Team）。
-	rows, rerr := auditrepo.New(a.db.Clock()).ListFiltered(context.Background(), a.db.Runner(),
+	rows, rerr := auditrepo.New(a.db.Clock(), a.db.Runner()).ListFiltered(context.Background(),
 		audit.Filter{Resource: "token/tok1"})
 	require.NoError(t, rerr)
 	require.Len(t, rows, 1)
@@ -113,7 +112,7 @@ func TestNarrowingEmptyIntersectionIs403WithReasonAndAudit(t *testing.T) {
 	// 节流：同 Token 60s 内重复拒绝不再落第二行。
 	_, err = resolveWith(t, a, secret)
 	require.Error(t, err)
-	rows, rerr = auditrepo.New(a.db.Clock()).ListFiltered(context.Background(), a.db.Runner(),
+	rows, rerr = auditrepo.New(a.db.Clock(), a.db.Runner()).ListFiltered(context.Background(),
 		audit.Filter{Resource: "token/tok1"})
 	require.NoError(t, rerr)
 	assert.Len(t, rows, 1)
@@ -122,7 +121,7 @@ func TestNarrowingEmptyIntersectionIs403WithReasonAndAudit(t *testing.T) {
 func TestNarrowingCreatorRemovedFromTeam(t *testing.T) {
 	secret, a := seedNarrowingWorld(t, []string{"apps:write"}, []string{"apps:admin"})
 	// creator membership 被移除（移出 Team）→ Token 立即失去全部授权。
-	require.NoError(t, a.memberships.DeleteByUser(context.Background(), a.db.Runner(), "u1", "t1"))
+	require.NoError(t, a.memberships.DeleteByUser(context.Background(), "u1", "t1"))
 	_, err := resolveWith(t, a, secret)
 	require.Error(t, err)
 	var e *apperr.Error
@@ -156,17 +155,16 @@ func TestNarrowingCreatorDeletedIsTerminal(t *testing.T) {
 func TestNarrowingUserlessTokenStaysDeclared(t *testing.T) {
 	// 无属主 Token（bootstrap/Agent/CI 形态）不参与收窄——声明即有效。
 	db, _ := statetest.New(t)
-	a := NewAuthenticator(db, testAuthnRepos(db.Clock()), nil, testVocab, quietLogger())
+	a := NewAuthenticator(db, testAuthnRepos(db.Clock(), db.Runner()), nil, testVocab, quietLogger())
 	ctx := context.Background()
-	run := db.Runner()
 	tm := &team.Team{ID: "t1", Name: "crew"}
-	require.NoError(t, teamrepo.New(db.Clock()).Create(ctx, run, tm))
+	require.NoError(t, teamrepo.New(db.Clock(), db.Runner()).Create(ctx, tm))
 	ro := &role.Role{ID: "r-tok", TeamID: "t1", Name: "tok-role", Scopes: []string{"apps:write"}}
-	require.NoError(t, rolerepo.New(db.Clock()).Create(ctx, run, ro))
+	require.NoError(t, rolerepo.New(db.Clock(), db.Runner()).Create(ctx, ro))
 	mat, err := identity.NewToken()
 	require.NoError(t, err)
 	tok := &token.Token{ID: "tok1", Name: "ci", TeamID: "t1", RoleID: "r-tok", SHA256: mat.SHA256, Prefix: mat.Prefix}
-	require.NoError(t, tokenrepo.New(db.Clock()).Create(ctx, run, tok))
+	require.NoError(t, tokenrepo.New(db.Clock(), db.Runner()).Create(ctx, tok))
 
 	id, err := resolveWith(t, a, mat.Secret)
 	require.NoError(t, err)

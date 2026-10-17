@@ -16,19 +16,20 @@ import (
 // repo 是 domain task.Repo 的 SQLite 实现。
 type repo struct {
 	clock state.Clock
+	run   state.Runner
 }
 
 // New 构造 repo（直接返回接口——消费面只见 domain task.Repo）。
-func New(clock state.Clock) task.Repo { return &repo{clock: clock} }
+func New(clock state.Clock, run state.Runner) task.Repo { return &repo{clock: clock, run: run} }
 
 // Create 落一行（活跃名唯一索引防项目内重名 → ErrAlreadyExists）。
-func (r *repo) Create(ctx context.Context, run state.Runner, t *task.Task) error {
+func (r *repo) Create(ctx context.Context, t *task.Task) error {
 	now := state.FormatTime(r.clock.Now())
 	t.CreatedAt, t.UpdatedAt = now, now
 	// minttask 在 TaskSpec 冻结期预铸 seq/id（ADR-0070：Task Mint 词条——
 	// 身份注入先于冻结）；此处零值兜底补铸，预置则原样落行。
 	if t.Seq == 0 {
-		seq, err := persistence.NextSeq(ctx, run, "tasks")
+		seq, err := persistence.NextSeq(ctx, r.run, "tasks")
 		if err != nil {
 			return err
 		}
@@ -37,7 +38,7 @@ func (r *repo) Create(ctx context.Context, run state.Runner, t *task.Task) error
 	if t.ID == "" {
 		t.ID = entityid.Join(t.Name, t.Seq)
 	}
-	_, err := run.ExecContext(ctx, `
+	_, err := r.run.ExecContext(ctx, `
 		INSERT INTO tasks
 			(id, seq, project_id, name, form, state, spec, owner_token_id,
 			 desired_concurrency, network_group, dns_name, lease_deadline,
@@ -53,21 +54,21 @@ func (r *repo) Create(ctx context.Context, run state.Runner, t *task.Task) error
 }
 
 // Get 按 ID 直读（tombstone 行照常返回——终态事实可见）。
-func (r *repo) Get(ctx context.Context, run state.Runner, id string) (*task.Task, error) {
-	row := run.QueryRowContext(ctx, selectCols+" WHERE id = ?", id)
+func (r *repo) Get(ctx context.Context, id string) (*task.Task, error) {
+	row := r.run.QueryRowContext(ctx, selectCols+" WHERE id = ?", id)
 	return scanTask(row.Scan)
 }
 
 // GetByName 按项目内名直读（活跃名唯一；无 → ErrNotFound）。
-func (r *repo) GetByName(ctx context.Context, run state.Runner, projectID, name string) (*task.Task, error) {
-	row := run.QueryRowContext(ctx,
+func (r *repo) GetByName(ctx context.Context, projectID, name string) (*task.Task, error) {
+	row := r.run.QueryRowContext(ctx,
 		selectCols+" WHERE project_id = ? AND name = ? AND state != 'deleted'", projectID, name)
 	return scanTask(row.Scan)
 }
 
 // ListByProject 返回项目内 Task（新→旧 + after 游标；ADR-0026 after_* + limit
 // 惯例——游标 = seq 创建序）。
-func (r *repo) ListByProject(ctx context.Context, run state.Runner, projectID string, afterSeq int64, limit int) ([]task.Task, error) {
+func (r *repo) ListByProject(ctx context.Context, projectID string, afterSeq int64, limit int) ([]task.Task, error) {
 	limit = persistence.ClampLimit(limit, defaultListLimit, maxListLimit)
 	q := selectCols + " WHERE project_id = ?"
 	args := []any{projectID}
@@ -77,12 +78,12 @@ func (r *repo) ListByProject(ctx context.Context, run state.Runner, projectID st
 	}
 	q += " ORDER BY seq DESC LIMIT ?"
 	args = append(args, limit)
-	return r.query(ctx, run, q, args...)
+	return r.query(ctx, q, args...)
 }
 
 // ListDriving 返回全部待驱动行（active/draining；tombstone 与终态不拾取）。
-func (r *repo) ListDriving(ctx context.Context, run state.Runner) ([]task.Task, error) {
-	return r.query(ctx, run,
+func (r *repo) ListDriving(ctx context.Context) ([]task.Task, error) {
+	return r.query(ctx,
 		selectCols+" WHERE state IN ('active', 'draining') ORDER BY seq")
 }
 
@@ -93,27 +94,27 @@ func (r *repo) ListDriving(ctx context.Context, run state.Runner) ([]task.Task, 
 // UTC 串（state.FormatTime），字典序即时序。limit 钳制与 ListByProject
 // 同口径（<=0 或超上限回落/钳缺省）。新→旧序（finished_at DESC）：近期
 // 收口的行才是残留的实际所在（崩溃/失败窗口），旧行近乎必然已收敛。
-func (r *repo) ListRecentlyFinished(ctx context.Context, run state.Runner, since string, limit int) ([]task.Task, error) {
+func (r *repo) ListRecentlyFinished(ctx context.Context, since string, limit int) ([]task.Task, error) {
 	limit = persistence.ClampLimit(limit, defaultListLimit, maxListLimit)
 	states := []string{string(task.StateCompleted), string(task.StateFailed), string(task.StateDrained)}
-	return r.query(ctx, run,
+	return r.query(ctx,
 		selectCols+" WHERE state IN ("+persistence.Placeholders(len(states))+")"+
 			" AND finished_at != '' AND finished_at >= ?"+
 			" ORDER BY finished_at DESC LIMIT ?", append(persistence.ToAny(states), since, limit)...)
 }
 
 // ListByOwner 返回属主 Token 名下活跃行（吊销排空的拉式扫描面，P1-8）。
-func (r *repo) ListByOwner(ctx context.Context, run state.Runner, tokenID string) ([]task.Task, error) {
-	return r.query(ctx, run,
+func (r *repo) ListByOwner(ctx context.Context, tokenID string) ([]task.Task, error) {
+	return r.query(ctx,
 		selectCols+" WHERE owner_token_id = ? AND state IN ('active', 'draining') ORDER BY seq", tokenID)
 }
 
 // StatsByProject 返回 Project 内非终态 Task 的配额口径统计（ADR-0017
 // 附录 A.1）：活跃行数与 desired_concurrency 之和（受理位与引擎配额检查
 // 共用，事务内读）。非终态 = 终态词表取反（TerminalStateStrings 单源）。
-func (r *repo) StatsByProject(ctx context.Context, run state.Runner, projectID string) (active int, desiredSum int64, err error) {
+func (r *repo) StatsByProject(ctx context.Context, projectID string) (active int, desiredSum int64, err error) {
 	states := task.TerminalStateStrings()
-	row := run.QueryRowContext(ctx, `
+	row := r.run.QueryRowContext(ctx, `
 		SELECT COUNT(*), COALESCE(SUM(desired_concurrency), 0)
 		FROM tasks
 		WHERE project_id = ? AND state NOT IN (`+persistence.Placeholders(len(states))+`)`,
@@ -127,8 +128,8 @@ func (r *repo) StatsByProject(ctx context.Context, run state.Runner, projectID s
 // Transit 是状态 CAS：仅当当前状态 ∈ from 时迁移到 to（mut 可补充落
 // lease_deadline/desired_concurrency 等字段）。前置不符 → ErrConflict；
 // 行不存在 → ErrNotFound。UPDATE 带 state 前置条件作并发防御纵深。
-func (r *repo) Transit(ctx context.Context, run state.Runner, id string, from []task.State, to task.State, mut func(*task.Task)) error {
-	cur, err := r.Get(ctx, run, id)
+func (r *repo) Transit(ctx context.Context, id string, from []task.State, to task.State, mut func(*task.Task)) error {
+	cur, err := r.Get(ctx, id)
 	if err != nil {
 		return err
 	}
@@ -144,7 +145,7 @@ func (r *repo) Transit(ctx context.Context, run state.Runner, id string, from []
 	if to.Terminal() && cur.FinishedAt == "" {
 		cur.FinishedAt = cur.UpdatedAt
 	}
-	res, err := run.ExecContext(ctx, `
+	res, err := r.run.ExecContext(ctx, `
 		UPDATE tasks SET
 			state = ?, lease_deadline = ?, desired_concurrency = ?,
 			updated_at = ?, finished_at = ?
@@ -164,8 +165,8 @@ func (r *repo) Transit(ctx context.Context, run state.Runner, id string, from []
 
 // UpdateLease 更新租约 deadline（原地：state 不变，ADR-0024 原地迁移不发
 // 事件的同款口径——lease 续期由 lease.renewed 事件显式承载）。
-func (r *repo) UpdateLease(ctx context.Context, run state.Runner, id, deadline string) error {
-	res, err := run.ExecContext(ctx, `
+func (r *repo) UpdateLease(ctx context.Context, id, deadline string) error {
+	res, err := r.run.ExecContext(ctx, `
 		UPDATE tasks SET lease_deadline = ?, updated_at = ? WHERE id = ?`,
 		deadline, state.FormatTime(r.clock.Now()), id)
 	if err != nil {
@@ -188,8 +189,8 @@ const selectCols = `
 	       created_at, updated_at, finished_at
 	FROM tasks`
 
-func (r *repo) query(ctx context.Context, run state.Runner, q string, args ...any) ([]task.Task, error) {
-	rows, err := run.QueryContext(ctx, q, args...)
+func (r *repo) query(ctx context.Context, q string, args ...any) ([]task.Task, error) {
+	rows, err := r.run.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}

@@ -91,7 +91,7 @@ func TestExecSessionGRPCLink(t *testing.T) {
 	}, 2*time.Second, 20*time.Millisecond)
 
 	// 审计：exec.session 行带 Detail（进程/实例/节点/命令）。
-	entries, err := h.Services.Audits.List(context.Background(), h.DB.Runner(), 10)
+	entries, err := h.Services.Audits.List(context.Background(), 10)
 	require.NoError(t, err)
 	found := false
 	for _, e := range entries {
@@ -109,7 +109,7 @@ func TestExecSessionGRPCLink(t *testing.T) {
 	assert.True(t, found, "exec.session audit row must exist")
 
 	// 事件：exec.session_opened 载荷带命令面。
-	evts, err := h.Services.OutboxEvents.ListAfter(context.Background(), h.DB.Runner(), 0, 50, "")
+	evts, err := h.Services.OutboxEvents.ListAfter(context.Background(), 0, 50, "")
 	require.NoError(t, err)
 	seen := false
 	for _, ev := range evts {

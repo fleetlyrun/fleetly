@@ -98,7 +98,7 @@ func (e *Engine) resetOrphanBuilds(ctx context.Context) {
 	if len(e.builders) == 0 {
 		return
 	}
-	active, err := e.builds.ListActive(ctx, e.db.Runner())
+	active, err := e.repos.Builds.ListActive(ctx)
 	if err != nil {
 		e.log.Error("build: reset orphans", "err", err)
 		return

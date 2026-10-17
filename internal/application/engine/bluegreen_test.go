@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
@@ -93,7 +94,7 @@ func TestBlueGreenWindowMaterializesUnion(t *testing.T) {
 func TestBlueGreenSwitchAndCollection(t *testing.T) {
 	e, rt, proxy, _ := newBGProxyEngine(t)
 	ctx := context.Background()
-	require.NoError(t, e.routes.Create(ctx, e.db.Runner(), &route.Route{
+	require.NoError(t, e.repos.Routes.Create(ctx, &route.Route{
 		ID: "01JD0ROUTE00000000000000001", ProjectID: tProjectID,
 		Host: "shop.127.0.0.1.sslip.io", AppID: tAppID, Process: "web", Port: 8080,
 		Protocol: capability.ProtocolHTTP, TLSMode: "none",
@@ -303,13 +304,13 @@ func newBGProxyEngine(t *testing.T) (*Engine, *fakeRuntime, *fakeProxy, *statete
 	db, clock := statetest.New(t)
 	rt := newFakeRuntime()
 	proxy := &fakeProxy{}
-	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
+	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
 	t.Cleanup(func() { _ = e.Stop(context.Background()) })
 	ctx := context.Background()
-	require.NoError(t, projectrepo.New(clock).Create(ctx, db.Runner(), &project.Project{
+	require.NoError(t, projectrepo.New(clock, db.Runner()).Create(ctx, &project.Project{
 		ID: tProjectID, Name: "shop", TeamID: "default",
 	}))
-	require.NoError(t, apprepo.New(clock).Create(ctx, db.Runner(), &app.App{
+	require.NoError(t, apprepo.New(clock, db.Runner()).Create(ctx, &app.App{
 		ID: tAppID, ProjectID: tProjectID, Name: "web",
 	}))
 	return e, rt, proxy, clock

@@ -74,7 +74,7 @@ func (e *Engine) resolveConfigFiles(ctx context.Context, names []string, project
 		if _, ok := materials.ConfigFiles[name]; ok {
 			continue
 		}
-		row, err := e.configs.Latest(ctx, e.db.Runner(), projectID, name)
+		row, err := e.repos.Configs.Latest(ctx, projectID, name)
 		if err != nil {
 			return fmt.Errorf("config %q (config_mounts): not found — create it via the configs API first (%w)", name, err)
 		}
@@ -192,7 +192,7 @@ func (e *Engine) materialsFor(ctx context.Context, refs, hosts []string, project
 			materials.RegistryAuth[host] = cred
 			continue
 		}
-		row, err := e.secrets.GetByName(ctx, e.db.Runner(), projectID, registrySecretPrefix+host)
+		row, err := e.repos.Secrets.GetByName(ctx, projectID, registrySecretPrefix+host)
 		if err != nil {
 			if errors.Is(err, state.ErrNotFound) {
 				continue
@@ -220,7 +220,7 @@ func (e *Engine) materialsFor(ctx context.Context, refs, hosts []string, project
 
 	// Secret 注入：process secret_refs 按名解析 → 文件材料。
 	for _, name := range refs {
-		row, err := e.secrets.GetByName(ctx, e.db.Runner(), projectID, name)
+		row, err := e.repos.Secrets.GetByName(ctx, projectID, name)
 		if err != nil {
 			return materials, fmt.Errorf("secret %q: %w", name, err)
 		}
@@ -243,7 +243,7 @@ func (e *Engine) pinVolumes(ctx context.Context, ws []capability.Workload, proje
 	var pending []capability.VolumeMount
 	for _, w := range ws {
 		for _, v := range w.Volumes {
-			row, err := e.volumes.GetByName(ctx, e.db.Runner(), projectID, v.VolumeID)
+			row, err := e.repos.Volumes.GetByName(ctx, projectID, v.VolumeID)
 			if err != nil {
 				return fmt.Errorf("volume %q: %w", v.VolumeID, err)
 			}
@@ -260,7 +260,7 @@ func (e *Engine) pinVolumes(ctx context.Context, ws []capability.Workload, proje
 		return err
 	}
 	for _, v := range pending {
-		if err := e.volumes.Pin(ctx, e.db.Runner(), projectID, v.VolumeID, nodeID); err != nil {
+		if err := e.repos.Volumes.Pin(ctx, projectID, v.VolumeID, nodeID); err != nil {
 			return fmt.Errorf("pin volume %q: %w", v.VolumeID, err)
 		}
 	}
@@ -290,7 +290,7 @@ func (e *Engine) applyVolumePinning(ctx context.Context, ws []capability.Workloa
 	for i := range ws {
 		w := &ws[i] // 指针就地改（range 值副本会丢失 Placement 修改）
 		for _, v := range w.Volumes {
-			row, err := e.volumes.GetByName(ctx, e.db.Runner(), projectID, v.VolumeID)
+			row, err := e.repos.Volumes.GetByName(ctx, projectID, v.VolumeID)
 			if err != nil {
 				return fmt.Errorf("volume %q: %w", v.VolumeID, err)
 			}

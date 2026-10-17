@@ -25,17 +25,17 @@ func testVarServices(t *testing.T) *Services {
 	db, _ := statetest.New(t)
 	return &Services{
 		DB:              db,
-		SharedVariables: sharedvariablerepo.New(db.Clock()),
-		AppVariables:    appvariablerepo.New(db.Clock()),
+		SharedVariables: sharedvariablerepo.New(db.Clock(), db.Runner()),
+		AppVariables:    appvariablerepo.New(db.Clock(), db.Runner()),
 	}
 }
 
 func TestDeployVarLookupLayering(t *testing.T) {
 	s := testVarServices(t)
 	ctx := context.Background()
-	require.NoError(t, s.SharedVariables.Upsert(ctx, s.DB.Runner(), &sharedvariable.SharedVariable{ProjectID: "p-1", Name: "db_url", Value: "proj"}))
-	require.NoError(t, s.SharedVariables.Upsert(ctx, s.DB.Runner(), &sharedvariable.SharedVariable{ProjectID: "p-1", Name: "only_proj", Value: "v"}))
-	require.NoError(t, s.AppVariables.Upsert(ctx, s.DB.Runner(), &appvariable.AppVariable{AppID: "a-1", Name: "db_url", Value: "app"}))
+	require.NoError(t, s.SharedVariables.Upsert(ctx, &sharedvariable.SharedVariable{ProjectID: "p-1", Name: "db_url", Value: "proj"}))
+	require.NoError(t, s.SharedVariables.Upsert(ctx, &sharedvariable.SharedVariable{ProjectID: "p-1", Name: "only_proj", Value: "v"}))
+	require.NoError(t, s.AppVariables.Upsert(ctx, &appvariable.AppVariable{AppID: "a-1", Name: "db_url", Value: "app"}))
 
 	lookup, err := deployVarLookup(ctx, s, &app.App{ID: "a-1", ProjectID: "p-1"})
 	require.NoError(t, err)

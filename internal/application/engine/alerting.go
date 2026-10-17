@@ -23,7 +23,7 @@ const (
 // evaluateRules 评估用户规则（App 聚合 = 该 App 全部容器取 max——最热副本
 // 代表，ADR-0041）。迁移沿：fired/resolved 各一次 + 事件 + 通道派发。
 func (e *Engine) evaluateRules(ctx context.Context, samples []containerSample, now time.Time) {
-	rules, err := e.alertRules.ListEnabled(ctx, e.db.Runner())
+	rules, err := e.alertRules.ListEnabled(ctx)
 	if err != nil {
 		e.log.Error("metrics step: list rules", "err", err)
 		return
@@ -52,7 +52,7 @@ func (e *Engine) evaluateRules(ctx context.Context, samples []containerSample, n
 		value := agg[strings.ToLower(rule.AppID)][rule.Metric]
 		observed := value != 0 // 零 = 无样本（cpu 率首拍/容器缺席）——不评估
 		if observed {
-			if err := e.alertRules.Observe(ctx, e.db.Runner(), rule.ID, value, state.FormatTime(now)); err != nil {
+			if err := e.alertRules.Observe(ctx, rule.ID, value, state.FormatTime(now)); err != nil {
 				e.log.Error("metrics step: observe rule", "rule", rule.ID, "err", err)
 			}
 		}
@@ -79,7 +79,7 @@ func (e *Engine) evaluateRules(ctx context.Context, samples []containerSample, n
 
 // transitionRule 落迁移 + 事件 + 派发（fire 与 resolve 同一通道载荷形态）。
 func (e *Engine) transitionRule(ctx context.Context, rule *alertrule.Rule, to string, value float64, now time.Time) {
-	if err := e.alertRules.Transition(ctx, e.db.Runner(), rule.ID, to, state.FormatTime(now)); err != nil {
+	if err := e.alertRules.Transition(ctx, rule.ID, to, state.FormatTime(now)); err != nil {
 		e.log.Error("metrics step: transition rule", "rule", rule.ID, "err", err)
 		return
 	}
@@ -119,7 +119,7 @@ func (e *Engine) emitAlertEvent(ctx context.Context, name string, rule *alertrul
 		RuleID: rule.ID, AppID: rule.AppID, Metric: rule.Metric,
 		Threshold: rule.Threshold, Value: value, State: rule.State,
 	})
-	if err := e.emitObservation(ctx, e.eventTeamOfApp(ctx, e.db.Runner(), rule.AppID),
+	if err := e.emitObservation(ctx, e.eventTeamOfApp(ctx, e.repos, rule.AppID),
 		name, "app", rule.AppID, payload); err != nil {
 		e.log.Error("metrics step: emit event", "rule", rule.ID, "err", err)
 	}

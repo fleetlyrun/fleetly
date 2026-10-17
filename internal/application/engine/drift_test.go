@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 )
@@ -108,7 +109,7 @@ func TestBaselineReplayRecheckSkipsActiveApp(t *testing.T) {
 	require.NoError(t, err)
 
 	before := len(rt.calls())
-	appRow, err := e.apps.Get(context.Background(), e.db.Runner(), tAppID)
+	appRow, err := e.repos.Apps.Get(context.Background(), tAppID)
 	require.NoError(t, err)
 	e.replayAppBaseline(context.Background(), appRow, d1)
 	assert.Len(t, rt.calls(), before, "replay must skip an app with an active deployment")
@@ -122,7 +123,7 @@ func TestStartupBaselineReplayRebuildsDriftCache(t *testing.T) {
 	driftDeployToSucceeded(t, e, rt, clock, rev)
 
 	// "重启"：新引擎实例（内存缓存清空），同库同 runtime。
-	e2 := New(Deps{DB: e.db, Repos: testRepos(e.db), Runtime: rt, Logger: e.log}, Options{})
+	e2 := New(Deps{DB: e.db, Stores: testRepos(e.db), Tx: transact.NewTx(e.db, testBinder(e.db)), Runtime: rt, Logger: e.log}, Options{})
 	e2.rebuildBaselines(context.Background())
 
 	calls := rt.calls()
@@ -308,7 +309,7 @@ func TestSpecDriftDetectedOnManualCommandEdit(t *testing.T) {
 	require.Equal(t, []string{"workload.drift_detected"}, eventNames(t, e, tAppID+"-web"),
 		"a manual command edit must raise drift")
 	var payload string
-	evs, err := e.outbox.ListAfter(context.Background(), e.db.Runner(), 0, 100, "")
+	evs, err := e.repos.Outbox.ListAfter(context.Background(), 0, 100, "")
 	require.NoError(t, err)
 	for _, ev := range evs {
 		if ev.AggregateID == tAppID+"-web" {

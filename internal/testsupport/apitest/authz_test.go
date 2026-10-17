@@ -30,8 +30,8 @@ func mintToken(t *testing.T, h *apitest.Harness, name, roleID string) string {
 	t.Helper()
 	material, err := identity.NewToken()
 	require.NoError(t, err)
-	repo := tokenrepo.New(h.DB.Clock())
-	require.NoError(t, repo.Create(context.Background(), h.DB.Runner(), &token.Token{
+	repo := tokenrepo.New(h.DB.Clock(), h.DB.Runner())
+	require.NoError(t, repo.Create(context.Background(), &token.Token{
 		Name:   name,
 		TeamID: identity.DefaultTeamID, RoleID: roleID,
 		SHA256: material.SHA256, Prefix: material.Prefix,
@@ -115,10 +115,10 @@ func TestRevokedTokenNextCallIs401(t *testing.T) {
 	require.NoError(t, err)
 
 	// 吊销 bootstrap（repo 直吊；TokensService 面随服务批）。
-	repo := tokenrepo.New(h.DB.Clock())
-	row, err := repo.GetBySHA256(ctx, h.DB.Runner(), identity.HashToken(h.Token))
+	repo := tokenrepo.New(h.DB.Clock(), h.DB.Runner())
+	row, err := repo.GetBySHA256(ctx, identity.HashToken(h.Token))
 	require.NoError(t, err)
-	_, err = repo.Revoke(context.Background(), h.DB.Runner(), row.ID)
+	_, err = repo.Revoke(context.Background(), row.ID)
 	require.NoError(t, err)
 
 	// 验收锚：进行中请求的下一个调用即 401（逐请求查表，无缓存宽限）。

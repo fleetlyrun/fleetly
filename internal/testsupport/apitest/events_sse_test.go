@@ -79,7 +79,7 @@ func TestEventsSSEFollowAndGone(t *testing.T) {
 
 	// 断档：游标落在窗外 → 流前 410（统一错误信封带 E_EVENTS_GONE）。
 	h.Clock.Advance(8 * 24 * time.Hour)
-	_, err := outbox.New(h.DB.Clock()).TrimBefore(context.Background(), h.DB.Runner(),
+	_, err := outbox.New(h.DB.Clock(), h.DB.Runner()).TrimBefore(context.Background(),
 		h.DB.Clock().Now().Add(-7*24*time.Hour))
 	require.NoError(t, err)
 

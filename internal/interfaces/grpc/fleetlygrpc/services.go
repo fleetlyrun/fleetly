@@ -8,6 +8,7 @@ import (
 	"log/slog"
 
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/run"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/schedule"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
@@ -51,7 +52,9 @@ import (
 
 // Services 聚合全部 API 依赖（装配注入；Runtime 面收窄为 Enrollment 消费）。
 type Services struct {
-	DB      state.DB
+	DB state.DB
+	// Tx 是事务入口（组合根装配 db + Binder，ADR-0080）。
+	Tx      transact.Tx
 	Engine  *engine.Engine
 	Cipher  *material.Cipher
 	Runtime capability.Runtime
@@ -157,7 +160,9 @@ type Services struct {
 // 零持久化构造，repo 实现选择住 assembly；vocab 是 scope 词表单一源，
 // GitHub/UploadStore 是客户端注入面）。字段与 Services 同名消费面对齐。
 type Deps struct {
-	DB          state.DB
+	DB state.DB
+	// Tx 是事务入口（组合根装配，ADR-0080）。
+	Tx          transact.Tx
 	Engine      *engine.Engine
 	Cipher      *material.Cipher
 	Runtime     capability.Runtime
@@ -219,6 +224,7 @@ type Deps struct {
 func NewServices(deps Deps) *Services {
 	return &Services{
 		DB:              deps.DB,
+		Tx:              deps.Tx,
 		Engine:          deps.Engine,
 		Cipher:          deps.Cipher,
 		Runtime:         deps.Runtime,

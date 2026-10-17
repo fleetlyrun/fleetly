@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 )
@@ -86,7 +87,7 @@ func TestScenario1KilledMidReleaseReplay(t *testing.T) {
 
 	// "被杀"：引擎停止（观测/Ensure 缓存清空语义）→ 新实例恢复。
 	require.NoError(t, e.Stop(context.Background()))
-	e2 := New(Deps{DB: e.db, Repos: testRepos(e.db), Runtime: rt, Logger: e.log}, Options{})
+	e2 := New(Deps{DB: e.db, Stores: testRepos(e.db), Tx: transact.NewTx(e.db, testBinder(e.db)), Runtime: rt, Logger: e.log}, Options{})
 	e2.step(ctx) // 幂等重放同 Generation
 	e2.handleObservation(ctx, workloadEventRunning(tAppID+"-web", d.Generation))
 	e2.step(ctx)
@@ -114,7 +115,7 @@ func TestNodeLeftReconciliation(t *testing.T) {
 	e.managedStep(ctx)
 
 	assert.Equal(t, []string{"node.left"}, eventNames(t, e, "01JD0NODE00000000000000000"))
-	n, err := e.nodes.Get(ctx, e.db.Runner(), "01JD0NODE00000000000000000")
+	n, err := e.repos.Nodes.Get(ctx, "01JD0NODE00000000000000000")
 	require.NoError(t, err)
 	assert.False(t, n.Available, "departed node marked unavailable in the cache")
 

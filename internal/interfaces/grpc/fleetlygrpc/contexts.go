@@ -4,7 +4,6 @@ package fleetlygrpc
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"slices"
 	"strconv"
@@ -15,6 +14,7 @@ import (
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -31,7 +31,7 @@ type NodesService struct {
 }
 
 func (svc *NodesService) ListNodes(ctx context.Context, req *runtimev1.ListNodesRequest) (*runtimev1.ListNodesResponse, error) {
-	list, err := svc.s.Nodes.ListPage(ctx, svc.s.DB.Runner(),
+	list, err := svc.s.Nodes.ListPage(ctx,
 		req.GetAfterNodeSeq(), listLimit(req.GetLimit()))
 	if err != nil {
 		return nil, mapStateError(err, "node")
@@ -224,8 +224,8 @@ func (svc *RoutesService) CreateRoute(ctx context.Context, req *proxyv1.CreateRo
 			svc.s.parentProjectAlive(req.GetProjectId()),
 			svc.s.projectAppAlive(req.GetProjectId(), req.GetAppId()),
 		},
-		write: func(ctx context.Context, tx *sql.Tx) error {
-			return svc.s.Routes.Create(ctx, tx, row)
+		write: func(ctx context.Context, st transact.Stores) error {
+			return st.Routes.Create(ctx, row)
 		},
 		facts: []func() writes.FactRow{
 			// 双真偏离（仅取证面）：Route CRUD 未入事件流（路由发布事实
@@ -255,7 +255,7 @@ func (svc *RoutesService) ListRoutes(ctx context.Context, req *proxyv1.ListRoute
 	if err != nil {
 		return nil, err
 	}
-	list, err := svc.s.Routes.ListPage(ctx, svc.s.DB.Runner(),
+	list, err := svc.s.Routes.ListPage(ctx,
 		req.GetProjectId(), req.GetAfterRouteSeq(), listLimit(req.GetLimit()))
 	if err != nil {
 		return nil, mapStateError(err, "route")
@@ -276,8 +276,8 @@ func (svc *RoutesService) DeleteRoute(ctx context.Context, req *proxyv1.DeleteRo
 		return nil, err
 	}
 	err := svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, tx *sql.Tx) error {
-			return svc.s.Routes.SoftDelete(ctx, tx, req.GetId())
+		write: func(ctx context.Context, st transact.Stores) error {
+			return st.Routes.SoftDelete(ctx, req.GetId())
 		},
 		facts: []func() writes.FactRow{
 			// 双真偏离（仅取证面）：Route CRUD 未入事件流（同 CreateRoute——
@@ -357,11 +357,11 @@ func (svc *EventsService) ListEvents(ctx context.Context, req *telemetryv1.ListE
 	if limit <= 0 || limit > 1000 {
 		limit = 100
 	}
-	events, err := svc.s.OutboxEvents.ListAfter(ctx, svc.s.DB.Runner(), req.GetAfterSeq(), int(limit), team)
+	events, err := svc.s.OutboxEvents.ListAfter(ctx, req.GetAfterSeq(), int(limit), team)
 	if err != nil {
 		return nil, mapStateError(err, "events")
 	}
-	lastSeq, err := svc.s.OutboxEvents.LastSeq(ctx, svc.s.DB.Runner())
+	lastSeq, err := svc.s.OutboxEvents.LastSeq(ctx)
 	if err != nil {
 		return nil, mapStateError(err, "events")
 	}
@@ -391,11 +391,11 @@ func (svc *EventsService) eventsGoneCheck(ctx context.Context, afterSeq int64) e
 	if afterSeq <= 0 {
 		return nil
 	}
-	earliest, err := svc.s.OutboxEvents.EarliestSeq(ctx, svc.s.DB.Runner())
+	earliest, err := svc.s.OutboxEvents.EarliestSeq(ctx)
 	if err != nil {
 		return mapStateError(err, "events")
 	}
-	last, err := svc.s.OutboxEvents.LastSeq(ctx, svc.s.DB.Runner())
+	last, err := svc.s.OutboxEvents.LastSeq(ctx)
 	if err != nil {
 		return mapStateError(err, "events")
 	}
@@ -425,11 +425,11 @@ func (svc *EventsService) StreamEvents(req *telemetryv1.StreamEventsRequest, str
 
 // GetEventStatus 是断档判定与快照重同步的基准（earliest_seq / last_seq）。
 func (svc *EventsService) GetEventStatus(ctx context.Context, _ *telemetryv1.GetEventStatusRequest) (*telemetryv1.GetEventStatusResponse, error) {
-	earliest, err := svc.s.OutboxEvents.EarliestSeq(ctx, svc.s.DB.Runner())
+	earliest, err := svc.s.OutboxEvents.EarliestSeq(ctx)
 	if err != nil {
 		return nil, mapStateError(err, "events")
 	}
-	last, err := svc.s.OutboxEvents.LastSeq(ctx, svc.s.DB.Runner())
+	last, err := svc.s.OutboxEvents.LastSeq(ctx)
 	if err != nil {
 		return nil, mapStateError(err, "events")
 	}
@@ -461,7 +461,7 @@ func (s *Services) subscribeEvents(ctx context.Context, team string, afterSeq in
 	}
 	cursor := afterSeq
 	for {
-		batch, err := s.OutboxEvents.ListAfter(ctx, s.DB.Runner(), cursor, 1000, team)
+		batch, err := s.OutboxEvents.ListAfter(ctx, cursor, 1000, team)
 		if err != nil {
 			return mapStateError(err, "events")
 		}
@@ -532,13 +532,13 @@ func (svc *LogsService) StreamLogs(req *telemetryv1.StreamLogsRequest, stream te
 // streamAppLogs 是 App 轴的原通路（app 行 → project 行 → 授权 → 双径）。
 func (svc *LogsService) streamAppLogs(req *telemetryv1.StreamLogsRequest, stream telemetryv1.LogsService_StreamLogsServer) error {
 	ctx := stream.Context()
-	appRow, err := svc.s.Apps.Get(ctx, svc.s.DB.Runner(), req.GetAppId())
+	appRow, err := svc.s.Apps.Get(ctx, req.GetAppId())
 	if err != nil {
 		return mapStateError(err, "app")
 	}
 	// 行级授权（ADR-0035）+ NamespaceRef.Team 实取（App → Project 行，
 	// resolveBackend 同族——api 面硬编码 "default" 漏网在此闭合）。
-	proj, err := svc.s.Projects.Get(ctx, svc.s.DB.Runner(), appRow.ProjectID)
+	proj, err := svc.s.Projects.Get(ctx, appRow.ProjectID)
 	if err != nil {
 		return mapStateError(err, "project")
 	}
@@ -557,11 +557,11 @@ func (svc *LogsService) streamAppLogs(req *telemetryv1.StreamLogsRequest, stream
 // databaseID，projection 投影公式），Runtime 与 VL 双径同锚。
 func (svc *LogsService) streamDatabaseLogs(req *telemetryv1.StreamLogsRequest, stream telemetryv1.LogsService_StreamLogsServer) error {
 	ctx := stream.Context()
-	dbRow, err := svc.s.Databases.Get(ctx, svc.s.DB.Runner(), req.GetDatabaseId())
+	dbRow, err := svc.s.Databases.Get(ctx, req.GetDatabaseId())
 	if err != nil {
 		return mapStateError(err, "database")
 	}
-	proj, err := svc.s.Projects.Get(ctx, svc.s.DB.Runner(), dbRow.ProjectID)
+	proj, err := svc.s.Projects.Get(ctx, dbRow.ProjectID)
 	if err != nil {
 		return mapStateError(err, "project")
 	}
@@ -594,15 +594,15 @@ func (svc *LogsService) streamDatabaseLogs(req *telemetryv1.StreamLogsRequest, s
 // run 载体（workload id = runID，投影公式）。
 func (svc *LogsService) streamRunLogs(req *telemetryv1.StreamLogsRequest, stream telemetryv1.LogsService_StreamLogsServer) error {
 	ctx := stream.Context()
-	runRow, err := svc.s.Runs.Get(ctx, svc.s.DB.Runner(), req.GetRunId())
+	runRow, err := svc.s.Runs.Get(ctx, req.GetRunId())
 	if err != nil {
 		return mapStateError(err, "run")
 	}
-	taskRow, err := svc.s.Tasks.Get(ctx, svc.s.DB.Runner(), runRow.TaskID)
+	taskRow, err := svc.s.Tasks.Get(ctx, runRow.TaskID)
 	if err != nil {
 		return mapStateError(err, "task")
 	}
-	proj, err := svc.s.Projects.Get(ctx, svc.s.DB.Runner(), runRow.ProjectID)
+	proj, err := svc.s.Projects.Get(ctx, runRow.ProjectID)
 	if err != nil {
 		return mapStateError(err, "project")
 	}

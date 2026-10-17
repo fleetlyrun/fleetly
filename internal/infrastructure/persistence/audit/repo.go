@@ -16,27 +16,28 @@ import (
 // repo 是 domain audit.Repo 的 SQLite 实现。
 type repo struct {
 	clock state.Clock
+	run   state.Runner
 }
 
 // New 构造 repo（直接返回接口——消费面只见 domain audit.Repo）。
-func New(clock state.Clock) audit.Repo { return &repo{clock: clock} }
+func New(clock state.Clock, run state.Runner) audit.Repo { return &repo{clock: clock, run: run} }
 
 // Append 落一条审计（四件一拍的"审计"件）。Team 轴统一铸入点：Entry 未
 // 显式携带时从 ctx 取（ADR-0035——全部调用方（api/engine/webhook）零改动
 // 获得 Team 标注；system/无身份动作显式留空 = 平台级行）。ID 由行装配处
 // 装配 aud-<seq>（ADR-0070——调用方不再自带 id）。
-func (r *repo) Append(ctx context.Context, run state.Runner, e *audit.Entry) error {
+func (r *repo) Append(ctx context.Context, e *audit.Entry) error {
 	if e.TeamID == "" {
 		e.TeamID = audit.TeamFromContext(ctx)
 	}
 	e.CreatedAt = state.FormatTime(r.clock.Now())
-	seq, err := persistence.NextSeq(ctx, run, "audit")
+	seq, err := persistence.NextSeq(ctx, r.run, "audit")
 	if err != nil {
 		return err
 	}
 	e.Seq = seq
 	e.ID = entityid.Audit(seq)
-	_, err = run.ExecContext(ctx, `
+	_, err = r.run.ExecContext(ctx, `
 		INSERT INTO audit (id, seq, actor, source, action, resource, before_fp, after_fp, team_id, created_at, detail)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		e.ID, e.Seq, e.Actor, string(e.Source), e.Action, e.Resource, e.BeforeFP, e.AfterFP, e.TeamID, e.CreatedAt, e.Detail)
@@ -44,13 +45,13 @@ func (r *repo) Append(ctx context.Context, run state.Runner, e *audit.Entry) err
 }
 
 // List 返回审计（新→旧；limit 上界钳制）。
-func (r *repo) List(ctx context.Context, run state.Runner, limit int) ([]audit.Entry, error) {
-	return r.ListFiltered(ctx, run, audit.Filter{Limit: limit})
+func (r *repo) List(ctx context.Context, limit int) ([]audit.Entry, error) {
+	return r.ListFiltered(ctx, audit.Filter{Limit: limit})
 }
 
 // ListFiltered 按过滤返回审计（新→旧；limit 上界钳制；条件动态拼接但
 // 占位符参数化——无字符串拼接 SQL）。
-func (r *repo) ListFiltered(ctx context.Context, run state.Runner, f audit.Filter) ([]audit.Entry, error) {
+func (r *repo) ListFiltered(ctx context.Context, f audit.Filter) ([]audit.Entry, error) {
 	f.Limit = persistence.ClampLimit(f.Limit, 1000, 1000)
 	query := `SELECT id, seq, actor, source, action, resource, before_fp, after_fp, team_id, created_at, detail FROM audit`
 	var conds []string
@@ -81,7 +82,7 @@ func (r *repo) ListFiltered(ctx context.Context, run state.Runner, f audit.Filte
 	query += " ORDER BY seq DESC LIMIT ?"
 	args = append(args, f.Limit)
 
-	rows, err := run.QueryContext(ctx, query, args...)
+	rows, err := r.run.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}

@@ -32,7 +32,7 @@ type proxies struct {
 // 一次轻量指纹比对）。后端地址不是行集的一部分——载体漂移/Dead backend
 // 撤流由 PublishRoutesNow 即时触发与强制重放节拍兜底（滞后有界，终态同）。
 func (e *Engine) publishRoutes(ctx context.Context) {
-	routes, err := e.routes.List(ctx, e.db.Runner())
+	routes, err := e.repos.Routes.List(ctx)
 	if err != nil {
 		e.log.Error("route publish: list", "err", err)
 		e.ensureForget(e.proxyMemo.pub, routesPubKey) // 指纹失真：下拍强制全量
@@ -148,7 +148,7 @@ func (e *Engine) resolveBackend(ctx context.Context, rt route.Route, servingGen 
 // 的输入序契约）。读失败上抛：调用方（reconcileManaged）按"整组不下发"
 // 收口，绝不以空集代偿（空集 = 把全部项目用户滚出 htpasswd）。
 func (e *Engine) activeProjectIDs(ctx context.Context) ([]string, error) {
-	projects, err := e.projects.List(ctx, e.db.Runner())
+	projects, err := e.repos.Projects.List(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -167,11 +167,11 @@ func (e *Engine) activeProjectIDs(ctx context.Context) ([]string, error) {
 // 折成"无网络"会让 Proxy 下发挖掉全部项目网引用的 spec——指纹一变一还
 // 两轮假滚；调用方对挂网域跳拍），绝不以空集代偿。
 func (e *Engine) activeProjectNetworks(ctx context.Context) ([]capability.NetworkRef, error) {
-	rows, err := e.networks.List(ctx, e.db.Runner())
+	rows, err := e.repos.Networks.List(ctx)
 	if err != nil {
 		return nil, err
 	}
-	projects, err := e.projects.List(ctx, e.db.Runner())
+	projects, err := e.repos.Projects.List(ctx)
 	if err != nil {
 		return nil, err
 	}

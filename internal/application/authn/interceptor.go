@@ -221,7 +221,7 @@ func (a *Authenticator) resolve(ctx context.Context) (*Identity, error) {
 		return nil, apperr.New("E_UNAUTHENTICATED", "invalid token format")
 	}
 	sha := identity.HashToken(secret)
-	tok, err := a.tokens.GetBySHA256(ctx, a.db.Runner(), sha)
+	tok, err := a.tokens.GetBySHA256(ctx, sha)
 	if err != nil {
 		// 分诊（Q-24）：行不存在 = 凭证无效（正常拒绝面，静默）；其余 =
 		// 存储故障——伪装成"无效凭证"会吞掉故障真相，必须以 E_INTERNAL
@@ -236,7 +236,7 @@ func (a *Authenticator) resolve(ctx context.Context) (*Identity, error) {
 		return nil, apperr.New("E_UNAUTHENTICATED", "token has been revoked").
 			WithContext("reason", "revoked")
 	}
-	role, err := a.roles.Get(ctx, a.db.Runner(), tok.RoleID)
+	role, err := a.roles.Get(ctx, tok.RoleID)
 	if err != nil {
 		// 角色失联是引用完整性破坏（FK 把守下的不可达）：按无效凭证拒。
 		a.log.Error("authn: token references missing role", "token", tok.Name, "role", tok.RoleID)
@@ -257,7 +257,7 @@ func (a *Authenticator) resolve(ctx context.Context) (*Identity, error) {
 		Scopes: scopes, scopeSet: set,
 	}
 	if tok.UserID != "" {
-		u, err := a.users.Get(ctx, a.db.Runner(), tok.UserID)
+		u, err := a.users.Get(ctx, tok.UserID)
 		if err != nil {
 			// creator 已删 = Token 终态失效（ADR-0038）。FK 把守下正常不可达
 			//（删用户须先吊销名下 Token），DB 手工清理与未来删除面放行时兜底。
@@ -284,7 +284,7 @@ func (a *Authenticator) resolve(ctx context.Context) (*Identity, error) {
 // id.Scopes/scopeSet）。全失（membership 消失/交集为空）返回 403 带原因
 // （Agent 可判定"找管理员"而非"重新认证"——P6 裁决）。
 func (a *Authenticator) narrowToCreator(ctx context.Context, tok *token.Token, id *Identity) error {
-	m, err := a.memberships.GetByUser(ctx, a.db.Runner(), tok.UserID, tok.TeamID)
+	m, err := a.memberships.GetByUser(ctx, tok.UserID, tok.TeamID)
 	if err != nil {
 		if !errors.Is(err, state.ErrNotFound) {
 			a.log.Error("authn: creator membership lookup failed", "token", tok.Name, "err", err)
@@ -297,7 +297,7 @@ func (a *Authenticator) narrowToCreator(ctx context.Context, tok *token.Token, i
 	if m.RoleID == tok.RoleID {
 		return nil // 同角色：creator 授权恒覆盖声明，求交 = 声明（免读快路径）
 	}
-	crole, err := a.roles.Get(ctx, a.db.Runner(), m.RoleID)
+	crole, err := a.roles.Get(ctx, m.RoleID)
 	if err != nil {
 		// membership 角色失联是引用完整性破坏（FK 把守下的不可达）：大声失败
 		// 而非静默放行（收窄不可判定时拒绝是 fail-closed）。
@@ -351,7 +351,7 @@ func (a *Authenticator) auditNarrowing(ctx context.Context, tok *token.Token, re
 	a.lastMu.Unlock()
 	// LedgerOnly：认证拒绝路径只有取证面——拒绝不是既成事实，无流面
 	// 事件可发（outbox 不触碰，Repos.Outbox 零值即不装配）。
-	err := writes.Emit(audit.WithTeam(ctx, tok.TeamID), a.db.Runner(), writes.Repos{Audits: a.audits}, writes.FactRow{
+	err := writes.Emit(audit.WithTeam(ctx, tok.TeamID), writes.Repos{Audits: a.audits}, writes.FactRow{
 		Aggregate: "token", ID: tok.ID,
 		Actor:      "token:" + tok.Name,
 		Source:     SourceFromContext(ctx),
@@ -375,7 +375,7 @@ func (a *Authenticator) touchLastUsed(id *Identity) {
 	}
 	a.lastUsed[id.TokenID] = now
 	a.lastMu.Unlock()
-	if err := a.tokens.TouchLastUsed(context.Background(), a.db.Runner(), id.TokenID); err != nil {
+	if err := a.tokens.TouchLastUsed(context.Background(), id.TokenID); err != nil {
 		a.log.Warn("authn: record last_used_at failed", "token", id.TokenName, "err", err)
 	}
 }

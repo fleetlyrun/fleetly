@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
@@ -46,8 +47,8 @@ func TestRestartComponentRoutesByProviderName(t *testing.T) {
 	rt := &restartRecorder{fakeRuntime: base}
 	db, _ := statetest.New(t)
 	e := New(Deps{
-		DB:      db,
-		Repos:   testRepos(db),
+		DB:     db,
+		Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)),
 		Runtime: rt,
 		Metrics: &managedFake{fakeMetrics: &fakeMetrics{}, name: "victoriametrics",
 			namespace: capability.NamespaceRef{Team: "fleetly", Project: "system", App: "metrics"},
@@ -64,8 +65,8 @@ func TestRestartComponentRoutesByProviderName(t *testing.T) {
 func TestRestartComponentUnknownAndUnsupported(t *testing.T) {
 	db, _ := statetest.New(t)
 	e := New(Deps{
-		DB:      db,
-		Repos:   testRepos(db),
+		DB:     db,
+		Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)),
 		Runtime: newFakeRuntime(),
 		// 在册但不声明受管部署形态（无载体可重启）。
 		Metrics: &unmanagedNamedFake{fakeMetrics: &fakeMetrics{}, name: "victoriametrics"},
@@ -97,8 +98,8 @@ func TestRestartComponentRequiresRuntimeSubface(t *testing.T) {
 	// Runtime 不实现 RuntimeRestart（第三 runtime 缺席形态）→ 精确拒绝。
 	db, _ := statetest.New(t)
 	e := New(Deps{
-		DB:      db,
-		Repos:   testRepos(db),
+		DB:     db,
+		Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)),
 		Runtime: newFakeRuntime(),
 		Metrics: &managedFake{fakeMetrics: &fakeMetrics{}, name: "victoriametrics", workloads: []capability.Workload{{ID: "vm"}}},
 		Logger:  discardLogger(),

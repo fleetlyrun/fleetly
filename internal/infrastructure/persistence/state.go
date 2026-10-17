@@ -7,9 +7,9 @@
 // 机械留 infrastructure）。
 //
 // 四件一拍（ADR-0005）：状态 CAS + tombstone + Outbox 事件 + 审计在同
-// 事务落库。事务边界由调用方（engine/API）经 Tx 收口；聚合 repo 方法一律
-// 接受 state.Runner（*sql.DB 或 *sql.Tx 均满足），可独立执行也可组合进
-// 事务。
+// 事务落库。事务边界由调用方（engine/API）经 Tx 收口；聚合 repo 构造
+// 绑定执行面（New(clock, run)——组合根绑 *sql.DB 独立形态），事务态由
+// application/transact 的 Binder 以事务执行面重造（ADR-0080）。
 package persistence
 
 import (
@@ -65,8 +65,8 @@ func MapScanErr(err error) error {
 // NextSeq 铸表的下一创建序号（ADR-0070：seq 是创建序唯一真源，兼任可读
 // id 后缀）。连接池收口为 1（见 Open），事务内 MAX+1 读-改-写天然串行；
 // UNIQUE(seq) 索引使违规双铸 fail-closed。table 由各 repo 以字面量传入
-// （非用户输入，无注入面）。包内聚合 repo 共用本包函数；消费侧经
-// (*DB).NextSeq 契约方法（state.DB 接口面），语义同一实现。
+// （非用户输入，无注入面）。包内聚合 repo 共用本包函数（事务态传绑定
+// 的 tx 执行面；transact.Stores.NextSeq 是消费侧唯一入口）。
 func NextSeq(ctx context.Context, run state.Runner, table string) (int64, error) {
 	var max sql.NullInt64
 	if err := run.QueryRowContext(ctx, "SELECT MAX(seq) FROM "+table).Scan(&max); err != nil {
@@ -138,12 +138,6 @@ func (d *DB) VacuumInto(ctx context.Context, target string) error {
 	return nil
 }
 
-// NextSeq 是消费侧契约方法（state.DB 接口面；ADR-0070 单源语义注记在
-// 契约处）：委托包函数，persistence 内部聚合 repo 仍共用包函数形态。
-func (d *DB) NextSeq(ctx context.Context, run state.Runner, table string) (int64, error) {
-	return NextSeq(ctx, run, table)
-}
-
 // migrate 执行 goose 前滚（只加法；失败=恢复 Platform Backup 重放，
 // 架构 §8）。
 func migrate(ctx context.Context, db *sql.DB) error {
@@ -158,10 +152,10 @@ func migrate(ctx context.Context, db *sql.DB) error {
 }
 
 // Tx 在单个写事务内执行 fn：四件一拍的组合点。fn 收到的 *sql.Tx 满足
-// state.Runner，聚合 repo 的事务形态据此完成 CAS + Outbox + 审计
-// (+tombstone)。返回 fn 的错误时自动回滚；事务内错误原样上抛（调用方转
-// apperr）。
-func (d *DB) Tx(ctx context.Context, fn func(tx *sql.Tx) error) error {
+// state.Runner，事务作用域 Stores（transact.Binder）据此重造各聚合 repo
+// 的事务形态，完成 CAS + Outbox + 审计 (+tombstone)。返回 fn 的错误时
+// 自动回滚；事务内错误原样上抛（调用方转 apperr）。
+func (d *DB) Tx(ctx context.Context, fn func(run state.Runner) error) error {
 	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("state: begin: %w", err)

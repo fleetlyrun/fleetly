@@ -75,7 +75,7 @@ func (e *Engine) baselineGeneration(ctx context.Context, d *deployment.Deploymen
 	if d.FromRevision == "" {
 		return 0
 	}
-	base, err := e.deployments.LatestSucceeded(ctx, e.db.Runner(), d.AppID)
+	base, err := e.repos.Deployments.LatestSucceeded(ctx, d.AppID)
 	if err != nil || base.ToRevision != d.FromRevision {
 		return 0
 	}
@@ -105,7 +105,7 @@ func (e *Engine) blueGreenWindowMaterialize(ctx context.Context, d *deployment.D
 		fromGen = d.Generation // 无基线（首次部署）：退化为单代窗
 	}
 
-	peers, err := e.resolvePeerRefs(ctx, e.db.Runner(), toSpec.GetApp().GetProject(), toSpec, false)
+	peers, err := e.resolvePeerRefs(ctx, e.repos, toSpec.GetApp().GetProject(), toSpec, false)
 	if err != nil {
 		return fmt.Errorf("resolve cross-project network peers: %w", err)
 	}
@@ -120,7 +120,7 @@ func (e *Engine) blueGreenWindowMaterialize(ctx context.Context, d *deployment.D
 		if err != nil {
 			return fmt.Errorf("resolve baseline build digests: %w", err)
 		}
-		fromPeers, err := e.resolvePeerRefs(ctx, e.db.Runner(), fromSpec.GetApp().GetProject(), fromSpec, false)
+		fromPeers, err := e.resolvePeerRefs(ctx, e.repos, fromSpec.GetApp().GetProject(), fromSpec, false)
 		if err != nil {
 			return fmt.Errorf("resolve baseline cross-project network peers: %w", err)
 		}
@@ -224,7 +224,7 @@ func (e *Engine) failBlueGreen(ctx context.Context, d *deployment.Deployment, re
 // 条目无对应活载体，Addresses 不产端点）。ListDriving 按 id 升序：首见
 // 即最老在途（无在途则最老 queued，其 FromRevision 同基线，值等价）。
 func (e *Engine) servingGenerations(ctx context.Context) map[string]uint64 {
-	driving, err := e.deployments.ListDriving(ctx, e.db.Runner())
+	driving, err := e.repos.Deployments.ListDriving(ctx)
 	if err != nil {
 		e.log.Error("route publish: list driving for serving generations", "err", err)
 		return nil

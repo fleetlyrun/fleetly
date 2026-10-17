@@ -40,11 +40,11 @@ package engine
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
@@ -100,16 +100,16 @@ func (e *Engine) mintOneShotTask(ctx context.Context, projectID string,
 	}
 	// 资源轴 Team 先行解析（P0-2）：Project 的 Team 归属不可变，事务外
 	// 解析无 TOCTOU 面。
-	team := e.eventTeamOfProject(ctx, e.db.Runner(), projectID)
+	team := e.eventTeamOfProject(ctx, e.repos, projectID)
 	var row *task.Task
-	err = e.db.Tx(ctx, func(tx *sql.Tx) error {
+	err = e.tx.Do(ctx, func(s transact.Stores) error {
 		// 配额检查先行（拒绝零副作用；含本单自占一位；ADR-0017 附录 A.1）：
 		// 命中返回哨兵——调用方转各自语义（到期拍 skip / predeploy 有界等待 /
 		// 手动拍诚实拒绝）。随后事务内取 seq 铸行（ADR-0070）。
-		if err := e.taskSpawnQuota(ctx, tx, projectID, 1); err != nil {
+		if err := e.taskSpawnQuota(ctx, s, projectID, 1); err != nil {
 			return err
 		}
-		seq, err := e.db.NextSeq(ctx, tx, "tasks")
+		seq, err := s.NextSeq(ctx, "tasks")
 		if err != nil {
 			return err
 		}
@@ -117,8 +117,8 @@ func (e *Engine) mintOneShotTask(ctx context.Context, projectID string,
 		if err != nil {
 			return err
 		}
-		return e.commitWrite(ctx, tx, writeFact{
-			write: func(ctx context.Context, tx *sql.Tx) error { return e.tasks.Create(ctx, tx, row) },
+		return e.commitWrite(ctx, s, writeFact{
+			write: func(ctx context.Context, s transact.Stores) error { return s.Tasks.Create(ctx, row) },
 			facts: []func() writes.FactRow{func() writes.FactRow {
 				fr := writes.FactRow{
 					Name: EventTaskCreated, Aggregate: "task", ID: row.ID,

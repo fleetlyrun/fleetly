@@ -10,7 +10,6 @@ package writes_test
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"testing"
 	"time"
@@ -31,9 +30,9 @@ import (
 var errBoom = errors.New("boom")
 
 // kernelRepos 装配真库 repo 集（FakeClock 钉时间戳）。
-func kernelRepos() writes.Repos {
+func kernelRepos(run state.Runner) writes.Repos {
 	clock := statetest.NewFakeClock()
-	return writes.Repos{Outbox: outboxrepo.New(clock), Audits: auditrepo.New(clock)}
+	return writes.Repos{Outbox: outboxrepo.New(clock, run), Audits: auditrepo.New(clock, run)}
 }
 
 // outboxTeamAxis 直读 outbox 行的资源轴 team_id（Event 读面不带 team——
@@ -51,11 +50,11 @@ func outboxTeamAxis(t *testing.T, db *persistence.DB, seq int64) string {
 // 缺省铸型（Source "" → system；Resource "" → Aggregate/ID）。
 func TestSequenceFansOutBothRows(t *testing.T) {
 	db, _ := statetest.New(t)
-	repos := kernelRepos()
+	repos := kernelRepos(db.Runner())
 	ctx := audit.WithTeam(context.Background(), "team-operator")
 
-	err := db.Tx(ctx, func(tx *sql.Tx) error {
-		return writes.Sequence(ctx, tx, repos, func() writes.FactRow {
+	err := db.Tx(ctx, func(run state.Runner) error {
+		return writes.Sequence(ctx, kernelRepos(run), func() writes.FactRow {
 			return writes.FactRow{
 				Name: "task.created", Aggregate: "task", ID: "id1",
 				Payload: []byte(`{"a":1}`), TeamID: "team-resource",
@@ -66,7 +65,7 @@ func TestSequenceFansOutBothRows(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	events, err := repos.Outbox.ListAfter(ctx, db.Runner(), 0, 10, "")
+	events, err := repos.Outbox.ListAfter(ctx, 0, 10, "")
 	require.NoError(t, err)
 	require.Len(t, events, 1, "流面一行")
 	assert.Equal(t, "task.created", events[0].Name)
@@ -76,7 +75,7 @@ func TestSequenceFansOutBothRows(t *testing.T) {
 	assert.Equal(t, "team-resource", outboxTeamAxis(t, db, events[0].Seq),
 		"outbox 行 team_id 是资源轴（FactRow.TeamID）")
 
-	audits, err := repos.Audits.List(ctx, db.Runner(), 10)
+	audits, err := repos.Audits.List(ctx, 10)
 	require.NoError(t, err)
 	require.Len(t, audits, 1, "取证面一行")
 	a := audits[0]
@@ -92,17 +91,17 @@ func TestSequenceFansOutBothRows(t *testing.T) {
 // （Audit 指纹词面不受影响——审计动词与事件名分立是 FactRow 显式双词面）。
 func TestSequenceDefaults(t *testing.T) {
 	db, _ := statetest.New(t)
-	repos := kernelRepos()
+	repos := kernelRepos(db.Runner())
 	ctx := context.Background()
 
-	require.NoError(t, db.Tx(ctx, func(tx *sql.Tx) error {
-		return writes.Sequence(ctx, tx, repos, func() writes.FactRow {
+	require.NoError(t, db.Tx(ctx, func(run state.Runner) error {
+		return writes.Sequence(ctx, kernelRepos(run), func() writes.FactRow {
 			return writes.FactRow{Name: "task.created", Aggregate: "task", ID: "id1",
 				Payload: []byte(`{}`), Action: "task.create"}
 		})
 	}))
 
-	audits, err := repos.Audits.List(ctx, db.Runner(), 10)
+	audits, err := repos.Audits.List(ctx, 10)
 	require.NoError(t, err)
 	require.Len(t, audits, 1)
 	assert.Equal(t, audit.SourceSystem, audits[0].Source, "空 Source 缺省 system")
@@ -112,11 +111,11 @@ func TestSequenceDefaults(t *testing.T) {
 // TestSequenceFlags：LedgerOnly 只落取证面；StreamOnly 只落流面。
 func TestSequenceFlags(t *testing.T) {
 	db, _ := statetest.New(t)
-	repos := kernelRepos()
+	repos := kernelRepos(db.Runner())
 	ctx := context.Background()
 
-	require.NoError(t, db.Tx(ctx, func(tx *sql.Tx) error {
-		return writes.Sequence(ctx, tx, repos,
+	require.NoError(t, db.Tx(ctx, func(run state.Runner) error {
+		return writes.Sequence(ctx, kernelRepos(run),
 			func() writes.FactRow {
 				return writes.FactRow{Aggregate: "task", ID: "l1",
 					Action: "task.audit", LedgerOnly: true} // 测试面：flag 语义探针
@@ -129,12 +128,12 @@ func TestSequenceFlags(t *testing.T) {
 		)
 	}))
 
-	events, err := repos.Outbox.ListAfter(ctx, db.Runner(), 0, 10, "")
+	events, err := repos.Outbox.ListAfter(ctx, 0, 10, "")
 	require.NoError(t, err)
 	require.Len(t, events, 1, "LedgerOnly 不落流面")
 	assert.Equal(t, "s1", events[0].AggregateID, "StreamOnly 落流面")
 
-	audits, err := repos.Audits.List(ctx, db.Runner(), 10)
+	audits, err := repos.Audits.List(ctx, 10)
 	require.NoError(t, err)
 	require.Len(t, audits, 1, "StreamOnly 不落取证面")
 	assert.Equal(t, "task/l1", audits[0].Resource, "LedgerOnly 落取证面")
@@ -143,9 +142,9 @@ func TestSequenceFlags(t *testing.T) {
 // TestSequenceRejectsBothFlags：双旗同立拒绝（什么都不发射 = 静默丢事实）。
 func TestSequenceRejectsBothFlags(t *testing.T) {
 	db, _ := statetest.New(t)
-	repos := kernelRepos()
+	repos := kernelRepos(db.Runner())
 
-	err := writes.Sequence(context.Background(), db.Runner(), repos, func() writes.FactRow {
+	err := writes.Sequence(context.Background(), repos, func() writes.FactRow {
 		// 测试面：双旗同立拒绝路径探针（非法形态本身无单侧偏离理由可注）。
 		return writes.FactRow{LedgerOnly: true, StreamOnly: true}
 	})
@@ -158,7 +157,7 @@ type fakeOutbox struct {
 	failOn  int // 第 failOn 次 Append 失败（1 起；0 = 永不）
 }
 
-func (f *fakeOutbox) Append(context.Context, state.Runner, string, string, string, string, []byte) (int64, error) {
+func (f *fakeOutbox) Append(context.Context, string, string, string, string, []byte) (int64, error) {
 	f.appends++
 	if f.appends == f.failOn {
 		return 0, errBoom
@@ -166,12 +165,12 @@ func (f *fakeOutbox) Append(context.Context, state.Runner, string, string, strin
 	return int64(f.appends), nil
 }
 
-func (f *fakeOutbox) ListAfter(context.Context, state.Runner, int64, int, string) ([]outbox.Event, error) {
+func (f *fakeOutbox) ListAfter(context.Context, int64, int, string) ([]outbox.Event, error) {
 	return nil, nil
 }
-func (f *fakeOutbox) LastSeq(context.Context, state.Runner) (int64, error)     { return 0, nil }
-func (f *fakeOutbox) EarliestSeq(context.Context, state.Runner) (int64, error) { return 0, nil }
-func (f *fakeOutbox) TrimBefore(context.Context, state.Runner, time.Time) (int64, error) {
+func (f *fakeOutbox) LastSeq(context.Context) (int64, error)     { return 0, nil }
+func (f *fakeOutbox) EarliestSeq(context.Context) (int64, error) { return 0, nil }
+func (f *fakeOutbox) TrimBefore(context.Context, time.Time) (int64, error) {
 	return 0, nil
 }
 
@@ -180,15 +179,15 @@ type fakeAudits struct {
 	entries []audit.Entry
 }
 
-func (f *fakeAudits) Append(_ context.Context, _ state.Runner, e *audit.Entry) error {
+func (f *fakeAudits) Append(_ context.Context, e *audit.Entry) error {
 	f.entries = append(f.entries, *e)
 	return nil
 }
 
-func (f *fakeAudits) List(context.Context, state.Runner, int) ([]audit.Entry, error) {
+func (f *fakeAudits) List(context.Context, int) ([]audit.Entry, error) {
 	return nil, nil
 }
-func (f *fakeAudits) ListFiltered(context.Context, state.Runner, audit.Filter) ([]audit.Entry, error) {
+func (f *fakeAudits) ListFiltered(context.Context, audit.Filter) ([]audit.Entry, error) {
 	return nil, nil
 }
 
@@ -208,7 +207,7 @@ func TestSequenceLazyOrderAndFailureIsolation(t *testing.T) {
 
 	// 第 1 条走取证面（不触碰流面）；第 2 条 StreamOnly 触碰 fakeOutbox
 	// 的失败注入位（首个 Append 即 boom）：失败即返回，第 3 条零求值。
-	err := writes.Sequence(context.Background(), nil, writes.Repos{Outbox: ob, Audits: au},
+	err := writes.Sequence(context.Background(), writes.Repos{Outbox: ob, Audits: au},
 		fact("f1"),
 		func() writes.FactRow {
 			evaluated = append(evaluated, "f2")
@@ -228,24 +227,24 @@ func TestSequenceLazyOrderAndFailureIsolation(t *testing.T) {
 func TestEmitNonTransactional(t *testing.T) {
 	db, _ := statetest.New(t)
 	clock := statetest.NewFakeClock()
-	audits := auditrepo.New(clock)
+	audits := auditrepo.New(clock, db.Runner())
 	ctx := audit.WithTeam(context.Background(), "team-op")
 
 	// LedgerOnly：登录/认证类事实——不装配 Outbox（未触碰的 repo 可为零值）。
-	require.NoError(t, writes.Emit(ctx, db.Runner(), writes.Repos{Audits: audits}, writes.FactRow{
+	require.NoError(t, writes.Emit(ctx, writes.Repos{Audits: audits}, writes.FactRow{
 		Aggregate: "token", ID: "t1",
 		Actor: "token:tok", Action: "token.narrowed_denied", AfterFP: "reason",
 		LedgerOnly: true, // 认证拒绝：仅取证面（无事件孪生）
 	}))
 
-	rows, err := audits.List(ctx, db.Runner(), 10)
+	rows, err := audits.List(ctx, 10)
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
 	assert.Equal(t, "token/t1", rows[0].Resource, "空 Resource 缺省 Aggregate/ID")
 	assert.Equal(t, "team-op", rows[0].TeamID)
 
 	// 错误面：fake 注入失败，Emit 原样返回（调用方自记日志）。
-	require.ErrorIs(t, writes.Emit(ctx, db.Runner(),
+	require.ErrorIs(t, writes.Emit(ctx,
 		writes.Repos{Outbox: &fakeOutbox{failOn: 1}, Audits: audits},
 		writes.FactRow{Name: "task.created", Aggregate: "task", ID: "x",
 			StreamOnly: true}), errBoom) // 测试面：失败注入探针（仅流面触碰 fakeOutbox）

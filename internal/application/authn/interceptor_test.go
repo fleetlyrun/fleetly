@@ -42,7 +42,7 @@ func TestResolveTokenLookupFailure(t *testing.T) {
 	var logs syncBuffer
 	log := slog.New(slog.NewTextHandler(&logs, nil))
 	// resolve 只触查表路径（policy 在 guard 执法时消费），nil 即占位。
-	a := NewAuthenticator(db, testAuthnRepos(db.Clock()), nil, testVocab, log)
+	a := NewAuthenticator(db, testAuthnRepos(db.Clock(), db.Runner()), nil, testVocab, log)
 	// 合法 platform 前缀但不在册的凭证：进 GetBySHA256 分支。
 	ctx := metadata.NewIncomingContext(context.Background(),
 		metadata.Pairs("authorization", "Bearer "+identity.TokenPrefix+"unknown-token-material"))

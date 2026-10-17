@@ -33,8 +33,8 @@ ADR-0005 时代的执行面约定「聚合 repo 方法一律接受 state.Runner�
 
 ## 验收锚
 
-- [ ] domain 生产代码零 `state.Runner` 引用（`internal/domain/shared/state` 除外），守卫落地
-- [ ] `database/sql` import 仅存 `internal/domain/shared/state` 与 `internal/infrastructure/persistence`，守卫落地
-- [ ] `state.DB.Tx` 回调签名收缝为 `state.Runner`；`state.DB.NextSeq` 契约移除
-- [ ] 全部聚合 repo 实现构造绑定化；Stores/Binder/Do 落地，assembly 单点装配
-- [ ] `mise run test` 三 module 全绿；`mise run lint` 绿；`mise run generate:verify` 零漂移（wire 再生成）
+- [x] domain 生产代码零 `state.Runner` 引用（`internal/domain/shared/state` 除外），守卫落地
+- [x] `database/sql` import 仅存 `internal/domain/shared/state` 与 `internal/infrastructure/persistence`，守卫落地
+- [x] `state.DB.Tx` 回调签名收缝为 `state.Runner`；`state.DB.NextSeq` 契约移除
+- [x] 全部聚合 repo 实现构造绑定化；Stores/Binder/Do 落地，assembly 单点装配
+- [x] `mise run test` 三 module 全绿；`mise run lint` 绿；`mise run generate:verify` 零漂移（wire 再生成）

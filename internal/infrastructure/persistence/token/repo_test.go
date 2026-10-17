@@ -6,7 +6,6 @@ package token
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"testing"
 
@@ -29,7 +28,7 @@ import (
 func TestTokenRoundTrip(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	repos := newRepos(clock)
+	repos := newRepos(clock, db.Runner())
 
 	teamRow := &team.Team{ID: identity.DefaultTeamID, Name: "default"}
 	roleRow := &role.Role{ID: identity.RoleMemberID, Name: "member", Scopes: []string{"deployments:write"}}
@@ -42,21 +41,21 @@ func TestTokenRoundTrip(t *testing.T) {
 		RoleID: roleRow.ID, SHA256: material.SHA256, Prefix: material.Prefix,
 	}
 
-	err = db.Tx(ctx, func(tx *sql.Tx) error {
-		if err := teamrepo.New(clock).Create(ctx, tx, teamRow); err != nil {
+	err = db.Tx(ctx, func(run state.Runner) error {
+		if err := teamrepo.New(clock, run).Create(ctx, teamRow); err != nil {
 			return err
 		}
-		if err := rolerepo.New(clock).Create(ctx, tx, roleRow); err != nil {
+		if err := rolerepo.New(clock, run).Create(ctx, roleRow); err != nil {
 			return err
 		}
-		return repos.tokens.Create(ctx, tx, tok)
+		return New(clock, run).Create(ctx, tok)
 	})
 	if err != nil {
 		t.Fatalf("seed tx: %v", err)
 	}
 
 	// 摘要查询（authn 拦截器路径）。
-	got, err := repos.tokens.GetBySHA256(ctx, db.Runner(), material.SHA256)
+	got, err := repos.tokens.GetBySHA256(ctx, material.SHA256)
 	if err != nil {
 		t.Fatalf("GetBySHA256: %v", err)
 	}
@@ -66,10 +65,10 @@ func TestTokenRoundTrip(t *testing.T) {
 
 	// last_used_at 节流记录 + 时间推进可见。
 	clock.Advance(61e9)
-	if err := repos.tokens.TouchLastUsed(ctx, db.Runner(), got.ID); err != nil {
+	if err := repos.tokens.TouchLastUsed(ctx, got.ID); err != nil {
 		t.Fatalf("TouchLastUsed: %v", err)
 	}
-	got, err = repos.tokens.Get(ctx, db.Runner(), got.ID)
+	got, err = repos.tokens.Get(ctx, got.ID)
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
@@ -78,17 +77,17 @@ func TestTokenRoundTrip(t *testing.T) {
 	}
 
 	// 吊销：幂等、状态可见。
-	revoked, err := repos.tokens.Revoke(ctx, db.Runner(), got.ID)
+	revoked, err := repos.tokens.Revoke(ctx, got.ID)
 	if err != nil {
 		t.Fatalf("Revoke: %v", err)
 	}
 	if !revoked.Revoked {
 		t.Fatal("revoke must flip revoked")
 	}
-	if again, err := repos.tokens.Revoke(ctx, db.Runner(), got.ID); err != nil || !again.Revoked {
+	if again, err := repos.tokens.Revoke(ctx, got.ID); err != nil || !again.Revoked {
 		t.Fatalf("re-revoke must be idempotent: %v", err)
 	}
-	alive, err := repos.tokens.HasAliveBootstrap(ctx, db.Runner())
+	alive, err := repos.tokens.HasAliveBootstrap(ctx)
 	if err != nil {
 		t.Fatalf("HasAliveBootstrap: %v", err)
 	}
@@ -100,22 +99,22 @@ func TestTokenRoundTrip(t *testing.T) {
 func TestIdentityFlow(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	repos := newRepos(clock)
+	repos := newRepos(clock, db.Runner())
 
-	err := db.Tx(ctx, func(tx *sql.Tx) error {
-		if err := repos.teams.Create(ctx, tx, &team.Team{ID: identity.DefaultTeamID, Name: "default"}); err != nil {
+	err := db.Tx(ctx, func(run state.Runner) error {
+		if err := teamrepo.New(clock, run).Create(ctx, &team.Team{ID: identity.DefaultTeamID, Name: "default"}); err != nil {
 			return err
 		}
 		for _, b := range identity.BuiltinRoles([]string{"projects", "deployments", "users", "audit"}) {
 			ro := &role.Role{ID: b.ID, Name: b.Name, Builtin: true, Scopes: identity.ScopeStrings(b.Scopes)}
-			if err := repos.roles.UpsertBuiltin(ctx, tx, ro); err != nil {
+			if err := rolerepo.New(clock, run).UpsertBuiltin(ctx, ro); err != nil {
 				return err
 			}
 		}
-		if err := repos.users.Create(ctx, tx, &user.User{ID: "01USER00000000000000000000", Name: "alice"}); err != nil {
+		if err := userrepo.New(clock, run).Create(ctx, &user.User{ID: "01USER00000000000000000000", Name: "alice"}); err != nil {
 			return err
 		}
-		return repos.memberships.Create(ctx, tx, &membership.Membership{
+		return membershiprepo.New(clock, run).Create(ctx, &membership.Membership{
 			ID: "01MEMB00000000000000000000", UserID: "01USER00000000000000000000",
 			TeamID: identity.DefaultTeamID, RoleID: identity.RoleAdminID,
 		})
@@ -126,10 +125,10 @@ func TestIdentityFlow(t *testing.T) {
 
 	// UpsertBuiltin 幂等 + scopes 刷新（词表演进的单源同步）。
 	newDef := identity.BuiltinRoles([]string{"projects", "deployments", "users", "audit", "builds"})
-	err = db.Tx(ctx, func(tx *sql.Tx) error {
+	err = db.Tx(ctx, func(run state.Runner) error {
 		for _, b := range newDef {
 			ro := &role.Role{ID: b.ID, Name: b.Name, Builtin: true, Scopes: identity.ScopeStrings(b.Scopes)}
-			if err := repos.roles.UpsertBuiltin(ctx, tx, ro); err != nil {
+			if err := rolerepo.New(clock, run).UpsertBuiltin(ctx, ro); err != nil {
 				return err
 			}
 		}
@@ -138,7 +137,7 @@ func TestIdentityFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reseed tx: %v", err)
 	}
-	roles, err := repos.roles.List(ctx, db.Runner())
+	roles, err := repos.roles.List(ctx)
 	if err != nil {
 		t.Fatalf("roles list: %v", err)
 	}
@@ -165,21 +164,21 @@ func TestIdentityFlow(t *testing.T) {
 	}
 
 	// 同名用户冲突（唯一约束命中 → ErrAlreadyExists，与 CAS/FK 冲突分立）。
-	err = repos.users.Create(ctx, db.Runner(), &user.User{ID: "01USER00000000000000000001", Name: "alice"})
+	err = repos.users.Create(ctx, &user.User{ID: "01USER00000000000000000001", Name: "alice"})
 	if err == nil || !errors.Is(err, state.ErrAlreadyExists) {
 		t.Fatalf("duplicate user name must be ErrAlreadyExists, got %v", err)
 	}
 
 	// 内置角色拒删；membership 引用的角色拒删。
-	if err := repos.roles.Delete(ctx, db.Runner(), identity.RoleAdminID); err == nil || !errors.Is(err, state.ErrConflict) {
+	if err := repos.roles.Delete(ctx, identity.RoleAdminID); err == nil || !errors.Is(err, state.ErrConflict) {
 		t.Fatalf("builtin delete must conflict, got %v", err)
 	}
 	custom := &role.Role{ID: "01ROLE00000000000000000000", TeamID: identity.DefaultTeamID, Name: "deployer", Scopes: []string{"deployments:write"}}
-	if err := repos.roles.Create(ctx, db.Runner(), custom); err != nil {
+	if err := repos.roles.Create(ctx, custom); err != nil {
 		t.Fatalf("custom role: %v", err)
 	}
-	err = db.Tx(ctx, func(tx *sql.Tx) error {
-		return repos.memberships.Create(ctx, tx, &membership.Membership{
+	err = db.Tx(ctx, func(run state.Runner) error {
+		return membershiprepo.New(clock, run).Create(ctx, &membership.Membership{
 			ID: "01MEMB00000000000000000001", UserID: "01USER00000000000000000000",
 			TeamID: identity.DefaultTeamID, RoleID: custom.ID,
 		})
@@ -198,17 +197,17 @@ func TestIdentityFlow(t *testing.T) {
 		TeamID: identity.DefaultTeamID, RoleID: identity.RoleMemberID,
 		ExpiresAt: "2026-01-02T00:00:00Z",
 	}
-	if err := repos.invitations.Create(ctx, db.Runner(), inv); err != nil {
+	if err := repos.invitations.Create(ctx, inv); err != nil {
 		t.Fatalf("invitation create: %v", err)
 	}
-	got, err := repos.invitations.GetBySHA256(ctx, db.Runner(), invMaterial.SHA256)
+	got, err := repos.invitations.GetBySHA256(ctx, invMaterial.SHA256)
 	if err != nil {
 		t.Fatalf("invitation lookup: %v", err)
 	}
-	if err := repos.invitations.MarkConsumed(ctx, db.Runner(), got.ID); err != nil {
+	if err := repos.invitations.MarkConsumed(ctx, got.ID); err != nil {
 		t.Fatalf("MarkConsumed: %v", err)
 	}
-	if err := repos.invitations.MarkConsumed(ctx, db.Runner(), got.ID); err == nil || !errors.Is(err, state.ErrConflict) {
+	if err := repos.invitations.MarkConsumed(ctx, got.ID); err == nil || !errors.Is(err, state.ErrConflict) {
 		t.Fatalf("second consume must conflict, got %v", err)
 	}
 }
@@ -222,13 +221,13 @@ type identityRepos struct {
 	invitations invitation.Repo
 }
 
-func newRepos(clock state.Clock) *identityRepos {
+func newRepos(clock state.Clock, run state.Runner) *identityRepos {
 	return &identityRepos{
-		users:       userrepo.New(clock),
-		teams:       teamrepo.New(clock),
-		roles:       rolerepo.New(clock),
-		memberships: membershiprepo.New(clock),
-		tokens:      New(clock),
-		invitations: invitationrepo.New(clock),
+		users:       userrepo.New(clock, run),
+		teams:       teamrepo.New(clock, run),
+		roles:       rolerepo.New(clock, run),
+		memberships: membershiprepo.New(clock, run),
+		tokens:      New(clock, run),
+		invitations: invitationrepo.New(clock, run),
 	}
 }

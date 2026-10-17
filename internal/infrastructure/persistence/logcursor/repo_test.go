@@ -22,32 +22,32 @@ import (
 func TestLogCursorZeroFallbackAndAdvance(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	cursors := logcursorrepo.New(clock)
+	cursors := logcursorrepo.New(clock, db.Runner())
 
 	const ns = "task:web:app-logs"
 
 	// 无行 → 零值 + 无错（首采语义：调用方走有界回看窗）。
-	got, err := cursors.Get(ctx, db.Runner(), ns)
+	got, err := cursors.Get(ctx, ns)
 	require.NoError(t, err)
 	assert.True(t, got.IsZero(), "a missing cursor row falls back to the zero time")
 
 	// Save 落游标：亚秒精度 RFC3339Nano 读回（采样时刻不丢纳秒）。
 	ts := time.Date(2026, 3, 4, 5, 6, 7, 123456789, time.UTC)
-	require.NoError(t, cursors.Save(ctx, db.Runner(), ns, ts))
-	got, err = cursors.Get(ctx, db.Runner(), ns)
+	require.NoError(t, cursors.Save(ctx, ns, ts))
+	got, err = cursors.Get(ctx, ns)
 	require.NoError(t, err)
 	assert.True(t, got.Equal(ts), "saved cursor must round-trip with sub-second precision")
 
 	// Save 再落同 namespace：upsert 推进（Ingest 成功后才前移的调用方
 	// 契约在此只验存储面覆盖写）。
 	later := ts.Add(90 * time.Second)
-	require.NoError(t, cursors.Save(ctx, db.Runner(), ns, later))
-	got, err = cursors.Get(ctx, db.Runner(), ns)
+	require.NoError(t, cursors.Save(ctx, ns, later))
+	got, err = cursors.Get(ctx, ns)
 	require.NoError(t, err)
 	assert.True(t, got.Equal(later), "a later Save advances the cursor in place")
 
 	// 双 namespace 互不串台。
-	other, err := cursors.Get(ctx, db.Runner(), "db:pg-main")
+	other, err := cursors.Get(ctx, "db:pg-main")
 	require.NoError(t, err)
 	assert.True(t, other.IsZero(), "cursors are per-namespace facts")
 
@@ -55,7 +55,7 @@ func TestLogCursorZeroFallbackAndAdvance(t *testing.T) {
 	_, err = db.Runner().ExecContext(ctx,
 		`INSERT INTO log_cursors (namespace, last_ts, updated_at) VALUES ('task:empty', '', '2026-01-01T00:00:00Z')`)
 	require.NoError(t, err)
-	got, err = cursors.Get(ctx, db.Runner(), "task:empty")
+	got, err = cursors.Get(ctx, "task:empty")
 	require.NoError(t, err)
 	assert.True(t, got.IsZero(), "an empty last_ts reads back as no cursor")
 
@@ -63,7 +63,7 @@ func TestLogCursorZeroFallbackAndAdvance(t *testing.T) {
 	_, err = db.Runner().ExecContext(ctx,
 		`INSERT INTO log_cursors (namespace, last_ts, updated_at) VALUES ('task:corrupt', 'not-a-timestamp', '2026-01-01T00:00:00Z')`)
 	require.NoError(t, err)
-	got, err = cursors.Get(ctx, db.Runner(), "task:corrupt")
+	got, err = cursors.Get(ctx, "task:corrupt")
 	require.NoError(t, err, "a corrupt cursor row must not fail loud")
 	assert.True(t, got.IsZero())
 }

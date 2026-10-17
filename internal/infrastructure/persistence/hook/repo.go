@@ -19,20 +19,21 @@ const deliveryRetention = 7 * 24 * 3600 // 秒
 // repo 是 domain hook.Repo 的 SQLite 实现。
 type repo struct {
 	clock state.Clock
+	run   state.Runner
 }
 
 // New 构造 repo（直接返回接口——消费面只见 domain hook.Repo）。
-func New(clock state.Clock) hook.Repo { return &repo{clock: clock} }
+func New(clock state.Clock, run state.Runner) hook.Repo { return &repo{clock: clock, run: run} }
 
 // Create 落一行（首配铸造路径：Token 材料随行落）。
-func (r *repo) Create(ctx context.Context, run state.Runner, h *hook.Hook) error {
+func (r *repo) Create(ctx context.Context, h *hook.Hook) error {
 	now := state.FormatTime(r.clock.Now())
 	h.CreatedAt, h.UpdatedAt = now, now
 	paths, err := marshalPaths(h.WatchPaths)
 	if err != nil {
 		return err
 	}
-	_, err = run.ExecContext(ctx, `
+	_, err = r.run.ExecContext(ctx, `
 		INSERT INTO app_hooks (app_id, repo, branch, dockerfile, watch_paths, token_sha256, token_prefix, secret_ciphertext, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		h.AppID, h.Repo, h.Branch, h.Dockerfile, paths, h.TokenSHA256, h.TokenPrefix, h.SecretCiphertext, h.CreatedAt, h.UpdatedAt)
@@ -46,13 +47,13 @@ func (r *repo) Create(ctx context.Context, run state.Runner, h *hook.Hook) error
 }
 
 // UpdateConfig 只改配置字段（已配置过的 Set 路径：不换 Token 材料）。
-func (r *repo) UpdateConfig(ctx context.Context, run state.Runner, h *hook.Hook) error {
+func (r *repo) UpdateConfig(ctx context.Context, h *hook.Hook) error {
 	h.UpdatedAt = state.FormatTime(r.clock.Now())
 	paths, err := marshalPaths(h.WatchPaths)
 	if err != nil {
 		return err
 	}
-	res, err := run.ExecContext(ctx, `
+	res, err := r.run.ExecContext(ctx, `
 		UPDATE app_hooks SET repo = ?, branch = ?, dockerfile = ?, watch_paths = ?, updated_at = ?
 		WHERE app_id = ?`,
 		h.Repo, h.Branch, h.Dockerfile, paths, h.UpdatedAt, h.AppID)
@@ -66,22 +67,22 @@ func (r *repo) UpdateConfig(ctx context.Context, run state.Runner, h *hook.Hook)
 }
 
 // Get 按 App 直读。
-func (r *repo) Get(ctx context.Context, run state.Runner, appID string) (*hook.Hook, error) {
-	row := run.QueryRowContext(ctx, selectColumns+` WHERE app_id = ?`, appID)
+func (r *repo) Get(ctx context.Context, appID string) (*hook.Hook, error) {
+	row := r.run.QueryRowContext(ctx, selectColumns+` WHERE app_id = ?`, appID)
 	return scanOne(row.Scan)
 }
 
 // GetByTokenSHA256 按 URL token 查找（接收面的入口查询键）。
-func (r *repo) GetByTokenSHA256(ctx context.Context, run state.Runner, sha string) (*hook.Hook, error) {
-	row := run.QueryRowContext(ctx, selectColumns+` WHERE token_sha256 = ?`, sha)
+func (r *repo) GetByTokenSHA256(ctx context.Context, sha string) (*hook.Hook, error) {
+	row := r.run.QueryRowContext(ctx, selectColumns+` WHERE token_sha256 = ?`, sha)
 	return scanOne(row.Scan)
 }
 
 // RotateToken 双换 Token 材料（URL token 与 webhook secret 同源；旧行即
 // 刻失效——查询键已换）。
-func (r *repo) RotateToken(ctx context.Context, run state.Runner, appID, sha, prefix string, ciphertext []byte) error {
+func (r *repo) RotateToken(ctx context.Context, appID, sha, prefix string, ciphertext []byte) error {
 	now := state.FormatTime(r.clock.Now())
-	res, err := run.ExecContext(ctx, `
+	res, err := r.run.ExecContext(ctx, `
 		UPDATE app_hooks SET token_sha256 = ?, token_prefix = ?, secret_ciphertext = ?, updated_at = ?
 		WHERE app_id = ?`, sha, prefix, ciphertext, now, appID)
 	if err != nil {
@@ -98,18 +99,18 @@ func (r *repo) RotateToken(ctx context.Context, run state.Runner, appID, sha, pr
 // 删除本身撞 FOREIGN KEY constraint failed——FB-1），hook 行后清。孤儿
 // hook 会让配置面对已删 App 继续成功、接收面却按活跃行拒绝——两面语义
 // 分裂（ADR-0072 批真机咬出：删除 App 后 rotate 仍成功、webhook 401）。
-func (r *repo) DeleteByApp(ctx context.Context, run state.Runner, appID string) error {
-	if _, err := run.ExecContext(ctx, `DELETE FROM hook_deliveries WHERE app_id = ?`, appID); err != nil {
+func (r *repo) DeleteByApp(ctx context.Context, appID string) error {
+	if _, err := r.run.ExecContext(ctx, `DELETE FROM hook_deliveries WHERE app_id = ?`, appID); err != nil {
 		return err
 	}
-	_, err := run.ExecContext(ctx, `DELETE FROM app_hooks WHERE app_id = ?`, appID)
+	_, err := r.run.ExecContext(ctx, `DELETE FROM app_hooks WHERE app_id = ?`, appID)
 	return err
 }
 
 // ListAll 读全表行：离线维护面（KEK 重封）专用（含 webhook secret 信封
 // 列，禁止回显面消费）。
-func (r *repo) ListAll(ctx context.Context, run state.Runner) ([]hook.Hook, error) {
-	rows, err := run.QueryContext(ctx, selectColumns)
+func (r *repo) ListAll(ctx context.Context) ([]hook.Hook, error) {
+	rows, err := r.run.QueryContext(ctx, selectColumns)
 	if err != nil {
 		return nil, err
 	}
@@ -127,8 +128,8 @@ func (r *repo) ListAll(ctx context.Context, run state.Runner) ([]hook.Hook, erro
 
 // UpdateSecretCiphertext 重封 webhook secret 信封（KEK 重封专用；URL
 // token 材料与信封无关，不动）。
-func (r *repo) UpdateSecretCiphertext(ctx context.Context, run state.Runner, appID string, ciphertext []byte) error {
-	_, err := run.ExecContext(ctx, `
+func (r *repo) UpdateSecretCiphertext(ctx context.Context, appID string, ciphertext []byte) error {
+	_, err := r.run.ExecContext(ctx, `
 		UPDATE app_hooks SET secret_ciphertext = ?, updated_at = ? WHERE app_id = ?`,
 		ciphertext, state.FormatTime(r.clock.Now()), appID)
 	return err
@@ -136,14 +137,14 @@ func (r *repo) UpdateSecretCiphertext(ctx context.Context, run state.Runner, app
 
 // RecordDelivery 落一行重投去重锚；返回 true = 该 delivery 已出现过
 // （重投）。顺带清理保留窗外的旧行。
-func (r *repo) RecordDelivery(ctx context.Context, run state.Runner, appID, delivery string) (bool, error) {
+func (r *repo) RecordDelivery(ctx context.Context, appID, delivery string) (bool, error) {
 	now := r.clock.Now()
 	cutoff := state.FormatTime(now.Add(-deliveryRetention * 1e9))
-	if _, err := run.ExecContext(ctx,
+	if _, err := r.run.ExecContext(ctx,
 		`DELETE FROM hook_deliveries WHERE received_at < ?`, cutoff); err != nil {
 		return false, err
 	}
-	res, err := run.ExecContext(ctx, `
+	res, err := r.run.ExecContext(ctx, `
 		INSERT OR IGNORE INTO hook_deliveries (app_id, delivery, received_at) VALUES (?, ?, ?)`,
 		appID, delivery, state.FormatTime(now))
 	if err != nil {

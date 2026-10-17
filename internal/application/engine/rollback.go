@@ -22,7 +22,7 @@ func (e *Engine) Rollback(ctx context.Context, appID, toRevisionID string) (*dep
 		// 最新成功基线（ADR-0022）：LatestSucceeded = succeeded 行按 ULID
 		// 创建序取最新——与既逐行扫描取首个 succeeded 的语义相同（列表分页
 		// 化后不再全量扫，见 deployment.ListByApp 的 ADR-0026 形态）。
-		base, err := e.deployments.LatestSucceeded(ctx, e.db.Runner(), appID)
+		base, err := e.repos.Deployments.LatestSucceeded(ctx, appID)
 		if err != nil {
 			if errors.Is(err, state.ErrNotFound) {
 				return nil, nil, fmt.Errorf("%w: app %s", ErrNoSuccessfulBaseline, appID)
@@ -31,7 +31,7 @@ func (e *Engine) Rollback(ctx context.Context, appID, toRevisionID string) (*dep
 		}
 		toRevisionID = base.ToRevision
 	}
-	rev, err := e.revisions.Get(ctx, e.db.Runner(), toRevisionID)
+	rev, err := e.repos.Revisions.Get(ctx, toRevisionID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("engine: rollback target revision: %w", err)
 	}

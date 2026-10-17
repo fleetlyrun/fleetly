@@ -45,7 +45,7 @@ func (e *Engine) handleRunObservation(ctx context.Context, runID string, ev capa
 	e.task.runObs[runID] = ev
 	e.task.obsMu.Unlock()
 
-	m, err := e.runs.Get(ctx, e.db.Runner(), runID)
+	m, err := e.repos.Runs.Get(ctx, runID)
 	if err != nil {
 		if !errors.Is(err, state.ErrNotFound) {
 			e.log.Error("run observe: get row", "run", runID, "err", err)
@@ -56,7 +56,6 @@ func (e *Engine) handleRunObservation(ctx context.Context, runID string, ev capa
 		e.task.recycleObs(runID) // 终态回收（迟到观测不重开状态机）
 		return
 	}
-
 	switch {
 	case ev.State == capability.WorkloadRunning && m.State == run.StatePending:
 		if err := e.transitRunFour(ctx, m, []run.State{run.StatePending}, run.StateRunning, nil); err != nil {

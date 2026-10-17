@@ -71,14 +71,14 @@ func TestTaskAndAppQuotaEnforcement(t *testing.T) {
 	pid := h.CreateProject(t, "brakes").GetId()
 
 	// 直接灌行到边界前一步：99 条活跃 one-shot×desired 2（active=99、sum=198）。
-	tasksRepo := taskrepo.New(h.DB.Clock())
+	tasksRepo := taskrepo.New(h.DB.Clock(), h.DB.Runner())
 	for i := 0; i < 99; i++ {
 		row := &task.Task{
 			ID: fmt.Sprintf("01JDQTASK0000000000000%03dQ", i), ProjectID: pid,
 			Form: task.FormOneShot, State: task.StateActive, Spec: []byte(`{"schema_version":1}`),
 			DesiredConcurrency: 2, DNSName: fmt.Sprintf("fleetly-task-%03d", i),
 		}
-		require.NoError(t, tasksRepo.Create(ctx, h.DB.Runner(), row))
+		require.NoError(t, tasksRepo.Create(ctx, row))
 	}
 
 	// 并发总量面：198 + 3 > 200 → 配额拒。
@@ -120,9 +120,9 @@ func TestTaskAndAppQuotaEnforcement(t *testing.T) {
 	require.Contains(t, err.Error(), "E_QUOTA_EXCEEDED")
 
 	// App 配额：50 活跃行满员后拒第 51。
-	appsRepo := apprepo.New(h.DB.Clock())
+	appsRepo := apprepo.New(h.DB.Clock(), h.DB.Runner())
 	for i := 0; i < 50; i++ {
-		require.NoError(t, appsRepo.Create(ctx, h.DB.Runner(), &app.App{
+		require.NoError(t, appsRepo.Create(ctx, &app.App{
 			ID: fmt.Sprintf("01JDQAPPS0000000000000%03dX", i), ProjectID: pid,
 			Name: fmt.Sprintf("svc-%02d", i),
 		}))

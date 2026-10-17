@@ -6,11 +6,11 @@ package fleetlygrpc
 
 import (
 	"context"
-	"database/sql"
 	"time"
 
 	identityv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/identity/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/invitation"
@@ -71,8 +71,8 @@ func (svc *InvitationsService) CreateInvitation(ctx context.Context, req *identi
 		// roleInTeam（Q-16 同族面）：邀请绑 team+role——不一致的邀请兑换出
 		// 跨 Team membership，同洞同修。
 		checks: []acceptanceCheck{svc.s.teamExists(teamID), svc.s.roleInTeam(req.GetRoleId(), teamID)},
-		write: func(ctx context.Context, tx *sql.Tx) error {
-			return svc.s.Invitations.Create(ctx, tx, inv)
+		write: func(ctx context.Context, st transact.Stores) error {
+			return st.Invitations.Create(ctx, inv)
 		},
 		facts: []func() writes.FactRow{
 			// 资源轴（P0-2）：邀请随目标 Team 落队。
@@ -100,7 +100,7 @@ func (svc *InvitationsService) ListInvitations(ctx context.Context, _ *identityv
 	if err != nil {
 		return nil, err
 	}
-	list, err := svc.s.Invitations.List(ctx, svc.s.DB.Runner())
+	list, err := svc.s.Invitations.List(ctx)
 	if err != nil {
 		return nil, mapStateError(err, "invitation")
 	}
@@ -125,7 +125,7 @@ func (svc *InvitationsService) AcceptInvitation(ctx context.Context, req *identi
 	if identity.TokenKind(req.GetSecret()) != "invitation" {
 		return nil, invalidInvitation("invitation token required")
 	}
-	inv, err := svc.s.Invitations.GetBySHA256(ctx, svc.s.DB.Runner(), identity.HashToken(req.GetSecret()))
+	inv, err := svc.s.Invitations.GetBySHA256(ctx, identity.HashToken(req.GetSecret()))
 	if err != nil {
 		return nil, invalidInvitation("invitation not found")
 	}
@@ -140,16 +140,16 @@ func (svc *InvitationsService) AcceptInvitation(ctx context.Context, req *identi
 	u := &user.User{Name: req.GetUserName()}
 	m := &membership.Membership{UserID: u.ID, TeamID: inv.TeamID, RoleID: inv.RoleID}
 	err = svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, tx *sql.Tx) error {
-			if err := svc.s.Users.Create(ctx, tx, u); err != nil {
+		write: func(ctx context.Context, st transact.Stores) error {
+			if err := st.Users.Create(ctx, u); err != nil {
 				return err
 			}
 			// membership 归属事务内铸出的用户 id（ADR-0070）。
 			m.UserID = u.ID
-			if err := svc.s.Memberships.Create(ctx, tx, m); err != nil {
+			if err := st.Memberships.Create(ctx, m); err != nil {
 				return err
 			}
-			return svc.s.Invitations.MarkConsumed(ctx, tx, inv.ID)
+			return st.Invitations.MarkConsumed(ctx, inv.ID)
 		},
 		facts: []func() writes.FactRow{
 			// 资源轴（P0-2）；审计来源是 manual（持信物的人当面操作；无

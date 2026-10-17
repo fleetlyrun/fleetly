@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
@@ -26,7 +27,7 @@ func putSecret(t *testing.T, e *Engine, projectID, name string, value []byte) {
 	require.NoError(t, err)
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(name))
-	require.NoError(t, e.secrets.Upsert(context.Background(), e.db.Runner(), &secret.Secret{
+	require.NoError(t, e.repos.Secrets.Upsert(context.Background(), &secret.Secret{
 		ID: "01JD0SEC" + fmt.Sprintf("%018x", uint64(h.Sum32())), ProjectID: projectID,
 		Name: name, Ciphertext: ct, Fingerprint: material.Fingerprint(value),
 	}))
@@ -39,7 +40,7 @@ func TestResolveMaterials(t *testing.T) {
 	cipher, err := keyring.LoadCipher(t.TempDir())
 	require.NoError(t, err)
 	rt := newFakeRuntime()
-	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Cipher: cipher, Logger: discardLogger()}, Options{})
+	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Cipher: cipher, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
 
 	const ghcrSpec = `{"schema_version":1,"app":{"id":"` + tAppID + `","project":"` + tProjectID + `"},` +
@@ -66,7 +67,7 @@ func TestResolveMaterials(t *testing.T) {
 func TestResolveMaterialsMissingSecretFails(t *testing.T) {
 	db, _ := statetest.New(t)
 	cipher, _ := keyring.LoadCipher(t.TempDir())
-	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: newFakeRuntime(), Cipher: cipher, Logger: discardLogger()}, Options{})
+	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: newFakeRuntime(), Cipher: cipher, Logger: discardLogger()}, Options{})
 	spec, err := e.loadSpec(context.Background(), freezeSpec(t, e, 2, `{"schema_version":1,`+
 		`"app":{"id":"`+tAppID+`","project":"`+tProjectID+`"},`+
 		`"source":{"image":{"ref":"nginx:1"}},"processes":[`+
@@ -80,9 +81,9 @@ func TestResolveMaterialsMissingSecretFails(t *testing.T) {
 func TestVolumePinning(t *testing.T) {
 	db, _ := statetest.New(t)
 	rt := newFakeRuntime()
-	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Logger: discardLogger()}, Options{})
+	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
-	require.NoError(t, e.volumes.Create(ctx, db.Runner(), &volume.Volume{
+	require.NoError(t, e.repos.Volumes.Create(ctx, &volume.Volume{
 		ID: "01JD0VOL00000000000000000", ProjectID: tProjectID, Name: "data",
 	}))
 
@@ -93,7 +94,7 @@ func TestVolumePinning(t *testing.T) {
 	require.NoError(t, e.pinVolumes(ctx, ws, tProjectID))
 	require.NoError(t, e.applyVolumePinning(ctx, ws, tProjectID))
 
-	row, err := e.volumes.GetByName(ctx, db.Runner(), tProjectID, "data")
+	row, err := e.repos.Volumes.GetByName(ctx, tProjectID, "data")
 	require.NoError(t, err)
 	assert.Equal(t, "01JD0NODE00000000000000000", row.PinnedNodeID, "pinned to the first available node")
 	require.Len(t, ws[0].Placement.NodeIDs, 1)
@@ -104,7 +105,7 @@ func TestVolumePinning(t *testing.T) {
 	rt.endpoints = nil
 	rt.mu.Unlock()
 	require.NoError(t, e.pinVolumes(ctx, ws, tProjectID))
-	row, _ = e.volumes.GetByName(ctx, db.Runner(), tProjectID, "data")
+	row, _ = e.repos.Volumes.GetByName(ctx, tProjectID, "data")
 	assert.Equal(t, "01JD0NODE00000000000000000", row.PinnedNodeID)
 }
 
@@ -115,7 +116,7 @@ func TestResolveMaterialsRegistryLookupErrorPropagates(t *testing.T) {
 	db, _ := statetest.New(t)
 	cipher, err := keyring.LoadCipher(t.TempDir())
 	require.NoError(t, err)
-	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: newFakeRuntime(), Cipher: cipher, Logger: discardLogger()}, Options{})
+	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: newFakeRuntime(), Cipher: cipher, Logger: discardLogger()}, Options{})
 	spec, err := e.loadSpec(context.Background(), freezeSpec(t, e, 3, `{"schema_version":1,`+
 		`"app":{"id":"`+tAppID+`","project":"`+tProjectID+`"},`+
 		`"source":{"image":{"ref":"ghcr.io/acme/web:1"}},"processes":[`+
@@ -134,7 +135,7 @@ func TestResolveMaterialsRegistryLookupErrorPropagates(t *testing.T) {
 // 无钉住调度（卷可能落到别的节点），比部署失败更糟。
 func TestApplyVolumePinningLookupErrorFails(t *testing.T) {
 	db, _ := statetest.New(t)
-	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: newFakeRuntime(), Logger: discardLogger()}, Options{})
+	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: newFakeRuntime(), Logger: discardLogger()}, Options{})
 
 	// 引用不存在的卷：GetByName → ErrNotFound（此前被静默 continue）。
 	ws := []capability.Workload{{
@@ -146,7 +147,7 @@ func TestApplyVolumePinningLookupErrorFails(t *testing.T) {
 	assert.ErrorContains(t, err, `volume "ghost"`)
 
 	// 存储故障注入：关库后已登记卷同样硬失败（不静默跳过合并）。
-	require.NoError(t, e.volumes.Create(context.Background(), db.Runner(), &volume.Volume{
+	require.NoError(t, e.repos.Volumes.Create(context.Background(), &volume.Volume{
 		ID: "01JD0VOL00000000000000001", ProjectID: tProjectID, Name: "data",
 		PinnedNodeID: "01JD0NODE00000000000000000",
 	}))

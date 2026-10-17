@@ -2,12 +2,12 @@ package engine
 
 import (
 	"context"
-	"database/sql"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
 
@@ -43,8 +43,8 @@ func TestTeardownAppRemovesCarriersAndClearsCaches(t *testing.T) {
 // 在 Submit 事务内）。
 func TestSubmitRejectsDeletedApp(t *testing.T) {
 	e, _, _ := newTestEngine(t)
-	require.NoError(t, e.db.Tx(context.Background(), func(tx *sql.Tx) error {
-		return e.apps.SoftDelete(context.Background(), tx, tAppID)
+	require.NoError(t, e.tx.Do(context.Background(), func(s transact.Stores) error {
+		return s.Apps.SoftDelete(context.Background(), tAppID)
 	}))
 	rev := freezeSpec(t, e, 1, tImageSpec)
 
@@ -58,22 +58,22 @@ func TestAppRepoHidesTombstonedRows(t *testing.T) {
 	e, _, _ := newTestEngine(t)
 	ctx := context.Background()
 
-	a, err := e.apps.Get(ctx, e.db.Runner(), tAppID)
+	a, err := e.repos.Apps.Get(ctx, tAppID)
 	require.NoError(t, err)
 	require.False(t, a.Deleted())
 
-	require.NoError(t, e.db.Tx(ctx, func(tx *sql.Tx) error {
-		return e.apps.SoftDelete(ctx, tx, tAppID)
+	require.NoError(t, e.tx.Do(ctx, func(s transact.Stores) error {
+		return s.Apps.SoftDelete(ctx, tAppID)
 	}))
 
-	_, err = e.apps.Get(ctx, e.db.Runner(), tAppID)
+	_, err = e.repos.Apps.Get(ctx, tAppID)
 	require.ErrorIs(t, err, state.ErrNotFound)
-	listed, err := e.apps.List(ctx, e.db.Runner())
+	listed, err := e.repos.Apps.List(ctx)
 	require.NoError(t, err)
 	assert.Empty(t, listed, "tombstoned app must not be listed")
 
-	err = e.db.Tx(ctx, func(tx *sql.Tx) error {
-		return e.apps.SoftDelete(ctx, tx, tAppID)
+	err = e.tx.Do(ctx, func(s transact.Stores) error {
+		return s.Apps.SoftDelete(ctx, tAppID)
 	})
 	require.ErrorIs(t, err, state.ErrNotFound, "re-delete surfaces as not-found (unified semantics)")
 }

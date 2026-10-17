@@ -24,17 +24,19 @@ package fleetlygrpc
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
 )
 
-// acceptanceCheck 是一条受理位检查：事务内运行，非 nil 错误即整单回滚。
-type acceptanceCheck func(ctx context.Context, tx *sql.Tx) error
+// acceptanceCheck 是一条受理位检查：事务内运行，非 nil 错误即整单回滚
+// （事务作用域 = transact.Stores，ADR-0080）。
+type acceptanceCheck func(ctx context.Context, st transact.Stores) error
 
 // writeFact 声明一次写路径的全部事实；零值段（无受理检查/无事实）合法。
 // facts 是 kernel 单声明事实（默认双真），惰性求值——Sequence 在聚合写
@@ -42,7 +44,7 @@ type acceptanceCheck func(ctx context.Context, tx *sql.Tx) error
 // 返回行等经闭包捕获自然可见，无需就地填充面）。
 type writeFact struct {
 	checks []acceptanceCheck
-	write  func(ctx context.Context, tx *sql.Tx) error
+	write  func(ctx context.Context, st transact.Stores) error
 	facts  []func() writes.FactRow
 }
 
@@ -50,24 +52,24 @@ type writeFact struct {
 // 聚合写居中、事实扇出殿后（双行配对与段间失败语义由事实发射 kernel
 // 拥有，internal/writes）；本原语是受理位入口与 writeFact 形态面。
 func (s *Services) commit(ctx context.Context, fact writeFact) error {
-	return s.DB.Tx(ctx, func(tx *sql.Tx) error {
+	return s.Tx.Do(ctx, func(st transact.Stores) error {
 		for _, check := range fact.checks {
-			if err := check(ctx, tx); err != nil {
+			if err := check(ctx, st); err != nil {
 				return err
 			}
 		}
 		if fact.write != nil {
-			if err := fact.write(ctx, tx); err != nil {
+			if err := fact.write(ctx, st); err != nil {
 				return err
 			}
 		}
-		return writes.Sequence(ctx, tx, s.factRepos(), fact.facts...)
+		return writes.Sequence(ctx, s.factRepos(st), fact.facts...)
 	})
 }
 
-// factRepos 是 kernel 落库面的注入形态（Services 双 repo 句柄直装）。
-func (s *Services) factRepos() writes.Repos {
-	return writes.Repos{Outbox: s.OutboxEvents, Audits: s.Audits}
+// factRepos 是 kernel 落库面的注入形态（tx 作用域 Stores 直取双面）。
+func (s *Services) factRepos(st transact.Stores) writes.Repos {
+	return writes.Repos{Outbox: st.Outbox, Audits: st.Audits}
 }
 
 // factOf 构造一条资源轴归属 Project 的事实声明：Team 在进事务前解析
@@ -78,7 +80,7 @@ func (s *Services) factRepos() writes.Repos {
 func (s *Services) factOf(ctx context.Context, projectID string, row func(team string) writes.FactRow) func() writes.FactRow {
 	team := ""
 	if projectID != "" {
-		if p, err := s.Projects.Get(ctx, s.DB.Runner(), projectID); err == nil {
+		if p, err := s.Projects.Get(ctx, projectID); err == nil {
 			team = p.TeamID
 		}
 	}
@@ -92,16 +94,16 @@ func (s *Services) factOf(ctx context.Context, projectID string, row func(team s
 // 活跃 App 守卫构成对偶——单写者事务串行下任一交错都满足"项目存活 ⇔
 // 子资源可建"。
 func (s *Services) parentProjectAlive(projectID string) acceptanceCheck {
-	return func(ctx context.Context, tx *sql.Tx) error {
-		return s.requireActiveProject(ctx, tx, projectID)
+	return func(ctx context.Context, st transact.Stores) error {
+		return s.requireActiveProject(ctx, st, projectID)
 	}
 }
 
 // projectAppAlive：App 在指定 Project 内存活（Route 的父引用面：apps
 // 活跃行口径 + 归属一致——跨项目悬空引用按"本项目无此 App"拒绝）。
 func (s *Services) projectAppAlive(projectID, appID string) acceptanceCheck {
-	return func(ctx context.Context, tx *sql.Tx) error {
-		return s.requireProjectApp(ctx, tx, projectID, appID)
+	return func(ctx context.Context, st transact.Stores) error {
+		return s.requireProjectApp(ctx, st, projectID, appID)
 	}
 }
 
@@ -110,23 +112,22 @@ func (s *Services) projectAppAlive(projectID, appID string) acceptanceCheck {
 // 事务内守卫与 DeleteProject 的无锁预检（先拒零副作用，再进库级联）经
 // rejectActiveApps 共用同一核（文案单源）。
 func (s *Services) noActiveApps(projectID string) acceptanceCheck {
-	return func(ctx context.Context, tx *sql.Tx) error {
-		return s.rejectActiveApps(ctx, tx, projectID)
+	return func(ctx context.Context, st transact.Stores) error {
+		return s.rejectActiveApps(ctx, st.Apps, projectID)
 	}
 }
 
-// rejectActiveApps 是活跃 App 拒绝判定的运行器无关核（*sql.Tx 与
-// *sql.DB 同满足 state.Runner）：事务内守卫与 DeleteProject 入口的
-// 无锁预检共用。
-func (s *Services) rejectActiveApps(ctx context.Context, run state.Runner, projectID string) error {
-	apps, err := s.Apps.ListByProject(ctx, run, projectID)
+// rejectActiveApps 是活跃 App 拒绝判定的核（repo 注入——事务内传
+// st.Apps、DeleteProject 入口无锁预检传 db 绑定面，同一文案单源）。
+func (s *Services) rejectActiveApps(ctx context.Context, apps app.Repo, projectID string) error {
+	rows, err := apps.ListByProject(ctx, projectID)
 	if err != nil {
 		return err
 	}
-	if len(apps) > 0 {
+	if len(rows) > 0 {
 		return apperr.New("E_CONFLICT",
 			"project %s still holds %d app(s); delete them before deleting the project",
-			projectID, len(apps))
+			projectID, len(rows))
 	}
 	return nil
 }
@@ -138,8 +139,8 @@ func (s *Services) rejectActiveApps(ctx context.Context, run state.Runner, proje
 // 处置分立：App 是手工前置面（先删 App 才受理），Database 是级联面
 // （项目删除自己收口）。
 func (s *Services) noActiveDatabases(projectID string) acceptanceCheck {
-	return func(ctx context.Context, tx *sql.Tx) error {
-		n, err := s.Databases.CountByProject(ctx, tx, projectID)
+	return func(ctx context.Context, st transact.Stores) error {
+		n, err := st.Databases.CountByProject(ctx, projectID)
 		if err != nil {
 			return err
 		}
@@ -156,15 +157,15 @@ func (s *Services) noActiveDatabases(projectID string) acceptanceCheck {
 // 版本不占新位）。读在事务内（ADR-0024：配额读与写同事务，收口批 0 复核
 // 指出的先读后写 TOCTOU）。
 func (s *Services) configQuota(projectID, name string) acceptanceCheck {
-	return func(ctx context.Context, tx *sql.Tx) error {
-		existing, err := s.Configs.Latest(ctx, tx, projectID, name)
+	return func(ctx context.Context, st transact.Stores) error {
+		existing, err := st.Configs.Latest(ctx, projectID, name)
 		if err != nil && !errors.Is(err, state.ErrNotFound) {
 			return err
 		}
 		if existing != nil {
 			return nil
 		}
-		latest, err := s.Configs.LatestByProject(ctx, tx, projectID)
+		latest, err := st.Configs.LatestByProject(ctx, projectID)
 		if err != nil {
 			return err
 		}
@@ -184,8 +185,8 @@ func (s *Services) configQuota(projectID, name string) acceptanceCheck {
 // engine.CheckTaskQuota 单源（ADR-0068）；哨兵经 mapTaskQuotaError 统一
 // 转义（与 scale/fire 动词同文案）。
 func (s *Services) taskQuota(projectID string, desired int64) acceptanceCheck {
-	return func(ctx context.Context, tx *sql.Tx) error {
-		active, sum, err := s.Tasks.StatsByProject(ctx, tx, projectID)
+	return func(ctx context.Context, st transact.Stores) error {
+		active, sum, err := st.Tasks.StatsByProject(ctx, projectID)
 		if err != nil {
 			return err
 		}
@@ -198,8 +199,8 @@ func (s *Services) taskQuota(projectID string, desired int64) acceptanceCheck {
 
 // appQuota：活跃 App 数配额（ADR-0017 附录 A.1，F1.9；同族受理检查）。
 func (s *Services) appQuota(projectID string) acceptanceCheck {
-	return func(ctx context.Context, tx *sql.Tx) error {
-		n, err := s.Apps.CountByProject(ctx, tx, projectID)
+	return func(ctx context.Context, st transact.Stores) error {
+		n, err := st.Apps.CountByProject(ctx, projectID)
 		if err != nil {
 			return err
 		}
@@ -214,8 +215,8 @@ func (s *Services) appQuota(projectID string) acceptanceCheck {
 // databaseQuota：活跃 Database 数配额（ADR-0029 决策 10；同族受理检查——
 // 库是长驻真实资源）。
 func (s *Services) databaseQuota(projectID string) acceptanceCheck {
-	return func(ctx context.Context, tx *sql.Tx) error {
-		n, err := s.Databases.CountByProject(ctx, tx, projectID)
+	return func(ctx context.Context, st transact.Stores) error {
+		n, err := st.Databases.CountByProject(ctx, projectID)
 		if err != nil {
 			return err
 		}
@@ -231,8 +232,8 @@ func (s *Services) databaseQuota(projectID string) acceptanceCheck {
 // projectHasNetwork：CreateDatabase 的可达性前置（ADR-0029 决策 5）——
 // 数据库挂全部活跃项目网，零网项目的库不可达；拒绝优于静默孤岛。
 func (s *Services) projectHasNetwork(projectID string) acceptanceCheck {
-	return func(ctx context.Context, tx *sql.Tx) error {
-		nets, err := s.Networks.ListByProject(ctx, tx, projectID)
+	return func(ctx context.Context, st transact.Stores) error {
+		nets, err := st.Networks.ListByProject(ctx, projectID)
 		if err != nil {
 			return err
 		}
@@ -250,8 +251,8 @@ func (s *Services) projectHasNetwork(projectID string) acceptanceCheck {
 
 // teamExists：创建型请求引用的 Team 必须存在。
 func (s *Services) teamExists(id string) acceptanceCheck {
-	return func(ctx context.Context, tx *sql.Tx) error {
-		_, err := s.Teams.Get(ctx, tx, id)
+	return func(ctx context.Context, st transact.Stores) error {
+		_, err := st.Teams.Get(ctx, id)
 		return err
 	}
 }
@@ -260,8 +261,8 @@ func (s *Services) teamExists(id string) acceptanceCheck {
 // 角色是平台级模板（team_id 空），可在任意 Team 授予；自定义 Role 必须
 // 属于同一 Team，跨 Team 引用 409。
 func (s *Services) roleInTeam(roleID, teamID string) acceptanceCheck {
-	return func(ctx context.Context, tx *sql.Tx) error {
-		ro, err := s.Roles.Get(ctx, tx, roleID)
+	return func(ctx context.Context, st transact.Stores) error {
+		ro, err := st.Roles.Get(ctx, roleID)
 		if err != nil {
 			return err
 		}
@@ -278,8 +279,8 @@ func (s *Services) roleInTeam(roleID, teamID string) acceptanceCheck {
 
 // userExists：创建型请求显式引用的 User 必须存在（可缺省）。
 func (s *Services) userExists(id string) acceptanceCheck {
-	return func(ctx context.Context, tx *sql.Tx) error {
-		_, err := s.Users.Get(ctx, tx, id)
+	return func(ctx context.Context, st transact.Stores) error {
+		_, err := st.Users.Get(ctx, id)
 		return err
 	}
 }
@@ -288,8 +289,8 @@ func (s *Services) userExists(id string) acceptanceCheck {
 // Team 持 membership，否则 Token 在实时收窄语义下铸出即死（求交恒空）。
 // 无 owner 豁免：给无 membership 的用户铸跨队 Token 从来不是合法运维。
 func (s *Services) userInTeam(userID, teamID string) acceptanceCheck {
-	return func(ctx context.Context, tx *sql.Tx) error {
-		_, err := s.Memberships.GetByUser(ctx, tx, userID, teamID)
+	return func(ctx context.Context, st transact.Stores) error {
+		_, err := st.Memberships.GetByUser(ctx, userID, teamID)
 		if err != nil {
 			return apperr.New("E_CONFLICT",
 				"user %s holds no membership in team %s; a user-bound token is capped by its creator's current access (ADR-0038) and would carry no authority", userID, teamID)

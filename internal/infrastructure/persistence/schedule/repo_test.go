@@ -35,37 +35,37 @@ func newSchedule(id, name string) *schedule.Schedule {
 func TestScheduleCRUDAndNameUnique(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	repo := schedulerepo.New(clock)
+	repo := schedulerepo.New(clock, db.Runner())
 
 	s := newSchedule("01JD0SCH00000000000000000", "nightly-migrate")
-	require.NoError(t, repo.Create(ctx, db.Runner(), s))
+	require.NoError(t, repo.Create(ctx, s))
 
-	got, err := repo.Get(ctx, db.Runner(), s.ID)
+	got, err := repo.Get(ctx, s.ID)
 	require.NoError(t, err)
 	assert.Equal(t, schedule.StateActive, got.State)
 	assert.Equal(t, "2026-01-01T09:30:00Z", got.NextFireAt)
 	assert.Equal(t, "2026-01-01T00:00:00Z", got.CreatedAt)
 
 	// 活跃名唯一；同项目同名 → ErrAlreadyExists。
-	err = repo.Create(ctx, db.Runner(), newSchedule("01JD0SCH00000000000000001", "nightly-migrate"))
+	err = repo.Create(ctx, newSchedule("01JD0SCH00000000000000001", "nightly-migrate"))
 	assert.ErrorIs(t, err, state.ErrAlreadyExists)
 
 	// tombstone 释放名位。
-	require.NoError(t, repo.Transit(ctx, db.Runner(), s.ID, schedule.StateActive, schedule.StateDeleted))
-	require.NoError(t, repo.Create(ctx, db.Runner(), newSchedule("01JD0SCH00000000000000002", "nightly-migrate")))
+	require.NoError(t, repo.Transit(ctx, s.ID, schedule.StateActive, schedule.StateDeleted))
+	require.NoError(t, repo.Create(ctx, newSchedule("01JD0SCH00000000000000002", "nightly-migrate")))
 
 	// deleted 行照常可读（终态事实可见）；终态不再迁移。
-	got, err = repo.Get(ctx, db.Runner(), s.ID)
+	got, err = repo.Get(ctx, s.ID)
 	require.NoError(t, err)
 	assert.True(t, got.State.Terminal())
-	err = repo.Transit(ctx, db.Runner(), s.ID, schedule.StateActive, schedule.StateDeleted)
+	err = repo.Transit(ctx, s.ID, schedule.StateActive, schedule.StateDeleted)
 	assert.ErrorIs(t, err, state.ErrConflict)
 }
 
 func TestScheduleListDrivingAndCursor(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	repo := schedulerepo.New(clock)
+	repo := schedulerepo.New(clock, db.Runner())
 
 	ids := []string{"01JD0SCH00000000000000000", "01JD0SCH00000000000000001", "01JD0SCH00000000000000002"}
 	for i, id := range ids {
@@ -73,19 +73,19 @@ func TestScheduleListDrivingAndCursor(t *testing.T) {
 		if i == 2 {
 			s.State = schedule.StateDeleted
 		}
-		require.NoError(t, repo.Create(ctx, db.Runner(), s))
+		require.NoError(t, repo.Create(ctx, s))
 	}
 
-	driving, err := repo.ListDriving(ctx, db.Runner())
+	driving, err := repo.ListDriving(ctx)
 	require.NoError(t, err)
 	assert.Len(t, driving, 2) // tombstone 不拾取
 
 	// 新→旧 + after 游标（列表含 tombstone——终态事实可见，与 tasks 同款）。
-	page, err := repo.ListByProject(ctx, db.Runner(), "01JD0PRJ000000000000000000", 0, 2)
+	page, err := repo.ListByProject(ctx, "01JD0PRJ000000000000000000", 0, 2)
 	require.NoError(t, err)
 	require.Len(t, page, 2)
 	assert.Equal(t, ids[2], page[0].ID)
-	page, err = repo.ListByProject(ctx, db.Runner(), "01JD0PRJ000000000000000000", page[0].Seq, 10)
+	page, err = repo.ListByProject(ctx, "01JD0PRJ000000000000000000", page[0].Seq, 10)
 	require.NoError(t, err)
 	require.Len(t, page, 2)
 	assert.Equal(t, ids[1], page[0].ID)
@@ -95,46 +95,46 @@ func TestScheduleListDrivingAndCursor(t *testing.T) {
 func TestScheduleFireCAS(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	repo := schedulerepo.New(clock)
+	repo := schedulerepo.New(clock, db.Runner())
 
 	s := newSchedule("01JD0SCH00000000000000000", "migrate")
-	require.NoError(t, repo.Create(ctx, db.Runner(), s))
+	require.NoError(t, repo.Create(ctx, s))
 
 	// from 不匹配（双发/陈读防御）→ ErrConflict。
-	err := repo.Fire(ctx, db.Runner(), s.ID, "2026-01-02T09:30:00Z", "2026-01-03T09:30:00Z", "01JD0TSK00000000000000000")
+	err := repo.Fire(ctx, s.ID, "2026-01-02T09:30:00Z", "2026-01-03T09:30:00Z", "01JD0TSK00000000000000000")
 	assert.ErrorIs(t, err, state.ErrConflict)
 
 	// from 匹配：next_fire_at 与 last_task_id 同拍推进。
-	require.NoError(t, repo.Fire(ctx, db.Runner(), s.ID,
+	require.NoError(t, repo.Fire(ctx, s.ID,
 		"2026-01-01T09:30:00Z", "2026-01-02T09:30:00Z", "01JD0TSK00000000000000000"))
-	got, err := repo.Get(ctx, db.Runner(), s.ID)
+	got, err := repo.Get(ctx, s.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "2026-01-02T09:30:00Z", got.NextFireAt)
 	assert.Equal(t, "01JD0TSK00000000000000000", got.LastTaskID)
 
 	// 手动拍记账（CAS 锚 = 读行时的旧 last_task_id）：last_task_id 推进、
 	// next_fire_at 不动。
-	require.NoError(t, repo.RecordFire(ctx, db.Runner(), s.ID, "01JD0TSK00000000000000000", "01JD0TSK00000000000000001"))
-	got, err = repo.Get(ctx, db.Runner(), s.ID)
+	require.NoError(t, repo.RecordFire(ctx, s.ID, "01JD0TSK00000000000000000", "01JD0TSK00000000000000001"))
+	got, err = repo.Get(ctx, s.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "2026-01-02T09:30:00Z", got.NextFireAt)
 	assert.Equal(t, "01JD0TSK00000000000000001", got.LastTaskID)
 
 	// B12 P3-4：CAS 锚失配（并发双拍的输家形态）→ ErrConflict，行不动。
-	err = repo.RecordFire(ctx, db.Runner(), s.ID, "01JD0TSK00000000000000000", "01JD0TSK00000000000000002")
+	err = repo.RecordFire(ctx, s.ID, "01JD0TSK00000000000000000", "01JD0TSK00000000000000002")
 	assert.ErrorIs(t, err, state.ErrConflict)
-	got, err = repo.Get(ctx, db.Runner(), s.ID)
+	got, err = repo.Get(ctx, s.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "01JD0TSK00000000000000001", got.LastTaskID)
 
 	// tombstone 后 Fire/RecordFire 均拒。
-	require.NoError(t, repo.Transit(ctx, db.Runner(), s.ID, schedule.StateActive, schedule.StateDeleted))
-	assert.ErrorIs(t, repo.Fire(ctx, db.Runner(), s.ID,
+	require.NoError(t, repo.Transit(ctx, s.ID, schedule.StateActive, schedule.StateDeleted))
+	assert.ErrorIs(t, repo.Fire(ctx, s.ID,
 		"2026-01-02T09:30:00Z", "2026-01-03T09:30:00Z", "x"), state.ErrConflict)
-	assert.ErrorIs(t, repo.RecordFire(ctx, db.Runner(), s.ID, "01JD0TSK00000000000000001", "x"), state.ErrConflict)
+	assert.ErrorIs(t, repo.RecordFire(ctx, s.ID, "01JD0TSK00000000000000001", "x"), state.ErrConflict)
 
 	// 不存在的行 → ErrNotFound。
-	assert.ErrorIs(t, repo.Fire(ctx, db.Runner(), "01JD0SCH000000000000099", "", "", ""), state.ErrNotFound)
+	assert.ErrorIs(t, repo.Fire(ctx, "01JD0SCH000000000000099", "", "", ""), state.ErrNotFound)
 }
 
 func TestParseCronTimezoneAndDST(t *testing.T) {

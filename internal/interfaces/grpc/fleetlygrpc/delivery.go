@@ -67,7 +67,7 @@ func (svc *DeploymentsService) Deploy(ctx context.Context, req *deliveryv1.Deplo
 		uploadID = specFile.GetSource().GetUpload().GetId()
 	}
 	if uploadID != "" {
-		row, err := svc.s.Uploads.Get(ctx, svc.s.DB.Runner(), uploadID)
+		row, err := svc.s.Uploads.Get(ctx, uploadID)
 		if err != nil {
 			return nil, mapStateError(err, "upload")
 		}
@@ -101,7 +101,7 @@ func (svc *DeploymentsService) Deploy(ctx context.Context, req *deliveryv1.Deplo
 	// api，合并执行随冻结/admission 下沉 engine.SubmitSpec（P3-7）。
 	hookOwned := false
 	merge := engine.MergeNone
-	if hookRow, herr := svc.s.Hooks.Get(ctx, svc.s.DB.Runner(), appRow.ID); herr == nil {
+	if hookRow, herr := svc.s.Hooks.Get(ctx, appRow.ID); herr == nil {
 		hookOwned = true
 		if !req.GetOverrideHook() && req.GetSpecFile() == "" {
 			return nil, apperr.New("E_APP_HOOK_OWNED",
@@ -144,14 +144,14 @@ func (svc *DeploymentsService) Deploy(ctx context.Context, req *deliveryv1.Deplo
 // E_INTERNAL。
 func deployVarLookup(ctx context.Context, s *Services, appRow *app.App) (composeintake.VariableLookup, error) {
 	env := map[string]string{}
-	vars, err := s.SharedVariables.ListActive(ctx, s.DB.Runner(), appRow.ProjectID)
+	vars, err := s.SharedVariables.ListActive(ctx, appRow.ProjectID)
 	if err != nil {
 		return nil, err
 	}
 	for _, v := range vars {
 		env[v.Name] = v.Value
 	}
-	appVars, err := s.AppVariables.ListActive(ctx, s.DB.Runner(), appRow.ID)
+	appVars, err := s.AppVariables.ListActive(ctx, appRow.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -253,7 +253,7 @@ func (svc *DeploymentsService) GetDeployment(ctx context.Context, req *deliveryv
 	if err := svc.s.authorizeDeploymentID(ctx, req.GetId()); err != nil {
 		return nil, err
 	}
-	d, err := svc.s.Deployments.Get(ctx, svc.s.DB.Runner(), req.GetId())
+	d, err := svc.s.Deployments.Get(ctx, req.GetId())
 	if err != nil {
 		return nil, mapStateError(err, "deployment")
 	}
@@ -264,7 +264,7 @@ func (svc *DeploymentsService) ListDeployments(ctx context.Context, req *deliver
 	if err := svc.s.authorizeAppIDOnly(ctx, req.GetAppId()); err != nil {
 		return nil, err
 	}
-	list, err := svc.s.Deployments.ListByApp(ctx, svc.s.DB.Runner(),
+	list, err := svc.s.Deployments.ListByApp(ctx,
 		req.GetAppId(), req.GetAfterDeploymentSeq(), listLimit(req.GetLimit()))
 	if err != nil {
 		return nil, mapStateError(err, "deployment")
@@ -336,7 +336,7 @@ func (svc *RevisionsService) ListRevisions(ctx context.Context, req *deliveryv1.
 	if err := svc.s.authorizeAppIDOnly(ctx, req.GetAppId()); err != nil {
 		return nil, err
 	}
-	list, err := svc.s.Revisions.ListByApp(ctx, svc.s.DB.Runner(),
+	list, err := svc.s.Revisions.ListByApp(ctx,
 		req.GetAppId(), req.GetAfterSeq(), listLimit(req.GetLimit()))
 	if err != nil {
 		return nil, mapStateError(err, "revision")
@@ -356,7 +356,7 @@ func (svc *RevisionsService) GetRevision(ctx context.Context, req *deliveryv1.Ge
 	if err := svc.s.authorizeAppIDOnly(ctx, req.GetAppId()); err != nil {
 		return nil, err
 	}
-	row, err := svc.s.Revisions.GetBySeq(ctx, svc.s.DB.Runner(), req.GetAppId(), req.GetSeq())
+	row, err := svc.s.Revisions.GetBySeq(ctx, req.GetAppId(), req.GetSeq())
 	if err != nil {
 		return nil, mapStateError(err, "revision")
 	}
@@ -395,11 +395,11 @@ func (svc *RevisionsService) DiffRevisions(ctx context.Context, req *deliveryv1.
 	if err := svc.s.authorizeAppIDOnly(ctx, req.GetAppId()); err != nil {
 		return nil, err
 	}
-	from, err := svc.s.Revisions.GetBySeq(ctx, svc.s.DB.Runner(), req.GetAppId(), req.GetFromSeq())
+	from, err := svc.s.Revisions.GetBySeq(ctx, req.GetAppId(), req.GetFromSeq())
 	if err != nil {
 		return nil, mapStateError(err, "revision")
 	}
-	to, err := svc.s.Revisions.GetBySeq(ctx, svc.s.DB.Runner(), req.GetAppId(), req.GetToSeq())
+	to, err := svc.s.Revisions.GetBySeq(ctx, req.GetAppId(), req.GetToSeq())
 	if err != nil {
 		return nil, mapStateError(err, "revision")
 	}
@@ -427,7 +427,7 @@ func (svc *BuildsService) ListBuilds(ctx context.Context, req *deliveryv1.ListBu
 	if err := svc.s.authorizeAppIDOnly(ctx, req.GetAppId()); err != nil {
 		return nil, err
 	}
-	list, err := svc.s.Builds.ListByApp(ctx, svc.s.DB.Runner(),
+	list, err := svc.s.Builds.ListByApp(ctx,
 		req.GetAppId(), req.GetAfterBuildSeq(), listLimit(req.GetLimit()))
 	if err != nil {
 		return nil, mapStateError(err, "build")
@@ -476,7 +476,7 @@ func (svc *BuildsService) StreamBuildLogs(req *deliveryv1.StreamBuildLogsRequest
 	// 重启即失——持久化面正是为此）。行级隔离 = 查询构造只携带本 build
 	// 的域锚（fleetly_build=<id> + 归属域字段）。
 	if newFrames == 0 && svc.s.Logging != nil {
-		b, err := svc.s.Builds.Get(ctx, svc.s.DB.Runner(), req.GetBuildId())
+		b, err := svc.s.Builds.Get(ctx, req.GetBuildId())
 		if err == nil && b.State.Terminal() {
 			if backfillErr := svc.backfillBuildLogs(ctx, b, stream); backfillErr != nil {
 				return backfillErr
@@ -498,7 +498,7 @@ func (svc *BuildsService) StreamBuildLogs(req *deliveryv1.StreamBuildLogsRequest
 		if err := flush(); err != nil {
 			return err
 		}
-		if b, err := svc.s.Builds.Get(ctx, svc.s.DB.Runner(), req.GetBuildId()); err == nil && b.State.Terminal() && newFrames == 0 {
+		if b, err := svc.s.Builds.Get(ctx, req.GetBuildId()); err == nil && b.State.Terminal() && newFrames == 0 {
 			return nil
 		}
 	}
@@ -507,11 +507,11 @@ func (svc *BuildsService) StreamBuildLogs(req *deliveryv1.StreamBuildLogsRequest
 // backfillBuildLogs 从 VL 回读一个终态 build 的日志（域锚 = Build 行的
 // 归属 App/Project + Team 实取）。
 func (svc *BuildsService) backfillBuildLogs(ctx context.Context, b *build.Build, stream deliveryv1.BuildsService_StreamBuildLogsServer) error {
-	appRow, err := svc.s.Apps.Get(ctx, svc.s.DB.Runner(), b.AppID)
+	appRow, err := svc.s.Apps.Get(ctx, b.AppID)
 	if err != nil {
 		return mapStateError(err, "app")
 	}
-	proj, err := svc.s.Projects.Get(ctx, svc.s.DB.Runner(), appRow.ProjectID)
+	proj, err := svc.s.Projects.Get(ctx, appRow.ProjectID)
 	if err != nil {
 		return mapStateError(err, "project")
 	}

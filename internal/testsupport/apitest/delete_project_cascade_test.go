@@ -9,7 +9,6 @@ package apitest_test
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"testing"
 
@@ -21,6 +20,7 @@ import (
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/apperrstatus"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
 )
@@ -241,8 +241,8 @@ func TestDeleteProjectRetryConvergesOrphanDatabases(t *testing.T) {
 
 	// 复刻旧行为残局：项目已 tombstone、两库原样（直插状态层——无 API
 	// 面可以绕过当前级联）。
-	require.NoError(t, h.DB.Tx(ctx, func(tx *sql.Tx) error {
-		_, err := tx.ExecContext(ctx,
+	require.NoError(t, h.DB.Tx(ctx, func(run state.Runner) error {
+		_, err := run.ExecContext(ctx,
 			"UPDATE projects SET deleted_at = '2026-10-05T00:00:00Z' WHERE id = ?", projectID)
 		return err
 	}))

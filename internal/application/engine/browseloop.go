@@ -28,7 +28,7 @@ func (e *Engine) browseStep(ctx context.Context) {
 	if !e.opts.Data.Browse.Configured() {
 		return // 面停用：无行可收（受理已拒），零成本拍
 	}
-	rows, err := e.browseRepo.List(ctx, e.db.Runner())
+	rows, err := e.repos.Browse.List(ctx)
 	if err != nil {
 		e.log.Error("browse step: list ledger", "err", err)
 		return
@@ -139,7 +139,7 @@ func (e *Engine) teardownBrowseSession(ctx context.Context, r *browse.Session) {
 		// 载体拆除失败不删行——下一拍重试（宁留行不漏载体）。
 		return
 	}
-	if err := e.browseRepo.Delete(stepCtx, e.db.Runner(), r.ID); err != nil {
+	if err := e.repos.Browse.Delete(stepCtx, r.ID); err != nil {
 		e.log.Error("browse teardown: delete ledger row", "session", r.ID, "err", err)
 		return
 	}
@@ -164,7 +164,7 @@ func (x *browses) teamOf(id string) string {
 // databaseNameOf 回读库名（凭证 Secret 铸名的输入；注册恢复路径）。库名
 // 不在台账行上（渲染期点查数据库行——列变更即方言重渲，行不冗余）。
 func (e *Engine) databaseNameOf(ctx context.Context, databaseID string) string {
-	row, err := e.databases.Get(ctx, e.db.Runner(), databaseID)
+	row, err := e.repos.Databases.Get(ctx, databaseID)
 	if err != nil {
 		return ""
 	}
@@ -249,7 +249,7 @@ func (e *Engine) renderBrowseDialect(ctx context.Context, s *browseSession) (dbb
 		return dbbrowser.Rendering{}, fmt.Errorf("browse requires the master key (data root keys/ missing)")
 	}
 	secName := DBCredentialSecretName(s.databaseRow)
-	sec, err := e.secrets.GetByName(ctx, e.db.Runner(), s.projectID, secName)
+	sec, err := e.repos.Secrets.GetByName(ctx, s.projectID, secName)
 	if err != nil {
 		return dbbrowser.Rendering{}, fmt.Errorf("lookup credential secret %q: %w", secName, err)
 	}

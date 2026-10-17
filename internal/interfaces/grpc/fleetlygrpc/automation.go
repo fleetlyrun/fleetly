@@ -6,7 +6,6 @@ package fleetlygrpc
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"time"
 
@@ -17,6 +16,7 @@ import (
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/run"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/schedule"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
@@ -93,7 +93,7 @@ func normalizeCreateTask(req *automationv1.CreateTaskRequest) (*specv1.TaskSpec,
 // 存活——吊销 Token 不能再当新 Task 的属主）。
 func (svc *TasksService) resolveOwnerToken(ctx context.Context, req *automationv1.CreateTaskRequest) (string, error) {
 	if id := req.GetOwnerTokenId(); id != "" {
-		tok, err := svc.s.Tokens.Get(ctx, svc.s.DB.Runner(), id)
+		tok, err := svc.s.Tokens.Get(ctx, id)
 		if err != nil {
 			return "", mapStateError(err, "owner token")
 		}
@@ -134,9 +134,9 @@ func (svc *TasksService) CreateTask(ctx context.Context, req *automationv1.Creat
 	err = svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{
 			svc.s.parentProjectAlive(req.GetProjectId()),
-			func(ctx context.Context, tx *sql.Tx) error {
+			func(ctx context.Context, st transact.Stores) error {
 				var err error
-				if seq, err = svc.s.DB.NextSeq(ctx, tx, "tasks"); err != nil {
+				if seq, err = st.NextSeq(ctx, "tasks"); err != nil {
 					return err
 				}
 				row, err = engine.MintTaskRow(req.GetProjectId(), req.GetName(), owner, taskSpec, seq)
@@ -147,12 +147,12 @@ func (svc *TasksService) CreateTask(ctx context.Context, req *automationv1.Creat
 				}
 				return nil
 			},
-			func(ctx context.Context, tx *sql.Tx) error {
-				return svc.s.taskQuota(req.GetProjectId(), row.DesiredConcurrency)(ctx, tx)
+			func(ctx context.Context, st transact.Stores) error {
+				return svc.s.taskQuota(req.GetProjectId(), row.DesiredConcurrency)(ctx, st)
 			},
 		},
-		write: func(ctx context.Context, tx *sql.Tx) error {
-			return svc.s.Tasks.Create(ctx, tx, row)
+		write: func(ctx context.Context, st transact.Stores) error {
+			return st.Tasks.Create(ctx, row)
 		},
 		facts: []func() writes.FactRow{
 			svc.s.factOf(ctx, req.GetProjectId(), func(team string) writes.FactRow {
@@ -174,7 +174,7 @@ func (svc *TasksService) CreateTask(ctx context.Context, req *automationv1.Creat
 }
 
 func (svc *TasksService) GetTask(ctx context.Context, req *automationv1.GetTaskRequest) (*automationv1.GetTaskResponse, error) {
-	row, err := svc.s.Tasks.Get(ctx, svc.s.DB.Runner(), req.GetId())
+	row, err := svc.s.Tasks.Get(ctx, req.GetId())
 	if err != nil {
 		return nil, mapStateError(err, "task")
 	}
@@ -190,11 +190,11 @@ func (svc *TasksService) ListTasks(ctx context.Context, req *automationv1.ListTa
 	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}
-	rows, err := svc.s.Tasks.ListByProject(ctx, svc.s.DB.Runner(), req.GetProjectId(), req.GetAfterTaskSeq(), listLimit(req.GetLimit()))
+	rows, err := svc.s.Tasks.ListByProject(ctx, req.GetProjectId(), req.GetAfterTaskSeq(), listLimit(req.GetLimit()))
 	if err != nil {
 		return nil, mapStateError(err, "task")
 	}
-	counts, err := svc.s.Runs.CountActiveByTasks(ctx, svc.s.DB.Runner())
+	counts, err := svc.s.Runs.CountActiveByTasks(ctx)
 	if err != nil {
 		return nil, mapStateError(err, "run")
 	}
@@ -261,7 +261,7 @@ type RunsService struct {
 }
 
 func (svc *RunsService) GetRun(ctx context.Context, req *automationv1.GetRunRequest) (*automationv1.GetRunResponse, error) {
-	row, err := svc.s.Runs.Get(ctx, svc.s.DB.Runner(), req.GetId())
+	row, err := svc.s.Runs.Get(ctx, req.GetId())
 	if err != nil {
 		return nil, mapStateError(err, "run")
 	}
@@ -280,19 +280,19 @@ func (svc *RunsService) ListRuns(ctx context.Context, req *automationv1.ListRuns
 	case req.GetTaskId() != "" && req.GetProjectId() != "":
 		return nil, apperr.New("E_INVALID_ARGUMENT", "task_id and project_id are mutually exclusive; provide one filter")
 	case req.GetTaskId() != "":
-		tk, terr := svc.s.Tasks.Get(ctx, svc.s.DB.Runner(), req.GetTaskId())
+		tk, terr := svc.s.Tasks.Get(ctx, req.GetTaskId())
 		if terr != nil {
 			return nil, mapStateError(terr, "task")
 		}
 		if aerr := svc.s.authorizeProjectID(ctx, tk.ProjectID); aerr != nil {
 			return nil, aerr
 		}
-		rows, err = svc.s.Runs.ListByTask(ctx, svc.s.DB.Runner(), req.GetTaskId(), req.GetAfterRunSeq(), listLimit(req.GetLimit()))
+		rows, err = svc.s.Runs.ListByTask(ctx, req.GetTaskId(), req.GetAfterRunSeq(), listLimit(req.GetLimit()))
 	case req.GetProjectId() != "":
 		if aerr := svc.s.authorizeProjectID(ctx, req.GetProjectId()); aerr != nil {
 			return nil, aerr
 		}
-		rows, err = svc.s.Runs.ListByProject(ctx, svc.s.DB.Runner(), req.GetProjectId(), req.GetAfterRunSeq(), listLimit(req.GetLimit()))
+		rows, err = svc.s.Runs.ListByProject(ctx, req.GetProjectId(), req.GetAfterRunSeq(), listLimit(req.GetLimit()))
 	default:
 		return nil, apperr.New("E_INVALID_ARGUMENT",
 			"task_id or project_id: one filter is required (an unfiltered run list spans every team's runs)")
@@ -344,7 +344,7 @@ func (svc *RunsService) WaitRun(req *automationv1.WaitRunRequest, stream automat
 func (svc *RunsService) waitRunByID(ctx context.Context, runID string, stream automationv1.RunsService_WaitRunServer) error {
 	return waitOnRow(ctx, svc.s, "run", runID,
 		func(ctx context.Context) (*run.Run, error) {
-			row, err := svc.s.Runs.Get(ctx, svc.s.DB.Runner(), runID)
+			row, err := svc.s.Runs.Get(ctx, runID)
 			if err != nil {
 				return nil, mapStateError(err, "run")
 			}
@@ -364,12 +364,12 @@ func (svc *RunsService) waitRunByID(ctx context.Context, runID string, stream au
 // 即重列钉定。订阅起点先于钉定读（waitOnAggregate 同款：两步间铸出的 Run
 // 只多一次幂等重列）。钉定后与 by-id 同流。
 func (svc *RunsService) waitRunByTask(ctx context.Context, taskID string, stream automationv1.RunsService_WaitRunServer) error {
-	cursor, err := svc.s.OutboxEvents.LastSeq(ctx, svc.s.DB.Runner())
+	cursor, err := svc.s.OutboxEvents.LastSeq(ctx)
 	if err != nil {
 		return mapStateError(err, "events")
 	}
 	pin := func() (*run.Run, error) {
-		rows, lerr := svc.s.Runs.ListByTask(ctx, svc.s.DB.Runner(), taskID, 0, 1)
+		rows, lerr := svc.s.Runs.ListByTask(ctx, taskID, 0, 1)
 		if lerr != nil {
 			return nil, mapStateError(lerr, "run")
 		}
@@ -383,7 +383,7 @@ func (svc *RunsService) waitRunByTask(ctx context.Context, taskID string, stream
 		return err
 	}
 	if first == nil {
-		t, terr := svc.s.Tasks.Get(ctx, svc.s.DB.Runner(), taskID)
+		t, terr := svc.s.Tasks.Get(ctx, taskID)
 		if terr != nil {
 			return mapStateError(terr, "task")
 		}
@@ -566,8 +566,8 @@ func (svc *SchedulesService) CreateSchedule(ctx context.Context, req *automation
 	}
 	err = svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{svc.s.parentProjectAlive(req.GetProjectId())},
-		write: func(ctx context.Context, tx *sql.Tx) error {
-			return svc.s.Schedules.Create(ctx, tx, row)
+		write: func(ctx context.Context, st transact.Stores) error {
+			return st.Schedules.Create(ctx, row)
 		},
 		facts: []func() writes.FactRow{
 			svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {
@@ -591,7 +591,7 @@ func (svc *SchedulesService) CreateSchedule(ctx context.Context, req *automation
 }
 
 func (svc *SchedulesService) GetSchedule(ctx context.Context, req *automationv1.GetScheduleRequest) (*automationv1.GetScheduleResponse, error) {
-	row, err := svc.s.Schedules.Get(ctx, svc.s.DB.Runner(), req.GetId())
+	row, err := svc.s.Schedules.Get(ctx, req.GetId())
 	if err != nil {
 		return nil, mapStateError(err, "schedule")
 	}
@@ -607,7 +607,7 @@ func (svc *SchedulesService) ListSchedules(ctx context.Context, req *automationv
 	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}
-	rows, err := svc.s.Schedules.ListByProject(ctx, svc.s.DB.Runner(), req.GetProjectId(), req.GetAfterScheduleSeq(), listLimit(req.GetLimit()))
+	rows, err := svc.s.Schedules.ListByProject(ctx, req.GetProjectId(), req.GetAfterScheduleSeq(), listLimit(req.GetLimit()))
 	if err != nil {
 		return nil, mapStateError(err, "schedule")
 	}
@@ -621,7 +621,7 @@ func (svc *SchedulesService) ListSchedules(ctx context.Context, req *automationv
 // DeleteSchedule tombstone（幂等：已删行直接成功）。已铸 Task 不受影响——
 // 跑完自然收口（引擎无载体可拆，纯行面走 commit 原语）。
 func (svc *SchedulesService) DeleteSchedule(ctx context.Context, req *automationv1.DeleteScheduleRequest) (*automationv1.DeleteScheduleResponse, error) {
-	row, err := svc.s.Schedules.Get(ctx, svc.s.DB.Runner(), req.GetId())
+	row, err := svc.s.Schedules.Get(ctx, req.GetId())
 	if err != nil {
 		return nil, mapStateError(err, "schedule")
 	}
@@ -632,8 +632,8 @@ func (svc *SchedulesService) DeleteSchedule(ctx context.Context, req *automation
 		return &automationv1.DeleteScheduleResponse{}, nil // 幂等
 	}
 	err = svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, tx *sql.Tx) error {
-			return svc.s.Schedules.Transit(ctx, tx, row.ID, schedule.StateActive, schedule.StateDeleted)
+		write: func(ctx context.Context, st transact.Stores) error {
+			return st.Schedules.Transit(ctx, row.ID, schedule.StateActive, schedule.StateDeleted)
 		},
 		facts: []func() writes.FactRow{
 			svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {

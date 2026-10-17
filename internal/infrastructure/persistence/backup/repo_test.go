@@ -28,17 +28,17 @@ func newBackup(id string) *backup.Backup {
 func TestBackupTerminalStateIsFinal(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	repo := backuprepo.New(clock)
+	repo := backuprepo.New(clock, db.Runner())
 
 	// running → succeeded 后：迟到失败回执被拒，终态与回执三元组不变。
 	b := newBackup("01JD0BKPC00000000000000001")
-	require.NoError(t, repo.Create(ctx, db.Runner(), b))
-	require.NoError(t, repo.MarkRunning(ctx, db.Runner(), b.ID))
-	require.NoError(t, repo.FinishSucceeded(ctx, db.Runner(), b.ID, "backups/p/d/k1", "digest-1", 42))
+	require.NoError(t, repo.Create(ctx, b))
+	require.NoError(t, repo.MarkRunning(ctx, b.ID))
+	require.NoError(t, repo.FinishSucceeded(ctx, b.ID, "backups/p/d/k1", "digest-1", 42))
 	clock.Advance(1e9)
-	err := repo.FinishFailed(ctx, db.Runner(), b.ID, "late failure after sweep")
+	err := repo.FinishFailed(ctx, b.ID, "late failure after sweep")
 	assert.ErrorIs(t, err, state.ErrConflict, "late failure receipt must not overwrite the terminal state")
-	got, err := repo.Get(ctx, db.Runner(), b.ID)
+	got, err := repo.Get(ctx, b.ID)
 	require.NoError(t, err)
 	assert.Equal(t, backup.StatusSucceeded, got.Status)
 	assert.Equal(t, "digest-1", got.Digest)
@@ -47,37 +47,37 @@ func TestBackupTerminalStateIsFinal(t *testing.T) {
 
 	// succeeded 行上的重复成功回执同样被拒（幂等面在行现状，不在重放）。
 	clock.Advance(1e9)
-	err = repo.FinishSucceeded(ctx, db.Runner(), b.ID, "backups/p/d/k2", "digest-2", 43)
+	err = repo.FinishSucceeded(ctx, b.ID, "backups/p/d/k2", "digest-2", 43)
 	assert.ErrorIs(t, err, state.ErrConflict)
-	got, err = repo.Get(ctx, db.Runner(), b.ID)
+	got, err = repo.Get(ctx, b.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "digest-1", got.Digest, "terminal receipt triple must stay frozen")
 
 	// pending 直落失败（MarkRunning 前的失败回执）合法。
 	p := newBackup("01JD0BKPC00000000000000002")
-	require.NoError(t, repo.Create(ctx, db.Runner(), p))
-	require.NoError(t, repo.FinishFailed(ctx, db.Runner(), p.ID, "database row unavailable"))
+	require.NoError(t, repo.Create(ctx, p))
+	require.NoError(t, repo.FinishFailed(ctx, p.ID, "database row unavailable"))
 
 	// running → failed（清扫路径）后：迟到成功回执被拒。
 	f := newBackup("01JD0BKPC00000000000000003")
-	require.NoError(t, repo.Create(ctx, db.Runner(), f))
-	require.NoError(t, repo.MarkRunning(ctx, db.Runner(), f.ID))
-	require.NoError(t, repo.FinishFailed(ctx, db.Runner(), f.ID, "interrupted by platform restart"))
+	require.NoError(t, repo.Create(ctx, f))
+	require.NoError(t, repo.MarkRunning(ctx, f.ID))
+	require.NoError(t, repo.FinishFailed(ctx, f.ID, "interrupted by platform restart"))
 	clock.Advance(1e9)
-	err = repo.FinishSucceeded(ctx, db.Runner(), f.ID, "backups/p/d/k3", "digest-3", 44)
+	err = repo.FinishSucceeded(ctx, f.ID, "backups/p/d/k3", "digest-3", 44)
 	assert.ErrorIs(t, err, state.ErrConflict, "late success receipt must not overwrite the terminal state")
-	got, err = repo.Get(ctx, db.Runner(), f.ID)
+	got, err = repo.Get(ctx, f.ID)
 	require.NoError(t, err)
 	assert.Equal(t, backup.StatusFailed, got.Status)
 	assert.Equal(t, "interrupted by platform restart", got.Error)
 
 	// pending 行的成功回执不合法（成功只属于本进程标记过的 running 行）。
 	q := newBackup("01JD0BKPC00000000000000004")
-	require.NoError(t, repo.Create(ctx, db.Runner(), q))
-	err = repo.FinishSucceeded(ctx, db.Runner(), q.ID, "backups/p/d/k4", "digest-4", 45)
+	require.NoError(t, repo.Create(ctx, q))
+	err = repo.FinishSucceeded(ctx, q.ID, "backups/p/d/k4", "digest-4", 45)
 	assert.ErrorIs(t, err, state.ErrConflict)
 
 	// 不存在行：ErrConflict（RowsAffected=0 同口径，MarkRunning 先例）。
-	err = repo.FinishFailed(ctx, db.Runner(), "missing", "boom")
+	err = repo.FinishFailed(ctx, "missing", "boom")
 	assert.True(t, errors.Is(err, state.ErrConflict))
 }

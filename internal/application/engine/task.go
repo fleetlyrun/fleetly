@@ -21,12 +21,12 @@ package engine
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"time"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/run"
@@ -54,7 +54,7 @@ var taskDrivingStates = []run.State{run.StatePending, run.StateRunning, run.Stat
 // 收口，代价随 driving 行数线性走。重估触发：driving 行数常态逼近 500
 // 量级。
 func (e *Engine) taskStep(ctx context.Context) {
-	tasks, err := e.tasks.ListDriving(ctx, e.db.Runner())
+	tasks, err := e.repos.Tasks.ListDriving(ctx)
 	if err != nil {
 		e.log.Error("task step: list driving", "err", err)
 		return
@@ -63,7 +63,7 @@ func (e *Engine) taskStep(ctx context.Context) {
 	if err := e.sweepZombieRuns(ctx); err != nil {
 		e.log.Error("task step: sweep zombie runs", "err", err)
 	}
-	runs, err := e.runs.ListDriving(ctx, e.db.Runner())
+	runs, err := e.repos.Runs.ListDriving(ctx)
 	if err != nil {
 		e.log.Error("task step: list driving runs", "err", err)
 		return
@@ -92,7 +92,7 @@ func (e *Engine) sweepRevokedOwners(ctx context.Context, tasks []task.Task) {
 		byToken[t.OwnerTokenID] = append(byToken[t.OwnerTokenID], t)
 	}
 	for tokenID, owned := range byToken {
-		tok, err := e.tokens.Get(ctx, e.db.Runner(), tokenID)
+		tok, err := e.repos.Tokens.Get(ctx, tokenID)
 		if err != nil {
 			if errors.Is(err, state.ErrNotFound) {
 				continue // 行不存在防御：Token 行只吊销不删
@@ -116,7 +116,7 @@ func (e *Engine) sweepRevokedOwners(ctx context.Context, tasks []task.Task) {
 // pre-fix 存量（staging 库已有），否则 Schedule 重叠判定（Run 行为真源）
 // 被僵尸行永久 skip。终态 Task 不进 ListDriving，本扫是其唯一收口路径。
 func (e *Engine) sweepZombieRuns(ctx context.Context) error {
-	zombies, err := e.runs.ListDrivingOfTerminalTasks(ctx, e.db.Runner())
+	zombies, err := e.repos.Runs.ListDrivingOfTerminalTasks(ctx)
 	if err != nil {
 		return err
 	}
@@ -177,7 +177,7 @@ func (e *Engine) driveLeaseExpiry(ctx context.Context, t *task.Task, now time.Ti
 	}
 	if deadline := parseDeadline(t.LeaseDeadline); deadline != nil && now.After(deadline.Add(e.opts.Task.TaskLeaseGrace)) {
 		e.drainTask(ctx, t, run.ReasonLeaseExpired)
-		if err := e.emitObservation(ctx, e.eventTeamOfProject(ctx, e.db.Runner(), t.ProjectID),
+		if err := e.emitObservation(ctx, e.eventTeamOfProject(ctx, e.repos, t.ProjectID),
 			eventLeaseExpired, "task", t.ID,
 			leaseEventPayloadJSON(t, "lease deadline exceeded grace")); err != nil {
 			e.log.Error("task drive: lease.expired event", "task", t.ID, "err", err)
@@ -342,7 +342,7 @@ func (e *Engine) driveReplenish(ctx context.Context, t *task.Task, spec *specv1.
 	if !created {
 		return runs
 	}
-	refreshed, err := e.runs.ListByTaskStates(ctx, e.db.Runner(), t.ID, taskDrivingStates)
+	refreshed, err := e.repos.Runs.ListByTaskStates(ctx, t.ID, taskDrivingStates)
 	if err != nil {
 		e.log.Error("task drive: relist runs", "task", t.ID, "err", err)
 		return runs
@@ -404,7 +404,7 @@ const (
 // 原因同面；读失败以 err 单独返回，处置策略归调用方（task 环下拍重试、
 // predeploy 记失败）。
 func (e *Engine) oneshotRunVerdict(ctx context.Context, taskID string) (oneshotVerdict, string, error) {
-	runs, err := e.runs.ListByTaskStates(ctx, e.db.Runner(), taskID, []run.State{run.StateStopped, run.StateFailed})
+	runs, err := e.repos.Runs.ListByTaskStates(ctx, taskID, []run.State{run.StateStopped, run.StateFailed})
 	if err != nil {
 		return oneshotRunFailed, "", err
 	}
@@ -512,7 +512,7 @@ func (e *Engine) drainTask(ctx context.Context, t *task.Task, reason string) {
 		return // 跑完 TTL 模式：存量 Run 自然收口
 	}
 	now := e.clock.Now()
-	runs, err := e.runs.ListByTaskStates(ctx, e.db.Runner(), t.ID, run.ActiveStates)
+	runs, err := e.repos.Runs.ListByTaskStates(ctx, t.ID, run.ActiveStates)
 	if err != nil {
 		e.log.Error("task drain: list runs", "task", t.ID, "err", err)
 		return
@@ -541,10 +541,10 @@ func (e *Engine) createRun(ctx context.Context, t *task.Task, spec *specv1.TaskS
 		deadline = state.FormatTime(now.Add(time.Duration(ttl) * time.Second))
 	}
 	var m *run.Run
-	return e.db.Tx(ctx, func(tx *sql.Tx) error {
+	return e.tx.Do(ctx, func(s transact.Stores) error {
 		// run id = <task id>-<seq>（ADR-0070 派生类）：WorkloadID 与 Run DNS
 		// 名随之全链可读（fleetly-run-nightly-backup-33-57）。
-		rseq, err := e.db.NextSeq(ctx, tx, "runs")
+		rseq, err := s.NextSeq(ctx, "runs")
 		if err != nil {
 			return err
 		}
@@ -554,12 +554,12 @@ func (e *Engine) createRun(ctx context.Context, t *task.Task, spec *specv1.TaskS
 			State: run.StatePending, WorkloadID: id, DNSName: RunDNSName(id),
 			Deadline: deadline,
 		}
-		return e.commitWrite(ctx, tx, writeFact{
-			write: func(ctx context.Context, tx *sql.Tx) error { return e.runs.Create(ctx, tx, m) },
+		return e.commitWrite(ctx, s, writeFact{
+			write: func(ctx context.Context, s transact.Stores) error { return s.Runs.Create(ctx, m) },
 			facts: []func() writes.FactRow{func() writes.FactRow {
 				return writes.FactRow{
 					Name: eventRunState(run.StatePending), Aggregate: "run", ID: m.ID,
-					Payload: runEventPayloadJSON(m), TeamID: e.eventTeamOfProject(ctx, tx, m.ProjectID),
+					Payload: runEventPayloadJSON(m), TeamID: e.eventTeamOfProject(ctx, s, m.ProjectID),
 					Action: "run.create", Resource: "run/" + m.ID,
 				}
 			}},
@@ -572,7 +572,7 @@ func (e *Engine) createRun(ctx context.Context, t *task.Task, spec *specv1.TaskS
 // 的落点）。跨域共享助手：browse/backup/managed/observ/builder/database/
 // hygiene 八处消费，故留驱动文件（P3 批 3 判定）。
 func (e *Engine) projectTeam(ctx context.Context, projectID string) (string, error) {
-	p, err := e.projects.Get(ctx, e.db.Runner(), projectID)
+	p, err := e.repos.Projects.Get(ctx, projectID)
 	if err != nil {
 		return "", fmt.Errorf("resolve project %s: %w", projectID, err)
 	}

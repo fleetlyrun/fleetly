@@ -4,7 +4,6 @@ package fleetlygrpc
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -15,6 +14,7 @@ import (
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
@@ -83,8 +83,8 @@ type structureEventPayload struct {
 // 单写者串行下与 DeleteProject 的活跃 App 守卫构成对偶——任一交错下
 // "项目存活 ⇔ 子资源可建"（批 0 复核：apps.project_id 无 FK，删除后建
 // 子资源此前直接成功）。
-func (s *Services) requireActiveProject(ctx context.Context, run state.Runner, id string) error {
-	p, err := s.Projects.Get(ctx, run, id)
+func (s *Services) requireActiveProject(ctx context.Context, st transact.Stores, id string) error {
+	p, err := st.Projects.Get(ctx, id)
 	if err != nil {
 		if errors.Is(err, state.ErrNotFound) {
 			return apperr.New("E_NOT_FOUND", "project %s not found", id)
@@ -100,8 +100,8 @@ func (s *Services) requireActiveProject(ctx context.Context, run state.Runner, i
 // requireProjectApp 在调用方事务内校验 App 在指定 Project 内存活（Route
 // 的父引用面：apps 活跃行口径 + 归属一致——跨项目悬空引用按"本项目无此
 // App"拒绝）。
-func (s *Services) requireProjectApp(ctx context.Context, run state.Runner, projectID, appID string) error {
-	a, err := s.Apps.Get(ctx, run, appID)
+func (s *Services) requireProjectApp(ctx context.Context, st transact.Stores, projectID, appID string) error {
+	a, err := st.Apps.Get(ctx, appID)
 	if err != nil {
 		if errors.Is(err, state.ErrNotFound) {
 			return apperr.New("E_NOT_FOUND", "app %s not found in project %s", appID, projectID)
@@ -138,13 +138,13 @@ func (svc *ProjectsService) CreateProject(ctx context.Context, req *structurev1.
 	// 解析锚路径（factOf）。
 	err = svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{svc.s.teamExists(p.TeamID)},
-		write: func(ctx context.Context, tx *sql.Tx) error {
-			if err := svc.s.Projects.Create(ctx, tx, p); err != nil {
+		write: func(ctx context.Context, st transact.Stores) error {
+			if err := st.Projects.Create(ctx, p); err != nil {
 				return err
 			}
 			// default 网络归属事务内铸出的项目 id（ADR-0070）。
 			net.ProjectID = p.ID
-			return svc.s.Networks.Create(ctx, tx, net)
+			return st.Networks.Create(ctx, net)
 		},
 		facts: []func() writes.FactRow{
 			func() writes.FactRow {
@@ -180,7 +180,7 @@ func (svc *ProjectsService) CreateProject(ctx context.Context, req *structurev1.
 }
 
 func (svc *ProjectsService) GetProject(ctx context.Context, req *structurev1.GetProjectRequest) (*structurev1.GetProjectResponse, error) {
-	p, err := svc.s.Projects.Get(ctx, svc.s.DB.Runner(), req.GetId())
+	p, err := svc.s.Projects.Get(ctx, req.GetId())
 	if err != nil {
 		return nil, mapStateError(err, "project")
 	}
@@ -200,9 +200,9 @@ func (svc *ProjectsService) ListProjects(ctx context.Context, req *structurev1.L
 	limit := listLimit(req.GetLimit())
 	var list []project.Project
 	if owner {
-		list, err = svc.s.Projects.ListPage(ctx, svc.s.DB.Runner(), req.GetAfterProjectSeq(), limit)
+		list, err = svc.s.Projects.ListPage(ctx, req.GetAfterProjectSeq(), limit)
 	} else {
-		list, err = svc.s.Projects.ListByTeamPage(ctx, svc.s.DB.Runner(), teamID, req.GetAfterProjectSeq(), limit)
+		list, err = svc.s.Projects.ListByTeamPage(ctx, teamID, req.GetAfterProjectSeq(), limit)
 	}
 	if err != nil {
 		return nil, mapStateError(err, "project")
@@ -242,7 +242,7 @@ func (svc *ProjectsService) DeleteProject(ctx context.Context, req *structurev1.
 	}
 	// 无锁预检（DeleteApp 同款形态，拒绝零副作用）：有活 App 在此拒绝，
 	// 不进入库级联拆载体；事务内 noActiveApps 复查仍是终局守卫。
-	if err := svc.s.rejectActiveApps(ctx, svc.s.DB.Runner(), req.GetId()); err != nil {
+	if err := svc.s.rejectActiveApps(ctx, svc.s.Apps, req.GetId()); err != nil {
 		return nil, mapStateError(err, "project")
 	}
 	// 数据库级联（ADR-0029 追记 2026-10-05）：逐库同款收口序；任一库
@@ -258,8 +258,8 @@ func (svc *ProjectsService) DeleteProject(ctx context.Context, req *structurev1.
 		// noActiveDatabases 复查闭合——级联的事务内终局，命中即拒（重试
 		// 把新库纳入级联）。
 		checks: []acceptanceCheck{svc.s.noActiveApps(req.GetId()), svc.s.noActiveDatabases(req.GetId())},
-		write: func(ctx context.Context, tx *sql.Tx) error {
-			return svc.s.Projects.SoftDelete(ctx, tx, req.GetId())
+		write: func(ctx context.Context, st transact.Stores) error {
+			return st.Projects.SoftDelete(ctx, req.GetId())
 		},
 		facts: []func() writes.FactRow{
 			svc.s.factOf(ctx, req.GetId(), func(team string) writes.FactRow {
@@ -308,8 +308,8 @@ func (svc *AppsService) CreateApp(ctx context.Context, req *structurev1.CreateAp
 			svc.s.parentProjectAlive(req.GetProjectId()),
 			svc.s.appQuota(req.GetProjectId()),
 		},
-		write: func(ctx context.Context, tx *sql.Tx) error {
-			return svc.s.Apps.Create(ctx, tx, a)
+		write: func(ctx context.Context, st transact.Stores) error {
+			return st.Apps.Create(ctx, a)
 		},
 		facts: []func() writes.FactRow{
 			// 行 id 事务内铸出（ADR-0070）：闭包求值在聚合写后，p.ID/a.ID
@@ -332,7 +332,7 @@ func (svc *AppsService) CreateApp(ctx context.Context, req *structurev1.CreateAp
 }
 
 func (svc *AppsService) GetApp(ctx context.Context, req *structurev1.GetAppRequest) (*structurev1.GetAppResponse, error) {
-	a, err := svc.s.Apps.Get(ctx, svc.s.DB.Runner(), req.GetId())
+	a, err := svc.s.Apps.Get(ctx, req.GetId())
 	if err != nil {
 		return nil, mapStateError(err, "app")
 	}
@@ -350,11 +350,11 @@ func (svc *AppsService) GetApp(ctx context.Context, req *structurev1.GetAppReque
 // 后经引擎打开只读流，256KiB 分块下发（gateway 帧化，消费端重组）。
 func (svc *DatabasesService) DownloadBackup(req *structurev1.DownloadBackupRequest, stream structurev1.DatabasesService_DownloadBackupServer) error {
 	ctx := stream.Context()
-	dbRow, err := svc.s.Databases.Get(ctx, svc.s.DB.Runner(), req.GetDatabaseId())
+	dbRow, err := svc.s.Databases.Get(ctx, req.GetDatabaseId())
 	if err != nil {
 		return mapStateError(err, "database")
 	}
-	proj, err := svc.s.Projects.Get(ctx, svc.s.DB.Runner(), dbRow.ProjectID)
+	proj, err := svc.s.Projects.Get(ctx, dbRow.ProjectID)
 	if err != nil {
 		return mapStateError(err, "project")
 	}
@@ -383,14 +383,14 @@ func (svc *DatabasesService) DownloadBackup(req *structurev1.DownloadBackupReque
 }
 
 func (svc *AppsService) GetAppSpec(ctx context.Context, req *structurev1.GetAppSpecRequest) (*structurev1.GetAppSpecResponse, error) {
-	a, err := svc.s.Apps.Get(ctx, svc.s.DB.Runner(), req.GetId())
+	a, err := svc.s.Apps.Get(ctx, req.GetId())
 	if err != nil {
 		return nil, mapStateError(err, "app")
 	}
 	if err := svc.s.authorizeAppRow(ctx, a); err != nil {
 		return nil, err
 	}
-	rev, err := svc.s.Revisions.Latest(ctx, svc.s.DB.Runner(), a.ID)
+	rev, err := svc.s.Revisions.Latest(ctx, a.ID)
 	if err != nil {
 		return nil, mapStateError(err, "spec")
 	}
@@ -412,7 +412,7 @@ func (svc *AppsService) ListApps(ctx context.Context, req *structurev1.ListAppsR
 	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}
-	list, err := svc.s.Apps.ListByProjectPage(ctx, svc.s.DB.Runner(),
+	list, err := svc.s.Apps.ListByProjectPage(ctx,
 		req.GetProjectId(), req.GetAfterAppSeq(), listLimit(req.GetLimit()))
 	if err != nil {
 		return nil, mapStateError(err, "app")
@@ -439,14 +439,14 @@ func (svc *AppsService) ListApps(ctx context.Context, req *structurev1.ListAppsR
 func (svc *AppsService) DeleteApp(ctx context.Context, req *structurev1.DeleteAppRequest) (*structurev1.DeleteAppResponse, error) {
 	// id 必填检查已退役为 DeleteAppRequest 的 protovalidate CEL 注解
 	//（P4-1 批 1 Run B1）：validate 拦截器在 handler 之前执法。
-	appRow, err := svc.s.Apps.Get(ctx, svc.s.DB.Runner(), req.GetId())
+	appRow, err := svc.s.Apps.Get(ctx, req.GetId())
 	if err != nil {
 		return nil, mapStateError(err, "app")
 	}
 	if err := svc.s.authorizeAppRow(ctx, appRow); err != nil {
 		return nil, err
 	}
-	active, err := svc.s.Deployments.ActiveByApp(ctx, svc.s.DB.Runner(), req.GetId())
+	active, err := svc.s.Deployments.ActiveByApp(ctx, req.GetId())
 	if err != nil {
 		return nil, mapStateError(err, "deployment")
 	}
@@ -475,8 +475,8 @@ func (svc *AppsService) DeleteApp(ctx context.Context, req *structurev1.DeleteAp
 		// TOCTOU 复查：收口后、落账前受理的活跃部署在此拒绝——整单回滚
 		//（无 tombstone、无路由删除；与 Submit 的存活判定互为对偶，单连接
 		// 事务串行下窗口闭合）。
-		checks: []acceptanceCheck{func(ctx context.Context, tx *sql.Tx) error {
-			active, err := svc.s.Deployments.ActiveByApp(ctx, tx, req.GetId())
+		checks: []acceptanceCheck{func(ctx context.Context, st transact.Stores) error {
+			active, err := st.Deployments.ActiveByApp(ctx, req.GetId())
 			if err != nil {
 				return err
 			}
@@ -486,19 +486,19 @@ func (svc *AppsService) DeleteApp(ctx context.Context, req *structurev1.DeleteAp
 			}
 			return nil
 		}},
-		write: func(ctx context.Context, tx *sql.Tx) error {
-			if err := svc.s.Apps.SoftDelete(ctx, tx, req.GetId()); err != nil {
+		write: func(ctx context.Context, st transact.Stores) error {
+			if err := st.Apps.SoftDelete(ctx, req.GetId()); err != nil {
 				return err
 			}
 			// git hook 行与 tombstone 同逝（级联）：配置面对已删 App 即刻
 			// 404，与接收面的活跃行拒绝同语义（无孤儿子女）。
-			if err := svc.s.Hooks.DeleteByApp(ctx, tx, req.GetId()); err != nil {
+			if err := st.Hooks.DeleteByApp(ctx, req.GetId()); err != nil {
 				return err
 			}
 			// 撤路由与 tombstone 同事务（ADR-0023 修订）：复查通过前路由
 			// 不得消失——拒绝路径不碰路由（managedStep 的周期发布因此只
 			// 可能见到"App 与路由同逝"的一致状态）。
-			routes, err := svc.s.Routes.List(ctx, tx)
+			routes, err := st.Routes.List(ctx)
 			if err != nil {
 				return err
 			}
@@ -506,7 +506,7 @@ func (svc *AppsService) DeleteApp(ctx context.Context, req *structurev1.DeleteAp
 				if rt.AppID != req.GetId() {
 					continue
 				}
-				if err := svc.s.Routes.SoftDelete(ctx, tx, rt.ID); err != nil {
+				if err := st.Routes.SoftDelete(ctx, rt.ID); err != nil {
 					return err
 				}
 			}
@@ -610,8 +610,8 @@ func (svc *SecretsService) PutSecret(ctx context.Context, req *structurev1.PutSe
 	// 不存在/已删的 Project 下。
 	err = svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{svc.s.parentProjectAlive(req.GetProjectId())},
-		write: func(ctx context.Context, tx *sql.Tx) error {
-			return svc.s.Secrets.Upsert(ctx, tx, row)
+		write: func(ctx context.Context, st transact.Stores) error {
+			return st.Secrets.Upsert(ctx, row)
 		},
 		facts: []func() writes.FactRow{
 			svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {
@@ -635,7 +635,7 @@ func (svc *SecretsService) ListSecrets(ctx context.Context, req *structurev1.Lis
 	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}
-	list, err := svc.s.Secrets.ListFingerprints(ctx, svc.s.DB.Runner(),
+	list, err := svc.s.Secrets.ListFingerprints(ctx,
 		req.GetProjectId(), req.GetAfterName(), listLimit(req.GetLimit()))
 	if err != nil {
 		return nil, mapStateError(err, "secret")
@@ -654,8 +654,8 @@ func (svc *SecretsService) DeleteSecret(ctx context.Context, req *structurev1.De
 		return nil, err
 	}
 	err := svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, tx *sql.Tx) error {
-			return svc.s.Secrets.SoftDelete(ctx, tx, req.GetProjectId(), req.GetName())
+		write: func(ctx context.Context, st transact.Stores) error {
+			return st.Secrets.SoftDelete(ctx, req.GetProjectId(), req.GetName())
 		},
 		facts: []func() writes.FactRow{
 			svc.s.factOf(ctx, req.GetProjectId(), func(team string) writes.FactRow {
@@ -714,8 +714,8 @@ func (svc *ConfigsService) PutConfig(ctx context.Context, req *structurev1.PutCo
 			svc.s.parentProjectAlive(req.GetProjectId()),
 			svc.s.configQuota(req.GetProjectId(), req.GetName()),
 		},
-		write: func(ctx context.Context, tx *sql.Tx) error {
-			return svc.s.Configs.Create(ctx, tx, row)
+		write: func(ctx context.Context, st transact.Stores) error {
+			return st.Configs.Create(ctx, row)
 		},
 		facts: []func() writes.FactRow{
 			svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {
@@ -745,9 +745,9 @@ func (svc *ConfigsService) GetConfig(ctx context.Context, req *structurev1.GetCo
 		err error
 	)
 	if req.GetVersion() > 0 {
-		row, err = svc.s.Configs.GetVersion(ctx, svc.s.DB.Runner(), req.GetProjectId(), req.GetName(), req.GetVersion())
+		row, err = svc.s.Configs.GetVersion(ctx, req.GetProjectId(), req.GetName(), req.GetVersion())
 	} else {
-		row, err = svc.s.Configs.Latest(ctx, svc.s.DB.Runner(), req.GetProjectId(), req.GetName())
+		row, err = svc.s.Configs.Latest(ctx, req.GetProjectId(), req.GetName())
 	}
 	if err != nil {
 		return nil, mapStateError(err, "config")
@@ -761,7 +761,7 @@ func (svc *ConfigsService) ListConfigs(ctx context.Context, req *structurev1.Lis
 	}
 	// 列表面只回 Project 内最新版（版本明细随版本面扩展）；分页只动行集
 	//（每行仍是该 name 最新版，ADR-0026 after_* + limit）。
-	list, err := svc.s.Configs.LatestByProjectPage(ctx, svc.s.DB.Runner(),
+	list, err := svc.s.Configs.LatestByProjectPage(ctx,
 		req.GetProjectId(), req.GetAfterName(), listLimit(req.GetLimit()))
 	if err != nil {
 		return nil, mapStateError(err, "config")
@@ -798,8 +798,8 @@ func (svc *VolumesService) CreateVolume(ctx context.Context, req *structurev1.Cr
 	// 不存在/已删的 Project 下。
 	err := svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{svc.s.parentProjectAlive(req.GetProjectId())},
-		write: func(ctx context.Context, tx *sql.Tx) error {
-			return svc.s.Volumes.Create(ctx, tx, row)
+		write: func(ctx context.Context, st transact.Stores) error {
+			return st.Volumes.Create(ctx, row)
 		},
 		facts: []func() writes.FactRow{
 			svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {
@@ -827,7 +827,7 @@ func (svc *VolumesService) CreateVolume(ctx context.Context, req *structurev1.Cr
 func (svc *VolumesService) DeleteVolume(ctx context.Context, req *structurev1.DeleteVolumeRequest) (*structurev1.DeleteVolumeResponse, error) {
 	// id 必填检查已退役为 DeleteVolumeRequest 的 protovalidate CEL 注解
 	//（P4-1 批 1 Run B1）：validate 拦截器在 handler 之前执法。
-	row, err := svc.s.Volumes.Get(ctx, svc.s.DB.Runner(), req.GetId())
+	row, err := svc.s.Volumes.Get(ctx, req.GetId())
 	if err != nil {
 		return nil, mapStateError(err, "volume")
 	}
@@ -844,8 +844,8 @@ func (svc *VolumesService) DeleteVolume(ctx context.Context, req *structurev1.De
 			row.Name, strings.Join(refs, ", "))
 	}
 	err = svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, tx *sql.Tx) error {
-			return svc.s.Volumes.SoftDelete(ctx, tx, req.GetId())
+		write: func(ctx context.Context, st transact.Stores) error {
+			return st.Volumes.SoftDelete(ctx, req.GetId())
 		},
 		facts: []func() writes.FactRow{
 			svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {
@@ -870,12 +870,12 @@ func (svc *VolumesService) DeleteVolume(ctx context.Context, req *structurev1.De
 // materials 同口径），不是行 ID。
 func (s *Services) volumeReferences(ctx context.Context, vol *volume.Volume) ([]string, error) {
 	var refs []string
-	apps, err := s.Apps.ListByProject(ctx, s.DB.Runner(), vol.ProjectID)
+	apps, err := s.Apps.ListByProject(ctx, vol.ProjectID)
 	if err != nil {
 		return nil, mapStateError(err, "app")
 	}
 	for i := range apps {
-		rev, err := s.Revisions.Latest(ctx, s.DB.Runner(), apps[i].ID)
+		rev, err := s.Revisions.Latest(ctx, apps[i].ID)
 		if err != nil {
 			if errors.Is(err, state.ErrNotFound) {
 				continue // 从未部署的 App 无冻结 Spec，无引用
@@ -895,7 +895,7 @@ func (s *Services) volumeReferences(ctx context.Context, vol *volume.Volume) ([]
 			}
 		}
 	}
-	databases, err := s.Databases.ListByProject(ctx, s.DB.Runner(), vol.ProjectID, 0, 200)
+	databases, err := s.Databases.ListByProject(ctx, vol.ProjectID, 0, 200)
 	if err != nil {
 		return nil, mapStateError(err, "database")
 	}
@@ -911,7 +911,7 @@ func (svc *VolumesService) ListVolumes(ctx context.Context, req *structurev1.Lis
 	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}
-	list, err := svc.s.Volumes.ListByProject(ctx, svc.s.DB.Runner(), req.GetProjectId())
+	list, err := svc.s.Volumes.ListByProject(ctx, req.GetProjectId())
 	if err != nil {
 		return nil, mapStateError(err, "volume")
 	}

@@ -16,17 +16,20 @@ import (
 // repo 是 domain sharedvariable.Repo 的 SQLite 实现。
 type repo struct {
 	clock state.Clock
+	run   state.Runner
 }
 
 // New 构造 repo（直接返回接口——消费面只见 domain sharedvariable.Repo）。
-func New(clock state.Clock) sharedvariable.Repo { return &repo{clock: clock} }
+func New(clock state.Clock, run state.Runner) sharedvariable.Repo {
+	return &repo{clock: clock, run: run}
+}
 
 // Upsert 写入（同名活跃行覆盖值；tombstone 行复活——upsert 语义与
 // secrets 同款，唯一索引只拦活跃行）。
-func (r *repo) Upsert(ctx context.Context, run state.Runner, v *sharedvariable.SharedVariable) error {
+func (r *repo) Upsert(ctx context.Context, v *sharedvariable.SharedVariable) error {
 	now := state.FormatTime(r.clock.Now())
-	if existing, err := r.GetByName(ctx, run, v.ProjectID, v.Name); err == nil {
-		_, err := run.ExecContext(ctx, `
+	if existing, err := r.GetByName(ctx, v.ProjectID, v.Name); err == nil {
+		_, err := r.run.ExecContext(ctx, `
 			UPDATE shared_variables SET value = ?, updated_at = ?, deleted_at = ''
 			WHERE id = ?`,
 			v.Value, now, existing.ID)
@@ -36,7 +39,7 @@ func (r *repo) Upsert(ctx context.Context, run state.Runner, v *sharedvariable.S
 		return err
 	}
 	v.CreatedAt, v.UpdatedAt = now, now
-	seq, err := persistence.NextSeq(ctx, run, "shared_variables")
+	seq, err := persistence.NextSeq(ctx, r.run, "shared_variables")
 	if err != nil {
 		return err
 	}
@@ -44,7 +47,7 @@ func (r *repo) Upsert(ctx context.Context, run state.Runner, v *sharedvariable.S
 	if v.ID == "" {
 		v.ID = entityid.Join("var", seq)
 	}
-	_, err = run.ExecContext(ctx, `
+	_, err = r.run.ExecContext(ctx, `
 		INSERT INTO shared_variables (id, seq, project_id, name, value, created_at, updated_at, deleted_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, '')`,
 		v.ID, v.Seq, v.ProjectID, v.Name, v.Value, v.CreatedAt, v.UpdatedAt)
@@ -57,8 +60,8 @@ func (r *repo) Upsert(ctx context.Context, run state.Runner, v *sharedvariable.S
 }
 
 // GetByName 读活跃行（API 回显与受影响 App 计算的读面）。
-func (r *repo) GetByName(ctx context.Context, run state.Runner, projectID, name string) (*sharedvariable.SharedVariable, error) {
-	row := run.QueryRowContext(ctx, `
+func (r *repo) GetByName(ctx context.Context, projectID, name string) (*sharedvariable.SharedVariable, error) {
+	row := r.run.QueryRowContext(ctx, `
 		SELECT id, seq, project_id, name, value, created_at, updated_at, deleted_at
 		FROM shared_variables WHERE project_id = ? AND name = ? AND deleted_at = ''`,
 		projectID, name)
@@ -67,8 +70,8 @@ func (r *repo) GetByName(ctx context.Context, run state.Runner, projectID, name 
 
 // ListActive 返回项目内全部活跃行（归一化期合成装载面 + 配额计数面；
 // 项目内共享变量受配额钳制，结果集有界）。
-func (r *repo) ListActive(ctx context.Context, run state.Runner, projectID string) ([]sharedvariable.SharedVariable, error) {
-	rows, err := run.QueryContext(ctx, `
+func (r *repo) ListActive(ctx context.Context, projectID string) ([]sharedvariable.SharedVariable, error) {
+	rows, err := r.run.QueryContext(ctx, `
 		SELECT id, seq, project_id, name, value, created_at, updated_at, deleted_at
 		FROM shared_variables WHERE project_id = ? AND deleted_at = ''
 		ORDER BY name ASC`, projectID)
@@ -90,7 +93,7 @@ func (r *repo) ListActive(ctx context.Context, run state.Runner, projectID strin
 // ListPage 分页读（ADR-0026 after_* + limit 惯例；游标轴 = 项目内 name
 // 字典序升序）。limit<=0 或 >200 回落/钳制缺省 50（与 secrets/configs
 // 同款）。
-func (r *repo) ListPage(ctx context.Context, run state.Runner, projectID, afterName string, limit int) ([]sharedvariable.SharedVariable, error) {
+func (r *repo) ListPage(ctx context.Context, projectID, afterName string, limit int) ([]sharedvariable.SharedVariable, error) {
 	limit = persistence.ClampLimit(limit, defaultListLimit, maxListLimit)
 	q := `
 		SELECT id, seq, project_id, name, value, created_at, updated_at, deleted_at
@@ -102,7 +105,7 @@ func (r *repo) ListPage(ctx context.Context, run state.Runner, projectID, afterN
 	}
 	q += " ORDER BY name ASC LIMIT ?"
 	args = append(args, limit)
-	rows, err := run.QueryContext(ctx, q, args...)
+	rows, err := r.run.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -120,16 +123,16 @@ func (r *repo) ListPage(ctx context.Context, run state.Runner, projectID, afterN
 
 // SoftDelete 落 tombstone（幂等；删除不存在/已删的名按 ErrNotFound 诚实
 // 上抛——secrets 同款）。
-func (r *repo) SoftDelete(ctx context.Context, run state.Runner, projectID, name string) error {
+func (r *repo) SoftDelete(ctx context.Context, projectID, name string) error {
 	now := state.FormatTime(r.clock.Now())
-	res, err := run.ExecContext(ctx, `
+	res, err := r.run.ExecContext(ctx, `
 		UPDATE shared_variables SET deleted_at = ?, updated_at = ?
 		WHERE project_id = ? AND name = ? AND deleted_at = ''`, now, now, projectID, name)
 	if err != nil {
 		return err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		_, err := r.GetByName(ctx, run, projectID, name)
+		_, err := r.GetByName(ctx, projectID, name)
 		return err
 	}
 	return nil

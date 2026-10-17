@@ -8,7 +8,6 @@ package fleetlygrpc
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"net/url"
 	"time"
@@ -18,6 +17,7 @@ import (
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/backup"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/browse"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
@@ -83,7 +83,7 @@ func (svc *DatabasesService) CreateDatabase(ctx context.Context, req *structurev
 	// 与聚合行同事务落（重启安全——备份环按行重放）。
 	var restoreSrc *backup.Backup
 	if req.GetRestoreFromBackup() != "" {
-		src, err := svc.s.Backups.Get(ctx, svc.s.DB.Runner(), req.GetRestoreFromBackup())
+		src, err := svc.s.Backups.Get(ctx, req.GetRestoreFromBackup())
 		if err != nil {
 			return nil, mapStateError(err, "backup")
 		}
@@ -107,8 +107,8 @@ func (svc *DatabasesService) CreateDatabase(ctx context.Context, req *structurev
 			svc.s.databaseQuota(req.GetProjectId()),
 			svc.s.projectHasNetwork(req.GetProjectId()),
 		},
-		write: func(ctx context.Context, tx *sql.Tx) error {
-			if err := svc.s.Databases.Create(ctx, tx, row); err != nil {
+		write: func(ctx context.Context, st transact.Stores) error {
+			if err := st.Databases.Create(ctx, row); err != nil {
 				return err
 			}
 			url, err := engine.DatabaseConnectionURL(req.GetEngine(), row.ID, mintDatabasePassword())
@@ -119,14 +119,14 @@ func (svc *DatabasesService) CreateDatabase(ctx context.Context, req *structurev
 			if err != nil {
 				return err
 			}
-			if err := svc.s.Secrets.Upsert(ctx, tx, &secret.Secret{
+			if err := st.Secrets.Upsert(ctx, &secret.Secret{
 				ProjectID: req.GetProjectId(), Name: secretName,
 				Ciphertext: sealed.Ciphertext, Fingerprint: sealed.Fingerprint,
 			}); err != nil {
 				return err
 			}
 			if restoreSrc != nil {
-				return svc.s.Databases.SetRestorePending(ctx, tx, row.ID, restoreSrc.ID)
+				return st.Databases.SetRestorePending(ctx, row.ID, restoreSrc.ID)
 			}
 			return nil
 		},
@@ -154,7 +154,7 @@ func (svc *DatabasesService) CreateDatabase(ctx context.Context, req *structurev
 }
 
 func (svc *DatabasesService) GetDatabase(ctx context.Context, req *structurev1.GetDatabaseRequest) (*structurev1.GetDatabaseResponse, error) {
-	row, err := svc.s.Databases.Get(ctx, svc.s.DB.Runner(), req.GetId())
+	row, err := svc.s.Databases.Get(ctx, req.GetId())
 	if err != nil {
 		return nil, mapStateError(err, "database")
 	}
@@ -174,7 +174,7 @@ func (svc *DatabasesService) ListDatabases(ctx context.Context, req *structurev1
 	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}
-	list, err := svc.s.Databases.ListByProject(ctx, svc.s.DB.Runner(),
+	list, err := svc.s.Databases.ListByProject(ctx,
 		req.GetProjectId(), req.GetAfterDatabaseSeq(), int(req.GetLimit()))
 	if err != nil {
 		return nil, mapStateError(err, "database")
@@ -192,7 +192,7 @@ func (svc *DatabasesService) ListDatabases(ctx context.Context, req *structurev1
 func (svc *DatabasesService) DeleteDatabase(ctx context.Context, req *structurev1.DeleteDatabaseRequest) (*structurev1.DeleteDatabaseResponse, error) {
 	// id 必填检查已退役为 DeleteDatabaseRequest 的 protovalidate CEL 注解
 	//（P4-1 批 1 Run B1）：validate 拦截器在 handler 之前执法。
-	row, err := svc.s.Databases.Get(ctx, svc.s.DB.Runner(), req.GetId())
+	row, err := svc.s.Databases.Get(ctx, req.GetId())
 	if err != nil {
 		return nil, mapStateError(err, "database")
 	}
@@ -206,8 +206,8 @@ func (svc *DatabasesService) DeleteDatabase(ctx context.Context, req *structurev
 		return nil, apperr.New("E_INTERNAL", "database teardown failed").WithCause(err)
 	}
 	err = svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, tx *sql.Tx) error {
-			return svc.s.Databases.SoftDelete(ctx, tx, req.GetId())
+		write: func(ctx context.Context, st transact.Stores) error {
+			return st.Databases.SoftDelete(ctx, req.GetId())
 		},
 		facts: []func() writes.FactRow{
 			svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {
@@ -237,7 +237,7 @@ func (svc *DatabasesService) RotateDatabasePassword(ctx context.Context, req *st
 	// database_id 必填检查已退役为 RotateDatabasePasswordRequest 的
 	// protovalidate CEL 注解（P4-1 批 1 Run B1）：validate 拦截器在 handler
 	// 之前执法。
-	row, err := svc.s.Databases.Get(ctx, svc.s.DB.Runner(), req.GetDatabaseId())
+	row, err := svc.s.Databases.Get(ctx, req.GetDatabaseId())
 	if err != nil {
 		return nil, mapStateError(err, "database")
 	}
@@ -272,7 +272,7 @@ func (svc *DatabasesService) RotateDatabasePassword(ctx context.Context, req *st
 	}); err != nil {
 		return nil, mapStateError(err, "database")
 	}
-	updated, err := svc.s.Databases.Get(ctx, svc.s.DB.Runner(), row.ID)
+	updated, err := svc.s.Databases.Get(ctx, row.ID)
 	if err != nil {
 		return nil, mapStateError(err, "database")
 	}
@@ -305,8 +305,8 @@ func (s *Services) cascadeDeleteDatabases(ctx context.Context, projectID string)
 				db.ID, db.Name).WithCause(err)
 		}
 		err = s.commit(ctx, writeFact{
-			write: func(ctx context.Context, tx *sql.Tx) error {
-				return s.Databases.SoftDelete(ctx, tx, db.ID)
+			write: func(ctx context.Context, st transact.Stores) error {
+				return st.Databases.SoftDelete(ctx, db.ID)
 			},
 			facts: []func() writes.FactRow{
 				s.factOf(ctx, db.ProjectID, func(team string) writes.FactRow {
@@ -342,7 +342,7 @@ func (s *Services) listActiveDatabases(ctx context.Context, projectID string) ([
 	const page = 200 // 与 repo maxListLimit 对齐（超出值被钳回）
 	var after int64
 	for {
-		rows, err := s.Databases.ListByProject(ctx, s.DB.Runner(), projectID, after, page)
+		rows, err := s.Databases.ListByProject(ctx, projectID, after, page)
 		if err != nil {
 			return nil, mapStateError(err, "database")
 		}
@@ -360,7 +360,7 @@ func (s *Services) listActiveDatabases(ctx context.Context, projectID string) ([
 func (svc *DatabasesService) TriggerBackup(ctx context.Context, req *structurev1.TriggerBackupRequest) (*structurev1.TriggerBackupResponse, error) {
 	// database_id 必填检查已退役为 TriggerBackupRequest 的 protovalidate
 	// CEL 注解（P4-1 批 1 Run B1）：validate 拦截器在 handler 之前执法。
-	db, err := svc.s.Databases.Get(ctx, svc.s.DB.Runner(), req.GetDatabaseId())
+	db, err := svc.s.Databases.Get(ctx, req.GetDatabaseId())
 	if err != nil {
 		return nil, mapStateError(err, "database")
 	}
@@ -372,8 +372,8 @@ func (svc *DatabasesService) TriggerBackup(ctx context.Context, req *structurev1
 		Engine: db.Engine, RetentionSecs: db.BackupRetentionSecs,
 	}
 	err = svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, tx *sql.Tx) error {
-			return svc.s.Backups.Create(ctx, tx, row)
+		write: func(ctx context.Context, st transact.Stores) error {
+			return st.Backups.Create(ctx, row)
 		},
 		facts: []func() writes.FactRow{
 			// 双真偏离（仅取证面）：触发动词未入事件流（执行完成事实由
@@ -399,14 +399,14 @@ func (svc *DatabasesService) TriggerBackup(ctx context.Context, req *structurev1
 func (svc *DatabasesService) ListBackups(ctx context.Context, req *structurev1.ListBackupsRequest) (*structurev1.ListBackupsResponse, error) {
 	// database_id 必填检查已退役为 ListBackupsRequest 的 protovalidate CEL
 	// 注解（P4-1 批 1 Run B1）：validate 拦截器在 handler 之前执法。
-	db, err := svc.s.Databases.Get(ctx, svc.s.DB.Runner(), req.GetDatabaseId())
+	db, err := svc.s.Databases.Get(ctx, req.GetDatabaseId())
 	if err != nil {
 		return nil, mapStateError(err, "database")
 	}
 	if err := svc.s.authorizeProjectID(ctx, db.ProjectID); err != nil {
 		return nil, err
 	}
-	list, err := svc.s.Backups.ListByDatabase(ctx, svc.s.DB.Runner(),
+	list, err := svc.s.Backups.ListByDatabase(ctx,
 		req.GetDatabaseId(), req.GetAfterBackupSeq(), int(req.GetLimit()))
 	if err != nil {
 		return nil, mapStateError(err, "backup")
@@ -424,11 +424,11 @@ func (svc *DatabasesService) VerifyBackup(ctx context.Context, req *structurev1.
 	// backup_id 必填检查已退役为 VerifyBackupRequest 的 protovalidate CEL
 	// 注解（P4-1 批 1 Run B1）：validate 拦截器在 handler 之前执法。
 	// 成功行才可验的台账检查（动态文案）留在服务内。
-	row, err := svc.s.Backups.Get(ctx, svc.s.DB.Runner(), req.GetBackupId())
+	row, err := svc.s.Backups.Get(ctx, req.GetBackupId())
 	if err != nil {
 		return nil, mapStateError(err, "backup")
 	}
-	db, err := svc.s.Databases.Get(ctx, svc.s.DB.Runner(), row.DatabaseID)
+	db, err := svc.s.Databases.Get(ctx, row.DatabaseID)
 	if err != nil {
 		return nil, mapStateError(err, "database")
 	}
@@ -498,7 +498,7 @@ func (svc *DatabasesService) BrowseDatabase(ctx context.Context, req *structurev
 		return nil, apperr.New("E_BROWSE_DISABLED",
 			"the database browse face is not configured on this platform (browse.host_suffix is empty)")
 	}
-	db, err := svc.s.Databases.Get(ctx, svc.s.DB.Runner(), req.GetDatabaseId())
+	db, err := svc.s.Databases.Get(ctx, req.GetDatabaseId())
 	if err != nil {
 		return nil, mapStateError(err, "database")
 	}
@@ -522,7 +522,7 @@ func (svc *DatabasesService) BrowseDatabase(ctx context.Context, req *structurev
 				WithSuggestion("Open the session read-only (the default), or use a token carrying databases:write.")
 		}
 	}
-	team, err := svc.s.Anchor.TeamOfProjectID(ctx, svc.s.DB.Runner(), db.ProjectID)
+	team, err := svc.s.Anchor.TeamOfProjectID(ctx, db.ProjectID)
 	if err != nil {
 		return nil, mapAnchorError(err)
 	}
@@ -543,8 +543,8 @@ func (svc *DatabasesService) BrowseDatabase(ctx context.Context, req *structurev
 		CreatedAt: state.FormatTime(now), ExpiresAt: state.FormatTime(now.Add(engine.BrowseHardTTL)),
 	}
 	err = svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, tx *sql.Tx) error {
-			return svc.s.Browse.Create(ctx, tx, row)
+		write: func(ctx context.Context, st transact.Stores) error {
+			return st.Browse.Create(ctx, row)
 		},
 		facts: []func() writes.FactRow{
 			svc.s.factOf(ctx, db.ProjectID, func(team string) writes.FactRow {

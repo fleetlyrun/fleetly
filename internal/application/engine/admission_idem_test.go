@@ -68,7 +68,7 @@ func TestIdempotencyKeyReusableAfterTerminalState(t *testing.T) {
 func TestIdempotencyKeyScopedPerApp(t *testing.T) {
 	ctx := context.Background()
 	e, _, clock := newTestEngine(t)
-	require.NoError(t, apprepo.New(clock).Create(ctx, e.db.Runner(), &app.App{
+	require.NoError(t, apprepo.New(clock, e.db.Runner()).Create(ctx, &app.App{
 		ID: tApp2ID, ProjectID: tProjectID, Name: "api",
 	}))
 

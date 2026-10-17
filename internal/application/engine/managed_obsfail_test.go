@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/network"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
@@ -77,7 +78,7 @@ func TestManagedReconcilerObservationFailureSkipsTick(t *testing.T) {
 
 	// 首任引擎把载体推到 gen=2（一次 spec 变更）——模拟重启前的现役载体
 	//（fleetly.generation 标签持久在 spec，计数器随进程消亡）。
-	e1 := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
+	e1 := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
 	e1.managedStep(ctx)
 	proxy.ws = []capability.Workload{{ID: "fleetly-proxy-fake", Process: "proxy", Image: "fake/proxy:2", Replicas: 1}}
 	e1.managedStep(ctx)
@@ -89,7 +90,7 @@ func TestManagedReconcilerObservationFailureSkipsTick(t *testing.T) {
 	// 持续失败 → 每拍跳过（不 Ensure、不推进 gen、不判 drift）。
 	h := &captureHandler{}
 	rt.inspectFail = true
-	e2 := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Proxy: proxy, Logger: slog.New(h)}, Options{})
+	e2 := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Proxy: proxy, Logger: slog.New(h)}, Options{})
 	before := len(rt.calls())
 	for i := 0; i < 3; i++ {
 		e2.managedStep(ctx)
@@ -124,13 +125,13 @@ func TestManagedProxyNetworkListFailureSkipsDomainTick(t *testing.T) {
 	reg := newFakeRegistry()
 	reg.managed = true
 	h := &captureHandler{}
-	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Proxy: &fakeProxy{}, Registry: reg, Logger: slog.New(h)}, Options{})
+	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Proxy: &fakeProxy{}, Registry: reg, Logger: slog.New(h)}, Options{})
 	ctx := context.Background()
 	// 在场一个项目网（挂网引用面非空——失败折成空集就是假滚的输入）。
-	require.NoError(t, projectrepo.New(clock).Create(ctx, db.Runner(), &project.Project{
+	require.NoError(t, projectrepo.New(clock, db.Runner()).Create(ctx, &project.Project{
 		ID: tProjectID, Name: "shop", TeamID: "default",
 	}))
-	require.NoError(t, e.networks.Create(ctx, db.Runner(), &network.Network{
+	require.NoError(t, e.repos.Networks.Create(ctx, &network.Network{
 		ID: "01JD0NET000000000000000001", ProjectID: tProjectID, Name: "default",
 	}))
 

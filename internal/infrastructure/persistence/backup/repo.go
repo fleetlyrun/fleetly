@@ -21,10 +21,11 @@ func parseCreatedAt(s string) (time.Time, error) { return time.Parse(time.RFC333
 // repo 是 domain backup.Repo 的 SQLite 实现。
 type repo struct {
 	clock state.Clock
+	run   state.Runner
 }
 
 // New 构造 repo（直接返回接口——消费面只见 domain backup.Repo）。
-func New(clock state.Clock) backup.Repo { return &repo{clock: clock} }
+func New(clock state.Clock, run state.Runner) backup.Repo { return &repo{clock: clock, run: run} }
 
 const selectCols = `SELECT id, seq, project_id, database_id, engine, object_key, digest,
 	size_bytes, retention_secs, status, error, started_at, finished_at, created_at FROM backups`
@@ -40,8 +41,8 @@ func scanBackup(scan func(...any) error) (*backup.Backup, error) {
 }
 
 // Create 落一行 pending（调度与手动触发共用；object_key 执行成功后回填）。
-func (r *repo) Create(ctx context.Context, run state.Runner, b *backup.Backup) error {
-	seq, err := persistence.NextSeq(ctx, run, "backups")
+func (r *repo) Create(ctx context.Context, b *backup.Backup) error {
+	seq, err := persistence.NextSeq(ctx, r.run, "backups")
 	if err != nil {
 		return err
 	}
@@ -51,7 +52,7 @@ func (r *repo) Create(ctx context.Context, run state.Runner, b *backup.Backup) e
 	}
 	now := state.FormatTime(r.clock.Now())
 	b.CreatedAt, b.Status = now, backup.StatusPending
-	_, err = run.ExecContext(ctx, `
+	_, err = r.run.ExecContext(ctx, `
 		INSERT INTO backups (id, seq, project_id, database_id, engine, object_key, digest,
 			size_bytes, retention_secs, status, error, started_at, finished_at, created_at)
 		VALUES (?, ?, ?, ?, ?, '', '', 0, ?, 'pending', '', '', '', ?)`,
@@ -60,13 +61,13 @@ func (r *repo) Create(ctx context.Context, run state.Runner, b *backup.Backup) e
 }
 
 // Get 按 ID 读一行。
-func (r *repo) Get(ctx context.Context, run state.Runner, id string) (*backup.Backup, error) {
-	row := run.QueryRowContext(ctx, selectCols+` WHERE id = ?`, id)
+func (r *repo) Get(ctx context.Context, id string) (*backup.Backup, error) {
+	row := r.run.QueryRowContext(ctx, selectCols+` WHERE id = ?`, id)
 	return scanBackup(row.Scan)
 }
 
 // ListByDatabase 新→旧分页（ADR-0026 after_* + limit 惯例；含终态与在途）。
-func (r *repo) ListByDatabase(ctx context.Context, run state.Runner, databaseID string, afterSeq int64, limit int) ([]backup.Backup, error) {
+func (r *repo) ListByDatabase(ctx context.Context, databaseID string, afterSeq int64, limit int) ([]backup.Backup, error) {
 	limit = persistence.ClampLimit(limit, 50, 200)
 	q := selectCols + ` WHERE database_id = ?`
 	args := []any{databaseID}
@@ -76,22 +77,22 @@ func (r *repo) ListByDatabase(ctx context.Context, run state.Runner, databaseID 
 	}
 	q += ` ORDER BY seq DESC LIMIT ?`
 	args = append(args, limit)
-	return r.query(ctx, run, q, args...)
+	return r.query(ctx, q, args...)
 }
 
 // OldestPending 返回最早的一行 pending（执行器单飞取件；无在途即空）。
 // in-flight 排他：同库存在 running 行时返回 ok=false（串行语义在环层，
 // 本查询兜底防同库双在途）。
-func (r *repo) OldestPending(ctx context.Context, run state.Runner) (*backup.Backup, bool, error) {
+func (r *repo) OldestPending(ctx context.Context) (*backup.Backup, bool, error) {
 	var n int
-	if err := run.QueryRowContext(ctx,
+	if err := r.run.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM backups WHERE status = 'running'`).Scan(&n); err != nil {
 		return nil, false, err
 	}
 	if n > 0 {
 		return nil, false, nil
 	}
-	row := run.QueryRowContext(ctx,
+	row := r.run.QueryRowContext(ctx,
 		selectCols+` WHERE status = 'pending' ORDER BY seq LIMIT 1`)
 	b, err := scanBackup(row.Scan)
 	if err != nil {
@@ -104,9 +105,9 @@ func (r *repo) OldestPending(ctx context.Context, run state.Runner) (*backup.Bac
 }
 
 // HasActiveFor 报告库是否存在在途行（pending|running——调度面防同库双行）。
-func (r *repo) HasActiveFor(ctx context.Context, run state.Runner, databaseID string) (bool, error) {
+func (r *repo) HasActiveFor(ctx context.Context, databaseID string) (bool, error) {
 	var n int
-	if err := run.QueryRowContext(ctx,
+	if err := r.run.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM backups WHERE database_id = ? AND status IN ('pending','running')`,
 		databaseID).Scan(&n); err != nil {
 		return false, err
@@ -117,8 +118,8 @@ func (r *repo) HasActiveFor(ctx context.Context, run state.Runner, databaseID st
 // LatestFailedFor 返回该库最新一行失败（退避锚——失败不推进 last_backup_at，
 // 重试节奏由本行 FinishedAt 承载；id 是 ULID 时序，走 (database_id, id)
 // 索引序即时间序。无失败行即 ok=false）。
-func (r *repo) LatestFailedFor(ctx context.Context, run state.Runner, databaseID string) (*backup.Backup, bool, error) {
-	row := run.QueryRowContext(ctx,
+func (r *repo) LatestFailedFor(ctx context.Context, databaseID string) (*backup.Backup, bool, error) {
+	row := r.run.QueryRowContext(ctx,
 		selectCols+` WHERE database_id = ? AND status = 'failed' ORDER BY seq DESC LIMIT 1`, databaseID)
 	b, err := scanBackup(row.Scan)
 	if err != nil {
@@ -133,17 +134,17 @@ func (r *repo) LatestFailedFor(ctx context.Context, run state.Runner, databaseID
 // DueForFailedRowSweep 返回失败行保留窗外的行（失败行无对象产物，仅删行
 // ——错误文本的诊断价值短命，48h 窗后由保留滚动同环清扫；created_at 升序
 // 限量分拍，DueForPrune 同款形态）。
-func (r *repo) DueForFailedRowSweep(ctx context.Context, run state.Runner, now time.Time, retention time.Duration, limit int) ([]backup.Backup, error) {
+func (r *repo) DueForFailedRowSweep(ctx context.Context, now time.Time, retention time.Duration, limit int) ([]backup.Backup, error) {
 	limit = persistence.ClampLimit(limit, 100, 500)
 	cutoff := now.Add(-retention).UTC().Format(time.RFC3339)
-	return r.query(ctx, run,
+	return r.query(ctx,
 		selectCols+` WHERE status = 'failed' AND created_at < ? ORDER BY created_at LIMIT ?`, cutoff, limit)
 }
 
 // MarkRunning 摘件落执行态（CAS：仅 pending 行命中）。
-func (r *repo) MarkRunning(ctx context.Context, run state.Runner, id string) error {
+func (r *repo) MarkRunning(ctx context.Context, id string) error {
 	now := state.FormatTime(r.clock.Now())
-	res, err := run.ExecContext(ctx,
+	res, err := r.run.ExecContext(ctx,
 		`UPDATE backups SET status = 'running', started_at = ? WHERE id = ? AND status = 'pending'`, now, id)
 	if err != nil {
 		return err
@@ -161,9 +162,9 @@ func (r *repo) MarkRunning(ctx context.Context, run state.Runner, id string) err
 // FinishSucceeded 回填成功（ObjectStore 回执三元组 + 终态；CAS：仅
 // running 行命中——终态是事实，启动清扫 SweepInterrupted 落 failed 后的
 // 迟到成功回执按 ErrConflict 拒绝，不得覆写）。
-func (r *repo) FinishSucceeded(ctx context.Context, run state.Runner, id, objectKey, digest string, size int64) error {
+func (r *repo) FinishSucceeded(ctx context.Context, id, objectKey, digest string, size int64) error {
 	now := state.FormatTime(r.clock.Now())
-	res, err := run.ExecContext(ctx, `
+	res, err := r.run.ExecContext(ctx, `
 		UPDATE backups SET status = 'succeeded', object_key = ?, digest = ?, size_bytes = ?,
 			finished_at = ? WHERE id = ? AND status = 'running'`, objectKey, digest, size, now, id)
 	if err != nil {
@@ -182,9 +183,9 @@ func (r *repo) FinishSucceeded(ctx context.Context, run state.Runner, id, object
 // FinishFailed 落失败终态（error 用户可见文本英文；CAS：pending/running
 // 行命中——失败回执在 MarkRunning 前后都合法，唯终态不可覆写，同
 // FinishSucceeded 口径）。
-func (r *repo) FinishFailed(ctx context.Context, run state.Runner, id, errMsg string) error {
+func (r *repo) FinishFailed(ctx context.Context, id, errMsg string) error {
 	now := state.FormatTime(r.clock.Now())
-	res, err := run.ExecContext(ctx, `
+	res, err := r.run.ExecContext(ctx, `
 		UPDATE backups SET status = 'failed', error = ?, finished_at = ?
 		WHERE id = ? AND status IN ('pending', 'running')`, errMsg, now, id)
 	if err != nil {
@@ -202,9 +203,9 @@ func (r *repo) FinishFailed(ctx context.Context, run state.Runner, id, errMsg st
 
 // SweepInterrupted 把重启打断的 running 行落 failed（引擎启动清扫；返回
 // 清扫行数供日志）。
-func (r *repo) SweepInterrupted(ctx context.Context, run state.Runner) (int64, error) {
+func (r *repo) SweepInterrupted(ctx context.Context) (int64, error) {
 	now := state.FormatTime(r.clock.Now())
-	res, err := run.ExecContext(ctx, `
+	res, err := r.run.ExecContext(ctx, `
 		UPDATE backups SET status = 'failed', error = 'interrupted by platform restart',
 			finished_at = ? WHERE status = 'running'`, now)
 	if err != nil {
@@ -217,9 +218,9 @@ func (r *repo) SweepInterrupted(ctx context.Context, run state.Runner) (int64, e
 // created_at 升序取前 lookahead 行、Go 侧按行上 retention 快照过滤（窗在
 // 行上逐行不同，SQL 单 cutoff 表达不了；升序保证到期行必在前沿，清扫
 // 跟得上即 O(到期行+前瞻)，积压窗拖不垮环——限量分拍）。
-func (r *repo) DueForPrune(ctx context.Context, run state.Runner, now time.Time, lookahead int) ([]backup.Backup, error) {
+func (r *repo) DueForPrune(ctx context.Context, now time.Time, lookahead int) ([]backup.Backup, error) {
 	lookahead = persistence.ClampLimit(lookahead, 100, 500)
-	rows, err := r.query(ctx, run,
+	rows, err := r.query(ctx,
 		selectCols+` ORDER BY created_at LIMIT ?`, lookahead)
 	if err != nil {
 		return nil, err
@@ -238,13 +239,13 @@ func (r *repo) DueForPrune(ctx context.Context, run state.Runner, now time.Time,
 }
 
 // Delete 删一行（保留滚动收口；与对象删除由调用方成对执行）。
-func (r *repo) Delete(ctx context.Context, run state.Runner, id string) error {
-	_, err := run.ExecContext(ctx, `DELETE FROM backups WHERE id = ?`, id)
+func (r *repo) Delete(ctx context.Context, id string) error {
+	_, err := r.run.ExecContext(ctx, `DELETE FROM backups WHERE id = ?`, id)
 	return err
 }
 
-func (r *repo) query(ctx context.Context, run state.Runner, q string, args ...any) ([]backup.Backup, error) {
-	rows, err := run.QueryContext(ctx, q, args...)
+func (r *repo) query(ctx context.Context, q string, args ...any) ([]backup.Backup, error) {
+	rows, err := r.run.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}

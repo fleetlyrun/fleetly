@@ -2,7 +2,6 @@ package assembly
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"log/slog"
 	"net"
@@ -22,6 +21,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/application/idem"
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/config"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/sourceupload"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/anchor"
@@ -83,7 +83,9 @@ var ProviderSet = wire.NewSet(
 	NewAppConfig,
 	NewPolicySet,
 	NewStateDB,
-	NewEngineRepos,
+	NewBinder,
+	NewStores,
+	NewTx,
 	NewAuthnRepos,
 	NewSeedRepos,
 	NewAuthenticator,
@@ -115,53 +117,77 @@ var ProviderSet = wire.NewSet(
 	NewPostStopHooks,
 )
 
-// NewEngineRepos 构造引擎的聚合 repo 集（P1b C 批构造上提：repo 实现选择
-// 集中组合根，engine 包零持久化构造；各 repo 以同一 DB 时钟构造）。
-func NewEngineRepos(db *persistence.DB) engine.Repos {
+// NewBinder 造事务作用域绑定闭包（ADR-0080）：组合根是唯一知道聚合 repo
+// 构造形态的地方——每次事务以 tx 执行面重造全套绑定实例（Stores 全字段
+// 齐备是有意的：调用点按需取用，不按需装配）。
+func NewBinder(db *persistence.DB) transact.Binder {
 	clock := db.Clock()
-	return engine.Repos{
-		Projects:    projectrepo.New(clock),
-		Apps:        apprepo.New(clock),
-		Revisions:   revisionrepo.New(clock),
-		Deployments: deploymentrepo.New(clock),
-		Builds:      buildrepo.New(clock),
-		Outbox:      outbox.New(clock),
-		Nodes:       noderepo.New(clock),
-		Audits:      auditrepo.New(clock),
-		Tasks:       taskrepo.New(clock),
-		Runs:        runrepo.New(clock),
-		Tokens:      tokenrepo.New(clock),
-		Schedules:   schedulerepo.New(clock),
-		PeerDecls:   networkpeerrepo.New(clock),
-		Uploads:     sourcerepo.New(clock),
-		Browse:      browserepo.New(clock),
-		Databases:   dbrepo.New(clock),
-		Backups:     backuprepo.New(clock),
-		LogCursors:  logcursorrepo.New(clock),
-		AlertRules:  alertrulerepo.New(clock),
-		Channels:    channelrepo.New(clock),
-		Routes:      routerepo.New(clock),
-		Secrets:     secretrepo.New(clock),
-		Configs:     cfgrepo.New(clock),
-		Volumes:     volumerepo.New(clock),
-		Networks:    networkrepo.New(clock),
-		GitHubApps:  githubapprepo.New(clock),
-		// 规格受理咽喉的三级合成消费面（P3-7 下沉批）：SharedVariable/
-		// AppVariable 的冻结前装载。
-		SharedVariables: sharedvariablerepo.New(clock),
-		AppVariables:    appvariablerepo.New(clock),
+	return func(run state.Runner) transact.Stores {
+		return transact.Stores{
+			Anchor: anchor.New(anchorRepos(clock, run)),
+			NextSeq: func(ctx context.Context, table string) (int64, error) {
+				return persistence.NextSeq(ctx, run, table)
+			},
+			Projects:        projectrepo.New(clock, run),
+			Apps:            apprepo.New(clock, run),
+			Revisions:       revisionrepo.New(clock, run),
+			Deployments:     deploymentrepo.New(clock, run),
+			Builds:          buildrepo.New(clock, run),
+			Outbox:          outbox.New(clock, run),
+			Nodes:           noderepo.New(clock, run),
+			Audits:          auditrepo.New(clock, run),
+			Tasks:           taskrepo.New(clock, run),
+			Runs:            runrepo.New(clock, run),
+			Tokens:          tokenrepo.New(clock, run),
+			Schedules:       schedulerepo.New(clock, run),
+			NetworkPeers:    networkpeerrepo.New(clock, run),
+			SourceUploads:   sourcerepo.New(clock, run),
+			Browse:          browserepo.New(clock, run),
+			Databases:       dbrepo.New(clock, run),
+			Backups:         backuprepo.New(clock, run),
+			LogCursors:      logcursorrepo.New(clock, run),
+			AlertRules:      alertrulerepo.New(clock, run),
+			Channels:        channelrepo.New(clock, run),
+			Routes:          routerepo.New(clock, run),
+			Secrets:         secretrepo.New(clock, run),
+			Configs:         cfgrepo.New(clock, run),
+			Volumes:         volumerepo.New(clock, run),
+			Networks:        networkrepo.New(clock, run),
+			GitHubApps:      githubapprepo.New(clock, run),
+			SharedVariables: sharedvariablerepo.New(clock, run),
+			AppVariables:    appvariablerepo.New(clock, run),
+			Teams:           teamrepo.New(clock, run),
+			Users:           userrepo.New(clock, run),
+			Roles:           rolerepo.New(clock, run),
+			Memberships:     membershiprepo.New(clock, run),
+			Invitations:     invitationrepo.New(clock, run),
+			Freezes:         freezerepo.New(clock, run),
+			Hooks:           hookrepo.New(clock, run),
+			Catalog:         catalogrepo.New(clock, run),
+			Idempotency:     idemrepo.New(clock, run),
+		}
 	}
+}
+
+// NewStores 造聚合目录的 db 绑定形态（读径直调；CQRS-lite，ADR-0075）。
+func NewStores(db *persistence.DB, bind transact.Binder) transact.Stores {
+	return bind(db.Runner())
+}
+
+// NewTx 装配事务入口（db + Binder 双注入，唯一事务门面）。
+func NewTx(db *persistence.DB, bind transact.Binder) transact.Tx {
+	return transact.NewTx(db, bind)
 }
 
 // NewAuthnRepos 构造身份执法面的 repo 集（P1b C 批构造上提）。
 func NewAuthnRepos(db *persistence.DB) authn.Repos {
 	clock := db.Clock()
 	return authn.Repos{
-		Roles:       rolerepo.New(clock),
-		Users:       userrepo.New(clock),
-		Tokens:      tokenrepo.New(clock),
-		Memberships: membershiprepo.New(clock),
-		Audits:      auditrepo.New(clock),
+		Roles:       rolerepo.New(clock, db.Runner()),
+		Users:       userrepo.New(clock, db.Runner()),
+		Tokens:      tokenrepo.New(clock, db.Runner()),
+		Memberships: membershiprepo.New(clock, db.Runner()),
+		Audits:      auditrepo.New(clock, db.Runner()),
 	}
 }
 
@@ -170,33 +196,37 @@ func NewAuthnRepos(db *persistence.DB) authn.Repos {
 func NewSeedRepos(db *persistence.DB) authn.SeedRepos {
 	clock := db.Clock()
 	return authn.SeedRepos{
-		Teams:  teamrepo.New(clock),
-		Roles:  rolerepo.New(clock),
-		Tokens: tokenrepo.New(clock),
-		Users:  userrepo.New(clock),
+		Teams:  teamrepo.New(clock, db.Runner()),
+		Roles:  rolerepo.New(clock, db.Runner()),
+		Tokens: tokenrepo.New(clock, db.Runner()),
+		Users:  userrepo.New(clock, db.Runner()),
 	}
 }
 
-// NewAnchor 构造「聚合行 → Project → Team」归属解析图（freeze 与行级
-// 授权共用单源，架构评审第二轮候选 3；组装在组合根——anchor 零持久化
-// 依赖，P1b C 批构造上提）。
-func NewAnchor(clock state.Clock) *anchor.Anchor {
-	return anchor.New(anchor.Repos{
-		Projects:    projectrepo.New(clock),
-		Apps:        apprepo.New(clock),
-		Tasks:       taskrepo.New(clock),
-		Schedules:   schedulerepo.New(clock),
-		Networks:    networkrepo.New(clock),
-		Peers:       networkpeerrepo.New(clock),
-		Hooks:       hookrepo.New(clock),
-		Routes:      routerepo.New(clock),
-		Databases:   dbrepo.New(clock),
-		Volumes:     volumerepo.New(clock),
-		Runs:        runrepo.New(clock),
-		Deployments: deploymentrepo.New(clock),
-		Builds:      buildrepo.New(clock),
-		GitHubApps:  githubapprepo.New(clock),
-	})
+// anchorRepos 装配「聚合行 → Project → Team」归属解析图的 repo 面（db
+// 绑定与事务绑定两形态共用同一清单）。
+func anchorRepos(clock state.Clock, run state.Runner) anchor.Repos {
+	return anchor.Repos{
+		Projects:    projectrepo.New(clock, run),
+		Apps:        apprepo.New(clock, run),
+		Tasks:       taskrepo.New(clock, run),
+		Schedules:   schedulerepo.New(clock, run),
+		Networks:    networkrepo.New(clock, run),
+		Peers:       networkpeerrepo.New(clock, run),
+		Hooks:       hookrepo.New(clock, run),
+		Routes:      routerepo.New(clock, run),
+		Databases:   dbrepo.New(clock, run),
+		Volumes:     volumerepo.New(clock, run),
+		Runs:        runrepo.New(clock, run),
+		Deployments: deploymentrepo.New(clock, run),
+		Builds:      buildrepo.New(clock, run),
+		GitHubApps:  githubapprepo.New(clock, run),
+	}
+}
+
+// NewAnchor 构造 db 绑定形态的归属解析图（freeze 与行级授权共用单源）。
+func NewAnchor(db *persistence.DB) *anchor.Anchor {
+	return anchor.New(anchorRepos(db.Clock(), db.Runner()))
 }
 
 // NewAuthenticator 构造身份执法器（authn 拦截器依赖集；词表单一源注入）。
@@ -428,7 +458,8 @@ func objectStoreSelection(cfg *config.AppConfig) (string, context.Context) {
 // 继续透传 queue 容量/观察窗/构建并发）。
 func NewEngine(
 	db *persistence.DB,
-	repos engine.Repos,
+	stores transact.Stores,
+	tx transact.Tx,
 	rt capability.Runtime,
 	b map[string]capability.Builder,
 	proxy capability.Proxy,
@@ -444,9 +475,9 @@ func NewEngine(
 	// 节点平台 ID 铸造权归平台（ADR-0070）：Provider 经可选接口拿铸造闭包
 	// （providers 不 import state，装配期接线；未实现接口的 Provider 照旧）。
 	if m, ok := rt.(capability.NodeIDMinter); ok {
-		nodes := repos.Nodes
+		nodes := stores.Nodes
 		m.SetNodeIDMinter(func(ctx context.Context) (string, error) {
-			return nodes.MintPlatformID(ctx, db.Runner())
+			return nodes.MintPlatformID(ctx)
 		})
 	}
 	overlap, err := engine.ParseScheduleOverlap(cfg.ScheduleOverlapPolicy())
@@ -472,7 +503,7 @@ func NewEngine(
 		browseTLS = "none"
 	}
 	return engine.New(engine.Deps{
-		DB: db, Repos: repos, Runtime: rt, Builders: b, Proxy: proxy, Registry: reg, Logging: logs,
+		DB: db, Stores: stores, Tx: tx, Runtime: rt, Builders: b, Proxy: proxy, Registry: reg, Logging: logs,
 		Metrics: mtr, ObjectStore: store, Cipher: cipher, Logger: app.Logger(),
 	}, engine.Options{
 		Task: engine.TaskOptions{
@@ -542,24 +573,24 @@ func gatewayPort(httpAddr string) string {
 // 与 anchor 组装集中组合根，fleetlygrpc 零持久化构造；生产 assembly 与
 // apitest 夹具共用本构造——测试面与生产面同源）。scope 词表单一源注入；
 // dataRoot 透传给上传产物 blob 面。
-func NewAPIDeps(db *persistence.DB, e *engine.Engine, cipher *material.Cipher, rt capability.Runtime, dataRoot string, vocab []string, log *slog.Logger) fleetlygrpc.Deps {
+func NewAPIDeps(db *persistence.DB, bind transact.Binder, e *engine.Engine, cipher *material.Cipher, rt capability.Runtime, dataRoot string, vocab []string, log *slog.Logger) fleetlygrpc.Deps {
 	clock := db.Clock()
-	projects := projectrepo.New(clock)
-	apps := apprepo.New(clock)
-	tasks := taskrepo.New(clock)
-	schedules := schedulerepo.New(clock)
-	networks := networkrepo.New(clock)
-	peers := networkpeerrepo.New(clock)
-	routes := routerepo.New(clock)
-	volumes := volumerepo.New(clock)
-	runs := runrepo.New(clock)
-	deployments := deploymentrepo.New(clock)
-	builds := buildrepo.New(clock)
-	hooks := hookrepo.New(clock)
-	ghApps := githubapprepo.New(clock)
-	databases := dbrepo.New(clock)
+	projects := projectrepo.New(clock, db.Runner())
+	apps := apprepo.New(clock, db.Runner())
+	tasks := taskrepo.New(clock, db.Runner())
+	schedules := schedulerepo.New(clock, db.Runner())
+	networks := networkrepo.New(clock, db.Runner())
+	peers := networkpeerrepo.New(clock, db.Runner())
+	routes := routerepo.New(clock, db.Runner())
+	volumes := volumerepo.New(clock, db.Runner())
+	runs := runrepo.New(clock, db.Runner())
+	deployments := deploymentrepo.New(clock, db.Runner())
+	builds := buildrepo.New(clock, db.Runner())
+	hooks := hookrepo.New(clock, db.Runner())
+	ghApps := githubapprepo.New(clock, db.Runner())
+	databases := dbrepo.New(clock, db.Runner())
 	return fleetlygrpc.Deps{
-		DB: db, Engine: e, Cipher: cipher, Runtime: rt,
+		DB: db, Tx: transact.NewTx(db, bind), Engine: e, Cipher: cipher, Runtime: rt,
 		Logging:     e.LoggingProvider(),
 		Metrics:     e.MetricsProvider(),
 		Vocab:       vocab,
@@ -570,36 +601,36 @@ func NewAPIDeps(db *persistence.DB, e *engine.Engine, cipher *material.Cipher, r
 		Projects:        projects,
 		Apps:            apps,
 		Deployments:     deployments,
-		Revisions:       revisionrepo.New(clock),
+		Revisions:       revisionrepo.New(clock, db.Runner()),
 		Builds:          builds,
 		Tasks:           tasks,
 		Runs:            runs,
 		Schedules:       schedules,
-		OutboxEvents:    outbox.New(clock),
-		Secrets:         secretrepo.New(clock),
-		Configs:         cfgrepo.New(clock),
-		SharedVariables: sharedvariablerepo.New(clock),
-		AppVariables:    appvariablerepo.New(clock),
+		OutboxEvents:    outbox.New(clock, db.Runner()),
+		Secrets:         secretrepo.New(clock, db.Runner()),
+		Configs:         cfgrepo.New(clock, db.Runner()),
+		SharedVariables: sharedvariablerepo.New(clock, db.Runner()),
+		AppVariables:    appvariablerepo.New(clock, db.Runner()),
 		Volumes:         volumes,
 		Networks:        networks,
 		NetworkPeers:    peers,
-		Freezes:         freezerepo.New(clock),
+		Freezes:         freezerepo.New(clock, db.Runner()),
 		Routes:          routes,
-		Nodes:           noderepo.New(clock),
-		Audits:          auditrepo.New(clock),
-		Users:           userrepo.New(clock),
-		Teams:           teamrepo.New(clock),
-		Roles:           rolerepo.New(clock),
-		Memberships:     membershiprepo.New(clock),
-		Tokens:          tokenrepo.New(clock),
-		Invitations:     invitationrepo.New(clock),
+		Nodes:           noderepo.New(clock, db.Runner()),
+		Audits:          auditrepo.New(clock, db.Runner()),
+		Users:           userrepo.New(clock, db.Runner()),
+		Teams:           teamrepo.New(clock, db.Runner()),
+		Roles:           rolerepo.New(clock, db.Runner()),
+		Memberships:     membershiprepo.New(clock, db.Runner()),
+		Tokens:          tokenrepo.New(clock, db.Runner()),
+		Invitations:     invitationrepo.New(clock, db.Runner()),
 		Hooks:           hooks,
 		GitHubApps:      ghApps,
-		Uploads:         sourcerepo.New(clock),
+		Uploads:         sourcerepo.New(clock, db.Runner()),
 		Databases:       databases,
-		Browse:          browserepo.New(clock),
-		Backups:         backuprepo.New(clock),
-		Catalog:         catalogrepo.New(clock),
+		Browse:          browserepo.New(clock, db.Runner()),
+		Backups:         backuprepo.New(clock, db.Runner()),
+		Catalog:         catalogrepo.New(clock, db.Runner()),
 		// anchor 与 Services 字段共用同一批 repo 实例（构造期共享，与
 		// 构造上提前的 NewServices 形态一致）。
 		Anchor: anchor.New(anchor.Repos{
@@ -613,8 +644,8 @@ func NewAPIDeps(db *persistence.DB, e *engine.Engine, cipher *material.Cipher, r
 
 // NewAPIServices 构造六上下文 API 服务依赖集（scope 词表单一源注入；
 // gateway 端口 = EnrollNode 的 RelayCommand 拼装锚，ADR-0049）。
-func NewAPIServices(db *persistence.DB, e *engine.Engine, cipher *material.Cipher, rt capability.Runtime, cfg *config.AppConfig, app lynx.App) *fleetlygrpc.Services {
-	s := fleetlygrpc.NewServices(NewAPIDeps(db, e, cipher, rt, cfg.DataRoot(), ScopeResources(), app.Logger()))
+func NewAPIServices(db *persistence.DB, bind transact.Binder, e *engine.Engine, cipher *material.Cipher, rt capability.Runtime, cfg *config.AppConfig, app lynx.App) *fleetlygrpc.Services {
+	s := fleetlygrpc.NewServices(NewAPIDeps(db, bind, e, cipher, rt, cfg.DataRoot(), ScopeResources(), app.Logger()))
 	s.GatewayPort = gatewayPort(cfg.HTTPAddr())
 	// App 模板目录刷新源（F3.3，ADR-0050 决策 4：空 = 刷新停用，内嵌目录
 	// 即全部）。
@@ -631,7 +662,7 @@ func NewAPIServices(db *persistence.DB, e *engine.Engine, cipher *material.Ciphe
 
 // NewIdemEnforcer 构造通用幂等执法器（ADR-0024：拦截器 + janitor sweep 面）。
 func NewIdemEnforcer(db *persistence.DB, app lynx.App) *idem.Enforcer {
-	return idem.NewEnforcer(db, idemrepo.New(db.Clock()), app.Logger())
+	return idem.NewEnforcer(db, idemrepo.New(db.Clock(), db.Runner()), app.Logger())
 }
 
 // NewRateLimiter 构造创建速率限制器（ADR-0017 附录 A.2 缺省：60s 固定窗 /
@@ -644,7 +675,7 @@ func NewRateLimiter(db *persistence.DB) *governance.RateLimiter {
 // NewFreezeGuard 构造变更冻结执法器（ADR-0017 附录 A.3：拦截器 + Team
 // 逐级回行解析；repo 与归属解析图在组合根构造——P1b C 批构造上提）。
 func NewFreezeGuard(db *persistence.DB, app lynx.App) *governance.FreezeGuard {
-	return governance.NewFreezeGuard(db, freezerepo.New(db.Clock()), NewAnchor(db.Clock()), app.Logger())
+	return governance.NewFreezeGuard(db, freezerepo.New(db.Clock(), db.Runner()), NewAnchor(db), app.Logger())
 }
 
 // retentionSweepInterval 是保留窗清扫节拍（幂等记录 24h/认领 90s、事件
@@ -701,7 +732,7 @@ func (s *RetentionJanitorService) Start(ctx context.Context) error {
 		} else if n > 0 {
 			s.log.Info("retention janitor: swept expired idempotency records", "count", n)
 		}
-		if n, err := outbox.New(s.db.Clock()).TrimBefore(ctx, s.db.Runner(), s.db.Clock().Now().Add(-outboxRetention)); err != nil {
+		if n, err := outbox.New(s.db.Clock(), s.db.Runner()).TrimBefore(ctx, s.db.Clock().Now().Add(-outboxRetention)); err != nil {
 			s.log.Error("retention janitor: outbox trim", "err", err)
 		} else if n > 0 {
 			s.log.Info("retention janitor: trimmed outbox rows past the retention window", "count", n)
@@ -743,21 +774,21 @@ func (s *RetentionJanitorService) Stop(context.Context) error { return nil }
 // blob 一并删除（refcount=行数，ADR-0019 附录 A.3）。
 func (s *RetentionJanitorService) sweepUploads(ctx context.Context) {
 	cutoff := state.FormatTime(s.db.Clock().Now().Add(-uploadRetention))
-	stale, err := s.uploads.SweepUnreferenced(ctx, s.db.Runner(), cutoff)
+	stale, err := s.uploads.SweepUnreferenced(ctx, cutoff)
 	if err != nil {
 		s.log.Error("retention janitor: upload sweep scan", "err", err)
 		return
 	}
 	swept := 0
 	for _, u := range stale {
-		if err := s.db.Tx(ctx, func(tx *sql.Tx) error {
-			return s.uploads.Delete(ctx, tx, u.ID)
+		if err := s.db.Tx(ctx, func(run state.Runner) error {
+			return sourcerepo.New(s.db.Clock(), run).Delete(ctx, u.ID)
 		}); err != nil {
 			s.log.Error("retention janitor: upload row delete", "upload", u.ID, "err", err)
 			continue
 		}
 		swept++
-		if n, cerr := s.uploads.CountByDigest(ctx, s.db.Runner(), u.Digest); cerr == nil && n == 0 {
+		if n, cerr := s.uploads.CountByDigest(ctx, u.Digest); cerr == nil && n == 0 {
 			if derr := s.blobs.DeleteBlob(u.Digest); derr != nil {
 				s.log.Error("retention janitor: upload blob delete", "digest", u.Digest, "err", derr)
 			}
@@ -774,7 +805,7 @@ func (s *RetentionJanitorService) sweepUploads(ctx context.Context) {
 func NewRetentionJanitorService(enforcer *idem.Enforcer, db *persistence.DB, cfg *config.AppConfig, e *engine.Engine, app lynx.App) *RetentionJanitorService {
 	return &RetentionJanitorService{
 		enforcer: enforcer, db: db,
-		uploads: sourcerepo.New(db.Clock()),
+		uploads: sourcerepo.New(db.Clock(), db.Runner()),
 		blobs:   upload.NewStore(cfg.DataRoot(), 0, 0),
 		engine:  e,
 		log:     app.Logger(),
@@ -818,7 +849,7 @@ func NewServiceFactories() []lynx.ServiceFactory { return nil }
 // Bootstrap Token 首启流（无用户时生成一次、journal 去重；F0.2/F0.6）。
 func NewPreStartHooks(db *persistence.DB, seedRepos authn.SeedRepos, cfg *config.AppConfig, app lynx.App) boot.PreStartHooks {
 	return boot.PreStartHooks{func(ctx context.Context) error {
-		_, err := authn.EnsureBootstrapToken(ctx, db, seedRepos, cfg.DataRoot(), ScopeResources(), app.Logger())
+		_, err := authn.EnsureBootstrapToken(ctx, db, transact.NewTx(db, NewBinder(db)), seedRepos, cfg.DataRoot(), ScopeResources(), app.Logger())
 		return err
 	}}
 }

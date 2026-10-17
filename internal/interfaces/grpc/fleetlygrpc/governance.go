@@ -7,10 +7,10 @@ package fleetlygrpc
 
 import (
 	"context"
-	"database/sql"
 
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/runtimeops/freeze"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
@@ -65,8 +65,8 @@ func (svc *GovernanceService) SetChangeFreeze(ctx context.Context, req *systemv1
 	}
 	err = svc.s.commit(ctx, writeFact{
 		checks: checks,
-		write: func(ctx context.Context, tx *sql.Tx) error {
-			return svc.s.Freezes.Create(ctx, tx, row)
+		write: func(ctx context.Context, st transact.Stores) error {
+			return st.Freezes.Create(ctx, row)
 		},
 		facts: []func() writes.FactRow{
 			// 资源轴（P0-2）：全局冻结 TeamID='' → 平台级可见。
@@ -92,7 +92,7 @@ func (svc *GovernanceService) SetChangeFreeze(ctx context.Context, req *systemv1
 // 历史行）。行级授权（ADR-0035 决策 7）：本队行可解；全局行（team_id 空）
 // 仅平台 owner。
 func (svc *GovernanceService) LiftChangeFreeze(ctx context.Context, req *systemv1.LiftChangeFreezeRequest) (*systemv1.LiftChangeFreezeResponse, error) {
-	row, err := svc.s.Freezes.Get(ctx, svc.s.DB.Runner(), req.GetId())
+	row, err := svc.s.Freezes.Get(ctx, req.GetId())
 	if err != nil {
 		return nil, mapStateError(err, "freeze")
 	}
@@ -106,8 +106,8 @@ func (svc *GovernanceService) LiftChangeFreeze(ctx context.Context, req *systemv
 	}
 	if row.Active() {
 		err = svc.s.commit(ctx, writeFact{
-			write: func(ctx context.Context, tx *sql.Tx) error {
-				return svc.s.Freezes.Lift(ctx, tx, row.ID)
+			write: func(ctx context.Context, st transact.Stores) error {
+				return st.Freezes.Lift(ctx, row.ID)
 			},
 			facts: []func() writes.FactRow{
 				// 资源轴（P0-2）：全局冻结 TeamID='' → 平台级可见。
@@ -126,7 +126,7 @@ func (svc *GovernanceService) LiftChangeFreeze(ctx context.Context, req *systemv
 		if err != nil {
 			return nil, mapStateError(err, "freeze")
 		}
-		row, err = svc.s.Freezes.Get(ctx, svc.s.DB.Runner(), req.GetId())
+		row, err = svc.s.Freezes.Get(ctx, req.GetId())
 		if err != nil {
 			return nil, mapStateError(err, "freeze")
 		}
@@ -141,7 +141,7 @@ func (svc *GovernanceService) ListChangeFreezes(ctx context.Context, req *system
 	if err != nil {
 		return nil, err
 	}
-	rows, err := svc.s.Freezes.List(ctx, svc.s.DB.Runner(), req.GetAfterFreezeSeq(), listLimit(req.GetLimit()))
+	rows, err := svc.s.Freezes.List(ctx, req.GetAfterFreezeSeq(), listLimit(req.GetLimit()))
 	if err != nil {
 		return nil, mapStateError(err, "freeze")
 	}

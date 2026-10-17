@@ -58,7 +58,7 @@ func TestSubmitSpecReusesIdenticalSpec(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, r1.ID, r2.ID, "identical spec must reuse the frozen revision")
-	revs, err := e.revisions.ListByApp(ctx, e.db.Runner(), tAppID, 0, 100)
+	revs, err := e.repos.Revisions.ListByApp(ctx, tAppID, 0, 100)
 	require.NoError(t, err)
 	assert.Len(t, revs, 1, "reuse freezes exactly one row")
 	assert.Equal(t, []string{"revision.create"}, auditActions(t, e, "revision/"),
@@ -70,11 +70,11 @@ func TestSubmitSpecReusesIdenticalSpec(t *testing.T) {
 func TestSubmitSpecVariableLayering(t *testing.T) {
 	e, _, _ := newTestEngine(t)
 	ctx := context.Background()
-	require.NoError(t, e.sharedVariables.Upsert(ctx, e.db.Runner(),
+	require.NoError(t, e.repos.SharedVariables.Upsert(ctx,
 		&sharedvariable.SharedVariable{ProjectID: tProjectID, Name: "LOG_LEVEL", Value: "from-shared"}))
-	require.NoError(t, e.sharedVariables.Upsert(ctx, e.db.Runner(),
+	require.NoError(t, e.repos.SharedVariables.Upsert(ctx,
 		&sharedvariable.SharedVariable{ProjectID: tProjectID, Name: "SHARED_ONLY", Value: "shared"}))
-	require.NoError(t, e.appVariables.Upsert(ctx, e.db.Runner(),
+	require.NoError(t, e.repos.AppVariables.Upsert(ctx,
 		&appvariable.AppVariable{AppID: tAppID, Name: "LOG_LEVEL", Value: "from-app"}))
 
 	submitted := submitImageSpec(tAppID, "nginx:1.27",

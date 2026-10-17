@@ -10,7 +10,6 @@ package fleetlygrpc
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"net/url"
 	"strings"
@@ -18,6 +17,7 @@ import (
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/hook"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
@@ -77,7 +77,7 @@ func (svc *HooksService) SetGitHook(ctx context.Context, req *deliveryv1.SetGitH
 		return nil, err
 	}
 
-	existing, err := svc.s.Hooks.Get(ctx, svc.s.DB.Runner(), appRow.ID)
+	existing, err := svc.s.Hooks.Get(ctx, appRow.ID)
 	if err != nil && !errors.Is(err, state.ErrNotFound) {
 		return nil, mapStateError(err, "hook")
 	}
@@ -99,8 +99,8 @@ func (svc *HooksService) SetGitHook(ctx context.Context, req *deliveryv1.SetGitH
 			TokenSHA256: material.SHA256, TokenPrefix: material.Prefix, SecretCiphertext: sealed.Ciphertext,
 		}
 		txErr := svc.s.commit(ctx, writeFact{
-			write: func(ctx context.Context, tx *sql.Tx) error {
-				return svc.s.Hooks.Create(ctx, tx, row)
+			write: func(ctx context.Context, st transact.Stores) error {
+				return st.Hooks.Create(ctx, row)
 			},
 			facts: []func() writes.FactRow{
 				svc.s.factOf(ctx, appRow.ProjectID, func(team string) writes.FactRow {
@@ -126,8 +126,8 @@ func (svc *HooksService) SetGitHook(ctx context.Context, req *deliveryv1.SetGitH
 	existing.Dockerfile = normalizeDockerfile(req.GetDockerfile())
 	existing.WatchPaths = normalizeWatchPaths(req.GetWatchPaths())
 	txErr := svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, tx *sql.Tx) error {
-			return svc.s.Hooks.UpdateConfig(ctx, tx, existing)
+		write: func(ctx context.Context, st transact.Stores) error {
+			return st.Hooks.UpdateConfig(ctx, existing)
 		},
 		facts: []func() writes.FactRow{
 			svc.s.factOf(ctx, appRow.ProjectID, func(team string) writes.FactRow {
@@ -153,7 +153,7 @@ func (svc *HooksService) GetGitHook(ctx context.Context, req *deliveryv1.GetGitH
 	if _, err := svc.s.authorizeAppID(ctx, req.GetAppId()); err != nil {
 		return nil, err
 	}
-	row, err := svc.s.Hooks.Get(ctx, svc.s.DB.Runner(), req.GetAppId())
+	row, err := svc.s.Hooks.Get(ctx, req.GetAppId())
 	if err != nil {
 		return nil, mapStateError(err, "hook")
 	}
@@ -169,7 +169,7 @@ func (svc *HooksService) RotateHookToken(ctx context.Context, req *deliveryv1.Ro
 	if err != nil {
 		return nil, err
 	}
-	if _, err := svc.s.Hooks.Get(ctx, svc.s.DB.Runner(), req.GetAppId()); err != nil {
+	if _, err := svc.s.Hooks.Get(ctx, req.GetAppId()); err != nil {
 		return nil, mapStateError(err, "hook")
 	}
 	material, err := identity.NewHookToken()
@@ -181,8 +181,8 @@ func (svc *HooksService) RotateHookToken(ctx context.Context, req *deliveryv1.Ro
 		return nil, apperr.New("E_SECRET_UNAVAILABLE", "sealing the hook secret failed: %v", err)
 	}
 	txErr := svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, tx *sql.Tx) error {
-			return svc.s.Hooks.RotateToken(ctx, tx, req.GetAppId(), material.SHA256, material.Prefix, sealed.Ciphertext)
+		write: func(ctx context.Context, st transact.Stores) error {
+			return st.Hooks.RotateToken(ctx, req.GetAppId(), material.SHA256, material.Prefix, sealed.Ciphertext)
 		},
 		facts: []func() writes.FactRow{
 			svc.s.factOf(ctx, appRow.ProjectID, func(team string) writes.FactRow {
@@ -199,7 +199,7 @@ func (svc *HooksService) RotateHookToken(ctx context.Context, req *deliveryv1.Ro
 	if txErr != nil {
 		return nil, mapStateError(txErr, "hook")
 	}
-	row, err := svc.s.Hooks.Get(ctx, svc.s.DB.Runner(), req.GetAppId())
+	row, err := svc.s.Hooks.Get(ctx, req.GetAppId())
 	if err != nil {
 		return nil, mapStateError(err, "hook")
 	}
@@ -219,12 +219,12 @@ func (svc *HooksService) DeleteGitHook(ctx context.Context, req *deliveryv1.Dele
 	if err != nil {
 		return nil, err
 	}
-	if _, err := svc.s.Hooks.Get(ctx, svc.s.DB.Runner(), req.GetAppId()); err != nil {
+	if _, err := svc.s.Hooks.Get(ctx, req.GetAppId()); err != nil {
 		return nil, mapStateError(err, "hook")
 	}
 	txErr := svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, tx *sql.Tx) error {
-			return svc.s.Hooks.DeleteByApp(ctx, tx, req.GetAppId())
+		write: func(ctx context.Context, st transact.Stores) error {
+			return st.Hooks.DeleteByApp(ctx, req.GetAppId())
 		},
 		facts: []func() writes.FactRow{
 			svc.s.factOf(ctx, appRow.ProjectID, func(team string) writes.FactRow {

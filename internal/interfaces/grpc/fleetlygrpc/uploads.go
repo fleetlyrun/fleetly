@@ -8,7 +8,6 @@ package fleetlygrpc
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"io"
@@ -17,6 +16,7 @@ import (
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/sourceupload"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
@@ -108,7 +108,7 @@ func (svc *BuildsService) UploadSource(stream deliveryv1.BuildsService_UploadSou
 
 	// 行落库：同项目同 digest 已在 → 重传幂等返回既有引用（内容寻址天然
 	// 幂等强于键重放，ADR-0019 附录 A.2）。
-	if existing, ferr := svc.s.Uploads.FindByDigest(ctx, svc.s.DB.Runner(), projectID, digest); ferr == nil {
+	if existing, ferr := svc.s.Uploads.FindByDigest(ctx, projectID, digest); ferr == nil {
 		return stream.SendAndClose(&deliveryv1.UploadSourceResponse{
 			Id: existing.ID, Digest: digest, SizeBytes: size, Deduplicated: true,
 		})
@@ -128,8 +128,8 @@ func (svc *BuildsService) UploadSource(stream deliveryv1.BuildsService_UploadSou
 			svc.s.parentProjectAlive(projectID),
 			svc.s.uploadBytesQuota(projectID, size),
 		},
-		write: func(ctx context.Context, tx *sql.Tx) error {
-			return svc.s.Uploads.Create(ctx, tx, row)
+		write: func(ctx context.Context, st transact.Stores) error {
+			return st.SourceUploads.Create(ctx, row)
 		},
 		facts: []func() writes.FactRow{
 			svc.s.factOf(ctx, projectID, func(team string) writes.FactRow {
@@ -146,7 +146,7 @@ func (svc *BuildsService) UploadSource(stream deliveryv1.BuildsService_UploadSou
 	if err != nil {
 		// 并发同内容：另一路先落行（唯一索引）→ 幂等返回既有引用。
 		if errors.Is(err, state.ErrAlreadyExists) {
-			if existing, ferr := svc.s.Uploads.FindByDigest(ctx, svc.s.DB.Runner(), projectID, digest); ferr == nil {
+			if existing, ferr := svc.s.Uploads.FindByDigest(ctx, projectID, digest); ferr == nil {
 				return stream.SendAndClose(&deliveryv1.UploadSourceResponse{
 					Id: existing.ID, Digest: digest, SizeBytes: size, Deduplicated: true,
 				})
@@ -166,7 +166,7 @@ func (svc *BuildsService) ListUploads(ctx context.Context, req *deliveryv1.ListU
 	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}
-	rows, err := svc.s.Uploads.ListByProject(ctx, svc.s.DB.Runner(), req.GetProjectId(), req.GetAfterUploadSeq(), listLimit(req.GetLimit()))
+	rows, err := svc.s.Uploads.ListByProject(ctx, req.GetProjectId(), req.GetAfterUploadSeq(), listLimit(req.GetLimit()))
 	if err != nil {
 		return nil, mapStateError(err, "upload")
 	}
@@ -183,8 +183,8 @@ func (svc *BuildsService) ListUploads(ctx context.Context, req *deliveryv1.ListU
 // 求和；(project, digest) 唯一使 SUM 即去重值；读在 finalize 事务内——
 // ADR-0024 TOCTOU 口径）。
 func (s *Services) uploadBytesQuota(projectID string, size int64) acceptanceCheck {
-	return func(ctx context.Context, tx *sql.Tx) error {
-		sum, err := s.Uploads.BytesByProject(ctx, tx, projectID)
+	return func(ctx context.Context, st transact.Stores) error {
+		sum, err := st.SourceUploads.BytesByProject(ctx, projectID)
 		if err != nil {
 			return err
 		}

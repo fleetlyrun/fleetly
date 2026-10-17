@@ -39,7 +39,7 @@ func (e *Engine) RotateDatabasePassword(ctx context.Context, databaseID string) 
 	e.rotateMu.Lock()
 	defer e.rotateMu.Unlock()
 
-	row, err := e.databases.Get(ctx, e.db.Runner(), databaseID)
+	row, err := e.repos.Databases.Get(ctx, databaseID)
 	if err != nil {
 		return err
 	}
@@ -73,7 +73,7 @@ func (e *Engine) RotateDatabasePassword(ctx context.Context, databaseID string) 
 		ProjectID: row.ProjectID, Name: row.CredentialsRef,
 		Ciphertext: sealed.Ciphertext, Fingerprint: sealed.Fingerprint,
 	}
-	if err := e.secrets.Upsert(ctx, e.db.Runner(), sec); err != nil {
+	if err := e.repos.Secrets.Upsert(ctx, sec); err != nil {
 		return fmt.Errorf("rewrite credential secret %q: %w", row.CredentialsRef, err)
 	}
 	// 密文已变 → 短路签名失效 → 下一拍重下发材料（redis 生效通道）；

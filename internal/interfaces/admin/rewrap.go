@@ -6,10 +6,10 @@ package admin
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 	githubapprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/githubapp"
 	hookrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/hook"
@@ -63,20 +63,21 @@ const (
 // 写者（停机窗口），阶段一读到的分类在事务内依然成立。
 func RewrapSecrets(ctx context.Context, db *persistence.DB, cipher *material.Cipher, dryRun bool) (*RewrapReport, error) {
 	rep := &RewrapReport{}
-	secrets := secret.New(db.Clock())
-	hooks := hookrepo.New(db.Clock())
-	ghApps := githubapprepo.New(db.Clock())
-	run := db.Runner()
+	secrets := secret.New(db.Clock(), db.Runner())
+	hooks := hookrepo.New(db.Clock(), db.Runner())
+	ghApps := githubapprepo.New(db.Clock(), db.Runner())
 
-	// 阶段一：全量解封分类，铸重封写单（不落库）。
+	// 阶段一：全量解封分类，铸重封写单（不落库）。rewrite 闭包收事务执行面
+	// ——阶段二在 db.Tx 内以 tx 绑定形态重造 repo 落库（ADR-0080：接口零
+	// 执行器参数，绑定态经构造重造）。
 	type write struct {
-		kind string
-		key  string
-		run  func(ctx context.Context, tx *sql.Tx) error
+		kind    string
+		key     string
+		rewrite func(ctx context.Context, run state.Runner) error
 	}
 	var writes []write
 
-	rows, err := secrets.ListAll(ctx, run)
+	rows, err := secrets.ListAll(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("admin: list secrets: %w", err)
 	}
@@ -94,8 +95,8 @@ func RewrapSecrets(ctx context.Context, db *persistence.DB, cipher *material.Cip
 				continue
 			}
 			id := row.ID
-			writes = append(writes, write{kind: "secret", key: key, run: func(ctx context.Context, tx *sql.Tx) error {
-				return secrets.UpdateCiphertext(ctx, tx, id, ct)
+			writes = append(writes, write{kind: "secret", key: key, rewrite: func(ctx context.Context, run state.Runner) error {
+				return secret.New(db.Clock(), run).UpdateCiphertext(ctx, id, ct)
 			}})
 			rep.SecretsRewrapped++
 		default:
@@ -104,7 +105,7 @@ func RewrapSecrets(ctx context.Context, db *persistence.DB, cipher *material.Cip
 		}
 	}
 
-	hookRows, err := hooks.ListAll(ctx, run)
+	hookRows, err := hooks.ListAll(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("admin: list hooks: %w", err)
 	}
@@ -121,8 +122,8 @@ func RewrapSecrets(ctx context.Context, db *persistence.DB, cipher *material.Cip
 				continue
 			}
 			appID := row.AppID
-			writes = append(writes, write{kind: "hook", key: row.AppID, run: func(ctx context.Context, tx *sql.Tx) error {
-				return hooks.UpdateSecretCiphertext(ctx, tx, appID, ct)
+			writes = append(writes, write{kind: "hook", key: row.AppID, rewrite: func(ctx context.Context, run state.Runner) error {
+				return hookrepo.New(db.Clock(), run).UpdateSecretCiphertext(ctx, appID, ct)
 			}})
 			rep.HooksRewrapped++
 		default:
@@ -133,7 +134,7 @@ func RewrapSecrets(ctx context.Context, db *persistence.DB, cipher *material.Cip
 
 	// GitHub App 私钥信封（ADR-0073）：两态行统一重封（Global 行的 Key
 	// 冠 global/ 前缀与 Project 域行区分）。
-	ghRows, err := ghApps.ListAll(ctx, run)
+	ghRows, err := ghApps.ListAll(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("admin: list github apps: %w", err)
 	}
@@ -154,8 +155,8 @@ func RewrapSecrets(ctx context.Context, db *persistence.DB, cipher *material.Cip
 				continue
 			}
 			id := row.ID
-			writes = append(writes, write{kind: "github_app", key: key, run: func(ctx context.Context, tx *sql.Tx) error {
-				return ghApps.UpdatePrivateKeyCiphertext(ctx, tx, id, ct)
+			writes = append(writes, write{kind: "github_app", key: key, rewrite: func(ctx context.Context, run state.Runner) error {
+				return githubapprepo.New(db.Clock(), run).UpdatePrivateKeyCiphertext(ctx, id, ct)
 			}})
 			rep.GitHubAppsRewrapped++
 		default:
@@ -172,9 +173,9 @@ func RewrapSecrets(ctx context.Context, db *persistence.DB, cipher *material.Cip
 	}
 
 	// 阶段二：单事务全量落库（全有或全无）。
-	if err := db.Tx(ctx, func(tx *sql.Tx) error {
+	if err := db.Tx(ctx, func(run state.Runner) error {
 		for i := range writes {
-			if err := writes[i].run(ctx, tx); err != nil {
+			if err := writes[i].rewrite(ctx, run); err != nil {
 				return fmt.Errorf("admin: rewrite %s %s: %w", writes[i].kind, writes[i].key, err)
 			}
 		}

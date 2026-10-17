@@ -104,7 +104,7 @@ func newExecDomainEngine(t *testing.T) (*Engine, *firedSeam) {
 	t.Helper()
 	e, _, _ := newTestEngine(t)
 	e.execFace = fakeExecFace{}
-	require.NoError(t, noderepo.New(e.clock).Upsert(context.Background(), e.db.Runner(), &node.Node{
+	require.NoError(t, noderepo.New(e.clock, e.db.Runner()).Upsert(context.Background(), &node.Node{
 		PlatformID: "node-1", CarrierID: "carrier-1", Hostname: "h", Role: "manager", Available: true,
 	}))
 	fired := &firedSeam{}

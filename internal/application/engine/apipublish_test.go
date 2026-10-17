@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
@@ -16,7 +17,7 @@ import (
 // 优先级更高——console 登录路由先例）。
 func TestAPICapabilityRoutes(t *testing.T) {
 	db, _ := statetest.New(t)
-	e := New(Deps{DB: db, Repos: testRepos(db), Logger: discardLogger()}, Options{Data: DataOptions{Api: ApiConfig{
+	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Logger: discardLogger()}, Options{Data: DataOptions{Api: ApiConfig{
 		Host:    "api.dev.fleetly.run",
 		GRPCURL: "http://10.124.0.3:9080",
 	}}})
@@ -50,7 +51,7 @@ func TestAPICapabilityRoutesDisabledOrMalformed(t *testing.T) {
 		"url 无 host 段": {Data: DataOptions{Api: ApiConfig{Host: "a.test", GRPCURL: "not-a-url"}}},
 		"url 仅 scheme": {Data: DataOptions{Api: ApiConfig{Host: "a.test", GRPCURL: "http://"}}},
 	} {
-		e := New(Deps{DB: db, Repos: testRepos(db), Logger: discardLogger()}, opts)
+		e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Logger: discardLogger()}, opts)
 		assert.Empty(t, e.apiCapabilityRoutes(), "%s：必须零发布", name)
 	}
 }
@@ -61,7 +62,7 @@ func TestPublishRoutesMergesAPIRoutes(t *testing.T) {
 	db, _ := statetest.New(t)
 	rt := newFakeRuntime()
 	proxy := &fakeProxy{}
-	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{
+	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{
 		Data: DataOptions{
 			Api: ApiConfig{Host: "api.dev.fleetly.run", GRPCURL: "http://127.0.0.1:9080"},
 		},

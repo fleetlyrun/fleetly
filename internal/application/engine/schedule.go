@@ -19,13 +19,13 @@ package engine
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"time"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/schedule"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
@@ -44,7 +44,7 @@ var (
 // 到期即拍（fire/skip）。单写者（Loop 串行）；手动触发经 TriggerSchedule
 // 与本环共享 Fire/RecordFire CAS 防御。
 func (e *Engine) scheduleStep(ctx context.Context) {
-	rows, err := e.schedules.ListDriving(ctx, e.db.Runner())
+	rows, err := e.repos.Schedules.ListDriving(ctx)
 	if err != nil {
 		e.log.Error("schedule step: list driving", "err", err)
 		return
@@ -98,27 +98,27 @@ func (e *Engine) fireSchedule(ctx context.Context, s *schedule.Schedule, now tim
 // skipSchedule 处理一次跳拍：Fire CAS 推进 next_fire_at + schedule.skipped
 // 事件（同事务；CAS 失败 = 另一拍先落，静默让位）。跳拍是"未发生"事实
 // 而非动作，不留审计。
-func (e *Engine) skipSchedule(ctx context.Context, s *schedule.Schedule, next, reason string) {
-	err := e.db.Tx(ctx, func(tx *sql.Tx) error {
-		return e.commitWrite(ctx, tx, writeFact{
-			write: func(ctx context.Context, tx *sql.Tx) error {
-				return e.schedules.Fire(ctx, tx, s.ID, s.NextFireAt, next, s.LastTaskID)
+func (e *Engine) skipSchedule(ctx context.Context, sched *schedule.Schedule, next, reason string) {
+	err := e.tx.Do(ctx, func(s transact.Stores) error {
+		return e.commitWrite(ctx, s, writeFact{
+			write: func(ctx context.Context, s transact.Stores) error {
+				return s.Schedules.Fire(ctx, sched.ID, sched.NextFireAt, next, sched.LastTaskID)
 			},
 			facts: []func() writes.FactRow{func() writes.FactRow {
-				skipped := *s
+				skipped := *sched
 				skipped.NextFireAt = next
 				// 双真偏离（仅流面）：跳拍是"未发生"事实而非动作，无取证
 				// 孪生（A 化前亦无审计行，行集合零漂移）。
 				return writes.FactRow{
-					Name: eventScheduleSkipped, Aggregate: "schedule", ID: s.ID,
-					Payload: scheduleEventPayloadJSON(&skipped, "", reason), TeamID: e.eventTeamOfProject(ctx, tx, s.ProjectID),
+					Name: eventScheduleSkipped, Aggregate: "schedule", ID: sched.ID,
+					Payload: scheduleEventPayloadJSON(&skipped, "", reason), TeamID: e.eventTeamOfProject(ctx, s, sched.ProjectID),
 					StreamOnly: true,
 				}
 			}},
 		})
 	})
 	if err != nil && !errors.Is(err, state.ErrConflict) {
-		e.log.Error("schedule fire: skip", "schedule", s.ID, "reason", reason, "err", err)
+		e.log.Error("schedule fire: skip", "schedule", sched.ID, "reason", reason, "err", err)
 	}
 }
 
@@ -126,7 +126,7 @@ func (e *Engine) skipSchedule(ctx context.Context, s *schedule.Schedule, next, r
 // 不动（cron 节奏不被手动拍打乱）；重叠时诚实拒绝（E_CONFLICT 面——先停
 // 上一拍 Run 或等其收口）。
 func (e *Engine) TriggerSchedule(ctx context.Context, id string) (*schedule.Schedule, error) {
-	s, err := e.schedules.Get(ctx, e.db.Runner(), id)
+	s, err := e.repos.Schedules.Get(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -144,7 +144,7 @@ func (e *Engine) TriggerSchedule(ctx context.Context, id string) (*schedule.Sche
 		return nil, mapTriggerConflict(err, id)
 	}
 	e.taskLoop.Kick()
-	return e.schedules.Get(ctx, e.db.Runner(), id)
+	return e.repos.Schedules.Get(ctx, id)
 }
 
 // mapTriggerConflict 把铸 Task 事务的 CAS 冲突归一为重叠语义（B12 P3-4：
@@ -163,7 +163,7 @@ func (e *Engine) scheduleOverlapping(ctx context.Context, lastTaskID string) (bo
 	if lastTaskID == "" {
 		return false, nil
 	}
-	runs, err := e.runs.ListByTaskStates(ctx, e.db.Runner(), lastTaskID, taskDrivingStates)
+	runs, err := e.repos.Runs.ListByTaskStates(ctx, lastTaskID, taskDrivingStates)
 	if err != nil {
 		return false, err
 	}
@@ -175,36 +175,36 @@ func (e *Engine) scheduleOverlapping(ctx context.Context, lastTaskID string) (bo
 // 函数只保留 schedule 域差异——载模板 + Fire CAS（到期拍：next_fire_at
 // 推进）或 RecordFire（手动拍：只记 last_task_id）+ schedule.fired 事件。
 // CAS 失败整单回滚（双发防御——Task 行不落孤账，B12 P3-4 手动拍锚）。
-func (e *Engine) spawnScheduleTask(ctx context.Context, s *schedule.Schedule, source, nextFireAt string) (*task.Task, error) {
+func (e *Engine) spawnScheduleTask(ctx context.Context, sched *schedule.Schedule, source, nextFireAt string) (*task.Task, error) {
 	// 队轴 Team 先行解析（P0-2）：steps 回调不携 ctx/tx，事务外解析
 	//（Project 的 Team 归属不可变，无 TOCTOU 面）。
-	team := e.eventTeamOfProject(ctx, e.db.Runner(), s.ProjectID)
-	return e.mintOneShotTask(ctx, s.ProjectID,
+	team := e.eventTeamOfProject(ctx, e.repos, sched.ProjectID)
+	return e.mintOneShotTask(ctx, sched.ProjectID,
 		func() (*specv1.TaskSpec, error) {
-			tmpl, err := loadTaskSpec(s.Spec)
+			tmpl, err := loadTaskSpec(sched.Spec)
 			if err != nil {
 				return nil, fmt.Errorf("load schedule template: %w", err)
 			}
 			return tmpl, nil
 		},
 		func(taskID string) []writeStep {
-			fired := *s
+			fired := *sched
 			fired.NextFireAt, fired.LastTaskID = nextFireAt, taskID
 			return []writeStep{{
-				write: func(ctx context.Context, tx *sql.Tx) error {
+				write: func(ctx context.Context, s transact.Stores) error {
 					if source == ScheduleSourceCron {
-						return e.schedules.Fire(ctx, tx, s.ID, s.NextFireAt, nextFireAt, taskID)
+						return s.Schedules.Fire(ctx, sched.ID, sched.NextFireAt, nextFireAt, taskID)
 					}
 					// 手动拍的 CAS 锚（B12 P3-4）：fromLastTaskID = 触发时读行
 					// 的旧值——并发双拍输家的锚失配 → ErrConflict 整单回滚
 					//（Task 行不落孤账），至多一铸。
-					return e.schedules.RecordFire(ctx, tx, s.ID, s.LastTaskID, taskID)
+					return s.Schedules.RecordFire(ctx, sched.ID, sched.LastTaskID, taskID)
 				},
 				facts: []func() writes.FactRow{func() writes.FactRow {
 					row := writes.FactRow{
-						Name: eventScheduleFired, Aggregate: "schedule", ID: s.ID,
+						Name: eventScheduleFired, Aggregate: "schedule", ID: sched.ID,
 						Payload: scheduleEventPayloadJSON(&fired, source, ""), TeamID: team,
-						Action: "schedule.fire", Resource: "schedule/" + s.ID, AfterFP: taskID,
+						Action: "schedule.fire", Resource: "schedule/" + sched.ID, AfterFP: taskID,
 					}
 					row.Actor, row.Source = authn.ActorFromContext(ctx), authn.SourceFromContext(ctx)
 					return row

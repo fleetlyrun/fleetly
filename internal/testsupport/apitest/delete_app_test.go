@@ -1,7 +1,6 @@
 package apitest_test
 
 import (
-	"database/sql"
 	"regexp"
 	"sync"
 	"testing"
@@ -15,6 +14,7 @@ import (
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	deploymentrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/deployment"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
 )
@@ -307,8 +307,8 @@ func TestDeleteAppTeardownAbortKeepsRoute(t *testing.T) {
 		ID: "fx-0001", AppID: appID,
 		ToRevision: revID, State: deployment.StateQueued, Generation: 2,
 	}
-	require.NoError(t, h.DB.Tx(ctx, func(tx *sql.Tx) error {
-		return deploymentrepo.New(h.Clock).Create(ctx, tx, planted)
+	require.NoError(t, h.DB.Tx(ctx, func(run state.Runner) error {
+		return deploymentrepo.New(h.DB.Clock(), run).Create(ctx, planted)
 	}))
 	release()
 

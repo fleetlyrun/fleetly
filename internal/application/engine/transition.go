@@ -24,23 +24,22 @@ package engine
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/run"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
-	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
 
 // eventTeamOfProject 解析 Project 轴的资源 Team（P0-2 事件 Team 铸入）：
 // 行缺失/存储故障 → ”（平台级可见——不劣于止血前行为，不为归属解析
 // 新增失败面；全量补齐由 P2 事实 kernel 承载）。
-func (e *Engine) eventTeamOfProject(ctx context.Context, run state.Runner, projectID string) string {
-	p, err := e.projects.Get(ctx, run, projectID)
+func (e *Engine) eventTeamOfProject(ctx context.Context, s transact.Stores, projectID string) string {
+	p, err := s.Projects.Get(ctx, projectID)
 	if err != nil {
 		e.log.Warn("events: resolve project team", "project", projectID, "err", err)
 		return ""
@@ -50,13 +49,13 @@ func (e *Engine) eventTeamOfProject(ctx context.Context, run state.Runner, proje
 
 // eventTeamOfApp 解析 App 轴的资源 Team（deployment/build 聚合两跳：
 // App → Project）。走 Any 档——App 删除后的收尾迁移事件仍可归属。
-func (e *Engine) eventTeamOfApp(ctx context.Context, run state.Runner, appID string) string {
-	a, err := e.apps.GetAnyByID(ctx, run, appID)
+func (e *Engine) eventTeamOfApp(ctx context.Context, s transact.Stores, appID string) string {
+	a, err := s.Apps.GetAnyByID(ctx, appID)
 	if err != nil {
 		e.log.Warn("events: resolve app team", "app", appID, "err", err)
 		return ""
 	}
-	return e.eventTeamOfProject(ctx, run, a.ProjectID)
+	return e.eventTeamOfProject(ctx, s, a.ProjectID)
 }
 
 // ownerTeam 按观测归属域解析载体事件的资源轴 Team（P2 批二补齐，
@@ -67,14 +66,14 @@ func (e *Engine) eventTeamOfApp(ctx context.Context, run state.Runner, appID str
 func (e *Engine) ownerTeam(ctx context.Context, owner workloadOwner) string {
 	switch owner.domain {
 	case ownerApp:
-		return e.eventTeamOfApp(ctx, e.db.Runner(), owner.id)
+		return e.eventTeamOfApp(ctx, e.repos, owner.id)
 	case ownerDatabase:
-		db, err := e.databases.Get(ctx, e.db.Runner(), owner.id)
+		db, err := e.repos.Databases.Get(ctx, owner.id)
 		if err != nil {
 			e.log.Warn("events: resolve database team", "database", owner.id, "err", err)
 			return ""
 		}
-		return e.eventTeamOfProject(ctx, e.db.Runner(), db.ProjectID)
+		return e.eventTeamOfProject(ctx, e.repos, db.ProjectID)
 	default:
 		return "" // managed/browse：平台域载体，无 owner Team（平台级可见）
 	}
@@ -85,25 +84,25 @@ func (e *Engine) ownerTeam(ctx context.Context, owner workloadOwner) string {
 // 原地迁移分支 = LedgerOnly 显式带旗）。team 轴解析面（eventTeamOfApp/
 // eventTeamOfProject）由各前门在 fact 闭包内调用（非迁移分支才解析）。
 type transitionFact struct {
-	move   func(ctx context.Context, tx *sql.Tx) (freshState string, inPlace bool, err error)
-	fact   func(ctx context.Context, tx *sql.Tx, freshState string, inPlace bool) writes.FactRow
-	extras []func(ctx context.Context, tx *sql.Tx) error
+	move   func(ctx context.Context, s transact.Stores) (freshState string, inPlace bool, err error)
+	fact   func(ctx context.Context, s transact.Stores, freshState string, inPlace bool) writes.FactRow
+	extras []func(ctx context.Context, s transact.Stores) error
 }
 
 // commitTransition 在调用方事务内落完一次状态迁移四件一：
 // CAS+刷新 → 事实扇出（kernel 单声明 FactRow 双行落库；原地迁移由
 // fact 闭包落 LedgerOnly 单行）→ 附加事实。任何一段失败整单回滚。
-func (e *Engine) commitTransition(ctx context.Context, tx *sql.Tx, f transitionFact) error {
-	freshState, inPlace, err := f.move(ctx, tx)
+func (e *Engine) commitTransition(ctx context.Context, s transact.Stores, f transitionFact) error {
+	freshState, inPlace, err := f.move(ctx, s)
 	if err != nil {
 		return err
 	}
-	row := f.fact(ctx, tx, freshState, inPlace)
-	if err := writes.Sequence(ctx, tx, e.factRepos(), func() writes.FactRow { return row }); err != nil {
+	row := f.fact(ctx, s, freshState, inPlace)
+	if err := writes.Sequence(ctx, e.factRepos(s), func() writes.FactRow { return row }); err != nil {
 		return err
 	}
 	for _, extra := range f.extras {
-		if err := extra(ctx, tx); err != nil {
+		if err := extra(ctx, s); err != nil {
 			return err
 		}
 	}
@@ -115,7 +114,7 @@ func (e *Engine) commitTransition(ctx context.Context, tx *sql.Tx, f transitionF
 // writeStep 是事务内的一段附加写（字段 CAS/派生建行）与其伴生事实；
 // 序列与主写一致（写 → 事实扇出）。
 type writeStep struct {
-	write func(ctx context.Context, tx *sql.Tx) error
+	write func(ctx context.Context, s transact.Stores) error
 	facts []func() writes.FactRow
 }
 
@@ -125,8 +124,8 @@ type writeStep struct {
 // acceptance.go 的 writeFact 同构（批三 A 化：events/audits 双段与机械
 // 映射 writeKernelRows 退役，落库行集合零漂移）。
 type writeFact struct {
-	checks []func(ctx context.Context, tx *sql.Tx) error
-	write  func(ctx context.Context, tx *sql.Tx) error
+	checks []func(ctx context.Context, s transact.Stores) error
+	write  func(ctx context.Context, s transact.Stores) error
 	facts  []func() writes.FactRow
 	steps  []writeStep
 }
@@ -135,36 +134,36 @@ type writeFact struct {
 // 附加写步殿后逐段重放同一序列。事实扇出与双行配对由事实发射 kernel
 // 拥有（internal/domain/services/writes，ADR-0064→收敛报告 §刀1）；
 // 本函数只做 facts 惰性编排与 steps 序列（域差异段不入 kernel）。
-func (e *Engine) commitWrite(ctx context.Context, tx *sql.Tx, f writeFact) error {
+func (e *Engine) commitWrite(ctx context.Context, s transact.Stores, f writeFact) error {
 	for _, check := range f.checks {
-		if err := check(ctx, tx); err != nil {
+		if err := check(ctx, s); err != nil {
 			return err
 		}
 	}
 	if f.write != nil {
-		if err := f.write(ctx, tx); err != nil {
+		if err := f.write(ctx, s); err != nil {
 			return err
 		}
 	}
-	if err := writes.Sequence(ctx, tx, e.factRepos(), f.facts...); err != nil {
+	if err := writes.Sequence(ctx, e.factRepos(s), f.facts...); err != nil {
 		return err
 	}
-	for _, s := range f.steps {
-		if s.write != nil {
-			if err := s.write(ctx, tx); err != nil {
+	for _, st := range f.steps {
+		if st.write != nil {
+			if err := st.write(ctx, s); err != nil {
 				return err
 			}
 		}
-		if err := writes.Sequence(ctx, tx, e.factRepos(), s.facts...); err != nil {
+		if err := writes.Sequence(ctx, e.factRepos(s), st.facts...); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// factRepos 是 kernel 落库面的注入形态（engine 双 repo 句柄直装）。
-func (e *Engine) factRepos() writes.Repos {
-	return writes.Repos{Outbox: e.outbox, Audits: e.audits}
+// factRepos 是 kernel 落库面的注入形态（tx 作用域 Stores 直取双面）。
+func (e *Engine) factRepos(s transact.Stores) writes.Repos {
+	return writes.Repos{Outbox: s.Outbox, Audits: s.Audits}
 }
 
 // emitObservation 是观测事实的 best-effort 发射面（kernel Emit 的便捷
@@ -173,7 +172,7 @@ func (e *Engine) factRepos() writes.Repos {
 // 备份节拍等自治观测动作无操作者动词可审计。team 是资源轴归属 Team
 // （"" = 平台级事件）。
 func (e *Engine) emitObservation(ctx context.Context, team, name, aggregate, id string, payload []byte) error {
-	return writes.Emit(ctx, e.db.Runner(), e.factRepos(), writes.FactRow{
+	return writes.Emit(ctx, writes.Repos{Outbox: e.repos.Outbox, Audits: e.repos.Audits}, writes.FactRow{
 		Name: name, Aggregate: aggregate, ID: id,
 		Payload: payload, TeamID: team,
 		StreamOnly: true, // 观测事实：仅流面（best-effort，无事务伴生）
@@ -184,20 +183,20 @@ func (e *Engine) emitObservation(ctx context.Context, team, name, aggregate, id 
 
 // transit 是 Deployment 状态迁移四件一的类型化前门（caller-tx：Submit
 // 受理序与 predeploy 游标推进组合进更大事务；部署记录无 tombstone）。
-func (e *Engine) transit(ctx context.Context, tx *sql.Tx, d *deployment.Deployment, from []deployment.State, to deployment.State, mut func(*deployment.Deployment)) error {
+func (e *Engine) transit(ctx context.Context, s transact.Stores, d *deployment.Deployment, from []deployment.State, to deployment.State, mut func(*deployment.Deployment)) error {
 	var fresh *deployment.Deployment
-	return e.commitTransition(ctx, tx, transitionFact{
-		move: func(ctx context.Context, tx *sql.Tx) (string, bool, error) {
-			if err := e.deployments.Transit(ctx, tx, d.ID, from, to, mut); err != nil {
+	return e.commitTransition(ctx, s, transitionFact{
+		move: func(ctx context.Context, s transact.Stores) (string, bool, error) {
+			if err := s.Deployments.Transit(ctx, d.ID, from, to, mut); err != nil {
 				return "", false, err
 			}
 			var err error
-			if fresh, err = e.deployments.Get(ctx, tx, d.ID); err != nil {
+			if fresh, err = s.Deployments.Get(ctx, d.ID); err != nil {
 				return "", false, err
 			}
 			return string(fresh.State), fresh.State == to && depStateIn(from, to), nil
 		},
-		fact: func(ctx context.Context, tx *sql.Tx, freshState string, inPlace bool) writes.FactRow {
+		fact: func(ctx context.Context, s transact.Stores, freshState string, inPlace bool) writes.FactRow {
 			// 审计 AfterFP（C5）：回放收口会把 to_revision 改写为实际运行的
 			// 回放目标（终态事实修正）——该改写随审计指纹带出，消除"行上
 			// 改了、审计看不见"的弯折。
@@ -217,7 +216,7 @@ func (e *Engine) transit(ctx context.Context, tx *sql.Tx, d *deployment.Deployme
 			}
 			row.Name = eventStateName(fresh.State)
 			row.Payload = deploymentEventPayloadJSON(fresh)
-			row.TeamID = e.eventTeamOfApp(ctx, tx, fresh.AppID)
+			row.TeamID = e.eventTeamOfApp(ctx, s, fresh.AppID)
 			return row
 		},
 	})
@@ -237,12 +236,12 @@ func depStateIn(set []deployment.State, s deployment.State) bool {
 // 刷新后的行（drive 循环据此链式推进）。
 func (e *Engine) transitAndReload(ctx context.Context, d *deployment.Deployment, from []deployment.State, to deployment.State, mut func(*deployment.Deployment)) (*deployment.Deployment, error) {
 	var fresh *deployment.Deployment
-	err := e.db.Tx(ctx, func(tx *sql.Tx) error {
-		if err := e.transit(ctx, tx, d, from, to, mut); err != nil {
+	err := e.tx.Do(ctx, func(s transact.Stores) error {
+		if err := e.transit(ctx, s, d, from, to, mut); err != nil {
 			return err
 		}
 		var err error
-		fresh, err = e.deployments.Get(ctx, tx, d.ID)
+		fresh, err = s.Deployments.Get(ctx, d.ID)
 		return err
 	})
 	if err != nil {
@@ -253,21 +252,21 @@ func (e *Engine) transitAndReload(ctx context.Context, d *deployment.Deployment,
 
 // transitRunTx 是 Run 状态迁移四件一（caller-tx 形态；原地回写调用方行；
 // 行不删）。
-func (e *Engine) transitRunTx(ctx context.Context, tx *sql.Tx, m *run.Run, from []run.State, to run.State, mut func(*run.Run)) error {
+func (e *Engine) transitRunTx(ctx context.Context, s transact.Stores, m *run.Run, from []run.State, to run.State, mut func(*run.Run)) error {
 	var fresh *run.Run
-	return e.commitTransition(ctx, tx, transitionFact{
-		move: func(ctx context.Context, tx *sql.Tx) (string, bool, error) {
-			if err := e.runs.Transit(ctx, tx, m.ID, from, to, mut); err != nil {
+	return e.commitTransition(ctx, s, transitionFact{
+		move: func(ctx context.Context, s transact.Stores) (string, bool, error) {
+			if err := s.Runs.Transit(ctx, m.ID, from, to, mut); err != nil {
 				return "", false, err
 			}
 			var err error
-			if fresh, err = e.runs.Get(ctx, tx, m.ID); err != nil {
+			if fresh, err = s.Runs.Get(ctx, m.ID); err != nil {
 				return "", false, err
 			}
 			*m = *fresh
 			return string(fresh.State), fresh.State == to && runStateIn(from, to), nil
 		},
-		fact: func(ctx context.Context, tx *sql.Tx, freshState string, inPlace bool) writes.FactRow {
+		fact: func(ctx context.Context, s transact.Stores, freshState string, inPlace bool) writes.FactRow {
 			row := writes.FactRow{
 				Aggregate: "run", ID: m.ID,
 				Action: "run.transit", Resource: "run/" + m.ID, AfterFP: freshState,
@@ -280,7 +279,7 @@ func (e *Engine) transitRunTx(ctx context.Context, tx *sql.Tx, m *run.Run, from 
 			}
 			row.Name = eventRunState(fresh.State)
 			row.Payload = runEventPayloadJSON(fresh)
-			row.TeamID = e.eventTeamOfProject(ctx, tx, fresh.ProjectID)
+			row.TeamID = e.eventTeamOfProject(ctx, s, fresh.ProjectID)
 			return row
 		},
 	})
@@ -298,27 +297,27 @@ func runStateIn(set []run.State, s run.State) bool {
 
 // transitRunFour 是 Run 状态迁移四件一（自开事务；原地回写调用方行）。
 func (e *Engine) transitRunFour(ctx context.Context, m *run.Run, from []run.State, to run.State, mut func(*run.Run)) error {
-	return e.db.Tx(ctx, func(tx *sql.Tx) error {
-		return e.transitRunTx(ctx, tx, m, from, to, mut)
+	return e.tx.Do(ctx, func(s transact.Stores) error {
+		return e.transitRunTx(ctx, s, m, from, to, mut)
 	})
 }
 
 // transitBuild 是 Build 的四件一（自开事务；终态触发日志缓冲回收）。
 func (e *Engine) transitBuild(ctx context.Context, b *build.Build, from []build.State, to build.State, mut func(*build.Build)) (*build.Build, error) {
 	var fresh *build.Build
-	err := e.db.Tx(ctx, func(tx *sql.Tx) error {
-		return e.commitTransition(ctx, tx, transitionFact{
-			move: func(ctx context.Context, tx *sql.Tx) (string, bool, error) {
-				if err := e.builds.Transit(ctx, tx, b.ID, from, to, mut); err != nil {
+	err := e.tx.Do(ctx, func(s transact.Stores) error {
+		return e.commitTransition(ctx, s, transitionFact{
+			move: func(ctx context.Context, s transact.Stores) (string, bool, error) {
+				if err := s.Builds.Transit(ctx, b.ID, from, to, mut); err != nil {
 					return "", false, err
 				}
 				var err error
-				if fresh, err = e.builds.Get(ctx, tx, b.ID); err != nil {
+				if fresh, err = s.Builds.Get(ctx, b.ID); err != nil {
 					return "", false, err
 				}
 				return string(fresh.State), fresh.State == to && buildStateIn(from, to), nil
 			},
-			fact: func(ctx context.Context, tx *sql.Tx, freshState string, inPlace bool) writes.FactRow {
+			fact: func(ctx context.Context, s transact.Stores, freshState string, inPlace bool) writes.FactRow {
 				row := writes.FactRow{
 					Aggregate: "build", ID: b.ID,
 					Action: "build.transit", Resource: "build/" + b.ID, AfterFP: freshState,
@@ -331,7 +330,7 @@ func (e *Engine) transitBuild(ctx context.Context, b *build.Build, from []build.
 				}
 				row.Name = eventBuildState(fresh.State)
 				row.Payload = buildEventPayloadJSON(fresh)
-				row.TeamID = e.eventTeamOfApp(ctx, tx, fresh.AppID)
+				row.TeamID = e.eventTeamOfApp(ctx, s, fresh.AppID)
 				return row
 			},
 		})
@@ -373,15 +372,15 @@ type taskTransitOpts struct {
 // transitTaskTx 是 Task 状态迁移四件一（caller-tx 形态；原地回写调用方
 // 行）。审计强制落行（D4 裁决，2026-10-03：收口前该域拷贝注释承诺审计、
 // 代码未落——五份拷贝漂移的实锤之一；架构 §6"一切写操作留痕"补齐）。
-func (e *Engine) transitTaskTx(ctx context.Context, tx *sql.Tx, t *task.Task, from []task.State, to task.State, mut func(*task.Task), opts taskTransitOpts) error {
+func (e *Engine) transitTaskTx(ctx context.Context, s transact.Stores, t *task.Task, from []task.State, to task.State, mut func(*task.Task), opts taskTransitOpts) error {
 	var fresh *task.Task
-	return e.commitTransition(ctx, tx, transitionFact{
-		move: func(ctx context.Context, tx *sql.Tx) (string, bool, error) {
-			if err := e.tasks.Transit(ctx, tx, t.ID, from, to, mut); err != nil {
+	return e.commitTransition(ctx, s, transitionFact{
+		move: func(ctx context.Context, s transact.Stores) (string, bool, error) {
+			if err := s.Tasks.Transit(ctx, t.ID, from, to, mut); err != nil {
 				return "", false, err
 			}
 			var err error
-			if fresh, err = e.tasks.Get(ctx, tx, t.ID); err != nil {
+			if fresh, err = s.Tasks.Get(ctx, t.ID); err != nil {
 				return "", false, err
 			}
 			*t = *fresh
@@ -391,7 +390,7 @@ func (e *Engine) transitTaskTx(ctx context.Context, tx *sql.Tx, t *task.Task, fr
 			}
 			return string(fresh.State), inPlace, nil
 		},
-		fact: func(ctx context.Context, tx *sql.Tx, freshState string, inPlace bool) writes.FactRow {
+		fact: func(ctx context.Context, s transact.Stores, freshState string, inPlace bool) writes.FactRow {
 			action := opts.auditAction
 			if action == "" {
 				action = "task.transit"
@@ -421,7 +420,7 @@ func (e *Engine) transitTaskTx(ctx context.Context, tx *sql.Tx, t *task.Task, fr
 			}
 			row.Name = name
 			row.Payload = taskEventPayloadJSON(fresh, opts.reason)
-			row.TeamID = e.eventTeamOfProject(ctx, tx, fresh.ProjectID)
+			row.TeamID = e.eventTeamOfProject(ctx, s, fresh.ProjectID)
 			return row
 		},
 	})
@@ -439,7 +438,7 @@ func taskStateIn(set []task.State, s task.State) bool {
 
 // transitTaskFour 是 Task 状态迁移四件一（自开事务；原地回写调用方行）。
 func (e *Engine) transitTaskFour(ctx context.Context, t *task.Task, from []task.State, to task.State, mut func(*task.Task)) error {
-	return e.db.Tx(ctx, func(tx *sql.Tx) error {
-		return e.transitTaskTx(ctx, tx, t, from, to, mut, taskTransitOpts{})
+	return e.tx.Do(ctx, func(s transact.Stores) error {
+		return e.transitTaskTx(ctx, s, t, from, to, mut, taskTransitOpts{})
 	})
 }

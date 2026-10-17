@@ -45,12 +45,12 @@ func insertTask(t *testing.T, ctx context.Context, db *persistence.DB, id string
 func TestRunCreateAndListByTask(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	runs := runrepo.New(clock)
+	runs := runrepo.New(clock, db.Runner())
 
 	// 同 Task 落三行（ID 缺省由 task-r<seq> 派生）+ 异项目一行。
 	mk := func(taskID, projectID string) *domainrun.Run {
 		m := &domainrun.Run{TaskID: taskID, ProjectID: projectID, State: domainrun.StatePending}
-		require.NoError(t, runs.Create(ctx, db.Runner(), m))
+		require.NoError(t, runs.Create(ctx, m))
 		return m
 	}
 	r1 := mk("task-a", projX)
@@ -67,32 +67,32 @@ func TestRunCreateAndListByTask(t *testing.T) {
 	assert.Equal(t, r1.CreatedAt, r1.UpdatedAt)
 
 	// 新→旧：seq DESC。
-	page, err := runs.ListByTask(ctx, db.Runner(), "task-a", 0, 50)
+	page, err := runs.ListByTask(ctx, "task-a", 0, 50)
 	require.NoError(t, err)
 	require.Len(t, page, 3)
 	assert.Equal(t, r3.ID, page[0].ID)
 	assert.Equal(t, r1.ID, page[2].ID)
 
 	// after 游标：只回 seq 严格小于游标的行。
-	page, err = runs.ListByTask(ctx, db.Runner(), "task-a", r2.Seq, 50)
+	page, err = runs.ListByTask(ctx, "task-a", r2.Seq, 50)
 	require.NoError(t, err)
 	require.Len(t, page, 1)
 	assert.Equal(t, r1.ID, page[0].ID)
 
 	// 游标越过最旧行 → 空页。
-	page, err = runs.ListByTask(ctx, db.Runner(), "task-a", 1, 50)
+	page, err = runs.ListByTask(ctx, "task-a", 1, 50)
 	require.NoError(t, err)
 	assert.Empty(t, page)
 
 	// limit 钳位：<=0 或 >200 回落缺省 50（三行全回，小夹具不截断）。
 	for _, limit := range []int{0, -7, 201} {
-		page, err = runs.ListByTask(ctx, db.Runner(), "task-a", 0, limit)
+		page, err = runs.ListByTask(ctx, "task-a", 0, limit)
 		require.NoError(t, err)
 		assert.Len(t, page, 3, "limit %d clamps into range and returns all rows", limit)
 	}
 
 	// ListByProject：runs 行自带冗余 project_id，项目隔离不二跳。
-	page, err = runs.ListByProject(ctx, db.Runner(), projY, 0, 50)
+	page, err = runs.ListByProject(ctx, projY, 0, 50)
 	require.NoError(t, err)
 	require.Len(t, page, 1)
 	assert.Equal(t, "task-b-r4", page[0].ID)
@@ -102,17 +102,17 @@ func TestRunCreateAndListByTask(t *testing.T) {
 func TestRunTransitCASStateMachine(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	runs := runrepo.New(clock)
+	runs := runrepo.New(clock, db.Runner())
 
 	m := &domainrun.Run{TaskID: "task-a", ProjectID: projX, State: domainrun.StatePending}
-	require.NoError(t, runs.Create(ctx, db.Runner(), m))
+	require.NoError(t, runs.Create(ctx, m))
 
 	// 缺行 → ErrNotFound。
-	err := runs.Transit(ctx, db.Runner(), "missing-id", domainrun.ActiveStates, domainrun.StateRunning, nil)
+	err := runs.Transit(ctx, "missing-id", domainrun.ActiveStates, domainrun.StateRunning, nil)
 	assert.ErrorIs(t, err, state.ErrNotFound)
 
 	// 前置不符 → ErrConflict，文案含 want one of（CAS 报错的消费面锚）。
-	err = runs.Transit(ctx, db.Runner(), m.ID, []domainrun.State{domainrun.StateStopping}, domainrun.StateRunning, nil)
+	err = runs.Transit(ctx, m.ID, []domainrun.State{domainrun.StateStopping}, domainrun.StateRunning, nil)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, state.ErrConflict)
 	assert.Contains(t, err.Error(), "want one of")
@@ -121,8 +121,8 @@ func TestRunTransitCASStateMachine(t *testing.T) {
 
 	// pending → running：StartedAt 回填（UpdatedAt 同时刻），FinishedAt 仍空。
 	clock.Advance(10e9)
-	require.NoError(t, runs.Transit(ctx, db.Runner(), m.ID, domainrun.ActiveStates, domainrun.StateRunning, nil))
-	got, err := runs.Get(ctx, db.Runner(), m.ID)
+	require.NoError(t, runs.Transit(ctx, m.ID, domainrun.ActiveStates, domainrun.StateRunning, nil))
+	got, err := runs.Get(ctx, m.ID)
 	require.NoError(t, err)
 	assert.Equal(t, domainrun.StateRunning, got.State)
 	assert.Equal(t, state.FormatTime(clock.Now()), got.StartedAt)
@@ -131,12 +131,12 @@ func TestRunTransitCASStateMachine(t *testing.T) {
 	// running → stopping：mut 落停止起因 + 收口兜底 deadline（ADR-0018 覆写面）。
 	clock.Advance(10e9)
 	cutoff := "2026-01-01T00:05:00Z"
-	require.NoError(t, runs.Transit(ctx, db.Runner(), m.ID, []domainrun.State{domainrun.StateRunning},
+	require.NoError(t, runs.Transit(ctx, m.ID, []domainrun.State{domainrun.StateRunning},
 		domainrun.StateStopping, func(cur *domainrun.Run) {
 			cur.StopReason = domainrun.ReasonStoppedByUser
 			cur.Deadline = cutoff
 		}))
-	got, err = runs.Get(ctx, db.Runner(), m.ID)
+	got, err = runs.Get(ctx, m.ID)
 	require.NoError(t, err)
 	assert.Equal(t, domainrun.StateStopping, got.State)
 	assert.Equal(t, domainrun.ReasonStoppedByUser, got.StopReason)
@@ -144,12 +144,12 @@ func TestRunTransitCASStateMachine(t *testing.T) {
 
 	// stopping → stopped：终态回填 FinishedAt，mut 落退出码（NULL → 值的扫描面）。
 	clock.Advance(10e9)
-	require.NoError(t, runs.Transit(ctx, db.Runner(), m.ID, []domainrun.State{domainrun.StateStopping},
+	require.NoError(t, runs.Transit(ctx, m.ID, []domainrun.State{domainrun.StateStopping},
 		domainrun.StateStopped, func(cur *domainrun.Run) {
 			code := 143
 			cur.ExitCode = &code
 		}))
-	got, err = runs.Get(ctx, db.Runner(), m.ID)
+	got, err = runs.Get(ctx, m.ID)
 	require.NoError(t, err)
 	assert.Equal(t, domainrun.StateStopped, got.State)
 	assert.Equal(t, state.FormatTime(clock.Now()), got.FinishedAt)
@@ -159,10 +159,10 @@ func TestRunTransitCASStateMachine(t *testing.T) {
 	finishedAt := got.FinishedAt
 
 	// 终态不可覆写：Terminal 后再 Transit 即 Conflict，行面冻结。
-	err = runs.Transit(ctx, db.Runner(), m.ID, domainrun.ActiveStates, domainrun.StateFailed, nil)
+	err = runs.Transit(ctx, m.ID, domainrun.ActiveStates, domainrun.StateFailed, nil)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, state.ErrConflict, "a terminal run must refuse further transitions")
-	got, err = runs.Get(ctx, db.Runner(), m.ID)
+	got, err = runs.Get(ctx, m.ID)
 	require.NoError(t, err)
 	assert.Equal(t, domainrun.StateStopped, got.State)
 	assert.Equal(t, finishedAt, got.FinishedAt, "terminal finished_at must not be overwritten")
@@ -170,12 +170,12 @@ func TestRunTransitCASStateMachine(t *testing.T) {
 	// 第二条腿：ActiveStates 直达 stopping（过量排空形态）→ failed 终态
 	// （失败起因）也回填 FinishedAt；exit_code 缺省保持 nil（未观测）。
 	n := &domainrun.Run{TaskID: "task-a", ProjectID: projX, State: domainrun.StatePending}
-	require.NoError(t, runs.Create(ctx, db.Runner(), n))
-	require.NoError(t, runs.Transit(ctx, db.Runner(), n.ID, domainrun.ActiveStates, domainrun.StateStopping,
+	require.NoError(t, runs.Create(ctx, n))
+	require.NoError(t, runs.Transit(ctx, n.ID, domainrun.ActiveStates, domainrun.StateStopping,
 		func(cur *domainrun.Run) { cur.StopReason = domainrun.ReasonPlatformDrained }))
-	require.NoError(t, runs.Transit(ctx, db.Runner(), n.ID, []domainrun.State{domainrun.StateStopping},
+	require.NoError(t, runs.Transit(ctx, n.ID, []domainrun.State{domainrun.StateStopping},
 		domainrun.StateFailed, func(cur *domainrun.Run) { cur.StopReason = domainrun.ReasonFailed }))
-	got, err = runs.Get(ctx, db.Runner(), n.ID)
+	got, err = runs.Get(ctx, n.ID)
 	require.NoError(t, err)
 	assert.Equal(t, domainrun.StateFailed, got.State)
 	assert.Equal(t, domainrun.ReasonFailed, got.StopReason)
@@ -190,7 +190,7 @@ func TestRunTransitCASStateMachine(t *testing.T) {
 func TestRunDrivingReapMatchesTaskTerminalWords(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	runs := runrepo.New(clock)
+	runs := runrepo.New(clock, db.Runner())
 
 	// 全六态 Task 各一行 + 名下一行 pending Run。
 	allStates := []task.State{
@@ -200,7 +200,7 @@ func TestRunDrivingReapMatchesTaskTerminalWords(t *testing.T) {
 	for i, st := range allStates {
 		id := "task-" + string(st)
 		insertTask(t, ctx, db, id, int64(i+1), st)
-		require.NoError(t, runs.Create(ctx, db.Runner(), &domainrun.Run{
+		require.NoError(t, runs.Create(ctx, &domainrun.Run{
 			TaskID: id, ProjectID: projX, State: domainrun.StatePending,
 		}))
 	}
@@ -221,12 +221,12 @@ func TestRunDrivingReapMatchesTaskTerminalWords(t *testing.T) {
 	}
 
 	// driving 集 = pending/running/stopping 全量六行（词表无关）。
-	driving, err := runs.ListDriving(ctx, db.Runner())
+	driving, err := runs.ListDriving(ctx)
 	require.NoError(t, err)
 	assert.Len(t, driving, 6)
 
 	// 收口面只捞终态 Task 名下 driving 行。
-	reap, err := runs.ListDrivingOfTerminalTasks(ctx, db.Runner())
+	reap, err := runs.ListDrivingOfTerminalTasks(ctx)
 	require.NoError(t, err)
 	require.Len(t, reap, 4)
 	for _, m := range reap {

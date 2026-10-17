@@ -33,6 +33,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/application/idem"
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/assembly"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	specir "github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
@@ -121,7 +122,8 @@ func newHarness(t testing.TB, autostart bool, mutators ...EngineOption) *Harness
 	for _, m := range mutators {
 		m(&opts)
 	}
-	eng := engine.New(engine.Deps{DB: db, Repos: assembly.NewEngineRepos(db), Runtime: rt, Cipher: cipher,
+	bind := assembly.NewBinder(db)
+	eng := engine.New(engine.Deps{DB: db, Stores: bind(db.Runner()), Tx: transact.NewTx(db, bind), Runtime: rt, Cipher: cipher,
 		Builders: map[string]capability.Builder{
 			specir.BuilderDockerfile: fb,
 			specir.BuilderRailpack:   fb,
@@ -140,7 +142,7 @@ func newHarness(t testing.TB, autostart bool, mutators ...EngineOption) *Harness
 	//（policy + authn 拦截器）→ fail-closed 断言。夹具不经 lynx，但执法
 	// 链必须与 NewGRPCServer 同构，否则测试面与生产面漂移。repo 集经
 	// assembly 组合根构造器注入（与生产同源，P1b C 批）。
-	boot, err := authn.EnsureBootstrapToken(ctx, db, assembly.NewSeedRepos(db), dataRoot, assembly.ScopeResources(), log)
+	boot, err := authn.EnsureBootstrapToken(ctx, db, transact.NewTx(db, bind), assembly.NewSeedRepos(db), dataRoot, assembly.ScopeResources(), log)
 	if err != nil {
 		t.Fatalf("apitest: bootstrap: %v", err)
 	}
@@ -149,15 +151,15 @@ func newHarness(t testing.TB, autostart bool, mutators ...EngineOption) *Harness
 		t.Fatalf("apitest: policy set: %v", err)
 	}
 	authenticator := authn.NewAuthenticator(db, assembly.NewAuthnRepos(db), policySet, assembly.ScopeResources(), log)
-	enforcer := idem.NewEnforcer(db, idemrepo.New(db.Clock()), log)
+	enforcer := idem.NewEnforcer(db, idemrepo.New(db.Clock(), db.Runner()), log)
 	limiter := governance.NewRateLimiter(db.Clock(), governance.DefaultRateWindow, governance.DefaultRateBudget)
-	freeze := governance.NewFreezeGuard(db, freezerepo.New(db.Clock()), assembly.NewAnchor(db.Clock()), log)
+	freeze := governance.NewFreezeGuard(db, freezerepo.New(db.Clock(), db.Runner()), assembly.NewAnchor(db), log)
 	unary, stream, err := assembly.NewInterceptors(log, policySet, authenticator, enforcer, limiter, freeze)
 	if err != nil {
 		t.Fatalf("apitest: interceptors: %v", err)
 	}
 
-	services := fleetlygrpc.NewServices(assembly.NewAPIDeps(db, eng, cipher, rt, dataRoot, assembly.ScopeResources(), log))
+	services := fleetlygrpc.NewServices(assembly.NewAPIDeps(db, bind, eng, cipher, rt, dataRoot, assembly.ScopeResources(), log))
 	// 传输层选项与生产服务器同源（收包限额等，assembly.GRPCServerOptions
 	// 单一真源）——夹具缺同款限额会让大请求面（如 webhook payload）的
 	// 测试结果与生产漂移。

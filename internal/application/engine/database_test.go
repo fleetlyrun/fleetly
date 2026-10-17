@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
@@ -41,20 +42,20 @@ func newDatabaseFixture(t *testing.T, engine, connectURL string) (*Engine, *fake
 	rt := newFakeRuntime()
 	cipher, err := keyring.LoadCipher(t.TempDir())
 	require.NoError(t, err)
-	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Cipher: cipher, Logger: discardLogger()}, Options{})
+	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Cipher: cipher, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
 
-	require.NoError(t, projectrepo.New(clock).Create(ctx, db.Runner(), &project.Project{
+	require.NoError(t, projectrepo.New(clock, e.db.Runner()).Create(ctx, &project.Project{
 		ID: tProjectID, Name: "shop", TeamID: "default",
 	}))
-	require.NoError(t, networkrepo.New(clock).Create(ctx, db.Runner(), &network.Network{
+	require.NoError(t, networkrepo.New(clock, e.db.Runner()).Create(ctx, &network.Network{
 		ID: "01JD0NET000000000000000001", ProjectID: tProjectID, Name: "default",
 	}))
 
 	secName := DBCredentialSecretName(tDatabaseName)
 	ct, err := cipher.Seal([]byte(connectURL))
 	require.NoError(t, err)
-	require.NoError(t, secretrepo.New(clock).Upsert(ctx, db.Runner(), &secret.Secret{
+	require.NoError(t, secretrepo.New(clock, e.db.Runner()).Upsert(ctx, &secret.Secret{
 		ID: "01JD0SEC000000000000000001", ProjectID: tProjectID, Name: secName,
 		Ciphertext: ct, Fingerprint: material.Fingerprint([]byte(connectURL)),
 	}))
@@ -64,7 +65,7 @@ func newDatabaseFixture(t *testing.T, engine, connectURL string) (*Engine, *fake
 		Engine: engine, CredentialsRef: secName,
 		BackupIntervalSecs: 86400, BackupRetentionSecs: 604800,
 	}
-	require.NoError(t, dbrepo.New(clock).Create(ctx, db.Runner(), row))
+	require.NoError(t, dbrepo.New(clock, e.db.Runner()).Create(ctx, row))
 	return e, rt, row
 }
 
@@ -108,7 +109,7 @@ func TestDatabaseReconcileConverges(t *testing.T) {
 
 	// 行状态推进：gen=1 落行（重读行——本地结构不随环推进）；观测
 	// running 后状态翻 running。
-	fresh, err := e.databases.Get(ctx, e.db.Runner(), tDatabaseID)
+	fresh, err := e.repos.Databases.Get(ctx, tDatabaseID)
 	require.NoError(t, err)
 	assert.Equal(t, uint64(1), fresh.Generation)
 	assert.NotEmpty(t, fresh.SpecFingerprint, "spec fingerprint persisted alongside the generation")
@@ -118,7 +119,7 @@ func TestDatabaseReconcileConverges(t *testing.T) {
 	}
 	e.obs.mu.Unlock()
 	e.databaseStep(ctx)
-	fresh, err = e.databases.Get(ctx, e.db.Runner(), tDatabaseID)
+	fresh, err = e.repos.Databases.Get(ctx, tDatabaseID)
 	require.NoError(t, err)
 	assert.Equal(t, database.StatusRunning, fresh.Status)
 }
@@ -139,7 +140,7 @@ func TestDatabaseGenerationStableAcrossTicks(t *testing.T) {
 	assert.Equal(t, capability.Generation(1), calls[0].Gen, "unchanged projection stays on its generation")
 
 	// 新项目网 → 网集变化 → 短路失效，恰好一次重下发（gen 推进），随后稳定。
-	require.NoError(t, networkrepo.New(e.db.Clock()).Create(ctx, e.db.Runner(), &network.Network{
+	require.NoError(t, networkrepo.New(e.db.Clock(), e.db.Runner()).Create(ctx, &network.Network{
 		ID: "01JD0NET000000000000000002", ProjectID: tProjectID, Name: "internal",
 	}))
 	for i := 0; i < 3; i++ {
@@ -169,7 +170,7 @@ func TestDatabaseShortCircuitKeepsStatusAdvancing(t *testing.T) {
 	e.obs.mu.Unlock()
 	e.databaseStep(ctx)
 	assert.Len(t, rt.calls(), 1, "the short-circuited tick must not re-Ensure")
-	fresh, err := e.databases.Get(ctx, e.db.Runner(), tDatabaseID)
+	fresh, err := e.repos.Databases.Get(ctx, tDatabaseID)
 	require.NoError(t, err)
 	assert.Equal(t, database.StatusRunning, fresh.Status, "status must advance on the skipped tick")
 
@@ -177,7 +178,7 @@ func TestDatabaseShortCircuitKeepsStatusAdvancing(t *testing.T) {
 	cipher := e.cipher
 	ct, err := cipher.Seal([]byte("postgresql://fleetly:newpw@db-01jd0db000000000000000000:5432/fleetly"))
 	require.NoError(t, err)
-	require.NoError(t, secretrepo.New(e.db.Clock()).Upsert(ctx, e.db.Runner(), &secret.Secret{
+	require.NoError(t, secretrepo.New(e.db.Clock(), e.db.Runner()).Upsert(ctx, &secret.Secret{
 		ID: "01JD0SEC000000000000000001", ProjectID: tProjectID,
 		Name: DBCredentialSecretName(tDatabaseName), Ciphertext: ct,
 		Fingerprint: material.Fingerprint([]byte("postgresql://fleetly:newpw@db-01jd0db000000000000000000:5432/fleetly")),
@@ -199,7 +200,7 @@ func TestDatabaseCredentialFailureClearsSignature(t *testing.T) {
 	require.Len(t, rt.calls(), 1)
 
 	// 软删凭证 → 短路拍预读失败 → 不 Ensure。
-	require.NoError(t, secretrepo.New(e.db.Clock()).SoftDelete(ctx, e.db.Runner(), tProjectID, row.CredentialsRef))
+	require.NoError(t, secretrepo.New(e.db.Clock(), e.db.Runner()).SoftDelete(ctx, tProjectID, row.CredentialsRef))
 	e.databaseStep(ctx)
 	assert.Len(t, rt.calls(), 1, "credential lookup failure must not reach Ensure")
 
@@ -207,7 +208,7 @@ func TestDatabaseCredentialFailureClearsSignature(t *testing.T) {
 	// ID（Upsert 走 GetByName 活跃行判定，旧 ID 已占主键）。
 	ct, err := e.cipher.Seal([]byte(url))
 	require.NoError(t, err)
-	require.NoError(t, secretrepo.New(e.db.Clock()).Upsert(ctx, e.db.Runner(), &secret.Secret{
+	require.NoError(t, secretrepo.New(e.db.Clock(), e.db.Runner()).Upsert(ctx, &secret.Secret{
 		ID: "01JD0SEC0000000000000000R1", ProjectID: tProjectID,
 		Name: row.CredentialsRef, Ciphertext: ct, Fingerprint: material.Fingerprint([]byte(url)),
 	}))
@@ -254,12 +255,12 @@ func TestDatabasePgvectorTemplateRenders(t *testing.T) {
 func TestDatabaseCredentialMissingBlocksEnsure(t *testing.T) {
 	e, rt, row := newDatabaseFixture(t, "postgres", "postgresql://u:p@h:5432/d")
 	ctx := context.Background()
-	require.NoError(t, secretrepo.New(e.db.Clock()).SoftDelete(ctx, e.db.Runner(), tProjectID, row.CredentialsRef))
+	require.NoError(t, secretrepo.New(e.db.Clock(), e.db.Runner()).SoftDelete(ctx, tProjectID, row.CredentialsRef))
 
 	e.databaseStep(ctx)
 	assert.Empty(t, rt.calls(), "credential failure must not reach Ensure")
 
-	fresh, err := e.databases.Get(ctx, e.db.Runner(), tDatabaseID)
+	fresh, err := e.repos.Databases.Get(ctx, tDatabaseID)
 	require.NoError(t, err)
 	assert.Equal(t, uint64(0), fresh.Generation)
 	assert.Equal(t, database.StatusPending, fresh.Status)

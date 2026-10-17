@@ -14,7 +14,6 @@ package engine
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 
@@ -22,6 +21,7 @@ import (
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/revision"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
@@ -123,7 +123,7 @@ func (e *Engine) SubmitSpec(ctx context.Context, req SubmitSpecRequest) (*revisi
 	}
 	// App 行载入（Project 轴解析——SharedVariable 合成的装载锚）；行缺失/
 	// 存储故障原样上抛，api 层 mapStateError 兜 errcode。
-	appRow, err := e.apps.Get(ctx, e.db.Runner(), req.AppID)
+	appRow, err := e.repos.Apps.Get(ctx, req.AppID)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -135,7 +135,7 @@ func (e *Engine) SubmitSpec(ctx context.Context, req SubmitSpecRequest) (*revisi
 	case MergeNone:
 		// 直投不合并。
 	case MergeMaterial, MergeOverlay:
-		latest, lerr := e.revisions.Latest(ctx, e.db.Runner(), req.AppID)
+		latest, lerr := e.repos.Revisions.Latest(ctx, req.AppID)
 		if lerr == nil {
 			frozen := &specv1.AppSpec{}
 			if uerr := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(latest.Spec, frozen); uerr != nil {
@@ -158,7 +158,7 @@ func (e *Engine) SubmitSpec(ctx context.Context, req SubmitSpecRequest) (*revisi
 	// 3. 三级变量合成（自 api 层冻结位移植；顺序即合成律——Shared 底 <
 	// 源声明 env 中 < AppVariable 顶，不变式②）。装载失败上抛不吞
 	//（P0-7.1 fail-closed：DB 瞬断不得静默吞成空环境）。
-	if vars, verr := e.sharedVariables.ListActive(ctx, e.db.Runner(), appRow.ProjectID); verr != nil {
+	if vars, verr := e.repos.SharedVariables.ListActive(ctx, appRow.ProjectID); verr != nil {
 		return nil, nil, nil, verr
 	} else if len(vars) > 0 {
 		shared := make(map[string]string, len(vars))
@@ -167,7 +167,7 @@ func (e *Engine) SubmitSpec(ctx context.Context, req SubmitSpecRequest) (*revisi
 		}
 		spec.MergeSharedEnv(req.Spec, shared)
 	}
-	if vars, verr := e.appVariables.ListActive(ctx, e.db.Runner(), req.AppID); verr != nil {
+	if vars, verr := e.repos.AppVariables.ListActive(ctx, req.AppID); verr != nil {
 		return nil, nil, nil, verr
 	} else if len(vars) > 0 {
 		appVars := make(map[string]string, len(vars))
@@ -191,10 +191,10 @@ func (e *Engine) SubmitSpec(ctx context.Context, req SubmitSpecRequest) (*revisi
 		return nil, nil, nil, merr
 	}
 	var rev *revision.Revision
-	ferr := e.db.Tx(ctx, func(tx *sql.Tx) error {
-		return e.commitWrite(ctx, tx, writeFact{
-			checks: []func(ctx context.Context, tx *sql.Tx) error{func(ctx context.Context, tx *sql.Tx) error {
-				existing, derr := e.revisions.FindByDigest(ctx, tx, req.AppID, revision.Digest(body))
+	ferr := e.tx.Do(ctx, func(s transact.Stores) error {
+		return e.commitWrite(ctx, s, writeFact{
+			checks: []func(ctx context.Context, s transact.Stores) error{func(ctx context.Context, s transact.Stores) error {
+				existing, derr := s.Revisions.FindByDigest(ctx, req.AppID, revision.Digest(body))
 				if derr == nil {
 					rev = existing
 					return errContentReused // 复用即受理终态：零冻结零事实
@@ -204,13 +204,13 @@ func (e *Engine) SubmitSpec(ctx context.Context, req SubmitSpecRequest) (*revisi
 				}
 				return nil
 			}},
-			write: func(ctx context.Context, tx *sql.Tx) error {
-				seq, serr := e.revisions.NextSeq(ctx, tx, req.AppID)
+			write: func(ctx context.Context, s transact.Stores) error {
+				seq, serr := s.Revisions.NextSeq(ctx, req.AppID)
 				if serr != nil {
 					return serr
 				}
 				rev = &revision.Revision{AppID: req.AppID, Seq: seq, Spec: body, SourceText: req.SourceText}
-				return e.revisions.Create(ctx, tx, rev)
+				return s.Revisions.Create(ctx, rev)
 			},
 			facts: []func() writes.FactRow{
 				// 双真偏离（仅取证面）：Revision 冻结无流面孪生——材料面不是

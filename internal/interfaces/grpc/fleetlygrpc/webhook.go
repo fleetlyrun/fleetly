@@ -14,7 +14,6 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
-	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"os"
@@ -26,6 +25,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/application/composeintake"
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/hook"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
@@ -66,19 +66,19 @@ func (svc *HooksService) ReceiveWebhook(ctx context.Context, req *deliveryv1.Rec
 	if identity.TokenKind(token) != "hook" {
 		return nil, apperr.New("E_UNAUTHENTICATED", "invalid hook token").WithContext("reject", "token_kind")
 	}
-	h, err := svc.s.Hooks.GetByTokenSHA256(ctx, svc.s.DB.Runner(), identity.HashToken(token))
+	h, err := svc.s.Hooks.GetByTokenSHA256(ctx, identity.HashToken(token))
 	if err != nil {
 		// 不区分"行不存在"与"App 已删"——对发送方只呈现"凭证无效"。
 		return nil, apperr.New("E_UNAUTHENTICATED", "invalid hook token").WithContext("reject", "token_lookup")
 	}
 	// App 已删（Get 活跃行口径）与行不存在同形——对发送方只呈现"凭证无效"。
-	appRow, err := svc.s.Apps.Get(ctx, svc.s.DB.Runner(), h.AppID)
+	appRow, err := svc.s.Apps.Get(ctx, h.AppID)
 	if err != nil {
 		return nil, apperr.New("E_UNAUTHENTICATED", "invalid hook token").WithContext("reject", "app_lookup:"+h.AppID)
 	}
 	// 审计 Team 轴（ADR-0035 决策 6）：PUBLIC 面无调用方身份——按 App 归属
 	// Project 的 Team 标注（hook 触发的部署/冻结审计行归属资源 Team）。
-	if proj, perr := svc.s.Projects.Get(ctx, svc.s.DB.Runner(), appRow.ProjectID); perr == nil {
+	if proj, perr := svc.s.Projects.Get(ctx, appRow.ProjectID); perr == nil {
 		ctx = audit.WithTeam(ctx, proj.TeamID)
 	}
 
@@ -178,8 +178,8 @@ func (svc *HooksService) ingestGitMaterial(ctx context.Context, appRow *app.App,
 		return "", nil, mapStateError(err, "hook")
 	}
 	err = svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, tx *sql.Tx) error {
-			_, err := svc.s.Hooks.RecordDelivery(ctx, tx, h.AppID, delivery)
+		write: func(ctx context.Context, st transact.Stores) error {
+			_, err := st.Hooks.RecordDelivery(ctx, h.AppID, delivery)
 			return err
 		},
 		facts: []func() writes.FactRow{
@@ -214,7 +214,7 @@ func (svc *HooksService) RefreshGitHook(ctx context.Context, req *deliveryv1.Ref
 	if err != nil {
 		return nil, err
 	}
-	h, err := svc.s.Hooks.Get(ctx, svc.s.DB.Runner(), req.GetAppId())
+	h, err := svc.s.Hooks.Get(ctx, req.GetAppId())
 	if err != nil {
 		return nil, mapStateError(err, "hook")
 	}

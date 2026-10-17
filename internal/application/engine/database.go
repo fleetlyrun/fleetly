@@ -74,7 +74,7 @@ func (e *Engine) KickDatabases() { e.databaseLoop.Kick() }
 // databaseStep 是 Database 收敛环的单次推进（单写者；逐行收敛，错误逐行
 // 记日志不阻断）。
 func (e *Engine) databaseStep(ctx context.Context) {
-	rows, err := e.databases.List(ctx, e.db.Runner())
+	rows, err := e.repos.Databases.List(ctx)
 	if err != nil {
 		e.log.Error("database step: list", "err", err)
 		return
@@ -140,7 +140,7 @@ func (e *Engine) reconcileDatabase(ctx context.Context, row *database.Database) 
 	}
 	// 凭证 Secret 行预读（不解密）：短路签名的材料面 + 下发段的解密输入
 	// 单源。读失败与既有材料失败路径同形（不 Ensure，载体保持现状）。
-	sec, err := e.secrets.GetByName(stepCtx, e.db.Runner(), row.ProjectID, row.CredentialsRef)
+	sec, err := e.repos.Secrets.GetByName(stepCtx, row.ProjectID, row.CredentialsRef)
 	if err != nil {
 		e.log.Error("database reconcile: resolve credentials", "database", row.ID,
 			"err", fmt.Errorf("lookup credential secret %q: %w", row.CredentialsRef, err))
@@ -176,7 +176,7 @@ func (e *Engine) reconcileDatabase(ctx context.Context, row *database.Database) 
 		e.log.Error("database reconcile: volume pinning merge", "database", row.ID, "err", err)
 		return
 	}
-	gen, err := e.databases.EnsureGeneration(stepCtx, e.db.Runner(), row.ID, managedFingerprint(ws))
+	gen, err := e.repos.Databases.EnsureGeneration(stepCtx, row.ID, managedFingerprint(ws))
 	if err != nil {
 		e.log.Error("database reconcile: generation", "database", row.ID, "err", err)
 		return
@@ -206,7 +206,7 @@ func (e *Engine) advanceDatabaseStatus(ctx context.Context, row *database.Databa
 	// database_test 以行 ID 注入观测即依赖此恒等）。
 	ev, seen := e.observationOf(row.ID)
 	if status, ok := dbStatusFromObservation(ev, gen); ok && seen && status != row.Status {
-		if err := e.databases.SetStatus(ctx, e.db.Runner(), row.ID, status); err != nil {
+		if err := e.repos.Databases.SetStatus(ctx, row.ID, status); err != nil {
 			e.log.Error("database reconcile: set status", "database", row.ID, "err", err)
 		}
 	}
@@ -274,12 +274,12 @@ func (e *Engine) databaseMaterials(ctx context.Context, row *database.Database, 
 // 其余错误上抛）。预创建的同名卷被复用（用户可借 CreateVolume 预先钉
 // 住节点——数据库收敛尊重既有 Placement）。
 func (e *Engine) ensureDatabaseVolume(ctx context.Context, row *database.Database) error {
-	if _, err := e.volumes.GetByName(ctx, e.db.Runner(), row.ProjectID, row.Name); err == nil {
+	if _, err := e.repos.Volumes.GetByName(ctx, row.ProjectID, row.Name); err == nil {
 		return nil
 	} else if !errors.Is(err, state.ErrNotFound) {
 		return err
 	}
-	return e.volumes.Create(ctx, e.db.Runner(), &volume.Volume{
+	return e.repos.Volumes.Create(ctx, &volume.Volume{
 		ProjectID: row.ProjectID, Name: row.Name,
 	})
 }
@@ -288,7 +288,7 @@ func (e *Engine) ensureDatabaseVolume(ctx context.Context, row *database.Databas
 // （数据库挂全部活跃项目网——受管 Proxy 同款语义、限本项目，ADR-0029
 // 决策 5；egress 事实供投影填 Workload.EgressNetworks，ADR-0052 决策 6）。
 func (e *Engine) projectNetworkFacts(ctx context.Context, projectID string) ([]string, map[string]bool) {
-	rows, err := e.networks.ListByProject(ctx, e.db.Runner(), projectID)
+	rows, err := e.repos.Networks.ListByProject(ctx, projectID)
 	if err != nil {
 		e.log.Error("database reconcile: list project networks", "project", projectID, "err", err)
 		return nil, nil
@@ -329,7 +329,7 @@ func databaseSpecFromRow(row *database.Database, tpl dbtemplate.Template) *specv
 // 后续事务落（先变更后留痕，ADR-0023 同款序）。单库删除与项目删除级联
 // 共用本口（级联语义见 ADR-0029 追记 2026-10-05）。
 func (e *Engine) TeardownDatabase(ctx context.Context, id string) error {
-	row, err := e.databases.Get(ctx, e.db.Runner(), id)
+	row, err := e.repos.Databases.Get(ctx, id)
 	if err != nil {
 		return err // ErrNotFound → API 404（对齐 TeardownApp 口径）
 	}

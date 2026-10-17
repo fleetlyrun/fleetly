@@ -17,16 +17,17 @@ import (
 // repo 是 domain route.Repo 的 SQLite 实现。
 type repo struct {
 	clock state.Clock
+	run   state.Runner
 }
 
 // New 构造 repo（直接返回接口——消费面只见 domain route.Repo）。
-func New(clock state.Clock) route.Repo { return &repo{clock: clock} }
+func New(clock state.Clock, run state.Runner) route.Repo { return &repo{clock: clock, run: run} }
 
 // Create 落一行；host+path 全局冲突（跨项目同 host 同为活跃行）返回
 // state.ErrAlreadyExists（安全批：host 命名空间是平台级资产，唯一索引
 // 已从项目内升级为全局——idx_routes_host_path）。
-func (r *repo) Create(ctx context.Context, run state.Runner, rt *route.Route) error {
-	seq, err := persistence.NextSeq(ctx, run, "routes")
+func (r *repo) Create(ctx context.Context, rt *route.Route) error {
+	seq, err := persistence.NextSeq(ctx, r.run, "routes")
 	if err != nil {
 		return err
 	}
@@ -36,7 +37,7 @@ func (r *repo) Create(ctx context.Context, run state.Runner, rt *route.Route) er
 	}
 	now := state.FormatTime(r.clock.Now())
 	rt.CreatedAt, rt.UpdatedAt = now, now
-	_, err = run.ExecContext(ctx, `
+	_, err = r.run.ExecContext(ctx, `
 		INSERT INTO routes (id, seq, project_id, host, path, app_id, process, port, protocol, tls_mode, created_at, updated_at, deleted_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '')`,
 		rt.ID, rt.Seq, rt.ProjectID, rt.Host, normalizePath(rt.Path), rt.AppID, rt.Process,
@@ -48,16 +49,16 @@ func (r *repo) Create(ctx context.Context, run state.Runner, rt *route.Route) er
 }
 
 // Get 按 ID 直读。
-func (r *repo) Get(ctx context.Context, run state.Runner, id string) (*route.Route, error) {
-	row := run.QueryRowContext(ctx, `
+func (r *repo) Get(ctx context.Context, id string) (*route.Route, error) {
+	row := r.run.QueryRowContext(ctx, `
 		SELECT id, seq, project_id, host, path, app_id, process, port, protocol, tls_mode, created_at, updated_at, deleted_at
 		FROM routes WHERE id = ?`, id)
 	return scanRoute(row.Scan)
 }
 
 // List 返回全部活跃 Route（Proxy 全量发布面；跨 Project）。
-func (r *repo) List(ctx context.Context, run state.Runner) ([]route.Route, error) {
-	rows, err := run.QueryContext(ctx, `
+func (r *repo) List(ctx context.Context) ([]route.Route, error) {
+	rows, err := r.run.QueryContext(ctx, `
 		SELECT id, seq, project_id, host, path, app_id, process, port, protocol, tls_mode, created_at, updated_at, deleted_at
 		FROM routes WHERE deleted_at = '' ORDER BY seq`)
 	if err != nil {
@@ -79,7 +80,7 @@ func (r *repo) List(ctx context.Context, run state.Runner) ([]route.Route, error
 // ——既有响应序不变）。projectID 过滤可选（过滤语义与既有内存过滤一致，
 // 下推 SQL 使游标分页与过滤叠加）；projectID 为空 = 全量分页。limit<=0
 // 或 >200 回落/钳制缺省 50。
-func (r *repo) ListPage(ctx context.Context, run state.Runner, projectID string, afterSeq int64, limit int) ([]route.Route, error) {
+func (r *repo) ListPage(ctx context.Context, projectID string, afterSeq int64, limit int) ([]route.Route, error) {
 	limit = persistence.ClampLimit(limit, defaultListLimit, maxListLimit)
 	q := `SELECT id, seq, project_id, host, path, app_id, process, port, protocol, tls_mode, created_at, updated_at, deleted_at
 		FROM routes WHERE deleted_at = ''`
@@ -94,7 +95,7 @@ func (r *repo) ListPage(ctx context.Context, run state.Runner, projectID string,
 	}
 	q += ` ORDER BY seq ASC LIMIT ?`
 	args = append(args, limit)
-	rows, err := run.QueryContext(ctx, q, args...)
+	rows, err := r.run.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -116,15 +117,15 @@ const (
 )
 
 // SoftDelete 落 tombstone（幂等）。
-func (r *repo) SoftDelete(ctx context.Context, run state.Runner, id string) error {
+func (r *repo) SoftDelete(ctx context.Context, id string) error {
 	now := state.FormatTime(r.clock.Now())
-	_, err := run.ExecContext(ctx, `
+	_, err := r.run.ExecContext(ctx, `
 		UPDATE routes SET deleted_at = ?, updated_at = ?
 		WHERE id = ? AND deleted_at = ''`, now, now, id)
 	if err != nil {
 		return err
 	}
-	if _, err := r.Get(ctx, run, id); err != nil {
+	if _, err := r.Get(ctx, id); err != nil {
 		return err
 	}
 	return nil

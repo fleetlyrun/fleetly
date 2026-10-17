@@ -32,7 +32,7 @@ func (c *countingRunner) ExecContext(ctx context.Context, q string, args ...any)
 func TestNodeListPagePagination(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	nodes := noderepo.New(clock)
+	nodes := noderepo.New(clock, db.Runner())
 
 	// 字典序与落序交错落三行。
 	rows := []*node.Node{
@@ -41,47 +41,47 @@ func TestNodeListPagePagination(t *testing.T) {
 		{PlatformID: "node-b", CarrierID: "carrier-b", Hostname: "b", Role: "worker"},
 	}
 	for _, n := range rows {
-		require.NoError(t, nodes.Upsert(ctx, db.Runner(), n))
+		require.NoError(t, nodes.Upsert(ctx, n))
 	}
 
 	// 升序首页截断（seq 锚定序 = 落序）。
-	page1, err := nodes.ListPage(ctx, db.Runner(), 0, 2)
+	page1, err := nodes.ListPage(ctx, 0, 2)
 	require.NoError(t, err)
 	require.Len(t, page1, 2)
 	assert.Equal(t, "node-c", page1[0].PlatformID)
 	assert.Equal(t, "node-a", page1[1].PlatformID)
 
 	// 游标跳过首页。
-	page2, err := nodes.ListPage(ctx, db.Runner(), page1[len(page1)-1].Seq, 2)
+	page2, err := nodes.ListPage(ctx, page1[len(page1)-1].Seq, 2)
 	require.NoError(t, err)
 	require.Len(t, page2, 1)
 	assert.Equal(t, "node-b", page2[0].PlatformID)
 
 	// 游标越过末条 → 空页。
-	page3, err := nodes.ListPage(ctx, db.Runner(), 999999, 2)
+	page3, err := nodes.ListPage(ctx, 999999, 2)
 	require.NoError(t, err)
 	assert.Empty(t, page3)
 
 	// limit 钳制：<=0 回落缺省 50（三行全回），>200 钳上界（不截断小夹具）。
 	for _, limit := range []int{0, -1, 300} {
-		got, err := nodes.ListPage(ctx, db.Runner(), 0, limit)
+		got, err := nodes.ListPage(ctx, 0, limit)
 		require.NoError(t, err)
 		assert.Len(t, got, 3, "limit %d clamps into range and returns all rows", limit)
 	}
 
 	// Upsert 刷新不换行（观测缓存语义）。
-	require.NoError(t, nodes.Upsert(ctx, db.Runner(), &node.Node{
+	require.NoError(t, nodes.Upsert(ctx, &node.Node{
 		PlatformID: "node-a", CarrierID: "carrier-a", Hostname: "a2", Role: "worker",
 	}))
-	fresh, err := nodes.ListPage(ctx, db.Runner(), 0, 50)
+	fresh, err := nodes.ListPage(ctx, 0, 50)
 	require.NoError(t, err)
 	assert.Len(t, fresh, 3, "upsert refreshes in place, no new row")
 
-	got, err := nodes.Get(ctx, db.Runner(), "node-a")
+	got, err := nodes.Get(ctx, "node-a")
 	require.NoError(t, err)
 	assert.Equal(t, "a2", got.Hostname)
 
-	_, err = nodes.Get(ctx, db.Runner(), "missing")
+	_, err = nodes.Get(ctx, "missing")
 	assert.ErrorIs(t, err, state.ErrNotFound)
 }
 
@@ -92,42 +92,42 @@ func TestNodeListPagePagination(t *testing.T) {
 func TestUpsertWriteGuard(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	nodes := noderepo.New(clock)
 	run := &countingRunner{Runner: db.Runner()}
+	nodes := noderepo.New(clock, run)
 
 	first := &node.Node{PlatformID: "node-1", CarrierID: "c-1", Hostname: "h", Role: "worker", Available: true}
-	require.NoError(t, nodes.Upsert(ctx, run, first))
+	require.NoError(t, nodes.Upsert(ctx, first))
 	firstWrites := run.writes
 	require.Positive(t, firstWrites)
-	row, err := nodes.Get(ctx, db.Runner(), "node-1")
+	row, err := nodes.Get(ctx, "node-1")
 	require.NoError(t, err)
 	assert.Equal(t, row.FirstSeenAt, row.LastSeenAt)
 
 	for i := 0; i < 5; i++ {
 		clock.Advance(time.Second)
-		require.NoError(t, nodes.Upsert(ctx, run, &node.Node{
+		require.NoError(t, nodes.Upsert(ctx, &node.Node{
 			PlatformID: "node-1", CarrierID: "c-1", Hostname: "h", Role: "worker", Available: true,
 		}))
 	}
 	assert.Equal(t, firstWrites, run.writes, "unchanged observation inside the refresh window must not write")
 
 	clock.Advance(time.Second)
-	require.NoError(t, nodes.Upsert(ctx, run, &node.Node{
+	require.NoError(t, nodes.Upsert(ctx, &node.Node{
 		PlatformID: "node-1", CarrierID: "c-1", Hostname: "h", Role: "worker", Available: false,
 	}))
 	assert.Greater(t, run.writes, firstWrites, "value change must write immediately")
-	row, err = nodes.Get(ctx, db.Runner(), "node-1")
+	row, err = nodes.Get(ctx, "node-1")
 	require.NoError(t, err)
 	assert.False(t, row.Available)
 	assert.Equal(t, first.FirstSeenAt, row.FirstSeenAt)
 
 	before := run.writes
 	clock.Advance(31 * time.Second)
-	require.NoError(t, nodes.Upsert(ctx, run, &node.Node{
+	require.NoError(t, nodes.Upsert(ctx, &node.Node{
 		PlatformID: "node-1", CarrierID: "c-1", Hostname: "h", Role: "worker", Available: false,
 	}))
 	assert.Greater(t, run.writes, before, "stale last_seen must refresh")
-	row, err = nodes.Get(ctx, db.Runner(), "node-1")
+	row, err = nodes.Get(ctx, "node-1")
 	require.NoError(t, err)
 	assert.Equal(t, state.FormatTime(clock.Now()), row.LastSeenAt)
 }

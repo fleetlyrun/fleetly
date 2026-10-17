@@ -8,9 +8,9 @@ package authn
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/role"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/team"
@@ -27,12 +27,17 @@ type SeedRepos struct {
 	Users  user.Repo
 }
 
+// Transactor 是事务入口的消费侧接口（accept interfaces 惯用法；生产装配
+// 传 transact.Tx，测试注入假实现——ADR-0080）。
+type Transactor interface {
+	Do(ctx context.Context, fn func(s transact.Stores) error) error
+}
+
 // EnsureSeed 幂等落 default Team 与三条内置角色（scopes 由代码单一源刷新
 // ——词表演进时启动即同步）。启动链与测试夹具共用。
-func EnsureSeed(ctx context.Context, db state.DB, repos SeedRepos, resources []string) error {
-	teams, roles := repos.Teams, repos.Roles
-	return db.Tx(ctx, func(tx *sql.Tx) error {
-		if err := teams.Create(ctx, tx, &team.Team{
+func EnsureSeed(ctx context.Context, tx Transactor, resources []string) error {
+	return tx.Do(ctx, func(s transact.Stores) error {
+		if err := s.Teams.Create(ctx, &team.Team{
 			ID: identity.DefaultTeamID, Name: identity.DefaultTeamID,
 		}); err != nil {
 			// default Team 已存在（幂等重启）时 repo 返回 ErrAlreadyExists
@@ -44,7 +49,7 @@ func EnsureSeed(ctx context.Context, db state.DB, repos SeedRepos, resources []s
 			}
 		}
 		for _, b := range identity.BuiltinRoles(resources) {
-			if err := roles.UpsertBuiltin(ctx, tx, &role.Role{
+			if err := s.Roles.UpsertBuiltin(ctx, &role.Role{
 				ID: b.ID, Name: b.Name, Builtin: true,
 				Scopes: identity.ScopeStrings(b.Scopes),
 			}); err != nil {

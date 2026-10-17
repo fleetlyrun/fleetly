@@ -18,19 +18,20 @@ import (
 // repo 是 domain project.Repo 的 SQLite 实现。
 type repo struct {
 	clock state.Clock
+	run   state.Runner
 }
 
 // New 构造 repo（直接返回接口——消费面只见 domain project.Repo）。
-func New(clock state.Clock) project.Repo { return &repo{clock: clock} }
+func New(clock state.Clock, run state.Runner) project.Repo { return &repo{clock: clock, run: run} }
 
 // Create 落一行；同 Team 同名活跃 Project 冲突返回 state.ErrAlreadyExists
 // （ADR-0028：唯一性口径 (team_id, name)——同名项目跨 Team 并存）。
 // ID 空则装配 "<name>-<seq>"（ADR-0070）；Seq 零值则事务内取 MAX+1（铸造
 // 单源在 repo 行装配处）。
-func (r *repo) Create(ctx context.Context, run state.Runner, p *project.Project) error {
+func (r *repo) Create(ctx context.Context, p *project.Project) error {
 	now := state.FormatTime(r.clock.Now())
 	p.CreatedAt, p.UpdatedAt = now, now
-	seq, err := persistence.NextSeq(ctx, run, "projects")
+	seq, err := persistence.NextSeq(ctx, r.run, "projects")
 	if err != nil {
 		return err
 	}
@@ -38,7 +39,7 @@ func (r *repo) Create(ctx context.Context, run state.Runner, p *project.Project)
 	if p.ID == "" {
 		p.ID = entityid.Join(p.Name, seq)
 	}
-	_, err = run.ExecContext(ctx, `
+	_, err = r.run.ExecContext(ctx, `
 		INSERT INTO projects (id, seq, name, team_id, created_at, updated_at, deleted_at)
 		VALUES (?, ?, ?, ?, ?, ?, '')`,
 		p.ID, p.Seq, p.Name, p.TeamID, p.CreatedAt, p.UpdatedAt)
@@ -49,8 +50,8 @@ func (r *repo) Create(ctx context.Context, run state.Runner, p *project.Project)
 }
 
 // Get 按 ID 直读（含已删行——tombstone 是事实，不是秘密）。
-func (r *repo) Get(ctx context.Context, run state.Runner, id string) (*project.Project, error) {
-	row := run.QueryRowContext(ctx, `
+func (r *repo) Get(ctx context.Context, id string) (*project.Project, error) {
+	row := r.run.QueryRowContext(ctx, `
 		SELECT id, seq, name, team_id, created_at, updated_at, deleted_at
 		FROM projects WHERE id = ?`, id)
 	return scanProject(row)
@@ -58,8 +59,8 @@ func (r *repo) Get(ctx context.Context, run state.Runner, id string) (*project.P
 
 // GetByNameInTeam 在 Team 内按名读活跃行（ADR-0028：名字唯一性只在
 // Team 内成立——跨 Team 同名并存，裸名查询语义不再成立）。
-func (r *repo) GetByNameInTeam(ctx context.Context, run state.Runner, teamID, name string) (*project.Project, error) {
-	row := run.QueryRowContext(ctx, `
+func (r *repo) GetByNameInTeam(ctx context.Context, teamID, name string) (*project.Project, error) {
+	row := r.run.QueryRowContext(ctx, `
 		SELECT id, seq, name, team_id, created_at, updated_at, deleted_at
 		FROM projects WHERE team_id = ? AND name = ? AND deleted_at = ''`, teamID, name)
 	return scanProject(row)
@@ -67,8 +68,8 @@ func (r *repo) GetByNameInTeam(ctx context.Context, run state.Runner, teamID, na
 
 // List 返回全部活跃行（全量面——seq 序 = 创建序；授权解析与引擎枚举
 // 消费；API 分页读面走 ListPage）。
-func (r *repo) List(ctx context.Context, run state.Runner) ([]project.Project, error) {
-	rows, err := run.QueryContext(ctx, `
+func (r *repo) List(ctx context.Context) ([]project.Project, error) {
+	rows, err := r.run.QueryContext(ctx, `
 		SELECT id, seq, name, team_id, created_at, updated_at, deleted_at
 		FROM projects WHERE deleted_at = '' ORDER BY seq`)
 	if err != nil {
@@ -88,14 +89,14 @@ func (r *repo) List(ctx context.Context, run state.Runner) ([]project.Project, e
 
 // ListPage 是 List 的分页读面（ADR-0026 after_* + limit；游标轴 = seq
 // 创建序升序——既有响应序不变）。limit<=0 或 >200 回落/钳制缺省 50。
-func (r *repo) ListPage(ctx context.Context, run state.Runner, afterSeq int64, limit int) ([]project.Project, error) {
-	return r.page(ctx, run, "", afterSeq, limit)
+func (r *repo) ListPage(ctx context.Context, afterSeq int64, limit int) ([]project.Project, error) {
+	return r.page(ctx, "", afterSeq, limit)
 }
 
 // ListByTeam 返回 Team 内全部活跃行（ADR-0035 行级授权的 List 面过滤锚
 // 与 authz 解析面——全量；非 owner 的 API 分页读面走 ListByTeamPage）。
-func (r *repo) ListByTeam(ctx context.Context, run state.Runner, teamID string) ([]project.Project, error) {
-	rows, err := run.QueryContext(ctx, `
+func (r *repo) ListByTeam(ctx context.Context, teamID string) ([]project.Project, error) {
+	rows, err := r.run.QueryContext(ctx, `
 		SELECT id, seq, name, team_id, created_at, updated_at, deleted_at
 		FROM projects WHERE deleted_at = '' AND team_id = ? ORDER BY seq`, teamID)
 	if err != nil {
@@ -115,13 +116,13 @@ func (r *repo) ListByTeam(ctx context.Context, run state.Runner, teamID string) 
 
 // ListByTeamPage 是 ListByTeam 的分页读面（ADR-0026 after_* + limit；
 // Team 过滤与游标分页叠加）。
-func (r *repo) ListByTeamPage(ctx context.Context, run state.Runner, teamID string, afterSeq int64, limit int) ([]project.Project, error) {
-	return r.page(ctx, run, teamID, afterSeq, limit)
+func (r *repo) ListByTeamPage(ctx context.Context, teamID string, afterSeq int64, limit int) ([]project.Project, error) {
+	return r.page(ctx, teamID, afterSeq, limit)
 }
 
 // page 是两种分页形态的共用体：teamID 空 = 全局（owner 面），非空 =
 // Team 过滤（ADR-0035 List 面）。
-func (r *repo) page(ctx context.Context, run state.Runner, teamID string, afterSeq int64, limit int) ([]project.Project, error) {
+func (r *repo) page(ctx context.Context, teamID string, afterSeq int64, limit int) ([]project.Project, error) {
 	limit = persistence.ClampLimit(limit, defaultListLimit, maxListLimit)
 	q := `
 		SELECT id, seq, name, team_id, created_at, updated_at, deleted_at
@@ -137,7 +138,7 @@ func (r *repo) page(ctx context.Context, run state.Runner, teamID string, afterS
 	}
 	q += ` ORDER BY seq ASC LIMIT ?`
 	args = append(args, limit)
-	rows, err := run.QueryContext(ctx, q, args...)
+	rows, err := r.run.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -160,9 +161,9 @@ const (
 
 // SoftDelete 落 tombstone（四件一拍的 tombstone 件；Outbox/审计由调用方
 // 同事务组合）。幂等：已删行不报错。
-func (r *repo) SoftDelete(ctx context.Context, run state.Runner, id string) error {
+func (r *repo) SoftDelete(ctx context.Context, id string) error {
 	now := state.FormatTime(r.clock.Now())
-	res, err := run.ExecContext(ctx, `
+	res, err := r.run.ExecContext(ctx, `
 		UPDATE projects SET deleted_at = ?, updated_at = ?
 		WHERE id = ? AND deleted_at = ''`, now, now, id)
 	if err != nil {
@@ -170,7 +171,7 @@ func (r *repo) SoftDelete(ctx context.Context, run state.Runner, id string) erro
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		// 已删（幂等）或不存在：区分只在审计语义上有意义，读路径已覆盖。
-		if _, err := r.Get(ctx, run, id); err != nil {
+		if _, err := r.Get(ctx, id); err != nil {
 			return err
 		}
 	}

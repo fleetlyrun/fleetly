@@ -14,7 +14,6 @@ package engine
 import (
 	"context"
 	"crypto/rand"
-	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -28,6 +27,7 @@ import (
 	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 )
 
@@ -376,8 +376,8 @@ func (e *Engine) TriggerPlatformBackup(ctx context.Context) (*PlatformSnapshot, 
 	if runErr != nil {
 		eventName, payload = eventPlatformBackupFail, platformBackupEventJSON("", runErr.Error())
 	}
-	if err := e.db.Tx(ctx, func(tx *sql.Tx) error {
-		return e.commitWrite(ctx, tx, writeFact{
+	if err := e.tx.Do(ctx, func(s transact.Stores) error {
+		return e.commitWrite(ctx, s, writeFact{
 			facts: []func() writes.FactRow{func() writes.FactRow {
 				// 平台级事件（platform 聚合无 Team 轴）：team 留 '' = 全员可见。
 				return writes.FactRow{

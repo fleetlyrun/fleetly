@@ -29,13 +29,13 @@ func createScheduleRow(t *testing.T, e *Engine, id, name, cronExpr, tz, nextFire
 		ID: id, ProjectID: tTaskProject, Name: name, State: schedule.StateActive,
 		CronExpr: cronExpr, Timezone: tz, Spec: []byte(spec), NextFireAt: nextFireAt,
 	}
-	require.NoError(t, e.schedules.Create(context.Background(), e.db.Runner(), row))
+	require.NoError(t, e.repos.Schedules.Create(context.Background(), row))
 	return row
 }
 
 func getScheduleRow(t *testing.T, e *Engine, id string) *schedule.Schedule {
 	t.Helper()
-	row, err := e.schedules.Get(context.Background(), e.db.Runner(), id)
+	row, err := e.repos.Schedules.Get(context.Background(), id)
 	require.NoError(t, err)
 	return row
 }
@@ -113,7 +113,7 @@ func TestScheduleMissedWindowCatchUpOnce(t *testing.T) {
 	assert.Equal(t, "2026-01-01T00:06:00Z", s.NextFireAt, "cadence resumes from now, no backlog replay")
 
 	// 全库只有这一条 Task（补跑一次，不是五次）。
-	tasks, err := e.tasks.ListDriving(ctx, e.db.Runner())
+	tasks, err := e.repos.Tasks.ListDriving(ctx)
 	require.NoError(t, err)
 	require.Len(t, tasks, 1)
 }
@@ -262,7 +262,7 @@ func TestTriggerScheduleConcurrentSingleMint(t *testing.T) {
 	assert.Nil(t, loser, "the losing mint rolls back its task row")
 
 	// 全库至多一条已铸 Task（双铸防御：孤账零落）。
-	tasks, err := e.tasks.ListDriving(ctx, e.db.Runner())
+	tasks, err := e.repos.Tasks.ListDriving(ctx)
 	require.NoError(t, err)
 	require.Len(t, tasks, 1)
 	assert.Equal(t, winner.ID, tasks[0].ID)
@@ -307,7 +307,7 @@ func TestScheduleTerminalNoFire(t *testing.T) {
 	spawned := getScheduleRow(t, e, sid).LastTaskID
 	require.NotEmpty(t, spawned)
 
-	require.NoError(t, e.schedules.Transit(ctx, e.db.Runner(), sid, schedule.StateActive, schedule.StateDeleted))
+	require.NoError(t, e.repos.Schedules.Transit(ctx, sid, schedule.StateActive, schedule.StateDeleted))
 	clock.Advance(2 * time.Hour)
 	e.scheduleStep(ctx)
 

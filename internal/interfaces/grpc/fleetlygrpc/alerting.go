@@ -8,13 +8,13 @@ package fleetlygrpc
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"time"
 
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -148,8 +148,8 @@ func (svc *AlertingService) CreateNotificationChannel(ctx context.Context, req *
 		ConfigCiphertext: sealed, Enabled: true,
 	}
 	err = svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, tx *sql.Tx) error {
-			return svc.s.Engine.NotificationChannelRepo().Create(ctx, tx, row)
+		write: func(ctx context.Context, st transact.Stores) error {
+			return st.Channels.Create(ctx, row)
 		},
 		facts: []func() writes.FactRow{
 			// 资源轴 ''（无 owner 域——平台级材料，全员可见）：通道是平台级
@@ -188,7 +188,7 @@ func (svc *AlertingService) TestNotificationChannel(ctx context.Context, req *te
 
 // ListNotificationChannels 列通道（配置载荷永不回显——凭证单向）。
 func (svc *AlertingService) ListNotificationChannels(ctx context.Context, _ *telemetryv1.ListNotificationChannelsRequest) (*telemetryv1.ListNotificationChannelsResponse, error) {
-	chs, err := svc.s.Engine.NotificationChannelRepo().ListAll(ctx, svc.s.DB.Runner())
+	chs, err := svc.s.Engine.NotificationChannelRepo().ListAll(ctx)
 	if err != nil {
 		return nil, mapStateError(err, "channel")
 	}
@@ -204,8 +204,8 @@ func (svc *AlertingService) DeleteNotificationChannel(ctx context.Context, req *
 	// channel_id 必填已退役 descriptor 注解（P4-1 批 1 Run B2）：空值由
 	// protovalidate 拦截器在受理面拦截，文案与退役前逐字节一致。
 	err := svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, tx *sql.Tx) error {
-			return svc.s.Engine.NotificationChannelRepo().Delete(ctx, tx, req.GetChannelId())
+		write: func(ctx context.Context, st transact.Stores) error {
+			return st.Channels.Delete(ctx, req.GetChannelId())
 		},
 		facts: []func() writes.FactRow{
 			// 资源轴 ''（无 owner 域——平台级材料，全员可见）：通道是平台级
@@ -251,8 +251,8 @@ func (svc *AlertingService) CreateAlertRule(ctx context.Context, req *telemetryv
 	}
 	err = svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{svc.s.parentProjectAlive(appRow.ProjectID)},
-		write: func(ctx context.Context, tx *sql.Tx) error {
-			return svc.s.Engine.AlertRuleRepo().Create(ctx, tx, row)
+		write: func(ctx context.Context, st transact.Stores) error {
+			return st.AlertRules.Create(ctx, row)
 		},
 		facts: []func() writes.FactRow{
 			svc.s.factOf(ctx, appRow.ProjectID, func(team string) writes.FactRow {
@@ -283,9 +283,9 @@ func (svc *AlertingService) ListAlertRules(ctx context.Context, req *telemetryv1
 	var rows []alertrule.Rule
 	var err error
 	if req.GetAppId() != "" {
-		rows, err = svc.s.Engine.AlertRuleRepo().ListByApp(ctx, svc.s.DB.Runner(), req.GetAppId())
+		rows, err = svc.s.Engine.AlertRuleRepo().ListByApp(ctx, req.GetAppId())
 	} else {
-		rows, err = svc.s.Engine.AlertRuleRepo().ListAll(ctx, svc.s.DB.Runner())
+		rows, err = svc.s.Engine.AlertRuleRepo().ListAll(ctx)
 	}
 	if err != nil {
 		return nil, mapStateError(err, "alert rule")
@@ -301,7 +301,7 @@ func (svc *AlertingService) ListAlertRules(ctx context.Context, req *telemetryv1
 func (svc *AlertingService) DeleteAlertRule(ctx context.Context, req *telemetryv1.DeleteAlertRuleRequest) (*telemetryv1.DeleteAlertRuleResponse, error) {
 	// rule_id 必填已退役 descriptor 注解（P4-1 批 1 Run B2）：空值由
 	// protovalidate 拦截器在受理面拦截，文案与退役前逐字节一致。
-	row, err := svc.s.Engine.AlertRuleRepo().Get(ctx, svc.s.DB.Runner(), req.GetRuleId())
+	row, err := svc.s.Engine.AlertRuleRepo().Get(ctx, req.GetRuleId())
 	if err != nil {
 		if errors.Is(err, state.ErrNotFound) {
 			return nil, apperr.New("E_NOT_FOUND", "alert rule %s not found", req.GetRuleId())
@@ -313,8 +313,8 @@ func (svc *AlertingService) DeleteAlertRule(ctx context.Context, req *telemetryv
 		return nil, err
 	}
 	err = svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, tx *sql.Tx) error {
-			return svc.s.Engine.AlertRuleRepo().Delete(ctx, tx, req.GetRuleId())
+		write: func(ctx context.Context, st transact.Stores) error {
+			return st.AlertRules.Delete(ctx, req.GetRuleId())
 		},
 		facts: []func() writes.FactRow{
 			svc.s.factOf(ctx, appRow.ProjectID, func(team string) writes.FactRow {
@@ -336,7 +336,7 @@ func (svc *AlertingService) DeleteAlertRule(ctx context.Context, req *telemetryv
 
 // ListAlertStates 列现行状态（用户规则行 + 内置系统行）。
 func (svc *AlertingService) ListAlertStates(ctx context.Context, _ *telemetryv1.ListAlertStatesRequest) (*telemetryv1.ListAlertStatesResponse, error) {
-	rows, err := svc.s.Engine.AlertRuleRepo().ListAll(ctx, svc.s.DB.Runner())
+	rows, err := svc.s.Engine.AlertRuleRepo().ListAll(ctx)
 	if err != nil {
 		return nil, mapStateError(err, "alert rule")
 	}

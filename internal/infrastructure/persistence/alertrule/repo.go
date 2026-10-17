@@ -15,17 +15,18 @@ import (
 // repo 是 domain alertrule.Repo 的 SQLite 实现。
 type repo struct {
 	clock state.Clock
+	run   state.Runner
 }
 
 // New 构造 repo（直接返回接口——消费面只见 domain alertrule.Repo）。
-func New(clock state.Clock) alertrule.Repo { return &repo{clock: clock} }
+func New(clock state.Clock, run state.Runner) alertrule.Repo { return &repo{clock: clock, run: run} }
 
 const selectCols = `id, seq, app_id, metric, threshold, for_secs, enabled, state, state_since,
 	last_value, last_observed_at, created_at, updated_at`
 
 // Create 落一条规则（初始态 ok）。
-func (r *repo) Create(ctx context.Context, run state.Runner, rule *alertrule.Rule) error {
-	seq, err := persistence.NextSeq(ctx, run, "alert_rules")
+func (r *repo) Create(ctx context.Context, rule *alertrule.Rule) error {
+	seq, err := persistence.NextSeq(ctx, r.run, "alert_rules")
 	if err != nil {
 		return err
 	}
@@ -36,7 +37,7 @@ func (r *repo) Create(ctx context.Context, run state.Runner, rule *alertrule.Rul
 	rule.CreatedAt = state.FormatTime(r.clock.Now())
 	rule.UpdatedAt = rule.CreatedAt
 	rule.State, rule.StateSince = alertrule.StateOK, rule.CreatedAt
-	_, err = run.ExecContext(ctx, `
+	_, err = r.run.ExecContext(ctx, `
 		INSERT INTO alert_rules (id, seq, app_id, metric, threshold, for_secs, enabled, state, state_since,
 			last_value, last_observed_at, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, '', ?, ?)`,
@@ -46,28 +47,28 @@ func (r *repo) Create(ctx context.Context, run state.Runner, rule *alertrule.Rul
 }
 
 // Get 按 ID 读行。
-func (r *repo) Get(ctx context.Context, run state.Runner, id string) (*alertrule.Rule, error) {
-	row := run.QueryRowContext(ctx, "SELECT "+selectCols+" FROM alert_rules WHERE id = ?", id)
+func (r *repo) Get(ctx context.Context, id string) (*alertrule.Rule, error) {
+	row := r.run.QueryRowContext(ctx, "SELECT "+selectCols+" FROM alert_rules WHERE id = ?", id)
 	return scanRule(row)
 }
 
 // ListEnabled 列全部启用规则（app 升序）。
-func (r *repo) ListEnabled(ctx context.Context, run state.Runner) ([]alertrule.Rule, error) {
-	return r.listWhere(ctx, run, "WHERE enabled = 1 ORDER BY app_id, id")
+func (r *repo) ListEnabled(ctx context.Context) ([]alertrule.Rule, error) {
+	return r.listWhere(ctx, "WHERE enabled = 1 ORDER BY app_id, id")
 }
 
 // ListByApp 列某 App 的规则（含禁用行；id 升序）。
-func (r *repo) ListByApp(ctx context.Context, run state.Runner, appID string) ([]alertrule.Rule, error) {
-	return r.listWhere(ctx, run, "WHERE app_id = ? ORDER BY seq", appID)
+func (r *repo) ListByApp(ctx context.Context, appID string) ([]alertrule.Rule, error) {
+	return r.listWhere(ctx, "WHERE app_id = ? ORDER BY seq", appID)
 }
 
 // ListAll 列全部规则（alerts list 面）。
-func (r *repo) ListAll(ctx context.Context, run state.Runner) ([]alertrule.Rule, error) {
-	return r.listWhere(ctx, run, "ORDER BY app_id, id")
+func (r *repo) ListAll(ctx context.Context) ([]alertrule.Rule, error) {
+	return r.listWhere(ctx, "ORDER BY app_id, id")
 }
 
-func (r *repo) listWhere(ctx context.Context, run state.Runner, where string, args ...any) ([]alertrule.Rule, error) {
-	rows, err := run.QueryContext(ctx, "SELECT "+selectCols+" FROM alert_rules "+where, args...)
+func (r *repo) listWhere(ctx context.Context, where string, args ...any) ([]alertrule.Rule, error) {
+	rows, err := r.run.QueryContext(ctx, "SELECT "+selectCols+" FROM alert_rules "+where, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -84,24 +85,24 @@ func (r *repo) listWhere(ctx context.Context, run state.Runner, where string, ar
 }
 
 // Observe 落最近评估观测（值 + 时刻；不迁态）。
-func (r *repo) Observe(ctx context.Context, run state.Runner, id string, value float64, at string) error {
-	_, err := run.ExecContext(ctx,
+func (r *repo) Observe(ctx context.Context, id string, value float64, at string) error {
+	_, err := r.run.ExecContext(ctx,
 		"UPDATE alert_rules SET last_value = ?, last_observed_at = ?, updated_at = ? WHERE id = ?",
 		value, at, state.FormatTime(r.clock.Now()), id)
 	return err
 }
 
 // Transition 迁移评估态（fired/resolved 通知沿的持久锚）。
-func (r *repo) Transition(ctx context.Context, run state.Runner, id, to, at string) error {
-	_, err := run.ExecContext(ctx,
+func (r *repo) Transition(ctx context.Context, id, to, at string) error {
+	_, err := r.run.ExecContext(ctx,
 		"UPDATE alert_rules SET state = ?, state_since = ?, updated_at = ? WHERE id = ?",
 		to, at, state.FormatTime(r.clock.Now()), id)
 	return err
 }
 
 // Delete 删行（幂等：不存在 ErrNotFound 由调用面映射 404）。
-func (r *repo) Delete(ctx context.Context, run state.Runner, id string) error {
-	res, err := run.ExecContext(ctx, "DELETE FROM alert_rules WHERE id = ?", id)
+func (r *repo) Delete(ctx context.Context, id string) error {
+	res, err := r.run.ExecContext(ctx, "DELETE FROM alert_rules WHERE id = ?", id)
 	if err != nil {
 		return err
 	}

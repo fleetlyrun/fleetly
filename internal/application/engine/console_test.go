@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
@@ -16,7 +17,7 @@ import (
 // entry 先例）。
 func TestConsoleCapabilityRoutes(t *testing.T) {
 	db, _ := statetest.New(t)
-	e := New(Deps{DB: db, Repos: testRepos(db), Logger: discardLogger()}, Options{Data: DataOptions{Console: ConsoleConfig{
+	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Logger: discardLogger()}, Options{Data: DataOptions{Console: ConsoleConfig{
 		Host:       "console.dev.fleetly.run",
 		GatewayURL: "http://10.124.0.3:9081",
 	}}})
@@ -50,7 +51,7 @@ func TestConsoleCapabilityRoutesDisabledOrMalformed(t *testing.T) {
 		"url 无 host 段": {Data: DataOptions{Console: ConsoleConfig{Host: "c.test", GatewayURL: "not-a-url"}}},
 		"url 仅 scheme": {Data: DataOptions{Console: ConsoleConfig{Host: "c.test", GatewayURL: "http://"}}},
 	} {
-		e := New(Deps{DB: db, Repos: testRepos(db), Logger: discardLogger()}, opts)
+		e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Logger: discardLogger()}, opts)
 		assert.Empty(t, e.consoleCapabilityRoutes(), "%s：必须零发布", name)
 	}
 }
@@ -61,7 +62,7 @@ func TestPublishRoutesMergesConsoleRoutes(t *testing.T) {
 	db, _ := statetest.New(t)
 	rt := newFakeRuntime()
 	proxy := &fakeProxy{}
-	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{
+	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{
 		Data: DataOptions{
 			Console: ConsoleConfig{Host: "console.dev.fleetly.run", GatewayURL: "http://127.0.0.1:9081"},
 		},

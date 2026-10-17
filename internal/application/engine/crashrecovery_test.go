@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 )
@@ -25,7 +26,7 @@ func restartEngine(t *testing.T, e *Engine) *Engine {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	require.NoError(t, e.Stop(ctx), "engine must drain within the bound")
-	return New(Deps{DB: e.db, Repos: testRepos(e.db), Runtime: e.runtime, Builders: e.builders, Registry: e.registry, Logger: e.log}, e.opts)
+	return New(Deps{DB: e.db, Stores: testRepos(e.db), Tx: transact.NewTx(e.db, testBinder(e.db)), Runtime: e.runtime, Builders: e.builders, Registry: e.registry, Logger: e.log}, e.opts)
 }
 
 // driveToTerminal 有界拍手动驱动新引擎直至 Deployment 终态：每拍注入
@@ -79,7 +80,7 @@ func TestCrashRecoveryBuildInFlightRestart(t *testing.T) {
 	require.Equal(t, deployment.StateSucceeded, final.State)
 
 	// 重建是登记层面的幂等：Build 行仍只此一条，且到终态带 digest。
-	builds, err := e2.builds.ListByRevision(ctx, e2.db.Runner(), revID)
+	builds, err := e2.repos.Builds.ListByRevision(ctx, revID)
 	require.NoError(t, err)
 	require.Len(t, builds, 1, "input rebuild must not duplicate the build row")
 	require.Equal(t, build.StateSucceeded, builds[0].State)
@@ -147,7 +148,7 @@ func TestCrashRecoveryKilledBuildingRow(t *testing.T) {
 	final := driveToTerminal(t, e2, d)
 	require.Equal(t, deployment.StateSucceeded, final.State)
 
-	builds, err := e2.builds.ListByRevision(ctx, e2.db.Runner(), revID)
+	builds, err := e2.repos.Builds.ListByRevision(ctx, revID)
 	require.NoError(t, err)
 	require.Len(t, builds, 1)
 	require.Equal(t, build.StateSucceeded, builds[0].State)

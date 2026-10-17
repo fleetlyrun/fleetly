@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	specir "github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
@@ -109,7 +110,7 @@ func TestBuildLogRedactionSecretZeroOccurrence(t *testing.T) {
 	}}
 	db, clock := statetest.New(t)
 	fl := &fakeLogging{}
-	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: newFakeRuntime(),
+	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: newFakeRuntime(),
 		Builders: map[string]capability.Builder{specir.BuilderDockerfile: fb},
 		Registry: newFakeRegistry(),
 		Logging:  fl,
@@ -118,7 +119,7 @@ func TestBuildLogRedactionSecretZeroOccurrence(t *testing.T) {
 	require.NoError(t, seedProjectApp(t, clock, db))
 	revID, _, _ := freezeGitBuildSpec(t, e, "01JD0REV0000000000000000C1")
 	b := &build.Build{ID: "01JD0BUILD000000000000000C1", AppID: tAppID, RevisionID: revID, State: build.StateBuilding}
-	require.NoError(t, e.builds.Create(ctx, e.db.Runner(), b))
+	require.NoError(t, e.repos.Builds.Create(ctx, b))
 	e.build.inputsMu.Lock()
 	e.build.inputs[b.ID] = capability.BuildRequest{
 		Builder:  specir.BuilderDockerfile,
@@ -131,7 +132,7 @@ func TestBuildLogRedactionSecretZeroOccurrence(t *testing.T) {
 
 	e.executeBuild(b)
 
-	got, err := e.builds.Get(ctx, e.db.Runner(), b.ID)
+	got, err := e.repos.Builds.Get(ctx, b.ID)
 	require.NoError(t, err)
 	assert.Equal(t, build.StateSucceeded, got.State, "build must succeed with redaction in place")
 
@@ -169,7 +170,7 @@ func TestBuildLogRedactionWithoutLogging(t *testing.T) {
 	const pushSecret = "push-only-secret-abcdef012345"
 	fb := &fakeBuilder{digest: "sha256:built", logs: []string{"auth " + pushSecret}}
 	db, clock := statetest.New(t)
-	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: newFakeRuntime(),
+	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: newFakeRuntime(),
 		Builders: map[string]capability.Builder{specir.BuilderDockerfile: fb},
 		Registry: newFakeRegistry(),
 		Logger:   discardLogger()}, Options{Data: DataOptions{DataRoot: t.TempDir()}})
@@ -177,7 +178,7 @@ func TestBuildLogRedactionWithoutLogging(t *testing.T) {
 	require.NoError(t, seedProjectApp(t, clock, db))
 	revID, _, _ := freezeGitBuildSpec(t, e, "01JD0REV0000000000000000C2")
 	b := &build.Build{ID: "01JD0BUILD000000000000000C2", AppID: tAppID, RevisionID: revID, State: build.StateBuilding}
-	require.NoError(t, e.builds.Create(ctx, e.db.Runner(), b))
+	require.NoError(t, e.repos.Builds.Create(ctx, b))
 	e.build.inputsMu.Lock()
 	e.build.inputs[b.ID] = capability.BuildRequest{
 		Builder:  specir.BuilderDockerfile,
@@ -209,7 +210,7 @@ func TestRedactTableOrdering(t *testing.T) {
 func TestNSBatchStampsAndFlush(t *testing.T) {
 	db, clock := statetest.New(t)
 	fl := &fakeLogging{}
-	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: newFakeRuntime(), Logging: fl, Logger: discardLogger()},
+	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: newFakeRuntime(), Logging: fl, Logger: discardLogger()},
 		Options{Data: DataOptions{DataRoot: t.TempDir()}})
 	ns := capability.NamespaceRef{Team: "t1", Project: "P1", App: "A1"}
 	b := &nsBatch{db: e.db, logging: e.logging, log: e.log, clock: e.clock, cursors: e.logpipe.cursors, ns: ns}
@@ -230,7 +231,7 @@ func TestNSBatchStampsAndFlush(t *testing.T) {
 		assert.Equal(t, "A1", f.App)
 	}
 	// 游标已落盘（首拍直落）。
-	cur, err := e.logpipe.cursors.Get(context.Background(), e.db.Runner(), ns.String())
+	cur, err := e.logpipe.cursors.Get(context.Background(), ns.String())
 	require.NoError(t, err)
 	assert.WithinDuration(t, ts.Add(time.Duration(logIngestBatchFrames-1)*time.Millisecond), cur, time.Millisecond)
 
@@ -250,7 +251,7 @@ func TestNSBatchStampsAndFlush(t *testing.T) {
 			require.NoError(t, err)
 		}
 	}
-	cur2, err := e.logpipe.cursors.Get(context.Background(), e.db.Runner(), ns.String())
+	cur2, err := e.logpipe.cursors.Get(context.Background(), ns.String())
 	require.NoError(t, err)
 	assert.Equal(t, cur, cur2, "cursor must freeze on ingest failure (replay anchor)")
 }
@@ -260,7 +261,7 @@ func TestNSBatchStampsAndFlush(t *testing.T) {
 func TestLoggingStepStreamLifecycle(t *testing.T) {
 	db, clock := statetest.New(t)
 	rt := newLogStreamRuntime()
-	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Logging: &fakeLogging{}, Logger: discardLogger()},
+	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Logging: &fakeLogging{}, Logger: discardLogger()},
 		Options{Data: DataOptions{DataRoot: t.TempDir()}})
 	ctx := context.Background()
 	require.NoError(t, seedProjectApp(t, clock, db))
@@ -283,7 +284,7 @@ func TestLoggingStepStreamLifecycle(t *testing.T) {
 	rt.feed <- capability.LogFrame{WorkloadID: "W1", Time: now, Line: []byte("hello")}
 
 	// app tombstone → 下一拍拆流。
-	require.NoError(t, e.apps.SoftDelete(ctx, e.db.Runner(), tAppID))
+	require.NoError(t, e.repos.Apps.SoftDelete(ctx, tAppID))
 	e.loggingStep(ctx)
 	select {
 	case ns := <-rt.stopped:
@@ -309,10 +310,10 @@ func waitForLogCond(t *testing.T, cond func() bool) {
 func seedProjectApp(t *testing.T, clock state.Clock, db *persistence.DB) error {
 	t.Helper()
 	ctx := context.Background()
-	if err := projectrepo.New(clock).Create(ctx, db.Runner(), &project.Project{ID: tProjectID, Name: "shop", TeamID: "default"}); err != nil {
+	if err := projectrepo.New(clock, db.Runner()).Create(ctx, &project.Project{ID: tProjectID, Name: "shop", TeamID: "default"}); err != nil {
 		return err
 	}
-	return apprepo.New(clock).Create(ctx, db.Runner(), &app.App{ID: tAppID, ProjectID: tProjectID, Name: "web"})
+	return apprepo.New(clock, db.Runner()).Create(ctx, &app.App{ID: tAppID, ProjectID: tProjectID, Name: "web"})
 }
 
 // frameLinesJoined 是帧行拼接（断言辅助）。

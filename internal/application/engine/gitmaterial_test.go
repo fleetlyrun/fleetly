@@ -27,6 +27,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/githubapp"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/github"
@@ -98,17 +99,17 @@ func TestResolveGitMaterialShadowing(t *testing.T) {
 	fake := newGhFake(t)
 	ghes := newGhFake(t)
 
-	e := &Engine{db: db, cipher: cipher, secrets: secretrepo.New(clock), ghApps: githubapprepo.New(clock), ghClient: github.NewClient(&http.Client{Transport: &http.Transport{TLSClientConfig: insecureTLS()}}, nil)}
+	e := &Engine{db: db, cipher: cipher, repos: transact.Stores{Secrets: secretrepo.New(clock, db.Runner()), GitHubApps: githubapprepo.New(clock, db.Runner())}, ghClient: github.NewClient(&http.Client{Transport: &http.Transport{TLSClientConfig: insecureTLS()}}, nil)}
 	sealed, err := cipher.Produce(ghKeyPEM(t))
 	require.NoError(t, err)
-	require.NoError(t, e.ghApps.Upsert(ctx, db.Runner(), &githubapp.App{
+	require.NoError(t, e.repos.GitHubApps.Upsert(ctx, &githubapp.App{
 		ProjectID: "proj-a", AppID: 182345, InstallationID: 51790921,
 		AccountLogin: "acme", APIBase: fake.srv.URL,
 		PrivateKeyCiphertext: sealed.Ciphertext, PrivateKeyFingerprint: sealed.Fingerprint,
 	}))
 	gseal, err := cipher.Produce(ghKeyPEM(t))
 	require.NoError(t, err)
-	require.NoError(t, e.ghApps.Upsert(ctx, db.Runner(), &githubapp.App{
+	require.NoError(t, e.repos.GitHubApps.Upsert(ctx, &githubapp.App{
 		ProjectID: "", AppID: 182345, InstallationID: 51790921,
 		AccountLogin: "giant-robots", APIBase: fake.srv.URL,
 		PrivateKeyCiphertext: gseal.Ciphertext, PrivateKeyFingerprint: gseal.Fingerprint,
@@ -139,7 +140,7 @@ func TestResolveGitMaterialShadowing(t *testing.T) {
 	// GHES 形态：第二个夹具当独立域，(proj-d, acme) 行 + 该域仓 → 命中。
 	ghesSeal, err := cipher.Produce(ghKeyPEM(t))
 	require.NoError(t, err)
-	require.NoError(t, e.ghApps.Upsert(ctx, db.Runner(), &githubapp.App{
+	require.NoError(t, e.repos.GitHubApps.Upsert(ctx, &githubapp.App{
 		ProjectID: "proj-d", AppID: 182345, InstallationID: 51790921,
 		AccountLogin: "acme", APIBase: ghes.srv.URL,
 		PrivateKeyCiphertext: ghesSeal.Ciphertext, PrivateKeyFingerprint: ghesSeal.Fingerprint,
@@ -152,7 +153,7 @@ func TestResolveGitMaterialShadowing(t *testing.T) {
 	// 即换缓存键，确保真的打到铸造调用而不是吃上一个 token 的缓存。
 	rotSeal, err := cipher.Produce(ghKeyPEM(t))
 	require.NoError(t, err)
-	require.NoError(t, e.ghApps.Upsert(ctx, db.Runner(), &githubapp.App{
+	require.NoError(t, e.repos.GitHubApps.Upsert(ctx, &githubapp.App{
 		ProjectID: "proj-d", AppID: 182345, InstallationID: 51790921,
 		AccountLogin: "acme", APIBase: ghes.srv.URL,
 		PrivateKeyCiphertext: rotSeal.Ciphertext, PrivateKeyFingerprint: rotSeal.Fingerprint,
@@ -215,7 +216,7 @@ func TestResolveGitSecretMaterial(t *testing.T) {
 	require.NoError(t, err)
 	fake := newGhFake(t)
 
-	e := &Engine{db: db, cipher: cipher, secrets: secretrepo.New(clock), ghApps: githubapprepo.New(clock), ghClient: github.NewClient(fake.srv.Client(), nil)}
+	e := &Engine{db: db, cipher: cipher, repos: transact.Stores{Secrets: secretrepo.New(clock, db.Runner()), GitHubApps: githubapprepo.New(clock, db.Runner())}, ghClient: github.NewClient(fake.srv.Client(), nil)}
 	proj := "proj-s"
 	repo := fake.srv.URL + "/acme/web" // host = 127.0.0.1:<port>
 	host, _, ok := gitHostOwner(repo)
@@ -224,7 +225,7 @@ func TestResolveGitSecretMaterial(t *testing.T) {
 	mustPutSecret := func(name, value string) {
 		sealed, serr := cipher.Produce([]byte(value))
 		require.NoError(t, serr)
-		require.NoError(t, e.secrets.Upsert(ctx, db.Runner(), &secret.Secret{
+		require.NoError(t, e.repos.Secrets.Upsert(ctx, &secret.Secret{
 			ID: "sec-" + name, ProjectID: proj, Name: name,
 			Ciphertext: sealed.Ciphertext, Fingerprint: sealed.Fingerprint,
 		}))
@@ -259,7 +260,7 @@ func TestResolveGitSecretMaterial(t *testing.T) {
 	// GitHub App 遮蔽 Secret：命中的行先返回，Secret 不参与。
 	sealed, serr := cipher.Produce(ghKeyPEM(t))
 	require.NoError(t, serr)
-	require.NoError(t, e.ghApps.Upsert(ctx, db.Runner(), &githubapp.App{
+	require.NoError(t, e.repos.GitHubApps.Upsert(ctx, &githubapp.App{
 		ProjectID: proj, AppID: 182345, InstallationID: 51790921,
 		AccountLogin: "acme", APIBase: fake.srv.URL,
 		PrivateKeyCiphertext: sealed.Ciphertext, PrivateKeyFingerprint: sealed.Fingerprint,

@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/revision"
@@ -108,13 +109,13 @@ func newBuildEngine(t *testing.T, fb *fakeBuilder) (*Engine, *fakeRuntime) {
 	t.Helper()
 	db, clock := statetest.New(t)
 	rt := newFakeRuntime()
-	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt,
+	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt,
 		Builders: map[string]capability.Builder{specir.BuilderDockerfile: fb},
 		Registry: newFakeRegistry(),
 		Logger:   discardLogger()}, Options{Data: DataOptions{DataRoot: t.TempDir()}})
 	ctx := context.Background()
-	require.NoError(t, projectrepo.New(clock).Create(ctx, db.Runner(), &project.Project{ID: tProjectID, Name: "shop", TeamID: "default"}))
-	require.NoError(t, apprepo.New(clock).Create(ctx, db.Runner(), &app.App{ID: tAppID, ProjectID: tProjectID, Name: "web"}))
+	require.NoError(t, projectrepo.New(clock, db.Runner()).Create(ctx, &project.Project{ID: tProjectID, Name: "shop", TeamID: "default"}))
+	require.NoError(t, apprepo.New(clock, db.Runner()).Create(ctx, &app.App{ID: tAppID, ProjectID: tProjectID, Name: "web"}))
 	return e, rt
 }
 
@@ -123,9 +124,9 @@ func newBuildEngine(t *testing.T, fb *fakeBuilder) (*Engine, *fakeRuntime) {
 func freezeGitBuildSpec(t *testing.T, e *Engine, id string) (string, int64, string) {
 	t.Helper()
 	ctx := context.Background()
-	seq, err := e.revisions.NextSeq(ctx, e.db.Runner(), tAppID)
+	seq, err := e.repos.Revisions.NextSeq(ctx, tAppID)
 	require.NoError(t, err)
-	require.NoError(t, e.revisions.Create(ctx, e.db.Runner(), &revision.Revision{
+	require.NoError(t, e.repos.Revisions.Create(ctx, &revision.Revision{
 		ID: id, AppID: tAppID, Seq: seq, Spec: []byte(gitBuildSpec()),
 	}))
 	dir := filepath.Join(e.opts.Data.DataRoot, "contexts", id)
@@ -209,10 +210,10 @@ func TestUnresolvableSourceFailsPrecisely(t *testing.T) {
 	fb := &fakeBuilder{digest: "sha256:x"}
 	e, _ := newBuildEngine(t, fb)
 	ctx := context.Background()
-	seq, err := e.revisions.NextSeq(ctx, e.db.Runner(), tAppID)
+	seq, err := e.repos.Revisions.NextSeq(ctx, tAppID)
 	require.NoError(t, err)
 	revID := "01JD0REV0000000000000000B3"
-	require.NoError(t, e.revisions.Create(ctx, e.db.Runner(), &revision.Revision{
+	require.NoError(t, e.repos.Revisions.Create(ctx, &revision.Revision{
 		ID: revID, AppID: tAppID, Seq: seq, Spec: []byte(gitBuildSpec()),
 	}))
 
@@ -239,7 +240,7 @@ func waitFor(t *testing.T, cond func() bool) {
 
 func lastBuild(t *testing.T, e *Engine, revID string) (*build.Build, bool) {
 	t.Helper()
-	list, err := e.builds.ListByRevision(context.Background(), e.db.Runner(), revID)
+	list, err := e.repos.Builds.ListByRevision(context.Background(), revID)
 	if err != nil || len(list) == 0 {
 		return nil, false
 	}
@@ -281,10 +282,10 @@ func TestExecuteBuildWithoutInputGoesTerminal(t *testing.T) {
 		ID: "01JD0BUILD000000000000000B8", AppID: tAppID,
 		RevisionID: revID, State: build.StateBuilding,
 	}
-	require.NoError(t, e.builds.Create(ctx, e.db.Runner(), b))
+	require.NoError(t, e.repos.Builds.Create(ctx, b))
 
 	e.executeBuild(b) // 同步直调：无登记路径
-	got, err := e.builds.Get(ctx, e.db.Runner(), b.ID)
+	got, err := e.repos.Builds.Get(ctx, b.ID)
 	require.NoError(t, err)
 	assert.Equal(t, build.StateCancelled, got.State, "input-less build must land terminal, not bounce to queued")
 	assert.Contains(t, got.Error, "build input lost")

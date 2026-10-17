@@ -71,7 +71,7 @@ func (e *Engine) SweepTerminalTaskCarriers(ctx context.Context, window time.Dura
 		return 0, nil
 	}
 	cutoff := state.FormatTime(e.clock.Now().Add(-window))
-	rows, err := e.tasks.ListRecentlyFinished(ctx, e.db.Runner(), cutoff, limit)
+	rows, err := e.repos.Tasks.ListRecentlyFinished(ctx, cutoff, limit)
 	if err != nil {
 		return 0, fmt.Errorf("terminal carrier sweep: list recently finished: %w", err)
 	}

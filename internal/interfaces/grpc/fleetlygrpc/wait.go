@@ -66,7 +66,7 @@ func (svc *DeploymentsService) WaitDeployment(req *deliveryv1.WaitDeploymentRequ
 	}
 	return waitOnRow(ctx, svc.s, "deployment", req.GetDeploymentId(),
 		func(ctx context.Context) (*deployment.Deployment, error) {
-			d, err := svc.s.Deployments.Get(ctx, svc.s.DB.Runner(), req.GetDeploymentId())
+			d, err := svc.s.Deployments.Get(ctx, req.GetDeploymentId())
 			if err != nil {
 				return nil, mapStateError(err, "deployment")
 			}
@@ -91,7 +91,7 @@ func (svc *BuildsService) WaitBuild(req *deliveryv1.WaitBuildRequest, stream del
 	}
 	return waitOnRow(ctx, svc.s, "build", req.GetBuildId(),
 		func(ctx context.Context) (*build.Build, error) {
-			b, err := svc.s.Builds.Get(ctx, svc.s.DB.Runner(), req.GetBuildId())
+			b, err := svc.s.Builds.Get(ctx, req.GetBuildId())
 			if err != nil {
 				return nil, mapStateError(err, "build")
 			}
@@ -108,7 +108,7 @@ func (svc *BuildsService) WaitBuild(req *deliveryv1.WaitBuildRequest, stream del
 // 重读行发帧。订阅起点先于行读：两步间落下的事件只多触发一次幂等重读。
 // 行不存在在首帧即 E_NOT_FOUND（Deployment/Build 行永不删除）。
 func waitOnAggregate(ctx context.Context, s *Services, aggregate, id string, send func() error) error {
-	cursor, err := s.OutboxEvents.LastSeq(ctx, s.DB.Runner())
+	cursor, err := s.OutboxEvents.LastSeq(ctx)
 	if err != nil {
 		return mapStateError(err, "events")
 	}

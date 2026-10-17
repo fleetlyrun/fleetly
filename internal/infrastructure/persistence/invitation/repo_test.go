@@ -43,7 +43,7 @@ func seedTeamAndRole(t *testing.T, ctx context.Context, db *persistence.DB) {
 func TestInvitationLifecycleOneShotConsumption(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	invitations := invitationrepo.New(clock)
+	invitations := invitationrepo.New(clock, db.Runner())
 	seedTeamAndRole(t, ctx, db)
 
 	// 首见落行：ID 由 inv+seq 铸、consumed_at 空串起手、created_at 假时钟。
@@ -52,20 +52,20 @@ func TestInvitationLifecycleOneShotConsumption(t *testing.T) {
 		TeamID:      teamID, RoleID: roleID, CreatedBy: "01JD0USER000000000000000U1",
 		ExpiresAt: "2026-01-01T01:00:00Z",
 	}
-	require.NoError(t, invitations.Create(ctx, db.Runner(), inv))
+	require.NoError(t, invitations.Create(ctx, inv))
 	assert.Equal(t, "inv-1", inv.ID, "default id joins the inv base and seq")
 	assert.Equal(t, int64(1), inv.Seq)
 	assert.Equal(t, state.FormatTime(clock.Now()), inv.CreatedAt)
 	assert.Empty(t, inv.ConsumedAt, "fresh invitation is unconsumed")
 
 	// GetBySHA256：摘要命中全行；未知摘要 NotFound。
-	got, err := invitations.GetBySHA256(ctx, db.Runner(), inv.TokenSHA256)
+	got, err := invitations.GetBySHA256(ctx, inv.TokenSHA256)
 	require.NoError(t, err)
 	assert.Equal(t, inv.ID, got.ID)
 	assert.Equal(t, teamID, got.TeamID)
 	assert.Equal(t, roleID, got.RoleID)
 	assert.Equal(t, "2026-01-01T01:00:00Z", got.ExpiresAt)
-	_, err = invitations.GetBySHA256(ctx, db.Runner(), "deadbeef")
+	_, err = invitations.GetBySHA256(ctx, "deadbeef")
 	assert.ErrorIs(t, err, state.ErrNotFound)
 
 	// 第二条邀请（列表序面）。
@@ -74,24 +74,24 @@ func TestInvitationLifecycleOneShotConsumption(t *testing.T) {
 		TeamID:      teamID, RoleID: roleID,
 		ExpiresAt: "2026-01-01T01:00:00Z",
 	}
-	require.NoError(t, invitations.Create(ctx, db.Runner(), inv2))
+	require.NoError(t, invitations.Create(ctx, inv2))
 
 	// MarkConsumed：落单次使用位，consumed_at 钉假时钟。
 	clock.Advance(30e9)
-	require.NoError(t, invitations.MarkConsumed(ctx, db.Runner(), inv.ID))
-	got, err = invitations.GetBySHA256(ctx, db.Runner(), inv.TokenSHA256)
+	require.NoError(t, invitations.MarkConsumed(ctx, inv.ID))
+	got, err = invitations.GetBySHA256(ctx, inv.TokenSHA256)
 	require.NoError(t, err)
 	assert.Equal(t, state.FormatTime(clock.Now()), got.ConsumedAt,
 		"consumption stamps the acceptance instant")
 
 	// 一次性语义：已消费行再 MarkConsumed → ErrConflict（并发双 accept
 	// 只有一个成功）。
-	err = invitations.MarkConsumed(ctx, db.Runner(), inv.ID)
+	err = invitations.MarkConsumed(ctx, inv.ID)
 	assert.ErrorIs(t, err, state.ErrConflict,
 		"a consumed invitation must refuse a second consumption")
 
 	// List：seq 稳定序，含已消费与未消费行（状态是可见事实）。
-	list, err := invitations.List(ctx, db.Runner())
+	list, err := invitations.List(ctx)
 	require.NoError(t, err)
 	require.Len(t, list, 2)
 	assert.Equal(t, inv.ID, list[0].ID)

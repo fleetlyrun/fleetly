@@ -2,11 +2,11 @@ package engine
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
@@ -100,31 +100,31 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 	var out *deployment.Deployment
 	var adm *Admission
 	var supersededIDs []string
-	err := e.db.Tx(ctx, func(tx *sql.Tx) error {
+	err := e.tx.Do(ctx, func(s transact.Stores) error {
 		// 0. App 存活判定（API/webhook 的预读只是快速失败面；权威判定在此）。
-		appRow, err := e.apps.Get(ctx, tx, req.AppID)
+		appRow, err := s.Apps.Get(ctx, req.AppID)
 		if err != nil {
 			return err
 		}
 		// 0.5 跨 Project 引用受理预检（ADR-0013 附录 A.3 fail-closed 第一道；
 		// prepare 的投影预检是第二道）：未 approved 的引用拒绝入队——
 		// 排队中途被撤销仍会在 prepare/投影失败至终态，双道闭合。
-		if err := e.CheckPeerRefs(ctx, tx, appRow.ProjectID, req.RevisionID); err != nil {
+		if err := e.CheckPeerRefs(ctx, s, appRow.ProjectID, req.RevisionID); err != nil {
 			return err
 		}
 		// 0.6 preDeployJobs 裸网名在场性预检（B12 P3-5 fail-closed）：项目内
 		// 无该网的裸网名拒绝入队——typo 在受理位显式失败，不冻结进 spec
 		// 等 job 超时才暴露。
-		if err := e.CheckPreDeployNetworks(ctx, tx, appRow.ProjectID, req.RevisionID); err != nil {
+		if err := e.CheckPreDeployNetworks(ctx, s, appRow.ProjectID, req.RevisionID); err != nil {
 			return err
 		}
 
 		// 1. 幂等键去重（键作用域 = App，B10：异 App 同键各自独立受理）。
 		//    命中即 deduplicated 附注（位次 = 既有部署在活跃集内的位置）。
 		if req.IdempotencyKey != "" {
-			existing, err := e.deployments.FindActiveByIdempotencyKey(ctx, tx, req.AppID, req.IdempotencyKey)
+			existing, err := s.Deployments.FindActiveByIdempotencyKey(ctx, req.AppID, req.IdempotencyKey)
 			if err == nil {
-				active, aerr := e.deployments.ActiveByApp(ctx, tx, req.AppID)
+				active, aerr := s.Deployments.ActiveByApp(ctx, req.AppID)
 				if aerr != nil {
 					return aerr
 				}
@@ -137,7 +137,7 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 			}
 		}
 
-		active, err := e.deployments.ActiveByApp(ctx, tx, req.AppID)
+		active, err := s.Deployments.ActiveByApp(ctx, req.AppID)
 		if err != nil {
 			return err
 		}
@@ -163,11 +163,11 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 				ErrQueueFull, len(queued), req.AppID, e.opts.Deploy.QueueCapacity)
 		}
 
-		gen, err := e.deployments.NextGeneration(ctx, tx, req.AppID)
+		gen, err := s.Deployments.NextGeneration(ctx, req.AppID)
 		if err != nil {
 			return err
 		}
-		dseq, err := e.db.NextSeq(ctx, tx, "deployments")
+		dseq, err := s.NextSeq(ctx, "deployments")
 		if err != nil {
 			return err
 		}
@@ -179,7 +179,7 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 		// StopTask 自开事务，不得嵌套）。
 		if req.Supersede {
 			for _, d := range inFlight {
-				if err := e.transit(ctx, tx, d,
+				if err := e.transit(ctx, s, d,
 					deployment.ActiveStatesNoQueued(), deployment.StateSuperseded,
 					func(m *deployment.Deployment) { m.SupersededBy = newID }); err != nil {
 					return err
@@ -189,7 +189,7 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 		}
 		// 5. latest-wins：既有 queued 全部让位（active 按 id 升序 → queued 亦然）。
 		for _, d := range queued {
-			if err := e.transit(ctx, tx, d,
+			if err := e.transit(ctx, s, d,
 				[]deployment.State{deployment.StateQueued}, deployment.StateSuperseded,
 				func(m *deployment.Deployment) { m.SupersededBy = newID }); err != nil {
 				return err
@@ -197,7 +197,7 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 		}
 
 		// 6. 受理落行 + 事件 + 审计。
-		baseline, baselineGen, err := e.lastDeployedRevision(ctx, tx, req.AppID)
+		baseline, baselineGen, err := e.lastDeployedRevision(ctx, s, req.AppID)
 		if err != nil {
 			return err
 		}
@@ -224,14 +224,14 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 		if req.Kind != "" {
 			afterFP = fmt.Sprintf("%s; kind=%s", d.ToRevision, req.Kind)
 		}
-		if err := e.commitWrite(ctx, tx, writeFact{
-			write: func(ctx context.Context, tx *sql.Tx) error {
-				return e.deployments.Create(ctx, tx, d)
+		if err := e.commitWrite(ctx, s, writeFact{
+			write: func(ctx context.Context, s transact.Stores) error {
+				return s.Deployments.Create(ctx, d)
 			},
 			facts: []func() writes.FactRow{func() writes.FactRow {
 				fr := writes.FactRow{
 					Name: eventStateName(d.State), Aggregate: "deployment", ID: d.ID,
-					Payload: deploymentEventPayloadJSON(d), TeamID: e.eventTeamOfApp(ctx, tx, d.AppID),
+					Payload: deploymentEventPayloadJSON(d), TeamID: e.eventTeamOfApp(ctx, s, d.AppID),
 					Action: "deployment.create", Resource: "deployment/" + d.ID, AfterFP: afterFP,
 					Actor:  authn.ActorFromContext(ctx),
 					Source: authn.SourceFromContext(ctx),
@@ -262,7 +262,7 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 		return nil, nil, err
 	}
 	for _, id := range supersededIDs {
-		if fresh, err := e.deployments.Get(ctx, e.db.Runner(), id); err == nil {
+		if fresh, err := e.repos.Deployments.Get(ctx, id); err == nil {
 			e.abandonPreDeployJobs(ctx, fresh)
 		} else {
 			e.log.Error("submit: supersede abandon lookup", "deployment", id, "err", err)
@@ -279,19 +279,19 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 // 决策 6：审计携带操作者）。
 func (e *Engine) Cancel(ctx context.Context, id string) (*deployment.Deployment, error) {
 	var out *deployment.Deployment
-	err := e.db.Tx(ctx, func(tx *sql.Tx) error {
-		d, err := e.deployments.Get(ctx, tx, id)
+	err := e.tx.Do(ctx, func(s transact.Stores) error {
+		d, err := s.Deployments.Get(ctx, id)
 		if err != nil {
 			return err
 		}
 		if d.State.Terminal() {
 			return fmt.Errorf("%w: deployment %s is %s", ErrNotCancellable, id, d.State)
 		}
-		if err := e.transit(ctx, tx, d,
+		if err := e.transit(ctx, s, d,
 			deployment.ActiveStates(), deployment.StateCancelled, nil); err != nil {
 			return err
 		}
-		out, err = e.deployments.Get(ctx, tx, id)
+		out, err = s.Deployments.Get(ctx, id)
 		return err
 	})
 	if err != nil {
@@ -308,23 +308,15 @@ func (e *Engine) Cancel(ctx context.Context, id string) (*deployment.Deployment,
 // 对象，失败即终态，领域模型 §4）。查询失败如实上抛（C5：吞错误按"首次"
 // 处理会在失败时缺回滚对象——错误面进不了事务，整单拒绝让调用方看到
 // 存储故障）。
-func (e *Engine) lastDeployedRevision(ctx context.Context, tx *sql.Tx, appID string) (string, uint64, error) {
-	rows, err := tx.QueryContext(ctx,
-		`SELECT to_revision, generation FROM deployments WHERE app_id = ? AND state = 'succeeded'
-		 ORDER BY id DESC LIMIT 1`, appID)
+func (e *Engine) lastDeployedRevision(ctx context.Context, s transact.Stores, appID string) (string, uint64, error) {
+	d, err := s.Deployments.LatestSucceeded(ctx, appID)
+	if errors.Is(err, state.ErrNotFound) {
+		return "", 0, nil // 首次部署：无基线（回滚无对象，失败即终态）
+	}
 	if err != nil {
 		return "", 0, fmt.Errorf("resolve baseline: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck // 只读单行，关闭错误无处置面
-	if rows.Next() {
-		var rev string
-		var gen uint64
-		if err := rows.Scan(&rev, &gen); err != nil {
-			return "", 0, fmt.Errorf("resolve baseline: %w", err)
-		}
-		return rev, gen, nil
-	}
-	return "", 0, nil
+	return d.ToRevision, d.Generation, nil
 }
 
 // transit（四件一的 Deployment 前门）与 transitAndReload 已收口至

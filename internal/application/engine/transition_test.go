@@ -6,13 +6,13 @@ package engine
 
 import (
 	"context"
-	"database/sql"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 )
@@ -20,7 +20,7 @@ import (
 // auditActions 取审计动作列表（按资源前缀过滤；空前缀 = 全部）。
 func auditActions(t *testing.T, e *Engine, resourcePrefix string) []string {
 	t.Helper()
-	rows, err := e.audits.List(context.Background(), e.db.Runner(), 500)
+	rows, err := e.repos.Audits.List(context.Background(), 500)
 	require.NoError(t, err)
 	var actions []string
 	for _, r := range rows {
@@ -155,16 +155,16 @@ func TestCommitWriteRollsBackOnEventFailure(t *testing.T) {
 		State: task.StateActive, Spec: []byte("{}"), DesiredConcurrency: 1,
 		DNSName: TaskDNSName(tid),
 	}
-	err := e.db.Tx(ctx, func(tx *sql.Tx) error {
-		return e.commitWrite(ctx, tx, writeFact{
-			write: func(ctx context.Context, tx *sql.Tx) error { return e.tasks.Create(ctx, tx, row) },
+	err := e.tx.Do(ctx, func(s transact.Stores) error {
+		return e.commitWrite(ctx, s, writeFact{
+			write: func(ctx context.Context, s transact.Stores) error { return s.Tasks.Create(ctx, row) },
 			facts: []func() writes.FactRow{func() writes.FactRow {
 				return writes.FactRow{Name: "task.not-registered", Aggregate: "task", ID: tid}
 			}},
 		})
 	})
 	require.Error(t, err, "未注册事件名被注册表拒绝")
-	_, gerr := e.tasks.Get(ctx, e.db.Runner(), tid)
+	_, gerr := e.repos.Tasks.Get(ctx, tid)
 	assert.Error(t, gerr, "事件失败整单回滚——行不落")
 }
 

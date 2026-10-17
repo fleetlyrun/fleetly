@@ -137,20 +137,20 @@ func (e *Enforcer) Unary() grpc.UnaryServerInterceptor {
 		fp := fingerprint(info.FullMethod, req)
 		now := e.db.Clock().Now()
 
-		rec, err := e.repo.Get(ctx, e.db.Runner(), key)
+		rec, err := e.repo.Get(ctx, key)
 		switch {
 		case err == nil && rec.ExpiresAt.After(now):
 			return e.dispatchRecorded(ctx, rec, info.FullMethod, fp)
 		case err == nil:
 			// 过期（含崩溃遗留 inflight）：惰性清理后重新认领。
-			if rerr := e.repo.Release(ctx, e.db.Runner(), key); rerr != nil {
+			if rerr := e.repo.Release(ctx, key); rerr != nil {
 				e.log.Error("idem: release expired record", "key", key, "err", rerr)
 			}
 		case !errors.Is(err, state.ErrNotFound):
 			return nil, apperr.New("E_INTERNAL", "idempotency lookup failed").WithCause(err)
 		}
 
-		if err := e.repo.Claim(ctx, e.db.Runner(), key, info.FullMethod, fp, ClaimTTL); err != nil {
+		if err := e.repo.Claim(ctx, key, info.FullMethod, fp, ClaimTTL); err != nil {
 			if errors.Is(err, state.ErrAlreadyExists) {
 				// 并发同键：另一请求刚认领（Get 未及见）。诚实报在途冲突。
 				return nil, conflictErr("a request with this Idempotency-Key is already in progress; retry after it completes to get the replayed response")
@@ -161,7 +161,7 @@ func (e *Enforcer) Unary() grpc.UnaryServerInterceptor {
 		resp, err := handler(ctx, req)
 		if err != nil {
 			// 失败无响应可重放：释放认领，同键干净重试。
-			if rerr := e.repo.Release(ctx, e.db.Runner(), key); rerr != nil {
+			if rerr := e.repo.Release(ctx, key); rerr != nil {
 				e.log.Error("idem: release after handler failure", "key", key, "err", rerr)
 			}
 			return nil, err
@@ -200,14 +200,14 @@ func (e *Enforcer) complete(ctx context.Context, key string, resp any) {
 		return
 	}
 	typeURL := "type.googleapis.com/" + string(msg.ProtoReflect().Descriptor().FullName())
-	if err := e.repo.Complete(ctx, e.db.Runner(), key, typeURL, body, Retention); err != nil {
+	if err := e.repo.Complete(ctx, key, typeURL, body, Retention); err != nil {
 		e.log.Error("idem: complete record", "key", key, "err", err)
 	}
 }
 
 // Sweep 清理保留窗外的一切行（janitor 周期执行；返回清理行数供观测日志）。
 func (e *Enforcer) Sweep(ctx context.Context) (int64, error) {
-	return e.repo.Sweep(ctx, e.db.Runner())
+	return e.repo.Sweep(ctx)
 }
 
 // replay 从在册响应引用重建响应消息（proto 全局注册表构造零值实例后反

@@ -15,14 +15,15 @@ import (
 // repo 是 domain idempotency.Repo 的 SQLite 实现。
 type repo struct {
 	clock state.Clock
+	run   state.Runner
 }
 
 // New 构造 repo（直接返回接口——消费面只见 domain idempotency.Repo）。
-func New(clock state.Clock) idempotency.Repo { return &repo{clock: clock} }
+func New(clock state.Clock, run state.Runner) idempotency.Repo { return &repo{clock: clock, run: run} }
 
 // Get 按键直读（含过期行——过期判定与惰性清理在调用方）。
-func (r *repo) Get(ctx context.Context, run state.Runner, key string) (*idempotency.Record, error) {
-	row := run.QueryRowContext(ctx, `
+func (r *repo) Get(ctx context.Context, key string) (*idempotency.Record, error) {
+	row := r.run.QueryRowContext(ctx, `
 		SELECT idem_key, method, fingerprint, state, response_type, response_body, created_at, expires_at
 		FROM idempotency_records WHERE idem_key = ?`, key)
 	var rec idempotency.Record
@@ -43,9 +44,9 @@ func (r *repo) Get(ctx context.Context, run state.Runner, key string) (*idempote
 
 // Claim 落一条 inflight 认领（键不存在时）。键已被认领/完成返回
 // state.ErrAlreadyExists——调用方据此进入重放/冲突分诊，不覆盖任何在册行。
-func (r *repo) Claim(ctx context.Context, run state.Runner, key, method, fingerprint string, claimTTL time.Duration) error {
+func (r *repo) Claim(ctx context.Context, key, method, fingerprint string, claimTTL time.Duration) error {
 	now := r.clock.Now()
-	_, err := run.ExecContext(ctx, `
+	_, err := r.run.ExecContext(ctx, `
 		INSERT INTO idempotency_records (idem_key, method, fingerprint, state, created_at, expires_at)
 		VALUES (?, ?, ?, ?, ?, ?)`,
 		key, method, fingerprint, idempotency.StateInflight,
@@ -59,8 +60,8 @@ func (r *repo) Claim(ctx context.Context, run state.Runner, key, method, fingerp
 // Complete 把 inflight 行落为完成态：携带响应引用（proto 全名 + 确定性
 // 序列化体）与 24h 保留窗。行不存在（已被清理/释放）返回 ErrNotFound——
 // 幂等承诺随行消失，调用方按无记录处理（不复活）。
-func (r *repo) Complete(ctx context.Context, run state.Runner, key, responseType string, body []byte, retention time.Duration) error {
-	res, err := run.ExecContext(ctx, `
+func (r *repo) Complete(ctx context.Context, key, responseType string, body []byte, retention time.Duration) error {
+	res, err := r.run.ExecContext(ctx, `
 		UPDATE idempotency_records
 		SET state = ?, response_type = ?, response_body = ?, expires_at = ?
 		WHERE idem_key = ?`,
@@ -77,14 +78,14 @@ func (r *repo) Complete(ctx context.Context, run state.Runner, key, responseType
 
 // Release 删除认领行（handler 失败路径：允许同键干净重试——失败请求无
 // 响应可重放）。
-func (r *repo) Release(ctx context.Context, run state.Runner, key string) error {
-	_, err := run.ExecContext(ctx, `DELETE FROM idempotency_records WHERE idem_key = ?`, key)
+func (r *repo) Release(ctx context.Context, key string) error {
+	_, err := r.run.ExecContext(ctx, `DELETE FROM idempotency_records WHERE idem_key = ?`, key)
 	return err
 }
 
 // Sweep 清理保留窗外的一切行（janitor 周期执行；返回清理行数供观测）。
-func (r *repo) Sweep(ctx context.Context, run state.Runner) (int64, error) {
-	res, err := run.ExecContext(ctx,
+func (r *repo) Sweep(ctx context.Context) (int64, error) {
+	res, err := r.run.ExecContext(ctx,
 		`DELETE FROM idempotency_records WHERE expires_at < ?`,
 		state.FormatTime(r.clock.Now()))
 	if err != nil {

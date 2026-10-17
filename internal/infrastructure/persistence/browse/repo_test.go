@@ -27,14 +27,14 @@ const (
 func TestBrowseSessionLedgerLifecycle(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	sessions := browserepo.New(clock)
+	sessions := browserepo.New(clock, db.Runner())
 
 	// 首见落行：ID 由 database+seq 派生；行不承载凭证，时间由受理方给定。
 	s1 := &browse.Session{
 		ProjectID: projA, DatabaseID: "db-9", Engine: "postgres",
 		ReadOnly: true, CreatedAt: "2026-01-01T00:00:00Z", ExpiresAt: "2026-01-01T01:00:00Z",
 	}
-	require.NoError(t, sessions.Create(ctx, db.Runner(), s1))
+	require.NoError(t, sessions.Create(ctx, s1))
 	assert.Equal(t, "db-9-s1", s1.ID, "default id derives from database id and seq")
 	assert.Equal(t, int64(1), s1.Seq)
 
@@ -43,15 +43,15 @@ func TestBrowseSessionLedgerLifecycle(t *testing.T) {
 		ProjectID: projB, DatabaseID: "db-8", Engine: "mysql",
 		ReadOnly: false, CreatedAt: "2026-01-01T00:00:00Z", ExpiresAt: "2026-01-01T01:00:00Z",
 	}
-	require.NoError(t, sessions.Create(ctx, db.Runner(), s2))
+	require.NoError(t, sessions.Create(ctx, s2))
 	s3 := &browse.Session{
 		ProjectID: projA, DatabaseID: "db-7", Engine: "postgres",
 		ReadOnly: true, CreatedAt: "2026-01-01T00:00:00Z", ExpiresAt: "2026-01-01T01:00:00Z",
 	}
-	require.NoError(t, sessions.Create(ctx, db.Runner(), s3))
+	require.NoError(t, sessions.Create(ctx, s3))
 
 	// List：seq 稳定序全量行，布尔面读回。
-	list, err := sessions.List(ctx, db.Runner())
+	list, err := sessions.List(ctx)
 	require.NoError(t, err)
 	require.Len(t, list, 3)
 	assert.Equal(t, s1.ID, list[0].ID)
@@ -63,25 +63,25 @@ func TestBrowseSessionLedgerLifecycle(t *testing.T) {
 	assert.Equal(t, "2026-01-01T01:00:00Z", list[0].ExpiresAt)
 
 	// CountByProject：项目隔离计数。
-	n, err := sessions.CountByProject(ctx, db.Runner(), projA)
+	n, err := sessions.CountByProject(ctx, projA)
 	require.NoError(t, err)
 	assert.Equal(t, 2, n)
-	n, err = sessions.CountByProject(ctx, db.Runner(), projB)
+	n, err = sessions.CountByProject(ctx, projB)
 	require.NoError(t, err)
 	assert.Equal(t, 1, n)
-	n, err = sessions.CountByProject(ctx, db.Runner(), "01JD0PROJ0000000000000000C")
+	n, err = sessions.CountByProject(ctx, "01JD0PROJ0000000000000000C")
 	require.NoError(t, err)
 	assert.Equal(t, 0, n)
 
 	// Delete：回收收口即删行；再删/删缺行都是幂等成功（无 NotFound 面）。
-	require.NoError(t, sessions.Delete(ctx, db.Runner(), s1.ID))
-	list, err = sessions.List(ctx, db.Runner())
+	require.NoError(t, sessions.Delete(ctx, s1.ID))
+	list, err = sessions.List(ctx)
 	require.NoError(t, err)
 	require.Len(t, list, 2)
-	n, err = sessions.CountByProject(ctx, db.Runner(), projA)
+	n, err = sessions.CountByProject(ctx, projA)
 	require.NoError(t, err)
 	assert.Equal(t, 1, n, "deleted sessions leave the quota count")
-	require.NoError(t, sessions.Delete(ctx, db.Runner(), s1.ID),
+	require.NoError(t, sessions.Delete(ctx, s1.ID),
 		"deleting an already-recycled session is an idempotent success")
-	require.NoError(t, sessions.Delete(ctx, db.Runner(), "missing-id"))
+	require.NoError(t, sessions.Delete(ctx, "missing-id"))
 }

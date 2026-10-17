@@ -43,7 +43,7 @@ const tMigrateJob = `{"name":"migrate","ttl":"600s","process":{"image":"busybox:
 // createProjectNetwork 落一条项目网络行（缺省挂靠断言的锚）。
 func createProjectNetwork(t *testing.T, e *Engine, id, name string) {
 	t.Helper()
-	require.NoError(t, networkrepo.New(e.clock).Create(context.Background(), e.db.Runner(),
+	require.NoError(t, networkrepo.New(e.clock, e.db.Runner()).Create(context.Background(),
 		&network.Network{ID: id, ProjectID: tProjectID, Name: name}))
 }
 
@@ -52,7 +52,7 @@ func mintedJobTask(t *testing.T, e *Engine, d *deployment.Deployment) *task.Task
 	t.Helper()
 	_, taskID, ok := d.PreDeployAnchor()
 	require.True(t, ok, "deployment should be anchored on a pre-deploy task (cursor=%q)", d.PreDeploy)
-	row, err := e.tasks.Get(context.Background(), e.db.Runner(), taskID)
+	row, err := e.repos.Tasks.Get(context.Background(), taskID)
 	require.NoError(t, err)
 	return row
 }
@@ -393,7 +393,7 @@ func TestPreDeployFromBuildDigest(t *testing.T) {
 	d, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
 	require.NoError(t, err)
 	e.step(ctx) // building：driveBuilding 受理 Build 行
-	queued, err := e.builds.ListByRevision(ctx, e.db.Runner(), revID)
+	queued, err := e.repos.Builds.ListByRevision(ctx, revID)
 	require.NoError(t, err)
 	require.Len(t, queued, 1)
 	require.NotEmpty(t, queued[0].Repo, "every production-created build row carries its repo")
@@ -401,7 +401,7 @@ func TestPreDeployFromBuildDigest(t *testing.T) {
 
 	// 构建产物收终态（releasing 进入条件 = build succeeded；经 Transit 携
 	// digest——Create 不落 digest 列，真实流同款路径）。
-	require.NoError(t, e.builds.Transit(ctx, e.db.Runner(), queued[0].ID,
+	require.NoError(t, e.repos.Builds.Transit(ctx, queued[0].ID,
 		[]build.State{build.StateQueued}, build.StateSucceeded,
 		func(m *build.Build) { m.Digest = tFakeDigest }))
 
@@ -511,7 +511,7 @@ func TestRollbackAuditAnnotatesKind(t *testing.T) {
 
 	plain, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
 	require.NoError(t, err)
-	entries, err := e.audits.ListFiltered(ctx, e.db.Runner(),
+	entries, err := e.repos.Audits.ListFiltered(ctx,
 		audit.Filter{ActionPrefix: "deployment.create", Resource: "deployment/" + plain.ID})
 	require.NoError(t, err)
 	require.Len(t, entries, 1)
@@ -519,7 +519,7 @@ func TestRollbackAuditAnnotatesKind(t *testing.T) {
 
 	rb, _, err := e.Rollback(ctx, tAppID, revID)
 	require.NoError(t, err)
-	entries, err = e.audits.ListFiltered(ctx, e.db.Runner(),
+	entries, err = e.repos.Audits.ListFiltered(ctx,
 		audit.Filter{ActionPrefix: "deployment.create", Resource: "deployment/" + rb.ID})
 	require.NoError(t, err)
 	require.Len(t, entries, 1)
@@ -576,7 +576,7 @@ func TestPreDeployLateCompletionNotL1Timeout(t *testing.T) {
 // taskCount 数项目 Task 行（零重铸断言的口径）。
 func taskCount(t *testing.T, e *Engine) int {
 	t.Helper()
-	rows, err := e.tasks.ListByProject(context.Background(), e.db.Runner(), tProjectID, 0, 1000)
+	rows, err := e.repos.Tasks.ListByProject(context.Background(), tProjectID, 0, 1000)
 	require.NoError(t, err)
 	return len(rows)
 }

@@ -5,7 +5,6 @@ package hook
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"testing"
 	"time"
@@ -19,13 +18,13 @@ import (
 func seedApp(t *testing.T, db *persistence.DB) {
 	t.Helper()
 	ctx := context.Background()
-	err := db.Tx(ctx, func(tx *sql.Tx) error {
+	err := db.Tx(ctx, func(run state.Runner) error {
 		now := "2026-09-30T00:00:00Z"
-		if _, err := tx.ExecContext(ctx,
+		if _, err := run.ExecContext(ctx,
 			`INSERT INTO projects (id, seq, name, team_id, created_at, updated_at) VALUES ('p1', 1, 'shop', 'default', ?, ?)`, now, now); err != nil {
 			return err
 		}
-		_, err := tx.ExecContext(ctx,
+		_, err := run.ExecContext(ctx,
 			`INSERT INTO apps (id, seq, project_id, name, created_at, updated_at) VALUES ('a1', 1, 'p1', 'web', ?, ?)`, now, now)
 		return err
 	})
@@ -38,18 +37,18 @@ func TestHookConfigRoundTrip(t *testing.T) {
 	db, clock := statetest.New(t)
 	seedApp(t, db)
 	ctx := context.Background()
-	repo := New(clock)
+	repo := New(clock, db.Runner())
 
 	h := &hook.Hook{ //nolint:gosec // 测试夹具的假材料（占位密文/前缀），非真实凭据
 		AppID: "a1", Repo: "https://github.com/acme/shop.git", Branch: "main",
 		Dockerfile: "Dockerfile", WatchPaths: []string{"web/", "libs/core"},
 		TokenSHA256: "sha-a", TokenPrefix: "flthook_ab", SecretCiphertext: []byte("ciphertext"),
 	}
-	if err := repo.Create(ctx, db.Runner(), h); err != nil {
+	if err := repo.Create(ctx, h); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 
-	got, err := repo.Get(ctx, db.Runner(), "a1")
+	got, err := repo.Get(ctx, "a1")
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -64,7 +63,7 @@ func TestHookConfigRoundTrip(t *testing.T) {
 	}
 
 	// URL token 查找键（接收面入口）。
-	byToken, err := repo.GetByTokenSHA256(ctx, db.Runner(), "sha-a")
+	byToken, err := repo.GetByTokenSHA256(ctx, "sha-a")
 	if err != nil {
 		t.Fatalf("get by token: %v", err)
 	}
@@ -76,10 +75,10 @@ func TestHookConfigRoundTrip(t *testing.T) {
 	clock.Advance(2 * time.Second)
 	got.Branch = "release"
 	got.WatchPaths = nil
-	if err := repo.UpdateConfig(ctx, db.Runner(), got); err != nil {
+	if err := repo.UpdateConfig(ctx, got); err != nil {
 		t.Fatalf("update config: %v", err)
 	}
-	after, err := repo.Get(ctx, db.Runner(), "a1")
+	after, err := repo.Get(ctx, "a1")
 	if err != nil {
 		t.Fatalf("get after update: %v", err)
 	}
@@ -95,25 +94,25 @@ func TestHookConfigRoundTrip(t *testing.T) {
 
 	// Rotate 双换。
 	clock.Advance(2 * time.Second)
-	if err := repo.RotateToken(ctx, db.Runner(), "a1", "sha-b", "flthook_cd", []byte("ct-b")); err != nil {
+	if err := repo.RotateToken(ctx, "a1", "sha-b", "flthook_cd", []byte("ct-b")); err != nil {
 		t.Fatalf("rotate: %v", err)
 	}
-	rotated, err := repo.GetByTokenSHA256(ctx, db.Runner(), "sha-b")
+	rotated, err := repo.GetByTokenSHA256(ctx, "sha-b")
 	if err != nil {
 		t.Fatalf("get by new token: %v", err)
 	}
 	if rotated.TokenPrefix != "flthook_cd" || string(rotated.SecretCiphertext) != "ct-b" {
 		t.Fatalf("rotated = %+v", rotated)
 	}
-	if _, err := repo.GetByTokenSHA256(ctx, db.Runner(), "sha-a"); err != state.ErrNotFound {
+	if _, err := repo.GetByTokenSHA256(ctx, "sha-a"); err != state.ErrNotFound {
 		t.Fatalf("old token must be gone, got %v", err)
 	}
 
 	// 未存在行的更新/换材料是 NotFound。
-	if err := repo.UpdateConfig(ctx, db.Runner(), &hook.Hook{AppID: "missing"}); err != state.ErrNotFound {
+	if err := repo.UpdateConfig(ctx, &hook.Hook{AppID: "missing"}); err != state.ErrNotFound {
 		t.Fatalf("update missing = %v", err)
 	}
-	if err := repo.RotateToken(ctx, db.Runner(), "missing", "x", "y", nil); err != state.ErrNotFound {
+	if err := repo.RotateToken(ctx, "missing", "x", "y", nil); err != state.ErrNotFound {
 		t.Fatalf("rotate missing = %v", err)
 	}
 }
@@ -132,9 +131,9 @@ func TestHookCreateConflictNormalization(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seed a2: %v", err)
 	}
-	repo := New(clock)
+	repo := New(clock, db.Runner())
 
-	if err := repo.Create(ctx, db.Runner(), &hook.Hook{
+	if err := repo.Create(ctx, &hook.Hook{
 		AppID: "a1", Repo: "https://example.com/repo.git",
 		TokenSHA256: "sha-a", SecretCiphertext: []byte("ct"),
 	}); err != nil {
@@ -142,7 +141,7 @@ func TestHookCreateConflictNormalization(t *testing.T) {
 	}
 
 	// 同 App 重复首配 → 主键冲突。
-	err = repo.Create(ctx, db.Runner(), &hook.Hook{
+	err = repo.Create(ctx, &hook.Hook{
 		AppID: "a1", Repo: "https://example.com/other.git",
 		TokenSHA256: "sha-b", SecretCiphertext: []byte("ct"),
 	})
@@ -151,7 +150,7 @@ func TestHookCreateConflictNormalization(t *testing.T) {
 	}
 
 	// 异 App 撞 token 查找键 → UNIQUE(token_sha256) 冲突。
-	err = repo.Create(ctx, db.Runner(), &hook.Hook{
+	err = repo.Create(ctx, &hook.Hook{
 		AppID: "a2", Repo: "https://example.com/repo.git",
 		TokenSHA256: "sha-a", SecretCiphertext: []byte("ct"),
 	})
@@ -164,21 +163,21 @@ func TestRecordDeliveryDedup(t *testing.T) {
 	db, clock := statetest.New(t)
 	seedApp(t, db)
 	ctx := context.Background()
-	repo := New(clock)
-	if err := repo.Create(ctx, db.Runner(), &hook.Hook{
+	repo := New(clock, db.Runner())
+	if err := repo.Create(ctx, &hook.Hook{
 		AppID: "a1", Repo: "https://example.com/repo.git", TokenSHA256: "sha-a", SecretCiphertext: []byte("ct"),
 	}); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 
-	dup, err := repo.RecordDelivery(ctx, db.Runner(), "a1", "d-1")
+	dup, err := repo.RecordDelivery(ctx, "a1", "d-1")
 	if err != nil {
 		t.Fatalf("record: %v", err)
 	}
 	if dup {
 		t.Fatalf("first delivery must not be duplicate")
 	}
-	dup, err = repo.RecordDelivery(ctx, db.Runner(), "a1", "d-1")
+	dup, err = repo.RecordDelivery(ctx, "a1", "d-1")
 	if err != nil {
 		t.Fatalf("record again: %v", err)
 	}
@@ -186,7 +185,7 @@ func TestRecordDeliveryDedup(t *testing.T) {
 		t.Fatalf("redelivery must be flagged duplicate")
 	}
 	// 不同 delivery 不互斥。
-	dup, err = repo.RecordDelivery(ctx, db.Runner(), "a1", "d-2")
+	dup, err = repo.RecordDelivery(ctx, "a1", "d-2")
 	if err != nil {
 		t.Fatalf("record d-2: %v", err)
 	}
@@ -196,7 +195,7 @@ func TestRecordDeliveryDedup(t *testing.T) {
 
 	// 保留窗清理：推进 8 天后 d-1 的行被清走，可再次受理。
 	clock.Advance(8 * 24 * time.Hour)
-	dup, err = repo.RecordDelivery(ctx, db.Runner(), "a1", "d-1")
+	dup, err = repo.RecordDelivery(ctx, "a1", "d-1")
 	if err != nil {
 		t.Fatalf("record after retention: %v", err)
 	}
@@ -213,22 +212,22 @@ func TestDeleteByAppCascadesDeliveries(t *testing.T) {
 	db, clock := statetest.New(t)
 	seedApp(t, db)
 	ctx := context.Background()
-	repo := New(clock)
-	if err := repo.Create(ctx, db.Runner(), &hook.Hook{
+	repo := New(clock, db.Runner())
+	if err := repo.Create(ctx, &hook.Hook{
 		AppID: "a1", Repo: "https://example.com/repo.git", TokenSHA256: "sha-a", SecretCiphertext: []byte("ct"),
 	}); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	for _, d := range []string{"d-1", "d-2"} {
-		if _, err := repo.RecordDelivery(ctx, db.Runner(), "a1", d); err != nil {
+		if _, err := repo.RecordDelivery(ctx, "a1", d); err != nil {
 			t.Fatalf("record %s: %v", d, err)
 		}
 	}
 
-	if err := repo.DeleteByApp(ctx, db.Runner(), "a1"); err != nil {
+	if err := repo.DeleteByApp(ctx, "a1"); err != nil {
 		t.Fatalf("delete by app: %v", err)
 	}
-	if _, err := repo.Get(ctx, db.Runner(), "a1"); err != state.ErrNotFound {
+	if _, err := repo.Get(ctx, "a1"); err != state.ErrNotFound {
 		t.Fatalf("hook row must be gone, got %v", err)
 	}
 	var deliveries int
@@ -241,7 +240,7 @@ func TestDeleteByAppCascadesDeliveries(t *testing.T) {
 	}
 
 	// 聚合既净：同 App 重新首配照常铸造（删除-重配环全通）。
-	if err := repo.Create(ctx, db.Runner(), &hook.Hook{
+	if err := repo.Create(ctx, &hook.Hook{
 		AppID: "a1", Repo: "https://example.com/repo.git", TokenSHA256: "sha-b", SecretCiphertext: []byte("ct"),
 	}); err != nil {
 		t.Fatalf("recreate after delete: %v", err)

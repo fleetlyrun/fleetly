@@ -139,7 +139,7 @@ func (g *FreezeGuard) enforce(ctx context.Context, req any, scope freezeScope) e
 	if !resolved {
 		return nil // 寻址失败放行：受理位给出诚实拒绝
 	}
-	rows, err := g.freezes.ActiveForTeam(ctx, g.db.Runner(), team)
+	rows, err := g.freezes.ActiveForTeam(ctx, team)
 	if err != nil {
 		return apperr.New("E_INTERNAL", "change freeze lookup failed").WithCause(err)
 	}
@@ -162,7 +162,7 @@ func (g *FreezeGuard) resolveTeam(ctx context.Context, req any, scope freezeScop
 	if ref == "" {
 		return "", false, nil
 	}
-	team, err := g.anchor.TeamOf(ctx, g.db.Runner(), scope.kind, ref)
+	team, err := g.anchor.TeamOf(ctx, scope.kind, ref)
 	if err != nil {
 		return resolutionError(err)
 	}

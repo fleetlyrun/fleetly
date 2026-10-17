@@ -2,7 +2,6 @@ package engine
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"os"
@@ -12,6 +11,7 @@ import (
 	"time"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
@@ -54,7 +54,7 @@ func (e *Engine) driveBuilding(ctx context.Context, d *deployment.Deployment) (*
 	}
 	// revSeq 是构建产物命名锚（LocalImageRef）：读取失败必须硬失败——静默
 	// 用 0 会撞 r0 tag（审计 Q-9；同驱动步内 revision 必在）。
-	rev, err := e.revisions.Get(ctx, e.db.Runner(), d.ToRevision)
+	rev, err := e.repos.Revisions.Get(ctx, d.ToRevision)
 	if err != nil {
 		return e.failDeployment(ctx, d, "resolve revision for build: "+err.Error())
 	}
@@ -69,7 +69,7 @@ func (e *Engine) driveBuilding(ctx context.Context, d *deployment.Deployment) (*
 	}
 
 	revSeq := rev.Seq
-	existing, err := e.builds.ListByRevision(ctx, e.db.Runner(), d.ToRevision)
+	existing, err := e.repos.Builds.ListByRevision(ctx, d.ToRevision)
 	if err != nil {
 		return nil, err
 	}
@@ -93,7 +93,7 @@ func (e *Engine) driveBuilding(ctx context.Context, d *deployment.Deployment) (*
 
 	// 无 Build 行：准备输入并受理（事件 + 审计同事务）。projectID 解析自
 	// App 行（推送目标前纲与 Build 行 repo 同源一次定型）。
-	a, err := e.apps.Get(ctx, e.db.Runner(), d.AppID)
+	a, err := e.repos.Apps.Get(ctx, d.AppID)
 	if err != nil {
 		return e.failDeployment(ctx, d, "resolve app for build: "+err.Error())
 	}
@@ -103,8 +103,8 @@ func (e *Engine) driveBuilding(ctx context.Context, d *deployment.Deployment) (*
 	}
 	// buildID 在事务内铸（seq = builds MAX+1，ADR-0070）；input 注册随之
 	// 入内（注册即对构建循环可见的时点语义与既有一致——先于行提交）。
-	err = e.db.Tx(ctx, func(tx *sql.Tx) error {
-		bseq, err := e.db.NextSeq(ctx, tx, "builds")
+	err = e.tx.Do(ctx, func(s transact.Stores) error {
+		bseq, err := s.NextSeq(ctx, "builds")
 		if err != nil {
 			return err
 		}
@@ -118,12 +118,12 @@ func (e *Engine) driveBuilding(ctx context.Context, d *deployment.Deployment) (*
 			ID: buildID, Seq: bseq, AppID: d.AppID, RevisionID: d.ToRevision, State: build.StateQueued,
 			Repo: buildRepo(a.ProjectID, d.AppID),
 		}
-		return e.commitWrite(ctx, tx, writeFact{
-			write: func(ctx context.Context, tx *sql.Tx) error { return e.builds.Create(ctx, tx, queued) },
+		return e.commitWrite(ctx, s, writeFact{
+			write: func(ctx context.Context, s transact.Stores) error { return s.Builds.Create(ctx, queued) },
 			facts: []func() writes.FactRow{func() writes.FactRow {
 				return writes.FactRow{
 					Name: eventBuildState(build.StateQueued), Aggregate: "build", ID: buildID,
-					Payload: buildEventPayloadJSON(queued), TeamID: e.eventTeamOfProject(ctx, tx, a.ProjectID),
+					Payload: buildEventPayloadJSON(queued), TeamID: e.eventTeamOfProject(ctx, s, a.ProjectID),
 					Action: "build.create", Resource: "build/" + buildID,
 				}
 			}},
@@ -148,7 +148,7 @@ func (e *Engine) ensureBuildInput(ctx context.Context, d *deployment.Deployment,
 	if ok {
 		return nil // 本进程已登记（正常路径）
 	}
-	a, err := e.apps.Get(ctx, e.db.Runner(), d.AppID)
+	a, err := e.repos.Apps.Get(ctx, d.AppID)
 	if err != nil {
 		return fmt.Errorf("resolve app for build input rebuild: %w", err)
 	}
@@ -310,7 +310,7 @@ func (e *Engine) extractUploadContext(ctx context.Context, uploadID, revisionID 
 	if e.opts.Data.DataRoot == "" {
 		return "", fmt.Errorf("data root is not configured for source extraction")
 	}
-	row, err := e.uploads.Get(ctx, e.db.Runner(), uploadID)
+	row, err := e.repos.SourceUploads.Get(ctx, uploadID)
 	if err != nil {
 		return "", fmt.Errorf("resolve upload source %s: %w", uploadID, err)
 	}

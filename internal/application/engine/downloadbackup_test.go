@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
 
@@ -44,7 +45,7 @@ func TestDownloadBackupPreciseRejections(t *testing.T) {
 	assert.ErrorIs(t, err, state.ErrNotFound)
 
 	// 对象仓未装配 = 精确失败。
-	bare := New(Deps{DB: e.db, Repos: testRepos(e.db), Runtime: newFakeRuntime(), Logger: discardLogger()}, Options{})
+	bare := New(Deps{DB: e.db, Stores: testRepos(e.db), Tx: transact.NewTx(e.db, testBinder(e.db)), Runtime: newFakeRuntime(), Logger: discardLogger()}, Options{})
 	_, _, err = bare.DownloadBackup(context.Background(), tDatabaseID, backupID)
 	assert.Contains(t, err.Error(), "object store is not assembled")
 }

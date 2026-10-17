@@ -76,7 +76,7 @@ func invPush(t *testing.T, h *apitest.Harness, secret, delivery, commit string) 
 // invRevisionRows 读 App 全部 Revision 行（冻结行集合断言面）。
 func invRevisionRows(t *testing.T, h *apitest.Harness, ctx context.Context, appID string) []revision.Revision {
 	t.Helper()
-	rows, err := h.Services.Revisions.ListByApp(ctx, h.DB.Runner(), appID, 0, 100)
+	rows, err := h.Services.Revisions.ListByApp(ctx, appID, 0, 100)
 	require.NoError(t, err)
 	return rows
 }

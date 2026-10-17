@@ -7,13 +7,13 @@ package authn
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/token"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -37,21 +37,21 @@ type BootstrapResult struct {
 // EnsureBootstrapToken 幂等执行首启流：种子 → 在册检查 → journal 检查 →
 // 生成（库 + 文件 + journal 同批落）。repos 由组合根注入；resources 是
 // scope 词表（assembly 单一源注入——本包不复制词表）。
-func EnsureBootstrapToken(ctx context.Context, db state.DB, repos SeedRepos, dataRoot string, resources []string, log *slog.Logger) (BootstrapResult, error) {
-	if err := EnsureSeed(ctx, db, repos, resources); err != nil {
+func EnsureBootstrapToken(ctx context.Context, db state.DB, tx Transactor, repos SeedRepos, dataRoot string, resources []string, log *slog.Logger) (BootstrapResult, error) {
+	if err := EnsureSeed(ctx, tx, resources); err != nil {
 		return BootstrapResult{}, fmt.Errorf("authn: seed: %w", err)
 	}
 	tokens := repos.Tokens
 	users := repos.Users
 
-	alive, err := tokens.HasAliveBootstrap(ctx, db.Runner())
+	alive, err := tokens.HasAliveBootstrap(ctx)
 	if err != nil {
 		return BootstrapResult{}, fmt.Errorf("authn: bootstrap check: %w", err)
 	}
 	if alive {
 		// 在册即不再生成；无用户且文件已失时提示恢复路径（明文 sha256
 		// 存储不可找回，诚实暴露）。
-		count, err := users.Count(ctx, db.Runner())
+		count, err := users.Count(ctx)
 		if err == nil && count == 0 {
 			if _, statErr := os.Stat(filepath.Join(dataRoot, bootstrapTokenFile)); os.IsNotExist(statErr) {
 				log.Warn("bootstrap token exists but its file is gone and no users exist; " +
@@ -77,8 +77,8 @@ func EnsureBootstrapToken(ctx context.Context, db state.DB, repos SeedRepos, dat
 		TeamID: identity.DefaultTeamID, RoleID: identity.RoleOwnerID,
 		SHA256: material.SHA256, Prefix: material.Prefix,
 	}
-	if err := db.Tx(ctx, func(tx *sql.Tx) error {
-		return tokens.Create(ctx, tx, row)
+	if err := tx.Do(ctx, func(s transact.Stores) error {
+		return s.Tokens.Create(ctx, row)
 	}); err != nil {
 		return BootstrapResult{}, fmt.Errorf("authn: persist bootstrap token: %w", err)
 	}

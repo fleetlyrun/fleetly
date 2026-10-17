@@ -8,6 +8,7 @@ package apitest_test
 import (
 	"context"
 	"encoding/json"
+	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
 	"strings"
 	"testing"
 
@@ -22,7 +23,6 @@ import (
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
-	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
 	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
@@ -260,7 +260,7 @@ func TestNetworkRebuildFrozenAndAuthz(t *testing.T) {
 // rebuildNS 取项目行团队构造隔离域（engine 侧 ns 同公式）。
 func rebuildNS(t *testing.T, h *apitest.Harness, projectID string) capability.NamespaceRef {
 	t.Helper()
-	p, err := project.New(h.DB.Clock()).Get(context.Background(), h.DB.Runner(), projectID)
+	p, err := projectrepo.New(h.DB.Clock(), h.DB.Runner()).Get(context.Background(), projectID)
 	require.NoError(t, err)
 	return capability.NamespaceRef{Team: p.TeamID, Project: projectID}
 }

@@ -16,16 +16,17 @@ import (
 // repo 是 domain networkpeer.Repo 的 SQLite 实现。
 type repo struct {
 	clock state.Clock
+	run   state.Runner
 }
 
 // New 构造 repo（直接返回接口——消费面只见 domain networkpeer.Repo）。
-func New(clock state.Clock) networkpeer.Repo { return &repo{clock: clock} }
+func New(clock state.Clock, run state.Runner) networkpeer.Repo { return &repo{clock: clock, run: run} }
 
 // Create 落声明行（挂靠方 declare）。同 (network, peer) 已有非 revoked 行
 // → ErrAlreadyExists（pending/approved 在场不可重复声明；撤销后可再来——
 // 新审批环）。
-func (r *repo) Create(ctx context.Context, run state.Runner, p *networkpeer.Peer) error {
-	seq, err := persistence.NextSeq(ctx, run, "network_peers")
+func (r *repo) Create(ctx context.Context, p *networkpeer.Peer) error {
+	seq, err := persistence.NextSeq(ctx, r.run, "network_peers")
 	if err != nil {
 		return err
 	}
@@ -36,7 +37,7 @@ func (r *repo) Create(ctx context.Context, run state.Runner, p *networkpeer.Peer
 	now := state.FormatTime(r.clock.Now())
 	p.CreatedAt, p.UpdatedAt = now, now
 	p.State = networkpeer.StatePending
-	_, err = run.ExecContext(ctx, `
+	_, err = r.run.ExecContext(ctx, `
 		INSERT INTO network_peers (id, seq, network_id, peer_project_id, state, created_at, updated_at, approved_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, '')`,
 		p.ID, p.Seq, p.NetworkID, p.PeerProjectID, string(p.State), p.CreatedAt, p.UpdatedAt)
@@ -48,15 +49,15 @@ func (r *repo) Create(ctx context.Context, run state.Runner, p *networkpeer.Peer
 }
 
 // Get 按 ID 直读（含 revoked——终态事实可见）。
-func (r *repo) Get(ctx context.Context, run state.Runner, id string) (*networkpeer.Peer, error) {
-	row := run.QueryRowContext(ctx, selectCols+" WHERE id = ?", id)
+func (r *repo) Get(ctx context.Context, id string) (*networkpeer.Peer, error) {
+	row := r.run.QueryRowContext(ctx, selectCols+" WHERE id = ?", id)
 	return scanPeer(row.Scan)
 }
 
 // FindActive 按 (network, peer project) 读非 revoked 行（无 → ErrNotFound；
 // pending/approved 均返回——批准态由调用方判定）。
-func (r *repo) FindActive(ctx context.Context, run state.Runner, networkID, peerProjectID string) (*networkpeer.Peer, error) {
-	row := run.QueryRowContext(ctx,
+func (r *repo) FindActive(ctx context.Context, networkID, peerProjectID string) (*networkpeer.Peer, error) {
+	row := r.run.QueryRowContext(ctx,
 		selectCols+" WHERE network_id = ? AND peer_project_id = ? AND state != 'revoked'",
 		networkID, peerProjectID)
 	return scanPeer(row.Scan)
@@ -64,9 +65,9 @@ func (r *repo) FindActive(ctx context.Context, run state.Runner, networkID, peer
 
 // Approve 是接收方批准的 CAS（pending → approved，落 approved_at）。
 // 前置不符 → ErrConflict（已批准/已撤销）。
-func (r *repo) Approve(ctx context.Context, run state.Runner, id string) error {
+func (r *repo) Approve(ctx context.Context, id string) error {
 	now := state.FormatTime(r.clock.Now())
-	res, err := run.ExecContext(ctx, `
+	res, err := r.run.ExecContext(ctx, `
 		UPDATE network_peers SET state = ?, approved_at = ?, updated_at = ?
 		`+persistence.TransitWhere,
 		string(networkpeer.StateApproved), now, now, id, string(networkpeer.StatePending))
@@ -74,7 +75,7 @@ func (r *repo) Approve(ctx context.Context, run state.Runner, id string) error {
 		return err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		if _, gerr := r.Get(ctx, run, id); gerr != nil {
+		if _, gerr := r.Get(ctx, id); gerr != nil {
 			return gerr
 		}
 		return fmt.Errorf("%w: peer declaration %s is not pending", state.ErrConflict, id)
@@ -84,8 +85,8 @@ func (r *repo) Approve(ctx context.Context, run state.Runner, id string) error {
 
 // Revoke 是撤销的 CAS（pending|approved → revoked）。已 revoked 由调用方
 // 幂等短路（Get 判态），此处只负责单拍迁移。
-func (r *repo) Revoke(ctx context.Context, run state.Runner, id string) error {
-	res, err := run.ExecContext(ctx, `
+func (r *repo) Revoke(ctx context.Context, id string) error {
+	res, err := r.run.ExecContext(ctx, `
 		UPDATE network_peers SET state = ?, updated_at = ?
 		WHERE id = ? AND state IN ('pending', 'approved')`,
 		string(networkpeer.StateRevoked), state.FormatTime(r.clock.Now()), id)
@@ -93,7 +94,7 @@ func (r *repo) Revoke(ctx context.Context, run state.Runner, id string) error {
 		return err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		if _, gerr := r.Get(ctx, run, id); gerr != nil {
+		if _, gerr := r.Get(ctx, id); gerr != nil {
 			return gerr
 		}
 		return fmt.Errorf("%w: peer declaration %s is not revocable", state.ErrConflict, id)
@@ -103,7 +104,7 @@ func (r *repo) Revoke(ctx context.Context, run state.Runner, id string) error {
 
 // List 分页枚举（新→旧 + after 游标；ADR-0026）。network_id / peer_project_id
 // 过滤可选——接收方与挂靠方两侧视图同面。
-func (r *repo) List(ctx context.Context, run state.Runner, networkID, peerProjectID string, afterSeq int64, limit int) ([]networkpeer.Peer, error) {
+func (r *repo) List(ctx context.Context, networkID, peerProjectID string, afterSeq int64, limit int) ([]networkpeer.Peer, error) {
 	limit = persistence.ClampLimit(limit, defaultListLimit, maxListLimit)
 	q := selectCols + " WHERE 1=1"
 	var args []any
@@ -121,13 +122,13 @@ func (r *repo) List(ctx context.Context, run state.Runner, networkID, peerProjec
 	}
 	q += " ORDER BY seq DESC LIMIT ?"
 	args = append(args, limit)
-	return r.query(ctx, run, q, args...)
+	return r.query(ctx, q, args...)
 }
 
 // ListApprovedByPeerProject 返回挂靠方项目的全部 approved 声明（隔离扫描
 // 面：受影响 App 的跨域附件批准态复核）。
-func (r *repo) ListApprovedByPeerProject(ctx context.Context, run state.Runner, peerProjectID string) ([]networkpeer.Peer, error) {
-	return r.query(ctx, run,
+func (r *repo) ListApprovedByPeerProject(ctx context.Context, peerProjectID string) ([]networkpeer.Peer, error) {
+	return r.query(ctx,
 		selectCols+" WHERE peer_project_id = ? AND state = 'approved' ORDER BY seq", peerProjectID)
 }
 
@@ -140,8 +141,8 @@ const selectCols = `
 	SELECT id, seq, network_id, peer_project_id, state, created_at, updated_at, approved_at
 	FROM network_peers`
 
-func (r *repo) query(ctx context.Context, run state.Runner, q string, args ...any) ([]networkpeer.Peer, error) {
-	rows, err := run.QueryContext(ctx, q, args...)
+func (r *repo) query(ctx context.Context, q string, args ...any) ([]networkpeer.Peer, error) {
+	rows, err := r.run.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}

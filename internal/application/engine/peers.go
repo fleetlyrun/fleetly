@@ -15,6 +15,7 @@ import (
 	"fmt"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	specir "github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
@@ -28,7 +29,7 @@ import (
 // 未 approved → ErrCrossProjectRefNotApproved（fail-closed）；isolate：
 // 未 approved 的引用缺席于结果（剥离）。存储错误恒上抛（isolate 也不吞
 // ——读失败剥离等于假隔离）。
-func (e *Engine) resolvePeerRefs(ctx context.Context, run state.Runner, consumerProjectID string, spec *specv1.AppSpec, isolate bool) (PeerRefs, error) {
+func (e *Engine) resolvePeerRefs(ctx context.Context, s transact.Stores, consumerProjectID string, spec *specv1.AppSpec, isolate bool) (PeerRefs, error) {
 	out := PeerRefs{Refs: map[string]capability.NetworkRef{}, Isolate: isolate}
 	resolve := func(net string) error {
 		if !specir.IsCrossProjectRef(net) {
@@ -37,7 +38,7 @@ func (e *Engine) resolvePeerRefs(ctx context.Context, run state.Runner, consumer
 		if _, done := out.Refs[net]; done {
 			return nil // 同引用多进程共享一次解析
 		}
-		ref, approved, err := e.resolveOnePeerRef(ctx, run, consumerProjectID, net)
+		ref, approved, err := e.resolveOnePeerRef(ctx, s, consumerProjectID, net)
 		if err != nil {
 			return err
 		}
@@ -71,13 +72,13 @@ func (e *Engine) resolvePeerRefs(ctx context.Context, run state.Runner, consumer
 // resolveOnePeerRef 解析单条跨 Project 引用：目标 Project 行（团队轴）→
 // 目标网络行 → peer 声明批准态。approved=false 表"引用当前不可投影"
 // （目标不存在/已删、网络无行、未声明/待批/已撤销）——存储错误另行上抛。
-func (e *Engine) resolveOnePeerRef(ctx context.Context, run state.Runner, consumerProjectID, ref string) (capability.NetworkRef, bool, error) {
+func (e *Engine) resolveOnePeerRef(ctx context.Context, s transact.Stores, consumerProjectID, ref string) (capability.NetworkRef, bool, error) {
 	projectID, name, ok := specir.CrossProjectRefParts(ref)
 	if !ok {
 		return capability.NetworkRef{}, false,
 			fmt.Errorf("malformed cross-project reference %q (expected project:<project-id>/<network-name>)", ref)
 	}
-	target, err := e.projects.Get(ctx, run, projectID)
+	target, err := s.Projects.Get(ctx, projectID)
 	if err != nil {
 		if errors.Is(err, state.ErrNotFound) {
 			return capability.NetworkRef{}, false, nil
@@ -87,14 +88,14 @@ func (e *Engine) resolveOnePeerRef(ctx context.Context, run state.Runner, consum
 	if target.Deleted() {
 		return capability.NetworkRef{}, false, nil
 	}
-	net, err := e.networks.GetByName(ctx, run, projectID, name)
+	net, err := s.Networks.GetByName(ctx, projectID, name)
 	if err != nil {
 		if errors.Is(err, state.ErrNotFound) {
 			return capability.NetworkRef{}, false, nil
 		}
 		return capability.NetworkRef{}, false, fmt.Errorf("resolve network %s in project %s: %w", name, projectID, err)
 	}
-	peer, err := e.peerDecls.FindActive(ctx, run, net.ID, consumerProjectID)
+	peer, err := s.NetworkPeers.FindActive(ctx, net.ID, consumerProjectID)
 	if err != nil {
 		if errors.Is(err, state.ErrNotFound) {
 			return capability.NetworkRef{}, false, nil
@@ -113,8 +114,8 @@ func (e *Engine) resolveOnePeerRef(ctx context.Context, run state.Runner, consum
 // CheckPeerRefs 是受理面的 strict 预检（Deploy admission，ADR-0013 附录
 // A.3 双层拒绝的第一道）：spec 引用任一未 approved 的跨 Project 网络即
 // 拒绝入队。Revision 读取经调用方事务 Runner（所见即受理终局）。
-func (e *Engine) CheckPeerRefs(ctx context.Context, run state.Runner, consumerProjectID, revisionID string) error {
-	rev, err := e.revisions.Get(ctx, run, revisionID)
+func (e *Engine) CheckPeerRefs(ctx context.Context, s transact.Stores, consumerProjectID, revisionID string) error {
+	rev, err := s.Revisions.Get(ctx, revisionID)
 	if err != nil {
 		return err
 	}
@@ -122,7 +123,7 @@ func (e *Engine) CheckPeerRefs(ctx context.Context, run state.Runner, consumerPr
 	if err != nil {
 		return err
 	}
-	_, err = e.resolvePeerRefs(ctx, run, consumerProjectID, spec, false)
+	_, err = e.resolvePeerRefs(ctx, s, consumerProjectID, spec, false)
 	return err
 }
 
@@ -132,12 +133,12 @@ func (e *Engine) CheckPeerRefs(ctx context.Context, run state.Runner, consumerPr
 // 已由调用方落账；本方法失败不回滚撤销（受理面已生效），错误上抛由
 // 调用方记录（漂移扫描拍兜底重试）。
 func (e *Engine) IsolateNetworkPeer(ctx context.Context, networkID, peerProjectID string) error {
-	net, err := e.networks.GetByID(ctx, e.db.Runner(), networkID)
+	net, err := e.repos.Networks.GetByID(ctx, networkID)
 	if err != nil {
 		return fmt.Errorf("isolate peer: load network %s: %w", networkID, err)
 	}
 	target := crossProjectRefString(net.ProjectID, net.Name)
-	apps, err := e.apps.ListByProject(ctx, e.db.Runner(), peerProjectID)
+	apps, err := e.repos.Apps.ListByProject(ctx, peerProjectID)
 	if err != nil {
 		return fmt.Errorf("isolate peer: list apps of project %s: %w", peerProjectID, err)
 	}
@@ -145,7 +146,7 @@ func (e *Engine) IsolateNetworkPeer(ctx context.Context, networkID, peerProjectI
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		d, err := e.deployments.LatestSucceeded(ctx, e.db.Runner(), apps[i].ID)
+		d, err := e.repos.Deployments.LatestSucceeded(ctx, apps[i].ID)
 		if err != nil {
 			if errors.Is(err, state.ErrNotFound) {
 				continue // 无成功基线：无可剥离的存量附件
@@ -184,7 +185,7 @@ func (e *Engine) enforcePeerIsolation(ctx context.Context) {
 			return
 		}
 		bad := false
-		a, err := e.apps.Get(ctx, e.db.Runner(), appID)
+		a, err := e.repos.Apps.Get(ctx, appID)
 		if err != nil {
 			continue
 		}
@@ -202,7 +203,7 @@ func (e *Engine) enforcePeerIsolation(ctx context.Context) {
 		if !bad {
 			continue
 		}
-		d, err := e.deployments.LatestSucceeded(ctx, e.db.Runner(), appID)
+		d, err := e.repos.Deployments.LatestSucceeded(ctx, appID)
 		if err != nil {
 			continue // 无基线却带附件：缓存残留，收敛面无从下手，跳过
 		}
@@ -216,14 +217,14 @@ func (e *Engine) enforcePeerIsolation(ctx context.Context) {
 
 // peerRefApproved 复核一条已下发跨域附件的批准态（隔离扫描的单元判定）。
 func (e *Engine) peerRefApproved(ctx context.Context, consumerProjectID string, ref capability.NetworkRef) (bool, error) {
-	net, err := e.networks.GetByName(ctx, e.db.Runner(), ref.Namespace.Project, ref.Name)
+	net, err := e.repos.Networks.GetByName(ctx, ref.Namespace.Project, ref.Name)
 	if err != nil {
 		if errors.Is(err, state.ErrNotFound) {
 			return false, nil
 		}
 		return false, err
 	}
-	peer, err := e.peerDecls.FindActive(ctx, e.db.Runner(), net.ID, consumerProjectID)
+	peer, err := e.repos.NetworkPeers.FindActive(ctx, net.ID, consumerProjectID)
 	if err != nil {
 		if errors.Is(err, state.ErrNotFound) {
 			return false, nil

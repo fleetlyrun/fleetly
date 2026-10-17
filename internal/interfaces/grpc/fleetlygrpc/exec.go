@@ -94,7 +94,7 @@ func (svc *ExecService) CreateExecSession(ctx context.Context, req *runtimev1.Cr
 	if err != nil {
 		return nil, err
 	}
-	team, err := svc.s.Anchor.TeamOfProjectID(ctx, svc.s.DB.Runner(), a.ProjectID)
+	team, err := svc.s.Anchor.TeamOfProjectID(ctx, a.ProjectID)
 	if err != nil {
 		return nil, mapAnchorError(err)
 	}

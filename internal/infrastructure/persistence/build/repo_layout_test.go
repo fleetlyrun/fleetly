@@ -18,15 +18,15 @@ import (
 func TestBuildRepoColumnRoundTrip(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	builds := buildrepo.New(clock)
+	builds := buildrepo.New(clock, db.Runner())
 
 	b := &build.Build{
 		ID: "01JD0BUILD00000000000000000", AppID: "01JD0APP000000000000000000",
 		RevisionID: "01JD0REV000000000000000000", State: build.StateQueued,
 		Repo: "01jd0app000000000000000000/web",
 	}
-	require.NoError(t, builds.Create(ctx, db.Runner(), b))
-	got, err := builds.Get(ctx, db.Runner(), b.ID)
+	require.NoError(t, builds.Create(ctx, b))
+	got, err := builds.Get(ctx, b.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "01jd0app000000000000000000/web", got.Repo)
 }

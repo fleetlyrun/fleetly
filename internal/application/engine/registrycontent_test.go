@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 )
 
@@ -29,7 +30,7 @@ func TestRegistryContentForUnconfiguredFamily(t *testing.T) {
 	// 形态二：Registry 装配但无 content 子面（fakeRegistry 未实现
 	// RegistryContent——FacesOf(...).Content 为 nil）。
 	db, _ := statetest.New(t)
-	e2 := New(Deps{DB: db, Repos: testRepos(db), Runtime: newFakeRuntime(), Registry: newFakeRegistry(), Logger: discardLogger()}, Options{})
+	e2 := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: newFakeRuntime(), Registry: newFakeRegistry(), Logger: discardLogger()}, Options{})
 	t.Cleanup(func() { _ = e2.Stop(context.Background()) })
 	_, err = e2.RegistryCatalog(context.Background(), tProjectID)
 	require.ErrorIs(t, err, ErrRegistryUnavailable)

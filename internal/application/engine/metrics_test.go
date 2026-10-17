@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/alertrule"
@@ -70,7 +71,7 @@ machine_cpu_cores{} 2
 // 非 /docker/ 聚合行跳过、核数观测、率百分比换算。
 func TestParseCadvisor(t *testing.T) {
 	db, clock := statetest.New(t)
-	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: newFakeRuntime(), Logger: discardLogger()}, Options{Data: DataOptions{DataRoot: t.TempDir()}})
+	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: newFakeRuntime(), Logger: discardLogger()}, Options{Data: DataOptions{DataRoot: t.TempDir()}})
 	now := clock.Now()
 	// 首拍：建差分基面（cpu=100）。
 	s0, _ := e.parseCadvisor("01N1", []byte(cadvisorFixture(100, 1024)), now)
@@ -95,7 +96,7 @@ func TestParseCadvisor(t *testing.T) {
 // 金形态（指标名/标签集/行序）确定。
 func TestParseCadvisorWorkloadVocabulary(t *testing.T) {
 	db, clock := statetest.New(t)
-	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: newFakeRuntime(), Logger: discardLogger()}, Options{Data: DataOptions{DataRoot: t.TempDir()}})
+	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: newFakeRuntime(), Logger: discardLogger()}, Options{Data: DataOptions{DataRoot: t.TempDir()}})
 
 	// 首拍：memory 在场、cpu 两指标缺席（差分无基面——零值与缺席是两件事）。
 	_, vocab0 := e.parseCadvisor("01N1", []byte(cadvisorFixture(100, 1024)), clock.Now())
@@ -177,15 +178,15 @@ func TestEvaluateRulesStateMachine(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: newFakeRuntime(), Metrics: fm, Cipher: testCipher(t), Logger: discardLogger()},
+	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: newFakeRuntime(), Metrics: fm, Cipher: testCipher(t), Logger: discardLogger()},
 		Options{Data: DataOptions{DataRoot: t.TempDir()}})
 	ctx := context.Background()
 	require.NoError(t, seedProjectApp(t, clock, db))
 
 	// 通道 + 规则（memory > 1000，for 30s）。
 	sealed := sealChannelConfig(t, e, srv.URL)
-	require.NoError(t, e.NotificationChannelRepo().Create(ctx, db.Runner(), makeChannelRow("ch1", sealed)))
-	require.NoError(t, e.AlertRuleRepo().Create(ctx, db.Runner(), &alertrule.Rule{
+	require.NoError(t, e.NotificationChannelRepo().Create(ctx, makeChannelRow("ch1", sealed)))
+	require.NoError(t, e.AlertRuleRepo().Create(ctx, &alertrule.Rule{
 		ID: "rule1", AppID: tAppID, Metric: alertrule.MetricMemoryWorkingSet,
 		Threshold: 1000, ForSecs: 30, Enabled: true,
 	}))
@@ -193,7 +194,7 @@ func TestEvaluateRulesStateMachine(t *testing.T) {
 	// 首拍：越限（mem=2048>1000）→ 起窗，不 firing。
 	now := clock.Now()
 	e.evaluateRules(ctx, []containerSample{{app: strings.ToLower(tAppID), id: "/system.slice/docker-x.scope", memBytes: 2048}}, now)
-	row, err := e.AlertRuleRepo().Get(ctx, db.Runner(), "rule1")
+	row, err := e.AlertRuleRepo().Get(ctx, "rule1")
 	require.NoError(t, err)
 	assert.Equal(t, alertrule.StateOK, row.State)
 	assert.InDelta(t, 2048, row.LastValue, 0.001, "observed value lands on the row")
@@ -201,32 +202,32 @@ func TestEvaluateRulesStateMachine(t *testing.T) {
 	// 窗内（+10s）：仍不 firing。
 	clock.Advance(10 * time.Second)
 	e.evaluateRules(ctx, []containerSample{{app: strings.ToLower(tAppID), id: "/system.slice/docker-x.scope", memBytes: 2048}}, clock.Now())
-	row, _ = e.AlertRuleRepo().Get(ctx, db.Runner(), "rule1")
+	row, _ = e.AlertRuleRepo().Get(ctx, "rule1")
 	assert.Equal(t, alertrule.StateOK, row.State)
 
 	// 窗满（+21s）：firing + webhook 派发。
 	clock.Advance(21 * time.Second)
 	e.evaluateRules(ctx, []containerSample{{app: strings.ToLower(tAppID), id: "/system.slice/docker-x.scope", memBytes: 2048}}, clock.Now())
-	row, _ = e.AlertRuleRepo().Get(ctx, db.Runner(), "rule1")
+	row, _ = e.AlertRuleRepo().Get(ctx, "rule1")
 	assert.Equal(t, alertrule.StateFiring, row.State)
 	_, hit := gotPayloads.Load("/")
 	assert.True(t, hit, "firing transition must dispatch to the webhook channel")
 
 	// 回落：ok + resolved 派发。
 	e.evaluateRules(ctx, []containerSample{{app: strings.ToLower(tAppID), id: "/system.slice/docker-x.scope", memBytes: 500}}, clock.Now())
-	row, _ = e.AlertRuleRepo().Get(ctx, db.Runner(), "rule1")
+	row, _ = e.AlertRuleRepo().Get(ctx, "rule1")
 	assert.Equal(t, alertrule.StateOK, row.State)
 
 	// 无样本拍：不评估不误恢复（value 零跳过）。
 	e.evaluateRules(ctx, nil, clock.Now())
-	row, _ = e.AlertRuleRepo().Get(ctx, db.Runner(), "rule1")
+	row, _ = e.AlertRuleRepo().Get(ctx, "rule1")
 	assert.Equal(t, alertrule.StateOK, row.State)
 }
 
 // TestEvaluateSystemRules 钉内置规则：s3 缺席 24h → firing；配置 s3 → 归位。
 func TestEvaluateSystemRules(t *testing.T) {
 	db, clock := statetest.New(t)
-	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: newFakeRuntime(), Logger: discardLogger()},
+	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: newFakeRuntime(), Logger: discardLogger()},
 		Options{Data: DataOptions{DataRoot: t.TempDir()}, Backup: BackupOptions{PlatformBackup: &PlatformBackupConfig{Interval: time.Hour}}})
 	ctx := context.Background()
 
@@ -248,7 +249,7 @@ func TestEvaluateSystemRules(t *testing.T) {
 // 绿；map 面（above/lastCPU/cores）不进此测（采集环单写者纪律承载）。
 func TestSystemOffsiteAlertStateRace(t *testing.T) {
 	db, clock := statetest.New(t)
-	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: newFakeRuntime(), Logger: discardLogger()},
+	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: newFakeRuntime(), Logger: discardLogger()},
 		Options{Data: DataOptions{DataRoot: t.TempDir()}, Backup: BackupOptions{PlatformBackup: &PlatformBackupConfig{Interval: time.Hour}}})
 	ctx := context.Background()
 
@@ -300,7 +301,7 @@ func TestSystemOffsiteAlertStateRace(t *testing.T) {
 func TestMetricsStepCadence(t *testing.T) {
 	db, clock := statetest.New(t)
 	fm := &fakeMetrics{}
-	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: newFakeRuntime(), Metrics: fm, Logger: discardLogger()},
+	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: newFakeRuntime(), Metrics: fm, Logger: discardLogger()},
 		Options{Data: DataOptions{DataRoot: t.TempDir()}})
 	e.metricsStep(context.Background())
 	n1 := len(fm.imports)

@@ -54,7 +54,7 @@ func TestTaskOneShotTerminalWaitsForCarrierConvergence(t *testing.T) {
 // finishTaskForTest 把 Task 迁到指定终态（finished_at = 当前假钟时刻）。
 func finishTaskForTest(t *testing.T, e *Engine, id string, to task.State) {
 	t.Helper()
-	require.NoError(t, e.tasks.Transit(context.Background(), e.db.Runner(), id,
+	require.NoError(t, e.repos.Tasks.Transit(context.Background(), id,
 		[]task.State{task.StateActive, task.StateDraining, task.StateCompleted, task.StateFailed, task.StateDrained},
 		to, nil))
 }
@@ -81,7 +81,7 @@ func TestSweepTerminalTaskCarriers(t *testing.T) {
 	finishTaskForTest(t, e, recentFailed, task.StateFailed)
 	recentDrained := "01JD0TASK00000000000000013"
 	createTaskRow(t, e, recentDrained, "idle", task.FormResident, 2, 0, "grp")
-	require.NoError(t, e.tasks.Transit(ctx, e.db.Runner(), recentDrained,
+	require.NoError(t, e.repos.Tasks.Transit(ctx, recentDrained,
 		[]task.State{task.StateActive}, task.StateDraining, nil))
 	finishTaskForTest(t, e, recentDrained, task.StateDrained)
 	deletedRecent := "01JD0TASK00000000000000014"
@@ -89,7 +89,7 @@ func TestSweepTerminalTaskCarriers(t *testing.T) {
 	finishTaskForTest(t, e, deletedRecent, task.StateDeleted)
 
 	orphanProject := "01JD0TASK00000000000000015"
-	require.NoError(t, e.tasks.Create(ctx, e.db.Runner(), &task.Task{
+	require.NoError(t, e.repos.Tasks.Create(ctx, &task.Task{
 		ID: orphanProject, ProjectID: "01JPROJMISSING000000000000", Name: "ghost",
 		Form: task.FormOneShot, State: task.StateActive,
 		Spec: []byte(`{"schema_version":1,"task":{"id":"` + orphanProject + `"}`),

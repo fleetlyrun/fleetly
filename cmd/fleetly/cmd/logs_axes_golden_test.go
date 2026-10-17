@@ -59,14 +59,14 @@ func TestGoldenLogsRunAxis(t *testing.T) {
 	// 直插 Task + Run 行（run 无 CLI 直铸面——池由 engine 消费；日志轴只读
 	// 行链，不依赖 engine 活体）。
 	taskID := "01LOGAXISTASK0000000000"
-	if err := h.Services.Tasks.Create(context.Background(), h.Services.DB.Runner(), &taskrepo.Task{
+	if err := h.Services.Tasks.Create(context.Background(), &taskrepo.Task{
 		ID: taskID, ProjectID: projectID, Name: "worker", Form: "resident",
 		State: taskrepo.StateActive, Spec: []byte("{}"),
 	}); err != nil {
 		t.Fatalf("seed task: %v", err)
 	}
 	runID := "01LOGAXISRUN000000000001"
-	if err := h.Services.Runs.Create(context.Background(), h.Services.DB.Runner(), &runrepo.Run{
+	if err := h.Services.Runs.Create(context.Background(), &runrepo.Run{
 		ID: runID, TaskID: taskID, ProjectID: projectID,
 		State: runrepo.StateRunning, WorkloadID: runID,
 	}); err != nil {

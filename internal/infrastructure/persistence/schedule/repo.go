@@ -16,14 +16,15 @@ import (
 // repo 是 domain schedule.Repo 的 SQLite 实现。
 type repo struct {
 	clock state.Clock
+	run   state.Runner
 }
 
 // New 构造 repo（直接返回接口——消费面只见 domain schedule.Repo）。
-func New(clock state.Clock) schedule.Repo { return &repo{clock: clock} }
+func New(clock state.Clock, run state.Runner) schedule.Repo { return &repo{clock: clock, run: run} }
 
 // Create 落一行（活跃名唯一索引防项目内重名 → ErrAlreadyExists）。
-func (r *repo) Create(ctx context.Context, run state.Runner, s *schedule.Schedule) error {
-	seq, err := persistence.NextSeq(ctx, run, "schedules")
+func (r *repo) Create(ctx context.Context, s *schedule.Schedule) error {
+	seq, err := persistence.NextSeq(ctx, r.run, "schedules")
 	if err != nil {
 		return err
 	}
@@ -33,7 +34,7 @@ func (r *repo) Create(ctx context.Context, run state.Runner, s *schedule.Schedul
 	}
 	now := state.FormatTime(r.clock.Now())
 	s.CreatedAt, s.UpdatedAt = now, now
-	_, err = run.ExecContext(ctx, `
+	_, err = r.run.ExecContext(ctx, `
 		INSERT INTO schedules (id, seq, project_id, name, state, cron_expr, timezone, spec,
 			 next_fire_at, last_task_id, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -46,21 +47,21 @@ func (r *repo) Create(ctx context.Context, run state.Runner, s *schedule.Schedul
 }
 
 // Get 按 ID 直读（tombstone 行照常返回——终态事实可见）。
-func (r *repo) Get(ctx context.Context, run state.Runner, id string) (*schedule.Schedule, error) {
-	row := run.QueryRowContext(ctx, selectCols+" WHERE id = ?", id)
+func (r *repo) Get(ctx context.Context, id string) (*schedule.Schedule, error) {
+	row := r.run.QueryRowContext(ctx, selectCols+" WHERE id = ?", id)
 	return scanSchedule(row.Scan)
 }
 
 // GetByName 按项目内名直读（活跃名唯一；无 → ErrNotFound）。
-func (r *repo) GetByName(ctx context.Context, run state.Runner, projectID, name string) (*schedule.Schedule, error) {
-	row := run.QueryRowContext(ctx,
+func (r *repo) GetByName(ctx context.Context, projectID, name string) (*schedule.Schedule, error) {
+	row := r.run.QueryRowContext(ctx,
 		selectCols+" WHERE project_id = ? AND name = ? AND state != 'deleted'", projectID, name)
 	return scanSchedule(row.Scan)
 }
 
 // ListByProject 返回项目内 Schedule（新→旧 + after 游标；ADR-0026 after_* +
 // limit 惯例——游标 = seq 创建序）。
-func (r *repo) ListByProject(ctx context.Context, run state.Runner, projectID string, afterSeq int64, limit int) ([]schedule.Schedule, error) {
+func (r *repo) ListByProject(ctx context.Context, projectID string, afterSeq int64, limit int) ([]schedule.Schedule, error) {
 	limit = persistence.ClampLimit(limit, defaultListLimit, maxListLimit)
 	q := selectCols + " WHERE project_id = ?"
 	args := []any{projectID}
@@ -70,20 +71,20 @@ func (r *repo) ListByProject(ctx context.Context, run state.Runner, projectID st
 	}
 	q += " ORDER BY seq DESC LIMIT ?"
 	args = append(args, limit)
-	return r.query(ctx, run, q, args...)
+	return r.query(ctx, q, args...)
 }
 
 // ListDriving 返回全部活跃行（到期判定由调用方按墙钟解析比较）。
-func (r *repo) ListDriving(ctx context.Context, run state.Runner) ([]schedule.Schedule, error) {
-	return r.query(ctx, run, selectCols+" WHERE state = 'active' ORDER BY seq")
+func (r *repo) ListDriving(ctx context.Context) ([]schedule.Schedule, error) {
+	return r.query(ctx, selectCols+" WHERE state = 'active' ORDER BY seq")
 }
 
 // Fire 是到期拍/跳过后推进 next_fire_at 的 CAS：仅当行活跃且 next_fire_at
 // 仍为 from 时落 next 与 last_task_id。前置不符 → ErrConflict（并发已拍/
 // 已删——与 Task 落行同事务时整体回滚，双发防御纵深）；行不存在 →
 // ErrNotFound。
-func (r *repo) Fire(ctx context.Context, run state.Runner, id, from, next, lastTaskID string) error {
-	res, err := run.ExecContext(ctx, `
+func (r *repo) Fire(ctx context.Context, id, from, next, lastTaskID string) error {
+	res, err := r.run.ExecContext(ctx, `
 		UPDATE schedules SET next_fire_at = ?, last_task_id = ?, updated_at = ?
 		WHERE id = ? AND state = 'active' AND next_fire_at = ?`,
 		next, lastTaskID, state.FormatTime(r.clock.Now()), id, from)
@@ -91,7 +92,7 @@ func (r *repo) Fire(ctx context.Context, run state.Runner, id, from, next, lastT
 		return err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		if _, gerr := r.Get(ctx, run, id); gerr != nil {
+		if _, gerr := r.Get(ctx, id); gerr != nil {
 			return gerr
 		}
 		return fmt.Errorf("%w: schedule %s next_fire_at changed concurrently", state.ErrConflict, id)
@@ -103,8 +104,8 @@ func (r *repo) Fire(ctx context.Context, run state.Runner, id, from, next, lastT
 // （cron 节奏不被手动拍打乱）。fromLastTaskID 是 CAS 锚（调用方读行时的
 // 旧值，B12 P3-4）：并发双拍时输家的锚失配 → ErrConflict——与 Task 落行
 // 同事务整体回滚，双铸防御。行不活跃 → ErrConflict；不存在 → ErrNotFound。
-func (r *repo) RecordFire(ctx context.Context, run state.Runner, id, fromLastTaskID, lastTaskID string) error {
-	res, err := run.ExecContext(ctx, `
+func (r *repo) RecordFire(ctx context.Context, id, fromLastTaskID, lastTaskID string) error {
+	res, err := r.run.ExecContext(ctx, `
 		UPDATE schedules SET last_task_id = ?, updated_at = ?
 		WHERE id = ? AND state = 'active' AND last_task_id = ?`,
 		lastTaskID, state.FormatTime(r.clock.Now()), id, fromLastTaskID)
@@ -112,7 +113,7 @@ func (r *repo) RecordFire(ctx context.Context, run state.Runner, id, fromLastTas
 		return err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		cur, gerr := r.Get(ctx, run, id)
+		cur, gerr := r.Get(ctx, id)
 		if gerr != nil {
 			return gerr
 		}
@@ -126,8 +127,8 @@ func (r *repo) RecordFire(ctx context.Context, run state.Runner, id, fromLastTas
 
 // Transit 是状态 CAS（active → deleted 的 tombstone 面；单前置态——
 // Schedule 无中间态迁移）。
-func (r *repo) Transit(ctx context.Context, run state.Runner, id string, from, to schedule.State) error {
-	res, err := run.ExecContext(ctx, `
+func (r *repo) Transit(ctx context.Context, id string, from, to schedule.State) error {
+	res, err := r.run.ExecContext(ctx, `
 		UPDATE schedules SET state = ?, updated_at = ?
 		`+persistence.TransitWhere,
 		string(to), state.FormatTime(r.clock.Now()), id, string(from))
@@ -135,7 +136,7 @@ func (r *repo) Transit(ctx context.Context, run state.Runner, id string, from, t
 		return err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		if _, gerr := r.Get(ctx, run, id); gerr != nil {
+		if _, gerr := r.Get(ctx, id); gerr != nil {
 			return gerr
 		}
 		return fmt.Errorf("%w: schedule %s is not %s", state.ErrConflict, id, from)
@@ -153,8 +154,8 @@ const selectCols = `
 	       next_fire_at, last_task_id, created_at, updated_at
 	FROM schedules`
 
-func (r *repo) query(ctx context.Context, run state.Runner, q string, args ...any) ([]schedule.Schedule, error) {
-	rows, err := run.QueryContext(ctx, q, args...)
+func (r *repo) query(ctx context.Context, q string, args ...any) ([]schedule.Schedule, error) {
+	rows, err := r.run.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}

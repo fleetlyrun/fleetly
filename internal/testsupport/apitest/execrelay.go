@@ -39,7 +39,7 @@ type fakeRelaySession struct {
 func AttachFakeRelay(ctx context.Context, h *Harness) (detach func()) {
 	a := &fakeRelay{rt: h.Runtime, sessions: map[string]*fakeRelaySession{}}
 
-	if err := h.Services.Nodes.Upsert(ctx, h.DB.Runner(), &node.Node{
+	if err := h.Services.Nodes.Upsert(ctx, &node.Node{
 		PlatformID: FakeExecNode, CarrierID: FakeExecCarrier, Role: "manager", Available: true,
 	}); err != nil {
 		panic("apitest: seed node: " + err.Error())

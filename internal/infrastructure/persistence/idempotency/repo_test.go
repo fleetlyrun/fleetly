@@ -35,11 +35,11 @@ var responseVal = []byte(`{"msg":"done"}`)
 func TestIdempotencyClaimCompleteReplay(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	records := idempotencyrepo.New(clock)
+	records := idempotencyrepo.New(clock, db.Runner())
 
 	// Claim 落 inflight 行：created = now，expires = now+TTL。
-	require.NoError(t, records.Claim(ctx, db.Runner(), "op-1", "POST", "fp-a", claimTTL))
-	rec, err := records.Get(ctx, db.Runner(), "op-1")
+	require.NoError(t, records.Claim(ctx, "op-1", "POST", "fp-a", claimTTL))
+	rec, err := records.Get(ctx, "op-1")
 	require.NoError(t, err)
 	assert.Equal(t, idempotency.StateInflight, rec.State)
 	assert.Equal(t, "POST", rec.Method)
@@ -50,18 +50,18 @@ func TestIdempotencyClaimCompleteReplay(t *testing.T) {
 
 	// 同键二次认领（异指纹）→ ErrAlreadyExists；在册行不被覆盖——重放
 	// 还是冲突，分诊在拦截器，存储面只保行事实。
-	err = records.Claim(ctx, db.Runner(), "op-1", "POST", "fp-b", claimTTL)
+	err = records.Claim(ctx, "op-1", "POST", "fp-b", claimTTL)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, state.ErrAlreadyExists,
 		"a second claim on a live key must normalize to ErrAlreadyExists")
-	rec, err = records.Get(ctx, db.Runner(), "op-1")
+	rec, err = records.Get(ctx, "op-1")
 	require.NoError(t, err)
 	assert.Equal(t, "fp-a", rec.Fingerprint, "the losing claim must not overwrite the row")
 
 	// Complete 落完成态：响应引用 + 保留窗覆写 expires_at。
 	clock.Advance(time.Second)
-	require.NoError(t, records.Complete(ctx, db.Runner(), "op-1", responseMD, responseVal, retention))
-	rec, err = records.Get(ctx, db.Runner(), "op-1")
+	require.NoError(t, records.Complete(ctx, "op-1", responseMD, responseVal, retention))
+	rec, err = records.Get(ctx, "op-1")
 	require.NoError(t, err)
 	assert.Equal(t, idempotency.StateCompleted, rec.State)
 	assert.Equal(t, responseMD, rec.ResponseType)
@@ -70,11 +70,11 @@ func TestIdempotencyClaimCompleteReplay(t *testing.T) {
 		"completed expires_at switches to the replay retention window")
 
 	// 完成态在册期间同键再认领同样被拒（一键一请求语义）。
-	err = records.Claim(ctx, db.Runner(), "op-1", "POST", "fp-a", claimTTL)
+	err = records.Claim(ctx, "op-1", "POST", "fp-a", claimTTL)
 	assert.ErrorIs(t, err, state.ErrAlreadyExists)
 
 	// Complete 缺行 ErrNotFound（幂等承诺随行消失，不复活）。
-	err = records.Complete(ctx, db.Runner(), "missing-key", responseMD, responseVal, retention)
+	err = records.Complete(ctx, "missing-key", responseMD, responseVal, retention)
 	assert.ErrorIs(t, err, state.ErrNotFound)
 }
 
@@ -82,46 +82,46 @@ func TestIdempotencyClaimCompleteReplay(t *testing.T) {
 func TestIdempotencyReleaseRetryAndSweep(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	records := idempotencyrepo.New(clock)
+	records := idempotencyrepo.New(clock, db.Runner())
 
 	// Release 删认领行；再 Complete 是 ErrNotFound（行没了承诺也没了）。
-	require.NoError(t, records.Claim(ctx, db.Runner(), "k2", "PUT", "fp-x", claimTTL))
-	require.NoError(t, records.Release(ctx, db.Runner(), "k2"))
-	_, err := records.Get(ctx, db.Runner(), "k2")
+	require.NoError(t, records.Claim(ctx, "k2", "PUT", "fp-x", claimTTL))
+	require.NoError(t, records.Release(ctx, "k2"))
+	_, err := records.Get(ctx, "k2")
 	assert.ErrorIs(t, err, state.ErrNotFound)
-	err = records.Complete(ctx, db.Runner(), "k2", responseMD, responseVal, retention)
+	err = records.Complete(ctx, "k2", responseMD, responseVal, retention)
 	assert.ErrorIs(t, err, state.ErrNotFound)
 
 	// 释放后同键可干净重试（失败请求无响应可重放）。
-	require.NoError(t, records.Claim(ctx, db.Runner(), "k2", "PUT", "fp-x", claimTTL))
-	rec, err := records.Get(ctx, db.Runner(), "k2")
+	require.NoError(t, records.Claim(ctx, "k2", "PUT", "fp-x", claimTTL))
+	rec, err := records.Get(ctx, "k2")
 	require.NoError(t, err)
 	assert.Equal(t, idempotency.StateInflight, rec.State)
 
 	// Release 未认领键是 no-op（plain DELETE，无 NotFound 面）。
-	require.NoError(t, records.Release(ctx, db.Runner(), "never-claimed"))
+	require.NoError(t, records.Release(ctx, "never-claimed"))
 
 	// k2 先落完成态（24h 保留窗），另认领长 TTL 的 k4——两者都是 Sweep
 	// 窗外的幸存者；k3 认领 5m 后过期。
-	require.NoError(t, records.Complete(ctx, db.Runner(), "k2", responseMD, responseVal, retention))
-	require.NoError(t, records.Claim(ctx, db.Runner(), "k4", "GET", "fp-y", 24*time.Hour))
-	require.NoError(t, records.Claim(ctx, db.Runner(), "k3", "GET", "fp-z", claimTTL))
+	require.NoError(t, records.Complete(ctx, "k2", responseMD, responseVal, retention))
+	require.NoError(t, records.Claim(ctx, "k4", "GET", "fp-y", 24*time.Hour))
+	require.NoError(t, records.Claim(ctx, "k3", "GET", "fp-z", claimTTL))
 	clock.Advance(10 * time.Minute)
-	n, err := records.Sweep(ctx, db.Runner())
+	n, err := records.Sweep(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), n, "only the expired inflight row is swept")
-	_, err = records.Get(ctx, db.Runner(), "k3")
+	_, err = records.Get(ctx, "k3")
 	assert.ErrorIs(t, err, state.ErrNotFound)
-	_, err = records.Get(ctx, db.Runner(), "k4")
+	_, err = records.Get(ctx, "k4")
 	require.NoError(t, err, "a live inflight row survives the sweep")
-	_, err = records.Get(ctx, db.Runner(), "k2")
+	_, err = records.Get(ctx, "k2")
 	require.NoError(t, err, "a completed row inside its retention window survives the sweep")
 
 	// 保留窗/TTL 走完后，幸存行也一并被清。
 	clock.Advance(25 * time.Hour)
-	n, err = records.Sweep(ctx, db.Runner())
+	n, err = records.Sweep(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), n, "the completed row and the long-claim row leave together")
-	_, err = records.Get(ctx, db.Runner(), "k2")
+	_, err = records.Get(ctx, "k2")
 	assert.ErrorIs(t, err, state.ErrNotFound)
 }

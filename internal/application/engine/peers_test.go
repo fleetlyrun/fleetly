@@ -26,16 +26,16 @@ func seedCrossProjectPeer(t *testing.T, e *Engine, approve bool) string {
 	t.Helper()
 	ctx := context.Background()
 	const providerID = "01JD0PROJ00000000000000007"
-	require.NoError(t, projectrepo.New(e.clock).Create(ctx, e.db.Runner(), &project.Project{
+	require.NoError(t, projectrepo.New(e.clock, e.db.Runner()).Create(ctx, &project.Project{
 		ID: providerID, Name: "messaging", TeamID: "platform",
 	}))
-	require.NoError(t, e.networks.Create(ctx, e.db.Runner(), &network.Network{
+	require.NoError(t, e.repos.Networks.Create(ctx, &network.Network{
 		ID: "01JD0NET000000000000000007", ProjectID: providerID, Name: "bus",
 	}))
 	peer := &networkpeer.Peer{ID: "01JD0PEER00000000000000007", NetworkID: "01JD0NET000000000000000007", PeerProjectID: tProjectID}
-	require.NoError(t, e.peerDecls.Create(ctx, e.db.Runner(), peer))
+	require.NoError(t, e.repos.NetworkPeers.Create(ctx, peer))
 	if approve {
-		require.NoError(t, e.peerDecls.Approve(ctx, e.db.Runner(), peer.ID))
+		require.NoError(t, e.repos.NetworkPeers.Approve(ctx, peer.ID))
 	}
 	return providerID
 }
@@ -61,7 +61,7 @@ func TestCrossProjectPeerStrictAdmission(t *testing.T) {
 	assert.Contains(t, err.Error(), "project:"+providerID+"/bus")
 
 	// 批准后同一 Revision 可受理，投影携带跨域附件。
-	require.NoError(t, e.peerDecls.Approve(ctx, e.db.Runner(), "01JD0PEER00000000000000007"))
+	require.NoError(t, e.repos.NetworkPeers.Approve(ctx, "01JD0PEER00000000000000007"))
 	d := deployToSucceeded(t, e, revID)
 	require.Equal(t, deployment.StateSucceeded, d.State)
 
@@ -86,7 +86,7 @@ func TestCrossProjectPeerRevokeIsolates(t *testing.T) {
 	require.Len(t, lastEnsure(rt).Spec["web"].NetworkRefs, 1)
 
 	// 撤销（行落账由 API 层承载；此处直接打 repo）→ 即时隔离。
-	require.NoError(t, e.peerDecls.Revoke(ctx, e.db.Runner(), "01JD0PEER00000000000000007"))
+	require.NoError(t, e.repos.NetworkPeers.Revoke(ctx, "01JD0PEER00000000000000007"))
 	require.NoError(t, e.IsolateNetworkPeer(ctx, "01JD0NET000000000000000007", tProjectID))
 
 	w := lastEnsure(rt).Spec["web"]
@@ -109,7 +109,7 @@ func TestCrossProjectPeerIsolationSelfHeals(t *testing.T) {
 	deployToSucceeded(t, e, revID)
 
 	// 只撤销行（跳过显式隔离入口）→ 漂移扫描拍收敛。
-	require.NoError(t, e.peerDecls.Revoke(ctx, e.db.Runner(), "01JD0PEER00000000000000007"))
+	require.NoError(t, e.repos.NetworkPeers.Revoke(ctx, "01JD0PEER00000000000000007"))
 	e.driftScan(ctx)
 	assert.Empty(t, lastEnsure(rt).Spec["web"].NetworkRefs, "the isolation invariant must re-converge on the drift tick")
 }
@@ -153,9 +153,9 @@ func TestCrossProjectPeerMissingTarget(t *testing.T) {
 			Networks: []string{"project:" + ghost + "/bus"},
 		}},
 	}
-	_, err := e.resolvePeerRefs(ctx, e.db.Runner(), tProjectID, spec, false)
+	_, err := e.resolvePeerRefs(ctx, e.repos, tProjectID, spec, false)
 	require.ErrorIs(t, err, ErrCrossProjectRefNotApproved)
-	refs, err := e.resolvePeerRefs(ctx, e.db.Runner(), tProjectID, spec, true)
+	refs, err := e.resolvePeerRefs(ctx, e.repos, tProjectID, spec, true)
 	require.NoError(t, err)
 	assert.Empty(t, refs.Refs, "isolate mode omits unresolvable references")
 }

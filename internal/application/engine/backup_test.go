@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/backup"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
@@ -169,28 +170,28 @@ func newBackupFixture(t *testing.T, engineName, connectURL string) (*Engine, *fa
 	store := newFakeObjectStore()
 	cipher, err := keyring.LoadCipher(t.TempDir())
 	require.NoError(t, err)
-	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: runtimeWithUtility{rt, ut}, ObjectStore: store, Cipher: cipher, Logger: discardLogger()}, Options{})
+	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: runtimeWithUtility{rt, ut}, ObjectStore: store, Cipher: cipher, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
 
-	require.NoError(t, projectrepo.New(clock).Create(ctx, db.Runner(), &project.Project{
+	require.NoError(t, projectrepo.New(clock, db.Runner()).Create(ctx, &project.Project{
 		ID: tProjectID, Name: "shop", TeamID: "default",
 	}))
-	require.NoError(t, networkrepo.New(clock).Create(ctx, db.Runner(), &network.Network{
+	require.NoError(t, networkrepo.New(clock, db.Runner()).Create(ctx, &network.Network{
 		ID: "01JD0NET000000000000000001", ProjectID: tProjectID, Name: "default",
 	}))
 	secName := DBCredentialSecretName(tDatabaseName)
 	ct, err := cipher.Seal([]byte(connectURL))
 	require.NoError(t, err)
-	require.NoError(t, secretrepo.New(clock).Upsert(ctx, db.Runner(), &secret.Secret{
+	require.NoError(t, secretrepo.New(clock, db.Runner()).Upsert(ctx, &secret.Secret{
 		ID: "01JD0SEC000000000000000001", ProjectID: tProjectID, Name: secName,
 		Ciphertext: ct, Fingerprint: material.Fingerprint([]byte(connectURL)),
 	}))
-	require.NoError(t, dbrepo.New(clock).Create(ctx, db.Runner(), &database.Database{
+	require.NoError(t, dbrepo.New(clock, db.Runner()).Create(ctx, &database.Database{
 		ID: tDatabaseID, ProjectID: tProjectID, Name: tDatabaseName,
 		Engine: engineName, CredentialsRef: secName,
 		BackupIntervalSecs: 3600, BackupRetentionSecs: 604800,
 	}))
-	require.NoError(t, dbrepo.New(clock).SetStatus(ctx, e.db.Runner(), tDatabaseID, database.StatusRunning))
+	require.NoError(t, dbrepo.New(clock, e.db.Runner()).SetStatus(ctx, tDatabaseID, database.StatusRunning))
 	return e, rt, ut, store, clock
 }
 
@@ -201,12 +202,12 @@ func seedSucceededBackup(t *testing.T, e *Engine, store *fakeObjectStore, backup
 	key := backup.KeyMint(tProjectID, tDatabaseID, backupID, e.clock.Now())
 	info, err := store.Put(ctx, key, strings.NewReader(payload))
 	require.NoError(t, err)
-	require.NoError(t, e.backups.Create(ctx, e.db.Runner(), &backup.Backup{
+	require.NoError(t, e.repos.Backups.Create(ctx, &backup.Backup{
 		ID: backupID, ProjectID: tProjectID, DatabaseID: tDatabaseID,
 		Engine: engineName, RetentionSecs: 604800,
 	}))
-	require.NoError(t, e.backups.MarkRunning(ctx, e.db.Runner(), backupID))
-	require.NoError(t, e.backups.FinishSucceeded(ctx, e.db.Runner(), backupID, key, info.Digest, info.Size))
+	require.NoError(t, e.repos.Backups.MarkRunning(ctx, backupID))
+	require.NoError(t, e.repos.Backups.FinishSucceeded(ctx, backupID, key, info.Digest, info.Size))
 }
 
 // 调度 + 执行 + 事件 + 锚推进全链（到期窗由假钟推进）。
@@ -221,7 +222,7 @@ func TestBackupScheduleExecuteSucceeds(t *testing.T) {
 	clock.Advance(3601 * time.Second)
 	e.backupStep(ctx) // 到期：铸行 + 执行一件
 
-	rows, err := e.backups.ListByDatabase(ctx, e.db.Runner(), tDatabaseID, 0, 10)
+	rows, err := e.repos.Backups.ListByDatabase(ctx, tDatabaseID, 0, 10)
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
 	assert.Equal(t, backup.StatusSucceeded, rows[0].Status)
@@ -247,10 +248,10 @@ func TestBackupScheduleExecuteSucceeds(t *testing.T) {
 	assert.Contains(t, reqs[0].SecretFiles, "database-backup-pgpass")
 
 	// 调度锚推进 + 事件。
-	fresh, err := e.databases.Get(ctx, e.db.Runner(), tDatabaseID)
+	fresh, err := e.repos.Databases.Get(ctx, tDatabaseID)
 	require.NoError(t, err)
 	assert.NotEmpty(t, fresh.LastBackupAt)
-	events, err := outboxrepo.New(clock).ListAfter(ctx, e.db.Runner(), 0, 10, "")
+	events, err := outboxrepo.New(clock, e.db.Runner()).ListAfter(ctx, 0, 10, "")
 	require.NoError(t, err)
 	found := false
 	for _, ev := range events {
@@ -270,7 +271,7 @@ func TestBackupScheduleNotDue(t *testing.T) {
 	ctx := context.Background()
 
 	e.backupStep(ctx)
-	rows, err := e.backups.ListByDatabase(ctx, e.db.Runner(), tDatabaseID, 0, 10)
+	rows, err := e.repos.Backups.ListByDatabase(ctx, tDatabaseID, 0, 10)
 	require.NoError(t, err)
 	assert.Empty(t, rows)
 	assert.Empty(t, ut.requests())
@@ -287,14 +288,14 @@ func TestBackupUtilityFailureRecorded(t *testing.T) {
 	clock.Advance(3601 * time.Second)
 	e.backupStep(ctx)
 
-	rows, err := e.backups.ListByDatabase(ctx, e.db.Runner(), tDatabaseID, 0, 10)
+	rows, err := e.repos.Backups.ListByDatabase(ctx, tDatabaseID, 0, 10)
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
 	assert.Equal(t, backup.StatusFailed, rows[0].Status)
 	assert.Contains(t, rows[0].Error, "backup execution failed")
 	assert.Contains(t, rows[0].Error, "boom-detail", "stderr tail rides the failure message")
 
-	fresh, err := e.databases.Get(ctx, e.db.Runner(), tDatabaseID)
+	fresh, err := e.repos.Databases.Get(ctx, tDatabaseID)
 	require.NoError(t, err)
 	assert.Empty(t, fresh.LastBackupAt, "failed backups must not advance the schedule anchor")
 }
@@ -306,7 +307,7 @@ func TestRestoreStreamFlow(t *testing.T) {
 	ctx := context.Background()
 
 	seedSucceededBackup(t, e, store, "01JD0BKP000000000000000001", "postgres", "BACKUP-BYTES-0123456789")
-	require.NoError(t, e.databases.SetRestorePending(ctx, e.db.Runner(), tDatabaseID, "01JD0BKP000000000000000001"))
+	require.NoError(t, e.repos.Databases.SetRestorePending(ctx, tDatabaseID, "01JD0BKP000000000000000001"))
 	e.backupStep(ctx)
 
 	reqs := ut.requests()
@@ -314,10 +315,10 @@ func TestRestoreStreamFlow(t *testing.T) {
 	assert.Equal(t, []string{"pg_restore", "-h", DatabaseDNSName(tDatabaseID), "-p", "5432", "-U", "fleetly", "-d", "fleetly", "--no-password", dbtemplate.BackupInputPath}, reqs[0].Argv)
 	assert.Equal(t, "BACKUP-BYTES-0123456789", ut.capturedStdins()[0], "restore input file carries the backup object")
 
-	fresh, err := e.databases.Get(ctx, e.db.Runner(), tDatabaseID)
+	fresh, err := e.repos.Databases.Get(ctx, tDatabaseID)
 	require.NoError(t, err)
 	assert.Empty(t, fresh.RestoreFromBackup, "pending flag cleared after successful restore")
-	events, err := outboxrepo.New(clock).ListAfter(ctx, e.db.Runner(), 0, 10, "")
+	events, err := outboxrepo.New(clock, e.db.Runner()).ListAfter(ctx, 0, 10, "")
 	require.NoError(t, err)
 	restored := false
 	for _, ev := range events {
@@ -337,7 +338,7 @@ func TestRestorePreseedFlow(t *testing.T) {
 	ctx := context.Background()
 
 	seedSucceededBackup(t, e, store, "01JD0BKP000000000000000002", "redis", "REDIS0011-rdb-bytes")
-	require.NoError(t, e.databases.SetRestorePending(ctx, e.db.Runner(), tDatabaseID, "01JD0BKP000000000000000002"))
+	require.NoError(t, e.repos.Databases.SetRestorePending(ctx, tDatabaseID, "01JD0BKP000000000000000002"))
 
 	// 门控：挂起中 databaseStep 不 Ensure（空卷首启 = 数据丢失）。
 	before := len(rt.calls())
@@ -352,7 +353,7 @@ func TestRestorePreseedFlow(t *testing.T) {
 	assert.Equal(t, "REDIS0011-rdb-bytes", ut.capturedStdins()[0])
 
 	// 卷钉住控制面节点（fake 集群唯一 manager）。
-	vol, err := e.volumes.GetByName(ctx, e.db.Runner(), tProjectID, tDatabaseName)
+	vol, err := e.repos.Volumes.GetByName(ctx, tProjectID, tDatabaseName)
 	require.NoError(t, err)
 	assert.Equal(t, "01JD0NODE00000000000000000", vol.PinnedNodeID, "seed volume pinned to the control-plane node")
 
@@ -360,7 +361,7 @@ func TestRestorePreseedFlow(t *testing.T) {
 	e.databaseStep(ctx)
 	assert.Greater(t, len(rt.calls()), before, "cleared pending lets the database converge")
 
-	fresh, err := e.databases.Get(ctx, e.db.Runner(), tDatabaseID)
+	fresh, err := e.repos.Databases.Get(ctx, tDatabaseID)
 	require.NoError(t, err)
 	assert.Empty(t, fresh.RestoreFromBackup)
 }
@@ -373,12 +374,12 @@ func TestRestoreFailureRecorded(t *testing.T) {
 	ctx := context.Background()
 
 	seedSucceededBackup(t, e, store, "01JD0BKP000000000000000003", "postgres", "BYTES")
-	require.NoError(t, e.databases.SetRestorePending(ctx, e.db.Runner(), tDatabaseID, "01JD0BKP000000000000000003"))
+	require.NoError(t, e.repos.Databases.SetRestorePending(ctx, tDatabaseID, "01JD0BKP000000000000000003"))
 	ut.execErr = context.DeadlineExceeded
 
 	e.backupStep(ctx)
 
-	fresh, err := e.databases.Get(ctx, e.db.Runner(), tDatabaseID)
+	fresh, err := e.repos.Databases.Get(ctx, tDatabaseID)
 	require.NoError(t, err)
 	assert.Empty(t, fresh.RestoreFromBackup, "pending cleared even on failure (no half-retry)")
 	assert.Contains(t, fresh.RestoreError, "restore execution failed")
@@ -391,11 +392,11 @@ func TestRestoreEngineMismatch(t *testing.T) {
 	ctx := context.Background()
 
 	seedSucceededBackup(t, e, store, "01JD0BKP000000000000000004", "postgres", "BYTES") // 源引擎与目标行不符
-	require.NoError(t, e.databases.SetRestorePending(ctx, e.db.Runner(), tDatabaseID, "01JD0BKP000000000000000004"))
+	require.NoError(t, e.repos.Databases.SetRestorePending(ctx, tDatabaseID, "01JD0BKP000000000000000004"))
 
 	e.backupStep(ctx)
 	assert.Empty(t, ut.requests(), "mismatched engines must not run a utility container")
-	fresh, err := e.databases.Get(ctx, e.db.Runner(), tDatabaseID)
+	fresh, err := e.repos.Databases.Get(ctx, tDatabaseID)
 	require.NoError(t, err)
 	assert.Contains(t, fresh.RestoreError, "does not match target engine")
 }
@@ -414,12 +415,12 @@ func TestBackupPruneRollsRetentionWindow(t *testing.T) {
 
 	e.backupStep(ctx) // 注：库此刻已到期，调度面会另铸一行——按 ID 定向断言
 
-	_, err := e.backups.Get(ctx, e.db.Runner(), "01JD0BKPA0000000000000001")
+	_, err := e.repos.Backups.Get(ctx, "01JD0BKPA0000000000000001")
 	assert.Error(t, err, "expired row must be pruned")
 	_, err = store.Stat(ctx, oldKey)
 	assert.Error(t, err, "expired object must be pruned alongside its row")
 
-	kept, err := e.backups.Get(ctx, e.db.Runner(), "01JD0BKPB0000000000000002")
+	kept, err := e.repos.Backups.Get(ctx, "01JD0BKPB0000000000000002")
 	require.NoError(t, err)
 	assert.Equal(t, backup.StatusSucceeded, kept.Status)
 	_, err = store.Stat(ctx, newKey)
@@ -432,15 +433,15 @@ func TestBackupSweepInterrupted(t *testing.T) {
 	e, _, _, _, _ := newBackupFixture(t, "postgres", url)
 	ctx := context.Background()
 
-	require.NoError(t, e.backups.Create(ctx, e.db.Runner(), &backup.Backup{
+	require.NoError(t, e.repos.Backups.Create(ctx, &backup.Backup{
 		ID: "01JD0BKPC0000000000000003", ProjectID: tProjectID, DatabaseID: tDatabaseID,
 		Engine: "postgres", RetentionSecs: 3600,
 	}))
-	require.NoError(t, e.backups.MarkRunning(ctx, e.db.Runner(), "01JD0BKPC0000000000000003"))
+	require.NoError(t, e.repos.Backups.MarkRunning(ctx, "01JD0BKPC0000000000000003"))
 
 	e.sweepInterruptedBackups(ctx)
 
-	row, err := e.backups.Get(ctx, e.db.Runner(), "01JD0BKPC0000000000000003")
+	row, err := e.repos.Backups.Get(ctx, "01JD0BKPC0000000000000003")
 	require.NoError(t, err)
 	assert.Equal(t, backup.StatusFailed, row.Status)
 	assert.Equal(t, "interrupted by platform restart", row.Error)
@@ -464,7 +465,7 @@ func TestBackupFailureBackoffWindow(t *testing.T) {
 
 	clock.Advance(2 * time.Hour) // 过 interval：到期铸行 + 执行失败
 	e.backupStep(ctx)
-	rows, err := e.backups.ListByDatabase(ctx, e.db.Runner(), tDatabaseID, 0, 50)
+	rows, err := e.repos.Backups.ListByDatabase(ctx, tDatabaseID, 0, 50)
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
 	require.Equal(t, backup.StatusFailed, rows[0].Status)
@@ -472,14 +473,14 @@ func TestBackupFailureBackoffWindow(t *testing.T) {
 
 	clock.Advance(2 * time.Minute) // 仍到期（锚未推进），但失败未满退避窗
 	e.backupStep(ctx)
-	rows, err = e.backups.ListByDatabase(ctx, e.db.Runner(), tDatabaseID, 0, 50)
+	rows, err = e.repos.Backups.ListByDatabase(ctx, tDatabaseID, 0, 50)
 	require.NoError(t, err)
 	assert.Len(t, rows, 1, "backoff window must suppress recasting")
 	assert.Len(t, ut.requests(), 1, "backoff window must suppress execution")
 
 	clock.Advance(4 * time.Minute) // 距失败 ~6min：窗外，重铸重试
 	e.backupStep(ctx)
-	rows, err = e.backups.ListByDatabase(ctx, e.db.Runner(), tDatabaseID, 0, 50)
+	rows, err = e.repos.Backups.ListByDatabase(ctx, tDatabaseID, 0, 50)
 	require.NoError(t, err)
 	assert.Len(t, rows, 2, "past the backoff window the scheduler recasts")
 	assert.Len(t, ut.requests(), 2)
@@ -493,12 +494,12 @@ func TestBackupFailedRowSweep(t *testing.T) {
 	ctx := context.Background()
 
 	seedFailed := func(id string) {
-		require.NoError(t, e.backups.Create(ctx, e.db.Runner(), &backup.Backup{
+		require.NoError(t, e.repos.Backups.Create(ctx, &backup.Backup{
 			ID: id, ProjectID: tProjectID, DatabaseID: tDatabaseID,
 			Engine: "postgres", RetentionSecs: 604800,
 		}))
-		require.NoError(t, e.backups.MarkRunning(ctx, e.db.Runner(), id))
-		require.NoError(t, e.backups.FinishFailed(ctx, e.db.Runner(), id, "boom"))
+		require.NoError(t, e.repos.Backups.MarkRunning(ctx, id))
+		require.NoError(t, e.repos.Backups.FinishFailed(ctx, id, "boom"))
 	}
 	clock.Advance(time.Hour)
 	seedFailed("01JD0FLD00000000000000000A")
@@ -509,7 +510,7 @@ func TestBackupFailedRowSweep(t *testing.T) {
 	e.backupStep(ctx) // prunePass 随步执行（库此刻也到期——step 会另铸一颗
 	// 真实成功行，断言按语义：失败行必须出清、成功种子行必须在场）
 
-	rows, err := e.backups.ListByDatabase(ctx, e.db.Runner(), tDatabaseID, 0, 50)
+	rows, err := e.repos.Backups.ListByDatabase(ctx, tDatabaseID, 0, 50)
 	require.NoError(t, err)
 	ids := make(map[string]bool, len(rows))
 	for _, r := range rows {

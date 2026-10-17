@@ -22,7 +22,7 @@ func newNetwork(id, projectID, name string) *network.Network {
 func TestNetworkListByProjectPagePagination(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	networks := networkrepo.New(clock)
+	networks := networkrepo.New(clock, db.Runner())
 
 	const projA = "01JD0PROJ0000000000000000A"
 	const projB = "01JD0PROJ0000000000000000B"
@@ -34,29 +34,29 @@ func TestNetworkListByProjectPagePagination(t *testing.T) {
 		newNetwork("01JD0NETR000000000000000000", projA, "default-json"),
 	}
 	for _, n := range rows {
-		require.NoError(t, networks.Create(ctx, db.Runner(), n))
+		require.NoError(t, networks.Create(ctx, n))
 	}
 
 	// 升序首页截断：default < default-json < workers。
-	page1, err := networks.ListByProjectPage(ctx, db.Runner(), projA, "", 1)
+	page1, err := networks.ListByProjectPage(ctx, projA, "", 1)
 	require.NoError(t, err)
 	require.Len(t, page1, 1)
 	assert.Equal(t, "default", page1[0].Name)
 
 	// 游标跳过首页。
-	page2, err := networks.ListByProjectPage(ctx, db.Runner(), projA, page1[0].Name, 1)
+	page2, err := networks.ListByProjectPage(ctx, projA, page1[0].Name, 1)
 	require.NoError(t, err)
 	require.Len(t, page2, 1)
 	assert.Equal(t, "default-json", page2[0].Name)
 
 	// 游标越过末条 → 空页。
-	page3, err := networks.ListByProjectPage(ctx, db.Runner(), projA, "zzz", 1)
+	page3, err := networks.ListByProjectPage(ctx, projA, "zzz", 1)
 	require.NoError(t, err)
 	assert.Empty(t, page3)
 
 	// limit 钳制：<=0 回落缺省 50（三行全回），>200 钳上界（不截断小夹具）。
 	for _, limit := range []int{0, -6, 600} {
-		got, err := networks.ListByProjectPage(ctx, db.Runner(), projA, "", limit)
+		got, err := networks.ListByProjectPage(ctx, projA, "", limit)
 		require.NoError(t, err)
 		assert.Len(t, got, 3, "limit %d clamps into range and returns all rows", limit)
 	}
@@ -66,22 +66,22 @@ func TestNetworkListByProjectPagePagination(t *testing.T) {
 func TestNetworkListUnchanged(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	networks := networkrepo.New(clock)
+	networks := networkrepo.New(clock, db.Runner())
 
-	require.NoError(t, networks.Create(ctx, db.Runner(),
+	require.NoError(t, networks.Create(ctx,
 		newNetwork("01JD0NETR000000000000000001", "01JD0PROJ0000000000000000A", "default")))
-	require.NoError(t, networks.Create(ctx, db.Runner(),
+	require.NoError(t, networks.Create(ctx,
 		newNetwork("01JD0NETR000000000000000000", "01JD0PROJ0000000000000000B", "bus")))
 
-	got, err := networks.List(ctx, db.Runner())
+	got, err := networks.List(ctx)
 	require.NoError(t, err)
 	require.Len(t, got, 2)
 
-	byProj, err := networks.ListByProject(ctx, db.Runner(), "01JD0PROJ0000000000000000A")
+	byProj, err := networks.ListByProject(ctx, "01JD0PROJ0000000000000000A")
 	require.NoError(t, err)
 	require.Len(t, byProj, 1)
 	assert.Equal(t, "default", byProj[0].Name)
 
-	_, err = networks.GetByName(ctx, db.Runner(), "01JD0PROJ0000000000000000A", "missing")
+	_, err = networks.GetByName(ctx, "01JD0PROJ0000000000000000A", "missing")
 	assert.ErrorIs(t, err, state.ErrNotFound)
 }

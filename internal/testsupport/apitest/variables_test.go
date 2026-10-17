@@ -23,7 +23,7 @@ import (
 // latestSpecEnv 读 App 最新 Revision 冻结体的单进程 env（冻结即最终生效集）。
 func latestSpecEnv(t *testing.T, h *apitest.Harness, ctx context.Context, appID, process string) map[string]string {
 	t.Helper()
-	rev, err := h.Services.Revisions.Latest(ctx, h.DB.Runner(), appID)
+	rev, err := h.Services.Revisions.Latest(ctx, appID)
 	require.NoError(t, err)
 	s := &specv1.AppSpec{}
 	require.NoError(t, (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(rev.Spec, s))
@@ -75,7 +75,7 @@ func TestSharedVariableMergeAtNormalization(t *testing.T) {
 		Env: map[string]string{"LOG_LEVEL": "warn", "EXTRA_FLAG": "app-only"},
 	})
 	require.NoError(t, err)
-	list, err := h.Services.Revisions.ListByApp(ctx, h.DB.Runner(), appID, 0, 10)
+	list, err := h.Services.Revisions.ListByApp(ctx, appID, 0, 10)
 	require.NoError(t, err)
 	require.Len(t, list, 1, "identical source+variable state must reuse the frozen revision")
 }
@@ -150,7 +150,7 @@ func TestSharedVariableChangeNoRedeployButAffectedHint(t *testing.T) {
 	assert.Equal(t, []string{appID}, put.GetAffectedApps())
 
 	// 未重部署：行为不变（Revision 集不变、无新部署行、冻结值仍旧值）。
-	list, err := h.Services.Revisions.ListByApp(ctx, h.DB.Runner(), appID, 0, 10)
+	list, err := h.Services.Revisions.ListByApp(ctx, appID, 0, 10)
 	require.NoError(t, err)
 	require.Len(t, list, 1)
 	assert.Equal(t, "postgres://v1", latestSpecEnv(t, h, ctx, appID, "web")["DATABASE_URL"])

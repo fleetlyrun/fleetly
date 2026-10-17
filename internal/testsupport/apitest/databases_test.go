@@ -7,7 +7,6 @@ package apitest_test
 
 import (
 	"context"
-	"database/sql"
 	"strings"
 	"testing"
 
@@ -17,7 +16,9 @@ import (
 	"google.golang.org/grpc/status"
 
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
+
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
 	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
@@ -158,13 +159,13 @@ func TestDatabaseCreateRequiresProjectNetwork(t *testing.T) {
 
 	// 形态一：出生面之前的存量零网项目（直插状态层）。
 	legacy := &project.Project{ID: "01JD0LEGACY000000000000000A", Name: "legacy-nonet", TeamID: "default"}
-	require.NoError(t, projectrepo.New(h.DB.Clock()).Create(ctx, h.DB.Runner(), legacy))
+	require.NoError(t, projectrepo.New(h.DB.Clock(), h.DB.Runner()).Create(ctx, legacy))
 	require.Error(t, createDB(legacy.ID), "legacy zero-network project must fail closed")
 	assert.Equal(t, codes.FailedPrecondition, status.Code(createDB(legacy.ID)))
 
 	// 形态二：出生 default 行被拆（无 API 删除面——直删复刻）。
-	require.NoError(t, h.DB.Tx(ctx, func(tx *sql.Tx) error {
-		_, err := tx.ExecContext(ctx, "DELETE FROM networks WHERE project_id = ?", p.GetId())
+	require.NoError(t, h.DB.Tx(ctx, func(run state.Runner) error {
+		_, err := run.ExecContext(ctx, "DELETE FROM networks WHERE project_id = ?", p.GetId())
 		return err
 	}))
 	require.Error(t, createDB(p.GetId()), "project with its default network removed must fail closed")

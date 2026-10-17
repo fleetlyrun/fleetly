@@ -42,11 +42,11 @@ func tombstoneAt(t *testing.T, db *persistence.DB, id string) string {
 func TestVolumeCreateGetListDeleteLifecycle(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	volumes := volumerepo.New(clock)
+	volumes := volumerepo.New(clock, db.Runner())
 
 	// 首见落行：ID 缺省由 name+seq 铸、时间戳取假时钟。
 	first := &volume.Volume{ProjectID: projA, Name: "data-vol"}
-	require.NoError(t, volumes.Create(ctx, db.Runner(), first))
+	require.NoError(t, volumes.Create(ctx, first))
 	assert.Equal(t, "data-vol-1", first.ID)
 	assert.Equal(t, int64(1), first.Seq)
 	assert.Equal(t, state.FormatTime(clock.Now()), first.CreatedAt)
@@ -55,31 +55,31 @@ func TestVolumeCreateGetListDeleteLifecycle(t *testing.T) {
 	assert.False(t, first.Deleted())
 
 	// 同 Project 同名 → 唯一索引命中归一 ErrAlreadyExists。
-	err := volumes.Create(ctx, db.Runner(), &volume.Volume{ProjectID: projA, Name: "data-vol"})
+	err := volumes.Create(ctx, &volume.Volume{ProjectID: projA, Name: "data-vol"})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, state.ErrAlreadyExists,
 		"same-name create in the same project must normalize to ErrAlreadyExists")
 
 	// 异 Project 同名合法（唯一轴是 project_id+name）。
 	other := &volume.Volume{ProjectID: projB, Name: "data-vol"}
-	require.NoError(t, volumes.Create(ctx, db.Runner(), other))
-	require.NoError(t, volumes.Create(ctx, db.Runner(), &volume.Volume{ProjectID: projA, Name: "cache-vol"}))
+	require.NoError(t, volumes.Create(ctx, other))
+	require.NoError(t, volumes.Create(ctx, &volume.Volume{ProjectID: projA, Name: "cache-vol"}))
 
 	// Get/GetByName 活跃行口径；缺行 NotFound。
-	got, err := volumes.Get(ctx, db.Runner(), first.ID)
+	got, err := volumes.Get(ctx, first.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "data-vol", got.Name)
 	assert.Equal(t, projA, got.ProjectID)
-	byName, err := volumes.GetByName(ctx, db.Runner(), projA, "data-vol")
+	byName, err := volumes.GetByName(ctx, projA, "data-vol")
 	require.NoError(t, err)
 	assert.Equal(t, first.ID, byName.ID)
-	_, err = volumes.Get(ctx, db.Runner(), "missing-id")
+	_, err = volumes.Get(ctx, "missing-id")
 	assert.ErrorIs(t, err, state.ErrNotFound)
-	_, err = volumes.GetByName(ctx, db.Runner(), projA, "nope")
+	_, err = volumes.GetByName(ctx, projA, "nope")
 	assert.ErrorIs(t, err, state.ErrNotFound)
 
 	// ListByProject：项目隔离 + name 字典序 + 只含活跃行。
-	list, err := volumes.ListByProject(ctx, db.Runner(), projA)
+	list, err := volumes.ListByProject(ctx, projA)
 	require.NoError(t, err)
 	require.Len(t, list, 2)
 	assert.Equal(t, "cache-vol", list[0].Name)
@@ -87,36 +87,36 @@ func TestVolumeCreateGetListDeleteLifecycle(t *testing.T) {
 
 	// 软删落 tombstone（deleted_at 取当前假时刻），双读径即盲。
 	clock.Advance(30e9)
-	require.NoError(t, volumes.SoftDelete(ctx, db.Runner(), first.ID))
+	require.NoError(t, volumes.SoftDelete(ctx, first.ID))
 	firstTomb := tombstoneAt(t, db, first.ID)
 	assert.Equal(t, state.FormatTime(clock.Now()), firstTomb)
-	_, err = volumes.Get(ctx, db.Runner(), first.ID)
+	_, err = volumes.Get(ctx, first.ID)
 	assert.ErrorIs(t, err, state.ErrNotFound)
-	_, err = volumes.GetByName(ctx, db.Runner(), projA, "data-vol")
+	_, err = volumes.GetByName(ctx, projA, "data-vol")
 	assert.ErrorIs(t, err, state.ErrNotFound)
-	list, err = volumes.ListByProject(ctx, db.Runner(), projA)
+	list, err = volumes.ListByProject(ctx, projA)
 	require.NoError(t, err)
 	require.Len(t, list, 1)
 	assert.Equal(t, "cache-vol", list[0].Name, "tombstoned rows stay out of the list")
 
 	// 异 Project 同名行不受影响。
-	_, err = volumes.GetByName(ctx, db.Runner(), projB, "data-vol")
+	_, err = volumes.GetByName(ctx, projB, "data-vol")
 	require.NoError(t, err, "tombstone must not leak across projects")
 
 	// 二次软删幂等（活跃行条件 WHERE 不再命中，不炸且不覆写时间戳）。
 	clock.Advance(30e9)
-	require.NoError(t, volumes.SoftDelete(ctx, db.Runner(), first.ID))
+	require.NoError(t, volumes.SoftDelete(ctx, first.ID))
 	assert.Equal(t, firstTomb, tombstoneAt(t, db, first.ID),
 		"second soft delete must keep the first tombstone timestamp")
 
 	// 同 Project 同名可重建（tombstone 不占活跃行唯一轴）；GetByName 只见新行。
 	reborn := &volume.Volume{ProjectID: projA, Name: "data-vol"}
-	require.NoError(t, volumes.Create(ctx, db.Runner(), reborn))
+	require.NoError(t, volumes.Create(ctx, reborn))
 	assert.NotEqual(t, first.ID, reborn.ID, "recreated volume gets a fresh identity")
-	again, err := volumes.GetByName(ctx, db.Runner(), projA, "data-vol")
+	again, err := volumes.GetByName(ctx, projA, "data-vol")
 	require.NoError(t, err)
 	assert.Equal(t, reborn.ID, again.ID)
-	list, err = volumes.ListByProject(ctx, db.Runner(), projA)
+	list, err = volumes.ListByProject(ctx, projA)
 	require.NoError(t, err)
 	require.Len(t, list, 2)
 	assert.Equal(t, "data-vol", list[1].Name)
@@ -127,30 +127,30 @@ func TestVolumeCreateGetListDeleteLifecycle(t *testing.T) {
 func TestVolumePinOneShot(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	volumes := volumerepo.New(clock)
+	volumes := volumerepo.New(clock, db.Runner())
 
 	v := &volume.Volume{ProjectID: projA, Name: "data-vol"}
-	require.NoError(t, volumes.Create(ctx, db.Runner(), v))
+	require.NoError(t, volumes.Create(ctx, v))
 
 	clock.Advance(10e9)
-	require.NoError(t, volumes.Pin(ctx, db.Runner(), projA, "data-vol", "node-1"))
-	got, err := volumes.GetByName(ctx, db.Runner(), projA, "data-vol")
+	require.NoError(t, volumes.Pin(ctx, projA, "data-vol", "node-1"))
+	got, err := volumes.GetByName(ctx, projA, "data-vol")
 	require.NoError(t, err)
 	assert.Equal(t, "node-1", got.PinnedNodeID)
 	assert.Equal(t, state.FormatTime(clock.Now()), got.UpdatedAt, "pin refreshes updated_at")
 
 	// 已钉住：换节点号的二次 Pin 是 no-op（锚不可变）。
-	require.NoError(t, volumes.Pin(ctx, db.Runner(), projA, "data-vol", "node-2"))
-	got, err = volumes.GetByName(ctx, db.Runner(), projA, "data-vol")
+	require.NoError(t, volumes.Pin(ctx, projA, "data-vol", "node-2"))
+	got, err = volumes.GetByName(ctx, projA, "data-vol")
 	require.NoError(t, err)
 	assert.Equal(t, "node-1", got.PinnedNodeID, "pin is one-shot: an existing anchor must not change")
 
 	// 缺行 NotFound。
-	err = volumes.Pin(ctx, db.Runner(), projA, "nope", "node-1")
+	err = volumes.Pin(ctx, projA, "nope", "node-1")
 	assert.ErrorIs(t, err, state.ErrNotFound)
 
 	// 已删行 NotFound（活跃行口径）。
-	require.NoError(t, volumes.SoftDelete(ctx, db.Runner(), v.ID))
-	err = volumes.Pin(ctx, db.Runner(), projA, "data-vol", "node-3")
+	require.NoError(t, volumes.SoftDelete(ctx, v.ID))
+	err = volumes.Pin(ctx, projA, "data-vol", "node-3")
 	assert.ErrorIs(t, err, state.ErrNotFound)
 }

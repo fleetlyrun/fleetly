@@ -16,10 +16,11 @@ import (
 // repo 是 domain browse.Repo 的 SQLite 实现。
 type repo struct {
 	clock state.Clock
+	run   state.Runner
 }
 
 // New 构造 repo（直接返回接口——消费面只见 domain browse.Repo）。
-func New(clock state.Clock) browse.Repo { return &repo{clock: clock} }
+func New(clock state.Clock, run state.Runner) browse.Repo { return &repo{clock: clock, run: run} }
 
 const selectCols = `SELECT id, seq, project_id, database_id, engine, read_only, created_at, expires_at FROM browse_sessions`
 
@@ -35,8 +36,8 @@ func scanSession(scan func(...any) error) (*browse.Session, error) {
 }
 
 // Create 落一行台账（受理事务内——与事件/审计同拍）。
-func (r *repo) Create(ctx context.Context, run state.Runner, s *browse.Session) error {
-	seq, err := persistence.NextSeq(ctx, run, "browse_sessions")
+func (r *repo) Create(ctx context.Context, s *browse.Session) error {
+	seq, err := persistence.NextSeq(ctx, r.run, "browse_sessions")
 	if err != nil {
 		return err
 	}
@@ -48,7 +49,7 @@ func (r *repo) Create(ctx context.Context, run state.Runner, s *browse.Session) 
 	if s.ReadOnly {
 		ro = 1
 	}
-	_, err = run.ExecContext(ctx,
+	_, err = r.run.ExecContext(ctx,
 		`INSERT INTO browse_sessions (id, seq, project_id, database_id, engine, read_only, created_at, expires_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		s.ID, s.Seq, s.ProjectID, s.DatabaseID, s.Engine, ro, s.CreatedAt, s.ExpiresAt)
@@ -56,8 +57,8 @@ func (r *repo) Create(ctx context.Context, run state.Runner, s *browse.Session) 
 }
 
 // List 返回全部在册行（到期判定在引擎域——repo 只做存取；id 升序稳定）。
-func (r *repo) List(ctx context.Context, run state.Runner) ([]*browse.Session, error) {
-	rows, err := run.QueryContext(ctx, selectCols+` ORDER BY seq`)
+func (r *repo) List(ctx context.Context) ([]*browse.Session, error) {
+	rows, err := r.run.QueryContext(ctx, selectCols+` ORDER BY seq`)
 	if err != nil {
 		return nil, err
 	}
@@ -74,16 +75,16 @@ func (r *repo) List(ctx context.Context, run state.Runner) ([]*browse.Session, e
 }
 
 // CountByProject 对在册行按 project 计数（quota 判定输入）。
-func (r *repo) CountByProject(ctx context.Context, run state.Runner, projectID string) (int, error) {
+func (r *repo) CountByProject(ctx context.Context, projectID string) (int, error) {
 	var n int
-	err := run.QueryRowContext(ctx,
+	err := r.run.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM browse_sessions WHERE project_id = ?`, projectID).Scan(&n)
 	return n, err
 }
 
 // Delete 删一行（回收收口；不存在是幂等成功）。
-func (r *repo) Delete(ctx context.Context, run state.Runner, id string) error {
-	_, err := run.ExecContext(ctx, `DELETE FROM browse_sessions WHERE id = ?`, id)
+func (r *repo) Delete(ctx context.Context, id string) error {
+	_, err := r.run.ExecContext(ctx, `DELETE FROM browse_sessions WHERE id = ?`, id)
 	if err == sql.ErrNoRows {
 		return nil
 	}

@@ -22,19 +22,19 @@ import (
 func TestCatalogSnapshotPutGetOverwrite(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	snapshots := catalogrepo.New(clock)
+	snapshots := catalogrepo.New(clock, db.Runner())
 
 	// 缺席：ErrNoSnapshot（非 state.ErrNotFound——回退内嵌目录是正常态）。
-	_, err := snapshots.Get(ctx, db.Runner())
+	_, err := snapshots.Get(ctx)
 	assert.ErrorIs(t, err, catalog.ErrNoSnapshot)
 	assert.NotErrorIs(t, err, state.ErrNotFound,
 		"absent snapshot must surface the domain sentinel, not the generic not-found")
 
 	// 首播落行：fetched_at 取假时钟，digest/body 原文读回。
 	first := &catalog.Snapshot{Digest: "sha256:aaa", Body: `[{"name":"web"}]`}
-	require.NoError(t, snapshots.Put(ctx, db.Runner(), first))
+	require.NoError(t, snapshots.Put(ctx, first))
 	assert.Equal(t, state.FormatTime(clock.Now()), first.FetchedAt, "Put stamps fetched_at from the clock")
-	got, err := snapshots.Get(ctx, db.Runner())
+	got, err := snapshots.Get(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, "sha256:aaa", got.Digest)
 	assert.Equal(t, `[{"name":"web"}]`, got.Body)
@@ -43,8 +43,8 @@ func TestCatalogSnapshotPutGetOverwrite(t *testing.T) {
 	// 二次 Put：整体替换三列，单行表不增行（id=1 覆盖写语义）。
 	clock.Advance(30e9)
 	second := &catalog.Snapshot{Digest: "sha256:bbb", Body: `[{"name":"web"},{"name":"api"}]`}
-	require.NoError(t, snapshots.Put(ctx, db.Runner(), second))
-	got, err = snapshots.Get(ctx, db.Runner())
+	require.NoError(t, snapshots.Put(ctx, second))
+	got, err = snapshots.Get(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, "sha256:bbb", got.Digest, "second Put replaces the digest")
 	assert.Equal(t, `[{"name":"web"},{"name":"api"}]`, got.Body, "second Put replaces the body")

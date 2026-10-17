@@ -23,7 +23,7 @@ func TestMaterializeThreePathsIdentical(t *testing.T) {
 	e, rt, _ := newTestEngine(t)
 	ctx := context.Background()
 
-	require.NoError(t, e.volumes.Create(ctx, e.db.Runner(), &volume.Volume{
+	require.NoError(t, e.repos.Volumes.Create(ctx, &volume.Volume{
 		ID: "01JD0VOL00000000000000000", ProjectID: tProjectID, Name: "data",
 	}))
 	volSpec := `{"schema_version":1,"app":{"id":"` + tAppID + `","project":"` + tProjectID + `"},` +

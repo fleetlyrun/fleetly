@@ -17,14 +17,15 @@ import (
 // repo 是 domain role.Repo 的 SQLite 实现。
 type repo struct {
 	clock state.Clock
+	run   state.Runner
 }
 
 // New 构造 repo（直接返回接口——消费面只见 domain role.Repo）。
-func New(clock state.Clock) role.Repo { return &repo{clock: clock} }
+func New(clock state.Clock, run state.Runner) role.Repo { return &repo{clock: clock, run: run} }
 
 // Create 落一行；同 Team 内同名冲突返回 state.ErrAlreadyExists。
-func (r *repo) Create(ctx context.Context, run state.Runner, ro *role.Role) error {
-	seq, err := persistence.NextSeq(ctx, run, "roles")
+func (r *repo) Create(ctx context.Context, ro *role.Role) error {
+	seq, err := persistence.NextSeq(ctx, r.run, "roles")
 	if err != nil {
 		return err
 	}
@@ -37,7 +38,7 @@ func (r *repo) Create(ctx context.Context, run state.Runner, ro *role.Role) erro
 	if err != nil {
 		return fmt.Errorf("role: scopes json: %w", err)
 	}
-	_, err = run.ExecContext(ctx, `
+	_, err = r.run.ExecContext(ctx, `
 		INSERT INTO roles (id, seq, team_id, name, builtin, scopes, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		ro.ID, ro.Seq, ro.TeamID, ro.Name, boolInt(ro.Builtin), string(scopes), ro.CreatedAt)
@@ -50,13 +51,13 @@ func (r *repo) Create(ctx context.Context, run state.Runner, ro *role.Role) erro
 // UpsertBuiltin 落/刷内置角色（固定 slug ID；scopes 由代码单一源刷新——
 // 词表演进时启动即同步，不待人工迁移）。幂等刷新不耗 seq 号：先 UPDATE，
 // 零行 = 首播 → 铸 seq 落行（ADR-0070）。
-func (r *repo) UpsertBuiltin(ctx context.Context, run state.Runner, ro *role.Role) error {
+func (r *repo) UpsertBuiltin(ctx context.Context, ro *role.Role) error {
 	ro.CreatedAt = state.FormatTime(r.clock.Now())
 	scopes, err := json.Marshal(ro.Scopes)
 	if err != nil {
 		return fmt.Errorf("role: scopes json: %w", err)
 	}
-	res, err := run.ExecContext(ctx,
+	res, err := r.run.ExecContext(ctx,
 		`UPDATE roles SET scopes = ? WHERE id = ?`, string(scopes), ro.ID)
 	if err != nil {
 		return err
@@ -64,12 +65,12 @@ func (r *repo) UpsertBuiltin(ctx context.Context, run state.Runner, ro *role.Rol
 	if n, _ := res.RowsAffected(); n > 0 {
 		return nil
 	}
-	seq, err := persistence.NextSeq(ctx, run, "roles")
+	seq, err := persistence.NextSeq(ctx, r.run, "roles")
 	if err != nil {
 		return err
 	}
 	ro.Seq = seq
-	_, err = run.ExecContext(ctx, `
+	_, err = r.run.ExecContext(ctx, `
 		INSERT INTO roles (id, seq, team_id, name, builtin, scopes, created_at)
 		VALUES (?, ?, '', ?, 1, ?, ?)`,
 		ro.ID, ro.Seq, ro.Name, string(scopes), ro.CreatedAt)
@@ -77,16 +78,16 @@ func (r *repo) UpsertBuiltin(ctx context.Context, run state.Runner, ro *role.Rol
 }
 
 // Get 按 ID 直读。
-func (r *repo) Get(ctx context.Context, run state.Runner, id string) (*role.Role, error) {
-	row := run.QueryRowContext(ctx, `
+func (r *repo) Get(ctx context.Context, id string) (*role.Role, error) {
+	row := r.run.QueryRowContext(ctx, `
 		SELECT id, seq, team_id, name, builtin, scopes, created_at
 		FROM roles WHERE id = ?`, id)
 	return scanRole(row.Scan)
 }
 
 // List 返回全部 Role（内置在前、ID 序稳定）。
-func (r *repo) List(ctx context.Context, run state.Runner) ([]role.Role, error) {
-	rows, err := run.QueryContext(ctx, `
+func (r *repo) List(ctx context.Context) ([]role.Role, error) {
+	rows, err := r.run.QueryContext(ctx, `
 		SELECT id, seq, team_id, name, builtin, scopes, created_at
 		FROM roles ORDER BY builtin DESC, id`)
 	if err != nil {
@@ -106,15 +107,15 @@ func (r *repo) List(ctx context.Context, run state.Runner) ([]role.Role, error) 
 
 // Delete 按 ID 删行。内置角色拒绝删（代码单一源）；仍被 Token/membership
 // 引用时 FK RESTRICT 归一为 state.ErrConflict。
-func (r *repo) Delete(ctx context.Context, run state.Runner, id string) error {
-	ro, err := r.Get(ctx, run, id)
+func (r *repo) Delete(ctx context.Context, id string) error {
+	ro, err := r.Get(ctx, id)
 	if err != nil {
 		return err
 	}
 	if ro.Builtin {
 		return fmt.Errorf("%w: builtin role %q cannot be deleted", state.ErrConflict, ro.Name)
 	}
-	res, err := run.ExecContext(ctx, `DELETE FROM roles WHERE id = ?`, id)
+	res, err := r.run.ExecContext(ctx, `DELETE FROM roles WHERE id = ?`, id)
 	if err != nil {
 		if persistence.IsUniqueViolation(err) || persistence.IsForeignKeyViolation(err) {
 			return fmt.Errorf("%w: role %s is still referenced by tokens or users", state.ErrConflict, id)

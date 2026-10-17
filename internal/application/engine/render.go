@@ -34,7 +34,7 @@ func (e *Engine) projectRevision(ctx context.Context, appID, revisionID string, 
 	if err != nil {
 		return nil, nil, capability.NamespaceRef{}, fmt.Errorf("resolve app: %w", err)
 	}
-	peers, err := e.resolvePeerRefs(ctx, e.db.Runner(), spec.GetApp().GetProject(), spec, isolate)
+	peers, err := e.resolvePeerRefs(ctx, e.repos, spec.GetApp().GetProject(), spec, isolate)
 	if err != nil {
 		return nil, nil, capability.NamespaceRef{}, fmt.Errorf("resolve cross-project network peers: %w", err)
 	}
@@ -81,26 +81,26 @@ func (e *Engine) RenderWorkloads(ctx context.Context, appID string, seq int64) (
 func (e *Engine) resolveRenderRevision(ctx context.Context, appID string, seq int64) (*revision.Revision, string, error) {
 	var rev *revision.Revision
 	if seq > 0 {
-		r, err := e.revisions.GetBySeq(ctx, e.db.Runner(), appID, seq)
+		r, err := e.repos.Revisions.GetBySeq(ctx, appID, seq)
 		if err != nil {
 			return nil, "", err
 		}
 		rev = r
 	} else {
-		d, err := e.deployments.LatestSucceeded(ctx, e.db.Runner(), appID)
+		d, err := e.repos.Deployments.LatestSucceeded(ctx, appID)
 		if err != nil {
 			if errors.Is(err, state.ErrNotFound) {
 				return nil, "", fmt.Errorf("app %s has no succeeded deployment yet: %w", appID, state.ErrNotFound)
 			}
 			return nil, "", err
 		}
-		r, err := e.revisions.Get(ctx, e.db.Runner(), d.ToRevision)
+		r, err := e.repos.Revisions.Get(ctx, d.ToRevision)
 		if err != nil {
 			return nil, "", err
 		}
 		rev = r
 	}
-	a, err := e.apps.Get(ctx, e.db.Runner(), appID)
+	a, err := e.repos.Apps.Get(ctx, appID)
 	if err != nil {
 		return nil, "", err
 	}

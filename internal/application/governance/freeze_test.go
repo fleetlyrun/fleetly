@@ -42,12 +42,12 @@ import (
 // testGuard 构造带真 repo 的执法器（hermetic 夹具可引 persistence——生产
 // 构造面在组合根，P1b C 批；freeze repo 与 anchor 归属解析图全量真件）。
 func testGuard(db state.DB, clock state.Clock) *FreezeGuard {
-	return NewFreezeGuard(db, freezerepo.New(clock), anchor.New(anchor.Repos{
-		Projects: projectrepo.New(clock), Apps: apprepo.New(clock), Tasks: taskrepo.New(clock),
-		Schedules: schedulerepo.New(clock), Networks: networkrepo.New(clock), Peers: networkpeerrepo.New(clock),
-		Hooks: hookrepo.New(clock), Routes: routerepo.New(clock), Databases: databaserepo.New(clock),
-		Volumes: volumerepo.New(clock), Runs: runrepo.New(clock), Deployments: deploymentrepo.New(clock),
-		Builds: buildrepo.New(clock), GitHubApps: githubapprepo.New(clock),
+	return NewFreezeGuard(db, freezerepo.New(clock, db.Runner()), anchor.New(anchor.Repos{
+		Projects: projectrepo.New(clock, db.Runner()), Apps: apprepo.New(clock, db.Runner()), Tasks: taskrepo.New(clock, db.Runner()),
+		Schedules: schedulerepo.New(clock, db.Runner()), Networks: networkrepo.New(clock, db.Runner()), Peers: networkpeerrepo.New(clock, db.Runner()),
+		Hooks: hookrepo.New(clock, db.Runner()), Routes: routerepo.New(clock, db.Runner()), Databases: databaserepo.New(clock, db.Runner()),
+		Volumes: volumerepo.New(clock, db.Runner()), Runs: runrepo.New(clock, db.Runner()), Deployments: deploymentrepo.New(clock, db.Runner()),
+		Builds: buildrepo.New(clock, db.Runner()), GitHubApps: githubapprepo.New(clock, db.Runner()),
 	}), slog.New(slog.DiscardHandler))
 }
 
@@ -78,11 +78,10 @@ const tTeamA = "01JD0TEAMA0000000000000000"
 func TestFreezeGuardTeamAxis(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	run := db.Runner()
 
 	// 夹具：Team A（project/app/task/network/peer）与 Team B（project）。
-	projects, apps, tasks := projectrepo.New(clock), apprepo.New(clock), taskrepo.New(clock)
-	networks, peers, freezes := networkrepo.New(clock), networkpeerrepo.New(clock), freezerepo.New(clock)
+	projects, apps, tasks := projectrepo.New(clock, db.Runner()), apprepo.New(clock, db.Runner()), taskrepo.New(clock, db.Runner())
+	networks, peers, freezes := networkrepo.New(clock, db.Runner()), networkpeerrepo.New(clock, db.Runner()), freezerepo.New(clock, db.Runner())
 	const (
 		pidA    = "01JD0PROJA0000000000000000"
 		pidB    = "01JD0PROJB0000000000000000"
@@ -92,15 +91,15 @@ func TestFreezeGuardTeamAxis(t *testing.T) {
 		peerA   = "01JD0PEERA0000000000000000"
 		reasonA = "upgrade window"
 	)
-	require.NoError(t, projects.Create(ctx, run, &project.Project{ID: pidA, TeamID: tTeamA, Name: "alpha"}))
-	require.NoError(t, projects.Create(ctx, run, &project.Project{ID: pidB, TeamID: "01JD0TEAMB0000000000000000", Name: "beta"}))
-	require.NoError(t, apps.Create(ctx, run, &app.App{ID: aidA, ProjectID: pidA, Name: "web"}))
-	require.NoError(t, tasks.Create(ctx, run, &task.Task{
+	require.NoError(t, projects.Create(ctx, &project.Project{ID: pidA, TeamID: tTeamA, Name: "alpha"}))
+	require.NoError(t, projects.Create(ctx, &project.Project{ID: pidB, TeamID: "01JD0TEAMB0000000000000000", Name: "beta"}))
+	require.NoError(t, apps.Create(ctx, &app.App{ID: aidA, ProjectID: pidA, Name: "web"}))
+	require.NoError(t, tasks.Create(ctx, &task.Task{
 		ID: tidA, ProjectID: pidA, Form: task.FormResident, State: task.StateActive,
 		Spec: []byte(`{}`), DesiredConcurrency: 1, DNSName: "x",
 	}))
-	require.NoError(t, networks.Create(ctx, run, &network.Network{ID: nidA, ProjectID: pidA, Name: "net"}))
-	require.NoError(t, peers.Create(ctx, run, &networkpeer.Peer{
+	require.NoError(t, networks.Create(ctx, &network.Network{ID: nidA, ProjectID: pidA, Name: "net"}))
+	require.NoError(t, peers.Create(ctx, &networkpeer.Peer{
 		ID: peerA, NetworkID: nidA, PeerProjectID: pidB, State: networkpeer.StatePending,
 	}))
 
@@ -118,7 +117,7 @@ func TestFreezeGuardTeamAxis(t *testing.T) {
 	require.NoError(t, call(t, g, createApp, &structurev1.CreateAppRequest{ProjectId: "01JD0MIA00000000000000000", Name: "x"}))
 
 	// Team A 冻结：A 域动词拒（reason 可见），B 域放行，豁免面放行。
-	require.NoError(t, freezes.Create(ctx, run, &freeze.Freeze{ID: "01JDQFRZA00000000000000000", TeamID: tTeamA, Reason: reasonA}))
+	require.NoError(t, freezes.Create(ctx, &freeze.Freeze{ID: "01JDQFRZA00000000000000000", TeamID: tTeamA, Reason: reasonA}))
 	wantFrozen(t, call(t, g, createApp, &structurev1.CreateAppRequest{ProjectId: pidA, Name: "x"}), reasonA)
 	wantFrozen(t, call(t, g, createProj, &structurev1.CreateProjectRequest{Name: "x", TeamId: tTeamA}), reasonA)
 	wantFrozen(t, call(t, g, scaleTask, &automationv1.ScaleTaskRequest{Id: tidA}), reasonA)
@@ -127,11 +126,11 @@ func TestFreezeGuardTeamAxis(t *testing.T) {
 	require.NoError(t, call(t, g, stopTask, &automationv1.StopTaskRequest{Id: tidA}), "stop family is exempt during a freeze")
 
 	// 全局冻结行与 Team 行并存：B 域也拒（全局命中）。
-	require.NoError(t, freezes.Create(ctx, run, &freeze.Freeze{ID: "01JDQFRZG00000000000000000", TeamID: "", Reason: "platform maintenance"}))
+	require.NoError(t, freezes.Create(ctx, &freeze.Freeze{ID: "01JDQFRZG00000000000000000", TeamID: "", Reason: "platform maintenance"}))
 	wantFrozen(t, call(t, g, createApp, &structurev1.CreateAppRequest{ProjectId: pidB, Name: "x"}), "platform maintenance")
 
 	// lift 全局行后：B 恢复、A 仍冻（Team 行还在）。
-	require.NoError(t, freezes.Lift(ctx, run, "01JDQFRZG00000000000000000"))
+	require.NoError(t, freezes.Lift(ctx, "01JDQFRZG00000000000000000"))
 	require.NoError(t, call(t, g, createApp, &structurev1.CreateAppRequest{ProjectId: pidB, Name: "x"}))
 	wantFrozen(t, call(t, g, createApp, &structurev1.CreateAppRequest{ProjectId: pidA, Name: "x"}), reasonA)
 }

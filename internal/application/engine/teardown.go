@@ -24,7 +24,7 @@ func (e *Engine) TeardownApp(ctx context.Context, appID string) error {
 	// appMu，此处所见即受理终局——API 无锁预检到收口之间受理的部署在
 	// 一切副作用之前拒绝（否则拆掉的载体要靠在途部署重放自愈，白承受
 	// 一次可用性抖动）。
-	active, err := e.deployments.ActiveByApp(ctx, e.db.Runner(), appID)
+	active, err := e.repos.Deployments.ActiveByApp(ctx, appID)
 	if err != nil {
 		return err
 	}
@@ -32,7 +32,7 @@ func (e *Engine) TeardownApp(ctx context.Context, appID string) error {
 		return fmt.Errorf("%w: app %s has %d active deployment(s)", ErrActiveDeployment, appID, len(active))
 	}
 
-	a, err := e.apps.Get(ctx, e.db.Runner(), appID)
+	a, err := e.repos.Apps.Get(ctx, appID)
 	if err != nil {
 		return err
 	}

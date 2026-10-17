@@ -41,7 +41,7 @@ type drifts struct {
 // 互斥，"复查后落行、重放再 Ensure 旧 Generation 与驱动器对翻标签"
 // 的窗口不存在（健康部署被 L1 误判回滚的根因）。
 func (e *Engine) rebuildBaselines(ctx context.Context) {
-	driving, err := e.deployments.ListDriving(ctx, e.db.Runner())
+	driving, err := e.repos.Deployments.ListDriving(ctx)
 	if err != nil {
 		e.log.Error("baseline replay: list driving", "err", err)
 		return
@@ -50,7 +50,7 @@ func (e *Engine) rebuildBaselines(ctx context.Context) {
 	for _, d := range driving {
 		busy[d.AppID] = true
 	}
-	apps, err := e.apps.List(ctx, e.db.Runner())
+	apps, err := e.repos.Apps.List(ctx)
 	if err != nil {
 		e.log.Error("baseline replay: list apps", "err", err)
 		return
@@ -62,7 +62,7 @@ func (e *Engine) rebuildBaselines(ctx context.Context) {
 		if busy[a.ID] {
 			continue
 		}
-		d, err := e.deployments.LatestSucceeded(ctx, e.db.Runner(), a.ID)
+		d, err := e.repos.Deployments.LatestSucceeded(ctx, a.ID)
 		if err != nil {
 			continue // 无成功基线（从未部署成功）：无可重放
 		}
@@ -77,7 +77,7 @@ func (e *Engine) replayAppBaseline(ctx context.Context, a *app.App, d *deploymen
 	appMu.Lock()
 	defer appMu.Unlock()
 
-	active, err := e.deployments.ActiveByApp(ctx, e.db.Runner(), a.ID)
+	active, err := e.repos.Deployments.ActiveByApp(ctx, a.ID)
 	if err != nil {
 		e.log.Error("baseline replay: recheck active", "app", a.ID, "err", err)
 		return
@@ -99,7 +99,7 @@ func (e *Engine) driftScan(ctx context.Context) {
 	inspector := capability.FacesOf(e.runtime).Inspector // spec 对照子面（FacesOf 协商点；nil = Provider 未提供）
 
 	// 在途 App 集（稳态判定：不在途才发 workload.stopped）。
-	driving, err := e.deployments.ListDriving(ctx, e.db.Runner())
+	driving, err := e.repos.Deployments.ListDriving(ctx)
 	if err != nil {
 		e.log.Error("drift scan: list driving", "err", err)
 		return
@@ -284,7 +284,7 @@ func (e *Engine) compareSpecs(ctx context.Context, appID string, obs []capabilit
 	}
 
 	// 本扫描按 App 圈定（appID 在手）：资源轴 Team 一次解析，两类事件共用。
-	team := e.eventTeamOfApp(ctx, e.db.Runner(), appID)
+	team := e.eventTeamOfApp(ctx, e.repos, appID)
 	for _, p := range pending {
 		if err := e.emitObservation(ctx, team, eventWorkloadDrift, "workload", p.wid,
 			driftEventPayloadJSON(p.ev, appOwner(appID), p.anchor)); err != nil {

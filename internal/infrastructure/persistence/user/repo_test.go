@@ -47,40 +47,40 @@ func seedTokenRef(t *testing.T, ctx context.Context, db *persistence.DB, userID 
 func TestUserCreateConflictAndReadFaces(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	users := userrepo.New(clock)
+	users := userrepo.New(clock, db.Runner())
 
 	alice := &user.User{Name: "alice"}
-	require.NoError(t, users.Create(ctx, db.Runner(), alice))
+	require.NoError(t, users.Create(ctx, alice))
 	assert.Equal(t, "alice-1", alice.ID, "default id joins name and seq")
 	assert.Equal(t, int64(1), alice.Seq)
 	assert.Equal(t, state.FormatTime(clock.Now()), alice.CreatedAt)
 	assert.Empty(t, alice.PasswordHash, "fresh user starts without a password credential (00028 default '')")
 
 	// 同名冲突归一 ErrAlreadyExists（name 唯一列把守）。
-	err := users.Create(ctx, db.Runner(), &user.User{Name: "alice"})
+	err := users.Create(ctx, &user.User{Name: "alice"})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, state.ErrAlreadyExists, "duplicate name must normalize to ErrAlreadyExists")
 
 	bob := &user.User{Name: "bob"}
-	require.NoError(t, users.Create(ctx, db.Runner(), bob))
+	require.NoError(t, users.Create(ctx, bob))
 
 	// Get/GetByName；缺行 NotFound（Login 自证入口的诚实拒绝前置）。
-	got, err := users.Get(ctx, db.Runner(), alice.ID)
+	got, err := users.Get(ctx, alice.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "alice", got.Name)
-	byName, err := users.GetByName(ctx, db.Runner(), "bob")
+	byName, err := users.GetByName(ctx, "bob")
 	require.NoError(t, err)
 	assert.Equal(t, bob.ID, byName.ID)
-	_, err = users.Get(ctx, db.Runner(), "missing-id")
+	_, err = users.Get(ctx, "missing-id")
 	assert.ErrorIs(t, err, state.ErrNotFound)
-	_, err = users.GetByName(ctx, db.Runner(), "carol")
+	_, err = users.GetByName(ctx, "carol")
 	assert.ErrorIs(t, err, state.ErrNotFound)
 
 	// Count（Bootstrap Token 的"无用户"判定轴）与 List（seq 稳定序）。
-	n, err := users.Count(ctx, db.Runner())
+	n, err := users.Count(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, 2, n)
-	all, err := users.List(ctx, db.Runner())
+	all, err := users.List(ctx)
 	require.NoError(t, err)
 	require.Len(t, all, 2)
 	assert.Equal(t, "alice", all[0].Name)
@@ -92,30 +92,30 @@ func TestUserCreateConflictAndReadFaces(t *testing.T) {
 func TestUserPasswordHashShape(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	users := userrepo.New(clock)
+	users := userrepo.New(clock, db.Runner())
 
 	u := &user.User{Name: "alice"}
-	require.NoError(t, users.Create(ctx, db.Runner(), u))
+	require.NoError(t, users.Create(ctx, u))
 
 	// 未设密形态：空串（密码登录诚实拒绝的判定面）。
-	got, err := users.GetByName(ctx, db.Runner(), "alice")
+	got, err := users.GetByName(ctx, "alice")
 	require.NoError(t, err)
 	assert.Empty(t, got.PasswordHash)
 
 	// 设置 → GetByName 回读（Login 自证物单源）。
-	require.NoError(t, users.SetPassword(ctx, db.Runner(), u.ID, fakeHash))
-	got, err = users.GetByName(ctx, db.Runner(), "alice")
+	require.NoError(t, users.SetPassword(ctx, u.ID, fakeHash))
+	got, err = users.GetByName(ctx, "alice")
 	require.NoError(t, err)
 	assert.Equal(t, fakeHash, got.PasswordHash)
 
 	// 重置覆写。
-	require.NoError(t, users.SetPassword(ctx, db.Runner(), u.ID, "$2a$10$rotated"))
-	got, err = users.Get(ctx, db.Runner(), u.ID)
+	require.NoError(t, users.SetPassword(ctx, u.ID, "$2a$10$rotated"))
+	got, err = users.Get(ctx, u.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "$2a$10$rotated", got.PasswordHash)
 
 	// 缺行 NotFound（RowsAffected==0 归一）。
-	err = users.SetPassword(ctx, db.Runner(), "missing-id", fakeHash)
+	err = users.SetPassword(ctx, "missing-id", fakeHash)
 	assert.ErrorIs(t, err, state.ErrNotFound)
 }
 
@@ -124,14 +124,14 @@ func TestUserPasswordHashShape(t *testing.T) {
 func TestUserDeleteFKRestrictNormalize(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	users := userrepo.New(clock)
+	users := userrepo.New(clock, db.Runner())
 
 	u := &user.User{Name: "alice"}
-	require.NoError(t, users.Create(ctx, db.Runner(), u))
+	require.NoError(t, users.Create(ctx, u))
 	seedTokenRef(t, ctx, db, u.ID)
 
 	// FK RESTRICT → 归一 ErrConflict，文案指向 tokens（不误导 E_INTERNAL）。
-	err := users.Delete(ctx, db.Runner(), u.ID)
+	err := users.Delete(ctx, u.ID)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, state.ErrConflict)
 	assert.Contains(t, err.Error(), "tokens", "conflict text must point at the referencing tokens")
@@ -139,14 +139,14 @@ func TestUserDeleteFKRestrictNormalize(t *testing.T) {
 	// 引用解除（吊销/删除名下 Token）后删除即净。
 	_, err = db.Runner().ExecContext(ctx, `DELETE FROM tokens WHERE id = '01JD0TOKN000000000000000T1'`)
 	require.NoError(t, err)
-	require.NoError(t, users.Delete(ctx, db.Runner(), u.ID))
-	_, err = users.Get(ctx, db.Runner(), u.ID)
+	require.NoError(t, users.Delete(ctx, u.ID))
+	_, err = users.Get(ctx, u.ID)
 	assert.ErrorIs(t, err, state.ErrNotFound)
-	n, err := users.Count(ctx, db.Runner())
+	n, err := users.Count(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, 0, n)
 
 	// 缺行 NotFound。
-	err = users.Delete(ctx, db.Runner(), u.ID)
+	err = users.Delete(ctx, u.ID)
 	assert.ErrorIs(t, err, state.ErrNotFound)
 }

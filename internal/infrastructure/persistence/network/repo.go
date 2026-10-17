@@ -17,14 +17,15 @@ import (
 // repo 是 domain network.Repo 的 SQLite 实现。
 type repo struct {
 	clock state.Clock
+	run   state.Runner
 }
 
 // New 构造 repo（直接返回接口——消费面只见 domain network.Repo）。
-func New(clock state.Clock) network.Repo { return &repo{clock: clock} }
+func New(clock state.Clock, run state.Runner) network.Repo { return &repo{clock: clock, run: run} }
 
 // Create 落一行；同 Project 同名冲突返回 state.ErrAlreadyExists。
-func (r *repo) Create(ctx context.Context, run state.Runner, n *network.Network) error {
-	seq, err := persistence.NextSeq(ctx, run, "networks")
+func (r *repo) Create(ctx context.Context, n *network.Network) error {
+	seq, err := persistence.NextSeq(ctx, r.run, "networks")
 	if err != nil {
 		return err
 	}
@@ -38,7 +39,7 @@ func (r *repo) Create(ctx context.Context, run state.Runner, n *network.Network)
 	if n.EgressNone {
 		egress = 1
 	}
-	_, err = run.ExecContext(ctx, `
+	_, err = r.run.ExecContext(ctx, `
 		INSERT INTO networks (id, seq, project_id, name, egress_none, created_at, deleted_at)
 		VALUES (?, ?, ?, ?, ?, ?, '')`,
 		n.ID, n.Seq, n.ProjectID, n.Name, egress, n.CreatedAt)
@@ -49,16 +50,16 @@ func (r *repo) Create(ctx context.Context, run state.Runner, n *network.Network)
 }
 
 // GetByID 按 ID 直读活跃行（peer 声明解析面：声明行只挂活跃网络）。
-func (r *repo) GetByID(ctx context.Context, run state.Runner, id string) (*network.Network, error) {
-	row := run.QueryRowContext(ctx, `
+func (r *repo) GetByID(ctx context.Context, id string) (*network.Network, error) {
+	row := r.run.QueryRowContext(ctx, `
 		SELECT id, seq, project_id, name, egress_none, created_at, deleted_at
 		FROM networks WHERE id = ? AND deleted_at = ''`, id)
 	return scanNetwork(row.Scan)
 }
 
 // GetByName 读活跃行。
-func (r *repo) GetByName(ctx context.Context, run state.Runner, projectID, name string) (*network.Network, error) {
-	row := run.QueryRowContext(ctx, `
+func (r *repo) GetByName(ctx context.Context, projectID, name string) (*network.Network, error) {
+	row := r.run.QueryRowContext(ctx, `
 		SELECT id, seq, project_id, name, egress_none, created_at, deleted_at
 		FROM networks WHERE project_id = ? AND name = ? AND deleted_at = ''`, projectID, name)
 	return scanNetwork(row.Scan)
@@ -66,8 +67,8 @@ func (r *repo) GetByName(ctx context.Context, run state.Runner, projectID, name 
 
 // ListByProject 返回 Project 全部活跃网络（全量面——配额检查与引擎挂网
 // 装配消费；API 分页读面走 ListByProjectPage）。
-func (r *repo) ListByProject(ctx context.Context, run state.Runner, projectID string) ([]network.Network, error) {
-	rows, err := run.QueryContext(ctx, `
+func (r *repo) ListByProject(ctx context.Context, projectID string) ([]network.Network, error) {
+	rows, err := r.run.QueryContext(ctx, `
 		SELECT id, seq, project_id, name, egress_none, created_at, deleted_at
 		FROM networks WHERE project_id = ? AND deleted_at = '' ORDER BY name`, projectID)
 	if err != nil {
@@ -88,7 +89,7 @@ func (r *repo) ListByProject(ctx context.Context, run state.Runner, projectID st
 // ListByProjectPage 是 ListByProject 的分页读面（ADR-0026 after_* + limit；
 // 游标轴 = 既有排序轴 name 字典序升序——既有响应序不变）。limit<=0 或
 // >200 回落/钳制缺省 50。
-func (r *repo) ListByProjectPage(ctx context.Context, run state.Runner, projectID, afterName string, limit int) ([]network.Network, error) {
+func (r *repo) ListByProjectPage(ctx context.Context, projectID, afterName string, limit int) ([]network.Network, error) {
 	limit = persistence.ClampLimit(limit, defaultListLimit, maxListLimit)
 	q := `
 		SELECT id, seq, project_id, name, egress_none, created_at, deleted_at
@@ -100,7 +101,7 @@ func (r *repo) ListByProjectPage(ctx context.Context, run state.Runner, projectI
 	}
 	q += ` ORDER BY name ASC LIMIT ?`
 	args = append(args, limit)
-	rows, err := run.QueryContext(ctx, q, args...)
+	rows, err := r.run.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -123,8 +124,8 @@ const (
 
 // List 返回全部活跃网络（跨 Project；受管 Proxy 挂网的全量真源，N0 修复
 // 批 B1）。
-func (r *repo) List(ctx context.Context, run state.Runner) ([]network.Network, error) {
-	rows, err := run.QueryContext(ctx, `
+func (r *repo) List(ctx context.Context) ([]network.Network, error) {
+	rows, err := r.run.QueryContext(ctx, `
 		SELECT id, seq, project_id, name, egress_none, created_at, deleted_at
 		FROM networks WHERE deleted_at = '' ORDER BY project_id, name`)
 	if err != nil {

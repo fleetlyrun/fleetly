@@ -26,14 +26,14 @@ func (e *Engine) reconcileNodes(ctx context.Context) {
 		if e.nodeLeftSeen[n.NodeID] {
 			delete(e.nodeLeftSeen, n.NodeID) // 回归清除：再离开可再发
 		}
-		if err := e.nodes.Upsert(ctx, e.db.Runner(), &node.Node{
+		if err := e.repos.Nodes.Upsert(ctx, &node.Node{
 			PlatformID: n.NodeID, CarrierID: n.CarrierID,
 			Hostname: n.Hostname, Role: n.Role, Available: n.Available,
 		}); err != nil {
 			e.log.Error("node reconcile: upsert", "node", n.NodeID, "err", err)
 		}
 	}
-	cached, err := e.nodes.List(ctx, e.db.Runner())
+	cached, err := e.repos.Nodes.List(ctx)
 	if err != nil {
 		e.log.Error("node reconcile: list", "err", err)
 		return
@@ -50,7 +50,7 @@ func (e *Engine) reconcileNodes(ctx context.Context) {
 			continue
 		}
 		// 离开即观测缓存下线（行保留——节点 ID 永不复用，历史可查）。
-		if err := e.nodes.Upsert(ctx, e.db.Runner(), &node.Node{
+		if err := e.repos.Nodes.Upsert(ctx, &node.Node{
 			PlatformID: n.PlatformID, CarrierID: n.CarrierID, Hostname: n.Hostname,
 			Role: n.Role, Available: false,
 		}); err != nil {

@@ -5,7 +5,6 @@ package engine
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 
@@ -13,6 +12,7 @@ import (
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/run"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
@@ -71,8 +71,8 @@ func CheckTaskQuota(projectID string, active int, sum, delta int64, spawn bool) 
 // 返回哨兵——调用方转有界等待（predeploy）/skip（到期拍）/诚实拒绝（手动
 // 拍）。此前在 predeploy 与 schedule 各持一份逐字拷贝，收口为 commitWrite
 // 的 checks 段。
-func (e *Engine) taskSpawnQuota(ctx context.Context, tx *sql.Tx, projectID string, desired int64) error {
-	active, sum, err := e.tasks.StatsByProject(ctx, tx, projectID)
+func (e *Engine) taskSpawnQuota(ctx context.Context, s transact.Stores, projectID string, desired int64) error {
+	active, sum, err := s.Tasks.StatsByProject(ctx, projectID)
 	if err != nil {
 		return err
 	}
@@ -84,8 +84,8 @@ func (e *Engine) taskSpawnQuota(ctx context.Context, tx *sql.Tx, projectID strin
 // active 恢复（"排空并补足"的补足半边）。
 func (e *Engine) RenewTask(ctx context.Context, id string) (*task.Task, error) {
 	var out *task.Task
-	err := e.db.Tx(ctx, func(tx *sql.Tx) error {
-		t, err := e.tasks.Get(ctx, tx, id)
+	err := e.tx.Do(ctx, func(s transact.Stores) error {
+		t, err := s.Tasks.Get(ctx, id)
 		if err != nil {
 			return err
 		}
@@ -99,22 +99,22 @@ func (e *Engine) RenewTask(ctx context.Context, id string) (*task.Task, error) {
 		if t.State != task.StateActive {
 			// 复活：draining/drained → active（四件一走唯一序列真源——
 			// task.active 事件与 task.renew 用户动词审计随行）。
-			if err := e.transitTaskTx(ctx, tx, t,
+			if err := e.transitTaskTx(ctx, s, t,
 				[]task.State{task.StateDraining, task.StateDrained}, task.StateActive, nil,
 				taskTransitOpts{auditAction: "task.renew", auditActorCtx: true}); err != nil {
 				return err
 			}
 		}
 		var fresh *task.Task
-		err = e.commitWrite(ctx, tx, writeFact{
+		err = e.commitWrite(ctx, s, writeFact{
 			// 续 lease 是字段更新而非状态迁移：无审计（resident 池持续续期，
 			// 逐次留痕是噪音面），lease.renewed 事实事件随行。
-			write: func(ctx context.Context, tx *sql.Tx) error {
-				if err := e.tasks.UpdateLease(ctx, tx, id, deadline); err != nil {
+			write: func(ctx context.Context, s transact.Stores) error {
+				if err := s.Tasks.UpdateLease(ctx, id, deadline); err != nil {
 					return err
 				}
 				var err error
-				fresh, err = e.tasks.Get(ctx, tx, id)
+				fresh, err = s.Tasks.Get(ctx, id)
 				return err
 			},
 			facts: []func() writes.FactRow{func() writes.FactRow {
@@ -122,7 +122,7 @@ func (e *Engine) RenewTask(ctx context.Context, id string) (*task.Task, error) {
 				// 续期，逐次留痕是噪音面（A 化前亦无审计行，行集合零漂移）。
 				return writes.FactRow{
 					Name: eventLeaseRenewed, Aggregate: "task", ID: id,
-					Payload: leaseEventPayloadJSON(fresh, ""), TeamID: e.eventTeamOfProject(ctx, tx, t.ProjectID),
+					Payload: leaseEventPayloadJSON(fresh, ""), TeamID: e.eventTeamOfProject(ctx, s, t.ProjectID),
 					StreamOnly: true,
 				}
 			}},
@@ -151,8 +151,8 @@ func (e *Engine) StopTask(ctx context.Context, id string, force bool) (*task.Tas
 	defer mu.Unlock()
 
 	var out *task.Task
-	err := e.db.Tx(ctx, func(tx *sql.Tx) error {
-		t, err := e.tasks.Get(ctx, tx, id)
+	err := e.tx.Do(ctx, func(s transact.Stores) error {
+		t, err := s.Tasks.Get(ctx, id)
 		if err != nil {
 			return err
 		}
@@ -163,13 +163,13 @@ func (e *Engine) StopTask(ctx context.Context, id string, force bool) (*task.Tas
 			// 排空迁移四件一：task.draining 事件（起因负载）+ task.stop
 			// 用户动词审计。已 draining 时无迁移不发事件（事件是状态迁移
 			// 的既成事实——此前该路径无迁移也重复发 draining 事件）。
-			if err := e.transitTaskTx(ctx, tx, t,
+			if err := e.transitTaskTx(ctx, s, t,
 				[]task.State{task.StateActive}, task.StateDraining, nil,
 				taskTransitOpts{reason: run.ReasonStoppedByUser, auditAction: "task.stop", auditActorCtx: true}); err != nil {
 				return err
 			}
 		}
-		fresh, err := e.tasks.Get(ctx, tx, id)
+		fresh, err := s.Tasks.Get(ctx, id)
 		if err != nil {
 			return err
 		}
@@ -181,7 +181,7 @@ func (e *Engine) StopTask(ctx context.Context, id string, force bool) (*task.Tas
 	}
 	if force {
 		now := e.clock.Now()
-		runs, rerr := e.runs.ListByTaskStates(ctx, e.db.Runner(), id, run.ActiveStates)
+		runs, rerr := e.repos.Runs.ListByTaskStates(ctx, id, run.ActiveStates)
 		if rerr != nil {
 			e.log.Error("task stop: list runs", "task", id, "err", rerr) // 行已 draining；停止收口交下一拍
 		}
@@ -198,8 +198,8 @@ func (e *Engine) StopTask(ctx context.Context, id string, force bool) (*task.Tas
 // ScaleTask 调整 resident 期望并发（原地迁移 + task.updated 事件）。
 func (e *Engine) ScaleTask(ctx context.Context, id string, desired int64) (*task.Task, error) {
 	var out *task.Task
-	err := e.db.Tx(ctx, func(tx *sql.Tx) error {
-		t, err := e.tasks.Get(ctx, tx, id)
+	err := e.tx.Do(ctx, func(s transact.Stores) error {
+		t, err := s.Tasks.Get(ctx, id)
 		if err != nil {
 			return err
 		}
@@ -219,7 +219,7 @@ func (e *Engine) ScaleTask(ctx context.Context, id string, desired int64) (*task
 		// 新值 − 现值；事务内读（SQLite 单写连接串行，无 TOCTOU）。scale
 		// 模态不占新行位——CheckTaskQuota 的 spawn=false 腿（ADR-0068）。
 		if delta := desired - t.DesiredConcurrency; delta > 0 {
-			_, sum, err := e.tasks.StatsByProject(ctx, tx, t.ProjectID)
+			_, sum, err := s.Tasks.StatsByProject(ctx, t.ProjectID)
 			if err != nil {
 				return err
 			}
@@ -229,7 +229,7 @@ func (e *Engine) ScaleTask(ctx context.Context, id string, desired int64) (*task
 		}
 		// 原地迁移（active→active 仅改 desired）：无状态事件（抑制规则），
 		// task.updated 是"变化"事件照发；task.update 用户动词审计随行。
-		if err := e.transitTaskTx(ctx, tx, t,
+		if err := e.transitTaskTx(ctx, s, t,
 			[]task.State{task.StateActive}, task.StateActive,
 			func(m *task.Task) { m.DesiredConcurrency = desired },
 			taskTransitOpts{
@@ -257,7 +257,7 @@ func (e *Engine) DeleteTask(ctx context.Context, id string) error {
 	mu.Lock()
 	defer mu.Unlock()
 
-	t, err := e.tasks.Get(ctx, e.db.Runner(), id)
+	t, err := e.repos.Tasks.Get(ctx, id)
 	if err != nil {
 		return err
 	}
@@ -282,8 +282,8 @@ func (e *Engine) DeleteTask(ctx context.Context, id string) error {
 	e.task.drainObs(id)
 	e.ensureForget(e.task.ensure, id)
 
-	return e.db.Tx(ctx, func(tx *sql.Tx) error {
-		driving, err := e.runs.ListDriving(ctx, tx)
+	return e.tx.Do(ctx, func(s transact.Stores) error {
+		driving, err := s.Runs.ListDriving(ctx)
 		if err != nil {
 			return err
 		}
@@ -293,7 +293,7 @@ func (e *Engine) DeleteTask(ctx context.Context, id string) error {
 			}
 			// 存量 Run 终态化走四件一（run.stopped 事件+审计随行——事件是
 			// 状态迁移的既成事实；此前此处静默 CAS 是五拷贝时代的漂移）。
-			if err := e.transitRunTx(ctx, tx, &driving[i],
+			if err := e.transitRunTx(ctx, s, &driving[i],
 				taskDrivingStates, run.StateStopped,
 				func(r *run.Run) { r.StopReason = run.ReasonStoppedByUser; r.Deadline = "" }); err != nil && !errors.Is(err, state.ErrConflict) {
 				return err
@@ -301,7 +301,7 @@ func (e *Engine) DeleteTask(ctx context.Context, id string) error {
 		}
 		// tombstone 迁移四件一：task.deleted 事件 + task.delete 用户动词
 		// 审计（AfterFP=deleted——此前无指纹，随收口补上）。
-		return e.transitTaskTx(ctx, tx, t,
+		return e.transitTaskTx(ctx, s, t,
 			[]task.State{task.StateActive, task.StateDraining, task.StateCompleted, task.StateFailed, task.StateDrained},
 			task.StateDeleted, nil,
 			taskTransitOpts{auditAction: "task.delete", auditActorCtx: true})
@@ -310,7 +310,7 @@ func (e *Engine) DeleteTask(ctx context.Context, id string) error {
 
 // StopRun 停止单条 Run（stopped_by_user；Task 补足在下一拍补位）。
 func (e *Engine) StopRun(ctx context.Context, id string) (*run.Run, error) {
-	m, err := e.runs.Get(ctx, e.db.Runner(), id)
+	m, err := e.repos.Runs.Get(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -321,7 +321,7 @@ func (e *Engine) StopRun(ctx context.Context, id string) (*run.Run, error) {
 		return nil, err
 	}
 	e.taskLoop.Kick()
-	return e.runs.Get(ctx, e.db.Runner(), id)
+	return e.repos.Runs.Get(ctx, id)
 }
 
 // transitRunFour（Run 四件一）与 transitTaskFour（Task 四件一）均已收口

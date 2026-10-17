@@ -35,8 +35,8 @@ func mintTeamToken(t *testing.T, h *apitest.Harness, name, teamID, roleID string
 	t.Helper()
 	material, err := identity.NewToken()
 	require.NoError(t, err)
-	repo := tokenrepo.New(h.DB.Clock())
-	require.NoError(t, repo.Create(context.Background(), h.DB.Runner(), &token.Token{
+	repo := tokenrepo.New(h.DB.Clock(), h.DB.Runner())
+	require.NoError(t, repo.Create(context.Background(), &token.Token{
 		Name:   name,
 		TeamID: teamID, RoleID: roleID,
 		SHA256: material.SHA256, Prefix: material.Prefix,

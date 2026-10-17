@@ -106,7 +106,7 @@ func TestEventsTeamFilterMatrix(t *testing.T) {
 	require.NoError(t, err)
 
 	// ---- 平台级事件（team_id=''，白箱直落——node.* 域在生产由 engine 铸） ----
-	_, err = h.Services.OutboxEvents.Append(context.Background(), h.DB.Runner(), "",
+	_, err = h.Services.OutboxEvents.Append(context.Background(), "",
 		"node.joined", "node", "01JD0NODE0000000000000000X", []byte(`{}`))
 	require.NoError(t, err)
 

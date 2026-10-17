@@ -118,7 +118,7 @@ func TestEventsGoneAfterRetentionTrim(t *testing.T) {
 
 	// 快进时钟越过保留窗并执行 retention 清扫（janitor 的同款调用）。
 	h.Clock.Advance(8 * 24 * time.Hour)
-	n, err := outbox.New(h.DB.Clock()).TrimBefore(context.Background(), h.DB.Runner(),
+	n, err := outbox.New(h.DB.Clock(), h.DB.Runner()).TrimBefore(context.Background(),
 		h.DB.Clock().Now().Add(-7*24*time.Hour))
 	require.NoError(t, err)
 	require.Greater(t, n, int64(0), "the retention trim must have reclaimed rows")

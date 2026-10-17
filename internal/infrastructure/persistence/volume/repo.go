@@ -16,15 +16,16 @@ import (
 // repo 是 domain volume.Repo 的 SQLite 实现。
 type repo struct {
 	clock state.Clock
+	run   state.Runner
 }
 
 // New 构造 repo（直接返回接口——消费面只见 domain volume.Repo）。
-func New(clock state.Clock) volume.Repo { return &repo{clock: clock} }
+func New(clock state.Clock, run state.Runner) volume.Repo { return &repo{clock: clock, run: run} }
 
 // Create 落一行；同 Project 同名冲突返回 state.ErrAlreadyExists。
 // pinnedNodeID 为空表示待钉住（首次挂载时由引擎分配——分配后不可变）。
-func (r *repo) Create(ctx context.Context, run state.Runner, v *volume.Volume) error {
-	seq, err := persistence.NextSeq(ctx, run, "volumes")
+func (r *repo) Create(ctx context.Context, v *volume.Volume) error {
+	seq, err := persistence.NextSeq(ctx, r.run, "volumes")
 	if err != nil {
 		return err
 	}
@@ -34,7 +35,7 @@ func (r *repo) Create(ctx context.Context, run state.Runner, v *volume.Volume) e
 	}
 	now := state.FormatTime(r.clock.Now())
 	v.CreatedAt, v.UpdatedAt = now, now
-	_, err = run.ExecContext(ctx, `
+	_, err = r.run.ExecContext(ctx, `
 		INSERT INTO volumes (id, seq, project_id, name, pinned_node_id, created_at, updated_at, deleted_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, '')`,
 		v.ID, v.Seq, v.ProjectID, v.Name, v.PinnedNodeID, v.CreatedAt, v.UpdatedAt)
@@ -45,16 +46,16 @@ func (r *repo) Create(ctx context.Context, run state.Runner, v *volume.Volume) e
 }
 
 // GetByName 读活跃行。
-func (r *repo) GetByName(ctx context.Context, run state.Runner, projectID, name string) (*volume.Volume, error) {
-	row := run.QueryRowContext(ctx, `
+func (r *repo) GetByName(ctx context.Context, projectID, name string) (*volume.Volume, error) {
+	row := r.run.QueryRowContext(ctx, `
 		SELECT id, seq, project_id, name, pinned_node_id, created_at, updated_at, deleted_at
 		FROM volumes WHERE project_id = ? AND name = ? AND deleted_at = ''`, projectID, name)
 	return scanVolume(row.Scan)
 }
 
 // Get 读活跃行（按 ID；anchor 解析链与 API 单体读面共用）。
-func (r *repo) Get(ctx context.Context, run state.Runner, id string) (*volume.Volume, error) {
-	row := run.QueryRowContext(ctx, `
+func (r *repo) Get(ctx context.Context, id string) (*volume.Volume, error) {
+	row := r.run.QueryRowContext(ctx, `
 		SELECT id, seq, project_id, name, pinned_node_id, created_at, updated_at, deleted_at
 		FROM volumes WHERE id = ? AND deleted_at = ''`, id)
 	return scanVolume(row.Scan)
@@ -62,33 +63,33 @@ func (r *repo) Get(ctx context.Context, run state.Runner, id string) (*volume.Vo
 
 // SoftDelete 收口删除（tombstone；活跃行口径——被引用卷由受理位前置拒绝，
 // 本方法只管落账）。
-func (r *repo) SoftDelete(ctx context.Context, run state.Runner, id string) error {
+func (r *repo) SoftDelete(ctx context.Context, id string) error {
 	now := state.FormatTime(r.clock.Now())
-	_, err := run.ExecContext(ctx, `
+	_, err := r.run.ExecContext(ctx, `
 		UPDATE volumes SET deleted_at = ?, updated_at = ?
 		WHERE id = ? AND deleted_at = ''`, now, now, id)
 	return err
 }
 
 // Pin 钉住节点（一次性：已钉住时幂等返回；节点 ID 永不复用——不改锚）。
-func (r *repo) Pin(ctx context.Context, run state.Runner, projectID, name, nodeID string) error {
+func (r *repo) Pin(ctx context.Context, projectID, name, nodeID string) error {
 	now := state.FormatTime(r.clock.Now())
-	_, err := run.ExecContext(ctx, `
+	_, err := r.run.ExecContext(ctx, `
 		UPDATE volumes SET pinned_node_id = ?, updated_at = ?
 		WHERE project_id = ? AND name = ? AND deleted_at = '' AND pinned_node_id = ''`,
 		nodeID, now, projectID, name)
 	if err != nil {
 		return err
 	}
-	if _, err := r.GetByName(ctx, run, projectID, name); err != nil {
+	if _, err := r.GetByName(ctx, projectID, name); err != nil {
 		return err
 	}
 	return nil
 }
 
 // ListByProject 返回 Project 全部活跃卷。
-func (r *repo) ListByProject(ctx context.Context, run state.Runner, projectID string) ([]volume.Volume, error) {
-	rows, err := run.QueryContext(ctx, `
+func (r *repo) ListByProject(ctx context.Context, projectID string) ([]volume.Volume, error) {
+	rows, err := r.run.QueryContext(ctx, `
 		SELECT id, seq, project_id, name, pinned_node_id, created_at, updated_at, deleted_at
 		FROM volumes WHERE project_id = ? AND deleted_at = '' ORDER BY name`, projectID)
 	if err != nil {

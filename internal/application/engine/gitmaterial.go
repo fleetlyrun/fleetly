@@ -81,14 +81,14 @@ func (e *Engine) resolveGitMaterial(ctx context.Context, projectID, repoURL stri
 		}
 		return &gitMaterial{username: installTokenUser, token: token}, nil
 	}
-	row, err := e.ghApps.GetByProjectAndOwner(ctx, e.db.Runner(), projectID, owner)
+	row, err := e.repos.GitHubApps.GetByProjectAndOwner(ctx, projectID, owner)
 	switch {
 	case err == nil:
 		return use(row)
 	case !errors.Is(err, state.ErrNotFound):
 		return nil, fmt.Errorf("lookup github app material for %s: %w", owner, err)
 	}
-	row, err = e.ghApps.GetGlobalByOwner(ctx, e.db.Runner(), owner)
+	row, err = e.repos.GitHubApps.GetGlobalByOwner(ctx, owner)
 	switch {
 	case err == nil:
 		return use(row)
@@ -104,7 +104,7 @@ func (e *Engine) resolveGitMaterial(ctx context.Context, projectID, repoURL stri
 // 解封失败/坏 JSON 精确失败上抛。
 func (e *Engine) resolveGitSecretMaterial(ctx context.Context, projectID, host string) (*gitMaterial, error) {
 	name := gitSecretPrefix + host
-	row, err := e.secrets.GetByName(ctx, e.db.Runner(), projectID, name)
+	row, err := e.repos.Secrets.GetByName(ctx, projectID, name)
 	if errors.Is(err, state.ErrNotFound) {
 		return nil, nil
 	}

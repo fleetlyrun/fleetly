@@ -2,7 +2,6 @@ package persistence_test
 
 import (
 	"context"
-	"database/sql"
 	"path/filepath"
 	"testing"
 	"time"
@@ -25,9 +24,7 @@ import (
 func TestFourWriteSameTransaction(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	deployments := deploymentrepo.New(clock)
-	events := outboxrepo.New(clock)
-	audits := auditrepo.New(clock)
+	deployments := deploymentrepo.New(clock, db.Runner())
 
 	d := &deployment.Deployment{
 		ID: "01JD0DEPLOY0000000000000000", AppID: "01JD0APP000000000000000000",
@@ -35,16 +32,19 @@ func TestFourWriteSameTransaction(t *testing.T) {
 	}
 
 	var seq int64
-	err := db.Tx(ctx, func(tx *sql.Tx) error {
-		if err := deployments.Create(ctx, tx, d); err != nil {
+	err := db.Tx(ctx, func(run state.Runner) error {
+		deployments := deploymentrepo.New(clock, run)
+		events := outboxrepo.New(clock, run)
+		audits := auditrepo.New(clock, run)
+		if err := deployments.Create(ctx, d); err != nil {
 			return err
 		}
 		var err error
-		seq, err = events.Append(ctx, tx, "default", "deployment.queued", "deployment", d.ID, []byte(`{}`))
+		seq, err = events.Append(ctx, "default", "deployment.queued", "deployment", d.ID, []byte(`{}`))
 		if err != nil {
 			return err
 		}
-		return audits.Append(ctx, tx, &audit.Entry{
+		return audits.Append(ctx, &audit.Entry{
 			ID: "01JD0AUDIT00000000000000000", Source: audit.SourceCLI,
 			Action: "deployment.create", Resource: "deployment/" + d.ID,
 		})
@@ -57,15 +57,17 @@ func TestFourWriteSameTransaction(t *testing.T) {
 		ID: "01JD0DEPLOY0000000000000001", AppID: d.AppID,
 		ToRevision: d.ToRevision, State: deployment.StateQueued,
 	}
-	err = db.Tx(ctx, func(tx *sql.Tx) error {
-		if err := deployments.Create(ctx, tx, bad); err != nil {
+	err = db.Tx(ctx, func(run state.Runner) error {
+		deployments := deploymentrepo.New(clock, run)
+		events := outboxrepo.New(clock, run)
+		if err := deployments.Create(ctx, bad); err != nil {
 			return err
 		}
-		_, err := events.Append(ctx, tx, "", "not.registered", "deployment", bad.ID, nil)
+		_, err := events.Append(ctx, "", "not.registered", "deployment", bad.ID, nil)
 		return err
 	})
 	require.Error(t, err)
-	_, err = deployments.Get(ctx, db.Runner(), bad.ID)
+	_, err = deployments.Get(ctx, bad.ID)
 	assert.ErrorIs(t, err, state.ErrNotFound, "rolled-back deployment must not persist")
 }
 

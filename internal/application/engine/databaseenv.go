@@ -46,7 +46,7 @@ func (e *Engine) applyDatabaseEnv(ctx context.Context, w *capability.Workload, p
 		return nil
 	}
 	for _, ref := range p.GetDatabaseRefs() {
-		row, err := e.databases.GetByName(ctx, e.db.Runner(), projectID, ref)
+		row, err := e.repos.Databases.GetByName(ctx, projectID, ref)
 		if err != nil {
 			return fmt.Errorf("database %q (database_refs): not found — create the managed database first (%w)", ref, err)
 		}

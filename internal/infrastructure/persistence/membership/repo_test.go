@@ -32,7 +32,7 @@ const (
 func TestMembershipGrantRevokeFaces(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	memberships := membershiprepo.New(clock)
+	memberships := membershiprepo.New(clock, db.Runner())
 
 	// 夹具：两 user、两 team、一 role（role 挂 teamA）。
 	_, err := db.Runner().ExecContext(ctx, `
@@ -54,17 +54,17 @@ func TestMembershipGrantRevokeFaces(t *testing.T) {
 
 	// 首见授权：ID 由 membership+seq 铸，created_at 假时钟。
 	m1 := &membership.Membership{UserID: userA, TeamID: teamA, RoleID: roleA}
-	require.NoError(t, memberships.Create(ctx, db.Runner(), m1))
+	require.NoError(t, memberships.Create(ctx, m1))
 	assert.Equal(t, "membership-1", m1.ID, "default id joins the base and seq")
 	assert.Equal(t, int64(1), m1.Seq)
 	assert.Equal(t, state.FormatTime(clock.Now()), m1.CreatedAt)
 
 	// 第二行：同 user 异 team（唯一轴是 user+team，跨 team 各自一行）。
 	m2 := &membership.Membership{UserID: userA, TeamID: teamB, RoleID: roleA}
-	require.NoError(t, memberships.Create(ctx, db.Runner(), m2))
+	require.NoError(t, memberships.Create(ctx, m2))
 
 	// 同 User 同 Team 重复授权 → ErrAlreadyExists（文案带双锚）。
-	err = memberships.Create(ctx, db.Runner(), &membership.Membership{UserID: userA, TeamID: teamA, RoleID: roleA})
+	err = memberships.Create(ctx, &membership.Membership{UserID: userA, TeamID: teamA, RoleID: roleA})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, state.ErrAlreadyExists,
 		"a duplicate user+team grant must normalize to ErrAlreadyExists")
@@ -72,30 +72,30 @@ func TestMembershipGrantRevokeFaces(t *testing.T) {
 	assert.Contains(t, err.Error(), teamA, "conflict text must carry the team id")
 
 	// GetByUser：复合键命中与缺行 NotFound。
-	got, err := memberships.GetByUser(ctx, db.Runner(), userA, teamA)
+	got, err := memberships.GetByUser(ctx, userA, teamA)
 	require.NoError(t, err)
 	assert.Equal(t, m1.ID, got.ID)
 	assert.Equal(t, roleA, got.RoleID)
-	_, err = memberships.GetByUser(ctx, db.Runner(), userB, teamA)
+	_, err = memberships.GetByUser(ctx, userB, teamA)
 	assert.ErrorIs(t, err, state.ErrNotFound)
 
 	// ListByUser：用户隔离 + seq 稳定序（Login 铸 Token 的 team/role 解析源）。
-	list, err := memberships.ListByUser(ctx, db.Runner(), userA)
+	list, err := memberships.ListByUser(ctx, userA)
 	require.NoError(t, err)
 	require.Len(t, list, 2)
 	assert.Equal(t, m1.ID, list[0].ID)
 	assert.Equal(t, m2.ID, list[1].ID)
-	list, err = memberships.ListByUser(ctx, db.Runner(), userB)
+	list, err = memberships.ListByUser(ctx, userB)
 	require.NoError(t, err)
 	assert.Empty(t, list)
 
 	// DeleteByUser 解绑：行即净；再解绑/解绑缺行是幂等成功（plain DELETE）。
-	require.NoError(t, memberships.DeleteByUser(ctx, db.Runner(), userA, teamA))
-	_, err = memberships.GetByUser(ctx, db.Runner(), userA, teamA)
+	require.NoError(t, memberships.DeleteByUser(ctx, userA, teamA))
+	_, err = memberships.GetByUser(ctx, userA, teamA)
 	assert.ErrorIs(t, err, state.ErrNotFound)
-	list, err = memberships.ListByUser(ctx, db.Runner(), userA)
+	list, err = memberships.ListByUser(ctx, userA)
 	require.NoError(t, err)
 	require.Len(t, list, 1, "only the unbound membership disappears")
-	require.NoError(t, memberships.DeleteByUser(ctx, db.Runner(), userA, teamA))
-	require.NoError(t, memberships.DeleteByUser(ctx, db.Runner(), "missing-user", teamA))
+	require.NoError(t, memberships.DeleteByUser(ctx, userA, teamA))
+	require.NoError(t, memberships.DeleteByUser(ctx, "missing-user", teamA))
 }

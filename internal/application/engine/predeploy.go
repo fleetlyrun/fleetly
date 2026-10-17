@@ -16,11 +16,11 @@ package engine
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
@@ -134,7 +134,7 @@ const (
 )
 
 func (e *Engine) preDeployOutcome(ctx context.Context, taskID string) (preDeployVerdict, string) {
-	t, err := e.tasks.Get(ctx, e.db.Runner(), taskID)
+	t, err := e.repos.Tasks.Get(ctx, taskID)
 	if err != nil {
 		if errors.Is(err, state.ErrNotFound) {
 			return preDeployFailed, "task row vanished"
@@ -205,7 +205,7 @@ func (e *Engine) mintPreDeployJob(ctx context.Context, d *deployment.Deployment,
 	wait := state.FormatTime(e.clock.Now().Add(job.GetTtl().AsDuration() + e.opts.Deploy.PreDeployWaitGrace))
 	// 部署轴 Team 先行解析（P0-2）：steps 回调不携 ctx/tx，事务外解析
 	//（App 轴 Team 不可变，无 TOCTOU 面）。
-	depTeam := e.eventTeamOfApp(ctx, e.db.Runner(), d.AppID)
+	depTeam := e.eventTeamOfApp(ctx, e.repos, d.AppID)
 	return e.mintOneShotTask(ctx, spec.GetApp().GetProject(),
 		func() (*specv1.TaskSpec, error) { return minted, nil },
 		func(taskID string) []writeStep {
@@ -213,8 +213,8 @@ func (e *Engine) mintPreDeployJob(ctx context.Context, d *deployment.Deployment,
 			return []writeStep{{
 				// 游标推进 + 等待截止（原地迁移：无状态事件；审计随 transit
 				// 落）+ pre_deploy_job 事实事件（部署→Task 因果链）。
-				write: func(ctx context.Context, tx *sql.Tx) error {
-					return e.transit(ctx, tx, d,
+				write: func(ctx context.Context, s transact.Stores) error {
+					return e.transit(ctx, s, d,
 						[]deployment.State{deployment.StateReleasing}, deployment.StateReleasing,
 						func(m *deployment.Deployment) { m.PreDeploy, m.ObserveDeadline = cursor, wait })
 				},
@@ -262,7 +262,7 @@ func (e *Engine) preDeployJobNetworks(ctx context.Context, d *deployment.Deploym
 	if len(declared) == 0 {
 		return e.projectNetworkFactsNamesOnly(ctx, spec.GetApp().GetProject()), nil
 	}
-	peers, err := e.resolvePeerRefs(ctx, e.db.Runner(), spec.GetApp().GetProject(), spec, false)
+	peers, err := e.resolvePeerRefs(ctx, e.repos, spec.GetApp().GetProject(), spec, false)
 	if err != nil {
 		return nil, fmt.Errorf("pre-deploy job %q: %w", job.GetName(), err)
 	}
@@ -294,8 +294,8 @@ func (e *Engine) preDeployJobNetworks(ctx context.Context, d *deployment.Deploym
 // 存储错误如实上抛（与受理面整体拒绝语义一致）。Revision 读取经调用方
 // 事务 Runner（所见即受理终局；CheckPeerRefs 同款形态，各持一次读——
 // 受理是冷路径，换取两个预检各自自洽）。
-func (e *Engine) CheckPreDeployNetworks(ctx context.Context, run state.Runner, projectID, revisionID string) error {
-	rev, err := e.revisions.Get(ctx, run, revisionID)
+func (e *Engine) CheckPreDeployNetworks(ctx context.Context, s transact.Stores, projectID, revisionID string) error {
+	rev, err := s.Revisions.Get(ctx, revisionID)
 	if err != nil {
 		return err
 	}
@@ -308,7 +308,7 @@ func (e *Engine) CheckPreDeployNetworks(ctx context.Context, run state.Runner, p
 			if specir.IsNetworkGroupRef(net) || specir.IsCrossProjectRef(net) {
 				continue
 			}
-			_, err := e.networks.GetByName(ctx, run, projectID, net)
+			_, err := s.Networks.GetByName(ctx, projectID, net)
 			if err == nil {
 				continue
 			}
@@ -330,7 +330,7 @@ func (e *Engine) abandonPreDeployJobs(ctx context.Context, d *deployment.Deploym
 	if !anchored {
 		return
 	}
-	t, err := e.tasks.Get(ctx, e.db.Runner(), taskID)
+	t, err := e.repos.Tasks.Get(ctx, taskID)
 	if err != nil {
 		if !errors.Is(err, state.ErrNotFound) {
 			e.log.Error("pre-deploy: abandon lookup", "deployment", d.ID, "task", taskID, "err", err)

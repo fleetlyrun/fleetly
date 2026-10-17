@@ -23,7 +23,7 @@ import (
 func TestChannelCreateConflictAndListFaces(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	channels := channelrepo.New(clock)
+	channels := channelrepo.New(clock, db.Runner())
 
 	// 首见落行：ID 由 name+seq 铸，age 信封载荷原样落 BLOB。
 	envelope := []byte("age:encrypted-envelope-bytes")
@@ -31,7 +31,7 @@ func TestChannelCreateConflictAndListFaces(t *testing.T) {
 		Name: "slack", Kind: channel.KindWebhook,
 		ConfigCiphertext: envelope, Enabled: true,
 	}
-	require.NoError(t, channels.Create(ctx, db.Runner(), c1))
+	require.NoError(t, channels.Create(ctx, c1))
 	assert.Equal(t, "slack-1", c1.ID, "default id joins name and seq")
 	assert.Equal(t, int64(1), c1.Seq)
 	assert.Equal(t, state.FormatTime(clock.Now()), c1.CreatedAt)
@@ -39,7 +39,7 @@ func TestChannelCreateConflictAndListFaces(t *testing.T) {
 	assert.Empty(t, c1.LastFailure, "fresh channel carries no delivery failure")
 
 	// 重名冲突归一 ErrAlreadyExists（name UNIQUE 把守）。
-	err := channels.Create(ctx, db.Runner(), &channel.Channel{
+	err := channels.Create(ctx, &channel.Channel{
 		Name: "slack", Kind: channel.KindTelegram, ConfigCiphertext: envelope, Enabled: true,
 	})
 	require.Error(t, err)
@@ -51,24 +51,24 @@ func TestChannelCreateConflictAndListFaces(t *testing.T) {
 		Name: "ops-bot", Kind: channel.KindTelegram,
 		ConfigCiphertext: []byte("age:second-envelope"), Enabled: false,
 	}
-	require.NoError(t, channels.Create(ctx, db.Runner(), c2))
+	require.NoError(t, channels.Create(ctx, c2))
 
 	// Get：命中（BLOB/布尔/时间戳读回）与缺行 NotFound。
-	got, err := channels.Get(ctx, db.Runner(), c1.ID)
+	got, err := channels.Get(ctx, c1.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "slack", got.Name)
 	assert.Equal(t, channel.KindWebhook, got.Kind)
 	assert.Equal(t, envelope, got.ConfigCiphertext, "age envelope round-trips as BLOB")
 	assert.True(t, got.Enabled)
-	_, err = channels.Get(ctx, db.Runner(), "missing-id")
+	_, err = channels.Get(ctx, "missing-id")
 	assert.ErrorIs(t, err, state.ErrNotFound)
 
 	// ListEnabled 只含启用行；ListAll 全量（均 seq 稳定序）。
-	enabled, err := channels.ListEnabled(ctx, db.Runner())
+	enabled, err := channels.ListEnabled(ctx)
 	require.NoError(t, err)
 	require.Len(t, enabled, 1)
 	assert.Equal(t, "slack", enabled[0].Name)
-	all, err := channels.ListAll(ctx, db.Runner())
+	all, err := channels.ListAll(ctx)
 	require.NoError(t, err)
 	require.Len(t, all, 2)
 	assert.Equal(t, "ops-bot", all[1].Name)
@@ -78,33 +78,33 @@ func TestChannelCreateConflictAndListFaces(t *testing.T) {
 func TestChannelRecordDeliveryAndDelete(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	channels := channelrepo.New(clock)
+	channels := channelrepo.New(clock, db.Runner())
 
 	c := &channel.Channel{
 		Name: "slack", Kind: channel.KindWebhook,
 		ConfigCiphertext: []byte("age:env"), Enabled: true,
 	}
-	require.NoError(t, channels.Create(ctx, db.Runner(), c))
+	require.NoError(t, channels.Create(ctx, c))
 
 	// 失败回写：诊断文案入 last_failure，updated_at 推进。
 	clock.Advance(10e9)
-	require.NoError(t, channels.RecordDelivery(ctx, db.Runner(), c.ID, "dial timeout"))
-	got, err := channels.Get(ctx, db.Runner(), c.ID)
+	require.NoError(t, channels.RecordDelivery(ctx, c.ID, "dial timeout"))
+	got, err := channels.Get(ctx, c.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "dial timeout", got.LastFailure)
 	assert.Equal(t, state.FormatTime(clock.Now()), got.UpdatedAt, "recorded delivery refreshes updated_at")
 
 	// 成功清位：空 err 文本把 last_failure 拉回空串。
 	clock.Advance(10e9)
-	require.NoError(t, channels.RecordDelivery(ctx, db.Runner(), c.ID, ""))
-	got, err = channels.Get(ctx, db.Runner(), c.ID)
+	require.NoError(t, channels.RecordDelivery(ctx, c.ID, ""))
+	got, err = channels.Get(ctx, c.ID)
 	require.NoError(t, err)
 	assert.Empty(t, got.LastFailure, "successful delivery clears the failure diagnostic")
 
 	// Delete 删行即净；缺行 ErrNotFound。
-	require.NoError(t, channels.Delete(ctx, db.Runner(), c.ID))
-	_, err = channels.Get(ctx, db.Runner(), c.ID)
+	require.NoError(t, channels.Delete(ctx, c.ID))
+	_, err = channels.Get(ctx, c.ID)
 	assert.ErrorIs(t, err, state.ErrNotFound)
-	err = channels.Delete(ctx, db.Runner(), c.ID)
+	err = channels.Delete(ctx, c.ID)
 	assert.ErrorIs(t, err, state.ErrNotFound)
 }

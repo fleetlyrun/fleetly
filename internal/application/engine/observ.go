@@ -2,13 +2,13 @@ package engine
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"time"
 
 	"google.golang.org/protobuf/encoding/protojson"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/runtimeops/node"
@@ -20,7 +20,7 @@ import (
 // loadSpec 反序列化 Revision 冻结体（protojson blob）。ctx 透传取消链
 // （Q-6：驱动/回放路径的关停可取消，不再内嵌 Background 脱链）。
 func (e *Engine) loadSpec(ctx context.Context, revID string) (*specv1.AppSpec, error) {
-	rev, err := e.revisions.Get(ctx, e.db.Runner(), revID)
+	rev, err := e.repos.Revisions.Get(ctx, revID)
 	if err != nil {
 		return nil, err
 	}
@@ -39,7 +39,7 @@ func unmarshalSpec(blob []byte) (*specv1.AppSpec, error) {
 // appTeam 解析 App 归属（团队解析单一真源，N0.1 P2-11 / ADR-0028 接实：
 // 从 Project 行实取 team_id，不再回退字面量）。
 func (e *Engine) appTeam(ctx context.Context, appID string) (string, *app.App, error) {
-	a, err := e.apps.Get(ctx, e.db.Runner(), appID)
+	a, err := e.repos.Apps.Get(ctx, appID)
 	if err != nil {
 		return "", nil, err
 	}
@@ -78,7 +78,7 @@ func (e *Engine) buildDigests(ctx context.Context, revision string) (map[string]
 	if err != nil {
 		return nil, err
 	}
-	builds, err := e.builds.ListByRevision(ctx, e.db.Runner(), revision)
+	builds, err := e.repos.Builds.ListByRevision(ctx, revision)
 	if err != nil {
 		return nil, err
 	}
@@ -216,8 +216,8 @@ func (e *Engine) runOwner(workloadID string) (string, bool) {
 // 事件（仅铸造时发——引擎重启的重复锚定扫描不重复发事件）。
 func (e *Engine) handleNodeJoined(ctx context.Context, nj *capability.NodeJoined) {
 	now := state.FormatTime(e.clock.Now())
-	err := e.db.Tx(ctx, func(tx *sql.Tx) error {
-		return e.nodes.Upsert(ctx, tx, &node.Node{
+	err := e.tx.Do(ctx, func(s transact.Stores) error {
+		return s.Nodes.Upsert(ctx, &node.Node{
 			PlatformID: nj.NodeID, CarrierID: nj.CarrierID, Available: true,
 			FirstSeenAt: now, LastSeenAt: now,
 		})

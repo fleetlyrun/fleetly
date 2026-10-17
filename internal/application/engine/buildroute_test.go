@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/revision"
@@ -32,7 +33,7 @@ func newRoutingEngine(t *testing.T) (*Engine, *fakeBuilder, *fakeBuilder, *fakeB
 	t.Helper()
 	fbD, fbR, fbS := &fakeBuilder{digest: "sha256:routed-d"}, &fakeBuilder{digest: "sha256:routed-r"}, &fakeBuilder{digest: "sha256:routed-s"}
 	db, clock := statetest.New(t)
-	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: newFakeRuntime(),
+	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: newFakeRuntime(),
 		Builders: map[string]capability.Builder{
 			specir.BuilderDockerfile: fbD,
 			specir.BuilderRailpack:   fbR,
@@ -40,8 +41,8 @@ func newRoutingEngine(t *testing.T) (*Engine, *fakeBuilder, *fakeBuilder, *fakeB
 		},
 		Registry: newFakeRegistry(), Logger: discardLogger()}, Options{Data: DataOptions{DataRoot: t.TempDir()}})
 	ctx := context.Background()
-	require.NoError(t, projectrepo.New(clock).Create(ctx, db.Runner(), &project.Project{ID: tProjectID, Name: "shop", TeamID: "default"}))
-	require.NoError(t, apprepo.New(clock).Create(ctx, db.Runner(), &app.App{ID: tAppID, ProjectID: tProjectID, Name: "web"}))
+	require.NoError(t, projectrepo.New(clock, db.Runner()).Create(ctx, &project.Project{ID: tProjectID, Name: "shop", TeamID: "default"}))
+	require.NoError(t, apprepo.New(clock, db.Runner()).Create(ctx, &app.App{ID: tAppID, ProjectID: tProjectID, Name: "web"}))
 	return e, fbD, fbR, fbS
 }
 
@@ -58,9 +59,9 @@ func strategySpecJSON(buildJSON string) string {
 func freezeStrategySpec(t *testing.T, e *Engine, id, buildJSON string) (string, int64) {
 	t.Helper()
 	ctx := context.Background()
-	seq, err := e.revisions.NextSeq(ctx, e.db.Runner(), tAppID)
+	seq, err := e.repos.Revisions.NextSeq(ctx, tAppID)
 	require.NoError(t, err)
-	require.NoError(t, e.revisions.Create(ctx, e.db.Runner(), &revision.Revision{
+	require.NoError(t, e.repos.Revisions.Create(ctx, &revision.Revision{
 		ID: id, AppID: tAppID, Seq: seq, Spec: []byte(strategySpecJSON(buildJSON)),
 	}))
 	require.NoError(t, os.MkdirAll(filepath.Join(e.opts.Data.DataRoot, "contexts", id), 0o750))
@@ -180,10 +181,10 @@ func TestExecuteBuildUnwiredBuilderFailsPrecisely(t *testing.T) {
 	ctx := context.Background()
 	b := &build.Build{ID: "01JD0B00000000000000000UN", AppID: tAppID,
 		RevisionID: "01JD0REV0000000000000000F1", State: build.StateBuilding}
-	require.NoError(t, e.builds.Create(ctx, e.db.Runner(), b))
+	require.NoError(t, e.repos.Builds.Create(ctx, b))
 	e.build.inputs[b.ID] = capability.BuildRequest{BuildID: b.ID, Builder: "nope", ContextDir: "."}
 	e.executeBuild(b)
-	got, err := e.builds.Get(ctx, e.db.Runner(), b.ID)
+	got, err := e.repos.Builds.Get(ctx, b.ID)
 	require.NoError(t, err)
 	assert.Equal(t, build.StateFailed, got.State)
 	assert.Contains(t, got.Error, `builder "nope" is not wired`)

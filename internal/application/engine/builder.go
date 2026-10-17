@@ -33,7 +33,7 @@ type buildLimits struct {
 // buildStep 是构建循环的收敛步：拾取 queued（并发余量内）→ 起 goroutine
 // 执行（per-Build 单写者：行级 CAS，goroutine 生命周期 = 该行写者）。
 func (e *Engine) buildStep(ctx context.Context) {
-	active, err := e.builds.ListActive(ctx, e.db.Runner())
+	active, err := e.repos.Builds.ListActive(ctx)
 	if err != nil {
 		e.log.Error("build step: list active", "err", err)
 		return
@@ -104,7 +104,7 @@ func (e *Engine) buildPickable(ctx context.Context, b *build.Build) bool {
 // buildOwnerActive 报告 Build 的归属部署是否仍活跃（同 App 且目标
 // Revision 一致：该部署进入 building 态时 driveBuilding 会重建输入登记）。
 func (e *Engine) buildOwnerActive(ctx context.Context, b *build.Build) (bool, error) {
-	active, err := e.deployments.ActiveByApp(ctx, e.db.Runner(), b.AppID)
+	active, err := e.repos.Deployments.ActiveByApp(ctx, b.AppID)
 	if err != nil {
 		return false, err
 	}
@@ -169,7 +169,7 @@ func (e *Engine) executeBuild(b *build.Build) {
 	var ingester *buildLogIngester
 	if e.logging != nil {
 		ingester = &buildLogIngester{logging: e.logging, log: e.log, buildID: b.ID}
-		if a, aerr := e.apps.Get(finishCtx, e.db.Runner(), b.AppID); aerr == nil {
+		if a, aerr := e.repos.Apps.Get(finishCtx, b.AppID); aerr == nil {
 			ingester.app = b.AppID
 			ingester.project = a.ProjectID
 			if team, terr := e.projectTeam(finishCtx, a.ProjectID); terr == nil {

@@ -24,7 +24,7 @@ func (e *Engine) RelayAttach(ctx context.Context, token, carrierNodeID, relayVer
 	if err := e.execFace.ExecClusterToken(ctx, token); err != nil {
 		return nil, nil, err
 	}
-	n, err := e.nodes.ByCarrier(ctx, e.db.Runner(), carrierNodeID)
+	n, err := e.repos.Nodes.ByCarrier(ctx, carrierNodeID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("%w: carrier %s", ErrExecNodeUnanchored, carrierNodeID)
 	}

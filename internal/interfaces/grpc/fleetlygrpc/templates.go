@@ -9,7 +9,6 @@ package fleetlygrpc
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,6 +22,7 @@ import (
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/apptemplate"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/catalog"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
@@ -68,7 +68,7 @@ type catalogView struct {
 // resolveCatalog 解析当前服务目录（ADR-0050 决策 4 解析序：快照在场优先、
 // 内嵌兜底）。快照 body 已在刷新时逐条核对与预校验——此处信任存储面。
 func (s *Services) resolveCatalog(ctx context.Context) (*catalogView, error) {
-	snap, err := s.Catalog.Get(ctx, s.DB.Runner())
+	snap, err := s.Catalog.Get(ctx)
 	if err == nil {
 		var manifest apptemplate.Manifest
 		if jerr := json.Unmarshal([]byte(snap.Body), &manifest); jerr != nil {
@@ -195,7 +195,7 @@ func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliv
 
 	// 1. App create-or-reuse（按名——重跑即重部署，latest-wins）。
 	var appID string
-	if existing, err := svc.s.Apps.GetByName(ctx, svc.s.DB.Runner(), req.GetProjectId(), req.GetAppName()); err == nil {
+	if existing, err := svc.s.Apps.GetByName(ctx, req.GetProjectId(), req.GetAppName()); err == nil {
 		appID = existing.ID
 		record("app", appID, req.GetAppName(), true)
 	} else if !errors.Is(err, state.ErrNotFound) {
@@ -214,7 +214,7 @@ func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliv
 	// 2. 模板声明 databases 时确保项目 default 网在场（CreateDatabase 受理
 	// 位要求活跃网络——零网项目的库不可达，拒绝优于静默孤岛）。
 	if len(doc.Databases) > 0 {
-		if _, err := svc.s.Networks.GetByName(ctx, svc.s.DB.Runner(), req.GetProjectId(), "default"); err == nil {
+		if _, err := svc.s.Networks.GetByName(ctx, req.GetProjectId(), "default"); err == nil {
 			record("network", "", "default", true)
 		} else if !errors.Is(err, state.ErrNotFound) {
 			return nil, mapStateError(err, "network")
@@ -246,7 +246,7 @@ func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliv
 	sort.Strings(secretVarNames)
 	for _, varName := range secretVarNames {
 		secretName := rendered.SecretNames[varName]
-		if _, err := svc.s.Secrets.GetByName(ctx, svc.s.DB.Runner(), req.GetProjectId(), secretName); err == nil {
+		if _, err := svc.s.Secrets.GetByName(ctx, req.GetProjectId(), secretName); err == nil {
 			record("secret", "", secretName, true)
 			continue
 		} else if !errors.Is(err, state.ErrNotFound) {
@@ -262,7 +262,7 @@ func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliv
 
 	// 5. databases create-or-reuse（凭证单真源链复用——ADR-0029 决策 6）。
 	for _, decl := range doc.Databases {
-		if existing, err := svc.s.Databases.GetByName(ctx, svc.s.DB.Runner(), req.GetProjectId(), decl.Name); err == nil {
+		if existing, err := svc.s.Databases.GetByName(ctx, req.GetProjectId(), decl.Name); err == nil {
 			record("database", existing.ID, decl.Name, true)
 			continue
 		} else if !errors.Is(err, state.ErrNotFound) {
@@ -294,7 +294,7 @@ func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliv
 
 	// 7. routes create-or-reuse（host 全局唯一——同 host 既有 Route 复用，
 	// quickstart 同款；tls 缺省 none——模板 routes 声明可显式 auto/ACME）。
-	allRoutes, err := svc.s.Routes.List(ctx, svc.s.DB.Runner())
+	allRoutes, err := svc.s.Routes.List(ctx)
 	if err != nil {
 		return nil, mapStateError(err, "route")
 	}
@@ -366,8 +366,8 @@ func (svc *TemplatesService) RefreshTemplates(ctx context.Context, _ *deliveryv1
 	digest := apptemplate.AggregateDigest(entries)
 	snap := &catalog.Snapshot{Digest: digest, Body: string(body)}
 	err = svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, tx *sql.Tx) error {
-			return svc.s.Catalog.Put(ctx, tx, snap)
+		write: func(ctx context.Context, st transact.Stores) error {
+			return st.Catalog.Put(ctx, snap)
 		},
 		facts: []func() writes.FactRow{
 			// 平台级事件（模板目录无 owner 域——平台级，全员可见）：team

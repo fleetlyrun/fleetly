@@ -7,7 +7,6 @@ package fleetlygrpc
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 
 	"google.golang.org/protobuf/encoding/protojson"
@@ -15,6 +14,7 @@ import (
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -52,8 +52,8 @@ func (svc *SharedVariablesService) PutSharedVariable(ctx context.Context, req *s
 			svc.s.parentProjectAlive(req.GetProjectId()),
 			svc.s.sharedVariableQuota(req.GetProjectId(), req.GetName()),
 		},
-		write: func(ctx context.Context, tx *sql.Tx) error {
-			return svc.s.SharedVariables.Upsert(ctx, tx, row)
+		write: func(ctx context.Context, st transact.Stores) error {
+			return st.SharedVariables.Upsert(ctx, row)
 		},
 		facts: []func() writes.FactRow{
 			svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {
@@ -82,7 +82,7 @@ func (svc *SharedVariablesService) ListSharedVariables(ctx context.Context, req 
 	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}
-	list, err := svc.s.SharedVariables.ListPage(ctx, svc.s.DB.Runner(),
+	list, err := svc.s.SharedVariables.ListPage(ctx,
 		req.GetProjectId(), req.GetAfterName(), listLimit(req.GetLimit()))
 	if err != nil {
 		return nil, mapStateError(err, "variable")
@@ -102,8 +102,8 @@ func (svc *SharedVariablesService) DeleteSharedVariable(ctx context.Context, req
 		return nil, err
 	}
 	err := svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, tx *sql.Tx) error {
-			return svc.s.SharedVariables.SoftDelete(ctx, tx, req.GetProjectId(), req.GetName())
+		write: func(ctx context.Context, st transact.Stores) error {
+			return st.SharedVariables.SoftDelete(ctx, req.GetProjectId(), req.GetName())
 		},
 		facts: []func() writes.FactRow{
 			svc.s.factOf(ctx, req.GetProjectId(), func(team string) writes.FactRow {
@@ -136,13 +136,13 @@ const absentValue = "\x00absent"
 // sharedVariableQuota 是 per-Project 共享变量数配额检查（Configs 同款：
 // 新名才占新位）。
 func (s *Services) sharedVariableQuota(projectID, name string) acceptanceCheck {
-	return func(ctx context.Context, tx *sql.Tx) error {
-		if _, err := s.SharedVariables.GetByName(ctx, tx, projectID, name); err == nil {
+	return func(ctx context.Context, st transact.Stores) error {
+		if _, err := st.SharedVariables.GetByName(ctx, projectID, name); err == nil {
 			return nil
 		} else if !errors.Is(err, state.ErrNotFound) {
 			return err
 		}
-		active, err := s.SharedVariables.ListActive(ctx, tx, projectID)
+		active, err := st.SharedVariables.ListActive(ctx, projectID)
 		if err != nil {
 			return err
 		}
@@ -171,7 +171,7 @@ func (svc *AppVariablesService) PutAppVariable(ctx context.Context, req *structu
 	// spec.EnvNamePattern（spec 包 descriptor 对齐测试执法）。
 	// 行级授权（ADR-0035）：App 域写面前置（含 App 存在性——变量不挂
 	// 幽灵 App）。
-	a, err := svc.s.Apps.Get(ctx, svc.s.DB.Runner(), req.GetAppId())
+	a, err := svc.s.Apps.Get(ctx, req.GetAppId())
 	if err != nil {
 		return nil, mapStateError(err, "app")
 	}
@@ -181,7 +181,7 @@ func (svc *AppVariablesService) PutAppVariable(ctx context.Context, req *structu
 	row := &appvariable.AppVariable{AppID: req.GetAppId(), Name: req.GetName(), Value: req.GetValue()}
 	err = svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{svc.s.appVariableQuota(req.GetAppId(), req.GetName())},
-		write:  func(ctx context.Context, tx *sql.Tx) error { return svc.s.AppVariables.Upsert(ctx, tx, row) },
+		write:  func(ctx context.Context, st transact.Stores) error { return st.AppVariables.Upsert(ctx, row) },
 		facts: []func() writes.FactRow{
 			svc.s.factOf(ctx, a.ProjectID, func(team string) writes.FactRow {
 				return writes.FactRow{
@@ -207,7 +207,7 @@ func (svc *AppVariablesService) ListAppVariables(ctx context.Context, req *struc
 	if err := svc.s.authorizeAppIDOnly(ctx, req.GetAppId()); err != nil {
 		return nil, err
 	}
-	list, err := svc.s.AppVariables.ListPage(ctx, svc.s.DB.Runner(),
+	list, err := svc.s.AppVariables.ListPage(ctx,
 		req.GetAppId(), req.GetAfterName(), listLimit(req.GetLimit()))
 	if err != nil {
 		return nil, mapStateError(err, "variable")
@@ -223,7 +223,7 @@ func (svc *AppVariablesService) DeleteAppVariable(ctx context.Context, req *stru
 	// app_id/name 必填组合检查已退役为 DeleteAppVariableRequest 的
 	// protovalidate CEL 注解（P4-1 批 1 Run B1）：validate 拦截器在 handler
 	// 之前执法，拆 per-field 文案。
-	a, err := svc.s.Apps.Get(ctx, svc.s.DB.Runner(), req.GetAppId())
+	a, err := svc.s.Apps.Get(ctx, req.GetAppId())
 	if err != nil {
 		return nil, mapStateError(err, "app")
 	}
@@ -231,8 +231,8 @@ func (svc *AppVariablesService) DeleteAppVariable(ctx context.Context, req *stru
 		return nil, err
 	}
 	err = svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, tx *sql.Tx) error {
-			return svc.s.AppVariables.SoftDelete(ctx, tx, req.GetAppId(), req.GetName())
+		write: func(ctx context.Context, st transact.Stores) error {
+			return st.AppVariables.SoftDelete(ctx, req.GetAppId(), req.GetName())
 		},
 		facts: []func() writes.FactRow{
 			svc.s.factOf(ctx, a.ProjectID, func(team string) writes.FactRow {
@@ -255,13 +255,13 @@ func (svc *AppVariablesService) DeleteAppVariable(ctx context.Context, req *stru
 // appVariableQuota 是 per-App 变量数配额检查（共享变量同款：新名才占
 // 新位）。
 func (s *Services) appVariableQuota(appID, name string) acceptanceCheck {
-	return func(ctx context.Context, tx *sql.Tx) error {
-		if _, err := s.AppVariables.GetByName(ctx, tx, appID, name); err == nil {
+	return func(ctx context.Context, st transact.Stores) error {
+		if _, err := st.AppVariables.GetByName(ctx, appID, name); err == nil {
 			return nil
 		} else if !errors.Is(err, state.ErrNotFound) {
 			return err
 		}
-		active, err := s.AppVariables.ListActive(ctx, tx, appID)
+		active, err := st.AppVariables.ListActive(ctx, appID)
 		if err != nil {
 			return err
 		}
@@ -279,13 +279,13 @@ func (s *Services) appVariableQuota(appID, name string) acceptanceCheck {
 // 同键的 App 会误报（冻结形态是扁平 map 无键来源账本）——提示是 DX 附注
 // 不是行为承诺，误报代价 = 一次幂等重部署。
 func (s *Services) affectedApps(ctx context.Context, projectID, name, newValue string) ([]string, error) {
-	apps, err := s.Apps.ListByProject(ctx, s.DB.Runner(), projectID)
+	apps, err := s.Apps.ListByProject(ctx, projectID)
 	if err != nil {
 		return nil, err
 	}
 	var affected []string
 	for _, a := range apps {
-		rev, err := s.Revisions.Latest(ctx, s.DB.Runner(), a.ID)
+		rev, err := s.Revisions.Latest(ctx, a.ID)
 		if errors.Is(err, state.ErrNotFound) {
 			continue // 从未部署过的 App 首次部署自然取新值
 		}

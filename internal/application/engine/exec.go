@@ -194,7 +194,7 @@ func (e *Engine) CreateSession(ctx context.Context, in CreateExecInput) (*ExecSe
 	if err != nil {
 		return nil, err
 	}
-	n, err := e.nodes.ByCarrier(ctx, e.db.Runner(), target.CarrierNodeID)
+	n, err := e.repos.Nodes.ByCarrier(ctx, target.CarrierNodeID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: carrier %s", ErrExecNodeUnanchored, target.CarrierNodeID)
 	}
@@ -492,7 +492,7 @@ func (e *Engine) ExecInstances(ctx context.Context, appID, process string) ([]ca
 // 回显 node 用；锚定表未及即 ErrExecNodeUnanchored——调用方按诚实边界
 // 降级呈现，与受理面同源）。
 func (e *Engine) NodePlatformIDByCarrier(ctx context.Context, carrierNodeID string) (string, error) {
-	n, err := e.nodes.ByCarrier(ctx, e.db.Runner(), carrierNodeID)
+	n, err := e.repos.Nodes.ByCarrier(ctx, carrierNodeID)
 	if err != nil {
 		return "", fmt.Errorf("%w: carrier %s", ErrExecNodeUnanchored, carrierNodeID)
 	}

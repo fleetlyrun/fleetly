@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/revision"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -24,24 +25,35 @@ import (
 	backuprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/backup"
 	browserepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/browse"
 	buildrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/build"
+	catalogrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/catalog"
 	channelrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/channel"
 	cfgrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/config"
 	dbrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/database"
 	deploymentrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/deployment"
+	freezerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/freeze"
 	githubapprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/githubapp"
+	hookrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/hook"
+	idemrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/idempotency"
+	invitationrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/invitation"
 	logcursorrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/logcursor"
+	membershiprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/membership"
 	networkrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/network"
 	networkpeerrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/networkpeer"
 	noderepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/node"
 	outboxrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/outbox"
 	projectrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/project"
 	revisionrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/revision"
+	rolerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/role"
 	routerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/route"
 	runrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/run"
 	schedulerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/schedule"
 	secretrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/secret"
 	sharedvariablerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/sharedvariable"
 	sourcerepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/sourceupload"
+	teamrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/team"
+	userrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/user"
+
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
 	taskrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/task"
 	tokenrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/token"
@@ -69,34 +81,48 @@ func newTestEngineOpts(t *testing.T, opts Options) (*Engine, *fakeRuntime, *stat
 	t.Helper()
 	db, clock := statetest.New(t)
 	rt := newFakeRuntime()
-	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Logger: discardLogger()}, opts)
+	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Logger: discardLogger()}, opts)
 	t.Cleanup(func() { _ = e.Stop(context.Background()) })
 
 	ctx := context.Background()
-	require.NoError(t, projectrepo.New(clock).Create(ctx, db.Runner(), &project.Project{
+	require.NoError(t, projectrepo.New(clock, db.Runner()).Create(ctx, &project.Project{
 		ID: tProjectID, Name: "shop", TeamID: "default",
 	}))
-	require.NoError(t, apprepo.New(clock).Create(ctx, db.Runner(), &app.App{
+	require.NoError(t, apprepo.New(clock, db.Runner()).Create(ctx, &app.App{
 		ID: tAppID, ProjectID: tProjectID, Name: "web",
 	}))
 	return e, rt, clock
 }
 
-// testRepos 构造引擎全量 repo 集（hermetic 夹具可引 persistence——生产构造
-// 面在组合根 assembly，P1b C 批；时钟取注入 DB 的时钟）。
-func testRepos(db state.DB) Repos {
+// testRepos 构造引擎全量 repo 集（db 绑定形态；事务态经 testBinder）。
+func testRepos(db state.DB) transact.Stores {
+	return testBinder(db)(db.Runner())
+}
+
+// testBinder 造事务绑定闭包（hermetic 夹具可引 persistence——生产构造
+// 面在组合根 assembly，ADR-0080）。
+func testBinder(db state.DB) transact.Binder {
 	clock := db.Clock()
-	return Repos{
-		Projects: projectrepo.New(clock), Apps: apprepo.New(clock), Revisions: revisionrepo.New(clock),
-		Deployments: deploymentrepo.New(clock), Builds: buildrepo.New(clock), Outbox: outboxrepo.New(clock),
-		Nodes: noderepo.New(clock), Audits: auditrepo.New(clock), Tasks: taskrepo.New(clock),
-		Runs: runrepo.New(clock), Tokens: tokenrepo.New(clock), Schedules: schedulerepo.New(clock),
-		PeerDecls: networkpeerrepo.New(clock), Uploads: sourcerepo.New(clock), Browse: browserepo.New(clock),
-		Databases: dbrepo.New(clock), Backups: backuprepo.New(clock), LogCursors: logcursorrepo.New(clock),
-		AlertRules: alertrulerepo.New(clock), Channels: channelrepo.New(clock), Routes: routerepo.New(clock),
-		Secrets: secretrepo.New(clock), Configs: cfgrepo.New(clock), Volumes: volumerepo.New(clock),
-		Networks: networkrepo.New(clock), GitHubApps: githubapprepo.New(clock),
-		SharedVariables: sharedvariablerepo.New(clock), AppVariables: appvariablerepo.New(clock),
+	return func(run state.Runner) transact.Stores {
+		return transact.Stores{
+			NextSeq: func(ctx context.Context, table string) (int64, error) {
+				return persistence.NextSeq(ctx, run, table)
+			},
+			Projects: projectrepo.New(clock, run), Apps: apprepo.New(clock, run), Revisions: revisionrepo.New(clock, run),
+			Deployments: deploymentrepo.New(clock, run), Builds: buildrepo.New(clock, run), Outbox: outboxrepo.New(clock, run),
+			Nodes: noderepo.New(clock, run), Audits: auditrepo.New(clock, run), Tasks: taskrepo.New(clock, run),
+			Runs: runrepo.New(clock, run), Tokens: tokenrepo.New(clock, run), Schedules: schedulerepo.New(clock, run),
+			NetworkPeers: networkpeerrepo.New(clock, run), SourceUploads: sourcerepo.New(clock, run), Browse: browserepo.New(clock, run),
+			Databases: dbrepo.New(clock, run), Backups: backuprepo.New(clock, run), LogCursors: logcursorrepo.New(clock, run),
+			AlertRules: alertrulerepo.New(clock, run), Channels: channelrepo.New(clock, run), Routes: routerepo.New(clock, run),
+			Secrets: secretrepo.New(clock, run), Configs: cfgrepo.New(clock, run), Volumes: volumerepo.New(clock, run),
+			Networks: networkrepo.New(clock, run), GitHubApps: githubapprepo.New(clock, run),
+			SharedVariables: sharedvariablerepo.New(clock, run), AppVariables: appvariablerepo.New(clock, run),
+			Teams: teamrepo.New(clock, run), Users: userrepo.New(clock, run), Roles: rolerepo.New(clock, run),
+			Memberships: membershiprepo.New(clock, run), Invitations: invitationrepo.New(clock, run),
+			Freezes: freezerepo.New(clock, run), Hooks: hookrepo.New(clock, run),
+			Catalog: catalogrepo.New(clock, run), Idempotency: idemrepo.New(clock, run),
+		}
 	}
 }
 
@@ -114,22 +140,22 @@ func freezeSpecForApp(t *testing.T, e *Engine, appID string, n int, specJSON str
 		Spec: []byte(specJSON),
 	}
 	var err error
-	rev.Seq, err = e.revisions.NextSeq(context.Background(), e.db.Runner(), appID)
+	rev.Seq, err = e.repos.Revisions.NextSeq(context.Background(), appID)
 	require.NoError(t, err)
-	require.NoError(t, e.revisions.Create(context.Background(), e.db.Runner(), rev))
+	require.NoError(t, e.repos.Revisions.Create(context.Background(), rev))
 	return rev.ID
 }
 
 func getDeployment(t *testing.T, e *Engine, id string) *deployment.Deployment {
 	t.Helper()
-	d, err := e.deployments.Get(context.Background(), e.db.Runner(), id)
+	d, err := e.repos.Deployments.Get(context.Background(), id)
 	require.NoError(t, err)
 	return d
 }
 
 func eventNames(t *testing.T, e *Engine, aggregateID string) []string {
 	t.Helper()
-	evs, err := e.outbox.ListAfter(context.Background(), e.db.Runner(), 0, 1000, "")
+	evs, err := e.repos.Outbox.ListAfter(context.Background(), 0, 1000, "")
 	require.NoError(t, err)
 	var names []string
 	for _, ev := range evs {
@@ -358,7 +384,7 @@ func TestEngineRestartReplaysInFlightGeneration(t *testing.T) {
 	require.Equal(t, deployment.StateReleasing, getDeployment(t, e, d.ID).State)
 
 	// "重启"：新引擎实例（观测/Ensure 内存缓存清空），同库同 runtime。
-	e2 := New(Deps{DB: e.db, Repos: testRepos(e.db), Runtime: rt, Logger: e.log}, Options{})
+	e2 := New(Deps{DB: e.db, Stores: testRepos(e.db), Tx: transact.NewTx(e.db, testBinder(e.db)), Runtime: rt, Logger: e.log}, Options{})
 	e2.step(ctx)
 
 	still := getDeployment(t, e2, d.ID)
@@ -408,7 +434,7 @@ func TestNodeJoinedAnchoring(t *testing.T) {
 		NodeID: "01JD0NODE00000000000000000", CarrierID: "swarmabc",
 	}})
 	assert.Equal(t, []string{"node.joined"}, eventNames(t, e, "01JD0NODE00000000000000000"))
-	n, err := e.nodes.Get(ctx, e.db.Runner(), "01JD0NODE00000000000000000")
+	n, err := e.repos.Nodes.Get(ctx, "01JD0NODE00000000000000000")
 	require.NoError(t, err)
 	assert.Equal(t, "swarmabc", n.CarrierID)
 	assert.True(t, n.Available)

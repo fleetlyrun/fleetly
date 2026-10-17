@@ -15,7 +15,6 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
-	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -29,6 +28,7 @@ import (
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/githubapp"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
@@ -254,8 +254,8 @@ func (svc *GitHubAppsService) SetGitHubApp(ctx context.Context, req *deliveryv1.
 		PrivateKeyCiphertext: sealed.Ciphertext, PrivateKeyFingerprint: sealed.Fingerprint,
 	}
 	txErr := svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, tx *sql.Tx) error {
-			return svc.s.GitHubApps.Upsert(ctx, tx, row)
+		write: func(ctx context.Context, st transact.Stores) error {
+			return st.GitHubApps.Upsert(ctx, row)
 		},
 		facts: []func() writes.FactRow{
 			svc.s.factOf(ctx, projectID, func(team string) writes.FactRow {
@@ -285,7 +285,7 @@ func (svc *GitHubAppsService) ListGitHubApps(ctx context.Context, req *deliveryv
 		if err := svc.s.authorizeProjectID(ctx, strings.TrimSpace(scope.ProjectId)); err != nil {
 			return nil, err
 		}
-		rows, err := svc.s.GitHubApps.ListByProject(ctx, svc.s.DB.Runner(), strings.TrimSpace(scope.ProjectId))
+		rows, err := svc.s.GitHubApps.ListByProject(ctx, strings.TrimSpace(scope.ProjectId))
 		if err != nil {
 			return nil, mapStateError(err, "github app")
 		}
@@ -294,7 +294,7 @@ func (svc *GitHubAppsService) ListGitHubApps(ctx context.Context, req *deliveryv
 		if err := svc.s.requirePlatformAdmin(ctx); err != nil {
 			return nil, err
 		}
-		rows, err := svc.s.GitHubApps.ListGlobal(ctx, svc.s.DB.Runner())
+		rows, err := svc.s.GitHubApps.ListGlobal(ctx)
 		if err != nil {
 			return nil, mapStateError(err, "github app")
 		}
@@ -307,7 +307,7 @@ func (svc *GitHubAppsService) ListGitHubApps(ctx context.Context, req *deliveryv
 // DeleteGitHubApp 软删（解析面即时失效；tombstone 行留档，密文随 KEK
 // rewrap 保留可解）。
 func (svc *GitHubAppsService) DeleteGitHubApp(ctx context.Context, req *deliveryv1.DeleteGitHubAppRequest) (*deliveryv1.DeleteGitHubAppResponse, error) {
-	row, err := svc.s.GitHubApps.Get(ctx, svc.s.DB.Runner(), req.GetId())
+	row, err := svc.s.GitHubApps.Get(ctx, req.GetId())
 	if err != nil {
 		return nil, mapStateError(err, "github app")
 	}
@@ -319,8 +319,8 @@ func (svc *GitHubAppsService) DeleteGitHubApp(ctx context.Context, req *delivery
 		return nil, err
 	}
 	txErr := svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, tx *sql.Tx) error {
-			return svc.s.GitHubApps.SoftDelete(ctx, tx, row.ID)
+		write: func(ctx context.Context, st transact.Stores) error {
+			return st.GitHubApps.SoftDelete(ctx, row.ID)
 		},
 		facts: []func() writes.FactRow{
 			svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {
@@ -347,7 +347,7 @@ func (svc *GitHubAppsService) DeleteGitHubApp(ctx context.Context, req *delivery
 // 面；上行解封只在内存短驻）。错误归 E_GITHUB_UPSTREAM——上游状态在此
 // 是"安装健康"事实，不是输入错误。
 func (svc *GitHubAppsService) ListGitHubAppRepos(ctx context.Context, req *deliveryv1.ListGitHubAppReposRequest) (*deliveryv1.ListGitHubAppReposResponse, error) {
-	row, err := svc.s.GitHubApps.Get(ctx, svc.s.DB.Runner(), req.GetId())
+	row, err := svc.s.GitHubApps.Get(ctx, req.GetId())
 	if err != nil {
 		return nil, mapStateError(err, "github app")
 	}
@@ -603,8 +603,8 @@ func (svc *GitHubAppsService) CompleteManifestFlow(ctx context.Context, req *del
 		PrivateKeyCiphertext: sealed.Ciphertext, PrivateKeyFingerprint: sealed.Fingerprint,
 	}
 	txErr := svc.s.commit(ctx, writeFact{
-		write: func(ctx context.Context, tx *sql.Tx) error {
-			return svc.s.GitHubApps.Upsert(ctx, tx, row)
+		write: func(ctx context.Context, st transact.Stores) error {
+			return st.GitHubApps.Upsert(ctx, row)
 		},
 		facts: []func() writes.FactRow{
 			svc.s.factOf(ctx, flow.projectID, func(team string) writes.FactRow {

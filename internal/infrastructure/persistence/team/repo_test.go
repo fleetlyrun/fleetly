@@ -23,17 +23,17 @@ import (
 func TestTeamLifecycleFaces(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	teams := teamrepo.New(clock)
+	teams := teamrepo.New(clock, db.Runner())
 
 	// 首见落行：ID 由 name+seq 铸，created_at 假时钟。
 	t1 := &team.Team{Name: "acme"}
-	require.NoError(t, teams.Create(ctx, db.Runner(), t1))
+	require.NoError(t, teams.Create(ctx, t1))
 	assert.Equal(t, "acme-1", t1.ID, "default id joins name and seq")
 	assert.Equal(t, int64(1), t1.Seq)
 	assert.Equal(t, state.FormatTime(clock.Now()), t1.CreatedAt)
 
 	// 同名冲突归一 ErrAlreadyExists。
-	err := teams.Create(ctx, db.Runner(), &team.Team{Name: "acme"})
+	err := teams.Create(ctx, &team.Team{Name: "acme"})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, state.ErrAlreadyExists,
 		"duplicate team name must normalize to ErrAlreadyExists")
@@ -41,29 +41,29 @@ func TestTeamLifecycleFaces(t *testing.T) {
 
 	// 第二行供列表序面。
 	t2 := &team.Team{Name: "platform"}
-	require.NoError(t, teams.Create(ctx, db.Runner(), t2))
+	require.NoError(t, teams.Create(ctx, t2))
 
 	// Get：命中与缺行 NotFound。
-	got, err := teams.Get(ctx, db.Runner(), t1.ID)
+	got, err := teams.Get(ctx, t1.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "acme", got.Name)
 	assert.Equal(t, int64(1), got.Seq)
 	assert.Equal(t, t1.CreatedAt, got.CreatedAt)
-	_, err = teams.Get(ctx, db.Runner(), "missing-id")
+	_, err = teams.Get(ctx, "missing-id")
 	assert.ErrorIs(t, err, state.ErrNotFound)
 
 	// List：seq 稳定序全量。
-	list, err := teams.List(ctx, db.Runner())
+	list, err := teams.List(ctx)
 	require.NoError(t, err)
 	require.Len(t, list, 2)
 	assert.Equal(t, "acme", list[0].Name)
 	assert.Equal(t, "platform", list[1].Name)
 
 	// Delete：缺行 ErrNotFound；自由行删行即净。
-	err = teams.Delete(ctx, db.Runner(), "missing-id")
+	err = teams.Delete(ctx, "missing-id")
 	assert.ErrorIs(t, err, state.ErrNotFound)
-	require.NoError(t, teams.Delete(ctx, db.Runner(), t2.ID))
-	list, err = teams.List(ctx, db.Runner())
+	require.NoError(t, teams.Delete(ctx, t2.ID))
+	list, err = teams.List(ctx)
 	require.NoError(t, err)
 	require.Len(t, list, 1)
 
@@ -84,7 +84,7 @@ func TestTeamLifecycleFaces(t *testing.T) {
 		VALUES ('01JD0MEMB000000000000000M1', 9, ?, ?, ?, '2026-01-01T00:00:00Z')`,
 		userID, t1.ID, roleID)
 	require.NoError(t, err)
-	err = teams.Delete(ctx, db.Runner(), t1.ID)
+	err = teams.Delete(ctx, t1.ID)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, state.ErrConflict,
 		"a referenced team must surface ErrConflict, not a raw FK error")

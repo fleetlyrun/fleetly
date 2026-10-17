@@ -11,36 +11,13 @@ import (
 	"log/slog"
 	"sync"
 
-	"github.com/fleetlyrun/fleetly/internal/domain/automation/run"
-	"github.com/fleetlyrun/fleetly/internal/domain/automation/schedule"
-	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
-	"github.com/fleetlyrun/fleetly/internal/domain/data/backup"
-	"github.com/fleetlyrun/fleetly/internal/domain/data/browse"
-	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
-	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
-	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
-	"github.com/fleetlyrun/fleetly/internal/domain/delivery/githubapp"
-	"github.com/fleetlyrun/fleetly/internal/domain/delivery/revision"
-	"github.com/fleetlyrun/fleetly/internal/domain/delivery/sourceupload"
-	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
-	"github.com/fleetlyrun/fleetly/internal/domain/identity/token"
-	"github.com/fleetlyrun/fleetly/internal/domain/runtimeops/node"
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
-	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
-	appvariable "github.com/fleetlyrun/fleetly/internal/domain/structure/appvariable"
-	configrepo "github.com/fleetlyrun/fleetly/internal/domain/structure/config"
-	"github.com/fleetlyrun/fleetly/internal/domain/structure/network"
-	"github.com/fleetlyrun/fleetly/internal/domain/structure/networkpeer"
-	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
-	"github.com/fleetlyrun/fleetly/internal/domain/structure/route"
-	"github.com/fleetlyrun/fleetly/internal/domain/structure/secret"
-	sharedvariable "github.com/fleetlyrun/fleetly/internal/domain/structure/sharedvariable"
-	"github.com/fleetlyrun/fleetly/internal/domain/structure/volume"
+
 	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/alertrule"
 	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/channel"
-	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/outbox"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/github"
 )
 
@@ -87,51 +64,15 @@ type Engine struct {
 	clock   state.Clock
 	opts    Options
 
-	projects    project.Repo
-	apps        app.Repo
-	revisions   revision.Repo
-	deployments deployment.Repo
-	builds      build.Repo
-	outbox      outbox.Repo
-	nodes       node.Repo
-	audits      audit.Repo
-
-	// 规格受理咽喉的三级合成消费面（P3-7 下沉批）：冻结前的平台变量
-	// 装载（Shared 底 < 源 env 中 < AppVariable 顶）。
-	sharedVariables sharedvariable.Repo
-	appVariables    appvariable.Repo
-
-	// Task 域（F1.5/F1.6）：聚合 repo + 单写者环 + 属主 Token 行引用面
-	//（吊销排空拉式扫描，P1-8）。
-	tasks  task.Repo
-	runs   run.Repo
-	tokens token.Repo
-
-	// Schedule 域（F1.7）：聚合 repo + 到期拍环（fire 铸 one-shot Task 后
-	// 交 taskLoop 驱动——Schedule 只拥有"何时拍"）。
-	schedules schedule.Repo
-
-	// 跨 Project peer 声明（F1.8，ADR-0013 附录 A）：批准态真源——
-	// 投影翻译（strict/isolate）与撤销隔离的解析面。
-	peerDecls networkpeer.Repo
-
-	// 上传产物行（F1.10，ADR-0019 附录 A）：构建输入解析面（upload id →
-	// digest → blob 解包）。
-	uploads sourceupload.Repo
-
-	// Database 域（F1.12，ADR-0029）：聚合 repo + 用户域受管收敛环
-	//（第三条部署轨——挂项目网供 App 连，与 App 部署链/受管域分立）。
-	databases database.Repo
-
-	// Browse 会话域（F3.6，ADR-0051）：回收台账 repo + 收敛环（会话
-	// 注册表进程内活体——行是重启恢复锚，见 browse.go）。
-	browseRepo browse.Repo
-	browse     browses
+	// repos 是本引擎的聚合目录（db 绑定形态——组合根经 Binder 以
+	// db.Runner() 造出；读径直调，CQRS-lite）。事务作用域经 transact.Tx.Do
+	// 的闭包 s 走同一类型的 tx 绑定形态（ADR-0080）。
+	repos transact.Stores
+	tx    transact.Tx
 
 	// Backup 域（F2.2，ADR-0039）：台账 repo + 备份环 + 执行链装配面
 	//（ObjectStore 端口 = 产物承载；Utility 子面 = 工具容器执行，装配期
 	// 经 FacesOf 从 Runtime 探测）。
-	backups     backup.Repo
 	objectStore capability.ObjectStore
 	utility     capability.RuntimeUtility
 	// execFace 是 exec 子面 typed 持有（F3.2，ADR-0049；nil = 受理诚实
@@ -140,13 +81,13 @@ type Engine struct {
 	// exec 是会话域实例态（受理/路由/生命周期；进程内活体，零持久化）。
 	exec execs
 
-	// Logging 域（F2.4，ADR-0040）：受管日志存储 Provider + 采集环（域流
-	// 账本/游标 repo；build 日志出口经同 Provider 持久化——见 buildlog.go）。
+	// Browse 会话域实例态（F3.6，ADR-0051）：会话注册表进程内活体。
+	browse browses
+
+	// Logging 域（F2.4，ADR-0040）：受管日志存储 Provider + 采集环。
 	logging capability.Logging
 	logpipe logpipes
 
-	// Metrics 域（F2.5，ADR-0041）：受管指标存储 Provider + 采集环（cadvisor
-	// 抓取/透传/规则评估；通道派发面）。
 	metrics    capability.Metrics
 	metricsDom metrics
 	alertRules alertrule.Repo
@@ -227,24 +168,21 @@ type Engine struct {
 	builders  map[string]capability.Builder
 	buildOpts buildLimits
 
-	// Proxy 面（F0.15）：Route 全量发布 + 受管 Provider reconciler。
-	proxy  capability.Proxy
-	routes route.Repo
+	// Proxy 面（F0.15）：受管 Provider reconciler（Route 全量发布真源在
+	// repos.Routes——读写同源，ADR-0080 目录化）。
+	proxy capability.Proxy
 
 	// Registry 面（F1.11，ADR-0019 附录 B）：构建推送目标 + from_build
 	// 引用组合 + 平台拉取凭证 + 受管 zot 自宿。
 	registry capability.Registry
 
-	// 材料面（F0.17/18，ADR-0014）：Secret/Config/Volume repo 与 age 信封。
-	cipher   *material.Cipher
-	secrets  secret.Repo
-	configs  configrepo.Repo
-	volumes  volume.Repo
-	networks network.Repo // 受管 Proxy 挂网真源（活跃 Project 网络全量）
+	// 材料面（F0.17/18，ADR-0014）：age 信封（Secret/Config/Volume repo
+	// 在 repos——读写同源，ADR-0080 目录化；networks 同）。
+	cipher *material.Cipher
 
-	// GitHub App 接入材料（ADR-0073 阶段 B）：聚合 repo + 最小客户端——
-	// clone 前按 host+属主解析并现铸 installation token（gitmaterial.go）。
-	ghApps   githubapp.Repo
+	// GitHub App 接入材料（ADR-0073 阶段 B）：聚合 repo 在 repos.GitHubApps
+	//（ADR-0080 目录化）+ 最小客户端——clone 前按 host+属主解析并现铸
+	// installation token（gitmaterial.go）。
 	ghClient *github.Client
 
 	// rotateMu 串行化 Database 凭证轮换（IA v3 二期⑤b）：并发轮换的

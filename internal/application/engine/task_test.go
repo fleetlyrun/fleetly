@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/run"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/role"
@@ -49,27 +50,27 @@ func createTaskRow(t *testing.T, e *Engine, id, name, form string, desired int64
 		State: task.StateActive, Spec: []byte(spec + "}"),
 		DesiredConcurrency: desired, DNSName: TaskDNSName(id),
 	}
-	require.NoError(t, e.tasks.Create(context.Background(), e.db.Runner(), row))
+	require.NoError(t, e.repos.Tasks.Create(context.Background(), row))
 	return row
 }
 
 func getTaskRow(t *testing.T, e *Engine, id string) *task.Task {
 	t.Helper()
-	row, err := e.tasks.Get(context.Background(), e.db.Runner(), id)
+	row, err := e.repos.Tasks.Get(context.Background(), id)
 	require.NoError(t, err)
 	return row
 }
 
 func getRunRow(t *testing.T, e *Engine, id string) *run.Run {
 	t.Helper()
-	row, err := e.runs.Get(context.Background(), e.db.Runner(), id)
+	row, err := e.repos.Runs.Get(context.Background(), id)
 	require.NoError(t, err)
 	return row
 }
 
 func taskRuns(t *testing.T, e *Engine, taskID string) []run.Run {
 	t.Helper()
-	rows, err := e.runs.ListByTaskStates(context.Background(), e.db.Runner(), taskID,
+	rows, err := e.repos.Runs.ListByTaskStates(context.Background(), taskID,
 		[]run.State{run.StatePending, run.StateRunning, run.StateStopping, run.StateStopped, run.StateFailed})
 	require.NoError(t, err)
 	return rows
@@ -514,7 +515,7 @@ func TestTaskOneShotStoppingNoReplenish(t *testing.T) {
 	assert.Equal(t, run.StateStopped, got.State)
 	assert.Equal(t, run.ReasonTTLExpired, got.StopReason)
 	assert.Equal(t, task.StateCompleted, getTaskRow(t, e, taskID).State)
-	driving, err := e.runs.ListByTaskStates(ctx, e.db.Runner(), taskID, taskDrivingStates)
+	driving, err := e.repos.Runs.ListByTaskStates(ctx, taskID, taskDrivingStates)
 	require.NoError(t, err)
 	assert.Empty(t, driving, "no driving runs may outlive a terminal one-shot task")
 	assert.Len(t, taskRuns(t, e, taskID), 1, "exactly one run ever existed")
@@ -533,7 +534,7 @@ func TestOneshotRunVerdictOutcomes(t *testing.T) {
 	seedRun := func(t *testing.T, taskID, runID string, st run.State, reason string, exit *int) {
 		t.Helper()
 		createTaskRow(t, e, taskID, "", task.FormOneShot, 1, 60, "")
-		require.NoError(t, e.runs.Create(ctx, e.db.Runner(), &run.Run{
+		require.NoError(t, e.repos.Runs.Create(ctx, &run.Run{
 			ID: runID, TaskID: taskID, ProjectID: tTaskProject,
 			State: st, StopReason: reason,
 		}))
@@ -595,10 +596,10 @@ func TestTaskZombieRunSweep(t *testing.T) {
 	taskID := "01JD0TASK0000000000000000C"
 	createTaskRow(t, e, taskID, "", task.FormOneShot, 1, 3600, "")
 	// 直落存量形态：Task 已终态、Run 停在 driving（绕过补足链）。
-	require.NoError(t, e.tasks.Transit(ctx, e.db.Runner(), taskID,
+	require.NoError(t, e.repos.Tasks.Transit(ctx, taskID,
 		[]task.State{task.StateActive}, task.StateCompleted, nil))
 	runID := "01JD0RUN00000000000000000001"
-	require.NoError(t, e.runs.Create(ctx, e.db.Runner(), &run.Run{
+	require.NoError(t, e.repos.Runs.Create(ctx, &run.Run{
 		ID: runID, TaskID: taskID, ProjectID: tTaskProject,
 		State: run.StateStopping, StopReason: run.ReasonStoppedByUser,
 		WorkloadID: runID, DNSName: RunDNSName(runID),
@@ -643,12 +644,12 @@ func TestOwnerRevokedDrainsTasks(t *testing.T) {
 	e, _, _ := newTestEngine(t)
 	ctx := context.Background()
 	// FK 地基：team + role（engine 测试库不跑账号批种子）。
-	require.NoError(t, teamrepo.New(e.db.Clock()).Create(ctx, e.db.Runner(), &team.Team{ID: "default", Name: "default"}))
-	require.NoError(t, rolerepo.New(e.db.Clock()).Create(ctx, e.db.Runner(), &role.Role{
+	require.NoError(t, teamrepo.New(e.db.Clock(), e.db.Runner()).Create(ctx, &team.Team{ID: "default", Name: "default"}))
+	require.NoError(t, rolerepo.New(e.db.Clock(), e.db.Runner()).Create(ctx, &role.Role{
 		ID: "builtin-member", Name: "member", Builtin: true, Scopes: []string{"tasks:read"},
 	}))
 	tokenID := "01JD0TOK0000000000000000000"
-	require.NoError(t, tokenrepo.New(e.db.Clock()).Create(ctx, e.db.Runner(), &token.Token{
+	require.NoError(t, tokenrepo.New(e.db.Clock(), e.db.Runner()).Create(ctx, &token.Token{
 		ID: tokenID, TeamID: "default", Name: "worker", RoleID: "builtin-member", SHA256: "aa", Prefix: "flt_x",
 	}))
 
@@ -657,14 +658,14 @@ func TestOwnerRevokedDrainsTasks(t *testing.T) {
 	// 属主引用上锚（吊销扫描的锚——createTaskRow 不带属主面）。
 	_, execErr := e.db.Runner().ExecContext(ctx, `UPDATE tasks SET owner_token_id = ? WHERE id = ?`, tokenID, taskID)
 	require.NoError(t, execErr)
-	require.NoError(t, e.tasks.UpdateLease(ctx, e.db.Runner(), taskID,
+	require.NoError(t, e.repos.Tasks.UpdateLease(ctx, taskID,
 		state.FormatTime(e.clock.Now().Add(time.Hour)))) // lease 未过期：排空只因吊销
 
 	e.taskStep(ctx)
 	require.Len(t, taskRuns(t, e, taskID), 2)
 
 	// 吊销属主 Token。
-	_, err := e.tokens.Revoke(ctx, e.db.Runner(), tokenID)
+	_, err := e.repos.Tokens.Revoke(ctx, tokenID)
 	require.NoError(t, err)
 
 	e.taskStep(ctx)
@@ -716,7 +717,7 @@ func TestScaleTaskDrainingRejected(t *testing.T) {
 	assert.EqualValues(t, 2, getTaskRow(t, e, taskID).DesiredConcurrency)
 
 	// 终态与 active 形态不受新前置影响（既有语义回归）。
-	require.NoError(t, e.tasks.Transit(ctx, e.db.Runner(), taskID,
+	require.NoError(t, e.repos.Tasks.Transit(ctx, taskID,
 		[]task.State{task.StateDraining}, task.StateDrained, nil))
 	_, err = e.ScaleTask(ctx, taskID, 5)
 	assert.ErrorIs(t, err, ErrTaskTerminal)
@@ -729,19 +730,19 @@ func TestScaleTaskDrainingRejected(t *testing.T) {
 func TestSweepRevokedOwnersStorageFaultContinues(t *testing.T) {
 	var logs bytes.Buffer
 	db, _ := statetest.New(t)
-	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: newFakeRuntime(), Logger: slog.New(slog.NewTextHandler(&logs, nil))}, Options{})
+	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: newFakeRuntime(), Logger: slog.New(slog.NewTextHandler(&logs, nil))}, Options{})
 	t.Cleanup(func() { _ = e.Stop(context.Background()) })
 	ctx := context.Background()
 
 	// FK 地基（engine 测试库不跑账号批种子）。
-	require.NoError(t, teamrepo.New(db.Clock()).Create(ctx, db.Runner(), &team.Team{ID: "default", Name: "default"}))
-	require.NoError(t, rolerepo.New(db.Clock()).Create(ctx, db.Runner(), &role.Role{
+	require.NoError(t, teamrepo.New(db.Clock(), db.Runner()).Create(ctx, &team.Team{ID: "default", Name: "default"}))
+	require.NoError(t, rolerepo.New(db.Clock(), db.Runner()).Create(ctx, &role.Role{
 		ID: "builtin-member", Name: "member", Builtin: true, Scopes: []string{"tasks:read"},
 	}))
 	tokA := "01JD0TOK000000000000000000A"
 	tokB := "01JD0TOK000000000000000000B"
 	for i, id := range []string{tokA, tokB} {
-		require.NoError(t, tokenrepo.New(db.Clock()).Create(ctx, db.Runner(), &token.Token{
+		require.NoError(t, tokenrepo.New(db.Clock(), db.Runner()).Create(ctx, &token.Token{
 			ID: id, TeamID: "default", Name: fmt.Sprintf("worker-%d", i), RoleID: "builtin-member",
 			SHA256: fmt.Sprintf("aa%d%d", i, i), Prefix: "flt_x",
 		}))
@@ -753,7 +754,7 @@ func TestSweepRevokedOwnersStorageFaultContinues(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	tasks, err := e.tasks.ListDriving(ctx, db.Runner())
+	tasks, err := e.repos.Tasks.ListDriving(ctx)
 	require.NoError(t, err)
 	require.NoError(t, db.Close()) // 存储故障注入：断连后一切读失败
 
@@ -799,7 +800,7 @@ func TestScaleTaskQuota(t *testing.T) {
 	assert.EqualValues(t, 100, got.DesiredConcurrency)
 
 	// 终态 Task 的 desired 不进统计：b completed 后总量回到 100，可扩满 200。
-	require.NoError(t, e.tasks.Transit(ctx, e.db.Runner(), b.ID,
+	require.NoError(t, e.repos.Tasks.Transit(ctx, b.ID,
 		[]task.State{task.StateActive}, task.StateCompleted, nil))
 	got, err = e.ScaleTask(ctx, a.ID, 200)
 	require.NoError(t, err)
@@ -885,7 +886,7 @@ func TestEnsureTaskWorkloadsEgressChangeReEnsures(t *testing.T) {
 	ctx := context.Background()
 	taskID := "01JD0TASK0000000000000000B"
 	runID := "01JD0RUN000000000000000000B"
-	require.NoError(t, e.networks.Create(ctx, e.db.Runner(), &network.Network{
+	require.NoError(t, e.repos.Networks.Create(ctx, &network.Network{
 		ID: "net-eg-1", ProjectID: tTaskProject, Name: "workers", EgressNone: true,
 	}))
 	// process.networks 挂项目网 = preDeploy 铸造行形态（挂靠网铸时解析，
@@ -894,11 +895,11 @@ func TestEnsureTaskWorkloadsEgressChangeReEnsures(t *testing.T) {
 	spec := fmt.Sprintf(`{"schema_version":1,"task":{"id":"%s","project":"%s"},`+
 		`"process":{"name":"run","image":"busybox:1.37","command":["/worker"],"networks":["workers"]},`+
 		`"ttl_seconds":0,"desired_concurrency":1,"form":"resident"}`, taskID, tTaskProject)
-	require.NoError(t, e.tasks.Create(ctx, e.db.Runner(), &task.Task{
+	require.NoError(t, e.repos.Tasks.Create(ctx, &task.Task{
 		ID: taskID, ProjectID: tTaskProject, Form: task.FormResident, State: task.StateActive,
 		Spec: []byte(spec), DesiredConcurrency: 1, DNSName: TaskDNSName(taskID),
 	}))
-	require.NoError(t, e.runs.Create(ctx, e.db.Runner(), &run.Run{
+	require.NoError(t, e.repos.Runs.Create(ctx, &run.Run{
 		ID: runID, TaskID: taskID, ProjectID: tTaskProject, State: run.StateRunning,
 	}))
 

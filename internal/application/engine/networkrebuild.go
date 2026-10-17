@@ -51,7 +51,7 @@ func (e *ForeignAttachmentError) Error() string {
 // （ReconcileReplayInterval，缺省 60s）Ensure 兜底重挂，重跑则加速收口。
 func (e *Engine) RebuildNetwork(ctx context.Context, projectID, name string) (NetworkRebuildResult, error) {
 	// 受理：Project 存活（同族受理检查）+ network 行在场。
-	p, err := e.projects.Get(ctx, e.db.Runner(), projectID)
+	p, err := e.repos.Projects.Get(ctx, projectID)
 	if err != nil {
 		if errors.Is(err, state.ErrNotFound) {
 			return NetworkRebuildResult{}, fmt.Errorf("rebuild network: project %s not found: %w", projectID, state.ErrNotFound)
@@ -61,7 +61,7 @@ func (e *Engine) RebuildNetwork(ctx context.Context, projectID, name string) (Ne
 	if p.Deleted() {
 		return NetworkRebuildResult{}, fmt.Errorf("rebuild network: project %s not found: %w", projectID, state.ErrNotFound)
 	}
-	if _, err := e.networks.GetByName(ctx, e.db.Runner(), projectID, name); err != nil {
+	if _, err := e.repos.Networks.GetByName(ctx, projectID, name); err != nil {
 		if errors.Is(err, state.ErrNotFound) {
 			return NetworkRebuildResult{}, fmt.Errorf("rebuild network: network %q not found in project %s: %w", name, projectID, state.ErrNotFound)
 		}
@@ -156,15 +156,15 @@ func (e *Engine) checkNetworkAttachments(ctx context.Context, attachments []capa
 	if len(attachments) == 0 {
 		return nil
 	}
-	apps, err := e.apps.List(ctx, e.db.Runner())
+	apps, err := e.repos.Apps.List(ctx)
 	if err != nil {
 		return fmt.Errorf("rebuild network: list apps: %w", err)
 	}
-	tasks, err := e.tasks.ListDriving(ctx, e.db.Runner())
+	tasks, err := e.repos.Tasks.ListDriving(ctx)
 	if err != nil {
 		return fmt.Errorf("rebuild network: list tasks: %w", err)
 	}
-	dbs, err := e.databases.List(ctx, e.db.Runner())
+	dbs, err := e.repos.Databases.List(ctx)
 	if err != nil {
 		return fmt.Errorf("rebuild network: list databases: %w", err)
 	}

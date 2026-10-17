@@ -28,7 +28,7 @@ func (e *Engine) RestartProcess(ctx context.Context, appID, process string) erro
 	if err != nil {
 		return err
 	}
-	rev, err := e.revisions.Latest(ctx, e.db.Runner(), appID)
+	rev, err := e.repos.Revisions.Latest(ctx, appID)
 	if err != nil {
 		if errors.Is(err, state.ErrNotFound) {
 			return fmt.Errorf("%w: app %s has no frozen spec (never deployed)", ErrProcessUnknown, appID)

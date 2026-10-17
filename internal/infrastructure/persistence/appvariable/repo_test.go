@@ -56,8 +56,8 @@ func TestAppVariableUpsertConcurrentSameNameConflict(t *testing.T) {
 	releaseA := make(chan struct{})
 	txErr := make(chan error, 1)
 	go func() {
-		txErr <- dbA.Tx(ctx, func(tx *sql.Tx) error {
-			_, err := tx.ExecContext(ctx, `
+		txErr <- dbA.Tx(ctx, func(run state.Runner) error {
+			_, err := run.ExecContext(ctx, `
 				INSERT INTO app_variables (id, seq, app_id, name, value, created_at, updated_at, deleted_at)
 				VALUES ('01JD0APVR000000000000000R', 99, ?, 'raced', 'a-value', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', '')`, appID)
 			close(rowReady) // 落行即放行（失败亦放行——主流程在 txErr 处暴露）
@@ -75,7 +75,7 @@ func TestAppVariableUpsertConcurrentSameNameConflict(t *testing.T) {
 	}
 	upsertErr := make(chan error, 1)
 	go func() {
-		upsertErr <- appvariablerepo.New(clock).Upsert(ctx, gate, &appvariable.AppVariable{
+		upsertErr <- appvariablerepo.New(clock, gate).Upsert(ctx, &appvariable.AppVariable{
 			AppID: appID, Name: "raced", Value: "b-value",
 		})
 	}()
@@ -94,7 +94,7 @@ func TestAppVariableUpsertConcurrentSameNameConflict(t *testing.T) {
 		"concurrent same-name PUT must normalize the unique violation, got: %v", err)
 
 	// 落库行仍是 A 的那颗（B 的 INSERT 失败即整体无效果）。
-	got, err := appvariablerepo.New(clock).GetByName(ctx, dbB.Runner(), appID, "raced")
+	got, err := appvariablerepo.New(clock, dbA.Runner()).GetByName(ctx, appID, "raced")
 	require.NoError(t, err)
 	assert.Equal(t, "a-value", got.Value)
 }

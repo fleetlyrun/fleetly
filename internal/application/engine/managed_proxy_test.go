@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/network"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
@@ -22,9 +23,9 @@ func TestManagedProxyAttachesProjectNetworks(t *testing.T) {
 	db, clock := statetest.New(t)
 	rt := newFakeRuntime()
 	proxy := &fakeProxy{}
-	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
+	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
-	require.NoError(t, projectrepo.New(clock).Create(ctx, db.Runner(), &project.Project{
+	require.NoError(t, projectrepo.New(clock, db.Runner()).Create(ctx, &project.Project{
 		ID: tProjectID, Name: "shop", TeamID: "default",
 	}))
 
@@ -32,10 +33,10 @@ func TestManagedProxyAttachesProjectNetworks(t *testing.T) {
 	genBefore := rt.calls()[len(rt.calls())-1].Gen
 
 	// 建两个 Project 网络 → 受管 workload 的引用集挂上。
-	require.NoError(t, e.networks.Create(ctx, db.Runner(), &network.Network{
+	require.NoError(t, e.repos.Networks.Create(ctx, &network.Network{
 		ID: "01JD0NET000000000000000001", ProjectID: tProjectID, Name: "default",
 	}))
-	require.NoError(t, e.networks.Create(ctx, db.Runner(), &network.Network{
+	require.NoError(t, e.repos.Networks.Create(ctx, &network.Network{
 		ID: "01JD0NET000000000000000002", ProjectID: tProjectID, Name: "internal", EgressNone: true,
 	}))
 	e.managedStep(ctx)
@@ -62,7 +63,7 @@ func TestManagedProxyCoveredBySteadyStateWatchdog(t *testing.T) {
 	db, _ := statetest.New(t)
 	rt := newFakeRuntime()
 	proxy := &fakeProxy{}
-	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
+	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
 
 	e.managedStep(ctx) // 受管 Ensure + 归属/期望登记

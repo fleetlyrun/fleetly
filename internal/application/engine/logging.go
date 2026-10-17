@@ -114,7 +114,7 @@ func (e *Engine) flushIdleLogBatches() {
 // databases + 受管域三件）。受管域从各 Provider 的 Managed 声明实取
 // （Proxy/Registry/Logging 自描述——新增受管 Provider 自动进采集面）。
 func (e *Engine) collectNamespaces(ctx context.Context) ([]capability.NamespaceRef, error) {
-	projects, err := e.projects.List(ctx, e.db.Runner())
+	projects, err := e.repos.Projects.List(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -130,7 +130,7 @@ func (e *Engine) collectNamespaces(ctx context.Context) ([]capability.NamespaceR
 		return capability.NamespaceRef{Team: team, Project: projectID}, true
 	}
 	var out []capability.NamespaceRef
-	apps, err := e.apps.List(ctx, e.db.Runner())
+	apps, err := e.repos.Apps.List(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -143,7 +143,7 @@ func (e *Engine) collectNamespaces(ctx context.Context) ([]capability.NamespaceR
 			out = append(out, ns)
 		}
 	}
-	tasks, err := e.tasks.ListDriving(ctx, e.db.Runner())
+	tasks, err := e.repos.Tasks.ListDriving(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -153,7 +153,7 @@ func (e *Engine) collectNamespaces(ctx context.Context) ([]capability.NamespaceR
 			out = append(out, ns)
 		}
 	}
-	dbs, err := e.databases.List(ctx, e.db.Runner())
+	dbs, err := e.repos.Databases.List(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -188,7 +188,7 @@ func (e *Engine) runLogCollector(ctx context.Context, ns capability.NamespaceRef
 	}
 	backoff := time.Second
 	for ctx.Err() == nil {
-		cursor, err := e.logpipe.cursors.Get(ctx, e.db.Runner(), ns.String())
+		cursor, err := e.logpipe.cursors.Get(ctx, ns.String())
 		if err != nil {
 			e.log.Error("log collector: load cursor", "namespace", ns.String(), "err", err)
 			if !sleepCtx(ctx, backoff) {
@@ -325,7 +325,7 @@ func (b *nsBatch) flush(ctx context.Context) error {
 		return err
 	}
 	if time.Since(b.cursorPersistAt) >= logCursorPersistInterval {
-		if err := b.cursors.Save(ctx, b.db.Runner(), b.ns.String(), cursor); err != nil {
+		if err := b.cursors.Save(ctx, b.ns.String(), cursor); err != nil {
 			b.log.Error("log collector: persist cursor", "namespace", b.ns.String(), "err", err)
 			// 游标落盘失败不致命：内存游标继续推进，重启多重放一段（VL 同流去重兜住）
 		}

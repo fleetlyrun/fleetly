@@ -29,23 +29,23 @@ func newTask(id, name string) *task.Task {
 func TestTaskLifecycleTransit(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	tasks := taskrepo.New(clock)
+	tasks := taskrepo.New(clock, db.Runner())
 
 	tk := newTask("01JD0TASK00000000000000000", "migrate")
-	require.NoError(t, tasks.Create(ctx, db.Runner(), tk))
+	require.NoError(t, tasks.Create(ctx, tk))
 
 	// one-shot 终态：active → completed（终态补 finished_at）。
 	clock.Advance(time.Second)
-	require.NoError(t, tasks.Transit(ctx, db.Runner(), tk.ID,
+	require.NoError(t, tasks.Transit(ctx, tk.ID,
 		[]task.State{task.StateActive}, task.StateCompleted, nil))
-	got, err := tasks.Get(ctx, db.Runner(), tk.ID)
+	got, err := tasks.Get(ctx, tk.ID)
 	require.NoError(t, err)
 	assert.Equal(t, task.StateCompleted, got.State)
 	assert.True(t, got.State.Terminal())
 	assert.Equal(t, "2026-01-01T00:00:01Z", got.FinishedAt)
 
 	// 终态不再迁移。
-	err = tasks.Transit(ctx, db.Runner(), tk.ID,
+	err = tasks.Transit(ctx, tk.ID,
 		[]task.State{task.StateActive}, task.StateDraining, nil)
 	assert.ErrorIs(t, err, state.ErrConflict)
 
@@ -53,13 +53,13 @@ func TestTaskLifecycleTransit(t *testing.T) {
 	r2 := newTask("01JD0TASK00000000000000001", "dispatcher")
 	r2.Form = task.FormResident
 	r2.DesiredConcurrency = 4
-	require.NoError(t, tasks.Create(ctx, db.Runner(), r2))
-	require.NoError(t, tasks.Transit(ctx, db.Runner(), r2.ID,
+	require.NoError(t, tasks.Create(ctx, r2))
+	require.NoError(t, tasks.Transit(ctx, r2.ID,
 		[]task.State{task.StateActive}, task.StateDraining, nil))
-	require.NoError(t, tasks.UpdateLease(ctx, db.Runner(), r2.ID, "2026-01-01T00:05:00Z"))
-	require.NoError(t, tasks.Transit(ctx, db.Runner(), r2.ID,
+	require.NoError(t, tasks.UpdateLease(ctx, r2.ID, "2026-01-01T00:05:00Z"))
+	require.NoError(t, tasks.Transit(ctx, r2.ID,
 		[]task.State{task.StateDraining}, task.StateDrained, nil))
-	got, err = tasks.Get(ctx, db.Runner(), r2.ID)
+	got, err = tasks.Get(ctx, r2.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "2026-01-01T00:05:00Z", got.LeaseDeadline)
 	assert.True(t, got.State.Terminal())
@@ -68,27 +68,27 @@ func TestTaskLifecycleTransit(t *testing.T) {
 func TestTaskNameUniquePerProject(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	tasks := taskrepo.New(clock)
+	tasks := taskrepo.New(clock, db.Runner())
 
-	require.NoError(t, tasks.Create(ctx, db.Runner(), newTask("01JD0TASK00000000000000000", "dispatcher")))
-	err := tasks.Create(ctx, db.Runner(), newTask("01JD0TASK00000000000000001", "dispatcher"))
+	require.NoError(t, tasks.Create(ctx, newTask("01JD0TASK00000000000000000", "dispatcher")))
+	err := tasks.Create(ctx, newTask("01JD0TASK00000000000000001", "dispatcher"))
 	assert.ErrorIs(t, err, state.ErrAlreadyExists)
 
 	// tombstone 释放名位（deleted 行不占名）。
-	require.NoError(t, tasks.Transit(ctx, db.Runner(), "01JD0TASK00000000000000000",
+	require.NoError(t, tasks.Transit(ctx, "01JD0TASK00000000000000000",
 		[]task.State{task.StateActive}, task.StateDeleted, nil))
-	require.NoError(t, tasks.Create(ctx, db.Runner(), newTask("01JD0TASK00000000000000002", "dispatcher")))
+	require.NoError(t, tasks.Create(ctx, newTask("01JD0TASK00000000000000002", "dispatcher")))
 
 	// 同名不同项目合法。
 	other := newTask("01JD0TASK00000000000000003", "dispatcher")
 	other.ProjectID = "01JD0PRJ000000000000000001"
-	require.NoError(t, tasks.Create(ctx, db.Runner(), other))
+	require.NoError(t, tasks.Create(ctx, other))
 }
 
 func TestTaskListAndOwnerScan(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	tasks := taskrepo.New(clock)
+	tasks := taskrepo.New(clock, db.Runner())
 
 	// ULID 递减构造（新→旧断言用）：后建的 id 更大。
 	ids := []string{"01JD0TASK00000000000000000", "01JD0TASK00000000000000001", "01JD0TASK00000000000000002"}
@@ -97,27 +97,27 @@ func TestTaskListAndOwnerScan(t *testing.T) {
 		if i == 1 {
 			tk.OwnerTokenID = "01JD0TOK0000000000000000000"
 		}
-		require.NoError(t, tasks.Create(ctx, db.Runner(), tk))
+		require.NoError(t, tasks.Create(ctx, tk))
 	}
 
 	// 新→旧 + after 游标 + limit。
-	page, err := tasks.ListByProject(ctx, db.Runner(), "01JD0PRJ000000000000000000", 0, 2)
+	page, err := tasks.ListByProject(ctx, "01JD0PRJ000000000000000000", 0, 2)
 	require.NoError(t, err)
 	assert.Equal(t, []string{ids[2], ids[1]}, []string{page[0].ID, page[1].ID})
-	next, err := tasks.ListByProject(ctx, db.Runner(), "01JD0PRJ000000000000000000", page[1].Seq, 2)
+	next, err := tasks.ListByProject(ctx, "01JD0PRJ000000000000000000", page[1].Seq, 2)
 	require.NoError(t, err)
 	assert.Equal(t, []string{ids[0]}, []string{next[0].ID})
 
 	// 属主扫描面（吊销排空拉式，P1-8）。
-	owned, err := tasks.ListByOwner(ctx, db.Runner(), "01JD0TOK0000000000000000000")
+	owned, err := tasks.ListByOwner(ctx, "01JD0TOK0000000000000000000")
 	require.NoError(t, err)
 	assert.Len(t, owned, 1)
 	assert.Equal(t, ids[1], owned[0].ID)
 
 	// 驱动拾取：终态行不入。
-	require.NoError(t, tasks.Transit(ctx, db.Runner(), ids[0],
+	require.NoError(t, tasks.Transit(ctx, ids[0],
 		[]task.State{task.StateActive}, task.StateDeleted, nil))
-	driving, err := tasks.ListDriving(ctx, db.Runner())
+	driving, err := tasks.ListDriving(ctx)
 	require.NoError(t, err)
 	assert.Len(t, driving, 2)
 }
@@ -127,29 +127,29 @@ func TestTaskListAndOwnerScan(t *testing.T) {
 func TestTaskStatsByProject(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	tasks := taskrepo.New(clock)
+	tasks := taskrepo.New(clock, db.Runner())
 
 	active := newTask("01JD0TASK00000000000000000", "keep-a")
 	active.DesiredConcurrency = 3
-	require.NoError(t, tasks.Create(ctx, db.Runner(), active))
+	require.NoError(t, tasks.Create(ctx, active))
 	filler := newTask("01JD0TASK00000000000000001", "keep-b")
 	filler.DesiredConcurrency = 4
-	require.NoError(t, tasks.Create(ctx, db.Runner(), filler))
+	require.NoError(t, tasks.Create(ctx, filler))
 	done := newTask("01JD0TASK00000000000000002", "done")
 	done.DesiredConcurrency = 10
-	require.NoError(t, tasks.Create(ctx, db.Runner(), done))
-	require.NoError(t, tasks.Transit(ctx, db.Runner(), done.ID,
+	require.NoError(t, tasks.Create(ctx, done))
+	require.NoError(t, tasks.Transit(ctx, done.ID,
 		[]task.State{task.StateActive}, task.StateCompleted, nil))
 	other := newTask("01JD0TASK00000000000000003", "other-project")
 	other.ProjectID = "01JD0PRJ000000000000000001"
-	require.NoError(t, tasks.Create(ctx, db.Runner(), other))
+	require.NoError(t, tasks.Create(ctx, other))
 
-	n, sum, err := tasks.StatsByProject(ctx, db.Runner(), "01JD0PRJ000000000000000000")
+	n, sum, err := tasks.StatsByProject(ctx, "01JD0PRJ000000000000000000")
 	require.NoError(t, err)
 	assert.Equal(t, 2, n, "terminal tasks must not count toward the quota")
 	assert.EqualValues(t, 7, sum, "desired concurrency sums non-terminal rows only")
 
-	n, sum, err = tasks.StatsByProject(ctx, db.Runner(), "01JD0PRJ000000000000000001")
+	n, sum, err = tasks.StatsByProject(ctx, "01JD0PRJ000000000000000001")
 	require.NoError(t, err)
 	assert.Equal(t, 1, n)
 	assert.EqualValues(t, 1, sum)
@@ -158,7 +158,7 @@ func TestTaskStatsByProject(t *testing.T) {
 func TestRunStateMachine(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	runs := runrepo.New(clock)
+	runs := runrepo.New(clock, db.Runner())
 
 	m := &run.Run{
 		ID: "01JD0RUN0000000000000000000", TaskID: "01JD0TASK00000000000000000",
@@ -166,26 +166,26 @@ func TestRunStateMachine(t *testing.T) {
 		WorkloadID: "01JD0RUN0000000000000000000", DNSName: "run-01jd0run0000000000000000000",
 		Deadline: "2026-01-01T01:00:00Z",
 	}
-	require.NoError(t, runs.Create(ctx, db.Runner(), m))
+	require.NoError(t, runs.Create(ctx, m))
 
 	// pending → running：started_at 补齐。
 	clock.Advance(time.Second)
-	require.NoError(t, runs.Transit(ctx, db.Runner(), m.ID,
+	require.NoError(t, runs.Transit(ctx, m.ID,
 		[]run.State{run.StatePending}, run.StateRunning, nil))
-	got, err := runs.Get(ctx, db.Runner(), m.ID)
+	got, err := runs.Get(ctx, m.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "2026-01-01T00:00:01Z", got.StartedAt)
 	assert.Nil(t, got.ExitCode)
 
 	// running → stopping（起因即写入）→ stopped（终态携带 + 退出码）。
-	require.NoError(t, runs.Transit(ctx, db.Runner(), m.ID,
+	require.NoError(t, runs.Transit(ctx, m.ID,
 		[]run.State{run.StateRunning}, run.StateStopping,
 		func(r *run.Run) { r.StopReason = run.ReasonTTLExpired; r.Deadline = "2026-01-01T00:01:00Z" }))
 	code := 0
-	require.NoError(t, runs.Transit(ctx, db.Runner(), m.ID,
+	require.NoError(t, runs.Transit(ctx, m.ID,
 		[]run.State{run.StateStopping}, run.StateStopped,
 		func(r *run.Run) { r.ExitCode = &code }))
-	got, err = runs.Get(ctx, db.Runner(), m.ID)
+	got, err = runs.Get(ctx, m.ID)
 	require.NoError(t, err)
 	assert.Equal(t, run.StateStopped, got.State)
 	assert.Equal(t, run.ReasonTTLExpired, got.StopReason)
@@ -195,15 +195,15 @@ func TestRunStateMachine(t *testing.T) {
 	assert.NotEmpty(t, got.FinishedAt)
 
 	// 非法迁移与终态封锁。
-	err = runs.Transit(ctx, db.Runner(), m.ID,
+	err = runs.Transit(ctx, m.ID,
 		[]run.State{run.StatePending, run.StateRunning}, run.StateStopping, nil)
 	assert.ErrorIs(t, err, state.ErrConflict)
 
 	// 自然完成直达：running → stopped/completed（不经 stopping）。
 	m2 := &run.Run{ID: "01JD0RUN0000000000000000001", TaskID: "01JD0TASK00000000000000000",
 		ProjectID: "01JD0PRJ000000000000000000", State: run.StateRunning}
-	require.NoError(t, runs.Create(ctx, db.Runner(), m2))
-	require.NoError(t, runs.Transit(ctx, db.Runner(), m2.ID,
+	require.NoError(t, runs.Create(ctx, m2))
+	require.NoError(t, runs.Transit(ctx, m2.ID,
 		[]run.State{run.StateRunning}, run.StateStopped,
 		func(r *run.Run) { r.StopReason = run.ReasonCompleted; r.ExitCode = &code }))
 }
@@ -211,7 +211,7 @@ func TestRunStateMachine(t *testing.T) {
 func TestRunListByTaskAndStates(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	runs := runrepo.New(clock)
+	runs := runrepo.New(clock, db.Runner())
 
 	taskID := "01JD0TASK00000000000000000"
 	states := []run.State{run.StatePending, run.StateRunning, run.StateStopping, run.StateStopped, run.StateFailed}
@@ -220,21 +220,21 @@ func TestRunListByTaskAndStates(t *testing.T) {
 			ID:     "01JD0RUN000000000000000000" + string(rune('0'+i)),
 			TaskID: taskID, ProjectID: "01JD0PRJ000000000000000000", State: s,
 		}
-		require.NoError(t, runs.Create(ctx, db.Runner(), m))
+		require.NoError(t, runs.Create(ctx, m))
 	}
 
 	// 新→旧 + after 游标。
-	page, err := runs.ListByTask(ctx, db.Runner(), taskID, 0, 3)
+	page, err := runs.ListByTask(ctx, taskID, 0, 3)
 	require.NoError(t, err)
 	assert.Len(t, page, 3)
 	assert.Equal(t, "01JD0RUN0000000000000000004", page[0].ID)
-	next, err := runs.ListByTask(ctx, db.Runner(), taskID, page[2].Seq, 3)
+	next, err := runs.ListByTask(ctx, taskID, page[2].Seq, 3)
 	require.NoError(t, err)
 	assert.Len(t, next, 2)
 
 	// 活槽位计数（补足判定面）+ 新→旧钉死（过量排空的方向锚：升序会把
 	// "停新保老"倒置成停老保新）。
-	live, err := runs.ListByTaskStates(ctx, db.Runner(), taskID,
+	live, err := runs.ListByTaskStates(ctx, taskID,
 		[]run.State{run.StatePending, run.StateRunning})
 	require.NoError(t, err)
 	require.Len(t, live, 2)
@@ -242,7 +242,7 @@ func TestRunListByTaskAndStates(t *testing.T) {
 	assert.Equal(t, "01JD0RUN0000000000000000000", live[1].ID)
 
 	// 驱动拾取：pending/running/stopping。
-	driving, err := runs.ListDriving(ctx, db.Runner())
+	driving, err := runs.ListDriving(ctx)
 	require.NoError(t, err)
 	assert.Len(t, driving, 3)
 }
@@ -250,23 +250,23 @@ func TestRunListByTaskAndStates(t *testing.T) {
 func TestTaskListRecentlyFinished(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	tasks := taskrepo.New(clock)
+	tasks := taskrepo.New(clock, db.Runner())
 
 	// 旧收口（窗前）→ 推进时钟 → 窗内 completed/failed/drained + deleted +
 	// 未收口（finished_at 空）。
 	old := newTask("01JD0TASK00000000000000000", "old")
-	require.NoError(t, tasks.Create(ctx, db.Runner(), old))
-	require.NoError(t, tasks.Transit(ctx, db.Runner(), old.ID,
+	require.NoError(t, tasks.Create(ctx, old))
+	require.NoError(t, tasks.Transit(ctx, old.ID,
 		[]task.State{task.StateActive}, task.StateCompleted, nil))
 	clock.Advance(8 * 24 * time.Hour)
 
 	in := func(id, name string, to task.State) {
 		tk := newTask(id, name)
 		tk.Form = task.FormResident
-		require.NoError(t, tasks.Create(ctx, db.Runner(), tk))
-		require.NoError(t, tasks.Transit(ctx, db.Runner(), tk.ID,
+		require.NoError(t, tasks.Create(ctx, tk))
+		require.NoError(t, tasks.Transit(ctx, tk.ID,
 			[]task.State{task.StateActive}, task.StateDraining, nil))
-		require.NoError(t, tasks.Transit(ctx, db.Runner(), tk.ID,
+		require.NoError(t, tasks.Transit(ctx, tk.ID,
 			[]task.State{task.StateDraining}, to, nil))
 	}
 	in("01JD0TASK00000000000000001", "done", task.StateCompleted)
@@ -277,10 +277,10 @@ func TestTaskListRecentlyFinished(t *testing.T) {
 	clock.Advance(time.Second)
 	in("01JD0TASK00000000000000004", "gone", task.StateDeleted)
 	active := newTask("01JD0TASK00000000000000005", "still-driving")
-	require.NoError(t, tasks.Create(ctx, db.Runner(), active))
+	require.NoError(t, tasks.Create(ctx, active))
 
 	// 窗内三行，新→旧；窗外/deleted/未收口不在列。
-	got, err := tasks.ListRecentlyFinished(ctx, db.Runner(), "2026-01-08T00:00:00Z", 50)
+	got, err := tasks.ListRecentlyFinished(ctx, "2026-01-08T00:00:00Z", 50)
 	require.NoError(t, err)
 	require.Len(t, got, 3)
 	assert.Equal(t, []string{
@@ -290,13 +290,13 @@ func TestTaskListRecentlyFinished(t *testing.T) {
 	}, []string{got[0].ID, got[1].ID, got[2].ID}, "newest finish first (residue lives in recent terminations)")
 
 	// limit 钳制。
-	limited, err := tasks.ListRecentlyFinished(ctx, db.Runner(), "2026-01-08T00:00:00Z", 2)
+	limited, err := tasks.ListRecentlyFinished(ctx, "2026-01-08T00:00:00Z", 2)
 	require.NoError(t, err)
 	assert.Len(t, limited, 2)
 	assert.Equal(t, "01JD0TASK00000000000000003", limited[0].ID)
 
 	// 全窗为空。
-	none, err := tasks.ListRecentlyFinished(ctx, db.Runner(), "2030-01-01T00:00:00Z", 50)
+	none, err := tasks.ListRecentlyFinished(ctx, "2030-01-01T00:00:00Z", 50)
 	require.NoError(t, err)
 	assert.Empty(t, none)
 }

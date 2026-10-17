@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/route"
@@ -58,7 +59,7 @@ func TestManagedReconcilerEnsuresSystemNamespace(t *testing.T) {
 	db, _ := statetest.New(t)
 	rt := newFakeRuntime()
 	proxy := &fakeProxy{}
-	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
+	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
 
 	e.managedStep(ctx)
@@ -83,7 +84,7 @@ func TestManagedGenerationStableAcrossTicks(t *testing.T) {
 	db, _ := statetest.New(t)
 	rt := newFakeRuntime()
 	proxy := &fakeProxy{}
-	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
+	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
 
 	for i := 0; i < 5; i++ {
@@ -112,7 +113,7 @@ func TestManagedEnsureMaterialsChangeForcesEnsure(t *testing.T) {
 	reg := newFakeRegistry()
 	reg.managed = true
 	reg.materials = capability.Materials{SecretFiles: map[string][]byte{"zot-config": []byte(`{"v":1}`)}}
-	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Proxy: &fakeProxy{}, Registry: reg, Logger: discardLogger()}, Options{})
+	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Proxy: &fakeProxy{}, Registry: reg, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
 	// 双 Provider（proxy+registry）：首轮各一次 Ensure。
 	e.managedStep(ctx)
@@ -135,7 +136,7 @@ func TestManagedEnsureFailureRetriesNextTick(t *testing.T) {
 	db, _ := statetest.New(t)
 	rt := newFakeRuntime()
 	rt.failNext = true
-	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Proxy: &fakeProxy{}, Logger: discardLogger()}, Options{})
+	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Proxy: &fakeProxy{}, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
 
 	e.managedStep(ctx) // Ensure 失败
@@ -152,7 +153,7 @@ func TestManagedStepBoundedWhenRuntimeHangs(t *testing.T) {
 	db, _ := statetest.New(t)
 	rt := newFakeRuntime()
 	rt.ensureGate.Arm() // 永不放行 = Ensure 永久挂起
-	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Proxy: &fakeProxy{}, Logger: discardLogger()},
+	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Proxy: &fakeProxy{}, Logger: discardLogger()},
 		Options{Ring: RingOptions{ManagedStepTimeout: 50 * time.Millisecond}})
 	ctx := context.Background()
 
@@ -175,10 +176,10 @@ func TestRoutePublishResolvesBackends(t *testing.T) {
 	db, clock := statetest.New(t)
 	rt := newFakeRuntime()
 	proxy := &fakeProxy{}
-	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
+	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
 	// Team 轴接实（ADR-0028）：后端域解析从 Project 行实取团队。
-	require.NoError(t, projectrepo.New(clock).Create(ctx, db.Runner(), &project.Project{
+	require.NoError(t, projectrepo.New(clock, db.Runner()).Create(ctx, &project.Project{
 		ID: tProjectID, Name: "shop", TeamID: "default",
 	}))
 
@@ -189,13 +190,13 @@ func TestRoutePublishResolvesBackends(t *testing.T) {
 	}
 	rt.mu.Unlock()
 
-	require.NoError(t, e.routes.Create(ctx, db.Runner(), &route.Route{
+	require.NoError(t, e.repos.Routes.Create(ctx, &route.Route{
 		ID: "01JD0ROUTE00000000000000001", ProjectID: tProjectID,
 		Host: "shop.127.0.0.1.sslip.io", AppID: tAppID, Process: "web", Port: 8080,
 		Protocol: capability.ProtocolH2C, TLSMode: "auto",
 	}))
 	// 后端解析不到（process 无地址）：跳过。
-	require.NoError(t, e.routes.Create(ctx, db.Runner(), &route.Route{
+	require.NoError(t, e.repos.Routes.Create(ctx, &route.Route{
 		ID: "01JD0ROUTE00000000000000002", ProjectID: tProjectID,
 		Host: "ghost.127.0.0.1.sslip.io", AppID: tAppID, Process: "ghost", Port: 9999,
 		Protocol: capability.ProtocolHTTP, TLSMode: "none",
@@ -215,9 +216,9 @@ func TestPublishRoutesShortCircuitsWhenUnchanged(t *testing.T) {
 	db, clock := statetest.New(t)
 	rt := newFakeRuntime()
 	proxy := &fakeProxy{}
-	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
+	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
-	require.NoError(t, projectrepo.New(clock).Create(ctx, db.Runner(), &project.Project{
+	require.NoError(t, projectrepo.New(clock, db.Runner()).Create(ctx, &project.Project{
 		ID: tProjectID, Name: "shop", TeamID: "default",
 	}))
 	rt.mu.Lock()
@@ -225,7 +226,7 @@ func TestPublishRoutesShortCircuitsWhenUnchanged(t *testing.T) {
 		"default/" + tProjectID + "/" + tAppID: {{Addr: "10.0.0.2", Process: "web", Port: 8080}},
 	}
 	rt.mu.Unlock()
-	require.NoError(t, e.routes.Create(ctx, db.Runner(), &route.Route{
+	require.NoError(t, e.repos.Routes.Create(ctx, &route.Route{
 		ID: "01JD0ROUTE00000000000000001", ProjectID: tProjectID,
 		Host: "shop.127.0.0.1.sslip.io", AppID: tAppID, Process: "web", Port: 8080,
 		Protocol: capability.ProtocolHTTP, TLSMode: "auto",
@@ -241,7 +242,7 @@ func TestPublishRoutesShortCircuitsWhenUnchanged(t *testing.T) {
 	assert.Len(t, rt.addrCallsSnapshot(), first, "the short circuit must hold across ticks")
 
 	// 行集变化（新增一行）→ 恰好一次全量重发布。
-	require.NoError(t, e.routes.Create(ctx, db.Runner(), &route.Route{
+	require.NoError(t, e.repos.Routes.Create(ctx, &route.Route{
 		ID: "01JD0ROUTE00000000000000002", ProjectID: tProjectID,
 		Host: "api.127.0.0.1.sslip.io", AppID: tAppID, Process: "web", Port: 8080,
 		Protocol: capability.ProtocolHTTP, TLSMode: "none",
@@ -257,9 +258,9 @@ func TestPublishRoutesForcedBypassResolvesFreshBackends(t *testing.T) {
 	db, clock := statetest.New(t)
 	rt := newFakeRuntime()
 	proxy := &fakeProxy{}
-	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
+	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
-	require.NoError(t, projectrepo.New(clock).Create(ctx, db.Runner(), &project.Project{
+	require.NoError(t, projectrepo.New(clock, db.Runner()).Create(ctx, &project.Project{
 		ID: tProjectID, Name: "shop", TeamID: "default",
 	}))
 	rt.mu.Lock()
@@ -267,7 +268,7 @@ func TestPublishRoutesForcedBypassResolvesFreshBackends(t *testing.T) {
 		"default/" + tProjectID + "/" + tAppID: {{Addr: "10.0.0.2", Process: "web", Port: 8080}},
 	}
 	rt.mu.Unlock()
-	require.NoError(t, e.routes.Create(ctx, db.Runner(), &route.Route{
+	require.NoError(t, e.repos.Routes.Create(ctx, &route.Route{
 		ID: "01JD0ROUTE00000000000000001", ProjectID: tProjectID,
 		Host: "shop.127.0.0.1.sslip.io", AppID: tAppID, Process: "web", Port: 8080,
 		Protocol: capability.ProtocolHTTP, TLSMode: "auto",
@@ -298,10 +299,10 @@ func TestPublishRoutesReplayWindowDropsDeadBackend(t *testing.T) {
 	db, clock := statetest.New(t)
 	rt := newFakeRuntime()
 	proxy := &fakeProxy{}
-	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Proxy: proxy, Logger: discardLogger()},
+	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Proxy: proxy, Logger: discardLogger()},
 		Options{Ring: RingOptions{ReconcileReplayInterval: 30 * time.Second}})
 	ctx := context.Background()
-	require.NoError(t, projectrepo.New(clock).Create(ctx, db.Runner(), &project.Project{
+	require.NoError(t, projectrepo.New(clock, db.Runner()).Create(ctx, &project.Project{
 		ID: tProjectID, Name: "shop", TeamID: "default",
 	}))
 	rt.mu.Lock()
@@ -309,7 +310,7 @@ func TestPublishRoutesReplayWindowDropsDeadBackend(t *testing.T) {
 		"default/" + tProjectID + "/" + tAppID: {{Addr: "10.0.0.2", Process: "web", Port: 8080}},
 	}
 	rt.mu.Unlock()
-	require.NoError(t, e.routes.Create(ctx, db.Runner(), &route.Route{
+	require.NoError(t, e.repos.Routes.Create(ctx, &route.Route{
 		ID: "01JD0ROUTE00000000000000001", ProjectID: tProjectID,
 		Host: "shop.127.0.0.1.sslip.io", AppID: tAppID, Process: "web", Port: 8080,
 		Protocol: capability.ProtocolHTTP, TLSMode: "auto",

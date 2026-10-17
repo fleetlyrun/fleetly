@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/browse"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
@@ -39,7 +40,7 @@ func newBrowseFixture(t *testing.T, engineName, connectURL string, readOnly bool
 	rt := newFakeRuntime()
 	cipher, err := keyring.LoadCipher(t.TempDir())
 	require.NoError(t, err)
-	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Cipher: cipher, Logger: discardLogger()}, Options{
+	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Cipher: cipher, Logger: discardLogger()}, Options{
 		Data: DataOptions{
 			Browse: BrowseConfig{
 				HostSuffix: "browse.test", GatewayURL: "http://127.0.0.1:9081", TLSMode: "none",
@@ -47,21 +48,21 @@ func newBrowseFixture(t *testing.T, engineName, connectURL string, readOnly bool
 		},
 	})
 	ctx := context.Background()
-	require.NoError(t, projectrepo.New(clock).Create(ctx, db.Runner(), &project.Project{
+	require.NoError(t, projectrepo.New(clock, db.Runner()).Create(ctx, &project.Project{
 		ID: tProjectID, Name: "shop", TeamID: "default",
 	}))
-	require.NoError(t, networkrepo.New(clock).Create(ctx, db.Runner(), &network.Network{
+	require.NoError(t, networkrepo.New(clock, db.Runner()).Create(ctx, &network.Network{
 		ID: "01JD0NET000000000000000001", ProjectID: tProjectID, Name: "default",
 	}))
 	secName := DBCredentialSecretName(tDatabaseName)
 	ct, err := cipher.Seal([]byte(connectURL))
 	require.NoError(t, err)
-	require.NoError(t, secretrepo.New(clock).Upsert(ctx, db.Runner(), &secret.Secret{
+	require.NoError(t, secretrepo.New(clock, db.Runner()).Upsert(ctx, &secret.Secret{
 		ID: "01JD0SEC000000000000000001", ProjectID: tProjectID, Name: secName,
 		Ciphertext: ct, Fingerprint: material.Fingerprint([]byte(connectURL)),
 	}))
 	// database 行（databaseNameOf 的点查目标——凭证 Secret 名的输入）。
-	require.NoError(t, dbrepo.New(clock).Create(ctx, db.Runner(), &database.Database{
+	require.NoError(t, dbrepo.New(clock, db.Runner()).Create(ctx, &database.Database{
 		ID: tDatabaseID, ProjectID: tProjectID, Name: tDatabaseName,
 		Engine: engineName, CredentialsRef: secName,
 		BackupIntervalSecs: 86400, BackupRetentionSecs: 604800,
@@ -72,7 +73,7 @@ func newBrowseFixture(t *testing.T, engineName, connectURL string, readOnly bool
 		CreatedAt: clock.Now().Format(time.RFC3339),
 		ExpiresAt: clock.Now().Add(BrowseHardTTL).Format(time.RFC3339),
 	}
-	require.NoError(t, e.browseRepo.Create(ctx, db.Runner(), row))
+	require.NoError(t, e.repos.Browse.Create(ctx, row))
 	return e, rt, row, clock
 }
 
@@ -190,7 +191,7 @@ func TestBrowseHardTTLReclaim(t *testing.T) {
 	clock.Advance(BrowseHardTTL + time.Minute)
 	e.browseStep(ctx)
 
-	rows, err := e.browseRepo.List(ctx, e.db.Runner())
+	rows, err := e.repos.Browse.List(ctx)
 	require.NoError(t, err)
 	assert.Empty(t, rows, "expired session row must be deleted")
 	removed := rt.removedSnapshot()
@@ -210,14 +211,14 @@ func TestBrowseIdleReclaim(t *testing.T) {
 	require.True(t, ok)
 	clock.Advance(browseIdleTTLForTest() / 2)
 	e.browseStep(ctx)
-	rows, err := e.browseRepo.List(ctx, e.db.Runner())
+	rows, err := e.repos.Browse.List(ctx)
 	require.NoError(t, err)
 	assert.Len(t, rows, 1, "touched session stays within the idle window")
 
 	// 全窗无接触 → 回收。
 	clock.Advance(browseIdleTTLForTest() + time.Minute)
 	e.browseStep(ctx)
-	rows, err = e.browseRepo.List(ctx, e.db.Runner())
+	rows, err = e.repos.Browse.List(ctx)
 	require.NoError(t, err)
 	assert.Empty(t, rows, "idle session must be reclaimed")
 }

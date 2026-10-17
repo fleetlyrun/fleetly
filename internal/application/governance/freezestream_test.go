@@ -70,11 +70,10 @@ func callStream(t *testing.T, g *FreezeGuard, method string, frames ...proto.Mes
 func TestFreezeStreamFirstFrameEnforcement(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()
-	run := db.Runner()
 
 	const pidA = "01JD0PROJA0000000000000000"
-	require.NoError(t, projectrepo.New(clock).Create(ctx, run, &project.Project{ID: pidA, TeamID: tTeamA, Name: "alpha"}))
-	freezes := freezerepo.New(clock)
+	require.NoError(t, projectrepo.New(clock, db.Runner()).Create(ctx, &project.Project{ID: pidA, TeamID: tTeamA, Name: "alpha"}))
+	freezes := freezerepo.New(clock, db.Runner())
 	g := testGuard(db, clock)
 
 	const uploadMethod = "/fleetly.delivery.v1.BuildsService/UploadSource"
@@ -91,7 +90,7 @@ func TestFreezeStreamFirstFrameEnforcement(t *testing.T) {
 	assert.Equal(t, 3, reads)
 
 	// Team A 冻结：首帧 Recv 即拒（handler 零读取——错误面在首帧呈现）。
-	require.NoError(t, freezes.Create(ctx, run, &freeze.Freeze{ID: "01JDQFRZZ0000000000000000Z", TeamID: tTeamA, Reason: "upgrade window"}))
+	require.NoError(t, freezes.Create(ctx, &freeze.Freeze{ID: "01JDQFRZZ0000000000000000Z", TeamID: tTeamA, Reason: "upgrade window"}))
 	reads, err = callStream(t, g, uploadMethod, meta(pidA), chunk, chunk)
 	wantFrozen(t, err, "upgrade window")
 	assert.Equal(t, 0, reads)

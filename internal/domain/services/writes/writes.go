@@ -36,7 +36,6 @@ import (
 	"errors"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
-	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/outbox"
 )
 
@@ -76,9 +75,9 @@ type Repos struct {
 // Sequence 在调用方事务/运行器内按声明序扇出全部事实。facts 惰性
 // 求值（每条在其落库时点求值——载荷/指纹可依赖事务内写的返回行）；
 // 任一行失败即返回，后续事实零求值零执行（调用方事务整单回滚）。
-func Sequence(ctx context.Context, run state.Runner, repos Repos, facts ...func() FactRow) error {
+func Sequence(ctx context.Context, repos Repos, facts ...func() FactRow) error {
 	for _, fact := range facts {
-		if err := emit(ctx, run, repos, fact()); err != nil {
+		if err := emit(ctx, repos, fact()); err != nil {
 			return err
 		}
 	}
@@ -89,19 +88,19 @@ func Sequence(ctx context.Context, run state.Runner, repos Repos, facts ...func(
 // 的事实）：扇出与 flag 语义同 Sequence，run 通常是独立执行面
 // （*sql.DB）。错误返回由调用方自记（kernel 不持有日志——domain 零
 // 系统副作用）。
-func Emit(ctx context.Context, run state.Runner, repos Repos, f FactRow) error {
-	return emit(ctx, run, repos, f)
+func Emit(ctx context.Context, repos Repos, f FactRow) error {
+	return emit(ctx, repos, f)
 }
 
 // emit 扇出一条事实：默认双真——outbox 行（资源轴 TeamID）居前、
 // audit 行（操作者轴，ctx 铸 Team）殿后；LedgerOnly 只落 audit、
 // StreamOnly 只落 outbox。双旗同立拒绝（什么都不发射 = 静默丢事实）。
-func emit(ctx context.Context, run state.Runner, repos Repos, f FactRow) error {
+func emit(ctx context.Context, repos Repos, f FactRow) error {
 	if f.LedgerOnly && f.StreamOnly {
 		return errBothFlags
 	}
 	if !f.LedgerOnly {
-		if _, err := repos.Outbox.Append(ctx, run, f.TeamID, f.Name, f.Aggregate, f.ID, f.Payload); err != nil {
+		if _, err := repos.Outbox.Append(ctx, f.TeamID, f.Name, f.Aggregate, f.ID, f.Payload); err != nil {
 			return err
 		}
 	}
@@ -121,7 +120,7 @@ func emit(ctx context.Context, run state.Runner, repos Repos, f FactRow) error {
 		if entry.Resource == "" {
 			entry.Resource = f.Aggregate + "/" + f.ID // 资源锚缺省 = 聚合/行 ID
 		}
-		if err := repos.Audits.Append(ctx, run, entry); err != nil {
+		if err := repos.Audits.Append(ctx, entry); err != nil {
 			return err
 		}
 	}

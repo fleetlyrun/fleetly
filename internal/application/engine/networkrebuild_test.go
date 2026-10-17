@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -29,7 +30,7 @@ import (
 // seedDefaultNetworkRow 落 networks 表行（重建受理面）。
 func seedDefaultNetworkRow(t *testing.T, e *Engine) {
 	t.Helper()
-	require.NoError(t, networkrepo.New(e.db.Clock()).Create(context.Background(), e.db.Runner(),
+	require.NoError(t, networkrepo.New(e.db.Clock(), e.db.Runner()).Create(context.Background(),
 		&network.Network{ID: "fx-0001", ProjectID: tProjectID, Name: "default"}))
 }
 
@@ -64,16 +65,16 @@ func TestRebuildNetworkAttributionAxes(t *testing.T) {
 	db, clock := statetest.New(t)
 	rt := newFakeRuntime()
 	// 受管 reconciler 在册（fakeRegistry 的命名空间 = fleetly/system）。
-	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Registry: newFakeRegistry(), Logger: discardLogger()}, Options{})
+	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Registry: newFakeRegistry(), Logger: discardLogger()}, Options{})
 	t.Cleanup(func() { _ = e.Stop(context.Background()) })
-	require.NoError(t, projectrepo.New(clock).Create(context.Background(), db.Runner(), &project.Project{
+	require.NoError(t, projectrepo.New(clock, db.Runner()).Create(context.Background(), &project.Project{
 		ID: tProjectID, Name: "shop", TeamID: "default",
 	}))
 	seedDefaultNetworkRow(t, e)
 
 	// driving Task 行（Task 轴附着的期望锚；spec 冻结体最小形态）。
 	taskID := "fx-0002"
-	require.NoError(t, taskrepo.New(clock).Create(context.Background(), db.Runner(), &task.Task{
+	require.NoError(t, taskrepo.New(clock, db.Runner()).Create(context.Background(), &task.Task{
 		ID: taskID, ProjectID: tProjectID, Name: "migrate", State: task.StateActive,
 		Spec: []byte(`{"schema_version":1,"task":{"id":"` + taskID + `","project":"` + tProjectID + `"},` +
 			`"process":{"name":"run","image":"busybox:1.37"},"desired_concurrency":1,"form":"oneshot"}`),
@@ -296,15 +297,15 @@ func TestRebuildNetworkSerializesWithDatabaseTeardown(t *testing.T) {
 func TestRebuildNetworkRollbackReattachesDetachedCarriers(t *testing.T) {
 	db, clock := statetest.New(t)
 	rt := newFakeRuntime()
-	e := New(Deps{DB: db, Repos: testRepos(db), Runtime: rt, Registry: newFakeRegistry(), Logger: discardLogger()}, Options{})
+	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Registry: newFakeRegistry(), Logger: discardLogger()}, Options{})
 	t.Cleanup(func() { _ = e.Stop(context.Background()) })
-	require.NoError(t, projectrepo.New(clock).Create(context.Background(), db.Runner(), &project.Project{
+	require.NoError(t, projectrepo.New(clock, db.Runner()).Create(context.Background(), &project.Project{
 		ID: tProjectID, Name: "shop", TeamID: "default",
 	}))
 	seedDefaultNetworkRow(t, e)
 
 	taskID := "fx-0004"
-	require.NoError(t, taskrepo.New(clock).Create(context.Background(), db.Runner(), &task.Task{
+	require.NoError(t, taskrepo.New(clock, db.Runner()).Create(context.Background(), &task.Task{
 		ID: taskID, ProjectID: tProjectID, Name: "migrate", State: task.StateActive,
 		Spec: []byte(`{"schema_version":1,"task":{"id":"` + taskID + `","project":"` + tProjectID + `"},` +
 			`"process":{"name":"run","image":"busybox:1.37"},"desired_concurrency":1,"form":"oneshot"}`),

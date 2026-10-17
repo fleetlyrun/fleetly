@@ -13,7 +13,7 @@ import (
 // 拾取全部待驱动行 → 按 App 分组 → 组内驱动至多一条（在途优先，无在途
 // 则最新 queued——latest-wins 已在 admission 合并，残余并发窗口在此收口）。
 func (e *Engine) step(ctx context.Context) {
-	driving, err := e.deployments.ListDriving(ctx, e.db.Runner())
+	driving, err := e.repos.Deployments.ListDriving(ctx)
 	if err != nil {
 		e.log.Error("engine step: list driving", "err", err)
 		return
@@ -136,7 +136,7 @@ func (e *Engine) prepare(ctx context.Context, d *deployment.Deployment) (*deploy
 	//（ADR-0013 附录 A.3——受理面已拒一次，此处是部署链内的第二道）。
 	digests, derr := e.buildDigests(ctx, d.ToRevision)
 	if derr == nil && (digests != nil || spec.GetBuild() == nil) {
-		peers, perr := e.resolvePeerRefs(ctx, e.db.Runner(), spec.GetApp().GetProject(), spec, false)
+		peers, perr := e.resolvePeerRefs(ctx, e.repos, spec.GetApp().GetProject(), spec, false)
 		if perr == nil {
 			_, _, perr = Project(spec, team, appRow.Name, digests, peers, nil)
 		}
@@ -327,7 +327,7 @@ func (e *Engine) rollback(ctx context.Context, d *deployment.Deployment) (*deplo
 	if !bg {
 		if deadline == nil {
 			var err error
-			gen, err = e.deployments.NextGeneration(ctx, e.db.Runner(), d.AppID)
+			gen, err = e.repos.Deployments.NextGeneration(ctx, d.AppID)
 			if err != nil {
 				return e.rollbackFailed(ctx, d, "next generation: "+err.Error())
 			}

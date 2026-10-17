@@ -7,7 +7,7 @@ package apitest_test
 // KEY constraint failed（staging 真机实咬，运维手工 sqlite 清表解围）。
 
 import (
-	"database/sql"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -101,9 +101,9 @@ func TestDeleteAppWithHookDeliveriesCascades(t *testing.T) {
 
 	// 植两行去重锚（webhook 重投的行形态；不经接收链——本测试钉的是
 	// tombstone 事务的级联，不是 webhook 校验）。
-	err = h.DB.Tx(ctx, func(tx *sql.Tx) error {
+	err = h.DB.Tx(ctx, func(run state.Runner) error {
 		for _, d := range []string{"d-1", "d-2"} {
-			if _, txErr := tx.ExecContext(ctx,
+			if _, txErr := run.ExecContext(ctx,
 				`INSERT INTO hook_deliveries (app_id, delivery, received_at) VALUES (?, ?, '2026-10-17T00:00:00Z')`,
 				appID, d); txErr != nil {
 				return txErr

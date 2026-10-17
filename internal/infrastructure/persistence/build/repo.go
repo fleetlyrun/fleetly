@@ -16,17 +16,18 @@ import (
 // repo 是 domain build.Repo 的 SQLite 实现。
 type repo struct {
 	clock state.Clock
+	run   state.Runner
 }
 
 // New 构造 repo（直接返回接口——消费面只见 domain build.Repo）。
-func New(clock state.Clock) build.Repo { return &repo{clock: clock} }
+func New(clock state.Clock, run state.Runner) build.Repo { return &repo{clock: clock, run: run} }
 
 // Create 落一行。ID 空则装配 "<app id>-<seq>"；Seq 零值则事务内取 MAX+1
 // （ADR-0070）。
-func (r *repo) Create(ctx context.Context, run state.Runner, b *build.Build) error {
+func (r *repo) Create(ctx context.Context, b *build.Build) error {
 	now := state.FormatTime(r.clock.Now())
 	b.CreatedAt, b.UpdatedAt = now, now
-	seq, err := persistence.NextSeq(ctx, run, "builds")
+	seq, err := persistence.NextSeq(ctx, r.run, "builds")
 	if err != nil {
 		return err
 	}
@@ -34,7 +35,7 @@ func (r *repo) Create(ctx context.Context, run state.Runner, b *build.Build) err
 	if b.ID == "" {
 		b.ID = entityid.Derive(b.AppID, "b", seq)
 	}
-	_, err = run.ExecContext(ctx, `
+	_, err = r.run.ExecContext(ctx, `
 		INSERT INTO builds (id, seq, app_id, revision_id, state, digest, repo, error, created_at, updated_at, finished_at)
 		VALUES (?, ?, ?, ?, ?, '', ?, '', ?, ?, '')`,
 		b.ID, b.Seq, b.AppID, b.RevisionID, string(b.State), b.Repo, b.CreatedAt, b.UpdatedAt)
@@ -42,14 +43,14 @@ func (r *repo) Create(ctx context.Context, run state.Runner, b *build.Build) err
 }
 
 // Get 按 ID 直读。
-func (r *repo) Get(ctx context.Context, run state.Runner, id string) (*build.Build, error) {
-	row := run.QueryRowContext(ctx, selectCols+" WHERE id = ?", id)
+func (r *repo) Get(ctx context.Context, id string) (*build.Build, error) {
+	row := r.run.QueryRowContext(ctx, selectCols+" WHERE id = ?", id)
 	return scanBuild(row.Scan)
 }
 
 // ListByApp 返回 App 全部 Build（新→旧 + after 游标；ADR-0026 after_* +
 // limit 惯例——游标 = seq 创建序）。limit<=0 或 >200 回落/钳制缺省 50。
-func (r *repo) ListByApp(ctx context.Context, run state.Runner, appID string, afterSeq int64, limit int) ([]build.Build, error) {
+func (r *repo) ListByApp(ctx context.Context, appID string, afterSeq int64, limit int) ([]build.Build, error) {
 	limit = persistence.ClampLimit(limit, defaultListLimit, maxListLimit)
 	q := selectCols + " WHERE app_id = ?"
 	args := []any{appID}
@@ -59,7 +60,7 @@ func (r *repo) ListByApp(ctx context.Context, run state.Runner, appID string, af
 	}
 	q += " ORDER BY seq DESC LIMIT ?"
 	args = append(args, limit)
-	rows, err := run.QueryContext(ctx, q, args...)
+	rows, err := r.run.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -77,8 +78,8 @@ func (r *repo) ListByApp(ctx context.Context, run state.Runner, appID string, af
 
 // ListByRevision 返回 Revision 的全部 Build 行（新→旧；Revision 级构建
 // 一次，历史行应只有一条——含终态供部署驱动判定复用或失败）。
-func (r *repo) ListByRevision(ctx context.Context, run state.Runner, revisionID string) ([]build.Build, error) {
-	rows, err := run.QueryContext(ctx,
+func (r *repo) ListByRevision(ctx context.Context, revisionID string) ([]build.Build, error) {
+	rows, err := r.run.QueryContext(ctx,
 		selectCols+" WHERE revision_id = ? ORDER BY seq DESC", revisionID)
 	if err != nil {
 		return nil, err
@@ -96,8 +97,8 @@ func (r *repo) ListByRevision(ctx context.Context, run state.Runner, revisionID 
 }
 
 // ListActive 返回全部活跃 Build（构建循环拾取面）。
-func (r *repo) ListActive(ctx context.Context, run state.Runner) ([]build.Build, error) {
-	rows, err := run.QueryContext(ctx,
+func (r *repo) ListActive(ctx context.Context) ([]build.Build, error) {
+	rows, err := r.run.QueryContext(ctx,
 		selectCols+" WHERE state IN (?, ?) ORDER BY seq", string(build.StateQueued), string(build.StateBuilding))
 	if err != nil {
 		return nil, err
@@ -115,8 +116,8 @@ func (r *repo) ListActive(ctx context.Context, run state.Runner) ([]build.Build,
 }
 
 // Transit 是状态 CAS（同 deployment.Transit 口径；mut 补充 digest/error）。
-func (r *repo) Transit(ctx context.Context, run state.Runner, id string, from []build.State, to build.State, mut func(*build.Build)) error {
-	cur, err := r.Get(ctx, run, id)
+func (r *repo) Transit(ctx context.Context, id string, from []build.State, to build.State, mut func(*build.Build)) error {
+	cur, err := r.Get(ctx, id)
 	if err != nil {
 		return err
 	}
@@ -132,7 +133,7 @@ func (r *repo) Transit(ctx context.Context, run state.Runner, id string, from []
 	if to.Terminal() && cur.FinishedAt == "" {
 		cur.FinishedAt = cur.UpdatedAt
 	}
-	res, err := run.ExecContext(ctx, `
+	res, err := r.run.ExecContext(ctx, `
 		UPDATE builds SET state = ?, digest = ?, error = ?, updated_at = ?, finished_at = ?
 		`+persistence.TransitWhere,
 		string(cur.State), cur.Digest, cur.Error, cur.UpdatedAt, cur.FinishedAt,

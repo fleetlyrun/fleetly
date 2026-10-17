@@ -134,11 +134,11 @@ func New(repos Repos) *Anchor {
 }
 
 // resolver 是一跳到 projectID 的链（KindTeam 除外——直通 team）。
-type resolver func(a *Anchor, ctx context.Context, r state.Runner, ref string) (string, error)
+type resolver func(a *Anchor, ctx context.Context, ref string) (string, error)
 
 // resolvers 是 Kind → 解析链的方法表（图的事实单源；新资源 = 加一行）。
 var resolvers = map[Kind]resolver{
-	KindProject: func(a *Anchor, ctx context.Context, r state.Runner, ref string) (string, error) {
+	KindProject: func(a *Anchor, ctx context.Context, ref string) (string, error) {
 		return ref, nil // project_id 直达终点腿
 	},
 	KindApp:        (*Anchor).appProject,
@@ -162,7 +162,7 @@ var resolvers = map[Kind]resolver{
 // state.ErrNotFound 成立）；存储故障原样上抛（消费面各自 fail-closed）。
 // 空 TeamID（Team 轴外的行，ADR-0028 后不可达防御）原样返回，消费面
 // 自行处置。
-func (a *Anchor) TeamOf(ctx context.Context, r state.Runner, kind Kind, ref string) (string, error) {
+func (a *Anchor) TeamOf(ctx context.Context, kind Kind, ref string) (string, error) {
 	if kind == KindTeam {
 		return ref, nil
 	}
@@ -170,21 +170,21 @@ func (a *Anchor) TeamOf(ctx context.Context, r state.Runner, kind Kind, ref stri
 	if !ok {
 		return "", fmt.Errorf("anchor: no resolution chain registered for kind %d", kind)
 	}
-	projectID, err := resolve(a, ctx, r, ref)
+	projectID, err := resolve(a, ctx, ref)
 	if err != nil {
 		return "", err
 	}
-	return a.TeamOfProjectID(ctx, r, projectID)
+	return a.TeamOfProjectID(ctx, projectID)
 }
 
 // TeamOfProjectID 是终点腿：projectID → Project 行 → TeamID（已持
 // projectID/挂靠行的消费面共用；projects.Get 对 tombstone 可见——
 // "tombstone 是事实不是秘密"，ADR-0023/0035）。
-func (a *Anchor) TeamOfProjectID(ctx context.Context, r state.Runner, projectID string) (string, error) {
+func (a *Anchor) TeamOfProjectID(ctx context.Context, projectID string) (string, error) {
 	if projectID == "" {
 		return "", notFound("project", projectID)
 	}
-	p, err := a.projects.Get(ctx, r, projectID)
+	p, err := a.projects.Get(ctx, projectID)
 	if err != nil {
 		if errors.Is(err, state.ErrNotFound) {
 			return "", notFound("project", projectID)
@@ -196,8 +196,8 @@ func (a *Anchor) TeamOfProjectID(ctx context.Context, r state.Runner, projectID 
 
 // ---- 各 Kind 的解析链（链上每跳 NotFound 带该跳资源名） ----
 
-func (a *Anchor) appProject(ctx context.Context, r state.Runner, ref string) (string, error) {
-	row, err := a.apps.Get(ctx, r, ref)
+func (a *Anchor) appProject(ctx context.Context, ref string) (string, error) {
+	row, err := a.apps.Get(ctx, ref)
 	if err != nil {
 		if errors.Is(err, state.ErrNotFound) {
 			return "", notFound("app", ref)
@@ -207,8 +207,8 @@ func (a *Anchor) appProject(ctx context.Context, r state.Runner, ref string) (st
 	return row.ProjectID, nil
 }
 
-func (a *Anchor) anyAppProject(ctx context.Context, r state.Runner, ref string) (string, error) {
-	row, err := a.apps.GetAnyByID(ctx, r, ref)
+func (a *Anchor) anyAppProject(ctx context.Context, ref string) (string, error) {
+	row, err := a.apps.GetAnyByID(ctx, ref)
 	if err != nil {
 		if errors.Is(err, state.ErrNotFound) {
 			return "", notFound("app", ref)
@@ -218,8 +218,8 @@ func (a *Anchor) anyAppProject(ctx context.Context, r state.Runner, ref string) 
 	return row.ProjectID, nil
 }
 
-func (a *Anchor) taskProject(ctx context.Context, r state.Runner, ref string) (string, error) {
-	row, err := a.tasks.Get(ctx, r, ref)
+func (a *Anchor) taskProject(ctx context.Context, ref string) (string, error) {
+	row, err := a.tasks.Get(ctx, ref)
 	if err != nil {
 		if errors.Is(err, state.ErrNotFound) {
 			return "", notFound("task", ref)
@@ -229,8 +229,8 @@ func (a *Anchor) taskProject(ctx context.Context, r state.Runner, ref string) (s
 	return row.ProjectID, nil
 }
 
-func (a *Anchor) scheduleProject(ctx context.Context, r state.Runner, ref string) (string, error) {
-	row, err := a.schedules.Get(ctx, r, ref)
+func (a *Anchor) scheduleProject(ctx context.Context, ref string) (string, error) {
+	row, err := a.schedules.Get(ctx, ref)
 	if err != nil {
 		if errors.Is(err, state.ErrNotFound) {
 			return "", notFound("schedule", ref)
@@ -240,8 +240,8 @@ func (a *Anchor) scheduleProject(ctx context.Context, r state.Runner, ref string
 	return row.ProjectID, nil
 }
 
-func (a *Anchor) networkProject(ctx context.Context, r state.Runner, ref string) (string, error) {
-	row, err := a.networks.GetByID(ctx, r, ref)
+func (a *Anchor) networkProject(ctx context.Context, ref string) (string, error) {
+	row, err := a.networks.GetByID(ctx, ref)
 	if err != nil {
 		if errors.Is(err, state.ErrNotFound) {
 			return "", notFound("network", ref)
@@ -251,19 +251,19 @@ func (a *Anchor) networkProject(ctx context.Context, r state.Runner, ref string)
 	return row.ProjectID, nil
 }
 
-func (a *Anchor) peerProject(ctx context.Context, r state.Runner, ref string) (string, error) {
-	p, err := a.peers.Get(ctx, r, ref)
+func (a *Anchor) peerProject(ctx context.Context, ref string) (string, error) {
+	p, err := a.peers.Get(ctx, ref)
 	if err != nil {
 		if errors.Is(err, state.ErrNotFound) {
 			return "", notFound("network peer", ref)
 		}
 		return "", err
 	}
-	return a.networkProject(ctx, r, p.NetworkID)
+	return a.networkProject(ctx, p.NetworkID)
 }
 
-func (a *Anchor) routeProject(ctx context.Context, r state.Runner, ref string) (string, error) {
-	row, err := a.routes.Get(ctx, r, ref)
+func (a *Anchor) routeProject(ctx context.Context, ref string) (string, error) {
+	row, err := a.routes.Get(ctx, ref)
 	if err != nil {
 		if errors.Is(err, state.ErrNotFound) {
 			return "", notFound("route", ref)
@@ -273,8 +273,8 @@ func (a *Anchor) routeProject(ctx context.Context, r state.Runner, ref string) (
 	return row.ProjectID, nil
 }
 
-func (a *Anchor) databaseProject(ctx context.Context, r state.Runner, ref string) (string, error) {
-	row, err := a.databases.Get(ctx, r, ref)
+func (a *Anchor) databaseProject(ctx context.Context, ref string) (string, error) {
+	row, err := a.databases.Get(ctx, ref)
 	if err != nil {
 		if errors.Is(err, state.ErrNotFound) {
 			return "", notFound("database", ref)
@@ -284,8 +284,8 @@ func (a *Anchor) databaseProject(ctx context.Context, r state.Runner, ref string
 	return row.ProjectID, nil
 }
 
-func (a *Anchor) volumeProject(ctx context.Context, r state.Runner, ref string) (string, error) {
-	row, err := a.volumes.Get(ctx, r, ref)
+func (a *Anchor) volumeProject(ctx context.Context, ref string) (string, error) {
+	row, err := a.volumes.Get(ctx, ref)
 	if err != nil {
 		if errors.Is(err, state.ErrNotFound) {
 			return "", notFound("volume", ref)
@@ -295,8 +295,8 @@ func (a *Anchor) volumeProject(ctx context.Context, r state.Runner, ref string) 
 	return row.ProjectID, nil
 }
 
-func (a *Anchor) runProject(ctx context.Context, r state.Runner, ref string) (string, error) {
-	row, err := a.runs.Get(ctx, r, ref)
+func (a *Anchor) runProject(ctx context.Context, ref string) (string, error) {
+	row, err := a.runs.Get(ctx, ref)
 	if err != nil {
 		if errors.Is(err, state.ErrNotFound) {
 			return "", notFound("run", ref)
@@ -306,8 +306,8 @@ func (a *Anchor) runProject(ctx context.Context, r state.Runner, ref string) (st
 	return row.ProjectID, nil
 }
 
-func (a *Anchor) deploymentProject(ctx context.Context, r state.Runner, ref string) (string, error) {
-	d, err := a.deployments.Get(ctx, r, ref)
+func (a *Anchor) deploymentProject(ctx context.Context, ref string) (string, error) {
+	d, err := a.deployments.Get(ctx, ref)
 	if err != nil {
 		if errors.Is(err, state.ErrNotFound) {
 			return "", notFound("deployment", ref)
@@ -316,41 +316,41 @@ func (a *Anchor) deploymentProject(ctx context.Context, r state.Runner, ref stri
 	}
 	// 审计型读面口径（ADR-0035）：App 锚走 Any 档——App 删除后的部署/
 	// 构建历史仍须可授权（归属是已删行上的事实）。
-	return a.anyAppProject(ctx, r, d.AppID)
+	return a.anyAppProject(ctx, d.AppID)
 }
 
-func (a *Anchor) buildProject(ctx context.Context, r state.Runner, ref string) (string, error) {
-	b, err := a.builds.Get(ctx, r, ref)
+func (a *Anchor) buildProject(ctx context.Context, ref string) (string, error) {
+	b, err := a.builds.Get(ctx, ref)
 	if err != nil {
 		if errors.Is(err, state.ErrNotFound) {
 			return "", notFound("build", ref)
 		}
 		return "", err
 	}
-	return a.anyAppProject(ctx, r, b.AppID)
+	return a.anyAppProject(ctx, b.AppID)
 }
 
-func (a *Anchor) gitHubAppProject(ctx context.Context, r state.Runner, ref string) (string, error) {
-	row, err := a.ghApps.Get(ctx, r, ref)
+func (a *Anchor) gitHubAppProject(ctx context.Context, ref string) (string, error) {
+	row, err := a.ghApps.Get(ctx, ref)
 	if err != nil {
 		if errors.Is(err, state.ErrNotFound) {
 			return "", notFound("github app", ref)
 		}
 		return "", err
 	}
-	return a.TeamOfProjectID(ctx, r, row.ProjectID)
+	return a.TeamOfProjectID(ctx, row.ProjectID)
 }
 
-func (a *Anchor) hookTokenProject(ctx context.Context, r state.Runner, ref string) (string, error) {
+func (a *Anchor) hookTokenProject(ctx context.Context, ref string) (string, error) {
 	if identity.TokenKind(ref) != "hook" {
 		return "", notFound("hook", ref) // 非法凭证：接收面自会 401（freeze 放行口径不变）
 	}
-	h, err := a.hooks.GetByTokenSHA256(ctx, r, identity.HashToken(ref))
+	h, err := a.hooks.GetByTokenSHA256(ctx, identity.HashToken(ref))
 	if err != nil {
 		if errors.Is(err, state.ErrNotFound) {
 			return "", notFound("hook", ref)
 		}
 		return "", err
 	}
-	return a.appProject(ctx, r, h.AppID)
+	return a.appProject(ctx, h.AppID)
 }
