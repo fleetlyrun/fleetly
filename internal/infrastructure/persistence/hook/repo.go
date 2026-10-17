@@ -93,10 +93,15 @@ func (r *repo) RotateToken(ctx context.Context, run state.Runner, appID, sha, pr
 	return nil
 }
 
-// DeleteByApp 随 App tombstone 级联移除 hook 行（与 tombstone 同事务）：
-// 孤儿 hook 会让配置面对已删 App 继续成功、接收面却按活跃行拒绝——两面
-// 语义分裂（ADR-0072 批真机咬出：删除 App 后 rotate 仍成功、webhook 401）。
+// DeleteByApp 随 App tombstone 级联移除整个聚合（与 tombstone 同事务）：
+// 去重行先清（FK hook_deliveries.app_id REFERENCES app_hooks，留着会让
+// 删除本身撞 FOREIGN KEY constraint failed——FB-1），hook 行后清。孤儿
+// hook 会让配置面对已删 App 继续成功、接收面却按活跃行拒绝——两面语义
+// 分裂（ADR-0072 批真机咬出：删除 App 后 rotate 仍成功、webhook 401）。
 func (r *repo) DeleteByApp(ctx context.Context, run state.Runner, appID string) error {
+	if _, err := run.ExecContext(ctx, `DELETE FROM hook_deliveries WHERE app_id = ?`, appID); err != nil {
+		return err
+	}
 	_, err := run.ExecContext(ctx, `DELETE FROM app_hooks WHERE app_id = ?`, appID)
 	return err
 }

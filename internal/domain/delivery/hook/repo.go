@@ -24,10 +24,12 @@ type Repo interface {
 	// RotateToken 双换 Token 材料（URL token 与 webhook secret 同源；旧行
 	// 即刻失效——查询键已换）。
 	RotateToken(ctx context.Context, run state.Runner, appID, sha, prefix string, ciphertext []byte) error
-	// DeleteByApp 随 App tombstone 级联移除 hook 行（与 tombstone 同事务）：
-	// 孤儿 hook 会让配置面对已删 App 继续成功、接收面却按活跃行拒绝——
-	// 两面语义分裂（ADR-0072 批真机咬出：删除 App 后 rotate 仍成功、
-	// webhook 401）。
+	// DeleteByApp 随 App tombstone 级联移除整个聚合（hook 行 + 重投去重
+	// 行，与 tombstone 同事务）：孤儿 hook 会让配置面对已删 App 继续成功、
+	// 接收面却按活跃行拒绝——两面语义分裂（ADR-0072 批真机咬出：删除 App
+	// 后 rotate 仍成功、webhook 401）。去重行不清会撞 FK（hook_deliveries
+	// REFERENCES app_hooks）令删除本身失败（FB-1：配置过 GitHook 的 App
+	// 删除报 FOREIGN KEY constraint failed）。
 	DeleteByApp(ctx context.Context, run state.Runner, appID string) error
 	// ListAll 读全表行：离线维护面（KEK 重封）专用（含 webhook secret
 	// 信封列，禁止回显面消费）。

@@ -204,3 +204,46 @@ func TestRecordDeliveryDedup(t *testing.T) {
 		t.Fatalf("delivery row past the retention window must be pruned")
 	}
 }
+
+// TestDeleteByAppCascadesDeliveries（FB-1 回归）：hook_deliveries.app_id
+// REFERENCES app_hooks 无 ON DELETE CASCADE——只删 hook 行会撞 FOREIGN
+// KEY constraint failed（配置过 GitHook 的 App 删除实咬）。聚合级联：
+// 去重行先清、hook 行后清，App tombstone 事务得以整体成功。
+func TestDeleteByAppCascadesDeliveries(t *testing.T) {
+	db, clock := statetest.New(t)
+	seedApp(t, db)
+	ctx := context.Background()
+	repo := New(clock)
+	if err := repo.Create(ctx, db.Runner(), &hook.Hook{
+		AppID: "a1", Repo: "https://example.com/repo.git", TokenSHA256: "sha-a", SecretCiphertext: []byte("ct"),
+	}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	for _, d := range []string{"d-1", "d-2"} {
+		if _, err := repo.RecordDelivery(ctx, db.Runner(), "a1", d); err != nil {
+			t.Fatalf("record %s: %v", d, err)
+		}
+	}
+
+	if err := repo.DeleteByApp(ctx, db.Runner(), "a1"); err != nil {
+		t.Fatalf("delete by app: %v", err)
+	}
+	if _, err := repo.Get(ctx, db.Runner(), "a1"); err != state.ErrNotFound {
+		t.Fatalf("hook row must be gone, got %v", err)
+	}
+	var deliveries int
+	if err := db.Runner().QueryRowContext(ctx,
+		`SELECT count(*) FROM hook_deliveries WHERE app_id = 'a1'`).Scan(&deliveries); err != nil {
+		t.Fatalf("count deliveries: %v", err)
+	}
+	if deliveries != 0 {
+		t.Fatalf("delivery dedup rows must be cascaded away, got %d", deliveries)
+	}
+
+	// 聚合既净：同 App 重新首配照常铸造（删除-重配环全通）。
+	if err := repo.Create(ctx, db.Runner(), &hook.Hook{
+		AppID: "a1", Repo: "https://example.com/repo.git", TokenSHA256: "sha-b", SecretCiphertext: []byte("ct"),
+	}); err != nil {
+		t.Fatalf("recreate after delete: %v", err)
+	}
+}
