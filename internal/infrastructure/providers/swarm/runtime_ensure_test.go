@@ -190,6 +190,82 @@ func TestPollTasksListsManagedServicesPerService(t *testing.T) {
 	assert.NotContains(t, logs.String(), "outsider")
 }
 
+// TestPollTasksAggregatesPerWorkload（staging 2026-10-16 观测风暴批）：非
+// Task 域逐 workload 聚合单发——paused start-first 残留（旧代 running@3 +
+// 新代 failed@4）只出一条 failed@4（spec 侧代次圈定），旧代状态不得入槽；
+// Task 域（labelTask）旁路聚合，one-shot 终态逐 task 可见（ADR-0025 决策 2）。
+func TestPollTasksAggregatesPerWorkload(t *testing.T) {
+	d := newFakeDaemon()
+	svc := swarm.Service{ID: "srv-m", Spec: swarm.ServiceSpec{
+		Annotations: swarm.Annotations{Name: "fleetly-p-app-web", Labels: map[string]string{
+			labelManaged:    "true",
+			labelWorkload:   "wl_app",
+			labelGeneration: "4",
+		}},
+	}}
+	d.store[svc.Spec.Name] = svc
+	taskLabelsFor := func(wl, gen, task string) map[string]string {
+		m := map[string]string{
+			labelManaged:    "true",
+			labelWorkload:   wl,
+			labelGeneration: gen,
+			labelNodeID:     "node-1",
+		}
+		if task != "" {
+			m[labelTask] = task
+		}
+		return m
+	}
+	d.tasks["srv-m"] = []swarm.Task{
+		{
+			ID: "task-old", ServiceID: "srv-m", DesiredState: swarm.TaskStateRunning,
+			Status: swarm.TaskStatus{State: swarm.TaskStateRunning},
+			Spec:   swarm.TaskSpec{ContainerSpec: &swarm.ContainerSpec{Labels: taskLabelsFor("wl_app", "3", "")}},
+		},
+		{
+			ID: "task-new", ServiceID: "srv-m", DesiredState: swarm.TaskStateRunning,
+			Status: swarm.TaskStatus{State: swarm.TaskStateFailed, Err: "start failure"},
+			Spec:   swarm.TaskSpec{ContainerSpec: &swarm.ContainerSpec{Labels: taskLabelsFor("wl_app", "4", "")}},
+		},
+	}
+	// Task 域服务：one-shot 终态任务（completed）——聚合旁路面。
+	runSvc := swarm.Service{ID: "srv-r", Spec: swarm.ServiceSpec{
+		Annotations: swarm.Annotations{Name: "fleetly-p-task-run", Labels: map[string]string{
+			labelManaged: "true", labelWorkload: "wl_run", labelGeneration: "1",
+		}},
+	}}
+	d.store[runSvc.Spec.Name] = runSvc
+	d.tasks["srv-r"] = []swarm.Task{{
+		ID: "task-run", ServiceID: "srv-r", DesiredState: swarm.TaskStateRunning,
+		Status: swarm.TaskStatus{State: swarm.TaskStateComplete},
+		Spec:   swarm.TaskSpec{ContainerSpec: &swarm.ContainerSpec{Labels: taskLabelsFor("wl_run", "1", "task-run")}},
+	}}
+
+	p := &Provider{cli: d.newClient(t)}
+	out := make(chan capability.WorkloadEvent, 8)
+	require.NoError(t, p.pollTasks(context.Background(), out))
+	close(out)
+
+	var evs []capability.WorkloadEvent
+	for ev := range out {
+		evs = append(evs, ev)
+	}
+	require.Len(t, evs, 2, "app workload aggregates to one event; the task-domain terminal stays per-task")
+	byWID := map[string]capability.WorkloadEvent{}
+	for _, ev := range evs {
+		byWID[ev.WorkloadID] = ev
+	}
+	app := byWID["wl_app"]
+	require.NotNil(t, app)
+	assert.Equal(t, capability.Generation(4), app.Generation, "the spec-side generation's state wins the slot")
+	assert.Equal(t, capability.WorkloadFailed, app.State, "the new generation's failure must not be masked by the stale running task")
+	assert.Equal(t, "failed: start failure", app.Message, "taskStatusMessage shape preserved (state prefix + swarm reason)")
+	assert.Equal(t, "task-new", app.Instance)
+	run := byWID["wl_run"]
+	require.NotNil(t, run)
+	assert.Equal(t, capability.WorkloadCompleted, run.State, "task-domain terminal states stay per-task visible")
+}
+
 // TestResolveNetworkTargetsMemoAndFaults（C19-3）：引用名→ID 解析以
 // per-Ensure 备忘去重（同名只探一次）；404 保留名字原样（既有语义）；非
 // 404 错误上抛带原因（Q-20，不再吞）。

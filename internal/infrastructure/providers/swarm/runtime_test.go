@@ -43,6 +43,92 @@ func TestTaskEventStateTight(t *testing.T) {
 	}
 }
 
+// aggregateWorkloadEvents 聚合语义钉测（staging 2026-10-16 观测风暴批）：
+// paused start-first 残留形态（旧代 task running@3 + 新代 task stopped@4）
+// 必须收敛为单条 stopped@4——逐 task 直发会让旧代 running@3 在引擎单槽上
+// 盖掉新代真实状态（L2 看门狗失明、drift 去抖被打穿成 10s 风暴、L1 采样
+// 崩溃重启环的 running 瞬间）。
+func TestAggregateWorkloadEvents(t *testing.T) {
+	ev := func(wid string, gen uint64, state capability.WorkloadState, msg string) capability.WorkloadEvent {
+		return capability.WorkloadEvent{WorkloadID: wid, Generation: capability.Generation(gen), State: state, Message: msg}
+	}
+
+	t.Run("spec-gen 优先：旧代残留不入槽", func(t *testing.T) {
+		out := aggregateWorkloadEvents([]capability.WorkloadEvent{
+			ev("wl", 3, capability.WorkloadRunning, "running"),
+			ev("wl", 4, capability.WorkloadStopped, "failed: start failure"),
+		}, 4)
+		require.Len(t, out, 1)
+		assert.Equal(t, uint64(4), uint64(out[0].Generation))
+		assert.Equal(t, capability.WorkloadStopped, out[0].State)
+		assert.Equal(t, "failed: start failure", out[0].Message, "single-task message stays verbatim")
+	})
+
+	t.Run("spec 代暂无 task：回退最高代（刚受理未建）", func(t *testing.T) {
+		out := aggregateWorkloadEvents([]capability.WorkloadEvent{
+			ev("wl", 3, capability.WorkloadRunning, "running"),
+		}, 4)
+		require.Len(t, out, 1)
+		assert.Equal(t, uint64(3), uint64(out[0].Generation))
+		assert.Equal(t, capability.WorkloadRunning, out[0].State)
+	})
+
+	t.Run("spec 代为 0（历史行）：回退最高代", func(t *testing.T) {
+		out := aggregateWorkloadEvents([]capability.WorkloadEvent{
+			ev("wl", 2, capability.WorkloadRunning, "running"),
+			ev("wl", 3, capability.WorkloadRunning, "running"),
+		}, 0)
+		require.Len(t, out, 1)
+		assert.Equal(t, uint64(3), uint64(out[0].Generation))
+		assert.Equal(t, capability.WorkloadRunning, out[0].State)
+	})
+
+	t.Run("多副本全 running：聚合单条 running", func(t *testing.T) {
+		out := aggregateWorkloadEvents([]capability.WorkloadEvent{
+			ev("wl", 4, capability.WorkloadRunning, "running"),
+			ev("wl", 4, capability.WorkloadRunning, "running"),
+		}, 4)
+		require.Len(t, out, 1)
+		assert.Equal(t, capability.WorkloadRunning, out[0].State)
+	})
+
+	t.Run("多副本部分失联：非 running 带 n/m 计数", func(t *testing.T) {
+		out := aggregateWorkloadEvents([]capability.WorkloadEvent{
+			ev("wl", 4, capability.WorkloadRunning, "running"),
+			ev("wl", 4, capability.WorkloadStopped, "shutdown"),
+		}, 4)
+		require.Len(t, out, 1)
+		assert.Equal(t, capability.WorkloadStopped, out[0].State)
+		assert.Equal(t, "1/2 running; shutdown", out[0].Message)
+	})
+
+	t.Run("同代多 task 混合 pending 与 stopped：终态优先作代表", func(t *testing.T) {
+		out := aggregateWorkloadEvents([]capability.WorkloadEvent{
+			ev("wl", 4, capability.WorkloadPending, "preparing"),
+			ev("wl", 4, capability.WorkloadStopped, "failed: exit 1"),
+		}, 4)
+		require.Len(t, out, 1)
+		assert.Equal(t, capability.WorkloadStopped, out[0].State)
+		assert.Equal(t, "0/2 running; failed: exit 1", out[0].Message)
+	})
+
+	t.Run("多 workload 各自聚合互不串", func(t *testing.T) {
+		out := aggregateWorkloadEvents([]capability.WorkloadEvent{
+			ev("wl-a", 4, capability.WorkloadRunning, "running"),
+			ev("wl-b", 4, capability.WorkloadStopped, "failed: exit 1"),
+			ev("wl-b", 3, capability.WorkloadRunning, "running"),
+		}, 4)
+		require.Len(t, out, 2)
+		byWID := map[string]capability.WorkloadEvent{}
+		for _, o := range out {
+			byWID[o.WorkloadID] = o
+		}
+		assert.Equal(t, capability.WorkloadRunning, byWID["wl-a"].State)
+		assert.Equal(t, capability.WorkloadStopped, byWID["wl-b"].State)
+		assert.Equal(t, "failed: exit 1", byWID["wl-b"].Message, "single-task subset message stays verbatim")
+	})
+}
+
 // service 事件只代表 spec 变化，不代表载体就绪：create/update 必须 pending
 // （就绪权威是任务轮询），remove 计 stopped。
 func TestServiceEventStateTight(t *testing.T) {
