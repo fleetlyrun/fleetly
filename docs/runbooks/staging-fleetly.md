@@ -1194,6 +1194,7 @@ F3.1/F3.2/F3.3/F3.6 四批走查的浏览器级挂账在后端在场的环境（
 - **浏览器走查**（console.dev.fleetly.run 公网直连，walker 既有会话）：Nodes 行点击 → `/nodes/node-2` 详情页（**行点击导航生效、cordon/drain 钮不误触**）——面包屑 Nodes / node-2、英雄卡（hostname + active 徽 + manager 徽 + node-2 全 id + Copy）、Node 观测卡（relay `online · ee956a1`——**新二进制经节点注册表活体实锤**，记录·三十三口径）、Containers 卡 **15 running** 全行渲染（Container 短 ID+Copy / Workload `app · process` / Domain 徽标 / Image 含 digest 全保形）；截图在案。
 
 **诚实边界（挂账）**：CLI 无 `nodes containers` 动词（REST/gRPC 面完整，CLI 动词随需补）；容器行深链 App 详情未做（需 project 归属解析）；本面列编排器 running task（每 task 一容器）——daemon 本地一次性 utility 容器不在射程（manager 视角本就看不到全集群，设计边界非缺口）。
+**〔前两挂账已清偿（2026-10-17，8abb122 待上站）〕**：CLI `nodes containers --node ID` 动词（表列 INSTANCE/WORKLOAD/DOMAIN/PROJECT/APP/PROCESS/IMAGE，golden 双形态）；console 容器行深链 App 详情——行内 project/app 归属投影本就齐备（零解析成本、proto 零改动），App 域行 Workload 单元即 `/p/$projectId/apps/$appId` 深链，其余域纯文本。第三条（utility 容器不在射程）维持设计边界。
 
 **走查痕迹清理**：部署临时物（/tmp 双二进制 + 验收脚本）即清；留底与卷 tar 按纪律保留（`/root/fleetlyd-66a9199.bak`、`/root/upgrade-ee956a1/vols/` 九枚）。
 
