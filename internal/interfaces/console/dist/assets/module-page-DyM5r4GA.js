@@ -1,0 +1,1 @@
+import{M as r}from"./vendor-1flJw8k5.js";import{P as x}from"./page-tabs-CUcSwNT_.js";import{P}from"./page-frame-C4j3vvr4.js";function j({width:o,title:a,description:e,actions:s,lead:m,tabs:t,current:n,onTabChange:i,children:p}){return r.jsxs(P,{width:o,title:a,description:e,actions:s,children:[m,r.jsx(x,{tabs:t,current:n,onChange:i}),p]})}export{j as M};

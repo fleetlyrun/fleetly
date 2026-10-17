@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { Outlet } from "@tanstack/react-router";
 import { CommandPalette } from "./command-palette";
 import { AppSidebar } from "./app-sidebar";
+import { RouteFallback } from "./route-fallback";
 import { Topbar } from "./topbar";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -21,7 +22,11 @@ export function ShellLayout() {
         <SidebarInset className="min-w-0">
           <Topbar onOpenPalette={() => setPaletteOpen(true)} />
           <main className="min-w-0 flex-1">
-            <Outlet />
+            {/* 懒加载路由切片的壳级兜底（W-3）：无 fallback 时慢链窗口整块
+                全黑——spinner 兜住首访/刷新后的 chunk 拉取窗。 */}
+            <Suspense fallback={<RouteFallback />}>
+              <Outlet />
+            </Suspense>
           </main>
         </SidebarInset>
         <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
