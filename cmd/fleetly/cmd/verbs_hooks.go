@@ -1,8 +1,9 @@
 package cmd
 
-// Hooks 上下文动词（F0.13 CLI 面）：per-App Git 触发配置的 set/get/rotate。
-// secret 只在 set（首次铸造）与 rotate 输出出现一次；同一串兼作 GitHub
-// webhook secret。
+// Hooks 上下文动词（F0.13 CLI 面）：per-App Git 触发配置的
+// set/get/rotate/refresh/delete。secret 只在 set（首次铸造）与 rotate 输出
+// 出现一次；同一串兼作 GitHub webhook secret。delete 是解除通道（W-8）：
+// token 与 webhook secret 即刻失效，材料所有权归还 deploy 面。
 
 import (
 	"context"
@@ -156,6 +157,37 @@ func newHooksRefreshVerb() commands.Command {
 				return renderOut(env, jsonOut, resp, func() {
 					_, _ = fmt.Fprintf(env.Stdout, "deployment %s\ncommit %s\nadmission %s\n",
 						resp.GetDeploymentId(), resp.GetCommit(), resp.GetAdmission().GetOutcome())
+				})
+			})
+		},
+	}
+}
+
+// newHooksDeleteVerb 解除通道（W-8）：移除 hook 配置——SetGitHook 是全量
+// upsert 表达不了"解除"。非幂等：无 hook 即 404（误删可见，不静默成功）。
+func newHooksDeleteVerb() commands.Command {
+	const name = "delete"
+	var app string
+	return &flaggedVerb{
+		name:     name,
+		synopsis: "Remove the per-app git trigger (URL token and webhook secret revoked immediately; material ownership returns to deploys)",
+		usage:    "hooks delete --app APP_ID",
+		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&app, "app", "", "app id (required)") },
+		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
+			if app == "" {
+				return usageErr(name, "--app is required")
+			}
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Hooks.DeleteGitHook(ctx, &deliveryv1.DeleteGitHookRequest{AppId: app})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintf(env.Stdout,
+						"deleted hook for app %s (URL token and webhook secret revoked; pushes to the old URL fail; material ownership returns to deploys)\n", app)
 				})
 			})
 		},

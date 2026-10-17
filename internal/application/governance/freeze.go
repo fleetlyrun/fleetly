@@ -71,7 +71,10 @@ var FrozenVerbs = map[string]freezeScope{
 	"/fleetly.delivery.v1.HooksService/SetGitHook":              {field: "app_id", kind: anchor.KindApp},
 	"/fleetly.delivery.v1.HooksService/RotateHookToken":         {field: "app_id", kind: anchor.KindApp},
 	"/fleetly.delivery.v1.HooksService/RefreshGitHook":          {field: "app_id", kind: anchor.KindApp},
-	"/fleetly.delivery.v1.HooksService/ReceiveWebhook":          {field: "token", kind: anchor.KindHookToken},
+	// DeleteGitHook 是解除通道（W-8）：hook 配置写面同族——冻结期照拒
+	//（解除也是 Workload 材料所有权变更，push/拉取通道随 hook 行即逝）。
+	"/fleetly.delivery.v1.HooksService/DeleteGitHook":  {field: "app_id", kind: anchor.KindApp},
+	"/fleetly.delivery.v1.HooksService/ReceiveWebhook": {field: "token", kind: anchor.KindHookToken},
 	// GitHub App 接入材料（ADR-0073）：Project 级行按 project_id 归属队
 	// 冻结；Global 行无 Team 轴（寻址失败放行口径）——平台材料在 per-Team
 	// 刹车之外。

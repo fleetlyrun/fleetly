@@ -95,4 +95,34 @@ func TestGoldenHooksVerbs(t *testing.T) {
 		}
 		compareGolden(t, "hooks-rotate-json", normalizeGolden(out))
 	})
+
+	// delete 解除通道（W-8）：hook 随删；重删 404——非幂等（误删可见，
+	// 不静默成功）。删除是破坏性的，双形态各需一个在册 hook：--json 先删，
+	// 重配（全新铸造）后人类形态再删，重删负例收尾。
+	t.Run("hooks delete", func(t *testing.T) {
+		code, out, stderr := runCLI(t, "hooks", "delete", "--app", appID, "--json")
+		if code != 0 || stderr != "" {
+			t.Fatalf("hooks delete --json: code=%d stderr=%q", code, stderr)
+		}
+		compareGolden(t, "hooks-delete-json", normalizeGolden(out))
+
+		code, _, stderr = runCLI(t, "hooks", "set", "--app", appID, "--repo", "https://github.com/acme/shop.git")
+		if code != 0 || stderr != "" {
+			t.Fatalf("hooks set after delete: code=%d stderr=%q", code, stderr)
+		}
+
+		code, out, stderr = runCLI(t, "hooks", "delete", "--app", appID)
+		if code != 0 || stderr != "" {
+			t.Fatalf("hooks delete: code=%d stderr=%q", code, stderr)
+		}
+		compareGolden(t, "hooks-delete", normalizeGolden(out))
+
+		code, out, stderr = runCLI(t, "hooks", "delete", "--app", appID)
+		if code == 0 {
+			t.Fatalf("re-deleting a removed hook must fail: %q", out)
+		}
+		if !strings.Contains(stderr, "E_NOT_FOUND") {
+			t.Fatalf("re-delete must surface E_NOT_FOUND: %q", stderr)
+		}
+	})
 }

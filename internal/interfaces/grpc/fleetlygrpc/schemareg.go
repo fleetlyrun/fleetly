@@ -127,6 +127,7 @@ func init() {
 	registerEventPayload(eventHookCreated, hookEventPayload{})
 	registerEventPayload(eventHookUpdated, hookEventPayload{})
 	registerEventPayload(eventHookRotated, hookEventPayload{})
+	registerEventPayload(eventHookDeleted, hookEventPayload{})
 	registerEventPayload(eventGitHubAppConnected, githubAppEventPayload{})
 	registerEventPayload(eventGitHubAppDeleted, githubAppEventPayload{})
 	registerEventPayload(eventAlertRuleCreated, alertRuleEventPayload{})

@@ -896,6 +896,7 @@ const (
 	HooksService_GetGitHook_FullMethodName      = "/fleetly.delivery.v1.HooksService/GetGitHook"
 	HooksService_RotateHookToken_FullMethodName = "/fleetly.delivery.v1.HooksService/RotateHookToken"
 	HooksService_RefreshGitHook_FullMethodName  = "/fleetly.delivery.v1.HooksService/RefreshGitHook"
+	HooksService_DeleteGitHook_FullMethodName   = "/fleetly.delivery.v1.HooksService/DeleteGitHook"
 	HooksService_ReceiveWebhook_FullMethodName  = "/fleetly.delivery.v1.HooksService/ReceiveWebhook"
 )
 
@@ -924,6 +925,12 @@ type HooksServiceClient interface {
 	// 同步。admission 与 push 同链（CommitSHA 去重——同 HEAD 重放回
 	// deduplicated 既有部署）。
 	RefreshGitHook(ctx context.Context, in *RefreshGitHookRequest, opts ...grpc.CallOption) (*RefreshGitHookResponse, error)
+	// DeleteGitHook 移除 hook 配置（URL token 与 webhook secret 即刻失效，
+	// 旧 URL 的 push 401——接收面在活跃行里查 token）。材料所有权归还
+	// deploy 面（ADR-0072 所有权分裂的显式出口；SetGitHook 只能改配置，
+	// 无法表达"解除"——本 RPC 是唯一解除通道）。非幂等：无 hook 即 404
+	// （配置面显式状态机，与 Get 同形——误删可见，不静默成功）。
+	DeleteGitHook(ctx context.Context, in *DeleteGitHookRequest, opts ...grpc.CallOption) (*DeleteGitHookResponse, error)
 	// ReceiveWebhook 是 GitHub webhook 接收面（PUBLIC；gRPC-only——HTTP 侧由
 	// gateway 原生 handler 直挂）。token 取 URL 段、payload 是原始请求体、
 	// event/delivery/signature 对应 X-GitHub-Event / X-GitHub-Delivery /
@@ -979,6 +986,16 @@ func (c *hooksServiceClient) RefreshGitHook(ctx context.Context, in *RefreshGitH
 	return out, nil
 }
 
+func (c *hooksServiceClient) DeleteGitHook(ctx context.Context, in *DeleteGitHookRequest, opts ...grpc.CallOption) (*DeleteGitHookResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteGitHookResponse)
+	err := c.cc.Invoke(ctx, HooksService_DeleteGitHook_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *hooksServiceClient) ReceiveWebhook(ctx context.Context, in *ReceiveWebhookRequest, opts ...grpc.CallOption) (*ReceiveWebhookResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ReceiveWebhookResponse)
@@ -1014,6 +1031,12 @@ type HooksServiceServer interface {
 	// 同步。admission 与 push 同链（CommitSHA 去重——同 HEAD 重放回
 	// deduplicated 既有部署）。
 	RefreshGitHook(context.Context, *RefreshGitHookRequest) (*RefreshGitHookResponse, error)
+	// DeleteGitHook 移除 hook 配置（URL token 与 webhook secret 即刻失效，
+	// 旧 URL 的 push 401——接收面在活跃行里查 token）。材料所有权归还
+	// deploy 面（ADR-0072 所有权分裂的显式出口；SetGitHook 只能改配置，
+	// 无法表达"解除"——本 RPC 是唯一解除通道）。非幂等：无 hook 即 404
+	// （配置面显式状态机，与 Get 同形——误删可见，不静默成功）。
+	DeleteGitHook(context.Context, *DeleteGitHookRequest) (*DeleteGitHookResponse, error)
 	// ReceiveWebhook 是 GitHub webhook 接收面（PUBLIC；gRPC-only——HTTP 侧由
 	// gateway 原生 handler 直挂）。token 取 URL 段、payload 是原始请求体、
 	// event/delivery/signature 对应 X-GitHub-Event / X-GitHub-Delivery /
@@ -1040,6 +1063,9 @@ func (UnimplementedHooksServiceServer) RotateHookToken(context.Context, *RotateH
 }
 func (UnimplementedHooksServiceServer) RefreshGitHook(context.Context, *RefreshGitHookRequest) (*RefreshGitHookResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RefreshGitHook not implemented")
+}
+func (UnimplementedHooksServiceServer) DeleteGitHook(context.Context, *DeleteGitHookRequest) (*DeleteGitHookResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteGitHook not implemented")
 }
 func (UnimplementedHooksServiceServer) ReceiveWebhook(context.Context, *ReceiveWebhookRequest) (*ReceiveWebhookResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ReceiveWebhook not implemented")
@@ -1137,6 +1163,24 @@ func _HooksService_RefreshGitHook_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _HooksService_DeleteGitHook_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteGitHookRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(HooksServiceServer).DeleteGitHook(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: HooksService_DeleteGitHook_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(HooksServiceServer).DeleteGitHook(ctx, req.(*DeleteGitHookRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _HooksService_ReceiveWebhook_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ReceiveWebhookRequest)
 	if err := dec(in); err != nil {
@@ -1177,6 +1221,10 @@ var HooksService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RefreshGitHook",
 			Handler:    _HooksService_RefreshGitHook_Handler,
+		},
+		{
+			MethodName: "DeleteGitHook",
+			Handler:    _HooksService_DeleteGitHook_Handler,
 		},
 		{
 			MethodName: "ReceiveWebhook",

@@ -44,6 +44,7 @@ freeze.set	event	A change freeze was set for a team (or globally); change verbs 
 github_app.connected	event	A GitHub App installation was connected as private-repo access material (verified at admission, owner resolved; re-put with a new key replaces the sealed material).
 github_app.deleted	event	A GitHub App access material was soft-deleted; resolution fails immediately while the sealed key survives for key rewrap.
 hook.created	event	A git hook configuration was created for an app (token minted; the secret itself never appears).
+hook.deleted	event	A git hook configuration was removed (W-8: the only release channel — SetGitHook is a full upsert and cannot express removal); the URL token and webhook secret died with it and material ownership returned to deploys.
 hook.push_accepted	event	A verified webhook push triggered a deployment.
 hook.refresh_accepted	event	A control-plane hook refresh pulled the branch head and triggered a deployment.
 hook.rotated	event	A git hook token was rotated; the URL token and the GitHub webhook secret were both replaced (old strings invalid immediately).

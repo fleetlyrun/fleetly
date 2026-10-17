@@ -19,7 +19,14 @@ export interface paths {
          *     （换 Token 用 RotateHookToken）。
          */
         post: operations["HooksService_SetGitHook"];
-        delete?: never;
+        /**
+         * DeleteGitHook 移除 hook 配置（URL token 与 webhook secret 即刻失效，
+         *     旧 URL 的 push 401——接收面在活跃行里查 token）。材料所有权归还
+         *     deploy 面（ADR-0072 所有权分裂的显式出口；SetGitHook 只能改配置，
+         *     无法表达"解除"——本 RPC 是唯一解除通道）。非幂等：无 hook 即 404
+         *     （配置面显式状态机，与 Get 同形——误删可见，不静默成功）。
+         */
+        delete: operations["HooksService_DeleteGitHook"];
         options?: never;
         head?: never;
         patch?: never;
@@ -461,6 +468,7 @@ export interface components {
             config?: string;
             target?: string;
         };
+        v1DeleteGitHookResponse: Record<string, never>;
         /**
          * DeployRequest 四源互斥（image 直投 / compose_yaml 受控子集 / upload_id
          *     上传产物 / spec_file 裸 AppSpec，F3.5）。
@@ -1043,6 +1051,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1SetGitHookResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    HooksService_DeleteGitHook: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description app_id 必填：目标 hook 的 App 行（行级授权锚）。 */
+                app_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1DeleteGitHookResponse"];
                 };
             };
             /** @description An unexpected error response. */

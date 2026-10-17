@@ -153,6 +153,16 @@ function GitHookCard({ appId, projectId }: { appId: string; projectId: string })
     },
     onError: (cause) => toast.error(fieldError(cause)),
   });
+  // Remove：解除通道（DeleteGitHook，W-8）——token 与 webhook secret 即刻
+  // 失效，材料所有权归还 deploy 面。非幂等（无 hook 即 404）。
+  const remove = useMutation({
+    mutationFn: async () => apiSend(`/v1/apps/${encodeURIComponent(appId)}/hook`, "DELETE"),
+    onSuccess: () => {
+      invalidate();
+      toast("Git deploy hook removed — material ownership returned to deploys");
+    },
+    onError: (cause) => toast.error(fieldError(cause)),
+  });
 
   const configured = hook.data != null;
   return (
@@ -204,6 +214,35 @@ function GitHookCard({ appId, projectId }: { appId: string; projectId: string })
             <Button size="sm" variant="outline" disabled={rotate.isPending} onClick={() => rotate.mutate()}>
               Rotate token…
             </Button>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button size="sm" variant="outline" className="text-destructive" disabled={remove.isPending}>
+                  Remove…
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Remove the git deploy hook?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    The URL token and the GitHub webhook secret are revoked immediately — pushes to the old webhook URL fail.
+                    Material ownership returns to deploys (image/compose/upload deploys are accepted again). Configure a new hook
+                    any time.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    disabled={remove.isPending}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      remove.mutate();
+                    }}
+                  >
+                    {remove.isPending ? "Removing…" : "Remove"}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </div>
           <p className="mt-2 text-2xs text-muted-foreground">
             <span className="font-semibold text-foreground">Deploy now</span> pulls the branch HEAD and deploys immediately — no

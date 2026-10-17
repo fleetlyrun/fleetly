@@ -41,6 +41,7 @@ freeze.set	A change freeze was set for a team (or globally); change verbs in sco
 github_app.connected	A GitHub App installation was connected as private-repo access material (verified at admission, owner resolved; re-put with a new key replaces the sealed material).	internal/interfaces/grpc/fleetlygrpc/githubapps.go SetGitHubApp/CompleteManifestFlow
 github_app.deleted	A GitHub App access material was soft-deleted; resolution fails immediately while the sealed key survives for key rewrap.	internal/interfaces/grpc/fleetlygrpc/githubapps.go DeleteGitHubApp
 hook.created	A git hook configuration was created for an app (token minted; the secret itself never appears).	internal/interfaces/grpc/fleetlygrpc/hooks.go SetGitHook
+hook.deleted	A git hook configuration was removed (W-8: the only release channel — SetGitHook is a full upsert and cannot express removal); the URL token and webhook secret died with it and material ownership returned to deploys.	internal/interfaces/grpc/fleetlygrpc/hooks.go DeleteGitHook
 hook.push_accepted	A verified webhook push triggered a deployment.	internal/interfaces/grpc/fleetlygrpc/webhook.go handlePush
 hook.refresh_accepted	A control-plane hook refresh pulled the branch head and triggered a deployment.	internal/interfaces/grpc/fleetlygrpc/webhook.go RefreshGitHook
 hook.rotated	A git hook token was rotated; the URL token and the GitHub webhook secret were both replaced (old strings invalid immediately).	internal/interfaces/grpc/fleetlygrpc/hooks.go RotateHookToken

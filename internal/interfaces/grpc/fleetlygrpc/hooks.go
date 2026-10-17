@@ -35,6 +35,7 @@ const (
 	eventHookCreated = "hook.created"
 	eventHookUpdated = "hook.updated"
 	eventHookRotated = "hook.rotated"
+	eventHookDeleted = "hook.deleted"
 )
 
 // hookEventPayload 是 hook.* 事件的载荷（字段只增；token 材料永不出现——
@@ -203,6 +204,44 @@ func (svc *HooksService) RotateHookToken(ctx context.Context, req *deliveryv1.Ro
 		return nil, mapStateError(err, "hook")
 	}
 	return &deliveryv1.RotateHookTokenResponse{Hook: hookMsg(row), Secret: material.Secret}, nil
+}
+
+// DeleteGitHook 移除 hook 配置（W-8：解除通道——SetGitHook 是全量
+// upsert，表达不了"解除"；没有本 RPC 时材料闸门是单向门，唯一出口是
+// override_hook）。URL token 与 webhook secret 即刻失效（旧行即逝——
+// 接收面在活跃行里查 token，旧 URL 的 push 401）；材料所有权归还
+// deploy 面（ADR-0072）。非幂等：无 hook 即 404（与 Get 同形——误删
+// 可见，不静默成功）。DeleteByApp 清整个聚合（去重行 + hook 行，
+// FB-1 级联同缝）。
+func (svc *HooksService) DeleteGitHook(ctx context.Context, req *deliveryv1.DeleteGitHookRequest) (*deliveryv1.DeleteGitHookResponse, error) {
+	// 行级授权（ADR-0035）：Apps.Get 活跃行口径，tombstone App 即 404。
+	appRow, err := svc.s.authorizeAppID(ctx, req.GetAppId())
+	if err != nil {
+		return nil, err
+	}
+	if _, err := svc.s.Hooks.Get(ctx, svc.s.DB.Runner(), req.GetAppId()); err != nil {
+		return nil, mapStateError(err, "hook")
+	}
+	txErr := svc.s.commit(ctx, writeFact{
+		write: func(ctx context.Context, tx *sql.Tx) error {
+			return svc.s.Hooks.DeleteByApp(ctx, tx, req.GetAppId())
+		},
+		facts: []func() writes.FactRow{
+			svc.s.factOf(ctx, appRow.ProjectID, func(team string) writes.FactRow {
+				return writes.FactRow{
+					Name: eventHookDeleted, Aggregate: "hook", ID: appRow.ID,
+					Payload: mustJSON(hookEventPayload{AppID: appRow.ID}),
+					TeamID:  team,
+					Action:  "hook.delete", Resource: "app/" + appRow.ID,
+					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+				}
+			}),
+		},
+	})
+	if txErr != nil {
+		return nil, mapStateError(txErr, "hook")
+	}
+	return &deliveryv1.DeleteGitHookResponse{}, nil
 }
 
 // hookMsg 投影聚合行（secret 永不回显）。

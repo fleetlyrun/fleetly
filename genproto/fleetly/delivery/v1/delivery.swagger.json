@@ -54,6 +54,36 @@
           "HooksService"
         ]
       },
+      "delete": {
+        "summary": "DeleteGitHook 移除 hook 配置（URL token 与 webhook secret 即刻失效，\n旧 URL 的 push 401——接收面在活跃行里查 token）。材料所有权归还\ndeploy 面（ADR-0072 所有权分裂的显式出口；SetGitHook 只能改配置，\n无法表达\"解除\"——本 RPC 是唯一解除通道）。非幂等：无 hook 即 404\n（配置面显式状态机，与 Get 同形——误删可见，不静默成功）。",
+        "operationId": "HooksService_DeleteGitHook",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1DeleteGitHookResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "app_id",
+            "description": "app_id 必填：目标 hook 的 App 行（行级授权锚）。",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "HooksService"
+        ]
+      },
       "post": {
         "summary": "SetGitHook 建/改配置；无 Token 时铸造（明文只在本响应出现一次，\n同一串兼作 GitHub webhook secret）。已配置过再 Set 只改配置不换 Token\n（换 Token 用 RotateHookToken）。",
         "operationId": "HooksService_SetGitHook",
@@ -982,6 +1012,9 @@
         }
       },
       "title": "DeployStrategy 是部署切换策略（CONTEXT.md Deployment Strategy 词条：\nrolling | blue-green；Avoid 表两词条不引入——渐进分流与代次槽位机制\n均显式不做，ADR-0048）。blue-green = engine 的编排变体（Runtime 契约\n不变，ADR-0048）：双代窗期间两代载体并存，新代 L1 全就绪才切换流量。\nUNSPECIFIED（零值）语义归一为 rolling——存量 Revision 无该字段重放即\nrolling，无迁移面。\nConfigMount 是单条 Config 挂载（名引用 + 容器内目标路径）。"
+    },
+    "v1DeleteGitHookResponse": {
+      "type": "object"
     },
     "v1DeployRequest": {
       "type": "object",
