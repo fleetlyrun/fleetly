@@ -1086,8 +1086,9 @@ F3.1/F3.2/F3.3/F3.6 四批走查的浏览器级挂账在后端在场的环境（
 
 - **W-6（P1，既有非本批，当日修 c14f854）**：Task 详情路由不可达——列表 `tasks.tsx` 无 index、`tasks.$taskId` 点嵌套其下而 ModulePage 不渲染 Outlet：URL 切详情、组件永不挂载（刷新亦然）。f6069a8（对齐批 5）起既有，此前走查未覆盖因不可达。修 = 列表改名 `tasks.index.tsx` 对齐 databases 先例；修复后详情英雄卡 + Definition/Pool & lease/Timing 三卡活体。
 - **W-7（P2，挂账）**：⌘K 命令面板挂载不可见（DOM 在、视觉无）；Events 页点 Search 触发整页错误边界 `Cannot read properties of undefined (reading 'subscribe')`（Logs 页不复现崩溃形态）。疑似 Slate vendored Dialog/cmdk 交换回归，root-cause 专属批。
-- **W-1（P2，挂账伞 + 新症状）**：目录加载窗内一次性整页弹回 `/overview`（一次实录、不可稳复现）；记忆已删项目双实锤在案，修复方向不变。
-- **W-3（P3→P2，挂账升级）**：Suspense 全壳黑窗（吞侧栏）本日两现（首次进站 + 切 Metrics tab），秒级自愈；另有首次进站 React 零挂载一次（刷新恢复）。壳级 spinner 建议维持。
+  **〔已收口（2026-10-17，299a918 待上站）〕**：两症状同根——vendored CommandDialog 交换批丢了官方 shadcn 形态的两个结构面：①DialogContent 内的 `<Command>` 根被丢（cmdk 子件经 context 读内部 store，缺根即 `.subscribe` undefined 渲染崩溃——jsdom 复现与真机文案逐字同形，Events 页 Search=开面板入口故必炸）；②sr-only DialogHeader/Title 挂在 Dialog 根下（浮层外）= a11y 树常驻文档流页底的「面板开进页底」形态。修复=Command 根复位+标题归位内容层（Radix a11y 本就要求 Title 属内容）；四用例钉死（jsdom 双缺口桩 ResizeObserver/scrollIntoView——此前面板在 jsdom 必炸，正是 W-7 沦为测试盲区的机理）。
+- **W-1（P2，挂账伞 + 新症状）**：目录加载窗内一次性整页弹回 `/overview`（一次实录、不可稳复现）；记忆已删项目双实锤在案，修复方向不变。〔URL 侧回退已收口（2026-10-17，8031782 待上站）：总览页目录查无即 redirect 首项目（replace、pending 窗不弹跳），目录全空诚实 Not found。〕
+- **W-3（P3→P2，挂账升级）**：Suspense 全壳黑窗（吞侧栏）本日两现（首次进站 + 切 Metrics tab），秒级自愈；另有首次进站 React 零挂载一次（刷新恢复）。壳级 spinner 建议维持。〔已收口（2026-10-17，8031782 待上站）：壳 Outlet 包 Suspense 落 RouteFallback spinner。〕
 
 **教训增补**：①TanStack 文件式路由的点嵌套即布局——列表页收编 ModulePage 时若同目录还有 `$id` 详情路由，列表必须落 `index.tsx`（databases 是正确先例；tasks 反例在役 36h 才被走查咬出）；②jsdom 全绿盲区第 N 度（W-6 路由树形状 + W-7 面板不可见均测试不可见）；③IAB 自动化怪癖增补：locator click 偶发迟效幽灵跳转、`cua.scroll` 恒挂起（keypress End 替代）、坐标点击前须重截图。
 
