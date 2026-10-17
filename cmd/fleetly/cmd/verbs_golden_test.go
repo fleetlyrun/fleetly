@@ -181,6 +181,10 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 		{"nodes drain", []string{"nodes", "drain", "--node", goldenNodeID}, 0},
 		{"nodes cordon", []string{"nodes", "cordon", "--node", goldenNodeID}, 0},
 		{"nodes uncordon", []string{"nodes", "uncordon", "--node", goldenNodeID}, 0},
+		// 节点容器观测（RuntimeNodeInspect CLI 收尾）：双行形态——App 域行
+		// 引用本流已铸的项目/App（归属列真实投影），Database 域行 workload_id
+		// 即域主体、归属列留空（诚实呈现契约）。
+		{"nodes containers", []string{"nodes", "containers", "--node", goldenNodeID}, 0},
 
 		// Automation 动词（F1.5/F1.6）：one-shot 全链 + resident 池。tasks
 		// create 的 --command 走可重复旗标形态（D24：每次一 argv 元素）。
@@ -450,6 +454,16 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 			}
 			if st.verb == "apps create bgapp" {
 				app3ID = extractTailID(out)
+			}
+			if st.verb == "nodes uncordon" {
+				// 观测面夹具（节点容器行，RuntimeNodeInspect）：App 域行的
+				// workload_id = appID.process 投影（provider 命名口径）；
+				// Database 域行归属留空——CLI 表与 console 同一口径。
+				h.Runtime.SetNodeContainers(goldenNodeID, []capability.NodeContainerObservation{
+					{Instance: "task-gold-1", WorkloadID: appID + ".web", Domain: capability.NodeDomainApp,
+						Team: "acme", Project: projectID, AppID: appID, Process: "web", Image: "nginx:1.26"},
+					{Instance: "task-gold-2", WorkloadID: "pg-gold", Domain: capability.NodeDomainDatabase, Image: "pg:16"},
+				})
 			}
 			if st.verb == "tasks create" {
 				taskID = extractTaskID(t, out)

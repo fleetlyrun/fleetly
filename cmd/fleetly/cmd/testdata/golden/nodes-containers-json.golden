@@ -1,0 +1,20 @@
+{
+  "containers": [
+    {
+      "instance": "task-gold-1",
+      "workload_id": "web-1.web",
+      "domain": "app",
+      "team": "acme",
+      "project_id": "shop-1",
+      "app_id": "web-1",
+      "process": "web",
+      "image": "nginx:1.26"
+    },
+    {
+      "instance": "task-gold-2",
+      "workload_id": "pg-gold",
+      "domain": "database",
+      "image": "pg:16"
+    }
+  ]
+}

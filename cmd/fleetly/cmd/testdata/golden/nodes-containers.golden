@@ -1,0 +1,3 @@
+INSTANCE	WORKLOAD	DOMAIN	PROJECT	APP	PROCESS	IMAGE
+task-gold-1	web-1.web	app	shop-1	web-1	web	nginx:1.26
+task-gold-2	pg-gold	database				pg:16

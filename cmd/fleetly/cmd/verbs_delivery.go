@@ -960,3 +960,42 @@ func newNodesUncordonVerb() commands.Command {
 			return c.Nodes.UncordonNode(ctx, &runtimev1.UncordonNodeRequest{NodeId: nodeID})
 		})
 }
+
+// newNodesContainersVerb 节点在跑容器观测（RuntimeNodeInspect 面，e922304
+// 的 CLI 收尾）：快照语义——直读编排器任务列表，每 running task/pod 一行；
+// 归属列是编排器载体标记的平台投影（App 域显 app/project 归属，其余域
+// workload_id 即域主体、归属列留空诚实呈现）。
+func newNodesContainersVerb() commands.Command {
+	const name = "containers"
+	var nodeID string
+	return &flaggedVerb{
+		name:     name,
+		synopsis: "List the containers running on a node (per running task/pod; snapshot, not cached observations)",
+		usage:    "nodes containers --node ID",
+		setFlags: func(fs *flag.FlagSet) {
+			fs.StringVar(&nodeID, "node", "", "platform node id (required)")
+		},
+		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
+			if nodeID == "" {
+				return usageErr(name, "--node is required")
+			}
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Nodes.ListNodeContainers(ctx, &runtimev1.ListNodeContainersRequest{NodeId: nodeID})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintln(env.Stdout, "INSTANCE\tWORKLOAD\tDOMAIN\tPROJECT\tAPP\tPROCESS\tIMAGE")
+					for _, row := range resp.GetContainers() {
+						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+							row.GetInstance(), row.GetWorkloadId(), row.GetDomain(),
+							row.GetProjectId(), row.GetAppId(), row.GetProcess(), row.GetImage())
+					}
+				})
+			})
+		},
+	}
+}

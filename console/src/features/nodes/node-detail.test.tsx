@@ -9,12 +9,17 @@ import { setToken } from "@/lib/token";
 // 不生效——afterEach 显式卸载，避免跨测试 DOM 残留撞查询。
 
 // Link 渲染脱离 Router context（详情页 crumb 回列表页用 Link）——桩成
-// 纯 a 元素即可（导航行为不在本组件测试面）。
+// 纯 a 元素即可（导航行为不在本组件测试面）；捕获 to/params 供容器行
+// 深链断言（App 域行 → App 详情）。
+const { linkProps } = vi.hoisted(() => ({ linkProps: [] as Array<{ to: unknown; params: unknown }> }));
 vi.mock("@tanstack/react-router", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@tanstack/react-router")>();
   return {
     ...actual,
-    Link: (props: { children?: ReactNode }) => <a>{props.children}</a>,
+    Link: ({ to, params, children }: { to: unknown; params: unknown; children?: ReactNode }) => {
+      linkProps.push({ to, params });
+      return <a>{children}</a>;
+    },
   };
 });
 
@@ -27,6 +32,7 @@ const fetchMock = vi.fn();
 
 beforeEach(() => {
   fetchMock.mockReset();
+  linkProps.length = 0;
   vi.stubGlobal("fetch", fetchMock);
   setToken("flt_test_token");
 });
@@ -86,6 +92,11 @@ describe("NodeDetailPage containers", () => {
     expect(screen.getByText("db1")).toBeTruthy();
     expect(screen.getByText("database")).toBeTruthy();
     expect(screen.getByText("2 running")).toBeTruthy();
+    // 深链（e922304 挂账收尾）：App 域行带行内 project/app 投影 → App
+    // 详情；database 域无 App 语境不产链接（crumb 的 /nodes Link 不计入）。
+    expect(linkProps.filter((entry) => entry.to === "/p/$projectId/apps/$appId")).toEqual([
+      { to: "/p/$projectId/apps/$appId", params: { projectId: "shop", appId: "web" } },
+    ]);
     client.clear();
   });
 

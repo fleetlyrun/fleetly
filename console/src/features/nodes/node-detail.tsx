@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { BoxesIcon, CheckCircle2Icon } from "lucide-react";
+import { ArrowUpRightIcon, BoxesIcon, CheckCircle2Icon } from "lucide-react";
 import type { components as runtimeSchemas } from "@/api/runtime";
 import { useNodeContainers, useNodes } from "@/lib/catalog";
 import { CopyButton } from "@/components/domain/copy-button";
@@ -117,6 +117,25 @@ function workloadOf(row: NodeContainer): string {
   return row.workload_id ?? "—";
 }
 
+// workloadCell 是容器行的归属单元：App 域行带 project/app 归属 → 深链
+// App 详情（行内投影零解析成本，e922304 挂账收尾）；其余域无 App 语境，
+// 纯文本。
+function workloadCell(row: NodeContainer) {
+  if (row.domain === "app" && row.app_id && row.project_id) {
+    return (
+      <Link
+        to="/p/$projectId/apps/$appId"
+        params={{ projectId: row.project_id, appId: row.app_id }}
+        className="group/link inline-flex items-center gap-1 text-info hover:underline"
+      >
+        {workloadOf(row)}
+        <ArrowUpRightIcon className="size-3.5 opacity-0 transition-opacity group-hover/link:opacity-100" />
+      </Link>
+    );
+  }
+  return workloadOf(row);
+}
+
 function ContainersCard({ nodeId }: { nodeId: string }) {
   const containers = useNodeContainers(nodeId);
   const rows = containers.data ?? [];
@@ -161,7 +180,7 @@ function ContainersCard({ nodeId }: { nodeId: string }) {
                     <CopyButton value={row.instance ?? ""} />
                   </span>
                 </TableCell>
-                <TableCell className="text-xs">{workloadOf(row)}</TableCell>
+                <TableCell className="text-xs">{workloadCell(row)}</TableCell>
                 <TableCell>
                   {row.domain ? (
                     <span className="rounded-full border px-2 py-0.5 text-2xs font-semibold text-muted-foreground">{row.domain}</span>
