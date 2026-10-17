@@ -1,6 +1,6 @@
 # fleetly Agents API 提案（交互式 coding agent 托管环境，2026-10-16）
 
-> 状态：**待裁决**（本文件即裁决载体——§0 总表逐案给裁决，§10 开放问题逐条给答；裁决后实施批各自开 ADR 并携带守卫任务，按 2026-10-03 提案集同款纪律）
+> 状态：**搁置**（2026-10-17 用户裁决：暂时搁置，等有需求了再实施；届时以本文件为裁决载体——§0 总表逐案给裁决，§10 开放问题逐条给答；裁决后实施批各自开 ADR 并携带守卫任务，按 2026-10-03 提案集同款纪律）
 > 来源：2026-10-16 Agents API 方向会话三轮收敛。**载荷澄清（本提案的成立前提）**：所指 agent 是 **Claude Code / Codex / OpenCode 这类交互式 coding agent 本体**（人在终端里使唤它干活的环境），**不是** LangGraph/CrewAI 那类 agent 框架服务——后者是 App/Function 形状的皮（长驻=App、请求驱动=Function、跑批=Task），不立实体；前者经 deletion test 重测（§2）判定为现有三执行产品 + 会话原语都不承载的空地。
 > 词汇遵守 CONTEXT.md：`Agent` 本提案中指**拟议新实体**（裁决通过则走 ADR-0007 显式修订通道：Task 词条让渡 `agent`——ADR-0077 让渡 `function` 同款先例——+ Agent 词条入册 + 守卫同步）；裁决前本文件为提案语境，非域内混用。拟议实体名恰好避开全部冻结禁词：竞品词 **workspace**（Team/Project 词条 Avoid）、**environment**（ADR-0011 否决实体 + Avoid）均不可用，`Agent` 是唯一既不撞冻结表又语义自洽的候选——且与 CONTEXT.md 开篇「人类与 AI Agent 同为一等用户」的操作者语义**同一物种**（部署的正是这等用户本身：平台两侧 = 操作侧与承载侧，居民领 Token 反向操作 fleetly，Token 词条「服务人与 Agent」直接闭环）。
 > 关联：`docs/design/2026-10-16-functions-api.md`（Functions 程序范式：三轴 deletion test → 词汇 ADR 先行 → 设计稿 → 交叉验证；本提案若获裁按同款程序走）；CONTEXT.md Task/Token/Event 词条；ADR-0049（Exec Session/Relay）、ADR-0051（Browse Session/Launcher Ticket）、ADR-0059（在册页面名词非资源行先例）、ADR-0062（Task Mint）、ADR-0077（词条让渡先例）。
