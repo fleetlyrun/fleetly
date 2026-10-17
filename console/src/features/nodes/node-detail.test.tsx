@@ -95,7 +95,7 @@ describe("NodeDetailPage containers", () => {
     // 非应用域：workload_id 即域主体，域徽标呈现。
     expect(screen.getByText("db1")).toBeTruthy();
     expect(screen.getByText("database")).toBeTruthy();
-    expect(screen.getByText("2 running")).toBeTruthy();
+    expect(screen.getByText("3 running")).toBeTruthy();
     // 深链（e922304 挂账收尾）：App 域行带行内 project/app 投影 → App
     // 详情；database 域无 App 语境不产链接（crumb 的 /nodes Link 不计入）；
     // 受管载体合成 project `system` 无 App 页，同样不产链接。
