@@ -1216,3 +1216,21 @@ F3.1/F3.2/F3.3/F3.6 四批走查的浏览器级挂账在后端在场的环境（
 **修复（本批，swarm provider 单点）**：`pollTasks` 非 Task 域改**逐 workload 聚合单发**（`aggregateWorkloadEvents` 纯函数）：spec 侧代次子集优先（滚动中/停摆时新代 task 的真实状态才是 L1/L2 判定对象，旧代残留不入槽）；spec 代无 task 回退全量最高代（刚受理未建/历史行）；聚合状态 = 子集全 running 才 running，非 running 取最重态（终态/stopped 优先于 pending），多 task 消息带 n/m 计数；Task 域旁路聚合（one-shot 终态逐 task 可见，ADR-0025 决策 2）。测试：纯函数七用例（风暴形态钉死）+ fake daemon 端到端（聚合 + Task 域旁路 + taskStatusMessage 保形）。
 
 **诚实边界（挂账改口）**：①崩溃重启环的 running 瞬间仍可被 L1 采样到（根绝需重启历史/稳定性窗，聚合后窗口收窄为单 task 自己的翻转，本批不涉）；②paused 旧代残留的恢复动作仍走 `resumeStalledRollout`（Force++ 重发）与人工 `--force`（记录·二十七口径不变）；③停摆时 spec 对照无感仍是记录·二十七已知边界，`workload.rollout_stalled` 事件承担该信号——聚合修复后 drift 与 stalled 两信号各归其位（前者=世界≠期望代、后者=编排器自报停摆）。
+
+## 2026-10-17 记录·五十八（七批修复全量换装 5bcaf9c→aa93ac6 + 全量验收；现役）
+
+**换代**：ee956a1 → `5bcaf9c`（一拍：buildinfo 下沉 + W-8/FB-1 + 观测聚合 + console W-1/W-3 + 节点观测收尾 + W-7 ⌘K 修复）→ `aa93ac6`（二拍：容器深链 system 门控，走查实咬前向修复）。**零迁移**（goose no migrations to run）、零 IR 形状变化。前置硬门：Platform Backup `a0d91f0e`（09:24 UTC）+ 受管卷 18 枚全量 tar 至 `/root/upgrade-5bcaf9c/vols/`（比九枚口径保守：db-*/vol-* 双代卷 + rustfs + buildkit-cache 全含）。
+
+**换装序**（CLI 本地律，SSH 仅系统面）：`verify:hermetic` PASS（双构建 sha256 逐位一致 `c3dcac0b…` + commit 戳 5bcaf9c）→ scp 双二进制对账 → 旧版留底 `/root/fleetlyd-ee956a1.bak` → stop（SIGTERM 排水）→ install → **drop-in 七件存活核验**（10-logging/11-metrics/api/browse/console/railpack/registry）→ 起服。二拍同序（`bf2aa8a5…`，留底免——一拍产物即回滚锚）。
+
+**验收锚（全绿）**：
+- **零滚动实锤**：换装前后全集群 running task 集 sha256 逐位一致（`25a03297…`，15 行）；tw.dev / console.dev 双 200。
+- **doctor**：10 ok / 2 warning（既有基线）/ 0 failed，健康行活体回显 `server 5bcaf9c`（二拍后 `aa93ac6` 同绿）。
+- **CLI 面（新动词活体三态）**：`nodes containers --node node-2` 正例 15 行（App/受管域投影逐列正确）+ 未知节点 E_NOT_FOUND + `--node` 缺席 usage 拒绝。
+- **GitHook 生命周期 CLI 全链**（一次性走查 app zhlog-w58-15/hookcheck-21，用后即删）：set → delete（解除文案）→ 删后 get E_NOT_FOUND → 重删 E_NOT_FOUND（非幂等诚实）→ app delete 级联在服。
+- **drift 风暴止息实锤**：换装重启后（09:26 起）`workload.drift_detected` / `rollout_stalled` 双零——修复前 messageloop-18 每 10 秒一条刷屏（记录·五十七）；messageloop 三进程单容器收敛在服。
+- **浏览器走查**（console.dev 公网直连，token 注入会话）：①**⌘K 面板活体**——顶栏 Search… 点击即开浮层（居中+遮罩+分组导航 23 项可寻址，截图在案），sr-only 标题在内容层内（修复前：Events 页必炸错误边界 + 页底 a11y 残影）；②**容器深链活体**——node-2 详情 15 行中用户域 9 行全部 `/p/$projectId/apps/$appId` 精确投影（demo-19→quickstart-14、torchwood-14→torchwood-1 等逐行核对）；③**W-1 回退活体**——`/p/gone-project-xyz` 直达自动回退 `/p/torchwood-1`（replace，无死页）。
+
+**走查实咬（当窗前向修复）**：受管载体行的合成 project `system` 也被加了深链（点击撞 W-1 回退落 torchwood 总览，误导）——`workloadCell` 补 `system` 门控（受管载体无 App 详情页）+ 钉测补反例（aa93ac6）。**流程教训**：`mise run console:verify 2>&1 | tail -1 && echo OK` 的管道让 tail 吞掉 verify 退出码，console:test 红被掩蔽后误推一版（19b645b）——门禁链必须显式核 `$?`/pipefail（本机 shell 教训第二次在案）。
+
+**留底与卷 tar 按纪律保留**：`/root/fleetlyd-ee956a1.bak`、`/root/upgrade-5bcaf9c/`（双二进制 + vols 18 枚）、`/root/upgrade-aa93ac6/`（双二进制）。
