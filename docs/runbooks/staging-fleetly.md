@@ -1196,3 +1196,21 @@ F3.1/F3.2/F3.3/F3.6 四批走查的浏览器级挂账在后端在场的环境（
 **诚实边界（挂账）**：CLI 无 `nodes containers` 动词（REST/gRPC 面完整，CLI 动词随需补）；容器行深链 App 详情未做（需 project 归属解析）；本面列编排器 running task（每 task 一容器）——daemon 本地一次性 utility 容器不在射程（manager 视角本就看不到全集群，设计边界非缺口）。
 
 **走查痕迹清理**：部署临时物（/tmp 双二进制 + 验收脚本）即清；留底与卷 tar 按纪律保留（`/root/fleetlyd-66a9199.bak`、`/root/upgrade-ee956a1/vols/` 九枚）。
+
+## 2026-10-17 记录·五十七（scale 双门超时 + N/1 drift 风暴排查收官：pollTasks 逐 workload 聚合修复；现役 ee956a1 上的观测缺陷，修复待上站）
+
+记录·五十三挂账（记录·五十三附：健康门/回滚门对 scale 部署的超时链路 + 孤儿清扫单独排查）的收官。全程 CLI 公网直连只读取证（`FLEETLY_ADDR=grpcs://api.dev.fleetly.run`，REST 经 console.dev 网关——api.* 是 gRPC 专用，REST 打 api.* 回 415 grpc content-type）。
+
+**真机取证链（三面交叉）**：
+1. **torchwood-14 d46-d49 L1 超时链收案（环境性，非引擎缺陷）**：d39-d45 是 db-bootstrap 作业失败链（bootstrap SQL/configs 材料未就绪），d46-d49（gen 7-9，换镜像 `sha-78ea1a4`→`latest`）各撞 L1 超时且 rollout_stalled 事件逐代在发（server/worker/minio/redis 全家 paused）——新代 task 起不来（GHCR 材料缺位窗）+ `FailureAction=pause` 停摆 → L1 诚实超时。d50（05:44，材料齐）起全绿，d60 succeeded——已自行收案。
+2. **messageloop-18 活体 drift 风暴（本批主案）**：`workload.drift_detected` 232+ 条（06:15-07:52+ 仍在发）`expected=4, observed=3, running` **每 10 秒一条**；`workload.rollout_stalled` gen2/3/4 三代齐发（06:16/07:03/07:17）；三个部署 d56/d58/d59 全部 **succeeded** 而活体停在旧代。节点容器 API 活体对账：messageloop 每进程**单 task 在跑、携带 gen 3 戳**，服务 spec 已是 gen 4（paused）——单 task 旧代残留形态（非多 task 堆叠）。
+3. **from_revision 谜底（非缺陷）**：d46-d49 无 from_revision 曾疑 console 部署缺回滚基线——实际 baseline=最近 **succeeded** 部署的 revision，torchwood-14 首个成功是 d50，此前无基线可不回滚=正确语义；记录·五十三的 01M4N3JXQ（App 已删）有基线故回滚门也超时（同一停摆机理在重放轮再咬一次）。
+
+**根因链（三环，代码面对号）**：
+- **环 1（swarm 语义，正确前提）**：`FailureAction=pause` + start-first——新代 task 崩溃 → 滚动停摆，旧代 task 继续服（可用性正确）；停摆后旧代 task 的 desired 仍 running，新代 task 按自身 restart 策略崩溃重启环。
+- **环 2（本批缺陷）**：`pollTasks`（10s 权威轮询）**逐 task** 发观测，全部砸进引擎 per-process 单槽（workload ID = `app-process`，last-write-wins）——旧代 running@3 与新代 stopped/running@4 在同一槽位**跨代互覆**：①L2 看门狗读槽被旧代 running 掩盖（该咬不咬）；②drift 去抖签名被两 task 交替打穿（running@4 命中期望清签名 → running@3 再发 drift → 循环）= 10s 风暴；③L1 采样到崩溃重启环的 running 瞬间 → **假通过**（d59 succeeded 而世界@3，与活体 drift 永久失配同源）。
+- **环 3（判定面，正确）**：L1 超时/回滚门超时本身是诚实裁决（停摆下等待确实不会就绪）；`serviceWireGen` 读 spec 侧标签在"已受理未滚完"窗口的漂移正是 drift 事件想说的内容——风暴的问题在去抖被打穿，不在 drift 说错。
+
+**修复（本批，swarm provider 单点）**：`pollTasks` 非 Task 域改**逐 workload 聚合单发**（`aggregateWorkloadEvents` 纯函数）：spec 侧代次子集优先（滚动中/停摆时新代 task 的真实状态才是 L1/L2 判定对象，旧代残留不入槽）；spec 代无 task 回退全量最高代（刚受理未建/历史行）；聚合状态 = 子集全 running 才 running，非 running 取最重态（终态/stopped 优先于 pending），多 task 消息带 n/m 计数；Task 域旁路聚合（one-shot 终态逐 task 可见，ADR-0025 决策 2）。测试：纯函数七用例（风暴形态钉死）+ fake daemon 端到端（聚合 + Task 域旁路 + taskStatusMessage 保形）。
+
+**诚实边界（挂账改口）**：①崩溃重启环的 running 瞬间仍可被 L1 采样到（根绝需重启历史/稳定性窗，聚合后窗口收窄为单 task 自己的翻转，本批不涉）；②paused 旧代残留的恢复动作仍走 `resumeStalledRollout`（Force++ 重发）与人工 `--force`（记录·二十七口径不变）；③停摆时 spec 对照无感仍是记录·二十七已知边界，`workload.rollout_stalled` 事件承担该信号——聚合修复后 drift 与 stalled 两信号各归其位（前者=世界≠期望代、后者=编排器自报停摆）。
