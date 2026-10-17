@@ -118,10 +118,11 @@ function workloadOf(row: NodeContainer): string {
 }
 
 // workloadCell 是容器行的归属单元：App 域行带 project/app 归属 → 深链
-// App 详情（行内投影零解析成本，e922304 挂账收尾）；其余域无 App 语境，
-// 纯文本。
+// App 详情（行内投影零解析成本，e922304 挂账收尾）；受管载体的合成
+// project `system` 无 App 详情页（点击只会撞 W-1 回退）不产链接；其余域
+// 无 App 语境，纯文本。
 function workloadCell(row: NodeContainer) {
-  if (row.domain === "app" && row.app_id && row.project_id) {
+  if (row.domain === "app" && row.app_id && row.project_id && row.project_id !== "system") {
     return (
       <Link
         to="/p/$projectId/apps/$appId"

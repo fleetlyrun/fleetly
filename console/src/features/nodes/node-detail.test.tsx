@@ -55,6 +55,10 @@ function stubFetch() {
               project_id: "shop", app_id: "web", process: "api", image: "nginx:1.27",
             },
             { instance: "task-aaa2", workload_id: "db1", domain: "database", image: "pg:16" },
+            {
+              instance: "task-aaa3", workload_id: "fleetly-proxy-traefik", domain: "app", team: "acme",
+              project_id: "system", app_id: "proxy", process: "traefik", image: "traefik:v3.5.4",
+            },
           ],
         }),
         { status: 200 },
@@ -93,10 +97,12 @@ describe("NodeDetailPage containers", () => {
     expect(screen.getByText("database")).toBeTruthy();
     expect(screen.getByText("2 running")).toBeTruthy();
     // 深链（e922304 挂账收尾）：App 域行带行内 project/app 投影 → App
-    // 详情；database 域无 App 语境不产链接（crumb 的 /nodes Link 不计入）。
+    // 详情；database 域无 App 语境不产链接（crumb 的 /nodes Link 不计入）；
+    // 受管载体合成 project `system` 无 App 页，同样不产链接。
     expect(linkProps.filter((entry) => entry.to === "/p/$projectId/apps/$appId")).toEqual([
       { to: "/p/$projectId/apps/$appId", params: { projectId: "shop", appId: "web" } },
     ]);
+    expect(screen.getByText("proxy · traefik")).toBeTruthy();
     client.clear();
   });
 
