@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://fleetly.dev/schemas/compose-dialect.json",
+  "$id": "https://fleetly.sh/schemas/compose-dialect.json",
   "title": "fleetly compose dialect",
   "description": "Editor aid for the fleetly compose intake language (ADR-0074): compose-spec official syntax + x-fleetly extensions. Closedness is enforced at intake, not here — fields outside this schema may be legal compose for other tools but are rejected by fleetly at deploy time.",
   "type": "object",

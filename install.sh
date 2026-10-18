@@ -1,5 +1,5 @@
 #!/bin/sh
-# fleetly 一行安装（F0.1）：curl -fsSL https://fleetly.dev/install.sh | sh
+# fleetly 一行安装（F0.1）：curl -fsSL https://fleetly.sh/install.sh | sh
 #
 # 流程：OS/arch 检测 → 二进制获取（GitHub Releases 或 FLEETLY_BIN_DIR 本地
 # 目录——dev/e2e 模式）→ Docker 检测/安装 → 单节点 swarm init → 数据根
@@ -272,5 +272,5 @@ fleetly is running.
   3. Sanity-check the install:
        fleetly doctor
 
-Docs: https://docs.fleetly.dev
+Docs: https://docs.fleetly.sh
 EOF

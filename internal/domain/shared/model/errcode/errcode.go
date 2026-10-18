@@ -25,7 +25,7 @@ import (
 var idPattern = regexp.MustCompile(`^E_[A-Z0-9]+(_[A-Z0-9]+)*$`)
 
 // DocsURLPrefix 是错误码文档锚点前缀；Envelope.docs 由 ID 派生。
-const DocsURLPrefix = "https://docs.fleetly.dev/errors/"
+const DocsURLPrefix = "https://docs.fleetly.sh/errors/"
 
 // Code 是一个对外稳定的错误码条目。
 type Code struct {

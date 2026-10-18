@@ -35,7 +35,7 @@ func TestFromErrorProjectsEnvelope(t *testing.T) {
 		Code:       "E_NOT_FOUND",
 		Message:    "app web not found",
 		Suggestion: "check the app id",
-		Docs:       "https://fleetly.dev/errors/E_NOT_FOUND",
+		Docs:       "https://fleetly.sh/errors/E_NOT_FOUND",
 		Context:    map[string]string{"error_id": "abc123", "project_id": "p1"},
 	})
 
@@ -44,7 +44,7 @@ func TestFromErrorProjectsEnvelope(t *testing.T) {
 		t.Fatal("FromError must project an envelope detail")
 	}
 	if got.Code != "E_NOT_FOUND" || got.Message != "app web not found" ||
-		got.Suggestion != "check the app id" || got.Docs != "https://fleetly.dev/errors/E_NOT_FOUND" {
+		got.Suggestion != "check the app id" || got.Docs != "https://fleetly.sh/errors/E_NOT_FOUND" {
 		t.Fatalf("envelope fields drifted: %+v", got)
 	}
 	if got.ErrorID != "abc123" {

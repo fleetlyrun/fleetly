@@ -1,3 +1,3 @@
 E_REGISTRY_UNAVAILABLE: the managed registry read proxy is unavailable: the registry provider does not offer the content face
 suggestion: Set registry.addr in the fleetlyd config and restart to enable the managed registry; if it is already set, the configured registry provider does not serve the catalog/tags content face. Absence is an explicit off state, not a degraded mode (E_BROWSE_DISABLED precedent).
-docs: https://docs.fleetly.dev/errors/E_REGISTRY_UNAVAILABLE
+docs: https://docs.fleetly.sh/errors/E_REGISTRY_UNAVAILABLE

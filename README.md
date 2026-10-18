@@ -18,7 +18,7 @@ fleetly 是一个轻量 PaaS：把源码或镜像变成运行在可插拔运行�
 ```sh
 # 1) 一行安装：OS/arch 检测 → 二进制 → Docker 检测/安装 → swarm init
 #    → fleetlyd（systemd）→ 健康等待
-curl -fsSL https://fleetly.dev/install.sh | sudo sh
+curl -fsSL https://fleetly.sh/install.sh | sudo sh
 
 # 2) 消费 bootstrap token 完成初始化
 cat /var/lib/fleetly/bootstrap-token
