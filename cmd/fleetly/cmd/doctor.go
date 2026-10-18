@@ -249,6 +249,16 @@ func runDoctorProbes(ctx context.Context, addr string, ex exposureTargets) docto
 			if !st.GetSystem() || st.GetState() != "firing" {
 				continue
 			}
+			// 收敛冷却行（ADR-0082 §4 可发现性：converge-failed 内置规则
+			// firing = 有 App 连续收敛失败进入冷却窗）。
+			if st.GetMetric() == "converge_failed" {
+				checks = append(checks, doctorCheck{
+					Area: "converge", Name: "convergence cooldown", Status: checkWarn,
+					Detail: "cooling since " + st.GetStateSince(),
+					Advice: "a drifted app failed to reconverge repeatedly; inspect `fleetly events list --json` for workload.converge_failed and check the app's carriers — the engine retries after the cooldown window (or on a new drift signature); set a change freeze before manual hot fixes so convergence stands down",
+				})
+				continue
+			}
 			checks = append(checks, doctorCheck{
 				Area: "alerting", Name: st.GetRuleId(), Status: checkWarn,
 				Detail: "firing since " + st.GetStateSince(),

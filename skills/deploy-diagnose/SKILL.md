@@ -32,7 +32,8 @@ the causal chain; logs and builds are the evidence underneath.
 
 2. Read the causal chain. Event names to look for: `deployment.*` (state
    transitions, `deployment.pre_deploy_job`), `build.*`, `run.*` / `task.*`
-   (deploy-time jobs), `workload.drift_detected`, `workload.stopped`:
+   (deploy-time jobs), `workload.drift_detected`, `workload.converged`,
+   `workload.converge_failed`, `workload.stopped`:
 
    ```bash
    fleetly events list --limit 50 --json
@@ -44,6 +45,14 @@ the causal chain; logs and builds are the evidence underneath.
    ```bash
    fleetly events follow --replay --json
    ```
+
+   Drift semantics (converge-by-default): on an idle app (no deployment in
+   flight) the engine reconverges drifted or missing carriers to the last
+   succeeded revision on its own — a `workload.drift_detected` is usually
+   followed by `workload.converged` within a scan interval. A drift that
+   persists, or a `workload.converge_failed`, means convergence is failing or
+   cooling down (see the triage table). To hand-edit carriers on purpose, set
+   a change freeze first — otherwise the engine will converge your fix away.
 
 3. Probe workload reality under the app (per process; live tail + recent
    buffer only — persisted search lands with N2):
@@ -132,7 +141,9 @@ the causal chain; logs and builds are the evidence underneath.
 | `failed` + `railpack: pinned version mismatch` or `railpack binary ... is not runnable` | The error text names the platform's pinned version and the `--railpack-version` form | Redeploy with the exact pinned version; a missing/mismatched binary is an operator task on the control-plane node (install.sh pins it). |
 | `failed` + `cross-project network reference ... is not approved` | `fleetly networks peers --project PROJECT_ID --json` | Have the receiving project approve the peer declaration, or drop the reference from the spec. |
 | `releasing` / `observing` for minutes, no failure | `fleetly events follow --replay --json` (are `workload` observations arriving at all?) | If observations stalled, suspect the runtime/provider; if L1 legitimately waits, the window (default 120s) will fail the deployment on its own — do not preempt it. |
-| `workload.stopped` on a `succeeded` app (steady state) | `fleetly logs --app APP_ID --process PROCESS --tail 100`, `fleetly events list --limit 20 --json` | The watchdog only reports. If the process exits are a crash loop, fix and deploy; a stopped row with no deployment in flight reconverges with `fleetly apps restart --app APP_ID --process PROCESS` (in-place force-reschedule; a redeploy of unchanged content does not roll carriers). |
+| `workload.stopped` on a `succeeded` app (steady state) | `fleetly logs --app APP_ID --process PROCESS --tail 100`, `fleetly events list --limit 20 --json` | The watchdog only reports (spec matches, so convergence stands down — the runtime restarts tasks on its own). If the process exits are a crash loop, fix and deploy; a stopped row with no deployment in flight reconverges with `fleetly apps restart --app APP_ID --process PROCESS` (in-place force-reschedule; a redeploy of unchanged content does not roll carriers). |
+| `workload.drift_detected` on an idle app (no deployment in flight) | `fleetly events list --limit 20 --json` (did `workload.converged` follow?), `fleetly doctor` | Converge-by-default restores the succeeded baseline within a scan interval — confirm convergence instead of acting. If drift persists without `workload.converged`, suspect a change freeze (convergence suspends; `fleetly freeze list --json`) or a cooling window (next row). |
+| `workload.converge_failed` / doctor shows a convergence cooldown | `fleetly events list --limit 50 --json` (the failure tails), `fleetly apps workloads --live APP_ID` | The engine retries after the cooldown window, or sooner on a new drift signature. Fix the underlying cause (carrier stuck, image unresolvable, runtime unhealthy) rather than retrying manually. For a deliberate manual hot fix, set a change freeze first (`fleetly freeze set --reason manual-hot-fix`), edit, then either write the change into the spec or lift the freeze. |
 | `E_QUEUE_FULL` on submit | `fleetly deployments list --app APP_ID --json` (queued rows pile-up) | Wait for the in-flight deployment to drain; do not retry-loop the submit. |
 | `E_CHANGE_FROZEN` on any change verb | `fleetly freeze list --json` | A change freeze is active for the team/resource. Lift it (`fleetly freeze lift FREEZE_ID`) only if the change is intended. |
 | `git clone` failure mentioning `Authentication failed` (build never starts) | `fleetly github-apps list --project PROJECT_ID --json` (is there a row whose owner matches the repo's `owner/` path?) | Private repository with no access material: for github.com hosts configure a GitHub App — `fleetly github-apps put --project PROJECT_ID --app-id 182345 --installation-id 51790921 --private-key-file key.pem` (owner resolved automatically; `--global` for a platform-wide row); for other hosts put a `git:<host>` project secret via `fleetly secrets put --project PROJECT_ID --value '{"username":"ci","secret":"s3cret"}' git:HOST` (flags before the NAME positional; value is a JSON pair). If a row exists but the failure persists, `fleetly github-apps repos --id ID` re-verifies the installation live (suspended or uninstalled rows fail precise with `E_GITHUB_UPSTREAM`). |

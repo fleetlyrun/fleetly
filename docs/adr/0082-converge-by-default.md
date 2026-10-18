@@ -86,12 +86,12 @@ ring 域（受管/Database/Task）已实现控制器赢：`ReconcileReplayInterv
 
 ## 验收锚
 
-- [ ] 收敛裁决表十行落码并 golden 钉死（表即断言：每行一个判定函数 + golden 快照）
-- [ ] 钉测族五类以上：冻结挂起（解冻重扫）/ 活跃部署跳过（含 failed 待回滚窗）/ stopped 不收敛 / 缺席重建 / 幽灵负向（BG 收口后旧代不重建、进程缩减后不重建）/ teardown 竞态 / gen 偏离收敛修复 / 终态后停摆恢复
-- [ ] 签名生命周期钉测：失败不落签名计冷却、挂起记账解冻重扫
-- [ ] 冷却钉测：N=3 → 10min + converge_failed 一次；解除三径各自可达
-- [ ] `workload.converged` / `workload.converge_failed` 事件注册三链（schemareg + golden + usage 反扫）
-- [ ] doctor 收敛冷却行 + `converge_failed` 内置告警规则
-- [ ] posture 配置键落地 + 缺省 all 钉测
-- [ ] 期望账本写点纪律：ensuredSpec/ensuredGen 仅 Ensure 写点（观测播种禁）+「succeeded 无期望缓存 → 收敛触发」分支钉测
-- [ ] Cancel 遗留回卷 LatestSucceeded 基线钉测
+- [x] 收敛裁决表十行落码并 golden 钉死（表即断言：每行一个判定函数 + golden 快照——convergeVerdict + testdata/converge-verdicts.golden）
+- [x] 钉测族五类以上：冻结挂起（解冻重扫）/ 活跃部署跳过（含 failed 待回滚窗）/ stopped 不收敛 / 缺席重建 / 幽灵负向（BG 收口后旧代不重建、进程缩减后不重建）/ teardown 竞态 / gen 偏离收敛修复 / 终态后停摆恢复（converge_test.go 八类全钉）
+- [x] 签名生命周期钉测：失败不落签名计冷却、挂起记账解冻重扫（TestConvergeCooldownLifecycle / TestFreezeSuspendsConvergeUntilLift）
+- [x] 冷却钉测：N=3 → 10min + converge_failed 一次；解除三径各自可达（超窗/签名变化/posture 切换，TestConvergeCooldownLifecycle；基线重放共用记账 TestBaselineReplaySharesCooldownLedger）
+- [x] `workload.converged` / `workload.converge_failed` 事件注册三链（schemareg + golden + usage 反扫）
+- [x] doctor 收敛冷却行 + `converge_failed` 内置告警规则（converge-failed 系统行入 ListAlertStates；doctor converge 冷却行带处置建议）
+- [x] posture 配置键落地 + 缺省 all 钉测（engine.converge_posture / failure_threshold / cooldown_secs 三键 + ParseConvergePosture fail-fast；TestConvergePostureDefaultsToAll）
+- [x] 期望账本写点纪律：ensuredSpec/ensuredGen 仅 Ensure 写点（观测播种禁，recordSpecs/recordEnsured 注释钉死）+「succeeded 无期望缓存 → 收敛触发」分支钉测（TestSucceededWithoutExpectCacheConverges）
+- [x] Cancel 遗留回卷 LatestSucceeded 基线钉测（TestCancelLegacyConvergesBackToBaseline——慢通道重放兑现回卷）

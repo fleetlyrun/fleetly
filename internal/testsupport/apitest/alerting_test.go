@@ -84,17 +84,19 @@ func TestAlertingRulesLifecycle(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, rules.GetRules(), 1)
 
-	// states 含系统内置行。
+	// states 含系统内置行（ADR-0082 起两行：platform-offsite-backup +
+	// converge-failed——收敛冷却的内置告警面）。
 	states, err := c.Alerting.ListAlertStates(ctx, &telemetryv1.ListAlertStatesRequest{})
 	require.NoError(t, err)
-	foundSystem := false
+	systemRules := map[string]bool{}
 	for _, s := range states.GetStates() {
 		if s.GetSystem() {
-			foundSystem = true
-			assert.Equal(t, "platform-offsite-backup", s.GetRuleId())
+			systemRules[s.GetRuleId()] = true
+			assert.Equal(t, "ok", s.GetState(), "no cooldown/fire at rest")
 		}
 	}
-	assert.True(t, foundSystem, "system rule must ride the states face")
+	assert.True(t, systemRules["platform-offsite-backup"], "offsite rule must ride the states face")
+	assert.True(t, systemRules["converge-failed"], "converge rule must ride the states face")
 
 	// 删除（coverage 锚）+ 删后 404 + states 收缩。
 	_, err = c.Alerting.DeleteAlertRule(ctx, &telemetryv1.DeleteAlertRuleRequest{RuleId: ruleID})

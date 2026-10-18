@@ -357,6 +357,17 @@ func (svc *AlertingService) ListAlertStates(ctx context.Context, _ *telemetryv1.
 		RuleId: sys.RuleID, Metric: "platform_offsite_backup",
 		State: sys.State, StateSince: since, System: true,
 	})
+	// 内置收敛告警行（ADR-0082 §4：任一 App 处于收敛冷却窗即 firing——
+	// platform-offsite-backup 先例对齐：不落行、不可删、doctor 可见）。
+	cvg := svc.s.Engine.SystemConvergeAlertState()
+	csince := ""
+	if !cvg.StateSince.IsZero() {
+		csince = cvg.StateSince.UTC().Format(time.RFC3339)
+	}
+	out.States = append(out.States, &telemetryv1.AlertState{
+		RuleId: cvg.RuleID, Metric: "converge_failed",
+		State: cvg.State, StateSince: csince, System: true,
+	})
 	return out, nil
 }
 

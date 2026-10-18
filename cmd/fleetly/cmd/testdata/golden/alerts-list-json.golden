@@ -19,6 +19,12 @@
       "metric": "platform_offsite_backup",
       "state": "ok",
       "system": true
+    },
+    {
+      "rule_id": "converge-failed",
+      "metric": "converge_failed",
+      "state": "ok",
+      "system": true
     }
   ]
 }
