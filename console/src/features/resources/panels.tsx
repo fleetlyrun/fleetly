@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
-import { LinkIcon, PlusIcon } from "lucide-react";
+import { LinkIcon, PencilIcon, PlusIcon } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
 import { toast } from "sonner";
 import {
@@ -15,13 +16,14 @@ import {
   useUploads,
   useVolumes,
 } from "@/lib/catalog";
-import { apiSend, apiSendRaw } from "@/api/client";
+import { apiSend, apiSendRaw, apiFetch } from "@/api/client";
 import { useApiMutation } from "@/lib/use-api-mutation";
 import { describeError } from "@/lib/api-errors";
 import { shortId } from "@/lib/format";
 import { specIndex, useAppSpecs } from "@/features/spec/use-app-specs";
 import { buildTar, rootPrefixOf } from "@/lib/tar";
 import { ConfirmDialog } from "@/components/domain/confirm-dialog";
+import { CopyButton } from "@/components/domain/copy-button";
 import { EmptyState } from "@/components/domain/empty-state";
 import { ErrorState } from "@/components/domain/error-state";
 import { ListCard } from "@/components/domain/list-page";
@@ -1006,6 +1008,7 @@ export function ConfigsPanel({ projectId }: { projectId: string }) {
 
 function ConfigsTab({ projectId }: { projectId: string }) {
   const configs = useConfigs(projectId);
+  const [selected, setSelected] = useState<KeyValueRow | null>(null);
 
   const columns: LegacyColumnDef<KeyValueRow, any>[] = [
     { accessorKey: "name", header: "Name", cell: ({ row }) => <span className="font-mono">{row.original.name}</span> },
@@ -1023,6 +1026,17 @@ function ConfigsTab({ projectId }: { projectId: string }) {
         </span>
       ),
     },
+    {
+      id: "actions",
+      header: () => <span className="sr-only">Actions</span>,
+      cell: ({ row }) => (
+        <div className="text-right">
+          <Button variant="outline" size="sm" onClick={() => setSelected(row.original)}>
+            view
+          </Button>
+        </div>
+      ),
+    },
   ];
 
   return (
@@ -1036,6 +1050,7 @@ function ConfigsTab({ projectId }: { projectId: string }) {
         error={configs.isError ? configs.error : null}
         onRetry={() => void configs.refetch()}
         columns={columns}
+        onRowClick={(row) => setSelected(row)}
         cli={`fleetly configs list --project ${projectId}`}
         actions={
           <PutForm
@@ -1048,7 +1063,140 @@ function ConfigsTab({ projectId }: { projectId: string }) {
           />
         }
       />
+      <ConfigDetailDialog projectId={projectId} config={selected} onClose={() => setSelected(null)} />
     </section>
+  );
+}
+
+// ConfigDetailDialog 是 Config 详情/编辑弹窗（行点击 / view 动词进入）：
+// 内容按 GetConfig 回读（Config 是版本化可回读面——与 Secrets 的
+// write-only 契约相反）；编辑提交 PUT 同名即冻结新版本，成功后回视图
+// 并刷新到新版本号。版本历史浏览平台面未开（ListConfigs 只回每 name
+// 最新版），详情先钉当前版。
+function ConfigDetailDialog({
+  projectId,
+  config,
+  onClose,
+}: {
+  projectId: string;
+  config: { name?: string } | null;
+  onClose: () => void;
+}) {
+  const name = config?.name ?? "";
+  const detail = useQuery({
+    queryKey: ["resources", "config", projectId, name],
+    enabled: name !== "",
+    queryFn: async () => {
+      const res = await apiFetch<{ config?: { version?: string; created_at?: string; content?: string } }>(
+        `/v1/configs/${encodeURIComponent(projectId)}/${encodeURIComponent(name)}`,
+      );
+      return res.config;
+    },
+  });
+  const [editing, setEditing] = useState(false);
+  const [content, setContent] = useState("");
+  const save = useApiMutation<{ config?: { version?: string } }>({
+    path: "/v1/configs",
+    method: "PUT",
+    body: () => ({ project_id: projectId, name, content }),
+    invalidate: [
+      ["resources", "configs", projectId],
+      ["resources", "config", projectId, name],
+    ],
+  });
+  function close() {
+    setEditing(false);
+    onClose();
+  }
+  return (
+    <Dialog
+      open={config !== null}
+      onOpenChange={(open) => {
+        if (!open) close();
+      }}
+    >
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="font-mono">{name}</DialogTitle>
+        </DialogHeader>
+        {editing ? (
+          <form
+            className="flex flex-col gap-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              save.mutate(undefined, {
+                onSuccess: (res) => {
+                  setEditing(false);
+                  toast(`${name} saved as version ${res.config?.version ?? "?"}`);
+                },
+              });
+            }}
+          >
+            <Textarea
+              rows={16}
+              className="font-mono text-xs"
+              value={content}
+              onChange={(event) => setContent(event.target.value)}
+              autoFocus
+            />
+            {save.isError ? <FormError error={save.error} /> : null}
+            <DialogFooter>
+              <Button type="button" variant="outline" disabled={save.isPending} onClick={() => setEditing(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={save.isPending || content === (detail.data?.content ?? "")}>
+                {save.isPending ? "Saving…" : "Save as new version"}
+              </Button>
+            </DialogFooter>
+          </form>
+        ) : (
+          <>
+            <p className="text-xs text-muted-foreground">
+              version <span className="font-mono">{detail.data?.version ?? "…"}</span>
+              {" · updated "}
+              <RelativeTime value={detail.data?.created_at} />
+              {" · "}
+              {new TextEncoder().encode(detail.data?.content ?? "").length} bytes
+            </p>
+            {detail.isPending ? (
+              <Skeleton className="h-48 w-full" />
+            ) : detail.isError ? (
+              <FormError error={detail.error} />
+            ) : (
+              <pre className="max-h-[50vh] overflow-auto rounded-lg border bg-muted/40 p-3 font-mono text-xs break-all whitespace-pre-wrap">
+                {detail.data?.content}
+              </pre>
+            )}
+            {detail.isError ? (
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={close}>
+                  Close
+                </Button>
+                <Button type="button" onClick={() => void detail.refetch()}>
+                  Retry
+                </Button>
+              </DialogFooter>
+            ) : (
+              <DialogFooter>
+                <CopyButton value={detail.data?.content ?? ""} label="Copy" />
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={detail.isPending || detail.isError}
+                  onClick={() => {
+                    setContent(detail.data?.content ?? "");
+                    setEditing(true);
+                  }}
+                >
+                  <PencilIcon data-icon-start-inline />
+                  Edit
+                </Button>
+              </DialogFooter>
+            )}
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 
