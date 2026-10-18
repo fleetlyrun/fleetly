@@ -86,7 +86,7 @@ export function AppOverviewTab({ projectId, appId }: { projectId: string; appId:
                 <dt className="text-muted-foreground">state</dt>
                 <dd><DeploymentStatusBadge state={rows[0]?.state} /></dd>
                 <dt className="text-muted-foreground">generation</dt>
-                <dd className="font-mono text-xs">g{rows[0]?.generation ?? "?"}{rows[0]?.from_generation && rows[0]?.from_generation !== "0" ? ` ← g${rows[0]?.from_generation}` : ""}</dd>
+                <dd className="font-mono text-xs">{rows[0]?.from_generation && rows[0]?.from_generation !== "0" ? `g${rows[0]?.from_generation} → ` : ""}g{rows[0]?.generation ?? "?"}</dd>
                 <dt className="text-muted-foreground">latest revision</dt>
                 <dd className="font-mono text-xs">{revisionLabel(seqByRevision.get(rows[0]?.to_revision ?? ""), rows[0]?.to_revision)}</dd>
                 <dt className="text-muted-foreground">updated</dt>

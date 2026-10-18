@@ -394,11 +394,12 @@ func newDeploymentsGetVerb() commands.Command {
 	}
 }
 
-// generationCell 是部署行的代次形态（F3.1 双代窗叙事）：有基线时
-// "NEW←BASE"（← 读 from——replay 与蓝绿双代窗同款诚实），首代纯数字。
+// generationCell 是部署行的代次形态：有基线时 "BASE→NEW"（基线→目标，
+// 与 revision 行 from→to 同向；2026-10-18 用户裁决翻向，显式废弃 F3.1
+// 旧形态 "NEW←BASE"——← 读 from 与 revision 行异向易误读），首代纯数字。
 func generationCell(d *deliveryv1.Deployment) string {
 	if d.GetFromGeneration() > 0 {
-		return fmt.Sprintf("%d←%d", d.GetGeneration(), d.GetFromGeneration())
+		return fmt.Sprintf("%d→%d", d.GetFromGeneration(), d.GetGeneration())
 	}
 	return fmt.Sprintf("%d", d.GetGeneration())
 }

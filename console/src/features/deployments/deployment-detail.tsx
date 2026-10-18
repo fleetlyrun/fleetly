@@ -410,7 +410,7 @@ function GenerationWindowCard({ window: info }: { window: GenerationWindow }) {
           {info.observing ? "blue-green window · observing" : "blue-green window"}
         </h3>
         <span className="font-mono text-xs text-muted-foreground">
-          current g{info.toGen} ← serving g{info.fromGen}
+          serving g{info.fromGen} → current g{info.toGen}
         </span>
       </div>
       <p className="mt-1 text-xs leading-relaxed text-muted-foreground">

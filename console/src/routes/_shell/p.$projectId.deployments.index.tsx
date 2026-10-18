@@ -62,8 +62,8 @@ function ProjectDeploymentsPage() {
         const hasBaseline = row.original.from_generation != null && row.original.from_generation !== "0";
         return (
           <span className="font-mono text-xs text-muted-foreground">
+            {hasBaseline ? `g${row.original.from_generation} → ` : ""}
             g{row.original.generation ?? "?"}
-            {hasBaseline ? ` ← g${row.original.from_generation}` : ""}
           </span>
         );
       },

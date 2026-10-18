@@ -1,5 +1,5 @@
 ID	STATE	REVISION	GENERATION	UPDATED
-web-1-d4	queued	web-1-r1	4←1	2026-01-01T00:02:00Z
-web-1-d3	superseded	web-1-r1	3←1	2026-01-01T00:02:00Z
-web-1-d2	superseded	web-1-r1	2←1	2026-01-01T00:02:00Z
+web-1-d4	queued	web-1-r1	1→4	2026-01-01T00:02:00Z
+web-1-d3	superseded	web-1-r1	1→3	2026-01-01T00:02:00Z
+web-1-d2	superseded	web-1-r1	1→2	2026-01-01T00:02:00Z
 web-1-d1	succeeded	web-1-r1	1	2026-01-01T00:02:00Z

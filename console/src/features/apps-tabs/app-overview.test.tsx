@@ -80,4 +80,39 @@ describe("AppOverviewTab processes summary", () => {
     await waitFor(() => expect(within(workerRow as HTMLElement).getByText("0")).toBeTruthy());
     client.clear();
   });
+
+  it("renders generation as baseline → target, same direction as the Revision column", async () => {
+    fetchMock.mockImplementation(async (path: string) => {
+      if (path.startsWith("/v1/apps?")) {
+        return new Response(JSON.stringify({ apps: [{ id: "A1", project_id: "P1", name: "alpha" }] }), { status: 200 });
+      }
+      if (path.startsWith("/v1/apps/A1/spec")) {
+        return new Response(JSON.stringify({ spec: { processes: [{ name: "web", replicas: "1" }] } }), { status: 200 });
+      }
+      if (path.startsWith("/v1/apps/A1/exec/instances")) {
+        return new Response(JSON.stringify({ instances: [] }), { status: 200 });
+      }
+      if (path.startsWith("/v1/deployments")) {
+        return new Response(
+          JSON.stringify({
+            deployments: [
+              { id: "D2", state: "releasing", generation: "2", from_generation: "1", from_revision: "R1", to_revision: "R2", updated_at: "2026-10-18T00:00:00Z" },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (path.startsWith("/v1/revisions")) return new Response(JSON.stringify({ revisions: [] }), { status: 200 });
+      if (path.startsWith("/v1/routes")) return new Response(JSON.stringify({ routes: [] }), { status: 200 });
+      if (path.startsWith("/v1/alerts")) return new Response(JSON.stringify({ states: [] }), { status: 200 });
+      return new Response(JSON.stringify({ series: [] }), { status: 200 });
+    });
+    const { client, wrapper } = withClient();
+    render(<AppOverviewTab projectId="P1" appId="A1" />, { wrapper });
+
+    // 方向钉测（2026-10-18 用户裁决）：generation 读作 基线→目标，
+    // 与 Revision 列 from→to 同向；旧 "NEW←BASE" 形态显式废弃。
+    await waitFor(() => expect(screen.getByText("g1 → g2")).toBeTruthy());
+    client.clear();
+  });
 });

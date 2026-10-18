@@ -313,7 +313,8 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 		//（代次化载体 g1 的 L1 + 观察窗——基线 gen 1 落位）；本段第三笔
 		// blue-green 部署（换镜像 → R3 新冻结）携带 from_generation=1 与
 		// merged 受理（R2 的 queued 请求被合并取代）。deployments get 钉
-		// 单行双代窗叙事（generation 3←1），revisions list 钉策略目录
+		// 单行双代窗叙事（generation 1→3——基线→目标，2026-10-18 翻向），
+		// revisions list 钉策略目录
 		//（R1/R3 web:blue-green、R2 缺省 rolling 的零值省略形态）。
 		{"deploy compose strategy bump", []string{"deploy", "--app", "GOLDEN_APP3", "--compose-file", "GOLDEN_COMPOSE_BG_BUMP",
 			"--idempotency-key", "compose-bg-3"}, 0},
