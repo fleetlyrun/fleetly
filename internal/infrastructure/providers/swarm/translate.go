@@ -32,6 +32,10 @@ const (
 	labelProcess  = "fleetly.process"
 	// labelGeneration 搬运平台 Generation（幂等重放与 Drift 判定锚）。
 	labelGeneration = "fleetly.generation"
+	// labelRestartSeq 搬运声明式重启序数（ADR-0083）：内容成分而非观测锚
+	// ——序数变更即内容变更（full update 滚动替换 = 声明式滚动重启）。
+	// seq=0 不铸标签；等价比对对 "0" 值按缺失归一（canonicalSpecJSON）。
+	labelRestartSeq = "fleetly.restart_seq"
 	// labelPorts（声明端口 label）已退役（架构评审第二轮候选 7：Addresses
 	// 期望集注入取代平行编码）；升级期存量 service 上的旧 label 由一次性
 	// 滚动更新消除（spec diff 变化，staging 在役代价已付）。
@@ -134,6 +138,12 @@ func workloadLabels(ns capability.NamespaceRef, w capability.Workload, gen capab
 		labelWorkload:   w.ID,
 		labelProcess:    sanitizeNamePart(w.Process),
 		labelGeneration: strconv.FormatUint(workloadGeneration(w, gen), 10),
+	}
+	// 重启序数标签（ADR-0083 步骤 4）：seq>0 才铸——存量载体（无标签 ≡
+	// 期望 0）升级首拍零滚动（bb5259d「label 消失 → 全量滚替」P0 前车的
+	// 回归钉）；与 gen 戳同形双落（服务级 Labels = container.Labels）。
+	if w.RestartSeq > 0 {
+		labels[labelRestartSeq] = strconv.FormatUint(uint64(w.RestartSeq), 10)
 	}
 	switch {
 	case ns.Task != "":

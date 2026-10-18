@@ -125,6 +125,9 @@ func Project(spec *specv1.AppSpec, team, appName string, buildDigests map[string
 			}(),
 			Networks:       p.GetNetworks(),
 			EgressNetworks: egressSubset(p.GetNetworks(), egress),
+			// 声明式重启序数透传（ADR-0083 步骤 3）：意图字段进 Workload，
+			// 铸标签与等价比对归 Provider。
+			RestartSeq: p.GetRestartSeq(),
 		}
 		// 网络别名双值（ADR-0034 裸名 + ADR-0048 决策 3 全名）：裸名保
 		// compose 单栈兼容（单 App 内进程名唯一，归一化路径永不撞名）；

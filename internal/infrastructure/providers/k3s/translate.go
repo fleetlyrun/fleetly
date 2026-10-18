@@ -32,6 +32,11 @@ const (
 	labelProcess  = "fleetly.process"
 	// labelGeneration 搬运平台 Generation（幂等重放与 Drift 判定锚）。
 	labelGeneration = "fleetly.generation"
+	// labelRestartSeq 搬运声明式重启序数（ADR-0083；swarm 同名同语义）：
+	// pod 模板 label——序数变更即模板变更（rollout = 声明式滚动重启，
+	// k8s rollout restart 同构）。seq=0 不铸；等价比对对 "0" 值按缺失归一
+	//（canonicalJSONModuloGen）。
+	labelRestartSeq = "fleetly.restart_seq"
 	// labelEgress 标记挂 egress:none 网络的载体（ADR-0052 决策 6：per-carrier
 	// deny 的 podSelector 锚——载体挂任一 egress:none 网络即整体限制出站）。
 	labelEgress = "fleetly.egress"
@@ -162,6 +167,12 @@ func workloadLabels(ns capability.NamespaceRef, w capability.Workload, gen capab
 		labelWorkload:   w.ID,
 		labelProcess:    sanitizeNamePart(w.Process),
 		labelGeneration: strconv.FormatUint(workloadGeneration(w, gen), 10),
+	}
+	// 重启序数标签（ADR-0083 步骤 4，k3s 面）：seq>0 才铸——进 pod 模板
+	// 即进 Deployment 滚动比对面（账本 A 键随标签入比照），存量载体升级
+	// 首拍零滚动（swarm 同款裁决）。
+	if w.RestartSeq > 0 {
+		labels[labelRestartSeq] = strconv.FormatUint(uint64(w.RestartSeq), 10)
 	}
 	switch {
 	case ns.Task != "":

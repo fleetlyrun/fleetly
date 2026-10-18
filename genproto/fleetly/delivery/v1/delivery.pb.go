@@ -1878,8 +1878,11 @@ type Workload struct {
 	Addressing []string `protobuf:"bytes,14,rep,name=addressing,proto3" json:"addressing,omitempty"`
 	// restart 是生命周期声明（空 = Provider 缺省；值域 any/never/on-failure
 	// 等——CONTEXT.md Restart 词条轴）。
-	Restart       string               `protobuf:"bytes,15,opt,name=restart,proto3" json:"restart,omitempty"`
-	StopGrace     *durationpb.Duration `protobuf:"bytes,16,opt,name=stop_grace,json=stopGrace,proto3" json:"stop_grace,omitempty"`
+	Restart   string               `protobuf:"bytes,15,opt,name=restart,proto3" json:"restart,omitempty"`
+	StopGrace *durationpb.Duration `protobuf:"bytes,16,opt,name=stop_grace,json=stopGrace,proto3" json:"stop_grace,omitempty"`
+	// restart_seq 是本载体携带的声明式重启序数（ADR-0083；0 = 缺省，存量
+	// 零漂移——读面回显期望序数，"这次重启轮到第几拍"的排障锚）。
+	RestartSeq    uint32 `protobuf:"varint,17,opt,name=restart_seq,json=restartSeq,proto3" json:"restart_seq,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2024,6 +2027,13 @@ func (x *Workload) GetStopGrace() *durationpb.Duration {
 		return x.StopGrace
 	}
 	return nil
+}
+
+func (x *Workload) GetRestartSeq() uint32 {
+	if x != nil {
+		return x.RestartSeq
+	}
+	return 0
 }
 
 // WorkloadHealthcheck 是全解析探针投影：与 spec.v1.HealthcheckSpec 的声明
@@ -3880,7 +3890,7 @@ const file_fleetly_delivery_v1_delivery_proto_rawDesc = "" +
 	"\x03seq\x18\x02 \x01(\x03R\x03seq\"\x91\x01\n" +
 	"\x17GetAppWorkloadsResponse\x129\n" +
 	"\brevision\x18\x01 \x01(\v2\x1d.fleetly.delivery.v1.RevisionR\brevision\x12;\n" +
-	"\tworkloads\x18\x02 \x03(\v2\x1d.fleetly.delivery.v1.WorkloadR\tworkloads\"\xe1\x05\n" +
+	"\tworkloads\x18\x02 \x03(\v2\x1d.fleetly.delivery.v1.WorkloadR\tworkloads\"\x82\x06\n" +
 	"\bWorkload\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
 	"\aprocess\x18\x02 \x01(\tR\aprocess\x12\x14\n" +
@@ -3901,7 +3911,9 @@ const file_fleetly_delivery_v1_delivery_proto_rawDesc = "" +
 	"addressing\x12\x18\n" +
 	"\arestart\x18\x0f \x01(\tR\arestart\x128\n" +
 	"\n" +
-	"stop_grace\x18\x10 \x01(\v2\x19.google.protobuf.DurationR\tstopGrace\x1a6\n" +
+	"stop_grace\x18\x10 \x01(\v2\x19.google.protobuf.DurationR\tstopGrace\x12\x1f\n" +
+	"\vrestart_seq\x18\x11 \x01(\rR\n" +
+	"restartSeq\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xc2\x02\n" +

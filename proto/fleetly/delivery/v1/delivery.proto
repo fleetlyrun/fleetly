@@ -653,6 +653,9 @@ message Workload {
   // 等——CONTEXT.md Restart 词条轴）。
   string restart = 15;
   google.protobuf.Duration stop_grace = 16;
+  // restart_seq 是本载体携带的声明式重启序数（ADR-0083；0 = 缺省，存量
+  // 零漂移——读面回显期望序数，"这次重启轮到第几拍"的排障锚）。
+  uint32 restart_seq = 17;
 }
 
 // WorkloadHealthcheck 是全解析探针投影：与 spec.v1.HealthcheckSpec 的声明

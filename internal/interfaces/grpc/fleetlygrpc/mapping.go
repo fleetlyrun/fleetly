@@ -220,6 +220,7 @@ func workloadMsg(w capability.Workload) *deliveryv1.Workload {
 		Addressing: addressNames(w.Addressing),
 		Restart:    string(w.Restart),
 		StopGrace:  durationMsg(w.StopGrace),
+		RestartSeq: w.RestartSeq,
 	}
 	for _, p := range w.Ports {
 		msg.Ports = append(msg.Ports, &specv1.PortSpec{Port: p.Port, Protocol: protocolEnum(p.Protocol)})

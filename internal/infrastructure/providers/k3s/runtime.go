@@ -961,11 +961,15 @@ func canonicalSansReplicas(moduloGenJSON string) string {
 
 // stripObjectGenLabel 剥对象 meta labels 与 pod 模板 labels 两处的 gen 键
 // （map 空间原地删除；Deployment/DaemonSet 的两处标签同源同值，one-shot
-// Pod 只有对象层）。
+// Pod 只有对象层），并把重启序数标签的 "0" 值归一到缺失（ADR-0083：缺失
+// ≡ 0——平台只铸非零序数，环外 "0" 值不得击穿账本 A 键的升级零滚判定）。
 func stripObjectGenLabel(m map[string]any) {
 	if meta, ok := m["metadata"].(map[string]any); ok {
 		if labels, ok := meta["labels"].(map[string]any); ok {
 			delete(labels, labelGeneration)
+			if v, ok := labels[labelRestartSeq].(string); ok && v == "0" {
+				delete(labels, labelRestartSeq)
+			}
 		}
 	}
 	if spec, ok := m["spec"].(map[string]any); ok {

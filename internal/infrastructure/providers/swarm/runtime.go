@@ -403,6 +403,7 @@ func canonicalSpecJSON(spec swarm.ServiceSpec) string {
 			}
 			if labels, ok := cs["Labels"].(map[string]any); ok {
 				delete(labels, labelGeneration)
+				normalizeRestartSeqLabel(labels)
 			}
 		}
 		if res, ok := tt["Resources"].(map[string]any); ok && len(res) == 0 {
@@ -413,6 +414,7 @@ func canonicalSpecJSON(spec swarm.ServiceSpec) string {
 	// 在顶层，无 "Annotations" 包裹层）。
 	if labels, ok := m["Labels"].(map[string]any); ok {
 		delete(labels, labelGeneration)
+		normalizeRestartSeqLabel(labels)
 	}
 	delete(m, "RollbackConfig")
 	if uc, ok := m["UpdateConfig"].(map[string]any); ok {
@@ -431,6 +433,16 @@ func canonicalSpecJSON(spec swarm.ServiceSpec) string {
 		return ""
 	}
 	return string(out)
+}
+
+// normalizeRestartSeqLabel 把重启序数标签归一到缺失语义（ADR-0083 步骤
+// 4：缺失 ≡ 0——平台只铸非零序数，"0" 值只可能来自环外/历史形态；比对
+// 前剥除使「存量无标签 × 期望 0」与「带 0 标签 × 期望 0」同判 skip，
+// 升级首拍零滚动的 canonical 半边）。
+func normalizeRestartSeqLabel(labels map[string]any) {
+	if v, ok := labels[labelRestartSeq].(string); ok && v == "0" {
+		delete(labels, labelRestartSeq)
+	}
 }
 
 // canonicalContentJSON 在 canonicalSpecJSON 之上再剥离副本数：等价 =

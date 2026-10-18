@@ -156,3 +156,85 @@ func TestEnsureResumesStalledRolloutOnce(t *testing.T) {
 	assert.Equal(t, 2, d.count(updateKey), "resume must not flap inside the guard window")
 	assert.Equal(t, capability.Generation(2), report.WireGen(changed, 2))
 }
+
+// ADR-0083 内容等价四用例（restart_seq 铸标签面）：seq 变 → full update
+// 滚动替换（声明式滚动重启）/ 同 seq → skip / 缺失 → create / 存量无标签
+// × 期望 0 → skip（升级首拍零滚动——bb5259d「label 消失 → 全量滚替 →
+// torchwood-pg WAL 损坏」P0 前车的回归钉）。
+func TestEnsureRestartSeqContentEquivalence(t *testing.T) {
+	d := newFakeDaemon()
+	p := &Provider{cli: d.newClient(t)}
+	ctx := context.Background()
+	name := ensureCarrierName()
+	w := ensureWorkload()
+	updateKey := "POST /services/srv-" + name + "/update"
+
+	// 用例 1（seq 变 → 滚动）：seq=1 铸标签，seq=2 恰一次 full update、
+	// 新标签随内容落地、报告按调用 gen 归因。
+	seq1 := w
+	seq1.RestartSeq = 1
+	_, err := p.Ensure(ctx, ensureNS, []capability.Workload{seq1}, capability.Generation(1), capability.Materials{})
+	require.NoError(t, err)
+	seq2 := w
+	seq2.RestartSeq = 2
+	report, err := p.Ensure(ctx, ensureNS, []capability.Workload{seq2}, capability.Generation(2), capability.Materials{})
+	require.NoError(t, err)
+	assert.Equal(t, 1, d.count(updateKey), "restart_seq change must roll carriers (declarative rolling restart)")
+	svc, _ := d.byRef(name)
+	assert.Equal(t, "2", svc.Spec.Labels[labelRestartSeq], "service label carries the new seq")
+	assert.Equal(t, "2", svc.Spec.TaskTemplate.ContainerSpec.Labels[labelRestartSeq])
+	assert.Equal(t, capability.Generation(2), report.WireGen(seq2, 2))
+
+	// 用例 2（同 seq → skip）：内容零变化重放零 update（账本短路 + 等价
+	// 回读双路径同判——跨代未变语义不被序数标签击穿）。
+	_, err = p.Ensure(ctx, ensureNS, []capability.Workload{seq2}, capability.Generation(3), capability.Materials{})
+	require.NoError(t, err)
+	assert.Equal(t, 1, d.count(updateKey), "same seq must skip (no-op across generations)")
+	cold := &Provider{cli: d.newClient(t)}
+	report, err = cold.Ensure(ctx, ensureNS, []capability.Workload{seq2}, capability.Generation(4), capability.Materials{})
+	require.NoError(t, err)
+	assert.Equal(t, 1, d.count(updateKey), "same seq must skip on a cold ledger too")
+	assert.Equal(t, capability.Generation(2), report.WireGen(seq2, 4))
+
+	// 用例 3（缺失 → create）：新载体（无标签形态期望 seq=0）走 create。
+	freshDaemon := newFakeDaemon()
+	fresh := &Provider{cli: freshDaemon.newClient(t)}
+	createKey := "POST /services/create"
+	_, err = fresh.Ensure(ctx, ensureNS, []capability.Workload{w}, capability.Generation(1), capability.Materials{})
+	require.NoError(t, err)
+	assert.Equal(t, 1, freshDaemon.count(createKey), "seq=0 workload is created without a seq label")
+	svc, _ = freshDaemon.byRef(name)
+	assert.NotContains(t, svc.Spec.Labels, labelRestartSeq, "seq=0 casts no label")
+	assert.NotContains(t, svc.Spec.TaskTemplate.ContainerSpec.Labels, labelRestartSeq)
+
+	// 用例 4（存量无标签 × 期望 0 → skip，升级零滚）：升级前的现役服务
+	// 不带序数标签（旧版平台从不铸），升级后新二进制（冷账本）期望 seq=0
+	// 同样不铸——canonical 双侧缺失归一，升级首拍零 update、代戳保留
+	// （bb5259d WAL 前车的钉：label 消失不得变成全量滚替）。
+	legacyName := name
+	legacySvc, _ := freshDaemon.byRef(legacyName) // 用例 3 的 create 产物 = 旧版形态（无序数标签）
+	require.NotContains(t, legacySvc.Spec.Labels, labelRestartSeq)
+	upgraded := &Provider{cli: freshDaemon.newClient(t)}
+	report, err = upgraded.Ensure(ctx, ensureNS, []capability.Workload{w}, capability.Generation(8), capability.Materials{})
+	require.NoError(t, err)
+	assert.Equal(t, 0, freshDaemon.count(updateKey),
+		"existing carrier without a seq label vs desired seq=0 must not roll (upgrade is zero-roll)")
+	svc, _ = freshDaemon.byRef(legacyName)
+	assert.Equal(t, "1", svc.Spec.Labels[labelGeneration], "gen stamp stays with the running carrier")
+	assert.Equal(t, capability.Generation(1), report.WireGen(w, 8))
+}
+
+// canonical 归一钉（ADR-0083 步骤 4 的比对半边）：restart_seq 标签缺失与
+// "0" 值在 canonical 里等价——「带 0 标签的环外形态 × 期望 0（不铸）」
+// 同判 skip，归一规则单点执法在 canonicalSpecJSON。
+func TestCanonicalSpecJSONNormalizesZeroRestartSeqLabel(t *testing.T) {
+	base := toServiceSpec(ensureNS, ensureWorkload(), 1, nil, nil)
+	zero := toServiceSpec(ensureNS, ensureWorkload(), 1, nil, nil)
+	zero.Labels[labelRestartSeq] = "0"
+	zero.TaskTemplate.ContainerSpec.Labels[labelRestartSeq] = "0"
+	assert.Equal(t, canonicalSpecJSON(base), canonicalSpecJSON(zero),
+		"a zero-valued restart_seq label must compare equal to its absence")
+	// 非零值是内容成分：缺失 ≠ 非零（序数变更必滚动的比对前提）。
+	one := toServiceSpec(ensureNS, capability.Workload{ID: "wl_01", Process: "web-1", Image: "nginx:1.27", RestartSeq: 1}, 1, nil, nil)
+	assert.NotEqual(t, canonicalSpecJSON(base), canonicalSpecJSON(one))
+}

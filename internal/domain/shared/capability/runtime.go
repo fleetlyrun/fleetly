@@ -418,6 +418,12 @@ type Workload struct {
 	// 成员持基线材料——secret 载体引用与拉取凭证不被新代材料改写（旧代
 	// 零扰动锚）；nil = 沿用 Ensure 调用级材料（域默认挂全域，既有语义）。
 	Materials *Materials
+	// RestartSeq 是声明式重启序数（ADR-0083）：Spec 冻结体的意图字段经
+	// 投影透传，Provider 铸为载体标签（swarm/k3s `fleetly.restart_seq`；
+	// 0 = 缺省不铸——存量载体升级首拍零滚动）。序数变更即内容变更（账本
+	// canonical key 随标签入比对面）→ full update 滚动替换 = 声明式滚动
+	// 重启；Provider 不解释语义，只保证"同序数零扰动、变序数必滚动"。
+	RestartSeq uint32
 }
 
 // RestartPolicy 是 Workload 生命周期声明（ADR-0025）。

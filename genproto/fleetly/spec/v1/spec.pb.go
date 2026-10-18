@@ -556,7 +556,16 @@ type ProcessSpec struct {
 	// 版本；target 是容器内绝对路径）。内容经材料面 Ensure 期下发（值不进
 	// Spec/Revision，ADR-0014 附录 A.2 同源纪律）。compose 面 = 服务
 	// configs（long-form source/target；顶层声明须 external: true）。
-	ConfigMounts  []*ConfigMount `protobuf:"bytes,17,rep,name=config_mounts,json=configMounts,proto3" json:"config_mounts,omitempty"`
+	ConfigMounts []*ConfigMount `protobuf:"bytes,17,rep,name=config_mounts,json=configMounts,proto3" json:"config_mounts,omitempty"`
+	// restart_seq 是声明式重启序数（ADR-0083）：全进程共享的单调计数器，
+	// 变更 = 以新序数重跑进程的期望（声明式滚动重启——载体内容等价语义
+	// ADR-0064 护航，经部署管线生效并入 lineage）。单调不减是调用方约定
+	// （并发受理下的序数警告语义模糊，不加受理执法）；平台保证最终态 =
+	// 最后执行的声明；seq=0 是缺省（存量 Revision 无该字段重放零漂移）。
+	// 回滚回落低 seq 显式豁免单调约定（操作者意图优先）。compareSpecs
+	// （漂移面）不对照本字段——意图字段非可观测态，与内容等价（收敛面）
+	// 的分际见 ADR-0083 边界裁决。
+	RestartSeq    uint32 `protobuf:"varint,18,opt,name=restart_seq,json=restartSeq,proto3" json:"restart_seq,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -712,6 +721,13 @@ func (x *ProcessSpec) GetConfigMounts() []*ConfigMount {
 		return x.ConfigMounts
 	}
 	return nil
+}
+
+func (x *ProcessSpec) GetRestartSeq() uint32 {
+	if x != nil {
+		return x.RestartSeq
+	}
+	return 0
 }
 
 type isProcessSpec_ImageOrigin interface {
@@ -1854,7 +1870,7 @@ const file_fleetly_spec_v1_spec_proto_rawDesc = "" +
 	"\vImageSource\x12\x10\n" +
 	"\x03ref\x18\x01 \x01(\tR\x03ref\"\x1e\n" +
 	"\fUploadSource\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"\xb4\x06\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\xd5\x06\n" +
 	"\vProcessSpec\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
 	"\x05image\x18\x02 \x01(\tH\x00R\x05image\x12\x1f\n" +
@@ -1874,7 +1890,9 @@ const file_fleetly_spec_v1_spec_proto_rawDesc = "" +
 	"\bnetworks\x18\x0e \x03(\tR\bnetworks\x12;\n" +
 	"\bstrategy\x18\x0f \x01(\x0e2\x1f.fleetly.spec.v1.DeployStrategyR\bstrategy\x12#\n" +
 	"\rdatabase_refs\x18\x10 \x03(\tR\fdatabaseRefs\x12A\n" +
-	"\rconfig_mounts\x18\x11 \x03(\v2\x1c.fleetly.spec.v1.ConfigMountR\fconfigMounts\x1a6\n" +
+	"\rconfig_mounts\x18\x11 \x03(\v2\x1c.fleetly.spec.v1.ConfigMountR\fconfigMounts\x12\x1f\n" +
+	"\vrestart_seq\x18\x12 \x01(\rR\n" +
+	"restartSeq\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01B\x0e\n" +
