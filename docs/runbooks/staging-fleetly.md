@@ -1264,3 +1264,20 @@ F3.1/F3.2/F3.3/F3.6 四批走查的浏览器级挂账在后端在场的环境（
 **账号事实更新**：walker-1 演练密码 c6-live-pw-2 已失效（2026-10-18 登录 E_UNAUTHENTICATED 实证）；platform / platform-2（owner）密码 o8KRoJf1YCPNER60 有效——CLI 公网登录（`fleetly login --name <user> --addr grpcs://api.dev.fleetly.run`，密码走 stdin；注意 addr 只信 env/旗标，凭据文件的 addr 不参与拨号）是现行铸 token 通道。
 
 **留底与卷 tar 按纪律保留**：`/root/fleetlyd-aa93ac6.bak`、`/root/fleetly-aa93ac6.bak`、`/root/upgrade-c730f5e/vols/`（九枚）。
+
+## 2026-10-18 记录·六十（严格声明式模型程序换装 dc22485 + 真跨越零扰动验收；现役）
+
+**换代**：c730f5e → `dc22485`（九 commit 程序批：ADR-0081 写面立法 + ADR-0082 缺省收敛升格 + ADR-0083 restart_seq 声明式重启 + e2e 三修——设计母本 `docs/design/2026-10-18-declarative-model.md`，对抗审查 29 项裁决在附录 A）。**零迁移**（goose 原地停在 v33）、**零 IR 破坏面**（RestartSeq 零值不铸标签 + omitempty 指纹稳定承诺——e2e:upgrade 矩阵 d9d68a1→dc22485 真跨越先行全绿：probe failures 0 / db task delta 0 / zero restart zero roll / 零假 drift）。前置硬门：Platform Backup `09676793`（18:49 UTC）+ 受管卷九枚 tar 至 `/root/upgrade-dc22485/`（torchwood-pg 15M / registry-zot 147M / VM 654M）。
+
+**换装序**：`verify:hermetic` PASS（双构建 sha256 逐位一致 `24095a1f…` + commit 戳 dc22485）→ scp 双二进制 + 管道 sha256 对账（`24095a1f…` 逐位一致）→ stop（18:52:54，SIGTERM 排水）→ install 双件 → 起服即 active。**偏差如实记**：install 前未先留旧版 .bak（五十八/五十九均留）——已补救：c730f5e 按 ref 重铸回填 `/root/fleetlyd-c730f5e.bak` + `/root/fleetly-c730f5e.bak`（ref 重铸非原字节，作回滚锚功能等价）。教训沉淀：**换装序的 .bak 留底必须在 install 之前**，脚本化时写作 `cp` 步而非事后补。
+
+**验收锚（全绿）**：
+- **零滚动实锤**：换装前后全集群 running task 集（16 容器）**逐 task ID diff 零变化** + 换装窗零新增 task 行（pre/post 清单留 `/root/*-tasks-dc22485.txt`）；受管五件（traefik/zot/victorialogs/VM/cadvisor）全 1/1 含在内——**收敛升格 posture=all 的换装收养零扰动在真机成立**（e2e 矩阵预测的现场复现）。
+- **doctor**：10 ok / 2 warning（既有基线：bind surface + notification channels）/ 0 failed，健康行活体 `server dc22485`。
+- **journal**：`goose: no migrations to run. current version: 33`；换装窗（18:52:54 起）converge/drift 日志**零行**——假漂移修复（RestartSeq omitempty + databaseLoop wire-gen 记账）真机确认。
+- **路由探针**：tw.dev / n0.dev 双 200。
+- **数据面核对**：torchwood-pg `pg_isready` accepting + `pg_database` count 5（路由 200 ≠ 数据在场纪律照走）。
+- **新特性面**：`apps workloads` **RESTART_SEQ 列在役**（存量负载 seq 0）；`apps restart` usage 双面（缺省声明面 / `--runtime --process` 逃逸）；`FLEETLY_ENGINE_CONVERGE_*` 未设 → **posture=all 缺省生效**；doctor converge 行为条件面（冷却期才现）——本窗无冷却如实不现。
+- **CLI 形态两枚**（远端核对时踩到，免后人重踩）：`apps list` 必带 `--project`；events 游标旗标是 `--after-seq`（ADR-0026 after_*_id 惯例的 events 形态）。
+
+**留底**：`/root/upgrade-dc22485/`（九卷 tar + 换装双二进制 + sha256）、`/root/*-tasks-dc22485.txt`（前后 task 清单）、`/root/fleetlyd-c730f5e.bak` / `/root/fleetly-c730f5e.bak`（ref 重铸回滚锚）。
