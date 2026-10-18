@@ -1234,3 +1234,22 @@ F3.1/F3.2/F3.3/F3.6 四批走查的浏览器级挂账在后端在场的环境（
 **走查实咬（当窗前向修复）**：受管载体行的合成 project `system` 也被加了深链（点击撞 W-1 回退落 torchwood 总览，误导）——`workloadCell` 补 `system` 门控（受管载体无 App 详情页）+ 钉测补反例（aa93ac6）。**流程教训**：`mise run console:verify 2>&1 | tail -1 && echo OK` 的管道让 tail 吞掉 verify 退出码，console:test 红被掩蔽后误推一版（19b645b）——门禁链必须显式核 `$?`/pipefail（本机 shell 教训第二次在案）。
 
 **留底与卷 tar 按纪律保留**：`/root/fleetlyd-ee956a1.bak`、`/root/upgrade-5bcaf9c/`（双二进制 + vols 18 枚）、`/root/upgrade-aa93ac6/`（双二进制）。
+
+## 2026-10-18 记录·五十九（Configs 详情/编辑 console 批换装 c730f5e + 浏览器走查；现役）
+
+**换代**：aa93ac6 → `c730f5e`（单 commit console 批：Variables→Configs 行 view 动词/行点击进 GetConfig 回读弹窗（版本/时间/字节元信息+复制）+ 编辑 PUT 同名冻结新版本回视图刷新；内容未变诚实禁存）。**零迁移**（起服 journal `goose: no migrations to run. current version: 33`）、零 IR 形状变化、纯前端批（后端 GetConfig/PutConfig 原生零改动；dist 换装同 commit）。前置硬门：Platform Backup `276dc0cc`（08:52 UTC）+ 受管卷九枚 tar 至 `/root/upgrade-c730f5e/vols/`（VM 643M 最大；torchwood-pg 15M / registry-zot 147M）。
+
+**换装序**（记录·五十八同款）：`verify:hermetic` PASS（双构建 sha256 逐位一致 `f29d15aa…` + commit 戳 c730f5e）→ scp 双二进制 /tmp 双侧 sha256 对账（用后即清，.bak 即回滚锚）→ 旧版留底 `/root/fleetlyd-aa93ac6.bak` + `/root/fleetly-aa93ac6.bak` → stop（SIGTERM 排水 31s；首跑脚本被 dash 无 `time` 咬停在 stop 前——远端 sh 脚本勿用 bashism，空转零副作用）→ install → drop-in 七件存活核验 → 起服。
+
+**验收锚（全绿）**：
+- **零滚动实锤**：换装前后全集群 running task 集 sha256 逐位一致（`54181abd…`，15 容器）；drift_detected / rollout_stalled 重启后双零。
+- **doctor**：10 ok / 2 warning（既有基线：bind surface + notification channels）/ 0 failed，健康行活体回显 `server c730f5e`。
+- **新 dist 上架**：console.dev `index-CrRGB_HG.js`（与本地 console:build 产物指纹精确一致）；tw.dev / console.dev 双 200。
+- **REST 活体**：`GET /v1/configs?project_id=torchwood-1` 3 行 + `GET /v1/configs/torchwood-1/config.yaml` v3 全文回读 200（公网 console.dev 网关）。
+- **浏览器走查**（console.dev 公网直连，fleetly-replay-local 既有会话；scratch 项目 cfgwalk-59-16 用后即删）：Configs 行 view 钮 → 详情弹窗（mono 标题 + `version 1 · updated 1m ago · 20 bytes` 字节精确 + 内容块 + Copy/Edit）→ Edit → textarea 预填 + **内容未变 Save 诚实禁用** → 改内容 → Save as new version → toast `saved as version 2` + 列表 Version 2 + 弹窗刷新 `version 2 · 54 bytes` + 新内容渲染；截图两帧在案。
+
+**走查附带发现（核实为设计内，非缺陷）**：`projects delete` 后其 Config 行留存且 GetConfig 仍可直读——DeleteProject 注释显式裁决「Project 级材料（Secret/Config/Volume/Network）不随 Project 删除，各自生命周期独立，不级联不代删」——与 FB-1（DeleteApp 漏 hook_deliveries 真缺陷）不同型；Config 无 delete 动词，孤儿行随 tombstone 项目不可达（无用户视图），诚实留存。scratch 项目 cfgwalk-59-16 的 walkthrough.txt@v2 即此形态（走查登录 token tok-14 已吊销、本地凭据已还原）。
+
+**账号事实更新**：walker-1 演练密码 c6-live-pw-2 已失效（2026-10-18 登录 E_UNAUTHENTICATED 实证）；platform / platform-2（owner）密码 o8KRoJf1YCPNER60 有效——CLI 公网登录（`fleetly login --name <user> --addr grpcs://api.dev.fleetly.run`，密码走 stdin；注意 addr 只信 env/旗标，凭据文件的 addr 不参与拨号）是现行铸 token 通道。
+
+**留底与卷 tar 按纪律保留**：`/root/fleetlyd-aa93ac6.bak`、`/root/fleetly-aa93ac6.bak`、`/root/upgrade-c730f5e/vols/`（九枚）。
