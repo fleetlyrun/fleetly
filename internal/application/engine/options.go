@@ -19,6 +19,8 @@ type Options struct {
 	// Ring 是环节拍与带界超时族（兜底节拍 + 受管步/漂移扫描/强制重放/
 	// 网络重建带界窗）。
 	Ring RingOptions
+	// Converge 是 App 域收敛升格参数（ADR-0082：posture + 冷却记账）。
+	Converge ConvergeOptions
 	// Relay 是回环中继面参数（ADR-0049）。
 	Relay RelayOptions
 	// Data 是平台数据与公网发布面参数。
@@ -113,6 +115,21 @@ type RingOptions struct {
 }
 
 // RelayOptions 是回环中继面参数（ADR-0049）。
+// ConvergeOptions 是 App 域收敛升格参数（ADR-0082 决策 4/5）。
+type ConvergeOptions struct {
+	// Posture 是收敛姿态（ParseConvergePosture 归一；缺省 all——检出漂移
+	// 即收敛；detect 只报事件不收敛，检测面照常）。装配经 config 解析后
+	// 注入（fail-fast，非法值启动失败）；启动基线重放不受 posture 门限
+	// （ADR-0005 旧行为保留：缓存重建是检测面的前提）。
+	Posture string
+	// FailureThreshold 是收敛连续失败冷却阈值 N（缺省 3；连续失败 N 次
+	// 进入冷却窗 + workload.converge_failed 一次）。
+	FailureThreshold int
+	// Cooldown 是冷却窗时长（缺省 10m；窗满自动解除）。
+	Cooldown time.Duration
+}
+
+// RelayOptions 是回环中继面参数（ADR-0049）。
 type RelayOptions struct {
 	// RelayLoopbackURL 是控制面回环中继的 gateway 基址（空 = 回环
 	// 中继停用；ADR-0049：manager 节点也是 exec 目标，进程内中继经此
@@ -187,6 +204,15 @@ func (o *Options) fill() {
 	if o.Ring.ReconcileReplayInterval <= 0 {
 		o.Ring.ReconcileReplayInterval = 60 * time.Second
 	}
+	if o.Converge.Posture == "" {
+		o.Converge.Posture = ConvergePostureAll
+	}
+	if o.Converge.FailureThreshold <= 0 {
+		o.Converge.FailureThreshold = 3
+	}
+	if o.Converge.Cooldown <= 0 {
+		o.Converge.Cooldown = 10 * time.Minute
+	}
 	if o.Task.ScheduleOverlap == "" {
 		o.Task.ScheduleOverlap = ScheduleOverlapSkip
 	}
@@ -213,5 +239,29 @@ func ParseScheduleOverlap(s string) (string, error) {
 	default:
 		return "", fmt.Errorf("engine: schedule_overlap_policy must be %q or %q, got %q",
 			ScheduleOverlapSkip, ScheduleOverlapFire, s)
+	}
+}
+
+// 收敛姿态值（ADR-0082 决策 5）。
+const (
+	// ConvergePostureAll：缺省收敛——检出漂移即收敛（staging 上站裁决：
+	// 不设 detect 观察期）。
+	ConvergePostureAll = "all"
+	// ConvergePostureDetect：只报事件不收敛，检测面照常（收敛的观察期
+	// 逃生门而非缺省；启动基线重放不受此门限——ADR-0005 旧行为保留）。
+	ConvergePostureDetect = "detect"
+)
+
+// ParseConvergePosture 归一收敛姿态配置值：空值/合法值直通，非法值报错
+// （fail-fast，ParseScheduleOverlap 同款口径——配置错误不得静默回退成 all）。
+func ParseConvergePosture(s string) (string, error) {
+	switch s {
+	case "", ConvergePostureAll:
+		return ConvergePostureAll, nil
+	case ConvergePostureDetect:
+		return ConvergePostureDetect, nil
+	default:
+		return "", fmt.Errorf("engine: converge_posture must be %q or %q, got %q",
+			ConvergePostureAll, ConvergePostureDetect, s)
 	}
 }

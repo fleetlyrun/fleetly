@@ -484,6 +484,13 @@ func NewEngine(
 	if err != nil {
 		return nil, err
 	}
+	// 收敛姿态旋钮（ADR-0082 决策 5）：AppConfig 透传并 fail-fast 校验
+	//（detect = 只报事件不收敛的观察期逃生门；缺省 all——检出漂移即收敛，
+	// 上站裁决不设 detect 观察期）。冷却记账参数同批透传。
+	posture, err := engine.ParseConvergePosture(cfg.ConvergePosture())
+	if err != nil {
+		return nil, err
+	}
 	// Platform Backup 配置快照（ADR-0039）：缺省节拍/保留经 config 访问器；
 	// s3 未配置 = 仅本地仓。
 	pb := &engine.PlatformBackupConfig{
@@ -508,6 +515,11 @@ func NewEngine(
 	}, engine.Options{
 		Task: engine.TaskOptions{
 			ScheduleOverlap: overlap,
+		},
+		Converge: engine.ConvergeOptions{
+			Posture:          posture,
+			FailureThreshold: int(cfg.ConvergeFailureThreshold()),
+			Cooldown:         time.Duration(cfg.ConvergeCooldownSecs()) * time.Second,
 		},
 		Backup: engine.BackupOptions{
 			PlatformBackup: pb,

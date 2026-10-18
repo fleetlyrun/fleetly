@@ -1062,8 +1062,21 @@ type Engine struct {
 	// "fire"（照常拍，允许并行拍）；空值回退 "skip"；非法值启动失败
 	// （fail-fast，不静默回退）。env 形态 FLEETLY_ENGINE_SCHEDULE_OVERLAP_POLICY。
 	ScheduleOverlapPolicy string `protobuf:"bytes,1,opt,name=schedule_overlap_policy,json=scheduleOverlapPolicy,proto3" json:"schedule_overlap_policy,omitempty"`
-	unknownFields         protoimpl.UnknownFields
-	sizeCache             protoimpl.SizeCache
+	// converge_posture 是 App 域收敛姿态（ADR-0082 决策 5）："all"（默认
+	// ——检出漂移即收敛）或 "detect"（只报事件不收敛，检测面照常——收敛
+	// 的观察期逃生门而非缺省）；空值回退 "all"；非法值启动失败（fail-fast）。
+	// env 形态 FLEETLY_ENGINE_CONVERGE_POSTURE。
+	ConvergePosture string `protobuf:"bytes,2,opt,name=converge_posture,json=convergePosture,proto3" json:"converge_posture,omitempty"`
+	// converge_failure_threshold 是收敛连续失败冷却阈值 N（ADR-0082 决策 4
+	// ：连续失败 N 次进入冷却窗并落一次 workload.converge_failed）。
+	// 空值回退 3。env 形态 FLEETLY_ENGINE_CONVERGE_FAILURE_THRESHOLD。
+	ConvergeFailureThreshold int64 `protobuf:"varint,3,opt,name=converge_failure_threshold,json=convergeFailureThreshold,proto3" json:"converge_failure_threshold,omitempty"`
+	// converge_cooldown_secs 是收敛冷却窗秒数（ADR-0082 决策 4；窗满自动
+	// 解除，漂移签名变化/posture 切换即时清零）。空值回退 600（10m）。
+	// env 形态 FLEETLY_ENGINE_CONVERGE_COOLDOWN_SECS。
+	ConvergeCooldownSecs int64 `protobuf:"varint,4,opt,name=converge_cooldown_secs,json=convergeCooldownSecs,proto3" json:"converge_cooldown_secs,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *Engine) Reset() {
@@ -1101,6 +1114,27 @@ func (x *Engine) GetScheduleOverlapPolicy() string {
 		return x.ScheduleOverlapPolicy
 	}
 	return ""
+}
+
+func (x *Engine) GetConvergePosture() string {
+	if x != nil {
+		return x.ConvergePosture
+	}
+	return ""
+}
+
+func (x *Engine) GetConvergeFailureThreshold() int64 {
+	if x != nil {
+		return x.ConvergeFailureThreshold
+	}
+	return 0
+}
+
+func (x *Engine) GetConvergeCooldownSecs() int64 {
+	if x != nil {
+		return x.ConvergeCooldownSecs
+	}
+	return 0
 }
 
 var File_config_proto protoreflect.FileDescriptor
@@ -1176,9 +1210,12 @@ const file_config_proto_rawDesc = "" +
 	"kubeconfig\x18\x01 \x01(\tR\n" +
 	"kubeconfig\"\x1a\n" +
 	"\x04Data\x12\x12\n" +
-	"\x04root\x18\x01 \x01(\tR\x04root\"@\n" +
+	"\x04root\x18\x01 \x01(\tR\x04root\"\xdf\x01\n" +
 	"\x06Engine\x126\n" +
-	"\x17schedule_overlap_policy\x18\x01 \x01(\tR\x15scheduleOverlapPolicyB/Z-github.com/fleetlyrun/fleetly/internal/configb\x06proto3"
+	"\x17schedule_overlap_policy\x18\x01 \x01(\tR\x15scheduleOverlapPolicy\x12)\n" +
+	"\x10converge_posture\x18\x02 \x01(\tR\x0fconvergePosture\x12<\n" +
+	"\x1aconverge_failure_threshold\x18\x03 \x01(\x03R\x18convergeFailureThreshold\x124\n" +
+	"\x16converge_cooldown_secs\x18\x04 \x01(\x03R\x14convergeCooldownSecsB/Z-github.com/fleetlyrun/fleetly/internal/configb\x06proto3"
 
 var (
 	file_config_proto_rawDescOnce sync.Once

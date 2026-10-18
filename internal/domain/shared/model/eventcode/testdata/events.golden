@@ -92,6 +92,8 @@ variable.deleted	A project shared variable was deleted.	internal/interfaces/grpc
 variable.updated	A project shared variable was set (values are readable via the API; redeploy affected apps to pick up the new value).	internal/interfaces/grpc/fleetlygrpc/variables.go PutSharedVariable
 volume.created	A volume was created.	internal/interfaces/grpc/fleetlygrpc/structure.go CreateVolume
 volume.deleted	An unreferenced volume row was deleted (the platform tombstones the row; the runtime-side volume is left for manual hygiene).	internal/interfaces/grpc/fleetlygrpc/structure.go DeleteVolume
+workload.converge_failed	Convergence for an app failed repeatedly and a cooldown window was entered (retries resume after the window, on a new drift signature, or on a posture switch).	internal/application/engine/converge.go convergeFail
+workload.converged	The engine reconverged an app's carriers to its succeeded baseline (converge-by-default); the audit row carries the baseline digest and no deployment row is created.	internal/application/engine/converge.go attemptConverge
 workload.drift_detected	Observed workload diverged from the ensured generation or spec (ADR-0022).	internal/application/engine/observ.go detectDrift + internal/application/engine/drift.go compareSpecs
 workload.rollout_stalled	A runtime rollout is stalled mid-flight (e.g. swarm update paused by task failure); spec matches, so spec-drift cannot see it.	internal/application/engine/drift.go compareSpecs
 workload.stopped	A steady-state workload was observed stopped at the current generation.	internal/application/engine/drift.go emitSteadyStateStopped

@@ -200,4 +200,17 @@ message Engine {
   // "fire"（照常拍，允许并行拍）；空值回退 "skip"；非法值启动失败
   //（fail-fast，不静默回退）。env 形态 FLEETLY_ENGINE_SCHEDULE_OVERLAP_POLICY。
   string schedule_overlap_policy = 1;
+  // converge_posture 是 App 域收敛姿态（ADR-0082 决策 5）："all"（默认
+  // ——检出漂移即收敛）或 "detect"（只报事件不收敛，检测面照常——收敛
+  // 的观察期逃生门而非缺省）；空值回退 "all"；非法值启动失败（fail-fast）。
+  // env 形态 FLEETLY_ENGINE_CONVERGE_POSTURE。
+  string converge_posture = 2;
+  // converge_failure_threshold 是收敛连续失败冷却阈值 N（ADR-0082 决策 4
+  // ：连续失败 N 次进入冷却窗并落一次 workload.converge_failed）。
+  // 空值回退 3。env 形态 FLEETLY_ENGINE_CONVERGE_FAILURE_THRESHOLD。
+  int64 converge_failure_threshold = 3;
+  // converge_cooldown_secs 是收敛冷却窗秒数（ADR-0082 决策 4；窗满自动
+  // 解除，漂移签名变化/posture 切换即时清零）。空值回退 600（10m）。
+  // env 形态 FLEETLY_ENGINE_CONVERGE_COOLDOWN_SECS。
+  int64 converge_cooldown_secs = 4;
 }

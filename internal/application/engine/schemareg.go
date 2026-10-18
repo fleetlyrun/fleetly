@@ -55,6 +55,9 @@ func init() {
 	registerEventPayload(eventWorkloadDrift, driftEventPayload{})
 	registerEventPayload(eventWorkloadStopped, stoppedEventPayload{})
 	registerEventPayload(eventWorkloadRolloutStall, rolloutStalledEventPayload{})
+	// 缺省收敛（ADR-0082）：converged / converge_failed 同一载荷形态。
+	registerEventPayload(eventWorkloadConverged, convergeEventPayload{})
+	registerEventPayload(eventWorkloadConvergeFailed, convergeEventPayload{})
 	registerEventPayload(eventNodeJoined, nodeEventPayload{})
 	registerEventPayload("node.left", nodeEventPayload{})
 

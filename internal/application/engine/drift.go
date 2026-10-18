@@ -2,16 +2,23 @@ package engine
 
 // ADR-0022 漂移检测口径：启动基线重放（重建归属/期望缓存）+ spec 对照
 // 扫描（RuntimeInspector 子面；gen-only 降级）+ 稳态看门狗（workload.stopped
-// 观测事件）。收敛仍 opt-in（ADR-0005）：drift 只发事件，Ensure 是唯一
-// 写动词。
+// 观测事件）。ADR-0082 收敛升格：检测面照发不变，driftScan 同时承载收敛
+// 判定——快通道四类信号（spec 失配/gen 偏离/缺席/终态后停摆，各自独立
+// 签名键）+ 慢通道 ReconcileReplayInterval 强制重放（converge.go 统一原
+// 语）；Ensure 仍是唯一写动词，升格的是 Ensure 的调用者。Watch 流
+// detectDrift 维持只读（事件面单源，不重复发）。
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"maps"
+	"strings"
 	"sync"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
 )
 
@@ -37,9 +44,10 @@ type drifts struct {
 // 与驱动互翻 Generation 标签会让载体多滚一轮——dind 场景 1 实证）；
 // 该 App 终态后下一次重启补上。跳过判定有两层（N0.1 P1-3）：启动快照
 // （ListDriving 一次）只作初筛；每 App 重放前在 App 级互斥内复查
-// ActiveByApp——快照后受理的部署在此跳过，且 Submit 与重放共享同一
-// 互斥，"复查后落行、重放再 Ensure 旧 Generation 与驱动器对翻标签"
-// 的窗口不存在（健康部署被 L1 误判回滚的根因）。
+// DrivingByApp（ADR-0082 收敛复查同口径——ActiveByApp 不含 failed 待
+// 回滚窗，重放×回滚交错会开 vacuously ready 竞态窗）；Submit 与重放
+// 共享同一互斥，"复查后落行、重放再 Ensure 旧 Generation 与驱动器对翻
+// 标签"的窗口不存在（健康部署被 L1 误判回滚的根因）。
 func (e *Engine) rebuildBaselines(ctx context.Context) {
 	driving, err := e.repos.Deployments.ListDriving(ctx)
 	if err != nil {
@@ -64,32 +72,27 @@ func (e *Engine) rebuildBaselines(ctx context.Context) {
 		}
 		d, err := e.repos.Deployments.LatestSucceeded(ctx, a.ID)
 		if err != nil {
-			continue // 无成功基线（从未部署成功）：无可重放
+			if errors.Is(err, state.ErrNotFound) {
+				continue // 无成功基线（从未部署成功）：无可重放
+			}
+			// 存储故障不是「无基线」：单 App 失败不得成为永久自愈盲
+			//（ADR-0082 账本纪律——扫描面「succeeded 无期望缓存 → 收敛
+			// 触发」分支会在后续拍把本 App 纳入收敛重放，旧实现的裸
+			// continue 与「下一扫描拍兜底」注释不符，此处把兜底做实：
+			// 本拍跳过，期望缓存缺席由扫描面分支接手）。
+			e.log.Error("baseline replay: latest succeeded", "app", a.ID, "err", err)
+			continue
 		}
 		e.replayAppBaseline(ctx, &a, d)
 	}
 }
 
-// replayAppBaseline 在 App 级互斥内复查活跃部署并重放单 App 基线：
-// 有活跃即跳过（交给驱动器）；互斥与 Submit 共享，复查所见即终局。
+// replayAppBaseline 在 App 级互斥内复查活跃部署并重放单 App 基线：有活跃
+// 即跳过（交给驱动器）；互斥与 Submit 共享，复查所见即终局。收敛动作走
+// attemptConverge 统一原语（ADR-0082 §2）：与快/慢通道共用闸门序与冷却
+// 记账（启动基线重放不受冷却豁免盲打），posture 门对基线源不生效。
 func (e *Engine) replayAppBaseline(ctx context.Context, a *app.App, d *deployment.Deployment) {
-	appMu := e.lockApp(a.ID)
-	appMu.Lock()
-	defer appMu.Unlock()
-
-	active, err := e.repos.Deployments.ActiveByApp(ctx, a.ID)
-	if err != nil {
-		e.log.Error("baseline replay: recheck active", "app", a.ID, "err", err)
-		return
-	}
-	if len(active) > 0 {
-		return // 快照后受理：驱动器拥有该 App 的 Ensure 权
-	}
-	stepCtx, cancel := context.WithTimeout(ctx, e.opts.Ring.ManagedStepTimeout)
-	if err := e.materialize(stepCtx, d, d.ToRevision, d.Generation, true); err != nil {
-		e.log.Error("baseline replay: ensure", "app", a.ID, "generation", d.Generation, "err", err)
-	}
-	cancel()
+	e.attemptConverge(ctx, a.ID, d, "", convergeSourceBaseline)
 }
 
 // driftScan 一拍漂移扫描：spec 对照（RuntimeInspector 可用时）+ 稳态
@@ -109,20 +112,35 @@ func (e *Engine) driftScan(ctx context.Context) {
 		inFlight[d.AppID] = true
 	}
 
-	// 扫描面 = 当前期望缓存（启动基线重放或部署 Ensure 建立）。spec 对照
-	// 只走 App 域 owner——Database/受管域 owner 只入看门狗（expected 已
-	// 登记），不进 App 表解析面（否则每拍一条噪声错；typed owner 域分派
-	// 取代前缀匹配）。
+	// 扫描面（ADR-0082 账本纪律）：A = 当前期望缓存（启动基线重放或部署
+	// Ensure 建立）；B = 有 succeeded 基线但无期望缓存的存活 App——重启
+	// 冷窗/基线重放单 App 失败不再永久自愈盲（「succeeded 无期望缓存 →
+	// 收敛触发」，重建期望缓存本身是收敛动作）。spec 对照只走 App 域
+	// owner——Database/受管域 owner 只入看门狗（expected 已登记），不进
+	// App 表解析面（否则每拍一条噪声错；typed owner 域分派取代前缀匹配）。
 	e.expect.mu.Lock()
-	appIDs := make([]string, 0, len(e.expect.expected))
+	face := make([]string, 0, len(e.expect.expected))
+	inFace := make(map[string]bool, len(e.expect.expected))
 	for owner := range e.expect.expected {
 		if owner.domain == ownerApp {
-			appIDs = append(appIDs, owner.id)
+			face = append(face, owner.id)
+			inFace[owner.id] = true
 		}
 	}
 	e.expect.mu.Unlock()
+	apps, err := e.repos.Apps.List(ctx)
+	if err != nil {
+		e.log.Error("drift scan: list apps", "err", err)
+	} else {
+		for _, a := range apps {
+			if !inFace[a.ID] {
+				face = append(face, a.ID)
+				inFace[a.ID] = true
+			}
+		}
+	}
 
-	for _, appID := range appIDs {
+	for _, appID := range face {
 		if ctx.Err() != nil {
 			return
 		}
@@ -144,7 +162,19 @@ func (e *Engine) driftScan(ctx context.Context) {
 			e.log.Error("drift scan: inspect", "app", appID, "err", err)
 			continue
 		}
-		e.compareSpecs(ctx, appID, obs)
+		// 基线锚（ADR-0082 §1：缺席检测与收敛的决策输入 = LatestSucceeded
+		// Revision 拍内重投影，不是期望缓存）。无成功基线的 App 无可收敛
+		// 锚——spec 对照照旧，缺席面与收敛跳过。
+		d, derr := e.repos.Deployments.LatestSucceeded(ctx, appID)
+		if derr != nil && !errors.Is(derr, state.ErrNotFound) {
+			e.log.Error("drift scan: latest succeeded", "app", appID, "err", derr)
+			continue
+		}
+		if derr != nil {
+			d = nil
+		}
+		signals := e.compareSpecs(ctx, appID, obs, d)
+		e.convergeStep(ctx, appID, d, signals)
 	}
 
 	// 稳态看门狗：观测槽里当前 Generation 的 stopped（去抖；回 running 清）。
@@ -154,9 +184,7 @@ func (e *Engine) driftScan(ctx context.Context) {
 	}
 	expected := map[workloadOwner]uint64{}
 	e.expect.mu.Lock()
-	for owner, gen := range e.expect.expected {
-		expected[owner] = gen
-	}
+	maps.Copy(expected, e.expect.expected)
 	e.expect.mu.Unlock()
 
 	var candidates []wlObs
@@ -185,8 +213,11 @@ func (e *Engine) driftScan(ctx context.Context) {
 }
 
 // compareSpecs 逐载体对照观测 spec 与缓存期望 spec：失配 → drift 事件
-// （签名含 spec 指纹去抖；同一失配不重复发，回归即清）。obsMu.RLock 只
-// 护缓存读——事件落账在锁外、经调用链 ctx（关停可取消；N0.1 P2-10）。
+// （签名含 spec 指纹去抖；同一失配不重复发，回归即清），并把四类收敛信号
+// 圈定返回（ADR-0082 快通道：spec 失配/gen 偏离/停摆/缺席各自独立签名键
+// ——事件面与收敛面在此分叉：事件去抖照旧，收敛信号交 convergeStep 走
+// 签名生命周期）。obsMu.RLock 只护缓存读——事件落账在锁外、经调用链 ctx
+// （关停可取消；N0.1 P2-10）。
 //
 // 镜像逐字比对是正确口径（2026-10-01 双腿实证，N0.1 P1-2）：dind 里
 // `docker service create` CLI 会尝试把 tag 解析钉版为 repo:tag@sha256
@@ -195,7 +226,20 @@ func (e *Engine) driftScan(ctx context.Context) {
 // spec 全为原样 tag，且 6 次部署 + 全天 30s 扫描零 drift 事件。假 drift
 // 假设（API 路径钉版）不成立；若未来出现钉版形态（如 CLI 人工改同 tag
 // 镜像），以显式证据重开此案，不在此预放行。
-func (e *Engine) compareSpecs(ctx context.Context, appID string, obs []capability.WorkloadObservation) {
+func (e *Engine) compareSpecs(ctx context.Context, appID string, obs []capability.WorkloadObservation, d *deployment.Deployment) convergeSignals {
+	signals := convergeSignals{}
+	// 缺席检测（ADR-0082 §1 新增面）：期望集 = 基线 Revision 拍内重投影，
+	// 对照观测集——载体被整删从零信号变缺席信号。投影失败（如材料解析
+	// 瞬断）跳过缺席面本拍：漏报不误报（方向安全），下拍重投影。
+	if d != nil {
+		missing, err := e.missingExpectedCarriers(ctx, d, obs)
+		if err != nil {
+			e.log.Error("drift scan: project expected set", "app", appID, "err", err)
+		} else if len(missing) > 0 {
+			signals["absent"] = "absent|" + strings.Join(missing, ",")
+		}
+	}
+
 	e.expect.mu.Lock()
 	expected := e.expect.expected[appOwner(appID)]
 	e.expect.mu.Unlock()
@@ -222,7 +266,9 @@ func (e *Engine) compareSpecs(ctx context.Context, appID string, obs []capabilit
 		// Ensure 已被编排器接受但滚动停在中间态——spec 面一致，spec drift
 		// 恒无感，与 spec 失配分立去抖（同停摆不重复发，恢复即清）。判定
 		// 在 gen 锚之前：停摆时 spec 通常是最新 gen，但 gen 偏离与停摆是
-		// 两个独立信号，不互斥。
+		// 两个独立信号，不互斥。ADR-0082：停摆在终态后是收敛信号（重放
+		// 途经 resumeStalledRollout）；部署窗内由收敛的驱动权复查闸门让位
+		// L1 超时回滚既有语义。
 		if o.RolloutStalled {
 			sig := "rollout|" + o.RolloutDetail
 			e.drift.mu.Lock()
@@ -231,6 +277,7 @@ func (e *Engine) compareSpecs(ctx context.Context, appID string, obs []capabilit
 				rollout = append(rollout, pendingRollout{wid: o.WorkloadID, gen: uint64(o.Generation), detail: o.RolloutDetail})
 			}
 			e.drift.mu.Unlock()
+			signals["rollout|"+o.WorkloadID] = sig
 		} else {
 			e.drift.mu.Lock()
 			delete(e.drift.rolloutSig, o.WorkloadID)
@@ -244,7 +291,10 @@ func (e *Engine) compareSpecs(ctx context.Context, appID string, obs []capabilit
 			anchor = g
 		}
 		if uint64(o.Generation) != anchor {
-			// gen 偏离由 Watch 流路径负责（detectDrift），此处不重复发。
+			// gen 偏离信号（ADR-0082 §1 行3：检测下沉 driftScan——独立
+			// 签名键 + 收敛信号，不再 continue 让位 Watch 流；事件面仍归
+			// Watch 流 detectDrift 专管，此处不重复发）。
+			signals["gen|"+o.WorkloadID] = fmt.Sprintf("gen|%d|%d", anchor, uint64(o.Generation))
 			continue
 		}
 		mismatch := ""
@@ -265,6 +315,7 @@ func (e *Engine) compareSpecs(ctx context.Context, appID string, obs []capabilit
 			continue
 		}
 		sig := fmt.Sprintf("spec|%s", mismatch)
+		signals["spec|"+o.WorkloadID] = sig
 		e.drift.mu.Lock()
 		if e.drift.sig[o.WorkloadID] == sig {
 			e.drift.mu.Unlock()
@@ -297,6 +348,7 @@ func (e *Engine) compareSpecs(ctx context.Context, appID string, obs []capabilit
 			e.log.Error("drift scan: rollout event", "workload", p.wid, "err", err)
 		}
 	}
+	return signals
 }
 
 // sameCommand 逐元素比较入口覆盖命令（nil 与空切片等价：两者都是

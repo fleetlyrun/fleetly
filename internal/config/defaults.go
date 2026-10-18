@@ -20,6 +20,16 @@ const (
 	// 修订：skip = 上一拍 Run 未终态时跳过本拍；fire = 照常拍）。值域
 	// 执法在 engine.ParseScheduleOverlap（fail-fast）。
 	DefaultScheduleOverlapPolicy = "skip"
+	// DefaultConvergePosture 是 App 域收敛姿态缺省（ADR-0082 决策 5：
+	// 缺省收敛——检出漂移即收敛；detect 是观察期逃生门而非缺省）。值域
+	// 执法在 engine.ParseConvergePosture（fail-fast）。
+	DefaultConvergePosture = "all"
+	// DefaultConvergeFailureThreshold 是收敛连续失败冷却阈值缺省
+	//（ADR-0082 决策 4：N=3）。
+	DefaultConvergeFailureThreshold = int64(3)
+	// DefaultConvergeCooldownSecs 是收敛冷却窗缺省（ADR-0082 决策 4：
+	// 10m）。
+	DefaultConvergeCooldownSecs = int64(600)
 	// DefaultPlatformBackupIntervalSecs 是 Platform Backup 快照节拍缺省
 	//（24h，ADR-0029 决策 7 口径；ADR-0039）。
 	DefaultPlatformBackupIntervalSecs = int64(86400)
@@ -78,6 +88,15 @@ func WithDefaults(c *AppConfig) *AppConfig {
 	}
 	if c.GetEngine().GetScheduleOverlapPolicy() == "" {
 		c.Engine.ScheduleOverlapPolicy = DefaultScheduleOverlapPolicy
+	}
+	if c.GetEngine().GetConvergePosture() == "" {
+		c.Engine.ConvergePosture = DefaultConvergePosture
+	}
+	if c.GetEngine().GetConvergeFailureThreshold() <= 0 {
+		c.Engine.ConvergeFailureThreshold = DefaultConvergeFailureThreshold
+	}
+	if c.GetEngine().GetConvergeCooldownSecs() <= 0 {
+		c.Engine.ConvergeCooldownSecs = DefaultConvergeCooldownSecs
 	}
 	if c.GetPlatformBackup() == nil {
 		c.PlatformBackup = &PlatformBackup{}
@@ -156,6 +175,31 @@ func (c *AppConfig) ScheduleOverlapPolicy() string {
 		return p
 	}
 	return DefaultScheduleOverlapPolicy
+}
+
+// ConvergePosture 是带缺省的收敛姿态访问器（容忍 nil 链；值域执法在
+// engine.ParseConvergePosture，ADR-0082）。
+func (c *AppConfig) ConvergePosture() string {
+	if p := c.GetEngine().GetConvergePosture(); p != "" {
+		return p
+	}
+	return DefaultConvergePosture
+}
+
+// ConvergeFailureThreshold 是收敛连续失败冷却阈值访问器（容忍 nil 链）。
+func (c *AppConfig) ConvergeFailureThreshold() int64 {
+	if n := c.GetEngine().GetConvergeFailureThreshold(); n > 0 {
+		return n
+	}
+	return DefaultConvergeFailureThreshold
+}
+
+// ConvergeCooldownSecs 是收敛冷却窗秒数访问器（容忍 nil 链）。
+func (c *AppConfig) ConvergeCooldownSecs() int64 {
+	if n := c.GetEngine().GetConvergeCooldownSecs(); n > 0 {
+		return n
+	}
+	return DefaultConvergeCooldownSecs
 }
 
 // PlatformBackupInterval 是快照节拍访问器（容忍 nil 链；ADR-0039）。

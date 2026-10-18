@@ -86,6 +86,7 @@ func New(deps Deps, opts Options) *Engine {
 	e.metricsDom.lastCPU = make(map[string]cpuCounter)
 	e.metricsDom.cores = make(map[string]float64)
 	e.obs.init()
+	e.converge.init()
 	e.exec.init()
 	e.exec.log = log
 	e.expect.expected = make(map[workloadOwner]uint64)

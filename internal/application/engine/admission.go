@@ -268,6 +268,10 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 			e.log.Error("submit: supersede abandon lookup", "deployment", id, "err", err)
 		}
 	}
+	// ADR-0082：受理成功 = 操作者显式让部署驱动器重建该 App（teardown-
+	// abort 语义的唯一重建通道，ADR-0023）——清删除收口标记，交还收敛
+	// 复查的重建权判定（appMu 在手，与 TeardownApp 的标记写入互斥）。
+	e.converge.clearTeardown(req.AppID)
 	e.loop.Kick()
 	return out, adm, nil
 }

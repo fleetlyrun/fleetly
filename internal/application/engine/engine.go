@@ -111,11 +111,12 @@ type Engine struct {
 	// 域状态（行为住各域文件，状态随域绑定——加环/加域不再横穿 Engine
 	// 结构体；域类型定义随域文件，P3 收官批 8 壳收口归位。锁语义零漂移：
 	// ensure 备忘族仍共用 ensureMu 单锁（五张 memo map 分住各域子结构）；
-	// 观测/漂移/期望各域锁照旧）。
+	// 观测/漂移/期望/收敛各域锁照旧）。
 	task      tasks
 	obs       observations
 	drift     drifts
 	expect    expects
+	converge  converges // ADR-0082 缺省收敛域（双通道 memo/签名生命周期/冷却记账/缺席投影缓存）
 	managed   manageds
 	database  databases
 	delivery  deploys

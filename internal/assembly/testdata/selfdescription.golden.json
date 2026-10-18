@@ -3805,6 +3805,66 @@
       }
     },
     {
+      "name": "workload.converge_failed",
+      "kind": "event",
+      "summary": "Convergence for an app failed repeatedly and a cooldown window was entered (retries resume after the window, on a new drift signature, or on a posture switch).",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "app_id": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "generation": {
+            "type": "integer"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "trigger": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "app_id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "workload.converged",
+      "kind": "event",
+      "summary": "The engine reconverged an app's carriers to its succeeded baseline (converge-by-default); the audit row carries the baseline digest and no deployment row is created.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "app_id": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "generation": {
+            "type": "integer"
+          },
+          "revision": {
+            "type": "string"
+          },
+          "trigger": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "app_id"
+        ],
+        "type": "object"
+      }
+    },
+    {
       "name": "workload.drift_detected",
       "kind": "event",
       "summary": "Observed workload diverged from the ensured generation or spec (ADR-0022).",

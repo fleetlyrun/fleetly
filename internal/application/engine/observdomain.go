@@ -44,6 +44,12 @@ func (o *observations) observe(ev capability.WorkloadEvent) {
 // recordSpecs 记录 Ensure 事实的完整面：归属 + per-Workload Generation 与
 // 投影 spec + （调用方另落 expect 域的 App 级锚）。App 部署链消费
 // （spec 对照 drift 需要 ensuredSpec）。
+//
+// 期望账本纪律（ADR-0082 §6 钉死）：ensuredSpec/ensuredGen 只由 Ensure
+// 路径写入（recordEnsured ← materialize 单序列），禁止观测播种——受管域
+// 的 gen 观测播种先例（managed.go seedFromRuntime）不得照抄到 App 域，
+// 否则手动热修被播种成期望态，静默击穿 controller-wins。语义修靠 converge
+// 域：漂移的修复只经收敛动作（materialize→Ensure）回写本账本。
 func (o *observations) recordSpecs(owner workloadOwner, gen uint64, ws []capability.Workload) {
 	o.mu.Lock()
 	for _, w := range ws {

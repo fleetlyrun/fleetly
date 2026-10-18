@@ -100,6 +100,13 @@ func (e *Engine) buildDigests(ctx context.Context, revision string) (map[string]
 // 并存，各自记录；同代一批）+ App 级最近 Generation（expect 域，Drift
 // 对照锚 = 调用 gen）。进程内缓存，重启后由幂等重放的 Ensure 或启动基线
 // 重放重建（ADR-0022）。
+//
+// 期望账本写点纪律（ADR-0082 §6）：本函数是 App 域 ensuredSpec/ensuredGen/
+// expected 的唯一写点，且只被 Ensure 路径（materialize 单序列）触达——
+// 观测播种禁（受管域 seedFromRuntime 先例不得照抄，见 observdomain.go
+// recordSpecs 注）。重启冷窗语义：基线重放完成前 expected 为空 → 缺席
+// 检测按「succeeded 无期望缓存」扫描面分支兜底（方向安全：漏报不误报），
+// 启动重放收口即闭合。
 func (e *Engine) recordEnsured(d *deployment.Deployment, gen uint64, ws []capability.Workload) {
 	e.expect.mu.Lock()
 	e.expect.expected[appOwner(d.AppID)] = gen
@@ -235,8 +242,10 @@ func (e *Engine) handleNodeJoined(ctx context.Context, nj *capability.NodeJoined
 	}
 }
 
-// detectDrift：对照最近 Ensure 的 Generation（架构 §5 Drift 判定；检测
-// 默认开、收敛默认 opt-in——只发事件不动状态，ADR-0005）。去抖：同一
+// detectDrift：对照最近 Ensure 的 Generation（架构 §5 Drift 判定）。Watch
+// 流恒只读（ADR-0082 范围条款）：本函数维持「只发事件不动状态」——检测
+// 默认开的 ADR-0005 口径在事件面保留；收敛半边归 driftScan 快通道 +
+// convergeStep（ADR-0082），两面对同一漂移各司其职不重复发。去抖：同一
 // (workload, expected, observed) 签名不重复发；观测回归 expected 即清
 // 签名（下次偏离可再发）。
 func (e *Engine) detectDrift(ctx context.Context, ev capability.WorkloadEvent) {

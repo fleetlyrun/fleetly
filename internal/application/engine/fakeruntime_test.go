@@ -295,6 +295,9 @@ func (f *fakeRuntime) InspectWorkloads(_ context.Context, ns capability.Namespac
 				obs[i].RolloutStalled = true
 				obs[i].RolloutDetail = t.rollout
 			}
+			if t.genSet {
+				obs[i].Generation = capability.Generation(t.gen)
+			}
 		}
 	}
 	return obs, nil
@@ -302,12 +305,16 @@ func (f *fakeRuntime) InspectWorkloads(_ context.Context, ns capability.Namespac
 
 // tamperEntry 是人工改载体的注入面（场景 7）。command 非 nil 即覆写
 // （含覆写为空切片 = 清掉入口覆盖）。rollout 非空 = 滚动停摆注入
-// （swarm UpdateStatus=paused 形态，runbook 记录·二十七）。
+// （swarm UpdateStatus=paused 形态，runbook 记录·二十七）。genSet = 抹
+// Generation 标签注入（docker service rollback 等价——载体回旧代，
+// ADR-0082 gen 偏离信号的观测面）。
 type tamperEntry struct {
 	image    string
 	command  []string
 	replicas int64
 	rollout  string
+	gen      uint64
+	genSet   bool
 }
 
 var _ capability.RuntimeInspector = (*fakeRuntime)(nil)

@@ -40,9 +40,17 @@ var builtins = []Event{
 
 	// 滚动停摆观测（runbook 记录·二十七：Ensure 已被编排器接受但滚动停在
 	// 中间态——swarm paused 形态下 spec 面恒一致，spec drift 无感；僵尸
-	// task 叠加三天无人感知的观测面收口。只观测不纠正，处置 = 人工 resume
-	// 或重部署）。
+	// task 叠加三天无人感知的观测面收口。收敛升格前只观测不纠正（处置 =
+	// 人工 resume 或重部署）；ADR-0082 起停摆信号触发基线重放，途经
+	// resumeStalledRollout 兑现滚动——事件面保留为观测沿）。
 	{Name: "workload.rollout_stalled", Summary: "A runtime rollout is stalled mid-flight (e.g. swarm update paused by task failure); spec matches, so spec-drift cannot see it.", Source: "internal/application/engine/drift.go compareSpecs"},
+
+	// 缺省收敛（ADR-0082：App 域收敛升格——检出漂移即收敛，posture 可降
+	// detect 只观测）。converged = 基线重放收敛成功（审计行 source=system
+	// 携带基线 digest，不建 Deployment 行）；converge_failed = 连续收敛
+	// 失败达阈值进入冷却窗（一次；超窗/签名变化/posture 切换解除）。
+	{Name: "workload.converged", Summary: "The engine reconverged an app's carriers to its succeeded baseline (converge-by-default); the audit row carries the baseline digest and no deployment row is created.", Source: "internal/application/engine/converge.go attemptConverge"},
+	{Name: "workload.converge_failed", Summary: "Convergence for an app failed repeatedly and a cooldown window was entered (retries resume after the window, on a new drift signature, or on a posture switch).", Source: "internal/application/engine/converge.go convergeFail"},
 
 	// Identity & Access（F0.5~F0.7 账号批）。
 	{Name: "user.created", Summary: "A user was created and granted a role in a team.", Source: "added during implementation"},

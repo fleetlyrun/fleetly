@@ -68,5 +68,11 @@ func (e *Engine) TeardownApp(ctx context.Context, appID string) error {
 		delete(e.drift.stoppedSig, wid)
 	}
 	e.drift.stoppedMu.Unlock()
+	// ADR-0082 缺席检测的竞态闭合：删除收口完成后钉 teardown 标记（与
+	// forgetOwner 同在 appMu 临界区）——收敛复查见到标记即放弃重建，重建
+	// 权交还部署驱动器（teardown-abort 的唯一重建通道，ADR-0023； Submit
+	// 受理成功清标记）。 expect 缓存缺席无法区分「重启冷窗」与「删除收口
+	// 后」，标记才是闭合面。
+	e.converge.markTeardown(appID)
 	return nil
 }

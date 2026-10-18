@@ -27,6 +27,10 @@ type Repo interface {
 	// §4：failed → (自动) rolling-back；rollback_attempted=1 或无 from_revision
 	// 的 failed 是终态，不拾取）。
 	ListDriving(ctx context.Context) ([]Deployment, error)
+	// DrivingByApp 是 ListDriving 的 per-App 形态（ADR-0082 收敛复查口径
+	// ——驱动权语义单源：活跃态 + 待自动回滚的 failed。ActiveByApp 不含
+	// failed 待回滚窗，单独使用会开"收敛×回滚交错"竞态窗）。
+	DrivingByApp(ctx context.Context, appID string) ([]Deployment, error)
 	// NextGeneration 返回 App 下一 Generation（单调；Drift 判定与幂等重放的锚）。
 	NextGeneration(ctx context.Context, appID string) (uint64, error)
 	// LatestSucceeded 返回 App 最近一次 succeeded 的 Deployment（ADR-0022

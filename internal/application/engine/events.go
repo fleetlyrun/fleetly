@@ -90,8 +90,10 @@ const (
 	eventWorkloadDrift        = "workload.drift_detected"
 	eventWorkloadStopped      = "workload.stopped"
 	eventWorkloadRolloutStall = "workload.rollout_stalled"
-	eventNodeJoined           = "node.joined"
-	eventPreDeployJobFired    = "deployment.pre_deploy_job"
+	// 收敛事件名住在 converge.go（事件与收敛动作同文件单源）；此处只列
+	// 漂移/观测面的锚。
+	eventNodeJoined        = "node.joined"
+	eventPreDeployJobFired = "deployment.pre_deploy_job"
 )
 
 // build.* payload schema。

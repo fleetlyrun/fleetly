@@ -140,30 +140,40 @@ func TestStartupBaselineReplayRebuildsDriftCache(t *testing.T) {
 }
 
 // 场景 7（领域模型）：人工改载体（镜像/副本，不动 fleetly 标记 = Generation
-// 不变）→ 下一扫描拍必须出 drift 事件（gen-only 对照对此失明）。
+// 不变）→ 下一扫描拍必须出 drift 事件（gen-only 对照对此失明）且收敛动作
+// 把基线 spec 重下发（ADR-0082：检出漂移即收敛；检测与事件面照发不变）。
 func TestSpecDriftDetectedOnManualCarrierEdit(t *testing.T) {
 	e, rt, clock := newTestEngine(t)
 	rev := freezeSpec(t, e, 1, tImageSpec)
 	driftDeployToSucceeded(t, e, rt, clock, rev)
+	settleSlowChannel(t, e) // 慢通道备忘落定：后续新增 Ensure 皆信号驱动
 
 	// 人工改镜像（docker service update --image 等价）。
 	rt.mu.Lock()
 	rt.tamper = map[string]tamperEntry{tAppID + "-web": {image: "nginx:1.27-alpine"}}
 	rt.mu.Unlock()
+	before := len(rt.calls())
 	e.driftScan(context.Background())
 	names := eventNames(t, e, tAppID+"-web")
 	require.Equal(t, []string{"workload.drift_detected"}, names, "manual image swap must raise drift")
+	require.Equal(t, 1, ensureDelta(t, rt, before), "ADR-0082: the same scan converges (baseline spec re-issued)")
+	last := rt.calls()[len(rt.calls())-1]
+	assert.Equal(t, capability.Generation(1), last.Gen, "converge re-issues at the baseline generation")
+	assert.Equal(t, "nginx:1.27", last.Spec["web"].Image)
+	require.Len(t, eventNamesOf(t, e, "workload.converged"), 1)
 
-	// 去抖：同一失配不重复发。
+	// 去抖：同一失配不重复发（已收敛签名 + memo 在期——不重复收敛）。
 	e.driftScan(context.Background())
 	assert.Len(t, eventNames(t, e, tAppID+"-web"), 1)
+	assert.Len(t, rt.calls(), before+1)
 
-	// 人工改副本数（scale 等价）→ 新签名 → 再发一条。
+	// 人工改副本数（scale 等价）→ 新签名 → 再发一条 + 再收敛。
 	rt.mu.Lock()
 	rt.tamper = map[string]tamperEntry{tAppID + "-web": {replicas: 3}}
 	rt.mu.Unlock()
 	e.driftScan(context.Background())
 	assert.Len(t, eventNames(t, e, tAppID+"-web"), 2, "a different mismatch is a new drift")
+	assert.Equal(t, 2, ensureDelta(t, rt, before), "a changed signature re-triggers convergence")
 
 	// 回归期望 spec → 签名清（下次偏离可再发）。
 	rt.mu.Lock()
@@ -176,29 +186,36 @@ func TestSpecDriftDetectedOnManualCarrierEdit(t *testing.T) {
 	rt.mu.Unlock()
 	e.driftScan(context.Background())
 	assert.Len(t, eventNames(t, e, tAppID+"-web"), 3, "recovery clears the debounce signature")
+	assert.Equal(t, 3, ensureDelta(t, rt, before), "post-recovery drift converges again")
 }
 
 // 滚动停摆观测（runbook 记录·二十七：staging 2026-10-06 换装收敛滚动遇
 // boot-fatal task → swarm paused → 旧 task 不退役，spec 面恒一致故 spec
 // drift 无感、三天无人感知）：RolloutStalled 观测 → workload.rollout_
-// stalled（去抖 + 恢复清签名），且不产 spec drift（口径分立）。
+// stalled（去抖 + 恢复清签名），且不产 spec drift（口径分立）。ADR-0082：
+// 终态后的停摆同时触发收敛（重放途经 resumeStalledRollout）。
 func TestRolloutStalledEmitsEventWithoutSpecDrift(t *testing.T) {
 	e, rt, clock := newTestEngine(t)
 	rev := freezeSpec(t, e, 1, tImageSpec)
 	driftDeployToSucceeded(t, e, rt, clock, rev)
+	settleSlowChannel(t, e)
 
 	// swarm paused 形态注入（spec 不动——这正是事故形态）。
 	stall := tamperEntry{rollout: "update paused due to failure or early termination of task zzkzvwhxy1b3h36ai8swyvk8a"}
 	rt.mu.Lock()
 	rt.tamper = map[string]tamperEntry{tAppID + "-web": stall}
 	rt.mu.Unlock()
+	before := len(rt.calls())
 	e.driftScan(context.Background())
 	assert.Equal(t, []string{"workload.rollout_stalled"}, eventNames(t, e, tAppID+"-web"),
 		"paused rollout must raise the stall event, not a spec drift")
+	assert.Equal(t, 1, ensureDelta(t, rt, before), "ADR-0082: the stall replays the baseline (provider-side resume)")
+	assert.Len(t, eventNamesOf(t, e, "workload.converged"), 1)
 
-	// 去抖：同一停摆不重复发。
+	// 去抖：同一停摆不重复发（已收敛 + memo 在期）。
 	e.driftScan(context.Background())
 	assert.Len(t, eventNames(t, e, tAppID+"-web"), 1)
+	assert.Len(t, rt.calls(), before+1)
 
 	// 恢复（滚动收口）→ 签名清；不同停摆再发一条。
 	rt.mu.Lock()
@@ -215,13 +232,16 @@ func TestRolloutStalledEmitsEventWithoutSpecDrift(t *testing.T) {
 }
 
 // 稳态看门狗：succeeded 之后载体停止 → workload.stopped（只观测不迁移，
-// 无 Deployment 状态变化）；观测恢复 → 签名清；在途部署期不发。
+// 无 Deployment 状态变化；ADR-0082 裁决表行5：spec 相符 + stopped 告警不
+// 收敛——swarm 自负责任务重启）；观测恢复 → 签名清；在途部署期不发。
 func TestSteadyStateWatchdogEmitsStopped(t *testing.T) {
 	e, rt, clock := newTestEngine(t)
 	rev := freezeSpec(t, e, 1, tImageSpec)
 	d := driftDeployToSucceeded(t, e, rt, clock, rev)
+	settleSlowChannel(t, e)
 
 	// 稳态停止（当前 gen）→ workload.stopped。
+	before := len(rt.calls())
 	e.handleObservation(context.Background(), capability.WorkloadEvent{
 		WorkloadID: tAppID + "-web", Generation: capability.Generation(1),
 		State: capability.WorkloadStopped, Message: "container exited",
@@ -230,6 +250,7 @@ func TestSteadyStateWatchdogEmitsStopped(t *testing.T) {
 	assert.Equal(t, []string{"workload.stopped"}, eventNames(t, e, tAppID+"-web"))
 	require.Equal(t, deployment.StateSucceeded, getDeployment(t, e, d.ID).State,
 		"steady-state stop must not touch the terminal deployment")
+	assert.Equal(t, 0, ensureDelta(t, rt, before), "steady stop must not converge (auto-restart is a non-goal)")
 
 	// 去抖 + 恢复清签名。
 	e.driftScan(context.Background())

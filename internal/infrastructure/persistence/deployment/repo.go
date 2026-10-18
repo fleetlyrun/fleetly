@@ -150,6 +150,31 @@ func (r *repo) ListDriving(ctx context.Context) ([]deployment.Deployment, error)
 	return out, rows.Err()
 }
 
+// DrivingByApp 是 ListDriving 的 per-App 形态（ADR-0082 收敛复查口径）：
+// 同一谓词（活跃态 + 待自动回滚的 failed）按 app_id 圈定。
+func (r *repo) DrivingByApp(ctx context.Context, appID string) ([]deployment.Deployment, error) {
+	states := deployment.ActiveStateStrings()
+	args := append([]any{appID}, persistence.ToAny(states)...)
+	args = append(args, false)
+	rows, err := r.run.QueryContext(ctx,
+		selectCols+" WHERE app_id = ? AND (state IN ("+persistence.Placeholders(len(states))+")"+
+			" OR (state = 'failed' AND rollback_attempted = ? AND from_revision != '')) ORDER BY seq",
+		args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
+	var out []deployment.Deployment
+	for rows.Next() {
+		d, err := scanDeployment(rows.Scan)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *d)
+	}
+	return out, rows.Err()
+}
+
 // NextGeneration 返回 App 下一 Generation（单调；Drift 判定与幂等重放的锚）。
 func (r *repo) NextGeneration(ctx context.Context, appID string) (uint64, error) {
 	var gen uint64
