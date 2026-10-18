@@ -10,6 +10,17 @@
 - `mise run verify:hermetic` 为探针：双构建 sha256 逐字节一致 + `fleetly --json version` 的 commit 戳对账，红了即通道退化回工作树构建。
 - 版本戳纪律不变（ldflags 三件 version/commit/date；date 取 HEAD 提交时刻，保同一 HEAD 双构建可复现）。
 
+## 手动干预与收敛共存纪律（ADR-0082，declarative-model 批立；随该批换装生效）
+
+App 域收敛缺省 posture=all 后，**载体上的手动热修会在有界滞后内被控制器回卷**（快通道 ≤1 拍扫描 + 慢通道 60s 强制重放）。在案手动操作序逐条对账：
+
+- **标准逃生序（freeze 优先）**：`fleetly freeze set`（该 Team 冻结 → 收敛挂起、检测照发）→ docker 干预 → **声明面回写**（deploy / `apps restart` / vars 更正 spec）→ `fleetly freeze lift`。冻结是热修的官方通道，不是可选装饰。
+- **硬逃生（现有救援实录的既有首步，语义不变）**：`systemctl stop fleetlyd`——控制器下线即收敛全停（记·二 bb5259d 救援序、平台升级操作序第 3 步均属此形态，无需改写）。
+- **scale-0 收敛法（记·八 messaging 网 rebuild）**：`docker service scale <svc>=0` 在收敛在役时与控制器对抗（缺席/失配 ≤1 拍内重建）。新序：freeze set → scale 0 → `networks rebuild` → `rollback --wait`（声明式 replay 本就是收敛同族）→ freeze lift。
+- **`docker rm -f` 健康容器排水（记·七 crash-loop 端点清零）**：与收敛同向不冲突——移除即缺席信号，控制器经 Ensure 以现行 spec 重建（原序靠 swarm 自行补，现由收敛接棒；等待至多一个扫描拍）。
+- **`docker service update` 改 replicas/镜像热修**：收敛在役时**必被回卷**（spec 失配），禁用；改走声明面，或 freeze set 临时窗内操作并自知解冻即回卷。
+- **检测面**：`workload.converged` / `workload.converge_failed` 事件、doctor converge 行（冷却可见）、`converge-failed` 内置告警规则；逃生姿态 `engine.converge_posture=detect`（重启级开关，恢复 ADR-0005 只检测行为）。
+
 ## 拓扑与连接
 
 - **manager** = `ssh root@fleetly-dev.deeploop.net`（146.190.58.0；VPC eth1=10.124.0.3；Debian 13 / 2C / 4G）。新 fleetlyd = systemd `fleetlyd.service`（数据根 /var/lib/fleetly；unit 另注入 `FLEETLY_PROXY_CONFIG_ENDPOINT=http://10.124.0.3:9082/proxy/config` + `FLEETLY_PROXY_ACME_EMAIL` + drop-in `browse.conf`：`FLEETLY_BROWSE_HOST_SUFFIX=dev.fleetly.run` + `FLEETLY_BROWSE_GATEWAY_URL=http://10.124.0.3:9081`，2026-10-07 起）。
