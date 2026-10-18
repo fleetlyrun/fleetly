@@ -12,7 +12,7 @@
 |---|---|---|
 | **Batch 0 预检** | 核对 drift.go 未提交改动（并行会话）；复核 ADR 编号；mise install | [x]（0081/0082/0083 空闲已核） |
 | **Batch A 立法** | CONTEXT.md 词条五新增 + Converge 修订 + restart_seq 注记；ADR-0081/0082/0083（含翻案登记与验收锚）；本计划文档 | [x] |
-| **Batch B 写面立法** | `writeclassguard_test.go`：ADR-0081 附录 153 方法完整分类（27 ACTION + 53 DECLARATION + 73 READ）+ 双向保鲜 + 单向 scope 断言 + FrozenVerbs/idem 从属断言；proto 零触碰 | [ ] |
+| **Batch B 写面立法** | `writeclassguard_test.go`：ADR-0081 附录 153 方法完整分类（27 ACTION + 53 DECLARATION + 73 READ）+ 双向保鲜 + 单向 scope 断言 + FrozenVerbs/idem 从属断言；proto 零触碰 | [x]（四测全绿；分类表与附录三处分项计数/FrozenVerbs ACTION 条数勘误同 commit） |
 | **Batch C 收敛升格** | C1：缺席检测（LatestSucceeded 重投影 + digest 签名短路）+ App 域双通道接线（快通道四类信号 + 60s 慢通道 + 签名生命周期 + 冷却 + 冻结 fail-closed + 审计行 + 两事件 + doctor/告警）。C2：ADR-0082 裁决表落码 golden + posture 旗标。钉测族与 skills deploy-diagnose 翻向同批 | [ ] |
 | **Batch D restart_seq** | spec.proto + Workload.RestartSeq + 投影 + swarm/k3s contentequiv 四用例 + 执行时 seq-only 判定 + CLI golden 族（含 selfdescription/schema/explain）+ console:gen && build dist 同 commit + skills restart 双面指引 | [ ] |
 | **Batch E 可选** | E1 受管/route 收敛 memo 持久化；E2 projects 项目级逃生门；E3 ring 域 ensuredSpec 记录 + spec 对照——按需另批（2026-10-18 裁决 4：A-D 收官即收本程序） | [ ] |
@@ -27,7 +27,7 @@
 
 ## 验收门禁清单
 
-- [ ] Batch B：writeclassguard 全绿（153 全分类 + 三从属断言）；`go test ./internal/guards/` 绿
+- [x] Batch B：writeclassguard 全绿（153 全分类 + 三从属断言）；`go test ./internal/guards/` 绿
 - [ ] Batch C：收敛裁决表 golden + 钉测族五类以上全绿；两事件注册三链；doctor 行 + 内置告警
 - [ ] Batch D：contentequiv 四用例（swarm+k3s）+ 升级零滚用例 + CLI/console golden 族
 - [ ] 收尾：`mise run test`（三 module -race）/ `lint` / `console:verify` / `generate:verify` 全绿；e2e:dind + e2e:upgrade 判读（升级首拍零滚为绿；现役载体带非零 seq 形态则一次性收敛为预期红，人工判读——BB 事故重演红线）

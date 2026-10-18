@@ -59,8 +59,8 @@ App spec 与实体的关系是**按引用绑定，不按值内嵌**（compose ex
 
 1. **完整分类**：proto 全部 153 方法逐个落桶（附录表为法源），未分类即红；表内出现 proto 不存在的方法即死条目红。
 2. **ACTION 双向保鲜**：例外清单不再命中 proto 即红（freezeguard 豁免面同款机制）。
-3. **单向 scope 断言**：DECLARATION ⇒ scope 注解为 WRITE/ADMIN（声明写必是授权写面）；**ACTION 允许 READ-scope**——不设「ACTION ⇒ WRITE」反向断言（VerifyBackup 携 backups:read 等先例在案），READ-scope 的 ACTION 经豁免通道显式登记（`scopeOpExemptions` 既有五条先例对齐：IssueEventTicket/TestNotificationChannel/StreamExecSession/StartManifestFlow/ConsumeManifestCode）。
-4. **FrozenVerbs 从属断言**：`governance.FrozenVerbs ⊆ DECLARATION∪ACTION`（冻结只拦写面；现表 42 条逐一可对账——其中 RestartProcess/RebuildNetwork/RotateDatabasePassword/RotateHookToken/RefreshGitHook/TriggerSchedule/ReceiveWebhook 七条是 ACTION，余为 DECLARATION）。
+3. **单向 scope 断言**：DECLARATION ⇒ scope 注解为 WRITE/ADMIN（声明写必是授权写面）；**ACTION 允许 READ-scope**——不设「ACTION ⇒ WRITE」反向断言（VerifyBackup 携 databases:read 等先例在案），READ-scope 的 ACTION 经 writeclassguard 自有豁免面显式登记（初值三条：VerifyBackup/BrowseDatabase/IssueEventTicket，按 PolicySet 在役 scope 实况对账；`scopeOpExemptions` 既有五条是 scopeguard 的动词方向豁免面，同形不同轴）。
+4. **FrozenVerbs 从属断言**：`governance.FrozenVerbs ⊆ DECLARATION∪ACTION`（冻结只拦写面；现表 42 条逐一可对账——其中 RestartProcess/RebuildNetwork/RotateDatabasePassword/RotateHookToken/RefreshGitHook/TriggerSchedule/ReceiveWebhook/CompleteManifestFlow 八条是 ACTION，余为 DECLARATION）。
 5. **idem 前缀从属断言**：`idem.EnforcedMethods` 的创建型前缀集成员 ⊆ DECLARATION∪豁免——表中 ReceiveWebhook/TriggerBackup/TriggerPlatformBackup/RebuildNetwork 四条 ACTION 经豁免通道显式登记（各自「重放安全」理由已在 enforcer 表内注记）。
 
 ### 5. 边界案例钉死
@@ -101,7 +101,7 @@ Write Class 的 **ACTION** 与 Scope 词条 `resource:action`（read/write 授�
 | DeleteSchedule | DECLARATION | 实体行删除 |
 | TriggerSchedule | ACTION | 仪式动词：按时立即生成一次 Run，不改规则行 |
 
-### A.2 delivery/v1/delivery.proto（DeploymentsService 7 + RevisionsService 4 + BuildsService 6 + HooksService 5 = 22）
+### A.2 delivery/v1/delivery.proto（DeploymentsService 7 + RevisionsService 4 + BuildsService 5 + HooksService 6 = 22）
 
 | RPC | 类 | 注 |
 |---|---|---|
@@ -199,7 +199,7 @@ Write Class 的 **ACTION** 与 Scope 词条 `resource:action`（read/write 授�
 |---|---|---|
 | GetAppWorkloadObservations | READ | 观测层只读透出（ADR-0071） |
 
-### A.11 structure/v1（ProjectsService 4 + AppsService 5 + SecretsService 3 + ConfigsService 3 + SharedVariablesService 3 + AppVariablesService 3 + VolumesService 3 + DatabasesService 11 + NetworksService 7 = 42）
+### A.11 structure/v1（ProjectsService 4 + AppsService 5 + SecretsService 3 + ConfigsService 3 + SharedVariablesService 3 + AppVariablesService 3 + VolumesService 3 + DatabasesService 10 + NetworksService 8 = 42）
 
 | RPC | 类 | 注 |
 |---|---|---|
@@ -250,7 +250,7 @@ Write Class 的 **ACTION** 与 Scope 词条 `resource:action`（read/write 授�
 | TriggerPlatformBackup | ACTION | 过程性动作：控制面导出过程（ADR-0039） |
 | ListPlatformBackups | READ | |
 
-### A.14 telemetry/v1（EventsService 4 + LogsService 1 + MetricsService 1 + AlertingService 7 = 14）
+### A.14 telemetry/v1（EventsService 4 + LogsService 1 + MetricsService 1 + AlertingService 8 = 14）
 
 | RPC | 类 | 注 |
 |---|---|---|
@@ -274,9 +274,9 @@ Write Class 的 **ACTION** 与 Scope 词条 `resource:action`（read/write 授�
 
 ## 验收锚
 
-- [ ] `writeclassguard_test.go` 完整分类：proto 全部 153 方法逐个落桶（本附录为法源），未分类即红、死条目即红；批内对账 27 ACTION + 53 DECLARATION + 73 READ
-- [ ] ACTION 例外双向保鲜：清单成员不再命中 proto 即红
-- [ ] 单向 scope 断言：DECLARATION ⇒ WRITE/ADMIN；ACTION 的 READ-scope 成员经豁免通道显式登记（scopeOpExemptions 通道）
-- [ ] FrozenVerbs ⊆ DECLARATION∪ACTION 断言（42 条逐一可对账，含 7 条 ACTION 成员）
-- [ ] idem 创建型前缀 ⊆ DECLARATION∪豁免断言（ReceiveWebhook/TriggerBackup/TriggerPlatformBackup/RebuildNetwork 四条经豁免通道）
-- [ ] proto 零触碰（本 ADR 执法面是 Go 表；注解面随配置面立项另批）
+- [x] `writeclassguard_test.go` 完整分类：proto 全部 153 方法逐个落桶（本附录为法源），未分类即红、死条目即红；批内对账 27 ACTION + 53 DECLARATION + 73 READ（2026-10-18 Batch B 兑现）
+- [x] ACTION 例外双向保鲜：清单成员不再命中 proto 即红（2026-10-18 Batch B 兑现）
+- [x] 单向 scope 断言：DECLARATION ⇒ WRITE/ADMIN；ACTION 的 READ-scope 成员经豁免通道显式登记（writeclassguard 豁免面，初值 VerifyBackup/BrowseDatabase/IssueEventTicket 三条，2026-10-18 Batch B 兑现）
+- [x] FrozenVerbs ⊆ DECLARATION∪ACTION 断言（42 条逐一可对账，含 8 条 ACTION 成员：RestartProcess/RebuildNetwork/RotateDatabasePassword/RotateHookToken/RefreshGitHook/TriggerSchedule/ReceiveWebhook/CompleteManifestFlow，2026-10-18 Batch B 兑现）
+- [x] idem 创建型前缀 ⊆ DECLARATION∪豁免断言（ReceiveWebhook/TriggerBackup/TriggerPlatformBackup/RebuildNetwork 四条经豁免通道，2026-10-18 Batch B 兑现）
+- [x] proto 零触碰（本 ADR 执法面是 Go 表；注解面随配置面立项另批——Batch B 守卫批实证）
