@@ -752,6 +752,18 @@ export interface components {
              *     configs（long-form source/target；顶层声明须 external: true）。
              */
             config_mounts?: components["schemas"]["v1ConfigMount"][];
+            /**
+             * restart_seq 是声明式重启序数（ADR-0083）：全进程共享的单调计数器，
+             *     变更 = 以新序数重跑进程的期望（声明式滚动重启——载体内容等价语义
+             *     ADR-0064 护航，经部署管线生效并入 lineage）。单调不减是调用方约定
+             *     （并发受理下的序数警告语义模糊，不加受理执法）；平台保证最终态 =
+             *     最后执行的声明；seq=0 是缺省（存量 Revision 无该字段重放零漂移）。
+             *     回滚回落低 seq 显式豁免单调约定（操作者意图优先）。compareSpecs
+             *     （漂移面）不对照本字段——意图字段非可观测态，与内容等价（收敛面）
+             *     的分际见 ADR-0083 边界裁决。
+             * Format: int64
+             */
+            restart_seq?: number;
         };
         /**
          * ProcessStrategy 是 Revision 冻结体的单进程策略摘要（F3.1：双代窗叙事
@@ -962,6 +974,12 @@ export interface components {
              */
             restart?: string;
             stop_grace?: string;
+            /**
+             * restart_seq 是本载体携带的声明式重启序数（ADR-0083；0 = 缺省，存量
+             *     零漂移——读面回显期望序数，"这次重启轮到第几拍"的排障锚）。
+             * Format: int64
+             */
+            restart_seq?: number;
         };
         /**
          * WorkloadHealthcheck 是全解析探针投影：与 spec.v1.HealthcheckSpec 的声明

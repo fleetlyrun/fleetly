@@ -44,11 +44,17 @@ ADR-0069 补了排障动线的动作半边：Process 级 restart = runtime-only 
 
 ## 验收锚
 
-- [ ] contentequiv 四用例（swarm + k3s 双侧）：seq 变 → update / 同 seq → skip / 缺失 → create / **存量无标签 × 期望 0 → skip（升级零滚）**
-- [ ] seq-only 执行时判定钉测：From 锚已被更早部署推进的场景，执行时重算后正确判向（免迁移判定不静默通过）
-- [ ] 迁移不因重启重跑钉测（kind=restart + PreDeployDone）
-- [ ] compareSpecs 不对照 restart_seq 钉测（漂移面零假阳性，与内容等价守卫共享法源注释）
-- [ ] CLI golden 族：`apps restart` 双形态（缺省声明面 / --runtime 动作面）+ `selfdescription.golden.json` + schema/explain golden + `revisions get` / `apps workloads` seq 非零夹具
-- [ ] `console:gen && console:build` dist 同 commit；console Spec 编辑器对 restart_seq 的控件/校验影响评估在案
-- [ ] e2e:upgrade 升级首拍零滚断言（预记两分支判读口径）
-- [ ] skills restart 双面指引同批（ADR-0031 能力面）
+- [x] contentequiv 四用例（swarm + k3s 双侧）：seq 变 → update / 同 seq → skip / 缺失 → create / **存量无标签 × 期望 0 → skip（升级零滚）**
+- [x] seq-only 执行时判定钉测：From 锚已被更早部署推进的场景，执行时重算后正确判向（免迁移判定不静默通过）
+- [x] 迁移不因重启重跑钉测（kind=restart + PreDeployDone）
+- [x] compareSpecs 不对照 restart_seq 钉测（漂移面零假阳性，与内容等价守卫共享法源注释）
+- [x] CLI golden 族：`apps restart` 双形态（缺省声明面 / --runtime 动作面）+ `selfdescription.golden.json` + schema/explain golden + `revisions get` / `apps workloads` seq 非零夹具
+- [x] `console:gen && console:build` dist 同 commit；console Spec 编辑器对 restart_seq 的控件/校验影响评估在案
+- [x] skills restart 双面指引同批（ADR-0031 能力面；deploy-diagnose 恢复动词段 + 分诊表翻向，skills-CLI 守卫同批执法）
+- [ ] e2e:upgrade 升级首拍零滚断言（预记两分支判读口径；收尾批执行——程序计划收尾门禁行，两分支口径在后果节预记）
+
+## 落码注记（2026-10-18 Batch D）
+
+- **k3s 在役形态核实**：providers/k3s 在树内（ADR-0052/0053 线），账本 canonical key 纳入同批落码——restart_seq 铸 pod 模板 label（进 Deployment 滚动比对面），`canonicalJSONModuloGen` 对 "0" 值归一缺失，与 swarm 同款四用例钉测。
+- **kind 标记形态**：Deployment 行无 Kind 列，kind 只活在审计流（AfterFP "; kind=<kind>" 后缀——回滚受理形态的执行时镜像）；补标经 transition.go 新类型化前门 `transitDeploymentAnnotated`（原地迁移 LedgerOnly 审计，transitguard 守卫口径内）。
+- **console 影响评估**：Spec 编辑器是冻结体 JSON 直编（服务端 ValidateApp 为 schema 权威，ADR-0033 字段白名单即全字段合法），restart_seq 经 src/api 类型再生成天然可编辑——零控件/校验新增，最小不动；`restart_seq` 经 delivery/structure 两 swagger 进 src/api（dist 运行时包零漂移——类型面变化不进 bundle，src/api 同 commit）。
