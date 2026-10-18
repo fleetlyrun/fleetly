@@ -145,7 +145,7 @@ _Avoid_: maintenance window, block, lock
 ### 运行时与中间表示
 
 **Spec**:
-规范化的期望状态中间表示，带 schemaVersion；四种：AppSpec、TaskSpec、DatabaseSpec、FunctionSpec。
+规范化的期望状态中间表示，带 schemaVersion；四种：AppSpec、TaskSpec、DatabaseSpec、FunctionSpec。AppSpec 的 Process 级携带 `restart_seq`（声明式重启序数——单调性是调用方约定、平台保证最终态为最后执行的声明，经部署管线滚动生效，ADR-0083）。
 _Avoid_: manifest, config(泛指), template
 
 **Workload**:
@@ -254,6 +254,17 @@ _Avoid_: notifier, sink
 由平台以普通 Workload 形式托管部署的 Provider 实例。
 _Avoid_: addon, internal service（component 经 ADR-0059 复裁为在册页面名词 Components，移出本表）
 
+### 写类与作者
+
+**Write Class**:
+写面立法三桶：READ（只读无副作用）| DECLARATION（声明写）| ACTION（动作写）；proto 全部 RPC 逐个落桶、未分类即红——完整分类表见 ADR-0081 附录，执法面为 Go 侧表守卫（一方 proto 注解推迟到配置面立项）。
+**Action**（动作写）:
+无终态可持有的过渡/仪式/修护动词（重启、触发、轮换、铸造短命凭证等）：效果是发生的过渡事实，不留下被持有的期望态；效果需进收敛面时经材料指纹接棒（动作改事实 + 收敛面接棒，ADR-0081）。
+**Declaration**（声明写）:
+经部署管线或实体行落期望态的写类：引擎负责把运行时收敛到满足该状态，未变声明重放 = 零扰动 no-op。与 Scope 词条的 `resource:action` 同词异轴——授权 action 见 Scope 词条（授权轴），本词是写类轴（Write Class 的 DECLARATION 桶）。
+**Author Class**:
+期望态的作者权属学说，三类：Document（部署事务的输入文档，冻结成 Revision）、Entity（持续在线的平台实体行）、System（控制环与平台决策——只写经策略委托的授权槽位、漂移对照合成后期望态、声明重放不清洗系统态）；学说与冲突语义表见 ADR-0081 附录。
+
 ### 状态语义
 
 **Generation**:
@@ -269,8 +280,11 @@ Ensure 的等价判定口径：modulo 载体代戳（及副本数）比较内容
 _Avoid_: in-place update, 增量部署
 
 **Converge**:
-把 Drift 拉回 Spec 的动作；默认 opt-in。
+把 Drift 拉回 Spec 的动作；缺省开启（posture 缺省 all，收敛姿态见 Posture 词条，ADR-0082——App 域与环域同律，翻案 ADR-0005 旧「收敛 opt-in」条款）。
 _Avoid_: sync, heal, repair
+
+**Posture**:
+收敛姿态旗标：`all`（缺省——检出漂移即收敛）| `detect`（只报事件不收敛）；配置键切换，裁决与语义见 ADR-0082。
 
 **Replay**:
 重新应用某条旧 Revision；回滚的唯一实现。
