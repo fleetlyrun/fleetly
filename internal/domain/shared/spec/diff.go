@@ -4,6 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
+
+	"google.golang.org/protobuf/encoding/protojson"
+
+	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 )
 
 // DiffEntry 是一条字段级差异（path 是点分字段路径，如
@@ -126,4 +131,39 @@ func jsonOrNull(v any) string {
 	}
 	b, _ := json.Marshal(v)
 	return string(b)
+}
+
+// restartSeqField 是 restart_seq 的 diff 路径尾段（protojson UseProtoNames
+// 冻结参数下的字段名字面量——ADR-0083 的 diff 判定与冻结咽喉同参）。
+const restartSeqField = ".restart_seq"
+
+// RestartSeqOnly 报告两份 AppSpec 的树差异字段集是否 ⊆ restart_seq
+// （ADR-0083 步骤 6：声明式重启的执行时判定纯函数——非空差异且每条差异
+// 路径都落在 restart_seq 上）。空差异 = 同内容重放：不是重启语义（同
+// Revision 再部署重跑 preDeployJobs 的既有纪律保持），恒 false。
+// marshal 参数与冻结咽喉逐字同参（EmitUnpopulated:false + UseProtoNames:
+// true）——seq=0 缺省形态两侧同缺席，缺席↔0 不产生差异条目。
+func RestartSeqOnly(oldSpec, newSpec *specv1.AppSpec) (bool, error) {
+	marshal := protojson.MarshalOptions{EmitUnpopulated: false, UseProtoNames: true}
+	oldBody, err := marshal.Marshal(oldSpec)
+	if err != nil {
+		return false, fmt.Errorf("restart-seq-only: marshal old spec: %w", err)
+	}
+	newBody, err := marshal.Marshal(newSpec)
+	if err != nil {
+		return false, fmt.Errorf("restart-seq-only: marshal new spec: %w", err)
+	}
+	entries, err := Diff(oldBody, newBody)
+	if err != nil {
+		return false, fmt.Errorf("restart-seq-only: %w", err)
+	}
+	if len(entries) == 0 {
+		return false, nil
+	}
+	for _, e := range entries {
+		if !strings.HasSuffix(e.Path, restartSeqField) {
+			return false, nil
+		}
+	}
+	return true, nil
 }

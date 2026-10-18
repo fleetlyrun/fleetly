@@ -1,0 +1,3 @@
+R2	web-1-r2	<DIGEST>
+created 2026-01-01T00:02:00Z	source image	strategy —
+{"schemaVersion":1,"app":{"id":"web-1","project":"shop-1"},"source":{"image":{"ref":"nginx:1.27"}},"processes":[{"name":"web","image":"nginx:1.27","replicas":"1","restartSeq":1}]}

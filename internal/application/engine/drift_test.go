@@ -363,3 +363,23 @@ func TestNoFalseDriftOnCommandDeploySpecCompare(t *testing.T) {
 			"spec compare must not raise drift for an unmodified command carrier")
 	}
 }
+
+// ADR-0083 边界裁决（与 providers 内容等价四用例共享法源注释）：compareSpecs
+// 不对照 restart_seq——意图字段非可观测态（WorkloadObservation 不携带），
+// 同一字段在内容等价（收敛面）与 spec 对照（漂移面）两比对器的分际是显式
+// 规则。restart_seq 非零期望 × 无序数观测的对照拍零假阳性（两轮都零才
+// 钉死，TestNoFalseDriftOnTagDeploySpecCompare 同形态）。
+func TestCompareSpecsIgnoresRestartSeq(t *testing.T) {
+	e, rt, clock := newTestEngine(t)
+	specJSON := `{"schema_version":1,"app":{"id":"` + tAppID + `","project":"` + tProjectID + `"},` +
+		`"source":{"image":{"ref":"nginx:1.27"}},"processes":[{"name":"web","image":"nginx:1.27","replicas":1,"restart_seq":7}]}`
+	rev := freezeSpec(t, e, 1, specJSON)
+	driftDeployToSucceeded(t, e, rt, clock, rev)
+
+	e.driftScan(context.Background())
+	e.driftScan(context.Background())
+	for _, name := range eventNames(t, e, "") {
+		require.NotEqual(t, "workload.drift_detected", name,
+			"the drift face must not compare restart_seq (intent is not observable state, ADR-0083)")
+	}
+}

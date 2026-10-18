@@ -108,10 +108,24 @@ func (e *Engine) driveOnce(ctx context.Context, d *deployment.Deployment) (*depl
 // engine 拾取）。preDeployJobs 的结构校验在此先行（受理面 ValidateApp
 // 同规则；此处是部署链内防御 + 更早失败：坏 job 不等构建完才死）——
 // 执行在 releasing 态前半（predeploy.go，ADR-0030）。
+//
+// ADR-0083 步骤 6：seq-only 判定在本态早期执行（驱动器拾取时对实际最新
+// succeeded 基线重算——受理时的 From 锚可能已被更早排队的部署推进）；
+// 命中即就地标 kind=restart + PreDeploy 游标直落 done（镜像回滚受理的
+// admission 形态），release 的 jobs 子相位见 done 游标直接进 carrier 子
+// 相位——迁移不得因重启重跑（步骤 8）。BG 策略进程的物化舞步不受影响
+// （kind=restart 只执游标与审计标注，release 按 anyBlueGreen 分流照常）。
 func (e *Engine) prepare(ctx context.Context, d *deployment.Deployment) (*deployment.Deployment, error) {
 	spec, err := e.loadSpec(ctx, d.ToRevision)
 	if err != nil {
 		return e.failDeployment(ctx, d, "load revision spec: "+err.Error())
+	}
+	fresh, rerr := e.markRestartSeqOnly(ctx, d, spec)
+	if rerr != nil {
+		return e.failDeployment(ctx, d, "restart-seq judgment: "+rerr.Error())
+	}
+	if fresh != nil {
+		d = fresh // 已补标：本行按声明式重启推进（游标 done 随刷新行携带）
 	}
 	for i, j := range spec.GetPreDeployJobs() {
 		if verr := specir.ValidateJob(fmt.Sprintf("app.pre_deploy_jobs[%d]", i), j); verr != nil {

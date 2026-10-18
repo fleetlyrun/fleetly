@@ -242,6 +242,9 @@ app (spec) — AppSpec: desired state of a long-running deployable unit (an app 
                 },
                 "type": "object"
               },
+              "restart_seq": {
+                "type": "integer"
+              },
               "secret_refs": {
                 "items": {
                   "type": "string"
@@ -453,6 +456,9 @@ app (spec) — AppSpec: desired state of a long-running deployable unit (an app 
               }
             },
             "type": "object"
+          },
+          "restart_seq": {
+            "type": "integer"
           },
           "secret_refs": {
             "items": {

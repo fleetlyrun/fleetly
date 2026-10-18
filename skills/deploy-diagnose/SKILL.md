@@ -110,20 +110,29 @@ the causal chain; logs and builds are the evidence underneath.
 8. Recovery verbs — pick per the triage table, do not stack them blindly.
    Cancel clears a queued or in-flight deployment first (terminal states
    refuse with E_NOT_CANCELLABLE); rollback and re-deploy submit the
-   replacement. For a wedged process with a healthy spec (internal state
-   rotted, carriers need a fresh start), `apps restart` force-reschedules
-   that process's carriers in place — no new revision or deployment, brief
-   per-replica downtime (ADR-0069). To attach to a deployment or build
-   already in flight (webhook-triggered chains submit outside your session),
-   use the standalone wait verbs — they stream state transitions and exit
-   non-zero unless the row ends `succeeded`:
+   replacement. Restart has two honest faces (ADR-0083): the default is the
+   declarative face — it bumps `restart_seq` on every process of the latest
+   frozen revision and rides the normal deploy pipeline (audited lineage,
+   pre-deploy jobs/migrations do not re-run, content-equivalence rolls the
+   carriers); use it when the intent is "re-run these processes as a desired
+   state change". `--runtime` is the escape hatch (ADR-0069): it
+   force-reschedules one process's carriers in place — no revision, no
+   deployment, brief per-replica downtime; use it to un-wedge a single
+   process whose spec is healthy. Hook-owned apps restart declaratively too
+   (the material half stays frozen to the hook; a plain material deploy on a
+   hook-owned app fails with E_APP_HOOK_OWNED — `--runtime` is that escape).
+   To attach to a deployment or build already in flight (webhook-triggered
+   chains submit outside your session), use the standalone wait verbs — they
+   stream state transitions and exit non-zero unless the row ends
+   `succeeded`:
 
    ```bash
    fleetly deployments cancel DEPLOYMENT_ID
    fleetly deployments wait --deployment DEPLOYMENT_ID
    fleetly builds wait --build BUILD_ID
    fleetly rollback --app APP_ID --wait
-   fleetly apps restart --app APP_ID --process PROCESS
+   fleetly apps restart --app APP_ID
+   fleetly apps restart --app APP_ID --runtime --process PROCESS
    fleetly deploy --app APP_ID --image IMAGE --wait
    fleetly deploy --app APP_ID --from-dir DIR --wait
    fleetly deploy --app APP_ID --from-dir DIR --builder railpack --railpack-version RAILPACK_VERSION --wait
@@ -141,7 +150,7 @@ the causal chain; logs and builds are the evidence underneath.
 | `failed` + `railpack: pinned version mismatch` or `railpack binary ... is not runnable` | The error text names the platform's pinned version and the `--railpack-version` form | Redeploy with the exact pinned version; a missing/mismatched binary is an operator task on the control-plane node (install.sh pins it). |
 | `failed` + `cross-project network reference ... is not approved` | `fleetly networks peers --project PROJECT_ID --json` | Have the receiving project approve the peer declaration, or drop the reference from the spec. |
 | `releasing` / `observing` for minutes, no failure | `fleetly events follow --replay --json` (are `workload` observations arriving at all?) | If observations stalled, suspect the runtime/provider; if L1 legitimately waits, the window (default 120s) will fail the deployment on its own — do not preempt it. |
-| `workload.stopped` on a `succeeded` app (steady state) | `fleetly logs --app APP_ID --process PROCESS --tail 100`, `fleetly events list --limit 20 --json` | The watchdog only reports (spec matches, so convergence stands down — the runtime restarts tasks on its own). If the process exits are a crash loop, fix and deploy; a stopped row with no deployment in flight reconverges with `fleetly apps restart --app APP_ID --process PROCESS` (in-place force-reschedule; a redeploy of unchanged content does not roll carriers). |
+| `workload.stopped` on a `succeeded` app (steady state) | `fleetly logs --app APP_ID --process PROCESS --tail 100`, `fleetly events list --limit 20 --json` | The watchdog only reports (spec matches, so convergence stands down — the runtime restarts tasks on its own). If the process exits are a crash loop, fix and deploy; a stopped row with no deployment in flight reconverges with `fleetly apps restart --app APP_ID --runtime --process PROCESS` (in-place force-reschedule for one wedged process) or `fleetly apps restart --app APP_ID` (declarative: bumps restart_seq through the deploy pipeline; a redeploy of unchanged content does not roll carriers). |
 | `workload.drift_detected` on an idle app (no deployment in flight) | `fleetly events list --limit 20 --json` (did `workload.converged` follow?), `fleetly doctor` | Converge-by-default restores the succeeded baseline within a scan interval — confirm convergence instead of acting. If drift persists without `workload.converged`, suspect a change freeze (convergence suspends; `fleetly freeze list --json`) or a cooling window (next row). |
 | `workload.converge_failed` / doctor shows a convergence cooldown | `fleetly events list --limit 50 --json` (the failure tails), `fleetly apps workloads --live APP_ID` | The engine retries after the cooldown window, or sooner on a new drift signature. Fix the underlying cause (carrier stuck, image unresolvable, runtime unhealthy) rather than retrying manually. For a deliberate manual hot fix, set a change freeze first (`fleetly freeze set --reason manual-hot-fix`), edit, then either write the change into the spec or lift the freeze. |
 | `E_QUEUE_FULL` on submit | `fleetly deployments list --app APP_ID --json` (queued rows pile-up) | Wait for the in-flight deployment to drain; do not retry-loop the submit. |

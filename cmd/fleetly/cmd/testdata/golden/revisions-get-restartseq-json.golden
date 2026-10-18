@@ -1,0 +1,35 @@
+{
+  "revision": {
+    "id": "web-1-r2",
+    "app_id": "web-1",
+    "seq": "2",
+    "digest": "<DIGEST>",
+    "created_at": "2026-01-01T00:02:00Z",
+    "process_strategies": [
+      {
+        "process": "web"
+      }
+    ],
+    "source_kind": "SOURCE_KIND_IMAGE"
+  },
+  "spec": {
+    "schema_version": 1,
+    "app": {
+      "id": "web-1",
+      "project": "shop-1"
+    },
+    "source": {
+      "image": {
+        "ref": "nginx:1.27"
+      }
+    },
+    "processes": [
+      {
+        "name": "web",
+        "image": "nginx:1.27",
+        "replicas": "1",
+        "restart_seq": 1
+      }
+    ]
+  }
+}

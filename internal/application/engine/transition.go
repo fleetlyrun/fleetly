@@ -250,6 +250,46 @@ func (e *Engine) transitAndReload(ctx context.Context, d *deployment.Deployment,
 	return fresh, nil
 }
 
+// transitDeploymentAnnotated 是 Deployment 原地迁移 + 审计指纹注记的类型化
+// 前门（ADR-0083 步骤 6/7）：驱动路径自开事务，CAS 按当前行态原地迁移
+// （状态未变不发事件，LedgerOnly 审计单行——规则 2），note 随 AfterFP 以
+// "; key=value" 后缀带出（admission 回放受理 "; kind=rollback" 后缀的执行
+// 时对偶——行上无 Kind 列，kind 只活在审计流）。返回刷新行。
+func (e *Engine) transitDeploymentAnnotated(ctx context.Context, d *deployment.Deployment, mut func(*deployment.Deployment), note string) (*deployment.Deployment, error) {
+	var fresh *deployment.Deployment
+	err := e.tx.Do(ctx, func(s transact.Stores) error {
+		return e.commitTransition(ctx, s, transitionFact{
+			move: func(ctx context.Context, s transact.Stores) (string, bool, error) {
+				if err := s.Deployments.Transit(ctx, d.ID,
+					[]deployment.State{d.State}, d.State, mut); err != nil {
+					return "", false, err
+				}
+				var err error
+				if fresh, err = s.Deployments.Get(ctx, d.ID); err != nil {
+					return "", false, err
+				}
+				return string(fresh.State), true, nil
+			},
+			fact: func(ctx context.Context, s transact.Stores, freshState string, inPlace bool) writes.FactRow {
+				return writes.FactRow{
+					Aggregate: "deployment", ID: d.ID,
+					Action: "deployment.transit", Resource: "deployment/" + d.ID,
+					AfterFP: freshState + note,
+					// LedgerOnly 偏离理由：原地迁移（落定状态仍在 from 集）
+					// 不发事件——事件是状态迁移的既成事实，状态未变不是迁移；
+					// kind 注记随审计指纹带出（transit 规则 2 同款，ADR-0083
+					// 步骤 6/7 的执行时补标面）。
+					LedgerOnly: true,
+				}
+			},
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+	return fresh, nil
+}
+
 // transitRunTx 是 Run 状态迁移四件一（caller-tx 形态；原地回写调用方行；
 // 行不删）。
 func (e *Engine) transitRunTx(ctx context.Context, s transact.Stores, m *run.Run, from []run.State, to run.State, mut func(*run.Run)) error {

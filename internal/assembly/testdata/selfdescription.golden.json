@@ -383,6 +383,9 @@
                       },
                       "type": "object"
                     },
+                    "restart_seq": {
+                      "type": "integer"
+                    },
                     "secret_refs": {
                       "items": {
                         "type": "string"
@@ -594,6 +597,9 @@
                     }
                   },
                   "type": "object"
+                },
+                "restart_seq": {
+                  "type": "integer"
                 },
                 "secret_refs": {
                   "items": {
@@ -3141,6 +3147,9 @@
                   }
                 },
                 "type": "object"
+              },
+              "restart_seq": {
+                "type": "integer"
               },
               "secret_refs": {
                 "items": {

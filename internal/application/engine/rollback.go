@@ -43,8 +43,14 @@ func (e *Engine) Rollback(ctx context.Context, appID, toRevisionID string) (*dep
 	})
 }
 
-// SubmitRequest.Kind 取值（审计与事件 payload 的来源标注）。
+// SubmitRequest.Kind 取值与执行时来源标注（审计与事件 payload 形态：
+// AfterFP 的 "; kind=<kind>" 后缀——行上无 Kind 列，kind 只活在审计流）。
 const (
-	// KindRollback 标注回放部署（`fleetly rollback` 一等动词）。
+	// KindRollback 标注回放部署（`fleetly rollback` 一等动词；受理时已知
+	// ——preDeploy 游标随建行直落 done）。
 	KindRollback = "rollback"
+	// KindRestart 标注声明式重启部署（ADR-0083 步骤 6/7：执行时 seq-only
+	// 判定命中后由驱动器就地补标——受理时不知道，判定延迟到对实际最新
+	// succeeded 基线重算）。
+	KindRestart = "restart"
 )

@@ -1,0 +1,29 @@
+{
+  "revision": {
+    "id": "web-1-r2",
+    "app_id": "web-1",
+    "seq": "2",
+    "digest": "<DIGEST>",
+    "created_at": "2026-01-01T00:02:00Z",
+    "process_strategies": [
+      {
+        "process": "web"
+      }
+    ],
+    "source_kind": "SOURCE_KIND_IMAGE"
+  },
+  "workloads": [
+    {
+      "id": "web-1-web",
+      "process": "web",
+      "image": "nginx:1.27",
+      "replicas": "1",
+      "placement": {},
+      "addressing": [
+        "web",
+        "web.web"
+      ],
+      "restart_seq": 1
+    }
+  ]
+}

@@ -244,14 +244,14 @@ func newAppsWorkloadsVerb() commands.Command {
 				}
 				return renderOut(env, jsonOut, resp, func() {
 					_, _ = fmt.Fprintf(env.Stdout, "revision R%d\t%s\n", resp.GetRevision().GetSeq(), resp.GetRevision().GetDigest())
-					_, _ = fmt.Fprintln(env.Stdout, "PROCESS\tIMAGE\tREPLICAS\tPORTS\tNETWORKS")
+					_, _ = fmt.Fprintln(env.Stdout, "PROCESS\tIMAGE\tREPLICAS\tPORTS\tNETWORKS\tRESTART_SEQ")
 					for _, w := range resp.GetWorkloads() {
 						ports := make([]string, 0, len(w.GetPorts()))
 						for _, p := range w.GetPorts() {
 							ports = append(ports, fmt.Sprintf("%d/%s", p.GetPort(), strings.ToLower(strings.TrimPrefix(p.GetProtocol().String(), "PROTOCOL_"))))
 						}
-						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%d\t%s\t%s\n",
-							w.GetProcess(), w.GetImage(), w.GetReplicas(), strings.Join(ports, ","), strings.Join(w.GetNetworks(), ","))
+						_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%d\t%s\t%s\t%d\n",
+							w.GetProcess(), w.GetImage(), w.GetReplicas(), strings.Join(ports, ","), strings.Join(w.GetNetworks(), ","), w.GetRestartSeq())
 					}
 				})
 			})
@@ -407,20 +407,26 @@ func newAppsListVerb() commands.Command {
 	}
 }
 
-// newAppsRestartVerb 强制重排单个进程的载体（ADR-0069，排障动线"进程卡死
-// → 就地重启"）：零 lineage（不产生 Revision/Deployment），经 Runtime 重启
-// 子面滚动重排；与 components restart（平台受管域）分立——本动词作用于
-// 用户 App 的 Process。
+// newAppsRestartVerb 是重启双面动词（ADR-0083 §3 双面操作者契约；推翻
+// ADR-0069 决策 6）：**缺省 = 声明面**——取最新冻结 Revision，全部进程
+// restart_seq+1，经 Deploy(spec_file) 走正常部署管线（有 lineage、
+// seq-only 判定免迁移、内容等价语义护航滚动替换）；`--runtime` 旗标走
+// ADR-0069 动作面逃生（单进程零 lineage 强制重排）。hook-owned 应用的
+// 所有权闸门错误（E_APP_HOOK_OWNED）如实透出，--runtime 即逃生；声明面
+// 对 hook-owned 应用走 spec_file overlay（材料半边取冻结侧），天然合法。
+// 取不到冻结 Revision / 空 spec 诚实报错（首部署无对象可重启）。
 func newAppsRestartVerb() commands.Command {
 	const name = "restart"
 	var app, process string
+	var runtimeFace bool
 	return &flaggedVerb{
 		name:     name,
-		synopsis: "Restart a single process of an app (force-reschedule its carriers; image and spec unchanged)",
-		usage:    "apps restart --app APP_ID --process NAME",
+		synopsis: "Restart an app declaratively: bump restart_seq on the latest frozen revision and redeploy (lineage + no migration re-run). --runtime force-reschedules one process in place (escape hatch, no lineage)",
+		usage:    "apps restart --app APP_ID [--runtime --process NAME]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&app, "app", "", "app id (required)")
-			fs.StringVar(&process, "process", "", "process name (required)")
+			fs.BoolVar(&runtimeFace, "runtime", false, "escape hatch: force-reschedule one process's carriers in place (ADR-0069; no revision or deployment, brief per-replica downtime)")
+			fs.StringVar(&process, "process", "", "process name (required with --runtime; not valid without it)")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if err := noArgs(name, args); err != nil {
@@ -429,20 +435,90 @@ func newAppsRestartVerb() commands.Command {
 			if app == "" {
 				return usageErr(name, "--app is required")
 			}
-			if process == "" {
-				return usageErr(name, "--process is required")
+			if runtimeFace {
+				if process == "" {
+					return usageErr(name, "--process is required with --runtime")
+				}
+				return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+					_, err := c.Deployments.RestartProcess(ctx, &deliveryv1.RestartProcessRequest{AppId: app, ProcessName: process})
+					if err != nil {
+						return err
+					}
+					return renderOut(env, jsonOut, &deliveryv1.RestartProcessResponse{}, func() {
+						_, _ = fmt.Fprintf(env.Stdout, "restart requested for process %s of app %s (carriers force-rescheduled)\n", process, app)
+					})
+				})
+			}
+			if process != "" {
+				return usageErr(name, "--process is only meaningful with --runtime (the declarative face restarts every process of the app)")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
-				_, err := c.Deployments.RestartProcess(ctx, &deliveryv1.RestartProcessRequest{AppId: app, ProcessName: process})
+				latest, err := latestFrozenRevision(ctx, c, app)
 				if err != nil {
 					return err
 				}
-				return renderOut(env, jsonOut, &deliveryv1.RestartProcessResponse{}, func() {
-					_, _ = fmt.Fprintf(env.Stdout, "restart requested for process %s of app %s (carriers force-rescheduled)\n", process, app)
+				got, err := c.Revisions.GetRevision(ctx, &deliveryv1.GetRevisionRequest{AppId: app, Seq: latest.GetSeq()})
+				if err != nil {
+					return err
+				}
+				spec := got.GetSpec()
+				if len(spec.GetProcesses()) == 0 {
+					return fmt.Errorf("frozen revision R%d of app %s declares no processes (nothing to restart)", latest.GetSeq(), app)
+				}
+				for _, p := range spec.GetProcesses() {
+					if p.GetRestartSeq() == ^uint32(0) {
+						return fmt.Errorf("process %s restart_seq is already at the maximum (4294967295); re-declare the app with a fresh spec instead", p.GetName())
+					}
+					p.RestartSeq = p.GetRestartSeq() + 1
+				}
+				// 冻结体 marshal 与服务端冻结咽喉同参（protojson
+				// UseProtoNames + EmitUnpopulated:false）——seq 变更即内容
+				// 变更（digest 覆盖 restart_seq），受理走同一咽喉。
+				body, err := protoJSONMarshal.Marshal(spec)
+				if err != nil {
+					return err
+				}
+				resp, err := c.Deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: app, SpecFile: string(body)})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp, func() {
+					d := resp.GetDeployment()
+					_, _ = fmt.Fprintf(env.Stdout,
+						"deployment %s %s (revision %s, generation %d, queue position %d; declarative restart of R%d: restart_seq bumped on %d process(es))\n",
+						d.GetId(), d.GetState(), d.GetToRevision(), d.GetGeneration(),
+						resp.GetAdmission().GetPosition(), latest.GetSeq(), len(spec.GetProcesses()))
 				})
 			})
 		},
 	}
+}
+
+// latestFrozenRevision 取 App 的最新冻结 Revision（R 号最大者）：列表
+// 游标走到尾（seq 升序分页——零新 RPC 的客户端组合，ADR-0083 §3）。
+func latestFrozenRevision(ctx context.Context, c *fleetly.Client, app string) (*deliveryv1.Revision, error) {
+	var latest *deliveryv1.Revision
+	after := int64(0)
+	for {
+		resp, err := c.Revisions.ListRevisions(ctx, &deliveryv1.ListRevisionsRequest{AppId: app, AfterSeq: after, Limit: 200})
+		if err != nil {
+			return nil, err
+		}
+		page := resp.GetRevisions()
+		for _, r := range page {
+			if latest == nil || r.GetSeq() > latest.GetSeq() {
+				latest = r
+			}
+		}
+		if len(page) == 0 {
+			break
+		}
+		after = page[len(page)-1].GetSeq()
+	}
+	if latest == nil {
+		return nil, fmt.Errorf("app %s has no frozen revision to restart (nothing was ever deployed; deploy first)", app)
+	}
+	return latest, nil
 }
 
 // apps delete（ADR-0023）：收口删除——拆载体 + 撤路由 + tombstone；活跃

@@ -82,3 +82,50 @@ func TestAppsWorkloadsNoSucceeded(t *testing.T) {
 		t.Fatalf("apps workloads (never deployed): code=%d stderr=%q (want not found)", code, stderr)
 	}
 }
+
+// ADR-0083 seq 非零夹具：声明面重启（restart_seq 0→1）驱动到 succeeded
+// 后，投影视图的 RESTART_SEQ 列携带非零序数（"这次重启轮到第几拍"的
+// 读面回显）。
+func TestGoldenAppsWorkloadsRestartSeq(t *testing.T) {
+	h := newGoldenHarness(t)
+	appID := goldenSeedDeploy(t, h)
+
+	code, _, stderr := runCLI(t, "apps", "restart", "--app", appID)
+	if code != 0 || stderr != "" {
+		t.Fatalf("apps restart: code=%d stderr=%q", code, stderr)
+	}
+	promoteCarrierToSucceeded(t, h, appID, appID+"-web", 2)
+
+	code, out, stderr := runCLI(t, "apps", "workloads", appID)
+	if code != 0 || stderr != "" {
+		t.Fatalf("apps workloads (post-restart): code=%d stderr=%q", code, stderr)
+	}
+	if !strings.Contains(out, "RESTART_SEQ") {
+		t.Fatalf("apps workloads: expected the RESTART_SEQ column, got %q", out)
+	}
+	compareGolden(t, goldenFile("apps-workloads-restartseq"), normalizeGolden(out))
+
+	code, outJSON, stderr := runCLI(t, "apps", "workloads", appID, "--json")
+	if code != 0 || stderr != "" {
+		t.Fatalf("apps workloads --json (post-restart): code=%d stderr=%q", code, stderr)
+	}
+	compareGolden(t, goldenFile("apps-workloads-restartseq")+"-json", normalizeGolden(outJSON))
+
+	// revisions get seq 非零夹具（ADR-0083 验收锚）：重启 Revision 的冻结
+	// 全文携带重启序数（该动词人读面是 protojson.Marshal 缺省 camelCase
+	// ——既有 golden 形态，restartSeq 键名同源）。
+	code, out, stderr = runCLI(t, "revisions", "get", "--app", appID, "--seq", "2")
+	if code != 0 || stderr != "" {
+		t.Fatalf("revisions get (post-restart): code=%d stderr=%q", code, stderr)
+	}
+	if !strings.Contains(out, "restartSeq") {
+		t.Fatalf("revisions get: expected restartSeq in the frozen spec, got %q", out)
+	}
+	compareGolden(t, goldenFile("revisions-get-restartseq"), normalizeGolden(out))
+
+	code, outJSON, stderr = runCLI(t, "revisions", "get", "--app", appID, "--seq", "2", "--json")
+	if code != 0 || stderr != "" {
+		t.Fatalf("revisions get --json (post-restart): code=%d stderr=%q", code, stderr)
+	}
+	compareGolden(t, goldenFile("revisions-get-restartseq")+"-json", normalizeGolden(outJSON))
+}
