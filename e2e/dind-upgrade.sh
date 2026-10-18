@@ -63,8 +63,8 @@ done
 # 同法构建。
 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -C "$NEWSRC" -trimpath -o "$WORKDIR/bins-new/h2cclient" ./e2e/h2cclient
 
-log "cross-compiling OLD binaries at HEAD~1 via worktree"
-git worktree add --detach "$OLDWT" HEAD~1 >/dev/null 2>&1
+log "cross-compiling OLD binaries at ${E2E_UPGRADE_OLD_REF:-HEAD~1} via worktree"
+git worktree add --detach "$OLDWT" "${E2E_UPGRADE_OLD_REF:-HEAD~1}" >/dev/null 2>&1
 for b in fleetlyd fleetly; do
   GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -C "$OLDWT" -o "$WORKDIR/bins-old/$b" "./cmd/$b"
 done
@@ -72,8 +72,26 @@ log "binaries ready: old=$(git -C "$OLDWT" rev-parse --short HEAD) new=$(git rev
 
 # 2. 起 dind（privileged；29 线与生产对齐）+ 预载镜像。
 log "starting dind container"
+
+# 宿主 daemon 走代理时（daemon.json proxies）注入 dind daemon（dockerd 原生
+# 消费 HTTP(S)_PROXY env）——钉版 digest 直拉与受管镜像拉取依赖出网。地址
+# 重写 127.0.0.1→172.17.0.1（dind 的宿主网关侧；代理须在该地址可达，仅听
+# loopback 的宿主代理需自行架桥转发）。CI 无 daemon.json 代理 → 数组为空
+# → 零注入零变化。
+DIND_PROXY_ENV=""
+if [ -r /etc/docker/daemon.json ] && command -v python3 >/dev/null 2>&1; then
+  PROXY=$(python3 -c 'import json,sys; print(json.load(open("/etc/docker/daemon.json")).get("proxies",{}).get("https-proxy",""))' 2>/dev/null)
+  case "$PROXY" in
+    http://127.0.0.1:*)
+      GW_PROXY="http://172.17.0.1:${PROXY#http://127.0.0.1:}"
+      DIND_PROXY_ENV="-e HTTP_PROXY=$GW_PROXY -e HTTPS_PROXY=$GW_PROXY -e NO_PROXY=localhost,127.0.0.1"
+      log "host daemon proxy detected → dind pulls via $GW_PROXY"
+      ;;
+  esac
+fi
 DIND_CID=$(docker run -d --privileged --name fleetly-e2e-upgrade-"$$" \
   -e DOCKER_TLS_CERTDIR= \
+  ${DIND_PROXY_ENV:+$DIND_PROXY_ENV} \
   docker:29-dind)
 
 i=0
@@ -103,6 +121,19 @@ for img in nginx:1.27 traefik:v3.5 traefik/whoami:v1.10 postgres:17-bookworm; do
   docker image inspect "$img" >/dev/null 2>&1 || docker pull "$img" >/dev/null
   docker image save "$img" | docker exec -i "$DIND_CID" docker load >/dev/null
 done
+# postgres 是 digest 钉定对（dbtemplate postgresImageTag/Digest，F2.7）——
+# save/load 不携带 RepoDigests，宿侧预载满足不了 `tag@sha256:` 引用；且
+# 上游 tag 移动后宿侧 tag 拉取的 digest 与钉版错位（2026-10-18 实证：
+# 钉 639ab7ce vs 现行 3645570c，loadout 3 恒 pending）。dind 出网（Docker
+# Hub 域）时按钉版 digest 直拉补足；不出网则诚实 NOTE 后靠 load 半命
+# （digest 引用解析可能仍失败——DB 腿 pending 为可判读信号）。
+PG_PIN=$(sed -n 's/^.*postgresImageDigest = "\(sha256:[a-f0-9]*\)".*/\1/p' \
+  internal/domain/services/dbtemplate/postgres.go | head -1)
+if [ -n "$PG_PIN" ]; then
+  log "ensuring pinned postgres digest inside dind (${PG_PIN#sha256:})"
+  docker exec "$DIND_CID" docker pull -q "postgres:17-bookworm@$PG_PIN" >/dev/null 2>&1 ||
+    echo "NOTE: pinned postgres digest pull failed — database leg may stay pending (no outbound)" >&2
+fi
 docker exec "$DIND_CID" docker tag traefik:v3.5 traefik:v3.5.4
 
 # 3. 旧版一行安装（install.sh bin-dir 模式 + Proxy 配置端点直达 fleetlyd：

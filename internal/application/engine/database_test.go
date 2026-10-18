@@ -152,6 +152,40 @@ func TestDatabaseGenerationStableAcrossTicks(t *testing.T) {
 	assert.Len(t, calls[1].Spec["postgres"].Networks, 2)
 }
 
+// ADR-0064 归属回写（2026-10-18 upgrade 矩阵实证的假 drift 根因钉）：指纹
+// 变化推进 gen 后，Provider 内容等价 skip 让载体保留现存代次（wire-gen 回
+// 执 < call-gen）——归属/期望登记必须按回执 wire-gen 记账；按 call-gen 记
+// 账则 Watch 对照必然失配、发假 workload.drift_detected。
+func TestDatabaseRegistrationUsesWireGenFromReport(t *testing.T) {
+	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
+	e, rt, _ := newDatabaseFixture(t, "postgres", url)
+	ctx := context.Background()
+
+	e.databaseStep(ctx)
+	e.expect.mu.Lock()
+	assert.Equal(t, uint64(1), e.expect.expected[databaseOwner(tDatabaseID)])
+	e.expect.mu.Unlock()
+
+	// 指纹变化（新网入集）→ gen 推进 2；Provider 回执 wire-gen=1（内容等价
+	// skip：载体实际停在 1）。
+	rt.wireGens = map[string]capability.Generation{tDatabaseID: 1}
+	require.NoError(t, networkrepo.New(e.db.Clock(), e.db.Runner()).Create(ctx, &network.Network{
+		ID: "01JD0NET000000000000000003", ProjectID: tProjectID, Name: "pinned",
+	}))
+	e.databaseStep(ctx)
+
+	e.expect.mu.Lock()
+	registered := e.expect.expected[databaseOwner(tDatabaseID)]
+	e.expect.mu.Unlock()
+	assert.Equal(t, uint64(1), registered,
+		"registration must follow the report wire-gen, not the call generation")
+	if g, ok := e.obs.ensuredGenOf(tDatabaseID); ok {
+		assert.Equal(t, uint64(1), uint64(g), "per-carrier anchor must also follow the wire-gen")
+	} else {
+		t.Fatal("per-carrier gen anchor missing after reconcile")
+	}
+}
+
 // N1 C16：签名短路的短路拍不停状态收敛——观测 running 到达后，跳过 Ensure
 // 的拍照样把行状态推进 running（观测缓存独立于 Ensure）。
 func TestDatabaseShortCircuitKeepsStatusAdvancing(t *testing.T) {

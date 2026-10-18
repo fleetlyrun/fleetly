@@ -181,19 +181,25 @@ func (e *Engine) reconcileDatabase(ctx context.Context, row *database.Database) 
 		e.log.Error("database reconcile: generation", "database", row.ID, "err", err)
 		return
 	}
-	if _, err := e.runtime.Ensure(stepCtx, ns, ws, capability.Generation(gen), materials); err != nil {
+	report, err := e.runtime.Ensure(stepCtx, ns, ws, capability.Generation(gen), materials)
+	if err != nil {
 		e.log.Error("database reconcile: ensure", "database", row.ID, "generation", gen, "err", err)
 		e.ensureForget(e.database.ensure, row.ID) // 失败清签名：下拍重试
 		return
 	}
-	e.ensureRemember(e.database.ensure, row.ID, ensureMemo{sig: sig, gen: gen, at: now})
+	// ADR-0064 归属回写（与 materialize 同律）：内容等价 skip 的载体保留
+	// 现存代次——登记必须按回执 wire-gen，call-gen 会与载体现行 gen 错位、
+	// Watch 对照发假 drift（2026-10-18 upgrade 矩阵实证：指纹跨二进制
+	// 漂移 → gen 推进 → 载体 skip 在旧 gen → call-gen 登记即漂移假阳性）。
+	wireGen := report.WireGen(w, capability.Generation(gen))
+	e.ensureRemember(e.database.ensure, row.ID, ensureMemo{sig: sig, gen: uint64(wireGen), at: now})
 	// 归属/期望登记（观测路由 + 稳态看门狗；driftScan 对 database/ 前缀
 	// 跳过 spec 对照——非 App 行键）。
-	e.obs.recordOwners(gen, []capability.Workload{w}, func(capability.Workload) workloadOwner {
+	e.obs.recordOwners(uint64(wireGen), []capability.Workload{w}, func(capability.Workload) workloadOwner {
 		return databaseOwner(row.ID)
 	})
 	e.expect.mu.Lock()
-	e.expect.expected[databaseOwner(row.ID)] = gen
+	e.expect.expected[databaseOwner(row.ID)] = uint64(wireGen)
 	e.expect.mu.Unlock()
 	e.advanceDatabaseStatus(stepCtx, row, gen)
 }

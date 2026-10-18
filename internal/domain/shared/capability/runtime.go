@@ -423,7 +423,12 @@ type Workload struct {
 	// 0 = 缺省不铸——存量载体升级首拍零滚动）。序数变更即内容变更（账本
 	// canonical key 随标签入比对面）→ full update 滚动替换 = 声明式滚动
 	// 重启；Provider 不解释语义，只保证"同序数零扰动、变序数必滚动"。
-	RestartSeq uint32
+	// omitempty 是指纹稳定性承诺（2026-10-18 upgrade 矩阵实证）：Workload
+	// 值参与 managedFingerprint（json.Marshal 全量保守口径）——未带 tag 的
+	// 新字段让跨二进制指纹结构性漂移（零值也现形），Database/受管域 gen
+	// 无谓推进且登记 gen 与载体现行 gen 错位、Watch 对照发假 drift。意图
+	// 字段零值 = 未声明，不得进指纹面。
+	RestartSeq uint32 `json:"RestartSeq,omitempty"`
 }
 
 // RestartPolicy 是 Workload 生命周期声明（ADR-0025）。

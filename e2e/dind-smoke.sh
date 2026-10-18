@@ -69,6 +69,16 @@ wait_docker
 log "preloading nginx:1.27 into dind (offline-stable deploy)"
 docker image save nginx:1.27 | docker exec -i "$DIND_CID" docker load >/dev/null
 
+# 受管指标双件同法预载（offline-stable）：VM/cadvisor 镜像若赌 dind 出网
+# 拉取，在无出网/代理抖动的宿主上恒 0/1（2026-10-18 实证：railpack/restic
+# 下载失败 NOTE 同源）。宿侧缺则拉（CI 有出网）→ save/load 进 dind，与
+# nginx 同模式。版本与 providers 钉版同源（victoriametrics provider.go）。
+for IMG in victoriametrics/victoria-metrics:v1.152.0 gcr.io/cadvisor/cadvisor:v0.55.1; do
+  docker image inspect "$IMG" >/dev/null 2>&1 || docker pull "$IMG" >/dev/null
+  log "preloading $IMG into dind"
+  docker image save "$IMG" | docker exec -i "$DIND_CID" docker load >/dev/null
+done
+
 # 3. 一行安装（F0.1 冒烟）：install.sh 的本地 bin-dir 模式在容器内走完
 # OS 检测 → Docker 检测 → swarm init → fleetlyd 起服（无 systemd 分支：
 # setsid 后台 + /var/log/fleetlyd.log）→ 健康等待。Releases 通道随首个
@@ -564,9 +574,19 @@ cli exec "$APP_ID/web" -- /bin/false >/dev/null 2>&1 || EXEC_RC=$?
 [ "$EXEC_RC" = "1" ] || { echo "exec exit code passthrough broken (expected 1 from /bin/false, got $EXEC_RC)" >&2; exit 1; }
 log "exec exit code passed through (/bin/false → 1)"
 
-SHELL_ERR=$(cli shell "$APP_ID/web" </dev/null 2>&1 >/dev/null || true)
+# shell 腿断言「会话开 + 会话关」。两处确定性要点：① 绕过 cli() 单独
+# -i 挂 stdin——cli() 的 docker exec 无 -i，容器进程 stdin 是空源（立即
+# EOF），管道喂入根本到不了 CLI、会话永悬（2026-10-18 dind 实证：exec
+# 腿绿而 shell 腿恒挂的根因；非 TTY 管道形态 echo|fleetly exec -- cat
+# 全链绿为对照）；② 喂显式 exit 而非依赖 EOF 收口——TTY 会话是 PTY
+# 语义，StdinEOF/CloseWrite 不构成退出信号（capability/exec.go StdinEOF
+# 「非终止」注记），显式 exit 才是确定收口。StdinEOF 中继帧路径由
+# testsupport/apitest/execrelay.go 钉测承载。
+SHELL_ERR=$(printf 'exit\n' | docker exec -i \
+  -e FLEETLY_ADDR=127.0.0.1:9080 -e FLEETLY_TOKEN="$CURRENT_TOKEN" "$DIND_CID" \
+  fleetly shell "$APP_ID/web" 2>&1 >/dev/null || true)
 case "$SHELL_ERR" in
-  *"# session"*) log "fleetly shell session opened and closed on stdin EOF" ;;
+  *"# session"*) log "fleetly shell session opened and closed (stdin fed, explicit exit)" ;;
   *) echo "shell session header missing, stderr: $SHELL_ERR" >&2; exit 1 ;;
 esac
 
