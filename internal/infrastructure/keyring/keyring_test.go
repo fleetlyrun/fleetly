@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -149,6 +150,112 @@ func TestLoadExistingCipherNeverGenerates(t *testing.T) {
 	require.NoError(t, err)
 	_, err = LoadExistingCipher(dir)
 	assert.NoError(t, err)
+}
+
+// 轮换窗口语义（R14-M8）：现役缺席但退役在场 = 轮换不完整——必须硬错，
+// 绝不静默铸新钥（新钥会顶掉轮换中的现役，窗口内新密文随后永久不可解）。
+func TestLoadCipherRefusesMintWhenRetiredExists(t *testing.T) {
+	dir := t.TempDir()
+	_, err := LoadCipher(dir)
+	require.NoError(t, err)
+	keys := filepath.Join(dir, keysDirName)
+	oldID := readKeyFile(t, filepath.Join(keys, kekFileName))
+
+	// 轮换第 1 步到一半崩溃：现役改名为退役，新现役尚未写入。
+	require.NoError(t, os.Rename(filepath.Join(keys, kekFileName), filepath.Join(keys, "master-oldrotation.agekey")))
+	require.NoError(t, os.WriteFile(filepath.Join(keys, "master-oldrotation.agekey"), []byte(oldID), 0o600))
+
+	_, err = LoadCipher(dir)
+	require.Error(t, err, "missing active + present retired must be a hard error")
+	assert.Contains(t, err.Error(), "rotation is incomplete")
+	assert.Contains(t, err.Error(), "refusing to mint")
+	_, statErr := os.Stat(filepath.Join(keys, kekFileName))
+	assert.True(t, os.IsNotExist(statErr), "the daemon loader must not mint a replacement active key")
+
+	// 维护面同判据（它本就不生成，只做错误面回归）。
+	_, err = LoadExistingCipher(dir)
+	require.ErrorContains(t, err, "no active master key")
+}
+
+// 首启崩溃窗（R07-L3）：tmp 文件残留在 keys/ 且无现役/退役 → 仍可安全
+// 生成（此时尚无密文行），残留 tmp 不得被当作 KEK 装载。
+func TestLoadCipherIgnoresCrashedTempFile(t *testing.T) {
+	dir := t.TempDir()
+	keys := filepath.Join(dir, keysDirName)
+	require.NoError(t, os.MkdirAll(keys, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(keys, kekFileName+".tmp-12345"), []byte("partial"), 0o600))
+
+	c, err := LoadCipher(dir)
+	require.NoError(t, err, "a crashed first-boot temp file must not brick the next start")
+	ct, err := c.Seal([]byte("v"))
+	require.NoError(t, err)
+	_, err = c.Open(ct)
+	assert.NoError(t, err)
+}
+
+// KEK 落盘原子性（R07-L3）：成功 = 正式路径完整内容 + 无 tmp 残留 + 权限
+// 0600/0700（Windows 跳过权限位断言——已知 ACL 环境项）。
+func TestWriteFileAtomicSuccess(t *testing.T) {
+	dir := t.TempDir()
+	keys := filepath.Join(dir, keysDirName)
+	target := filepath.Join(keys, kekFileName)
+	require.NoError(t, writeFileAtomic(target, []byte("AGE-SECRET-KEY-1TEST"), 0o600))
+
+	data, err := os.ReadFile(target) //nolint:gosec // 本测试 t.TempDir 内自建路径
+	require.NoError(t, err)
+	assert.Equal(t, "AGE-SECRET-KEY-1TEST", string(data))
+	entries, err := os.ReadDir(keys)
+	require.NoError(t, err)
+	require.Len(t, entries, 1, "the temp file must be renamed into place, not left behind")
+	assert.Equal(t, kekFileName, entries[0].Name())
+	if runtime.GOOS != "windows" {
+		di, err := os.Stat(keys)
+		require.NoError(t, err)
+		assert.Equal(t, fs.FileMode(0o700), di.Mode().Perm())
+		fi, err := os.Stat(target)
+		require.NoError(t, err)
+		assert.Equal(t, fs.FileMode(0o600), fi.Mode().Perm())
+	}
+}
+
+// 写失败窗（rename 目标被目录占位）：错误返回、正式路径原状、tmp 清理
+// 干净——不留半文件。
+func TestWriteFileAtomicFailureLeavesNoPartialFile(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, kekFileName)
+	require.NoError(t, os.MkdirAll(target, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(target, "occupied"), []byte("x"), 0o600))
+
+	err := writeFileAtomic(target, []byte("half"), 0o600)
+	require.Error(t, err)
+	entries, rerr := os.ReadDir(dir)
+	require.NoError(t, rerr)
+	require.Len(t, entries, 1, "the failed write must remove its temp file")
+	assert.Equal(t, kekFileName, entries[0].Name())
+	info, serr := os.Stat(target)
+	require.NoError(t, serr)
+	assert.True(t, info.IsDir(), "the existing target must not be replaced")
+}
+
+// 权限复核：已存在过宽（0755/0644）的 keys 目录与 KEK 文件被收敛到
+// 0700/0600；权限位断言只对 POSIX 有效（Windows ACL 已知环境项）。
+func TestWriteFileAtomicEnforcesPermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("known environment item: Go permission bits do not carry Windows ACL semantics")
+	}
+	dir := t.TempDir()
+	keys := filepath.Join(dir, keysDirName)
+	require.NoError(t, os.MkdirAll(keys, 0o755))
+	target := filepath.Join(keys, kekFileName)
+	require.NoError(t, os.WriteFile(target, []byte("old"), 0o644))
+
+	require.NoError(t, writeFileAtomic(target, []byte("new"), 0o600))
+	di, err := os.Stat(keys)
+	require.NoError(t, err)
+	assert.Equal(t, fs.FileMode(0o700), di.Mode().Perm(), "the keys directory must be owner-only")
+	fi, err := os.Stat(target)
+	require.NoError(t, err)
+	assert.Equal(t, fs.FileMode(0o600), fi.Mode().Perm(), "the KEK file must be owner-only")
 }
 
 // 非 KEK 文件不进退役装载面（形态过滤）；目录条目忽略。

@@ -11,6 +11,7 @@ import (
 	"context"
 	"crypto/rsa"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -70,9 +71,22 @@ type cachedToken struct {
 }
 
 // NewClient 构造客户端（http/now 可注入：测试用假时钟与 httptest）。
+// nil 客户端 = 生产形态：NewSecureHTTPClient 的完整出站约束（跨源重定向
+// 拒绝 + 总超时 + 解析 IP 私网门禁，R07-M4）。注入客户端也强制补上
+// 重定向闸与总超时（零值才补，调用方显式值优先）；注入方的 Transport
+// 不动——httptest TLS 等自定义传输面由测试自持。
 func NewClient(httpClient *http.Client, now func() time.Time) *Client {
 	if httpClient == nil {
-		httpClient = http.DefaultClient
+		httpClient = NewSecureHTTPClient(nil)
+	} else {
+		cp := *httpClient
+		if cp.CheckRedirect == nil {
+			cp.CheckRedirect = refuseCrossOriginRedirect
+		}
+		if cp.Timeout == 0 {
+			cp.Timeout = DefaultOutboundTimeout
+		}
+		httpClient = &cp
 	}
 	if now == nil {
 		now = time.Now
@@ -245,6 +259,15 @@ func (c *Client) do(ctx context.Context, method string, app *App, path, bearer s
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
+		// 出站门禁拒绝：client.Do 的 *url.Error 会拼上请求 URL（重定向目标
+		// 或 api_base 指向的内网地址）——R07-M4 要求错误面不回显内部地址，
+		// 这里按哨兵重包为只述原因的稳定文案。
+		if errors.Is(err, errRedirectRefused) {
+			return fmt.Errorf("github api %s %s: %w", method, path, errRedirectRefused)
+		}
+		if errors.Is(err, errNonPublicAddress) {
+			return fmt.Errorf("github api %s %s: %w", method, path, errNonPublicAddress)
+		}
 		return fmt.Errorf("github api %s %s: %w", method, path, err)
 	}
 	defer resp.Body.Close() //nolint:errcheck // 应答体已读完或放弃，关闭错误无处置面

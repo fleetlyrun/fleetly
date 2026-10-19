@@ -47,6 +47,10 @@ var (
 	// 单飞：快照/仓锁外步骤不得并发，否则可产出损坏但 restic check 通过的
 	// 恢复点；API 层映射 E_CONFLICT，节拍环静默跳过）。
 	ErrPlatformBackupInProgress = errors.New("engine: platform backup already in progress")
+	// ErrInvalidRegistryRepository 是 Registry 读代理的仓名形态非法（R03-M13）：
+	// 受理面映射 E_INVALID_ARGUMENT（400），与"形态合法但越纲"的 404
+	// （state.ErrNotFound）分层——避免把用户输入错误伪装成运行期 500。
+	ErrInvalidRegistryRepository = errors.New("engine: repository is not a valid platform repository name")
 )
 
 // ring 是收敛环注册项（Start/DriveOnce 表驱动：goroutine 挂载、启动

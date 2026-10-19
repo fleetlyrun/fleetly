@@ -25,11 +25,11 @@
           ]
         }
       },
-      "api-dev-fleetly-run-fleetly-identity-v1-UsersService-Login-ae17e57291f6": {
+      "api-dev-fleetly-run-fleetly-identity-v1-usersservice-login-ae17e57291f6": {
         "rule": "Host(`api.dev.fleetly.run`) && PathPrefix(`/fleetly.identity.v1.UsersService/Login`)",
-        "service": "api-dev-fleetly-run-fleetly-identity-v1-UsersService-Login-ae17e57291f6",
+        "service": "api-dev-fleetly-run-fleetly-identity-v1-usersservice-login-ae17e57291f6",
         "middlewares": [
-          "api-dev-fleetly-run-fleetly-identity-v1-UsersService-Login-ae17e57291f6-rl"
+          "api-dev-fleetly-run-fleetly-identity-v1-usersservice-login-ae17e57291f6-rl"
         ],
         "tls": {
           "certResolver": "le",
@@ -114,7 +114,7 @@
           ]
         }
       },
-      "api-dev-fleetly-run-fleetly-identity-v1-UsersService-Login-ae17e57291f6": {
+      "api-dev-fleetly-run-fleetly-identity-v1-usersservice-login-ae17e57291f6": {
         "loadBalancer": {
           "servers": [
             {
@@ -179,7 +179,7 @@
       }
     },
     "middlewares": {
-      "api-dev-fleetly-run-fleetly-identity-v1-UsersService-Login-ae17e57291f6-rl": {
+      "api-dev-fleetly-run-fleetly-identity-v1-usersservice-login-ae17e57291f6-rl": {
         "rateLimit": {
           "average": 10,
           "period": "1m",

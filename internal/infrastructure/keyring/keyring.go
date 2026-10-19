@@ -35,10 +35,14 @@ const retiredKEKPattern = "master-*.agekey"
 // keysDirName 是 KEK 目录名（数据根下，0700 平台私有）。
 const keysDirName = "keys"
 
-// LoadCipher 打开数据根下的 KEK；现役文件不存在时生成并落盘（首启初始
-// 化——0600 权限，数据根内平台私有）。退役 KEK（master-*.agekey，轮换
-// 窗口在场）一并装载参与解封——轮换中重启 daemon 不破坏旧密文的注入
-// 路径；全部行重封后文件删除即自然退出解封面。
+// LoadCipher 打开数据根下的 KEK；现役文件不存在且无退役 key 时生成并
+// 原子落盘（首启初始化——tmp+rename+fsync，0600/0700 权限复核）。退役
+// KEK（master-*.agekey，轮换窗口在场）一并装载参与解封——轮换中重启
+// daemon 不破坏旧密文的注入路径；全部行重封后文件删除即自然退出解封面。
+//
+// 轮换窗硬错（R14-M8）：现役缺席而退役在场 = 轮换不完整，拒绝铸新钥。
+// 静默生成会让窗口内新写的密文用一把随后被覆盖的 key 封，退役 key 又
+// 不在内存里 → 密文永久不可解；恢复只能靠离线备份。
 func LoadCipher(dataRoot string) (*material.Cipher, error) {
 	c, err := loadCipherDir(dataRoot)
 	if err != nil {
@@ -47,15 +51,17 @@ func LoadCipher(dataRoot string) (*material.Cipher, error) {
 	if c.HasActive() {
 		return c, nil
 	}
+	if c.HasRetired() {
+		return nil, fmt.Errorf(
+			"material: active master key is missing while retired keys exist in %s; the KEK rotation is incomplete — restore keys/%s (the new active key) or remove the retired keys after rewrap; refusing to mint a new active key",
+			filepath.Join(dataRoot, keysDirName), kekFileName)
+	}
 	dir := filepath.Join(dataRoot, keysDirName)
 	id, err := age.GenerateX25519Identity()
 	if err != nil {
 		return nil, fmt.Errorf("material: generate master key: %w", err)
 	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return nil, fmt.Errorf("material: persist master key: %w", err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, kekFileName), []byte(id.String()), 0o600); err != nil {
+	if err := writeFileAtomic(filepath.Join(dir, kekFileName), []byte(id.String()), 0o600); err != nil {
 		return nil, fmt.Errorf("material: persist master key: %w", err)
 	}
 	return material.NewCipher(id, nil), nil

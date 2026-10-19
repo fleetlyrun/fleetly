@@ -10,11 +10,41 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
+
+// registryRepoSegmentRe / registryRepoNameRe 是平台仓名双段白名单
+// （R03-M13）：项目段 = lower(projectID)（ULID 小写形态），仓名段单段
+// [a-z0-9._-]+。大小写混杂一律拒绝（与 registry 双段小写纪律一致）；
+// `..`/`.` 段单列拒绝（白名单字符集本身允许点号，但 dot-segment 是路径
+// 归一面的注入入口）。
+var (
+	registryRepoSegmentRe = regexp.MustCompile(`^[a-z0-9]+$`)
+	registryRepoNameRe    = regexp.MustCompile(`^[a-z0-9._-]+$`)
+)
+
+// ValidateRegistryRepository 把 API 传入的 repository 收敛为平台仓名：
+// 恰两段、全小写白名单、无 `.`/`..` 段、无 `%`/`?`/`#`/空白/多级路径。
+// 形态非法 = ErrInvalidRegistryRepository（受理面 E_INVALID_ARGUMENT；
+// 用户输入错不是运行期故障）；形态合法但不属于该项目 = state.ErrNotFound
+// （跨项目探测不可达，不泄漏存在性）。
+func ValidateRegistryRepository(projectID, repository string) error {
+	segments := strings.Split(repository, "/")
+	if len(segments) != 2 ||
+		!registryRepoSegmentRe.MatchString(segments[0]) ||
+		!registryRepoNameRe.MatchString(segments[1]) ||
+		segments[1] == "." || segments[1] == ".." {
+		return ErrInvalidRegistryRepository
+	}
+	if segments[0]+"/" != buildRepo(projectID, "") {
+		return state.ErrNotFound
+	}
+	return nil
+}
 
 // RegistryCatalog 列项目前纲下的仓名（升序）。Registry 面或内容子面未
 // 装配 = 精确失败（不静默空清单——调用方据此显示 n/a 而非"无镜像"）。
@@ -37,19 +67,19 @@ func (e *Engine) RegistryCatalog(ctx context.Context, projectID string) ([]strin
 	return out, nil
 }
 
-// RegistryTags 列项目前纲下仓名的 tag 事实。repository 必须落在该项目
-// 前纲下（越纲 = state.ErrNotFound——跨项目探测不可达，与备份归属校验
-// 同口径；API 层 map 404）。
+// RegistryTags 列项目前纲下仓名的 tag 事实。repository 必须收敛为平台
+// 仓名（ValidateRegistryRepository）：形态非法 = ErrInvalidRegistryRepository
+// （受理面 400），形态合法但越纲 = state.ErrNotFound（404——跨项目探测
+// 不可达，与备份归属校验同口径）。
 func (e *Engine) RegistryTags(ctx context.Context, projectID, repository string) ([]capability.RegistryTag, error) {
-	prefix := buildRepo(projectID, "")
-	if repository == "" || !strings.HasPrefix(strings.ToLower(repository), prefix) {
-		return nil, state.ErrNotFound
+	if err := ValidateRegistryRepository(projectID, repository); err != nil {
+		return nil, err
 	}
 	content, ep, err := e.registryContentFor(ctx, projectID)
 	if err != nil {
 		return nil, err
 	}
-	tags, err := content.Tags(ctx, ep, strings.ToLower(repository))
+	tags, err := content.Tags(ctx, ep, repository)
 	if err != nil {
 		var contentErr *capability.RegistryContentError
 		if errors.As(err, &contentErr) && contentErr.Status == 404 {

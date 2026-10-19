@@ -286,11 +286,33 @@ func (e *Engine) platformRepos() ([]resticRepo, error) {
 
 // platformRepoPassword 铸/读仓密（32 字节 hex；0600；首启生成）。仓密在
 // 备份集外（keys/ 排除见 runPlatformBackup 的 exclude 集——仓密进仓自锁）。
+//
+// 既有文件按 TrimSpace 后校验 64 hex（R14-L4）：运维手写常带行尾换行，
+// 旧实现 len(existing) != 64 即当"损坏"静默重铸并覆盖——既有 restic 仓
+// 随后永久不可开。形态非法 = 硬错（不重铸、不覆盖），读失败（非 not-exist）
+// 同样硬错（不把"读不到"变成"覆盖原密码"）。
 func (e *Engine) platformRepoPassword() (string, error) {
 	keyPath := filepath.Join(e.opts.Data.DataRoot, "keys", platformRepoKeyFile)
 	//nolint:gosec // G304：路径段全部平台常量拼接（DataRoot 装配注入）
-	if existing, err := os.ReadFile(keyPath); err == nil && len(existing) == 64 {
-		return string(existing), nil
+	existing, err := os.ReadFile(keyPath)
+	switch {
+	case err == nil:
+		pass := strings.TrimSpace(string(existing))
+		if len(pass) != 64 {
+			return "", fmt.Errorf(
+				"platform backup: repo password file %s must contain exactly 64 hex characters (found %d bytes after trimming); restore the original repo password — a regenerated password would make the existing restic repository unopenable",
+				keyPath, len(pass))
+		}
+		if _, derr := hex.DecodeString(pass); derr != nil {
+			return "", fmt.Errorf(
+				"platform backup: repo password file %s must contain exactly 64 hex characters; restore the original repo password — a regenerated password would make the existing restic repository unopenable",
+				keyPath)
+		}
+		return pass, nil
+	case os.IsNotExist(err):
+		// 首启：下方铸造。
+	default:
+		return "", fmt.Errorf("platform backup: read repo password file %s: %w", keyPath, err)
 	}
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {

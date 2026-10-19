@@ -34,6 +34,10 @@ func NewCipher(identity *age.X25519Identity, retired []*age.X25519Identity) *Cip
 // HasActive 报告现役 KEK 在场（缺席由装载侧裁决：生成或报错）。
 func (c *Cipher) HasActive() bool { return c.identity != nil }
 
+// HasRetired 报告退役 KEK 在场（轮换窗口；现役缺席时装载侧据此拒绝静默
+// 造新——新 key 会让窗口内新密文在退役 key 被丢弃后永久不可解）。
+func (c *Cipher) HasRetired() bool { return len(c.retired) > 0 }
+
 // Seal 用 KEK 信封加密明文（age armor 文本；密文落 secrets.ciphertext）。
 func (c *Cipher) Seal(plaintext []byte) ([]byte, error) {
 	buf := &bytes.Buffer{}

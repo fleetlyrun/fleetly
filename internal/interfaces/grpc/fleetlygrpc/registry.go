@@ -42,11 +42,21 @@ func (svc *RegistryService) ListRegistryCatalog(ctx context.Context, req *delive
 }
 
 // ListRegistryTags 列仓名下的 tag 事实；越纲仓名按 not found（不泄漏跨
-// 项目存在性）。
+// 项目存在性）。repository 形态非法（路径段注入面，R03-M13）在受理位即
+// E_INVALID_ARGUMENT——用户输入错不是运行期 500。
 func (svc *RegistryService) ListRegistryTags(ctx context.Context, req *deliveryv1.ListRegistryTagsRequest) (*deliveryv1.ListRegistryTagsResponse, error) {
 	// project_id/repository 必填组合检查已退役为 ListRegistryTagsRequest
 	// 的 protovalidate CEL 注解（P4-1 批 1 Run B1）：validate 拦截器在
 	// handler 之前执法，拆 per-field 文案。
+	if err := engine.ValidateRegistryRepository(req.GetProjectId(), req.GetRepository()); err != nil {
+		switch {
+		case errors.Is(err, engine.ErrInvalidRegistryRepository):
+			return nil, apperr.New("E_INVALID_ARGUMENT",
+				"repository: must be a platform repository name '<project-id>/<name>' with lowercase letters, digits, '.', '_' or '-' in the name; path segments such as '..', '?', '#', '%%' or '/' are not allowed")
+		case errors.Is(err, state.ErrNotFound):
+			return nil, apperr.New("E_NOT_FOUND", "repository %s not found in project scope", req.GetRepository())
+		}
+	}
 	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}

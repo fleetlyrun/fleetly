@@ -363,7 +363,10 @@ func (svc *RoutesService) CreateRoute(ctx context.Context, req *proxyv1.CreateRo
 	// 受理面校验（安全批 P0）：host/path 原样内插进 traefik 规则的反引号
 	// 定界符内（Host(`%s`)），反引号等元字符可注入/劫持路由规则；白名单
 	// 与 Proxy Provider 纵深面共用同一真源（capability.ValidateRouteHost）。
-	if err := capability.ValidateRouteHost(req.GetHost()); err != nil {
+	// host 统一小写（R07-M2）：traefik 按小写请求 host 匹配，大写规则值
+	// 永不命中——受理面即归一，落库/返回都是小写形态。
+	host := capability.NormalizeRouteHost(req.GetHost())
+	if err := capability.ValidateRouteHost(host); err != nil {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "%v", err)
 	}
 	if err := capability.ValidateRoutePath(req.GetPath()); err != nil {
@@ -382,7 +385,7 @@ func (svc *RoutesService) CreateRoute(ctx context.Context, req *proxyv1.CreateRo
 		tlsMode = "auto"
 	}
 	row := &route.Route{
-		ProjectID: req.GetProjectId(), Host: req.GetHost(), Path: req.GetPath(),
+		ProjectID: req.GetProjectId(), Host: host, Path: req.GetPath(),
 		AppID: req.GetAppId(), Process: req.GetProcess(), Port: req.GetPort(),
 		Protocol: protocol, TLSMode: tlsMode,
 	}

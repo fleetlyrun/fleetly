@@ -70,6 +70,32 @@ func TestCreateRouteHostPathValidation(t *testing.T) {
 	}
 }
 
+// TestCreateRouteHostLowercased：R07-M2——host 在受理面统一小写（traefik
+// Host 匹配按小写请求 host，大写规则值永不命中）；大写写法与服务端归一后
+// 的小写写法命中同一条（唯一键同形，不是两条路由）。
+func TestCreateRouteHostLowercased(t *testing.T) {
+	h := apitest.New(t)
+	ctx := h.Ctx()
+	routes := proxyv1.NewRoutesServiceClient(h.Conn)
+
+	projectID := h.CreateProject(t, "hostlower").GetId()
+	appID := h.CreateApp(t, projectID, "web").GetId()
+
+	created, err := routes.CreateRoute(ctx, &proxyv1.CreateRouteRequest{
+		ProjectId: projectID, Host: "Shop.Example.COM", AppId: appID, Process: "web", Port: 8080,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "shop.example.com", created.GetRoute().GetHost(),
+		"the acceptance surface must store/return the lowercase form")
+
+	// 小写再创建同 host+path：唯一键同形而拒绝（大小写不再分裂路由）。
+	_, err = routes.CreateRoute(ctx, &proxyv1.CreateRouteRequest{
+		ProjectId: projectID, Host: "shop.example.com", AppId: appID, Process: "web", Port: 8081,
+	})
+	require.Error(t, err)
+	assert.Equal(t, codes.AlreadyExists, status.Code(err))
+}
+
 // TestRouteHostGloballyUnique：跨项目同 host+path 第二次 Create 拒绝
 // （E_ALREADY_EXISTS；唯一约束 00016 已升级为全局——此前跨项目共存会让
 // traefik 同名 router 互覆/劫持）。项目内撞名同形拒绝、软删让位复用不变。

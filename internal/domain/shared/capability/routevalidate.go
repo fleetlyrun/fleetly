@@ -28,6 +28,13 @@ func ValidateRouteHost(host string) error {
 	return nil
 }
 
+// NormalizeRouteHost 归一 Route host 的大小写：DNS 名大小写不敏感，而
+// traefik 的 Host 匹配按请求 host 的小写形态执行（大写规则值永不命中，
+// R07-M2）——受理面统一存小写，构造/匹配面对存量大写行同样归一（不迁移
+// 存量行）。只改大小写，不做其他清洗（非法形态仍由 ValidateRouteHost
+// fail-closed 拒绝）。
+func NormalizeRouteHost(host string) string { return strings.ToLower(host) }
+
 // routePathAllowed 是 path 白名单字符集（RFC 3986 pchar 加 `/` 与 `%`；
 // 刻意不含反引号——traefik 规则的定界符，出现即注入面）。
 const routePathAllowed = "/._~!$&'()*+,;=:@%-"

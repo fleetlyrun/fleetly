@@ -9,6 +9,7 @@ package engine
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -302,6 +303,63 @@ func TestPlatformBackupSingleFlight(t *testing.T) {
 	}
 	_, err = os.Stat(e.platformBackupPath(platformSnapshotName))
 	require.NoError(t, err, "canonical snapshot must exist after success")
+}
+
+// 平台备份仓密（R14-L4）：首启 32 字节 hex；既有文件 TrimSpace 后校验
+// 64 hex——带换行的合法值必须接受且不重写；非 hex/长度不符硬错且绝不
+// 覆盖（静默重铸会让既有 restic 仓永久不可开）。
+func TestPlatformRepoPasswordTrimAndValidation(t *testing.T) {
+	e, _, _ := withFakeRestic(t, nil)
+	keyPath := filepath.Join(e.opts.Data.DataRoot, "keys", platformRepoKeyFile)
+
+	pass, err := e.platformRepoPassword()
+	require.NoError(t, err)
+	require.Len(t, pass, 64, "first use mints a 32-byte hex password")
+	_, derr := hex.DecodeString(pass)
+	require.NoError(t, derr)
+	raw, err := os.ReadFile(keyPath) //nolint:gosec // 本测试 t.TempDir 内自建路径
+	require.NoError(t, err)
+	assert.Equal(t, pass, string(raw))
+
+	// 运维手写带换行：旧实现 len(existing) != 64 → 静默重铸并覆盖。
+	require.NoError(t, os.WriteFile(keyPath, []byte(pass+"\n"), 0o600))
+	got, err := e.platformRepoPassword()
+	require.NoError(t, err, "a trailing newline must be trimmed, not treated as corruption")
+	assert.Equal(t, pass, got)
+	raw, err = os.ReadFile(keyPath) //nolint:gosec // 同上
+	require.NoError(t, err)
+	assert.Equal(t, pass+"\n", string(raw), "an accepted password file must not be rewritten")
+
+	// 大小写 hex 合法：按文件原样作为密码（restic 密码大小写敏感，不擅自
+	// 归一）。
+	upper := strings.ToUpper(pass)
+	require.NoError(t, os.WriteFile(keyPath, []byte(upper), 0o600))
+	got, err = e.platformRepoPassword()
+	require.NoError(t, err)
+	assert.Equal(t, upper, got)
+
+	// 非 hex / 长度不符：硬错并给处置建议，文件原样保留（不重铸）。
+	for _, bad := range []string{"", "not-hex", strings.Repeat("z", 64), pass[:63], pass[:63] + "g"} {
+		require.NoError(t, os.WriteFile(keyPath, []byte(bad), 0o600))
+		_, err := e.platformRepoPassword()
+		require.Error(t, err, "malformed password %q must be a hard error", bad)
+		assert.Contains(t, err.Error(), "64 hex")
+		assert.Contains(t, err.Error(), "restore the original")
+		raw, rerr := os.ReadFile(keyPath) //nolint:gosec // 同上
+		require.NoError(t, rerr)
+		assert.Equal(t, bad, string(raw), "a malformed password file must never be overwritten")
+	}
+}
+
+// 读失败（非 not-exist）不得走首启铸造分支——否则会把"读不到"变成
+// "覆盖原密码"。
+func TestPlatformRepoPasswordReadErrorIsFatal(t *testing.T) {
+	e, _, _ := withFakeRestic(t, nil)
+	keyPath := filepath.Join(e.opts.Data.DataRoot, "keys", platformRepoKeyFile)
+	require.NoError(t, os.MkdirAll(keyPath, 0o700)) // 目标被目录占位 → ReadFile 报非 not-exist 错
+	_, err := e.platformRepoPassword()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "read repo password")
 }
 
 // isResticBackupCall 报告 argv 是否 backup 动作（argv 前缀恒 ["-r", repo]）。

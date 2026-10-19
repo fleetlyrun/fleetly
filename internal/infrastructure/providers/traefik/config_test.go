@@ -233,6 +233,56 @@ func TestPrecheckAcceptsGeneratedConfigs(t *testing.T) {
 	assert.NoError(t, validateDynamicConfig(emptyDynamicConfig()))
 }
 
+// R07-M2：路由名恒 DNS 安全（[a-z0-9-] 折叠，含 '@' 在内的白名单外字符
+// 不再原样进 traefik 对象名）；host 受理/构造面统一小写——大小写两种写法
+// 命中同一 router（存量大写行不迁移，构造面归一即可）。
+func TestRouteKeyNameCharsetAndHostLowering(t *testing.T) {
+	routes := []capability.Route{
+		{Host: "Shop.Example.com", Path: "/@scope/pkg", Process: "web", Port: 80,
+			Protocol: capability.ProtocolHTTP, BackendAddr: "10.0.0.1:80"},
+		{Host: "api.example.com", Path: "/v1/users/@me", Process: "gateway", Port: 8080,
+			Protocol: capability.ProtocolH2C, BackendAddr: "10.0.0.2:8080"},
+		{Host: "*.Wild.Example.com", Process: "web", Port: 80,
+			Protocol: capability.ProtocolTCP, TLS: "none", BackendAddr: "10.0.0.3:80"},
+	}
+	for _, r := range routes {
+		key := routeKey(r)
+		require.NotContains(t, key, "@", "the '@' of a legal path must not reach a traefik object name")
+		for _, c := range key {
+			require.True(t, (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-',
+				"route key %q must stay DNS-safe (R07-M2)", key)
+		}
+	}
+
+	// 同 host 的大小写两种写法 = 同一 DNS 名 → 同一 routeKey（大小写不再
+	// 分裂 router）。path 保持大小写敏感（哈希仍按原 path）。
+	upper := capability.Route{Host: "Shop.Example.com", Process: "web", Port: 80,
+		Protocol: capability.ProtocolHTTP, BackendAddr: "10.0.0.1:80"}
+	lower := upper
+	lower.Host = "shop.example.com"
+	require.Equal(t, routeKey(upper), routeKey(lower), "host case must not split the router key")
+
+	cfg, err := buildDynamicConfig(routes)
+	require.NoError(t, err)
+	text := string(cfg)
+	assert.NotContains(t, text, "Shop.Example.com", "acceptance/construction must lowercase the host")
+	assert.NotContains(t, text, "Wild.Example.com")
+	assert.Contains(t, text, "Host(`shop.example.com`)")
+	assert.Contains(t, text, "PathPrefix(`/@scope/pkg`)", "path bytes are preserved (only the object name folds)")
+	assert.NoError(t, validateDynamicConfig(cfg), "the generated snapshot must pass the strengthened precheck")
+}
+
+// R07-M2 预检：router/service 名字字符集收口——'@' 等非 [a-z0-9-] 字符
+// 不得进入 traefik 对象名（生成器漏网输入在发布前拒绝；中间件名由 router
+// 名加后缀派生，覆盖同一折叠面）。
+func TestPrecheckRejectsUnsafeTraefikNames(t *testing.T) {
+	err := validateDynamicConfig([]byte(`{"http":{"routers":{"evil@x":{"rule":"Host(` + "`a`" + `)","service":"s1"}},"services":{"s1":{"loadBalancer":{"servers":[{"url":"http://10.0.0.1:80"}]}}}}}`))
+	assert.ErrorContains(t, err, "DNS-safe", "a router name carrying '@' must be rejected before publication")
+
+	err = validateDynamicConfig([]byte(`{"http":{"routers":{"r1":{"rule":"Host(` + "`a`" + `)","service":"svc@x"}},"services":{"svc@x":{"loadBalancer":{"servers":[{"url":"http://10.0.0.1:80"}]}}}}}`))
+	assert.ErrorContains(t, err, "DNS-safe", "a service name carrying '@' must be rejected before publication")
+}
+
 // P9 预检红面四类：非 JSON / 未知字段（形态漂移）/ 规则越语法 / 引用
 // 悬空 / URL 形态错——各给精确原因。
 func TestPrecheckRejectsCorruptedSnapshots(t *testing.T) {
