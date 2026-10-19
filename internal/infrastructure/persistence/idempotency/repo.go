@@ -21,14 +21,15 @@ type repo struct {
 // New 构造 repo（直接返回接口——消费面只见 domain idempotency.Repo）。
 func New(clock state.Clock, run state.Runner) idempotency.Repo { return &repo{clock: clock, run: run} }
 
-// Get 按键直读（含过期行——过期判定与惰性清理在调用方）。
-func (r *repo) Get(ctx context.Context, key string) (*idempotency.Record, error) {
+// Get 在作用域内按键直读（含过期行——过期判定与惰性清理在调用方）。
+// 作用域外同键不可见（H11 / R14-H4）。
+func (r *repo) Get(ctx context.Context, scope, key string) (*idempotency.Record, error) {
 	row := r.run.QueryRowContext(ctx, `
-		SELECT idem_key, method, fingerprint, state, response_type, response_body, created_at, expires_at
-		FROM idempotency_records WHERE idem_key = ?`, key)
+		SELECT scope, idem_key, method, fingerprint, state, response_type, response_body, created_at, expires_at
+		FROM idempotency_records WHERE scope = ? AND idem_key = ?`, scope, key)
 	var rec idempotency.Record
 	var createdAt, expiresAt string
-	if err := row.Scan(&rec.Key, &rec.Method, &rec.Fingerprint, &rec.State,
+	if err := row.Scan(&rec.Scope, &rec.Key, &rec.Method, &rec.Fingerprint, &rec.State,
 		&rec.ResponseType, &rec.ResponseBody, &createdAt, &expiresAt); err != nil {
 		return nil, persistence.MapScanErr(err)
 	}
@@ -42,14 +43,15 @@ func (r *repo) Get(ctx context.Context, key string) (*idempotency.Record, error)
 	return &rec, nil
 }
 
-// Claim 落一条 inflight 认领（键不存在时）。键已被认领/完成返回
-// state.ErrAlreadyExists——调用方据此进入重放/冲突分诊，不覆盖任何在册行。
-func (r *repo) Claim(ctx context.Context, key, method, fingerprint string, claimTTL time.Duration) error {
+// Claim 在作用域内落一条 inflight 认领（(scope, key) 不存在时）。同一
+// (scope, key) 已被认领/完成返回 state.ErrAlreadyExists——调用方据此进入
+// 重放/冲突分诊，不覆盖任何在册行；异作用域同键各自独立认领。
+func (r *repo) Claim(ctx context.Context, scope, key, method, fingerprint string, claimTTL time.Duration) error {
 	now := r.clock.Now()
 	_, err := r.run.ExecContext(ctx, `
-		INSERT INTO idempotency_records (idem_key, method, fingerprint, state, created_at, expires_at)
-		VALUES (?, ?, ?, ?, ?, ?)`,
-		key, method, fingerprint, idempotency.StateInflight,
+		INSERT INTO idempotency_records (scope, idem_key, method, fingerprint, state, created_at, expires_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		scope, key, method, fingerprint, idempotency.StateInflight,
 		state.FormatTime(now), state.FormatTime(now.Add(claimTTL)))
 	if persistence.IsUniqueViolation(err) {
 		return state.ErrAlreadyExists
@@ -57,16 +59,16 @@ func (r *repo) Claim(ctx context.Context, key, method, fingerprint string, claim
 	return err
 }
 
-// Complete 把 inflight 行落为完成态：携带响应引用（proto 全名 + 确定性
-// 序列化体）与 24h 保留窗。行不存在（已被清理/释放）返回 ErrNotFound——
-// 幂等承诺随行消失，调用方按无记录处理（不复活）。
-func (r *repo) Complete(ctx context.Context, key, responseType string, body []byte, retention time.Duration) error {
+// Complete 把作用域内的 inflight 行落为完成态：携带响应引用（proto 全名 +
+// 确定性序列化体）与 24h 保留窗。行不存在（已被清理/释放）返回
+// ErrNotFound——幂等承诺随行消失，调用方按无记录处理（不复活）。
+func (r *repo) Complete(ctx context.Context, scope, key, responseType string, body []byte, retention time.Duration) error {
 	res, err := r.run.ExecContext(ctx, `
 		UPDATE idempotency_records
 		SET state = ?, response_type = ?, response_body = ?, expires_at = ?
-		WHERE idem_key = ?`,
+		WHERE scope = ? AND idem_key = ?`,
 		idempotency.StateCompleted, responseType, body,
-		state.FormatTime(r.clock.Now().Add(retention)), key)
+		state.FormatTime(r.clock.Now().Add(retention)), scope, key)
 	if err != nil {
 		return err
 	}
@@ -76,10 +78,11 @@ func (r *repo) Complete(ctx context.Context, key, responseType string, body []by
 	return nil
 }
 
-// Release 删除认领行（handler 失败路径：允许同键干净重试——失败请求无
-// 响应可重放）。
-func (r *repo) Release(ctx context.Context, key string) error {
-	_, err := r.run.ExecContext(ctx, `DELETE FROM idempotency_records WHERE idem_key = ?`, key)
+// Release 删除作用域内的认领行（handler 失败路径：允许同键干净重试——失败
+// 请求无响应可重放）。作用域外同键不受影响。
+func (r *repo) Release(ctx context.Context, scope, key string) error {
+	_, err := r.run.ExecContext(ctx,
+		`DELETE FROM idempotency_records WHERE scope = ? AND idem_key = ?`, scope, key)
 	return err
 }
 

@@ -13,8 +13,11 @@ const (
 	StateCompleted = "completed"
 )
 
-// Record 是幂等记录行。
+// Record 是幂等记录行。键空间 = (Scope, Key)：Scope 是调用方主体作用域
+// （application/idem 的 callerScope：token:<TokenID> / user:<UserID> /
+// anonymous），同键同体只在同一主体内重放（H11 / R14-H4）。
 type Record struct {
+	Scope        string
 	Key          string
 	Method       string
 	Fingerprint  string

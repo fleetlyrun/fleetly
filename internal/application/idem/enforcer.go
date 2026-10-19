@@ -25,6 +25,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoregistry"
 
+	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/idempotency"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -136,21 +137,22 @@ func (e *Enforcer) Unary() grpc.UnaryServerInterceptor {
 
 		fp := fingerprint(info.FullMethod, req)
 		now := e.db.Clock().Now()
+		scope := callerScope(ctx)
 
-		rec, err := e.repo.Get(ctx, key)
+		rec, err := e.repo.Get(ctx, scope, key)
 		switch {
 		case err == nil && rec.ExpiresAt.After(now):
 			return e.dispatchRecorded(ctx, rec, info.FullMethod, fp)
 		case err == nil:
 			// 过期（含崩溃遗留 inflight）：惰性清理后重新认领。
-			if rerr := e.repo.Release(ctx, key); rerr != nil {
-				e.log.Error("idem: release expired record", "key", key, "err", rerr)
+			if rerr := e.repo.Release(ctx, scope, key); rerr != nil {
+				e.log.Error("idem: release expired record", "scope", scope, "key", key, "err", rerr)
 			}
 		case !errors.Is(err, state.ErrNotFound):
 			return nil, apperr.New("E_INTERNAL", "idempotency lookup failed").WithCause(err)
 		}
 
-		if err := e.repo.Claim(ctx, key, info.FullMethod, fp, ClaimTTL); err != nil {
+		if err := e.repo.Claim(ctx, scope, key, info.FullMethod, fp, ClaimTTL); err != nil {
 			if errors.Is(err, state.ErrAlreadyExists) {
 				// 并发同键：另一请求刚认领（Get 未及见）。诚实报在途冲突。
 				return nil, conflictErr("a request with this Idempotency-Key is already in progress; retry after it completes to get the replayed response")
@@ -161,14 +163,37 @@ func (e *Enforcer) Unary() grpc.UnaryServerInterceptor {
 		resp, err := handler(ctx, req)
 		if err != nil {
 			// 失败无响应可重放：释放认领，同键干净重试。
-			if rerr := e.repo.Release(ctx, key); rerr != nil {
-				e.log.Error("idem: release after handler failure", "key", key, "err", rerr)
+			if rerr := e.repo.Release(ctx, scope, key); rerr != nil {
+				e.log.Error("idem: release after handler failure", "scope", scope, "key", key, "err", rerr)
 			}
 			return nil, err
 		}
-		e.complete(ctx, key, resp)
+		e.complete(ctx, scope, key, resp)
 		return resp, nil
 	}
+}
+
+// callerScope 计算幂等记录键空间的作用域 = 调用方主体（principal）：
+// Token 维度优先（"token:<TokenID>"，一人多 Token 各自独立键空间），其次
+// 用户维度（"user:<UserID>"，非 Token 身份面），无身份回退 "anonymous"。
+// 生产 EnforcedMethods 几乎全为 SERVER 档，authn 拦截器保证身份恒在 ctx；
+// 唯一 PUBLIC 面 ReceiveWebhook（HMAC 即凭证）的键由 gateway 以
+// X-GitHub-Delivery（GitHub 随机全局投递号）派生，响应不含凭证——匿名
+// 分支不构成跨队串台面，其余匿名形态只服务 hermetic 单测与拦截器直连。
+// "anonymous" 与存量行的空作用域（空串）不同，不与任何真实主体共享键
+// 空间（H11 / R14-H4）。
+func callerScope(ctx context.Context) string {
+	id, ok := authn.FromContext(ctx)
+	if !ok {
+		return "anonymous"
+	}
+	if id.TokenID != "" {
+		return "token:" + id.TokenID
+	}
+	if id.UserID != "" {
+		return "user:" + id.UserID
+	}
+	return "anonymous"
 }
 
 // dispatchRecorded 按在册行分诊：异体/异方法 → 冲突；完成 → 重放；在途 →
@@ -188,20 +213,20 @@ func (e *Enforcer) dispatchRecorded(ctx context.Context, rec *idempotency.Record
 // complete 落完成态（响应引用 + 保留窗）。记录失败不吞已发生的业务效果：
 // 诚实记日志，该键的幂等面退化为"可重跑"（业务层自身的唯一约束/admission
 // 去重兜底）。
-func (e *Enforcer) complete(ctx context.Context, key string, resp any) {
+func (e *Enforcer) complete(ctx context.Context, scope, key string, resp any) {
 	msg, ok := resp.(proto.Message)
 	if !ok {
-		e.log.Warn("idem: response is not a proto message; idempotency record not completed", "key", key)
+		e.log.Warn("idem: response is not a proto message; idempotency record not completed", "scope", scope, "key", key)
 		return
 	}
 	body, err := proto.MarshalOptions{Deterministic: true}.Marshal(msg)
 	if err != nil {
-		e.log.Error("idem: marshal response", "key", key, "err", err)
+		e.log.Error("idem: marshal response", "scope", scope, "key", key, "err", err)
 		return
 	}
 	typeURL := "type.googleapis.com/" + string(msg.ProtoReflect().Descriptor().FullName())
-	if err := e.repo.Complete(ctx, key, typeURL, body, Retention); err != nil {
-		e.log.Error("idem: complete record", "key", key, "err", err)
+	if err := e.repo.Complete(ctx, scope, key, typeURL, body, Retention); err != nil {
+		e.log.Error("idem: complete record", "scope", scope, "key", key, "err", err)
 	}
 }
 

@@ -6,6 +6,7 @@ package idem
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"testing"
 	"time"
@@ -19,6 +20,7 @@ import (
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
+	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	idemrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/idempotency"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
@@ -27,12 +29,23 @@ import (
 
 const createProjectMethod = "/fleetly.structure.v1.ProjectsService/CreateProject"
 
-// call 经拦截器驱动一次请求；handler 返回固定响应（计数由闭包持有）。
+// call 经拦截器驱动一次不带调用方身份的请求（anonymous 作用域）；handler
+// 返回固定响应（计数由闭包持有）。
 func call(t *testing.T, e *Enforcer, key string, req proto.Message, handler grpc.UnaryHandler) (any, error) {
+	t.Helper()
+	return callAs(t, e, key, nil, req, handler)
+}
+
+// callAs 经拦截器驱动一次携带调用方身份的请求（scope 由 authn.Identity
+// 派生：TokenID 优先，其次 UserID；nil = 无身份，anonymous 作用域）。
+func callAs(t *testing.T, e *Enforcer, key string, id *authn.Identity, req proto.Message, handler grpc.UnaryHandler) (any, error) {
 	t.Helper()
 	ctx := context.Background()
 	if key != "" {
 		ctx = metadata.NewIncomingContext(ctx, metadata.Pairs(HeaderKey, key))
+	}
+	if id != nil {
+		ctx = authn.WithIdentity(ctx, id)
 	}
 	return e.Unary()(ctx, req, &grpc.UnaryServerInfo{FullMethod: createProjectMethod}, handler)
 }
@@ -54,6 +67,14 @@ func codeOf(t *testing.T, err error) string {
 	}
 	st, _ := status.FromError(err)
 	return "grpc:" + st.Code().String()
+}
+
+// projectIDOf 取响应里的项目 id（跨调用方隔离断言用）。
+func projectIDOf(t *testing.T, resp any) string {
+	t.Helper()
+	msg, ok := resp.(*structurev1.CreateProjectResponse)
+	require.True(t, ok, "handler response must be a CreateProjectResponse")
+	return msg.GetProject().GetId()
 }
 
 // 同键同体重放返回同一响应，handler 只执行一次。
@@ -85,6 +106,110 @@ func TestConflictDifferentBody(t *testing.T) {
 	_, err := call(t, e, "k1", projReq("shop"), handler)
 	require.NoError(t, err)
 	_, err = call(t, e, "k1", projReq("other"), handler)
+	require.Error(t, err)
+	assert.Equal(t, "E_IDEMPOTENCY_KEY_CONFLICT", codeOf(t, err))
+	assert.Equal(t, 1, count)
+}
+
+// callerScope 组成：Token 优先于 User，无身份回退 anonymous（H11 /
+// R14-H4 的作用域语义单源）。
+func TestCallerScopeComposition(t *testing.T) {
+	assert.Equal(t, "anonymous", callerScope(context.Background()), "no identity = anonymous scope")
+	assert.Equal(t, "token:tok-a", callerScope(authn.WithIdentity(context.Background(),
+		&authn.Identity{TokenID: "tok-a", UserID: "user-1", TeamID: "team-a"})),
+		"token identity takes precedence over its creator user")
+	assert.Equal(t, "user:user-1", callerScope(authn.WithIdentity(context.Background(),
+		&authn.Identity{UserID: "user-1", TeamID: "team-a"})),
+		"non-token identity falls back to the user dimension")
+}
+
+// 同 Token 同键同体 → 重放（作用域收窄不放松同一调用方的幂等承诺）。
+func TestSameTokenReplays(t *testing.T) {
+	db, _ := statetest.New(t)
+	e := NewEnforcer(db, idemrepo.New(db.Clock(), db.Runner()), slog.New(slog.DiscardHandler))
+	tok := &authn.Identity{TokenID: "tok-a", TeamID: "team-a"}
+	count := 0
+	handler := func(context.Context, any) (any, error) {
+		count++
+		return projResp("01JD0P"), nil
+	}
+	r1, err := callAs(t, e, "k1", tok, projReq("shop"), handler)
+	require.NoError(t, err)
+	r2, err := callAs(t, e, "k1", tok, projReq("shop"), handler)
+	require.NoError(t, err)
+	assert.Equal(t, 1, count, "same token + key + body must replay without re-executing the handler")
+	assert.True(t, proto.Equal(r1.(proto.Message), r2.(proto.Message)),
+		"replay must return the stored response verbatim")
+}
+
+// 同键同体不同 Token → 各自执行（不重放）：键空间按 principal 隔离，
+// H11/R14-H4 的跨 Token 串台在拦截器层闭合。
+func TestCrossTokenSameKeyDoesNotReplay(t *testing.T) {
+	db, _ := statetest.New(t)
+	e := NewEnforcer(db, idemrepo.New(db.Clock(), db.Runner()), slog.New(slog.DiscardHandler))
+	tokenA := &authn.Identity{TokenID: "tok-a", TeamID: "team-a"}
+	tokenB := &authn.Identity{TokenID: "tok-b", TeamID: "team-b"}
+	count := 0
+	handler := func(context.Context, any) (any, error) {
+		count++
+		return projResp(fmt.Sprintf("resp-%d", count)), nil
+	}
+	rA, err := callAs(t, e, "shared-key", tokenA, projReq("shop"), handler)
+	require.NoError(t, err)
+	rB, err := callAs(t, e, "shared-key", tokenB, projReq("shop"), handler)
+	require.NoError(t, err, "a different token must not be blocked by the other token's key")
+	assert.Equal(t, 2, count, "each token executes its own handler instead of replaying the other's response")
+	assert.Equal(t, "resp-1", projectIDOf(t, rA))
+	assert.Equal(t, "resp-2", projectIDOf(t, rB), "the second token must not receive the first token's response")
+
+	// 各自的键空间仍可重放自己的响应。
+	rA2, err := callAs(t, e, "shared-key", tokenA, projReq("shop"), handler)
+	require.NoError(t, err)
+	assert.Equal(t, 2, count)
+	assert.Equal(t, "resp-1", projectIDOf(t, rA2))
+}
+
+// 跨 Team 不同 Token 同键同体：B 队拿到自己的响应而非 A 队的（明文
+// secret 类响应的泄露面在键空间层被切断）。
+func TestCrossTeamDifferentTokensDoNotLeak(t *testing.T) {
+	db, _ := statetest.New(t)
+	e := NewEnforcer(db, idemrepo.New(db.Clock(), db.Runner()), slog.New(slog.DiscardHandler))
+	memberA := &authn.Identity{TokenID: "tok-a", TeamID: "team-a"}
+	memberB := &authn.Identity{TokenID: "tok-b", TeamID: "team-b"}
+	count := 0
+	handler := func(ctx context.Context, _ any) (any, error) {
+		count++
+		id, _ := authn.FromContext(ctx)
+		return projResp("team:" + id.TeamID), nil
+	}
+	rA, err := callAs(t, e, "ci-token-1", memberA, projReq("ci"), handler)
+	require.NoError(t, err)
+	rB, err := callAs(t, e, "ci-token-1", memberB, projReq("ci"), handler)
+	require.NoError(t, err)
+	assert.Equal(t, 2, count, "the same key+body across teams must not dedupe into one execution")
+	assert.Equal(t, "team:team-a", projectIDOf(t, rA))
+	assert.Equal(t, "team:team-b", projectIDOf(t, rB), "team B must never receive team A's stored response")
+
+	// B 的重放仍是 B 自己的完成态行。
+	rB2, err := callAs(t, e, "ci-token-1", memberB, projReq("ci"), handler)
+	require.NoError(t, err)
+	assert.Equal(t, 2, count)
+	assert.True(t, proto.Equal(rB.(proto.Message), rB2.(proto.Message)))
+}
+
+// 同 token 同键异体 → 仍 409（作用域收窄不放松同主体内的单请求语义）。
+func TestSameTokenDifferentBodyConflicts(t *testing.T) {
+	db, _ := statetest.New(t)
+	e := NewEnforcer(db, idemrepo.New(db.Clock(), db.Runner()), slog.New(slog.DiscardHandler))
+	tok := &authn.Identity{TokenID: "tok-a", TeamID: "team-a"}
+	count := 0
+	handler := func(context.Context, any) (any, error) {
+		count++
+		return projResp("01JD0P"), nil
+	}
+	_, err := callAs(t, e, "k1", tok, projReq("shop"), handler)
+	require.NoError(t, err)
+	_, err = callAs(t, e, "k1", tok, projReq("other"), handler)
 	require.Error(t, err)
 	assert.Equal(t, "E_IDEMPOTENCY_KEY_CONFLICT", codeOf(t, err))
 	assert.Equal(t, 1, count)
@@ -178,9 +303,10 @@ func TestRetentionExpiry(t *testing.T) {
 func TestClaimExpiryRecoversOrphan(t *testing.T) {
 	db, clock := statetest.New(t)
 	e := NewEnforcer(db, idemrepo.New(db.Clock(), db.Runner()), slog.New(slog.DiscardHandler))
-	// 模拟崩溃遗留：直接落一条 inflight 行（handler 从未完成）。
+	// 模拟崩溃遗留：直接落一条 inflight 行（handler 从未完成；无身份调用
+	// = anonymous 作用域，与下方 call 的派生一致）。
 	require.NoError(t, idemrepo.New(db.Clock(), db.Runner()).
-		Claim(context.Background(), "k1", createProjectMethod, "stale-fp", ClaimTTL))
+		Claim(context.Background(), callerScope(context.Background()), "k1", createProjectMethod, "stale-fp", ClaimTTL))
 	clock.Advance(ClaimTTL + time.Second)
 
 	count := 0
@@ -207,7 +333,7 @@ func TestNoKeyPassthrough(t *testing.T) {
 	_, err = call(t, e, "", projReq("shop"), handler)
 	require.NoError(t, err)
 	assert.Equal(t, 2, count, "no key means no idempotency, by design (optional commitment)")
-	_, err = e.repo.Get(context.Background(), "any")
+	_, err = e.repo.Get(context.Background(), callerScope(context.Background()), "any")
 	assert.ErrorIs(t, err, state.ErrNotFound, "no records may be written for keyless requests")
 }
 
@@ -249,6 +375,6 @@ func TestSweepRemovesExpired(t *testing.T) {
 	n, err = e.Sweep(context.Background())
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), n)
-	_, err = e.repo.Get(context.Background(), "k1")
+	_, err = e.repo.Get(context.Background(), callerScope(context.Background()), "k1")
 	assert.ErrorIs(t, err, state.ErrNotFound)
 }

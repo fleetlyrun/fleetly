@@ -25,9 +25,9 @@ import (
 //go:embed *.sql
 var forwardFS embed.FS
 
-// latestMigrationVersion 是迁移链最新版本号（00033_first_boot_to_pre_deploy.sql）；
+// latestMigrationVersion 是迁移链最新版本号（00034_idempotency_caller_scope.sql）；
 // 链前进即改这里（golden 同批纪律：新迁移带锚更新）。
-const latestMigrationVersion = 33
+const latestMigrationVersion = 34
 
 // openMigrationDB 打开 temp 目录裸 SQLite（纯迁移面，不带 Open 的
 // pragmas——本文件只验 goose 前滚语义；单写者收口与 Open 同纪律），
@@ -109,11 +109,61 @@ func TestMigrateForwardFromEra28ToLatest(t *testing.T) {
 	}
 }
 
+// TestMigrateForwardIdempotencyCallerScope：00034 重建表的存量处置锚——
+// v33 era 幂等行（无 scope 列）前滚后落空作用域（scope = 空串，无调用方
+// 可达的隔离区，仅等 Sweep）；新键空间 (scope, idem_key) 允许同键异作用
+// 域并存；临时表已改名、过期索引在新表上重建（H11 / R14-H4）。
+func TestMigrateForwardIdempotencyCallerScope(t *testing.T) {
+	ctx := context.Background()
+	db := openMigrationDB(t)
+
+	require.NoError(t, goose.UpToContext(ctx, db, ".", 33))
+	_, err := db.ExecContext(ctx, `INSERT INTO idempotency_records
+		(idem_key, method, fingerprint, state, response_type, response_body, created_at, expires_at)
+		VALUES ('legacy-key', '/fleetly.structure.v1.ProjectsService/CreateProject', 'fp-legacy',
+		        'completed', 'type.googleapis.com/fleetly.structure.v1.CreateProjectResponse', ?,
+		        '2026-10-11T00:00:00Z', '2026-10-12T00:00:00Z')`, []byte(`{"msg":"legacy"}`))
+	require.NoError(t, err)
+
+	require.NoError(t, goose.UpContext(ctx, db, "."))
+	version, err := goose.GetDBVersion(db)
+	require.NoError(t, err)
+	require.Equal(t, int64(latestMigrationVersion), version)
+
+	// 存量行完整保留但落不可达作用域 ''。
+	var scope, method, responseType string
+	var body []byte
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT scope, method, response_type, response_body
+		FROM idempotency_records WHERE idem_key = 'legacy-key'`).
+		Scan(&scope, &method, &responseType, &body))
+	assert.Empty(t, scope, "legacy rows must land in the unreachable empty scope")
+	assert.Equal(t, "/fleetly.structure.v1.ProjectsService/CreateProject", method)
+	assert.Equal(t, "type.googleapis.com/fleetly.structure.v1.CreateProjectResponse", responseType)
+	assert.Equal(t, []byte(`{"msg":"legacy"}`), body, "legacy response body must survive the rebuild")
+
+	// 新键空间：同键不同作用域可并存（旧全局主键已拆为复合主键）。
+	for _, scope := range []string{"token:tok-a", "token:tok-b"} {
+		_, err = db.ExecContext(ctx, `INSERT INTO idempotency_records
+			(scope, idem_key, method, fingerprint, state, created_at, expires_at)
+			VALUES (?, 'legacy-key', 'POST', 'fp', 'inflight', '2026-10-11T00:00:00Z', '2026-10-11T00:01:30Z')`, scope)
+		require.NoError(t, err)
+	}
+
+	// 临时表不残留、过期索引在新表名下重建。
+	var n int
+	require.NoError(t, db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'idempotency_records_v2'`).Scan(&n))
+	assert.Zero(t, n, "the rebuild staging table must not survive the rename")
+	require.NoError(t, db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_idempotency_expires' AND tbl_name = 'idempotency_records'`).Scan(&n))
+	assert.Equal(t, 1, n, "the expiry index must be rebuilt on the renamed table")
+}
+
 // TestMigrateForwardFromRecentCheckpoints 对每个近期检查点验证「该检查
 // 点之后的库 = 在役库形态」：fresh 库钉在检查点后一滚到顶（真实升级
 // 路径是逐版前滚，检查点代表中途接管的库）。
 func TestMigrateForwardFromRecentCheckpoints(t *testing.T) {
-	for _, cp := range []int64{30, 31, 32} {
+	for _, cp := range []int64{30, 31, 32, 33} {
 		t.Run(fmt.Sprintf("from_v%d", cp), func(t *testing.T) {
 			ctx := context.Background()
 			db := openMigrationDB(t)
