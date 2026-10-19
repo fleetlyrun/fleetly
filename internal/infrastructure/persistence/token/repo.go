@@ -42,16 +42,16 @@ func (r *repo) Create(ctx context.Context, t *token.Token) error {
 		userID = t.UserID
 	}
 	_, err = r.run.ExecContext(ctx, `
-		INSERT INTO tokens (id, seq, name, team_id, user_id, role_id, sha256, prefix, revoked, last_used_at, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?)`,
-		t.ID, t.Seq, t.Name, t.TeamID, userID, t.RoleID, t.SHA256, t.Prefix, revoked, t.CreatedAt)
+		INSERT INTO tokens (id, seq, name, team_id, user_id, role_id, sha256, prefix, revoked, last_used_at, created_at, expires_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?, ?)`,
+		t.ID, t.Seq, t.Name, t.TeamID, userID, t.RoleID, t.SHA256, t.Prefix, revoked, t.CreatedAt, t.ExpiresAt)
 	return err
 }
 
 // GetBySHA256 按明文摘要查行（authn 拦截器的查询键）。
 func (r *repo) GetBySHA256(ctx context.Context, sha string) (*token.Token, error) {
 	row := r.run.QueryRowContext(ctx, `
-		SELECT id, seq, name, team_id, COALESCE(user_id, ''), role_id, sha256, prefix, revoked, last_used_at, created_at
+		SELECT id, seq, name, team_id, COALESCE(user_id, ''), role_id, sha256, prefix, revoked, last_used_at, created_at, expires_at
 		FROM tokens WHERE sha256 = ?`, sha)
 	return scanOne(row.Scan)
 }
@@ -59,7 +59,7 @@ func (r *repo) GetBySHA256(ctx context.Context, sha string) (*token.Token, error
 // Get 按 ID 直读。
 func (r *repo) Get(ctx context.Context, id string) (*token.Token, error) {
 	row := r.run.QueryRowContext(ctx, `
-		SELECT id, seq, name, team_id, COALESCE(user_id, ''), role_id, sha256, prefix, revoked, last_used_at, created_at
+		SELECT id, seq, name, team_id, COALESCE(user_id, ''), role_id, sha256, prefix, revoked, last_used_at, created_at, expires_at
 		FROM tokens WHERE id = ?`, id)
 	return scanOne(row.Scan)
 }
@@ -76,7 +76,7 @@ func (r *repo) HasAliveBootstrap(ctx context.Context) (bool, error) {
 // List 返回全部 Token（ID 序稳定；含已吊销——吊销状态是可见事实）。
 func (r *repo) List(ctx context.Context) ([]token.Token, error) {
 	rows, err := r.run.QueryContext(ctx, `
-		SELECT id, seq, name, team_id, COALESCE(user_id, ''), role_id, sha256, prefix, revoked, last_used_at, created_at
+		SELECT id, seq, name, team_id, COALESCE(user_id, ''), role_id, sha256, prefix, revoked, last_used_at, created_at, expires_at
 		FROM tokens ORDER BY seq`)
 	if err != nil {
 		return nil, err
@@ -116,7 +116,7 @@ func scanOne(scan func(dest ...any) error) (*token.Token, error) {
 	var t token.Token
 	var revoked int
 	if err := scan(&t.ID, &t.Seq, &t.Name, &t.TeamID, &t.UserID, &t.RoleID, &t.SHA256, &t.Prefix,
-		&revoked, &t.LastUsedAt, &t.CreatedAt); err != nil {
+		&revoked, &t.LastUsedAt, &t.CreatedAt, &t.ExpiresAt); err != nil {
 		return nil, persistence.MapScanErr(err)
 	}
 	t.Revoked = revoked != 0

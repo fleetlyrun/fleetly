@@ -34,10 +34,15 @@ func NewBindConfigFunc() lynx.BindConfigFunc {
 // UnmarshalConfig 把 lynx.Config 解码到 AppConfig 并应用缺省（WithDefaults）。
 // proto 生成结构带 json tag（snake_case 键），lynx Unmarshal 按
 // mapstructure → json → 小写字段名回退链逐叶取值。
+// 动态值域（时长字符串等）在此统一校验：非法即启动 fail-fast，不把配置
+// 错误推迟到首个请求。
 func UnmarshalConfig(c lynx.Config, out *AppConfig) error {
 	if err := c.Unmarshal(out); err != nil {
 		return err
 	}
 	WithDefaults(out)
+	if _, err := out.LoginTokenTTL(); err != nil {
+		return err
+	}
 	return nil
 }

@@ -31,6 +31,18 @@ message AppConfig {
   // 平台 API（gRPC 控制面）公网发布面（ADR-0079）：host 空 = 不发布
   //（现状，升级零扰动）。
   Api api = 11;
+  // 认证面（S18-B / R14-M1）：Login 会话 Token 时效。
+  Auth auth = 12;
+}
+
+// Auth 是认证面配置（S18-B）：Login 铸造的密码会话 Token 的时效锚。
+message Auth {
+  // login_token_ttl 是 Login 会话 Token 的有效期（Go duration 字符串，
+  // 如 "720h"、"24h"；"0" = 永不过期）。空值回退 720h（30 天）；非法值
+  // 启动 fail-fast（不静默回退）。只作用于 Login 铸造的会话 Token——
+  // bootstrap 与 tokens create/CLI/SDK 铸造的 Agent/CI Token 仍永不过期。
+  // env 形态 FLEETLY_AUTH_LOGIN_TOKEN_TTL。
+  string login_token_ttl = 1;
 }
 
 // Console 是 Console 面板公网发布面配置（ADR-0061）：受管 traefik 前置一条

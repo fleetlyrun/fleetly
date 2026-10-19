@@ -2,6 +2,7 @@ package config
 
 import (
 	"testing"
+	"time"
 
 	"github.com/lynx-go/lynx"
 	"github.com/spf13/pflag"
@@ -71,6 +72,55 @@ func TestLoggingDefaults(t *testing.T) {
 	assert.Equal(t, DefaultLoggingRetentionDays, c.LoggingRetentionDays())
 	assert.Empty(t, (*AppConfig)(nil).LoggingAddr())
 	assert.Equal(t, DefaultLoggingRetentionDays, (*AppConfig)(nil).LoggingRetentionDays())
+}
+
+// TestLoginTokenTTL 钉 Login 会话 Token 时效（S18-B / R14-M1）：缺省 720h
+// （30 天）；显式 "0" = 永不过期；非法/负值报错（fail-fast，不静默回退）；
+// nil 链安全。
+func TestLoginTokenTTL(t *testing.T) {
+	ttl, err := WithDefaults(&AppConfig{}).LoginTokenTTL()
+	require.NoError(t, err)
+	assert.Equal(t, 720*time.Hour, ttl, "unset TTL defaults to 30 days")
+
+	ttl, err = WithDefaults(&AppConfig{Auth: &Auth{LoginTokenTtl: "0"}}).LoginTokenTTL()
+	require.NoError(t, err)
+	assert.Zero(t, ttl, "explicit 0 disables expiry (escape hatch)")
+
+	ttl, err = WithDefaults(&AppConfig{Auth: &Auth{LoginTokenTtl: "24h"}}).LoginTokenTTL()
+	require.NoError(t, err)
+	assert.Equal(t, 24*time.Hour, ttl)
+
+	_, err = WithDefaults(&AppConfig{Auth: &Auth{LoginTokenTtl: "banana"}}).LoginTokenTTL()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "auth.login_token_ttl")
+
+	_, err = WithDefaults(&AppConfig{Auth: &Auth{LoginTokenTtl: "-1h"}}).LoginTokenTTL()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "negative")
+
+	ttl, err = (*AppConfig)(nil).LoginTokenTTL()
+	require.NoError(t, err)
+	assert.Equal(t, 720*time.Hour, ttl, "nil chain falls back to the default")
+}
+
+// TestLoginTokenTTLEnvOverride 钉 env 键 FLEETLY_AUTH_LOGIN_TOKEN_TTL 与
+// 非法值启动 fail-fast（UnmarshalConfig 返回错误，装配不启动）。
+func TestLoginTokenTTLEnvOverride(t *testing.T) {
+	t.Setenv("FLEETLY_AUTH_LOGIN_TOKEN_TTL", "24h")
+	v := viper.New()
+	cs := lynx.NewViperConfig(v)
+	require.NoError(t, ConfigureConfigSource(pflag.NewFlagSet("t", pflag.ContinueOnError), cs))
+	var c AppConfig
+	require.NoError(t, UnmarshalConfig(cs, &c))
+	ttl, err := c.LoginTokenTTL()
+	require.NoError(t, err)
+	assert.Equal(t, 24*time.Hour, ttl)
+
+	t.Setenv("FLEETLY_AUTH_LOGIN_TOKEN_TTL", "not-a-duration")
+	var bad AppConfig
+	err = UnmarshalConfig(cs, &bad)
+	require.Error(t, err, "invalid TTL must fail config load (startup fail-fast)")
+	assert.Contains(t, err.Error(), "auth.login_token_ttl")
 }
 
 // TestEnvPlatformBackupS3FiveTuple 钉五元组的 env 覆盖通道（ADR-0042：装配

@@ -592,7 +592,7 @@
         "parameters": [
           {
             "name": "app_id",
-            "description": "app_id 与 database_id 恰一非空（scope 互斥）。",
+            "description": "app_id/database_id/project_id 恰一非空（scope 互斥）。project scope 的\n指标白名单只有 cpu_cores/memory_working_set_bytes：project 汇总没有\n明确的 CPU 分母（cpu_percent 在受理面 E_INVALID_ARGUMENT），process\n维度也只在 app scope 存在。",
             "in": "query",
             "required": false,
             "type": "string"
@@ -637,6 +637,13 @@
             "required": false,
             "type": "string",
             "format": "int64"
+          },
+          {
+            "name": "project_id",
+            "description": "project_id 是 project scope 的聚合轴（本队行级授权；成员可查本队）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
           }
         ],
         "tags": [

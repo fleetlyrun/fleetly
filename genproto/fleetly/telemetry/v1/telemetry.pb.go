@@ -940,12 +940,15 @@ func (x *MetricPoint) GetValue() float64 {
 	return 0
 }
 
-// QueryScopedMetricsRequest 是租户图表面：调用方只给 scope（App 或
-// Database 恰一）+ 指标白名单 + 时间窗，PromQL 由服务端固定模板构造
+// QueryScopedMetricsRequest 是租户图表面：调用方只给 scope（App、Database
+// 或 Project 恰一）+ 指标白名单 + 时间窗，PromQL 由服务端固定模板构造
 // （H8 设计文档 §5.1/§5.3）。
 type QueryScopedMetricsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// app_id 与 database_id 恰一非空（scope 互斥）。
+	// app_id/database_id/project_id 恰一非空（scope 互斥）。project scope 的
+	// 指标白名单只有 cpu_cores/memory_working_set_bytes：project 汇总没有
+	// 明确的 CPU 分母（cpu_percent 在受理面 E_INVALID_ARGUMENT），process
+	// 维度也只在 app scope 存在。
 	AppId      string `protobuf:"bytes,1,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
 	DatabaseId string `protobuf:"bytes,2,opt,name=database_id,json=databaseId,proto3" json:"database_id,omitempty"`
 	// metric 白名单：cpu_percent | cpu_cores | memory_working_set_bytes
@@ -957,7 +960,9 @@ type QueryScopedMetricsRequest struct {
 	Start string `protobuf:"bytes,5,opt,name=start,proto3" json:"start,omitempty"`
 	End   string `protobuf:"bytes,6,opt,name=end,proto3" json:"end,omitempty"`
 	// step_seconds 是请求步长；0 = 服务端按窗口自动，实际值会被钳制。
-	StepSeconds   int64 `protobuf:"varint,7,opt,name=step_seconds,json=stepSeconds,proto3" json:"step_seconds,omitempty"`
+	StepSeconds int64 `protobuf:"varint,7,opt,name=step_seconds,json=stepSeconds,proto3" json:"step_seconds,omitempty"`
+	// project_id 是 project scope 的聚合轴（本队行级授权；成员可查本队）。
+	ProjectId     string `protobuf:"bytes,8,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1039,6 +1044,13 @@ func (x *QueryScopedMetricsRequest) GetStepSeconds() int64 {
 		return x.StepSeconds
 	}
 	return 0
+}
+
+func (x *QueryScopedMetricsRequest) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
 }
 
 type QueryScopedMetricsResponse struct {
@@ -2225,7 +2237,7 @@ const file_fleetly_telemetry_v1_telemetry_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"7\n" +
 	"\vMetricPoint\x12\x12\n" +
 	"\x04time\x18\x01 \x01(\tR\x04time\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\x01R\x05value\"\x9a\x04\n" +
+	"\x05value\x18\x02 \x01(\x01R\x05value\"\xfb\x04\n" +
 	"\x19QueryScopedMetricsRequest\x12\x15\n" +
 	"\x06app_id\x18\x01 \x01(\tR\x05appId\x12\x1f\n" +
 	"\vdatabase_id\x18\x02 \x01(\tR\n" +
@@ -2235,8 +2247,10 @@ const file_fleetly_telemetry_v1_telemetry_proto_rawDesc = "" +
 	"\aprocess\x18\x04 \x01(\tR\aprocess\x12\x14\n" +
 	"\x05start\x18\x05 \x01(\tR\x05start\x12\x10\n" +
 	"\x03end\x18\x06 \x01(\tR\x03end\x12!\n" +
-	"\fstep_seconds\x18\a \x01(\x03R\vstepSeconds:\x90\x01\xbaH\x8c\x01\x1a\x89\x01\n" +
-	"$queryscopedmetrics.scope_exactly_one\x120exactly one of app_id or database_id must be set\x1a/(this.app_id == '') != (this.database_id == '')\"\x99\x01\n" +
+	"\fstep_seconds\x18\a \x01(\x03R\vstepSeconds\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\b \x01(\tR\tprojectId:\xd2\x01\xbaH\xce\x01\x1a\xcb\x01\n" +
+	"$queryscopedmetrics.scope_exactly_one\x12<exactly one of app_id, database_id or project_id must be set\x1ae(this.app_id != '' ? 1 : 0) + (this.database_id != '' ? 1 : 0) + (this.project_id != '' ? 1 : 0) == 1\"\x99\x01\n" +
 	"\x1aQueryScopedMetricsResponse\x12:\n" +
 	"\x06series\x18\x01 \x03(\v2\".fleetly.telemetry.v1.MetricSeriesR\x06series\x12\x1c\n" +
 	"\ttruncated\x18\x02 \x01(\bR\ttruncated\x12!\n" +

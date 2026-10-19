@@ -60,21 +60,24 @@ func newMetricsQueryVerb() commands.Command {
 }
 
 // metrics series：scoped 固定模板查询（H8 阶段 B，设计 §5.4）——调用方只给
-// App/Database 作用域 + 指标白名单 + 时间窗，PromQL 由服务端按已授权行
-// 构造；member 可用。人类输出逐点保留序列身份（series=<labels> <time>
-// <value>），--json 输出 QueryScopedMetricsResponse protojson。
+// App/Database/Project 作用域 + 指标白名单 + 时间窗，PromQL 由服务端按已
+// 授权行构造；member 可用。project scope 只支持 cpu_cores/
+// memory_working_set_bytes（服务端对 cpu_percent 返回 E_INVALID_ARGUMENT）。
+// 人类输出逐点保留序列身份（series=<labels> <time> <value>），--json 输出
+// QueryScopedMetricsResponse protojson。
 func newMetricsSeriesVerb() commands.Command {
 	const name = "series"
-	var appID, databaseID, metric, process, start, end string
+	var appID, databaseID, projectID, metric, process, start, end string
 	var step int64
 	return &flaggedVerb{
 		name:     name,
-		synopsis: "Query a scoped metric template for an app or database (no PromQL)",
-		usage: "metrics series (--app APP_ID | --database DB_ID) --metric M [--process P] " +
+		synopsis: "Query a scoped metric template for an app, database or project (no PromQL)",
+		usage: "metrics series (--app APP_ID | --database DB_ID | --project PROJECT_ID) --metric M [--process P] " +
 			"[--start T] [--end T] [--step-seconds N]",
 		setFlags: func(fs *flag.FlagSet) {
-			fs.StringVar(&appID, "app", "", "app id (exactly one of --app/--database)")
-			fs.StringVar(&databaseID, "database", "", "database id (exactly one of --app/--database)")
+			fs.StringVar(&appID, "app", "", "app id (exactly one of --app/--database/--project)")
+			fs.StringVar(&databaseID, "database", "", "database id (exactly one of --app/--database/--project)")
+			fs.StringVar(&projectID, "project", "", "project id (exactly one of --app/--database/--project)")
 			fs.StringVar(&metric, "metric", "", "metric: cpu_percent | cpu_cores | memory_working_set_bytes (required)")
 			fs.StringVar(&process, "process", "", "process filter (app scope only)")
 			fs.StringVar(&start, "start", "", "time window start (RFC3339; default: end minus 1h)")
@@ -85,17 +88,23 @@ func newMetricsSeriesVerb() commands.Command {
 			if err := noArgs(name, args); err != nil {
 				return err
 			}
+			scopes := 0
+			for _, v := range []string{appID, databaseID, projectID} {
+				if v != "" {
+					scopes++
+				}
+			}
 			switch {
-			case appID == "" && databaseID == "":
-				return usageErr(name, "exactly one of --app or --database is required")
-			case appID != "" && databaseID != "":
-				return usageErr(name, "--app and --database are mutually exclusive")
+			case scopes == 0:
+				return usageErr(name, "exactly one of --app, --database or --project is required")
+			case scopes > 1:
+				return usageErr(name, "--app, --database and --project are mutually exclusive")
 			case metric == "":
 				return usageErr(name, "--metric is required")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
 				resp, err := c.Metrics.QueryScopedMetrics(ctx, &telemetryv1.QueryScopedMetricsRequest{
-					AppId: appID, DatabaseId: databaseID, Metric: metric, Process: process,
+					AppId: appID, DatabaseId: databaseID, ProjectId: projectID, Metric: metric, Process: process,
 					Start: start, End: end, StepSeconds: step,
 				})
 				if err != nil {

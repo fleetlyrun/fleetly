@@ -34,13 +34,31 @@ func databaseQuery(metric string) ScopedQuery {
 	}
 }
 
-// TestBuildScopedPromQL 钉死每个模板形状（app/database × 指标 × 双 runtime
-// 臂共 10 条精确字符串）与 process 可选面。
+// projectQuery 是 project scope 形态：AppID/DatabaseID 均空，ProjectID 即
+// 作用域（词汇臂不覆盖 project 维度，双臂都走 raw——见 BuildScopedPromQL
+// 注释）。
+func projectQuery(metric string) ScopedQuery {
+	return ScopedQuery{
+		Metric:    metric,
+		ProjectID: "01PROJ",
+		Start:     time.Unix(1767225600, 0).UTC(),
+		End:       time.Unix(1767229200, 0).UTC(),
+		Step:      15 * time.Second,
+	}
+}
+
+// TestBuildScopedPromQL 钉死每个模板形状（app/database/project × 指标 × 双
+// runtime 臂共 13 条精确字符串）与 process 可选面。
 func TestBuildScopedPromQL(t *testing.T) {
 	const (
 		appSelector = `{namespace="fleetly-01PROJ",pod=~"fleetly-01APP-web(-.*)?",container!=""}`
 		appNoProc   = `{namespace="fleetly-01PROJ",pod=~"fleetly-01APP-.*",container!=""}`
 		dbSelector  = `{namespace="fleetly-01PROJ",pod=~"fleetly-db-01DB(-.*)?",container!=""}`
+		// project scope 双臂都是 raw：swarm 臂按写侧 cAdvisor 投影标签
+		// container_label_fleetly_ns_project 收敛（词汇标签集没有 project
+		// 维度，ADR-0065 标签集是注册表），k3s 臂按 namespace 收敛。
+		projSwarmSelector = `{container_label_fleetly_ns_project="01PROJ",container!=""}`
+		projK3sSelector   = `{namespace="fleetly-01PROJ",container!=""}`
 	)
 	tests := []struct {
 		name string
@@ -98,6 +116,25 @@ func TestBuildScopedPromQL(t *testing.T) {
 			name: "database memory",
 			q:    databaseQuery(MetricMemoryWorkingSet),
 			want: `(fleetly_container_memory_working_set_bytes{database="01DB"}) or (container_memory_working_set_bytes` + dbSelector + `)`,
+		},
+		{
+			name: "project cpu_cores",
+			q:    projectQuery(MetricCPUCores),
+			want: `(rate(container_cpu_usage_seconds_total` + projSwarmSelector + `[2m])) or (rate(container_cpu_usage_seconds_total` + projK3sSelector + `[2m]))`,
+		},
+		{
+			name: "project memory",
+			q:    projectQuery(MetricMemoryWorkingSet),
+			want: `(container_memory_working_set_bytes` + projSwarmSelector + `) or (container_memory_working_set_bytes` + projK3sSelector + `)`,
+		},
+		{
+			name: "project cpu_cores rate window follows step",
+			q: func() ScopedQuery {
+				q := projectQuery(MetricCPUCores)
+				q.Step = 90 * time.Second
+				return q
+			}(),
+			want: `(rate(container_cpu_usage_seconds_total` + projSwarmSelector + `[6m])) or (rate(container_cpu_usage_seconds_total` + projK3sSelector + `[6m]))`,
 		},
 		{
 			name: "app cpu_cores rate window follows step",
@@ -174,7 +211,12 @@ func TestBuildScopedPromQLRejects(t *testing.T) {
 		},
 		{
 			name: "no scope",
-			q:    func() ScopedQuery { q := base; q.AppID = ""; return q }(),
+			q: func() ScopedQuery {
+				q := base
+				q.AppID = ""
+				q.ProjectID = ""
+				return q
+			}(),
 			want: "exactly one",
 		},
 		{
@@ -190,6 +232,16 @@ func TestBuildScopedPromQLRejects(t *testing.T) {
 		{
 			name: "cpu_percent on database scope",
 			q:    databaseQuery(MetricCPUPercent),
+			want: "only available for app scope",
+		},
+		{
+			name: "cpu_percent on project scope",
+			q:    projectQuery(MetricCPUPercent),
+			want: "only available for app scope",
+		},
+		{
+			name: "process on project scope",
+			q:    func() ScopedQuery { q := projectQuery(MetricCPUCores); q.Process = "web"; return q }(),
 			want: "only available for app scope",
 		},
 	}

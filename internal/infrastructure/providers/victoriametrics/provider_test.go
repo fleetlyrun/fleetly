@@ -387,6 +387,44 @@ func TestQueryScopedTemplate(t *testing.T) {
 	assert.Equal(t, "15", q.Get("step"))
 }
 
+// TestQueryScopedProjectTemplate 钉 project scope 的 HTTP query 参数逐字节
+// 等于固定模板（双臂都走 raw：swarm 按 cAdvisor 投影 project 标签、k3s 按
+// namespace）。
+func TestQueryScopedProjectTemplate(t *testing.T) {
+	var formMu sync.Mutex
+	var gotForm url.Values
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.NoError(t, r.ParseForm())
+		formMu.Lock()
+		gotForm = r.Form
+		formMu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(matrixBody(1))
+	}))
+	defer srv.Close()
+
+	p := newTestProvider(t)
+	p.addr = strings.TrimPrefix(srv.URL, "http://")
+	page, err := p.QueryScoped(context.Background(), capability.ScopedQuery{
+		Metric:    capability.MetricCPUCores,
+		ProjectID: "01PROJ",
+		Start:     time.Unix(1767225600, 0),
+		End:       time.Unix(1767229200, 0),
+		Step:      15 * time.Second,
+	})
+	require.NoError(t, err)
+	require.Len(t, page.Series, 1)
+	assert.Equal(t, 1, page.Total)
+
+	formMu.Lock()
+	q := gotForm
+	formMu.Unlock()
+	want := `(rate(container_cpu_usage_seconds_total{container_label_fleetly_ns_project="01PROJ",container!=""}[2m])) or ` +
+		`(rate(container_cpu_usage_seconds_total{namespace="fleetly-01PROJ",container!=""}[2m]))`
+	assert.Equal(t, want, q.Get("query"))
+	assert.Equal(t, "15", q.Get("step"))
+}
+
 // TestQueryScopedTruncates 钉 scoped 序列上限的截断语义（60 条 → 50 +
 // truncated + total=60；恰好 50 不截断），与 raw 的拒绝语义分立。
 func TestQueryScopedTruncates(t *testing.T) {

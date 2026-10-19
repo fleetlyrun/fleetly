@@ -25,9 +25,9 @@ import (
 //go:embed *.sql
 var forwardFS embed.FS
 
-// latestMigrationVersion 是迁移链最新版本号（00035_node_relay_credentials.sql）；
+// latestMigrationVersion 是迁移链最新版本号（00036_token_expiry.sql）；
 // 链前进即改这里（golden 同批纪律：新迁移带锚更新）。
-const latestMigrationVersion = 35
+const latestMigrationVersion = 36
 
 // openMigrationDB 打开 temp 目录裸 SQLite（纯迁移面，不带 Open 的
 // pragmas——本文件只验 goose 前滚语义；单写者收口与 Open 同纪律），
@@ -203,11 +203,54 @@ func TestMigrateForwardNodeRelayCredentials(t *testing.T) {
 	assert.Equal(t, "worker", role)
 }
 
+// TestMigrateForwardTokenExpiry：00036 的换装锚——v35 库的 tokens 无
+// expires_at，前滚后列在场且存量行默认 ”（永不过期；Login 会话 Token 才
+// 带过期时刻，存量 bootstrap/CI Token 语义不变）。
+func TestMigrateForwardTokenExpiry(t *testing.T) {
+	ctx := context.Background()
+	db := openMigrationDB(t)
+
+	require.NoError(t, goose.UpToContext(ctx, db, ".", 35))
+	// era 行按 v35 列形插入（无 expires_at）。
+	_, err := db.ExecContext(ctx, `INSERT INTO teams (id, seq, name, created_at)
+		VALUES ('team-era35', 1, 'era', '2026-10-11T00:00:00Z')`)
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, `INSERT INTO roles (id, seq, team_id, name, builtin, scopes, created_at)
+		VALUES ('role-era35', 1, '', 'era-role', 0, '[]', '2026-10-11T00:00:00Z')`)
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, `INSERT INTO tokens
+		(id, seq, name, team_id, user_id, role_id, sha256, prefix, revoked, last_used_at, created_at)
+		VALUES ('tok-era35', 1, 'era-token', 'team-era35', NULL, 'role-era35',
+		        'sha-era35', 'flt_era', 0, '', '2026-10-11T00:00:00Z')`)
+	require.NoError(t, err)
+
+	var hasColumn int
+	require.NoError(t, db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM pragma_table_info('tokens') WHERE name = 'expires_at'`).Scan(&hasColumn))
+	assert.Zero(t, hasColumn, "v35 must not carry tokens.expires_at")
+
+	require.NoError(t, goose.UpContext(ctx, db, "."))
+	version, err := goose.GetDBVersion(db)
+	require.NoError(t, err)
+	require.Equal(t, int64(latestMigrationVersion), version)
+
+	require.NoError(t, db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM pragma_table_info('tokens') WHERE name = 'expires_at'`).Scan(&hasColumn))
+	assert.Equal(t, 1, hasColumn, "v36 must add tokens.expires_at")
+
+	// 存量行无损且默认 ''（永不过期——迁移不编造过期时刻）。
+	var name, expiresAt string
+	require.NoError(t, db.QueryRowContext(ctx,
+		`SELECT name, expires_at FROM tokens WHERE id = 'tok-era35'`).Scan(&name, &expiresAt))
+	assert.Equal(t, "era-token", name)
+	assert.Empty(t, expiresAt, "v36 must backfill expires_at with '' (never expires)")
+}
+
 // TestMigrateForwardFromRecentCheckpoints 对每个近期检查点验证「该检查
 // 点之后的库 = 在役库形态」：fresh 库钉在检查点后一滚到顶（真实升级
 // 路径是逐版前滚，检查点代表中途接管的库）。
 func TestMigrateForwardFromRecentCheckpoints(t *testing.T) {
-	for _, cp := range []int64{30, 31, 32, 33, 34} {
+	for _, cp := range []int64{30, 31, 32, 33, 34, 35} {
 		t.Run(fmt.Sprintf("from_v%d", cp), func(t *testing.T) {
 			ctx := context.Background()
 			db := openMigrationDB(t)

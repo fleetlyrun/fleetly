@@ -49,7 +49,9 @@ type AppConfig struct {
 	Console *Console `protobuf:"bytes,10,opt,name=console,proto3" json:"console,omitempty"`
 	// 平台 API（gRPC 控制面）公网发布面（ADR-0079）：host 空 = 不发布
 	// （现状，升级零扰动）。
-	Api           *Api `protobuf:"bytes,11,opt,name=api,proto3" json:"api,omitempty"`
+	Api *Api `protobuf:"bytes,11,opt,name=api,proto3" json:"api,omitempty"`
+	// 认证面（S18-B / R14-M1）：Login 会话 Token 时效。
+	Auth          *Auth `protobuf:"bytes,12,opt,name=auth,proto3" json:"auth,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -161,6 +163,63 @@ func (x *AppConfig) GetApi() *Api {
 	return nil
 }
 
+func (x *AppConfig) GetAuth() *Auth {
+	if x != nil {
+		return x.Auth
+	}
+	return nil
+}
+
+// Auth 是认证面配置（S18-B）：Login 铸造的密码会话 Token 的时效锚。
+type Auth struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// login_token_ttl 是 Login 会话 Token 的有效期（Go duration 字符串，
+	// 如 "720h"、"24h"；"0" = 永不过期）。空值回退 720h（30 天）；非法值
+	// 启动 fail-fast（不静默回退）。只作用于 Login 铸造的会话 Token——
+	// bootstrap 与 tokens create/CLI/SDK 铸造的 Agent/CI Token 仍永不过期。
+	// env 形态 FLEETLY_AUTH_LOGIN_TOKEN_TTL。
+	LoginTokenTtl string `protobuf:"bytes,1,opt,name=login_token_ttl,json=loginTokenTtl,proto3" json:"login_token_ttl,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Auth) Reset() {
+	*x = Auth{}
+	mi := &file_config_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Auth) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Auth) ProtoMessage() {}
+
+func (x *Auth) ProtoReflect() protoreflect.Message {
+	mi := &file_config_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Auth.ProtoReflect.Descriptor instead.
+func (*Auth) Descriptor() ([]byte, []int) {
+	return file_config_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *Auth) GetLoginTokenTtl() string {
+	if x != nil {
+		return x.LoginTokenTtl
+	}
+	return ""
+}
+
 // Console 是 Console 面板公网发布面配置（ADR-0061）：受管 traefik 前置一条
 // Host 路由指回 REST gateway（Console SPA 与 /v1 REST API 同端口同源服务，
 // internal/interfaces/console.Mount）——host 空 = 整面停用（现状；registry/browse
@@ -183,7 +242,7 @@ type Console struct {
 
 func (x *Console) Reset() {
 	*x = Console{}
-	mi := &file_config_proto_msgTypes[1]
+	mi := &file_config_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -195,7 +254,7 @@ func (x *Console) String() string {
 func (*Console) ProtoMessage() {}
 
 func (x *Console) ProtoReflect() protoreflect.Message {
-	mi := &file_config_proto_msgTypes[1]
+	mi := &file_config_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -208,7 +267,7 @@ func (x *Console) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Console.ProtoReflect.Descriptor instead.
 func (*Console) Descriptor() ([]byte, []int) {
-	return file_config_proto_rawDescGZIP(), []int{1}
+	return file_config_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *Console) GetHost() string {
@@ -254,7 +313,7 @@ type Api struct {
 
 func (x *Api) Reset() {
 	*x = Api{}
-	mi := &file_config_proto_msgTypes[2]
+	mi := &file_config_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -266,7 +325,7 @@ func (x *Api) String() string {
 func (*Api) ProtoMessage() {}
 
 func (x *Api) ProtoReflect() protoreflect.Message {
-	mi := &file_config_proto_msgTypes[2]
+	mi := &file_config_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -279,7 +338,7 @@ func (x *Api) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Api.ProtoReflect.Descriptor instead.
 func (*Api) Descriptor() ([]byte, []int) {
-	return file_config_proto_rawDescGZIP(), []int{2}
+	return file_config_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *Api) GetHost() string {
@@ -321,7 +380,7 @@ type PlatformBackup struct {
 
 func (x *PlatformBackup) Reset() {
 	*x = PlatformBackup{}
-	mi := &file_config_proto_msgTypes[3]
+	mi := &file_config_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -333,7 +392,7 @@ func (x *PlatformBackup) String() string {
 func (*PlatformBackup) ProtoMessage() {}
 
 func (x *PlatformBackup) ProtoReflect() protoreflect.Message {
-	mi := &file_config_proto_msgTypes[3]
+	mi := &file_config_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -346,7 +405,7 @@ func (x *PlatformBackup) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlatformBackup.ProtoReflect.Descriptor instead.
 func (*PlatformBackup) Descriptor() ([]byte, []int) {
-	return file_config_proto_rawDescGZIP(), []int{3}
+	return file_config_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *PlatformBackup) GetIntervalSecs() int64 {
@@ -385,7 +444,7 @@ type PlatformBackupS3 struct {
 
 func (x *PlatformBackupS3) Reset() {
 	*x = PlatformBackupS3{}
-	mi := &file_config_proto_msgTypes[4]
+	mi := &file_config_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -397,7 +456,7 @@ func (x *PlatformBackupS3) String() string {
 func (*PlatformBackupS3) ProtoMessage() {}
 
 func (x *PlatformBackupS3) ProtoReflect() protoreflect.Message {
-	mi := &file_config_proto_msgTypes[4]
+	mi := &file_config_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -410,7 +469,7 @@ func (x *PlatformBackupS3) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlatformBackupS3.ProtoReflect.Descriptor instead.
 func (*PlatformBackupS3) Descriptor() ([]byte, []int) {
-	return file_config_proto_rawDescGZIP(), []int{4}
+	return file_config_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *PlatformBackupS3) GetEndpoint() string {
@@ -464,7 +523,7 @@ type Server struct {
 
 func (x *Server) Reset() {
 	*x = Server{}
-	mi := &file_config_proto_msgTypes[5]
+	mi := &file_config_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -476,7 +535,7 @@ func (x *Server) String() string {
 func (*Server) ProtoMessage() {}
 
 func (x *Server) ProtoReflect() protoreflect.Message {
-	mi := &file_config_proto_msgTypes[5]
+	mi := &file_config_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -489,7 +548,7 @@ func (x *Server) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Server.ProtoReflect.Descriptor instead.
 func (*Server) Descriptor() ([]byte, []int) {
-	return file_config_proto_rawDescGZIP(), []int{5}
+	return file_config_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *Server) GetGrpc() *GRPC {
@@ -530,7 +589,7 @@ type GRPC struct {
 
 func (x *GRPC) Reset() {
 	*x = GRPC{}
-	mi := &file_config_proto_msgTypes[6]
+	mi := &file_config_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -542,7 +601,7 @@ func (x *GRPC) String() string {
 func (*GRPC) ProtoMessage() {}
 
 func (x *GRPC) ProtoReflect() protoreflect.Message {
-	mi := &file_config_proto_msgTypes[6]
+	mi := &file_config_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -555,7 +614,7 @@ func (x *GRPC) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GRPC.ProtoReflect.Descriptor instead.
 func (*GRPC) Descriptor() ([]byte, []int) {
-	return file_config_proto_rawDescGZIP(), []int{6}
+	return file_config_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *GRPC) GetAddr() string {
@@ -575,7 +634,7 @@ type HTTP struct {
 
 func (x *HTTP) Reset() {
 	*x = HTTP{}
-	mi := &file_config_proto_msgTypes[7]
+	mi := &file_config_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -587,7 +646,7 @@ func (x *HTTP) String() string {
 func (*HTTP) ProtoMessage() {}
 
 func (x *HTTP) ProtoReflect() protoreflect.Message {
-	mi := &file_config_proto_msgTypes[7]
+	mi := &file_config_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -600,7 +659,7 @@ func (x *HTTP) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HTTP.ProtoReflect.Descriptor instead.
 func (*HTTP) Descriptor() ([]byte, []int) {
-	return file_config_proto_rawDescGZIP(), []int{7}
+	return file_config_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *HTTP) GetAddr() string {
@@ -628,7 +687,7 @@ type ProxyConfig struct {
 
 func (x *ProxyConfig) Reset() {
 	*x = ProxyConfig{}
-	mi := &file_config_proto_msgTypes[8]
+	mi := &file_config_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -640,7 +699,7 @@ func (x *ProxyConfig) String() string {
 func (*ProxyConfig) ProtoMessage() {}
 
 func (x *ProxyConfig) ProtoReflect() protoreflect.Message {
-	mi := &file_config_proto_msgTypes[8]
+	mi := &file_config_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -653,7 +712,7 @@ func (x *ProxyConfig) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProxyConfig.ProtoReflect.Descriptor instead.
 func (*ProxyConfig) Descriptor() ([]byte, []int) {
-	return file_config_proto_rawDescGZIP(), []int{8}
+	return file_config_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ProxyConfig) GetAddr() string {
@@ -683,7 +742,7 @@ type Registry struct {
 
 func (x *Registry) Reset() {
 	*x = Registry{}
-	mi := &file_config_proto_msgTypes[9]
+	mi := &file_config_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -695,7 +754,7 @@ func (x *Registry) String() string {
 func (*Registry) ProtoMessage() {}
 
 func (x *Registry) ProtoReflect() protoreflect.Message {
-	mi := &file_config_proto_msgTypes[9]
+	mi := &file_config_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -708,7 +767,7 @@ func (x *Registry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Registry.ProtoReflect.Descriptor instead.
 func (*Registry) Descriptor() ([]byte, []int) {
-	return file_config_proto_rawDescGZIP(), []int{9}
+	return file_config_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *Registry) GetAddr() string {
@@ -733,7 +792,7 @@ type Logging struct {
 
 func (x *Logging) Reset() {
 	*x = Logging{}
-	mi := &file_config_proto_msgTypes[10]
+	mi := &file_config_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -745,7 +804,7 @@ func (x *Logging) String() string {
 func (*Logging) ProtoMessage() {}
 
 func (x *Logging) ProtoReflect() protoreflect.Message {
-	mi := &file_config_proto_msgTypes[10]
+	mi := &file_config_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -758,7 +817,7 @@ func (x *Logging) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Logging.ProtoReflect.Descriptor instead.
 func (*Logging) Descriptor() ([]byte, []int) {
-	return file_config_proto_rawDescGZIP(), []int{10}
+	return file_config_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *Logging) GetAddr() string {
@@ -790,7 +849,7 @@ type Metrics struct {
 
 func (x *Metrics) Reset() {
 	*x = Metrics{}
-	mi := &file_config_proto_msgTypes[11]
+	mi := &file_config_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -802,7 +861,7 @@ func (x *Metrics) String() string {
 func (*Metrics) ProtoMessage() {}
 
 func (x *Metrics) ProtoReflect() protoreflect.Message {
-	mi := &file_config_proto_msgTypes[11]
+	mi := &file_config_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -815,7 +874,7 @@ func (x *Metrics) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Metrics.ProtoReflect.Descriptor instead.
 func (*Metrics) Descriptor() ([]byte, []int) {
-	return file_config_proto_rawDescGZIP(), []int{11}
+	return file_config_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *Metrics) GetAddr() string {
@@ -854,7 +913,7 @@ type Browse struct {
 
 func (x *Browse) Reset() {
 	*x = Browse{}
-	mi := &file_config_proto_msgTypes[12]
+	mi := &file_config_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -866,7 +925,7 @@ func (x *Browse) String() string {
 func (*Browse) ProtoMessage() {}
 
 func (x *Browse) ProtoReflect() protoreflect.Message {
-	mi := &file_config_proto_msgTypes[12]
+	mi := &file_config_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -879,7 +938,7 @@ func (x *Browse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Browse.ProtoReflect.Descriptor instead.
 func (*Browse) Descriptor() ([]byte, []int) {
-	return file_config_proto_rawDescGZIP(), []int{12}
+	return file_config_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *Browse) GetHostSuffix() string {
@@ -919,7 +978,7 @@ type Runtime struct {
 
 func (x *Runtime) Reset() {
 	*x = Runtime{}
-	mi := &file_config_proto_msgTypes[13]
+	mi := &file_config_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -931,7 +990,7 @@ func (x *Runtime) String() string {
 func (*Runtime) ProtoMessage() {}
 
 func (x *Runtime) ProtoReflect() protoreflect.Message {
-	mi := &file_config_proto_msgTypes[13]
+	mi := &file_config_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -944,7 +1003,7 @@ func (x *Runtime) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Runtime.ProtoReflect.Descriptor instead.
 func (*Runtime) Descriptor() ([]byte, []int) {
-	return file_config_proto_rawDescGZIP(), []int{13}
+	return file_config_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *Runtime) GetProvider() string {
@@ -974,7 +1033,7 @@ type RuntimeK3S struct {
 
 func (x *RuntimeK3S) Reset() {
 	*x = RuntimeK3S{}
-	mi := &file_config_proto_msgTypes[14]
+	mi := &file_config_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -986,7 +1045,7 @@ func (x *RuntimeK3S) String() string {
 func (*RuntimeK3S) ProtoMessage() {}
 
 func (x *RuntimeK3S) ProtoReflect() protoreflect.Message {
-	mi := &file_config_proto_msgTypes[14]
+	mi := &file_config_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -999,7 +1058,7 @@ func (x *RuntimeK3S) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RuntimeK3S.ProtoReflect.Descriptor instead.
 func (*RuntimeK3S) Descriptor() ([]byte, []int) {
-	return file_config_proto_rawDescGZIP(), []int{14}
+	return file_config_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *RuntimeK3S) GetKubeconfig() string {
@@ -1020,7 +1079,7 @@ type Data struct {
 
 func (x *Data) Reset() {
 	*x = Data{}
-	mi := &file_config_proto_msgTypes[15]
+	mi := &file_config_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1032,7 +1091,7 @@ func (x *Data) String() string {
 func (*Data) ProtoMessage() {}
 
 func (x *Data) ProtoReflect() protoreflect.Message {
-	mi := &file_config_proto_msgTypes[15]
+	mi := &file_config_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1045,7 +1104,7 @@ func (x *Data) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Data.ProtoReflect.Descriptor instead.
 func (*Data) Descriptor() ([]byte, []int) {
-	return file_config_proto_rawDescGZIP(), []int{15}
+	return file_config_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *Data) GetRoot() string {
@@ -1081,7 +1140,7 @@ type Engine struct {
 
 func (x *Engine) Reset() {
 	*x = Engine{}
-	mi := &file_config_proto_msgTypes[16]
+	mi := &file_config_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1093,7 +1152,7 @@ func (x *Engine) String() string {
 func (*Engine) ProtoMessage() {}
 
 func (x *Engine) ProtoReflect() protoreflect.Message {
-	mi := &file_config_proto_msgTypes[16]
+	mi := &file_config_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1106,7 +1165,7 @@ func (x *Engine) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Engine.ProtoReflect.Descriptor instead.
 func (*Engine) Descriptor() ([]byte, []int) {
-	return file_config_proto_rawDescGZIP(), []int{16}
+	return file_config_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *Engine) GetScheduleOverlapPolicy() string {
@@ -1141,7 +1200,7 @@ var File_config_proto protoreflect.FileDescriptor
 
 const file_config_proto_rawDesc = "" +
 	"\n" +
-	"\fconfig.proto\x12\x11fleetly.config.v1\"\xd8\x04\n" +
+	"\fconfig.proto\x12\x11fleetly.config.v1\"\x85\x05\n" +
 	"\tAppConfig\x121\n" +
 	"\x06server\x18\x01 \x01(\v2\x19.fleetly.config.v1.ServerR\x06server\x12+\n" +
 	"\x04data\x18\x02 \x01(\v2\x17.fleetly.config.v1.DataR\x04data\x121\n" +
@@ -1154,7 +1213,10 @@ const file_config_proto_rawDesc = "" +
 	"\aruntime\x18\t \x01(\v2\x1a.fleetly.config.v1.RuntimeR\aruntime\x124\n" +
 	"\aconsole\x18\n" +
 	" \x01(\v2\x1a.fleetly.config.v1.ConsoleR\aconsole\x12(\n" +
-	"\x03api\x18\v \x01(\v2\x16.fleetly.config.v1.ApiR\x03api\"P\n" +
+	"\x03api\x18\v \x01(\v2\x16.fleetly.config.v1.ApiR\x03api\x12+\n" +
+	"\x04auth\x18\f \x01(\v2\x17.fleetly.config.v1.AuthR\x04auth\".\n" +
+	"\x04Auth\x12&\n" +
+	"\x0flogin_token_ttl\x18\x01 \x01(\tR\rloginTokenTtl\"P\n" +
 	"\aConsole\x12\x12\n" +
 	"\x04host\x18\x01 \x01(\tR\x04host\x12\x1f\n" +
 	"\vgateway_url\x18\x02 \x01(\tR\n" +
@@ -1229,48 +1291,50 @@ func file_config_proto_rawDescGZIP() []byte {
 	return file_config_proto_rawDescData
 }
 
-var file_config_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
+var file_config_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
 var file_config_proto_goTypes = []any{
 	(*AppConfig)(nil),        // 0: fleetly.config.v1.AppConfig
-	(*Console)(nil),          // 1: fleetly.config.v1.Console
-	(*Api)(nil),              // 2: fleetly.config.v1.Api
-	(*PlatformBackup)(nil),   // 3: fleetly.config.v1.PlatformBackup
-	(*PlatformBackupS3)(nil), // 4: fleetly.config.v1.PlatformBackupS3
-	(*Server)(nil),           // 5: fleetly.config.v1.Server
-	(*GRPC)(nil),             // 6: fleetly.config.v1.GRPC
-	(*HTTP)(nil),             // 7: fleetly.config.v1.HTTP
-	(*ProxyConfig)(nil),      // 8: fleetly.config.v1.ProxyConfig
-	(*Registry)(nil),         // 9: fleetly.config.v1.Registry
-	(*Logging)(nil),          // 10: fleetly.config.v1.Logging
-	(*Metrics)(nil),          // 11: fleetly.config.v1.Metrics
-	(*Browse)(nil),           // 12: fleetly.config.v1.Browse
-	(*Runtime)(nil),          // 13: fleetly.config.v1.Runtime
-	(*RuntimeK3S)(nil),       // 14: fleetly.config.v1.RuntimeK3s
-	(*Data)(nil),             // 15: fleetly.config.v1.Data
-	(*Engine)(nil),           // 16: fleetly.config.v1.Engine
+	(*Auth)(nil),             // 1: fleetly.config.v1.Auth
+	(*Console)(nil),          // 2: fleetly.config.v1.Console
+	(*Api)(nil),              // 3: fleetly.config.v1.Api
+	(*PlatformBackup)(nil),   // 4: fleetly.config.v1.PlatformBackup
+	(*PlatformBackupS3)(nil), // 5: fleetly.config.v1.PlatformBackupS3
+	(*Server)(nil),           // 6: fleetly.config.v1.Server
+	(*GRPC)(nil),             // 7: fleetly.config.v1.GRPC
+	(*HTTP)(nil),             // 8: fleetly.config.v1.HTTP
+	(*ProxyConfig)(nil),      // 9: fleetly.config.v1.ProxyConfig
+	(*Registry)(nil),         // 10: fleetly.config.v1.Registry
+	(*Logging)(nil),          // 11: fleetly.config.v1.Logging
+	(*Metrics)(nil),          // 12: fleetly.config.v1.Metrics
+	(*Browse)(nil),           // 13: fleetly.config.v1.Browse
+	(*Runtime)(nil),          // 14: fleetly.config.v1.Runtime
+	(*RuntimeK3S)(nil),       // 15: fleetly.config.v1.RuntimeK3s
+	(*Data)(nil),             // 16: fleetly.config.v1.Data
+	(*Engine)(nil),           // 17: fleetly.config.v1.Engine
 }
 var file_config_proto_depIdxs = []int32{
-	5,  // 0: fleetly.config.v1.AppConfig.server:type_name -> fleetly.config.v1.Server
-	15, // 1: fleetly.config.v1.AppConfig.data:type_name -> fleetly.config.v1.Data
-	16, // 2: fleetly.config.v1.AppConfig.engine:type_name -> fleetly.config.v1.Engine
-	9,  // 3: fleetly.config.v1.AppConfig.registry:type_name -> fleetly.config.v1.Registry
-	3,  // 4: fleetly.config.v1.AppConfig.platform_backup:type_name -> fleetly.config.v1.PlatformBackup
-	10, // 5: fleetly.config.v1.AppConfig.logging:type_name -> fleetly.config.v1.Logging
-	11, // 6: fleetly.config.v1.AppConfig.metrics:type_name -> fleetly.config.v1.Metrics
-	12, // 7: fleetly.config.v1.AppConfig.browse:type_name -> fleetly.config.v1.Browse
-	13, // 8: fleetly.config.v1.AppConfig.runtime:type_name -> fleetly.config.v1.Runtime
-	1,  // 9: fleetly.config.v1.AppConfig.console:type_name -> fleetly.config.v1.Console
-	2,  // 10: fleetly.config.v1.AppConfig.api:type_name -> fleetly.config.v1.Api
-	4,  // 11: fleetly.config.v1.PlatformBackup.s3:type_name -> fleetly.config.v1.PlatformBackupS3
-	6,  // 12: fleetly.config.v1.Server.grpc:type_name -> fleetly.config.v1.GRPC
-	7,  // 13: fleetly.config.v1.Server.http:type_name -> fleetly.config.v1.HTTP
-	8,  // 14: fleetly.config.v1.Server.proxy_config:type_name -> fleetly.config.v1.ProxyConfig
-	14, // 15: fleetly.config.v1.Runtime.k3s:type_name -> fleetly.config.v1.RuntimeK3s
-	16, // [16:16] is the sub-list for method output_type
-	16, // [16:16] is the sub-list for method input_type
-	16, // [16:16] is the sub-list for extension type_name
-	16, // [16:16] is the sub-list for extension extendee
-	0,  // [0:16] is the sub-list for field type_name
+	6,  // 0: fleetly.config.v1.AppConfig.server:type_name -> fleetly.config.v1.Server
+	16, // 1: fleetly.config.v1.AppConfig.data:type_name -> fleetly.config.v1.Data
+	17, // 2: fleetly.config.v1.AppConfig.engine:type_name -> fleetly.config.v1.Engine
+	10, // 3: fleetly.config.v1.AppConfig.registry:type_name -> fleetly.config.v1.Registry
+	4,  // 4: fleetly.config.v1.AppConfig.platform_backup:type_name -> fleetly.config.v1.PlatformBackup
+	11, // 5: fleetly.config.v1.AppConfig.logging:type_name -> fleetly.config.v1.Logging
+	12, // 6: fleetly.config.v1.AppConfig.metrics:type_name -> fleetly.config.v1.Metrics
+	13, // 7: fleetly.config.v1.AppConfig.browse:type_name -> fleetly.config.v1.Browse
+	14, // 8: fleetly.config.v1.AppConfig.runtime:type_name -> fleetly.config.v1.Runtime
+	2,  // 9: fleetly.config.v1.AppConfig.console:type_name -> fleetly.config.v1.Console
+	3,  // 10: fleetly.config.v1.AppConfig.api:type_name -> fleetly.config.v1.Api
+	1,  // 11: fleetly.config.v1.AppConfig.auth:type_name -> fleetly.config.v1.Auth
+	5,  // 12: fleetly.config.v1.PlatformBackup.s3:type_name -> fleetly.config.v1.PlatformBackupS3
+	7,  // 13: fleetly.config.v1.Server.grpc:type_name -> fleetly.config.v1.GRPC
+	8,  // 14: fleetly.config.v1.Server.http:type_name -> fleetly.config.v1.HTTP
+	9,  // 15: fleetly.config.v1.Server.proxy_config:type_name -> fleetly.config.v1.ProxyConfig
+	15, // 16: fleetly.config.v1.Runtime.k3s:type_name -> fleetly.config.v1.RuntimeK3s
+	17, // [17:17] is the sub-list for method output_type
+	17, // [17:17] is the sub-list for method input_type
+	17, // [17:17] is the sub-list for extension type_name
+	17, // [17:17] is the sub-list for extension extendee
+	0,  // [0:17] is the sub-list for field type_name
 }
 
 func init() { file_config_proto_init() }
@@ -1284,7 +1348,7 @@ func file_config_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_config_proto_rawDesc), len(file_config_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   17,
+			NumMessages:   18,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

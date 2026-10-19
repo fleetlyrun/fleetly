@@ -1,2 +1,2 @@
-exactly one of --app or --database is required
+exactly one of --app, --database or --project is required
 usage: series

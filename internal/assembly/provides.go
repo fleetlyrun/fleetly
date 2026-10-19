@@ -681,9 +681,16 @@ func NewAPIDeps(db *persistence.DB, bind transact.Binder, e *engine.Engine, ciph
 
 // NewAPIServices 构造六上下文 API 服务依赖集（scope 词表单一源注入；
 // gateway 端口 = 定向中继材料的 NodeRelayCommand 拼装锚，H10）。
-func NewAPIServices(db *persistence.DB, bind transact.Binder, e *engine.Engine, cipher *material.Cipher, rt capability.Runtime, cfg *config.AppConfig, app lynx.App) *fleetlygrpc.Services {
+// auth.login_token_ttl 在此解析并注入 Login 铸造面：非法值启动 fail-fast
+// （S18-B / R14-M1——配置错误不得静默回退到永不过期）。
+func NewAPIServices(db *persistence.DB, bind transact.Binder, e *engine.Engine, cipher *material.Cipher, rt capability.Runtime, cfg *config.AppConfig, app lynx.App) (*fleetlygrpc.Services, error) {
+	loginTTL, err := cfg.LoginTokenTTL()
+	if err != nil {
+		return nil, err
+	}
 	s := fleetlygrpc.NewServices(NewAPIDeps(db, bind, e, cipher, rt, cfg.DataRoot(), ScopeResources(), app.Logger()))
 	s.GatewayPort = gatewayPort(cfg.HTTPAddr())
+	s.LoginTokenTTL = loginTTL
 	// App 模板目录刷新源（F3.3，ADR-0050 决策 4：空 = 刷新停用，内嵌目录
 	// 即全部）。
 	if cfg.Server != nil {
@@ -694,7 +701,7 @@ func NewAPIServices(db *persistence.DB, bind transact.Binder, e *engine.Engine, 
 	if cfg.Console != nil && cfg.Console.GetHost() != "" {
 		s.GitHubManifestBase = "https://" + cfg.Console.GetHost()
 	}
-	return s
+	return s, nil
 }
 
 // NewIdemEnforcer 构造通用幂等执法器（ADR-0024：拦截器 + janitor sweep 面）。

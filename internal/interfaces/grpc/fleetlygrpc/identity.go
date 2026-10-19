@@ -23,6 +23,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/user"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
 
 // ---- Users ----
@@ -130,8 +131,12 @@ func (svc *UsersService) GetUser(ctx context.Context, req *identityv1.GetUserReq
 // 双桶，先于 bcrypt 与用户行读取判定（超限即拒，零口令验证成本）；仅
 // 失败尝试计数，成功登录清零两桶。这是纵深防御的一层——真实部署仍须
 // 外部入口限流（WAF/反代/网关）与网络暴露约束，进程内桶不跨副本、重启
-// 清零。Token TTL（R14-M1 另一半）不在本批：密码会话 Token 仍无过期的
-// 语义，随 S14 的 token 表迁移与拦截器收口。
+// 清零。
+//
+// 时效（R14-M1 另一半，S18-B）：登录铸造的会话 Token 带 expires_at =
+// now + auth.login_token_ttl（缺省 720h；0 = 永不过期），authn 拦截器逐
+// 请求判定；tokens create/bootstrap/CLI init 铸造的 Agent/CI Token 不带
+// 时效（” = 永不过期——升级零扰动）。
 func (svc *UsersService) Login(ctx context.Context, req *identityv1.LoginRequest) (*identityv1.LoginResponse, error) {
 	// name/password 必填组合检查已退役为 LoginRequest 的 protovalidate CEL
 	// 注解（P4-1 批 1 Run B1）：validate 拦截器在 handler 之前执法，拆
@@ -166,6 +171,11 @@ func (svc *UsersService) Login(ctx context.Context, req *identityv1.LoginRequest
 	t := &token.Token{
 		Name: "password session", TeamID: m.TeamID, UserID: u.ID,
 		RoleID: m.RoleID, SHA256: material.SHA256, Prefix: material.Prefix,
+	}
+	// 会话时效（S18-B）：TTL > 0 才落 expires_at；0 = 永不过期（''），
+	// 与 bootstrap/CI Token 同形态。时钟取注入接缝（假时钟可测）。
+	if svc.s.LoginTokenTTL > 0 {
+		t.ExpiresAt = state.FormatTime(svc.s.DB.Clock().Now().Add(svc.s.LoginTokenTTL))
 	}
 	err = svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{svc.s.teamExists(m.TeamID), svc.s.roleInTeam(m.RoleID, m.TeamID), svc.s.userInTeam(u.ID, m.TeamID)},

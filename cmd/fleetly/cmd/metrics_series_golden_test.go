@@ -135,6 +135,52 @@ func TestGoldenMetricsSeries(t *testing.T) {
 	require.Equal(t, db.GetDatabase().GetId(), q.DatabaseID)
 	require.Equal(t, "memory_working_set_bytes", q.Metric)
 	require.Empty(t, q.Process)
+
+	// Project scope：--project 只带 project_id（服务端按行级授权聚合本队
+	// 项目）；project 无 process 维度、无 cpu_percent 语义。
+	fake.page = capability.SeriesPage{
+		Series: []capability.Series{{
+			Metric: map[string]string{"container_label_fleetly_ns_project": project.GetId(), "container": "fleetly-web-1"},
+			Points: []capability.SeriesPoint{{Time: t0, Value: 2097152}},
+		}},
+		Total: 1,
+	}
+	projArgs := []string{
+		"metrics", "series", "--project", project.GetId(), "--metric", "memory_working_set_bytes",
+		"--start", "2026-10-09T12:00:00Z", "--end", "2026-10-09T13:00:00Z",
+	}
+	code, out, stderr = runCLI(t, projArgs...)
+	require.Equal(t, 0, code, "stderr=%q", stderr)
+	require.Empty(t, stderr)
+	compareGolden(t, "metrics-series-project", normalizeGolden(out))
+
+	code, out, stderr = runCLI(t, append(append([]string{}, projArgs...), "--json")...)
+	require.Equal(t, 0, code, "stderr=%q", stderr)
+	require.Empty(t, stderr)
+	compareGolden(t, "metrics-series-project-json", normalizeGolden(out))
+
+	require.Len(t, fake.queries, 5)
+	q = fake.queries[4]
+	require.Empty(t, q.AppID, "project scope must not carry app_id")
+	require.Empty(t, q.DatabaseID, "project scope must not carry database_id")
+	require.Equal(t, project.GetId(), q.ProjectID)
+	require.Equal(t, "memory_working_set_bytes", q.Metric)
+	require.Empty(t, q.Process)
+}
+
+// TestMetricsSeriesProjectCPUPercentRejected 钉 project scope 的 cpu_percent
+// 由服务端拒绝（400 信封；fake 零调用——CLI 不复制服务端指标白名单）。
+func TestMetricsSeriesProjectCPUPercentRejected(t *testing.T) {
+	fake := &goldenScopedMetrics{}
+	h := newGoldenMetricsHarness(t, fake)
+	project := h.CreateProject(t, "shop")
+
+	code, out, stderr := runCLI(t, "metrics", "series", "--project", project.GetId(), "--metric", "cpu_percent")
+	require.Equal(t, 1, code, "stderr=%q", stderr)
+	require.Empty(t, out, "error paths write nothing to stdout")
+	require.Contains(t, stderr, "E_INVALID_ARGUMENT")
+	require.Contains(t, stderr, "cpu_percent is only available for app scope")
+	require.Empty(t, fake.queries, "rejected requests must not reach Metrics")
 }
 
 // TestMetricsSeriesFlagValidation 钉客户端参数校验（scope 恰一、
@@ -146,8 +192,9 @@ func TestMetricsSeriesFlagValidation(t *testing.T) {
 		args []string
 		want string
 	}{
-		{"no-scope", []string{"metrics", "series", "--metric", "cpu_percent"}, "exactly one of --app or --database is required"},
-		{"scope-conflict", []string{"metrics", "series", "--app", "a", "--database", "d", "--metric", "cpu_percent"}, "--app and --database are mutually exclusive"},
+		{"no-scope", []string{"metrics", "series", "--metric", "cpu_percent"}, "exactly one of --app, --database or --project is required"},
+		{"scope-conflict", []string{"metrics", "series", "--app", "a", "--database", "d", "--metric", "cpu_percent"}, "--app, --database and --project are mutually exclusive"},
+		{"project-scope-conflict", []string{"metrics", "series", "--project", "p", "--app", "a", "--metric", "memory_working_set_bytes"}, "--app, --database and --project are mutually exclusive"},
 		{"no-metric", []string{"metrics", "series", "--app", "a"}, "--metric is required"},
 	}
 	for _, tc := range cases {
@@ -183,6 +230,7 @@ func TestGoldenMetricsSeriesErrors(t *testing.T) {
 	}{
 		{"metrics-series-no-scope", []string{"metrics", "series", "--metric", "cpu_percent"}, exitUsage},
 		{"metrics-series-scope-conflict", []string{"metrics", "series", "--app", app.GetId(), "--database", "db-golden", "--metric", "cpu_percent"}, exitUsage},
+		{"metrics-series-project-scope-conflict", []string{"metrics", "series", "--project", project.GetId(), "--app", app.GetId(), "--metric", "memory_working_set_bytes"}, exitUsage},
 		{"metrics-series-no-metric", []string{"metrics", "series", "--app", app.GetId()}, exitUsage},
 		{"metrics-series-error", []string{"metrics", "series", "--app", app.GetId(), "--metric", "cpu_percent"}, 1},
 	}

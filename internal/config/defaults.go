@@ -1,5 +1,10 @@
 package config
 
+import (
+	"fmt"
+	"time"
+)
+
 // 缺省值集中在此（proto 无法携带默认）：WithDefaults 是唯一落点，装配
 // （internal/assembly）经 UnmarshalConfig 间接触达。
 const (
@@ -49,6 +54,9 @@ const (
 	// DefaultK3sKubeconfig 是 k3s Provider kubeconfig 缺省路径（k3s 发行
 	// 缺省；e2e 形态 fleetlyd 与 k3s 同容器即达）。
 	DefaultK3sKubeconfig = "/etc/rancher/k3s/k3s.yaml"
+	// DefaultLoginTokenTTL 是 Login 会话 Token 缺省时效（30 天；S18-B /
+	// R14-M1——口令会话不应永不过期）。显式 "0" = 永不过期（逃生门）。
+	DefaultLoginTokenTTL = "720h"
 )
 
 // WithDefaults 就地填充空缺省字段，返回同一实例（链式）。
@@ -121,6 +129,12 @@ func WithDefaults(c *AppConfig) *AppConfig {
 	}
 	if c.GetRuntime() == nil {
 		c.Runtime = &Runtime{}
+	}
+	if c.GetAuth() == nil {
+		c.Auth = &Auth{}
+	}
+	if c.Auth.GetLoginTokenTtl() == "" {
+		c.Auth.LoginTokenTtl = DefaultLoginTokenTTL
 	}
 	return c
 }
@@ -271,4 +285,22 @@ func (c *AppConfig) K3sKubeconfig() string {
 		return p
 	}
 	return DefaultK3sKubeconfig
+}
+
+// LoginTokenTTL 返回 Login 会话 Token 的时效（0 = 永不过期；S18-B /
+// R14-M1）。空值回退 720h；非法/负值返回错误——配置错误不得静默回退，
+// UnmarshalConfig 与装配期都按 fail-fast 消费。
+func (c *AppConfig) LoginTokenTTL() (time.Duration, error) {
+	raw := c.GetAuth().GetLoginTokenTtl()
+	if raw == "" {
+		raw = DefaultLoginTokenTTL
+	}
+	ttl, err := time.ParseDuration(raw)
+	if err != nil {
+		return 0, fmt.Errorf("auth.login_token_ttl: must be a duration such as 720h or 24h (0 = never expires), got %q: %w", raw, err)
+	}
+	if ttl < 0 {
+		return 0, fmt.Errorf("auth.login_token_ttl: must not be negative (got %q; 0 = never expires)", raw)
+	}
+	return ttl, nil
 }

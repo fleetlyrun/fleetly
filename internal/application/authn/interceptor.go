@@ -236,6 +236,12 @@ func (a *Authenticator) resolve(ctx context.Context) (*Identity, error) {
 		return nil, apperr.New("E_UNAUTHENTICATED", "token has been revoked").
 			WithContext("reason", "revoked")
 	}
+	// Login 会话 Token 时效（S18-B / R14-M1 另一半）：'' = 永不过期
+	//（bootstrap/CI Token 语义）；非空且已到点即拒，逐请求查表判定、
+	// 不缓存结果（换发/修正会话的下一请求即生效）。
+	if err := a.checkTokenExpiry(tok); err != nil {
+		return nil, err
+	}
 	role, err := a.roles.Get(ctx, tok.RoleID)
 	if err != nil {
 		// 角色失联是引用完整性破坏（FK 把守下的不可达）：按无效凭证拒。
@@ -278,6 +284,30 @@ func (a *Authenticator) resolve(ctx context.Context) (*Identity, error) {
 		}
 	}
 	return id, nil
+}
+
+// checkTokenExpiry 执法 Login 会话 Token 的时效（S18-B）：ExpiresAt 空串
+// = 永不过期；非空必须可解析且严格晚于当前时刻（到点即过期，不赌秒级
+// 边界）。时钟用注入接缝（假时钟可测）；不可解析按 fail-closed 拒绝并
+// 大声记日志（库内文本只由平台写路径铸造，损坏即完整性缺口）。
+func (a *Authenticator) checkTokenExpiry(tok *token.Token) error {
+	if tok.ExpiresAt == "" {
+		return nil
+	}
+	exp, err := time.Parse(time.RFC3339, tok.ExpiresAt)
+	if err != nil {
+		a.log.Error("authn: token expiry is malformed",
+			"token", tok.Name, "expires_at", tok.ExpiresAt, "err", err)
+		return apperr.New("E_UNAUTHENTICATED", "token expiry is malformed").
+			WithContext("reason", "invalid")
+	}
+	if !exp.After(a.db.Clock().Now()) {
+		return apperr.New("E_UNAUTHENTICATED",
+			"token expired at %s; sign in again to mint a fresh session token", tok.ExpiresAt).
+			WithContext("reason", "expired").
+			WithSuggestion("Sign in again ('fleetly login') to mint a fresh session token; tokens created via 'tokens create' do not expire.")
+	}
+	return nil
 }
 
 // narrowToCreator 把 Identity 的 scope 面收窄到 creator 当前授权（原地改

@@ -146,6 +146,74 @@ func TestQueryScopedMetricsRejectsOtherTeam(t *testing.T) {
 	assert.Empty(t, fake.scopedQueries(), "not-found rows never reach Metrics")
 }
 
+// TestQueryScopedMetricsProjectScope 钉 project scope（H8 阶段 C 单列小批）：
+// 本队成员按 project_id 查本队聚合（行级授权后才暴露 store）、跨队 403、
+// 不存在 404、cpu_percent 400；truncated/series_total 与 app/db 同语义。
+func TestQueryScopedMetricsProjectScope(t *testing.T) {
+	fake := &fakeMetrics{}
+	h := apitest.NewWithMetrics(t, fake)
+	alpha := newScopedFixture(t, h, "alpha", "alpha-proj")
+	beta := newScopedFixture(t, h, "beta", "beta-proj")
+	h.CreateApp(t, alpha.projectID, "web")
+	alphaMember := scopedMemberSession(t, h, "alpha-member", alpha.teamID, "alpha-member-pass")
+	client := telemetryv1.NewMetricsServiceClient(h.Conn)
+
+	resp, err := client.QueryScopedMetrics(alphaMember, &telemetryv1.QueryScopedMetricsRequest{
+		ProjectId: alpha.projectID, Metric: capability.MetricCPUCores,
+	})
+	require.NoError(t, err)
+	assert.False(t, resp.GetTruncated())
+	assert.Equal(t, int32(0), resp.GetSeriesTotal())
+
+	queries := fake.scopedQueries()
+	require.Len(t, queries, 1)
+	q := queries[0]
+	assert.Equal(t, alpha.projectID, q.ProjectID, "project scope carries the authorized project id")
+	assert.Empty(t, q.AppID)
+	assert.Empty(t, q.DatabaseID)
+	assert.Empty(t, q.Process)
+	assert.Equal(t, capability.MetricCPUCores, q.Metric)
+	assert.Equal(t, capability.ScopedMetricsMaxSeries, q.MaxSeries)
+
+	// 跨队 member：403 且零下游（授权先于 store 状态）。
+	betaMember := scopedMemberSession(t, h, "beta-member", beta.teamID, "beta-member-pass")
+	_, err = client.QueryScopedMetrics(betaMember, &telemetryv1.QueryScopedMetricsRequest{
+		ProjectId: alpha.projectID, Metric: capability.MetricMemoryWorkingSet,
+	})
+	wantCode(t, err, codes.PermissionDenied, "E_FORBIDDEN")
+	assert.Len(t, fake.scopedQueries(), 1, "cross-team project must not reach Metrics")
+
+	// 行不存在 → 404（authorizeProjectID 经 anchor 链）。
+	const missing = "01M01M01M01M01M01M01M01M01M"
+	_, err = client.QueryScopedMetrics(alphaMember, &telemetryv1.QueryScopedMetricsRequest{
+		ProjectId: missing, Metric: capability.MetricMemoryWorkingSet,
+	})
+	wantCode(t, err, codes.NotFound, "E_NOT_FOUND")
+	assert.Len(t, fake.scopedQueries(), 1, "missing project must not reach Metrics")
+
+	// project 无明确 CPU 分母：cpu_percent 400，零下游。
+	_, err = client.QueryScopedMetrics(alphaMember, &telemetryv1.QueryScopedMetricsRequest{
+		ProjectId: alpha.projectID, Metric: capability.MetricCPUPercent,
+	})
+	wantCode(t, err, codes.InvalidArgument, "E_INVALID_ARGUMENT")
+	assert.Contains(t, err.Error(), "cpu_percent is only available for app scope")
+	assert.Len(t, fake.scopedQueries(), 1, "rejected project cpu_percent must not reach Metrics")
+
+	// truncated/series_total 语义与 app scope 同（超限不报错）。
+	series := make([]capability.Series, capability.ScopedMetricsMaxSeries)
+	for i := range series {
+		series[i] = capability.Series{Metric: map[string]string{capability.MetricLabelProjectOnContainer: alpha.projectID}}
+	}
+	fake.scopedPage = capability.SeriesPage{Series: series, Truncated: true, Total: 60}
+	resp, err = client.QueryScopedMetrics(alphaMember, &telemetryv1.QueryScopedMetricsRequest{
+		ProjectId: alpha.projectID, Metric: capability.MetricMemoryWorkingSet,
+	})
+	require.NoError(t, err)
+	assert.Len(t, resp.GetSeries(), capability.ScopedMetricsMaxSeries)
+	assert.True(t, resp.GetTruncated())
+	assert.Equal(t, int32(60), resp.GetSeriesTotal())
+}
+
 // TestQueryScopedMetricsValidation 钉受理面校验：指标白名单、scope 互斥、
 // database+cpu_percent/process、窗口 >24h 全部 400，且 fake 零调用。
 func TestQueryScopedMetricsValidation(t *testing.T) {
@@ -177,12 +245,17 @@ func TestQueryScopedMetricsValidation(t *testing.T) {
 		{
 			name:    "both scopes",
 			req:     &telemetryv1.QueryScopedMetricsRequest{AppId: app.GetId(), DatabaseId: db.GetDatabase().GetId(), Metric: capability.MetricCPUCores},
-			message: "exactly one of app_id or database_id",
+			message: "exactly one of app_id, database_id or project_id",
+		},
+		{
+			name:    "project plus app scope",
+			req:     &telemetryv1.QueryScopedMetricsRequest{AppId: app.GetId(), ProjectId: fixture.projectID, Metric: capability.MetricCPUCores},
+			message: "exactly one of app_id, database_id or project_id",
 		},
 		{
 			name:    "no scope",
 			req:     &telemetryv1.QueryScopedMetricsRequest{Metric: capability.MetricCPUCores},
-			message: "exactly one of app_id or database_id",
+			message: "exactly one of app_id, database_id or project_id",
 		},
 		{
 			name:    "database cpu_percent",
@@ -192,6 +265,11 @@ func TestQueryScopedMetricsValidation(t *testing.T) {
 		{
 			name:    "database process",
 			req:     &telemetryv1.QueryScopedMetricsRequest{DatabaseId: db.GetDatabase().GetId(), Metric: capability.MetricMemoryWorkingSet, Process: "web"},
+			message: "process: only available for app scope",
+		},
+		{
+			name:    "project process",
+			req:     &telemetryv1.QueryScopedMetricsRequest{ProjectId: fixture.projectID, Metric: capability.MetricMemoryWorkingSet, Process: "web"},
 			message: "process: only available for app scope",
 		},
 		{

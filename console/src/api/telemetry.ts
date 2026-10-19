@@ -949,7 +949,12 @@ export interface operations {
     MetricsService_QueryScopedMetrics: {
         parameters: {
             query?: {
-                /** @description app_id 与 database_id 恰一非空（scope 互斥）。 */
+                /**
+                 * @description app_id/database_id/project_id 恰一非空（scope 互斥）。project scope 的
+                 *     指标白名单只有 cpu_cores/memory_working_set_bytes：project 汇总没有
+                 *     明确的 CPU 分母（cpu_percent 在受理面 E_INVALID_ARGUMENT），process
+                 *     维度也只在 app scope 存在。
+                 */
                 app_id?: string;
                 database_id?: string;
                 /**
@@ -964,6 +969,8 @@ export interface operations {
                 end?: string;
                 /** @description step_seconds 是请求步长；0 = 服务端按窗口自动，实际值会被钳制。 */
                 step_seconds?: string;
+                /** @description project_id 是 project scope 的聚合轴（本队行级授权；成员可查本队）。 */
+                project_id?: string;
             };
             header?: never;
             path?: never;

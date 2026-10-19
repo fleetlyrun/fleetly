@@ -101,13 +101,13 @@ func (svc *MetricsService) QueryMetrics(ctx context.Context, req *telemetryv1.Qu
 // 同源：小写字母数字与内部连字符，首尾字母数字；设计文档 §5.2）。
 var scopedProcessPattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
 
-// QueryScopedMetrics 是租户图表面（H8 阶段 B）：调用方只给 scope（App 或
-// Database 恰一）+ 指标白名单 + 时间窗；PromQL 由 capability 固定模板
-// 构造，服务端不接受表达式。
+// QueryScopedMetrics 是租户图表面（H8 阶段 B）：调用方只给 scope（App、
+// Database 或 Project 恰一）+ 指标白名单 + 时间窗；PromQL 由 capability
+// 固定模板构造，服务端不接受表达式。
 //
 // 处理顺序（设计文档 §5.2；未授权调用方不得用 503/400 差异探测资源）：
 // protovalidate（拦截器）→ 行级授权 → Metrics store 状态 → process/
-// database+cpu_percent 动态校验 → 窗口/step 钳制 → QueryScoped → 映射。
+// cpu_percent 动态校验 → 窗口/step 钳制 → QueryScoped → 映射。
 func (svc *MetricsService) QueryScopedMetrics(ctx context.Context, req *telemetryv1.QueryScopedMetricsRequest) (*telemetryv1.QueryScopedMetricsResponse, error) {
 	q := capability.ScopedQuery{Metric: req.GetMetric()}
 	var projectID string
@@ -131,20 +131,29 @@ func (svc *MetricsService) QueryScopedMetrics(ctx context.Context, req *telemetr
 		}
 		projectID = db.ProjectID
 		q.DatabaseID = db.ID
+	case req.GetProjectId() != "":
+		// project scope：行级授权沿 anchor 链（不存在 404 / 跨队 403 /
+		// 平台管理员豁免），与 app/database 同源同序——授权先于 store
+		// 状态，未授权调用方探测不到 503/400 差异。
+		if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
+			return nil, err
+		}
+		projectID = req.GetProjectId()
 	default:
 		// protovalidate 的 message CEL 已在受理面拦截（scope 恰一）；防御
 		// 分支保持同一可编程错误。
-		return nil, apperr.New("E_INVALID_ARGUMENT", "exactly one of app_id or database_id must be set")
+		return nil, apperr.New("E_INVALID_ARGUMENT", "exactly one of app_id, database_id or project_id must be set")
 	}
 	// store 状态在授权之后暴露（503 不泄漏资源存在性）。
 	if svc.s.Metrics == nil {
 		return nil, apperr.New("E_METRICS_STORE_UNAVAILABLE", "metrics queries require the managed metrics store; set config metrics.addr to enable it")
 	}
-	// 动态参数校验：database 页没有 process/cpu_percent 消费面，显式拒绝
-	// 而非静默忽略（设计文档 §5.7）。
+	// 动态参数校验：database/project 页没有 process/cpu_percent 消费面，
+	// 显式拒绝而非静默忽略（设计文档 §5.7；project 汇总没有明确的 CPU
+	// 分母，故 cpu_percent 只留 app scope）。
 	if req.GetProcess() != "" {
-		if q.DatabaseID != "" {
-			return nil, apperr.New("E_INVALID_ARGUMENT", "process: only available for app scope (database scope has no process dimension)")
+		if q.AppID == "" {
+			return nil, apperr.New("E_INVALID_ARGUMENT", "process: only available for app scope (database and project scopes have no process dimension)")
 		}
 		if !scopedProcessPattern.MatchString(req.GetProcess()) {
 			return nil, apperr.New("E_INVALID_ARGUMENT",
@@ -152,9 +161,9 @@ func (svc *MetricsService) QueryScopedMetrics(ctx context.Context, req *telemetr
 		}
 		q.Process = req.GetProcess()
 	}
-	if q.DatabaseID != "" && q.Metric == capability.MetricCPUPercent {
+	if q.AppID == "" && q.Metric == capability.MetricCPUPercent {
 		return nil, apperr.New("E_INVALID_ARGUMENT",
-			"metric: cpu_percent is only available for app scope (database scope supports %s and %s)",
+			"metric: cpu_percent is only available for app scope (database and project scopes support %s and %s)",
 			capability.MetricCPUCores, capability.MetricMemoryWorkingSet)
 	}
 	start, end, err := parseMetricsWindow(req.GetStart(), req.GetEnd())

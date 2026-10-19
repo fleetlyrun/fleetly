@@ -6,6 +6,7 @@ package fleetlygrpc
 
 import (
 	"log/slog"
+	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
@@ -157,6 +158,12 @@ type Services struct {
 	// GatewayPort 是 REST gateway 端口（H10：EnrollNode 定向中继材料的
 	// NodeRelayCommand 拼装锚——装配期从配置注入，默认空 = 无中继材料脚本面）。
 	GatewayPort string
+
+	// LoginTokenTTL 是 Login 铸造的密码会话 Token 时效（S18-B / R14-M1；
+	// 装配期从 auth.login_token_ttl 注入，缺省 720h）。0 = 永不过期
+	//（逃生门与零值夹具语义）；只作用于 Login——tokens create/bootstrap
+	// 铸造的 Token 保持 ''（永不过期）。
+	LoginTokenTTL time.Duration
 
 	Log *slog.Logger
 }

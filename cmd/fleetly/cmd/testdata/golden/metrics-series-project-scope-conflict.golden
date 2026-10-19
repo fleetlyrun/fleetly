@@ -1,0 +1,2 @@
+--app, --database and --project are mutually exclusive
+usage: series

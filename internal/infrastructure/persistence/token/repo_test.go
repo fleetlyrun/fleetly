@@ -39,6 +39,9 @@ func TestTokenRoundTrip(t *testing.T) {
 	tok := &token.Token{
 		ID: "01TOKEN0000000000000000000", Name: "ci", TeamID: teamRow.ID,
 		RoleID: roleRow.ID, SHA256: material.SHA256, Prefix: material.Prefix,
+		// 过期时刻随行往返（S18-B：Login 会话 Token 的时效锚；'' = 永不
+		// 过期由 TestTokenExpiryOptional 覆盖）。
+		ExpiresAt: "2026-01-02T00:00:00Z",
 	}
 
 	err = db.Tx(ctx, func(run state.Runner) error {
@@ -61,6 +64,9 @@ func TestTokenRoundTrip(t *testing.T) {
 	}
 	if got.Name != "ci" || got.Revoked {
 		t.Fatalf("got = %+v", got)
+	}
+	if got.ExpiresAt != "2026-01-02T00:00:00Z" {
+		t.Fatalf("expires_at roundtrip = %q, want 2026-01-02T00:00:00Z", got.ExpiresAt)
 	}
 
 	// last_used_at 节流记录 + 时间推进可见。
@@ -93,6 +99,52 @@ func TestTokenRoundTrip(t *testing.T) {
 	}
 	if alive {
 		t.Fatal("non-bootstrap token must not count as bootstrap")
+	}
+}
+
+// TestTokenExpiryOptional 钉 ” = 永不过期的显式语义（bootstrap/CI Token
+// 的存量形态；迁移默认与 repo 往返都不得编造过期时刻）。
+func TestTokenExpiryOptional(t *testing.T) {
+	db, clock := statetest.New(t)
+	ctx := context.Background()
+	repos := newRepos(clock, db.Runner())
+
+	teamRow := &team.Team{ID: identity.DefaultTeamID, Name: "default"}
+	roleRow := &role.Role{ID: identity.RoleMemberID, Name: "member", Scopes: []string{"deployments:write"}}
+	material, err := identity.NewToken()
+	if err != nil {
+		t.Fatalf("material: %v", err)
+	}
+	tok := &token.Token{
+		Name: "ci", TeamID: teamRow.ID, RoleID: roleRow.ID,
+		SHA256: material.SHA256, Prefix: material.Prefix,
+	}
+	err = db.Tx(ctx, func(run state.Runner) error {
+		if err := teamrepo.New(clock, run).Create(ctx, teamRow); err != nil {
+			return err
+		}
+		if err := rolerepo.New(clock, run).Create(ctx, roleRow); err != nil {
+			return err
+		}
+		return New(clock, run).Create(ctx, tok)
+	})
+	if err != nil {
+		t.Fatalf("seed tx: %v", err)
+	}
+
+	got, err := repos.tokens.GetBySHA256(ctx, material.SHA256)
+	if err != nil {
+		t.Fatalf("GetBySHA256: %v", err)
+	}
+	if got.ExpiresAt != "" {
+		t.Fatalf("expires_at = %q, want empty (never expires)", got.ExpiresAt)
+	}
+	list, err := repos.tokens.List(ctx)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(list) != 1 || list[0].ExpiresAt != "" {
+		t.Fatalf("List = %+v, want one row with empty expires_at", list)
 	}
 }
 
