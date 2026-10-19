@@ -14,9 +14,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/signal"
 	"strings"
-	"syscall"
 
 	"github.com/lynx-go/commands"
 	"golang.org/x/term"
@@ -154,10 +152,11 @@ func pumpExecUpstream(stream interface {
 		oldState, err := term.MakeRaw(int(stdin.Fd()))
 		if err == nil {
 			defer func() { _ = term.Restore(int(stdin.Fd()), oldState) }()
-			// resize 传播（SIGWINCH → 当前终端尺寸）。
+			// resize 传播（SIGWINCH → 当前终端尺寸）；SIGWINCH 订阅面按平台
+			// 拆分在 exec_resize_unix.go / exec_resize_windows.go。
 			winch := make(chan os.Signal, 1)
-			signal.Notify(winch, syscall.SIGWINCH)
-			defer signal.Stop(winch)
+			startTerminalResize(winch)
+			defer stopTerminalResize(winch)
 			go func() {
 				for range winch {
 					if w, h, err := term.GetSize(int(stdin.Fd())); err == nil {
