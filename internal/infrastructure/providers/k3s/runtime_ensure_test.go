@@ -285,11 +285,14 @@ func TestAddresses(t *testing.T) {
 }
 
 // InspectWorkloads：Deployment spec 还原（gen/workload id/镜像/命令/副本）。
+// 副本数用 replicas=3 断言（R06-M2 回归锚）：硬编码 1 的实现会在
+// engine/drift.go 的 spec 对照面产生假 drift——"恰好 replicas=1 通过"的
+// 旧断言对硬编码无鉴别力。
 func TestInspectWorkloads(t *testing.T) {
 	p, _ := newFakeProvider()
 	ctx := context.Background()
 	ws := []capability.Workload{{
-		ID: "w1", Process: "api", Image: "nginx:1.27", Command: []string{"/app"},
+		ID: "w1", Process: "api", Image: "nginx:1.27", Command: []string{"/app"}, Replicas: 3,
 	}}
 	require.NoError(t, ensureErr(p, ctx, appNS(), ws, 4, capability.Materials{}))
 	obs, err := p.InspectWorkloads(ctx, appNS())
@@ -299,7 +302,40 @@ func TestInspectWorkloads(t *testing.T) {
 	assert.EqualValues(t, 4, obs[0].Generation)
 	assert.Equal(t, "nginx:1.27", obs[0].Image)
 	assert.Equal(t, []string{"/app"}, obs[0].Command)
-	assert.EqualValues(t, 1, obs[0].Replicas)
+	assert.EqualValues(t, 3, obs[0].Replicas, "observation must read Deployment spec.replicas (R06-M2: no hardcoded 1)")
+}
+
+// InspectWorkloads 的 DaemonSet 面：Global 声明"每节点一载体"，副本语义按
+// 0 记（R06-M2 的"DaemonSet 语义另定"落点）——Global 只出现在受管域，受管域
+// 不落 ensuredSpec（observdomain.recordOwners），故 0 不参与副本对照，也不会
+// 造 drift。nil Replicas 是 k8s 默认 1 的裸对象形态（fake 无 defaulting）。
+func TestInspectWorkloadsDaemonSetAndNilReplicas(t *testing.T) {
+	p, cli := newFakeProvider()
+	ctx := context.Background()
+	nsName := "fleetly-shop"
+	ds := toDaemonSet(appNS(), capability.Workload{
+		ID: "w9", Process: "collector", Image: "busybox:1.37", Global: true,
+	}, 2, nil, nil, nil)
+	_, err := cli.AppsV1().DaemonSets(nsName).Create(ctx, ds, metav1.CreateOptions{})
+	require.NoError(t, err)
+	// 裸 Deployment（Spec.Replicas 缺席 = apiserver 默认 1；fake 无 defaulting）。
+	bare := toDeployment(appNS(), capability.Workload{
+		ID: "w8", Process: "api", Image: "nginx:1.27",
+	}, 3, nil, nil, nil)
+	bare.Spec.Replicas = nil
+	_, err = cli.AppsV1().Deployments(nsName).Create(ctx, bare, metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	obs, err := p.InspectWorkloads(ctx, appNS())
+	require.NoError(t, err)
+	byID := map[string]capability.WorkloadObservation{}
+	for _, o := range obs {
+		byID[o.WorkloadID] = o
+	}
+	require.Contains(t, byID, "w9")
+	assert.EqualValues(t, 0, byID["w9"].Replicas, "DaemonSet (Global) keeps the per-node semantics: replicas not compared")
+	require.Contains(t, byID, "w8")
+	assert.EqualValues(t, 1, byID["w8"].Replicas, "absent spec.replicas must fall back to the k8s default of 1, not 0")
 }
 
 // pod 状态映射：one-shot 终态（Succeeded/Failed + 退出码）、长运行

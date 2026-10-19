@@ -135,15 +135,30 @@ func (p *Provider) ExecWorkload(ctx context.Context, req capability.ExecWorkload
 		pumpErr <- err
 	}()
 
+	// 退出码轮询（docker exec 无 wait API；inspect 轮询是 CLI 同款机制）。
+	code, err := p.waitExecExit(ctx, created.ID, stdinDone, nil)
+	if err != nil {
+		return code, err
+	}
+	if err := <-pumpErr; err != nil {
+		return code, fmt.Errorf("swarm exec: output pump: %w", err)
+	}
+	return code, nil
+}
+
+// waitExecExit 轮询 exec 的退出码直到容器侧进程退出（docker exec 无 wait
+// API；inspect 轮询是 CLI 同款机制）。stdinDone 关闭 = stdin 泵已尽；beat 是
+// 轮询节拍缝（nil = time.After——单测注入以便断言间隔而不真等待）。
+func (p *Provider) waitExecExit(ctx context.Context, execID string, stdinDone <-chan struct{}, beat func(time.Duration) <-chan time.Time) (int, error) {
+	if beat == nil {
+		beat = time.After
+	}
 	for {
-		insp, err := p.cli.ExecInspect(ctx, created.ID, client.ExecInspectOptions{})
+		insp, err := p.cli.ExecInspect(ctx, execID, client.ExecInspectOptions{})
 		if err != nil {
 			return 0, fmt.Errorf("swarm exec: inspect: %w", err)
 		}
 		if !insp.Running {
-			if err := <-pumpErr; err != nil {
-				return insp.ExitCode, fmt.Errorf("swarm exec: output pump: %w", err)
-			}
 			return insp.ExitCode, nil
 		}
 		select {
@@ -152,8 +167,12 @@ func (p *Provider) ExecWorkload(ctx context.Context, req capability.ExecWorkload
 			return 0, fmt.Errorf("swarm exec: %w", ctx.Err())
 		case <-stdinDone:
 			// stdin 已尽：等容器进程自然退出（非 TTY 消费 stdin 的命令
-			// 依赖 EOF 传播；轮询继续）。
-		case <-time.After(execInspectPoll):
+			// 依赖 EOF 传播；轮询继续）。置 nil 让该 case 不再恒就绪——
+			// 已关闭通道在 select 里永久可选中，会击穿 150ms 节拍形成
+			// 忙轮询（R06-M5：echo|/heredoc/CI 的非交互 exec 常态形态，
+			// 每次 ExecInspect 紧接下一次直到容器退出）。
+			stdinDone = nil
+		case <-beat(execInspectPoll):
 		}
 	}
 }

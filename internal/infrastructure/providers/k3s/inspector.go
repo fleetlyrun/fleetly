@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -28,7 +29,10 @@ func (p *Provider) InspectWorkloads(ctx context.Context, ns capability.Namespace
 		if d.Labels[labelManaged] != "true" {
 			continue
 		}
-		out = append(out, observeFromPodSpec(d.Labels, &d.Spec.Template.Spec))
+		// 副本数是 engine spec 对照的决策字段（drift.go 逐字段比对）：
+		// 必须读 Deployment 的期望副本（R06-M2——硬编码 1 会让 replicas≥2
+		// 的 App 在每次重启/收敛状态重置后产出假 drift + 假收敛审计）。
+		out = append(out, observeFromPodSpec(d.Labels, &d.Spec.Template.Spec, deploymentReplicas(d)))
 	}
 	daemonsets, err := p.cli.AppsV1().DaemonSets(nsName).List(ctx, metav1.ListOptions{LabelSelector: sel.String()})
 	if err != nil {
@@ -39,9 +43,10 @@ func (p *Provider) InspectWorkloads(ctx context.Context, ns capability.Namespace
 		if ds.Labels[labelManaged] != "true" {
 			continue
 		}
-		obs := observeFromPodSpec(ds.Labels, &ds.Spec.Template.Spec)
-		obs.Replicas = 0 // Global 形态：副本语义不参与（每节点一载体）
-		out = append(out, obs)
+		// Global 形态：副本语义不参与（每节点一载体，DaemonSet spec 无
+		// replicas 字段）。记 0 是文档化取舍——Global 只用于受管域，受管域
+		// 不落 ensuredSpec（observdomain.recordOwners），副本面无从对照。
+		out = append(out, observeFromPodSpec(ds.Labels, &ds.Spec.Template.Spec, 0))
 	}
 	pods, err := p.cli.CoreV1().Pods(nsName).List(ctx, metav1.ListOptions{LabelSelector: sel.String()})
 	if err != nil {
@@ -52,20 +57,31 @@ func (p *Provider) InspectWorkloads(ctx context.Context, ns capability.Namespace
 		if pod.Labels[labelManaged] != "true" || ownerIsController(pod.OwnerReferences) {
 			continue
 		}
-		out = append(out, observeFromPodSpec(pod.Labels, &pod.Spec))
+		out = append(out, observeFromPodSpec(pod.Labels, &pod.Spec, 1))
 	}
 	return out, nil
 }
 
+// deploymentReplicas 读 Deployment 的期望副本（k8s 默认 1 的裸对象兜底：
+// apiserver 会补默认值，fake/手工对象可能缺席——缺席不得当 0，否则
+// scale-to-zero 与"未设值"会被混为一谈而产生反向假 drift）。
+func deploymentReplicas(d *appsv1.Deployment) int64 {
+	if d.Spec.Replicas == nil {
+		return 1
+	}
+	return int64(*d.Spec.Replicas)
+}
+
 // observeFromPodSpec 从载体标签与 pod spec 还原观测（字段只增；未观测
-// 字段零值 = 该面无对照）。
-func observeFromPodSpec(lb map[string]string, spec *corev1.PodSpec) capability.WorkloadObservation {
+// 字段零值 = 该面无对照）。replicas 是期望副本（Provider 载体形态还原，
+// 非实时 pod 计数）。
+func observeFromPodSpec(lb map[string]string, spec *corev1.PodSpec, replicas int64) capability.WorkloadObservation {
 	gen, _ := strconv.ParseUint(lb[labelGeneration], 10, 64)
 	obs := capability.WorkloadObservation{
 		WorkloadID: lb[labelWorkload],
 		Generation: capability.Generation(gen),
 		State:      capability.WorkloadRunning,
-		Replicas:   1,
+		Replicas:   replicas,
 	}
 	if len(spec.Containers) > 0 {
 		obs.Image = spec.Containers[0].Image

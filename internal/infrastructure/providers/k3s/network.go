@@ -33,6 +33,11 @@ func (p *Provider) ensureNamespace(ctx context.Context, nsName string) error {
 // reconcileEgressNetpol 收敛域上的 egress deny NetworkPolicy（ADR-0052
 // 决策 6：域内存在 egress 载体 → 恒有一条 deny policy；全部期望载体不再
 // 挂 egress 网络时撤除——policy 与载体标记共同构成隔离不变式）。
+//
+// 落盘走 putNetpol 单源（R06-M6）：create-only 会让存量 policy 永锁旧形态
+// ——平台升级改放行集（如 ADR-0055 的 utility 放行）后旧 policy 不收敛，
+// 安全方向可能变成漏隔离或断服务发现（同文件集内成员/授权 policy 早已
+// create-or-update，egress deny 曾漏修）。相等零写、形状漂移即 update。
 func (p *Provider) reconcileEgressNetpol(ctx context.Context, nsName string, ws []capability.Workload) error {
 	need := false
 	for _, w := range ws {
@@ -49,11 +54,7 @@ func (p *Provider) reconcileEgressNetpol(ctx context.Context, nsName string, ws 
 		}
 		return nil
 	}
-	_, err := p.cli.NetworkingV1().NetworkPolicies(nsName).Create(ctx, toEgressNetpol(), metav1.CreateOptions{})
-	if err != nil && !apierrors.IsAlreadyExists(err) {
-		return fmt.Errorf("ensure egress netpol: %w", err)
-	}
-	return nil
+	return p.putNetpol(ctx, nsName, toEgressNetpol())
 }
 
 // serviceLabels 是域内 Service 的归属标记（域收敛对照面——Service 名是

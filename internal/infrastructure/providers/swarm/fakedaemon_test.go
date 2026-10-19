@@ -28,6 +28,7 @@ type fakeDaemon struct {
 	mu         sync.Mutex
 	store      map[string]swarm.Service // 服务存储（键 = Spec.Name，ID = "srv-"+名）
 	secrets    map[string]swarm.Secret  // Secret 存储（键 = Spec.Name，ID = "sec-"+名；孤儿清扫面 E29）
+	configs    map[string]swarm.Config  // Config 存储（键 = Spec.Name，ID = "cfg-"+名；孤儿清扫面 R06-M7）
 	tasks      map[string][]swarm.Task  // service ID → 任务快照
 	nets       map[string]string        // 网络载体名 → 网络 ID
 	netCreates []struct {               // 网络创建选项流水（attachable 断言，ADR-0039）
@@ -55,12 +56,20 @@ type fakeDaemon struct {
 	// 面，引用事实由种子侧直给）。
 	volumes  map[string]volume.Volume
 	volInUse map[string]bool
+
+	// exec 面（R06-M5 忙轮询用例）：execRunning 是 ExecInspect 前 N 次仍报
+	// Running 的响应预算，execExitCode 是终态退出码，execPolls 是实际
+	// inspect 调用次数（轮询节拍断言——忙轮询会把它打到 N+1 且零节拍）。
+	execRunning  int
+	execExitCode int
+	execPolls    int
 }
 
 func newFakeDaemon() *fakeDaemon {
 	return &fakeDaemon{
 		store:      map[string]swarm.Service{},
 		secrets:    map[string]swarm.Secret{},
+		configs:    map[string]swarm.Config{},
 		tasks:      map[string][]swarm.Task{},
 		nets:       map[string]string{},
 		netDetails: map[string]network.Inspect{},
@@ -139,6 +148,31 @@ func (f *fakeDaemon) secretCount() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return len(f.secrets)
+}
+
+// addConfig 预置存量 Config 载体（孤儿清扫面 R06-M7 的现役/孤儿/宽限窗形态）。
+func (f *fakeDaemon) addConfig(cfg swarm.Config) swarm.Config {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if cfg.ID == "" {
+		cfg.ID = "cfg-" + cfg.Spec.Name
+	}
+	f.configs[cfg.Spec.Name] = cfg
+	return cfg
+}
+
+// configCount 返回存量 Config 数（清扫结果断言）。
+func (f *fakeDaemon) configCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.configs)
+}
+
+// execPollCount 返回 ExecInspect 调用次数（轮询节拍断言）。
+func (f *fakeDaemon) execPollCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.execPolls
 }
 
 // addVolume 预置存量卷（匿名孤儿卷清扫面 P2-4 的形态；inUse 模拟容器
@@ -292,6 +326,53 @@ func (f *fakeDaemon) routeLocked(r *http.Request, key string) (status int, body 
 			}
 		}
 		return http.StatusNotFound, map[string]string{"message": fmt.Sprintf("secret %s not found", ref)}, true
+	case key == "GET /configs":
+		items := make([]swarm.Config, 0, len(f.configs))
+		for _, cfg := range f.configs {
+			items = append(items, cfg)
+		}
+		items = filterConfigs(items, decodeFilters(r.URL.Query()))
+		sort.Slice(items, func(i, j int) bool { return items[i].Spec.Name < items[j].Spec.Name })
+		return http.StatusOK, items, true
+	case strings.HasPrefix(key, "GET /configs/"):
+		// config 载体 inspect（ensureConfigs 的 get 半边）。
+		ref := strings.TrimPrefix(key, "GET /configs/")
+		for name, cfg := range f.configs {
+			if name == ref || cfg.ID == ref {
+				return http.StatusOK, cfg, true
+			}
+		}
+		return http.StatusNotFound, map[string]string{"message": fmt.Sprintf("config %s not found", ref)}, true
+	case key == "POST /configs/create":
+		var spec swarm.ConfigSpec
+		if err := json.NewDecoder(r.Body).Decode(&spec); err != nil {
+			return http.StatusBadRequest, map[string]string{"message": err.Error()}, true
+		}
+		cfg := swarm.Config{ID: "cfg-" + spec.Name, Spec: spec}
+		f.configs[spec.Name] = cfg
+		return http.StatusOK, swarm.ConfigCreateResponse{ID: cfg.ID}, true
+	case strings.HasPrefix(key, "DELETE /configs/"):
+		ref := strings.TrimPrefix(key, "DELETE /configs/")
+		for name, cfg := range f.configs {
+			if name == ref || cfg.ID == ref {
+				delete(f.configs, name)
+				return http.StatusOK, map[string]string{}, true
+			}
+		}
+		return http.StatusNotFound, map[string]string{"message": fmt.Sprintf("config %s not found", ref)}, true
+	case strings.HasPrefix(key, "GET /exec/") && strings.HasSuffix(key, "/json"):
+		// exec inspect（R06-M5 轮询节拍用例）：前 execRunning 次报 Running，
+		// 之后按 execExitCode 终态返回（退出码透传断言）。
+		f.execPolls++
+		insp := client.ExecInspectResult{
+			ID: strings.TrimSuffix(strings.TrimPrefix(key, "GET /exec/"), "/json"),
+		}
+		if f.execPolls <= f.execRunning {
+			insp.Running = true
+			return http.StatusOK, insp, true
+		}
+		insp.ExitCode = f.execExitCode
+		return http.StatusOK, insp, true
 	case key == "GET /volumes":
 		items := make([]volume.Volume, 0, len(f.volumes))
 		for _, v := range f.volumes {
@@ -444,6 +525,30 @@ func filterSecrets(items []swarm.Secret, filters map[string]map[string]bool) []s
 		}
 		if match {
 			out = append(out, sec)
+		}
+	}
+	return out
+}
+
+// filterConfigs 按 label 全等过滤 Config（filterSecrets 的 Config 面孪生；
+// 真 daemon 的服务端过滤语义，fake 只实现测试用到的 label 项）。
+func filterConfigs(items []swarm.Config, filters map[string]map[string]bool) []swarm.Config {
+	labels := filters["label"]
+	if len(labels) == 0 {
+		return items
+	}
+	out := items[:0]
+	for _, cfg := range items {
+		match := true
+		for kv := range labels {
+			k, v, _ := strings.Cut(kv, "=")
+			if cfg.Spec.Labels[k] != v {
+				match = false
+				break
+			}
+		}
+		if match {
+			out = append(out, cfg)
 		}
 	}
 	return out
