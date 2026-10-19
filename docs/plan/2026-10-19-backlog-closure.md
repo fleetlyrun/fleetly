@@ -1,11 +1,11 @@
 # 残余 backlog 收口台账（2026-10-19）
 
-> **状态**：本轮收口中——台账已交付；**S13（身份读面/Login 限速/alerts Team 过滤）已验收提交**；S14-S19 按 §3 执行。设计稿阶段：design-only 已过；后续由各批执行子代理更新本文件状态行。
+> **状态**：**已收口（198/198 全部有裁决，零未分类）**。S13-S18b 已 push；S19 为 docs-only 收口（工作区未提交），最终统计与校验见 §3.10。
 > **日期**：2026-10-19。
-> **基线**：`HEAD = 2ada1446`（S1-S12 + D3 已 push `origin/main`）；**另有 S13 工作区改动未提交**（`git status --porcelain` 显示 5 个修改文件 + 4 个新增文件，见 §3.1 注）。
+> **基线**：`HEAD = 4cfcc7fc`（S1-S18b 全部 push `origin/main`）；S19 开工时工作区干净，收口改动仅 `docs/**` + `CONTEXT.md`（未提交）。
 > **来源**：17 份归档报告（`docs/reviews/2026-10-19-architecture-acceptance/R01…R16`，R08 两份）、汇总报告 §4/§5/§11、`docs/plan/2026-10-19-review-remediation.md`、`docs/design/2026-10-19-security-backlog-design.md`、`docs/design/2026-10-19-converge-semantics.md`、ADR-0081/0082/0083、`docs/runbooks/staging-fleetly.md` 2026-10-19 节。
-> **用途**：S13-S17 修复批的任务来源与最终报告 §4 的事实来源。逐条只给"裁决 + 动作"，不复述报告证据；证据回链报告原文。
-> **读者**：Lead（裁决争议项）、S13-S17 子代理（照 §3 执行）、最终报告作者（照 §4 写风险）。
+> **用途**：S13-S18 修复批的任务来源与最终报告 §4 的事实来源。逐条只给"裁决 + 动作"，不复述报告证据；证据回链报告原文。
+> **读者**：Lead（终验）、最终报告作者（照 §4 写风险）、后续批次（照 §3.10 认领独立项）。
 
 ## 0. 分类定义与使用说明
 
@@ -93,6 +93,8 @@
 | **合计** | **17** | **9** | **59** | **30** | **83** | **198** |
 
 > 外挂行 `R01-H1†` 记 `FIX-NOW`（S16-c6），不计入上表。
+>
+> **上表是裁决时点（S13 派发前）快照**：其中 `FIX-NOW` 59 项已在 S13-S17 全部落码，最终统计见 §3.10（FIXED 76 / DUP 9 / ACCEPT 30 / SEPARATE 83 / FIX-NOW 0；合计 198）。
 
 ### 1.4 计数校验（可复跑）
 
@@ -146,7 +148,7 @@ Compare-Object $reportML $ledgerML
 | R02-M3 | 动作面重启按 unscoped workloadID 定位 | M | engine-deploy | FIX-NOW | S15-c2：按最新 succeeded Generation 解析代次化载体；swarm/k3s 各补 BG 重启命中用例；成本 S |
 | R02-M4 | 删除收口对 failed 待回滚窗失明 | M | engine-deploy | FIX-NOW | S15-c3：Teardown/Delete 预检统一"驱动权"谓词（`DrivingByApp`）；钉测 failed 待回滚窗拒绝收口；成本 S |
 | R02-M5 | Cancel 遗留回卷无审计无事件 | M | engine-deploy | FIXED | S12 `2740a09d`：慢通道按真实变更发审计+事件；ADR 行 10 机制更正 |
-| R02-M6 | 声明式重启对构建源触发全量重建 | M | engine-deploy | SEPARATE | 需构建缓存键/基线 digest 复用设计 + ADR-0083 追补；owner engine-build；触发：首个构建源 App 重启失败或镜像漂移 |
+| R02-M6 | 声明式重启对构建源触发全量重建 | M | engine-deploy | SEPARATE | 需构建缓存键/基线 digest 复用设计 + ADR-0083 追补；owner engine-build；触发：首个构建源 App 重启失败或镜像漂移；**S19 已在 ADR-0083 追记边界**（v1 接受"重启=新 Revision→重建"，基线 digest 复用为目标态；触发动作面回归批） |
 | R02-M7 | 环 panic 终止无消费面，写面静默停摆 | M | engine-deploy | FIX-NOW | S15-c4：`Loop.Done()` 接入 supervisor + health/doctor 行；钉测环 panic 后可见；成本 S |
 | R02-L1 | 已收敛签名漂移消失后不清零 | L | engine-deploy | FIX-NOW | S15-c1 同批：信号集为空时清 `resolved[appID]`；钉测同形态复发走快通道；成本 S |
 | R02-L2 | 事件 payload `Kind` 恒空 | L | engine-deploy | ACCEPT | 审计 AfterFP 已可区分 restart/rollback，补列需迁移+事件契约变更，成本远超收益；触发：事件消费者需按 kind 分流 |
@@ -172,7 +174,7 @@ Compare-Object $reportML $ledgerML
 | R03-M9 | `cache_from` 有契约无消费方 | M | engine-build | SEPARATE | 二选一（接 BuildKit / 删契约字段）需 IR 契约裁决；owner engine-build+proto；触发：IR 契约批次 |
 | R03-M10 | schema 把 int64 声明为 integer | M | engine-build | SEPARATE | 改输出类型会改 Agent 自描述契约 + golden；owner schema；触发：Agent 面契约批 |
 | R03-M11 | git 批 compose 不冻结 `source_text` | M | engine-build | SEPARATE | 涉及 webhook 摄取透传 + 存量回填口径；owner intake；触发：compose 读面需求 |
-| R03-M12 | 删变量后 material push 仍用冻结值 | M | engine-build | SEPARATE | 需"变量来源账本"改造冻结链（ADR-0072 决策 6 重写）；owner deployspec；触发：变量删除误用事故 |
+| R03-M12 | 删变量后 material push 仍用冻结值 | M | engine-build | SEPARATE | 需"变量来源账本"改造冻结链（ADR-0072 决策 6 重写）；owner deployspec；触发：变量删除误用事故；**S19 已在 ADR-0072 追记冻结体边界**（删除/修改变量不回溯已冻结 material/ConfigMap 体，需重部署产新 Revision）——v1 接受该边界，"变量来源账本"仍为独立项 |
 | R03-M13 | registry tags 仓名只做前缀校验 | M | engine-build | FIX-NOW | S14-c1：repository 收敛为平台仓名白名单（禁 `..`/`?`/`#`）；engine 层正反用例；成本 S |
 | R03-L1 | 构建终态错误文本未脱敏 | L | engine-build | ACCEPT | 未发现 Secret 入 error 的路径（脱敏主出口在日志）；随触随修（终态错误过脱敏表）；触发：上游错误现实例 |
 | R03-L2 | GitHub 属主匹配大小写敏感 | L | engine-build | ACCEPT | 仅可用性（落匿名 clone + 提示误导）；随触随修（owner 双侧归一）；触发：下次改 `gitmaterial.go` |
@@ -251,7 +253,7 @@ Compare-Object $reportML $ledgerML
 | ID | 标题（≤40字） | 严重度 | 模块 | 裁决 | 依据/动作 |
 |---|---|---|---|---|---|
 | R08-M1 | 节点读面对 member 开放且无 Team 过滤 | M | interfaces-api | FIX-NOW | S16-c7：`ListNodes`/`ListNodeContainers` 平台门或按 callerTeam 行过滤；成员/跨队负例；成本 S |
-| R08-M2 | 观测/告警读面全平台开放（残余 alerts） | M | interfaces-api | FIX-NOW | S13-c3：`ListAlertRules`/`ListAlertStates` Team 过滤；指标半边已由 S9/S10 收口；**工作区进行中**；成本 S |
+| R08-M2 | 观测/告警读面全平台开放（残余 alerts） | M | interfaces-api | FIX-NOW | S13-c3：`ListAlertRules`/`ListAlertStates` Team 过滤；指标半边已由 S9/S10 收口；**已提交 `1dd4171d`**；成本 S |
 | R08-M3 | 复合 handler 直调服务方法绕过 scope | M | interfaces-api | FIX-NOW | S14-c6：内层动作显式 `HasScope`（或注解取能力并集）+ 自定义角色授权测试；成本 S-M |
 | R08-M4 | PutSecret 无值上限（32MiB 收包） | M | interfaces-api | SEPARATE | 需载体上限核对 + per-Project 配额（acceptance quota 族）；owner interfaces+governance；触发：配额批 |
 | R08-M5 | 85/153 RPC 无必填注解，同族 400/404 分裂 | M | interfaces-api | SEPARATE | 契约大扫 + 守卫（寻址字段 required 或登记豁免）；owner api-contract；触发：proto 契约批 |
@@ -362,7 +364,7 @@ Compare-Object $reportML $ledgerML
 
 | ID | 标题（≤40字） | 严重度 | 模块 | 裁决 | 依据/动作 |
 |---|---|---|---|---|---|
-| R14-M1 | Login 是 PUBLIC 且不在限速面 | M | security | FIX-NOW | S13-c1：per-name+per-IP 固定窗（`loginlimit.go`）；**工作区已落，待提交/验收**；成本 S |
+| R14-M1 | Login 是 PUBLIC 且不在限速面 | M | security | FIX-NOW | S13-c1：per-name+per-IP 固定窗（`loginlimit.go`）；**已提交 `1dd4171d`**（会话 TTL 另一半由 S18a `07128fef` 补）；成本 S |
 | R14-M2 | init 后可能无 builtin-owner 身份 | M | security | FIXED | S2 `94a5267f`：首个 init 用户改 builtin-owner |
 | R14-M3 | 节点三动词只按 nodes:write 门禁 | M | security | FIXED | S2 `94a5267f`：`nodeAdmin` 首行 `RequirePlatformAdmin`（代码核：门先于子面协商/审计） |
 | R14-M4 | 非 default Team 省略 team_id 一律 403 | M | security | FIXED | S2 `94a5267f`：三处预填删除，统一 caller-team 解析 |
@@ -370,7 +372,7 @@ Compare-Object $reportML $ledgerML
 | R14-M6 | Edge 端点缺省无认证+通配绑定 | M | security | DUP | 并入 R09-M8（同一 proxy/edge 暴露面默认安全项） |
 | R14-M7 | install 下载物零校验（root 安装运行） | M | security | DUP | 并入 R09-M3（同一下载物供应链项） |
 | R14-M8 | KEK 轮换窗缺失静默铸新并丢弃退役 | M | security | FIX-NOW | S14-c4：`HasActive()==false && len(retired)>0` 视为硬错误；用例；成本 S |
-| R14-L1 | identity 目录读面全平台可见 | L | security | FIX-NOW | S13-c2：`ListUsers/GetUser/ListRoles/ListTeams` 本队成员+平台 owner 过滤；**工作区进行中**；成本 S |
+| R14-L1 | identity 目录读面全平台可见 | L | security | FIX-NOW | S13-c2：`ListUsers/GetUser/ListRoles/ListTeams` 本队成员+平台 owner 过滤；**已提交 `1dd4171d`**；成本 S |
 | R14-L2 | relay/join token 用 `==` 逐个比较 | L | security | FIXED | S11a `9fe85c4e`：join token 退出 relay 鉴权；凭证比对走 `subtle.ConstantTimeCompare`（`engine/exec.go:201`） |
 | R14-L3 | exec 事件载荷含完整 argv | L | security | SEPARATE | 需事件载荷脱敏/只进审计 Detail；owner interfaces；触发：事件面敏感载荷批 |
 | R14-L4 | 平台备份仓密文件对换行敏感 | L | security | FIX-NOW | S14-c4：`TrimSpace` + 非 hex 即硬错；用例；成本 S |
@@ -379,7 +381,7 @@ Compare-Object $reportML $ledgerML
 
 | ID | 标题（≤40字） | 严重度 | 模块 | 裁决 | 依据/动作 |
 |---|---|---|---|---|---|
-| R15-M1 | "恢复期平台只读/解除只读"无实现 | M | acceptance | SEPARATE | 二选一：实现平台态闸门+`platform restore` 动词，或同批修订六份文档；**需产品裁决**；owner product/ADR；触发：灾备叙事对外承诺前 |
+| R15-M1 | "恢复期平台只读/解除只读"无实现 | M | acceptance | SEPARATE | 二选一已裁决为**改文档**（Lead 2026-10-19 选项 B）；**S19 已落地**：CONTEXT/ADR-0005/ADR-0015/architecture/domain-model/runbook/F2.3 条目统一改 v1 诚实口径（无平台只读闸门、无 `platform restore` 动词；恢复 = Platform Backup 重放 + 手工停服序）。实现闸门 + restore 动词另立独立项；owner product/ADR；触发：F2.3 恢复链落地 |
 | R15-M2 | G1-G24 执法手册仓内不可达 | M | acceptance | SEPARATE | 需补档原始条目（条目名+要求+守卫+反推假设）；owner docs/audit；触发：审计链补档或下次收敛计划 |
 | R15-M3 | ADR-0015 N-1 兼容零实现零挂账 | M | acceptance | SEPARATE | 二选一：实现版本协商头+超差 errcode，或成文"开发期无兼容负担"；owner product/ADR；触发：首个跨版本 CLI 连生产 |
 | R15-L1 | 契约/注册表注释仍写收敛 opt-in | L | acceptance | ACCEPT | 翻案后文档漂移；随触随修（同 commit 修三处）；触发：下次改 ADR-0005/0022 下游 |
@@ -393,7 +395,7 @@ Compare-Object $reportML $ledgerML
 | ID | 标题（≤40字） | 严重度 | 模块 | 裁决 | 依据/动作 |
 |---|---|---|---|---|---|
 | R16-M1 | RestartSeqOnly 用路径后缀判定 | M | declarative | FIXED | S4 `c925ba3b`：改精确 proto 路径判定 |
-| R16-M2 | detect 语义双向错位 | M | declarative | FIXED | S12 `2740a09d`（事实分流/信号）+ D3 `ca199a82`（detect 零写）；残余失明按 ADR-0082 §5 成文降级 |
+| R16-M2 | detect 语义双向错位 | M | declarative | FIXED | S12 `2740a09d`（事实分流/信号）+ D3 `ca199a82`（detect 零写）；残余失明按 ADR-0082 §5 成文降级；S19 补 detect 下 Cancel 遗留不回卷语义（§5 第 6 条，S17b 负例） |
 | R16-M3 | 账本被未成功物化写脏（Cancel 后失明） | M | declarative | FIXED | S12 `2740a09d`：`EnsureReport.Changed/Removed` + `ensuredBy` 账本归属 |
 | R16-M4 | 撤销 peer 在 handler 内同步 Ensure | M | declarative | FIX-NOW | S15-c5：改"标记 + Kick driftScan"，请求不等 Ensure；请求路径写面钉测；成本 S |
 | R16-M5 | ADR-0081 DECLARATION 定义自相矛盾 | M | declarative | FIXED | S12 `23f4b0b1`：两子类判据 + 域级收敛面表 + 154 计数 |
@@ -427,13 +429,15 @@ Compare-Object $reportML $ledgerML
 
 | 批次 | 主题 | 项数 | 覆盖 ID | 与当前计划关系 |
 |---|---|---|---|---|
-| S13 | 身份与读面最小化 | 3 | 3（R14-M1、R14-L1、R08-M2） | **一致（已派，工作区进行中）**；只补"提交前核对点"（§3.2） |
-| S14 | 安全边界二批：外部面/密钥/契约 | 8 | 10 | 原 S14 的 **project 级 scoped 指标属 H8 阶段 C（非台账 M/L 项）**，可并跑但不要混 commit；若"S14 TTL"指 R08-M7，本台账判 `SEPARATE`，不塞进 S14 |
+| S13 | 身份与读面最小化 | 3 | 3（R14-M1、R14-L1、R08-M2） | **一致（已提交 `1dd4171d`）**；提交前核对点见 §3.2 |
+| S14 | 安全边界二批：外部面/密钥/契约 | 8 | 10 | 原 S14 的 **project 级 scoped 指标属 H8 阶段 C（非台账 M/L 项）**，已由 S18a `07128fef` 落地，不混 commit；R08-M7（流式/票据上限）仍判 `SEPARATE`，未塞进 S14 |
 | S15 | 收敛与引擎残余 | 8 | 15 +1 DUP | **一致**（收敛残余），补 compose 受理保真五连 |
-| S16 | Runtime 一致性与适配面 | 8 | 11 + † 1（共 12 行） | **一致**（R06-M7/R08-M1 保持）；k3s CPU% 属 H8 阶段 C，非台账项，仍随 S16 |
-| S17 | 守卫与测试基建 | 8 | 20 | **一致**（测试基建）；新增 R09-L5/L7（工程基线）与 R10-M1/L1（CLI 契约 golden）填满批次 |
+| S16 | Runtime 一致性与适配面 | 8 | 11 + † 1（共 12 行） | **一致**（R06-M7/R08-M1 保持）；k3s CPU% 属 H8 阶段 C，非台账项 |
+| S17 | 守卫与测试基建 | 8 | 20 | **一致**（测试基建）；R09-L5/L7 与 R10-M1/L1 填满批次 |
+| S18 | 非 M/L 残项（代码 + 测试/运维） | 2 批 | 非 M/L | **一致**：S18a `07128fef`（project scoped metrics + Login 会话 TTL）、S18b `4cfcc7fc`（golden flake/console:gen/node.left/browse/volumes） |
+| S19 | 文档收口 + 终验 | 1 | R15-M1（文档侧）+ ADR 追记 | **本批（docs-only，工作区未提交）**：六份文档改 v1 诚实口径、ADR-0072/0082/0083 追记、台账 §3.10、报告 §11、plan 收尾 |
 
-> **S13 工作区现状（2026-10-19 17:39 采样）**：`git status --porcelain` = 6 修改 + 5 新增源文件（另有本台账临时文件 4 个，已完成使命、收尾时删除）：`identity/membership/repo.go`、`persistence/membership/repo.go`、`fleetlygrpc/{alerting,identity,identityauthz,services}.go` + `loginlimit{,_test}.go`、`apitest/{alerting_team_filter,identity_read_authz,login_ratelimit}_test.go`。台账确认与 S13 三项范围一致（登录限速 / identity 读面 / alerts Team 过滤）；**提交前 Lead 需核**：① membership repo 改动是否仅服务读面过滤；② 限速常量与窗口是否符合 §1 风险边界（不跨副本、重启清零）；③ `git diff --stat proto/ genproto/` 应为空。
+> **S13 工作区现状（2026-10-19 17:39 采样；历史存档——S13 已提交 `1dd4171d`）**：`git status --porcelain` = 6 修改 + 5 新增源文件（另有本台账临时文件 4 个，已完成使命、收尾时删除）：`identity/membership/repo.go`、`persistence/membership/repo.go`、`fleetlygrpc/{alerting,identity,identityauthz,services}.go` + `loginlimit{,_test}.go`、`apitest/{alerting_team_filter,identity_read_authz,login_ratelimit}_test.go`。台账确认与 S13 三项范围一致（登录限速 / identity 读面 / alerts Team 过滤）；**提交前 Lead 需核**：① membership repo 改动是否仅服务读面过滤；② 限速常量与窗口是否符合 §1 风险边界（不跨副本、重启清零）；③ `git diff --stat proto/ genproto/` 应为空。
 
 ### 3.2 S13 明细（3 项）
 
@@ -509,27 +513,29 @@ Compare-Object $reportML $ledgerML
 
 | 计划项 | 台账裁决 | 说明 |
 |---|---|---|
-| S13（已派：S2 读面 + Login 限速 + alerts Team 过滤） | **一致** | 台账三项完全对齐；不追加，避免与进行中工作区冲突 |
-| S14（project metrics + TTL） | **调整** | project 级 scoped 指标是 H8 阶段 C（H8 已由 S9/S10 收口 app 级），不属 M/L 台账；TTL 若指流式/票据上限（R08-M7）判 `SEPARATE`（需限流基座）。S14 改为安全边界二批；project metrics 顺延 S18 或与 S14 并跑（不混 commit） |
+| S13（已提交：S2 读面 + Login 限速 + alerts Team 过滤） | **一致** | 台账三项完全对齐；已提交 `1dd4171d` |
+| S14（project metrics + TTL） | **调整** | project 级 scoped 指标是 H8 阶段 C（H8 已由 S9/S10 收口 app 级），不属 M/L 台账——已由 S18a `07128fef` 落地（raw 双臂）；TTL 若指流式/票据上限（R08-M7）判 `SEPARATE`（需限流基座）。S14 改为安全边界二批 |
 | S15（收敛残余） | **一致** | 台账补入 compose 受理保真五连（同批不冲突：文件面独立） |
-| S16（R06-M7/R08-M1/k3s CPU%） | **一致** | R06-M7→c4、R08-M1→c7；k3s CPU% 属 H8 阶段 C 非台账项，仍随 S16 |
+| S16（R06-M7/R08-M1/k3s CPU%） | **一致** | R06-M7→c4、R08-M1→c7；k3s CPU% 属 H8 阶段 C 非台账项（S18a 未含 CPU%，仍待真机项） |
 | S17（测试基建） | **一致** | 台账把"工程基线"（R09-L5/L7）与"CLI 契约 golden"（R10-M1/L1）并入，理由：同属"门禁/契约断言"，避免再开 S18 只为 4 条 L |
 
-> **口径冲突**：若 Lead 坚持 181 口径，则 §1.2 的 17 条会掉出台账；其中 R14-M2/M3/M4/L2 是已修项（掉出会让"已修清单"缺 4 条）、R14-M1/L1 正在进行（S13），因此**建议不接受 181**，以 198 为准并把 181 作为"提取口径"记录在案。
+> **口径冲突**：若 Lead 坚持 181 口径，则 §1.2 的 17 条会掉出台账；其中 R14-M2/M3/M4/L2 是已修项（掉出会让"已修清单"缺 4 条）、R14-M1/L1 已由 S13 `1dd4171d` 修复，因此**建议不接受 181**，以 198 为准并把 181 作为"提取口径"记录在案。
 
 ### 3.8 非 M/L 的机制残余（不占批次，供最终报告"残余"节引用）
 
-以下项在报告里不是 M/L 编号（属阶段残留或 H8 阶段 C），不占 S13-S17 批次，但收口时必须点名，否则最终报告会漏：
+以下项在报告里不是 M/L 编号（属阶段残留或 H8 阶段 C），不占 S13-S19 批次，但收口时必须点名，否则最终报告会漏：
 
-| 项 | 来源 | 状态 | 建议 |
+| 项 | 来源 | 状态（S19 终态） | 建议/去向 |
 |---|---|---|---|
-| H8 阶段 C：k3s CPU% 量纲/真机 | 报告 §11 残余、S10a 残留 | 未做 | 随 S16 真机项；需 k3s 指标面先有 CPU 语义 |
-| project 级 scoped 指标 | S10 裁决"单列小批" | 未做 | S18 候选；app 级已由 S10 收口 |
-| 平台面 AST 守卫（scope 词表第二维） | S2 残留 | 未做 | 与 R08-L1/权限模型 ADR 同批 |
-| `cmd/fleetly` golden 假时钟 flake | 报告 §11、S10b 残留 | 基线既有 | 单列修夹具（假时钟漂移），不与功能批混 |
-| `console:gen` Windows shim | S10b 残留 | 本地转发器绕过 | 单列修 `gen.mjs` 跨平台 |
-| e2e/Actions 真跑台账（H7/H9、k3s config mount、relay 双节点） | 报告 §11 修复边界 | 未跑（无 Docker） | dind/staging 台账批；不阻塞 S13-S17 代码批 |
-| `node.left` 抖动宽限窗 | S11b 残留/裁决点 | 观察中 | 先按 runbook 处置；触发：节点抖动误删凭证 |
+| H8 阶段 C：k3s CPU% 量纲/真机 | 报告 §11 残余、S10a 残留 | **未做** | S18a 的 project scope 白名单已排除 `cpu_percent`；k3s CPU 语义仍待 staging 真机项（Lead S19 复核），不阻塞安全面 |
+| project 级 scoped 指标 | S10 裁决"单列小批" | **✅ 已修（S18a `07128fef`）** | raw 双臂（cAdvisor project 标签 + k3s namespace）；白名单 `cpu_cores`/`memory_working_set_bytes`；app 级已由 S10 收口 |
+| 平台面 AST 守卫（scope 词表第二维） | S2 残留 | **未做** | 与 R08-L1/权限模型 ADR 同批（SEPARATE，触发：权限模型 ADR） |
+| `cmd/fleetly` golden 假时钟 flake | 报告 §11、S10b 残留 | **✅ 已修（S18b `4cfcc7fc`）** | 两相假时钟驱动（`golden_helpers_test.go`），不再靠时序运气 |
+| `console:gen` Windows shim | S10b 残留 | **✅ 已修（S18b `4cfcc7fc`）** | `console/src/api/gen.mjs` 跨平台 + `consolecodegen` 守卫；不再需要本地转发器 |
+| e2e/Actions 真跑台账（H7/H9、k3s config mount、relay 双节点） | 报告 §11 修复边界 | **CI job 已加（S17b `c1e828d7`），Actions 未真跑** | 本机无 Docker，e2e 未复跑；dind/staging 台账批（触发：下次 CI 全量运行或 staging 演练） |
+| `node.left` 抖动宽限窗 | S11b 残留/裁决点 | **✅ 已修（S18b `4cfcc7fc`）** | `NodeOptions.LeaveGrace` 默认 30s，连续缺失满窗才删凭证/断连；窗内回归不处置 |
+
+> 本表原有 7 行：S18 收口 4 行（project scoped/golden/console:gen/node.left），余 3 行为真机或独立项（k3s CPU%、平台面 AST、e2e/Actions 真跑），均已登记在 §3.10 的 SEPARATE 清单或本表触发条件中，不算未分类。
 
 ### 3.9 执行状态（滚动更新）
 
@@ -537,37 +543,141 @@ Compare-Object $reportML $ledgerML
 |---|---|---|---|
 | S13 | ✅ | `1dd4171d` | 身份读面最小化/Login 双桶限速/alerts Team 过滤；门禁全绿 |
 | S14a | ✅ | `5e5ab2fe` + 回归修复 `ff0b8681` | c1-c4 外部面/密钥材料；c1 首版项目段白名单漏 entityid 连字符，Lead 门禁发现并修复（cmd golden 复绿） |
-| S14b | ✅ | 本提交 | c5-c9 授权/事实/契约/端点认证；新增 factteam 守卫；c9 多队无 token 启动 fail-fast（部署注意见下） |
-| S15a | ✅ | 本提交 | 收敛/引擎 c1-c4：冷却签名三态、BG 重启按 succeeded gen、收口驱动权+维护锁守卫、环 panic/Inspector 可观测；engine `-race` 225s 绿 |
-| S15b | ✅ | 本提交 | 收敛/引擎 c5-c8：peer 撤销异步剥离、BG 退役代账本差集、Teardown 清 converge 记账+projMemo LRU、compose 保真五连；engine `-race` 228s 绿 |
-| S16a | ✅ | 本提交 | Runtime 一致性 c1-c5：k3s 副本数/egress 收敛/日志帧（R06-M2/M6/M4）、swarm config 载体清扫/exec 节拍（R06-M7/M5）；负例先红、门禁全绿 |
+| S14b | ✅ | `42fb9f50` | c5-c9 授权/事实/契约/端点认证；新增 factteam 守卫；c9 多队无 token 启动 fail-fast（部署注意见下） |
+| S15a | ✅ | `ff8b8d18` | 收敛/引擎 c1-c4：冷却签名三态、BG 重启按 succeeded gen、收口驱动权+维护锁守卫、环 panic/Inspector 可观测；engine `-race` 225s 绿 |
+| S15b | ✅ | `b2941cc3` | 收敛/引擎 c5-c8：peer 撤销异步剥离、BG 退役代账本差集、Teardown 清 converge 记账+projMemo LRU、compose 保真五连；engine `-race` 228s 绿 |
+| S16a | ✅ | `a543266b` | Runtime 一致性 c1-c5：k3s 副本数/egress 收敛/日志帧（R06-M2/M6/M4）、swarm config 载体清扫/exec 节拍（R06-M7/M5）；负例先红、门禁全绿 |
 | S16b | ✅ | `ce9a15c7` | Runtime/适配面 c6-c8：browse 五引擎方言往返（R01-H1†/M1）、节点读面平台门+Console fail-closed（R08-M1）、引擎卫生四连（R03-M1/M2、R04-M1、R13-L3）；engine `-race` 235s、console 139 全绿 |
 | S17a | ✅ | `8f5d41e7` | 守卫 c1-c4：Runtime/loop/statefacade 判据 AST 化、三红线共享禁列表、账本写点守卫、FakeRuntime 回执可配、e2e converged 断言；每项反向验证红→绿 |
-| S17b | ✅ | 本提交 | 守卫 c5-c8：CI/verify 对账（hermetic job、Windows 交叉编译门、go.mod 零漂移、proto⇒console 同 commit 守卫）、写类守卫三盲点（READ 显式 74 项/FrozenVerbs 34+8/三桶互斥）、install 数据根 0750、CLI delete `--json` 契约 + 防空 golden、freeze 查询故障真钉测；负例先红→绿 |
+| S17b | ✅ | `c1e828d7` | 守卫 c5-c8：CI/verify 对账（hermetic job、Windows 交叉编译门、go.mod 零漂移、proto⇒console 同 commit 守卫）、写类守卫三盲点（READ 显式 74 项/FrozenVerbs 34+8/三桶互斥）、install 数据根 0750、CLI delete `--json` 契约 + 防空 golden、freeze 查询故障真钉测；负例先红→绿 |
 | S18a | ✅ | `07128fef` | 非 M/L 残项（代码半边）：project 级 scoped metrics（proto/CEL/raw 双臂/CLI/apitest/golden，`console:gen` 同批）+ Login 会话 Token TTL（迁移 00036、config `auth.login_token_ttl` 默认 720h、authn 逐请求过期拒绝） |
-| S18b | 待派 | — | 非 M/L 残项（测试/运维半边）：golden 假时钟 flake、console:gen Windows shim、node.left 宽限窗、browse flake、volumes delete 成功 golden |
-| S19 | 待派 | — | 文档修订/真机复核/终验 |
+| S18b | ✅ | `4cfcc7fc` | 非 M/L 残项（测试/运维半边）：golden 假时钟两相驱动、console:gen 跨平台、node.left 宽限窗（`NodeOptions.LeaveGrace`）、browse flake 根因、volumes 成功 golden |
+| S19 | ✅ | docs-only（工作区，未提交） | R15-M1 六份文档改 v1 诚实口径（+domain-model）、ADR-0072/0082/0083 追记、security 设计 S18 追记、台账 §3.10/§4/§3.8/§3.9、报告 §11、plan 收尾；无代码/生成物改动 |
 
 > **c9 部署注意（S14b 遗留）**：既有**多队**部署在换装到含 c9 的二进制前，必须先设置 `FLEETLY_SERVER_PROXY_CONFIG_AUTH_TOKEN`（或把 `server.proxy_config.addr` 绑回环），否则启动 fail-fast；单队部署（含当前 staging）零扰动。换装 staging 前先核团队数。
 
-## 4. 剩余风险清单（供最终报告 §4 更新，取 ACCEPT/SEPARATE 中影响发布/安全最高者）
+### 3.10 最终统计（S19 收口：198/198 全部有裁决，零未分类）
 
-> 选取标准：① 安全/数据完整性；② 发布或升级链阻断；③ 事故放大器（控制面自己坏了）；④ 对外承诺与实现不符。按"若不修，最坏后果 × 触发概率"排序。
+> 统计时点 2026-10-19，基线 `4cfcc7fc`。§1.3 的 FIX-NOW 59 是**裁决时点快照**；S13-S17 已把 59 项全部落码，故 **FIXED 76 = 17 原 FIXED + 59 FIX-NOW**，FIX-NOW 归零。外挂行 `R01-H1†`（报告标 H、Lead 校准降 M）不计入 198，但已由 S16-c6 修复，单列在表末。
+
+#### 3.10.1 FIXED 76（17 原 + 59 本轮，按批次列出 ID）
+
+| 批次 | commit | 覆盖 ID | 计数 |
+|---|---|---|---|
+| 原 S1-S12（附录 A） | 见附录 A | `R02-M2, R02-M5, R05-M1, R05-M4, R06-M1, R09-M1, R10-M6, R12-M1, R14-M2, R14-M3, R14-M4, R14-L2, R16-M1, R16-M2, R16-M3, R16-M5, R16-M6` | 17 |
+| S13 | `1dd4171d` | `R14-M1, R14-L1, R08-M2` | 3 |
+| S14 | `5e5ab2fe` + `ff0b8681` + `42fb9f50` | `R03-M13, R07-M4, R07-M2, R14-M8, R07-L3, R14-L4, R14-M5, R08-M3, R08-M8, R08-M9` | 10 |
+| S15 | `ff8b8d18` + `b2941cc3` | `R02-M1, R02-L1, R02-M3, R02-M4, R13-L1, R02-M7, R16-L3, R16-M4, R13-M1, R16-L2, R03-M5, R03-M6, R03-M7, R03-M8, R03-L5` | 15 |
+| S16 | `a543266b` + `ce9a15c7` | `R06-M2, R06-M6, R06-M4, R06-M7, R06-M5, R01-M1, R08-M1, R03-M1, R03-M2, R04-M1, R13-L3` | 11 |
+| S17 | `8f5d41e7` + `c1e828d7` | `R12-M2, R12-L2, R05-M8, R12-L1, R06-L1, R12-M3, R12-M4, R12-M7, R12-M5, R12-L5, R09-L4, R15-L4, R16-L4, R16-L1, R09-L7, R09-L5, R10-M1, R10-L1, R02-L5, R16-L5` | 20 |
+| **合计** | | | **76** |
+
+> S18 **未覆盖 M/L**：S18a 的 project scoped metrics / Login 会话 TTL 属非 M/L 残项（R14-M1 另一半已计入 S13 的 R14-M1，不重复计）；S18b 修的是 §3.8 的测试/运维残项。外挂行：`R01-H1†`（S16-c6，不计入 198 的五个分类，但已修）。
+
+#### 3.10.2 其余裁决（DUP 9 / ACCEPT 30 / SEPARATE 83）
+
+**DUP 9（源 → 主条目；不单独排期、不重复计数）**
+
+| 源 ID | 合并到 |
+|---|---|
+| `R01-L1` | `R06-L1` |
+| `R02-L6` | `R12-M3` |
+| `R02-L7` | `R16-L2` |
+| `R05-M7` | `R08-M6` |
+| `R07-L7` | `R03-M13` |
+| `R08-L6` | `R11-L3` |
+| `R09-M5` | `R13-M2` |
+| `R14-M6` | `R09-M8` |
+| `R14-M7` | `R09-M3` |
+
+**ACCEPT 30（接受现状；均带理由 + 触发，明细见 §2）**
+
+| 裁决 | 计数 | ID 清单 |
+|---|---|---|
+| ACCEPT | 30 | `R02-L2, R02-L3, R03-L1, R03-L2, R03-L3, R03-L4, R04-L1, R05-L1, R05-L4, R05-L5, R06-L2, R06-L3, R07-L4, R07-L6, R08-L5, R08-L7, R09-L1, R09-L2, R09-L3, R09-L6, R10-L2, R10-L3, R10-L4, R11-L5, R11-L6, R15-L1, R15-L2, R15-L3, R15-L5, R16-L6` |
+
+**SEPARATE 83（独立立项/独立风险；均带 owner + 前置 + 触发，明细见 §2；不算未分类）**
+
+| 裁决 | 计数 | ID 清单 |
+|---|---|---|
+| SEPARATE | 83 | `R01-M2, R01-M3, R01-L2, R02-M6, R02-L4, R02-L8, R03-M3, R03-M4, R03-M9, R03-M10, R03-M11, R03-M12, R04-M2, R04-M3, R04-M4, R04-M5, R04-L2, R04-L3, R05-M2, R05-M3, R05-M5, R05-M6, R05-L2, R05-L3, R05-L6, R06-M3, R06-M8, R06-L4, R07-M1, R07-M3, R07-M5, R07-L1, R07-L2, R07-L5, R08-M4, R08-M5, R08-M6, R08-M7, R08-M10, R08-M11, R08-L1, R08-L2, R08-L3, R08-L4, R08-L8, R09-M2, R09-M3, R09-M4, R09-M6, R09-M7, R09-M8, R10-M2, R10-M3, R10-M4, R10-M5, R10-M7, R10-M8, R10-M9, R11-M1, R11-M2, R11-M3, R11-M4, R11-M5, R11-M6, R11-M7, R11-M8, R11-L1, R11-L2, R11-L3, R11-L4, R11-L7, R12-M6, R12-L3, R12-L4, R12-L6, R12-L7, R13-M2, R13-M3, R13-L2, R14-L3, R15-M1, R15-M2, R15-M3` |
+
+**合计校验**：76（FIXED）+ 9（DUP）+ 30（ACCEPT）+ 83（SEPARATE）= **198**；FIX-NOW = **0**。
+
+#### 3.10.3 已消除的风险项（从 §4 移入）
+
+- **R15-M1（原 §4 风险 #2，承诺与实现不符）**：S19 按 Lead 选项 B 落地——CONTEXT「Restore」、ADR-0005/ADR-0015 的 S19 修订、architecture §7/§8、domain-model 场景 8、runbook 升级序/失败回滚边界、F2.3 条目统一改 **v1 诚实口径**（无平台运行期只读闸门、无 `platform restore` 动词；恢复 = Platform Backup 重放 + 手工停服序）。**实现闸门 + restore 动词另立独立项**（owner product/ADR；触发：F2.3 恢复链落地），不再作为"现行承诺与实现不符"计入风险。
+- **R09-M8（原 §4 风险 #8 的端点半边）**：S14b `42fb9f50` 已落受管 Edge/proxy 端点默认认证（多队无 `auth_token` 启动 fail-fast）。§4 风险 #8 只余 R09-M7（无单实例约束）。
+
+#### 3.10.4 可复跑校验（PowerShell，在仓库根执行）
+
+```powershell
+$ledger = "docs\plan\2026-10-19-backlog-closure.md"
+
+# ① §2 行数：199 = 198 + R01-H1†；unique 199
+$rows = Select-String -Path $ledger -Pattern '^\| (R\d{2}-[HML]\d+[†]?)' | ForEach-Object { $_.Matches[0].Groups[1].Value }
+"rows=$($rows.Count) unique=$(($rows | Sort-Object -Unique).Count)"
+# 期望：rows=199 unique=199
+
+# ② §2 裁决分布（裁决时点）：FIXED=17 DUP=9 FIX-NOW=60 ACCEPT=30 SEPARATE=83（60 含 †）
+$parsed = Select-String -Path $ledger -Pattern '^\| (R\d{2}-[HML]\d+[†]?) \|.*\| (FIXED|DUP|FIX-NOW|ACCEPT|SEPARATE) \|' |
+  ForEach-Object { [pscustomobject]@{ ID = $_.Matches[0].Groups[1].Value; V = $_.Matches[0].Groups[2].Value } }
+$parsed | Group-Object V | Sort-Object Name | ForEach-Object { "$($_.Name)=$($_.Count)" }
+# 期望：ACCEPT=30 DUP=9 FIX-NOW=60 FIXED=17 SEPARATE=83
+
+# ③ §3.10.1 的 FIXED 清单 == §2 的 FIXED + 非 † FIX-NOW（76 个；双向差集应为空）
+$expectFixed = $parsed | Where-Object { $_.V -in 'FIXED','FIX-NOW' -and $_.ID -notlike '*†*' } |
+  ForEach-Object ID | Sort-Object -Unique
+$all = Get-Content $ledger
+$i = [array]::IndexOf($all, ($all | Where-Object { $_ -like '#### 3.10.1*' } | Select-Object -First 1))
+$j = [array]::IndexOf($all, ($all | Where-Object { $_ -like '#### 3.10.2*' } | Select-Object -First 1))
+$table = $all[($i+1)..($j-1)] | Where-Object { $_ -match '^\| (原 S1-S12（附录 A）|S1[3-7]) \|' }
+$listedFixed = [regex]::Matches(($table -join "`n"), 'R\d{2}-[HML]\d+') | ForEach-Object Value | Sort-Object -Unique
+Compare-Object $expectFixed $listedFixed
+"fixed=$($listedFixed.Count)"
+# 期望：Compare-Object 无输出；fixed=76
+
+# ④ §3.10.2 的 ACCEPT/SEPARATE/DUP 清单 == §2 对应裁决（双向差集应为空）
+$listedAccept = (Select-String -Path $ledger -Pattern '^\| ACCEPT \| 30 \|').Line |
+  ForEach-Object { [regex]::Matches($_, 'R\d{2}-[HML]\d+') } | ForEach-Object Value | Sort-Object -Unique
+Compare-Object ($parsed | Where-Object V -eq 'ACCEPT' | ForEach-Object ID | Sort-Object -Unique) $listedAccept
+$listedSeparate = (Select-String -Path $ledger -Pattern '^\| SEPARATE \| 83 \|').Line |
+  ForEach-Object { [regex]::Matches($_, 'R\d{2}-[HML]\d+') } | ForEach-Object Value | Sort-Object -Unique
+Compare-Object ($parsed | Where-Object V -eq 'SEPARATE' | ForEach-Object ID | Sort-Object -Unique) $listedSeparate
+$listedDup = (Select-String -Path $ledger -Pattern '^\| `?(R\d{2}-[HML]\d+)`? \| `?(R\d{2}-[HML]\d+)`? \|').Line |
+  ForEach-Object { [regex]::Match($_, 'R\d{2}-[HML]\d+').Value } | Sort-Object -Unique
+Compare-Object ($parsed | Where-Object V -eq 'DUP' | ForEach-Object ID | Sort-Object -Unique) $listedDup
+"accept=$($listedAccept.Count) separate=$($listedSeparate.Count) dup=$($listedDup.Count)"
+# 期望：三个 Compare-Object 均无输出；accept=30 separate=83 dup=9
+
+# ⑤ 总计 198；报告侧 198 条 M/L 与台账双向差集为空
+"total=$($listedFixed.Count + $listedDup.Count + $listedAccept.Count + $listedSeparate.Count)"
+$dir = "docs\reviews\2026-10-19-architecture-acceptance"
+$reportIds = Get-ChildItem $dir -Filter "R*.md" | ForEach-Object {
+  [regex]::Matches((Get-Content $_.FullName -Raw), '(R\d{2}-[HML]\d+)(?=｜)') | ForEach-Object { $_.Groups[1].Value }
+} | Sort-Object -Unique
+Compare-Object ($reportIds | Where-Object { $_ -match '-[ML]\d+$' }) ($rows | Where-Object { $_ -match '^R\d{2}-[ML]\d+$' })
+# 期望：total=198；Compare-Object 无输出（报告 112M+86L = 台账 198）
+```
+
+## 4. 剩余风险清单（S19 收口后，供最终报告 §4 更新，取 ACCEPT/SEPARATE 中影响发布/安全最高者）
+
+> 选取标准：① 安全/数据完整性；② 发布或升级链阻断；③ 事故放大器（控制面自己坏了）；④ 对外承诺与实现不符。按"若不修，最坏后果 × 触发概率"排序。**本表全部是 SEPARATE/ACCEPT 的已裁决项——未修但不是未分类**；原 R15-M1（承诺不符）与 R09-M8（端点认证）已消除，见 §3.10.3。
 
 | # | 风险 | 来源条目 | 现状为何不修 | 最坏后果 | 建议动作 / 触发 |
 |---|---|---|---|---|---|
 | 1 | **安装链供应链无校验**：fleetly/railpack/restic 与 docker 安装脚本零签名零校验，root 安装 root 运行 | R09-M3（+R14-M7 DUP） | 需发布流水线（SHA256SUMS/cosign）配合，非代码批可解 | 上游/镜像被替换即 root 级沦陷；无审计链 | **v1 发版前阻断项**：先出 `SHA256SUMS` + install 校验（缺清单即 die），cosign 可后补 |
-| 2 | **"恢复期平台只读/解除只读"是六份文档的现行承诺，全仓无闸门、无 `platform restore` 动词** | R15-M1 | 需产品裁决（实现闸门 vs 改文档），且涉及 ADR-0005/0015/architecture 多处 | 灾备演练时写面仍可写：恢复中新建资源会被恢复覆盖/账本错乱；对外承诺不成立 | 二选一并同批改文；触发：首次真实灾备演练或对外文档发布前 |
-| 3 | **关停预算 5s 截断在途 Ensure/构建/备份**，随后 DB/runtime 仍被 cleanup 关闭 | R13-M2（+R09-M5/M6 DUP/同批） | 需显式 `WithStopTimeout` + 引擎排水 ctx + janitor join，属装配/引擎交叉 | 升级/重启时在途写被腰斩：载体半下发、备份半写、审计缺尾 | 与 S15 收敛批解耦，单列"关停序"小批；触发：首次升级窗口内出现半态资源 |
-| 4 | **SQLite 单连接 + 关键查询缺索引**：长扫描把 API/事件流/收敛环串行化 | R05-M5、R05-M6 | 池>1 需事务/单写者模型压测，索引需慢查询观测支撑 | 规模上来后 p99 尖刺、流式超时、收敛节拍漂移（staging 小规模未暴露） | 先加慢查询/耗时观测 + 高价值索引（审计/outbox/runs/builds/backups）；触发：压测或 p99 告警 |
-| 5 | **破坏性外部动作无补偿原语**：数据库改密成功而 Secret 写失败 = 凭证永久丢失（rotate 自述的 Browse 恢复路径依赖同一份被覆盖 Secret） | R13-M3 | 需两阶段凭证/恢复通道设计，跨 engine+database+keyring | 一次失败即不可逆凭证丢失，只能重建数据库账号 | 设计"待生效凭证"两阶段；触发：首次 rotate 失败或客户化数据库 |
-| 6 | **契约面不可预测**：85/153 RPC 无必填注解（同族缺 id 有 400 有 404）+ `PutSecret` 无大小上限（32MiB 收包） | R08-M5、R08-M4 | 契约大扫需 proto/CLI/Console 同批 + 配额模型 | Agent/SDK 按错误码分支失效；member 可灌 32MiB secret 无配额（跨租户资源滥用） | 先补寻址字段 required（寻址一族）+ secret 上限；触发：SDK/Agent 错误处理事故 |
-| 7 | **审计只能读最近 ≤1000 行 + 流式/票据无上限** | R08-M6（+R05-M7 DUP）、R08-M7 | 需 proto only-add + repo 游标 + CLI/Console 同批；限流需基座扩展 | 永续账本不可回读（合规/取证缺口）；follow 流与票据可被单租户打满 | 审计游标优先（只增字段）；触发：取证需求或流式 DoS |
-| 8 | **无单实例约束 + Edge/proxy 端点默认无认证** | R09-M7、R09-M8（+R14-M6 DUP） | 需 flock 运维语义与暴露面默认安全设计（ADR-0036 前置项） | 同数据根双 daemon 双写 SQLite（WAL 接受双写）；端点被同网段任意进程伪造 traefik 配置 | 数据根 flock + 端点 `auth_token` 必填（teams>1 拒绝启动）；触发：多租户启用前 |
-| 9 | **Console 凭据存 localStorage 且全站无 CSP/安全头** | R11-L4 | 需 CSP（S）+ 会话形态改造（M），归 Console 安全批 | 任一 XSS 即全量 token 可取（叠加默认 admin token 习惯） | 先落 CSP/nosniff/frame-ancestors（S）；触发：安全头批或 XSS 演练 |
-| 10 | **exec 会话可靠性双洞**：relay 写队列满静默丢控制帧；attach×finish 竞态留节点侧孤儿 | R06-M8、R04-M4 | 分别需帧队列/背压协议与附件状态机，均为 M 级重构 | exec 会话静默断开/幽灵进程占用节点资源，排障无信号 | 单列"exec 可靠性"批；触发：首次孤儿进程或 relay 断连投诉 |
+| 2 | **关停预算 5s 截断在途 Ensure/构建/备份**，随后 DB/runtime 仍被 cleanup 关闭 | R13-M2（+R09-M5/M6 DUP/同批） | 需显式 `WithStopTimeout` + 引擎排水 ctx + janitor join，属装配/引擎交叉 | 升级/重启时在途写被腰斩：载体半下发、备份半写、审计缺尾 | 单列"关停序"小批；触发：首次升级窗口内出现半态资源 |
+| 3 | **SQLite 单连接 + 关键查询缺索引**：长扫描把 API/事件流/收敛环串行化 | R05-M5、R05-M6 | 池>1 需事务/单写者模型压测，索引需慢查询观测支撑 | 规模上来后 p99 尖刺、流式超时、收敛节拍漂移（staging 小规模未暴露） | 先加慢查询/耗时观测 + 高价值索引（审计/outbox/runs/builds/backups）；触发：压测或 p99 告警 |
+| 4 | **破坏性外部动作无补偿原语**：数据库改密成功而 Secret 写失败 = 凭证永久丢失（rotate 自述的 Browse 恢复路径依赖同一份被覆盖 Secret） | R13-M3 | 需两阶段凭证/恢复通道设计，跨 engine+database+keyring | 一次失败即不可逆凭证丢失，只能重建数据库账号 | 设计"待生效凭证"两阶段；触发：首次 rotate 失败或客户化数据库 |
+| 5 | **契约面不可预测**：85/153 RPC 无必填注解（同族缺 id 有 400 有 404）+ `PutSecret` 无大小上限（32MiB 收包） | R08-M5、R08-M4 | 契约大扫需 proto/CLI/Console 同批 + 配额模型 | Agent/SDK 按错误码分支失效；member 可灌 32MiB secret 无配额（跨租户资源滥用） | 先补寻址字段 required（寻址一族）+ secret 上限；触发：SDK/Agent 错误处理事故 |
+| 6 | **审计只能读最近 ≤1000 行 + 流式/票据无上限** | R08-M6（+R05-M7 DUP）、R08-M7 | 需 proto only-add + repo 游标 + CLI/Console 同批；限流需基座扩展 | 永续账本不可回读（合规/取证缺口）；follow 流与票据可被单租户打满 | 审计游标优先（只增字段）；触发：取证需求或流式 DoS |
+| 7 | **Console 凭据存 localStorage 且全站无 CSP/安全头** | R11-L4 | 需 CSP（S）+ 会话形态改造（M），归 Console 安全批 | 任一 XSS 即全量 token 可取（叠加默认 admin token 习惯） | 先落 CSP/nosniff/frame-ancestors（S）；触发：安全头批或 XSS 演练 |
+| 8 | **无单实例约束**：同数据根可双 daemon 双写 SQLite（WAL 接受双写） | R09-M7 | 需数据根 flock + 运维语义（升级/备份共存） | 两个 daemon 同写一库：状态机/审计/outbox 交错、恢复点不可信 | 数据根 flock（启动即独占）；触发：双 daemon 双写事故或升级/备份并发演练 |
+| 9 | **exec 会话可靠性双洞**：relay 写队列满静默丢控制帧；attach×finish 竞态留节点侧孤儿 | R06-M8、R04-M4 | 分别需帧队列/背压协议与附件状态机，均为 M 级重构 | exec 会话静默断开/幽灵进程占用节点资源，排障无信号 | 单列"exec 可靠性"批；触发：首次孤儿进程或 relay 断连投诉 |
+| 10 | **install.sh 无升级语义**：`enable --now` 不重启、覆盖运行中二进制、健康探测不分代次、无 `.bak` 回滚 | R09-M2 | 需安装器升级分支 + 备份/重启/代次健康探测 + 真机验证 | 首次原地升级可能"二进制已换、进程仍旧/半换"；无自动回退锚 | 出 install 升级分支 + `.bak` + 代次健康探测；**触发：v1 发版前/首次原地升级** |
 
-> **观察项（不进 top10 但需在最终报告"残余"提一句）**：R05-M2（硬删聚合 seq 可重发，ADR-0070 承诺被破坏）、R02-M6（构建源 App"重启"触发全量重建）、R16-L6（Author Class 三铁律零执法，已声明推迟）、R09-M2（install 无升级语义）。
+> **观察项（不进 top10 但需在最终报告"残余"提一句）**：R05-M2（硬删聚合 seq 可重发，ADR-0070 承诺被破坏）、R02-M6（构建源 App"重启"触发全量重建，边界已成文 ADR-0083）、R16-L6（Author Class 三铁律零执法，已声明推迟）、k3s CPU% 真机（H8 阶段 C）、S13-S18b 的 staging 换装与 dind/Actions 真跑（见 §3.8；待 Lead S19 真机复核回填）。
 
 ## 5. 待 Lead 裁决的争议项（5 条）
 
@@ -581,9 +691,9 @@ Compare-Object $reportML $ledgerML
 | 4 | R09-M8/R14-M6 Edge/proxy 端点认证 | v1 必做（teams>1 且无 auth_token 拒绝启动） | 留作多租户启用前置项（当前单租户部署可接受） | **A**：ADR-0036 已自述为前置项，且成本 S；不做等于把"多租户"承诺悬空 |
 | 5 | R02-M6 构建源 App 的"重启" | 接受"重启=新 Revision→重建"（构建缓存命中时成本低） | 实现基线 digest 复用，保证"重启零构建" | **B**（目标态）但本轮不做：需 ADR-0083 追补 + Build 复用语义；先接受 A 并写清边界 |
 
-**裁决落地归属**：① R15-M1 → **S19 文档修订**（删/改六份"只读/restore"承诺，留 ADR 说明）；② R16-M2 残余 → **ACCEPT**（ADR-0082 §5 已成文，S19 只在报告/词条补一句）；③ R03-M12 → **ACCEPT + S19 ADR-0072 修订**（写明"删除变量不回溯冻结体"边界）；④ R09-M8/R14-M6 → **S14-c9 新增**（v1 必做：受管 Edge/proxy 端点默认认证）；⑤ R02-M6 → **ACCEPT + S19 ADR-0083 追补边界**（目标态 B 列后续独立项）。
+**裁决落地归属（S19 终态）**：① R15-M1 → **已落地（S19 docs）**：六份文档 + domain-model 改 v1 诚实口径（无只读闸门/无 restore 动词），实现闸门列独立项（触发：F2.3 恢复链落地）；② R16-M2 残余 → **ACCEPT**（ADR-0082 §5 成文；S19 补第 6 条「detect 下 Cancel 遗留不回卷」）；③ R03-M12 → **ACCEPT + ADR-0072 追记已落**（冻结体边界：删除/修改变量不回溯已冻结体）；④ R09-M8/R14-M6 → **已修（S14b `42fb9f50`）**（v1 必做：受管 Edge/proxy 端点默认认证）；⑤ R02-M6 → **ACCEPT 边界成文 + ADR-0083 追记已落**（目标态 B 另列独立项，触发：动作面回归批）。
 
-## 附录 A：FIXED 证据索引（17 条）
+## 附录 A：FIXED 证据索引（原 17 条；S13-S17 新增 59 条见 §3.10.1）
 
 | ID | 阶段/commit | 证据形态 |
 |---|---|---|
@@ -607,9 +717,9 @@ Compare-Object $reportML $ledgerML
 
 ## 附录 B：边界与未验证项（诚实清单）
 
-1. **未跑任何 e2e/真机**：本台账的判断全部来自报告原文 + 代码静态核实 + plan/§11 记录；dind/staging 触发面（H7/H9、k3s config mount、relay 双节点、R06-M2/C3 真机）仍未验证。
-2. **S13 未提交**：§3.1 列的工作区改动是并行子代理的进行中产物，本台账只做范围确认，不作为 FIXED 证据；若 S13 提交内容与范围不符，R14-M1/R14-L1/R08-M2 应退回 `FIX-NOW` 待验。
-3. **代码核过 vs 记录核过**：17 条 FIXED 中 2 条（R14-M3、R14-L2）是本次代码直核；其余 15 条依据 plan 执行记录与报告 §11（两者互相独立），未逐 commit 读 diff。
-4. **ACCEPT 判断的时效**：所有"随触随修"条目依赖"下次触碰同文件同 commit 修正"的纪律，本台账未加守卫；若 Lead 要机制化，应把 §2 的 ACCEPT 行按文件面汇总成一份 `fix-on-touch` 清单（可作为 S17-c1 的附带产出）。
+1. **e2e/真机只覆盖了 D3**：D3（detect 零写）已 staging 真机验证（`ca199a82`，runbook 2026-10-19 节）；**S13-S18b 尚未上 staging**；dind e2e 与 GitHub Actions 的新 job 未真跑（本机无 Docker daemon），H7/H9、k3s config mount、relay 双节点仍属"代码+单测级修复、真机触发待验"。
+2. **S13-S18b 均已提交并 push**：§3.9 的 commit 为准；S19 为 docs-only 工作区改动，未提交，验收后由 Lead 提交。
+3. **代码核过 vs 记录核过**：17 条原 FIXED 中 2 条（R14-M3、R14-L2）是台账作者代码直核；其余 15 条依据 plan 执行记录与报告 §11。S13-S17 的 59 条以各批 commit + 台账 §3.9 记录为准，未逐条重读 diff。
+4. **ACCEPT 判断的时效**：所有"随触随修"条目依赖"下次触碰同文件同 commit 修正"的纪律；S19 已把全部 30 条 ACCEPT 列入 §3.10.2 清单（不再散落）。
 5. **未覆盖的上游语义**：MongoDB authSource 缺省、traefik `@` 名字拒绝、zot ACL 兜底、KEK age 解析失败路径等依赖上游行为，报告已标"待复核"的条目（R01-M1、R07-M2、R07-L7 等）在本台账按"代码事实 + 上游常识"裁决，真机可能调整严重度但不改裁决方向。
-6. **本文件不是修复承诺**：`FIX-NOW` 的批次与项数是建议，Lead 可按风险重排；唯一硬约束是"每条 ID 必须留在台账里，裁决可改、不可丢"。
+6. **本文件是收口记录，不是修复承诺**：198 条裁决与 S13-S19 的执行状态已固化；SEPARATE 83 条是独立立项/独立风险（带 owner + 触发），ACCEPT 30 条是带理由的接受——两者都不是"未分类"。后续批次按 §3.10 清单认领。

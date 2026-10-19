@@ -64,5 +64,5 @@ ADR-0069 补了排障动线的动作半边：Process 级 restart = runtime-only 
 ## 落码注记（2026-10-19 S4/追记）
 
 - **restart 源修复（H15）**：`c925ba3b` 把 CLI 声明面源从「最新冻结 Revision」改为「生效基线」——`latestSucceededRevision` + `selectRestartBaseline`（`cmd/fleetly/cmd/verbs_structure.go:501-577`），golden `apps-restart-json.golden` 的 `to_revision` 由 `r3` 变 `r2`（失败/回滚后取回生效行）；`TestSelectRestartBaseline` 钉选源纯函数，`TestGoldenAppsRestart` 钉双形态。
-- **残余（同族，登记不修）**：`--runtime` 的进程存在性校验仍对 `Revisions.Latest`（`internal/application/engine/processrestart.go:31`）：若新冻结版删除了某进程而它正在基线里跑，动作面会误报 `unknown process`（逆向也会放行一个不存在的进程）。修法（若批准）= 改取 `LatestSucceeded().ToRevision` 的冻结体 + `TestRestartProcessValidatesAgainstEffectiveBaseline`；**S12b2 未修，登记为 P2 可选小修**。
+- **残余（同族，登记不修）**：`--runtime` 的进程存在性校验仍对 `Revisions.Latest`（`internal/application/engine/processrestart.go:31`）：若新冻结版删除了某进程而它正在基线里跑，动作面会误报 `unknown process`（逆向也会放行一个不存在的进程）。修法（若批准）= 改取 `LatestSucceeded().ToRevision` 的冻结体 + `TestRestartProcessValidatesAgainstEffectiveBaseline`；**S12b2 未修，登记为 P2 可选小修**。**S19 补登记（目标/触发）**：目标态 = 与声明面同源，改取**生效基线**（`LatestSucceeded().ToRevision` 的冻结体）；触发 = **动作面回归批**（下次触碰 `processrestart.go`/`apps restart --runtime` 路径时同批修；不单开批）。
 - **与 H15 同路径的次生面**：以基线体为源重提交时，基线体里的 inline env 是当年值；变量面（Shared/AppVariable）由服务端合成取当前值（ADR-0072 不变）——「已删变量复活」仅限 inline env 且属 R03 变量合成面，本 ADR 不裁。

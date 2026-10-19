@@ -291,7 +291,7 @@ _Avoid_: sync, heal, repair, opt-in（收敛姿态义）
 _Avoid_: restore, revert
 
 **Restore**:
-从 Backup 重建数据；恢复期平台只读。
+从 Backup 重建数据。v1 的恢复是**离线手工序**（停服 → Platform Backup 重放 → 旧版二进制回装 → 启动核对，见 runbook）；**无平台运行期只读闸门、无 `platform restore` 动词**——恢复窗内不受理写操作由"操作者停服"保证，不由平台执法。实现闸门/恢复动词列为后续独立项（触发：F2.3 恢复链落地）。
 _Avoid_: recovery(泛指), replay
 
 **Backup**:

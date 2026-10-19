@@ -547,8 +547,8 @@ fleetly metrics series --database DB_ID --metric memory_working_set_bytes|cpu_co
 
 | 风险/未决 | 影响 | 处置/验证 |
 |---|---|---|
-| **project 级 scoped 查询是否要有** | 当前 Console 无 project 汇总图表；CLI 诊断若想按 project 查需 raw（管理员） | **待裁决（推荐 v1 不做）**：现有产品面无消费；将来加 project scope 需给词汇补 `project` 标签（引擎改动）或走 raw 双臂。验证：产品/用户确认 |
-| **R08-M2 余项：ListAlertRules/ListAlertStates 无 Team 过滤** | 与 H8 同源（R08-M2 被并入 H8 条目），但不在指标查询面 | **待裁决（推荐单列 S-M 小批）**：修它需要规则→App→Project→Team 的列表过滤路径（`alerting.go:276-298,337-372`），与 metrics RPC 无耦合；不建议混进本批扩大改动面。验证：新 apitest 两队规则列表 |
+| **project 级 scoped 查询是否要有** | 当前 Console 无 project 汇总图表；CLI 诊断若想按 project 查需 raw（管理员） | **已做（S18a `07128fef`，2026-10-19 裁决转为 v1 做）**：v1 用 **raw 双臂**——swarm 臂按 cAdvisor 投影标签 `container_label_fleetly_ns_project`、k3s 臂按 `namespace=fleetly-<project>`（两臂标签集互斥，`or` 不重复计数）；**不扩词汇** `fleetly_container_*`（ADR-0065 词汇无 project 维度）。project 白名单仅 `cpu_cores`/`memory_working_set_bytes`（`cpu_percent` 无明确 CPU 分母，受理面 `E_INVALID_ARGUMENT`；process 维度仅 app scope）。验证：`capability` 查询构造形状测 + apitest project scope + CLI `metrics series --project` golden。 |
+| **R08-M2 余项：ListAlertRules/ListAlertStates 无 Team 过滤** | 与 H8 同源（R08-M2 被并入 H8 条目），但不在指标查询面 | **已修（S13-c3 `1dd4171d`）**：`ListAlertRules/ListAlertStates` 非平台管理员按本 Team 的 Project 集过滤（`alerting.go`）；apitest `alerting_team_filter_test.go` 钉他队规则不可见。本设计原「单列 S-M 小批」的建议已被 S13 并入身份/读面最小化批。 |
 | k3s CPU % 模板真机行为 | 若 `group_left` 在 k3s raw 序列上量纲/匹配不对，member 的 k3s CPU % 图空 | 阶段 C staging 验证；失败回退为“cores/memory 可用、CPU % 空集”并显式记档（不阻塞安全修复） |
 | k3s raw 臂的 app/database 归属是 pod 名近似 | 同 Project 内 ID 互为前缀的兄弟载体可能多命中（非跨 Team） | 安全边界由 `namespace=fleetly-<project>` 收敛；严格 app 粒度需 k3s 词汇化/标签白名单（ADR-0065 挂账）。验证：staging 造 `web-1`/`web-1-2` 夹具，确认 charts 只差“多出兄弟序列”且无跨 Project 序列 |
 | VM 双 `or` 臂的查询成本 | 每图两个 selector；大范围可能更慢 | 24h/1000 点钳制 + 30s 超时；staging 观察 P95；必要时按 scope 缓存（不做在本批） |
@@ -661,8 +661,10 @@ node 执行 relay_command
 重连：同一凭证；同节点顶替旧连接（在途会话 relay_disconnected）
 rotate（平台管理员）→ 轮换 join tokens + DELETE 全部 relay 凭证 + 断开全部 relay
 revoke --node（平台管理员）→ DELETE 该行 + 断开该节点 relay
-node.left（观测缓存检出）→ DELETE 该行 + 断开该节点 relay
+node.left（连续缺失满 LeaveGrace=30s）→ DELETE 该行 + 断开该节点 relay
 ```
+
+> **S18b 宽限窗（`4cfcc7fc`）**：单拍缺行只起算，窗内节点回归即清零——不删凭证/不断连/不发事件；连续缺失满 `NodeOptions.LeaveGrace`（默认 30s）才执行离场清理。S11b 的「单拍即删」语义已被本修订取代。
 
 ### 4.2 数据模型（迁移 00035）
 
@@ -838,13 +840,13 @@ RelayAttach(token, carrierID, version, writer):
 | `nodes relay --node X`（重铸） | 不变 | 只替换 X 的 hash（旧即刻失效） | 断开 X 的旧连接（新脚本重连后替换） | X 上在途会话 `relay_disconnected` |
 | `nodes revoke-relay --node X` | 不变 | 删除 X 行 | 断开 X | 同上 |
 | `nodes enroll --rotate` | 轮换 worker+manager | 删除全部行 | 断开全部 relay | 全部 `relay_disconnected` |
-| `node.left`（节点离开集群） | 不变 | 删除该节点行 | 断开该节点 | 同上 |
+| `node.left`（节点连续缺失满 LeaveGrace） | 不变 | 删除该节点行 | 断开该节点 | 同上 |
 
 实现：
 
 - `Engine.DropRelay(platformID)`：从 `relays` 摘除并 `finish` 其名下全部会话（复用 `dropRelay`，`execrelay.go:123-145`）。
 - `Engine.DropAllRelays()`：遍历快照逐个 drop；在 DB 事务提交后调用（先让凭证失效，再断连接；即使断开失败，重连也会 401）。
-- 即时断开是“泄漏处置”语义；与现状 rotate 只影响下次重连不同，属于有意加强（见 §8 待裁决）。
+- 即时断开是“泄漏处置”语义；与现状 rotate 只影响下次重连不同，属于有意加强（S11 已裁决即时；见 §8）。
 - 重铸 X 时旧连接断开后，节点上的旧脚本容器（restart unless-stopped）会用旧凭证重连 → 401 → 退避；运营者执行新脚本（`docker rm -f fleetly-relay` + 重建）后恢复。`nodeRelayScript` 已是幂等重建脚本（`swarm/runtime.go:665-679`）。
 - **重铸即断旧连接**：`nodes relay --node X` 一返回，X 的现有 relay 就会被 `DropRelay`；脚本必须在节点上立即执行（CLI/Console 文案明确“先取脚本、就地执行”，不要把重铸当作只读预览）。
 
@@ -990,7 +992,7 @@ docker cp $t $c:/tmp/fleetlyd && docker start $c && rm -f $t
 改动：
 
 - rotate/revoke 的即时断连已在阶段 1 落地；本阶段不重复实现，只验证行为。
-- `reconcileNodes`：`node.left` 删除凭证 + `DropRelay` + 审计（`internal/application/engine/nodes.go:41-58`；凭证清理独立于 `node.left` 事件发射成功与否——先清安全材料，事件失败只记日志，不把清理挂在事件 `continue` 之后）。
+- `reconcileNodes`：`node.left` 删除凭证 + `DropRelay` + 审计（`internal/application/engine/nodes.go`；凭证清理独立于 `node.left` 事件发射成功与否——先清安全材料，事件失败只记日志，不把清理挂在事件 `continue` 之后）。**S18b 起**：节点连续缺失满 `NodeOptions.LeaveGrace`（默认 30s）才执行清理，单拍缺行只起算（窗内回归不处置）。
 - `RelayAttach` 的 `old != nil` 二次附着 `slog.Warn` + `node.relay_replaced` 审计。
 - `e2e/dind-two-node.sh` exec 腿改新流程 + join-token 401 负例 + rotate 恢复腿。
 - `docs/runbooks/staging-fleetly.md` 全量更新（enroll 两步、升级重跑、rotate、故障排查）。
@@ -1002,16 +1004,22 @@ docker cp $t $c:/tmp/fleetlyd && docker start $c && rm -f $t
 
 | 风险/未决 | 影响 | 处置/验证 |
 |---|---|---|
-| **两步 enroll 的运营成本**（join → 等锚定 → 按节点取 relay） | 每加一个 worker 多一次命令；升级序多一步 | **待裁决（推荐接受）**：这是消除 TOFU/抢绑的唯一干净形态；Console 节点行动作可把第二次变成一次点击。验证：runbook 演练 + e2e |
-| **rotate/重铸是否即时断开在连 relay** | 现状 rotate 只影响“下次重连”；即时断开会让在途会话立即失败 | **待裁决（推荐即时）**：泄漏处置应立刻失效；会话收到 `relay_disconnected` 诚实告知。若用户要求平滑，退化为“只作废下次重连”，需在 ADR 追记写明边界 |
+| **两步 enroll 的运营成本**（join → 等锚定 → 按节点取 relay） | 每加一个 worker 多一次命令；升级序多一步 | **已裁决接受（S11 落地）**：这是消除 TOFU/抢绑的唯一干净形态；Console 节点行动作把第二次变成一次点击；runbook 升级序已列「逐 worker 重铸」。 |
+| **rotate/重铸是否即时断开在连 relay** | 现状 rotate 只影响“下次重连”；即时断开会让在途会话立即失败 | **已裁决即时（S11 落地）**：泄漏处置立刻失效；会话收到 `relay_disconnected` 诚实告知。 |
 | 脚本内凭证可被节点 root 读取 | 节点 root 本就有 docker.sock/容器 root，等于已控节点；无法在不引入硬件根信任下消除 | 接受（ADR-0049:140-144 同款边界）；控制面只保证“脚本泄漏 ≠ 集群 join token 泄漏” |
 | join token 仍可让恶意节点加入 swarm | H10 只关闭 relay 顶替腿，不关闭“集群成员权”本身（C3） | 保留为独立议题；H1/H2 平台门禁已修（S2），join token 分发仍按平台管理员面管理 |
 | 内部 token 可声明任意已锚定节点 | 控制面进程自身信任面；若进程被攻破 exec 已全失守 | 接受；内存 only、无日志/无脚本；不写库 |
 | k3s 无节点侧 relay 材料 | 定向 `node_id` 在 k3s 返回 501；运营者不能给 k3s 节点发 relay 脚本 | 符合 ADR-0053 集中形态；文档写清“k3s 无需此动作”；若未来 k3s 节点侧代理化，再补实现 |
-| `node.left` 抖动误删凭证 | 节点短暂从 DescribeCluster 消失会触发 revoke，节点回归需重铸 | `node.left` 只在“从集群视图消失”时发（现有语义，nodes.go:41-58）；如 staging 观察到抖动，改为“连续 N 拍消失”再删 |
+| `node.left` 抖动误删凭证 | **已修（S18b `4cfcc7fc`）**：单拍缺行只起算，连续缺失满 `NodeOptions.LeaveGrace`（默认 30s）才删凭证/断连；窗内回归不处置（不删/不断/不发事件） | 宽限窗钉测在 `internal/application/engine/nodes_test.go`；runbook「node.left 抖动风险」同步改口 |
 | 升级窗内 worker exec 不可用 | 旧 relay 容器 401，直到逐节点重跑新脚本 | pre-release 接受；runbook 把“逐 worker 重铸”列为升级硬步骤；manager 回环不受影响 |
 | 旧 relay 脚本被缓存/重放 | 旧 join token 脚本在升级后 401；旧单节点凭证脚本在重铸后 401 | 重铸/rotate 后旧脚本自然失效；e2e/审计可验证 |
-| Console 动作对非管理员 403 | 与现有 enroll/rotate 行为一致 | 沿用现有 403 toast；后续可用 H8 的 `platform_admin` 做显隐（可选） |
+| Console 动作对非管理员 403 | 与现有 enroll/rotate 行为一致 | **已做（S11b `f756ed70`）**：`nodes-list.tsx` 按 `whoami.platform_admin` fail-closed 显隐平台动作；非管理员沿用现有 403 toast。 |
+
+## S18 追记（2026-10-19，`07128fef` + `4cfcc7fc`）
+
+- **project 级 scoped 指标（S18a）**：v1 做，走 raw 双臂而非词汇扩展（详见 H8 §9 行与附录 C）；白名单 `cpu_cores`/`memory_working_set_bytes`。
+- **Login 会话 Token TTL（S18a，R14-M1 另一半）**：`auth.login_token_ttl` 默认 `720h`，`0` = 不过期（逃生门）；**只作用于 Login 铸造的密码会话 Token**——bootstrap 与 `tokens create`/CLI/SDK 铸造的 Agent/CI Token 永不过期。authn 逐请求查表判定（过期即 `E_UNAUTHENTICATED`，suggestion 指向重新登录）。过期行当前**无清扫**：每次登录新增一行、不构成新增泄漏面，列为后续清理项（触发：token 表容量观测/清理批）。
+- **node.left 宽限窗（S18b）**：`NodeOptions.LeaveGrace` 默认 30s；单拍缺行只起算，满窗才删凭证/断连（H10 §4.1/§4.6/§8 已同批改口）。
 
 ---
 
@@ -1071,7 +1079,7 @@ docker cp $t $c:/tmp/fleetlyd && docker start $c && rm -f $t
 
 **阶段 2**
 
-- `internal/application/engine/nodes.go`（node.left revoke/drop/audit）
+- `internal/application/engine/nodes.go`（node.left revoke/drop/audit + LeaveGrace 宽限窗，S18b）
 - `internal/application/engine/execrelay.go`（二次附着 warn/audit）
 - `console/src/routes/_shell/nodes.index.tsx`（节点行 Relay/Revoke 动作 + rotate 文案）
 - `e2e/dind-two-node.sh`（rotate 恢复腿、负例）
@@ -1116,7 +1124,7 @@ mise run lint
 
 H8：
 
-- 不做 project 级 scoped 指标查询（无当前 Console 消费；记为待裁决）。
+- 不做**词汇级** project 标签（S18a `07128fef` 已用 raw 双臂承载 project scope：cAdvisor 投影标签 + k3s namespace；ADR-0065 词汇保持无 project 维度）。
 - 不新增 PromQL 解析器、不做 PromQL 标签重写。
 - 不拆/迁移 VictoriaMetrics，不做 per-tenant 存储路由。
 - 不在本批修 `ListAlertRules`/`ListAlertStates` 的 Team 过滤（R08-M2 余项，单列小批；见 §9）。

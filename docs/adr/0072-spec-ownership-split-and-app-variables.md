@@ -53,3 +53,7 @@ deployVarLookup 留在 api；webhook 的 delivery 台账 Tx 留在 api
 随 ctx 走：WithAuditOverride 先于 SubmitSpec 注入，revision.create 与
 deployment.create 审计行 actor/source 逐字节同形。九条受理不变式由
 apitest（submit_spec_invariants_test）逐条钉死。
+
+## 追记：变量冻结体边界（2026-10-19，S19）
+
+决策 6 的「删除 store 键则回落 intake 值」只描述**下一次冻结**的合成输入，不回溯已冻结体：**material/ConfigMap 的内容是冻结时快照**——删除或修改 Shared/App Variable 不会改写已冻结 Revision 的 material 体，hook 推送与部署（含 Replay/重启）继续使用冻结值（material push 因此仍推旧值）。变量变更要生效，必须重新冻结产生新 Revision（Apply/部署，hook 应用的下一次 push）。「变量来源账本」式回溯改造不在 v1，`R03-M12` 登记为独立项（owner deployspec；触发：变量删除误用事故）。

@@ -1207,6 +1207,8 @@ mise run lint       # vet/gofmt/golangci/buf lint/buf breaking
 - **e2e 真机验证**：本机无 Docker；**D3 的 detect 真机面已由 staging 复验（2026-10-19，见 §7.2/runbook）**；D2 的 provider 真机变更集仍记待复核；其余 dind（H7/H9、k3s config mount、双节点 relay）待 dind/CI。
 - **不新增事件码**：`WorkloadOrphaned` 不做（行 9 未落码）；不给 `workload.converged` 加慢通道触发。
 
+> **S19 状态追记（2026-10-19）**：本节「明确不做」是 **S12 时点**的范围。后续批次已收口：R02-M1/R02-M7 → S15a `ff8b8d18`；R16-M4/R16-L2 → S15b `b2941cc3`（撤销 peer 改"标记 + Kick 漂移扫描"，ADR-0082 §5 第 5 条）；R12-M7 → S17a `8f5d41e7`；R16-L1/L4/L5 → S17b `c1e828d7`。R16-L6 仍 ACCEPT（Author Class 执法面，已声明推迟）。逐条见 `docs/plan/2026-10-19-backlog-closure.md` §3.10。
+
 ### 9.2 待复核（含验证方法）
 
 | # | 不确定点 | 验证方法 |

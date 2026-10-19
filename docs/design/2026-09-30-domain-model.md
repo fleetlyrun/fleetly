@@ -11,7 +11,7 @@
 1. **运行时中立**：领域模型、Spec、API 中不出现任何编排器概念（service/task/pod/label 公式/节点约束语法）。编排器概念只存在于对应 Provider 内部（继承自旧项目的头号失误反推，见新 ADR-0001））。
 2. **人类与 Agent 同为一等**：Console / API / CLI 三面同等能力，同源 proto，无私有服务端面（继承旧 P0-3 教训）；对 Agent 的支持走 CLI + 专属 Skills，**不建 MCP 面**（2026-09-30 用户直裁：MCP 体验不佳，见 ADR-0006）。
 3. **DX 优先 + 轻量定位**：开发者体验是一切取舍的第一权重（ADR-0010）；轻量是产品定位的组成部分。"多容器重栈红线"与 idle 预算数字降级为参考默认，重估中。
-4. **状态语义保守**（参考默认，ADR-0010 后待重估）：单写者、快照重放式回滚、漂移检测默认开收敛默认关、恢复期只读、孤儿只登记不删（旧 ADR-0002/0003/0004/0014，见新 ADR-0005）。
+4. **状态语义保守**（参考默认，ADR-0010 后待重估）：单写者、快照重放式回滚、漂移检测默认开、收敛缺省开启（ADR-0082 翻案旧 opt-in）、孤儿只登记不删（旧 ADR-0002/0003/0004/0014，见新 ADR-0005）；旧语义中的「恢复窗只读」v1 未落闸门——改为手工停服纪律（2026-10-19，见场景 8）。
 
 ## 2. 上下文映射
 
@@ -102,7 +102,7 @@ Run: pending → running → stopping → stopped | failed
 
 ### Database
 
-七态收敛（provisioning → running → …→ failed/maintenance），写点单入口 + kick 事件驱动，模板渲染成 DatabaseSpec 后复用 Runtime 通道。备份/恢复/升级/迁移走等序原则（旧 ADR-0014：恢复期禁自动收敛，只读观察）。
+七态收敛（provisioning → running → …→ failed/maintenance），写点单入口 + kick 事件驱动，模板渲染成 DatabaseSpec 后复用 Runtime 通道。备份/恢复/升级/迁移走等序原则（旧 ADR-0014 的「恢复期禁自动收敛/只读观察」在 v1 无运行期闸门——恢复靠手工停服序，见场景 8）。
 
 ### Managed Provider（受管能力实例）
 
@@ -122,8 +122,8 @@ Run: pending → running → stopping → stopped | failed
 4. **Provider 降级**：Logging Provider 宕机 → 部署照常、日志查询报"能力不可用"；Proxy Provider 宕机 → 存量路由继续服务，Route 变更失败且明示。降级矩阵见架构文档 §9。
 5. **节点失联 + Volume**：节点 DOWN（旧实测 ~13.5s 检出）期间钉住卷的工作负载不迁移、不重建（旧 spike C3a：无钉住跨节点 = 数据丢失）；node rm 后卡 PENDING 的工作负载登记为孤儿，人工裁决（旧 C4b）。
 6. **Agent 重试幂等**：同一 Idempotency-Key + 同请求体 → 返回同一 Deployment；同 Key 不同体 → 409。
-7. **漂移与人工干预**：人工改了载体配置 → Drift 事件可见，默认不自动 Converge；挂起（suspend）永不被静默撤销（旧 ADR-0004）。
-8. **Platform Restore**：恢复期只读观察：拒绝新 Deployment/Converge；看门狗收口、TTL 到期、Drift 事件只登记、不改变决策状态（防恢复窗内 Drift 事件洪水，继承旧 ADR-0014 只读观察语义）；基线确认后解除。启动顺序 = 控制面 → Platform Backup → Managed Provider → 用户 Workload（旧结论：备份启动序）。
+7. **漂移与人工干预**：人工改了载体配置 → Drift 事件可见；缺省收敛（posture `all`，ADR-0082 翻案旧 opt-in）把载体拉回 Spec，`detect` 姿态下只报事件；挂起（suspend）永不被静默撤销（旧 ADR-0004）。
+8. **Platform Restore（v1 离线手工序）**：无平台运行期只读闸门、无 `platform restore` 动词。恢复 = 停服 → Platform Backup 重放（restic）→ 旧版二进制回装（goose 只前滚）→ 启动核对；恢复窗内不引导服务由操作者停服保证，daemon 在跑则照常受理写。启动顺序 = 控制面 → Platform Backup → Managed Provider → 用户 Workload（旧结论：备份启动序）。实现平台态闸门 + restore 动词列为后续独立项（触发：F2.3 恢复链落地）。
 9. **并发部署 admission**（ADR-0016 修订）：同 App 部署请求入队判定——同幂等键/同 commit 去重返回既有；默认 latest-wins 合并；显式 supersede 抢占；queue 满显式反馈；排队与在途可取消。409 仅保留给幂等键冲突与互斥资源锁。
 10. **常驻实例池伸缩**：Task 池扩容 = 新建 Run，缩容 = TTL 提前 + 排空；不动 App 状态机。
 11. **租约失联**（ADR-0012）：dispatcher 进程死亡 → 心跳停止 → 宽限后 Run 进 stopping(lease_expired)，池自动补足；属主 Token 被吊销 → 名下 Task 默认宽限排空（ADR-0017），处置进审计。
@@ -169,7 +169,7 @@ Run: pending → running → stopping → stopped | failed
 | ADR-0010 Team ⊥ Project 正交 | 实体关系继承；"新增 Environment 为 Project 内分区"已被 ADR-0011 否决（环境即项目） |
 | ADR-0012 webhook + 拉源唯一轨 | 新 ADR-0009 原样继承 |
 | ADR-0013 容器形态三适配 / 控制面地址物化 | 架构 §7 部署形态 |
-| ADR-0014 备份等序 / 恢复只读 / 孤儿不删 | 状态机与场景 5/8 |
+| ADR-0014 备份等序 / 恢复窗纪律 / 孤儿不删 | 状态机与场景 5/8（v1 无运行期只读闸门，见场景 8 与 ADR-0005 S19 修订） |
 | ADR-0015 Compose 受控子集 | Source 归一化输入面（架构 §5） |
 | ADR-0016/0017/0018 不抽象三连 + deletion test | 新 ADR-0003 的裁尺 |
 | torchwood 直裁：docker 直连部署形态并存；per-task attach 明禁 | Automation 上下文语义（attach 禁令维持；创建时刻挂靠合法，ADR-0012/0013） |

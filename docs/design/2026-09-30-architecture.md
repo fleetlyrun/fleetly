@@ -122,7 +122,7 @@ type RuntimeAdmin interface { Drain/Cordon/... }    // 子面，CLI 管理操作
 
 - **proto 是唯一契约源**：一份服务定义生成 gRPC + REST(gateway) + OpenAPI(spec) + TS 客户端类型（Console schema 漂移门禁，继承）。服务面按领域模型八个上下文切分，读写分离（旧"一文件三 service 含写面"教训）。
 - **三面同等能力**：Console / API / CLI。Console 只消费公共 REST/WS API，无私有服务端面（旧 P0-3 教训）；CLI 是瘦 API 客户端，写面与 API 对等，全命令 `--json`。
-- **Agent 面 = CLI + 专属 Skills，不做 MCP**（2026-09-30 用户直裁：MCP 协议体验不佳）。机器契约在 CLI：稳定 JSON 字段（golden 钉死）、错误信封（errcode + 处置提示）、稳定退出码、`--wait`（等待原语的 CLI 形态）、`events follow`（事件流的 CLI 形态）。程序性知识在 Skills：`skills/` 随仓版本化，每个 Skill 包装一段 CLI 工作流（部署诊断、数据库开通与备份、Task 池管理、Platform Restore 等），与平台版本同批演进。
+- **Agent 面 = CLI + 专属 Skills，不做 MCP**（2026-09-30 用户直裁：MCP 协议体验不佳）。机器契约在 CLI：稳定 JSON 字段（golden 钉死）、错误信封（errcode + 处置提示）、稳定退出码、`--wait`（等待原语的 CLI 形态）、`events follow`（事件流的 CLI 形态）。程序性知识在 Skills：`skills/` 随仓版本化，每个 Skill 包装一段 CLI 工作流（部署诊断、数据库开通与备份、Task 池管理等；v1 无 Platform Restore 技能——恢复是 runbook 手工序，见 §8），与平台版本同批演进。
 - **Token**：`resource:action` Scope（write 蕴含 read），团队/项目两级绑定；Bootstrap Token 首启生成、**可吊销**（旧项目缺口，这次补上）。
 - **治理刹车**（ADR-0017）：per-Project 的 Task/Workload 数量配额、per-Token 创建速率限制、change freeze 变更冻结窗（命中返回带原因的拒绝）、属主 Token 吊销 → 名下 Task 默认宽限排空。Scope 维持"读默认开放、写显式授权"。
 - **能力自描述**：`fleetly explain <资源>` 与 `fleetly schema` 输出 JSON Schema（Spec 与契约由 Go 类型反射生成，扩展面各自注入合并）——Agent 的零文档发现面（porter 模式）。
@@ -145,11 +145,11 @@ type RuntimeAdmin interface { Drain/Cordon/... }    // 子面，CLI 管理操作
 
 **HA 口径**（继承旧 ADR-0005，不改）：控制面单实例诚实暴露；数据面多 A 记录 + 连接级重试；有状态走 Backup/Restore；三 manager 管理面 HA 延后；明确不做 VIP/keepalived。
 
-**顺序与恢复**：启动序 = 控制面 → Platform Backup → Managed Provider → 用户 Workload 观测；Platform Restore 期间只读；优雅退出是必要条件（in-flight Ensure 必须可安全中断重放，旧 spike V4）。
+**顺序与恢复**：启动序 = 控制面 → Platform Backup → Managed Provider → 用户 Workload 观测；**v1 无平台运行期只读闸门、无 `platform restore` 动词**——恢复是 Platform Backup 重放 + runbook 手工停服序（恢复窗内不引导服务是操作纪律，不由平台执法；daemon 在跑则照常受理写）。实现闸门/恢复动词列后续独立项（触发：F2.3 恢复链落地）。优雅退出是必要条件（in-flight Ensure 必须可安全中断重放，旧 spike V4）。
 
 **孤儿**：一切对不上账的载体只登记、永不自动删（继承；平台自建残留如超 TTL 的 Run 由看门狗收口，不属孤儿）。
 
-**升级与版本偏差**（ADR-0015，"升级永不弄坏你的东西"的设计支撑）：fleetlyd 升级序 = Platform Backup 前置 → 二进制/镜像替换 → SQLite 迁移（goose 前滚，失败=恢复备份重放）→ Managed Provider 逐个 reconcile（镜像钉版、逐个升级）→ 解除只读；验收 = 升级期间用户 Workload 零重启、路由零中断。CLI/server 版本偏差 = N-1 兼容 + 请求版本协商头；proto buf breaking 门禁保持。
+**升级与版本偏差**（ADR-0015，"升级永不弄坏你的东西"的设计支撑）：fleetlyd 升级序 = Platform Backup 前置 → 二进制/镜像替换 → SQLite 迁移（goose 前滚，失败=恢复备份重放）→ Managed Provider 逐个 reconcile（镜像钉版、逐个升级）→ 启动后健康核对（`status`/`doctor` + 零扰动断言；**v1 无「解除只读」步骤**——平台无运行期只读态）；验收 = 升级期间用户 Workload 零重启、路由零中断。CLI/server 版本偏差 = N-1 兼容 + 请求版本协商头；proto buf breaking 门禁保持。
 
 ## 9. 默认 Provider 选型（v1）
 

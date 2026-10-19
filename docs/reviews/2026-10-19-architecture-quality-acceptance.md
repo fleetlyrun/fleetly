@@ -406,9 +406,9 @@
 
 ---
 
-## 11. 修复执行状态（2026-10-19，S1-S12；全部已 push `origin/main`）
+## 11. 修复执行状态（2026-10-19，S1-S19；S1-S18b 已 push，S19 docs-only 未提交）
 
-排期与逐阶段验收记录：`docs/plan/2026-10-19-review-remediation.md`；H8/H10 设计：`docs/design/2026-10-19-security-backlog-design.md`；S12 设计：`docs/design/2026-10-19-converge-semantics.md`。执行方式：子代理逐阶段实现 + Lead 亲验验收门 + 每阶段还原点 commit + push（S1-S12 共 21 个还原点，HEAD 见 git log）。
+排期与逐阶段验收记录：`docs/plan/2026-10-19-review-remediation.md`；H8/H10 设计：`docs/design/2026-10-19-security-backlog-design.md`；S12 设计：`docs/design/2026-10-19-converge-semantics.md`；198 条 M/L 的裁决台账与最终统计：`docs/plan/2026-10-19-backlog-closure.md` §3.10。执行方式：子代理逐阶段实现 + Lead 亲验验收门 + 每阶段还原点 commit + push；S1-S18b 共 40 个提交（`git log 35257f18..4cfcc7fc`），S19 为 docs-only 收口（工作区，未提交）。
 
 | 阶段 | commit | 覆盖发现 | 验收证据（Lead 亲跑） |
 |---|---|---|---|
@@ -424,23 +424,46 @@
 | S10 H8 阶段 B | `e9654b8c` + `b22d6cc3` | H8 | QueryScopedMetrics（固定模板/行级授权/新错误码）+ Console scoped 图表 + CLI `metrics series`；capability/apitest/guards/console 138 全绿；生成物零漂移 |
 | S11 H10 | `9fe85c4e` + `f756ed70` | H10（R14-H3） | 迁移 00035 + 个体 relay 凭证 + 两步 enroll + 握手双向绑定 + 即时断连 + node.left 清理/顶替审计 + CLI/Console/runbook/ADR 追记；engine 25.9s/apitest 31.2s/guards 21.3s/console 138 全绿 |
 | S12 收敛语义 | `402132fe`（设计）+ `2740a09d`（b1 代码）+ `23f4b0b1`（b2 文档/守卫）+ `fc485f1d`（终验 self-description golden 同步）+ `ca199a82`（D3 代码） | R02-M2/M5、R16-M2/M3/M5/M6 | 判定表 8 行接进生产 + golden 8 行；`EnsureReport.Changed/Removed` + 审计按「fast 源 ∨ 真实变更」分流；`extra`/`replay` 真实信号；`ensuredBy` 账本归属 + 重放标记；ADR-0081 判据两子类/域级收敛面表/153→154；ADR-0082 表 8+2/事实面/§5 detect 零写/§6 账本；ADR-0083 H15 追记。**D3（detect=零运行时写）已实施**：删 baseline 豁免、启动面只重建期望账本、gen 锚守卫、隔离 Warn，C1-C6 钉测全 PASS；**staging 真机验证**见下。b2/终验验收门：gofmt 空、双平台 build 0、guards/engine/cmd 全绿、vet 0、diff-check 0；终验 `go test ./...` 仅 2 项本机环境失败（keyring/builders），装配层 self-description golden 漏项由 Lead 终验捕获并在 `fc485f1d` 同批同步 |
+| S13 身份读面/限速/alerts | `1dd4171d` | R14-M1、R14-L1、R08-M2 | 身份目录读面按本队+平台 owner 过滤；Login per-name/per-IP 双桶固定窗；alerts 规则/状态 Team 过滤；门禁全绿 |
+| S14 安全边界二批 | `5e5ab2fe` + `ff0b8681` + `42fb9f50` | R03-M13、R07-M4/M2、R14-M8、R07-L3/L4、R14-M5、R08-M3/M8/M9、R09-M8（+R14-M6 DUP） | 仓名白名单/GitHub 出站约束/traefik 名字与 host 归一/KEK+restic 材料；freeze 回退、复合 scope、fact fail-closed、GetStatus 最小态、Edge 端点认证（多队无 token fail-fast）；c1 回归修复 `ff0b8681` |
+| S15 收敛/引擎残余 | `ff8b8d18` + `b2941cc3` | R02-M1/M3/M4/M7、R02-L1、R13-L1、R16-L3/M4/L2、R13-M1、R03-M5/M6/M7/M8/L5（+R02-L7 DUP） | 冷却签名三态、BG 重启代次、收口驱动权+维护锁、环 panic/Inspector 可观测、peer 撤销异步、BG 退役代账本、Teardown 清账+LRU、compose 保真五连；engine `-race` 225s/228s 绿 |
+| S16 Runtime 一致性/适配 | `a543266b` + `ce9a15c7` | R06-M2/M4/M5/M6/M7、R01-M1（+R01-H1†）、R08-M1、R03-M1/M2、R04-M1、R13-L3 | k3s replicas/egress/logs、swarm config 清扫/exec 节拍；browse 五引擎方言、节点读面平台门、引擎卫生四连；engine `-race` 235s、console 139 全绿 |
+| S17 守卫/测试基建 | `8f5d41e7` + `c1e828d7` | R12-M2/M3/M4/M5/M7/L1/L2/L5、R05-M8、R06-L1、R09-L4/L5/L7、R15-L4、R16-L1/L4/L5、R10-M1/L1、R02-L5 | Runtime/loop/statefacade AST 判据、三红线禁列、账本写点守卫、FakeRuntime 回执、e2e converged 断言；CI/verify 对账、写类守卫三盲点、install 0750、CLI delete JSON 契约、freeze fail-closed 真钉测；每项反向验证红→绿 |
+| S18 非 M/L 残项 | `07128fef` + `4cfcc7fc` | project scoped metrics、Login TTL（R14-M1 另一半）、golden flake、console:gen shim、node.left 宽限窗、browse flake、volumes golden | S18a：project scope raw 双臂 + 白名单、迁移 00036/`auth.login_token_ttl` 720h；S18b：假时钟两相驱动、`gen.mjs` 跨平台、`NodeOptions.LeaveGrace` 30s、browse 根因、volumes 成功 golden |
+| S19 文档收口 | docs-only（未提交） | R15-M1（文档侧）、ADR-0072/0082/0083 追记、security 设计 S18 追记、converge 设计 §9.1 状态追记、台账 §3.10、本表 | 六份文档 + domain-model 改 v1 诚实口径（无只读闸门/无 restore 动词）；ADR-0072 冻结体边界、ADR-0082 撤销 peer 首拍窗/detect 下 Cancel 不回卷、ADR-0083 `--runtime` 残余目标/触发；台账 198/198 统计与可复跑校验 |
 
 **H 状态：15/15 条 H 已在本地修复并推送**。机制级真机余量：H7（BG/route 就绪门）与 H9（BG 旧代 egress）为代码+单测级修复，e2e 触发待 dind/staging；H3 的 k3s 真机 403 反转与 S11a/b 的 relay 新流程待 dind/staging 台账（本机无 Docker daemon）。同批修复的 M/R：R16-M1、R14-M2/M4、R10-M6、R05-M1/M4、R12-M1、R09-M1、R06-M1；第二轮 S12 收口 R02-M2/M5、R16-M2/M3/M5/M6（**R16-M2 的 detect 零写半边已由 D3 落码并经 staging 验证**，见下）。
 
-**staging 真机验证（2026-10-19，D3/整体修复首次上真机）**：staging `fleetly-dev` 由旧 `dc22485` 换装至 `ca199a82`（数据库 goose 33→35；换装前后 16 容器 CreatedAt diff 零滚动），停服快照与回滚路径见 `docs/runbooks/staging-fleetly.md` 2026-10-19 节。D3 验收：detect 冷启动后 n0/tw/console 三探针 200（期望账本重建生效）、跨 60s 慢通道窗容器零变化（零写）、事件无 converge 堆积；`--replicas 2` 篡改 ≤10s 产出 `workload.drift_detected` 且保持 2/2 不收敛；恢复 `all` 后 20s 内自动回 1/1，审计出现 `workload.converge`（source=system + 基线 digest）、事件无刷屏。staging 现役 `ca199a82`、posture 恢复 `all`。
+**M/L 状态（S19 收口）：198/198 全部有裁决，零未分类。** 最终分类：**FIXED 76**（原 17 + S13-S17 落码 59）、**DUP 9**、**ACCEPT 30**、**SEPARATE 83**、**FIX-NOW 0**（合计 198）；外挂行 `R01-H1†` 已由 S16-c6 修复（不计入 198）。逐条 ID、批次映射与可复跑校验命令见台账 §3.10。S13-S17 的 59 项全部落码；S18 只覆盖非 M/L 残项（project scoped metrics / Login 会话 TTL / 测试运维）；S19 只改文档（R15-M1 + ADR 追记）。
+
+**未修但不是未分类：ACCEPT/SEPARATE 的 top10 风险（沿用台账 §4，均带触发）**：
+1. 安装链供应链无校验（R09-M3 + R14-M7 DUP）——触发：**v1 发版前阻断项**；
+2. 关停预算 5s 截断（R13-M2 + R09-M5/M6）——触发：升级窗出现半态资源；
+3. SQLite 单连接 + 缺索引（R05-M5/M6）——触发：压测或 p99 告警；
+4. 外部破坏性动作无补偿（R13-M3）——触发：首次 rotate 失败；
+5. 契约不可预测 + `PutSecret` 无上限（R08-M5/M4）——触发：SDK/Agent 错误处理事故；
+6. 审计无游标 + 流式/票据无上限（R08-M6 + R05-M7 DUP、R08-M7）——触发：取证需求或流式 DoS；
+7. Console localStorage 无 CSP（R11-L4）——触发：安全头批或 XSS 演练；
+8. 无单实例约束（R09-M7）——触发：双 daemon 双写事故；
+9. exec 可靠性双洞（R06-M8、R04-M4）——触发：孤儿进程或 relay 断连投诉；
+10. `install.sh` 无升级语义（R09-M2）——触发：首次原地升级 / v1 发版前。
+
+> S19 已消除的风险：R15-M1（只读/restore 承诺——六份文档 + domain-model 改 v1 诚实口径，实现闸门列独立项）、R09-M8（Edge/proxy 端点认证已由 S14b `42fb9f50` 修复）；明细见台账 §3.10.3。
+
+**staging 真机验证（2026-10-19）**：staging `fleetly-dev` 由旧 `dc22485` 换装至 `ca199a82`（数据库 goose 33→35；换装前后 16 容器 CreatedAt diff 零滚动），停服快照与回滚路径见 `docs/runbooks/staging-fleetly.md` 2026-10-19 节。D3 验收：detect 冷启动后 n0/tw/console 三探针 200（期望账本重建生效）、跨 60s 慢通道窗容器零变化（零写）、事件无 converge 堆积；`--replicas 2` 篡改 ≤10s 产出 `workload.drift_detected` 且保持 2/2 不收敛；恢复 `all` 后 20s 内自动回 1/1，审计出现 `workload.converge`（source=system + 基线 digest）、事件无刷屏。staging 记录现役 `ca199a82`、posture 恢复 `all`。
+
+**S13-S18b 换装 + S19 真机复核（2026-10-19，fleetly-dev）**：staging 由 `ca199a82` 换装至 **`4cfcc7fc`**（S1-S18b 全部修复）；goose 35→**36** 前滚（00036 token expiry），启动 12s 内 active、gRPC/HTTP :9080/:9081/:9082 正常；**16 容器 CreatedAt diff 零滚动**；whoami `platform_admin:true`、nodes 可读、`doctor` **11 ok / 2 warning / 0 failed**（convergence capability `posture=all, inspector=present`）；n0/tw/console 三探针 200。新特性抽查：`metrics series --project` API 通（窗口内空集）且 `project+cpu_percent` 精确 `E_INVALID_ARGUMENT`；c9 端点暴露门在单队形态下仅落 WARN（"set server.proxy_config.auth_token before enabling more than one team"），未拒启。**诚实边界**：staging 单队（teams=1、users=2），S13 跨队读面、S14 多队端点认证、Login TTL 到点拒用等**跨租户/时点面无法在单队 staging 端到端复验**，以单测/apitest 为证据；快照与回滚见 runbook 2026-10-19（终装）节。
 
 **S12 文档账更正（D5）**：ADR-0081 附录统计 **153→154**——S10a 的 `QueryScopedMetrics` 未入法源，而 `writeclassguard_test.go` 早已断言 154；本批修法源（附录 A.14 补行 + §1/§4/验收锚四处计数），不改守卫降级。同批：ADR-0081 DECLARATION 判据分「有运行时面 / 状态即事实」两子类 + 域级收敛面表（`TestWriteClassConvergenceFaceByDomain`）+ ACTION/DECLARATION 互斥断言（`TestWriteClassBucketsMutuallyExclusive`）；ADR-0082 裁决表裁为 **8 判定行 + 2 非行**（行 05 信号层非行、行 09 未落码），行 10 机制更正为 `replay` 重放标记；ADR-0083 补 H15「restart 源 = 生效基线」追记。
 
-**仍余 backlog（非 H）**：
-- **D3 成文降级（非缺陷）**：detect 期间 gen/stopped 看门狗失明、撤销 peer 不剥离（恢复 `all` 后下一拍剥离）；ADR-0082 §5 已按准确语义成文，C5/C6 钉测含「切回 all 恢复」反向断言
-- **M 级残余**：R16-M4（撤销 peer 在请求 goroutine 内同步 Ensure）、R16-L1/L2/L4/L5/L6（翻案登记补全/9 张表清理/守卫其余盲点/弱断言/Author Class 执法面）、R02-M1（冷却空签名解除）、R06-M7 ConfigMap 孤建清扫、R08-M1 节点读面
-- k3s CPU% 量纲/真机（H8 阶段 C）、`node.left` 抖动宽限窗裁决
-- project 级 scoped 指标与 `ListAlertRules`/`ListAlertStates` Team 过滤（已裁决单列小批）
-- S2 残留：ListUsers/GetUser 读面授权、Login TTL/限速、平台面 AST 守卫
-- 以及 §4 其余 M/L
-- `cmd/fleetly` golden 假时钟 flake（基线既有：manual-drive 多跑一拍导致 `created_at` 00:02/00:04 漂移；单跑绿、并发/`-count=3` 偶发）；`console:gen` Windows shim 问题（本地转发器绕过，建议单列修 gen.mjs 跨平台）
+**仍余 backlog（非 H；均为 SEPARATE/ACCEPT 已裁决项，不是未分类）**：
+- **M/L 残余**：top10 见上；全量 83 条 SEPARATE + 30 条 ACCEPT 的 ID 清单、owner 与触发条件见台账 §3.10.2 / §2。
+- **D3 成文降级（非缺陷）**：detect 期间 gen/stopped 看门狗失明、撤销 peer 不剥离（恢复 `all` 后下一拍剥离）；ADR-0082 §5 已按准确语义成文，C5/C6 钉测含「切回 all 恢复」反向断言。
+- **真机/e2e 余量**：k3s CPU% 量纲/真机（H8 阶段 C）；dind e2e（H7/H9、k3s config mount、relay 双节点）与 GitHub Actions 新 job 未真跑（本机无 Docker）；S13-S18b 已上 staging（`4cfcc7fc`，见上），跨租户/时点门仍以单测为证据。
+- **独立项**：平台面 AST 守卫（随权限模型 ADR，R08-L1/R12-L3/L4）；R15-M2（G1-G24 执法手册补档）、R15-M3（ADR-0015 N-1 协商实现或成文）——见台账 SEPARATE 清单。
+- **S19 文档侧已消除**：R15-M1（只读/restore 承诺改口）；S18b 已修 golden 假时钟 flake、`console:gen` Windows shim、node.left 宽限窗、browse flake、volumes 成功 golden。
 
-**修复边界（诚实）**：S1-S12 的代码/生成物/文档已全部 push；`generate:verify`/`console:verify` 零漂移；终验 `go test ./...` 仅 2 项本机环境失败（keyring Windows ACL、builders 无 Docker daemon），其余全绿（cmd golden 假时钟 flake 仍偶发、单跑绿）；**staging 已实测整体修复可启动/迁移前滚/路由观测收敛面不回归，D3 真机验收通过**（详见 runbook 2026-10-19 节）；其余 dind e2e（H7/H9、k3s config mount、relay 双节点）与 GitHub Actions 仍未运行；R06-M7/R08-M1 等 M/L 待后续批。
+**修复边界（诚实，S19 更新）**：S1-S18b 的代码/生成物/文档已全部 push，HEAD `4cfcc7fc`；`generate:verify`/`console:verify` 零漂移；终验 `go test ./...` 仅 2 项本机环境失败（keyring Windows ACL、builders 无 Docker daemon）；S18b 已修 golden 假时钟 flake 与 `console:gen` 跨平台（二者不再列为已知缺口）。**staging 已实测 `4cfcc7fc`（S1-S18b）可启动/迁移 36 前滚/零滚动/路由与 doctor 正常，D3 语义与 project metrics 受理面不回归**；跨租户/时点门（S13 跨队读面、S14 多队端点认证、Login TTL 到点、node.left 宽限真机）以单测/apitest 为证据——staging 单队无法复验。**dind e2e（H7/H9、k3s config mount、relay 双节点）与 GitHub Actions 新 job 仍未真跑**——S17b 只把 job/守卫写进 CI，本机无 Docker。R09-M8/R14-M6 端点认证、R06-M7/R08-M1 等 M/L 已由 S13-S17 收口，残余以台账 §3.10 为准。
 
 ---
 

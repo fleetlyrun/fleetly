@@ -491,7 +491,7 @@ ADR-0042 落地（64f07f0..8b7f51d 七 commit，CI run 37218474928 六 job 全�
 
 ## 平台升级操作序（F2.3 工具化，2026-10-04）
 
-ADR-0015 升级序的完整落地形态：**Platform Backup 前置 → SIGTERM 排水 → 二进制替换 → 起新版（goose 前滚 + Managed Provider 逐个 reconcile + 解除只读，全自动）**。前置动词自 75a3d31 起可用（旧版无 platform 组时按 b4cfea0 节的手工快照纪律执行）。
+ADR-0015 升级序的完整落地形态：**Platform Backup 前置 → SIGTERM 排水 → 二进制替换 → 起新版（goose 前滚 + Managed Provider 逐个 reconcile；v1 无「解除只读」步骤——平台无运行期只读态，末步为健康核对）**。前置动词自 75a3d31 起可用（旧版无 platform 组时按 b4cfea0 节的手工快照纪律执行）。
 
 1. **Platform Backup 前置（硬停分支——备份没成=不得动二进制）**：
    ```sh
@@ -531,7 +531,7 @@ ADR-0015 升级序的完整落地形态：**Platform Backup 前置 → SIGTERM �
   3. **旧版二进制回装**（goose 只前滚：新版迁移已写入的库，旧版二进制读不懂 schema——这正是要恢复备份而非直接回装的原因）。
   4. `systemctl start fleetlyd` + `fleetly status`。
   5. 失败数据根保留取证（`/var/lib/fleetly.failed-*`），确认稳定后清理。
-- **边界**：Platform Restore 期间控制面只读语义 = 恢复窗口内不引导服务；受管库卷/zot 卷不在 Platform Backup 集内（平台只快照数据根）——数据面回滚依赖第 2 步的手工卷快照。
+- **边界**：v1 无平台运行期只读闸门/无 `platform restore` 动词——「恢复窗内不引导服务」是操作者停服纪律，不是平台执法（daemon 在跑则照常受理写）；受管库卷/zot 卷不在 Platform Backup 集内（平台只快照数据根）——数据面回滚依赖第 2 步的手工卷快照。实现闸门 + restore 动词列后续独立项（触发：F2.3 恢复链落地）。
 
 ### staging pg 旧布局卷迁移（F2.2 挂账；2026-10-04 实录改写——原六步序作废）
 
@@ -1350,3 +1350,29 @@ systemctl daemon-reload && systemctl start fleetlyd
 ```
 
 **现状**：staging 现役 fleetlyd/fleetly = `ca199a82`；posture 已恢复缺省 `all`；本记录同时验证 S1-S12 修复在真机可启动、迁移前滚 33→35、路由/观测/收敛面不回归。
+
+---
+
+## 2026-10-19 终装：S1-S18b 全量修复上 staging（二进制 4cfcc7fc）
+
+**来源**：backlog 收口 S13-S18b（`docs/plan/2026-10-19-backlog-closure.md`）全部合入后首次上真机。快照留底 `/root/fleetly-upgrade-4cfcc7fc/`：旧双二进制 `fleetlyd.ca199a82`/`fleetly.ca199a82`、`data-root.tgz`（停服后全量）、`volumes/{torchwood-pg-data,zot,registry-data}.tgz`、`state/`（前后 service/container 清单 + 校验文件）。
+
+**换装序**：scp 双件（sha256 `266fe9e1…`/`130afebc…`）→ stop → data-root tar → install → start。启动日志：`goose: successfully migrated database to version: 36`（35→36：Login 会话 token `expires_at`）。
+
+**验收锚（全绿）**：
+- 换装前后 16 容器 `CreatedAt` diff **零变化**（无 task 重建）；whoami `platform_admin:true`；nodes 可读；`doctor` **11 ok / 2 warning / 0 failed**（convergence capability `posture=all, inspector=present`）；n0/tw/console 三探针 200。
+- 新受理面：`metrics series --project <id> --metric cpu_cores` 正常返回（窗口空集 `{}`）；`--metric cpu_percent` + project → 精确 `E_INVALID_ARGUMENT`。
+- 启动告警（预期）：单队形态 + `server.proxy_config.auth_token` 空 → WARN 提示"多队前设置 token"（S14b c9 失效安全门；单队不拒启）。
+
+**诚实边界**：staging 为单队（teams=1 / users=2），S13 跨队读面、S14b 多队端点认证、Login TTL 到点拒用、node.left 宽限窗等**跨租户/时点/抖动面**无法在单队 staging 端到端复验，以单测/apitest 为证据。建议后续多队 staging 或 dind 覆盖。
+
+**回滚**（旧二进制 + 快照）：
+```sh
+systemctl stop fleetlyd
+install -m0755 /root/fleetly-upgrade-4cfcc7fc/fleetlyd.ca199a82 /usr/local/bin/fleetlyd
+install -m0755 /root/fleetly-upgrade-4cfcc7fc/fleetly.ca199a82 /usr/local/bin/fleetly
+systemctl daemon-reload && systemctl start fleetlyd
+# 数据回滚（仅必要时）：systemctl stop fleetlyd && tar xzf data-root.tgz -C /var/lib/fleetly
+```
+
+**现状**：staging 现役 fleetlyd/fleetly = `4cfcc7fc`；posture 缺省 `all`；`/root/fleetly-upgrade-ca199a82/`（D3 换装）与本次目录均保留作回滚锚。

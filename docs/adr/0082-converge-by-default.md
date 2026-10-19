@@ -2,7 +2,7 @@
 
 | 状态 | 日期 | 关联 |
 |---|---|---|
-| Accepted | 2026-10-18 | 设计母本 `docs/design/2026-10-18-declarative-model.md` §1/§4（唯一规格源）；**推翻 ADR-0005「漂移检测默认开、收敛默认 opt-in」条款**（该条款自 ADR-0010 起已降参考缺省，本 ADR 显式了断）；**推翻 ADR-0022 decision 1** 的「失配仅发事件、只观测不迁移」口径（**decision 3 的 stopped 只观测实质保留**——本 ADR 裁决表对 spec 相符 stopped 维持告警不收敛）；**登记在役引用点 `docs/adr/0046:74`**（「drift 只发事件、Ensure 是唯一写动词（ADR-0005）」——该行的扫描-重建互不干扰论证不受影响，引用的收敛口径自本 ADR 翻向）；**翻案 admission N0「不自动拆除」条款在 Cancel 遗留场景的适用**（2026-10-18 用户裁决：回卷 LatestSucceeded 基线）；ADR-0064（内容锚定等价——收敛的等价判据与停摆 resume 先例）；ADR-0048（双代窗与驱动权口径）；ADR-0017（变更冻结语义）；ADR-0066/0075（写序列 kernel 与审计行）；CONTEXT.md Converge 词条同批修订（「默认 opt-in」翻案）；**修订 2026-10-19（S12）**：§1 表裁为 8 判定行 + 2 非行且判定函数被生产路径真实调用；§2 事实面按「fast 源 ∨ 真实变更」分流；§6 账本归属与 replay 重放标记；**§5 detect = 零运行时写（D3 已实施：四源同受门限，启动面只重建期望账本）** |
+| Accepted | 2026-10-18 | 设计母本 `docs/design/2026-10-18-declarative-model.md` §1/§4（唯一规格源）；**推翻 ADR-0005「漂移检测默认开、收敛默认 opt-in」条款**（该条款自 ADR-0010 起已降参考缺省，本 ADR 显式了断）；**推翻 ADR-0022 decision 1** 的「失配仅发事件、只观测不迁移」口径（**decision 3 的 stopped 只观测实质保留**——本 ADR 裁决表对 spec 相符 stopped 维持告警不收敛）；**登记在役引用点 `docs/adr/0046:74`**（「drift 只发事件、Ensure 是唯一写动词（ADR-0005）」——该行的扫描-重建互不干扰论证不受影响，引用的收敛口径自本 ADR 翻向）；**翻案 admission N0「不自动拆除」条款在 Cancel 遗留场景的适用**（2026-10-18 用户裁决：回卷 LatestSucceeded 基线）；ADR-0064（内容锚定等价——收敛的等价判据与停摆 resume 先例）；ADR-0048（双代窗与驱动权口径）；ADR-0017（变更冻结语义）；ADR-0066/0075（写序列 kernel 与审计行）；CONTEXT.md Converge 词条同批修订（「默认 opt-in」翻案）；**修订 2026-10-19（S12）**：§1 表裁为 8 判定行 + 2 非行且判定函数被生产路径真实调用；§2 事实面按「fast 源 ∨ 真实变更」分流；§6 账本归属与 replay 重放标记；**§5 detect = 零运行时写（D3 已实施：四源同受门限，启动面只重建期望账本）**；**修订 2026-10-19（S19）**：§5 补撤销 peer 首拍窗（S15b）与 detect 下 Cancel 遗留不回卷（S17b），§6 补重放标记不被 detect 消费 |
 
 ## 背景
 
@@ -81,6 +81,8 @@ ring 域（受管/Database/Task）已实现控制器赢：`ReconcileReplayInterv
 2. 启动面在 detect 下只**重建期望账本**（`rebuildBaselineExpectations` → `recordProjectedSpecs`：`ensuredSpec` 期望 spec + 声明端口 + `ensuredBy` 归属 = 基线行），**不下发 Ensure**——账本重建是检测面与路由解析面（`resolveBackend` 读 `ensuredSpec`）的前提，不是收敛动作；
 3. **成文降级**（detect 期间的检测面）：spec 失配 / 缺席 / 滚动停摆照常；**gen 偏离与稳态 stopped 看门狗在进程重启后失明**（gen 锚只能由 Ensure 回执的 wire-gen 提供，detect 不写 → 无回执），直到姿态切回 `all` 或发生一次部署；
 4. **撤销 peer 的隔离在 detect 下不执行**（剥离是运行时写），被拦时落一条 Warn 日志（`convergeOutcomePostureDetect`，消息含 "posture is detect"）；恢复 `all` 后下一拍剥离。
+5. **撤销 peer 的首拍窗口（S15b）**：撤销请求只落账 + 标记待剥离 + Kick 漂移扫描，**请求返回不等剥离**；剥离在下一漂移拍由 `IsolateNetworkPeer` 完成（断存量附件）。剥离失败落 Warn 并在后续拍重试（标记保留）；进程崩溃丢失待办标记时，漂移拍的隔离不变式（`crossProjectRefs` 复核批准态）在重启基线重放后兜底剥离——标记是及时性优化，不是正确性依赖。detect 下该剥离照旧不执行（第 4 条）。**这是异步语义，不是"撤销后已剥离"的同步承诺**：响应返回时附件可能仍在，下一拍才消失。
+6. **detect 下 Cancel 遗留不回卷（S17b 负例）**：detect 零写期间，非成功终态的 replay 重放标记**不被消费**——driftScan 不 Ensure、不发 `workload.converged`、不落 `workload.converge` 审计，标记保留；恢复 `all` 后下一拍由同一标记兑现回卷基线（`TestPostureDetectCancelLegacyDoesNotRollBack`）。这是第 1 条「四源同受门限」在 Cancel 面的具体形态，不是新增降级。
 
 **D3 实施注记（2026-10-19，detect = 零运行时写）**：
 
@@ -93,7 +95,7 @@ ring 域（受管/Database/Task）已实现控制器赢：`ReconcileReplayInterv
 
 - ensuredGen **只由 Ensure 写入，禁止观测播种**；ensuredSpec/ensuredBy 的唯一非 Ensure 写径是 detect 期的账本重建（投影，不写 gen——见本节末条与 §5 第 2 条）——受管域 gen 观测播种先例不得照抄到 App 域，否则手动热修被播种成期望态，静默击穿 controller-wins。
 - **账本条目带写入部署归属**：每条 `ensuredSpec`/`ensuredGen` 记录写入它的 Deployment ID（`observations.ensuredBy`）；drift 的期望侧**只采用写入者 == 当前 `LatestSucceeded` 行的条目**（`drift.go:277-291`）。未成功终态（Cancel/failed/superseded）或进行中部署的物化因此不再污染期望态——那是「上次下发了什么」，不是「期望什么」。**方向安全性**：不采用 = 跳过该载体的 spec/gen 对照（漏报不误报）。**部署窗收窄成文**：在途部署写下的条目在窗内不参与对照（窗内驱动权在部署链，裁决行 6 执法）；窗口结束后条目归属新基线、对照自动恢复。窗口内人工改载体不被 drift 面看见（≤ 一个部署窗），是可接受且必须成文的取舍。
-- **非成功终态 → 重放标记**：终态且该行已进过物化相位（releasing/observing/rolling-back，`stateMayHaveMaterialized`）→ 落标记，下一拍 `replay` 快信号以基线重放重建账本（行 10 的兑现机制）；成功终态撤销标记（`transit` 单前门 + `convergeSucceed` + teardown）。标记值携带部署 ID——第二次取消 = 新签名，可再触发。
+- **非成功终态 → 重放标记**：终态且该行已进过物化相位（releasing/observing/rolling-back，`stateMayHaveMaterialized`）→ 落标记，下一拍 `replay` 快信号以基线重放重建账本（行 10 的兑现机制）；成功终态撤销标记（`transit` 单前门 + `convergeSucceed` + teardown）。标记值携带部署 ID——第二次取消 = 新签名，可再触发。**detect 下标记不被消费**（§5 第 6 条）：零写期间不回卷，恢复 `all` 后同一标记兑现（不是"detect 丢掉回卷意图"）。
 - **重启冷窗成文**：基线重放完成前 expected 为空 → 缺席检测盲，方向安全（漏报不误报），启动重放收口即闭合（detect 下的冷窗形态见 §5 第 3 条）。
 - **succeeded 无期望缓存 → 收敛触发**：扫描面补「有 succeeded 基线但无期望缓存」分支（重建期望缓存本身是收敛动作），修复 rebuildBaselines 单 App 失败即永久自愈盲（`drift.go:66-69` continue 与「下一扫描拍兜底」注释不符）。
 - **detect 下的账本重建**：启动面在 detect 只写 `ensuredSpec`（投影，精确）+ `ensuredBy` 归属（写入者 = 基线行），**不写 gen 锚**——gen 面失明见 §5 第 3 条；这是 detect 期的唯一账本写径，仍属「零运行时写」（不触达载体，只重建检测/路由/隔离的输入缓存）。
@@ -139,3 +141,4 @@ ring 域（受管/Database/Task）已实现控制器赢：`ReconcileReplayInterv
   2. §5 第 3/4 条降级（gen/stopped 失明、撤销 peer 不剥离）由继承条款转为实现语义，并配 C1-C6 钉测与「切回 `all` 恢复」反向断言；
   3. §6 补 detect 账本写径的边界（唯一非 Ensure 写点、不写 gen、写入者 = 基线行）；原「待办 D3/不得改 detect」表述删除。实施注记见设计稿 `docs/design/2026-10-19-converge-semantics.md` §3。
 - **2026-10-19 staging 真机验证（D3，commit `ca199a82`）**：staging `fleetly-dev` 换装 `dc22485 → ca199a82`（goose 33→35，零容器滚动）后切 `posture=detect` 冷启动：路由三探针 200、跨 60s 慢通道窗零容器变化、事件无 `workload.converged` 堆积；篡改副本数后产出 `workload.drift_detected` 且不收敛（保持篡改态）；恢复 `all` 后自动回卷并落 `workload.converge` 审计行（source=system + 基线 digest）。证据与回滚路径见 `docs/runbooks/staging-fleetly.md` 2026-10-19 节。
+- **2026-10-19 修订（S19）**：§5 补第 5 条「撤销 peer 首拍窗」（S15b `b2941cc3`：撤销落账即返回、下一漂移拍剥离、失败 Warn 重试、崩溃由隔离不变式兜底）与第 6 条「detect 下 Cancel 遗留不回卷」（S17b `c1e828d7`：零写期间标记不消费，恢复 `all` 后兑现）；§6 重放标记条补 detect 边界。历史裁决不改写。

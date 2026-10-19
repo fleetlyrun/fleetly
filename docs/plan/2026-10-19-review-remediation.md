@@ -74,7 +74,7 @@
 - 还原点 commit：见 git log（`fix(k3s,persistence,guards,ci): S5 ...`）
 - 残留/后续：R06-M1 ConfigMounts 仍归 backlog（H3 只消除 403，真机发布前应先落挂载，否则"显式 403 变静默无配置"）；审计跨进程仅靠重试；e2e/Actions 未本机运行。
 
-## 终验（全部阶段后，Lead 亲跑 2026-10-19）
+## 终验（S1-S5 后，Lead 亲跑 2026-10-19；历史记录）
 
 - `go build ./...`（Windows）exit 0；`GOOS=linux GOARCH=amd64 go build ./...` exit 0。
 - `go test ./...`（root module）：除本机已知环境面 2 项外全绿——`keyring`（Windows ACL 不体现 0600/0700）与 `builders`（Docker daemon 不可达）；`cmd/fleetly` 自 S1 起在 Windows 可运行（35.9s）、engine 36.3s、guards 45.1s、apitest 45.8s、persistence 全包、k3s、traefik、interfaces 全绿。
@@ -189,3 +189,38 @@ d233c07d docs(plan,reviews): S1-S5 终验记录与修复状态归档
 - 验收证据（Lead 亲跑）：gofmt 空；双平台 build 0；idem 0.68s / persistence/idempotency 0.22s / migrations 1.78s / persistence 0.18s / guards 17.3s / apitest 26.9s 全 ok；新增 7 项测试逐个 PASS；vet 0；diff-check 0。
 - 全局一致性检查：authn 在 idem 拦截器之前（生产 ctx 恒有身份）；ReceiveWebhook 为 PUBLIC 面，X-GitHub-Delivery 派生键落 anonymous 且响应不含凭证；存量空作用域行对全部调用方不可达、仅由 Sweep 过期清理。
 - 残留：`entityid_guard` 豁免注释仍写"主键 = idem_key"（现为复合主键，守卫绿，随批更新注释）；迁移不可回滚（goose 只前滚惯例）。
+
+---
+
+## 第三轮 backlog 收口（S13-S19，2026-10-19）
+
+台账（198 条 M/L 的裁决、逐条状态、最终统计与可复跑校验）：`docs/plan/2026-10-19-backlog-closure.md`；S13-S17 把 59 条 FIX-NOW 全部落码，S18 收口非 M/L 残项，S19 只改文档。
+
+| 批次 | commit | 覆盖 | 门禁/证据（台账 §3.9 记录） |
+|---|---|---|---|
+| S13 | `1dd4171d` | R14-M1、R14-L1、R08-M2 | 身份读面最小化 / Login 双桶限速 / alerts Team 过滤；门禁全绿 |
+| S14a | `5e5ab2fe` + `ff0b8681` | R03-M13、R07-M4、R07-M2、R14-M8、R07-L3、R07-L4 | 外部面/密钥材料；c1 回归修复后 cmd golden 复绿 |
+| S14b | `42fb9f50` | R14-M5、R08-M3、R08-M8、R08-M9、R09-M8（+R14-M6 DUP） | 授权/事实/契约/端点认证；新增 factteam 守卫；多队无 token fail-fast |
+| S15a | `ff8b8d18` | R02-M1、R02-L1、R02-M3、R02-M4、R02-M7、R13-L1、R16-L3 | 冷却签名三态/BG 重启代次/收口驱动权+维护锁/环 panic 可观测；engine `-race` 225s 绿 |
+| S15b | `b2941cc3` | R16-M4、R16-L2（+R02-L7 DUP）、R13-M1、R03-M5/M6/M7/M8/L5 | peer 撤销异步/BG 退役代账本/Teardown 清账+LRU/compose 保真五连；engine `-race` 228s 绿 |
+| S16a | `a543266b` | R06-M2、R06-M6、R06-M4、R06-M7、R06-M5 | k3s replicas/egress/logs、swarm config 清扫/exec 节拍；负例先红、门禁全绿 |
+| S16b | `ce9a15c7` | R01-M1（+R01-H1†）、R08-M1、R03-M1/M2、R04-M1、R13-L3 | browse 五引擎方言/节点读面平台门/引擎卫生四连；engine `-race` 235s、console 139 全绿 |
+| S17a | `8f5d41e7` | R12-M2/L1/L2/M3/M4/M7、R05-M8、R06-L1 | Runtime/loop/statefacade AST 判据、账本写点守卫、FakeRuntime 回执、e2e converged 断言；每项反向验证红→绿 |
+| S17b | `c1e828d7` | R12-M5/L5、R09-L4/L5/L7、R15-L4、R16-L1/L4/L5、R10-M1/L1、R02-L5 | CI/verify 对账、写类守卫三盲点、install 0750、CLI delete JSON 契约、freeze 真钉测；负例先红→绿 |
+| S18a | `07128fef` | project scoped metrics（非 M/L）、Login TTL（R14-M1 另一半） | 迁移 00036、`auth.login_token_ttl` 720h、raw 双臂、golden/console:gen 同批 |
+| S18b | `4cfcc7fc` | 非 M/L：golden flake / console:gen shim / node.left 宽限窗 / browse flake / volumes golden | 两相假时钟、`gen.mjs` 跨平台、`NodeOptions.LeaveGrace` 30s、browse 根因；已 push |
+| S19 | docs-only（未提交） | R15-M1（文档侧）+ ADR-0072/0082/0083 追记 + 台账 §3.10 + 报告 §11 + 本记录 | 无 go test；`git status --porcelain` 仅 docs/CONTEXT；台账 §3.10.4 校验脚本实跑全绿 |
+
+### S19 执行记录（docs-only）
+- 改动面：`CONTEXT.md`（Restore 词条）、`docs/adr/0005/0015/0072/0082/0083`、`docs/design/2026-09-30-architecture.md`、`docs/design/2026-09-30-domain-model.md`、`docs/design/2026-10-19-security-backlog-design.md`、`docs/design/2026-10-19-converge-semantics.md`（§9.1 S19 状态追记）、`docs/runbooks/staging-fleetly.md`、`docs/plan/2026-09-30-feature-checklist.md`（F2.3 条目）、`docs/plan/2026-10-19-backlog-closure.md`、`docs/reviews/2026-10-19-architecture-quality-acceptance.md`、本文件。
+- 行为口径：v1 **无平台运行期只读闸门、无 `platform restore` 动词**；恢复 = Platform Backup 重放 + runbook 手工停服序；升级序末步为启动后健康核对（无「解除只读」）。实现闸门 + restore 动词登记为独立项（触发：F2.3 恢复链落地）。
+- 验收：无代码/proto/golden/CI/脚本改动；台账 §3.10.4 的 PowerShell 校验实跑输出 `rows=199 unique=199`、`FIXED=17/DUP=9/FIX-NOW=60/ACCEPT=30/SEPARATE=83`、`fixed=76`、`total=198`，Compare-Object 全空。
+- 未提交：按任务约束不 commit、不 push；由 Lead 验收后提交。
+
+## 终验（S1-S19 收口，2026-10-19）
+
+- **代码基线**：`HEAD = 4cfcc7fc`（S1-S18b 全部 push `origin/main`；`git log 35257f18..4cfcc7fc` 共 40 个提交）。S19 为 docs-only 工作区改动。
+- **台账口径**：198 条 M/L 全部有裁决——FIXED 76（17 原 + 59 本轮）、DUP 9、ACCEPT 30、SEPARATE 83、FIX-NOW 0；外挂 `R01-H1†` 已修（不计入 198）。双向差集为空（`docs/plan/2026-10-19-backlog-closure.md` §3.10.4，实跑 `total=198`）。
+- **文档一致性**：R15-M1 六份文档 + domain-model 已改 v1 诚实口径；`grep -rn "恢复期" docs/` 剩余命中均为历史审计记录、台账裁决原文或"数据库恢复期"无关语义（ADR-0055），无现行平台只读承诺；ADR-0005/ADR-0015 以 S19 修订注记保留历史正文（ADR 只追加/修订不删历史）；ADR-0072/0082/0083 追记已落。
+- **门禁**：S13-S18b 各批由 Lead 在提交前验收（gofmt/双平台 build/guards/目标包 test/engine `-race`/console 等，见台账 §3.9）；S18b 已 push。S19 无 go test；自检 = `git status --porcelain` 仅 docs/CONTEXT + 台账 §3.10.4 脚本全绿。
+- **未验证边界（诚实）**：S13-S18b 未上 staging（待 Lead S19 真机复核结果回填）；dind e2e（H7/H9、k3s config mount、relay 双节点）与 GitHub Actions 新 job 未真跑（本机无 Docker）；k3s CPU% 真机属 H8 阶段 C。
