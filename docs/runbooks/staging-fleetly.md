@@ -1376,3 +1376,8 @@ systemctl daemon-reload && systemctl start fleetlyd
 ```
 
 **现状**：staging 现役 fleetlyd/fleetly = `4cfcc7fc`；posture 缺省 `all`；`/root/fleetly-upgrade-ca199a82/`（D3 换装）与本次目录均保留作回滚锚。
+
+### 升级注意（随 4cfcc7fc 生效的运维事项）
+
+- **存量 Login 会话 Token 永不过期**：迁移 00036 只给**新登录**铸造的会话 Token 写 `expires_at`（`auth.login_token_ttl`，缺省 720h）；存量行 `expires_at=''` 语义为永不过期（升级零扰动的有意取舍，00036 注记同文）。口令曾泄露或离手的账号，旧会话不会因升级自动失效——轮换路径：`fleetly tokens list` 找出 password session 行逐个 `fleetly tokens revoke <id>`，必要时全量重登。Agent/CI Token（`tokens create`/bootstrap）本就无时效，不受影响。
+- **Login 限速的反代聚合面**：进程内双桶 = 单来源 IP 5 次失败/分钟 + 单账号 5 次失败/5 分钟。经 traefik/反代终结后转发 gRPC 的部署形态（staging 的 `api.*` 公网直连即此），所有外部登录共享反代的单一 peer 地址——IP 桶退化为**全局** 5 次失败/分钟，一次分布式爆破尝试可误锁全体登录至多 1 分钟（fail-closed 方向，无泄露无绕过）。处置：外部入口（WAF/网关）自备限流，进程内桶只作纵深防御层（loginlimit.go 文件头同口径）。
