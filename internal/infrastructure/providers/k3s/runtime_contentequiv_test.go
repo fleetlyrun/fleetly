@@ -186,12 +186,12 @@ func TestEnsureRestartSeqContentEquivalence(t *testing.T) {
 // canonical 归一钉（ADR-0083 比对半边，k3s 面）：restart_seq 标签 "0" 值
 // 与缺失在 modulo-gen canonical 里等价（stripObjectGenLabel 单点执法）。
 func TestCanonicalModuloGenNormalizesZeroRestartSeqLabel(t *testing.T) {
-	base := toDeployment(appNS(), capability.Workload{ID: "w1", Process: "api", Image: "nginx:1.27"}, 1, nil, nil, nil)
-	zero := toDeployment(appNS(), capability.Workload{ID: "w1", Process: "api", Image: "nginx:1.27"}, 1, nil, nil, nil)
+	base := toDeployment(appNS(), capability.Workload{ID: "w1", Process: "api", Image: "nginx:1.27"}, 1, nil, nil, "", nil)
+	zero := toDeployment(appNS(), capability.Workload{ID: "w1", Process: "api", Image: "nginx:1.27"}, 1, nil, nil, "", nil)
 	zero.Labels[labelRestartSeq] = "0"
 	zero.Spec.Template.Labels[labelRestartSeq] = "0"
 	assert.Equal(t, canonicalJSONModuloGen(base), canonicalJSONModuloGen(zero),
 		"a zero-valued restart_seq label must compare equal to its absence")
-	one := toDeployment(appNS(), capability.Workload{ID: "w1", Process: "api", Image: "nginx:1.27", RestartSeq: 1}, 1, nil, nil, nil)
+	one := toDeployment(appNS(), capability.Workload{ID: "w1", Process: "api", Image: "nginx:1.27", RestartSeq: 1}, 1, nil, nil, "", nil)
 	assert.NotEqual(t, canonicalJSONModuloGen(base), canonicalJSONModuloGen(one))
 }

@@ -51,6 +51,15 @@ const (
 	// labelNodeID 是节点锚定标记（D-MN-8：平台节点 ID 先于 placement 存在、
 	// 永不复用；k8s Node 对象 label，Placement 的 nodeSelector 锚）。
 	labelNodeID = "fleetly.node.id"
+	// annotationConfigChecksum 是 Config 材料内容指纹的 pod 模板注记（值轮换
+	// 传播面）。SubPath 单文件挂载是 k8s 明文不传播更新的形态——kubelet 不
+	// 刷新 subPath 文件，ConfigMap 原地 Update 后运行中容器拿不到新值（且
+	// pod spec 未变不触发 rollout）。指纹进模板即进 Deployment 滚动比对面：
+	// 值轮换 = 模板变更 = rollout，与 swarm 侧内容寻址 config 载体名同语义
+	// （ADR-0053 决策 3 值轮换面的 k3s 补全）。secret 走 projected 卷由
+	// kubelet 自带传播，不需要对应物。零挂载不铸注记——存量无配置载体升级
+	// 首拍零滚动。
+	annotationConfigChecksum = "fleetly.config.checksum"
 
 	namePrefix = "fleetly"
 	// namespacePrefix 是 per-Project Namespace 命名公式前缀：
@@ -346,6 +355,34 @@ func configVolumeName(i int) string {
 	return "fleetly-config-" + strconv.Itoa(i)
 }
 
+// configChecksum 计算「声明 ∩ 材料」稳定序下本 Workload 挂载 Config 的内容
+// 指纹（sha256 hex；零挂载返回空——调用方不铸注记）。指纹只覆盖实际挂载的
+// 声明：材料集里未被引用的条目值变化不滚本载体（swarm 内容寻址载体名同判
+// 定面——服务 spec 只引用自己挂的 config）。段间长度前缀编码，name/target
+// 是任意声明串不得依赖分隔符。
+func configChecksum(mounts []capability.ConfigMount, values map[string][]byte) string {
+	if len(mounts) == 0 || len(values) == 0 {
+		return ""
+	}
+	h := sha256.New()
+	mounted := 0
+	for _, m := range sortedConfigMounts(mounts) {
+		v, ok := values[m.Name]
+		if !ok {
+			continue
+		}
+		fmt.Fprintf(h, "%d:%s", len(m.Name), m.Name)
+		fmt.Fprintf(h, "%d:%s", len(m.Target), m.Target)
+		fmt.Fprintf(h, "%d:", len(v))
+		h.Write(v)
+		mounted++
+	}
+	if mounted == 0 {
+		return ""
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
 // toContainer 把 Workload 的容器面翻译为 k8s 容器声明（Deployment/
 // DaemonSet/Pod 共用）。
 //
@@ -510,8 +547,9 @@ func secretObjectName(platformName string) string {
 }
 
 // podTemplate 构造 Pod 模板（Deployment/DaemonSet 共用）。restart 由载体
-// 类型承载（Deployment=Always 语义；one-shot Pod=Never）。
-func podTemplate(ns capability.NamespaceRef, w capability.Workload, gen capability.Generation, secretFiles map[string]string, configFiles map[string]string, restart corev1.RestartPolicy) corev1.PodTemplateSpec {
+// 类型承载（Deployment=Always 语义；one-shot Pod=Never）。configChecksum
+// 非空时铸 Config 内容指纹注记（值轮换传播面，见 annotationConfigChecksum）。
+func podTemplate(ns capability.NamespaceRef, w capability.Workload, gen capability.Generation, secretFiles map[string]string, configFiles map[string]string, configChecksum string, restart corev1.RestartPolicy) corev1.PodTemplateSpec {
 	labels := workloadLabels(ns, w, gen)
 	spec := corev1.PodSpec{
 		Containers: []corev1.Container{toContainer(w, secretFiles, configFiles)},
@@ -599,18 +637,22 @@ func podTemplate(ns capability.NamespaceRef, w capability.Workload, gen capabili
 			},
 		})
 	}
-	return corev1.PodTemplateSpec{
+	template := corev1.PodTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{Labels: labels},
 		Spec:       spec,
 	}
+	if configChecksum != "" {
+		template.Annotations = map[string]string{annotationConfigChecksum: configChecksum}
+	}
+	return template
 }
 
 // ptr 是泛型取址助手（k8s API 大量指针字段）。
 func ptr[T any](v T) *T { return &v }
 
 // toDeployment 把长运行 Workload 翻译为 Deployment。
-func toDeployment(ns capability.NamespaceRef, w capability.Workload, gen capability.Generation, secretFiles map[string]string, configFiles map[string]string, pullSecrets []string) *appsv1.Deployment {
-	template := podTemplate(ns, w, gen, secretFiles, configFiles, corev1.RestartPolicyAlways)
+func toDeployment(ns capability.NamespaceRef, w capability.Workload, gen capability.Generation, secretFiles map[string]string, configFiles map[string]string, configChecksum string, pullSecrets []string) *appsv1.Deployment {
+	template := podTemplate(ns, w, gen, secretFiles, configFiles, configChecksum, corev1.RestartPolicyAlways)
 	for _, name := range pullSecrets {
 		template.Spec.ImagePullSecrets = append(template.Spec.ImagePullSecrets,
 			corev1.LocalObjectReference{Name: name})
@@ -647,8 +689,8 @@ func toDeployment(ns capability.NamespaceRef, w capability.Workload, gen capabil
 
 // toDaemonSet 把 Global 声明（受管采集面每节点一载体，ADR-0041）翻译为
 // DaemonSet（Workload.Global 的 k8s 原语，架构 §5 契约注释的既定映射）。
-func toDaemonSet(ns capability.NamespaceRef, w capability.Workload, gen capability.Generation, secretFiles map[string]string, configFiles map[string]string, pullSecrets []string) *appsv1.DaemonSet {
-	template := podTemplate(ns, w, gen, secretFiles, configFiles, corev1.RestartPolicyAlways)
+func toDaemonSet(ns capability.NamespaceRef, w capability.Workload, gen capability.Generation, secretFiles map[string]string, configFiles map[string]string, configChecksum string, pullSecrets []string) *appsv1.DaemonSet {
+	template := podTemplate(ns, w, gen, secretFiles, configFiles, configChecksum, corev1.RestartPolicyAlways)
 	for _, name := range pullSecrets {
 		template.Spec.ImagePullSecrets = append(template.Spec.ImagePullSecrets,
 			corev1.LocalObjectReference{Name: name})
@@ -669,8 +711,8 @@ func toDaemonSet(ns capability.NamespaceRef, w capability.Workload, gen capabili
 
 // toOneShotPod 把 one-shot Run Workload（RestartNever，ADR-0025 决策 1：
 // 退出即终态、补足由平台池语义承担）翻译为独立 Pod。
-func toOneShotPod(ns capability.NamespaceRef, w capability.Workload, gen capability.Generation, secretFiles map[string]string, configFiles map[string]string, pullSecrets []string) *corev1.Pod {
-	template := podTemplate(ns, w, gen, secretFiles, configFiles, corev1.RestartPolicyNever)
+func toOneShotPod(ns capability.NamespaceRef, w capability.Workload, gen capability.Generation, secretFiles map[string]string, configFiles map[string]string, configChecksum string, pullSecrets []string) *corev1.Pod {
+	template := podTemplate(ns, w, gen, secretFiles, configFiles, configChecksum, corev1.RestartPolicyNever)
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   workloadName(ns, w, gen),
@@ -817,6 +859,3 @@ func toEgressNetpol() *networkingv1.NetworkPolicy {
 func imagePullSecretName(server string) string {
 	return "fleetly-pull-" + sanitizeNamePart(server)
 }
-
-// fmt 包引用占位（错误文本构造在 runtime.go；保翻译层依赖最小）。
-var _ = fmt.Sprintf

@@ -87,7 +87,7 @@ func TestToDeployment(t *testing.T) {
 		Volumes:   []capability.VolumeMount{{VolumeID: "01V", Target: "/data"}},
 		StopGrace: 30 * time.Second,
 	}
-	d := toDeployment(ns, w, 7, map[string]string{"db-pass": "fleetly-mat-db-pass"}, nil, nil) //nolint:gosec // 测试载荷：材料名→对象名映射断言，非凭证本体
+	d := toDeployment(ns, w, 7, map[string]string{"db-pass": "fleetly-mat-db-pass"}, nil, "", nil) //nolint:gosec // 测试载荷：材料名→对象名映射断言，非凭证本体
 	assert.Equal(t, "fleetly-web-api", d.Name)
 	require.Len(t, d.Spec.Template.Spec.Containers, 1)
 	c := d.Spec.Template.Spec.Containers[0]
@@ -154,7 +154,7 @@ func TestConfigMountsTranslate(t *testing.T) {
 
 	// Deployment：两条声明各落一卷 + 一挂载；卷名 = fleetly-config-<位次>
 	// （稳定序位次，非名段——净化同形/同名多 target 都不得撞卷名）。
-	d := toDeployment(ns, w, 1, nil, configFiles, nil)
+	d := toDeployment(ns, w, 1, nil, configFiles, "", nil)
 	require.Len(t, d.Spec.Template.Spec.Volumes, 2)
 	vol0 := d.Spec.Template.Spec.Volumes[0]
 	assert.Equal(t, "fleetly-config-0", vol0.Name)
@@ -183,14 +183,14 @@ func TestConfigMountsTranslate(t *testing.T) {
 	// DaemonSet（Global）与 one-shot Pod（RestartNever）同形态。
 	ds := toDaemonSet(ns, capability.Workload{
 		ID: "w2", Process: "collect", Image: "nginx:1.27", Global: true, ConfigMounts: mounts,
-	}, 1, nil, configFiles, nil)
+	}, 1, nil, configFiles, "", nil)
 	require.Len(t, ds.Spec.Template.Spec.Volumes, 2)
 	require.Len(t, ds.Spec.Template.Spec.Containers[0].VolumeMounts, 2)
 	assert.Equal(t, "/etc/app/app.conf", ds.Spec.Template.Spec.Containers[0].VolumeMounts[0].MountPath)
 
 	pod := toOneShotPod(capability.NamespaceRef{Team: "acme", Project: "shop", Task: "01T"}, capability.Workload{
 		ID: "01R", Process: "run", Image: "busybox:1.37", Restart: capability.RestartNever, ConfigMounts: mounts,
-	}, 1, nil, configFiles, nil)
+	}, 1, nil, configFiles, "", nil)
 	require.Len(t, pod.Spec.Volumes, 2)
 	require.NotNil(t, pod.Spec.Volumes[1].ConfigMap)
 	assert.Equal(t, "fleetly-mat-web-worker-conf", pod.Spec.Volumes[1].ConfigMap.Name)
@@ -199,7 +199,7 @@ func TestConfigMountsTranslate(t *testing.T) {
 
 	// 材料缺失的声明防御性跳过（swarm configCarriers 查表同判据）：无悬空
 	// ConfigMap 引用、无多余挂载，其余声明位次前移仍两侧对齐。
-	partial := toDeployment(ns, w, 1, nil, map[string]string{"app-conf": "fleetly-mat-web-app-conf"}, nil)
+	partial := toDeployment(ns, w, 1, nil, map[string]string{"app-conf": "fleetly-mat-web-app-conf"}, "", nil)
 	require.Len(t, partial.Spec.Template.Spec.Volumes, 1)
 	require.NotNil(t, partial.Spec.Template.Spec.Volumes[0].ConfigMap)
 	assert.Equal(t, "fleetly-mat-web-app-conf", partial.Spec.Template.Spec.Volumes[0].ConfigMap.Name)
@@ -207,42 +207,91 @@ func TestConfigMountsTranslate(t *testing.T) {
 	assert.Equal(t, "/etc/app/app.conf", partial.Spec.Template.Spec.Containers[0].VolumeMounts[0].MountPath)
 
 	// 材料整体缺席（nil = SkipMaterials / 零 ConfigFiles）：零卷零挂载。
-	none := toDeployment(ns, w, 1, nil, nil, nil)
+	none := toDeployment(ns, w, 1, nil, nil, "", nil)
 	assert.Empty(t, none.Spec.Template.Spec.Volumes)
 	assert.Empty(t, none.Spec.Template.Spec.Containers[0].VolumeMounts)
 
 	// 顺序稳定：声明逆序 → 翻译产物逐字节相等（canonical 内容等价依赖同一序）。
 	reversed := w
 	reversed.ConfigMounts = []capability.ConfigMount{mounts[1], mounts[0]}
-	assert.Equal(t, d, toDeployment(ns, reversed, 1, nil, configFiles, nil),
+	assert.Equal(t, d, toDeployment(ns, reversed, 1, nil, configFiles, "", nil),
 		"declaration order must not leak into the carrier spec")
-	assert.Equal(t, canonicalJSON(d), canonicalJSON(toDeployment(ns, w, 1, nil, configFiles, nil)),
+	assert.Equal(t, canonicalJSON(d), canonicalJSON(toDeployment(ns, w, 1, nil, configFiles, "", nil)),
 		"same input must translate byte-identically")
+}
+
+// Config 内容指纹注记（值轮换传播面，见 annotationConfigChecksum）：值变即
+// 指纹变（进模板 = 进 Deployment 滚动比对面——SubPath 挂载 kubelet 不传播
+// 更新，rollout 是新值到达容器的唯一通道）；指纹只覆盖实际挂载的声明；零
+// 挂载不铸注记（存量无配置载体升级首拍零滚动）；声明顺序不进指纹。
+func TestConfigChecksumRotation(t *testing.T) {
+	ns := capability.NamespaceRef{Team: "acme", Project: "shop", App: "web"}
+	w := capability.Workload{ID: "w1", Process: "api", Image: "nginx:1.27",
+		ConfigMounts: []capability.ConfigMount{{Name: "app-conf", Target: "/etc/app/app.conf"}}}
+	configFiles := map[string]string{"app-conf": "fleetly-mat-web-app-conf"}
+	values := map[string][]byte{"app-conf": []byte("v1")}
+
+	d1 := toDeployment(ns, w, 1, nil, configFiles, configChecksum(w.ConfigMounts, values), nil)
+	sum1 := d1.Spec.Template.Annotations[annotationConfigChecksum]
+	require.NotEmpty(t, sum1)
+
+	// 值轮换 → 指纹变 → 模板变更（rollout 锚）。
+	values["app-conf"] = []byte("v2")
+	d2 := toDeployment(ns, w, 1, nil, configFiles, configChecksum(w.ConfigMounts, values), nil)
+	assert.NotEqual(t, sum1, d2.Spec.Template.Annotations[annotationConfigChecksum],
+		"config value rotation must change the pod template (rollout)")
+
+	// 未挂载的材料条目值变化不滚本载体。
+	values["app-conf"] = []byte("v1")
+	values["other-conf"] = []byte("unmounted")
+	assert.Equal(t, sum1, configChecksum(w.ConfigMounts, values),
+		"unmounted material entries must not affect the checksum")
+
+	// 材料缺席的声明不进指纹（与「声明 ∩ 材料」挂载视图同判据）。
+	missing := configChecksum([]capability.ConfigMount{{Name: "absent-conf", Target: "/etc/x"}}, values)
+	assert.Empty(t, missing)
+
+	// 零挂载不铸注记。
+	plain := toDeployment(ns, capability.Workload{ID: "w1", Process: "api", Image: "nginx:1.27"}, 1, nil, nil, "", nil)
+	assert.Empty(t, plain.Spec.Template.Annotations)
+
+	// 声明顺序不进指纹（sortedConfigMounts 同源稳定序）。
+	multi := []capability.ConfigMount{
+		{Name: "app-conf", Target: "/etc/app/app.conf"},
+		{Name: "worker-conf", Target: "/etc/app/worker.conf"},
+	}
+	allValues := map[string][]byte{"app-conf": []byte("v1"), "worker-conf": []byte("w1")}
+	reversed := []capability.ConfigMount{multi[1], multi[0]}
+	assert.Equal(t, configChecksum(multi, allValues), configChecksum(reversed, allValues),
+		"declaration order must not leak into the checksum")
+	// Target 参与（同名异 target 是合法声明组合，轮换面互不混淆）。
+	retargeted := []capability.ConfigMount{{Name: "app-conf", Target: "/etc/other.conf"}}
+	assert.NotEqual(t, configChecksum(multi[:1], allValues), configChecksum(retargeted, allValues))
 }
 
 // 无争用负载不显式设置策略（k8s 服务端缺省物化 RollingUpdate）；hostPort
 // 发布同样 Recreate。
 func TestDeploymentStrategy(t *testing.T) {
 	ns := capability.NamespaceRef{Team: "acme", Project: "shop", App: "web"}
-	plain := toDeployment(ns, capability.Workload{ID: "w1", Process: "api"}, 1, nil, nil, nil)
+	plain := toDeployment(ns, capability.Workload{ID: "w1", Process: "api"}, 1, nil, nil, "", nil)
 	assert.Empty(t, plain.Spec.Strategy.Type, "no-strategy carriers defer to k8s default (RollingUpdate)")
 	hostPub := toDeployment(ns, capability.Workload{
 		ID: "w2", Process: "edge",
 		Publish: []capability.PortPublish{{PublishedPort: 80, TargetPort: 8080, Mode: capability.PublishModeHost}},
-	}, 1, nil, nil, nil)
+	}, 1, nil, nil, "", nil)
 	assert.Equal(t, appsv1.RecreateDeploymentStrategyType, hostPub.Spec.Strategy.Type)
 }
 
 // Global → DaemonSet；one-shot RestartNever → 独立 Pod（Never）。
 func TestCarrierTypes(t *testing.T) {
 	ns := capability.NamespaceRef{Team: "acme", Project: "shop", App: "web"}
-	ds := toDaemonSet(ns, capability.Workload{ID: "w1", Process: "collect", Global: true}, 1, nil, nil, nil)
+	ds := toDaemonSet(ns, capability.Workload{ID: "w1", Process: "collect", Global: true}, 1, nil, nil, "", nil)
 	assert.Equal(t, "fleetly-web-collect", ds.Name)
 	require.Len(t, ds.Spec.Template.Spec.Containers, 1)
 	assert.Equal(t, corev1.RestartPolicyAlways, ds.Spec.Template.Spec.RestartPolicy)
 	pod := toOneShotPod(capability.NamespaceRef{Team: "acme", Project: "shop", Task: "01T"}, capability.Workload{
 		ID: "01R", Process: "run", Restart: capability.RestartNever,
-	}, 1, nil, nil, nil)
+	}, 1, nil, nil, "", nil)
 	assert.Equal(t, corev1.RestartPolicyNever, pod.Spec.RestartPolicy)
 	assert.Equal(t, "true", pod.Labels[labelManaged])
 	assert.Equal(t, "fleetly-run-01r", pod.Name)
@@ -288,8 +337,8 @@ func TestToPVC(t *testing.T) {
 
 // canonicalJSON：相同输入稳定（map 键排序内建）。
 func TestCanonicalJSONStable(t *testing.T) {
-	a := toDeployment(capability.NamespaceRef{Project: "p", App: "a"}, capability.Workload{ID: "w", Process: "x"}, 1, nil, nil, nil)
-	b := toDeployment(capability.NamespaceRef{Project: "p", App: "a"}, capability.Workload{ID: "w", Process: "x"}, 1, nil, nil, nil)
+	a := toDeployment(capability.NamespaceRef{Project: "p", App: "a"}, capability.Workload{ID: "w", Process: "x"}, 1, nil, nil, "", nil)
+	b := toDeployment(capability.NamespaceRef{Project: "p", App: "a"}, capability.Workload{ID: "w", Process: "x"}, 1, nil, nil, "", nil)
 	assert.Equal(t, canonicalJSON(a), canonicalJSON(b))
 }
 

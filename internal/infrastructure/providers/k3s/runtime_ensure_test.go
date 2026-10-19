@@ -148,6 +148,42 @@ func TestEnsureConfigMountsReferenceEnsuredConfigMap(t *testing.T) {
 	assert.Empty(t, probe.Spec.Template.Spec.Containers[0].VolumeMounts)
 }
 
+// TestEnsureConfigRotationRollsDeployment（值轮换传播面端到端锚）：ConfigMap
+// 原地 Update 后 SubPath 挂载不传播（kubelet 不刷新 subPath 文件），新值到
+// 达运行中容器的唯一通道是模板变更触发 rollout——内容指纹注记保证值轮换即
+// 模板变更（swarm 内容寻址载体名同语义）；同值重放模板零写（幂等不滚）。
+func TestEnsureConfigRotationRollsDeployment(t *testing.T) {
+	p, cli := newFakeProvider()
+	ctx := context.Background()
+	nsName := "fleetly-shop"
+	ws := []capability.Workload{{
+		ID: "w1", Process: "api", Image: "nginx:1.27", Replicas: 1,
+		ConfigMounts: []capability.ConfigMount{{Name: "app-conf", Target: "/etc/app/app.conf"}},
+	}}
+	require.NoError(t, ensureErr(p, ctx, appNS(), ws, 1, capability.Materials{ConfigFiles: map[string][]byte{"app-conf": []byte("v1")}}))
+
+	objName := domainSecretObjectName(appNS(), "app-conf")
+	deploySum := func() string {
+		d, err := cli.AppsV1().Deployments(nsName).Get(ctx, "fleetly-web-api", metav1.GetOptions{})
+		require.NoError(t, err)
+		return d.Spec.Template.Annotations[annotationConfigChecksum]
+	}
+	sum1 := deploySum()
+	require.NotEmpty(t, sum1, "config-mounted carriers must carry the content checksum annotation")
+
+	// 值轮换：ConfigMap 原地更新 + 模板指纹变更（rollout 比对面）。
+	require.NoError(t, ensureErr(p, ctx, appNS(), ws, 1, capability.Materials{ConfigFiles: map[string][]byte{"app-conf": []byte("v2")}}))
+	cm, err := cli.CoreV1().ConfigMaps(nsName).Get(ctx, objName, metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, "v2", cm.Data[secretDataKey])
+	sum2 := deploySum()
+	assert.NotEqual(t, sum1, sum2, "value rotation must reach the pod template (rollout is the only propagation channel for SubPath mounts)")
+
+	// 同值重放：模板零写（幂等重放不滚）。
+	require.NoError(t, ensureErr(p, ctx, appNS(), ws, 1, capability.Materials{ConfigFiles: map[string][]byte{"app-conf": []byte("v2")}}))
+	assert.Equal(t, sum2, deploySum())
+}
+
 // egress netpol 收敛的另一边：期望集不再含 egress 载体 → policy 撤除。
 func TestEnsureRemovesNetpolWhenNoEgressCarriers(t *testing.T) {
 	p, cli := newFakeProvider()
@@ -315,13 +351,13 @@ func TestInspectWorkloadsDaemonSetAndNilReplicas(t *testing.T) {
 	nsName := "fleetly-shop"
 	ds := toDaemonSet(appNS(), capability.Workload{
 		ID: "w9", Process: "collector", Image: "busybox:1.37", Global: true,
-	}, 2, nil, nil, nil)
+	}, 2, nil, nil, "", nil)
 	_, err := cli.AppsV1().DaemonSets(nsName).Create(ctx, ds, metav1.CreateOptions{})
 	require.NoError(t, err)
 	// 裸 Deployment（Spec.Replicas 缺席 = apiserver 默认 1；fake 无 defaulting）。
 	bare := toDeployment(appNS(), capability.Workload{
 		ID: "w8", Process: "api", Image: "nginx:1.27",
-	}, 3, nil, nil, nil)
+	}, 3, nil, nil, "", nil)
 	bare.Spec.Replicas = nil
 	_, err = cli.AppsV1().Deployments(nsName).Create(ctx, bare, metav1.CreateOptions{})
 	require.NoError(t, err)
@@ -465,7 +501,7 @@ func TestBuildUtilityPodNetMembershipLabels(t *testing.T) {
 func TestPutDeploymentRetriesOnConflict(t *testing.T) {
 	p, cli := newFakeProvider()
 	ctx := context.Background()
-	seed := toDeployment(appNS(), capability.Workload{ID: "w1", Process: "api", Image: "nginx:1.27"}, 1, nil, nil, nil)
+	seed := toDeployment(appNS(), capability.Workload{ID: "w1", Process: "api", Image: "nginx:1.27"}, 1, nil, nil, "", nil)
 	seed.ResourceVersion = "10"
 	_, err := cli.AppsV1().Deployments("fleetly-shop").Create(ctx, seed, metav1.CreateOptions{})
 	require.NoError(t, err)

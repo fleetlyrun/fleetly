@@ -123,6 +123,18 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 		}
 		return callConfigs
 	}
+	// configValuesOf 是 configChecksum 的值源（与 configFilesOf 同判据：
+	// SkipMaterials 退出、逐载体覆写优先、调用级兜底——解析集与值集同键，
+	// ensureConfigMaps 按值集键落盘）。
+	configValuesOf := func(w capability.Workload) map[string][]byte {
+		if w.SkipMaterials {
+			return nil
+		}
+		if w.Materials != nil {
+			return w.Materials.ConfigFiles
+		}
+		return m.ConfigFiles
+	}
 	secretFilesOf := func(w capability.Workload) map[string]string {
 		// SkipMaterials：域材料默认挂全域 Workload，显式退出面（ADR-0041 的
 		// cadvisor——无状态采集端不收存储凭证）。k8s 形态的退出同时是启动
@@ -164,20 +176,21 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 	for _, w := range ws {
 		secretFiles := secretFilesOf(w)
 		configFiles := configFilesOf(w)
+		configSum := configChecksum(w.ConfigMounts, configValuesOf(w))
 		name := workloadName(ns, w, gen)
 		// 内容寻址决策（ADR-0064 决策 1/2 的 k3s 面，免服务端内容比对）：
 		// A = modulo-gen canonical（账本 A 键比对——跨代未变零写）；B = 再
 		// 剥副本数（B 键比对——replicas-only 分流）。写代钉住 = 翻译时传
 		// writeGen 而非调用 gen：未变载体模板字节不动（服务端 defaulting
 		// 归一后 no-op），代戳与内容恒同移。
-		kind, obj := translateWorkloadObject(ns, w, gen, secretFiles, configFiles, pullNames)
+		kind, obj := translateWorkloadObject(ns, w, gen, secretFiles, configFiles, configSum, pullNames)
 		A := canonicalJSONModuloGen(obj)
 		B := canonicalSansReplicas(A)
 		key := kind + "/" + name
 		writeGen, skip, coldLedger := p.planContentAddressed(ctx, nsName, kind, name, A, B, w, gen)
 		if !skip {
 			if writeGen != uint64(gen) {
-				_, obj = translateWorkloadObject(ns, w, capability.Generation(writeGen), secretFiles, configFiles, pullNames)
+				_, obj = translateWorkloadObject(ns, w, capability.Generation(writeGen), secretFiles, configFiles, configSum, pullNames)
 			}
 			write := func() error {
 				switch o := obj.(type) {
@@ -999,15 +1012,15 @@ func stripObjectGenLabel(m map[string]any) {
 // 环与内容寻址决策共用；gen 参数承载写代钉住——跳过/scale 载体传 wire-
 // gen 使模板字节不动）。
 func translateWorkloadObject(ns capability.NamespaceRef, w capability.Workload, gen capability.Generation,
-	secretFiles map[string]string, configFiles map[string]string, pullSecrets []string,
+	secretFiles map[string]string, configFiles map[string]string, configChecksum string, pullSecrets []string,
 ) (string, any) {
 	switch {
 	case w.Global:
-		return "daemonset", toDaemonSet(ns, w, gen, secretFiles, configFiles, pullSecrets)
+		return "daemonset", toDaemonSet(ns, w, gen, secretFiles, configFiles, configChecksum, pullSecrets)
 	case w.Restart == capability.RestartNever:
-		return "pod", toOneShotPod(ns, w, gen, secretFiles, configFiles, pullSecrets)
+		return "pod", toOneShotPod(ns, w, gen, secretFiles, configFiles, configChecksum, pullSecrets)
 	default:
-		return "deployment", toDeployment(ns, w, gen, secretFiles, configFiles, pullSecrets)
+		return "deployment", toDeployment(ns, w, gen, secretFiles, configFiles, configChecksum, pullSecrets)
 	}
 }
 
