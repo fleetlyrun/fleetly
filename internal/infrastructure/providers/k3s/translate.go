@@ -373,9 +373,10 @@ func configChecksum(mounts []capability.ConfigMount, values map[string][]byte) s
 		if !ok {
 			continue
 		}
-		fmt.Fprintf(h, "%d:%s", len(m.Name), m.Name)
-		fmt.Fprintf(h, "%d:%s", len(m.Target), m.Target)
-		fmt.Fprintf(h, "%d:", len(v))
+		// hash.Hash 写入恒成功（接口无错误路径），显式丢弃以满足 errcheck。
+		_, _ = fmt.Fprintf(h, "%d:%s", len(m.Name), m.Name)
+		_, _ = fmt.Fprintf(h, "%d:%s", len(m.Target), m.Target)
+		_, _ = fmt.Fprintf(h, "%d:", len(v))
 		h.Write(v)
 		mounted++
 	}

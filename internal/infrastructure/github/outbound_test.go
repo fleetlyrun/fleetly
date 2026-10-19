@@ -45,6 +45,19 @@ func fakeResponse(req *http.Request, status int, location, body string) *http.Re
 	}
 }
 
+// doGet 是测试面最小 GET（ctx 贯通 + body 关闭合规——noctx/bodyclose 判据
+// 在测试面同样执法）。错误路径用例只消费 err，应答体在 helper 内关闭。
+func doGet(t *testing.T, client *http.Client, url string) error {
+	t.Helper()
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
+	require.NoError(t, err)
+	resp, err := client.Do(req)
+	if resp != nil {
+		_ = resp.Body.Close() // 测试应答体，立即关闭
+	}
+	return err
+}
+
 // 302 到异源（含异 host / 降级 scheme）拒绝；经 Client 的 do 出口后错误
 // 文本不回显重定向目标（目标可能是内网/元数据端点）。
 func TestGitHubClientRejectsCrossOriginRedirect(t *testing.T) {
@@ -91,7 +104,7 @@ func TestSecureClientRejectsNonPublicResolution(t *testing.T) {
 			ip := net.ParseIP(tc.ip)
 			require.NotNil(t, ip)
 			client := github.NewSecureHTTPClient(staticResolver{{IP: ip}})
-			_, err := client.Get("https://api.example/")
+			err := doGet(t, client, "https://api.example/")
 			require.Error(t, err, "a resolution to %s must be refused", tc.ip)
 			assert.Contains(t, err.Error(), "non-public address")
 			assert.NotContains(t, err.Error(), tc.ip, "the resolved address must not leak into the error")
@@ -105,7 +118,7 @@ func TestSecureClientRejectsMixedResolution(t *testing.T) {
 		{IP: net.ParseIP("93.184.216.34")},
 		{IP: net.ParseIP("10.1.2.3")},
 	})
-	_, err := client.Get("https://api.example/")
+	err := doGet(t, client, "https://api.example/")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "non-public address")
 }
@@ -122,7 +135,9 @@ func TestSecureClientAllowsSameOriginRedirect(t *testing.T) {
 		}
 		return fakeResponse(req, http.StatusOK, "", `{"ok":true}`), nil
 	})
-	resp, err := client.Get("https://api.example/")
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "https://api.example/", nil)
+	require.NoError(t, err)
+	resp, err := client.Do(req)
 	require.NoError(t, err)
 	defer resp.Body.Close() //nolint:errcheck // 假应答体
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
@@ -139,7 +154,7 @@ func TestSecureClientTotalTimeout(t *testing.T) {
 		return nil, req.Context().Err()
 	})
 	start := time.Now()
-	_, err := client.Get("https://api.example/")
+	err := doGet(t, client, "https://api.example/")
 	require.Error(t, err)
 	var netErr net.Error
 	require.ErrorAs(t, err, &netErr)

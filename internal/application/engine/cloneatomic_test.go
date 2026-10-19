@@ -59,7 +59,7 @@ func TestCloneSourcePublishesCompleteContextAtomically(t *testing.T) {
 	})
 
 	require.NoError(t, e.cloneSource(context.Background(), "https://github.test/acme/shop.git", "main", dir, nil))
-	b, err := os.ReadFile(filepath.Join(dir, "Dockerfile"))
+	b, err := os.ReadFile(filepath.Join(dir, "Dockerfile")) //nolint:gosec // 测试夹具读自身 TempDir 产物，路径非用户输入
 	require.NoError(t, err, "a successful clone must be published at the final context path")
 	assert.Equal(t, "FROM busybox", string(b))
 	_, statErr := os.Stat(dir + ".cloning")
@@ -79,7 +79,7 @@ func TestCloneSourceToleratesConcurrentWinner(t *testing.T) {
 	})
 
 	require.NoError(t, e.cloneSource(context.Background(), "https://github.test/acme/shop.git", "main", dir, nil))
-	b, err := os.ReadFile(filepath.Join(dir, "winner"))
+	b, err := os.ReadFile(filepath.Join(dir, "winner")) //nolint:gosec // 测试夹具读自身 TempDir 产物，路径非用户输入
 	require.NoError(t, err, "the concurrently published context must be kept intact")
 	assert.Equal(t, "complete", string(b))
 	_, statErr := os.Stat(dir + ".cloning")

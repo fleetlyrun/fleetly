@@ -39,6 +39,8 @@ func (fakeExecFace) RunNodeRelay(context.Context, capability.NodeRelayOptions) e
 
 // testRelayCredential 是验收夹具的节点个体凭证（node-1/carrier-1 绑定；
 // H10：中继附着只认 node_relay_credentials 的 hash 或 engine 内部 token）。
+//
+//nolint:gosec // 测试夹具常量，非真实凭证
 const testRelayCredential = "fltrelay_apitest_engine_fixture"
 
 // relaySink 是最小 RelayWriter（收帧不解析——本文件只要求中继在连；需观

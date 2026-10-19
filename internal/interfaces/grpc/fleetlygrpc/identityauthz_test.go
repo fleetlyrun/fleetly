@@ -25,7 +25,9 @@ import (
 // 行序即 seq 稳定序——测试按 Login 解析语义显式布置）。
 type stubMembershipRows struct{ rows []membership.Membership }
 
-func (s *stubMembershipRows) Create(context.Context, *membership.Membership) error { return errors.New("not implemented") }
+func (s *stubMembershipRows) Create(context.Context, *membership.Membership) error {
+	return errors.New("not implemented")
+}
 func (s *stubMembershipRows) GetByUser(context.Context, string, string) (*membership.Membership, error) {
 	return nil, errors.New("not implemented")
 }

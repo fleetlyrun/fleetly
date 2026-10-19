@@ -25,8 +25,9 @@ func newTestLoginLimiter() (*loginLimiter, *fakeLoginClock) {
 	return newLoginLimiter(clock), clock
 }
 
-// requireRateLimited 断言 E_RATE_LIMITED 信封与 retry 语义。
-func requireRateLimited(t *testing.T, err error) *apperr.Error {
+// requireRateLimited 断言 E_RATE_LIMITED 信封与 retry 语义（无返回值——
+// 断言收口形态，调用方零消费面；errcheck 对未接的 error 族返回值执法）。
+func requireRateLimited(t *testing.T, err error) {
 	t.Helper()
 	var ae *apperr.Error
 	require.ErrorAs(t, err, &ae)
@@ -35,7 +36,6 @@ func requireRateLimited(t *testing.T, err error) *apperr.Error {
 	require.True(t, ok, "rate-limit error must carry RetryAfter")
 	assert.GreaterOrEqual(t, wait, time.Second, "retry window is at least 1s")
 	assert.NotEmpty(t, ae.Suggestion())
-	return ae
 }
 
 func TestLoginLimiterFixedWindowAndSuccessReset(t *testing.T) {
@@ -43,14 +43,16 @@ func TestLoginLimiterFixedWindowAndSuccessReset(t *testing.T) {
 	for i := 0; i < loginUsernameBudget; i++ {
 		require.NoError(t, lim.begin("10.0.0.1", "alice"), "attempt %d must pass", i+1)
 	}
-	requireRateLimited(t, lim.begin("10.0.0.1", "alice"))
+	err := lim.begin("10.0.0.1", "alice")
+	requireRateLimited(t, err)
 
 	// 成功登录清零两桶：再给满预算，仍要到第 budget+1 次才拒。
 	lim.reset("10.0.0.1", "alice")
 	for i := 0; i < loginIPBudget; i++ {
 		require.NoError(t, lim.begin("10.0.0.1", "alice"), "post-reset attempt %d must pass", i+1)
 	}
-	requireRateLimited(t, lim.begin("10.0.0.1", "alice"))
+	err = lim.begin("10.0.0.1", "alice")
+	requireRateLimited(t, err)
 }
 
 func TestLoginLimiterDualWindow(t *testing.T) {
@@ -60,7 +62,8 @@ func TestLoginLimiterDualWindow(t *testing.T) {
 	}
 	// IP 窗（1m）滑过后，账号窗（5m）仍在 → 仍拒（换/等短窗不放行）。
 	clock.advance(loginIPWindow + time.Second)
-	requireRateLimited(t, lim.begin("10.0.0.1", "alice"))
+	err := lim.begin("10.0.0.1", "alice")
+	requireRateLimited(t, err)
 	// 账号窗也滑过 → 恢复。
 	clock.advance(loginUsernameWindow)
 	require.NoError(t, lim.begin("10.0.0.1", "alice"))
@@ -71,10 +74,12 @@ func TestLoginLimiterDimensionsAreIndependent(t *testing.T) {
 	for i := 0; i < loginUsernameBudget; i++ {
 		require.NoError(t, lim.begin("10.0.0.1", "alice"))
 	}
-	requireRateLimited(t, lim.begin("10.0.0.1", "alice"))
+	err := lim.begin("10.0.0.1", "alice")
+	requireRateLimited(t, err)
 
 	// 用户名维度跨来源：换 IP 不能继续猜同一账号。
-	requireRateLimited(t, lim.begin("10.0.0.2", "alice"))
+	err = lim.begin("10.0.0.2", "alice")
+	requireRateLimited(t, err)
 
 	// 来源维度与用户名维度互不污染：新来源 + 新用户名不受影响。
 	require.NoError(t, lim.begin("10.0.0.2", "bob"))
