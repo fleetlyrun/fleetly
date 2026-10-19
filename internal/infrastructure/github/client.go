@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -72,9 +73,10 @@ type cachedToken struct {
 
 // NewClient 构造客户端（http/now 可注入：测试用假时钟与 httptest）。
 // nil 客户端 = 生产形态：NewSecureHTTPClient 的完整出站约束（跨源重定向
-// 拒绝 + 总超时 + 解析 IP 私网门禁，R07-M4）。注入客户端也强制补上
-// 重定向闸与总超时（零值才补，调用方显式值优先）；注入方的 Transport
-// 不动——httptest TLS 等自定义传输面由测试自持。
+// 拒绝 + 总超时 + 解析 IP 私网门禁，R07-M4）。注入客户端强制补齐零值安全
+// 面——重定向闸、总超时、**IP 门禁传输层**（nil Transport 是常见注入形
+// 态，缺补装即静默失守）；显式自带 Transport 的注入是测试自定义传输面的
+// 豁免形态，生产装配点只准传 nil。
 func NewClient(httpClient *http.Client, now func() time.Time) *Client {
 	if httpClient == nil {
 		httpClient = NewSecureHTTPClient(nil)
@@ -85,6 +87,9 @@ func NewClient(httpClient *http.Client, now func() time.Time) *Client {
 		}
 		if cp.Timeout == 0 {
 			cp.Timeout = DefaultOutboundTimeout
+		}
+		if cp.Transport == nil {
+			cp.Transport = newSecureTransport(net.DefaultResolver)
 		}
 		httpClient = &cp
 	}

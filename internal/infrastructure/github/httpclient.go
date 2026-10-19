@@ -58,19 +58,28 @@ func newSecureHTTPClient(resolver IPResolver, timeout time.Duration) *http.Clien
 	if resolver == nil {
 		resolver = net.DefaultResolver
 	}
+	return &http.Client{
+		Transport:     newSecureTransport(resolver),
+		Timeout:       timeout,
+		CheckRedirect: refuseCrossOriginRedirect,
+	}
+}
+
+// newSecureTransport 是出站约束的传输层形态（Proxy=nil + 拨号前解析 IP
+// 门禁 + 直拨解析结果——见文件头三道约束的第 3 道）。NewClient 注入分支
+// 对零值 Transport 补装本形态：`&http.Client{}` 是常见注入面，缺此补装会
+// 静默失去 IP 门禁；显式自带 Transport 的（httptest TLS 等测试自定义传输
+// 面）是装配约定下的显式豁免——生产装配点只准传 nil 客户端。
+func newSecureTransport(resolver IPResolver) *http.Transport {
 	base, ok := http.DefaultTransport.(*http.Transport)
 	if !ok {
 		base = &http.Transport{}
 	}
 	tr := base.Clone()
-	tr.Proxy = nil // 见文件头：代理解析会绕过 IP 门禁
+	tr.Proxy = nil
 	dialer := &net.Dialer{Timeout: 10 * time.Second}
 	tr.DialContext = guardedDialContext(resolver, dialer)
-	return &http.Client{
-		Transport:     tr,
-		Timeout:       timeout,
-		CheckRedirect: refuseCrossOriginRedirect,
-	}
+	return tr
 }
 
 // refuseCrossOriginRedirect 限制重定向到与原请求同源（scheme + host，
