@@ -586,7 +586,10 @@ type Materials struct {
 	ConfigFiles map[string][]byte
 }
 
-// ConfigMount 是单条 Config 挂载声明（名引用 + 容器内目标路径）。
+// ConfigMount 是单条 Config 挂载声明（名引用 + 容器内目标路径）。同名多
+// target（一条 config 挂两处）不是可移植子集：swarmkit 拒绝 service spec
+// 内重复 ConfigID（Ensure 即错），k3s 面可承载（位次卷名天然支持）——受
+// 理面应把同名多 target 挡在跨 Runtime 差异之前，Provider 不为此分叉兜底。
 type ConfigMount struct {
 	Name   string
 	Target string

@@ -56,7 +56,7 @@ var builtins = []Code{
 		ID:         "E_CONFLICT",
 		Summary:    "The operation conflicts with the resource's current state.",
 		Suggestion: "Resolve the conflicting state named in the cause (cancel or wait for active work, remove referencing resources, or refresh after a concurrent change) and retry.",
-		Source:     "internal/interfaces/grpc/fleetlygrpc/mapping.go mapStateError (state.ErrConflict: CAS mismatch / FK RESTRICT); internal/interfaces/grpc/fleetlygrpc/structure.go DeleteApp/DeleteProject (ADR-0023); REST maps 409 via assembly errcodeToHTTP",
+		Source:     "internal/interfaces/grpc/fleetlygrpc/mapping.go mapStateError (state.ErrConflict: CAS mismatch / FK RESTRICT); internal/interfaces/grpc/fleetlygrpc/structure.go DeleteApp/DeleteProject (ADR-0023); internal/interfaces/grpc/fleetlygrpc/platform.go TriggerPlatformBackup (备份在途 409, S3 H6); REST maps 409 via assembly errcodeToHTTP",
 		GRPC:       "FailedPrecondition",
 	},
 	{

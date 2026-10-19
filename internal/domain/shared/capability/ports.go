@@ -535,7 +535,11 @@ type ObjectInfo struct {
 type ObjectStore interface {
 	Provider
 
-	// Put 上传一个对象并回执元数据（digest 流式铸造）。
+	// Put 上传一个对象并回执元数据（digest 流式铸造）。Reader 生命周期：
+	// 实现按需流式消费 r（GB 级备份），**允许未读尽即返回**（校验提前失败、
+	// 上游短路）——调用方不得假设 r 被读至 EOF，读端关闭与错误归集是调用
+	// 方的义务（backup.go 的 defer Close + runErr 汇聚即本契约的执法形态，
+	// S3 H5）。
 	Put(ctx context.Context, key string, r io.Reader) (ObjectInfo, error)
 	// Get 下载一个对象（ctx 取消即断流；调用方负责 Close）。
 	Get(ctx context.Context, key string) (io.ReadCloser, error)

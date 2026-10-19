@@ -349,8 +349,10 @@ func configMountsWithMaterials(mounts []capability.ConfigMount, configFiles map[
 
 // configVolumeName 是 Config 卷的载体卷名：按「声明 ∩ 材料」稳定序的位次
 // 编号（DNS label 安全、确定性）。位次而非名段是唯一性所需——声明名净化后
-// 可能同形（app.conf 与 app-conf 同落 app-conf），同名多 target 也合法；
-// k8s 对 pod 内重复卷名硬拒。同输入同序 ⇒ 卷名恒等（canonical 稳定）。
+// 可能同形（app.conf 与 app-conf 同落 app-conf），同名多 target 在 k8s 面
+// 可承载（capability.ConfigMount 注记的可移植子集裁决：swarm 拒绝重复
+// ConfigID，本 Provider 不为此分叉兜底）；k8s 对 pod 内重复卷名硬拒。同输
+// 入同序 ⇒ 卷名恒等（canonical 稳定）。
 func configVolumeName(i int) string {
 	return "fleetly-config-" + strconv.Itoa(i)
 }
