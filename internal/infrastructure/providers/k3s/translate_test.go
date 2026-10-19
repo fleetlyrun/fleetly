@@ -127,6 +127,90 @@ func TestToDeployment(t *testing.T) {
 	assert.EqualValues(t, 2, *d.Spec.Replicas)
 }
 
+// Config 挂载翻译（R06-M1 回归锚）：声明 → ConfigMap 卷 + SubPath 单文件
+// 挂载到 Target；材料缺失防御性跳过；同一「声明 ∩ 材料」稳定序保证卷名与
+// 挂载位次两侧对齐、同一输入逐字节稳定（swarm config target 语义对齐，
+// ADR-0014 附录 A.2）。
+func TestConfigMountsTranslate(t *testing.T) {
+	ns := capability.NamespaceRef{Team: "acme", Project: "shop", App: "web"}
+	mounts := []capability.ConfigMount{
+		{Name: "app-conf", Target: "/etc/app/app.conf"},
+		{Name: "worker-conf", Target: "/etc/app/worker.conf"},
+	}
+	w := capability.Workload{ID: "w1", Process: "api", Image: "nginx:1.27", ConfigMounts: mounts}
+	configFiles := map[string]string{
+		"app-conf":    "fleetly-mat-web-app-conf",
+		"worker-conf": "fleetly-mat-web-worker-conf",
+	}
+
+	// Deployment：两条声明各落一卷 + 一挂载；卷名 = fleetly-config-<位次>
+	// （稳定序位次，非名段——净化同形/同名多 target 都不得撞卷名）。
+	d := toDeployment(ns, w, 1, nil, configFiles, nil)
+	require.Len(t, d.Spec.Template.Spec.Volumes, 2)
+	vol0 := d.Spec.Template.Spec.Volumes[0]
+	assert.Equal(t, "fleetly-config-0", vol0.Name)
+	require.NotNil(t, vol0.ConfigMap)
+	assert.Equal(t, "fleetly-mat-web-app-conf", vol0.ConfigMap.Name, "volume must reference the ensured object name verbatim")
+	require.NotNil(t, vol0.ConfigMap.DefaultMode)
+	assert.EqualValues(t, 0o444, *vol0.ConfigMap.DefaultMode, "0444 keeps non-root USER images able to read the file (swarm config target parity)")
+	vol1 := d.Spec.Template.Spec.Volumes[1]
+	assert.Equal(t, "fleetly-config-1", vol1.Name)
+	require.NotNil(t, vol1.ConfigMap)
+	assert.Equal(t, "fleetly-mat-web-worker-conf", vol1.ConfigMap.Name)
+
+	c := d.Spec.Template.Spec.Containers[0]
+	require.Len(t, c.VolumeMounts, 2)
+	assert.Equal(t, corev1.VolumeMount{
+		Name:      "fleetly-config-0",
+		MountPath: "/etc/app/app.conf",
+		SubPath:   secretDataKey,
+		ReadOnly:  true,
+	}, c.VolumeMounts[0], "SubPath mounts the value key as the file itself (no <target>/value directory level)")
+	assert.Equal(t, "fleetly-config-1", c.VolumeMounts[1].Name)
+	assert.Equal(t, "/etc/app/worker.conf", c.VolumeMounts[1].MountPath)
+	assert.Equal(t, secretDataKey, c.VolumeMounts[1].SubPath)
+	assert.True(t, c.VolumeMounts[1].ReadOnly)
+
+	// DaemonSet（Global）与 one-shot Pod（RestartNever）同形态。
+	ds := toDaemonSet(ns, capability.Workload{
+		ID: "w2", Process: "collect", Image: "nginx:1.27", Global: true, ConfigMounts: mounts,
+	}, 1, nil, configFiles, nil)
+	require.Len(t, ds.Spec.Template.Spec.Volumes, 2)
+	require.Len(t, ds.Spec.Template.Spec.Containers[0].VolumeMounts, 2)
+	assert.Equal(t, "/etc/app/app.conf", ds.Spec.Template.Spec.Containers[0].VolumeMounts[0].MountPath)
+
+	pod := toOneShotPod(capability.NamespaceRef{Team: "acme", Project: "shop", Task: "01T"}, capability.Workload{
+		ID: "01R", Process: "run", Image: "busybox:1.37", Restart: capability.RestartNever, ConfigMounts: mounts,
+	}, 1, nil, configFiles, nil)
+	require.Len(t, pod.Spec.Volumes, 2)
+	require.NotNil(t, pod.Spec.Volumes[1].ConfigMap)
+	assert.Equal(t, "fleetly-mat-web-worker-conf", pod.Spec.Volumes[1].ConfigMap.Name)
+	require.Len(t, pod.Spec.Containers[0].VolumeMounts, 2)
+	assert.Equal(t, "/etc/app/worker.conf", pod.Spec.Containers[0].VolumeMounts[1].MountPath)
+
+	// 材料缺失的声明防御性跳过（swarm configCarriers 查表同判据）：无悬空
+	// ConfigMap 引用、无多余挂载，其余声明位次前移仍两侧对齐。
+	partial := toDeployment(ns, w, 1, nil, map[string]string{"app-conf": "fleetly-mat-web-app-conf"}, nil)
+	require.Len(t, partial.Spec.Template.Spec.Volumes, 1)
+	require.NotNil(t, partial.Spec.Template.Spec.Volumes[0].ConfigMap)
+	assert.Equal(t, "fleetly-mat-web-app-conf", partial.Spec.Template.Spec.Volumes[0].ConfigMap.Name)
+	require.Len(t, partial.Spec.Template.Spec.Containers[0].VolumeMounts, 1)
+	assert.Equal(t, "/etc/app/app.conf", partial.Spec.Template.Spec.Containers[0].VolumeMounts[0].MountPath)
+
+	// 材料整体缺席（nil = SkipMaterials / 零 ConfigFiles）：零卷零挂载。
+	none := toDeployment(ns, w, 1, nil, nil, nil)
+	assert.Empty(t, none.Spec.Template.Spec.Volumes)
+	assert.Empty(t, none.Spec.Template.Spec.Containers[0].VolumeMounts)
+
+	// 顺序稳定：声明逆序 → 翻译产物逐字节相等（canonical 内容等价依赖同一序）。
+	reversed := w
+	reversed.ConfigMounts = []capability.ConfigMount{mounts[1], mounts[0]}
+	assert.Equal(t, d, toDeployment(ns, reversed, 1, nil, configFiles, nil),
+		"declaration order must not leak into the carrier spec")
+	assert.Equal(t, canonicalJSON(d), canonicalJSON(toDeployment(ns, w, 1, nil, configFiles, nil)),
+		"same input must translate byte-identically")
+}
+
 // 无争用负载不显式设置策略（k8s 服务端缺省物化 RollingUpdate）；hostPort
 // 发布同样 Recreate。
 func TestDeploymentStrategy(t *testing.T) {

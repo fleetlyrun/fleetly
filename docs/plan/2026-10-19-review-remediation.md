@@ -91,4 +91,27 @@ a5ae233f docs(plan): 评审修复排期 S1-S5
 eb852068 fix(delivery): S3 安装路由面/Browse 会话绑定/备份可靠性/wait deadline/Console 键
 c925ba3b fix(engine,cli,spec,traefik): S4 restart 源=生效基线/精确 seq 判定/BG egress/Route 发布就绪门
 cdecabe0 fix(k3s,persistence,guards,ci): S5 RBAC 调用面收敛/守卫换形/审计并发/outbox 前缀裁剪/CI codegen 门禁
+d233c07d docs(plan,reviews): S1-S5 终验记录与修复状态归档
 ```
+
+> 2026-10-19 已 push 到 `origin/main`（`35257f18..d233c07d`）。
+
+---
+
+## 第二轮 backlog 修复（S6-S10，已启动）
+
+| 阶段 | 主题 | 覆盖发现 | 验收门 | 状态 |
+|---|---|---|---|---|
+| S6 | k3s ConfigMounts 挂载（H3 配套） | R06-M1 | translate/runtime ensure 新测试 + 引用名一致性；k3s/guards 绿 | ✅ |
+| S7 | 幂等键调用方作用域 | H11（R14-H4） | 迁移 00034 + repo/enforcer 签名；跨 token/跨队同键不同体/同体不复用；apitest 绿 | ☐ |
+| S8 | Metrics 查询租户域过滤 | H8（R07-H2/R08-M2） | 端口加作用域锚 + handler 行级授权 + matcher 注入；跨队指标不可见；Console/CLI 回归 | ☐ |
+| S9 | relay 节点个体凭证 | H10（R14-H3） | Enrollment/relay 握手节点身份绑定 + 迁移；伪造 carrier id 拒；双 Provider | ☐ |
+| S10 | 收敛语义深水区 + ADR 追记 | R02-M2/M5、R16-M2/M3/M5/M6、H15 ADR-0083 追记 | ADR 修订 + 判定表单源 + 静默面事实化；钉测翻向 | ☐ |
+
+> S6 先行原因：H3 已消除 k3s configmaps 403，若不落挂载，真机会从"显式 403 失败"变成"ConfigMap 建了但容器无配置"的静默失败。
+
+### S6 执行记录
+- 改动：`k3s/translate.go`（sortedConfigMounts/configMountsWithMaterials/configVolumeName + toContainer SubPath 挂载 + podTemplate ConfigMap 卷 0444）、`translate_test.go`（三载体/缺材料/顺序稳定）、`runtime_ensure_test.go`（Ensure 引用名一致性 + SkipMaterials）。
+- 验收证据（Lead 亲跑）：gofmt 空；双平台 build 0；k3s 3.3s（2 新测试 PASS）；guards 17.3s；vet 0；diff-check 0。
+- 设计：卷名 `fleetly-config-<i>`（稳定序位次，避免净化同形/同名多 target 撞卷名）；SubPath="value" 单文件挂载；卷 DefaultMode 0444 对齐 swarm；材料缺失防御跳过、SkipMaterials 零挂载；canonical 逐字节稳定。
+- 残留：`e2e:dind-k3s` 未覆盖 config materials（建议补断言）；SubPath 单文件在 ConfigMap 轮换时不热更新（需重调度/滚动，归后续载体版本化项）；R06-M7 孤建清扫仍 backlog。

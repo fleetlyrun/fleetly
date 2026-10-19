@@ -94,6 +94,60 @@ func TestEnsureCreatesObjects(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// TestEnsureConfigMountsReferenceEnsuredConfigMap（R06-M1 回归锚）：材料经
+// ensureConfigMaps 落为域唯一对象名的 ConfigMap，载体卷引用同一对象名、容器
+// 内按 Target 经 SubPath 单文件挂载——"ConfigMap 建了但容器内无配置"的静默
+// 失效面端到端锚；SkipMaterials 载体（configFiles=nil）不挂 config 材料。
+func TestEnsureConfigMountsReferenceEnsuredConfigMap(t *testing.T) {
+	p, cli := newFakeProvider()
+	ctx := context.Background()
+	nsName := "fleetly-shop"
+	const conf = "server {\n  listen 8080;\n}\n"
+	ws := []capability.Workload{
+		{
+			ID: "w1", Process: "api", Image: "nginx:1.27", Replicas: 1,
+			ConfigMounts: []capability.ConfigMount{{Name: "app-conf", Target: "/etc/app/app.conf"}},
+		},
+		{
+			ID: "w2", Process: "probe", Image: "busybox:1.37", Replicas: 1, SkipMaterials: true,
+			ConfigMounts: []capability.ConfigMount{{Name: "app-conf", Target: "/etc/app/app.conf"}},
+		},
+	}
+	mats := capability.Materials{ConfigFiles: map[string][]byte{"app-conf": []byte(conf)}}
+	require.NoError(t, ensureErr(p, ctx, appNS(), ws, 1, mats))
+
+	// 材料落盘：域唯一对象名 + value 键内容。
+	objName := domainSecretObjectName(appNS(), "app-conf")
+	cm, err := cli.CoreV1().ConfigMaps(nsName).Get(ctx, objName, metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, conf, cm.Data[secretDataKey])
+
+	d, err := cli.AppsV1().Deployments(nsName).Get(ctx, "fleetly-web-api", metav1.GetOptions{})
+	require.NoError(t, err)
+	var ref *corev1.ConfigMapVolumeSource
+	for _, v := range d.Spec.Template.Spec.Volumes {
+		if v.Name == configVolumeName(0) {
+			ref = v.ConfigMap
+		}
+	}
+	require.NotNil(t, ref, "config declaration must materialize as a ConfigMap volume")
+	assert.Equal(t, objName, ref.Name, "carrier must reference the exact object ensureConfigMaps wrote")
+	require.Len(t, d.Spec.Template.Spec.Containers[0].VolumeMounts, 1)
+	m := d.Spec.Template.Spec.Containers[0].VolumeMounts[0]
+	assert.Equal(t, configVolumeName(0), m.Name)
+	assert.Equal(t, "/etc/app/app.conf", m.MountPath)
+	assert.Equal(t, secretDataKey, m.SubPath)
+	assert.True(t, m.ReadOnly)
+
+	// SkipMaterials 载体：域材料不挂（ADR-0041 退出面在 config 面同判据）。
+	probe, err := cli.AppsV1().Deployments(nsName).Get(ctx, "fleetly-web-probe", metav1.GetOptions{})
+	require.NoError(t, err)
+	for _, v := range probe.Spec.Template.Spec.Volumes {
+		assert.Nil(t, v.ConfigMap, "SkipMaterials carriers must not mount domain config materials")
+	}
+	assert.Empty(t, probe.Spec.Template.Spec.Containers[0].VolumeMounts)
+}
+
 // egress netpol 收敛的另一边：期望集不再含 egress 载体 → policy 撤除。
 func TestEnsureRemovesNetpolWhenNoEgressCarriers(t *testing.T) {
 	p, cli := newFakeProvider()

@@ -306,6 +306,46 @@ func sortedKeys[V any](m map[string]V) []string {
 	return keys
 }
 
+// sortedConfigMounts 是 Config 挂载声明的稳定排序（按 Name 再 Target；
+// swarm sortedConfigMounts 同源判据：spec 逐字节稳定——幂等重放 diff 不
+// 产生假变更，canonical 内容等价依赖同一序）。
+func sortedConfigMounts(mounts []capability.ConfigMount) []capability.ConfigMount {
+	out := append([]capability.ConfigMount(nil), mounts...)
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Name != out[j].Name {
+			return out[i].Name < out[j].Name
+		}
+		return out[i].Target < out[j].Target
+	})
+	return out
+}
+
+// configMountsWithMaterials 是「声明 ∩ 材料」的稳定序视图：材料缺席的声明
+// 防御性跳过（与 swarm configCarriers 查表同判据——声明无材料 = 材料解析
+// 面已失败，此处不制造悬空 ConfigMap 引用）。容器挂载与卷声明共用此视图，
+// 位次卷名两侧天然对齐；材料未下发（configFiles=nil——SkipMaterials 或零
+// ConfigFiles）时自然退化为零挂载。
+func configMountsWithMaterials(mounts []capability.ConfigMount, configFiles map[string]string) []capability.ConfigMount {
+	if len(mounts) == 0 || len(configFiles) == 0 {
+		return nil
+	}
+	out := make([]capability.ConfigMount, 0, len(mounts))
+	for _, m := range sortedConfigMounts(mounts) {
+		if _, ok := configFiles[m.Name]; ok {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// configVolumeName 是 Config 卷的载体卷名：按「声明 ∩ 材料」稳定序的位次
+// 编号（DNS label 安全、确定性）。位次而非名段是唯一性所需——声明名净化后
+// 可能同形（app.conf 与 app-conf 同落 app-conf），同名多 target 也合法；
+// k8s 对 pod 内重复卷名硬拒。同输入同序 ⇒ 卷名恒等（canonical 稳定）。
+func configVolumeName(i int) string {
+	return "fleetly-config-" + strconv.Itoa(i)
+}
+
 // toContainer 把 Workload 的容器面翻译为 k8s 容器声明（Deployment/
 // DaemonSet/Pod 共用）。
 //
@@ -318,6 +358,8 @@ func sortedKeys[V any](m map[string]V) []string {
 //   - SecretFiles → projected Secret 卷挂 /run/secrets/<名>（swarm secret
 //     注入同语义；defaultMode 0444——非 root USER 镜像可读，staging 实证
 //     口径）。
+//   - ConfigMounts → 逐声明 ConfigMap 卷 + SubPath 单文件挂载到
+//     mount.Target（swarm config target 语义；ADR-0014 附录 A.2）。
 //   - HostBinds → hostPath 只读。
 func toContainer(w capability.Workload, secretFiles map[string]string, configFiles map[string]string) corev1.Container {
 	c := corev1.Container{
@@ -378,6 +420,23 @@ func toContainer(w capability.Workload, secretFiles map[string]string, configFil
 		c.VolumeMounts = append(c.VolumeMounts, corev1.VolumeMount{
 			Name:      secretsVolumeName,
 			MountPath: "/run/secrets",
+			ReadOnly:  true,
+		})
+	}
+	// Config 挂载（Workload.ConfigMounts 声明面，ADR-0014 附录 A.2 的
+	// compose configs 契约；与 swarm config target 语义对齐）：内容已落
+	// ConfigMap 载体（ensureConfigMaps），容器内按 Target 逐文件挂载。
+	// SubPath=value 是单文件挂载——裸 ConfigMap 卷会得到 <Target>/<key>
+	// 两级目录形态（/run/secrets 裸 Secret 卷同坑），compose configs 的
+	// 容器内路径契约是文件本体。ReadOnly + 卷 DefaultMode 0444 = swarm
+	// config target 的只读可读形态。卷名与 podTemplate 的卷声明同源
+	// （configVolumeName 位次 + 同一「声明 ∩ 材料」稳定序），缺失材料的
+	// 声明两侧同步跳过。
+	for i, mount := range configMountsWithMaterials(w.ConfigMounts, configFiles) {
+		c.VolumeMounts = append(c.VolumeMounts, corev1.VolumeMount{
+			Name:      configVolumeName(i),
+			MountPath: mount.Target,
+			SubPath:   secretDataKey,
 			ReadOnly:  true,
 		})
 	}
@@ -519,6 +578,23 @@ func podTemplate(ns capability.NamespaceRef, w capability.Workload, gen capabili
 				Projected: &corev1.ProjectedVolumeSource{
 					Sources:     sources,
 					DefaultMode: ptr(int32(0o444)),
+				},
+			},
+		})
+	}
+	// Config 卷（Workload.ConfigMounts；与 toContainer 的挂载共用同一
+	// 「声明 ∩ 材料」稳定序与位次卷名——两侧引用天然对齐）。引用名取
+	// ensureConfigMaps 落盘对象名（域唯一）；重算常量名会与落盘实体分叉成
+	// 悬空引用（"建了 ConfigMap 但容器内无配置"的静默失效面，R06-M1）。
+	// DefaultMode 0444 与 swarm config target Mode 0o444 同语义（非 root
+	// USER 镜像可读）。
+	for i, mount := range configMountsWithMaterials(w.ConfigMounts, configFiles) {
+		spec.Volumes = append(spec.Volumes, corev1.Volume{
+			Name: configVolumeName(i),
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{Name: configFiles[mount.Name]},
+					DefaultMode:          ptr(int32(0o444)),
 				},
 			},
 		})
