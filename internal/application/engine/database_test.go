@@ -186,6 +186,37 @@ func TestDatabaseRegistrationUsesWireGenFromReport(t *testing.T) {
 	}
 }
 
+// R13-L3（S16-c8）：状态推进与归属登记同律——观测对照必须按回执
+// wire-gen，而非 Ensure 的 call-gen。内容等价 skip 让载体停在旧代次时，
+// 观测（wire-gen 标注）与 call-gen 恒不匹配 → 状态永久停在 pending。
+func TestDatabaseStatusAdvanceUsesWireGenFromReport(t *testing.T) {
+	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
+	e, rt, _ := newDatabaseFixture(t, "postgres", url)
+	ctx := context.Background()
+
+	e.databaseStep(ctx) // gen=1 落行
+	// 指纹变化（新网入集）→ call-gen 推进 2；Provider 内容等价 skip，回执
+	// wire-gen=1（载体实际停在 1）——观测以 wire-gen 标注。
+	rt.wireGens = map[string]capability.Generation{tDatabaseID: 1}
+	require.NoError(t, networkrepo.New(e.db.Clock(), e.db.Runner()).Create(ctx, &network.Network{
+		ID: "01JD0NET000000000000000004", ProjectID: tProjectID, Name: "wiregen-status",
+	}))
+	e.obs.mu.Lock()
+	e.obs.observations[tDatabaseID] = capability.WorkloadEvent{
+		WorkloadID: tDatabaseID, Generation: 1, State: capability.WorkloadRunning,
+	}
+	e.obs.mu.Unlock()
+	e.databaseStep(ctx) // Ensure 走 call-gen 2，回执 wire-gen 1
+
+	calls := rt.calls()
+	require.Len(t, calls, 2)
+	require.Equal(t, capability.Generation(2), calls[1].Gen, "the fixture must advance the call generation")
+	fresh, err := e.repos.Databases.Get(ctx, tDatabaseID)
+	require.NoError(t, err)
+	assert.Equal(t, database.StatusRunning, fresh.Status,
+		"status must advance against the wire-gen the carrier actually reports, not the call generation")
+}
+
 // N1 C16：签名短路的短路拍不停状态收敛——观测 running 到达后，跳过 Ensure
 // 的拍照样把行状态推进 running（观测缓存独立于 Ensure）。
 func TestDatabaseShortCircuitKeepsStatusAdvancing(t *testing.T) {

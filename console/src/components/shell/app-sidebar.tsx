@@ -1,5 +1,6 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { BoxIcon, PlusIcon, SparklesIcon, RocketIcon, SquareTerminalIcon } from "lucide-react";
+import { useWhoami } from "@/lib/catalog";
 import { navSections, type NavItem } from "@/lib/nav";
 import { useProjectId } from "@/lib/project";
 import {
@@ -30,7 +31,10 @@ import { ProjectSwitcher } from "./project-switcher";
 export function AppSidebar() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const [projectId] = useProjectId();
-  const sections = navSections(projectId || undefined);
+  // 平台域入口显隐依据（fail-closed：whoami 未到/失败即隐藏）——Nodes 读面
+  // 自 S16-c7 起是平台管理员门；user-menu 持有同一 query key，零额外请求。
+  const whoami = useWhoami(true);
+  const sections = navSections(projectId || undefined, whoami.data?.platformAdmin === true);
 
   return (
     <Sidebar collapsible="icon">

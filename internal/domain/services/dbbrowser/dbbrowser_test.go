@@ -7,6 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
 )
 
@@ -100,6 +103,42 @@ func TestRenderingsAreClean(t *testing.T) {
 			}
 		}
 	}
+}
+
+// TestRedisCommanderEmptyUser（R01-H1†）：redis 无用户名概念——dbtemplate
+// 铸出的连接串 Username() 恒空（redis://:pw@host:6379/0）。共享闸不得把
+// user 当通用必填域拒绝，否则 browse 全链在 Render 处静默停摆（API 假
+// 成功后 URL 永久不可用）。
+func TestRedisCommanderEmptyUser(t *testing.T) {
+	conn := Conn{Host: "db-01H", Port: 6379, User: "", Password: "s3cretPW123", DB: "0"}
+	r, err := redisCommanderTemplate{}.Render(conn, true)
+	require.NoError(t, err)
+	assert.Equal(t, "db:db-01H:6379:0:s3cretPW123", r.Env["REDIS_HOSTS"])
+	assert.Equal(t, "true", r.Env["READ_ONLY"])
+}
+
+// TestDialectsConsumingUserStillRequireIt：redis 豁免不放宽其它方言——
+// pgweb/adminer/mongoku 的连接串/材料消费用户名，空 user 仍 fail-closed。
+func TestDialectsConsumingUserStillRequireIt(t *testing.T) {
+	conn := Conn{Host: "db-01H", Port: 5432, User: "", Password: "s3cretPW123", DB: "fleetly"}
+	for _, engine := range []string{"postgres", "mysql", "mongo"} {
+		b, ok := For(engine)
+		require.True(t, ok)
+		if _, err := b.Render(conn, false); err == nil {
+			t.Errorf("engine %q must still reject an empty connection user (its dialect consumes it)", engine)
+		}
+	}
+}
+
+// TestMongokuDefaultHostCarriesDatabase（R01-M1）：Mongo 连接串无库段时
+// driver 的 authSource 缺省 admin，而平台账号建在业务库——方言必须用
+// Conn.DB 补路径库（路径库即 authSource 缺省源），与 dbtemplate.ConnURL
+// 的单真源形态一致。
+func TestMongokuDefaultHostCarriesDatabase(t *testing.T) {
+	conn := Conn{Host: "db-01H", Port: 27017, User: "fleetly", Password: "s3cretPW123", DB: "fleetly"}
+	r, err := mongokuTemplate{}.Render(conn, true)
+	require.NoError(t, err)
+	assert.Equal(t, "mongodb://fleetly:s3cretPW123@db-01H:27017/fleetly", r.Env["MONGOKU_DEFAULT_HOST"])
 }
 
 // TestAdminerRouterPHPPinned 钉 vendored 胶水的 sha256（改动 = 刻意动作，

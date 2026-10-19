@@ -45,6 +45,9 @@ func (t pgwebTemplate) Render(conn Conn, readonly bool) (Rendering, error) {
 	if err := validateConn(conn); err != nil {
 		return Rendering{}, err
 	}
+	if err := requireConnUser(conn); err != nil {
+		return Rendering{}, err
+	}
 	// pgpass 行格式 host:port:db:user:password（libpq 逐字段匹配——首行
 	// 命中即用；平台密码域 [0-9A-Za-z]，无冒号转义面）。
 	pgpass := fmt.Sprintf("%s:%d:%s:%s:%s\n", conn.Host, conn.Port, conn.DB, conn.User, conn.Password)

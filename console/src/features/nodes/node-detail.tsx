@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
-import { ArrowUpRightIcon, BoxesIcon, CheckCircle2Icon } from "lucide-react";
+import { ArrowUpRightIcon, BoxesIcon, CheckCircle2Icon, ShieldAlertIcon } from "lucide-react";
 import type { components as runtimeSchemas } from "@/api/runtime";
-import { useNodeContainers, useNodes } from "@/lib/catalog";
+import { useNodeContainers, useNodes, useWhoami } from "@/lib/catalog";
 import { CopyButton } from "@/components/domain/copy-button";
 import { EmptyState } from "@/components/domain/empty-state";
 import { ErrorState } from "@/components/domain/error-state";
@@ -27,8 +27,31 @@ type NodeContainer = runtimeSchemas["schemas"]["v1NodeContainer"];
 // docker 本义使用（2026-10-16 用户裁定）。只读页——cordon/drain 动词面
 // 留在列表页行内。
 export function NodeDetailPage({ nodeId }: { nodeId: string }) {
-  const nodes = useNodes();
+  const whoami = useWhoami(true);
+  // 平台管理员门（R08-M1/S16-c7）：节点详情与在跑容器同属平台级读面；
+  // Console fail-closed（whoami 未到/失败/非管理员都不请求读面）。
+  const platformAdmin = whoami.data?.platformAdmin === true;
+  const nodes = useNodes(platformAdmin);
   const node = (nodes.data ?? []).find((entry) => entry.platform_id === nodeId);
+
+  if (whoami.isPending) {
+    return (
+      <PageFrame>
+        <Skeleton className="mb-5 h-24 w-full rounded-xl" />
+      </PageFrame>
+    );
+  }
+  if (!platformAdmin) {
+    return (
+      <PageFrame>
+        <EmptyState
+          icon={ShieldAlertIcon}
+          title="Platform admin only"
+          description="Cluster nodes and their running containers are platform-scoped. Sign in as the platform owner to inspect them."
+        />
+      </PageFrame>
+    );
+  }
 
   return (
     <PageFrame

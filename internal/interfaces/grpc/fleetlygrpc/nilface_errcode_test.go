@@ -87,7 +87,9 @@ func TestRuntimeFaceAbsentRefusedPrecise(t *testing.T) {
 	assert.Equal(t, "Unimplemented", apperrstatus.ToGRPCStatus(ae).Code().String())
 	assert.Contains(t, ae.Message(), "does not expose container logs")
 
-	_, err = svc.ListNodeContainers(context.Background(),
+	// ListNodeContainers 自 S16-c7 起与读面同门（平台管理员门先于子面协商；
+	// R08-M1）——注入平台 owner 身份直达 501 分支。
+	_, err = svc.ListNodeContainers(platformCtx,
 		&runtimev1.ListNodeContainersRequest{NodeId: "01JD0NODE00000000000000000"})
 	ae = apperrOf(t, err)
 	assert.Equal(t, "E_RUNTIME_FACE_UNSUPPORTED", ae.Code())

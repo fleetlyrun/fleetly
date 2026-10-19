@@ -9,13 +9,16 @@ import {
   CommandList,
   CommandSeparator,
 } from "@/components/ui/command";
+import { useWhoami } from "@/lib/catalog";
 import { navSections } from "@/lib/nav";
 
 // ⌘K 命令面板（UI v2 键盘契约）：全局导航 + 动作入口。⌘K/Ctrl-K 开合，
-// Esc 关闭（Dialog 自带）；选择即导航。
+// Esc 关闭（Dialog 自带）；选择即导航。导航项与侧栏同源（Nodes 的平台
+// 管理员显隐同判；R08-M1）。
 export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const navigate = useNavigate();
-  const sections = navSections(undefined);
+  const whoami = useWhoami(true);
+  const sections = navSections(undefined, whoami.data?.platformAdmin === true);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {

@@ -5,7 +5,7 @@ import { PageFrame } from "@/components/domain/page-frame";
 import { ProjectAvatar } from "@/components/domain/project-avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { useAlertStates, useApps, useNodes, useProjects } from "@/lib/catalog";
+import { useAlertStates, useApps, useNodes, useProjects, useWhoami } from "@/lib/catalog";
 import { useProjectId } from "@/lib/project";
 
 // 舰队总览（Dashboard 原型，UI v2 批 2）：平台状态条 + 项目磁贴墙 +
@@ -16,7 +16,11 @@ export const Route = createFileRoute("/_shell/overview")({
 
 function OverviewPage() {
   const projects = useProjects();
-  const nodes = useNodes();
+  // 节点读面是平台管理员门（R08-M1/S16-c7）：非平台身份不请求 /v1/nodes，
+  // 节点卡随 whoami.platformAdmin 显隐（fail-closed）。
+  const whoami = useWhoami(true);
+  const platformAdmin = whoami.data?.platformAdmin === true;
+  const nodes = useNodes(platformAdmin);
   const alerts = useAlertStates();
   const firing = (alerts.data ?? []).filter((state) => state.state === "firing");
   const availableNodes = (nodes.data ?? []).filter((node) => node.available === true);
@@ -37,7 +41,9 @@ function OverviewPage() {
     >
 
       <div className="mb-6 grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-3.5">
-        <StatCard label="Nodes" value={`${availableNodes.length}/${(nodes.data ?? []).length}`} sub="available" loading={nodes.isPending} />
+        {platformAdmin ? (
+          <StatCard label="Nodes" value={`${availableNodes.length}/${(nodes.data ?? []).length}`} sub="available" loading={nodes.isPending} />
+        ) : null}
         <StatCard
           label="Alerts"
           value={String(firing.length)}

@@ -58,6 +58,11 @@ import (
 // ownerTokenID 允许空（匿名/机制铸造无属主，resident 无租约保温）。seq 由
 // 调用方在其写事务内取（e.db.NextSeq 契约方法）——id = <name|task>-<seq>，身份注
 // 入先于冻结（ADR-0070；CONTEXT.md Task Mint 词条：铸造单源不动）。
+//
+// 行装配不写 LeaseDeadline（R04-M1）：本函数是纯铸造（不持时钟），创建
+// 受理面在 interfaces 层；租约由引擎首拍布防（task.go armTaskLease：权威
+// 时钟 now+interval）——API 创建后 KickTasks 保证一拍内落地，此后不续期
+// 即按 deadline+宽限排空，与"创建即布防"行为等价。
 func MintTaskRow(projectID, name, ownerTokenID string, s *specv1.TaskSpec, seq int64) (*task.Task, error) {
 	if s == nil {
 		return nil, fmt.Errorf("mint task row: nil spec")

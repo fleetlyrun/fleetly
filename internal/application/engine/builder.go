@@ -116,6 +116,14 @@ func (e *Engine) buildOwnerActive(ctx context.Context, b *build.Build) (bool, er
 	return false, nil
 }
 
+// forgetBuildInput 释放单条构建输入登记（终态唯一释放口；登记写入点在
+// buildsource.go）。输入含推送凭证明文，终态后不得常驻内存（R03-M1）。
+func (e *Engine) forgetBuildInput(buildID string) {
+	e.build.inputsMu.Lock()
+	delete(e.build.inputs, buildID)
+	e.build.inputsMu.Unlock()
+}
+
 // executeBuild 执行一次构建（goroutine；根 = 引擎进程生命期 runCtx，构建
 // 超时独立包裹其上）。幂等重放：崩溃遗留的 building 行由 Start 重置
 // queued 重跑（buildkit 缓存保证重放成本可控）。

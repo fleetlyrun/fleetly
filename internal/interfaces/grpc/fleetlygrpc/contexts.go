@@ -32,7 +32,13 @@ type NodesService struct {
 	s *Services
 }
 
+// ListNodes 是平台级读面（R08-M1）：节点清单含 relay 在线状态与全平台节点
+// 目录，节点本身无 Team 轴——读面与写动词同门（平台管理员），门在任何
+// 列表读取之前（拒绝零暴露）。成员不再看到跨租户节点面。
 func (svc *NodesService) ListNodes(ctx context.Context, req *runtimev1.ListNodesRequest) (*runtimev1.ListNodesResponse, error) {
+	if err := RequirePlatformAdmin(ctx); err != nil {
+		return nil, err
+	}
 	list, err := svc.s.Nodes.ListPage(ctx,
 		req.GetAfterNodeSeq(), listLimit(req.GetLimit()))
 	if err != nil {
@@ -55,8 +61,13 @@ func (svc *NodesService) ListNodes(ctx context.Context, req *runtimev1.ListNodes
 
 // ListNodeContainers 实时观测节点上的在跑容器（RuntimeNodeInspect 面；
 // 平台节点 ID 为锚——运维三动词同锚约定）。读面零审计（ListNodes 同款）；
-// 列表面诚实空——无在跑容器是空集而非错误。
+// 列表面诚实空——无在跑容器是空集而非错误。平台管理员门与 ListNodes 同
+// 门（R08-M1）：容器行携带 team/project/app 归属，跨租户侦察面必须清零；
+// 门先于子面协商与节点存在性（403 不带存在性泄露）。
 func (svc *NodesService) ListNodeContainers(ctx context.Context, req *runtimev1.ListNodeContainersRequest) (*runtimev1.ListNodeContainersResponse, error) {
+	if err := RequirePlatformAdmin(ctx); err != nil {
+		return nil, err
+	}
 	inspect := capability.FacesOf(svc.s.Runtime).NodeInspect // 节点观测子面（FacesOf 协商点）
 	if inspect == nil {
 		// 可选子面缺席是 honest failure（P4-3 批 3）：精确 501，不再落

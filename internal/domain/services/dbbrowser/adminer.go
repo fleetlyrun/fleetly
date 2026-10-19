@@ -35,6 +35,9 @@ func (t adminerTemplate) Render(conn Conn, readonly bool) (Rendering, error) {
 	if err := validateConn(conn); err != nil {
 		return Rendering{}, err
 	}
+	if err := requireConnUser(conn); err != nil {
+		return Rendering{}, err
+	}
 	if readonly {
 		return Rendering{}, fmt.Errorf("dbbrowser: adminer has no read-only dialect (enforcement none; read-write gate is at acceptance)")
 	}

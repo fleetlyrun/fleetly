@@ -201,12 +201,14 @@ func (e *Engine) reconcileDatabase(ctx context.Context, row *database.Database) 
 	e.expect.mu.Lock()
 	e.expect.expected[databaseOwner(row.ID)] = uint64(wireGen)
 	e.expect.mu.Unlock()
-	e.advanceDatabaseStatus(stepCtx, row, gen)
+	e.advanceDatabaseStatus(stepCtx, row, uint64(wireGen))
 }
 
 // advanceDatabaseStatus 从观测缓存推进行状态（gen 匹配才采信——旧 gen 的
-// 迟到观测不翻状态）。Ensure 成功拍与签名短路拍共用（短路拍 Ensure 不发，
-// 状态收敛不停——观测经 Watch 流独立到达）。
+// 迟到观测不翻状态）。gen 是载体实际在 wire 上的代次（回执 wire-gen，与
+// 归属登记同律 R13-L3——call-gen 在内容等价 skip 下恒不等于观测）。Ensure
+// 成功拍与签名短路拍共用（短路拍 Ensure 不发，状态收敛不停——观测经
+// Watch 流独立到达）。
 func (e *Engine) advanceDatabaseStatus(ctx context.Context, row *database.Database, gen uint64) {
 	// 观测缓存键 = 投影 Workload ID = 数据库行 ID（ProjectDatabase 铸造式；
 	// database_test 以行 ID 注入观测即依赖此恒等）。

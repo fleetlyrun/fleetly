@@ -154,6 +154,7 @@ func (e *Engine) driveTask(ctx context.Context, t *task.Task, runs runsByTask) {
 	}
 	now := e.clock.Now()
 
+	e.armTaskLease(ctx, t, now)
 	e.driveLeaseExpiry(ctx, t, now)
 	e.driveRunJanitor(ctx, runs, now)
 	e.driveDrainReStop(ctx, t, runs, now)
@@ -165,6 +166,23 @@ func (e *Engine) driveTask(ctx context.Context, t *task.Task, runs runsByTask) {
 	}
 	runs = e.driveReplenish(ctx, t, spec, runs, now)
 	e.driveEnsure(ctx, t, spec, runs)
+}
+
+// armTaskLease 是 Owner Lease 的首次布防（R04-M1）：resident + 显式属主 +
+// 空 deadline 的行在首拍铸 deadline（now + interval）。创建受理面在
+// interfaces 层（本批文件面之外），布防落在引擎首拍——API 创建后 KickTasks，
+// 一拍内落地；此后不续期即按 deadline + 宽限排空（driveLeaseExpiry），
+// ADR-0012 的"属主失联回收"从创建起生效（匿名/机制铸造无属主 = 无租约）。
+func (e *Engine) armTaskLease(ctx context.Context, t *task.Task, now time.Time) {
+	if t.State != task.StateActive || t.Form != task.FormResident || t.OwnerTokenID == "" || t.LeaseDeadline != "" {
+		return
+	}
+	deadline := state.FormatTime(now.Add(e.opts.Task.TaskLeaseInterval))
+	if err := e.repos.Tasks.UpdateLease(ctx, t.ID, deadline); err != nil {
+		e.log.Error("task drive: arm lease", "task", t.ID, "err", err)
+		return
+	}
+	t.LeaseDeadline = deadline
 }
 
 // driveLeaseExpiry：resident + active + 绝对 deadline 超宽限（ADR-0018

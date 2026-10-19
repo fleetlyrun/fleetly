@@ -43,7 +43,10 @@ export interface NavSection {
   zone?: "project" | "platform";
 }
 
-export function navSections(projectId: string | undefined): NavSection[] {
+// navSections 生成导航单源。platformAdmin 是平台域入口的显隐依据（fail-
+// closed：whoami 未到/失败传 false 即隐藏）——Nodes 读面是平台管理员门
+//（R08-M1/S16-c7：节点无 Team 轴，成员看节点页只会撞 403）。
+export function navSections(projectId: string | undefined, platformAdmin = false): NavSection[] {
   const pid = projectId ?? "";
   const projectBase = pid !== "" ? `/p/${encodeURIComponent(pid)}` : "";
   const projectItem = (label: string, to: string, icon: LucideIcon): NavItem => ({
@@ -100,7 +103,9 @@ export function navSections(projectId: string | undefined): NavSection[] {
       label: "Fleet",
       zone: "platform",
       items: [
-        { label: "Nodes", to: "/nodes", icon: Box },
+        // Nodes 仅平台管理员可见（服务端门 R08-M1）：节点清单与在跑容器
+        // 是跨租户舰队面，member/team admin 无可见性。
+        ...(platformAdmin ? [{ label: "Nodes", to: "/nodes", icon: Box }] : []),
         { label: "Components", to: "/components", icon: Boxes }, // ADR-0059 定名 + ADR-0060 路由对齐页名
         { label: "GitHub Apps", to: "/github-apps", icon: Fingerprint }, // ADR-0073：平台级接入材料（Global 行）
         { label: "Events", to: "/events", icon: Zap },

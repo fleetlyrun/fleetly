@@ -187,7 +187,9 @@ func (e *Engine) prepareBuildInput(ctx context.Context, d *deployment.Deployment
 			return capability.BuildRequest{}, fmt.Errorf("data root is not configured for source checkout")
 		}
 		dir := filepath.Join(e.opts.Data.DataRoot, "contexts", d.ToRevision)
-		if _, err := os.Stat(dir); os.IsNotExist(err) {
+		// 目录在场即完成：cloneSource 原子落位（半截上下文只可能留在
+		// `.cloning`，最终路径要么不存在要么完整——R03-M2）。
+		if _, serr := os.Stat(dir); serr != nil {
 			// 材料解析（ADR-0073 决策 1）：Project 级 GitHub App → Global →
 			// 匿名；命中而铸造失败 = 精确失败（不静默降级匿名）。
 			cloneURL, secrets, rerr := e.prepareCloneURL(ctx, projectID, origin.Git.GetRepo())
@@ -350,28 +352,52 @@ func (e *Engine) extractUploadContext(ctx context.Context, uploadID, revisionID 
 // repo 是待发送的 argv URL（可能内嵌访问材料 userinfo，ADR-0073）；secrets
 // 是错误输出中的字面脱敏清单（URL 整体剥除 + token 字面替换——Token 材料
 // 只进命令参数不进日志，ADR-0009）。
+//
+// 原子落位（R03-M2）：「目录存在」不是完成判据——clone/checkout 先落在
+// `<dir>.cloning`，全部成功后才 rename 到最终路径；中断/超时/失败只清临时
+// 目录，最终路径永远不会出现半截上下文被后续拍误判完整（与 upload 解包
+// 同纪律）。并发同 Revision 双驱动时，先落位者胜、本侧临时目录清理。
 func (e *Engine) cloneSource(ctx context.Context, repo, ref, dir string, secrets []string) error {
 	cloneCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 	if err := os.MkdirAll(filepath.Dir(dir), 0o750); err != nil {
 		return err
 	}
-	args := gitCloneArgs(repo, ref, dir)
-	// nolint:gosec // G204 变量子进程的信任域在受理面：repo 经 hooks.go 的
-	// https:// 白名单+控制字符拒绝，argv 构造带 -- 分隔与 protocol.ext/file
-	// .allow=never 双防线（58f901d）——此处非注入面。
-	cmd := exec.CommandContext(cloneCtx, "git", args...)
-	if out, err := cmd.CombinedOutput(); err != nil {
+	tmp := dir + ".cloning"
+	_ = os.RemoveAll(tmp) // 上次中断遗留（正常路径 rename 已带走）
+	args := gitCloneArgs(repo, ref, tmp)
+	// G204 的信任域在受理面：repo 经 hooks.go 的 https:// 白名单+控制字符
+	// 拒绝，argv 构造带 -- 分隔与 protocol.ext/file.allow=never 双防线
+	//（58f901d）——此处非注入面。
+	out, err := gitRun(cloneCtx, args...)
+	if err != nil {
+		_ = os.RemoveAll(tmp)
 		return cloneErr(err, out, repo, secrets)
 	}
 	if isHexSHA(ref) {
 		// ref 取自 Revision 冻结体（已冻结的不可变输入，非调用方实时注入）。
-		co := exec.CommandContext(cloneCtx, "git", "-C", dir, "checkout", "--quiet", ref) //nolint:gosec // ref 来自冻结体
-		if out, err := co.CombinedOutput(); err != nil {
+		out, err = gitRun(cloneCtx, "-C", tmp, "checkout", "--quiet", ref) //nolint:gosec // ref 来自冻结体
+		if err != nil {
+			_ = os.RemoveAll(tmp)
 			return cloneErr(err, out, repo, secrets)
 		}
 	}
+	if err := os.Rename(tmp, dir); err != nil {
+		// 并发检出先行落位：容忍并清理本侧临时目录。
+		if _, serr := os.Stat(dir); serr == nil {
+			_ = os.RemoveAll(tmp)
+			return nil
+		}
+		_ = os.RemoveAll(tmp)
+		return fmt.Errorf("publish cloned context: %w", err)
+	}
 	return nil
+}
+
+// gitRun 是 git 子命令的执行缝（生产唯一路径 = exec.CommandContext；测试
+// 注入中断/半截形态——R03-M2 的原子落位负例不依赖网络与真仓）。
+var gitRun = func(ctx context.Context, args ...string) ([]byte, error) {
+	return exec.CommandContext(ctx, "git", args...).CombinedOutput() //nolint:gosec // argv 由 gitCloneArgs 构造（白名单 + -- 终结）
 }
 
 // cloneErr 收口 clone 的失败面：URL 剥除（从 https:// 起到空白占位——

@@ -43,9 +43,16 @@ afterEach(() => {
   setToken("");
 });
 
-// fetch 面桩：节点行（英雄卡数据源）+ 节点在跑容器集（四域投影字段回显）。
+// fetch 面桩：whoami 平台管理员（节点读面门放行）+ 节点行（英雄卡数据源）
+// + 节点在跑容器集（四域投影字段回显）。
 function stubFetch() {
   fetchMock.mockImplementation(async (path: string) => {
+    if (path === "/v1/whoami") {
+      return new Response(
+        JSON.stringify({ token_name: "console", role_name: "builtin-owner", user_name: "root", platform_admin: true }),
+        { status: 200 },
+      );
+    }
     if (path.startsWith("/v1/nodes/N1/containers")) {
       return new Response(
         JSON.stringify({
@@ -108,6 +115,7 @@ describe("NodeDetailPage containers", () => {
 
   it("shows the honest empty state when no containers run", async () => {
     fetchMock.mockImplementation(async (path: string) => {
+      if (path === "/v1/whoami") return new Response(JSON.stringify({ platform_admin: true }), { status: 200 });
       if (path.startsWith("/v1/nodes/N1/containers")) return new Response(JSON.stringify({ containers: [] }), { status: 200 });
       if (path === "/v1/nodes") {
         return new Response(JSON.stringify({ nodes: [{ platform_id: "N1", hostname: "fleetly-dev", role: "manager", available: true }] }), { status: 200 });
@@ -122,12 +130,25 @@ describe("NodeDetailPage containers", () => {
 
   it("shows not-found when the node row is gone (stale link)", async () => {
     fetchMock.mockImplementation(async (path: string) => {
+      if (path === "/v1/whoami") return new Response(JSON.stringify({ platform_admin: true }), { status: 200 });
       if (path === "/v1/nodes") return new Response(JSON.stringify({ nodes: [] }), { status: 200 });
       return new Response("{}", { status: 200 });
     });
     const { client, wrapper } = withClient();
     render(<NodeDetailPage nodeId="N1" />, { wrapper });
     await waitFor(() => expect(screen.getByText("Node not found")).toBeTruthy());
+    client.clear();
+  });
+
+  it("renders the platform admin gate instead of a 403 error for plain members", async () => {
+    fetchMock.mockImplementation(async (path: string) => {
+      if (path === "/v1/whoami") return new Response(JSON.stringify({ platform_admin: false }), { status: 200 });
+      return new Response("{}", { status: 200 });
+    });
+    const { client, wrapper } = withClient();
+    render(<NodeDetailPage nodeId="N1" />, { wrapper });
+    await waitFor(() => expect(screen.getByText("Platform admin only")).toBeTruthy());
+    expect(fetchMock.mock.calls.some(([called]) => String(called) === "/v1/nodes")).toBe(false);
     client.clear();
   });
 });

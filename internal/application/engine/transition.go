@@ -418,6 +418,10 @@ func (e *Engine) transitBuild(ctx context.Context, b *build.Build, from []build.
 	if fresh.State.Terminal() {
 		// 终态登记触发超龄缓冲回收（frames map 只增不清会泄漏，N0.1 P2-1）。
 		e.build.logs.markTerminal(b.ID)
+		// 终态释放输入登记（R03-M1）：BuildRequest 携带推送凭证明文，且每次
+		// 构建一行——只增不清即进程生命期凭据常驻 + 内存泄漏。全部终态
+		//（succeeded/failed/expired/cancelled）都经本口。
+		e.forgetBuildInput(b.ID)
 	}
 	return fresh, nil
 }

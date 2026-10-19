@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { CheckCircle2Icon, RefreshCwIcon } from "lucide-react";
+import { CheckCircle2Icon, RefreshCwIcon, ShieldAlertIcon } from "lucide-react";
 import { toast } from "sonner";
 import type { components as runtimeSchemas } from "@/api/runtime";
 import { apiSend } from "@/api/client";
@@ -46,16 +46,36 @@ type Node = runtimeSchemas["schemas"]["v1Node"];
 // 观测，nodes.$nodeId）。index 路由与 $nodeId 平级（apps.index/$appId
 // 同范式——无父 layout）。
 export function NodesPage() {
-  const nodes = useNodes();
   const whoami = useWhoami(true);
+  // 平台管理员门（R08-M1/S16-c7）：节点清单与在跑容器是平台级读面，服务端
+  // 门已收口；Console 只做显隐（fail-closed：whoami 未到/失败/非平台管理员
+  // 都不请求 /v1/nodes——成员不再撞 403 页面）。
+  const platformAdmin = whoami.data?.platformAdmin === true;
+  const nodes = useNodes(platformAdmin);
   const [material, setMaterial] = useState<{ join: string } | null>(null);
   const [relayMaterial, setRelayMaterial] = useState<{ nodeId: string; script: string } | null>(null);
   const [rotating, setRotating] = useState(false);
   const enroll = useEnrollMaterial(false, setMaterial);
   const rotate = useEnrollMaterial(true, setMaterial);
-  // 平台管理员门（H10 §4.10）：定向 relay 材料是平台管理员动作；Console
-  // 只做显隐（fail-closed：whoami 未知/失败即隐藏），服务端 403 仍是真门。
-  const platformAdmin = whoami.data?.platformAdmin === true;
+
+  if (whoami.isPending) {
+    return (
+      <PageFrame title="Nodes" description="Cluster membership, relay liveness and the runtime admin verbs">
+        <Skeleton className="h-48 w-full rounded-xl" />
+      </PageFrame>
+    );
+  }
+  if (!platformAdmin) {
+    return (
+      <PageFrame title="Nodes" description="Cluster membership, relay liveness and the runtime admin verbs">
+        <EmptyState
+          icon={ShieldAlertIcon}
+          title="Platform admin only"
+          description="Cluster nodes and their running containers are platform-scoped. Sign in as the platform owner to inspect them."
+        />
+      </PageFrame>
+    );
+  }
 
   const sorted = [...(nodes.data ?? [])].sort((a, b) => Number(b.available ?? false) - Number(a.available ?? false));
 

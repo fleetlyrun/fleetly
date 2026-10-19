@@ -526,9 +526,12 @@ export function appNameOf(apps: AppEntry[] | undefined, appId: string | undefine
 // 节点面（C4）：RuntimeAdmin 的 UI 消费面——list + enroll 材料 + drain/
 // cordon/uncordon 三动词（动词面对齐 CLI nodes 组）。enroll 材料等价集群
 // 成员权（platform:admin 档），响应只在铸造/轮换时可见。
-export function useNodes() {
+// useNodes 节点清单（平台级读面：服务端门 R08-M1——非平台管理员调用即
+// 403，故 enabled 由调用方按 whoami.platformAdmin 传入，fail-closed）。
+export function useNodes(enabled = true) {
   return useQuery({
     queryKey: ["nodes", "list"],
+    enabled,
     queryFn: async () => {
       const res = await apiFetch<{ nodes?: Array<Runtime["v1Node"] | undefined> }>("/v1/nodes");
       return rowsOf(res.nodes);

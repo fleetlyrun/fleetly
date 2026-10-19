@@ -123,13 +123,13 @@ describe("NodesPage relay actions", () => {
     client.clear();
   });
 
-  it("hides the relay actions when platform_admin is unknown/false (fail-closed)", async () => {
+  it("hides the whole node surface when platform_admin is unknown/false (fail-closed)", async () => {
     stubFetch(false);
     const { client, wrapper } = withClient();
     render(<NodesPage />, { wrapper });
-    await waitFor(() => expect(screen.getByText("worker-1")).toBeTruthy());
-    expect(screen.queryByText("Relay command")).toBeNull();
-    expect(screen.queryByText("Revoke relay")).toBeNull();
+    await waitFor(() => expect(screen.getByText("Platform admin only")).toBeTruthy());
+    expect(screen.queryByText("worker-1")).toBeNull();
+    expect(calls.some((call) => call.path === "/v1/nodes")).toBe(false);
     client.clear();
   });
 });
