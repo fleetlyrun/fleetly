@@ -541,7 +541,7 @@ Compare-Object $reportML $ledgerML
 | S15a | ✅ | 本提交 | 收敛/引擎 c1-c4：冷却签名三态、BG 重启按 succeeded gen、收口驱动权+维护锁守卫、环 panic/Inspector 可观测；engine `-race` 225s 绿 |
 | S15b | ✅ | 本提交 | 收敛/引擎 c5-c8：peer 撤销异步剥离、BG 退役代账本差集、Teardown 清 converge 记账+projMemo LRU、compose 保真五连；engine `-race` 228s 绿 |
 | S16a | ✅ | 本提交 | Runtime 一致性 c1-c5：k3s 副本数/egress 收敛/日志帧（R06-M2/M6/M4）、swarm config 载体清扫/exec 节拍（R06-M7/M5）；负例先红、门禁全绿 |
-| S16b | 待派 | — | Runtime/适配面 c6-c8：browse 方言（R01-H1†/M1）、节点读面（R08-M1）、引擎卫生（R03-M1/M2、R04-M1、R13-L3） |
+| S16b | ✅ | `ce9a15c7` | Runtime/适配面 c6-c8：browse 五引擎方言往返（R01-H1†/M1）、节点读面平台门+Console fail-closed（R08-M1）、引擎卫生四连（R03-M1/M2、R04-M1、R13-L3）；engine `-race` 235s、console 139 全绿 |
 | S17 | 待派 | — | 守卫/测试基建 |
 | S18 | 待派 | — | 非 M/L 残项 |
 | S19 | 待派 | — | 文档修订/真机复核/终验 |
