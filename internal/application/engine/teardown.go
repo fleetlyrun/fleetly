@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
+	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/alertrule"
 )
 
 // TeardownApp 拆除 App 的全部 Runtime 载体（幂等；Remove 对不存在对象不
@@ -77,14 +78,19 @@ func (e *Engine) TeardownApp(ctx context.Context, appID string) error {
 		delete(e.drift.stoppedSig, wid)
 	}
 	e.drift.stoppedMu.Unlock()
-	// ADR-0082 缺席检测的竞态闭合：删除收口完成后钉 teardown 标记（与
-	// forgetOwner 同在 appMu 临界区）——收敛复查见到标记即放弃重建，重建
-	// 权交还部署驱动器（teardown-abort 的唯一重建通道，ADR-0023； Submit
-	// 受理成功清标记）。 expect 缓存缺席无法区分「重启冷窗」与「删除收口
-	// 后」，标记才是闭合面。
+	// 收敛域记账全清（R16-L2 + R02-L7）：memo/resolved/fails/failSig/
+	// posture/cooldown/eventSeen/projMemo/replay 全部随 App 作废——已删 App
+	// 的冷却记账会让内置 converge-failed 永久 firing、doctor 永久 warn，
+	// 且这些表对已删 App 泄漏。随后重钉 teardown 标记（ADR-0023/ADR-0082：
+	// expect 缓存缺席无法区分「重启冷窗」与「删除收口后」，标记才是竞态
+	// 闭合面，且必须在 forgetOwner 之后、同一 appMu 临界区内落位；Submit
+	// 受理成功清标记）。
+	alertResolved := e.converge.forgetApp(appID)
 	e.converge.markTeardown(appID)
-	// 删除收口即账本作废：待重放标记随 App 一并清（ADR-0082 §6——已拆除的
-	// App 无期望态可回卷，残留标记会让下一位重建者看到幽灵回卷信号）。
-	e.converge.clearReplay(appID)
+	// 最后一个冷却 App 被删 = 内置告警解除沿（与冷却释放同款沿处理——
+	// 告警状态与记账单源，不靠重启清场）。
+	if alertResolved {
+		e.convergeAlertEdge(ctx, alertrule.StateOK, e.clock.Now())
+	}
 	return nil
 }

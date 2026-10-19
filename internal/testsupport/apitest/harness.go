@@ -326,6 +326,12 @@ type FakeRuntime struct {
 	// 仅经 ArmRemoveBlock 在启动 goroutine 前布置。
 	removeGate testruntime.BlockGate
 
+	// ensureGate 是 Ensure hang 注入门（R16-M4 撤销 peer 的异步语义钉测：
+	// 请求路径不得同步 replay 到 Ensure）。与 engine 假底座同核；仅经
+	// ArmEnsureBlock 在启动被测 goroutine 前布置。撞门在记录之前——门内
+	// 的 Ensure 不出现在 Calls() 快照里（"未调用 Ensure"的观测面）。
+	ensureGate testruntime.BlockGate
+
 	// removeErrByDB 是按 Database 轴注入的 Remove 错误（项目删除级联的
 	// 失败注入缝：对指定库的拆载体报错，其余库照常——SetRemoveErrFor
 	// 布置/清除；SetAdminErr 同款形态）。
@@ -553,7 +559,12 @@ func (f *FakeRuntime) Health(context.Context) capability.HealthReport {
 	return capability.HealthReport{Healthy: true}
 }
 
-func (f *FakeRuntime) Ensure(_ context.Context, ns capability.NamespaceRef, ws []capability.Workload, gen capability.Generation, m capability.Materials) (capability.EnsureReport, error) {
+func (f *FakeRuntime) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []capability.Workload, gen capability.Generation, m capability.Materials) (capability.EnsureReport, error) {
+	if f.ensureGate.Pass() {
+		if err := f.ensureGate.Wait(ctx); err != nil {
+			return capability.EnsureReport{}, err
+		}
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	spec := make(map[string]capability.Workload, len(ws))
@@ -562,6 +573,13 @@ func (f *FakeRuntime) Ensure(_ context.Context, ns capability.NamespaceRef, ws [
 	}
 	f.ensures = append(f.ensures, EnsureCall{NS: ns, Gen: gen, Spec: spec, Materials: m})
 	return capability.EnsureReport{}, nil
+}
+
+// ArmEnsureBlock 使下一次 Ensure 阻塞在注入点（记录之前），返回入口信号与
+// 解除函数。撤销 peer 的异步语义钉测面：请求路径若同步 replay 会停在这里，
+// 异步路径照常秒回。门在解除后保持开放（BlockGate 语义）。
+func (f *FakeRuntime) ArmEnsureBlock() (entered <-chan struct{}, release func()) {
+	return f.ensureGate.Arm()
 }
 
 func (f *FakeRuntime) Remove(ctx context.Context, ns capability.NamespaceRef) error {

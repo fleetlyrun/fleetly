@@ -14,6 +14,7 @@ package engine
 
 import (
 	"context"
+	"sort"
 	"testing"
 	"time"
 
@@ -343,4 +344,79 @@ func newBGProxyEngine(t *testing.T) (*Engine, *fakeRuntime, *fakeProxy, *statete
 		ID: tAppID, ProjectID: tProjectID, Name: "web",
 	}))
 	return e, rt, proxy, clock
+}
+
+// peerRollingSpec / peerBGSpect 构造带跨 Project 附件的最小 spec（c6 夹具：
+// 两代都挂同一条跨域网，账本差集的可观测面）。
+func peerRollingSpec(providerID, ref string) string {
+	return `{"schema_version":1,"app":{"id":"` + tAppID + `","project":"` + tProjectID + `"},` +
+		`"source":{"image":{"ref":"` + ref + `"}},` +
+		`"processes":[{"name":"web","image":"` + ref + `","replicas":1,` +
+		`"networks":["project:` + providerID + `/bus","default"]}]}`
+}
+
+func peerBGSpec(providerID, ref string) string {
+	return `{"schema_version":1,"app":{"id":"` + tAppID + `","project":"` + tProjectID + `"},` +
+		`"source":{"image":{"ref":"` + ref + `"}},` +
+		`"processes":[{"name":"web","image":"` + ref + `","replicas":1,` +
+		`"networks":["project:` + providerID + `/bus","default"],` +
+		`"strategy":"DEPLOY_STRATEGY_BLUE_GREEN"}]}`
+}
+
+// ownerLedgerIDs 取该 App 在期望账本（ensuredSpec）中的载体 ID 集（排序）。
+func ownerLedgerIDs(e *Engine, appID string) []string {
+	e.obs.mu.RLock()
+	defer e.obs.mu.RUnlock()
+	var ids []string
+	for wid := range e.obs.ensuredSpec {
+		if e.obs.workloadApp[wid] == appOwner(appID) {
+			ids = append(ids, wid)
+		}
+	}
+	sort.Strings(ids)
+	return ids
+}
+
+// R13-M1（S15b-c6）：BG 收口按本代保留集对 owner 做差集清账——退役代的
+// ensuredSpec/ensuredGen/ensuredBy/workloadApp 条目不得残留，否则
+// crossProjectRefs 每拍重见旧代附件、30s 扫描反复重收敛。
+func TestBlueGreenCollectionDropsRetiredGenerationLedger(t *testing.T) {
+	e, rt, _ := newTestEngine(t)
+	ctx := context.Background()
+	providerID := seedCrossProjectPeer(t, e, true)
+
+	// 基线：rolling + 跨域附件（旧代 = 稳定名 + gen1 账本条目）。
+	rev1 := freezeSpec(t, e, 1, peerRollingSpec(providerID, "nginx:1.27"))
+	deployToSucceeded(t, e, rev1)
+	oldID := tAppID + "-web"
+	require.Equal(t, []string{oldID}, ownerLedgerIDs(e, tAppID))
+
+	// 第二部署：同引用改 BG → 双代窗（旧代 + 新代各自记账）→ 收口。
+	rev2 := freezeSpec(t, e, 2, peerBGSpec(providerID, "nginx:1.28"))
+	d2, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev2})
+	require.NoError(t, err)
+	e.step(ctx) // releasing：窗口物化（联合集）
+	newID := genScopedWorkloadID(oldID, 2)
+	e.handleObservation(ctx, workloadEventRunning(newID, 2))
+	e.step(ctx) // observing（切换）
+	advanceClock(t, e, 61*time.Second)
+	e.step(ctx) // 收口 succeeded（仅新代 Ensure）
+	require.Equal(t, deployment.StateSucceeded, getDeployment(t, e, d2.ID).State)
+
+	// 账本只剩本代成员：退役代条目已随收口差集清除。
+	assert.Equal(t, []string{newID}, ownerLedgerIDs(e, tAppID),
+		"the retired generation's ledger entries must be forgotten at collection")
+	refs := e.obs.crossProjectRefs()
+	require.Len(t, refs[tAppID], 1, "crossProjectRefs must only see the surviving generation")
+
+	// 撤销 peer：下一拍隔离只收敛一次；再下一拍不得因退役代影子反复重收敛。
+	require.NoError(t, e.repos.NetworkPeers.Revoke(ctx, "01JD0PEER00000000000000007"))
+	before := len(rt.calls())
+	e.driftScan(ctx)
+	assert.GreaterOrEqual(t, ensureDelta(t, rt, before), 1, "the drift tick strips the revoked attachment")
+	assert.Empty(t, lastEnsure(rt).Spec["web"].NetworkRefs, "attachment stripped from the surviving carrier")
+
+	afterFirst := len(rt.calls())
+	e.driftScan(ctx)
+	assert.Zero(t, ensureDelta(t, rt, afterFirst), "no repeated re-convergence once the retired generation is gone")
 }

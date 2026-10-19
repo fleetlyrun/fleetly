@@ -3,6 +3,8 @@ package engine
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,6 +13,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
 
@@ -139,4 +142,113 @@ func TestAppRepoHidesTombstonedRows(t *testing.T) {
 		return s.Apps.SoftDelete(ctx, tAppID)
 	})
 	require.ErrorIs(t, err, state.ErrNotFound, "re-delete surfaces as not-found (unified semantics)")
+}
+
+// R16-L2 + R02-L7（S15b-c7）：TeardownApp 末尾清该 App 的全部收敛域记账
+// （memo/resolved/fails/failSig/posture/cooldown/eventSeen/projMemo/replay），
+// 并重钉 teardown 标记；内置 converge-failed 告警随之解除（不残留 firing）。
+func TestTeardownAppClearsConvergeLedger(t *testing.T) {
+	e, rt, clock := newTestEngine(t)
+	ctx := context.Background()
+	rev := freezeSpec(t, e, 1, tImageSpec)
+	driftDeployToSucceeded(t, e, rt, clock, rev)
+	settleSlowChannel(t, e) // 慢通道 memo + projMemo 落账
+
+	// 一次成功的信号驱动收敛：resolved 生命周期面在册。
+	rt.mu.Lock()
+	rt.tamper = map[string]tamperEntry{tAppID + "-web": {image: "nginx:1.27-alpine"}}
+	rt.mu.Unlock()
+	e.driftScan(ctx)
+	e.converge.mu.Lock()
+	_, hasResolved := e.converge.resolved[tAppID]
+	e.converge.mu.Unlock()
+	require.True(t, hasResolved, "a fast-source converge records the resolved signature")
+
+	// 不同形态的三连失败 → 冷却窗 + 内置告警 firing（fails/failSig/posture/
+	// cooldown/eventSeen 全部在册）。
+	rt.mu.Lock()
+	rt.tamper = map[string]tamperEntry{tAppID + "-web": {replicas: 3}}
+	rt.mu.Unlock()
+	convergeFailOnce(t, e, rt)
+	convergeFailOnce(t, e, rt)
+	convergeFailOnce(t, e, rt)
+	e.converge.markReplay(tAppID, "01JD0DEPLOYREPLAY0000000")
+
+	e.converge.mu.Lock()
+	_, hasMemo := e.converge.memo[tAppID]
+	_, hasFails := e.converge.fails[tAppID]
+	_, hasFailSig := e.converge.failSig[tAppID]
+	_, hasPosture := e.converge.posture[tAppID]
+	_, hasCooldown := e.converge.cooldown[tAppID]
+	_, hasEventSeen := e.converge.eventSeen[tAppID]
+	_, hasReplay := e.converge.replay[tAppID]
+	projKeys := len(e.converge.projMemo)
+	e.converge.mu.Unlock()
+	require.True(t, hasMemo && hasFails && hasFailSig && hasPosture && hasCooldown && hasEventSeen && hasReplay,
+		"fixture: every converge ledger entry must be present before teardown")
+	require.Positive(t, projKeys, "fixture: the projection memo holds the app's baseline key")
+	assert.Equal(t, "firing", e.SystemConvergeAlertState().State, "fixture: the builtin converge alert is firing")
+
+	require.NoError(t, e.TeardownApp(ctx, tAppID))
+
+	e.converge.mu.Lock()
+	_, memoAfter := e.converge.memo[tAppID]
+	_, resolvedAfter := e.converge.resolved[tAppID]
+	_, failsAfter := e.converge.fails[tAppID]
+	_, failSigAfter := e.converge.failSig[tAppID]
+	_, postureAfter := e.converge.posture[tAppID]
+	_, cooldownAfter := e.converge.cooldown[tAppID]
+	_, eventSeenAfter := e.converge.eventSeen[tAppID]
+	_, replayAfter := e.converge.replay[tAppID]
+	for key := range e.converge.projMemo {
+		assert.False(t, strings.HasPrefix(key, tAppID+"\x00"), "projMemo key %q of the deleted app must be dropped", key)
+	}
+	e.converge.mu.Unlock()
+	assert.False(t, memoAfter, "memo")
+	assert.False(t, resolvedAfter, "resolved")
+	assert.False(t, failsAfter, "fails")
+	assert.False(t, failSigAfter, "failSig")
+	assert.False(t, postureAfter, "posture")
+	assert.False(t, cooldownAfter, "cooldown")
+	assert.False(t, eventSeenAfter, "eventSeen")
+	assert.False(t, replayAfter, "replay")
+	assert.True(t, e.converge.teardownMarked(tAppID), "the teardown mark is re-pinned after the purge (race closure)")
+	assert.Equal(t, "ok", e.SystemConvergeAlertState().State, "deleting the last cooling app clears the builtin alert")
+	assert.Len(t, eventNamesOf(t, e, "alert.resolved"), 1, "the resolved edge is emitted (same沿 handling as a cooldown release)")
+}
+
+// c7 第二半：projMemo 容量上限 + LRU 淘汰（长跑无界增长的回归锚；淘汰后
+// 投影仍正确重算）。
+func TestConvergeProjMemoBoundedLRU(t *testing.T) {
+	e, _, _ := newTestEngine(t)
+	c := &e.converge
+	keyFor := func(i int) string { return fmt.Sprintf("app%04d\x00rev\x00%d", i, i) }
+
+	c.mu.Lock()
+	for i := 0; i < convergeProjMemoLimit; i++ {
+		c.projMemoPut(keyFor(i), []capability.Workload{{ID: keyFor(i)}})
+	}
+	// 触达最早键让 LRU 序生效：再插一条应淘汰第二旧的键而非被触达的键。
+	c.projMemoGet(keyFor(0))
+	c.projMemoPut("newest\x00rev\x001", []capability.Workload{{ID: "newest"}})
+	size := len(c.projMemo)
+	_, oldestKept := c.projMemo[keyFor(0)]
+	_, secondEvicted := c.projMemo[keyFor(1)]
+	c.mu.Unlock()
+
+	require.Equal(t, convergeProjMemoLimit, size, "the projection memo is capacity-bounded")
+	assert.True(t, oldestKept, "a recently used key survives eviction (LRU)")
+	assert.False(t, secondEvicted, "the least recently used key is evicted first")
+
+	// 淘汰后读径仍正确：真实基线投影重算并命中缓存。
+	rev := freezeSpec(t, e, 1, tImageSpec)
+	deployToSucceeded(t, e, rev)
+	d, err := e.repos.Deployments.LatestSucceeded(context.Background(), tAppID)
+	require.NoError(t, err)
+	ws, err := e.expectedWorkloads(context.Background(), d)
+	require.NoError(t, err)
+	require.NotEmpty(t, ws, "the projection is recomputed after eviction")
+	cached, err := e.expectedWorkloads(context.Background(), d)
+	require.NoError(t, err)
+	assert.Equal(t, ws, cached, "the recomputed projection is cached and served identically")
 }

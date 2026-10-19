@@ -156,6 +156,11 @@ func (e *Engine) replayAppBaseline(ctx context.Context, a *app.App, d *deploymen
 func (e *Engine) driftScan(ctx context.Context) {
 	inspector := capability.FacesOf(e.runtime).Inspector // spec 对照子面（FacesOf 协商点；nil = Provider 未提供）
 
+	// 撤销 peer 的待剥离标记（R16-M4 异步语义）先于对照面执行：本拍剥离
+	// 成功后期望账本已更新，后续 spec 对照/慢通道不会对同一次撤销做第二
+	// 次重放（一拍一次）。失败保留下拍重试（失败可见在 drain 内）。
+	e.drainPeerIsolation(ctx)
+
 	// 在途 App 集（稳态判定：不在途才发 workload.stopped）。
 	driving, err := e.repos.Deployments.ListDriving(ctx)
 	if err != nil {

@@ -158,6 +158,30 @@ func (o *observations) forgetOwner(owner workloadOwner) []string {
 	return wids
 }
 
+// reconcileOwner 按"本代保留集"对 owner 做差集清理（R13-M1）：某次 Ensure
+// 的期望集就是该 App 的现行保留集——不在其中的同 owner 账本条目是退役代/
+// 被缩减载体（BG 收口时旧代成员即落此列）。不清会让 ensuredSpec 永久带着
+// 退役代的跨域附件：crossProjectRefs 每拍重见"未批准引用"、30s 扫描反复
+// 重收敛（无事件无日志的不动点缺失）。返回清掉的 workloadID 集。
+func (o *observations) reconcileOwner(owner workloadOwner, keep map[string]bool) []string {
+	o.mu.Lock()
+	var wids []string
+	for wid, own := range o.workloadApp {
+		if own == owner && !keep[wid] {
+			wids = append(wids, wid)
+		}
+	}
+	for _, wid := range wids {
+		delete(o.workloadApp, wid)
+		delete(o.ensuredGen, wid)
+		delete(o.ensuredSpec, wid)
+		delete(o.ensuredBy, wid)
+		delete(o.observations, wid)
+	}
+	o.mu.Unlock()
+	return wids
+}
+
 // forget 清单载体缓存面（Database 拆载体等域内收口）。
 func (o *observations) forget(wid string) {
 	o.mu.Lock()

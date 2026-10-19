@@ -6,18 +6,22 @@ package apitest_test
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	identityv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/identity/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
 	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
@@ -196,4 +200,81 @@ func TestApproveNetworkPeerReceiverTeamOnly(t *testing.T) {
 		&structurev1.ApproveNetworkPeerRequest{Id: peerID})
 	require.NoError(t, err)
 	assert.Equal(t, "approved", again.GetPeer().GetState())
+}
+
+// R16-M4（S15b-c5）：撤销 peer 的请求路径不再同步 replay/Ensure——撤销落账
+// 后只标记待剥离并 Kick 漂移扫描；慢 Ensure 在场时 RevokeNetworkPeer 仍秒级
+// 返回，剥离由下一拍漂移扫描完成（异步语义，响应字段/错误码不变）。
+func TestRevokeNetworkPeerDoesNotBlockOnSlowEnsure(t *testing.T) {
+	h := apitest.New(t)
+	ctx := h.Ctx()
+	networks := structurev1.NewNetworksServiceClient(h.Conn)
+	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
+
+	receiver := h.CreateProject(t, "messaging")
+	consumer := h.CreateProject(t, "torchwood")
+	net, err := networks.CreateNetwork(ctx, &structurev1.CreateNetworkRequest{
+		ProjectId: receiver.GetId(), Name: "bus",
+	})
+	require.NoError(t, err)
+	declared, err := networks.DeclareNetworkPeer(ctx, &structurev1.DeclareNetworkPeerRequest{
+		NetworkId: net.GetNetwork().GetId(), PeerProjectId: consumer.GetId(),
+	})
+	require.NoError(t, err)
+	peerID := declared.GetPeer().GetId()
+	_, err = networks.ApproveNetworkPeer(ctx, &structurev1.ApproveNetworkPeerRequest{Id: peerID})
+	require.NoError(t, err)
+
+	app := h.CreateApp(t, consumer.GetId(), "web")
+	body := fmt.Sprintf(`{"schema_version":1,
+		"source":{"image":{"ref":"nginx:1.27"}},
+		"processes":[{"name":"web","image":"nginx:1.27","replicas":1,"networks":["project:%s/bus","default"]}]}`,
+		receiver.GetId())
+	dep, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: app.GetId(), SpecFile: body})
+	require.NoError(t, err)
+	require.Eventually(t, func() bool { return len(h.Runtime.Calls()) > 0 }, 10*time.Second, 10*time.Millisecond)
+	h.Runtime.ReportRunning(app.GetId()+"-web", capability.Generation(dep.GetDeployment().GetGeneration()))
+	require.Eventually(t, func() bool {
+		got, err := deployments.GetDeployment(ctx, &deliveryv1.GetDeploymentRequest{Id: dep.GetDeployment().GetId()})
+		return err == nil && got.GetDeployment().GetState() == "observing"
+	}, 10*time.Second, 10*time.Millisecond)
+	h.Clock.Advance(61 * time.Second)
+	require.Eventually(t, func() bool {
+		got, err := deployments.GetDeployment(ctx, &deliveryv1.GetDeploymentRequest{Id: dep.GetDeployment().GetId()})
+		return err == nil && got.GetDeployment().GetState() == "succeeded"
+	}, 10*time.Second, 10*time.Millisecond)
+	calls := h.Runtime.Calls()
+	require.NotEmpty(t, calls)
+	require.Len(t, calls[len(calls)-1].Spec["web"].NetworkRefs, 1, "baseline carries the approved cross-project attachment")
+
+	// 慢 Ensure 门：同步 replay 的撤销会停在门内。
+	_, release := h.Runtime.ArmEnsureBlock()
+	before := len(h.Runtime.Calls())
+	done := make(chan error, 1)
+	started := time.Now()
+	go func() {
+		_, rerr := networks.RevokeNetworkPeer(ctx, &structurev1.RevokeNetworkPeerRequest{Id: peerID})
+		done <- rerr
+	}()
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+		assert.Less(t, time.Since(started), 3*time.Second, "revoke must not wait for the isolation Ensure")
+	case <-time.After(5 * time.Second):
+		release()
+		t.Fatal("RevokeNetworkPeer blocked on a slow Ensure: the request path still replays the isolation synchronously")
+	}
+	assert.Equal(t, before, len(h.Runtime.Calls()), "the request path must not call Ensure (mark + kick only)")
+
+	// 下一拍漂移扫描完成剥离（放行被标记的 Ensure）。
+	release()
+	require.Eventually(t, func() bool {
+		calls := h.Runtime.Calls()
+		if len(calls) <= before {
+			return false
+		}
+		last := calls[len(calls)-1]
+		w, ok := last.Spec["web"]
+		return ok && len(w.NetworkRefs) == 0
+	}, 10*time.Second, 10*time.Millisecond, "the next drift scan strips the revoked attachment")
 }

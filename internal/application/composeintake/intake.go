@@ -22,8 +22,6 @@ import (
 	"strings"
 	"time"
 
-	"go.yaml.in/yaml/v3"
-
 	"github.com/compose-spec/compose-go/v2/loader"
 	"github.com/compose-spec/compose-go/v2/template"
 	"github.com/compose-spec/compose-go/v2/types"
@@ -165,6 +163,17 @@ func FromYAML(body []byte, appID, projectID string, vars VariableLookup) (*specv
 			} else if b, isBool := ext.(bool); !isBool || !b {
 				return nil, invalidf("compose.configs."+cname, "external must be true (platform Configs are the content source; upload via the configs API)")
 			}
+			// 声明面白名单（R03-M8）：name 覆盖形态合法（声明键 → 平台
+			// Config 名），其余官方面（file/content/labels/driver…）显式
+			// 拒收——静默丢即静默失败。
+			for key := range d {
+				switch key {
+				case "external", "name":
+				default:
+					return nil, invalidf("compose.configs."+cname+"."+key,
+						"official compose field %q is not enabled on fleetly configs (supported: external, name)", key)
+				}
+			}
 		}
 	}
 	jobsRaw := raw["x-fleetly-pre-deploy-jobs"]
@@ -197,7 +206,7 @@ func FromYAML(body []byte, appID, projectID string, vars VariableLookup) (*specv
 		svc := project.Services[name]
 		// 服务 label 方言：fleetly.job: init = 一次性作业（不落 processes）。
 		if svc.Labels["fleetly.job"] != "" {
-			j, jerr := initJobFromService(fmt.Sprintf("compose.services.%s", name), name, svc)
+			j, jerr := initJobFromService(fmt.Sprintf("compose.services.%s", name), name, svc, project)
 			if jerr != nil {
 				return nil, jerr
 			}
@@ -224,57 +233,6 @@ func FromYAML(body []byte, appID, projectID string, vars VariableLookup) (*specv
 		return nil, err
 	}
 	return app, nil
-}
-
-// escapeCommandDollars 预逃逸 command 面（services[].command 与
-// x-fleetly-pre-deploy-jobs[].command）的 $ → $$：官方插值 $$→$ 还原原文
-// ——command 是运行时 shell 语境，$ 语义属 shell（真机咬出：脚本循环变量
-// $n 被 fail-closed 插值当未声明孔硬拒；dokploy 系模板仓的 command 脚本
-// 普遍不逃逸，模板库使命要求原样承接）。平台变量经进程 env 在运行时可见
-// （ADR-0072 合成面），无需插值烘焙。非 YAML 原样交还（canonical 错误由
-// 官方管线给出）。
-func escapeCommandDollars(body []byte) []byte {
-	var doc map[string]any
-	if err := yaml.Unmarshal(body, &doc); err != nil {
-		return body
-	}
-	var escape func(v any) any
-	escape = func(v any) any {
-		switch t := v.(type) {
-		case string:
-			return strings.ReplaceAll(t, "$", "$$")
-		case []any:
-			out := make([]any, len(t))
-			for i, item := range t {
-				out[i] = escape(item)
-			}
-			return out
-		}
-		return v
-	}
-	if services, ok := doc["services"].(map[string]any); ok {
-		for _, raw := range services {
-			if svc, ok := raw.(map[string]any); ok {
-				if cmd, present := svc["command"]; present {
-					svc["command"] = escape(cmd)
-				}
-			}
-		}
-	}
-	if jobs, ok := doc["x-fleetly-pre-deploy-jobs"].([]any); ok {
-		for _, raw := range jobs {
-			if job, ok := raw.(map[string]any); ok {
-				if cmd, present := job["command"]; present {
-					job["command"] = escape(cmd)
-				}
-			}
-		}
-	}
-	out, err := yaml.Marshal(doc)
-	if err != nil {
-		return body
-	}
-	return out
 }
 
 // loaderOptions 是官方管线的装载选项：插值 + 官方 schema 校验发生在
@@ -434,7 +392,7 @@ func externalDeclarations(project *types.Project) error {
 // → ttl。拒绝面：volumes/ports/networks/depends_on/restart/deploy/build 各带
 // 指向性文案（preDeployJobRejections 同措辞）；其余官方面与服务级 x- 扩展
 // 键经白名单收口显式拒（静默丢即静默失败，ADR-0074）。
-func initJobFromService(field, name string, svc types.ServiceConfig) (*specv1.JobSpec, error) {
+func initJobFromService(field, name string, svc types.ServiceConfig, project *types.Project) (*specv1.JobSpec, error) {
 	for key := range svc.Labels {
 		switch key {
 		case "fleetly.job", "fleetly.job.timeout", "fleetly.databases":
@@ -487,12 +445,24 @@ func initJobFromService(field, name string, svc types.ServiceConfig) (*specv1.Jo
 		return nil, err
 	}
 	p.Env = env
-	// secrets：typed 面直接取名（external 声明律同服务面；原始 any 形态
-	// 的 jobSecretRefs 不吃 typed 切片）。
+	// secrets：typed 面与服务面同律执法（R03-M7）——target 只认官方缺省
+	// /run/secrets/<source>，uid/gid/mode 不翻译；name 覆盖解析平台名。
+	// 旧实现直接取 Source 静默丢全部长语法字段（同文件写成 service 或
+	// 顶层 job 会精确拒绝，行为按方言分叉）。
 	if len(svc.Secrets) > 0 {
 		secretRefs := make([]string, 0, len(svc.Secrets))
-		for _, sr := range svc.Secrets {
-			secretRefs = append(secretRefs, sr.Source)
+		for i, sr := range svc.Secrets {
+			sf := field + ".secrets[" + fmt.Sprintf("%d", i) + "]"
+			if sr.Source == "" {
+				return nil, invalidf(sf, "secret entry must reference a declared secret by name")
+			}
+			if sr.Target != "" && sr.Target != path.Join("/run/secrets", sr.Source) {
+				return nil, invalidf(sf, "secret %q: target remapping is not supported (injected at /run/secrets/<name>)", sr.Source)
+			}
+			if sr.UID != "" || sr.GID != "" || sr.Mode != nil {
+				return nil, invalidf(sf, "secret %q: uid/gid/mode are not translated", sr.Source)
+			}
+			secretRefs = append(secretRefs, declaredSecretName(project.Secrets, sr.Source))
 		}
 		p.SecretRefs = secretRefs
 	}
@@ -513,7 +483,7 @@ func initJobFromService(field, name string, svc types.ServiceConfig) (*specv1.Jo
 			if c.Target == "" {
 				return nil, invalidf(cf, "long-form source/target is required (target is the container path the file mounts at; got source %q without target)", c.Source)
 			}
-			mounts = append(mounts, &specv1.ConfigMount{Config: c.Source, Target: c.Target})
+			mounts = append(mounts, &specv1.ConfigMount{Config: declaredConfigName(project.Configs, c.Source), Target: c.Target})
 		}
 		p.ConfigMounts = mounts
 	}
@@ -585,7 +555,7 @@ func serviceProcess(project *types.Project, name string, svc types.ServiceConfig
 			if c.Target == "" {
 				return nil, "", invalidf(cf, "long-form source/target is required (target is the container path the file mounts at; got source %q without target)", c.Source)
 			}
-			mounts = append(mounts, &specv1.ConfigMount{Config: c.Source, Target: c.Target})
+			mounts = append(mounts, &specv1.ConfigMount{Config: declaredConfigName(project.Configs, c.Source), Target: c.Target})
 		}
 		p.ConfigMounts = mounts
 	}
@@ -600,8 +570,17 @@ func serviceProcess(project *types.Project, name string, svc types.ServiceConfig
 		if err := deployExtras(field+".deploy", svc.Deploy); err != nil {
 			return nil, "", err
 		}
-		if svc.Deploy.Replicas != nil && *svc.Deploy.Replicas > 0 {
-			p.Replicas = int64(*svc.Deploy.Replicas) //nolint:gosec // 副本计数域内
+		if svc.Deploy.Replicas != nil {
+			// replicas: 0 是合法 compose 值但不是可声明的平台期望态（IR 的
+			// 0 = 缺省 = 1）——静默归一为 1 会让"缩零"声明变成继续服务
+			// （R03-M6）。显式拒收，负值交叶子校验精确拒绝。
+			if *svc.Deploy.Replicas == 0 {
+				return nil, "", invalidf(field+".deploy.replicas",
+					"replicas: 0 is not declarable; remove the service or declare replicas: 1")
+			}
+			if *svc.Deploy.Replicas > 0 {
+				p.Replicas = int64(*svc.Deploy.Replicas) //nolint:gosec // 副本计数域内
+			}
 		}
 		if err := deployStrategy(field+".deploy", svc.Deploy.Extensions, p); err != nil {
 			return nil, "", err
@@ -619,14 +598,15 @@ func serviceProcess(project *types.Project, name string, svc types.ServiceConfig
 	}
 	p.Healthcheck = probe
 
-	nets, err := serviceNetworks(field+".networks", svc.Networks)
+	nets, err := serviceNetworks(field+".networks", svc.Networks, project.Networks)
 	if err != nil {
 		return nil, "", err
 	}
 	// 声明端口即 Route-facing（F3.5 两半边裁决）：ports 在场而 default
 	// 未挂时补挂项目 default 网（Proxy 可达性半边）。spec_file 是用户
 	// 亲笔 AppSpec，平台不改写其 networks——本规则只在 compose 方言生效。
-	if len(p.Ports) > 0 && !containsString(nets, "default") {
+	// 「已挂 default」按声明键判定（name 覆盖下平台名可能不是 "default"）。
+	if len(p.Ports) > 0 && !containsString(nets, "default") && svc.Networks["default"] == nil {
 		nets = append(nets, "default")
 	}
 	p.Networks = nets
@@ -854,11 +834,20 @@ func healthcheck(field string, hc *types.HealthCheckConfig) (*specv1.Healthcheck
 		words = append(words, hc.Test...)
 		switch words[0] {
 		case "CMD":
+			// 空载荷（["CMD"] 无命令）是合法的官方 schema 形态但语义上
+			// 不构成探针——静默投影成无探针会让健康门失守（R03-L5）。
+			if len(words) < 2 {
+				return nil, invalidf(field+".test", "test must carry a command after CMD")
+			}
 			out.Probe = &specv1.HealthcheckSpec_Exec{Exec: &specv1.ExecProbe{Command: words[1:]}}
 		case "CMD-SHELL":
 			// CMD-SHELL 载荷是单个 shell 字符串：按空白切分会撕碎引号结构
 			//（staging 真机实证，ADR-0033 注记）——整体经 sh -c 承载。
-			out.Probe = &specv1.HealthcheckSpec_Exec{Exec: &specv1.ExecProbe{Command: []string{"sh", "-c", strings.Join(words[1:], " ")}}}
+			shell := strings.Join(words[1:], " ")
+			if strings.TrimSpace(shell) == "" {
+				return nil, invalidf(field+".test", "test must carry a command after CMD-SHELL")
+			}
+			out.Probe = &specv1.HealthcheckSpec_Exec{Exec: &specv1.ExecProbe{Command: []string{"sh", "-c", shell}}}
 		default:
 			return nil, invalidf(field+".test", "test must start with CMD or CMD-SHELL")
 		}
@@ -884,8 +873,9 @@ func healthcheck(field string, hc *types.HealthCheckConfig) (*specv1.Healthcheck
 // serviceNetworks 执法网络附件：名单形态（nil 配置）；带 aliases/ipv4 等
 // 长语法配置显式拒绝。跨 Project 引用形态（project:<id>/<name>）带冒号
 // 斜杠，官方 schema 的网络键字符集不容——该面属 spec_file（方言边界，
-// ADR-0074 注记）。
-func serviceNetworks(field string, nets map[string]*types.ServiceNetworkConfig) ([]string, error) {
+// ADR-0074 注记）。附件的平台名按顶层 external 声明的 name 覆盖解析
+// （R03-M8：与 volumes/secrets 同一条 external 声明律，不再按声明键直取）。
+func serviceNetworks(field string, nets map[string]*types.ServiceNetworkConfig, declared map[string]types.NetworkConfig) ([]string, error) {
 	if len(nets) == 0 {
 		return nil, nil
 	}
@@ -894,12 +884,37 @@ func serviceNetworks(field string, nets map[string]*types.ServiceNetworkConfig) 
 			return nil, invalidf(field+"."+name, "network attachments are by name only (aliases, ipv4_address and driver_opts are not translated)")
 		}
 	}
+	seen := make(map[string]bool, len(nets))
 	out := make([]string, 0, len(nets))
 	for name := range nets {
-		out = append(out, name)
+		resolved := name
+		if decl, ok := declared[name]; ok && decl.Name != "" {
+			resolved = decl.Name
+		}
+		if seen[resolved] {
+			continue
+		}
+		seen[resolved] = true
+		out = append(out, resolved)
 	}
 	sort.Strings(out) // map → 切片落点排序归一（幂等 diff 稳定）
 	return out, nil
+}
+
+// declaredConfigName / declaredSecretName 解析 external 声明的 name 覆盖
+// （声明键 → 平台实体名）；未声明或未覆盖回退声明键。
+func declaredConfigName(declared map[string]types.ConfigObjConfig, source string) string {
+	if decl, ok := declared[source]; ok && decl.Name != "" {
+		return decl.Name
+	}
+	return source
+}
+
+func declaredSecretName(declared map[string]types.SecretConfig, source string) string {
+	if decl, ok := declared[source]; ok && decl.Name != "" {
+		return decl.Name
+	}
+	return source
 }
 
 // serviceVolumes 执法卷挂载：短语法 name:/target[:ro]（官方解析承载），

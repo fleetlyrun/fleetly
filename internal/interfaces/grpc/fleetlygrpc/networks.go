@@ -354,9 +354,11 @@ func (svc *NetworksService) ApproveNetworkPeer(ctx context.Context, req *structu
 	return &structurev1.ApproveNetworkPeerResponse{Peer: networkPeerMsg(fresh, net)}, nil
 }
 
-// RevokeNetworkPeer 撤销（任一侧；幂等）：即时隔离——撤销落账后引擎对
-// 受影响 App isolate 重收敛剥离附件（断存量，A.4）。剥离失败不回滚撤销
-// （受理面已生效），漂移扫描拍兜底重收敛。
+// RevokeNetworkPeer 撤销（任一侧；幂等）：撤销落账后进入异步隔离（R16-M4）
+// ——只标记待剥离并 Kick 漂移扫描环，请求路径不再同步 replay/Ensure（剥离
+// 耗时随项目内 App 数线性叠加，曾让撤销请求最长等 N×30s）。剥离由下一拍
+// 漂移扫描以 isolate 重收敛完成（断存量，A.4）；失败不回滚撤销（受理面已
+// 生效），漂移拍记 Warn 并兜底重试。响应字段/错误码与同步语义兼容。
 func (svc *NetworksService) RevokeNetworkPeer(ctx context.Context, req *structurev1.RevokeNetworkPeerRequest) (*structurev1.RevokeNetworkPeerResponse, error) {
 	p, err := svc.s.NetworkPeers.Get(ctx, req.GetId())
 	if err != nil {
@@ -394,11 +396,13 @@ func (svc *NetworksService) RevokeNetworkPeer(ctx context.Context, req *structur
 	if err != nil {
 		return nil, mapStateError(err, "network peer")
 	}
-	// 即时隔离（A.4）：撤销已生效，剥离是收敛动作——失败记日志，漂移拍自愈。
-	if serr := svc.s.Engine.IsolateNetworkPeer(ctx, p.NetworkID, p.PeerProjectID); serr != nil {
-		if svc.s.Log != nil {
-			svc.s.Log.Warn("network peer revoke: isolation reconverge deferred to the drift tick", "peer", p.ID, "err", serr)
-		}
+	// 异步剥离（A.4/R16-M4）：撤销已落账即返回——标记 + Kick，剥离在下一拍
+	// 漂移扫描完成（失败记 Warn，漂移拍兜底重试）。Info 是"已撤销未剥离"
+	// 的最小可发现性表达（不新增 proto 字段）。
+	svc.s.Engine.RequestPeerIsolation(p.NetworkID, p.PeerProjectID)
+	if svc.s.Log != nil {
+		svc.s.Log.Info("network peer revoked: attachment removal deferred to the next drift scan tick",
+			"peer", p.ID, "network", p.NetworkID, "project", p.PeerProjectID)
 	}
 	fresh, gerr := svc.s.NetworkPeers.Get(ctx, p.ID)
 	if gerr != nil {

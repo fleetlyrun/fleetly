@@ -539,7 +539,7 @@ Compare-Object $reportML $ledgerML
 | S14a | ✅ | `5e5ab2fe` + 回归修复 `ff0b8681` | c1-c4 外部面/密钥材料；c1 首版项目段白名单漏 entityid 连字符，Lead 门禁发现并修复（cmd golden 复绿） |
 | S14b | ✅ | 本提交 | c5-c9 授权/事实/契约/端点认证；新增 factteam 守卫；c9 多队无 token 启动 fail-fast（部署注意见下） |
 | S15a | ✅ | 本提交 | 收敛/引擎 c1-c4：冷却签名三态、BG 重启按 succeeded gen、收口驱动权+维护锁守卫、环 panic/Inspector 可观测；engine `-race` 225s 绿 |
-| S15b | 待派 | — | 收敛/引擎 c5-c8（含 compose 保真五连） |
+| S15b | ✅ | 本提交 | 收敛/引擎 c5-c8：peer 撤销异步剥离、BG 退役代账本差集、Teardown 清 converge 记账+projMemo LRU、compose 保真五连；engine `-race` 228s 绿 |
 | S16 | 待派 | — | Runtime/适配面 |
 | S17 | 待派 | — | 守卫/测试基建 |
 | S18 | 待派 | — | 非 M/L 残项 |

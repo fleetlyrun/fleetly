@@ -214,9 +214,14 @@ type converges struct {
 	// eventSeen 钉「本轮冷却已发 workload.converge_failed」（一次语义）。
 	eventSeen map[string]bool
 	// projMemo 是基线投影的结果缓存（digest 签名短路：Revision 冻结体
-	// 不可变，(Revision, Generation) 即内容锚——缺席/多余检测的每拍重投影
-	// 在未变基线上近零成本，ADR-0082 §1）。投影结果即内容，ID 是派生面。
+	// 不可变，(App, Revision, Generation) 即内容锚——缺席/多余检测的每拍
+	// 重投影在未变基线上近零成本，ADR-0082 §1）。投影结果即内容，ID 是
+	// 派生面。键带 App 前缀（删除收口的差集清账可按前缀精确回收）+ 容量
+	// 上限（R16-L2：长跑进程的每部署条目不得无界增长）；LRU 记账在
+	// projUsed（访问序）与 projTick（单调时钟）两字段。
 	projMemo map[string][]capability.Workload
+	projUsed map[string]uint64 // projMemo 键 → 最近访问序
+	projTick uint64            // 访问序发号器（projMemo 的 LRU 单一记账面）
 	// replay 是非成功终态的待重放标记（appID → 触发重放的 Deployment ID）：
 	// 取消/失败/被抢占的部署从未成为期望态，下一拍以 replay 快信号回卷
 	// 基线（ADR-0082 §1 行 10 / §6）；值携带部署 ID → 第二次取消 = 新签名，
@@ -244,6 +249,7 @@ func (c *converges) init() {
 	c.cooldown = make(map[string]time.Time)
 	c.eventSeen = make(map[string]bool)
 	c.projMemo = make(map[string][]capability.Workload)
+	c.projUsed = make(map[string]uint64)
 	c.replay = make(map[string]string)
 	c.teardown = make(map[string]bool)
 }
@@ -255,6 +261,45 @@ func convergeMemoSig(d *deployment.Deployment) string {
 		return ""
 	}
 	return d.ToRevision + "\x00" + fmt.Sprint(d.Generation)
+}
+
+// convergeProjMemoLimit 是基线投影缓存的容量上限（LRU 淘汰；512 条 ≈ 数百
+// 个 (App, Revision, Generation) 组合，覆盖 N0 小团队全部现役基线的同时
+// 给长跑进程一个硬上界——R16-L2）。
+const convergeProjMemoLimit = 512
+
+// convergeProjMemoKey 构造投影缓存键：App 前缀让删除收口按前缀精确差集
+// （Revision 在 App 内唯一，前缀不引入歧义），(Revision, Generation) 是
+// 内容锚。
+func convergeProjMemoKey(appID string, d *deployment.Deployment) string {
+	return appID + "\x00" + convergeMemoSig(d)
+}
+
+// projMemoGet 读投影缓存并刷新 LRU 访问序（调用方持 mu）。
+func (c *converges) projMemoGet(key string) ([]capability.Workload, bool) {
+	ws, ok := c.projMemo[key]
+	if ok {
+		c.projTick++
+		c.projUsed[key] = c.projTick
+	}
+	return ws, ok
+}
+
+// projMemoPut 写投影缓存并按容量上限淘汰最久未用的条目（调用方持 mu）。
+func (c *converges) projMemoPut(key string, ws []capability.Workload) {
+	c.projTick++
+	c.projMemo[key] = ws
+	c.projUsed[key] = c.projTick
+	for len(c.projMemo) > convergeProjMemoLimit {
+		oldestKey, oldest := "", ^uint64(0)
+		for k, seq := range c.projUsed {
+			if seq < oldest {
+				oldestKey, oldest = k, seq
+			}
+		}
+		delete(c.projMemo, oldestKey)
+		delete(c.projUsed, oldestKey)
+	}
 }
 
 // ---- 裁决表（ADR-0082 §1：8 判定行 + 2 非行；golden 钉死 = 表即断言）----
@@ -378,9 +423,9 @@ func convergeActionable(verdict string) bool {
 // 根源性消除。(Revision, Generation) 签名短路：投影结果按内容锚缓存，
 // 未变基线近零成本。
 func (e *Engine) expectedWorkloads(ctx context.Context, d *deployment.Deployment) ([]capability.Workload, error) {
-	key := convergeMemoSig(d)
+	key := convergeProjMemoKey(d.AppID, d)
 	e.converge.mu.Lock()
-	if ws, ok := e.converge.projMemo[key]; ok {
+	if ws, ok := e.converge.projMemoGet(key); ok {
 		e.converge.mu.Unlock()
 		return ws, nil
 	}
@@ -395,7 +440,7 @@ func (e *Engine) expectedWorkloads(ctx context.Context, d *deployment.Deployment
 	stampDeploymentGenerations(ws, spec, d.Generation)
 	sort.Slice(ws, func(i, j int) bool { return ws[i].ID < ws[j].ID })
 	e.converge.mu.Lock()
-	e.converge.projMemo[key] = ws
+	e.converge.projMemoPut(key, ws)
 	e.converge.mu.Unlock()
 	return ws, nil
 }
@@ -816,6 +861,44 @@ func (c *converges) teardownMarked(appID string) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.teardown[appID]
+}
+
+// forgetApp 清该 App 的全部收敛域记账（删除收口，R16-L2 + R02-L7）：memo /
+// resolved / fails / failSig / posture / cooldown / eventSeen / projMemo /
+// replay / teardown 十面一次清（调用方持 appMu——锁身份先取后删，与并发
+// 收敛动作的锁内复查互斥）。返回是否需发内置告警解除沿：该 App 是最后一个
+// 冷却中的 App 时 alertFiring 随记账清零（否则已删 App 的 converge-failed
+// 会永久 firing，只能重启进程清除）。teardown 标记由调用方随后重钉。
+//
+// projMemo 按 App 前缀差集清理；并发的漂移对照读到本 App 旧基线时可能在
+// 清理后回填一条（对照面不持 appMu）——残留有界（容量 LRU）且键含 App ID
+// （ID 不复用），不再服务任何读径。
+func (c *converges) forgetApp(appID string) (alertResolved bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.memo, appID)
+	delete(c.resolved, appID)
+	delete(c.fails, appID)
+	delete(c.failSig, appID)
+	delete(c.posture, appID)
+	delete(c.cooldown, appID)
+	delete(c.eventSeen, appID)
+	delete(c.replay, appID)
+	delete(c.teardown, appID)
+	prefix := appID + "\x00"
+	for key := range c.projMemo {
+		if !strings.HasPrefix(key, prefix) {
+			continue
+		}
+		delete(c.projMemo, key)
+		delete(c.projUsed, key)
+	}
+	if len(c.cooldown) == 0 && c.alertFiring {
+		c.alertFiring = false
+		c.alertSince = time.Time{}
+		return true
+	}
+	return false
 }
 
 // ---- 非成功终态重放标记（ADR-0082 §1 行 10 / §6）----

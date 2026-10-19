@@ -753,3 +753,146 @@ services:
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "long-form source/target is required")
 }
+
+// R03-M5（S15b-c8①）：compose `$$` 只对奇数连续 `$` 预逃逸——`$`/`$$`/`$$$`
+// 按 compose 规范消转一次（`$$`→`$`、`$$$`→`$$`），不再对用户已写的转义
+// 二次加倍。command 面（服务/label job/顶层 job）同口径。
+func TestFromYAMLCommandDollarEscaping(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"echo $PATH", "echo $PATH"},
+		{"echo $$PATH", "echo $PATH"},
+		{"echo $$$PATH", "echo $$PATH"},
+		{"echo $$$$PATH", "echo $$PATH"},
+		{"echo $$$$$PATH", "echo $$$PATH"},
+		{"n=$((n+1))", "n=$((n+1))"},
+		{"migrate \"${FLEETLY_DB_TORCHWOOD_PG_URL}\"", "migrate \"${FLEETLY_DB_TORCHWOOD_PG_URL}\""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.in, func(t *testing.T) {
+			body := "services:\n  web:\n    image: nginx:1.27\n    command:\n      - sh\n      - -c\n      - '" + tc.in + "'\n"
+			s, err := fromYAML(t, body)
+			require.NoError(t, err)
+			assert.Equal(t, []string{"sh", "-c", tc.want}, procByName(t, s, "web").GetCommand())
+		})
+	}
+
+	// 顶层 job 面同一层预逃逸（单点实现覆盖双面）。
+	s, err := fromYAML(t, `
+services:
+  web:
+    image: nginx:1.27
+x-fleetly-pre-deploy-jobs:
+  - name: migrate
+    image: migrate/migrate:v4.18.1
+    ttl: 5m
+    command: ["sh", "-c", "echo $$PATH"]
+`)
+	require.NoError(t, err)
+	require.Len(t, s.GetPreDeployJobs(), 1)
+	assert.Equal(t, []string{"sh", "-c", "echo $PATH"}, s.GetPreDeployJobs()[0].GetProcess().GetCommand())
+}
+
+// R03-M6（S15b-c8②）：`deploy.replicas: 0` 不再静默归一为 1——声明 0 副本
+// 的期望态平台不支持，受理期精确拒收（移除服务或声明 1）；正数照常。
+func TestFromYAMLReplicasZeroRejected(t *testing.T) {
+	_, err := fromYAML(t, "services:\n  web:\n    image: nginx:1.27\n    deploy:\n      replicas: 0\n")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "replicas: 0 is not declarable")
+
+	s, err := fromYAML(t, "services:\n  web:\n    image: nginx:1.27\n    deploy:\n      replicas: 3\n")
+	require.NoError(t, err)
+	assert.Equal(t, int64(3), procByName(t, s, "web").GetReplicas())
+}
+
+// R03-M7（S15b-c8③）：label 方言 job 的 secrets 长语法与服务面同律——
+// target 只认缺省、uid/gid/mode 显式拒收（不再静默丢字段）；name 覆盖解析。
+func TestFromYAMLLabelJobSecretLongSyntax(t *testing.T) {
+	base := "services:\n  web:\n    image: nginx:1.27\n  bootstrap:\n    image: busybox:1.37\n" +
+		"    labels:\n      fleetly.job: \"init\"\n      fleetly.job.timeout: \"5m\"\n"
+	decl := "secrets:\n  s:\n    external: true\n    name: \"database:pg\"\n"
+
+	s, err := fromYAML(t, base+"    secrets:\n      - source: s\n"+decl)
+	require.NoError(t, err)
+	require.Len(t, s.GetPreDeployJobs(), 1)
+	assert.Equal(t, []string{"database:pg"}, s.GetPreDeployJobs()[0].GetProcess().GetSecretRefs(),
+		"the label dialect resolves the declared name override")
+
+	s, err = fromYAML(t, base+"    secrets:\n      - source: s\n        target: /run/secrets/s\n"+decl)
+	require.NoError(t, err, "the official default target is accepted")
+
+	cases := []struct {
+		name  string
+		extra string
+		want  string
+	}{
+		{"target remap", "        target: /etc/secret\n", "target remapping is not supported"},
+		{"uid", "        uid: \"1000\"\n", "uid/gid/mode are not translated"},
+		{"gid", "        gid: \"1000\"\n", "uid/gid/mode are not translated"},
+		{"mode", "        mode: 0400\n", "uid/gid/mode are not translated"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := fromYAML(t, base+"    secrets:\n      - source: s\n"+tc.extra+decl)
+			require.Error(t, err, "the label-dialect job must reject instead of silently dropping the field")
+			assert.Contains(t, err.Error(), tc.want)
+		})
+	}
+}
+
+// R03-M8（S15b-c8④）：external 声明的 name 覆盖对 networks/configs 同样生效
+// （不只 volumes/secrets）；configs 声明面的其余官方面显式拒收。
+func TestFromYAMLExternalNameOverrides(t *testing.T) {
+	body := `
+services:
+  web:
+    image: nginx:1.27
+    networks: [back]
+    configs:
+      - source: appconf
+        target: /etc/app.conf
+networks:
+  back:
+    external: true
+    name: real-net
+configs:
+  appconf:
+    external: true
+    name: real-config
+`
+	s, err := fromYAML(t, body)
+	require.NoError(t, err)
+	web := procByName(t, s, "web")
+	assert.Equal(t, []string{"real-net"}, web.GetNetworks(), "the network name override resolves the platform entity")
+	assert.Equal(t, []*specv1.ConfigMount{{Config: "real-config", Target: "/etc/app.conf"}},
+		web.GetConfigMounts(), "the config name override resolves the platform entity")
+
+	// 声明面白名单：name/external 之外的官方面（labels/driver 等）拒收。
+	_, err = fromYAML(t, `
+services:
+  web:
+    image: nginx:1.27
+configs:
+  appconf:
+    external: true
+    name: real-config
+    labels:
+      team: acme
+`)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "official compose field \"labels\" is not enabled")
+}
+
+// R03-L5（S15b-c8⑤）：空探针载荷（[CMD] / [CMD-SHELL] 无命令）受理期拒收
+// ——声明的探针不得静默消失（swarm 侧 [NONE]）。
+func TestFromYAMLHealthcheckEmptyPayloadRejected(t *testing.T) {
+	for _, test := range []string{`["CMD"]`, `["CMD-SHELL"]`, `["CMD-SHELL", "  "]`} {
+		_, err := fromYAML(t, "services:\n  web:\n    image: nginx:1.27\n    healthcheck:\n      test: "+test+"\n")
+		require.Error(t, err, "empty probe payload %s must be rejected", test)
+		assert.Contains(t, err.Error(), "must carry a command")
+	}
+
+	s, err := fromYAML(t, "services:\n  web:\n    image: nginx:1.27\n    healthcheck:\n      test: [CMD, \"curl\", \"-f\", \"http://localhost/\"]\n")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"curl", "-f", "http://localhost/"},
+		procByName(t, s, "web").GetHealthcheck().GetExec().GetCommand())
+}

@@ -123,6 +123,14 @@ func (e *Engine) recordEnsured(d *deployment.Deployment, gen uint64, ws []capabi
 	for g, batch := range groups {
 		e.obs.recordSpecs(appOwner(d.AppID), d.ID, g, batch)
 	}
+	// 差集收口（R13-M1）：本代期望集之外的同 owner 账本条目作废——BG 收口
+	// 的退役代成员（代次化 ID 与稳定名两形态）在此清除；crossProjectRefs /
+	// routeExpectations 不再看见退役代，30s 拍不会反复重收敛。
+	keep := make(map[string]bool, len(ws))
+	for _, w := range ws {
+		keep[w.ID] = true
+	}
+	e.obs.reconcileOwner(appOwner(d.AppID), keep)
 }
 
 // releaseReady 是 L1 健康门：本 Deployment 下发的全部 Workload（gen 匹配

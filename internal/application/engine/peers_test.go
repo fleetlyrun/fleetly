@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -219,4 +220,82 @@ func TestProjectTranslatesCrossProjectRef(t *testing.T) {
 	require.Len(t, ws, 1)
 	assert.Equal(t, []string{"default", "taskgrp-dispatcher"}, ws[0].Networks)
 	assert.Empty(t, ws[0].NetworkRefs)
+}
+
+// R16-M4（S15b-c5）：撤销 peer 改"标记 + Kick 漂移扫描"异步语义——请求路径
+// 只落待剥离标记，不调用 Ensure；下一拍漂移扫描完成剥离（一拍一次）。
+func TestRequestPeerIsolationDefersToDriftTick(t *testing.T) {
+	e, rt, _ := newTestEngine(t)
+	ctx := context.Background()
+	providerID := seedCrossProjectPeer(t, e, true)
+	revID := freezeSpec(t, e, 1, peerSpec(providerID))
+	deployToSucceeded(t, e, revID)
+
+	require.NoError(t, e.repos.NetworkPeers.Revoke(ctx, "01JD0PEER00000000000000007"))
+	before := len(rt.calls())
+	e.RequestPeerIsolation("01JD0NET000000000000000007", tProjectID)
+	assert.Equal(t, 0, ensureDelta(t, rt, before), "the request path only marks + kicks (no synchronous replay)")
+	assert.Equal(t, 1, e.pendingPeerIsolationCount(), "the revocation leaves exactly one pending isolation mark")
+
+	e.driftScan(ctx)
+	assert.Equal(t, 1, ensureDelta(t, rt, before), "the next drift tick performs exactly one isolation replay")
+	assert.Empty(t, lastEnsure(rt).Spec["web"].NetworkRefs, "the revoked attachment is stripped")
+	assert.Zero(t, e.pendingPeerIsolationCount(), "the pending mark is consumed by the tick")
+
+	after := len(rt.calls())
+	e.driftScan(ctx)
+	assert.Zero(t, ensureDelta(t, rt, after), "no repeated re-convergence once the attachment is stripped")
+}
+
+// R16-M4 失败路径：网络行已删（撤销面本身容忍的形态）——待剥离标记的按 ID
+// 定位失效，Warn 可见并清标记；附件剥离由隔离不变式按缓存附件兜底完成。
+func TestRequestPeerIsolationNetworkGoneFallsToInvariant(t *testing.T) {
+	var logs bytes.Buffer
+	e, rt, _ := newTestEngineWithLogger(t, Options{}, slog.New(slog.NewTextHandler(&logs, nil)))
+	ctx := context.Background()
+	providerID := seedCrossProjectPeer(t, e, true)
+	revID := freezeSpec(t, e, 1, peerSpec(providerID))
+	deployToSucceeded(t, e, revID)
+
+	require.NoError(t, e.repos.NetworkPeers.Revoke(ctx, "01JD0PEER00000000000000007"))
+	_, err := e.db.Runner().ExecContext(ctx, `DELETE FROM networks WHERE id = ?`, "01JD0NET000000000000000007")
+	require.NoError(t, err, "fixture: drop the network row (revoke tolerates a deleted network)")
+	e.RequestPeerIsolation("01JD0NET000000000000000007", tProjectID)
+
+	before := len(rt.calls())
+	e.driftScan(ctx)
+	assert.Contains(t, logs.String(), "network row is gone", "the dropped network is visible (Warn)")
+	assert.Contains(t, logs.String(), "peer isolation", "the warning names the deferred isolation")
+	assert.Zero(t, e.pendingPeerIsolationCount(), "the pending mark is cleared (the invariant owns the strip)")
+	assert.GreaterOrEqual(t, ensureDelta(t, rt, before), 1, "the isolation invariant still strips via the cached attachment")
+	assert.Empty(t, lastEnsure(rt).Spec["web"].NetworkRefs, "the attachment is stripped by the invariant")
+}
+
+// R16-M4 失败路径：剥离期的存储故障不吞——待办保留、Warn 每拍可见（撤销
+// 已落账不回滚），恢复后下一拍完成剥离。
+func TestRequestPeerIsolationRetriesOnStorageFault(t *testing.T) {
+	var logs bytes.Buffer
+	e, rt, _ := newTestEngineWithLogger(t, Options{}, slog.New(slog.NewTextHandler(&logs, nil)))
+	ctx := context.Background()
+	providerID := seedCrossProjectPeer(t, e, true)
+	revID := freezeSpec(t, e, 1, peerSpec(providerID))
+	deployToSucceeded(t, e, revID)
+
+	require.NoError(t, e.repos.NetworkPeers.Revoke(ctx, "01JD0PEER00000000000000007"))
+	// 基线读面故障：隔离无法定位该 App 的成功基线（非 NotFound = 存储故障，
+	// 必须上抛并由 drain 保留待办）。
+	_, err := e.db.Runner().ExecContext(ctx, `DROP TABLE deployments`)
+	require.NoError(t, err)
+	e.RequestPeerIsolation("01JD0NET000000000000000007", tProjectID)
+
+	before := len(rt.calls())
+	e.driftScan(ctx)
+	assert.Contains(t, logs.String(), "peer isolation deferred to the next drift tick", "the failure is visible (Warn)")
+	assert.Equal(t, 1, e.pendingPeerIsolationCount(), "a storage fault keeps the pending mark for the next tick")
+	assert.Zero(t, ensureDelta(t, rt, before), "no Ensure is attempted while the baseline lookup fails")
+
+	e.driftScan(ctx)
+	assert.GreaterOrEqual(t, strings.Count(logs.String(), "peer isolation deferred to the next drift tick"), 2,
+		"the next drift tick retries and logs again")
+	assert.Equal(t, 1, e.pendingPeerIsolationCount(), "the mark survives until the storage recovers")
 }

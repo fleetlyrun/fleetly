@@ -130,11 +130,15 @@ func (e *Engine) CheckPeerRefs(ctx context.Context, s transact.Stores, consumerP
 	return err
 }
 
-// IsolateNetworkPeer 是撤销后的即时隔离（A.4）：对挂靠方项目下、当前
-// 成功基线引用目标网络的 App 逐个 isolate 重收敛（在途部署的 App 跳过
-// ——驱动器拥有 Ensure 权，其投影将 fail-closed 失败至终态）。撤销行
-// 已由调用方落账；本方法失败不回滚撤销（受理面已生效），错误上抛由
-// 调用方记录（漂移扫描拍兜底重试）。
+// IsolateNetworkPeer 是撤销后的隔离重收敛执行体（A.4）：对挂靠方项目下、
+// 当前成功基线引用目标网络的 App 逐个 isolate 重收敛（在途部署的 App 跳过
+// ——驱动器拥有 Ensure 权，其投影将 fail-closed 失败至终态）。撤销行已由
+// 调用方落账；本方法失败不回滚撤销（受理面已生效），错误上抛由调用方记录
+// （漂移扫描拍兜底重试）。
+//
+// 调用面（R16-M4）：**不是请求路径**——撤销 handler 只调 RequestPeerIsolation
+// 标记 + Kick，剥离由下一拍漂移扫描在本方法上完成（请求不等待 N×30s 的
+// 同步 replay）。测试可直调以钉同步语义。
 //
 // posture=detect 下剥离不执行（零运行时写，ADR-0082 §5 第 4 条）：隔离
 // 重放被门限拦住时落一条 Warn——撤销仍已落账，detect 的承诺就是不动；
@@ -175,6 +179,80 @@ func (e *Engine) IsolateNetworkPeer(ctx context.Context, networkID, peerProjectI
 		}
 	}
 	return nil
+}
+
+// peerIsolationRequest 是一条撤销后的待剥离标记（网络 + 挂靠方项目）。
+type peerIsolationRequest struct {
+	networkID     string
+	peerProjectID string
+}
+
+// RequestPeerIsolation 标记一次撤销后的待剥离并唤醒漂移扫描环（R16-M4 的
+// 异步语义）：撤销落账即返回，剥离由下一拍漂移扫描完成（IsolateNetworkPeer）。
+// 标记驻内存：崩溃丢失时，漂移拍的隔离不变式（crossProjectRefs 复核批准态）
+// 仍会在重启基线重放后兜底剥离——标记是及时性优化，不是正确性依赖。
+func (e *Engine) RequestPeerIsolation(networkID, peerProjectID string) {
+	if networkID == "" || peerProjectID == "" {
+		return
+	}
+	e.peerIsolationMu.Lock()
+	if e.peerIsolations == nil {
+		e.peerIsolations = map[peerIsolationRequest]bool{}
+	}
+	e.peerIsolations[peerIsolationRequest{networkID: networkID, peerProjectID: peerProjectID}] = true
+	e.peerIsolationMu.Unlock()
+	if e.driftLoop != nil {
+		e.driftLoop.Kick()
+	}
+}
+
+// drainPeerIsolation 消费待剥离标记（漂移扫描拍单写者）。成功/网络行已删即
+// 清标记；存储故障保留标记下拍重试（失败可见：Warn 带 network/project/err）。
+// 网络行已删形态由隔离不变式按缓存附件兜底剥离——按 ID 已无从定位，保留
+// 待办只会每拍重复同一条错误。
+func (e *Engine) drainPeerIsolation(ctx context.Context) {
+	e.peerIsolationMu.Lock()
+	if len(e.peerIsolations) == 0 {
+		e.peerIsolationMu.Unlock()
+		return
+	}
+	pending := make([]peerIsolationRequest, 0, len(e.peerIsolations))
+	for req := range e.peerIsolations {
+		pending = append(pending, req)
+	}
+	e.peerIsolationMu.Unlock()
+	for _, req := range pending {
+		if ctx.Err() != nil {
+			return
+		}
+		err := e.IsolateNetworkPeer(ctx, req.networkID, req.peerProjectID)
+		if err == nil {
+			e.clearPeerIsolation(req)
+			continue
+		}
+		if errors.Is(err, state.ErrNotFound) {
+			e.clearPeerIsolation(req)
+			e.log.Warn("peer isolation deferred: network row is gone; the isolation invariant strips the attachment",
+				"network", req.networkID, "project", req.peerProjectID)
+			continue
+		}
+		e.log.Warn("peer isolation deferred to the next drift tick",
+			"network", req.networkID, "project", req.peerProjectID, "err", err)
+	}
+}
+
+// clearPeerIsolation 撤销一条待剥离标记（缺失为 no-op）。
+func (e *Engine) clearPeerIsolation(req peerIsolationRequest) {
+	e.peerIsolationMu.Lock()
+	delete(e.peerIsolations, req)
+	e.peerIsolationMu.Unlock()
+}
+
+// pendingPeerIsolationCount 返回待剥离标记数（测试/诊断面）。
+func (e *Engine) pendingPeerIsolationCount() int {
+	e.peerIsolationMu.Lock()
+	defer e.peerIsolationMu.Unlock()
+	return len(e.peerIsolations)
 }
 
 // enforcePeerIsolation 是漂移扫描拍的隔离不变式（A.4 自愈兜底）：缓存中
