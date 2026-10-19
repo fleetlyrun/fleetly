@@ -5,7 +5,6 @@ package apitest
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -346,6 +345,7 @@ type FakeRuntime struct {
 	execEchoStdin bool
 	execSkipStdin bool     // 不读 stdin（自退出形态——WS 客户端无 half-close 的测试面）
 	execInstances []string // ExecInstances 假实例集（空 = 单实例常量）
+	relayCommands []string // NodeRelayCommand 铸出的凭证明文（H10 定向材料调用记录）
 
 	// nodeContainers 是节点观测假底座（RuntimeNodeInspect）：按平台节点 ID
 	// 布置在跑容器行集（SetNodeContainers）；键缺席 = 节点未知
@@ -448,12 +448,26 @@ func (f *FakeRuntime) SetExecInstances(instances []string) {
 	f.execMu.Unlock()
 }
 
-// ExecClusterToken 实现 RuntimeExec：TESTTOKEN（Enrollment 同源假材料）。
-func (f *FakeRuntime) ExecClusterToken(_ context.Context, token string) error {
-	if token == "TESTTOKEN" {
-		return nil
-	}
-	return errors.New("relay credential does not match an active swarm join token")
+// ExecClusterToken 已随 H10 删除：join token 不再承担 relay 鉴权——中继
+// 凭证面由 engine 按 node_relay_credentials 的 sha256 校验（AttachFakeRelay
+// 先种凭证行）。
+
+// NodeRelayCommand 实现 RuntimeRelayMaterial（H10 §4.4 定向材料面）：返回
+// 携带该凭证的假脚本并记录调用（脚本形态断言面）。k3s 形态的负例经
+// NoRelayMaterial 收窄包装（FacesOf 探测不含本方法）。
+func (f *FakeRuntime) NodeRelayCommand(_ context.Context, credential string, _ capability.EnrollmentOptions) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.relayCommands = append(f.relayCommands, credential)
+	return "true # fake relay script for " + credential, nil
+}
+
+// RelayCommands 返回定向中继材料的凭证铸造记录（只含明文——测试断言
+// 不落库；生产面对应 node_relay_credentials 的 hash 行）。
+func (f *FakeRuntime) RelayCommands() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.relayCommands...)
 }
 
 // ExecWorkload 实现 RuntimeExec：banner + argv 回显 + 可选 stdin 回声 +
@@ -614,11 +628,8 @@ func (f *FakeRuntime) Enrollment(_ context.Context, rotate bool, o capability.En
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.enrollCalls = append(f.enrollCalls, rotate)
-	kit := capability.EnrollKit{Command: "docker swarm join --token TESTTOKEN 127.0.0.1:2377"}
-	if o.GatewayPort != "" {
-		kit.RelayCommand = "true # fake relay script"
-	}
-	return kit, nil
+	// H10：初始 enrollment 只产 join 材料；中继材料走 NodeRelayCommand。
+	return capability.EnrollKit{Command: "docker swarm join --token TESTTOKEN 127.0.0.1:2377"}, nil
 }
 
 // EnrollCalls 返回 Enrollment 调用记录（rotate 标志序列；C3 断言面）。
@@ -917,9 +928,42 @@ var (
 	_ capability.RuntimeAdmin              = (*FakeRuntime)(nil)
 	_ capability.RuntimeNetworkMaintenance = (*FakeRuntime)(nil)
 	_ capability.RuntimeNodeInspect        = (*FakeRuntime)(nil)
+	_ capability.RuntimeRelayMaterial      = (*FakeRuntime)(nil)
 	_ capability.Builder                   = (*FakeBuilder)(nil)
 	_ capability.Registry                  = (*FakeRegistry)(nil)
 )
+
+// noRelayMaterial 是 FakeRuntime 的 Runtime 核心面收窄包装：不实现
+// RuntimeRelayMaterial（也不实现 exec 面）——k3s 集中形态的负例底座，
+// FacesOf 探测到 RelayMaterial==nil，定向材料请求精确 501。
+type noRelayMaterial struct{ rt *FakeRuntime }
+
+func (w noRelayMaterial) Describe() capability.ProviderDescriptor { return w.rt.Describe() }
+func (w noRelayMaterial) Health(ctx context.Context) capability.HealthReport {
+	return w.rt.Health(ctx)
+}
+func (w noRelayMaterial) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []capability.Workload, gen capability.Generation, m capability.Materials) (capability.EnsureReport, error) {
+	return w.rt.Ensure(ctx, ns, ws, gen, m)
+}
+func (w noRelayMaterial) Remove(ctx context.Context, ns capability.NamespaceRef) error {
+	return w.rt.Remove(ctx, ns)
+}
+func (w noRelayMaterial) Watch(ctx context.Context) (<-chan capability.WorkloadEvent, error) {
+	return w.rt.Watch(ctx)
+}
+func (w noRelayMaterial) Addresses(ctx context.Context, ns capability.NamespaceRef, expected []capability.Workload) ([]capability.Endpoint, error) {
+	return w.rt.Addresses(ctx, ns, expected)
+}
+func (w noRelayMaterial) DescribeCluster(ctx context.Context) (capability.ClusterView, error) {
+	return w.rt.DescribeCluster(ctx)
+}
+func (w noRelayMaterial) Enrollment(ctx context.Context, rotate bool, o capability.EnrollmentOptions) (capability.EnrollKit, error) {
+	return w.rt.Enrollment(ctx, rotate, o)
+}
+
+// NoRelayMaterial 返回无 relay 材料面的 Runtime 包装（k3s 形态负例用；
+// 装配面只换 Services.Runtime，engine 的 provider 面不动）。
+func NoRelayMaterial(rt *FakeRuntime) capability.Runtime { return noRelayMaterial{rt: rt} }
 
 // FakeRegistryAddr 是 apitest 假受管仓库地址（引用形态断言锚）。
 const FakeRegistryAddr = "reg.apitest:5000"

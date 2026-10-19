@@ -30,4 +30,18 @@ type Repo interface {
 	// 携带载体节点 ID，平台锚定表反查平台节点 ID——与 Watch 锚定同一张
 	// 表）。
 	ByCarrier(ctx context.Context, carrierID string) (*Node, error)
+
+	// ---- 节点个体 relay 凭证（H10；独立表 node_relay_credentials） ----
+
+	// PutRelayCredential UPSERT 一行凭证（重铸即替换：同 platform_id 的旧
+	// hash 被覆盖，旧凭证永远查不到）。读面不返回明文。
+	PutRelayCredential(ctx context.Context, c *RelayCredential) error
+	// RelayCredentialBySHA256 按 hash 查一行（relay 握手鉴权面）；缺行
+	// state.ErrNotFound。
+	RelayCredentialBySHA256(ctx context.Context, sha string) (*RelayCredential, error)
+	// DeleteRelayCredential 删单节点凭证；deleted 报告是否实际删行（幂等
+	// 空删 = false, nil）。
+	DeleteRelayCredential(ctx context.Context, platformID string) (deleted bool, err error)
+	// DeleteAllRelayCredentials 删全表（rotate 泄漏处置面）。
+	DeleteAllRelayCredentials(ctx context.Context) error
 }

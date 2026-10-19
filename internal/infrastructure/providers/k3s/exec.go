@@ -57,24 +57,10 @@ func (p *Provider) ExecInstances(ctx context.Context, workloadID string) ([]capa
 	return rows, nil
 }
 
-// ExecClusterToken 实现 RuntimeExec：k3s node token 对照（与 Enrollment 同
-// 源文件——活 token 等价集群成员权，C3；/v1/relay 与 /v1/platform/binary
-// 原生入口的鉴权单源）。
-func (p *Provider) ExecClusterToken(ctx context.Context, token string) error {
-	if token == "" {
-		return errors.New("empty relay credential")
-	}
-	want, err := p.readNodeToken()
-	if err != nil {
-		return fmt.Errorf("k3s exec token: %w", err)
-	}
-	if token != want {
-		return errors.New("relay credential does not match the k3s node token")
-	}
-	return nil
-}
+// ExecClusterToken 已随 H10 删除：join/node token 不再承担 relay 鉴权，
+// 鉴权面住 engine（节点个体凭证 hash + 内部 token）。
 
-// readNodeToken 读 node token 文件（Enrollment 与 ExecClusterToken 共用；
+// readNodeToken 读 node token 文件（Enrollment 的 join 材料源；
 // p.nodeTokenPath 覆写供单测，缺省 k3s 发行路径）。
 func (p *Provider) readNodeToken() (string, error) {
 	path := p.nodeTokenPath

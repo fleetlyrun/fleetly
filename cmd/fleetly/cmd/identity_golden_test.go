@@ -11,7 +11,9 @@ import (
 )
 
 var (
-	secretRe  = regexp.MustCompile(`(flt_|fltinv_)[A-Za-z0-9_-]+`)
+	// secretRe 是出货面凭据扫描锚（H10：节点个体 relay 凭证 fltrelay_
+	// 与前缀族同批——golden 误把节点凭证打进出货面即红）。
+	secretRe  = regexp.MustCompile(`(flt_|fltinv_|fltrelay_)[A-Za-z0-9_-]+`)
 	tailIDRef = regexp.MustCompile(`\(id ([a-z0-9][a-z0-9-]*)\)`)
 )
 

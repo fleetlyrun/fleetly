@@ -16,6 +16,8 @@ package engine
 import (
 	"context"
 	cryptorand "crypto/rand"
+	"crypto/subtle"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -23,7 +25,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/runtimeops/node"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
 
 // exec 限额常量（ADR-0049 决策 4；编译期常量先例 = maxAppsPerProject 族）。
@@ -43,6 +47,12 @@ const (
 	// execIDRandBytes 是会话 ID 的随机字节数（hex 后 32 字符，连前缀总长
 	// 38——P3-1 随机化铸造面，见 CreateSession 语义锚）。
 	execIDRandBytes = 16
+	// relayInternalCredentialPrefix 是控制面内部中继凭证前缀（H10：只存
+	// 内存、不落库/不入日志，进程消亡即失效；与节点个体凭证 fltrelay_
+	// 分面——内部面可声明任意已锚定节点，是进程自身信任面）。
+	relayInternalCredentialPrefix = "fltint_"
+	// relayInternalCredentialBytes 是内部 token 随机字节数（256-bit 熵）。
+	relayInternalCredentialBytes = 32
 )
 
 // exec 会话域哨兵（api 层映射稳定 errcode）。
@@ -62,6 +72,12 @@ var (
 	ErrExecTeamLimit = errors.New("too many concurrent exec sessions for team")
 	// ErrExecSessionNotFound 是会话不存在或已收口。
 	ErrExecSessionNotFound = errors.New("exec session not found")
+	// ErrExecRelayUnauthorized 是中继凭证不在册（伪造/已轮换/已吊销的
+	// 节点个体凭证，或 join token——H10：join token 退出 relay 鉴权面）。
+	ErrExecRelayUnauthorized = errors.New("relay credential is not an active node relay credential")
+	// ErrExecRelayStore 是中继凭证存储故障（gateway 映射 503、WS 映射
+	// 1011——绝不能落成 401，否则轮换/存储故障不可区分）。
+	ErrExecRelayStore = errors.New("relay credential store is unavailable")
 )
 
 // ExecSessionInfo 是受理产品（api 层回显/票据绑定面）。
@@ -145,12 +161,44 @@ type execs struct {
 	// after 是 TTL 计时器缝（默认 time.AfterFunc；测试捕获回调手动触发
 	// ——FakeClock 驱不动真实 timer，返回 nil 计时器由各 nil 守卫兜住）。
 	after func(d time.Duration, f func()) *time.Timer
+
+	// 内部中继凭证（H10 §4.5）：控制面进程内中继（swarm manager 回环 /
+	// k3s 每节点回环）的鉴权源。惰性一次铸造（crypto/rand，fltint_），只
+	// 存内存——不落库、不入日志/脚本；进程重启即失效。内部 token 可在
+	// hello 中声明任意已锚定节点，这是控制面进程自身信任面（若进程被
+	// 攻破 exec 全链已失守，不构成新增边界）。
+	internalOnce sync.Once
+	internalCred string
+	internalErr  error
 }
 
 func (x *execs) init() {
 	x.sessions = make(map[string]*execSession)
 	x.relays = make(map[string]*relayConn)
 	x.after = time.AfterFunc
+}
+
+// internalCredential 返回（惰性铸造的）内部中继凭证明文。
+func (x *execs) internalCredential() (string, error) {
+	x.internalOnce.Do(func() {
+		raw := make([]byte, relayInternalCredentialBytes)
+		if _, err := cryptorand.Read(raw); err != nil {
+			x.internalErr = fmt.Errorf("mint relay internal credential: %w", err)
+			return
+		}
+		x.internalCred = relayInternalCredentialPrefix + base64.RawURLEncoding.EncodeToString(raw)
+	})
+	return x.internalCred, x.internalErr
+}
+
+// matchesInternal 报告 token 是否等于内部凭证（常数时间比较；铸造失败
+// 视为不匹配——回环路径会把错误如实上抛）。
+func (x *execs) matchesInternal(token string) bool {
+	cred, err := x.internalCredential()
+	if err != nil || cred == "" || len(token) != len(cred) {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(token), []byte(cred)) == 1
 }
 
 // relayConn 是一条在连节点中继。
@@ -526,13 +574,37 @@ func (e *Engine) ExecSessionByID(id string) (*ExecSessionInfo, bool) {
 // ExecUnsupported 报告 Runtime 是否缺 exec 子面（api 受理面诚实失败锚）。
 func (e *Engine) ExecUnsupported() bool { return e.execFace == nil }
 
-// ExecValidateClusterToken 校验中继凭证（/v1/platform/binary 原生入口的
-// 鉴权面；RelayAttach 内含同一校验——单源 Provider 调用）。
-func (e *Engine) ExecValidateClusterToken(ctx context.Context, token string) error {
+// ValidateRelayCredential 校验中继凭证（/v1/relay 与 /v1/platform/binary
+// 两个原生入口的 HTTP 层鉴权单源，H10 §4.5）：空 → 拒；内部 token（控制
+// 面进程内中继）→ 过；sha256 在 node_relay_credentials 有行 → 过；否则
+// 拒（join token 不再被接受）。存储故障与"无此凭证"必须可区分——前者
+// 返回 ErrExecRelayStore（gateway 映射 503），后者 ErrExecRelayUnauthorized
+// （401）。
+func (e *Engine) ValidateRelayCredential(ctx context.Context, bearer string) error {
 	if e.execFace == nil {
 		return ErrExecUnsupported
 	}
-	return e.execFace.ExecClusterToken(ctx, token)
+	if bearer == "" {
+		return ErrExecRelayUnauthorized
+	}
+	if e.exec.matchesInternal(bearer) {
+		return nil
+	}
+	if _, err := e.repos.Nodes.RelayCredentialBySHA256(ctx, node.HashRelayCredential(bearer)); err != nil {
+		if errors.Is(err, state.ErrNotFound) {
+			return ErrExecRelayUnauthorized
+		}
+		return fmt.Errorf("%w: %w", ErrExecRelayStore, err)
+	}
+	return nil
+}
+
+// RelayInternalCredential 是回环中继的凭证回调面（NodeRelayOptions.
+// Credential）：manager 回环与 k3s 每节点回环都从同一 engine 进程取内部
+// token。carrierNodeID 是签名对齐参数（内部 token 可声明任意已锚定节点
+// ——控制面进程自身信任面，不按 carrier 分面）；不写库、不入日志。
+func (e *Engine) RelayInternalCredential(_ context.Context, _ string) (string, error) {
+	return e.exec.internalCredential()
 }
 
 // clampExitCode 钳制退出码到 proto int32 值域（G115 转换收口）。

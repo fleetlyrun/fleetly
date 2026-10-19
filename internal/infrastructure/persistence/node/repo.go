@@ -175,3 +175,58 @@ func scanNode(scan func(dest ...any) error) (*node.Node, error) {
 	n.Available = avail != 0
 	return &n, nil
 }
+
+// ---- 节点个体 relay 凭证（H10）：只落 sha256，读面不返回明文 ----
+
+// PutRelayCredential UPSERT 一行凭证（重铸即替换：同 platform_id 的旧
+// hash 被覆盖，旧凭证永远查不到）。created_at 缺省由 repo 时钟铸造（调用
+// 方只关心身份绑定轴）。
+func (r *repo) PutRelayCredential(ctx context.Context, c *node.RelayCredential) error {
+	createdAt := c.CreatedAt
+	if createdAt == "" {
+		createdAt = state.FormatTime(r.clock.Now())
+		c.CreatedAt = createdAt
+	}
+	_, err := r.run.ExecContext(ctx, `
+		INSERT INTO node_relay_credentials (platform_id, carrier_id, secret_sha256, created_at)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT(platform_id) DO UPDATE SET
+			carrier_id = excluded.carrier_id,
+			secret_sha256 = excluded.secret_sha256,
+			created_at = excluded.created_at`,
+		c.PlatformID, c.CarrierID, c.SHA256, createdAt)
+	return err
+}
+
+// RelayCredentialBySHA256 按 hash 查一行（relay 握手鉴权面）；缺行
+// state.ErrNotFound（MapScanErr 归一）。
+func (r *repo) RelayCredentialBySHA256(ctx context.Context, sha string) (*node.RelayCredential, error) {
+	row := r.run.QueryRowContext(ctx, `
+		SELECT platform_id, carrier_id, secret_sha256, created_at
+		FROM node_relay_credentials WHERE secret_sha256 = ?`, sha)
+	var c node.RelayCredential
+	if err := row.Scan(&c.PlatformID, &c.CarrierID, &c.SHA256, &c.CreatedAt); err != nil {
+		return nil, persistence.MapScanErr(err)
+	}
+	return &c, nil
+}
+
+// DeleteRelayCredential 删单节点凭证（幂等空删 = false, nil）。
+func (r *repo) DeleteRelayCredential(ctx context.Context, platformID string) (bool, error) {
+	res, err := r.run.ExecContext(ctx,
+		`DELETE FROM node_relay_credentials WHERE platform_id = ?`, platformID)
+	if err != nil {
+		return false, err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return affected > 0, nil
+}
+
+// DeleteAllRelayCredentials 删全表（rotate 泄漏处置面）。
+func (r *repo) DeleteAllRelayCredentials(ctx context.Context) error {
+	_, err := r.run.ExecContext(ctx, `DELETE FROM node_relay_credentials`)
+	return err
+}

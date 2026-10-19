@@ -8,25 +8,44 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"github.com/fleetlyrun/fleetly/internal/domain/runtimeops/node"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
 
-// RelayAttach 是中继连接附着：校验凭证（集群成员权等价，C3）→ 载体
-// 节点 ID 反查平台节点 ID（锚定表）→ 注册写端。同节点重连顶替旧连接：
-// 未附着会话重指新连接（受理面立即可用），已附着会话收口（exec 不可迁移，
-// 客户端重开——诚实边界）。feed 供适配器上行投递；detach 在连接断开时调用。
+// RelayAttach 是中继连接附着（H10 §4.5 校验序）：exec 面 → 载体节点锚定
+// （ByCarrier）→ 内部 token（控制面进程自身）→ sha256 查节点个体凭证 →
+// 凭证绑定轴与节点行双向匹配 → 注册写端。join token 不再被接受（鉴权
+// 凭证不是集群成员权）。同节点重连顶替旧连接：未附着会话重指新连接（受
+// 理面立即可用），已附着会话收口（exec 不可迁移，客户端重开——诚实
+// 边界）。feed 供适配器上行投递；detach 在连接断开时调用。
 func (e *Engine) RelayAttach(ctx context.Context, token, carrierNodeID, relayVersion string, w RelayWriter) (feed func(capability.RelayFrame), detach func(), err error) {
 	if e.execFace == nil {
 		return nil, nil, ErrExecUnsupported
 	}
-	if err := e.execFace.ExecClusterToken(ctx, token); err != nil {
-		return nil, nil, err
-	}
 	n, err := e.repos.Nodes.ByCarrier(ctx, carrierNodeID)
 	if err != nil {
-		return nil, nil, fmt.Errorf("%w: carrier %s", ErrExecNodeUnanchored, carrierNodeID)
+		if errors.Is(err, state.ErrNotFound) {
+			return nil, nil, fmt.Errorf("%w: carrier %s", ErrExecNodeUnanchored, carrierNodeID)
+		}
+		return nil, nil, fmt.Errorf("%w: %w", ErrExecRelayStore, err)
+	}
+	if !e.exec.matchesInternal(token) {
+		row, err := e.repos.Nodes.RelayCredentialBySHA256(ctx, node.HashRelayCredential(token))
+		if err != nil {
+			if errors.Is(err, state.ErrNotFound) {
+				return nil, nil, fmt.Errorf("%w: carrier %s", ErrExecRelayUnauthorized, carrierNodeID)
+			}
+			return nil, nil, fmt.Errorf("%w: %w", ErrExecRelayStore, err)
+		}
+		// 双向绑定：凭证行铸给哪个平台节点/载体，hello 就必须声明同一
+		// 载体——伪造 carrier 或串号凭证在此失败（H10 的核心修复点）。
+		if row.PlatformID != n.PlatformID || row.CarrierID != n.CarrierID {
+			return nil, nil, fmt.Errorf("%w: credential bound to node %s", ErrExecRelayUnauthorized, row.PlatformID)
+		}
 	}
 
 	a := &relayConn{nodeID: n.PlatformID, version: relayVersion, w: w}
@@ -141,6 +160,32 @@ func (x *execs) dropRelay(a *relayConn) {
 	x.log.Info("node relay disconnected", "node", a.nodeID)
 	for _, s := range affected {
 		x.finish(s, relayGoneFrame(nil))
+	}
+}
+
+// DropRelay 断开某平台节点的在连中继（H10 重铸/吊销的即时失效面）：
+// 从 relays 摘除并收口其名下全部会话（relay_disconnected 如实告知——复用
+// dropRelay 的身份校验与收口语义）。
+func (e *Engine) DropRelay(platformID string) {
+	e.exec.mu.Lock()
+	a := e.exec.relays[platformID]
+	e.exec.mu.Unlock()
+	if a != nil {
+		e.exec.dropRelay(a)
+	}
+}
+
+// DropAllRelays 断开全部在连中继（rotate 全量作废面）：在 DB 事务提交后
+// 调用（先让旧凭证失效，再断连接；即使断开失败，重连也会 401）。
+func (e *Engine) DropAllRelays() {
+	e.exec.mu.Lock()
+	rels := make([]*relayConn, 0, len(e.exec.relays))
+	for _, a := range e.exec.relays {
+		rels = append(rels, a)
+	}
+	e.exec.mu.Unlock()
+	for _, a := range rels {
+		e.exec.dropRelay(a)
 	}
 }
 

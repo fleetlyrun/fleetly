@@ -38,10 +38,12 @@ type NodesServiceClient interface {
 	// 每 running task/pod 对应一个容器；快照语义——直读编排器任务列表，观测
 	// 缓存不参与）。平台节点 ID 为锚（运维三动词同锚）。
 	ListNodeContainers(ctx context.Context, in *ListNodeContainersRequest, opts ...grpc.CallOption) (*ListNodeContainersResponse, error)
-	// EnrollNode 输出工作节点加入材料（F0.20：节点零平台安装物）。活 join
-	// token 等价集群成员权（不可逆），档位是 platform:admin（C3 收紧：
-	// nodes:admin 只覆盖可逆运维面，不得白送集群钥匙）；rotate 先轮换
-	// 全部 join token（泄漏处置）再返回新材料。
+	// EnrollNode 是节点材料动词（F0.20：节点零平台安装物）。无参数 = 初始
+	// join 材料（中继材料不再随初始 enrollment 产出——join token 退出 relay
+	// 鉴权面，节点锚定后按节点定向铸造）。活 join token 等价集群成员权
+	// （不可逆），档位是 platform:admin（C3 收紧：nodes:admin 只覆盖可逆运维
+	// 面，不得白送集群钥匙）；rotate 先轮换全部 join token 并作废全部节点
+	// relay 凭证（泄漏处置）再返回新材料。
 	EnrollNode(ctx context.Context, in *EnrollNodeRequest, opts ...grpc.CallOption) (*EnrollNodeResponse, error)
 	// 节点运维三动词（F0.19 RuntimeAdmin 面）：平台节点 ID 为锚；可逆的
 	// 调度控制走 nodes write 档。
@@ -127,10 +129,12 @@ type NodesServiceServer interface {
 	// 每 running task/pod 对应一个容器；快照语义——直读编排器任务列表，观测
 	// 缓存不参与）。平台节点 ID 为锚（运维三动词同锚）。
 	ListNodeContainers(context.Context, *ListNodeContainersRequest) (*ListNodeContainersResponse, error)
-	// EnrollNode 输出工作节点加入材料（F0.20：节点零平台安装物）。活 join
-	// token 等价集群成员权（不可逆），档位是 platform:admin（C3 收紧：
-	// nodes:admin 只覆盖可逆运维面，不得白送集群钥匙）；rotate 先轮换
-	// 全部 join token（泄漏处置）再返回新材料。
+	// EnrollNode 是节点材料动词（F0.20：节点零平台安装物）。无参数 = 初始
+	// join 材料（中继材料不再随初始 enrollment 产出——join token 退出 relay
+	// 鉴权面，节点锚定后按节点定向铸造）。活 join token 等价集群成员权
+	// （不可逆），档位是 platform:admin（C3 收紧：nodes:admin 只覆盖可逆运维
+	// 面，不得白送集群钥匙）；rotate 先轮换全部 join token 并作废全部节点
+	// relay 凭证（泄漏处置）再返回新材料。
 	EnrollNode(context.Context, *EnrollNodeRequest) (*EnrollNodeResponse, error)
 	// 节点运维三动词（F0.19 RuntimeAdmin 面）：平台节点 ID 为锚；可逆的
 	// 调度控制走 nodes write 档。

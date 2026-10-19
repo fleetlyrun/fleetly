@@ -3,9 +3,11 @@ package swarm
 // 节点中继（F3.2，ADR-0049 决策 2）：`fleetlyd relay` 在节点上运行的本
 // 实现与 manager 进程内回环中继共用——拨号控制面 gateway 的 /v1/relay，
 // 握手上报载体节点身份（docker info 的本机 NodeID），随后多路复用收发
-// exec 会话帧。阻塞至 ctx 结束（内部重连退避）；凭证每次拨号前取新
-//（回环形态 = 本地 SwarmInspect，rotate 后自愈；worker 形态 = 启动注入
-// 固定 token，轮换后失联待重跑装载脚本——泄漏处置语义）。
+// exec 会话帧。阻塞至 ctx 结束（内部重连退避）；凭证每次拨号前按 carrier
+// 回调取（H10：回环形态 = engine 内部 token，rotate/重连自愈；worker 形态
+// = 启动注入的节点个体凭证，重铸后旧凭证 401 待重跑装载脚本——泄漏处置
+// 语义）。carrier 必须先确定（docker info）再取凭证：凭证与载体身份在
+// 平台侧绑定。
 
 import (
 	"context"
@@ -64,26 +66,19 @@ func (p *Provider) relayOnce(ctx context.Context, o capability.NodeRelayOptions)
 	if o.GatewayURL == "" {
 		return errors.New("node relay: gateway url is required")
 	}
-	token := ""
-	if o.JoinToken != nil {
-		t, err := o.JoinToken(ctx)
-		if err != nil {
-			return fmt.Errorf("node relay: credential: %w", err)
-		}
-		token = t
-	} else {
-		t, err := p.localClusterToken(ctx)
-		if err != nil {
-			return err
-		}
-		token = t
-	}
 	info, err := p.cli.Info(ctx, client.InfoOptions{})
 	if err != nil {
 		return fmt.Errorf("node relay: local info: %w", err)
 	}
 	if info.Info.Swarm.NodeID == "" {
 		return errors.New("node relay: local node is not in a swarm")
+	}
+	if o.Credential == nil {
+		return errors.New("node relay: credential callback is required")
+	}
+	token, err := o.Credential(ctx, info.Info.Swarm.NodeID)
+	if err != nil {
+		return fmt.Errorf("node relay: credential: %w", err)
 	}
 
 	hdr := http.Header{"Authorization": []string{"Bearer " + token}}
@@ -333,15 +328,8 @@ func (w *relayFrameWriter) Write(p []byte) (int, error) {
 	return total, nil
 }
 
-// localClusterToken 是回环形态的凭证源（本地 SwarmInspect worker token；
-// rotate 后下次重连自愈）。
-func (p *Provider) localClusterToken(ctx context.Context) (string, error) {
-	inspect, err := p.cli.SwarmInspect(ctx, client.SwarmInspectOptions{})
-	if err != nil {
-		return "", fmt.Errorf("node relay: local credential: %w", err)
-	}
-	return inspect.Swarm.JoinTokens.Worker, nil
-}
+// localClusterToken 已随 H10 删除：回环中继从 engine 取内部 token（经由
+// NodeRelayOptions.Credential），Provider 不再读本地 join token。
 
 func (p *Provider) logRelay(msg string, err error) {
 	if err != nil {

@@ -25,9 +25,9 @@ import (
 //go:embed *.sql
 var forwardFS embed.FS
 
-// latestMigrationVersion 是迁移链最新版本号（00034_idempotency_caller_scope.sql）；
+// latestMigrationVersion 是迁移链最新版本号（00035_node_relay_credentials.sql）；
 // 链前进即改这里（golden 同批纪律：新迁移带锚更新）。
-const latestMigrationVersion = 34
+const latestMigrationVersion = 35
 
 // openMigrationDB 打开 temp 目录裸 SQLite（纯迁移面，不带 Open 的
 // pragmas——本文件只验 goose 前滚语义；单写者收口与 Open 同纪律），
@@ -107,6 +107,14 @@ func TestMigrateForwardFromEra28ToLatest(t *testing.T) {
 		require.NoError(t, db.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+table).Scan(&n),
 			"table %s must exist after rollforward", table)
 	}
+
+	// v35 节点个体 relay 凭证表在场且无回填：凭证只在“节点已锚定”后由
+	// 定向动作铸造，迁移不为存量节点编造材料（表空起步）。
+	var relayRows int
+	require.NoError(t, db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM node_relay_credentials`).Scan(&relayRows),
+		"node_relay_credentials must exist after rollforward")
+	assert.Zero(t, relayRows, "v35 must not backfill relay credentials for existing nodes")
 }
 
 // TestMigrateForwardIdempotencyCallerScope：00034 重建表的存量处置锚——
@@ -159,11 +167,47 @@ func TestMigrateForwardIdempotencyCallerScope(t *testing.T) {
 	assert.Equal(t, 1, n, "the expiry index must be rebuilt on the renamed table")
 }
 
+// TestMigrateForwardNodeRelayCredentials：00035 的换装锚——v34 库无凭证表，
+// 前滚后新表在场、零回填（凭证只在节点锚定后由定向动作为单节点铸造），
+// 存量 nodes 观测行无损（nodes 是观测缓存，不与凭证同表）。
+func TestMigrateForwardNodeRelayCredentials(t *testing.T) {
+	ctx := context.Background()
+	db := openMigrationDB(t)
+
+	require.NoError(t, goose.UpToContext(ctx, db, ".", 34))
+	_, err := db.ExecContext(ctx, `INSERT INTO nodes
+		(platform_id, seq, carrier_id, hostname, role, available, first_seen_at, last_seen_at)
+		VALUES ('node-era34', 1, 'carrier-era34', 'era-host', 'worker', 1,
+		        '2026-10-11T00:00:00Z', '2026-10-11T00:00:00Z')`)
+	require.NoError(t, err)
+	var n int
+	require.NoError(t, db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'node_relay_credentials'`).Scan(&n))
+	assert.Zero(t, n, "v34 must not carry the relay credential table")
+
+	require.NoError(t, goose.UpContext(ctx, db, "."))
+	version, err := goose.GetDBVersion(db)
+	require.NoError(t, err)
+	require.Equal(t, int64(latestMigrationVersion), version)
+
+	// 新表在场但空——迁移无 backfill（不做存量节点的凭证编造）。
+	require.NoError(t, db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM node_relay_credentials`).Scan(&n))
+	assert.Zero(t, n, "v35 must start empty (no backfill)")
+
+	// 存量节点行无损（v35 不触碰 nodes）。
+	var carrier, role string
+	require.NoError(t, db.QueryRowContext(ctx,
+		`SELECT carrier_id, role FROM nodes WHERE platform_id = 'node-era34'`).Scan(&carrier, &role))
+	assert.Equal(t, "carrier-era34", carrier)
+	assert.Equal(t, "worker", role)
+}
+
 // TestMigrateForwardFromRecentCheckpoints 对每个近期检查点验证「该检查
 // 点之后的库 = 在役库形态」：fresh 库钉在检查点后一滚到顶（真实升级
 // 路径是逐版前滚，检查点代表中途接管的库）。
 func TestMigrateForwardFromRecentCheckpoints(t *testing.T) {
-	for _, cp := range []int64{30, 31, 32, 33} {
+	for _, cp := range []int64{30, 31, 32, 33, 34} {
 		t.Run(fmt.Sprintf("from_v%d", cp), func(t *testing.T) {
 			ctx := context.Background()
 			db := openMigrationDB(t)

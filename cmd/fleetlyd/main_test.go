@@ -135,21 +135,22 @@ func TestVerbAppRun(t *testing.T) {
 	t.Run("relay missing required flags", func(t *testing.T) {
 		code, _, errOut := run("relay")
 		assert.Equal(t, commands.ExitUsage, code)
-		assert.Contains(t, errOut, "--manager and --join-token are required")
+		assert.Contains(t, errOut, "--manager and --relay-credential are required")
 		assert.Contains(t, errOut, "usage:")
 	})
 
 	t.Run("relay half flags still rejected", func(t *testing.T) {
 		code, _, errOut := run("relay", "--manager", "http://10.0.0.3:9081")
 		assert.Equal(t, commands.ExitUsage, code)
-		assert.Contains(t, errOut, "--manager and --join-token are required")
+		assert.Contains(t, errOut, "--manager and --relay-credential are required")
 	})
 
 	t.Run("relay help shows flags", func(t *testing.T) {
 		code, out, _ := run("help", "relay")
 		assert.Equal(t, commands.ExitOK, code)
 		assert.Contains(t, out, "-manager")
-		assert.Contains(t, out, "-join-token")
+		assert.Contains(t, out, "-relay-credential")
 		assert.Contains(t, out, "-runtime")
+		assert.NotContains(t, out, "-join-token")
 	})
 }

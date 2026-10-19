@@ -107,7 +107,7 @@ d233c07d docs(plan,reviews): S1-S5 终验记录与修复状态归档
 | S8 | Metrics 租户域过滤（设计） | H8（R07-H2/R08-M2） | 设计文档 `docs/design/2026-10-19-security-backlog-design.md`（推荐 QueryScopedMetrics + raw 收平台管理员） | ✅ 设计 |
 | S9 | H8 阶段 A 止血 | H8 | raw QueryMetrics 收平台管理员（403 先于 503）+ 响应 8MiB/1000 序列上限；member 图表失明（已裁决代价） | ✅ |
 | S10 | H8 阶段 B scoped RPC + Console/CLI 切换 | H8 | **a** 契约+服务端 ✅（`e9654b8c`）；**b** Console scoped 图表/WhoAmI.platformAdmin/truncated 提示 + CLI `metrics series` + `console:gen/build` 同批 ✅ | ✅ |
-| S11 | relay 节点个体凭证 | H10（R14-H3） | 两步 enroll（join → 锚定 → 按节点取 relay）；个体凭证（hash 库存 + carrier_id）；rotate 即时断连；迁移 00035 | ☐ |
+| S11 | relay 节点个体凭证 | H10（R14-H3） | **a** 后端+兼容：迁移 00035/材质/hash 库存/两步 enroll/握手绑定/定向材料/内部 token/即时断连 ✅（`33xxxxxx`）；**b** 运维面：`nodes relay/revoke-relay` CLI + Console 节点行动作 + runbook + `node.left` 清理/`relay_replaced` 审计 | 🟡 a 完成 |
 | S12 | 收敛语义深水区 + ADR 追记 | R02-M2/M5、R16-M2/M3/M5/M6、H15 ADR-0083 追记 | ADR 修订 + 判定表单源 + 静默面事实化；钉测翻向 | ☐ |
 
 > S6 先行原因：H3 已消除 k3s configmaps 403，若不落挂载，真机会从"显式 403 失败"变成"ConfigMap 建了但容器无配置"的静默失败。
@@ -138,6 +138,18 @@ d233c07d docs(plan,reviews): S1-S5 终验记录与修复状态归档
 - golden：改 2（组列表）/新 9（成功双形态/App/Database/usage 三类/服务端错误/offline 双形态）；demo 测试与参数校验单测同批。
 - 验收证据（Lead 亲跑）：gofmt 空；build 0；cmd 5.4s、guards 20.0s；metrics golden 定向全 PASS；console `pnpm test` 30 files/134 tests PASS；`console:verify`（提交后）0。
 - 残留：CLI golden 既有假时钟 flake（基线 worktree 亦偶发，非本批引入）；`console:gen` Windows shim 问题本次以本地转发器绕过（未入仓，建议单列修 gen.mjs 跨平台）；e2e 真机图表与 k3s CPU%（阶段 C）。
+
+### S11a 执行记录（H10 阶段 1 后端+兼容面）
+- 迁移 `00035_node_relay_credentials.sql`（platform_id PK/secret_sha256 UNIQUE/created_at；无外键/expires/revoked 列；forward_test 35）。
+- domain：`fltrelay_` 材质（crypto/rand 32B base64url）+ sha256 hex + Repo 四方法；persistence UPSERT/单查/删除（读面无明文；hash-at-rest 测试）。
+- capability：删 `ExecClusterToken`/`EnrollKit.RelayCommand`；新增 `RuntimeRelayMaterial` 面（FacesOf/Offered）；`NodeRelayOptions.Credential` 回调。
+- providers：swarm `NodeRelayCommand` + 脚本改 `--relay-credential`（不含 SWMTKN）；k3s 无 relay material 面、Credential 回调；fleetlyd `--relay-credential`。
+- engine：`fltint_` 内存内部 token + `ValidateRelayCredential`（内部/凭证行/存储故障分流）+ `RelayAttach` 双向绑定（PlatformID/CarrierID）+ `DropRelay/DropAllRelays`；删 `ExecValidateClusterToken`。
+- gateway：`/v1/relay`、`/v1/platform/binary` 升级前凭证校验（401 bad_credential / 503 relay_unavailable），attach 错误 1013/1011/1008 分流，日志不落凭证。
+- handler `EnrollNode` 三分支：初始 join-only / rotate（Runtime 轮换→事务删全部+审计→DropAllRelays）/ 定向重铸（Get→manager/空 carrier 拒→face 501→铸材质→脚本→事务 Put+审计→DropRelay）/ revoke（事务删+条件审计→DropRelay）；三处 LedgerOnly 理由注释；Detail 只含 carrier/prefix/reason。
+- apitest 8 项 §6 验收锚 + engine 4 项 + repo/domain/provider/migration 测试全 PASS；e2e 脚本改两步流程（仅语法）。
+- 验收证据（Lead 亲跑）：gofmt 空；双平台 build 0；node/persistence/migrations、swarm/k3s、engine(21.1s)/assembly/fleetlygrpc、apitest(28.2s)、guards(15.5s)、cmd/fleetly(5.5s)/fleetlyd 全 ok；vet 全仓 0；`buf breaking '.git#branch=origin/main'` 0；`sh -n e2e` 0；diff-check 0；`generate:verify`/`console:verify`（提交后）0。
+- 残留（S11b）：`nodes relay/revoke-relay` CLI、Console 节点行动作/初始材料文案、runbook、`node.left` 删凭证+DropRelay+审计(reason=node_left)、`node.relay_replaced` 审计/warn、`E_RUNTIME_FACE_UNSUPPORTED` suggestion 补 relay material、e2e 真跑（无 Docker）。
 
 ### S6 执行记录
 - 改动：`k3s/translate.go`（sortedConfigMounts/configMountsWithMaterials/configVolumeName + toContainer SubPath 挂载 + podTemplate ConfigMap 卷 0444）、`translate_test.go`（三载体/缺材料/顺序稳定）、`runtime_ensure_test.go`（Ensure 引用名一致性 + SkipMaterials）。

@@ -10,8 +10,9 @@ package k3s
 //
 // 节点生命周期：节拍列锚定节点（fleetly.node.id 在场）——新节点起连接
 //（未锚定进平台表即退避重试，锚定后自愈）、消失节点停连接（连接关闭 →
-// engine 侧 dropRelay 收口其名下会话）。凭证每次拨号前取 node token
-// 文件（k3s 无 swarm rotate 面——Enrollment rotate 诚实失败，同口径）。
+// engine 侧 dropRelay 收口其名下会话）。凭证每次拨号前按 carrier 回调取
+//（H10：k3s 每节点回环都从同一 engine 进程取内部 token——无节点侧凭证，
+// 集中式形态；k3s node token 不再承担 relay 鉴权）。
 
 import (
 	"context"
@@ -133,19 +134,12 @@ func (p *Provider) nodeRelayLoop(ctx context.Context, o capability.NodeRelayOpti
 // 循环，直至错误或 ctx 结束（swarm relayOnce 同构——帧面单源
 // capability，连接面各 Provider 私有）。
 func (p *Provider) nodeRelayOnce(ctx context.Context, o capability.NodeRelayOptions, nodeName string) error {
-	token := ""
-	if o.JoinToken != nil {
-		t, err := o.JoinToken(ctx)
-		if err != nil {
-			return fmt.Errorf("node relay: credential: %w", err)
-		}
-		token = t
-	} else {
-		t, err := p.readNodeToken()
-		if err != nil {
-			return fmt.Errorf("node relay: credential: %w", err)
-		}
-		token = t
+	if o.Credential == nil {
+		return errors.New("node relay: credential callback is required")
+	}
+	token, err := o.Credential(ctx, nodeName)
+	if err != nil {
+		return fmt.Errorf("node relay: credential: %w", err)
 	}
 
 	hdr := http.Header{"Authorization": []string{"Bearer " + token}}

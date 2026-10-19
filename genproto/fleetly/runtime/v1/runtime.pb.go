@@ -450,9 +450,15 @@ func (x *ListNodeContainersResponse) GetContainers() []*NodeContainer {
 
 type EnrollNodeRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// rotate 先轮换全部 join token（worker+manager；泄漏处置：旧材料即刻
-	// 失效）再返回新材料。
-	Rotate        bool `protobuf:"varint,1,opt,name=rotate,proto3" json:"rotate,omitempty"`
+	// rotate 轮换 worker+manager join token，并作废全部节点 relay 凭证；
+	// 响应只含 join_command（relay_command 空）。与 node_id/revoke 互斥。
+	Rotate bool `protobuf:"varint,1,opt,name=rotate,proto3" json:"rotate,omitempty"`
+	// node_id 非空 = 针对该已锚定平台的 relay 材料动作（与 rotate 互斥）：
+	//
+	//	revoke=false：铸新 relay 凭证（旧凭证即刻失效）并返回 relay_command；
+	//	revoke=true ：只吊销该节点 relay 凭证，响应两命令皆空。
+	NodeId        string `protobuf:"bytes,2,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	Revoke        bool   `protobuf:"varint,3,opt,name=revoke,proto3" json:"revoke,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -494,15 +500,26 @@ func (x *EnrollNodeRequest) GetRotate() bool {
 	return false
 }
 
+func (x *EnrollNodeRequest) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
+func (x *EnrollNodeRequest) GetRevoke() bool {
+	if x != nil {
+		return x.Revoke
+	}
+	return false
+}
+
 type EnrollNodeResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// join_command 是工作节点完整加入命令（swarm join 形态）。
+	// join_command 是工作节点完整加入命令（仅 swarm 形态）。
 	JoinCommand string `protobuf:"bytes,1,opt,name=join_command,json=joinCommand,proto3" json:"join_command,omitempty"`
-	// relay_command 是节点中继装载脚本（ADR-0049：busybox 载体 +
-	// /v1/platform/binary 下载 fleetlyd + docker cp 注入 + docker.sock 挂载
-	// 跑 `fleetlyd relay`；幂等——重跑即中继升级/修复通道）。join 语义不变：
-	// 只跑 join_command 的节点集群面完整，exec 面不可用（relay_online=false
-	// 诚实可见）。
+	// relay_command 是节点中继装载脚本（针对 node_id 铸造；含该节点个体凭证，
+	// 不再含 join token）。初始 enroll / rotate 时为空：先 join，再按节点取。
 	RelayCommand  string `protobuf:"bytes,2,opt,name=relay_command,json=relayCommand,proto3" json:"relay_command,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -838,9 +855,11 @@ const file_fleetly_runtime_v1_runtime_proto_rawDesc = "" +
 	"\x1aListNodeContainersResponse\x12A\n" +
 	"\n" +
 	"containers\x18\x01 \x03(\v2!.fleetly.runtime.v1.NodeContainerR\n" +
-	"containers\"+\n" +
+	"containers\"\\\n" +
 	"\x11EnrollNodeRequest\x12\x16\n" +
-	"\x06rotate\x18\x01 \x01(\bR\x06rotate\"\\\n" +
+	"\x06rotate\x18\x01 \x01(\bR\x06rotate\x12\x17\n" +
+	"\anode_id\x18\x02 \x01(\tR\x06nodeId\x12\x16\n" +
+	"\x06revoke\x18\x03 \x01(\bR\x06revoke\"\\\n" +
 	"\x12EnrollNodeResponse\x12!\n" +
 	"\fjoin_command\x18\x01 \x01(\tR\vjoinCommand\x12#\n" +
 	"\rrelay_command\x18\x02 \x01(\tR\frelayCommand\"h\n" +

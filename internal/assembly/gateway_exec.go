@@ -1,15 +1,16 @@
 package assembly
 
-// gateway 的 exec 原生入口（F3.2，ADR-0049）三件：
+// gateway 的 exec 原生入口（F3.2，ADR-0049；鉴权面 H10 改写）三件：
 //
-//   - GET /v1/relay          节点中继 WS（Bearer = swarm join token，
-//     集群成员权等价 C3；首帧 hello 绑定载体节点身份，随后多路复用
+//   - GET /v1/relay          节点中继 WS（Bearer = 节点个体 relay 凭证
+//     `fltrelay_...` 的 sha256 行，或控制面内部 token `fltint_...`；join
+//     token 不再被接受。首帧 hello 绑定载体节点身份，随后多路复用
 //     capability 帧协议的二进制形态）。
 //   - GET /v1/exec/stream    会话消费端 WS（Console 终端页；浏览器 WS 无
 //     自定义头——query 携带秒级单用途票据，ADR-0026 exec 版；帧形态 =
 //     [1B kind][payload] 的会话流信封，与 gRPC oneof 同构）。
-//   - GET /v1/platform/binary  控制面二进制下载（EnrollKit.RelayCommand 的
-//     curl 目标；鉴权与 /v1/relay 同一 join token）。
+//   - GET /v1/platform/binary  控制面二进制下载（relay 脚本的 curl 目标；
+//     鉴权与 /v1/relay 同一凭证面）。
 //
 // 与 uploads/hooks/events SSE 同一挂法族：root mux 精确路径 + gateway
 // 回落；不进 gateway 注解面（swagger 不含——Console 侧手写客户端，
@@ -18,6 +19,7 @@ package assembly
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -52,7 +54,7 @@ const (
 )
 
 // relayAcceptOptions 收紧 WS 握手（无压缩——帧是二进制协议；来源不限：
-// 节点出站连接的目标地址由 RelayCommand 携带）。
+// 节点出站连接的目标地址由 relay 脚本携带）。
 var relayAcceptOptions = websocket.AcceptOptions{
 	CompressionMode: websocket.CompressionDisabled,
 	OriginPatterns:  []string{"*"}, // 节点中继非浏览器（无 Origin 面）
@@ -73,13 +75,19 @@ func mountRelay(h http.Handler, eng *engine.Engine) http.Handler {
 	})
 }
 
-// serveRelay 服务一条中继连接：凭证（HTTP 层，升级前 401）→ 升级 →
-// hello（文本 JSON）→ engine 附着（凭证复验 + 节点绑定）→ 读循环投递帧。
+// serveRelay 服务一条中继连接：凭证（HTTP 层，升级前 401/503）→ 升级 →
+// hello（文本 JSON）→ engine 附着（凭证绑定 + 节点匹配）→ 读循环投递帧。
 func serveRelay(w http.ResponseWriter, r *http.Request, eng *engine.Engine) {
-	// 凭证先于升级校验：坏凭证对 HTTP 面呈现 401（匿名面最小事实），
-	// 不进 WS 协议层。
-	if err := eng.ExecValidateClusterToken(r.Context(), bearerToken(r)); err != nil {
-		writeExecStatus(w, http.StatusUnauthorized, "bad_credential", "credential does not match an active swarm join token")
+	// 凭证先于升级校验：坏凭证对 HTTP 面呈现 401；凭证存储故障 503（不能
+	// 把故障伪装成 401，否则轮换/存储故障不可区分）。均不进 WS 协议层。
+	if err := eng.ValidateRelayCredential(r.Context(), bearerToken(r)); err != nil {
+		if errors.Is(err, engine.ErrExecRelayUnauthorized) {
+			writeExecStatus(w, http.StatusUnauthorized, "bad_credential",
+				"credential is not an active node relay credential")
+			return
+		}
+		writeExecStatus(w, http.StatusServiceUnavailable, "relay_unavailable",
+			"relay credential store is unavailable")
 		return
 	}
 	conn, err := websocket.Accept(w, r, &relayAcceptOptions)
@@ -107,8 +115,20 @@ func serveRelay(w http.ResponseWriter, r *http.Request, eng *engine.Engine) {
 	token := bearerToken(r)
 	feed, detach, err := eng.RelayAttach(ctx, token, hello.CarrierNodeID, hello.RelayVersion, &wsRelayWriter{conn: conn})
 	if err != nil {
-		slog.Warn("relay attach rejected", "err", err.Error())
-		_ = conn.Close(websocket.StatusPolicyViolation, "attach rejected")
+		// 日志只记节点/载体/版本，不记凭证（H10：凭证绝不入日志）。
+		slog.Warn("relay attach rejected", "carrier", hello.CarrierNodeID,
+			"version", hello.RelayVersion, "err", err.Error())
+		switch {
+		case errors.Is(err, engine.ErrExecNodeUnanchored):
+			// 节点刚加入/对账未及：节点代理按退避重连（现有行为）。
+			_ = conn.Close(websocket.StatusTryAgainLater, "node not anchored yet; retry shortly")
+		case errors.Is(err, engine.ErrExecRelayStore):
+			// 存储故障不落成凭证错（节点代理退避重试）。
+			_ = conn.Close(websocket.StatusInternalError, "relay credential store unavailable")
+		default:
+			// 凭证合法但 carrier 不匹配 / 伪造凭证：策略拒绝。
+			_ = conn.Close(websocket.StatusPolicyViolation, "attach rejected")
+		}
 		return
 	}
 	defer detach()
@@ -248,8 +268,8 @@ func (c *execWSClient) Send(f engine.ExecServerFrame) error {
 	return c.conn.Write(wctx, websocket.MessageBinary, buf)
 }
 
-// mountPlatformBinary 挂载控制面二进制下载入口（RelayCommand 的 curl
-// 目标；Bearer = join token 与 /v1/relay 同源）。
+// mountPlatformBinary 挂载控制面二进制下载入口（relay 脚本的 curl 目标；
+// Bearer = 节点个体 relay 凭证，与 /v1/relay 同源）。
 func mountPlatformBinary(h http.Handler, eng *engine.Engine) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != platformBinaryPath {
@@ -260,8 +280,14 @@ func mountPlatformBinary(h http.Handler, eng *engine.Engine) http.Handler {
 			writeExecStatus(w, http.StatusMethodNotAllowed, "get_only", "the binary endpoint accepts GET only")
 			return
 		}
-		if err := eng.ExecValidateClusterToken(r.Context(), bearerToken(r)); err != nil {
-			writeExecStatus(w, http.StatusUnauthorized, "bad_credential", "credential does not match an active swarm join token")
+		if err := eng.ValidateRelayCredential(r.Context(), bearerToken(r)); err != nil {
+			if errors.Is(err, engine.ErrExecRelayUnauthorized) {
+				writeExecStatus(w, http.StatusUnauthorized, "bad_credential",
+					"credential is not an active node relay credential")
+				return
+			}
+			writeExecStatus(w, http.StatusServiceUnavailable, "relay_unavailable",
+				"relay credential store is unavailable")
 			return
 		}
 		self, err := os.Executable()

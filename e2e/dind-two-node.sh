@@ -58,8 +58,8 @@ log "manager ip: $MGR_IP"
 log "preloading nginx + busybox into both nodes"
 docker image save nginx:1.27 | docker exec -i "$MGR_CID" docker load >/dev/null
 docker image save nginx:1.27 | docker exec -i "$WRK_CID" docker load >/dev/null
-# busybox:1.37 是节点中继的载体镜像（ADR-0049 EnrollKit.RelayCommand
-# 钉版；与 e2e 预载清单同源）——worker 装载中继前预载（离线确定性）。
+# busybox:1.37 是节点中继的载体镜像（ADR-0049 定向中继材料钉版；与 e2e
+# 预载清单同源）——worker 装载中继前预载（离线确定性）。
 docker image save busybox:1.37 | docker exec -i "$WRK_CID" docker load >/dev/null
 
 log "installing fleetly on the manager (worker stays zero-install)"
@@ -228,18 +228,53 @@ if [ "${LOG_NODES:-0}" -lt 2 ]; then
 fi
 log "log stream covers both nodes ($LOG_NODES node ids seen)"
 
-# ---- F3.2 exec 子面（ADR-0049）：反向中继全链 ----
-# 节点中继装载走 EnrollKit.RelayCommand（纯单引号形态——JSON 转义恒等，
-# --json 输出可原样 sed 抽取执行；幂等 = 重跑即升级通道）。worker 上的
-# 中继容器 busybox 载体 + docker cp 注入的 fleetlyd 出站拨 manager
-# gateway——节点零入站端口。装好后断言：双节点 relay_online=true →
-# 卷钉住 process（worker 侧落点）exec 全链 → 跨节点 process exec →
-# `fleetly shell` 非交互形态 → 中继容器在场与重跑幂等。
-log "exec leg: installing the worker node relay via EnrollKit.RelayCommand"
-RELAY_CMD=$(cli --json nodes enroll | sed -n 's/.*"relay_command": *"\([^"]*\)".*/\1/p' | head -1)
+# ---- F3.2 exec 子面（ADR-0049 → H10 两步材料）：反向中继全链 ----
+# 中继材料不再随 nodes enroll 返回（join token 退出 relay 鉴权面）：worker
+# join → 等 Watch/DescribeCluster 锚定（nodes 表出现 platform_id）→
+# `nodes relay --node <platform_id>` 铸该节点个体凭证并取脚本 → 在节点执行
+#（纯单引号形态——JSON 转义恒等，--json 输出可原样 sed 抽取执行；幂等 =
+# 重跑即升级通道）。worker 上的中继容器 busybox 载体 + docker cp 注入的
+# fleetlyd 出站拨 manager gateway——节点零入站端口，脚本只含该节点凭证、
+# 不含 SWMTKN join token。装好后断言：双节点 relay_online=true → 卷钉住
+# process（worker 侧落点）exec 全链 → 跨节点 process exec → `fleetly shell`
+# 非交互形态 → 中继容器在场与重跑幂等。
+
+# H10 负例：join token 不再是 relay 凭证——/v1/platform/binary 必须 401。
+log "exec leg: the join token must be rejected on /v1/platform/binary"
+JOIN_TOKEN=$(printf '%s\n' "$JOIN_CMD" | awk '{print $4}')
+[ -n "$JOIN_TOKEN" ] || { echo "could not extract the join token from $JOIN_CMD" >&2; exit 1; }
+JOIN_TOKEN_HTTP=$(docker exec "$MGR_CID" sh -c \
+  "wget -S -O /dev/null --header 'Authorization: Bearer $JOIN_TOKEN' http://127.0.0.1:9081/v1/platform/binary" 2>&1 || true)
+case "$JOIN_TOKEN_HTTP" in
+  *401*) log "join token rejected on /v1/platform/binary (401)" ;;
+  *) echo "expected 401 for the join token on /v1/platform/binary, got: $JOIN_TOKEN_HTTP" >&2; exit 1 ;;
+esac
+
+log "exec leg: waiting for the worker node to be anchored"
+i=0
+WORKER_PLATFORM_ID=""
+while [ "$i" -lt 60 ]; do
+  WORKER_PLATFORM_ID=$(cli nodes list 2>/dev/null | awk '$2 == "worker" {print $1}' | head -1)
+  [ -n "$WORKER_PLATFORM_ID" ] && break
+  i=$((i + 1)); sleep 2
+done
+[ -n "$WORKER_PLATFORM_ID" ] || {
+  echo "worker node never anchored (no worker row in nodes list)" >&2
+  cli nodes list >&2 || true
+  exit 1
+}
+log "worker anchored as $WORKER_PLATFORM_ID"
+
+log "exec leg: issuing the worker node relay credential (nodes relay --node)"
+RELAY_CMD=$(cli --json nodes relay --node "$WORKER_PLATFORM_ID" \
+  | sed -n 's/.*"relay_command": *"\([^"]*\)".*/\1/p' | head -1)
 case "$RELAY_CMD" in
-  */v1/platform/binary*fleetly-relay*busybox:1.37*) log "relay command shape verified (carrier/busybox/binary endpoint)" ;;
+  */v1/platform/binary*fleetly-relay*busybox:1.37*--relay-credential*fltrelay_*)
+    log "relay command shape verified (carrier/busybox/binary endpoint/individual credential)" ;;
   *) echo "relay command missing expected shape: $RELAY_CMD" >&2; exit 1 ;;
+esac
+case "$RELAY_CMD" in
+  *SWMTKN*) echo "relay command must not carry the swarm join token" >&2; exit 1 ;;
 esac
 docker exec "$WRK_CID" sh -c "$RELAY_CMD"
 i=0

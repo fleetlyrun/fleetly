@@ -3,12 +3,12 @@ package swarm
 // exec 子面的 swarm 实现（F3.2，ADR-0049）：管理侧实例解析（ExecInstances =
 // 服务任务实时快照）、节点侧载体执行（ExecWorkload = 本地 daemon 的
 // docker exec——exec API 只落在持有容器的 daemon 上，节点代理是唯一
-// 抵达面）、凭证校验（ExecClusterToken = swarm join token 对照）。
-// 节点中继循环（RunNodeRelay）在 noderelay.go。
+// 抵达面）。中继鉴权自 H10 起是节点个体凭证（engine 校验
+// node_relay_credentials），Provider 不再对照 join token。节点中继循环
+//（RunNodeRelay）在 noderelay.go，中继材料（NodeRelayCommand）在 runtime.go。
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -74,22 +74,8 @@ func (p *Provider) ExecInstances(ctx context.Context, workloadID string) ([]capa
 	return rows, nil
 }
 
-// ExecClusterToken 实现 RuntimeExec：对照 swarm 活 join token（worker 与
-// manager 皆可——两者等价集群成员权，C3）。/v1/relay 与 /v1/platform/binary
-// 原生入口的鉴权单源。
-func (p *Provider) ExecClusterToken(ctx context.Context, token string) error {
-	if token == "" {
-		return errors.New("empty relay credential")
-	}
-	inspect, err := p.cli.SwarmInspect(ctx, client.SwarmInspectOptions{})
-	if err != nil {
-		return fmt.Errorf("swarm exec token: inspect: %w", err)
-	}
-	if token == inspect.Swarm.JoinTokens.Worker || token == inspect.Swarm.JoinTokens.Manager {
-		return nil
-	}
-	return errors.New("relay credential does not match an active swarm join token")
-}
+// ExecClusterToken 已随 H10 删除：join token 不再承担 relay 鉴权，鉴权
+// 面住 engine（节点个体凭证 hash + 内部 token）。
 
 // ExecWorkload 实现 RuntimeExec：本地 daemon 上解析（WorkloadID, Instance）
 // 的载体容器并 docker exec。TTY 形态单流（stdout 合流——PTY 语义）；
@@ -191,7 +177,7 @@ func (p *Provider) execContainer(ctx context.Context, workloadID, instance strin
 }
 
 // relayHTTPClient 是节点代理拨号 manager 的 HTTP 客户端（明文 VPC 形态，
-// ADR-0049 决策 2；代理安全承载 = join token）。
+// ADR-0049 决策 2；代理安全承载 = 节点个体凭证或控制面内部 token）。
 func relayHTTPClient() *http.Client {
 	return &http.Client{Transport: &http.Transport{
 		DisableKeepAlives: true, // 每次拨号独立连接（重连语义清晰）

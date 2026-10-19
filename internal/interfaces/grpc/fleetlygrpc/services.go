@@ -149,8 +149,8 @@ type Services struct {
 	// 注入——服务面不自带词表）。
 	ScopeVocabulary []string
 
-	// GatewayPort 是 REST gateway 端口（ADR-0049：EnrollNode 的 RelayCommand
-	// 拼装锚——装配期从配置注入，默认空 = 无中继装载脚本面）。
+	// GatewayPort 是 REST gateway 端口（H10：EnrollNode 定向中继材料的
+	// NodeRelayCommand 拼装锚——装配期从配置注入，默认空 = 无中继材料脚本面）。
 	GatewayPort string
 
 	Log *slog.Logger

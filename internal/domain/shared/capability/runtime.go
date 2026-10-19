@@ -50,18 +50,28 @@ type Runtime interface {
 	// Enrollment 生成节点加入材料（swarm join 材料；k8s 节点 kubelet
 	// 既有），含轮换。rotate=true 先作废全部现有材料（泄漏处置：旧
 	// token 即刻失效）再返回新材料——活材料等价集群成员权，动词面与
-	// 授权档位都按此敏感度对待（C3）。o 携带受理面上下文（ADR-0049：
-	// RelayCommand 拼装需要 gateway 可达锚——控制面配置口径，Provider
-	// 不读配置）。
+	// 授权档位都按此敏感度对待（C3）。材料只有集群加入面：节点中继材料
+	// 是 noded 个体凭证的定向动作（RuntimeRelayMaterial），不在初始
+	// enrollment 里产出（H10：join token 不再承担 relay 鉴权）。
 	Enrollment(ctx context.Context, rotate bool, o EnrollmentOptions) (EnrollKit, error)
 }
 
 // EnrollmentOptions 是 Enrollment 的受理面上下文。
 type EnrollmentOptions struct {
-	// GatewayPort 是 REST gateway 端口（RelayCommand 的 manager 基址
-	// 拼装锚：http://<swarm manager 广播地址>:<port>；明文 VPC 形态，
+	// GatewayPort 是 REST gateway 端口（RuntimeRelayMaterial 的 manager
+	// 基址拼装锚：http://<swarm manager 广播地址>:<port>；明文 VPC 形态，
 	// ADR-0049 决策 2）。
 	GatewayPort string
+}
+
+// RuntimeRelayMaterial 是节点中继材料的可选子面（H10 §4.4）：按已锚定
+// 节点渲染中继装载脚本。与 Enrollment 分立——初始 enroll 不再产中继
+// 材料，材料只在“节点已锚定 + 平台管理员定向铸造”时生成；脚本只含该
+// 节点个体凭证，不含 join token。
+type RuntimeRelayMaterial interface {
+	// NodeRelayCommand 渲染某节点的中继装载脚本；credential 是平台铸造的
+	// 个体凭证明文（调用方负责落 sha256，本面不持久化、不读库）。
+	NodeRelayCommand(ctx context.Context, credential string, o EnrollmentOptions) (string, error)
 }
 
 // RuntimeLogs 是日志子面（F0.25 `fleetly logs` 消费；按需实现）。
@@ -670,19 +680,15 @@ type NodeView struct {
 	Labels map[string]string
 }
 
-// EnrollKit 是节点加入材料（由 Runtime Provider 生成与轮换）。
+// EnrollKit 是节点加入材料（由 Runtime Provider 生成与轮换）。中继材料
+// 不在此（H10：按已锚定节点定向铸造，见 RuntimeRelayMaterial——join
+// token 退出 relay 鉴权面）。
 type EnrollKit struct {
 	// Command 是工作节点执行的完整加入命令（节点零平台安装物：加入材料
 	// 即全部所需）。
 	Command string
 	// ManagerCommand 是追加 manager 的加入命令（HA 扩容用；v1 延后）。
 	ManagerCommand string
-	// RelayCommand 是节点中继装载脚本（ADR-0049：busybox 载体 +
-	// /v1/platform/binary 下载 fleetlyd + docker cp 注入 + docker.sock
-	// 挂载跑 `fleetlyd relay`）。幂等——重跑即中继升级/修复通道。只跑
-	// Command 的节点集群面完整，exec 面不可用（relay_online=false 诚实
-	// 可见）。空 = Provider 无节点中继面（exec 子面同判）。
-	RelayCommand string
 	// ExpiresAt 是材料时效观测。
 	ExpiresAt time.Time
 }

@@ -30,10 +30,12 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * EnrollNode 输出工作节点加入材料（F0.20：节点零平台安装物）。活 join
-         *     token 等价集群成员权（不可逆），档位是 platform:admin（C3 收紧：
-         *     nodes:admin 只覆盖可逆运维面，不得白送集群钥匙）；rotate 先轮换
-         *     全部 join token（泄漏处置）再返回新材料。
+         * EnrollNode 是节点材料动词（F0.20：节点零平台安装物）。无参数 = 初始
+         *     join 材料（中继材料不再随初始 enrollment 产出——join token 退出 relay
+         *     鉴权面，节点锚定后按节点定向铸造）。活 join token 等价集群成员权
+         *     （不可逆），档位是 platform:admin（C3 收紧：nodes:admin 只覆盖可逆运维
+         *     面，不得白送集群钥匙）；rotate 先轮换全部 join token 并作废全部节点
+         *     relay 凭证（泄漏处置）再返回新材料。
          */
         post: operations["NodesService_EnrollNode"];
         delete?: never;
@@ -127,20 +129,24 @@ export interface components {
         v1DrainNodeResponse: Record<string, never>;
         v1EnrollNodeRequest: {
             /**
-             * rotate 先轮换全部 join token（worker+manager；泄漏处置：旧材料即刻
-             *     失效）再返回新材料。
+             * rotate 轮换 worker+manager join token，并作废全部节点 relay 凭证；
+             *     响应只含 join_command（relay_command 空）。与 node_id/revoke 互斥。
              */
             rotate?: boolean;
+            /**
+             * node_id 非空 = 针对该已锚定平台的 relay 材料动作（与 rotate 互斥）：
+             *       revoke=false：铸新 relay 凭证（旧凭证即刻失效）并返回 relay_command；
+             *       revoke=true ：只吊销该节点 relay 凭证，响应两命令皆空。
+             */
+            node_id?: string;
+            revoke?: boolean;
         };
         v1EnrollNodeResponse: {
-            /** join_command 是工作节点完整加入命令（swarm join 形态）。 */
+            /** join_command 是工作节点完整加入命令（仅 swarm 形态）。 */
             join_command?: string;
             /**
-             * relay_command 是节点中继装载脚本（ADR-0049：busybox 载体 +
-             *     /v1/platform/binary 下载 fleetlyd + docker cp 注入 + docker.sock 挂载
-             *     跑 `fleetlyd relay`；幂等——重跑即中继升级/修复通道）。join 语义不变：
-             *     只跑 join_command 的节点集群面完整，exec 面不可用（relay_online=false
-             *     诚实可见）。
+             * relay_command 是节点中继装载脚本（针对 node_id 铸造；含该节点个体凭证，
+             *     不再含 join token）。初始 enroll / rotate 时为空：先 join，再按节点取。
              */
             relay_command?: string;
         };

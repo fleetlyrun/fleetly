@@ -36,7 +36,10 @@ func (fakeExecFace) ExecWorkload(context.Context, capability.ExecWorkloadRequest
 	return 0, nil
 }
 func (fakeExecFace) RunNodeRelay(context.Context, capability.NodeRelayOptions) error { return nil }
-func (fakeExecFace) ExecClusterToken(context.Context, string) error                  { return nil }
+
+// testRelayCredential 是验收夹具的节点个体凭证（node-1/carrier-1 绑定；
+// H10：中继附着只认 node_relay_credentials 的 hash 或 engine 内部 token）。
+const testRelayCredential = "fltrelay_apitest_engine_fixture"
 
 // relaySink 是最小 RelayWriter（收帧不解析——本文件只要求中继在连；需观
 // 测帧类别时用 kinds 反解）。
@@ -98,8 +101,8 @@ func (s *firedSeam) len() int {
 }
 
 // newExecDomainEngine 建 exec 域可用的引擎底座：白盒注入 exec 面 + 节点
-// 锚定行 + after 缝（捕获 TTL 回调供手动触发）。中继由测试自行
-// RelayAttach（需持有 detach 与帧观测面的场景走此底层形态）。
+// 锚定行 + 节点个体凭证行 + after 缝（捕获 TTL 回调供手动触发）。中继由
+// 测试自行 RelayAttach（需持有 detach 与帧观测面的场景走此底层形态）。
 func newExecDomainEngine(t *testing.T) (*Engine, *firedSeam) {
 	t.Helper()
 	e, _, _ := newTestEngine(t)
@@ -107,16 +110,26 @@ func newExecDomainEngine(t *testing.T) (*Engine, *firedSeam) {
 	require.NoError(t, noderepo.New(e.clock, e.db.Runner()).Upsert(context.Background(), &node.Node{
 		PlatformID: "node-1", CarrierID: "carrier-1", Hostname: "h", Role: "manager", Available: true,
 	}))
+	seedRelayCredential(t, e, "node-1", "carrier-1", testRelayCredential)
 	fired := &firedSeam{}
 	fired.install(e)
 	return e, fired
+}
+
+// seedRelayCredential 落一行节点个体凭证（只经 repo 写 hash——与生产
+// 铸造面同款纪律）。
+func seedRelayCredential(t *testing.T, e *Engine, platformID, carrierID, secret string) {
+	t.Helper()
+	require.NoError(t, e.repos.Nodes.PutRelayCredential(context.Background(), &node.RelayCredential{
+		PlatformID: platformID, CarrierID: carrierID, SHA256: node.HashRelayCredential(secret),
+	}))
 }
 
 // attachExecRelay 便捷壳：carrier-1 上附着中继（帧观测走 relaySink 夹具），
 // detach 入 cleanup。
 func attachExecRelay(t *testing.T, e *Engine, rs *relaySink) {
 	t.Helper()
-	_, detach, err := e.RelayAttach(context.Background(), "any-token", "carrier-1", "t", rs)
+	_, detach, err := e.RelayAttach(context.Background(), testRelayCredential, "carrier-1", "t", rs)
 	require.NoError(t, err)
 	t.Cleanup(detach)
 }
@@ -352,14 +365,14 @@ func TestExecRecvEOFNotTermination(t *testing.T) {
 	assert.False(t, alive)
 }
 
-// TestExecRelayReplacementRepointsUnattached（P3-1 验收锚）：同节点中继
-// 顶替——已附着会话收口（relay_disconnected 如实告知），未附着会话重指
-// 新连接（白盒指针比对）；旧连接 detach 走身份校验，继任者与未附着会话
-// 不受牵连。
-func TestExecRelayReplacementRepointsUnattached(t *testing.T) {
+// TestRelayAttachReplacesSameNode（H10 §6 验收锚）：同节点中继顶替——
+// 同一凭证同一 carrier 再附着，已附着会话收口（relay_disconnected 如实
+// 告知），未附着会话重指新连接（白盒指针比对）；旧连接 detach 走身份
+// 校验，继任者与未附着会话不受牵连。
+func TestRelayAttachReplacesSameNode(t *testing.T) {
 	e, _ := newExecDomainEngine(t)
 	ctx := context.Background()
-	_, detachOld, err := e.RelayAttach(ctx, "any-token", "carrier-1", "v1", &relaySink{})
+	_, detachOld, err := e.RelayAttach(ctx, testRelayCredential, "carrier-1", "v1", &relaySink{})
 	require.NoError(t, err) // detachOld 不入 cleanup——测试内显式 detach 验身份校验
 
 	in := CreateExecInput{TeamID: "default", AppID: tAppID, Process: "web", Argv: []string{"sh"}}
@@ -383,7 +396,7 @@ func TestExecRelayReplacementRepointsUnattached(t *testing.T) {
 	e.exec.mu.Unlock()
 
 	// 同 carrier 新中继附着（顶替）。
-	_, detachNew, err := e.RelayAttach(ctx, "any-token", "carrier-1", "v2", &relaySink{})
+	_, detachNew, err := e.RelayAttach(ctx, testRelayCredential, "carrier-1", "v2", &relaySink{})
 	require.NoError(t, err)
 	t.Cleanup(detachNew)
 
@@ -482,4 +495,85 @@ func TestExecExitFrameClosesAndFinishIdempotent(t *testing.T) {
 	// 幂等：重复 finish 无 panic（closed 已置位短路）。
 	e.exec.finish(s, nil)
 	e.exec.finish(s, nil)
+}
+
+// TestRelayAttachRejectsJoinToken（H10 §6 验收锚）：join token 不再是
+// relay 凭证——RelayAttach 与 ValidateRelayCredential 都拒绝；内部 token
+// 仍被信任（控制面进程内中继），空凭证拒绝。
+func TestRelayAttachRejectsJoinToken(t *testing.T) {
+	e, _ := newExecDomainEngine(t)
+	ctx := context.Background()
+
+	// swarm join token 形态（真实形态 SWMTKN-* 与夹具的 TESTTOKEN 同判）。
+	for _, joinToken := range []string{"TESTTOKEN", "SWMTKN-1-abc"} {
+		_, _, err := e.RelayAttach(ctx, joinToken, "carrier-1", "v1", &relaySink{})
+		require.ErrorIs(t, err, ErrExecRelayUnauthorized,
+			"join token %q must not authenticate a relay", joinToken)
+		require.ErrorIs(t, e.ValidateRelayCredential(ctx, joinToken), ErrExecRelayUnauthorized)
+	}
+
+	// 空凭证拒绝。
+	require.ErrorIs(t, e.ValidateRelayCredential(ctx, ""), ErrExecRelayUnauthorized)
+
+	// 合法节点个体凭证与内部 token 通过；未锚定 carrier 的内部 token
+	// 附着仍按锚定校验（内部面只免凭证面，不免锚定面）。
+	require.NoError(t, e.ValidateRelayCredential(ctx, testRelayCredential))
+	internal, err := e.RelayInternalCredential(ctx, "carrier-1")
+	require.NoError(t, err)
+	require.NoError(t, e.ValidateRelayCredential(ctx, internal))
+	_, detach, err := e.RelayAttach(ctx, internal, "carrier-1", "v1", &relaySink{})
+	require.NoError(t, err)
+	detach()
+
+	// 失败路径不留连接（join token 被拒后 relays 为空）。
+	e.exec.mu.Lock()
+	_, online := e.exec.relays["node-1"]
+	e.exec.mu.Unlock()
+	assert.False(t, online, "a rejected credential must not register a relay")
+}
+
+// TestRelayAttachRejectsOtherCarrier（H10 §6 验收锚）：节点 A 的凭证 +
+// hello 声明已锚定的节点 B carrier → ErrExecRelayUnauthorized（凭证绑定
+// 轴与 hello 解析出的节点双向不匹配）；B 无连接，已有 A 连接不受影响。
+func TestRelayAttachRejectsOtherCarrier(t *testing.T) {
+	e, _ := newExecDomainEngine(t)
+	ctx := context.Background()
+	require.NoError(t, e.repos.Nodes.Upsert(ctx, &node.Node{
+		PlatformID: "node-2", CarrierID: "carrier-2", Hostname: "h2", Role: "worker", Available: true,
+	}))
+
+	// A 正常附着。
+	aSink := &relaySink{}
+	_, detachA, err := e.RelayAttach(ctx, testRelayCredential, "carrier-1", "v1", aSink)
+	require.NoError(t, err)
+	t.Cleanup(detachA)
+
+	// A 的凭证冒充 B：拒。
+	_, _, err = e.RelayAttach(ctx, testRelayCredential, "carrier-2", "v1", &relaySink{})
+	require.ErrorIs(t, err, ErrExecRelayUnauthorized,
+		"a credential bound to one carrier must not attach as another carrier")
+
+	e.exec.mu.Lock()
+	a := e.exec.relays["node-1"]
+	_, bOnline := e.exec.relays["node-2"]
+	e.exec.mu.Unlock()
+	assert.NotNil(t, a, "the existing A connection must stay registered")
+	assert.False(t, bOnline, "the rejected connection must not be registered under B")
+}
+
+// TestRelayAttachRejectsUnanchoredCarrier（H10 §6 验收锚）：凭证行存在但
+// ByCarrier 无行（节点尚未锚定）→ ErrExecNodeUnanchored。
+func TestRelayAttachRejectsUnanchoredCarrier(t *testing.T) {
+	e, _ := newExecDomainEngine(t)
+	ctx := context.Background()
+	seedRelayCredential(t, e, "node-orphan", "carrier-orphan", "fltrelay_orphan_credential")
+
+	_, _, err := e.RelayAttach(ctx, "fltrelay_orphan_credential", "carrier-orphan", "v1", &relaySink{})
+	require.ErrorIs(t, err, ErrExecNodeUnanchored,
+		"a credential row without an anchored carrier must fail on the anchoring axis")
+
+	e.exec.mu.Lock()
+	_, online := e.exec.relays["node-orphan"]
+	e.exec.mu.Unlock()
+	assert.False(t, online)
 }

@@ -4,6 +4,7 @@ package fleetlygrpc
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"slices"
 	"strconv"
@@ -15,6 +16,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
+	"github.com/fleetlyrun/fleetly/internal/domain/runtimeops/node"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -79,30 +81,48 @@ func (svc *NodesService) ListNodeContainers(ctx context.Context, req *runtimev1.
 	return out, nil
 }
 
+// EnrollNode 是节点材料动词（H10 §4.4 三分支）：无参数 = 初始 join；rotate
+// = 轮换 join token + 作废全部节点 relay 凭证并断开在连中继；node_id 定向
+// = 为该已锚定节点铸造个体 relay 凭证（revoke=false）或吊销（revoke=true）。
+// 平台管理员门（R08-H1）：join token 等价集群成员权，`nodes:admin` 只覆盖
+// 可逆运维面，不得白送集群钥匙；门在审计与 Runtime 副作用之前（拒绝零
+// 副作用）。
 func (svc *NodesService) EnrollNode(ctx context.Context, req *runtimev1.EnrollNodeRequest) (*runtimev1.EnrollNodeResponse, error) {
-	// 平台管理员门（R08-H1）：加入材料（含 rotate 作废全部既有材料）是
-	// 集群面敏感动作——任何 Team 的 builtin-admin 携带 platform:admin 也
-	// 不得触达；门在审计与 Runtime 副作用之前（拒绝零副作用）。
 	if err := RequirePlatformAdmin(ctx); err != nil {
 		return nil, err
 	}
-	// 材料生成与轮换都是集群面敏感动作：审计如实区分（EnrollNode 是
-	// platform:admin 档，C3）。
-	action := "node.enroll"
-	if req.GetRotate() {
-		action = "node.rotate_join_tokens"
+	rotate, nodeID, revoke := req.GetRotate(), req.GetNodeId(), req.GetRevoke()
+	// 参数组合校验（拒绝零副作用）：rotate 与定向动作互斥；revoke 必须
+	// 带 node_id（无锚点的吊销无对象）。
+	if rotate && (nodeID != "" || revoke) {
+		return nil, apperr.New("E_INVALID_ARGUMENT", "rotate cannot be combined with node_id or revoke")
 	}
-	// 轮换是破坏性动作（全部既有 join token 作废）：先审计后轮换
-	//（N0.1 P2-11）——审计落账失败时材料绝不作废；轮换失败时审计已在
-	// 场（意图可见，比"已轮换无痕"诚实）。普通材料生成只读，同样先记
-	// 后做不损失语义（读取意图本身敏感）。
+	if revoke && nodeID == "" {
+		return nil, apperr.New("E_INVALID_ARGUMENT", "revoke requires node_id")
+	}
+	switch {
+	case rotate:
+		return svc.enrollRotate(ctx)
+	case nodeID == "":
+		return svc.enrollInitial(ctx)
+	case revoke:
+		return svc.enrollRelayRevoke(ctx, nodeID)
+	default:
+		return svc.enrollRelayMaterial(ctx, nodeID)
+	}
+}
+
+// enrollInitial 是初始 enrollment：只返回 join 命令（H10：中继材料不再随
+// 初始 enrollment 产出——join token 退出 relay 鉴权面；节点锚定后按节点
+// 定向铸造）。材料生成是敏感读+写意图，先审计后生成（N0.1 P2-11）。
+func (svc *NodesService) enrollInitial(ctx context.Context) (*runtimev1.EnrollNodeResponse, error) {
 	if err := svc.s.commit(ctx, writeFact{
 		facts: []func() writes.FactRow{
 			// 双真偏离（仅取证面）：集群材料动词未入事件流（node 聚合的
 			// 流面只铺 joined/left 迁移；A 化前亦无事件行，行集合零漂移）。
 			func() writes.FactRow {
 				return writes.FactRow{
-					Action: action, Resource: "cluster/join-material",
+					Action: "node.enroll", Resource: "cluster/join-material",
 					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
 					LedgerOnly: true,
 				}
@@ -111,11 +131,150 @@ func (svc *NodesService) EnrollNode(ctx context.Context, req *runtimev1.EnrollNo
 	}); err != nil {
 		return nil, err
 	}
-	kit, err := svc.s.Runtime.Enrollment(ctx, req.GetRotate(), capability.EnrollmentOptions{GatewayPort: svc.s.GatewayPort})
+	kit, err := svc.s.Runtime.Enrollment(ctx, false, capability.EnrollmentOptions{GatewayPort: svc.s.GatewayPort})
 	if err != nil {
 		return nil, mapStateError(err, "enrollment")
 	}
-	return &runtimev1.EnrollNodeResponse{JoinCommand: kit.Command, RelayCommand: kit.RelayCommand}, nil
+	return &runtimev1.EnrollNodeResponse{JoinCommand: kit.Command}, nil
+}
+
+// enrollRotate 是泄漏处置面（H10 §4.4 步骤 3 / §4.6）：Runtime 轮换是外部
+// 副作用，先于 DB 事务（事务失败时 join token 已轮换、旧 relay 凭证仍在，
+// 重试或逐节点重铸均可收敛，错误如实上抛）；事务删全部 relay 凭证 + 审计；
+// 提交后断开全部在连中继（先让凭证失效，再断连接；即使断开失败，重连也
+// 会 401）。
+func (svc *NodesService) enrollRotate(ctx context.Context) (*runtimev1.EnrollNodeResponse, error) {
+	kit, err := svc.s.Runtime.Enrollment(ctx, true, capability.EnrollmentOptions{GatewayPort: svc.s.GatewayPort})
+	if err != nil {
+		return nil, mapStateError(err, "enrollment")
+	}
+	if err := svc.s.commit(ctx, writeFact{
+		write: func(ctx context.Context, st transact.Stores) error {
+			return st.Nodes.DeleteAllRelayCredentials(ctx)
+		},
+		facts: []func() writes.FactRow{
+			// 双真偏离（仅取证面）：集群材料动词未入事件流（node 聚合的
+			// 流面只铺 joined/left 迁移；A 化前亦无事件行，行集合零漂移）。
+			// relay 凭证全量作废是 auth 材料吊销，不是聚合状态迁移。
+			func() writes.FactRow {
+				return writes.FactRow{
+					Action: "node.rotate_join_tokens", Resource: "cluster/join-material",
+					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+					LedgerOnly: true,
+					Detail:     auditDetailJSON(map[string]any{"relay_credentials_revoked": true}),
+				}
+			},
+		},
+	}); err != nil {
+		return nil, err
+	}
+	svc.s.Engine.DropAllRelays()
+	return &runtimev1.EnrollNodeResponse{JoinCommand: kit.Command}, nil
+}
+
+// enrollRelayMaterial 为已锚定节点铸造个体 relay 凭证（H10 §4.4 步骤 5）：
+// 节点行 → manager/空 carrier 拒绝 → RuntimeRelayMaterial face（k3s 无 →
+// 501）→ 铸材质 → 渲染脚本（事务前，无副作用）→ 事务 UPSERT hash + 审计
+// → 断开该节点旧连接（重铸即断，旧凭证即刻失效）。
+func (svc *NodesService) enrollRelayMaterial(ctx context.Context, nodeID string) (*runtimev1.EnrollNodeResponse, error) {
+	n, err := svc.s.Nodes.Get(ctx, nodeID)
+	if err != nil {
+		return nil, mapStateError(err, "node")
+	}
+	// manager 的 relay 由进程内回环承载，节点侧脚本会造成双 relay 抖动；
+	// 空 carrier 无法绑定（凭证的 carrier 轴没有值）。
+	if n.CarrierID == "" || n.Role == "manager" {
+		return nil, apperr.New("E_INVALID_ARGUMENT",
+			"node %s cannot receive relay material: manager nodes run the in-process relay and a node without a carrier id cannot be bound",
+			nodeID)
+	}
+	face := capability.FacesOf(svc.s.Runtime).RelayMaterial
+	if face == nil {
+		// 可选子面缺席是 honest failure：k3s 集中形态无节点侧材料。
+		return nil, apperr.New("E_RUNTIME_FACE_UNSUPPORTED", "the runtime provider does not expose node relay material")
+	}
+	material, err := node.NewRelayCredential()
+	if err != nil {
+		return nil, apperr.New("E_INTERNAL", "node relay credential could not be minted").WithCause(err)
+	}
+	script, err := face.NodeRelayCommand(ctx, material.Secret, capability.EnrollmentOptions{GatewayPort: svc.s.GatewayPort})
+	if err != nil {
+		return nil, mapStateError(err, "relay material")
+	}
+	// 事务失败不返回脚本（脚本是单次可见的明文材料——不落库、不回显）。
+	carrierID, prefix := n.CarrierID, material.Prefix
+	if err := svc.s.commit(ctx, writeFact{
+		write: func(ctx context.Context, st transact.Stores) error {
+			return st.Nodes.PutRelayCredential(ctx, &node.RelayCredential{
+				PlatformID: n.PlatformID, CarrierID: carrierID, SHA256: material.SHA256,
+			})
+		},
+		facts: []func() writes.FactRow{
+			// 双真偏离（仅取证面）：auth 材料铸造不是聚合状态迁移，无 outbox
+			// 孪生事件；Detail 只带 carrier 与明文前缀（绝不落明文/完整 sha）。
+			func() writes.FactRow {
+				return writes.FactRow{
+					Action: "node.relay_credential_issued", Resource: "node/" + n.PlatformID,
+					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+					LedgerOnly: true,
+					Detail: auditDetailJSON(map[string]string{
+						"carrier_id": carrierID, "prefix": prefix,
+					}),
+				}
+			},
+		},
+	}); err != nil {
+		return nil, err
+	}
+	svc.s.Engine.DropRelay(n.PlatformID)
+	return &runtimev1.EnrollNodeResponse{RelayCommand: script}, nil
+}
+
+// enrollRelayRevoke 吊销单节点 relay 凭证（H10 §4.4 步骤 6）：无行 = 幂等
+// 成功且不写审计（无删除事实）；实际删行才落 node.relay_credential_revoked
+// （Detail: carrier_id, reason="manual"）并断开该节点在连中继。不要求
+// RuntimeRelayMaterial face（k3s 空删幂等；runtime 换届后也可清理存量行）。
+func (svc *NodesService) enrollRelayRevoke(ctx context.Context, nodeID string) (*runtimev1.EnrollNodeResponse, error) {
+	n, err := svc.s.Nodes.Get(ctx, nodeID)
+	if err != nil {
+		return nil, mapStateError(err, "node")
+	}
+	carrierID := n.CarrierID
+	if err := svc.s.commit(ctx, writeFact{
+		write: func(ctx context.Context, st transact.Stores) error {
+			deleted, err := st.Nodes.DeleteRelayCredential(ctx, nodeID)
+			if err != nil || !deleted {
+				return err
+			}
+			// 条件事实：只有实际删行才有删除事实可记（幂等空删不写审计）。
+			// writeFact.facts 声明是前定的、逐条必发——条件分支只能在写段
+			// 内以同一事务的 kernel 调用表达（不导出新的声明面）。
+			return writes.Sequence(ctx, svc.s.factRepos(st), func() writes.FactRow {
+				// 双真偏离（仅取证面）：auth 材料吊销不是聚合状态迁移，无
+				// outbox 孪生事件；Detail 只带 carrier 与吊销原因。
+				return writes.FactRow{
+					Action: "node.relay_credential_revoked", Resource: "node/" + nodeID,
+					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+					LedgerOnly: true,
+					Detail:     auditDetailJSON(map[string]string{"carrier_id": carrierID, "reason": "manual"}),
+				}
+			})
+		},
+	}); err != nil {
+		return nil, err
+	}
+	svc.s.Engine.DropRelay(nodeID)
+	return &runtimev1.EnrollNodeResponse{}, nil
+}
+
+// auditDetailJSON 编码审计 Detail（结构受控；编码失败退回空串——审计行
+// 仍落，动作可见性不因 Detail 缺失而丢失）。
+func auditDetailJSON(v any) string {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return ""
+	}
+	return string(b)
 }
 
 // DrainNode 把节点置为排空（F0.19 RuntimeAdmin 面；平台节点 ID 为锚）。

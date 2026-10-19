@@ -131,3 +131,85 @@ func TestUpsertWriteGuard(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, state.FormatTime(clock.Now()), row.LastSeenAt)
 }
+
+// TestRelayCredentialHashAtRest（H10 §6 验收锚）：库内只落 sha256——明文
+// 查不到、表行是 64 hex 且不等于明文、全行扫描不含 fltrelay_ 前缀；
+// UPSERT 重铸使旧 hash 永久失效；单节点空删幂等、全删清表。
+func TestRelayCredentialHashAtRest(t *testing.T) {
+	db, clock := statetest.New(t)
+	ctx := context.Background()
+	nodes := noderepo.New(clock, db.Runner())
+
+	mat, err := node.NewRelayCredential()
+	require.NoError(t, err)
+	require.NotEmpty(t, mat.Secret)
+
+	require.NoError(t, nodes.PutRelayCredential(ctx, &node.RelayCredential{
+		PlatformID: "node-a", CarrierID: "carrier-a", SHA256: mat.SHA256,
+	}))
+
+	// 明文不是可查询键（库里没有明文，也没有对应行）。
+	_, err = nodes.RelayCredentialBySHA256(ctx, mat.Secret)
+	assert.ErrorIs(t, err, state.ErrNotFound, "the plaintext must never be a query key")
+
+	// hash 查得到，身份绑定轴如实回读。
+	got, err := nodes.RelayCredentialBySHA256(ctx, node.HashRelayCredential(mat.Secret))
+	require.NoError(t, err)
+	assert.Equal(t, "node-a", got.PlatformID)
+	assert.Equal(t, "carrier-a", got.CarrierID)
+	assert.Equal(t, mat.SHA256, got.SHA256)
+	assert.NotEmpty(t, got.CreatedAt)
+
+	// 表行形态：secret_sha256 为 64 hex，且全行扫描不含明文前缀。
+	var platformID, carrierID, secretSHA, createdAt string
+	require.NoError(t, db.Runner().QueryRowContext(ctx, `
+		SELECT platform_id, carrier_id, secret_sha256, created_at
+		FROM node_relay_credentials WHERE platform_id = 'node-a'`).
+		Scan(&platformID, &carrierID, &secretSHA, &createdAt))
+	assert.Len(t, secretSHA, 64, "stored material must be a sha256 hex digest")
+	assert.Regexp(t, `^[0-9a-f]{64}$`, secretSHA)
+	assert.NotEqual(t, mat.Secret, secretSHA)
+	assert.NotEqual(t, mat.Secret, platformID)
+	assert.NotEqual(t, mat.Secret, carrierID)
+	assert.NotEqual(t, mat.Secret, createdAt)
+	assert.NotContains(t, platformID+carrierID+secretSHA+createdAt, node.RelayCredentialPrefix,
+		"no row column may carry the plaintext prefix")
+
+	// 重铸 = UPSERT 替换：旧 hash 永久失效，新 hash 命中同一身份行。
+	rotated, err := node.NewRelayCredential()
+	require.NoError(t, err)
+	require.NoError(t, nodes.PutRelayCredential(ctx, &node.RelayCredential{
+		PlatformID: "node-a", CarrierID: "carrier-a", SHA256: rotated.SHA256,
+	}))
+	_, err = nodes.RelayCredentialBySHA256(ctx, mat.SHA256)
+	assert.ErrorIs(t, err, state.ErrNotFound, "reissue must invalidate the old hash at once")
+	got, err = nodes.RelayCredentialBySHA256(ctx, rotated.SHA256)
+	require.NoError(t, err)
+	assert.Equal(t, "node-a", got.PlatformID)
+
+	// 单节点空删幂等；删后 hash 不可查。
+	require.NoError(t, nodes.PutRelayCredential(ctx, &node.RelayCredential{
+		PlatformID: "node-b", CarrierID: "carrier-b", SHA256: mustCredentialHash(t),
+	}))
+	deleted, err := nodes.DeleteRelayCredential(ctx, "node-b")
+	require.NoError(t, err)
+	assert.True(t, deleted)
+	deleted, err = nodes.DeleteRelayCredential(ctx, "node-b")
+	require.NoError(t, err)
+	assert.False(t, deleted, "deleting a missing credential is an idempotent no-op")
+
+	// 全删清表。
+	require.NoError(t, nodes.DeleteAllRelayCredentials(ctx))
+	var n int
+	require.NoError(t, db.Runner().QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM node_relay_credentials`).Scan(&n))
+	assert.Zero(t, n)
+}
+
+// mustCredentialHash 铸一枚仅用于库内行的 hash（材质生成不触库）。
+func mustCredentialHash(t *testing.T) string {
+	t.Helper()
+	mat, err := node.NewRelayCredential()
+	require.NoError(t, err)
+	return mat.SHA256
+}

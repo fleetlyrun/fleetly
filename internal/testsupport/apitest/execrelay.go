@@ -33,9 +33,15 @@ type fakeRelaySession struct {
 	cancel context.CancelFunc
 }
 
+// FakeRelayCredential 是假中继的节点个体凭证（H10：中继附着只认
+// node_relay_credentials 的 sha256 行或 engine 内部 token——假中继先种行
+// 再用它附着；join token TESTTOKEN 不再可用）。
+const FakeRelayCredential = "fltrelay_apitest_relay_fixture"
+
 // AttachFakeRelay 把假中继接入 hub 并确保载体节点已锚定（nodes 表
 // 预置——CreateSession 的 ByCarrier 反查前提；DescribeCluster 假身份
-// 同源）。返回值是 detach（测试收口）。
+// 同源）+ 节点个体凭证行（RelayAttach 的 sha256 校验前提）。返回值是
+// detach（测试收口）。
 func AttachFakeRelay(ctx context.Context, h *Harness) (detach func()) {
 	a := &fakeRelay{rt: h.Runtime, sessions: map[string]*fakeRelaySession{}}
 
@@ -44,7 +50,13 @@ func AttachFakeRelay(ctx context.Context, h *Harness) (detach func()) {
 	}); err != nil {
 		panic("apitest: seed node: " + err.Error())
 	}
-	feed, detachHub, err := h.Engine.RelayAttach(ctx, "TESTTOKEN", FakeExecCarrier, "test-relay", &fakeRelayWriter{a: a})
+	if err := h.Services.Nodes.PutRelayCredential(ctx, &node.RelayCredential{
+		PlatformID: FakeExecNode, CarrierID: FakeExecCarrier,
+		SHA256: node.HashRelayCredential(FakeRelayCredential),
+	}); err != nil {
+		panic("apitest: seed relay credential: " + err.Error())
+	}
+	feed, detachHub, err := h.Engine.RelayAttach(ctx, FakeRelayCredential, FakeExecCarrier, "test-relay", &fakeRelayWriter{a: a})
 	if err != nil {
 		panic("apitest: attach fake relay: " + err.Error())
 	}

@@ -10,9 +10,13 @@ import (
 
 // RuntimeExec 是 exec 子面（F3.2，ADR-0049）：进入运行中 Workload 载体的
 // 会话。Provider 贡献三件编排器原语——管理侧实例解析（ExecTarget）、节点
-// 侧载体执行（ExecWorkload）、节点中继（RunNodeRelay + 凭证校验）；
+// 侧载体执行（ExecWorkload）、节点中继（RunNodeRelay + 节点凭证回调）；
 // 会话语义（受理/限额/审计/票据/路由/超时）住 engine，不经 Runtime。
 // 未实现时 exec 受理诚实失败（E_EXEC_UNSUPPORTED，无降级路径）。
+//
+// 中继鉴权自 H10 起是节点个体凭证（node_relay_credentials 的 sha256）与
+// 控制面内部 token——join token 不再承担 relay 鉴权，故本面无凭证校验
+// 方法（校验面住 engine：/v1/relay 与 /v1/platform/binary 共用）。
 type RuntimeExec interface {
 	// ExecInstances 管理侧实时解析 Workload 的全部在跑实例（快照语义：
 	// 每次调用直读任务/_pod 列表——观测缓存不参与决策）。行序按实例 ID
@@ -32,11 +36,6 @@ type RuntimeExec interface {
 	// 握手上报载体节点身份，随后收发会话帧（多路复用，帧协议见 execwire
 	// 单源）。阻塞直至 ctx 结束或不可恢复错误；调用方负责重连节拍。
 	RunNodeRelay(ctx context.Context, o NodeRelayOptions) error
-
-	// ExecClusterToken 校验中继凭证（swarm join token 对照——集群成员权
-	// 等价，C3；manager 回环中继与节点中继同面）。/v1/relay 与
-	// /v1/platform/binary 两个原生入口的鉴权单源。
-	ExecClusterToken(ctx context.Context, token string) error
 }
 
 // ExecTargetInstance 是 ExecInstances 的一行在跑实例观测（受理锚定与
@@ -79,9 +78,11 @@ type NodeRelayOptions struct {
 	// GatewayURL 是控制面 gateway 基址（如 http://10.0.0.3:9081；节点
 	// 零入站端口——中继出站拨号唯一通道）。
 	GatewayURL string
-	// JoinToken 取中继凭证（每次拨号前调用——manager 回环中继借此在
-	// rotate 后自愈取新 token；worker 中继返回启动注入的固定值）。
-	JoinToken func(ctx context.Context) (string, error)
+	// Credential 取中继凭证（每次拨号前调用；carrierNodeID 是本机载体
+	// 节点标识——实现须先确定 carrier 再回调：swarm 先 docker info、k3s
+	// 用 nodeName）。回环形态按 carrier 取 engine 内部 token；worker 形态
+	// 返回启动注入的固定节点个体凭证（fleetlyd --relay-credential）。
+	Credential func(ctx context.Context, carrierNodeID string) (string, error)
 	// Version 是握手上报的平台版本（节点视图回显；帧协议只增，
 	// 滞后中继照常受理）。
 	Version string

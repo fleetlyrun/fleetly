@@ -22,6 +22,10 @@ type ProviderFaces struct {
 	// Exec 是 exec 子面（F3.2，ADR-0049：会话进载体；未实现时 exec 受理
 	// 诚实失败 E_EXEC_UNSUPPORTED——无降级路径）。
 	Exec RuntimeExec
+	// RelayMaterial 是节点中继材料子面（H10：按已锚定节点定向铸造脚本；
+	// 未实现时定向材料请求精确失败 E_RUNTIME_FACE_UNSUPPORTED——k3s 集中
+	// 形态无节点侧材料，其节点行在 CLI/Console 不提供该动作）。
+	RelayMaterial RuntimeRelayMaterial
 	// NodeInspect 是节点观测子面（按平台节点 ID 实时列在跑容器；未实现时
 	// 列表面精确失败 E_RUNTIME_FACE_UNSUPPORTED）。
 	NodeInspect RuntimeNodeInspect
@@ -61,6 +65,9 @@ func FacesOf(p Provider) ProviderFaces {
 	}
 	if v, ok := p.(RuntimeExec); ok {
 		f.Exec = v
+	}
+	if v, ok := p.(RuntimeRelayMaterial); ok {
+		f.RelayMaterial = v
 	}
 	if v, ok := p.(RuntimeNodeInspect); ok {
 		f.NodeInspect = v
@@ -110,6 +117,9 @@ func (f ProviderFaces) Offered() []string {
 	}
 	if f.Exec != nil {
 		out = append(out, "exec")
+	}
+	if f.RelayMaterial != nil {
+		out = append(out, "relay_material")
 	}
 	if f.NodeInspect != nil {
 		out = append(out, "node-inspect")

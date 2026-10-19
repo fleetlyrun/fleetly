@@ -571,8 +571,8 @@ func relayLoopbackURL(httpAddr string) string {
 	return "http://" + host + ":" + port
 }
 
-// gatewayPort 从 gateway 绑定地址取端口段（EnrollNode 的 RelayCommand
-// 拼装锚；空 = 无代理装载脚本面）。
+// gatewayPort 从 gateway 绑定地址取端口段（EnrollNode 定向中继材料的
+// NodeRelayCommand 拼装锚；空 = 无中继材料面）。
 func gatewayPort(httpAddr string) string {
 	_, port, err := net.SplitHostPort(httpAddr)
 	if err != nil {
@@ -655,7 +655,7 @@ func NewAPIDeps(db *persistence.DB, bind transact.Binder, e *engine.Engine, ciph
 }
 
 // NewAPIServices 构造六上下文 API 服务依赖集（scope 词表单一源注入；
-// gateway 端口 = EnrollNode 的 RelayCommand 拼装锚，ADR-0049）。
+// gateway 端口 = 定向中继材料的 NodeRelayCommand 拼装锚，H10）。
 func NewAPIServices(db *persistence.DB, bind transact.Binder, e *engine.Engine, cipher *material.Cipher, rt capability.Runtime, cfg *config.AppConfig, app lynx.App) *fleetlygrpc.Services {
 	s := fleetlygrpc.NewServices(NewAPIDeps(db, bind, e, cipher, rt, cfg.DataRoot(), ScopeResources(), app.Logger()))
 	s.GatewayPort = gatewayPort(cfg.HTTPAddr())

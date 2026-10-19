@@ -273,8 +273,9 @@ func TestAdvertiseServerURL(t *testing.T) {
 	assert.Equal(t, "https://k3s-lab:6443", p3.advertiseServerURL(context.Background()))
 }
 
-// TestEnrollmentCommandShape：join 命令形态锚(advertise server + token;
-// RelayCommand 恒空 = 集中形态无节点中继面)。
+// TestEnrollmentCommandShape：join 命令形态锚（advertise server + token）
+// + 集中形态无节点中继材料面（H10：RuntimeRelayMaterial 缺席 → handler
+// 定向材料请求 501）。
 func TestEnrollmentCommandShape(t *testing.T) {
 	tokFile := t.TempDir() + "/node-token"
 	require.NoError(t, os.WriteFile(tokFile, []byte("K10abc::worker:secret\n"), 0o600))
@@ -288,19 +289,9 @@ func TestEnrollmentCommandShape(t *testing.T) {
 	kit, err := p.Enrollment(context.Background(), false, capability.EnrollmentOptions{})
 	require.NoError(t, err)
 	assert.Contains(t, kit.Command, "k3s agent --server https://10.0.0.3:6443 --token K10abc::worker:secret")
-	assert.Empty(t, kit.RelayCommand, "central exec form carries no node-side relay face")
+	assert.Nil(t, capability.FacesOf(p).RelayMaterial,
+		"central exec form carries no node-side relay material face")
 
 	_, err = p.Enrollment(context.Background(), true, capability.EnrollmentOptions{})
 	require.Error(t, err, "rotate must fail honestly (k3s server-side operation)")
-}
-
-// TestExecClusterToken：node token 对照面（同源文件;不匹配即拒）。
-func TestExecClusterToken(t *testing.T) {
-	tokFile := t.TempDir() + "/node-token"
-	require.NoError(t, os.WriteFile(tokFile, []byte("K10abc\n"), 0o600))
-	p, _ := newFakeProvider()
-	p.nodeTokenPath = tokFile
-	require.NoError(t, p.ExecClusterToken(context.Background(), "K10abc"))
-	require.Error(t, p.ExecClusterToken(context.Background(), "K10other"))
-	require.Error(t, p.ExecClusterToken(context.Background(), ""))
 }

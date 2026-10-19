@@ -80,7 +80,7 @@ type Provider struct {
 
 // 编译期契约断言：核心面 + 五个子面（F0.19 全契约；C-10 补 Inspector 面
 // ——缺此断言则接口改名时静默降级 gen-only 无红灯；ADR-0039 补 Utility；
-// NodeInspect 补节点观测面）。
+// NodeInspect 补节点观测面；H10 补中继材料子面）。
 var (
 	_ capability.Runtime                   = (*Provider)(nil)
 	_ capability.RuntimeLogs               = (*Provider)(nil)
@@ -90,6 +90,7 @@ var (
 	_ capability.RuntimeUtility            = (*Provider)(nil)
 	_ capability.RuntimeNetworkMaintenance = (*Provider)(nil)
 	_ capability.RuntimeNodeInspect        = (*Provider)(nil)
+	_ capability.RuntimeRelayMaterial      = (*Provider)(nil)
 )
 
 // New 构造 Provider：host 为 daemon 端点（空 = DOCKER_HOST / 默认套接字）。

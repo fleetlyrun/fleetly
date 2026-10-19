@@ -51,6 +51,9 @@ func (p *fakeFaceProvider) EndpointForProject(context.Context, string) (Registry
 	return RegistryEndpoint{}, nil
 }
 func (p *fakeFaceProvider) ManagedMaterialsFor([]string) Materials { return Materials{} }
+func (p *fakeFaceProvider) NodeRelayCommand(context.Context, string, EnrollmentOptions) (string, error) {
+	return "", nil
+}
 
 func TestFacesOfAllOffered(t *testing.T) {
 	p := &fakeFaceProvider{}
@@ -61,12 +64,13 @@ func TestFacesOfAllOffered(t *testing.T) {
 	assert.NotNil(t, f.Hygiene)
 	assert.NotNil(t, f.Utility)
 	assert.NotNil(t, f.NetworkMaintenance)
+	assert.NotNil(t, f.RelayMaterial)
 	assert.NotNil(t, f.Managed)
 	assert.NotNil(t, f.MaterialsSource)
 	assert.NotNil(t, f.ConfigSource)
 	assert.NotNil(t, f.ProjectEndpoints)
 	assert.NotNil(t, f.ProjectScopedMaterials)
-	assert.Equal(t, []string{"logs", "admin", "inspector", "hygiene", "utility", "network-maintenance", "managed", "materials", "config",
+	assert.Equal(t, []string{"logs", "admin", "inspector", "hygiene", "utility", "network-maintenance", "relay_material", "managed", "materials", "config",
 		"project-endpoints", "project-materials"},
 		f.Offered(), "enumeration order is frozen")
 }
@@ -83,6 +87,7 @@ func TestFacesOfNoneOffered(t *testing.T) {
 	assert.Nil(t, f.Admin)
 	assert.Nil(t, f.Inspector)
 	assert.Nil(t, f.Hygiene)
+	assert.Nil(t, f.RelayMaterial)
 	assert.Nil(t, f.Managed)
 	assert.Nil(t, f.MaterialsSource)
 	assert.Nil(t, f.ConfigSource)
