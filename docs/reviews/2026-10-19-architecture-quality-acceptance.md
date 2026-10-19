@@ -406,29 +406,35 @@
 
 ---
 
-## 11. 修复执行状态（2026-10-19，S1-S5；本地 commit，未 push）
+## 11. 修复执行状态（2026-10-19，S1-S11；已 push `origin/main`）
 
-排期与验收记录：`docs/plan/2026-10-19-review-remediation.md`。执行方式：子代理逐阶段实现 + Lead 亲验验收门 + 每阶段本地还原点 commit（共 5 个还原点，HEAD 见 git log）。终验：全量测试/构建/守卫见下。
+排期与逐阶段验收记录：`docs/plan/2026-10-19-review-remediation.md`；H8/H10 设计：`docs/design/2026-10-19-security-backlog-design.md`。执行方式：子代理逐阶段实现 + Lead 亲验验收门 + 每阶段还原点 commit + push（S1-S11 共 14 个功能/文档还原点，HEAD 见 git log）。
 
 | 阶段 | commit | 覆盖发现 | 验收证据（Lead 亲跑） |
 |---|---|---|---|
-| S1 工程基线 | `01bd214e` | R10-M6（Windows `syscall.SIGWINCH`） | `go build ./...` 双平台 0；`go test ./cmd/fleetly/...` 74 PASS；guards 16s |
-| S2 安全边界 | `94a5267f` | H1、H2（+R14-M2/M4） | 攻击链反转用例 3 组全 PASS（H1 九子例/H2 五子例/角色上限五子例）；apitest 24s；guards 16s；cmd 4.6s；init-whoami golden 同批 |
-| S3 交付主链 | `eb852068` | H12、H4、H5、H6、H14、H13 | 6 项新钉测 PASS；install.sh guard + `sh -n`；engine 22.5s/assembly/apitest 23.6s；console 130/130 |
-| S4 声明式/路由 | `c925ba3b` | H15、R16-M1、H9、H7 | 4 项新钉测 PASS；spec/engine 23s/traefik/assembly/guards；golden 逐行核对（H15 语义） |
-| S5 Runtime/守卫/完整性 | `cdecabe0` | H3、R12-M1、R05-M1、R05-M4、R09-M1 | k3s 调用面↔RBAC 守卫 + 审计 256 并发全成功 + outbox 无洞 + acceptanceguard 换形；persistence 全包绿；vet 0 |
+| S1 工程基线 | `01bd214e` | R10-M6（Windows SIGWINCH） | 双平台 build 0；cmd 74 PASS；guards 16s |
+| S2 安全边界 | `94a5267f` | H1、H2（+R14-M2/M4） | 攻击链反转用例全 PASS；apitest/guards/cmd 绿；golden 同批 |
+| S3 交付主链 | `eb852068` | H12、H4、H5、H6、H14、H13 | 6 项钉测 PASS；install guard；engine/assembly/apitest 绿；console 130/130 |
+| S4 声明式/路由 | `c925ba3b` | H15、R16-M1、H9、H7 | 4 项钉测 PASS；golden 逐行核对 |
+| S5 Runtime/守卫/完整性 | `cdecabe0` | H3、R12-M1、R05-M1、R05-M4、R09-M1 | RBAC 调用面守卫/审计并发/outbox 前缀；persistence 全包绿 |
+| S6 k3s 材料 | `b37a61c1` | R06-M1（H3 配套） | 三载体 ConfigMount 卷/挂载 + 引用名一致；k3s/guards 绿 |
+| S7 幂等作用域 | `f312687c` | H11（R14-H4） | 迁移 00034 复合主键；跨 Token/跨队 7 测试 PASS；apitest 绿 |
+| S8 安全设计 | `5be1527b` | H8/H10 设计 | 方案矩阵 + 25 条验收锚 + 分步计划 |
+| S9 H8 止血 | `d581c60b` | H8 阶段 A | raw 收平台管理员（403 先于 503）+ 8MiB/1000 序列上限 |
+| S10 H8 阶段 B | `e9654b8c` + `b22d6cc3` | H8 | QueryScopedMetrics（固定模板/行级授权/新错误码）+ Console scoped 图表 + CLI `metrics series`；capability/apitest/guards/console 138 全绿；生成物零漂移 |
+| S11 H10 | `9fe85c4e` + `f756ed70` | H10（R14-H3） | 迁移 00035 + 个体 relay 凭证 + 两步 enroll + 握手双向绑定 + 即时断连 + node.left 清理/顶替审计 + CLI/Console/runbook/ADR 追记；engine 25.9s/apitest 31.2s/guards 21.3s/console 138 全绿 |
 
-**已在本轮修复的 H（10/15）**：H1、H2、H3、H4、H5、H6、H7、H9、H12、H13、H14、H15（计 12 条；H7/H9 为"机制级修复 + 单测"，真机 e2e 仍待补）。同批修复的 M/R：R16-M1、R14-M2/M4、R10-M6、R05-M1/M4、R12-M1、R09-M1。
+**H 状态：15/15 条 H 已在本地修复并推送**。机制级真机余量：H7（BG/route 就绪门）与 H9（BG 旧代 egress）为代码+单测级修复，e2e 触发待 dind/staging；H3 的 k3s 真机 403 反转与 S11a/b 的 relay 新流程待 dind/staging 台账（本机无 Docker daemon）。同批修复的 M/R：R16-M1、R14-M2/M4、R10-M6、R05-M1/M4、R12-M1、R09-M1、R06-M1。
 
-**本轮明确未修（backlog，需设计/迁移）**：
-- **H8 Metrics 租户过滤**（端口签名 + handler 授权，需设计）
-- **H10 `/v1/relay` 节点个体凭证**（Enrollment/双 Provider 设计 + 迁移）
-- **H11 幂等键租户维度**（迁移 00034 + 兼容策略）
-- 收敛语义深水区（R02-M2/M5、R16-M2/M3/M5/M6）随 ADR 修订批
-- R06-M1 k3s ConfigMounts 挂载（**重要**：H3 修复只消除 configmaps 403；真机发布前必须同批落挂载，否则"显式 403 失败"会变成"建了 ConfigMap 但容器无配置"的静默失败）
-- 其余 M/L（见 §4/附录 A 各报告）
+**仍余 backlog（非 H）**：
+- **S12 收敛语义深水区**：R02-M2/M5、R16-M2/M3/M5/M6 + ADR-0083/0081/0082 追记（下一阶段，未开始）
+- k3s CPU% 量纲/真机（H8 阶段 C）、`node.left` 抖动宽限窗裁决
+- project 级 scoped 指标与 `ListAlertRules`/`ListAlertStates` Team 过滤（已裁决单列小批）
+- S2 残留：ListUsers/GetUser 读面授权、Login TTL/限速、平台面 AST 守卫
+- R06-M7 ConfigMap 孤建清扫、R08-M1 节点读面、以及 §4 其余 M/L
+- `cmd/fleetly` golden 假时钟 flake（基线既有：manual-drive 多跑一拍导致 `created_at` 00:02/00:04 漂移；单跑绿、并发/`-count=3` 偶发）；`console:gen` Windows shim 问题（本地转发器绕过，建议单列修 gen.mjs 跨平台）
 
-**修复边界（诚实）**：本地 commit 未 push；e2e/真机（Docker daemon 不可达）与 GitHub Actions 未运行，CI codegen job 仅静态核对；H7/H9 的真机触发与 H3 的真机 403 反转需 staging/dind 台账。
+**修复边界（诚实）**：代码与生成物已 push，`generate:verify`/`console:verify` 零漂移；e2e/真机（Docker daemon 不可达）与 GitHub Actions 未运行，CI codegen job 仅静态核对；里程碑全量回归 `go test ./...` 仅 2 项本机环境失败（keyring Windows ACL、builders 无 Docker daemon）+ 上述既有 golden flake，其余全绿。
 
 ---
 
