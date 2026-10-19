@@ -43,6 +43,23 @@ func (p *fakeFaceProvider) EnsureNetwork(context.Context, NamespaceRef, string) 
 func (p *fakeFaceProvider) AttachNetwork(context.Context, NamespaceRef, string, string) error {
 	return nil
 }
+func (p *fakeFaceProvider) Restart(context.Context, NamespaceRef, string) error { return nil }
+func (p *fakeFaceProvider) ExecInstances(context.Context, string) ([]ExecTargetInstance, error) {
+	return nil, nil
+}
+func (p *fakeFaceProvider) ExecWorkload(context.Context, ExecWorkloadRequest) (int, error) {
+	return 0, nil
+}
+func (p *fakeFaceProvider) RunNodeRelay(context.Context, NodeRelayOptions) error { return nil }
+func (p *fakeFaceProvider) NodeContainers(context.Context, string) ([]NodeContainerObservation, error) {
+	return nil, nil
+}
+func (p *fakeFaceProvider) Catalog(context.Context, RegistryEndpoint) ([]string, error) {
+	return nil, nil
+}
+func (p *fakeFaceProvider) Tags(context.Context, RegistryEndpoint, string) ([]RegistryTag, error) {
+	return nil, nil
+}
 func (p *fakeFaceProvider) ManagedWorkloads() []Workload   { return nil }
 func (p *fakeFaceProvider) ManagedNamespace() NamespaceRef { return NamespaceRef{} }
 func (p *fakeFaceProvider) ManagedMaterials() Materials    { return Materials{} }
@@ -55,6 +72,10 @@ func (p *fakeFaceProvider) NodeRelayCommand(context.Context, string, EnrollmentO
 	return "", nil
 }
 
+// TestFacesOfAllOffered：ProviderFaces 的**全字段**断言（R01-L1/R06-L1）。
+// 历史漂移：报告基线曾 14 面而测试只断言 11 面；当前基线 15 个声明面 +
+// R06-L1 补入 Restart = 16。本测试逐字段 + Offered 冻结序 + Len 三重钉死，
+// 新增字段不改测试即红（不会再出现"断言清单落后于结构体"）。
 func TestFacesOfAllOffered(t *testing.T) {
 	p := &fakeFaceProvider{}
 	f := FacesOf(p)
@@ -64,15 +85,20 @@ func TestFacesOfAllOffered(t *testing.T) {
 	assert.NotNil(t, f.Hygiene)
 	assert.NotNil(t, f.Utility)
 	assert.NotNil(t, f.NetworkMaintenance)
+	assert.NotNil(t, f.Exec, "Exec face must be enumerated (F3.2/ADR-0049)")
+	assert.NotNil(t, f.Restart, "Restart face must be enumerated (ADR-0069; R06-L1)")
 	assert.NotNil(t, f.RelayMaterial)
+	assert.NotNil(t, f.NodeInspect, "NodeInspect face must be enumerated (H10)")
 	assert.NotNil(t, f.Managed)
 	assert.NotNil(t, f.MaterialsSource)
 	assert.NotNil(t, f.ConfigSource)
 	assert.NotNil(t, f.ProjectEndpoints)
 	assert.NotNil(t, f.ProjectScopedMaterials)
-	assert.Equal(t, []string{"logs", "admin", "inspector", "hygiene", "utility", "network-maintenance", "relay_material", "managed", "materials", "config",
-		"project-endpoints", "project-materials"},
+	assert.NotNil(t, f.Content, "Content face must be enumerated (IA v3)")
+	assert.Equal(t, []string{"logs", "admin", "inspector", "hygiene", "utility", "network-maintenance", "exec", "restart", "relay_material",
+		"node-inspect", "managed", "materials", "config", "project-endpoints", "project-materials", "content"},
 		f.Offered(), "enumeration order is frozen")
+	assert.Len(t, f.Offered(), 16, "every declared ProviderFaces field must be enumerated exactly once (R01-L1/R06-L1)")
 }
 
 // bareFaceProvider 只实现 Provider 三件套（零子面）。
@@ -87,12 +113,18 @@ func TestFacesOfNoneOffered(t *testing.T) {
 	assert.Nil(t, f.Admin)
 	assert.Nil(t, f.Inspector)
 	assert.Nil(t, f.Hygiene)
+	assert.Nil(t, f.Utility)
+	assert.Nil(t, f.NetworkMaintenance)
+	assert.Nil(t, f.Exec)
+	assert.Nil(t, f.Restart)
 	assert.Nil(t, f.RelayMaterial)
+	assert.Nil(t, f.NodeInspect)
 	assert.Nil(t, f.Managed)
 	assert.Nil(t, f.MaterialsSource)
 	assert.Nil(t, f.ConfigSource)
 	assert.Nil(t, f.ProjectEndpoints)
 	assert.Nil(t, f.ProjectScopedMaterials)
+	assert.Nil(t, f.Content)
 	assert.Empty(t, f.Offered())
 }
 
@@ -116,5 +148,9 @@ func TestFacesOfPartial(t *testing.T) {
 	assert.Nil(t, f.Managed, "MaterialsSource does not imply Managed (独立子面)")
 	assert.NotNil(t, f.ProjectEndpoints)
 	assert.Nil(t, f.ProjectScopedMaterials, "ProjectEndpoints does not imply ProjectScopedMaterials (独立子面)")
+	assert.Nil(t, f.Exec)
+	assert.Nil(t, f.Restart)
+	assert.Nil(t, f.NodeInspect)
+	assert.Nil(t, f.Content)
 	assert.Equal(t, []string{"logs", "materials", "project-endpoints"}, f.Offered())
 }

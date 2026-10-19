@@ -5,6 +5,7 @@ package apitest
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -93,6 +94,12 @@ type EngineOption func(*engine.Options)
 // NewManualOpts 装配夹具（手动驱动 + 引擎选项覆写）。
 func NewManualOpts(t testing.TB, mutators ...EngineOption) *Harness {
 	return newHarness(t, false, mutators...)
+}
+
+// NewWithOptions 装配自动驱动夹具并叠加引擎选项（R12-M7：停摆收敛用例
+// 需要把漂移扫描节拍压到测试尺度；生产缺省 30s 不变）。
+func NewWithOptions(t testing.TB, mutators ...EngineOption) *Harness {
+	return newHarness(t, true, mutators...)
 }
 
 // NewWithMetrics 装配夹具（自动驱动）并注入 Metrics 假面（H8 scoped 查询
@@ -357,6 +364,18 @@ type FakeRuntime struct {
 	// 布置在跑容器行集（SetNodeContainers）；键缺席 = 节点未知
 	//（ErrNodeNotFound），键在场 = 行集如实透传（空切片 = 诚实空）。
 	nodeContainers map[string][]capability.NodeContainerObservation
+
+	// ensureEquivalence 开启"内容等价回执"模拟（R12-M7/ADR-0064）：按
+	// 逐载体 canonical 内容（剥离部署代戳）判定，等价重下发回旧 wire gen
+	// （EnsureReport.Gens 携带），仅副本数变化/停摆 resume 回旧 gen 但计入
+	// Changed。默认关闭 = 空回执（旧行为：全员按调用 gen 下发）。
+	ensureEquivalence bool
+	carrierContent    map[string]fakeCarrierContent
+
+	// stalled 是滚动停摆观测桩（workloadID → 注入的编排器原话）：
+	// InspectWorkloads 按此上报 RolloutStalled，收敛环按 ADR-0082 行4 触发
+	// 收敛（R12-M7 的"停摆→收敛"全栈复现面）。空串/键缺席 = 无停摆。
+	stalled map[string]string
 }
 
 // SetNodeContainers 布置节点在跑容器行集（按平台节点 ID 键；rows nil =
@@ -543,6 +562,58 @@ type EnsureCall struct {
 	Gen       capability.Generation
 	Spec      map[string]capability.Workload
 	Materials capability.Materials // secret 文件注入等分发材料（job 面断言用）
+	// Report 是本假底座实际返回的 EnsureReport（内容等价模式下携带逐载体
+	// wire gen 与 Changed；R12-M7 的回执断言面）。
+	Report capability.EnsureReport
+}
+
+// fakeCarrierContent 是内容等价回执的逐载体账本：canonical 内容（剥离
+// 部署代戳）与最近一次的 wire gen。
+type fakeCarrierContent struct {
+	content      string
+	sansReplicas string
+	wire         capability.Generation
+}
+
+// fakeWorkloadContent 把 Workload 归一为可比较的内容键（encoding/json 的
+// map 键序稳定）：剥离部署代戳（modulo-gen 内容等价，ADR-0064）；
+// sansReplicas 再剥离副本数——swarm/k3s 的 scale-only 分支不换代戳。
+func fakeWorkloadContent(w capability.Workload, sansReplicas bool) string {
+	w.Generation = 0
+	if sansReplicas {
+		w.Replicas = 0
+	}
+	b, _ := json.Marshal(w)
+	return string(b)
+}
+
+// SetEnsureContentEquivalence 开/关内容等价回执模拟（R12-M7/ADR-0064）。
+// 开启后 Ensure 按逐载体 canonical 内容记账：内容等价（modulo 部署代戳）
+// 回旧 wire gen 且不计 Changed；仅副本数变化 / 停摆 resume 回旧 gen 但计入
+// Changed；其余按调用 gen 下发。关闭 = 空回执（旧行为，全员按调用 gen）。
+func (f *FakeRuntime) SetEnsureContentEquivalence(on bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.ensureEquivalence = on
+	if on && f.carrierContent == nil {
+		f.carrierContent = map[string]fakeCarrierContent{}
+	}
+}
+
+// SetRolloutStalled 布置/清除滚动停摆观测（R12-M7 的 inspector 桩）：
+// InspectWorkloads 对指定 Workload 上报 RolloutStalled + 编排器原话，drift
+// 扫描据此产生 rollout 收敛信号（ADR-0082 行4）。false = 清除。
+func (f *FakeRuntime) SetRolloutStalled(workloadID string, stalled bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !stalled {
+		delete(f.stalled, workloadID)
+		return
+	}
+	if f.stalled == nil {
+		f.stalled = map[string]string{}
+	}
+	f.stalled[workloadID] = "injected rollout stall (apitest observation stub)"
 }
 
 // RestartCall 是一次 RuntimeRestart 动词记录（ADR-0069）。
@@ -571,8 +642,52 @@ func (f *FakeRuntime) Ensure(ctx context.Context, ns capability.NamespaceRef, ws
 	for _, w := range ws {
 		spec[w.Process] = w
 	}
-	f.ensures = append(f.ensures, EnsureCall{NS: ns, Gen: gen, Spec: spec, Materials: m})
-	return capability.EnsureReport{}, nil
+	report := capability.EnsureReport{}
+	if f.ensureEquivalence {
+		if f.carrierContent == nil {
+			f.carrierContent = map[string]fakeCarrierContent{}
+		}
+		changed := map[string]bool{}
+		gens := map[string]capability.Generation{}
+		for _, w := range ws {
+			// 载体默认 wire gen：显式逐载体覆写优先（ADR-0048 双代窗），
+			// 否则调用 gen。
+			wire := capability.Generation(gen)
+			if w.Generation != 0 {
+				wire = capability.Generation(w.Generation)
+			}
+			full := fakeWorkloadContent(w, false)
+			sansReplicas := fakeWorkloadContent(w, true)
+			prev, seen := f.carrierContent[w.ID]
+			switch {
+			case seen && prev.content == full:
+				// 内容等价：跳过更新，保留旧 wire gen（ADR-0064）。
+				wire = prev.wire
+			case seen && prev.sansReplicas == sansReplicas:
+				// 仅副本数变化：scale-only 不换代戳，但确是真实变更。
+				wire = prev.wire
+				changed[w.ID] = true
+			default:
+				changed[w.ID] = true
+			}
+			// 停摆 resume 是真实写穿（EnsureReport.Changed 语义明列），
+			// 但载体代次不变。
+			if f.stalled[w.ID] != "" {
+				changed[w.ID] = true
+			}
+			f.carrierContent[w.ID] = fakeCarrierContent{content: full, sansReplicas: sansReplicas, wire: wire}
+			if wire != capability.Generation(gen) {
+				gens[w.ID] = wire
+			}
+		}
+		report.Gens = gens
+		for id := range changed {
+			report.Changed = append(report.Changed, id)
+		}
+		sort.Strings(report.Changed)
+	}
+	f.ensures = append(f.ensures, EnsureCall{NS: ns, Gen: gen, Spec: spec, Materials: m, Report: report})
+	return report, nil
 }
 
 // ArmEnsureBlock 使下一次 Ensure 阻塞在注入点（记录之前），返回入口信号与
@@ -670,7 +785,9 @@ func (f *FakeRuntime) Calls() []EnsureCall {
 
 // InspectWorkloads 实现 RuntimeInspector 可选子面（ADR-0071 观测面透出）：
 // 观测 = 该域最近一次 Ensure 的 spec（engine 假底座同款语义——载体持有的
-// 是最新 spec，非下发历史首笔）；逐载体 generation = 调用 gen（无覆写形态）。
+// 是最新 spec，非下发历史首笔）；逐载体 generation 优先取 Ensure 回执的
+// wire gen（内容等价保留旧代，ADR-0064），其次逐载体覆写，最后调用 gen；
+// 停摆桩经 SetRolloutStalled 注入（ADR-0082 行4 的观测源）。
 func (f *FakeRuntime) InspectWorkloads(_ context.Context, ns capability.NamespaceRef) ([]capability.WorkloadObservation, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -681,10 +798,18 @@ func (f *FakeRuntime) InspectWorkloads(_ context.Context, ns capability.Namespac
 		}
 		obs = nil
 		for _, w := range c.Spec {
+			gen := c.Gen
+			if g, ok := c.Report.Gens[w.ID]; ok && g != 0 {
+				gen = g // 回执 wire gen：内容等价跳过/scale-only 的旧代锚
+			} else if w.Generation != 0 {
+				gen = capability.Generation(w.Generation)
+			}
 			obs = append(obs, capability.WorkloadObservation{
-				WorkloadID: w.ID, Generation: c.Gen,
+				WorkloadID: w.ID, Generation: gen,
 				Image: w.Image, Command: w.Command, Replicas: w.Replicas,
-				State: capability.WorkloadRunning,
+				State:          capability.WorkloadRunning,
+				RolloutStalled: f.stalled[w.ID] != "",
+				RolloutDetail:  f.stalled[w.ID],
 			})
 		}
 	}

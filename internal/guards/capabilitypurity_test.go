@@ -21,12 +21,11 @@ import (
 
 const capabilityPuritySubtree = "internal/domain/shared/capability/"
 
-// capabilityDenyMatchers 是 capability 子树生产码的 import 禁列。
+// capabilityDenyMatchers 是 capability 子树生产码的 import 禁列（红线②/③：
+// 契约生成物与 RPC 框架）。红线①（无 I/O）与 domain 守卫共享
+// puritySystemImportMatchers（R12-L1，net/url 白名单）——本表只管
+// capability 特有的两类禁列，不重复维护系统副作用面。
 var capabilityDenyMatchers = []string{
-	"os",
-	"os/",
-	"net",
-	"net/",
 	"google.golang.org/grpc",
 	genprotoImportPrefix,
 }
@@ -44,8 +43,10 @@ func TestCapabilityPurity(t *testing.T) {
 		}
 		files++
 		for _, imp := range f.imports {
-			if imp == "net/url" {
-				continue // 纯解析（URL 拆解/拼装），零副作用
+			// 红线①：系统副作用面（与 domain 守卫共享禁列；net/url 白名单）。
+			if matchesPuritySystemImport(imp) {
+				t.Errorf("%s imports %q — capability is pure types + pure functions (三红线①共享禁列；正当例外走 capabilityPurityExemptions 带理由)", f.rel, imp)
+				continue
 			}
 			if !matchesImport(imp, capabilityDenyMatchers) {
 				continue

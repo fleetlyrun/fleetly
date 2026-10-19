@@ -414,6 +414,75 @@ cli revisions list --app "$APP_ID" >/dev/null
 cli events list --limit 5 >/dev/null
 cli nodes list >/dev/null
 
+# 4e. 缺省收敛**正向**断言（R12-M4）：删一个载体（service scale 0）后
+#     必须在 ≤90s 内出现 workload.converged，且期间无
+#     workload.converge_failed。既有 e2e 只有"零 drift"的否定断言——收敛
+#     环被整体关掉（如 posture=detect 或 Inspector 缺席）时 13 条脚本仍
+#     全绿。事件窗用 --after-seq 游标圈定本段；JSON 解析只用 grep/sed
+#     （dind 镜像无 jq），失败带事件片段与 service ps 证据。
+log "convergence drill: scale the web service to 0, expect workload.converged within 90s"
+CONV_SVC="$SVC"
+[ -n "$CONV_SVC" ] || { echo "convergence drill: service name not resolved" >&2; exit 1; }
+CONV_SEQ=$(cli --json events list --limit 1 | sed -n 's/.*"last_seq": *"\([0-9][0-9]*\)".*/\1/p' | head -1)
+[ -n "$CONV_SEQ" ] || { echo "convergence drill: cannot read the events cursor (last_seq)" >&2; exit 1; }
+docker exec "$DIND_CID" docker service scale "$CONV_SVC=0" >/dev/null
+CONV_START=$(date +%s)
+CONVERGED_AT=""
+i=0
+while [ "$i" -lt 45 ]; do # 45 x 2s = 90s 预算（60s 慢通道 + 一拍裕度）
+  EVENTS_JSON=$(cli --json events list --after-seq "$CONV_SEQ" --limit 1000) || {
+    echo "convergence drill: events list failed after seq $CONV_SEQ" >&2
+    exit 1
+  }
+  if printf '%s' "$EVENTS_JSON" | grep -q '"name": *"workload.converge_failed"'; then
+    echo "convergence drill: workload.converge_failed appeared after the carrier scale-down" >&2
+    printf '%s\n' "$EVENTS_JSON" | grep -B 4 -A 6 '"workload.converge_failed"' >&2 || true
+    exit 1
+  fi
+  if printf '%s' "$EVENTS_JSON" | grep -A 3 '"name": *"workload.converged"' \
+    | grep -q "\"aggregate_id\": *\"$APP_ID\""; then
+    CONVERGED_AT=$(($(date +%s) - CONV_START))
+    break
+  fi
+  i=$((i + 1))
+  sleep 2
+done
+if [ -z "$CONVERGED_AT" ]; then
+  echo "convergence drill: no workload.converged for app $APP_ID within 90s of deleting a carrier task" >&2
+  cli --json events list --after-seq "$CONV_SEQ" --limit 1000 | grep -B 4 -A 6 '"workload\.' >&2 || true
+  docker exec "$DIND_CID" docker service ps "$CONV_SVC" --format '{{.CurrentState}}' >&2 || true
+  exit 1
+fi
+if [ "$CONVERGED_AT" -gt 90 ]; then
+  echo "convergence drill: workload.converged took ${CONVERGED_AT}s (budget <=90s)" >&2
+  exit 1
+fi
+# 收敛动作必须把副本拉回 1/1（事件 + 真实载体双证据；task 拉起另给 30s）。
+i=0
+REPLICAS_NOW=""
+while [ "$i" -lt 30 ]; do
+  REPLICAS_NOW=$(docker exec "$DIND_CID" docker service ls --filter "name=$CONV_SVC" --format '{{.Replicas}}')
+  [ "$REPLICAS_NOW" = "1/1" ] && break
+  i=$((i + 1))
+  sleep 1
+done
+if [ "$REPLICAS_NOW" != "1/1" ]; then
+  echo "convergence drill: carrier did not return to 1/1 after convergence (got ${REPLICAS_NOW:-none})" >&2
+  docker exec "$DIND_CID" docker service ps "$CONV_SVC" --format '{{.CurrentState}}' >&2 || true
+  exit 1
+fi
+# 收口复核：整段窗口内无收敛失败事件（首循环已逐拍检查，这里防后置帧）。
+FINAL_EVENTS=$(cli --json events list --after-seq "$CONV_SEQ" --limit 1000) || {
+  echo "convergence drill: final events list failed" >&2
+  exit 1
+}
+if printf '%s' "$FINAL_EVENTS" | grep -q '"name": *"workload.converge_failed"'; then
+  echo "convergence drill: workload.converge_failed present in the drill window" >&2
+  printf '%s\n' "$FINAL_EVENTS" | grep -B 4 -A 6 '"workload.converge_failed"' >&2 || true
+  exit 1
+fi
+log "workload.converged within ${CONVERGED_AT}s (<=90s), no converge_failed, carrier back to 1/1"
+
 # 6. webhook 段（F0.13，本段置尾）：配置 hook（首配铸造，secret 一次）→
 #    容器内经自备 h2cclient 直发 gateway :9081 /v1/hooks/<token>（HMAC
 #    宿侧计算；零出站依赖）。

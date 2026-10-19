@@ -15,14 +15,10 @@ import (
 
 const domainPuritySubtree = "internal/domain/"
 
-// systemImportMatchers 红线①（系统副作用面）：进程/文件系统/标准 HTTP。
-// os/* 一并禁（os/exec 含在内）；io/ioutil 是弃用包且暗示文件系统面。
-var systemImportMatchers = []string{
-	"os",
-	"os/",
-	"io/ioutil",
-	"net/http",
-}
+// 红线①（系统副作用面）的禁列是跨守卫共享表（R12-L1）：os/os.*、
+// io/ioutil、net/net.*、syscall；net/url 走显式白名单。单源住
+// purityredline_test.go 的 puritySystemImportMatchers——本守卫与
+// capabilitypurity 引用同一表，禁止各自维护一份。
 
 // genprotoImportPrefix 红线②（契约生成物面）：fleetly genproto module。
 const genprotoImportPrefix = "github.com/fleetlyrun/fleetly/genproto/"
@@ -99,8 +95,8 @@ func TestDomainPurity(t *testing.T) {
 // domainPurityLine 报告 import 命中的红线（""=不命中）。①②③分别对应
 // 系统/生成物/框架面，报错信息带红线名便于定位。
 func domainPurityLine(imp string) string {
-	if matchesImport(imp, systemImportMatchers) {
-		return "①系统副作用（os/os.*、io/ioutil、net/http）"
+	if matchesPuritySystemImport(imp) {
+		return "①系统副作用（os/os.*、io/ioutil、net/net.*、syscall；net/url 白名单）"
 	}
 	if strings.HasPrefix(imp, genprotoImportPrefix) {
 		return "②契约生成物（genproto/**）"
