@@ -1314,3 +1314,39 @@ F3.1/F3.2/F3.3/F3.6 四批走查的浏览器级挂账在后端在场的环境（
 - **CLI 形态两枚**（远端核对时踩到，免后人重踩）：`apps list` 必带 `--project`；events 游标旗标是 `--after-seq`（ADR-0026 after_*_id 惯例的 events 形态）。
 
 **留底**：`/root/upgrade-dc22485/`（九卷 tar + 换装双二进制 + sha256）、`/root/*-tasks-dc22485.txt`（前后 task 清单）、`/root/fleetlyd-c730f5e.bak` / `/root/fleetly-c730f5e.bak`（ref 重铸回滚锚）。
+
+---
+
+## 2026-10-19 D3（detect = 零运行时写）实现 + staging 验证（二进制 ca199a82）
+
+**来源**：S12 设计 §3 D3 批（`docs/design/2026-10-19-converge-semantics.md`）；本地 commit `ca199a82`（engine：删 baseline 豁免 + 启动只重建期望账本 + gen 锚守卫 + 隔离 Warn；C1-C6 钉测；ADR-0082 §5 收口），Lead 门禁：engine 22.3s / apitest 27.6s / guards 19.5s / cmd 5.4s 全绿、双平台 build 0、vet 0。
+
+**换装**：dc22485 → ca199a82（跨 S1-S12 全部修复 + D3）。快照留底 `/root/fleetly-upgrade-ca199a82/`：
+- `fleetlyd.dc22485`、`fleetly.dc22485`（旧双二进制）
+- `data-root.tgz`（停服后 `/var/lib/fleetly` 全量，109 MB）
+- `volumes/*.tgz`（七卷：torchwood-pg 数据/legacy、registry zot/registry-data、minio ×2、rustfs）
+- `state/`（preflight、换装前后 service/container 清单、detect 事件与容器 diff）
+
+**换装序**：scp 双件 → sha256 对账 → `systemctl stop fleetlyd` → data-root tar → `install` 双件 → `systemctl start fleetlyd`。启动日志：`goose: successfully migrated database to version: 35`（00034 幂等调用方作用域 + 00035 节点 relay 凭证），gRPC/HTTP :9080/:9081/:9082 正常起。
+
+**验收锚（全绿）**：
+- **零滚动**：换装前后 16 个容器 `CreatedAt` 逐行 diff 零变化（无 task 重建）；whoami `platform_admin:true`；nodes `relay_version: ca199a82`；8 条路由在册；n0/tw/console 三探针 200。
+- **detect 冷启动零写**：写入 systemd drop-in `20-posture-detect.conf`（`FLEETLY_ENGINE_CONVERGE_POSTURE=detect`）重启后：
+  - 三探针立即 200 —— 启动面「只重建期望账本」使路由解析可用（设计 F1 硬约束真机成立）；
+  - 跨 60s 慢通道窗 + margin 后全容器 `CreatedAt` diff 零变化 = 零运行时写；
+  - 事件面仅 1 条 cadvisor `workload.drift_detected`（既有基线），无 `workload.converged` 堆积。
+- **detect 下漂移检出但不收敛**：`docker service update --replicas 2 fleetly-default-quickstart-14-demo-19-web` 后 ≤10s 出现 `workload.drift_detected`（seq 1862, workload demo-19-web）；replicas 保持 2/2（未被收敛回卷）。
+- **恢复 all**：删 drop-in → daemon-reload → restart → 20s 内 replicas 自动回 1/1；审计出现 `workload.converge`（source=system、app/demo-19、AfterFP=基线 digest）——S12 的「慢/基线真实变更落审计」事实面真机成立；事件流无 `workload.converged` 刷屏（fast-only 语义保持）；三探针 200。
+- **未覆盖**：detect 下 gen/stopped 失明与 peer 隔离不剥离为成文降级（ADR-0082 §5），staging 当前无 network peer 面，engine C5/C6 覆盖。
+
+**回滚**（旧二进制 + 快照）：
+```sh
+systemctl stop fleetlyd
+install -m0755 /root/fleetly-upgrade-ca199a82/fleetlyd.dc22485 /usr/local/bin/fleetlyd
+install -m0755 /root/fleetly-upgrade-ca199a82/fleetly.dc22485 /usr/local/bin/fleetly
+rm -f /etc/systemd/system/fleetlyd.service.d/20-posture-detect.conf
+systemctl daemon-reload && systemctl start fleetlyd
+# 数据回滚（仅必要时）：systemctl stop fleetlyd && tar xzf data-root.tgz -C /var/lib/fleetly
+```
+
+**现状**：staging 现役 fleetlyd/fleetly = `ca199a82`；posture 已恢复缺省 `all`；本记录同时验证 S1-S12 修复在真机可启动、迁移前滚 33→35、路由/观测/收敛面不回归。

@@ -138,3 +138,4 @@ ring 域（受管/Database/Task）已实现控制器赢：`ReconcileReplayInterv
   1. §5 删除 baseline 豁免，四源（fast/slow/启动基线重放/peer 撤销隔离）同受门限；启动面改「只重建期望账本」（`rebuildBaselineExpectations` → `recordProjectedSpecs`，写 `ensuredSpec` + `ensuredBy`、不写 gen 锚）；隔离重放被拦落 Warn；
   2. §5 第 3/4 条降级（gen/stopped 失明、撤销 peer 不剥离）由继承条款转为实现语义，并配 C1-C6 钉测与「切回 `all` 恢复」反向断言；
   3. §6 补 detect 账本写径的边界（唯一非 Ensure 写点、不写 gen、写入者 = 基线行）；原「待办 D3/不得改 detect」表述删除。实施注记见设计稿 `docs/design/2026-10-19-converge-semantics.md` §3。
+- **2026-10-19 staging 真机验证（D3，commit `ca199a82`）**：staging `fleetly-dev` 换装 `dc22485 → ca199a82`（goose 33→35，零容器滚动）后切 `posture=detect` 冷启动：路由三探针 200、跨 60s 慢通道窗零容器变化、事件无 `workload.converged` 堆积；篡改副本数后产出 `workload.drift_detected` 且不收敛（保持篡改态）；恢复 `all` 后自动回卷并落 `workload.converge` 审计行（source=system + 基线 digest）。证据与回滚路径见 `docs/runbooks/staging-fleetly.md` 2026-10-19 节。

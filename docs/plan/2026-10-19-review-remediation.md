@@ -108,11 +108,11 @@ d233c07d docs(plan,reviews): S1-S5 终验记录与修复状态归档
 | S9 | H8 阶段 A 止血 | H8 | raw QueryMetrics 收平台管理员（403 先于 503）+ 响应 8MiB/1000 序列上限；member 图表失明（已裁决代价） | ✅ |
 | S10 | H8 阶段 B scoped RPC + Console/CLI 切换 | H8 | **a** 契约+服务端 ✅（`e9654b8c`）；**b** Console scoped 图表/WhoAmI.platformAdmin/truncated 提示 + CLI `metrics series` + `console:gen/build` 同批 ✅ | ✅ |
 | S11 | relay 节点个体凭证 | H10（R14-H3） | **a** 后端+兼容 ✅（`9fe85c4e`）；**b** 运维面：`nodes relay/revoke-relay` CLI + Console 节点行动作 + runbook + `node.left` 清理/`relay_replaced` 审计 + ADR 追记 ✅ | ✅ |
-| S12 | 收敛语义深水区 + ADR 追记 | R02-M2/M5、R16-M2/M3/M5/M6、H15 ADR-0083 追记 | ADR 修订 + 判定表单源 + 静默面事实化；钉测翻向 | ✅（D3 延后） |
+| S12 | 收敛语义深水区 + ADR 追记 | R02-M2/M5、R16-M2/M3/M5/M6、H15 ADR-0083 追记 | ADR 修订 + 判定表单源 + 静默面事实化；钉测翻向；**D3 已实施并经 staging 真机验证**（`ca199a82`） | ✅ |
 
 > S6 先行原因：H3 已消除 k3s configmaps 403，若不落挂载，真机会从"显式 403 失败"变成"ConfigMap 建了但容器无配置"的静默失败。
 
-> **第二轮收尾（2026-10-19）**：S6-S12 全部结项——S12 分两批落码：**b1** `2740a09d`（判定表接进生产 + `EnsureReport` 变更集 + `extra`/`replay` 真实信号 + `ensuredBy` 账本归属，已 push）；**b2** `23f4b0b1`（ADR-0081/0082/0083 修订 + CONTEXT 词条 + 守卫补强，已 push）。**D3（detect 零运行时写）经 Lead 裁决延后**至 staging 验证后另立批，ADR-0082 §5 已成文为「已知降级」并列出落地必接受的三条降级；设计文档 §3.7 记录裁决原文。第二轮 H 与目标 M 级发现的代码/法源半边均已收敛（D3 零写半边除外），残余见各阶段记录与评审报告 §11。
+> **第二轮收尾（2026-10-19）**：S6-S12 全部结项——S12 分三批落码：**b1** `2740a09d`（判定表接进生产 + `EnsureReport` 变更集 + `extra`/`replay` 真实信号 + `ensuredBy` 账本归属，已 push）；**b2** `23f4b0b1`（ADR-0081/0082/0083 修订 + CONTEXT 词条 + 守卫补强，已 push）；**D3** `ca199a82`（detect = 零运行时写：删 baseline 豁免 + 启动只重建期望账本 + gen 锚守卫 + 隔离 Warn + C1-C6 钉测；Lead 在 S12b2 后复核裁决执行），并已在 **staging 真机验证**（二进制 dc22485→ca199a82，detect 冷启动零写/路由可解析/drift 检出但不收敛/恢复 all 自动回卷；详见 `docs/runbooks/staging-fleetly.md` 2026-10-19 节）。第二轮 H 与目标 M 级发现（R02-M2/M5、R16-M2/M3/M5/M6）均已收敛，残余 M/L 见评审报告 §11。
 
 ### 第二轮裁决记录（2026-10-19，用户确认）
 - H8：**先阶段 A 止血 + 随后阶段 B scoped RPC**；本批只做 **app 级**，project 级 scoped 查询与 `ListAlertRules`/`ListAlertStates` 的 Team 过滤单列小批。
@@ -169,7 +169,14 @@ d233c07d docs(plan,reviews): S1-S5 终验记录与修复状态归档
 - 验收证据（Lead 亲跑）：b1 见 `2740a09d` 与评审 §11；b2/终验：gofmt 空、双平台 build 0、guards 20.5s/engine 25.8s/cmd 全绿、vet 0、diff-check 0；终验 `go test ./...` 仅 2 项本机环境失败（keyring/builders），装配层 self-description golden 漏项由 Lead 终验捕获并在 `fc485f1d` 同步。
 - 全局一致性检查：判定表 8 行与 golden 逐行一致；ADR 计数 `27 ACTION + 53 DECLARATION + 74 READ = 154` 与 `writeclassguard_test.go` 断言一致（S10a 的 `QueryScopedMetrics` 补入附录 A.14）；ADR-0082 行 10 机制改写为 `replay` 重放标记（撤销「缺席检测」旧表述）；ADR-0081 判据与 `SetUserPassword` 附录/边界案例三处同源；D3 行为零改动（`attemptConverge` baseline 豁免与 `options.go` 注释原样）。
 - 还原点 commit：`402132fe`（设计稿）、`2740a09d`（S12b1 代码）、`23f4b0b1`（S12b2 文档/守卫）、`fc485f1d`（终验 self-description golden 同步）。
-- 残留/后续：**D3**（detect 零写：删 baseline 豁免 + `rebuildBaselineExpectations`/`recordProjectedSpecs` + gen 锚守卫 + 隔离 Warn + C1-C6 钉测）待 staging 验证后另立批；`--runtime` 校验改生效基线（P2 可选）；R16-M4（撤销 peer 同步 Ensure）、R16-L1/L2/L4/L6 等 M/L 残余见评审 §11。
+- 残留/后续：`--runtime` 校验改生效基线（P2 可选）；R16-M4（撤销 peer 同步 Ensure）、R16-L1/L2/L4/L6 等 M/L 残余见评审 §11。
+
+### D3 执行记录（detect = 零运行时写 + staging 真机验证）
+- 代码（commit `ca199a82`，12 文件）：`attemptConverge` 删 baseline 豁免（fast/slow/启动基线重放/peer 隔离四源同受）；`rebuildBaselines` detect 分支改走 `rebuildBaselineExpectations`（lockApp + driving 复查 + `expectedWorkloads` + `recordProjectedSpecs`，不 Ensure）；`recordProjectedSpecs` 写 `ensuredSpec`+`ensuredBy`、不写 gen 锚；gen 对照无锚即跳过（防 0 锚假信号）；`IsolateNetworkPeer`/`enforcePeerIsolation` 被拦落 Warn；CONTEXT/options/ADR-0082 §5 收口（验收锚 `[x]`）。
+- 测试（C1-C6 全 PASS）：`TestPostureDetectWritesNothing`（替换旧测）、`...RebuildsExpectationsWithoutEnsure`、`...PublishesRoutesFromExpectationCache`、`...SpecDriftStillDetected`、`...GenDriftBlindDocumented`、`...IsolationSkipsWithWarn`（均含切回 all 反向断言）。
+- Lead 门禁：gofmt 空、双平台 build 0、engine 22.9s、apitest 30.7s、guards 20.2s、cmd 6.2s 全绿、vet 0、diff-check 0。
+- **staging 真机（fleetly-dev，2026-10-19）**：旧 dc22485 → 新 ca199a82，停服快照（data-root 109MB + 七卷 tar + 旧双二进制）后换装；migrations 33→35；16 容器 CreatedAt diff 零滚动；detect 冷启动后三探针 200、跨 60s 慢通道窗容器零变化、事件无 converge 堆积；`--replicas 2` 篡改 10s 内产出 `workload.drift_detected` 且保持 2/2 不收敛；恢复 all 后 20s 内自动回 1/1，审计出现 `workload.converge`（source=system + 基线 digest），事件无刷屏。回滚/留底路径见 runbook 2026-10-19 节。
+- 残留/降级（成文 ADR-0082 §5）：detect 下 gen/stopped 失明、撤销 peer 不剥离（Warn，恢复 all 后下一拍剥离）；staging 无 peer 面，C5/C6 覆盖。
 
 ### S6 执行记录
 - 改动：`k3s/translate.go`（sortedConfigMounts/configMountsWithMaterials/configVolumeName + toContainer SubPath 挂载 + podTemplate ConfigMap 卷 0444）、`translate_test.go`（三载体/缺材料/顺序稳定）、`runtime_ensure_test.go`（Ensure 引用名一致性 + SkipMaterials）。

@@ -2,7 +2,7 @@
 
 | 项 | 值 |
 |---|---|
-| 状态 | 批 1/2 已实施（commit `2740a09d` / `402132fe`）；**D3 已实施（detect = 零运行时写）**；D5/D6 已实施（S12b2） |
+| 状态 | 批 1/2 已实施（commit `2740a09d` / `402132fe`）；**D3 已实施（detect = 零运行时写）并经 staging 真机验证**（`ca199a82`，见 §7.2/§9.2）；D5/D6 已实施（S12b2） |
 | 日期 | 2026-10-19 |
 | 基线 | `main` @ `e99d2470`（工作区干净；S1-S11 已 push；Go 1.26.6；本机无 Docker → e2e 不可跑）；实施后 HEAD `2740a09d`（S12b1 已 push） |
 | 实施注记 | S12b1 落码把设计稿中的 `revert` 信号命名为 `replay`（键 `replay\|<deployment-id>`、`convergeSignalReplay`；测试名 `TestCancelReplaySignalDrivesBaselineReplay` / `TestReplayMark*`），语义不变——ADR-0082 文本按落码命名。detect 的 `rebuildBaselineExpectations` / `recordProjectedSpecs` 已随 D3 落码（§3.3），实施细节与产物见 §3.4/§3.7。 |
@@ -1152,7 +1152,7 @@ mise run test       # go test -race 三 module
 mise run lint       # vet/gofmt/golangci/buf lint/buf breaking
 ```
 
-> e2e（dind/h2c/twonode）本机不可跑（无 Docker daemon）——D2/D3 的"detect 下路由仍可解析"只在 engine 层钉（C3），真机面记为 **待复核**（验证方法：staging 切 `posture=detect` 重启控制面，`fleetly routes list` + 外部 curl 应仍 200；恢复 `all` 后 `events --json` 无 `workload.converged` 堆积）。
+> e2e（dind/h2c/twonode）本机不可跑（无 Docker daemon）——D2/D3 的"detect 下路由仍可解析"已在 engine 层钉（C3），并已 **staging 真机复验（2026-10-19）**：切 `posture=detect` 冷启动后 `fleetly routes list` 与外部 n0/tw/console 三探针均 200、全容器 CreatedAt 跨慢通道窗零变化、事件无 `workload.converged` 堆积；恢复 `all` 后自动回卷且审计行在场。详细命令与留底见 `docs/runbooks/staging-fleetly.md` 2026-10-19 节。
 
 ---
 
@@ -1204,14 +1204,14 @@ mise run lint       # vet/gofmt/golangci/buf lint/buf breaking
 - **R16-L1/L2/L4/L5/L6**：文档状态回写、9 张表清理、守卫三盲点（互斥一条顺带在 D5 可选）、六处弱断言（除 D1/D4 已强化的三条）、Author Class 字段注册表——除 D5 明确点到的两条守卫外不做。
 - **R02-M7（环 panic 无消费面）**：不在 S12。
 - **apitest 夹具真实回执**（R12-M7）：新增 `Changed`/`Removed` 在 `harness.FakeRuntime` 仍恒空；全栈面不可达，engine 层已覆盖。
-- **e2e 真机验证**：本机无 Docker；D3 的 detect 真机面、D2 的 provider 真机变更集均记待复核（§7.2）。
+- **e2e 真机验证**：本机无 Docker；**D3 的 detect 真机面已由 staging 复验（2026-10-19，见 §7.2/runbook）**；D2 的 provider 真机变更集仍记待复核；其余 dind（H7/H9、k3s config mount、双节点 relay）待 dind/CI。
 - **不新增事件码**：`WorkloadOrphaned` 不做（行 9 未落码）；不给 `workload.converged` 加慢通道触发。
 
 ### 9.2 待复核（含验证方法）
 
 | # | 不确定点 | 验证方法 |
 |---|---|---|
-| 1 | detect 账本重建是否足以让 `publishRoutes` 在真机上解析出端点（fake 只覆盖结构） | `TestPostureDetectPublishesRoutesFromExpectationCache`（engine）+ staging：切 detect 重启后 `fleetly routes list` 与外部请求 200 |
+| 1 | ~~detect 账本重建是否足以让 `publishRoutes` 在真机上解析出端点（fake 只覆盖结构）~~ **已复核（2026-10-19 staging）** | engine `TestPostureDetectPublishesRoutesFromExpectationCache` + staging：detect 冷启动后 n0/tw/console 三探针 200、容器零变化；恢复 all 后回卷 |
 | 2 | `extra` 信号在 BG 收口失败/回滚失败等边角形态是否假阳性 | 实现后跑 `go test ./internal/application/engine -count=1`（含 bluegreen/rollback 族）；新增 A9；仍不确定的形态记 staging 观测（`events --name workload.converged --json` 计数） |
 | 3 | k3s 冷账本判据（`lastA == ""` 且 `serverObjectGen > 0`）是否覆盖全部重启形态 | `TestEnsureColdLedgerReplayNotReportedChanged` + `go test ./internal/infrastructure/providers/k3s -count=1` |
 | 4 | 审计 `Detail` JSON 在审计查询/Console 面是否需要 schema | `go test ./internal/persistence/audit ./internal/interfaces/console`；Console 无 Detail 消费（grep `detail`） |
@@ -1224,7 +1224,7 @@ mise run lint       # vet/gofmt/golangci/buf lint/buf breaking
 |---|---|---|
 | D1（表接线 + extra/revert） | **高** | 全部证据是行级代码；extra/revert 数据源就在手边；映射/字段/行为三层可测 |
 | D2（EnsureReport 变更集） | **高** | 双 provider 的写分支已逐条枚举（§2.3.2/2.3.3）；冷账本例外有成文理由 |
-| D3（detect 零写） | **中高** | 语义正确性与"路由依赖"已静态核实（F1）；真机路由行为待 staging 复核；gen/stopped 失明是已知代价，已钉成显式测试 |
+| D3（detect 零写） | **高** | 语义正确性与"路由依赖"已静态核实（F1）；staging 真机已验证零写/路由可解析/drift 检出/恢复回卷（2026-10-19）；gen/stopped 失明是成文代价，已钉显式测试 |
 | D4（账本归属 + 重放标记） | **高** | 根因与写点均定位到行；部署窗收窄是可解释取舍（有测试与成文） |
 | D5（ADR-0081） | **高** | 纯文档；计数已用 proto 实数复核（154） |
 | D6（ADR-0083 追记） | **高** | S4 代码与 golden 已在仓内 |
