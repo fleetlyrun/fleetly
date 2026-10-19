@@ -593,12 +593,14 @@ func TestBaselineReplaySharesCooldownLedger(t *testing.T) {
 	rev := freezeSpec(t, e, 1, tImageSpec)
 	driftDeployToSucceeded(t, e, rt, clock, rev)
 
-	// 冷却窗在位（直接钉记账——聚焦基线路径的闸门消费）。
+	// 冷却窗在位（直接钉记账——聚焦基线路径的闸门消费）。failSig 取真实
+	// 有签名形态：无签名重放既不匹配也不得解除（R02-M1 负例；旧实现靠
+	// 空签名注入才掩盖了「基线重放释放冷却」的缺陷）。
 	now := e.clock.Now()
 	e.converge.mu.Lock()
 	e.converge.cooldown[tAppID] = now
 	e.converge.posture[tAppID] = ConvergePostureAll
-	e.converge.failSig[tAppID] = ""
+	e.converge.failSig[tAppID] = convergeFailureSignature{sig: "spec|image mismatch", present: true}
 	e.converge.mu.Unlock()
 
 	appRow, err := e.repos.Apps.Get(context.Background(), tAppID)
@@ -606,6 +608,93 @@ func TestBaselineReplaySharesCooldownLedger(t *testing.T) {
 	before := len(rt.calls())
 	e.replayAppBaseline(context.Background(), appRow, getDeployment(t, e, latestSucceededID(t, e)))
 	assert.Equal(t, 0, ensureDelta(t, rt, before), "baseline replay is gated by the shared cooldown ledger")
+}
+
+// R02-M1：无签名源（启动基线重放 / 隔离重放）不得解除冷却——解除径②
+// 只在触发确实携带签名时比对；有签名且签名变化仍保留解除能力。
+func TestCooldownNotReleasedByUnsignaledReplay(t *testing.T) {
+	e, rt, clock := newTestEngine(t)
+	rev := freezeSpec(t, e, 1, tImageSpec)
+	driftDeployToSucceeded(t, e, rt, clock, rev)
+	settleSlowChannel(t, e)
+
+	// 真实形态进冷却：连续 3 次快通道 Ensure 失败（不注入 failSig）。
+	rt.mu.Lock()
+	rt.tamper = map[string]tamperEntry{tAppID + "-web": {image: "nginx:1.27-alpine"}}
+	rt.mu.Unlock()
+	convergeFailOnce(t, e, rt)
+	convergeFailOnce(t, e, rt)
+	convergeFailOnce(t, e, rt)
+	e.converge.mu.Lock()
+	_, cooling := e.converge.cooldown[tAppID]
+	failedSig := e.converge.failSig[tAppID]
+	e.converge.mu.Unlock()
+	require.True(t, cooling, "three consecutive failures enter the cooldown window")
+	require.True(t, failedSig.present, "the failure ledger carries the real aggregate signature")
+
+	// 冷却中启动基线重放（隔离重放 IsolateNetworkPeer 走同一入口）：
+	// 无签名触发不得解除冷却、不得发起 Ensure。
+	appRow, err := e.repos.Apps.Get(context.Background(), tAppID)
+	require.NoError(t, err)
+	d := getDeployment(t, e, latestSucceededID(t, e))
+	before := len(rt.calls())
+	assert.Equal(t, convergeOutcomeCooling, e.replayAppBaseline(context.Background(), appRow, d),
+		"an unsignaled replay must not release the cooldown (R02-M1)")
+	assert.Zero(t, ensureDelta(t, rt, before), "the cooldown gate must stop the replay before Ensure")
+	e.converge.mu.Lock()
+	_, stillCooling := e.converge.cooldown[tAppID]
+	e.converge.mu.Unlock()
+	assert.True(t, stillCooling, "the cooldown ledger must survive an unsignaled replay")
+
+	// 有签名且签名变化仍可解除（解除径②保留）：换失配形态 = 新聚合签名。
+	rt.mu.Lock()
+	rt.tamper = map[string]tamperEntry{tAppID + "-web": {replicas: 3}}
+	rt.mu.Unlock()
+	convergeFailOnce(t, e, rt)
+	e.converge.mu.Lock()
+	_, coolingAfter := e.converge.cooldown[tAppID]
+	e.converge.mu.Unlock()
+	assert.False(t, coolingAfter, "a signed, changed drift signature still releases the cooldown")
+}
+
+// R02-L1：信号集为空（无未收敛信号）时清「已收敛签名」——同一形态复发
+// 重新走快通道，不等 60s 慢通道重放。
+func TestResolvedSignatureClearedWhenSignalsEmpty(t *testing.T) {
+	e, rt, clock := newTestEngine(t)
+	rev := freezeSpec(t, e, 1, tImageSpec)
+	driftDeployToSucceeded(t, e, rt, clock, rev)
+	settleSlowChannel(t, e)
+
+	drift := tamperEntry{image: "nginx:1.27-alpine"}
+	rt.mu.Lock()
+	rt.tamper = map[string]tamperEntry{tAppID + "-web": drift}
+	rt.mu.Unlock()
+	before := len(rt.calls())
+	e.driftScan(context.Background())
+	require.Equal(t, 1, ensureDelta(t, rt, before), "the first occurrence converges via the fast channel")
+	e.converge.mu.Lock()
+	resolved := e.converge.resolved[tAppID]
+	e.converge.mu.Unlock()
+	require.NotEmpty(t, resolved, "a successful convergence records the resolved signature")
+
+	// 载体恢复 → 无未收敛信号：已收敛签名必须清零。
+	rt.mu.Lock()
+	rt.tamper = nil
+	rt.mu.Unlock()
+	e.driftScan(context.Background())
+	e.converge.mu.Lock()
+	_, stillResolved := e.converge.resolved[tAppID]
+	e.converge.mu.Unlock()
+	assert.False(t, stillResolved, "an empty signal set must clear the resolved signature")
+
+	// 同一形态复发（同一聚合签名）：快通道立即重触发（不靠慢通道）。
+	rt.mu.Lock()
+	rt.tamper = map[string]tamperEntry{tAppID + "-web": drift}
+	rt.mu.Unlock()
+	before = len(rt.calls())
+	e.driftScan(context.Background())
+	assert.Equal(t, 1, ensureDelta(t, rt, before),
+		"the same drift form must re-trigger immediately once the signal set goes empty")
 }
 
 // ---- posture 闸门：detect = 零运行时写（四源同受门限，检测照发）----

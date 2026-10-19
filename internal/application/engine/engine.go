@@ -114,8 +114,13 @@ type Engine struct {
 	browseLoop   *Loop // Browse 会话收敛环（F3.6，ADR-0051）
 	driftLoop    *Loop // ADR-0022 漂移扫描环（spec 对照 + 稳态看门狗）
 	rings        []ring
-	cancel       context.CancelFunc
-	wg           sync.WaitGroup
+	// ringMu/ringDeaths 是环死亡记账（supervisor 消费 Loop.Done 后按
+	// Panicked 落账；HealthComponents/DeadRings 是 health/doctor 查询面，
+	// R02-M7）。map 在 New 初始化，读写都在 ringMu 内。
+	ringMu     sync.Mutex
+	ringDeaths map[string]bool
+	cancel     context.CancelFunc
+	wg         sync.WaitGroup
 
 	// 域状态（行为住各域文件，状态随域绑定——加环/加域不再横穿 Engine
 	// 结构体；域类型定义随域文件，P3 收官批 8 壳收口归位。锁语义零漂移：

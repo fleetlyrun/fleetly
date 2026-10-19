@@ -430,16 +430,17 @@ func (svc *AppsService) ListApps(ctx context.Context, req *structurev1.ListAppsR
 	return out, nil
 }
 
-// DeleteApp 收口删除（ADR-0023）：活跃部署拒绝（E_CONFLICT，先 cancel/等
-// 终态）→ engine 收口拆载体 → tombstone + 撤路由 + 审计一事务落账。副作用
-// 不可与审计同事务：先收口后落账，收口失败即整体失败（App 保持可操作）。
+// DeleteApp 收口删除（ADR-0023）：驱动权在位拒绝（E_CONFLICT，先 cancel/
+// 等终态；含 failed 待自动回滚窗，R02-M4）→ engine 收口拆载体 → tombstone +
+// 撤路由 + 审计一事务落账。副作用不可与审计同事务：先收口后落账，收口失败
+// 即整体失败（App 保持可操作）。
 //
 // 拒删不变式"App 存活 ⇒ 路由不得消失"由三道复查承载（ADR-0023 修订）：
-//  1. 无锁预检：常规拒绝发生在零副作用阶段；
+//  1. 无锁预检：常规拒绝发生在零副作用阶段（驱动权谓词）；
 //  2. TeardownApp 锁内预检：与 Submit 共享 appMu，拆载体前所见即受理
 //     终局——预检与收口之间受理的部署在副作用前拒绝；
 //  3. tombstone 事务内复查：与 App tombstone、撤路由、审计同生共死——
-//     收口后落账前受理的活跃部署使整单回滚（无 tombstone、无路由删除），
+//     收口后落账前受理的驱动权行使整单回滚（无 tombstone、无路由删除），
 //     已拆载体由在途部署的 Ensure/回滚重放自愈，teardown-aborted 事件 +
 //     审计留痕（不静默）。
 func (svc *AppsService) DeleteApp(ctx context.Context, req *structurev1.DeleteAppRequest) (*structurev1.DeleteAppResponse, error) {
@@ -452,13 +453,16 @@ func (svc *AppsService) DeleteApp(ctx context.Context, req *structurev1.DeleteAp
 	if err := svc.s.authorizeAppRow(ctx, appRow); err != nil {
 		return nil, err
 	}
-	active, err := svc.s.Deployments.ActiveByApp(ctx, req.GetId())
+	// 驱动权预检（R02-M4）：与 converger 同口径（DrivingByApp = 活跃态 +
+	// failed 待自动回滚窗）。ActiveByApp 不含 failed 待回滚行——用它放行
+	// 会让驱动器在收口后回滚重放并重建载体（无主孤儿）。
+	driving, err := svc.s.Deployments.DrivingByApp(ctx, req.GetId())
 	if err != nil {
 		return nil, mapStateError(err, "deployment")
 	}
-	if len(active) > 0 {
+	if len(driving) > 0 {
 		return nil, apperr.New("E_CONFLICT",
-			"app %s has %d active deployment(s); cancel them or wait for a terminal state before deleting", req.GetId(), len(active))
+			"app %s has %d active deployment(s); cancel them or wait for a terminal state before deleting", req.GetId(), len(driving))
 	}
 	if err := svc.s.Engine.TeardownApp(ctx, req.GetId()); err != nil {
 		// 并发双删：对手已落 tombstone（Get 活跃行口径）→ 同形 404；
@@ -491,16 +495,16 @@ func (svc *AppsService) DeleteApp(ctx context.Context, req *structurev1.DeleteAp
 		return nil, err
 	}
 	err = svc.s.commit(ctx, writeFact{
-		// TOCTOU 复查：收口后、落账前受理的活跃部署在此拒绝——整单回滚
-		//（无 tombstone、无路由删除；与 Submit 的存活判定互为对偶，单连接
-		// 事务串行下窗口闭合）。
+		// 驱动权复查（R02-M4）：收口后、落账前受理的部署（含 failed 待
+		// 自动回滚窗）在此拒绝——整单回滚（无 tombstone、无路由删除；与
+		// Submit 的存活判定互为对偶，单连接事务串行下窗口闭合）。
 		checks: []acceptanceCheck{func(ctx context.Context, st transact.Stores) error {
-			active, err := st.Deployments.ActiveByApp(ctx, req.GetId())
+			driving, err := st.Deployments.DrivingByApp(ctx, req.GetId())
 			if err != nil {
 				return err
 			}
-			if len(active) > 0 {
-				aborted = len(active)
+			if len(driving) > 0 {
+				aborted = len(driving)
 				return errDeleteAborted
 			}
 			return nil

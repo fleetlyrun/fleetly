@@ -453,6 +453,22 @@ func objectStoreSelection(cfg *config.AppConfig) (string, context.Context) {
 	})
 }
 
+// checkConvergenceInspector 是收敛能力的装配门（R16-L3）：posture=all 是
+// 缺省承诺（检出漂移即收敛），而 Runtime 未实现 Inspector 子面时 driftScan
+// 的 spec/gen/缺席检测整拍失明——收敛静默停摆，装配期 fail-fast。posture=
+// detect 是显式零写姿态，Inspector 缺席不违背承诺（此时由调用方记 Warn +
+// doctor 的 convergence capability 行承载可发现性）。
+func checkConvergenceInspector(rt capability.Provider, posture string) error {
+	if rt == nil || posture != engine.ConvergePostureAll {
+		return nil
+	}
+	if capability.FacesOf(rt).Inspector == nil {
+		return fmt.Errorf("assembly: engine.converge_posture is %q but runtime provider %s does not implement the RuntimeInspector subface — drift detection and default convergence would silently stall (R16-L3); implement the inspector or set engine.converge_posture=%q",
+			posture, rt.Describe().Name, engine.ConvergePostureDetect)
+	}
+	return nil
+}
+
 // NewEngine 构造部署收敛引擎（重叠策略旋钮从 AppConfig 透传并 fail-fast
 // 校验——ADR-0017 附录 A.4；其余参数当前取默认，配置面接入后从 AppConfig
 // 继续透传 queue 容量/观察窗/构建并发）。
@@ -490,6 +506,15 @@ func NewEngine(
 	posture, err := engine.ParseConvergePosture(cfg.ConvergePosture())
 	if err != nil {
 		return nil, err
+	}
+	// 收敛能力装配门（R16-L3）：缺省收敛依赖 Inspector 子面；缺席即启动
+	// 期 fail-fast（detect 显式降级形态记 Warn，doctor 有 capability 行）。
+	if err := checkConvergenceInspector(rt, posture); err != nil {
+		return nil, err
+	}
+	if posture == engine.ConvergePostureDetect && capability.FacesOf(rt).Inspector == nil {
+		app.Logger().Warn("convergence: runtime provider has no Inspector subface; posture=detect can detect nothing (spec drift, gen deviation and absence checks are disabled)",
+			"provider", rt.Describe().Name)
 	}
 	// Platform Backup 配置快照（ADR-0039）：缺省节拍/保留经 config 访问器；
 	// s3 未配置 = 仅本地仓。

@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/fleetlyrun/fleetly/internal/application/engine"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/config"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -28,6 +29,46 @@ func TestNewEngineOverlapPolicyFailsFast(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "schedule_overlap_policy")
 	assert.Contains(t, err.Error(), "queue")
+}
+
+// inspectorRuntimeProvider 是带 RuntimeInspector 子面的假 Provider（收敛
+// 能力装配门的正形态对照）。
+type inspectorRuntimeProvider struct{ fakeRuntimeProvider }
+
+func (inspectorRuntimeProvider) InspectWorkloads(context.Context, capability.NamespaceRef) ([]capability.WorkloadObservation, error) {
+	return nil, nil
+}
+
+// TestConvergenceInspectorAssemblyGate（R16-L3）：posture=all 是缺省收敛
+// 承诺，Inspector 缺席会让 drift 检测整拍失明——装配期 fail-fast；posture
+// =detect 是显式零写降级，允许缺席（Warn + doctor 行承载可发现性）。
+func TestConvergenceInspectorAssemblyGate(t *testing.T) {
+	missing := fakeRuntimeProvider{name: "assembly-test-no-inspector"}
+	err := checkConvergenceInspector(missing, engine.ConvergePostureAll)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "RuntimeInspector")
+	assert.Contains(t, err.Error(), "assembly-test-no-inspector")
+	assert.Contains(t, err.Error(), engine.ConvergePostureDetect,
+		"the failure names the explicit opt-out (detect) as the alternative")
+	assert.NotContains(t, err.Error(), "assembly-test-inspector")
+
+	require.NoError(t, checkConvergenceInspector(missing, engine.ConvergePostureDetect),
+		"an explicit detect posture may run without the inspector (documented degradation)")
+	withInspector := inspectorRuntimeProvider{fakeRuntimeProvider{name: "assembly-test-inspector"}}
+	require.NoError(t, checkConvergenceInspector(withInspector, engine.ConvergePostureAll))
+	require.NoError(t, checkConvergenceInspector(nil, engine.ConvergePostureAll),
+		"nil runtime is left to the existing assembly checks (guard order)")
+}
+
+// TestNewEngineFailsFastWithoutInspector：门接在 NewEngine 的配置校验序里
+// （先于任何引擎依赖物化）——缺省 posture + 无 Inspector = 启动失败。
+func TestNewEngineFailsFastWithoutInspector(t *testing.T) {
+	cfg := config.WithDefaults(&config.AppConfig{})
+	_, err := NewEngine(nil, transact.Stores{}, transact.Tx{},
+		fakeRuntimeProvider{name: "assembly-test-no-inspector"},
+		nil, nil, nil, nil, nil, nil, nil, nil, cfg, buildinfo.BuildInfo{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "RuntimeInspector")
 }
 
 // TestObjectStoreSelection（ADR-0042 决策 2 装配选择锚）：platform_backup.s3

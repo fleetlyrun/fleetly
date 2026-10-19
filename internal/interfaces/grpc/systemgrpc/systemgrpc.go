@@ -35,6 +35,9 @@ type Service struct {
 	// engine 是组件重启的路由面（可空 = apitest 手工装配；缺席时重启
 	// 精确失败——E_INTERNAL）。
 	engine *engine.Engine
+	// engineHealth 是引擎健康组件查询窄缝（R02-M7：环死亡 / 收敛能力行；
+	// 缺省委托 engine.HealthComponents，测试可注入）。
+	engineHealth func() []engine.HealthComponent
 
 	// now 是缓存时钟（测试可注入；零值回退 time.Now）。
 	now func() time.Time
@@ -162,7 +165,25 @@ func (s *Service) checkComponents(ctx context.Context) []*systemv1.ComponentHeal
 		}(i, provider)
 	}
 	wg.Wait()
+	// 引擎健康行（R02-M7 / R16-L3）：环死亡与收敛能力缺口并入组件面——
+	// 任一不健康即 DEGRADED（GetStatus 聚合态据此计算），doctor 逐行呈报。
+	for _, row := range s.engineHealthRows() {
+		out = append(out, &systemv1.ComponentHealth{
+			Name: row.Name, Capability: "engine", Healthy: row.Healthy, Details: row.Details,
+		})
+	}
 	return out
+}
+
+// engineHealthRows 返回引擎健康组件行（窄缝优先，其次 *engine.Engine）。
+func (s *Service) engineHealthRows() []engine.HealthComponent {
+	if s.engineHealth != nil {
+		return s.engineHealth()
+	}
+	if s.engine == nil {
+		return nil
+	}
+	return s.engine.HealthComponents()
 }
 
 // RestartComponent 重启受管组件载体（IA v3 二期④）：引擎按 Provider 名

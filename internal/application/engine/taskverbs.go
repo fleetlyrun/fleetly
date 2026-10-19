@@ -269,6 +269,11 @@ func (e *Engine) DeleteTask(ctx context.Context, id string) error {
 		return err
 	}
 	ns := capability.NamespaceRef{Team: team, Project: t.ProjectID, Task: t.ID}
+	// 维护互斥读半边（R13-L1 同根因：载体写动词必须持读锁，与 Ensure 族
+	// 及网络重建写半边串行化）。锁等待不占步预算（排队语义：读锁在带界
+	// ctx 派生之前获取）。
+	unlockMaintenance := e.lockMaintenance()
+	defer unlockMaintenance()
 	// Remove 带界（B15-1，批 3 判定的反转）：API 请求路径的 Remove 挂死会
 	// 卡住 API 调用本身（与收敛环卡死同害），且 lockTask 被握死堵住驱动环
 	// 同 Task 全部驱动。带 ManagedStepTimeout 硬上限，超时如实上抛。

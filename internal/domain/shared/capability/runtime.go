@@ -90,6 +90,12 @@ type RuntimeRestart interface {
 	Restart(ctx context.Context, ns NamespaceRef, workloadID string) error
 }
 
+// ErrRestartTargetNotFound 是重启子面的未命中哨兵（R02-M3）：按 Workload
+// ID 零命中时 provider 返回（wrapped），引擎据此尝试下一载体 ID 形态
+// （裸/代次化）并在全部未命中时映射为既有 E_NOT_FOUND 语义。不得静默成功
+// （k3s 的 DeleteCollection 零命中曾返回 nil = agent 面假成功）。
+var ErrRestartTargetNotFound = errors.New("runtime restart: target carrier not found")
+
 // RuntimeAdmin 是管理子面（`fleetly nodes` 运维操作；按需实现）。
 type RuntimeAdmin interface {
 	// Drain 把节点置为排空（不再调度新载体，存量按编排器语义迁移/回收）。

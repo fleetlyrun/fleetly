@@ -13,6 +13,7 @@ import (
 
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
+	"github.com/fleetlyrun/fleetly/internal/application/engine"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -130,6 +131,32 @@ func TestGetStatusAnonymousMinimalState(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, authed.GetComponents(), 1)
 	assert.Contains(t, authed.GetComponents()[0].GetDetails(), "10.99.0.7")
+}
+
+// TestGetStatusSurfacesEngineHealthComponents：引擎环死亡/收敛能力行经
+// 健康组件面透出（R02-M7 / R16-L3）——任一不健康即 DEGRADED；匿名面照旧
+// 不含 components（R08-M9 的最小态约束不被本行绕过）。
+func TestGetStatusSurfacesEngineHealthComponents(t *testing.T) {
+	svc := testService()
+	svc.engineHealth = func() []engine.HealthComponent {
+		return []engine.HealthComponent{
+			{Name: "engine ring deployment", Healthy: false, Details: "ring=deployment dead"},
+			{Name: engine.ConvergenceHealthComponent, Healthy: true, Details: "posture=all, inspector=present"},
+		}
+	}
+	resp, err := svc.GetStatus(authCtx(), &systemv1.GetStatusRequest{})
+	require.NoError(t, err)
+	assert.Equal(t, systemv1.StatusState_STATUS_STATE_DEGRADED, resp.GetState(),
+		"a dead engine ring degrades the control plane status")
+	require.Len(t, resp.GetComponents(), 2)
+	assert.Equal(t, "engine ring deployment", resp.GetComponents()[0].GetName())
+	assert.Equal(t, "engine", resp.GetComponents()[0].GetCapability())
+	assert.Equal(t, "ring=deployment dead", resp.GetComponents()[0].GetDetails())
+	assert.Equal(t, engine.ConvergenceHealthComponent, resp.GetComponents()[1].GetName())
+
+	anon, err := svc.GetStatus(context.Background(), &systemv1.GetStatusRequest{})
+	require.NoError(t, err)
+	assert.Empty(t, anon.GetComponents(), "anonymous callers still get the minimal state (no engine details)")
 }
 
 // TestGetStatusCachesProbes：探活结果 TTL 缓存——窗口内重复请求不再触发

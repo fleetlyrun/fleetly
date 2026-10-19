@@ -98,6 +98,37 @@ func (s convergeSignals) aggregate() string {
 	return strings.Join(parts, "\x1f")
 }
 
+// convergeTrigger 是一次收敛尝试的触发面（R02-M1）：有签名 = 快/慢通道
+// 圈定了未收敛信号（sig = 聚合签名）；无签名 = 启动基线重放 / 隔离重放等
+// 例行重放。冷却解除径②（"漂移签名变化"）只在有签名触发上比对——无签名
+// 调用既不匹配也不得解除冷却。
+type convergeTrigger struct {
+	sig string
+}
+
+// signaledConvergeTrigger 构造携带签名的触发（快/慢通道的信号驱动面）。
+func signaledConvergeTrigger(sig string) convergeTrigger { return convergeTrigger{sig: sig} }
+
+// isSignaled 报告触发是否携带签名（空聚合 = 无未收敛信号 = 无签名）。
+func (t convergeTrigger) isSignaled() bool { return t.sig != "" }
+
+// convergeFailureSignature 是失败签名的三态记账（R02-M1）：零值 = 最近一次
+// 失败无签名（或账本缺席）；present = 最近一次**有签名**失败的聚合签名在册。
+// 比较只在 changedBy 一处做（解除径②的单一判定点）。
+type convergeFailureSignature struct {
+	sig     string
+	present bool
+}
+
+// changedBy 报告一次触发是否构成「漂移签名变化」解除径：无签名触发恒
+// false（不得解除冷却）；有签名触发在账本无签名或签名不同时为 true。
+func (f convergeFailureSignature) changedBy(t convergeTrigger) bool {
+	if !t.isSignaled() {
+		return false
+	}
+	return !f.present || f.sig != t.sig
+}
+
 // convergeSignalClass 是收敛信号类的单一枚举（键构造与裁决映射的唯一
 // 构造点）：每类一个前缀 + 一个裁决表字段，新增类不在两处同时登记即红
 // （TestConvergeVerdictSignalClassTotality）。
@@ -173,8 +204,9 @@ type converges struct {
 	resolved map[string]string
 	// fails 是连续收敛失败计数（冷却阈值 N 的记账面）。
 	fails map[string]int
-	// failSig 是最近一次失败时的聚合签名（签名变化重触发判定）。
-	failSig map[string]string
+	// failSig 是最近一次**携带签名**的失败触发快照（三态：无签名/有签名同/
+	// 有签名异——R02-M1）。无签名失败不写本账（见 convergeFail）。
+	failSig map[string]convergeFailureSignature
 	// posture 是进入冷却时的 posture 快照（切换清零判定）。
 	posture map[string]string
 	// cooldown 是冷却窗起点（键缺席 = 未冷却；窗满自动解除）。
@@ -207,7 +239,7 @@ func (c *converges) init() {
 	c.memo = make(map[string]ensureMemo)
 	c.resolved = make(map[string]string)
 	c.fails = make(map[string]int)
-	c.failSig = make(map[string]string)
+	c.failSig = make(map[string]convergeFailureSignature)
 	c.posture = make(map[string]string)
 	c.cooldown = make(map[string]time.Time)
 	c.eventSeen = make(map[string]bool)
@@ -441,10 +473,17 @@ const (
 // 过闸；快通道先经裁决表——信号不构成收敛行即不发起动作（表覆盖不全的
 // 组合走此分支，不得凭信号存在就收敛）。
 func (e *Engine) convergeStep(ctx context.Context, appID string, d *deployment.Deployment, signals convergeSignals) {
+	agg := signals.aggregate()
+	// 空信号集 = 无未收敛信号：清「已收敛签名」（R02-L1）——同一形态复发
+	// 必须以快通道重触发，不得靠慢通道 ≤90s 有界兜底。
+	if len(signals) == 0 {
+		e.converge.mu.Lock()
+		delete(e.converge.resolved, appID)
+		e.converge.mu.Unlock()
+	}
 	if d == nil {
 		return // 无成功基线：无可收敛锚（spec 对照照旧，缺席面跳过）
 	}
-	agg := signals.aggregate()
 	e.converge.mu.Lock()
 	unchanged := e.converge.resolved[appID] == agg
 	e.converge.mu.Unlock()
@@ -454,13 +493,15 @@ func (e *Engine) convergeStep(ctx context.Context, appID string, d *deployment.D
 		if !convergeActionable(convergeVerdict(signalVerdictInput(signals))) {
 			return // 信号不构成收敛行（当前六类皆可行动；未知信号类不得发起动作）
 		}
-		e.attemptConverge(ctx, appID, d, agg, convergeSourceFast)
+		e.attemptConverge(ctx, appID, d, signaledConvergeTrigger(agg), convergeSourceFast)
 		return
 	}
 	if fresh {
 		return // 稳态：无未收敛信号 + 物化备忘在期
 	}
-	e.attemptConverge(ctx, appID, d, agg, convergeSourceSlow)
+	// 慢通道也可能携带信号（"已收敛签名"未变的残留信号：fast 让位后由慢
+	// 通道重放）；agg 为空即无签名触发（例行重放）。
+	e.attemptConverge(ctx, appID, d, convergeTrigger{sig: agg}, convergeSourceSlow)
 }
 
 // attemptConverge 是收敛动作的统一原语（ADR-0082 §2）：闸门序（冷却 →
@@ -470,11 +511,11 @@ func (e *Engine) convergeStep(ctx context.Context, appID string, d *deployment.D
 // （isolate=true，boundedStep 带界）→ 记账（成功落签名/备忘，失败计冷却）。
 // 不建 Deployment 行——收敛高频，部署行会成行垃圾（替代案已驳回）；审计
 // 走 SourceSystem 行而非部署 lineage。
-func (e *Engine) attemptConverge(ctx context.Context, appID string, d *deployment.Deployment, agg string, src convergeSource) convergeOutcome {
+func (e *Engine) attemptConverge(ctx context.Context, appID string, d *deployment.Deployment, trigger convergeTrigger, src convergeSource) convergeOutcome {
 	// 冷却门先于 posture 门：posture 切换（all→detect→all 往返）在冷却
 	// 判定点可见即清零记账（解除三径之一；跨重启的切换由记账内存态自然
 	// 清零——两径对齐 ADR-0082 §4）。窗内尝试跳过。
-	if !e.convergeCooldownOpen(ctx, appID, agg) {
+	if !e.convergeCooldownOpen(ctx, appID, trigger) {
 		return convergeOutcomeCooling
 	}
 	// posture 门（ADR-0082 §5）：detect = 零运行时写——门限对 fast / slow /
@@ -538,18 +579,19 @@ func (e *Engine) attemptConverge(ctx context.Context, appID string, d *deploymen
 	report, err := e.materialize(ctx, fresh, fresh.ToRevision, fresh.Generation, true)
 	if err != nil {
 		e.log.Error("converge: materialize", "app", appID, "generation", fresh.Generation, "err", err)
-		e.convergeFail(ctx, appID, agg, err)
+		e.convergeFail(ctx, appID, trigger, err)
 		return convergeOutcomeFailed
 	}
-	e.convergeSucceed(ctx, appID, convergeMemoSig(fresh), agg, fresh, src, report)
+	e.convergeSucceed(ctx, appID, convergeMemoSig(fresh), trigger, fresh, src, report)
 	return convergeOutcomeConverged
 }
 
 // convergeCooldownOpen 报告该 App 是否可发起收敛尝试（锁外判定；窗内返回
 // false）。解除三径（ADR-0082 §4）在窗内逐拍判定：超窗自动 / 漂移签名
-// 变化重触发 / posture 切换清零。返回 true 时若发生了释放且内置告警在
-// firing，就地落 resolved 沿（事件 + 通道派发，锁外 I/O）。
-func (e *Engine) convergeCooldownOpen(ctx context.Context, appID, agg string) bool {
+// 变化重触发（仅限携带签名的触发，R02-M1）/ posture 切换清零。返回 true
+// 时若发生了释放且内置告警在 firing，就地落 resolved 沿（事件 + 通道派发，
+// 锁外 I/O）。
+func (e *Engine) convergeCooldownOpen(ctx context.Context, appID string, trigger convergeTrigger) bool {
 	now := e.clock.Now()
 	e.converge.mu.Lock()
 	until, cooling := e.converge.cooldown[appID]
@@ -558,7 +600,7 @@ func (e *Engine) convergeCooldownOpen(ctx context.Context, appID, agg string) bo
 		return true
 	}
 	release := now.Sub(until) >= e.opts.Converge.Cooldown ||
-		e.converge.failSig[appID] != agg ||
+		e.converge.failSig[appID].changedBy(trigger) ||
 		e.converge.posture[appID] != e.opts.Converge.Posture
 	if !release {
 		e.converge.mu.Unlock()
@@ -595,11 +637,17 @@ func (e *Engine) convergeReleaseLocked(appID string) {
 //     驱动（fast 源）**就发——"系统改了你的运行时必留痕"；
 //   - 事件（workload.converged）：维持 fast 源才发——慢通道/启动重放是
 //     例行节拍，进事件流即行垃圾；它们的真实变更由审计行承载。
-func (e *Engine) convergeSucceed(ctx context.Context, appID, sig, agg string, d *deployment.Deployment, src convergeSource, rep capability.EnsureReport) {
+func (e *Engine) convergeSucceed(ctx context.Context, appID, sig string, trigger convergeTrigger, d *deployment.Deployment, src convergeSource, rep capability.EnsureReport) {
 	now := e.clock.Now()
 	e.ensureRemember(e.converge.memo, appID, ensureMemo{sig: sig, gen: d.Generation, at: now})
 	e.converge.mu.Lock()
-	e.converge.resolved[appID] = agg
+	if trigger.isSignaled() {
+		e.converge.resolved[appID] = trigger.sig
+	} else {
+		// 无签名收敛（基线/慢通道例行重放）：无未收敛信号 = 已收敛签名的
+		// 生命周期终点（R02-L1——同形态复发必须在快通道重触发）。
+		delete(e.converge.resolved, appID)
+	}
 	e.convergeReleaseLocked(appID)
 	resolved := len(e.converge.cooldown) == 0 && e.converge.alertFiring
 	if resolved {
@@ -627,11 +675,11 @@ func (e *Engine) convergeSucceed(ctx context.Context, appID, sig, agg string, d 
 	team := e.eventTeamOfApp(ctx, e.repos, appID)
 	fact := writes.FactRow{
 		Name: eventWorkloadConverged, Aggregate: "app", ID: appID,
-		Payload: convergeEventPayloadJSON(appID, d.ToRevision, d.Generation, agg, ""),
+		Payload: convergeEventPayloadJSON(appID, d.ToRevision, d.Generation, trigger.sig, ""),
 		Action:  "workload.converge", Resource: "app/" + appID,
 		AfterFP: digest, Source: audit.SourceSystem,
 		TeamID: team,
-		Detail: convergeAuditDetailJSON(src, agg, rep),
+		Detail: convergeAuditDetailJSON(src, trigger.sig, rep),
 	}
 	if src != convergeSourceFast {
 		// LedgerOnly 偏离理由（ADR-0082 §2 第 2 条）：慢通道/启动重放的
@@ -670,14 +718,20 @@ func convergeAuditDetailJSON(src convergeSource, agg string, rep capability.Ensu
 // convergeFail 记一次收敛失败：不落签名（resolved 不动——下拍重扫即自然
 // 重试），计冷却计数；连续失败达阈值 N 进入冷却窗 + workload.converge_failed
 // 一次 + 内置告警 firing 沿（ADR-0082 §4）。
-func (e *Engine) convergeFail(ctx context.Context, appID, agg string, cause error) {
+//
+// 签名账三态（R02-M1）：只有携带签名的失败才写 failSig；无签名失败（基线/
+// 隔离重放）只计数、不抹签名账——否则一次无签名重放失败会把 failSig 清空，
+// 让下一次同签名失败被误判成「签名变化」而解除冷却。
+func (e *Engine) convergeFail(ctx context.Context, appID string, trigger convergeTrigger, cause error) {
 	now := e.clock.Now()
 	e.converge.mu.Lock()
-	// 签名变化重触发：与上次失败不同的聚合签名 = 新触发（计数重开）。
-	if prev, ok := e.converge.failSig[appID]; ok && prev != agg {
-		e.converge.fails[appID] = 0
+	// 签名变化重触发：与上次**有签名**失败不同的聚合签名 = 新触发（计数重开）。
+	if trigger.isSignaled() {
+		if prev := e.converge.failSig[appID]; prev.present && prev.sig != trigger.sig {
+			e.converge.fails[appID] = 0
+		}
+		e.converge.failSig[appID] = convergeFailureSignature{sig: trigger.sig, present: true}
 	}
-	e.converge.failSig[appID] = agg
 	e.converge.fails[appID]++
 	n := e.converge.fails[appID]
 	enter := n >= e.opts.Converge.FailureThreshold
@@ -699,7 +753,7 @@ func (e *Engine) convergeFail(ctx context.Context, appID, agg string, cause erro
 	}
 	team := e.eventTeamOfApp(ctx, e.repos, appID)
 	if err := e.emitObservation(ctx, team, eventWorkloadConvergeFailed, "app", appID,
-		convergeEventPayloadJSON(appID, "", 0, agg, cause.Error())); err != nil {
+		convergeEventPayloadJSON(appID, "", 0, trigger.sig, cause.Error())); err != nil {
 		e.log.Error("converge: emit failure event", "app", appID, "err", err)
 	}
 	e.convergeAlertEdge(ctx, alertrule.StateFiring, now)

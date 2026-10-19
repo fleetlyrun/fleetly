@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"runtime/debug"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -27,8 +28,12 @@ type Loop struct {
 	done chan struct{}
 	// doneOnce 守护 done 的单次关闭（B12 P3-6 修面）：Stop 后重启会再次
 	// 进入 Run（Start 见 cancel=nil 放行），裸 close 二次触发 panic——
-	// done 观察面只保首任循环的关闭信号（当前无消费方）。
+	// done 观察面只保首任循环的关闭信号（R02-M7 起由 engine supervisor
+	// 消费：panic 死亡转成 ring dead 记账，health/doctor 可见）。
 	doneOnce sync.Once
+	// panicked 标记本次生命期由 panic 恢复终止（Done 关闭前由 runStep
+	// 置位；supervisor 据此区分「优雅取消」与「环死亡」）。
+	panicked atomic.Bool
 }
 
 // NewLoop 构造循环（name 供日志与观测面）。
@@ -51,6 +56,13 @@ func (l *Loop) Kick() {
 
 // Done 在循环退出（ctx 取消或 panic 终止）后关闭。
 func (l *Loop) Done() <-chan struct{} { return l.done }
+
+// Panicked 报告本循环是否因 panic 恢复而终止（Done 关闭后有效；优雅取消
+// = false）。supervisor 的 ring dead 判据（R02-M7）。
+func (l *Loop) Panicked() bool { return l.panicked.Load() }
+
+// Name 返回环名（诊断/log 面）。
+func (l *Loop) Name() string { return l.name }
 
 // Run 阻塞驱动直至 ctx 取消。tick 是兜底节拍（观察窗到期、超时看门狗
 // 靠它推进；kick 提供事件驱动的即时路径）。优雅退出契约：ctx 取消后
@@ -77,6 +89,7 @@ func (l *Loop) Run(ctx context.Context, tick time.Duration, step func(context.Co
 func (l *Loop) runStep(ctx context.Context, step func(context.Context)) (alive bool) {
 	defer func() {
 		if r := recover(); r != nil {
+			l.panicked.Store(true)
 			l.log.Error("engine loop terminated after panic",
 				"loop", l.name, "panic", r, "stack", string(debug.Stack()))
 			alive = false

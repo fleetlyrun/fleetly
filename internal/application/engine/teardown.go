@@ -20,16 +20,19 @@ func (e *Engine) TeardownApp(ctx context.Context, appID string) error {
 	appMu.Lock()
 	defer appMu.Unlock()
 
-	// 锁内预检（ADR-0023 修订）：拆载体前复查活跃部署。与 Submit 共享
-	// appMu，此处所见即受理终局——API 无锁预检到收口之间受理的部署在
-	// 一切副作用之前拒绝（否则拆掉的载体要靠在途部署重放自愈，白承受
+	// 锁内预检（ADR-0023 修订）：拆载体前复查**驱动权**（R02-M4）。
+	// 谓词与 converger 同口径（DrivingByApp = 活跃态 + failed 待自动回滚
+	// 窗）——ActiveByApp 不含 failed 待回滚行，单独使用会放行"驱动器马上
+	// 要回滚重放"的 App，让回卷在收口后重建载体（无主孤儿）。与 Submit
+	// 共享 appMu，此处所见即受理终局——API 无锁预检到收口之间受理的部署
+	// 在一切副作用之前拒绝（否则拆掉的载体要靠在途部署重放自愈，白承受
 	// 一次可用性抖动）。
-	active, err := e.repos.Deployments.ActiveByApp(ctx, appID)
+	driving, err := e.repos.Deployments.DrivingByApp(ctx, appID)
 	if err != nil {
 		return err
 	}
-	if len(active) > 0 {
-		return fmt.Errorf("%w: app %s has %d active deployment(s)", ErrActiveDeployment, appID, len(active))
+	if len(driving) > 0 {
+		return fmt.Errorf("%w: app %s has %d driving deployment(s)", ErrActiveDeployment, appID, len(driving))
 	}
 
 	a, err := e.repos.Apps.Get(ctx, appID)
@@ -41,6 +44,12 @@ func (e *Engine) TeardownApp(ctx context.Context, appID string) error {
 		return fmt.Errorf("resolve app: %w", err)
 	}
 	ns := capability.NamespaceRef{Team: team, Project: a.ProjectID, App: a.ID}
+	// 维护互斥读半边（R13-L1）：Remove 是载体写动词，与 Ensure 族及网络
+	// 重建（写半边 detach→rm→create→attach 全序）串行化——重建窗内不得
+	// 插入拆载体（半拆网 × 半拆 App 交错会把 re-attach 面对已逝归属）。
+	// 锁等待不占步预算（排队语义：读锁在带界 ctx 派生之前获取）。
+	unlockMaintenance := e.lockMaintenance()
+	defer unlockMaintenance()
 	// Remove 带界（B15-1，批 3 判定的反转）：API 请求路径的 Remove 挂死会
 	// 卡住 API 调用本身（与收敛环卡死同害——docker hang 时 DeleteApp 的
 	// gRPC 永不返回，且 appMu 被握死堵住同 App 全部受理/重放）。带

@@ -145,7 +145,9 @@ func (e *Engine) rebuildBaselineExpectations(ctx context.Context, appID string, 
 // 期不走本函数（rebuildBaselineExpectations 只重建账本）；本函数保留给
 // all 态与 detect 期 peer 隔离重放，返回值供检测/隔离分支区分结局。
 func (e *Engine) replayAppBaseline(ctx context.Context, a *app.App, d *deployment.Deployment) convergeOutcome {
-	return e.attemptConverge(ctx, a.ID, d, "", convergeSourceBaseline)
+	// 无签名触发（R02-M1）：基线/隔离重放不携带未收敛信号，冷却解除径②
+	// 对它不适用——窗内重放只排队等窗满，不得凭空签名释放冷却。
+	return e.attemptConverge(ctx, a.ID, d, convergeTrigger{}, convergeSourceBaseline)
 }
 
 // driftScan 一拍漂移扫描：spec 对照（RuntimeInspector 可用时）+ 稳态

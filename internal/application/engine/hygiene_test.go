@@ -116,6 +116,43 @@ func TestSweepTerminalTaskCarriers(t *testing.T) {
 	}
 }
 
+// R13-L1：SweepTerminalTaskCarriers 是载体写动词——持 maintenanceMu 读
+// 半边，与网络重建写锁串行化（重建窗内不得插入清扫拆除）。写锁占位 +
+// 超时断言防死锁。
+func TestSweepTerminalTaskCarriersWaitsForMaintenanceWriter(t *testing.T) {
+	e, rt, _ := newTestEngine(t)
+	taskID := "01JD0TASK00000000000000030"
+	createTaskRow(t, e, taskID, "", task.FormOneShot, 1, 0, "")
+	finishTaskForTest(t, e, taskID, task.StateCompleted)
+
+	e.maintenanceMu.Lock() // 模拟 RebuildNetwork 写半边
+	type sweepResult struct {
+		n   int
+		err error
+	}
+	done := make(chan sweepResult, 1)
+	go func() {
+		n, err := e.SweepTerminalTaskCarriers(context.Background(), 7*24*time.Hour, 20)
+		done <- sweepResult{n: n, err: err}
+	}()
+	select {
+	case r := <-done:
+		e.maintenanceMu.Unlock()
+		t.Fatalf("terminal carrier sweep bypassed the maintenance lock: n=%d err=%v", r.n, r.err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	e.maintenanceMu.Unlock()
+
+	select {
+	case r := <-done:
+		require.NoError(t, r.err)
+		assert.Equal(t, 1, r.n)
+		assert.Len(t, rt.removedSnapshot(), 1, "the sweep proceeds after the writer releases the lock")
+	case <-time.After(5 * time.Second):
+		t.Fatal("terminal carrier sweep did not resume after the maintenance writer released the lock (deadlock)")
+	}
+}
+
 // TestSweepTerminalTaskCarriersDisabled 钉停用口径：window/limit 非正值 =
 // 本拍 no-op（装配层策略旋钮）。
 func TestSweepTerminalTaskCarriersDisabled(t *testing.T) {

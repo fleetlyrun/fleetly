@@ -2,12 +2,15 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 )
 
@@ -36,6 +39,66 @@ func TestTeardownAppRemovesCarriersAndClearsCaches(t *testing.T) {
 	// 幂等：再拆一次不报错、不重复计数。
 	require.NoError(t, e.TeardownApp(context.Background(), tAppID))
 	assert.Len(t, rt.removedSnapshot(), 2, "Remove is idempotent-reachable (carrier count per call is provider-side)")
+}
+
+// R02-M4：收口预检用驱动权谓词（DrivingByApp 含 failed 待自动回滚窗，与
+// converger 同口径）——failed 待回滚行在位时拒绝收口且零副作用；回滚窗
+// 关闭（rollback_attempted=1）后方可拆除。
+func TestTeardownAppRefusesFailedPendingRollbackWindow(t *testing.T) {
+	e, rt, clock := newTestEngine(t)
+	ctx := context.Background()
+	rev := freezeSpec(t, e, 1, tImageSpec)
+	driftDeployToSucceeded(t, e, rt, clock, rev)
+
+	// failed 待自动回滚行（from_revision 非空 + rollback_attempted=0；
+	// 形态与 drive.go 的 startRollback 拾取面一致）。
+	planted := &deployment.Deployment{
+		ID: "01JD0DEPLOYFAILED00000000", AppID: tAppID,
+		FromRevision: rev, ToRevision: rev,
+		State: deployment.StateFailed, Generation: 2, FromGeneration: 1,
+	}
+	require.NoError(t, e.repos.Deployments.Create(ctx, planted))
+	before := len(rt.removedSnapshot())
+
+	err := e.TeardownApp(ctx, tAppID)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrActiveDeployment), "the failed rollback window is driving; teardown must refuse, got %v", err)
+	assert.Len(t, rt.removedSnapshot(), before, "the refusal happens before any carrier side effect")
+
+	// 回滚窗关闭（已尝试回滚 = 终态失败）：收口放行。
+	require.NoError(t, e.repos.Deployments.Transit(ctx, planted.ID,
+		[]deployment.State{deployment.StateFailed}, deployment.StateFailed,
+		func(m *deployment.Deployment) { m.RollbackAttempted = true }))
+	require.NoError(t, e.TeardownApp(ctx, tAppID))
+	assert.Len(t, rt.removedSnapshot(), before+1, "after the rollback window closes the teardown proceeds")
+}
+
+// R13-L1：TeardownApp 是载体写动词——持 maintenanceMu 读半边，与网络重建
+// 写锁串行化（重建窗内不得插入拆载体）。用写锁占位 + 超时断言防死锁。
+func TestTeardownAppWaitsForMaintenanceWriter(t *testing.T) {
+	e, rt, clock := newTestEngine(t)
+	rev := freezeSpec(t, e, 1, tImageSpec)
+	driftDeployToSucceeded(t, e, rt, clock, rev)
+	before := len(rt.removedSnapshot())
+
+	e.maintenanceMu.Lock() // 模拟 RebuildNetwork 写半边
+	done := make(chan error, 1)
+	go func() { done <- e.TeardownApp(context.Background(), tAppID) }()
+	select {
+	case err := <-done:
+		e.maintenanceMu.Unlock()
+		t.Fatalf("teardown bypassed the maintenance lock: err=%v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	e.maintenanceMu.Unlock()
+
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+		assert.Len(t, rt.removedSnapshot(), before+1)
+	case <-time.After(5 * time.Second):
+		t.Fatal("teardown did not resume after the maintenance writer released the lock (deadlock)")
+	}
 }
 
 // ADR-0023 统一口径（N0.1 P1-1）：tombstone 后 Submit 在事务内拒绝——

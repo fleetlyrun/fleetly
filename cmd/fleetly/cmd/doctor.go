@@ -74,9 +74,14 @@ const (
 	// doctorDriftTolerance 是时钟漂移容差（LE 证书窗口与审计时间线的下限）。
 	doctorDriftTolerance = 2 * time.Minute
 	// disk 阈值：2 GiB 硬下限（镜像+构建上下文），10 GiB 建议线。
-	doctorDiskFail  = 2 << 30
-	doctorDiskWarn  = 10 << 30
+	doctorDiskFail = 2 << 30
+	doctorDiskWarn = 10 << 30
+	// doctorProbeWait 是单次探针预算。
 	doctorProbeWait = 1500 * time.Millisecond
+	// doctorConvergenceComponent 与 engine.ConvergenceHealthComponent 同名
+	//（GetStatus components 的收敛能力行；跨层字面契约，doctor 固定渲染成
+	// 「convergence capability」一行——R16-L3 的可发现性面）。
+	doctorConvergenceComponent = "convergence"
 	// doctorDockerWait 是 docker CLI 探测超时（docker info 首调明显慢于
 	// version——Windows/Docker Desktop 实测 >1.5s）。
 	doctorDockerWait = 5 * time.Second
@@ -279,6 +284,31 @@ func runDoctorProbes(ctx context.Context, addr string, ex exposureTargets) docto
 			Area: "remote", Name: "fleetlyd " + addr, Status: checkOK,
 			Detail: fmt.Sprintf("%s, server %s", state, serverVersionOrUnknown(resp.GetVersion())),
 		})
+		// 引擎健康组件（R02-M7 / R16-L3）：鉴权详情面携带环死亡
+		//（"ring=<name> dead"）与收敛能力行；匿名面 components 缺席——本段
+		// 静默跳过。收敛能力行固定渲染（Inspector 缺席时 warn）。
+		for _, c := range resp.GetComponents() {
+			if c.GetName() == doctorConvergenceComponent {
+				status, advice := checkOK, ""
+				if !c.GetHealthy() {
+					status = checkWarn
+					advice = "the runtime provider cannot inspect carriers, so default convergence detects and fixes nothing; implement the inspector or declare engine.converge_posture=detect explicitly"
+				}
+				checks = append(checks, doctorCheck{
+					Area: "remote", Name: "convergence capability", Status: status,
+					Detail: c.GetDetails(), Advice: advice,
+				})
+				continue
+			}
+			if c.GetHealthy() {
+				continue
+			}
+			checks = append(checks, doctorCheck{
+				Area: "remote", Name: "component " + c.GetName(), Status: checkWarn,
+				Detail: c.GetDetails(),
+				Advice: "the control plane reported this component unhealthy; a dead engine ring halts its single-writer face until fleetlyd restarts — inspect the daemon logs",
+			})
+		}
 	}
 
 	rep := doctorReport{Checks: checks}

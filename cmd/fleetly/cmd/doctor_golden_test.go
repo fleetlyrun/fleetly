@@ -58,6 +58,52 @@ func TestGoldenDoctor(t *testing.T) {
 	compareGolden(t, "doctor-json", out)
 }
 
+// TestDoctorEngineHealthLines（R02-M7 / R16-L3）：GetStatus 鉴权详情里的
+// 引擎健康组件转成 doctor 行——环死亡（"ring=<name> dead"）warn 可见；
+// 收敛能力行固定渲染（Inspector 缺席时 warn + 可行动建议）。warn-only
+// 检查不置失败退出码（既有口径）。
+func TestDoctorEngineHealthLines(t *testing.T) {
+	t.Setenv(envProxyConfigEndpoint, "")
+	t.Setenv(envRegistryAddr, "")
+	t.Setenv(envRuntimeProvider, "")
+
+	injectDoctorProbes(t,
+		dockerProbeResult{ClientVersion: "29.7.2", ServerVersion: "29.7.2", SwarmState: "active"},
+		nil, 128<<30, nil,
+		&systemv1.GetStatusResponse{
+			State: systemv1.StatusState_STATUS_STATE_DEGRADED, Version: "0.1.0-test",
+			Components: []*systemv1.ComponentHealth{
+				{Name: "engine ring deployment", Capability: "engine", Healthy: false, Details: "ring=deployment dead"},
+				{Name: "convergence", Capability: "engine", Healthy: true, Details: "posture=all, inspector=present"},
+			},
+		},
+		nil,
+	)
+	code, out, _ := runCLI(t, "doctor")
+	assert.Equal(t, 0, code, "warn-only engine health lines must keep exit 0")
+	assert.Contains(t, out, "ring=deployment dead", "a dead engine ring surfaces as a doctor line")
+	assert.Contains(t, out, "convergence capability", "convergence capability has its own doctor line")
+	assert.Contains(t, out, "posture=all, inspector=present")
+
+	// Inspector 缺席（detect 显式降级 / 手工装配）：收敛能力行 warn + 建议。
+	injectDoctorProbes(t,
+		dockerProbeResult{ClientVersion: "29.7.2", ServerVersion: "29.7.2", SwarmState: "active"},
+		nil, 128<<30, nil,
+		&systemv1.GetStatusResponse{
+			State: systemv1.StatusState_STATUS_STATE_DEGRADED, Version: "0.1.0-test",
+			Components: []*systemv1.ComponentHealth{
+				{Name: "convergence", Capability: "engine", Healthy: false, Details: "posture=detect, inspector=missing: spec drift is blind"},
+			},
+		},
+		nil,
+	)
+	code, out, _ = runCLI(t, "doctor")
+	assert.Equal(t, 0, code)
+	assert.Contains(t, out, "[warn] convergence capability")
+	assert.Contains(t, out, "inspector=missing")
+	assert.Contains(t, out, "engine.converge_posture", "the warn must point at the explicit opt-out")
+}
+
 func TestDoctorFailuresExitNonZero(t *testing.T) {
 	t.Setenv(envProxyConfigEndpoint, "")
 	t.Setenv(envRegistryAddr, "")

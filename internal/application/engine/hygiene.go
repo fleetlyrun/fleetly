@@ -88,10 +88,16 @@ func (e *Engine) SweepTerminalTaskCarriers(ctx context.Context, window time.Dura
 			}
 			continue
 		}
+		// 维护互斥读半边（R13-L1）：Remove 是载体写动词，与 Ensure 族及
+		// 网络重建写半边串行化——重建窗内不得插入清扫拆除（排空中的旧域
+		// 载体被重建的 re-attach 当作归属已逝的残留）。逐 Task 取放（不跨
+		// 整拍持锁）：清扫之间仍允许重建插队（排队语义，非整拍排他）。
+		unlockMaintenance := e.lockMaintenance()
 		stepCtx, cancel := e.boundedStep(ctx)
 		ns := capability.NamespaceRef{Team: team, Project: t.ProjectID, Task: t.ID}
 		err = e.runtime.Remove(stepCtx, ns)
 		cancel()
+		unlockMaintenance()
 		if err != nil {
 			e.log.Error("terminal carrier sweep: remove", "task", t.ID, "err", err)
 			continue

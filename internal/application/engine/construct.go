@@ -106,6 +106,7 @@ func New(deps Deps, opts Options) *Engine {
 	e.proxyMemo.pub = make(map[string]ensureMemo)
 	e.browse.sessions = make(map[string]*browseSession)
 	e.browse.ensure = make(map[string]ensureMemo)
+	e.ringDeaths = make(map[string]bool)
 	// 环表（表序 = DriveOnce 手动驱动序：schedule 先于 task——同一轮内
 	// 铸出的 Task 即刻进补足链；goroutine 挂载/Kick 顺序随表，环间独立
 	// 无依赖）。

@@ -43,6 +43,10 @@ func (e *Engine) Start(ctx context.Context) {
 		}()
 	}
 	e.StartWatch(runCtx)
+	// 环死亡监督（R02-M7）：消费各环 Done 面——panic 终止记 ring dead
+	//（HealthComponents/DeadRings 查询面），进程不崩；ctx 取消（优雅停）
+	// 不记。观察 goroutine 计入 wg，Stop 排水覆盖。
+	e.superviseRings(runCtx)
 	for _, r := range e.rings {
 		r.loop.Kick() // 启动即收敛：进程重启后按 Generation 幂等重放（场景 1）
 	}
