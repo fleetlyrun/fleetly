@@ -406,9 +406,9 @@
 
 ---
 
-## 11. 修复执行状态（2026-10-19，S1-S12；S1-S12b1 已 push `origin/main`，S12b2 文档批在工作区待提交）
+## 11. 修复执行状态（2026-10-19，S1-S12；全部已 push `origin/main`）
 
-排期与逐阶段验收记录：`docs/plan/2026-10-19-review-remediation.md`；H8/H10 设计：`docs/design/2026-10-19-security-backlog-design.md`；S12 设计：`docs/design/2026-10-19-converge-semantics.md`。执行方式：子代理逐阶段实现 + Lead 亲验验收门 + 每阶段还原点 commit + push（S1-S12b1 共 16 个功能/文档还原点；S12b2 文档批待 Lead 验收提交，HEAD 见 git log）。
+排期与逐阶段验收记录：`docs/plan/2026-10-19-review-remediation.md`；H8/H10 设计：`docs/design/2026-10-19-security-backlog-design.md`；S12 设计：`docs/design/2026-10-19-converge-semantics.md`。执行方式：子代理逐阶段实现 + Lead 亲验验收门 + 每阶段还原点 commit + push（S1-S12 共 21 个还原点，HEAD 见 git log）。
 
 | 阶段 | commit | 覆盖发现 | 验收证据（Lead 亲跑） |
 |---|---|---|---|
@@ -423,7 +423,7 @@
 | S9 H8 止血 | `d581c60b` | H8 阶段 A | raw 收平台管理员（403 先于 503）+ 8MiB/1000 序列上限 |
 | S10 H8 阶段 B | `e9654b8c` + `b22d6cc3` | H8 | QueryScopedMetrics（固定模板/行级授权/新错误码）+ Console scoped 图表 + CLI `metrics series`；capability/apitest/guards/console 138 全绿；生成物零漂移 |
 | S11 H10 | `9fe85c4e` + `f756ed70` | H10（R14-H3） | 迁移 00035 + 个体 relay 凭证 + 两步 enroll + 握手双向绑定 + 即时断连 + node.left 清理/顶替审计 + CLI/Console/runbook/ADR 追记；engine 25.9s/apitest 31.2s/guards 21.3s/console 138 全绿 |
-| S12 收敛语义 | `402132fe`（设计）+ `2740a09d`（b1 代码）；b2 文档待提交 | R02-M2/M5、R16-M3/M5/M6（R16-M2 零写半边延后，见 backlog） | 判定表 8 行接进生产 + golden 8 行；`EnsureReport.Changed/Removed` + 审计按「fast 源 ∨ 真实变更」分流；`extra`/`replay` 真实信号；`ensuredBy` 账本归属 + 重放标记；ADR-0081 判据两子类/域级收敛面表/153→154；ADR-0082 表 8+2/事实面/§5 已知降级/§6 账本；ADR-0083 H15 追记。b2 验收门：gofmt 空、双平台 build 0、guards/engine/cmd 全绿、vet 0、diff-check 0（Lead 复验补录） |
+| S12 收敛语义 | `402132fe`（设计）+ `2740a09d`（b1 代码）+ `23f4b0b1`（b2 文档/守卫）+ `fc485f1d`（终验 self-description golden 同步） | R02-M2/M5、R16-M3/M5/M6（R16-M2 零写半边延后，见 backlog） | 判定表 8 行接进生产 + golden 8 行；`EnsureReport.Changed/Removed` + 审计按「fast 源 ∨ 真实变更」分流；`extra`/`replay` 真实信号；`ensuredBy` 账本归属 + 重放标记；ADR-0081 判据两子类/域级收敛面表/153→154；ADR-0082 表 8+2/事实面/§5 已知降级/§6 账本；ADR-0083 H15 追记。b2/终验验收门：gofmt 空、双平台 build 0、guards 20.5s/engine 25.8s/cmd 全绿、vet 0、diff-check 0；终验 `go test ./...` 仅 2 项本机环境失败（keyring/builders），装配层 self-description golden 漏项由 Lead 终验捕获并在 `fc485f1d` 同批同步 |
 
 **H 状态：15/15 条 H 已在本地修复并推送**。机制级真机余量：H7（BG/route 就绪门）与 H9（BG 旧代 egress）为代码+单测级修复，e2e 触发待 dind/staging；H3 的 k3s 真机 403 反转与 S11a/b 的 relay 新流程待 dind/staging 台账（本机无 Docker daemon）。同批修复的 M/R：R16-M1、R14-M2/M4、R10-M6、R05-M1/M4、R12-M1、R09-M1、R06-M1；第二轮 S12 收口 R02-M2/M5、R16-M3/M5/M6（R16-M2 的零写半边延后，见下）。
 
@@ -438,7 +438,7 @@
 - 以及 §4 其余 M/L
 - `cmd/fleetly` golden 假时钟 flake（基线既有：manual-drive 多跑一拍导致 `created_at` 00:02/00:04 漂移；单跑绿、并发/`-count=3` 偶发）；`console:gen` Windows shim 问题（本地转发器绕过，建议单列修 gen.mjs 跨平台）
 
-**修复边界（诚实）**：S1-S12b1 的代码与生成物已 push，S12b2 文档批（ADR/CONTEXT/守卫/状态回写）在工作区待 Lead 验收提交；`generate:verify`/`console:verify` 零漂移（S12 未动生成物）；e2e/真机（Docker daemon 不可达）与 GitHub Actions 未运行，CI codegen job 仅静态核对；里程碑全量回归 `go test ./...` 仅 2 项本机环境失败（keyring Windows ACL、builders 无 Docker daemon）+ 上述既有 golden flake，其余全绿。
+**修复边界（诚实）**：S1-S12 的代码/生成物/文档已全部 push；`generate:verify`/`console:verify` 零漂移；终验 `go test ./...` 仅 2 项本机环境失败（keyring Windows ACL、builders 无 Docker daemon），其余全绿（cmd golden 假时钟 flake 仍偶发、单跑绿）；e2e/真机（Docker daemon 不可达）与 GitHub Actions 未运行，CI codegen job 仅静态核对；D3（detect 零写）与 R06-M7/R08-M1 等待 staging/后续批。
 
 ---
 

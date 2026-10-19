@@ -112,7 +112,7 @@ d233c07d docs(plan,reviews): S1-S5 终验记录与修复状态归档
 
 > S6 先行原因：H3 已消除 k3s configmaps 403，若不落挂载，真机会从"显式 403 失败"变成"ConfigMap 建了但容器无配置"的静默失败。
 
-> **第二轮收尾（2026-10-19）**：S6-S12 全部结项——S12 分两批落码：**b1** `2740a09d`（判定表接进生产 + `EnsureReport` 变更集 + `extra`/`replay` 真实信号 + `ensuredBy` 账本归属，已 push）；**b2** 文档批（ADR-0081/0082/0083 修订 + CONTEXT 词条 + 守卫补强，工作区待 Lead 验收提交）。**D3（detect 零运行时写）经 Lead 裁决延后**至 staging 验证后另立批，ADR-0082 §5 已成文为「已知降级」并列出落地必接受的三条降级；设计文档 §3.7 记录裁决原文。第二轮 H 与目标 M 级发现的代码/法源半边均已收敛（D3 零写半边除外），残余见各阶段记录与评审报告 §11。
+> **第二轮收尾（2026-10-19）**：S6-S12 全部结项——S12 分两批落码：**b1** `2740a09d`（判定表接进生产 + `EnsureReport` 变更集 + `extra`/`replay` 真实信号 + `ensuredBy` 账本归属，已 push）；**b2** `23f4b0b1`（ADR-0081/0082/0083 修订 + CONTEXT 词条 + 守卫补强，已 push）。**D3（detect 零运行时写）经 Lead 裁决延后**至 staging 验证后另立批，ADR-0082 §5 已成文为「已知降级」并列出落地必接受的三条降级；设计文档 §3.7 记录裁决原文。第二轮 H 与目标 M 级发现的代码/法源半边均已收敛（D3 零写半边除外），残余见各阶段记录与评审报告 §11。
 
 ### 第二轮裁决记录（2026-10-19，用户确认）
 - H8：**先阶段 A 止血 + 随后阶段 B scoped RPC**；本批只做 **app 级**，project 级 scoped 查询与 `ListAlertRules`/`ListAlertStates` 的 Team 过滤单列小批。
@@ -163,12 +163,12 @@ d233c07d docs(plan,reviews): S1-S5 终验记录与修复状态归档
 - 残留/裁决点：`node.left` 抖动为单拍缺行即删凭证/断连（无宽限窗；runbook 已写处置，是否加宽限待后续观察）；e2e rotate 恢复腿与 staging 真机未跑（无 Docker）；checklist/评审报告状态留给 Lead 统一更新。
 
 ### S12 执行记录（收敛语义深水区 + ADR 追记）
-- 子代理 prompt 要点：**b1**（已提交 `2740a09d`）判定表接进生产（8 判定行 + 信号/闸门两映射 + 两处真实调用）、`EnsureReport.Changed/Removed` 与审计按「fast 源 ∨ 真实变更」分流、`extra`/`replay` 真实信号、`ensuredBy` 账本归属；**b2**（本批，S12b2）只做法源与守卫收尾——ADR-0081/0082/0083 修订、CONTEXT 词条、`writeclassguard_test.go` 两条断言、设计/plan/review 状态回写；**D3（detect 零写）Lead 裁决延后**，禁止改 detect/engine 行为。
+- 子代理 prompt 要点：**b1**（已提交 `2740a09d`）判定表接进生产（8 判定行 + 信号/闸门两映射 + 两处真实调用）、`EnsureReport.Changed/Removed` 与审计按「fast 源 ∨ 真实变更」分流、`extra`/`replay` 真实信号、`ensuredBy` 账本归属；**b2**（S12b2，commit `23f4b0b1`）只做法源与守卫收尾——ADR-0081/0082/0083 修订、CONTEXT 词条、`writeclassguard_test.go` 两条断言、设计/plan/review 状态回写；**D3（detect 零写）Lead 裁决延后**，禁止改 detect/engine 行为。
 - 改动文件（b1）：`internal/application/engine/{converge,drift,materialize,observ,observdomain,transition,teardown,options}.go` 与 `converge_test.go`/`fakeruntime_test.go`、`internal/domain/shared/capability/runtime.go`、swarm/k3s `runtime.go` + 内容等价/ensure 测试、`eventcode/events.go` + golden、`converge-verdicts.golden`（10→8 行）。
 - 改动文件（b2 文档批）：`docs/adr/0081-write-class-author-class.md`、`docs/adr/0082-converge-by-default.md`、`docs/adr/0083-restart-seq.md`、`CONTEXT.md`（Declaration/Posture/Replay 三条）、`internal/guards/writeclassguard_test.go`、`docs/design/2026-10-19-converge-semantics.md`（状态 + §3.7 裁决记录 + §8 实施现状）、本文件、评审报告 §11。
-- 验收证据（b1，Lead 亲跑）：见 `2740a09d` 与评审 §11 行；b2 验收门已由实现子代理执行（gofmt 空、双平台 build 0、guards/engine/cmd 全绿、vet 0、diff-check 0），**Lead 复验后补录逐条输出**。
+- 验收证据（Lead 亲跑）：b1 见 `2740a09d` 与评审 §11；b2/终验：gofmt 空、双平台 build 0、guards 20.5s/engine 25.8s/cmd 全绿、vet 0、diff-check 0；终验 `go test ./...` 仅 2 项本机环境失败（keyring/builders），装配层 self-description golden 漏项由 Lead 终验捕获并在 `fc485f1d` 同步。
 - 全局一致性检查：判定表 8 行与 golden 逐行一致；ADR 计数 `27 ACTION + 53 DECLARATION + 74 READ = 154` 与 `writeclassguard_test.go` 断言一致（S10a 的 `QueryScopedMetrics` 补入附录 A.14）；ADR-0082 行 10 机制改写为 `replay` 重放标记（撤销「缺席检测」旧表述）；ADR-0081 判据与 `SetUserPassword` 附录/边界案例三处同源；D3 行为零改动（`attemptConverge` baseline 豁免与 `options.go` 注释原样）。
-- 还原点 commit：`402132fe`（设计稿）、`2740a09d`（S12b1 代码）；**S12b2 文档批待 Lead 验收后提交**（本子代理不提交、不 push）。
+- 还原点 commit：`402132fe`（设计稿）、`2740a09d`（S12b1 代码）、`23f4b0b1`（S12b2 文档/守卫）、`fc485f1d`（终验 self-description golden 同步）。
 - 残留/后续：**D3**（detect 零写：删 baseline 豁免 + `rebuildBaselineExpectations`/`recordProjectedSpecs` + gen 锚守卫 + 隔离 Warn + C1-C6 钉测）待 staging 验证后另立批；`--runtime` 校验改生效基线（P2 可选）；R16-M4（撤销 peer 同步 Ensure）、R16-L1/L2/L4/L6 等 M/L 残余见评审 §11。
 
 ### S6 执行记录
