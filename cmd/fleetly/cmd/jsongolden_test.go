@@ -59,7 +59,7 @@ var jsonGoldenStderr = map[string]string{
 	"registry-tags-upstream-json.golden":              "registry upstream service-error envelope (registry unreachable); stderr",
 	"templates-refresh-json.golden":                   "templates refresh rejection (catalog URL empty, embedded catalog is authoritative); stderr envelope",
 	"users-accept-json.golden":                        "invitation acceptance rejection (token/identity validation); stderr envelope",
-	"volumes-delete-json.golden":                      "volume delete rejection (volume still referenced); stderr envelope",
+	"volumes-delete-json.golden":                      "volume delete rejection (missing/already-deleted row); stderr envelope (success form is a JSON document: volumes-delete-success-json.golden)",
 }
 
 // jsonNDJSON 报告内容是否是多行 NDJSON 帧流（每行一个合法 JSON 对象）。

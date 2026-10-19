@@ -23,6 +23,8 @@ type Options struct {
 	Converge ConvergeOptions
 	// Relay 是回环中继面参数（ADR-0049）。
 	Relay RelayOptions
+	// Node 是节点观测对账参数（S11b 宽限窗）。
+	Node NodeOptions
 	// Data 是平台数据与公网发布面参数。
 	Data DataOptions
 }
@@ -141,6 +143,14 @@ type RelayOptions struct {
 	RelayVersion string
 }
 
+// NodeOptions 是节点观测对账参数（S11b 裁决：node.left 宽限窗）。
+type NodeOptions struct {
+	// LeaveGrace 是节点连续缺失的宽限窗（默认 30s；引擎时钟量度）。窗内
+	// 节点回归即清零——不删个体 relay 凭证、不断连、不发 node.left；窗满
+	// 才执行离场清理（S11b：单拍快照抖动不得升级成凭证误删事故）。
+	LeaveGrace time.Duration
+}
+
 // DataOptions 是平台数据与公网发布面参数。
 type DataOptions struct {
 	// DataRoot 是平台数据根（构建上下文与 git 检出落盘）。
@@ -216,6 +226,9 @@ func (o *Options) fill() {
 	}
 	if o.Task.ScheduleOverlap == "" {
 		o.Task.ScheduleOverlap = ScheduleOverlapSkip
+	}
+	if o.Node.LeaveGrace <= 0 {
+		o.Node.LeaveGrace = 30 * time.Second
 	}
 }
 

@@ -101,9 +101,10 @@ func TestScenario1KilledMidReleaseReplay(t *testing.T) {
 	assert.Equal(t, capability.Generation(d.Generation), calls[len(calls)-1].Gen)
 }
 
-// 节点对账：快照消失的节点 → node.left 事件 + 观测缓存下线（一次性）。
+// 节点对账：快照消失的节点在宽限窗满后 → node.left 事件 + 观测缓存下线
+// （一次性；S11b 窗内单拍不触发）。
 func TestNodeLeftReconciliation(t *testing.T) {
-	e, rt, _ := newTestEngine(t)
+	e, rt, clock := newTestEngine(t)
 	ctx := context.Background()
 	e.managedStep(ctx) // 首轮：node-1 在快照内（upsert）
 
@@ -112,8 +113,11 @@ func TestNodeLeftReconciliation(t *testing.T) {
 	rt.clusterOverride = true
 	rt.clusterView = capability.ClusterView{}
 	rt.mu.Unlock()
-	e.managedStep(ctx)
+	e.managedStep(ctx) // 宽限窗起算：单拍缺行不清理
+	assert.Empty(t, eventNames(t, e, "01JD0NODE00000000000000000"))
 
+	clock.Advance(e.opts.Node.LeaveGrace)
+	e.managedStep(ctx)
 	assert.Equal(t, []string{"node.left"}, eventNames(t, e, "01JD0NODE00000000000000000"))
 	n, err := e.repos.Nodes.Get(ctx, "01JD0NODE00000000000000000")
 	require.NoError(t, err)

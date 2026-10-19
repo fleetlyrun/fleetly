@@ -44,6 +44,9 @@ func TestGoldenQuickstartWaitsToSucceeded(t *testing.T) {
 	}
 
 	deadline := time.Now().Add(30 * time.Second)
+	// 假时钟只在部署进入 observing 后推进一次（越过 L3 观察窗）——推进次数
+	// 固定，不随轮询轮次漂移（S18b：每轮推进会让 created_at 00:02↔00:04 抖）。
+	advanced := false
 	for {
 		select {
 		case r := <-done:
@@ -57,8 +60,10 @@ func TestGoldenQuickstartWaitsToSucceeded(t *testing.T) {
 		}
 		h.Runtime.ReportRunning(appID+"-web", 1)
 		h.Drive(ctx)
-		h.Clock.Advance(120 * time.Second)
-		h.Drive(ctx)
+		if !advanced && latestDeploymentState(t, h, appID) == "observing" {
+			h.Clock.Advance(120 * time.Second)
+			advanced = true
+		}
 		time.Sleep(50 * time.Millisecond)
 	}
 }

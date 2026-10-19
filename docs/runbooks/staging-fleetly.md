@@ -387,7 +387,7 @@ ADR-0042 落地（64f07f0..8b7f51d 七 commit，CI run 37218474928 六 job 全�
 - **审计/事件**：`audit --action exec.` 行 actor/source（cli/api 分立）+ Detail 命令面；`exec.session_opened` 事件在 outbox（注意 events list 是 after_seq 游标语义——从窗头起查尾部事件要 `--after-seq`，walkthrough 坑①）。
 - **走查咬出 W1（同日修复）**：Provider 哨兵（无在跑实例）未进受理位信封映射 → E_INTERNAL 吞错因（3ms 快败无诊断面）。修复 = capability 跨层哨兵 `ErrExecNoRunning` 单源 + engine 归一 E_NOT_FOUND + 信封带 workload-id。**错因面**：目标 app 的 process 名错用（probe app 的进程是 web——`docker service inspect` 标签核对是排障第一步）。
 - **TTY stdin EOF 语义实测**（e2e 咬出 + staging 复证）：非交互 `shell </dev/null` = 连接半关闭 → daemon 收口 TTY exec（退出 137 形态，非挂死）——交互面不受影响（真终端 stdin 常开）。
-- **中继运维面**：relay 脚本幂等（重跑 = rm -f 旧容器重建——e2e 实证单容器收口）；**H10 起 rotate = join token + 全部节点 relay 凭证作废、在连中继即时断开**——旧中继失联后须逐 worker `nodes relay --node` 重铸并重跑（C3 泄漏处置语义，见「节点 relay 凭证运维」节）；**平台升级后中继二进制滞后**——帧协议只增容忍、`nodes list` 的 `relay_version` 回显滞后，升级序补一步"逐 worker 重铸 relay 凭证并重跑 relay 命令"；**node.left 清理**——节点离开快照即删其凭证并断连，短抖动后回归需重取脚本。
+- **中继运维面**：relay 脚本幂等（重跑 = rm -f 旧容器重建——e2e 实证单容器收口）；**H10 起 rotate = join token + 全部节点 relay 凭证作废、在连中继即时断开**——旧中继失联后须逐 worker `nodes relay --node` 重铸并重跑（C3 泄漏处置语义，见「节点 relay 凭证运维」节）；**平台升级后中继二进制滞后**——帧协议只增容忍、`nodes list` 的 `relay_version` 回显滞后，升级序补一步"逐 worker 重铸 relay 凭证并重跑 relay 命令"；**node.left 清理**——节点连续缺失超过 30s 宽限窗才删其凭证并断连（短抖动不处置），回归后需重取脚本。
 - 残留清理（上批挂账）：torchwood 项目 buildprobe/staticprobe/railpackprobe 三 app 删除（级联拆载体）+ `fleetly-vol-archredis`/`fleetly-vol-probe-redis` 孤儿卷删除。
 
 ## 2026-10-06 记录·十二（F3.3 模板库批换装 9df27c9-f33tpl + 模板面真机全链）
@@ -570,7 +570,7 @@ H10 起 `/v1/relay` 与 `/v1/platform/binary` 只认节点个体凭证（`fltrel
 - `relay_online=false`：先查审计（上述 action 名），再在节点看中继容器：`docker ps -a --filter name=fleetly-relay; docker logs fleetly-relay 2>&1 | tail -20`。
 - `/v1/platform/binary` 或 `/v1/relay` **401 `bad_credential`**：凭证已轮换/吊销，或节点行已被 `node.left` 清理——重新 `nodes relay --node` 并执行新脚本。
 - `node.relay_replaced` 审计 + `node relay replaced while previous connection live` 日志 = 同节点发生活体顶替（重复执行脚本/双 relay 抖动）；正常断线重连（旧连接已 drop）不触发。
-- **node.left 抖动风险**：`reconcileNodes` 以 DescribeCluster 快照判定离开，快照瞬时缺行即删凭证/断连；节点回归后 `nodes list` 行保留 unavailable，直接 `nodes relay --node` 重铸即可恢复（不重复 enroll/join）。抖动频繁时先查编排器 quorum/网络，再按本动线逐节点恢复。
+- **node.left 抖动风险**：`reconcileNodes` 以 DescribeCluster 快照判定离开，并有 **30s 宽限窗**（S11b 裁决，连续缺失满 `LeaveGrace` 才处置；窗内回归不删凭证/不断连/不发事件）；超过宽限窗才删凭证/断连，节点回归后 `nodes list` 行保留 unavailable，直接 `nodes relay --node` 重铸即可恢复（不重复 enroll/join）。抖动频繁时先查编排器 quorum/网络，再按本动线逐节点恢复。
 
 
 ## KEK 轮换操作序（`fleetlyd admin rewrap`，2026-10-03 工具化）

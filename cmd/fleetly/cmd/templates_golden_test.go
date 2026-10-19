@@ -102,6 +102,9 @@ func TestGoldenTemplatesInstantiateWaitsToSucceeded(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	deadline := time.Now().Add(30 * time.Second)
+	// 同 quickstart：假时钟只在 observing 就位后固定推进一次（S18b——推进
+	// 次数与轮询轮次解耦，时间戳才确定）。
+	advanced := false
 	for {
 		select {
 		case r := <-done:
@@ -115,7 +118,10 @@ func TestGoldenTemplatesInstantiateWaitsToSucceeded(t *testing.T) {
 		}
 		h.Runtime.ReportRunning(appID+"-web", 1)
 		h.Drive(ctx)
-		h.Clock.Advance(120 * time.Second)
+		if !advanced && latestDeploymentState(t, h, appID) == "observing" {
+			h.Clock.Advance(120 * time.Second)
+			advanced = true
+		}
 	}
 }
 

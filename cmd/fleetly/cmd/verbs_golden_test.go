@@ -640,21 +640,41 @@ func promoteScopedToSucceeded(t *testing.T, h *apitest.Harness, appID string, ge
 
 // promoteCarrierToSucceeded 是驱动公因子：载体 running 观测 + 假时钟推过
 // L1/L3，直到该 App 最新部署行 succeeded。
+//
+// 时钟推进与轮询次数解耦（S18b 假时钟 flake 根因修）：观测经 Runtime Watch
+// 消费 goroutine 异步进引擎缓存，「每轮 Drive + Advance」在调度抖动下会多跑
+// 一拍（created_at 00:02 ↔ 00:04 漂移）。改为两相——相位 A 只 Drive 到
+// observing（不碰假时钟，L1 死线恒在未来）；相位 B 固定推一次 120s 越过
+// L3 观察窗，再 Drive 到 succeeded。推进次数恒为 1，与调度无关。
 func promoteCarrierToSucceeded(t *testing.T, h *apitest.Harness, appID, workloadID string, gen uint64) {
 	t.Helper()
 	client := deliveryv1.NewDeploymentsServiceClient(h.Conn)
 	ctx := sdk.WithToken(context.Background(), h.Token) // 执法链激活后读路径同样要凭证
+	latestState := func() string {
+		list, err := client.ListDeployments(ctx, &deliveryv1.ListDeploymentsRequest{AppId: appID})
+		if err != nil || len(list.GetDeployments()) == 0 {
+			return ""
+		}
+		return list.GetDeployments()[0].GetState()
+	}
+	// 相位 A：L1 就位（releasing → observing）。假时钟不动 → L1 死线不会到。
 	for i := 0; i < 20; i++ {
 		h.Runtime.ReportRunning(workloadID, capability.Generation(gen))
 		h.Drive(ctx)
-		h.Clock.Advance(120 * time.Second)
+		if s := latestState(); s == "observing" || s == "succeeded" {
+			break
+		}
+	}
+	// 相位 B：固定推进一拍（越过 L3 观察窗）→ 收口到 succeeded。
+	h.Clock.Advance(120 * time.Second)
+	for i := 0; i < 20; i++ {
 		h.Drive(ctx)
-		list, err := client.ListDeployments(ctx, &deliveryv1.ListDeploymentsRequest{AppId: appID})
-		if err == nil && len(list.GetDeployments()) > 0 && list.GetDeployments()[0].GetState() == "succeeded" {
+		if latestState() == "succeeded" {
 			return
 		}
 	}
-	t.Fatal("deployment did not reach succeeded within the manual drive budget")
+	t.Fatalf("deployment of app %s did not reach succeeded within the manual drive budget (last state %q)",
+		appID, latestState())
 }
 
 // rollbackDeploymentRe 取 rollback 人类形态 "rolling back via deployment X"

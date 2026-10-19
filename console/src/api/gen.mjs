@@ -13,8 +13,17 @@
 //    参数→requestBody、responses.schema→content）。
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { createRequire } from "node:module";
+import { dirname, join } from "node:path";
 import converter from "swagger2openapi";
+
+// openapi-typescript 的 bin 入口经包解析定位（S18b 跨平台）：pnpm 在
+// node_modules/.bin 下放的 `openapi-typescript` 是无扩展名的 POSIX sh
+// 转发器，Windows 上不可执行（spawnSync ENOENT；此前靠本地转发器绕过）。
+// 改为「当前 node 直跑包内 bin/cli.js」——Linux/macOS/Windows 同一条调用，
+// 不依赖 shell、不依赖 .bin 的转发器形态。
+const require = createRequire(import.meta.url);
+const OPENAPI_TS_CLI = join(dirname(require.resolve("openapi-typescript/package.json")), "bin", "cli.js");
 
 // F3.1 写面扩面：identity/automation/proxy 入生成清单（audit/tokens 与
 // tasks/schedules/routes 的消费类型面；system 随 IA v3 二期③ Managed
@@ -75,7 +84,7 @@ try {
     spec.definitions.ErrorResponse = errorDefinition;
     const oas3 = await convert(spec);
     writeFileSync(tmp, JSON.stringify(oas3));
-    execFileSync("node_modules/.bin/openapi-typescript", [tmp, "-o", `${OUT_DIR}/${ctx}.ts`], { stdio: "inherit" });
+    execFileSync(process.execPath, [OPENAPI_TS_CLI, tmp, "-o", `${OUT_DIR}/${ctx}.ts`], { stdio: "inherit" });
     console.log(`generated ${OUT_DIR}/${ctx}.ts from genproto/${ctx}/v1/${ctx}.swagger.json`);
   }
 } finally {

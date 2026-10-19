@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -47,8 +48,31 @@ func browseFixture(t *testing.T, engineName string) (*apitest.Harness, context.C
 	// 状态推到 running（受理前置）。
 	h.Drive(ctx)
 	h.Runtime.ReportRunning(db.GetDatabase().GetId(), capability.Generation(1))
-	h.Drive(ctx)
+	waitDatabaseRunning(t, h, ctx, db.GetDatabase().GetId())
 	return h, ctx, db.GetDatabase().GetId()
+}
+
+// waitDatabaseRunning 是观测面的确定性同步点（S18b browse flake 根因修）：
+// ReportRunning 经 Runtime Watch 消费 goroutine **异步**进引擎观测缓存，
+// 紧随其后的固定一拍 Drive 可能与消费时序竞争——缺观测即停留在 pending，
+// 受理面如实回 E_DATABASE_NOT_READY（假阴性）。这里在界预算内反复
+// 「Drive + 让出调度」直到行态 running；超时仍失败（不掩盖真缺陷）。
+func waitDatabaseRunning(t *testing.T, h *apitest.Harness, ctx context.Context, dbID string) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	status := ""
+	for {
+		h.Drive(ctx)
+		require.NoError(t, h.DB.Runner().QueryRowContext(ctx,
+			`SELECT status FROM databases WHERE id = ?`, dbID).Scan(&status))
+		if status == "running" {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("database %s did not reach running within the drive budget (last status %q)", dbID, status)
+		}
+		time.Sleep(2 * time.Millisecond) // 让出 Watch 消费 goroutine（观测异步进缓存）
+	}
 }
 
 func TestBrowseDisabledWithoutConfig(t *testing.T) {
@@ -72,7 +96,7 @@ func browseFixtureOn(t *testing.T, h *apitest.Harness, engineName string) (*apit
 	require.NoError(t, err)
 	h.Drive(ctx)
 	h.Runtime.ReportRunning(db.GetDatabase().GetId(), capability.Generation(1))
-	h.Drive(ctx)
+	waitDatabaseRunning(t, h, ctx, db.GetDatabase().GetId())
 	return h, ctx, db.GetDatabase().GetId()
 }
 

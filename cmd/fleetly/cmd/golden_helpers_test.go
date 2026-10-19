@@ -4,6 +4,7 @@ package cmd
 // deploy 到 succeeded），供 telemetry 等后续 golden 组复用。
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -72,4 +73,44 @@ func goldenSeedDeploy(t *testing.T, h *apitest.Harness) string {
 	}
 	promoteToSucceeded(t, h, appID)
 	return appID
+}
+
+// latestDeploymentState 读某 App 最新部署行的状态（golden 轮询夹具的推进门）：
+// 假时钟只在 observing 就位后推进（S18b——推进次数与轮询次数解耦，否则观测
+// 经 Watch 消费 goroutine 异步进缓存，调度抖动会让同测试多推一拍，时间戳漂）。
+func latestDeploymentState(t *testing.T, h *apitest.Harness, appID string) string {
+	t.Helper()
+	var state string
+	err := h.DB.Runner().QueryRowContext(context.Background(),
+		`SELECT state FROM deployments WHERE app_id = ? ORDER BY seq DESC LIMIT 1`, appID).Scan(&state)
+	if err != nil {
+		return ""
+	}
+	return state
+}
+
+// waitDatabaseRunning 在界预算内驱动收敛环直到库行 running（S18b browse
+// flake 根因修）：running 观测经 Watch 消费 goroutine 异步进引擎缓存，固定
+// 一拍 Drive 可能与消费时序竞争——缺观测即 pending，browse 受理如实拒绝
+// （E_DATABASE_NOT_READY 假阴性）。条件等待只去掉时序假设，不弱化断言。
+func waitDatabaseRunning(t *testing.T, h *apitest.Harness, dbID string) {
+	t.Helper()
+	ctx := context.Background()
+	driveCtx := fleetly.WithToken(ctx, h.Token)
+	deadline := time.Now().Add(10 * time.Second)
+	status := ""
+	for {
+		h.Drive(driveCtx)
+		if err := h.DB.Runner().QueryRowContext(ctx,
+			`SELECT status FROM databases WHERE id = ?`, dbID).Scan(&status); err != nil {
+			t.Fatalf("read database status for %s: %v", dbID, err)
+		}
+		if status == "running" {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("database %s did not reach running within the drive budget (last status %q)", dbID, status)
+		}
+		time.Sleep(2 * time.Millisecond) // 让出 Watch 消费 goroutine（观测异步进缓存）
+	}
 }

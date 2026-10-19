@@ -165,10 +165,12 @@ func TestGoldenDatabasesBrowse(t *testing.T) {
 	t.Setenv("FLEETLY_TOKEN", h.Token)
 	projectID := seedDatabaseProject(t, "dbs-browse")
 	dbID, _ := createDatabase(t, projectID, "postgres", "shop", false)
-	// 库状态推到 running（受理前置：E_DATABASE_NOT_READY 拒 pending）。
+	// 库状态推到 running（受理前置：E_DATABASE_NOT_READY 拒 pending）。观测
+	// 经 Watch 消费 goroutine 异步进缓存——固定两拍会与消费时序竞争（S18b
+	// browse flake），改用条件等待。
 	h.Drive(sdk.WithToken(context.Background(), h.Token))
 	h.Runtime.ReportRunning(dbID, capability.Generation(1))
-	h.Drive(sdk.WithToken(context.Background(), h.Token))
+	waitDatabaseRunning(t, h, dbID)
 
 	code, out, stderr := runCLI(t, "databases", "browse", dbID)
 	if code != 0 || stderr != "" {

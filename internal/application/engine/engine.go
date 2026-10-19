@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
@@ -177,6 +178,11 @@ type Engine struct {
 
 	// nodeLeftSeen 是 node.left 去抖实例态（节点回归即清签名）。
 	nodeLeftSeen map[string]bool
+
+	// nodeAbsentSince 是 node.left 宽限窗计时（节点 ID → 首次缺失的引擎时
+	// 刻；S11b）：连续缺失达 opts.Node.LeaveGrace 才执行离场清理，窗内回
+	// 归即清条目（不删凭证/不断连/不发事件）。
+	nodeAbsentSince map[string]time.Time
 
 	// appLocks 是 App 级互斥（admission/基线重放/收口共享，N0.1 P1-3）：
 	// 重放持有锁期间 Submit 排队——admission 落行与重放的 ActiveByApp
