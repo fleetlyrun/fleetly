@@ -286,6 +286,20 @@ type Generation uint64
 // 缺席条目 = 该载体按调用 gen 下发（回滚兼容：空报告等价旧行为）。
 type EnsureReport struct {
 	Gens map[string]Generation
+	// Changed 是本次 Ensure 真实写穿内容等价判定的载体（Workload ID，升序
+	// 去重）：创建 / 整更新 / 仅副本数 / 停摆 resume 计入；内容寻址 skip 不
+	// 计；k3s 冷账本重放不计（ADR-0082 §2 第 3 条——该形态严格等于重启前
+	// 已下发内容的幂等重放，计入会让每次重启产生 N 条假变更审计）。
+	Changed []string
+	// Removed 是本次 Ensure 从域内移除的既有载体（"<kind>/<name>"，升序
+	// 去重）——被移除者没有期望 Workload，故不用 ID（ADR-0082 §2 第 4 条）。
+	Removed []string
+}
+
+// HasMaterialChange 报告本次 Ensure 是否真的改了运行时（审计分流的唯一
+// 判据：慢通道/启动重放的例行幂等重放零事实）。
+func (r EnsureReport) HasMaterialChange() bool {
+	return len(r.Changed) > 0 || len(r.Removed) > 0
 }
 
 // WireGen 返回某 Workload 的实际下发代次：回执优先，缺席回落载体自身

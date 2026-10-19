@@ -277,10 +277,11 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 }
 
 // Cancel 取消排队或在途 Deployment（ADR-0016：排队与在途均可取消）。
-// 在途取消是"停止推进"语义：当前 step 收尾后不再迁移；已下发的
-// Workload 由后续部署或 Remove 收口（N0 不自动拆除——诚实暴露）。
-// jobs 等待中的部署取消后，锚定 job Task best-effort 强停（ADR-0030
-// 决策 6：审计携带操作者）。
+// 在途取消是"停止推进"语义：当前 step 收尾后不再迁移。已下发的 Workload
+// **由收敛回卷基线**（ADR-0082 §1 行 10：取消的部署从未成为期望态；非成功
+// 终态在 transition 前门落重放标记，下一拍 Replay 快信号兑现），N0「不自动
+// 拆除」条款在本场景自 ADR-0082 起废止。jobs 等待中的部署取消后，锚定
+// job Task best-effort 强停（ADR-0030 决策 6：审计携带操作者）。
 func (e *Engine) Cancel(ctx context.Context, id string) (*deployment.Deployment, error) {
 	var out *deployment.Deployment
 	err := e.tx.Do(ctx, func(s transact.Stores) error {

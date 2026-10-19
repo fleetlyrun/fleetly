@@ -49,7 +49,7 @@ var builtins = []Event{
 	// detect 只观测）。converged = 基线重放收敛成功（审计行 source=system
 	// 携带基线 digest，不建 Deployment 行）；converge_failed = 连续收敛
 	// 失败达阈值进入冷却窗（一次；超窗/签名变化/posture 切换解除）。
-	{Name: "workload.converged", Summary: "The engine reconverged an app's carriers to its succeeded baseline (converge-by-default); the audit row carries the baseline digest and no deployment row is created.", Source: "internal/application/engine/converge.go attemptConverge"},
+	{Name: "workload.converged", Summary: "The engine reconverged an app's carriers to its succeeded baseline (converge-by-default); the audit row carries the baseline digest and no deployment row is created. Material reconvergence of any trigger source (slow replay, startup baseline replay) writes an audit row with the changed carrier set, while the event stream stays signal-driven.", Source: "internal/application/engine/converge.go attemptConverge"},
 	{Name: "workload.converge_failed", Summary: "Convergence for an app failed repeatedly and a cooldown window was entered (retries resume after the window, on a new drift signature, or on a posture switch).", Source: "internal/application/engine/converge.go convergeFail"},
 
 	// Identity & Access（F0.5~F0.7 账号批）。

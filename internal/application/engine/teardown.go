@@ -74,5 +74,8 @@ func (e *Engine) TeardownApp(ctx context.Context, appID string) error {
 	// 受理成功清标记）。 expect 缓存缺席无法区分「重启冷窗」与「删除收口
 	// 后」，标记才是闭合面。
 	e.converge.markTeardown(appID)
+	// 删除收口即账本作废：待重放标记随 App 一并清（ADR-0082 §6——已拆除的
+	// App 无期望态可回卷，残留标记会让下一位重建者看到幽灵回卷信号）。
+	e.converge.clearReplay(appID)
 	return nil
 }

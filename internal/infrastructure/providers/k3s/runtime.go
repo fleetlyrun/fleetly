@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/url"
 	"runtime/debug"
+	"slices"
 	"sort"
 	"strconv"
 	"time"
@@ -173,7 +174,7 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 		A := canonicalJSONModuloGen(obj)
 		B := canonicalSansReplicas(A)
 		key := kind + "/" + name
-		writeGen, skip := p.planContentAddressed(ctx, nsName, kind, name, A, B, w, gen)
+		writeGen, skip, coldLedger := p.planContentAddressed(ctx, nsName, kind, name, A, B, w, gen)
 		if !skip {
 			if writeGen != uint64(gen) {
 				_, obj = translateWorkloadObject(ns, w, capability.Generation(writeGen), secretFiles, configFiles, pullNames)
@@ -193,6 +194,12 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 				return capability.EnsureReport{}, fmt.Errorf("k3s ensure %s: %w", ns, err)
 			}
 			p.recordLastIssuedB(key, B)
+			if !coldLedger {
+				// 真实写穿内容等价判定（ADR-0082 §2 第 3 条）：创建 / 整更新 /
+				// 仅副本数计入；冷账本重放不计——该形态严格等于重启前已下发
+				// 内容的幂等重放，计入会让每次重启产生 N 条假变更审计。
+				report.Changed = append(report.Changed, w.ID)
+			}
 		}
 		if writeGen != 0 && writeGen != uint64(gen) {
 			wires[w.ID] = writeGen
@@ -223,6 +230,8 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 				return capability.EnsureReport{}, fmt.Errorf("k3s ensure %s: remove stale %s: %w", ns, obj.name, err)
 			}
 			p.forgetLastIssued(obj.name)
+			// 被移除者没有期望 Workload ID（ADR-0082 §2 第 4 条）：用载体名。
+			report.Removed = append(report.Removed, obj.kind+"/"+obj.name)
 		}
 	}
 	// Service 收敛（补轴后的域感规则）：按 team+project 宽列，只删本域轴
@@ -249,6 +258,7 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 			return capability.EnsureReport{}, fmt.Errorf("k3s ensure %s: remove stale service %s: %w", ns, svc.Name, err)
 		}
 		p.forgetLastIssued("service/" + svc.Name)
+		report.Removed = append(report.Removed, "service/"+svc.Name)
 	}
 	// Drift 对照账本落账（ADR-0064：wire-gen 真源——跳过/scale 载体保持
 	// 旧值，内容变更载体记调用 gen；Watch 的 gen 对照信号面由此与载体
@@ -260,6 +270,11 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 		}
 		p.recordIssuedGen(w.ID, g)
 	}
+	// 变更集归一（升序去重——审计 Detail 的可比形态；ADR-0082 §2 第 3/4 条）。
+	sort.Strings(report.Changed)
+	report.Changed = slices.Compact(report.Changed)
+	sort.Strings(report.Removed)
+	report.Removed = slices.Compact(report.Removed)
 	return report, nil
 }
 
@@ -1006,30 +1021,31 @@ func translateWorkloadObject(ns capability.NamespaceRef, w capability.Workload, 
 //   - A 键缺席（冷账本——daemon 重启重放形态）→ 读现存对象 meta 代戳钉
 //     写代：内容未变则服务端归一后 no-op（重启零滚动）；已变则该载体滚
 //     动但代戳停旧值——归因自洽（pod 标签=报告=账本三方一致），L1 按报
-//     告圈集，边界记 ADR。
+//     告圈集，边界记 ADR。coldLedger=true 报告"本次写是重启重放形态"，
+//     调用方不得计入 Changed（ADR-0082 §2 第 3 条）。
 //   - 其余 = 内容变更 → 写代 = 调用 gen（滚动替换，代戳随内容推进）。
-func (p *Provider) planContentAddressed(ctx context.Context, nsName, kind, name, a, b string, w capability.Workload, gen capability.Generation) (writeGen uint64, skip bool) {
+func (p *Provider) planContentAddressed(ctx context.Context, nsName, kind, name, a, b string, w capability.Workload, gen capability.Generation) (writeGen uint64, skip, coldLedger bool) {
 	key := kind + "/" + name
 	lastA := p.lastIssuedOf(key)
 	callGen := uint64(gen)
 	if lastA != "" && a == lastA {
 		if g, ok := p.issuedGenOf(w.ID); ok {
-			return g, true
+			return g, true, false
 		}
-		return callGen, true // 账本在而 issuedGen 缺席的异常形态：保守跳过
+		return callGen, true, false // 账本在而 issuedGen 缺席的异常形态：保守跳过
 	}
 	if lastA != "" && b == p.lastIssuedBOf(key) {
 		if g, ok := p.issuedGenOf(w.ID); ok {
-			return g, false // replicas-only：模板钉 wire-gen，只动副本数
+			return g, false, false // replicas-only：模板钉 wire-gen，只动副本数
 		}
-		return callGen, false
+		return callGen, false, false
 	}
 	if lastA == "" {
 		if g := p.serverObjectGen(ctx, nsName, kind, name); g > 0 {
-			return g, false // 冷账本重放：钉现存代戳（内容未变 → no-op 零滚）
+			return g, false, true // 冷账本重放：钉现存代戳（内容未变 → no-op 零滚）
 		}
 	}
-	return callGen, false
+	return callGen, false, false
 }
 
 // serverObjectGen 读现存对象的 meta 代戳（冷账本重放的写代钉住锚；404

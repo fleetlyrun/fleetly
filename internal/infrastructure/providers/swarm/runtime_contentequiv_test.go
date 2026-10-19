@@ -41,6 +41,9 @@ func TestEnsureContentEquivalenceSkipsUnchangedAcrossGen(t *testing.T) {
 	svc, _ = d.byRef(name)
 	assert.Equal(t, "1", svc.Spec.Labels[labelGeneration], "gen stamp stays with the running carrier")
 	assert.Equal(t, capability.Generation(1), report.WireGen(w, 2), "report carries the wire gen for observation attribution")
+	assert.Empty(t, report.Changed, "content-addressed skip must not report a change (ADR-0082 §2)")
+	assert.Empty(t, report.Removed)
+	assert.False(t, report.HasMaterialChange())
 
 	// 拍 3（冷账本——daemon 重启形态）：等价回读路径同语义。
 	cold := &Provider{cli: d.newClient(t)}
@@ -48,6 +51,7 @@ func TestEnsureContentEquivalenceSkipsUnchangedAcrossGen(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 0, d.count(updateKey))
 	assert.Equal(t, capability.Generation(1), report.WireGen(w, 3))
+	assert.Empty(t, report.Changed, "cold-ledger equivalent read must not report a change")
 }
 
 // replicas-only：内容等价（modulo 代戳与副本数）仅副本数不同 → 恰一次
@@ -79,11 +83,13 @@ func TestEnsureReplicasOnlyScalesPreservingTemplate(t *testing.T) {
 		"scale-only must preserve the in-service task template (no task replacement)")
 	assert.Equal(t, "1", svc.Spec.Labels[labelGeneration], "service-level gen anchor moves with the template, not the deployment")
 	assert.Equal(t, capability.Generation(1), report.WireGen(scaled, 2))
+	assert.Equal(t, []string{scaled.ID}, report.Changed, "replicas-only is a material change (scale updates are real writes)")
 
-	// 拍 3（同期望重放）：账本短路零新 update。
-	_, err = p.Ensure(ctx, ensureNS, []capability.Workload{scaled}, capability.Generation(2), capability.Materials{})
+	// 拍 3（同期望重放）：账本短路零新 update，零变更。
+	report, err = p.Ensure(ctx, ensureNS, []capability.Workload{scaled}, capability.Generation(2), capability.Materials{})
 	require.NoError(t, err)
 	assert.Equal(t, 1, d.count(updateKey))
+	assert.Empty(t, report.Changed, "a same-desired replay reports no change")
 }
 
 // 真内容变更：滚动替换照常、新代戳随变更落地、报告缺席该载体（wire-gen
@@ -108,6 +114,7 @@ func TestEnsureContentChangeRollsWithNewGen(t *testing.T) {
 	assert.Equal(t, "2", svc.Spec.Labels[labelGeneration], "content change advances the gen stamp")
 	assert.Equal(t, "2", svc.Spec.TaskTemplate.ContainerSpec.Labels[labelGeneration])
 	assert.Equal(t, capability.Generation(2), report.WireGen(changed, 2), "rolled workload reports the call gen")
+	assert.Equal(t, []string{changed.ID}, report.Changed, "a content change is a material change")
 }
 
 // 滚动停摆 resume（ADR-0064 决策 5）：期望内容等价 + UpdateStatus=paused
@@ -148,6 +155,7 @@ func TestEnsureResumesStalledRolloutOnce(t *testing.T) {
 	d.mu.Unlock()
 	assert.Equal(t, uint64(1), fu, "resume bumps ForceUpdate (docker --force semantics)")
 	assert.Equal(t, capability.Generation(2), report.WireGen(changed, 2))
+	assert.Equal(t, []string{changed.ID}, report.Changed, "resume is a real update dispatch (material change)")
 
 	// 拍 4：fake 不清 UpdateStatus（停摆持续形态）→ 窗内护栏不再 resume，
 	// 回到跳过语义（wire-gen = 现存服务代戳）。
@@ -155,6 +163,7 @@ func TestEnsureResumesStalledRolloutOnce(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 2, d.count(updateKey), "resume must not flap inside the guard window")
 	assert.Equal(t, capability.Generation(2), report.WireGen(changed, 2))
+	assert.Empty(t, report.Changed, "a guarded no-op resume reports no change")
 }
 
 // ADR-0083 内容等价四用例（restart_seq 铸标签面）：seq 变 → full update

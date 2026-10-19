@@ -196,6 +196,27 @@ func TestEnsureConvergesStaleCarriers(t *testing.T) {
 	assert.Contains(t, err.Error(), "carrier name collision")
 }
 
+// B4：域内 stale 载体移除进 Removed（载体名形态）；同拍期望集未变 → Changed
+// 空——"移除"与"更新"是两类变更事实（ADR-0082 §2 第 4 条）。
+func TestEnsureReportRemovedStaleCarrier(t *testing.T) {
+	p, _ := newFakeProvider()
+	ctx := context.Background()
+	ws := []capability.Workload{
+		{ID: "w1", Process: "api", Image: "nginx:1.27"},
+		{ID: "w2", Process: "worker", Image: "nginx:1.27"},
+	}
+	first, err := p.Ensure(ctx, appNS(), ws, capability.Generation(1), capability.Materials{})
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"w1", "w2"}, first.Changed, "creates are material changes")
+
+	// 期望集收窄：worker 被移除；api 内容未变（A 键命中零写）。
+	report, err := p.Ensure(ctx, appNS(), ws[:1], capability.Generation(2), capability.Materials{})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"deployment/fleetly-web-worker"}, report.Removed)
+	assert.Empty(t, report.Changed, "the remaining carrier is content-equivalent (no write)")
+	assert.True(t, report.HasMaterialChange(), "a removal is a material change")
+}
+
 // Remove 拆域内载体与 Service；PVC/Secret 是数据与材料面不随域拆。
 func TestRemoveKeepsDataPlane(t *testing.T) {
 	p, cli := newFakeProvider()

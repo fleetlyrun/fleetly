@@ -36,7 +36,11 @@ type deploys struct {
 // 而非失败——撤销隔离收敛、基线重放与缺省收敛用（隔离是收敛不变式：
 // 重启/失败后由漂移扫描拍与重放持续重申）。部署链（release/rollback/
 // prepare）恒 strict。
-func (e *Engine) materialize(ctx context.Context, d *deployment.Deployment, revision string, gen uint64, isolate bool) error {
+//
+// 返回值是 Ensure 的逐载体回执（ADR-0082 §2：Changed/Removed 是审计分流
+// 的唯一事实源——"系统改了你的运行时必留痕"；部署链调用方按 `_, err`
+// 丢弃，收敛动作消费变更集）。
+func (e *Engine) materialize(ctx context.Context, d *deployment.Deployment, revision string, gen uint64, isolate bool) (capability.EnsureReport, error) {
 	// 维护互斥读半边（ADR-0046）：Ensure 族与网络重建的串行化锚。锁获取
 	// 在带界 ctx 派生之前——锁等待是排队语义，不占步预算。
 	unlockMaintenance := e.lockMaintenance()
@@ -51,7 +55,7 @@ func (e *Engine) materialize(ctx context.Context, d *deployment.Deployment, revi
 
 	spec, ws, ns, err := e.projectRevision(ctx, d.AppID, revision, isolate)
 	if err != nil {
-		return err
+		return capability.EnsureReport{}, err
 	}
 	// 部署代标记（ADR-0048：全员逐载体 gen 锚 + blue-green 进程的代次化
 	// ID/命名位——rolling spec 全员 unscoped，逐字节零漂移）。release/
@@ -59,22 +63,22 @@ func (e *Engine) materialize(ctx context.Context, d *deployment.Deployment, revi
 	stampDeploymentGenerations(ws, spec, gen)
 	materials, err := e.resolveMaterials(ctx, spec, spec.GetApp().GetProject())
 	if err != nil {
-		return fmt.Errorf("resolve materials: %w", err)
+		return capability.EnsureReport{}, fmt.Errorf("resolve materials: %w", err)
 	}
 	if err := e.pinVolumes(ctx, ws, spec.GetApp().GetProject()); err != nil {
-		return fmt.Errorf("pin volumes: %w", err)
+		return capability.EnsureReport{}, fmt.Errorf("pin volumes: %w", err)
 	}
 	if err := e.applyVolumePinning(ctx, ws, spec.GetApp().GetProject()); err != nil {
-		return fmt.Errorf("merge volume pinning: %w", err)
+		return capability.EnsureReport{}, fmt.Errorf("merge volume pinning: %w", err)
 	}
 	// 托管库引用注入（database_refs → FLEETLY_DB_* env；值不进 Spec——
 	// Ensure 前解析，缺失精确失败）。
 	if err := e.injectDatabaseEnv(ctx, spec, ws, spec.GetApp().GetProject()); err != nil {
-		return fmt.Errorf("inject database env: %w", err)
+		return capability.EnsureReport{}, fmt.Errorf("inject database env: %w", err)
 	}
 	report, err := e.runtime.Ensure(ctx, ns, ws, capability.Generation(gen), materials)
 	if err != nil {
-		return fmt.Errorf("runtime ensure: %w", err)
+		return capability.EnsureReport{}, fmt.Errorf("runtime ensure: %w", err)
 	}
 	// 归因修正（ADR-0064 决策 4）：未变载体保留 wire-gen（跳过/scale 不
 	// 换代戳），观测记账按实际在服代次锚——L1 门按 wire-gen 等 running，
@@ -83,5 +87,5 @@ func (e *Engine) materialize(ctx context.Context, d *deployment.Deployment, revi
 		ws[i].Generation = uint64(report.WireGen(ws[i], capability.Generation(gen)))
 	}
 	e.recordEnsured(d, gen, ws)
-	return nil
+	return report, nil
 }

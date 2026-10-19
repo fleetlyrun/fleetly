@@ -1,14 +1,15 @@
 package engine
 
 // ADR-0082 缺省收敛（Converge by Default）：App 域收敛升格——检出漂移即
-// 收敛（裁决表十行），检测与事件面照发（ADR-0022 保留），Ensure 仍是唯一
-// 写动词（收敛动作的执行机构就是 Ensure/materialize→Ensure，升格的是调用
-// 者）。本文件承载：缺席检测（LatestSucceeded 拍内重投影）、双通道触发
-// （快通道四类信号 + 慢通道 ReconcileReplayInterval 强制重放）、签名生命
-// 周期（绑定收敛结果）、冷却记账（N=3 → 10min + converge_failed 一次）、
-// 冻结闸门（fail-closed）、收敛动作（lockApp 双复查 + materialize isolate
-// + 审计行 source=system + workload.converged）与裁决表判定函数（golden
-// 钉死）。
+// 收敛（裁决表 8 判定行 + 2 非行），检测与事件面照发（ADR-0022 保留），
+// Ensure 仍是唯一写动词（收敛动作的执行机构就是 Ensure/materialize→
+// Ensure，升格的是调用者）。本文件承载：缺席/多余检测（LatestSucceeded
+// 拍内重投影）、双通道触发（快通道六类信号 + 慢通道 ReconcileReplay-
+// Interval 强制重放）、签名生命周期（绑定收敛结果）、冷却记账（N=3 →
+// 10min + converge_failed 一次）、冻结闸门（fail-closed）、收敛动作
+// （lockApp 双复查 + materialize isolate + 审计/事件按真实变更分流）、
+// 裁决表判定函数与两个生产构造点（signalVerdictInput / gateVerdictInput）、
+// 非成功终态的重放标记（replay 快信号）。
 //
 // 防自激三件套（缺一即回到「20s 49 次版本推进」或「永不收敛」两个失败
 // 形态）：provider 侧 no-op 断路器 + 内容等价（materialize 同代重放下发
@@ -54,14 +55,29 @@ const (
 	// 内容等价使其近零成本；Cancel 遗留回卷/域内多余载体移除经此兑现）。
 	convergeSourceSlow
 	// convergeSourceBaseline 启动基线重放：rebuildBaselines 的单 App 面。
-	// 与快/慢通道共用闸门序与冷却记账；posture 门不生效（ADR-0005 旧行为
-	// 保留——期望缓存重建是检测面的前提，detect 也要能看见漂移）。
+	// 与快/慢通道共用闸门序与冷却记账；posture 门不生效（期望缓存重建是
+	// 检测面的前提）。**已知降级（D3 待 staging 验证）**：`posture=detect`
+	// 的最终语义是"零运行时写"（fast/slow/基线/peer 隔离四源同受门限），
+	// 本批保留 baseline 豁免即与最终语义有差——收口待 staging 验证后落地。
 	convergeSourceBaseline
 )
 
+// String 返回触发源字面（审计/日志/Detail 的 "source" 面）。
+func (src convergeSource) String() string {
+	switch src {
+	case convergeSourceFast:
+		return "fast"
+	case convergeSourceSlow:
+		return "slow"
+	case convergeSourceBaseline:
+		return "baseline"
+	}
+	return "unknown"
+}
+
 // convergeSignals 是一次扫描对某 App 圈定的收敛信号集：键 = 信号类锚
-// （四类独立签名键，ADR-0082 §4——spec 失配/gen 偏离/缺席/停摆各自去抖
-// 互不覆盖），值 = 该信号的签名字面。
+// （六类独立签名键，ADR-0082 §4 与 §1 行 8/10——spec 失配/gen 偏离/缺席/
+// 停摆/多余/重放各自去抖互不覆盖），值 = 该信号的签名字面。
 type convergeSignals map[string]string
 
 // aggregate 把信号集聚合为 App 级签名字面（键排序拼接——快通道「签名变化
@@ -80,6 +96,67 @@ func (s convergeSignals) aggregate() string {
 		parts = append(parts, k+"="+s[k])
 	}
 	return strings.Join(parts, "\x1f")
+}
+
+// convergeSignalClass 是收敛信号类的单一枚举（键构造与裁决映射的唯一
+// 构造点）：每类一个前缀 + 一个裁决表字段，新增类不在两处同时登记即红
+// （TestConvergeVerdictSignalClassTotality）。
+type convergeSignalClass uint8
+
+const (
+	convergeSignalSpec    convergeSignalClass = iota // 行1：spec 失配
+	convergeSignalAbsent                             // 行2：载体缺席
+	convergeSignalGen                                // 行3：稳态 gen 偏离
+	convergeSignalRollout                            // 行4：终态后滚动停摆
+	convergeSignalExtra                              // 行8：域内多余载体
+	convergeSignalReplay                             // 行10：Cancel/失败终态遗留
+)
+
+// allConvergeSignalClasses 返回全部信号类（完备性守卫的遍历面）。
+func allConvergeSignalClasses() []convergeSignalClass {
+	return []convergeSignalClass{
+		convergeSignalSpec, convergeSignalAbsent, convergeSignalGen,
+		convergeSignalRollout, convergeSignalExtra, convergeSignalReplay,
+	}
+}
+
+// key 构造该类在 convergeSignals 里的键（suffix 为空 = 无逐载体维度）。
+func (c convergeSignalClass) key(suffix string) string {
+	if suffix == "" {
+		return c.String()
+	}
+	return c.String() + "|" + suffix
+}
+
+// String 返回信号类字面（测试/日志；键前缀即本字面）。
+func (c convergeSignalClass) String() string {
+	switch c {
+	case convergeSignalSpec:
+		return "spec"
+	case convergeSignalAbsent:
+		return "absent"
+	case convergeSignalGen:
+		return "gen"
+	case convergeSignalRollout:
+		return "rollout"
+	case convergeSignalExtra:
+		return "extra"
+	case convergeSignalReplay:
+		return "replay"
+	}
+	return "unknown"
+}
+
+// convergeSignalClassOf 解析信号键的信号类（键前缀即类名）。未知键 =
+// 无类：调用方按"非收敛行"处理，不得为未知键伪造裁决输入。
+func convergeSignalClassOf(key string) (convergeSignalClass, bool) {
+	prefix, _, _ := strings.Cut(key, "|")
+	for _, c := range allConvergeSignalClasses() {
+		if c.String() == prefix {
+			return c, true
+		}
+	}
+	return 0, false
 }
 
 // converges 是收敛域实例态（内存态——崩溃循环由 boundedStep + 慢通道节拍
@@ -104,10 +181,16 @@ type converges struct {
 	cooldown map[string]time.Time
 	// eventSeen 钉「本轮冷却已发 workload.converge_failed」（一次语义）。
 	eventSeen map[string]bool
-	// projMemo 是基线重投影的 ID 集缓存（digest 签名短路：Revision 冻结体
-	// 不可变，(Revision, Generation) 即内容锚——缺席检测的每拍重投影在
-	// 未变基线上近零成本，ADR-0082 §1）。
-	projMemo map[string][]string
+	// projMemo 是基线投影的结果缓存（digest 签名短路：Revision 冻结体
+	// 不可变，(Revision, Generation) 即内容锚——缺席/多余检测的每拍重投影
+	// 在未变基线上近零成本，ADR-0082 §1）。投影结果即内容，ID 是派生面。
+	projMemo map[string][]capability.Workload
+	// replay 是非成功终态的待重放标记（appID → 触发重放的 Deployment ID）：
+	// 取消/失败/被抢占的部署从未成为期望态，下一拍以 replay 快信号回卷
+	// 基线（ADR-0082 §1 行 10 / §6）；值携带部署 ID → 第二次取消 = 新签名，
+	// 可再次触发。写点 = transition.transit 单前门，清点 = 成功收敛/
+	// 删除收口/成功终态迁移。
+	replay map[string]string
 	// teardown 是删除收口完成标记（teardown 竞态闭合的机制载体——expect
 	// 缓存无法区分「重启冷窗」与「删除收口后」，标记在 appMu 内与
 	// forgetOwner 同临界区写入，重建权交还部署驱动器：teardown-abort 的
@@ -128,7 +211,8 @@ func (c *converges) init() {
 	c.posture = make(map[string]string)
 	c.cooldown = make(map[string]time.Time)
 	c.eventSeen = make(map[string]bool)
-	c.projMemo = make(map[string][]string)
+	c.projMemo = make(map[string][]capability.Workload)
+	c.replay = make(map[string]string)
 	c.teardown = make(map[string]bool)
 }
 
@@ -141,10 +225,13 @@ func convergeMemoSig(d *deployment.Deployment) string {
 	return d.ToRevision + "\x00" + fmt.Sprint(d.Generation)
 }
 
-// ---- 裁决表（ADR-0082 §1 十行落码；golden 钉死 = 表即断言）----
+// ---- 裁决表（ADR-0082 §1：8 判定行 + 2 非行；golden 钉死 = 表即断言）----
 
 // convergeVerdictInput 是裁决表一行的输入面（每行一个判定分支 + golden
-// 快照钉死；行号对齐 ADR-0082 §1 表序）。
+// 快照钉死；行号对齐 ADR-0082 §1 表序）。行 5（spec 相符 + stopped）是
+// **信号层非行**——稳态看门狗只发事件、不产收敛信号，本结构无此字段；
+// 行 9（域外孤儿）**明确未落码**——观测面只有域内枚举、无 WorkloadOrphaned
+// 事件码，本结构同样无此字段（ADR-0082 修订版 §1）。
 type convergeVerdictInput struct {
 	Frozen         bool // 行7：冻结中
 	Driving        bool // 行6：活跃部署中（含 failed 待自动回滚窗）
@@ -153,26 +240,39 @@ type convergeVerdictInput struct {
 	GenDeviated    bool // 行3：稳态 gen 偏离
 	RolloutStalled bool // 行4：终态后滚动停摆（spec+gen 均一致）
 	ExtraCarriers  bool // 行8：域内多余载体
-	SteadyStopped  bool // 行5：spec 相符 + stopped
-	OrphanObserved bool // 行9：域外/无主孤儿观测
 	CancelLegacy   bool // 行10：Cancel 遗留载体（终态行、部分下发）
+}
+
+// verdictFieldProducers 是裁决表字段的生产者登记表（字段名 → 唯一生产
+// 构造点）：每个字段必须有唯一生产构造者（"不可伪造"原则）。加字段不
+// 登记、或表项无对应字段即红（TestConvergeVerdictFieldProducersComplete
+// 双向保鲜）；信号侧六类与映射的完备性由 TestConvergeVerdictSignalClass
+// Totality 执法。
+var verdictFieldProducers = map[string]string{
+	"Frozen":         "gateVerdictInput ← convergeFrozen",
+	"Driving":        "gateVerdictInput ← Deployments.DrivingByApp",
+	"SpecMismatch":   "signalVerdictInput ← convergeSignalSpec",
+	"Absent":         "signalVerdictInput ← convergeSignalAbsent",
+	"GenDeviated":    "signalVerdictInput ← convergeSignalGen",
+	"RolloutStalled": "signalVerdictInput ← convergeSignalRollout",
+	"ExtraCarriers":  "signalVerdictInput ← convergeSignalExtra",
+	"CancelLegacy":   "signalVerdictInput ← convergeSignalReplay",
 }
 
 // 裁决值（golden 字面）。
 const (
 	verdictSteady         = "steady"          // 无漂移：稳态（慢通道 memo 节拍照常，非裁决行）
 	verdictConverge       = "converge"        // 收敛动作（§2 统一原语）
-	verdictAlertOnly      = "alert-only"      // 只告警不收敛（ADR-0022 decision 3 实质保留）
 	verdictSkip           = "skip"            // 跳过本拍（驱动权在部署链）
 	verdictSuspend        = "suspend"         // 挂起（不消费签名，解冻重扫）
-	verdictRecordOnly     = "record-only"     // 只登记永不自动删（人裁保留）
 	verdictReplayBaseline = "replay-baseline" // 回卷 LatestSucceeded 基线
 )
 
-// convergeVerdict 是收敛裁决表的判定函数（优先序：闸门行 > 信号行 > 观测
-// 行；Cancel 遗留在信号行之后——同拍多信号时以显式信号裁决优先，遗留面
-// 由慢通道重放兜底兑现回卷）。posture=detect 不是行裁决：它是全局闸门
-// （收敛动作前置检查），检测与事件面照发。
+// convergeVerdict 是收敛裁决表的判定函数（优先序：闸门行 > 信号行；Cancel
+// 遗留在信号行之后——同拍多信号时以显式信号裁决优先）。两个生产构造点：
+// signalVerdictInput（信号侧）与 gateVerdictInput（闸门侧）；convergeStep
+// 与 attemptConverge 都真实调用它。posture=detect 不是行裁决：它是全局
+// 闸门（收敛动作前置检查），检测与事件面照发。
 func convergeVerdict(in convergeVerdictInput) string {
 	switch {
 	case in.Frozen:
@@ -191,28 +291,65 @@ func convergeVerdict(in convergeVerdictInput) string {
 		return verdictReplayBaseline // 行10：取消的部署从未成为期望态（翻案 admission N0 本场景）
 	case in.ExtraCarriers:
 		return verdictConverge // 行8：Ensure 域内移除既有语义（顺带）
-	case in.SteadyStopped:
-		return verdictAlertOnly // 行5：Ensure 内容等价 skip = 无效动作；swarm 自负重启
-	case in.OrphanObserved:
-		return verdictRecordOnly // 行9：WorkloadOrphaned 只登记原则不动
 	default:
 		return verdictSteady
 	}
 }
 
-// ---- 缺席检测（期望集 = LatestSucceeded 拍内重投影）----
+// signalVerdictInput 把一次扫描的信号集映射为裁决表输入——信号键→行的
+// 唯一映射点（ADR-0082 §1 的"表即断言"在信号侧的执行面）。未知信号键
+// 不置位任何字段（不得为未知键伪造裁决输入）。
+func signalVerdictInput(signals convergeSignals) convergeVerdictInput {
+	var in convergeVerdictInput
+	for key := range signals {
+		class, ok := convergeSignalClassOf(key)
+		if !ok {
+			continue // 未知信号类：无行可映射（不伪造输入）
+		}
+		switch class {
+		case convergeSignalSpec:
+			in.SpecMismatch = true
+		case convergeSignalAbsent:
+			in.Absent = true
+		case convergeSignalGen:
+			in.GenDeviated = true
+		case convergeSignalRollout:
+			in.RolloutStalled = true
+		case convergeSignalExtra:
+			in.ExtraCarriers = true
+		case convergeSignalReplay:
+			in.CancelLegacy = true
+		}
+	}
+	return in
+}
 
-// expectedCarrierIDs 重投影基线 Revision 的期望载体 ID 集（与部署
-// RenderWorkloads/materialize 同源走 projectRevision + 代标记 stamp——
-// 决策输入是 Revision 真源而非期望缓存，ADR-0082 §1；缓存幽灵/BG 旧代/
-// 进程缩减三类假阳性根源性消除）。(Revision, Generation) 签名短路：投影
-// 结果按内容锚缓存，未变基线近零成本。
-func (e *Engine) expectedCarrierIDs(ctx context.Context, d *deployment.Deployment) ([]string, error) {
+// gateVerdictInput 把闸门事实映射为裁决表输入——冻结/驱动权两行（ADR-0082
+// §1 行6/行7）的唯一映射点。
+func gateVerdictInput(frozen, driving bool) convergeVerdictInput {
+	return convergeVerdictInput{Frozen: frozen, Driving: driving}
+}
+
+// convergeActionable 报告裁决值是否应发起收敛动作（converge |
+// replay-baseline；两者动作同为「基线物化」，差别只在触发来源与事实面标签）。
+func convergeActionable(verdict string) bool {
+	return verdict == verdictConverge || verdict == verdictReplayBaseline
+}
+
+// ---- 缺席/多余检测（期望集 = LatestSucceeded 拍内重投影）----
+
+// expectedWorkloads 返回基线 Revision 的投影载体集（含代戳；缺席/多余/
+// detect 账本三面共用同一投影与同一 memo）。与部署 RenderWorkloads/
+// materialize 同源走 projectRevision + 代标记 stamp——决策输入是 Revision
+// 真源而非期望缓存，ADR-0082 §1；缓存幽灵/BG 旧代/进程缩减三类假阳性
+// 根源性消除。(Revision, Generation) 签名短路：投影结果按内容锚缓存，
+// 未变基线近零成本。
+func (e *Engine) expectedWorkloads(ctx context.Context, d *deployment.Deployment) ([]capability.Workload, error) {
 	key := convergeMemoSig(d)
 	e.converge.mu.Lock()
-	if ids, ok := e.converge.projMemo[key]; ok {
+	if ws, ok := e.converge.projMemo[key]; ok {
 		e.converge.mu.Unlock()
-		return ids, nil
+		return ws, nil
 	}
 	e.converge.mu.Unlock()
 
@@ -221,96 +358,142 @@ func (e *Engine) expectedCarrierIDs(ctx context.Context, d *deployment.Deploymen
 		return nil, err
 	}
 	// 代标记 stamp（与 materialize 同源单源）：blue-green 进程的代次化 ID
-	// 在此与部署物化逐字节一致——缺席对照的身份面不可能分叉。
+	// 在此与部署物化逐字节一致——缺席/多余对照的身份面不可能分叉。
 	stampDeploymentGenerations(ws, spec, d.Generation)
+	sort.Slice(ws, func(i, j int) bool { return ws[i].ID < ws[j].ID })
+	e.converge.mu.Lock()
+	e.converge.projMemo[key] = ws
+	e.converge.mu.Unlock()
+	return ws, nil
+}
+
+// expectedCarrierIDs 保留为投影的派生面（缺席检测的对外形态；ID 由
+// expectedWorkloads 排序后派生）。
+func (e *Engine) expectedCarrierIDs(ctx context.Context, d *deployment.Deployment) ([]string, error) {
+	ws, err := e.expectedWorkloads(ctx, d)
+	if err != nil {
+		return nil, err
+	}
 	ids := make([]string, 0, len(ws))
 	for _, w := range ws {
 		ids = append(ids, w.ID)
 	}
-	sort.Strings(ids)
-	e.converge.mu.Lock()
-	e.converge.projMemo[key] = ids
-	e.converge.mu.Unlock()
 	return ids, nil
 }
 
-// missingExpectedCarriers 计算缺席面：期望集 − 观测集（字典序；空 = 无缺席）。
-func (e *Engine) missingExpectedCarriers(ctx context.Context, d *deployment.Deployment, obs []capability.WorkloadObservation) ([]string, error) {
-	ids, err := e.expectedCarrierIDs(ctx, d)
-	if err != nil {
-		return nil, err
-	}
+// missingIDs 计算缺席面：期望集 − 观测集（字典序；空 = 无缺席）。与
+// extraIDs 是同一对照的两个方向（行2/行8 同源同序，便于对照测试）。
+func missingIDs(ws []capability.Workload, obs []capability.WorkloadObservation) []string {
 	seen := make(map[string]bool, len(obs))
 	for _, o := range obs {
 		seen[o.WorkloadID] = true
 	}
 	var missing []string
-	for _, id := range ids {
-		if !seen[id] {
-			missing = append(missing, id)
+	for _, w := range ws {
+		if !seen[w.ID] {
+			missing = append(missing, w.ID)
 		}
 	}
-	return missing, nil
+	return missing
+}
+
+// extraIDs 计算多余面：观测集 − 期望集（字典序；空 = 无多余）。数据源是
+// InspectWorkloads 的**域内**枚举（swarm/k3s 两侧都按 fleetly.managed 标签
+// + 域选择器过滤）——因此它是「域内多余载体」（行 8）而非「域外孤儿」
+// （行 9，明确未落码）。部署窗内在途新代载体由裁决行 6 Driving 让位。
+func extraIDs(ws []capability.Workload, obs []capability.WorkloadObservation) []string {
+	expected := make(map[string]bool, len(ws))
+	for _, w := range ws {
+		expected[w.ID] = true
+	}
+	var extra []string
+	for _, o := range obs {
+		if !expected[o.WorkloadID] {
+			extra = append(extra, o.WorkloadID)
+		}
+	}
+	sort.Strings(extra)
+	return extra
 }
 
 // ---- 双通道触发与收敛动作 ----
 
+// convergeOutcome 是一次收敛尝试的结局（闸门/动作面的单一回报形态）：
+// 让调用方能区分"没做"的原因（冷却/姿态/冻结/驱动权/收口/基线已变/失败），
+// 而不是靠 Ensure 调用计数猜。
+type convergeOutcome uint8
+
+const (
+	convergeOutcomeConverged convergeOutcome = iota
+	convergeOutcomeCooling
+	convergeOutcomePostureDetect
+	convergeOutcomeSuspended // 冻结
+	convergeOutcomeDriving   // 驱动权在部署链
+	convergeOutcomeTeardown  // 删除收口标记在位
+	convergeOutcomeMoved     // 基线已更替（本拍放弃）
+	convergeOutcomeFailed
+)
+
 // convergeStep 是单 App 的双通道判定（driftScan 每拍消费）：快通道 = 有未
 // 收敛信号；慢通道 = 物化备忘到期（ReconcileReplayInterval 强制重放——无
-// 信号也重放，环外变更/Cancel 遗留的兜底，ring 域同律）。两通道经同一
-// attemptConverge 过闸。
+// 信号也重放，环外变更的兜底，ring 域同律）。两通道经同一 attemptConverge
+// 过闸；快通道先经裁决表——信号不构成收敛行即不发起动作（表覆盖不全的
+// 组合走此分支，不得凭信号存在就收敛）。
 func (e *Engine) convergeStep(ctx context.Context, appID string, d *deployment.Deployment, signals convergeSignals) {
 	if d == nil {
 		return // 无成功基线：无可收敛锚（spec 对照照旧，缺席面跳过）
 	}
 	agg := signals.aggregate()
-	fast := len(signals) > 0
 	e.converge.mu.Lock()
 	unchanged := e.converge.resolved[appID] == agg
 	e.converge.mu.Unlock()
-	fast = fast && !unchanged
+	fast := len(signals) > 0 && !unchanged
 	_, fresh := e.ensureFresh(e.converge.memo, appID, convergeMemoSig(d), e.clock.Now())
-	if !fast && fresh {
+	if fast {
+		if !convergeActionable(convergeVerdict(signalVerdictInput(signals))) {
+			return // 信号不构成收敛行（当前六类皆可行动；未知信号类不得发起动作）
+		}
+		e.attemptConverge(ctx, appID, d, agg, convergeSourceFast)
+		return
+	}
+	if fresh {
 		return // 稳态：无未收敛信号 + 物化备忘在期
 	}
-	src := convergeSourceSlow
-	if fast {
-		src = convergeSourceFast
-	}
-	e.attemptConverge(ctx, appID, d, agg, src)
+	e.attemptConverge(ctx, appID, d, agg, convergeSourceSlow)
 }
 
-// attemptConverge 是收敛动作的统一原语（ADR-0082 §2）：闸门序（posture →
-// 冷却 → 冻结 fail-closed）→ lockApp 双复查（①驱动权语义 per-App 查询；
-// ②teardown 标记——expect 缓存成员资格复查的机制载体）→ materialize
+// attemptConverge 是收敛动作的统一原语（ADR-0082 §2）：闸门序（冷却 →
+// posture → 冻结 fail-closed）→ lockApp 双复查（①驱动权语义 per-App 查询；
+// ②teardown 标记——expect 缓存成员资格复查的机制载体）→ 一次裁决
+// （gateVerdictInput：冻结/驱动权两行同一映射点）→ materialize
 // （isolate=true，boundedStep 带界）→ 记账（成功落签名/备忘，失败计冷却）。
 // 不建 Deployment 行——收敛高频，部署行会成行垃圾（替代案已驳回）；审计
 // 走 SourceSystem 行而非部署 lineage。
-func (e *Engine) attemptConverge(ctx context.Context, appID string, d *deployment.Deployment, agg string, src convergeSource) {
+func (e *Engine) attemptConverge(ctx context.Context, appID string, d *deployment.Deployment, agg string, src convergeSource) convergeOutcome {
 	// 冷却门先于 posture 门：posture 切换（all→detect→all 往返）在冷却
 	// 判定点可见即清零记账（解除三径之一；跨重启的切换由记账内存态自然
 	// 清零——两径对齐 ADR-0082 §4）。窗内尝试跳过。
 	if !e.convergeCooldownOpen(ctx, appID, agg) {
-		return
+		return convergeOutcomeCooling
 	}
 	// posture 门（ADR-0082 §5）：detect = 检测照发、收敛全跳（观察期逃生
-	// 门）；启动基线重放不受门限——缓存重建是检测面的前提（ADR-0005 旧
-	// 行为保留）。
+	// 门）。**已知降级（D3 待 staging 验证）**：启动基线重放仍不受门限——
+	// 期望缓存重建是检测面的前提（ADR-0005 旧行为保留）；"detect = 零
+	// 运行时写"（四源同受门限）待 staging 验证后收口，本批不得改 detect
+	// 行为。
 	if src != convergeSourceBaseline && e.opts.Converge.Posture == ConvergePostureDetect {
-		return
+		return convergeOutcomePostureDetect
 	}
 	// 冻结闸门（ADR-0082 §3 fail-closed）：挂起 = 不消费签名、不记账——
-	// 解冻后下一拍重扫即自然收敛。
+	// 解冻后下一拍重扫即自然收敛。取事实在锁外（现行序），裁决与驱动权
+	// 事实合并到锁内一次（gateVerdictInput）。
 	frozen, err := e.convergeFrozen(ctx, appID)
 	if err != nil {
 		// fail-closed：Team 解析失败/存储故障跳过本拍下拍重试——不走
 		// transition.go ownerTeam 的降级 '' 契约（那对只读事件面合理，
 		// 搬进执法面即 fail-open）。
 		e.log.Error("converge: freeze gate", "app", appID, "err", err)
-		return
-	}
-	if frozen {
-		return
+		return convergeOutcomeFailed
 	}
 
 	// lockApp 内双复查（共享互斥即闭合「重建刚拆载体」竞态——teardown 的
@@ -324,7 +507,7 @@ func (e *Engine) attemptConverge(ctx context.Context, appID string, d *deploymen
 	// 本身无法区分「重启冷窗」与「删除收口后」，标记在 forgetOwner 同锁
 	// 内写入才是闭合面。
 	if e.converge.teardownMarked(appID) {
-		return
+		return convergeOutcomeTeardown
 	}
 	// 复查①（驱动权语义 per-App 查询，ListDriving 同口径——活跃态含
 	// failed 待回滚窗；ActiveByApp 不含 failed，单独使用会开「收敛×回滚
@@ -332,27 +515,34 @@ func (e *Engine) attemptConverge(ctx context.Context, appID string, d *deploymen
 	driving, err := e.repos.Deployments.DrivingByApp(ctx, appID)
 	if err != nil {
 		e.log.Error("converge: recheck driving", "app", appID, "err", err)
-		return
+		return convergeOutcomeFailed
 	}
-	if len(driving) > 0 {
-		return // 驱动权在部署链：本拍跳过（不记账不落签名）
+	// 一次性裁决（冻结/驱动权两行的唯一映射点）：两行都只是 return，
+	// 不消费签名、不记账。
+	switch convergeVerdict(gateVerdictInput(frozen, len(driving) > 0)) {
+	case verdictSuspend:
+		return convergeOutcomeSuspended
+	case verdictSkip:
+		return convergeOutcomeDriving
 	}
 	// 基线刷新：扫描到锁之间 succeeded 行可能已更替——锚已变则本拍放弃
 	//（下拍以新签名重判；拿着旧基线物化会把新代翻回去）。
 	fresh, err := e.repos.Deployments.LatestSucceeded(ctx, appID)
 	if err != nil {
 		e.log.Error("converge: recheck baseline", "app", appID, "err", err)
-		return
+		return convergeOutcomeFailed
 	}
 	if fresh.ToRevision != d.ToRevision || fresh.Generation != d.Generation {
-		return
+		return convergeOutcomeMoved
 	}
-	if err := e.materialize(ctx, fresh, fresh.ToRevision, fresh.Generation, true); err != nil {
+	report, err := e.materialize(ctx, fresh, fresh.ToRevision, fresh.Generation, true)
+	if err != nil {
 		e.log.Error("converge: materialize", "app", appID, "generation", fresh.Generation, "err", err)
 		e.convergeFail(ctx, appID, agg, err)
-		return
+		return convergeOutcomeFailed
 	}
-	e.convergeSucceed(ctx, appID, convergeMemoSig(fresh), agg, fresh, src)
+	e.convergeSucceed(ctx, appID, convergeMemoSig(fresh), agg, fresh, src, report)
+	return convergeOutcomeConverged
 }
 
 // convergeCooldownOpen 报告该 App 是否可发起收敛尝试（锁外判定；窗内返回
@@ -396,10 +586,16 @@ func (e *Engine) convergeReleaseLocked(appID string) {
 }
 
 // convergeSucceed 落收敛成功的全套记账：物化备忘（慢通道签名）+ 已收敛
-// 聚合签名（快通道生命周期）+ 冷却清零 + 事实面（快通道才发 workload.
-// converged——慢通道重放与启动基线重放是无差别的幂等重放，逐拍发事件即
-// 行垃圾；信号驱动的真收敛才有事件价值）。
-func (e *Engine) convergeSucceed(ctx context.Context, appID, sig, agg string, d *deployment.Deployment, src convergeSource) {
+// 聚合签名（快通道生命周期）+ 冷却清零 + 撤销重放标记 + 事实面。
+//
+// 事实面按真实变更分流（ADR-0082 §2）：
+//   - 审计行（workload.converge，SourceSystem，AfterFP = 基线 digest，
+//     Detail 携带 {source, trigger, changed, removed}）：只要本次收敛真的
+//     写穿了内容等价判定（EnsureReport.Changed/Removed 非空）**或是信号
+//     驱动（fast 源）**就发——"系统改了你的运行时必留痕"；
+//   - 事件（workload.converged）：维持 fast 源才发——慢通道/启动重放是
+//     例行节拍，进事件流即行垃圾；它们的真实变更由审计行承载。
+func (e *Engine) convergeSucceed(ctx context.Context, appID, sig, agg string, d *deployment.Deployment, src convergeSource, rep capability.EnsureReport) {
 	now := e.clock.Now()
 	e.ensureRemember(e.converge.memo, appID, ensureMemo{sig: sig, gen: d.Generation, at: now})
 	e.converge.mu.Lock()
@@ -410,30 +606,65 @@ func (e *Engine) convergeSucceed(ctx context.Context, appID, sig, agg string, d 
 		e.converge.alertFiring = false
 	}
 	e.converge.mu.Unlock()
+	// 成功收敛 = 该行已重锚账本（materialize 写入的条目归属它）：撤销非
+	// 成功终态的重放标记（ADR-0082 §6）。
+	e.converge.clearReplay(appID)
 	if resolved {
 		e.convergeAlertEdge(ctx, alertrule.StateOK, now)
 	}
-	if src != convergeSourceFast {
-		return
+	if src != convergeSourceFast && !rep.HasMaterialChange() {
+		return // 无真实变更的例行重放：零事实（审计不发，事件本就不发）
 	}
 	// 事实面双真（kernel 默认）：workload.converged 流面 + 审计行
-	// source=system（AfterFP = 基线 digest——「换成了什么」的取证锚）。
-	// 收敛是系统自治动作，有审计动词可查证（ADR-0066 写序列 kernel）。
+	// source=system（AfterFP = 基线 digest——「换成了什么」的取证锚；
+	// Detail 携带变更集——「改了什么」的取证锚）。收敛是系统自治动作，
+	// 有审计动词可查证（ADR-0066 写序列 kernel）。
 	rev, err := e.repos.Revisions.Get(ctx, d.ToRevision)
 	digest := ""
 	if err == nil {
 		digest = rev.Digest
 	}
 	team := e.eventTeamOfApp(ctx, e.repos, appID)
-	if err := writes.Emit(ctx, writes.Repos{Outbox: e.repos.Outbox, Audits: e.repos.Audits}, writes.FactRow{
+	fact := writes.FactRow{
 		Name: eventWorkloadConverged, Aggregate: "app", ID: appID,
 		Payload: convergeEventPayloadJSON(appID, d.ToRevision, d.Generation, agg, ""),
 		Action:  "workload.converge", Resource: "app/" + appID,
 		AfterFP: digest, Source: audit.SourceSystem,
 		TeamID: team,
-	}); err != nil {
-		e.log.Error("converge: emit event", "app", appID, "err", err)
+		Detail: convergeAuditDetailJSON(src, agg, rep),
 	}
+	if src != convergeSourceFast {
+		// LedgerOnly 偏离理由（ADR-0082 §2 第 2 条）：慢通道/启动重放的
+		// **真实变更**只落取证面——事件面是操作者时间线，例行节拍（60s
+		// 强制重放）进流即行垃圾；R02-M5 的 Cancel 可发现性由行 10 的
+		// replay 快信号承担（事件 + 审计同时在场）。
+		fact.LedgerOnly = true
+		fact.Name, fact.Payload = "", nil
+	}
+	if err := writes.Emit(ctx, writes.Repos{Outbox: e.repos.Outbox, Audits: e.repos.Audits}, fact); err != nil {
+		e.log.Error("converge: emit fact", "app", appID, "err", err)
+	}
+}
+
+// convergeAuditDetail 是收敛审计的 Detail 面（ADR-0049）：{source, trigger,
+// changed, removed}——"改了什么"的取证锚（AfterFP 只给基线 digest，不给
+// 变更集）。字段面受控：只放四个短字段，不放开指针/时间。
+type convergeAuditDetail struct {
+	Source  string   `json:"source"`
+	Trigger string   `json:"trigger,omitempty"`
+	Changed []string `json:"changed"`
+	Removed []string `json:"removed"`
+}
+
+// convergeAuditDetailJSON 构造收敛审计的 Detail（空集归一为 []——审计查询
+// 面不出现 null）。
+func convergeAuditDetailJSON(src convergeSource, agg string, rep capability.EnsureReport) string {
+	return auditDetailJSON(convergeAuditDetail{
+		Source:  src.String(),
+		Trigger: agg,
+		Changed: append([]string{}, rep.Changed...),
+		Removed: append([]string{}, rep.Removed...),
+	})
 }
 
 // convergeFail 记一次收敛失败：不落签名（resolved 不动——下拍重扫即自然
@@ -531,6 +762,44 @@ func (c *converges) teardownMarked(appID string) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.teardown[appID]
+}
+
+// ---- 非成功终态重放标记（ADR-0082 §1 行 10 / §6）----
+
+// stateMayHaveMaterialized 报告该部署行在终态前是否已进入物化相位
+// （releasing/observing/rolling-back = materialize 的三个调用位点）：非
+// 成功终态只有在这三个相位才可能把"未成为期望态"的内容写进账本，故重放
+// 标记以此判据收窄（queued/preparing/building 取消 = 零下发，无脏账本可
+// 回卷）。后续新增物化相位须同改本判据（否则漏标 → 回到慢通道兜底）。
+func stateMayHaveMaterialized(s deployment.State) bool {
+	switch s {
+	case deployment.StateReleasing, deployment.StateObserving, deployment.StateRollingBack:
+		return true
+	}
+	return false
+}
+
+// markReplay 落重放标记（非成功终态且该行已可能物化）：值携带部署 ID——
+// 第二次取消 = 新签名，可再次触发（不造空签名源，R02-M1 同族的边界面）。
+func (c *converges) markReplay(appID, deploymentID string) {
+	c.mu.Lock()
+	c.replay[appID] = deploymentID
+	c.mu.Unlock()
+}
+
+// replayMarked 返回待重放的部署 ID（drift 扫描的 replay 信号源）。
+func (c *converges) replayMarked(appID string) (string, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	id, ok := c.replay[appID]
+	return id, ok
+}
+
+// clearReplay 撤销重放标记（成功收敛/删除收口/成功终态迁移）。
+func (c *converges) clearReplay(appID string) {
+	c.mu.Lock()
+	delete(c.replay, appID)
+	c.mu.Unlock()
 }
 
 // ---- 可发现性面（doctor / ListAlertStates）----

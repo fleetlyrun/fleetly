@@ -110,9 +110,14 @@ func TestEnsureNoopBreakerSkipsIdenticalDesired(t *testing.T) {
 	}
 	d.addService(stale)
 	p.recordLastIssued(staleName, "stale-anchor")
-	require.NoError(t, ensureErr(p, ctx, ensureNS, []capability.Workload{changed2}, capability.Generation(3), capability.Materials{}))
+	report, err := p.Ensure(ctx, ensureNS, []capability.Workload{changed2}, capability.Generation(3), capability.Materials{})
+	require.NoError(t, err)
 	assert.Equal(t, 1, d.count("DELETE /services/srv-"+staleName), "stale service must be removed")
 	assert.Empty(t, p.lastIssuedOf(staleName), "removal must forget the ledger entry")
+	// B4：域内 stale 移除进 Removed（载体名形态——被移除者没有期望 Workload ID）；
+	// 同拍期望集未变 → Changed 空。
+	assert.Equal(t, []string{"service/" + staleName}, report.Removed, "domain removal must be reported as a material change")
+	assert.Empty(t, report.Changed, "the unchanged desired set writes nothing")
 }
 
 // TestPollTasksListsManagedServicesPerService（C19-2）：任务轮询先按

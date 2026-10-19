@@ -2,10 +2,12 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
+	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
 	"github.com/fleetlyrun/fleetly/internal/domain/runtimeops/freeze"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -72,7 +75,7 @@ func setTeamFreeze(t *testing.T, e *Engine) string {
 	return f.ID
 }
 
-// ---- 裁决表 golden（ADR-0082 §1 十行落码——表即断言）----
+// ---- 裁决表 golden（ADR-0082 §1：8 判定行 + 2 非行——表即断言）----
 
 func TestConvergeVerdictGolden(t *testing.T) {
 	rows := []struct {
@@ -83,11 +86,13 @@ func TestConvergeVerdictGolden(t *testing.T) {
 		{"02-absent-carrier", convergeVerdictInput{Absent: true}},
 		{"03-gen-deviation", convergeVerdictInput{GenDeviated: true}},
 		{"04-rollout-stalled-terminal", convergeVerdictInput{RolloutStalled: true}},
-		{"05-steady-stopped-spec-match", convergeVerdictInput{SteadyStopped: true}},
+		// 行5（spec 相符 + stopped）是信号层非行：稳态看门狗只发事件、不产
+		// 收敛信号，判定函数无此分支（ADR-0082 修订版 §1）。
 		{"06-active-deployment-incl-failed-rollback", convergeVerdictInput{Driving: true}},
 		{"07-frozen", convergeVerdictInput{Frozen: true}},
 		{"08-extra-carriers-in-domain", convergeVerdictInput{ExtraCarriers: true}},
-		{"09-orphan-out-of-domain", convergeVerdictInput{OrphanObserved: true}},
+		// 行9（域外孤儿只登记）明确未落码：观测面只有域内枚举、无
+		// WorkloadOrphaned 事件码（ADR-0082 修订版 §1）。
 		{"10-cancel-legacy-partial-issue", convergeVerdictInput{CancelLegacy: true}},
 	}
 	var b strings.Builder
@@ -104,7 +109,96 @@ func TestConvergeVerdictGolden(t *testing.T) {
 	want, err := os.ReadFile(path) //nolint:gosec // 读取本包 testdata 自有夹具
 	require.NoError(t, err, "golden missing; run go test ./internal/application/engine -update")
 	assert.Equal(t, string(want), b.String(),
-		"converge verdict table drifted from golden (ADR-0082 §1 ten rows are pinned)")
+		"converge verdict table drifted from golden (ADR-0082 §1: 8 judged rows + 2 non-rows are pinned)")
+}
+
+// ---- 裁决表接线守卫（映射/字段完备性——改真实映射即红）----
+
+// 信号类 → 裁决表字段的映射逐条钉死：某类被误映射到别的行（如 gen 键置
+// SpecMismatch）即红——这是"表即断言"在信号侧的执行面。
+func TestConvergeVerdictSignalMapping(t *testing.T) {
+	cases := []struct {
+		name    string
+		signals convergeSignals
+		want    convergeVerdictInput
+		verdict string
+	}{
+		{"spec", convergeSignals{convergeSignalSpec.key("app-web"): "spec|image"}, convergeVerdictInput{SpecMismatch: true}, verdictConverge},
+		{"absent", convergeSignals{convergeSignalAbsent.key(""): "absent|app-web"}, convergeVerdictInput{Absent: true}, verdictConverge},
+		{"gen", convergeSignals{convergeSignalGen.key("app-web"): "gen|1|0"}, convergeVerdictInput{GenDeviated: true}, verdictConverge},
+		{"rollout", convergeSignals{convergeSignalRollout.key("app-web"): "rollout|paused"}, convergeVerdictInput{RolloutStalled: true}, verdictConverge},
+		{"extra", convergeSignals{convergeSignalExtra.key(""): "extra|app-ghost"}, convergeVerdictInput{ExtraCarriers: true}, verdictConverge},
+		{"replay", convergeSignals{convergeSignalReplay.key(""): "replay|dep-2"}, convergeVerdictInput{CancelLegacy: true}, verdictReplayBaseline},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := signalVerdictInput(tc.signals)
+			// 逐字段相等即钉死映射（多置位/错置位都红）。
+			assert.Equal(t, tc.want, got, "signal class must map to exactly its own verdict-table row")
+			assert.Equal(t, tc.verdict, convergeVerdict(got))
+			assert.True(t, convergeActionable(convergeVerdict(got)), "signal rows must be actionable")
+		})
+	}
+}
+
+// 枚举完备性：allConvergeSignalClasses 的每一类都必须能被信号侧映射识别
+// （新增枚举而未在 signalVerdictInput 登记 → 输入零值 → 非收敛行 → 红）。
+func TestConvergeVerdictSignalClassTotality(t *testing.T) {
+	classes := allConvergeSignalClasses()
+	require.Len(t, classes, 6, "六类信号：spec/absent/gen/rollout/extra/replay")
+	seen := map[string]bool{}
+	for _, c := range classes {
+		key := c.key("x")
+		require.False(t, seen[key], "signal class key %q must be unique", key)
+		seen[key] = true
+		in := signalVerdictInput(convergeSignals{key: "v"})
+		require.NotEqual(t, convergeVerdictInput{}, in,
+			"signal class %q has no verdict-table field mapping (register it in signalVerdictInput)", c)
+		assert.True(t, convergeActionable(convergeVerdict(in)),
+			"signal class %q must resolve to an actionable verdict", c)
+	}
+	// 未知信号类不伪造输入（不得凭未知键发起收敛）。
+	assert.Equal(t, convergeVerdictInput{}, signalVerdictInput(convergeSignals{"bogus|x": "v"}))
+}
+
+// 闸门侧映射（冻结/驱动权两行 + 优先序：冻结先于驱动权）。
+func TestConvergeVerdictGateMapping(t *testing.T) {
+	cases := []struct {
+		name            string
+		frozen, driving bool
+		verdict         string
+	}{
+		{"frozen", true, false, verdictSuspend},
+		{"driving", false, true, verdictSkip},
+		{"clear", false, false, verdictSteady},
+		{"frozen-before-driving", true, true, verdictSuspend},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.verdict, convergeVerdict(gateVerdictInput(tc.frozen, tc.driving)))
+			assert.False(t, convergeActionable(convergeVerdict(gateVerdictInput(tc.frozen, tc.driving))),
+				"gate rows never initiate a converge action")
+		})
+	}
+}
+
+// 字段 ⇄ 生产者双向保鲜：反射出的字段名集必须与 verdictFieldProducers 的
+// 键集一一对应（加字段不登记即红，表项无字段即红）。
+func TestConvergeVerdictFieldProducersComplete(t *testing.T) {
+	typ := reflect.TypeOf(convergeVerdictInput{})
+	fields := map[string]bool{}
+	for i := 0; i < typ.NumField(); i++ {
+		fields[typ.Field(i).Name] = true
+	}
+	require.NotEmpty(t, fields)
+	for name := range fields {
+		_, ok := verdictFieldProducers[name]
+		assert.True(t, ok, "verdict field %q has no registered producer (add it to verdictFieldProducers)", name)
+	}
+	for name := range verdictFieldProducers {
+		assert.True(t, fields[name], "verdictFieldProducers entry %q has no matching input field", name)
+	}
+	assert.Len(t, verdictFieldProducers, len(fields), "verdict fields and producers must be one-to-one")
 }
 
 // ---- spec 失配 → 收敛 + 事件（检测与事件面照发，收敛半边增收）----
@@ -129,15 +223,18 @@ func TestConvergeOnSpecMismatchRestoresBaseline(t *testing.T) {
 	require.Len(t, eventNamesOf(t, e, "workload.converged"), 1)
 	require.Len(t, eventNamesOf(t, e, "workload.drift_detected"), 1, "detection face unchanged")
 
-	// 审计行 source=system、AfterFP=基线 digest、不建 Deployment 行。
-	entries, err := e.repos.Audits.ListFiltered(context.Background(), audit.Filter{ActionPrefix: "workload.converge", Limit: 10})
-	require.NoError(t, err)
+	// 审计行 source=system、AfterFP=基线 digest、Detail source=fast、不建
+	// Deployment 行。
+	entries := convergeAuditEntries(t, e)
 	require.Len(t, entries, 1)
 	assert.Equal(t, audit.SourceSystem, entries[0].Source)
 	revRow, err := e.repos.Revisions.Get(context.Background(), rev)
 	require.NoError(t, err)
 	assert.Equal(t, revRow.Digest, entries[0].AfterFP, "audit AfterFP carries the baseline digest")
 	assert.Equal(t, "app/"+tAppID, entries[0].Resource)
+	var detail map[string]any
+	require.NoError(t, json.Unmarshal([]byte(entries[0].Detail), &detail))
+	assert.Equal(t, "fast", detail["source"], "fast-source audit carries source=fast in Detail")
 
 	// 去抖：同一失配（签名已收敛 + memo 在期）不重复收敛不重复发事件。
 	e.driftScan(context.Background())
@@ -549,6 +646,9 @@ func TestConvergePostureDefaultsToAll(t *testing.T) {
 
 // ---- Cancel 遗留载体：回卷 LatestSucceeded 基线（翻案 admission N0 本场景）----
 
+// 慢通道兜底形态保留：即使没有 replay 标记，60s 例行重放也会把遗留载体
+// 卷回基线（本测不依赖标记，仅钉回卷结果与事实面；快信号的钉测见
+// TestCancelReplaySignalDrivesBaselineReplay）。
 func TestCancelLegacyConvergesBackToBaseline(t *testing.T) {
 	e, rt, clock := newTestEngine(t)
 	rev1 := freezeSpec(t, e, 1, tImageSpec)
@@ -563,11 +663,17 @@ func TestCancelLegacyConvergesBackToBaseline(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "nginx:1.28", rt.calls()[len(rt.calls())-1].Spec["web"].Image, "legacy carrier is at the cancelled generation")
 
-	// 取消的部署从未成为期望态：慢通道重放回卷基线。
+	// 取消的部署从未成为期望态：下一拍重放回卷基线。
 	e.driftScan(context.Background())
 	last := rt.calls()[len(rt.calls())-1]
 	assert.Equal(t, "nginx:1.27", last.Spec["web"].Image, "cancel legacy rolls back to the succeeded baseline")
 	assert.Equal(t, capability.Generation(1), last.Gen)
+
+	// 回卷事实面：审计 1 条（SourceSystem）+ 事件 1 条（replay 走 fast 源）。
+	require.Len(t, eventNamesOf(t, e, "workload.converged"), 1)
+	entries := convergeAuditEntries(t, e)
+	require.Len(t, entries, 1)
+	assert.Equal(t, audit.SourceSystem, entries[0].Source)
 }
 
 // ---- 账本纪律：「succeeded 无期望缓存 → 收敛触发」（自愈盲修复）----
@@ -614,4 +720,337 @@ func TestProjectionMemoShortCircuit(t *testing.T) {
 	projLen = len(e.converge.projMemo)
 	e.converge.mu.Unlock()
 	assert.Equal(t, 1, projLen, "unchanged baseline reuses the memo (no re-projection)")
+}
+
+// ---- 行 8：域内多余载体（extra 快信号）----
+
+// convergeAuditEntries 返回 workload.converge 审计行（收敛事实取证面）。
+func convergeAuditEntries(t *testing.T, e *Engine) []audit.Entry {
+	t.Helper()
+	entries, err := e.repos.Audits.ListFiltered(context.Background(),
+		audit.Filter{ActionPrefix: "workload.converge", Limit: 50})
+	require.NoError(t, err)
+	return entries
+}
+
+// inspectApp 取测试 App 的域内观测快照（与 driftScan 同 ns 同选择器）。
+func inspectApp(t *testing.T, e *Engine) []capability.WorkloadObservation {
+	t.Helper()
+	inspector := capability.FacesOf(e.runtime).Inspector
+	require.NotNil(t, inspector, "test runtime must expose the inspector subface")
+	obs, err := inspector.InspectWorkloads(context.Background(),
+		capability.NamespaceRef{Team: "default", Project: tProjectID, App: tAppID})
+	require.NoError(t, err)
+	return obs
+}
+
+func TestExtraCarriersSignalConvergesDomainRemoval(t *testing.T) {
+	e, rt, clock := newTestEngine(t)
+	ctx := context.Background()
+	rev := freezeSpec(t, e, 1, tImageSpec)
+	driftDeployToSucceeded(t, e, rt, clock, rev)
+	settleSlowChannel(t, e)
+
+	// 域内多余载体（如环外 create 出的平台管辖服务）：观测集多一个期望外 ID。
+	ghost := capability.Workload{ID: "01JD0GHOST0000000000000000", Process: "ghost", Image: "nginx:1.27", Replicas: 1}
+	rt.injectObservedCarrier(ghost)
+
+	// 信号面：extra 可见且裁决输入点亮行 8 的字段。
+	d := getDeployment(t, e, latestSucceededID(t, e))
+	signals := e.compareSpecs(ctx, tAppID, inspectApp(t, e), d)
+	require.Contains(t, signals, convergeSignalExtra.key(""), "an extra in-domain carrier must raise the extra signal")
+	assert.True(t, signalVerdictInput(signals).ExtraCarriers, "the extra signal must light the row-8 verdict input")
+
+	// 一拍即收敛（Ensure +1）：下发的是基线投影（不含幽灵）——域内移除由
+	// Provider 的 Ensure 语义承载。
+	before := len(rt.calls())
+	e.driftScan(ctx)
+	calls := rt.calls()
+	require.Len(t, calls, before+1, "extra carrier converges in one beat")
+	assert.NotContains(t, calls[before].ByID, ghost.ID, "convergence re-issues the baseline projection (provider removes the extra)")
+}
+
+// 行 6 让位：部署窗内域内"多余"（在途新代载体）不发起收敛，但信号可见。
+func TestExtraSignalYieldsToDrivingGate(t *testing.T) {
+	e, rt, clock := newTestEngine(t)
+	ctx := context.Background()
+	rev := freezeSpec(t, e, 1, tImageSpec)
+	driftDeployToSucceeded(t, e, rt, clock, rev)
+	settleSlowChannel(t, e)
+
+	// 在途部署（queued）持有驱动权。
+	rev2 := freezeSpec(t, e, 2, imageSpecFor("nginx:1.28"))
+	_, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev2})
+	require.NoError(t, err)
+
+	ghost := capability.Workload{ID: "01JD0GHOST0000000000000001", Process: "ghost", Image: "nginx:1.27", Replicas: 1}
+	rt.injectObservedCarrier(ghost)
+	d := getDeployment(t, e, latestSucceededID(t, e))
+	signals := e.compareSpecs(ctx, tAppID, inspectApp(t, e), d)
+	require.Contains(t, signals, convergeSignalExtra.key(""), "the extra signal must stay visible during the deployment window")
+
+	before := len(rt.calls())
+	e.driftScan(ctx)
+	assert.Equal(t, 0, ensureDelta(t, rt, before), "row 6 (driving) yields over row 8 inside the deployment window")
+}
+
+// ---- 行 10：Cancel/失败终态的重放标记（replay 快信号）----
+
+func TestCancelReplaySignalDrivesBaselineReplay(t *testing.T) {
+	e, rt, clock := newTestEngine(t)
+	ctx := context.Background()
+	rev1 := freezeSpec(t, e, 1, tImageSpec)
+	driftDeployToSucceeded(t, e, rt, clock, rev1)
+
+	rev2 := freezeSpec(t, e, 2, imageSpecFor("nginx:1.28"))
+	d2, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev2})
+	require.NoError(t, err)
+	e.step(ctx) // releasing：gen2 已下发（部分物化 = 遗留形态）
+	_, err = e.Cancel(ctx, d2.ID)
+	require.NoError(t, err)
+
+	markID, marked := e.converge.replayMarked(tAppID)
+	require.True(t, marked, "cancelling a materialized deployment leaves a replay mark")
+	assert.Equal(t, d2.ID, markID, "the mark carries the offending deployment ID (a second cancel is a new signature)")
+
+	// 脏账本（写入者 = 已取消的 d2）不得产生假期望：归属采用规则跳过其
+	// spec/gen 对照（R16-M3 根因），同拍唯一信号是 replay 标记。
+	d1 := getDeployment(t, e, latestSucceededID(t, e))
+	assert.Equal(t,
+		convergeSignals{convergeSignalReplay.key(""): "replay|" + d2.ID},
+		e.compareSpecs(ctx, tAppID, inspectApp(t, e), d1),
+		"the cancelled deployment's ledger entries must not produce spec/gen signals")
+
+	// 下一拍即以基线重放回卷（replay 走 fast 通道，不等慢通道 60s）。
+	before := len(rt.calls())
+	e.driftScan(ctx)
+	calls := rt.calls()
+	require.Len(t, calls, before+1, "the replay fast signal converges in the next beat")
+	assert.Equal(t, "nginx:1.27", calls[before].Spec["web"].Image, "cancel legacy rolls back to the succeeded baseline")
+	assert.Equal(t, capability.Generation(1), calls[before].Gen)
+	_, marked = e.converge.replayMarked(tAppID)
+	assert.False(t, marked, "a successful replay clears the mark")
+
+	// 回卷事实双真：事件 + 审计（replay 是信号驱动 = fast 源）。
+	require.Len(t, eventNamesOf(t, e, "workload.converged"), 1, "replay drives the event stream (fast source)")
+	entries := convergeAuditEntries(t, e)
+	require.Len(t, entries, 1, "the audit row lands with the event")
+	assert.Equal(t, audit.SourceSystem, entries[0].Source)
+}
+
+// 标记收窄：queued 取消（零下发）不落标记；进入物化相位的取消才落。
+func TestReplayMarkOnlyAfterMaterialization(t *testing.T) {
+	e, rt, clock := newTestEngine(t)
+	ctx := context.Background()
+	rev1 := freezeSpec(t, e, 1, tImageSpec)
+	driftDeployToSucceeded(t, e, rt, clock, rev1)
+	settleSlowChannel(t, e)
+
+	// queued 取消：无标记、无回卷 Ensure、无审计。
+	rev2 := freezeSpec(t, e, 2, imageSpecFor("nginx:1.28"))
+	dQueued, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev2})
+	require.NoError(t, err)
+	_, err = e.Cancel(ctx, dQueued.ID)
+	require.NoError(t, err)
+	_, marked := e.converge.replayMarked(tAppID)
+	assert.False(t, marked, "cancelling a queued deployment must not leave a replay mark (nothing materialized)")
+
+	before := len(rt.calls())
+	e.driftScan(ctx)
+	assert.Len(t, rt.calls(), before, "no replay signal → no replay ensure")
+	assert.Empty(t, convergeAuditEntries(t, e), "no material change and no fast signal → zero fact")
+
+	// releasing 取消：已进入物化相位 → 标记在位。
+	rev3 := freezeSpec(t, e, 3, imageSpecFor("nginx:1.29"))
+	d3, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev3})
+	require.NoError(t, err)
+	e.step(ctx)
+	require.Equal(t, deployment.StateReleasing, getDeployment(t, e, d3.ID).State)
+	_, err = e.Cancel(ctx, d3.ID)
+	require.NoError(t, err)
+	_, marked = e.converge.replayMarked(tAppID)
+	assert.True(t, marked, "cancelling a releasing deployment must leave a replay mark")
+}
+
+// 成功终态撤销标记（失败 → 自动回滚 succeeded），下一拍无多余重放。
+func TestReplayMarkClearedOnSucceededDeployment(t *testing.T) {
+	e, rt, clock := newTestEngine(t)
+	ctx := context.Background()
+	r1 := freezeSpec(t, e, 1, imageSpecFor("nginx:1.26"))
+	driftDeployToSucceeded(t, e, rt, clock, r1)
+
+	// R2 首次下发失败 → failed（已物化相位）→ 落标记 → 自动回滚。
+	rt.failNext = true
+	r2 := freezeSpec(t, e, 2, imageSpecFor("nginx:1.27"))
+	d2, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: r2})
+	require.NoError(t, err)
+	e.step(ctx)
+	require.Equal(t, deployment.StateRollingBack, getDeployment(t, e, d2.ID).State)
+	_, marked := e.converge.replayMarked(tAppID)
+	require.True(t, marked, "a failed deployment that entered the materialize phase leaves a replay mark")
+
+	// 回滚就绪 → observing → succeeded：成功终态撤销标记。
+	e.handleObservation(ctx, workloadEventRunning(tAppID+"-web", 3))
+	e.step(ctx)
+	clock.Advance(61 * time.Second)
+	e.step(ctx)
+	require.Equal(t, deployment.StateSucceeded, getDeployment(t, e, d2.ID).State)
+	_, marked = e.converge.replayMarked(tAppID)
+	assert.False(t, marked, "a succeeded deployment (rollback) clears the replay mark")
+
+	// 下一拍无多余重放（慢通道备忘先落定——一次例行重放，非回卷信号）。
+	settleSlowChannel(t, e)
+	before := len(rt.calls())
+	e.driftScan(ctx)
+	assert.Len(t, rt.calls(), before, "no replay mark → no extra replay")
+}
+
+// ---- 账本归属（D4）：写入者 == 当前 LatestSucceeded 才采用 ----
+
+func TestExpectationLedgerSkipsForeignWriter(t *testing.T) {
+	e, rt, clock := newTestEngine(t)
+	ctx := context.Background()
+	rev1 := freezeSpec(t, e, 1, tImageSpec)
+	driftDeployToSucceeded(t, e, rt, clock, rev1)
+
+	// d2 在途：materialize 写下账本条目（写入者 = d2，尚未成为期望态）。
+	rev2 := freezeSpec(t, e, 2, imageSpecFor("nginx:1.28"))
+	d2, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev2})
+	require.NoError(t, err)
+	e.step(ctx)
+	require.Equal(t, deployment.StateReleasing, getDeployment(t, e, d2.ID).State)
+
+	// 人工改载体（观测与 d2 写的账本失配）：若账本被采用必出 spec 信号。
+	rt.mu.Lock()
+	rt.tamper = map[string]tamperEntry{tAppID + "-web": {image: "nginx:1.99"}}
+	rt.mu.Unlock()
+	d1 := getDeployment(t, e, latestSucceededID(t, e))
+	obs := inspectApp(t, e)
+	signals := e.compareSpecs(ctx, tAppID, obs, d1)
+	for key := range signals {
+		class, _ := convergeSignalClassOf(key)
+		assert.NotEqual(t, convergeSignalSpec, class, "a foreign-writer ledger entry must not produce a spec signal")
+		assert.NotEqual(t, convergeSignalGen, class, "a foreign-writer ledger entry must not produce a gen signal")
+	}
+
+	// 同一观测下把写入者改回基线行 → 信号出现（证明是归属在裁决）。
+	e.obs.mu.Lock()
+	e.obs.ensuredBy[tAppID+"-web"] = d1.ID
+	e.obs.mu.Unlock()
+	signals = e.compareSpecs(ctx, tAppID, inspectApp(t, e), d1)
+	require.Contains(t, signals, convergeSignalSpec.key(tAppID+"-web"),
+		"the same observation must produce the spec signal once the writer is the baseline")
+}
+
+// 删除收口：账本归属与重放标记一并清（无期望态可回卷）。
+func TestExpectationLedgerForgottenOnTeardown(t *testing.T) {
+	e, rt, clock := newTestEngine(t)
+	ctx := context.Background()
+	rev1 := freezeSpec(t, e, 1, tImageSpec)
+	driftDeployToSucceeded(t, e, rt, clock, rev1)
+
+	// 造账本条目（d2 的 materialize）与重放标记（releasing 取消）。
+	rev2 := freezeSpec(t, e, 2, imageSpecFor("nginx:1.28"))
+	d2, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev2})
+	require.NoError(t, err)
+	e.step(ctx)
+	_, err = e.Cancel(ctx, d2.ID)
+	require.NoError(t, err)
+	_, marked := e.converge.replayMarked(tAppID)
+	require.True(t, marked)
+	e.obs.mu.RLock()
+	_, ledgered := e.obs.ensuredBy[tAppID+"-web"]
+	e.obs.mu.RUnlock()
+	require.True(t, ledgered, "the cancelled deployment's materialize wrote the ledger")
+
+	require.NoError(t, e.TeardownApp(ctx, tAppID))
+	e.obs.mu.RLock()
+	_, ledgered = e.obs.ensuredBy[tAppID+"-web"]
+	e.obs.mu.RUnlock()
+	assert.False(t, ledgered, "teardown must forget the ledger ownership")
+	_, marked = e.converge.replayMarked(tAppID)
+	assert.False(t, marked, "teardown must clear the replay mark")
+}
+
+// ---- 事实面分流（D2）：审计按真实变更发、事件维持 fast-only ----
+
+func TestConvergeSlowChannelMaterialChangeWritesAudit(t *testing.T) {
+	e, rt, clock := newTestEngine(t)
+	ctx := context.Background()
+	rev := freezeSpec(t, e, 1, tImageSpec)
+	driftDeployToSucceeded(t, e, rt, clock, rev)
+	settleSlowChannel(t, e)
+
+	// 慢通道到期 + 回执含真实变更（外部改动被纠正的形态）。
+	rt.mu.Lock()
+	rt.reportChanged = []string{tAppID + "-web"}
+	rt.mu.Unlock()
+	clock.Advance(61 * time.Second)
+	e.driftScan(ctx)
+
+	entries := convergeAuditEntries(t, e)
+	require.Len(t, entries, 1, "a material change on the slow channel writes exactly one audit row")
+	assert.Equal(t, audit.SourceSystem, entries[0].Source)
+	revRow, err := e.repos.Revisions.Get(ctx, rev)
+	require.NoError(t, err)
+	assert.Equal(t, revRow.Digest, entries[0].AfterFP, "audit AfterFP carries the baseline digest")
+	var detail map[string]any
+	require.NoError(t, json.Unmarshal([]byte(entries[0].Detail), &detail))
+	assert.Equal(t, "slow", detail["source"])
+	assert.Equal(t, []any{tAppID + "-web"}, detail["changed"])
+	assert.Empty(t, eventNamesOf(t, e, "workload.converged"), "the event stream stays signal-driven (slow replay emits none)")
+}
+
+func TestConvergeSlowChannelNoChangeWritesNoFact(t *testing.T) {
+	e, rt, clock := newTestEngine(t)
+	ctx := context.Background()
+	rev := freezeSpec(t, e, 1, tImageSpec)
+	driftDeployToSucceeded(t, e, rt, clock, rev)
+	settleSlowChannel(t, e) // 首拍例行重放（回执空 = 无变更）
+
+	clock.Advance(61 * time.Second)
+	e.driftScan(ctx) // 又一次例行重放，无变更
+
+	assert.Empty(t, convergeAuditEntries(t, e), "routine replay without material change writes no audit")
+	assert.Empty(t, eventNamesOf(t, e, "workload.converged"), "routine replay emits no event")
+}
+
+func TestConvergeBaselineReplayMaterialChangeWritesAudit(t *testing.T) {
+	e, rt, clock := newTestEngine(t)
+	ctx := context.Background()
+	rev := freezeSpec(t, e, 1, tImageSpec)
+	driftDeployToSucceeded(t, e, rt, clock, rev)
+
+	rt.mu.Lock()
+	rt.reportChanged = []string{tAppID + "-web"}
+	rt.mu.Unlock()
+
+	// "重启"：新引擎实例，启动基线重放的回执含真实变更。
+	e2 := New(Deps{DB: e.db, Stores: testRepos(e.db), Tx: transact.NewTx(e.db, testBinder(e.db)), Runtime: rt, Logger: discardLogger()}, Options{})
+	e2.rebuildBaselines(ctx)
+
+	entries := convergeAuditEntries(t, e2)
+	require.Len(t, entries, 1, "startup baseline replay with material change writes one audit row")
+	assert.Equal(t, audit.SourceSystem, entries[0].Source)
+	assert.Empty(t, eventNamesOf(t, e2, "workload.converged"), "baseline replay never emits the event (fast-only)")
+}
+
+// B10：审计 Detail 的 JSON 契约（source/trigger/changed/removed；空集归一为
+// []——不出现 null）。只断言 map 内容，不引入 key 顺序脆弱性。
+func TestConvergeAuditDetailCarriesChangedSet(t *testing.T) {
+	rep := capability.EnsureReport{
+		Changed: []string{"wid-b", "wid-a"},
+		Removed: []string{"service/old"},
+	}
+	var got map[string]any
+	require.NoError(t, json.Unmarshal([]byte(convergeAuditDetailJSON(convergeSourceSlow, "absent|x", rep)), &got))
+	assert.Equal(t, "slow", got["source"])
+	assert.Equal(t, "absent|x", got["trigger"])
+	assert.Equal(t, []any{"wid-b", "wid-a"}, got["changed"])
+	assert.Equal(t, []any{"service/old"}, got["removed"])
+
+	var empty map[string]any
+	require.NoError(t, json.Unmarshal([]byte(convergeAuditDetailJSON(convergeSourceFast, "", capability.EnsureReport{})), &empty))
+	assert.Equal(t, []any{}, empty["changed"], "an empty change set must normalize to [] (never null)")
+	assert.Equal(t, []any{}, empty["removed"])
 }

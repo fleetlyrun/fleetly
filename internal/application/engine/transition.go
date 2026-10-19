@@ -207,7 +207,7 @@ func auditDetailJSON(v any) string {
 // 受理序与 predeploy 游标推进组合进更大事务；部署记录无 tombstone）。
 func (e *Engine) transit(ctx context.Context, s transact.Stores, d *deployment.Deployment, from []deployment.State, to deployment.State, mut func(*deployment.Deployment)) error {
 	var fresh *deployment.Deployment
-	return e.commitTransition(ctx, s, transitionFact{
+	err := e.commitTransition(ctx, s, transitionFact{
 		move: func(ctx context.Context, s transact.Stores) (string, bool, error) {
 			if err := s.Deployments.Transit(ctx, d.ID, from, to, mut); err != nil {
 				return "", false, err
@@ -242,6 +242,21 @@ func (e *Engine) transit(ctx context.Context, s transact.Stores, d *deployment.D
 			return row
 		},
 	})
+	if err != nil {
+		return err
+	}
+	// 期望账本归属钩子（ADR-0082 §6）：成功终态 = 该行已重锚账本（materialize
+	// 写入的条目归属它），撤销遗留标记；非成功终态且该行已进过物化相位 =
+	// 账本可能被"未成为期望态"的内容写脏（或载体已按未生效内容下发），落
+	// 重放标记（裁决表行 10 的真实信号源）——下一拍由 Replay 快信号兑现
+	// 回卷，慢通道兜底不变。d.State 是迁移前的在行状态。
+	switch {
+	case to == deployment.StateSucceeded:
+		e.converge.clearReplay(d.AppID)
+	case to.Terminal() && stateMayHaveMaterialized(d.State):
+		e.converge.markReplay(d.AppID, d.ID)
+	}
+	return nil
 }
 
 // depStateIn 报告 to 是否在 from 集（原地迁移判定）。

@@ -202,7 +202,7 @@ func (e *Engine) blueGreenWindowMaterialize(ctx context.Context, d *deployment.D
 func (e *Engine) failBlueGreen(ctx context.Context, d *deployment.Deployment, reason string) (*deployment.Deployment, error) {
 	fromGen := e.baselineGeneration(ctx, d)
 	if d.FromRevision != "" && fromGen > 0 {
-		if err := e.materialize(ctx, d, d.FromRevision, fromGen, false); err != nil {
+		if _, err := e.materialize(ctx, d, d.FromRevision, fromGen, false); err != nil {
 			return nil, err
 		}
 	}

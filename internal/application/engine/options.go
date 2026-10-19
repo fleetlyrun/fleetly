@@ -248,7 +248,10 @@ const (
 	// 不设 detect 观察期）。
 	ConvergePostureAll = "all"
 	// ConvergePostureDetect：只报事件不收敛，检测面照常（收敛的观察期
-	// 逃生门而非缺省；启动基线重放不受此门限——ADR-0005 旧行为保留）。
+	// 逃生门而非缺省）。**已知降级（D3 待 staging 验证）**：检测/收敛语义
+	// 收口为"零运行时写"（fast/slow/启动基线重放/peer 隔离四源同受门限）
+	// 尚未落地——本轮保留启动基线重放豁免（ADR-0005 旧行为，期望缓存重建
+	// 是检测面与路由解析的前提）；收口待 staging 验证后实施。
 	ConvergePostureDetect = "detect"
 )
 

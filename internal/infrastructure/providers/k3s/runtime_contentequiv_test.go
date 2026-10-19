@@ -38,6 +38,9 @@ func TestEnsureContentEquivalenceSkipsUnchangedAcrossGen(t *testing.T) {
 	assert.Equal(t, "1", d.Labels[labelGeneration], "gen stamp stays with the running carrier")
 	assert.Equal(t, "1", d.Spec.Template.Labels[labelGeneration], "pod template gen stays frozen at creation gen")
 	assert.Equal(t, capability.Generation(1), report.WireGen(w, 2), "report carries the wire gen for observation attribution")
+	assert.Empty(t, report.Changed, "content-addressed skip must not report a change (ADR-0082 §2)")
+	assert.Empty(t, report.Removed)
+	assert.False(t, report.HasMaterialChange())
 }
 
 // replicas-only：B 键命中 → 写代钉 wire-gen——pod 模板字节不动（k8s 语义
@@ -62,6 +65,7 @@ func TestEnsureReplicasOnlyScalesPreservingTemplate(t *testing.T) {
 	assert.Equal(t, "1", d.Spec.Template.Labels[labelGeneration],
 		"scale-only must keep the pod template byte-stable (no pod replacement)")
 	assert.Equal(t, capability.Generation(1), report.WireGen(scaled, 2))
+	assert.Equal(t, []string{scaled.ID}, report.Changed, "replicas-only is a material change (the object is written)")
 }
 
 // 真内容变更：写代 = 调用 gen——对象与 pod 模板代戳随内容推进，报告
@@ -84,6 +88,7 @@ func TestEnsureContentChangeRollsWithNewGen(t *testing.T) {
 	assert.Equal(t, "2", d.Labels[labelGeneration], "content change advances the gen stamp")
 	assert.Equal(t, "2", d.Spec.Template.Labels[labelGeneration])
 	assert.Equal(t, capability.Generation(2), report.WireGen(changed, 2), "rolled workload reports the call gen")
+	assert.Equal(t, []string{changed.ID}, report.Changed, "a content change is a material change")
 }
 
 // 冷账本重放（daemon 重启形态）：账本空 → 读现存对象代戳钉写代——内容
@@ -107,6 +112,10 @@ func TestEnsureColdLedgerReplayPinsServerGen(t *testing.T) {
 	assert.Equal(t, "1", d.Spec.Template.Labels[labelGeneration],
 		"cold replay of unchanged content must pin the server gen (no rollout after daemon restart)")
 	assert.Equal(t, capability.Generation(1), report.WireGen(w, 7))
+	// B5：冷账本重放不计 Changed——该形态严格等于重启前已下发内容的幂等
+	// 重放，计入会让每次重启产生 N 条假变更审计（ADR-0082 §2 第 3 条）。
+	assert.Empty(t, report.Changed, "cold-ledger replay must not report a change")
+	assert.False(t, report.HasMaterialChange())
 	g, ok := cold.issuedGenOf(w.ID)
 	require.True(t, ok)
 	assert.Equal(t, uint64(1), g, "issuedGen ledger records the wire gen")

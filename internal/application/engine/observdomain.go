@@ -24,14 +24,21 @@ type observations struct {
 	workloadApp  map[string]workloadOwner            // workloadID → 归属（观测路由/drift 跳过面）
 	ensuredGen   map[string]uint64                   // workloadID → 最近 Ensure 的 Generation（就绪门集合界定）
 	ensuredSpec  map[string]capability.Workload      // workloadID → 最近 Ensure 的投影 spec（ADR-0022 spec 对照 drift）
+	// ensuredBy 是账本的写入部署归属（workloadID → Deployment ID）：drift
+	// 期望侧只采用写入者 == 当前 LatestSucceeded 的条目（ADR-0082 §6）。
+	// 写点当前只有 recordSpecs（Ensure 路径，materialize 单序列）；D3 收口
+	// 时 detect 的账本重建（recordProjectedSpecs，写入者=基线行）将成为
+	// 第二个写点。受管/Database 域不写（不参与 App 对照面）。
+	ensuredBy map[string]string
 }
 
-// init 建域内四张缓存（Engine.New 装配期一次）。
+// init 建域内缓存（Engine.New 装配期一次）。
 func (o *observations) init() {
 	o.observations = make(map[string]capability.WorkloadEvent)
 	o.workloadApp = make(map[string]workloadOwner)
 	o.ensuredGen = make(map[string]uint64)
 	o.ensuredSpec = make(map[string]capability.Workload)
+	o.ensuredBy = make(map[string]string)
 }
 
 // observe 写一条载体观测（Watch 消费单点；last-write-wins）。
@@ -42,20 +49,21 @@ func (o *observations) observe(ev capability.WorkloadEvent) {
 }
 
 // recordSpecs 记录 Ensure 事实的完整面：归属 + per-Workload Generation 与
-// 投影 spec + （调用方另落 expect 域的 App 级锚）。App 部署链消费
-// （spec 对照 drift 需要 ensuredSpec）。
+// 投影 spec + 账本归属（写入部署 ID）+ （调用方另落 expect 域的 App 级
+// 锚）。App 部署链消费（spec 对照 drift 需要 ensuredSpec）。
 //
-// 期望账本纪律（ADR-0082 §6 钉死）：ensuredSpec/ensuredGen 只由 Ensure
-// 路径写入（recordEnsured ← materialize 单序列），禁止观测播种——受管域
-// 的 gen 观测播种先例（managed.go seedFromRuntime）不得照抄到 App 域，
-// 否则手动热修被播种成期望态，静默击穿 controller-wins。语义修靠 converge
-// 域：漂移的修复只经收敛动作（materialize→Ensure）回写本账本。
-func (o *observations) recordSpecs(owner workloadOwner, gen uint64, ws []capability.Workload) {
+// 期望账本纪律（ADR-0082 §6 钉死）：ensuredSpec/ensuredGen/ensuredBy 只由
+// Ensure 路径写入（recordEnsured ← materialize 单序列），禁止观测播种——
+// 受管域的 gen 观测播种先例（managed.go seedFromRuntime）不得照抄到 App
+// 域，否则手动热修被播种成期望态，静默击穿 controller-wins。语义修靠
+// converge 域：漂移的修复只经收敛动作（materialize→Ensure）回写本账本。
+func (o *observations) recordSpecs(owner workloadOwner, deploymentID string, gen uint64, ws []capability.Workload) {
 	o.mu.Lock()
 	for _, w := range ws {
 		o.workloadApp[w.ID] = owner
 		o.ensuredGen[w.ID] = gen
 		o.ensuredSpec[w.ID] = w
+		o.ensuredBy[w.ID] = deploymentID
 	}
 	o.mu.Unlock()
 }
@@ -97,6 +105,15 @@ func (o *observations) ensuredSpecOf(wid string) (capability.Workload, bool) {
 	return w, ok
 }
 
+// ensuredByOf 返回该载体账本条目的写入部署 ID（drift 期望侧的归属采用
+// 判据：写入者必须 == 当前 LatestSucceeded 行，ADR-0082 §6）。
+func (o *observations) ensuredByOf(wid string) (string, bool) {
+	o.mu.RLock()
+	id, ok := o.ensuredBy[wid]
+	o.mu.RUnlock()
+	return id, ok
+}
+
 // forgetOwner 清某归属名下的全部缓存面，返回清掉的 workloadID 集（调用
 // 方同步清 drift/稳态签名——签名只按 workloadID 键，跨 App 不得误删）。
 func (o *observations) forgetOwner(owner workloadOwner) []string {
@@ -111,6 +128,7 @@ func (o *observations) forgetOwner(owner workloadOwner) []string {
 		delete(o.workloadApp, wid)
 		delete(o.ensuredGen, wid)
 		delete(o.ensuredSpec, wid)
+		delete(o.ensuredBy, wid)
 		delete(o.observations, wid)
 	}
 	o.mu.Unlock()
@@ -123,6 +141,7 @@ func (o *observations) forget(wid string) {
 	delete(o.workloadApp, wid)
 	delete(o.ensuredGen, wid)
 	delete(o.ensuredSpec, wid)
+	delete(o.ensuredBy, wid)
 	delete(o.observations, wid)
 	o.mu.Unlock()
 }

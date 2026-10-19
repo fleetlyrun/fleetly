@@ -90,9 +90,11 @@ func (e *Engine) rebuildBaselines(ctx context.Context) {
 // replayAppBaseline 在 App 级互斥内复查活跃部署并重放单 App 基线：有活跃
 // 即跳过（交给驱动器）；互斥与 Submit 共享，复查所见即终局。收敛动作走
 // attemptConverge 统一原语（ADR-0082 §2）：与快/慢通道共用闸门序与冷却
-// 记账（启动基线重放不受冷却豁免盲打），posture 门对基线源不生效。
-func (e *Engine) replayAppBaseline(ctx context.Context, a *app.App, d *deployment.Deployment) {
-	e.attemptConverge(ctx, a.ID, d, "", convergeSourceBaseline)
+// 记账（启动基线重放不受冷却豁免盲打），posture 门对基线源不生效（已知
+// 降级：detect = 零运行时写的收口待 staging 验证，D3）。返回值供 detect/
+// 隔离分支区分结局（ADR-0082 §5）。
+func (e *Engine) replayAppBaseline(ctx context.Context, a *app.App, d *deployment.Deployment) convergeOutcome {
+	return e.attemptConverge(ctx, a.ID, d, "", convergeSourceBaseline)
 }
 
 // driftScan 一拍漂移扫描：spec 对照（RuntimeInspector 可用时）+ 稳态
@@ -213,11 +215,11 @@ func (e *Engine) driftScan(ctx context.Context) {
 }
 
 // compareSpecs 逐载体对照观测 spec 与缓存期望 spec：失配 → drift 事件
-// （签名含 spec 指纹去抖；同一失配不重复发，回归即清），并把四类收敛信号
-// 圈定返回（ADR-0082 快通道：spec 失配/gen 偏离/停摆/缺席各自独立签名键
-// ——事件面与收敛面在此分叉：事件去抖照旧，收敛信号交 convergeStep 走
-// 签名生命周期）。obsMu.RLock 只护缓存读——事件落账在锁外、经调用链 ctx
-// （关停可取消；N0.1 P2-10）。
+// （签名含 spec 指纹去抖；同一失配不重复发，回归即清），并把六类收敛信号
+// 圈定返回（ADR-0082 快通道：spec 失配/gen 偏离/停摆/缺席/多余/重放各自
+// 独立签名键——事件面与收敛面在此分叉：事件去抖照旧，收敛信号交
+// convergeStep 走签名生命周期）。obsMu.RLock 只护缓存读——事件落账在锁外、
+// 经调用链 ctx（关停可取消；N0.1 P2-10）。
 //
 // 镜像逐字比对是正确口径（2026-10-01 双腿实证，N0.1 P1-2）：dind 里
 // `docker service create` CLI 会尝试把 tag 解析钉版为 repo:tag@sha256
@@ -228,15 +230,26 @@ func (e *Engine) driftScan(ctx context.Context) {
 // 镜像），以显式证据重开此案，不在此预放行。
 func (e *Engine) compareSpecs(ctx context.Context, appID string, obs []capability.WorkloadObservation, d *deployment.Deployment) convergeSignals {
 	signals := convergeSignals{}
-	// 缺席检测（ADR-0082 §1 新增面）：期望集 = 基线 Revision 拍内重投影，
-	// 对照观测集——载体被整删从零信号变缺席信号。投影失败（如材料解析
-	// 瞬断）跳过缺席面本拍：漏报不误报（方向安全），下拍重投影。
+	// 非成功终态的重放标记（裁决表行 10）：取消/失败的部署从未成为期望态，
+	// 下一拍以基线重放回卷（值携带部署 ID → 第二次取消 = 新签名，可再
+	// 触发）。标记由 transition.transit 单前门在终态迁移时落下。
+	if depID, ok := e.converge.replayMarked(appID); ok {
+		signals[convergeSignalReplay.key("")] = "replay|" + depID
+	}
+	// 缺席/多余检测（ADR-0082 §1 行2/行8，同源同投影）：期望集 = 基线
+	// Revision 拍内重投影，对照观测集。投影失败（如材料解析瞬断）跳过本拍：
+	// 漏报不误报（方向安全），下拍重投影。
 	if d != nil {
-		missing, err := e.missingExpectedCarriers(ctx, d, obs)
+		ws, err := e.expectedWorkloads(ctx, d)
 		if err != nil {
 			e.log.Error("drift scan: project expected set", "app", appID, "err", err)
-		} else if len(missing) > 0 {
-			signals["absent"] = "absent|" + strings.Join(missing, ",")
+		} else {
+			if missing := missingIDs(ws, obs); len(missing) > 0 {
+				signals[convergeSignalAbsent.key("")] = "absent|" + strings.Join(missing, ",")
+			}
+			if extra := extraIDs(ws, obs); len(extra) > 0 {
+				signals[convergeSignalExtra.key("")] = "extra|" + strings.Join(extra, ",")
+			}
 		}
 	}
 
@@ -261,6 +274,21 @@ func (e *Engine) compareSpecs(ctx context.Context, appID string, obs []capabilit
 		if !ok {
 			continue // 非平台管辖（孤儿面：只登记原则）
 		}
+		// 账本采用规则（ADR-0082 §6）：条目必须属于当前生效基线——未成功
+		// 终态（Cancel/failed/superseded）或进行中部署写下的条目是"上次下发
+		// 了什么"，不是"期望什么"，不得当锚（否则遗留载体与脏账本一致 →
+		// spec/gen 零信号；R16-M3 的根因）。不采用 = 跳过该载体的 spec/gen
+		// 对照（方向安全：漏报不误报）。无成功基线时同样跳过。
+		//
+		// 部署窗收窄的显式取舍（ADR-0082 §6 成文）：在途部署写下的条目
+		// 不属于当前基线 → 窗内这些载体的 spec/gen 不参与对照；窗内驱动权
+		// 在部署链（裁决行 6），窗口结束后条目归属新基线，对照自动恢复。
+		if d == nil {
+			continue
+		}
+		if by, ok := e.obs.ensuredByOf(o.WorkloadID); !ok || by != d.ID {
+			continue
+		}
 
 		// 滚动停摆观测（workload.rollout_stalled，runbook 记录·二十七）：
 		// Ensure 已被编排器接受但滚动停在中间态——spec 面一致，spec drift
@@ -277,7 +305,7 @@ func (e *Engine) compareSpecs(ctx context.Context, appID string, obs []capabilit
 				rollout = append(rollout, pendingRollout{wid: o.WorkloadID, gen: uint64(o.Generation), detail: o.RolloutDetail})
 			}
 			e.drift.mu.Unlock()
-			signals["rollout|"+o.WorkloadID] = sig
+			signals[convergeSignalRollout.key(o.WorkloadID)] = sig
 		} else {
 			e.drift.mu.Lock()
 			delete(e.drift.rolloutSig, o.WorkloadID)
@@ -294,7 +322,7 @@ func (e *Engine) compareSpecs(ctx context.Context, appID string, obs []capabilit
 			// gen 偏离信号（ADR-0082 §1 行3：检测下沉 driftScan——独立
 			// 签名键 + 收敛信号，不再 continue 让位 Watch 流；事件面仍归
 			// Watch 流 detectDrift 专管，此处不重复发）。
-			signals["gen|"+o.WorkloadID] = fmt.Sprintf("gen|%d|%d", anchor, uint64(o.Generation))
+			signals[convergeSignalGen.key(o.WorkloadID)] = fmt.Sprintf("gen|%d|%d", anchor, uint64(o.Generation))
 			continue
 		}
 		mismatch := ""
@@ -315,7 +343,7 @@ func (e *Engine) compareSpecs(ctx context.Context, appID string, obs []capabilit
 			continue
 		}
 		sig := fmt.Sprintf("spec|%s", mismatch)
-		signals["spec|"+o.WorkloadID] = sig
+		signals[convergeSignalSpec.key(o.WorkloadID)] = sig
 		e.drift.mu.Lock()
 		if e.drift.sig[o.WorkloadID] == sig {
 			e.drift.mu.Unlock()

@@ -2,9 +2,7 @@
 02-absent-carrier converge
 03-gen-deviation converge
 04-rollout-stalled-terminal converge
-05-steady-stopped-spec-match alert-only
 06-active-deployment-incl-failed-rollback skip
 07-frozen suspend
 08-extra-carriers-in-domain converge
-09-orphan-out-of-domain record-only
 10-cancel-legacy-partial-issue replay-baseline

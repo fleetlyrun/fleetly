@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -121,6 +122,11 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 			report.Gens[wid] = capability.Generation(g)
 		}
 	}
+	// changed 落变更集（ADR-0082 §2 第 3 条）：审计/事件分流的唯一事实源
+	// ——只有真实写穿内容等价判定的分支才计入（内容寻址 skip 不计）。
+	changed := func(wid string) {
+		report.Changed = append(report.Changed, wid)
+	}
 	for _, w := range ws {
 		carriers := callCarriers
 		if w.Materials != nil {
@@ -160,6 +166,7 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 				return capability.EnsureReport{}, fmt.Errorf("swarm ensure %s: create %s: %w", ns, spec.Name, err)
 			}
 			p.recordLastIssued(spec.Name, desiredJSON) // create 即入账：服务端已持有该 spec
+			changed(w.ID)                              // create = 真实变更（新载体）
 			continue                                   // wire-gen = 调用 gen（create 落的就是新戳）
 		}
 		svc := inspect.Service
@@ -171,7 +178,10 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 			if rerr != nil {
 				return report, rerr
 			}
-			if !resumed {
+			if resumed {
+				// resume 是一次真实更新下发（ForceUpdate 自增重滚）：计入变更集。
+				changed(w.ID)
+			} else {
 				wireGen(w.ID, svc)
 			} // resume 已重发：wire-gen = 本拍 gen（报告缺席）
 			continue
@@ -188,7 +198,10 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 			if rerr != nil {
 				return report, rerr
 			}
-			if !resumed {
+			if resumed {
+				// resume 是一次真实更新下发（ForceUpdate 自增重滚）：计入变更集。
+				changed(w.ID)
+			} else {
 				wireGen(w.ID, svc)
 			}
 			continue
@@ -205,6 +218,7 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 				return report, uerr // update 失败：defer 整拍作废账本，下拍重发（C19-1）
 			}
 			p.recordLastIssued(spec.Name, desiredJSON) // 账本记期望内容（modulo gen + 新副本数）
+			changed(w.ID)                              // 仅副本数也是真实更新下发（只增删任务）
 			wireGen(w.ID, svc)
 			continue
 		}
@@ -212,6 +226,7 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 			return report, uerr // update 失败：defer 整拍作废账本，下拍重发（C19-1）
 		}
 		p.recordLastIssued(spec.Name, desiredJSON)
+		changed(w.ID) // 内容变更整更新 = 真实变更（滚动替换）
 	}
 
 	// 域内收敛：期望集之外的 fleetly 管辖服务移除。
@@ -221,8 +236,14 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 				return capability.EnsureReport{}, fmt.Errorf("swarm ensure %s: remove stale %s: %w", ns, svc.Spec.Name, err)
 			}
 			p.forgetLastIssued(svc.Spec.Name) // 服务删除即清账（不复活、不泄漏）
+			// 被移除者没有期望 Workload ID（ADR-0082 §2 第 4 条）：用载体名。
+			report.Removed = append(report.Removed, "service/"+svc.Spec.Name)
 		}
 	}
+	sort.Strings(report.Changed)
+	report.Changed = slices.Compact(report.Changed)
+	sort.Strings(report.Removed)
+	report.Removed = slices.Compact(report.Removed)
 	return report, nil
 }
 

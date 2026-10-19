@@ -19,10 +19,12 @@ type fakeRuntime struct {
 	ensures  []ensureCall
 	failNext bool // 下一次 Ensure 失败（一次性注入；消费后自动清除）
 	// wireGens 非空时 Ensure 回执逐载体回传（ADR-0064 归因回路注入面）。
-	wireGens    map[string]capability.Generation
-	inspectFail bool // InspectWorkloads 持续失败（P1-5 观测风暴注入缝；清除即恢复）
-	removed     []capability.NamespaceRef
-	ensureGate  testruntime.BlockGate // Arm 后 Ensure 阻塞直至放行或 ctx 取消（hang 注入）
+	wireGens      map[string]capability.Generation
+	reportChanged []string // EnsureReport.Changed 注入面（D2 审计分流钉测；未注入 = 空 = 无真实变更）
+	reportRemoved []string // EnsureReport.Removed 注入面（同上）
+	inspectFail   bool     // InspectWorkloads 持续失败（P1-5 观测风暴注入缝；清除即恢复）
+	removed       []capability.NamespaceRef
+	ensureGate    testruntime.BlockGate // Arm 后 Ensure 阻塞直至放行或 ctx 取消（hang 注入）
 
 	// removeGate 非空时 Remove 阻塞（B15-1 hang 注入；apitest
 	// FakeRuntime.ArmRemoveBlock 同款语义，共享核 BlockGate）。
@@ -149,10 +151,25 @@ func (f *fakeRuntime) Ensure(ctx context.Context, ns capability.NamespaceRef, ws
 	}
 	// wireGens 注入（ADR-0064）：非空时作为 EnsureReport 逐载体回执返回——
 	// 归因回路测试面（swarm 侧跳过/scale 分支的等价假体）。
+	report := capability.EnsureReport{Changed: f.reportChanged, Removed: f.reportRemoved}
 	if len(f.wireGens) > 0 {
-		return capability.EnsureReport{Gens: f.wireGens}, nil
+		report.Gens = f.wireGens
 	}
-	return capability.EnsureReport{}, nil
+	return report, nil
+}
+
+// injectObservedCarrier 把一条载体塞进最近一次 Ensure 的域快照（
+// InspectWorkloads 的观测源）——"域内多余载体"注入面（ADR-0082 行 8 的
+// 收敛信号钉测；真源 Provider 的域内枚举同形态）。
+func (f *fakeRuntime) injectObservedCarrier(w capability.Workload) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.ensures) == 0 {
+		return
+	}
+	last := &f.ensures[len(f.ensures)-1]
+	last.Spec[w.Process] = w
+	last.ByID[w.ID] = w
 }
 
 func (f *fakeRuntime) Remove(ctx context.Context, ns capability.NamespaceRef) error {

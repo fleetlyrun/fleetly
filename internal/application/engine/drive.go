@@ -209,7 +209,7 @@ func (e *Engine) release(ctx context.Context, d *deployment.Deployment) (*deploy
 			return e.failDeployment(ctx, d, werr.Error())
 		}
 		e.rememberReleaseMaterialize(d)
-	} else if err := e.materialize(ctx, d, d.ToRevision, d.Generation, false); err != nil {
+	} else if _, err := e.materialize(ctx, d, d.ToRevision, d.Generation, false); err != nil {
 		return e.failDeployment(ctx, d, err.Error())
 	} else {
 		e.rememberReleaseMaterialize(d)
@@ -298,7 +298,7 @@ func (e *Engine) observe(ctx context.Context, d *deployment.Deployment) (*deploy
 		return nil, err
 	}
 	if anyBlueGreen(spec) {
-		if err := e.materialize(ctx, d, d.ToRevision, d.Generation, false); err != nil {
+		if _, err := e.materialize(ctx, d, d.ToRevision, d.Generation, false); err != nil {
 			e.log.Error("engine observe: blue-green collection ensure", "deployment", d.ID, "err", err)
 			return nil, err
 		}
@@ -351,7 +351,7 @@ func (e *Engine) rollback(ctx context.Context, d *deployment.Deployment) (*deplo
 		// "行 gen == 载体 gen"不变式在切回后保持，下一部署的基线锚不漂）。
 		gen = d.FromGeneration
 	}
-	if err := e.materialize(ctx, d, d.FromRevision, gen, false); err != nil {
+	if _, err := e.materialize(ctx, d, d.FromRevision, gen, false); err != nil {
 		return e.rollbackFailed(ctx, d, err.Error())
 	}
 	if e.releaseReadyGen(d, gen) {

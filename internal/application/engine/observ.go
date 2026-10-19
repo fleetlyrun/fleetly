@@ -97,13 +97,14 @@ func (e *Engine) buildDigests(ctx context.Context, revision string) (map[string]
 
 // recordEnsured 记录 Ensure 事实：观测域归属缓存 + 各 Workload 的
 // Generation 与投影 spec（逐载体锚分组——ADR-0048 双代窗联合期望集两代
-// 并存，各自记录；同代一批）+ App 级最近 Generation（expect 域，Drift
-// 对照锚 = 调用 gen）。进程内缓存，重启后由幂等重放的 Ensure 或启动基线
-// 重放重建（ADR-0022）。
+// 并存，各自记录；同代一批）+ 账本写入部署归属（ADR-0082 §6：drift 期望
+// 侧只采用写入者 == 当前 LatestSucceeded 的条目）+ App 级最近 Generation
+// （expect 域，Drift 对照锚 = 调用 gen）。进程内缓存，重启后由幂等重放的
+// Ensure 或启动基线重放重建（ADR-0022）。
 //
 // 期望账本写点纪律（ADR-0082 §6）：本函数是 App 域 ensuredSpec/ensuredGen/
-// expected 的唯一写点，且只被 Ensure 路径（materialize 单序列）触达——
-// 观测播种禁（受管域 seedFromRuntime 先例不得照抄，见 observdomain.go
+// ensuredBy/expected 的唯一写点，且只被 Ensure 路径（materialize 单序列）
+// 触达——观测播种禁（受管域 seedFromRuntime 先例不得照抄，见 observdomain.go
 // recordSpecs 注）。重启冷窗语义：基线重放完成前 expected 为空 → 缺席
 // 检测按「succeeded 无期望缓存」扫描面分支兜底（方向安全：漏报不误报），
 // 启动重放收口即闭合。
@@ -120,7 +121,7 @@ func (e *Engine) recordEnsured(d *deployment.Deployment, gen uint64, ws []capabi
 		groups[g] = append(groups[g], w)
 	}
 	for g, batch := range groups {
-		e.obs.recordSpecs(appOwner(d.AppID), g, batch)
+		e.obs.recordSpecs(appOwner(d.AppID), d.ID, g, batch)
 	}
 }
 
