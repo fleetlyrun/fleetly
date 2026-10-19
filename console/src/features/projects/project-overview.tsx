@@ -111,9 +111,11 @@ export function ProjectOverviewPage({ projectId }: { projectId: string }) {
 
 function AppTile({ projectId, appId, appName }: { projectId: string; appId: string; appName: string }) {
   const base = `/p/${encodeURIComponent(projectId)}/apps/${encodeURIComponent(appId)}`;
-  // 每磁贴自持最近部署态（5s 轮询与列表页同键，共享缓存不加重）
+  // 每磁贴自持最近部署态（5s 轮询）。查询键必须独立于列表页的
+  // ["deployments", appId]（Deployment[] 形状，H13）——同键双形状会让
+  // App 详情页把这里缓存的单条 Deployment 当数组 slice 而首帧崩溃。
   const deployments = useQuery({
-    queryKey: ["deployments", appId],
+    queryKey: ["deployments", "latest", appId],
     queryFn: async () => {
       const res = await apiFetch<{ deployments?: Array<{ id?: string; state?: string; updated_at?: string }> }>(
         `/v1/deployments?app_id=${encodeURIComponent(appId)}&limit=1`,

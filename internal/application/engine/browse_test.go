@@ -144,7 +144,9 @@ func TestBrowseCapabilityRoutes(t *testing.T) {
 	tool := routes[1]
 	assert.Equal(t, "", tool.Path)
 	require.NotNil(t, tool.Auth)
-	assert.Equal(t, "http://127.0.0.1:9081/v1/browse/authorize", tool.Auth.Address)
+	// 会话绑定（H4）：ForwardAuth 地址必须携带本会话的 ?session=，authorize
+	// 面据此拒绝他会话的 cookie；entry 路由不带 Auth（上面已断言 nil）。
+	assert.Equal(t, "http://127.0.0.1:9081/v1/browse/authorize?session="+tBrowseSessionID, tool.Auth.Address)
 	assert.NotEqual(t, "", tool.BackendAddr)
 	assert.Equal(t, "browse-"+strings.ToLower(tBrowseSessionID)+".browse.test", tool.Host)
 }

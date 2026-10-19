@@ -59,6 +59,11 @@ func (e *Engine) platformBackupPass(ctx context.Context) {
 	execCtx, cancel := context.WithTimeout(ctx, e.opts.Backup.BackupTimeout)
 	defer cancel()
 	if err := e.runPlatformBackup(execCtx, *cfg); err != nil {
+		// 单飞未获（手动触发正在跑）：本拍不是失败事实，安静跳过——不落
+		// fail 事件、不误报；下拍到点再试（H6）。
+		if errors.Is(err, ErrPlatformBackupInProgress) {
+			return
+		}
 		e.log.Error("platform backup failed", "err", err)
 		// 平台级事件（platform 聚合无 Team 轴）：team 留 '' = 全员可见。
 		if err := e.emitObservation(ctx, "", eventPlatformBackupFail, "platform", "platform-backup",
@@ -235,6 +240,10 @@ func (e *Engine) executeOneBackup(ctx context.Context) {
 	// 工具日志合流走 stdout，失败报文不带尾部对排障失明（restore 面同款
 	// 修，e2e 批实证）。
 	pr, pw := io.Pipe()
+	// 读端生命周期归调用方（H5）：ObjectStore.Put 允许读错/未读尽即返回，
+	// 写端会永久阻塞在 Pipe 上——读端必须在函数返回前关闭（Close 幂等，
+	// 成功路径已读尽 EOF，不影响字节）。
+	defer func() { _ = pr.Close() }()
 	stderr := &bytes.Buffer{}
 	tail := &boundedTail{}
 	runErr := make(chan error, 1)
@@ -258,8 +267,21 @@ func (e *Engine) executeOneBackup(ctx context.Context) {
 		runErr <- err
 	}()
 	info, putErr := e.objectStore.Put(execCtx, key, pr)
-	// 排空运行侧（Put 返回后工具容器可能仍在收尾；超时路径由 execCtx 收口）。
-	if rerr := <-runErr; rerr != nil && putErr == nil {
+	if putErr != nil {
+		// 未读尽即返回错误（断网/磁盘满/ctx 取消）：先关读端解除写端阻塞，
+		// 否则下面等运行侧收尾会互相等（H5 的挂死环）。
+		_ = pr.Close()
+	}
+	// 排空运行侧：ctx 感知的等待（Put 返回后工具容器可能仍在收尾，超时/
+	// 取消路径由 execCtx 收口；无界 <-runErr 会把备份环单写者钉死）。
+	var rerr error
+	select {
+	case rerr = <-runErr:
+	case <-execCtx.Done():
+		_ = pr.Close()
+		rerr = execCtx.Err()
+	}
+	if rerr != nil && putErr == nil {
 		putErr = rerr
 	}
 	if putErr != nil {

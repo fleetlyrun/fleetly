@@ -45,6 +45,10 @@ import (
 type fakeObjectStore struct {
 	mu      sync.Mutex
 	objects map[string][]byte
+	// putFailNoRead 模拟"未读 reader 即返回错误"的 ObjectStore 形态（断网/
+	// 磁盘满/ctx 取消）：写端会阻塞在 io.Pipe 上——H5 的挂死触发面。置位时
+	// Put 直接返回错误、不消费 reader。
+	putFailNoRead bool
 }
 
 func newFakeObjectStore() *fakeObjectStore {
@@ -60,6 +64,12 @@ func (f *fakeObjectStore) Health(context.Context) capability.HealthReport {
 }
 
 func (f *fakeObjectStore) Put(_ context.Context, key string, r io.Reader) (capability.ObjectInfo, error) {
+	f.mu.Lock()
+	failNoRead := f.putFailNoRead
+	f.mu.Unlock()
+	if failNoRead {
+		return capability.ObjectInfo{}, errors.New("fake object store: put failed before reading")
+	}
 	body, err := io.ReadAll(r)
 	if err != nil {
 		return capability.ObjectInfo{}, err
@@ -229,6 +239,10 @@ func TestBackupScheduleExecuteSucceeds(t *testing.T) {
 	assert.NotEmpty(t, rows[0].ObjectKey)
 	assert.NotEmpty(t, rows[0].Digest)
 	assert.Equal(t, int64(len("BACKUP-BYTES-0123456789")), rows[0].SizeBytes)
+	// 成功路径字节不变（H5 修复只动读端生命周期）：digest 与夹具 stdout 的
+	// sha256 逐位一致。
+	wantSum := sha256.Sum256([]byte("BACKUP-BYTES-0123456789"))
+	assert.Equal(t, hex.EncodeToString(wantSum[:]), rows[0].Digest)
 
 	// 对象内容（工具容器 stdout 落位）。
 	obj, err := store.Get(ctx, rows[0].ObjectKey)
@@ -298,6 +312,45 @@ func TestBackupUtilityFailureRecorded(t *testing.T) {
 	fresh, err := e.repos.Databases.Get(ctx, tDatabaseID)
 	require.NoError(t, err)
 	assert.Empty(t, fresh.LastBackupAt, "failed backups must not advance the schedule anchor")
+}
+
+// ObjectStore 未读 reader 即返回错误（断网/磁盘满/ctx 取消的真实 Provider
+// 形态）：executeOneBackup 必须秒级返回并把行落 failed，不得在 io.Pipe 上
+// 与工具容器互等（H5：备份环单写者挂死 + maintenanceMu 读锁连坐）。
+func TestBackupPutFailureBeforeReadDoesNotHang(t *testing.T) {
+	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
+	e, _, _, store, clock := newBackupFixture(t, "postgres", url)
+	store.putFailNoRead = true
+	clock.Advance(3601 * time.Second)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		e.backupStep(ctx)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("backupStep hung on a Put failure that returned without reading — the pipe reader is not being closed")
+	}
+
+	ctx := context.Background()
+	rows, err := e.repos.Backups.ListByDatabase(ctx, tDatabaseID, 0, 10)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	assert.Equal(t, backup.StatusFailed, rows[0].Status)
+	assert.Contains(t, rows[0].Error, "put failed before reading")
+
+	// 失败不产对象、不推进调度锚（与既有失败语义一致）。
+	store.mu.Lock()
+	objectCount := len(store.objects)
+	store.mu.Unlock()
+	assert.Zero(t, objectCount)
+	fresh, err := e.repos.Databases.Get(ctx, tDatabaseID)
+	require.NoError(t, err)
+	assert.Empty(t, fresh.LastBackupAt)
 }
 
 // 流式恢复：目标库 running → stdin = 对象内容 → 清挂起 + database.restored。

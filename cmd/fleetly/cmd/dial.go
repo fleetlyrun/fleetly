@@ -36,6 +36,18 @@ func noDeadline() dialOption {
 	return func(o *dialOptions) { o.noDeadline = true }
 }
 
+// unaryDeadlineContext 返回包裹请求级 deadline 的 unary ctx（已有 deadline
+// 时原样返回 + 无操作 cancel）。与等待流分离是硬纪律（H14/R10-H1）：unary
+// 的 120s 上限只允许包住「调用 + 回执」，等待流必须继续用调用方原始 ctx
+// （--wait 拨号已 noDeadline）——继承 unary deadline 会让超过 2 分钟的部署
+// 必然假失败。调用点用两个变量显式表达两个生命周期。
+func unaryDeadlineContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if _, ok := ctx.Deadline(); ok {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, cliRequestTimeout)
+}
+
 // resolveToken 按 显式旗标 > FLEETLY_TOKEN env > 凭据文件 归一 token。
 func resolveToken(flagToken string) string {
 	if flagToken != "" {

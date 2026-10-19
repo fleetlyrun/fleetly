@@ -31,6 +31,11 @@ type fakeRestic struct {
 	envs     []map[string]string
 	execErr  error
 	snapsOut string
+	// backupStarted/blockBackup 是 H6 单飞测试的阻塞缝：backup 动作进入时
+	// 向 backupStarted 投递一次信号，随后阻塞到 blockBackup 关闭（模拟长
+	// 备份窗——A 在途时 B 的触发必须立即被单飞拒绝）。
+	backupStarted chan struct{}
+	blockBackup   chan struct{}
 }
 
 func withFakeRestic(t *testing.T, cfg *PlatformBackupConfig) (*Engine, *fakeRestic, *statetest.FakeClock) {
@@ -39,7 +44,6 @@ func withFakeRestic(t *testing.T, cfg *PlatformBackupConfig) (*Engine, *fakeRest
 	orig := resticExec
 	resticExec = func(_ context.Context, _ string, args []string, env []string) ([]byte, error) {
 		fr.mu.Lock()
-		defer fr.mu.Unlock()
 		fr.calls = append(fr.calls, args)
 		envMap := map[string]string{}
 		for _, kv := range env {
@@ -48,12 +52,25 @@ func withFakeRestic(t *testing.T, cfg *PlatformBackupConfig) (*Engine, *fakeRest
 			}
 		}
 		fr.envs = append(fr.envs, envMap)
-		if fr.execErr != nil {
-			return []byte("fake restic failure detail"), fr.execErr
+		execErr, snapsOut := fr.execErr, fr.snapsOut
+		started, block := fr.backupStarted, fr.blockBackup
+		fr.mu.Unlock()
+
+		if block != nil && isResticBackupCall(args) {
+			if started != nil {
+				select {
+				case started <- struct{}{}:
+				default:
+				}
+			}
+			<-block
+		}
+		if execErr != nil {
+			return []byte("fake restic failure detail"), execErr
 		}
 		for _, a := range args {
 			if a == "snapshots" {
-				return []byte(fr.snapsOut), nil
+				return []byte(snapsOut), nil
 			}
 		}
 		return []byte("ok"), nil
@@ -232,6 +249,64 @@ func TestTriggerPlatformBackupManual(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "no snapshots")
 	})
+}
+
+// 引擎级单飞（H6）：A 在 restic backup 中阻塞时，B 的 runPlatformBackup 必须
+// 立即返回 ErrPlatformBackupInProgress（不阻塞排队），手动触发映射为冲突且
+// 不落 fail 事件；放行 A 后全链成功，快照只剩 canonical 名（无 .tmp 残留）。
+func TestPlatformBackupSingleFlight(t *testing.T) {
+	e, fr, _ := withFakeRestic(t, &PlatformBackupConfig{Interval: time.Hour, Retention: 24 * time.Hour})
+	fr.mu.Lock()
+	fr.backupStarted = make(chan struct{}, 1)
+	fr.blockBackup = make(chan struct{})
+	fr.mu.Unlock()
+	cfg := *e.opts.Backup.PlatformBackup
+
+	firstDone := make(chan error, 1)
+	go func() { firstDone <- e.runPlatformBackup(context.Background(), cfg) }()
+	select {
+	case <-fr.backupStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the first platform backup never reached the restic backup step")
+	}
+
+	// B（引擎面）：单飞拒绝必须立即返回，不排队。
+	require.ErrorIs(t, e.runPlatformBackup(context.Background(), cfg), ErrPlatformBackupInProgress)
+	// B（手动面）：同一哨兵，且"已有备份在途"不是一次失败运行。
+	_, terr := e.TriggerPlatformBackup(context.Background())
+	require.ErrorIs(t, terr, ErrPlatformBackupInProgress)
+	assert.NotContains(t, eventNames(t, e, "platform-backup"), eventPlatformBackupFail,
+		"a single-flight rejection must not be recorded as a failed backup run")
+
+	// A 仍在 backup 中：restic backup 动作恰好一次（无并发 backup）。
+	fr.mu.Lock()
+	calls := make([][]string, len(fr.calls))
+	copy(calls, fr.calls)
+	fr.mu.Unlock()
+	backups := 0
+	for _, args := range calls {
+		if isResticBackupCall(args) {
+			backups++
+		}
+	}
+	assert.Equal(t, 1, backups, "no concurrent restic backup may start while the first is in flight")
+
+	close(fr.blockBackup)
+	require.NoError(t, <-firstDone)
+
+	// 快照原子落 canonical：成功后只剩 canonical，无临时文件残留。
+	entries, err := os.ReadDir(e.platformBackupPath(""))
+	require.NoError(t, err)
+	for _, entry := range entries {
+		assert.NotContains(t, entry.Name(), ".tmp", "snapshot temp files must be renamed or removed")
+	}
+	_, err = os.Stat(e.platformBackupPath(platformSnapshotName))
+	require.NoError(t, err, "canonical snapshot must exist after success")
+}
+
+// isResticBackupCall 报告 argv 是否 backup 动作（argv 前缀恒 ["-r", repo]）。
+func isResticBackupCall(args []string) bool {
+	return len(args) > 2 && args[2] == "backup"
 }
 
 // 列举面：新→旧（time 降序——分页游标的确定性前提）。

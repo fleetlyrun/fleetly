@@ -8,8 +8,9 @@ package assembly
 //     路由）。该路径经 browse 会话的免门禁 ephemeral Route 到达（规则
 //     更长优先级更高），自身安全面 = 票据本身。
 //   - GET /v1/browse/authorize  ForwardAuth 校验目标（traefik 每请求
-//     侧呼；原始 Cookie 头透传——2026-10-07 v3.6 实证）：校验 cookie 的
-//     grant（常量时间比对 + 续活）→ 200/401。
+//     侧呼；原始 Cookie 头透传——2026-10-07 v3.6 实证）：校验目标会话
+//     （?session=，H4 会话绑定）与 cookie 内 sid 一致 + grant（常量时间
+//     比对 + 续活）→ 200/401。
 //
 // 与 relay/exec-stream/platform-binary 同一挂法族：root mux 精确路径 +
 // gateway 回落；不进 swagger（原生入口）。
@@ -109,19 +110,40 @@ func serveBrowseEntry(w http.ResponseWriter, r *http.Request, gate *BrowseGate) 
 }
 
 // serveBrowseAuthorize：ForwardAuth 校验面（traefik 侧呼）。无有效 cookie
-// 一律 401（无正文细节——对匿名面只呈现"未授权"）。
+// 或目标会话与 cookie 不一致一律 401（无正文细节——对匿名面只呈现"未授
+// 权"）。目标会话经路由 Auth.Address 的 ?session= 参数注入（H4 会话绑定：
+// cookie 只能进它自己被铸出的 browse host）。
 func serveBrowseAuthorize(w http.ResponseWriter, r *http.Request, gate *BrowseGate) {
+	serveBrowseAuthorizeWith(w, r, gate.validate)
+}
+
+// serveBrowseAuthorizeWith 是 serveBrowseAuthorize 的校验函数注入形态（单测
+// 缝；生产传 gate.validate）。
+func serveBrowseAuthorizeWith(w http.ResponseWriter, r *http.Request, validate func(string, string) bool) {
 	c, err := r.Cookie(browseCookieName)
 	if err != nil || c.Value == "" {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
-	sid, grant, ok := splitBrowseCookie(c.Value)
-	if !ok || !gate.validate(sid, grant) {
+	if !authorizeBrowseCookie(c.Value, r.URL.Query().Get("session"), validate) {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+// authorizeBrowseCookie 是 authorize 面的纯判定（H4）：cookie 形态必须为
+// <sid>.<grant>、cookie 内 sid 必须等于目标会话（Auth.Address 的 ?session=）、
+// 且 grant 经注册表校验通过。任一不成立即拒绝；校验函数只在会话一致后调用。
+func authorizeBrowseCookie(cookieValue, targetSession string, validate func(string, string) bool) bool {
+	if targetSession == "" {
+		return false
+	}
+	sid, grant, ok := splitBrowseCookie(cookieValue)
+	if !ok || sid != targetSession {
+		return false
+	}
+	return validate(sid, grant)
 }
 
 // splitBrowseCookie 拆 <sid>.<grant>（形态不符 = 无效）。

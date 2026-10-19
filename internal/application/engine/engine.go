@@ -42,6 +42,10 @@ var (
 	// 裸网名（B12 P3-5 fail-closed：建网/taskGroup:/project: 引用/删附件；
 	// API 层映射 E_INVALID_ARGUMENT）。
 	ErrPreDeployNetworkUnknown = errors.New("engine: pre-deploy job attaches an unknown network")
+	// ErrPlatformBackupInProgress 是 Platform Backup 已有执行在途（H6 引擎级
+	// 单飞：快照/仓锁外步骤不得并发，否则可产出损坏但 restic check 通过的
+	// 恢复点；API 层映射 E_CONFLICT，节拍环静默跳过）。
+	ErrPlatformBackupInProgress = errors.New("engine: platform backup already in progress")
 )
 
 // ring 是收敛环注册项（Start/DriveOnce 表驱动：goroutine 挂载、启动
@@ -136,6 +140,13 @@ type Engine struct {
 	// 粒度是对该耦合的诚实取舍，ADR-0046 决策 3）。锁等待不占步预算
 	// （排队语义，见 lockMaintenance）。
 	maintenanceMu sync.RWMutex
+
+	// platformBackupMu 是 Platform Backup 的引擎级单飞锁（H6）：快照
+	// （VACUUM INTO）与仓外步骤不在 restic 仓锁内——并发触发可产出损坏
+	// 但 restic check 通过的恢复点，也会让手动触发误报失败。runPlatformBackup
+	// 入口 TryLock，拿不到即 ErrPlatformBackupInProgress（节拍环静默跳过、
+	// 手动面映射 E_CONFLICT）；不阻塞排队，触发者立即得到诚实反馈。
+	platformBackupMu sync.Mutex
 
 	// lifecycleMu 同步引擎生命周期（B12 P3-6）：Start 全程持锁（cancel
 	// 判空/赋值 + wg.Add）与 Stop 全程持锁（cancel 置 nil + wg.Wait 排水）

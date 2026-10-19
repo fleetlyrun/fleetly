@@ -7,6 +7,7 @@ package fleetlygrpc
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
@@ -30,9 +31,19 @@ func (svc *PlatformService) TriggerPlatformBackup(ctx context.Context, _ *system
 	}
 	snap, err := svc.s.Engine.TriggerPlatformBackup(ctx)
 	if err != nil {
-		return nil, apperr.New("E_PLATFORM_BACKUP_FAILED", "%v", err).WithCause(err)
+		return nil, platformBackupErr(err)
 	}
 	return &systemv1.TriggerPlatformBackupResponse{Snapshot: platformSnapshotMsg(snap)}, nil
+}
+
+// platformBackupErr 把引擎错误映射成 API errcode（H6）：单飞冲突是状态
+// 冲突（409/E_CONFLICT，"已有备份在途"），不是一次备份失败；其余错误维持
+// E_PLATFORM_BACKUP_FAILED（升级序的失败硬停语义不变）。
+func platformBackupErr(err error) error {
+	if errors.Is(err, engine.ErrPlatformBackupInProgress) {
+		return apperr.New("E_CONFLICT", "platform backup already in progress").WithCause(err)
+	}
+	return apperr.New("E_PLATFORM_BACKUP_FAILED", "%v", err).WithCause(err)
 }
 
 // ListPlatformBackups 新→旧分页（restic 仓直读；after_snapshot_id 游标按

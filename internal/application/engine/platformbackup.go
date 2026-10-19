@@ -16,6 +16,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -117,6 +118,12 @@ const platformBackupRetryBackoff = 5 * time.Minute
 // 双仓 backup → check → forget；s3 仓失败不阻断本地仓完成事实——事件按
 // 整体成败落）。尝试锚先落（失败退避的计时起点），成功锚仅全链成功推进。
 func (e *Engine) runPlatformBackup(ctx context.Context, cfg PlatformBackupConfig) error {
+	// 引擎级单飞（H6）：TryLock 不排队——并发触发立即得到"已在执行"的诚实
+	// 反馈，而不是在快照/仓锁外步骤上互相覆盖。
+	if !e.platformBackupMu.TryLock() {
+		return ErrPlatformBackupInProgress
+	}
+	defer e.platformBackupMu.Unlock()
 	if !e.PlatformBackupAvailable() {
 		return fmt.Errorf("platform backup: restic binary not found (pin %s); install it or disable platform backup", PinnedResticVersion)
 	}
@@ -213,13 +220,25 @@ func (e *Engine) ensureResticRepo(ctx context.Context, repo resticRepo) error {
 
 // snapshotState 铸 SQLite 一致快照（VACUUM INTO——在线一致，WAL 安全；
 // 快照入库、live 库三件排除在备份集外，恢复面以快照为准）。
+//
+// 唯一临时名 + rename（H6）：restic 备份集只会看到 canonical 名，且任何时刻
+// 该名要么是上一次的完整快照、要么是本次完整快照——不会读到 VACUUM INTO
+// 的半写中间态。失败清理临时文件，canonical 的上一次快照保持可用。
 func (e *Engine) snapshotState(ctx context.Context) error {
 	if err := os.MkdirAll(e.platformBackupPath(""), 0o750); err != nil {
 		return err
 	}
 	target := e.platformBackupPath(platformSnapshotName)
-	_ = os.Remove(target) // VACUUM INTO 不覆写既有文件
-	return e.db.VacuumInto(ctx, target)
+	tmp := e.platformBackupPath(fmt.Sprintf("state-snapshot-%d.db.tmp", e.clock.Now().UnixNano()))
+	if err := e.db.VacuumInto(ctx, tmp); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, target); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return nil
 }
 
 // platformBackupPath 解析 platform-backups 域内路径。
@@ -359,9 +378,10 @@ type PlatformSnapshot struct {
 
 // TriggerPlatformBackup 立即同步执行一次 Platform Backup（ADR-0039 决策 9
 // 手动面：直接执行不走节拍锚——F2.3 升级序的前置动词执行体，ADR-0015）。
-// 执行时长受 BackupTimeout 上界约束；与节拍环的并发互斥由 restic 仓锁兜
-// 底（同仓并发 backup 一方持锁一方精确失败，无半写态）。成败事件 + 审计
-// 一拍落账（节拍环同款事件面；手动面加操作者审计）。
+// 执行时长受 BackupTimeout 上界约束；与节拍环的并发互斥由引擎级单飞
+// （platformBackupMu，H6）保证：已有执行在途即返回 ErrPlatformBackupInProgress
+// （API 层映射 E_CONFLICT），不落失败事件（不是一次失败运行）。其余成败
+// 事件 + 审计一拍落账（节拍环同款事件面；手动面加操作者审计）。
 func (e *Engine) TriggerPlatformBackup(ctx context.Context) (*PlatformSnapshot, error) {
 	cfg := e.opts.Backup.PlatformBackup
 	if cfg == nil {
@@ -370,6 +390,10 @@ func (e *Engine) TriggerPlatformBackup(ctx context.Context) (*PlatformSnapshot, 
 	execCtx, cancel := context.WithTimeout(ctx, e.opts.Backup.BackupTimeout)
 	defer cancel()
 	runErr := e.runPlatformBackup(execCtx, *cfg)
+	if errors.Is(runErr, ErrPlatformBackupInProgress) {
+		// 单飞拒绝：没有执行发生，不写 fail 事件/审计（调用方按冲突呈现）。
+		return nil, runErr
+	}
 
 	// 事件 + 审计（失败也落——成败事实与节拍环同面；审计带操作者）。
 	eventName, payload := eventPlatformBackupOK, platformBackupEventJSON(cfg.Retention.String(), "")

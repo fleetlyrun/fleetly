@@ -31,3 +31,26 @@ func TestDialFromEnvDeadline(t *testing.T) {
 	_, ok = sctx.Deadline()
 	assert.False(t, ok, "streaming verbs must be exempt from the client deadline")
 }
+
+// TestUnaryDeadlineContextKeepsWaitCtxClean：H14（R10-H1）——unary 的 120s
+// 上限只包 unary 调用；等待流使用的原始 ctx 不得被污染（否则 deploy --wait
+// 超过 2 分钟必然假失败）。已有 deadline 时不再叠加，原样复用。
+func TestUnaryDeadlineContextKeepsWaitCtxClean(t *testing.T) {
+	parent := context.Background()
+	unaryCtx, cancel := unaryDeadlineContext(parent)
+	defer cancel()
+	dl, ok := unaryCtx.Deadline()
+	require.True(t, ok, "unary calls keep the bounded request deadline")
+	assert.WithinDuration(t, time.Now().Add(cliRequestTimeout), dl, 5*time.Second)
+	_, waitHasDeadline := parent.Deadline()
+	assert.False(t, waitHasDeadline, "the wait stream must keep the deadline-free parent ctx")
+
+	bounded, bcancel := context.WithTimeout(context.Background(), time.Minute)
+	defer bcancel()
+	want, _ := bounded.Deadline()
+	got, noop := unaryDeadlineContext(bounded)
+	defer noop()
+	gotDL, ok := got.Deadline()
+	require.True(t, ok)
+	assert.Equal(t, want, gotDL, "an existing deadline is reused, not stacked")
+}

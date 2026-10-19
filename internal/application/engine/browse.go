@@ -291,7 +291,12 @@ func (e *Engine) browseCapabilityRoutes(ctx context.Context) []capability.Route 
 			Protocol:    capability.ProtocolHTTP,
 			TLS:         tls,
 			BackendAddr: backend,
-			Auth:        &capability.RouteAuth{Address: e.opts.Data.Browse.GatewayURL + "/v1/browse/authorize"},
+			// ?session= 是会话绑定的 ForwardAuth 参数（H4）：authorize 面据此
+			// 比对 cookie 内 sid——没有它，任一有效 browse cookie 可穿过他人
+			// browse host 的门禁（entry 路由不带 Auth，不受影响）。
+			Auth: &capability.RouteAuth{
+				Address: e.opts.Data.Browse.GatewayURL + "/v1/browse/authorize?session=" + url.QueryEscape(s.id),
+			},
 		})
 	}
 	return out

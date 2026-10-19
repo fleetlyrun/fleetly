@@ -141,7 +141,8 @@ type Route struct {
 
 // RouteAuth 是 Route 的请求门禁声明（ADR-0051 决策 5：launcher ticket 兑换
 // 后的持续校验面——Address 是平台 authorize 端点（容器可达的 gateway 基址
-// + 路径），Proxy 原样作为 ForwardAuth 目标）。
+// + 路径 + 可选的会话绑定参数，browse 路由携 ?session=<会话 id>），Proxy
+// 原样作为 ForwardAuth 目标）。
 type RouteAuth struct {
 	Address string
 }

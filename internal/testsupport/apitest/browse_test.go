@@ -227,19 +227,28 @@ func TestBrowseEntryTicketAndCookie(t *testing.T) {
 		"/v1/browse/entry?session="+resp.GetSessionId()+"&ticket="+resp.GetTicket(), nil))
 	assert.Equal(t, http.StatusUnauthorized, rec.Code)
 
-	// authorize（ForwardAuth 语义——traefik 透传原始 Cookie 头）。
-	authReq := func(cookie string) *httptest.ResponseRecorder {
+	// authorize（ForwardAuth 语义——traefik 透传原始 Cookie 头；H4：目标
+	// 会话经 ?session= 绑定）。
+	authReq := func(cookie, session string) *httptest.ResponseRecorder {
 		rec := httptest.NewRecorder()
-		req := httptest.NewRequestWithContext(context.Background(), "GET", "/v1/browse/authorize", nil)
+		target := "/v1/browse/authorize"
+		if session != "" {
+			target += "?session=" + session
+		}
+		req := httptest.NewRequestWithContext(context.Background(), "GET", target, nil)
 		if cookie != "" {
 			req.Header.Set("Cookie", cookie)
 		}
 		handler.ServeHTTP(rec, req)
 		return rec
 	}
-	assert.Equal(t, http.StatusUnauthorized, authReq("").Code)
-	assert.Equal(t, http.StatusOK, authReq("flt_browse="+ck.Value).Code)
-	assert.Equal(t, http.StatusUnauthorized, authReq("flt_browse="+resp.GetSessionId()+".wrongvalue").Code)
+	assert.Equal(t, http.StatusUnauthorized, authReq("", resp.GetSessionId()).Code)
+	assert.Equal(t, http.StatusOK, authReq("flt_browse="+ck.Value, resp.GetSessionId()).Code)
+	assert.Equal(t, http.StatusUnauthorized, authReq("flt_browse="+resp.GetSessionId()+".wrongvalue", resp.GetSessionId()).Code)
+	// H4：有效 cookie 不得穿过他会话的 authorize（目标会话不一致 → 401）。
+	assert.Equal(t, http.StatusUnauthorized, authReq("flt_browse="+ck.Value, "01JDSOMEBROWSE0000000000000").Code)
+	// 会话绑定参数缺席同样 fail-closed。
+	assert.Equal(t, http.StatusUnauthorized, authReq("flt_browse="+ck.Value, "").Code)
 
 	// 错方法 → 405（get_only）。
 	rec = httptest.NewRecorder()

@@ -239,14 +239,13 @@ func newDeployVerb() commands.Command {
 				// 头（通用幂等）与 body 字段（部署去重锚）同值下发——ADR-0024
 				// 双源一致性：不一致即 409。--from-dir 形态上传先行完成，Deploy
 				// 仍按普通 unary 走（ctx 无 deadline 时显式附 120s 上限）。
-				if _, ok := ctx.Deadline(); !ok {
-					var dctx context.Context
-					dctx, cancel2 := context.WithTimeout(ctx, cliRequestTimeout)
-					defer cancel2()
-					ctx = dctx
-				}
-				ctx = fleetly.WithIdempotencyKey(ctx, idemKey)
-				resp, err := c.Deployments.Deploy(ctx, req)
+				// H14：120s 只包 Deploy；下面的 --wait 等待流必须用原始 ctx
+				//（--wait 拨号已 noDeadline）——继承 unary deadline 会让
+				// 超过 2 分钟的部署必然假失败。
+				unaryCtx, cancelUnary := unaryDeadlineContext(ctx)
+				defer cancelUnary()
+				unaryCtx = fleetly.WithIdempotencyKey(unaryCtx, idemKey)
+				resp, err := c.Deployments.Deploy(unaryCtx, req)
 				if err != nil {
 					return err
 				}

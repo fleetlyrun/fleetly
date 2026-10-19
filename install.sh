@@ -19,6 +19,8 @@
 #   FLEETLY_LOGGING_ADDR    受管日志存储地址（默认 <advertise>:9428；空 = 禁用
 #   FLEETLY_METRICS_ADDR    受管指标存储地址（默认 <advertise>:8428；空 = 禁用
 #                           构建链——镜像直投部署不受影响）
+#   FLEETLY_PROXY_CONFIG_ENDPOINT  受管 Proxy 配置拉取端点（默认
+#                           http://<advertise>:9082/proxy/config；显式值优先）
 #
 # railpack 构建器（零配置源码构建）随脚本钉版安装（F1.14，ADR-0032）；
 # 版段与 internal/infrastructure/providers/builders 的 railpackPinnedVersion 同 commit 纪律。
@@ -183,6 +185,12 @@ LOGGING_ADDR="${FLEETLY_LOGGING_ADDR:-}"
 METRICS_ADDR="${FLEETLY_METRICS_ADDR:-}"
 [ -z "$METRICS_ADDR" ] && [ -n "$ADDR" ] && METRICS_ADDR="$ADDR:8428"
 
+# 受管 Proxy 配置拉取端点（H12）：同源物化（http://<advertise>:9082/proxy/config）。
+# traefik 工厂只经 env FLEETLY_PROXY_CONFIG_ENDPOINT 取得端点——空即工厂失败、
+# 受管 Proxy 缺席，Route/Console/API 发布全链静默停用。
+PROXY_CONFIG_ENDPOINT="${FLEETLY_PROXY_CONFIG_ENDPOINT:-}"
+[ -z "$PROXY_CONFIG_ENDPOINT" ] && [ -n "$ADDR" ] && PROXY_CONFIG_ENDPOINT="http://$ADDR:9082/proxy/config"
+
 start_fleetlyd_systemd() {
   log "starting fleetlyd via systemd"
   EXTRA_ENV=""
@@ -196,6 +204,10 @@ start_fleetlyd_systemd() {
   fi
   if [ -n "$METRICS_ADDR" ]; then
     EXTRA_ENV="${EXTRA_ENV}Environment=FLEETLY_METRICS_ADDR=$METRICS_ADDR
+"
+  fi
+  if [ -n "$PROXY_CONFIG_ENDPOINT" ]; then
+    EXTRA_ENV="${EXTRA_ENV}Environment=FLEETLY_PROXY_CONFIG_ENDPOINT=$PROXY_CONFIG_ENDPOINT
 "
   fi
   cat > /etc/systemd/system/fleetlyd.service <<UNIT
@@ -229,6 +241,7 @@ FLEETLY_DATA_ROOT=$DATA_ROOT
 FLEETLY_REGISTRY_ADDR=${REGISTRY_ADDR:-}
 FLEETLY_LOGGING_ADDR=${LOGGING_ADDR:-}
 FLEETLY_METRICS_ADDR=${METRICS_ADDR:-}
+FLEETLY_PROXY_CONFIG_ENDPOINT=${PROXY_CONFIG_ENDPOINT:-}
 ENVEOF
   chmod 0600 /etc/fleetlyd.env
   # shellcheck disable=SC2046
