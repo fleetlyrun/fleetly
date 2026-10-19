@@ -2,7 +2,7 @@
 
 | 状态 | 日期 | 关联 |
 |---|---|---|
-| Accepted | 2026-10-18 | 设计母本 `docs/design/2026-10-18-declarative-model.md` §1/§4（唯一规格源）；**推翻 ADR-0005「漂移检测默认开、收敛默认 opt-in」条款**（该条款自 ADR-0010 起已降参考缺省，本 ADR 显式了断）；**推翻 ADR-0022 decision 1** 的「失配仅发事件、只观测不迁移」口径（**decision 3 的 stopped 只观测实质保留**——本 ADR 裁决表对 spec 相符 stopped 维持告警不收敛）；**登记在役引用点 `docs/adr/0046:74`**（「drift 只发事件、Ensure 是唯一写动词（ADR-0005）」——该行的扫描-重建互不干扰论证不受影响，引用的收敛口径自本 ADR 翻向）；**翻案 admission N0「不自动拆除」条款在 Cancel 遗留场景的适用**（2026-10-18 用户裁决：回卷 LatestSucceeded 基线）；ADR-0064（内容锚定等价——收敛的等价判据与停摆 resume 先例）；ADR-0048（双代窗与驱动权口径）；ADR-0017（变更冻结语义）；ADR-0066/0075（写序列 kernel 与审计行）；CONTEXT.md Converge 词条同批修订（「默认 opt-in」翻案）；**修订 2026-10-19（S12）**：§1 表裁为 8 判定行 + 2 非行且判定函数被生产路径真实调用；§2 事实面按「fast 源 ∨ 真实变更」分流；§6 账本归属与 replay 重放标记；§5 detect 的零运行时写为 staging 验证后待办（当前启动基线重放不受门限 = 已知降级） |
+| Accepted | 2026-10-18 | 设计母本 `docs/design/2026-10-18-declarative-model.md` §1/§4（唯一规格源）；**推翻 ADR-0005「漂移检测默认开、收敛默认 opt-in」条款**（该条款自 ADR-0010 起已降参考缺省，本 ADR 显式了断）；**推翻 ADR-0022 decision 1** 的「失配仅发事件、只观测不迁移」口径（**decision 3 的 stopped 只观测实质保留**——本 ADR 裁决表对 spec 相符 stopped 维持告警不收敛）；**登记在役引用点 `docs/adr/0046:74`**（「drift 只发事件、Ensure 是唯一写动词（ADR-0005）」——该行的扫描-重建互不干扰论证不受影响，引用的收敛口径自本 ADR 翻向）；**翻案 admission N0「不自动拆除」条款在 Cancel 遗留场景的适用**（2026-10-18 用户裁决：回卷 LatestSucceeded 基线）；ADR-0064（内容锚定等价——收敛的等价判据与停摆 resume 先例）；ADR-0048（双代窗与驱动权口径）；ADR-0017（变更冻结语义）；ADR-0066/0075（写序列 kernel 与审计行）；CONTEXT.md Converge 词条同批修订（「默认 opt-in」翻案）；**修订 2026-10-19（S12）**：§1 表裁为 8 判定行 + 2 非行且判定函数被生产路径真实调用；§2 事实面按「fast 源 ∨ 真实变更」分流；§6 账本归属与 replay 重放标记；**§5 detect = 零运行时写（D3 已实施：四源同受门限，启动面只重建期望账本）** |
 
 ## 背景
 
@@ -73,22 +73,30 @@ ring 域（受管/Database/Task）已实现控制器赢：`ReconcileReplayInterv
 
 ### 5. posture 旗标
 
-`all`（缺省——检出漂移即收敛）| `detect`（只报事件、不收敛，检测面照常）。配置键承载；detect 是收敛的观察期逃生门而非缺省。上站裁决：e2e:dind + e2e:upgrade 金丝雀绿后 staging 换装即 posture=all 缺省生效，**不设 detect 观察期**（runbook 手动面盘点同批落地作对冲，2026-10-18 裁决）。
+`all`（缺省——检出漂移即收敛）| `detect`（**零运行时写**：只报事件，不收敛、不物化、不隔离、不重建载体）。配置键承载；detect 是收敛的观察期逃生门而非缺省。上站裁决：e2e:dind + e2e:upgrade 金丝雀绿后 staging 换装即 posture=all 缺省生效，**不设 detect 观察期**（runbook 手动面盘点同批落地作对冲，2026-10-18 裁决）。
 
-**当前实现与已知降级（2026-10-19 S12 成文）**：
+**detect 的准确语义（D3 已实施）**：
 
-1. detect 门限对 **fast / slow** 源生效（`attemptConverge` 的 posture 门）；**启动基线重放的期望缓存重建不受门限**（`src == baseline` 豁免，ADR-0005 旧行为：缓存重建是检测面的前提）。因此 detect **仍会在启动时静默改载体**（基线重放走 `materialize → Ensure`）——这是**已知降级**，不是「零写」承诺；
-2. **待办 D3（detect = 零运行时写）**：删除 baseline 豁免、启动面改为「只重建期望账本」，使 fast / slow / 启动基线重放 / peer 撤销的即时隔离重放四源同受门限。**Lead 裁决（2026-10-19）**：本轮不做；须在 staging 验证后另立批，验证前**不得改 detect 行为**；
-3. D3 落地必须一并成文的三条降级（现状同样适用，只是当前因 baseline 重放仍写而部分被掩盖）：① **gen 偏离与稳态 stopped 看门狗在进程重启后失明**——gen 锚只能由 Ensure 回执的 wire-gen 提供，不写则无回执，直到切回 `all` 或发生一次部署；② **撤销 peer 的隔离在 detect 下不执行**（剥离是运行时写），被拦时落 Warn（`convergeOutcomePostureDetect`），恢复 `all` 后下一拍剥离；③ **路由发布与 peer 隔离不变式依赖 `ensuredSpec` 缓存**（`routeExpectations` / `crossProjectRefs` 读它）——启动面必须重建期望账本（投影 spec + 归属），否则用户路由解析不到后端；这也是 D3 必须先补账本重建、再删豁免的原因。
+1. 门限对**全部触发源**生效——fast / slow / **启动基线重放** / peer 撤销的即时隔离重放，一律不写（`attemptConverge` 的 posture 门无任何 source 豁免）；
+2. 启动面在 detect 下只**重建期望账本**（`rebuildBaselineExpectations` → `recordProjectedSpecs`：`ensuredSpec` 期望 spec + 声明端口 + `ensuredBy` 归属 = 基线行），**不下发 Ensure**——账本重建是检测面与路由解析面（`resolveBackend` 读 `ensuredSpec`）的前提，不是收敛动作；
+3. **成文降级**（detect 期间的检测面）：spec 失配 / 缺席 / 滚动停摆照常；**gen 偏离与稳态 stopped 看门狗在进程重启后失明**（gen 锚只能由 Ensure 回执的 wire-gen 提供，detect 不写 → 无回执），直到姿态切回 `all` 或发生一次部署；
+4. **撤销 peer 的隔离在 detect 下不执行**（剥离是运行时写），被拦时落一条 Warn 日志（`convergeOutcomePostureDetect`，消息含 "posture is detect"）；恢复 `all` 后下一拍剥离。
+
+**D3 实施注记（2026-10-19，detect = 零运行时写）**：
+
+1. 闸门删除了 baseline 豁免（原 `src != convergeSourceBaseline && Posture == detect`）：fast / slow / 启动基线重放 / peer 撤销隔离四源同受门限（`TestPostureDetectWritesNothing`）；
+2. 启动面改走 `rebuildBaselineExpectations`：只重建期望账本（`ensuredSpec` + `ensuredBy`，写入者 = 基线行——§6 的采用规则据此放行）、**不写 gen 锚**；路由仍可解析（`TestPostureDetectRebuildsExpectationsWithoutEnsure` / `TestPostureDetectPublishesRoutesFromExpectationCache`），spec 漂移仍可检测（`TestPostureDetectSpecDriftStillDetected`）；
+3. 上面第 3/4 条的两个降级是 detect 语义的必然代价，已钉成显式期望：`TestPostureDetectGenDriftBlindDocumented`（gen 面不产信号、不调 Ensure；切回 `all` 后一拍重放修复）与 `TestPostureDetectIsolationSkipsWithWarn`（隔离被拦 Warn；切回 `all` 后一拍剥离）；
+4. detect 下账本重建只写 `ensuredSpec` + `ensuredBy`，**不写 `ensuredGen` / `expect.expected`**；路由与 peer 隔离不变式读 `ensuredSpec`，因此启动顺序必须是「账本重建 → `routeReady.Store(true)`」——`lifecycle.runBaselineReplay` 的现有顺序天然满足（重建在同一函数内先于开门）。
 
 ### 6. 期望账本纪律
 
-- ensuredSpec/ensuredGen **只由 Ensure 写入，禁止观测播种**——受管域 gen 观测播种先例不得照抄到 App 域，否则手动热修被播种成期望态，静默击穿 controller-wins。
+- ensuredGen **只由 Ensure 写入，禁止观测播种**；ensuredSpec/ensuredBy 的唯一非 Ensure 写径是 detect 期的账本重建（投影，不写 gen——见本节末条与 §5 第 2 条）——受管域 gen 观测播种先例不得照抄到 App 域，否则手动热修被播种成期望态，静默击穿 controller-wins。
 - **账本条目带写入部署归属**：每条 `ensuredSpec`/`ensuredGen` 记录写入它的 Deployment ID（`observations.ensuredBy`）；drift 的期望侧**只采用写入者 == 当前 `LatestSucceeded` 行的条目**（`drift.go:277-291`）。未成功终态（Cancel/failed/superseded）或进行中部署的物化因此不再污染期望态——那是「上次下发了什么」，不是「期望什么」。**方向安全性**：不采用 = 跳过该载体的 spec/gen 对照（漏报不误报）。**部署窗收窄成文**：在途部署写下的条目在窗内不参与对照（窗内驱动权在部署链，裁决行 6 执法）；窗口结束后条目归属新基线、对照自动恢复。窗口内人工改载体不被 drift 面看见（≤ 一个部署窗），是可接受且必须成文的取舍。
 - **非成功终态 → 重放标记**：终态且该行已进过物化相位（releasing/observing/rolling-back，`stateMayHaveMaterialized`）→ 落标记，下一拍 `replay` 快信号以基线重放重建账本（行 10 的兑现机制）；成功终态撤销标记（`transit` 单前门 + `convergeSucceed` + teardown）。标记值携带部署 ID——第二次取消 = 新签名，可再触发。
 - **重启冷窗成文**：基线重放完成前 expected 为空 → 缺席检测盲，方向安全（漏报不误报），启动重放收口即闭合（detect 下的冷窗形态见 §5 第 3 条）。
 - **succeeded 无期望缓存 → 收敛触发**：扫描面补「有 succeeded 基线但无期望缓存」分支（重建期望缓存本身是收敛动作），修复 rebuildBaselines 单 App 失败即永久自愈盲（`drift.go:66-69` continue 与「下一扫描拍兜底」注释不符）。
-- **detect 下的账本重建属 D3 待办**（§5 第 2/3 条）：D3 落地后启动面在 detect 只写 `ensuredSpec` + `ensuredBy`（写入者 = 基线行），**不写 gen 锚**；当前 detect 仍走基线重放完整写账本（§5 第 1 条已知降级）。
+- **detect 下的账本重建**：启动面在 detect 只写 `ensuredSpec`（投影，精确）+ `ensuredBy` 归属（写入者 = 基线行），**不写 gen 锚**——gen 面失明见 §5 第 3 条；这是 detect 期的唯一账本写径，仍属「零运行时写」（不触达载体，只重建检测/路由/隔离的输入缓存）。
 
 ### 7. 范围
 
@@ -117,7 +125,7 @@ ring 域（受管/Database/Task）已实现控制器赢：`ReconcileReplayInterv
 - [x] Cancel/失败终态回卷 LatestSucceeded 基线钉测：非成功终态落重放标记 → 下一拍 `replay` 快信号回卷（`TestCancelReplaySignalDrivesBaselineReplay`），且回卷事实双真（`workload.converged` 事件 + `workload.converge` 审计）；`TestCancelLegacyConvergesBackToBaseline` 保留为慢通道兜底形态（去掉「兑现回卷」的唯一性表述）
 - [x] 行 8 域内多余载体钉测（`TestExtraCarriersSignalConvergesDomainRemoval`；部署窗内让位行 6：`TestExtraSignalYieldsToDrivingGate`）
 - [x] 慢/基线事实面钉测：慢通道真实变更写审计不写事件（`TestConvergeSlowChannelMaterialChangeWritesAudit`）、纯例行重放零事实（`TestConvergeSlowChannelNoChangeWritesNoFact`）、基线重放真实变更审计 1 条（`TestConvergeBaselineReplayMaterialChangeWritesAudit`）、审计 Detail 变更集（`TestConvergeAuditDetailCarriesChangedSet`）
-- [ ] posture=detect **零运行时写**（D3：删 baseline 豁免 + 启动面只重建期望账本；待 staging 验证后另立批）。当前成文为已知降级：启动基线重放不受门限（§5 第 1 条）；gen/stopped 检测失明、撤销 peer 不剥离、路由依赖 `ensuredSpec` 三条降级见 §5 第 3 条
+- [x] posture=detect **零运行时写**（D3 已实施）：fast/slow/启动基线重放/peer 隔离四源同受门限（`TestPostureDetectWritesNothing`）；启动面只重建期望账本（`TestPostureDetectRebuildsExpectationsWithoutEnsure`）、路由仍可解析（`TestPostureDetectPublishesRoutesFromExpectationCache`）、spec 漂移仍可检测（`TestPostureDetectSpecDriftStillDetected`）；成文降级两条——gen/stopped 面失明（`TestPostureDetectGenDriftBlindDocumented`，反向断言切回 `all` 后一拍重放修复）与隔离不执行（`TestPostureDetectIsolationSkipsWithWarn`，反向断言切回 `all` 后一拍剥离）
 
 ## 变更记录
 
@@ -126,3 +134,7 @@ ring 域（受管/Database/Task）已实现控制器赢：`ReconcileReplayInterv
   2. §2 事实面按「fast 源 ∨ 真实变更」分流：`EnsureReport.Changed`/`Removed`、审计 `SourceSystem` + `AfterFP` digest + `Detail{source,trigger,changed,removed}`、事件维持 fast-only（非 fast 真实变更审计 `LedgerOnly`）、k3s 冷账本重放不计变更；
   3. §6 账本归属（`ensuredBy == 当前 LatestSucceeded` 才采用）与非成功终态 replay 重放标记；行 10 的机制描述更正——**不是缺席检测**，是重放标记驱动的基线回卷；
   4. §5 成文 detect 的**已知降级**（启动基线重放不受门限），并把「detect = 零运行时写」（D3）登记为 **staging 验证后另立批**（附三条落地降级）。
+- **2026-10-19 D3（detect = 零运行时写）**：
+  1. §5 删除 baseline 豁免，四源（fast/slow/启动基线重放/peer 撤销隔离）同受门限；启动面改「只重建期望账本」（`rebuildBaselineExpectations` → `recordProjectedSpecs`，写 `ensuredSpec` + `ensuredBy`、不写 gen 锚）；隔离重放被拦落 Warn；
+  2. §5 第 3/4 条降级（gen/stopped 失明、撤销 peer 不剥离）由继承条款转为实现语义，并配 C1-C6 钉测与「切回 `all` 恢复」反向断言；
+  3. §6 补 detect 账本写径的边界（唯一非 Ensure 写点、不写 gen、写入者 = 基线行）；原「待办 D3/不得改 detect」表述删除。实施注记见设计稿 `docs/design/2026-10-19-converge-semantics.md` §3。

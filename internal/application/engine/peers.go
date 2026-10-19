@@ -8,11 +8,14 @@ package engine
 // 收敛）未批准即剥离。撤销隔离（A.4）：断存量——受影响 App 以 isolate
 // 重投影重 Ensure（swarm service update 全量替换即断存量连接），隔离
 // 生效时点 = 该次 Ensure 完成；漂移扫描拍持续复核（收敛不变式）。
+// posture=detect 下剥离是运行时写、不执行：重放被门限拦住时落 Warn，
+// 恢复 all 后下一拍剥离（ADR-0082 §5 第 4 条）。
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
@@ -132,6 +135,10 @@ func (e *Engine) CheckPeerRefs(ctx context.Context, s transact.Stores, consumerP
 // ——驱动器拥有 Ensure 权，其投影将 fail-closed 失败至终态）。撤销行
 // 已由调用方落账；本方法失败不回滚撤销（受理面已生效），错误上抛由
 // 调用方记录（漂移扫描拍兜底重试）。
+//
+// posture=detect 下剥离不执行（零运行时写，ADR-0082 §5 第 4 条）：隔离
+// 重放被门限拦住时落一条 Warn——撤销仍已落账，detect 的承诺就是不动；
+// 恢复 all 后由漂移扫描拍的隔离不变式在下一拍剥离。
 func (e *Engine) IsolateNetworkPeer(ctx context.Context, networkID, peerProjectID string) error {
 	net, err := e.repos.Networks.GetByID(ctx, networkID)
 	if err != nil {
@@ -163,7 +170,9 @@ func (e *Engine) IsolateNetworkPeer(ctx context.Context, networkID, peerProjectI
 		if !specReferencesNetwork(spec, target) {
 			continue
 		}
-		e.replayAppBaseline(ctx, &apps[i], d) // materialize 落点即 isolate 模式
+		if out := e.replayAppBaseline(ctx, &apps[i], d); out == convergeOutcomePostureDetect {
+			e.warnPeerIsolationSkipped(apps[i].ID, net.Name)
+		}
 	}
 	return nil
 }
@@ -180,6 +189,7 @@ func (e *Engine) enforcePeerIsolation(ctx context.Context) {
 
 	var stale []*app.App
 	staleDepl := map[string]*deployment.Deployment{}
+	staleNetwork := map[string]string{}
 	for appID, refs := range appRefs {
 		if ctx.Err() != nil {
 			return
@@ -209,10 +219,32 @@ func (e *Engine) enforcePeerIsolation(ctx context.Context) {
 		}
 		stale = append(stale, a)
 		staleDepl[appID] = d
+		staleNetwork[appID] = peerRefNames(refs)
 	}
 	for _, a := range stale {
-		e.replayAppBaseline(ctx, a, staleDepl[a.ID])
+		// detect 下剥离是运行时写：重放被门限拦住即 Warn（ADR-0082 §5 第 4
+		// 条）。恢复 all 后本函数下一拍剥离（撤销已落账，不变式仍在）。
+		if out := e.replayAppBaseline(ctx, a, staleDepl[a.ID]); out == convergeOutcomePostureDetect {
+			e.warnPeerIsolationSkipped(a.ID, staleNetwork[a.ID])
+		}
 	}
+}
+
+// warnPeerIsolationSkipped 是 detect 下隔离重放被拦的可发现性面（ADR-0082
+// §5 第 4 条）：撤销落账与剥离执行是两件事——detect 承诺不写载体，故剥离
+// 延后到姿态恢复 all 的下一拍。Warn 让"该剥离而未剥离"可见。
+func (e *Engine) warnPeerIsolationSkipped(appID, network string) {
+	e.log.Warn("peer isolation skipped: convergence posture is detect (no runtime writes); lift the posture or freeze-lift to isolate",
+		"app", appID, "network", network)
+}
+
+// peerRefNames 合成隔离附件的网络名串（Warn 的 network 面）。
+func peerRefNames(refs []capability.NetworkRef) string {
+	names := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		names = append(names, ref.Name)
+	}
+	return strings.Join(names, ",")
 }
 
 // peerRefApproved 复核一条已下发跨域附件的批准态（隔离扫描的单元判定）。

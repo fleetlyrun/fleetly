@@ -42,8 +42,9 @@ const (
 	systemConvergeMetric = "converge_failed"
 )
 
-// convergeSource 标注一次收敛尝试的触发源（闸门差异的载体：posture 门只
-// 豁免基线源；冷却门三源共用同一记账——启动基线重放不受冷却豁免盲打）。
+// convergeSource 标注一次收敛尝试的触发源（冷却门三源共用同一记账——
+// 启动基线重放不受冷却豁免盲打；posture 门三源同受，无任何豁免：detect
+// = 零运行时写，ADR-0082 §5）。
 type convergeSource uint8
 
 const (
@@ -55,10 +56,9 @@ const (
 	// 内容等价使其近零成本；Cancel 遗留回卷/域内多余载体移除经此兑现）。
 	convergeSourceSlow
 	// convergeSourceBaseline 启动基线重放：rebuildBaselines 的单 App 面。
-	// 与快/慢通道共用闸门序与冷却记账；posture 门不生效（期望缓存重建是
-	// 检测面的前提）。**已知降级（D3 待 staging 验证）**：`posture=detect`
-	// 的最终语义是"零运行时写"（fast/slow/基线/peer 隔离四源同受门限），
-	// 本批保留 baseline 豁免即与最终语义有差——收口待 staging 验证后落地。
+	// 与快/慢通道共用闸门序与冷却记账；posture=detect 下**不进入本源**
+	// （启动面只重建期望账本，见 rebuildBaselineExpectations），其余场景
+	// 与另两源同受 posture 门限（ADR-0082 §5）。
 	convergeSourceBaseline
 )
 
@@ -272,7 +272,8 @@ const (
 // 遗留在信号行之后——同拍多信号时以显式信号裁决优先）。两个生产构造点：
 // signalVerdictInput（信号侧）与 gateVerdictInput（闸门侧）；convergeStep
 // 与 attemptConverge 都真实调用它。posture=detect 不是行裁决：它是全局
-// 闸门（收敛动作前置检查），检测与事件面照发。
+// 闸门（收敛动作前置检查，零运行时写——fast/slow/启动基线重放/peer 撤销
+// 隔离四源同受门限，ADR-0082 §5），检测与事件面照发。
 func convergeVerdict(in convergeVerdictInput) string {
 	switch {
 	case in.Frozen:
@@ -476,12 +477,11 @@ func (e *Engine) attemptConverge(ctx context.Context, appID string, d *deploymen
 	if !e.convergeCooldownOpen(ctx, appID, agg) {
 		return convergeOutcomeCooling
 	}
-	// posture 门（ADR-0082 §5）：detect = 检测照发、收敛全跳（观察期逃生
-	// 门）。**已知降级（D3 待 staging 验证）**：启动基线重放仍不受门限——
-	// 期望缓存重建是检测面的前提（ADR-0005 旧行为保留）；"detect = 零
-	// 运行时写"（四源同受门限）待 staging 验证后收口，本批不得改 detect
-	// 行为。
-	if src != convergeSourceBaseline && e.opts.Converge.Posture == ConvergePostureDetect {
+	// posture 门（ADR-0082 §5）：detect = 零运行时写——门限对 fast / slow /
+	// 启动基线重放 / peer 撤销隔离一视同仁（原「baseline 豁免」条款废止：
+	// 它让观察期在启动与撤销 peer 两个场景静默改载体；启动面的期望账本
+	// 重建不走本原语，见 rebuildBaselineExpectations）。检测与事件面照发。
+	if e.opts.Converge.Posture == ConvergePostureDetect {
 		return convergeOutcomePostureDetect
 	}
 	// 冻结闸门（ADR-0082 §3 fail-closed）：挂起 = 不消费签名、不记账——

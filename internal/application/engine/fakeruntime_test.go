@@ -34,6 +34,10 @@ type fakeRuntime struct {
 
 	endpoints map[string][]capability.Endpoint // ns → 后端地址（Route 解析面）
 	addrCalls []capability.NamespaceRef        // Addresses 调用记录（C16b 短路断言面）
+	// addrFromExpected 置位时 Addresses 按传入的期望集推导端点（detect 账本
+	// 重建钉测面：无 Ensure 调用 → 存活集不可得，期望集是唯一输入；空集
+	// 返回空端点 = 路由解析失败——正是 F1 的失真形态）。
+	addrFromExpected bool
 
 	clusterOverride bool                   // 显式启用编程视图（空视图=节点全离开）
 	clusterView     capability.ClusterView // 可编程集群快照（节点对账面）
@@ -198,6 +202,19 @@ func (f *fakeRuntime) Addresses(_ context.Context, ns capability.NamespaceRef, e
 	defer f.mu.Unlock()
 	f.addrCalls = append(f.addrCalls, ns)
 	if eps, ok := f.endpoints[ns.String()]; ok {
+		return eps, nil
+	}
+	if f.addrFromExpected {
+		// 期望集本身就是唯一输入：逐载体声明端口铸端点（detect 账本重建
+		// 后路由仍可解析的证明面——期望集为空则无端点，Route 被跳过）。
+		var eps []capability.Endpoint
+		for _, w := range expected {
+			for _, port := range w.Ports {
+				eps = append(eps, capability.Endpoint{
+					Addr: "vip-" + w.ID, Process: w.Process, Port: port.Port,
+				})
+			}
+		}
 		return eps, nil
 	}
 	var live *ensureCall

@@ -2,10 +2,10 @@
 
 | 项 | 值 |
 |---|---|
-| 状态 | 批 1/2 已实施（commit `2740a09d` / `402132fe`）；D3 延后（staging 验证）；D5/D6 本批完成（S12b2） |
+| 状态 | 批 1/2 已实施（commit `2740a09d` / `402132fe`）；**D3 已实施（detect = 零运行时写）**；D5/D6 已实施（S12b2） |
 | 日期 | 2026-10-19 |
 | 基线 | `main` @ `e99d2470`（工作区干净；S1-S11 已 push；Go 1.26.6；本机无 Docker → e2e 不可跑）；实施后 HEAD `2740a09d`（S12b1 已 push） |
-| 实施注记 | S12b1 落码把设计稿中的 `revert` 信号命名为 `replay`（键 `replay\|<deployment-id>`、`convergeSignalReplay`；测试名 `TestCancelReplaySignalDrivesBaselineReplay` / `TestReplayMark*`），语义不变——ADR-0082 文本按落码命名。detect 的 `rebuildBaselineExpectations` / `recordProjectedSpecs` 未落码（D3 延后）。 |
+| 实施注记 | S12b1 落码把设计稿中的 `revert` 信号命名为 `replay`（键 `replay\|<deployment-id>`、`convergeSignalReplay`；测试名 `TestCancelReplaySignalDrivesBaselineReplay` / `TestReplayMark*`），语义不变——ADR-0082 文本按落码命名。detect 的 `rebuildBaselineExpectations` / `recordProjectedSpecs` 已随 D3 落码（§3.3），实施细节与产物见 §3.4/§3.7。 |
 | 评审锚 | `docs/reviews/2026-10-19-architecture-quality-acceptance.md`（§3 遗留项、§7 M-9/M-14/M-15）；`R02-engine-deploy.md` §R02-M2/M5（`:97-115`、`:159-178`）；`R16-declarative-model.md` §R16-M2/M3/M5/M6（`:134-159`、`:161-186`、`:212-232`、`:234-248`）、§4A 十行落点表（`:354-385`）、§4B C5（`:437`） |
 | 关联 ADR | **修订**：ADR-0082（§1 裁决表 / §2 收敛动作 / §5 posture / §6 账本 / 验收锚）、ADR-0081（§1 DECLARATION 判据 / §5 边界案例 / 附录 A.6+A.14 / 统计与验收锚）。**追记**：ADR-0083（§3 双面契约 + 落码注记 + 验收锚）。词条同步：CONTEXT.md `Posture`（`:286-287`）、`Declaration`（`:263-264`）、`Converge`（`:282-284`） |
 | 结论摘要 | ① 裁决表**真正接线**：8 行由生产路径构造（含为行 8/10 补两个真实信号），行 5/9 降为「信号层非行」并在 ADR 标注行 9 未落码；② `EnsureReport` 扩 `Changed`/`Removed`，`materialize` 回传回执，**审计按真实变更发、事件维持 fast-only**；③ `posture=detect` 改为**零运行时写**，启动面只重建期望账本（含 `ensuredSpec`——路由解析依赖它）；④ 期望账本条目加**写入部署归属**，非基线写入不采用；非成功终态落**重放标记**取代「靠慢通道兜底」；⑤ ADR-0081 修判据（两个子类 + 域级收敛面表）；⑥ ADR-0083 追记 restart 源=生效基线 |
@@ -21,7 +21,7 @@
 |---|---|---|---|---|---|
 | D1 | R02-M2 判定表是装饰函数 | 裁决表接进生产：信号侧 + 闸门侧两处构造 input；补 `extra`/`revert` 两个真实信号；行 5/9 降为非行（行 9 标未落码）；删死字段与两个死 verdict（alert-only/record-only） | 代码（S12b-1/2） | M | 8 行 golden + 信号类/字段生产者双保鮮 + 行为测 |
 | D2 | R16-M6/R02-M5 慢/基线收敛静默 | `EnsureReport` + `Changed`/`Removed`；`materialize` 回传回执；审计按 `fast源 ∨ 真实变更` 发（`SourceSystem` + `AfterFP` digest + Detail 变更集），事件维持 fast-only | 代码（S12b-1） | M | 双 provider 回执测 + 3 条审计/事件分流测 |
-| D3 | R16-M2 detect 语义双向错位 | `detect` = **零运行时写**（删 baseline 豁免）；启动面改「只重建期望账本」（spec 面精确、gen 面成文失明）；隔离重放被拦即 Warn | **已延后**：staging 验证后另立批（Lead 2026-10-19 裁决） | M | 零写钉测 + 账本重建 + 路由可解析 + 降级清单 |
+| D3 | R16-M2 detect 语义双向错位 | `detect` = **零运行时写**（删 baseline 豁免）；启动面改「只重建期望账本」（spec 面精确、gen 面成文失明）；隔离重放被拦即 Warn | **已实施**（D3 批：四源同受门限 + 启动只重建账本 + 隔离 Warn） | M | 零写钉测 + 账本重建 + 路由可解析 + 降级清单 |
 | D4 | R16-M3 账本被未成功部署写脏 | 账本条目带**写入部署 ID**，drift 期望侧只在写入者==当前 `LatestSucceeded` 时采用；非成功终态（已物化的行）落**重放标记**→下一拍真实 `revert` 快信号 | 代码（S12b-2） | M | 归属采用/跳过测 + 标记触发测 + 全链 Cancel 测加强 |
 | D5 | R16-M5 ADR-0081 判据自相矛盾 | 修判据：DECLARATION 分「可重放 no-op」与「状态即事实」两子类 + 新增**域级收敛面表**；`SetUserPassword` 归后者并写明 bcrypt 反例；顺带修 153→154 | **本批完成**（S12b2 文档 + 守卫） | S | 判据文字 + 附录统计对账 + 互斥/域面断言 |
 | D6 | H15 已修但 ADR-0083 无记录 | 追记：声明面重启源 = **生效基线**（非最新冻结 Revision），附 S4 落码注记、验收锚与 `--runtime` 校验残余 | **本批完成**（S12b2 文档） | S | 追记段落 + 新验收锚条目 |
@@ -30,7 +30,7 @@
 
 > 术语：表中的「**本轮**」= **S12b 实施波次**（本设计稿批准后的代码落地轮，见 §8），**不是**本设计会话——本会话零代码改动。「只做文档」= 该次实施只改 ADR/词条/注释，无行为变更。
 
-> **实施现状（2026-10-19）**：批次 1（D1+D2）与批次 2（D1 剩余+D4）已合并落在 S12b1 `2740a09d`（含 `extra`/`replay` 信号与 `ensuredBy` 归属）；批次 3 的**法源半边**（D5+D6 文档、守卫补强、CONTEXT 词条）由 S12b2 完成；**D3（detect 零写）经 Lead 裁决延后**——staging 验证后另立批，见 §3.7 与 §8 批次 3 注记。表中 D1/D2/D4 的「本轮」列保留为原计划批次标签，实际归属以本注记为准。
+> **实施现状（2026-10-19）**：批次 1（D1+D2）与批次 2（D1 剩余+D4）已合并落在 S12b1 `2740a09d`（含 `extra`/`replay` 信号与 `ensuredBy` 归属）；批次 3 的**法源半边**（D5+D6 文档、守卫补强、CONTEXT 词条）由 S12b2 完成；**D3（detect 零写）已实施**——Lead 在 S12b2 后复核裁决执行（不再延后），代码清单 §3.3 与 C1-C6 钉测同批落地。表中 D1/D2/D4 的「本轮」列保留为原计划批次标签，实际归属以本注记为准。
 
 ---
 
@@ -801,11 +801,13 @@ func (o *observations) recordProjectedSpecs(owner workloadOwner, deploymentID st
 
 **会变红的既有测试（预期）**：`TestPostureDetectSkipsConverge`（被 C1 替换）；其余不变。
 
-### 3.7 Lead 裁决（2026-10-19，S12b2）
+### 3.7 Lead 裁决（2026-10-19，S12b2 先延后、后裁决执行）
 
 > **D3（detect 零写）本轮不做**；在 ADR-0082 §5 与本文档中成文为「已知降级 + staging 验证后另立批」；**不得改 detect 行为**。
 
 据此本批只做：ADR-0082 §5 的现状/降级/待办三条成文（当前 baseline 重放不受门限 = 已知降级；D3 落地时必须接受的 gen/stopped 失明、撤销 peer 不剥离、路由依赖 `ensuredSpec` 三条降级同批成文）；代码侧保留 `attemptConverge` 的 baseline 豁免、`options.go` 的已知降级注释与现有测试不动。§3.3 的代码清单（`rebuildBaselineExpectations`/`recordProjectedSpecs`/gen 锚守卫/隔离 Warn）与 §3.4 的 C1-C6 钉测顺延到 D3 批；§3.1 的检测面依赖核实仍是那一批的施工依据。
+
+> **后续裁决（2026-10-19，D3 批）**：Lead 复核后裁决**执行 D3，不再延后**——按本文档 §3.3 精确清单与 §3.4 C1-C6 实施；上述「顺延」表述仅作为裁决史保留，最终语义以 ADR-0082 §5 与 §3.3 为准。
 
 ---
 
@@ -1156,7 +1158,7 @@ mise run lint       # vet/gofmt/golangci/buf lint/buf breaking
 
 ## 8. S12b 实施顺序（三批，每批可独立 commit + 验收门）
 
-> **实施状态（2026-10-19）**：批次 1/2 已落 S12b1 `2740a09d`（判定表接线、`EnsureReport` 变更集、`extra`/`replay` 信号、账本归属与重放标记）；批次 3 只完成了**法源半边**（S12b2：ADR-0081/0082/0083、CONTEXT、守卫），代码半边（D3）延后——Lead 裁决见 §3.7。各批「验收门」保留为原规格，供 D3 批复验。
+> **实施状态（2026-10-19）**：批次 1/2 已落 S12b1 `2740a09d`（判定表接线、`EnsureReport` 变更集、`extra`/`replay` 信号、账本归属与重放标记）；批次 3 的**法源半边**由 S12b2 完成（ADR-0081/0082/0083、CONTEXT、守卫），**代码半边（D3）已实施**（见 §3.3/§3.4 与 §3.7 后续裁决）。各批「验收门」保留为原规格。
 
 ### 批次 1 —— 语义骨架：判定表接线 + 事实面（D1 主体 + D2）
 
@@ -1173,7 +1175,7 @@ mise run lint       # vet/gofmt/golangci/buf lint/buf breaking
 
 ### 批次 3 —— posture 收口与法源（D3 + D5 + D6）
 
-> **本批（S12b2）只做了法源半边**：ADR-0081 修订（D5）、ADR-0082 全文替换块（§1/§2/§5/§6 + 验收锚；D3 部分按「已知降级 + 待办」成文）、ADR-0083 追记（D6）、CONTEXT 三条词条、`writeclassguard_test.go` 两条断言、plan/review/设计文档状态回写。**D3 代码清单（detect 零写）未做**——见 §3.7 Lead 裁决；`options.go` 的已知降级注释已在 S12b1 落码，`identity.go` 的 bcrypt 反例注释与 `declarative-model.md` 行 10 的裁决回写随 D3 批或后续文档小修处理。
+> **本批（S12b2 + D3 批）**：法源半边由 S12b2 完成——ADR-0081 修订（D5）、ADR-0082 全文替换块（§1/§2/§5/§6 + 验收锚）、ADR-0083 追记（D6）、CONTEXT 三条词条、`writeclassguard_test.go` 两条断言、plan/review/设计文档状态回写。**D3 代码清单（detect 零写）已实施**——删 baseline 豁免、`rebuildBaselineExpectations` + `recordProjectedSpecs`、gen 锚守卫、隔离 Warn、C1-C6 钉测；`options.go` 注释、CONTEXT `Posture` 词条、ADR-0082 §5/验收锚/变更记录、本设计稿状态行同批回写。
 
 - **范围**：detect 零写（删豁免）、`rebuildBaselineExpectations` + `recordProjectedSpecs`、gen 锚守卫、隔离 Warn、`convergeOutcome` 的 detect/隔离两支消费（类型在批次 1 引入）；ADR-0082 全文替换块（§1/§2/§5/§6 + 验收锚）、ADR-0081 修订、ADR-0083 追记、CONTEXT 三条词条、`options.go` 注释、`identity.go` 注释、`docs/design/2026-10-18-declarative-model.md` §4.1 行 10「待裁决」改为"已裁决（ADR-0082）"。
 - **可选**（P2，单独 commit）：`--runtime` 存在性校验改生效基线 + `TestRestartProcessValidatesAgainstEffectiveBaseline`；`writeclassguard` 互斥断言 + 域面表断言。

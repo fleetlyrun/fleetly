@@ -118,9 +118,10 @@ type RingOptions struct {
 // ConvergeOptions 是 App 域收敛升格参数（ADR-0082 决策 4/5）。
 type ConvergeOptions struct {
 	// Posture 是收敛姿态（ParseConvergePosture 归一；缺省 all——检出漂移
-	// 即收敛；detect 只报事件不收敛，检测面照常）。装配经 config 解析后
-	// 注入（fail-fast，非法值启动失败）；启动基线重放不受 posture 门限
-	// （ADR-0005 旧行为保留：缓存重建是检测面的前提）。
+	// 即收敛；detect = 零运行时写：只报事件，不收敛、不物化、不隔离）。
+	// 装配经 config 解析后注入（fail-fast，非法值启动失败）；启动面在
+	// detect 下只重建期望账本（ensuredSpec + ensuredBy），不下发载体——
+	// 见 rebuildBaselineExpectations 与 ADR-0082 §5。
 	Posture string
 	// FailureThreshold 是收敛连续失败冷却阈值 N（缺省 3；连续失败 N 次
 	// 进入冷却窗 + workload.converge_failed 一次）。
@@ -247,11 +248,12 @@ const (
 	// ConvergePostureAll：缺省收敛——检出漂移即收敛（staging 上站裁决：
 	// 不设 detect 观察期）。
 	ConvergePostureAll = "all"
-	// ConvergePostureDetect：只报事件不收敛，检测面照常（收敛的观察期
-	// 逃生门而非缺省）。**已知降级（D3 待 staging 验证）**：检测/收敛语义
-	// 收口为"零运行时写"（fast/slow/启动基线重放/peer 隔离四源同受门限）
-	// 尚未落地——本轮保留启动基线重放豁免（ADR-0005 旧行为，期望缓存重建
-	// 是检测面与路由解析的前提）；收口待 staging 验证后实施。
+	// ConvergePostureDetect：**零运行时写**——只报事件，不收敛、不物化、
+	// 不隔离（收敛的观察期逃生门而非缺省）。门限对 fast / slow / 启动
+	// 基线重放 / peer 撤销隔离四源一视同仁；启动面只重建期望账本
+	//（ensuredSpec + ensuredBy，不写 gen 锚）。成文降级：gen/stopped 面在
+	// 进程重启后失明、撤销 peer 的剥离延后到恢复 all 的下一拍（Warn 可见）
+	// ——ADR-0082 §5 第 3/4 条。
 	ConvergePostureDetect = "detect"
 )
 

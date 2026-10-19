@@ -1,12 +1,13 @@
 package engine
 
-// ADR-0022 漂移检测口径：启动基线重放（重建归属/期望缓存）+ spec 对照
-// 扫描（RuntimeInspector 子面；gen-only 降级）+ 稳态看门狗（workload.stopped
-// 观测事件）。ADR-0082 收敛升格：检测面照发不变，driftScan 同时承载收敛
-// 判定——快通道四类信号（spec 失配/gen 偏离/缺席/终态后停摆，各自独立
-// 签名键）+ 慢通道 ReconcileReplayInterval 强制重放（converge.go 统一原
-// 语）；Ensure 仍是唯一写动词，升格的是 Ensure 的调用者。Watch 流
-// detectDrift 维持只读（事件面单源，不重复发）。
+// ADR-0022 漂移检测口径：启动基线重放（重建归属/期望缓存；posture=detect
+// 下改为只重建期望账本、不下发载体）+ spec 对照扫描（RuntimeInspector
+// 子面；gen-only 降级）+ 稳态看门狗（workload.stopped 观测事件）。ADR-0082
+// 收敛升格：检测面照发不变，driftScan 同时承载收敛判定——快通道四类信号
+// （spec 失配/gen 偏离/缺席/终态后停摆，各自独立签名键）+ 慢通道
+// ReconcileReplayInterval 强制重放（converge.go 统一原语）；Ensure 仍是唯一
+// 写动词，升格的是 Ensure 的调用者。Watch 流 detectDrift 维持只读（事件面
+// 单源，不重复发）。
 
 import (
 	"context"
@@ -39,6 +40,12 @@ type drifts struct {
 // "最近部署为 succeeded"的 App 以行上 Generation 重下发——载体未变即
 // no-op，重建 workloadApp/expected/ensuredSpec 缓存。失败不阻断启动
 // （下一扫描拍兜底，drift 降级 gen-only/状态观测）。
+//
+// posture=detect 时改走 rebuildBaselineExpectations：启动面**不下发载体**
+// （零运行时写，ADR-0082 §5），只重建期望账本（ensuredSpec + ensuredBy）
+// ——路由解析（routeExpectations）与 peer 隔离不变式（crossProjectRefs）
+// 的前提。检测面在冷启动后仍在场的只有 spec/缺席/停摆三面（gen 与稳态
+// stopped 锚失明，见 ADR §5 第 3 条）。
 //
 // 有活跃部署的 App 跳过：在途驱动器拥有该 App 的 Ensure 权（基线重放
 // 与驱动互翻 Generation 标签会让载体多滚一轮——dind 场景 1 实证）；
@@ -83,16 +90,60 @@ func (e *Engine) rebuildBaselines(ctx context.Context) {
 			e.log.Error("baseline replay: latest succeeded", "app", a.ID, "err", err)
 			continue
 		}
+		if e.opts.Converge.Posture == ConvergePostureDetect {
+			if err := e.rebuildBaselineExpectations(ctx, a.ID, d); err != nil {
+				e.log.Error("baseline expectations: rebuild", "app", a.ID, "err", err)
+			}
+			continue
+		}
 		e.replayAppBaseline(ctx, &a, d)
 	}
+}
+
+// rebuildBaselineExpectations 在 posture=detect 下重建期望账本而不下发载体
+// （ADR-0082 §5 第 2 条）：投影与缺席检测同源（expectedWorkloads =
+// projectRevision + 代戳，同一 memo），只落归属 + ensuredSpec（期望 spec/
+// 声明端口）+ ensuredBy（写入者 = 基线行）。不落 gen 锚，也不写 App 级
+// expect.expected——wire-gen 只有 Ensure 回执可知，detect 不写就没有回执
+// （gen/stopped 面成文失明，ADR-0082 §5 第 3 条）。
+//
+// Route 解析（routepublish.resolveBackend → obs.routeExpectations）与 peer
+// 隔离不变式（obs.crossProjectRefs）都读 ensuredSpec——本函数的第二存在
+// 理由：不重建则 detect 下用户路由全失、撤销 peer 连"该剥离"都算不出来。
+// ensuredBy 必须写 d.ID：drift 的账本采用规则要求写入者 == 当前
+// LatestSucceeded，否则 detect 下 spec 对照也失明（ADR-0082 §6）。
+//
+// 锁序与 replayAppBaseline 同口径：lockApp 内复查 teardown/驱动权——账本
+// 重建与并发部署交错的窗口由同一互斥闭合（旧投影不覆盖新基线）。
+func (e *Engine) rebuildBaselineExpectations(ctx context.Context, appID string, d *deployment.Deployment) error {
+	appMu := e.lockApp(appID)
+	appMu.Lock()
+	defer appMu.Unlock()
+	if e.converge.teardownMarked(appID) {
+		return nil
+	}
+	driving, err := e.repos.Deployments.DrivingByApp(ctx, appID)
+	if err != nil {
+		return err
+	}
+	if len(driving) > 0 {
+		return nil // 驱动权在部署链：其 materialize 会写账本
+	}
+	ws, err := e.expectedWorkloads(ctx, d)
+	if err != nil {
+		return err
+	}
+	e.obs.recordProjectedSpecs(appOwner(appID), d.ID, ws)
+	return nil
 }
 
 // replayAppBaseline 在 App 级互斥内复查活跃部署并重放单 App 基线：有活跃
 // 即跳过（交给驱动器）；互斥与 Submit 共享，复查所见即终局。收敛动作走
 // attemptConverge 统一原语（ADR-0082 §2）：与快/慢通道共用闸门序与冷却
-// 记账（启动基线重放不受冷却豁免盲打），posture 门对基线源不生效（已知
-// 降级：detect = 零运行时写的收口待 staging 验证，D3）。返回值供 detect/
-// 隔离分支区分结局（ADR-0082 §5）。
+// 记账（启动基线重放不受冷却豁免盲打）。posture=detect 下本函数仍受统一
+// 门限（返回 convergeOutcomePostureDetect，零运行时写）——启动面在 detect
+// 期不走本函数（rebuildBaselineExpectations 只重建账本）；本函数保留给
+// all 态与 detect 期 peer 隔离重放，返回值供检测/隔离分支区分结局。
 func (e *Engine) replayAppBaseline(ctx context.Context, a *app.App, d *deployment.Deployment) convergeOutcome {
 	return e.attemptConverge(ctx, a.ID, d, "", convergeSourceBaseline)
 }
@@ -312,18 +363,22 @@ func (e *Engine) compareSpecs(ctx context.Context, appID string, obs []capabilit
 			e.drift.mu.Unlock()
 		}
 
-		// 逐载体对照锚（ADR-0048 决策 2：双代窗两代并存各自对照——
-		// ensuredGen 在场即优先，缺席回落 App 级锚）。
+		// 逐载体 gen 锚（ADR-0048 决策 2）：**必须**有 Ensure 回执的 wire-gen。
+		// 无锚（detect 期望账本 / 冷窗）→ gen 面跳过（安全侧：漏报不误报）——
+		// 原「回落 App 级 expected」分支在 detect 账本下会把 0 当锚，令全部
+		// 载体产假 gen 偏离，故删除（ADR-0082 §5 第 3 条成文失明：detect
+		// 不写载体就没有回执）。spec 面不受影响——下面照常对照 ensuredSpec。
 		anchor := expected
-		if g, ok := e.obs.ensuredGenOf(o.WorkloadID); ok {
+		g, hasGen := e.obs.ensuredGenOf(o.WorkloadID)
+		if hasGen {
 			anchor = g
-		}
-		if uint64(o.Generation) != anchor {
-			// gen 偏离信号（ADR-0082 §1 行3：检测下沉 driftScan——独立
-			// 签名键 + 收敛信号，不再 continue 让位 Watch 流；事件面仍归
-			// Watch 流 detectDrift 专管，此处不重复发）。
-			signals[convergeSignalGen.key(o.WorkloadID)] = fmt.Sprintf("gen|%d|%d", anchor, uint64(o.Generation))
-			continue
+			if uint64(o.Generation) != g {
+				// gen 偏离信号（ADR-0082 §1 行3：检测下沉 driftScan——独立
+				// 签名键 + 收敛信号，不再 continue 让位 Watch 流；事件面仍归
+				// Watch 流 detectDrift 专管，此处不重复发）。
+				signals[convergeSignalGen.key(o.WorkloadID)] = fmt.Sprintf("gen|%d|%d", g, uint64(o.Generation))
+				continue
+			}
 		}
 		mismatch := ""
 		switch {

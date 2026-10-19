@@ -5,7 +5,9 @@ package engine
 //（isolate 重收敛剥离附件）与漂移扫描拍自愈。
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -137,6 +139,35 @@ func TestIsolateNetworkPeerStorageFaultPropagates(t *testing.T) {
 	e2, _, _ := newTestEngine(t)
 	seedCrossProjectPeer(t, e2, true)
 	require.NoError(t, e2.IsolateNetworkPeer(ctx, "01JD0NET000000000000000007", tProjectID))
+}
+
+// posture=detect 下撤销 peer 的隔离不执行（ADR-0082 §5 第 4 条）：隔离
+// 重放被门限拦住 → Ensure 0 + Warn（含 "posture is detect"）；撤销已落账，
+// 恢复 all 后由漂移扫描拍的隔离不变式在下一拍剥离。
+func TestPostureDetectIsolationSkipsWithWarn(t *testing.T) {
+	var logs bytes.Buffer
+	e, rt, clock := newTestEngineWithLogger(t,
+		Options{Converge: ConvergeOptions{Posture: ConvergePostureDetect}},
+		slog.New(slog.NewTextHandler(&logs, nil)))
+	ctx := context.Background()
+	providerID := seedCrossProjectPeer(t, e, true)
+	revID := freezeSpec(t, e, 1, peerSpec(providerID))
+	driftDeployToSucceeded(t, e, rt, clock, revID)
+	require.Len(t, lastEnsure(rt).Spec["web"].NetworkRefs, 1)
+
+	require.NoError(t, e.repos.NetworkPeers.Revoke(ctx, "01JD0PEER00000000000000007"))
+	before := len(rt.calls())
+	require.NoError(t, e.IsolateNetworkPeer(ctx, "01JD0NET000000000000000007", tProjectID))
+	assert.Equal(t, 0, ensureDelta(t, rt, before), "detect: revoke isolation replay is gated (no runtime write)")
+	assert.Contains(t, logs.String(), "posture is detect", "a gated isolation replay must be observable (Warn)")
+	assert.Contains(t, logs.String(), tAppID, "the Warn names the app")
+	assert.Contains(t, logs.String(), "bus", "the Warn names the network")
+
+	// 反向断言：恢复 all 后下一拍剥离（撤销已落账，不变式仍在）。
+	e.opts.Converge.Posture = ConvergePostureAll
+	e.driftScan(ctx)
+	assert.GreaterOrEqual(t, ensureDelta(t, rt, before), 1, "after lifting the posture the next tick strips the attachment")
+	assert.Empty(t, lastEnsure(rt).Spec["web"].NetworkRefs, "revoked attachment is stripped once writes are allowed")
 }
 
 // 引用目标缺失（项目/网络不存在）在 strict 与 isolate 两侧的口径：

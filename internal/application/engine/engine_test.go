@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"sync"
 	"testing"
 	"time"
@@ -79,9 +80,16 @@ func newTestEngine(t *testing.T) (*Engine, *fakeRuntime, *statetest.FakeClock) {
 // newTestEngineOpts 同 newTestEngine，但注入 Options（重叠策略旋钮等）。
 func newTestEngineOpts(t *testing.T, opts Options) (*Engine, *fakeRuntime, *statetest.FakeClock) {
 	t.Helper()
+	return newTestEngineWithLogger(t, opts, discardLogger())
+}
+
+// newTestEngineWithLogger 同 newTestEngineOpts，但替换日志器（Warn 可发现性
+// 钉测面——隔离被 posture 门拦住时必须留痕）。
+func newTestEngineWithLogger(t *testing.T, opts Options, logger *slog.Logger) (*Engine, *fakeRuntime, *statetest.FakeClock) {
+	t.Helper()
 	db, clock := statetest.New(t)
 	rt := newFakeRuntime()
-	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Logger: discardLogger()}, opts)
+	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Logger: logger}, opts)
 	t.Cleanup(func() { _ = e.Stop(context.Background()) })
 
 	ctx := context.Background()

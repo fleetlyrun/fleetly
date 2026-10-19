@@ -20,6 +20,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
 	"github.com/fleetlyrun/fleetly/internal/domain/runtimeops/freeze"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/route"
 )
 
 // ADR-0082 缺省收敛钉测族：裁决表十行 golden + 快慢通道 + 签名生命周期 +
@@ -607,10 +608,31 @@ func TestBaselineReplaySharesCooldownLedger(t *testing.T) {
 	assert.Equal(t, 0, ensureDelta(t, rt, before), "baseline replay is gated by the shared cooldown ledger")
 }
 
-// ---- posture 闸门：detect 全跳（检测照发），基线重放不受门限 ----
+// ---- posture 闸门：detect = 零运行时写（四源同受门限，检测照发）----
 
-func TestPostureDetectSkipsConverge(t *testing.T) {
-	e, rt, clock := newTestEngineOpts(t, Options{Converge: ConvergeOptions{Posture: ConvergePostureDetect}})
+// tImagePortSpec 是带声明端口的基线 spec：Route 后端解析的期望集必须携带
+// 端口（detect 账本重建的路由可解析性钉测面）。
+const tImagePortSpec = `{"schema_version":1,"app":{"id":"` + tAppID + `","project":"` + tProjectID + `"},` +
+	`"source":{"image":{"ref":"nginx:1.27"}},"processes":[{"name":"web","image":"nginx:1.27","replicas":1,` +
+	`"ports":[{"port":8080,"protocol":"PROTOCOL_HTTP"}]}]}`
+
+// newRestartedEngine 造同库同 runtime 的新引擎实例（重启形态：进程内缓存
+// 全清，基线只从行重建）。
+func newRestartedEngine(t *testing.T, e *Engine, rt *fakeRuntime, opts Options) *Engine {
+	t.Helper()
+	e2 := New(Deps{DB: e.db, Stores: testRepos(e.db), Tx: transact.NewTx(e.db, testBinder(e.db)), Runtime: rt, Logger: e.log}, opts)
+	t.Cleanup(func() { _ = e2.Stop(context.Background()) })
+	return e2
+}
+
+func detectOptions() Options {
+	return Options{Converge: ConvergeOptions{Posture: ConvergePostureDetect}}
+}
+
+// detect 零运行时写（D3 / ADR-0082 §5 第 1-2 条）：漂移注入一拍 → fast 与
+// slow 两通道均不 Ensure；启动面只重建账本、不调 Ensure；检测事件照发。
+func TestPostureDetectWritesNothing(t *testing.T) {
+	e, rt, clock := newTestEngineOpts(t, detectOptions())
 	rev := freezeSpec(t, e, 1, tImageSpec)
 	driftDeployToSucceeded(t, e, rt, clock, rev)
 
@@ -619,18 +641,133 @@ func TestPostureDetectSkipsConverge(t *testing.T) {
 	rt.mu.Unlock()
 	before := len(rt.calls())
 	e.driftScan(context.Background())
-	assert.Equal(t, 0, ensureDelta(t, rt, before), "detect posture: no fast-channel converge")
-	assert.Equal(t, 0, ensureDelta(t, rt, before), "detect posture: no slow-channel replay")
+	assert.Equal(t, 0, ensureDelta(t, rt, before), "detect posture: neither fast nor slow channel may write")
 	assert.Len(t, eventNamesOf(t, e, "workload.drift_detected"), 1, "detection face keeps firing")
 	assert.Empty(t, eventNamesOf(t, e, "workload.converged"))
 
-	// 启动基线重放不受 posture 门限（ADR-0005 旧行为保留：缓存重建是
-	// 检测面的前提）。
-	e2 := New(Deps{DB: e.db, Stores: testRepos(e.db), Tx: transact.NewTx(e.db, testBinder(e.db)), Runtime: rt, Logger: discardLogger()},
-		Options{Converge: ConvergeOptions{Posture: ConvergePostureDetect}})
+	// 启动面（D3）：detect 下重放只重建期望账本，不下发载体。
+	e2 := newRestartedEngine(t, e, rt, detectOptions())
 	e2.rebuildBaselines(context.Background())
-	assert.Greater(t, len(rt.calls()), before, "baseline replay still runs under detect")
-	assert.Empty(t, eventNamesOf(t, e, "workload.converged"), "baseline replay emits no converge event")
+	assert.Equal(t, 0, ensureDelta(t, rt, before), "detect posture: startup replay must not Ensure")
+	assert.Empty(t, eventNamesOf(t, e, "workload.converged"), "startup rebuild emits no converge event")
+}
+
+// 启动账本重建（D3 / ADR-0082 §5 第 2 条 + §6）：ensuredSpec 在场且为基线
+// 投影、ensuredBy = 基线行（D4 采用规则放行）、gen 锚缺席（无 Ensure 回执）。
+func TestPostureDetectRebuildsExpectationsWithoutEnsure(t *testing.T) {
+	e, rt, clock := newTestEngineOpts(t, detectOptions())
+	rev := freezeSpec(t, e, 1, tImageSpec)
+	driftDeployToSucceeded(t, e, rt, clock, rev)
+
+	before := len(rt.calls())
+	e2 := newRestartedEngine(t, e, rt, detectOptions())
+	e2.rebuildBaselines(context.Background())
+
+	assert.Equal(t, 0, ensureDelta(t, rt, before), "detect startup rebuild must not Ensure")
+	w, ok := e2.obs.ensuredSpecOf(tAppID + "-web")
+	require.True(t, ok, "detect rebuild writes ensuredSpec (route/isolation input face)")
+	assert.Equal(t, "nginx:1.27", w.Image, "ledger spec is the baseline projection")
+	_, hasGen := e2.obs.ensuredGenOf(tAppID + "-web")
+	assert.False(t, hasGen, "detect rebuild must not fabricate a gen anchor (Ensure receipt is its only source)")
+	by, ok := e2.obs.ensuredByOf(tAppID + "-web")
+	require.True(t, ok, "ledger entries carry their writer")
+	assert.Equal(t, latestSucceededID(t, e2), by, "writer is the baseline row so the §6 adoption rule accepts it")
+}
+
+// 路由仍可解析（F1 硬约束 / ADR-0082 §5 第 2 条）：detect 账本重建后
+// publishRoutes 经 routeExpectations 取期望集、Addresses 返回端点、
+// Proxy 收到该 Route——期望集为空则端点空、Route 被跳过（失真形态）。
+func TestPostureDetectPublishesRoutesFromExpectationCache(t *testing.T) {
+	e, rt, clock := newTestEngineOpts(t, detectOptions())
+	rev := freezeSpec(t, e, 1, tImagePortSpec)
+	driftDeployToSucceeded(t, e, rt, clock, rev)
+	ctx := context.Background()
+	require.NoError(t, e.repos.Routes.Create(ctx, &route.Route{
+		ID: "01JD0ROUTE00000000000000001", ProjectID: tProjectID,
+		Host: "shop.127.0.0.1.sslip.io", AppID: tAppID, Process: "web", Port: 8080,
+		Protocol: capability.ProtocolHTTP, TLSMode: "auto",
+	}))
+
+	rt.mu.Lock()
+	rt.addrFromExpected = true // 端点的唯一输入 = 期望集（detect 无 Ensure 存活集）
+	rt.mu.Unlock()
+	proxy := &fakeProxy{}
+	e2 := New(Deps{DB: e.db, Stores: testRepos(e.db), Tx: transact.NewTx(e.db, testBinder(e.db)), Runtime: rt, Proxy: proxy, Logger: e.log}, detectOptions())
+	t.Cleanup(func() { _ = e2.Stop(ctx) })
+
+	before := len(rt.calls())
+	e2.rebuildBaselines(ctx)
+	assert.Equal(t, 0, ensureDelta(t, rt, before), "detect startup rebuild must not Ensure")
+	require.Len(t, e2.obs.routeExpectations(tAppID, 0), 1, "rebuilt ledger feeds route backend resolution")
+
+	e2.publishRoutes(ctx)
+	calls := rt.addrCallsSnapshot()
+	require.Len(t, calls, 1, "route backend resolution must reach Runtime.Addresses")
+	assert.Equal(t, capability.NamespaceRef{Team: "default", Project: tProjectID, App: tAppID}, calls[0])
+	require.Len(t, proxy.published, 1, "the route resolves from the rebuilt expectation ledger (no Ensure)")
+	assert.Equal(t, "vip-"+tAppID+"-web:8080", proxy.published[0].BackendAddr)
+	assert.Equal(t, "shop.127.0.0.1.sslip.io", proxy.published[0].Host)
+}
+
+// spec 漂移检测照常（ADR-0082 §5 第 3 条：spec 面无降级）：账本重建后
+// tamper 镜像 → 扫描面出 1 条 workload.drift_detected，仍不 Ensure。
+func TestPostureDetectSpecDriftStillDetected(t *testing.T) {
+	e, rt, clock := newTestEngineOpts(t, detectOptions())
+	rev := freezeSpec(t, e, 1, tImageSpec)
+	driftDeployToSucceeded(t, e, rt, clock, rev)
+
+	e2 := newRestartedEngine(t, e, rt, detectOptions())
+	e2.rebuildBaselines(context.Background())
+	rt.mu.Lock()
+	rt.tamper = map[string]tamperEntry{tAppID + "-web": {image: "nginx:1.27-alpine"}}
+	rt.mu.Unlock()
+
+	before := len(rt.calls())
+	e2.driftScan(context.Background())
+	assert.Len(t, eventNamesOf(t, e2, "workload.drift_detected"), 1, "detect keeps the spec detection face")
+	assert.Equal(t, 0, ensureDelta(t, rt, before), "detect still writes nothing")
+}
+
+// gen 失明钉成显式期望（ADR-0082 §5 第 3 条）：detect 账本无 gen 锚 →
+// gen tamper 不产 gen| 信号、不调 Ensure；切回 all 后一拍重放修复锚。
+func TestPostureDetectGenDriftBlindDocumented(t *testing.T) {
+	e, rt, clock := newTestEngineOpts(t, detectOptions())
+	rev := freezeSpec(t, e, 1, tImageSpec)
+	driftDeployToSucceeded(t, e, rt, clock, rev)
+
+	e2 := newRestartedEngine(t, e, rt, detectOptions())
+	e2.rebuildBaselines(context.Background())
+	ctx := context.Background()
+	rt.mu.Lock()
+	rt.tamper = map[string]tamperEntry{tAppID + "-web": {gen: 0, genSet: true}}
+	rt.mu.Unlock()
+
+	// 扫描面直接钉信号集：无 gen| 键（原「回落 App 级 expected」会把 0
+	// 当锚、产假 gen 偏离——本测是删除该分支的反向守卫）。
+	d := getDeployment(t, e2, latestSucceededID(t, e2))
+	signals := e2.compareSpecs(ctx, tAppID, inspectApp(t, e2), d)
+	for key := range signals {
+		assert.False(t, strings.HasPrefix(key, "gen|"), "detect ledger without a gen anchor must not raise gen drift (got %q)", key)
+	}
+	before := len(rt.calls())
+	e2.driftScan(ctx)
+	assert.Equal(t, 0, ensureDelta(t, rt, before), "detect writes nothing on the blind gen face")
+
+	// 反向：切回 all 后一拍重放把 gen 锚写回（Ensure 回执 = 唯一锚源）。
+	e2.opts.Converge.Posture = ConvergePostureAll
+	e2.driftScan(ctx)
+	require.Equal(t, 1, ensureDelta(t, rt, before), "lifting the posture restores the gen anchor via one baseline replay")
+	last := rt.calls()[len(rt.calls())-1]
+	assert.Equal(t, capability.Generation(1), last.Gen)
+	assert.Equal(t, "nginx:1.27", last.Spec["web"].Image)
+
+	// 锚恢复 + tamper 清除后：无新信号、无新 Ensure（gen 面重新工作）。
+	rt.mu.Lock()
+	rt.tamper = nil
+	rt.mu.Unlock()
+	before = len(rt.calls())
+	e2.driftScan(ctx)
+	assert.Equal(t, 0, ensureDelta(t, rt, before), "recovered anchor and clean observation short-circuit")
 }
 
 // posture 缺省 all 钉测（fill 归一）。

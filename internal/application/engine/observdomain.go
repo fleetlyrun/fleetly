@@ -26,9 +26,9 @@ type observations struct {
 	ensuredSpec  map[string]capability.Workload      // workloadID → 最近 Ensure 的投影 spec（ADR-0022 spec 对照 drift）
 	// ensuredBy 是账本的写入部署归属（workloadID → Deployment ID）：drift
 	// 期望侧只采用写入者 == 当前 LatestSucceeded 的条目（ADR-0082 §6）。
-	// 写点当前只有 recordSpecs（Ensure 路径，materialize 单序列）；D3 收口
-	// 时 detect 的账本重建（recordProjectedSpecs，写入者=基线行）将成为
-	// 第二个写点。受管/Database 域不写（不参与 App 对照面）。
+	// 写点两个：recordSpecs（Ensure 路径，materialize 单序列）与
+	// recordProjectedSpecs（posture=detect 启动作业的账本重建，写入者 =
+	// 基线行）。受管/Database 域不写（不参与 App 对照面）。
 	ensuredBy map[string]string
 }
 
@@ -52,16 +52,39 @@ func (o *observations) observe(ev capability.WorkloadEvent) {
 // 投影 spec + 账本归属（写入部署 ID）+ （调用方另落 expect 域的 App 级
 // 锚）。App 部署链消费（spec 对照 drift 需要 ensuredSpec）。
 //
-// 期望账本纪律（ADR-0082 §6 钉死）：ensuredSpec/ensuredGen/ensuredBy 只由
-// Ensure 路径写入（recordEnsured ← materialize 单序列），禁止观测播种——
-// 受管域的 gen 观测播种先例（managed.go seedFromRuntime）不得照抄到 App
-// 域，否则手动热修被播种成期望态，静默击穿 controller-wins。语义修靠
-// converge 域：漂移的修复只经收敛动作（materialize→Ensure）回写本账本。
+// 期望账本纪律（ADR-0082 §6 钉死）：ensuredGen 只由 Ensure 路径写入
+// （recordEnsured ← materialize 单序列）；ensuredSpec/ensuredBy 另有一个
+// 非 Ensure 写点——posture=detect 的启动账本重建（recordProjectedSpecs，
+// 写入者 = 基线行，不写 gen 锚）。禁止观测播种——受管域的 gen 观测播种
+// 先例（managed.go seedFromRuntime）不得照抄到 App 域，否则手动热修被
+// 播种成期望态，静默击穿 controller-wins。语义修靠 converge 域：漂移的
+// 修复只经收敛动作（materialize→Ensure）回写本账本。
 func (o *observations) recordSpecs(owner workloadOwner, deploymentID string, gen uint64, ws []capability.Workload) {
 	o.mu.Lock()
 	for _, w := range ws {
 		o.workloadApp[w.ID] = owner
 		o.ensuredGen[w.ID] = gen
+		o.ensuredSpec[w.ID] = w
+		o.ensuredBy[w.ID] = deploymentID
+	}
+	o.mu.Unlock()
+}
+
+// recordProjectedSpecs 写 posture=detect 期的期望账本（归属 + 期望 spec +
+// 归属部署），**不写 ensuredGen**：detect 零运行时写 → 没有 Ensure 回执 →
+// wire-gen 不可知（gen/stopped 面成文失明，ADR-0082 §5 第 3 条）。
+//
+// 写入者必须传基线行 ID（rebuildBaselineExpectations 传 d.ID）：drift 的
+// 账本采用规则（ADR-0082 §6）只采用写入者 == 当前 LatestSucceeded 的条目，
+// 不写归属会让 detect 下的 spec 对照整体失明（与 C4 的检测承诺冲突）。
+// 投影与缺席/多余检测同源（expectedWorkloads → projectRevision + 代戳），
+// 因此本账本也是路由解析（routeExpectations）与 peer 隔离不变式
+// （crossProjectRefs）的输入面——它替代 detect 期本应由 Ensure 建立的
+// 缓存，不是收敛动作。
+func (o *observations) recordProjectedSpecs(owner workloadOwner, deploymentID string, ws []capability.Workload) {
+	o.mu.Lock()
+	for _, w := range ws {
+		o.workloadApp[w.ID] = owner
 		o.ensuredSpec[w.ID] = w
 		o.ensuredBy[w.ID] = deploymentID
 	}
