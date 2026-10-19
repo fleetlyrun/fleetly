@@ -3846,7 +3846,7 @@
     {
       "name": "workload.converged",
       "kind": "event",
-      "summary": "The engine reconverged an app's carriers to its succeeded baseline (converge-by-default); the audit row carries the baseline digest and no deployment row is created.",
+      "summary": "The engine reconverged an app's carriers to its succeeded baseline (converge-by-default); the audit row carries the baseline digest and no deployment row is created. Material reconvergence of any trigger source (slow replay, startup baseline replay) writes an audit row with the changed carrier set, while the event stream stays signal-driven.",
       "schema": {
         "$schema": "http://json-schema.org/draft-07/schema#",
         "additionalProperties": false,
