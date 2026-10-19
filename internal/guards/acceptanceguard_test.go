@@ -6,8 +6,9 @@ package guards
 //  1. proto 的创建型/删除型动词 handler 必须经 Services.commit 写原语
 //     （受理检查 → 聚合写 → 事件 → 审计的顺序与回滚只有一个拥有者）；
 //     不经原语的写面要么红，要么在豁免表带理由。
-//  2. fleetlygrpc 包内 DB.Tx 直调只许出现在 acceptance.go（原语本体）——
-//     手写四件一拍编排（2026-10-01 曾达 29 处）不得回潮。
+//  2. fleetlygrpc 包内事务直调（ADR-0080 形态 `Tx.Do`）只许出现在
+//     acceptance.go（原语本体）——手写四件一拍编排（2026-10-01 曾达 29 处）
+//     不得回潮。针随 ADR-0080 换形（R12-M1：旧针 `.DB.Tx(` 已零命中）。
 
 import (
 	"go/ast"
@@ -119,11 +120,25 @@ func TestAcceptanceWritePathsGoThroughCommit(t *testing.T) {
 	}
 }
 
-// TestNoHandRolledTxChoreography：fleetlygrpc 包内 DB.Tx 直调只许出现在
-// acceptance.go（原语本体）——手写四件一拍编排不得回潮。
+// TestNoHandRolledTxChoreography：fleetlygrpc 包内事务直调（ADR-0080 形态
+// `Tx.Do`）只许出现在 acceptance.go（原语本体）——手写四件一拍编排不得
+// 回潮。先钉"针的真实形态"再反扫：ADR-0080 换形后旧针 `.DB.Tx(` 静默
+// 零命中（R12-M1），本锚断言防同名失配再次发生。
 func TestNoHandRolledTxChoreography(t *testing.T) {
 	root := filepath.Join(repoRoot(t), filepath.Join("internal", "interfaces", "grpc", "fleetlygrpc"))
-	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
+	acceptancePath := filepath.Join(root, "acceptance.go")
+	acceptanceBody, err := os.ReadFile(acceptancePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 形态锚：唯一事务入口是服务持有的 Tx.Do（ADR-0080）。若事务 API 再
+	// 换形，此断言先红——提醒改针，而不是让守卫悄悄退化成零扫描。
+	if !strings.Contains(string(acceptanceBody), "s.Tx.Do(") {
+		t.Fatal("guard anchor missing: acceptance.go no longer contains `s.Tx.Do(`; the ADR-0080 transaction-form needle is stale — update the needle before trusting this guard")
+	}
+
+	scanned := 0
+	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
@@ -132,18 +147,23 @@ func TestNoHandRolledTxChoreography(t *testing.T) {
 		}
 		rel := filepath.ToSlash(path[len(repoRoot(t))+1:])
 		if rel == "internal/interfaces/grpc/fleetlygrpc/acceptance.go" {
-			return nil // 原语本体：唯一允许的 DB.Tx 直调点
+			return nil // 原语本体：唯一允许的事务直调点
 		}
+		scanned++
 		content, rerr := os.ReadFile(path)
 		if rerr != nil {
 			return rerr
 		}
-		if strings.Contains(string(content), ".DB.Tx(") {
-			t.Errorf("%s hand-rolls the four-in-one-tx choreography via DB.Tx; declare a writeFact and go through Services.commit (ADR-0024)", rel)
+		if strings.Contains(string(content), ".Tx.Do(") {
+			t.Errorf("%s hand-rolls the four-in-one-tx choreography via Tx.Do; declare a writeFact and go through Services.commit (ADR-0024)", rel)
 		}
 		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	// 防盲：扫描面文件数下限（目录/后缀漂移导致的零扫描即红）。
+	if scanned < 10 {
+		t.Fatalf("scanned only %d files under fleetlygrpc — guard is blind, fix the scan", scanned)
 	}
 }

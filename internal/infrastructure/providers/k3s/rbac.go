@@ -44,21 +44,28 @@ func desiredClusterRole() *rbacv1.ClusterRole {
 		Rules: []rbacv1.PolicyRule{
 			{APIGroups: []string{""}, Resources: []string{"namespaces"}, Verbs: []string{"create", "delete", "get"}},
 			{APIGroups: []string{""}, Resources: []string{"nodes"}, Verbs: []string{"get", "list", "update"}},
-			{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"create", "delete", "get", "list", "watch"}},
+			// pods deletecollection 是 Restart 的按 label 批量删面（ADR-0069/
+			// IA v3）——delete 不覆盖 DeleteCollection，缺它真机恒 403。
+			{APIGroups: []string{""}, Resources: []string{"pods"}, Verbs: []string{"create", "delete", "deletecollection", "get", "list", "watch"}},
 			{APIGroups: []string{""}, Resources: []string{"pods/exec"}, Verbs: []string{"create"}},
 			// pods/log 是 k8s 子资源真名（单数——"pods/logs" 不命中任何
 			// 子资源，log collector 全程 403；staging k3s 真机实证 ADR-0055）。
 			{APIGroups: []string{""}, Resources: []string{"pods/log"}, Verbs: []string{"get"}},
 			{APIGroups: []string{""}, Resources: []string{"services"}, Verbs: []string{"create", "delete", "get", "list", "update"}},
 			{APIGroups: []string{""}, Resources: []string{"secrets"}, Verbs: []string{"create", "delete", "deletecollection", "get", "list", "update"}},
+			// configmaps 是 ensureConfigMaps 的落点（compose configs /
+			// 预部署 job 的 bootstrap SQL）：Create → Get → Update 三动词，
+			// 整组缺失时真机在 Ensure 即 403（R06-H1）。
+			{APIGroups: []string{""}, Resources: []string{"configmaps"}, Verbs: []string{"create", "get", "update"}},
 			// persistentvolumeclaims 的 list 是空域收尾的零卷判据（ADR-0056
 			// 决策 5）——缺它判据 List 403 静默跳过（fake clientset 不执法
 			// RBAC，单测不暴露；dind lab 实证 2026-10-08）。
 			{APIGroups: []string{""}, Resources: []string{"persistentvolumeclaims"}, Verbs: []string{"create", "get", "list"}},
 			{APIGroups: []string{""}, Resources: []string{"events"}, Verbs: []string{"get", "list"}},
 			{APIGroups: []string{"apps"}, Resources: []string{"deployments", "daemonsets"}, Verbs: []string{"create", "delete", "get", "list", "update"}},
-			// networkpolicies list：成员资格隔离的期望集收敛对照（ADR-0054）。
-			{APIGroups: []string{"networking.k8s.io"}, Resources: []string{"networkpolicies"}, Verbs: []string{"create", "delete", "get", "list"}},
+			// networkpolicies list：成员资格隔离的期望集收敛对照（ADR-0054）；
+			// update：平台升级改放行集后的 putNetpol 形状漂移收敛（R06-H1）。
+			{APIGroups: []string{"networking.k8s.io"}, Resources: []string{"networkpolicies"}, Verbs: []string{"create", "delete", "get", "list", "update"}},
 			{APIGroups: []string{"policy"}, Resources: []string{"pods/eviction"}, Verbs: []string{"create"}},
 		},
 	}

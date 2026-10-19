@@ -143,15 +143,16 @@ func TestDesiredClusterRoleTable(t *testing.T) {
 	assert.Equal(t, []rbacv1.PolicyRule{
 		rule("", []string{"namespaces"}, "create", "delete", "get"), // delete = 空域收尾(ADR-0056 决策 5)
 		rule("", []string{"nodes"}, "get", "list", "update"),
-		rule("", []string{"pods"}, "create", "delete", "get", "list", "watch"),
+		rule("", []string{"pods"}, "create", "delete", "deletecollection", "get", "list", "watch"), // deletecollection = Restart（ADR-0069）
 		rule("", []string{"pods/exec"}, "create"),
 		rule("", []string{"pods/log"}, "get"), // k8s 子资源真名单数(staging k3s 实证)
 		rule("", []string{"services"}, "create", "delete", "get", "list", "update"),
 		rule("", []string{"secrets"}, "create", "delete", "deletecollection", "get", "list", "update"),
+		rule("", []string{"configmaps"}, "create", "get", "update"),           // ensureConfigMaps 调用面(R06-H1)
 		rule("", []string{"persistentvolumeclaims"}, "create", "get", "list"), // list = 空域收尾零卷判据(ADR-0056)
 		rule("", []string{"events"}, "get", "list"),
 		rule("apps", []string{"deployments", "daemonsets"}, "create", "delete", "get", "list", "update"),
-		rule("networking.k8s.io", []string{"networkpolicies"}, "create", "delete", "get", "list"),
+		rule("networking.k8s.io", []string{"networkpolicies"}, "create", "delete", "get", "list", "update"), // update = putNetpol 漂移收敛(R06-H1)
 		rule("policy", []string{"pods/eviction"}, "create"),
 	}, desiredClusterRole().Rules)
 }

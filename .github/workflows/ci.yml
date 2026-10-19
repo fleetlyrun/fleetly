@@ -43,12 +43,35 @@ jobs:
       - name: golangci-lint
         run: mise run lint:golangci
 
-      # codegen 漂移检查（buf generate / wire 同步）在本地门禁（mise run
-      # generate:all + git diff）：CI 冷环境重跑生成受 tidy/网络影响会产生
-      # 本地不复现的 diff（torchwood 2026-09-23 裁决沿用）。
+      # codegen 漂移检查（buf generate / wire 同步）由独立 codegen job 覆盖
+      # （mise run generate:verify，与本地同款）。
 
       - name: Tests (race, three modules)
         run: go test -race ./... ./genproto/... ./sdk/go/...
+
+  # 生成物零漂移门禁（R09-M1）：genproto/**、config.pb.go、wire_gen.go 是
+  # 提交进仓的生成物（AGENTS.md「生成物纪律：手改即错」）；generate:verify
+  # 再生成 + git diff 断言，与本地同款命令。独立 job 让"改了 proto 没再
+  # 生成"在 CI 定位清楚，而不是只活在本地门禁里。
+  codegen:
+    name: Codegen (generated artifacts drift)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: jdx/mise-action@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-${{ runner.os }}-${{ hashFiles('go.sum', 'genproto/go.sum', 'sdk/go/go.sum') }}
+          restore-keys: go-${{ runner.os }}-
+
+      - name: Generated artifacts (drift gate)
+        run: mise run generate:verify
 
   # Console（F2.6/ADR-0044）：类型再生成 + 构建 + 零漂移断言（src/api
   # 类型 + internal/interfaces/console/dist 产物双钉）；node/pnpm 走 mise.toml 钉版

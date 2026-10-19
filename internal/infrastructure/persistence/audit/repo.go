@@ -5,13 +5,32 @@ package audit
 
 import (
 	"context"
+	"database/sql"
 	"strings"
+	"sync"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence"
 )
+
+// auditAppendAttempts 是非事务 Append 的有界尝试次数（首次 + 2 次唯一冲突
+// 重试）。唯一冲突是"另一写者刚铸走同一 seq"的信号，重取 MAX+1 即可；其
+// 他错误不重试（连接/约束/语法错误重试只会延迟失败）。
+const auditAppendAttempts = 3
+
+// nonTxAppendMu 串行化"非事务执行面"的 seq 铸造 + 插入（R05-M1）。SQLite
+// 连接池收口为 1，但 NextSeq 与 INSERT 是两条自动提交语句，并发调用可在
+// 两语句之间交错而双铸同一 seq（32 goroutine × 8 次复现 205/256 失败）。
+// 非事务写者（authn 收窄审计 / engine converge 事实）在进程内共享本锁，
+// 把读-改-写收成一个临界区；有界重试则兜住跨进程/未来连接池放宽的残余
+// 竞争。
+//
+// 事务执行面（*sql.Tx）**不取锁**：单连接事务内的 NextSeq+INSERT 已天然
+// 串行；若事务路径也抢本锁，会出现"事务持连接等锁 / 非事务持锁等连接"的
+// 死锁。故仅在 run 不是 *sql.Tx 时加锁。
+var nonTxAppendMu sync.Mutex
 
 // repo 是 domain audit.Repo 的 SQLite 实现。
 type repo struct {
@@ -26,22 +45,43 @@ func New(clock state.Clock, run state.Runner) audit.Repo { return &repo{clock: c
 // 显式携带时从 ctx 取（ADR-0035——全部调用方（api/engine/webhook）零改动
 // 获得 Team 标注；system/无身份动作显式留空 = 平台级行）。ID 由行装配处
 // 装配 aud-<seq>（ADR-0070——调用方不再自带 id）。
+//
+// 并发面（R05-M1）：非事务执行面先取 nonTxAppendMu 串行化 NextSeq+INSERT，
+// 唯一冲突（跨进程残余竞争）再按 auditAppendAttempts 有界重试——仅唯一
+// 冲突重取 seq 重试，其他错误立即返回；每次尝试重铸 e.Seq/e.ID（CreatedAt
+// 在受理时刻取一次，重试不推进事实落账时间）。
 func (r *repo) Append(ctx context.Context, e *audit.Entry) error {
 	if e.TeamID == "" {
 		e.TeamID = audit.TeamFromContext(ctx)
 	}
 	e.CreatedAt = state.FormatTime(r.clock.Now())
-	seq, err := persistence.NextSeq(ctx, r.run, "audit")
-	if err != nil {
-		return err
+
+	if _, inTx := r.run.(*sql.Tx); !inTx {
+		nonTxAppendMu.Lock()
+		defer nonTxAppendMu.Unlock()
 	}
-	e.Seq = seq
-	e.ID = entityid.Audit(seq)
-	_, err = r.run.ExecContext(ctx, `
+
+	var lastErr error
+	for attempt := 0; attempt < auditAppendAttempts; attempt++ {
+		seq, err := persistence.NextSeq(ctx, r.run, "audit")
+		if err != nil {
+			return err
+		}
+		e.Seq = seq
+		e.ID = entityid.Audit(seq)
+		_, err = r.run.ExecContext(ctx, `
 		INSERT INTO audit (id, seq, actor, source, action, resource, before_fp, after_fp, team_id, created_at, detail)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		e.ID, e.Seq, e.Actor, string(e.Source), e.Action, e.Resource, e.BeforeFP, e.AfterFP, e.TeamID, e.CreatedAt, e.Detail)
-	return err
+			e.ID, e.Seq, e.Actor, string(e.Source), e.Action, e.Resource, e.BeforeFP, e.AfterFP, e.TeamID, e.CreatedAt, e.Detail)
+		if err == nil {
+			return nil
+		}
+		if !persistence.IsUniqueViolation(err) {
+			return err
+		}
+		lastErr = err
+	}
+	return lastErr
 }
 
 // List 返回审计（新→旧；limit 上界钳制）。

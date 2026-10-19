@@ -6,10 +6,15 @@ package audit_test
 // ADR-0035）、ListFiltered 过滤矩阵（actor/source/action 前缀/resource 单
 // 维与至少两维组合断言、action 前缀 LIKE 转义——% _ 字面义）、Team 轴
 // 过滤口径（team 行 ∪ '' 平台行——ADR-0035 决策 6）、limit 钳位（<=0 或
-// >1000 回落 1000）。只增聚合，无更新/删除面，不硬造。
+// >1000 回落 1000）、非事务面并发 Append（seq 唯一连续——R05-M1 复现）
+// 与唯一冲突重试的成功/耗尽两径。只增聚合，无更新/删除面，不硬造。
 
 import (
 	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -150,4 +155,114 @@ func TestAuditListFilteredMatrix(t *testing.T) {
 	got, err = repo.ListFiltered(ctx, audit.Filter{Team: teamA, Actor: "bob"})
 	require.NoError(t, err)
 	assert.Equal(t, []string{"aud-3"}, ids(got))
+}
+
+// TestAuditAppendConcurrentNonTx：R05-M1 复现形态——32 goroutine × 8 次
+// 非事务 Append 全部成功，seq 唯一且连续（1..256），ID 与 seq 一一对应。
+// 非事务面的 NextSeq+INSERT 临界区由 repo 串行化；唯一冲突重试是兜底。
+func TestAuditAppendConcurrentNonTx(t *testing.T) {
+	db, clock := statetest.New(t)
+	repo := auditrepo.New(clock, db.Runner())
+	const (
+		goroutines = 32
+		perWorker  = 8
+		total      = goroutines * perWorker
+	)
+	errs := make(chan error, total)
+	var wg sync.WaitGroup
+	for g := 0; g < goroutines; g++ {
+		wg.Add(1)
+		go func(g int) {
+			defer wg.Done()
+			for i := 0; i < perWorker; i++ {
+				e := &audit.Entry{
+					Actor:    "racer",
+					Source:   audit.SourceSystem,
+					Action:   "audit.concurrent",
+					Resource: fmt.Sprintf("audit/%d-%d", g, i),
+				}
+				if err := repo.Append(context.Background(), e); err != nil {
+					errs <- err
+				}
+			}
+		}(g)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Errorf("concurrent append must not lose rows: %v", err)
+	}
+
+	rows, err := repo.List(context.Background(), total)
+	require.NoError(t, err)
+	require.Len(t, rows, total, "every append must leave exactly one audit row")
+	seen := make(map[int64]bool, total)
+	for i, row := range rows { // 新→旧：seq 应连续递减
+		want := int64(total - i)
+		assert.Equal(t, want, row.Seq, "seq must be contiguous with no gaps")
+		assert.Equal(t, fmt.Sprintf("aud-%d", want), row.ID, "id is cast from the retried seq")
+		seen[row.Seq] = true
+	}
+	assert.Len(t, seen, total, "seq must be unique")
+}
+
+// collidingRunner 模拟"另一写者刚铸走同一 seq"：第一次 INSERT 先真实落库，
+// 再以同参数重放一次取回真实 UNIQUE 错误——repo 应重取 MAX+1 后成功。
+type collidingRunner struct {
+	state.Runner
+	collideOnce bool
+}
+
+func (r *collidingRunner) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	if !r.collideOnce {
+		return r.Runner.ExecContext(ctx, query, args...)
+	}
+	r.collideOnce = false
+	if _, err := r.Runner.ExecContext(ctx, query, args...); err != nil {
+		return nil, err
+	}
+	return r.Runner.ExecContext(ctx, query, args...) // 同 seq 二次插入 → 真实唯一冲突
+}
+
+// TestAuditAppendRetriesUniqueCollision：唯一冲突后重取 seq 重铸 ID。
+func TestAuditAppendRetriesUniqueCollision(t *testing.T) {
+	db, clock := statetest.New(t)
+	repo := auditrepo.New(clock, &collidingRunner{Runner: db.Runner(), collideOnce: true})
+
+	e := &audit.Entry{Actor: "alice", Source: audit.SourceSystem, Action: "audit.retry", Resource: "audit/r1"}
+	require.NoError(t, repo.Append(context.Background(), e))
+	assert.Equal(t, int64(2), e.Seq, "retry must re-cast seq from MAX+1")
+	assert.Equal(t, "aud-2", e.ID, "retry must re-cast id from the new seq")
+
+	rows, err := repo.List(context.Background(), 10)
+	require.NoError(t, err)
+	require.Len(t, rows, 2)
+	assert.Equal(t, int64(2), rows[0].Seq)
+	assert.Equal(t, int64(1), rows[1].Seq)
+}
+
+// uniqueViolationRunner 每次 INSERT 都报唯一冲突（模拟持续外部竞争），用
+// 于断言重试有界、错误不再被吞。
+type uniqueViolationRunner struct {
+	state.Runner
+	calls int
+}
+
+func (r *uniqueViolationRunner) ExecContext(context.Context, string, ...any) (sql.Result, error) {
+	r.calls++
+	return nil, errors.New("constraint failed: UNIQUE constraint failed: audit.seq (2067)")
+}
+
+// TestAuditAppendRetryExhausted：有界尝试耗尽后返回最后一次唯一冲突。
+func TestAuditAppendRetryExhausted(t *testing.T) {
+	db, clock := statetest.New(t)
+	run := &uniqueViolationRunner{Runner: db.Runner()}
+	repo := auditrepo.New(clock, run)
+
+	err := repo.Append(context.Background(), &audit.Entry{Actor: "alice", Source: audit.SourceSystem, Action: "audit.retry", Resource: "audit/r1"})
+	require.ErrorContains(t, err, "UNIQUE")
+	assert.Equal(t, 3, run.calls, "bounded attempts: initial + 2 retries")
+	rows, lerr := repo.List(context.Background(), 10)
+	require.NoError(t, lerr)
+	assert.Empty(t, rows, "failed appends must not leave partial rows")
 }

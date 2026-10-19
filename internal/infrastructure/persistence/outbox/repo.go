@@ -86,12 +86,20 @@ func (r *repo) EarliestSeq(ctx context.Context) (int64, error) {
 	return seq, err
 }
 
-// TrimBefore 删除保留窗外的全部行（janitor 周期执行；返回清理行数供
-// 观测）。事件既成事实落审计后由本面回收——"只增"修订为"保留窗内只增"
-// （ADR-0026：订阅契约以 earliest_seq 划界，窗内不删不改）。
+// TrimBefore 删除保留窗外的行（janitor 周期执行；返回清理行数供观测）。
+// 事件既成事实落审计后由本面回收——"只增"修订为"保留窗内只增"（ADR-0026：
+// 订阅契约以 earliest_seq 划界，窗内不删不改）。
+//
+// 裁剪必须是 seq 前缀（R05-M4）：EarliestSeq = MIN(seq)，410 判定只看
+// after_seq < earliest——只有"被删集合 = {seq <= N}"时该判定才等价于
+// "游标落在窗外"。按 created_at 直接 DELETE 会在墙钟跳变（VM 快照/错误
+// RTC/NTP 大步校正）下删掉中间行：旧行之后的未来行幸存 → earliest 不前移
+// → 订阅方静默跳过被删事件。故先取"窗外行中的最大 seq"，再删所有 seq <=
+// 它的行（窗外行可多删，但结果必为前缀）。
 func (r *repo) TrimBefore(ctx context.Context, cutoff time.Time) (int64, error) {
 	res, err := r.run.ExecContext(ctx,
-		`DELETE FROM outbox WHERE created_at < ?`, state.FormatTime(cutoff))
+		`DELETE FROM outbox WHERE seq <= COALESCE((SELECT MAX(seq) FROM outbox WHERE created_at < ?), 0)`,
+		state.FormatTime(cutoff))
 	if err != nil {
 		return 0, err
 	}

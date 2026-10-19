@@ -12,7 +12,7 @@
 | S2 | 安全边界：平台面门禁 + 身份写面归属 + 角色授予上限 | H1、H2（另含 R14-M2 的 init owner 修正、R14-M4 的 team 缺省退化） | 复现场景反转为 403；同队 admin 正常；apitest/guards 绿；golden 同批 | ✅ |
 | S3 | 交付主链：安装路由面 + Browse 会话绑定 + 备份可靠性 + CLI 等待/Console 崩溃 | H12、H4、H5、H6、H14、H13 | 各修复单测/回归绿；install.sh guard 绿；console vitest 绿；build 双平台 | ✅ |
 | S4 | 声明式与路由语义：restart 源/精确判定 + BG egress + 发布就绪门 | H15、R16-M1、H9、H7 | 新钉测绿；engine/assembly/traefik/providers 相关包绿；golden 同批 | ✅ |
-| S5 | 双 Runtime 与守卫/完整性收尾 | H3、R12-M1、R05-M1、R05-M4、R09-M1 | k3s 规则+守卫绿；并发 audit/outbox 测试绿；CI 门禁就位；全量回归 | ☐ |
+| S5 | 双 Runtime 与守卫/完整性收尾 | H3、R12-M1、R05-M1、R05-M4、R09-M1 | k3s 规则+守卫绿；并发 audit/outbox 测试绿；CI 门禁就位；全量回归 | ✅ |
 
 ## 本轮不做（需设计决策/迁移，记录为后续 backlog）
 
@@ -65,6 +65,14 @@
 - 全局一致性检查：`--runtime` 逃生面未动；routeReady 构造默认 true 保证手动驱动/测试零行为变化；只有 Start 的基线重放窗关闸；traefik Ready 失败不清位（LKG 继续）；端点对不实现 Ready 的旧 Provider 语义不变。
 - 还原点 commit：见 git log（`fix(engine,cli): S4 ...`）
 - 残留/后续：H7 真机 e2e（多 App 慢重放 + traefik 503 保 LKG）、publishRoutes skip 不 remember（由既有强制重放兜底）、H9 k3s e2e 断言、H15 的 ADR-0083 追记与 skills 文案。
+
+### S5 执行记录
+- 子代理 prompt 要点：k3s RBAC 补 configmaps/netpol update/pods deletecollection + 调用面↔RBAC AST 守卫 + e2e can-i；acceptanceguard 针随 ADR-0080 换形 + 防盲锚；audit 非事务 Append 串行化+有界重试；outbox TrimBefore 改 seq 前缀；CI 加 codegen 零漂移 job。
+- 改动文件：`k3s/{rbac,rbac_test,rbac_surface_test}.go`、`e2e/dind-k3s.sh`、`guards/acceptanceguard_test.go`、`persistence/{audit,outbox}/repo{,_test}.go`、`.github/workflows/ci.yml`。
+- 验收证据（Lead 亲跑）：`gofmt -l` 空；双平台 build 0；k3s 3.3s、audit 0.33s、outbox 0.24s、guards 17.4s、persistence 全包全 ok；vet 0；`git diff --check` 0；`sh -n e2e/dind-k3s.sh` 0；audit 并发 256 全成功、outbox 无中间洞（子代理实测复核）。
+- 全局一致性检查：RBAC 只扩 `p.cli`（SA 身份）调用面，boot/管理 kubeconfig 面与 RbacV1/serviceaccounts 不扩；事务执行面不取锁（避免单连接死锁）；outbox 前缀裁剪保留 410 契约；CI job 与本地同命令。
+- 还原点 commit：见 git log（`fix(k3s,persistence,guards,ci): S5 ...`）
+- 残留/后续：R06-M1 ConfigMounts 仍归 backlog（H3 只消除 403，真机发布前应先落挂载，否则"显式 403 变静默无配置"）；审计跨进程仅靠重试；e2e/Actions 未本机运行。
 
 ## 终验（全部阶段后）
 

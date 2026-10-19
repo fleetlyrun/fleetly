@@ -73,6 +73,45 @@ func TestOutboxMonotonicSeq(t *testing.T) {
 	assert.Zero(t, earliest, "empty table reports earliest 0 (not a gap)")
 }
 
+// TestOutboxTrimKeepsSeqPrefix：R05-M4——按 created_at 直删会在墙钟跳变
+// 下制造中间洞（删掉 seq2/3 的旧行、留下 seq1 的未来行，earliest 仍为 1，
+// 订阅方不触发 410 而静默丢事件）。裁剪必须是 seq 前缀：先取窗外行中的
+// 最大 seq，再删所有 seq <= 它的行；时间乱序行直插构造（Append 走时钟，
+// 无法回拨造乱序）。
+func TestOutboxTrimKeepsSeqPrefix(t *testing.T) {
+	db, clock := statetest.New(t)
+	ctx := context.Background()
+	events := outboxrepo.New(clock, db.Runner())
+	insert := func(createdAt, aggregateID string) {
+		t.Helper()
+		_, err := db.Runner().ExecContext(ctx,
+			`INSERT INTO outbox (name, aggregate, aggregate_id, payload, created_at, team_id) VALUES (?, ?, ?, ?, ?, '')`,
+			"deployment.queued", "deployment", aggregateID, `{}`, createdAt)
+		require.NoError(t, err)
+	}
+	insert("2026-02-01T00:00:00Z", "d1") // seq1：墙钟"未来"
+	insert("2026-01-01T00:00:00Z", "d2") // seq2：窗外（旧）
+	insert("2026-01-02T00:00:00Z", "d3") // seq3：窗外（旧）
+	insert("2026-02-02T00:00:00Z", "d4") // seq4：墙钟"未来"
+
+	n, err := events.TrimBefore(ctx, statetest.MustParse("2026-01-04T00:00:00Z"))
+	require.NoError(t, err)
+	assert.Equal(t, int64(3), n, "only the seq prefix (1..3) may be trimmed: max old seq is 3")
+
+	earliest, err := events.EarliestSeq(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, int64(4), earliest, "the surviving table is a seq suffix (no middle hole)")
+	last, err := events.LastSeq(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, int64(4), last)
+	assert.Less(t, int64(1), earliest, "a cursor at the trimmed edge satisfies the 410 condition (after_seq < earliest)")
+
+	after, err := events.ListAfter(ctx, 3, 10, "")
+	require.NoError(t, err)
+	require.Len(t, after, 1)
+	assert.Equal(t, int64(4), after[0].Seq)
+}
+
 func TestAuditAppendList(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()

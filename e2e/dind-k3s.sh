@@ -331,6 +331,9 @@ docker exec "$DIND_CID" sh -c '
   [ "$(k3s kubectl auth can-i create deployments.apps --as=$sa 2>/dev/null)" = "yes" ] || { echo "SA must be allowed to create deployments" >&2; exit 1; }
   [ "$(k3s kubectl auth can-i get pods/log --as=$sa 2>/dev/null)" = "yes" ] || { echo "SA must be allowed to get pod logs (subresource name is pods/log, singular; a plural-form rule silently grants nothing — staging k3s live finding, ADR-0055)" >&2; exit 1; }
   [ "$(k3s kubectl auth can-i list networkpolicies.networking.k8s.io --as=$sa 2>/dev/null)" = "yes" ] || { echo "SA must be allowed to list network policies (membership isolation convergence, ADR-0054)" >&2; exit 1; }
+  [ "$(k3s kubectl auth can-i create configmaps --as=$sa 2>/dev/null)" = "yes" ] || { echo "SA must be allowed to create config maps (compose configs / predeploy bootstrap SQL, R06-H1)" >&2; exit 1; }
+  [ "$(k3s kubectl auth can-i update networkpolicies.networking.k8s.io --as=$sa 2>/dev/null)" = "yes" ] || { echo "SA must be allowed to update network policies (shape drift convergence, R06-H1)" >&2; exit 1; }
+  [ "$(k3s kubectl auth can-i deletecollection pods --as=$sa 2>/dev/null)" = "yes" ] || { echo "SA must be allowed to deletecollection pods (runtime restart, R06-H1)" >&2; exit 1; }
   [ "$(k3s kubectl auth can-i create clusterroles.rbac.authorization.k8s.io --as=$sa 2>/dev/null)" = "no" ] || { echo "SA must NOT be allowed to create cluster roles" >&2; exit 1; }
   [ "$(k3s kubectl auth can-i delete namespaces --as=$sa 2>/dev/null)" = "yes" ] || { echo "SA must be allowed to delete namespaces (drained-namespace teardown, ADR-0056)" >&2; exit 1; }
   [ "$(k3s kubectl auth can-i delete nodes --as=$sa 2>/dev/null)" = "no" ] || { echo "SA must NOT be allowed to delete nodes" >&2; exit 1; }
