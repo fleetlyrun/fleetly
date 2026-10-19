@@ -381,13 +381,13 @@ ADR-0042 落地（64f07f0..8b7f51d 七 commit，CI run 37218474928 六 job 全�
 **换装**（161b62b-f31walk → 05df932-f32exec2，五 commit 3829263/0e50fb8/bd29438/console 批/05df932）：前置 Platform Backup `c8a74e33` + 卷 tar（受管四卷——含 probe 遗留 archredis；torchwood-pg 已非独立卷名）；**00025 迁移随批前滚**（audit detail 列）。零扰动：34 running task 行稳定；tw.dev 200。
 
 - **回环中继（manager）零动作在线**：daemon 起服即进程内回环中继连自身 gateway（10.124.0.3:9081，明文 VPC 形态）——`nodes list` manager 行 `relay_online=true`、无容器（与 worker 容器形态分立）。
-- **worker 中继落地 = RelayCommand 原样执行**：`fleetly --json nodes enroll` 的 `relay_command` sed 抽取（纯单引号形态 JSON 转义恒等——契约实测成立）→ node2 `sh` 执行：busybox:1.37 载体 + 41MB binary 经 `/v1/platform/binary` 下载 + docker cp 注入 + docker.sock 挂载 `fleetlyd relay` 起服（Up 即连，`relay_online=true`）。
+- **worker 中继落地 = 两步材料（H10 改写，原文为 RelayCommand 原样执行）**：先 `fleetly nodes enroll` 在 worker 执行 join（仅集群加入）→ 等 `nodes list` 出现该 worker 的 platform_id → `fleetly nodes relay --node <platform_id>` 取该节点个体凭证脚本 → node2 `sh` 执行：busybox:1.37 载体 + 41MB binary 经 `/v1/platform/binary` 下载 + docker cp 注入 + docker.sock 挂载 `fleetlyd relay` 起服（Up 即连，`relay_online=true`）。旧 join-token 脚本在 H10 后一律 401。
 - **exec 真机全链**：worker 侧（probe/web，node2 经反向中继）one-shot `echo` + **TTY 交互 shell**（管道灌命令实测：pty 回显/执行/`exit 0` 退出码透传）双绿；manager 侧（n0reg/web 回环 + torchwood/server 真负载 `/bin/hostname` 返回容器名）；错误进程名 → `E_NOT_FOUND: no running instance ... <workload-id>` 诚实信封。
 - **WS/binary 契约探针**：`/v1/exec/stream` 无票 401、票据换流 **101 升级**（HTTP/1.1 upgrade 经真 gateway）、同票复用 401（单用途）、`/v1/relay` 无凭证 401、`/v1/platform/binary` 坏 token 401；票据铸造 REST（POST /v1/exec/sessions）protojson snake_case 全形。
 - **审计/事件**：`audit --action exec.` 行 actor/source（cli/api 分立）+ Detail 命令面；`exec.session_opened` 事件在 outbox（注意 events list 是 after_seq 游标语义——从窗头起查尾部事件要 `--after-seq`，walkthrough 坑①）。
 - **走查咬出 W1（同日修复）**：Provider 哨兵（无在跑实例）未进受理位信封映射 → E_INTERNAL 吞错因（3ms 快败无诊断面）。修复 = capability 跨层哨兵 `ErrExecNoRunning` 单源 + engine 归一 E_NOT_FOUND + 信封带 workload-id。**错因面**：目标 app 的 process 名错用（probe app 的进程是 web——`docker service inspect` 标签核对是排障第一步）。
 - **TTY stdin EOF 语义实测**（e2e 咬出 + staging 复证）：非交互 `shell </dev/null` = 连接半关闭 → daemon 收口 TTY exec（退出 137 形态，非挂死）——交互面不受影响（真终端 stdin 常开）。
-- **中继运维面**：RelayCommand 幂等（重跑 = rm -f 旧容器重建——e2e 实证单容器收口）；**rotate 双 token 后旧中继失联待重跑**（C3 泄漏处置语义）；**平台升级后中继二进制滞后**——帧协议只增容忍、`nodes list` 的 `relay_version` 回显滞后，升级序补一步"worker 重跑 RelayCommand"（本批 node2 已重跑至 f32exec2 同版）。
+- **中继运维面**：relay 脚本幂等（重跑 = rm -f 旧容器重建——e2e 实证单容器收口）；**H10 起 rotate = join token + 全部节点 relay 凭证作废、在连中继即时断开**——旧中继失联后须逐 worker `nodes relay --node` 重铸并重跑（C3 泄漏处置语义，见「节点 relay 凭证运维」节）；**平台升级后中继二进制滞后**——帧协议只增容忍、`nodes list` 的 `relay_version` 回显滞后，升级序补一步"逐 worker 重铸 relay 凭证并重跑 relay 命令"；**node.left 清理**——节点离开快照即删其凭证并断连，短抖动后回归需重取脚本。
 - 残留清理（上批挂账）：torchwood 项目 buildprobe/staticprobe/railpackprobe 三 app 删除（级联拆载体）+ `fleetly-vol-archredis`/`fleetly-vol-probe-redis` 孤儿卷删除。
 
 ## 2026-10-06 记录·十二（F3.3 模板库批换装 9df27c9-f33tpl + 模板面真机全链）
@@ -506,6 +506,12 @@ ADR-0015 升级序的完整落地形态：**Platform Backup 前置 → SIGTERM �
    - `docker service ps` 三件负载 task 行零新增（受管域 spec 变更除外——预期滚一次）；
    - Route 探针 200；
    - **数据面核对**：受管库 exec 查已知表（表数/行数）——**路由 200 ≠ 数据在场**（前端+进程级 healthcheck 曾掩盖空库 14h，见 10-04 记录 P0 ①）。
+6. **worker relay 重铸（H10 起）**：relay 鉴权是节点个体凭证，控制面升级后旧 worker 中继容器仍跑旧二进制、旧 join-token 脚本一律 401。逐 worker 重铸并重跑：
+   ```sh
+   fleetly nodes list --json                     # 取每个 worker 的 platform_id
+   fleetly nodes relay --node <platform_id>      # 铸新凭证；旧连接即时断开
+   ```
+   把输出脚本（首行 `# treat this script as node-root material...` 提示）在对应节点就地执行；`fleetly nodes list --json` 的 `relay_online=true` 恢复即完成。manager 回环用内部 token，零动作。
 
 ### 失败回滚路径（goose 前滚失败 = daemon 拒引导）
 
@@ -539,6 +545,33 @@ ADR-0015 升级序的完整落地形态：**Platform Backup 前置 → SIGTERM �
 6. 变更后 `fleetly platform backup`。
 
 重建+恢复（delete → 真删卷 → recreate `--restore-from-backup`）保留为**灾备路径**（CI e2e 四引擎演练常态回归）。真机操作要点（10-04 scratch 实录）：删库后容器 GC 有窗，`docker volume rm` 需循环到成功（残留即假恢复）；恢复是异步任务，库状态先 running、数据后到（等 `database.restore_*` 收口或隔 30s 断言）。**pre-F2.2 存量项目网不 attachable 会挡 Database Backup/Restore 的 utility 附着**（见 10-04 记录——已由 `fleetly networks rebuild` 收口，ADR-0046/F2.2 节闭合注记）。
+
+## 节点 relay 凭证运维（H10：两步 enrollment，2026-10-19 起）
+
+H10 起 `/v1/relay` 与 `/v1/platform/binary` 只认节点个体凭证（`fltrelay_...`，sha256 落 `node_relay_credentials`）；swarm join token 退出 relay 鉴权面。**enroll 是两步**：join 仍是集群加入，relay 材料是节点锚定后的按节点动作。
+
+1. `fleetly nodes enroll`（平台管理员）→ join 命令；在目标节点执行 join。
+2. 等锚定：`fleetly nodes list` 出现该节点的 platform_id（锚定延迟 = 对账节拍；未锚定取材料是 E_NOT_FOUND，重试即可）。
+3. `fleetly nodes relay --node <platform_id>`（平台管理员）→ 该节点 relay 装载脚本（脚本是 node-root 等价材料：只含该节点个体凭证、不含 join token）。**立即在节点执行**——取脚本的动作本身已断开旧连接、旧凭证失效（重铸不是只读预览）。
+4. 验证：`fleetly nodes list --json` 该节点 `relay_online=true`；`fleetly exec <app>/<process>` 可达。
+
+**manager 节点不接受定向材料**（其 relay 由控制面进程内回环承载，节点侧脚本会造成双 relay 抖动）；Console 行内动作同样只在 worker 行显示。
+
+**升级序**：控制面升级后逐 worker 重铸并重跑 relay 命令（旧 join-token 脚本 401），即上节第 6 步。
+
+**rotate（泄漏处置）**：`fleetly nodes enroll --rotate` / Console rotate = 轮换 worker+manager join token + 删除全部节点 relay 凭证 + 断开全部在连中继（即时，在途 exec 会话收口 `relay_disconnected`）。之后逐 worker `nodes relay --node` 重铸并重跑；manager 回环自愈。
+
+**吊销单节点**：`fleetly nodes revoke-relay --node X`（或 Console 行内 `Revoke relay`）→ 删行 + 断连；节点恢复后旧脚本 401，需重铸。无凭证行时幂等成功且不写审计。
+
+**审计 action 名**（`fleetly audit` / audit 表）：`node.relay_credential_issued`（定向铸造，Detail: carrier_id/prefix）、`node.relay_credential_revoked`（定向吊销 reason=manual；`node.left` 清理 reason=node_left）、`node.relay_replaced`（同节点活体顶替，Detail: version）、`node.rotate_join_tokens`（全量作废，Detail: relay_credentials_revoked=true）。
+
+**故障排查**：
+
+- `relay_online=false`：先查审计（上述 action 名），再在节点看中继容器：`docker ps -a --filter name=fleetly-relay; docker logs fleetly-relay 2>&1 | tail -20`。
+- `/v1/platform/binary` 或 `/v1/relay` **401 `bad_credential`**：凭证已轮换/吊销，或节点行已被 `node.left` 清理——重新 `nodes relay --node` 并执行新脚本。
+- `node.relay_replaced` 审计 + `node relay replaced while previous connection live` 日志 = 同节点发生活体顶替（重复执行脚本/双 relay 抖动）；正常断线重连（旧连接已 drop）不触发。
+- **node.left 抖动风险**：`reconcileNodes` 以 DescribeCluster 快照判定离开，快照瞬时缺行即删凭证/断连；节点回归后 `nodes list` 行保留 unavailable，直接 `nodes relay --node` 重铸即可恢复（不重复 enroll/join）。抖动频繁时先查编排器 quorum/网络，再按本动线逐节点恢复。
+
 
 ## KEK 轮换操作序（`fleetlyd admin rewrap`，2026-10-03 工具化）
 
@@ -803,7 +836,7 @@ F3.1/F3.2/F3.3/F3.6 四批走查的浏览器级挂账在后端在场的环境（
 
 **换装**（81619b6-c3mig2 → **c603111-c45（现役）**）：纯 console 批（Go 零变更），Platform Backup + torchwood-pg 卷 tar；零扰动；tw.dev 200；新 dist `index-D6sMsU14.js` 在役。
 
-**C4 Nodes 页（路由 +1）**：集群成员表（hostname/role/可用态 chip/中继活体 relay_online+版本/last seen）+ 运维三动词（drain 带真迁移确认、cordon/uncordon 按可用态切换）+ **enroll 材料揭示面**（join + relay 两条命令——等价集群成员权的警示文案；rotate join tokens 泄漏处置动词带确认）。动词面对齐 CLI nodes 组（F0.19/F3.2/ADR-0049）。真机锚：manager 在役行 available+relay 双 True；历史行 available 缺省 = runbook 既有记档形态（观测缓存非权威），页面全量诚实呈现。
+**C4 Nodes 页（路由 +1）**：集群成员表（hostname/role/可用态 chip/中继活体 relay_online+版本/last seen）+ 运维三动词（drain 带真迁移确认、cordon/uncordon 按可用态切换）+ **enroll 材料揭示面**（H10 起初始 enrollment 只示 join + "锚定后从节点行取 relay"提示；worker 行内 `Relay command` 定向铸造个体凭证脚本、`Revoke relay` 确认后吊销——平台管理员可见；rotate 确认文案明示 join token + 全部 relay 凭证作废、在连中继即时断开、需逐节点重铸）。动词面对齐 CLI nodes 组（F0.19/F3.2/ADR-0049/H10）。真机锚：manager 在役行 available+relay 双 True；历史行 available 缺省 = runbook 既有记档形态（观测缓存非权威），页面全量诚实呈现。
 
 **C5 数据面深化（Resources databases tab）**：备份行动作面——**verify**（`POST /v1/backups/{id}/verify` 重算 digest，ok/digest/error 诚实呈现；真机锚 = torchwood-pg 最新备份 verify ok=True digest 2abe86…）+ **restore**（行内表单按名建新库带 `restore_from_backup`，异步恢复注记；恢复是异步任务、库行先建后到数据——runbook 灾备路径口径）。
 

@@ -110,6 +110,8 @@ func TestFlagVerbsRejectPositionalArgs(t *testing.T) {
 		{"routes list", []string{"routes", "list", "STRAY"}},
 		{"nodes list", []string{"nodes", "list", "STRAY"}},
 		{"nodes enroll", []string{"nodes", "enroll", "STRAY"}},
+		{"nodes relay", []string{"nodes", "relay", "STRAY"}},
+		{"nodes revoke-relay", []string{"nodes", "revoke-relay", "STRAY"}},
 		{"nodes drain", []string{"nodes", "drain", "STRAY"}},
 		{"tasks create", []string{"tasks", "create", "STRAY"}},
 		{"tasks list", []string{"tasks", "list", "STRAY"}},

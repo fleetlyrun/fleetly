@@ -229,3 +229,15 @@ console 再生成），守卫防回流（wording guard banned 复合形态；rev
   观测"的既有语义（帧协议只增；重跑 relay_command 即刷新），无行为面变化。
 - k3s 外部命令 `k3s agent`（上游子命令）与 docker swarmkit 自身构件的
   agent 是外部词汇，不在更名射程。
+
+## 附录 C：鉴权模型改写——节点个体 relay 凭证（H10，2026-10-19）
+
+本附录只追记改写，不改上文历史决策：§2 的"鉴权 = swarm join token（worker 或 manager 皆可）"与 §3 的 `/v1/platform/binary` join-token 鉴权自 H10 起作废，按用户 2026-10-14 裁决无兼容窗口（pre-release 直接重 enroll）。
+
+- **凭证面**：join token 退出 `/v1/relay` 与 `/v1/platform/binary` 鉴权；改用节点个体凭证 `fltrelay_` + base64url(32B)，库内只存 sha256（迁移 00035 `node_relay_credentials`，一节点一现役行，重铸 = UPSERT 覆盖 hash）。manager 回环与 k3s 集中形态用 engine 进程内 `fltint_` 内部 token（不落库、不入脚本）。
+- **enroll 两步**：初始 `nodes enroll` 只返回 join 命令；节点锚定（Watch/DescribeCluster + nodes 行）后 `nodes relay --node <platform_id>` 定向铸造该节点脚本（`RuntimeRelayMaterial.NodeRelayCommand`）。manager 节点拒绝定向材料（回环已覆盖）。
+- **握手绑定**：RelayAttach 以 sha256 查行 → `ByCarrier(hello.carrier_node_id)` → 双向比对 `platform_id`/`carrier_id`——伪造 carrier 或串号凭证在此失败（H10 的核心修复点；join token 持有者不再能顶替任意节点中继）。
+- **生命周期**：`nodes relay` 重铸即断旧连接（旧凭证即刻失效）；`nodes revoke-relay` 删单节点行 + 断连；`nodes enroll --rotate` 轮换双 join token + 删全部 relay 凭证 + 断全部在连中继；`node.left` 对账检出即删该节点凭证 + 断连（审计 reason=node_left）。在途会话 `relay_disconnected` 如实收口（用户裁决：即时断开在连 relay）。
+- **审计**：`node.relay_credential_issued` / `node.relay_credential_revoked` / `node.relay_replaced` / `node.rotate_join_tokens`（均 LedgerOnly：auth 材料动作不是聚合状态迁移，无 outbox 孪生事件；Detail 只带 carrier/prefix/version，绝不落明文或完整 sha）。
+- **CLI/Console/e2e**：`nodes relay --node` / `nodes revoke-relay --node`（平台管理员）；Console 初始 enrollment 只示 join，worker 行内定向取/吊销；`e2e/dind-two-node.sh` 含 join-token 401 负例与 rotate 恢复腿。runbook 操作序见 `docs/runbooks/staging-fleetly.md`「节点 relay 凭证运维」节。
+- **Provider 差异**：swarm 提供 `RuntimeRelayMaterial`（节点侧 busybox 中继容器 + 个体凭证脚本）；k3s 无节点侧材料（集中形态，`FacesOf.RelayMaterial == nil`，定向请求 501）——ADR-0052/0053 同批追记一句。

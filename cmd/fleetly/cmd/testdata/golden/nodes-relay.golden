@@ -1,0 +1,2 @@
+# treat this script as node-root material; it carries the individual relay credential for node node-relay-golden
+true # fake relay script for <RELAYCRED>

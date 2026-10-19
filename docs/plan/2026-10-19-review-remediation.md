@@ -107,7 +107,7 @@ d233c07d docs(plan,reviews): S1-S5 终验记录与修复状态归档
 | S8 | Metrics 租户域过滤（设计） | H8（R07-H2/R08-M2） | 设计文档 `docs/design/2026-10-19-security-backlog-design.md`（推荐 QueryScopedMetrics + raw 收平台管理员） | ✅ 设计 |
 | S9 | H8 阶段 A 止血 | H8 | raw QueryMetrics 收平台管理员（403 先于 503）+ 响应 8MiB/1000 序列上限；member 图表失明（已裁决代价） | ✅ |
 | S10 | H8 阶段 B scoped RPC + Console/CLI 切换 | H8 | **a** 契约+服务端 ✅（`e9654b8c`）；**b** Console scoped 图表/WhoAmI.platformAdmin/truncated 提示 + CLI `metrics series` + `console:gen/build` 同批 ✅ | ✅ |
-| S11 | relay 节点个体凭证 | H10（R14-H3） | **a** 后端+兼容：迁移 00035/材质/hash 库存/两步 enroll/握手绑定/定向材料/内部 token/即时断连 ✅（`33xxxxxx`）；**b** 运维面：`nodes relay/revoke-relay` CLI + Console 节点行动作 + runbook + `node.left` 清理/`relay_replaced` 审计 | 🟡 a 完成 |
+| S11 | relay 节点个体凭证 | H10（R14-H3） | **a** 后端+兼容 ✅（`9fe85c4e`）；**b** 运维面：`nodes relay/revoke-relay` CLI + Console 节点行动作 + runbook + `node.left` 清理/`relay_replaced` 审计 + ADR 追记 ✅ | ✅ |
 | S12 | 收敛语义深水区 + ADR 追记 | R02-M2/M5、R16-M2/M3/M5/M6、H15 ADR-0083 追记 | ADR 修订 + 判定表单源 + 静默面事实化；钉测翻向 | ☐ |
 
 > S6 先行原因：H3 已消除 k3s configmaps 403，若不落挂载，真机会从"显式 403 失败"变成"ConfigMap 建了但容器无配置"的静默失败。
@@ -150,6 +150,15 @@ d233c07d docs(plan,reviews): S1-S5 终验记录与修复状态归档
 - apitest 8 项 §6 验收锚 + engine 4 项 + repo/domain/provider/migration 测试全 PASS；e2e 脚本改两步流程（仅语法）。
 - 验收证据（Lead 亲跑）：gofmt 空；双平台 build 0；node/persistence/migrations、swarm/k3s、engine(21.1s)/assembly/fleetlygrpc、apitest(28.2s)、guards(15.5s)、cmd/fleetly(5.5s)/fleetlyd 全 ok；vet 全仓 0；`buf breaking '.git#branch=origin/main'` 0；`sh -n e2e` 0；diff-check 0；`generate:verify`/`console:verify`（提交后）0。
 - 残留（S11b）：`nodes relay/revoke-relay` CLI、Console 节点行动作/初始材料文案、runbook、`node.left` 删凭证+DropRelay+审计(reason=node_left)、`node.relay_replaced` 审计/warn、`E_RUNTIME_FACE_UNSUPPORTED` suggestion 补 relay material、e2e 真跑（无 Docker）。
+
+### S11b 执行记录（H10 阶段 2 运维面/生命周期）
+- engine：`node.left` 先删个体凭证→DropRelay→仅 deleted 审计 `reason=node_left`（独立于事件成败，事件失败不再 continue 且照常下线）；`RelayAttach` 活体顶替发 Warn + LedgerOnly `node.relay_replaced`（Detail version）；新增 `emitLedger` best-effort 取证面。
+- CLI：`nodes relay --node`（敏感脚本 + 提示）与 `nodes revoke-relay --node`；组列表 golden 更新；新 golden 7 个（双形态/缺参/manager 拒绝）+ 参数校验。
+- Console：`nodes-list.tsx` 新载体——初始 Enrollment 仅 join+提示；worker 行 Relay command/Revoke relay；rotate 文案；whoami.platformAdmin fail-closed 显隐；vitest 4 用例。
+- 文档：runbook 升级序/新「节点 relay 凭证运维」节；ADR-0049 附录 C + ADR-0052/0053 Provider 差异追记；`E_RUNTIME_FACE_UNSUPPORTED` suggestion 补 relay material（codes.golden 同批）。
+- e2e：rotate 恢复腿脚本（仅语法校验）；未真跑（无 Docker）。
+- 验收证据（Lead 亲跑）：gofmt 空；双平台 build 0；engine 25.9s/apitest 31.2s/guards 21.3s/cmd 5.6s/fleetlyd 全 ok；NodeLeft 两测试 + RelayAttach 审计测试逐个 PASS；vet 全仓 0；diff-check 0；e2e 语法 0；console 138/138；`generate:verify`/`console:verify`（提交后）0。
+- 残留/裁决点：`node.left` 抖动为单拍缺行即删凭证/断连（无宽限窗；runbook 已写处置，是否加宽限待后续观察）；e2e rotate 恢复腿与 staging 真机未跑（无 Docker）；checklist/评审报告状态留给 Lead 统一更新。
 
 ### S6 执行记录
 - 改动：`k3s/translate.go`（sortedConfigMounts/configMountsWithMaterials/configVolumeName + toContainer SubPath 挂载 + podTemplate ConfigMap 卷 0444）、`translate_test.go`（三载体/缺材料/顺序稳定）、`runtime_ensure_test.go`（Ensure 引用名一致性 + SkipMaterials）。

@@ -66,6 +66,13 @@ func (e *Engine) RelayAttach(ctx context.Context, token, carrierNodeID, relayVer
 	e.exec.mu.Unlock()
 	if old != nil {
 		e.log.Info("node relay replaced", "node", n.PlatformID, "version", relayVersion)
+		// 活体顶替是人工可见告警（H10 §4.9）：正常断线重连时旧连接已在
+		// dropRelay 中摘除（old == nil），不会走到这里。
+		e.log.Warn("node relay replaced while previous connection live", "node", n.PlatformID, "version", relayVersion)
+		if err := e.emitLedger(ctx, "node.relay_replaced", "node/"+n.PlatformID,
+			auditDetailJSON(map[string]string{"version": relayVersion})); err != nil {
+			e.log.Error("node relay replaced audit", "node", n.PlatformID, "err", err)
+		}
 	} else {
 		e.log.Info("node relay connected", "node", n.PlatformID, "version", relayVersion)
 	}

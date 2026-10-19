@@ -97,3 +97,7 @@ Describe Notes 变更四行：撤"exec subface is not implemented"；增 exec �
 - [x] NetMaintenance 定型：不实现接口的编译期断言维持（provider.go 断言块注释）+ Notes 声明（"network rebuild verb is semantically absent"——TestDescribeNotesHonesty 锚）+ ADR-0046 追记（2026-10-08 永久语义性缺席定型段）
 - [x] 全门禁：`mise run test` 三 module + `mise run lint`（golangci 0 issues + buf breaking 过）+ `go test -count=1 ./internal/guards/`（含双腿 k3s 钉版一致守卫扩展）+ `generate:verify` + `console:verify` 全绿；swarm 全套零回归（providers/swarm 零代码改动）
 - [x] ADR-0052 §9 挂账 1/2/5/6 划线注日期（2026-10-08）；checklist F4.1 条目补本批实录
+
+## 追记（2026-10-19，H10 节点个体 relay 凭证）
+
+集中形态与 swarm 的 relay 材料差异一句：swarm 新增 `RuntimeRelayMaterial`（按已锚定节点铸 `fltrelay_` 个体凭证脚本）；k3s 不实现该子面（无节点侧常驻物、`FacesOf.RelayMaterial == nil`，定向材料请求 501），节点 relay 仍是 manager 进程内每节点回环 + engine 内部 token。§5 的"RelayCommand 恒空/worker 零平台守护物"结论不变，只是 swarm 侧的 relay 材料改成了按节点定向凭证（ADR-0049 附录 C）。

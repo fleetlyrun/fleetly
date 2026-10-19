@@ -910,6 +910,74 @@ func newNodesEnrollVerb() commands.Command {
 	}
 }
 
+// newNodesRelayVerb 为已锚定节点铸造个体 relay 凭证并打印装载脚本（H10
+// §4.10）：脚本是该节点的 node-root 等价材料（含 fltrelay_ 明文）——先取
+// 脚本再就地执行，重铸即断旧连接（不是只读预览）。平台管理员门在服务端
+// （非管理员 403）。
+func newNodesRelayVerb() commands.Command {
+	const name = "relay"
+	var nodeID string
+	return &flaggedVerb{
+		name: name, synopsis: "Print the relay install command for an anchored node (sensitive node-root material)",
+		usage: "nodes relay --node ID",
+		setFlags: func(fs *flag.FlagSet) {
+			fs.StringVar(&nodeID, "node", "", "platform node id (required)")
+		},
+		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
+			if nodeID == "" {
+				return usageErr(name, "--node is required")
+			}
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Nodes.EnrollNode(ctx, &runtimev1.EnrollNodeRequest{NodeId: nodeID})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintf(env.Stdout,
+						"# treat this script as node-root material; it carries the individual relay credential for node %s\n",
+						nodeID)
+					_, _ = fmt.Fprintln(env.Stdout, resp.GetRelayCommand())
+				})
+			})
+		},
+	}
+}
+
+// newNodesRevokeRelayVerb 吊销单个节点的 relay 凭证（H10 §4.6）：响应两命令
+// 皆空；删除事实落 node.relay_credential_revoked 审计（无行 = 幂等成功）。
+// 服务端同时断开该节点在连中继。
+func newNodesRevokeRelayVerb() commands.Command {
+	const name = "revoke-relay"
+	var nodeID string
+	return &flaggedVerb{
+		name: name, synopsis: "Revoke the relay credential of one node (connected relay drops)",
+		usage: "nodes revoke-relay --node ID",
+		setFlags: func(fs *flag.FlagSet) {
+			fs.StringVar(&nodeID, "node", "", "platform node id (required)")
+		},
+		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
+			if nodeID == "" {
+				return usageErr(name, "--node is required")
+			}
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Nodes.EnrollNode(ctx, &runtimev1.EnrollNodeRequest{NodeId: nodeID, Revoke: true})
+				if err != nil {
+					return err
+				}
+				return renderOut(env, jsonOut, resp, func() {
+					_, _ = fmt.Fprintf(env.Stdout, "relay credential revoked for node %s\n", nodeID)
+				})
+			})
+		},
+	}
+}
+
 // newNodesAdminVerb 构造节点运维动词（drain/cordon/uncordon；平台节点 ID
 // 为锚，幂等可重放——结果即动作本身，无数据面返回）。
 func newNodesAdminVerb(name, past, synopsis string, call func(ctx context.Context, c *fleetly.Client, nodeID string) (proto.Message, error)) commands.Command {

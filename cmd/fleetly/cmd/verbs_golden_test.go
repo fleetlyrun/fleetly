@@ -36,7 +36,10 @@ var (
 	browseTicketRe = regexp.MustCompile(`[A-Za-z0-9_-]{43}`)
 	invitationRe   = regexp.MustCompile(`fltinv_[A-Za-z0-9_-]{4,}`)
 	hookTokenRe    = regexp.MustCompile(`flthook_[A-Za-z0-9_-]{4,}`)
-	credPathRe     = regexp.MustCompile(`(?m)^credentials saved: .*$`)
+	// relayCredRe 是节点个体 relay 凭证（H10：fltrelay_ + base64url 32B；
+	// 逐次铸造随机——nodes relay 双形态 golden 占位化）。
+	relayCredRe = regexp.MustCompile(`fltrelay_[A-Za-z0-9_-]+`)
+	credPathRe  = regexp.MustCompile(`(?m)^credentials saved: .*$`)
 	// ghFakeBaseRe 是 GitHub App golden 夹具的假上游基址（DNS 名形态
 	// ghe.test——P0-7.3 起夹具 api_base 不走环回字面，见 ghGoldenFake；
 	// 窄形态不吞其他 URL）。
@@ -51,6 +54,7 @@ func normalizeGolden(s string) string {
 	s = ghFakeBaseRe.ReplaceAllString(s, "<GITHUBFAKE>")
 	s = invitationRe.ReplaceAllString(s, "<INVITATION>")
 	s = hookTokenRe.ReplaceAllString(s, "<HOOKTOKEN>")
+	s = relayCredRe.ReplaceAllString(s, "<RELAYCRED>")
 	s = credPathRe.ReplaceAllString(s, "credentials saved: <CREDS>")
 	s = credJSONRe.ReplaceAllString(s, `"credentials_path": "<CREDS>"`)
 	s = tokenRe.ReplaceAllString(s, "<TOKEN>")

@@ -116,6 +116,7 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 		newCreateFromDokployVerb(),
 		groupVerb("routes", "manage routes", newRoutesCreateVerb(), newRoutesListVerb()),
 		groupVerb("nodes", "inspect cluster nodes and administer scheduling", newNodesListVerb(), newNodesEnrollVerb(),
+			newNodesRelayVerb(), newNodesRevokeRelayVerb(),
 			newNodesDrainVerb(), newNodesCordonVerb(), newNodesUncordonVerb(), newNodesContainersVerb()),
 		// Telemetry 上下文。
 		groupVerb("events", "list and follow platform events from the outbox", newEventsListVerb(), newEventsFollowVerb()),

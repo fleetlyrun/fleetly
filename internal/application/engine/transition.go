@@ -24,6 +24,7 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
@@ -177,6 +178,27 @@ func (e *Engine) emitObservation(ctx context.Context, team, name, aggregate, id 
 		Payload: payload, TeamID: team,
 		StreamOnly: true, // 观测事实：仅流面（best-effort，无事务伴生）
 	})
+}
+
+// emitLedger 是取证事实的 best-effort 发射面（LedgerOnly：仅 audit 行，
+// 无 outbox 孪生）。用于系统自治的安全材料动作（H10 节点生命周期清理与
+// 中继连接顶替）——这些动作没有聚合状态迁移可发事件，且无操作者轴可记；
+// 错误由调用方自记日志（kernel 不持日志，domain 零系统副作用）。
+func (e *Engine) emitLedger(ctx context.Context, action, resource, detail string) error {
+	return writes.Emit(ctx, writes.Repos{Audits: e.repos.Audits}, writes.FactRow{
+		Action: action, Resource: resource, Detail: detail,
+		LedgerOnly: true, // 仅取证面：系统自治的安全材料动作不是聚合状态迁移，无 outbox 孪生事件
+	})
+}
+
+// auditDetailJSON 编码审计 Detail（结构受控；编码失败退回空串——审计行
+// 仍落，动作可见性不因 Detail 缺失而丢失）。
+func auditDetailJSON(v any) string {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return ""
+	}
+	return string(b)
 }
 
 // ---- 类型化前门（保留原名原签名，调用点零改动） ----

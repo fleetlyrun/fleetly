@@ -250,9 +250,9 @@ var builtins = []Code{
 	},
 	{
 		ID:         "E_RUNTIME_FACE_UNSUPPORTED",
-		Summary:    "The runtime provider does not expose the optional sub-face this operation needs (node administration or container logs), or the engine face is absent.",
-		Suggestion: "The sub-face set is provider-dependent: node drain/cordon/uncordon and live container logs need a runtime with RuntimeAdmin/RuntimeLogs implemented, and carrier restart additionally needs the engine face. There is no degraded path (E_EXEC_UNSUPPORTED precedent); serve the operation from a runtime that implements the face.",
-		Source:     "internal/interfaces/grpc/fleetlygrpc/contexts.go NodesService nodeAdmin + LogsService streamLogsDualPath; internal/interfaces/grpc/systemgrpc/systemgrpc.go RestartComponent (P4-3 batch 3: absent optional face = precise 501, not a masked E_INTERNAL 500; E_EXEC_UNSUPPORTED/E_BROWSER_UNSUPPORTED precedent)",
+		Summary:    "The runtime provider does not expose the optional sub-face this operation needs (node administration, container logs or node relay material), or the engine face is absent.",
+		Suggestion: "The sub-face set is provider-dependent: node drain/cordon/uncordon and live container logs need a runtime with RuntimeAdmin/RuntimeLogs implemented, node relay material needs RuntimeRelayMaterial, and carrier restart additionally needs the engine face. There is no degraded path (E_EXEC_UNSUPPORTED precedent); serve the operation from a runtime that implements the face.",
+		Source:     "internal/interfaces/grpc/fleetlygrpc/contexts.go NodesService nodeAdmin/enrollRelayMaterial + LogsService streamLogsDualPath; internal/interfaces/grpc/systemgrpc/systemgrpc.go RestartComponent (P4-3 batch 3: absent optional face = precise 501, not a masked E_INTERNAL 500; E_EXEC_UNSUPPORTED/E_BROWSER_UNSUPPORTED precedent)",
 		GRPC:       "Unimplemented",
 	},
 	{

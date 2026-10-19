@@ -433,6 +433,46 @@ func TestRelayAttachReplacesSameNode(t *testing.T) {
 	assert.True(t, alive, "unattached session must survive old-conn detach")
 }
 
+// TestRelayAttachReplacementAudit（H10 §4.9 验收锚）：old != nil 的二次附着
+// 发 node.relay_replaced LedgerOnly 审计（Detail 带新版本）；正常断线重连
+// （旧连接已经 dropRelay 摘除，old == nil）不触发。
+func TestRelayAttachReplacementAudit(t *testing.T) {
+	e, _ := newExecDomainEngine(t)
+	ctx := context.Background()
+
+	count := func() (int, []string) {
+		rows, err := e.repos.Audits.List(ctx, 100)
+		require.NoError(t, err)
+		var details []string
+		for _, row := range rows {
+			if row.Action == "node.relay_replaced" {
+				require.Equal(t, "node/node-1", row.Resource)
+				details = append(details, row.Detail)
+			}
+		}
+		return len(details), details
+	}
+
+	_, detachOld, err := e.RelayAttach(ctx, testRelayCredential, "carrier-1", "v1", &relaySink{})
+	require.NoError(t, err)
+	detachOld()
+
+	// 正常重连（旧连接已摘除）：无顶替事实。
+	_, detachNew, err := e.RelayAttach(ctx, testRelayCredential, "carrier-1", "v1", &relaySink{})
+	require.NoError(t, err)
+	n, _ := count()
+	assert.Zero(t, n, "a clean reconnect after the old connection was dropped must not emit node.relay_replaced")
+
+	// 活体顶替：一行审计，Detail 带新版本。
+	_, detachNext, err := e.RelayAttach(ctx, testRelayCredential, "carrier-1", "v2", &relaySink{})
+	require.NoError(t, err)
+	t.Cleanup(detachNew) // 已被顶替：身份校验为 no-op
+	t.Cleanup(detachNext)
+	n, details := count()
+	require.Equal(t, 1, n, "a live replacement must emit exactly one node.relay_replaced row")
+	assert.Contains(t, details[0], `"version":"v2"`)
+}
+
 // TestExecSlowConsumerStallClosesSession（P3-1 验收锚）：慢消费端——下
 // 行缓冲填满（无消费端不排水）后再投一帧即 client_stalled 收口（内存膨
 // 胀防护）。

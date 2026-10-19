@@ -3,4 +3,6 @@ cordon
 drain
 enroll
 list
+relay
+revoke-relay
 uncordon

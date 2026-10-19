@@ -126,3 +126,7 @@ F4.1 是 N4 唯一项，也是 v1 功能清单收官项：k3s Provider 作为 Ru
 - [x] 能力发现面：k3s Describe().Notes 含强隔离声明与弱化对照（TestDescribeNotesHonesty 钉死措辞）
 - [x] swarm 全套测试零回归 + `mise run test`（57 包）/`mise run lint`（golangci 0 issues + buf breaking 过）+ `go test -count=1 ./internal/guards/` 全绿；`generate:verify`/`console:verify` 零漂移
 - [x] k3s 版本常量与 e2e 下载段同 commit 一致（TestK3sPinConstantAndE2EAgree：常量在位 + sha256 在场 + 下载段模板 + ADR 双向保鲜）
+
+## 追记（2026-10-19，H10 节点个体 relay 凭证）
+
+Enrollment 的 relay 材料面在两 Provider 间不同形：swarm 实现可选子面 `RuntimeRelayMaterial`（对已锚定节点定向铸造个体凭证脚本，join token 退出 relay 鉴权）；k3s 集中形态**无节点侧中继材料**——`FacesOf.RelayMaterial == nil`，定向材料请求精确 501，节点 relay 由 manager 进程内回环 + engine 内部 token 承载（ADR-0053 决策 1/5 的集中形态结论不变）。历史正文的 join-token 鉴权描述由 ADR-0049 附录 C 改写。

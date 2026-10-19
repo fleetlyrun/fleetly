@@ -318,6 +318,63 @@ docker exec "$WRK_CID" docker ps --filter name=fleetly-relay --format '{{.Names}
 }
 log "relay reinstall idempotent (single fleetly-relay container)"
 
+# ---- H10 rotate 恢复腿：全量作废 → 旧 relay 失联 → 逐 worker 重铸重跑 ----
+# rotate = 轮换 join token + 删除全部节点 relay 凭证 + 断开全部在连中继（即时；
+# manager 回环用内部 token 自愈）。旧凭证在 /v1/platform/binary 面立即 401；
+# 逐 worker `nodes relay --node` 重铸新脚本并重跑，relay_online 恢复、exec 复通。
+log "rotate leg: rotating join tokens and revoking all node relay credentials"
+OLD_RELAY_CRED=$(printf '%s\n' "$RELAY_CMD" | sed -n 's/.*Bearer \(fltrelay_[A-Za-z0-9_-]*\).*/\1/p' | head -1)
+[ -n "$OLD_RELAY_CRED" ] || { echo "could not extract the old relay credential from the install script" >&2; exit 1; }
+cli nodes enroll --rotate >/dev/null
+ROTATE_HTTP=$(docker exec "$MGR_CID" sh -c \
+  "wget -S -O /dev/null --header 'Authorization: Bearer $OLD_RELAY_CRED' http://127.0.0.1:9081/v1/platform/binary" 2>&1 || true)
+case "$ROTATE_HTTP" in
+  *401*) log "revoked relay credential rejected after rotate (401)" ;;
+  *) echo "expected 401 for the revoked relay credential after rotate, got: $ROTATE_HTTP" >&2; exit 1 ;;
+esac
+i=0
+while [ "$i" -lt 60 ]; do
+  n=$(cli --json nodes list | grep -c '"relay_online": *true' || true)
+  [ "$n" -lt 2 ] && break
+  i=$((i + 1)); sleep 2
+done
+[ "${n:-2}" -lt 2 ] || {
+  echo "rotate did not drop the live worker relay (relay_online count $n)" >&2
+  cli --json nodes list >&2 || true
+  exit 1
+}
+log "worker relay dropped immediately after rotate (live connections revoked)"
+
+log "rotate leg: reissuing and re-running the worker relay command"
+RELAY_CMD2=$(cli --json nodes relay --node "$WORKER_PLATFORM_ID" \
+  | sed -n 's/.*"relay_command": *"\([^"]*\)".*/\1/p' | head -1)
+case "$RELAY_CMD2" in
+  */v1/platform/binary*fleetly-relay*busybox:1.37*--relay-credential*fltrelay_*)
+    log "reissued relay command shape verified" ;;
+  *) echo "reissued relay command missing expected shape: $RELAY_CMD2" >&2; exit 1 ;;
+esac
+case "$RELAY_CMD2" in
+  *"$OLD_RELAY_CRED"*) echo "reissued relay command still carries the revoked credential" >&2; exit 1 ;;
+esac
+docker exec "$WRK_CID" sh -c "$RELAY_CMD2"
+i=0
+while [ "$i" -lt 60 ]; do
+  n=$(cli --json nodes list | grep -c '"relay_online": *true' || true)
+  [ "$n" = "2" ] && break
+  i=$((i + 1)); sleep 2
+done
+[ "${n:-0}" = "2" ] || {
+  echo "relay_online did not recover after per-worker reissue (count $n)" >&2
+  cli --json nodes list >&2 || true
+  docker exec "$WRK_CID" sh -c 'docker ps -a --filter name=fleetly-relay; docker logs fleetly-relay 2>&1 | tail -5' >&2 || true
+  exit 1
+}
+STORE_OUT2=$(cli exec "$APP_ID/store" -- /bin/echo store-exec-after-rotate)
+case "$STORE_OUT2" in
+  *store-exec-after-rotate*) log "exec recovered after rotate + per-worker relay reissue" ;;
+  *) echo "post-rotate exec output missing marker, got: $STORE_OUT2" >&2; exit 1 ;;
+esac
+
 
 # 受管日志存储（F2.4/ADR-0040）：VL 起服 + 采集环落地后 --text 检索路径
 # 可查（跨节点历史 + 全文过滤；install.sh 默认物化 logging.addr）。
