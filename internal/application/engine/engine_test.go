@@ -87,9 +87,21 @@ func newTestEngineOpts(t *testing.T, opts Options) (*Engine, *fakeRuntime, *stat
 // 钉测面——隔离被 posture 门拦住时必须留痕）。
 func newTestEngineWithLogger(t *testing.T, opts Options, logger *slog.Logger) (*Engine, *fakeRuntime, *statetest.FakeClock) {
 	t.Helper()
+	return newTestEngineMutated(t, opts, logger, nil)
+}
+
+// newTestEngineMutated 同 newTestEngineWithLogger，但允许在装配前覆写 repo
+// 集（R02-L5：包装 Freezes repo 注入查询故障，走 convergeFrozen 的真实
+// fail-closed 分支——不是 driftScan 前段 App/Project 解析的另一条路）。
+func newTestEngineMutated(t *testing.T, opts Options, logger *slog.Logger, mutate func(*transact.Stores)) (*Engine, *fakeRuntime, *statetest.FakeClock) {
+	t.Helper()
 	db, clock := statetest.New(t)
 	rt := newFakeRuntime()
-	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Logger: logger}, opts)
+	stores := testRepos(db)
+	if mutate != nil {
+		mutate(&stores)
+	}
+	e := New(Deps{DB: db, Stores: stores, Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Logger: logger}, opts)
 	t.Cleanup(func() { _ = e.Stop(context.Background()) })
 
 	ctx := context.Background()

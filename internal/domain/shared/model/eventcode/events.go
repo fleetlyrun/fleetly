@@ -31,7 +31,7 @@ var builtins = []Event{
 	{Name: "node.left", Summary: "Node left the cluster.", Source: "added during implementation"},
 
 	// Drift 信号（per-Workload 粒度 + 去抖，2026-09-30 裁决；检测默认开、
-	// 收敛默认 opt-in，ADR-0005；ADR-0022 升级为 gen 偏离 + spec 失配双路径）。
+	// 收敛缺省开启（ADR-0082）；ADR-0022 升级为 gen 偏离 + spec 失配双路径）。
 	{Name: "workload.drift_detected", Summary: "Observed workload diverged from the ensured generation or spec (ADR-0022).", Source: "internal/application/engine/observ.go detectDrift + internal/application/engine/drift.go compareSpecs"},
 
 	// 稳态看门狗（ADR-0022：最近部署 succeeded 的 App 在当前 Generation

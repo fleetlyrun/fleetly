@@ -58,8 +58,8 @@ type stoppedEventPayload struct {
 // workload.rollout_stalled（runbook 记录·二十七观测面收口）：编排器滚动
 // 更新停在中间态（swarm UpdateStatus=paused：新 task 失败 + FailureAction
 // =pause + start-first 旧 task 不退役 → 僵尸 task 叠加）。spec 面恒一致
-// 故与 drift 分立成事件；只观测不纠正（ADR-0005 opt-in），处置 = 人工
-// resume（docker service update --force）或重部署。
+// 故与 drift 分立成事件；ADR-0082 起停摆信号触发基线重放（重放途经
+// resumeStalledRollout），部署窗内归 L1 超时回滚既有语义，不再只观测。
 type rolloutStalledEventPayload struct {
 	WorkloadID string `json:"workload_id"`
 	AppID      string `json:"app_id,omitempty"`

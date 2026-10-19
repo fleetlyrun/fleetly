@@ -68,10 +68,12 @@ run = [
 ]
 
 [tasks."generate:verify"]
-description = "基线通道重生成后零漂移断言（genproto/config/wire）"
+description = "基线通道重生成后零漂移断言（genproto/config/wire + go.mod/go.sum/go.work）"
 run = [
   { task = "generate:all" },
-  "git diff --exit-code -- genproto internal/config internal/assembly",
+  # module 文件纳入断言（R09-L4）：wire 任务会跑 `go mod tidy`，只 diff
+  # 生成物会放行依赖漂移。
+  "git diff --exit-code -- genproto internal/config internal/assembly go.mod go.sum go.work go.work.sum",
 ]
 
 [tasks."lint:proto"]

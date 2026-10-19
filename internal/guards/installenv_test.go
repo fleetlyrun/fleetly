@@ -72,3 +72,27 @@ func TestInstallMaterializesManagedProviderEnv(t *testing.T) {
 		t.Errorf("install.sh no longer derives the default proxy config endpoint as http://$ADDR:9082/proxy/config — the installed control plane would run without a managed proxy")
 	}
 }
+
+// TestInstallDataRootPermissions 是数据根权限守卫（R09-L5）：install.sh
+// 必须以 0750 预建数据根并做一次幂等 chmod——旧版 `mkdir -p` 在默认
+// umask 022 下落 0755，压过 daemon 侧 os.MkdirAll(0o750) 的意图，本地
+// 任意用户可枚举 fleetly.db/uploads/bootstrap-token 的名字。已存在的老
+// 部署（0755）由显式 chmod 幂等收敛，不依赖新建路径。
+func TestInstallDataRootPermissions(t *testing.T) {
+	install := readFileLF(t, "install.sh")
+	if install == "" {
+		t.Fatal("install.sh is empty — the guard is blind")
+	}
+	if !strings.Contains(install, `DATA_ROOT="${FLEETLY_DATA_ROOT:-/var/lib/fleetly}"`) {
+		t.Errorf("install.sh no longer defines DATA_ROOT with the documented default — the permission assertions below would be checking the wrong path")
+	}
+	if !strings.Contains(install, `install -d -m 0750 "$DATA_ROOT"`) {
+		t.Errorf("install.sh no longer creates the data root with install -d -m 0750 — a plain mkdir under umask 022 leaves it 0755 and defeats the daemon's 0750 intent (R09-L5)")
+	}
+	if !strings.Contains(install, `chmod 0750 "$DATA_ROOT"`) {
+		t.Errorf("install.sh no longer runs an idempotent `chmod 0750` on the data root — pre-existing 0755 roots from older installs would keep their mode (R09-L5)")
+	}
+	if strings.Contains(install, `mkdir -p "$DATA_ROOT"`) {
+		t.Errorf("install.sh still pre-creates the data root with `mkdir -p` — the mode is umask-dependent; use install -d -m 0750 plus the idempotent chmod (R09-L5)")
+	}
+}

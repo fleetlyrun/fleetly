@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lynx-go/commands"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -16,35 +17,43 @@ import (
 //
 // N0 修复批（A5）：枚举递归进动词组——组本身有 golden 不代表组员有
 // （revisions diff / builds list 曾双双漏网：顶层名词检查全绿、组员零
-// golden）。
+// golden）。R10-L1：递归改为按组内核无限下钻（alerts rules / apps vars
+// 等二层组员同样受契约），不再只展开一层名字。
 func TestAllVerbsHaveDualGoldens(t *testing.T) {
 	if *goldenUpdate {
 		t.Skip("golden regeneration in progress; coverage re-checked on the next plain run")
 	}
 	app := NewApp(testBuildInfo)
-	names := app.Names()
-	assert.NotEmpty(t, names)
-
-	for _, name := range names {
-		verbNames := []string{name}
-		cmd, ok := app.Lookup(name)
-		if ok {
-			if fv, ok := cmd.(*flaggedVerb); ok {
-				for _, sub := range fv.subcommands {
-					verbNames = append(verbNames, name+" "+sub)
-				}
+	var verbs []string
+	var walk func(prefix string, app *commands.App)
+	walk = func(prefix string, app *commands.App) {
+		for _, name := range app.Names() {
+			verb := name
+			if prefix != "" {
+				verb = prefix + " " + name
+			}
+			verbs = append(verbs, verb)
+			cmd, ok := app.Lookup(name)
+			if !ok {
+				continue
+			}
+			if fv, ok := cmd.(*flaggedVerb); ok && fv.innerApp != nil {
+				walk(verb, fv.innerApp)
 			}
 		}
-		for _, vn := range verbNames {
-			file := strings.ReplaceAll(vn, " ", "-")
-			human, err := filepath.Glob(filepath.Join("testdata", "golden", file+".golden"))
-			assert.NoError(t, err)
-			assert.NotEmpty(t, human, "verb %q has no human-form golden (%s.golden)", vn, file)
+	}
+	walk("", app)
+	assert.NotEmpty(t, verbs)
 
-			jsonForm, err := filepath.Glob(filepath.Join("testdata", "golden", file+"-json.golden"))
-			assert.NoError(t, err)
-			assert.NotEmpty(t, jsonForm, "verb %q has no --json golden (%s-json.golden)", vn, file)
-		}
+	for _, vn := range verbs {
+		file := strings.ReplaceAll(vn, " ", "-")
+		human, err := filepath.Glob(filepath.Join("testdata", "golden", file+".golden"))
+		assert.NoError(t, err)
+		assert.NotEmpty(t, human, "verb %q has no human-form golden (%s.golden)", vn, file)
+
+		jsonForm, err := filepath.Glob(filepath.Join("testdata", "golden", file+"-json.golden"))
+		assert.NoError(t, err)
+		assert.NotEmpty(t, jsonForm, "verb %q has no --json golden (%s-json.golden)", vn, file)
 	}
 }
 

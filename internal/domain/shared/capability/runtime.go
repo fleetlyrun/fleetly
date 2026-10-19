@@ -627,8 +627,8 @@ type WorkloadEvent struct {
 	Generation Generation
 	// State 是观测状态。
 	State WorkloadState
-	// Drift 标记实际状态偏离已下发 Spec（检测默认开，收敛默认 opt-in，
-	// ADR-0005）。
+	// Drift 标记实际状态偏离已下发 Spec（检测默认开；收敛缺省开启，
+	// posture 语义见 ADR-0082）。
 	Drift bool
 	// Node 是观测节点（平台节点 ID）。
 	Node string

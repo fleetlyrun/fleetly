@@ -173,7 +173,10 @@ fi
 
 # ---- 5. 数据根 + fleetlyd 起服 ----
 DATA_ROOT="${FLEETLY_DATA_ROOT:-/var/lib/fleetly}"
-mkdir -p "$DATA_ROOT"
+# 0750 显式预建（R09-L5）：旧版 mkdir -p 在默认 umask 022 落到 0755，
+# 压过 daemon 侧 0750 意图；已存在的老数据根由幂等 chmod 收敛。
+install -d -m 0750 "$DATA_ROOT"
+chmod 0750 "$DATA_ROOT"
 
 # 受管日志存储端点（F2.4，ADR-0040）：与 registry 同源物化
 #（<advertise>:9428，routing mesh 发布）；空 = Logging 面停用。

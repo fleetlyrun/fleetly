@@ -1,14 +1,18 @@
 package engine
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -270,10 +274,84 @@ func TestFreezeSuspendsConvergeUntilLift(t *testing.T) {
 	assert.Len(t, eventNamesOf(t, e, "workload.converged"), 1)
 }
 
-// Team 解析失败 fail-closed（跳过本拍，不走 ownerTeam 降级 '' 契约）：
-// App 行消失后收敛闸门如实放弃（ Get 活跃行口径报错 → 本拍跳过）。
+// flakyFreezeRepo 包装 Freeze repo：App/Project 行都存在，只让冻结查询
+// 故障（R02-L5 的真路径注入点——旧测在 driftScan 的 appTeam 解析处就
+// continue，从未进入 convergeFrozen 的 fail-closed 分支）。
+type flakyFreezeRepo struct {
+	freeze.Repo
+	mu      sync.Mutex
+	failing bool
+}
 
-func TestFreezeGateFailClosedOnUnresolvableTeam(t *testing.T) {
+func (r *flakyFreezeRepo) ActiveForTeam(ctx context.Context, teamID string) ([]freeze.Freeze, error) {
+	r.mu.Lock()
+	failing := r.failing
+	r.mu.Unlock()
+	if failing {
+		return nil, errors.New("injected freeze store outage")
+	}
+	return r.Repo.ActiveForTeam(ctx, teamID)
+}
+
+func (r *flakyFreezeRepo) setFailing(v bool) {
+	r.mu.Lock()
+	r.failing = v
+	r.mu.Unlock()
+}
+
+// 冻结查询故障 = fail-closed 真钉测（R02-L5）：ADR-0082 §3 承诺"存储故障
+// 跳过本拍、下拍重试，不得 fail-open 收敛"。本测走到 convergeFrozen 的
+// 错误分支（appTeam 成功 → Freezes.ActiveForTeam 报错），断言：
+//   - 本拍零 Ensure（不写载体）；
+//   - 不落已收敛签名（resolved 空——否则同形态复发会被快通道误判"已收敛"）；
+//   - 不进失败计数/冷却（闸门故障不是收敛失败，不得消耗重试预算）；
+//   - 存储恢复后下一拍即收敛（跳过不粘滞）。
+func TestFreezeQueryFailureFailsClosedAndRetries(t *testing.T) {
+	var frozen *flakyFreezeRepo
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelError}))
+	e, rt, clock := newTestEngineMutated(t, Options{}, logger, func(stores *transact.Stores) {
+		frozen = &flakyFreezeRepo{Repo: stores.Freezes}
+		stores.Freezes = frozen
+	})
+	ctx := context.Background()
+	rev := freezeSpec(t, e, 1, tImageSpec)
+	driftDeployToSucceeded(t, e, rt, clock, rev)
+	settleSlowChannel(t, e)
+
+	// 基线已收敛；制造 spec 失配让快通道有可收敛信号，然后让冻结查询故障。
+	rt.mu.Lock()
+	rt.tamper = map[string]tamperEntry{tAppID + "-web": {image: "nginx:1.27-alpine"}}
+	rt.mu.Unlock()
+	frozen.setFailing(true)
+	before := len(rt.calls())
+	e.driftScan(ctx)
+
+	// 分支打点：确认走的是 convergeFrozen 的存储故障分支（不是 driftScan
+	// 前段解析失败的另一条 skip 路径）——R02-L5 的原始缺陷就是"测试没打中"。
+	assert.Contains(t, logs.String(), "converge: freeze gate", "the test must exercise convergeFrozen's fail-closed branch")
+	assert.Equal(t, 0, ensureDelta(t, rt, before), "a freeze-query outage must fail closed (no carrier write)")
+	assert.Empty(t, eventNamesOf(t, e, "workload.converged"), "failed-closed gate must not emit convergence facts")
+	e.converge.mu.Lock()
+	_, resolved := e.converge.resolved[tAppID]
+	_, cooling := e.converge.cooldown[tAppID]
+	fails := e.converge.fails[tAppID]
+	e.converge.mu.Unlock()
+	assert.False(t, resolved, "a fail-closed skip must not consume the drift signature")
+	assert.False(t, cooling, "a gate outage is not a convergence failure; it must not enter the cooldown ledger")
+	assert.Zero(t, fails, "a gate outage must not count toward the failure threshold")
+
+	// 存储恢复：下一拍同一信号照常收敛（跳过不粘滞、签名未被消费）。
+	frozen.setFailing(false)
+	e.driftScan(ctx)
+	assert.Equal(t, 1, ensureDelta(t, rt, before), "the next beat retries and converges once the freeze store recovers")
+	assert.Len(t, eventNamesOf(t, e, "workload.converged"), 1)
+}
+
+// 扫描面 Team 解析失败 fail-closed（跳过本拍，不走 ownerTeam 降级 ” 契约）：
+// App 行消失后在进入收敛判定前就放弃。这是与上测分立的另一条 fail-closed
+// 路径（R02-L5 指出旧测只覆盖这一条却声称覆盖 convergeFrozen）。
+func TestFreezeGateSkipsScanOnUnresolvableTeam(t *testing.T) {
 	e, rt, clock := newTestEngine(t)
 	rev := freezeSpec(t, e, 1, tImageSpec)
 	driftDeployToSucceeded(t, e, rt, clock, rev)
@@ -716,6 +794,44 @@ func newRestartedEngine(t *testing.T, e *Engine, rt *fakeRuntime, opts Options) 
 
 func detectOptions() Options {
 	return Options{Converge: ConvergeOptions{Posture: ConvergePostureDetect}}
+}
+
+// Cancel 遗留负例（R16-L5 四类负向之一）：detect 下 Cancel 遗留的唯一
+// 兑现面（慢通道/重放快信号）被 posture 门拦住 → 不 Ensure、不落
+// converged 事件、重放标记不被消费；恢复 all 后下一拍即回卷基线。这是
+// ADR-0082 §5 成文降级的回归锚（断言"detect 零写 + 标记保留 + 恢复后
+// 兑现"，而不是把矛盾钉成期望）。
+func TestPostureDetectCancelLegacyDoesNotRollBack(t *testing.T) {
+	e, rt, clock := newTestEngineOpts(t, detectOptions())
+	ctx := context.Background()
+	rev1 := freezeSpec(t, e, 1, tImageSpec)
+	driftDeployToSucceeded(t, e, rt, clock, rev1)
+
+	rev2 := freezeSpec(t, e, 2, imageSpecFor("nginx:1.28"))
+	d2, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev2})
+	require.NoError(t, err)
+	e.step(ctx) // releasing：gen2 已下发（部分物化 = 遗留形态）
+	_, err = e.Cancel(ctx, d2.ID)
+	require.NoError(t, err)
+	_, marked := e.converge.replayMarked(tAppID)
+	require.True(t, marked, "a materialized cancel leaves a replay mark for the convergence face")
+
+	before := len(rt.calls())
+	e.driftScan(ctx)
+	assert.Equal(t, 0, ensureDelta(t, rt, before), "detect posture: the cancel-legacy replay must not write")
+	assert.Empty(t, eventNamesOf(t, e, "workload.converged"), "detect posture: no convergence fact")
+	_, stillMarked := e.converge.replayMarked(tAppID)
+	assert.True(t, stillMarked, "detect must not consume the replay mark (switching back to all redeems it)")
+
+	// 恢复 all：下一拍同一标记照常回卷基线。
+	e.opts.Converge.Posture = ConvergePostureAll
+	e.driftScan(ctx)
+	assert.Equal(t, 1, ensureDelta(t, rt, before), "restoring the all posture redeems the marked rollback")
+	last := rt.calls()[len(rt.calls())-1]
+	assert.Equal(t, "nginx:1.27", last.Spec["web"].Image, "cancel legacy rolls back to the succeeded baseline")
+	assert.Equal(t, capability.Generation(1), last.Gen)
+	_, cleared := e.converge.replayMarked(tAppID)
+	assert.False(t, cleared, "a successful replay clears the mark")
 }
 
 // detect 零运行时写（D3 / ADR-0082 §5 第 1-2 条）：漂移注入一拍 → fast 与

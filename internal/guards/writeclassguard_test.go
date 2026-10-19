@@ -2,21 +2,24 @@ package guards
 
 // 写面立法执法面（ADR-0081 Batch B 落地）：附录完整分类表（27 ACTION +
 // 53 DECLARATION + 74 READ = 154）是「未分类即红」的唯一清单，测试内单源
-// 机械转写；READ 为余集按 §1 读前缀缺省归类不列。三从属断言把既有三张
-// 守卫表挂上同一法源，防各自漂移：FrozenVerbs ⊆ DECLARATION∪ACTION（冻结
-// 只拦写面）；idem.EnforcedMethods ⊆ DECLARATION∪豁免（幂等重放只挂声明
-// 写面）；scope 单向断言（DECLARATION ⇒ WRITE/ADMIN，ACTION 的 READ-scope
-// 经豁免面显式登记）。proto 零触碰：执法面是 Go 表，一方注解随配置面立项
-// 另批（ADR-0081 决策 3）。
+// 机械转写；三桶全部显式枚举（READ 不再按读前缀余集推断——带副作用的
+// StreamXxx 会被余集自动归 READ 而无人复核，R16-L4 ②）。三从属断言把既有
+// 三张守卫表挂上同一法源，防各自漂移：FrozenVerbs ⊆ DECLARATION∪ACTION
+//（冻结只拦写面，且 42 = 34 + 8 的台账实数钉死）；idem.EnforcedMethods ⊆
+// DECLARATION∪豁免（幂等重放只挂声明写面）；scope 单向断言（DECLARATION ⇒
+// WRITE/ADMIN，ACTION 的 READ-scope 经豁免面显式登记）。proto 零触碰：
+// 执法面是 Go 表，一方注解随配置面立项另批（ADR-0081 决策 3）。
 //
 // H8 阶段 B（2026-10-19）新增只读 RPC QueryScopedMetrics → 154 方法
-//（27 ACTION + 53 DECLARATION + 74 READ，仍为 READ 余集）；ADR-0081
-// 附录的台账实数随 H8 批文档追记同批重编。
+//（27 ACTION + 53 DECLARATION + 74 READ）；ADR-0081 附录的台账实数随 H8
+// 批文档追记同批重编。
 //
-// S12b2（2026-10-19）补两条机械可判断言：ACTION/DECLARATION 互斥
+// S12b2（2026-10-19）补两条机械可判断言：三桶互斥
 //（TestWriteClassBucketsMutuallyExclusive——完备性扫描的 continue 序盲点）
 // 与 DECLARATION 的域级收敛面登记（TestWriteClassConvergenceFaceByDomain
-// —新域未分类即红）。语义判据本身不可静态执法，交给 ADR-0081 §1/§1.1/§5。
+// —新域未分类即红）。S17b（R16-L4）补 READ 显式集合 + 读前缀复核
+//（TestWriteClassReadPrefixReview）与 FrozenVerbs 34/8 计数断言。语义判据
+// 本身不可静态执法，交给 ADR-0081 §1/§1.1/§5。
 
 import (
 	"bufio"
@@ -107,6 +110,109 @@ var writeClassDeclarations = map[string]bool{
 	"/fleetly.telemetry.v1.AlertingService/CreateAlertRule":           true,
 	"/fleetly.telemetry.v1.AlertingService/DeleteAlertRule":           true,
 }
+
+// writeClassReads 是 READ 桶（读面，74 条）——ADR-0081 附录 B 机械转写。
+// 显式枚举的理由（R16-L4 ②）：旧实现按读前缀（Get/List/Wait/Stream/Query/
+// WhoAmI/Explain/Diff/Download）取余集，一个带副作用的 StreamXxx 会自动
+// 归 READ 且无人复核。逐条登记强制每次新增 RPC 必须显式裁决桶归属；
+// TestWriteClassReadPrefixReview 再做一层复核：READ 成员必须仍带读前缀，
+// 或落 readClassExemptions 带理由（前缀是缺省判据，不是唯一判据）。
+var writeClassReads = map[string]bool{
+	// —— automation/v1（附录 B.1）：Task/Schedule/Run 读面。
+	"/fleetly.automation.v1.RunsService/GetRun":             true,
+	"/fleetly.automation.v1.RunsService/ListRuns":           true,
+	"/fleetly.automation.v1.RunsService/WaitRun":            true,
+	"/fleetly.automation.v1.SchedulesService/GetSchedule":   true,
+	"/fleetly.automation.v1.SchedulesService/ListSchedules": true,
+	"/fleetly.automation.v1.TasksService/GetTask":           true,
+	"/fleetly.automation.v1.TasksService/ListTasks":         true,
+
+	// —— delivery/v1（附录 B.2）：构建/部署/钩子/仓/Revision/模板读面。
+	"/fleetly.delivery.v1.BuildsService/ListBuilds":             true,
+	"/fleetly.delivery.v1.BuildsService/ListUploads":            true,
+	"/fleetly.delivery.v1.BuildsService/StreamBuildLogs":        true,
+	"/fleetly.delivery.v1.BuildsService/WaitBuild":              true,
+	"/fleetly.delivery.v1.DeploymentsService/GetDeployment":     true,
+	"/fleetly.delivery.v1.DeploymentsService/ListDeployments":   true,
+	"/fleetly.delivery.v1.DeploymentsService/WaitDeployment":    true,
+	"/fleetly.delivery.v1.GitHubAppsService/ListGitHubAppRepos": true,
+	"/fleetly.delivery.v1.GitHubAppsService/ListGitHubApps":     true,
+	"/fleetly.delivery.v1.HooksService/GetGitHook":              true,
+	"/fleetly.delivery.v1.RegistryService/ListRegistryCatalog":  true,
+	"/fleetly.delivery.v1.RegistryService/ListRegistryTags":     true,
+	"/fleetly.delivery.v1.RevisionsService/DiffRevisions":       true,
+	"/fleetly.delivery.v1.RevisionsService/GetAppWorkloads":     true,
+	"/fleetly.delivery.v1.RevisionsService/GetRevision":         true,
+	"/fleetly.delivery.v1.RevisionsService/ListRevisions":       true,
+	"/fleetly.delivery.v1.TemplatesService/GetTemplate":         true,
+	"/fleetly.delivery.v1.TemplatesService/ListTemplates":       true,
+
+	// —— identity/v1（附录 B.3）：审计/邀请/角色/团队/Token/用户读面。
+	"/fleetly.identity.v1.AuditQueryService/ListAudit":        true,
+	"/fleetly.identity.v1.InvitationsService/ListInvitations": true,
+	"/fleetly.identity.v1.RolesService/GetRole":               true,
+	"/fleetly.identity.v1.RolesService/ListRoles":             true,
+	"/fleetly.identity.v1.TeamsService/GetTeam":               true,
+	"/fleetly.identity.v1.TeamsService/ListTeams":             true,
+	"/fleetly.identity.v1.TokensService/GetToken":             true,
+	"/fleetly.identity.v1.TokensService/ListTokens":           true,
+	"/fleetly.identity.v1.UsersService/GetUser":               true,
+	"/fleetly.identity.v1.UsersService/ListUsers":             true,
+	"/fleetly.identity.v1.UsersService/WhoAmI":                true,
+
+	// —— proxy/v1（附录 B.4）：Route 读面。
+	"/fleetly.proxy.v1.RoutesService/ListRoutes": true,
+
+	// —— runtime/v1（附录 B.5）：exec 实例/节点/Workload 观测读面。
+	"/fleetly.runtime.v1.ExecService/ListExecInstances":               true,
+	"/fleetly.runtime.v1.NodesService/ListNodeContainers":             true,
+	"/fleetly.runtime.v1.NodesService/ListNodes":                      true,
+	"/fleetly.runtime.v1.WorkloadsService/GetAppWorkloadObservations": true,
+
+	// —— structure/v1（附录 B.6）：平台实体读面。
+	"/fleetly.structure.v1.AppsService/GetApp":                         true,
+	"/fleetly.structure.v1.AppsService/GetAppSpec":                     true,
+	"/fleetly.structure.v1.AppsService/ListApps":                       true,
+	"/fleetly.structure.v1.AppVariablesService/ListAppVariables":       true,
+	"/fleetly.structure.v1.ConfigsService/GetConfig":                   true,
+	"/fleetly.structure.v1.ConfigsService/ListConfigs":                 true,
+	"/fleetly.structure.v1.DatabasesService/DownloadBackup":            true,
+	"/fleetly.structure.v1.DatabasesService/GetDatabase":               true,
+	"/fleetly.structure.v1.DatabasesService/ListBackups":               true,
+	"/fleetly.structure.v1.DatabasesService/ListDatabases":             true,
+	"/fleetly.structure.v1.NetworksService/GetNetworkPeer":             true,
+	"/fleetly.structure.v1.NetworksService/ListNetworkPeers":           true,
+	"/fleetly.structure.v1.NetworksService/ListNetworks":               true,
+	"/fleetly.structure.v1.ProjectsService/GetProject":                 true,
+	"/fleetly.structure.v1.ProjectsService/ListProjects":               true,
+	"/fleetly.structure.v1.SecretsService/ListSecrets":                 true,
+	"/fleetly.structure.v1.SharedVariablesService/ListSharedVariables": true,
+	"/fleetly.structure.v1.VolumesService/ListVolumes":                 true,
+
+	// —— system/v1（附录 B.7）：治理/平台备份/自描述读面。
+	"/fleetly.system.v1.GovernanceService/ListChangeFreezes": true,
+	"/fleetly.system.v1.PlatformService/ListPlatformBackups": true,
+	"/fleetly.system.v1.SystemService/Explain":               true,
+	"/fleetly.system.v1.SystemService/GetSchema":             true,
+	"/fleetly.system.v1.SystemService/GetStatus":             true,
+	"/fleetly.system.v1.SystemService/GetVersion":            true,
+
+	// —— telemetry/v1（附录 B.8）：告警/事件/日志/指标读面。
+	"/fleetly.telemetry.v1.AlertingService/ListAlertRules":           true,
+	"/fleetly.telemetry.v1.AlertingService/ListAlertStates":          true,
+	"/fleetly.telemetry.v1.AlertingService/ListNotificationChannels": true,
+	"/fleetly.telemetry.v1.EventsService/GetEventStatus":             true,
+	"/fleetly.telemetry.v1.EventsService/ListEvents":                 true,
+	"/fleetly.telemetry.v1.EventsService/StreamEvents":               true,
+	"/fleetly.telemetry.v1.LogsService/StreamLogs":                   true,
+	"/fleetly.telemetry.v1.MetricsService/QueryMetrics":              true,
+	"/fleetly.telemetry.v1.MetricsService/QueryScopedMetrics":        true,
+}
+
+// readClassExemptions 是 READ 桶的读前缀复核豁免面（方法 → 理由）：
+// READ 成员不携带任何读前缀时必须在此显式登记（如未来的只读动词用了
+// 非标准前缀）；未登记即红，豁免不再命中（成员改类/改名）同样红。
+var readClassExemptions = map[string]string{}
 
 // writeClassActions 是 ACTION 桶（动作写，27 条）——无终态可持有的过渡/
 // 仪式/修护动词，例外清单：每一入桶成员带一句理由（ADR-0081 §1；例外
@@ -214,11 +320,10 @@ var writeClassConvergenceFace = map[string]convergenceFace{
 }
 
 // TestWriteClassCompleteClassification：proto 全方法 × 三桶完备对账（ADR-0081
-// 验收锚，freezeguard「全方法 × 桶」既定形态）。DECLARATION/ACTION 两表
-// 枚举，READ 是余集（§1 读前缀缺省归类，与冻结读面同前缀集）；两表皆无
-// 且不携读前缀 = 未分类红；表条目在 proto 不存在 = 死条目红（更名/删除
-// 曝光）；27/53/154 台账实数漂移 = 立法文件与代码脱钩红（同 commit 重编
-// 附录）。
+// 验收锚，freezeguard「全方法 × 桶」既定形态）。三表全部显式枚举（READ 不
+// 再按读前缀余集）；任一方法零命中 = 未分类红；表条目在 proto 不存在 =
+// 死条目红（更名/删除曝光）；27/53/74/154 台账实数漂移 = 立法文件与代码
+// 脱钩红（同 commit 重编附录）。
 func TestWriteClassCompleteClassification(t *testing.T) {
 	all := protoAllMethods(t)
 	if len(all) < 150 {
@@ -226,12 +331,15 @@ func TestWriteClassCompleteClassification(t *testing.T) {
 	}
 
 	// 台账实数对账（附录统计：27 ACTION + 53 DECLARATION + 74 READ = 154；
-	// H8 阶段 B 的 QueryScopedMetrics 是 READ 余集）。
+	// H8 阶段 B 的 QueryScopedMetrics 是显式 READ）。
 	if len(writeClassActions) != 27 {
 		t.Errorf("writeClassActions holds %d entries; the ADR-0081 appendix ledger says 27 — re-transcribe the classification table and the appendix in the same commit", len(writeClassActions))
 	}
 	if len(writeClassDeclarations) != 53 {
 		t.Errorf("writeClassDeclarations holds %d entries; the ADR-0081 appendix ledger says 53 — re-transcribe the classification table and the appendix in the same commit", len(writeClassDeclarations))
+	}
+	if len(writeClassReads) != 74 {
+		t.Errorf("writeClassReads holds %d entries; the ADR-0081 appendix ledger says 74 — re-transcribe the classification table and the appendix in the same commit", len(writeClassReads))
 	}
 	if len(all) != 154 {
 		t.Errorf("proto surface holds %d methods; the ADR-0081 appendix ledger says 154 (27 ACTION + 53 DECLARATION + 74 READ) — reclassify and re-transcribe the appendix in the same commit", len(all))
@@ -245,14 +353,14 @@ func TestWriteClassCompleteClassification(t *testing.T) {
 		if writeClassDeclarations[m] {
 			continue
 		}
-		if isReadVerb(m) {
-			continue // READ 余集：按缺省读前缀归类的合法剩余（附录不枚举）
+		if writeClassReads[m] {
+			continue
 		}
 		unclassified = append(unclassified, m)
 	}
 	sort.Strings(unclassified)
 	for _, m := range unclassified {
-		t.Errorf("RPC %s falls into no write class — it carries neither a read-verb prefix nor a DECLARATION/ACTION table entry; classify it consciously in writeclassguard_test.go and re-transcribe the ADR-0081 appendix in the same commit", m)
+		t.Errorf("RPC %s falls into no write class — enumerate it in writeClassActions / writeClassDeclarations / writeClassReads and re-transcribe the ADR-0081 appendix in the same commit", m)
 	}
 
 	// 反向：表条目在 proto 不存在 = 死条目。
@@ -267,26 +375,76 @@ func TestWriteClassCompleteClassification(t *testing.T) {
 			dead = append(dead, "DECLARATION "+m)
 		}
 	}
+	for m := range writeClassReads {
+		if !all[m] {
+			dead = append(dead, "READ "+m)
+		}
+	}
 	sort.Strings(dead)
 	for _, m := range dead {
 		t.Errorf("write class table lists %s but no such proto method exists — remove the stale entry and re-transcribe the ADR-0081 appendix in the same commit", m)
 	}
 }
 
-// TestWriteClassBucketsMutuallyExclusive：ACTION/DECLARATION 互斥断言
-// （ADR-0081 §1：三桶中每个方法恰属一桶）。完备性扫描的 continue 顺序
-// （ACTION 先命中即跳过 DECLARATION）在两表同时命中时静默取 ACTION 桶
-// ——本断言补该序盲点（R16-L4 ①）。
+// TestWriteClassBucketsMutuallyExclusive：三桶互斥断言（ADR-0081 §1：每个
+// 方法恰属一桶）。完备性扫描的 continue 顺序（ACTION 先命中即跳过其余桶）
+// 在两表同时命中时静默取前者——本断言补该序盲点（R16-L4 ①）。
 func TestWriteClassBucketsMutuallyExclusive(t *testing.T) {
 	var both []string
 	for m := range writeClassActions {
 		if writeClassDeclarations[m] {
-			both = append(both, m)
+			both = append(both, "ACTION+DECLARATION "+m)
+		}
+		if writeClassReads[m] {
+			both = append(both, "ACTION+READ "+m)
+		}
+	}
+	for m := range writeClassDeclarations {
+		if writeClassReads[m] {
+			both = append(both, "DECLARATION+READ "+m)
 		}
 	}
 	sort.Strings(both)
 	for _, m := range both {
-		t.Errorf("RPC %s is listed in both writeClassActions and writeClassDeclarations — each method belongs to exactly one Write Class (ADR-0081 §1); remove one entry and re-transcribe the appendix in the same commit", m)
+		t.Errorf("RPC is listed in two write-class buckets (%s) — each method belongs to exactly one Write Class (ADR-0081 §1); remove one entry and re-transcribe the appendix in the same commit", m)
+	}
+}
+
+// TestWriteClassReadPrefixReview：READ 桶的读语义复核（R16-L4 ②）。显式
+// 登记只解决"被看见"，本断言再加一层：每个 READ 成员必须仍带读前缀
+// （Get/List/Wait/Stream/Query/WhoAmI/Explain/Diff/Download 的缺省判据），
+// 或落 readClassExemptions 带理由——带副作用的动词若被塞进 READ 桶，前缀
+// 复核会要求一次显式裁决。豁免双向保鲜：登记项必须存活且确实不带前缀。
+func TestWriteClassReadPrefixReview(t *testing.T) {
+	used := map[string]bool{}
+	var offenders []string
+	for m := range writeClassReads {
+		if isReadVerb(m) {
+			continue
+		}
+		reason, ok := readClassExemptions[m]
+		if !ok || reason == "" {
+			offenders = append(offenders, m)
+			continue
+		}
+		used[m] = true
+	}
+	sort.Strings(offenders)
+	for _, m := range offenders {
+		t.Errorf("READ-class RPC %s carries no read prefix — a read class is a conscious review, not a resting bucket; either add a read prefix or register the method in readClassExemptions with a reason (ADR-0081 §1)", m)
+	}
+	var stale []string
+	for m, reason := range readClassExemptions {
+		if reason == "" {
+			t.Errorf("read-class exemption %s must carry a reason", m)
+		}
+		if !used[m] {
+			stale = append(stale, m)
+		}
+	}
+	sort.Strings(stale)
+	for _, m := range stale {
+		t.Errorf("read-class exemption %s no longer covers a real gap (member renamed/reclassified or carries a read prefix now); remove the entry", m)
 	}
 }
 
@@ -362,7 +520,7 @@ func TestWriteClassConvergenceFaceByDomain(t *testing.T) {
 // 走真 descriptor 的形态）：DECLARATION ⇒ scope WRITE/ADMIN（声明写必是
 // 授权写面，标 READ 即 fail-open 洞）；ACTION 允许 READ-scope（不设反向
 // 断言 ACTION ⇒ WRITE）但必须落 actionReadScopeExemptions 豁免面；READ
-// 余集与 PUBLIC/无 scope 面不在本守卫域（读型动词方向漂移由 scopeguard 执法）。
+// READ 桶与 PUBLIC/无 scope 面不在本守卫域（读型动词方向漂移由 scopeguard 执法）。
 func TestWriteClassScopeDirection(t *testing.T) {
 	policy, err := assembly.NewPolicySet()
 	if err != nil {
@@ -398,7 +556,7 @@ func TestWriteClassScopeDirection(t *testing.T) {
 			}
 			continue
 		}
-		// READ 余集成员：本守卫域外（scopeguard 已对账动词 × 方向）。
+		// READ 桶成员：本守卫域外（scopeguard 已对账动词 × 方向）。
 	}
 
 	// 双向保鲜：豁免不再命中即红。
@@ -420,6 +578,8 @@ func TestWriteClassScopeDirection(t *testing.T) {
 // TestWriteClassFrozenVerbsConsistency：冻结封禁面从属断言（ADR-0081 §4.4 /
 // ADR-0017 附录 A.3）：governance.FrozenVerbs 键集 ⊆ DECLARATION∪ACTION——
 // 冻结只拦写面；READ 或未分类成员即红，死条目（proto 无此方法）同红。
+// 台账实数 42 = 34 DECLARATION + 8 ACTION 逐数对账（R16-L4 ③：旧实现只
+// t.Logf，改表不会红；冻结面是治理刹车，实数漂移必须同 commit 重编附录）。
 func TestWriteClassFrozenVerbsConsistency(t *testing.T) {
 	all := protoAllMethods(t)
 	var offenders []string
@@ -443,7 +603,11 @@ func TestWriteClassFrozenVerbsConsistency(t *testing.T) {
 	for _, m := range offenders {
 		t.Errorf("governance.FrozenVerbs lists %s which classifies as READ (or is unclassified) — the change freeze only intercepts the write face (DECLARATION∪ACTION, ADR-0081 §4.4); fix the classification or drop the verb from the freeze table", m)
 	}
-	// 对账注记：在表实数（ADR-0081 §4.4 散文的台账形态，42 = 34 + 8）。
+	// 台账实数对账：ADR-0081 §4.4 散文的 42 = 34 + 8（改表即红，同 commit
+	// 重编 ADR 附录）。
+	if decl != 34 || act != 8 {
+		t.Errorf("FrozenVerbs reconciliation drifted: %d entries = %d DECLARATION + %d ACTION; the ADR-0081 §4.4 ledger says 42 = 34 + 8 — re-transcribe the appendix with the table change", len(governance.FrozenVerbs), decl, act)
+	}
 	t.Logf("FrozenVerbs reconciliation: %d entries = %d DECLARATION + %d ACTION", len(governance.FrozenVerbs), decl, act)
 }
 

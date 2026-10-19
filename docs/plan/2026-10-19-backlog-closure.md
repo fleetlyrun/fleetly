@@ -543,7 +543,7 @@ Compare-Object $reportML $ledgerML
 | S16a | ✅ | 本提交 | Runtime 一致性 c1-c5：k3s 副本数/egress 收敛/日志帧（R06-M2/M6/M4）、swarm config 载体清扫/exec 节拍（R06-M7/M5）；负例先红、门禁全绿 |
 | S16b | ✅ | `ce9a15c7` | Runtime/适配面 c6-c8：browse 五引擎方言往返（R01-H1†/M1）、节点读面平台门+Console fail-closed（R08-M1）、引擎卫生四连（R03-M1/M2、R04-M1、R13-L3）；engine `-race` 235s、console 139 全绿 |
 | S17a | ✅ | `8f5d41e7` | 守卫 c1-c4：Runtime/loop/statefacade 判据 AST 化、三红线共享禁列表、账本写点守卫、FakeRuntime 回执可配、e2e converged 断言；每项反向验证红→绿 |
-| S17b | 待派 | — | 守卫 c5-c8：CI/verify 对账、写类守卫三盲点、Windows 交叉编译/install 权限、CLI 契约 golden |
+| S17b | ✅ | 本提交 | 守卫 c5-c8：CI/verify 对账（hermetic job、Windows 交叉编译门、go.mod 零漂移、proto⇒console 同 commit 守卫）、写类守卫三盲点（READ 显式 74 项/FrozenVerbs 34+8/三桶互斥）、install 数据根 0750、CLI delete `--json` 契约 + 防空 golden、freeze 查询故障真钉测；负例先红→绿 |
 | S18 | 待派 | — | 非 M/L 残项 |
 | S19 | 待派 | — | 文档修订/真机复核/终验 |
 

@@ -13,6 +13,11 @@ jobs:
   backend:
     name: Backend (lint + proto + test)
     runs-on: ubuntu-latest
+    env:
+      # R15-L4 守卫的基线：CI 上强制指定 origin/main——不可解析即红，不在
+      # PR 面静默退化为"只看工作树"（本地未设时守卫按 origin/main > HEAD
+      # 解析）。
+      FLEETLY_CONSOLE_SYNC_BASE: origin/main
     steps:
       - uses: actions/checkout@v4
         with:
@@ -39,6 +44,12 @@ jobs:
 
       - name: Format check (gofmt) + go vet
         run: mise run lint:go
+
+      # 跨平台编译门禁（R09-L7）：Windows 是仓内声明的开发平台之二（生产
+      # 部署 Linux-only）。只编译不测试——Unix-only 符号（signal/TTY/权限）
+      # 漂移此前只在开发者本机 `go build` 时显形，CI 永不红。
+      - name: Cross-compile (windows/amd64, build only)
+        run: CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build ./...
 
       - name: golangci-lint
         run: mise run lint:golangci
@@ -72,6 +83,30 @@ jobs:
 
       - name: Generated artifacts (drift gate)
         run: mise run generate:verify
+
+  # 换装 hermeticity 回归锚（R12-M5）：verify:hermetic 是 2026-10-11 换装
+  # 事故的回归锚（工作树构建把未提交改动带进部署二进制），此前只活在本地
+  # 门禁/runbook 的记忆里。成本 9s 级：git archive HEAD 快照双构建 +
+  # sha256 一致 + 版本戳对账；与本地同命令。
+  hermetic:
+    name: Hermetic build channel (verify:hermetic)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: jdx/mise-action@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-${{ runner.os }}-${{ hashFiles('go.sum', 'genproto/go.sum', 'sdk/go/go.sum') }}
+          restore-keys: go-${{ runner.os }}-
+
+      - name: Hermeticity probe (double build sha256 + commit stamp)
+        run: mise run verify:hermetic
 
   # Console（F2.6/ADR-0044）：类型再生成 + 构建 + 零漂移断言（src/api
   # 类型 + internal/interfaces/console/dist 产物双钉）；node/pnpm 走 mise.toml 钉版

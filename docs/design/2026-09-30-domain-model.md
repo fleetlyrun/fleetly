@@ -163,7 +163,7 @@ Run: pending → running → stopping → stopped | failed
 |---|---|
 | ADR-0002 三层状态模型 / 单写点四件一拍 | 新 ADR-0005 原样继承 |
 | ADR-0003 回滚 = Revision Replay | 状态机 §4 原样继承 |
-| ADR-0004 漂移检测开 / 收敛 opt-in | 场景 7 原样继承 |
+| ADR-0004 漂移检测开 / 收敛 opt-in | 场景 7 原样继承；**收敛半边已翻案（ADR-0082，2026-10-18）：缺省收敛（posture all），Ensure 仍是唯一写动词** |
 | ADR-0005 HA 三层口径 | 架构 §9 原样继承 |
 | ADR-0008 易用性 = 轻量元裁决 | 不变量 3；新 ADR-0008 |
 | ADR-0010 Team ⊥ Project 正交 | 实体关系继承；"新增 Environment 为 Project 内分区"已被 ADR-0011 否决（环境即项目） |

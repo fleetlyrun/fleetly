@@ -108,7 +108,7 @@ service FunctionsService {                        // scope resource: "functions"
 - **投影公式（`ProjectFunction`，住 projection.go，与三既有投影同族）**：FunctionSpec(冻结) + 行事实(replicas) + 项目事实(team/networks/egress) → Workload{ID=行 id, Process="handler", Image=解析后引用, Command/Env/Resources 直映, Ports=[{声明口, http|h2c}], Healthcheck=缺省 **tcp 探声明口**（不假设函数配合 /healthz——调用语义归函数）, Replicas=行值, Restart=Always, Networks=全部活跃项目网, Addressing=[fn-<id>], StopGrace 缺省 30s（在途请求排空）}。**平台事实 env 注入**（only-add）：`FLEETLY_FUNCTION_ID / _NAME / _REVISION(digest 前 12) / _PORT`（FLEETLY_DB_* 同族先例）。secret_refs 文件注入 /run/secrets/<名>（ADR-0014——**不是 env**，镜像侧自理文件→env 自举）。
 - **NamespaceRef 增 `.Function` 轴**（Task/Database 轴两次先例；核心 6 方法签名零改动，swarm/k3s 各补归属 label 与载体命名分支）。
 - **收敛环（functionLoop，databaseLoop 同族新环，复用全仓唯一 Loop 骨架）**单拍：per-function 互斥 → 读行 + 冻结 spec → 项目事实解析（读失败跳拍绝不空集代偿）→ 投影 + 材料解密 → ensureFresh 签名短路（WorkloadSetSignature 全集 + ns + 材料指纹）→ maintenanceMu 读锁 + boundedStep → EnsureGeneration（指纹含副本数）→ Runtime.Ensure → 归属登记 + 看门狗期望登记（**replicas>0 才进期望面**——故意缩零不是事故，否则假告警）→ ensureRemember + status 推进（wire-gen 匹配才采信）。失败清签名下拍重试；重启 = 行 + 持久 gen 幂等重放。
-- **Ensure/Drift/Converge 不变量**：Ensure 是唯一载体写动词（用户动词只写行 + Kick）；gen 恒同移（纯伸缩走 scale-only 保 wire-gen、零任务替换）；Drift 的 Generation 路径接入（按 functionOwner 归属过滤）、**spec 对照 P1 对 `function/` 前缀跳过**（`database/` 先例——稳态看门狗面保留）；Converge opt-in 不变；观测两轨（Watch/期望缓存 + Revision 只读重放）。
+- **Ensure/Drift/Converge 不变量**：Ensure 是唯一载体写动词（用户动词只写行 + Kick）；gen 恒同移（纯伸缩走 scale-only 保 wire-gen、零任务替换）；Drift 的 Generation 路径接入（按 functionOwner 归属过滤）、**spec 对照 P1 对 `function/` 前缀跳过**（`database/` 先例——稳态看门狗面保留）；**Converge 缺省开启（ADR-0082 翻案；本文原写「Converge opt-in 不变」，functions 立项时按新法实现）**；观测两轨（Watch/期望缓存 + Revision 只读重放）。
 
 ## 8. 伸缩语义
 

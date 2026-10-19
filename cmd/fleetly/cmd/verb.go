@@ -20,6 +20,10 @@ type flaggedVerb struct {
 	// subcommands 非空 = 动词组（groupVerb 装配时记录子命令名）。
 	// 覆盖守卫据此递归枚举组内子命令，组员与组本身同受双 golden 契约。
 	subcommands []string
+	// innerApp 是组的分发内核（仅 groupVerb 装配时非 nil）：覆盖守卫递归
+	// 下钻二层及以上嵌套组（alerts rules / apps vars）用——subcommands 只有
+	// 名字、没有子命令对象，无法判定组员是否又是组（R10-L1 只递归一层）。
+	innerApp *commands.App
 }
 
 func (v *flaggedVerb) Name() string     { return v.name }

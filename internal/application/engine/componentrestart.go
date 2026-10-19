@@ -48,8 +48,8 @@ func (e *Engine) RestartComponent(ctx context.Context, name string) (int, error)
 	if managed == nil {
 		return 0, ErrRestartUnsupported
 	}
-	restart, ok := e.runtime.(capability.RuntimeRestart)
-	if !ok {
+	restart := capability.FacesOf(e.runtime).Restart
+	if restart == nil {
 		return 0, ErrRuntimeNoRestart
 	}
 	ns := managed.ManagedNamespace()

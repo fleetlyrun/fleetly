@@ -268,9 +268,12 @@ func newChannelsDeleteVerb() commands.Command {
 				if _, err := c.Alerting.DeleteNotificationChannel(ctx, &telemetryv1.DeleteNotificationChannelRequest{ChannelId: channelID}); err != nil {
 					return err
 				}
-				if !jsonOut {
-					_, _ = fmt.Fprintf(env.Stdout, "deleted channel %s\n", channelID)
+				if jsonOut {
+					// 删除成功必须回可解析对象（R10-M1；与 tasks/schedules
+					// delete 同形）——空 stdout 会让 Agent 误判"命令未执行"。
+					return writeJSON(env.Stdout, map[string]string{"deleted": channelID})
 				}
+				_, _ = fmt.Fprintf(env.Stdout, "deleted channel %s\n", channelID)
 				return nil
 			})
 		},
@@ -374,9 +377,12 @@ func newAlertsRulesDeleteVerb() commands.Command {
 				if _, err := c.Alerting.DeleteAlertRule(ctx, &telemetryv1.DeleteAlertRuleRequest{RuleId: ruleID}); err != nil {
 					return err
 				}
-				if !jsonOut {
-					_, _ = fmt.Fprintf(env.Stdout, "deleted alert rule %s\n", ruleID)
+				if jsonOut {
+					// 删除成功必须回可解析对象（R10-M1；与 tasks/schedules
+					// delete 同形）。
+					return writeJSON(env.Stdout, map[string]string{"deleted": ruleID})
 				}
+				_, _ = fmt.Fprintf(env.Stdout, "deleted alert rule %s\n", ruleID)
 				return nil
 			})
 		},

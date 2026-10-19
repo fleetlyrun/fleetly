@@ -57,8 +57,8 @@ func (e *Engine) RestartProcess(ctx context.Context, appID, process string) erro
 	if !found {
 		return fmt.Errorf("%w: process %q not in the frozen spec of app %s", ErrProcessUnknown, process, appID)
 	}
-	restart, ok := e.runtime.(capability.RuntimeRestart)
-	if !ok {
+	restart := capability.FacesOf(e.runtime).Restart
+	if restart == nil {
 		return ErrRuntimeNoRestart
 	}
 	ns := capability.NamespaceRef{Team: team, Project: a.ProjectID, App: appID}

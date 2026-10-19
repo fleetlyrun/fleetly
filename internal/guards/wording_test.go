@@ -56,6 +56,11 @@ var bannedPatterns = map[string]*regexp.Regexp{
 	"revert":     wordRe(`revert|reverts|reverted|reverting`),
 	"dump":       wordRe(`dump|dumps|dumped|dumping`),
 	"epoch":      wordRe(`epoch|epochs`),
+	// Converge 词条（ADR-0082 翻案后入册）：收敛姿态义禁「opt-in」——旧法
+	// 「收敛默认 opt-in」已被 ADR-0082 推翻，缺省 posture=all；其余语境
+	// （provider 动作窗口/测试开关/k3s 装机形态）按本义使用，经
+	// wordingExemptions 带理由豁免。翻案历史正文（ADR/设计）不入扫面。
+	"opt-in": wordRe(`opt-in`),
 	// Route/Proxy 词条（Edge→Proxy 更名，ADR-0047）。
 	"edge":          wordRe(`edge[_ -]?config|edgev1|fleetly[./_-]edge|edge[.]proto`),
 	"vhost":         wordRe(`vhost|vhosts`),
@@ -322,6 +327,12 @@ func TestAvoidTokensTriaged(t *testing.T) {
 // 白名单内不红；白名单条目不再命中（对应文件已无该词）也红——双向保鲜。
 // 扩白名单前先确认命中确属框架契约等不可更名的外部 API。
 var wordingExemptions = map[string]map[string]string{
+	// opt-in（Converge 词条，ADR-0082 翻案后入册）：只禁**收敛姿态义**的
+	// 旧法措辞；provider 动作窗口与测试开关是各自领域的本义用法。
+	"opt-in": {
+		"internal/infrastructure/providers/traefik/provider.go":       "operator-chosen action window in the proxy provider comment (the carrier rolls only when the shared token changes); not the convergence posture term overturned by ADR-0082",
+		"internal/domain/services/dbtemplate/dbtemplate_live_test.go": "test-gating sense (the live registry check must be enabled explicitly via env); not the convergence posture term overturned by ADR-0082",
+	},
 	// organization（用户裁定 2026-10-13）：GitHub 的 Organization 是第三方
 	// 专有实体（GitHub App 的安装目标/属主解析回组织名），按本义使用不在
 	// 禁列——禁的是 fleetly 域内 Team/Project 同义混用。

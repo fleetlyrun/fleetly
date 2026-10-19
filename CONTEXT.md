@@ -281,7 +281,7 @@ _Avoid_: in-place update, 增量部署
 
 **Converge**:
 把 Drift 拉回 Spec 的动作；缺省开启（posture 缺省 all，收敛姿态见 Posture 词条，ADR-0082——App 域与环域同律，翻案 ADR-0005 旧「收敛 opt-in」条款）。
-_Avoid_: sync, heal, repair
+_Avoid_: sync, heal, repair, opt-in（收敛姿态义）
 
 **Posture**:
 收敛姿态旗标：`all`（缺省——检出漂移即收敛）| `detect`（**零运行时写**：只报事件，不收敛、不物化、不隔离；启动面只重建期望账本——`ensuredSpec` + 归属，不写 gen 锚）。配置键切换，裁决与语义见 ADR-0082 §5。**成文降级**（detect 期间）：gen 偏离与稳态 stopped 在进程重启后失明（gen 锚只能由 Ensure 回执提供）；撤销 peer 的隔离不执行，被拦时落 Warn，恢复 `all` 后下一拍剥离。
