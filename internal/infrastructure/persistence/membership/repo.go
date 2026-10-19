@@ -5,6 +5,7 @@ package membership
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/membership"
@@ -91,6 +92,22 @@ func (r *repo) ListByUser(ctx context.Context, userID string) ([]membership.Memb
 	if err != nil {
 		return nil, err
 	}
+	return scanMany(rows)
+}
+
+// ListByTeam 返回 Team 内的全部 membership（身份目录读面按队过滤的单源：
+// ListUsers 非平台管理员一次取本队成员全集，避免逐用户回读的 N+1）。
+func (r *repo) ListByTeam(ctx context.Context, teamID string) ([]membership.Membership, error) {
+	rows, err := r.run.QueryContext(ctx, `
+		SELECT id, seq, user_id, team_id, role_id, created_at FROM memberships WHERE team_id = ? ORDER BY seq`, teamID)
+	if err != nil {
+		return nil, err
+	}
+	return scanMany(rows)
+}
+
+// scanMany 消费 membership 行集（ListByUser/ListByTeam 共用扫描列序）。
+func scanMany(rows *sql.Rows) ([]membership.Membership, error) {
 	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
 	var out []membership.Membership
 	for rows.Next() {

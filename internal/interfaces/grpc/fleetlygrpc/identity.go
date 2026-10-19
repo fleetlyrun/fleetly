@@ -109,6 +109,11 @@ func (svc *UsersService) CreateUser(ctx context.Context, req *identityv1.CreateU
 }
 
 func (svc *UsersService) GetUser(ctx context.Context, req *identityv1.GetUserRequest) (*identityv1.GetUserResponse, error) {
+	// 读面归属门（R14-M2 残留）：平台管理员任意；本人；同队任一
+	// membership。其余（含目标不存在）统一 403——不泄露跨队用户是否存在。
+	if err := svc.s.authorizeUserRead(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
 	u, err := svc.s.Users.Get(ctx, req.GetId())
 	if err != nil {
 		return nil, mapStateError(err, "user")
@@ -119,16 +124,32 @@ func (svc *UsersService) GetUser(ctx context.Context, req *identityv1.GetUserReq
 // Login 密码自证铸 Token（C6 密码会话第一期）：复用 tokens 面的全部
 // 执法（scope）、审计（token.created + user.login 双行）与吊销面（authn
 // 拦截器逐请求查表——吊销即 401），不引入独立会话表。失败形态不区分
-// 哪半边错（用户名枚举面收窄）；PUBLIC 端点无限速是多租户前诚实边界
-// （控制面 9080/9081 均 VPC-only，端口暴露矩阵承载边界）。
+// 哪半边错（用户名枚举面收窄）。
+//
+// 限速（R14-M1 限速半边，S13）：进程内固定窗 per-source IP + per-username
+// 双桶，先于 bcrypt 与用户行读取判定（超限即拒，零口令验证成本）；仅
+// 失败尝试计数，成功登录清零两桶。这是纵深防御的一层——真实部署仍须
+// 外部入口限流（WAF/反代/网关）与网络暴露约束，进程内桶不跨副本、重启
+// 清零。Token TTL（R14-M1 另一半）不在本批：密码会话 Token 仍无过期的
+// 语义，随 S14 的 token 表迁移与拦截器收口。
 func (svc *UsersService) Login(ctx context.Context, req *identityv1.LoginRequest) (*identityv1.LoginResponse, error) {
 	// name/password 必填组合检查已退役为 LoginRequest 的 protovalidate CEL
 	// 注解（P4-1 批 1 Run B1）：validate 拦截器在 handler 之前执法，拆
 	// per-field 文案。
+	source := loginSource(ctx)
+	username := normalizeLoginUsername(req.GetName())
+	if lim := svc.s.loginLimiter; lim != nil {
+		if err := lim.begin(source, username); err != nil {
+			return nil, err
+		}
+	}
 	u, err := svc.s.Users.GetByName(ctx, req.GetName())
 	if err != nil || u.PasswordHash == "" ||
 		bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(req.GetPassword())) != nil {
 		return nil, apperr.New("E_UNAUTHENTICATED", "name or password is incorrect")
+	}
+	if lim := svc.s.loginLimiter; lim != nil {
+		lim.reset(source, username)
 	}
 	memberships, err := svc.s.Memberships.ListByUser(ctx, u.ID)
 	if err != nil {
@@ -207,13 +228,36 @@ func (svc *UsersService) SetUserPassword(ctx context.Context, req *identityv1.Se
 	return &identityv1.SetUserPasswordResponse{}, nil
 }
 
+// ListUsers 按调用方 Team 过滤（R14-M2 读面残留）：平台管理员全量；其余
+// 调用者只返回与调用方 Team 有 membership 的用户（任意角色——目录读面，
+// 与写面 owner/admin 门区分）。单源：一次 Memberships.ListByTeam 取本队
+// 成员 id 集合，再按 Users.List 的既有 ID 序过滤（无逐用户回读的 N+1，
+// 响应序与原实现逐行一致）。
 func (svc *UsersService) ListUsers(ctx context.Context, _ *identityv1.ListUsersRequest) (*identityv1.ListUsersResponse, error) {
+	teamID, owner, err := callerTeam(ctx)
+	if err != nil {
+		return nil, err
+	}
 	list, err := svc.s.Users.List(ctx)
 	if err != nil {
 		return nil, mapStateError(err, "user")
 	}
+	var visible map[string]bool
+	if !owner {
+		members, err := svc.s.Memberships.ListByTeam(ctx, teamID)
+		if err != nil {
+			return nil, mapStateError(err, "membership")
+		}
+		visible = make(map[string]bool, len(members))
+		for i := range members {
+			visible[members[i].UserID] = true
+		}
+	}
 	out := &identityv1.ListUsersResponse{}
 	for i := range list {
+		if !owner && !visible[list[i].ID] {
+			continue
+		}
 		out.Users = append(out.Users, userMsg(&list[i]))
 	}
 	return out, nil

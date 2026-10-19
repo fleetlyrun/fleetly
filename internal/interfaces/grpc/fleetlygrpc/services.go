@@ -145,6 +145,11 @@ type Services struct {
 	// IssueEventTicket，兑换限 SSE 原生入口）。
 	eventTickets *eventTicketStore
 
+	// loginLimiter 是 Login 口令面的进程内固定窗限速器（R14-M1 限速半边；
+	// loginlimit.go 单源）。nil 安全：仅 Login 消费，测试直构 Services 的
+	// 面不受影响。
+	loginLimiter *loginLimiter
+
 	// ScopeVocabulary 是 scope 词表（CreateRole 校验用；assembly 单一源
 	// 注入——服务面不自带词表）。
 	ScopeVocabulary []string
@@ -267,6 +272,7 @@ func NewServices(deps Deps) *Services {
 		Catalog:         deps.Catalog,
 		Anchor:          deps.Anchor,
 		eventTickets:    newEventTicketStore(deps.DB.Clock()),
+		loginLimiter:    newLoginLimiter(deps.DB.Clock()),
 		ScopeVocabulary: deps.Vocab,
 		Log:             deps.Log,
 	}

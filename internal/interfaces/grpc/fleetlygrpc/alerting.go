@@ -403,19 +403,23 @@ func (svc *AlertingService) CreateAlertRule(ctx context.Context, req *telemetryv
 	return &telemetryv1.CreateAlertRuleResponse{Rule: ruleMsg(row)}, nil
 }
 
-// ListAlertRules 列规则（app_id 非空 = 行级授权锚；空 = 全量可读面）。
+// ListAlertRules 列规则（app_id 非空 = 行级授权锚；空 = 按调用方 Team
+// 过滤的全量可读面——R08-M2：规则行含他队 app_id/阈值，member 不得跨队
+// 枚举）。
 func (svc *AlertingService) ListAlertRules(ctx context.Context, req *telemetryv1.ListAlertRulesRequest) (*telemetryv1.ListAlertRulesResponse, error) {
-	if req.GetAppId() != "" {
-		if _, err := svc.s.authorizeAppID(ctx, req.GetAppId()); err != nil {
-			return nil, err
-		}
-	}
 	var rows []alertrule.Rule
 	var err error
 	if req.GetAppId() != "" {
+		// 指定 App 时行级授权已把"他队 App"拒成 403，无需再做 List 面过滤。
+		if _, err := svc.s.authorizeAppID(ctx, req.GetAppId()); err != nil {
+			return nil, err
+		}
 		rows, err = svc.s.Engine.AlertRuleRepo().ListByApp(ctx, req.GetAppId())
 	} else {
 		rows, err = svc.s.Engine.AlertRuleRepo().ListAll(ctx)
+		if err == nil {
+			rows, err = svc.filterAlertRulesByTeam(ctx, rows)
+		}
 	}
 	if err != nil {
 		return nil, mapStateError(err, "alert rule")
@@ -423,6 +427,58 @@ func (svc *AlertingService) ListAlertRules(ctx context.Context, req *telemetryv1
 	out := &telemetryv1.ListAlertRulesResponse{}
 	for i := range rows {
 		out.Rules = append(out.Rules, ruleMsg(&rows[i]))
+	}
+	return out, nil
+}
+
+// filterAlertRulesByTeam 是告警规则 List 面的行级过滤核（R08-M2，规则
+// 归属经 App → Project → Team）：平台管理员全量；其余调用者只保留本 Team
+// Project 下 App 的规则。读路径两次批量查询（本队 Project 集 + 活跃 App
+// 全量建 appID→projectID 表），不做逐规则 anchor 解析的 N+1；规则不随
+// App tombstone 级联删除，活跃表未命中时用 GetAnyByID 兜底解析已删 App
+// 的归属（"tombstone 是事实不是秘密"，ADR-0035）。App 行彻底缺失的孤儿
+// 规则归属不可判定，非平台管理员不展示（fail-closed）。
+func (svc *AlertingService) filterAlertRulesByTeam(ctx context.Context, rows []alertrule.Rule) ([]alertrule.Rule, error) {
+	teamProjects, all, err := svc.s.teamProjectFilter(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if all {
+		return rows, nil
+	}
+	apps, err := svc.s.Apps.List(ctx)
+	if err != nil {
+		return nil, mapStateError(err, "app")
+	}
+	projectOf := make(map[string]string, len(apps))
+	for i := range apps {
+		projectOf[apps[i].ID] = apps[i].ProjectID
+	}
+	visible := make(map[string]bool)
+	out := make([]alertrule.Rule, 0, len(rows))
+	for i := range rows {
+		appID := rows[i].AppID
+		allowed, seen := visible[appID]
+		if !seen {
+			projectID, ok := projectOf[appID]
+			if !ok {
+				a, err := svc.s.Apps.GetAnyByID(ctx, appID)
+				if err != nil {
+					if errors.Is(err, state.ErrNotFound) {
+						visible[appID] = false
+						continue
+					}
+					return nil, mapStateError(err, "app")
+				}
+				projectID = a.ProjectID
+				projectOf[appID] = projectID
+			}
+			allowed = teamProjects[projectID]
+			visible[appID] = allowed
+		}
+		if allowed {
+			out = append(out, rows[i])
+		}
 	}
 	return out, nil
 }
@@ -464,11 +520,18 @@ func (svc *AlertingService) DeleteAlertRule(ctx context.Context, req *telemetryv
 	return &telemetryv1.DeleteAlertRuleResponse{}, nil
 }
 
-// ListAlertStates 列现行状态（用户规则行 + 内置系统行）。
+// ListAlertStates 列现行状态（用户规则行 + 内置系统行）。用户规则按
+// 调用方 Team 过滤（R08-M2：状态行同样泄露他队 app_id）；内置系统行无
+// Team 轴（平台级、行不落库），沿用既有全员可见语义——Console 的
+// 平台告警卡依赖它们，不随本批收窄。
 func (svc *AlertingService) ListAlertStates(ctx context.Context, _ *telemetryv1.ListAlertStatesRequest) (*telemetryv1.ListAlertStatesResponse, error) {
 	rows, err := svc.s.Engine.AlertRuleRepo().ListAll(ctx)
 	if err != nil {
 		return nil, mapStateError(err, "alert rule")
+	}
+	rows, err = svc.filterAlertRulesByTeam(ctx, rows)
+	if err != nil {
+		return nil, err
 	}
 	out := &telemetryv1.ListAlertStatesResponse{}
 	for i := range rows {

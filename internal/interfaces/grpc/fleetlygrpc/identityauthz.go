@@ -72,6 +72,39 @@ func (s *Services) authorizeUserAdmin(ctx context.Context, memberships membershi
 		WithSuggestion("Use a token of the team that holds the user, or ask the platform owner.")
 }
 
+// authorizeUserRead 判定调用方能否读目标用户（R14-M2 读面残留；S2 只修了
+// 写面）：
+//  1. 平台管理员（default Team 的 builtin-owner）→ 任意用户；
+//  2. 调用者本人 → 放行（WhoAmI 之外的 GetUser 自助读）；
+//  3. 目标用户在调用方 Team 持有任一 membership（任意角色）→ 放行；
+//  4. 其余一律 E_FORBIDDEN——含目标不存在：读面不泄露跨队用户是否存在，
+//     跨队与缺行统一 403（与写面 authorizeUserAdmin 的角色门区分：读面
+//     允许同队 member，写面仍限 owner/admin）。
+func (s *Services) authorizeUserRead(ctx context.Context, targetUserID string) error {
+	id, ok := authn.FromContext(ctx)
+	if !ok {
+		return apperr.New("E_UNAUTHENTICATED", "present a valid token to read user accounts")
+	}
+	if callerIsPlatformAdmin(id) {
+		return nil
+	}
+	if id.UserID != "" && targetUserID == id.UserID {
+		return nil
+	}
+	rows, err := s.Memberships.ListByUser(ctx, targetUserID)
+	if err != nil {
+		return mapStateError(err, "membership")
+	}
+	for i := range rows {
+		if rows[i].TeamID == id.TeamID {
+			return nil
+		}
+	}
+	return apperr.New("E_FORBIDDEN",
+		"user %s holds no membership in the caller's team %s", targetUserID, id.TeamID).
+		WithSuggestion("Use a token of the team that holds the user, or ask the platform owner.")
+}
+
 // authorizeRoleGrant 判定调用方能否授予 roleID（角色授予特权上限）：
 //   - 平台管理员 → 放行（builtin-owner 亦只在此分支放行）；
 //   - 其余调用者：逐条比对 Role.Scopes 是否被自身 scope 覆盖（覆盖语义

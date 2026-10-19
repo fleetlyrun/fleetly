@@ -20,4 +20,8 @@ type Repo interface {
 	// team/role 解析源；C6 第一期——单 membership 取首行，多队诚实取 ID 序
 	// 首个，跨队会话面随多队裁决扩展）。
 	ListByUser(ctx context.Context, userID string) ([]Membership, error)
+	// ListByTeam 返回 Team 内的全部 membership（身份目录读面按队过滤的
+	// 单源：ListUsers 非平台管理员只见与调用方 Team 有 membership 的用户，
+	// 一次查询取全集，避免逐用户回读的 N+1；seq 升序稳定）。
+	ListByTeam(ctx context.Context, teamID string) ([]Membership, error)
 }
