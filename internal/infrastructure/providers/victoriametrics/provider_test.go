@@ -261,3 +261,85 @@ func TestRetentionVariants(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, strings.Join(p.ManagedWorkloads()[0].Command, " "), "-retentionPeriod=30d")
 }
+
+// matrixBody 造 n 条序列的 query_range 成功响应（每条一个采样点；H8
+// 阶段 A 序列上限测试用）。
+func matrixBody(n int) []byte {
+	var b strings.Builder
+	b.WriteString(`{"status":"success","data":{"resultType":"matrix","result":[`)
+	for i := 0; i < n; i++ {
+		if i > 0 {
+			b.WriteString(",")
+		}
+		fmt.Fprintf(&b, `{"metric":{"__name__":"up","instance":"i%d"},"values":[[1767225600,"1"]]}`, i)
+	}
+	b.WriteString(`]}}`)
+	return []byte(b.String())
+}
+
+// paddedMatrixBody 造一条带 padding 字节标签的序列响应（响应体上限测试用；
+// 单序列小值点，撑大的是标签而不是命中数）。
+func paddedMatrixBody(paddingBytes int) []byte {
+	var b strings.Builder
+	b.WriteString(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"__name__":"up","padding":"`)
+	b.WriteString(strings.Repeat("x", paddingBytes))
+	b.WriteString(`"},"values":[[1767225600,"1"]]}]}}`)
+	return []byte(b.String())
+}
+
+// TestQuerySeriesRawLimits 钉 H8 阶段 A 的资源上限（设计文档 §5.3.3）：
+// 响应体 8 MiB、序列数 1000。超限是调用方查询/时间窗过宽——返回
+// capability.MetricsQueryError（API 层落 E_INVALID_ARGUMENT），边界值
+// （恰好 1000 序列、8 MiB 以内）正常返回。
+func TestQuerySeriesRawLimits(t *testing.T) {
+	providerFor := func(t *testing.T, body []byte) *Provider {
+		t.Helper()
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(body)
+		}))
+		t.Cleanup(srv.Close)
+		p := newTestProvider(t)
+		p.addr = strings.TrimPrefix(srv.URL, "http://")
+		return p
+	}
+	query := func(p *Provider) ([]capability.Series, error) {
+		return p.QuerySeries(context.Background(), "up",
+			time.Unix(1767225600, 0), time.Unix(1767225900, 0), 15*time.Second)
+	}
+
+	t.Run("exactly 1000 series succeeds", func(t *testing.T) {
+		series, err := query(providerFor(t, matrixBody(maxQuerySeries)))
+		require.NoError(t, err)
+		require.Len(t, series, maxQuerySeries)
+	})
+
+	t.Run("1001 series rejected", func(t *testing.T) {
+		_, err := query(providerFor(t, matrixBody(maxQuerySeries+1)))
+		require.Error(t, err)
+		var qe *capability.MetricsQueryError
+		require.ErrorAs(t, err, &qe)
+		assert.Equal(t, http.StatusUnprocessableEntity, qe.Status)
+		assert.Contains(t, qe.Message, "exceeds 1000 series")
+		assert.Contains(t, qe.Message, "narrow the query or the time range")
+	})
+
+	t.Run("response over 8 MiB rejected", func(t *testing.T) {
+		_, err := query(providerFor(t, paddedMatrixBody(maxQueryResponseBytes+1024)))
+		require.Error(t, err)
+		var qe *capability.MetricsQueryError
+		require.ErrorAs(t, err, &qe)
+		assert.Equal(t, http.StatusRequestEntityTooLarge, qe.Status)
+		assert.Contains(t, qe.Message, "exceeds 8 MiB")
+		assert.Contains(t, qe.Message, "narrow the query or the time range")
+	})
+
+	t.Run("response under 8 MiB succeeds", func(t *testing.T) {
+		body := paddedMatrixBody(maxQueryResponseBytes - 2048)
+		require.LessOrEqual(t, len(body), maxQueryResponseBytes, "fixture must stay inside the read limit")
+		series, err := query(providerFor(t, body))
+		require.NoError(t, err)
+		require.Len(t, series, 1)
+		require.Len(t, series[0].Points, 1)
+	})
+}

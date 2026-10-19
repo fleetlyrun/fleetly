@@ -104,11 +104,24 @@ d233c07d docs(plan,reviews): S1-S5 终验记录与修复状态归档
 |---|---|---|---|---|
 | S6 | k3s ConfigMounts 挂载（H3 配套） | R06-M1 | translate/runtime ensure 新测试 + 引用名一致性；k3s/guards 绿 | ✅ |
 | S7 | 幂等键调用方作用域 | H11（R14-H4） | 迁移 00034 + repo/enforcer 签名；跨 token/跨队同键不同体/同体不复用；apitest 绿 | ✅ |
-| S8 | Metrics 租户域过滤（设计→实现） | H8（R07-H2/R08-M2） | 设计：`docs/design/2026-10-19-security-backlog-design.md`（推荐 QueryScopedMetrics + raw 收平台管理员）；实现待裁决 | 🟡 设计完成 |
-| S9 | relay 节点个体凭证 | H10（R14-H3） | 设计：同上文档（推荐按节点个体 relay 凭证 + 两步 enroll）；实现待裁决 | 🟡 设计完成 |
-| S10 | 收敛语义深水区 + ADR 追记 | R02-M2/M5、R16-M2/M3/M5/M6、H15 ADR-0083 追记 | ADR 修订 + 判定表单源 + 静默面事实化；钉测翻向 | ☐ |
+| S8 | Metrics 租户域过滤（设计） | H8（R07-H2/R08-M2） | 设计文档 `docs/design/2026-10-19-security-backlog-design.md`（推荐 QueryScopedMetrics + raw 收平台管理员） | ✅ 设计 |
+| S9 | H8 阶段 A 止血 | H8 | raw QueryMetrics 收平台管理员（403 先于 503）+ 响应 8MiB/1000 序列上限；member 图表失明（已裁决代价） | ✅ |
+| S10 | H8 阶段 B scoped RPC + Console/CLI 切换 | H8 | `QueryScopedMetrics`（服务端固定模板 + 行级授权）恢复 member 观测；raw 保留平台诊断面；proto/console 生成同批 | ☐ |
+| S11 | relay 节点个体凭证 | H10（R14-H3） | 两步 enroll（join → 锚定 → 按节点取 relay）；个体凭证（hash 库存 + carrier_id）；rotate 即时断连；迁移 00035 | ☐ |
+| S12 | 收敛语义深水区 + ADR 追记 | R02-M2/M5、R16-M2/M3/M5/M6、H15 ADR-0083 追记 | ADR 修订 + 判定表单源 + 静默面事实化；钉测翻向 | ☐ |
 
 > S6 先行原因：H3 已消除 k3s configmaps 403，若不落挂载，真机会从"显式 403 失败"变成"ConfigMap 建了但容器无配置"的静默失败。
+
+### 第二轮裁决记录（2026-10-19，用户确认）
+- H8：**先阶段 A 止血 + 随后阶段 B scoped RPC**；本批只做 **app 级**，project 级 scoped 查询与 `ListAlertRules`/`ListAlertStates` 的 Team 过滤单列小批。
+- H10：**接受两步 enroll**（先 join，节点锚定后按节点领取 relay 脚本）；**rotate/重铸即时断开在连 relay**（在途 exec 收 relay_disconnected）。
+- 设计文档：`docs/design/2026-10-19-security-backlog-design.md`（S8 归档，commit `5be1527b`）。
+
+### S9 执行记录（H8 阶段 A）
+- 改动：`fleetlygrpc/alerting.go`（QueryMetrics 首行 RequirePlatformAdmin，门先于 Metrics nil 的 503）、`providers/victoriametrics/provider.go`（响应体 8 MiB + 1000 序列上限，超限返回 `capability.MetricsQueryError` → E_INVALID_ARGUMENT）、`provider_test.go`（4 子例）、`apitest/metrics_authz_test.go`（新，3 非平台身份 403 + owner 非 403）。
+- 验收证据（Lead 亲跑）：gofmt 空；双平台 build 0；victoriametrics 3.35s、fleetlygrpc 0.26s、apitest 25.8s、guards 18.0s；新测试逐个 PASS；vet 0；diff-check 0。
+- 已知代价：member/非平台 admin 的图表与 CLI `metrics query` 现 403（已裁决；阶段 B 恢复）。告警评估不经查询面、不受影响。
+- 残留：阶段 B `QueryScopedMetrics` + Console/CLI 切换（S10）；project 级与 alerts Team 过滤单列小批。
 
 ### S6 执行记录
 - 改动：`k3s/translate.go`（sortedConfigMounts/configMountsWithMaterials/configVolumeName + toContainer SubPath 挂载 + podTemplate ConfigMap 卷 0444）、`translate_test.go`（三载体/缺材料/顺序稳定）、`runtime_ensure_test.go`（Ensure 引用名一致性 + SkipMaterials）。

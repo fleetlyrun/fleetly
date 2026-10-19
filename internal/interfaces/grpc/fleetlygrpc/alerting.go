@@ -51,8 +51,24 @@ type MetricsService struct {
 	s *Services
 }
 
-// QueryMetrics 透传 PromQL 到受管 VM（Metrics 面停用时精确失败）。
+// QueryMetrics 透传 PromQL 到受管 VM（平台管理员诊断面；Metrics 面停用时
+// 精确失败）。
+//
+// 授权（H8 阶段 A 止血，设计文档 docs/design/2026-10-19-security-backlog-
+// design.md §5.2）：raw PromQL 让调用方自带表达式与标签，服务端不引入
+// PromQL 解析器就无法约束行级作用域；单存储 + 平台凭证下这是跨 Team
+// 遥测读，故本面收归平台管理员（default Team 的 builtin-owner）。门在
+// Metrics nil 检查之前：非平台管理员不得用 403/503 差异探测存储是否启用，
+// 拒绝零副作用。
+//
+// 阶段 B 锚（设计文档 §4/§5.1）：新增 QueryScopedMetrics（服务端固定模板
+// + 行级授权）恢复 member 图表面后，本函数保留为平台管理员诊断面，
+// Console/CLI 切到 scoped 动线；阶段 B 落地前 member 图表失明是已裁决的
+// 已知代价（§3.3）。
 func (svc *MetricsService) QueryMetrics(ctx context.Context, req *telemetryv1.QueryMetricsRequest) (*telemetryv1.QueryMetricsResponse, error) {
+	if err := RequirePlatformAdmin(ctx); err != nil {
+		return nil, err
+	}
 	if svc.s.Metrics == nil {
 		// 未配 metrics.addr 是显式关态（P4-3 批 3）：精确 503，不再落
 		// E_INTERNAL 脱敏 500。

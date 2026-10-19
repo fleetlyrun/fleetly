@@ -58,6 +58,19 @@ const healthTimeout = 3 * time.Second
 // queryTimeout 是单次查询请求上界。
 const queryTimeout = 30 * time.Second
 
+// 单次查询的资源上限（H8 阶段 A 止血；与设计文档
+// docs/design/2026-10-19-security-backlog-design.md §5.3.3 同值）：
+// 即使调用方是平台管理员，raw PromQL 也不得打爆控制面——响应体与序列数
+// 双向封顶；超限是调用方查询过宽（调用方错），不是平台故障。
+const (
+	// maxQueryResponseBytes 是查询响应体的读取上限（8 MiB）。此前
+	// io.ReadAll 无界，{__name__=~".+"}[90d] 形态可把控制面堆打满。
+	maxQueryResponseBytes = 8 << 20
+	// maxQuerySeries 是单次查询返回的序列数上限（raw 诊断面不做静默截断，
+	// 超限直接拒绝）。
+	maxQuerySeries = 1000
+)
+
 // Provider 是 VictoriaMetrics Metrics Provider。
 type Provider struct {
 	addr          string
@@ -289,7 +302,9 @@ func (p *Provider) ImportPrometheus(ctx context.Context, body []byte, extraLabel
 
 // QuerySeries 实现 Metrics 端口：PromQL 透传 VM query_range（Prometheus
 // 兼容 API）；step 秒形态。响应是标准 matrix（{metric, values} 列表），
-// 多标签命中逐序列返回（空集 = 查询无数据，合法形态）。
+// 多标签命中逐序列返回（空集 = 查询无数据，合法形态）。响应体与序列数
+// 受 maxQueryResponseBytes / maxQuerySeries 封顶（H8 阶段 A），超限返回
+// capability.MetricsQueryError（调用方查询过宽）。
 func (p *Provider) QuerySeries(ctx context.Context, query string, start, end time.Time, step time.Duration) ([]capability.Series, error) {
 	if step <= 0 {
 		step = 15 * time.Second
@@ -311,9 +326,20 @@ func (p *Provider) QuerySeries(ctx context.Context, query string, start, end tim
 		return nil, fmt.Errorf("victoriametrics query: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(resp.Body)
+	// 读上限 = 8 MiB + 1 字节：读到第 8 MiB+1 个字节即证超限，超限响应
+	// 不整段读进内存（H8 阶段 A 止血）。
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxQueryResponseBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("victoriametrics query: read response: %w", err)
+	}
+	if len(body) > maxQueryResponseBytes {
+		// 超限归调用方面（查询/时间窗过宽），类型化上抛供 API 落
+		// E_INVALID_ARGUMENT；不落平台 E_INTERNAL（H8 阶段 A）。
+		return nil, &capability.MetricsQueryError{
+			Status: http.StatusRequestEntityTooLarge,
+			Message: fmt.Sprintf("response exceeds %d MiB; narrow the query or the time range and retry",
+				maxQueryResponseBytes>>20),
+		}
 	}
 	if resp.StatusCode/100 == 4 {
 		// 上游 4xx = 查询语法/语义错（调用方面）——类型化上抛供 API 分流
@@ -324,7 +350,20 @@ func (p *Provider) QuerySeries(ctx context.Context, query string, start, end tim
 	if resp.StatusCode/100 != 2 {
 		return nil, fmt.Errorf("victoriametrics query: status %d: %s", resp.StatusCode, snippetOf(body))
 	}
-	return decodeQueryRange(body)
+	series, err := decodeQueryRange(body)
+	if err != nil {
+		return nil, err
+	}
+	// 序列上限在解码后执法（拿到的是真实命中数）：raw 诊断面不做静默
+	// 截断，超限即拒绝（H8 阶段 A；设计文档 §5.3.3 的 1000 序列）。
+	if len(series) > maxQuerySeries {
+		return nil, &capability.MetricsQueryError{
+			Status: http.StatusUnprocessableEntity,
+			Message: fmt.Sprintf("result exceeds %d series (got %d); narrow the query or the time range and retry",
+				maxQuerySeries, len(series)),
+		}
+	}
+	return series, nil
 }
 
 // queryErrorMessage 提取 VM 错误载荷的 error 字段（status=error 信封）；
