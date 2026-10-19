@@ -32,6 +32,13 @@ type proxies struct {
 // 一次轻量指纹比对）。后端地址不是行集的一部分——载体漂移/Dead backend
 // 撤流由 PublishRoutesNow 即时触发与强制重放节拍兜底（滞后有界，终态同）。
 func (e *Engine) publishRoutes(ctx context.Context) {
+	// 发布就绪门（H7）：启动基线重放收口前不发布——冷缓存逐 Route 跳过
+	// 会让"部分快照"发布成功并 remember（签名固化到慢通道重放，最长
+	// 60s），traefik 侧则可能先拉到空配置覆盖存量路由。开门与即时发布
+	// 由 lifecycle.runBaselineReplay 收口；手动驱动形态构造即开门。
+	if !e.routeReady.Load() {
+		return
+	}
 	routes, err := e.repos.Routes.List(ctx)
 	if err != nil {
 		e.log.Error("route publish: list", "err", err)

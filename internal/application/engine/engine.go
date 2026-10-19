@@ -10,6 +10,7 @@ import (
 	"errors"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
@@ -183,6 +184,12 @@ type Engine struct {
 	// Proxy 面（F0.15）：受管 Provider reconciler（Route 全量发布真源在
 	// repos.Routes——读写同源，ADR-0080 目录化）。
 	proxy capability.Proxy
+
+	// routeReady 是 Route 全量发布就绪门（H7）：Start 在启动循环前置 false
+	//（基线重放窗），重放返回后置 true 并即时发布一次；重放失败同样置
+	// true（否则拉取端点永久 503，失败由既有 drift/受管环自愈）。构造
+	// 默认 true——未 Start 的手动驱动形态（测试/apitest 手动）行为不变。
+	routeReady atomic.Bool
 
 	// Registry 面（F1.11，ADR-0019 附录 B）：构建推送目标 + from_build
 	// 引用组合 + 平台拉取凭证 + 受管 zot 自宿。

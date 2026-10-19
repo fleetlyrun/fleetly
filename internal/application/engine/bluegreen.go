@@ -87,7 +87,9 @@ func (e *Engine) baselineGeneration(ctx context.Context, d *deployment.Deploymen
 // 即移除"的域内收敛语义天然不移除任何一方（ADR-0048 决策 1.2）。三锚：
 //   - 旧代成员按 from_revision 重投影（确定性——缓存冷热无关）+ 基线 gen
 //     标记 + 逐载体基线材料（旧代 secret 引用/凭证不被新代材料改写——
-//     零扰动锚）；
+//     零扰动锚）；egress 事实与新代同源（H9：k3s 的 deny policy 以
+//     EgressNetworks 为 podSelector——窗口内正在承载流量的旧代缺该事实
+//     会失去 egress:none 强隔离，ADR-0052 F4.1 验收锚）；
 //   - 新代成员按 to_revision 投影 + 本部署 gen 标记（调用 gen = from_gen，
 //     新代显式覆写自身 gen——旧代标签不被调用 gen 翻新）；
 //   - rolling 进程（to-spec 非 BG）只进新代——窗内即替换，联合集不含其
@@ -124,7 +126,8 @@ func (e *Engine) blueGreenWindowMaterialize(ctx context.Context, d *deployment.D
 		if err != nil {
 			return fmt.Errorf("resolve baseline cross-project network peers: %w", err)
 		}
-		fromWS, _, err = Project(fromSpec, team, appName, fromDigests, fromPeers, nil)
+		fromWS, _, err = Project(fromSpec, team, appName, fromDigests, fromPeers,
+			e.egressNetworkMap(ctx, fromSpec.GetApp().GetProject()))
 		if err != nil {
 			return fmt.Errorf("project baseline spec: %w", err)
 		}

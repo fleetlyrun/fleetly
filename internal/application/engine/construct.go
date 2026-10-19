@@ -79,6 +79,9 @@ func New(deps Deps, opts Options) *Engine {
 	}
 	e.build.logs = newLogBuffer(500)
 	e.build.inputs = make(map[string]capability.BuildRequest)
+	// Route 发布门默认开放（H7）：只有 Start 的基线重放窗会临时关闭它——
+	// 手动驱动/测试形态零行为变化。
+	e.routeReady.Store(true)
 	e.logpipe.streams = make(map[string]context.CancelFunc)
 	e.logpipe.batches = make(map[string]*nsBatch)
 	e.logpipe.cursors = deps.Stores.LogCursors

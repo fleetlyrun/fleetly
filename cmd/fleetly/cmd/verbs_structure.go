@@ -408,20 +408,24 @@ func newAppsListVerb() commands.Command {
 }
 
 // newAppsRestartVerb 是重启双面动词（ADR-0083 §3 双面操作者契约；推翻
-// ADR-0069 决策 6）：**缺省 = 声明面**——取最新冻结 Revision，全部进程
-// restart_seq+1，经 Deploy(spec_file) 走正常部署管线（有 lineage、
-// seq-only 判定免迁移、内容等价语义护航滚动替换）；`--runtime` 旗标走
-// ADR-0069 动作面逃生（单进程零 lineage 强制重排）。hook-owned 应用的
-// 所有权闸门错误（E_APP_HOOK_OWNED）如实透出，--runtime 即逃生；声明面
-// 对 hook-owned 应用走 spec_file overlay（材料半边取冻结侧），天然合法。
-// 取不到冻结 Revision / 空 spec 诚实报错（首部署无对象可重启）。
+// ADR-0069 决策 6）：**缺省 = 声明面**——取**生效基线**（最新 succeeded
+// 部署的 to_revision）为源，**不是** R 号最大的冻结 Revision（H15：失败/
+// 取消/回滚后最新冻结体可能从未生效，以其为源会把失败 spec 重新上线，
+// 且引擎对 succeeded 基线判定为非 seq-only → 迁移重跑）。全部进程
+// restart_seq+1，经 Deploy(spec_file) 走正常部署管线（有 lineage、seq-only
+// 判定免迁移、内容等价语义护航滚动替换）；`--runtime` 旗标走 ADR-0069
+// 动作面逃生（单进程零 lineage 强制重排；进程存在性校验仍对最新冻结
+// Spec——逃生面语义不动）。hook-owned 应用的所有权闸门错误
+// （E_APP_HOOK_OWNED）如实透出，--runtime 即逃生；声明面对 hook-owned 应用
+// 走 spec_file overlay（材料半边取冻结侧），天然合法。无 succeeded 基线
+// （从未成功部署）诚实报错。
 func newAppsRestartVerb() commands.Command {
 	const name = "restart"
 	var app, process string
 	var runtimeFace bool
 	return &flaggedVerb{
 		name:     name,
-		synopsis: "Restart an app declaratively: bump restart_seq on the latest frozen revision and redeploy (lineage + no migration re-run). --runtime force-reschedules one process in place (escape hatch, no lineage)",
+		synopsis: "Restart an app declaratively: bump restart_seq on the effective baseline revision and redeploy (lineage + no migration re-run). --runtime force-reschedules one process in place (escape hatch, no lineage)",
 		usage:    "apps restart --app APP_ID [--runtime --process NAME]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&app, "app", "", "app id (required)")
@@ -453,7 +457,7 @@ func newAppsRestartVerb() commands.Command {
 				return usageErr(name, "--process is only meaningful with --runtime (the declarative face restarts every process of the app)")
 			}
 			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
-				latest, err := latestFrozenRevision(ctx, c, app)
+				latest, err := latestSucceededRevision(ctx, c, app)
 				if err != nil {
 					return err
 				}
@@ -494,31 +498,83 @@ func newAppsRestartVerb() commands.Command {
 	}
 }
 
-// latestFrozenRevision 取 App 的最新冻结 Revision（R 号最大者）：列表
-// 游标走到尾（seq 升序分页——零新 RPC 的客户端组合，ADR-0083 §3）。
-func latestFrozenRevision(ctx context.Context, c *fleetly.Client, app string) (*deliveryv1.Revision, error) {
-	var latest *deliveryv1.Revision
-	after := int64(0)
+// latestSucceededRevision 取 App 的**生效基线** Revision（H15）：最新
+// state=succeeded 部署行的 to_revision 所指的冻结体——语义源是"当前生效"
+// 而非"R 号最大者"（rollback 不冻结新号；failed/cancelled 的冻结体不是
+// 生效态，以其为重启源会重新上线失败 spec 并让引擎判定为非 seq-only）。
+// 分页全部走客户端组合（部署新→旧、Revision R 号升序），零新 RPC。
+func latestSucceededRevision(ctx context.Context, c *fleetly.Client, app string) (*deliveryv1.Revision, error) {
+	deployments := make([]*deliveryv1.Deployment, 0, 50)
+	afterDeployment := int64(0)
 	for {
-		resp, err := c.Revisions.ListRevisions(ctx, &deliveryv1.ListRevisionsRequest{AppId: app, AfterSeq: after, Limit: 200})
+		resp, err := c.Deployments.ListDeployments(ctx, &deliveryv1.ListDeploymentsRequest{
+			AppId: app, AfterDeploymentSeq: afterDeployment, Limit: 200,
+		})
+		if err != nil {
+			return nil, err
+		}
+		page := resp.GetDeployments()
+		deployments = append(deployments, page...)
+		// 部署列表新→旧：扫到首个 succeeded 所在页即可停（同页更旧行仍由
+		// 选择纯函数按 seq 取最大）。空页 = 已到尾。
+		succeeded := false
+		for _, d := range page {
+			if d.GetState() == "succeeded" {
+				succeeded = true
+				break
+			}
+		}
+		if len(page) == 0 || succeeded {
+			break
+		}
+		afterDeployment = page[len(page)-1].GetSeq()
+	}
+	revisions := make([]*deliveryv1.Revision, 0, 50)
+	afterRevision := int64(0)
+	for {
+		resp, err := c.Revisions.ListRevisions(ctx, &deliveryv1.ListRevisionsRequest{
+			AppId: app, AfterSeq: afterRevision, Limit: 200,
+		})
 		if err != nil {
 			return nil, err
 		}
 		page := resp.GetRevisions()
-		for _, r := range page {
-			if latest == nil || r.GetSeq() > latest.GetSeq() {
-				latest = r
-			}
-		}
+		revisions = append(revisions, page...)
 		if len(page) == 0 {
 			break
 		}
-		after = page[len(page)-1].GetSeq()
+		afterRevision = page[len(page)-1].GetSeq()
+	}
+	rev := selectRestartBaseline(deployments, revisions)
+	if rev == nil {
+		return nil, fmt.Errorf("app %s has no successful baseline to restart (deploy first)", app)
+	}
+	return rev, nil
+}
+
+// selectRestartBaseline 是声明面重启的选源纯函数（H15 可单测面）：取 seq
+// 最大的 succeeded 部署行的 to_revision，再在 Revision 行集中按 id 命中该
+// 冻结体。无 succeeded 部署（或行集缺对应 Revision——不该发生）返回 nil，
+// 由调用方报"无成功基线"。输入序无关：部署行可乱序，纯函数按 seq 取最大。
+func selectRestartBaseline(deployments []*deliveryv1.Deployment, revisions []*deliveryv1.Revision) *deliveryv1.Revision {
+	var latest *deliveryv1.Deployment
+	for _, d := range deployments {
+		if d.GetState() != "succeeded" {
+			continue
+		}
+		if latest == nil || d.GetSeq() > latest.GetSeq() {
+			latest = d
+		}
 	}
 	if latest == nil {
-		return nil, fmt.Errorf("app %s has no frozen revision to restart (nothing was ever deployed; deploy first)", app)
+		return nil
 	}
-	return latest, nil
+	for _, r := range revisions {
+		if r.GetId() == latest.GetToRevision() {
+			return r
+		}
+	}
+	return nil
 }
 
 // apps delete（ADR-0023）：收口删除——拆载体 + 撤路由 + tombstone；活跃

@@ -272,3 +272,31 @@ func TestPrecheckFailureKeepsLastGoodSnapshot(t *testing.T) {
 	assert.Error(t, err)
 	assert.Equal(t, before, string(p.ConfigSnapshot()), "a rejected publication must leave the served snapshot untouched")
 }
+
+// H7 发布就绪门：构造即未就绪（端点侧 503 → traefik 保 LKG）；首次成功
+// 全量发布后置 ready；之后的失败发布不清位（既有 LKG 继续服务）。
+func TestProviderReadyGate(t *testing.T) {
+	p, err := New("http://fleetlyd:9082/proxy/config", "", "", "")
+	require.NoError(t, err)
+	assert.False(t, p.Ready(), "a provider that never completed a full publication is not ready")
+
+	// 失败发布（未解析后端）不得把 ready 置真。
+	err = p.PublishRoutes(context.Background(), []capability.Route{
+		{Host: "bad.127.0.0.1.sslip.io", Process: "web", Port: 80},
+	})
+	require.Error(t, err)
+	assert.False(t, p.Ready(), "a rejected first publication must not open the readiness gate")
+
+	// 成功发布 → ready。
+	good := []capability.Route{{Host: "good.127.0.0.1.sslip.io", Process: "web", Port: 80,
+		Protocol: capability.ProtocolHTTP, BackendAddr: "10.0.0.1:80"}}
+	require.NoError(t, p.PublishRoutes(context.Background(), good))
+	assert.True(t, p.Ready())
+
+	// 后续失败不清位：last-known-good 仍在服务。
+	err = p.PublishRoutes(context.Background(), []capability.Route{
+		{Host: "bad.127.0.0.1.sslip.io", Process: "web", Port: 80},
+	})
+	require.Error(t, err)
+	assert.True(t, p.Ready(), "a rejected publication must not clear readiness (last-known-good keeps serving)")
+}

@@ -24,6 +24,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/deployment"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/network"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/project"
 	"github.com/fleetlyrun/fleetly/internal/domain/structure/route"
 	apprepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/app"
@@ -47,16 +48,40 @@ func rollingSpecWithPort(ref string) string {
 		`"ports":[{"port":8080,"protocol":"PROTOCOL_HTTP"}]}]}`
 }
 
+// bgSpecOnNetwork 同 bgSpecFor，但进程挂指定项目网（H9：双代窗 egress 事实
+// 需要 process.networks 指向 egress:none 网络）。
+func bgSpecOnNetwork(ref, net string) string {
+	return `{"schema_version":1,"app":{"id":"` + tAppID + `","project":"` + tProjectID + `"},` +
+		`"source":{"image":{"ref":"` + ref + `"}},` +
+		`"processes":[{"name":"web","image":"` + ref + `","replicas":1,` +
+		`"ports":[{"port":8080,"protocol":"PROTOCOL_HTTP"}],"networks":["` + net + `"],` +
+		`"strategy":"DEPLOY_STRATEGY_BLUE_GREEN"}]}`
+}
+
+// rollingSpecOnNetwork 同 rollingSpecWithPort，但进程挂指定项目网。
+func rollingSpecOnNetwork(ref, net string) string {
+	return `{"schema_version":1,"app":{"id":"` + tAppID + `","project":"` + tProjectID + `"},` +
+		`"source":{"image":{"ref":"` + ref + `"}},` +
+		`"processes":[{"name":"web","image":"` + ref + `","replicas":1,` +
+		`"ports":[{"port":8080,"protocol":"PROTOCOL_HTTP"}],"networks":["` + net + `"]}]}`
+}
+
 // TestBlueGreenWindowMaterializesUnion：双代窗物化——单次 Ensure 联合集
 // （rolling 基线 → BG 升级的混合形态：旧代成员 rolling 名 + 基线 gen，
 // 新代成员代次化 ID + 本部署 gen；调用 gen = 基线 gen——旧代标签不翻新）。
+// H9 同批：旧代进程的 egress 事实与新代同源（egress:none 网络夹具）——
+// k3s 的 deny policy 以 EgressNetworks 为 podSelector，窗口内正在承载流量
+// 的旧代缺该事实即失去强隔离（ADR-0052 F4.1）。
 func TestBlueGreenWindowMaterializesUnion(t *testing.T) {
 	e, rt, _ := newTestEngine(t)
 	ctx := context.Background()
-	rev1 := freezeSpec(t, e, 1, rollingSpecWithPort("nginx:1.27"))
+	require.NoError(t, e.repos.Networks.Create(ctx, &network.Network{
+		ID: "01JD0NET00000000000000E1", ProjectID: tProjectID, Name: "private", EgressNone: true,
+	}))
+	rev1 := freezeSpec(t, e, 1, rollingSpecOnNetwork("nginx:1.27", "private"))
 	deployToSucceeded(t, e, rev1)
 
-	rev2 := freezeSpec(t, e, 2, bgSpecFor("nginx:1.28"))
+	rev2 := freezeSpec(t, e, 2, bgSpecOnNetwork("nginx:1.28", "private"))
 	d2, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev2})
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), d2.FromGeneration, "admission anchors the baseline generation")
@@ -77,6 +102,8 @@ func TestBlueGreenWindowMaterializesUnion(t *testing.T) {
 	assert.False(t, oldW.GenerationScoped, "rolling-era baseline carrier keeps its plain name")
 	assert.Equal(t, "nginx:1.27", oldW.Image)
 	assert.NotNil(t, oldW.Materials, "baseline member carries its baseline materials (zero-touch anchor)")
+	assert.Equal(t, []string{"private"}, oldW.EgressNetworks,
+		"baseline member carries the egress:none fact (k3s deny policy keeps selecting the serving old generation during the window)")
 
 	newW, ok := win.ByID[newID]
 	require.True(t, ok, "new-generation carrier is generation-scoped")
@@ -84,6 +111,8 @@ func TestBlueGreenWindowMaterializesUnion(t *testing.T) {
 	assert.True(t, newW.GenerationScoped)
 	assert.Equal(t, "nginx:1.28", newW.Image)
 	assert.Nil(t, newW.Materials, "new-generation member inherits the call-level materials")
+	assert.Equal(t, oldW.EgressNetworks, newW.EgressNetworks,
+		"both generations derive the egress fact from the same source (the project's network facts)")
 	assert.Contains(t, newW.Addressing, capability.Address{Name: "web.g2"},
 		"scoped addressing carries the generation name ({proc}.g{gen}, ADR-0048 decision 1.4)")
 }

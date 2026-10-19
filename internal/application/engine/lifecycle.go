@@ -30,6 +30,10 @@ func (e *Engine) Start(ctx context.Context) {
 	e.runCtxMu.Unlock()
 	e.resetOrphanBuilds(runCtx)
 	e.sweepInterruptedBackups(runCtx)
+	// Route 发布就绪门（H7）：启动基线重放收口前关闭——冷缓存的逐 Route
+	// 跳过会把"半量快照"当成功并 remember（签名固化到慢通道重放），且
+	// traefik 5s poll 可能拉到空/部分配置覆盖 last-known-good。
+	e.routeReady.Store(false)
 	e.wg.Add(len(e.rings))
 	for _, r := range e.rings {
 		r := r
@@ -48,7 +52,7 @@ func (e *Engine) Start(ctx context.Context) {
 	e.wg.Add(1)
 	go func() {
 		defer e.wg.Done()
-		e.rebuildBaselines(runCtx)
+		e.runBaselineReplay(runCtx)
 	}()
 	e.wg.Add(1)
 	go func() {
@@ -76,6 +80,17 @@ func (e *Engine) StartWatch(ctx context.Context) {
 		defer e.wg.Done()
 		e.consumeWatch(ctx)
 	}()
+}
+
+// runBaselineReplay 是启动基线重放的收口包装（H7）：重放返回即开放 Route
+// 发布门并触发一次即时发布——重放期间 publishRoutes 直接返回（不发半量
+// 快照）；开门后的信号由 managed 环节拍（或 Kick）消费，在途路由变更即时
+// 下发。重放失败也置 true：否则拉取端点永久 503，而基线/漂移扫描的既有
+// 慢通道会继续自愈（单 App 失败不应让全平台路由面失明）。
+func (e *Engine) runBaselineReplay(ctx context.Context) {
+	e.rebuildBaselines(ctx)
+	e.routeReady.Store(true)
+	e.PublishRoutesNow()
 }
 
 // buildRootCtx 返回构建 goroutine 的派生根：Start 后是进程生命期 runCtx

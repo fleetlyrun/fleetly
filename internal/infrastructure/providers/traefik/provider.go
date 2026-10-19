@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"sync/atomic"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 )
@@ -42,6 +43,12 @@ type Provider struct {
 
 	mu     sync.RWMutex
 	schema []byte // 最近发布的全量动态配置（拉取端点快照）
+
+	// ready 标记"至少成功发布过一次全量配置"（H7 发布就绪门）：构造即
+	// false——拉取端点在 ready 前返回 503，traefik 保持 last-known-good，
+	// 不会用空/半量快照覆盖存量路由。PublishRoutes 通过 schema 预检并落
+	// 快照后置 true；失败不清位（既有 LKG 继续服务）。
+	ready atomic.Bool
 }
 
 // 编译期契约断言：Proxy 端口 + 受管形态声明。
@@ -107,8 +114,14 @@ func (p *Provider) PublishRoutes(_ context.Context, routes []capability.Route) e
 	p.mu.Lock()
 	p.schema = schema
 	p.mu.Unlock()
+	p.ready.Store(true)
 	return nil
 }
+
+// Ready 报告是否至少成功发布过一次全量配置（H7 就绪门；拉取端点的可选
+// 判定子面——不实现 Ready 的旧 Provider 语义不变）。false 期间端点返回
+// 503，traefik 保留 last-known-good。
+func (p *Provider) Ready() bool { return p.ready.Load() }
 
 // ConfigSnapshot 返回当前全量配置快照（HTTP provider 拉取端点消费，
 // capability.ConfigSource 子面）。

@@ -3,8 +3,8 @@ package spec
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"sort"
-	"strings"
 
 	"google.golang.org/protobuf/encoding/protojson"
 
@@ -133,9 +133,13 @@ func jsonOrNull(v any) string {
 	return string(b)
 }
 
-// restartSeqField 是 restart_seq 的 diff 路径尾段（protojson UseProtoNames
-// 冻结参数下的字段名字面量——ADR-0083 的 diff 判定与冻结咽喉同参）。
-const restartSeqField = ".restart_seq"
+// restartSeqPathRe 是 restart_seq 的**完整 proto 路径**匹配（R16-M1）：
+// protojson UseProtoNames 冻结参数下进程字段路径形如
+// "processes[<n>].restart_seq"（n = 数组下标）。必须精确全路径匹配，不得
+// 退化为后缀判定——用户 env 键名恰为 restart_seq 时 diff 路径是
+// "processes[0].env.restart_seq"，后缀判定会把普通配置变更误判成 seq-only，
+// 从而静默跳过 preDeployJobs（迁移不跑；ADR-0083 步骤 8 承诺反转）。
+var restartSeqPathRe = regexp.MustCompile(`^processes\[\d+\]\.restart_seq$`)
 
 // RestartSeqOnly 报告两份 AppSpec 的树差异字段集是否 ⊆ restart_seq
 // （ADR-0083 步骤 6：声明式重启的执行时判定纯函数——非空差异且每条差异
@@ -161,7 +165,7 @@ func RestartSeqOnly(oldSpec, newSpec *specv1.AppSpec) (bool, error) {
 		return false, nil
 	}
 	for _, e := range entries {
-		if !strings.HasSuffix(e.Path, restartSeqField) {
+		if !restartSeqPathRe.MatchString(e.Path) {
 			return false, nil
 		}
 	}

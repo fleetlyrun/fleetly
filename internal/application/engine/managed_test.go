@@ -330,3 +330,56 @@ func TestPublishRoutesReplayWindowDropsDeadBackend(t *testing.T) {
 	e.publishRoutes(ctx)
 	assert.Empty(t, proxy.published, "the replay window must converge the dead-backend withdrawal")
 }
+
+// H7 发布就绪门（引擎侧）：routeReady=false 时 publishRoutes 不触达 Proxy
+// （连后端解析都不做——冷缓存不得产半量快照）；开门后恢复全量发布。
+func TestPublishRoutesGatedUntilReady(t *testing.T) {
+	db, clock := statetest.New(t)
+	rt := newFakeRuntime()
+	proxy := &fakeProxy{}
+	e := New(Deps{DB: db, Stores: testRepos(db), Tx: transact.NewTx(db, testBinder(db)), Runtime: rt, Proxy: proxy, Logger: discardLogger()}, Options{})
+	ctx := context.Background()
+	require.NoError(t, projectrepo.New(clock, db.Runner()).Create(ctx, &project.Project{
+		ID: tProjectID, Name: "shop", TeamID: "default",
+	}))
+	rt.mu.Lock()
+	rt.endpoints = map[string][]capability.Endpoint{
+		"default/" + tProjectID + "/" + tAppID: {{Addr: "10.0.0.2", Process: "web", Port: 8080}},
+	}
+	rt.mu.Unlock()
+	require.NoError(t, e.repos.Routes.Create(ctx, &route.Route{
+		ID: "01JD0ROUTE00000000000000001", ProjectID: tProjectID,
+		Host: "shop.127.0.0.1.sslip.io", AppID: tAppID, Process: "web", Port: 8080,
+		Protocol: capability.ProtocolHTTP, TLSMode: "auto",
+	}))
+
+	e.routeReady.Store(false)
+	e.publishRoutes(ctx)
+	assert.Empty(t, proxy.published, "a closed route gate must not publish")
+	assert.Empty(t, rt.addrCallsSnapshot(), "a closed route gate must not even resolve backends")
+
+	e.routeReady.Store(true)
+	e.publishRoutes(ctx)
+	require.Len(t, proxy.published, 1, "the open gate publishes the full snapshot")
+}
+
+// H7 启动就绪门：Start 后基线重放在途期间 routeReady=false（发布被抑制）；
+// 重放收口即开门（成功或失败都开——否则拉取端点永久 503）。
+func TestStartOpensRouteGateAfterBaselineReplay(t *testing.T) {
+	e, rt, clock := newTestEngine(t)
+	rev := freezeSpec(t, e, 1, tImageSpec)
+	driftDeployToSucceeded(t, e, rt, clock, rev)
+
+	entered, release := rt.ensureGate.Arm()
+	e.Start(context.Background())
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("startup baseline replay never reached Ensure")
+	}
+	assert.False(t, e.routeReady.Load(),
+		"the route gate must stay closed while the startup baseline replay is in flight")
+	release()
+	require.Eventually(t, e.routeReady.Load, 5*time.Second, 10*time.Millisecond,
+		"the gate must open once the baseline replay returns")
+}

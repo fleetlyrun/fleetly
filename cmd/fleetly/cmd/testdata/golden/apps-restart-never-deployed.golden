@@ -1,1 +1,1 @@
-app bare-1 has no frozen revision to restart (nothing was ever deployed; deploy first)
+app bare-1 has no successful baseline to restart (deploy first)

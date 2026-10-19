@@ -19,6 +19,16 @@ type fakeConfigSource struct{ snap []byte }
 
 func (f fakeConfigSource) ConfigSnapshot() []byte { return f.snap }
 
+// readyConfigSource 在 fakeConfigSource 上叠加可选 Ready 子面（H7 发布
+// 就绪门的端点侧判定；不实现 Ready 的旧 Provider 走 fakeConfigSource
+// 形态，语义不变）。
+type readyConfigSource struct {
+	fakeConfigSource
+	ready bool
+}
+
+func (f readyConfigSource) Ready() bool { return f.ready }
+
 func proxyConfigRequest(t *testing.T, token string) *http.Request {
 	t.Helper()
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/proxy/config", nil)
@@ -59,6 +69,30 @@ func TestProxyConfigHandlerTokenEnforced(t *testing.T) {
 	// 正确值 → 200 + 快照。
 	resp := httptest.NewRecorder()
 	h.ServeHTTP(resp, proxyConfigRequest(t, "proxy-secret"))
+	require.Equal(t, http.StatusOK, resp.Code)
+	assert.Equal(t, string(snap), resp.Body.String())
+}
+
+// H7：Ready 子面在场且未就绪 → 503 且不写快照（traefik 保 last-known-good，
+// 不被空/半量配置覆盖）；就绪 → 200 出快照。认证先于就绪判定。
+func TestProxyConfigHandlerReadinessGate(t *testing.T) {
+	snap := []byte(`{"http":{"routers":{"r":{}}}}`)
+
+	notReady := newProxyConfigMux(readyConfigSource{fakeConfigSource{snap: snap}, false}, "")
+	resp := httptest.NewRecorder()
+	notReady.ServeHTTP(resp, proxyConfigRequest(t, ""))
+	require.Equal(t, http.StatusServiceUnavailable, resp.Code)
+	assert.NotContains(t, resp.Body.String(), "routers", "503 must not leak any snapshot bytes")
+
+	// 认证优先：错令牌仍是 401（不因未就绪改判 503）。
+	authed := newProxyConfigMux(readyConfigSource{fakeConfigSource{snap: snap}, false}, "proxy-secret")
+	resp = httptest.NewRecorder()
+	authed.ServeHTTP(resp, proxyConfigRequest(t, "wrong"))
+	assert.Equal(t, http.StatusUnauthorized, resp.Code)
+
+	ready := newProxyConfigMux(readyConfigSource{fakeConfigSource{snap: snap}, true}, "")
+	resp = httptest.NewRecorder()
+	ready.ServeHTTP(resp, proxyConfigRequest(t, ""))
 	require.Equal(t, http.StatusOK, resp.Code)
 	assert.Equal(t, string(snap), resp.Body.String())
 }

@@ -61,6 +61,14 @@ func newProxyConfigMux(src capability.ConfigSource, authToken string) *http.Serv
 				return
 			}
 		}
+		// 发布就绪门（H7）：全量配置从未成功发布过（控制面刚起、基线重放
+		// 未收口）时返回 503——traefik 保持 last-known-good，不用空/半量
+		// 快照覆盖在服路由。Ready 是可选子面：不实现的旧 Provider 维持原
+		// 语义（直接出快照）。
+		if ready, ok := src.(interface{ Ready() bool }); ok && !ready.Ready() {
+			http.Error(w, "proxy config is not ready yet: no full route snapshot has been published", http.StatusServiceUnavailable)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		body := src.ConfigSnapshot()
 		if len(body) == 0 {

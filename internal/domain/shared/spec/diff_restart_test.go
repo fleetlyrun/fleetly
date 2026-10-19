@@ -62,4 +62,22 @@ func TestRestartSeqOnly(t *testing.T) {
 		tAppSpec(tWebProc(2), &specv1.ProcessSpec{Name: "worker", ImageOrigin: &specv1.ProcessSpec_Image{Image: "nginx:1.29"}, Replicas: 1}))
 	require.NoError(t, err)
 	assert.False(t, only, "any non-seq path in the diff disqualifies the deployment")
+
+	// R16-M1 反例（后缀判定的欺骗面）：env 键名恰为 restart_seq——diff 路径
+	// 是 processes[0].env.restart_seq，后缀判定会把它误判成纯 seq bump，让
+	// 普通配置变更静默跳过 preDeployJobs。精确 proto 路径匹配必须拒绝。
+	envA, envB := tWebProc(1), tWebProc(1)
+	envA.Env = map[string]string{"restart_seq": "v1"}
+	envB.Env = map[string]string{"restart_seq": "v2"}
+	only, err = RestartSeqOnly(tAppSpec(envA), tAppSpec(envB))
+	require.NoError(t, err)
+	assert.False(t, only, "an env key literally named restart_seq is not the restart_seq field")
+
+	// 同族反例：仅后缀形似的 env 键（my_restart_seq）同样不得命中。
+	envC, envD := tWebProc(1), tWebProc(1)
+	envC.Env = map[string]string{"my_restart_seq": "v1"}
+	envD.Env = map[string]string{"my_restart_seq": "v2"}
+	only, err = RestartSeqOnly(tAppSpec(envC), tAppSpec(envD))
+	require.NoError(t, err)
+	assert.False(t, only, "a suffix-like env key must not be accepted as the restart_seq field")
 }
