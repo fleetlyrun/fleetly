@@ -18,12 +18,15 @@ import (
 )
 
 // registryRepoSegmentRe / registryRepoNameRe 是平台仓名双段白名单
-// （R03-M13）：项目段 = lower(projectID)（ULID 小写形态），仓名段单段
+// （R03-M13）：项目段 = lower(projectID)，形态对齐 entityid
+// （`^[a-z0-9]+(-[a-z0-9]+)+$`：项目 ID 是 `<name>-<seq>`，如 `regcat-1`，
+// 不能只收 `[a-z0-9]+`；此处用等价的“段间单连字符”形态）；仓名段单段
 // [a-z0-9._-]+。大小写混杂一律拒绝（与 registry 双段小写纪律一致）；
 // `..`/`.` 段单列拒绝（白名单字符集本身允许点号，但 dot-segment 是路径
-// 归一面的注入入口）。
+// 归一面的注入入口）。归属判定仍由 buildRepo 等值比较兜底——白名单只
+// 负责词法安全，不替代归属。
 var (
-	registryRepoSegmentRe = regexp.MustCompile(`^[a-z0-9]+$`)
+	registryRepoSegmentRe = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 	registryRepoNameRe    = regexp.MustCompile(`^[a-z0-9._-]+$`)
 )
 
