@@ -74,10 +74,21 @@
 - 还原点 commit：见 git log（`fix(k3s,persistence,guards,ci): S5 ...`）
 - 残留/后续：R06-M1 ConfigMounts 仍归 backlog（H3 只消除 403，真机发布前应先落挂载，否则"显式 403 变静默无配置"）；审计跨进程仅靠重试；e2e/Actions 未本机运行。
 
-## 终验（全部阶段后）
+## 终验（全部阶段后，Lead 亲跑 2026-10-19）
 
-- `go build ./...`（Windows）+ `GOOS=linux go build ./...`
-- `go test ./...` 三 module（剔除本机已知环境面：keyring Windows ACL、builders Docker daemon）
-- `go test ./internal/guards/` + `go vet ./...` + `gofmt -l`
-- `cd console && pnpm test`
-- 逐条对照本文件阶段门 + 更新 `docs/reviews/2026-10-19-architecture-quality-acceptance.md` 修复状态
+- `go build ./...`（Windows）exit 0；`GOOS=linux GOARCH=amd64 go build ./...` exit 0。
+- `go test ./...`（root module）：除本机已知环境面 2 项外全绿——`keyring`（Windows ACL 不体现 0600/0700）与 `builders`（Docker daemon 不可达）；`cmd/fleetly` 自 S1 起在 Windows 可运行（35.9s）、engine 36.3s、guards 45.1s、apitest 45.8s、persistence 全包、k3s、traefik、interfaces 全绿。
+- `go test ./genproto/... ./sdk/go/...` exit 0；`go vet ./...` exit 0；`gofmt -l .` 空；`go test ./internal/guards/` 45.1s ok。
+- `cd console && pnpm test` 30 files / **130 tests passed**。
+- 终验结论：**S1-S5 全部验收门通过**；12/15 条 H 已本地修复（未 push），H8/H10/H11 与收敛语义深水区列 backlog；e2e/Actions 未本机运行（Docker daemon 不可达），H3/H7/H9 真机触发需 staging/dind 台账。
+
+## 还原点（本地 commit，未 push）
+
+```
+a5ae233f docs(plan): 评审修复排期 S1-S5
+01bd214e fix(cli,guards): S1 Windows 构建解封
+94a5267f fix(authz): S2 平台面门禁 + 身份写面归属 + 角色授予上限
+eb852068 fix(delivery): S3 安装路由面/Browse 会话绑定/备份可靠性/wait deadline/Console 键
+c925ba3b fix(engine,cli,spec,traefik): S4 restart 源=生效基线/精确 seq 判定/BG egress/Route 发布就绪门
+cdecabe0 fix(k3s,persistence,guards,ci): S5 RBAC 调用面收敛/守卫换形/审计并发/outbox 前缀裁剪/CI codegen 门禁
+```

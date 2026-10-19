@@ -406,6 +406,32 @@
 
 ---
 
+## 11. 修复执行状态（2026-10-19，S1-S5；本地 commit，未 push）
+
+排期与验收记录：`docs/plan/2026-10-19-review-remediation.md`。执行方式：子代理逐阶段实现 + Lead 亲验验收门 + 每阶段本地还原点 commit（共 5 个还原点，HEAD 见 git log）。终验：全量测试/构建/守卫见下。
+
+| 阶段 | commit | 覆盖发现 | 验收证据（Lead 亲跑） |
+|---|---|---|---|
+| S1 工程基线 | `01bd214e` | R10-M6（Windows `syscall.SIGWINCH`） | `go build ./...` 双平台 0；`go test ./cmd/fleetly/...` 74 PASS；guards 16s |
+| S2 安全边界 | `94a5267f` | H1、H2（+R14-M2/M4） | 攻击链反转用例 3 组全 PASS（H1 九子例/H2 五子例/角色上限五子例）；apitest 24s；guards 16s；cmd 4.6s；init-whoami golden 同批 |
+| S3 交付主链 | `eb852068` | H12、H4、H5、H6、H14、H13 | 6 项新钉测 PASS；install.sh guard + `sh -n`；engine 22.5s/assembly/apitest 23.6s；console 130/130 |
+| S4 声明式/路由 | `c925ba3b` | H15、R16-M1、H9、H7 | 4 项新钉测 PASS；spec/engine 23s/traefik/assembly/guards；golden 逐行核对（H15 语义） |
+| S5 Runtime/守卫/完整性 | `cdecabe0` | H3、R12-M1、R05-M1、R05-M4、R09-M1 | k3s 调用面↔RBAC 守卫 + 审计 256 并发全成功 + outbox 无洞 + acceptanceguard 换形；persistence 全包绿；vet 0 |
+
+**已在本轮修复的 H（10/15）**：H1、H2、H3、H4、H5、H6、H7、H9、H12、H13、H14、H15（计 12 条；H7/H9 为"机制级修复 + 单测"，真机 e2e 仍待补）。同批修复的 M/R：R16-M1、R14-M2/M4、R10-M6、R05-M1/M4、R12-M1、R09-M1。
+
+**本轮明确未修（backlog，需设计/迁移）**：
+- **H8 Metrics 租户过滤**（端口签名 + handler 授权，需设计）
+- **H10 `/v1/relay` 节点个体凭证**（Enrollment/双 Provider 设计 + 迁移）
+- **H11 幂等键租户维度**（迁移 00034 + 兼容策略）
+- 收敛语义深水区（R02-M2/M5、R16-M2/M3/M5/M6）随 ADR 修订批
+- R06-M1 k3s ConfigMounts 挂载（**重要**：H3 修复只消除 configmaps 403；真机发布前必须同批落挂载，否则"显式 403 失败"会变成"建了 ConfigMap 但容器无配置"的静默失败）
+- 其余 M/L（见 §4/附录 A 各报告）
+
+**修复边界（诚实）**：本地 commit 未 push；e2e/真机（Docker daemon 不可达）与 GitHub Actions 未运行，CI codegen job 仅静态核对；H7/H9 的真机触发与 H3 的真机 403 反转需 staging/dind 台账。
+
+---
+
 ## 附录 A：分模块报告索引（归档于本目录）
 
 | ID | 模块 | 报告 | H/M/L |
