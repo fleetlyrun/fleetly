@@ -41,23 +41,25 @@ func (svc *NetworksService) CreateNetwork(ctx context.Context, req *structurev1.
 		ProjectID: req.GetProjectId(), Name: req.GetName(), EgressNone: req.GetEgressNone(),
 	}
 	// 父资源存活校验（批 0 复核，同族面）：Project 级材料不得落在
-	// 不存在/已删的 Project 下。
-	err := svc.s.commit(ctx, writeFact{
+	// 不存在/已删的 Project 下。事件归属进事务前解析（R08-M8）。
+	fact, err := svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {
+		return writes.FactRow{
+			Name: eventNetworkCreated, Aggregate: "network", ID: row.Name,
+			Payload: mustJSON(structureEventPayload{ID: row.Name, ProjectID: row.ProjectID}),
+			TeamID:  team,
+			Action:  "network.create", Resource: "network/" + row.Name, AfterFP: req.String(),
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
+	err = svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{svc.s.parentProjectAlive(req.GetProjectId())},
 		write: func(ctx context.Context, st transact.Stores) error {
 			return st.Networks.Create(ctx, row)
 		},
-		facts: []func() writes.FactRow{
-			svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {
-				return writes.FactRow{
-					Name: eventNetworkCreated, Aggregate: "network", ID: row.Name,
-					Payload: mustJSON(structureEventPayload{ID: row.Name, ProjectID: row.ProjectID}),
-					TeamID:  team,
-					Action:  "network.create", Resource: "network/" + row.Name, AfterFP: req.String(),
-					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-				}
-			}),
-		},
+		facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "network")
@@ -113,19 +115,21 @@ func (svc *NetworksService) RebuildNetwork(ctx context.Context, req *structurev1
 		ProjectID: net.ProjectID, Network: net.Name,
 		Detached: int32(res.Detached), Reattached: int32(res.Reattached), //nolint:gosec // 计数域内（载体数）
 	})
+	fact, err := svc.s.factOf(ctx, net.ProjectID, func(team string) writes.FactRow {
+		return writes.FactRow{
+			Name: eventNetworkRebuilt, Aggregate: "network", ID: net.ID,
+			Payload: payload,
+			TeamID:  team,
+			Action:  "network.rebuild", Resource: "network/" + net.Name,
+			AfterFP: fmt.Sprintf("project=%s detached=%d reattached=%d", net.ProjectID, res.Detached, res.Reattached),
+			Actor:   authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
 	err = svc.s.commit(ctx, writeFact{
-		facts: []func() writes.FactRow{
-			svc.s.factOf(ctx, net.ProjectID, func(team string) writes.FactRow {
-				return writes.FactRow{
-					Name: eventNetworkRebuilt, Aggregate: "network", ID: net.ID,
-					Payload: payload,
-					TeamID:  team,
-					Action:  "network.rebuild", Resource: "network/" + net.Name,
-					AfterFP: fmt.Sprintf("project=%s detached=%d reattached=%d", net.ProjectID, res.Detached, res.Reattached),
-					Actor:   authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-				}
-			}),
-		},
+		facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "network")
@@ -171,20 +175,25 @@ func networkPeerEventPayloadOf(p *networkpeer.Peer, net *network.Network) []byte
 
 // networkPeerFacts 构造 peer 三拍的写事实（单声明双真 + 双侧审计）：
 // 首行 = 事件 + 网络侧审计（双真）；次行 = 挂靠项目侧审计（仅取证面——
-// 双侧记账是 ADR-0013 的审计面形状，流面孪生只此一条）。projectID 是
-// 资源轴 Team 解析锚（P0-2；peer 双项目——锚网络侧归属）。
-func (s *Services) networkPeerFacts(ctx context.Context, name, action string, p *networkpeer.Peer, net *network.Network) []func() writes.FactRow {
+// 双侧记账是 ADR-0013 的审计面形状，流面孪生只此一条）。anchorProjectID
+// 是资源轴 Team 解析锚（P0-2；peer 双项目——锚网络侧归属，网络行已删时
+// 调用方改锚挂靠方项目）。归属解析失败返回 error：整单拒绝（R08-M8）。
+func (s *Services) networkPeerFacts(ctx context.Context, anchorProjectID, name, action string, p *networkpeer.Peer, net *network.Network) ([]func() writes.FactRow, error) {
 	fp := fmt.Sprintf("peer_project=%s network=%s state=%s", p.PeerProjectID, net.Name, p.State)
+	primary, err := s.factOf(ctx, anchorProjectID, func(team string) writes.FactRow {
+		return writes.FactRow{
+			Name: name, Aggregate: "network", ID: p.NetworkID,
+			Payload: networkPeerEventPayloadOf(p, net),
+			TeamID:  team,
+			Action:  action, Resource: "network/" + net.Name + "/peers/" + p.ID, AfterFP: fp,
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
 	return []func() writes.FactRow{
-		s.factOf(ctx, net.ProjectID, func(team string) writes.FactRow {
-			return writes.FactRow{
-				Name: name, Aggregate: "network", ID: p.NetworkID,
-				Payload: networkPeerEventPayloadOf(p, net),
-				TeamID:  team,
-				Action:  action, Resource: "network/" + net.Name + "/peers/" + p.ID, AfterFP: fp,
-				Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-			}
-		}),
+		primary,
 		func() writes.FactRow {
 			// 双真偏离（仅取证面）：挂靠项目侧的镜像审计（ADR-0013 双侧
 			// 记账），无独立流面孪生——A 化前亦只此一条审计行。
@@ -194,7 +203,7 @@ func (s *Services) networkPeerFacts(ctx context.Context, name, action string, p 
 				LedgerOnly: true,
 			}
 		},
-	}
+	}, nil
 }
 
 // loadPeerNetwork 读 peer 声明指向的网络行（活跃口径；A.1：批准面只对
@@ -282,6 +291,10 @@ func (svc *NetworksService) DeclareNetworkPeer(ctx context.Context, req *structu
 		return nil, err
 	}
 	p := &networkpeer.Peer{NetworkID: net.ID, PeerProjectID: req.GetPeerProjectId()}
+	facts, err := svc.s.networkPeerFacts(ctx, net.ProjectID, eventNetworkPeerDeclared, "network.peer_declare", p, net)
+	if err != nil {
+		return nil, err
+	}
 	err = svc.s.commit(ctx, writeFact{
 		// 双侧父资源存活（事务内）：网络归属方与挂靠方项目都必须在场。
 		checks: []acceptanceCheck{
@@ -291,7 +304,7 @@ func (svc *NetworksService) DeclareNetworkPeer(ctx context.Context, req *structu
 		write: func(ctx context.Context, st transact.Stores) error {
 			return st.NetworkPeers.Create(ctx, p)
 		},
-		facts: svc.s.networkPeerFacts(ctx, eventNetworkPeerDeclared, "network.peer_declare", p, net),
+		facts: facts,
 	})
 	if err != nil {
 		return nil, mapStateError(err, "network peer")
@@ -321,11 +334,15 @@ func (svc *NetworksService) ApproveNetworkPeer(ctx context.Context, req *structu
 		return nil, apperr.New("E_CONFLICT",
 			"peer declaration %s was revoked; declare a new one to re-attach", p.ID)
 	}
+	facts, err := svc.s.networkPeerFacts(ctx, net.ProjectID, eventNetworkPeerApproved, "network.peer_approve", p, net)
+	if err != nil {
+		return nil, err
+	}
 	err = svc.s.commit(ctx, writeFact{
 		write: func(ctx context.Context, st transact.Stores) error {
 			return st.NetworkPeers.Approve(ctx, p.ID)
 		},
-		facts: svc.s.networkPeerFacts(ctx, eventNetworkPeerApproved, "network.peer_approve", p, net),
+		facts: facts,
 	})
 	if err != nil {
 		return nil, mapStateError(err, "network peer")
@@ -358,11 +375,21 @@ func (svc *NetworksService) RevokeNetworkPeer(ctx context.Context, req *structur
 	if active, nerr := svc.s.Networks.GetByID(ctx, p.NetworkID); nerr == nil {
 		net = active
 	}
+	// 资源轴锚：网络行已删（上一步的可容忍形态）时改锚挂靠方 Project——
+	// 两侧都不可解析则 factOf 返回 error、撤销整单拒绝（R08-M8 fail-closed）。
+	anchor := net.ProjectID
+	if anchor == "" {
+		anchor = p.PeerProjectID
+	}
+	facts, err := svc.s.networkPeerFacts(ctx, anchor, eventNetworkPeerRevoked, "network.peer_revoke", p, net)
+	if err != nil {
+		return nil, err
+	}
 	err = svc.s.commit(ctx, writeFact{
 		write: func(ctx context.Context, st transact.Stores) error {
 			return st.NetworkPeers.Revoke(ctx, p.ID)
 		},
-		facts: svc.s.networkPeerFacts(ctx, eventNetworkPeerRevoked, "network.peer_revoke", p, net),
+		facts: facts,
 	})
 	if err != nil {
 		return nil, mapStateError(err, "network peer")

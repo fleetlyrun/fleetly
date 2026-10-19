@@ -17,6 +17,8 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/lynx-go/grpcapi/authz"
+
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	proxyv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/proxy/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
@@ -153,6 +155,45 @@ func (svc *TemplatesService) GetTemplate(ctx context.Context, req *deliveryv1.Ge
 //（values.* 前缀 = 调用方供值错误 E_INVALID_ARGUMENT；其余 = 模板文档
 // 缺陷 E_TEMPLATE_INVALID——ADR-0050 决策 3）。
 
+// innerScopeNeed 是一条内层动作的能力需求（resource 与内层 RPC 的
+// api_key_scope 同源；action 是执行序上的动作名，供对照表与错误定位）。
+type innerScopeNeed struct {
+	action   string
+	resource string
+}
+
+// templateInnerScopes 列出本次实例化将执行的内层写动作及其 scope（顺序 =
+// 执行序；首个缺口即拒）。逐动作对照（R08-M3 收口表）：
+//
+//	CreateApp       → apps:write
+//	CreateNetwork   → networks:write（模板声明 databases 时确保 default 网）
+//	PutSecret       → secrets:write（secret 型变量平台铸造）
+//	CreateDatabase  → databases:write
+//	Deploy          → deployments:write（既有部署链）
+//	CreateRoute     → routes:write
+//
+// 复用路径（create-or-reuse 命中既有行）不改变能力声明：动作集按"可能创建"
+// 计（fail-closed，能力面与声明并集一致）。
+func templateInnerScopes(doc *apptemplate.Doc, hasSecrets bool) []innerScopeNeed {
+	out := []innerScopeNeed{
+		{action: "CreateApp", resource: "apps"},
+	}
+	if len(doc.Databases) > 0 {
+		out = append(out, innerScopeNeed{action: "CreateNetwork", resource: "networks"})
+	}
+	if hasSecrets {
+		out = append(out, innerScopeNeed{action: "PutSecret", resource: "secrets"})
+	}
+	if len(doc.Databases) > 0 {
+		out = append(out, innerScopeNeed{action: "CreateDatabase", resource: "databases"})
+	}
+	out = append(out, innerScopeNeed{action: "Deploy", resource: "deployments"})
+	if len(doc.Routes) > 0 {
+		out = append(out, innerScopeNeed{action: "CreateRoute", resource: "routes"})
+	}
+	return out
+}
+
 // InstantiateTemplate 一键部署编排（ADR-0050 决策 3 的 create-or-reuse 序）。
 // 部分失败诚实语义：失败即停带精确错误；重跑按 create-or-reuse 收敛
 // （不旋转密码、不重建库/路由）。
@@ -167,11 +208,32 @@ func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliv
 	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}
+	// 摘要事件的归属在进事务前解析（R08-M8：解析失败整单拒绝）。本编排的
+	// 内层步骤各自提交，故解析先于任何副作用——不留下半实例化缺口。
+	// 依赖闭包在求值（提交）时才读 appID/deploymentID/entry（已就位）。
+	var (
+		appID        string
+		deploymentID string
+		entry        apptemplate.Entry
+	)
+	summaryFact, err := svc.s.factOf(ctx, req.GetProjectId(), func(team string) writes.FactRow {
+		return writes.FactRow{
+			Name: eventTemplateInstantiated, Aggregate: "app", ID: appID,
+			Payload: mustJSON(templateEventPayload{Template: entry.Name, Version: entry.Version, Deployment: deploymentID}),
+			TeamID:  team,
+			Action:  "template.instantiate", Resource: "app/" + appID, AfterFP: entry.Name + "@" + entry.Version,
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
 	view, err := svc.s.resolveCatalog(ctx)
 	if err != nil {
 		return nil, err
 	}
-	entry, doc, err := view.findTemplate(req.GetTemplate())
+	var doc *apptemplate.Doc
+	entry, doc, err = view.findTemplate(req.GetTemplate())
 	if err != nil {
 		return nil, err
 	}
@@ -188,19 +250,33 @@ func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliv
 		return nil, apperr.New("E_MASTER_KEY_UNAVAILABLE", "the secret facility is unavailable (no master key)")
 	}
 
+	// 内层动作能力预检（R08-M3）：本 handler 在进程内直调 Apps/Networks/
+	// Secrets/Databases/Deployments/Routes 服务方法，authn 拦截器只在 RPC
+	// 边界按外层 templates:write 执法一次——内层动词的 scope 必须在此显式
+	// 复核（与各内层 RPC 的 api_key_scope 同源）。预检覆盖本次将执行的
+	// 动作集、先于任何副作用：缺任一能力即 403 零副作用；各动作调用点仍有
+	// 二次复核（防后续新增内层动作漏配预检）。
+	for _, need := range templateInnerScopes(doc, hasSecrets) {
+		if err := svc.s.requireScope(ctx, need.resource, authz.ScopeWrite); err != nil {
+			return nil, err
+		}
+	}
+
 	resources := []*deliveryv1.InstantiatedResource{}
 	record := func(kind, id, name string, reused bool) {
 		resources = append(resources, &deliveryv1.InstantiatedResource{Kind: kind, Id: id, Name: name, Reused: reused})
 	}
 
 	// 1. App create-or-reuse（按名——重跑即重部署，latest-wins）。
-	var appID string
 	if existing, err := svc.s.Apps.GetByName(ctx, req.GetProjectId(), req.GetAppName()); err == nil {
 		appID = existing.ID
 		record("app", appID, req.GetAppName(), true)
 	} else if !errors.Is(err, state.ErrNotFound) {
 		return nil, mapStateError(err, "app")
 	} else {
+		if err := svc.s.requireScope(ctx, "apps", authz.ScopeWrite); err != nil {
+			return nil, err
+		}
 		created, err := (&AppsService{s: svc.s}).CreateApp(ctx, &structurev1.CreateAppRequest{
 			ProjectId: req.GetProjectId(), Name: req.GetAppName(),
 		})
@@ -219,6 +295,9 @@ func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliv
 		} else if !errors.Is(err, state.ErrNotFound) {
 			return nil, mapStateError(err, "network")
 		} else {
+			if err := svc.s.requireScope(ctx, "networks", authz.ScopeWrite); err != nil {
+				return nil, err
+			}
 			if _, err := (&NetworksService{s: svc.s}).CreateNetwork(ctx, &structurev1.CreateNetworkRequest{
 				ProjectId: req.GetProjectId(), Name: "default",
 			}); err != nil {
@@ -252,6 +331,9 @@ func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliv
 		} else if !errors.Is(err, state.ErrNotFound) {
 			return nil, mapStateError(err, "secret")
 		}
+		if err := svc.s.requireScope(ctx, "secrets", authz.ScopeWrite); err != nil {
+			return nil, err
+		}
 		if _, err := (&SecretsService{s: svc.s}).PutSecret(ctx, &structurev1.PutSecretRequest{
 			ProjectId: req.GetProjectId(), Name: secretName, Value: mintDatabasePassword(),
 		}); err != nil {
@@ -268,6 +350,9 @@ func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliv
 		} else if !errors.Is(err, state.ErrNotFound) {
 			return nil, mapStateError(err, "database")
 		}
+		if err := svc.s.requireScope(ctx, "databases", authz.ScopeWrite); err != nil {
+			return nil, err
+		}
 		created, err := (&DatabasesService{s: svc.s}).CreateDatabase(ctx, &structurev1.CreateDatabaseRequest{
 			ProjectId: req.GetProjectId(), Name: decl.Name, Engine: decl.Engine,
 		})
@@ -283,13 +368,16 @@ func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliv
 	if err != nil {
 		return nil, apperr.New("E_INTERNAL", "rendered compose could not be encoded").WithCause(err)
 	}
+	if err := svc.s.requireScope(ctx, "deployments", authz.ScopeWrite); err != nil {
+		return nil, err
+	}
 	dep, err := (&DeploymentsService{s: svc.s}).Deploy(ctx, &deliveryv1.DeployRequest{
 		AppId: appID, ComposeYaml: string(composeYAML),
 	})
 	if err != nil {
 		return nil, err
 	}
-	deploymentID := dep.GetDeployment().GetId()
+	deploymentID = dep.GetDeployment().GetId()
 	record("deployment", deploymentID, "", false)
 
 	// 7. routes create-or-reuse（host 全局唯一——同 host 既有 Route 复用，
@@ -307,6 +395,9 @@ func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliv
 			record("route", existingID, r.Host, true)
 			continue
 		}
+		if err := svc.s.requireScope(ctx, "routes", authz.ScopeWrite); err != nil {
+			return nil, err
+		}
 		created, err := (&RoutesService{s: svc.s}).CreateRoute(ctx, &proxyv1.CreateRouteRequest{
 			ProjectId: req.GetProjectId(), Host: r.Host, AppId: appID,
 			Process: r.Process, Port: r.Port, Protocol: r.Protocol, TlsMode: routeTLS(r.TLS),
@@ -322,17 +413,7 @@ func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliv
 	// 8. 摘要事件 + 审计一拍（伴生资源的事件已由各服务步骤发射）。
 	err = svc.s.commit(ctx, writeFact{
 		write: nil,
-		facts: []func() writes.FactRow{
-			svc.s.factOf(ctx, req.GetProjectId(), func(team string) writes.FactRow {
-				return writes.FactRow{
-					Name: eventTemplateInstantiated, Aggregate: "app", ID: appID,
-					Payload: mustJSON(templateEventPayload{Template: entry.Name, Version: entry.Version, Deployment: deploymentID}),
-					TeamID:  team,
-					Action:  "template.instantiate", Resource: "app/" + appID, AfterFP: entry.Name + "@" + entry.Version,
-					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-				}
-			}),
-		},
+		facts: []func() writes.FactRow{summaryFact},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "template instantiation")
@@ -376,9 +457,10 @@ func (svc *TemplatesService) RefreshTemplates(ctx context.Context, _ *deliveryv1
 		},
 		facts: []func() writes.FactRow{
 			// 平台级事件（模板目录无 owner 域——平台级，全员可见）：team
-			// 留 ''（P0-2 终态口径）。aggregate 随前缀归一：templates →
-			// template（单数域，P2 批二裁决——见事件名常量注释）。
-			func() writes.FactRow {
+			// 留 ''（P0-2 终态口径），经 platformFact 显式声明（R08-M8）。
+			// aggregate 随前缀归一：templates → template（单数域，P2 批二
+			// 裁决——见事件名常量注释）。
+			platformFact(func() writes.FactRow {
 				return writes.FactRow{
 					Name: eventTemplateRefreshed, Aggregate: "template", ID: digest,
 					Payload: mustJSON(templateRefreshedPayload{Previous: previous.digest, Digest: digest, Count: len(entries)}),
@@ -386,7 +468,7 @@ func (svc *TemplatesService) RefreshTemplates(ctx context.Context, _ *deliveryv1
 					AfterFP: fmt.Sprintf("%s -> %s (%d entries)", previous.digest, digest, len(entries)),
 					Actor:   authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
 				}
-			},
+			}),
 		},
 	})
 	if err != nil {

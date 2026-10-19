@@ -101,7 +101,21 @@ func (svc *DatabasesService) CreateDatabase(ctx context.Context, req *structurev
 		}
 		restoreSrc = src
 	}
-	err := svc.s.commit(ctx, writeFact{
+	// 行 id 由事务内铸出（ADR-0070）：闭包求值在聚合写后自然可见。事件归属
+	// 进事务前解析（R08-M8：解析失败整单拒绝）。
+	fact, err := svc.s.factOf(ctx, req.GetProjectId(), func(team string) writes.FactRow {
+		return writes.FactRow{
+			Name: eventDatabaseCreated, Aggregate: "database", ID: row.ID,
+			Payload: mustJSON(structureEventPayload{ID: row.ID, ProjectID: row.ProjectID}),
+			TeamID:  team,
+			Action:  "database.create", Resource: "database/" + row.ID, AfterFP: row.Engine + " " + row.Name,
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
+	err = svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{
 			svc.s.parentProjectAlive(req.GetProjectId()),
 			svc.s.databaseQuota(req.GetProjectId()),
@@ -130,18 +144,7 @@ func (svc *DatabasesService) CreateDatabase(ctx context.Context, req *structurev
 			}
 			return nil
 		},
-		// 行 id 由事务内铸出（ADR-0070）：闭包求值在聚合写后自然可见。
-		facts: []func() writes.FactRow{
-			svc.s.factOf(ctx, req.GetProjectId(), func(team string) writes.FactRow {
-				return writes.FactRow{
-					Name: eventDatabaseCreated, Aggregate: "database", ID: row.ID,
-					Payload: mustJSON(structureEventPayload{ID: row.ID, ProjectID: row.ProjectID}),
-					TeamID:  team,
-					Action:  "database.create", Resource: "database/" + row.ID, AfterFP: row.Engine + " " + row.Name,
-					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-				}
-			}),
-		},
+		facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "database")
@@ -205,21 +208,23 @@ func (svc *DatabasesService) DeleteDatabase(ctx context.Context, req *structurev
 		}
 		return nil, apperr.New("E_INTERNAL", "database teardown failed").WithCause(err)
 	}
+	fact, err := svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {
+		return writes.FactRow{
+			Name: eventDatabaseDeleted, Aggregate: "database", ID: req.GetId(),
+			Payload: mustJSON(structureEventPayload{ID: req.GetId(), ProjectID: row.ProjectID}),
+			TeamID:  team,
+			Action:  "database.delete", Resource: "database/" + req.GetId(),
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
 	err = svc.s.commit(ctx, writeFact{
 		write: func(ctx context.Context, st transact.Stores) error {
 			return st.Databases.SoftDelete(ctx, req.GetId())
 		},
-		facts: []func() writes.FactRow{
-			svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {
-				return writes.FactRow{
-					Name: eventDatabaseDeleted, Aggregate: "database", ID: req.GetId(),
-					Payload: mustJSON(structureEventPayload{ID: req.GetId(), ProjectID: row.ProjectID}),
-					TeamID:  team,
-					Action:  "database.delete", Resource: "database/" + req.GetId(),
-					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-				}
-			}),
-		},
+		facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "database")
@@ -257,18 +262,20 @@ func (svc *DatabasesService) RotateDatabasePassword(ctx context.Context, req *st
 		}
 		return nil, apperr.New("E_INTERNAL", "credential rotation failed").WithCause(err)
 	}
+	fact, err := svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {
+		return writes.FactRow{
+			Name: eventDatabaseRotated, Aggregate: "database", ID: row.ID,
+			Payload: mustJSON(structureEventPayload{ID: row.ID, ProjectID: row.ProjectID}),
+			TeamID:  team,
+			Action:  "database.rotate_password", Resource: "database/" + row.ID, AfterFP: row.CredentialsRef,
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
 	if err := svc.s.commit(ctx, writeFact{
-		facts: []func() writes.FactRow{
-			svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {
-				return writes.FactRow{
-					Name: eventDatabaseRotated, Aggregate: "database", ID: row.ID,
-					Payload: mustJSON(structureEventPayload{ID: row.ID, ProjectID: row.ProjectID}),
-					TeamID:  team,
-					Action:  "database.rotate_password", Resource: "database/" + row.ID, AfterFP: row.CredentialsRef,
-					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-				}
-			}),
-		},
+		facts: []func() writes.FactRow{fact},
 	}); err != nil {
 		return nil, mapStateError(err, "database")
 	}
@@ -304,21 +311,23 @@ func (s *Services) cascadeDeleteDatabases(ctx context.Context, projectID string)
 				"project delete: database %s (%s) teardown failed; databases torn down so far stay deleted - retry the project delete to converge",
 				db.ID, db.Name).WithCause(err)
 		}
+		fact, ferr := s.factOf(ctx, db.ProjectID, func(team string) writes.FactRow {
+			return writes.FactRow{
+				Name: eventDatabaseDeleted, Aggregate: "database", ID: db.ID,
+				Payload: mustJSON(structureEventPayload{ID: db.ID, ProjectID: db.ProjectID}),
+				TeamID:  team,
+				Action:  "database.delete", Resource: "database/" + db.ID,
+				Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+			}
+		})
+		if ferr != nil {
+			return ferr
+		}
 		err = s.commit(ctx, writeFact{
 			write: func(ctx context.Context, st transact.Stores) error {
 				return st.Databases.SoftDelete(ctx, db.ID)
 			},
-			facts: []func() writes.FactRow{
-				s.factOf(ctx, db.ProjectID, func(team string) writes.FactRow {
-					return writes.FactRow{
-						Name: eventDatabaseDeleted, Aggregate: "database", ID: db.ID,
-						Payload: mustJSON(structureEventPayload{ID: db.ID, ProjectID: db.ProjectID}),
-						TeamID:  team,
-						Action:  "database.delete", Resource: "database/" + db.ID,
-						Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-					}
-				}),
-			},
+			facts: []func() writes.FactRow{fact},
 		})
 		if err != nil {
 			if errors.Is(err, state.ErrNotFound) {
@@ -542,25 +551,27 @@ func (svc *DatabasesService) BrowseDatabase(ctx context.Context, req *structurev
 		Engine: db.Engine, ReadOnly: readOnly,
 		CreatedAt: state.FormatTime(now), ExpiresAt: state.FormatTime(now.Add(engine.BrowseHardTTL)),
 	}
+	fact, err := svc.s.factOf(ctx, db.ProjectID, func(team string) writes.FactRow {
+		detail := mustJSON(map[string]any{
+			"session_id": row.ID, "browser": browser.Name(),
+			"read_only": readOnly, "enforcement": string(browser.ReadOnlyEnforcement()),
+		})
+		return writes.FactRow{
+			Name: eventDatabaseBrowserOpened, Aggregate: "database", ID: db.ID,
+			Payload: mustJSON(structureEventPayload{ID: db.ID, ProjectID: db.ProjectID}),
+			TeamID:  team,
+			Action:  "database.browse", Resource: "database/" + db.ID, Detail: string(detail),
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
 	err = svc.s.commit(ctx, writeFact{
 		write: func(ctx context.Context, st transact.Stores) error {
 			return st.Browse.Create(ctx, row)
 		},
-		facts: []func() writes.FactRow{
-			svc.s.factOf(ctx, db.ProjectID, func(team string) writes.FactRow {
-				detail := mustJSON(map[string]any{
-					"session_id": row.ID, "browser": browser.Name(),
-					"read_only": readOnly, "enforcement": string(browser.ReadOnlyEnforcement()),
-				})
-				return writes.FactRow{
-					Name: eventDatabaseBrowserOpened, Aggregate: "database", ID: db.ID,
-					Payload: mustJSON(structureEventPayload{ID: db.ID, ProjectID: db.ProjectID}),
-					TeamID:  team,
-					Action:  "database.browse", Resource: "database/" + db.ID, Detail: string(detail),
-					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-				}
-			}),
-		},
+		facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "browse session")

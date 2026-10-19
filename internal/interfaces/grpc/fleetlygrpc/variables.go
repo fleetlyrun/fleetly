@@ -46,8 +46,20 @@ func (svc *SharedVariablesService) PutSharedVariable(ctx context.Context, req *s
 		ProjectID: req.GetProjectId(), Name: req.GetName(), Value: req.GetValue(),
 	}
 	// 数量配额按"Project 内活跃名数"计（同名 put 是覆盖不占新位）——
-	// 受理位检查（事务内读，ADR-0024 同款）。
-	err := svc.s.commit(ctx, writeFact{
+	// 受理位检查（事务内读，ADR-0024 同款）。事件归属进事务前解析（R08-M8）。
+	fact, err := svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {
+		return writes.FactRow{
+			Name: eventVariableUpdated, Aggregate: "variable", ID: row.Name,
+			Payload: mustJSON(structureEventPayload{ID: row.Name, ProjectID: row.ProjectID}),
+			TeamID:  team,
+			Action:  "variable.put", Resource: "variable/" + row.Name, AfterFP: row.Value,
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
+	err = svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{
 			svc.s.parentProjectAlive(req.GetProjectId()),
 			svc.s.sharedVariableQuota(req.GetProjectId(), req.GetName()),
@@ -55,17 +67,7 @@ func (svc *SharedVariablesService) PutSharedVariable(ctx context.Context, req *s
 		write: func(ctx context.Context, st transact.Stores) error {
 			return st.SharedVariables.Upsert(ctx, row)
 		},
-		facts: []func() writes.FactRow{
-			svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {
-				return writes.FactRow{
-					Name: eventVariableUpdated, Aggregate: "variable", ID: row.Name,
-					Payload: mustJSON(structureEventPayload{ID: row.Name, ProjectID: row.ProjectID}),
-					TeamID:  team,
-					Action:  "variable.put", Resource: "variable/" + row.Name, AfterFP: row.Value,
-					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-				}
-			}),
-		},
+		facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "variable")
@@ -101,21 +103,23 @@ func (svc *SharedVariablesService) DeleteSharedVariable(ctx context.Context, req
 	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}
-	err := svc.s.commit(ctx, writeFact{
+	fact, err := svc.s.factOf(ctx, req.GetProjectId(), func(team string) writes.FactRow {
+		return writes.FactRow{
+			Name: eventVariableDeleted, Aggregate: "variable", ID: req.GetName(),
+			Payload: mustJSON(structureEventPayload{ID: req.GetName(), ProjectID: req.GetProjectId()}),
+			TeamID:  team,
+			Action:  "variable.delete", Resource: "variable/" + req.GetName(),
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
+	err = svc.s.commit(ctx, writeFact{
 		write: func(ctx context.Context, st transact.Stores) error {
 			return st.SharedVariables.SoftDelete(ctx, req.GetProjectId(), req.GetName())
 		},
-		facts: []func() writes.FactRow{
-			svc.s.factOf(ctx, req.GetProjectId(), func(team string) writes.FactRow {
-				return writes.FactRow{
-					Name: eventVariableDeleted, Aggregate: "variable", ID: req.GetName(),
-					Payload: mustJSON(structureEventPayload{ID: req.GetName(), ProjectID: req.GetProjectId()}),
-					TeamID:  team,
-					Action:  "variable.delete", Resource: "variable/" + req.GetName(),
-					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-				}
-			}),
-		},
+		facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "variable")
@@ -179,20 +183,22 @@ func (svc *AppVariablesService) PutAppVariable(ctx context.Context, req *structu
 		return nil, err
 	}
 	row := &appvariable.AppVariable{AppID: req.GetAppId(), Name: req.GetName(), Value: req.GetValue()}
+	fact, err := svc.s.factOf(ctx, a.ProjectID, func(team string) writes.FactRow {
+		return writes.FactRow{
+			Name: eventAppVarUpdated, Aggregate: "app_variable", ID: a.ID + "/" + row.Name,
+			Payload: mustJSON(structureEventPayload{ID: a.ID + "/" + row.Name, ProjectID: a.ProjectID}),
+			TeamID:  team,
+			Action:  "app_variable.put", Resource: "app_variable/" + a.ID + "/" + row.Name, AfterFP: row.Value,
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
 	err = svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{svc.s.appVariableQuota(req.GetAppId(), req.GetName())},
 		write:  func(ctx context.Context, st transact.Stores) error { return st.AppVariables.Upsert(ctx, row) },
-		facts: []func() writes.FactRow{
-			svc.s.factOf(ctx, a.ProjectID, func(team string) writes.FactRow {
-				return writes.FactRow{
-					Name: eventAppVarUpdated, Aggregate: "app_variable", ID: a.ID + "/" + row.Name,
-					Payload: mustJSON(structureEventPayload{ID: a.ID + "/" + row.Name, ProjectID: a.ProjectID}),
-					TeamID:  team,
-					Action:  "app_variable.put", Resource: "app_variable/" + a.ID + "/" + row.Name, AfterFP: row.Value,
-					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-				}
-			}),
-		},
+		facts:  []func() writes.FactRow{fact},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "variable")
@@ -230,21 +236,23 @@ func (svc *AppVariablesService) DeleteAppVariable(ctx context.Context, req *stru
 	if err := svc.s.authorizeAppRow(ctx, a); err != nil {
 		return nil, err
 	}
+	fact, err := svc.s.factOf(ctx, a.ProjectID, func(team string) writes.FactRow {
+		return writes.FactRow{
+			Name: eventAppVarDeleted, Aggregate: "app_variable", ID: a.ID + "/" + req.GetName(),
+			Payload: mustJSON(structureEventPayload{ID: a.ID + "/" + req.GetName(), ProjectID: a.ProjectID}),
+			TeamID:  team,
+			Action:  "app_variable.delete", Resource: "app_variable/" + a.ID + "/" + req.GetName(),
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
 	err = svc.s.commit(ctx, writeFact{
 		write: func(ctx context.Context, st transact.Stores) error {
 			return st.AppVariables.SoftDelete(ctx, req.GetAppId(), req.GetName())
 		},
-		facts: []func() writes.FactRow{
-			svc.s.factOf(ctx, a.ProjectID, func(team string) writes.FactRow {
-				return writes.FactRow{
-					Name: eventAppVarDeleted, Aggregate: "app_variable", ID: a.ID + "/" + req.GetName(),
-					Payload: mustJSON(structureEventPayload{ID: a.ID + "/" + req.GetName(), ProjectID: a.ProjectID}),
-					TeamID:  team,
-					Action:  "app_variable.delete", Resource: "app_variable/" + a.ID + "/" + req.GetName(),
-					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-				}
-			}),
-		},
+		facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "variable")

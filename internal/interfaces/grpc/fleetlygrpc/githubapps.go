@@ -253,25 +253,34 @@ func (svc *GitHubAppsService) SetGitHubApp(ctx context.Context, req *deliveryv1.
 		AccountLogin: inst.AccountLogin, APIBase: strings.TrimSpace(req.GetApiBase()),
 		PrivateKeyCiphertext: sealed.Ciphertext, PrivateKeyFingerprint: sealed.Fingerprint,
 	}
+	// 事件归属（R08-M8）：Project 行走资源轴解析（失败整单拒绝）；Global 行
+	// （project_id 空）是平台级材料、无 Team 轴，经 platformFact 显式声明全员
+	// 可见（允许的空 Team 形态，理由在此）。
+	makeFact := func(team string) writes.FactRow {
+		return writes.FactRow{
+			Name: eventGitHubAppConnected, Aggregate: "github_app", ID: row.ID,
+			Payload: mustJSON(githubAppEventPayload{
+				AppID: row.AppID, InstallationID: row.InstallationID, AccountLogin: row.AccountLogin,
+			}),
+			TeamID: team,
+			Action: "github_app.put", Resource: "github_app/" + row.AccountLogin, AfterFP: sealed.Fingerprint,
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+		}
+	}
+	var fact func() writes.FactRow
+	if projectID == "" {
+		fact = platformFact(func() writes.FactRow { return makeFact("") })
+	} else {
+		fact, err = svc.s.factOf(ctx, projectID, makeFact)
+		if err != nil {
+			return nil, err
+		}
+	}
 	txErr := svc.s.commit(ctx, writeFact{
 		write: func(ctx context.Context, st transact.Stores) error {
 			return st.GitHubApps.Upsert(ctx, row)
 		},
-		facts: []func() writes.FactRow{
-			svc.s.factOf(ctx, projectID, func(team string) writes.FactRow {
-				return writes.FactRow{
-					Name: eventGitHubAppConnected, Aggregate: "github_app", ID: row.ID,
-					Payload: mustJSON(githubAppEventPayload{
-						AppID: row.AppID, InstallationID: row.InstallationID, AccountLogin: row.AccountLogin,
-					}),
-					// 平台级行（Global）无 Team 轴：factOf 对空 projectID 留 ''
-					// = 全员可见（平台材料，P0-2 口径）。
-					TeamID: team,
-					Action: "github_app.put", Resource: "github_app/" + row.AccountLogin, AfterFP: sealed.Fingerprint,
-					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-				}
-			}),
-		},
+		facts: []func() writes.FactRow{fact},
 	})
 	if txErr != nil {
 		return nil, mapStateError(txErr, "github app")
@@ -318,24 +327,33 @@ func (svc *GitHubAppsService) DeleteGitHubApp(ctx context.Context, req *delivery
 	} else if err := svc.s.requirePlatformAdmin(ctx); err != nil {
 		return nil, err
 	}
+	makeFact := func(team string) writes.FactRow {
+		return writes.FactRow{
+			Name: eventGitHubAppDeleted, Aggregate: "github_app", ID: row.ID,
+			Payload: mustJSON(githubAppEventPayload{
+				AppID: row.AppID, InstallationID: row.InstallationID, AccountLogin: row.AccountLogin,
+			}),
+			TeamID: team,
+			Action: "github_app.delete", Resource: "github_app/" + row.AccountLogin,
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+		}
+	}
+	// 归属解析同 SetGitHubApp：Global 行平台级（显式 platformFact），Project
+	// 行走资源轴 fail-closed（R08-M8）。
+	var fact func() writes.FactRow
+	if row.ProjectID == "" {
+		fact = platformFact(func() writes.FactRow { return makeFact("") })
+	} else {
+		fact, err = svc.s.factOf(ctx, row.ProjectID, makeFact)
+		if err != nil {
+			return nil, err
+		}
+	}
 	txErr := svc.s.commit(ctx, writeFact{
 		write: func(ctx context.Context, st transact.Stores) error {
 			return st.GitHubApps.SoftDelete(ctx, row.ID)
 		},
-		facts: []func() writes.FactRow{
-			svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {
-				return writes.FactRow{
-					Name: eventGitHubAppDeleted, Aggregate: "github_app", ID: row.ID,
-					Payload: mustJSON(githubAppEventPayload{
-						AppID: row.AppID, InstallationID: row.InstallationID, AccountLogin: row.AccountLogin,
-					}),
-					// 平台级行（Global）无 Team 轴：'' = 全员可见（同 put）。
-					TeamID: team,
-					Action: "github_app.delete", Resource: "github_app/" + row.AccountLogin,
-					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-				}
-			}),
-		},
+		facts: []func() writes.FactRow{fact},
 	})
 	if txErr != nil {
 		return nil, mapStateError(txErr, "github app")
@@ -602,25 +620,33 @@ func (svc *GitHubAppsService) CompleteManifestFlow(ctx context.Context, req *del
 		AccountLogin:         inst.AccountLogin,
 		PrivateKeyCiphertext: sealed.Ciphertext, PrivateKeyFingerprint: sealed.Fingerprint,
 	}
+	// 归属解析与 SetGitHubApp 同款：Global 行（flow 无 project 作用域）是
+	// 平台级材料，经 platformFact 显式声明；Project 行走资源轴 fail-closed。
+	makeFact := func(team string) writes.FactRow {
+		return writes.FactRow{
+			Name: eventGitHubAppConnected, Aggregate: "github_app", ID: row.ID,
+			Payload: mustJSON(githubAppEventPayload{
+				AppID: row.AppID, InstallationID: row.InstallationID, AccountLogin: row.AccountLogin,
+			}),
+			TeamID: team,
+			Action: "github_app.put", Resource: "github_app/" + row.AccountLogin, AfterFP: sealed.Fingerprint,
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+		}
+	}
+	var fact func() writes.FactRow
+	if flow.projectID == "" {
+		fact = platformFact(func() writes.FactRow { return makeFact("") })
+	} else {
+		fact, err = svc.s.factOf(ctx, flow.projectID, makeFact)
+		if err != nil {
+			return nil, err
+		}
+	}
 	txErr := svc.s.commit(ctx, writeFact{
 		write: func(ctx context.Context, st transact.Stores) error {
 			return st.GitHubApps.Upsert(ctx, row)
 		},
-		facts: []func() writes.FactRow{
-			svc.s.factOf(ctx, flow.projectID, func(team string) writes.FactRow {
-				return writes.FactRow{
-					Name: eventGitHubAppConnected, Aggregate: "github_app", ID: row.ID,
-					Payload: mustJSON(githubAppEventPayload{
-						AppID: row.AppID, InstallationID: row.InstallationID, AccountLogin: row.AccountLogin,
-					}),
-					// 平台级行（Global）无 Team 轴：factOf 对空 projectID 留 ''
-					// = 全员可见（平台材料，P0-2 口径）。
-					TeamID: team,
-					Action: "github_app.put", Resource: "github_app/" + row.AccountLogin, AfterFP: sealed.Fingerprint,
-					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-				}
-			}),
-		},
+		facts: []func() writes.FactRow{fact},
 	})
 	if txErr != nil {
 		return nil, mapStateError(txErr, "github app")

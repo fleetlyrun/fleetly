@@ -131,6 +131,19 @@ func (svc *TasksService) CreateTask(ctx context.Context, req *automationv1.Creat
 	// 求值自然可见（ADR-0070）。
 	var seq int64
 	var row *task.Task
+	// 事件归属在进事务前解析（R08-M8：解析失败整单拒绝）。
+	fact, err := svc.s.factOf(ctx, req.GetProjectId(), func(team string) writes.FactRow {
+		return writes.FactRow{
+			Name: engine.EventTaskCreated, Aggregate: "task", ID: row.ID,
+			Payload: engine.TaskCreatedEventJSON(row),
+			TeamID:  team,
+			Action:  "task.create", Resource: "task/" + row.ID, AfterFP: row.Form,
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
 	err = svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{
 			svc.s.parentProjectAlive(req.GetProjectId()),
@@ -154,17 +167,7 @@ func (svc *TasksService) CreateTask(ctx context.Context, req *automationv1.Creat
 		write: func(ctx context.Context, st transact.Stores) error {
 			return st.Tasks.Create(ctx, row)
 		},
-		facts: []func() writes.FactRow{
-			svc.s.factOf(ctx, req.GetProjectId(), func(team string) writes.FactRow {
-				return writes.FactRow{
-					Name: engine.EventTaskCreated, Aggregate: "task", ID: row.ID,
-					Payload: engine.TaskCreatedEventJSON(row),
-					TeamID:  team,
-					Action:  "task.create", Resource: "task/" + row.ID, AfterFP: row.Form,
-					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-				}
-			}),
-		},
+		facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "task")
@@ -564,24 +567,26 @@ func (svc *SchedulesService) CreateSchedule(ctx context.Context, req *automation
 		State: schedule.StateActive, CronExpr: req.GetCron(), Timezone: timezone,
 		Spec: body, NextFireAt: nextFire,
 	}
+	fact, err := svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {
+		return writes.FactRow{
+			// payload 字段全部在行上（时间戳不在 payload 面）——静态
+			// 构造与 write 后求值等价（task.created 同款口径）。
+			Name: engine.EventScheduleCreated, Aggregate: "schedule", ID: row.ID,
+			Payload: engine.ScheduleCreatedEventJSON(row),
+			TeamID:  team,
+			Action:  "schedule.create", Resource: "schedule/" + row.ID, AfterFP: row.CronExpr,
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
 	err = svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{svc.s.parentProjectAlive(req.GetProjectId())},
 		write: func(ctx context.Context, st transact.Stores) error {
 			return st.Schedules.Create(ctx, row)
 		},
-		facts: []func() writes.FactRow{
-			svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {
-				return writes.FactRow{
-					// payload 字段全部在行上（时间戳不在 payload 面）——静态
-					// 构造与 write 后求值等价（task.created 同款口径）。
-					Name: engine.EventScheduleCreated, Aggregate: "schedule", ID: row.ID,
-					Payload: engine.ScheduleCreatedEventJSON(row),
-					TeamID:  team,
-					Action:  "schedule.create", Resource: "schedule/" + row.ID, AfterFP: row.CronExpr,
-					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-				}
-			}),
-		},
+		facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "schedule")
@@ -631,21 +636,23 @@ func (svc *SchedulesService) DeleteSchedule(ctx context.Context, req *automation
 	if row.State.Terminal() {
 		return &automationv1.DeleteScheduleResponse{}, nil // 幂等
 	}
+	fact, err := svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {
+		return writes.FactRow{
+			Name: "schedule.deleted", Aggregate: "schedule", ID: row.ID,
+			Payload: engine.ScheduleDeletedEventJSON(row),
+			TeamID:  team,
+			Action:  "schedule.delete", Resource: "schedule/" + row.ID,
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
 	err = svc.s.commit(ctx, writeFact{
 		write: func(ctx context.Context, st transact.Stores) error {
 			return st.Schedules.Transit(ctx, row.ID, schedule.StateActive, schedule.StateDeleted)
 		},
-		facts: []func() writes.FactRow{
-			svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {
-				return writes.FactRow{
-					Name: "schedule.deleted", Aggregate: "schedule", ID: row.ID,
-					Payload: engine.ScheduleDeletedEventJSON(row),
-					TeamID:  team,
-					Action:  "schedule.delete", Resource: "schedule/" + row.ID,
-					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-				}
-			}),
-		},
+		facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "schedule")

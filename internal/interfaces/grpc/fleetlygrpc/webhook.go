@@ -20,6 +20,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/lynx-go/grpcapi/authz"
+
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
@@ -207,6 +209,13 @@ func (svc *HooksService) ingestGitMaterial(ctx context.Context, appRow *app.App,
 // admission 与 push 同链（同 HEAD 重放回 deduplicated）。审计/事件带调用
 // 方真实身份（source=api），与 webhook 面的 hook:<App> 覆写分野。
 func (svc *HooksService) RefreshGitHook(ctx context.Context, req *deliveryv1.RefreshGitHookRequest) (*deliveryv1.RefreshGitHookResponse, error) {
+	// 内层动作门（R08-M3）：外层注解是 apps:write，但本动词的实质是部署
+	// 链（拉取材料 → Engine 提交 → 构建/替换工作负载）——必须显式持有
+	// deployments:write（与 Deploy RPC 的 api_key_scope 同源）。门先于
+	// 404/拉取副作用：仅持 apps:write 的角色 403 且零部署行。
+	if err := svc.s.requireScope(ctx, "deployments", authz.ScopeWrite); err != nil {
+		return nil, err
+	}
 	// app_id 必填已退役 descriptor 注解（P4-1 批 1 Run B2）：空值由
 	// protovalidate 拦截器在受理面拦截，文案与退役前逐字节一致；token/
 	// signature/payload 校验是动态面，保留手写。

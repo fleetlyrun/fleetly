@@ -857,10 +857,15 @@ func NewAppConfig(app lynx.App) (*config.AppConfig, error) {
 // Console SPA embed 等可选编译面随对应批次挂入。
 func NewServiceFactories() []lynx.ServiceFactory { return nil }
 
-// NewPreStartHooks 启动前钩子（OnPreStart，先于监听）：identity 种子 +
-// Bootstrap Token 首启流（无用户时生成一次、journal 去重；F0.2/F0.6）。
+// NewPreStartHooks 启动前钩子（OnPreStart，先于监听）：先跑暴露面门
+// （受管 Proxy 配置端点在多租户形态下不得无认证——R09-M8/R14-M6 →
+// S14-c9；失败即 fail-fast），再执行 identity 种子 + Bootstrap Token 首启
+// 流（无用户时生成一次、journal 去重；F0.2/F0.6）。
 func NewPreStartHooks(db *persistence.DB, seedRepos authn.SeedRepos, cfg *config.AppConfig, app lynx.App) boot.PreStartHooks {
 	return boot.PreStartHooks{func(ctx context.Context) error {
+		if err := ensureProxyConfigExposure(ctx, db, cfg); err != nil {
+			return err
+		}
 		_, err := authn.EnsureBootstrapToken(ctx, db, transact.NewTx(db, NewBinder(db)), seedRepos, cfg.DataRoot(), ScopeResources(), app.Logger())
 		return err
 	}}

@@ -14,6 +14,8 @@ import (
 	"context"
 	"errors"
 
+	"github.com/lynx-go/grpcapi/authz"
+
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/token"
@@ -41,6 +43,26 @@ func callerTeam(ctx context.Context) (teamID string, owner bool, err error) {
 // 共用的唯一判定点——别处不得再复制 role/team 双条件。
 func callerIsPlatformAdmin(id *authn.Identity) bool {
 	return id != nil && id.RoleID == identity.RoleOwnerID && id.TeamID == identity.DefaultTeamID
+}
+
+// requireScope 是复合 handler 的内层动作门（R08-M3）：复合编排在进程内直调
+// 其他服务方法（或触发部署链），authn 拦截器只在 RPC 边界按外层注解执法
+// 一次——内层动词的能力面必须在这里显式复核（HasScope 与内层 RPC 的
+// api_key_scope 同源；平台 owner 的 `*` 天然通过，无身份特判）。
+func (s *Services) requireScope(ctx context.Context, resource string, op authz.ScopeOp) error {
+	id, ok := authn.FromContext(ctx)
+	if !ok {
+		return apperr.New("E_UNAUTHENTICATED", "present a valid token to use the %s capability", resource)
+	}
+	if id.HasScope(resource, op) {
+		return nil
+	}
+	need := resource + ":" + string(op)
+	return apperr.New("E_FORBIDDEN",
+		"token %q lacks required scope %s for this composite operation", id.TokenName, need).
+		WithContext("token", id.TokenName).
+		WithContext("required_scope", need).
+		WithSuggestion("Grant the token's role the inner scopes this operation performs (" + need + "), or use a token whose role carries them.")
 }
 
 // teamAuthorized 是纯判定（行级授权唯一比较点）：资源归属 Team 与调用方

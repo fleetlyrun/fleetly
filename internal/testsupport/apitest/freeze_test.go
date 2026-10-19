@@ -14,7 +14,9 @@ import (
 	identityv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/identity/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity"
 	"github.com/fleetlyrun/fleetly/internal/testsupport/apitest"
+	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 // TestChangeFreezeLifecycle（F1.9，ADR-0017 附录 A.3）：per-Team 冻结 →
@@ -111,4 +113,60 @@ func TestChangeFreezeLifecycle(t *testing.T) {
 	// 事件三链面：freeze.set / freeze.lifted 入流（aggregate=freeze）。
 	events := peerEventNames(t, owner, h, "freeze", freezeID)
 	assert.Equal(t, []string{"freeze.set", "freeze.lifted"}, events)
+}
+
+// TestChangeFreezeCreateProjectCallerTeamFallback（R14-M5）：冻结寻址的目标
+// Team 必须解析为调用方 Team 或显式 target team——省略 team_id（handler 会
+// 归一到调用方 Team）不得绕过冻结刹车；未冻结队不受影响；平台 owner 显式
+// 寻址冻结队同规则拒绝（冻结是平台治理，不因 owner 豁免）。
+func TestChangeFreezeCreateProjectCallerTeamFallback(t *testing.T) {
+	h := apitest.NewManual(t)
+	owner := h.Ctx()
+	anon := context.Background()
+	teams := identityv1.NewTeamsServiceClient(h.Conn)
+	projects := structurev1.NewProjectsServiceClient(h.Conn)
+	gov := systemv1.NewGovernanceServiceClient(h.Conn)
+
+	teamA, err := teams.CreateTeam(owner, &identityv1.CreateTeamRequest{Name: "acme"})
+	require.NoError(t, err)
+	teamB, err := teams.CreateTeam(owner, &identityv1.CreateTeamRequest{Name: "beta"})
+	require.NoError(t, err)
+	aAdmin := sdk.WithToken(anon, mintTeamToken(t, h, "acme-freeze-admin", teamA.GetTeam().GetId(), identity.RoleAdminID))
+	bAdmin := sdk.WithToken(anon, mintTeamToken(t, h, "beta-freeze-admin", teamB.GetTeam().GetId(), identity.RoleAdminID))
+
+	const reason = "incident window"
+	_, err = gov.SetChangeFreeze(owner, &systemv1.SetChangeFreezeRequest{TeamId: teamA.GetTeam().GetId(), Reason: reason})
+	require.NoError(t, err)
+
+	// 冻结队省略 team_id：目标 = 调用方 Team（修复前 ref=="" 直接放行 → 红）。
+	_, err = projects.CreateProject(aAdmin, &structurev1.CreateProjectRequest{Name: "sneaky"})
+	require.Error(t, err)
+	assert.Equal(t, codes.FailedPrecondition, status.Code(err))
+	assert.Contains(t, err.Error(), "E_CHANGE_FROZEN")
+	assert.Contains(t, err.Error(), reason)
+
+	// 未冻结队省略 team_id：不受影响（回退解析不得把目标钉在别人的 Team）。
+	_, err = projects.CreateProject(bAdmin, &structurev1.CreateProjectRequest{Name: "beta-ok"})
+	require.NoError(t, err)
+
+	// 平台 owner 显式寻址冻结队：同规则拒绝。
+	_, err = projects.CreateProject(owner, &structurev1.CreateProjectRequest{Name: "owner-explicit", TeamId: teamA.GetTeam().GetId()})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "E_CHANGE_FROZEN")
+
+	// 零副作用：被拒项目未落行（重名再建也会成功即证）。
+	list, err := projects.ListProjects(owner, &structurev1.ListProjectsRequest{})
+	require.NoError(t, err)
+	for _, p := range list.GetProjects() {
+		assert.NotEqual(t, "sneaky", p.GetName(), "denied project must not persist")
+	}
+
+	// lift 后恢复（冻结语义本身不回退）。
+	frozenList, err := gov.ListChangeFreezes(owner, &systemv1.ListChangeFreezesRequest{})
+	require.NoError(t, err)
+	require.Len(t, frozenList.GetFreezes(), 1)
+	_, err = gov.LiftChangeFreeze(owner, &systemv1.LiftChangeFreezeRequest{Id: frozenList.GetFreezes()[0].GetId()})
+	require.NoError(t, err)
+	_, err = projects.CreateProject(aAdmin, &structurev1.CreateProjectRequest{Name: "sneaky"})
+	require.NoError(t, err)
 }

@@ -13,6 +13,7 @@ import (
 
 	"github.com/lynx-go/lynx/buildinfo"
 
+	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -34,15 +35,31 @@ type Service struct {
 	// engine 是组件重启的路由面（可空 = apitest 手工装配；缺席时重启
 	// 精确失败——E_INTERNAL）。
 	engine *engine.Engine
+
+	// now 是缓存时钟（测试可注入；零值回退 time.Now）。
+	now func() time.Time
+	// statusTTL 是探活结果缓存窗（缺省 statusCacheTTL；测试可缩短）。
+	statusTTL time.Duration
+	// statusMu 串行化探活（并发首请求单飞——匿名放大面收口）并保护缓存。
+	statusMu         sync.Mutex
+	statusComponents []*systemv1.ComponentHealth
+	statusCheckedAt  time.Time
 }
 
 // healthCheckTimeout 是单项探活预算（TCP 拨号类检查自带更短超时；此处
 // 兜底防慢检查拖垮 status 面）。
 const healthCheckTimeout = 2 * time.Second
 
+// statusCacheTTL 是探活结果缓存窗（R08-M9）：公开面无需凭证，逐请求
+// 全量探活可被匿名放大——TTL 内复用上次结果（匿名/鉴权共用同一缓存）。
+const statusCacheTTL = 10 * time.Second
+
 // New 构造 SystemService（checkers/engine 均可空）。
 func New(info buildinfo.BuildInfo, checkers []capability.Provider, eng *engine.Engine) *Service {
-	return &Service{info: info, checkers: checkers, engine: eng}
+	return &Service{
+		info: info, checkers: checkers, engine: eng,
+		now: time.Now, statusTTL: statusCacheTTL,
+	}
 }
 
 // GetVersion 返回控制面构建信息。
@@ -55,8 +72,14 @@ func (s *Service) GetVersion(context.Context, *systemv1.GetVersionRequest) (*sys
 }
 
 // GetStatus 返回控制面服务状态（逐项 Health() 并行探活 + 聚合）。
+//
+// 两面形态（R08-M9）：公开/匿名面只回最小态（state + version；components
+// 空 repeated 按 protojson 约定省略）——components 携带内部地址与上游
+// 错误原文，仅已认证调用方（拦截器注入 Identity，PUBLIC 面携有效凭证同样
+// 有身份）可见。聚合态由缓存快照计算（匿名方也看不到逐项详情，但 degraded
+// 事实不受影响）。
 func (s *Service) GetStatus(ctx context.Context, _ *systemv1.GetStatusRequest) (*systemv1.GetStatusResponse, error) {
-	components := s.checkComponents(ctx)
+	components := s.componentsCached(ctx)
 	state := systemv1.StatusState_STATUS_STATE_HEALTHY
 	for _, component := range components {
 		if !component.GetHealthy() {
@@ -64,11 +87,38 @@ func (s *Service) GetStatus(ctx context.Context, _ *systemv1.GetStatusRequest) (
 			break
 		}
 	}
-	return &systemv1.GetStatusResponse{
-		State:      state,
-		Version:    s.info.Version,
-		Components: components,
-	}, nil
+	resp := &systemv1.GetStatusResponse{
+		State:   state,
+		Version: s.info.Version,
+	}
+	if _, ok := authn.FromContext(ctx); ok {
+		resp.Components = components
+	}
+	return resp, nil
+}
+
+// componentsCached 返回 TTL 内的探活快照；未命中即探活并回写缓存。探活
+// 用脱离调用方取消信号的 ctx（客户端断连不污染共享缓存）；并发请求在
+// mutex 上排队，窗口内只跑一轮探活。
+func (s *Service) componentsCached(ctx context.Context) []*systemv1.ComponentHealth {
+	now := s.clockNow()
+	s.statusMu.Lock()
+	defer s.statusMu.Unlock()
+	if s.statusComponents != nil && now.Sub(s.statusCheckedAt) < s.statusTTL {
+		return append([]*systemv1.ComponentHealth(nil), s.statusComponents...)
+	}
+	components := s.checkComponents(context.WithoutCancel(ctx))
+	s.statusComponents = components
+	s.statusCheckedAt = now
+	return append([]*systemv1.ComponentHealth(nil), components...)
+}
+
+// clockNow 读缓存时钟（零值回退真实时间——注入缺失不 panic）。
+func (s *Service) clockNow() time.Time {
+	if s.now != nil {
+		return s.now()
+	}
+	return time.Now()
 }
 
 // checkComponents 并行探活在册 Provider（单项 2s 预算；超时/panic 按

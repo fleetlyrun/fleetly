@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/lynx-go/lynx/buildinfo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
@@ -48,7 +50,7 @@ func TestGetStatusAggregatesComponentHealth(t *testing.T) {
 		fakeHealthProvider{name: "healthy-one", healthy: true},
 		fakeHealthProvider{name: "sick-one", healthy: false, details: "dial refused"},
 	}, nil)
-	resp, err := svc.GetStatus(context.Background(), &systemv1.GetStatusRequest{})
+	resp, err := svc.GetStatus(authCtx(), &systemv1.GetStatusRequest{})
 	require.NoError(t, err)
 	assert.Equal(t, systemv1.StatusState_STATUS_STATE_DEGRADED, resp.GetState())
 	require.Len(t, resp.GetComponents(), 2)
@@ -62,7 +64,7 @@ func TestGetStatusHealthyWhenAllPass(t *testing.T) {
 		fakeHealthProvider{name: "a", healthy: true},
 		fakeHealthProvider{name: "b", healthy: true},
 	}, nil)
-	resp, err := svc.GetStatus(context.Background(), &systemv1.GetStatusRequest{})
+	resp, err := svc.GetStatus(authCtx(), &systemv1.GetStatusRequest{})
 	require.NoError(t, err)
 	assert.Equal(t, systemv1.StatusState_STATUS_STATE_HEALTHY, resp.GetState())
 	assert.Len(t, resp.GetComponents(), 2)
@@ -72,7 +74,7 @@ func TestGetStatusTimeoutCountsUnhealthy(t *testing.T) {
 	svc := New(buildinfo.BuildInfo{Version: "0.1.0-test"}, []capability.Provider{
 		fakeHealthProvider{name: "slow", block: true},
 	}, nil)
-	resp, err := svc.GetStatus(context.Background(), &systemv1.GetStatusRequest{})
+	resp, err := svc.GetStatus(authCtx(), &systemv1.GetStatusRequest{})
 	require.NoError(t, err)
 	assert.Equal(t, systemv1.StatusState_STATUS_STATE_DEGRADED, resp.GetState())
 	assert.Contains(t, resp.GetComponents()[0].GetDetails(), "timed out")
@@ -83,6 +85,79 @@ func TestGetStatusEmptyCheckersStaysHealthy(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, systemv1.StatusState_STATUS_STATE_HEALTHY, resp.GetState())
 	assert.Empty(t, resp.GetComponents())
+}
+
+// authCtx 注入一条已认证身份（GetStatus 的详情面门：匿名只回最小态）。
+func authCtx() context.Context {
+	return authn.WithIdentity(context.Background(), &authn.Identity{
+		TeamID: identity.DefaultTeamID, RoleID: identity.RoleMemberID, TokenName: "status-probe",
+	})
+}
+
+// countingProvider 记录 Health 调用次数（探活缓存命中锚）。
+type countingProvider struct {
+	name  string
+	calls *int
+}
+
+func (c countingProvider) Describe() capability.ProviderDescriptor {
+	return capability.ProviderDescriptor{Name: c.name, Capability: capability.KindRuntime, Version: "test"}
+}
+
+func (c countingProvider) Health(context.Context) capability.HealthReport {
+	*c.calls++
+	return capability.HealthReport{Healthy: true, Details: "ok at 10.99.0.7:9000"}
+}
+
+// TestGetStatusAnonymousMinimalState：公开/匿名面只回最小态——不含
+// components（内部拓扑/上游错误详情的载体）。
+func TestGetStatusAnonymousMinimalState(t *testing.T) {
+	svc := New(buildinfo.BuildInfo{Version: "0.1.0-test"}, []capability.Provider{
+		fakeHealthProvider{name: "managed-vl", healthy: false, details: "managed log store unreachable at 10.99.0.7:9428"},
+	}, nil)
+	resp, err := svc.GetStatus(context.Background(), &systemv1.GetStatusRequest{})
+	require.NoError(t, err)
+	assert.Equal(t, systemv1.StatusState_STATUS_STATE_DEGRADED, resp.GetState())
+	assert.Equal(t, "0.1.0-test", resp.GetVersion())
+	assert.Empty(t, resp.GetComponents(), "anonymous callers must not receive component details")
+	body, err := protojson.Marshal(resp)
+	require.NoError(t, err)
+	assert.NotContains(t, string(body), "components")
+	assert.NotContains(t, string(body), "10.99.0.7")
+
+	// 鉴权面：同一状态可见 components 与详情（排障动线）。
+	authed, err := svc.GetStatus(authCtx(), &systemv1.GetStatusRequest{})
+	require.NoError(t, err)
+	require.Len(t, authed.GetComponents(), 1)
+	assert.Contains(t, authed.GetComponents()[0].GetDetails(), "10.99.0.7")
+}
+
+// TestGetStatusCachesProbes：探活结果 TTL 缓存——窗口内重复请求不再触发
+// Provider 探活；TTL 过期后重新探活。
+func TestGetStatusCachesProbes(t *testing.T) {
+	calls := 0
+	svc := New(buildinfo.BuildInfo{Version: "0.1.0-test"}, []capability.Provider{
+		countingProvider{name: "cached", calls: &calls},
+	}, nil)
+	now := time.Unix(1_700_000_000, 0)
+	svc.now = func() time.Time { return now }
+
+	_, err := svc.GetStatus(authCtx(), &systemv1.GetStatusRequest{})
+	require.NoError(t, err)
+	_, err = svc.GetStatus(authCtx(), &systemv1.GetStatusRequest{})
+	require.NoError(t, err)
+	assert.Equal(t, 1, calls, "a cache hit must not re-run provider probes")
+
+	// 匿名请求同样命中缓存（不放大探活）。
+	_, err = svc.GetStatus(context.Background(), &systemv1.GetStatusRequest{})
+	require.NoError(t, err)
+	assert.Equal(t, 1, calls)
+
+	// TTL 过期 → 重新探活一次。
+	now = now.Add(statusCacheTTL + time.Second)
+	_, err = svc.GetStatus(authCtx(), &systemv1.GetStatusRequest{})
+	require.NoError(t, err)
+	assert.Equal(t, 2, calls)
 }
 
 func TestGetSchemaListsEntriesSorted(t *testing.T) {

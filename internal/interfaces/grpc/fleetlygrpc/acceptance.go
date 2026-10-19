@@ -73,19 +73,34 @@ func (s *Services) factRepos(st transact.Stores) writes.Repos {
 }
 
 // factOf 构造一条资源轴归属 Project 的事实声明：Team 在进事务前解析
-// （P0-2 契约——显式空串/行缺失/存储故障 → "" 平台级可见，不为归属
-// 解析新增失败面；事务外读与既有 resolveEventTeams 同款时序），row 闭包
-// 在求值时把解析产物铸入 FactRow.TeamID。归属 Team 在手（identity 域）
-// 或无 Team 轴（平台级材料）的场合不经本助手，直接声明闭包。
-func (s *Services) factOf(ctx context.Context, projectID string, row func(team string) writes.FactRow) func() writes.FactRow {
-	team := ""
-	if projectID != "" {
-		if p, err := s.Projects.Get(ctx, projectID); err == nil {
-			team = p.TeamID
-		}
+// （P0-2 契约——事务外读与既有 resolveEventTeams 同款时序），row 闭包在
+// 求值时把解析产物铸入 FactRow.TeamID。
+//
+// fail-closed（R08-M8）：归属解析失败（空 project_id / 行缺失 / 存储故障 /
+// 解析结果空 Team）→ 返回 error，调用方整单拒绝（写与事件/审计均不落）。
+// 绝不把解析失败吞成 TeamID=""——空 Team 行按 outbox 过滤口径对**全部
+// Team** 可见，那正是跨队事件泄漏的 fail-open 单点。TeamID="" 的平台级
+// 事实必须经 platformFact 显式构造（无 Team 轴的理由写在调用点）。
+func (s *Services) factOf(ctx context.Context, projectID string, row func(team string) writes.FactRow) (func() writes.FactRow, error) {
+	if projectID == "" {
+		return nil, apperr.New("E_INTERNAL", "event ownership cannot be resolved: the write carries no project id")
 	}
-	return func() writes.FactRow { return row(team) }
+	p, err := s.Projects.Get(ctx, projectID)
+	if err != nil {
+		return nil, apperr.New("E_INTERNAL", "event ownership resolution failed for project %s", projectID).WithCause(err)
+	}
+	if p.TeamID == "" {
+		return nil, apperr.New("E_INTERNAL", "event ownership resolution returned an empty team for project %s", projectID)
+	}
+	team := p.TeamID
+	return func() writes.FactRow { return row(team) }, nil
 }
+
+// platformFact 是平台级事实（TeamID=""、全员可见）的唯一显式构造器：只用于
+// 无 Team 轴的平台聚合（platform 聚合、node 平台事件、模板目录等）。资源轴
+// 事实必须走 factOf——此处是"空 Team 需显式理由"纪律的语法载体（调用点
+// 注释必须写明为何对全体 Team 可见）。
+func platformFact(row func() writes.FactRow) func() writes.FactRow { return row }
 
 // ---- 受理检查族（可枚举面；守卫对账对象） ----
 

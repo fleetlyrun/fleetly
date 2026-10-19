@@ -12,7 +12,9 @@ import (
 
 	automationv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/automation/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
+	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/domain/automation/task"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity"
 	"github.com/fleetlyrun/fleetly/internal/domain/runtimeops/freeze"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/anchor"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
@@ -54,8 +56,14 @@ func testGuard(db state.DB, clock state.Clock) *FreezeGuard {
 // call 经拦截器跑一次 handler（fullMethod 决定执法面）。
 func call(t *testing.T, g *FreezeGuard, method string, req proto.Message) error {
 	t.Helper()
+	return callCtx(t, g, context.Background(), method, req)
+}
+
+// callCtx 同 call，但允许注入 context（调用方身份轴）。
+func callCtx(t *testing.T, g *FreezeGuard, ctx context.Context, method string, req proto.Message) error {
+	t.Helper()
 	called := false
-	_, err := g.Unary()(context.Background(), req, &grpc.UnaryServerInfo{FullMethod: method},
+	_, err := g.Unary()(ctx, req, &grpc.UnaryServerInfo{FullMethod: method},
 		func(context.Context, any) (any, error) { called = true; return nil, nil })
 	if err == nil {
 		require.True(t, called, "handler must run when not frozen")
@@ -133,6 +141,42 @@ func TestFreezeGuardTeamAxis(t *testing.T) {
 	require.NoError(t, freezes.Lift(ctx, "01JDQFRZG00000000000000000"))
 	require.NoError(t, call(t, g, createApp, &structurev1.CreateAppRequest{ProjectId: pidB, Name: "x"}))
 	wantFrozen(t, call(t, g, createApp, &structurev1.CreateAppRequest{ProjectId: pidA, Name: "x"}), reasonA)
+}
+
+// TestFreezeGuardCreateProjectCallerTeamFallback（R14-M5）：CreateProject 的
+// 冻结寻址字段 team_id 为空时目标 = 调用方 Team——冻结队省略 team_id 不得
+// 绕过刹车（fail-closed：无身份也不得放行）。其余创建型动词以行 ID 寻址
+// （空值 = 受理位 404 侧），语义不变。
+func TestFreezeGuardCreateProjectCallerTeamFallback(t *testing.T) {
+	db, clock := statetest.New(t)
+	ctx := context.Background()
+	const (
+		createProj = "/fleetly.structure.v1.ProjectsService/CreateProject"
+		// tTeamB 是未冻结队（回退解析后不得误伤）。
+		tTeamB = "01JD0TEAMB0000000000000000"
+		// reason 是拒绝信封的可见锚。
+		reason = "incident window"
+	)
+	freezes := freezerepo.New(clock, db.Runner())
+	require.NoError(t, freezes.Create(ctx, &freeze.Freeze{ID: "01JDQFRZA00000000000000000", TeamID: tTeamA, Reason: reason}))
+	g := testGuard(db, clock)
+
+	teamACtx := authn.WithIdentity(ctx, &authn.Identity{TeamID: tTeamA, RoleID: identity.RoleAdminID, TokenName: "acme-admin"})
+	teamBCtx := authn.WithIdentity(ctx, &authn.Identity{TeamID: tTeamB, RoleID: identity.RoleAdminID, TokenName: "beta-admin"})
+
+	// 冻结队省略 team_id：拒绝（负例——修复前 ref=="" 直接放行）。
+	wantFrozen(t, callCtx(t, g, teamACtx, createProj, &structurev1.CreateProjectRequest{Name: "sneaky"}), reason)
+	// 未冻结队省略 team_id：放行（回退解析不得把目标钉在别人的 Team）。
+	require.NoError(t, callCtx(t, g, teamBCtx, createProj, &structurev1.CreateProjectRequest{Name: "ok"}))
+	// 显式寻址到他队冻结行：拒绝（原有语义不回退——owner 亦不豁免）。
+	ownerCtx := authn.WithIdentity(ctx, &authn.Identity{TeamID: identity.DefaultTeamID, RoleID: identity.RoleOwnerID, TokenName: "bootstrap"})
+	wantFrozen(t, callCtx(t, g, ownerCtx, createProj, &structurev1.CreateProjectRequest{Name: "x", TeamId: tTeamA}), reason)
+	require.NoError(t, callCtx(t, g, ownerCtx, createProj, &structurev1.CreateProjectRequest{Name: "y"}),
+		"owner's omitted team_id targets the caller (default) team, which is not frozen")
+	// 无身份 + 省略 team_id：fail-closed（数据面 SERVER 档拦截器先拒；此处纵深防御）。
+	_, err := g.Unary()(ctx, &structurev1.CreateProjectRequest{Name: "anon"}, &grpc.UnaryServerInfo{FullMethod: createProj},
+		func(context.Context, any) (any, error) { return nil, nil })
+	require.Error(t, err, "a frozen-face verb with an empty addressing field must not pass without a caller identity")
 }
 
 func TestFreezeGuardPassThroughOnMissingRows(t *testing.T) {

@@ -123,6 +123,19 @@ func (svc *BuildsService) UploadSource(stream deliveryv1.BuildsService_UploadSou
 	if err != nil {
 		return apperr.New("E_INTERNAL", "encoding the upload event payload failed").WithCause(err)
 	}
+	// 事件归属进事务前解析（R08-M8：解析失败整单拒绝）。
+	fact, err := svc.s.factOf(ctx, projectID, func(team string) writes.FactRow {
+		return writes.FactRow{
+			Name: eventUploadStored, Aggregate: "project", ID: projectID,
+			Payload: payload,
+			TeamID:  team,
+			Action:  "upload.create", Resource: "upload/" + row.ID, AfterFP: digest,
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+		}
+	})
+	if err != nil {
+		return err
+	}
 	err = svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{
 			svc.s.parentProjectAlive(projectID),
@@ -131,17 +144,7 @@ func (svc *BuildsService) UploadSource(stream deliveryv1.BuildsService_UploadSou
 		write: func(ctx context.Context, st transact.Stores) error {
 			return st.SourceUploads.Create(ctx, row)
 		},
-		facts: []func() writes.FactRow{
-			svc.s.factOf(ctx, projectID, func(team string) writes.FactRow {
-				return writes.FactRow{
-					Name: eventUploadStored, Aggregate: "project", ID: projectID,
-					Payload: payload,
-					TeamID:  team,
-					Action:  "upload.create", Resource: "upload/" + row.ID, AfterFP: digest,
-					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-				}
-			}),
-		},
+		facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
 		// 并发同内容：另一路先落行（唯一索引）→ 幂等返回既有引用。

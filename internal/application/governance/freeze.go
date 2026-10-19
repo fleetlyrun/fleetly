@@ -23,6 +23,8 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 
+	"github.com/fleetlyrun/fleetly/internal/application/authn"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity"
 	"github.com/fleetlyrun/fleetly/internal/domain/runtimeops/freeze"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/anchor"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
@@ -31,9 +33,14 @@ import (
 
 // freezeScope 声明一个冻结面动词的 Team 解析方式（field 是请求字段名；
 // kind 走 anchor 解析图——归属链单源，架构评审第二轮候选 3）。
+//
+// fallbackToCaller 标记"寻址字段为空时 handler 会把目标归一到调用方 Team"
+// 的创建型动词（R14-M5）：这类动词的空寻址不是"寻址失败"，而是"目标 =
+// 调用方 Team"——冻结必须按同一目标解析，否则省略 team_id 即绕过刹车。
 type freezeScope struct {
-	field string
-	kind  anchor.Kind
+	field            string
+	kind             anchor.Kind
+	fallbackToCaller bool
 }
 
 // FrozenVerbs 是封禁面（ADR-0017 附录 A.3：Workload 与结构变更族；豁免面
@@ -41,7 +48,12 @@ type freezeScope struct {
 // 守卫双向对账）。
 var FrozenVerbs = map[string]freezeScope{
 	// structure：全部变更动词。
-	"/fleetly.structure.v1.ProjectsService/CreateProject":               {field: "team_id", kind: anchor.KindTeam},
+	//
+	// CreateProject 是唯一"目标 Team 缺省 = 调用方 Team"的创建型动词
+	//（structure.go 的 resolveTargetTeam 归一）：空 team_id 时回退调用方
+	// Team 解析——空寻址不得放行（R14-M5）。其余动词以行 ID 寻址，空值
+	// 由受理位拒绝，放行口径不变。
+	"/fleetly.structure.v1.ProjectsService/CreateProject":               {field: "team_id", kind: anchor.KindTeam, fallbackToCaller: true},
 	"/fleetly.structure.v1.ProjectsService/DeleteProject":               {field: "id", kind: anchor.KindProject},
 	"/fleetly.structure.v1.AppsService/CreateApp":                       {field: "project_id", kind: anchor.KindProject},
 	"/fleetly.structure.v1.AppsService/DeleteApp":                       {field: "id", kind: anchor.KindApp},
@@ -157,10 +169,28 @@ func (g *FreezeGuard) enforce(ctx context.Context, req any, scope freezeScope) e
 // resolveTeam 解析请求的治理 Team（归属链经 anchor 解析图单源，方法表
 // 见 internal/anchor）。resolved=false 表示寻址失败（空字段、行缺失或
 // Team 轴外的行）——放行交由受理位拒绝；存储故障 fail-closed（E_INTERNAL）。
+//
+// fallbackToCaller 动词的空寻址不是寻址失败：目标 = 调用方 Team（与 handler
+// 的 resolveTargetTeam 同义，R14-M5）。无身份 = fail-closed（数据面 SERVER
+// 档由 authn 先拒，此处纵深防御）。
 func (g *FreezeGuard) resolveTeam(ctx context.Context, req any, scope freezeScope) (string, bool, error) {
 	ref := reqField(req, scope.field)
 	if ref == "" {
-		return "", false, nil
+		if !scope.fallbackToCaller {
+			return "", false, nil
+		}
+		caller, ok := authn.FromContext(ctx)
+		if !ok {
+			return "", false, apperr.New("E_UNAUTHENTICATED",
+				"change freeze targeting requires an authenticated caller for %s", scope.field).
+				WithSuggestion("Pass a token of the team that owns the change ('fleetly login' or the authorization header).")
+		}
+		team := caller.TeamID
+		if team == "" {
+			// 与 resolveTargetTeam 的防御性缺省同义（数据面不可达）。
+			team = identity.DefaultTeamID
+		}
+		return team, true, nil
 	}
 	team, err := g.anchor.TeamOf(ctx, scope.kind, ref)
 	if err != nil {

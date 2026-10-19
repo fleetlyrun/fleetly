@@ -12,6 +12,12 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/fleetlyrun/fleetly/internal/config"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity/team"
+	"github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/statetest"
+	teamrepo "github.com/fleetlyrun/fleetly/internal/infrastructure/persistence/team"
 )
 
 // fakeConfigSource 是 ConfigSource 的测试假（快照恒定）。
@@ -95,4 +101,27 @@ func TestProxyConfigHandlerReadinessGate(t *testing.T) {
 	ready.ServeHTTP(resp, proxyConfigRequest(t, ""))
 	require.Equal(t, http.StatusOK, resp.Code)
 	assert.Equal(t, string(snap), resp.Body.String())
+}
+
+// TestEnsureProxyConfigExposureStartupGate（R09-M8/R14-M6 → S14-c9）：启动
+// 期团队数探测决定受管端点认证门——单租户现状放行（升级零扰动），多租户
+// 无 token 且非回环监听 fail-fast，置 token 后放行。
+func TestEnsureProxyConfigExposureStartupGate(t *testing.T) {
+	db, clock := statetest.New(t)
+	ctx := context.Background()
+	teams := teamrepo.New(clock, db.Runner())
+	require.NoError(t, teams.Create(ctx, &team.Team{ID: identity.DefaultTeamID, Name: "default"}))
+	cfg := config.WithDefaults(&config.AppConfig{})
+
+	require.NoError(t, ensureProxyConfigExposure(ctx, db, cfg),
+		"single-team deployments keep the current default bind (ADR-0036, upgrade zero-disturbance)")
+
+	require.NoError(t, teams.Create(ctx, &team.Team{ID: "01JD0TEAMB0000000000000000", Name: "acme"}))
+	err := ensureProxyConfigExposure(ctx, db, cfg)
+	require.Error(t, err, "more than one team + unauthenticated wildcard bind must fail fast")
+	assert.Contains(t, err.Error(), "server.proxy_config.auth_token")
+
+	// 置 token → 多租户放行。
+	cfg = config.WithDefaults(&config.AppConfig{Server: &config.Server{ProxyConfig: &config.ProxyConfig{AuthToken: "proxy-secret"}}})
+	require.NoError(t, ensureProxyConfigExposure(ctx, db, cfg))
 }

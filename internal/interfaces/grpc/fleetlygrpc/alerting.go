@@ -379,23 +379,26 @@ func (svc *AlertingService) CreateAlertRule(ctx context.Context, req *telemetryv
 		AppID: appRow.ID, Metric: metric,
 		Threshold: req.GetThreshold(), ForSecs: req.GetForSeconds(), Enabled: true,
 	}
+	// 事件归属在进事务前解析（R08-M8：解析失败整单拒绝，不落平台级可见行）。
+	fact, err := svc.s.factOf(ctx, appRow.ProjectID, func(team string) writes.FactRow {
+		return writes.FactRow{
+			Name: eventAlertRuleCreated, Aggregate: "alert_rule", ID: row.ID,
+			Payload: mustJSON(alertRuleEventPayload{AppID: row.AppID, Metric: row.Metric}),
+			TeamID:  team,
+			Action:  "alert_rule.create", Resource: "alert_rule/" + row.ID,
+			AfterFP: appRow.ID + ":" + metric,
+			Actor:   authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
 	err = svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{svc.s.parentProjectAlive(appRow.ProjectID)},
 		write: func(ctx context.Context, st transact.Stores) error {
 			return st.AlertRules.Create(ctx, row)
 		},
-		facts: []func() writes.FactRow{
-			svc.s.factOf(ctx, appRow.ProjectID, func(team string) writes.FactRow {
-				return writes.FactRow{
-					Name: eventAlertRuleCreated, Aggregate: "alert_rule", ID: row.ID,
-					Payload: mustJSON(alertRuleEventPayload{AppID: row.AppID, Metric: row.Metric}),
-					TeamID:  team,
-					Action:  "alert_rule.create", Resource: "alert_rule/" + row.ID,
-					AfterFP: appRow.ID + ":" + metric,
-					Actor:   authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-				}
-			}),
-		},
+		facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "alert rule")
@@ -498,21 +501,23 @@ func (svc *AlertingService) DeleteAlertRule(ctx context.Context, req *telemetryv
 	if err != nil {
 		return nil, err
 	}
+	fact, err := svc.s.factOf(ctx, appRow.ProjectID, func(team string) writes.FactRow {
+		return writes.FactRow{
+			Name: eventAlertRuleDeleted, Aggregate: "alert_rule", ID: row.ID,
+			Payload: mustJSON(alertRuleEventPayload{AppID: row.AppID, Metric: row.Metric}),
+			TeamID:  team,
+			Action:  "alert_rule.delete", Resource: "alert_rule/" + row.ID,
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
 	err = svc.s.commit(ctx, writeFact{
 		write: func(ctx context.Context, st transact.Stores) error {
 			return st.AlertRules.Delete(ctx, req.GetRuleId())
 		},
-		facts: []func() writes.FactRow{
-			svc.s.factOf(ctx, appRow.ProjectID, func(team string) writes.FactRow {
-				return writes.FactRow{
-					Name: eventAlertRuleDeleted, Aggregate: "alert_rule", ID: row.ID,
-					Payload: mustJSON(alertRuleEventPayload{AppID: row.AppID, Metric: row.Metric}),
-					TeamID:  team,
-					Action:  "alert_rule.delete", Resource: "alert_rule/" + row.ID,
-					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-				}
-			}),
-		},
+		facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "alert rule")

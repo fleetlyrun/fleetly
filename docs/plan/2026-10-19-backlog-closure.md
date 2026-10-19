@@ -531,6 +531,22 @@ Compare-Object $reportML $ledgerML
 | e2e/Actions 真跑台账（H7/H9、k3s config mount、relay 双节点） | 报告 §11 修复边界 | 未跑（无 Docker） | dind/staging 台账批；不阻塞 S13-S17 代码批 |
 | `node.left` 抖动宽限窗 | S11b 残留/裁决点 | 观察中 | 先按 runbook 处置；触发：节点抖动误删凭证 |
 
+### 3.9 执行状态（滚动更新）
+
+| 批次 | 状态 | commit | 备注 |
+|---|---|---|---|
+| S13 | ✅ | `1dd4171d` | 身份读面最小化/Login 双桶限速/alerts Team 过滤；门禁全绿 |
+| S14a | ✅ | `5e5ab2fe` + 回归修复 `ff0b8681` | c1-c4 外部面/密钥材料；c1 首版项目段白名单漏 entityid 连字符，Lead 门禁发现并修复（cmd golden 复绿） |
+| S14b | ✅ | 本提交 | c5-c9 授权/事实/契约/端点认证；新增 factteam 守卫；c9 多队无 token 启动 fail-fast（部署注意见下） |
+| S15a | 待派 | — | 收敛/引擎 c1-c4 |
+| S15b | 待派 | — | 收敛/引擎 c5-c8（含 compose 保真五连） |
+| S16 | 待派 | — | Runtime/适配面 |
+| S17 | 待派 | — | 守卫/测试基建 |
+| S18 | 待派 | — | 非 M/L 残项 |
+| S19 | 待派 | — | 文档修订/真机复核/终验 |
+
+> **c9 部署注意（S14b 遗留）**：既有**多队**部署在换装到含 c9 的二进制前，必须先设置 `FLEETLY_SERVER_PROXY_CONFIG_AUTH_TOKEN`（或把 `server.proxy_config.addr` 绑回环），否则启动 fail-fast；单队部署（含当前 staging）零扰动。换装 staging 前先核团队数。
+
 ## 4. 剩余风险清单（供最终报告 §4 更新，取 ACCEPT/SEPARATE 中影响发布/安全最高者）
 
 > 选取标准：① 安全/数据完整性；② 发布或升级链阻断；③ 事故放大器（控制面自己坏了）；④ 对外承诺与实现不符。按"若不修，最坏后果 × 触发概率"排序。

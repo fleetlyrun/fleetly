@@ -250,8 +250,21 @@ func (svc *ProjectsService) DeleteProject(ctx context.Context, req *structurev1.
 	if err := svc.s.cascadeDeleteDatabases(ctx, req.GetId()); err != nil {
 		return nil, err
 	}
-	// 聚合即项目本体：自身充当 Team 解析锚（P0-2，factOf）。
-	err := svc.s.commit(ctx, writeFact{
+	// 聚合即项目本体：自身充当 Team 解析锚（P0-2，factOf）。事件归属进
+	// 事务前解析（R08-M8：解析失败整单拒绝）。
+	fact, err := svc.s.factOf(ctx, req.GetId(), func(team string) writes.FactRow {
+		return writes.FactRow{
+			Name: eventProjectDeleted, Aggregate: "project", ID: req.GetId(),
+			Payload: mustJSON(structureEventPayload{ID: req.GetId()}),
+			TeamID:  team,
+			Action:  "project.delete", Resource: "project/" + req.GetId(),
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
+	err = svc.s.commit(ctx, writeFact{
 		// 删除守卫与 tombstone 同事务：并发建 App 的窗口由两侧守卫对偶
 		// 闭合（本侧拒绝"删除时仍有 App"；CreateApp 侧受理检查拒绝"删除
 		// 后挂 App"；单写者事务串行，见函数注释）。并发建库窗口由
@@ -261,17 +274,7 @@ func (svc *ProjectsService) DeleteProject(ctx context.Context, req *structurev1.
 		write: func(ctx context.Context, st transact.Stores) error {
 			return st.Projects.SoftDelete(ctx, req.GetId())
 		},
-		facts: []func() writes.FactRow{
-			svc.s.factOf(ctx, req.GetId(), func(team string) writes.FactRow {
-				return writes.FactRow{
-					Name: eventProjectDeleted, Aggregate: "project", ID: req.GetId(),
-					Payload: mustJSON(structureEventPayload{ID: req.GetId()}),
-					TeamID:  team,
-					Action:  "project.delete", Resource: "project/" + req.GetId(),
-					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-				}
-			}),
-		},
+		facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "project")
@@ -302,8 +305,21 @@ func (svc *AppsService) CreateApp(ctx context.Context, req *structurev1.CreateAp
 	// 父资源存活校验（批 0 复核）：apps.project_id 无 FK，不校验则对
 	// 不存在/已删 project 建 App 直接成功，活 App 落已删项目、路由照发
 	// ——DeleteProject 守卫的"窗口闭合"承诺以此对偶守卫成立。数量配额
-	//（ADR-0017 附录 A.1）与存活校验同住受理位（事务内读）。
-	err := svc.s.commit(ctx, writeFact{
+	//（ADR-0017 附录 A.1）与存活校验同住受理位（事务内读）。事件归属
+	// 进事务前解析（R08-M8：解析失败整单拒绝）。
+	fact, err := svc.s.factOf(ctx, a.ProjectID, func(team string) writes.FactRow {
+		return writes.FactRow{
+			Name: eventAppCreated, Aggregate: "app", ID: a.ID,
+			Payload: mustJSON(structureEventPayload{ID: a.ID, ProjectID: a.ProjectID}),
+			TeamID:  team,
+			Action:  "app.create", Resource: "app/" + a.ID, AfterFP: a.Name,
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
+	err = svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{
 			svc.s.parentProjectAlive(req.GetProjectId()),
 			svc.s.appQuota(req.GetProjectId()),
@@ -311,19 +327,9 @@ func (svc *AppsService) CreateApp(ctx context.Context, req *structurev1.CreateAp
 		write: func(ctx context.Context, st transact.Stores) error {
 			return st.Apps.Create(ctx, a)
 		},
-		facts: []func() writes.FactRow{
-			// 行 id 事务内铸出（ADR-0070）：闭包求值在聚合写后，p.ID/a.ID
-			// 就位自然可见。
-			svc.s.factOf(ctx, a.ProjectID, func(team string) writes.FactRow {
-				return writes.FactRow{
-					Name: eventAppCreated, Aggregate: "app", ID: a.ID,
-					Payload: mustJSON(structureEventPayload{ID: a.ID, ProjectID: a.ProjectID}),
-					TeamID:  team,
-					Action:  "app.create", Resource: "app/" + a.ID, AfterFP: a.Name,
-					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-				}
-			}),
-		},
+		// 行 id 事务内铸出（ADR-0070）：闭包求值在聚合写后，p.ID/a.ID
+		// 就位自然可见。
+		facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "app")
@@ -471,6 +477,19 @@ func (svc *AppsService) DeleteApp(ctx context.Context, req *structurev1.DeleteAp
 	// tombstone 事务：复查、App tombstone、撤路由、事件、审计同生共死。
 	// aborted 非零 ⇔ 复查命中活跃部署（整单回滚的哨兵，见下方残余面）。
 	var aborted int
+	// 事件归属进事务前解析（R08-M8：解析失败整单拒绝）。
+	fact, err := svc.s.factOf(ctx, appRow.ProjectID, func(team string) writes.FactRow {
+		return writes.FactRow{
+			Name: eventAppDeleted, Aggregate: "app", ID: req.GetId(),
+			Payload: mustJSON(structureEventPayload{ID: req.GetId(), ProjectID: appRow.ProjectID}),
+			TeamID:  team,
+			Action:  "app.delete", Resource: "app/" + req.GetId(),
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
 	err = svc.s.commit(ctx, writeFact{
 		// TOCTOU 复查：收口后、落账前受理的活跃部署在此拒绝——整单回滚
 		//（无 tombstone、无路由删除；与 Submit 的存活判定互为对偶，单连接
@@ -512,17 +531,7 @@ func (svc *AppsService) DeleteApp(ctx context.Context, req *structurev1.DeleteAp
 			}
 			return nil
 		},
-		facts: []func() writes.FactRow{
-			svc.s.factOf(ctx, appRow.ProjectID, func(team string) writes.FactRow {
-				return writes.FactRow{
-					Name: eventAppDeleted, Aggregate: "app", ID: req.GetId(),
-					Payload: mustJSON(structureEventPayload{ID: req.GetId(), ProjectID: appRow.ProjectID}),
-					TeamID:  team,
-					Action:  "app.delete", Resource: "app/" + req.GetId(),
-					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-				}
-			}),
-		},
+		facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
 		if aborted > 0 {
@@ -546,22 +555,25 @@ func (svc *AppsService) DeleteApp(ctx context.Context, req *structurev1.DeleteAp
 // 错误只触发回滚；对外形态由 aborted 分支的 E_CONFLICT 承载）。
 var errDeleteAborted = errors.New("app delete: teardown aborted by a deployment admitted mid-delete")
 
-// recordTeardownAbort 落 teardown-aborted 事件 + 审计（同事务）。
+// recordTeardownAbort 落 teardown-aborted 事件 + 审计（同事务）。资源轴
+// 改走正常归属解析（R08-M8 第二个实例：调用点已持有 projectID，隶属可
+// 解析——不再留 ” 平台级可见，把受害 Team 的 project_id 广播给全体 Team）。
 func (svc *AppsService) recordTeardownAbort(ctx context.Context, id, projectID string, active int) error {
+	fact, ferr := svc.s.factOf(ctx, projectID, func(team string) writes.FactRow {
+		return writes.FactRow{
+			Name: eventAppTeardownAborted, Aggregate: "app", ID: id,
+			Payload: mustJSON(structureEventPayload{ID: id, ProjectID: projectID, ActiveDeployments: active}),
+			TeamID:  team,
+			Action:  "app.teardown_abort", Resource: "app/" + id,
+			AfterFP: fmt.Sprintf("active_deployments=%d", active),
+			Source:  audit.SourceSystem,
+		}
+	})
+	if ferr != nil {
+		return ferr
+	}
 	err := svc.s.commit(ctx, writeFact{
-		facts: []func() writes.FactRow{
-			func() writes.FactRow {
-				return writes.FactRow{
-					Name: eventAppTeardownAborted, Aggregate: "app", ID: id,
-					Payload: mustJSON(structureEventPayload{ID: id, ProjectID: projectID, ActiveDeployments: active}),
-					// 资源轴 ''（平台级可见）：中止哨兵是系统动作，聚合行
-					// 归属 Team 的解析面在此不可得（A 化前同款 '' 口径）。
-					Action: "app.teardown_abort", Resource: "app/" + id,
-					AfterFP: fmt.Sprintf("active_deployments=%d", active),
-					Source:  audit.SourceSystem,
-				}
-			},
-		},
+		facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
 		return apperr.New("E_INTERNAL", "app teardown abort could not be recorded").WithCause(err)
@@ -607,23 +619,25 @@ func (svc *SecretsService) PutSecret(ctx context.Context, req *structurev1.PutSe
 		Ciphertext: sealed.Ciphertext, Fingerprint: sealed.Fingerprint,
 	}
 	// 父资源存活校验（批 0 复核，同族面）：Project 级材料不得落在
-	// 不存在/已删的 Project 下。
+	// 不存在/已删的 Project 下。事件归属进事务前解析（R08-M8）。
+	fact, err := svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {
+		return writes.FactRow{
+			Name: eventSecretUpdated, Aggregate: "secret", ID: row.Name,
+			Payload: mustJSON(structureEventPayload{ID: row.Name, ProjectID: row.ProjectID}),
+			TeamID:  team,
+			Action:  "secret.put", Resource: "secret/" + row.Name, AfterFP: row.Fingerprint,
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
 	err = svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{svc.s.parentProjectAlive(req.GetProjectId())},
 		write: func(ctx context.Context, st transact.Stores) error {
 			return st.Secrets.Upsert(ctx, row)
 		},
-		facts: []func() writes.FactRow{
-			svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {
-				return writes.FactRow{
-					Name: eventSecretUpdated, Aggregate: "secret", ID: row.Name,
-					Payload: mustJSON(structureEventPayload{ID: row.Name, ProjectID: row.ProjectID}),
-					TeamID:  team,
-					Action:  "secret.put", Resource: "secret/" + row.Name, AfterFP: row.Fingerprint,
-					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-				}
-			}),
-		},
+		facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "secret")
@@ -653,21 +667,23 @@ func (svc *SecretsService) DeleteSecret(ctx context.Context, req *structurev1.De
 	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}
-	err := svc.s.commit(ctx, writeFact{
+	fact, err := svc.s.factOf(ctx, req.GetProjectId(), func(team string) writes.FactRow {
+		return writes.FactRow{
+			Name: eventSecretDeleted, Aggregate: "secret", ID: req.GetName(),
+			Payload: mustJSON(structureEventPayload{ID: req.GetName(), ProjectID: req.GetProjectId()}),
+			TeamID:  team,
+			Action:  "secret.delete", Resource: "secret/" + req.GetName(),
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
+	err = svc.s.commit(ctx, writeFact{
 		write: func(ctx context.Context, st transact.Stores) error {
 			return st.Secrets.SoftDelete(ctx, req.GetProjectId(), req.GetName())
 		},
-		facts: []func() writes.FactRow{
-			svc.s.factOf(ctx, req.GetProjectId(), func(team string) writes.FactRow {
-				return writes.FactRow{
-					Name: eventSecretDeleted, Aggregate: "secret", ID: req.GetName(),
-					Payload: mustJSON(structureEventPayload{ID: req.GetName(), ProjectID: req.GetProjectId()}),
-					TeamID:  team,
-					Action:  "secret.delete", Resource: "secret/" + req.GetName(),
-					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-				}
-			}),
-		},
+		facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "secret")
@@ -709,7 +725,19 @@ func (svc *ConfigsService) PutConfig(ctx context.Context, req *structurev1.PutCo
 	// 数量配额按"Project 内配置名数"计（新名才占新位；同名 put 是新版本）
 	// ——受理位检查（事务内读，ADR-0024：与写同事务，无先读后写 TOCTOU）。
 	row := &configrepo.Config{ProjectID: req.GetProjectId(), Name: req.GetName(), Content: []byte(req.GetContent())}
-	err := svc.s.commit(ctx, writeFact{
+	fact, err := svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {
+		return writes.FactRow{
+			Name: eventConfigUpdated, Aggregate: "config", ID: row.Name,
+			Payload: mustJSON(structureEventPayload{ID: row.Name, ProjectID: row.ProjectID}),
+			TeamID:  team,
+			Action:  "config.put", Resource: "config/" + row.Name, AfterFP: material.Fingerprint(row.Content),
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
+	err = svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{
 			svc.s.parentProjectAlive(req.GetProjectId()),
 			svc.s.configQuota(req.GetProjectId(), req.GetName()),
@@ -717,17 +745,7 @@ func (svc *ConfigsService) PutConfig(ctx context.Context, req *structurev1.PutCo
 		write: func(ctx context.Context, st transact.Stores) error {
 			return st.Configs.Create(ctx, row)
 		},
-		facts: []func() writes.FactRow{
-			svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {
-				return writes.FactRow{
-					Name: eventConfigUpdated, Aggregate: "config", ID: row.Name,
-					Payload: mustJSON(structureEventPayload{ID: row.Name, ProjectID: row.ProjectID}),
-					TeamID:  team,
-					Action:  "config.put", Resource: "config/" + row.Name, AfterFP: material.Fingerprint(row.Content),
-					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-				}
-			}),
-		},
+		facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "config")
@@ -795,23 +813,25 @@ func (svc *VolumesService) CreateVolume(ctx context.Context, req *structurev1.Cr
 		PinnedNodeID: req.GetPinnedNodeId(),
 	}
 	// 父资源存活校验（批 0 复核，同族面）：Project 级材料不得落在
-	// 不存在/已删的 Project 下。
-	err := svc.s.commit(ctx, writeFact{
+	// 不存在/已删的 Project 下。事件归属进事务前解析（R08-M8）。
+	fact, err := svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {
+		return writes.FactRow{
+			Name: eventVolumeCreated, Aggregate: "volume", ID: row.Name,
+			Payload: mustJSON(structureEventPayload{ID: row.Name, ProjectID: row.ProjectID}),
+			TeamID:  team,
+			Action:  "volume.create", Resource: "volume/" + row.Name, AfterFP: row.PinnedNodeID,
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
+	err = svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{svc.s.parentProjectAlive(req.GetProjectId())},
 		write: func(ctx context.Context, st transact.Stores) error {
 			return st.Volumes.Create(ctx, row)
 		},
-		facts: []func() writes.FactRow{
-			svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {
-				return writes.FactRow{
-					Name: eventVolumeCreated, Aggregate: "volume", ID: row.Name,
-					Payload: mustJSON(structureEventPayload{ID: row.Name, ProjectID: row.ProjectID}),
-					TeamID:  team,
-					Action:  "volume.create", Resource: "volume/" + row.Name, AfterFP: row.PinnedNodeID,
-					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-				}
-			}),
-		},
+		facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "volume")
@@ -843,21 +863,23 @@ func (svc *VolumesService) DeleteVolume(ctx context.Context, req *structurev1.De
 			"volume %s is still referenced: %s - detach it from the referencing apps (redeploy without the volume attachment) or delete the database first",
 			row.Name, strings.Join(refs, ", "))
 	}
+	fact, err := svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {
+		return writes.FactRow{
+			Name: eventVolumeDeleted, Aggregate: "volume", ID: row.Name,
+			Payload: mustJSON(structureEventPayload{ID: row.Name, ProjectID: row.ProjectID}),
+			TeamID:  team,
+			Action:  "volume.delete", Resource: "volume/" + row.Name,
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
 	err = svc.s.commit(ctx, writeFact{
 		write: func(ctx context.Context, st transact.Stores) error {
 			return st.Volumes.SoftDelete(ctx, req.GetId())
 		},
-		facts: []func() writes.FactRow{
-			svc.s.factOf(ctx, row.ProjectID, func(team string) writes.FactRow {
-				return writes.FactRow{
-					Name: eventVolumeDeleted, Aggregate: "volume", ID: row.Name,
-					Payload: mustJSON(structureEventPayload{ID: row.Name, ProjectID: row.ProjectID}),
-					TeamID:  team,
-					Action:  "volume.delete", Resource: "volume/" + row.Name,
-					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-				}
-			}),
-		},
+		facts: []func() writes.FactRow{fact},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "volume")

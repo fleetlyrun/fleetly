@@ -98,21 +98,24 @@ func (svc *HooksService) SetGitHook(ctx context.Context, req *deliveryv1.SetGitH
 			WatchPaths:  normalizeWatchPaths(req.GetWatchPaths()),
 			TokenSHA256: material.SHA256, TokenPrefix: material.Prefix, SecretCiphertext: sealed.Ciphertext,
 		}
+		// 事件归属进事务前解析（R08-M8：解析失败整单拒绝）。
+		fact, ferr := svc.s.factOf(ctx, appRow.ProjectID, func(team string) writes.FactRow {
+			return writes.FactRow{
+				Name: eventHookCreated, Aggregate: "hook", ID: appRow.ID,
+				Payload: mustJSON(hookEventPayload{AppID: appRow.ID}),
+				TeamID:  team,
+				Action:  "hook.create", Resource: "app/" + appRow.ID, AfterFP: row.Repo + "@" + row.Branch,
+				Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+			}
+		})
+		if ferr != nil {
+			return nil, ferr
+		}
 		txErr := svc.s.commit(ctx, writeFact{
 			write: func(ctx context.Context, st transact.Stores) error {
 				return st.Hooks.Create(ctx, row)
 			},
-			facts: []func() writes.FactRow{
-				svc.s.factOf(ctx, appRow.ProjectID, func(team string) writes.FactRow {
-					return writes.FactRow{
-						Name: eventHookCreated, Aggregate: "hook", ID: appRow.ID,
-						Payload: mustJSON(hookEventPayload{AppID: appRow.ID}),
-						TeamID:  team,
-						Action:  "hook.create", Resource: "app/" + appRow.ID, AfterFP: row.Repo + "@" + row.Branch,
-						Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-					}
-				}),
-			},
+			facts: []func() writes.FactRow{fact},
 		})
 		if txErr != nil {
 			return nil, mapStateError(txErr, "hook")
@@ -125,21 +128,23 @@ func (svc *HooksService) SetGitHook(ctx context.Context, req *deliveryv1.SetGitH
 	existing.Branch = normalizeBranch(req.GetBranch())
 	existing.Dockerfile = normalizeDockerfile(req.GetDockerfile())
 	existing.WatchPaths = normalizeWatchPaths(req.GetWatchPaths())
+	fact, err := svc.s.factOf(ctx, appRow.ProjectID, func(team string) writes.FactRow {
+		return writes.FactRow{
+			Name: eventHookUpdated, Aggregate: "hook", ID: appRow.ID,
+			Payload: mustJSON(hookEventPayload{AppID: appRow.ID}),
+			TeamID:  team,
+			Action:  "hook.update", Resource: "app/" + appRow.ID, AfterFP: existing.Repo + "@" + existing.Branch,
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
 	txErr := svc.s.commit(ctx, writeFact{
 		write: func(ctx context.Context, st transact.Stores) error {
 			return st.Hooks.UpdateConfig(ctx, existing)
 		},
-		facts: []func() writes.FactRow{
-			svc.s.factOf(ctx, appRow.ProjectID, func(team string) writes.FactRow {
-				return writes.FactRow{
-					Name: eventHookUpdated, Aggregate: "hook", ID: appRow.ID,
-					Payload: mustJSON(hookEventPayload{AppID: appRow.ID}),
-					TeamID:  team,
-					Action:  "hook.update", Resource: "app/" + appRow.ID, AfterFP: existing.Repo + "@" + existing.Branch,
-					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-				}
-			}),
-		},
+		facts: []func() writes.FactRow{fact},
 	})
 	if txErr != nil {
 		return nil, mapStateError(txErr, "hook")
@@ -180,21 +185,23 @@ func (svc *HooksService) RotateHookToken(ctx context.Context, req *deliveryv1.Ro
 	if err != nil {
 		return nil, apperr.New("E_SECRET_UNAVAILABLE", "sealing the hook secret failed: %v", err)
 	}
+	fact, err := svc.s.factOf(ctx, appRow.ProjectID, func(team string) writes.FactRow {
+		return writes.FactRow{
+			Name: eventHookRotated, Aggregate: "hook", ID: req.GetAppId(),
+			Payload: mustJSON(hookEventPayload{AppID: req.GetAppId()}),
+			TeamID:  team,
+			Action:  "hook.rotate", Resource: "app/" + req.GetAppId(),
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
 	txErr := svc.s.commit(ctx, writeFact{
 		write: func(ctx context.Context, st transact.Stores) error {
 			return st.Hooks.RotateToken(ctx, req.GetAppId(), material.SHA256, material.Prefix, sealed.Ciphertext)
 		},
-		facts: []func() writes.FactRow{
-			svc.s.factOf(ctx, appRow.ProjectID, func(team string) writes.FactRow {
-				return writes.FactRow{
-					Name: eventHookRotated, Aggregate: "hook", ID: req.GetAppId(),
-					Payload: mustJSON(hookEventPayload{AppID: req.GetAppId()}),
-					TeamID:  team,
-					Action:  "hook.rotate", Resource: "app/" + req.GetAppId(),
-					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-				}
-			}),
-		},
+		facts: []func() writes.FactRow{fact},
 	})
 	if txErr != nil {
 		return nil, mapStateError(txErr, "hook")
@@ -222,21 +229,23 @@ func (svc *HooksService) DeleteGitHook(ctx context.Context, req *deliveryv1.Dele
 	if _, err := svc.s.Hooks.Get(ctx, req.GetAppId()); err != nil {
 		return nil, mapStateError(err, "hook")
 	}
+	fact, err := svc.s.factOf(ctx, appRow.ProjectID, func(team string) writes.FactRow {
+		return writes.FactRow{
+			Name: eventHookDeleted, Aggregate: "hook", ID: appRow.ID,
+			Payload: mustJSON(hookEventPayload{AppID: appRow.ID}),
+			TeamID:  team,
+			Action:  "hook.delete", Resource: "app/" + appRow.ID,
+			Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
 	txErr := svc.s.commit(ctx, writeFact{
 		write: func(ctx context.Context, st transact.Stores) error {
 			return st.Hooks.DeleteByApp(ctx, req.GetAppId())
 		},
-		facts: []func() writes.FactRow{
-			svc.s.factOf(ctx, appRow.ProjectID, func(team string) writes.FactRow {
-				return writes.FactRow{
-					Name: eventHookDeleted, Aggregate: "hook", ID: appRow.ID,
-					Payload: mustJSON(hookEventPayload{AppID: appRow.ID}),
-					TeamID:  team,
-					Action:  "hook.delete", Resource: "app/" + appRow.ID,
-					Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-				}
-			}),
-		},
+		facts: []func() writes.FactRow{fact},
 	})
 	if txErr != nil {
 		return nil, mapStateError(txErr, "hook")
