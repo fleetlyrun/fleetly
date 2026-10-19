@@ -104,8 +104,8 @@ d233c07d docs(plan,reviews): S1-S5 终验记录与修复状态归档
 |---|---|---|---|---|
 | S6 | k3s ConfigMounts 挂载（H3 配套） | R06-M1 | translate/runtime ensure 新测试 + 引用名一致性；k3s/guards 绿 | ✅ |
 | S7 | 幂等键调用方作用域 | H11（R14-H4） | 迁移 00034 + repo/enforcer 签名；跨 token/跨队同键不同体/同体不复用；apitest 绿 | ✅ |
-| S8 | Metrics 查询租户域过滤 | H8（R07-H2/R08-M2） | 端口加作用域锚 + handler 行级授权 + matcher 注入；跨队指标不可见；Console/CLI 回归 | ☐ |
-| S9 | relay 节点个体凭证 | H10（R14-H3） | Enrollment/relay 握手节点身份绑定 + 迁移；伪造 carrier id 拒；双 Provider | ☐ |
+| S8 | Metrics 租户域过滤（设计→实现） | H8（R07-H2/R08-M2） | 设计：`docs/design/2026-10-19-security-backlog-design.md`（推荐 QueryScopedMetrics + raw 收平台管理员）；实现待裁决 | 🟡 设计完成 |
+| S9 | relay 节点个体凭证 | H10（R14-H3） | 设计：同上文档（推荐按节点个体 relay 凭证 + 两步 enroll）；实现待裁决 | 🟡 设计完成 |
 | S10 | 收敛语义深水区 + ADR 追记 | R02-M2/M5、R16-M2/M3/M5/M6、H15 ADR-0083 追记 | ADR 修订 + 判定表单源 + 静默面事实化；钉测翻向 | ☐ |
 
 > S6 先行原因：H3 已消除 k3s configmaps 403，若不落挂载，真机会从"显式 403 失败"变成"ConfigMap 建了但容器无配置"的静默失败。
