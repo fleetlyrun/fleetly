@@ -21,7 +21,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { useRawMetricsSeries } from "@/lib/catalog";
+import { useRawMetricsSeries, useWhoami } from "@/lib/catalog";
 import { PageFrame } from "@/components/domain/page-frame";
 import { StatusBadge, type StatusTone } from "@/components/domain/status-badge";
 import { Button } from "@/components/ui/button";
@@ -70,7 +70,13 @@ const MANAGED_PROVIDERS: ManagedProviderCard[] = [
 
 export function ManagedProvidersView() {
   const status = useSystemStatus();
-  const diskSeries = useRawMetricsSeries(DISK_WATERMARK_QUERY, "30m");
+  // raw metrics 两卡（ingest freshness / disk usage）是平台管理员诊断面
+  // （S9 收紧后 member 由服务端 403）：非管理员不发起请求，行显示诚实
+  // 的 n/a——显隐只看服务端 platform_admin，Console 不复制 role/team 判定
+  // （Metrics 工作台 Custom tab 同口径）。
+  const whoami = useWhoami(true);
+  const platformAdmin = whoami.data?.platformAdmin === true;
+  const diskSeries = useRawMetricsSeries(DISK_WATERMARK_QUERY, "30m", platformAdmin);
   const diskUsage = formatWatermark(lastPointValue(diskSeries.data));
   const degraded = status.data?.state === "STATUS_STATE_DEGRADED";
   return (
@@ -91,6 +97,7 @@ export function ManagedProvidersView() {
             provider={provider}
             health={componentHealth(status.data?.components, provider.key)}
             diskUsage={diskUsage}
+            canProbeMetrics={platformAdmin}
             onRestarted={() => void status.refetch()}
           />
         ))}
@@ -110,11 +117,13 @@ function ProviderCardView({
   provider,
   health,
   diskUsage,
+  canProbeMetrics,
   onRestarted,
 }: {
   provider: ManagedProviderCard;
   health: ReturnType<typeof componentHealth>;
   diskUsage: ReturnType<typeof formatWatermark>;
+  canProbeMetrics: boolean;
   onRestarted: () => void;
 }) {
   const probed = health != null;
@@ -154,7 +163,11 @@ function ProviderCardView({
       <div className="flex items-center gap-2 text-xs">
         <span className="w-32 flex-none text-muted-foreground">ingest freshness</span>
         {provider.freshness === "metrics-probe" ? (
-          <MetricsFreshness />
+          canProbeMetrics ? (
+            <MetricsFreshness />
+          ) : (
+            <span className="font-mono text-2xs text-muted-foreground">n/a — platform admin diagnostics</span>
+          )
         ) : provider.freshness === "needs-vl-proxy" ? (
           <span className="font-mono text-2xs text-muted-foreground">n/a — needs VL query proxy (phase 3)</span>
         ) : (
@@ -163,21 +176,28 @@ function ProviderCardView({
       </div>
       {/* disk usage（原型卡内行形态，IA v3 对齐批）：数据卷所在宿主盘水位
           ——单机拓扑四卡同值是事实；多节点分化后此行接 per-provider 载体
-          节点锚（GetStatus 载体节点信息挂账）。 */}
+          节点锚（GetStatus 载体节点信息挂账）。非管理员不显示（raw metrics
+          是管理员诊断面）。 */}
       <div className="flex items-center gap-2 text-xs">
         <span className="w-32 flex-none text-muted-foreground">disk usage</span>
-        <span className="hidden h-1.5 w-40 overflow-hidden rounded-full bg-muted sm:block">
-          <span
-            className={`block h-full rounded-full ${
-              diskUsage.tone === "danger" ? "bg-destructive" : diskUsage.tone === "warning" ? "bg-amber-500" : "bg-emerald-500"
-            }`}
-            style={{ width: `${Math.min(100, Math.round(diskUsage.ratio * 100))}%` }}
-          />
-        </span>
-        <span className={`font-mono text-2xs font-semibold ${diskUsage.tone === "danger" ? "text-destructive" : ""}`}>
-          {diskUsage.label}
-        </span>
-        <span className="text-2xs text-muted-foreground">root fs</span>
+        {canProbeMetrics ? (
+          <>
+            <span className="hidden h-1.5 w-40 overflow-hidden rounded-full bg-muted sm:block">
+              <span
+                className={`block h-full rounded-full ${
+                  diskUsage.tone === "danger" ? "bg-destructive" : diskUsage.tone === "warning" ? "bg-amber-500" : "bg-emerald-500"
+                }`}
+                style={{ width: `${Math.min(100, Math.round(diskUsage.ratio * 100))}%` }}
+              />
+            </span>
+            <span className={`font-mono text-2xs font-semibold ${diskUsage.tone === "danger" ? "text-destructive" : ""}`}>
+              {diskUsage.label}
+            </span>
+            <span className="text-2xs text-muted-foreground">root fs</span>
+          </>
+        ) : (
+          <span className="font-mono text-2xs text-muted-foreground">n/a — platform admin diagnostics</span>
+        )}
       </div>
       <div className="mt-1 flex gap-2 border-t pt-3">
         {provider.workbench ? (

@@ -464,11 +464,14 @@ function metricWindow(rangeKey: string): { start: string; end: string; stepSecon
 }
 
 // useRawMetricsSeries 拉原始 PromQL 时序（GET /v1/metrics；平台管理员诊断
-// 面——member 由服务端 403）。空 query 不发请求（表单未就绪态）。
-export function useRawMetricsSeries(query: string, rangeKey: string) {
+// 面——member 由服务端 403）。空 query 不发请求（表单未就绪态）；enabled
+// 由调用方按 whoami.platformAdmin 传入（缺省 true——诊断页表单形态；组件
+// 页对非管理员禁发，省一次恒 403 的请求噪音，useScopedMetricsSeries 同款
+// 纪律）。
+export function useRawMetricsSeries(query: string, rangeKey: string, enabled = true) {
   return useQuery({
     queryKey: ["metrics", query, rangeKey],
-    enabled: query !== "",
+    enabled: enabled && query !== "",
     queryFn: async (): Promise<Telemetry["v1MetricSeries"][]> => {
       const { start, end, stepSeconds } = metricWindow(rangeKey);
       const res = await apiFetch<{ series?: Array<Telemetry["v1MetricSeries"] | undefined> }>(
