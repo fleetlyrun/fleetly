@@ -129,3 +129,41 @@ func TestRegistryCatalogKeepsOnlyProjectScope(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []string{prefix + "/web", prefix + "/api"}, repos)
 }
+
+// 项目段白名单的 entityid 正形正例（ff0b8681 回归锚；评审 P3 跟进——该修
+// 复当时只由 cmd golden 捕获）：项目 ID 的实体形态是 `<name>-<seq>`（如
+// `regcat-1`），白名单初版把项目段写死为 ULID 形 `[a-z0-9]+` 而误拒。正例
+// 补齐后，entityid 正形与多连字符名段在 engine 层有直接承载；负例钉住段
+// 形边界（首段空/尾连字符/双连字符不构成段）。
+func TestRegistryTagsRepositoryEntityIDProjectSegment(t *testing.T) {
+	e, reg := newRegistryContentEngine(t)
+	ctx := context.Background()
+	projectID := "regcat-1"
+	valid := projectID + "/web"
+	reg.tags = []capability.RegistryTag{{Name: "r1", Digest: "sha256:aa", SizeBytes: 1, PushedAt: "2026-10-19T00:00:00Z"}}
+
+	tags, err := e.RegistryTags(ctx, projectID, valid)
+	require.NoError(t, err, "an entityid-shaped project segment must stay accepted")
+	assert.Equal(t, valid, reg.lastRepo, "the accepted repository must reach the content face unchanged")
+	assert.Equal(t, "r1", tags[0].Name)
+
+	// 多连字符名段同样合法（`<name>-<seq>` 的 name 自身可含连字符）。
+	multiDash := projectID + "/my-app-web"
+	reg.lastRepo = ""
+	_, err = e.RegistryTags(ctx, projectID, multiDash)
+	require.NoError(t, err)
+	assert.Equal(t, multiDash, reg.lastRepo)
+
+	// 段形边界：项目段尾连字符/双连字符不构成段（`-` 单独不是段分隔），
+	// 白名单拒绝且不触达上游。
+	for _, repo := range []string{
+		"regcat-/" + "web", // 项目段尾连字符
+		"regcat--1/web",    // 空名段（双连字符）
+		"-regcat-1/web",    // 首连字符
+	} {
+		reg.lastRepo = ""
+		_, err := e.RegistryTags(ctx, projectID, repo)
+		require.Error(t, err, "repository %q must be rejected", repo)
+		assert.Empty(t, reg.lastRepo, "repository %q must never reach the content face", repo)
+	}
+}
