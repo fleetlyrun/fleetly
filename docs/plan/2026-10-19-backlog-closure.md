@@ -544,7 +544,8 @@ Compare-Object $reportML $ledgerML
 | S16b | ✅ | `ce9a15c7` | Runtime/适配面 c6-c8：browse 五引擎方言往返（R01-H1†/M1）、节点读面平台门+Console fail-closed（R08-M1）、引擎卫生四连（R03-M1/M2、R04-M1、R13-L3）；engine `-race` 235s、console 139 全绿 |
 | S17a | ✅ | `8f5d41e7` | 守卫 c1-c4：Runtime/loop/statefacade 判据 AST 化、三红线共享禁列表、账本写点守卫、FakeRuntime 回执可配、e2e converged 断言；每项反向验证红→绿 |
 | S17b | ✅ | 本提交 | 守卫 c5-c8：CI/verify 对账（hermetic job、Windows 交叉编译门、go.mod 零漂移、proto⇒console 同 commit 守卫）、写类守卫三盲点（READ 显式 74 项/FrozenVerbs 34+8/三桶互斥）、install 数据根 0750、CLI delete `--json` 契约 + 防空 golden、freeze 查询故障真钉测；负例先红→绿 |
-| S18 | 待派 | — | 非 M/L 残项 |
+| S18a | ✅ | `07128fef` | 非 M/L 残项（代码半边）：project 级 scoped metrics（proto/CEL/raw 双臂/CLI/apitest/golden，`console:gen` 同批）+ Login 会话 Token TTL（迁移 00036、config `auth.login_token_ttl` 默认 720h、authn 逐请求过期拒绝） |
+| S18b | 待派 | — | 非 M/L 残项（测试/运维半边）：golden 假时钟 flake、console:gen Windows shim、node.left 宽限窗、browse flake、volumes delete 成功 golden |
 | S19 | 待派 | — | 文档修订/真机复核/终验 |
 
 > **c9 部署注意（S14b 遗留）**：既有**多队**部署在换装到含 c9 的二进制前，必须先设置 `FLEETLY_SERVER_PROXY_CONFIG_AUTH_TOKEN`（或把 `server.proxy_config.addr` 绑回环），否则启动 fail-fast；单队部署（含当前 staging）零扰动。换装 staging 前先核团队数。
