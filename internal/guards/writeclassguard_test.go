@@ -12,9 +12,16 @@ package guards
 // H8 阶段 B（2026-10-19）新增只读 RPC QueryScopedMetrics → 154 方法
 //（27 ACTION + 53 DECLARATION + 74 READ，仍为 READ 余集）；ADR-0081
 // 附录的台账实数随 H8 批文档追记同批重编。
+//
+// S12b2（2026-10-19）补两条机械可判断言：ACTION/DECLARATION 互斥
+//（TestWriteClassBucketsMutuallyExclusive——完备性扫描的 continue 序盲点）
+// 与 DECLARATION 的域级收敛面登记（TestWriteClassConvergenceFaceByDomain
+// —新域未分类即红）。语义判据本身不可静态执法，交给 ADR-0081 §1/§1.1/§5。
 
 import (
+	"bufio"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/lynx-go/grpcapi/authz"
@@ -178,6 +185,34 @@ var idemActionExemptions = map[string]string{
 	"/fleetly.structure.v1.NetworksService/RebuildNetwork":     "replay-safe: an already-attachable network takes the fast path with zero perturbation; an in-claim replay returns the first response (ADR-0046)",
 }
 
+// convergenceFace 是单个 proto 域的收敛面声明（ADR-0081 §1.1）：runtime
+// 报告该域的 DECLARATION 写是否有运行时基底可收敛（true = 引擎欠收敛、
+// 未变声明重放应零扰动；false = 状态即事实、重放只有行级 upsert 幂等）。
+type convergenceFace struct {
+	runtime bool
+	reason  string
+}
+
+// writeClassConvergenceFace 是 DECLARATION 的域级收敛面登记表（ADR-0081
+// §1.1）：proto 包 → 收敛面归属 + 一句理由。逐 RPC 加列不产生新信息，
+// 故按域登记——新增服务文件/域未登记即红（新域必须显式裁决一次），表项
+// 不再承载 DECLARATION 方法同样红（双向保鲜）。
+//
+// fleetly.system.v1 的 DECLARATION 全部来自 governance.proto，故按
+// governance 域登记；fleetly.delivery.v1 的四个服务文件同属部署管线面。
+// identity 的 SetUserPassword 是「状态即事实」子类的判据样本：bcrypt
+// 每次新盐 → 同明文重放行内容必变，不承诺 no-op（ADR-0081 §5）。
+var writeClassConvergenceFace = map[string]convergenceFace{
+	"fleetly.automation.v1": {runtime: true, reason: "Task/Schedule 行：desired_concurrency 与周期规则由域内环/调度器对照，不是 Ensure"},
+	"fleetly.delivery.v1":   {runtime: true, reason: "部署管线：Revision/Deployment/Build/Hook/GitHub App 经 Ensure 收敛，材料经指纹接棒"},
+	"fleetly.proxy.v1":      {runtime: true, reason: "Route 行：行集指纹 → Route 全量发布"},
+	"fleetly.runtime.v1":    {runtime: true, reason: "Node 行：schedulable 期望态可对照、可收敛回真"},
+	"fleetly.structure.v1":  {runtime: true, reason: "实体行是 Ensure 的输入面（行集收敛/材料注入/网络附件）"},
+	"fleetly.identity.v1":   {runtime: false, reason: "identity 实体行：无运行时基底可收敛，行即事实，重放只有 upsert 幂等（SetUserPassword 每次新盐）"},
+	"fleetly.system.v1":     {runtime: false, reason: "governance.proto 的治理态行：无运行时基底，行即事实（ADR-0017）"},
+	"fleetly.telemetry.v1":  {runtime: false, reason: "alerting 通道/规则行：无运行时基底，行即事实（ADR-0041）"},
+}
+
 // TestWriteClassCompleteClassification：proto 全方法 × 三桶完备对账（ADR-0081
 // 验收锚，freezeguard「全方法 × 桶」既定形态）。DECLARATION/ACTION 两表
 // 枚举，READ 是余集（§1 读前缀缺省归类，与冻结读面同前缀集）；两表皆无
@@ -235,6 +270,91 @@ func TestWriteClassCompleteClassification(t *testing.T) {
 	sort.Strings(dead)
 	for _, m := range dead {
 		t.Errorf("write class table lists %s but no such proto method exists — remove the stale entry and re-transcribe the ADR-0081 appendix in the same commit", m)
+	}
+}
+
+// TestWriteClassBucketsMutuallyExclusive：ACTION/DECLARATION 互斥断言
+// （ADR-0081 §1：三桶中每个方法恰属一桶）。完备性扫描的 continue 顺序
+// （ACTION 先命中即跳过 DECLARATION）在两表同时命中时静默取 ACTION 桶
+// ——本断言补该序盲点（R16-L4 ①）。
+func TestWriteClassBucketsMutuallyExclusive(t *testing.T) {
+	var both []string
+	for m := range writeClassActions {
+		if writeClassDeclarations[m] {
+			both = append(both, m)
+		}
+	}
+	sort.Strings(both)
+	for _, m := range both {
+		t.Errorf("RPC %s is listed in both writeClassActions and writeClassDeclarations — each method belongs to exactly one Write Class (ADR-0081 §1); remove one entry and re-transcribe the appendix in the same commit", m)
+	}
+}
+
+// TestWriteClassConvergenceFaceByDomain：DECLARATION 的域级收敛面登记
+// （ADR-0081 §1.1）。扫 proto 各包内落 DECLARATION 的方法：所在包未登记
+// 即红（新服务文件/域必须显式裁决「有运行时面 / 状态即事实」一次）；
+// 表项不再承载 DECLARATION 方法同样红（双向保鲜）。本守卫不证明语义为
+// 真——它强制把语义声明写成可对账的表（与字段权属「推迟但记账」同款）。
+func TestWriteClassConvergenceFaceByDomain(t *testing.T) {
+	declaredByPkg := map[string][]string{}
+	err := walkRepoFiles(t, "proto", ".proto", func(_ string, scan *bufio.Scanner) {
+		pkg, svc := "", ""
+		for scan.Scan() {
+			line := strings.TrimSpace(scan.Text())
+			if v, ok := strings.CutSuffix(line, ";"); ok && strings.HasPrefix(v, "package ") {
+				pkg = strings.TrimSpace(strings.TrimPrefix(v, "package "))
+				continue
+			}
+			if strings.HasPrefix(line, "service ") {
+				svc = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(line, "service "), "{"))
+				continue
+			}
+			if strings.HasPrefix(line, "rpc ") && pkg != "" && svc != "" {
+				fields := strings.Fields(strings.TrimPrefix(line, "rpc "))
+				if len(fields) == 0 {
+					continue
+				}
+				method, _, _ := strings.Cut(fields[0], "(")
+				full := "/" + pkg + "." + svc + "/" + method
+				if writeClassDeclarations[full] {
+					declaredByPkg[pkg] = append(declaredByPkg[pkg], full)
+				}
+			}
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 盲区锚：当前 proto 的 DECLARATION 分布在 8 个包（5 有运行时面 +
+	// identity/governance/telemetry）；少于 8 说明扫描面坏了，不得静默通过。
+	if len(declaredByPkg) < 8 {
+		t.Fatalf("DECLARATION scan covered only %d proto packages — guard is blind, fix the scan", len(declaredByPkg))
+	}
+
+	var unregistered []string
+	for pkg := range declaredByPkg {
+		if _, ok := writeClassConvergenceFace[pkg]; !ok {
+			unregistered = append(unregistered, pkg)
+		}
+	}
+	sort.Strings(unregistered)
+	for _, pkg := range unregistered {
+		t.Errorf("proto package %s carries DECLARATION methods but has no convergence-face entry — classify the domain as runtime-backed or state-is-fact in writeClassConvergenceFace with a reason (ADR-0081 §1.1)", pkg)
+	}
+
+	// 双向保鲜：表项必须真的承载 DECLARATION 方法，且理由非空。
+	var stale []string
+	for pkg, face := range writeClassConvergenceFace {
+		if face.reason == "" {
+			t.Errorf("convergence-face entry %s must carry a reason (ADR-0081 §1.1)", pkg)
+		}
+		if len(declaredByPkg[pkg]) == 0 {
+			stale = append(stale, pkg)
+		}
+	}
+	sort.Strings(stale)
+	for _, pkg := range stale {
+		t.Errorf("convergence-face entry %s no longer covers any DECLARATION method; remove the entry (ADR-0081 §1.1)", pkg)
 	}
 }
 

@@ -2,7 +2,7 @@
 
 | 状态 | 日期 | 关联 |
 |---|---|---|
-| Accepted | 2026-10-18 | 设计母本 `docs/design/2026-10-18-declarative-model.md` §5（唯一规格源）；**推翻 ADR-0069 决策 6**（「App 级整体重启不做专用动词」——CLI `apps restart` 缺省走声明面即 App 级声明式重启，2026-10-18 用户裁决）；**部分推翻 ADR-0069 决策 1**（「重启不进部署叙事」——声明面重启入 lineage，动作面零 lineage 不动）；ADR-0064（内容锚定等价——seq 变更即内容变更，走 full CAS update 滚动替换）；ADR-0030（preDeploy 游标与 PreDeployDone）；ADR-0002（Spec IR 与 Revision 冻结）；ADR-0071/0072（投影/渲染单源与冻结咽喉）；ADR-0048（蓝绿双代窗）；ADR-0052/0053（k3s 账本 canonical 键形态） |
+| Accepted | 2026-10-18 | 设计母本 `docs/design/2026-10-18-declarative-model.md` §5（唯一规格源）；**推翻 ADR-0069 决策 6**（「App 级整体重启不做专用动词」——CLI `apps restart` 缺省走声明面即 App 级声明式重启，2026-10-18 用户裁决）；**部分推翻 ADR-0069 决策 1**（「重启不进部署叙事」——声明面重启入 lineage，动作面零 lineage 不动）；ADR-0064（内容锚定等价——seq 变更即内容变更，走 full CAS update 滚动替换）；ADR-0030（preDeploy 游标与 PreDeployDone）；ADR-0002（Spec IR 与 Revision 冻结）；ADR-0071/0072（投影/渲染单源与冻结咽喉）；ADR-0048（蓝绿双代窗）；ADR-0052/0053（k3s 账本 canonical 键形态）；**追记 2026-10-19（H15）**：声明面重启的**源**已明确为「生效基线」——最新 `succeeded` 部署行的 `to_revision`，**不是** R 号最大的冻结 Revision；失败/取消/回滚后重启不得把未生效 spec 重新上线（S4 `c925ba3b` 落码）。`--runtime` 的进程存在性校验仍取最新冻结 Spec，登记为残余（见落码注记） |
 
 ## 背景
 
@@ -33,7 +33,7 @@ ADR-0069 补了排障动线的动作半边：Process 级 restart = runtime-only 
 
 ### 3. 双面操作者契约（2026-10-18 用户裁决）
 
-`fleetly apps restart` **缺省走声明面**：对全部进程 bump restart_seq → 正常部署管线（有 lineage、跳迁移、内容等价语义护航）；`--runtime` 旗标走 ADR-0069 零 lineage 动作面作逃逸。两动词并存、语义各自诚实：声明面是「我要求以新序数重跑进程」的期望态变更，动作面是「立即就地重排载体」的过渡动作。
+`fleetly apps restart` **缺省走声明面**：**以生效基线为源**（最新 `succeeded` 部署行的 `to_revision` 所指冻结体；`latestSucceededRevision` + `selectRestartBaseline` 纯函数按部署 seq 取最大），对全部进程 bump restart_seq → 正常部署管线（有 lineage、跳迁移、内容等价语义护航）。**为什么不是「最新冻结 Revision」**：`rollback` 不冻结新号、`failed`/`cancelled` 的冻结体从未生效——以其为源会把失败 spec 重新上线，且引擎的执行时判定会把它判成非 seq-only → 迁移重跑，直接违反 §1 步 8。`--runtime` 旗标走 ADR-0069 零 lineage 动作面作逃逸（进程存在性校验仍对最新冻结 Spec——见落码注记残余）。两动词并存、语义各自诚实：声明面是「我要求以新序数重跑进程」的期望态变更，动作面是「立即就地重排载体」的过渡动作。无 `succeeded` 基线（从未成功部署）时声明面诚实报错。
 
 ## 后果
 
@@ -52,9 +52,17 @@ ADR-0069 补了排障动线的动作半边：Process 级 restart = runtime-only 
 - [x] `console:gen && console:build` dist 同 commit；console Spec 编辑器对 restart_seq 的控件/校验影响评估在案
 - [x] skills restart 双面指引同批（ADR-0031 能力面；deploy-diagnose 恢复动词段 + 分诊表翻向，skills-CLI 守卫同批执法）
 - [ ] e2e:upgrade 升级首拍零滚断言（预记两分支判读口径；收尾批执行——程序计划收尾门禁行，两分支口径在后果节预记）
+- [x] restart 声明面源 = **生效基线**（失败/取消/回滚后不重上线失败 spec）：`TestSelectRestartBaseline` + `TestGoldenAppsRestart`（golden `to_revision` 取 r2）+ 引擎侧 `TestRestartSeqOnlyRecomputesBaselineAtExecution`（执行时判定同源，S4 `c925ba3b`；本追记 2026-10-19 补录）
+- [x] `--runtime` 进程存在性校验的源位**登记在案**（残余未修：仍对最新冻结 Spec，`internal/application/engine/processrestart.go:31`；若批准修复则改为生效基线 + `TestRestartProcessValidatesAgainstEffectiveBaseline`）
 
 ## 落码注记（2026-10-18 Batch D）
 
 - **k3s 在役形态核实**：providers/k3s 在树内（ADR-0052/0053 线），账本 canonical key 纳入同批落码——restart_seq 铸 pod 模板 label（进 Deployment 滚动比对面），`canonicalJSONModuloGen` 对 "0" 值归一缺失，与 swarm 同款四用例钉测。
 - **kind 标记形态**：Deployment 行无 Kind 列，kind 只活在审计流（AfterFP "; kind=<kind>" 后缀——回滚受理形态的执行时镜像）；补标经 transition.go 新类型化前门 `transitDeploymentAnnotated`（原地迁移 LedgerOnly 审计，transitguard 守卫口径内）。
 - **console 影响评估**：Spec 编辑器是冻结体 JSON 直编（服务端 ValidateApp 为 schema 权威，ADR-0033 字段白名单即全字段合法），restart_seq 经 src/api 类型再生成天然可编辑——零控件/校验新增，最小不动；`restart_seq` 经 delivery/structure 两 swagger 进 src/api（dist 运行时包零漂移——类型面变化不进 bundle，src/api 同 commit）。
+
+## 落码注记（2026-10-19 S4/追记）
+
+- **restart 源修复（H15）**：`c925ba3b` 把 CLI 声明面源从「最新冻结 Revision」改为「生效基线」——`latestSucceededRevision` + `selectRestartBaseline`（`cmd/fleetly/cmd/verbs_structure.go:501-577`），golden `apps-restart-json.golden` 的 `to_revision` 由 `r3` 变 `r2`（失败/回滚后取回生效行）；`TestSelectRestartBaseline` 钉选源纯函数，`TestGoldenAppsRestart` 钉双形态。
+- **残余（同族，登记不修）**：`--runtime` 的进程存在性校验仍对 `Revisions.Latest`（`internal/application/engine/processrestart.go:31`）：若新冻结版删除了某进程而它正在基线里跑，动作面会误报 `unknown process`（逆向也会放行一个不存在的进程）。修法（若批准）= 改取 `LatestSucceeded().ToRevision` 的冻结体 + `TestRestartProcessValidatesAgainstEffectiveBaseline`；**S12b2 未修，登记为 P2 可选小修**。
+- **与 H15 同路径的次生面**：以基线体为源重提交时，基线体里的 inline env 是当年值；变量面（Shared/AppVariable）由服务端合成取当前值（ADR-0072 不变）——「已删变量复活」仅限 inline env 且属 R03 变量合成面，本 ADR 不裁。

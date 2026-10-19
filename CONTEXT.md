@@ -261,7 +261,7 @@ _Avoid_: addon, internal service（component 经 ADR-0059 复裁为在册页面�
 **Action**（动作写）:
 无终态可持有的过渡/仪式/修护动词（重启、触发、轮换、铸造短命凭证等）：效果是发生的过渡事实，不留下被持有的期望态；效果需进收敛面时经材料指纹接棒（动作改事实 + 收敛面接棒，ADR-0081）。
 **Declaration**（声明写）:
-经部署管线或实体行落期望态的写类：引擎负责把运行时收敛到满足该状态，未变声明重放 = 零扰动 no-op。与 Scope 词条的 `resource:action` 同词异轴——授权 action 见 Scope 词条（授权轴），本词是写类轴（Write Class 的 DECLARATION 桶）。
+经部署管线或实体行落期望态的写类。按**有无运行时面**分两子类：有运行时面 = 引擎负责把运行时收敛到该状态，未变声明重放 = 零扰动 no-op；状态即事实 = 该域无运行时基底可收敛（identity/governance/alerting），行内容即事实，重放语义是行级 upsert 幂等、**不承诺 no-op**（写入不可复现内容如 bcrypt 随机盐者每次必变）。与 Scope 词条的 `resource:action` 同词异轴——授权 action 见 Scope 词条（授权轴），本词是写类轴（Write Class 的 DECLARATION 桶）。判据与域级收敛面表见 ADR-0081 §1/§1.1。
 **Author Class**:
 期望态的作者权属学说，三类：Document（部署事务的输入文档，冻结成 Revision）、Entity（持续在线的平台实体行）、System（控制环与平台决策——只写经策略委托的授权槽位、漂移对照合成后期望态、声明重放不清洗系统态）；学说与冲突语义表见 ADR-0081 附录。
 
@@ -284,10 +284,10 @@ _Avoid_: in-place update, 增量部署
 _Avoid_: sync, heal, repair
 
 **Posture**:
-收敛姿态旗标：`all`（缺省——检出漂移即收敛）| `detect`（只报事件不收敛）；配置键切换，裁决与语义见 ADR-0082。
+收敛姿态旗标：`all`（缺省——检出漂移即收敛）| `detect`（只报事件不收敛）；配置键切换，裁决与语义见 ADR-0082。**已知降级**：启动基线重放的期望缓存重建当前不受 detect 门限（detect 在启动时仍会改载体）；「零运行时写」及 gen/stopped 检测、撤销 peer 隔离的降级待 staging 验证后收口（ADR-0082 §5）。
 
 **Replay**:
-重新应用某条旧 Revision；回滚的唯一实现。
+重新应用某条旧 Revision；回滚的唯一实现。系统侧的基线重放（启动重建、慢通道兜底、非成功终态回卷）是同一原语的非操作者触发形态，触发者是收敛而非回滚动词。
 _Avoid_: restore, revert
 
 **Restore**:

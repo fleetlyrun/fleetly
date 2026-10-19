@@ -406,9 +406,9 @@
 
 ---
 
-## 11. 修复执行状态（2026-10-19，S1-S11；已 push `origin/main`）
+## 11. 修复执行状态（2026-10-19，S1-S12；S1-S12b1 已 push `origin/main`，S12b2 文档批在工作区待提交）
 
-排期与逐阶段验收记录：`docs/plan/2026-10-19-review-remediation.md`；H8/H10 设计：`docs/design/2026-10-19-security-backlog-design.md`。执行方式：子代理逐阶段实现 + Lead 亲验验收门 + 每阶段还原点 commit + push（S1-S11 共 14 个功能/文档还原点，HEAD 见 git log）。
+排期与逐阶段验收记录：`docs/plan/2026-10-19-review-remediation.md`；H8/H10 设计：`docs/design/2026-10-19-security-backlog-design.md`；S12 设计：`docs/design/2026-10-19-converge-semantics.md`。执行方式：子代理逐阶段实现 + Lead 亲验验收门 + 每阶段还原点 commit + push（S1-S12b1 共 16 个功能/文档还原点；S12b2 文档批待 Lead 验收提交，HEAD 见 git log）。
 
 | 阶段 | commit | 覆盖发现 | 验收证据（Lead 亲跑） |
 |---|---|---|---|
@@ -423,18 +423,22 @@
 | S9 H8 止血 | `d581c60b` | H8 阶段 A | raw 收平台管理员（403 先于 503）+ 8MiB/1000 序列上限 |
 | S10 H8 阶段 B | `e9654b8c` + `b22d6cc3` | H8 | QueryScopedMetrics（固定模板/行级授权/新错误码）+ Console scoped 图表 + CLI `metrics series`；capability/apitest/guards/console 138 全绿；生成物零漂移 |
 | S11 H10 | `9fe85c4e` + `f756ed70` | H10（R14-H3） | 迁移 00035 + 个体 relay 凭证 + 两步 enroll + 握手双向绑定 + 即时断连 + node.left 清理/顶替审计 + CLI/Console/runbook/ADR 追记；engine 25.9s/apitest 31.2s/guards 21.3s/console 138 全绿 |
+| S12 收敛语义 | `402132fe`（设计）+ `2740a09d`（b1 代码）；b2 文档待提交 | R02-M2/M5、R16-M3/M5/M6（R16-M2 零写半边延后，见 backlog） | 判定表 8 行接进生产 + golden 8 行；`EnsureReport.Changed/Removed` + 审计按「fast 源 ∨ 真实变更」分流；`extra`/`replay` 真实信号；`ensuredBy` 账本归属 + 重放标记；ADR-0081 判据两子类/域级收敛面表/153→154；ADR-0082 表 8+2/事实面/§5 已知降级/§6 账本；ADR-0083 H15 追记。b2 验收门：gofmt 空、双平台 build 0、guards/engine/cmd 全绿、vet 0、diff-check 0（Lead 复验补录） |
 
-**H 状态：15/15 条 H 已在本地修复并推送**。机制级真机余量：H7（BG/route 就绪门）与 H9（BG 旧代 egress）为代码+单测级修复，e2e 触发待 dind/staging；H3 的 k3s 真机 403 反转与 S11a/b 的 relay 新流程待 dind/staging 台账（本机无 Docker daemon）。同批修复的 M/R：R16-M1、R14-M2/M4、R10-M6、R05-M1/M4、R12-M1、R09-M1、R06-M1。
+**H 状态：15/15 条 H 已在本地修复并推送**。机制级真机余量：H7（BG/route 就绪门）与 H9（BG 旧代 egress）为代码+单测级修复，e2e 触发待 dind/staging；H3 的 k3s 真机 403 反转与 S11a/b 的 relay 新流程待 dind/staging 台账（本机无 Docker daemon）。同批修复的 M/R：R16-M1、R14-M2/M4、R10-M6、R05-M1/M4、R12-M1、R09-M1、R06-M1；第二轮 S12 收口 R02-M2/M5、R16-M3/M5/M6（R16-M2 的零写半边延后，见下）。
+
+**S12 文档账更正（D5）**：ADR-0081 附录统计 **153→154**——S10a 的 `QueryScopedMetrics` 未入法源，而 `writeclassguard_test.go` 早已断言 154；本批修法源（附录 A.14 补行 + §1/§4/验收锚四处计数），不改守卫降级。同批：ADR-0081 DECLARATION 判据分「有运行时面 / 状态即事实」两子类 + 域级收敛面表（`TestWriteClassConvergenceFaceByDomain`）+ ACTION/DECLARATION 互斥断言（`TestWriteClassBucketsMutuallyExclusive`）；ADR-0082 裁决表裁为 **8 判定行 + 2 非行**（行 05 信号层非行、行 09 未落码），行 10 机制更正为 `replay` 重放标记；ADR-0083 补 H15「restart 源 = 生效基线」追记。
 
 **仍余 backlog（非 H）**：
-- **S12 收敛语义深水区**：R02-M2/M5、R16-M2/M3/M5/M6 + ADR-0083/0081/0082 追记（下一阶段，未开始）
+- **D3（detect 零运行时写）**：R16-M2 的零写半边经 Lead 裁决（2026-10-19）延后——须先补启动面期望账本重建（路由解析与 peer 隔离不变式依赖 `ensuredSpec`），并在 staging 验证后另立批；当前 detect 的启动基线重放豁免已在 ADR-0082 §5 成文为**已知降级**，落地必接受的三条降级（gen/stopped 失明、撤销 peer 不剥离、路由依赖 ensuredSpec）同批成文
+- **M 级残余**：R16-M4（撤销 peer 在请求 goroutine 内同步 Ensure）、R16-L1/L2/L4/L5/L6（翻案登记补全/9 张表清理/守卫其余盲点/弱断言/Author Class 执法面）、R02-M1（冷却空签名解除）、R06-M7 ConfigMap 孤建清扫、R08-M1 节点读面
 - k3s CPU% 量纲/真机（H8 阶段 C）、`node.left` 抖动宽限窗裁决
 - project 级 scoped 指标与 `ListAlertRules`/`ListAlertStates` Team 过滤（已裁决单列小批）
 - S2 残留：ListUsers/GetUser 读面授权、Login TTL/限速、平台面 AST 守卫
-- R06-M7 ConfigMap 孤建清扫、R08-M1 节点读面、以及 §4 其余 M/L
+- 以及 §4 其余 M/L
 - `cmd/fleetly` golden 假时钟 flake（基线既有：manual-drive 多跑一拍导致 `created_at` 00:02/00:04 漂移；单跑绿、并发/`-count=3` 偶发）；`console:gen` Windows shim 问题（本地转发器绕过，建议单列修 gen.mjs 跨平台）
 
-**修复边界（诚实）**：代码与生成物已 push，`generate:verify`/`console:verify` 零漂移；e2e/真机（Docker daemon 不可达）与 GitHub Actions 未运行，CI codegen job 仅静态核对；里程碑全量回归 `go test ./...` 仅 2 项本机环境失败（keyring Windows ACL、builders 无 Docker daemon）+ 上述既有 golden flake，其余全绿。
+**修复边界（诚实）**：S1-S12b1 的代码与生成物已 push，S12b2 文档批（ADR/CONTEXT/守卫/状态回写）在工作区待 Lead 验收提交；`generate:verify`/`console:verify` 零漂移（S12 未动生成物）；e2e/真机（Docker daemon 不可达）与 GitHub Actions 未运行，CI codegen job 仅静态核对；里程碑全量回归 `go test ./...` 仅 2 项本机环境失败（keyring Windows ACL、builders 无 Docker daemon）+ 上述既有 golden flake，其余全绿。
 
 ---
 
