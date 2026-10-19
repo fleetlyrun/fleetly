@@ -23,6 +23,11 @@ type PlatformService struct {
 // 库轨"触发不等执行"分立——restic 链对控制面数据根是本地操作，执行时长
 // 有上界，同步等待面成立：升级脚本拿到的成功即事实）。
 func (svc *PlatformService) TriggerPlatformBackup(ctx context.Context, _ *systemv1.TriggerPlatformBackupRequest) (*systemv1.TriggerPlatformBackupResponse, error) {
+	// 平台管理员门（R08-H1）：平台仓备份是全平台材料，任何 Team 的
+	// builtin-admin 不得触发（门先于引擎执行与备份事件/审计）。
+	if err := RequirePlatformAdmin(ctx); err != nil {
+		return nil, err
+	}
 	snap, err := svc.s.Engine.TriggerPlatformBackup(ctx)
 	if err != nil {
 		return nil, apperr.New("E_PLATFORM_BACKUP_FAILED", "%v", err).WithCause(err)
@@ -34,6 +39,11 @@ func (svc *PlatformService) TriggerPlatformBackup(ctx context.Context, _ *system
 // 短 id 精确匹配——restic 快照无自然序键，等值命中是唯一确定性语义，
 // 未命中游标精确拒绝）。
 func (svc *PlatformService) ListPlatformBackups(ctx context.Context, req *systemv1.ListPlatformBackupsRequest) (*systemv1.ListPlatformBackupsResponse, error) {
+	// 平台管理员门（R08-H1）：快照清单暴露全平台备份时点，与触发面同门
+	// （门先于 restic 读取）。
+	if err := RequirePlatformAdmin(ctx); err != nil {
+		return nil, err
+	}
 	snaps, err := svc.s.Engine.ListPlatformSnapshots(ctx)
 	if err != nil {
 		return nil, apperr.New("E_PLATFORM_BACKUP_FAILED", "%v", err).WithCause(err)

@@ -73,15 +73,17 @@ func newInitVerb() commands.Command {
 				return fmt.Errorf("init: this flow consumes the bootstrap token (got %q); mint more tokens with 'fleetly tokens create' instead", who.GetTokenName())
 			}
 
-			// 2. 建 admin 用户；3. 铸名下 CLI token。
+			// 2. 建 admin 用户；3. 铸名下 CLI token。首个初始化用户即平台
+			// 管理员（default Team 的 builtin-owner——R14-M2 修正）；bootstrap
+			// 本身是 owner/default，经新角色授予上限校验照常放行。
 			user, err := c.Users.CreateUser(auth, &identityv1.CreateUserRequest{
-				Name: userName, RoleId: identity.RoleAdminID,
+				Name: userName, RoleId: identity.RoleOwnerID,
 			})
 			if err != nil {
 				return fmt.Errorf("init: create admin user: %w", err)
 			}
 			tok, err := c.Tokens.CreateToken(auth, &identityv1.CreateTokenRequest{
-				Name: userName + "-cli", RoleId: identity.RoleAdminID, UserId: user.GetUser().GetId(),
+				Name: userName + "-cli", RoleId: identity.RoleOwnerID, UserId: user.GetUser().GetId(),
 			})
 			if err != nil {
 				return fmt.Errorf("init: mint cli token: %w", err)

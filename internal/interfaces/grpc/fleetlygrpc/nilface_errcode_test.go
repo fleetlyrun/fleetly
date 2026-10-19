@@ -18,6 +18,8 @@ import (
 	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
+	"github.com/fleetlyrun/fleetly/internal/application/authn"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/apperrstatus"
@@ -64,8 +66,13 @@ func TestCipherNilRefusedPrecise(t *testing.T) {
 // Unimplemented，honest failure 无降级路径。
 func TestRuntimeFaceAbsentRefusedPrecise(t *testing.T) {
 	// Runtime 零值（FacesOf 全空）——nil 接口经 FacesOf 协商即全缺席。
+	// S2 起 nodeAdmin 的平台管理员门先于子面协商，故注入平台 owner 身份
+	// 直达 501 分支（handler 级单测不经拦截器）。
+	platformCtx := authn.WithIdentity(context.Background(), &authn.Identity{
+		TeamID: identity.DefaultTeamID, RoleID: identity.RoleOwnerID,
+	})
 	svc := &NodesService{s: &Services{}}
-	err := svc.nodeAdmin(context.Background(), "01JD0NODE00000000000000000", "node.drain",
+	err := svc.nodeAdmin(platformCtx, "01JD0NODE00000000000000000", "node.drain",
 		func(capability.RuntimeAdmin, string) error { return nil })
 	ae := apperrOf(t, err)
 	assert.Equal(t, "E_RUNTIME_FACE_UNSUPPORTED", ae.Code())

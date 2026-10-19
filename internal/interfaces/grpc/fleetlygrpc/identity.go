@@ -54,11 +54,10 @@ func (svc *UsersService) CreateUser(ctx context.Context, req *identityv1.CreateU
 	//（P4-1 批 1 Run B1）：validate 拦截器在 handler 之前执法；正则字面
 	// 单源见 entityid.NamePatternSource（descriptor 对齐测试执法）。
 	teamID := req.GetTeamId()
-	if teamID == "" {
-		teamID = identity.DefaultTeamID
-	}
 	// Team 轴（ADR-0035 决策 5）：membership 目标 Team 缺省 = 调用方 Team；
-	// 显式他队目标仅平台 owner 可。
+	// 显式他队目标仅平台 owner 可（R14-M4：缺省值由 resolveTargetTeam
+	// 决定——此前先预填 default 再解析，非 default 队 admin 省略 team_id
+	// 恒 403）。
 	resolvedTeam, err := resolveTargetTeam(ctx, teamID)
 	if err != nil {
 		return nil, err
@@ -76,7 +75,11 @@ func (svc *UsersService) CreateUser(ctx context.Context, req *identityv1.CreateU
 	}
 	m := &membership.Membership{UserID: u.ID, TeamID: teamID, RoleID: req.GetRoleId()}
 	err = svc.s.commit(ctx, writeFact{
-		checks: []acceptanceCheck{svc.s.teamExists(teamID), svc.s.roleInTeam(req.GetRoleId(), teamID)},
+		// roleGrant：角色授予特权上限（R08-H1 同根）——非平台管理员不得
+		// 铸造 builtin-owner 或转授超出自身权限/平台面的 scope。
+		checks: []acceptanceCheck{
+			svc.s.teamExists(teamID), svc.s.roleInTeam(req.GetRoleId(), teamID), svc.s.roleGrant(req.GetRoleId()),
+		},
 		write: func(ctx context.Context, st transact.Stores) error {
 			if err := st.Users.Create(ctx, u); err != nil {
 				return err
@@ -179,7 +182,9 @@ func (svc *UsersService) SetUserPassword(ctx context.Context, req *identityv1.Se
 		return nil, apperr.New("E_INTERNAL", "password hashing failed").WithCause(err)
 	}
 	err = svc.s.commit(ctx, writeFact{
-		checks: []acceptanceCheck{svc.s.userExists(req.GetUserId())},
+		// userAdmin：身份写面归属门（R08-H2）——拒绝跨队/越级改密，判定
+		// 先于写（拒绝零副作用）；自助改密（目标=调用者本人）放行。
+		checks: []acceptanceCheck{svc.s.userExists(req.GetUserId()), svc.s.userAdmin(req.GetUserId())},
 		write: func(ctx context.Context, st transact.Stores) error {
 			return st.Users.SetPassword(ctx, req.GetUserId(), string(hash))
 		},
@@ -220,6 +225,9 @@ func (svc *UsersService) DeleteUser(ctx context.Context, req *identityv1.DeleteU
 	// FK 归一（repo 的 DeleteByUser 带 team 过滤、语义不同）随 ADR-0028 批。
 	name := "" // BeforeFP 依赖事务内读到的行（闭包求值在 write 后可见）
 	err := svc.s.commit(ctx, writeFact{
+		// userAdmin：身份写面归属门（R08-H2）——先 userExists 保持缺行
+		// 404 语义，再判归属（越级删除 → 403，零副作用）。
+		checks: []acceptanceCheck{svc.s.userExists(req.GetId()), svc.s.userAdmin(req.GetId())},
 		write: func(ctx context.Context, st transact.Stores) error {
 			u, err := st.Users.Get(ctx, req.GetId())
 			if err != nil {
@@ -353,11 +361,8 @@ func (svc *RolesService) CreateRole(ctx context.Context, req *identityv1.CreateR
 		return nil, apperr.New("E_INVALID_ARGUMENT", "scopes: %v", err)
 	}
 	teamID := req.GetTeamId()
-	if teamID == "" {
-		teamID = identity.DefaultTeamID
-	}
 	// Team 轴（ADR-0035 决策 5）：自定义 Role 落在调用方 Team（他队目标仅
-	// 平台 owner 可）。
+	// 平台 owner 可；R14-M4：缺省交 resolveTargetTeam 解析为调用方 Team）。
 	resolvedTeam, err := resolveTargetTeam(ctx, teamID)
 	if err != nil {
 		return nil, err
@@ -365,7 +370,9 @@ func (svc *RolesService) CreateRole(ctx context.Context, req *identityv1.CreateR
 	teamID = resolvedTeam
 	ro := &role.Role{TeamID: teamID, Name: req.GetName(), Scopes: identity.ScopeStrings(scopes)}
 	err = svc.s.commit(ctx, writeFact{
-		checks: []acceptanceCheck{svc.s.teamExists(teamID)},
+		// scopeGrant：角色授予特权上限（R08-H1 同根）——请求的每个 scope
+		// 都必须被调用者覆盖；`*` 与 platform 资源仅平台管理员可授。
+		checks: []acceptanceCheck{svc.s.teamExists(teamID), svc.s.scopeGrant(scopes)},
 		write: func(ctx context.Context, st transact.Stores) error {
 			return st.Roles.Create(ctx, ro)
 		},
@@ -466,7 +473,9 @@ func (svc *TokensService) CreateToken(ctx context.Context, req *identityv1.Creat
 		Name: req.GetName(), TeamID: teamID, UserID: req.GetUserId(),
 		RoleID: req.GetRoleId(), SHA256: material.SHA256, Prefix: material.Prefix,
 	}
-	checks := []acceptanceCheck{svc.s.teamExists(teamID), svc.s.roleInTeam(req.GetRoleId(), teamID)}
+	checks := []acceptanceCheck{
+		svc.s.teamExists(teamID), svc.s.roleInTeam(req.GetRoleId(), teamID), svc.s.roleGrant(req.GetRoleId()),
+	}
 	if req.GetUserId() != "" {
 		// 铸造位收口（ADR-0038）：creator 须在目标 Team 持 membership——
 		// 实时收窄语义下无 membership 的属主 Token 铸出即死，受理位拒绝。

@@ -347,6 +347,11 @@ func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliv
 // 预校验（apptemplate.FetchCatalog 单源）→ 原子覆盖快照 + 事件/审计。
 // 未配置 catalog URL = 精确拒绝（内嵌目录即全部——冷启动诚实边界）。
 func (svc *TemplatesService) RefreshTemplates(ctx context.Context, _ *deliveryv1.RefreshTemplatesRequest) (*deliveryv1.RefreshTemplatesResponse, error) {
+	// 平台管理员门（R08-H1）：模板目录是平台级材料（一次刷新服务全体
+	// Project 的一键部署目录），门在配置探测/拉取/审计之前。
+	if err := RequirePlatformAdmin(ctx); err != nil {
+		return nil, err
+	}
 	if svc.s.TemplatesCatalogURL == "" {
 		return nil, apperr.New("E_INVALID_ARGUMENT",
 			"the template catalog refresh is disabled: server.templates_catalog_url is empty and the embedded catalog is the whole catalog")

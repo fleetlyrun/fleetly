@@ -80,6 +80,12 @@ func (svc *NodesService) ListNodeContainers(ctx context.Context, req *runtimev1.
 }
 
 func (svc *NodesService) EnrollNode(ctx context.Context, req *runtimev1.EnrollNodeRequest) (*runtimev1.EnrollNodeResponse, error) {
+	// 平台管理员门（R08-H1）：加入材料（含 rotate 作废全部既有材料）是
+	// 集群面敏感动作——任何 Team 的 builtin-admin 携带 platform:admin 也
+	// 不得触达；门在审计与 Runtime 副作用之前（拒绝零副作用）。
+	if err := RequirePlatformAdmin(ctx); err != nil {
+		return nil, err
+	}
 	// 材料生成与轮换都是集群面敏感动作：审计如实区分（EnrollNode 是
 	// platform:admin 档，C3）。
 	action := "node.enroll"
@@ -151,6 +157,11 @@ func (svc *NodesService) UncordonNode(ctx context.Context, req *runtimev1.Uncord
 // DrainNode/CordonNode/UncordonNode 的 node_id 由 protovalidate 拦截器在
 // 受理面拦截，文案与退役前逐字节一致。
 func (svc *NodesService) nodeAdmin(ctx context.Context, nodeID, action string, op func(capability.RuntimeAdmin, string) error) error {
+	// 平台管理员门（R08-H1）：节点排空/封锁是集群面动作（影响全平台
+	// 调度），门在子面协商、编排器副作用与审计之前。
+	if err := RequirePlatformAdmin(ctx); err != nil {
+		return err
+	}
 	admin := capability.FacesOf(svc.s.Runtime).Admin // 节点管理子面（FacesOf 协商点）
 	if admin == nil {
 		// 可选子面缺席是 honest failure（P4-3 批 3）：精确 501，不再落

@@ -48,11 +48,9 @@ func (svc *InvitationsService) CreateInvitation(ctx context.Context, req *identi
 		ttl = d
 	}
 	teamID := req.GetTeamId()
-	if teamID == "" {
-		teamID = identity.DefaultTeamID
-	}
 	// Team 轴（ADR-0035 决策 5）：邀请入队的目标 Team 缺省 = 调用方 Team；
-	// 显式他队目标仅平台 owner 可（跨队邀请 = 跨队 membership 提权面）。
+	// 显式他队目标仅平台 owner 可（跨队邀请 = 跨队 membership 提权面；
+	// R14-M4：缺省交 resolveTargetTeam 解析为调用方 Team）。
 	resolvedTeam, err := resolveTargetTeam(ctx, teamID)
 	if err != nil {
 		return nil, err
@@ -69,8 +67,11 @@ func (svc *InvitationsService) CreateInvitation(ctx context.Context, req *identi
 	}
 	err = svc.s.commit(ctx, writeFact{
 		// roleInTeam（Q-16 同族面）：邀请绑 team+role——不一致的邀请兑换出
-		// 跨 Team membership，同洞同修。
-		checks: []acceptanceCheck{svc.s.teamExists(teamID), svc.s.roleInTeam(req.GetRoleId(), teamID)},
+		// 跨 Team membership，同洞同修。roleGrant：角色授予特权上限
+		// （R08-H1 同根）——邀请是延迟授予通道，上限必须在建邀请时判定。
+		checks: []acceptanceCheck{
+			svc.s.teamExists(teamID), svc.s.roleInTeam(req.GetRoleId(), teamID), svc.s.roleGrant(req.GetRoleId()),
+		},
 		write: func(ctx context.Context, st transact.Stores) error {
 			return st.Invitations.Create(ctx, inv)
 		},

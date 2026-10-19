@@ -9,7 +9,7 @@
 | 阶段 | 主题 | 覆盖发现 | 验收门（每阶段） | 状态 |
 |---|---|---|---|---|
 | S1 | 工程基线：Windows 构建解封 | R10-M6（SIGWINCH） | `go build ./...` 双平台通过；`go test ./cmd/fleetly/...` 可运行；guards 绿 | ✅ |
-| S2 | 安全边界：平台面门禁 + 身份写面归属 + 角色授予上限 | H1、H2（另含 R14-M2 的 init owner 修正、R14-M4 的 team 缺省退化） | 复现场景反转为 403；同队 admin 正常；apitest/guards 绿；golden 同批 | ☐ |
+| S2 | 安全边界：平台面门禁 + 身份写面归属 + 角色授予上限 | H1、H2（另含 R14-M2 的 init owner 修正、R14-M4 的 team 缺省退化） | 复现场景反转为 403；同队 admin 正常；apitest/guards 绿；golden 同批 | ✅ |
 | S3 | 交付主链：安装路由面 + Browse 会话绑定 + 备份可靠性 + CLI 等待/Console 崩溃 | H12、H4、H5、H6、H14、H13 | 各修复单测/回归绿；install.sh guard 绿；console vitest 绿；build 双平台 | ☐ |
 | S4 | 声明式与路由语义：restart 源/精确判定 + BG egress + 发布就绪门 | H15、R16-M1、H9、H7 | 新钉测绿；engine/assembly/traefik/providers 相关包绿；golden 同批 | ☐ |
 | S5 | 双 Runtime 与守卫/完整性收尾 | H3、R12-M1、R05-M1、R05-M4、R09-M1 | k3s 规则+守卫绿；并发 audit/outbox 测试绿；CI 门禁就位；全量回归 | ☐ |
@@ -41,6 +41,14 @@
 - 全局一致性检查：仅 import 清理 + 两行函数名替换，resize 帧构造/信号 channel 语义未动；无其他 Windows-only 编译阻塞。
 - 还原点 commit：见 git log（`fix(cli): exec TTY resize 按平台拆分...`）
 - 残留/后续：Windows 终端 resize 不传播（明确不做）；js/plan9/wasip1 不在支持矩阵；CI Windows 编译门禁属 R09-L7（后续）。
+
+### S2 执行记录
+- 子代理 prompt 要点：平台管理员门 8 个 handler（EnrollNode/三节点动词/RestartComponent/RefreshTemplates/平台备份两动词）+ 身份写面归属门（SetUserPassword/DeleteUser）+ 角色授予特权上限（CreateUser/CreateToken/CreateInvitation/CreateRole）+ 首个 init 用户改 builtin-owner + R14-M4 缺省 team 修正。
+- 改动文件：`fleetlygrpc/identityauthz.go`（新）、`authz.go`（callerIsPlatformAdmin/导出 RequirePlatformAdmin）、`contexts.go`、`templates.go`、`platform.go`、`systemgrpc/systemgrpc.go`、`identity.go`、`invitations.go`、`cmd/fleetly/cmd/init.go`、`init-whoami.golden`、两处 handler 级单测身份注入、`apitest/identity_authz_test.go`（新）。
+- 验收证据（Lead 亲跑）：`gofmt -l` 空；`go build ./...` 双平台 exit 0；3 个新安全用例全 PASS（H1 九子例、H2 五子例、角色上限五子例）；`go test ./internal/testsupport/apitest/` ok 24.0s；interfaces/authn/identity 8 包 ok；guards ok 16.3s；cmd/fleetly ok 4.6s；`go vet` exit 0。
+- 全局一致性检查：门在审计/副作用之前（拒绝零副作用）；平台管理员判定单源（callerIsPlatformAdmin）；角色上限复用 DotForm 展开语义（admin⇒write⇒read）；init-whoami golden 同批更新（唯一用户可见变化）。非平台管理员不能再转授 builtin-admin（其含 platform:admin）——有意收紧，待权限模型 ADR 恢复队内 admin 委派。
+- 还原点 commit：见 git log（`fix(authz): S2 ...`）
+- 残留/后续：ListUsers/GetUser 读面授权、Login TTL/限速、平台面 AST 守卫、Scope 词表第二维 ADR、ListNodes/ListNodeContainers 读门（R08-M1）、多队用户 Login 队选择语义。
 
 ## 终验（全部阶段后）
 

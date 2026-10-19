@@ -10,6 +10,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
+	"github.com/fleetlyrun/fleetly/internal/application/authn"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/apperrstatus"
@@ -119,9 +121,14 @@ func TestExplainRejectsUnknownName(t *testing.T) {
 // TestRestartComponentEngineAbsent 钉引擎面缺席的精确拒绝（P4-3 批 3）：
 // 重启编排经引擎面路由（capability.Managed 声明者），face 缺席是 honest
 // failure——E_RUNTIME_FACE_UNSUPPORTED / Unimplemented，不再落 E_INTERNAL
-// 脱敏 500（testService 的 engine 即 nil，直达分支）。
+// 脱敏 500（testService 的 engine 即 nil，直达分支）。S2 起平台管理员门
+// 先于引擎分支，故本用例注入平台 owner 身份（handler 级单测不经拦截器，
+// 身份按 authn.WithIdentity 装配）。
 func TestRestartComponentEngineAbsent(t *testing.T) {
-	_, err := testService().RestartComponent(context.Background(), &systemv1.RestartComponentRequest{Name: "traefik"})
+	ctx := authn.WithIdentity(context.Background(), &authn.Identity{
+		TeamID: identity.DefaultTeamID, RoleID: identity.RoleOwnerID,
+	})
+	_, err := testService().RestartComponent(ctx, &systemv1.RestartComponentRequest{Name: "traefik"})
 	require.Error(t, err)
 	ae, ok := err.(*apperr.Error)
 	require.True(t, ok, "engine-absent branch must produce an apperr envelope, got %T", err)

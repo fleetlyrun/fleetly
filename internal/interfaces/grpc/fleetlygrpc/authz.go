@@ -33,8 +33,14 @@ func callerTeam(ctx context.Context) (teamID string, owner bool, err error) {
 	if !ok {
 		return "", false, apperr.New("E_UNAUTHENTICATED", "present a valid token to access team resources")
 	}
-	platformAdmin := id.RoleID == identity.RoleOwnerID && id.TeamID == identity.DefaultTeamID
-	return id.TeamID, platformAdmin, nil
+	return id.TeamID, callerIsPlatformAdmin(id), nil
+}
+
+// callerIsPlatformAdmin 报告身份是否平台管理员：default Team 的
+// builtin-owner（ADR-0035 决策 2）。平台面门（H1）与身份写面归属门（H2）
+// 共用的唯一判定点——别处不得再复制 role/team 双条件。
+func callerIsPlatformAdmin(id *authn.Identity) bool {
+	return id != nil && id.RoleID == identity.RoleOwnerID && id.TeamID == identity.DefaultTeamID
 }
 
 // teamAuthorized 是纯判定（行级授权唯一比较点）：资源归属 Team 与调用方
@@ -57,15 +63,25 @@ func teamAuthorized(ctx context.Context, resourceTeam string) error {
 
 // requirePlatformAdmin 是平台级行的写门（Global GitHub App 等）：builtin-
 // owner（default Team 的 owner）之外一律 E_FORBIDDEN——平台行无 Team 轴，
-// 行级授权不可达，此处是唯一门。
+// 行级授权不可达，此处是唯一门。实现委托导出形态 RequirePlatformAdmin
+// （systemgrpc 等跨包 handler 复用同一判定，不复制 role/team 条件）。
 func (s *Services) requirePlatformAdmin(ctx context.Context) error {
-	_, owner, err := callerTeam(ctx)
+	return RequirePlatformAdmin(ctx)
+}
+
+// RequirePlatformAdmin 是平台管理员门的跨包导出形态：平台面/身份面
+// handler 必须在任何副作用与审计之前调用（403 先于 404/501/业务校验，
+// 拒绝零副作用）。平台管理员 = default Team 的 builtin-owner——bootstrap
+// 引导 Token 与 init 产出的首个用户即此档。
+func RequirePlatformAdmin(ctx context.Context) error {
+	_, platformAdmin, err := callerTeam(ctx)
 	if err != nil {
 		return err
 	}
-	if !owner {
+	if !platformAdmin {
 		return apperr.New("E_FORBIDDEN",
-			"this operation manages platform-scoped material; a platform-admin token (default team owner) is required")
+			"this operation manages platform-scoped material; a platform-admin token (default team owner) is required").
+			WithSuggestion("Sign in as the platform owner (the builtin-owner of the default team, minted by 'fleetly init') and retry.")
 	}
 	return nil
 }

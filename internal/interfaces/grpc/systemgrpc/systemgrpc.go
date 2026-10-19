@@ -16,6 +16,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
+	"github.com/fleetlyrun/fleetly/internal/interfaces/grpc/fleetlygrpc"
 
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/schema"
@@ -118,6 +119,12 @@ func (s *Service) checkComponents(ctx context.Context) []*systemv1.ComponentHeal
 // 路由（capability.Managed 声明者），经 Runtime 重启子面逐 Workload 强制
 // 重排；哨兵错误 map 为精确错误码。
 func (s *Service) RestartComponent(ctx context.Context, req *systemv1.RestartComponentRequest) (*systemv1.RestartComponentResponse, error) {
+	// 平台管理员门（R08-H1）：重启受管组件影响全平台载体，门在引擎路由
+	// 与重启副作用之前（403 先于 501/404——不向非平台管理员暴露组件面
+	// 状态）。判定复用 fleetlygrpc 的同一真源，不复制 role/team 条件。
+	if err := fleetlygrpc.RequirePlatformAdmin(ctx); err != nil {
+		return nil, err
+	}
 	if s.engine == nil {
 		// 引擎面缺席是 honest failure（P4-3 批 3）：精确 501，不再落
 		// E_INTERNAL 脱敏 500。
