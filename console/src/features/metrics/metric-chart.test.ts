@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildChartRows } from "./metric-chart";
+import { buildChartRows, seriesCapNote } from "./metric-chart";
 import type { components } from "@/api/telemetry";
 
 // buildChartRows 数据底座锚：protojson 零值缺省（value 缺席 = 0，idle 应用
@@ -134,5 +134,16 @@ describe("buildChartRows", () => {
     expect(keys).toHaveLength(10);
     expect(keys[0]).toBe("s0"); // live 系列原始下标 0，活跃优先
     expect(hidden).toBe(2);
+  });
+});
+
+// H8 §5.3.3：服务端 scoped 面命中序列超过上限时返回前 N 条 + 截断披露；
+// 图面提示只能基于服务端真实截断，且不改变图内 10 条上限/hidden 计数。
+describe("seriesCapNote", () => {
+  it("renders the server cap line only when the response was truncated", () => {
+    expect(seriesCapNote(true, 60, 50)).toBe("server cap reached — 50 of 60 series shown");
+    expect(seriesCapNote(true, 50, 50)).toBeNull();
+    expect(seriesCapNote(false, 60, 50)).toBeNull();
+    expect(seriesCapNote(true, undefined, 50)).toBeNull();
   });
 });

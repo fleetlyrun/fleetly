@@ -126,8 +126,10 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 		newExecVerb(),
 		newShellVerb(),
 		newExecInstancesVerb(),
-		// Metrics/Alerting 上下文（F2.5，ADR-0041）。
-		groupVerb("metrics", "query the managed metrics store (PromQL pass-through)", newMetricsQueryVerb()),
+		// Metrics/Alerting 上下文（F2.5，ADR-0041；H8 阶段 B：scoped series
+		// 是 member 图表/诊断面，raw PromQL 仅平台管理员）。
+		groupVerb("metrics", "query metrics (scoped series for apps/databases; raw PromQL is platform-admin diagnostics)",
+			newMetricsQueryVerb(), newMetricsSeriesVerb()),
 		groupVerb("channels", "manage notification channels for alerting (credentials are write-only)",
 			newChannelsCreateVerb(), newChannelsTestVerb(), newChannelsListVerb(), newChannelsDeleteVerb()),
 		groupVerb("alerts", "manage threshold alert rules and list current alert states",

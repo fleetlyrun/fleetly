@@ -1,0 +1,3 @@
+series=app=web-1,container=fleetly-web-1,process=web 2026-10-09T12:00:00Z 12.5
+series=app=web-1,container=fleetly-web-1,process=web 2026-10-09T12:01:00Z 0
+series=app=web-1,process=worker 2026-10-09T12:00:00Z 3

@@ -489,6 +489,12 @@ export interface components {
             user_name?: string;
             /** colon 形态（resource:action），蕴含未展开 */
             scopes?: string[];
+            /**
+             * platform_admin 报告调用方是否平台管理员（default Team 的 builtin-owner）
+             *     ——与 RequirePlatformAdmin 同一判定；Console 据此显隐平台面入口
+             *     （H8 raw PromQL）。
+             */
+            platform_admin?: boolean;
         };
         ErrorResponse: {
             code?: string;

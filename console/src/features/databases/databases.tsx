@@ -19,7 +19,7 @@ import { DatabaseLogsTab } from "@/features/databases/database-logs";
 import { downloadBackupChunks } from "@/api/streams";
 import { DATABASE_CARRIER_PRESETS } from "@/features/databases/database-metrics";
 import { MetricChart } from "@/features/metrics/metric-chart";
-import { useDatabases, useDatabaseBackups, useMetricsSeries, useApps, useProjectName } from "@/lib/catalog";
+import { useDatabases, useDatabaseBackups, useScopedMetricsSeries, useApps, useProjectName } from "@/lib/catalog";
 import { useAppSpecs, specIndex, type AppSpec } from "@/features/spec/use-app-specs";
 import { CopyButton } from "@/components/domain/copy-button";
 import { ContentCrumb } from "@/components/domain/content-crumb";
@@ -515,7 +515,7 @@ export function DatabaseDetailPage({ projectId, databaseId }: { projectId: strin
         onChange={setTab}
       />
       {tab === "overview" ? <DatabaseOverview database={database} projectApps={apps.data ?? []} specs={specs} /> : null}
-      {tab === "metrics" ? <DatabaseMetrics databaseId={databaseId} projectId={projectId} /> : null}
+      {tab === "metrics" ? <DatabaseMetrics databaseId={databaseId} /> : null}
       {tab === "logs" ? <DatabaseLogsTab databaseId={databaseId} /> : null}
       {tab === "backups" ? <DatabaseBackups database={database} projectId={projectId} databaseId={databaseId} /> : null}
       {tab === "browse" ? (
@@ -640,11 +640,11 @@ function DatabaseOverview({
   );
 }
 
-function DatabaseMetrics({ databaseId, projectId }: { databaseId: string; projectId: string }) {
+function DatabaseMetrics({ databaseId }: { databaseId: string }) {
   const memory = DATABASE_CARRIER_PRESETS.find((preset) => preset.key === "memory")!;
   const cpu = DATABASE_CARRIER_PRESETS.find((preset) => preset.key === "cpu_cores")!;
-  const memorySeries = useMetricsSeries(memory.build(databaseId, projectId), "1h");
-  const cpuSeries = useMetricsSeries(cpu.build(databaseId, projectId), "1h");
+  const memorySeries = useScopedMetricsSeries({ kind: "database", id: databaseId }, memory.metric, undefined, "1h");
+  const cpuSeries = useScopedMetricsSeries({ kind: "database", id: databaseId }, cpu.metric, undefined, "1h");
   return (
     <div className="flex flex-col gap-4">
       <div className="grid gap-4 lg:grid-cols-2">
@@ -652,8 +652,8 @@ function DatabaseMetrics({ databaseId, projectId }: { databaseId: string; projec
         <MetricCard title="CPU (cores)" unit="plain" series={cpuSeries} />
       </div>
       <p className="text-2xs text-muted-foreground">
-        Carrier addressing (IA v3 T8): docker label <span className="font-mono">fleetly_workload_id</span> with a k3s
-        namespace/pod fallback arm — both runtimes covered by one query.
+        Scoped metric templates: the server resolves this database's project and builds the docker/k3s arms — the
+        console never sends PromQL.
       </p>
     </div>
   );
@@ -666,8 +666,9 @@ function MetricCard({
 }: {
   title: string;
   unit: "bytes" | "plain";
-  series: ReturnType<typeof useMetricsSeries>;
+  series: ReturnType<typeof useScopedMetricsSeries>;
 }) {
+  const seriesList = series.data?.series ?? [];
   return (
     <section className="rounded-xl border bg-card p-4">
       <div className="mb-2 flex items-baseline justify-between">
@@ -678,10 +679,15 @@ function MetricCard({
         <p className="py-10 text-center text-xs text-muted-foreground">Loading series…</p>
       ) : series.isError ? (
         <p className="py-10 text-center text-xs text-destructive">{fieldError(series.error)}</p>
-      ) : (series.data ?? []).length === 0 ? (
+      ) : seriesList.length === 0 ? (
         <p className="py-10 text-center text-xs text-muted-foreground">No series — the carrier may be stopped.</p>
       ) : (
-        <MetricChart seriesList={series.data ?? []} unit={unit} />
+        <MetricChart
+          seriesList={seriesList}
+          unit={unit}
+          truncated={series.data?.truncated}
+          seriesTotal={series.data?.seriesTotal}
+        />
       )}
     </section>
   );

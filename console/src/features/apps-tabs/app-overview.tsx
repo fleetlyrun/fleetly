@@ -2,10 +2,9 @@ import { Link } from "@tanstack/react-router";
 import { ArrowUpRightIcon, BoxesIcon, GlobeIcon, LayersIcon } from "lucide-react";
 import { useAppDeployments } from "@/features/deployments/hooks";
 import { useAppSpecs } from "@/features/spec/use-app-specs";
-import { METRIC_PRESETS } from "@/features/metrics/metric-presets";
 import { firingAlerts } from "@/features/apps-tabs/alert-badges";
 import { lastPointValue } from "@/features/fleet/freshness";
-import { useAlertStates, useApps, useMetricsSeries, useRevisions, useRoutes } from "@/lib/catalog";
+import { useAlertStates, useApps, useRevisions, useRoutes, useScopedMetricsSeries } from "@/lib/catalog";
 import { formatBytes, revisionLabel } from "@/lib/format";
 import { RunningCount } from "@/features/apps-tabs/running-instances";
 import { CopyButton } from "@/components/domain/copy-button";
@@ -35,13 +34,11 @@ export function AppOverviewTab({ projectId, appId }: { projectId: string; appId:
   const spec = specs.get(appId);
   const specProcesses = spec?.processes ?? [];
   const replicas = specProcesses.reduce((sum, process) => sum + Number(process.replicas ?? 0), 0);
-  // app 域指标（cadvisor ns 标签过滤；最近点取值——工作台预设同款查询）
-  const cpuQuery = METRIC_PRESETS.find((preset) => preset.key === "cpu_cores")?.build(appId.toLowerCase()) ?? "";
-  const memQuery = METRIC_PRESETS.find((preset) => preset.key === "memory")?.build(appId.toLowerCase()) ?? "";
-  const cpu = useMetricsSeries(cpuQuery, "1h");
-  const mem = useMetricsSeries(memQuery, "1h");
-  const cpuValue = lastPointValue(cpu.data);
-  const memValue = lastPointValue(mem.data);
+  // app 域指标（服务端 scoped 模板；最近点取值——工作台预设同源查询）
+  const cpu = useScopedMetricsSeries({ kind: "app", id: appId }, "cpu_cores", undefined, "1h");
+  const mem = useScopedMetricsSeries({ kind: "app", id: appId }, "memory_working_set_bytes", undefined, "1h");
+  const cpuValue = lastPointValue(cpu.data?.series);
+  const memValue = lastPointValue(mem.data?.series);
   // R 序号对表：revision id → seq
   const seqByRevision = new Map((revisions.data ?? []).map((rev) => [rev.id ?? "", rev.seq ?? ""]));
   const appRoutes = (routes.data ?? []).filter((route) => route.app_id === appId);

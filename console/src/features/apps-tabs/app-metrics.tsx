@@ -1,19 +1,16 @@
 import { useState } from "react";
-import { METRIC_PRESETS } from "@/features/metrics/metric-presets";
+import { METRIC_PRESETS, type MetricPreset } from "@/features/metrics/metric-presets";
 import { MetricChart } from "@/features/metrics/metric-chart";
-import { useMetricsSeries, useRevisions } from "@/lib/catalog";
+import { useRevisions, useScopedMetricsSeries, type ScopedMetric } from "@/lib/catalog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-// App Metrics scoped tab（IA v3 T2）：工作台预设的 app 域变体——归一标签
-// 口径与全局工作台一致（appId 小写 = swarm sanitizeNamePart 的 label 值，
-// metrics.tsx:51 同款）。CPU percent 的 group_left 除法语义见 metric-presets
-//（F-B1：裸 on(node) 被 VM 拒 422）。Process 选择器是 per-process 下钻
-//（2026-10-12 层级定案：观测类 tab 可下探 Process；Instance 级留给工作台
-// 自定义 PromQL）——"all" = 全进程并集（原语义），process 标签值的小写
-// 归一在 metric-presets 单源完成（与词汇导出侧 engine/metrics.go 同款）。
+// App Metrics scoped tab（IA v3 T2；H8 阶段 B 起走服务端 scoped 模板）：
+// 请求只带 app id + 独立预设的指标白名单 + 可选 process，PromQL 由服务端
+// 按行解析出的 Project 固定构造（设计 §5.4）。process 选择器是 per-process
+// 下钻（2026-10-12 层级定案：观测类 tab 可下探 Process；Instance 级留给
+// 工作台自定义 PromQL）——"all" = 全进程并集（原语义）。
 export function AppMetricsTab({ appId }: { appId: string }) {
-  const appLabel = appId.toLowerCase();
   const revisions = useRevisions(appId);
   const processes = (revisions.data?.[0]?.process_strategies ?? [])
     .map((entry) => entry?.process ?? "")
@@ -45,7 +42,14 @@ export function AppMetricsTab({ appId }: { appId: string }) {
       </div>
       <div className="grid gap-4 lg:grid-cols-2">
         {METRIC_PRESETS.filter((preset) => preset.key !== "cpu_cores").map((preset) => (
-          <PresetCard key={preset.key} title={preset.label} unit={preset.unit} query={preset.build(appLabel, processFilter)} />
+          <PresetCard
+            key={preset.key}
+            appId={appId}
+            title={preset.label}
+            unit={preset.unit}
+            metric={preset.metric}
+            process={processFilter}
+          />
         ))}
       </div>
       <p className="text-2xs text-muted-foreground">
@@ -67,15 +71,20 @@ export function AppMetricsTab({ appId }: { appId: string }) {
 }
 
 function PresetCard({
+  appId,
   title,
   unit,
-  query,
+  metric,
+  process,
 }: {
+  appId: string;
   title: string;
-  unit: "percent" | "bytes" | "plain";
-  query: string;
+  unit: MetricPreset["unit"];
+  metric: ScopedMetric;
+  process: string | undefined;
 }) {
-  const series = useMetricsSeries(query, "1h");
+  const series = useScopedMetricsSeries({ kind: "app", id: appId }, metric, process, "1h");
+  const seriesList = series.data?.series ?? [];
   return (
     <section className="rounded-xl border bg-card p-4">
       <div className="mb-2 flex items-baseline justify-between">
@@ -86,10 +95,15 @@ function PresetCard({
         <p className="py-10 text-center text-xs text-muted-foreground">Loading series…</p>
       ) : series.isError ? (
         <p className="py-10 text-center text-xs text-destructive">{series.error instanceof Error ? series.error.message : String(series.error)}</p>
-      ) : (series.data ?? []).length === 0 ? (
+      ) : seriesList.length === 0 ? (
         <p className="py-10 text-center text-xs text-muted-foreground">No series — replicas may be stopped.</p>
       ) : (
-        <MetricChart seriesList={series.data ?? []} unit={unit} />
+        <MetricChart
+          seriesList={seriesList}
+          unit={unit}
+          truncated={series.data?.truncated}
+          seriesTotal={series.data?.seriesTotal}
+        />
       )}
     </section>
   );

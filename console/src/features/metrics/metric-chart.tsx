@@ -118,12 +118,25 @@ export function buildChartRows(seriesList: MetricSeries[]): {
   return { rows, keys, labels, hidden };
 }
 
+// seriesCapNote 是服务端序列上限的提示行（H8 §5.3.3）：仅服务端明确截断
+// 且实际返回数小于命中总数时呈现；不改变图面 10 条渲染上限与 hidden 计数。
+export function seriesCapNote(truncated: boolean, seriesTotal: number | undefined, shown: number): string | null {
+  if (!truncated || seriesTotal == null || seriesTotal <= shown) return null;
+  return `server cap reached — ${shown} of ${seriesTotal} series shown`;
+}
+
 export function MetricChart({
   seriesList,
   unit,
+  truncated,
+  seriesTotal,
 }: {
   seriesList: MetricSeries[];
   unit: "percent" | "bytes" | "plain";
+  // truncated/seriesTotal 是服务端 scoped 面的截断披露（H8 §5.3.3）：命中
+  // 序列超过服务端上限时只返回前 N 条，图面必须显式说明而不是静默丢序列。
+  truncated?: boolean;
+  seriesTotal?: number;
 }) {
   const { rows, config, keys, hidden } = useMemo(() => {
     const config: ChartConfig = {};
@@ -134,6 +147,8 @@ export function MetricChart({
     }
     return { rows: built.rows, config, keys: built.keys, hidden: built.hidden };
   }, [seriesList]);
+
+  const capNote = seriesCapNote(truncated === true, seriesTotal, seriesList.length);
 
   const lastValues = useMemo(() => {
     const out: Record<string, number | undefined> = {};
@@ -200,6 +215,7 @@ export function MetricChart({
           +{hidden} more series not shown — stopped replicas from earlier generations stay queryable in the workbench.
         </p>
       ) : null}
+      {capNote != null ? <p className="px-1 pb-1 text-2xs text-muted-foreground">{capNote}</p> : null}
     </div>
   );
 }

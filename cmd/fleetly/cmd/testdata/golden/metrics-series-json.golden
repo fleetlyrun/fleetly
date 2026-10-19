@@ -1,0 +1,33 @@
+{
+  "series": [
+    {
+      "labels": {
+        "app": "web-1",
+        "container": "fleetly-web-1",
+        "process": "web"
+      },
+      "points": [
+        {
+          "time": "2026-10-09T12:00:00Z",
+          "value": 12.5
+        },
+        {
+          "time": "2026-10-09T12:01:00Z"
+        }
+      ]
+    },
+    {
+      "labels": {
+        "app": "web-1",
+        "process": "worker"
+      },
+      "points": [
+        {
+          "time": "2026-10-09T12:00:00Z",
+          "value": 3
+        }
+      ]
+    }
+  ],
+  "series_total": 2
+}

@@ -360,10 +360,13 @@ export function usePlatformBackups() {
 }
 
 // WhoAmIResponse 的行形态（identity swagger 的信封名以生成类型为准）。
+// platformAdmin 读服务端 platform_admin（H8 raw PromQL 入口显隐）——Console
+// 不复制 role/team 判定（设计 §5.1/§5.4）。
 export interface WhoAmI {
   tokenName: string;
   roleName: string;
   userName: string;
+  platformAdmin: boolean;
 }
 
 export function useWhoami(enabled: boolean) {
@@ -376,6 +379,7 @@ export function useWhoami(enabled: boolean) {
         tokenName: typeof res.token_name === "string" ? res.token_name : "",
         roleName: typeof res.role_name === "string" ? res.role_name : "",
         userName: typeof res.user_name === "string" ? res.user_name : "",
+        platformAdmin: res.platform_admin === true,
       };
     },
     retry: false,
@@ -427,22 +431,87 @@ export const METRIC_RANGES: Record<string, number> = {
   "24h": 24 * 60 * 60_000,
 };
 
-// useMetricsSeries 拉 PromQL 时序（多序列——C1 起后端返回全量命中序列）。
-// 空 query 不发请求（表单未就绪态）。
-export function useMetricsSeries(query: string, rangeKey: string) {
+// ScopedMetric 是服务端 scoped 指标白名单（proto QueryScopedMetricsRequest
+// .metric 同形）；Console 只在这三者中选择，不构造 PromQL。
+export type ScopedMetric = "cpu_percent" | "cpu_cores" | "memory_working_set_bytes";
+
+// MetricsScope 是 scoped 指标查询作用域（App 与 Database 恰一；project 由
+// 服务端从已授权行解析，客户端不传）。
+export interface MetricsScope {
+  kind: "app" | "database";
+  id: string;
+}
+
+// ScopedMetricsResult 保留服务端截断披露（truncated/series_total）——图表
+// 据此提示命中序列被服务端上限截断，而不是静默丢数据。
+export interface ScopedMetricsResult {
+  series: Telemetry["v1MetricSeries"][];
+  truncated: boolean;
+  seriesTotal: number;
+}
+
+// metricWindow 是 raw/scoped 共用的时间窗计算（end=now、窗宽取
+// METRIC_RANGES、step=max(15s, 窗/240)——与服务端钳制口径一致）。
+function metricWindow(rangeKey: string): { start: string; end: string; stepSeconds: number } {
+  const windowMs = METRIC_RANGES[rangeKey] ?? METRIC_RANGES["1h"];
+  const end = new Date();
+  const start = new Date(end.getTime() - windowMs);
+  return {
+    start: start.toISOString(),
+    end: end.toISOString(),
+    stepSeconds: Math.max(15, Math.round(windowMs / 1000 / 240)),
+  };
+}
+
+// useRawMetricsSeries 拉原始 PromQL 时序（GET /v1/metrics；平台管理员诊断
+// 面——member 由服务端 403）。空 query 不发请求（表单未就绪态）。
+export function useRawMetricsSeries(query: string, rangeKey: string) {
   return useQuery({
     queryKey: ["metrics", query, rangeKey],
+    enabled: query !== "",
     queryFn: async (): Promise<Telemetry["v1MetricSeries"][]> => {
-      const windowMs = METRIC_RANGES[rangeKey] ?? METRIC_RANGES["1h"];
-      const end = new Date();
-      const start = new Date(end.getTime() - windowMs);
-      const stepSeconds = Math.max(15, Math.round(windowMs / 1000 / 240));
+      const { start, end, stepSeconds } = metricWindow(rangeKey);
       const res = await apiFetch<{ series?: Array<Telemetry["v1MetricSeries"] | undefined> }>(
-        `/v1/metrics${qs({ query, start: start.toISOString(), end: end.toISOString(), step_seconds: stepSeconds })}`,
+        `/v1/metrics${qs({ query, start, end, step_seconds: stepSeconds })}`,
       );
       return rowsOf(res.series);
     },
-    enabled: query !== "",
+    refetchInterval: 30_000,
+  });
+}
+
+// useScopedMetricsSeries 拉服务端 scoped 固定模板时序（GET
+// /v1/metrics/scoped；H8 阶段 B member 图表唯一路径）：请求只带 scope +
+// 白名单 metric + 时间窗，PromQL 由服务端构造。scope 与 metric 进 queryKey
+//（切 App/Database/指标即换缓存键）；process 仅 app scope 传递；空 scope id
+// 不发请求；enabled 供 custom raw 模式关掉后台预设请求。
+export function useScopedMetricsSeries(
+  scope: MetricsScope,
+  metric: ScopedMetric,
+  process: string | undefined,
+  rangeKey: string,
+  enabled = true,
+) {
+  // process 值域与词汇导出一致（小写 dns）；仅 app scope 传递，database
+  // scope 忽略（服务端会拒绝 database+process）。
+  const processFilter = scope.kind === "app" && process != null && process !== "" ? process.toLowerCase() : undefined;
+  return useQuery({
+    queryKey: ["metrics", "scoped", scope.kind, scope.id, metric, processFilter ?? "", rangeKey],
+    enabled: enabled && scope.id !== "",
+    queryFn: async (): Promise<ScopedMetricsResult> => {
+      const { start, end, stepSeconds } = metricWindow(rangeKey);
+      const params =
+        scope.kind === "app"
+          ? { app_id: scope.id, metric, process: processFilter, start, end, step_seconds: stepSeconds }
+          : { database_id: scope.id, metric, start, end, step_seconds: stepSeconds };
+      const res = await apiFetch<Telemetry["v1QueryScopedMetricsResponse"]>(`/v1/metrics/scoped${qs(params)}`);
+      const series = rowsOf(res.series);
+      return {
+        series,
+        truncated: res.truncated === true,
+        seriesTotal: res.series_total ?? series.length,
+      };
+    },
     refetchInterval: 30_000,
   });
 }

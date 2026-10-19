@@ -1,13 +1,17 @@
 package cmd
 
-// Alerting/Metrics 动词组（F2.5，ADR-0041）：metrics query（PromQL 透传）、
-// channels create/test/list/delete（通知通道——凭证只写不读）、alerts
-// rules create/list/delete + alerts list（现行状态含系统内置行）。
+// Alerting/Metrics 动词组（F2.5，ADR-0041；H8 阶段 B 扩面）：metrics
+// query（raw PromQL 平台管理员诊断）、metrics series（scoped 固定模板——
+// member 图表/日常诊断）、channels create/test/list/delete（通知通道——
+// 凭证只写不读）、alerts rules create/list/delete + alerts list（现行状态
+// 含系统内置行）。
 
 import (
 	"context"
 	"flag"
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/lynx-go/commands"
 
@@ -15,14 +19,15 @@ import (
 	"github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
-// metrics query：PromQL 透传（位置参数 = 查询文本）。
+// metrics query：raw PromQL 透传（位置参数 = 查询文本；平台管理员诊断面，
+// member 由服务端返回 403）。
 func newMetricsQueryVerb() commands.Command {
 	const name = "query"
 	var start, end string
 	var step int64
 	return &flaggedVerb{
 		name:     name,
-		synopsis: "Run a PromQL query against the managed metrics store (pass-through)",
+		synopsis: "Run a raw PromQL query (platform-admin diagnostics)",
 		usage:    "metrics query PROMQL [--start T] [--end T] [--step-seconds N]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&start, "start", "", "time window start (RFC3339; default: end minus 1h)")
@@ -52,6 +57,82 @@ func newMetricsQueryVerb() commands.Command {
 			})
 		},
 	}
+}
+
+// metrics series：scoped 固定模板查询（H8 阶段 B，设计 §5.4）——调用方只给
+// App/Database 作用域 + 指标白名单 + 时间窗，PromQL 由服务端按已授权行
+// 构造；member 可用。人类输出逐点保留序列身份（series=<labels> <time>
+// <value>），--json 输出 QueryScopedMetricsResponse protojson。
+func newMetricsSeriesVerb() commands.Command {
+	const name = "series"
+	var appID, databaseID, metric, process, start, end string
+	var step int64
+	return &flaggedVerb{
+		name:     name,
+		synopsis: "Query a scoped metric template for an app or database (no PromQL)",
+		usage: "metrics series (--app APP_ID | --database DB_ID) --metric M [--process P] " +
+			"[--start T] [--end T] [--step-seconds N]",
+		setFlags: func(fs *flag.FlagSet) {
+			fs.StringVar(&appID, "app", "", "app id (exactly one of --app/--database)")
+			fs.StringVar(&databaseID, "database", "", "database id (exactly one of --app/--database)")
+			fs.StringVar(&metric, "metric", "", "metric: cpu_percent | cpu_cores | memory_working_set_bytes (required)")
+			fs.StringVar(&process, "process", "", "process filter (app scope only)")
+			fs.StringVar(&start, "start", "", "time window start (RFC3339; default: end minus 1h)")
+			fs.StringVar(&end, "end", "", "time window end (RFC3339; default: now)")
+			fs.Int64Var(&step, "step-seconds", 0, "sampling step in seconds (0 = server auto)")
+		},
+		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
+			switch {
+			case appID == "" && databaseID == "":
+				return usageErr(name, "exactly one of --app or --database is required")
+			case appID != "" && databaseID != "":
+				return usageErr(name, "--app and --database are mutually exclusive")
+			case metric == "":
+				return usageErr(name, "--metric is required")
+			}
+			return runRPC(ctx, nil, func(ctx context.Context, c *fleetly.Client) error {
+				resp, err := c.Metrics.QueryScopedMetrics(ctx, &telemetryv1.QueryScopedMetricsRequest{
+					AppId: appID, DatabaseId: databaseID, Metric: metric, Process: process,
+					Start: start, End: end, StepSeconds: step,
+				})
+				if err != nil {
+					return err
+				}
+				if jsonOut {
+					return renderOut(env, jsonOut, resp, func() {})
+				}
+				for _, s := range resp.GetSeries() {
+					labels := formatMetricLabels(s.GetLabels())
+					for _, p := range s.GetPoints() {
+						_, _ = fmt.Fprintf(env.Stdout, "series=%s %s %v\n", labels, p.GetTime(), p.GetValue())
+					}
+				}
+				return nil
+			})
+		},
+	}
+}
+
+// formatMetricLabels 把序列标签渲染为稳定顺序的 k=v 组（map 遍历序不
+// 确定，按 key 排序保 golden 稳定）；空标签落 "-"（无标签序列仍有身份
+// 行，不与时间/数值列混淆）。
+func formatMetricLabels(labels map[string]string) string {
+	if len(labels) == 0 {
+		return "-"
+	}
+	keys := make([]string, 0, len(labels))
+	for key := range labels {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		parts = append(parts, key+"="+labels[key])
+	}
+	return strings.Join(parts, ",")
 }
 
 // channels create：登记通道（凭证只写不读——建后不回显）。

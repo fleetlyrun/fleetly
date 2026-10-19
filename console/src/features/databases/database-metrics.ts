@@ -1,22 +1,14 @@
-// 库载体指标寻址（IA v3 T8 已验证；ADR-0065 起 docker 臂走负载词汇）：
-// docker 臂查采集环归一导出的 fleetly_container_* 词汇（身份标签
-// workload = fleetly.workload.id 小写归一）；k3s 载体词汇化挂账——保留
-// cadvisor/k8s 形态原文臂（namespace/pod 匹配），双 runtime 以 or 臂
-// 各自恰一命中。label/pod 值均经小写归一（F2.5 同款），matcher 取
-// databaseID.toLowerCase()。
-// 词汇 percent/cores 在引擎差分面预计算——docker 臂无 rate()；k3s 臂仍
-// 自带 rate()（raw counter 形态，双臂量纲一致：cores）。
-
-const dockerWorkload = (databaseId: string) => `workload="${databaseId.toLowerCase()}"`;
-
-const k3sCarrier = (databaseId: string, projectId: string) =>
-  `namespace="fleetly-${projectId.toLowerCase()}",pod=~"fleetly-db-${databaseId.toLowerCase()}.*"`;
+// 库载体指标预设（IA v3 T8；H8 阶段 B 起走服务端 scoped 模板）：
+// Console 只声明指标白名单值与展示量纲，docker/k3s 双臂 PromQL 由服务端
+// 按 database id + 行解析出的 Project 固定构造（设计
+// docs/design/2026-10-19-security-backlog-design.md §5.3、§5.4）。Database
+// 图表面没有 CPU % 消费（cpu_percent 仅 app scope），保留 memory/cores 两项。
 
 export interface CarrierMetricPreset {
   key: string;
   label: string;
   unit: "bytes" | "plain";
-  build: (databaseId: string, projectId: string) => string;
+  metric: "memory_working_set_bytes" | "cpu_cores";
 }
 
 export const DATABASE_CARRIER_PRESETS: CarrierMetricPreset[] = [
@@ -24,14 +16,12 @@ export const DATABASE_CARRIER_PRESETS: CarrierMetricPreset[] = [
     key: "memory",
     label: "Memory working set (bytes)",
     unit: "bytes",
-    build: (databaseId, projectId) =>
-      `fleetly_container_memory_working_set_bytes{${dockerWorkload(databaseId)}} or container_memory_working_set_bytes{${k3sCarrier(databaseId, projectId)}}`,
+    metric: "memory_working_set_bytes",
   },
   {
     key: "cpu_cores",
     label: "CPU (cores)",
     unit: "plain",
-    build: (databaseId, projectId) =>
-      `fleetly_container_cpu_cores{${dockerWorkload(databaseId)}} or rate(container_cpu_usage_seconds_total{${k3sCarrier(databaseId, projectId)}}[2m])`,
+    metric: "cpu_cores",
   },
 ];

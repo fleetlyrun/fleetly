@@ -211,7 +211,28 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** QueryMetrics 原样透传 PromQL（平台管理员诊断；member 调用 E_FORBIDDEN）。 */
         get: operations["MetricsService_QueryMetrics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/metrics/scoped": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * QueryScopedMetrics 按 App/Database 作用域查固定指标模板。
+         *     授权：metrics:read + app/database 所在 Project 的行级 Team 比对。
+         */
+        get: operations["MetricsService_QueryScopedMetrics"];
         put?: never;
         post?: never;
         delete?: never;
@@ -378,6 +399,16 @@ export interface components {
         };
         v1QueryMetricsResponse: {
             series?: components["schemas"]["v1MetricSeries"][];
+        };
+        v1QueryScopedMetricsResponse: {
+            series?: components["schemas"]["v1MetricSeries"][];
+            /** truncated 表示命中序列数超过服务端上限，返回的是前 N 条。 */
+            truncated?: boolean;
+            /**
+             * series_total 是截断前的命中序列数（未截断 = len(series)）。
+             * Format: int32
+             */
+            series_total?: number;
         };
         v1StreamEventsResponse: {
             event?: components["schemas"]["v1Event"];
@@ -879,8 +910,8 @@ export interface operations {
         parameters: {
             query?: {
                 /**
-                 * @description query 是 PromQL（透传；App 域过滤经 container_label_fleetly_ns_*
-                 *     序列标签——CLI/Console 侧构造）。必填：空查询无从起查。
+                 * @description query 是 PromQL（原样透传；平台管理员诊断面，服务端不做行级约束）。
+                 *     必填：空查询无从起查。
                  */
                 query?: string;
                 /** @description start/end 是时间窗（RFC3339；空 end = 现在，空 start = end 前 1h）。 */
@@ -902,6 +933,51 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1QueryMetricsResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    MetricsService_QueryScopedMetrics: {
+        parameters: {
+            query?: {
+                /** @description app_id 与 database_id 恰一非空（scope 互斥）。 */
+                app_id?: string;
+                database_id?: string;
+                /**
+                 * @description metric 白名单：cpu_percent | cpu_cores | memory_working_set_bytes
+                 *     （与告警规则 metric 词表同形；非法值在受理面 E_INVALID_ARGUMENT）。
+                 */
+                metric?: string;
+                /** @description process 仅 app scope 可用；小写 dns 形态（与 Process 名字符集同源）。 */
+                process?: string;
+                /** @description start/end 是 RFC3339；空 end = now，空 start = end 前 1h（与 raw 同）。 */
+                start?: string;
+                end?: string;
+                /** @description step_seconds 是请求步长；0 = 服务端按窗口自动，实际值会被钳制。 */
+                step_seconds?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1QueryScopedMetricsResponse"];
                 };
             };
             /** @description An unexpected error response. */

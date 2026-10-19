@@ -1,0 +1,2 @@
+exactly one of --app or --database is required
+usage: series

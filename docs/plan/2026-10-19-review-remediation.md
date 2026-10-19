@@ -106,7 +106,7 @@ d233c07d docs(plan,reviews): S1-S5 终验记录与修复状态归档
 | S7 | 幂等键调用方作用域 | H11（R14-H4） | 迁移 00034 + repo/enforcer 签名；跨 token/跨队同键不同体/同体不复用；apitest 绿 | ✅ |
 | S8 | Metrics 租户域过滤（设计） | H8（R07-H2/R08-M2） | 设计文档 `docs/design/2026-10-19-security-backlog-design.md`（推荐 QueryScopedMetrics + raw 收平台管理员） | ✅ 设计 |
 | S9 | H8 阶段 A 止血 | H8 | raw QueryMetrics 收平台管理员（403 先于 503）+ 响应 8MiB/1000 序列上限；member 图表失明（已裁决代价） | ✅ |
-| S10 | H8 阶段 B scoped RPC + Console/CLI 切换 | H8 | **a** 契约+服务端：`QueryScopedMetrics`（固定模板/行级授权/上限/新错误码，proto+生成物同批）✅；**b** Console/CLI 切换（`metrics series` + 图表切 scoped + console:gen/build）☐ | 🟡 a 完成 |
+| S10 | H8 阶段 B scoped RPC + Console/CLI 切换 | H8 | **a** 契约+服务端 ✅（`e9654b8c`）；**b** Console scoped 图表/WhoAmI.platformAdmin/truncated 提示 + CLI `metrics series` + `console:gen/build` 同批 ✅ | ✅ |
 | S11 | relay 节点个体凭证 | H10（R14-H3） | 两步 enroll（join → 锚定 → 按节点取 relay）；个体凭证（hash 库存 + carrier_id）；rotate 即时断连；迁移 00035 | ☐ |
 | S12 | 收敛语义深水区 + ADR 追记 | R02-M2/M5、R16-M2/M3/M5/M6、H15 ADR-0083 追记 | ADR 修订 + 判定表单源 + 静默面事实化；钉测翻向 | ☐ |
 
@@ -131,6 +131,13 @@ d233c07d docs(plan,reviews): S1-S5 终验记录与修复状态归档
 - apitest：`NewWithMetrics` seam + 7 用例（本队成功/他队 403/404/8 项校验/截断/平台管理员跨队/模板拒绝 500/哨兵 429/504）全 PASS。
 - 验收证据（Lead 亲跑）：buf lint 0；gofmt 空；双平台 build 0；capability/errcode/vm/fleetlygrpc/apitest(26.9s)/guards(19.1s)/cmd(5.1s) 全 ok；vet 0；diff-check 0；`mise run generate:verify`（提交后）0。
 - 残留：S10b Console（useScopedMetricsSeries/whoami.platformAdmin/图表 truncated 提示）+ CLI `metrics series` + `console:gen && console:build` + golden；阶段 C k3s CPU% 真机；ADR 追记。
+
+### S10b 执行记录（H8 阶段 B Console/CLI 切换）
+- Console：`metric-presets` 改指标描述（去 PromQL builder）；`catalog.ts` 新增 `useScopedMetricsSeries`/raw 改名 `useRawMetricsSeries`/WhoAmI `platformAdmin`；`app-metrics`/`app-overview`/`_shell/metrics`/`database-metrics`/`databases` 切 scoped；Custom tab 仅平台管理员可见；`MetricChart` 截断提示；`console:gen` + `console:build` 同批（api 类型 + dist 82 项生成物）。
+- CLI：新增 `metrics series`（scope 恰一/`--metric` 必填；人类逐点 `series=<labels> <time> <value>`、`--json` protojson）；`metrics query` synopsis 改平台管理员诊断；metrics 组注册同步。
+- golden：改 2（组列表）/新 9（成功双形态/App/Database/usage 三类/服务端错误/offline 双形态）；demo 测试与参数校验单测同批。
+- 验收证据（Lead 亲跑）：gofmt 空；build 0；cmd 5.4s、guards 20.0s；metrics golden 定向全 PASS；console `pnpm test` 30 files/134 tests PASS；`console:verify`（提交后）0。
+- 残留：CLI golden 既有假时钟 flake（基线 worktree 亦偶发，非本批引入）；`console:gen` Windows shim 问题本次以本地转发器绕过（未入仓，建议单列修 gen.mjs 跨平台）；e2e 真机图表与 k3s CPU%（阶段 C）。
 
 ### S6 执行记录
 - 改动：`k3s/translate.go`（sortedConfigMounts/configMountsWithMaterials/configVolumeName + toContainer SubPath 挂载 + podTemplate ConfigMap 卷 0444）、`translate_test.go`（三载体/缺材料/顺序稳定）、`runtime_ensure_test.go`（Ensure 引用名一致性 + SkipMaterials）。

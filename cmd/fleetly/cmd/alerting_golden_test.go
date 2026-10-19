@@ -43,6 +43,11 @@ func TestGoldenAlertingVerbs(t *testing.T) {
 		// 查询面：夹具未配置 metrics.addr → 精确失败；空查询 → usage 拒绝。
 		{"metrics query", []string{"metrics", "query", "up"}, 1},
 		{"metrics query empty", []string{"metrics", "query"}, 64},
+		// scoped 系列面（H8 阶段 B）：夹具未配置 metrics.addr → 授权后
+		// 精确失败；--json 轮由循环同拍钉死 QueryScopedMetricsResponse 出口。
+		// golden 名与成功面（TestGoldenMetricsSeries）分立，避免 stdout 空
+		// 形态覆盖成功快照。
+		{"metrics series offline", []string{"metrics", "series", "--app", "GOLDEN_APP", "--metric", "cpu_percent"}, 1},
 	}
 
 	// jsonRoundCode 是 --json 轮的退出码覆盖表（缺省同 code）。

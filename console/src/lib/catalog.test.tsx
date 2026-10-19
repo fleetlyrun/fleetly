@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { appNameOf, useApps, useProjects, useAlertRules, useAlertStates, useMetricsSeries, useUsers, useTeams, useInvitations, usePlatformBackups, useNodes } from "./catalog";
+import { appNameOf, useApps, useProjects, useAlertRules, useAlertStates, useRawMetricsSeries, useScopedMetricsSeries, useWhoami, useUsers, useTeams, useInvitations, usePlatformBackups, useNodes } from "./catalog";
 import { setToken } from "./token";
 
 // 目录查询消费面锚（F2.6 只读面 + F3.1 扩面共用）：REST 路径/查询串、
@@ -100,10 +100,10 @@ describe("useAlertRules / useAlertStates", () => {
   });
 });
 
-describe("useMetricsSeries", () => {
+describe("useRawMetricsSeries", () => {
   it("does not query with an empty promql", async () => {
     const { client, wrapper } = withClient();
-    const { result } = renderHook(() => useMetricsSeries("", "1h"), { wrapper });
+    const { result } = renderHook(() => useRawMetricsSeries("", "1h"), { wrapper });
     await Promise.resolve();
     expect(fetchMock).not.toHaveBeenCalled();
     expect(result.current.data).toBeUndefined();
@@ -124,7 +124,7 @@ describe("useMetricsSeries", () => {
       ),
     );
     const { client, wrapper } = withClient();
-    const { result } = renderHook(() => useMetricsSeries('rate(container_cpu_usage_seconds_total{container_label_fleetly_ns_app="01m4a1"}[2m])', "30m"), { wrapper });
+    const { result } = renderHook(() => useRawMetricsSeries('rate(container_cpu_usage_seconds_total{container_label_fleetly_ns_app="01m4a1"}[2m])', "30m"), { wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual([
       { labels: { name: "web.1" }, points: [{ time: "2026-10-08T12:00:00Z", value: 1.5 }] },
@@ -135,6 +135,96 @@ describe("useMetricsSeries", () => {
     expect(path).toContain("step_seconds=15"); // 30m/240 = 7.5s → 下限 15s
     expect(path).toContain("start=");
     expect(path).toContain("end=");
+    client.clear();
+  });
+});
+
+// H8 阶段 B：scoped 图表 hook——请求只带 scope + 指标白名单 + 时间窗
+// （服务端构造 PromQL），并保留 truncated/series_total 给图面披露。
+describe("useScopedMetricsSeries", () => {
+  it("queries app scope with the metric and process, preserving truncation metadata", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          series: [{ labels: { process: "web" }, points: [{ time: "2026-10-08T12:00:00Z", value: 12.5 }] }],
+          truncated: true,
+          series_total: 60,
+        }),
+        { status: 200 },
+      ),
+    );
+    const { client, wrapper } = withClient();
+    const { result } = renderHook(() => useScopedMetricsSeries({ kind: "app", id: "01M4A1" }, "cpu_percent", "Web", "30m"), {
+      wrapper,
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.series).toEqual([
+      { labels: { process: "web" }, points: [{ time: "2026-10-08T12:00:00Z", value: 12.5 }] },
+    ]);
+    expect(result.current.data?.truncated).toBe(true);
+    expect(result.current.data?.seriesTotal).toBe(60);
+    const [path] = fetchMock.mock.calls[0] as [string];
+    expect(path.startsWith("/v1/metrics/scoped?")).toBe(true);
+    expect(path).toContain("app_id=01M4A1");
+    expect(path).toContain("metric=cpu_percent");
+    expect(path).toContain("process=web");
+    expect(path).not.toContain("database_id=");
+    expect(path).toContain("step_seconds=15"); // 30m/240 = 7.5s → 下限 15s
+    expect(path).toContain("start=");
+    expect(path).toContain("end=");
+    client.clear();
+  });
+
+  it("drops process on database scope and defaults seriesTotal when the server omits it", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ series: [{ labels: { database: "D1" }, points: [] }] }), { status: 200 }),
+    );
+    const { client, wrapper } = withClient();
+    const { result } = renderHook(
+      () => useScopedMetricsSeries({ kind: "database", id: "D1" }, "memory_working_set_bytes", "web", "1h"),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.seriesTotal).toBe(1);
+    expect(result.current.data?.truncated).toBe(false);
+    const [path] = fetchMock.mock.calls[0] as [string];
+    expect(path).toContain("database_id=D1");
+    expect(path).toContain("metric=memory_working_set_bytes");
+    expect(path).not.toContain("process=");
+    client.clear();
+  });
+
+  it("does not query with an empty scope id", async () => {
+    const { client, wrapper } = withClient();
+    const { result } = renderHook(() => useScopedMetricsSeries({ kind: "app", id: "" }, "cpu_percent", undefined, "1h"), {
+      wrapper,
+    });
+    await Promise.resolve();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(result.current.data).toBeUndefined();
+    client.clear();
+  });
+});
+
+// H8 §5.1：WhoAmI 的 platform_admin 是 Console 显隐 raw PromQL 的唯一依据
+// （不复制 role/team 判定）。
+describe("useWhoami", () => {
+  it("maps platform_admin onto platformAdmin", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ token_name: "ci", role_name: "builtin-owner", user_name: "root", platform_admin: true }),
+        { status: 200 },
+      ),
+    );
+    const { client, wrapper } = withClient();
+    const { result } = renderHook(() => useWhoami(true), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toEqual({
+      tokenName: "ci",
+      roleName: "builtin-owner",
+      userName: "root",
+      platformAdmin: true,
+    });
     client.clear();
   });
 });

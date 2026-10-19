@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 import { RefreshCwIcon } from "lucide-react";
-import { METRIC_RANGES, useApps, useMetricsSeries } from "@/lib/catalog";
+import { METRIC_RANGES, useApps, useRawMetricsSeries, useScopedMetricsSeries, useWhoami } from "@/lib/catalog";
 import { useProjectId } from "@/lib/project";
 import { METRIC_PRESETS } from "@/features/metrics/metric-presets";
 import { MetricChart } from "@/features/metrics/metric-chart";
@@ -15,11 +15,13 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 
-// 指标工作台（Workbench 原型，UI v2 批 3）：预设/自定义 PromQL + 时间窗
-// （search param）+ shadcn Chart。查询经 GET /v1/metrics 透传（无 WS——
-// 前端 30s 轮询是既有契约）。批 5 模板化复裁：Metric 下拉升格为
-// PageTabs 四 tab（CPU % / Memory / CPU cores / Custom PromQL，用户裁决
-// 2026-10-11）——tab 即 preset search param，URL 契约不变。根高
+// 指标工作台（Workbench 原型，UI v2 批 3；H8 阶段 B 切换）：预设走服务端
+// scoped 模板（GET /v1/metrics/scoped——请求只带 app id + 指标白名单），
+// 自定义 PromQL 保留为平台管理员诊断面（GET /v1/metrics 原始透传）。批 5
+// 模板化复裁：Metric 下拉升格为 PageTabs 四 tab（CPU % / Memory / CPU
+// cores / Custom PromQL，用户裁决 2026-10-11）——tab 即 preset search
+// param，URL 契约不变；Custom tab 仅 whoami.platform_admin 可见，非管理员
+// 深链 preset=custom 诚实回落到 CPU %（设计 §5.4）。根高
 // calc(100svh-3.25rem)（顶栏 h-13）：workbench 视口定死，图区内部滚动。
 
 const metricsSearch = z.object({
@@ -47,6 +49,7 @@ function MetricsWorkbench() {
   const navigate = Route.useNavigate();
   const [projectId] = useProjectId();
   const apps = useApps(projectId);
+  const whoami = useWhoami(true);
   const [appId, setAppId] = useState(search.app ?? "");
   const [presetKey, setPresetKey] = useState<MetricTab>(parseTab(search.preset));
   const [rangeKey, setRangeKey] = useState(search.range ?? "1h");
@@ -59,12 +62,24 @@ function MetricsWorkbench() {
     }
   }, [apps.data, appId, search.app]);
 
-  const preset = METRIC_PRESETS.find((entry) => entry.key === presetKey) ?? METRIC_PRESETS[0];
-  const appLabel = (appId || (apps.data ?? [])[0]?.id || "").toLowerCase();
-  const custom = presetKey === "custom";
-  const query = custom ? customQuery.trim() : appId === "" ? "" : preset.build(appLabel);
+  // Custom PromQL 是平台管理员诊断面：显隐只看服务端 platform_admin，
+  // Console 不复制 role/team 判定。
+  const platformAdmin = whoami.data?.platformAdmin === true;
+  const allowedTabs = platformAdmin ? METRIC_TABS : METRIC_TABS.filter((tab) => tab.value !== "custom");
+  const activeTab: MetricTab = presetKey === "custom" && !platformAdmin ? "cpu_percent" : presetKey;
+  const preset = METRIC_PRESETS.find((entry) => entry.key === activeTab) ?? METRIC_PRESETS[0];
+  const custom = activeTab === "custom";
+  const scopedAppId = appId || (apps.data ?? [])[0]?.id || "";
+  const rawQuery = custom ? customQuery.trim() : "";
+
+  // 两钩子都无条件调用；scoped 钩子在 custom 模式下 enabled=false（不产生
+  // 后台预设请求），raw 钩子在非 custom 模式 query 为空不发请求。
+  const presetSeries = useScopedMetricsSeries({ kind: "app", id: scopedAppId }, preset.metric, undefined, rangeKey, !custom);
+  const rawSeries = useRawMetricsSeries(rawQuery, rangeKey);
+  const series = custom ? rawSeries : presetSeries;
+  const seriesList = custom ? (rawSeries.data ?? []) : (presetSeries.data?.series ?? []);
+  const hasQuery = custom ? rawQuery !== "" : scopedAppId !== "";
   const unit = custom ? "plain" : preset.unit;
-  const series = useMetricsSeries(query, rangeKey);
 
   function update(next: { app?: string; preset?: string; range?: string }) {
     if (next.app !== undefined) setAppId(next.app);
@@ -79,7 +94,11 @@ function MetricsWorkbench() {
     <div className="flex h-[calc(100svh-3.25rem)] flex-col px-5 pt-4">
       <div className="mb-1 flex items-baseline gap-3">
         <h1 className="font-heading text-lg font-bold tracking-tight">Metrics</h1>
-        <span className="text-xs text-muted-foreground">PromQL passthrough to managed VictoriaMetrics · refreshed every 30s</span>
+        <span className="text-xs text-muted-foreground">
+          {custom
+            ? "Raw PromQL diagnostics (platform admin) · refreshed every 30s"
+            : "Scoped metric templates from managed VictoriaMetrics · refreshed every 30s"}
+        </span>
       </div>
 
       <div className="flex flex-none flex-wrap items-end gap-2.5 py-3">
@@ -119,8 +138,8 @@ function MetricsWorkbench() {
       </div>
 
       <PageTabs
-        tabs={METRIC_TABS.map((tab) => ({ value: tab.value, label: tab.label }))}
-        current={presetKey}
+        tabs={allowedTabs.map((tab) => ({ value: tab.value, label: tab.label }))}
+        current={activeTab}
         onChange={(value) => {
           setPresetKey(value);
           // tab 深链（ModulePage 口径：tab 即 URL search param，可分享可回退）。
@@ -142,28 +161,33 @@ function MetricsWorkbench() {
       ) : null}
 
       <div className="min-h-0 flex-1 overflow-y-auto pb-5">
-        {series.isPending && query !== "" ? (
+        {series.isPending && hasQuery ? (
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             <Skeleton className="h-64 rounded-xl" />
             <Skeleton className="h-64 rounded-xl" />
           </div>
         ) : series.isError ? (
           <ErrorState error={series.error} onRetry={() => void series.refetch()} />
-        ) : series.data != null && series.data.length > 0 ? (
+        ) : seriesList.length > 0 ? (
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm">
                 {custom ? "Custom query" : preset.label}
                 <span className="ml-2 text-2xs font-normal text-muted-foreground">
-                  {series.data.length} series · step {Math.max(15, Math.round((METRIC_RANGES[rangeKey] ?? 3_600_000) / 1000 / 240))}s
+                  {seriesList.length} series · step {Math.max(15, Math.round((METRIC_RANGES[rangeKey] ?? 3_600_000) / 1000 / 240))}s
                 </span>
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <MetricChart seriesList={series.data} unit={unit} />
+              <MetricChart
+                seriesList={seriesList}
+                unit={unit}
+                truncated={custom ? undefined : presetSeries.data?.truncated}
+                seriesTotal={custom ? undefined : presetSeries.data?.seriesTotal}
+              />
             </CardContent>
           </Card>
-        ) : query !== "" ? (
+        ) : hasQuery ? (
           <div className="rounded-xl border border-dashed px-6 py-10 text-center text-sm text-muted-foreground">
             No series matched — pick an app with running processes, or widen the range.
           </div>

@@ -21,7 +21,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { useMetricsSeries } from "@/lib/catalog";
+import { useRawMetricsSeries } from "@/lib/catalog";
 import { PageFrame } from "@/components/domain/page-frame";
 import { StatusBadge, type StatusTone } from "@/components/domain/status-badge";
 import { Button } from "@/components/ui/button";
@@ -70,7 +70,7 @@ const MANAGED_PROVIDERS: ManagedProviderCard[] = [
 
 export function ManagedProvidersView() {
   const status = useSystemStatus();
-  const diskSeries = useMetricsSeries(DISK_WATERMARK_QUERY, "30m");
+  const diskSeries = useRawMetricsSeries(DISK_WATERMARK_QUERY, "30m");
   const diskUsage = formatWatermark(lastPointValue(diskSeries.data));
   const degraded = status.data?.state === "STATUS_STATE_DEGRADED";
   return (
@@ -238,7 +238,7 @@ function RestartButton({ name, onRestarted }: { name: string; onRestarted: () =>
 }
 
 function MetricsFreshness() {
-  const series = useMetricsSeries(METRICS_FRESHNESS_QUERY, "30m");
+  const series = useRawMetricsSeries(METRICS_FRESHNESS_QUERY, "30m");
   const seconds = lastPointValue(series.data);
   const fresh = formatFreshness(seconds);
   const toneClass: Record<StatusTone, string> = {
