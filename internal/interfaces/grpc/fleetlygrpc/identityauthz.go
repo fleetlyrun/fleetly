@@ -29,12 +29,17 @@ import (
 //  2. 目标用户持有平台管理员身份（default Team 的 builtin-owner）→ 仅平台
 //     管理员可操作（同队 admin 也不行——该账号可登录成平台 owner）；
 //  3. 调用者本人 → 放行（自助改密/自销；自助面不引入旧密码自证）；
-//  4. 调用者角色 ∈ {builtin-owner, builtin-admin} 且目标用户在其 Team 持有
-//     membership → 放行（队内管理员管本队成员）；
+//  4. 调用者角色 ∈ {builtin-owner, builtin-admin} 且目标的**登录队**（首个
+//     membership——ListByUser 的 seq 稳定序正是 Login 铸 Token 的解析源，
+//     identity.go memberships[0] 同源同序）是调用方 Team → 放行；
 //     其余一律 E_FORBIDDEN。
 //
-// 第 2 步先于第 3/4 步：平台管理员身份的判定不因"同队"或"本人"降级；
-// 多队用户的会话 Team 由 Login 首个 membership 决定（现行语义）。
+// 第 2 步先于第 3/4 步：平台管理员身份的判定不因"同队"或"本人"降级。
+// 第 4 步按登录队对齐而非「任一 membership 在本队」：队内管理员若能重置
+// 「本队挂名、登录队在他队」的多队用户密码，PUBLIC Login 按 memberships[0]
+// 铸 Token 即等价取得他队身份（跨队 member 读）——队内管理的能力边界必须
+// 与 Login 的会话语义严格对齐。多队用户的产品面路径与 Login 队选择语义整
+// 体待权限模型 ADR。
 func (s *Services) authorizeUserAdmin(ctx context.Context, memberships membership.Repo, targetUserID string) error {
 	id, ok := authn.FromContext(ctx)
 	if !ok {
@@ -62,14 +67,15 @@ func (s *Services) authorizeUserAdmin(ctx context.Context, memberships membershi
 			"managing user %s requires a builtin-owner or builtin-admin role in the user's team", targetUserID).
 			WithSuggestion("Ask an owner or admin of the user's team to perform this operation.")
 	}
-	for i := range rows {
-		if rows[i].TeamID == id.TeamID {
-			return nil
-		}
+	// 登录队对齐（首个 membership，seq 稳定序）：任一 membership 在本队即放
+	// 行的历史形态对多队用户是跨队读洞——会话语义由 memberships[0] 决定，
+	// 队内管理的能力边界不得宽于它。
+	if len(rows) > 0 && rows[0].TeamID == id.TeamID {
+		return nil
 	}
 	return apperr.New("E_FORBIDDEN",
-		"user %s holds no membership in the caller's team %s; tokens operate within their own team", targetUserID, id.TeamID).
-		WithSuggestion("Use a token of the team that holds the user, or ask the platform owner.")
+		"user %s does not log into the caller's team %s; team administrators may only manage accounts whose login team (first membership) is their own", targetUserID, id.TeamID).
+		WithSuggestion("Use a token of the user's login team, or ask the platform owner.")
 }
 
 // authorizeUserRead 判定调用方能否读目标用户（R14-M2 读面残留；S2 只修了
