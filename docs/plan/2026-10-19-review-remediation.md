@@ -106,7 +106,7 @@ d233c07d docs(plan,reviews): S1-S5 终验记录与修复状态归档
 | S7 | 幂等键调用方作用域 | H11（R14-H4） | 迁移 00034 + repo/enforcer 签名；跨 token/跨队同键不同体/同体不复用；apitest 绿 | ✅ |
 | S8 | Metrics 租户域过滤（设计） | H8（R07-H2/R08-M2） | 设计文档 `docs/design/2026-10-19-security-backlog-design.md`（推荐 QueryScopedMetrics + raw 收平台管理员） | ✅ 设计 |
 | S9 | H8 阶段 A 止血 | H8 | raw QueryMetrics 收平台管理员（403 先于 503）+ 响应 8MiB/1000 序列上限；member 图表失明（已裁决代价） | ✅ |
-| S10 | H8 阶段 B scoped RPC + Console/CLI 切换 | H8 | `QueryScopedMetrics`（服务端固定模板 + 行级授权）恢复 member 观测；raw 保留平台诊断面；proto/console 生成同批 | ☐ |
+| S10 | H8 阶段 B scoped RPC + Console/CLI 切换 | H8 | **a** 契约+服务端：`QueryScopedMetrics`（固定模板/行级授权/上限/新错误码，proto+生成物同批）✅；**b** Console/CLI 切换（`metrics series` + 图表切 scoped + console:gen/build）☐ | 🟡 a 完成 |
 | S11 | relay 节点个体凭证 | H10（R14-H3） | 两步 enroll（join → 锚定 → 按节点取 relay）；个体凭证（hash 库存 + carrier_id）；rotate 即时断连；迁移 00035 | ☐ |
 | S12 | 收敛语义深水区 + ADR 追记 | R02-M2/M5、R16-M2/M3/M5/M6、H15 ADR-0083 追记 | ADR 修订 + 判定表单源 + 静默面事实化；钉测翻向 | ☐ |
 
@@ -122,6 +122,15 @@ d233c07d docs(plan,reviews): S1-S5 终验记录与修复状态归档
 - 验收证据（Lead 亲跑）：gofmt 空；双平台 build 0；victoriametrics 3.35s、fleetlygrpc 0.26s、apitest 25.8s、guards 18.0s；新测试逐个 PASS；vet 0；diff-check 0。
 - 已知代价：member/非平台 admin 的图表与 CLI `metrics query` 现 403（已裁决；阶段 B 恢复）。告警评估不经查询面、不受影响。
 - 残留：阶段 B `QueryScopedMetrics` + Console/CLI 切换（S10）；project 级与 alerts Team 过滤单列小批。
+
+### S10a 执行记录（H8 阶段 B 契约+服务端）
+- proto：`telemetry.proto` 新增 `QueryScopedMetrics`（GET `/v1/metrics/scoped`）+ 请求/响应（scope 恰一、metric 白名单 CEL）；`identity.proto` WhoAmIResponse 加 `platform_admin`；`mise run generate:all` 生成 6 个 genproto 文件（config.pb/wire_gen 零 diff），`generate:verify`/`buf lint`/`buf breaking` 均 0。
+- capability：`ports.go` Metrics 加 `QueryScoped` + ScopedQuery/SeriesPage + 两错误哨兵；新 `metricsquery.go`（BuildScopedPromQL 固定模板：swarm 词汇臂 or k3s raw 臂；ClampScopedStep 24h/15s/1000 点/1000 序列上限）+ 10 形状 golden 测试。
+- provider：抽 `queryRange`（8MiB 体上限/4xx 类型化/30s 超时类型化/序列 cap）；`QueryScoped` 截断 50 条 + truncated/total；raw 超限改哨兵。
+- handler：`QueryScopedMetrics` 严格顺序（行级授权→503→动态参数→窗口/step→查询）；scoped VM 4xx→E_INTERNAL 带 cause；`WhoAmI.platform_admin` 映射；新 errcode E_METRICS_RESULT_TOO_LARGE(429)/E_METRICS_QUERY_TIMEOUT(504) + mapping + codes.golden。
+- apitest：`NewWithMetrics` seam + 7 用例（本队成功/他队 403/404/8 项校验/截断/平台管理员跨队/模板拒绝 500/哨兵 429/504）全 PASS。
+- 验收证据（Lead 亲跑）：buf lint 0；gofmt 空；双平台 build 0；capability/errcode/vm/fleetlygrpc/apitest(26.9s)/guards(19.1s)/cmd(5.1s) 全 ok；vet 0；diff-check 0；`mise run generate:verify`（提交后）0。
+- 残留：S10b Console（useScopedMetricsSeries/whoami.platformAdmin/图表 truncated 提示）+ CLI `metrics series` + `console:gen && console:build` + golden；阶段 C k3s CPU% 真机；ADR 追记。
 
 ### S6 执行记录
 - 改动：`k3s/translate.go`（sortedConfigMounts/configMountsWithMaterials/configVolumeName + toContainer SubPath 挂载 + podTemplate ConfigMap 卷 0444）、`translate_test.go`（三载体/缺材料/顺序稳定）、`runtime_ensure_test.go`（Ensure 引用名一致性 + SkipMaterials）。

@@ -67,15 +67,19 @@ func (*WhoAmIRequest) Descriptor() ([]byte, []int) {
 }
 
 type WhoAmIResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	TokenId       string                 `protobuf:"bytes,1,opt,name=token_id,json=tokenId,proto3" json:"token_id,omitempty"`
-	TokenName     string                 `protobuf:"bytes,2,opt,name=token_name,json=tokenName,proto3" json:"token_name,omitempty"`
-	TeamId        string                 `protobuf:"bytes,3,opt,name=team_id,json=teamId,proto3" json:"team_id,omitempty"`
-	RoleId        string                 `protobuf:"bytes,4,opt,name=role_id,json=roleId,proto3" json:"role_id,omitempty"`
-	RoleName      string                 `protobuf:"bytes,5,opt,name=role_name,json=roleName,proto3" json:"role_name,omitempty"`
-	UserId        string                 `protobuf:"bytes,6,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
-	UserName      string                 `protobuf:"bytes,7,opt,name=user_name,json=userName,proto3" json:"user_name,omitempty"`
-	Scopes        []string               `protobuf:"bytes,8,rep,name=scopes,proto3" json:"scopes,omitempty"` // colon 形态（resource:action），蕴含未展开
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	TokenId   string                 `protobuf:"bytes,1,opt,name=token_id,json=tokenId,proto3" json:"token_id,omitempty"`
+	TokenName string                 `protobuf:"bytes,2,opt,name=token_name,json=tokenName,proto3" json:"token_name,omitempty"`
+	TeamId    string                 `protobuf:"bytes,3,opt,name=team_id,json=teamId,proto3" json:"team_id,omitempty"`
+	RoleId    string                 `protobuf:"bytes,4,opt,name=role_id,json=roleId,proto3" json:"role_id,omitempty"`
+	RoleName  string                 `protobuf:"bytes,5,opt,name=role_name,json=roleName,proto3" json:"role_name,omitempty"`
+	UserId    string                 `protobuf:"bytes,6,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	UserName  string                 `protobuf:"bytes,7,opt,name=user_name,json=userName,proto3" json:"user_name,omitempty"`
+	Scopes    []string               `protobuf:"bytes,8,rep,name=scopes,proto3" json:"scopes,omitempty"` // colon 形态（resource:action），蕴含未展开
+	// platform_admin 报告调用方是否平台管理员（default Team 的 builtin-owner）
+	// ——与 RequirePlatformAdmin 同一判定；Console 据此显隐平台面入口
+	// （H8 raw PromQL）。
+	PlatformAdmin bool `protobuf:"varint,9,opt,name=platform_admin,json=platformAdmin,proto3" json:"platform_admin,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -164,6 +168,13 @@ func (x *WhoAmIResponse) GetScopes() []string {
 		return x.Scopes
 	}
 	return nil
+}
+
+func (x *WhoAmIResponse) GetPlatformAdmin() bool {
+	if x != nil {
+		return x.PlatformAdmin
+	}
+	return false
 }
 
 type User struct {
@@ -2778,7 +2789,7 @@ var File_fleetly_identity_v1_identity_proto protoreflect.FileDescriptor
 const file_fleetly_identity_v1_identity_proto_rawDesc = "" +
 	"\n" +
 	"\"fleetly/identity/v1/identity.proto\x12\x13fleetly.identity.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"\x0f\n" +
-	"\rWhoAmIRequest\"\xe7\x01\n" +
+	"\rWhoAmIRequest\"\x8e\x02\n" +
 	"\x0eWhoAmIResponse\x12\x19\n" +
 	"\btoken_id\x18\x01 \x01(\tR\atokenId\x12\x1d\n" +
 	"\n" +
@@ -2788,7 +2799,8 @@ const file_fleetly_identity_v1_identity_proto_rawDesc = "" +
 	"\trole_name\x18\x05 \x01(\tR\broleName\x12\x17\n" +
 	"\auser_id\x18\x06 \x01(\tR\x06userId\x12\x1b\n" +
 	"\tuser_name\x18\a \x01(\tR\buserName\x12\x16\n" +
-	"\x06scopes\x18\b \x03(\tR\x06scopes\"I\n" +
+	"\x06scopes\x18\b \x03(\tR\x06scopes\x12%\n" +
+	"\x0eplatform_admin\x18\t \x01(\bR\rplatformAdmin\"I\n" +
 	"\x04User\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1d\n" +

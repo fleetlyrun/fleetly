@@ -96,6 +96,14 @@ func mapStateError(err error, what string) error {
 		// 不吞成 E_INTERNAL 500（staging 实证：缺 group_left 的除法查询
 		// 曾整链 500 且 cause 不落盘，误导排查方向）。
 		return apperr.New("E_INVALID_ARGUMENT", "metrics query: %s", qe.Message).WithCause(err)
+	case errors.Is(err, capability.ErrMetricsResultTooLarge):
+		// 结果超体/超序列（H8 阶段 B）：调用方查询过宽，可缩窗重试；
+		// 与上游 4xx 的 E_INVALID_ARGUMENT 分立（429）。
+		return apperr.New("E_METRICS_RESULT_TOO_LARGE", "%s", err.Error()).WithCause(err)
+	case errors.Is(err, capability.ErrMetricsQueryTimeout):
+		// provider 上界到期（H8 阶段 B）：网关超时语义（504），客户端
+		// 主动取消已在 provider 侧排除、不落本码。
+		return apperr.New("E_METRICS_QUERY_TIMEOUT", "%s", err.Error()).WithCause(err)
 	default:
 		var ae *apperr.Error
 		if errors.As(err, &ae) {

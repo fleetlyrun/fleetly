@@ -255,4 +255,18 @@ var builtins = []Code{
 		Source:     "internal/interfaces/grpc/fleetlygrpc/contexts.go NodesService nodeAdmin + LogsService streamLogsDualPath; internal/interfaces/grpc/systemgrpc/systemgrpc.go RestartComponent (P4-3 batch 3: absent optional face = precise 501, not a masked E_INTERNAL 500; E_EXEC_UNSUPPORTED/E_BROWSER_UNSUPPORTED precedent)",
 		GRPC:       "Unimplemented",
 	},
+	{
+		ID:         "E_METRICS_RESULT_TOO_LARGE",
+		Summary:    "The metrics query result exceeds the server-side cap (response body or series count).",
+		Suggestion: "Narrow the PromQL query or the time range and retry. The caps are 8 MiB of response body (raw and scoped) and 1000 series (raw diagnostics); scoped queries return at most 50 series and mark the page truncated instead of failing.",
+		Source:     "internal/infrastructure/providers/victoriametrics/provider.go queryRange (H8 design docs/design/2026-10-19-security-backlog-design.md §5.3.3: body/series caps shared by raw and scoped queries)",
+		GRPC:       "ResourceExhausted",
+	},
+	{
+		ID:         "E_METRICS_QUERY_TIMEOUT",
+		Summary:    "The metrics store did not answer within the server-side query timeout.",
+		Suggestion: "Narrow the query or the time range and retry; the server-side timeout is 30 seconds. A client-side cancellation is not reported as this error. If it persists, check the managed metrics store health.",
+		Source:     "internal/infrastructure/providers/victoriametrics/provider.go queryRange (H8 design docs/design/2026-10-19-security-backlog-design.md §5.3.3: 30s typed timeout; parent-context cancellation excluded)",
+		GRPC:       "DeadlineExceeded",
+	},
 }

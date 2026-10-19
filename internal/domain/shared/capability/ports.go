@@ -398,9 +398,40 @@ type Metrics interface {
 	// 每节拍回灌；extraLabels 是平台归因标签——job/node，VM extra_label
 	// 通道）。成功即样本可查（VM 流式导入）。
 	ImportPrometheus(ctx context.Context, body []byte, extraLabels map[string]string) error
-	// QuerySeries 查询指标序列（PromQL 透传；Console 图表与 CLI 诊断面）。
+	// QuerySeries 查询指标序列（raw PromQL 透传；平台管理员诊断面）。
 	// 多标签命中返回多序列（空集合法——查询无数据不是错误）。
 	QuerySeries(ctx context.Context, query string, start, end time.Time, step time.Duration) ([]Series, error)
+	// QueryScoped 查询受作用域约束的固定指标模板；调用方不提供 PromQL。
+	// 构造在实现内部完成（BuildScopedPromQL），实现方不得接受用户表达式。
+	QueryScoped(ctx context.Context, q ScopedQuery) (SeriesPage, error)
+}
+
+// ScopedQuery 是 scoped 指标查询的作用域参数（H8 阶段 B，设计文档 §5.3.1）：
+// ProjectID/AppID/DatabaseID 由 handler 从已授权的行解析，Process 经词法
+// 校验，Metric 是白名单值；PromQL 由 BuildScopedPromQL 固定模板构造。
+type ScopedQuery struct {
+	// Metric：cpu_percent | cpu_cores | memory_working_set_bytes。
+	Metric string
+	// ProjectID 是 App/Database 行解析出的 Project（k3s namespace 臂）。
+	ProjectID string
+	// AppID 与 DatabaseID 恰一非空（scope 互斥）。
+	AppID      string
+	DatabaseID string
+	// Process 仅 app scope 可选。
+	Process    string
+	Start, End time.Time
+	// Step 已由 ClampScopedStep 钳制（整数秒，≥15s）。
+	Step time.Duration
+	// MaxSeries 是截断上限（0 = ScopedMetricsMaxSeries）。
+	MaxSeries int
+}
+
+// SeriesPage 是 scoped 查询结果页：Series 已按上限截断，Truncated 标记
+// 是否截断，Total 是截断前的命中序列数。
+type SeriesPage struct {
+	Series    []Series
+	Truncated bool
+	Total     int
 }
 
 // Series 是一段指标序列。
@@ -428,6 +459,16 @@ type MetricsQueryError struct {
 func (e *MetricsQueryError) Error() string {
 	return fmt.Sprintf("metrics query rejected by upstream: status %d: %s", e.Status, e.Message)
 }
+
+// ErrMetricsResultTooLarge 是查询结果超过服务端上限的哨兵（响应体 > 8 MiB
+// 或 raw 序列 > 1000；H8 阶段 B，设计文档 §5.3.3）：超限是调用方查询/时间
+// 窗过宽，API 面落 E_METRICS_RESULT_TOO_LARGE（429），不是 E_INTERNAL。
+var ErrMetricsResultTooLarge = errors.New("metrics result exceeds the server-side cap")
+
+// ErrMetricsQueryTimeout 是查询超过 provider 30s 上界的哨兵（H8 阶段 B）：
+// API 面落 E_METRICS_QUERY_TIMEOUT（504）。客户端主动取消（父 ctx 取消）
+// 不归入本哨兵。
+var ErrMetricsQueryTimeout = errors.New("metrics query timed out")
 
 // ObjectStoreS3Config 是外置 S3 兼容 ObjectStore 目标的配置面（ADR-0042：
 // 复用 platform_backup.s3 五元组——Backup 是唯一消费方；prefix 归 restic

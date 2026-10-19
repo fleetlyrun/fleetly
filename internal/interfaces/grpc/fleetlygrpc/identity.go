@@ -44,7 +44,8 @@ func (svc *UsersService) WhoAmI(ctx context.Context, _ *identityv1.WhoAmIRequest
 		TokenId: id.TokenID, TokenName: id.TokenName,
 		TeamId: id.TeamID, RoleId: id.RoleID, RoleName: id.RoleName,
 		UserId: id.UserID, UserName: id.UserName,
-		Scopes: id.ScopeStrings(),
+		Scopes:        id.ScopeStrings(),
+		PlatformAdmin: callerIsPlatformAdmin(id),
 	}, nil
 }
 

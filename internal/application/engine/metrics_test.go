@@ -48,6 +48,9 @@ func (f *fakeMetrics) ImportPrometheus(_ context.Context, body []byte, _ map[str
 func (f *fakeMetrics) QuerySeries(context.Context, string, time.Time, time.Time, time.Duration) ([]capability.Series, error) {
 	return nil, nil
 }
+func (f *fakeMetrics) QueryScoped(context.Context, capability.ScopedQuery) (capability.SeriesPage, error) {
+	return capability.SeriesPage{}, nil
+}
 
 // cadvisorFixture 是 exposition 夹具（平台容器 + 系统噪音行混布）。两个
 // 平台载体：web（app 域——进告警样本 + 词汇）、postgres（database 域——

@@ -82,14 +82,29 @@ service LogsService {
   }
 }
 
-// MetricsService：指标查询面（ADR-0041）：PromQL 透传（Console F2.6 图表
-// 的数据源；CLI 诊断面）。Metrics 面停用时精确失败。行级隔离由调用方
-// 查询构造承载（App 域标签过滤）——存储是平台单租户。
+// MetricsService：指标查询面（ADR-0041）。
+//   - QueryMetrics 是平台管理员诊断面：原始 PromQL 直通，仅平台管理员可
+//     调用（存储是平台单租户，服务端无法对用户表达式做行级约束）；
+//   - QueryScopedMetrics 是租户图表面：服务端按 scope + metric 白名单构造
+//     固定 PromQL，调用方无法指定表达式；行级授权在本 handler。
+//
+// Metrics 面停用时两者均精确失败。
 service MetricsService {
   option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
 
+  // QueryMetrics 原样透传 PromQL（平台管理员诊断；member 调用 E_FORBIDDEN）。
   rpc QueryMetrics(QueryMetricsRequest) returns (QueryMetricsResponse) {
     option (google.api.http) = { get: "/v1/metrics" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "metrics" op: SCOPE_OP_READ }
+    };
+  }
+
+  // QueryScopedMetrics 按 App/Database 作用域查固定指标模板。
+  // 授权：metrics:read + app/database 所在 Project 的行级 Team 比对。
+  rpc QueryScopedMetrics(QueryScopedMetricsRequest) returns (QueryScopedMetricsResponse) {
+    option (google.api.http) = { get: "/v1/metrics/scoped" };
     option (grpcapi.v1.method_auth) = {
       access: ACCESS_LEVEL_SERVER
       api_key_scope: { resource: "metrics" op: SCOPE_OP_READ }
@@ -264,8 +279,8 @@ message StreamLogsResponse {
 // ---- Metrics（ADR-0041）----
 
 message QueryMetricsRequest {
-  // query 是 PromQL（透传；App 域过滤经 container_label_fleetly_ns_*
-  // 序列标签——CLI/Console 侧构造）。必填：空查询无从起查。
+  // query 是 PromQL（原样透传；平台管理员诊断面，服务端不做行级约束）。
+  // 必填：空查询无从起查。
   string query = 1 [
     (buf.validate.field).cel = {
       id: "string.required"
@@ -292,6 +307,45 @@ message MetricSeries {
 message MetricPoint {
   string time = 1;
   double value = 2;
+}
+
+// QueryScopedMetricsRequest 是租户图表面：调用方只给 scope（App 或
+// Database 恰一）+ 指标白名单 + 时间窗，PromQL 由服务端固定模板构造
+//（H8 设计文档 §5.1/§5.3）。
+message QueryScopedMetricsRequest {
+  // scope 互斥：app_id 与 database_id 恰一非空。
+  option (buf.validate.message).cel = {
+    id: "queryscopedmetrics.scope_exactly_one"
+    message: "exactly one of app_id or database_id must be set"
+    expression: "(this.app_id == '') != (this.database_id == '')"
+  };
+  // app_id 与 database_id 恰一非空（scope 互斥）。
+  string app_id = 1;
+  string database_id = 2;
+  // metric 白名单：cpu_percent | cpu_cores | memory_working_set_bytes
+  //（与告警规则 metric 词表同形；非法值在受理面 E_INVALID_ARGUMENT）。
+  string metric = 3 [
+    (buf.validate.field).cel = {
+      id: "queryscopedmetrics.metric_vocab"
+      message: "metric must be one of cpu_percent, cpu_cores, memory_working_set_bytes"
+      expression: "this in ['cpu_percent', 'cpu_cores', 'memory_working_set_bytes']"
+    }
+  ];
+  // process 仅 app scope 可用；小写 dns 形态（与 Process 名字符集同源）。
+  string process = 4;
+  // start/end 是 RFC3339；空 end = now，空 start = end 前 1h（与 raw 同）。
+  string start = 5;
+  string end = 6;
+  // step_seconds 是请求步长；0 = 服务端按窗口自动，实际值会被钳制。
+  int64 step_seconds = 7;
+}
+
+message QueryScopedMetricsResponse {
+  repeated MetricSeries series = 1;
+  // truncated 表示命中序列数超过服务端上限，返回的是前 N 条。
+  bool truncated = 2;
+  // series_total 是截断前的命中序列数（未截断 = len(series)）。
+  int32 series_total = 3;
 }
 
 // ---- Alerting（ADR-0041）----

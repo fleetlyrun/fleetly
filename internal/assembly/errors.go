@@ -48,6 +48,9 @@ import (
 //     Q-11 限额错位教训——不得死于不透明 RESOURCE_EXHAUSTED）、
 //     E_QUEUE_FULL 与 E_QUOTA_EXCEEDED 与 E_RATE_LIMITED→429（Retry-After
 //     提取仍按 429 生效——E_RATE_LIMITED 携带 RetryInfo detail）、
+//     E_METRICS_RESULT_TOO_LARGE→429（指标结果超体/超序列是调用方查询
+//     过宽；H8 §5.7 钉 429）、E_METRICS_QUERY_TIMEOUT→504（provider 上界
+//     到期，语义是网关超时而非请求错误）、
 //     E_UNAUTHENTICATED 与 E_INVALID_SIGNATURE→401、E_FORBIDDEN 与
 //     E_INVALID_INVITATION→403、E_INTERNAL→500。
 //
@@ -73,6 +76,8 @@ var errcodeToHTTP = map[string]int{
 	"E_INVALID_SIGNATURE":         http.StatusUnauthorized,
 	"E_LOG_STORE_UNAVAILABLE":     http.StatusServiceUnavailable,
 	"E_MASTER_KEY_UNAVAILABLE":    http.StatusServiceUnavailable,
+	"E_METRICS_QUERY_TIMEOUT":     http.StatusGatewayTimeout,
+	"E_METRICS_RESULT_TOO_LARGE":  http.StatusTooManyRequests,
 	"E_METRICS_STORE_UNAVAILABLE": http.StatusServiceUnavailable,
 	"E_NODE_RELAY_OFFLINE":        http.StatusServiceUnavailable,
 	"E_DATABASE_ROTATE_FAILED":    http.StatusConflict,

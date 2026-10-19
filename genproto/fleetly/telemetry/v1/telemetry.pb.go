@@ -722,8 +722,8 @@ func (x *StreamLogsResponse) GetLine() []byte {
 
 type QueryMetricsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// query 是 PromQL（透传；App 域过滤经 container_label_fleetly_ns_*
-	// 序列标签——CLI/Console 侧构造）。必填：空查询无从起查。
+	// query 是 PromQL（原样透传；平台管理员诊断面，服务端不做行级约束）。
+	// 必填：空查询无从起查。
 	Query string `protobuf:"bytes,1,opt,name=query,proto3" json:"query,omitempty"`
 	// start/end 是时间窗（RFC3339；空 end = 现在，空 start = end 前 1h）。
 	Start string `protobuf:"bytes,2,opt,name=start,proto3" json:"start,omitempty"`
@@ -940,6 +940,169 @@ func (x *MetricPoint) GetValue() float64 {
 	return 0
 }
 
+// QueryScopedMetricsRequest 是租户图表面：调用方只给 scope（App 或
+// Database 恰一）+ 指标白名单 + 时间窗，PromQL 由服务端固定模板构造
+// （H8 设计文档 §5.1/§5.3）。
+type QueryScopedMetricsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// app_id 与 database_id 恰一非空（scope 互斥）。
+	AppId      string `protobuf:"bytes,1,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
+	DatabaseId string `protobuf:"bytes,2,opt,name=database_id,json=databaseId,proto3" json:"database_id,omitempty"`
+	// metric 白名单：cpu_percent | cpu_cores | memory_working_set_bytes
+	// （与告警规则 metric 词表同形；非法值在受理面 E_INVALID_ARGUMENT）。
+	Metric string `protobuf:"bytes,3,opt,name=metric,proto3" json:"metric,omitempty"`
+	// process 仅 app scope 可用；小写 dns 形态（与 Process 名字符集同源）。
+	Process string `protobuf:"bytes,4,opt,name=process,proto3" json:"process,omitempty"`
+	// start/end 是 RFC3339；空 end = now，空 start = end 前 1h（与 raw 同）。
+	Start string `protobuf:"bytes,5,opt,name=start,proto3" json:"start,omitempty"`
+	End   string `protobuf:"bytes,6,opt,name=end,proto3" json:"end,omitempty"`
+	// step_seconds 是请求步长；0 = 服务端按窗口自动，实际值会被钳制。
+	StepSeconds   int64 `protobuf:"varint,7,opt,name=step_seconds,json=stepSeconds,proto3" json:"step_seconds,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *QueryScopedMetricsRequest) Reset() {
+	*x = QueryScopedMetricsRequest{}
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *QueryScopedMetricsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*QueryScopedMetricsRequest) ProtoMessage() {}
+
+func (x *QueryScopedMetricsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use QueryScopedMetricsRequest.ProtoReflect.Descriptor instead.
+func (*QueryScopedMetricsRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *QueryScopedMetricsRequest) GetAppId() string {
+	if x != nil {
+		return x.AppId
+	}
+	return ""
+}
+
+func (x *QueryScopedMetricsRequest) GetDatabaseId() string {
+	if x != nil {
+		return x.DatabaseId
+	}
+	return ""
+}
+
+func (x *QueryScopedMetricsRequest) GetMetric() string {
+	if x != nil {
+		return x.Metric
+	}
+	return ""
+}
+
+func (x *QueryScopedMetricsRequest) GetProcess() string {
+	if x != nil {
+		return x.Process
+	}
+	return ""
+}
+
+func (x *QueryScopedMetricsRequest) GetStart() string {
+	if x != nil {
+		return x.Start
+	}
+	return ""
+}
+
+func (x *QueryScopedMetricsRequest) GetEnd() string {
+	if x != nil {
+		return x.End
+	}
+	return ""
+}
+
+func (x *QueryScopedMetricsRequest) GetStepSeconds() int64 {
+	if x != nil {
+		return x.StepSeconds
+	}
+	return 0
+}
+
+type QueryScopedMetricsResponse struct {
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Series []*MetricSeries        `protobuf:"bytes,1,rep,name=series,proto3" json:"series,omitempty"`
+	// truncated 表示命中序列数超过服务端上限，返回的是前 N 条。
+	Truncated bool `protobuf:"varint,2,opt,name=truncated,proto3" json:"truncated,omitempty"`
+	// series_total 是截断前的命中序列数（未截断 = len(series)）。
+	SeriesTotal   int32 `protobuf:"varint,3,opt,name=series_total,json=seriesTotal,proto3" json:"series_total,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *QueryScopedMetricsResponse) Reset() {
+	*x = QueryScopedMetricsResponse{}
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *QueryScopedMetricsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*QueryScopedMetricsResponse) ProtoMessage() {}
+
+func (x *QueryScopedMetricsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use QueryScopedMetricsResponse.ProtoReflect.Descriptor instead.
+func (*QueryScopedMetricsResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *QueryScopedMetricsResponse) GetSeries() []*MetricSeries {
+	if x != nil {
+		return x.Series
+	}
+	return nil
+}
+
+func (x *QueryScopedMetricsResponse) GetTruncated() bool {
+	if x != nil {
+		return x.Truncated
+	}
+	return false
+}
+
+func (x *QueryScopedMetricsResponse) GetSeriesTotal() int32 {
+	if x != nil {
+		return x.SeriesTotal
+	}
+	return 0
+}
+
 type NotificationChannel struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -957,7 +1120,7 @@ type NotificationChannel struct {
 
 func (x *NotificationChannel) Reset() {
 	*x = NotificationChannel{}
-	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[15]
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -969,7 +1132,7 @@ func (x *NotificationChannel) String() string {
 func (*NotificationChannel) ProtoMessage() {}
 
 func (x *NotificationChannel) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[15]
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -982,7 +1145,7 @@ func (x *NotificationChannel) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NotificationChannel.ProtoReflect.Descriptor instead.
 func (*NotificationChannel) Descriptor() ([]byte, []int) {
-	return file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP(), []int{15}
+	return file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *NotificationChannel) GetId() string {
@@ -1049,7 +1212,7 @@ type CreateNotificationChannelRequest struct {
 
 func (x *CreateNotificationChannelRequest) Reset() {
 	*x = CreateNotificationChannelRequest{}
-	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[16]
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1061,7 +1224,7 @@ func (x *CreateNotificationChannelRequest) String() string {
 func (*CreateNotificationChannelRequest) ProtoMessage() {}
 
 func (x *CreateNotificationChannelRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[16]
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1074,7 +1237,7 @@ func (x *CreateNotificationChannelRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateNotificationChannelRequest.ProtoReflect.Descriptor instead.
 func (*CreateNotificationChannelRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP(), []int{16}
+	return file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *CreateNotificationChannelRequest) GetName() string {
@@ -1121,7 +1284,7 @@ type CreateNotificationChannelResponse struct {
 
 func (x *CreateNotificationChannelResponse) Reset() {
 	*x = CreateNotificationChannelResponse{}
-	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[17]
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1133,7 +1296,7 @@ func (x *CreateNotificationChannelResponse) String() string {
 func (*CreateNotificationChannelResponse) ProtoMessage() {}
 
 func (x *CreateNotificationChannelResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[17]
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1146,7 +1309,7 @@ func (x *CreateNotificationChannelResponse) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use CreateNotificationChannelResponse.ProtoReflect.Descriptor instead.
 func (*CreateNotificationChannelResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP(), []int{17}
+	return file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *CreateNotificationChannelResponse) GetChannel() *NotificationChannel {
@@ -1166,7 +1329,7 @@ type TestNotificationChannelRequest struct {
 
 func (x *TestNotificationChannelRequest) Reset() {
 	*x = TestNotificationChannelRequest{}
-	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[18]
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1178,7 +1341,7 @@ func (x *TestNotificationChannelRequest) String() string {
 func (*TestNotificationChannelRequest) ProtoMessage() {}
 
 func (x *TestNotificationChannelRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[18]
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1191,7 +1354,7 @@ func (x *TestNotificationChannelRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TestNotificationChannelRequest.ProtoReflect.Descriptor instead.
 func (*TestNotificationChannelRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP(), []int{18}
+	return file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *TestNotificationChannelRequest) GetChannelId() string {
@@ -1212,7 +1375,7 @@ type TestNotificationChannelResponse struct {
 
 func (x *TestNotificationChannelResponse) Reset() {
 	*x = TestNotificationChannelResponse{}
-	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[19]
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1224,7 +1387,7 @@ func (x *TestNotificationChannelResponse) String() string {
 func (*TestNotificationChannelResponse) ProtoMessage() {}
 
 func (x *TestNotificationChannelResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[19]
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1237,7 +1400,7 @@ func (x *TestNotificationChannelResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TestNotificationChannelResponse.ProtoReflect.Descriptor instead.
 func (*TestNotificationChannelResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP(), []int{19}
+	return file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *TestNotificationChannelResponse) GetDelivered() bool {
@@ -1262,7 +1425,7 @@ type ListNotificationChannelsRequest struct {
 
 func (x *ListNotificationChannelsRequest) Reset() {
 	*x = ListNotificationChannelsRequest{}
-	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[20]
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1274,7 +1437,7 @@ func (x *ListNotificationChannelsRequest) String() string {
 func (*ListNotificationChannelsRequest) ProtoMessage() {}
 
 func (x *ListNotificationChannelsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[20]
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1287,7 +1450,7 @@ func (x *ListNotificationChannelsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListNotificationChannelsRequest.ProtoReflect.Descriptor instead.
 func (*ListNotificationChannelsRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP(), []int{20}
+	return file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP(), []int{22}
 }
 
 type ListNotificationChannelsResponse struct {
@@ -1299,7 +1462,7 @@ type ListNotificationChannelsResponse struct {
 
 func (x *ListNotificationChannelsResponse) Reset() {
 	*x = ListNotificationChannelsResponse{}
-	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[21]
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1311,7 +1474,7 @@ func (x *ListNotificationChannelsResponse) String() string {
 func (*ListNotificationChannelsResponse) ProtoMessage() {}
 
 func (x *ListNotificationChannelsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[21]
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1324,7 +1487,7 @@ func (x *ListNotificationChannelsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListNotificationChannelsResponse.ProtoReflect.Descriptor instead.
 func (*ListNotificationChannelsResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP(), []int{21}
+	return file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *ListNotificationChannelsResponse) GetChannels() []*NotificationChannel {
@@ -1344,7 +1507,7 @@ type DeleteNotificationChannelRequest struct {
 
 func (x *DeleteNotificationChannelRequest) Reset() {
 	*x = DeleteNotificationChannelRequest{}
-	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[22]
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1356,7 +1519,7 @@ func (x *DeleteNotificationChannelRequest) String() string {
 func (*DeleteNotificationChannelRequest) ProtoMessage() {}
 
 func (x *DeleteNotificationChannelRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[22]
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1369,7 +1532,7 @@ func (x *DeleteNotificationChannelRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteNotificationChannelRequest.ProtoReflect.Descriptor instead.
 func (*DeleteNotificationChannelRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP(), []int{22}
+	return file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *DeleteNotificationChannelRequest) GetChannelId() string {
@@ -1387,7 +1550,7 @@ type DeleteNotificationChannelResponse struct {
 
 func (x *DeleteNotificationChannelResponse) Reset() {
 	*x = DeleteNotificationChannelResponse{}
-	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[23]
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1399,7 +1562,7 @@ func (x *DeleteNotificationChannelResponse) String() string {
 func (*DeleteNotificationChannelResponse) ProtoMessage() {}
 
 func (x *DeleteNotificationChannelResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[23]
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1412,7 +1575,7 @@ func (x *DeleteNotificationChannelResponse) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use DeleteNotificationChannelResponse.ProtoReflect.Descriptor instead.
 func (*DeleteNotificationChannelResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP(), []int{23}
+	return file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP(), []int{25}
 }
 
 type AlertRule struct {
@@ -1436,7 +1599,7 @@ type AlertRule struct {
 
 func (x *AlertRule) Reset() {
 	*x = AlertRule{}
-	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[24]
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1448,7 +1611,7 @@ func (x *AlertRule) String() string {
 func (*AlertRule) ProtoMessage() {}
 
 func (x *AlertRule) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[24]
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1461,7 +1624,7 @@ func (x *AlertRule) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AlertRule.ProtoReflect.Descriptor instead.
 func (*AlertRule) Descriptor() ([]byte, []int) {
-	return file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP(), []int{24}
+	return file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *AlertRule) GetId() string {
@@ -1545,7 +1708,7 @@ type CreateAlertRuleRequest struct {
 
 func (x *CreateAlertRuleRequest) Reset() {
 	*x = CreateAlertRuleRequest{}
-	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[25]
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1557,7 +1720,7 @@ func (x *CreateAlertRuleRequest) String() string {
 func (*CreateAlertRuleRequest) ProtoMessage() {}
 
 func (x *CreateAlertRuleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[25]
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1570,7 +1733,7 @@ func (x *CreateAlertRuleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateAlertRuleRequest.ProtoReflect.Descriptor instead.
 func (*CreateAlertRuleRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP(), []int{25}
+	return file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *CreateAlertRuleRequest) GetAppId() string {
@@ -1610,7 +1773,7 @@ type CreateAlertRuleResponse struct {
 
 func (x *CreateAlertRuleResponse) Reset() {
 	*x = CreateAlertRuleResponse{}
-	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[26]
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1622,7 +1785,7 @@ func (x *CreateAlertRuleResponse) String() string {
 func (*CreateAlertRuleResponse) ProtoMessage() {}
 
 func (x *CreateAlertRuleResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[26]
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1635,7 +1798,7 @@ func (x *CreateAlertRuleResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateAlertRuleResponse.ProtoReflect.Descriptor instead.
 func (*CreateAlertRuleResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP(), []int{26}
+	return file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *CreateAlertRuleResponse) GetRule() *AlertRule {
@@ -1655,7 +1818,7 @@ type ListAlertRulesRequest struct {
 
 func (x *ListAlertRulesRequest) Reset() {
 	*x = ListAlertRulesRequest{}
-	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[27]
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1667,7 +1830,7 @@ func (x *ListAlertRulesRequest) String() string {
 func (*ListAlertRulesRequest) ProtoMessage() {}
 
 func (x *ListAlertRulesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[27]
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1680,7 +1843,7 @@ func (x *ListAlertRulesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAlertRulesRequest.ProtoReflect.Descriptor instead.
 func (*ListAlertRulesRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP(), []int{27}
+	return file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *ListAlertRulesRequest) GetAppId() string {
@@ -1699,7 +1862,7 @@ type ListAlertRulesResponse struct {
 
 func (x *ListAlertRulesResponse) Reset() {
 	*x = ListAlertRulesResponse{}
-	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[28]
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1711,7 +1874,7 @@ func (x *ListAlertRulesResponse) String() string {
 func (*ListAlertRulesResponse) ProtoMessage() {}
 
 func (x *ListAlertRulesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[28]
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1724,7 +1887,7 @@ func (x *ListAlertRulesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAlertRulesResponse.ProtoReflect.Descriptor instead.
 func (*ListAlertRulesResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP(), []int{28}
+	return file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *ListAlertRulesResponse) GetRules() []*AlertRule {
@@ -1744,7 +1907,7 @@ type DeleteAlertRuleRequest struct {
 
 func (x *DeleteAlertRuleRequest) Reset() {
 	*x = DeleteAlertRuleRequest{}
-	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[29]
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1756,7 +1919,7 @@ func (x *DeleteAlertRuleRequest) String() string {
 func (*DeleteAlertRuleRequest) ProtoMessage() {}
 
 func (x *DeleteAlertRuleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[29]
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1769,7 +1932,7 @@ func (x *DeleteAlertRuleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteAlertRuleRequest.ProtoReflect.Descriptor instead.
 func (*DeleteAlertRuleRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP(), []int{29}
+	return file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *DeleteAlertRuleRequest) GetRuleId() string {
@@ -1787,7 +1950,7 @@ type DeleteAlertRuleResponse struct {
 
 func (x *DeleteAlertRuleResponse) Reset() {
 	*x = DeleteAlertRuleResponse{}
-	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[30]
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1799,7 +1962,7 @@ func (x *DeleteAlertRuleResponse) String() string {
 func (*DeleteAlertRuleResponse) ProtoMessage() {}
 
 func (x *DeleteAlertRuleResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[30]
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1812,7 +1975,7 @@ func (x *DeleteAlertRuleResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteAlertRuleResponse.ProtoReflect.Descriptor instead.
 func (*DeleteAlertRuleResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP(), []int{30}
+	return file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP(), []int{32}
 }
 
 type AlertState struct {
@@ -1832,7 +1995,7 @@ type AlertState struct {
 
 func (x *AlertState) Reset() {
 	*x = AlertState{}
-	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[31]
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1844,7 +2007,7 @@ func (x *AlertState) String() string {
 func (*AlertState) ProtoMessage() {}
 
 func (x *AlertState) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[31]
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1857,7 +2020,7 @@ func (x *AlertState) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AlertState.ProtoReflect.Descriptor instead.
 func (*AlertState) Descriptor() ([]byte, []int) {
-	return file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP(), []int{31}
+	return file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *AlertState) GetRuleId() string {
@@ -1917,7 +2080,7 @@ type ListAlertStatesRequest struct {
 
 func (x *ListAlertStatesRequest) Reset() {
 	*x = ListAlertStatesRequest{}
-	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[32]
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1929,7 +2092,7 @@ func (x *ListAlertStatesRequest) String() string {
 func (*ListAlertStatesRequest) ProtoMessage() {}
 
 func (x *ListAlertStatesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[32]
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1942,7 +2105,7 @@ func (x *ListAlertStatesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAlertStatesRequest.ProtoReflect.Descriptor instead.
 func (*ListAlertStatesRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP(), []int{32}
+	return file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP(), []int{34}
 }
 
 type ListAlertStatesResponse struct {
@@ -1954,7 +2117,7 @@ type ListAlertStatesResponse struct {
 
 func (x *ListAlertStatesResponse) Reset() {
 	*x = ListAlertStatesResponse{}
-	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[33]
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1966,7 +2129,7 @@ func (x *ListAlertStatesResponse) String() string {
 func (*ListAlertStatesResponse) ProtoMessage() {}
 
 func (x *ListAlertStatesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[33]
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1979,7 +2142,7 @@ func (x *ListAlertStatesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAlertStatesResponse.ProtoReflect.Descriptor instead.
 func (*ListAlertStatesResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP(), []int{33}
+	return file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *ListAlertStatesResponse) GetStates() []*AlertState {
@@ -2062,7 +2225,22 @@ const file_fleetly_telemetry_v1_telemetry_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"7\n" +
 	"\vMetricPoint\x12\x12\n" +
 	"\x04time\x18\x01 \x01(\tR\x04time\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\x01R\x05value\"\xa9\x01\n" +
+	"\x05value\x18\x02 \x01(\x01R\x05value\"\x9a\x04\n" +
+	"\x19QueryScopedMetricsRequest\x12\x15\n" +
+	"\x06app_id\x18\x01 \x01(\tR\x05appId\x12\x1f\n" +
+	"\vdatabase_id\x18\x02 \x01(\tR\n" +
+	"databaseId\x12\xcc\x01\n" +
+	"\x06metric\x18\x03 \x01(\tB\xb3\x01\xbaH\xaf\x01\xba\x01\xab\x01\n" +
+	"\x1fqueryscopedmetrics.metric_vocab\x12Fmetric must be one of cpu_percent, cpu_cores, memory_working_set_bytes\x1a@this in ['cpu_percent', 'cpu_cores', 'memory_working_set_bytes']R\x06metric\x12\x18\n" +
+	"\aprocess\x18\x04 \x01(\tR\aprocess\x12\x14\n" +
+	"\x05start\x18\x05 \x01(\tR\x05start\x12\x10\n" +
+	"\x03end\x18\x06 \x01(\tR\x03end\x12!\n" +
+	"\fstep_seconds\x18\a \x01(\x03R\vstepSeconds:\x90\x01\xbaH\x8c\x01\x1a\x89\x01\n" +
+	"$queryscopedmetrics.scope_exactly_one\x120exactly one of app_id or database_id must be set\x1a/(this.app_id == '') != (this.database_id == '')\"\x99\x01\n" +
+	"\x1aQueryScopedMetricsResponse\x12:\n" +
+	"\x06series\x18\x01 \x03(\v2\".fleetly.telemetry.v1.MetricSeriesR\x06series\x12\x1c\n" +
+	"\ttruncated\x18\x02 \x01(\bR\ttruncated\x12!\n" +
+	"\fseries_total\x18\x03 \x01(\x05R\vseriesTotal\"\xa9\x01\n" +
 	"\x13NotificationChannel\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x12\n" +
@@ -2159,10 +2337,12 @@ const file_fleetly_telemetry_v1_telemetry_proto_rawDesc = "" +
 	"\n" +
 	"StreamLogs\x12'.fleetly.telemetry.v1.StreamLogsRequest\x1a(.fleetly.telemetry.v1.StreamLogsResponse\" \xea\xc4\x19\f\b\x03\"\b\n" +
 	"\x04logs\x10\x01\x82\xd3\xe4\x93\x02\n" +
-	"\x12\b/v1/logs0\x01\x1a\x06\xf2\xc4\x19\x02\b\x032\xa8\x01\n" +
+	"\x12\b/v1/logs0\x01\x1a\x06\xf2\xc4\x19\x02\b\x032\xd1\x02\n" +
 	"\x0eMetricsService\x12\x8d\x01\n" +
 	"\fQueryMetrics\x12).fleetly.telemetry.v1.QueryMetricsRequest\x1a*.fleetly.telemetry.v1.QueryMetricsResponse\"&\xea\xc4\x19\x0f\b\x03\"\v\n" +
-	"\ametrics\x10\x01\x82\xd3\xe4\x93\x02\r\x12\v/v1/metrics\x1a\x06\xf2\xc4\x19\x02\b\x032\x91\v\n" +
+	"\ametrics\x10\x01\x82\xd3\xe4\x93\x02\r\x12\v/v1/metrics\x12\xa6\x01\n" +
+	"\x12QueryScopedMetrics\x12/.fleetly.telemetry.v1.QueryScopedMetricsRequest\x1a0.fleetly.telemetry.v1.QueryScopedMetricsResponse\"-\xea\xc4\x19\x0f\b\x03\"\v\n" +
+	"\ametrics\x10\x01\x82\xd3\xe4\x93\x02\x14\x12\x12/v1/metrics/scoped\x1a\x06\xf2\xc4\x19\x02\b\x032\x91\v\n" +
 	"\x0fAlertingService\x12\xb9\x01\n" +
 	"\x19CreateNotificationChannel\x126.fleetly.telemetry.v1.CreateNotificationChannelRequest\x1a7.fleetly.telemetry.v1.CreateNotificationChannelResponse\"+\xea\xc4\x19\x10\b\x03\"\f\n" +
 	"\bchannels\x10\x02\x82\xd3\xe4\x93\x02\x11:\x01*\"\f/v1/channels\x12\xc5\x01\n" +
@@ -2201,7 +2381,7 @@ func file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP() []byte {
 	return file_fleetly_telemetry_v1_telemetry_proto_rawDescData
 }
 
-var file_fleetly_telemetry_v1_telemetry_proto_msgTypes = make([]protoimpl.MessageInfo, 35)
+var file_fleetly_telemetry_v1_telemetry_proto_msgTypes = make([]protoimpl.MessageInfo, 37)
 var file_fleetly_telemetry_v1_telemetry_proto_goTypes = []any{
 	(*Event)(nil),                             // 0: fleetly.telemetry.v1.Event
 	(*ListEventsRequest)(nil),                 // 1: fleetly.telemetry.v1.ListEventsRequest
@@ -2218,71 +2398,76 @@ var file_fleetly_telemetry_v1_telemetry_proto_goTypes = []any{
 	(*QueryMetricsResponse)(nil),              // 12: fleetly.telemetry.v1.QueryMetricsResponse
 	(*MetricSeries)(nil),                      // 13: fleetly.telemetry.v1.MetricSeries
 	(*MetricPoint)(nil),                       // 14: fleetly.telemetry.v1.MetricPoint
-	(*NotificationChannel)(nil),               // 15: fleetly.telemetry.v1.NotificationChannel
-	(*CreateNotificationChannelRequest)(nil),  // 16: fleetly.telemetry.v1.CreateNotificationChannelRequest
-	(*CreateNotificationChannelResponse)(nil), // 17: fleetly.telemetry.v1.CreateNotificationChannelResponse
-	(*TestNotificationChannelRequest)(nil),    // 18: fleetly.telemetry.v1.TestNotificationChannelRequest
-	(*TestNotificationChannelResponse)(nil),   // 19: fleetly.telemetry.v1.TestNotificationChannelResponse
-	(*ListNotificationChannelsRequest)(nil),   // 20: fleetly.telemetry.v1.ListNotificationChannelsRequest
-	(*ListNotificationChannelsResponse)(nil),  // 21: fleetly.telemetry.v1.ListNotificationChannelsResponse
-	(*DeleteNotificationChannelRequest)(nil),  // 22: fleetly.telemetry.v1.DeleteNotificationChannelRequest
-	(*DeleteNotificationChannelResponse)(nil), // 23: fleetly.telemetry.v1.DeleteNotificationChannelResponse
-	(*AlertRule)(nil),                         // 24: fleetly.telemetry.v1.AlertRule
-	(*CreateAlertRuleRequest)(nil),            // 25: fleetly.telemetry.v1.CreateAlertRuleRequest
-	(*CreateAlertRuleResponse)(nil),           // 26: fleetly.telemetry.v1.CreateAlertRuleResponse
-	(*ListAlertRulesRequest)(nil),             // 27: fleetly.telemetry.v1.ListAlertRulesRequest
-	(*ListAlertRulesResponse)(nil),            // 28: fleetly.telemetry.v1.ListAlertRulesResponse
-	(*DeleteAlertRuleRequest)(nil),            // 29: fleetly.telemetry.v1.DeleteAlertRuleRequest
-	(*DeleteAlertRuleResponse)(nil),           // 30: fleetly.telemetry.v1.DeleteAlertRuleResponse
-	(*AlertState)(nil),                        // 31: fleetly.telemetry.v1.AlertState
-	(*ListAlertStatesRequest)(nil),            // 32: fleetly.telemetry.v1.ListAlertStatesRequest
-	(*ListAlertStatesResponse)(nil),           // 33: fleetly.telemetry.v1.ListAlertStatesResponse
-	nil,                                       // 34: fleetly.telemetry.v1.MetricSeries.LabelsEntry
+	(*QueryScopedMetricsRequest)(nil),         // 15: fleetly.telemetry.v1.QueryScopedMetricsRequest
+	(*QueryScopedMetricsResponse)(nil),        // 16: fleetly.telemetry.v1.QueryScopedMetricsResponse
+	(*NotificationChannel)(nil),               // 17: fleetly.telemetry.v1.NotificationChannel
+	(*CreateNotificationChannelRequest)(nil),  // 18: fleetly.telemetry.v1.CreateNotificationChannelRequest
+	(*CreateNotificationChannelResponse)(nil), // 19: fleetly.telemetry.v1.CreateNotificationChannelResponse
+	(*TestNotificationChannelRequest)(nil),    // 20: fleetly.telemetry.v1.TestNotificationChannelRequest
+	(*TestNotificationChannelResponse)(nil),   // 21: fleetly.telemetry.v1.TestNotificationChannelResponse
+	(*ListNotificationChannelsRequest)(nil),   // 22: fleetly.telemetry.v1.ListNotificationChannelsRequest
+	(*ListNotificationChannelsResponse)(nil),  // 23: fleetly.telemetry.v1.ListNotificationChannelsResponse
+	(*DeleteNotificationChannelRequest)(nil),  // 24: fleetly.telemetry.v1.DeleteNotificationChannelRequest
+	(*DeleteNotificationChannelResponse)(nil), // 25: fleetly.telemetry.v1.DeleteNotificationChannelResponse
+	(*AlertRule)(nil),                         // 26: fleetly.telemetry.v1.AlertRule
+	(*CreateAlertRuleRequest)(nil),            // 27: fleetly.telemetry.v1.CreateAlertRuleRequest
+	(*CreateAlertRuleResponse)(nil),           // 28: fleetly.telemetry.v1.CreateAlertRuleResponse
+	(*ListAlertRulesRequest)(nil),             // 29: fleetly.telemetry.v1.ListAlertRulesRequest
+	(*ListAlertRulesResponse)(nil),            // 30: fleetly.telemetry.v1.ListAlertRulesResponse
+	(*DeleteAlertRuleRequest)(nil),            // 31: fleetly.telemetry.v1.DeleteAlertRuleRequest
+	(*DeleteAlertRuleResponse)(nil),           // 32: fleetly.telemetry.v1.DeleteAlertRuleResponse
+	(*AlertState)(nil),                        // 33: fleetly.telemetry.v1.AlertState
+	(*ListAlertStatesRequest)(nil),            // 34: fleetly.telemetry.v1.ListAlertStatesRequest
+	(*ListAlertStatesResponse)(nil),           // 35: fleetly.telemetry.v1.ListAlertStatesResponse
+	nil,                                       // 36: fleetly.telemetry.v1.MetricSeries.LabelsEntry
 }
 var file_fleetly_telemetry_v1_telemetry_proto_depIdxs = []int32{
 	0,  // 0: fleetly.telemetry.v1.ListEventsResponse.events:type_name -> fleetly.telemetry.v1.Event
 	0,  // 1: fleetly.telemetry.v1.StreamEventsResponse.event:type_name -> fleetly.telemetry.v1.Event
 	13, // 2: fleetly.telemetry.v1.QueryMetricsResponse.series:type_name -> fleetly.telemetry.v1.MetricSeries
-	34, // 3: fleetly.telemetry.v1.MetricSeries.labels:type_name -> fleetly.telemetry.v1.MetricSeries.LabelsEntry
+	36, // 3: fleetly.telemetry.v1.MetricSeries.labels:type_name -> fleetly.telemetry.v1.MetricSeries.LabelsEntry
 	14, // 4: fleetly.telemetry.v1.MetricSeries.points:type_name -> fleetly.telemetry.v1.MetricPoint
-	15, // 5: fleetly.telemetry.v1.CreateNotificationChannelResponse.channel:type_name -> fleetly.telemetry.v1.NotificationChannel
-	15, // 6: fleetly.telemetry.v1.ListNotificationChannelsResponse.channels:type_name -> fleetly.telemetry.v1.NotificationChannel
-	24, // 7: fleetly.telemetry.v1.CreateAlertRuleResponse.rule:type_name -> fleetly.telemetry.v1.AlertRule
-	24, // 8: fleetly.telemetry.v1.ListAlertRulesResponse.rules:type_name -> fleetly.telemetry.v1.AlertRule
-	31, // 9: fleetly.telemetry.v1.ListAlertStatesResponse.states:type_name -> fleetly.telemetry.v1.AlertState
-	1,  // 10: fleetly.telemetry.v1.EventsService.ListEvents:input_type -> fleetly.telemetry.v1.ListEventsRequest
-	3,  // 11: fleetly.telemetry.v1.EventsService.StreamEvents:input_type -> fleetly.telemetry.v1.StreamEventsRequest
-	5,  // 12: fleetly.telemetry.v1.EventsService.GetEventStatus:input_type -> fleetly.telemetry.v1.GetEventStatusRequest
-	7,  // 13: fleetly.telemetry.v1.EventsService.IssueEventTicket:input_type -> fleetly.telemetry.v1.IssueEventTicketRequest
-	9,  // 14: fleetly.telemetry.v1.LogsService.StreamLogs:input_type -> fleetly.telemetry.v1.StreamLogsRequest
-	11, // 15: fleetly.telemetry.v1.MetricsService.QueryMetrics:input_type -> fleetly.telemetry.v1.QueryMetricsRequest
-	16, // 16: fleetly.telemetry.v1.AlertingService.CreateNotificationChannel:input_type -> fleetly.telemetry.v1.CreateNotificationChannelRequest
-	18, // 17: fleetly.telemetry.v1.AlertingService.TestNotificationChannel:input_type -> fleetly.telemetry.v1.TestNotificationChannelRequest
-	20, // 18: fleetly.telemetry.v1.AlertingService.ListNotificationChannels:input_type -> fleetly.telemetry.v1.ListNotificationChannelsRequest
-	22, // 19: fleetly.telemetry.v1.AlertingService.DeleteNotificationChannel:input_type -> fleetly.telemetry.v1.DeleteNotificationChannelRequest
-	25, // 20: fleetly.telemetry.v1.AlertingService.CreateAlertRule:input_type -> fleetly.telemetry.v1.CreateAlertRuleRequest
-	27, // 21: fleetly.telemetry.v1.AlertingService.ListAlertRules:input_type -> fleetly.telemetry.v1.ListAlertRulesRequest
-	29, // 22: fleetly.telemetry.v1.AlertingService.DeleteAlertRule:input_type -> fleetly.telemetry.v1.DeleteAlertRuleRequest
-	32, // 23: fleetly.telemetry.v1.AlertingService.ListAlertStates:input_type -> fleetly.telemetry.v1.ListAlertStatesRequest
-	2,  // 24: fleetly.telemetry.v1.EventsService.ListEvents:output_type -> fleetly.telemetry.v1.ListEventsResponse
-	4,  // 25: fleetly.telemetry.v1.EventsService.StreamEvents:output_type -> fleetly.telemetry.v1.StreamEventsResponse
-	6,  // 26: fleetly.telemetry.v1.EventsService.GetEventStatus:output_type -> fleetly.telemetry.v1.GetEventStatusResponse
-	8,  // 27: fleetly.telemetry.v1.EventsService.IssueEventTicket:output_type -> fleetly.telemetry.v1.IssueEventTicketResponse
-	10, // 28: fleetly.telemetry.v1.LogsService.StreamLogs:output_type -> fleetly.telemetry.v1.StreamLogsResponse
-	12, // 29: fleetly.telemetry.v1.MetricsService.QueryMetrics:output_type -> fleetly.telemetry.v1.QueryMetricsResponse
-	17, // 30: fleetly.telemetry.v1.AlertingService.CreateNotificationChannel:output_type -> fleetly.telemetry.v1.CreateNotificationChannelResponse
-	19, // 31: fleetly.telemetry.v1.AlertingService.TestNotificationChannel:output_type -> fleetly.telemetry.v1.TestNotificationChannelResponse
-	21, // 32: fleetly.telemetry.v1.AlertingService.ListNotificationChannels:output_type -> fleetly.telemetry.v1.ListNotificationChannelsResponse
-	23, // 33: fleetly.telemetry.v1.AlertingService.DeleteNotificationChannel:output_type -> fleetly.telemetry.v1.DeleteNotificationChannelResponse
-	26, // 34: fleetly.telemetry.v1.AlertingService.CreateAlertRule:output_type -> fleetly.telemetry.v1.CreateAlertRuleResponse
-	28, // 35: fleetly.telemetry.v1.AlertingService.ListAlertRules:output_type -> fleetly.telemetry.v1.ListAlertRulesResponse
-	30, // 36: fleetly.telemetry.v1.AlertingService.DeleteAlertRule:output_type -> fleetly.telemetry.v1.DeleteAlertRuleResponse
-	33, // 37: fleetly.telemetry.v1.AlertingService.ListAlertStates:output_type -> fleetly.telemetry.v1.ListAlertStatesResponse
-	24, // [24:38] is the sub-list for method output_type
-	10, // [10:24] is the sub-list for method input_type
-	10, // [10:10] is the sub-list for extension type_name
-	10, // [10:10] is the sub-list for extension extendee
-	0,  // [0:10] is the sub-list for field type_name
+	13, // 5: fleetly.telemetry.v1.QueryScopedMetricsResponse.series:type_name -> fleetly.telemetry.v1.MetricSeries
+	17, // 6: fleetly.telemetry.v1.CreateNotificationChannelResponse.channel:type_name -> fleetly.telemetry.v1.NotificationChannel
+	17, // 7: fleetly.telemetry.v1.ListNotificationChannelsResponse.channels:type_name -> fleetly.telemetry.v1.NotificationChannel
+	26, // 8: fleetly.telemetry.v1.CreateAlertRuleResponse.rule:type_name -> fleetly.telemetry.v1.AlertRule
+	26, // 9: fleetly.telemetry.v1.ListAlertRulesResponse.rules:type_name -> fleetly.telemetry.v1.AlertRule
+	33, // 10: fleetly.telemetry.v1.ListAlertStatesResponse.states:type_name -> fleetly.telemetry.v1.AlertState
+	1,  // 11: fleetly.telemetry.v1.EventsService.ListEvents:input_type -> fleetly.telemetry.v1.ListEventsRequest
+	3,  // 12: fleetly.telemetry.v1.EventsService.StreamEvents:input_type -> fleetly.telemetry.v1.StreamEventsRequest
+	5,  // 13: fleetly.telemetry.v1.EventsService.GetEventStatus:input_type -> fleetly.telemetry.v1.GetEventStatusRequest
+	7,  // 14: fleetly.telemetry.v1.EventsService.IssueEventTicket:input_type -> fleetly.telemetry.v1.IssueEventTicketRequest
+	9,  // 15: fleetly.telemetry.v1.LogsService.StreamLogs:input_type -> fleetly.telemetry.v1.StreamLogsRequest
+	11, // 16: fleetly.telemetry.v1.MetricsService.QueryMetrics:input_type -> fleetly.telemetry.v1.QueryMetricsRequest
+	15, // 17: fleetly.telemetry.v1.MetricsService.QueryScopedMetrics:input_type -> fleetly.telemetry.v1.QueryScopedMetricsRequest
+	18, // 18: fleetly.telemetry.v1.AlertingService.CreateNotificationChannel:input_type -> fleetly.telemetry.v1.CreateNotificationChannelRequest
+	20, // 19: fleetly.telemetry.v1.AlertingService.TestNotificationChannel:input_type -> fleetly.telemetry.v1.TestNotificationChannelRequest
+	22, // 20: fleetly.telemetry.v1.AlertingService.ListNotificationChannels:input_type -> fleetly.telemetry.v1.ListNotificationChannelsRequest
+	24, // 21: fleetly.telemetry.v1.AlertingService.DeleteNotificationChannel:input_type -> fleetly.telemetry.v1.DeleteNotificationChannelRequest
+	27, // 22: fleetly.telemetry.v1.AlertingService.CreateAlertRule:input_type -> fleetly.telemetry.v1.CreateAlertRuleRequest
+	29, // 23: fleetly.telemetry.v1.AlertingService.ListAlertRules:input_type -> fleetly.telemetry.v1.ListAlertRulesRequest
+	31, // 24: fleetly.telemetry.v1.AlertingService.DeleteAlertRule:input_type -> fleetly.telemetry.v1.DeleteAlertRuleRequest
+	34, // 25: fleetly.telemetry.v1.AlertingService.ListAlertStates:input_type -> fleetly.telemetry.v1.ListAlertStatesRequest
+	2,  // 26: fleetly.telemetry.v1.EventsService.ListEvents:output_type -> fleetly.telemetry.v1.ListEventsResponse
+	4,  // 27: fleetly.telemetry.v1.EventsService.StreamEvents:output_type -> fleetly.telemetry.v1.StreamEventsResponse
+	6,  // 28: fleetly.telemetry.v1.EventsService.GetEventStatus:output_type -> fleetly.telemetry.v1.GetEventStatusResponse
+	8,  // 29: fleetly.telemetry.v1.EventsService.IssueEventTicket:output_type -> fleetly.telemetry.v1.IssueEventTicketResponse
+	10, // 30: fleetly.telemetry.v1.LogsService.StreamLogs:output_type -> fleetly.telemetry.v1.StreamLogsResponse
+	12, // 31: fleetly.telemetry.v1.MetricsService.QueryMetrics:output_type -> fleetly.telemetry.v1.QueryMetricsResponse
+	16, // 32: fleetly.telemetry.v1.MetricsService.QueryScopedMetrics:output_type -> fleetly.telemetry.v1.QueryScopedMetricsResponse
+	19, // 33: fleetly.telemetry.v1.AlertingService.CreateNotificationChannel:output_type -> fleetly.telemetry.v1.CreateNotificationChannelResponse
+	21, // 34: fleetly.telemetry.v1.AlertingService.TestNotificationChannel:output_type -> fleetly.telemetry.v1.TestNotificationChannelResponse
+	23, // 35: fleetly.telemetry.v1.AlertingService.ListNotificationChannels:output_type -> fleetly.telemetry.v1.ListNotificationChannelsResponse
+	25, // 36: fleetly.telemetry.v1.AlertingService.DeleteNotificationChannel:output_type -> fleetly.telemetry.v1.DeleteNotificationChannelResponse
+	28, // 37: fleetly.telemetry.v1.AlertingService.CreateAlertRule:output_type -> fleetly.telemetry.v1.CreateAlertRuleResponse
+	30, // 38: fleetly.telemetry.v1.AlertingService.ListAlertRules:output_type -> fleetly.telemetry.v1.ListAlertRulesResponse
+	32, // 39: fleetly.telemetry.v1.AlertingService.DeleteAlertRule:output_type -> fleetly.telemetry.v1.DeleteAlertRuleResponse
+	35, // 40: fleetly.telemetry.v1.AlertingService.ListAlertStates:output_type -> fleetly.telemetry.v1.ListAlertStatesResponse
+	26, // [26:41] is the sub-list for method output_type
+	11, // [11:26] is the sub-list for method input_type
+	11, // [11:11] is the sub-list for extension type_name
+	11, // [11:11] is the sub-list for extension extendee
+	0,  // [0:11] is the sub-list for field type_name
 }
 
 func init() { file_fleetly_telemetry_v1_telemetry_proto_init() }
@@ -2296,7 +2481,7 @@ func file_fleetly_telemetry_v1_telemetry_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fleetly_telemetry_v1_telemetry_proto_rawDesc), len(file_fleetly_telemetry_v1_telemetry_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   35,
+			NumMessages:   37,
 			NumExtensions: 0,
 			NumServices:   4,
 		},

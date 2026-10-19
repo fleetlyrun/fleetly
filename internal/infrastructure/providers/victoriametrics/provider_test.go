@@ -2,6 +2,7 @@ package victoriametrics
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -287,10 +288,10 @@ func paddedMatrixBody(paddingBytes int) []byte {
 	return []byte(b.String())
 }
 
-// TestQuerySeriesRawLimits 钉 H8 阶段 A 的资源上限（设计文档 §5.3.3）：
+// TestQuerySeriesRawLimits 钉 raw 诊断面的资源上限（设计文档 §5.3.3）：
 // 响应体 8 MiB、序列数 1000。超限是调用方查询/时间窗过宽——返回
-// capability.MetricsQueryError（API 层落 E_INVALID_ARGUMENT），边界值
-// （恰好 1000 序列、8 MiB 以内）正常返回。
+// capability.ErrMetricsResultTooLarge（API 面落 E_METRICS_RESULT_TOO_LARGE
+// 429），边界值（恰好 1000 序列、8 MiB 以内）正常返回。
 func TestQuerySeriesRawLimits(t *testing.T) {
 	providerFor := func(t *testing.T, body []byte) *Provider {
 		t.Helper()
@@ -317,21 +318,21 @@ func TestQuerySeriesRawLimits(t *testing.T) {
 	t.Run("1001 series rejected", func(t *testing.T) {
 		_, err := query(providerFor(t, matrixBody(maxQuerySeries+1)))
 		require.Error(t, err)
+		assert.True(t, errors.Is(err, capability.ErrMetricsResultTooLarge))
 		var qe *capability.MetricsQueryError
-		require.ErrorAs(t, err, &qe)
-		assert.Equal(t, http.StatusUnprocessableEntity, qe.Status)
-		assert.Contains(t, qe.Message, "exceeds 1000 series")
-		assert.Contains(t, qe.Message, "narrow the query or the time range")
+		assert.NotErrorAs(t, err, &qe, "size caps are not caller query errors")
+		assert.Contains(t, err.Error(), "exceeds 1000 series")
+		assert.Contains(t, err.Error(), "narrow the query or the time range")
 	})
 
 	t.Run("response over 8 MiB rejected", func(t *testing.T) {
 		_, err := query(providerFor(t, paddedMatrixBody(maxQueryResponseBytes+1024)))
 		require.Error(t, err)
+		assert.True(t, errors.Is(err, capability.ErrMetricsResultTooLarge))
 		var qe *capability.MetricsQueryError
-		require.ErrorAs(t, err, &qe)
-		assert.Equal(t, http.StatusRequestEntityTooLarge, qe.Status)
-		assert.Contains(t, qe.Message, "exceeds 8 MiB")
-		assert.Contains(t, qe.Message, "narrow the query or the time range")
+		assert.NotErrorAs(t, err, &qe, "size caps are not caller query errors")
+		assert.Contains(t, err.Error(), "exceeds 8 MiB")
+		assert.Contains(t, err.Error(), "narrow the query or the time range")
 	})
 
 	t.Run("response under 8 MiB succeeds", func(t *testing.T) {
@@ -342,4 +343,136 @@ func TestQuerySeriesRawLimits(t *testing.T) {
 		require.Len(t, series, 1)
 		require.Len(t, series[0].Points, 1)
 	})
+}
+
+// TestQueryScopedTemplate 钉 scoped 查询落在 HTTP 面的 query 参数逐字节
+// 等于固定模板（调用方无表达式可插）。
+func TestQueryScopedTemplate(t *testing.T) {
+	var formMu sync.Mutex
+	var gotForm url.Values
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.NoError(t, r.ParseForm())
+		formMu.Lock()
+		gotForm = r.Form
+		formMu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(matrixBody(1))
+	}))
+	defer srv.Close()
+
+	p := newTestProvider(t)
+	p.addr = strings.TrimPrefix(srv.URL, "http://")
+	page, err := p.QueryScoped(context.Background(), capability.ScopedQuery{
+		Metric:    capability.MetricCPUPercent,
+		ProjectID: "01PROJ",
+		AppID:     "01APP",
+		Process:   "web",
+		Start:     time.Unix(1767225600, 0),
+		End:       time.Unix(1767229200, 0),
+		Step:      15 * time.Second,
+	})
+	require.NoError(t, err)
+	require.Len(t, page.Series, 1)
+	assert.False(t, page.Truncated)
+	assert.Equal(t, 1, page.Total)
+
+	formMu.Lock()
+	q := gotForm
+	formMu.Unlock()
+	want := `(fleetly_container_cpu_percent{app="01APP",process="web"}) or ` +
+		`(100 * rate(container_cpu_usage_seconds_total{namespace="fleetly-01PROJ",pod=~"fleetly-01APP-web(-.*)?",container!=""}[2m]) / on(node) group_left machine_cpu_cores)`
+	assert.Equal(t, want, q.Get("query"), "scoped PromQL is server-owned; the HTTP query param must be the exact template")
+	assert.Equal(t, "1767225600", q.Get("start"))
+	assert.Equal(t, "1767229200", q.Get("end"))
+	assert.Equal(t, "15", q.Get("step"))
+}
+
+// TestQueryScopedTruncates 钉 scoped 序列上限的截断语义（60 条 → 50 +
+// truncated + total=60；恰好 50 不截断），与 raw 的拒绝语义分立。
+func TestQueryScopedTruncates(t *testing.T) {
+	providerFor := func(t *testing.T, n int) *Provider {
+		t.Helper()
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(matrixBody(n))
+		}))
+		t.Cleanup(srv.Close)
+		p := newTestProvider(t)
+		p.addr = strings.TrimPrefix(srv.URL, "http://")
+		return p
+	}
+	query := func(p *Provider) (capability.SeriesPage, error) {
+		return p.QueryScoped(context.Background(), capability.ScopedQuery{
+			Metric: capability.MetricMemoryWorkingSet, ProjectID: "01PROJ", AppID: "01APP",
+			Start: time.Unix(1767225600, 0), End: time.Unix(1767229200, 0), Step: 15 * time.Second,
+		})
+	}
+
+	t.Run("60 series truncated to 50", func(t *testing.T) {
+		page, err := query(providerFor(t, capability.ScopedMetricsMaxSeries+10))
+		require.NoError(t, err)
+		assert.Len(t, page.Series, capability.ScopedMetricsMaxSeries)
+		assert.True(t, page.Truncated)
+		assert.Equal(t, capability.ScopedMetricsMaxSeries+10, page.Total)
+	})
+
+	t.Run("exactly 50 series not truncated", func(t *testing.T) {
+		page, err := query(providerFor(t, capability.ScopedMetricsMaxSeries))
+		require.NoError(t, err)
+		assert.Len(t, page.Series, capability.ScopedMetricsMaxSeries)
+		assert.False(t, page.Truncated)
+		assert.Equal(t, capability.ScopedMetricsMaxSeries, page.Total)
+	})
+
+	t.Run("caller MaxSeries override", func(t *testing.T) {
+		p := providerFor(t, 5)
+		page, err := p.QueryScoped(context.Background(), capability.ScopedQuery{
+			Metric: capability.MetricMemoryWorkingSet, ProjectID: "01PROJ", AppID: "01APP",
+			Start: time.Unix(1767225600, 0), End: time.Unix(1767229200, 0), Step: 15 * time.Second,
+			MaxSeries: 2,
+		})
+		require.NoError(t, err)
+		assert.Len(t, page.Series, 2)
+		assert.True(t, page.Truncated)
+		assert.Equal(t, 5, page.Total)
+	})
+
+	t.Run("invalid scoped input propagates", func(t *testing.T) {
+		p := providerFor(t, 1)
+		_, err := p.QueryScoped(context.Background(), capability.ScopedQuery{
+			Metric: "disk_full", ProjectID: "01PROJ", AppID: "01APP",
+			Start: time.Unix(1767225600, 0), End: time.Unix(1767229200, 0), Step: 15 * time.Second,
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "unknown scoped metric")
+	})
+}
+
+// TestQueryTimeout 钉 provider 上界超时的类型化：命中
+// capability.ErrMetricsQueryTimeout；父 ctx 主动取消不落超时码（设计文档
+// §5.3.3/§7）。
+func TestQueryTimeout(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(300 * time.Millisecond)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(matrixBody(1))
+	}))
+	defer srv.Close()
+
+	p := newTestProvider(t)
+	p.addr = strings.TrimPrefix(srv.URL, "http://")
+	p.timeout = 30 * time.Millisecond
+	_, err := p.QuerySeries(context.Background(), "up",
+		time.Unix(1767225600, 0), time.Unix(1767225900, 0), 15*time.Second)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, capability.ErrMetricsQueryTimeout), "provider timeout must be typed: %v", err)
+	assert.Contains(t, err.Error(), "did not answer within 30ms")
+
+	// 父 ctx 取消：不是超时码（客户端主动放弃）。
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err = p.QuerySeries(ctx, "up", time.Unix(1767225600, 0), time.Unix(1767225900, 0), 15*time.Second)
+	require.Error(t, err)
+	assert.False(t, errors.Is(err, capability.ErrMetricsQueryTimeout), "client cancellation must not map to the timeout code: %v", err)
+	assert.True(t, errors.Is(err, context.Canceled))
 }

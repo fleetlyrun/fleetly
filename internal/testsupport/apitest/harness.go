@@ -96,6 +96,15 @@ func NewManualOpts(t testing.TB, mutators ...EngineOption) *Harness {
 	return newHarness(t, false, mutators...)
 }
 
+// NewWithMetrics 装配夹具（自动驱动）并注入 Metrics 假面（H8 scoped 查询
+// 测试 seam；生产装配不变——受管 store 仍由 config metrics.addr 决定）。
+func NewWithMetrics(t testing.TB, metrics capability.Metrics) *Harness {
+	t.Helper()
+	h := newHarness(t, true)
+	h.Services.Metrics = metrics
+	return h
+}
+
 // Drive 手动驱动一轮收敛。
 func (h *Harness) Drive(ctx context.Context) {
 	h.Engine.DriveOnce(ctx)

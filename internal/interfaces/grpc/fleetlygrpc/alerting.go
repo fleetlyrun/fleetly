@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"regexp"
 	"time"
 
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
@@ -17,6 +18,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
 	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/alertrule"
 	"github.com/fleetlyrun/fleetly/internal/domain/telemetry/channel"
@@ -61,10 +63,8 @@ type MetricsService struct {
 // Metrics nil 检查之前：非平台管理员不得用 403/503 差异探测存储是否启用，
 // 拒绝零副作用。
 //
-// 阶段 B 锚（设计文档 §4/§5.1）：新增 QueryScopedMetrics（服务端固定模板
-// + 行级授权）恢复 member 图表面后，本函数保留为平台管理员诊断面，
-// Console/CLI 切到 scoped 动线；阶段 B 落地前 member 图表失明是已裁决的
-// 已知代价（§3.3）。
+// 阶段 B（H8）：租户图表面走 QueryScopedMetrics（服务端固定模板 + 行级
+// 授权）；本函数保留为平台管理员诊断面，仍受体/序列/超时上限。
 func (svc *MetricsService) QueryMetrics(ctx context.Context, req *telemetryv1.QueryMetricsRequest) (*telemetryv1.QueryMetricsResponse, error) {
 	if err := RequirePlatformAdmin(ctx); err != nil {
 		return nil, err
@@ -77,42 +77,156 @@ func (svc *MetricsService) QueryMetrics(ctx context.Context, req *telemetryv1.Qu
 	// query 必填已退役 descriptor 注解（P4-1 批 1 Run B2）：空值由
 	// protovalidate 拦截器在受理面拦截，文案与退役前逐字节一致；start/end
 	// 时间窗是动态文案（RFC3339 解析带 got 回显），保留手写。
-	end := time.Now().UTC()
-	if raw := req.GetEnd(); raw != "" {
-		t, err := time.Parse(time.RFC3339, raw)
-		if err != nil {
-			return nil, apperr.New("E_INVALID_ARGUMENT", "end: must be RFC3339 (got %q)", raw)
-		}
-		end = t
+	start, end, err := parseMetricsWindow(req.GetStart(), req.GetEnd())
+	if err != nil {
+		return nil, err
 	}
-	start := end.Add(-time.Hour)
-	if raw := req.GetStart(); raw != "" {
-		t, err := time.Parse(time.RFC3339, raw)
-		if err != nil {
-			return nil, apperr.New("E_INVALID_ARGUMENT", "start: must be RFC3339 (got %q)", raw)
-		}
-		start = t
-	}
-	if !start.Before(end) {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "start: must be before end")
+	// raw 步长：与 scoped 共用符号校验，但诊断面不钳制 24h/点数（管理员
+	// 可查长窗；体/序列/超时上限兜底）。
+	if req.GetStepSeconds() < 0 {
+		return nil, apperr.New("E_INVALID_ARGUMENT", "step_seconds: must not be negative (got %d)", req.GetStepSeconds())
 	}
 	step := time.Duration(req.GetStepSeconds()) * time.Second
+	if step == 0 {
+		step = capability.ScopedMetricsMinStep
+	}
 	series, err := svc.s.Metrics.QuerySeries(ctx, req.GetQuery(), start, end, step)
 	if err != nil {
 		return nil, mapStateError(err, "metrics")
 	}
-	resp := &telemetryv1.QueryMetricsResponse{}
+	return &telemetryv1.QueryMetricsResponse{Series: metricSeriesMsgs(series)}, nil
+}
+
+// scopedProcessPattern 是 process 词法的受理面形态（与 Process 名字符集
+// 同源：小写字母数字与内部连字符，首尾字母数字；设计文档 §5.2）。
+var scopedProcessPattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
+
+// QueryScopedMetrics 是租户图表面（H8 阶段 B）：调用方只给 scope（App 或
+// Database 恰一）+ 指标白名单 + 时间窗；PromQL 由 capability 固定模板
+// 构造，服务端不接受表达式。
+//
+// 处理顺序（设计文档 §5.2；未授权调用方不得用 503/400 差异探测资源）：
+// protovalidate（拦截器）→ 行级授权 → Metrics store 状态 → process/
+// database+cpu_percent 动态校验 → 窗口/step 钳制 → QueryScoped → 映射。
+func (svc *MetricsService) QueryScopedMetrics(ctx context.Context, req *telemetryv1.QueryScopedMetricsRequest) (*telemetryv1.QueryScopedMetricsResponse, error) {
+	q := capability.ScopedQuery{Metric: req.GetMetric()}
+	var projectID string
+	switch {
+	case req.GetAppId() != "":
+		// project_id 不由客户端给：从 App 行解析，避免"伪造 project +
+		// 合法 app"的组合；行不存在 404 / 他队 403 与既有单源同源。
+		a, err := svc.s.authorizeAppID(ctx, req.GetAppId())
+		if err != nil {
+			return nil, err
+		}
+		projectID = a.ProjectID
+		q.AppID = a.ID
+	case req.GetDatabaseId() != "":
+		db, err := svc.s.Databases.Get(ctx, req.GetDatabaseId())
+		if err != nil {
+			return nil, mapStateError(err, "database")
+		}
+		if err := svc.s.authorizeProjectID(ctx, db.ProjectID); err != nil {
+			return nil, err
+		}
+		projectID = db.ProjectID
+		q.DatabaseID = db.ID
+	default:
+		// protovalidate 的 message CEL 已在受理面拦截（scope 恰一）；防御
+		// 分支保持同一可编程错误。
+		return nil, apperr.New("E_INVALID_ARGUMENT", "exactly one of app_id or database_id must be set")
+	}
+	// store 状态在授权之后暴露（503 不泄漏资源存在性）。
+	if svc.s.Metrics == nil {
+		return nil, apperr.New("E_METRICS_STORE_UNAVAILABLE", "metrics queries require the managed metrics store; set config metrics.addr to enable it")
+	}
+	// 动态参数校验：database 页没有 process/cpu_percent 消费面，显式拒绝
+	// 而非静默忽略（设计文档 §5.7）。
+	if req.GetProcess() != "" {
+		if q.DatabaseID != "" {
+			return nil, apperr.New("E_INVALID_ARGUMENT", "process: only available for app scope (database scope has no process dimension)")
+		}
+		if !scopedProcessPattern.MatchString(req.GetProcess()) {
+			return nil, apperr.New("E_INVALID_ARGUMENT",
+				"process: must be a dns label (lowercase letters, digits, inner hyphens; start and end alphanumeric, got %q)", req.GetProcess())
+		}
+		q.Process = req.GetProcess()
+	}
+	if q.DatabaseID != "" && q.Metric == capability.MetricCPUPercent {
+		return nil, apperr.New("E_INVALID_ARGUMENT",
+			"metric: cpu_percent is only available for app scope (database scope supports %s and %s)",
+			capability.MetricCPUCores, capability.MetricMemoryWorkingSet)
+	}
+	start, end, err := parseMetricsWindow(req.GetStart(), req.GetEnd())
+	if err != nil {
+		return nil, err
+	}
+	step, err := capability.ClampScopedStep(start, end, req.GetStepSeconds())
+	if err != nil {
+		return nil, apperr.New("E_INVALID_ARGUMENT", "%s", err.Error())
+	}
+	q.ProjectID = projectID
+	q.Start, q.End, q.Step = start, end, step
+	q.MaxSeries = capability.ScopedMetricsMaxSeries
+	page, err := svc.s.Metrics.QueryScoped(ctx, q)
+	if err != nil {
+		// scoped 模板是服务端固定的：VM 4xx 是平台缺陷，不能沿用 raw 的
+		// E_INVALID_ARGUMENT（调用方无法修模板）；带 cause 供排查。
+		var qe *capability.MetricsQueryError
+		if errors.As(err, &qe) {
+			return nil, apperr.New("E_INTERNAL",
+				"scoped metrics query was rejected by the metrics store (server-owned template): %s", qe.Message).WithCause(err)
+		}
+		// 超体/超序列与超时走共享映射（E_METRICS_RESULT_TOO_LARGE /
+		// E_METRICS_QUERY_TIMEOUT）。
+		return nil, mapStateError(err, "metrics")
+	}
+	return &telemetryv1.QueryScopedMetricsResponse{
+		Series:      metricSeriesMsgs(page.Series),
+		Truncated:   page.Truncated,
+		SeriesTotal: int32(page.Total), //nolint:gosec // 命中数受 VM 响应体上限约束（远小于 int32）
+	}, nil
+}
+
+// parseMetricsWindow 解析 raw/scoped 共用的时间窗（RFC3339；空 end = now，
+// 空 start = end 前 1h），并校验 start < end。
+func parseMetricsWindow(startRaw, endRaw string) (time.Time, time.Time, error) {
+	end := time.Now().UTC()
+	if raw := endRaw; raw != "" {
+		t, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			return time.Time{}, time.Time{}, apperr.New("E_INVALID_ARGUMENT", "end: must be RFC3339 (got %q)", raw)
+		}
+		end = t
+	}
+	start := end.Add(-time.Hour)
+	if raw := startRaw; raw != "" {
+		t, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			return time.Time{}, time.Time{}, apperr.New("E_INVALID_ARGUMENT", "start: must be RFC3339 (got %q)", raw)
+		}
+		start = t
+	}
+	if !start.Before(end) {
+		return time.Time{}, time.Time{}, apperr.New("E_INVALID_ARGUMENT", "start: must be before end")
+	}
+	return start, end, nil
+}
+
+// metricSeriesMsgs 是 capability.Series → proto 传输形态（raw/scoped 共用）。
+func metricSeriesMsgs(series []capability.Series) []*telemetryv1.MetricSeries {
+	out := make([]*telemetryv1.MetricSeries, 0, len(series))
 	for _, s := range series {
-		out := &telemetryv1.MetricSeries{Labels: s.Metric}
+		msg := &telemetryv1.MetricSeries{Labels: s.Metric}
 		for _, p := range s.Points {
-			out.Points = append(out.Points, &telemetryv1.MetricPoint{
+			msg.Points = append(msg.Points, &telemetryv1.MetricPoint{
 				Time:  p.Time.Format(time.RFC3339),
 				Value: p.Value,
 			})
 		}
-		resp.Series = append(resp.Series, out)
+		out = append(out, msg)
 	}
-	return resp, nil
+	return out
 }
 
 // AlertingService 是告警配置面。

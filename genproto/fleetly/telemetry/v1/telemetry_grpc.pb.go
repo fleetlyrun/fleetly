@@ -377,18 +377,27 @@ var LogsService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	MetricsService_QueryMetrics_FullMethodName = "/fleetly.telemetry.v1.MetricsService/QueryMetrics"
+	MetricsService_QueryMetrics_FullMethodName       = "/fleetly.telemetry.v1.MetricsService/QueryMetrics"
+	MetricsService_QueryScopedMetrics_FullMethodName = "/fleetly.telemetry.v1.MetricsService/QueryScopedMetrics"
 )
 
 // MetricsServiceClient is the client API for MetricsService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// MetricsService：指标查询面（ADR-0041）：PromQL 透传（Console F2.6 图表
-// 的数据源；CLI 诊断面）。Metrics 面停用时精确失败。行级隔离由调用方
-// 查询构造承载（App 域标签过滤）——存储是平台单租户。
+// MetricsService：指标查询面（ADR-0041）。
+//   - QueryMetrics 是平台管理员诊断面：原始 PromQL 直通，仅平台管理员可
+//     调用（存储是平台单租户，服务端无法对用户表达式做行级约束）；
+//   - QueryScopedMetrics 是租户图表面：服务端按 scope + metric 白名单构造
+//     固定 PromQL，调用方无法指定表达式；行级授权在本 handler。
+//
+// Metrics 面停用时两者均精确失败。
 type MetricsServiceClient interface {
+	// QueryMetrics 原样透传 PromQL（平台管理员诊断；member 调用 E_FORBIDDEN）。
 	QueryMetrics(ctx context.Context, in *QueryMetricsRequest, opts ...grpc.CallOption) (*QueryMetricsResponse, error)
+	// QueryScopedMetrics 按 App/Database 作用域查固定指标模板。
+	// 授权：metrics:read + app/database 所在 Project 的行级 Team 比对。
+	QueryScopedMetrics(ctx context.Context, in *QueryScopedMetricsRequest, opts ...grpc.CallOption) (*QueryScopedMetricsResponse, error)
 }
 
 type metricsServiceClient struct {
@@ -409,15 +418,33 @@ func (c *metricsServiceClient) QueryMetrics(ctx context.Context, in *QueryMetric
 	return out, nil
 }
 
+func (c *metricsServiceClient) QueryScopedMetrics(ctx context.Context, in *QueryScopedMetricsRequest, opts ...grpc.CallOption) (*QueryScopedMetricsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(QueryScopedMetricsResponse)
+	err := c.cc.Invoke(ctx, MetricsService_QueryScopedMetrics_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // MetricsServiceServer is the server API for MetricsService service.
 // All implementations must embed UnimplementedMetricsServiceServer
 // for forward compatibility.
 //
-// MetricsService：指标查询面（ADR-0041）：PromQL 透传（Console F2.6 图表
-// 的数据源；CLI 诊断面）。Metrics 面停用时精确失败。行级隔离由调用方
-// 查询构造承载（App 域标签过滤）——存储是平台单租户。
+// MetricsService：指标查询面（ADR-0041）。
+//   - QueryMetrics 是平台管理员诊断面：原始 PromQL 直通，仅平台管理员可
+//     调用（存储是平台单租户，服务端无法对用户表达式做行级约束）；
+//   - QueryScopedMetrics 是租户图表面：服务端按 scope + metric 白名单构造
+//     固定 PromQL，调用方无法指定表达式；行级授权在本 handler。
+//
+// Metrics 面停用时两者均精确失败。
 type MetricsServiceServer interface {
+	// QueryMetrics 原样透传 PromQL（平台管理员诊断；member 调用 E_FORBIDDEN）。
 	QueryMetrics(context.Context, *QueryMetricsRequest) (*QueryMetricsResponse, error)
+	// QueryScopedMetrics 按 App/Database 作用域查固定指标模板。
+	// 授权：metrics:read + app/database 所在 Project 的行级 Team 比对。
+	QueryScopedMetrics(context.Context, *QueryScopedMetricsRequest) (*QueryScopedMetricsResponse, error)
 	mustEmbedUnimplementedMetricsServiceServer()
 }
 
@@ -430,6 +457,9 @@ type UnimplementedMetricsServiceServer struct{}
 
 func (UnimplementedMetricsServiceServer) QueryMetrics(context.Context, *QueryMetricsRequest) (*QueryMetricsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method QueryMetrics not implemented")
+}
+func (UnimplementedMetricsServiceServer) QueryScopedMetrics(context.Context, *QueryScopedMetricsRequest) (*QueryScopedMetricsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method QueryScopedMetrics not implemented")
 }
 func (UnimplementedMetricsServiceServer) mustEmbedUnimplementedMetricsServiceServer() {}
 func (UnimplementedMetricsServiceServer) testEmbeddedByValue()                        {}
@@ -470,6 +500,24 @@ func _MetricsService_QueryMetrics_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _MetricsService_QueryScopedMetrics_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryScopedMetricsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MetricsServiceServer).QueryScopedMetrics(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MetricsService_QueryScopedMetrics_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MetricsServiceServer).QueryScopedMetrics(ctx, req.(*QueryScopedMetricsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // MetricsService_ServiceDesc is the grpc.ServiceDesc for MetricsService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -480,6 +528,10 @@ var MetricsService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "QueryMetrics",
 			Handler:    _MetricsService_QueryMetrics_Handler,
+		},
+		{
+			MethodName: "QueryScopedMetrics",
+			Handler:    _MetricsService_QueryScopedMetrics_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

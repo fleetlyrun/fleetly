@@ -138,6 +138,9 @@ func (fakeMetricsProvider) ImportPrometheus(_ context.Context, _ []byte, _ map[s
 func (fakeMetricsProvider) QuerySeries(_ context.Context, _ string, _, _ time.Time, _ time.Duration) ([]capability.Series, error) {
 	return nil, nil
 }
+func (fakeMetricsProvider) QueryScoped(_ context.Context, _ capability.ScopedQuery) (capability.SeriesPage, error) {
+	return capability.SeriesPage{}, nil
+}
 
 // TestMetricsFaceDisabledWhenAddrEmpty（ADR-0041 锚 7 装配面）：metrics.addr
 // 空 = Metrics 面停用——工厂在册的同一夹具下仍返回 nil Provider：装配不

@@ -6,5 +6,6 @@
   "role_name": "owner",
   "scopes": [
     "*"
-  ]
+  ],
+  "platform_admin": true
 }

@@ -235,6 +235,10 @@ message WhoAmIResponse {
   string user_id = 6;
   string user_name = 7;
   repeated string scopes = 8; // colon 形态（resource:action），蕴含未展开
+  // platform_admin 报告调用方是否平台管理员（default Team 的 builtin-owner）
+  // ——与 RequirePlatformAdmin 同一判定；Console 据此显隐平台面入口
+  //（H8 raw PromQL）。
+  bool platform_admin = 9;
 }
 
 message User {

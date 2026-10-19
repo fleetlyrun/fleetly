@@ -14,6 +14,15 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 )
 
+// TestContainerLabelProjectionDriftGuard 钉读侧 capability 标签常量与写侧
+// label 的点号→下划线投影一致（H8 阶段 B：scoped 查询模板按
+// container_label_* 读 cAdvisor 投影；写侧改名而不改读侧常量即红）。
+func TestContainerLabelProjectionDriftGuard(t *testing.T) {
+	assert.Equal(t, "container_label_"+strings.ReplaceAll(labelProject, ".", "_"), capability.MetricLabelProjectOnContainer)
+	assert.Equal(t, "container_label_"+strings.ReplaceAll(labelApp, ".", "_"), capability.MetricLabelAppOnContainer)
+	assert.Equal(t, "container_label_"+strings.ReplaceAll(labelDatabase, ".", "_"), capability.MetricLabelDatabaseOnContainer)
+}
+
 // 命名公式：四域载体名 + GenerationScoped 代次后缀 + 超长截断（哈希兜底）。
 func TestWorkloadName(t *testing.T) {
 	appNS := capability.NamespaceRef{Team: "acme", Project: "shop", App: "web"}

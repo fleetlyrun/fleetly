@@ -156,6 +156,12 @@ func TestMetricsQueryUpstreamRejection(t *testing.T) {
 // fakeMetrics 是只承接查询错误注入的假 Metrics 面（其余动词不在用例面）。
 type fakeMetrics struct {
 	queryErr error
+
+	// scoped 记录 scoped 查询（授权/参数构造的断言面）；scopedPage 与
+	// scopedErr 是注入的返回面。
+	scoped     []capability.ScopedQuery
+	scopedPage capability.SeriesPage
+	scopedErr  error
 }
 
 func (f *fakeMetrics) Describe() capability.ProviderDescriptor {
@@ -172,6 +178,18 @@ func (f *fakeMetrics) ImportPrometheus(_ context.Context, _ []byte, _ map[string
 
 func (f *fakeMetrics) QuerySeries(_ context.Context, _ string, _, _ time.Time, _ time.Duration) ([]capability.Series, error) {
 	return nil, f.queryErr
+}
+
+func (f *fakeMetrics) QueryScoped(_ context.Context, q capability.ScopedQuery) (capability.SeriesPage, error) {
+	f.scoped = append(f.scoped, q)
+	return f.scopedPage, f.scopedErr
+}
+
+// scopedQueries 返回 scoped 查询记录快照。
+func (f *fakeMetrics) scopedQueries() []capability.ScopedQuery {
+	out := make([]capability.ScopedQuery, len(f.scoped))
+	copy(out, f.scoped)
+	return out
 }
 
 // alertingClient 铸带 owner token 的类型化客户端（apitest 同款形态）。

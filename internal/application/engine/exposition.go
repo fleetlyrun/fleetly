@@ -10,15 +10,18 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
 )
 
 // 负载词汇指标名（ADR-0065 词汇注册表）：采集环归一导出的平台指标——
 // 产品面（console presets、CLI、后续 per-process 告警）一律经词汇查询；
-// cadvisor 原始序列只是工作台透传面，不是消费契约。
+// cadvisor 原始序列只是工作台透传面，不是消费契约。词条真源已迁
+// capability（H8 阶段 B：查询构造与采集环共用）；本处保留同名 alias。
 const (
-	MetricWorkloadCPUPercent = "fleetly_container_cpu_percent"
-	MetricWorkloadCPUCores   = "fleetly_container_cpu_cores"
-	MetricWorkloadMemory     = "fleetly_container_memory_working_set_bytes"
+	MetricWorkloadCPUPercent = capability.MetricWorkloadCPUPercent
+	MetricWorkloadCPUCores   = capability.MetricWorkloadCPUCores
+	MetricWorkloadMemory     = capability.MetricWorkloadMemory
 )
 
 // composeWorkloadExposition 把词汇样本渲染为 exposition 文本（VM 流式导入

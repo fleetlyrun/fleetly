@@ -520,6 +520,7 @@
     },
     "/v1/metrics": {
       "get": {
+        "summary": "QueryMetrics 原样透传 PromQL（平台管理员诊断；member 调用 E_FORBIDDEN）。",
         "operationId": "MetricsService_QueryMetrics",
         "responses": {
           "200": {
@@ -538,7 +539,7 @@
         "parameters": [
           {
             "name": "query",
-            "description": "query 是 PromQL（透传；App 域过滤经 container_label_fleetly_ns_*\n序列标签——CLI/Console 侧构造）。必填：空查询无从起查。",
+            "description": "query 是 PromQL（原样透传；平台管理员诊断面，服务端不做行级约束）。\n必填：空查询无从起查。",
             "in": "query",
             "required": false,
             "type": "string"
@@ -559,6 +560,79 @@
           {
             "name": "step_seconds",
             "description": "step_seconds 是采样步长（0 = 缺省 15s）。",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          }
+        ],
+        "tags": [
+          "MetricsService"
+        ]
+      }
+    },
+    "/v1/metrics/scoped": {
+      "get": {
+        "summary": "QueryScopedMetrics 按 App/Database 作用域查固定指标模板。\n授权：metrics:read + app/database 所在 Project 的行级 Team 比对。",
+        "operationId": "MetricsService_QueryScopedMetrics",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1QueryScopedMetricsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "app_id",
+            "description": "app_id 与 database_id 恰一非空（scope 互斥）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "database_id",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "metric",
+            "description": "metric 白名单：cpu_percent | cpu_cores | memory_working_set_bytes\n（与告警规则 metric 词表同形；非法值在受理面 E_INVALID_ARGUMENT）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "process",
+            "description": "process 仅 app scope 可用；小写 dns 形态（与 Process 名字符集同源）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "start",
+            "description": "start/end 是 RFC3339；空 end = now，空 start = end 前 1h（与 raw 同）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "end",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "step_seconds",
+            "description": "step_seconds 是请求步长；0 = 服务端按窗口自动，实际值会被钳制。",
             "in": "query",
             "required": false,
             "type": "string",
@@ -883,6 +957,27 @@
             "type": "object",
             "$ref": "#/definitions/v1MetricSeries"
           }
+        }
+      }
+    },
+    "v1QueryScopedMetricsResponse": {
+      "type": "object",
+      "properties": {
+        "series": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1MetricSeries"
+          }
+        },
+        "truncated": {
+          "type": "boolean",
+          "title": "truncated 表示命中序列数超过服务端上限，返回的是前 N 条。"
+        },
+        "series_total": {
+          "type": "integer",
+          "format": "int32",
+          "title": "series_total 是截断前的命中序列数（未截断 = len(series)）。"
         }
       }
     },

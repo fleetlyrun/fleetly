@@ -1,13 +1,17 @@
 package guards
 
 // 写面立法执法面（ADR-0081 Batch B 落地）：附录完整分类表（27 ACTION +
-// 53 DECLARATION + 73 READ = 153）是「未分类即红」的唯一清单，测试内单源
+// 53 DECLARATION + 74 READ = 154）是「未分类即红」的唯一清单，测试内单源
 // 机械转写；READ 为余集按 §1 读前缀缺省归类不列。三从属断言把既有三张
 // 守卫表挂上同一法源，防各自漂移：FrozenVerbs ⊆ DECLARATION∪ACTION（冻结
 // 只拦写面）；idem.EnforcedMethods ⊆ DECLARATION∪豁免（幂等重放只挂声明
 // 写面）；scope 单向断言（DECLARATION ⇒ WRITE/ADMIN，ACTION 的 READ-scope
 // 经豁免面显式登记）。proto 零触碰：执法面是 Go 表，一方注解随配置面立项
 // 另批（ADR-0081 决策 3）。
+//
+// H8 阶段 B（2026-10-19）新增只读 RPC QueryScopedMetrics → 154 方法
+//（27 ACTION + 53 DECLARATION + 74 READ，仍为 READ 余集）；ADR-0081
+// 附录的台账实数随 H8 批文档追记同批重编。
 
 import (
 	"sort"
@@ -178,7 +182,7 @@ var idemActionExemptions = map[string]string{
 // 验收锚，freezeguard「全方法 × 桶」既定形态）。DECLARATION/ACTION 两表
 // 枚举，READ 是余集（§1 读前缀缺省归类，与冻结读面同前缀集）；两表皆无
 // 且不携读前缀 = 未分类红；表条目在 proto 不存在 = 死条目红（更名/删除
-// 曝光）；27/53/153 台账实数漂移 = 立法文件与代码脱钩红（同 commit 重编
+// 曝光）；27/53/154 台账实数漂移 = 立法文件与代码脱钩红（同 commit 重编
 // 附录）。
 func TestWriteClassCompleteClassification(t *testing.T) {
 	all := protoAllMethods(t)
@@ -186,15 +190,16 @@ func TestWriteClassCompleteClassification(t *testing.T) {
 		t.Fatalf("proto method scan found only %d methods — guard is blind, fix the scan", len(all))
 	}
 
-	// 台账实数对账（附录统计：27 ACTION + 53 DECLARATION + 73 READ = 153）。
+	// 台账实数对账（附录统计：27 ACTION + 53 DECLARATION + 74 READ = 154；
+	// H8 阶段 B 的 QueryScopedMetrics 是 READ 余集）。
 	if len(writeClassActions) != 27 {
 		t.Errorf("writeClassActions holds %d entries; the ADR-0081 appendix ledger says 27 — re-transcribe the classification table and the appendix in the same commit", len(writeClassActions))
 	}
 	if len(writeClassDeclarations) != 53 {
 		t.Errorf("writeClassDeclarations holds %d entries; the ADR-0081 appendix ledger says 53 — re-transcribe the classification table and the appendix in the same commit", len(writeClassDeclarations))
 	}
-	if len(all) != 153 {
-		t.Errorf("proto surface holds %d methods; the ADR-0081 appendix ledger says 153 (27 ACTION + 53 DECLARATION + 73 READ) — reclassify and re-transcribe the appendix in the same commit", len(all))
+	if len(all) != 154 {
+		t.Errorf("proto surface holds %d methods; the ADR-0081 appendix ledger says 154 (27 ACTION + 53 DECLARATION + 74 READ) — reclassify and re-transcribe the appendix in the same commit", len(all))
 	}
 
 	var unclassified []string
