@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { TimezoneCombobox, detectedTimezone } from "./timezone-combobox";
 import {
   Table,
   TableBody,
@@ -440,7 +441,9 @@ function RunRow({ run }: { run: { id?: string; state?: string; status?: string; 
 // 自包含。
 export function NewScheduleButton({ projectId }: { projectId: string }) {
   const [createOpen, setCreateOpen] = useState(false);
-  const [form, setForm] = useState({ name: "", cron: "0 3 * * *", timezone: "UTC", image: "", command: "", env: "", ttl: "3600" });
+  // 时区默认浏览器本地时区（用户裁定 2026-10-21），检测失败回退 UTC；
+  // 切换走可搜索下拉（timezone-combobox），服务端校验仍是真源。
+  const [form, setForm] = useState({ name: "", cron: "0 3 * * *", timezone: detectedTimezone(), image: "", command: "", env: "", ttl: "3600" });
   const create = useApiMutation({
     path: "/v1/schedules",
     method: "POST",
@@ -488,7 +491,7 @@ export function NewScheduleButton({ projectId }: { projectId: string }) {
               </Label>
               <Label className="flex flex-col gap-1.5">
                 <span className="text-xs font-semibold">Timezone</span>
-                <Input value={form.timezone} onChange={(event) => setForm({ ...form, timezone: event.target.value })} />
+                <TimezoneCombobox value={form.timezone} onChange={(timezone) => setForm({ ...form, timezone })} />
                 <span className="text-2xs font-normal text-muted-foreground">IANA name</span>
               </Label>
             </div>
