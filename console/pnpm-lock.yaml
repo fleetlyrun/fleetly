@@ -18,8 +18,8 @@ importers:
         specifier: ^5.9.1
         version: 5.9.1(@standard-schema/spec@1.1.0)(ajv-formats@2.1.1(ajv@8.20.0))(ajv@8.20.0)(react-hook-form@7.89.0(@types/react@19.3.0)(react@19.3.0))(zod@4.6.5)
       '@lynx-go/ui-kit':
-        specifier: file:./vendor/lynx-go-ui-kit-0.1.0.tgz
-        version: file:vendor/lynx-go-ui-kit-0.1.0.tgz(@tanstack/react-form@1.33.5(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(@tanstack/react-query@5.104.1(react@19.3.0))(@tanstack/react-router@1.170.41(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0)
+        specifier: ^0.1.1
+        version: 0.1.1(@tanstack/react-form@1.33.5(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(@tanstack/react-query@5.104.1(react@19.3.0))(@tanstack/react-router@1.170.41(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0)
       '@radix-ui/react-alert-dialog':
         specifier: ^1.1.24
         version: 1.1.24(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -669,9 +669,8 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
-  '@lynx-go/ui-kit@file:vendor/lynx-go-ui-kit-0.1.0.tgz':
-    resolution: {integrity: sha512-zTr15AyCmEeVOF2drPovwPhNJN/6jWll8OdhW3yjsI0zU4jWNcUOexgzNao7YXvKjw4hbu0+BksqUKyP+xzz2Q==, tarball: file:vendor/lynx-go-ui-kit-0.1.0.tgz}
-    version: 0.1.0
+  '@lynx-go/ui-kit@0.1.1':
+    resolution: {integrity: sha512-R+W3lbLehT/v5einsPn2bUwyOz8KdPtts2zSsM00Ea4i02KcCikNQPWO5QD+NHPOJwmdqJuKi9QtZrMkVxm3qA==}
     peerDependencies:
       '@tanstack/react-form': '>=1.30'
       '@tanstack/react-query': '>=5.100'
@@ -4212,7 +4211,7 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.6.0
 
-  '@lynx-go/ui-kit@file:vendor/lynx-go-ui-kit-0.1.0.tgz(@tanstack/react-form@1.33.5(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(@tanstack/react-query@5.104.1(react@19.3.0))(@tanstack/react-router@1.170.41(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0)':
+  '@lynx-go/ui-kit@0.1.1(@tanstack/react-form@1.33.5(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(@tanstack/react-query@5.104.1(react@19.3.0))(@tanstack/react-router@1.170.41(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0)':
     dependencies:
       '@tanstack/react-form': 1.33.5(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       effect: 4.0.6
