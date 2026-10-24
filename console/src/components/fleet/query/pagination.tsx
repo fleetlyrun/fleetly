@@ -1,7 +1,7 @@
 // vendored from fleet-ui registry/query/pagination.tsx @0.1.0（2026-10-24 试点切片）
 // 拷贝适配（design.md §12.1）：token 方言类名按映射表改写；Select 基元改用
 // fleet 本地原生 select 桥；其余与上游一致。
-import type { CollectionHandle } from "@fleetly/fleet-ui-kit/react";
+import type { CollectionHandle } from "@fleetly/ui-kit/react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/fleet/ui/native-select";

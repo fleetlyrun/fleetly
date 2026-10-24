@@ -2,10 +2,10 @@
 // 拷贝适配（design.md §12.1）：token 方言类名按映射表改写；Select 基元改用
 // fleet 本地原生 select 桥（本仓 ui/select 是 Radix compound，形态不匹配）；
 // 其余与上游一致。
-import type { Predicate } from "@fleetly/fleet-ui-kit/kernel";
-import { textPredicate } from "@fleetly/fleet-ui-kit/kernel";
-import type { CollectionHandle } from "@fleetly/fleet-ui-kit/react";
-import type { FilterFieldDef, QuerySearchSchema } from "@fleetly/fleet-ui-kit/schema";
+import type { Predicate } from "@fleetly/ui-kit/kernel";
+import { textPredicate } from "@fleetly/ui-kit/kernel";
+import type { CollectionHandle } from "@fleetly/ui-kit/react";
+import type { FilterFieldDef, QuerySearchSchema } from "@fleetly/ui-kit/schema";
 import { Search, X } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";

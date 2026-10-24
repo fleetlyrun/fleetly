@@ -2,7 +2,7 @@
 // 拷贝适配（design.md §12.1）：token 方言类名按映射表改写（text-err → 本仓
 // status-danger 变量）；四态文案保持块内 kind 分支（消费方 describeError 单源
 // 的 override 槽是后续块 API 议题，§12.1-6）；其余与上游一致。
-import type { ApiError } from "@fleetly/fleet-ui-kit/kernel";
+import type { ApiError } from "@fleetly/ui-kit/kernel";
 import { RotateCw, SearchX } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";

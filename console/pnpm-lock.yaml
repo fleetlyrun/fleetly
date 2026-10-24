@@ -8,9 +8,9 @@ importers:
 
   .:
     dependencies:
-      '@fleetly/fleet-ui-kit':
-        specifier: file:./vendor/fleetly-fleet-ui-kit-0.1.0.tgz
-        version: file:vendor/fleetly-fleet-ui-kit-0.1.0.tgz(@tanstack/react-form@1.33.5(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(@tanstack/react-query@5.104.1(react@19.3.0))(@tanstack/react-router@1.170.41(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0)
+      '@fleetly/ui-kit':
+        specifier: file:./vendor/fleetly-ui-kit-0.1.0.tgz
+        version: file:vendor/fleetly-ui-kit-0.1.0.tgz(@tanstack/react-form@1.33.5(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(@tanstack/react-query@5.104.1(react@19.3.0))(@tanstack/react-router@1.170.41(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0)
       '@fontsource-variable/inter':
         specifier: ^5.3.0
         version: 5.3.0
@@ -548,8 +548,8 @@ packages:
   '@exodus/schemasafe@1.3.0':
     resolution: {integrity: sha512-5Aap/GaRupgNx/feGBwLLTVv8OQFfv3pq2lPRzPg9R+IOBnDgghTGW7l7EuVXOvg5cc/xSAlRW8rBrjIC3Nvqw==}
 
-  '@fleetly/fleet-ui-kit@file:vendor/fleetly-fleet-ui-kit-0.1.0.tgz':
-    resolution: {integrity: sha512-3PemUi1z5A0M+REw2fVF1WDIk5vsXp4d11TTSi8ByGvT04HJIiXoPHzzuh1nCQYQgCRgZSsw9ycgYh08qfLfGA==, tarball: file:vendor/fleetly-fleet-ui-kit-0.1.0.tgz}
+  '@fleetly/ui-kit@file:vendor/fleetly-ui-kit-0.1.0.tgz':
+    resolution: {integrity: sha512-TKpQjKbUm3upHu6LlAugLuXvWbPX+Gv+SdbB+KtZwM/D5yuJPAmLeQtN6m934q1R7bbHHUfc40ggA5k758YlHg==, tarball: file:vendor/fleetly-ui-kit-0.1.0.tgz}
     version: 0.1.0
     peerDependencies:
       '@tanstack/react-form': '>=1.30'
@@ -4158,7 +4158,7 @@ snapshots:
 
   '@exodus/schemasafe@1.3.0': {}
 
-  '@fleetly/fleet-ui-kit@file:vendor/fleetly-fleet-ui-kit-0.1.0.tgz(@tanstack/react-form@1.33.5(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(@tanstack/react-query@5.104.1(react@19.3.0))(@tanstack/react-router@1.170.41(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0)':
+  '@fleetly/ui-kit@file:vendor/fleetly-ui-kit-0.1.0.tgz(@tanstack/react-form@1.33.5(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(@tanstack/react-query@5.104.1(react@19.3.0))(@tanstack/react-router@1.170.41(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react@19.3.0)':
     dependencies:
       '@tanstack/react-form': 1.33.5(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       effect: 4.0.6

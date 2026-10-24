@@ -1,6 +1,6 @@
-import { clientCollection, createHttp } from "@fleetly/fleet-ui-kit/adapters";
-import { defineResource, type ResourceScope } from "@fleetly/fleet-ui-kit/kernel";
-import { collectionQuerySchema } from "@fleetly/fleet-ui-kit/schema";
+import { clientCollection, createHttp } from "@fleetly/ui-kit/adapters";
+import { defineResource, type ResourceScope } from "@fleetly/ui-kit/kernel";
+import { collectionQuerySchema } from "@fleetly/ui-kit/schema";
 import { notifyUnauthorized } from "@/api/client";
 import type { AppEntry } from "@/lib/catalog";
 import { getToken } from "@/lib/token";
