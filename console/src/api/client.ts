@@ -24,6 +24,13 @@ export function setUnauthorizedHandler(handler: UnauthorizedHandler | null) {
   unauthorizedHandler = handler;
 }
 
+// notifyUnauthorized 触发已注册的 401 闭环（main.tsx 单源注册：清 token/缓存
+// + 回登录）。fleet-ui http 管线（src/fleet/）的 onUnauthorized 接此——同一
+// 闭环服务两条数据面，不在 fleet 侧复制逻辑。
+export function notifyUnauthorized() {
+  unauthorizedHandler?.();
+}
+
 // errorFromResponse 尽力解析统一错误信封；解析失败退回状态行文本。
 async function errorFromResponse(res: Response): Promise<ApiError> {
   let code = "unknown";

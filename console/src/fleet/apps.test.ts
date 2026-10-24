@@ -1,0 +1,96 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { setToken } from "@/lib/token";
+import { appsSearch, fetchApps } from "./apps";
+
+// fleet-ui 适配器族单测（试点切片）：protojson 行收敛、作用域参数与鉴权头、
+// 空 scope 不发请求、URL 编解码往返。fetch 面 stub 在 global（kit http 管线
+// 调用裸 fetch）。
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  setToken("");
+});
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+describe("fetchApps（protojson 收敛 + 作用域参数 + 鉴权头）", () => {
+  it("整取 /v1/apps 并把宽松生成类型收敛为非空 AppEntry", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({
+        apps: [
+          { id: "a1", name: "web", project_id: "shop", created_at: "2026-01-01T00:00:00Z" },
+          undefined,
+          { id: "", name: "no-id" },
+          { name: "no-id-2" },
+        ],
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const rows = await fetchApps({ projectId: "shop" });
+
+    expect(rows).toEqual([
+      { id: "a1", project_id: "shop", name: "web", created_at: "2026-01-01T00:00:00Z" },
+    ]);
+    const [url] = fetchMock.mock.calls[0] as unknown as [string];
+    expect(String(url)).toContain("/v1/apps?");
+    expect(String(url)).toContain("project_id=shop");
+    expect(String(url)).toContain("limit=200");
+  });
+
+  it("空 projectId 不发请求（ListApps project_id 必填契约）", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await fetchApps({})).toEqual([]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("持有凭证时带 Bearer 头", async () => {
+    setToken("tok-1");
+    const fetchMock = vi.fn(async () => jsonResponse({ apps: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchApps({ projectId: "shop" });
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer tok-1");
+  });
+
+  it("非 2xx 走统一错误信封（code/message 抛出）", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ code: "E_X", message: "boom" }, 503)));
+    await expect(fetchApps({ projectId: "shop" })).rejects.toThrowError(/boom/);
+  });
+});
+
+describe("appsSearch（URL 编解码契约）", () => {
+  it("q 编码往返为 contains 谓词；decode 容忍缺省", () => {
+    const encoded = appsSearch.encode({
+      predicate: { any: [
+        { field: "name", op: "contains", value: "web" },
+        { field: "id", op: "contains", value: "web" },
+      ] },
+      window: { size: 20 },
+    });
+    expect(encoded.q).toBe("web");
+    const decoded = appsSearch.decode({ q: "web" });
+    expect(decoded.predicate).toEqual({
+      any: [
+        { field: "name", op: "contains", value: "web" },
+        { field: "id", op: "contains", value: "web" },
+      ],
+    });
+    expect(decoded.window.size).toBe(20);
+  });
+
+  it("清除谓词的补丁显式置空 q（函数式 search 展开不残留旧值）", () => {
+    const patch = appsSearch.patch({ predicate: null });
+    expect("q" in patch).toBe(true);
+    expect(patch.q).toBeUndefined();
+    expect(patch.page).toBeUndefined();
+  });
+});

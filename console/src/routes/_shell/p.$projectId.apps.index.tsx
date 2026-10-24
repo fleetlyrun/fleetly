@@ -2,14 +2,19 @@ import { useState } from "react";
 import { Link, useNavigate, createFileRoute } from "@tanstack/react-router";
 import { useMutation } from "@tanstack/react-query";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
-import { BoxesIcon, MoreHorizontalIcon, PlusIcon, RocketIcon, ScrollTextIcon, SquareTerminalIcon } from "lucide-react";
+import { MoreHorizontalIcon, PlusIcon, RocketIcon, ScrollTextIcon, SquareTerminalIcon } from "lucide-react";
 import { toast } from "sonner";
+import { useCollection } from "@fleetly/fleet-ui-kit";
 import { apiSend } from "@/api/client";
+import { DataTable } from "@/components/fleet/query/data-table";
+import { FilterBar } from "@/components/fleet/query/filter-bar";
+import { ListPage as FleetListPage } from "@/components/fleet/query/list-page";
+import { Pagination } from "@/components/fleet/query/pagination";
 import { DeploySheet } from "@/features/deployments/deploy-sheet";
 import { useAppDeployments, type Deployment } from "@/features/deployments/hooks";
 import { CopyButton } from "@/components/domain/copy-button";
-import { EmptyState } from "@/components/domain/empty-state";
-import { ListPage } from "@/components/domain/list-page";
+import { CliEquivalent } from "@/components/domain/list-toolbar";
+import { PageFrame } from "@/components/domain/page-frame";
 import { ProjectAvatar } from "@/components/domain/project-avatar";
 import { RelativeTime } from "@/components/domain/relative-time";
 import { DeploymentStatusBadge } from "@/components/domain/status-badge";
@@ -29,23 +34,34 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useApps, useProjectName, useRoutes, type AppEntry } from "@/lib/catalog";
+import { useProjectName, useRoutes, type AppEntry } from "@/lib/catalog";
+import { appsResource, appsSearch } from "@/fleet/apps";
 
-// Apps 列表（List 原型 + IA v3 原型 screen-apps 对齐批）：filter 工具栏 +
-// 计数 + ROUTES 列 + 行尾动词 + CLI equivalent 行；创建入口 "+ New app"
-// （瘦对话框契约 §5.5：只承载 Name——create-then-configure，初始源在
-// 详情页 Deploy 承接）。语境来自 URL，手贴 project ID 的时代终结。
+// Apps 列表（fleet-ui 试点切片，2026-10-24）：骨架换 fleet 块（ListPage ×
+// FilterBar × DataTable × Pagination），快筛/分页/排序首次进 URL（q/size/
+// page/sort——旧页是 useState 本地态，无存量参数兼容面，纯增量）；业务件
+// （单元格/创建对话框/DeploySheet/CLI 行）保持本仓自持。语境 projectId 经
+// useCollection 的 scope 注入数据层（query key 嵌入 scope 段）。
 export const Route = createFileRoute("/_shell/p/$projectId/apps/")({
+  validateSearch: appsSearch.toSearchSchema(),
   component: AppsListPage,
 });
 
 function AppsListPage() {
   const { projectId } = Route.useParams();
   const navigate = useNavigate();
-  const apps = useApps(projectId);
+  const list = useCollection(appsResource, {
+    // from 传 Route.id（不是 fullPath）：_shell 无路径布局下 fullPath 与
+    // 路由 id 不同形，useSearch/useNavigate 按 id 找活跃 match（试点实咬，
+    // 记 design.md §12.1 痛点清单）
+    from: Route.id,
+    search: appsSearch,
+    scope: { projectId },
+    query: { refetchInterval: 60_000 },
+  });
   const routes = useRoutes(projectId);
   const projectName = useProjectName(projectId);
-  const rows = apps.data ?? [];
+  const rows = list.rows;
   const [createOpen, setCreateOpen] = useState(false);
   const [deployOpen, setDeployOpen] = useState(false);
   const [deployAppId, setDeployAppId] = useState("");
@@ -61,6 +77,7 @@ function AppsListPage() {
     {
       accessorKey: "name",
       header: "App",
+      meta: { sortField: "name" },
       cell: ({ row }) => (
         <div className="flex items-center gap-2.5">
           <ProjectAvatar seed={row.original.id} label={row.original.name} />
@@ -122,73 +139,83 @@ function AppsListPage() {
     },
   ];
 
+  // 源空与过滤空两套文案（旧页 filterEmpty 契约）：谓词在场 = 过滤空。
+  const filtered = list.query.predicate != null;
+  const count = list.total ?? rows.length;
+
   return (
-    <ListPage
+    <PageFrame
       title="Apps"
       description={
-        rows.length > 0
-          ? `${rows.length} app${rows.length === 1 ? "" : "s"} in ${projectName ?? "this project"} — deployments are tracked per app`
+        count > 0
+          ? `${count} app${count === 1 ? "" : "s"} in ${projectName ?? "this project"} — deployments are tracked per app`
           : "Deployments are tracked per app — create one to get started"
       }
-      label="apps"
-      placeholder="Filter apps..."
-      rows={rows}
-      fieldsOf={(app) => [app.name, app.id]}
-      loading={apps.isPending}
-      error={apps.isError ? apps.error : null}
-      onRetry={() => void apps.refetch()}
-      columns={columns}
-      onRowClick={(app) => {
-        void navigate({ to: "/p/$projectId/apps/$appId", params: { projectId, appId: app.id } });
-      }}
-      cli={`fleetly apps list --project ${projectId}`}
-      actions={
-        <Button
-          size="sm"
-          onClick={() => {
-            setCreateOpen(true);
+    >
+      <FleetListPage
+        list={list}
+        toolbar={
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <FilterBar list={list} schema={appsSearch} textPlaceholder="Filter apps..." />
+            {/* 列表主动作钉工具栏行最右（本仓对齐批 5 裁决——不吃 fleet 块的页头钮位） */}
+            <div className="py-2 pr-3">
+              <Button
+                size="sm"
+                onClick={() => {
+                  setCreateOpen(true);
+                }}
+              >
+                <PlusIcon data-icon-start-inline />
+                New app
+              </Button>
+            </div>
+          </div>
+        }
+        pagination={<Pagination list={list} />}
+        emptyTitle={filtered ? "No apps match the filter" : "No apps yet"}
+        emptyDescription={
+          filtered
+            ? "Adjust or clear the filter to see rows again."
+            : "Create one with New app — or close this and deploy an image, the app appears here."
+        }
+        appendix={
+          <>
+            <CliEquivalent command={`fleetly apps list --project ${projectId}`} />
+            <NewAppDialog
+              projectId={projectId}
+              open={createOpen}
+              onOpenChange={setCreateOpen}
+              onCreated={(appId) => {
+                void navigate({ to: "/p/$projectId/apps/$appId", params: { projectId, appId } });
+              }}
+            />
+            <DeploySheet
+              open={deployOpen}
+              onOpenChange={setDeployOpen}
+              apps={[...rows]}
+              defaultAppId={deployAppId || rows[0]?.id || ""}
+              projectId={projectId}
+              onDeployed={(deploymentId) => {
+                void navigate({
+                  to: "/p/$projectId/apps/$appId/deployments/$deploymentId",
+                  params: { projectId, appId: deployAppId || rows[0]?.id || "", deploymentId },
+                });
+              }}
+            />
+          </>
+        }
+      >
+        <DataTable
+          list={list}
+          columns={columns}
+          getRowId={(row) => row.id}
+          onRowClick={(app) => {
+            void navigate({ to: "/p/$projectId/apps/$appId", params: { projectId, appId: app.id } });
           }}
-        >
-          <PlusIcon data-icon-start-inline />
-          New app
-        </Button>
-      }
-      empty={
-        <EmptyState
-          icon={BoxesIcon}
-          title="No apps yet"
-          description="Create one with New app — or close this and deploy an image, the app appears here."
         />
-      }
-
-      appendix={
-        <>
-          <NewAppDialog
-            projectId={projectId}
-            open={createOpen}
-            onOpenChange={setCreateOpen}
-            onCreated={(appId) => {
-              void navigate({ to: "/p/$projectId/apps/$appId", params: { projectId, appId } });
-            }}
-          />
-
-          <DeploySheet
-            open={deployOpen}
-            onOpenChange={setDeployOpen}
-            apps={rows}
-            defaultAppId={deployAppId || rows[0]?.id || ""}
-            projectId={projectId}
-            onDeployed={(deploymentId) => {
-              void navigate({
-                to: "/p/$projectId/apps/$appId/deployments/$deploymentId",
-                params: { projectId, appId: deployAppId || rows[0]?.id || "", deploymentId },
-              });
-            }}
-          />
-        </>
-      }
-    />
-  );
+      </FleetListPage>
+    </PageFrame>
+  )
 }
 
 // NewAppDialog 是创建瘦对话框（§5.5 契约）：只承载 Name——create-then-
