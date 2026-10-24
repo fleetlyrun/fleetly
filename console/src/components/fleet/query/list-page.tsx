@@ -3,7 +3,7 @@
 // 自带页壳（mx-auto max-w-5xl p-6）与块内 header——本仓壳与页头双双单源
 // （PageFrame/PageHeader，守卫规则⑥立法意图 + 页头唯一形态法），页面经
 // PageFrame 套本块，块只管卡体 × toolbar × 四态 × appendix。
-import type { CollectionHandle } from "@fleetly/ui-kit/react";
+import type { CollectionHandle } from "@lynx-go/ui-kit/react";
 import type { ReactNode } from "react";
 import { Card } from "@/components/ui/card";
 import { EmptyState, ErrorState, LoadingState } from "../values/states";
