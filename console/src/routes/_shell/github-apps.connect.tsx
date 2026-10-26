@@ -1,10 +1,12 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { ArrowRightIcon, CheckCircle2Icon, FingerprintIcon } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
-import { apiSend } from "@/api/client";
+import { useCommand } from "@lynx-go/uikit-core";
+import type { ApiError, CommandResult } from "@lynx-go/uikit-core/kernel";
+import { describeApiError } from "@/kit/errors";
+import { githubAppsResource } from "@/kit/githubapps";
 import { ErrorState } from "@/components/domain/error-state";
 import { PageFrame } from "@/components/domain/page-frame";
 import { Button } from "@/components/ui/button";
@@ -18,6 +20,10 @@ import { Button } from "@/components/ui/button";
 //     URL 存活）→ complete 落行（project_id 由 state 载荷解码——载荷可读
 //     不可伪造，服务端复验）。
 // 成功即回对应清单页（project 行回 Registry 第三 tab，global 行回本页）。
+// 批2：consume/complete 走 kit/githubapps.ts commands——回跳页有整页错误
+// 态（ErrorState）在场，rejected/conflict/failure 都折算进页面呈现不走
+// toast（结果盒在场，toast 单源的例外分支）；流态解码挪 kit
+// decodeFlowStateProject。
 
 // GitHub 以纯 query 追加回调参数,TanStack Router 缺省会 JSON.parse 值——
 // 数字形态的 installation_id 落成 number。一律宽容收下再转 string。
@@ -39,32 +45,25 @@ export const Route = createFileRoute("/_shell/github-apps/connect")({
   component: ConnectPage,
 });
 
-// stateProject 解码签名态的可读载荷（base64url(JSON)——服务端验签，本地
-// 只读作用域用于回跳导航）。解码失败返回 null（走通用错误态）。
-function stateProject(state: string): { projectId?: string } | null {
-  try {
-    const [body] = state.split(".");
-    const json = JSON.parse(atob(body.replace(/-/g, "+").replace(/_/g, "/")));
-    return { projectId: typeof json.p === "string" && json.p !== "" ? json.p : undefined };
-  } catch {
-    return null;
-  }
+// 结果/失败两通道折算为 ErrorState 可呈现形态：kernel ApiError 非 Error
+// 实例（describeApiError 先摊平），rejected/conflict 用 message 原句。
+function commandPageError<P>(command: { failure: ApiError | null; result: CommandResult<P> | null }): Error | null {
+  if (command.failure != null) return new Error(describeApiError(command.failure));
+  if (command.result != null && command.result.status !== "ok") return new Error(command.result.message);
+  return null;
 }
 
 function ConnectPage() {
   const { code, state, installation_id } = Route.useSearch();
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const [installUrl, setInstallUrl] = useState<string | null>(null);
   const [appName, setAppName] = useState<string | null>(null);
 
-  const consume = useMutation({
-    mutationFn: () =>
-      apiSend<{ install_url?: string; app_name?: string }>("/v1/github-apps/manifest/consume", "POST", {
-        code: code ?? "",
-        state: state ?? "",
-      }),
-    onSuccess: (res) => {
+  // ok 副作用：签名态落本地（phase B 恢复面）+ 安装页 URL/应用名进呈现；
+  // 非 ok 分支不落任何态，页面错误态由 commandPageError 折算。
+  const consume = useCommand(githubAppsResource.commands.manifestConsume, {
+    onSettled: (result, failure) => {
+      if (failure != null || result == null || result.status !== "ok") return;
       if (state != null && state !== "") {
         try {
           localStorage.setItem(flowStateKey, state);
@@ -72,10 +71,11 @@ function ConnectPage() {
           // 存不进也不挡流程——setup 回调同 tab 打开,常态都在
         }
       }
-      setInstallUrl(res.install_url ?? "");
-      setAppName(res.app_name ?? "");
+      setInstallUrl(result.payload.install_url ?? "");
+      setAppName(result.payload.app_name ?? "");
     },
   });
+  const consumeInput = { code: code ?? "", state: state ?? "" };
 
   // phase B 的流态:setup 回调缺 state 时取 consume 时存的本地副本。
   const resolveFlowState = (): string => {
@@ -87,26 +87,19 @@ function ConnectPage() {
     }
   };
 
-  const complete = useMutation({
-    mutationFn: () => {
-      const flowState = resolveFlowState();
-      const scope = flowState !== "" ? stateProject(flowState) : null;
-      if (scope == null) throw new Error("the flow state could not be recovered — restart the flow from the GitHub Apps page");
-      return apiSend<{ app?: { id?: string; project_id?: string; account_login?: string } }>(
-        "/v1/github-apps/manifest/complete",
-        "POST",
-        { state: flowState, installation_id: Number(installation_id ?? 0), project_id: scope.projectId ?? "" },
-      );
-    },
-    onSuccess: (res) => {
+  // ok 副作用：清本地流态 + toast + 回对应清单页（project 行回 Registry
+  // 第三 tab，global 行回管理页）；落行失效（双语境集合 + repos 子查询）
+  // 由命令声明承载。
+  const complete = useCommand(githubAppsResource.commands.manifestComplete, {
+    onSettled: (result, failure) => {
+      if (failure != null || result == null || result.status !== "ok") return;
       try {
         localStorage.removeItem(flowStateKey);
       } catch {
         // 清理尽力而为
       }
-      toast.success(`GitHub App added — owner ${res.app?.account_login ?? "?"} resolved from the installation`);
-      void queryClient.invalidateQueries({ queryKey: ["github-apps"] });
-      const pid = res.app?.project_id;
+      toast.success(`GitHub App added — owner ${result.payload.app?.account_login ?? "?"} resolved from the installation`);
+      const pid = result.payload.app?.project_id;
       if (pid != null && pid !== "") {
         void navigate({ to: "/p/$projectId/registry", params: { projectId: pid }, search: { tab: "github" } });
       } else {
@@ -114,33 +107,37 @@ function ConnectPage() {
       }
     },
   });
+  const completeInput = { state: resolveFlowState(), installationId: installation_id ?? "" };
 
-  // useMutation 不会自跑——落地即自动兑换/落行（ref 挡 StrictMode 双发；
-  // code 兑换在 GitHub 侧一次性，服务端对已耗 code 做流内幂等重放，刷新
-  // 页面安全）。
+  // 命令不会自跑——落地即自动兑换/落行（ref 挡 StrictMode 双发；code 兑
+  // 换在 GitHub 侧一次性，服务端对已耗 code 做流内幂等重放，刷新页面安
+  // 全）。
   const firedRef = useRef(false);
   useEffect(() => {
     if (firedRef.current) return;
     if (installation_id != null && installation_id !== "") {
       firedRef.current = true;
-      void complete.mutate();
+      void complete.mutate(completeInput);
     } else if (code != null && code !== "" && state != null && state !== "") {
       firedRef.current = true;
-      void consume.mutate();
+      void consume.mutate(consumeInput);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 挂载即判段触发一次，参数由路由 search 固定
   }, []);
+
+  const consumeError = commandPageError(consume);
+  const completeError = commandPageError(complete);
 
   // phase B：安装完成回跳（setup_url 追加 installation_id；state 由本地恢复）。
   if (installation_id != null && installation_id !== "") {
     return (
       <ConnectFrame>
-        {complete.isPending ? (
+        {complete.pending ? (
           <p className="flex items-center gap-2 text-sm text-muted-foreground">
             <FingerprintIcon className="size-4" /> Verifying the installation and landing the row…
           </p>
-        ) : complete.isError ? (
-          <ErrorState error={complete.error} onRetry={() => void complete.mutate()} />
+        ) : completeError != null ? (
+          <ErrorState error={completeError} onRetry={() => void complete.mutate(completeInput)} />
         ) : null}
       </ConnectFrame>
     );
@@ -150,10 +147,10 @@ function ConnectPage() {
   if (code != null && code !== "") {
     return (
       <ConnectFrame>
-        {consume.isPending ? (
+        {consume.pending ? (
           <p className="text-sm text-muted-foreground">Exchanging the creation code…</p>
-        ) : consume.isError ? (
-          <ErrorState error={consume.error} onRetry={() => void consume.mutate()} />
+        ) : consumeError != null ? (
+          <ErrorState error={consumeError} onRetry={() => void consume.mutate(consumeInput)} />
         ) : (
           <div className="flex flex-col items-start gap-3">
             <p className="flex items-center gap-2 text-sm">

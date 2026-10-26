@@ -7,9 +7,10 @@ import {
   lastPointValue,
 } from "@/features/fleet/freshness";
 import { componentHealth, useSystemStatus } from "@/features/fleet/use-system-status";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { apiSend } from "@/api/client";
+import { useCommand } from "@lynx-go/uikit-core";
+import { systemResource } from "@/kit/system";
+import { toastOnSettled } from "@/kit/toast";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -212,24 +213,22 @@ function ProviderCardView({
 }
 
 // RestartButton（IA v3 二期④）：载体重启（Runtime 重启子面强制重排）——
-// 破坏性动作走 AlertDialog 确认（守卫执法：禁 window.confirm）；成功后
-// 刷新健康面（滚动重排期间 unhealthy 是预期中间态）。
+// 破坏性动作走 AlertDialog 确认（守卫执法：禁 window.confirm）；批2 走
+// kit/system.ts 的 restart 命令——["system","status"] 失效语义经 legacyKeys
+// 保留，成功后另由 onRestarted 刷新健康面（滚动重排期间 unhealthy 是预
+// 期中间态）。
 function RestartButton({ name, onRestarted }: { name: string; onRestarted: () => void }) {
-  const queryClient = useQueryClient();
-  const restart = useMutation({
-    mutationFn: async () => apiSend<{ restarted?: number }>(`/v1/system/components/${encodeURIComponent(name)}/restart`, "POST", {}),
-    onSuccess: (resp) => {
-      toast(`Restart requested — ${resp?.restarted ?? 1} carrier(s) rescheduling`);
-      void queryClient.invalidateQueries({ queryKey: ["system", "status"] });
+  const restart = useCommand(systemResource.commands.restart, {
+    onSettled: toastOnSettled((payload) => {
+      toast(`Restart requested — ${payload.restarted ?? 1} carrier(s) rescheduling`);
       onRestarted();
-    },
-    onError: (cause) => toast.error(cause instanceof Error ? cause.message : String(cause)),
+    }),
   });
   return (
     <AlertDialog>
       <AlertDialogTrigger asChild>
-        <Button size="sm" variant="outline" disabled={restart.isPending}>
-          {restart.isPending ? "Restarting…" : "Restart…"}
+        <Button size="sm" variant="outline" disabled={restart.pending}>
+          {restart.pending ? "Restarting…" : "Restart…"}
         </Button>
       </AlertDialogTrigger>
       <AlertDialogContent>
@@ -243,13 +242,13 @@ function RestartButton({ name, onRestarted }: { name: string; onRestarted: () =>
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
           <AlertDialogAction
-            disabled={restart.isPending}
+            disabled={restart.pending}
             onClick={(event) => {
               event.preventDefault();
-              restart.mutate();
+              restart.mutate({ name });
             }}
           >
-            {restart.isPending ? "Restarting…" : "Restart"}
+            {restart.pending ? "Restarting…" : "Restart"}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

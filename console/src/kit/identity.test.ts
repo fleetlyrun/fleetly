@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { QueryClient } from "@tanstack/react-query";
+import { invalidateAfterCommand } from "@lynx-go/uikit-core";
 import { textPredicate } from "@lynx-go/uikit-core/kernel";
 import { setToken } from "@/lib/token";
-import { fetchInvitations, fetchRoles, fetchTeams, fetchUsers, identitySearch } from "./identity";
+import { fetchInvitations, fetchRoles, fetchTeams, fetchUsers, identitySearch, usersResource } from "./identity";
 
 // 身份域适配器单测（批1 Wave2-B）：四 resource 端点锚、信封行收敛、共享
 // schema 的 URL 编解码往返（平台域无 scope——fetch 恒发）。fetch 面 stub
@@ -61,5 +63,38 @@ describe("identitySearch（URL 编解码契约，四 tab 共享实例）", () =>
     expect("q" in patch).toBe(true);
     expect(patch.q).toBeUndefined();
     expect(patch.page).toBeUndefined();
+  });
+});
+
+// 命令锚（批2 写面 useCommand 化）：每域 1 锚——runCommandMapped 映射 +
+// 失效桥（kit 集合键默认失效 × legacyKeys 存量键）。identity 锚在 users
+// remove（create/setPassword 等同族同管线）。
+describe("命令锚：users remove（映射 + 失效桥）", () => {
+  it("ok → kit users 集合键与存量 [identity,users] 键同批失效", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({})));
+    const result = await usersResource.commands.remove.run({ id: "u1" });
+    expect(result.status).toBe("ok");
+
+    const queryClient = new QueryClient();
+    // collectionKey 同形：["collection",name,scope,predicate,order,window]
+    const kitKey = ["collection", "users", {}, null, null, { size: 20, cursor: null, offset: null }];
+    queryClient.setQueryData(kitKey, []);
+    queryClient.setQueryData(["identity", "users"], []);
+    invalidateAfterCommand(queryClient, usersResource.commands.remove, {});
+    expect(queryClient.getQueryState(kitKey)?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(["identity", "users"])?.isInvalidated).toBe(true);
+  });
+
+  it("400 → rejected 保留 apperr code；remove 打 DELETE /v1/users/{id}", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ code: "E_IDENTITY_LAST_ADMIN", message: "cannot delete" }, 400));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(usersResource.commands.remove.run({ id: "u1" })).resolves.toEqual({
+      status: "rejected",
+      code: "E_IDENTITY_LAST_ADMIN",
+      message: "cannot delete",
+    });
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(String(url)).toBe("/v1/users/u1");
+    expect(init.method).toBe("DELETE");
   });
 });

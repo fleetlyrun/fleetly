@@ -1,12 +1,14 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { FingerprintIcon, InfoIcon, PlusIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
-import { useCollection } from "@lynx-go/uikit-core";
+import { useCollection, useCommand } from "@lynx-go/uikit-core";
 import type { components as ghSchemas } from "@/api/github_apps";
-import { apiFetch, apiSend } from "@/api/client";
+import { apiFetch } from "@/api/client";
+import { describeApiError } from "@/kit/errors";
 import { githubAppsResource, githubAppsSearch, type GitHubAppRow } from "@/kit/githubapps";
+import { toastOnSettled } from "@/kit/toast";
 import { ConfirmDialog } from "@/components/domain/confirm-dialog";
 import { CopyButton } from "@/components/domain/copy-button";
 import { RelativeTime } from "@/components/domain/relative-time";
@@ -33,13 +35,18 @@ type GitHubAppRepo = ghSchemas["schemas"]["v1GitHubAppRepo"];
 // /Repos 验证面板/添加对话框三段逐屏回照）。projectId 在场 = Project 级
 // 行（Registry 第三 tab）；缺席 = 平台级 Global 行（Fleet 段管理页）。
 // 私钥只写不读：任何界面只出现指纹。
-// 2026-10-26 批1 Wave2-A useCollection 化：列表读面走 kit 资源（快筛/
-// 分页进 URL；无轮询——与旧 inline 查询同现状）；Repos 展开子行走
-// DataTable 本地扩展槽 renderExtraRow（展开态归页面）；manifest 整页
-// POST 流/手动添加表单/删除 Confirm 原样保留（写后失效改打 kit 集合键
-// 前缀，repos 子查询键前缀照旧）。
+// 2026-10-26 批1 Wave2-A useCollection 化 + 批2 写面 useCommand 化：列表读
+// 面走 kit 资源（快筛/分页进 URL；无轮询——与旧 inline 查询同现状）；
+// Repos 展开子行走 DataTable 本地扩展槽 renderExtraRow（展开态归页面）；
+// 写面三动词（put/remove/manifestStart）走 kit/githubapps.ts 的 resource
+// commands——批1 的写后双失效特判（kit 集合前缀 + ["github-apps"] 前缀）
+// 退役，统一由 commands 的 invalidates（allScopes 双语境集合）+ legacyKeys
+//（repos 子查询键）声明承载；manifest 整页 POST 流（浏览器表单导航）非
+// mutation 不动；toast 单源（ok 原句 / rejected·conflict toast.error
+// (message) / failure 走 describeApiError——各命令内联，payload 相关文案
+// 不合模板）。
+
 export function GitHubAppsView({ projectId, from }: { projectId?: string; from: string }) {
-  const queryClient = useQueryClient();
   const list = useCollection(githubAppsResource, {
     from,
     search: githubAppsSearch,
@@ -51,19 +58,17 @@ export function GitHubAppsView({ projectId, from }: { projectId?: string; from: 
   const [deleting, setDeleting] = useState<GitHubAppRow | null>(null);
   // Repos 展开态归页面（单开；id 空兜底不展开）
   const [openRepos, setOpenRepos] = useState<string | null>(null);
-  const del = useMutation({
-    mutationFn: (row: GitHubAppRow) => apiSend(`/v1/github-apps/${encodeURIComponent(row.id ?? "")}`, "DELETE", {}),
-    onSuccess: () => {
-      toast.success("GitHub App removed — clone resolution loses this row immediately");
-      // kit 集合键（["collection","github-apps",…] 前缀）+ repos 子查询键
-      //（["github-apps",appId,"repos"] 前缀）双失效
-      void queryClient.invalidateQueries({ queryKey: ["collection", "github-apps"] });
-      void queryClient.invalidateQueries({ queryKey: ["github-apps"] });
-      setDeleting(null);
-    },
-    onError: (cause) => {
-      toast.error(`${describeError(cause).title} — ${describeError(cause).detail}`);
-      setDeleting(null);
+  // 失效（双语境集合 + repos 子查询键）由 remove 命令声明承载——确认壳
+  // 两分支都要收窗（旧 onError 也收）。
+  const del = useCommand(githubAppsResource.commands.remove, {
+    onSettled: (result, failure) => {
+      if (result != null || failure != null) setDeleting(null);
+      if (failure != null) {
+        toast.error(describeApiError(failure));
+        return;
+      }
+      if (result?.status === "ok") toast.success("GitHub App removed — clone resolution loses this row immediately");
+      else if (result != null) toast.error(result.message);
     },
   });
 
@@ -179,11 +184,8 @@ export function GitHubAppsView({ projectId, from }: { projectId?: string; from: 
         <AddGitHubAppDialog
           projectId={projectId}
           onClose={() => setAddOpen(false)}
-          onAdded={() => {
-            setAddOpen(false);
-            void queryClient.invalidateQueries({ queryKey: ["collection", "github-apps"] });
-            void queryClient.invalidateQueries({ queryKey: ["github-apps"] });
-          }}
+          // 批2：添加成功后的失效由 put 命令声明承载，这里只收弹窗
+          onAdded={() => setAddOpen(false)}
         />
       ) : null}
       <ConfirmDialog
@@ -193,7 +195,7 @@ export function GitHubAppsView({ projectId, from }: { projectId?: string; from: 
         description="Clones stop using this row immediately; the installation on GitHub is untouched. Private repos it covered will fail with an auth error until a row is added again."
         confirmLabel="Remove app"
         pendingLabel="Removing…"
-        onConfirm={() => (deleting != null ? del.mutateAsync(deleting) : Promise.resolve())}
+        onConfirm={() => (deleting != null ? del.mutateAsync({ id: deleting.id ?? "" }) : Promise.resolve())}
       />
     </>
   );
@@ -251,7 +253,9 @@ function ReposPanel({ appId }: { appId: string }) {
 
 // AddGitHubAppDialog 是添加表单（原型回照：App ID / Installation ID /
 // 私钥三字段 + Advanced 折叠 api_base；Owner 受理即验证自动解析——保存
-// 时平台实调 GitHub，错值当场报）。
+// 时平台实调 GitHub，错值当场报）。批2：put/manifestStart 走 kit commands，
+// 表单壳（useState + textarea 折叠）保留；错误反馈 toast 单源（旧内联
+// error <p> 退役）。
 function AddGitHubAppDialog({
   projectId,
   onClose,
@@ -266,7 +270,6 @@ function AddGitHubAppDialog({
   const [privateKey, setPrivateKey] = useState("");
   const [apiBase, setApiBase] = useState("");
   const [advanced, setAdvanced] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   // startFlow 发起 manifest 自动建流（ADR-0073 决策 8）。提交形态（GitHub
   // 官方文档口径）：浏览器以 HTML form **POST** 到 apps/new（字段名
@@ -278,40 +281,32 @@ function AddGitHubAppDialog({
   useEffect(() => {
     if (ghFlow != null) flowFormRef.current?.submit();
   }, [ghFlow]);
-  const startFlow = useMutation({
-    mutationFn: () => {
-      const body = projectId != null ? { project_id: projectId } : { global: true };
-      return apiSend<{ action_url?: string; manifest?: string }>("/v1/github-apps/manifest/start", "POST", body);
-    },
-    onSuccess: (res) => {
-      if (res.action_url != null && res.action_url !== "" && res.manifest != null && res.manifest !== "") {
-        setGhFlow({ actionUrl: res.action_url, manifest: res.manifest });
+  const startFlow = useCommand(githubAppsResource.commands.manifestStart, {
+    onSettled: (result, failure) => {
+      if (failure != null) {
+        toast.error(describeApiError(failure));
+        return;
+      }
+      if (result == null) return;
+      if (result.status === "ok") {
+        const { action_url: actionUrl, manifest } = result.payload;
+        if (actionUrl != null && actionUrl !== "" && manifest != null && manifest !== "") {
+          setGhFlow({ actionUrl, manifest });
+        }
+      } else {
+        toast.error(result.message);
       }
     },
   });
 
-  const put = useMutation({
-    mutationFn: async () => {
-      const body: Record<string, unknown> = {
-        app_id: Number(appId),
-        installation_id: Number(installationId),
-        private_key_pem: privateKey,
-      };
-      if (projectId != null) {
-        body.project_id = projectId;
-      } else {
-        body.global = true;
-      }
-      if (apiBase.trim() !== "") {
-        body.api_base = apiBase.trim();
-      }
-      return apiSend<{ app?: GitHubAppRow }>("/v1/github-apps", "POST", body);
-    },
-    onSuccess: (res) => {
-      toast.success(`GitHub App added — owner ${res.app?.account_login ?? "?"} resolved from the installation`);
+  // put 的 ok 文案带受理解析出的 owner（载荷相关）——toastOnSettled 的
+  // onOk(payload) 支路；del/startFlow 各有壳编排（收窗/流材料条件）保持
+  // 内联同口径。
+  const put = useCommand(githubAppsResource.commands.put, {
+    onSettled: toastOnSettled((payload) => {
+      toast.success(`GitHub App added — owner ${payload.app?.account_login ?? "?"} resolved from the installation`);
       onAdded();
-    },
-    onError: (cause) => setError(`${describeError(cause).title} — ${describeError(cause).detail}`),
+    }),
   });
 
   const valid = appId.trim() !== "" && installationId.trim() !== "" && privateKey.trim() !== "";
@@ -347,15 +342,11 @@ function AddGitHubAppDialog({
           <Button
             size="sm"
             className="self-start"
-            disabled={startFlow.isPending}
-            onClick={() =>
-              startFlow.mutate(undefined, {
-                onError: (cause) => toast.error(`${describeError(cause).title} — ${describeError(cause).detail}`),
-              })
-            }
+            disabled={startFlow.pending}
+            onClick={() => startFlow.mutate({ projectId })}
           >
             <FingerprintIcon data-icon-start-inline />
-            {startFlow.isPending ? "Preparing…" : "Continue to GitHub →"}
+            {startFlow.pending ? "Preparing…" : "Continue to GitHub →"}
           </Button>
           <div className="pt-1 text-2xs text-muted-foreground">
             or configure manually below (GitHub Enterprise Server / restricted environments)
@@ -413,18 +404,24 @@ function AddGitHubAppDialog({
             On save, fleetly verifies the app + installation + key against GitHub and fills in the owner automatically — repos
             under that owner resolve to this app{projectId != null ? " (project rows shadow global rows)" : ""}.
           </p>
-          {error != null ? (
-            <p className="rounded-lg border border-[color-mix(in_oklch,var(--status-danger)_35%,transparent)] bg-[var(--status-danger-bg)] px-3 py-2 text-xs text-[var(--status-danger)]">
-              {error}
-            </p>
-          ) : null}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button disabled={!valid || put.isPending} onClick={() => put.mutate()}>
-            {put.isPending ? "Verifying…" : "Add app"}
+          <Button
+            disabled={!valid || put.pending}
+            onClick={() =>
+              put.mutate({
+                appId,
+                installationId,
+                privateKeyPem: privateKey,
+                apiBase,
+                projectId,
+              })
+            }
+          >
+            {put.pending ? "Verifying…" : "Add app"}
           </Button>
         </DialogFooter>
       </DialogContent>

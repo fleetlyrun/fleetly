@@ -1,11 +1,13 @@
 import { useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { DatabaseBackupIcon, KeyRound, PlusIcon, ShieldOffIcon } from "lucide-react";
 import { toast } from "sonner";
-import { apiFetch, apiSend } from "@/api/client";
+import { useCommand } from "@lynx-go/uikit-core";
+import { apiFetch } from "@/api/client";
 import { usePlatformBackups, useRoles, useTokens, useWhoami } from "@/lib/catalog";
-import { describeError } from "@/lib/api-errors";
+import { freezesResource, platformBackupsResource, tokensResource } from "@/kit/settings";
+import { toastOnSettled } from "@/kit/toast";
 import { CopyButton } from "@/components/domain/copy-button";
 import { EmptyState } from "@/components/domain/empty-state";
 import { ErrorState } from "@/components/domain/error-state";
@@ -48,7 +50,10 @@ import {
 // 设置页（F3.1 → UI v2 批 5 reskin；模板化收编 PageFrame(narrow) +
 // SectionCard）：身份（whoami）/ Token 铸造与吊销（Console 自身凭证生命
 // 周期；secret 一次性揭示）/ 平台治理（变更冻结 + 平台备份触发与台账）。
-// 全部动词语义原样，仅换呈现。
+// 2026-10-26 批2 写路径命令化：五写位（mint/revoke/freeze/lift/backup）全
+// 走 kit/settings.ts 的 resource commands——失效经 legacyKeys 桥存量
+// ["settings",…] 键，toast 单源在 kit/toast.ts（toastOnSettled）；动词语义
+// 原样。
 export const Route = createFileRoute("/_shell/settings")({
   component: SettingsPageV2,
 });
@@ -134,16 +139,12 @@ function TokensCard() {
 }
 
 function TokenRow({ token }: { token: { id?: string; name?: string; role_id?: string; created_at?: string; last_used_at?: string; revoked_at?: string } }) {
-  const queryClient = useQueryClient2();
   const [revoking, setRevoking] = useState(false);
-  const revoke = useMutation({
-    mutationFn: () => apiSend(`/v1/tokens/${encodeURIComponent(token.id ?? "")}/revoke`, "POST"),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["settings", "tokens"] });
+  const revoke = useCommand(tokensResource.commands.revoke, {
+    onSettled: toastOnSettled(() => {
       toast("Token revoked — clients using it fail immediately");
       setRevoking(false);
-    },
-    onError: (cause) => toast.error(`${describeError(cause).title} — ${describeError(cause).detail}`),
+    }),
   });
   return (
     <>
@@ -174,8 +175,8 @@ function TokenRow({ token }: { token: { id?: string; name?: string; role_id?: st
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction asChild>
-              <Button variant="destructive" disabled={revoke.isPending} onClick={() => revoke.mutate()}>
-                {revoke.isPending ? "Revoking…" : "Revoke token"}
+              <Button variant="destructive" disabled={revoke.pending} onClick={() => revoke.mutate({ id: token.id ?? "" })}>
+                {revoke.pending ? "Revoking…" : "Revoke token"}
               </Button>
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -185,23 +186,14 @@ function TokenRow({ token }: { token: { id?: string; name?: string; role_id?: st
   );
 }
 
-// useQueryClient2 避免与本文件顶层导入重名（薄别名）。
-import { useQueryClient as useQueryClient2 } from "@tanstack/react-query";
-
 function CreateTokenDialog({ open, onClose, roles }: { open: boolean; onClose: () => void; roles: Array<{ id?: string; name?: string; builtin?: boolean }> }) {
   const [name, setName] = useState("");
   const [roleId, setRoleId] = useState("");
   const [minted, setMinted] = useState<string | null>(null);
-  const create = useMutation({
-    mutationFn: () =>
-      apiSend<{ token?: { id?: string }; secret?: string }>("/v1/tokens", "POST", {
-        name,
-        role_id: roleId || roles[0]?.id,
-      }),
-    onSuccess: (response) => {
-      setMinted(response.secret ?? "secret not returned");
-    },
-    onError: (cause) => toast.error(`${describeError(cause).title} — ${describeError(cause).detail}`),
+  // mint→reveal 揭示链：ok 进一次性 secret 揭示卡（无 toast——旧口径），
+  // rejected/conflict 兜 toast.error(message)。
+  const create = useCommand(tokensResource.commands.mint, {
+    onSettled: toastOnSettled((payload) => setMinted(payload.secret ?? "secret not returned")),
   });
   return (
     <Dialog
@@ -230,7 +222,13 @@ function CreateTokenDialog({ open, onClose, roles }: { open: boolean; onClose: (
             </div>
           </div>
         ) : (
-          <form className="flex flex-col gap-3" onSubmit={(event) => { event.preventDefault(); create.mutate(); }}>
+          <form
+            className="flex flex-col gap-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              create.mutate({ name, roleId: roleId || roles[0]?.id });
+            }}
+          >
             <div className="flex flex-col gap-1.5">
               <Label className="text-xs">Name</Label>
               <Input value={name} onChange={(event) => setName(event.target.value)} autoFocus />
@@ -256,8 +254,8 @@ function CreateTokenDialog({ open, onClose, roles }: { open: boolean; onClose: (
           ) : (
             <>
               <Button variant="outline" onClick={onClose}>Cancel</Button>
-              <Button disabled={create.isPending || name === ""} onClick={() => create.mutate()}>
-                {create.isPending ? "Creating…" : "Create"}
+              <Button disabled={create.pending || name === ""} onClick={() => create.mutate({ name, roleId: roleId || roles[0]?.id })}>
+                {create.pending ? "Creating…" : "Create"}
               </Button>
             </>
           )}
@@ -276,35 +274,22 @@ function GovernanceCard() {
     },
     refetchInterval: 30_000,
   });
-  const queryClient = useQueryClient2();
   const [reason, setReason] = useState("");
   const [lifting, setLifting] = useState<{ id: string; reason: string } | null>(null);
-  const invalidate = () => void queryClient.invalidateQueries({ queryKey: ["settings", "freezes"] });
-  const freeze = useMutation({
-    mutationFn: () => apiSend("/v1/governance/freezes", "POST", { reason }),
-    onSuccess: () => {
+  const freeze = useCommand(freezesResource.commands.freeze, {
+    onSettled: toastOnSettled(() => {
       toast("Change freeze set — change verbs are refused until lifted");
-      invalidate();
       setReason("");
-    },
-    onError: (cause) => toast.error(`${describeError(cause).title} — ${describeError(cause).detail}`),
+    }),
   });
-  const backup = useMutation({
-    mutationFn: () => apiSend<{ backup?: { id?: string } }>("/v1/platform/backups", "POST", {}),
-    onSuccess: (data) => {
-      toast(`Platform backup ${data.backup?.id ?? ""} finished`);
-      void queryClient.invalidateQueries({ queryKey: ["settings", "platform-backups"] });
-    },
-    onError: (cause) => toast.error(`${describeError(cause).title} — ${describeError(cause).detail}`),
+  const backup = useCommand(platformBackupsResource.commands.trigger, {
+    onSettled: toastOnSettled((payload) => toast(`Platform backup ${payload.backup?.id ?? ""} finished`)),
   });
-  const lift = useMutation({
-    mutationFn: (id: string) => apiSend(`/v1/governance/freezes/${encodeURIComponent(id)}/lift`, "POST"),
-    onSuccess: () => {
+  const lift = useCommand(freezesResource.commands.lift, {
+    onSettled: toastOnSettled(() => {
       toast("Change freeze lifted");
-      invalidate();
       setLifting(null);
-    },
-    onError: (cause) => toast.error(`${describeError(cause).title} — ${describeError(cause).detail}`),
+    }),
   });
   const active = (freezes.data ?? []).filter((row) => !row.lifted_at);
 
@@ -335,7 +320,7 @@ function GovernanceCard() {
           className="flex flex-wrap items-end gap-2"
           onSubmit={(event) => {
             event.preventDefault();
-            freeze.mutate();
+            freeze.mutate({ reason });
           }}
         >
           <div className="flex flex-col gap-1">
@@ -343,14 +328,14 @@ function GovernanceCard() {
             <Input value={reason} onChange={(event) => setReason(event.target.value)} placeholder="maintenance window" className="h-8 w-56" />
             <p className="text-2xs text-muted-foreground">platform-wide (all teams); change verbs are refused until lifted</p>
           </div>
-          <Button type="submit" size="sm" disabled={freeze.isPending || reason === ""} className="mb-4.5">
+          <Button type="submit" size="sm" disabled={freeze.pending || reason === ""} className="mb-4.5">
             set freeze
           </Button>
         </form>
         <div className="flex flex-wrap items-center gap-3 border-t pt-3">
-          <Button variant="outline" size="sm" disabled={backup.isPending} onClick={() => backup.mutate()}>
+          <Button variant="outline" size="sm" disabled={backup.pending} onClick={() => backup.mutate(undefined)}>
             <DatabaseBackupIcon data-icon-start-inline />
-            {backup.isPending ? "Backing up…" : "Trigger platform backup"}
+            {backup.pending ? "Backing up…" : "Trigger platform backup"}
           </Button>
           <span className="text-xs text-muted-foreground">synchronous full platform snapshot (SQLite + secrets + object store)</span>
         </div>
@@ -366,8 +351,8 @@ function GovernanceCard() {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction asChild>
-              <Button disabled={lift.isPending} onClick={() => lifting && lift.mutate(lifting.id)}>
-                {lift.isPending ? "Lifting…" : "Lift freeze"}
+              <Button disabled={lift.pending} onClick={() => lifting && lift.mutate({ id: lifting.id })}>
+                {lift.pending ? "Lifting…" : "Lift freeze"}
               </Button>
             </AlertDialogAction>
           </AlertDialogFooter>
