@@ -1,7 +1,10 @@
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
-import { apiFetch, apiSend, ApiError } from "@/api/client";
+import { useQuery } from "@tanstack/react-query";
+import { useCommand } from "@lynx-go/uikit-core";
+import { apiFetch, ApiError } from "@/api/client";
+import { appTabCommands, type GitHook } from "@/kit/app-tabs";
+import { toastOnSettled } from "@/kit/toast";
 import { CopyButton } from "@/components/domain/copy-button";
 import { RelativeTime } from "@/components/domain/relative-time";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -14,18 +17,8 @@ import { toast } from "sonner";
 // 生命周期与凭证）：General 元数据 / Git deploy hook（get/set/rotate，
 // secret 仅铸造时回显一次）/ Danger zone 删除（级联披露）。
 // Variables（spec 面）与 Build/Processes 卡按 §4.1 挂二期 proto（spec 读取
-// 通路）后并入本 tab。
-
-type GitHook = {
-  app_id?: string;
-  repo?: string;
-  branch?: string;
-  dockerfile?: string;
-  watch_paths?: string[];
-  token_prefix?: string;
-  created_at?: string;
-  updated_at?: string;
-};
+// 通路）后并入本 tab。写面批2 命令化（kit/app-tabs 的 hook/deleteApp 动词
+// 族，失效声明在命令内）。
 
 function fieldError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -94,12 +87,10 @@ function useGitHook(appId: string) {
 }
 
 function GitHookCard({ appId, projectId }: { appId: string; projectId: string }) {
-  const queryClient = useQueryClient();
   const hook = useGitHook(appId);
   const [form, setForm] = useState({ repo: "", branch: "main", dockerfile: "", watchPaths: "" });
   const [editing, setEditing] = useState(false);
   const [revealedSecret, setRevealedSecret] = useState<string | null>(null);
-  const invalidate = () => void queryClient.invalidateQueries({ queryKey: ["apps", "hook", appId] });
   // 编辑入口（SetGitHook 是全量 upsert：改配置不换 Token）——表单按现值
   // 预填，保存即回展示态。
   const startEdit = () => {
@@ -112,56 +103,33 @@ function GitHookCard({ appId, projectId }: { appId: string; projectId: string })
     setEditing(true);
   };
 
-  const save = useMutation({
-    mutationFn: async () =>
-      apiSend<{ hook?: GitHook; secret?: string }>(`/v1/apps/${encodeURIComponent(appId)}/hook`, "POST", {
-        repo: form.repo,
-        branch: form.branch,
-        dockerfile: form.dockerfile || undefined,
-        watch_paths: form.watchPaths === "" ? undefined : form.watchPaths.split(/[,\s]+/).filter((entry) => entry !== ""),
-      }),
-    onSuccess: (resp) => {
-      invalidate();
+  const commands = appTabCommands(projectId, appId);
+  const save = useCommand(commands.setGitHook, {
+    onSettled: toastOnSettled((payload) => {
       setEditing(false);
       toast("Git deploy hook configured");
-      if (resp?.secret) setRevealedSecret(resp.secret);
-    },
-    onError: (cause) => toast.error(fieldError(cause)),
+      if (payload.secret) setRevealedSecret(payload.secret);
+    }),
   });
-  const rotate = useMutation({
-    mutationFn: async () => apiSend<{ hook?: GitHook; secret?: string }>(`/v1/apps/${encodeURIComponent(appId)}/hook/rotate`, "POST", {}),
-    onSuccess: (resp) => {
-      invalidate();
+  const rotate = useCommand(commands.rotateGitHook, {
+    onSettled: toastOnSettled((payload) => {
       toast("Hook token rotated — the previous token is revoked");
-      if (resp?.secret) setRevealedSecret(resp.secret);
-    },
-    onError: (cause) => toast.error(fieldError(cause)),
+      if (payload.secret) setRevealedSecret(payload.secret);
+    }),
   });
   // Deploy now：拉取通道（RefreshGitHook）——不依赖 GitHub 侧 webhook 配置
   // 即可立即部署（首配验证 / App Templates 第三方模板仓的前提原语）。
-  const refresh = useMutation({
-    mutationFn: async () =>
-      apiSend<{ deployment_id?: string; commit?: string; admission?: { outcome?: string } }>(
-        `/v1/apps/${encodeURIComponent(appId)}/hook/refresh`,
-        "POST",
-        {},
-      ),
-    onSuccess: (resp) => {
-      void queryClient.invalidateQueries({ queryKey: ["deployments"] });
-      const suffix = resp?.admission?.outcome === "deduplicated" ? " (deduplicated — same commit already in the pipeline)" : "";
-      toast(`Deployment ${resp?.deployment_id ?? "?"} queued @ ${resp?.commit?.slice(0, 7) ?? "?"}${suffix}`);
-    },
-    onError: (cause) => toast.error(fieldError(cause)),
+  const refresh = useCommand(commands.refreshGitHook, {
+    scope: { projectId },
+    onSettled: toastOnSettled((payload) => {
+      const suffix = payload.admission?.outcome === "deduplicated" ? " (deduplicated — same commit already in the pipeline)" : "";
+      toast(`Deployment ${payload.deployment_id ?? "?"} queued @ ${payload.commit?.slice(0, 7) ?? "?"}${suffix}`);
+    }),
   });
   // Remove：解除通道（DeleteGitHook，W-8）——token 与 webhook secret 即刻
   // 失效，材料所有权归还 deploy 面。非幂等（无 hook 即 404）。
-  const remove = useMutation({
-    mutationFn: async () => apiSend(`/v1/apps/${encodeURIComponent(appId)}/hook`, "DELETE"),
-    onSuccess: () => {
-      invalidate();
-      toast("Git deploy hook removed — material ownership returned to deploys");
-    },
-    onError: (cause) => toast.error(fieldError(cause)),
+  const remove = useCommand(commands.deleteGitHook, {
+    onSettled: toastOnSettled(() => toast("Git deploy hook removed — material ownership returned to deploys")),
   });
 
   const configured = hook.data != null;
@@ -205,18 +173,18 @@ function GitHookCard({ appId, projectId }: { appId: string; projectId: string })
             material ownership to deploys.
           </p>
           <div className="mt-3 flex gap-2">
-            <Button size="sm" disabled={refresh.isPending} onClick={() => refresh.mutate()}>
-              {refresh.isPending ? "Pulling…" : "Deploy now"}
+            <Button size="sm" disabled={refresh.pending} onClick={() => refresh.mutate()}>
+              {refresh.pending ? "Pulling…" : "Deploy now"}
             </Button>
             <Button size="sm" variant="outline" onClick={startEdit}>
               Edit
             </Button>
-            <Button size="sm" variant="outline" disabled={rotate.isPending} onClick={() => rotate.mutate()}>
+            <Button size="sm" variant="outline" disabled={rotate.pending} onClick={() => rotate.mutate()}>
               Rotate token…
             </Button>
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button size="sm" variant="outline" className="text-destructive" disabled={remove.isPending}>
+                <Button size="sm" variant="outline" className="text-destructive" disabled={remove.pending}>
                   Remove…
                 </Button>
               </AlertDialogTrigger>
@@ -232,13 +200,13 @@ function GitHookCard({ appId, projectId }: { appId: string; projectId: string })
                 <AlertDialogFooter>
                   <AlertDialogCancel>Cancel</AlertDialogCancel>
                   <AlertDialogAction
-                    disabled={remove.isPending}
+                    disabled={remove.pending}
                     onClick={(event) => {
                       event.preventDefault();
                       remove.mutate();
                     }}
                   >
-                    {remove.isPending ? "Removing…" : "Remove"}
+                    {remove.pending ? "Removing…" : "Remove"}
                   </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
@@ -257,7 +225,7 @@ function GitHookCard({ appId, projectId }: { appId: string; projectId: string })
           className="flex flex-col gap-3"
           onSubmit={(event) => {
             event.preventDefault();
-            save.mutate();
+            save.mutate({ repo: form.repo, branch: form.branch, dockerfile: form.dockerfile, watchPaths: form.watchPaths });
           }}
         >
           {editing ? (
@@ -285,8 +253,8 @@ function GitHookCard({ appId, projectId }: { appId: string; projectId: string })
             <Input id="hook-watch" className="font-mono text-xs" value={form.watchPaths} onChange={(event) => setForm({ ...form, watchPaths: event.target.value })} placeholder="web/, libs/" />
           </div>
           <div className="flex gap-2">
-            <Button type="submit" size="sm" disabled={save.isPending || form.repo === ""}>
-              {save.isPending ? "Saving…" : editing ? "Save changes" : "Configure hook"}
+            <Button type="submit" size="sm" disabled={save.pending || form.repo === ""}>
+              {save.pending ? "Saving…" : editing ? "Save changes" : "Configure hook"}
             </Button>
             {editing ? (
               <Button type="button" size="sm" variant="outline" onClick={() => setEditing(false)}>
@@ -315,15 +283,12 @@ function GitHookCard({ appId, projectId }: { appId: string; projectId: string })
 }
 
 function DangerZone({ appId, appName, projectId, onDeleted }: { appId: string; appName: string; projectId: string; onDeleted: () => void }) {
-  const queryClient = useQueryClient();
-  const remove = useMutation({
-    mutationFn: async () => apiSend(`/v1/apps/${encodeURIComponent(appId)}`, "DELETE"),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["catalog", "apps", projectId] });
+  const remove = useCommand(appTabCommands(projectId, appId).deleteApp, {
+    scope: { projectId },
+    onSettled: toastOnSettled(() => {
       toast(`App ${appName} deleted`);
       onDeleted();
-    },
-    onError: (cause) => toast.error(fieldError(cause)),
+    }),
   });
   return (
     <section className="rounded-xl border border-destructive/30 bg-card p-5">
@@ -348,13 +313,13 @@ function DangerZone({ appId, appName, projectId, onDeleted }: { appId: string; a
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              disabled={remove.isPending}
+              disabled={remove.pending}
               onClick={(event) => {
                 event.preventDefault();
                 remove.mutate();
               }}
             >
-              {remove.isPending ? "Deleting…" : "Delete"}
+              {remove.pending ? "Deleting…" : "Delete"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

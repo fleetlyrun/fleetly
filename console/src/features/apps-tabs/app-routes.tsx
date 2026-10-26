@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
-import { apiSend } from "@/api/client";
+import { useCommand } from "@lynx-go/uikit-core";
 import { useRoutes } from "@/lib/catalog";
+import { appTabCommands } from "@/kit/app-tabs";
+import { toastOnSettled } from "@/kit/toast";
 import { CopyButton } from "@/components/domain/copy-button";
 import { DataTable } from "@/components/domain/data-table";
 import { EmptyState } from "@/components/domain/empty-state";
@@ -16,17 +17,13 @@ import { toast } from "sonner";
 
 type RouteEntry = { id?: string; host?: string; path?: string; app_id?: string; process?: string; port?: number; protocol?: string; tls_mode?: string };
 
-function fieldError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
 // App Routes scoped tab（IA v3 T2）：项目路由表按 app 过滤的暴露面 + 创建
-// （app 固定本 app）/删除。列表走 house 模板（ListToolbar + DataTable，
+//（app 固定本 app）/删除。列表走 house 模板（ListToolbar + DataTable，
 // 2026-10-12 走查：手拼 table 与其他列表形态脱队）；创建交互统一契约：
-// 入口钉工具栏主动作槽 + 模态对话框。
+// 入口钉工具栏主动作槽 + 模态对话框。写面批2 命令化（kit/app-tabs 的
+// createRoute/deleteRoute，失效声明在命令内）。
 export function AppRoutesTab({ projectId, appId }: { projectId: string; appId: string }) {
   const routes = useRoutes(projectId);
-  const queryClient = useQueryClient();
   const rows = (routes.data ?? []).filter((route) => route.app_id === appId);
   const [createOpen, setCreateOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -37,7 +34,6 @@ export function AppRoutesTab({ projectId, appId }: { projectId: string; appId: s
     route.protocol ?? "",
     route.tls_mode ?? "",
   ]);
-  const invalidate = () => void queryClient.invalidateQueries({ queryKey: ["resources", "routes", projectId] });
 
   const columns: LegacyColumnDef<RouteEntry, any>[] = [
     {
@@ -81,7 +77,7 @@ export function AppRoutesTab({ projectId, appId }: { projectId: string; appId: s
     {
       id: "actions",
       header: () => <span className="sr-only">Actions</span>,
-      cell: ({ row }) => <RouteDeleteButton route={row.original} onDeleted={invalidate} />,
+      cell: ({ row }) => <RouteDeleteButton projectId={projectId} route={row.original} />,
     },
   ];
 
@@ -121,23 +117,24 @@ export function AppRoutesTab({ projectId, appId }: { projectId: string; appId: s
           }
         />
       </div>
-      <CreateRouteDialog projectId={projectId} appId={appId} open={createOpen} onOpenChange={setCreateOpen} onCreated={invalidate} />
+      <CreateRouteDialog projectId={projectId} appId={appId} open={createOpen} onOpenChange={setCreateOpen} />
     </div>
   );
 }
 
-function RouteDeleteButton({ route, onDeleted }: { route: RouteEntry; onDeleted: () => void }) {
-  const remove = useMutation({
-    mutationFn: async () => apiSend(`/v1/routes/${encodeURIComponent(route.id ?? "")}`, "DELETE"),
-    onSuccess: () => {
-      toast("Route deleted");
-      onDeleted();
-    },
-    onError: (cause) => toast.error(fieldError(cause)),
+function RouteDeleteButton({ projectId, route }: { projectId: string; route: RouteEntry }) {
+  const remove = useCommand(appTabCommands(projectId, route.app_id ?? "").deleteRoute, {
+    scope: { projectId },
+    onSettled: toastOnSettled(() => toast("Route deleted")),
   });
   return (
     <div className="text-right">
-      <Button variant="outline" size="sm" disabled={remove.isPending} onClick={() => remove.mutate()}>
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={remove.pending}
+        onClick={() => remove.mutate({ id: route.id ?? "" })}
+      >
         Delete
       </Button>
     </div>
@@ -149,40 +146,26 @@ function CreateRouteDialog({
   appId,
   open,
   onOpenChange,
-  onCreated,
 }: {
   projectId: string;
   appId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onCreated: () => void;
 }) {
   const [form, setForm] = useState({ host: "", path: "", process: "web", port: "8080", protocol: "http", tls: "auto" });
-  const create = useMutation({
-    mutationFn: async () =>
-      apiSend("/v1/routes", "POST", {
-        project_id: projectId,
-        host: form.host,
-        path: form.path || undefined,
-        app_id: appId,
-        process: form.process,
-        port: Number(form.port),
-        protocol: form.protocol,
-        tls_mode: form.tls,
-      }),
-    onSuccess: () => {
+  const create = useCommand(appTabCommands(projectId, appId).createRoute, {
+    scope: { projectId },
+    onSettled: toastOnSettled(() => {
       toast("Route created");
       onOpenChange(false);
       setForm({ host: "", path: "", process: "web", port: "8080", protocol: "http", tls: "auto" });
-      onCreated();
-    },
-    onError: (cause) => toast.error(fieldError(cause)),
+    }),
   });
   return (
     <Dialog
       open={open}
       onOpenChange={(next) => {
-        if (!create.isPending) onOpenChange(next);
+        if (!create.pending) onOpenChange(next);
       }}
     >
       <DialogContent className="sm:max-w-md">
@@ -193,7 +176,14 @@ function CreateRouteDialog({
           className="flex flex-col gap-4"
           onSubmit={(event) => {
             event.preventDefault();
-            create.mutate();
+            create.mutate({
+              host: form.host,
+              path: form.path,
+              process: form.process,
+              port: Number(form.port),
+              protocol: form.protocol,
+              tlsMode: form.tls,
+            });
           }}
         >
           <div className="flex flex-col gap-2">
@@ -252,8 +242,8 @@ function CreateRouteDialog({
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={create.isPending || form.host === ""}>
-              {create.isPending ? "Creating…" : "Create route"}
+            <Button type="submit" disabled={create.pending || form.host === ""}>
+              {create.pending ? "Creating…" : "Create route"}
             </Button>
           </DialogFooter>
         </form>

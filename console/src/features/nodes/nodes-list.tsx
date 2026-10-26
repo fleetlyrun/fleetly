@@ -1,13 +1,14 @@
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { RefreshCwIcon, ShieldAlertIcon } from "lucide-react";
-import { toast } from "sonner";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
-import { useCollection } from "@lynx-go/uikit-core";
+import { useCollection, useCommand } from "@lynx-go/uikit-core";
 import { apiSend } from "@/api/client";
 import { useWhoami } from "@/lib/catalog";
 import { describeError } from "@/lib/api-errors";
+import { enrollMaterialCommand } from "@/kit/app-tabs";
+import { toastOnSettled } from "@/kit/toast";
 import { nodesResource, nodesSearch, type NodeRow } from "@/kit/nodes";
 import { ConfirmDialog } from "@/components/domain/confirm-dialog";
 import { CopyButton } from "@/components/domain/copy-button";
@@ -40,7 +41,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 // 列表骨架换 fleet 块（ListPage × FilterBar × DataTable × Pagination），
 // 快筛/分页/available 降序默认排序进 URL；行内动作失败披露行走
 // DataTable 本地扩展槽 renderExtraRow（错误态归页面 {nodeId, cause} 单开）。
-// 工具栏 Enrollment material/rotate tokens 与各 Confirm 弹窗原样保留。
+// 工具栏 Enrollment material/rotate tokens 批2 命令化（useCommand + toast
+// 单源），与各 Confirm 弹窗原样保留。
 
 export function NodesPage({ from }: { from: string }) {
   const whoami = useWhoami(true);
@@ -84,8 +86,8 @@ function NodesList({ from }: { from: string }) {
   const [rotating, setRotating] = useState(false);
   // 行内动作失败披露（单开：verb 前清、catch 记）——renderExtraRow 消费
   const [actionError, setActionError] = useState<{ nodeId: string; cause: unknown } | null>(null);
-  const enroll = useEnrollMaterial(false, setMaterial);
-  const rotate = useEnrollMaterial(true, setMaterial);
+  const enroll = useEnrollMaterial(setMaterial);
+  const rotate = useEnrollMaterial(setMaterial);
 
   const columns: LegacyColumnDef<NodeRow, any>[] = [
     {
@@ -163,7 +165,7 @@ function NodesList({ from }: { from: string }) {
           <div className="flex flex-wrap items-center justify-between gap-2">
             <FilterBar list={list} schema={nodesSearch} textPlaceholder="Filter nodes..." />
             <div className="flex items-center gap-2 py-2 pr-3">
-              <Button variant="outline" size="sm" disabled={enroll.isPending} onClick={() => enroll.mutate()}>
+              <Button variant="outline" size="sm" disabled={enroll.pending} onClick={() => enroll.mutate({ rotate: false })}>
                 <RefreshCwIcon data-icon-start-inline />
                 Enrollment material…
               </Button>
@@ -212,17 +214,18 @@ function NodesList({ from }: { from: string }) {
         description="Rotate join tokens and revoke all node relay credentials; connected relays drop. Reissue relay commands per node."
         confirmLabel="Rotate tokens"
         pendingLabel="Rotating…"
-        onConfirm={() => rotate.mutateAsync()}
+        onConfirm={() => rotate.mutateAsync({ rotate: true })}
       />
     </PageFrame>
   );
 }
 
-function useEnrollMaterial(rotate: boolean, onMaterial: (data: { join: string }) => void) {
-  return useMutation({
-    mutationFn: () => apiSend<{ join_command?: string }>("/v1/nodes/enroll", "POST", { rotate }),
-    onSuccess: (data) => onMaterial({ join: data.join_command ?? "" }),
-    onError: (cause) => toast.error(`${describeError(cause).title} — ${describeError(cause).detail}`),
+// enroll 材料铸取（批2 命令化，kit/app-tabs 的 enrollMaterialCommand）：
+// 初始 join 与 rotate 全量同端点同命令——ok 面是材料揭示弹窗（无 toast），
+// 失败面 toast 单源。列表 15s 轮询自跟进，无失效声明（材料铸造不落列表）。
+function useEnrollMaterial(onMaterial: (data: { join: string }) => void) {
+  return useCommand(enrollMaterialCommand, {
+    onSettled: toastOnSettled((payload) => onMaterial({ join: payload.join_command ?? "" })),
   });
 }
 
@@ -247,7 +250,14 @@ function NodeActionsCell({
   function verb(path: string, body: Record<string, unknown> = {}) {
     clearActionError();
     return apiSend(path, "POST", body)
-      .then(() => queryClient.invalidateQueries({ queryKey: ["nodes"] }))
+      // 批2 集成桥：legacy ["nodes"] 前缀打不中 kit 集合键——双前缀失效
+      //（裸 apiSend promise 非本批 mutation 钉口，全套命令化随批4 大扫除）。
+      .then(() =>
+        queryClient.invalidateQueries({ queryKey: ["nodes"] }),
+      )
+      .then(() =>
+        queryClient.invalidateQueries({ queryKey: ["collection", "nodes"] }),
+      )
       .catch((cause: unknown) => onActionError(cause));
   }
 

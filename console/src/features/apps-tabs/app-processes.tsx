@@ -1,11 +1,14 @@
 import { Fragment, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { ApiError, apiFetch, apiSend } from "@/api/client";
+import { useCommand } from "@lynx-go/uikit-core";
+import { ApiError, apiFetch } from "@/api/client";
 import type { components } from "@/api/structure";
 import { ChevronRightIcon, MinusIcon, PlusIcon, RotateCwIcon } from "lucide-react";
 import { toast } from "sonner";
 import { useRoutes } from "@/lib/catalog";
+import { appTabCommands } from "@/kit/app-tabs";
+import { toastOnSettled } from "@/kit/toast";
 import { InstanceList, RunningCount } from "./running-instances";
 import {
   AlertDialog,
@@ -33,7 +36,6 @@ type AppSpec = components["schemas"]["v1AppSpec"];
 // 层级定案）：声明 Replicas 旁对照 live 在跑数，展开见实例明细（ADR-0067
 // 观测原语，10s 快照）。
 export function AppProcessesTab({ projectId, appId }: { projectId: string; appId: string }) {
-  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [staged, setStaged] = useState<Record<string, number>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -72,53 +74,45 @@ export function AppProcessesTab({ projectId, appId }: { projectId: string; appId
       return replicas !== Number(process?.replicas ?? 1);
     });
 
-  const deploy = useMutation({
-    mutationFn: async () => {
-      if (frozen == null) throw new Error("no frozen spec");
-      const editedProcesses = processes.map((process) => {
-        const replicas = staged[process.name ?? ""];
-        if (replicas == null) return process;
-        return { ...process, replicas: String(replicas) };
-      });
-      const edited: AppSpec = { ...frozen, processes: editedProcesses };
-      return apiSend<{ deployment?: { id?: string } }>("/v1/deployments", "POST", {
-        app_id: appId,
-        spec_file: JSON.stringify(edited),
-      });
-    },
-    onSuccess: (resp) => {
+  // 实例数暂存 → Deploy（声明式路径，批2 命令化）：spec 组装留在组件
+  //（冻结 Spec 在本 tab 的读面上），命令只受理 spec_file。失效面在命令内
+  //（冻结 Spec + 部署两形态）；受理成功落部署详情的导航锚不动。
+  const commands = appTabCommands(projectId, appId);
+  const deploy = useCommand(commands.redeploy, {
+    scope: { projectId },
+    onSettled: toastOnSettled((payload) => {
       setStaged({});
-      void queryClient.invalidateQueries({ queryKey: ["resources", "app-spec", projectId, appId] });
       toast("Replicas staged as a new deployment");
-      const id = resp?.deployment?.id;
       // 受理成功落部署详情：typed 路由 SPA 导航。相对 URL（../deployments/<id>）
       // 在 tab 路由下会解析成 /p/<pid>/apps/deployments/<id>（.. 吃掉 appId
       // 段）——404 页，禁回退。
+      const id = payload.deployment?.id;
       if (id) {
         void navigate({
           to: "/p/$projectId/apps/$appId/deployments/$deploymentId",
           params: { projectId, appId, deploymentId: id },
         });
       }
-    },
-    onError: (cause) => toast.error(cause instanceof Error ? cause.message : String(cause)),
+    }),
   });
+  const applyStaged = () => {
+    if (frozen == null) return; // hasStagedEdits 已保证 frozen 在册（防御钉）
+    const editedProcesses = processes.map((process) => {
+      const replicas = staged[process.name ?? ""];
+      if (replicas == null) return process;
+      return { ...process, replicas: String(replicas) };
+    });
+    deploy.mutate({ specFile: JSON.stringify({ ...frozen, processes: editedProcesses }) });
+  };
 
   // RestartProcess（ADR-0069）：行级就地强制重排——不动 Spec 零 lineage，
-  // 与"staged replicas → 新部署"的声明式路径分立（排障动线）。成功即失效
-  // 实例观测缓存，Running 列即时跟进滚动。
-  const restart = useMutation({
-    mutationFn: async (process: string) =>
-      apiSend<Record<string, never>>(
-        `/v1/apps/${encodeURIComponent(appId)}/processes/${encodeURIComponent(process)}/restart`,
-        "POST",
-        {},
-      ),
-    onSuccess: (_resp, process) => {
-      toast(`Restart requested — ${process} carriers are force-rescheduling`);
-      void queryClient.invalidateQueries({ queryKey: ["exec-instances", appId] });
-    },
-    onError: (cause) => toast.error(cause instanceof Error ? cause.message : String(cause)),
+  // 与"staged replicas → 新部署"的声明式路径分立（排障动线）。失效面在
+  // 命令内（仅实例观测缓存），Running 列即时跟进滚动。
+  const restart = useCommand(commands.restartProcess, {
+    scope: { projectId },
+    onSettled: toastOnSettled((payload) => {
+      toast(`Restart requested — ${payload.process} carriers are force-rescheduling`);
+    }),
   });
 
   if (spec.isPending) {
@@ -165,8 +159,8 @@ export function AppProcessesTab({ projectId, appId }: { projectId: string; appId
             Discard
           </Button>
         ) : null}
-        <Button size="sm" disabled={!hasStagedEdits || deploy.isPending} onClick={() => deploy.mutate()}>
-          {deploy.isPending ? "Deploying…" : "Apply changes"}
+        <Button size="sm" disabled={!hasStagedEdits || deploy.pending} onClick={applyStaged}>
+          {deploy.pending ? "Deploying…" : "Apply changes"}
         </Button>
       </div>
 
@@ -249,8 +243,8 @@ export function AppProcessesTab({ projectId, appId }: { projectId: string; appId
                     <TableCell className="text-right">
                       <ProcessRestartButton
                         processName={name}
-                        pending={restart.isPending}
-                        onConfirm={() => restart.mutate(name)}
+                        pending={restart.pending}
+                        onConfirm={() => restart.mutate({ process: name })}
                       />
                     </TableCell>
                   </TableRow>
