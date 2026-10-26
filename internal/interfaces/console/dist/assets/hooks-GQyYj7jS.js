@@ -1,1 +1,0 @@
-import{aY as t}from"./vendor-CAg-lALr.js";import{l as r}from"./index-CkVEwY9k.js";const o=5e3;function s(e){return(e??[]).flatMap(n=>n?.id?[n]:[])}function p(e){return t({queryKey:["deployments",e],enabled:e!=="",queryFn:async()=>{const n=await r(`/v1/deployments?app_id=${encodeURIComponent(e)}&limit=50`);return s(n.deployments)},refetchInterval:o})}export{p as u};
