@@ -5,18 +5,32 @@ import { z } from "zod";
 import { PlusIcon } from "lucide-react";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
 import { toast } from "sonner";
-import type { components as identitySchemas } from "@/api/identity";
+import { useCollection } from "@lynx-go/uikit-core";
 import { apiSend } from "@/api/client";
 import { describeError } from "@/lib/api-errors";
-import { useInvitations, useRoles, useTeams, useUsers } from "@/lib/catalog";
+import { useRoles, useTeams } from "@/lib/catalog";
+import { shortId } from "@/lib/format";
+import {
+  identitySearch,
+  invitationsResource,
+  rolesResource,
+  teamsResource,
+  usersResource,
+  type InvitationEntry,
+  type RoleEntry,
+  type TeamEntry,
+  type UserEntry,
+} from "@/kit/identity";
 import { ConfirmDialog } from "@/components/domain/confirm-dialog";
 import { CopyButton } from "@/components/domain/copy-button";
-import { EmptyState } from "@/components/domain/empty-state";
-import { ErrorState } from "@/components/domain/error-state";
-import { ListCard } from "@/components/domain/list-page";
+import { CliEquivalent } from "@/components/domain/list-toolbar";
 import { ModulePage } from "@/components/domain/module-page";
 import { RelativeTime } from "@/components/domain/relative-time";
 import { StatusBadge } from "@/components/domain/status-badge";
+import { DataTable } from "@/components/kit/query/data-table";
+import { FilterBar } from "@/components/kit/query/filter-bar";
+import { ListPage as FleetListPage } from "@/components/kit/query/list-page";
+import { Pagination } from "@/components/kit/query/pagination";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -29,30 +43,26 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 
-type User = identitySchemas["schemas"]["v1User"];
-type Team = identitySchemas["schemas"]["v1Team"];
-type Role = identitySchemas["schemas"]["v1Role"];
-type Invitation = identitySchemas["schemas"]["v1Invitation"];
-
-// 身份管理页（C2 治理批 → UI v2 批 5 reskin；模板化收编 ModulePage +
-// ListCard + ConfirmDialog）：users / teams / roles / invitations 四 tab
-//（URL param），动词面对齐 CLI。明文凭证沿 CLI 口径：邀请 secret 只在
-// 铸造响应出现一次（SecretReveal 形态）。users tab 的行内设密表单行走
-// children 逃生舱（跨行展开是 DataTable 列模型表达不了的特例）。
-const identitySearch = z.object({ tab: z.enum(["users", "teams", "roles", "invitations"]).optional() });
+// 身份管理页（C2 治理批 → UI v2 批 5 reskin → 2026-10-26 批1 Wave2-B
+// useCollection 化）：users / teams / roles / invitations 四 tab（URL
+// param），动词面对齐 CLI。明文凭证沿 CLI 口径：邀请 secret 只在铸造响应
+// 出现一次（SecretReveal 形态）。列表骨架换 fleet 块（FleetListPage ×
+// FilterBar × DataTable × Pagination），快筛/分页首次进 URL
+//（identitySearch 四 tab 共享实例，q/分页跨 tab 持久）；users 行内设密
+// 跨行展开走 DataTable 本地扩展槽 renderExtraRow（展开态归页面）；写面
+// useMutation/弹窗/Confirm 原样保留（catalog 的 useTeams/useRoles 是创建
+// 弹窗下拉的写面伴读，不经 kit 集合）。
+// useCollection 化批：validateSearch 合并形态收编 tab 键 + kit 集合参数
+//（toSearchSchema 不认 tab，必须显式并入）；tab 切换走函数式 search 保
+// q/分页跨 tab 持久（接受语义）。
+const identityTabSearch = z.object({ tab: z.enum(["users", "teams", "roles", "invitations"]).optional() });
 
 export const Route = createFileRoute("/_shell/identity")({
-  validateSearch: identitySearch,
+  validateSearch: (input: Record<string, unknown>) => ({
+    ...identityTabSearch.parse(input),
+    ...identitySearch.toSearchSchema()["~standard"].validate(input).value,
+  }),
   component: IdentityPageV2,
 });
 
@@ -60,7 +70,8 @@ function IdentityPageV2() {
   const navigate = Route.useNavigate();
   const tab = Route.useSearch({ select: (search) => search.tab ?? "users" });
   // 创建入口在各 tab 工具栏行右侧（对齐批 5 用户复裁：页头钮位退役）。
-  // 切 tab 即收起未完成的创建弹窗。
+  // 切 tab 即收起未完成的创建弹窗（createOpen 提升保持；teams 的弹窗态
+  // 原本就本地自管，写面不动）。
   const [createOpen, setCreateOpen] = useState(false);
   return (
     <ModulePage
@@ -75,7 +86,7 @@ function IdentityPageV2() {
       current={tab}
       onTabChange={(value) => {
         setCreateOpen(false);
-        void navigate({ search: { tab: value } });
+        void navigate({ search: (prev) => ({ ...prev, tab: value }) });
       }}
     >
       {tab === "users" ? <UsersTab createOpen={createOpen} onCreateOpenChange={setCreateOpen} /> : null}
@@ -100,72 +111,103 @@ function fieldError(error: unknown): string {
 // ---- users ----
 
 function UsersTab({ createOpen, onCreateOpenChange }: { createOpen: boolean; onCreateOpenChange: (open: boolean) => void }) {
-  const users = useUsers();
-  const rows = users.data ?? [];
+  // 数据面 useCollection（15s 轮询，与旧 useUsers 同拍；写后列表新鲜度同
+  // Wave1 口径靠轮询兜底——invalidate 仍打 catalog 键，写面不动）。
+  const list = useCollection(usersResource, {
+    from: Route.id,
+    search: identitySearch,
+    query: { refetchInterval: 15_000 },
+  });
+  // 行内设密展开态归页面（单开；id 空兜底不展开）
+  const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
+
+  const columns: LegacyColumnDef<UserEntry, any>[] = [
+    {
+      accessorKey: "name",
+      header: "Name",
+      meta: { sortField: "name" },
+      cell: ({ row }) => <span className="text-sm font-medium">{row.original.name}</span>,
+    },
+    {
+      accessorKey: "id",
+      header: "ID",
+      meta: { sortField: "id" },
+      cell: ({ row }) => (
+        <span className="font-mono text-2xs text-muted-foreground" title={row.original.id}>
+          {shortId(row.original.id)}
+          <CopyButton value={row.original.id ?? ""} />
+        </span>
+      ),
+    },
+    {
+      accessorKey: "created_at",
+      header: "Created",
+      meta: { sortField: "created_at" },
+      cell: ({ row }) => (
+        <span className="text-xs text-muted-foreground">
+          <RelativeTime value={row.original.created_at} />
+        </span>
+      ),
+    },
+    {
+      id: "actions",
+      header: () => <span className="sr-only">Actions</span>,
+      cell: ({ row }) => (
+        <UserActionsCell
+          user={row.original}
+          expanded={expandedUserId != null && row.original.id === expandedUserId}
+          onTogglePassword={() =>
+            setExpandedUserId((prev) => (prev === row.original.id ? null : row.original.id ?? null))
+          }
+        />
+      ),
+    },
+  ];
+
+  const filtered = list.query.predicate != null;
   return (
     <>
-      <ListCard
-        label="users"
-        placeholder="Filter users..."
-        rows={rows}
-        fieldsOf={(user) => [user.name ?? "", user.id ?? ""]}
-        loading={users.isPending}
-        error={users.isError ? users.error : null}
-        onRetry={() => void users.refetch()}
-        cli="fleetly users list"
-        actions={
-          <Button size="sm" onClick={() => onCreateOpenChange(true)}>
-            <PlusIcon data-icon-start-inline />
-            New user…
-          </Button>
+      <FleetListPage
+        list={list}
+        toolbar={
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <FilterBar list={list} schema={identitySearch} textPlaceholder="Filter users..." />
+            <div className="py-2 pr-3">
+              <Button size="sm" onClick={() => onCreateOpenChange(true)}>
+                <PlusIcon data-icon-start-inline />
+                New user…
+              </Button>
+            </div>
+          </div>
         }
-        empty={<EmptyState icon={PlusIcon} title="No users yet" description="Create one, or mint a token in Settings." />}
+        pagination={<Pagination list={list} />}
+        emptyTitle={filtered ? "No users match the filter" : "No users yet"}
+        emptyDescription={
+          filtered ? "Adjust or clear the filter to see rows again." : "Create one, or mint a token in Settings."
+        }
+        appendix={<CliEquivalent command="fleetly users list" />}
       >
-        {({ pageRows, query }) => (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>ID</TableHead>
-                <TableHead>Created</TableHead>
-                <TableHead />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {users.isPending ? (
-                <TableRow>
-                  <TableCell colSpan={4}><Skeleton className="h-5 w-full" /></TableCell>
-                </TableRow>
-              ) : users.isError ? (
-                <TableRow>
-                  <TableCell colSpan={4}><ErrorState error={users.error} onRetry={() => void users.refetch()} /></TableCell>
-                </TableRow>
-              ) : pageRows.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={4}>
-                    {query.trim() !== "" ? (
-                      <span className="block py-8 text-center text-sm text-muted-foreground">No users match the filter.</span>
-                    ) : (
-                      <EmptyState icon={PlusIcon} title="No users yet" description="Create one, or mint a token in Settings." />
-                    )}
-                  </TableCell>
-                </TableRow>
-              ) : (
-                pageRows.map((user) => <UserRow key={user.id} user={user} />)
-              )}
-            </TableBody>
-          </Table>
-        )}
-      </ListCard>
+        <DataTable
+          list={list}
+          columns={columns}
+          getRowId={(row) => row.id ?? ""}
+          renderExtraRow={(user) =>
+            expandedUserId != null && user.id === expandedUserId ? (
+              <SetPasswordRow userId={user.id ?? ""} onDone={() => setExpandedUserId(null)} />
+            ) : null
+          }
+        />
+      </FleetListPage>
       <CreateUserDialog open={createOpen} onClose={() => onCreateOpenChange(false)} />
     </>
   );
 }
 
-function UserRow({ user }: { user: User }) {
+// UserActionsCell：行内动作（password… 跨行展开 / delete + Confirm）——写
+// 面 useMutation 原样保留。
+function UserActionsCell({ user, expanded, onTogglePassword }: { user: UserEntry; expanded: boolean; onTogglePassword: () => void }) {
   const invalidate = useInvalidate(["identity", "users"]);
   const [deleting, setDeleting] = useState(false);
-  const [pwOpen, setPwOpen] = useState(false);
   const remove = useMutation({
     mutationFn: () => apiSend(`/v1/users/${encodeURIComponent(user.id ?? "")}`, "DELETE"),
     onSuccess: () => {
@@ -175,25 +217,15 @@ function UserRow({ user }: { user: User }) {
     onError: (cause) => toast.error(fieldError(cause)),
   });
   return (
-    <>
-      <TableRow>
-        <TableCell className="text-sm font-medium">{user.name}</TableCell>
-        <TableCell className="font-mono text-2xs text-muted-foreground">
-          {user.id?.slice(0, 10)}…<CopyButton value={user.id ?? ""} />
-        </TableCell>
-        <TableCell className="text-xs text-muted-foreground"><RelativeTime value={user.created_at} /></TableCell>
-        <TableCell className="text-right">
-          <div className="flex items-center justify-end gap-1.5">
-            <Button variant="outline" size="sm" onClick={() => setPwOpen((prev) => !prev)}>
-              password…
-            </Button>
-            <Button variant="outline" size="sm" className="text-[var(--status-danger)]" onClick={() => setDeleting(true)}>
-              delete
-            </Button>
-          </div>
-        </TableCell>
-      </TableRow>
-      {pwOpen ? <SetPasswordRow userId={user.id ?? ""} onDone={() => setPwOpen(false)} /> : null}
+    <div className="text-right">
+      <div className="flex items-center justify-end gap-1.5">
+        <Button variant="outline" size="sm" onClick={onTogglePassword}>
+          {expanded ? "hide password" : "password…"}
+        </Button>
+        <Button variant="outline" size="sm" className="text-[var(--status-danger)]" onClick={() => setDeleting(true)}>
+          delete
+        </Button>
+      </div>
       <ConfirmDialog
         open={deleting}
         onOpenChange={setDeleting}
@@ -202,44 +234,43 @@ function UserRow({ user }: { user: User }) {
         confirmLabel="Delete user"
         onConfirm={() => remove.mutateAsync()}
       />
-    </>
+    </div>
   );
 }
 
 // SetPasswordRow 是行内设密表单（admin 重置面；C6 第一期——自助改密随
 // SSO 批裁决）。POST /v1/users/{id}/password，users:write scope 执法。
+// renderExtraRow 槽内渲染（块侧 td p-0，故本件是 div 形态而非 TableRow）。
 function SetPasswordRow({ userId, onDone }: { userId: string; onDone: () => void }) {
   const [password, setPassword] = useState("");
   const [pending, setPending] = useState(false);
   return (
-    <TableRow className="hover:bg-transparent">
-      <TableCell colSpan={4} className="bg-panel-2/30">
-        <form
-          className="flex flex-wrap items-end gap-2 py-1"
-          onSubmit={(event) => {
-            event.preventDefault();
-            setPending(true);
-            apiSend(`/v1/users/${encodeURIComponent(userId)}/password`, "POST", { password })
-              .then(() => {
-                toast("Password set");
-                setPassword("");
-                onDone();
-              })
-              .catch((cause: unknown) => toast.error(fieldError(cause)))
-              .finally(() => setPending(false));
-          }}
-        >
-          <div className="flex flex-col gap-1">
-            <Label className="text-xs">New password</Label>
-            <Input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="••••••••" autoFocus className="h-8 w-48" />
-          </div>
-          <Button type="submit" size="sm" disabled={pending || password === ""} className="mb-0.5">
-            {pending ? "Setting…" : "Set password"}
-          </Button>
-          <p className="mb-1.5 text-2xs text-muted-foreground">admin reset — the user signs in with this on the password tab</p>
-        </form>
-      </TableCell>
-    </TableRow>
+    <div className="bg-panel-2/30 px-3 py-2">
+      <form
+        className="flex flex-wrap items-end gap-2 py-1"
+        onSubmit={(event) => {
+          event.preventDefault();
+          setPending(true);
+          apiSend(`/v1/users/${encodeURIComponent(userId)}/password`, "POST", { password })
+            .then(() => {
+              toast("Password set");
+              setPassword("");
+              onDone();
+            })
+            .catch((cause: unknown) => toast.error(fieldError(cause)))
+            .finally(() => setPending(false));
+        }}
+      >
+        <div className="flex flex-col gap-1">
+          <Label className="text-xs">New password</Label>
+          <Input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="••••••••" autoFocus className="h-8 w-48" />
+        </div>
+        <Button type="submit" size="sm" disabled={pending || password === ""} className="mb-0.5">
+          {pending ? "Setting…" : "Set password"}
+        </Button>
+        <p className="mb-1.5 text-2xs text-muted-foreground">admin reset — the user signs in with this on the password tab</p>
+      </form>
+    </div>
   );
 }
 
@@ -323,11 +354,16 @@ function CreateUserDialog({ open, onClose }: { open: boolean; onClose: () => voi
 // ---- teams ----
 
 function TeamsTab() {
-  const teams = useTeams();
+  // 数据面 useCollection（15s 轮询，与旧 useTeams 同拍）。
+  const list = useCollection(teamsResource, {
+    from: Route.id,
+    search: identitySearch,
+    query: { refetchInterval: 15_000 },
+  });
   const invalidate = useInvalidate(["identity", "teams"]);
   const [name, setName] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
-  const [deleting, setDeleting] = useState<Team | null>(null);
+  const [deleting, setDeleting] = useState<TeamEntry | null>(null);
   const create = useMutation({
     mutationFn: () => apiSend("/v1/teams", "POST", { name }),
     onSuccess: () => {
@@ -346,20 +382,23 @@ function TeamsTab() {
     });
   }
 
-  const columns: LegacyColumnDef<Team, any>[] = [
-    { accessorKey: "name", header: "Name", cell: ({ row }) => <span className="text-sm font-medium">{row.original.name}</span> },
+  const columns: LegacyColumnDef<TeamEntry, any>[] = [
+    { accessorKey: "name", header: "Name", meta: { sortField: "name" }, cell: ({ row }) => <span className="text-sm font-medium">{row.original.name}</span> },
     {
       accessorKey: "id",
       header: "ID",
+      meta: { sortField: "id" },
       cell: ({ row }) => (
-        <span className="font-mono text-2xs text-muted-foreground">
-          {row.original.id?.slice(0, 10)}…<CopyButton value={row.original.id ?? ""} />
+        <span className="font-mono text-2xs text-muted-foreground" title={row.original.id}>
+          {shortId(row.original.id)}
+          <CopyButton value={row.original.id ?? ""} />
         </span>
       ),
     },
     {
       accessorKey: "created_at",
       header: "Created",
+      meta: { sortField: "created_at" },
       cell: ({ row }) => (
         <span className="text-xs text-muted-foreground"><RelativeTime value={row.original.created_at} /></span>
       ),
@@ -377,26 +416,31 @@ function TeamsTab() {
     },
   ];
 
+  const filtered = list.query.predicate != null;
   return (
     <>
-      <ListCard
-        label="teams"
-        placeholder="Filter teams..."
-        rows={teams.data ?? []}
-        fieldsOf={(team) => [team.name ?? "", team.id ?? ""]}
-        loading={teams.isPending}
-        error={teams.isError ? teams.error : null}
-        onRetry={() => void teams.refetch()}
-        columns={columns}
-        cli="fleetly teams list"
-        actions={
-          <Button size="sm" onClick={() => { setName(""); setCreateOpen(true); }}>
-            <PlusIcon data-icon-start-inline />
-            New team…
-          </Button>
+      <FleetListPage
+        list={list}
+        toolbar={
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <FilterBar list={list} schema={identitySearch} textPlaceholder="Filter teams..." />
+            <div className="py-2 pr-3">
+              <Button size="sm" onClick={() => { setName(""); setCreateOpen(true); }}>
+                <PlusIcon data-icon-start-inline />
+                New team…
+              </Button>
+            </div>
+          </div>
         }
-        empty={<EmptyState icon={PlusIcon} title="No teams" description="The default team always exists implicitly." />}
-      />
+        pagination={<Pagination list={list} />}
+        emptyTitle={filtered ? "No teams match the filter" : "No teams"}
+        emptyDescription={
+          filtered ? "Adjust or clear the filter to see rows again." : "The default team always exists implicitly."
+        }
+        appendix={<CliEquivalent command="fleetly teams list" />}
+      >
+        <DataTable list={list} columns={columns} getRowId={(row) => row.id ?? ""} />
+      </FleetListPage>
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -441,8 +485,16 @@ function TeamsTab() {
 // ---- roles ----
 
 function RolesTab({ createOpen, onCreateOpenChange }: { createOpen: boolean; onCreateOpenChange: (open: boolean) => void }) {
+  // useTeams 是创建弹窗下拉的写面伴读（不经 kit 集合）。
   const teams = useTeams();
-  const roles = useRoles();
+  // 数据面 useCollection：轮询统一 15s 取齐其余三表（旧 catalog useRoles
+  // 键在 ["settings","roles"] 是 60s 前缀异类——kit fetch 直打同端点
+  // /v1/roles，拍频对齐本页四表）。
+  const list = useCollection(rolesResource, {
+    from: Route.id,
+    search: identitySearch,
+    query: { refetchInterval: 15_000 },
+  });
   const invalidate = useInvalidate(["settings", "roles"]);
 
   function deleteRole(id: string) {
@@ -452,12 +504,13 @@ function RolesTab({ createOpen, onCreateOpenChange }: { createOpen: boolean; onC
     });
   }
 
-  const columns: LegacyColumnDef<Role, any>[] = [
-    { accessorKey: "name", header: "Name", cell: ({ row }) => <span className="text-sm font-medium">{row.original.name}</span> },
+  const columns: LegacyColumnDef<RoleEntry, any>[] = [
+    { accessorKey: "name", header: "Name", meta: { sortField: "name" }, cell: ({ row }) => <span className="text-sm font-medium">{row.original.name}</span> },
     {
       accessorKey: "team_id",
       header: "Team",
-      cell: ({ row }) => <span className="font-mono text-2xs text-muted-foreground">{row.original.team_id?.slice(0, 10) ?? "—"}</span>,
+      meta: { sortField: "team_id" },
+      cell: ({ row }) => <span className="font-mono text-2xs text-muted-foreground" title={row.original.team_id}>{row.original.team_id?.slice(0, 10) ?? "—"}</span>,
     },
     {
       accessorKey: "builtin",
@@ -496,28 +549,33 @@ function RolesTab({ createOpen, onCreateOpenChange }: { createOpen: boolean; onC
         ),
     },
   ];
-  const [deleting, setDeleting] = useState<Role | null>(null);
+  const [deleting, setDeleting] = useState<RoleEntry | null>(null);
 
+  const filtered = list.query.predicate != null;
   return (
     <>
-      <ListCard
-        label="roles"
-        placeholder="Filter roles..."
-        rows={roles.data ?? []}
-        fieldsOf={(role) => [role.name ?? "", ...(role.scopes ?? [])]}
-        loading={roles.isPending}
-        error={roles.isError ? roles.error : null}
-        onRetry={() => void roles.refetch()}
-        columns={columns}
-        cli="fleetly roles list"
-        actions={
-          <Button size="sm" onClick={() => onCreateOpenChange(true)}>
-            <PlusIcon data-icon-start-inline />
-            New role…
-          </Button>
+      <FleetListPage
+        list={list}
+        toolbar={
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <FilterBar list={list} schema={identitySearch} textPlaceholder="Filter roles..." />
+            <div className="py-2 pr-3">
+              <Button size="sm" onClick={() => onCreateOpenChange(true)}>
+                <PlusIcon data-icon-start-inline />
+                New role…
+              </Button>
+            </div>
+          </div>
         }
-        empty={<EmptyState icon={PlusIcon} title="No roles" description="Builtin templates are listed here once queried per team." />}
-      />
+        pagination={<Pagination list={list} />}
+        emptyTitle={filtered ? "No roles match the filter" : "No roles"}
+        emptyDescription={
+          filtered ? "Adjust or clear the filter to see rows again." : "Builtin templates are listed here once queried per team."
+        }
+        appendix={<CliEquivalent command="fleetly roles list" />}
+      >
+        <DataTable list={list} columns={columns} getRowId={(row) => row.id ?? ""} />
+      </FleetListPage>
       <ConfirmDialog
         open={deleting != null}
         onOpenChange={(open) => !open && setDeleting(null)}
@@ -531,7 +589,7 @@ function RolesTab({ createOpen, onCreateOpenChange }: { createOpen: boolean; onC
   );
 }
 
-function CreateRoleDialog({ open, onClose, teams }: { open: boolean; onClose: () => void; teams: Team[] }) {
+function CreateRoleDialog({ open, onClose, teams }: { open: boolean; onClose: () => void; teams: TeamEntry[] }) {
   const invalidate = useInvalidate(["settings", "roles"]);
   const [name, setName] = useState("");
   const [teamId, setTeamId] = useState("");
@@ -595,29 +653,45 @@ function CreateRoleDialog({ open, onClose, teams }: { open: boolean; onClose: ()
 // ---- invitations ----
 
 function InvitationsTab({ createOpen, onCreateOpenChange }: { createOpen: boolean; onCreateOpenChange: (open: boolean) => void }) {
-  const invitations = useInvitations();
+  // 数据面 useCollection（15s 轮询，与旧 useInvitations 同拍）。
+  const list = useCollection(invitationsResource, {
+    from: Route.id,
+    search: identitySearch,
+    query: { refetchInterval: 15_000 },
+  });
+  // useTeams/useRoles 是创建弹窗下拉的写面伴读（不经 kit 集合）。
   const teams = useTeams();
   const roles = useRoles();
 
-  const columns: LegacyColumnDef<Invitation, any>[] = [
+  const columns: LegacyColumnDef<InvitationEntry, any>[] = [
     {
       accessorKey: "id",
       header: "ID",
+      meta: { sortField: "id" },
       cell: ({ row }) => (
-        <span className="font-mono text-2xs text-muted-foreground">
-          {row.original.id?.slice(0, 10)}…<CopyButton value={row.original.id ?? ""} />
+        <span className="font-mono text-2xs text-muted-foreground" title={row.original.id}>
+          {shortId(row.original.id)}
+          <CopyButton value={row.original.id ?? ""} />
         </span>
       ),
     },
     {
       accessorKey: "team_id",
       header: "Team",
-      cell: ({ row }) => <span className="font-mono text-2xs text-muted-foreground">{row.original.team_id?.slice(0, 10)}</span>,
+      cell: ({ row }) => (
+        <span className="font-mono text-2xs text-muted-foreground" title={row.original.team_id}>
+          {row.original.team_id?.slice(0, 10)}
+        </span>
+      ),
     },
     {
       accessorKey: "role_id",
       header: "Role",
-      cell: ({ row }) => <span className="font-mono text-2xs text-muted-foreground">{row.original.role_id?.slice(0, 10)}</span>,
+      cell: ({ row }) => (
+        <span className="font-mono text-2xs text-muted-foreground" title={row.original.role_id}>
+          {row.original.role_id?.slice(0, 10)}
+        </span>
+      ),
     },
     {
       accessorKey: "created_by",
@@ -644,38 +718,44 @@ function InvitationsTab({ createOpen, onCreateOpenChange }: { createOpen: boolea
     {
       accessorKey: "created_at",
       header: "Created",
+      meta: { sortField: "created_at" },
       cell: ({ row }) => (
         <span className="text-xs text-muted-foreground"><RelativeTime value={row.original.created_at} /></span>
       ),
     },
   ];
 
+  const filtered = list.query.predicate != null;
   return (
     <>
-      <ListCard
-        label="invitations"
-        placeholder="Filter invitations..."
-        rows={invitations.data ?? []}
-        fieldsOf={(invitation) => [invitation.id ?? "", invitation.team_id ?? "", invitation.role_id ?? "", invitation.created_by ?? ""]}
-        loading={invitations.isPending}
-        error={invitations.isError ? invitations.error : null}
-        onRetry={() => void invitations.refetch()}
-        columns={columns}
-        actions={
-          <Button size="sm" onClick={() => onCreateOpenChange(true)}>
-            <PlusIcon data-icon-start-inline />
-            New invitation…
-          </Button>
+      <FleetListPage
+        list={list}
+        toolbar={
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <FilterBar list={list} schema={identitySearch} textPlaceholder="Filter invitations..." />
+            <div className="py-2 pr-3">
+              <Button size="sm" onClick={() => onCreateOpenChange(true)}>
+                <PlusIcon data-icon-start-inline />
+                New invitation…
+              </Button>
+            </div>
+          </div>
         }
-        empty={<EmptyState icon={PlusIcon} title="No invitations" description="Mint one to onboard a teammate — the secret is shown once." />}
-      />
+        pagination={<Pagination list={list} />}
+        emptyTitle={filtered ? "No invitations match the filter" : "No invitations"}
+        emptyDescription={
+          filtered ? "Adjust or clear the filter to see rows again." : "Mint one to onboard a teammate — the secret is shown once."
+        }
+      >
+        <DataTable list={list} columns={columns} getRowId={(row) => row.id ?? ""} />
+      </FleetListPage>
       {/* invitations 无 CLI list 动词——CLI 行诚实省略 */}
       <CreateInvitationDialog open={createOpen} onClose={() => onCreateOpenChange(false)} teams={teams.data ?? []} roles={roles.data ?? []} />
     </>
   );
 }
 
-function CreateInvitationDialog({ open, onClose, teams, roles }: { open: boolean; onClose: () => void; teams: Team[]; roles: Role[] }) {
+function CreateInvitationDialog({ open, onClose, teams, roles }: { open: boolean; onClose: () => void; teams: TeamEntry[]; roles: RoleEntry[] }) {
   const invalidate = useInvalidate(["identity", "invitations"]);
   const [teamId, setTeamId] = useState("");
   const [roleId, setRoleId] = useState("");
@@ -683,7 +763,7 @@ function CreateInvitationDialog({ open, onClose, teams, roles }: { open: boolean
   const [secret, setSecret] = useState<string | null>(null);
   const create = useMutation({
     mutationFn: () =>
-      apiSend<{ invitation?: Invitation; secret?: string }>("/v1/invitations", "POST", {
+      apiSend<{ invitation?: InvitationEntry; secret?: string }>("/v1/invitations", "POST", {
         team_id: teamId === "" ? undefined : teamId,
         role_id: roleId === "" ? undefined : roleId,
         ttl: ttl === "" ? undefined : ttl,
