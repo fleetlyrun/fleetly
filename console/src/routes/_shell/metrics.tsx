@@ -50,17 +50,20 @@ function MetricsWorkbench() {
   const [projectId] = useProjectId();
   const apps = useApps(projectId);
   const whoami = useWhoami(true);
-  const [appId, setAppId] = useState(search.app ?? "");
-  const [presetKey, setPresetKey] = useState<MetricTab>(parseTab(search.preset));
-  const [rangeKey, setRangeKey] = useState(search.range ?? "1h");
+  // URL 即真相（批1 §3 裁决）：app/preset/range 三选全进 search——原 useState
+  // 持有 + 仅 range 回写的半吊子形态在回退/前进时失同步（设计路线所指
+  // useState 不一致即此）。customQuery 是草稿输入，保持本地态。
+  const appId = search.app ?? "";
+  const presetKey = parseTab(search.preset);
+  const rangeKey = search.range ?? "1h";
   const [customQuery, setCustomQuery] = useState("");
 
-  // 项目目录到达后补默认 App（同日志页口径）
+  // 项目目录到达后补默认 App（同日志页口径）：缺省选择写回 URL（replace）。
   useEffect(() => {
-    if (appId === "" && search.app === undefined && (apps.data ?? []).length > 0) {
-      setAppId(apps.data![0].id);
+    if (search.app === undefined && (apps.data ?? []).length > 0) {
+      void navigate({ replace: true, search: (prev) => ({ ...prev, app: apps.data![0].id }) });
     }
-  }, [apps.data, appId, search.app]);
+  }, [apps.data, search.app, navigate]);
 
   // Custom PromQL 是平台管理员诊断面：显隐只看服务端 platform_admin，
   // Console 不复制 role/team 判定。
@@ -82,12 +85,7 @@ function MetricsWorkbench() {
   const unit = custom ? "plain" : preset.unit;
 
   function update(next: { app?: string; preset?: string; range?: string }) {
-    if (next.app !== undefined) setAppId(next.app);
-    if (next.preset !== undefined) setPresetKey(parseTab(next.preset));
-    if (next.range !== undefined) {
-      setRangeKey(next.range);
-      void navigate({ search: { app: appId || undefined, preset: presetKey, range: next.range } });
-    }
+    void navigate({ replace: true, search: (prev) => ({ ...prev, ...next }) });
   }
 
   return (
@@ -141,9 +139,8 @@ function MetricsWorkbench() {
         tabs={allowedTabs.map((tab) => ({ value: tab.value, label: tab.label }))}
         current={activeTab}
         onChange={(value) => {
-          setPresetKey(value);
-          // tab 深链（ModulePage 口径：tab 即 URL search param，可分享可回退）。
-          void navigate({ search: { app: appId || undefined, preset: value === "cpu_percent" ? undefined : value, range: rangeKey } });
+          // tab 深链（URL 即真相）：默认 CPU % 不落键（保持 URL 干净），回退/前进同步。
+          update({ preset: value === "cpu_percent" ? undefined : value });
         }}
       />
 
