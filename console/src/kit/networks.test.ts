@@ -1,8 +1,21 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchNetworkPeers, fetchNetworks, networksSearch } from "./networks";
+import { runCommand } from "@lynx-go/uikit-core/kernel";
+import {
+  approvePeerDescriptor,
+  createNetworkCommand,
+  declarePeerDescriptor,
+  fetchNetworkPeers,
+  fetchNetworks,
+  networkPeersResource,
+  networksResource,
+  networksSearch,
+  rebuildNetworkDescriptor,
+  revokePeerDescriptor,
+} from "./networks";
 
 // Networks 域资源适配单测：双资源端点/信封收敛、空 scope 不发请求、URL
-// 编解码往返。fetch 面 stub 在 global（kit http 管线调用裸 fetch）。
+// 编解码往返；批 2 命令族锚（提交形收敛、结果两分、裸 descriptor 动词
+// 面、失效桥键清单）。fetch 面 stub 在 global（kit http 管线调用裸 fetch）。
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -85,5 +98,76 @@ describe("networksSearch（URL 编解码契约——双 tab 共享 name/id）", 
     expect("q" in patch).toBe(true);
     expect(patch.q).toBeUndefined();
     expect(patch.page).toBeUndefined();
+  });
+});
+
+describe("networks 命令族（批 2 写路径命令化）", () => {
+  it("create：POST /v1/networks 提交形收敛（egressNone 未勾选 = egress_none 不发送）", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await runCommand(createNetworkCommand, { name: "net-a", egressNone: false }, { projectId: "shop" });
+
+    expect(result).toEqual({ status: "ok", payload: null });
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(String(url)).toBe("/v1/networks");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(String(init.body))).toEqual({ project_id: "shop", name: "net-a" });
+  });
+
+  it("结果两分：400→rejected 保留 apperr code、409→conflict、500→throw kernel ApiError", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ code: "E_INVALID_ARGUMENT", message: "bad name" }, 400)));
+    await expect(
+      runCommand(createNetworkCommand, { name: "", egressNone: false }, { projectId: "shop" }),
+    ).resolves.toEqual({ status: "rejected", code: "E_INVALID_ARGUMENT", message: "bad name" });
+
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ code: "E_ALREADY_EXISTS", message: "name taken" }, 409)));
+    await expect(
+      runCommand(createNetworkCommand, { name: "x", egressNone: false }, { projectId: "shop" }),
+    ).resolves.toEqual({ status: "conflict", message: "name taken" });
+
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ code: "E_INTERNAL", message: "boom" }, 500)));
+    await expect(
+      runCommand(createNetworkCommand, { name: "x", egressNone: false }, { projectId: "shop" }),
+    ).rejects.toEqual({ kind: "server", status: 500, message: "E_INTERNAL: boom" });
+  });
+
+  it("rebuild/approve/revoke 裸 descriptor：动词 URL 与 invalidates 目标资源", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await runCommand(rebuildNetworkDescriptor, { networkId: "n1" }, { projectId: "shop" });
+    await runCommand(approvePeerDescriptor, { peerId: "p 1" }, { projectId: "shop" });
+    await runCommand(revokePeerDescriptor, { peerId: "p1" }, { projectId: "shop" });
+
+    expect(String(fetchMock.mock.calls[0][0])).toBe("/v1/networks/rebuild");
+    expect(JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))).toEqual({ network_id: "n1" });
+    expect(String(fetchMock.mock.calls[1][0])).toBe("/v1/networks/peers/p%201/approve");
+    expect(String(fetchMock.mock.calls[2][0])).toBe("/v1/networks/peers/p1/revoke");
+    expect(rebuildNetworkDescriptor.invalidates).toEqual([{ resource: networksResource.name }]);
+    expect(approvePeerDescriptor.invalidates).toEqual([{ resource: networkPeersResource.name }]);
+    expect(revokePeerDescriptor.invalidates).toEqual([{ resource: networkPeersResource.name }]);
+  });
+
+  it("declare：POST /v1/networks/peers 全参（ctx 线程 project_id）", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await runCommand(declarePeerDescriptor, { networkId: "n1", peerProjectId: "other" }, { projectId: "shop" });
+
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(String(url)).toBe("/v1/networks/peers");
+    expect(JSON.parse(String(init.body))).toEqual({
+      network_id: "n1",
+      project_id: "shop",
+      peer_project_id: "other",
+    });
+  });
+
+  it("失效桥键清单（旧 useApiMutation invalidate 等值）", () => {
+    expect(networksResource.legacyKeys?.({ projectId: "shop" })).toEqual([["resources", "networks", "shop"]]);
+    expect(declarePeerDescriptor.legacyKeys?.({ projectId: "shop" })).toEqual([
+      ["resources", "network-peers", "shop"],
+    ]);
   });
 });

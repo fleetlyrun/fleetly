@@ -3,11 +3,11 @@ import { LinkIcon, PencilIcon, PlusIcon } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
 import { toast } from "sonner";
-import { useCollection } from "@lynx-go/uikit-core";
+import { useCollection, useCommand, useCommandForm } from "@lynx-go/uikit-core";
+import type { ApiError, CommandResult } from "@lynx-go/uikit-core/kernel";
 import { useApps, useDatabases, useNetworks, useProjects } from "@/lib/catalog";
-import { apiSend, apiSendRaw, apiFetch } from "@/api/client";
-import { useApiMutation } from "@/lib/use-api-mutation";
-import { describeError } from "@/lib/api-errors";
+import { apiSendRaw, apiFetch } from "@/api/client";
+import { describeApiError, toApiError } from "@/kit/errors";
 import { shortId } from "@/lib/format";
 import { specIndex, useAppSpecs } from "@/features/spec/use-app-specs";
 import { buildTar, rootPrefixOf } from "@/lib/tar";
@@ -15,17 +15,43 @@ import { DataTable } from "@/components/kit/query/data-table";
 import { FilterBar } from "@/components/kit/query/filter-bar";
 import { ListPage as FleetListPage } from "@/components/kit/query/list-page";
 import { Pagination } from "@/components/kit/query/pagination";
+import { Form } from "@/components/kit/command/form";
+import { SelectField, TextField } from "@/components/kit/command/fields";
 import {
+  approvePeerDescriptor,
+  createNetworkCommand,
+  declarePeerDescriptor,
   networkPeersResource,
   networksResource,
   networksSearch,
+  rebuildNetworkDescriptor,
+  revokePeerDescriptor,
   type Network,
   type NetworkPeer,
 } from "@/kit/networks";
-import { routesResource, routesSearch, type Route } from "@/kit/routes";
-import { storageSearch, uploadsResource, volumesResource, type Upload, type Volume } from "@/kit/storage";
+import {
+  createRouteCommand,
+  removeRouteCommand,
+  routesResource,
+  routesSearch,
+  type Route,
+} from "@/kit/routes";
+import {
+  createVolumeCommand,
+  removeVolumeCommand,
+  storageSearch,
+  uploadsResource,
+  volumesResource,
+  type Upload,
+  type Volume,
+} from "@/kit/storage";
 import {
   configsResource,
+  putConfigCommand,
+  putSecretCommand,
+  putSharedVariableCommand,
+  removeSecretCommand,
+  removeSharedVariableCommand,
   secretsResource,
   sharedVariablesResource,
   variablesSearch,
@@ -55,31 +81,38 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { describeError } from "@/lib/api-errors";
 
 // 资源面板族（UI v2 批 4 → 模板化收编 ListCard → useCollection 化批 3
 // 收编 kit 块）：自旧 Resources.tsx 八 tab 搬迁——走查过的 mutation 语义
 // 零漂移（创建/变更/删除/peer 审批/目录 tar 上传）。列表读面走 kit 资源
 // （useCollection + ListPage × FilterBar × DataTable × Pagination，快筛/
-// 分页/排序进 URL）；写面（useApiMutation/弹窗/ConfirmDialog/上传流）
-// 保持本仓自持待批 2 迁移。 Mounted by / Referenced by 反查列的异步占
-// 位是块外槽（页面列 cell 自绘）。DatabasesPanel 已随 Databases 一级页
-// （features/databases）消亡删除。
+// 分页/排序进 URL）；写面批 2 命令化（kit/<域> commands + useCommand/
+// useCommandForm；简单静态表单收编 kit command 块——submit 进 Form 内芯，
+// 复杂/动态壳保留只换命令接线；toast 单源 onSettled：ok→成功句、
+// rejected/conflict→表单结果盒或行钮 toast、failure→describeApiError）。
+// Mounted by / Referenced by 反查列的异步占位是块外槽（页面列 cell 自绘）。
+// DatabasesPanel 已随 Databases 一级页（features/databases）消亡删除。
 
-// RowError 是行内动作失败的披露行（v2 口径：分状态文案单源）。
-function RowError({ error }: { error: unknown }) {
-  const described = describeError(error);
-  return (
-    <div className="mt-1 text-2xs text-[var(--status-danger)]">
-      {described.title} — <span className="font-mono">{described.detail}</span>
-    </div>
-  );
-}
-
-// FormError 是弹窗表单的提交错误面（danger 信封盒，describeError 单源）。
+// FormError 是弹窗表单的失败通道错误面（danger 信封盒，describeError 单
+// 源）——承载查询面错误（Config 详情回读）与上传流错误；命令结果通道
+// （rejected/conflict）走 CmdResultError/kit Form 结果盒。
 function FormError({ error }: { error: unknown }) {
   return (
     <div className="rounded-lg border border-[color-mix(in_oklch,var(--status-danger)_35%,transparent)] bg-[var(--status-danger-bg)] px-3 py-2 font-mono text-2xs break-all text-muted-foreground">
       {describeError(error).detail}
+    </div>
+  );
+}
+
+// CmdResultError 是命令结果通道（rejected/conflict）的错误盒——保留原壳
+// 的表单（PutForm/Config 编辑/declare）接替 FormError 的位置：400 的
+// apperr code 保留机器判别面前缀，失败通道（网络/5xx）不走这里（toast）。
+function CmdResultError({ result }: { result: Extract<CommandResult<unknown>, { status: "rejected" | "conflict" }> }) {
+  return (
+    <div className="rounded-lg border border-[color-mix(in_oklch,var(--status-danger)_35%,transparent)] bg-[var(--status-danger-bg)] px-3 py-2 font-mono text-2xs break-all text-muted-foreground">
+      {result.status === "rejected" && result.code ? `[${result.code}] ` : ""}
+      {result.message}
     </div>
   );
 }
@@ -92,23 +125,28 @@ export function NetworksPanel({ projectId, routeId }: { projectId: string; route
   return <NetworksTab projectId={projectId} routeId={routeId} />;
 }
 
-// NewNetworkButton 是 Networks 工具栏主动作（弹窗与 mutation 自包含）。
+// NewNetworkButton 是 Networks 工具栏主动作（弹窗壳 + kit command 表单
+// 内芯：submit 进 Form 块，rejected/conflict 走结果盒，failure 走 toast）。
 export function NewNetworkButton({ projectId }: { projectId: string }) {
   const [createOpen, setCreateOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [egressNone, setEgressNone] = useState(false);
-  const create = useApiMutation({
-    path: "/v1/networks",
-    method: "POST",
-    body: () => ({ project_id: projectId, name, egress_none: egressNone || undefined }),
-    invalidate: [["resources", "networks", projectId]],
+  const create = useCommandForm(createNetworkCommand, {
+    defaultValues: { name: "", egressNone: false },
+    scope: { projectId },
+    onSettled: (result, failure) => {
+      if (result?.status === "ok") {
+        setCreateOpen(false);
+      } else if (failure) {
+        toast.error(describeApiError(failure));
+      }
+    },
   });
   return (
     <>
       <Button
         size="sm"
         onClick={() => {
-          setName("");
+          create.form.reset();
+          create.command.reset();
           setCreateOpen(true);
         }}
       >
@@ -120,35 +158,29 @@ export function NewNetworkButton({ projectId }: { projectId: string }) {
           <DialogHeader>
             <DialogTitle>New network</DialogTitle>
           </DialogHeader>
-          <form
-            className="flex flex-col gap-3"
-            onSubmit={(event) => {
-              event.preventDefault();
-              create.mutate(undefined, { onSuccess: () => setCreateOpen(false) });
-            }}
+          <Form
+            form={create.form}
+            submitting={create.submitting}
+            result={create.result}
+            submitLabel="Create"
+            submittingLabel="Creating…"
+            cancelLabel="Cancel"
+            onCancel={() => setCreateOpen(false)}
           >
-            <Label className="flex flex-col gap-1.5">
-              <span className="text-xs font-semibold">Name</span>
-              <Input value={name} onChange={(event) => setName(event.target.value)} autoFocus />
-            </Label>
-            <label className="flex items-center gap-2 text-xs text-muted-foreground">
-              <input
-                type="checkbox"
-                checked={egressNone}
-                onChange={(event) => setEgressNone(event.target.checked)}
-              />
-              Egress none (isolated network)
-            </label>
-            {create.isError ? <FormError error={create.error} /> : null}
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={create.isPending || name === ""}>
-                {create.isPending ? "Creating…" : "Create"}
-              </Button>
-            </DialogFooter>
-          </form>
+            <TextField form={create.form} name="name" label="Name" required />
+            <create.form.Field name="egressNone">
+              {(field: { state: { value: boolean }; handleChange(value: boolean): void }) => (
+                <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    checked={field.state.value}
+                    onChange={(event) => field.handleChange(event.target.checked)}
+                  />
+                  Egress none (isolated network)
+                </label>
+              )}
+            </create.form.Field>
+          </Form>
         </DialogContent>
       </Dialog>
     </>
@@ -191,7 +223,7 @@ function NetworksTab({ projectId, routeId }: { projectId: string; routeId: strin
     {
       id: "actions",
       header: () => <span className="sr-only">Actions</span>,
-      cell: ({ row }) => <NetworkActionsCell networkId={row.original.id} />,
+      cell: ({ row }) => <NetworkActionsCell projectId={projectId} networkId={row.original.id} />,
     },
   ];
 
@@ -222,25 +254,27 @@ function NetworksTab({ projectId, routeId }: { projectId: string; routeId: strin
   );
 }
 
-// NetworkActionsCell 是行内 rebuild 动词（失败披露在钮下——走查语义原样）。
-function NetworkActionsCell({ networkId }: { networkId?: string }) {
-  const rebuild = useApiMutation({
-    path: "/v1/networks/rebuild",
-    method: "POST",
-    body: () => ({ network_id: networkId }),
+// NetworkActionsCell 是行内 rebuild 动词（无容器行钮：rejected/conflict 与
+// 失败通道走 toast；成功原无 toast——零漂移不新造）。
+function NetworkActionsCell({ projectId, networkId }: { projectId: string; networkId?: string }) {
+  const rebuild = useCommand(rebuildNetworkDescriptor, {
+    scope: { projectId },
+    onSettled: (result, failure) => {
+      if (result && result.status !== "ok") toast.error(result.message);
+      else if (failure) toast.error(describeApiError(failure));
+    },
   });
   return (
     <div className="text-right">
       <Button
         variant="outline"
         size="sm"
-        disabled={rebuild.isPending}
-        onClick={() => void rebuild.mutate()}
+        disabled={rebuild.pending}
+        onClick={() => rebuild.mutate({ networkId: networkId ?? "" })}
         title="Rebuild the carrier network (minute-scale)"
       >
         rebuild
       </Button>
-      {rebuild.isError ? <RowError error={rebuild.error} /> : null}
     </div>
   );
 }
@@ -294,7 +328,7 @@ export function PeersPanel({ projectId, routeId }: { projectId: string; routeId:
     {
       id: "actions",
       header: () => <span className="sr-only">Actions</span>,
-      cell: ({ row }) => <PeerActionsCell peer={row.original} />,
+      cell: ({ row }) => <PeerActionsCell projectId={projectId} peer={row.original} />,
     },
   ];
 
@@ -322,64 +356,75 @@ export function PeersPanel({ projectId, routeId }: { projectId: string; routeId:
   );
 }
 
-// PeerActionsCell：行内 approve/revoke（失败披露在钮下——走查语义原样；
-// revoke 经 ConfirmDialog 确认）。
-function PeerActionsCell({ peer }: { peer: NetworkPeer }) {
-  const approve = useApiMutation({
-    path: `/v1/networks/peers/${encodeURIComponent(peer.id ?? "")}/approve`,
-    method: "POST",
-  });
-  const revoke = useApiMutation({
-    path: `/v1/networks/peers/${encodeURIComponent(peer.id ?? "")}/revoke`,
-    method: "POST",
-  });
+// PeerActionsCell：行内 approve/revoke（无容器行钮：rejected/conflict 与失
+// 败通道走 toast，成功原无 toast——零漂移；revoke 经 ConfirmDialog 确认）。
+function PeerActionsCell({ projectId, peer }: { projectId: string; peer: NetworkPeer }) {
+  const settle = (result: CommandResult<null> | null, failure: ApiError | null) => {
+    if (result && result.status !== "ok") toast.error(result.message);
+    else if (failure) toast.error(describeApiError(failure));
+  };
+  const approve = useCommand(approvePeerDescriptor, { scope: { projectId }, onSettled: settle });
+  const revoke = useCommand(revokePeerDescriptor, { scope: { projectId }, onSettled: settle });
   const [revoking, setRevoking] = useState(false);
   return (
     <div className="flex flex-col items-end">
       <div className="flex justify-end gap-1">
-        <Button variant="outline" size="sm" disabled={approve.isPending} onClick={() => void approve.mutate()}>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={approve.pending}
+          onClick={() => approve.mutate({ peerId: peer.id ?? "" })}
+        >
           approve
         </Button>
         <Button
           variant="outline"
           size="sm"
           className="text-[var(--status-danger)]"
-          disabled={revoke.isPending}
+          disabled={revoke.pending}
           onClick={() => setRevoking(true)}
         >
           revoke
         </Button>
       </div>
-      {approve.isError ? <RowError error={approve.error} /> : null}
-      {revoke.isError ? <RowError error={revoke.error} /> : null}
       <ConfirmDialog
         open={revoking}
         onOpenChange={setRevoking}
         title="Revoke this peer?"
         description="The cross-project attachment is detached immediately."
         confirmLabel="Revoke"
-        onConfirm={() => revoke.mutateAsync()}
+        onConfirm={() => revoke.mutateAsync({ peerId: peer.id ?? "" })}
       />
     </div>
   );
 }
 
+// DeclarePeerForm：跨项目挂靠声明（inline 工具栏表单——壳保留：shadcn
+// Select 双下拉与行内提交钮形态不变，只换命令接线；结果盒/Working… 占位
+// 原位，成功占位保持瞬时态（reset 后即退场，零漂移））。
 function DeclarePeerForm({ projectId, networks }: { projectId: string; networks: Array<{ id?: string; name?: string }> }) {
   const projects = useProjects();
   const [networkId, setNetworkId] = useState("");
   const [peerProject, setPeerProject] = useState("");
-  const declare = useApiMutation({
-    path: "/v1/networks/peers",
-    method: "POST",
-    body: () => ({ network_id: networkId, project_id: projectId, peer_project_id: peerProject }),
-    invalidate: [["resources", "network-peers", projectId]],
+  const declare = useCommand(declarePeerDescriptor, {
+    scope: { projectId },
+    onSettled: (result, failure) => {
+      if (result?.status === "ok") {
+        setNetworkId("");
+        setPeerProject("");
+        declare.reset();
+      } else if (failure) {
+        toast.error(describeApiError(failure));
+      }
+      // rejected/conflict → 结果盒（有表单容器，不 toast）
+    },
   });
   return (
     <form
       className="flex flex-wrap items-end gap-2 rounded-lg border px-3 py-2"
       onSubmit={(event) => {
         event.preventDefault();
-        declare.mutate(undefined, { onSuccess: () => declare.reset() });
+        declare.mutate({ networkId, peerProjectId: peerProject });
       }}
     >
       <Label className="flex flex-col gap-1 text-xs">
@@ -414,12 +459,12 @@ function DeclarePeerForm({ projectId, networks }: { projectId: string; networks:
           </SelectContent>
         </Select>
       </Label>
-      <Button type="submit" size="sm" disabled={declare.isPending || networkId === "" || peerProject === ""}>
+      <Button type="submit" size="sm" disabled={declare.pending || networkId === "" || peerProject === ""}>
         declare
       </Button>
-      {declare.isPending ? <span className="text-xs text-muted-foreground">Working…</span> : null}
-      {declare.isError ? <FormError error={declare.error} /> : null}
-      {declare.isSuccess ? <span className="text-xs text-[var(--status-success)]">peer declared</span> : null}
+      {declare.pending ? <span className="text-xs text-muted-foreground">Working…</span> : null}
+      {declare.result != null && declare.result.status !== "ok" ? <CmdResultError result={declare.result} /> : null}
+      {declare.result?.status === "ok" ? <span className="text-xs text-[var(--status-success)]">peer declared</span> : null}
     </form>
   );
 }
@@ -440,31 +485,39 @@ export function RoutesPanel({
   return <RoutesTab projectId={projectId} routeId={routeId} apps={apps} />;
 }
 
-// NewRouteButton 是 Routes 工具栏主动作；项目尚无 App 时诚实禁用。
+// NewRouteButton 是 Routes 工具栏主动作（弹窗壳 + kit command 表单内芯；
+// host/path/port 带 hint/inputMode 的字段在 Form 块内手接线保文案零漂移，
+// 纯下拉走 kit SelectField）；项目尚无 App 时诚实禁用。
 export function NewRouteButton({ projectId, apps }: { projectId: string; apps: Array<{ id: string; name: string }> }) {
   const [createOpen, setCreateOpen] = useState(false);
-  const [form, setForm] = useState({ host: "", path: "", app: apps[0]?.id ?? "", process: "web", port: "8080", protocol: "http", tls: "auto" });
-  const create = useApiMutation({
-    path: "/v1/routes",
-    method: "POST",
-    body: () => ({
-      project_id: projectId,
-      host: form.host,
-      path: form.path || undefined,
-      app_id: form.app,
-      process: form.process,
-      port: Number(form.port),
-      protocol: form.protocol,
-      tls_mode: form.tls,
-    }),
-    invalidate: [["resources", "routes", projectId]],
+  const defaults = () => ({
+    host: "",
+    path: "",
+    app: apps[0]?.id ?? "",
+    process: "web",
+    port: "8080",
+    protocol: "http",
+    tls: "auto",
   });
+  const create = useCommandForm(createRouteCommand, {
+    defaultValues: defaults(),
+    scope: { projectId },
+    onSettled: (result, failure) => {
+      if (result?.status === "ok") {
+        setCreateOpen(false);
+      } else if (failure) {
+        toast.error(describeApiError(failure));
+      }
+    },
+  });
+  const form = create.form;
   return (
     <>
       <Button
         size="sm"
         onClick={() => {
-          setForm((prev) => ({ ...prev, app: apps[0]?.id ?? prev.app }));
+          form.reset(defaults());
+          create.command.reset();
           setCreateOpen(true);
         }}
         disabled={apps.length === 0}
@@ -477,87 +530,87 @@ export function NewRouteButton({ projectId, apps }: { projectId: string; apps: A
           <DialogHeader>
             <DialogTitle>New route</DialogTitle>
           </DialogHeader>
-          <form
-            className="flex flex-col gap-3"
-            onSubmit={(event) => {
-              event.preventDefault();
-              create.mutate(undefined, { onSuccess: () => setCreateOpen(false) });
-            }}
+          <Form
+            form={form}
+            submitting={create.submitting}
+            result={create.result}
+            submitLabel="Create"
+            submittingLabel="Creating…"
+            cancelLabel="Cancel"
+            onCancel={() => setCreateOpen(false)}
           >
-            <Label className="flex flex-col gap-1.5">
-              <span className="text-xs font-semibold">Host</span>
-              <Input value={form.host} onChange={(event) => setForm({ ...form, host: event.target.value })} autoFocus />
-              <span className="text-2xs font-normal text-muted-foreground">e.g. shop.203.0.113.10.sslip.io</span>
-            </Label>
+            <form.Field name="host">
+              {(field: { state: { value: unknown }; handleChange(value: unknown): void }) => (
+                <label className="block space-y-1">
+                  <span className="text-xs font-medium text-muted">Host</span>
+                  <Input
+                    value={String(field.state.value ?? "")}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                    autoFocus
+                  />
+                  <span className="text-[11px] text-muted">e.g. shop.203.0.113.10.sslip.io</span>
+                </label>
+              )}
+            </form.Field>
             <div className="grid grid-cols-2 gap-3">
-              <Label className="flex flex-col gap-1.5">
-                <span className="text-xs font-semibold">Path</span>
-                <Input value={form.path} onChange={(event) => setForm({ ...form, path: event.target.value })} placeholder="/" />
-                <span className="text-2xs font-normal text-muted-foreground">optional prefix</span>
-              </Label>
-              <Label className="flex flex-col gap-1.5">
-                <span className="text-xs font-semibold">TLS</span>
-                <Select value={form.tls} onValueChange={(value) => setForm({ ...form, tls: value })}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="auto">auto</SelectItem>
-                    <SelectItem value="none">none</SelectItem>
-                  </SelectContent>
-                </Select>
-              </Label>
+              <form.Field name="path">
+                {(field: { state: { value: unknown }; handleChange(value: unknown): void }) => (
+                  <label className="block space-y-1">
+                    <span className="text-xs font-medium text-muted">Path</span>
+                    <Input
+                      value={String(field.state.value ?? "")}
+                      onChange={(e) => field.handleChange(e.target.value)}
+                      placeholder="/"
+                    />
+                    <span className="text-[11px] text-muted">optional prefix</span>
+                  </label>
+                )}
+              </form.Field>
+              <SelectField
+                form={form}
+                name="tls"
+                label="TLS"
+                options={[
+                  { value: "auto", label: "auto" },
+                  { value: "none", label: "none" },
+                ]}
+              />
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <Label className="flex flex-col gap-1.5">
-                <span className="text-xs font-semibold">App</span>
-                <Select value={form.app} onValueChange={(value) => setForm({ ...form, app: value })}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {apps.map((app) => (
-                      <SelectItem key={app.id} value={app.id}>
-                        {app.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Label>
-              <Label className="flex flex-col gap-1.5">
-                <span className="text-xs font-semibold">Process</span>
-                <Input value={form.process} onChange={(event) => setForm({ ...form, process: event.target.value })} />
-              </Label>
+              <SelectField
+                form={form}
+                name="app"
+                label="App"
+                required
+                options={apps.map((app) => ({ value: app.id, label: app.name }))}
+              />
+              <TextField form={form} name="process" label="Process" />
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <Label className="flex flex-col gap-1.5">
-                <span className="text-xs font-semibold">Port</span>
-                <Input value={form.port} onChange={(event) => setForm({ ...form, port: event.target.value })} inputMode="numeric" />
-              </Label>
-              <Label className="flex flex-col gap-1.5">
-                <span className="text-xs font-semibold">Protocol</span>
-                <Select value={form.protocol} onValueChange={(value) => setForm({ ...form, protocol: value })}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="http">http</SelectItem>
-                    <SelectItem value="h2c">h2c</SelectItem>
-                    <SelectItem value="tcp">tcp</SelectItem>
-                  </SelectContent>
-                </Select>
-              </Label>
+              <form.Field name="port">
+                {(field: { state: { value: unknown }; handleChange(value: unknown): void }) => (
+                  <label className="block space-y-1">
+                    <span className="text-xs font-medium text-muted">Port</span>
+                    <Input
+                      value={String(field.state.value ?? "")}
+                      onChange={(e) => field.handleChange(e.target.value)}
+                      inputMode="numeric"
+                    />
+                  </label>
+                )}
+              </form.Field>
+              <SelectField
+                form={form}
+                name="protocol"
+                label="Protocol"
+                options={[
+                  { value: "http", label: "http" },
+                  { value: "h2c", label: "h2c" },
+                  { value: "tcp", label: "tcp" },
+                ]}
+              />
             </div>
-            {create.isError ? <FormError error={create.error} /> : null}
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={create.isPending || form.host === "" || form.app === ""}>
-                {create.isPending ? "Creating…" : "Create"}
-              </Button>
-            </DialogFooter>
-          </form>
+          </Form>
         </DialogContent>
       </Dialog>
     </>
@@ -653,10 +706,12 @@ function RoutesTab({
 
 function RouteActionsCell({ routeId, host, projectId }: { routeId?: string; host?: string; projectId: string }) {
   const [deleting, setDeleting] = useState(false);
-  const del = useApiMutation({
-    path: `/v1/routes/${encodeURIComponent(routeId ?? "")}`,
-    method: "DELETE",
-    invalidate: [["resources", "routes", projectId]],
+  const del = useCommand(removeRouteCommand, {
+    scope: { projectId },
+    onSettled: (result, failure) => {
+      if (result && result.status !== "ok") toast.error(result.message);
+      else if (failure) toast.error(describeApiError(failure));
+    },
   });
   return (
     <div className="text-right">
@@ -664,7 +719,7 @@ function RouteActionsCell({ routeId, host, projectId }: { routeId?: string; host
         variant="outline"
         size="sm"
         className="text-[var(--status-danger)]"
-        disabled={del.isPending}
+        disabled={del.pending}
         onClick={() => setDeleting(true)}
       >
         delete
@@ -675,7 +730,7 @@ function RouteActionsCell({ routeId, host, projectId }: { routeId?: string; host
         title={`Delete route ${host ?? ""}?`}
         description="Traffic to this host stops being served by the managed proxy."
         confirmLabel="Delete route"
-        onConfirm={() => del.mutateAsync()}
+        onConfirm={() => del.mutateAsync({ routeId: routeId ?? "" })}
       />
     </div>
   );
@@ -700,13 +755,16 @@ function VolumesTab({ projectId, routeId }: { projectId: string; routeId: string
   const databases = useDatabases(projectId);
   const { specs, pending: specsPending } = useAppSpecs(projectId, apps.data ?? []);
   const [createOpen, setCreateOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [pinnedNode, setPinnedNode] = useState("");
-  const create = useApiMutation({
-    path: "/v1/volumes",
-    method: "POST",
-    body: () => ({ project_id: projectId, name, pinned_node_id: pinnedNode || undefined }),
-    invalidate: [["resources", "volumes", projectId]],
+  const create = useCommandForm(createVolumeCommand, {
+    defaultValues: { name: "", pinnedNode: "" },
+    scope: { projectId },
+    onSettled: (result, failure) => {
+      if (result?.status === "ok") {
+        setCreateOpen(false);
+      } else if (failure) {
+        toast.error(describeApiError(failure));
+      }
+    },
   });
   // 挂载判据（IA v3 二期⑤b）：卷锚 = 平台卷名（App 冻结 Spec 的卷附件
   // volume_id 与 Database 挂靠卷名公式都按 Name——引擎同口径；W-7 对齐）。
@@ -720,7 +778,8 @@ function VolumesTab({ projectId, routeId }: { projectId: string; routeId: string
     return { carrier: carried, users: carried ? [] : users };
   };
   const openCreate = () => {
-    setName("");
+    create.form.reset();
+    create.command.reset();
     setCreateOpen(true);
   };
 
@@ -822,32 +881,29 @@ function VolumesTab({ projectId, routeId }: { projectId: string; routeId: string
               <DialogHeader>
                 <DialogTitle>New volume</DialogTitle>
               </DialogHeader>
-              <form
-                className="flex flex-col gap-3"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  create.mutate(undefined, { onSuccess: () => setCreateOpen(false) });
-                }}
+              <Form
+                form={create.form}
+                submitting={create.submitting}
+                result={create.result}
+                submitLabel="Create"
+                submittingLabel="Creating…"
+                cancelLabel="Cancel"
+                onCancel={() => setCreateOpen(false)}
               >
-                <Label className="flex flex-col gap-1.5">
-                  <span className="text-xs font-semibold">Name</span>
-                  <Input value={name} onChange={(event) => setName(event.target.value)} autoFocus />
-                </Label>
-                <Label className="flex flex-col gap-1.5">
-                  <span className="text-xs font-semibold">Pinned node</span>
-                  <Input value={pinnedNode} onChange={(event) => setPinnedNode(event.target.value)} />
-                  <span className="text-2xs font-normal text-muted-foreground">optional platform node id — volume stays on that node</span>
-                </Label>
-                {create.isError ? <FormError error={create.error} /> : null}
-                <DialogFooter>
-                  <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>
-                    Cancel
-                  </Button>
-                  <Button type="submit" disabled={create.isPending || name === ""}>
-                    {create.isPending ? "Creating…" : "Create"}
-                  </Button>
-                </DialogFooter>
-              </form>
+                <TextField form={create.form} name="name" label="Name" required />
+                <create.form.Field name="pinnedNode">
+                  {(field: { state: { value: unknown }; handleChange(value: unknown): void }) => (
+                    <label className="block space-y-1">
+                      <span className="text-xs font-medium text-muted">Pinned node</span>
+                      <Input
+                        value={String(field.state.value ?? "")}
+                        onChange={(e) => field.handleChange(e.target.value)}
+                      />
+                      <span className="text-[11px] text-muted">optional platform node id — volume stays on that node</span>
+                    </label>
+                  )}
+                </create.form.Field>
+              </Form>
             </DialogContent>
           </Dialog>
           <p className="text-xs text-muted-foreground">
@@ -874,10 +930,17 @@ function VolumeActionsCell({
   mounted: boolean;
   projectId: string;
 }) {
-  const del = useApiMutation({
-    path: `/v1/volumes/${encodeURIComponent(volume.id ?? "")}`,
-    method: "DELETE",
-    invalidate: [["resources", "volumes", projectId]],
+  const del = useCommand(removeVolumeCommand, {
+    scope: { projectId },
+    onSettled: (result, failure) => {
+      if (result?.status === "ok") {
+        toast.success(`Volume ${volume.name} deleted`);
+      } else if (result) {
+        toast.error(result.message);
+      } else if (failure) {
+        toast.error(describeApiError(failure));
+      }
+    },
   });
   if (mounted) {
     return null;
@@ -886,7 +949,7 @@ function VolumeActionsCell({
     <div className="text-right">
       <AlertDialog>
         <AlertDialogTrigger asChild>
-          <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" disabled={del.isPending}>
+          <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" disabled={del.pending}>
             delete
           </Button>
         </AlertDialogTrigger>
@@ -901,13 +964,13 @@ function VolumeActionsCell({
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              disabled={del.isPending}
+              disabled={del.pending}
               onClick={(event) => {
                 event.preventDefault();
-                del.mutate(undefined, { onSuccess: () => toast(`Volume ${volume.name} deleted`) });
+                del.mutate({ volumeId: volume.id ?? "" });
               }}
             >
-              {del.isPending ? "Deleting…" : "Delete"}
+              {del.pending ? "Deleting…" : "Delete"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -921,7 +984,8 @@ function VolumeActionsCell({
 
 // PutForm 是 Add 型写面的统一弹窗（secret/config/shared variable 共用，
 // API 动词是 PUT——组件名承动词面，按钮文案统一 Add *，用户裁决 2026-10-11）：
-// 名称 + 值（或 multiline 内容），错误信封盒披露）。
+// 名称 + 值（或 multiline 内容）。壳保留（批 2 只换命令接线）：onSubmit 返
+// 回 CommandResult——rejected/conflict 走结果盒，失败通道 toast，ok 关窗。
 function PutForm({
   title,
   nameLabel,
@@ -935,12 +999,12 @@ function PutForm({
   valueLabel: string;
   valueHint?: string;
   multiline?: boolean;
-  onSubmit: (name: string, value: string) => Promise<unknown>;
+  onSubmit: (name: string, value: string) => Promise<CommandResult<unknown>>;
 }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [value, setValue] = useState("");
-  const [error, setError] = useState<unknown>(null);
+  const [result, setResult] = useState<Extract<CommandResult<unknown>, { status: "rejected" | "conflict" }> | null>(null);
   const [pending, setPending] = useState(false);
   return (
     <>
@@ -949,7 +1013,7 @@ function PutForm({
         onClick={() => {
           setName("");
           setValue("");
-          setError(null);
+          setResult(null);
           setOpen(true);
         }}
       >
@@ -966,12 +1030,17 @@ function PutForm({
             onSubmit={async (event) => {
               event.preventDefault();
               setPending(true);
-              setError(null);
+              setResult(null);
               try {
-                await onSubmit(name, value);
-                setOpen(false);
+                const settled = await onSubmit(name, value);
+                if (settled.status === "ok") {
+                  setOpen(false);
+                } else {
+                  setResult(settled);
+                }
               } catch (cause) {
-                setError(cause);
+                // 失败通道（网络/401/5xx）不走结果盒——toast 诚实文案
+                toast.error(describeApiError(toApiError(cause)));
               } finally {
                 setPending(false);
               }
@@ -990,7 +1059,7 @@ function PutForm({
               )}
               {valueHint ? <span className="text-2xs font-normal text-muted-foreground">{valueHint}</span> : null}
             </Label>
-            {error !== null ? <FormError error={error} /> : null}
+            {result !== null ? <CmdResultError result={result} /> : null}
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setOpen(false)}>
                 Cancel
@@ -1017,6 +1086,7 @@ function SecretsTab({ projectId, routeId }: { projectId: string; routeId: string
     scope: { projectId },
     query: { refetchInterval: 15_000 },
   });
+  const put = useCommand(putSecretCommand, { scope: { projectId } });
 
   const columns: LegacyColumnDef<Secret, any>[] = [
     {
@@ -1057,7 +1127,7 @@ function SecretsTab({ projectId, routeId }: { projectId: string; routeId: string
               nameLabel="Name"
               valueLabel="Value"
               valueHint="write-only — the list never shows values"
-              onSubmit={(name, value) => apiSend("/v1/secrets", "PUT", { project_id: projectId, name, value })}
+              onSubmit={(name, value) => put.mutateAsync({ name, value })}
             />
           </div>
         </div>
@@ -1076,10 +1146,12 @@ function SecretsTab({ projectId, routeId }: { projectId: string; routeId: string
 
 function SecretActionsCell({ name, projectId }: { name?: string; projectId: string }) {
   const [deleting, setDeleting] = useState(false);
-  const del = useApiMutation({
-    path: `/v1/secrets/${encodeURIComponent(projectId)}/${encodeURIComponent(name ?? "")}`,
-    method: "DELETE",
-    invalidate: [["resources", "secrets", projectId]],
+  const del = useCommand(removeSecretCommand, {
+    scope: { projectId },
+    onSettled: (result, failure) => {
+      if (result && result.status !== "ok") toast.error(result.message);
+      else if (failure) toast.error(describeApiError(failure));
+    },
   });
   return (
     <div className="text-right">
@@ -1087,7 +1159,7 @@ function SecretActionsCell({ name, projectId }: { name?: string; projectId: stri
         variant="outline"
         size="sm"
         className="text-[var(--status-danger)]"
-        disabled={del.isPending}
+        disabled={del.pending}
         onClick={() => setDeleting(true)}
       >
         delete
@@ -1098,7 +1170,7 @@ function SecretActionsCell({ name, projectId }: { name?: string; projectId: stri
         title={`Delete secret ${name ?? ""}?`}
         description="Apps referencing it at deploy freeze time will fail to resolve."
         confirmLabel="Delete secret"
-        onConfirm={() => del.mutateAsync()}
+        onConfirm={() => del.mutateAsync({ name: name ?? "" })}
       />
     </div>
   );
@@ -1116,6 +1188,7 @@ function ConfigsTab({ projectId, routeId }: { projectId: string; routeId: string
     query: { refetchInterval: 15_000 },
   });
   const [selected, setSelected] = useState<Config | null>(null);
+  const put = useCommand(putConfigCommand, { scope: { projectId } });
 
   const columns: LegacyColumnDef<Config, any>[] = [
     {
@@ -1167,7 +1240,7 @@ function ConfigsTab({ projectId, routeId }: { projectId: string; routeId: string
               valueLabel="Content"
               valueHint="each write freezes a new version"
               multiline
-              onSubmit={(name, content) => apiSend("/v1/configs", "PUT", { project_id: projectId, name, content })}
+              onSubmit={(name, content) => put.mutateAsync({ name, content })}
             />
           </div>
         </div>
@@ -1221,14 +1294,20 @@ function ConfigDetailDialog({
   });
   const [editing, setEditing] = useState(false);
   const [content, setContent] = useState("");
-  const save = useApiMutation<{ config?: { version?: string } }>({
-    path: "/v1/configs",
-    method: "PUT",
-    body: () => ({ project_id: projectId, name, content }),
-    invalidate: [
-      ["resources", "configs", projectId],
-      ["resources", "config", projectId, name],
-    ],
+  // Config 编辑壳保留（批 2 只换命令接线）：保存 PUT 同名即冻结新版本，
+  // 成功后回视图并刷新到新版本号；rejected/conflict 走结果盒、failure 走
+  // toast；详情键失效经 configsResource.legacyKeys 宽前缀桥。
+  const save = useCommand(putConfigCommand, {
+    scope: { projectId },
+    onSettled: (result, failure) => {
+      if (result?.status === "ok") {
+        setEditing(false);
+        toast.success(`${name} saved as version ${result.payload?.config?.version ?? "?"}`);
+      } else if (failure) {
+        toast.error(describeApiError(failure));
+      }
+      // rejected/conflict → 结果盒（表单容器，不 toast）
+    },
   });
   function close() {
     setEditing(false);
@@ -1250,12 +1329,7 @@ function ConfigDetailDialog({
             className="flex flex-col gap-3"
             onSubmit={(event) => {
               event.preventDefault();
-              save.mutate(undefined, {
-                onSuccess: (res) => {
-                  setEditing(false);
-                  toast(`${name} saved as version ${res.config?.version ?? "?"}`);
-                },
-              });
+              save.mutate({ name, content });
             }}
           >
             <Textarea
@@ -1265,13 +1339,13 @@ function ConfigDetailDialog({
               onChange={(event) => setContent(event.target.value)}
               autoFocus
             />
-            {save.isError ? <FormError error={save.error} /> : null}
+            {save.result != null && save.result.status !== "ok" ? <CmdResultError result={save.result} /> : null}
             <DialogFooter>
-              <Button type="button" variant="outline" disabled={save.isPending} onClick={() => setEditing(false)}>
+              <Button type="button" variant="outline" disabled={save.pending} onClick={() => setEditing(false)}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={save.isPending || content === (detail.data?.content ?? "")}>
-                {save.isPending ? "Saving…" : "Save as new version"}
+              <Button type="submit" disabled={save.pending || content === (detail.data?.content ?? "")}>
+                {save.pending ? "Saving…" : "Save as new version"}
               </Button>
             </DialogFooter>
           </form>
@@ -1354,19 +1428,14 @@ function VariablesTab({
     query: { refetchInterval: 15_000 },
   });
   const [banner, setBanner] = useState<string | null>(null);
-  const [bannerError, setBannerError] = useState<unknown>(null);
-  const [pending, setPending] = useState(false);
-  async function put(name: string, value: string) {
-    setPending(true);
-    setBanner(null);
-    setBannerError(null);
-    try {
-      const res = await apiSend<{ affected_apps?: Array<string | undefined> }>("/v1/shared-variables", "PUT", {
-        project_id: projectId,
-        name,
-        value,
-      });
-      const affected = (res.affected_apps ?? []).flatMap((id: string | undefined) =>
+  const putCommand = useCommand(putSharedVariableCommand, { scope: { projectId } });
+  // affected_apps 横幅逻辑保留（批 2 命令化）：ok 载荷带受影响 App 名单
+  // ——redeploy 提示链；rejected/conflict 由 PutForm 结果盒披露、失败通
+  // 道 toast（PutForm 内单源）。
+  async function put(name: string, value: string): Promise<CommandResult<unknown>> {
+    const result = await putCommand.mutateAsync({ name, value });
+    if (result.status === "ok") {
+      const affected = (result.payload.affected_apps ?? []).flatMap((id: string | undefined) =>
         id ? [apps.find((app) => app.id === id)?.name ?? id.slice(0, 10)] : [],
       );
       setBanner(
@@ -1374,11 +1443,8 @@ function VariablesTab({
           ? `${name} saved — no app references it yet`
           : `${name} saved — redeploy to pick it up: ${affected.join(",")}`,
       );
-    } catch (cause) {
-      setBannerError(cause);
-    } finally {
-      setPending(false);
     }
+    return result;
   }
 
   const columns: LegacyColumnDef<SharedVariable, any>[] = [
@@ -1441,8 +1507,7 @@ function VariablesTab({
       appendix={
         <>
           <CliEquivalent command={`fleetly shared-variables list --project ${projectId}`} />
-          {pending ? <p className="text-xs text-muted-foreground">Working…</p> : null}
-          {bannerError != null ? <FormError error={bannerError} /> : null}
+          {putCommand.pending ? <p className="text-xs text-muted-foreground">Working…</p> : null}
           {banner ? <p className="text-xs text-[var(--status-success)]">{banner}</p> : null}
         </>
       }
@@ -1462,12 +1527,27 @@ function VariableActionsCell({
   apps: Array<{ id: string; name: string }>;
 }) {
   const [result, setResult] = useState<string | null>(null);
-  const [error, setError] = useState<unknown>(null);
   const [deleting, setDeleting] = useState(false);
-  const del = useApiMutation<{ affected_apps?: Array<string | undefined> }>({
-    path: `/v1/shared-variables/${encodeURIComponent(projectId)}/${encodeURIComponent(row.name ?? "")}`,
-    method: "DELETE",
-    invalidate: [["resources", "shared-variables", projectId]],
+  // 行删（ConfirmDialog 壳保留）：ok 的 affected_apps 披露保留行内绿条
+  // （redeploy 提示链）；rejected/conflict 与失败通道走 toast（无容器动作）。
+  const del = useCommand(removeSharedVariableCommand, {
+    scope: { projectId },
+    onSettled: (result, failure) => {
+      if (result?.status === "ok") {
+        const affected = result.payload?.affected_apps ?? [];
+        setResult(
+          affected.length === 0
+            ? `${row.name} deleted`
+            : `${row.name} deleted — redeploy to pick it up: ${affected
+                .flatMap((id) => (id ? [apps.find((app) => app.id === id)?.name ?? id.slice(0, 10)] : []))
+                .join(",")}`,
+        );
+      } else if (result) {
+        toast.error(result.message);
+      } else if (failure) {
+        toast.error(describeApiError(failure));
+      }
+    },
   });
   return (
     <div className="text-right align-top">
@@ -1475,32 +1555,19 @@ function VariableActionsCell({
         variant="outline"
         size="sm"
         className="text-[var(--status-danger)]"
-        disabled={del.isPending}
+        disabled={del.pending}
         onClick={() => setDeleting(true)}
       >
         delete
       </Button>
       {result ? <div className="mt-1 text-2xs text-[var(--status-success)]">{result}</div> : null}
-      {error != null ? <RowError error={error} /> : null}
       <ConfirmDialog
         open={deleting}
         onOpenChange={setDeleting}
         title={`Delete shared variable ${row.name ?? ""}?`}
         description="Apps referencing it keep the last merged value until the next deploy freeze."
         confirmLabel="Delete variable"
-        onConfirm={() =>
-          del.mutateAsync().then((response) => {
-            const affected = response?.affected_apps ?? [];
-            setResult(
-              affected.length === 0
-                ? `${row.name} deleted`
-                : `${row.name} deleted — redeploy to pick it up: ${affected
-                    .flatMap((id) => (id ? [apps.find((app) => app.id === id)?.name ?? id.slice(0, 10)] : []))
-                    .join(",")}`,
-            );
-            setError(null);
-          })
-        }
+        onConfirm={() => del.mutateAsync({ name: row.name ?? "" })}
       />
     </div>
   );

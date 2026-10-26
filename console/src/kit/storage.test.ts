@@ -1,8 +1,17 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchUploads, fetchVolumes, storageSearch } from "./storage";
+import { runCommand } from "@lynx-go/uikit-core/kernel";
+import {
+  createVolumeCommand,
+  fetchUploads,
+  fetchVolumes,
+  removeVolumeCommand,
+  storageSearch,
+  volumesResource,
+} from "./storage";
 
 // Storage 域资源适配单测：protojson 行收敛、空 scope 不发请求、URL 编解码
-// 往返。fetch 面 stub 在 global（kit http 管线调用裸 fetch）。
+// 往返；批 2 volumes 命令族锚（提交形收敛、结果两分、失效桥键清单）。
+// fetch 面 stub 在 global（kit http 管线调用裸 fetch）。
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -89,5 +98,64 @@ describe("storageSearch（URL 编解码契约——双 tab 共享 name/id/digest
     expect("q" in patch).toBe(true);
     expect(patch.q).toBeUndefined();
     expect(patch.page).toBeUndefined();
+  });
+});
+
+describe("volumes 命令族（批 2 写路径命令化）", () => {
+  it("create：POST /v1/volumes 提交形收敛（pinnedNode 空串 = pinned_node_id 不发送）", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await runCommand(createVolumeCommand, { name: "data", pinnedNode: "" }, { projectId: "shop" });
+
+    expect(result).toEqual({ status: "ok", payload: null });
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(String(url)).toBe("/v1/volumes");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(String(init.body))).toEqual({ project_id: "shop", name: "data" });
+
+    await runCommand(createVolumeCommand, { name: "pinned", pinnedNode: "node-a" }, { projectId: "shop" });
+    expect(JSON.parse(String((fetchMock.mock.calls[1][1] as RequestInit).body))).toEqual({
+      project_id: "shop",
+      name: "pinned",
+      pinned_node_id: "node-a",
+    });
+  });
+
+  it("结果两分：400→rejected 保留 apperr code、409→conflict（挂载中拒删）、500→throw kernel ApiError", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ code: "E_VOLUME_IN_USE", message: "mounted by shop" }, 409)));
+    await expect(runCommand(removeVolumeCommand, { volumeId: "v1" }, { projectId: "shop" })).resolves.toEqual({
+      status: "conflict",
+      message: "mounted by shop",
+    });
+
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ code: "E_INVALID_ARGUMENT", message: "bad name" }, 400)));
+    await expect(runCommand(createVolumeCommand, { name: "", pinnedNode: "" }, { projectId: "shop" })).resolves.toEqual({
+      status: "rejected",
+      code: "E_INVALID_ARGUMENT",
+      message: "bad name",
+    });
+
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ code: "E_INTERNAL", message: "boom" }, 500)));
+    await expect(runCommand(removeVolumeCommand, { volumeId: "v1" }, { projectId: "shop" })).rejects.toEqual({
+      kind: "server",
+      status: 500,
+      message: "E_INTERNAL: boom",
+    });
+  });
+
+  it("remove：DELETE /v1/volumes/{id}（URL 编码）", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await runCommand(removeVolumeCommand, { volumeId: "v 1" }, { projectId: "shop" });
+
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(String(url)).toBe("/v1/volumes/v%201");
+    expect(init.method).toBe("DELETE");
+  });
+
+  it("失效桥键清单（旧 useApiMutation invalidate 等值）", () => {
+    expect(volumesResource.legacyKeys?.({ projectId: "shop" })).toEqual([["resources", "volumes", "shop"]]);
   });
 });

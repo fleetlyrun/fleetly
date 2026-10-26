@@ -1,6 +1,8 @@
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
+import { useCommand } from "@lynx-go/uikit-core";
+import type { CommandDescriptor } from "@lynx-go/uikit-core/kernel";
 import { ApiError, apiFetch, apiSend } from "@/api/client";
 import { PlusIcon, SlidersIcon, TrashIcon } from "lucide-react";
 import { toast } from "sonner";
@@ -8,7 +10,8 @@ import { CopyButton } from "@/components/domain/copy-button";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { fetchFrozenSpec, useSpecDeploy } from "@/lib/spec-deploy";
+import { describeApiError, runCommandMapped } from "@/kit/errors";
+import { fetchFrozenSpec, useSpecDeploy, type AppSpec } from "@/lib/spec-deploy";
 
 type VariableRow = { id?: string; name: string; value: string; updated_at?: string };
 
@@ -18,8 +21,48 @@ type VariableRow = { id?: string; name: string; value: string; updated_at?: stri
 // 运行时 overlay 受理，材料半边不动）。生效 env 是只读投影（冻结体合成
 // 终态）；per-process 的源声明 env 与 secret_refs 属 Spec 高级面（Spec tab
 // 编辑器 / Deploy 表单），不在此重复。
+//
+// 批 2 写路径命令化：Apply 动线（PUT 变更键 → DELETE 移除键 → 回读冻结
+// 体 → 重发 Spec）是一条原子命令——模块级 descriptor 工厂闭包 appId 与
+// 部署步（useSpecDeploy 句柄注入，lib 共享件不动）；未变键过滤在提交边
+// （staged/base diff 是 UI 状态语义）。存量 store 键
+// ["resources","app-variables",appId] 经 legacyKeys 桥（读面尚未 kit 化，
+// 无 kit 键可失效）；结果两分经 runCommandMapped（400→rejected 保留
+// apperr code、409→conflict、其余 throw）；toast 单源 onSettled。
+
+export interface ApplyAppVariablesInput {
+  /** 变更键全量行（空名与未变键已在提交边过滤） */
+  puts: ReadonlyArray<{ name: string; value: string }>;
+  /** 移除键名 */
+  deletes: ReadonlyArray<string>;
+}
+
+// applyAppVariablesDescriptor：变量落库 + 重部署一条动线（deploy 是组件
+// 侧 hook 句柄——闭包注入保持 useSpecDeploy 的失效/导航单源）。
+export function applyAppVariablesDescriptor(
+  appId: string,
+  deploy: (spec: AppSpec) => Promise<unknown>,
+): CommandDescriptor<ApplyAppVariablesInput, null> {
+  return {
+    run: async (input) =>
+      runCommandMapped(async () => {
+        for (const row of input.puts) {
+          await apiSend("/v1/app-variables", "PUT", { app_id: appId, name: row.name, value: row.value });
+        }
+        for (const name of input.deletes) {
+          await apiSend(`/v1/app-variables/${encodeURIComponent(appId)}/${encodeURIComponent(name)}`, "DELETE");
+        }
+        // 变量生效需一次部署（冻结咽喉合成）；无冻结体的 App 在首部署取新值。
+        const frozen = await fetchFrozenSpec(appId);
+        if (frozen) await deploy(frozen);
+        return null;
+      }),
+    // 存量 store 键桥（旧 useMutation invalidate 等值）
+    legacyKeys: () => [["resources", "app-variables", appId]],
+  };
+}
+
 export function AppVariablesTab({ projectId, appId }: { projectId: string; appId: string }) {
-  const queryClient = useQueryClient();
   const navigate = useNavigate();
 
   const store = useQuery({
@@ -53,30 +96,30 @@ export function AppVariablesTab({ projectId, appId }: { projectId: string; appId
     });
   });
 
-  const apply = useMutation({
-    mutationFn: async () => {
-      const baseline = new Map(base.map((row) => [row.name, row]));
-      for (const row of staged ?? []) {
-        if (row.name === "" ) continue;
-        if (baseline.get(row.name)?.value === row.value) continue; // 未变键不重写
-        await apiSend("/v1/app-variables", "PUT", { app_id: appId, name: row.name, value: row.value });
+  const apply = useCommand(applyAppVariablesDescriptor(appId, (frozen) => deploy.mutateAsync(frozen)), {
+    onSettled: (result, failure) => {
+      if (result?.status === "ok") {
+        setStaged(null);
+        toast.success("Variables saved — a new deployment rolls the new values");
+      } else if (result) {
+        toast.error(result.message);
+      } else if (failure) {
+        toast.error(describeApiError(failure));
       }
-      for (const row of base) {
-        if (!(staged ?? []).some((kept) => kept.name === row.name)) {
-          await apiSend(`/v1/app-variables/${encodeURIComponent(appId)}/${encodeURIComponent(row.name)}`, "DELETE");
-        }
-      }
-      // 变量生效需一次部署（冻结咽喉合成）；无冻结体的 App 在首部署取新值。
-      const frozen = await fetchFrozenSpec(appId);
-      if (frozen) await deploy.mutateAsync(frozen);
     },
-    onSuccess: async () => {
-      setStaged(null);
-      await queryClient.invalidateQueries({ queryKey: ["resources", "app-variables", appId] });
-      toast("Variables saved — a new deployment rolls the new values");
-    },
-    onError: (cause) => toast.error(cause instanceof Error ? cause.message : String(cause)),
   });
+
+  // 提交边 diff：未变键不重写、移除键 DELETE、空名行丢弃（原动线语义）。
+  function applyStaged() {
+    const baseline = new Map(base.map((row) => [row.name, row]));
+    const puts = (staged ?? []).filter(
+      (row) => row.name !== "" && baseline.get(row.name)?.value !== row.value,
+    );
+    const deletes = base
+      .filter((row) => !(staged ?? []).some((kept) => kept.name === row.name))
+      .map((row) => row.name);
+    apply.mutate({ puts, deletes });
+  }
 
   return (
     <div className="flex flex-col gap-5">
@@ -144,12 +187,12 @@ export function AppVariablesTab({ projectId, appId }: { projectId: string; appId
             </Button>
             <div className="flex items-center gap-2">
               {staged != null ? (
-                <Button size="sm" variant="ghost" onClick={() => setStaged(null)} disabled={apply.isPending}>
+                <Button size="sm" variant="ghost" onClick={() => setStaged(null)} disabled={apply.pending}>
                   Discard
                 </Button>
               ) : null}
-              <Button size="sm" disabled={!hasChanges || apply.isPending} onClick={() => void apply.mutate()}>
-                {apply.isPending ? "Applying…" : "Apply & deploy"}
+              <Button size="sm" disabled={!hasChanges || apply.pending} onClick={applyStaged}>
+                {apply.pending ? "Applying…" : "Apply & deploy"}
               </Button>
             </div>
           </div>

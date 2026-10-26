@@ -1,8 +1,23 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchConfigs, fetchSecrets, fetchSharedVariables, variablesSearch } from "./variables";
+import { runCommand } from "@lynx-go/uikit-core/kernel";
+import {
+  configsResource,
+  fetchConfigs,
+  fetchSecrets,
+  fetchSharedVariables,
+  putConfigCommand,
+  putSecretCommand,
+  putSharedVariableCommand,
+  removeSecretCommand,
+  removeSharedVariableCommand,
+  secretsResource,
+  sharedVariablesResource,
+  variablesSearch,
+} from "./variables";
 
 // Variables 域资源适配单测：三资源端点/信封收敛、空 scope 不发请求、URL
-// 编解码往返。fetch 面 stub 在 global（kit http 管线调用裸 fetch）。
+// 编解码往返；批 2 命令族锚（载荷契约、结果两分、失效桥键清单）。fetch
+// 面 stub 在 global（kit http 管线调用裸 fetch）。
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -81,5 +96,82 @@ describe("variablesSearch（URL 编解码契约——三 tab 共享 name 单字�
     expect("q" in patch).toBe(true);
     expect(patch.q).toBeUndefined();
     expect(patch.page).toBeUndefined();
+  });
+});
+
+describe("variables 命令族（批 2 写路径命令化）", () => {
+  it("secrets put/remove：PUT/DELETE 端点与路径（ctx 线程 project_id，URL 编码）", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await runCommand(putSecretCommand, { name: "api key", value: "s3cr3t" }, { projectId: "shop" });
+    await runCommand(removeSecretCommand, { name: "api key" }, { projectId: "shop" });
+
+    expect(String(fetchMock.mock.calls[0][0])).toBe("/v1/secrets");
+    expect(JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))).toEqual({
+      project_id: "shop",
+      name: "api key",
+      value: "s3cr3t",
+    });
+    const [delUrl, delInit] = fetchMock.mock.calls[1] as unknown as [string, RequestInit];
+    expect(String(delUrl)).toBe("/v1/secrets/shop/api%20key");
+    expect(delInit.method).toBe("DELETE");
+  });
+
+  it("configs put：ok 载荷带 version（ConfigDetailDialog 冻结版本回读面）", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ config: { version: "4" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await runCommand(putConfigCommand, { name: "config.yaml", content: "SELECT 2;\n" }, { projectId: "shop" });
+
+    expect(result).toEqual({ status: "ok", payload: { config: { version: "4" } } });
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(String(url)).toBe("/v1/configs");
+    expect(JSON.parse(String(init.body))).toEqual({ project_id: "shop", name: "config.yaml", content: "SELECT 2;\n" });
+  });
+
+  it("shared-variables put/remove：ok 载荷带 affected_apps（redeploy 提示链数据源）", async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+      jsonResponse({ affected_apps: ["a1"] }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const put = await runCommand(putSharedVariableCommand, { name: "LOG_LEVEL", value: "debug" }, { projectId: "shop" });
+    expect(put).toEqual({ status: "ok", payload: { affected_apps: ["a1"] } });
+
+    const del = await runCommand(removeSharedVariableCommand, { name: "LOG_LEVEL" }, { projectId: "shop" });
+    expect(del).toEqual({ status: "ok", payload: { affected_apps: ["a1"] } });
+    expect(String(fetchMock.mock.calls[1][0])).toBe("/v1/shared-variables/shop/LOG_LEVEL");
+    expect((fetchMock.mock.calls[1][1] as RequestInit).method).toBe("DELETE");
+  });
+
+  it("结果两分：400→rejected 保留 apperr code、409→conflict、500→throw kernel ApiError", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ code: "E_INVALID_ARGUMENT", message: "empty name" }, 400)));
+    await expect(
+      runCommand(putSharedVariableCommand, { name: "", value: "v" }, { projectId: "shop" }),
+    ).resolves.toEqual({ status: "rejected", code: "E_INVALID_ARGUMENT", message: "empty name" });
+
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ code: "E_FROZEN", message: "immutable" }, 409)));
+    await expect(
+      runCommand(removeSecretCommand, { name: "x" }, { projectId: "shop" }),
+    ).resolves.toEqual({ status: "conflict", message: "immutable" });
+
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ code: "E_INTERNAL", message: "boom" }, 500)));
+    await expect(runCommand(putConfigCommand, { name: "x", content: "y" }, { projectId: "shop" })).rejects.toEqual({
+      kind: "server",
+      status: 500,
+      message: "E_INTERNAL: boom",
+    });
+  });
+
+  it("失效桥键清单（旧 useApiMutation invalidate 等值；configs 含详情宽前缀）", () => {
+    expect(secretsResource.legacyKeys?.({ projectId: "shop" })).toEqual([["resources", "secrets", "shop"]]);
+    expect(configsResource.legacyKeys?.({ projectId: "shop" })).toEqual([
+      ["resources", "configs", "shop"],
+      ["resources", "config", "shop"],
+    ]);
+    expect(sharedVariablesResource.legacyKeys?.({ projectId: "shop" })).toEqual([
+      ["resources", "shared-variables", "shop"],
+    ]);
   });
 });
