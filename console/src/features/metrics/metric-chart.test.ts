@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { components } from "@/api/telemetry";
-import { buildMetricRows } from "@/components/fleet/values/metric-chart";
+import { buildMetricRows } from "@/components/kit/values/metric-chart";
 import { serverCapOf, toMetricSeries } from "./metric-chart";
 
 // 数据底座锚（metrics 直迁批：渲染面换 fleet-ui 块后，锚走薄壳的真实执行

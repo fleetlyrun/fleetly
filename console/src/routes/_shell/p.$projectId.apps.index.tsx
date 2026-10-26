@@ -6,10 +6,10 @@ import { MoreHorizontalIcon, PlusIcon, RocketIcon, ScrollTextIcon, SquareTermina
 import { toast } from "sonner";
 import { useCollection } from "@lynx-go/uikit-core";
 import { apiSend } from "@/api/client";
-import { DataTable } from "@/components/fleet/query/data-table";
-import { FilterBar } from "@/components/fleet/query/filter-bar";
-import { ListPage as FleetListPage } from "@/components/fleet/query/list-page";
-import { Pagination } from "@/components/fleet/query/pagination";
+import { DataTable } from "@/components/kit/query/data-table";
+import { FilterBar } from "@/components/kit/query/filter-bar";
+import { ListPage as FleetListPage } from "@/components/kit/query/list-page";
+import { Pagination } from "@/components/kit/query/pagination";
 import { DeploySheet } from "@/features/deployments/deploy-sheet";
 import { useAppDeployments, type Deployment } from "@/features/deployments/hooks";
 import { CopyButton } from "@/components/domain/copy-button";
@@ -35,7 +35,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useProjectName, useRoutes, type AppEntry } from "@/lib/catalog";
-import { appsResource, appsSearch } from "@/fleet/apps";
+import { appsResource, appsSearch } from "@/kit/apps";
 
 // Apps 列表（fleet-ui 试点切片，2026-10-24）：骨架换 fleet 块（ListPage ×
 // FilterBar × DataTable × Pagination），快筛/分页/排序首次进 URL（q/size/

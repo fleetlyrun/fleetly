@@ -1,1 +1,0 @@
-import{M as e,ba as a}from"./vendor-BOesSnWF.js";function t(){return e.jsx("div",{role:"status","aria-label":"Loading",className:"flex min-h-[50vh] items-center justify-center p-10 text-muted-foreground",children:e.jsx(a,{className:"size-5 animate-spin"})})}export{t as R};

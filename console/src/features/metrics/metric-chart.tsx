@@ -3,7 +3,7 @@ import type { components } from "@/api/telemetry";
 import {
   type MetricSeries,
   MetricChart as FleetMetricChart,
-} from "@/components/fleet/values/metric-chart";
+} from "@/components/kit/values/metric-chart";
 import { formatMetricValue } from "./metric-presets";
 
 // MetricChart（metrics 直迁批，2026-10-24）：渲染面整页换 fleet-ui 块
