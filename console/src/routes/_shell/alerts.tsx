@@ -5,43 +5,50 @@ import { z } from "zod";
 import { BellIcon, PlusIcon } from "lucide-react";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
 import { toast } from "sonner";
+import { useCollection } from "@lynx-go/uikit-core";
 import type { components as telemetrySchemas } from "@/api/telemetry";
 import { apiSend } from "@/api/client";
-import { useAlertRules, useAlertStates, useAlertingChannels } from "@/lib/catalog";
+import { useAlertStates } from "@/lib/catalog";
+import { alertRulesResource, alertsSearch, channelsResource, type AlertRuleRow, type ChannelRow } from "@/kit/alerts";
 import { CreateRuleDialog } from "@/features/alerts/create-rule-dialog";
 import { ConfirmDialog } from "@/components/domain/confirm-dialog";
 import { CopyButton } from "@/components/domain/copy-button";
-import { EmptyState } from "@/components/domain/empty-state";
-import { ListCard } from "@/components/domain/list-page";
+import { CliEquivalent } from "@/components/domain/list-toolbar";
 import { ModulePage } from "@/components/domain/module-page";
 import { RelativeTime } from "@/components/domain/relative-time";
 import { StatusBadge, alertTone } from "@/components/domain/status-badge";
+import { DataTable } from "@/components/kit/query/data-table";
+import { FilterBar } from "@/components/kit/query/filter-bar";
+import { ListPage as FleetListPage } from "@/components/kit/query/list-page";
+import { Pagination } from "@/components/kit/query/pagination";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
-// 告警页（List 变体，UI v2 批 3；模板化收编 ModulePage+ListCard）：
-// firing 摘要条置顶（lead 槽）+ rules/channels 双 tab（URL search param
-// 由路由 validateSearch 自带）。旧 Observability 三层嵌套 tab 在此拆平。
+// 告警页（List 变体，UI v2 批 3 → 2026-10-26 批1 Wave2-A useCollection 化）：
+// firing 摘要条置顶（lead 槽）+ rules/channels 双 tab。rules/channels 列表
+// 读面走 kit 双资源（15s 轮询沿用旧拍，快筛/分页进 URL——validateSearch
+// 合并形态收编 tab 键 + 集合键）；alert states 保持 useQuery（lead 槽
+// firing 摘要 + 行内 state 覆盖列的前端 join 数据源，不是列表）。rules×
+// states join 列、Test/Delete 动作与 CreateRuleDialog 原样保留。
 
-type AlertRule = telemetrySchemas["schemas"]["v1AlertRule"];
 type AlertState = telemetrySchemas["schemas"]["v1AlertState"];
-type Channel = telemetrySchemas["schemas"]["v1NotificationChannel"];
 
-const alertsSearch = z.object({ tab: z.enum(["rules", "channels"]).optional() });
+const alertsTabSearch = z.object({ tab: z.enum(["rules", "channels"]).optional() });
 
 export const Route = createFileRoute("/_shell/alerts")({
-  validateSearch: alertsSearch,
+  validateSearch: (input: Record<string, unknown>) => ({
+    ...alertsTabSearch.parse(input),
+    ...alertsSearch.toSearchSchema()["~standard"].validate(input).value,
+  }),
   component: AlertsPage,
 });
 
 function AlertsPage() {
-  const search = Route.useSearch();
   const navigate = Route.useNavigate();
-  const tab = search.tab ?? "rules";
-  const rules = useAlertRules();
+  const tab = Route.useSearch({ select: (search) => search.tab ?? "rules" });
   const states = useAlertStates();
-  const firing = (states.data ?? []).filter((state) => state.state === "firing");
   const [createOpen, setCreateOpen] = useState(false);
+  const firing = (states.data ?? []).filter((state) => state.state === "firing");
 
   return (
     <ModulePage
@@ -72,19 +79,12 @@ function AlertsPage() {
         { value: "channels", label: "Notification channels" },
       ]}
       current={tab}
-      onTabChange={(value) => void navigate({ search: { tab: value } })}
+      onTabChange={(value) => void navigate({ search: (prev) => ({ ...prev, tab: value }) })}
     >
       {tab === "rules" ? (
-        <RulesPanel
-          rules={rules.data ?? []}
-          states={states.data ?? []}
-          loading={rules.isPending}
-          error={rules.isError ? rules.error : null}
-          onRetry={() => void rules.refetch()}
-          onCreate={() => setCreateOpen(true)}
-        />
+        <RulesPanel from={Route.id} states={states.data ?? []} onCreate={() => setCreateOpen(true)} />
       ) : (
-        <ChannelsPanel />
+        <ChannelsPanel from={Route.id} />
       )}
 
       <CreateRuleDialog open={createOpen} onOpenChange={setCreateOpen} />
@@ -92,24 +92,17 @@ function AlertsPage() {
   );
 }
 
-function RulesPanel({
-  rules,
-  states,
-  loading,
-  error,
-  onRetry,
-  onCreate,
-}: {
-  rules: AlertRule[];
-  states: AlertState[];
-  loading: boolean;
-  error: unknown;
-  onRetry: () => void;
-  onCreate: () => void;
-}) {
+// RulesPanel：规则表（行内 state/since 由 states 前端 join 覆盖——live 值
+// 优先，缺席回退行内联 state）+ Delete。
+function RulesPanel({ from, states, onCreate }: { from: string; states: AlertState[]; onCreate: () => void }) {
   const queryClient = useQueryClient();
+  const list = useCollection(alertRulesResource, {
+    from,
+    search: alertsSearch,
+    query: { refetchInterval: 15_000 },
+  });
   const stateOf = new Map(states.map((state) => [state.rule_id ?? "", state]));
-  const [deleting, setDeleting] = useState<AlertRule | null>(null);
+  const [deleting, setDeleting] = useState<AlertRuleRow | null>(null);
 
   // deleteRule 供 ConfirmDialog 的 onConfirm 消费（失败经 toast 披露，
   // 弹窗由 ConfirmDialog 落定关窗——全站统一契约）。
@@ -120,9 +113,19 @@ function RulesPanel({
     });
   }
 
-  const columns: LegacyColumnDef<AlertRule, any>[] = [
-    { accessorKey: "app_id", header: "App", cell: ({ row }) => <span className="font-mono text-xs">{row.original.app_id}</span> },
-    { accessorKey: "metric", header: "Metric", cell: ({ row }) => <span className="font-mono text-xs">{row.original.metric}</span> },
+  const columns: LegacyColumnDef<AlertRuleRow, any>[] = [
+    {
+      accessorKey: "app_id",
+      header: "App",
+      meta: { sortField: "app_id" },
+      cell: ({ row }) => <span className="font-mono text-xs">{row.original.app_id}</span>,
+    },
+    {
+      accessorKey: "metric",
+      header: "Metric",
+      meta: { sortField: "metric" },
+      cell: ({ row }) => <span className="font-mono text-xs">{row.original.metric}</span>,
+    },
     { accessorKey: "threshold", header: "Threshold", cell: ({ row }) => <span className="font-mono text-xs">{row.original.threshold}</span> },
     {
       accessorKey: "for_seconds",
@@ -166,34 +169,40 @@ function RulesPanel({
     },
   ];
 
+  const filtered = list.query.predicate != null;
   return (
     <>
-      <ListCard
-        label="alert rules"
-        placeholder="Filter rules..."
-        rows={rules}
-        fieldsOf={(rule) => [rule.app_id ?? "", rule.metric ?? ""]}
-        loading={loading}
-        error={error}
-        onRetry={onRetry}
-        columns={columns}
-        cli="fleetly alerts rules list"
-        actions={
-          <Button size="sm" onClick={onCreate}>
-            <PlusIcon data-icon-start-inline />
-            New rule
-          </Button>
+      <FleetListPage
+        list={list}
+        toolbar={
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <FilterBar list={list} schema={alertsSearch} textPlaceholder="Filter rules..." />
+            <div className="py-2 pr-3">
+              <Button size="sm" onClick={onCreate}>
+                <PlusIcon data-icon-start-inline />
+                New rule
+              </Button>
+            </div>
+          </div>
         }
-        empty={
-          <EmptyState
-            icon={BellIcon}
-            title="No alert rules"
-            description="Create one to get notified when an app crosses a threshold."
-            actionLabel="New rule"
-            onAction={onCreate}
-          />
+        pagination={<Pagination list={list} />}
+        emptyTitle={filtered ? "No rules match the filter" : "No alert rules"}
+        emptyDescription={
+          filtered
+            ? "Adjust or clear the filter to see rows again."
+            : "Create one to get notified when an app crosses a threshold."
         }
-      />
+        emptyAction={
+          filtered ? undefined : (
+            <Button size="sm" variant="outline" onClick={onCreate}>
+              <BellIcon className="size-3.5" /> New rule
+            </Button>
+          )
+        }
+        appendix={<CliEquivalent command="fleetly alerts rules list" />}
+      >
+        <DataTable list={list} columns={columns} getRowId={(row) => row.id ?? ""} />
+      </FleetListPage>
 
       <ConfirmDialog
         open={deleting != null}
@@ -212,10 +221,14 @@ function RulesPanel({
   );
 }
 
-function ChannelsPanel() {
-  const channels = useAlertingChannels();
+function ChannelsPanel({ from }: { from: string }) {
   const queryClient = useQueryClient();
-  const [deleting, setDeleting] = useState<Channel | null>(null);
+  const list = useCollection(channelsResource, {
+    from,
+    search: alertsSearch,
+    query: { refetchInterval: 15_000 },
+  });
+  const [deleting, setDeleting] = useState<ChannelRow | null>(null);
   const [testing, setTesting] = useState<string | null>(null);
 
   function deleteChannel(id: string) {
@@ -233,11 +246,11 @@ function ChannelsPanel() {
       .finally(() => setTesting(null));
   }
 
-  const rows = channels.data ?? [];
-  const columns: LegacyColumnDef<Channel, any>[] = [
+  const columns: LegacyColumnDef<ChannelRow, any>[] = [
     {
       accessorKey: "name",
       header: "Name",
+      meta: { sortField: "name" },
       cell: ({ row }) => (
         <span className="text-sm font-medium">
           {row.original.name}
@@ -245,7 +258,12 @@ function ChannelsPanel() {
         </span>
       ),
     },
-    { accessorKey: "kind", header: "Kind", cell: ({ row }) => <span className="font-mono text-xs">{row.original.kind}</span> },
+    {
+      accessorKey: "kind",
+      header: "Kind",
+      meta: { sortField: "kind" },
+      cell: ({ row }) => <span className="font-mono text-xs">{row.original.kind}</span>,
+    },
     {
       accessorKey: "enabled",
       header: "Enabled",
@@ -289,33 +307,34 @@ function ChannelsPanel() {
     },
   ];
 
+  const filtered = list.query.predicate != null;
   return (
     <>
-      <ListCard
-        label="channels"
-        placeholder="Filter channels..."
-        rows={rows}
-        fieldsOf={(channel) => [channel.name ?? "", channel.kind ?? ""]}
-        loading={channels.isPending}
-        error={channels.isError ? channels.error : null}
-        onRetry={() => void channels.refetch()}
-        columns={columns}
-        cli="fleetly channels list"
-        actions={
-          /* 渠道创建 Dialog 批 6 补齐（表单面迁移尾巴，不在本批谎称完成） */
-          <Button size="sm" variant="outline" disabled title="Ships with the settings milestone">
-            <PlusIcon data-icon-start-inline />
-            New channel
-          </Button>
+      <FleetListPage
+        list={list}
+        toolbar={
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <FilterBar list={list} schema={alertsSearch} textPlaceholder="Filter channels..." />
+            <div className="py-2 pr-3">
+              {/* 渠道创建 Dialog 批 6 补齐（表单面迁移尾巴，不在本批谎称完成） */}
+              <Button size="sm" variant="outline" disabled title="Ships with the settings milestone">
+                <PlusIcon data-icon-start-inline />
+                New channel
+              </Button>
+            </div>
+          </div>
         }
-        empty={
-          <EmptyState
-            icon={BellIcon}
-            title="No notification channels"
-            description="Register a webhook or telegram channel so alerts reach someone."
-          />
+        pagination={<Pagination list={list} />}
+        emptyTitle={filtered ? "No channels match the filter" : "No notification channels"}
+        emptyDescription={
+          filtered
+            ? "Adjust or clear the filter to see rows again."
+            : "Register a webhook or telegram channel so alerts reach someone."
         }
-      />
+        appendix={<CliEquivalent command="fleetly channels list" />}
+      >
+        <DataTable list={list} columns={columns} getRowId={(row) => row.id ?? ""} />
+      </FleetListPage>
 
       <ConfirmDialog
         open={deleting != null}

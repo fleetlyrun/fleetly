@@ -1,24 +1,43 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+  RouterProvider,
+} from "@tanstack/react-router";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import type { ReactNode } from "react";
 import { NodesPage } from "./nodes-list";
+import { nodesSearch } from "@/kit/nodes";
 import { setToken } from "@/lib/token";
 
 // 本文件多测试连渲：vitest 未开 globals，testing-library 的自动 cleanup
 // 不生效——afterEach 显式卸载，避免跨测试 DOM 残留撞查询。
+//（批1 Wave2-A useCollection 化：useCollection 需要 Router/Query 两上下文，
+// 裸 render 不再成立——内联最小路由（resources/panels.test 同款）。）
 
-// 行点击导航脱离 Router context（NodeRow 的 useNavigate）：桩成空函数即可
-// ——导航行为不在本组件测试面。
-const { navigateMock } = vi.hoisted(() => ({ navigateMock: vi.fn() }));
-vi.mock("@tanstack/react-router", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@tanstack/react-router")>();
-  return { ...actual, useNavigate: () => navigateMock };
-});
+// NODES_ROUTE_ID：测试路由自持的 id——useSearch({ from }) 按此锚定活跃
+// match（真实路由 id 是 /_shell/nodes/，同形参数化在此等价）。
+const NODES_ROUTE_ID = "/nodes";
 
-function withClient() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return { client, wrapper: ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider> };
+function renderNodesPage() {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const rootRoute = createRootRoute({ validateSearch: nodesSearch.toSearchSchema() });
+  const pageRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: NODES_ROUTE_ID,
+    component: () => (
+      <QueryClientProvider client={queryClient}>
+        <NodesPage from={NODES_ROUTE_ID} />
+      </QueryClientProvider>
+    ),
+  });
+  const router = createRouter({
+    routeTree: rootRoute.addChildren([pageRoute]),
+    history: createMemoryHistory({ initialEntries: [NODES_ROUTE_ID] }),
+  });
+  return { queryClient, ...render(<RouterProvider router={router} />) };
 }
 
 interface FetchCall {
@@ -61,7 +80,6 @@ function stubFetch(platformAdmin: boolean) {
 
 beforeEach(() => {
   fetchMock.mockReset();
-  navigateMock.mockReset();
   vi.stubGlobal("fetch", fetchMock);
   setToken("flt_test_token");
 });
@@ -75,8 +93,7 @@ afterEach(() => {
 describe("NodesPage relay actions", () => {
   it("shows the two relay actions on worker rows only (platform admin)", async () => {
     stubFetch(true);
-    const { client, wrapper } = withClient();
-    render(<NodesPage />, { wrapper });
+    const { queryClient } = renderNodesPage();
     await waitFor(() => expect(screen.getByText("worker-1")).toBeTruthy());
 
     const workerRow = screen.getByText("worker-1").closest("tr");
@@ -86,13 +103,12 @@ describe("NodesPage relay actions", () => {
     expect(within(workerRow as HTMLElement).getByText("Relay command")).toBeTruthy();
     expect(within(workerRow as HTMLElement).getByText("Revoke relay")).toBeTruthy();
     expect(within(managerRow as HTMLElement).queryByText("Relay command")).toBeNull();
-    client.clear();
+    queryClient.clear();
   });
 
   it("issues the relay command for a node and reveals the sensitive script", async () => {
     stubFetch(true);
-    const { client, wrapper } = withClient();
-    render(<NodesPage />, { wrapper });
+    const { queryClient } = renderNodesPage();
     await waitFor(() => expect(screen.getByText("worker-1")).toBeTruthy());
 
     fireEvent.click(screen.getByText("Relay command"));
@@ -102,13 +118,12 @@ describe("NodesPage relay actions", () => {
 
     const enrollCall = calls.find((call) => call.path === "/v1/nodes/enroll");
     expect(enrollCall?.body).toEqual({ node_id: "W1" });
-    client.clear();
+    queryClient.clear();
   });
 
   it("revokes a node relay credential after confirmation", async () => {
     stubFetch(true);
-    const { client, wrapper } = withClient();
-    render(<NodesPage />, { wrapper });
+    const { queryClient } = renderNodesPage();
     await waitFor(() => expect(screen.getByText("worker-1")).toBeTruthy());
 
     fireEvent.click(screen.getByText("Revoke relay"));
@@ -120,16 +135,15 @@ describe("NodesPage relay actions", () => {
       const enrollCall = calls.find((call) => call.path === "/v1/nodes/enroll");
       expect(enrollCall?.body).toEqual({ node_id: "W1", revoke: true });
     });
-    client.clear();
+    queryClient.clear();
   });
 
   it("hides the whole node surface when platform_admin is unknown/false (fail-closed)", async () => {
     stubFetch(false);
-    const { client, wrapper } = withClient();
-    render(<NodesPage />, { wrapper });
+    const { queryClient } = renderNodesPage();
     await waitFor(() => expect(screen.getByText("Platform admin only")).toBeTruthy());
     expect(screen.queryByText("worker-1")).toBeNull();
     expect(calls.some((call) => call.path === "/v1/nodes")).toBe(false);
-    client.clear();
+    queryClient.clear();
   });
 });

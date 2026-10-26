@@ -16,8 +16,9 @@ import { describe, expect, it } from "vitest";
 // 纪律天然不在扫描面。
 // 范围例外（带理由，双向保鲜）：
 // - components/ui/**：shadcn 上游手植层，按原样保留不自改（升级即 diff 干净）；
-// - features/fleet/backups-view.tsx：平台快照只读小表无快筛需求，分页
-//   直挂 useClientPage（ListCard 会强加快筛输入——台账形态特例）。
+// - features/fleet/backups-view.tsx 的快照小表特例已随批1 Wave2-A
+//   useCollection 化摘除（快照 tab 收编 kit 四件套，分页走 URL）——本规则
+//   不再保留文件级豁免。
 // 旧 #/ 深链的一次性改写（ADR-0057）在 main.tsx 启动时经 lib/legacy-hash
 // 完成——只读 hash + history.replaceState，无直写面，不在豁免之列。
 const SCANNED_ROOTS = ["src/components/domain", "src/lib", "src/features", "src/hooks", "src/routes", "src/pages"];
@@ -47,8 +48,8 @@ const RULES: Array<{ pattern: RegExp; message: string; skip?: (path: string) => 
   {
     pattern: /\b(useClientPage|ListPagination)\b/,
     message: "hand-wired list pagination is banned — pagination is built into ListCard/DataTable",
-    // 模板定义域合法；backups-view 快照小表是带理由的特例（见文件头例外表）
-    skip: (path) => path.startsWith("src/components/domain/") || path === "src/features/fleet/backups-view.tsx",
+    // 模板定义域合法（本规则的唯一合法宿主）
+    skip: (path) => path.startsWith("src/components/domain/"),
   },
 ];
 

@@ -53,7 +53,7 @@ export function RegistryView({
       onTabChange={onTabChange}
     >
       {tab === "github" ? (
-        <GitHubAppsView projectId={projectId} />
+        <GitHubAppsView projectId={projectId} from={routeId} />
       ) : tab === "catalog" ? (
         <RegistryCatalog projectId={projectId} apps={apps.data ?? []} />
       ) : (

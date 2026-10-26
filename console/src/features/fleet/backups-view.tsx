@@ -1,67 +1,40 @@
-import { useQueries } from "@tanstack/react-query";
-import { DatabaseIcon, HardDriveDownloadIcon, LinkIcon } from "lucide-react";
+import { HardDriveDownloadIcon, LinkIcon } from "lucide-react";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
-import { apiFetch } from "@/api/client";
-import type { components } from "@/api/structure";
+import { useCollection } from "@lynx-go/uikit-core";
 import { backupHealth } from "@/features/databases/backup-health";
-import { CliEquivalent, ListPagination, useClientPage } from "@/components/domain/list-toolbar";
+import { backupsSearch, databaseBackupsResource, platformSnapshotsResource, type DatabaseBackupRow, type PlatformSnapshotRow } from "@/kit/backups";
+import { CliEquivalent } from "@/components/domain/list-toolbar";
 import { PageTabs } from "@/components/domain/page-tabs";
-import { EmptyState } from "@/components/domain/empty-state";
-import { ListCard } from "@/components/domain/list-page";
 import { PageFrame } from "@/components/domain/page-frame";
 import { ProjectAvatar } from "@/components/domain/project-avatar";
 import { RelativeTime } from "@/components/domain/relative-time";
 import { statusToneClass } from "@/components/domain/status-badge";
-import { usePlatformBackups, useProjects } from "@/lib/catalog";
+import { DataTable } from "@/components/kit/query/data-table";
+import { FilterBar } from "@/components/kit/query/filter-bar";
+import { ListPage as FleetListPage } from "@/components/kit/query/list-page";
+import { Pagination } from "@/components/kit/query/pagination";
 
-type DatabaseEntry = components["schemas"]["v1Database"];
-
-type DatabaseRow = { project: { id?: string; name?: string }; database: DatabaseEntry };
-
-// Backups 聚合页（IA v3 T7，§5.3；模板化收编 PageFrame+PageTabs+ListCard）：
-// 数据安全一屏回答"昨晚备份成没成"——每库一行（v1Database.last_backup_at
-// 是最近成功锚，ADR-0039，无需深度 fan-out）+ 平台快照（restic）区块。
-// 跨项目聚合走客户端（ADR-0057 不变量）；聚合 API 二期优化（§8）。
-export function BackupsView({ tab, onTabChange }: { tab: "databases" | "snapshots"; onTabChange: (value: "databases" | "snapshots") => void }) {
-  const projects = useProjects();
-  const projectList = projects.data ?? [];
-  const databaseLists = useQueries({
-    queries: projectList.slice(0, 50).map((project) => ({
-      queryKey: ["resources", "databases", project.id],
-      queryFn: async (): Promise<DatabaseEntry[]> => {
-        const res = await apiFetch<{ databases?: Array<DatabaseEntry | undefined> }>(`/v1/databases?project_id=${encodeURIComponent(project.id)}`);
-        return (res.databases ?? []).flatMap((entry) => (entry != null ? [entry] : []));
-      },
-      enabled: projectList.length > 0,
-      refetchInterval: 60_000,
-    })),
-  });
-  const snapshots = usePlatformBackups();
-
-  // 行序（"昨晚成没成"的视线序）：过期库先于健康库，组内按最近成功备份
-  // 升序（最久未备份最前）；ListCard 的过滤保持入参相对序，过滤后仍成立。
-  const aggregated = projectList
-    .slice(0, 50)
-    .flatMap((project, index) =>
-      (databaseLists[index]?.data ?? []).map((database) => ({ project, database })),
-    );
-  const byStaleness = (row: DatabaseRow) => (backupHealth(row.database.last_backup_at).tone !== "success" ? 0 : 1);
-  const rows = [...aggregated].sort((a, b) => {
-    const stale = byStaleness(a) - byStaleness(b);
-    if (stale !== 0) return stale;
-    return (a.database.last_backup_at ?? "").localeCompare(b.database.last_backup_at ?? "");
-  });
-  const healthyCount = rows.filter((row) => backupHealth(row.database.last_backup_at).tone === "success").length;
-  const loading = projects.isPending || databaseLists.some((list) => list.isPending);
-
+// Backups 聚合页（IA v3 T7，§5.3 → 2026-10-26 批1 Wave2-A useCollection
+// 化）：数据安全一屏回答"昨晚备份成没成"——每库一行（v1Database
+// .last_backup_at 是最近成功锚，ADR-0039）+ 平台快照（restic）区块。
+// 跨项目聚合不变量保持客户端 fan-out（ADR-0057），取数并轨 kit/backups
+// 双资源（Databases 60s 轮询沿用旧拍）；快照小表收编 kit 四件套——页内
+// 手挂分页的反模式豁免随迁移摘除（分页/快筛进 URL）。页头动态计数
+//（N databases · M healthy）随列表句柄化退场（句柄只暴露当前页切片），
+// 页头描述收敛静态文案。
+export function BackupsView({
+  tab,
+  onTabChange,
+  from,
+}: {
+  tab: "databases" | "snapshots";
+  onTabChange: (value: "databases" | "snapshots") => void;
+  from: string;
+}) {
   return (
     <PageFrame
       title="Backups"
-      description={
-        rows.length > 0
-          ? `Data safety at a glance — ${rows.length} database${rows.length === 1 ? "" : "s"} · ${healthyCount} healthy`
-          : "Data safety at a glance — database backups and platform snapshots"
-      }
+      description="Data safety at a glance — database backups and platform snapshots"
       actions={<ButtonLink href="/settings" label="Platform backup settings" />}
     >
       <PageTabs
@@ -73,37 +46,48 @@ export function BackupsView({ tab, onTabChange }: { tab: "databases" | "snapshot
         onChange={onTabChange}
       />
 
-      {tab === "databases" ? <DatabasesTab rows={rows} loading={loading} /> : <SnapshotsTab snapshots={snapshots.data ?? []} />}
+      {tab === "databases" ? <DatabasesTab from={from} /> : <SnapshotsTab from={from} />}
     </PageFrame>
   );
 }
 
-function DatabasesTab({ rows, loading }: { rows: DatabaseRow[]; loading: boolean }) {
-  const columns: LegacyColumnDef<DatabaseRow, any>[] = [
+// DatabasesTab：跨项目备份健康台账（kit fan-out 资源；staleness 业务排序
+// 在 fetch 内，URL 无 sort 时保持视线序）。
+function DatabasesTab({ from }: { from: string }) {
+  const list = useCollection(databaseBackupsResource, {
+    from,
+    search: backupsSearch,
+    query: { refetchInterval: 60_000 },
+  });
+
+  const columns: LegacyColumnDef<DatabaseBackupRow, any>[] = [
     {
-      id: "database",
+      accessorKey: "name",
       header: "Database",
+      meta: { sortField: "name" },
       cell: ({ row }) => (
         <div className="flex items-center gap-2.5">
-          <ProjectAvatar seed={row.original.database.id ?? ""} label={row.original.database.name ?? ""} />
-          <div className="text-sm font-semibold">{row.original.database.name}</div>
+          <ProjectAvatar seed={row.original.id} label={row.original.name} />
+          <div className="text-sm font-semibold">{row.original.name}</div>
         </div>
       ),
     },
     {
-      id: "project",
+      accessorKey: "project_name",
       header: "Project",
+      meta: { sortField: "project_name" },
       cell: ({ row }) => (
         <span className="flex items-center gap-1 text-xs text-muted-foreground">
           <LinkIcon className="size-3" />
-          {row.original.project.name}
+          {row.original.project_name}
         </span>
       ),
     },
     {
       accessorKey: "engine",
       header: "Engine",
-      cell: ({ row }) => <span className="font-mono text-xs text-muted-foreground">{row.original.database.engine}</span>,
+      meta: { sortField: "engine" },
+      cell: ({ row }) => <span className="font-mono text-xs text-muted-foreground">{row.original.engine}</span>,
     },
     {
       id: "health",
@@ -138,7 +122,7 @@ function DatabasesTab({ rows, loading }: { rows: DatabaseRow[]; loading: boolean
         <div className="text-right">
           <a
             className="text-xs text-info underline-offset-2 hover:underline"
-            href={`/p/${encodeURIComponent(row.original.project.id ?? "")}/databases/${encodeURIComponent(row.original.database.id ?? "")}`}
+            href={`/p/${encodeURIComponent(row.original.project_id)}/databases/${encodeURIComponent(row.original.id)}`}
           >
             open
           </a>
@@ -147,68 +131,82 @@ function DatabasesTab({ rows, loading }: { rows: DatabaseRow[]; loading: boolean
     },
   ];
 
+  const filtered = list.query.predicate != null;
   return (
-    <section className="mb-8">
-      <ListCard
-        label="databases"
-        placeholder="Filter databases..."
-        rows={rows}
-        fieldsOf={(row) => [row.database.name ?? "", row.database.engine ?? "", row.project.name ?? ""]}
-        loading={loading}
-        columns={columns}
-        empty={
-          <EmptyState
-            icon={DatabaseIcon}
-            title="No databases"
-            description="Database backup health rows appear here once databases exist."
-          />
-        }
-      />
-    </section>
+    <FleetListPage
+      list={list}
+      toolbar={<FilterBar list={list} schema={backupsSearch} textPlaceholder="Filter databases..." />}
+      pagination={<Pagination list={list} />}
+      emptyTitle={filtered ? "No databases match the filter" : "No databases"}
+      emptyDescription={
+        filtered
+          ? "Adjust or clear the filter to see rows again."
+          : "Database backup health rows appear here once databases exist."
+      }
+    >
+      <DataTable list={list} columns={columns} getRowId={(row) => row.id} />
+    </FleetListPage>
   );
 }
 
-// SnapshotsTab 是平台快照区块（restic）——只读三列小表；快照行数 = 备份
-// 窗口频次的台账，分页保留（客户端切片）。
-function SnapshotsTab({ snapshots }: { snapshots: Array<{ id: string; hostname: string; time: string }> }) {
-  const { page, pageCount, pageRows, setPage } = useClientPage(snapshots);
+// SnapshotsTab：平台快照区块（restic）——只读三列小表；快照行数 = 备份
+// 窗口频次的台账（kit 四件套收编，60s 轮询沿用旧拍）。
+function SnapshotsTab({ from }: { from: string }) {
+  const list = useCollection(platformSnapshotsResource, {
+    from,
+    search: backupsSearch,
+    query: { refetchInterval: 60_000 },
+  });
+
+  const columns: LegacyColumnDef<PlatformSnapshotRow, any>[] = [
+    {
+      accessorKey: "id",
+      header: "Snapshot",
+      meta: { sortField: "id" },
+      cell: ({ row }) => <span className="font-mono text-xs">{row.original.id}</span>,
+    },
+    {
+      accessorKey: "hostname",
+      header: "Host",
+      meta: { sortField: "hostname" },
+      cell: ({ row }) => <span className="font-mono text-xs text-muted-foreground">{row.original.hostname}</span>,
+    },
+    {
+      accessorKey: "time",
+      header: "Taken",
+      cell: ({ row }) => (
+        <span className="text-xs text-muted-foreground">
+          <RelativeTime value={row.original.time} />
+        </span>
+      ),
+    },
+  ];
+
+  const filtered = list.query.predicate != null;
   return (
-    <section>
-      <div className="rounded-xl border bg-card">
-        {snapshots.length === 0 ? (
-          <p className="p-6 text-center text-xs text-muted-foreground">
-            No snapshots listed yet — the platform backup window writes here (local store + optional S3 mirror).
+    <FleetListPage
+      list={list}
+      toolbar={<FilterBar list={list} schema={backupsSearch} textPlaceholder="Filter snapshots..." />}
+      pagination={<Pagination list={list} />}
+      emptyTitle={filtered ? "No snapshots match the filter" : "No snapshots listed yet"}
+      emptyDescription={
+        filtered
+          ? "Adjust or clear the filter to see rows again."
+          : "The platform backup window writes here (local store + optional S3 mirror)."
+      }
+      appendix={
+        <>
+          <CliEquivalent command="fleetly platform backups" />
+          <p className="mt-3 flex items-center gap-1.5 text-2xs text-muted-foreground">
+            <HardDriveDownloadIcon className="size-3.5" />
+            Snapshot cadence and retention follow the platform backup config; the local store is same-node — not disaster
+            recovery.
           </p>
-        ) : (
-          <table className="w-full text-sm">
-            <thead className="border-b bg-panel-2/40 text-left text-2xs font-semibold tracking-wide text-muted-foreground uppercase">
-              <tr>
-                <th className="px-3 py-2">Snapshot</th>
-                <th className="px-3 py-2">Host</th>
-                <th className="px-3 py-2">Taken</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pageRows.map((snapshot) => (
-                <tr key={snapshot.id} className="border-b last:border-b-0">
-                  <td className="px-3 py-2 font-mono text-xs">{snapshot.id}</td>
-                  <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{snapshot.hostname}</td>
-                  <td className="px-3 py-2 text-xs text-muted-foreground">
-                    <RelativeTime value={snapshot.time} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-        {snapshots.length > 0 ? <ListPagination page={page} pageCount={pageCount} setPage={setPage} total={snapshots.length} /> : null}
-      </div>
-      <CliEquivalent command="fleetly platform backups" />
-      <p className="mt-3 flex items-center gap-1.5 text-2xs text-muted-foreground">
-        <HardDriveDownloadIcon className="size-3.5" />
-        Snapshot cadence and retention follow the platform backup config; the local store is same-node — not disaster recovery.
-      </p>
-    </section>
+        </>
+      }
+    >
+      <DataTable list={list} columns={columns} getRowId={(row) => row.id ?? ""} />
+    </FleetListPage>
   );
 }
 

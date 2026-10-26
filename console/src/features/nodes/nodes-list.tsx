@@ -1,20 +1,24 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { CheckCircle2Icon, RefreshCwIcon, ShieldAlertIcon } from "lucide-react";
+import { RefreshCwIcon, ShieldAlertIcon } from "lucide-react";
 import { toast } from "sonner";
-import type { components as runtimeSchemas } from "@/api/runtime";
+import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
+import { useCollection } from "@lynx-go/uikit-core";
 import { apiSend } from "@/api/client";
-import { useNodes, useWhoami } from "@/lib/catalog";
+import { useWhoami } from "@/lib/catalog";
 import { describeError } from "@/lib/api-errors";
+import { nodesResource, nodesSearch, type NodeRow } from "@/kit/nodes";
 import { ConfirmDialog } from "@/components/domain/confirm-dialog";
 import { CopyButton } from "@/components/domain/copy-button";
 import { EmptyState } from "@/components/domain/empty-state";
-import { ErrorState } from "@/components/domain/error-state";
-import { ListCard } from "@/components/domain/list-page";
 import { PageFrame } from "@/components/domain/page-frame";
 import { RelativeTime } from "@/components/domain/relative-time";
 import { StatusBadge, nodeTone } from "@/components/domain/status-badge";
+import { DataTable } from "@/components/kit/query/data-table";
+import { FilterBar } from "@/components/kit/query/filter-bar";
+import { ListPage as FleetListPage } from "@/components/kit/query/list-page";
+import { Pagination } from "@/components/kit/query/pagination";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -25,38 +29,24 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 
-type Node = runtimeSchemas["schemas"]["v1Node"];
+// 节点页（C4 → UI v2 批 5 reskin → 2026-10-26 批1 Wave2-A useCollection
+// 化）：集群成员表 + 运维动词（drain/cordon/uncordon）+ enroll 材料
+//（H10：初始 enrollment 只发 join；relay 材料按已锚定节点定向铸造，行内
+// `Relay command` 取）。行点击进节点详情（nodes.$nodeId）。
+// 平台管理员门（R08-M1/S16-c7）保持门在 useCollection 之外：whoami 未到
+// /失败/非平台管理员都不挂集合（fail-closed，非管理员不发 /v1/nodes 请
+// 求）——门内表体拆子组件 NodesList，避免条件 return 跨渲染增删 hook。
+// 列表骨架换 fleet 块（ListPage × FilterBar × DataTable × Pagination），
+// 快筛/分页/available 降序默认排序进 URL；行内动作失败披露行走
+// DataTable 本地扩展槽 renderExtraRow（错误态归页面 {nodeId, cause} 单开）。
+// 工具栏 Enrollment material/rotate tokens 与各 Confirm 弹窗原样保留。
 
-// 节点页（C4 → UI v2 批 5 reskin；模板化收编 PageFrame+ListCard）：页头
-// 动词钮随对齐批 5 裁决收进工具栏主动作槽。表格体走 children 逃生舱自
-// 绘——行级动作错误行（cordon/drain 的行内失败披露）是 DataTable 列模型
-// 表达不了的特例；四态语义原样。RuntimeAdmin 的 UI 面——集群成员表
-//（可用态/中继活体）+ 运维三动词（drain/cordon/uncordon，drain 真迁移
-// 任务）+ enroll 材料（H10：初始 enrollment 只发 join；relay 材料按已锚定
-// 节点定向铸造，行内 `Relay command` 取）。行点击进节点详情（在跑容器
-// 观测，nodes.$nodeId）。index 路由与 $nodeId 平级（apps.index/$appId
-// 同范式——无父 layout）。
-export function NodesPage() {
+export function NodesPage({ from }: { from: string }) {
   const whoami = useWhoami(true);
-  // 平台管理员门（R08-M1/S16-c7）：节点清单与在跑容器是平台级读面，服务端
-  // 门已收口；Console 只做显隐（fail-closed：whoami 未到/失败/非平台管理员
-  // 都不请求 /v1/nodes——成员不再撞 403 页面）。
+  // 平台管理员门（fail-closed：whoami 未到/失败/非平台管理员都不请求
+  // /v1/nodes——成员不再撞 403 页面）。
   const platformAdmin = whoami.data?.platformAdmin === true;
-  const nodes = useNodes(platformAdmin);
-  const [material, setMaterial] = useState<{ join: string } | null>(null);
-  const [relayMaterial, setRelayMaterial] = useState<{ nodeId: string; script: string } | null>(null);
-  const [rotating, setRotating] = useState(false);
-  const enroll = useEnrollMaterial(false, setMaterial);
-  const rotate = useEnrollMaterial(true, setMaterial);
 
   if (whoami.isPending) {
     return (
@@ -77,84 +67,141 @@ export function NodesPage() {
     );
   }
 
-  const sorted = [...(nodes.data ?? [])].sort((a, b) => Number(b.available ?? false) - Number(a.available ?? false));
+  return <NodesList from={from} />;
+}
 
+// NodesList：门内的成员表本体（useCollection 15s 轮询，与旧 useNodes 同拍；
+// 工具栏两动词 + enroll/relay 揭示弹窗）。
+function NodesList({ from }: { from: string }) {
+  const navigate = useNavigate();
+  const list = useCollection(nodesResource, {
+    from,
+    search: nodesSearch,
+    query: { refetchInterval: 15_000 },
+  });
+  const [material, setMaterial] = useState<{ join: string } | null>(null);
+  const [relayMaterial, setRelayMaterial] = useState<{ nodeId: string; script: string } | null>(null);
+  const [rotating, setRotating] = useState(false);
+  // 行内动作失败披露（单开：verb 前清、catch 记）——renderExtraRow 消费
+  const [actionError, setActionError] = useState<{ nodeId: string; cause: unknown } | null>(null);
+  const enroll = useEnrollMaterial(false, setMaterial);
+  const rotate = useEnrollMaterial(true, setMaterial);
+
+  const columns: LegacyColumnDef<NodeRow, any>[] = [
+    {
+      accessorKey: "hostname",
+      header: "Hostname",
+      meta: { sortField: "hostname" },
+      cell: ({ row }) => (
+        <span className="font-medium" title="View the containers running on this node">
+          {row.original.hostname}
+          <span className="ml-1.5 font-mono text-2xs text-muted-foreground" title={row.original.platform_id}>
+            {row.original.platform_id?.slice(0, 8)}…
+          </span>
+        </span>
+      ),
+    },
+    {
+      accessorKey: "role",
+      header: "Role",
+      meta: { sortField: "role" },
+      cell: ({ row }) => <span className="text-xs text-muted-foreground">{row.original.role}</span>,
+    },
+    {
+      accessorKey: "available",
+      header: "Availability",
+      meta: { sortField: "available" },
+      cell: ({ row }) => (
+        <StatusBadge tone={nodeTone(row.original.available)}>
+          {row.original.available ? "active" : "unavailable"}
+        </StatusBadge>
+      ),
+    },
+    {
+      id: "relay",
+      header: "Relay",
+      cell: ({ row }) =>
+        row.original.relay_online ? (
+          <span className="font-mono text-xs text-muted-foreground" title="node relay online — exec sessions can route to this node">
+            online{row.original.relay_version ? ` · ${row.original.relay_version}` : ""}
+          </span>
+        ) : (
+          <span className="text-xs text-[var(--status-danger)]" title="node relay offline — exec cannot route; issue and run a new relay command to recover">
+            offline
+          </span>
+        ),
+    },
+    {
+      accessorKey: "last_seen_at",
+      header: "Last seen",
+      cell: ({ row }) => (
+        <span className="text-xs text-muted-foreground">
+          <RelativeTime value={row.original.last_seen_at} />
+        </span>
+      ),
+    },
+    {
+      id: "actions",
+      header: () => <span className="sr-only">Actions</span>,
+      cell: ({ row }) => (
+        <NodeActionsCell
+          node={row.original}
+          onRelayMaterial={(script) => setRelayMaterial({ nodeId: row.original.platform_id ?? "", script })}
+          onActionError={(cause) => setActionError({ nodeId: row.original.platform_id ?? "", cause })}
+          clearActionError={() => setActionError(null)}
+        />
+      ),
+    },
+  ];
+
+  const filtered = list.query.predicate != null;
   return (
     <PageFrame title="Nodes" description="Cluster membership, relay liveness and the runtime admin verbs">
-      <ListCard
-        label="nodes"
-        placeholder="Filter nodes..."
-        rows={sorted}
-        fieldsOf={(node) => [node.hostname ?? "", node.platform_id ?? "", node.role ?? ""]}
-        actions={
-          <>
-            <Button variant="outline" size="sm" disabled={enroll.isPending} onClick={() => enroll.mutate()}>
-              <RefreshCwIcon data-icon-start-inline />
-              Enrollment material…
-            </Button>
-            <Button variant="outline" size="sm" className="text-[var(--status-danger)]" onClick={() => setRotating(true)}>
-              rotate join tokens…
-            </Button>
-          </>
+      <FleetListPage
+        list={list}
+        toolbar={
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <FilterBar list={list} schema={nodesSearch} textPlaceholder="Filter nodes..." />
+            <div className="flex items-center gap-2 py-2 pr-3">
+              <Button variant="outline" size="sm" disabled={enroll.isPending} onClick={() => enroll.mutate()}>
+                <RefreshCwIcon data-icon-start-inline />
+                Enrollment material…
+              </Button>
+              <Button variant="outline" size="sm" className="text-[var(--status-danger)]" onClick={() => setRotating(true)}>
+                rotate join tokens…
+              </Button>
+            </div>
+          </div>
+        }
+        pagination={<Pagination list={list} />}
+        emptyTitle={filtered ? "No nodes match the filter" : "No nodes registered"}
+        emptyDescription={
+          filtered
+            ? "Adjust or clear the filter to see rows again."
+            : "The control plane node appears once its daemon has observed the runtime."
+        }
+        appendix={
+          <p className="mt-3 text-xs text-muted-foreground">
+            Drain migrates running tasks off the node (real task movement); cordon/uncordon toggle schedulability. The
+            control-plane node hosts the managed carriers (proxy, registry, metrics) and cannot be drained away from them.
+          </p>
         }
       >
-        {({ pageRows }) => (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Hostname</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead>Availability</TableHead>
-                <TableHead>Relay</TableHead>
-                <TableHead>Last seen</TableHead>
-                <TableHead />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {nodes.isPending ? (
-                Array.from({ length: 2 }).map((_, index) => (
-                  <TableRow key={index}>
-                    {Array.from({ length: 6 }).map((_, cell) => (
-                      <TableCell key={cell}>
-                        <Skeleton className="h-5 w-24" />
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                ))
-              ) : nodes.isError ? (
-                <TableRow>
-                  <TableCell colSpan={6}>
-                    <ErrorState error={nodes.error} onRetry={() => void nodes.refetch()} />
-                  </TableCell>
-                </TableRow>
-              ) : pageRows.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={6}>
-                    <EmptyState
-                      icon={CheckCircle2Icon}
-                      title="No nodes registered"
-                      description="The control plane node appears once its daemon has observed the runtime."
-                    />
-                  </TableCell>
-                </TableRow>
-              ) : (
-                pageRows.map((node) => (
-                  <NodeRow
-                    key={node.platform_id}
-                    node={node}
-                    platformAdmin={platformAdmin}
-                    onRelayMaterial={(script) => setRelayMaterial({ nodeId: node.platform_id ?? "", script })}
-                  />
-                ))
-              )}
-            </TableBody>
-          </Table>
-        )}
-      </ListCard>
-      <p className="mt-3 text-xs text-muted-foreground">
-        Drain migrates running tasks off the node (real task movement); cordon/uncordon toggle schedulability. The control-plane node
-        hosts the managed carriers (proxy, registry, metrics) and cannot be drained away from them.
-      </p>
+        <DataTable
+          list={list}
+          columns={columns}
+          getRowId={(row) => row.platform_id ?? ""}
+          onRowClick={(node) => void navigate({ to: "/nodes/$nodeId", params: { nodeId: node.platform_id ?? "" } })}
+          renderExtraRow={(node) =>
+            actionError != null && node.platform_id === actionError.nodeId ? (
+              <div className="px-3 py-2 text-xs text-[var(--status-danger)]">
+                {describeError(actionError.cause).title} —{" "}
+                <span className="font-mono">{describeError(actionError.cause).detail}</span>
+              </div>
+            ) : null
+          }
+        />
+      </FleetListPage>
 
       {material != null ? <MaterialDialog material={material} onClose={() => setMaterial(null)} /> : null}
       {relayMaterial != null ? <RelayDialog material={relayMaterial} onClose={() => setRelayMaterial(null)} /> : null}
@@ -179,138 +226,83 @@ function useEnrollMaterial(rotate: boolean, onMaterial: (data: { join: string })
   });
 }
 
-function NodeRow({
+// NodeActionsCell：worker 行的 Relay command/Revoke（平台管理员 + 非
+// manager 行才显）与全员 cordon/uncordon/drain——行点击导航由 DataTable
+// 的行内交互短路承接（button 点击不触发行导航）。
+function NodeActionsCell({
   node,
-  platformAdmin,
   onRelayMaterial,
+  onActionError,
+  clearActionError,
 }: {
-  node: Node;
-  platformAdmin: boolean;
+  node: NodeRow;
   onRelayMaterial: (script: string) => void;
+  onActionError: (cause: unknown) => void;
+  clearActionError: () => void;
 }) {
   const queryClient = useQueryClient();
-  const navigate = useNavigate();
-  const [actionError, setActionError] = useState<unknown>(null);
   const [revoking, setRevoking] = useState(false);
   const nodeId = node.platform_id ?? "";
 
   function verb(path: string, body: Record<string, unknown> = {}) {
-    setActionError(null);
+    clearActionError();
     return apiSend(path, "POST", body)
       .then(() => queryClient.invalidateQueries({ queryKey: ["nodes"] }))
-      .catch((cause: unknown) => setActionError(cause));
+      .catch((cause: unknown) => onActionError(cause));
   }
 
   // Relay command（H10 §4.6）：重铸即断旧连接——先取脚本、就地执行；不是
   // 只读预览。响应携带该节点个体凭证（脚本是 node-root 等价材料）。
   function relayCommand() {
-    setActionError(null);
+    clearActionError();
     void apiSend<{ relay_command?: string }>("/v1/nodes/enroll", "POST", { node_id: nodeId })
       .then((data) => onRelayMaterial(data.relay_command ?? ""))
-      .catch((cause: unknown) => setActionError(cause));
+      .catch((cause: unknown) => onActionError(cause));
   }
 
   return (
-    <>
-      <TableRow
-        className={`cursor-pointer ${node.available ? "" : "opacity-60"}`}
-        title="View the containers running on this node"
-        onClick={() => navigate({ to: "/nodes/$nodeId", params: { nodeId } })}
-      >
-        <TableCell className="font-medium">
-          {node.hostname}
-          <span className="ml-1.5 font-mono text-2xs text-muted-foreground" title={node.platform_id}>
-            {node.platform_id?.slice(0, 8)}…
-          </span>
-        </TableCell>
-        <TableCell className="text-xs text-muted-foreground">{node.role}</TableCell>
-        <TableCell>
-          <StatusBadge tone={nodeTone(node.available)}>{node.available ? "active" : "unavailable"}</StatusBadge>
-        </TableCell>
-        <TableCell className="text-xs">
-          {node.relay_online ? (
-            <span className="font-mono text-muted-foreground" title="node relay online — exec sessions can route to this node">
-              online{node.relay_version ? ` · ${node.relay_version}` : ""}
-            </span>
-          ) : (
-            <span className="text-[var(--status-danger)]" title="node relay offline — exec cannot route; issue and run a new relay command to recover">
-              offline
-            </span>
-          )}
-        </TableCell>
-        <TableCell className="text-xs text-muted-foreground">
-          <RelativeTime value={node.last_seen_at} />
-        </TableCell>
-        <TableCell className="text-right">
-          <div className="flex items-center justify-end gap-1.5">
-            {platformAdmin && node.role !== "manager" ? (
-              <>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  title="Issue this node's individual relay credential and show its install command (sensitive; drops the current relay)"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    relayCommand();
-                  }}
-                >
-                  Relay command
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="text-[var(--status-danger)]"
-                  title="Revoke this node's relay credential (the connected relay drops)"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setRevoking(true);
-                  }}
-                >
-                  Revoke relay
-                </Button>
-              </>
-            ) : null}
-            {node.available ? (
-              <Button
-                variant="outline"
-                size="sm"
-                title="Mark the node unschedulable (reversible)"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  void verb(`/v1/nodes/${encodeURIComponent(nodeId)}/cordon`);
-                }}
-              >
-                cordon
-              </Button>
-            ) : (
-              <Button
-                variant="outline"
-                size="sm"
-                title="Return the node to schedulable"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  void verb(`/v1/nodes/${encodeURIComponent(nodeId)}/uncordon`);
-                }}
-              >
-                uncordon
-              </Button>
-            )}
-            <DrainButton
-              hostname={node.hostname ?? ""}
-              onRun={() => verb(`/v1/nodes/${encodeURIComponent(nodeId)}/drain`)}
-            />
-          </div>
-        </TableCell>
-      </TableRow>
-      {actionError != null ? (
-        <TableRow className="hover:bg-transparent">
-          <TableCell colSpan={6} className="py-2">
-            <span className="text-xs text-[var(--status-danger)]">
-              {describeError(actionError).title} — <span className="font-mono">{describeError(actionError).detail}</span>
-            </span>
-          </TableCell>
-        </TableRow>
+    <div className="flex flex-wrap items-center justify-end gap-1.5">
+      {node.role !== "manager" ? (
+        <>
+          <Button
+            variant="outline"
+            size="sm"
+            title="Issue this node's individual relay credential and show its install command (sensitive; drops the current relay)"
+            onClick={() => relayCommand()}
+          >
+            Relay command
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="text-[var(--status-danger)]"
+            title="Revoke this node's relay credential (the connected relay drops)"
+            onClick={() => setRevoking(true)}
+          >
+            Revoke relay
+          </Button>
+        </>
       ) : null}
+      {node.available ? (
+        <Button
+          variant="outline"
+          size="sm"
+          title="Mark the node unschedulable (reversible)"
+          onClick={() => void verb(`/v1/nodes/${encodeURIComponent(nodeId)}/cordon`)}
+        >
+          cordon
+        </Button>
+      ) : (
+        <Button
+          variant="outline"
+          size="sm"
+          title="Return the node to schedulable"
+          onClick={() => void verb(`/v1/nodes/${encodeURIComponent(nodeId)}/uncordon`)}
+        >
+          uncordon
+        </Button>
+      )}
+      <DrainButton hostname={node.hostname ?? ""} onRun={() => verb(`/v1/nodes/${encodeURIComponent(nodeId)}/drain`)} />
       <ConfirmDialog
         open={revoking}
         onOpenChange={setRevoking}
@@ -320,7 +312,7 @@ function NodeRow({
         pendingLabel="Revoking…"
         onConfirm={() => verb("/v1/nodes/enroll", { node_id: nodeId, revoke: true })}
       />
-    </>
+    </div>
   );
 }
 
@@ -332,8 +324,7 @@ function DrainButton({ hostname, onRun }: { hostname: string; onRun: () => Promi
         variant="outline"
         size="sm"
         className="text-[var(--status-danger)]"
-        onClick={(event) => {
-          event.stopPropagation();
+        onClick={() => {
           setOpen(true);
         }}
       >

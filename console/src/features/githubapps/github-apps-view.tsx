@@ -2,14 +2,18 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FingerprintIcon, InfoIcon, PlusIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
+import { useCollection } from "@lynx-go/uikit-core";
 import type { components as ghSchemas } from "@/api/github_apps";
 import { apiFetch, apiSend } from "@/api/client";
+import { githubAppsResource, githubAppsSearch, type GitHubAppRow } from "@/kit/githubapps";
 import { ConfirmDialog } from "@/components/domain/confirm-dialog";
 import { CopyButton } from "@/components/domain/copy-button";
-import { EmptyState } from "@/components/domain/empty-state";
-import { ErrorState } from "@/components/domain/error-state";
-import { ListCard } from "@/components/domain/list-page";
 import { RelativeTime } from "@/components/domain/relative-time";
+import { DataTable } from "@/components/kit/query/data-table";
+import { FilterBar } from "@/components/kit/query/filter-bar";
+import { ListPage as FleetListPage } from "@/components/kit/query/list-page";
+import { Pagination } from "@/components/kit/query/pagination";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -20,18 +24,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { describeError } from "@/lib/api-errors";
 
-type GitHubApp = ghSchemas["schemas"]["v1GitHubApp"];
 type GitHubAppRepo = ghSchemas["schemas"]["v1GitHubAppRepo"];
 
 // GitHubAppsView 是 GitHub App 接入材料的管理卡（ADR-0073 阶段 B，视觉
@@ -39,24 +33,31 @@ type GitHubAppRepo = ghSchemas["schemas"]["v1GitHubAppRepo"];
 // /Repos 验证面板/添加对话框三段逐屏回照）。projectId 在场 = Project 级
 // 行（Registry 第三 tab）；缺席 = 平台级 Global 行（Fleet 段管理页）。
 // 私钥只写不读：任何界面只出现指纹。
-export function GitHubAppsView({ projectId }: { projectId?: string }) {
+// 2026-10-26 批1 Wave2-A useCollection 化：列表读面走 kit 资源（快筛/
+// 分页进 URL；无轮询——与旧 inline 查询同现状）；Repos 展开子行走
+// DataTable 本地扩展槽 renderExtraRow（展开态归页面）；manifest 整页
+// POST 流/手动添加表单/删除 Confirm 原样保留（写后失效改打 kit 集合键
+// 前缀，repos 子查询键前缀照旧）。
+export function GitHubAppsView({ projectId, from }: { projectId?: string; from: string }) {
   const queryClient = useQueryClient();
-  const listKey = ["github-apps", projectId ?? "global"];
-  const list = useQuery({
-    queryKey: listKey,
-    queryFn: async (): Promise<GitHubApp[]> => {
-      const qs = projectId != null ? `project_id=${encodeURIComponent(projectId)}` : "global=true";
-      const res = await apiFetch<{ apps?: Array<GitHubApp | undefined> }>(`/v1/github-apps?${qs}`);
-      return (res.apps ?? []).flatMap((entry) => (entry != null ? [entry] : []));
-    },
+  const list = useCollection(githubAppsResource, {
+    from,
+    search: githubAppsSearch,
+    // scope 可选轴：project 语境传 projectId 分面；global 面不传（资源未
+    // 声明 scope，context 采纳不生效）
+    scope: projectId != null ? { projectId } : undefined,
   });
   const [addOpen, setAddOpen] = useState(false);
-  const [deleting, setDeleting] = useState<GitHubApp | null>(null);
+  const [deleting, setDeleting] = useState<GitHubAppRow | null>(null);
+  // Repos 展开态归页面（单开；id 空兜底不展开）
   const [openRepos, setOpenRepos] = useState<string | null>(null);
   const del = useMutation({
-    mutationFn: (row: GitHubApp) => apiSend(`/v1/github-apps/${encodeURIComponent(row.id ?? "")}`, "DELETE", {}),
+    mutationFn: (row: GitHubAppRow) => apiSend(`/v1/github-apps/${encodeURIComponent(row.id ?? "")}`, "DELETE", {}),
     onSuccess: () => {
       toast.success("GitHub App removed — clone resolution loses this row immediately");
+      // kit 集合键（["collection","github-apps",…] 前缀）+ repos 子查询键
+      //（["github-apps",appId,"repos"] 前缀）双失效
+      void queryClient.invalidateQueries({ queryKey: ["collection", "github-apps"] });
       void queryClient.invalidateQueries({ queryKey: ["github-apps"] });
       setDeleting(null);
     },
@@ -66,75 +67,106 @@ export function GitHubAppsView({ projectId }: { projectId?: string }) {
     },
   });
 
+  const columns: LegacyColumnDef<GitHubAppRow, any>[] = [
+    {
+      accessorKey: "account_login",
+      header: "Owner",
+      meta: { sortField: "account_login" },
+      cell: ({ row }) => (
+        <div className="flex items-center gap-2.5">
+          <div className="flex size-7 flex-none items-center justify-center rounded-lg bg-panel-2 font-semibold">
+            {(row.original.account_login ?? "?").slice(0, 1).toUpperCase()}
+          </div>
+          <div>
+            <div className="flex items-center gap-1.5 text-sm font-semibold">
+              {row.original.account_login}
+              <span className="rounded border px-1 py-px font-mono text-2xs text-muted-foreground">
+                {row.original.project_id ? "PROJECT" : "GLOBAL"}
+              </span>
+            </div>
+            <div className="font-mono text-2xs text-muted-foreground">{row.original.api_base || "api.github.com"}</div>
+          </div>
+        </div>
+      ),
+    },
+    { accessorKey: "app_id", header: "App ID", cell: ({ row }) => <span className="font-mono text-xs">{row.original.app_id}</span> },
+    {
+      accessorKey: "installation_id",
+      header: "Installation ID",
+      cell: ({ row }) => <span className="font-mono text-xs">{row.original.installation_id}</span>,
+    },
+    {
+      id: "fingerprint",
+      header: "Private key",
+      cell: ({ row }) => (
+        <span className="flex items-center gap-1 font-mono text-xs text-muted-foreground" title="key never leaves the store — fingerprint only">
+          <CopyButton value={row.original.private_key_fingerprint ?? ""} />
+          {row.original.private_key_fingerprint}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "created_at",
+      header: "Added",
+      cell: ({ row }) => (
+        <span className="text-xs text-muted-foreground">
+          <RelativeTime value={row.original.created_at} />
+        </span>
+      ),
+    },
+    {
+      id: "actions",
+      header: () => <span className="sr-only">Actions</span>,
+      cell: ({ row }) => (
+        <div className="flex items-center justify-end gap-1.5">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setOpenRepos(openRepos === row.original.id ? null : (row.original.id ?? null))}
+          >
+            {openRepos === row.original.id ? "Repos ▴" : "Repos ▾"}
+          </Button>
+          <Button variant="outline" size="sm" className="text-[var(--status-danger)]" onClick={() => setDeleting(row.original)}>
+            Delete
+          </Button>
+        </div>
+      ),
+    },
+  ];
+
+  const filtered = list.query.predicate != null;
   return (
     <>
-      <ListCard
-        label="github apps"
-        placeholder="Filter by owner..."
-        rows={list.data ?? []}
-        fieldsOf={(app) => [app.account_login ?? "", app.id ?? ""]}
-        actions={
-          <Button size="sm" disabled={addOpen} onClick={() => setAddOpen(true)}>
-            <PlusIcon data-icon-start-inline />
-            Add GitHub App
-          </Button>
+      <FleetListPage
+        list={list}
+        toolbar={
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <FilterBar list={list} schema={githubAppsSearch} textPlaceholder="Filter by owner..." />
+            <div className="py-2 pr-3">
+              <Button size="sm" disabled={addOpen} onClick={() => setAddOpen(true)}>
+                <PlusIcon data-icon-start-inline />
+                Add GitHub App
+              </Button>
+            </div>
+          </div>
         }
-        empty={
-          <EmptyState
-            icon={FingerprintIcon}
-            title={projectId != null ? "No GitHub Apps in this project" : "No global GitHub Apps"}
-            description={
-              projectId != null
-                ? "Private repositories resolve anonymous clones today — builds fail with an auth error and a pointer here. Add a project-scoped app, or rely on a global one if your platform provides it."
-                : "Global installations serve every project at clone time. Add one with a platform-admin token."
-            }
-          />
+        pagination={<Pagination list={list} />}
+        emptyTitle={filtered ? "No GitHub Apps match the filter" : projectId != null ? "No GitHub Apps in this project" : "No global GitHub Apps"}
+        emptyDescription={
+          filtered
+            ? "Adjust or clear the filter to see rows again."
+            : projectId != null
+              ? "Private repositories resolve anonymous clones today — builds fail with an auth error and a pointer here. Add a project-scoped app, or rely on a global one if your platform provides it."
+              : "Global installations serve every project at clone time. Add one with a platform-admin token."
         }
       >
-        {({ pageRows }) => (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Owner</TableHead>
-                <TableHead>App ID</TableHead>
-                <TableHead>Installation</TableHead>
-                <TableHead>Private key</TableHead>
-                <TableHead>Added</TableHead>
-                <TableHead />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {list.isPending ? (
-                Array.from({ length: 1 }).map((_, index) => (
-                  <TableRow key={index}>
-                    {Array.from({ length: 6 }).map((_, cell) => (
-                      <TableCell key={cell}>
-                        <Skeleton className="h-5 w-24" />
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                ))
-              ) : list.isError ? (
-                <TableRow>
-                  <TableCell colSpan={6}>
-                    <ErrorState error={list.error} onRetry={() => void list.refetch()} />
-                  </TableCell>
-                </TableRow>
-              ) : pageRows.length === 0 ? null : (
-                pageRows.map((app) => (
-                  <GitHubAppRow
-                    key={app.id}
-                    app={app}
-                    reposOpen={openRepos === app.id}
-                    onToggleRepos={() => setOpenRepos(openRepos === app.id ? null : (app.id ?? null))}
-                    onDelete={() => setDeleting(app)}
-                  />
-                ))
-              )}
-            </TableBody>
-          </Table>
-        )}
-      </ListCard>
+        <DataTable
+          list={list}
+          columns={columns}
+          getRowId={(row) => row.id ?? ""}
+          renderExtraRow={(app) => (openRepos != null && app.id === openRepos ? <ReposPanel appId={app.id ?? ""} /> : null)}
+        />
+      </FleetListPage>
       {projectId != null ? (
         <p className="mt-3 text-2xs text-muted-foreground">
           Build-time resolution order: <span className="font-medium">project GitHub App</span> →{" "}
@@ -149,6 +181,7 @@ export function GitHubAppsView({ projectId }: { projectId?: string }) {
           onClose={() => setAddOpen(false)}
           onAdded={() => {
             setAddOpen(false);
+            void queryClient.invalidateQueries({ queryKey: ["collection", "github-apps"] });
             void queryClient.invalidateQueries({ queryKey: ["github-apps"] });
           }}
         />
@@ -166,66 +199,10 @@ export function GitHubAppsView({ projectId }: { projectId?: string }) {
   );
 }
 
-function GitHubAppRow({
-  app,
-  reposOpen,
-  onToggleRepos,
-  onDelete,
-}: {
-  app: GitHubApp;
-  reposOpen: boolean;
-  onToggleRepos: () => void;
-  onDelete: () => void;
-}) {
-  return (
-    <>
-      <TableRow>
-        <TableCell>
-          <div className="flex items-center gap-2.5">
-            <div className="flex size-7 flex-none items-center justify-center rounded-lg bg-panel-2 font-semibold">
-              {(app.account_login ?? "?").slice(0, 1).toUpperCase()}
-            </div>
-            <div>
-              <div className="flex items-center gap-1.5 text-sm font-semibold">
-                {app.account_login}
-                <span className="rounded border px-1 py-px font-mono text-2xs text-muted-foreground">
-                  {app.project_id ? "PROJECT" : "GLOBAL"}
-                </span>
-              </div>
-              <div className="font-mono text-2xs text-muted-foreground">{app.api_base || "api.github.com"}</div>
-            </div>
-          </div>
-        </TableCell>
-        <TableCell className="font-mono text-xs">{app.app_id}</TableCell>
-        <TableCell className="font-mono text-xs">{app.installation_id}</TableCell>
-        <TableCell>
-          <span className="flex items-center gap-1 font-mono text-xs text-muted-foreground" title="key never leaves the store — fingerprint only">
-            <CopyButton value={app.private_key_fingerprint ?? ""} />
-            {app.private_key_fingerprint}
-          </span>
-        </TableCell>
-        <TableCell className="text-xs text-muted-foreground">
-          <RelativeTime value={app.created_at} />
-        </TableCell>
-        <TableCell className="text-right">
-          <div className="flex items-center justify-end gap-1.5">
-            <Button variant="outline" size="sm" onClick={onToggleRepos}>
-              {reposOpen ? "Repos ▴" : "Repos ▾"}
-            </Button>
-            <Button variant="outline" size="sm" className="text-[var(--status-danger)]" onClick={onDelete}>
-              Delete
-            </Button>
-          </div>
-        </TableCell>
-      </TableRow>
-      {reposOpen ? <ReposRow appId={app.id ?? ""} /> : null}
-    </>
-  );
-}
-
-// ReposRow 是 installation 可达仓库的展开面板（现铸 token 的健康验证面—
-// 挂起/卸载的安装在这里以 E_GITHUB_UPSTREAM 诚实呈现）。
-function ReposRow({ appId }: { appId: string }) {
+// ReposPanel 是 installation 可达仓库的展开面板（现铸 token 的健康验证面
+// ——挂起/卸载的安装在这里以 E_GITHUB_UPSTREAM 诚实呈现）。renderExtraRow
+// 槽内自持取数（展开挂载即取、收起即停）。
+function ReposPanel({ appId }: { appId: string }) {
   const repos = useQuery({
     queryKey: ["github-apps", appId, "repos"],
     queryFn: async (): Promise<GitHubAppRepo[]> => {
@@ -237,40 +214,38 @@ function ReposRow({ appId }: { appId: string }) {
     retry: false,
   });
   return (
-    <TableRow className="hover:bg-transparent">
-      <TableCell colSpan={6} className="bg-panel-2/30 px-4 pb-4 pt-3 sm:pl-14">
-        <div className="mb-2 flex items-center gap-2">
-          <span className="text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Repositories reachable via this installation
-          </span>
-          <span className="font-mono text-2xs text-muted-foreground">resolved live · not stored</span>
+    <div className="bg-panel-2/30 px-4 pb-4 pt-3 sm:pl-14">
+      <div className="mb-2 flex items-center gap-2">
+        <span className="text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Repositories reachable via this installation
+        </span>
+        <span className="font-mono text-2xs text-muted-foreground">resolved live · not stored</span>
+      </div>
+      {repos.isPending ? (
+        <p className="text-xs text-muted-foreground">Minting a short-lived token and listing…</p>
+      ) : repos.isError ? (
+        <p className="rounded-lg border bg-card px-3 py-2 text-xs text-[var(--status-danger)]">
+          {describeError(repos.error).title} — {describeError(repos.error).detail}
+        </p>
+      ) : (repos.data ?? []).length === 0 ? (
+        <p className="text-xs text-muted-foreground">No repositories reachable via this installation.</p>
+      ) : (
+        <div className="overflow-hidden rounded-lg border bg-card">
+          {(repos.data ?? []).map((repo) => (
+            <div key={repo.full_name} className="flex items-center gap-2 border-b px-3 py-1.5 text-xs last:border-b-0">
+              <span className="font-mono">{repo.full_name}</span>
+              <span
+                className={`rounded border px-1 py-px font-mono text-2xs ${
+                  repo.private ? "border-[color-mix(in_oklch,var(--status-warn)_35%,transparent)] text-[var(--status-warn)]" : "text-muted-foreground"
+                }`}
+              >
+                {repo.private ? "private" : "public"}
+              </span>
+            </div>
+          ))}
         </div>
-        {repos.isPending ? (
-          <p className="text-xs text-muted-foreground">Minting a short-lived token and listing…</p>
-        ) : repos.isError ? (
-          <p className="rounded-lg border bg-card px-3 py-2 text-xs text-[var(--status-danger)]">
-            {describeError(repos.error).title} — {describeError(repos.error).detail}
-          </p>
-        ) : (repos.data ?? []).length === 0 ? (
-          <p className="text-xs text-muted-foreground">No repositories reachable via this installation.</p>
-        ) : (
-          <div className="overflow-hidden rounded-lg border bg-card">
-            {(repos.data ?? []).map((repo) => (
-              <div key={repo.full_name} className="flex items-center gap-2 border-b px-3 py-1.5 text-xs last:border-b-0">
-                <span className="font-mono">{repo.full_name}</span>
-                <span
-                  className={`rounded border px-1 py-px font-mono text-2xs ${
-                    repo.private ? "border-[color-mix(in_oklch,var(--status-warn)_35%,transparent)] text-[var(--status-warn)]" : "text-muted-foreground"
-                  }`}
-                >
-                  {repo.private ? "private" : "public"}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </TableCell>
-    </TableRow>
+      )}
+    </div>
   );
 }
 
@@ -330,7 +305,7 @@ function AddGitHubAppDialog({
       if (apiBase.trim() !== "") {
         body.api_base = apiBase.trim();
       }
-      return apiSend<{ app?: GitHubApp }>("/v1/github-apps", "POST", body);
+      return apiSend<{ app?: GitHubAppRow }>("/v1/github-apps", "POST", body);
     },
     onSuccess: (res) => {
       toast.success(`GitHub App added — owner ${res.app?.account_login ?? "?"} resolved from the installation`);
