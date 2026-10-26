@@ -3,7 +3,6 @@ import { SearchIcon } from "lucide-react";
 import { Breadcrumb, BreadcrumbItem, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
 import { SidebarTrigger } from "@/components/ui/sidebar";
-import { ThemeToggle } from "./theme-toggle";
 import { UserMenu } from "./user-menu";
 import { useProjects } from "@/lib/catalog";
 
@@ -75,11 +74,10 @@ export function Topbar({ onOpenPalette }: { onOpenPalette: () => void }) {
         <Button variant="ghost" size="sm" className="gap-2 text-muted-foreground" onClick={onOpenPalette}>
           <SearchIcon className="size-3.5" />
           <span className="hidden md:inline">Search…</span>
-          <kbd className="pointer-events-none rounded border bg-muted px-1.5 font-mono text-2xs text-muted-foreground">
+          <kbd className="pointer-events-none rounded border bg-panel-2 px-1.5 font-mono text-2xs text-muted-foreground">
             ⌘K
           </kbd>
         </Button>
-        <ThemeToggle />
         <UserMenu />
       </div>
     </header>

@@ -172,7 +172,7 @@ export function AppSpecTab({ projectId, appId, seq }: { projectId: string; appId
             </span>
           </CardHeader>
           <CardContent>
-            <pre className="max-h-96 overflow-auto rounded-lg bg-muted/50 p-3 font-mono text-2xs leading-relaxed">
+            <pre className="max-h-96 overflow-auto rounded-lg bg-panel-2/50 p-3 font-mono text-2xs leading-relaxed">
               {frozen.data.revision.source_text}
             </pre>
           </CardContent>
@@ -194,7 +194,7 @@ export function AppSpecTab({ projectId, appId, seq }: { projectId: string; appId
           </span>
         </CardHeader>
         <CardContent>
-          <pre className="max-h-96 overflow-auto rounded-lg bg-muted/50 p-3 font-mono text-2xs leading-relaxed">
+          <pre className="max-h-96 overflow-auto rounded-lg bg-panel-2/50 p-3 font-mono text-2xs leading-relaxed">
             {prettySpec(frozen.data) || "…"}
           </pre>
         </CardContent>

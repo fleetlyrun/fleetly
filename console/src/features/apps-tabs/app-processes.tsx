@@ -256,7 +256,7 @@ export function AppProcessesTab({ projectId, appId }: { projectId: string; appId
                   </TableRow>
                   {expanded[name] ? (
                     <TableRow>
-                      <TableCell colSpan={8} className="bg-muted/30 px-4 py-0">
+                      <TableCell colSpan={8} className="bg-panel-2/30 px-4 py-0">
                         <ProcessDetail process={process} />
                         <InstanceList appId={appId} processName={name} />
                       </TableCell>

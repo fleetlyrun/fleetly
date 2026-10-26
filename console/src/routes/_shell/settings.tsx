@@ -225,7 +225,7 @@ function CreateTokenDialog({ open, onClose, roles }: { open: boolean; onClose: (
               Secret shown once — copy it now:
             </div>
             <div className="relative">
-              <pre className="overflow-x-auto rounded-lg border bg-muted/40 px-3 py-2.5 pr-9 font-mono text-xs break-all whitespace-pre-wrap text-[var(--status-success)]">{minted}</pre>
+              <pre className="overflow-x-auto rounded-lg border bg-panel-2/40 px-3 py-2.5 pr-9 font-mono text-xs break-all whitespace-pre-wrap text-[var(--status-success)]">{minted}</pre>
               <CopyButton value={minted} className="absolute top-2 right-2" />
             </div>
           </div>

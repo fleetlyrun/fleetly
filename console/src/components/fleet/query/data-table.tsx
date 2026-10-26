@@ -97,7 +97,7 @@ export function DataTable<T extends RowData>({
             <tr
               key={row.id}
               className={cn(
-                "border-b border-border/60 hover:bg-muted/50",
+                "border-b border-border/60 hover:bg-panel-2/50",
                 onRowClick && "cursor-pointer",
               )}
               onClick={onRowClick ? () => onRowClick(row.original as T) : undefined}

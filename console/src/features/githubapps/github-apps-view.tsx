@@ -182,7 +182,7 @@ function GitHubAppRow({
       <TableRow>
         <TableCell>
           <div className="flex items-center gap-2.5">
-            <div className="flex size-7 flex-none items-center justify-center rounded-lg bg-muted font-semibold">
+            <div className="flex size-7 flex-none items-center justify-center rounded-lg bg-panel-2 font-semibold">
               {(app.account_login ?? "?").slice(0, 1).toUpperCase()}
             </div>
             <div>
@@ -238,7 +238,7 @@ function ReposRow({ appId }: { appId: string }) {
   });
   return (
     <TableRow className="hover:bg-transparent">
-      <TableCell colSpan={6} className="bg-muted/30 px-4 pb-4 pt-3 sm:pl-14">
+      <TableCell colSpan={6} className="bg-panel-2/30 px-4 pb-4 pt-3 sm:pl-14">
         <div className="mb-2 flex items-center gap-2">
           <span className="text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
             Repositories reachable via this installation
@@ -364,7 +364,7 @@ function AddGitHubAppDialog({
             revisions.
           </DialogDescription>
         </DialogHeader>
-        <div className="flex flex-col gap-2 rounded-lg border bg-muted/30 p-3">
+        <div className="flex flex-col gap-2 rounded-lg border bg-panel-2/30 p-3">
           <div className="text-xs font-semibold">Recommended — create it on GitHub automatically</div>
           <p className="text-2xs text-muted-foreground">
             GitHub generates the key and delivers it to fleetly (sealed, never shown) — nothing to copy by hand.
@@ -433,7 +433,7 @@ function AddGitHubAppDialog({
               </label>
             ) : null}
           </div>
-          <p className="flex items-start gap-1.5 rounded-lg border bg-muted/40 px-3 py-2 text-2xs text-muted-foreground">
+          <p className="flex items-start gap-1.5 rounded-lg border bg-panel-2/40 px-3 py-2 text-2xs text-muted-foreground">
             <InfoIcon className="mt-px size-3.5 flex-none" />
             On save, fleetly verifies the app + installation + key against GitHub and fills in the owner automatically — repos
             under that owner resolve to this app{projectId != null ? " (project rows shadow global rows)" : ""}.

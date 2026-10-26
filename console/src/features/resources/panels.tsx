@@ -1163,7 +1163,7 @@ function ConfigDetailDialog({
             ) : detail.isError ? (
               <FormError error={detail.error} />
             ) : (
-              <pre className="max-h-[50vh] overflow-auto rounded-lg border bg-muted/40 p-3 font-mono text-xs break-all whitespace-pre-wrap">
+              <pre className="max-h-[50vh] overflow-auto rounded-lg border bg-panel-2/40 p-3 font-mono text-xs break-all whitespace-pre-wrap">
                 {detail.data?.content}
               </pre>
             )}

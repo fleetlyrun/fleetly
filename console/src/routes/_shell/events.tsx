@@ -223,7 +223,7 @@ function EventsPageV2() {
                     {event.payload && event.payload !== "{}" ? (
                       <details className="mt-0.5">
                         <summary className="cursor-pointer hover:text-foreground">payload</summary>
-                        <pre className="mt-1 max-w-lg overflow-auto rounded border bg-muted/40 p-2 font-mono text-2xs">
+                        <pre className="mt-1 max-w-lg overflow-auto rounded border bg-panel-2/40 p-2 font-mono text-2xs">
                           {prettyPayload(event.payload)}
                         </pre>
                       </details>

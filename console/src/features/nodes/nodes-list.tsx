@@ -370,7 +370,7 @@ function MaterialDialog({ material, onClose }: { material: { join: string }; onC
           <div className="flex flex-col gap-1.5">
             <span className="text-xs font-semibold">join command</span>
             <div className="relative">
-              <pre className="overflow-x-auto rounded-lg border bg-muted/40 px-3 py-2.5 pr-9 font-mono text-xs text-[var(--status-success)]">
+              <pre className="overflow-x-auto rounded-lg border bg-panel-2/40 px-3 py-2.5 pr-9 font-mono text-xs text-[var(--status-success)]">
                 {material.join}
               </pre>
               <CopyButton value={material.join} className="absolute top-2 right-2" />
@@ -402,7 +402,7 @@ function RelayDialog({ material, onClose }: { material: { nodeId: string; script
           </DialogDescription>
         </DialogHeader>
         <div className="relative">
-          <pre className="overflow-x-auto rounded-lg border bg-muted/40 px-3 py-2.5 pr-9 font-mono text-xs text-[var(--status-info)]">
+          <pre className="overflow-x-auto rounded-lg border bg-panel-2/40 px-3 py-2.5 pr-9 font-mono text-xs text-[var(--status-info)]">
             {material.script}
           </pre>
           <CopyButton value={material.script} className="absolute top-2 right-2" />

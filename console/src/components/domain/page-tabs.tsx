@@ -29,7 +29,7 @@ export function PageTabs<T extends string>({
             className={`-mb-px rounded-t-md border-b-2 px-3.5 py-2 text-sm font-medium transition-colors ${
               active
                 ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:bg-muted hover:text-foreground"
+                : "border-transparent text-muted-foreground hover:bg-panel-2 hover:text-foreground"
             }`}
           >
             {tab.label}

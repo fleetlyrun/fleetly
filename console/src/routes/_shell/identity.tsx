@@ -213,7 +213,7 @@ function SetPasswordRow({ userId, onDone }: { userId: string; onDone: () => void
   const [pending, setPending] = useState(false);
   return (
     <TableRow className="hover:bg-transparent">
-      <TableCell colSpan={4} className="bg-muted/30">
+      <TableCell colSpan={4} className="bg-panel-2/30">
         <form
           className="flex flex-wrap items-end gap-2 py-1"
           onSubmit={(event) => {
@@ -707,7 +707,7 @@ function CreateInvitationDialog({ open, onClose, teams, roles }: { open: boolean
             </DialogDescription>
           </DialogHeader>
           <div className="relative">
-            <pre className="overflow-x-auto rounded-lg border bg-muted/40 px-3 py-2.5 pr-9 font-mono text-xs text-[var(--status-success)]">{secret}</pre>
+            <pre className="overflow-x-auto rounded-lg border bg-panel-2/40 px-3 py-2.5 pr-9 font-mono text-xs text-[var(--status-success)]">{secret}</pre>
             <CopyButton value={secret} className="absolute top-2 right-2" />
           </div>
           <DialogFooter>

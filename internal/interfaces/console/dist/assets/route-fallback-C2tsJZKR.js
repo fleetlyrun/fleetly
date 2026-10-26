@@ -1,1 +1,0 @@
-import{M as e,bc as a}from"./vendor-BKeeNkxd.js";function t(){return e.jsx("div",{role:"status","aria-label":"Loading",className:"flex min-h-[50vh] items-center justify-center p-10 text-muted-foreground",children:e.jsx(a,{className:"size-5 animate-spin"})})}export{t as R};

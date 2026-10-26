@@ -34,7 +34,7 @@ export function ListToolbar({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
-        className="h-8 w-56 bg-muted/40"
+        className="h-8 w-56 bg-panel-2/40"
         aria-label={`Filter ${label}`}
       />
       {children}

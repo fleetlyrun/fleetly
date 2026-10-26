@@ -210,7 +210,7 @@ export function DatabasesListPage({ projectId }: { projectId: string }) {
           value={engine}
           onChange={(event) => setEngine(event.target.value)}
           aria-label="Filter by engine"
-          className="h-8 rounded-md border bg-muted/40 px-2 text-xs text-foreground"
+          className="h-8 rounded-md border bg-panel-2/40 px-2 text-xs text-foreground"
         >
           <option value="all">All engines</option>
           {engines.map((entry) => (
@@ -714,7 +714,7 @@ function DatabaseBackups({
       </div>
       <div className="overflow-hidden rounded-xl border">
         <table className="w-full text-sm">
-          <thead className="border-b bg-muted/40 text-left text-2xs font-semibold tracking-wide text-muted-foreground uppercase">
+          <thead className="border-b bg-panel-2/40 text-left text-2xs font-semibold tracking-wide text-muted-foreground uppercase">
             <tr>
               <th className="px-3 py-2">Backup</th>
               <th className="px-3 py-2">Status</th>

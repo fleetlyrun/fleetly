@@ -309,7 +309,7 @@ function TaskRow({ task }: { task: { id?: string; name?: string; form?: string; 
                   value={scaleTo}
                   onChange={(event) => setScaleTo(event.target.value)}
                   placeholder="n"
-                  className="h-7 w-14 bg-muted/40 px-1.5 text-xs"
+                  className="h-7 w-14 bg-panel-2/40 px-1.5 text-xs"
                 />
                 <Button variant="outline" size="sm" disabled={scale.isPending || scaleTo === ""} onClick={() => void scale.mutate()}>
                   scale
@@ -344,7 +344,7 @@ function TaskRow({ task }: { task: { id?: string; name?: string; form?: string; 
       </TableRow>
       {expanded ? (
         <TableRow className="hover:bg-transparent">
-          <TableCell colSpan={5} className="bg-muted/30">
+          <TableCell colSpan={5} className="bg-panel-2/30">
             {runs.isPending ? (
               <Skeleton className="h-10 w-full" />
             ) : runs.isError ? (

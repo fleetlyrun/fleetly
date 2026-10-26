@@ -175,7 +175,7 @@ function TemplatesPageV2() {
                   ) : null}
                   <div>
                     <p className="mb-1 text-xs font-semibold">Template body</p>
-                    <pre className="max-h-64 overflow-auto rounded-lg border bg-muted/40 p-3 font-mono text-xs">{detailQuery.data.body}</pre>
+                    <pre className="max-h-64 overflow-auto rounded-lg border bg-panel-2/40 p-3 font-mono text-xs">{detailQuery.data.body}</pre>
                   </div>
                 </div>
               ) : null}

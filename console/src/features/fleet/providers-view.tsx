@@ -140,7 +140,7 @@ function ProviderCardView({
   return (
     <section className="flex flex-col gap-3 rounded-xl border bg-card p-5">
       <div className="flex items-center gap-3">
-        <span className="grid size-9 place-items-center rounded-lg bg-muted text-muted-foreground">
+        <span className="grid size-9 place-items-center rounded-lg bg-panel-2 text-muted-foreground">
           <provider.icon className="size-4" />
         </span>
         <div className="min-w-0">
@@ -182,7 +182,7 @@ function ProviderCardView({
         <span className="w-32 flex-none text-muted-foreground">disk usage</span>
         {canProbeMetrics ? (
           <>
-            <span className="hidden h-1.5 w-40 overflow-hidden rounded-full bg-muted sm:block">
+            <span className="hidden h-1.5 w-40 overflow-hidden rounded-full bg-panel-2 sm:block">
               <span
                 className={`block h-full rounded-full ${
                   diskUsage.tone === "danger" ? "bg-destructive" : diskUsage.tone === "warning" ? "bg-amber-500" : "bg-emerald-500"

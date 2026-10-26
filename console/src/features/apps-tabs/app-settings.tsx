@@ -168,7 +168,7 @@ function GitHookCard({ appId, projectId }: { appId: string; projectId: string })
   return (
     <section className="rounded-xl border bg-card p-4">
       <h3 className="mb-3 text-sm font-semibold">Git deploy hook</h3>
-      <p className="mb-3 rounded-lg border bg-muted/40 px-3 py-2 text-2xs text-muted-foreground">
+      <p className="mb-3 rounded-lg border bg-panel-2/40 px-3 py-2 text-2xs text-muted-foreground">
         Private repository?{" "}
         <Link
           to="/p/$projectId/registry"
@@ -261,7 +261,7 @@ function GitHookCard({ appId, projectId }: { appId: string; projectId: string })
           }}
         >
           {editing ? (
-            <p className="rounded-lg border bg-muted/40 px-3 py-2 text-2xs text-muted-foreground">
+            <p className="rounded-lg border bg-panel-2/40 px-3 py-2 text-2xs text-muted-foreground">
               Editing the existing hook — SetGitHook is a full upsert: fields become this save&apos;s values, the token stays
               unchanged. Repo URL must keep its scheme (https).
             </p>

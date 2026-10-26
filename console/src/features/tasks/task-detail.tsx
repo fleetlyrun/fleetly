@@ -209,7 +209,7 @@ function TaskRuns({ taskId }: { taskId: string }) {
       ) : (
         <div className="overflow-hidden rounded-xl border">
           <table className="w-full text-sm">
-            <thead className="border-b bg-muted/40 text-left text-2xs font-semibold tracking-wide text-muted-foreground uppercase">
+            <thead className="border-b bg-panel-2/40 text-left text-2xs font-semibold tracking-wide text-muted-foreground uppercase">
               <tr>
                 <th className="px-3 py-2">Run</th>
                 <th className="px-3 py-2">State</th>
@@ -291,7 +291,7 @@ function RunRow({ run }: { run: RunEntry }) {
       </td>
     </tr>
       {logsOpen ? (
-        <tr className="border-b last:border-b-0 bg-muted/30">
+        <tr className="border-b last:border-b-0 bg-panel-2/30">
           <td colSpan={6} className="px-3 py-2">
             <div className="h-64 overflow-hidden rounded-lg border">
               <LogViewer frames={log.frames} streaming={log.streaming} />

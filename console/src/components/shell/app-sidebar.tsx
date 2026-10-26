@@ -105,7 +105,7 @@ function NewMenu() {
         <button
           type="button"
           aria-label="Create new…"
-          className="ml-auto grid size-6 place-items-center rounded-md border text-muted-foreground hover:bg-muted hover:text-foreground group-data-[collapsible=icon]:hidden"
+          className="ml-auto grid size-6 place-items-center rounded-md border text-muted-foreground hover:bg-panel-2 hover:text-foreground group-data-[collapsible=icon]:hidden"
         >
           <PlusIcon className="size-3.5" />
         </button>

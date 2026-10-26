@@ -205,7 +205,7 @@ function RegistryCatalog({ projectId, apps }: { projectId: string; apps: Array<{
             <div key={repo} className="border-b last:border-b-0">
               <button
                 type="button"
-                className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-muted/40"
+                className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-panel-2/40"
                 onClick={() => setOpenRepo(openRepo === repo ? null : repo)}
               >
                 {openRepo === repo ? (
