@@ -12,7 +12,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { SidebarMenuButton } from "@/components/ui/sidebar";
 
 // 项目切换器（UI v2 信息架构锚，侧栏顶部）：全局项目语境的唯一切换位。
 // 批 1 只承载选中记忆；批 2 选中即跳 /p/$projectId（此后项目语境进 URL）。
@@ -37,11 +36,15 @@ export function ProjectSwitcher() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <SidebarMenuButton className="border data-[state=open]:bg-sidebar-accent">
+        {/* AppShell 侧栏头部槽（demo 形态）：flat 边线按钮，非 shadcn sidebar 基元 */}
+        <button
+          type="button"
+          className="flex w-full items-center gap-2 rounded-md border border-line bg-panel-2/50 px-2 py-1.5 text-sm text-fg hover:bg-panel-2 data-[state=open]:bg-panel-2"
+        >
           <ProjectAvatar seed={current?.id} label={current?.name ?? "?"} className="size-5 rounded-md text-2xs" />
           <span className="truncate font-semibold">{current?.name ?? (projects.isPending ? "Loading…" : "No project")}</span>
-          <ChevronDownIcon className="ml-auto size-3.5 text-muted-foreground" />
-        </SidebarMenuButton>
+          <ChevronDownIcon className="ml-auto size-3.5 text-muted" />
+        </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-56">
         <DropdownMenuLabel>Projects</DropdownMenuLabel>
