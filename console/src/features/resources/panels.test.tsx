@@ -1,20 +1,46 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+  RouterProvider,
+} from "@tanstack/react-router";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import type { ReactNode } from "react";
 import { ConfigsPanel } from "./panels";
+import { variablesSearch } from "@/kit/variables";
 import { setToken } from "@/lib/token";
 
-// Configs 面板（详情/编辑批）：view 动词/行点击进 GetConfig 回读弹窗；
-// 编辑 PUT 同名冻结新版本，成功后回视图并刷新到新版本；内容未变更时
-// Save 诚实禁用（不铸无谓版本）。
+// Configs 面板（详情/编辑批；useCollection 化批 3 补 URL 上下文——
+// useCollection 需要 Router/Query 两上下文，裸 render 不再成立）：view
+// 动词/行点击进 GetConfig 回读弹窗；编辑 PUT 同名冻结新版本，成功后回
+// 视图并刷新到新版本号；内容未变更时 Save 诚实禁用（不铸无谓版本）。
+// （uikit-core/testing 的 renderWithKit harness 源码过不了本仓
+// noUnusedLocals，此处内联等价最小路由。）
 
-function withClient() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return {
-    client,
-    wrapper: ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>,
-  };
+// CONFIGS_ROUTE_ID：path 即根路由 id——useSearch({ from }) 按此锚定活跃
+// match（真实路由 id 是 /_shell/p/$projectId/variables，此处测试路由自
+// 持同形 id）。
+const CONFIGS_ROUTE_ID = "/p/P1/variables";
+
+function renderConfigsPanel() {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const rootRoute = createRootRoute({ validateSearch: variablesSearch.toSearchSchema() });
+  const pageRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: CONFIGS_ROUTE_ID,
+    component: () => (
+      <QueryClientProvider client={queryClient}>
+        <ConfigsPanel projectId="P1" routeId={CONFIGS_ROUTE_ID} />
+      </QueryClientProvider>
+    ),
+  });
+  const router = createRouter({
+    routeTree: rootRoute.addChildren([pageRoute]),
+    history: createMemoryHistory({ initialEntries: [CONFIGS_ROUTE_ID] }),
+  });
+  return render(<RouterProvider router={router} />);
 }
 
 const fetchMock = vi.fn();
@@ -71,8 +97,7 @@ function stubConfigs() {
 }
 
 async function openDetail() {
-  const { wrapper } = withClient();
-  render(<ConfigsPanel projectId="P1" />, { wrapper });
+  renderConfigsPanel();
   expect(await screen.findByText("config.yaml")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "view" }));
   await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/v1/configs/P1/config.yaml", expect.anything()));

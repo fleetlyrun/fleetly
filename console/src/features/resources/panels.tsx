@@ -3,30 +3,39 @@ import { LinkIcon, PencilIcon, PlusIcon } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
 import { toast } from "sonner";
-import {
-  useApps,
-  useConfigs,
-  useDatabases,
-  useNetworkPeers,
-  useNetworks,
-  useProjects,
-  useRoutes,
-  useSecrets,
-  useSharedVariables,
-  useUploads,
-  useVolumes,
-} from "@/lib/catalog";
+import { useCollection } from "@lynx-go/uikit-core";
+import { useApps, useDatabases, useNetworks, useProjects } from "@/lib/catalog";
 import { apiSend, apiSendRaw, apiFetch } from "@/api/client";
 import { useApiMutation } from "@/lib/use-api-mutation";
 import { describeError } from "@/lib/api-errors";
 import { shortId } from "@/lib/format";
 import { specIndex, useAppSpecs } from "@/features/spec/use-app-specs";
 import { buildTar, rootPrefixOf } from "@/lib/tar";
+import { DataTable } from "@/components/kit/query/data-table";
+import { FilterBar } from "@/components/kit/query/filter-bar";
+import { ListPage as FleetListPage } from "@/components/kit/query/list-page";
+import { Pagination } from "@/components/kit/query/pagination";
+import {
+  networkPeersResource,
+  networksResource,
+  networksSearch,
+  type Network,
+  type NetworkPeer,
+} from "@/kit/networks";
+import { routesResource, routesSearch, type Route } from "@/kit/routes";
+import { storageSearch, uploadsResource, volumesResource, type Upload, type Volume } from "@/kit/storage";
+import {
+  configsResource,
+  secretsResource,
+  sharedVariablesResource,
+  variablesSearch,
+  type Config,
+  type Secret,
+  type SharedVariable,
+} from "@/kit/variables";
 import { ConfirmDialog } from "@/components/domain/confirm-dialog";
 import { CopyButton } from "@/components/domain/copy-button";
-import { EmptyState } from "@/components/domain/empty-state";
-import { ErrorState } from "@/components/domain/error-state";
-import { ListCard } from "@/components/domain/list-page";
+import { CliEquivalent } from "@/components/domain/list-toolbar";
 import { RelativeTime } from "@/components/domain/relative-time";
 import {
   AlertDialog,
@@ -45,22 +54,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 
-// 资源面板族（UI v2 批 4 → 模板化收编 ListCard）：自旧 Resources.tsx 八
-// tab 搬迁——走查过的 mutation 语义零漂移（创建/变更/删除/peer 审批/
-// 备份 verify+restore/browse/目录 tar 上传）。表格四态/工具栏/分页/CLI
-// 行收口 ListCard；跨行展开特例（数据库备份、restore 表单行走 children
-// 渲染槽）。pre-v2 共享层（components/ui.tsx）脱钩退役。
-// DatabasesPanel 已随 Databases 一级页（features/databases）消亡删除。
+// 资源面板族（UI v2 批 4 → 模板化收编 ListCard → useCollection 化批 3
+// 收编 kit 块）：自旧 Resources.tsx 八 tab 搬迁——走查过的 mutation 语义
+// 零漂移（创建/变更/删除/peer 审批/目录 tar 上传）。列表读面走 kit 资源
+// （useCollection + ListPage × FilterBar × DataTable × Pagination，快筛/
+// 分页/排序进 URL）；写面（useApiMutation/弹窗/ConfirmDialog/上传流）
+// 保持本仓自持待批 2 迁移。 Mounted by / Referenced by 反查列的异步占
+// 位是块外槽（页面列 cell 自绘）。DatabasesPanel 已随 Databases 一级页
+// （features/databases）消亡删除。
 
 // RowError 是行内动作失败的披露行（v2 口径：分状态文案单源）。
 function RowError({ error }: { error: unknown }) {
@@ -83,9 +86,10 @@ function FormError({ error }: { error: unknown }) {
 
 // ---- networks ----
 
-// NetworksPanel：网络表 + rebuild 行内动词。
-export function NetworksPanel({ projectId }: { projectId: string }) {
-  return <NetworksTab projectId={projectId} />;
+// NetworksPanel：网络表 + rebuild 行内动词（kit 化：快筛/分页/排序进
+// URL，15s 轮询沿用）。
+export function NetworksPanel({ projectId, routeId }: { projectId: string; routeId: string }) {
+  return <NetworksTab projectId={projectId} routeId={routeId} />;
 }
 
 // NewNetworkButton 是 Networks 工具栏主动作（弹窗与 mutation 自包含）。
@@ -151,11 +155,16 @@ export function NewNetworkButton({ projectId }: { projectId: string }) {
   );
 }
 
-function NetworksTab({ projectId }: { projectId: string }) {
-  const networks = useNetworks(projectId);
+function NetworksTab({ projectId, routeId }: { projectId: string; routeId: string }) {
+  const list = useCollection(networksResource, {
+    from: routeId,
+    search: networksSearch,
+    scope: { projectId },
+    query: { refetchInterval: 15_000 },
+  });
 
-  const columns: LegacyColumnDef<{ id?: string; name?: string; egress_none?: boolean; created_at?: string }, any>[] = [
-    { accessorKey: "name", header: "Name", cell: ({ row }) => <span className="font-medium">{row.original.name}</span> },
+  const columns: LegacyColumnDef<Network, any>[] = [
+    { accessorKey: "name", header: "Name", meta: { sortField: "name" }, cell: ({ row }) => <span className="font-medium">{row.original.name}</span> },
     {
       accessorKey: "id",
       header: "ID",
@@ -186,21 +195,30 @@ function NetworksTab({ projectId }: { projectId: string }) {
     },
   ];
 
+  // 源空与过滤空两套文案（旧页 filterEmpty 契约）：谓词在场 = 过滤空。
+  const filtered = list.query.predicate != null;
+
   return (
-    <section className="flex flex-col gap-3">
-      <ListCard
-        label="networks"
-        placeholder="Filter networks..."
-        rows={networks.data ?? []}
-        fieldsOf={(network) => [network.name ?? "", network.id ?? ""]}
-        loading={networks.isPending}
-        error={networks.isError ? networks.error : null}
-        onRetry={() => void networks.refetch()}
-        columns={columns}
-        cli={`fleetly networks list --project ${projectId}`}
-        actions={<NewNetworkButton projectId={projectId} />}
-      />
-    </section>
+    <FleetListPage
+      list={list}
+      toolbar={
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <FilterBar list={list} schema={networksSearch} textPlaceholder="Filter networks..." />
+          {/* 列表主动作钉工具栏行最右（对齐批 5 裁决） */}
+          <div className="py-2 pr-3">
+            <NewNetworkButton projectId={projectId} />
+          </div>
+        </div>
+      }
+      pagination={<Pagination list={list} />}
+      emptyTitle={filtered ? "No networks match the filter" : "No networks yet"}
+      emptyDescription={
+        filtered ? "Adjust or clear the filter to see rows again." : "Create one with New network… to attach apps across hosts."
+      }
+      appendix={<CliEquivalent command={`fleetly networks list --project ${projectId}`} />}
+    >
+      <DataTable list={list} columns={columns} getRowId={(row) => row.id ?? ""} />
+    </FleetListPage>
   );
 }
 
@@ -228,46 +246,85 @@ function NetworkActionsCell({ networkId }: { networkId?: string }) {
 }
 
 // PeersPanel 是 Networks 页 Peers tab（跨项目挂靠面：审批表 + 声明表单）。
-export function PeersPanel({ projectId }: { projectId: string }) {
-  const peers = useNetworkPeers(projectId);
+// 本批收编 kit 列表（resource networkPeers + DataTable，原自绘表退役）；
+// approve/revoke 动词与 DeclarePeerForm 写面不动。
+export function PeersPanel({ projectId, routeId }: { projectId: string; routeId: string }) {
+  const list = useCollection(networkPeersResource, {
+    from: routeId,
+    search: networksSearch,
+    scope: { projectId },
+    query: { refetchInterval: 15_000 },
+  });
+  // DeclarePeerForm 的网络下拉数据（写面伴读，不经 kit 集合）。
   const networks = useNetworks(projectId);
+
+  const columns: LegacyColumnDef<NetworkPeer, any>[] = [
+    {
+      id: "network",
+      header: "Network",
+      cell: ({ row }) => (
+        <span className="font-mono text-xs" title={row.original.network_id}>
+          {shortId(row.original.network_id)}
+        </span>
+      ),
+    },
+    {
+      id: "peer_project",
+      header: "Peer project",
+      cell: ({ row }) => (
+        <span className="font-mono text-xs text-muted-foreground" title={row.original.peer_project_id}>
+          {shortId(row.original.peer_project_id)}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "state",
+      header: "State",
+      cell: ({ row }) => <span className="text-xs text-muted-foreground">{row.original.state}</span>,
+    },
+    {
+      id: "id",
+      header: "ID",
+      cell: ({ row }) => (
+        <span className="font-mono text-xs text-muted-foreground" title={row.original.id}>
+          {shortId(row.original.id)}
+        </span>
+      ),
+    },
+    {
+      id: "actions",
+      header: () => <span className="sr-only">Actions</span>,
+      cell: ({ row }) => <PeerActionsCell peer={row.original} />,
+    },
+  ];
+
+  // 源空与过滤空两套文案：谓词在场 = 过滤空。
+  const filtered = list.query.predicate != null;
+
   return (
     <section className="flex flex-col gap-3">
       <p className="text-xs text-muted-foreground">
         Cross-project network attachment: the attaching project declares, the network owner approves.
       </p>
-      {peers.isPending ? (
-        <Skeleton className="h-16 w-full" />
-      ) : peers.isError ? (
-        <ErrorState error={peers.error} onRetry={() => void peers.refetch()} />
-      ) : (peers.data ?? []).length === 0 ? (
-        <EmptyState icon={PlusIcon} title="No peers declared" description="Declare a cross-project attachment below." />
-      ) : (
-        <div className="overflow-x-auto rounded-xl border bg-card">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Network</TableHead>
-                <TableHead>Peer project</TableHead>
-                <TableHead>State</TableHead>
-                <TableHead>ID</TableHead>
-                <TableHead />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {(peers.data ?? []).map((peer) => (
-                <PeerRow key={peer.id} peer={peer} />
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      )}
+      <FleetListPage
+        list={list}
+        toolbar={<FilterBar list={list} schema={networksSearch} textPlaceholder="Filter peers..." />}
+        pagination={<Pagination list={list} />}
+        emptyTitle={filtered ? "No peers match the filter" : "No peers declared"}
+        emptyDescription={
+          filtered ? "Adjust or clear the filter to see rows again." : "Declare a cross-project attachment below."
+        }
+      >
+        <DataTable list={list} columns={columns} getRowId={(row) => row.id ?? ""} />
+      </FleetListPage>
       <DeclarePeerForm projectId={projectId} networks={networks.data ?? []} />
     </section>
   );
 }
 
-function PeerRow({ peer }: { peer: { id?: string; network_id?: string; peer_project_id?: string; state?: string } }) {
+// PeerActionsCell：行内 approve/revoke（失败披露在钮下——走查语义原样；
+// revoke 经 ConfirmDialog 确认）。
+function PeerActionsCell({ peer }: { peer: NetworkPeer }) {
   const approve = useApiMutation({
     path: `/v1/networks/peers/${encodeURIComponent(peer.id ?? "")}/approve`,
     method: "POST",
@@ -278,37 +335,23 @@ function PeerRow({ peer }: { peer: { id?: string; network_id?: string; peer_proj
   });
   const [revoking, setRevoking] = useState(false);
   return (
-    <>
-      <TableRow>
-        <TableCell className="font-mono text-xs" title={peer.network_id}>
-          {shortId(peer.network_id)}
-        </TableCell>
-        <TableCell className="font-mono text-xs text-muted-foreground" title={peer.peer_project_id}>
-          {shortId(peer.peer_project_id)}
-        </TableCell>
-        <TableCell className="text-xs text-muted-foreground">{peer.state}</TableCell>
-        <TableCell className="font-mono text-xs text-muted-foreground" title={peer.id}>
-          {shortId(peer.id)}
-        </TableCell>
-        <TableCell className="text-right">
-          <div className="flex justify-end gap-1">
-            <Button variant="outline" size="sm" disabled={approve.isPending} onClick={() => void approve.mutate()}>
-              approve
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="text-[var(--status-danger)]"
-              disabled={revoke.isPending}
-              onClick={() => setRevoking(true)}
-            >
-              revoke
-            </Button>
-          </div>
-          {approve.isError ? <RowError error={approve.error} /> : null}
-          {revoke.isError ? <RowError error={revoke.error} /> : null}
-        </TableCell>
-      </TableRow>
+    <div className="flex flex-col items-end">
+      <div className="flex justify-end gap-1">
+        <Button variant="outline" size="sm" disabled={approve.isPending} onClick={() => void approve.mutate()}>
+          approve
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="text-[var(--status-danger)]"
+          disabled={revoke.isPending}
+          onClick={() => setRevoking(true)}
+        >
+          revoke
+        </Button>
+      </div>
+      {approve.isError ? <RowError error={approve.error} /> : null}
+      {revoke.isError ? <RowError error={revoke.error} /> : null}
       <ConfirmDialog
         open={revoking}
         onOpenChange={setRevoking}
@@ -317,7 +360,7 @@ function PeerRow({ peer }: { peer: { id?: string; network_id?: string; peer_proj
         confirmLabel="Revoke"
         onConfirm={() => revoke.mutateAsync()}
       />
-    </>
+    </div>
   );
 }
 
@@ -383,9 +426,18 @@ function DeclarePeerForm({ projectId, networks }: { projectId: string; networks:
 
 // ---- routes ----
 
-// RoutesPanel：host → app/process/port 路由表 + 创建。
-export function RoutesPanel({ projectId, apps }: { projectId: string; apps: Array<{ id: string; name: string }> }) {
-  return <RoutesTab projectId={projectId} apps={apps} />;
+// RoutesPanel：host → app/process/port 路由表 + 创建（kit 化：快筛/分页/
+// 排序进 URL，15s 轮询沿用——最标准单列表形态）。
+export function RoutesPanel({
+  projectId,
+  routeId,
+  apps,
+}: {
+  projectId: string;
+  routeId: string;
+  apps: Array<{ id: string; name: string }>;
+}) {
+  return <RoutesTab projectId={projectId} routeId={routeId} apps={apps} />;
 }
 
 // NewRouteButton 是 Routes 工具栏主动作；项目尚无 App 时诚实禁用。
@@ -512,11 +564,29 @@ export function NewRouteButton({ projectId, apps }: { projectId: string; apps: A
   );
 }
 
-function RoutesTab({ projectId, apps }: { projectId: string; apps: Array<{ id: string; name: string }> }) {
-  const routes = useRoutes(projectId);
+function RoutesTab({
+  projectId,
+  routeId,
+  apps,
+}: {
+  projectId: string;
+  routeId: string;
+  apps: Array<{ id: string; name: string }>;
+}) {
+  const list = useCollection(routesResource, {
+    from: routeId,
+    search: routesSearch,
+    scope: { projectId },
+    query: { refetchInterval: 15_000 },
+  });
 
-  const columns: LegacyColumnDef<{ id?: string; host?: string; path?: string; app_id?: string; process?: string; port?: number; protocol?: string; tls_mode?: string }, any>[] = [
-    { accessorKey: "host", header: "Host", cell: ({ row }) => <span className="font-mono">{row.original.host}</span> },
+  const columns: LegacyColumnDef<Route, any>[] = [
+    {
+      accessorKey: "host",
+      header: "Host",
+      meta: { sortField: "host" },
+      cell: ({ row }) => <span className="font-mono">{row.original.host}</span>,
+    },
     {
       accessorKey: "path",
       header: "Path",
@@ -555,21 +625,29 @@ function RoutesTab({ projectId, apps }: { projectId: string; apps: Array<{ id: s
     },
   ];
 
+  // 源空与过滤空两套文案：谓词在场 = 过滤空。
+  const filtered = list.query.predicate != null;
+
   return (
-    <section className="flex flex-col gap-3">
-      <ListCard
-        label="routes"
-        placeholder="Filter routes..."
-        rows={routes.data ?? []}
-        fieldsOf={(route) => [route.host ?? "", route.app_id ?? "", route.process ?? ""]}
-        loading={routes.isPending}
-        error={routes.isError ? routes.error : null}
-        onRetry={() => void routes.refetch()}
-        columns={columns}
-        cli={`fleetly routes list --project ${projectId}`}
-        actions={<NewRouteButton projectId={projectId} apps={apps} />}
-      />
-    </section>
+    <FleetListPage
+      list={list}
+      toolbar={
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <FilterBar list={list} schema={routesSearch} textPlaceholder="Filter routes..." />
+          <div className="py-2 pr-3">
+            <NewRouteButton projectId={projectId} apps={apps} />
+          </div>
+        </div>
+      }
+      pagination={<Pagination list={list} />}
+      emptyTitle={filtered ? "No routes match the filter" : "No routes yet"}
+      emptyDescription={
+        filtered ? "Adjust or clear the filter to see rows again." : "Create one with New route… to serve traffic on a host."
+      }
+      appendix={<CliEquivalent command={`fleetly routes list --project ${projectId}`} />}
+    >
+      <DataTable list={list} columns={columns} getRowId={(row) => row.id ?? ""} />
+    </FleetListPage>
   );
 }
 
@@ -604,14 +682,20 @@ function RouteActionsCell({ routeId, host, projectId }: { routeId?: string; host
 }
 
 // ---- volumes（IA v3 二期⑤b v2 形态：Dialog 创建 + AlertDialog 删除
-// 确认 + token 类；mutation 语义自批 4 零漂移） ----
+// 确认 + token 类；mutation 语义自批 4 零漂移；本批 kit 化列表读面，
+// 15s 轮询沿用） ----
 
-export function VolumesPanel({ projectId }: { projectId: string }) {
-  return <VolumesTab projectId={projectId} />;
+export function VolumesPanel({ projectId, routeId }: { projectId: string; routeId: string }) {
+  return <VolumesTab projectId={projectId} routeId={routeId} />;
 }
 
-function VolumesTab({ projectId }: { projectId: string }) {
-  const volumes = useVolumes(projectId);
+function VolumesTab({ projectId, routeId }: { projectId: string; routeId: string }) {
+  const list = useCollection(volumesResource, {
+    from: routeId,
+    search: storageSearch,
+    scope: { projectId },
+    query: { refetchInterval: 15_000 },
+  });
   const apps = useApps(projectId);
   const databases = useDatabases(projectId);
   const { specs, pending: specsPending } = useAppSpecs(projectId, apps.data ?? []);
@@ -635,9 +719,18 @@ function VolumesTab({ projectId }: { projectId: string }) {
     const carried = (databases.data ?? []).some((database) => database.name === volume.name);
     return { carrier: carried, users: carried ? [] : users };
   };
+  const openCreate = () => {
+    setName("");
+    setCreateOpen(true);
+  };
 
-  const columns: LegacyColumnDef<{ id?: string; name?: string; pinned_node_id?: string; created_at?: string }, any>[] = [
-    { accessorKey: "name", header: "Name", cell: ({ row }) => <span className="font-medium">{row.original.name}</span> },
+  const columns: LegacyColumnDef<Volume, any>[] = [
+    {
+      accessorKey: "name",
+      header: "Name",
+      meta: { sortField: "name" },
+      cell: ({ row }) => <span className="font-medium">{row.original.name}</span>,
+    },
     {
       accessorKey: "pinned_node_id",
       header: "Pinned node",
@@ -647,6 +740,7 @@ function VolumesTab({ projectId }: { projectId: string }) {
       id: "mounted_by",
       header: "Mounted by",
       cell: ({ row }) => {
+        // 异步反查占位是块外槽（页面列 cell 自绘——kit 块无此槽）
         if (specsPending) return <span className="text-xs text-muted-foreground">…</span>;
         const mount = mountOf(row.original);
         if (mount.carrier) {
@@ -693,79 +787,77 @@ function VolumesTab({ projectId }: { projectId: string }) {
     },
   ];
 
+  // 源空与过滤空两套文案：谓词在场 = 过滤空。
+  const filtered = list.query.predicate != null;
+
   return (
-    <section className="flex flex-col gap-3">
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>New volume</DialogTitle>
-          </DialogHeader>
-          <form
-            className="flex flex-col gap-3"
-            onSubmit={(event) => {
-              event.preventDefault();
-              create.mutate(undefined, { onSuccess: () => setCreateOpen(false) });
-            }}
-          >
-            <Label className="flex flex-col gap-1.5">
-              <span className="text-xs font-semibold">Name</span>
-              <Input value={name} onChange={(event) => setName(event.target.value)} autoFocus />
-            </Label>
-            <Label className="flex flex-col gap-1.5">
-              <span className="text-xs font-semibold">Pinned node</span>
-              <Input value={pinnedNode} onChange={(event) => setPinnedNode(event.target.value)} />
-              <span className="text-2xs font-normal text-muted-foreground">optional platform node id — volume stays on that node</span>
-            </Label>
-            {create.isError ? <FormError error={create.error} /> : null}
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={create.isPending || name === ""}>
-                {create.isPending ? "Creating…" : "Create"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-      <ListCard
-        label="volumes"
-        placeholder="Filter volumes..."
-        rows={volumes.data ?? []}
-        fieldsOf={(volume) => [volume.name ?? "", volume.id ?? ""]}
-        loading={volumes.isPending}
-        error={volumes.isError ? volumes.error : null}
-        onRetry={() => void volumes.refetch()}
-        columns={columns}
-        actions={
-          <Button
-            size="sm"
-            onClick={() => {
-              setName("");
-              setCreateOpen(true);
-            }}
-          >
-            <PlusIcon data-icon-start-inline />
-            New volume…
-          </Button>
-        }
-        empty={
-          <EmptyState
-            icon={PlusIcon}
-            title="No volumes"
-            description="Create one to attach it from an app's Variables tab."
-            actionLabel="New volume…"
-            onAction={() => {
-              setName("");
-              setCreateOpen(true);
-            }}
-          />
-        }
-      />
-      <p className="text-xs text-muted-foreground">
-        Mounts resolve from frozen app specs — new references go live on the app's next deploy.
-      </p>
-    </section>
+    <FleetListPage
+      list={list}
+      toolbar={
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <FilterBar list={list} schema={storageSearch} textPlaceholder="Filter volumes..." />
+          <div className="py-2 pr-3">
+            <Button size="sm" onClick={openCreate}>
+              <PlusIcon data-icon-start-inline />
+              New volume…
+            </Button>
+          </div>
+        </div>
+      }
+      pagination={<Pagination list={list} />}
+      emptyTitle={filtered ? "No volumes match the filter" : "No volumes"}
+      emptyDescription={
+        filtered ? "Adjust or clear the filter to see rows again." : "Create one to attach it from an app's Variables tab."
+      }
+      emptyAction={
+        <Button size="sm" onClick={openCreate}>
+          <PlusIcon data-icon-start-inline />
+          New volume…
+        </Button>
+      }
+      appendix={
+        <>
+          <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>New volume</DialogTitle>
+              </DialogHeader>
+              <form
+                className="flex flex-col gap-3"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  create.mutate(undefined, { onSuccess: () => setCreateOpen(false) });
+                }}
+              >
+                <Label className="flex flex-col gap-1.5">
+                  <span className="text-xs font-semibold">Name</span>
+                  <Input value={name} onChange={(event) => setName(event.target.value)} autoFocus />
+                </Label>
+                <Label className="flex flex-col gap-1.5">
+                  <span className="text-xs font-semibold">Pinned node</span>
+                  <Input value={pinnedNode} onChange={(event) => setPinnedNode(event.target.value)} />
+                  <span className="text-2xs font-normal text-muted-foreground">optional platform node id — volume stays on that node</span>
+                </Label>
+                {create.isError ? <FormError error={create.error} /> : null}
+                <DialogFooter>
+                  <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={create.isPending || name === ""}>
+                    {create.isPending ? "Creating…" : "Create"}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+          <p className="text-xs text-muted-foreground">
+            Mounts resolve from frozen app specs — new references go live on the app's next deploy.
+          </p>
+        </>
+      }
+    >
+      <DataTable list={list} columns={columns} getRowId={(row) => row.id ?? ""} />
+    </FleetListPage>
   );
 }
 
@@ -824,15 +916,8 @@ function VolumeActionsCell({
   );
 }
 
-// ---- secrets / configs / shared variables（put 型写面） ----
-
-interface KeyValueRow {
-  id?: string;
-  name?: string;
-  created_at?: string;
-  updated_at?: string;
-  version?: string;
-}
+// ---- secrets / configs / shared variables（put 型写面；列表读面本批
+// kit 化，三 tab 共享 variablesSearch，均 15s 轮询沿用） ----
 
 // PutForm 是 Add 型写面的统一弹窗（secret/config/shared variable 共用，
 // API 动词是 PUT——组件名承动词面，按钮文案统一 Add *，用户裁决 2026-10-11）：
@@ -921,21 +1006,32 @@ function PutForm({
   );
 }
 
-export function SecretsPanel({ projectId }: { projectId: string }) {
-  return <SecretsTab projectId={projectId} />;
+export function SecretsPanel({ projectId, routeId }: { projectId: string; routeId: string }) {
+  return <SecretsTab projectId={projectId} routeId={routeId} />;
 }
 
-function SecretsTab({ projectId }: { projectId: string }) {
-  const secrets = useSecrets(projectId);
+function SecretsTab({ projectId, routeId }: { projectId: string; routeId: string }) {
+  const list = useCollection(secretsResource, {
+    from: routeId,
+    search: variablesSearch,
+    scope: { projectId },
+    query: { refetchInterval: 15_000 },
+  });
 
-  const columns: LegacyColumnDef<KeyValueRow, any>[] = [
-    { accessorKey: "name", header: "Name", cell: ({ row }) => <span className="font-mono">{row.original.name}</span> },
+  const columns: LegacyColumnDef<Secret, any>[] = [
+    {
+      accessorKey: "name",
+      header: "Name",
+      meta: { sortField: "name" },
+      cell: ({ row }) => <span className="font-mono">{row.original.name}</span>,
+    },
     {
       id: "updated",
       header: "Updated",
       cell: ({ row }) => (
         <span className="text-xs text-muted-foreground">
-          <RelativeTime value={row.original.updated_at ?? row.original.created_at} />
+          {/* v1Secret 只有 updated_at（fingerprint 行无 created_at） */}
+          <RelativeTime value={row.original.updated_at} />
         </span>
       ),
     },
@@ -946,29 +1042,35 @@ function SecretsTab({ projectId }: { projectId: string }) {
     },
   ];
 
+  // 源空与过滤空两套文案：谓词在场 = 过滤空。
+  const filtered = list.query.predicate != null;
+
   return (
-    <section className="flex flex-col gap-3">
-      <ListCard
-        label="secrets"
-        placeholder="Filter secrets..."
-        rows={secrets.data ?? []}
-        fieldsOf={(row) => [row.name ?? ""]}
-        loading={secrets.isPending}
-        error={secrets.isError ? secrets.error : null}
-        onRetry={() => void secrets.refetch()}
-        columns={columns}
-        cli={`fleetly secrets list --project ${projectId}`}
-        actions={
-          <PutForm
-            title="Add secret…"
-            nameLabel="Name"
-            valueLabel="Value"
-            valueHint="write-only — the list never shows values"
-            onSubmit={(name, value) => apiSend("/v1/secrets", "PUT", { project_id: projectId, name, value })}
-          />
-        }
-      />
-    </section>
+    <FleetListPage
+      list={list}
+      toolbar={
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <FilterBar list={list} schema={variablesSearch} textPlaceholder="Filter secrets..." />
+          <div className="py-2 pr-3">
+            <PutForm
+              title="Add secret…"
+              nameLabel="Name"
+              valueLabel="Value"
+              valueHint="write-only — the list never shows values"
+              onSubmit={(name, value) => apiSend("/v1/secrets", "PUT", { project_id: projectId, name, value })}
+            />
+          </div>
+        </div>
+      }
+      pagination={<Pagination list={list} />}
+      emptyTitle={filtered ? "No secrets match the filter" : "No secrets yet"}
+      emptyDescription={
+        filtered ? "Adjust or clear the filter to see rows again." : "Add one — apps reference it by name at deploy freeze time."
+      }
+      appendix={<CliEquivalent command={`fleetly secrets list --project ${projectId}`} />}
+    >
+      <DataTable list={list} columns={columns} getRowId={(row) => row.id ?? row.name ?? ""} />
+    </FleetListPage>
   );
 }
 
@@ -1002,16 +1104,26 @@ function SecretActionsCell({ name, projectId }: { name?: string; projectId: stri
   );
 }
 
-export function ConfigsPanel({ projectId }: { projectId: string }) {
-  return <ConfigsTab projectId={projectId} />;
+export function ConfigsPanel({ projectId, routeId }: { projectId: string; routeId: string }) {
+  return <ConfigsTab projectId={projectId} routeId={routeId} />;
 }
 
-function ConfigsTab({ projectId }: { projectId: string }) {
-  const configs = useConfigs(projectId);
-  const [selected, setSelected] = useState<KeyValueRow | null>(null);
+function ConfigsTab({ projectId, routeId }: { projectId: string; routeId: string }) {
+  const list = useCollection(configsResource, {
+    from: routeId,
+    search: variablesSearch,
+    scope: { projectId },
+    query: { refetchInterval: 15_000 },
+  });
+  const [selected, setSelected] = useState<Config | null>(null);
 
-  const columns: LegacyColumnDef<KeyValueRow, any>[] = [
-    { accessorKey: "name", header: "Name", cell: ({ row }) => <span className="font-mono">{row.original.name}</span> },
+  const columns: LegacyColumnDef<Config, any>[] = [
+    {
+      accessorKey: "name",
+      header: "Name",
+      meta: { sortField: "name" },
+      cell: ({ row }) => <span className="font-mono">{row.original.name}</span>,
+    },
     {
       accessorKey: "version",
       header: "Version",
@@ -1039,32 +1151,46 @@ function ConfigsTab({ projectId }: { projectId: string }) {
     },
   ];
 
+  // 源空与过滤空两套文案：谓词在场 = 过滤空。
+  const filtered = list.query.predicate != null;
+
   return (
-    <section className="flex flex-col gap-3">
-      <ListCard
-        label="configs"
-        placeholder="Filter configs..."
-        rows={configs.data ?? []}
-        fieldsOf={(config) => [config.name ?? ""]}
-        loading={configs.isPending}
-        error={configs.isError ? configs.error : null}
-        onRetry={() => void configs.refetch()}
+    <FleetListPage
+      list={list}
+      toolbar={
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <FilterBar list={list} schema={variablesSearch} textPlaceholder="Filter configs..." />
+          <div className="py-2 pr-3">
+            <PutForm
+              title="Add config…"
+              nameLabel="Name"
+              valueLabel="Content"
+              valueHint="each write freezes a new version"
+              multiline
+              onSubmit={(name, content) => apiSend("/v1/configs", "PUT", { project_id: projectId, name, content })}
+            />
+          </div>
+        </div>
+      }
+      pagination={<Pagination list={list} />}
+      emptyTitle={filtered ? "No configs match the filter" : "No configs yet"}
+      emptyDescription={
+        filtered ? "Adjust or clear the filter to see rows again." : "Add one — each write freezes a new version."
+      }
+      appendix={
+        <>
+          <CliEquivalent command={`fleetly configs list --project ${projectId}`} />
+          <ConfigDetailDialog projectId={projectId} config={selected} onClose={() => setSelected(null)} />
+        </>
+      }
+    >
+      <DataTable
+        list={list}
         columns={columns}
+        getRowId={(row) => row.id ?? row.name ?? ""}
         onRowClick={(row) => setSelected(row)}
-        cli={`fleetly configs list --project ${projectId}`}
-        actions={
-          <PutForm
-            title="Add config…"
-            nameLabel="Name"
-            valueLabel="Content"
-            valueHint="each write freezes a new version"
-            multiline
-            onSubmit={(name, content) => apiSend("/v1/configs", "PUT", { project_id: projectId, name, content })}
-          />
-        }
       />
-      <ConfigDetailDialog projectId={projectId} config={selected} onClose={() => setSelected(null)} />
-    </section>
+    </FleetListPage>
   );
 }
 
@@ -1200,12 +1326,33 @@ function ConfigDetailDialog({
   );
 }
 
-export function VariablesPanel({ projectId, apps }: { projectId: string; apps: Array<{ id: string; name: string }> }) {
-  return <VariablesTab projectId={projectId} apps={apps} />;
+export function VariablesPanel({
+  projectId,
+  routeId,
+  apps,
+}: {
+  projectId: string;
+  routeId: string;
+  apps: Array<{ id: string; name: string }>;
+}) {
+  return <VariablesTab projectId={projectId} routeId={routeId} apps={apps} />;
 }
 
-function VariablesTab({ projectId, apps }: { projectId: string; apps: Array<{ id: string; name: string }> }) {
-  const variables = useSharedVariables(projectId);
+function VariablesTab({
+  projectId,
+  routeId,
+  apps,
+}: {
+  projectId: string;
+  routeId: string;
+  apps: Array<{ id: string; name: string }>;
+}) {
+  const list = useCollection(sharedVariablesResource, {
+    from: routeId,
+    search: variablesSearch,
+    scope: { projectId },
+    query: { refetchInterval: 15_000 },
+  });
   const [banner, setBanner] = useState<string | null>(null);
   const [bannerError, setBannerError] = useState<unknown>(null);
   const [pending, setPending] = useState(false);
@@ -1234,8 +1381,13 @@ function VariablesTab({ projectId, apps }: { projectId: string; apps: Array<{ id
     }
   }
 
-  const columns: LegacyColumnDef<KeyValueRow & { value?: string }, any>[] = [
-    { accessorKey: "name", header: "Name", cell: ({ row }) => <span className="font-mono">{row.original.name}</span> },
+  const columns: LegacyColumnDef<SharedVariable, any>[] = [
+    {
+      accessorKey: "name",
+      header: "Name",
+      meta: { sortField: "name" },
+      cell: ({ row }) => <span className="font-mono">{row.original.name}</span>,
+    },
     {
       accessorKey: "value",
       header: "Value",
@@ -1261,32 +1413,42 @@ function VariablesTab({ projectId, apps }: { projectId: string; apps: Array<{ id
     },
   ];
 
+  // 源空与过滤空两套文案：谓词在场 = 过滤空。
+  const filtered = list.query.predicate != null;
+
   return (
-    <section className="flex flex-col gap-3">
-      {pending ? <p className="text-xs text-muted-foreground">Working…</p> : null}
-      {bannerError != null ? <FormError error={bannerError} /> : null}
-      {banner ? <p className="text-xs text-[var(--status-success)]">{banner}</p> : null}
-      <ListCard
-        label="shared variables"
-        placeholder="Filter variables..."
-        rows={variables.data ?? []}
-        fieldsOf={(v) => [v.name ?? ""]}
-        loading={variables.isPending}
-        error={variables.isError ? variables.error : null}
-        onRetry={() => void variables.refetch()}
-        columns={columns}
-        cli={`fleetly shared-variables list --project ${projectId}`}
-        actions={
-          <PutForm
-            title="Add variable…"
-            nameLabel="Name"
-            valueLabel="Value"
-            valueHint="merged into app env at deploy freeze time"
-            onSubmit={put}
-          />
-        }
-      />
-    </section>
+    <FleetListPage
+      list={list}
+      toolbar={
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <FilterBar list={list} schema={variablesSearch} textPlaceholder="Filter variables..." />
+          <div className="py-2 pr-3">
+            <PutForm
+              title="Add variable…"
+              nameLabel="Name"
+              valueLabel="Value"
+              valueHint="merged into app env at deploy freeze time"
+              onSubmit={put}
+            />
+          </div>
+        </div>
+      }
+      pagination={<Pagination list={list} />}
+      emptyTitle={filtered ? "No variables match the filter" : "No shared variables yet"}
+      emptyDescription={
+        filtered ? "Adjust or clear the filter to see rows again." : "Add one — it merges into app env at deploy freeze time."
+      }
+      appendix={
+        <>
+          <CliEquivalent command={`fleetly shared-variables list --project ${projectId}`} />
+          {pending ? <p className="text-xs text-muted-foreground">Working…</p> : null}
+          {bannerError != null ? <FormError error={bannerError} /> : null}
+          {banner ? <p className="text-xs text-[var(--status-success)]">{banner}</p> : null}
+        </>
+      }
+    >
+      <DataTable list={list} columns={columns} getRowId={(row) => row.id ?? row.name ?? ""} />
+    </FleetListPage>
   );
 }
 
@@ -1295,7 +1457,7 @@ function VariableActionsCell({
   projectId,
   apps,
 }: {
-  row: KeyValueRow & { value?: string };
+  row: SharedVariable;
   projectId: string;
   apps: Array<{ id: string; name: string }>;
 }) {
@@ -1344,14 +1506,19 @@ function VariableActionsCell({
   );
 }
 
-// ---- uploads ----
+// ---- uploads（上传流工具栏不动；列表读面本批 kit 化，15s 轮询沿用） ----
 
-export function UploadsPanel({ projectId }: { projectId: string }) {
-  return <UploadsTab projectId={projectId} />;
+export function UploadsPanel({ projectId, routeId }: { projectId: string; routeId: string }) {
+  return <UploadsTab projectId={projectId} routeId={routeId} />;
 }
 
-function UploadsTab({ projectId }: { projectId: string }) {
-  const uploads = useUploads(projectId);
+function UploadsTab({ projectId, routeId }: { projectId: string; routeId: string }) {
+  const list = useCollection(uploadsResource, {
+    from: routeId,
+    search: storageSearch,
+    scope: { projectId },
+    query: { refetchInterval: 15_000 },
+  });
   const apps = useApps(projectId);
   const { specs, pending: specsPending } = useAppSpecs(projectId, apps.data ?? []);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -1394,7 +1561,7 @@ function UploadsTab({ projectId }: { projectId: string }) {
     }
   }
 
-  const columns: LegacyColumnDef<{ id?: string; digest?: string; size_bytes?: string; created_at?: string }, any>[] = [
+  const columns: LegacyColumnDef<Upload, any>[] = [
     {
       accessorKey: "id",
       header: "Upload",
@@ -1433,6 +1600,7 @@ function UploadsTab({ projectId }: { projectId: string }) {
       id: "referenced_by",
       header: "Referenced by",
       cell: ({ row }) => {
+        // 异步反查占位是块外槽（页面列 cell 自绘——kit 块无此槽）
         if (specsPending) return <span className="text-xs text-muted-foreground">…</span>;
         const users = (uploadIndex.get(row.original.id ?? "") ?? []).map(appName);
         if (users.length === 0) return <span className="text-xs text-muted-foreground">—</span>;
@@ -1446,38 +1614,45 @@ function UploadsTab({ projectId }: { projectId: string }) {
     },
   ];
 
+  // 源空与过滤空两套文案：谓词在场 = 过滤空。
+  const filtered = list.query.predicate != null;
+
   return (
-    <section className="flex flex-col gap-3">
-      <ListCard
-        label="uploads"
-        placeholder="Filter uploads..."
-        rows={uploads.data ?? []}
-        fieldsOf={(upload) => [upload.id ?? "", upload.digest ?? ""]}
-        loading={uploads.isPending}
-        error={uploads.isError ? uploads.error : null}
-        onRetry={() => void uploads.refetch()}
-        columns={columns}
-        cli={`fleetly uploads list --project ${projectId}`}
-        actions={
-          <>
+    <FleetListPage
+      list={list}
+      toolbar={
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-3">
+            <FilterBar list={list} schema={storageSearch} textPlaceholder="Filter uploads..." />
+            <span className="hidden text-xs text-muted-foreground lg:inline">deterministic tar · .git skipped · content-addressed</span>
+          </div>
+          <div className="py-2 pr-3">
             <input ref={inputRef} type="file" multiple className="hidden" onChange={(event) => void onFiles(event.target.files)} />
             <Button size="sm" disabled={pending} onClick={() => inputRef.current?.click()}>
               <PlusIcon data-icon-start-inline />
               {pending ? "Uploading…" : "Upload directory…"}
             </Button>
-          </>
-        }
-        filters={<span className="hidden text-xs text-muted-foreground lg:inline">deterministic tar · .git skipped · content-addressed</span>}
-        empty={
-          <EmptyState icon={PlusIcon} title="No uploads" description="Pick a directory to build a deployable source." />
-        }
-      />
-      {pending ? <p className="px-1 text-xs text-muted-foreground">Packing & uploading…</p> : null}
-      {error != null ? <FormError error={error} /> : null}
-      {result != null ? <p className="px-1 text-xs text-muted-foreground">{result}</p> : null}
-      <p className="text-xs text-muted-foreground">
-        Upload references resolve from frozen app specs — they go live on the app's next deploy.
-      </p>
-    </section>
+          </div>
+        </div>
+      }
+      pagination={<Pagination list={list} />}
+      emptyTitle={filtered ? "No uploads match the filter" : "No uploads"}
+      emptyDescription={
+        filtered ? "Adjust or clear the filter to see rows again." : "Pick a directory to build a deployable source."
+      }
+      appendix={
+        <>
+          <CliEquivalent command={`fleetly uploads list --project ${projectId}`} />
+          {pending ? <p className="text-xs text-muted-foreground">Packing & uploading…</p> : null}
+          {error != null ? <FormError error={error} /> : null}
+          {result != null ? <p className="text-xs text-muted-foreground">{result}</p> : null}
+          <p className="text-xs text-muted-foreground">
+            Upload references resolve from frozen app specs — they go live on the app's next deploy.
+          </p>
+        </>
+      }
+    >
+      <DataTable list={list} columns={columns} getRowId={(row) => row.id ?? ""} />
+    </FleetListPage>
   );
 }

@@ -1,68 +1,89 @@
 import { Link } from "@tanstack/react-router";
-import { useQueries, useQuery } from "@tanstack/react-query";
-import { ChevronDownIcon, ChevronRightIcon, LayersIcon } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
 import { useState } from "react";
+import { useCollection } from "@lynx-go/uikit-core";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
 import { apiFetch } from "@/api/client";
-import type { components } from "@/api/delivery";
-import { digestByRevisionId, latestDeploymentPerApp } from "@/features/registry/registry-model";
+import { registryResource, registrySearch, type RegistryRow } from "@/kit/registry";
 import { DeploymentStatusBadge } from "@/components/domain/status-badge";
 import { CliEquivalent } from "@/components/domain/list-toolbar";
 import { CopyButton } from "@/components/domain/copy-button";
-import { EmptyState } from "@/components/domain/empty-state";
-import { ListCard } from "@/components/domain/list-page";
 import { ModulePage } from "@/components/domain/module-page";
 import { ProjectAvatar } from "@/components/domain/project-avatar";
 import { RelativeTime } from "@/components/domain/relative-time";
+import { DataTable } from "@/components/kit/query/data-table";
+import { FilterBar } from "@/components/kit/query/filter-bar";
+import { ListPage as FleetListPage } from "@/components/kit/query/list-page";
+import { Pagination } from "@/components/kit/query/pagination";
 import { GitHubAppsView } from "@/features/githubapps/github-apps-view";
 import { useApps } from "@/lib/catalog";
-import { useProjectDeployments } from "@/features/deployments/hooks";
 import { formatBytes } from "@/lib/format";
 
-type Revision = components["schemas"]["v1Revision"];
-
-// Registry v1（IA v3 T5，§5.1 一期；模板化收编 ModulePage+ListCard）：
-// 按 app 维度的"当前运行内容"视图——最新部署的 revision digest（内容寻
-//址锚）+ commit + 状态。二期（⑤b）：镜像仓内容视图点亮——catalog/tags
-// 经受管仓只读代理（按项目前纲）。
+// Registry v1（IA v3 T5，§5.1 一期；模板化收编 ModulePage+ListCard →
+// useCollection 化批 3 收编 kit 块）：按 app 维度的"当前运行内容"视图
+// ——最新部署的 revision digest（内容寻址）+ commit + 状态。Apps tab 的
+// apps→deployments→revisions 三级合并并轨进 kit/registry 的单条集合查
+// 询（deployment 轴 15s 轮询）。二期（⑤b）：镜像仓内容视图点亮——
+// catalog/tags 经受管仓只读代理（按项目前纲；本批不动）。
 export function RegistryView({
   projectId,
+  routeId,
   tab,
   onTabChange,
 }: {
   projectId: string;
+  routeId: string;
   tab: "apps" | "catalog" | "github";
   onTabChange: (value: "apps" | "catalog" | "github") => void;
 }) {
+  // useApps 供 catalog tab 的仓名反查（apps tab 已并轨 kit 集合）。
   const apps = useApps(projectId);
-  const appIds = (apps.data ?? []).map((app) => app.id);
-  const deployments = useProjectDeployments(appIds);
-  const latest = latestDeploymentPerApp(deployments.data);
 
-  // revisions fan-out（digest 解析）：与 deployments fan-out 同款客户端聚合
-  //（ADR-0057 不变量：项目级聚合走客户端，服务端 per-App 轴不动）。
-  const revisionLists = useQueries({
-    queries: appIds.slice(0, 50).map((appId) => ({
-      queryKey: ["resources", "revisions", appId],
-      queryFn: async (): Promise<Revision[]> => {
-        const res = await apiFetch<{ revisions?: Array<Revision | undefined> }>(`/v1/revisions?app_id=${encodeURIComponent(appId)}&limit=200`);
-        return (res.revisions ?? []).flatMap((entry) => (entry != null ? [entry] : []));
-      },
-      enabled: appIds.length > 0,
-      refetchInterval: 30_000,
-    })),
+  return (
+    <ModulePage
+      title="Registry"
+      description="What each app runs right now — revision digests from the managed registry (zot)"
+      tabs={[
+        { value: "apps", label: "Apps" },
+        { value: "catalog", label: "Image catalog" },
+        { value: "github", label: "GitHub Apps" },
+      ]}
+      current={tab}
+      onTabChange={onTabChange}
+    >
+      {tab === "github" ? (
+        <GitHubAppsView projectId={projectId} />
+      ) : tab === "catalog" ? (
+        <RegistryCatalog projectId={projectId} apps={apps.data ?? []} />
+      ) : (
+        <RegistryAppsTab projectId={projectId} routeId={routeId} />
+      )}
+    </ModulePage>
+  );
+}
+
+// RegistryAppsTab：三级合并列表的 kit 消费面（行 = RegistryRow，digest
+// 已在 fetch 内解析——列不再持 per-App 反查索引）。
+function RegistryAppsTab({ projectId, routeId }: { projectId: string; routeId: string }) {
+  const list = useCollection(registryResource, {
+    from: routeId,
+    search: registrySearch,
+    scope: { projectId },
+    // 并轨取 deployment 轴 15s（旧三级 60s/15s/30s 的最鲜轴；registry
+    // digest 只随部署变化，apps/revisions 无需更高频）。
+    query: { refetchInterval: 15_000 },
   });
-  const digests = digestByRevisionId(revisionLists.map((entry) => entry.data));
-  const rows = (apps.data ?? []).map((app) => ({ app, deployment: latest.get(app.id) }));
 
-  const columns: LegacyColumnDef<(typeof rows)[number], any>[] = [
+  const columns: LegacyColumnDef<RegistryRow, any>[] = [
     {
       id: "app",
       header: "App",
+      meta: { sortField: "name" },
       cell: ({ row }) => (
         <div className="flex items-center gap-2.5">
-          <ProjectAvatar seed={row.original.app.id} label={row.original.app.name} />
-          <div className="text-sm font-semibold">{row.original.app.name}</div>
+          <ProjectAvatar seed={row.original.id} label={row.original.name} />
+          <div className="text-sm font-semibold">{row.original.name}</div>
         </div>
       ),
     },
@@ -82,18 +103,15 @@ export function RegistryView({
     {
       id: "digest",
       header: "Revision digest",
-      cell: ({ row }) => {
-        const revision = row.original.deployment?.to_revision;
-        if (revision == null || !digests.has(revision)) {
-          return <span className="text-xs text-muted-foreground">—</span>;
-        }
-        return (
+      cell: ({ row }) =>
+        row.original.digest ? (
           <span className="flex items-center gap-1 font-mono text-xs">
-            {digests.get(revision)!.slice(0, 19)}…
-            <CopyButton value={digests.get(revision) ?? ""} />
+            {row.original.digest.slice(0, 19)}…
+            <CopyButton value={row.original.digest} />
           </span>
-        );
-      },
+        ) : (
+          <span className="text-xs text-muted-foreground">—</span>
+        ),
     },
     {
       id: "commit",
@@ -116,7 +134,7 @@ export function RegistryView({
         <div className="text-right">
           <Link
             to="/p/$projectId/apps/$appId/deployments"
-            params={{ projectId, appId: row.original.app.id }}
+            params={{ projectId, appId: row.original.id }}
             className="text-xs text-info underline-offset-2 hover:underline"
           >
             deployments
@@ -126,47 +144,26 @@ export function RegistryView({
     },
   ];
 
+  // 源空与过滤空两套文案：谓词在场 = 过滤空。
+  const filtered = list.query.predicate != null;
+
   return (
-    <ModulePage
-      title="Registry"
-      description="What each app runs right now — revision digests from the managed registry (zot)"
-      tabs={[
-        { value: "apps", label: "Apps" },
-        { value: "catalog", label: "Image catalog" },
-        { value: "github", label: "GitHub Apps" },
-      ]}
-      current={tab}
-      onTabChange={onTabChange}
+    <FleetListPage
+      list={list}
+      toolbar={<FilterBar list={list} schema={registrySearch} textPlaceholder="Filter apps..." />}
+      pagination={<Pagination list={list} />}
+      emptyTitle={filtered ? "No apps match the filter" : "No apps in this project"}
+      emptyDescription={
+        filtered
+          ? "Adjust or clear the filter to see rows again."
+          : "Registry rows appear per app once apps exist — each row resolves the running revision digest."
+      }
+      appendix={
+        <p className="text-2xs text-muted-foreground">Digests are content-addressed — they identify exactly what is running.</p>
+      }
     >
-      {tab === "github" ? (
-        <GitHubAppsView projectId={projectId} />
-      ) : tab === "catalog" ? (
-        <RegistryCatalog projectId={projectId} apps={apps.data ?? []} />
-      ) : (
-        <>
-          <ListCard
-            label="apps"
-            placeholder="Filter apps..."
-            rows={rows}
-            fieldsOf={(row) => [row.app.name ?? "", row.app.id ?? ""]}
-            loading={apps.isPending}
-            error={apps.isError ? apps.error : null}
-            onRetry={() => void apps.refetch()}
-            columns={columns}
-            empty={
-              <EmptyState
-                icon={LayersIcon}
-                title="No apps in this project"
-                description="Registry rows appear per app once apps exist — each row resolves the running revision digest."
-              />
-            }
-          />
-          <p className="mt-3 text-2xs text-muted-foreground">
-            Digests are content-addressed — they identify exactly what is running.
-          </p>
-        </>
-      )}
-    </ModulePage>
+      <DataTable list={list} columns={columns} getRowId={(row) => row.id} />
+    </FleetListPage>
   );
 }
 
