@@ -60,8 +60,10 @@ func TestNewInterceptorsBoundsUnaryHandler(t *testing.T) {
 	db, _ := statetest.New(t)
 	policySet, err := NewPolicySet()
 	require.NoError(t, err)
+	authenticator, err := authn.NewAuthenticator(db, NewAuthnRepos(db), policySet, ScopeResources(), slog.New(slog.DiscardHandler))
+	require.NoError(t, err)
 	unary, stream, err := NewInterceptors(slog.New(slog.DiscardHandler), policySet,
-		authn.NewAuthenticator(db, NewAuthnRepos(db), policySet, ScopeResources(), slog.New(slog.DiscardHandler)),
+		authenticator,
 		idem.NewEnforcer(db, idemrepo.New(db.Clock(), db.Runner()), slog.New(slog.DiscardHandler)),
 		governance.NewRateLimiter(db.Clock(), 0, 0),
 		governance.NewFreezeGuard(db, freezerepo.New(db.Clock(), db.Runner()), NewAnchor(db), slog.New(slog.DiscardHandler)))
@@ -94,8 +96,10 @@ func TestNewInterceptorsSanitizeAtChainHead(t *testing.T) {
 	require.NoError(t, err)
 	var logBuf lockedBuffer
 	logger := slog.New(slog.NewTextHandler(&logBuf, nil))
+	authenticator, err := authn.NewAuthenticator(db, NewAuthnRepos(db), policySet, ScopeResources(), slog.New(slog.DiscardHandler))
+	require.NoError(t, err)
 	unary, _, err := NewInterceptors(logger, policySet,
-		authn.NewAuthenticator(db, NewAuthnRepos(db), policySet, ScopeResources(), slog.New(slog.DiscardHandler)),
+		authenticator,
 		idem.NewEnforcer(db, idemrepo.New(db.Clock(), db.Runner()), slog.New(slog.DiscardHandler)),
 		governance.NewRateLimiter(db.Clock(), 0, 0),
 		governance.NewFreezeGuard(db, freezerepo.New(db.Clock(), db.Runner()), NewAnchor(db), slog.New(slog.DiscardHandler)))

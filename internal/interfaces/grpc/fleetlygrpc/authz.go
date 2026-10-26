@@ -14,8 +14,6 @@ import (
 	"context"
 	"errors"
 
-	"github.com/lynx-go/grpcapi/authz"
-
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/token"
@@ -49,7 +47,7 @@ func callerIsPlatformAdmin(id *authn.Identity) bool {
 // 其他服务方法（或触发部署链），authn 拦截器只在 RPC 边界按外层注解执法
 // 一次——内层动词的能力面必须在这里显式复核（HasScope 与内层 RPC 的
 // api_key_scope 同源；平台 owner 的 `*` 天然通过，无身份特判）。
-func (s *Services) requireScope(ctx context.Context, resource string, op authz.ScopeOp) error {
+func (s *Services) requireScope(ctx context.Context, resource string, op string) error {
 	id, ok := authn.FromContext(ctx)
 	if !ok {
 		return apperr.New("E_UNAUTHENTICATED", "present a valid token to use the %s capability", resource)

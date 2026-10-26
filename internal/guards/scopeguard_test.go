@@ -1,7 +1,7 @@
 package guards
 
 // 写面 scope fail-safe 门（ADR-0038 / P6 T2，与 idem 覆盖反扫同构）：proto
-// 注解是 scope 声明表（authz.Build 收集，运行时真源）；本守卫在 CI 对账
+// 注解是 scope 声明表（policy.Build 收集，运行时真源）；本守卫在 CI 对账
 // "动词 × 声明方向"——变更型动词（Create/Delete/Put/Deploy/...）标 READ 即
 // 红（新 RPC 上线忘挂授权检查 = fail-open 静默洞，zane 三维修权同款防线）；
 // 读型动词标 WRITE/ADMIN 同样红（声明表与动词漂移即误标）。动词表完备性
@@ -13,9 +13,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lynx-go/grpcapi/authz"
-
+	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/assembly"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity"
 )
 
 // mutatingVerbs 是变更型动词前缀（op 必须 WRITE/ADMIN）。
@@ -71,19 +71,22 @@ func matchesVerb(verb string, prefixes []string) bool {
 
 // TestScopeDeclarationsMatchVerbs：SERVER 面全部 scope 声明 × 动词分类对账。
 func TestScopeDeclarationsMatchVerbs(t *testing.T) {
-	policy, err := assembly.NewPolicySet()
+	set, err := assembly.NewPolicySet()
 	if err != nil {
 		t.Fatalf("policy build failed: %v", err)
 	}
-	methods := policy.Methods()
+	methods, err := authn.ViewRules(set)
+	if err != nil {
+		t.Fatalf("policy view failed: %v", err)
+	}
 	if len(methods) < 40 {
 		t.Fatalf("policy surface suspiciously small (%d methods) — guard is blind, fix the scan", len(methods))
 	}
 
 	usedExemptions := map[string]bool{}
 	for _, p := range methods {
-		if p.Access != authz.AccessServer || p.Scope == nil {
-			continue // PUBLIC/PERMISSION 面与无 scope 方法不在本守卫域
+		if p.Public || p.Scope == nil {
+			continue // PUBLIC 面与无 scope 方法不在本守卫域
 		}
 		verb := methodVerb(p.Method)
 		if reason, ok := scopeOpExemptions[p.Method]; ok {
@@ -95,12 +98,12 @@ func TestScopeDeclarationsMatchVerbs(t *testing.T) {
 		}
 		switch {
 		case matchesVerb(verb, mutatingVerbs):
-			if p.Scope.Op == authz.ScopeRead {
+			if p.Scope.Op == identity.OpRead {
 				t.Errorf("mutating RPC %s declares scope %s:%s — a mutating verb behind a read scope is the fail-open hole this guard exists to close (ADR-0038); declare WRITE/ADMIN or add an exemption with a reason",
 					p.Method, p.Scope.Resource, p.Scope.Op)
 			}
 		case matchesVerb(verb, readVerbs):
-			if p.Scope.Op != authz.ScopeRead {
+			if p.Scope.Op != identity.OpRead {
 				t.Errorf("read-type RPC %s declares scope %s:%s — read verbs behind write/admin scopes are declaration drift; fix the annotation or add an exemption with a reason",
 					p.Method, p.Scope.Resource, p.Scope.Op)
 			}

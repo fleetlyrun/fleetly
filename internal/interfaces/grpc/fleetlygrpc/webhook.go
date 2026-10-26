@@ -20,8 +20,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/lynx-go/grpcapi/authz"
-
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
@@ -213,7 +211,7 @@ func (svc *HooksService) RefreshGitHook(ctx context.Context, req *deliveryv1.Ref
 	// 链（拉取材料 → Engine 提交 → 构建/替换工作负载）——必须显式持有
 	// deployments:write（与 Deploy RPC 的 api_key_scope 同源）。门先于
 	// 404/拉取副作用：仅持 apps:write 的角色 403 且零部署行。
-	if err := svc.s.requireScope(ctx, "deployments", authz.ScopeWrite); err != nil {
+	if err := svc.s.requireScope(ctx, "deployments", identity.OpWrite); err != nil {
 		return nil, err
 	}
 	// app_id 必填已退役 descriptor 注解（P4-1 批 1 Run B2）：空值由

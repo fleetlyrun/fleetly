@@ -17,7 +17,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
-	"github.com/lynx-go/grpcapi/authz"
+	"github.com/lynx-go/grpcapi/policy"
+	"github.com/lynx-go/grpcapi/policy/scope"
 
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
@@ -57,7 +58,7 @@ type Identity struct {
 	RoleName  string
 	Scopes    []identity.Scope // colon 原始形态（未展开蕴含）
 
-	scopeSet authz.ScopeSet // dot 展开形态（执法用；resolve 时一次物化）
+	scopeSet scope.Set // colon 展开形态（执法用；resolve 时一次物化）
 }
 
 // Actor 返回审计 actor 形态（有属主用户以用户名计，否则 Token 名计）。
@@ -85,7 +86,7 @@ func FromContext(ctx context.Context) (*Identity, bool) {
 // Authenticator 是拦截器依赖集（assembly 与 apitest 夹具共用构造）。
 type Authenticator struct {
 	db          state.DB
-	policy      *authz.PolicySet
+	rules       map[string]MethodRule
 	log         *slog.Logger
 	roles       role.Repo
 	users       user.Repo
@@ -108,21 +109,30 @@ type Repos struct {
 	Audits      audit.Repo
 }
 
-// NewAuthenticator 构造（repos 由组合根注入；vocab 是 scope 词表——
-// assembly 单一源注入）。
-func NewAuthenticator(db state.DB, repos Repos, policy *authz.PolicySet, vocab []string, log *slog.Logger) *Authenticator {
+// NewAuthenticator 构造（repos 由组合根注入；policySet 是 proto 注解收集的
+// 规范策略集，构造期经 ViewRules 物化为执法视图——任一方法树形非规范
+// 即构造失败，fail-closed；vocab 是 scope 词表——assembly 单一源注入）。
+func NewAuthenticator(db state.DB, repos Repos, policySet *policy.Set, vocab []string, log *slog.Logger) (*Authenticator, error) {
+	rules, err := ViewRules(policySet)
+	if err != nil {
+		return nil, err
+	}
+	byMethod := make(map[string]MethodRule, len(rules))
+	for _, r := range rules {
+		byMethod[r.Method] = r
+	}
 	return &Authenticator{
-		db: db, policy: policy, log: log,
+		db: db, rules: byMethod, log: log,
 		roles:       repos.Roles,
 		users:       repos.Users,
 		tokens:      repos.Tokens,
 		memberships: repos.Memberships,
 		audits:      repos.Audits,
 		vocab:       vocab, lastUsed: map[string]time.Time{}, lastNarrow: map[string]time.Time{},
-	}
+	}, nil
 }
 
-// Unary 返回 unary 拦截器（SlotAuth 槽位）。
+// Unary 返回 unary 拦截器（authn 链位）。
 func (a *Authenticator) Unary() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
 		next, err := a.guard(ctx, info.FullMethod)
@@ -165,7 +175,7 @@ func withRequestIdentity(ctx context.Context, id *Identity) context.Context {
 
 // guard 是执法主体：解析 → 面档判定 → scope 检查 → identity 注入。
 func (a *Authenticator) guard(ctx context.Context, fullMethod string) (context.Context, error) {
-	policy, ok := a.policy.Get(fullMethod)
+	rule, ok := a.rules[fullMethod]
 	if !ok {
 		// 启动断言把守下的不可达分支：纵深防御，拒且大声。
 		a.log.Error("authn: method without policy (invariant broken)", "method", fullMethod)
@@ -174,15 +184,15 @@ func (a *Authenticator) guard(ctx context.Context, fullMethod string) (context.C
 	}
 
 	id, credErr := a.resolve(ctx)
-	switch policy.Access {
-	case authz.AccessPublic:
+	switch {
+	case rule.Public:
 		// 公开面：无效凭证按匿名（status/version 不被脏凭证阻塞）；
 		// 解析成功的身份照常注入（whoami 消费）。
 		if credErr != nil {
 			id = nil
 		}
 		return withRequestIdentity(ctx, id), nil
-	case authz.AccessServer:
+	case rule.Scope != nil:
 		if credErr != nil {
 			return nil, credErr
 		}
@@ -190,23 +200,19 @@ func (a *Authenticator) guard(ctx context.Context, fullMethod string) (context.C
 			return nil, apperr.New("E_UNAUTHENTICATED",
 				"this method requires a token; pass one via 'fleetly login' or the authorization header")
 		}
-		rule := a.policy.ScopeRule(fullMethod)
-		if rule == nil {
-			a.log.Error("authn: SERVER method without scope rule (invariant broken)", "method", fullMethod)
-			return nil, apperr.New("E_INTERNAL", "authorization scope is missing for this method").
-				WithContext("method", fullMethod)
-		}
-		if !id.scopeSet.Satisfies(*rule) {
+		if !id.scopeSet.Satisfies(rule.Scope.Resource, rule.Scope.Op) {
 			return nil, apperr.New("E_FORBIDDEN",
-				"token %q lacks required scope %s:%s", id.TokenName, rule.Resource, rule.Op).
+				"token %q lacks required scope %s", id.TokenName, rule.Scope).
 				WithContext("token", id.TokenName).
-				WithContext("required_scope", rule.Resource+":"+string(rule.Op))
+				WithContext("required_scope", rule.Scope.String())
 		}
 		a.touchLastUsed(id)
 		return withRequestIdentity(ctx, id), nil
 	default:
-		// END_USER/PERMISSION/SYSTEM 档 v1 未启用：fail-closed 拒。
-		return nil, apperr.New("E_FORBIDDEN", "this method is not available in the current release").
+		// 规范两形态之外的第三态在 ViewRules 构造期已拒（启动红）——
+		// 不可达防御分支：拒且大声。
+		a.log.Error("authn: method policy is not a canonical shape (invariant broken)", "method", fullMethod)
+		return nil, apperr.New("E_INTERNAL", "authorization policy is malformed for this method").
 			WithContext("method", fullMethod)
 	}
 }
@@ -253,7 +259,7 @@ func (a *Authenticator) resolve(ctx context.Context) (*Identity, error) {
 		a.log.Error("authn: role carries scopes outside vocabulary", "role", role.Name, "err", err)
 		return nil, apperr.New("E_UNAUTHENTICATED", "token role carries invalid scopes")
 	}
-	set, err := identity.DotForm(scopes)
+	set, err := identity.ScopeSet(scopes)
 	if err != nil {
 		return nil, apperr.New("E_UNAUTHENTICATED", "token role carries invalid scopes")
 	}
@@ -349,7 +355,7 @@ func (a *Authenticator) narrowToCreator(ctx context.Context, tok *token.Token, i
 		a.log.Info("authn: token narrowed to creator authority",
 			"token", tok.Name, "declared", len(id.Scopes), "effective", len(effective))
 	}
-	set, err := identity.DotForm(effective)
+	set, err := identity.ScopeSet(effective)
 	if err != nil {
 		return apperr.New("E_UNAUTHENTICATED", "token role carries invalid scopes")
 	}
@@ -488,8 +494,8 @@ func SourceFromContext(ctx context.Context) audit.Source {
 }
 
 // HasScope 报告身份是否携带指定 scope（服务内动态提权门消费——静态
-// method_auth 注解只能表达 RPC 的最低门，写档形态按请求值运行时校验；
+// 方法注解只能表达 RPC 的最低门，写档形态按请求值运行时校验；
 // ADR-0051 决策 6：browse 的 read_write/无执法方言要求 databases:write）。
-func (id *Identity) HasScope(resource string, op authz.ScopeOp) bool {
-	return id != nil && id.scopeSet.Satisfies(authz.ScopeRule{Resource: resource, Op: op})
+func (id *Identity) HasScope(resource string, op string) bool {
+	return id != nil && id.scopeSet.Satisfies(resource, op)
 }

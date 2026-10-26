@@ -8,7 +8,7 @@ option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/proxy/v1;pro
 import "buf/validate/validate.proto";
 import "google/api/annotations.proto";
 import "protoc-gen-openapiv2/options/annotations.proto";
-import "grpcapi/v1/authz.proto";
+import "grpcapi/v1/policy.proto";
 
 option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
   responses: {
@@ -21,27 +21,30 @@ option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
 };
 
 service RoutesService {
-  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+  option (grpcapi.v1.service) = { default_policy: { authenticated: true } };
 
   rpc CreateRoute(CreateRouteRequest) returns (CreateRouteResponse) {
     option (google.api.http) = { post: "/v1/routes" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "routes" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["routes:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   rpc ListRoutes(ListRoutesRequest) returns (ListRoutesResponse) {
     option (google.api.http) = { get: "/v1/routes" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "routes" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["routes:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   rpc DeleteRoute(DeleteRouteRequest) returns (DeleteRouteResponse) {
     option (google.api.http) = { delete: "/v1/routes/{id}" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "routes" op: SCOPE_OP_ADMIN }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["routes:admin"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
 }

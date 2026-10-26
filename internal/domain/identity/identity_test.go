@@ -6,8 +6,6 @@ package identity
 import (
 	"strings"
 	"testing"
-
-	"github.com/lynx-go/grpcapi/authz"
 )
 
 var vocab = []string{
@@ -53,41 +51,41 @@ func TestParseScope(t *testing.T) {
 	}
 }
 
-func TestDotFormExpandsImplications(t *testing.T) {
-	set, err := DotForm([]Scope{
+func TestScopeSetExpandsImplications(t *testing.T) {
+	set, err := ScopeSet([]Scope{
 		{Resource: "deployments", Action: "admin"},
 		{Resource: "secrets", Action: "write"},
 	})
 	if err != nil {
-		t.Fatalf("DotForm: %v", err)
+		t.Fatalf("ScopeSet: %v", err)
 	}
 	// admin ⇒ write ⇒ read。
-	for _, rule := range []authz.ScopeRule{
-		{Resource: "deployments", Op: authz.ScopeAdmin},
-		{Resource: "deployments", Op: authz.ScopeWrite},
-		{Resource: "deployments", Op: authz.ScopeRead},
-		{Resource: "secrets", Op: authz.ScopeWrite},
-		{Resource: "secrets", Op: authz.ScopeRead},
+	for _, rule := range []ScopeRule{
+		{Resource: "deployments", Op: OpAdmin},
+		{Resource: "deployments", Op: OpWrite},
+		{Resource: "deployments", Op: OpRead},
+		{Resource: "secrets", Op: OpWrite},
+		{Resource: "secrets", Op: OpRead},
 	} {
-		if !set.Satisfies(rule) {
+		if !set.Satisfies(rule.Resource, rule.Op) {
 			t.Fatalf("expanded set %#v should satisfy %#v", set, rule)
 		}
 	}
 	// write 不上蕴含 admin；未授权资源不满足。
-	for _, rule := range []authz.ScopeRule{
-		{Resource: "secrets", Op: authz.ScopeAdmin},
-		{Resource: "apps", Op: authz.ScopeRead},
+	for _, rule := range []ScopeRule{
+		{Resource: "secrets", Op: OpAdmin},
+		{Resource: "apps", Op: OpRead},
 	} {
-		if set.Satisfies(rule) {
+		if set.Satisfies(rule.Resource, rule.Op) {
 			t.Fatalf("set must not satisfy %#v", rule)
 		}
 	}
 	// 通配符恒真（owner 全权形态）。
-	star, err := DotForm([]Scope{{Resource: "*", Action: "*"}})
+	star, err := ScopeSet([]Scope{{Resource: "*", Action: "*"}})
 	if err != nil {
-		t.Fatalf("DotForm(star): %v", err)
+		t.Fatalf("ScopeSet(star): %v", err)
 	}
-	if !star.Satisfies(authz.ScopeRule{Resource: "users", Op: authz.ScopeAdmin}) {
+	if !star.Satisfies("users", OpAdmin) {
 		t.Fatal("star scope must satisfy any rule")
 	}
 }
@@ -159,51 +157,51 @@ func TestBuiltinRoles(t *testing.T) {
 	}
 
 	// owner = *。
-	owner, err := DotForm(byID[RoleOwnerID].Scopes)
+	owner, err := ScopeSet(byID[RoleOwnerID].Scopes)
 	if err != nil {
-		t.Fatalf("owner DotForm: %v", err)
+		t.Fatalf("owner ScopeSet: %v", err)
 	}
-	if !owner.Satisfies(authz.ScopeRule{Resource: "anything", Op: authz.ScopeAdmin}) {
+	if !owner.Satisfies("anything", OpAdmin) {
 		t.Fatal("owner must satisfy any rule")
 	}
 
 	// admin = 全资源 :admin、audit 只 read。
 	admin := byID[RoleAdminID].Scopes
-	adminSet, err := DotForm(admin)
+	adminSet, err := ScopeSet(admin)
 	if err != nil {
-		t.Fatalf("admin DotForm: %v", err)
+		t.Fatalf("admin ScopeSet: %v", err)
 	}
 	for _, res := range vocab {
-		want := authz.ScopeWrite
+		want := OpWrite
 		if res == "audit" {
-			want = authz.ScopeRead
+			want = OpRead
 		}
-		if !adminSet.Satisfies(authz.ScopeRule{Resource: res, Op: want}) {
+		if !adminSet.Satisfies(res, want) {
 			t.Fatalf("admin must cover %s %s", res, want)
 		}
 	}
-	if adminSet.Satisfies(authz.ScopeRule{Resource: "audit", Op: authz.ScopeAdmin}) {
+	if adminSet.Satisfies("audit", OpAdmin) {
 		t.Fatal("admin must not carry audit:admin (audit is read-only surface)")
 	}
 
 	// member = 全资源 read + 部署/材料 write；无 identity/管理面。
-	memberSet, err := DotForm(byID[RoleMemberID].Scopes)
+	memberSet, err := ScopeSet(byID[RoleMemberID].Scopes)
 	if err != nil {
-		t.Fatalf("member DotForm: %v", err)
+		t.Fatalf("member ScopeSet: %v", err)
 	}
-	if !memberSet.Satisfies(authz.ScopeRule{Resource: "projects", Op: authz.ScopeRead}) {
+	if !memberSet.Satisfies("projects", OpRead) {
 		t.Fatal("member must read everything")
 	}
-	if !memberSet.Satisfies(authz.ScopeRule{Resource: "deployments", Op: authz.ScopeWrite}) {
+	if !memberSet.Satisfies("deployments", OpWrite) {
 		t.Fatal("member must write deployments")
 	}
-	for _, rule := range []authz.ScopeRule{
-		{Resource: "projects", Op: authz.ScopeWrite},
-		{Resource: "users", Op: authz.ScopeWrite},
-		{Resource: "tokens", Op: authz.ScopeRead},
-		{Resource: "audit", Op: authz.ScopeRead},
+	for _, rule := range []ScopeRule{
+		{Resource: "projects", Op: OpWrite},
+		{Resource: "users", Op: OpWrite},
+		{Resource: "tokens", Op: OpRead},
+		{Resource: "audit", Op: OpRead},
 	} {
-		if memberSet.Satisfies(rule) {
+		if memberSet.Satisfies(rule.Resource, rule.Op) {
 			t.Fatalf("member must not satisfy %#v", rule)
 		}
 	}

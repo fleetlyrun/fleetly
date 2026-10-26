@@ -13,7 +13,7 @@ option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1;r
 import "buf/validate/validate.proto";
 import "google/api/annotations.proto";
 import "protoc-gen-openapiv2/options/annotations.proto";
-import "grpcapi/v1/authz.proto";
+import "grpcapi/v1/policy.proto";
 
 option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
   responses: {
@@ -26,7 +26,7 @@ option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
 };
 
 service ExecService {
-  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+  option (grpcapi.v1.service) = { default_policy: { authenticated: true } };
 
   // CreateExecSession 受理会话：实时解析目标实例与节点（观测缓存不参与
   // 决策）、per-Team 并发限额、审计 + exec.session_opened 事件、铸造单
@@ -34,18 +34,20 @@ service ExecService {
   // （ADR-0049：exec 不变更资源状态，诊断面在冻结窗内最需要）。
   rpc CreateExecSession(CreateExecSessionRequest) returns (CreateExecSessionResponse) {
     option (google.api.http) = { post: "/v1/exec/sessions" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "exec" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["exec:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   // StreamExecSession 是会话流（gRPC 消费径；CLI）。首帧必须 attach 携带
   // CreateExecSession 返回的会话 ID；随后 stdin/resize 上行、stdout/stderr/
   // exit/error 下行，直至 exit 或 error 收口。一个会话至多一个消费端附着。
   rpc StreamExecSession(stream StreamExecSessionRequest) returns (stream StreamExecSessionResponse) {
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "exec" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["exec:write"] }] }
+      exposure: EXPOSURE_INTERNAL
+      label: "SERVER"
     };
   }
   // ListExecInstances 实时观测进程的在跑实例集（ADR-0067 实例锚定）：
@@ -54,9 +56,10 @@ service ExecService {
   // 升序确定性。空集 = 本进程无在跑实例（观测行，非错误）。
   rpc ListExecInstances(ListExecInstancesRequest) returns (ListExecInstancesResponse) {
     option (google.api.http) = { get: "/v1/apps/{app_id}/exec/instances" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "exec" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["exec:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
 }

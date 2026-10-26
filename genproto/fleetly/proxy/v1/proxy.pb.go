@@ -495,7 +495,7 @@ var File_fleetly_proxy_v1_proxy_proto protoreflect.FileDescriptor
 
 const file_fleetly_proxy_v1_proxy_proto_rawDesc = "" +
 	"\n" +
-	"\x1cfleetly/proxy/v1/proxy.proto\x12\x10fleetly.proxy.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"\x8b\x02\n" +
+	"\x1cfleetly/proxy/v1/proxy.proto\x12\x10fleetly.proxy.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x17grpcapi/v1/policy.proto\"\x8b\x02\n" +
 	"\x05Route\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x10\n" +
 	"\x03seq\x18\v \x01(\x03R\x03seq\x12\x1d\n" +
@@ -537,20 +537,21 @@ const file_fleetly_proxy_v1_proxy_proto_rawDesc = "" +
 	"\x06routes\x18\x01 \x03(\v2\x17.fleetly.proxy.v1.RouteR\x06routes\"$\n" +
 	"\x12DeleteRouteRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"\x15\n" +
-	"\x13DeleteRouteResponse2\xa4\x03\n" +
-	"\rRoutesService\x12\x83\x01\n" +
-	"\vCreateRoute\x12$.fleetly.proxy.v1.CreateRouteRequest\x1a%.fleetly.proxy.v1.CreateRouteResponse\"'\xea\xc4\x19\x0e\b\x03\"\n" +
+	"\x13DeleteRouteResponse2\xe5\x03\n" +
+	"\rRoutesService\x12\x98\x01\n" +
+	"\vCreateRoute\x12$.fleetly.proxy.v1.CreateRouteRequest\x1a%.fleetly.proxy.v1.CreateRouteResponse\"<\xda\xf0\x19#\n" +
+	"\x17B\x15\n" +
+	"\x05scope\"\froutes:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x0f:\x01*\"\n" +
+	"/v1/routes\x12\x91\x01\n" +
 	"\n" +
-	"\x06routes\x10\x02\x82\xd3\xe4\x93\x02\x0f:\x01*\"\n" +
-	"/v1/routes\x12}\n" +
-	"\n" +
-	"ListRoutes\x12#.fleetly.proxy.v1.ListRoutesRequest\x1a$.fleetly.proxy.v1.ListRoutesResponse\"$\xea\xc4\x19\x0e\b\x03\"\n" +
-	"\n" +
-	"\x06routes\x10\x01\x82\xd3\xe4\x93\x02\f\x12\n" +
-	"/v1/routes\x12\x85\x01\n" +
-	"\vDeleteRoute\x12$.fleetly.proxy.v1.DeleteRouteRequest\x1a%.fleetly.proxy.v1.DeleteRouteResponse\")\xea\xc4\x19\x0e\b\x03\"\n" +
-	"\n" +
-	"\x06routes\x10\x03\x82\xd3\xe4\x93\x02\x11*\x0f/v1/routes/{id}\x1a\x06\xf2\xc4\x19\x02\b\x03B\x96\x01\x92ARRP\n" +
+	"ListRoutes\x12#.fleetly.proxy.v1.ListRoutesRequest\x1a$.fleetly.proxy.v1.ListRoutesResponse\"8\xda\xf0\x19\"\n" +
+	"\x16B\x14\n" +
+	"\x05scope\"\vroutes:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\f\x12\n" +
+	"/v1/routes\x12\x9a\x01\n" +
+	"\vDeleteRoute\x12$.fleetly.proxy.v1.DeleteRouteRequest\x1a%.fleetly.proxy.v1.DeleteRouteResponse\">\xda\xf0\x19#\n" +
+	"\x17B\x15\n" +
+	"\x05scope\"\froutes:admin\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x11*\x0f/v1/routes/{id}\x1a\b\xd2\xf0\x19\x04\n" +
+	"\x02 \x01B\x96\x01\x92ARRP\n" +
 	"\adefault\x12E\n" +
 	"\x1dAn unexpected error response.\x12$\n" +
 	"\"\x1a .fleetly.shared.v1.ErrorResponseZ?github.com/fleetlyrun/fleetly/genproto/fleetly/proxy/v1;proxyv1b\x06proto3"

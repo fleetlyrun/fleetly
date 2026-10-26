@@ -165,7 +165,10 @@ func newHarness(t testing.TB, autostart bool, mutators ...EngineOption) *Harness
 	if err != nil {
 		t.Fatalf("apitest: policy set: %v", err)
 	}
-	authenticator := authn.NewAuthenticator(db, assembly.NewAuthnRepos(db), policySet, assembly.ScopeResources(), log)
+	authenticator, err := authn.NewAuthenticator(db, assembly.NewAuthnRepos(db), policySet, assembly.ScopeResources(), log)
+	if err != nil {
+		t.Fatalf("apitest: authenticator: %v", err)
+	}
 	enforcer := idem.NewEnforcer(db, idemrepo.New(db.Clock(), db.Runner()), log)
 	limiter := governance.NewRateLimiter(db.Clock(), governance.DefaultRateWindow, governance.DefaultRateBudget)
 	freeze := governance.NewFreezeGuard(db, freezerepo.New(db.Clock(), db.Runner()), assembly.NewAnchor(db), log)

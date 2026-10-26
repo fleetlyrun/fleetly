@@ -1,9 +1,12 @@
 package assembly
 
 import (
-	"google.golang.org/protobuf/reflect/protoreflect"
+	"context"
 
-	"github.com/lynx-go/grpcapi/authz"
+	"github.com/lynx-go/grpcapi/policy"
+	"github.com/lynx-go/grpcapi/policy/protopolicy"
+	"github.com/lynx-go/grpcapi/policy/scope"
+	"google.golang.org/protobuf/reflect/protoreflect"
 
 	automationv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/automation/v1"
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
@@ -15,7 +18,7 @@ import (
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
 )
 
-// authzFiles 是 authz 策略收集的业务 proto 清单（单一事实源；新增服务
+// authzFiles 是授权策略收集的业务 proto 清单（单一事实源；新增服务
 // proto 只登记此处，NewGRPCServer 的 fail-closed 断言经 PolicySet 覆盖
 // 同一集合）。
 func authzFiles() []protoreflect.FileDescriptor {
@@ -39,7 +42,7 @@ func authzFiles() []protoreflect.FileDescriptor {
 
 // ScopeResources 是 Scope 词表（CONTEXT.md Scope 词条：resource:action，
 // write 蕴含 read）。注解先行、执法随账号批（F0.5~F0.7）接管——词表现在
-// 登记保证 authz.Build 对 scope 声明的资源校验即刻生效（fail-closed）。
+// 登记保证 policy.Build 对 scope 声明的资源校验即刻生效（fail-closed）。
 // platform 是集群面资源（C3）：EnrollNode 的活 join token 等价集群成员权，
 // 独立于 nodes 运维面（drain/cordon 可逆，join 材料不可逆——白送即失守）。
 func ScopeResources() []string {
@@ -52,11 +55,27 @@ func ScopeResources() []string {
 	}
 }
 
-// NewPolicySet 从 proto 注解收集全量方法授权策略（authz.Build；流式面
-// logs/events 显式放行——拦截器按流首元数据执法，随账号批接入）。
-func NewPolicySet() (*authz.PolicySet, error) {
-	return authz.Build(authzFiles(), authz.Options{
-		Vocabulary:     authz.Vocabulary{ScopeResources: ScopeResources()},
-		AllowStreaming: true,
+// NewPolicySet 从 proto 注解（grpcapi.v1 policy.proto 声明）收集全量方法
+// 授权策略（policy.Build + protopolicy；scope kind 消费 "scopes" claim、
+// 词表域 "scope" 执法资源声明）。执行面视图化在 authn.ViewRules——流式
+// 面走同款策略（拦截器按流首元数据执法）。
+func NewPolicySet() (*policy.Set, error) {
+	reg, err := policy.NewRegistry(
+		policy.KindAuthenticated(),
+		policy.KindClaim(),
+		policy.KindPrincipal(),
+		scope.Kind(scope.Options{
+			Claim:             "scopes",
+			VocabularyDomain:  "scope",
+			RequireVocabulary: true,
+		}),
+	)
+	if err != nil {
+		return nil, err
+	}
+	return policy.Build(context.Background(), policy.FromFiles(authzFiles()...), policy.Options{
+		Provider:   protopolicy.New(protopolicy.Options{}),
+		Registry:   reg,
+		Vocabulary: policy.NewVocabulary(map[string][]string{"scope": ScopeResources()}),
 	})
 }

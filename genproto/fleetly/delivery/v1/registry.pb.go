@@ -301,7 +301,7 @@ var File_fleetly_delivery_v1_registry_proto protoreflect.FileDescriptor
 
 const file_fleetly_delivery_v1_registry_proto_rawDesc = "" +
 	"\n" +
-	"\"fleetly/delivery/v1/registry.proto\x12\x13fleetly.delivery.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"x\n" +
+	"\"fleetly/delivery/v1/registry.proto\x12\x13fleetly.delivery.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x17grpcapi/v1/policy.proto\"x\n" +
 	"\x1aListRegistryCatalogRequest\x12Z\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
@@ -326,12 +326,15 @@ const file_fleetly_delivery_v1_registry_proto_rawDesc = "" +
 	"\n" +
 	"repository\x18\x01 \x01(\tR\n" +
 	"repository\x124\n" +
-	"\x04tags\x18\x02 \x03(\v2 .fleetly.delivery.v1.RegistryTagR\x04tags2\xf4\x02\n" +
-	"\x0fRegistryService\x12\xaa\x01\n" +
-	"\x13ListRegistryCatalog\x12/.fleetly.delivery.v1.ListRegistryCatalogRequest\x1a0.fleetly.delivery.v1.ListRegistryCatalogResponse\"0\xea\xc4\x19\x10\b\x03\"\f\n" +
-	"\bregistry\x10\x01\x82\xd3\xe4\x93\x02\x16\x12\x14/v1/registry/catalog\x12\xab\x01\n" +
-	"\x10ListRegistryTags\x12,.fleetly.delivery.v1.ListRegistryTagsRequest\x1a-.fleetly.delivery.v1.ListRegistryTagsResponse\":\xea\xc4\x19\x10\b\x03\"\f\n" +
-	"\bregistry\x10\x01\x82\xd3\xe4\x93\x02 \x12\x1e/v1/registry/{repository}/tags\x1a\x06\xf2\xc4\x19\x02\b\x03BGZEgithub.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1;deliveryv1b\x06proto3"
+	"\x04tags\x18\x02 \x03(\v2 .fleetly.delivery.v1.RegistryTagR\x04tags2\x9e\x03\n" +
+	"\x0fRegistryService\x12\xbe\x01\n" +
+	"\x13ListRegistryCatalog\x12/.fleetly.delivery.v1.ListRegistryCatalogRequest\x1a0.fleetly.delivery.v1.ListRegistryCatalogResponse\"D\xda\xf0\x19$\n" +
+	"\x18B\x16\n" +
+	"\x05scope\"\rregistry:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x16\x12\x14/v1/registry/catalog\x12\xbf\x01\n" +
+	"\x10ListRegistryTags\x12,.fleetly.delivery.v1.ListRegistryTagsRequest\x1a-.fleetly.delivery.v1.ListRegistryTagsResponse\"N\xda\xf0\x19$\n" +
+	"\x18B\x16\n" +
+	"\x05scope\"\rregistry:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02 \x12\x1e/v1/registry/{repository}/tags\x1a\b\xd2\xf0\x19\x04\n" +
+	"\x02 \x01BGZEgithub.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1;deliveryv1b\x06proto3"
 
 var (
 	file_fleetly_delivery_v1_registry_proto_rawDescOnce sync.Once

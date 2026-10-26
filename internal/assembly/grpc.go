@@ -10,8 +10,8 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
-	"github.com/lynx-go/grpcapi/authz"
 	grpcapiinterceptor "github.com/lynx-go/grpcapi/interceptor"
+	"github.com/lynx-go/grpcapi/policy"
 	"github.com/lynx-go/lynx"
 	lynxgrpc "github.com/lynx-go/lynx/server/grpc"
 
@@ -126,14 +126,14 @@ func newValidateInterceptor() grpc.UnaryServerInterceptor {
 	}
 }
 
-// NewGRPCServer 装配控制面 gRPC 服务：grpcapi 槽位链（ClientInfo 打头、
-// Auth 居中、Validate 收尾）+ 流式同款执法 + 服务注册 +
-// AssertAllRegisteredHavePolicy（已注册方法缺 authz 策略即拒绝启动，
+// NewGRPCServer 装配控制面 gRPC 服务：grpcapi Stage 链（clientinfo 打头、
+// authn 居中、validate 收尾）+ 流式同款执法 + 服务注册 +
+// AssertAllRegisteredHavePolicy（已注册方法缺授权策略即拒绝启动，
 // fail-closed，见 ADR-0021）。
 func NewGRPCServer(
 	app lynx.App,
 	cfg *config.AppConfig,
-	policySet *authz.PolicySet,
+	policySet *policy.Set,
 	authenticator *authn.Authenticator,
 	enforcer *idem.Enforcer,
 	limiter *governance.RateLimiter,
@@ -214,26 +214,29 @@ func sanitizeExitError(ctx context.Context, logger *slog.Logger, err error, meth
 // NewInterceptors 构造完整拦截器链（unary + 流式）——assembly 服务器与
 // apitest 夹具共用（夹具不经 lynx，但必须走同一条执法链，否则测试面与
 // 生产面漂移）。链序（ADR-0017/0024）：出口纪律（链头，P0-3——E_INTERNAL
-// 三面统一收口）→ 执法链（clientinfo/auth/validate）→ 冻结拦截器（拒绝
+// 三面统一收口）→ 执法链（clientinfo/authn/validate）→ 冻结拦截器（拒绝
 // 不占幂等记录）→ 幂等执法器（重放不消耗业务超时预算、鉴权失败不占幂等
 // 记录）→ 创建速率限制器（仅实际执行计数——重放不消耗预算）→ 请求超时。
 // 流式链：出口纪律 → authn → 冻结（首帧 RecvMsg 执法，F1.10 起
 // client-streaming 写面在封禁面——ADR-0019 附录 A.2）；幂等/速率/超时保持
 // unary 面（上传的自然幂等=内容寻址，限额刹车=大小上限与项目存量配额，
 // 流生命周期由取消信号管理）。
-func NewInterceptors(logger *slog.Logger, policySet *authz.PolicySet, authenticator *authn.Authenticator, enforcer *idem.Enforcer, limiter *governance.RateLimiter, freeze *governance.FreezeGuard) ([]grpc.UnaryServerInterceptor, []grpc.StreamServerInterceptor, error) {
+func NewInterceptors(logger *slog.Logger, policySet *policy.Set, authenticator *authn.Authenticator, enforcer *idem.Enforcer, limiter *governance.RateLimiter, freeze *governance.FreezeGuard) ([]grpc.UnaryServerInterceptor, []grpc.StreamServerInterceptor, error) {
 	chain, err := grpcapiinterceptor.Assemble(
-		grpcapiinterceptor.ChainItem{
-			Slot:        grpcapiinterceptor.SlotClientInfo,
-			Interceptor: grpcapiinterceptor.NewClientInfo(grpcapiinterceptor.ClientInfoConfig{}).Unary(),
+		grpcapiinterceptor.Stage{
+			Name:  grpcapiinterceptor.StageClientInfo,
+			Order: grpcapiinterceptor.OrderClientInfo,
+			Unary: grpcapiinterceptor.NewClientInfo(grpcapiinterceptor.ClientInfoConfig{}).Unary(),
 		},
-		grpcapiinterceptor.ChainItem{
-			Slot:        grpcapiinterceptor.SlotAuth,
-			Interceptor: authenticator.Unary(),
+		grpcapiinterceptor.Stage{
+			Name:  grpcapiinterceptor.StageAuthn,
+			Order: grpcapiinterceptor.OrderAuthn,
+			Unary: authenticator.Unary(),
 		},
-		grpcapiinterceptor.ChainItem{
-			Slot:        grpcapiinterceptor.SlotValidate,
-			Interceptor: newValidateInterceptor(),
+		grpcapiinterceptor.Stage{
+			Name:  grpcapiinterceptor.StageValidate,
+			Order: grpcapiinterceptor.OrderValidate,
+			Unary: newValidateInterceptor(),
 		},
 	)
 	if err != nil {
@@ -241,20 +244,20 @@ func NewInterceptors(logger *slog.Logger, policySet *authz.PolicySet, authentica
 	}
 	// 出口纪律挂链头（最外层）：执法链自身的失败（幂等查询失败等）与
 	// handler 失败同走收口面，不漏内部细节。
-	chain = append([]grpc.UnaryServerInterceptor{newErrorExitInterceptor(logger)}, chain...)
+	unary := append([]grpc.UnaryServerInterceptor{newErrorExitInterceptor(logger)}, chain.Unary()...)
 	if freeze != nil {
-		chain = append(chain, freeze.Unary())
+		unary = append(unary, freeze.Unary())
 	}
-	chain = append(chain, enforcer.Unary())
-	chain = append(chain, limiter.Unary())
-	// 请求级超时挂链尾（最贴近 handler）：执法链（clientinfo/auth/validate）
+	unary = append(unary, enforcer.Unary())
+	unary = append(unary, limiter.Unary())
+	// 请求级超时挂链尾（最贴近 handler）：执法链（clientinfo/authn/validate）
 	// 在 deadline 外运行——超时的请求同样要过完整的执法与未来的审计/用量
 	// 面，且鉴权查询不被请求 deadline 误杀；流式链不加超时（follow 面与
 	// 上传流面豁免——生命周期由取消信号管理，上传另有 15m 流硬上限）。
-	chain = append(chain, newUnaryTimeoutInterceptor(grpcUnaryTimeout))
+	unary = append(unary, newUnaryTimeoutInterceptor(grpcUnaryTimeout))
 	stream := []grpc.StreamServerInterceptor{newStreamErrorExitInterceptor(logger), authenticator.Stream()}
 	if freeze != nil {
 		stream = append(stream, freeze.Stream())
 	}
-	return chain, stream, nil
+	return unary, stream, nil
 }

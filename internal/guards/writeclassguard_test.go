@@ -27,11 +27,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/lynx-go/grpcapi/authz"
-
+	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/application/idem"
 	"github.com/fleetlyrun/fleetly/internal/assembly"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity"
 )
 
 // writeClassDeclarations 是 DECLARATION 桶（声明写，53 条）——经部署管线
@@ -522,22 +522,25 @@ func TestWriteClassConvergenceFaceByDomain(t *testing.T) {
 // 断言 ACTION ⇒ WRITE）但必须落 actionReadScopeExemptions 豁免面；READ
 // READ 桶与 PUBLIC/无 scope 面不在本守卫域（读型动词方向漂移由 scopeguard 执法）。
 func TestWriteClassScopeDirection(t *testing.T) {
-	policy, err := assembly.NewPolicySet()
+	set, err := assembly.NewPolicySet()
 	if err != nil {
 		t.Fatalf("policy build failed: %v", err)
 	}
-	methods := policy.Methods()
+	methods, err := authn.ViewRules(set)
+	if err != nil {
+		t.Fatalf("policy view failed: %v", err)
+	}
 	if len(methods) < 150 {
 		t.Fatalf("policy surface suspiciously small (%d methods) — guard is blind, fix the scan", len(methods))
 	}
 
 	usedExemptions := map[string]bool{}
 	for _, p := range methods {
-		if p.Access != authz.AccessServer || p.Scope == nil {
-			continue // PUBLIC/PERMISSION 面与无 scope 方法不在本守卫域
+		if p.Public || p.Scope == nil {
+			continue // PUBLIC 面与无 scope 方法不在本守卫域
 		}
 		if _, isAction := writeClassActions[p.Method]; isAction {
-			if p.Scope.Op != authz.ScopeRead {
+			if p.Scope.Op != identity.OpRead {
 				continue // WRITE/ADMIN 方向对 ACTION 天然合法
 			}
 			reason, ok := actionReadScopeExemptions[p.Method]
@@ -550,7 +553,7 @@ func TestWriteClassScopeDirection(t *testing.T) {
 			continue
 		}
 		if writeClassDeclarations[p.Method] {
-			if p.Scope.Op == authz.ScopeRead {
+			if p.Scope.Op == identity.OpRead {
 				t.Errorf("DECLARATION RPC %s declares scope %s:%s — a declaration write is always the authorized write face (WRITE/ADMIN); a read scope on it is the fail-open hole this guard exists to close (ADR-0081 §4.3)",
 					p.Method, p.Scope.Resource, p.Scope.Op)
 			}

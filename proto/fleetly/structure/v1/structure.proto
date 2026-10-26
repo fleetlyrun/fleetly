@@ -11,7 +11,7 @@ import "buf/validate/validate.proto";
 import "fleetly/spec/v1/spec.proto";
 import "google/api/annotations.proto";
 import "protoc-gen-openapiv2/options/annotations.proto";
-import "grpcapi/v1/authz.proto";
+import "grpcapi/v1/policy.proto";
 
 option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
   responses: {
@@ -26,53 +26,59 @@ option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
 // ProjectsService：Project 聚合 CRUD（scope 注解 + authn 拦截器执法；
 // 服务缺省档 SERVER——新增方法缺注解即启动红，不静默放行）。
 service ProjectsService {
-  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+  option (grpcapi.v1.service) = { default_policy: { authenticated: true } };
 
   rpc CreateProject(CreateProjectRequest) returns (CreateProjectResponse) {
     option (google.api.http) = { post: "/v1/projects" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "projects" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["projects:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   rpc GetProject(GetProjectRequest) returns (GetProjectResponse) {
     option (google.api.http) = { get: "/v1/projects/{id}" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "projects" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["projects:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   rpc ListProjects(ListProjectsRequest) returns (ListProjectsResponse) {
     option (google.api.http) = { get: "/v1/projects" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "projects" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["projects:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   rpc DeleteProject(DeleteProjectRequest) returns (DeleteProjectResponse) {
     option (google.api.http) = { delete: "/v1/projects/{id}" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "projects" op: SCOPE_OP_ADMIN }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["projects:admin"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
 }
 
 service AppsService {
-  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+  option (grpcapi.v1.service) = { default_policy: { authenticated: true } };
 
   rpc CreateApp(CreateAppRequest) returns (CreateAppResponse) {
     option (google.api.http) = { post: "/v1/apps" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "apps" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["apps:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   rpc GetApp(GetAppRequest) returns (GetAppResponse) {
     option (google.api.http) = { get: "/v1/apps/{id}" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "apps" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["apps:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   // GetAppSpec 回读 App 当前冻结 Spec（最新 Revision 的 protojson 规范
@@ -80,77 +86,86 @@ service AppsService {
   // 反查 / Volume 挂载反查的数据源（IA v3 二期②）。
   rpc GetAppSpec(GetAppSpecRequest) returns (GetAppSpecResponse) {
     option (google.api.http) = { get: "/v1/apps/{id}/spec" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "apps" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["apps:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   rpc ListApps(ListAppsRequest) returns (ListAppsResponse) {
     option (google.api.http) = { get: "/v1/apps" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "apps" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["apps:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   rpc DeleteApp(DeleteAppRequest) returns (DeleteAppResponse) {
     option (google.api.http) = { delete: "/v1/apps/{id}" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "apps" op: SCOPE_OP_ADMIN }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["apps:admin"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
 }
 
 // SecretsService：值永不回显——响应只携带指纹（ADR-0014）。
 service SecretsService {
-  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+  option (grpcapi.v1.service) = { default_policy: { authenticated: true } };
 
   rpc PutSecret(PutSecretRequest) returns (PutSecretResponse) {
     option (google.api.http) = { put: "/v1/secrets" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "secrets" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["secrets:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   rpc ListSecrets(ListSecretsRequest) returns (ListSecretsResponse) {
     option (google.api.http) = { get: "/v1/secrets" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "secrets" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["secrets:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   rpc DeleteSecret(DeleteSecretRequest) returns (DeleteSecretResponse) {
     option (google.api.http) = { delete: "/v1/secrets/{project_id}/{name}" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "secrets" op: SCOPE_OP_ADMIN }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["secrets:admin"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
 }
 
 // ConfigsService：版本化挂载文件（可回读）。
 service ConfigsService {
-  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+  option (grpcapi.v1.service) = { default_policy: { authenticated: true } };
 
   rpc PutConfig(PutConfigRequest) returns (PutConfigResponse) {
     option (google.api.http) = { put: "/v1/configs" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "configs" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["configs:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   rpc GetConfig(GetConfigRequest) returns (GetConfigResponse) {
     option (google.api.http) = { get: "/v1/configs/{project_id}/{name}" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "configs" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["configs:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   rpc ListConfigs(ListConfigsRequest) returns (ListConfigsResponse) {
     option (google.api.http) = { get: "/v1/configs" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "configs" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["configs:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
 }
@@ -160,27 +175,30 @@ service ConfigsService {
 // 下、App 层 env 覆盖，ADR-0027），改共享变量需重部署才生效——响应携带
 // 受影响 App 提示（近似口径）。
 service SharedVariablesService {
-  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+  option (grpcapi.v1.service) = { default_policy: { authenticated: true } };
 
   rpc PutSharedVariable(PutSharedVariableRequest) returns (PutSharedVariableResponse) {
     option (google.api.http) = { put: "/v1/shared-variables" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "shared_variables" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["shared_variables:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   rpc ListSharedVariables(ListSharedVariablesRequest) returns (ListSharedVariablesResponse) {
     option (google.api.http) = { get: "/v1/shared-variables" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "shared_variables" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["shared_variables:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   rpc DeleteSharedVariable(DeleteSharedVariableRequest) returns (DeleteSharedVariableResponse) {
     option (google.api.http) = { delete: "/v1/shared-variables/{project_id}/{name}" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "shared_variables" op: SCOPE_OP_ADMIN }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["shared_variables:admin"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
 }
@@ -189,46 +207,51 @@ service SharedVariablesService {
 // 的 env 之家（push 合并与 overlay 都过冻结咽喉，store 值每次重合成）。
 // 改变量不触发自动重部署；重部署（Redeploy/Deploy/push）取新值。
 service AppVariablesService {
-  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+  option (grpcapi.v1.service) = { default_policy: { authenticated: true } };
 
   rpc PutAppVariable(PutAppVariableRequest) returns (PutAppVariableResponse) {
     option (google.api.http) = { put: "/v1/app-variables" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "app_variables" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["app_variables:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   rpc ListAppVariables(ListAppVariablesRequest) returns (ListAppVariablesResponse) {
     option (google.api.http) = { get: "/v1/app-variables" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "app_variables" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["app_variables:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   rpc DeleteAppVariable(DeleteAppVariableRequest) returns (DeleteAppVariableResponse) {
     option (google.api.http) = { delete: "/v1/app-variables/{app_id}/{name}" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "app_variables" op: SCOPE_OP_ADMIN }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["app_variables:admin"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
 }
 
 service VolumesService {
-  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+  option (grpcapi.v1.service) = { default_policy: { authenticated: true } };
 
   rpc CreateVolume(CreateVolumeRequest) returns (CreateVolumeResponse) {
     option (google.api.http) = { post: "/v1/volumes" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "volumes" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["volumes:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   rpc ListVolumes(ListVolumesRequest) returns (ListVolumesResponse) {
     option (google.api.http) = { get: "/v1/volumes" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "volumes" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["volumes:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   // DeleteVolume 删除未挂载卷（IA v3 二期⑤b）：受理位前置引用预检——项目
@@ -238,9 +261,10 @@ service VolumesService {
   // 数据兜底永不级联，调用方披露）。
   rpc DeleteVolume(DeleteVolumeRequest) returns (DeleteVolumeResponse) {
     option (google.api.http) = { delete: "/v1/volumes/{id}" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "volumes" op: SCOPE_OP_ADMIN }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["volumes:admin"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
 }
@@ -249,29 +273,32 @@ service VolumesService {
 // 响应只携带 Secret 名与去密码连接面（host/port）；App 经 secret_refs
 // 引用 credentials_ref 取完整连接 URL。
 service DatabasesService {
-  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+  option (grpcapi.v1.service) = { default_policy: { authenticated: true } };
 
   rpc CreateDatabase(CreateDatabaseRequest) returns (CreateDatabaseResponse) {
     option (google.api.http) = { post: "/v1/databases" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "databases" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["databases:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   rpc GetDatabase(GetDatabaseRequest) returns (GetDatabaseResponse) {
     option (google.api.http) = { get: "/v1/databases/{id}" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "databases" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["databases:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   // ListDatabases 新→旧分页（after_database_seq 游标 = seq 创建序，
   // ADR-0026 惯例）。
   rpc ListDatabases(ListDatabasesRequest) returns (ListDatabasesResponse) {
     option (google.api.http) = { get: "/v1/databases" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "databases" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["databases:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   // DeleteDatabase 收口删除（ADR-0029 决策 8）：拆载体 → tombstone 一
@@ -279,9 +306,10 @@ service DatabasesService {
   // 备份保留义）。
   rpc DeleteDatabase(DeleteDatabaseRequest) returns (DeleteDatabaseResponse) {
     option (google.api.http) = { delete: "/v1/databases/{id}" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "databases" op: SCOPE_OP_ADMIN }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["databases:admin"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   // TriggerBackup 手动触发（ADR-0039）：立即铸一行 pending 台账并 Kick
@@ -289,34 +317,38 @@ service DatabasesService {
   // ListBackups 观测（触发不等执行）。
   rpc TriggerBackup(TriggerBackupRequest) returns (TriggerBackupResponse) {
     option (google.api.http) = { post: "/v1/databases/{database_id}/backups" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "databases" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["databases:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   // ListBackups 新→旧分页（ADR-0026 after_* + limit）。
   rpc ListBackups(ListBackupsRequest) returns (ListBackupsResponse) {
     option (google.api.http) = { get: "/v1/databases/{database_id}/backups" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "databases" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["databases:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   // VerifyBackup 重算对象摘要比对回执（ADR-0039 决策 8）。
   rpc VerifyBackup(VerifyBackupRequest) returns (VerifyBackupResponse) {
     option (google.api.http) = { post: "/v1/backups/{backup_id}/verify" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "databases" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["databases:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   // DownloadBackup 流式下载备份对象（Verify 同源存储读面；分块字节经
   // gateway 帧化，消费端重组——IA v3 二期⑤）。仅 succeeded 台账行可下载。
   rpc DownloadBackup(DownloadBackupRequest) returns (stream DownloadBackupResponse) {
     option (google.api.http) = { get: "/v1/databases/{database_id}/backups/{backup_id}/download" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "databases" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["databases:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   // BrowseDatabase 铸造数据浏览器按需会话（F3.6，ADR-0051）：静态 scope 是
@@ -325,9 +357,10 @@ service DatabasesService {
   // 用途）——兑换入口即 URL 本身。会话硬 TTL 30min、空闲 10min 回收。
   rpc BrowseDatabase(BrowseDatabaseRequest) returns (BrowseDatabaseResponse) {
     option (google.api.http) = { post: "/v1/databases/{database_id}/browse" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "databases" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["databases:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   // RotateDatabasePassword 轮换数据库凭证（IA v3 二期⑤b）：方言级数据面
@@ -338,9 +371,10 @@ service DatabasesService {
   // 必须披露。要求库在服；新连接串只进 Secret（与创建同口径，永不回显）。
   rpc RotateDatabasePassword(RotateDatabasePasswordRequest) returns (RotateDatabasePasswordResponse) {
     option (google.api.http) = { post: "/v1/databases/{database_id}/rotate-password" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "databases" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["databases:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
 }
@@ -349,20 +383,22 @@ service DatabasesService {
 // 附录 A：成员③显式跨 Project 引用——双向声明、接收方批准、撤销即时
 // 隔离）。peer 动词 scope 复用 networks 资源（授权面等价于"管理网络"）。
 service NetworksService {
-  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+  option (grpcapi.v1.service) = { default_policy: { authenticated: true } };
 
   rpc CreateNetwork(CreateNetworkRequest) returns (CreateNetworkResponse) {
     option (google.api.http) = { post: "/v1/networks" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "networks" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["networks:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   rpc ListNetworks(ListNetworksRequest) returns (ListNetworksResponse) {
     option (google.api.http) = { get: "/v1/networks" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "networks" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["networks:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   // RebuildNetwork 是网络重建维护动词（ADR-0046）：平台中介地删除并按
@@ -372,52 +408,58 @@ service NetworksService {
   // 在幂等执法面（Idempotency-Key 头，ADR-0024）；变更冻结期拒绝。
   rpc RebuildNetwork(RebuildNetworkRequest) returns (RebuildNetworkResponse) {
     option (google.api.http) = { post: "/v1/networks/rebuild" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "networks" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["networks:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   // DeclareNetworkPeer 是挂靠方声明（落 pending 行）：peer 项目请求挂靠
   // 目标网络。在幂等执法面（Idempotency-Key 头，ADR-0024）。
   rpc DeclareNetworkPeer(DeclareNetworkPeerRequest) returns (DeclareNetworkPeerResponse) {
     option (google.api.http) = { post: "/v1/networks/peers" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "networks" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["networks:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   // ApproveNetworkPeer 是接收方批准（pending → approved）：网络归属方
   // 同意挂靠。批准前引用不可投影（strict 投影 fail-closed）。
   rpc ApproveNetworkPeer(ApproveNetworkPeerRequest) returns (ApproveNetworkPeerResponse) {
     option (google.api.http) = { post: "/v1/networks/peers/{id}/approve" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "networks" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["networks:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   // RevokeNetworkPeer 撤销（任一侧；幂等）：即时隔离——引擎对受影响
   // App 以 isolate 模式重收敛剥离附件（断存量，ADR-0013 附录 A.4）。
   rpc RevokeNetworkPeer(RevokeNetworkPeerRequest) returns (RevokeNetworkPeerResponse) {
     option (google.api.http) = { post: "/v1/networks/peers/{id}/revoke" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "networks" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["networks:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   rpc GetNetworkPeer(GetNetworkPeerRequest) returns (GetNetworkPeerResponse) {
     option (google.api.http) = { get: "/v1/networks/peers/{id}" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "networks" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["networks:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   // ListNetworkPeers 新→旧分页（游标 = seq 创建序；network_id /
   // peer_project_id 过滤可选——接收方与挂靠方两侧视图同面）。
   rpc ListNetworkPeers(ListNetworkPeersRequest) returns (ListNetworkPeersResponse) {
     option (google.api.http) = { get: "/v1/networks/peers" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "networks" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["networks:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
 }

@@ -116,7 +116,7 @@ func wireBootstrap(app lynx.App, info buildinfo.BuildInfo) (*boot.Bootstrap, fun
 	service := NewEngineService(engine)
 	enforcer := NewIdemEnforcer(db, app)
 	retentionJanitorService := NewRetentionJanitorService(enforcer, db, appConfig, engine, app)
-	policySet, err := NewPolicySet()
+	set, err := NewPolicySet()
 	if err != nil {
 		cleanup9()
 		cleanup8()
@@ -130,7 +130,19 @@ func wireBootstrap(app lynx.App, info buildinfo.BuildInfo) (*boot.Bootstrap, fun
 		return nil, nil, err
 	}
 	repos := NewAuthnRepos(db)
-	authenticator := NewAuthenticator(db, repos, policySet, app)
+	authenticator, err := NewAuthenticator(db, repos, set, app)
+	if err != nil {
+		cleanup9()
+		cleanup8()
+		cleanup7()
+		cleanup6()
+		cleanup5()
+		cleanup4()
+		cleanup3()
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
 	rateLimiter := NewRateLimiter(db)
 	freezeGuard := NewFreezeGuard(db, app)
 	v2 := NewHealthCheckers(runtime, proxy, registry, logging, metrics, objectStore)
@@ -148,7 +160,7 @@ func wireBootstrap(app lynx.App, info buildinfo.BuildInfo) (*boot.Bootstrap, fun
 		cleanup()
 		return nil, nil, err
 	}
-	server, err := NewGRPCServer(app, appConfig, policySet, authenticator, enforcer, rateLimiter, freezeGuard, systemgrpcService, services)
+	server, err := NewGRPCServer(app, appConfig, set, authenticator, enforcer, rateLimiter, freezeGuard, systemgrpcService, services)
 	if err != nil {
 		cleanup9()
 		cleanup8()

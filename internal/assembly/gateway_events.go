@@ -7,6 +7,8 @@ package assembly
 // 订阅与票据兑换经 EventStreamSource 与 gRPC StreamEvents 同源。
 
 import (
+	"github.com/lynx-go/grpcapi/gateway"
+
 	"bytes"
 	"context"
 	"encoding/json"
@@ -54,7 +56,7 @@ func newEventsSSEHandler(src *fleetlygrpc.EventStreamSource) http.Handler {
 		// 断档预检先于 200/SSE 头（410 走统一错误信封；状态行一旦发出，
 		// 错误只能以 SSE error 帧收口，410 语义就丢了）。
 		if err := src.Gone(r.Context(), afterSeq); err != nil {
-			newGatewayErrorHandler(nil)(r.Context(), nil, nil, w, r, err)
+			gateway.WriteError(w, r, err, newGatewayErrorEncoder(nil))
 			return
 		}
 
@@ -126,7 +128,7 @@ func newEventsSSEHandler(src *fleetlygrpc.EventStreamSource) http.Handler {
 				// 流开始前失败（断档等）走 HTTP 状态面；开始后只能以 SSE
 				// error 帧收口（状态行已发出）。
 				if !wrote {
-					newGatewayErrorHandler(nil)(r.Context(), nil, nil, w, r, err)
+					gateway.WriteError(w, r, err, newGatewayErrorEncoder(nil))
 				} else {
 					_, _ = fmt.Fprintf(w, "event: error\ndata: %s\n\n", sseErrorPayload(err)) //nolint:errcheck // 客户端已断则无处置面
 					flusher.Flush()

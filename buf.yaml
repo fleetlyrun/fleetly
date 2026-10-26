@@ -28,6 +28,8 @@ breaking:
   # Node.relay_agent_version→relay_version、EnrollNodeResponse.agent_command
   # →relay_command（字段号与类型不动，词汇更名非契约破坏）。豁免仅此两
   # 规则此一文件、不开全局口子；落地 origin/main 后本条目可移除。
+  #（依赖文件的删除豁免不在此配——grpcapi v0.4.0 批起 lint:proto 用
+  # --exclude-imports 只比自有契约面，见 mise.toml 与 ADR-0084。）
   ignore_only:
     FIELD_SAME_NAME:
       - proto/fleetly/runtime/v1/runtime.proto

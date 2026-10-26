@@ -14,9 +14,15 @@ package guards
 // （backend job）下 origin/main 可解析 → 逐 commit 生效；push 到 main 后
 // range 为空，历史窗口由 PR 门禁拦截。
 //
-// 判据：变更集含 proto/** 或 genproto/**/*.swagger.json，却不含
-// console/src/api/** 即红。swagger 的描述文本会进入生成类型（见
-// console/src/api 的 @description），故注释级 proto 变更同样要求再生成。
+// 判据（2026-10-26 收窄，grpcapi policy.proto 迁移批实证）：变更集含
+// genproto/**/*.swagger.json（console:gen 的唯一契约输入）却不含
+// console/src/api/** 即红。触发器从 proto/** 收窄到 swagger 产物：注解级
+// proto 变更（如 grpcapi.v1 授权注解换方言）swagger 字节不变、console:gen
+// 零漂移，按 proto 触发是假阳性；「改了 proto 忘跑 generate:all」的漏
+// 再生成形态由 generate:verify 的零漂移断言独立把守（该轴不归本守卫），
+// swagger→api 的晚窗才是本守卫独有价值。swagger 的描述文本会进入生成
+// 类型（见 console/src/api 的 @description），故注释级 proto 变更经
+// swagger 产物同樣被网住——只要描述真的变了。
 
 import (
 	"os"
@@ -66,11 +72,9 @@ func consoleSyncBase(t *testing.T) string {
 	return "HEAD"
 }
 
-// isProtoContractPath 报告路径是否属于 proto 契约面（proto 源或 swagger）。
-func isProtoContractPath(path string) bool {
-	if strings.HasPrefix(path, "proto/") {
-		return true
-	}
+// isSwaggerContractPath 报告路径是否属于 swagger 契约面（console:gen 的
+// 唯一输入；proto 源的新鲜度轴归 generate:verify，见文件头注）。
+func isSwaggerContractPath(path string) bool {
 	return strings.HasPrefix(path, "genproto/") && strings.HasSuffix(path, ".swagger.json")
 }
 
@@ -79,22 +83,22 @@ func isConsoleAPIPath(path string) bool {
 	return strings.HasPrefix(path, "console/src/api/")
 }
 
-// consoleSyncViolations 返回触发「proto 变更但 console/src/api 未同批」
-// 判据的变更路径（空 = 合规）。
+// consoleSyncViolations 返回触发「swagger 契约变更但 console/src/api 未
+// 同批」判据的变更路径（空 = 合规）。
 func consoleSyncViolations(paths []string) []string {
-	proto, api := false, false
+	swagger, api := false, false
 	for _, path := range paths {
-		if isProtoContractPath(path) {
-			proto = true
+		if isSwaggerContractPath(path) {
+			swagger = true
 		}
 		if isConsoleAPIPath(path) {
 			api = true
 		}
 	}
-	if proto && !api {
+	if swagger && !api {
 		var offenders []string
 		for _, path := range paths {
-			if isProtoContractPath(path) {
+			if isSwaggerContractPath(path) {
 				offenders = append(offenders, path)
 			}
 		}

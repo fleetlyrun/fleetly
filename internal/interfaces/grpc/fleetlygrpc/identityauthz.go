@@ -13,8 +13,6 @@ package fleetlygrpc
 import (
 	"context"
 
-	"github.com/lynx-go/grpcapi/authz"
-
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity"
@@ -115,7 +113,7 @@ func (s *Services) authorizeUserRead(ctx context.Context, targetUserID string) e
 //   - 平台管理员 → 放行（builtin-owner 亦只在此分支放行）；
 //   - 其余调用者：逐条比对 Role.Scopes 是否被自身 scope 覆盖（覆盖语义
 //     复用 authn.Identity.HasScope——admin ⇒ write ⇒ read 的蕴含已由
-//     identity.DotForm 展开物化）；
+//     identity.ScopeSet 展开物化）；
 //   - `*`（owner 通配）与 platform 资源 scope 在任何非平台分支一律拒绝
 //     （前者等价平台 owner，后者是平台面资源——与 handler 平台门同口径；
 //     内建 admin 模板虽携带 platform:admin，非平台管理员不得再转授）。
@@ -160,7 +158,7 @@ func authorizeScopeGrant(id *authn.Identity, scopes []identity.Scope) error {
 				"scope %s is platform-scoped; only a platform administrator may grant it", sc.String()).
 				WithSuggestion("Ask the platform owner to grant platform-scoped roles, or drop this scope.")
 		}
-		if !id.HasScope(sc.Resource, authz.ScopeOp(sc.Action)) {
+		if !id.HasScope(sc.Resource, sc.Action) {
 			return apperr.New("E_FORBIDDEN",
 				"scope %s exceeds the caller's own authority; a role grant cannot exceed what the caller holds", sc.String()).
 				WithSuggestion("Grant only scopes your own token carries (WhoAmI lists them), or ask the platform owner.")

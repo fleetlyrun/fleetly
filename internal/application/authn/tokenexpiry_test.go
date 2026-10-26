@@ -32,7 +32,8 @@ import (
 func seedExpiryWorld(t *testing.T) (*Authenticator, *statetest.FakeClock, token.Repo, *persistence.DB) {
 	t.Helper()
 	db, clock := statetest.New(t)
-	a := NewAuthenticator(db, testAuthnRepos(db.Clock(), db.Runner()), nil, testVocab, quietLogger())
+	a, aerr := NewAuthenticator(db, testAuthnRepos(db.Clock(), db.Runner()), nil, testVocab, quietLogger())
+	require.NoError(t, aerr)
 	ctx := context.Background()
 	require.NoError(t, teamrepo.New(clock, db.Runner()).Create(ctx, &team.Team{ID: "t1", Name: "crew"}))
 	require.NoError(t, rolerepo.New(clock, db.Runner()).Create(ctx, &role.Role{

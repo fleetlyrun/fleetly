@@ -12,7 +12,7 @@ option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1;
 import "buf/validate/validate.proto";
 import "google/api/annotations.proto";
 import "protoc-gen-openapiv2/options/annotations.proto";
-import "grpcapi/v1/authz.proto";
+import "grpcapi/v1/policy.proto";
 
 option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
   responses: {
@@ -25,23 +25,25 @@ option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
 };
 
 service TemplatesService {
-  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+  option (grpcapi.v1.service) = { default_policy: { authenticated: true } };
 
   // ListTemplates 列目录（当前服务源：内嵌或最近刷新快照）。平台全局读面
   // ——无行级归属。
   rpc ListTemplates(ListTemplatesRequest) returns (ListTemplatesResponse) {
     option (google.api.http) = { get: "/v1/templates" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "templates" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["templates:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   // GetTemplate 读单条（含模板体原文——插值前，无 secret 材料）。
   rpc GetTemplate(GetTemplateRequest) returns (GetTemplateResponse) {
     option (google.api.http) = { get: "/v1/templates/{name}" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "templates" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["templates:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   // InstantiateTemplate 一键部署：模板 + values → create-or-reuse 序
@@ -50,9 +52,10 @@ service TemplatesService {
   // 事（部署引用已返回）。
   rpc InstantiateTemplate(InstantiateTemplateRequest) returns (InstantiateTemplateResponse) {
     option (google.api.http) = { post: "/v1/templates/instantiate" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "templates" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["templates:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   // RefreshTemplates 刷新目录（操作员动词）：拉取配置的 catalog URL →
@@ -60,9 +63,10 @@ service TemplatesService {
   // 目录）。未配置 catalog URL = 精确拒绝（内嵌目录即全部）。
   rpc RefreshTemplates(RefreshTemplatesRequest) returns (RefreshTemplatesResponse) {
     option (google.api.http) = { post: "/v1/templates/refresh" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "platform" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["platform:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
 }

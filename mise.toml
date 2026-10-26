@@ -78,7 +78,11 @@ run = [
 
 [tasks."lint:proto"]
 description = "buf lint + 对 origin/main 的 breaking 检查"
-run = ["buf lint", "buf breaking --against '.git#branch=origin/main'"]
+# --exclude-imports（grpcapi v0.4.0 批裁定，ADR-0084）：breaking 只比 fleetly
+# 自有契约面。依赖文件（googleapis/grpc-gateway/grpcapi）随 BSR pin 变动，
+# 上游升级即删改——对旧 pin 比较必红且无契约意义（ignore/ignore_only 均
+# 不覆盖依赖文件）。
+run = ["buf lint", "buf breaking --exclude-imports --against '.git#branch=origin/main'"]
 
 [tasks."lint:go"]
 description = "go vet + gofmt 检查"

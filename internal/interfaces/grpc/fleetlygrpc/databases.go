@@ -12,8 +12,6 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/lynx-go/grpcapi/authz"
-
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
@@ -21,6 +19,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/data/backup"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/browse"
 	"github.com/fleetlyrun/fleetly/internal/domain/data/database"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbbrowser"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/dbtemplate"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
@@ -525,7 +524,7 @@ func (svc *DatabasesService) BrowseDatabase(ctx context.Context, req *structurev
 	}
 	readOnly := !req.GetReadWrite()
 	if req.GetReadWrite() || browser.ReadOnlyEnforcement() == dbbrowser.EnforcementNone {
-		if id, ok := authn.FromContext(ctx); !ok || !id.HasScope("databases", authz.ScopeWrite) {
+		if id, ok := authn.FromContext(ctx); !ok || !id.HasScope("databases", identity.OpWrite) {
 			return nil, apperr.New("E_FORBIDDEN",
 				"this browse form requires the databases:write scope (read_write, or engines with no read-only enforcement)").
 				WithSuggestion("Open the session read-only (the default), or use a token carrying databases:write.")

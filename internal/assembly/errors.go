@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"github.com/lynx-go/grpcapi/gateway"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
@@ -108,8 +107,8 @@ func resolveHTTPStatus(st *status.Status, envelope *sharedv1.ErrorResponse) int 
 	return gateway.DefaultCodeToHTTP(st.Code())
 }
 
-// newGatewayErrorHandler 构造 REST 错误统一出口（语义对齐 grpcapi
-// gateway.NewErrorHandler，错误体换为 apperr 信封）：
+// newGatewayErrorEncoder 构造 REST 错误统一编码器（语义对齐 grpcapi v3
+// gateway.ErrorEncoder 协议，错误体保持 apperr 信封）：
 //
 //   - 内部错误出口纪律（P0-3）：E_INTERNAL（及 Internal/Unknown 机械错误）
 //     经 apperrstatus.SanitizeExit 单点收口——与 gRPC 拦截器同源（REST 面经 gRPC
@@ -122,15 +121,21 @@ func resolveHTTPStatus(st *status.Status, envelope *sharedv1.ErrorResponse) int 
 //   - error_id 经响应头 x-fleetly-error-id 同步承载（与 gRPC trailer 同键；
 //     信封 context 仍为主面）；
 //   - 429 从 RetryInfo detail 提取 Retry-After（向上取整，至少 1s）。
-func newGatewayErrorHandler(logger *slog.Logger) runtime.ErrorHandlerFunc {
-	return func(ctx context.Context, mux *runtime.ServeMux, marshaler runtime.Marshaler, w http.ResponseWriter, r *http.Request, err error) {
+//
+// 响应写出（状态行/Content-Type/marshal/尾换行）由 gateway.
+// NewEncoderErrorHandler 承担——与 grpc-gateway mux marshaler（snake_case
+// protojson）同源。
+func newGatewayErrorEncoder(logger *slog.Logger) gateway.ErrorEncoder {
+	return gateway.ErrorEncoderFunc(func(ctx context.Context, err error) gateway.ErrorResponse {
 		if logger == nil {
 			logger = slog.Default()
 		}
-		// 单点收口：内部错误在此（或 gRPC 出口已）脱敏 + 铸 id；非内部错误
-		// 原样放行（errorID 空串）。where 只进日志（见 SanitizeExit），不
-		// 进响应体——r 派生值经此调用不构成响应 taint。
-		errorID, sanitized := apperrstatus.SanitizeExit(ctx, logger, err, "http "+r.Method+" "+r.URL.Path)
+		// 单点收口：内部错误在此（或 gRPC 出口已）脱敏 + 铸 id（error_id
+		// 幂等复用——REST 面经 gRPC 段转发的错误沿用 gRPC 出口的 id）；
+		// 非内部错误原样放行（errorID 空串，下面统一补铸）。where 只进
+		// 日志（见 SanitizeExit），不进响应体——编码器协议无 *http.Request
+		// 可派生，error_id 关联面不受影响。
+		errorID, sanitized := apperrstatus.SanitizeExit(ctx, logger, err, "")
 		st, ok := status.FromError(sanitized)
 		if !ok || st == nil {
 			// 防御分支：SanitizeExit 已把裸错误收成 status 形态，正常不可达。
@@ -142,30 +147,16 @@ func newGatewayErrorHandler(logger *slog.Logger) runtime.ErrorHandlerFunc {
 		}
 		envelope := apperrstatus.EnvelopeFromGRPCStatus(st, errorID)
 
+		headers := http.Header{}
+		headers.Set(apperrstatus.ErrorIDHeader, errorID)
 		httpStatus := resolveHTTPStatus(st, envelope)
 		if httpStatus == http.StatusTooManyRequests {
 			if retryAfter, ok := retryAfterSeconds(st); ok {
-				w.Header().Set("Retry-After", retryAfter)
+				headers.Set("Retry-After", retryAfter)
 			}
 		}
-
-		w.Header().Set(apperrstatus.ErrorIDHeader, errorID)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(httpStatus)
-		m := marshaler
-		if m == nil {
-			m = gateway.NewMarshaler()
-		}
-		data, merr := m.Marshal(envelope)
-		if merr != nil {
-			logger.ErrorContext(ctx, "failed to encode error response", "error", merr, "error_id", errorID)
-			return
-		}
-		//nolint:gosec // G705 误报：gosec 把 SanitizeExit 的 where 参数（r.Method/r.URL.Path，仅落服务端日志）保守汇入返回值污点；data 实为 err 信封的 JSON 序列化（Content-Type: application/json），非 HTML 注入面
-		if _, werr := w.Write(append(data, '\n')); werr != nil {
-			logger.ErrorContext(ctx, "failed to write error response", "error", werr, "error_id", errorID)
-		}
-	}
+		return gateway.ErrorResponse{Status: httpStatus, Body: envelope, Headers: headers}
+	})
 }
 
 // retryAfterSeconds 从 status details 提取 RetryInfo 建议退避秒数（向上

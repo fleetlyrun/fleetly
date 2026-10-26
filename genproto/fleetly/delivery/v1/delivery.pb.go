@@ -3723,7 +3723,7 @@ var File_fleetly_delivery_v1_delivery_proto protoreflect.FileDescriptor
 
 const file_fleetly_delivery_v1_delivery_proto_rawDesc = "" +
 	"\n" +
-	"\"fleetly/delivery/v1/delivery.proto\x12\x13fleetly.delivery.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1egoogle/protobuf/duration.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\x1a\x1afleetly/spec/v1/spec.proto\"\xa4\x04\n" +
+	"\"fleetly/delivery/v1/delivery.proto\x12\x13fleetly.delivery.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1egoogle/protobuf/duration.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x17grpcapi/v1/policy.proto\x1a\x1afleetly/spec/v1/spec.proto\"\xa4\x04\n" +
 	"\n" +
 	"Deployment\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x10\n" +
@@ -4052,63 +4052,89 @@ const file_fleetly_delivery_v1_delivery_proto_rawDesc = "" +
 	"\x17SOURCE_KIND_UNSPECIFIED\x10\x00\x12\x13\n" +
 	"\x0fSOURCE_KIND_GIT\x10\x01\x12\x15\n" +
 	"\x11SOURCE_KIND_IMAGE\x10\x02\x12\x16\n" +
-	"\x12SOURCE_KIND_UPLOAD\x10\x032\x9e\t\n" +
-	"\x12DeploymentsService\x12\x84\x01\n" +
-	"\x06Deploy\x12\".fleetly.delivery.v1.DeployRequest\x1a#.fleetly.delivery.v1.DeployResponse\"1\xea\xc4\x19\x13\b\x03\"\x0f\n" +
-	"\vdeployments\x10\x02\x82\xd3\xe4\x93\x02\x14:\x01*\"\x0f/v1/deployments\x12\x9b\x01\n" +
-	"\rGetDeployment\x12).fleetly.delivery.v1.GetDeploymentRequest\x1a*.fleetly.delivery.v1.GetDeploymentResponse\"3\xea\xc4\x19\x13\b\x03\"\x0f\n" +
-	"\vdeployments\x10\x01\x82\xd3\xe4\x93\x02\x16\x12\x14/v1/deployments/{id}\x12\x9c\x01\n" +
-	"\x0fListDeployments\x12+.fleetly.delivery.v1.ListDeploymentsRequest\x1a,.fleetly.delivery.v1.ListDeploymentsResponse\".\xea\xc4\x19\x13\b\x03\"\x0f\n" +
-	"\vdeployments\x10\x01\x82\xd3\xe4\x93\x02\x11\x12\x0f/v1/deployments\x12\xae\x01\n" +
-	"\x10CancelDeployment\x12,.fleetly.delivery.v1.CancelDeploymentRequest\x1a-.fleetly.delivery.v1.CancelDeploymentResponse\"=\xea\xc4\x19\x13\b\x03\"\x0f\n" +
-	"\vdeployments\x10\x02\x82\xd3\xe4\x93\x02 :\x01*\"\x1b/v1/deployments/{id}/cancel\x12\x95\x01\n" +
-	"\bRollback\x12$.fleetly.delivery.v1.RollbackRequest\x1a%.fleetly.delivery.v1.RollbackResponse\"<\xea\xc4\x19\x13\b\x03\"\x0f\n" +
-	"\vdeployments\x10\x02\x82\xd3\xe4\x93\x02\x1f:\x01*\"\x1a/v1/apps/{app_id}/rollback\x12\xbf\x01\n" +
-	"\x0eRestartProcess\x12*.fleetly.delivery.v1.RestartProcessRequest\x1a+.fleetly.delivery.v1.RestartProcessResponse\"T\xea\xc4\x19\x13\b\x03\"\x0f\n" +
-	"\vdeployments\x10\x02\x82\xd3\xe4\x93\x027:\x01*\"2/v1/apps/{app_id}/processes/{process_name}/restart\x12\xb0\x01\n" +
-	"\x0eWaitDeployment\x12*.fleetly.delivery.v1.WaitDeploymentRequest\x1a+.fleetly.delivery.v1.WaitDeploymentResponse\"C\xea\xc4\x19\x13\b\x03\"\x0f\n" +
-	"\vdeployments\x10\x01\x82\xd3\xe4\x93\x02&\x12$/v1/deployments/{deployment_id}/wait0\x01\x1a\x06\xf2\xc4\x19\x02\b\x032\x90\x05\n" +
-	"\x10RevisionsService\x12\x92\x01\n" +
-	"\rListRevisions\x12).fleetly.delivery.v1.ListRevisionsRequest\x1a*.fleetly.delivery.v1.ListRevisionsResponse\"*\xea\xc4\x19\x11\b\x03\"\r\n" +
-	"\trevisions\x10\x01\x82\xd3\xe4\x93\x02\x0f\x12\r/v1/revisions\x12\x97\x01\n" +
-	"\rDiffRevisions\x12).fleetly.delivery.v1.DiffRevisionsRequest\x1a*.fleetly.delivery.v1.DiffRevisionsResponse\"/\xea\xc4\x19\x11\b\x03\"\r\n" +
-	"\trevisions\x10\x01\x82\xd3\xe4\x93\x02\x14\x12\x12/v1/revisions/diff\x12\x9b\x01\n" +
-	"\vGetRevision\x12'.fleetly.delivery.v1.GetRevisionRequest\x1a(.fleetly.delivery.v1.GetRevisionResponse\"9\xea\xc4\x19\x11\b\x03\"\r\n" +
-	"\trevisions\x10\x01\x82\xd3\xe4\x93\x02\x1e\x12\x1c/v1/revisions/{app_id}/{seq}\x12\xa6\x01\n" +
-	"\x0fGetAppWorkloads\x12+.fleetly.delivery.v1.GetAppWorkloadsRequest\x1a,.fleetly.delivery.v1.GetAppWorkloadsResponse\"8\xea\xc4\x19\x11\b\x03\"\r\n" +
-	"\trevisions\x10\x01\x82\xd3\xe4\x93\x02\x1d\x12\x1b/v1/apps/{app_id}/workloads\x1a\x06\xf2\xc4\x19\x02\b\x032\xd3\x05\n" +
-	"\rBuildsService\x12\x83\x01\n" +
+	"\x12SOURCE_KIND_UPLOAD\x10\x032\xb0\n" +
 	"\n" +
-	"ListBuilds\x12&.fleetly.delivery.v1.ListBuildsRequest\x1a'.fleetly.delivery.v1.ListBuildsResponse\"$\xea\xc4\x19\x0e\b\x03\"\n" +
+	"\x12DeploymentsService\x12\x99\x01\n" +
+	"\x06Deploy\x12\".fleetly.delivery.v1.DeployRequest\x1a#.fleetly.delivery.v1.DeployResponse\"F\xda\xf0\x19(\n" +
+	"\x1cB\x1a\n" +
+	"\x05scope\"\x11deployments:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x14:\x01*\"\x0f/v1/deployments\x12\xaf\x01\n" +
+	"\rGetDeployment\x12).fleetly.delivery.v1.GetDeploymentRequest\x1a*.fleetly.delivery.v1.GetDeploymentResponse\"G\xda\xf0\x19'\n" +
+	"\x1bB\x19\n" +
+	"\x05scope\"\x10deployments:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x16\x12\x14/v1/deployments/{id}\x12\xb0\x01\n" +
+	"\x0fListDeployments\x12+.fleetly.delivery.v1.ListDeploymentsRequest\x1a,.fleetly.delivery.v1.ListDeploymentsResponse\"B\xda\xf0\x19'\n" +
+	"\x1bB\x19\n" +
+	"\x05scope\"\x10deployments:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x11\x12\x0f/v1/deployments\x12\xc3\x01\n" +
+	"\x10CancelDeployment\x12,.fleetly.delivery.v1.CancelDeploymentRequest\x1a-.fleetly.delivery.v1.CancelDeploymentResponse\"R\xda\xf0\x19(\n" +
+	"\x1cB\x1a\n" +
+	"\x05scope\"\x11deployments:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02 :\x01*\"\x1b/v1/deployments/{id}/cancel\x12\xaa\x01\n" +
+	"\bRollback\x12$.fleetly.delivery.v1.RollbackRequest\x1a%.fleetly.delivery.v1.RollbackResponse\"Q\xda\xf0\x19(\n" +
+	"\x1cB\x1a\n" +
+	"\x05scope\"\x11deployments:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x1f:\x01*\"\x1a/v1/apps/{app_id}/rollback\x12\xd4\x01\n" +
+	"\x0eRestartProcess\x12*.fleetly.delivery.v1.RestartProcessRequest\x1a+.fleetly.delivery.v1.RestartProcessResponse\"i\xda\xf0\x19(\n" +
+	"\x1cB\x1a\n" +
+	"\x05scope\"\x11deployments:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x027:\x01*\"2/v1/apps/{app_id}/processes/{process_name}/restart\x12\xc4\x01\n" +
+	"\x0eWaitDeployment\x12*.fleetly.delivery.v1.WaitDeploymentRequest\x1a+.fleetly.delivery.v1.WaitDeploymentResponse\"W\xda\xf0\x19'\n" +
+	"\x1bB\x19\n" +
+	"\x05scope\"\x10deployments:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02&\x12$/v1/deployments/{deployment_id}/wait0\x01\x1a\b\xd2\xf0\x19\x04\n" +
+	"\x02 \x012\xe2\x05\n" +
+	"\x10RevisionsService\x12\xa6\x01\n" +
+	"\rListRevisions\x12).fleetly.delivery.v1.ListRevisionsRequest\x1a*.fleetly.delivery.v1.ListRevisionsResponse\">\xda\xf0\x19%\n" +
+	"\x19B\x17\n" +
+	"\x05scope\"\x0erevisions:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x0f\x12\r/v1/revisions\x12\xab\x01\n" +
+	"\rDiffRevisions\x12).fleetly.delivery.v1.DiffRevisionsRequest\x1a*.fleetly.delivery.v1.DiffRevisionsResponse\"C\xda\xf0\x19%\n" +
+	"\x19B\x17\n" +
+	"\x05scope\"\x0erevisions:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x14\x12\x12/v1/revisions/diff\x12\xaf\x01\n" +
+	"\vGetRevision\x12'.fleetly.delivery.v1.GetRevisionRequest\x1a(.fleetly.delivery.v1.GetRevisionResponse\"M\xda\xf0\x19%\n" +
+	"\x19B\x17\n" +
+	"\x05scope\"\x0erevisions:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x1e\x12\x1c/v1/revisions/{app_id}/{seq}\x12\xba\x01\n" +
+	"\x0fGetAppWorkloads\x12+.fleetly.delivery.v1.GetAppWorkloadsRequest\x1a,.fleetly.delivery.v1.GetAppWorkloadsResponse\"L\xda\xf0\x19%\n" +
+	"\x19B\x17\n" +
+	"\x05scope\"\x0erevisions:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x1d\x12\x1b/v1/apps/{app_id}/workloads\x1a\b\xd2\xf0\x19\x04\n" +
+	"\x02 \x012\xbb\x06\n" +
+	"\rBuildsService\x12\x97\x01\n" +
 	"\n" +
-	"\x06builds\x10\x01\x82\xd3\xe4\x93\x02\f\x12\n" +
-	"/v1/builds\x12\x99\x01\n" +
-	"\x0fStreamBuildLogs\x12+.fleetly.delivery.v1.StreamBuildLogsRequest\x1a,.fleetly.delivery.v1.StreamBuildLogsResponse\")\xea\xc4\x19\x0e\b\x03\"\n" +
+	"ListBuilds\x12&.fleetly.delivery.v1.ListBuildsRequest\x1a'.fleetly.delivery.v1.ListBuildsResponse\"8\xda\xf0\x19\"\n" +
+	"\x16B\x14\n" +
+	"\x05scope\"\vbuilds:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\f\x12\n" +
+	"/v1/builds\x12\xad\x01\n" +
+	"\x0fStreamBuildLogs\x12+.fleetly.delivery.v1.StreamBuildLogsRequest\x1a,.fleetly.delivery.v1.StreamBuildLogsResponse\"=\xda\xf0\x19\"\n" +
+	"\x16B\x14\n" +
+	"\x05scope\"\vbuilds:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x11\x12\x0f/v1/builds/logs0\x01\x12\xa6\x01\n" +
+	"\tWaitBuild\x12%.fleetly.delivery.v1.WaitBuildRequest\x1a&.fleetly.delivery.v1.WaitBuildResponse\"H\xda\xf0\x19\"\n" +
+	"\x16B\x14\n" +
+	"\x05scope\"\vbuilds:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x1c\x12\x1a/v1/builds/{build_id}/wait0\x01\x12\x8e\x01\n" +
+	"\fUploadSource\x12(.fleetly.delivery.v1.UploadSourceRequest\x1a).fleetly.delivery.v1.UploadSourceResponse\"'\xda\xf0\x19#\n" +
+	"\x17B\x15\n" +
+	"\x05scope\"\fbuilds:write\x10\x01\x1a\x06SERVER(\x01\x12\x9b\x01\n" +
+	"\vListUploads\x12'.fleetly.delivery.v1.ListUploadsRequest\x1a(.fleetly.delivery.v1.ListUploadsResponse\"9\xda\xf0\x19\"\n" +
+	"\x16B\x14\n" +
+	"\x05scope\"\vbuilds:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\r\x12\v/v1/uploads\x1a\b\xd2\xf0\x19\x04\n" +
+	"\x02 \x012\x8b\b\n" +
+	"\fHooksService\x12\xa5\x01\n" +
 	"\n" +
-	"\x06builds\x10\x01\x82\xd3\xe4\x93\x02\x11\x12\x0f/v1/builds/logs0\x01\x12\x92\x01\n" +
-	"\tWaitBuild\x12%.fleetly.delivery.v1.WaitBuildRequest\x1a&.fleetly.delivery.v1.WaitBuildResponse\"4\xea\xc4\x19\x0e\b\x03\"\n" +
+	"SetGitHook\x12&.fleetly.delivery.v1.SetGitHookRequest\x1a'.fleetly.delivery.v1.SetGitHookResponse\"F\xda\xf0\x19!\n" +
+	"\x15B\x13\n" +
+	"\x05scope\"\n" +
+	"apps:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x1b:\x01*\"\x16/v1/apps/{app_id}/hook\x12\xa1\x01\n" +
 	"\n" +
-	"\x06builds\x10\x01\x82\xd3\xe4\x93\x02\x1c\x12\x1a/v1/builds/{build_id}/wait0\x01\x12y\n" +
-	"\fUploadSource\x12(.fleetly.delivery.v1.UploadSourceRequest\x1a).fleetly.delivery.v1.UploadSourceResponse\"\x12\xea\xc4\x19\x0e\b\x03\"\n" +
-	"\n" +
-	"\x06builds\x10\x02(\x01\x12\x87\x01\n" +
-	"\vListUploads\x12'.fleetly.delivery.v1.ListUploadsRequest\x1a(.fleetly.delivery.v1.ListUploadsResponse\"%\xea\xc4\x19\x0e\b\x03\"\n" +
-	"\n" +
-	"\x06builds\x10\x01\x82\xd3\xe4\x93\x02\r\x12\v/v1/uploads\x1a\x06\xf2\xc4\x19\x02\b\x032\x95\a\n" +
-	"\fHooksService\x12\x90\x01\n" +
-	"\n" +
-	"SetGitHook\x12&.fleetly.delivery.v1.SetGitHookRequest\x1a'.fleetly.delivery.v1.SetGitHookResponse\"1\xea\xc4\x19\f\b\x03\"\b\n" +
-	"\x04apps\x10\x02\x82\xd3\xe4\x93\x02\x1b:\x01*\"\x16/v1/apps/{app_id}/hook\x12\x8d\x01\n" +
-	"\n" +
-	"GetGitHook\x12&.fleetly.delivery.v1.GetGitHookRequest\x1a'.fleetly.delivery.v1.GetGitHookResponse\".\xea\xc4\x19\f\b\x03\"\b\n" +
-	"\x04apps\x10\x01\x82\xd3\xe4\x93\x02\x18\x12\x16/v1/apps/{app_id}/hook\x12\xa6\x01\n" +
-	"\x0fRotateHookToken\x12+.fleetly.delivery.v1.RotateHookTokenRequest\x1a,.fleetly.delivery.v1.RotateHookTokenResponse\"8\xea\xc4\x19\f\b\x03\"\b\n" +
-	"\x04apps\x10\x02\x82\xd3\xe4\x93\x02\":\x01*\"\x1d/v1/apps/{app_id}/hook/rotate\x12\xa4\x01\n" +
-	"\x0eRefreshGitHook\x12*.fleetly.delivery.v1.RefreshGitHookRequest\x1a+.fleetly.delivery.v1.RefreshGitHookResponse\"9\xea\xc4\x19\f\b\x03\"\b\n" +
-	"\x04apps\x10\x02\x82\xd3\xe4\x93\x02#:\x01*\"\x1e/v1/apps/{app_id}/hook/refresh\x12\x96\x01\n" +
-	"\rDeleteGitHook\x12).fleetly.delivery.v1.DeleteGitHookRequest\x1a*.fleetly.delivery.v1.DeleteGitHookResponse\".\xea\xc4\x19\f\b\x03\"\b\n" +
-	"\x04apps\x10\x02\x82\xd3\xe4\x93\x02\x18*\x16/v1/apps/{app_id}/hook\x12q\n" +
-	"\x0eReceiveWebhook\x12*.fleetly.delivery.v1.ReceiveWebhookRequest\x1a+.fleetly.delivery.v1.ReceiveWebhookResponse\"\x06\xea\xc4\x19\x02\b\x01\x1a\x06\xf2\xc4\x19\x02\b\x03B\x9c\x01\x92ARRP\n" +
+	"GetGitHook\x12&.fleetly.delivery.v1.GetGitHookRequest\x1a'.fleetly.delivery.v1.GetGitHookResponse\"B\xda\xf0\x19 \n" +
+	"\x14B\x12\n" +
+	"\x05scope\"\tapps:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x18\x12\x16/v1/apps/{app_id}/hook\x12\xbb\x01\n" +
+	"\x0fRotateHookToken\x12+.fleetly.delivery.v1.RotateHookTokenRequest\x1a,.fleetly.delivery.v1.RotateHookTokenResponse\"M\xda\xf0\x19!\n" +
+	"\x15B\x13\n" +
+	"\x05scope\"\n" +
+	"apps:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\":\x01*\"\x1d/v1/apps/{app_id}/hook/rotate\x12\xb9\x01\n" +
+	"\x0eRefreshGitHook\x12*.fleetly.delivery.v1.RefreshGitHookRequest\x1a+.fleetly.delivery.v1.RefreshGitHookResponse\"N\xda\xf0\x19!\n" +
+	"\x15B\x13\n" +
+	"\x05scope\"\n" +
+	"apps:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02#:\x01*\"\x1e/v1/apps/{app_id}/hook/refresh\x12\xab\x01\n" +
+	"\rDeleteGitHook\x12).fleetly.delivery.v1.DeleteGitHookRequest\x1a*.fleetly.delivery.v1.DeleteGitHookResponse\"C\xda\xf0\x19!\n" +
+	"\x15B\x13\n" +
+	"\x05scope\"\n" +
+	"apps:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x18*\x16/v1/apps/{app_id}/hook\x12}\n" +
+	"\x0eReceiveWebhook\x12*.fleetly.delivery.v1.ReceiveWebhookRequest\x1a+.fleetly.delivery.v1.ReceiveWebhookResponse\"\x12\xda\xf0\x19\x0e\n" +
+	"\x02\x18\x01\x10\x01\x1a\x06PUBLIC\x1a\b\xd2\xf0\x19\x04\n" +
+	"\x02 \x01B\x9c\x01\x92ARRP\n" +
 	"\adefault\x12E\n" +
 	"\x1dAn unexpected error response.\x12$\n" +
 	"\"\x1a .fleetly.shared.v1.ErrorResponseZEgithub.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1;deliveryv1b\x06proto3"

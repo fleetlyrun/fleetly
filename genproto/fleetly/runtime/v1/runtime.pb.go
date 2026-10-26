@@ -817,7 +817,7 @@ var File_fleetly_runtime_v1_runtime_proto protoreflect.FileDescriptor
 
 const file_fleetly_runtime_v1_runtime_proto_rawDesc = "" +
 	"\n" +
-	" fleetly/runtime/v1/runtime.proto\x12\x12fleetly.runtime.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"\xb4\x02\n" +
+	" fleetly/runtime/v1/runtime.proto\x12\x12fleetly.runtime.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x17grpcapi/v1/policy.proto\"\xb4\x02\n" +
 	"\x04Node\x12\x1f\n" +
 	"\vplatform_id\x18\x01 \x01(\tR\n" +
 	"platformId\x12\x10\n" +
@@ -874,22 +874,31 @@ const file_fleetly_runtime_v1_runtime_proto_rawDesc = "" +
 	"\x13UncordonNodeRequest\x12T\n" +
 	"\anode_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
 	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\x06nodeId\"\x16\n" +
-	"\x14UncordonNodeResponse2\x98\a\n" +
-	"\fNodesService\x12|\n" +
-	"\tListNodes\x12$.fleetly.runtime.v1.ListNodesRequest\x1a%.fleetly.runtime.v1.ListNodesResponse\"\"\xea\xc4\x19\r\b\x03\"\t\n" +
-	"\x05nodes\x10\x01\x82\xd3\xe4\x93\x02\v\x12\t/v1/nodes\x12\xac\x01\n" +
-	"\x12ListNodeContainers\x12-.fleetly.runtime.v1.ListNodeContainersRequest\x1a..fleetly.runtime.v1.ListNodeContainersResponse\"7\xea\xc4\x19\r\b\x03\"\t\n" +
-	"\x05nodes\x10\x01\x82\xd3\xe4\x93\x02 \x12\x1e/v1/nodes/{node_id}/containers\x12\x8c\x01\n" +
+	"\x14UncordonNodeResponse2\x97\b\n" +
+	"\fNodesService\x12\x90\x01\n" +
+	"\tListNodes\x12$.fleetly.runtime.v1.ListNodesRequest\x1a%.fleetly.runtime.v1.ListNodesResponse\"6\xda\xf0\x19!\n" +
+	"\x15B\x13\n" +
+	"\x05scope\"\n" +
+	"nodes:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\v\x12\t/v1/nodes\x12\xc0\x01\n" +
+	"\x12ListNodeContainers\x12-.fleetly.runtime.v1.ListNodeContainersRequest\x1a..fleetly.runtime.v1.ListNodeContainersResponse\"K\xda\xf0\x19!\n" +
+	"\x15B\x13\n" +
+	"\x05scope\"\n" +
+	"nodes:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02 \x12\x1e/v1/nodes/{node_id}/containers\x12\xa1\x01\n" +
 	"\n" +
-	"EnrollNode\x12%.fleetly.runtime.v1.EnrollNodeRequest\x1a&.fleetly.runtime.v1.EnrollNodeResponse\"/\xea\xc4\x19\x10\b\x03\"\f\n" +
-	"\bplatform\x10\x03\x82\xd3\xe4\x93\x02\x15:\x01*\"\x10/v1/nodes/enroll\x12\x8f\x01\n" +
-	"\tDrainNode\x12$.fleetly.runtime.v1.DrainNodeRequest\x1a%.fleetly.runtime.v1.DrainNodeResponse\"5\xea\xc4\x19\r\b\x03\"\t\n" +
-	"\x05nodes\x10\x02\x82\xd3\xe4\x93\x02\x1e:\x01*\"\x19/v1/nodes/{node_id}/drain\x12\x93\x01\n" +
+	"EnrollNode\x12%.fleetly.runtime.v1.EnrollNodeRequest\x1a&.fleetly.runtime.v1.EnrollNodeResponse\"D\xda\xf0\x19%\n" +
+	"\x19B\x17\n" +
+	"\x05scope\"\x0eplatform:admin\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x15:\x01*\"\x10/v1/nodes/enroll\x12\xa4\x01\n" +
+	"\tDrainNode\x12$.fleetly.runtime.v1.DrainNodeRequest\x1a%.fleetly.runtime.v1.DrainNodeResponse\"J\xda\xf0\x19\"\n" +
+	"\x16B\x14\n" +
+	"\x05scope\"\vnodes:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x1e:\x01*\"\x19/v1/nodes/{node_id}/drain\x12\xa8\x01\n" +
 	"\n" +
-	"CordonNode\x12%.fleetly.runtime.v1.CordonNodeRequest\x1a&.fleetly.runtime.v1.CordonNodeResponse\"6\xea\xc4\x19\r\b\x03\"\t\n" +
-	"\x05nodes\x10\x02\x82\xd3\xe4\x93\x02\x1f:\x01*\"\x1a/v1/nodes/{node_id}/cordon\x12\x9b\x01\n" +
-	"\fUncordonNode\x12'.fleetly.runtime.v1.UncordonNodeRequest\x1a(.fleetly.runtime.v1.UncordonNodeResponse\"8\xea\xc4\x19\r\b\x03\"\t\n" +
-	"\x05nodes\x10\x02\x82\xd3\xe4\x93\x02!:\x01*\"\x1c/v1/nodes/{node_id}/uncordon\x1a\x06\xf2\xc4\x19\x02\b\x03B\x9a\x01\x92ARRP\n" +
+	"CordonNode\x12%.fleetly.runtime.v1.CordonNodeRequest\x1a&.fleetly.runtime.v1.CordonNodeResponse\"K\xda\xf0\x19\"\n" +
+	"\x16B\x14\n" +
+	"\x05scope\"\vnodes:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x1f:\x01*\"\x1a/v1/nodes/{node_id}/cordon\x12\xb0\x01\n" +
+	"\fUncordonNode\x12'.fleetly.runtime.v1.UncordonNodeRequest\x1a(.fleetly.runtime.v1.UncordonNodeResponse\"M\xda\xf0\x19\"\n" +
+	"\x16B\x14\n" +
+	"\x05scope\"\vnodes:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02!:\x01*\"\x1c/v1/nodes/{node_id}/uncordon\x1a\b\xd2\xf0\x19\x04\n" +
+	"\x02 \x01B\x9a\x01\x92ARRP\n" +
 	"\adefault\x12E\n" +
 	"\x1dAn unexpected error response.\x12$\n" +
 	"\"\x1a .fleetly.shared.v1.ErrorResponseZCgithub.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1;runtimev1b\x06proto3"

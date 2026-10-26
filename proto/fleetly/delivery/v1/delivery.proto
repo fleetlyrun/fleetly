@@ -12,7 +12,7 @@ import "buf/validate/validate.proto";
 import "google/api/annotations.proto";
 import "google/protobuf/duration.proto";
 import "protoc-gen-openapiv2/options/annotations.proto";
-import "grpcapi/v1/authz.proto";
+import "grpcapi/v1/policy.proto";
 import "fleetly/spec/v1/spec.proto";
 
 option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
@@ -26,44 +26,49 @@ option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
 };
 
 service DeploymentsService {
-  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+  option (grpcapi.v1.service) = { default_policy: { authenticated: true } };
 
   // Deploy 归一化四源（镜像直投 / Compose 受控子集 / 上传产物 / 裸
   // AppSpec）并受理部署。
   rpc Deploy(DeployRequest) returns (DeployResponse) {
     option (google.api.http) = { post: "/v1/deployments" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "deployments" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["deployments:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   rpc GetDeployment(GetDeploymentRequest) returns (GetDeploymentResponse) {
     option (google.api.http) = { get: "/v1/deployments/{id}" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "deployments" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["deployments:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   rpc ListDeployments(ListDeploymentsRequest) returns (ListDeploymentsResponse) {
     option (google.api.http) = { get: "/v1/deployments" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "deployments" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["deployments:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   rpc CancelDeployment(CancelDeploymentRequest) returns (CancelDeploymentResponse) {
     option (google.api.http) = { post: "/v1/deployments/{id}/cancel" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "deployments" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["deployments:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   // Rollback 是一等动词（F0.11）：Revision Replay——空目标回上一成功基线。
   rpc Rollback(RollbackRequest) returns (RollbackResponse) {
     option (google.api.http) = { post: "/v1/apps/{app_id}/rollback" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "deployments" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["deployments:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
 
@@ -74,9 +79,10 @@ service DeploymentsService {
   // Ensure 互补：重发未变更 Spec 零替换，本动词是显式强制面。
   rpc RestartProcess(RestartProcessRequest) returns (RestartProcessResponse) {
     option (google.api.http) = { post: "/v1/apps/{app_id}/processes/{process_name}/restart" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "deployments" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["deployments:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
 
@@ -85,29 +91,32 @@ service DeploymentsService {
   // 轮询。WaitRun 随 Run 实体（F1.5/6）落地，不预发空面。
   rpc WaitDeployment(WaitDeploymentRequest) returns (stream WaitDeploymentResponse) {
     option (google.api.http) = { get: "/v1/deployments/{deployment_id}/wait" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "deployments" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["deployments:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
 }
 
 service RevisionsService {
-  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+  option (grpcapi.v1.service) = { default_policy: { authenticated: true } };
 
   rpc ListRevisions(ListRevisionsRequest) returns (ListRevisionsResponse) {
     option (google.api.http) = { get: "/v1/revisions" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "revisions" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["revisions:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   // DiffRevisions 输出两条 Revision 的字段级差异（路径字典序）。
   rpc DiffRevisions(DiffRevisionsRequest) returns (DiffRevisionsResponse) {
     option (google.api.http) = { get: "/v1/revisions/diff" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "revisions" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["revisions:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   // GetRevision 回读单条 Revision 的冻结 AppSpec 全文（ADR-0071 决策 1
@@ -117,9 +126,10 @@ service RevisionsService {
   // 数据源。
   rpc GetRevision(GetRevisionRequest) returns (GetRevisionResponse) {
     option (google.api.http) = { get: "/v1/revisions/{app_id}/{seq}" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "revisions" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["revisions:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   // GetAppWorkloads 按 Revision 只读重放 Workload 投影（ADR-0071 决策 1
@@ -129,21 +139,23 @@ service RevisionsService {
   // 代戳）见决策 5。
   rpc GetAppWorkloads(GetAppWorkloadsRequest) returns (GetAppWorkloadsResponse) {
     option (google.api.http) = { get: "/v1/apps/{app_id}/workloads" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "revisions" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["revisions:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
 }
 
 service BuildsService {
-  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+  option (grpcapi.v1.service) = { default_policy: { authenticated: true } };
 
   rpc ListBuilds(ListBuildsRequest) returns (ListBuildsResponse) {
     option (google.api.http) = { get: "/v1/builds" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "builds" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["builds:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
 
@@ -151,18 +163,20 @@ service BuildsService {
   // "仅实时+最近缓冲"，持久化检索 N2；follow 随构建推进续流至终态）。
   rpc StreamBuildLogs(StreamBuildLogsRequest) returns (stream StreamBuildLogsResponse) {
     option (google.api.http) = { get: "/v1/builds/logs" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "builds" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["builds:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
 
   // WaitBuild 是构建等待原语（F1.3，架构 §7）：状态快照帧，终态帧后收流。
   rpc WaitBuild(WaitBuildRequest) returns (stream WaitBuildResponse) {
     option (google.api.http) = { get: "/v1/builds/{build_id}/wait" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "builds" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["builds:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
 
@@ -172,9 +186,10 @@ service BuildsService {
   // 无 HTTP 绑定；REST/Console 形态随 Console 批次另行裁决）。同字节重传
   // 天然幂等：同 digest 返回同一引用（deduplicated=true）。
   rpc UploadSource(stream UploadSourceRequest) returns (UploadSourceResponse) {
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "builds" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["builds:write"] }] }
+      exposure: EXPOSURE_INTERNAL
+      label: "SERVER"
     };
   }
 
@@ -182,9 +197,10 @@ service BuildsService {
   // List 惯例）。
   rpc ListUploads(ListUploadsRequest) returns (ListUploadsResponse) {
     option (google.api.http) = { get: "/v1/uploads" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "builds" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["builds:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
 }
@@ -195,32 +211,35 @@ service BuildsService {
 // 请求体字节计算（protojson 解码会改变字节形态），REST 入口
 // /v1/hooks/<token> 由 gateway 直挂原生 handler 经本服务转发。
 service HooksService {
-  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+  option (grpcapi.v1.service) = { default_policy: { authenticated: true } };
 
   // SetGitHook 建/改配置；无 Token 时铸造（明文只在本响应出现一次，
   // 同一串兼作 GitHub webhook secret）。已配置过再 Set 只改配置不换 Token
   //（换 Token 用 RotateHookToken）。
   rpc SetGitHook(SetGitHookRequest) returns (SetGitHookResponse) {
     option (google.api.http) = { post: "/v1/apps/{app_id}/hook" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "apps" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["apps:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   rpc GetGitHook(GetGitHookRequest) returns (GetGitHookResponse) {
     option (google.api.http) = { get: "/v1/apps/{app_id}/hook" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "apps" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["apps:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   // RotateHookToken 吊销旧 Token 铸新（URL token 与 GitHub webhook secret
   // 同源双换；旧 Token 即刻失效）。
   rpc RotateHookToken(RotateHookTokenRequest) returns (RotateHookTokenResponse) {
     option (google.api.http) = { post: "/v1/apps/{app_id}/hook/rotate" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "apps" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["apps:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   // RefreshGitHook 立即拉取 hook 材料并触发部署（push 通道的一等孪生：
@@ -231,9 +250,10 @@ service HooksService {
   // deduplicated 既有部署）。
   rpc RefreshGitHook(RefreshGitHookRequest) returns (RefreshGitHookResponse) {
     option (google.api.http) = { post: "/v1/apps/{app_id}/hook/refresh" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "apps" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["apps:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   // DeleteGitHook 移除 hook 配置（URL token 与 webhook secret 即刻失效，
@@ -243,9 +263,10 @@ service HooksService {
   // （配置面显式状态机，与 Get 同形——误删可见，不静默成功）。
   rpc DeleteGitHook(DeleteGitHookRequest) returns (DeleteGitHookResponse) {
     option (google.api.http) = { delete: "/v1/apps/{app_id}/hook" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "apps" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["apps:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   // ReceiveWebhook 是 GitHub webhook 接收面（PUBLIC；gRPC-only——HTTP 侧由
@@ -253,7 +274,11 @@ service HooksService {
   // event/delivery/signature 对应 X-GitHub-Event / X-GitHub-Delivery /
   // X-Hub-Signature-256 头。
   rpc ReceiveWebhook(ReceiveWebhookRequest) returns (ReceiveWebhookResponse) {
-    option (grpcapi.v1.method_auth) = { access: ACCESS_LEVEL_PUBLIC };
+    option (grpcapi.v1.method) = {
+      policy: { anonymous: true }
+      exposure: EXPOSURE_INTERNAL
+      label: "PUBLIC"
+    };
   }
 }
 

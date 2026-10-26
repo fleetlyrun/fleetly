@@ -231,7 +231,7 @@ var File_fleetly_runtime_v1_workloads_proto protoreflect.FileDescriptor
 
 const file_fleetly_runtime_v1_workloads_proto_rawDesc = "" +
 	"\n" +
-	"\"fleetly/runtime/v1/workloads.proto\x12\x12fleetly.runtime.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"w\n" +
+	"\"fleetly/runtime/v1/workloads.proto\x12\x12fleetly.runtime.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x17grpcapi/v1/policy.proto\"w\n" +
 	"!GetAppWorkloadObservationsRequest\x12R\n" +
 	"\x06app_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
 	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\x05appId\"q\n" +
@@ -248,10 +248,12 @@ const file_fleetly_runtime_v1_workloads_proto_rawDesc = "" +
 	"\breplicas\x18\x05 \x01(\x03R\breplicas\x12\x14\n" +
 	"\x05state\x18\x06 \x01(\tR\x05state\x12'\n" +
 	"\x0frollout_stalled\x18\a \x01(\bR\x0erolloutStalled\x12%\n" +
-	"\x0erollout_detail\x18\b \x01(\tR\rrolloutDetail2\xe7\x01\n" +
-	"\x10WorkloadsService\x12\xca\x01\n" +
-	"\x1aGetAppWorkloadObservations\x125.fleetly.runtime.v1.GetAppWorkloadObservationsRequest\x1a6.fleetly.runtime.v1.GetAppWorkloadObservationsResponse\"=\xea\xc4\x19\x11\b\x03\"\r\n" +
-	"\tworkloads\x10\x01\x82\xd3\xe4\x93\x02\"\x12 /v1/apps/{app_id}/workloads/live\x1a\x06\xf2\xc4\x19\x02\b\x03B\x9a\x01\x92ARRP\n" +
+	"\x0erollout_detail\x18\b \x01(\tR\rrolloutDetail2\xfd\x01\n" +
+	"\x10WorkloadsService\x12\xde\x01\n" +
+	"\x1aGetAppWorkloadObservations\x125.fleetly.runtime.v1.GetAppWorkloadObservationsRequest\x1a6.fleetly.runtime.v1.GetAppWorkloadObservationsResponse\"Q\xda\xf0\x19%\n" +
+	"\x19B\x17\n" +
+	"\x05scope\"\x0eworkloads:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\"\x12 /v1/apps/{app_id}/workloads/live\x1a\b\xd2\xf0\x19\x04\n" +
+	"\x02 \x01B\x9a\x01\x92ARRP\n" +
 	"\adefault\x12E\n" +
 	"\x1dAn unexpected error response.\x12$\n" +
 	"\"\x1a .fleetly.shared.v1.ErrorResponseZCgithub.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1;runtimev1b\x06proto3"

@@ -5404,7 +5404,7 @@ var File_fleetly_structure_v1_structure_proto protoreflect.FileDescriptor
 
 const file_fleetly_structure_v1_structure_proto_rawDesc = "" +
 	"\n" +
-	"$fleetly/structure/v1/structure.proto\x12\x14fleetly.structure.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1afleetly/spec/v1/spec.proto\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"\x96\x01\n" +
+	"$fleetly/structure/v1/structure.proto\x12\x14fleetly.structure.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1afleetly/spec/v1/spec.proto\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x17grpcapi/v1/policy.proto\"\x96\x01\n" +
 	"\aProject\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x10\n" +
 	"\x03seq\x18\x06 \x01(\x03R\x03seq\x12\x12\n" +
@@ -5834,104 +5834,156 @@ const file_fleetly_structure_v1_structure_proto_rawDesc = "" +
 	"(BROWSE_READ_ONLY_ENFORCEMENT_UNSPECIFIED\x10\x00\x12(\n" +
 	"$BROWSE_READ_ONLY_ENFORCEMENT_SESSION\x10\x01\x12%\n" +
 	"!BROWSE_READ_ONLY_ENFORCEMENT_TOOL\x10\x02\x12%\n" +
-	"!BROWSE_READ_ONLY_ENFORCEMENT_NONE\x10\x032\xee\x04\n" +
-	"\x0fProjectsService\x12\x95\x01\n" +
-	"\rCreateProject\x12*.fleetly.structure.v1.CreateProjectRequest\x1a+.fleetly.structure.v1.CreateProjectResponse\"+\xea\xc4\x19\x10\b\x03\"\f\n" +
-	"\bprojects\x10\x02\x82\xd3\xe4\x93\x02\x11:\x01*\"\f/v1/projects\x12\x8e\x01\n" +
+	"!BROWSE_READ_ONLY_ENFORCEMENT_NONE\x10\x032\xc2\x05\n" +
+	"\x0fProjectsService\x12\xaa\x01\n" +
+	"\rCreateProject\x12*.fleetly.structure.v1.CreateProjectRequest\x1a+.fleetly.structure.v1.CreateProjectResponse\"@\xda\xf0\x19%\n" +
+	"\x19B\x17\n" +
+	"\x05scope\"\x0eprojects:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x11:\x01*\"\f/v1/projects\x12\xa2\x01\n" +
 	"\n" +
-	"GetProject\x12'.fleetly.structure.v1.GetProjectRequest\x1a(.fleetly.structure.v1.GetProjectResponse\"-\xea\xc4\x19\x10\b\x03\"\f\n" +
-	"\bprojects\x10\x01\x82\xd3\xe4\x93\x02\x13\x12\x11/v1/projects/{id}\x12\x8f\x01\n" +
-	"\fListProjects\x12).fleetly.structure.v1.ListProjectsRequest\x1a*.fleetly.structure.v1.ListProjectsResponse\"(\xea\xc4\x19\x10\b\x03\"\f\n" +
-	"\bprojects\x10\x01\x82\xd3\xe4\x93\x02\x0e\x12\f/v1/projects\x12\x97\x01\n" +
-	"\rDeleteProject\x12*.fleetly.structure.v1.DeleteProjectRequest\x1a+.fleetly.structure.v1.DeleteProjectResponse\"-\xea\xc4\x19\x10\b\x03\"\f\n" +
-	"\bprojects\x10\x03\x82\xd3\xe4\x93\x02\x13*\x11/v1/projects/{id}\x1a\x06\xf2\xc4\x19\x02\b\x032\xa6\x05\n" +
-	"\vAppsService\x12\x81\x01\n" +
-	"\tCreateApp\x12&.fleetly.structure.v1.CreateAppRequest\x1a'.fleetly.structure.v1.CreateAppResponse\"#\xea\xc4\x19\f\b\x03\"\b\n" +
-	"\x04apps\x10\x02\x82\xd3\xe4\x93\x02\r:\x01*\"\b/v1/apps\x12z\n" +
-	"\x06GetApp\x12#.fleetly.structure.v1.GetAppRequest\x1a$.fleetly.structure.v1.GetAppResponse\"%\xea\xc4\x19\f\b\x03\"\b\n" +
-	"\x04apps\x10\x01\x82\xd3\xe4\x93\x02\x0f\x12\r/v1/apps/{id}\x12\x8b\x01\n" +
+	"GetProject\x12'.fleetly.structure.v1.GetProjectRequest\x1a(.fleetly.structure.v1.GetProjectResponse\"A\xda\xf0\x19$\n" +
+	"\x18B\x16\n" +
+	"\x05scope\"\rprojects:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x13\x12\x11/v1/projects/{id}\x12\xa3\x01\n" +
+	"\fListProjects\x12).fleetly.structure.v1.ListProjectsRequest\x1a*.fleetly.structure.v1.ListProjectsResponse\"<\xda\xf0\x19$\n" +
+	"\x18B\x16\n" +
+	"\x05scope\"\rprojects:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x0e\x12\f/v1/projects\x12\xac\x01\n" +
+	"\rDeleteProject\x12*.fleetly.structure.v1.DeleteProjectRequest\x1a+.fleetly.structure.v1.DeleteProjectResponse\"B\xda\xf0\x19%\n" +
+	"\x19B\x17\n" +
+	"\x05scope\"\x0eprojects:admin\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x13*\x11/v1/projects/{id}\x1a\b\xd2\xf0\x19\x04\n" +
+	"\x02 \x012\x90\x06\n" +
+	"\vAppsService\x12\x96\x01\n" +
+	"\tCreateApp\x12&.fleetly.structure.v1.CreateAppRequest\x1a'.fleetly.structure.v1.CreateAppResponse\"8\xda\xf0\x19!\n" +
+	"\x15B\x13\n" +
+	"\x05scope\"\n" +
+	"apps:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\r:\x01*\"\b/v1/apps\x12\x8e\x01\n" +
+	"\x06GetApp\x12#.fleetly.structure.v1.GetAppRequest\x1a$.fleetly.structure.v1.GetAppResponse\"9\xda\xf0\x19 \n" +
+	"\x14B\x12\n" +
+	"\x05scope\"\tapps:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x0f\x12\r/v1/apps/{id}\x12\x9f\x01\n" +
 	"\n" +
-	"GetAppSpec\x12'.fleetly.structure.v1.GetAppSpecRequest\x1a(.fleetly.structure.v1.GetAppSpecResponse\"*\xea\xc4\x19\f\b\x03\"\b\n" +
-	"\x04apps\x10\x01\x82\xd3\xe4\x93\x02\x14\x12\x12/v1/apps/{id}/spec\x12{\n" +
-	"\bListApps\x12%.fleetly.structure.v1.ListAppsRequest\x1a&.fleetly.structure.v1.ListAppsResponse\" \xea\xc4\x19\f\b\x03\"\b\n" +
-	"\x04apps\x10\x01\x82\xd3\xe4\x93\x02\n" +
-	"\x12\b/v1/apps\x12\x83\x01\n" +
-	"\tDeleteApp\x12&.fleetly.structure.v1.DeleteAppRequest\x1a'.fleetly.structure.v1.DeleteAppResponse\"%\xea\xc4\x19\f\b\x03\"\b\n" +
-	"\x04apps\x10\x03\x82\xd3\xe4\x93\x02\x0f*\r/v1/apps/{id}\x1a\x06\xf2\xc4\x19\x02\b\x032\xd3\x03\n" +
-	"\x0eSecretsService\x12\x87\x01\n" +
-	"\tPutSecret\x12&.fleetly.structure.v1.PutSecretRequest\x1a'.fleetly.structure.v1.PutSecretResponse\")\xea\xc4\x19\x0f\b\x03\"\v\n" +
-	"\asecrets\x10\x02\x82\xd3\xe4\x93\x02\x10:\x01*\x1a\v/v1/secrets\x12\x8a\x01\n" +
-	"\vListSecrets\x12(.fleetly.structure.v1.ListSecretsRequest\x1a).fleetly.structure.v1.ListSecretsResponse\"&\xea\xc4\x19\x0f\b\x03\"\v\n" +
-	"\asecrets\x10\x01\x82\xd3\xe4\x93\x02\r\x12\v/v1/secrets\x12\xa1\x01\n" +
-	"\fDeleteSecret\x12).fleetly.structure.v1.DeleteSecretRequest\x1a*.fleetly.structure.v1.DeleteSecretResponse\":\xea\xc4\x19\x0f\b\x03\"\v\n" +
-	"\asecrets\x10\x03\x82\xd3\xe4\x93\x02!*\x1f/v1/secrets/{project_id}/{name}\x1a\x06\xf2\xc4\x19\x02\b\x032\xca\x03\n" +
-	"\x0eConfigsService\x12\x87\x01\n" +
-	"\tPutConfig\x12&.fleetly.structure.v1.PutConfigRequest\x1a'.fleetly.structure.v1.PutConfigResponse\")\xea\xc4\x19\x0f\b\x03\"\v\n" +
-	"\aconfigs\x10\x02\x82\xd3\xe4\x93\x02\x10:\x01*\x1a\v/v1/configs\x12\x98\x01\n" +
-	"\tGetConfig\x12&.fleetly.structure.v1.GetConfigRequest\x1a'.fleetly.structure.v1.GetConfigResponse\":\xea\xc4\x19\x0f\b\x03\"\v\n" +
-	"\aconfigs\x10\x01\x82\xd3\xe4\x93\x02!\x12\x1f/v1/configs/{project_id}/{name}\x12\x8a\x01\n" +
-	"\vListConfigs\x12(.fleetly.structure.v1.ListConfigsRequest\x1a).fleetly.structure.v1.ListConfigsResponse\"&\xea\xc4\x19\x0f\b\x03\"\v\n" +
-	"\aconfigs\x10\x01\x82\xd3\xe4\x93\x02\r\x12\v/v1/configs\x1a\x06\xf2\xc4\x19\x02\b\x032\xd9\x04\n" +
-	"\x16SharedVariablesService\x12\xb1\x01\n" +
-	"\x11PutSharedVariable\x12..fleetly.structure.v1.PutSharedVariableRequest\x1a/.fleetly.structure.v1.PutSharedVariableResponse\";\xea\xc4\x19\x18\b\x03\"\x14\n" +
-	"\x10shared_variables\x10\x02\x82\xd3\xe4\x93\x02\x19:\x01*\x1a\x14/v1/shared-variables\x12\xb4\x01\n" +
-	"\x13ListSharedVariables\x120.fleetly.structure.v1.ListSharedVariablesRequest\x1a1.fleetly.structure.v1.ListSharedVariablesResponse\"8\xea\xc4\x19\x18\b\x03\"\x14\n" +
-	"\x10shared_variables\x10\x01\x82\xd3\xe4\x93\x02\x16\x12\x14/v1/shared-variables\x12\xcb\x01\n" +
-	"\x14DeleteSharedVariable\x121.fleetly.structure.v1.DeleteSharedVariableRequest\x1a2.fleetly.structure.v1.DeleteSharedVariableResponse\"L\xea\xc4\x19\x18\b\x03\"\x14\n" +
-	"\x10shared_variables\x10\x03\x82\xd3\xe4\x93\x02**(/v1/shared-variables/{project_id}/{name}\x1a\x06\xf2\xc4\x19\x02\b\x032\xa5\x04\n" +
-	"\x13AppVariablesService\x12\xa2\x01\n" +
-	"\x0ePutAppVariable\x12+.fleetly.structure.v1.PutAppVariableRequest\x1a,.fleetly.structure.v1.PutAppVariableResponse\"5\xea\xc4\x19\x15\b\x03\"\x11\n" +
-	"\rapp_variables\x10\x02\x82\xd3\xe4\x93\x02\x16:\x01*\x1a\x11/v1/app-variables\x12\xa5\x01\n" +
-	"\x10ListAppVariables\x12-.fleetly.structure.v1.ListAppVariablesRequest\x1a..fleetly.structure.v1.ListAppVariablesResponse\"2\xea\xc4\x19\x15\b\x03\"\x11\n" +
-	"\rapp_variables\x10\x01\x82\xd3\xe4\x93\x02\x13\x12\x11/v1/app-variables\x12\xb8\x01\n" +
-	"\x11DeleteAppVariable\x12..fleetly.structure.v1.DeleteAppVariableRequest\x1a/.fleetly.structure.v1.DeleteAppVariableResponse\"B\xea\xc4\x19\x15\b\x03\"\x11\n" +
-	"\rapp_variables\x10\x03\x82\xd3\xe4\x93\x02#*!/v1/app-variables/{app_id}/{name}\x1a\x06\xf2\xc4\x19\x02\b\x032\xcd\x03\n" +
-	"\x0eVolumesService\x12\x90\x01\n" +
-	"\fCreateVolume\x12).fleetly.structure.v1.CreateVolumeRequest\x1a*.fleetly.structure.v1.CreateVolumeResponse\")\xea\xc4\x19\x0f\b\x03\"\v\n" +
-	"\avolumes\x10\x02\x82\xd3\xe4\x93\x02\x10:\x01*\"\v/v1/volumes\x12\x8a\x01\n" +
-	"\vListVolumes\x12(.fleetly.structure.v1.ListVolumesRequest\x1a).fleetly.structure.v1.ListVolumesResponse\"&\xea\xc4\x19\x0f\b\x03\"\v\n" +
-	"\avolumes\x10\x01\x82\xd3\xe4\x93\x02\r\x12\v/v1/volumes\x12\x92\x01\n" +
-	"\fDeleteVolume\x12).fleetly.structure.v1.DeleteVolumeRequest\x1a*.fleetly.structure.v1.DeleteVolumeResponse\"+\xea\xc4\x19\x0f\b\x03\"\v\n" +
-	"\avolumes\x10\x03\x82\xd3\xe4\x93\x02\x12*\x10/v1/volumes/{id}\x1a\x06\xf2\xc4\x19\x02\b\x032\xce\r\n" +
-	"\x10DatabasesService\x12\x9a\x01\n" +
-	"\x0eCreateDatabase\x12+.fleetly.structure.v1.CreateDatabaseRequest\x1a,.fleetly.structure.v1.CreateDatabaseResponse\"-\xea\xc4\x19\x11\b\x03\"\r\n" +
-	"\tdatabases\x10\x02\x82\xd3\xe4\x93\x02\x12:\x01*\"\r/v1/databases\x12\x93\x01\n" +
-	"\vGetDatabase\x12(.fleetly.structure.v1.GetDatabaseRequest\x1a).fleetly.structure.v1.GetDatabaseResponse\"/\xea\xc4\x19\x11\b\x03\"\r\n" +
-	"\tdatabases\x10\x01\x82\xd3\xe4\x93\x02\x14\x12\x12/v1/databases/{id}\x12\x94\x01\n" +
-	"\rListDatabases\x12*.fleetly.structure.v1.ListDatabasesRequest\x1a+.fleetly.structure.v1.ListDatabasesResponse\"*\xea\xc4\x19\x11\b\x03\"\r\n" +
-	"\tdatabases\x10\x01\x82\xd3\xe4\x93\x02\x0f\x12\r/v1/databases\x12\x9c\x01\n" +
-	"\x0eDeleteDatabase\x12+.fleetly.structure.v1.DeleteDatabaseRequest\x1a,.fleetly.structure.v1.DeleteDatabaseResponse\"/\xea\xc4\x19\x11\b\x03\"\r\n" +
-	"\tdatabases\x10\x03\x82\xd3\xe4\x93\x02\x14*\x12/v1/databases/{id}\x12\xad\x01\n" +
-	"\rTriggerBackup\x12*.fleetly.structure.v1.TriggerBackupRequest\x1a+.fleetly.structure.v1.TriggerBackupResponse\"C\xea\xc4\x19\x11\b\x03\"\r\n" +
-	"\tdatabases\x10\x02\x82\xd3\xe4\x93\x02(:\x01*\"#/v1/databases/{database_id}/backups\x12\xa4\x01\n" +
-	"\vListBackups\x12(.fleetly.structure.v1.ListBackupsRequest\x1a).fleetly.structure.v1.ListBackupsResponse\"@\xea\xc4\x19\x11\b\x03\"\r\n" +
-	"\tdatabases\x10\x01\x82\xd3\xe4\x93\x02%\x12#/v1/databases/{database_id}/backups\x12\xa5\x01\n" +
-	"\fVerifyBackup\x12).fleetly.structure.v1.VerifyBackupRequest\x1a*.fleetly.structure.v1.VerifyBackupResponse\">\xea\xc4\x19\x11\b\x03\"\r\n" +
-	"\tdatabases\x10\x01\x82\xd3\xe4\x93\x02#:\x01*\"\x1e/v1/backups/{backup_id}/verify\x12\xc4\x01\n" +
-	"\x0eDownloadBackup\x12+.fleetly.structure.v1.DownloadBackupRequest\x1a,.fleetly.structure.v1.DownloadBackupResponse\"U\xea\xc4\x19\x11\b\x03\"\r\n" +
-	"\tdatabases\x10\x01\x82\xd3\xe4\x93\x02:\x128/v1/databases/{database_id}/backups/{backup_id}/download0\x01\x12\xaf\x01\n" +
-	"\x0eBrowseDatabase\x12+.fleetly.structure.v1.BrowseDatabaseRequest\x1a,.fleetly.structure.v1.BrowseDatabaseResponse\"B\xea\xc4\x19\x11\b\x03\"\r\n" +
-	"\tdatabases\x10\x01\x82\xd3\xe4\x93\x02':\x01*\"\"/v1/databases/{database_id}/browse\x12\xd0\x01\n" +
-	"\x16RotateDatabasePassword\x123.fleetly.structure.v1.RotateDatabasePasswordRequest\x1a4.fleetly.structure.v1.RotateDatabasePasswordResponse\"K\xea\xc4\x19\x11\b\x03\"\r\n" +
-	"\tdatabases\x10\x02\x82\xd3\xe4\x93\x020:\x01*\"+/v1/databases/{database_id}/rotate-password\x1a\x06\xf2\xc4\x19\x02\b\x032\xca\n" +
-	"\n" +
-	"\x0fNetworksService\x12\x95\x01\n" +
-	"\rCreateNetwork\x12*.fleetly.structure.v1.CreateNetworkRequest\x1a+.fleetly.structure.v1.CreateNetworkResponse\"+\xea\xc4\x19\x10\b\x03\"\f\n" +
-	"\bnetworks\x10\x02\x82\xd3\xe4\x93\x02\x11:\x01*\"\f/v1/networks\x12\x8f\x01\n" +
-	"\fListNetworks\x12).fleetly.structure.v1.ListNetworksRequest\x1a*.fleetly.structure.v1.ListNetworksResponse\"(\xea\xc4\x19\x10\b\x03\"\f\n" +
-	"\bnetworks\x10\x01\x82\xd3\xe4\x93\x02\x0e\x12\f/v1/networks\x12\xa0\x01\n" +
-	"\x0eRebuildNetwork\x12+.fleetly.structure.v1.RebuildNetworkRequest\x1a,.fleetly.structure.v1.RebuildNetworkResponse\"3\xea\xc4\x19\x10\b\x03\"\f\n" +
-	"\bnetworks\x10\x02\x82\xd3\xe4\x93\x02\x19:\x01*\"\x14/v1/networks/rebuild\x12\xaa\x01\n" +
-	"\x12DeclareNetworkPeer\x12/.fleetly.structure.v1.DeclareNetworkPeerRequest\x1a0.fleetly.structure.v1.DeclareNetworkPeerResponse\"1\xea\xc4\x19\x10\b\x03\"\f\n" +
-	"\bnetworks\x10\x02\x82\xd3\xe4\x93\x02\x17:\x01*\"\x12/v1/networks/peers\x12\xb7\x01\n" +
-	"\x12ApproveNetworkPeer\x12/.fleetly.structure.v1.ApproveNetworkPeerRequest\x1a0.fleetly.structure.v1.ApproveNetworkPeerResponse\">\xea\xc4\x19\x10\b\x03\"\f\n" +
-	"\bnetworks\x10\x02\x82\xd3\xe4\x93\x02$:\x01*\"\x1f/v1/networks/peers/{id}/approve\x12\xb3\x01\n" +
-	"\x11RevokeNetworkPeer\x12..fleetly.structure.v1.RevokeNetworkPeerRequest\x1a/.fleetly.structure.v1.RevokeNetworkPeerResponse\"=\xea\xc4\x19\x10\b\x03\"\f\n" +
-	"\bnetworks\x10\x02\x82\xd3\xe4\x93\x02#:\x01*\"\x1e/v1/networks/peers/{id}/revoke\x12\xa0\x01\n" +
-	"\x0eGetNetworkPeer\x12+.fleetly.structure.v1.GetNetworkPeerRequest\x1a,.fleetly.structure.v1.GetNetworkPeerResponse\"3\xea\xc4\x19\x10\b\x03\"\f\n" +
-	"\bnetworks\x10\x01\x82\xd3\xe4\x93\x02\x19\x12\x17/v1/networks/peers/{id}\x12\xa1\x01\n" +
-	"\x10ListNetworkPeers\x12-.fleetly.structure.v1.ListNetworkPeersRequest\x1a..fleetly.structure.v1.ListNetworkPeersResponse\".\xea\xc4\x19\x10\b\x03\"\f\n" +
-	"\bnetworks\x10\x01\x82\xd3\xe4\x93\x02\x14\x12\x12/v1/networks/peers\x1a\x06\xf2\xc4\x19\x02\b\x03B\x9e\x01\x92ARRP\n" +
+	"GetAppSpec\x12'.fleetly.structure.v1.GetAppSpecRequest\x1a(.fleetly.structure.v1.GetAppSpecResponse\">\xda\xf0\x19 \n" +
+	"\x14B\x12\n" +
+	"\x05scope\"\tapps:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x14\x12\x12/v1/apps/{id}/spec\x12\x8f\x01\n" +
+	"\bListApps\x12%.fleetly.structure.v1.ListAppsRequest\x1a&.fleetly.structure.v1.ListAppsResponse\"4\xda\xf0\x19 \n" +
+	"\x14B\x12\n" +
+	"\x05scope\"\tapps:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\n" +
+	"\x12\b/v1/apps\x12\x98\x01\n" +
+	"\tDeleteApp\x12&.fleetly.structure.v1.DeleteAppRequest\x1a'.fleetly.structure.v1.DeleteAppResponse\":\xda\xf0\x19!\n" +
+	"\x15B\x13\n" +
+	"\x05scope\"\n" +
+	"apps:admin\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x0f*\r/v1/apps/{id}\x1a\b\xd2\xf0\x19\x04\n" +
+	"\x02 \x012\x93\x04\n" +
+	"\x0eSecretsService\x12\x9c\x01\n" +
+	"\tPutSecret\x12&.fleetly.structure.v1.PutSecretRequest\x1a'.fleetly.structure.v1.PutSecretResponse\">\xda\xf0\x19$\n" +
+	"\x18B\x16\n" +
+	"\x05scope\"\rsecrets:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x10:\x01*\x1a\v/v1/secrets\x12\x9e\x01\n" +
+	"\vListSecrets\x12(.fleetly.structure.v1.ListSecretsRequest\x1a).fleetly.structure.v1.ListSecretsResponse\":\xda\xf0\x19#\n" +
+	"\x17B\x15\n" +
+	"\x05scope\"\fsecrets:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\r\x12\v/v1/secrets\x12\xb6\x01\n" +
+	"\fDeleteSecret\x12).fleetly.structure.v1.DeleteSecretRequest\x1a*.fleetly.structure.v1.DeleteSecretResponse\"O\xda\xf0\x19$\n" +
+	"\x18B\x16\n" +
+	"\x05scope\"\rsecrets:admin\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02!*\x1f/v1/secrets/{project_id}/{name}\x1a\b\xd2\xf0\x19\x04\n" +
+	"\x02 \x012\x89\x04\n" +
+	"\x0eConfigsService\x12\x9c\x01\n" +
+	"\tPutConfig\x12&.fleetly.structure.v1.PutConfigRequest\x1a'.fleetly.structure.v1.PutConfigResponse\">\xda\xf0\x19$\n" +
+	"\x18B\x16\n" +
+	"\x05scope\"\rconfigs:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x10:\x01*\x1a\v/v1/configs\x12\xac\x01\n" +
+	"\tGetConfig\x12&.fleetly.structure.v1.GetConfigRequest\x1a'.fleetly.structure.v1.GetConfigResponse\"N\xda\xf0\x19#\n" +
+	"\x17B\x15\n" +
+	"\x05scope\"\fconfigs:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02!\x12\x1f/v1/configs/{project_id}/{name}\x12\x9e\x01\n" +
+	"\vListConfigs\x12(.fleetly.structure.v1.ListConfigsRequest\x1a).fleetly.structure.v1.ListConfigsResponse\":\xda\xf0\x19#\n" +
+	"\x17B\x15\n" +
+	"\x05scope\"\fconfigs:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\r\x12\v/v1/configs\x1a\b\xd2\xf0\x19\x04\n" +
+	"\x02 \x012\x99\x05\n" +
+	"\x16SharedVariablesService\x12\xc6\x01\n" +
+	"\x11PutSharedVariable\x12..fleetly.structure.v1.PutSharedVariableRequest\x1a/.fleetly.structure.v1.PutSharedVariableResponse\"P\xda\xf0\x19-\n" +
+	"!B\x1f\n" +
+	"\x05scope\"\x16shared_variables:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x19:\x01*\x1a\x14/v1/shared-variables\x12\xc8\x01\n" +
+	"\x13ListSharedVariables\x120.fleetly.structure.v1.ListSharedVariablesRequest\x1a1.fleetly.structure.v1.ListSharedVariablesResponse\"L\xda\xf0\x19,\n" +
+	" B\x1e\n" +
+	"\x05scope\"\x15shared_variables:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x16\x12\x14/v1/shared-variables\x12\xe0\x01\n" +
+	"\x14DeleteSharedVariable\x121.fleetly.structure.v1.DeleteSharedVariableRequest\x1a2.fleetly.structure.v1.DeleteSharedVariableResponse\"a\xda\xf0\x19-\n" +
+	"!B\x1f\n" +
+	"\x05scope\"\x16shared_variables:admin\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02**(/v1/shared-variables/{project_id}/{name}\x1a\b\xd2\xf0\x19\x04\n" +
+	"\x02 \x012\xe5\x04\n" +
+	"\x13AppVariablesService\x12\xb7\x01\n" +
+	"\x0ePutAppVariable\x12+.fleetly.structure.v1.PutAppVariableRequest\x1a,.fleetly.structure.v1.PutAppVariableResponse\"J\xda\xf0\x19*\n" +
+	"\x1eB\x1c\n" +
+	"\x05scope\"\x13app_variables:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x16:\x01*\x1a\x11/v1/app-variables\x12\xb9\x01\n" +
+	"\x10ListAppVariables\x12-.fleetly.structure.v1.ListAppVariablesRequest\x1a..fleetly.structure.v1.ListAppVariablesResponse\"F\xda\xf0\x19)\n" +
+	"\x1dB\x1b\n" +
+	"\x05scope\"\x12app_variables:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x13\x12\x11/v1/app-variables\x12\xcd\x01\n" +
+	"\x11DeleteAppVariable\x12..fleetly.structure.v1.DeleteAppVariableRequest\x1a/.fleetly.structure.v1.DeleteAppVariableResponse\"W\xda\xf0\x19*\n" +
+	"\x1eB\x1c\n" +
+	"\x05scope\"\x13app_variables:admin\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02#*!/v1/app-variables/{app_id}/{name}\x1a\b\xd2\xf0\x19\x04\n" +
+	"\x02 \x012\x8d\x04\n" +
+	"\x0eVolumesService\x12\xa5\x01\n" +
+	"\fCreateVolume\x12).fleetly.structure.v1.CreateVolumeRequest\x1a*.fleetly.structure.v1.CreateVolumeResponse\">\xda\xf0\x19$\n" +
+	"\x18B\x16\n" +
+	"\x05scope\"\rvolumes:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x10:\x01*\"\v/v1/volumes\x12\x9e\x01\n" +
+	"\vListVolumes\x12(.fleetly.structure.v1.ListVolumesRequest\x1a).fleetly.structure.v1.ListVolumesResponse\":\xda\xf0\x19#\n" +
+	"\x17B\x15\n" +
+	"\x05scope\"\fvolumes:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\r\x12\v/v1/volumes\x12\xa7\x01\n" +
+	"\fDeleteVolume\x12).fleetly.structure.v1.DeleteVolumeRequest\x1a*.fleetly.structure.v1.DeleteVolumeResponse\"@\xda\xf0\x19$\n" +
+	"\x18B\x16\n" +
+	"\x05scope\"\rvolumes:admin\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x12*\x10/v1/volumes/{id}\x1a\b\xd2\xf0\x19\x04\n" +
+	"\x02 \x012\x9c\x0f\n" +
+	"\x10DatabasesService\x12\xaf\x01\n" +
+	"\x0eCreateDatabase\x12+.fleetly.structure.v1.CreateDatabaseRequest\x1a,.fleetly.structure.v1.CreateDatabaseResponse\"B\xda\xf0\x19&\n" +
+	"\x1aB\x18\n" +
+	"\x05scope\"\x0fdatabases:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x12:\x01*\"\r/v1/databases\x12\xa7\x01\n" +
+	"\vGetDatabase\x12(.fleetly.structure.v1.GetDatabaseRequest\x1a).fleetly.structure.v1.GetDatabaseResponse\"C\xda\xf0\x19%\n" +
+	"\x19B\x17\n" +
+	"\x05scope\"\x0edatabases:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x14\x12\x12/v1/databases/{id}\x12\xa8\x01\n" +
+	"\rListDatabases\x12*.fleetly.structure.v1.ListDatabasesRequest\x1a+.fleetly.structure.v1.ListDatabasesResponse\">\xda\xf0\x19%\n" +
+	"\x19B\x17\n" +
+	"\x05scope\"\x0edatabases:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x0f\x12\r/v1/databases\x12\xb1\x01\n" +
+	"\x0eDeleteDatabase\x12+.fleetly.structure.v1.DeleteDatabaseRequest\x1a,.fleetly.structure.v1.DeleteDatabaseResponse\"D\xda\xf0\x19&\n" +
+	"\x1aB\x18\n" +
+	"\x05scope\"\x0fdatabases:admin\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x14*\x12/v1/databases/{id}\x12\xc2\x01\n" +
+	"\rTriggerBackup\x12*.fleetly.structure.v1.TriggerBackupRequest\x1a+.fleetly.structure.v1.TriggerBackupResponse\"X\xda\xf0\x19&\n" +
+	"\x1aB\x18\n" +
+	"\x05scope\"\x0fdatabases:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02(:\x01*\"#/v1/databases/{database_id}/backups\x12\xb8\x01\n" +
+	"\vListBackups\x12(.fleetly.structure.v1.ListBackupsRequest\x1a).fleetly.structure.v1.ListBackupsResponse\"T\xda\xf0\x19%\n" +
+	"\x19B\x17\n" +
+	"\x05scope\"\x0edatabases:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02%\x12#/v1/databases/{database_id}/backups\x12\xb9\x01\n" +
+	"\fVerifyBackup\x12).fleetly.structure.v1.VerifyBackupRequest\x1a*.fleetly.structure.v1.VerifyBackupResponse\"R\xda\xf0\x19%\n" +
+	"\x19B\x17\n" +
+	"\x05scope\"\x0edatabases:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02#:\x01*\"\x1e/v1/backups/{backup_id}/verify\x12\xd8\x01\n" +
+	"\x0eDownloadBackup\x12+.fleetly.structure.v1.DownloadBackupRequest\x1a,.fleetly.structure.v1.DownloadBackupResponse\"i\xda\xf0\x19%\n" +
+	"\x19B\x17\n" +
+	"\x05scope\"\x0edatabases:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02:\x128/v1/databases/{database_id}/backups/{backup_id}/download0\x01\x12\xc3\x01\n" +
+	"\x0eBrowseDatabase\x12+.fleetly.structure.v1.BrowseDatabaseRequest\x1a,.fleetly.structure.v1.BrowseDatabaseResponse\"V\xda\xf0\x19%\n" +
+	"\x19B\x17\n" +
+	"\x05scope\"\x0edatabases:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02':\x01*\"\"/v1/databases/{database_id}/browse\x12\xe5\x01\n" +
+	"\x16RotateDatabasePassword\x123.fleetly.structure.v1.RotateDatabasePasswordRequest\x1a4.fleetly.structure.v1.RotateDatabasePasswordResponse\"`\xda\xf0\x19&\n" +
+	"\x1aB\x18\n" +
+	"\x05scope\"\x0fdatabases:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x020:\x01*\"+/v1/databases/{database_id}/rotate-password\x1a\b\xd2\xf0\x19\x04\n" +
+	"\x02 \x012\xf1\v\n" +
+	"\x0fNetworksService\x12\xaa\x01\n" +
+	"\rCreateNetwork\x12*.fleetly.structure.v1.CreateNetworkRequest\x1a+.fleetly.structure.v1.CreateNetworkResponse\"@\xda\xf0\x19%\n" +
+	"\x19B\x17\n" +
+	"\x05scope\"\x0enetworks:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x11:\x01*\"\f/v1/networks\x12\xa3\x01\n" +
+	"\fListNetworks\x12).fleetly.structure.v1.ListNetworksRequest\x1a*.fleetly.structure.v1.ListNetworksResponse\"<\xda\xf0\x19$\n" +
+	"\x18B\x16\n" +
+	"\x05scope\"\rnetworks:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x0e\x12\f/v1/networks\x12\xb5\x01\n" +
+	"\x0eRebuildNetwork\x12+.fleetly.structure.v1.RebuildNetworkRequest\x1a,.fleetly.structure.v1.RebuildNetworkResponse\"H\xda\xf0\x19%\n" +
+	"\x19B\x17\n" +
+	"\x05scope\"\x0enetworks:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x19:\x01*\"\x14/v1/networks/rebuild\x12\xbf\x01\n" +
+	"\x12DeclareNetworkPeer\x12/.fleetly.structure.v1.DeclareNetworkPeerRequest\x1a0.fleetly.structure.v1.DeclareNetworkPeerResponse\"F\xda\xf0\x19%\n" +
+	"\x19B\x17\n" +
+	"\x05scope\"\x0enetworks:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x17:\x01*\"\x12/v1/networks/peers\x12\xcc\x01\n" +
+	"\x12ApproveNetworkPeer\x12/.fleetly.structure.v1.ApproveNetworkPeerRequest\x1a0.fleetly.structure.v1.ApproveNetworkPeerResponse\"S\xda\xf0\x19%\n" +
+	"\x19B\x17\n" +
+	"\x05scope\"\x0enetworks:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02$:\x01*\"\x1f/v1/networks/peers/{id}/approve\x12\xc8\x01\n" +
+	"\x11RevokeNetworkPeer\x12..fleetly.structure.v1.RevokeNetworkPeerRequest\x1a/.fleetly.structure.v1.RevokeNetworkPeerResponse\"R\xda\xf0\x19%\n" +
+	"\x19B\x17\n" +
+	"\x05scope\"\x0enetworks:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02#:\x01*\"\x1e/v1/networks/peers/{id}/revoke\x12\xb4\x01\n" +
+	"\x0eGetNetworkPeer\x12+.fleetly.structure.v1.GetNetworkPeerRequest\x1a,.fleetly.structure.v1.GetNetworkPeerResponse\"G\xda\xf0\x19$\n" +
+	"\x18B\x16\n" +
+	"\x05scope\"\rnetworks:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x19\x12\x17/v1/networks/peers/{id}\x12\xb5\x01\n" +
+	"\x10ListNetworkPeers\x12-.fleetly.structure.v1.ListNetworkPeersRequest\x1a..fleetly.structure.v1.ListNetworkPeersResponse\"B\xda\xf0\x19$\n" +
+	"\x18B\x16\n" +
+	"\x05scope\"\rnetworks:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x14\x12\x12/v1/networks/peers\x1a\b\xd2\xf0\x19\x04\n" +
+	"\x02 \x01B\x9e\x01\x92ARRP\n" +
 	"\adefault\x12E\n" +
 	"\x1dAn unexpected error response.\x12$\n" +
 	"\"\x1a .fleetly.shared.v1.ErrorResponseZGgithub.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1;structurev1b\x06proto3"

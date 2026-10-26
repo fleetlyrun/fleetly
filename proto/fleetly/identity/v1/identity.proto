@@ -10,7 +10,7 @@ option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/identity/v1;
 import "buf/validate/validate.proto";
 import "google/api/annotations.proto";
 import "protoc-gen-openapiv2/options/annotations.proto";
-import "grpcapi/v1/authz.proto";
+import "grpcapi/v1/policy.proto";
 
 option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
   responses: {
@@ -26,17 +26,22 @@ option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
 // 任意有效 Token 本身，不要求任何 Scope——login 验证与 CLI 调试入口；
 // 无身份携带即 E_UNAUTHENTICATED）。
 service UsersService {
-  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+  option (grpcapi.v1.service) = { default_policy: { authenticated: true } };
 
   rpc WhoAmI(WhoAmIRequest) returns (WhoAmIResponse) {
     option (google.api.http) = { get: "/v1/whoami" };
-    option (grpcapi.v1.method_auth) = { access: ACCESS_LEVEL_PUBLIC };
+    option (grpcapi.v1.method) = {
+      policy: { anonymous: true }
+      exposure: EXPOSURE_PUBLIC
+      label: "PUBLIC"
+    };
   }
   rpc CreateUser(CreateUserRequest) returns (CreateUserResponse) {
     option (google.api.http) = { post: "/v1/users" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "users" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["users:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   // Login（C6 密码会话第一期）：密码自证铸 Token——PUBLIC 位（先例 =
@@ -44,36 +49,44 @@ service UsersService {
   // （控制面 9080/9081 均 VPC-only）。
   rpc Login(LoginRequest) returns (LoginResponse) {
     option (google.api.http) = { post: "/v1/auth/login" body: "*" };
-    option (grpcapi.v1.method_auth) = { access: ACCESS_LEVEL_PUBLIC };
+    option (grpcapi.v1.method) = {
+      policy: { anonymous: true }
+      exposure: EXPOSURE_PUBLIC
+      label: "PUBLIC"
+    };
   }
   // SetUserPassword 设置/重置密码（admin 面；自证走创建时初始密码或
   // admin 重置——自助改密随 SSO 批裁决）。
   rpc SetUserPassword(SetUserPasswordRequest) returns (SetUserPasswordResponse) {
     option (google.api.http) = { post: "/v1/users/{user_id}/password" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "users" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["users:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   rpc GetUser(GetUserRequest) returns (GetUserResponse) {
     option (google.api.http) = { get: "/v1/users/{id}" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "users" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["users:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   rpc ListUsers(ListUsersRequest) returns (ListUsersResponse) {
     option (google.api.http) = { get: "/v1/users" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "users" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["users:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   rpc DeleteUser(DeleteUserRequest) returns (DeleteUserResponse) {
     option (google.api.http) = { delete: "/v1/users/{id}" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "users" op: SCOPE_OP_ADMIN }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["users:admin"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
 }
@@ -81,34 +94,38 @@ service UsersService {
 // TeamsService：权限轴 Team CRUD（Project 归属 Team；Token/User 经 Team
 // 内 Role 获权）。
 service TeamsService {
-  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+  option (grpcapi.v1.service) = { default_policy: { authenticated: true } };
 
   rpc CreateTeam(CreateTeamRequest) returns (CreateTeamResponse) {
     option (google.api.http) = { post: "/v1/teams" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "teams" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["teams:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   rpc GetTeam(GetTeamRequest) returns (GetTeamResponse) {
     option (google.api.http) = { get: "/v1/teams/{id}" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "teams" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["teams:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   rpc ListTeams(ListTeamsRequest) returns (ListTeamsResponse) {
     option (google.api.http) = { get: "/v1/teams" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "teams" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["teams:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   rpc DeleteTeam(DeleteTeamRequest) returns (DeleteTeamResponse) {
     option (google.api.http) = { delete: "/v1/teams/{id}" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "teams" op: SCOPE_OP_ADMIN }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["teams:admin"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
 }
@@ -116,34 +133,38 @@ service TeamsService {
 // RolesService：命名的 Scope 集合（内置 owner/admin/member 只读 + 自定义
 // Role CRUD）。Scope 形态 `resource:action`，action ∈ read|write|admin。
 service RolesService {
-  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+  option (grpcapi.v1.service) = { default_policy: { authenticated: true } };
 
   rpc CreateRole(CreateRoleRequest) returns (CreateRoleResponse) {
     option (google.api.http) = { post: "/v1/roles" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "roles" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["roles:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   rpc GetRole(GetRoleRequest) returns (GetRoleResponse) {
     option (google.api.http) = { get: "/v1/roles/{id}" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "roles" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["roles:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   rpc ListRoles(ListRolesRequest) returns (ListRolesResponse) {
     option (google.api.http) = { get: "/v1/roles" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "roles" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["roles:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   rpc DeleteRole(DeleteRoleRequest) returns (DeleteRoleResponse) {
     option (google.api.http) = { delete: "/v1/roles/{id}" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "roles" op: SCOPE_OP_ADMIN }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["roles:admin"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
 }
@@ -152,34 +173,38 @@ service RolesService {
 // 存储侧 sha256；吊销即下一个调用 401。Bootstrap Token 也在列表面可见、
 // 可吊销。
 service TokensService {
-  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+  option (grpcapi.v1.service) = { default_policy: { authenticated: true } };
 
   rpc CreateToken(CreateTokenRequest) returns (CreateTokenResponse) {
     option (google.api.http) = { post: "/v1/tokens" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "tokens" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["tokens:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   rpc GetToken(GetTokenRequest) returns (GetTokenResponse) {
     option (google.api.http) = { get: "/v1/tokens/{id}" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "tokens" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["tokens:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   rpc ListTokens(ListTokensRequest) returns (ListTokensResponse) {
     option (google.api.http) = { get: "/v1/tokens" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "tokens" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["tokens:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   rpc RevokeToken(RevokeTokenRequest) returns (RevokeTokenResponse) {
     option (google.api.http) = { post: "/v1/tokens/{id}/revoke" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "tokens" op: SCOPE_OP_ADMIN }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["tokens:admin"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
 }
@@ -187,38 +212,45 @@ service TokensService {
 // InvitationsService：一次性邀请（F0.5）。AcceptInvitation 是 PUBLIC 档
 // ——邀请 Token 自身就是凭证（被邀请者尚无平台 Token）；时窗内单次有效。
 service InvitationsService {
-  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+  option (grpcapi.v1.service) = { default_policy: { authenticated: true } };
 
   rpc CreateInvitation(CreateInvitationRequest) returns (CreateInvitationResponse) {
     option (google.api.http) = { post: "/v1/invitations" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "invitations" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["invitations:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   rpc ListInvitations(ListInvitationsRequest) returns (ListInvitationsResponse) {
     option (google.api.http) = { get: "/v1/invitations" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "invitations" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["invitations:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   rpc AcceptInvitation(AcceptInvitationRequest) returns (AcceptInvitationResponse) {
     option (google.api.http) = { post: "/v1/invitations/accept" body: "*" };
-    option (grpcapi.v1.method_auth) = { access: ACCESS_LEVEL_PUBLIC };
+    option (grpcapi.v1.method) = {
+      policy: { anonymous: true }
+      exposure: EXPOSURE_PUBLIC
+      label: "PUBLIC"
+    };
   }
 }
 
 // AuditQueryService：审计读路径（F0.7）。写路径落行在各聚合事务内
 // （四件一拍）；本面按操作者/来源/动作过滤。
 service AuditQueryService {
-  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+  option (grpcapi.v1.service) = { default_policy: { authenticated: true } };
 
   rpc ListAudit(ListAuditRequest) returns (ListAuditResponse) {
     option (google.api.http) = { get: "/v1/audit" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "audit" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["audit:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
 }

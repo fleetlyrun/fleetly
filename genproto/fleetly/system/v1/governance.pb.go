@@ -413,7 +413,7 @@ var File_fleetly_system_v1_governance_proto protoreflect.FileDescriptor
 
 const file_fleetly_system_v1_governance_proto_rawDesc = "" +
 	"\n" +
-	"\"fleetly/system/v1/governance.proto\x12\x11fleetly.system.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"\xbc\x01\n" +
+	"\"fleetly/system/v1/governance.proto\x12\x11fleetly.system.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x17grpcapi/v1/policy.proto\"\xbc\x01\n" +
 	"\fChangeFreeze\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x10\n" +
 	"\x03seq\x18\a \x01(\x03R\x03seq\x12\x17\n" +
@@ -438,14 +438,18 @@ const file_fleetly_system_v1_governance_proto_rawDesc = "" +
 	"\x10after_freeze_seq\x18\x01 \x01(\x03R\x0eafterFreezeSeq\x12\x14\n" +
 	"\x05limit\x18\x02 \x01(\x05R\x05limit\"V\n" +
 	"\x19ListChangeFreezesResponse\x129\n" +
-	"\afreezes\x18\x01 \x03(\v2\x1f.fleetly.system.v1.ChangeFreezeR\afreezes2\x91\x04\n" +
-	"\x11GovernanceService\x12\x9f\x01\n" +
-	"\x0fSetChangeFreeze\x12).fleetly.system.v1.SetChangeFreezeRequest\x1a*.fleetly.system.v1.SetChangeFreezeResponse\"5\xea\xc4\x19\x10\b\x03\"\f\n" +
-	"\bplatform\x10\x02\x82\xd3\xe4\x93\x02\x1b:\x01*\"\x16/v1/governance/freezes\x12\xac\x01\n" +
-	"\x10LiftChangeFreeze\x12*.fleetly.system.v1.LiftChangeFreezeRequest\x1a+.fleetly.system.v1.LiftChangeFreezeResponse\"?\xea\xc4\x19\x10\b\x03\"\f\n" +
-	"\bplatform\x10\x02\x82\xd3\xe4\x93\x02%:\x01*\" /v1/governance/freezes/{id}/lift\x12\xa2\x01\n" +
-	"\x11ListChangeFreezes\x12+.fleetly.system.v1.ListChangeFreezesRequest\x1a,.fleetly.system.v1.ListChangeFreezesResponse\"2\xea\xc4\x19\x10\b\x03\"\f\n" +
-	"\bplatform\x10\x01\x82\xd3\xe4\x93\x02\x18\x12\x16/v1/governance/freezes\x1a\x06\xf2\xc4\x19\x02\b\x03B\x98\x01\x92ARRP\n" +
+	"\afreezes\x18\x01 \x03(\v2\x1f.fleetly.system.v1.ChangeFreezeR\afreezes2\xd1\x04\n" +
+	"\x11GovernanceService\x12\xb4\x01\n" +
+	"\x0fSetChangeFreeze\x12).fleetly.system.v1.SetChangeFreezeRequest\x1a*.fleetly.system.v1.SetChangeFreezeResponse\"J\xda\xf0\x19%\n" +
+	"\x19B\x17\n" +
+	"\x05scope\"\x0eplatform:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x1b:\x01*\"\x16/v1/governance/freezes\x12\xc1\x01\n" +
+	"\x10LiftChangeFreeze\x12*.fleetly.system.v1.LiftChangeFreezeRequest\x1a+.fleetly.system.v1.LiftChangeFreezeResponse\"T\xda\xf0\x19%\n" +
+	"\x19B\x17\n" +
+	"\x05scope\"\x0eplatform:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02%:\x01*\" /v1/governance/freezes/{id}/lift\x12\xb6\x01\n" +
+	"\x11ListChangeFreezes\x12+.fleetly.system.v1.ListChangeFreezesRequest\x1a,.fleetly.system.v1.ListChangeFreezesResponse\"F\xda\xf0\x19$\n" +
+	"\x18B\x16\n" +
+	"\x05scope\"\rplatform:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x18\x12\x16/v1/governance/freezes\x1a\b\xd2\xf0\x19\x04\n" +
+	"\x02 \x01B\x98\x01\x92ARRP\n" +
 	"\adefault\x12E\n" +
 	"\x1dAn unexpected error response.\x12$\n" +
 	"\"\x1a .fleetly.shared.v1.ErrorResponseZAgithub.com/fleetlyrun/fleetly/genproto/fleetly/system/v1;systemv1b\x06proto3"

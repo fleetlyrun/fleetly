@@ -1021,7 +1021,7 @@ var File_fleetly_delivery_v1_github_apps_proto protoreflect.FileDescriptor
 
 const file_fleetly_delivery_v1_github_apps_proto_rawDesc = "" +
 	"\n" +
-	"%fleetly/delivery/v1/github_apps.proto\x12\x13fleetly.delivery.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x16grpcapi/v1/authz.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\"\xb0\x02\n" +
+	"%fleetly/delivery/v1/github_apps.proto\x12\x13fleetly.delivery.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x17grpcapi/v1/policy.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\"\xb0\x02\n" +
 	"\tGitHubApp\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
 	"\n" +
@@ -1090,29 +1090,31 @@ const file_fleetly_delivery_v1_github_apps_proto_rawDesc = "" +
 	"\n" +
 	"project_id\x18\x03 \x01(\tR\tprojectId\"P\n" +
 	"\x1cCompleteManifestFlowResponse\x120\n" +
-	"\x03app\x18\x01 \x01(\v2\x1e.fleetly.delivery.v1.GitHubAppR\x03app2\xd9\t\n" +
-	"\x11GitHubAppsService\x12\x95\x01\n" +
-	"\fSetGitHubApp\x12(.fleetly.delivery.v1.SetGitHubAppRequest\x1a).fleetly.delivery.v1.SetGitHubAppResponse\"0\xea\xc4\x19\x12\b\x03\"\x0e\n" +
+	"\x03app\x18\x01 \x01(\v2\x1e.fleetly.delivery.v1.GitHubAppR\x03app2\xec\n" +
 	"\n" +
-	"github_app\x10\x02\x82\xd3\xe4\x93\x02\x14:\x01*\"\x0f/v1/github-apps\x12\x98\x01\n" +
-	"\x0eListGitHubApps\x12*.fleetly.delivery.v1.ListGitHubAppsRequest\x1a+.fleetly.delivery.v1.ListGitHubAppsResponse\"-\xea\xc4\x19\x12\b\x03\"\x0e\n" +
-	"\n" +
-	"github_app\x10\x01\x82\xd3\xe4\x93\x02\x11\x12\x0f/v1/github-apps\x12\xa0\x01\n" +
-	"\x0fDeleteGitHubApp\x12+.fleetly.delivery.v1.DeleteGitHubAppRequest\x1a,.fleetly.delivery.v1.DeleteGitHubAppResponse\"2\xea\xc4\x19\x12\b\x03\"\x0e\n" +
-	"\n" +
-	"github_app\x10\x02\x82\xd3\xe4\x93\x02\x16*\x14/v1/github-apps/{id}\x12\xaf\x01\n" +
-	"\x12ListGitHubAppRepos\x12..fleetly.delivery.v1.ListGitHubAppReposRequest\x1a/.fleetly.delivery.v1.ListGitHubAppReposResponse\"8\xea\xc4\x19\x12\b\x03\"\x0e\n" +
-	"\n" +
-	"github_app\x10\x01\x82\xd3\xe4\x93\x02\x1c\x12\x1a/v1/github-apps/{id}/repos\x12\xb3\x01\n" +
-	"\x11StartManifestFlow\x12-.fleetly.delivery.v1.StartManifestFlowRequest\x1a..fleetly.delivery.v1.StartManifestFlowResponse\"?\xea\xc4\x19\x12\b\x03\"\x0e\n" +
-	"\n" +
-	"github_app\x10\x02\x82\xd3\xe4\x93\x02#:\x01*\"\x1e/v1/github-apps/manifest/start\x12\xbb\x01\n" +
-	"\x13ConsumeManifestCode\x12/.fleetly.delivery.v1.ConsumeManifestCodeRequest\x1a0.fleetly.delivery.v1.ConsumeManifestCodeResponse\"A\xea\xc4\x19\x12\b\x03\"\x0e\n" +
-	"\n" +
-	"github_app\x10\x02\x82\xd3\xe4\x93\x02%:\x01*\" /v1/github-apps/manifest/consume\x12\xbf\x01\n" +
-	"\x14CompleteManifestFlow\x120.fleetly.delivery.v1.CompleteManifestFlowRequest\x1a1.fleetly.delivery.v1.CompleteManifestFlowResponse\"B\xea\xc4\x19\x12\b\x03\"\x0e\n" +
-	"\n" +
-	"github_app\x10\x02\x82\xd3\xe4\x93\x02&:\x01*\"!/v1/github-apps/manifest/complete\x1a\x06\xf2\xc4\x19\x02\b\x03B\x9c\x01\x92ARRP\n" +
+	"\x11GitHubAppsService\x12\xaa\x01\n" +
+	"\fSetGitHubApp\x12(.fleetly.delivery.v1.SetGitHubAppRequest\x1a).fleetly.delivery.v1.SetGitHubAppResponse\"E\xda\xf0\x19'\n" +
+	"\x1bB\x19\n" +
+	"\x05scope\"\x10github_app:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x14:\x01*\"\x0f/v1/github-apps\x12\xac\x01\n" +
+	"\x0eListGitHubApps\x12*.fleetly.delivery.v1.ListGitHubAppsRequest\x1a+.fleetly.delivery.v1.ListGitHubAppsResponse\"A\xda\xf0\x19&\n" +
+	"\x1aB\x18\n" +
+	"\x05scope\"\x0fgithub_app:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x11\x12\x0f/v1/github-apps\x12\xb5\x01\n" +
+	"\x0fDeleteGitHubApp\x12+.fleetly.delivery.v1.DeleteGitHubAppRequest\x1a,.fleetly.delivery.v1.DeleteGitHubAppResponse\"G\xda\xf0\x19'\n" +
+	"\x1bB\x19\n" +
+	"\x05scope\"\x10github_app:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x16*\x14/v1/github-apps/{id}\x12\xc3\x01\n" +
+	"\x12ListGitHubAppRepos\x12..fleetly.delivery.v1.ListGitHubAppReposRequest\x1a/.fleetly.delivery.v1.ListGitHubAppReposResponse\"L\xda\xf0\x19&\n" +
+	"\x1aB\x18\n" +
+	"\x05scope\"\x0fgithub_app:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x1c\x12\x1a/v1/github-apps/{id}/repos\x12\xc8\x01\n" +
+	"\x11StartManifestFlow\x12-.fleetly.delivery.v1.StartManifestFlowRequest\x1a..fleetly.delivery.v1.StartManifestFlowResponse\"T\xda\xf0\x19'\n" +
+	"\x1bB\x19\n" +
+	"\x05scope\"\x10github_app:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02#:\x01*\"\x1e/v1/github-apps/manifest/start\x12\xd0\x01\n" +
+	"\x13ConsumeManifestCode\x12/.fleetly.delivery.v1.ConsumeManifestCodeRequest\x1a0.fleetly.delivery.v1.ConsumeManifestCodeResponse\"V\xda\xf0\x19'\n" +
+	"\x1bB\x19\n" +
+	"\x05scope\"\x10github_app:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02%:\x01*\" /v1/github-apps/manifest/consume\x12\xd4\x01\n" +
+	"\x14CompleteManifestFlow\x120.fleetly.delivery.v1.CompleteManifestFlowRequest\x1a1.fleetly.delivery.v1.CompleteManifestFlowResponse\"W\xda\xf0\x19'\n" +
+	"\x1bB\x19\n" +
+	"\x05scope\"\x10github_app:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02&:\x01*\"!/v1/github-apps/manifest/complete\x1a\b\xd2\xf0\x19\x04\n" +
+	"\x02 \x01B\x9c\x01\x92ARRP\n" +
 	"\adefault\x12E\n" +
 	"\x1dAn unexpected error response.\x12$\n" +
 	"\"\x1a .fleetly.shared.v1.ErrorResponseZEgithub.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1;deliveryv1b\x06proto3"

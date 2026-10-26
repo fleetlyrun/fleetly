@@ -41,7 +41,8 @@ func quietLogger() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard
 func seedNarrowingWorld(t *testing.T, tokScopes, creatorScopes []string) (string, *Authenticator) {
 	t.Helper()
 	db, _ := statetest.New(t)
-	a := NewAuthenticator(db, testAuthnRepos(db.Clock(), db.Runner()), nil, testVocab, quietLogger())
+	a, aerr := NewAuthenticator(db, testAuthnRepos(db.Clock(), db.Runner()), nil, testVocab, quietLogger())
+	require.NoError(t, aerr)
 	ctx := context.Background()
 
 	tm := &team.Team{ID: "t1", Name: "crew"}
@@ -155,7 +156,8 @@ func TestNarrowingCreatorDeletedIsTerminal(t *testing.T) {
 func TestNarrowingUserlessTokenStaysDeclared(t *testing.T) {
 	// 无属主 Token（bootstrap/Agent/CI 形态）不参与收窄——声明即有效。
 	db, _ := statetest.New(t)
-	a := NewAuthenticator(db, testAuthnRepos(db.Clock(), db.Runner()), nil, testVocab, quietLogger())
+	a, aerr := NewAuthenticator(db, testAuthnRepos(db.Clock(), db.Runner()), nil, testVocab, quietLogger())
+	require.NoError(t, aerr)
 	ctx := context.Background()
 	tm := &team.Team{ID: "t1", Name: "crew"}
 	require.NoError(t, teamrepo.New(db.Clock(), db.Runner()).Create(ctx, tm))

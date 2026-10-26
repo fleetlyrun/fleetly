@@ -11,7 +11,7 @@ option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1;sy
 import "buf/validate/validate.proto";
 import "google/api/annotations.proto";
 import "protoc-gen-openapiv2/options/annotations.proto";
-import "grpcapi/v1/authz.proto";
+import "grpcapi/v1/policy.proto";
 
 // 统一 default 错误响应（运行时错误体即 fleetly.shared.v1.ErrorResponse），
 // 文件级声明自动填充到本文件全部 operation。
@@ -26,33 +26,36 @@ option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
 };
 
 service GovernanceService {
-  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+  option (grpcapi.v1.service) = { default_policy: { authenticated: true } };
 
   // SetChangeFreeze 落一条活跃冻结（team_id 空 = 全局冻结行；scope 已有
   // 活跃冻结 → E_CONFLICT，先 lift）。创建型动词（幂等执法面）。
   rpc SetChangeFreeze(SetChangeFreezeRequest) returns (SetChangeFreezeResponse) {
     option (google.api.http) = { post: "/v1/governance/freezes" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "platform" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["platform:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
 
   // LiftChangeFreeze 解除一条冻结（落 lifted_at；已 lift 再 lift 幂等成功）。
   rpc LiftChangeFreeze(LiftChangeFreezeRequest) returns (LiftChangeFreezeResponse) {
     option (google.api.http) = { post: "/v1/governance/freezes/{id}/lift" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "platform" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["platform:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
 
   // ListChangeFreezes 列冻结窗（含历史；after_* + limit 惯例，ADR-0026）。
   rpc ListChangeFreezes(ListChangeFreezesRequest) returns (ListChangeFreezesResponse) {
     option (google.api.http) = { get: "/v1/governance/freezes" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "platform" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["platform:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
 }

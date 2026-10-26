@@ -17,8 +17,6 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
-	"github.com/lynx-go/grpcapi/authz"
-
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	proxyv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/proxy/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
@@ -26,6 +24,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/catalog"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
@@ -257,7 +256,7 @@ func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliv
 	// 动作集、先于任何副作用：缺任一能力即 403 零副作用；各动作调用点仍有
 	// 二次复核（防后续新增内层动作漏配预检）。
 	for _, need := range templateInnerScopes(doc, hasSecrets) {
-		if err := svc.s.requireScope(ctx, need.resource, authz.ScopeWrite); err != nil {
+		if err := svc.s.requireScope(ctx, need.resource, identity.OpWrite); err != nil {
 			return nil, err
 		}
 	}
@@ -274,7 +273,7 @@ func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliv
 	} else if !errors.Is(err, state.ErrNotFound) {
 		return nil, mapStateError(err, "app")
 	} else {
-		if err := svc.s.requireScope(ctx, "apps", authz.ScopeWrite); err != nil {
+		if err := svc.s.requireScope(ctx, "apps", identity.OpWrite); err != nil {
 			return nil, err
 		}
 		created, err := (&AppsService{s: svc.s}).CreateApp(ctx, &structurev1.CreateAppRequest{
@@ -295,7 +294,7 @@ func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliv
 		} else if !errors.Is(err, state.ErrNotFound) {
 			return nil, mapStateError(err, "network")
 		} else {
-			if err := svc.s.requireScope(ctx, "networks", authz.ScopeWrite); err != nil {
+			if err := svc.s.requireScope(ctx, "networks", identity.OpWrite); err != nil {
 				return nil, err
 			}
 			if _, err := (&NetworksService{s: svc.s}).CreateNetwork(ctx, &structurev1.CreateNetworkRequest{
@@ -331,7 +330,7 @@ func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliv
 		} else if !errors.Is(err, state.ErrNotFound) {
 			return nil, mapStateError(err, "secret")
 		}
-		if err := svc.s.requireScope(ctx, "secrets", authz.ScopeWrite); err != nil {
+		if err := svc.s.requireScope(ctx, "secrets", identity.OpWrite); err != nil {
 			return nil, err
 		}
 		if _, err := (&SecretsService{s: svc.s}).PutSecret(ctx, &structurev1.PutSecretRequest{
@@ -350,7 +349,7 @@ func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliv
 		} else if !errors.Is(err, state.ErrNotFound) {
 			return nil, mapStateError(err, "database")
 		}
-		if err := svc.s.requireScope(ctx, "databases", authz.ScopeWrite); err != nil {
+		if err := svc.s.requireScope(ctx, "databases", identity.OpWrite); err != nil {
 			return nil, err
 		}
 		created, err := (&DatabasesService{s: svc.s}).CreateDatabase(ctx, &structurev1.CreateDatabaseRequest{
@@ -368,7 +367,7 @@ func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliv
 	if err != nil {
 		return nil, apperr.New("E_INTERNAL", "rendered compose could not be encoded").WithCause(err)
 	}
-	if err := svc.s.requireScope(ctx, "deployments", authz.ScopeWrite); err != nil {
+	if err := svc.s.requireScope(ctx, "deployments", identity.OpWrite); err != nil {
 		return nil, err
 	}
 	dep, err := (&DeploymentsService{s: svc.s}).Deploy(ctx, &deliveryv1.DeployRequest{
@@ -395,7 +394,7 @@ func (svc *TemplatesService) InstantiateTemplate(ctx context.Context, req *deliv
 			record("route", existingID, r.Host, true)
 			continue
 		}
-		if err := svc.s.requireScope(ctx, "routes", authz.ScopeWrite); err != nil {
+		if err := svc.s.requireScope(ctx, "routes", identity.OpWrite); err != nil {
 			return nil, err
 		}
 		created, err := (&RoutesService{s: svc.s}).CreateRoute(ctx, &proxyv1.CreateRouteRequest{

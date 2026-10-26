@@ -15,6 +15,8 @@ package assembly
 // 分派，非 POST 原样回落 gateway。
 
 import (
+	"github.com/lynx-go/grpcapi/gateway"
+
 	"context"
 	"io"
 	"net/http"
@@ -60,7 +62,7 @@ func newUploadsHandler(client uploadsStreamer, next http.Handler) http.Handler {
 		}
 		stream, err := client.UploadSource(callCtx)
 		if err != nil {
-			newGatewayErrorHandler(nil)(r.Context(), nil, nil, w, r, err)
+			gateway.WriteError(w, r, err, newGatewayErrorEncoder(nil))
 			return
 		}
 		if err := stream.Send(&deliveryv1.UploadSourceRequest{
@@ -71,13 +73,13 @@ func newUploadsHandler(client uploadsStreamer, next http.Handler) http.Handler {
 			// 首帧拒绝（冻结/授权）经 CloseAndRecv 取回真实 RPC 状态——
 			// 与 CLI 同款，错误不被客户端 EOF 掩蔽。
 			if resp, cerr := stream.CloseAndRecv(); cerr != nil {
-				newGatewayErrorHandler(nil)(r.Context(), nil, nil, w, r, cerr)
+				gateway.WriteError(w, r, cerr, newGatewayErrorEncoder(nil))
 				return
 			} else if resp != nil {
 				writeHookProtoJSON(w, http.StatusOK, resp)
 				return
 			}
-			newGatewayErrorHandler(nil)(r.Context(), nil, nil, w, r, err)
+			gateway.WriteError(w, r, err, newGatewayErrorEncoder(nil))
 			return
 		}
 		buf := make([]byte, uploadChunkSize)
@@ -91,13 +93,13 @@ func newUploadsHandler(client uploadsStreamer, next http.Handler) http.Handler {
 					// 服务端中途拒绝（限额等）：Send 多为 io.EOF，真实状态
 					// 经 CloseAndRecv 取回（首帧同款，错误不被掩蔽）。
 					if resp, cerr := stream.CloseAndRecv(); cerr != nil {
-						newGatewayErrorHandler(nil)(r.Context(), nil, nil, w, r, cerr)
+						gateway.WriteError(w, r, cerr, newGatewayErrorEncoder(nil))
 						return
 					} else if resp != nil {
 						writeHookProtoJSON(w, http.StatusOK, resp)
 						return
 					}
-					newGatewayErrorHandler(nil)(r.Context(), nil, nil, w, r, serr)
+					gateway.WriteError(w, r, serr, newGatewayErrorEncoder(nil))
 					return
 				}
 			}
@@ -112,7 +114,7 @@ func newUploadsHandler(client uploadsStreamer, next http.Handler) http.Handler {
 		}
 		resp, err := stream.CloseAndRecv()
 		if err != nil {
-			newGatewayErrorHandler(nil)(r.Context(), nil, nil, w, r, err)
+			gateway.WriteError(w, r, err, newGatewayErrorEncoder(nil))
 			return
 		}
 		writeHookProtoJSON(w, http.StatusOK, resp)

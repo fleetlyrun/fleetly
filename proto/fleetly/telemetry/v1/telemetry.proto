@@ -9,7 +9,7 @@ option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1
 import "buf/validate/validate.proto";
 import "google/api/annotations.proto";
 import "protoc-gen-openapiv2/options/annotations.proto";
-import "grpcapi/v1/authz.proto";
+import "grpcapi/v1/policy.proto";
 
 option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
   responses: {
@@ -24,13 +24,14 @@ option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
 // EventsService：Outbox 读路径（F0.23 列表；F1.2 订阅面——gRPC 流 + SSE
 //（票据换键）+ 断档 410 + 快照重同步基准；保留窗与断档口径见 ADR-0026）。
 service EventsService {
-  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+  option (grpcapi.v1.service) = { default_policy: { authenticated: true } };
 
   rpc ListEvents(ListEventsRequest) returns (ListEventsResponse) {
     option (google.api.http) = { get: "/v1/events" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "events" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["events:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
 
@@ -39,9 +40,10 @@ service EventsService {
   // 客户端取消。after_seq 落在保留窗外 → E_EVENTS_GONE（410，重同步）。
   rpc StreamEvents(StreamEventsRequest) returns (stream StreamEventsResponse) {
     option (google.api.http) = { get: "/v1/events/stream" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "events" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["events:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
 
@@ -49,9 +51,10 @@ service EventsService {
   // 起点（after_seq < earliest 即断档），last_seq 定重同步后的新游标。
   rpc GetEventStatus(GetEventStatusRequest) returns (GetEventStatusResponse) {
     option (google.api.http) = { get: "/v1/events/status" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "events" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["events:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
 
@@ -60,9 +63,10 @@ service EventsService {
   // query 参数携带；限订阅路径，泄漏面受控）。
   rpc IssueEventTicket(IssueEventTicketRequest) returns (IssueEventTicketResponse) {
     option (google.api.http) = { post: "/v1/events/ticket" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "events" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["events:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
 }
@@ -71,13 +75,14 @@ service EventsService {
 //（follow/since/tail，集群面）；text = 持久化检索路径（VictoriaLogs
 // 保留窗 + 全文过滤）。Logging 面停用时检索路径精确失败。
 service LogsService {
-  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+  option (grpcapi.v1.service) = { default_policy: { authenticated: true } };
 
   rpc StreamLogs(StreamLogsRequest) returns (stream StreamLogsResponse) {
     option (google.api.http) = { get: "/v1/logs" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "logs" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["logs:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
 }
@@ -90,14 +95,15 @@ service LogsService {
 //
 // Metrics 面停用时两者均精确失败。
 service MetricsService {
-  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+  option (grpcapi.v1.service) = { default_policy: { authenticated: true } };
 
   // QueryMetrics 原样透传 PromQL（平台管理员诊断；member 调用 E_FORBIDDEN）。
   rpc QueryMetrics(QueryMetricsRequest) returns (QueryMetricsResponse) {
     option (google.api.http) = { get: "/v1/metrics" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "metrics" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["metrics:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
 
@@ -105,9 +111,10 @@ service MetricsService {
   // 授权：metrics:read + app/database 所在 Project 的行级 Team 比对。
   rpc QueryScopedMetrics(QueryScopedMetricsRequest) returns (QueryScopedMetricsResponse) {
     option (google.api.http) = { get: "/v1/metrics/scoped" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "metrics" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["metrics:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
 }
@@ -115,68 +122,76 @@ service MetricsService {
 // AlertingService：阈值告警规则 + 通知通道（ADR-0041 决策 3/4）。通道是
 // 平台级配置（channels 资源）；规则按 App 归属行级授权（alerts 资源）。
 service AlertingService {
-  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+  option (grpcapi.v1.service) = { default_policy: { authenticated: true } };
 
   // CreateNotificationChannel 登记一条通知通道（webhook/telegram；配置
   // age 信封入库——URL/token 只写不读）。
   rpc CreateNotificationChannel(CreateNotificationChannelRequest) returns (CreateNotificationChannelResponse) {
     option (google.api.http) = { post: "/v1/channels" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "channels" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["channels:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   // TestNotificationChannel 即时发一条测试载荷（通道验收锚；配置错误
   // 原样上抛）。
   rpc TestNotificationChannel(TestNotificationChannelRequest) returns (TestNotificationChannelResponse) {
     option (google.api.http) = { post: "/v1/channels/{channel_id}/test" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "channels" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["channels:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   rpc ListNotificationChannels(ListNotificationChannelsRequest) returns (ListNotificationChannelsResponse) {
     option (google.api.http) = { get: "/v1/channels" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "channels" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["channels:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   rpc DeleteNotificationChannel(DeleteNotificationChannelRequest) returns (DeleteNotificationChannelResponse) {
     option (google.api.http) = { delete: "/v1/channels/{channel_id}" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "channels" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["channels:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   // CreateAlertRule 登记一条 per-App 阈值规则（评估在采集遍内原生完成）。
   rpc CreateAlertRule(CreateAlertRuleRequest) returns (CreateAlertRuleResponse) {
     option (google.api.http) = { post: "/v1/alerts/rules" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "alerts" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["alerts:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   rpc ListAlertRules(ListAlertRulesRequest) returns (ListAlertRulesResponse) {
     option (google.api.http) = { get: "/v1/alerts/rules" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "alerts" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["alerts:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   rpc DeleteAlertRule(DeleteAlertRuleRequest) returns (DeleteAlertRuleResponse) {
     option (google.api.http) = { delete: "/v1/alerts/rules/{rule_id}" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "alerts" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["alerts:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   // ListAlertStates 是现行告警状态面（含系统内置规则行）。
   rpc ListAlertStates(ListAlertStatesRequest) returns (ListAlertStatesResponse) {
     option (google.api.http) = { get: "/v1/alerts" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "alerts" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["alerts:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
 }

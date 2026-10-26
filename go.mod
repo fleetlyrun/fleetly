@@ -15,7 +15,7 @@ require (
 	github.com/google/wire v0.7.0
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0
 	github.com/lynx-go/commands v0.3.0
-	github.com/lynx-go/grpcapi v0.1.0
+	github.com/lynx-go/grpcapi v0.4.0
 	github.com/lynx-go/lynx v1.20.0
 	github.com/lynx-go/lynx/contrib/zap v1.20.0
 	github.com/minio/minio-go/v7 v7.3.0
@@ -94,7 +94,7 @@ require (
 	github.com/klauspost/compress v1.19.2 // indirect
 	github.com/klauspost/cpuid/v2 v2.4.0 // indirect
 	github.com/klauspost/crc32 v1.3.0 // indirect
-	github.com/lynx-go/grpcapi/genproto v0.1.0 // indirect
+	github.com/lynx-go/grpcapi/genproto v0.3.0 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/mattn/go-shellwords v1.0.12 // indirect
 	github.com/mfridman/interpolate v0.0.2 // indirect
@@ -148,7 +148,7 @@ require (
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	go.yaml.in/yaml/v4 v4.0.0-rc.4 // indirect
 	golang.org/x/exp v0.0.0-20260824195058-e88cd73687aa // indirect
-	golang.org/x/net v0.59.0 // indirect
+	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/text v0.42.0 // indirect

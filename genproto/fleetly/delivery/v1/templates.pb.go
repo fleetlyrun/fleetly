@@ -696,7 +696,7 @@ var File_fleetly_delivery_v1_templates_proto protoreflect.FileDescriptor
 
 const file_fleetly_delivery_v1_templates_proto_rawDesc = "" +
 	"\n" +
-	"#fleetly/delivery/v1/templates.proto\x12\x13fleetly.delivery.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"\xb7\x01\n" +
+	"#fleetly/delivery/v1/templates.proto\x12\x13fleetly.delivery.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x17grpcapi/v1/policy.proto\"\xb7\x01\n" +
 	"\bTemplate\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\tR\aversion\x12\x16\n" +
@@ -746,16 +746,21 @@ const file_fleetly_delivery_v1_templates_proto_rawDesc = "" +
 	"\x18RefreshTemplatesResponse\x12'\n" +
 	"\x0fprevious_digest\x18\x01 \x01(\tR\x0epreviousDigest\x12\x16\n" +
 	"\x06digest\x18\x02 \x01(\tR\x06digest\x12%\n" +
-	"\x0etemplate_count\x18\x03 \x01(\x05R\rtemplateCount2\xa3\x05\n" +
-	"\x10TemplatesService\x12\x92\x01\n" +
-	"\rListTemplates\x12).fleetly.delivery.v1.ListTemplatesRequest\x1a*.fleetly.delivery.v1.ListTemplatesResponse\"*\xea\xc4\x19\x11\b\x03\"\r\n" +
-	"\ttemplates\x10\x01\x82\xd3\xe4\x93\x02\x0f\x12\r/v1/templates\x12\x93\x01\n" +
-	"\vGetTemplate\x12'.fleetly.delivery.v1.GetTemplateRequest\x1a(.fleetly.delivery.v1.GetTemplateResponse\"1\xea\xc4\x19\x11\b\x03\"\r\n" +
-	"\ttemplates\x10\x01\x82\xd3\xe4\x93\x02\x16\x12\x14/v1/templates/{name}\x12\xb3\x01\n" +
-	"\x13InstantiateTemplate\x12/.fleetly.delivery.v1.InstantiateTemplateRequest\x1a0.fleetly.delivery.v1.InstantiateTemplateResponse\"9\xea\xc4\x19\x11\b\x03\"\r\n" +
-	"\ttemplates\x10\x02\x82\xd3\xe4\x93\x02\x1e:\x01*\"\x19/v1/templates/instantiate\x12\xa5\x01\n" +
-	"\x10RefreshTemplates\x12,.fleetly.delivery.v1.RefreshTemplatesRequest\x1a-.fleetly.delivery.v1.RefreshTemplatesResponse\"4\xea\xc4\x19\x10\b\x03\"\f\n" +
-	"\bplatform\x10\x02\x82\xd3\xe4\x93\x02\x1a:\x01*\"\x15/v1/templates/refresh\x1a\x06\xf2\xc4\x19\x02\b\x03B\x9c\x01\x92ARRP\n" +
+	"\x0etemplate_count\x18\x03 \x01(\x05R\rtemplateCount2\xf7\x05\n" +
+	"\x10TemplatesService\x12\xa6\x01\n" +
+	"\rListTemplates\x12).fleetly.delivery.v1.ListTemplatesRequest\x1a*.fleetly.delivery.v1.ListTemplatesResponse\">\xda\xf0\x19%\n" +
+	"\x19B\x17\n" +
+	"\x05scope\"\x0etemplates:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x0f\x12\r/v1/templates\x12\xa7\x01\n" +
+	"\vGetTemplate\x12'.fleetly.delivery.v1.GetTemplateRequest\x1a(.fleetly.delivery.v1.GetTemplateResponse\"E\xda\xf0\x19%\n" +
+	"\x19B\x17\n" +
+	"\x05scope\"\x0etemplates:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x16\x12\x14/v1/templates/{name}\x12\xc8\x01\n" +
+	"\x13InstantiateTemplate\x12/.fleetly.delivery.v1.InstantiateTemplateRequest\x1a0.fleetly.delivery.v1.InstantiateTemplateResponse\"N\xda\xf0\x19&\n" +
+	"\x1aB\x18\n" +
+	"\x05scope\"\x0ftemplates:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x1e:\x01*\"\x19/v1/templates/instantiate\x12\xba\x01\n" +
+	"\x10RefreshTemplates\x12,.fleetly.delivery.v1.RefreshTemplatesRequest\x1a-.fleetly.delivery.v1.RefreshTemplatesResponse\"I\xda\xf0\x19%\n" +
+	"\x19B\x17\n" +
+	"\x05scope\"\x0eplatform:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x1a:\x01*\"\x15/v1/templates/refresh\x1a\b\xd2\xf0\x19\x04\n" +
+	"\x02 \x01B\x9c\x01\x92ARRP\n" +
 	"\adefault\x12E\n" +
 	"\x1dAn unexpected error response.\x12$\n" +
 	"\"\x1a .fleetly.shared.v1.ErrorResponseZEgithub.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1;deliveryv1b\x06proto3"

@@ -1,12 +1,14 @@
 package assembly
 
 // PolicySet 构造面测试：词表与 proto 注解的咬合（fail-closed 断言在
-// authz.Build 构造期爆掉；本测试钉住 identity 面的关键策略投影）。
+// policy.Build 构造期爆掉；本测试钉住 identity 面的关键策略投影——ViewRules
+// 规范树形视图，见 authn/policyview.go）。
 
 import (
 	"testing"
 
-	"github.com/lynx-go/grpcapi/authz"
+	"github.com/fleetlyrun/fleetly/internal/application/authn"
+	"github.com/fleetlyrun/fleetly/internal/domain/identity"
 )
 
 func TestPolicySetCoversIdentity(t *testing.T) {
@@ -14,36 +16,43 @@ func TestPolicySetCoversIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPolicySet: %v", err)
 	}
+	rules, err := authn.ViewRules(set)
+	if err != nil {
+		t.Fatalf("ViewRules: %v", err)
+	}
+	byMethod := make(map[string]authn.MethodRule, len(rules))
+	for _, r := range rules {
+		byMethod[r.Method] = r
+	}
 	cases := []struct {
 		method string
-		access authz.AccessLevel
-		scope  *authz.ScopeRule
+		public bool
+		scope  *identity.ScopeRule
 	}{
-		{"/fleetly.identity.v1.UsersService/WhoAmI", authz.AccessPublic, nil},
-		{"/fleetly.identity.v1.UsersService/CreateUser", authz.AccessServer, &authz.ScopeRule{Resource: "users", Op: authz.ScopeWrite}},
-		{"/fleetly.identity.v1.TokensService/RevokeToken", authz.AccessServer, &authz.ScopeRule{Resource: "tokens", Op: authz.ScopeAdmin}},
-		{"/fleetly.identity.v1.InvitationsService/AcceptInvitation", authz.AccessPublic, nil},
-		{"/fleetly.identity.v1.AuditQueryService/ListAudit", authz.AccessServer, &authz.ScopeRule{Resource: "audit", Op: authz.ScopeRead}},
-		{"/fleetly.system.v1.SystemService/GetStatus", authz.AccessPublic, nil},
-		{"/fleetly.structure.v1.ProjectsService/CreateProject", authz.AccessServer, &authz.ScopeRule{Resource: "projects", Op: authz.ScopeWrite}},
+		{"/fleetly.identity.v1.UsersService/WhoAmI", true, nil},
+		{"/fleetly.identity.v1.UsersService/CreateUser", false, &identity.ScopeRule{Resource: "users", Op: identity.OpWrite}},
+		{"/fleetly.identity.v1.TokensService/RevokeToken", false, &identity.ScopeRule{Resource: "tokens", Op: identity.OpAdmin}},
+		{"/fleetly.identity.v1.InvitationsService/AcceptInvitation", true, nil},
+		{"/fleetly.identity.v1.AuditQueryService/ListAudit", false, &identity.ScopeRule{Resource: "audit", Op: identity.OpRead}},
+		{"/fleetly.system.v1.SystemService/GetStatus", true, nil},
+		{"/fleetly.structure.v1.ProjectsService/CreateProject", false, &identity.ScopeRule{Resource: "projects", Op: identity.OpWrite}},
 	}
 	for _, tc := range cases {
-		got, ok := set.Get(tc.method)
+		got, ok := byMethod[tc.method]
 		if !ok {
 			t.Fatalf("method %s missing from policy set", tc.method)
 		}
-		if got.Access != tc.access {
-			t.Fatalf("%s: access = %s, want %s", tc.method, got.Access, tc.access)
+		if got.Public != tc.public {
+			t.Fatalf("%s: public = %v, want %v", tc.method, got.Public, tc.public)
 		}
-		gotRule := set.ScopeRule(tc.method)
 		if tc.scope == nil {
-			if gotRule != nil {
-				t.Fatalf("%s: unexpected scope rule %+v", tc.method, gotRule)
+			if got.Scope != nil {
+				t.Fatalf("%s: unexpected scope rule %+v", tc.method, got.Scope)
 			}
 			continue
 		}
-		if gotRule == nil || *gotRule != *tc.scope {
-			t.Fatalf("%s: scope rule = %+v, want %+v", tc.method, gotRule, tc.scope)
+		if got.Scope == nil || *got.Scope != *tc.scope {
+			t.Fatalf("%s: scope rule = %+v, want %+v", tc.method, got.Scope, tc.scope)
 		}
 	}
 }

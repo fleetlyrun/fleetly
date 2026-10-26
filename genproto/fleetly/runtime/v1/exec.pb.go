@@ -878,7 +878,7 @@ var File_fleetly_runtime_v1_exec_proto protoreflect.FileDescriptor
 
 const file_fleetly_runtime_v1_exec_proto_rawDesc = "" +
 	"\n" +
-	"\x1dfleetly/runtime/v1/exec.proto\x12\x12fleetly.runtime.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"\x8d\x02\n" +
+	"\x1dfleetly/runtime/v1/exec.proto\x12\x12fleetly.runtime.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x17grpcapi/v1/policy.proto\"\x8d\x02\n" +
 	"\x18CreateExecSessionRequest\x12R\n" +
 	"\x06app_id\x18\x01 \x01(\tB;\xbaH8\xba\x015\n" +
 	"\x0fstring.required\x12\x11must not be empty\x1a\x0fthis.size() > 0R\x05appId\x12U\n" +
@@ -937,14 +937,20 @@ const file_fleetly_runtime_v1_exec_proto_rawDesc = "" +
 	"\x04code\x18\x01 \x01(\x05R\x04code\"?\n" +
 	"\x0fExecStreamError\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\tR\x04code\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage2\xec\x03\n" +
-	"\vExecService\x12\x9e\x01\n" +
-	"\x11CreateExecSession\x12,.fleetly.runtime.v1.CreateExecSessionRequest\x1a-.fleetly.runtime.v1.CreateExecSessionResponse\",\xea\xc4\x19\f\b\x03\"\b\n" +
-	"\x04exec\x10\x02\x82\xd3\xe4\x93\x02\x16:\x01*\"\x11/v1/exec/sessions\x12\x86\x01\n" +
-	"\x11StreamExecSession\x12,.fleetly.runtime.v1.StreamExecSessionRequest\x1a-.fleetly.runtime.v1.StreamExecSessionResponse\"\x10\xea\xc4\x19\f\b\x03\"\b\n" +
-	"\x04exec\x10\x02(\x010\x01\x12\xaa\x01\n" +
-	"\x11ListExecInstances\x12,.fleetly.runtime.v1.ListExecInstancesRequest\x1a-.fleetly.runtime.v1.ListExecInstancesResponse\"8\xea\xc4\x19\f\b\x03\"\b\n" +
-	"\x04exec\x10\x01\x82\xd3\xe4\x93\x02\"\x12 /v1/apps/{app_id}/exec/instances\x1a\x06\xf2\xc4\x19\x02\b\x03B\x9a\x01\x92ARRP\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage2\xac\x04\n" +
+	"\vExecService\x12\xb3\x01\n" +
+	"\x11CreateExecSession\x12,.fleetly.runtime.v1.CreateExecSessionRequest\x1a-.fleetly.runtime.v1.CreateExecSessionResponse\"A\xda\xf0\x19!\n" +
+	"\x15B\x13\n" +
+	"\x05scope\"\n" +
+	"exec:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x16:\x01*\"\x11/v1/exec/sessions\x12\x9b\x01\n" +
+	"\x11StreamExecSession\x12,.fleetly.runtime.v1.StreamExecSessionRequest\x1a-.fleetly.runtime.v1.StreamExecSessionResponse\"%\xda\xf0\x19!\n" +
+	"\x15B\x13\n" +
+	"\x05scope\"\n" +
+	"exec:write\x10\x01\x1a\x06SERVER(\x010\x01\x12\xbe\x01\n" +
+	"\x11ListExecInstances\x12,.fleetly.runtime.v1.ListExecInstancesRequest\x1a-.fleetly.runtime.v1.ListExecInstancesResponse\"L\xda\xf0\x19 \n" +
+	"\x14B\x12\n" +
+	"\x05scope\"\texec:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\"\x12 /v1/apps/{app_id}/exec/instances\x1a\b\xd2\xf0\x19\x04\n" +
+	"\x02 \x01B\x9a\x01\x92ARRP\n" +
 	"\adefault\x12E\n" +
 	"\x1dAn unexpected error response.\x12$\n" +
 	"\"\x1a .fleetly.shared.v1.ErrorResponseZCgithub.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1;runtimev1b\x06proto3"

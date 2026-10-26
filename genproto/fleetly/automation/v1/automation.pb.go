@@ -2230,7 +2230,7 @@ var File_fleetly_automation_v1_automation_proto protoreflect.FileDescriptor
 
 const file_fleetly_automation_v1_automation_proto_rawDesc = "" +
 	"\n" +
-	"&fleetly/automation/v1/automation.proto\x12\x15fleetly.automation.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"\x9d\x04\n" +
+	"&fleetly/automation/v1/automation.proto\x12\x15fleetly.automation.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x17grpcapi/v1/policy.proto\"\x9d\x04\n" +
 	"\x04Task\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x10\n" +
 	"\x03seq\x18\x12 \x01(\x03R\x03seq\x12\x1d\n" +
@@ -2430,45 +2430,71 @@ const file_fleetly_automation_v1_automation_proto_rawDesc = "" +
 	"\x16TriggerScheduleRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"V\n" +
 	"\x17TriggerScheduleResponse\x12;\n" +
-	"\bschedule\x18\x01 \x01(\v2\x1f.fleetly.automation.v1.ScheduleR\bschedule2\xec\a\n" +
-	"\fTasksService\x12\x88\x01\n" +
+	"\bschedule\x18\x01 \x01(\v2\x1f.fleetly.automation.v1.ScheduleR\bschedule2\xff\b\n" +
+	"\fTasksService\x12\x9d\x01\n" +
 	"\n" +
-	"CreateTask\x12(.fleetly.automation.v1.CreateTaskRequest\x1a).fleetly.automation.v1.CreateTaskResponse\"%\xea\xc4\x19\r\b\x03\"\t\n" +
-	"\x05tasks\x10\x02\x82\xd3\xe4\x93\x02\x0e:\x01*\"\t/v1/tasks\x12\x81\x01\n" +
-	"\aGetTask\x12%.fleetly.automation.v1.GetTaskRequest\x1a&.fleetly.automation.v1.GetTaskResponse\"'\xea\xc4\x19\r\b\x03\"\t\n" +
-	"\x05tasks\x10\x01\x82\xd3\xe4\x93\x02\x10\x12\x0e/v1/tasks/{id}\x12\x82\x01\n" +
-	"\tListTasks\x12'.fleetly.automation.v1.ListTasksRequest\x1a(.fleetly.automation.v1.ListTasksResponse\"\"\xea\xc4\x19\r\b\x03\"\t\n" +
-	"\x05tasks\x10\x01\x82\xd3\xe4\x93\x02\v\x12\t/v1/tasks\x12\x90\x01\n" +
-	"\tScaleTask\x12'.fleetly.automation.v1.ScaleTaskRequest\x1a(.fleetly.automation.v1.ScaleTaskResponse\"0\xea\xc4\x19\r\b\x03\"\t\n" +
-	"\x05tasks\x10\x02\x82\xd3\xe4\x93\x02\x19:\x01*\"\x14/v1/tasks/{id}/scale\x12\x8c\x01\n" +
-	"\bStopTask\x12&.fleetly.automation.v1.StopTaskRequest\x1a'.fleetly.automation.v1.StopTaskResponse\"/\xea\xc4\x19\r\b\x03\"\t\n" +
-	"\x05tasks\x10\x02\x82\xd3\xe4\x93\x02\x18:\x01*\"\x13/v1/tasks/{id}/stop\x12\x8a\x01\n" +
+	"CreateTask\x12(.fleetly.automation.v1.CreateTaskRequest\x1a).fleetly.automation.v1.CreateTaskResponse\":\xda\xf0\x19\"\n" +
+	"\x16B\x14\n" +
+	"\x05scope\"\vtasks:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x0e:\x01*\"\t/v1/tasks\x12\x95\x01\n" +
+	"\aGetTask\x12%.fleetly.automation.v1.GetTaskRequest\x1a&.fleetly.automation.v1.GetTaskResponse\";\xda\xf0\x19!\n" +
+	"\x15B\x13\n" +
+	"\x05scope\"\n" +
+	"tasks:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x10\x12\x0e/v1/tasks/{id}\x12\x96\x01\n" +
+	"\tListTasks\x12'.fleetly.automation.v1.ListTasksRequest\x1a(.fleetly.automation.v1.ListTasksResponse\"6\xda\xf0\x19!\n" +
+	"\x15B\x13\n" +
+	"\x05scope\"\n" +
+	"tasks:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\v\x12\t/v1/tasks\x12\xa5\x01\n" +
+	"\tScaleTask\x12'.fleetly.automation.v1.ScaleTaskRequest\x1a(.fleetly.automation.v1.ScaleTaskResponse\"E\xda\xf0\x19\"\n" +
+	"\x16B\x14\n" +
+	"\x05scope\"\vtasks:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x19:\x01*\"\x14/v1/tasks/{id}/scale\x12\xa1\x01\n" +
+	"\bStopTask\x12&.fleetly.automation.v1.StopTaskRequest\x1a'.fleetly.automation.v1.StopTaskResponse\"D\xda\xf0\x19\"\n" +
+	"\x16B\x14\n" +
+	"\x05scope\"\vtasks:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x18:\x01*\"\x13/v1/tasks/{id}/stop\x12\x9f\x01\n" +
 	"\n" +
-	"DeleteTask\x12(.fleetly.automation.v1.DeleteTaskRequest\x1a).fleetly.automation.v1.DeleteTaskResponse\"'\xea\xc4\x19\r\b\x03\"\t\n" +
-	"\x05tasks\x10\x02\x82\xd3\xe4\x93\x02\x10*\x0e/v1/tasks/{id}\x12\x90\x01\n" +
-	"\tRenewTask\x12'.fleetly.automation.v1.RenewTaskRequest\x1a(.fleetly.automation.v1.RenewTaskResponse\"0\xea\xc4\x19\r\b\x03\"\t\n" +
-	"\x05tasks\x10\x02\x82\xd3\xe4\x93\x02\x19:\x01*\"\x14/v1/tasks/{id}/renew\x1a\x06\xf2\xc4\x19\x02\b\x032\xca\x04\n" +
-	"\vRunsService\x12}\n" +
-	"\x06GetRun\x12$.fleetly.automation.v1.GetRunRequest\x1a%.fleetly.automation.v1.GetRunResponse\"&\xea\xc4\x19\r\b\x03\"\t\n" +
-	"\x05tasks\x10\x01\x82\xd3\xe4\x93\x02\x0f\x12\r/v1/runs/{id}\x12~\n" +
-	"\bListRuns\x12&.fleetly.automation.v1.ListRunsRequest\x1a'.fleetly.automation.v1.ListRunsResponse\"!\xea\xc4\x19\r\b\x03\"\t\n" +
-	"\x05tasks\x10\x01\x82\xd3\xe4\x93\x02\n" +
-	"\x12\b/v1/runs\x12\x88\x01\n" +
-	"\aStopRun\x12%.fleetly.automation.v1.StopRunRequest\x1a&.fleetly.automation.v1.StopRunResponse\".\xea\xc4\x19\r\b\x03\"\t\n" +
-	"\x05tasks\x10\x02\x82\xd3\xe4\x93\x02\x17:\x01*\"\x12/v1/runs/{id}/stop\x12\xa8\x01\n" +
-	"\aWaitRun\x12%.fleetly.automation.v1.WaitRunRequest\x1a&.fleetly.automation.v1.WaitRunResponse\"L\xea\xc4\x19\r\b\x03\"\t\n" +
-	"\x05tasks\x10\x01\x82\xd3\xe4\x93\x025Z\x1f\x12\x1d/v1/tasks/{task_id}/runs/wait\x12\x12/v1/runs/{id}/wait0\x01\x1a\x06\xf2\xc4\x19\x02\b\x032\xa6\x06\n" +
-	"\x10SchedulesService\x12\x98\x01\n" +
-	"\x0eCreateSchedule\x12,.fleetly.automation.v1.CreateScheduleRequest\x1a-.fleetly.automation.v1.CreateScheduleResponse\")\xea\xc4\x19\r\b\x03\"\t\n" +
-	"\x05tasks\x10\x02\x82\xd3\xe4\x93\x02\x12:\x01*\"\r/v1/schedules\x12\x91\x01\n" +
-	"\vGetSchedule\x12).fleetly.automation.v1.GetScheduleRequest\x1a*.fleetly.automation.v1.GetScheduleResponse\"+\xea\xc4\x19\r\b\x03\"\t\n" +
-	"\x05tasks\x10\x01\x82\xd3\xe4\x93\x02\x14\x12\x12/v1/schedules/{id}\x12\x92\x01\n" +
-	"\rListSchedules\x12+.fleetly.automation.v1.ListSchedulesRequest\x1a,.fleetly.automation.v1.ListSchedulesResponse\"&\xea\xc4\x19\r\b\x03\"\t\n" +
-	"\x05tasks\x10\x01\x82\xd3\xe4\x93\x02\x0f\x12\r/v1/schedules\x12\x9a\x01\n" +
-	"\x0eDeleteSchedule\x12,.fleetly.automation.v1.DeleteScheduleRequest\x1a-.fleetly.automation.v1.DeleteScheduleResponse\"+\xea\xc4\x19\r\b\x03\"\t\n" +
-	"\x05tasks\x10\x02\x82\xd3\xe4\x93\x02\x14*\x12/v1/schedules/{id}\x12\xa8\x01\n" +
-	"\x0fTriggerSchedule\x12-.fleetly.automation.v1.TriggerScheduleRequest\x1a..fleetly.automation.v1.TriggerScheduleResponse\"6\xea\xc4\x19\r\b\x03\"\t\n" +
-	"\x05tasks\x10\x02\x82\xd3\xe4\x93\x02\x1f:\x01*\"\x1a/v1/schedules/{id}/trigger\x1a\x06\xf2\xc4\x19\x02\b\x03B\xa0\x01\x92ARRP\n" +
+	"DeleteTask\x12(.fleetly.automation.v1.DeleteTaskRequest\x1a).fleetly.automation.v1.DeleteTaskResponse\"<\xda\xf0\x19\"\n" +
+	"\x16B\x14\n" +
+	"\x05scope\"\vtasks:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x10*\x0e/v1/tasks/{id}\x12\xa5\x01\n" +
+	"\tRenewTask\x12'.fleetly.automation.v1.RenewTaskRequest\x1a(.fleetly.automation.v1.RenewTaskResponse\"E\xda\xf0\x19\"\n" +
+	"\x16B\x14\n" +
+	"\x05scope\"\vtasks:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x19:\x01*\"\x14/v1/tasks/{id}/renew\x1a\b\xd2\xf0\x19\x04\n" +
+	"\x02 \x012\x9f\x05\n" +
+	"\vRunsService\x12\x91\x01\n" +
+	"\x06GetRun\x12$.fleetly.automation.v1.GetRunRequest\x1a%.fleetly.automation.v1.GetRunResponse\":\xda\xf0\x19!\n" +
+	"\x15B\x13\n" +
+	"\x05scope\"\n" +
+	"tasks:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x0f\x12\r/v1/runs/{id}\x12\x92\x01\n" +
+	"\bListRuns\x12&.fleetly.automation.v1.ListRunsRequest\x1a'.fleetly.automation.v1.ListRunsResponse\"5\xda\xf0\x19!\n" +
+	"\x15B\x13\n" +
+	"\x05scope\"\n" +
+	"tasks:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\n" +
+	"\x12\b/v1/runs\x12\x9d\x01\n" +
+	"\aStopRun\x12%.fleetly.automation.v1.StopRunRequest\x1a&.fleetly.automation.v1.StopRunResponse\"C\xda\xf0\x19\"\n" +
+	"\x16B\x14\n" +
+	"\x05scope\"\vtasks:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x17:\x01*\"\x12/v1/runs/{id}/stop\x12\xbc\x01\n" +
+	"\aWaitRun\x12%.fleetly.automation.v1.WaitRunRequest\x1a&.fleetly.automation.v1.WaitRunResponse\"`\xda\xf0\x19!\n" +
+	"\x15B\x13\n" +
+	"\x05scope\"\n" +
+	"tasks:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x025Z\x1f\x12\x1d/v1/tasks/{task_id}/runs/wait\x12\x12/v1/runs/{id}/wait0\x01\x1a\b\xd2\xf0\x19\x04\n" +
+	"\x02 \x012\x8f\a\n" +
+	"\x10SchedulesService\x12\xad\x01\n" +
+	"\x0eCreateSchedule\x12,.fleetly.automation.v1.CreateScheduleRequest\x1a-.fleetly.automation.v1.CreateScheduleResponse\">\xda\xf0\x19\"\n" +
+	"\x16B\x14\n" +
+	"\x05scope\"\vtasks:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x12:\x01*\"\r/v1/schedules\x12\xa5\x01\n" +
+	"\vGetSchedule\x12).fleetly.automation.v1.GetScheduleRequest\x1a*.fleetly.automation.v1.GetScheduleResponse\"?\xda\xf0\x19!\n" +
+	"\x15B\x13\n" +
+	"\x05scope\"\n" +
+	"tasks:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x14\x12\x12/v1/schedules/{id}\x12\xa6\x01\n" +
+	"\rListSchedules\x12+.fleetly.automation.v1.ListSchedulesRequest\x1a,.fleetly.automation.v1.ListSchedulesResponse\":\xda\xf0\x19!\n" +
+	"\x15B\x13\n" +
+	"\x05scope\"\n" +
+	"tasks:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x0f\x12\r/v1/schedules\x12\xaf\x01\n" +
+	"\x0eDeleteSchedule\x12,.fleetly.automation.v1.DeleteScheduleRequest\x1a-.fleetly.automation.v1.DeleteScheduleResponse\"@\xda\xf0\x19\"\n" +
+	"\x16B\x14\n" +
+	"\x05scope\"\vtasks:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x14*\x12/v1/schedules/{id}\x12\xbd\x01\n" +
+	"\x0fTriggerSchedule\x12-.fleetly.automation.v1.TriggerScheduleRequest\x1a..fleetly.automation.v1.TriggerScheduleResponse\"K\xda\xf0\x19\"\n" +
+	"\x16B\x14\n" +
+	"\x05scope\"\vtasks:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x1f:\x01*\"\x1a/v1/schedules/{id}/trigger\x1a\b\xd2\xf0\x19\x04\n" +
+	"\x02 \x01B\xa0\x01\x92ARRP\n" +
 	"\adefault\x12E\n" +
 	"\x1dAn unexpected error response.\x12$\n" +
 	"\"\x1a .fleetly.shared.v1.ErrorResponseZIgithub.com/fleetlyrun/fleetly/genproto/fleetly/automation/v1;automationv1b\x06proto3"

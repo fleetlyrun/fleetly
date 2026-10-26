@@ -11,7 +11,7 @@ option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1;
 
 import "buf/validate/validate.proto";
 import "google/api/annotations.proto";
-import "grpcapi/v1/authz.proto";
+import "grpcapi/v1/policy.proto";
 import "protoc-gen-openapiv2/options/annotations.proto";
 
 option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
@@ -25,7 +25,7 @@ option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
 };
 
 service GitHubAppsService {
-  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+  option (grpcapi.v1.service) = { default_policy: { authenticated: true } };
 
   // SetGitHubApp 受理即验证：私钥签 JWT 读 installation 对象，校验三元
   // 组并解析属主后落库（错值精确报错，不等到首次构建）；同作用域同属主
@@ -33,34 +33,38 @@ service GitHubAppsService {
   // 响应与读面只回指纹。
   rpc SetGitHubApp(SetGitHubAppRequest) returns (SetGitHubAppResponse) {
     option (google.api.http) = { post: "/v1/github-apps" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "github_app" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["github_app:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   // ListGitHubApps 按作用域列指纹面（project_id 或 global 二选一必填）。
   rpc ListGitHubApps(ListGitHubAppsRequest) returns (ListGitHubAppsResponse) {
     option (google.api.http) = { get: "/v1/github-apps" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "github_app" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["github_app:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   // DeleteGitHubApp 软删（tombstone；解析面即时失效）。
   rpc DeleteGitHubApp(DeleteGitHubAppRequest) returns (DeleteGitHubAppResponse) {
     option (google.api.http) = { delete: "/v1/github-apps/{id}" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "github_app" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["github_app:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   // ListGitHubAppRepos 现铸 token 列 installation 可达仓库（安装健康验证
   // 面；授权随行作用域）。
   rpc ListGitHubAppRepos(ListGitHubAppReposRequest) returns (ListGitHubAppReposResponse) {
     option (google.api.http) = { get: "/v1/github-apps/{id}/repos" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "github_app" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["github_app:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
 
@@ -75,18 +79,20 @@ service GitHubAppsService {
   // 单兜底）。
   rpc StartManifestFlow(StartManifestFlowRequest) returns (StartManifestFlowResponse) {
     option (google.api.http) = { post: "/v1/github-apps/manifest/start" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "github_app" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["github_app:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   // ConsumeManifestCode 用一次性 code 换 App 凭据（私钥即收即封、暂存于
   // 流存储，15 分钟时效），返回安装页 URL——installation 在下一步落定。
   rpc ConsumeManifestCode(ConsumeManifestCodeRequest) returns (ConsumeManifestCodeResponse) {
     option (google.api.http) = { post: "/v1/github-apps/manifest/consume" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "github_app" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["github_app:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   // CompleteManifestFlow 以 setup 回调的 installation_id 落行（走既有受
@@ -94,9 +100,10 @@ service GitHubAppsService {
   // 致，谎言即拒）。流一次性：complete 后 nonce 作废。
   rpc CompleteManifestFlow(CompleteManifestFlowRequest) returns (CompleteManifestFlowResponse) {
     option (google.api.http) = { post: "/v1/github-apps/manifest/complete" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "github_app" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["github_app:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
 }

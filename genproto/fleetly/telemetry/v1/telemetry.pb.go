@@ -2168,7 +2168,7 @@ var File_fleetly_telemetry_v1_telemetry_proto protoreflect.FileDescriptor
 
 const file_fleetly_telemetry_v1_telemetry_proto_rawDesc = "" +
 	"\n" +
-	"$fleetly/telemetry/v1/telemetry.proto\x12\x14fleetly.telemetry.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"\xa7\x01\n" +
+	"$fleetly/telemetry/v1/telemetry.proto\x12\x14fleetly.telemetry.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x17grpcapi/v1/policy.proto\"\xa7\x01\n" +
 	"\x05Event\x12\x10\n" +
 	"\x03seq\x18\x01 \x01(\x03R\x03seq\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1c\n" +
@@ -2331,54 +2331,65 @@ const file_fleetly_telemetry_v1_telemetry_proto_rawDesc = "" +
 	"\x06system\x18\a \x01(\bR\x06system\"\x18\n" +
 	"\x16ListAlertStatesRequest\"S\n" +
 	"\x17ListAlertStatesResponse\x128\n" +
-	"\x06states\x18\x01 \x03(\v2 .fleetly.telemetry.v1.AlertStateR\x06states2\xf5\x04\n" +
-	"\rEventsService\x12\x85\x01\n" +
+	"\x06states\x18\x01 \x03(\v2 .fleetly.telemetry.v1.AlertStateR\x06states2\xc7\x05\n" +
+	"\rEventsService\x12\x99\x01\n" +
 	"\n" +
-	"ListEvents\x12'.fleetly.telemetry.v1.ListEventsRequest\x1a(.fleetly.telemetry.v1.ListEventsResponse\"$\xea\xc4\x19\x0e\b\x03\"\n" +
+	"ListEvents\x12'.fleetly.telemetry.v1.ListEventsRequest\x1a(.fleetly.telemetry.v1.ListEventsResponse\"8\xda\xf0\x19\"\n" +
+	"\x16B\x14\n" +
+	"\x05scope\"\vevents:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\f\x12\n" +
+	"/v1/events\x12\xa8\x01\n" +
+	"\fStreamEvents\x12).fleetly.telemetry.v1.StreamEventsRequest\x1a*.fleetly.telemetry.v1.StreamEventsResponse\"?\xda\xf0\x19\"\n" +
+	"\x16B\x14\n" +
+	"\x05scope\"\vevents:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x13\x12\x11/v1/events/stream0\x01\x12\xac\x01\n" +
+	"\x0eGetEventStatus\x12+.fleetly.telemetry.v1.GetEventStatusRequest\x1a,.fleetly.telemetry.v1.GetEventStatusResponse\"?\xda\xf0\x19\"\n" +
+	"\x16B\x14\n" +
+	"\x05scope\"\vevents:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x13\x12\x11/v1/events/status\x12\xb5\x01\n" +
+	"\x10IssueEventTicket\x12-.fleetly.telemetry.v1.IssueEventTicketRequest\x1a..fleetly.telemetry.v1.IssueEventTicketResponse\"B\xda\xf0\x19\"\n" +
+	"\x16B\x14\n" +
+	"\x05scope\"\vevents:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x16:\x01*\"\x11/v1/events/ticket\x1a\b\xd2\xf0\x19\x04\n" +
+	"\x02 \x012\xb1\x01\n" +
+	"\vLogsService\x12\x97\x01\n" +
 	"\n" +
-	"\x06events\x10\x01\x82\xd3\xe4\x93\x02\f\x12\n" +
-	"/v1/events\x12\x94\x01\n" +
-	"\fStreamEvents\x12).fleetly.telemetry.v1.StreamEventsRequest\x1a*.fleetly.telemetry.v1.StreamEventsResponse\"+\xea\xc4\x19\x0e\b\x03\"\n" +
-	"\n" +
-	"\x06events\x10\x01\x82\xd3\xe4\x93\x02\x13\x12\x11/v1/events/stream0\x01\x12\x98\x01\n" +
-	"\x0eGetEventStatus\x12+.fleetly.telemetry.v1.GetEventStatusRequest\x1a,.fleetly.telemetry.v1.GetEventStatusResponse\"+\xea\xc4\x19\x0e\b\x03\"\n" +
-	"\n" +
-	"\x06events\x10\x01\x82\xd3\xe4\x93\x02\x13\x12\x11/v1/events/status\x12\xa1\x01\n" +
-	"\x10IssueEventTicket\x12-.fleetly.telemetry.v1.IssueEventTicketRequest\x1a..fleetly.telemetry.v1.IssueEventTicketResponse\".\xea\xc4\x19\x0e\b\x03\"\n" +
-	"\n" +
-	"\x06events\x10\x01\x82\xd3\xe4\x93\x02\x16:\x01*\"\x11/v1/events/ticket\x1a\x06\xf2\xc4\x19\x02\b\x032\x9b\x01\n" +
-	"\vLogsService\x12\x83\x01\n" +
-	"\n" +
-	"StreamLogs\x12'.fleetly.telemetry.v1.StreamLogsRequest\x1a(.fleetly.telemetry.v1.StreamLogsResponse\" \xea\xc4\x19\f\b\x03\"\b\n" +
-	"\x04logs\x10\x01\x82\xd3\xe4\x93\x02\n" +
-	"\x12\b/v1/logs0\x01\x1a\x06\xf2\xc4\x19\x02\b\x032\xd1\x02\n" +
-	"\x0eMetricsService\x12\x8d\x01\n" +
-	"\fQueryMetrics\x12).fleetly.telemetry.v1.QueryMetricsRequest\x1a*.fleetly.telemetry.v1.QueryMetricsResponse\"&\xea\xc4\x19\x0f\b\x03\"\v\n" +
-	"\ametrics\x10\x01\x82\xd3\xe4\x93\x02\r\x12\v/v1/metrics\x12\xa6\x01\n" +
-	"\x12QueryScopedMetrics\x12/.fleetly.telemetry.v1.QueryScopedMetricsRequest\x1a0.fleetly.telemetry.v1.QueryScopedMetricsResponse\"-\xea\xc4\x19\x0f\b\x03\"\v\n" +
-	"\ametrics\x10\x01\x82\xd3\xe4\x93\x02\x14\x12\x12/v1/metrics/scoped\x1a\x06\xf2\xc4\x19\x02\b\x032\x91\v\n" +
-	"\x0fAlertingService\x12\xb9\x01\n" +
-	"\x19CreateNotificationChannel\x126.fleetly.telemetry.v1.CreateNotificationChannelRequest\x1a7.fleetly.telemetry.v1.CreateNotificationChannelResponse\"+\xea\xc4\x19\x10\b\x03\"\f\n" +
-	"\bchannels\x10\x02\x82\xd3\xe4\x93\x02\x11:\x01*\"\f/v1/channels\x12\xc5\x01\n" +
-	"\x17TestNotificationChannel\x124.fleetly.telemetry.v1.TestNotificationChannelRequest\x1a5.fleetly.telemetry.v1.TestNotificationChannelResponse\"=\xea\xc4\x19\x10\b\x03\"\f\n" +
-	"\bchannels\x10\x02\x82\xd3\xe4\x93\x02#:\x01*\"\x1e/v1/channels/{channel_id}/test\x12\xb3\x01\n" +
-	"\x18ListNotificationChannels\x125.fleetly.telemetry.v1.ListNotificationChannelsRequest\x1a6.fleetly.telemetry.v1.ListNotificationChannelsResponse\"(\xea\xc4\x19\x10\b\x03\"\f\n" +
-	"\bchannels\x10\x01\x82\xd3\xe4\x93\x02\x0e\x12\f/v1/channels\x12\xc3\x01\n" +
-	"\x19DeleteNotificationChannel\x126.fleetly.telemetry.v1.DeleteNotificationChannelRequest\x1a7.fleetly.telemetry.v1.DeleteNotificationChannelResponse\"5\xea\xc4\x19\x10\b\x03\"\f\n" +
-	"\bchannels\x10\x02\x82\xd3\xe4\x93\x02\x1b*\x19/v1/channels/{channel_id}\x12\x9d\x01\n" +
-	"\x0fCreateAlertRule\x12,.fleetly.telemetry.v1.CreateAlertRuleRequest\x1a-.fleetly.telemetry.v1.CreateAlertRuleResponse\"-\xea\xc4\x19\x0e\b\x03\"\n" +
-	"\n" +
-	"\x06alerts\x10\x02\x82\xd3\xe4\x93\x02\x15:\x01*\"\x10/v1/alerts/rules\x12\x97\x01\n" +
-	"\x0eListAlertRules\x12+.fleetly.telemetry.v1.ListAlertRulesRequest\x1a,.fleetly.telemetry.v1.ListAlertRulesResponse\"*\xea\xc4\x19\x0e\b\x03\"\n" +
-	"\n" +
-	"\x06alerts\x10\x01\x82\xd3\xe4\x93\x02\x12\x12\x10/v1/alerts/rules\x12\xa4\x01\n" +
-	"\x0fDeleteAlertRule\x12,.fleetly.telemetry.v1.DeleteAlertRuleRequest\x1a-.fleetly.telemetry.v1.DeleteAlertRuleResponse\"4\xea\xc4\x19\x0e\b\x03\"\n" +
-	"\n" +
-	"\x06alerts\x10\x02\x82\xd3\xe4\x93\x02\x1c*\x1a/v1/alerts/rules/{rule_id}\x12\x94\x01\n" +
-	"\x0fListAlertStates\x12,.fleetly.telemetry.v1.ListAlertStatesRequest\x1a-.fleetly.telemetry.v1.ListAlertStatesResponse\"$\xea\xc4\x19\x0e\b\x03\"\n" +
-	"\n" +
-	"\x06alerts\x10\x01\x82\xd3\xe4\x93\x02\f\x12\n" +
-	"/v1/alerts\x1a\x06\xf2\xc4\x19\x02\b\x03B\x9e\x01\x92ARRP\n" +
+	"StreamLogs\x12'.fleetly.telemetry.v1.StreamLogsRequest\x1a(.fleetly.telemetry.v1.StreamLogsResponse\"4\xda\xf0\x19 \n" +
+	"\x14B\x12\n" +
+	"\x05scope\"\tlogs:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\n" +
+	"\x12\b/v1/logs0\x01\x1a\b\xd2\xf0\x19\x04\n" +
+	"\x02 \x012\xfb\x02\n" +
+	"\x0eMetricsService\x12\xa1\x01\n" +
+	"\fQueryMetrics\x12).fleetly.telemetry.v1.QueryMetricsRequest\x1a*.fleetly.telemetry.v1.QueryMetricsResponse\":\xda\xf0\x19#\n" +
+	"\x17B\x15\n" +
+	"\x05scope\"\fmetrics:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\r\x12\v/v1/metrics\x12\xba\x01\n" +
+	"\x12QueryScopedMetrics\x12/.fleetly.telemetry.v1.QueryScopedMetricsRequest\x1a0.fleetly.telemetry.v1.QueryScopedMetricsResponse\"A\xda\xf0\x19#\n" +
+	"\x17B\x15\n" +
+	"\x05scope\"\fmetrics:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x14\x12\x12/v1/metrics/scoped\x1a\b\xd2\xf0\x19\x04\n" +
+	"\x02 \x012\xb8\f\n" +
+	"\x0fAlertingService\x12\xce\x01\n" +
+	"\x19CreateNotificationChannel\x126.fleetly.telemetry.v1.CreateNotificationChannelRequest\x1a7.fleetly.telemetry.v1.CreateNotificationChannelResponse\"@\xda\xf0\x19%\n" +
+	"\x19B\x17\n" +
+	"\x05scope\"\x0echannels:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x11:\x01*\"\f/v1/channels\x12\xda\x01\n" +
+	"\x17TestNotificationChannel\x124.fleetly.telemetry.v1.TestNotificationChannelRequest\x1a5.fleetly.telemetry.v1.TestNotificationChannelResponse\"R\xda\xf0\x19%\n" +
+	"\x19B\x17\n" +
+	"\x05scope\"\x0echannels:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02#:\x01*\"\x1e/v1/channels/{channel_id}/test\x12\xc7\x01\n" +
+	"\x18ListNotificationChannels\x125.fleetly.telemetry.v1.ListNotificationChannelsRequest\x1a6.fleetly.telemetry.v1.ListNotificationChannelsResponse\"<\xda\xf0\x19$\n" +
+	"\x18B\x16\n" +
+	"\x05scope\"\rchannels:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x0e\x12\f/v1/channels\x12\xd8\x01\n" +
+	"\x19DeleteNotificationChannel\x126.fleetly.telemetry.v1.DeleteNotificationChannelRequest\x1a7.fleetly.telemetry.v1.DeleteNotificationChannelResponse\"J\xda\xf0\x19%\n" +
+	"\x19B\x17\n" +
+	"\x05scope\"\x0echannels:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x1b*\x19/v1/channels/{channel_id}\x12\xb2\x01\n" +
+	"\x0fCreateAlertRule\x12,.fleetly.telemetry.v1.CreateAlertRuleRequest\x1a-.fleetly.telemetry.v1.CreateAlertRuleResponse\"B\xda\xf0\x19#\n" +
+	"\x17B\x15\n" +
+	"\x05scope\"\falerts:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x15:\x01*\"\x10/v1/alerts/rules\x12\xab\x01\n" +
+	"\x0eListAlertRules\x12+.fleetly.telemetry.v1.ListAlertRulesRequest\x1a,.fleetly.telemetry.v1.ListAlertRulesResponse\">\xda\xf0\x19\"\n" +
+	"\x16B\x14\n" +
+	"\x05scope\"\valerts:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x12\x12\x10/v1/alerts/rules\x12\xb9\x01\n" +
+	"\x0fDeleteAlertRule\x12,.fleetly.telemetry.v1.DeleteAlertRuleRequest\x1a-.fleetly.telemetry.v1.DeleteAlertRuleResponse\"I\xda\xf0\x19#\n" +
+	"\x17B\x15\n" +
+	"\x05scope\"\falerts:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x1c*\x1a/v1/alerts/rules/{rule_id}\x12\xa8\x01\n" +
+	"\x0fListAlertStates\x12,.fleetly.telemetry.v1.ListAlertStatesRequest\x1a-.fleetly.telemetry.v1.ListAlertStatesResponse\"8\xda\xf0\x19\"\n" +
+	"\x16B\x14\n" +
+	"\x05scope\"\valerts:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\f\x12\n" +
+	"/v1/alerts\x1a\b\xd2\xf0\x19\x04\n" +
+	"\x02 \x01B\x9e\x01\x92ARRP\n" +
 	"\adefault\x12E\n" +
 	"\x1dAn unexpected error response.\x12$\n" +
 	"\"\x1a .fleetly.shared.v1.ErrorResponseZGgithub.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1;telemetryv1b\x06proto3"

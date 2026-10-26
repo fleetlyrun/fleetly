@@ -8,7 +8,7 @@ option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1;r
 import "buf/validate/validate.proto";
 import "google/api/annotations.proto";
 import "protoc-gen-openapiv2/options/annotations.proto";
-import "grpcapi/v1/authz.proto";
+import "grpcapi/v1/policy.proto";
 
 option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
   responses: {
@@ -21,13 +21,14 @@ option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
 };
 
 service NodesService {
-  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+  option (grpcapi.v1.service) = { default_policy: { authenticated: true } };
 
   rpc ListNodes(ListNodesRequest) returns (ListNodesResponse) {
     option (google.api.http) = { get: "/v1/nodes" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "nodes" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["nodes:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   // ListNodeContainers 实时观测节点上的在跑容器（RuntimeNodeInspect 面：
@@ -35,9 +36,10 @@ service NodesService {
   // 缓存不参与）。平台节点 ID 为锚（运维三动词同锚）。
   rpc ListNodeContainers(ListNodeContainersRequest) returns (ListNodeContainersResponse) {
     option (google.api.http) = { get: "/v1/nodes/{node_id}/containers" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "nodes" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["nodes:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   // EnrollNode 是节点材料动词（F0.20：节点零平台安装物）。无参数 = 初始
@@ -48,32 +50,36 @@ service NodesService {
   // relay 凭证（泄漏处置）再返回新材料。
   rpc EnrollNode(EnrollNodeRequest) returns (EnrollNodeResponse) {
     option (google.api.http) = { post: "/v1/nodes/enroll" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "platform" op: SCOPE_OP_ADMIN }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["platform:admin"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   // 节点运维三动词（F0.19 RuntimeAdmin 面）：平台节点 ID 为锚；可逆的
   // 调度控制走 nodes write 档。
   rpc DrainNode(DrainNodeRequest) returns (DrainNodeResponse) {
     option (google.api.http) = { post: "/v1/nodes/{node_id}/drain" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "nodes" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["nodes:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   rpc CordonNode(CordonNodeRequest) returns (CordonNodeResponse) {
     option (google.api.http) = { post: "/v1/nodes/{node_id}/cordon" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "nodes" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["nodes:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   rpc UncordonNode(UncordonNodeRequest) returns (UncordonNodeResponse) {
     option (google.api.http) = { post: "/v1/nodes/{node_id}/uncordon" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "nodes" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["nodes:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
 }

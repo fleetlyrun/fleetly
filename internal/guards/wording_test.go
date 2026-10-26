@@ -134,8 +134,8 @@ var skippedTokens = map[string]string{
 	// ---- 组织与访问 ----
 	"account":    "User 同义词禁用仅限身份实体语境；账目/解释义（account for）为通用英文",
 	"member":     "常见集合词（members list）；User 实体语境人工评审",
-	"permission": "grpcapi authz 注解面（MethodPolicy.Permissions）为库契约",
-	"policy":     "grpcapi authz PolicySet 为库契约",
+	"permission": "grpcapi policy 注解面（Policy.permissions 糖）为库契约",
+	"policy":     "grpcapi policy.Set 为库契约",
 	"grant":      "动词义（grant a scope）通用",
 	"capability": "授权义禁用；Capability 是 fleetly 冻结实体（七类端口）",
 	"credential": "DatabaseSpec.credentialsRef 为架构 §4 契约字段；Token 同义词语境人工评审",

@@ -92,7 +92,7 @@ func gatewayRegistrations() []gateway.RegisterFunc {
 // 零变化）。execSrc nil = exec 原生入口停用（纯 gateway 测试形态）。
 func NewGatewayHandler(logger *slog.Logger, conn grpc.ClientConnInterface, eventsSrc *fleetlygrpc.EventStreamSource, execSrc *fleetlygrpc.ExecStreamSource, browseGate *BrowseGate) (http.Handler, error) {
 	mux := gateway.NewMux(gateway.MuxOptions{
-		ErrorHandler: newGatewayErrorHandler(logger),
+		ErrorEncoder: newGatewayErrorEncoder(logger),
 	})
 	if err := gateway.Register(context.Background(), mux, conn, gatewayRegistrations()...); err != nil {
 		return nil, err

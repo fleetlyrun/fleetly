@@ -11,26 +11,28 @@ option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1;
 
 import "buf/validate/validate.proto";
 import "google/api/annotations.proto";
-import "grpcapi/v1/authz.proto";
+import "grpcapi/v1/policy.proto";
 
 service RegistryService {
-  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+  option (grpcapi.v1.service) = { default_policy: { authenticated: true } };
 
   // ListRegistryCatalog 列项目前纲下的仓名（受管仓库停用 = 精确失败）。
   rpc ListRegistryCatalog(ListRegistryCatalogRequest) returns (ListRegistryCatalogResponse) {
     option (google.api.http) = { get: "/v1/registry/catalog" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "registry" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["registry:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   // ListRegistryTags 列仓名下的 tag 清单（digest/压缩大小/推送时刻；
   // manifest index 形态的 tag 无可得大小/时刻——诚实留空）。
   rpc ListRegistryTags(ListRegistryTagsRequest) returns (ListRegistryTagsResponse) {
     option (google.api.http) = { get: "/v1/registry/{repository}/tags" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "registry" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["registry:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
 }

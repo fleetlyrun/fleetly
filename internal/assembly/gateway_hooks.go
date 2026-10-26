@@ -7,6 +7,8 @@ package assembly
 // 日志（gateway 无逐请求访问日志；错误路径只记 delivery 标识）。
 
 import (
+	"github.com/lynx-go/grpcapi/gateway"
+
 	"bytes"
 	"context"
 	"encoding/json"
@@ -72,7 +74,7 @@ func newHooksHandler(client hooksReceiver) http.Handler {
 		if err != nil {
 			// 统一错误信封出口（与 gateway 其余 REST 面同构；token 不进
 			// 日志或响应）。
-			newGatewayErrorHandler(nil)(r.Context(), nil, nil, w, r, err)
+			gateway.WriteError(w, r, err, newGatewayErrorEncoder(nil))
 			return
 		}
 		writeHookProtoJSON(w, http.StatusOK, resp)

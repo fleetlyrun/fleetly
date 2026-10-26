@@ -926,7 +926,7 @@ var File_fleetly_system_v1_system_proto protoreflect.FileDescriptor
 
 const file_fleetly_system_v1_system_proto_rawDesc = "" +
 	"\n" +
-	"\x1efleetly/system/v1/system.proto\x12\x11fleetly.system.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"\x13\n" +
+	"\x1efleetly/system/v1/system.proto\x12\x11fleetly.system.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x17grpcapi/v1/policy.proto\"\x13\n" +
 	"\x11GetVersionRequest\"Z\n" +
 	"\x12GetVersionResponse\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12\x16\n" +
@@ -979,20 +979,26 @@ const file_fleetly_system_v1_system_proto_rawDesc = "" +
 	"\vStatusState\x12\x1c\n" +
 	"\x18STATUS_STATE_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14STATUS_STATE_HEALTHY\x10\x01\x12\x19\n" +
-	"\x15STATUS_STATE_DEGRADED\x10\x022\x95\x05\n" +
+	"\x15STATUS_STATE_DEGRADED\x10\x022\xae\x05\n" +
 	"\rSystemService\x12u\n" +
 	"\n" +
 	"GetVersion\x12$.fleetly.system.v1.GetVersionRequest\x1a%.fleetly.system.v1.GetVersionResponse\"\x1a\x82\xd3\xe4\x93\x02\x14\x12\x12/v1/system/version\x12q\n" +
-	"\tGetStatus\x12#.fleetly.system.v1.GetStatusRequest\x1a$.fleetly.system.v1.GetStatusResponse\"\x19\x82\xd3\xe4\x93\x02\x13\x12\x11/v1/system/status\x12\xb0\x01\n" +
-	"\x10RestartComponent\x12*.fleetly.system.v1.RestartComponentRequest\x1a+.fleetly.system.v1.RestartComponentResponse\"C\xea\xc4\x19\x10\b\x03\"\f\n" +
-	"\bplatform\x10\x03\x82\xd3\xe4\x93\x02):\x01*\"$/v1/system/components/{name}/restart\x12q\n" +
+	"\tGetStatus\x12#.fleetly.system.v1.GetStatusRequest\x1a$.fleetly.system.v1.GetStatusResponse\"\x19\x82\xd3\xe4\x93\x02\x13\x12\x11/v1/system/status\x12\xc5\x01\n" +
+	"\x10RestartComponent\x12*.fleetly.system.v1.RestartComponentRequest\x1a+.fleetly.system.v1.RestartComponentResponse\"X\xda\xf0\x19%\n" +
+	"\x19B\x17\n" +
+	"\x05scope\"\x0eplatform:admin\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02):\x01*\"$/v1/system/components/{name}/restart\x12q\n" +
 	"\tGetSchema\x12#.fleetly.system.v1.GetSchemaRequest\x1a$.fleetly.system.v1.GetSchemaResponse\"\x19\x82\xd3\xe4\x93\x02\x13\x12\x11/v1/system/schema\x12l\n" +
-	"\aExplain\x12!.fleetly.system.v1.ExplainRequest\x1a\".fleetly.system.v1.ExplainResponse\"\x1a\x82\xd3\xe4\x93\x02\x14\x12\x12/v1/system/explain\x1a\x06\xf2\xc4\x19\x02\b\x012\xf4\x02\n" +
-	"\x0fPlatformService\x12\xaf\x01\n" +
-	"\x15TriggerPlatformBackup\x12/.fleetly.system.v1.TriggerPlatformBackupRequest\x1a0.fleetly.system.v1.TriggerPlatformBackupResponse\"3\xea\xc4\x19\x10\b\x03\"\f\n" +
-	"\bplatform\x10\x02\x82\xd3\xe4\x93\x02\x19:\x01*\"\x14/v1/platform/backups\x12\xa6\x01\n" +
-	"\x13ListPlatformBackups\x12-.fleetly.system.v1.ListPlatformBackupsRequest\x1a..fleetly.system.v1.ListPlatformBackupsResponse\"0\xea\xc4\x19\x10\b\x03\"\f\n" +
-	"\bplatform\x10\x01\x82\xd3\xe4\x93\x02\x16\x12\x14/v1/platform/backups\x1a\x06\xf2\xc4\x19\x02\b\x03B\x98\x01\x92ARRP\n" +
+	"\aExplain\x12!.fleetly.system.v1.ExplainRequest\x1a\".fleetly.system.v1.ExplainResponse\"\x1a\x82\xd3\xe4\x93\x02\x14\x12\x12/v1/system/explain\x1a\n" +
+	"\xd2\xf0\x19\x06\n" +
+	"\x02\x18\x01\x10\x022\x9f\x03\n" +
+	"\x0fPlatformService\x12\xc4\x01\n" +
+	"\x15TriggerPlatformBackup\x12/.fleetly.system.v1.TriggerPlatformBackupRequest\x1a0.fleetly.system.v1.TriggerPlatformBackupResponse\"H\xda\xf0\x19%\n" +
+	"\x19B\x17\n" +
+	"\x05scope\"\x0eplatform:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x19:\x01*\"\x14/v1/platform/backups\x12\xba\x01\n" +
+	"\x13ListPlatformBackups\x12-.fleetly.system.v1.ListPlatformBackupsRequest\x1a..fleetly.system.v1.ListPlatformBackupsResponse\"D\xda\xf0\x19$\n" +
+	"\x18B\x16\n" +
+	"\x05scope\"\rplatform:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x16\x12\x14/v1/platform/backups\x1a\b\xd2\xf0\x19\x04\n" +
+	"\x02 \x01B\x98\x01\x92ARRP\n" +
 	"\adefault\x12E\n" +
 	"\x1dAn unexpected error response.\x12$\n" +
 	"\"\x1a .fleetly.shared.v1.ErrorResponseZAgithub.com/fleetlyrun/fleetly/genproto/fleetly/system/v1;systemv1b\x06proto3"

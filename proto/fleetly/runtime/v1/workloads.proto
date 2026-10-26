@@ -13,7 +13,7 @@ option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1;r
 import "buf/validate/validate.proto";
 import "google/api/annotations.proto";
 import "protoc-gen-openapiv2/options/annotations.proto";
-import "grpcapi/v1/authz.proto";
+import "grpcapi/v1/policy.proto";
 
 option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
   responses: {
@@ -26,16 +26,17 @@ option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
 };
 
 service WorkloadsService {
-  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+  option (grpcapi.v1.service) = { default_policy: { authenticated: true } };
 
   // GetAppWorkloadObservations 返回 App 全部在服载体的观测快照（ADR-0071
   // 观测层）。观测是集群实况快照：滚动进行中会看到新旧行为混合，语义归
   // Provider（与 drift 扫描同一数据面，ADR-0022）。
   rpc GetAppWorkloadObservations(GetAppWorkloadObservationsRequest) returns (GetAppWorkloadObservationsResponse) {
     option (google.api.http) = { get: "/v1/apps/{app_id}/workloads/live" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "workloads" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["workloads:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
 }

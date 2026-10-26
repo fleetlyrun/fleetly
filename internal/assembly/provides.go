@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/google/wire"
-	"github.com/lynx-go/grpcapi/authz"
+	"github.com/lynx-go/grpcapi/policy"
 	"github.com/lynx-go/lynx"
 	"github.com/lynx-go/lynx/boot"
 	"github.com/lynx-go/lynx/buildinfo"
@@ -229,8 +229,9 @@ func NewAnchor(db *persistence.DB) *anchor.Anchor {
 	return anchor.New(anchorRepos(db.Clock(), db.Runner()))
 }
 
-// NewAuthenticator 构造身份执法器（authn 拦截器依赖集；词表单一源注入）。
-func NewAuthenticator(db *persistence.DB, repos authn.Repos, policySet *authz.PolicySet, app lynx.App) *authn.Authenticator {
+// NewAuthenticator 构造身份执法器（authn 拦截器依赖集；词表单一源注入；
+// 策略集构造期 ViewRules 物化，非规范树形即装配失败——fail-closed）。
+func NewAuthenticator(db *persistence.DB, repos authn.Repos, policySet *policy.Set, app lynx.App) (*authn.Authenticator, error) {
 	return authn.NewAuthenticator(db, repos, policySet, ScopeResources(), app.Logger())
 }
 

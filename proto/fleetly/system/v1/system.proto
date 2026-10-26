@@ -10,7 +10,7 @@ option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1;sy
 import "buf/validate/validate.proto";
 import "google/api/annotations.proto";
 import "protoc-gen-openapiv2/options/annotations.proto";
-import "grpcapi/v1/authz.proto";
+import "grpcapi/v1/policy.proto";
 
 // 统一 default 错误响应（运行时错误体即 fleetly.shared.v1.ErrorResponse），
 // 文件级声明自动填充到本文件全部 operation。
@@ -25,7 +25,7 @@ option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
 };
 
 service SystemService {
-  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_PUBLIC };
+  option (grpcapi.v1.service) = { default_policy: { anonymous: true } default_exposure: EXPOSURE_PUBLIC };
 
   // GetVersion 返回控制面构建信息。
   rpc GetVersion(GetVersionRequest) returns (GetVersionResponse) {
@@ -43,9 +43,10 @@ service SystemService {
   // 未知名/非受管自宿 = 精确拒绝。
   rpc RestartComponent(RestartComponentRequest) returns (RestartComponentResponse) {
     option (google.api.http) = { post: "/v1/system/components/{name}/restart" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "platform" op: SCOPE_OP_ADMIN }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["platform:admin"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
 
@@ -66,7 +67,7 @@ service SystemService {
 // 的公开诊断面分立——本面全部要凭证）。首个动词族 = Platform Backup
 // （ADR-0039 决策 10；升级序前置=F2.3 的消费面，ADR-0015）。
 service PlatformService {
-  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+  option (grpcapi.v1.service) = { default_policy: { authenticated: true } };
 
   // TriggerPlatformBackup 立即同步执行一次 Platform Backup（不走节拍锚；
   // 执行时长受平台备份超时上界约束）。restic 缺席/链失败 = 精确失败。
@@ -74,18 +75,20 @@ service PlatformService {
   //（ADR-0024；ADR-0039 决策 10）。
   rpc TriggerPlatformBackup(TriggerPlatformBackupRequest) returns (TriggerPlatformBackupResponse) {
     option (google.api.http) = { post: "/v1/platform/backups" body: "*" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "platform" op: SCOPE_OP_WRITE }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["platform:write"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
   // ListPlatformBackups 列举本地仓快照（restic snapshots 直读，零状态行
   // ——仓库自身即事实源，ADR-0039 决策 10）；新→旧分页（ADR-0026）。
   rpc ListPlatformBackups(ListPlatformBackupsRequest) returns (ListPlatformBackupsResponse) {
     option (google.api.http) = { get: "/v1/platform/backups" };
-    option (grpcapi.v1.method_auth) = {
-      access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "platform" op: SCOPE_OP_READ }
+    option (grpcapi.v1.method) = {
+      policy: { require: [{ kind: "scope" values: ["platform:read"] }] }
+      exposure: EXPOSURE_PUBLIC
+      label: "SERVER"
     };
   }
 }

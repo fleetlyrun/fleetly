@@ -2788,7 +2788,7 @@ var File_fleetly_identity_v1_identity_proto protoreflect.FileDescriptor
 
 const file_fleetly_identity_v1_identity_proto_rawDesc = "" +
 	"\n" +
-	"\"fleetly/identity/v1/identity.proto\x12\x13fleetly.identity.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"\x0f\n" +
+	"\"fleetly/identity/v1/identity.proto\x12\x13fleetly.identity.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x17grpcapi/v1/policy.proto\"\x0f\n" +
 	"\rWhoAmIRequest\"\x8e\x02\n" +
 	"\x0eWhoAmIResponse\x12\x19\n" +
 	"\btoken_id\x18\x01 \x01(\tR\atokenId\x12\x1d\n" +
@@ -2974,70 +2974,102 @@ const file_fleetly_identity_v1_identity_proto_rawDesc = "" +
 	"\x05limit\x18\x04 \x01(\x05R\x05limit\x12\x14\n" +
 	"\x05actor\x18\x05 \x01(\tR\x05actor\"N\n" +
 	"\x11ListAuditResponse\x129\n" +
-	"\aentries\x18\x01 \x03(\v2\x1f.fleetly.identity.v1.AuditEntryR\aentries2\xac\a\n" +
-	"\fUsersService\x12k\n" +
-	"\x06WhoAmI\x12\".fleetly.identity.v1.WhoAmIRequest\x1a#.fleetly.identity.v1.WhoAmIResponse\"\x18\xea\xc4\x19\x02\b\x01\x82\xd3\xe4\x93\x02\f\x12\n" +
-	"/v1/whoami\x12\x84\x01\n" +
+	"\aentries\x18\x01 \x03(\v2\x1f.fleetly.identity.v1.AuditEntryR\aentries2\xaf\b\n" +
+	"\fUsersService\x12w\n" +
+	"\x06WhoAmI\x12\".fleetly.identity.v1.WhoAmIRequest\x1a#.fleetly.identity.v1.WhoAmIResponse\"$\xda\xf0\x19\x0e\n" +
+	"\x02\x18\x01\x10\x02\x1a\x06PUBLIC\x82\xd3\xe4\x93\x02\f\x12\n" +
+	"/v1/whoami\x12\x99\x01\n" +
 	"\n" +
-	"CreateUser\x12&.fleetly.identity.v1.CreateUserRequest\x1a'.fleetly.identity.v1.CreateUserResponse\"%\xea\xc4\x19\r\b\x03\"\t\n" +
-	"\x05users\x10\x02\x82\xd3\xe4\x93\x02\x0e:\x01*\"\t/v1/users\x12o\n" +
-	"\x05Login\x12!.fleetly.identity.v1.LoginRequest\x1a\".fleetly.identity.v1.LoginResponse\"\x1f\xea\xc4\x19\x02\b\x01\x82\xd3\xe4\x93\x02\x13:\x01*\"\x0e/v1/auth/login\x12\xa6\x01\n" +
-	"\x0fSetUserPassword\x12+.fleetly.identity.v1.SetUserPasswordRequest\x1a,.fleetly.identity.v1.SetUserPasswordResponse\"8\xea\xc4\x19\r\b\x03\"\t\n" +
-	"\x05users\x10\x02\x82\xd3\xe4\x93\x02!:\x01*\"\x1c/v1/users/{user_id}/password\x12}\n" +
-	"\aGetUser\x12#.fleetly.identity.v1.GetUserRequest\x1a$.fleetly.identity.v1.GetUserResponse\"'\xea\xc4\x19\r\b\x03\"\t\n" +
-	"\x05users\x10\x01\x82\xd3\xe4\x93\x02\x10\x12\x0e/v1/users/{id}\x12~\n" +
-	"\tListUsers\x12%.fleetly.identity.v1.ListUsersRequest\x1a&.fleetly.identity.v1.ListUsersResponse\"\"\xea\xc4\x19\r\b\x03\"\t\n" +
-	"\x05users\x10\x01\x82\xd3\xe4\x93\x02\v\x12\t/v1/users\x12\x86\x01\n" +
+	"CreateUser\x12&.fleetly.identity.v1.CreateUserRequest\x1a'.fleetly.identity.v1.CreateUserResponse\":\xda\xf0\x19\"\n" +
+	"\x16B\x14\n" +
+	"\x05scope\"\vusers:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x0e:\x01*\"\t/v1/users\x12{\n" +
+	"\x05Login\x12!.fleetly.identity.v1.LoginRequest\x1a\".fleetly.identity.v1.LoginResponse\"+\xda\xf0\x19\x0e\n" +
+	"\x02\x18\x01\x10\x02\x1a\x06PUBLIC\x82\xd3\xe4\x93\x02\x13:\x01*\"\x0e/v1/auth/login\x12\xbb\x01\n" +
+	"\x0fSetUserPassword\x12+.fleetly.identity.v1.SetUserPasswordRequest\x1a,.fleetly.identity.v1.SetUserPasswordResponse\"M\xda\xf0\x19\"\n" +
+	"\x16B\x14\n" +
+	"\x05scope\"\vusers:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02!:\x01*\"\x1c/v1/users/{user_id}/password\x12\x91\x01\n" +
+	"\aGetUser\x12#.fleetly.identity.v1.GetUserRequest\x1a$.fleetly.identity.v1.GetUserResponse\";\xda\xf0\x19!\n" +
+	"\x15B\x13\n" +
+	"\x05scope\"\n" +
+	"users:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x10\x12\x0e/v1/users/{id}\x12\x92\x01\n" +
+	"\tListUsers\x12%.fleetly.identity.v1.ListUsersRequest\x1a&.fleetly.identity.v1.ListUsersResponse\"6\xda\xf0\x19!\n" +
+	"\x15B\x13\n" +
+	"\x05scope\"\n" +
+	"users:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\v\x12\t/v1/users\x12\x9b\x01\n" +
 	"\n" +
-	"DeleteUser\x12&.fleetly.identity.v1.DeleteUserRequest\x1a'.fleetly.identity.v1.DeleteUserResponse\"'\xea\xc4\x19\r\b\x03\"\t\n" +
-	"\x05users\x10\x03\x82\xd3\xe4\x93\x02\x10*\x0e/v1/users/{id}\x1a\x06\xf2\xc4\x19\x02\b\x032\xa5\x04\n" +
-	"\fTeamsService\x12\x84\x01\n" +
+	"DeleteUser\x12&.fleetly.identity.v1.DeleteUserRequest\x1a'.fleetly.identity.v1.DeleteUserResponse\"<\xda\xf0\x19\"\n" +
+	"\x16B\x14\n" +
+	"\x05scope\"\vusers:admin\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x10*\x0e/v1/users/{id}\x1a\b\xd2\xf0\x19\x04\n" +
+	"\x02 \x012\xfb\x04\n" +
+	"\fTeamsService\x12\x99\x01\n" +
 	"\n" +
-	"CreateTeam\x12&.fleetly.identity.v1.CreateTeamRequest\x1a'.fleetly.identity.v1.CreateTeamResponse\"%\xea\xc4\x19\r\b\x03\"\t\n" +
-	"\x05teams\x10\x02\x82\xd3\xe4\x93\x02\x0e:\x01*\"\t/v1/teams\x12}\n" +
-	"\aGetTeam\x12#.fleetly.identity.v1.GetTeamRequest\x1a$.fleetly.identity.v1.GetTeamResponse\"'\xea\xc4\x19\r\b\x03\"\t\n" +
-	"\x05teams\x10\x01\x82\xd3\xe4\x93\x02\x10\x12\x0e/v1/teams/{id}\x12~\n" +
-	"\tListTeams\x12%.fleetly.identity.v1.ListTeamsRequest\x1a&.fleetly.identity.v1.ListTeamsResponse\"\"\xea\xc4\x19\r\b\x03\"\t\n" +
-	"\x05teams\x10\x01\x82\xd3\xe4\x93\x02\v\x12\t/v1/teams\x12\x86\x01\n" +
+	"CreateTeam\x12&.fleetly.identity.v1.CreateTeamRequest\x1a'.fleetly.identity.v1.CreateTeamResponse\":\xda\xf0\x19\"\n" +
+	"\x16B\x14\n" +
+	"\x05scope\"\vteams:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x0e:\x01*\"\t/v1/teams\x12\x91\x01\n" +
+	"\aGetTeam\x12#.fleetly.identity.v1.GetTeamRequest\x1a$.fleetly.identity.v1.GetTeamResponse\";\xda\xf0\x19!\n" +
+	"\x15B\x13\n" +
+	"\x05scope\"\n" +
+	"teams:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x10\x12\x0e/v1/teams/{id}\x12\x92\x01\n" +
+	"\tListTeams\x12%.fleetly.identity.v1.ListTeamsRequest\x1a&.fleetly.identity.v1.ListTeamsResponse\"6\xda\xf0\x19!\n" +
+	"\x15B\x13\n" +
+	"\x05scope\"\n" +
+	"teams:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\v\x12\t/v1/teams\x12\x9b\x01\n" +
 	"\n" +
-	"DeleteTeam\x12&.fleetly.identity.v1.DeleteTeamRequest\x1a'.fleetly.identity.v1.DeleteTeamResponse\"'\xea\xc4\x19\r\b\x03\"\t\n" +
-	"\x05teams\x10\x03\x82\xd3\xe4\x93\x02\x10*\x0e/v1/teams/{id}\x1a\x06\xf2\xc4\x19\x02\b\x032\xa5\x04\n" +
-	"\fRolesService\x12\x84\x01\n" +
+	"DeleteTeam\x12&.fleetly.identity.v1.DeleteTeamRequest\x1a'.fleetly.identity.v1.DeleteTeamResponse\"<\xda\xf0\x19\"\n" +
+	"\x16B\x14\n" +
+	"\x05scope\"\vteams:admin\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x10*\x0e/v1/teams/{id}\x1a\b\xd2\xf0\x19\x04\n" +
+	"\x02 \x012\xfb\x04\n" +
+	"\fRolesService\x12\x99\x01\n" +
 	"\n" +
-	"CreateRole\x12&.fleetly.identity.v1.CreateRoleRequest\x1a'.fleetly.identity.v1.CreateRoleResponse\"%\xea\xc4\x19\r\b\x03\"\t\n" +
-	"\x05roles\x10\x02\x82\xd3\xe4\x93\x02\x0e:\x01*\"\t/v1/roles\x12}\n" +
-	"\aGetRole\x12#.fleetly.identity.v1.GetRoleRequest\x1a$.fleetly.identity.v1.GetRoleResponse\"'\xea\xc4\x19\r\b\x03\"\t\n" +
-	"\x05roles\x10\x01\x82\xd3\xe4\x93\x02\x10\x12\x0e/v1/roles/{id}\x12~\n" +
-	"\tListRoles\x12%.fleetly.identity.v1.ListRolesRequest\x1a&.fleetly.identity.v1.ListRolesResponse\"\"\xea\xc4\x19\r\b\x03\"\t\n" +
-	"\x05roles\x10\x01\x82\xd3\xe4\x93\x02\v\x12\t/v1/roles\x12\x86\x01\n" +
+	"CreateRole\x12&.fleetly.identity.v1.CreateRoleRequest\x1a'.fleetly.identity.v1.CreateRoleResponse\":\xda\xf0\x19\"\n" +
+	"\x16B\x14\n" +
+	"\x05scope\"\vroles:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x0e:\x01*\"\t/v1/roles\x12\x91\x01\n" +
+	"\aGetRole\x12#.fleetly.identity.v1.GetRoleRequest\x1a$.fleetly.identity.v1.GetRoleResponse\";\xda\xf0\x19!\n" +
+	"\x15B\x13\n" +
+	"\x05scope\"\n" +
+	"roles:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x10\x12\x0e/v1/roles/{id}\x12\x92\x01\n" +
+	"\tListRoles\x12%.fleetly.identity.v1.ListRolesRequest\x1a&.fleetly.identity.v1.ListRolesResponse\"6\xda\xf0\x19!\n" +
+	"\x15B\x13\n" +
+	"\x05scope\"\n" +
+	"roles:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\v\x12\t/v1/roles\x12\x9b\x01\n" +
 	"\n" +
-	"DeleteRole\x12&.fleetly.identity.v1.DeleteRoleRequest\x1a'.fleetly.identity.v1.DeleteRoleResponse\"'\xea\xc4\x19\r\b\x03\"\t\n" +
-	"\x05roles\x10\x03\x82\xd3\xe4\x93\x02\x10*\x0e/v1/roles/{id}\x1a\x06\xf2\xc4\x19\x02\b\x032\xc6\x04\n" +
-	"\rTokensService\x12\x89\x01\n" +
-	"\vCreateToken\x12'.fleetly.identity.v1.CreateTokenRequest\x1a(.fleetly.identity.v1.CreateTokenResponse\"'\xea\xc4\x19\x0e\b\x03\"\n" +
+	"DeleteRole\x12&.fleetly.identity.v1.DeleteRoleRequest\x1a'.fleetly.identity.v1.DeleteRoleResponse\"<\xda\xf0\x19\"\n" +
+	"\x16B\x14\n" +
+	"\x05scope\"\vroles:admin\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x10*\x0e/v1/roles/{id}\x1a\b\xd2\xf0\x19\x04\n" +
+	"\x02 \x012\x9a\x05\n" +
+	"\rTokensService\x12\x9e\x01\n" +
+	"\vCreateToken\x12'.fleetly.identity.v1.CreateTokenRequest\x1a(.fleetly.identity.v1.CreateTokenResponse\"<\xda\xf0\x19#\n" +
+	"\x17B\x15\n" +
+	"\x05scope\"\ftokens:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x0f:\x01*\"\n" +
+	"/v1/tokens\x12\x96\x01\n" +
+	"\bGetToken\x12$.fleetly.identity.v1.GetTokenRequest\x1a%.fleetly.identity.v1.GetTokenResponse\"=\xda\xf0\x19\"\n" +
+	"\x16B\x14\n" +
+	"\x05scope\"\vtokens:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x11\x12\x0f/v1/tokens/{id}\x12\x97\x01\n" +
 	"\n" +
-	"\x06tokens\x10\x02\x82\xd3\xe4\x93\x02\x0f:\x01*\"\n" +
-	"/v1/tokens\x12\x82\x01\n" +
-	"\bGetToken\x12$.fleetly.identity.v1.GetTokenRequest\x1a%.fleetly.identity.v1.GetTokenResponse\")\xea\xc4\x19\x0e\b\x03\"\n" +
-	"\n" +
-	"\x06tokens\x10\x01\x82\xd3\xe4\x93\x02\x11\x12\x0f/v1/tokens/{id}\x12\x83\x01\n" +
-	"\n" +
-	"ListTokens\x12&.fleetly.identity.v1.ListTokensRequest\x1a'.fleetly.identity.v1.ListTokensResponse\"$\xea\xc4\x19\x0e\b\x03\"\n" +
-	"\n" +
-	"\x06tokens\x10\x01\x82\xd3\xe4\x93\x02\f\x12\n" +
-	"/v1/tokens\x12\x95\x01\n" +
-	"\vRevokeToken\x12'.fleetly.identity.v1.RevokeTokenRequest\x1a(.fleetly.identity.v1.RevokeTokenResponse\"3\xea\xc4\x19\x0e\b\x03\"\n" +
-	"\n" +
-	"\x06tokens\x10\x03\x82\xd3\xe4\x93\x02\x1b:\x01*\"\x16/v1/tokens/{id}/revoke\x1a\x06\xf2\xc4\x19\x02\b\x032\xfb\x03\n" +
-	"\x12InvitationsService\x12\xa2\x01\n" +
-	"\x10CreateInvitation\x12,.fleetly.identity.v1.CreateInvitationRequest\x1a-.fleetly.identity.v1.CreateInvitationResponse\"1\xea\xc4\x19\x13\b\x03\"\x0f\n" +
-	"\vinvitations\x10\x02\x82\xd3\xe4\x93\x02\x14:\x01*\"\x0f/v1/invitations\x12\x9c\x01\n" +
-	"\x0fListInvitations\x12+.fleetly.identity.v1.ListInvitationsRequest\x1a,.fleetly.identity.v1.ListInvitationsResponse\".\xea\xc4\x19\x13\b\x03\"\x0f\n" +
-	"\vinvitations\x10\x01\x82\xd3\xe4\x93\x02\x11\x12\x0f/v1/invitations\x12\x98\x01\n" +
-	"\x10AcceptInvitation\x12,.fleetly.identity.v1.AcceptInvitationRequest\x1a-.fleetly.identity.v1.AcceptInvitationResponse\"'\xea\xc4\x19\x02\b\x01\x82\xd3\xe4\x93\x02\x1b:\x01*\"\x16/v1/invitations/accept\x1a\x06\xf2\xc4\x19\x02\b\x032\x9b\x01\n" +
-	"\x11AuditQueryService\x12~\n" +
-	"\tListAudit\x12%.fleetly.identity.v1.ListAuditRequest\x1a&.fleetly.identity.v1.ListAuditResponse\"\"\xea\xc4\x19\r\b\x03\"\t\n" +
-	"\x05audit\x10\x01\x82\xd3\xe4\x93\x02\v\x12\t/v1/audit\x1a\x06\xf2\xc4\x19\x02\b\x03B\x9c\x01\x92ARRP\n" +
+	"ListTokens\x12&.fleetly.identity.v1.ListTokensRequest\x1a'.fleetly.identity.v1.ListTokensResponse\"8\xda\xf0\x19\"\n" +
+	"\x16B\x14\n" +
+	"\x05scope\"\vtokens:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\f\x12\n" +
+	"/v1/tokens\x12\xaa\x01\n" +
+	"\vRevokeToken\x12'.fleetly.identity.v1.RevokeTokenRequest\x1a(.fleetly.identity.v1.RevokeTokenResponse\"H\xda\xf0\x19#\n" +
+	"\x17B\x15\n" +
+	"\x05scope\"\ftokens:admin\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x1b:\x01*\"\x16/v1/tokens/{id}/revoke\x1a\b\xd2\xf0\x19\x04\n" +
+	"\x02 \x012\xb2\x04\n" +
+	"\x12InvitationsService\x12\xb7\x01\n" +
+	"\x10CreateInvitation\x12,.fleetly.identity.v1.CreateInvitationRequest\x1a-.fleetly.identity.v1.CreateInvitationResponse\"F\xda\xf0\x19(\n" +
+	"\x1cB\x1a\n" +
+	"\x05scope\"\x11invitations:write\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x14:\x01*\"\x0f/v1/invitations\x12\xb0\x01\n" +
+	"\x0fListInvitations\x12+.fleetly.identity.v1.ListInvitationsRequest\x1a,.fleetly.identity.v1.ListInvitationsResponse\"B\xda\xf0\x19'\n" +
+	"\x1bB\x19\n" +
+	"\x05scope\"\x10invitations:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\x11\x12\x0f/v1/invitations\x12\xa4\x01\n" +
+	"\x10AcceptInvitation\x12,.fleetly.identity.v1.AcceptInvitationRequest\x1a-.fleetly.identity.v1.AcceptInvitationResponse\"3\xda\xf0\x19\x0e\n" +
+	"\x02\x18\x01\x10\x02\x1a\x06PUBLIC\x82\xd3\xe4\x93\x02\x1b:\x01*\"\x16/v1/invitations/accept\x1a\b\xd2\xf0\x19\x04\n" +
+	"\x02 \x012\xb2\x01\n" +
+	"\x11AuditQueryService\x12\x92\x01\n" +
+	"\tListAudit\x12%.fleetly.identity.v1.ListAuditRequest\x1a&.fleetly.identity.v1.ListAuditResponse\"6\xda\xf0\x19!\n" +
+	"\x15B\x13\n" +
+	"\x05scope\"\n" +
+	"audit:read\x10\x02\x1a\x06SERVER\x82\xd3\xe4\x93\x02\v\x12\t/v1/audit\x1a\b\xd2\xf0\x19\x04\n" +
+	"\x02 \x01B\x9c\x01\x92ARRP\n" +
 	"\adefault\x12E\n" +
 	"\x1dAn unexpected error response.\x12$\n" +
 	"\"\x1a .fleetly.shared.v1.ErrorResponseZEgithub.com/fleetlyrun/fleetly/genproto/fleetly/identity/v1;identityv1b\x06proto3"

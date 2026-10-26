@@ -3,10 +3,10 @@
 // 内置角色定义。不 import 任何 internal 包——域纯度与 model/spec 同级
 // （守卫见 internal/guards）。
 //
-// Scope 双形态裁决（本批）：CONTEXT.md 冻结 `resource:action`（colon）为
-// 存储/展示/审计的唯一形态；lynx authz 库的 ScopeSet 语言是 `resource.op`
-// （dot，colon 被 fail-closed 拒绝）。两界各自尊重——本包持有 colon 侧的
-// 解析/校验/蕴含，DotForm 单点转译喂库，词汇真源不动。
+// Scope 形态：CONTEXT.md 冻结 `resource:action`（colon）为存储/展示/审计
+// 的唯一形态；grpcapi v3（policy/scope）的声明与求值语言同以 colon 为
+// 规范形态（dot 仅兼容旧消费者）。本包持有 colon 侧的解析/校验/蕴含，
+// ScopeSet 单点转译喂库（蕴含物化——库的 Satisfies 是精确匹配）。
 package identity
 
 import (
@@ -14,8 +14,26 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/lynx-go/grpcapi/authz"
+	"github.com/lynx-go/grpcapi/policy/scope"
 )
+
+// Scope 语言的三个方向（string 原生形态对齐 v3 库语言；actionRank/
+// expandAction 的判据同源）。
+const (
+	OpRead  = "read"
+	OpWrite = "write"
+	OpAdmin = "admin"
+)
+
+// ScopeRule 是方法级 scope 门的规范形态（`resource:action` 单元；authn
+// View 层与执法面共用——对齐 grpcapi v3 scope requirement 的声明值）。
+type ScopeRule struct {
+	Resource string
+	Op       string
+}
+
+// String 返回 colon 规范形态。
+func (r ScopeRule) String() string { return r.Resource + ":" + r.Op }
 
 // Scope 是授权单元（`resource:action`；action ∈ read|write|admin）。
 type Scope struct {
@@ -101,9 +119,9 @@ func expandAction(action string) []string {
 	}
 }
 
-// DotForm 把 colon 形态 scope 集合转译为库的 dot 形态 ScopeSet，并展开
-// 蕴含（库的 Satisfies 是精确匹配，蕴含必须在此物化）。这是唯一转译点。
-func DotForm(scopes []Scope) (authz.ScopeSet, error) {
+// ScopeSet 把 colon 形态 scope 集合转译为库的 scope.Set，并展开蕴含
+// （库的 Satisfies 是精确匹配，蕴含必须在此物化）。这是唯一转译点。
+func ScopeSet(scopes []Scope) (scope.Set, error) {
 	tokens := make([]string, 0, len(scopes)*3)
 	for _, s := range scopes {
 		if s.Resource == "*" {
@@ -111,10 +129,10 @@ func DotForm(scopes []Scope) (authz.ScopeSet, error) {
 			continue
 		}
 		for _, action := range expandAction(s.Action) {
-			tokens = append(tokens, s.Resource+"."+action)
+			tokens = append(tokens, s.Resource+":"+action)
 		}
 	}
-	return authz.ParseScopeSet(tokens)
+	return scope.Parse(tokens)
 }
 
 // Expand 把 scope 集合展开为蕴含完备的 colon 形态集合（排序去重；展示与
