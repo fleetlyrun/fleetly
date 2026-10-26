@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
+import { useCommand } from "@lynx-go/uikit-core";
+import type { ApiError, CommandResult } from "@lynx-go/uikit-core/kernel";
 import { RocketIcon } from "lucide-react";
 import { toast } from "sonner";
-import type { components } from "@/api/delivery";
-import { ApiError, apiFetch, apiSend } from "@/api/client";
-import { buildDeployPayload, type DeployFormState } from "@/lib/deployPayload";
+import { ApiError as FetchApiError, apiFetch } from "@/api/client";
+import type { DeployFormState } from "@/lib/deployPayload";
 import { useUploads, type AppEntry } from "@/lib/catalog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,18 +15,21 @@ import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { describeError } from "@/lib/api-errors";
+import { deploymentsResource } from "@/kit/deployments";
+import { describeApiError } from "@/kit/errors";
 
-// DeploySheet（List 原型的主操作，UI v2 批 2）：四源部署表单的 Sheet 形态
-// ——image 直投 / compose 受理语言 / spec_file 裸 AppSpec / upload 产物。
+// DeploySheet（List 原型的主操作，UI v2 批 2）：五源部署表单的 Sheet 形态
+// ——current（冻结体可编辑）/ image 直投 / compose 受理语言 / spec_file 裸
+// AppSpec / upload 产物 / hook 托管（Deploy now 现拉）。
 // 载荷构造单源仍是 lib/deployPayload（纯函数已测，语义保真）；策略声明
 // 走 compose/spec 扩展键（ADR-0048 决策 6），不设独立控件。
-// 成功反馈走 toast 带动作链接（"View"跳详情）——MutationBanner 退役。
-
-type DeployResponse = {
-  deployment?: components["schemas"]["v1Deployment"];
-  admission?: components["schemas"]["v1Admission"];
-};
+// 批2（2026-10-26）提交面命令化：**保留壳只换提交面**——五源动态表单不迁
+// Form 块，deploy/hookRefresh 走 deployments resource commands；成功反馈
+// 走 toast 带动作链接（"View"跳详情）。结果通道（rejected/conflict）以
+// message-first 结果盒呈现（form 块结果分支同形）——spec_file 链携带
+// AppSpec.restart_seq（ADR-0083 OCC 面），陈旧序数的服务端 CAS 拒绝落
+// conflict 分支，如实呈现不复现为 ok；失败通道（网络/401/5xx）走
+// describeApiError 文案盒。
 
 type SourceKind = DeployFormState["source"];
 
@@ -53,7 +57,6 @@ export function DeploySheet({
   /** 部署受理后的跳转回调（路由语境里给 navigate） */
   onDeployed?: (deploymentId: string) => void;
 }) {
-  const queryClient = useQueryClient();
   const [appId, setAppId] = useState(defaultAppId);
   // 缺省源推导（ADR-0072 写面）：已有冻结 Spec 的 App 缺省走 current
   // （预填可编辑）；显式选择后以选择为准。
@@ -91,7 +94,7 @@ export function DeploySheet({
       try {
         return await apiFetch<{ spec?: unknown; revision_seq?: string }>(`/v1/apps/${encodeURIComponent(effectiveAppId)}/spec`);
       } catch (error) {
-        if (error instanceof ApiError && error.status === 404) return null;
+        if (error instanceof FetchApiError && error.status === 404) return null;
         throw error;
       }
     },
@@ -108,7 +111,7 @@ export function DeploySheet({
           `/v1/apps/${encodeURIComponent(effectiveAppId)}/hook`);
         return res?.hook ?? null;
       } catch (error) {
-        if (error instanceof ApiError && error.status === 404) return null;
+        if (error instanceof FetchApiError && error.status === 404) return null;
         throw error;
       }
     },
@@ -118,22 +121,21 @@ export function DeploySheet({
 
   // 拉取通道（RefreshGitHook）：hook 托管 App 的部署主操作——不依赖
   // GitHub 侧 webhook,HEAD 现解析;admission 同链（同 HEAD deduplicated）。
-  const refresh = useMutation({
-    mutationFn: async () =>
-      apiSend<{ deployment_id?: string; commit?: string; admission?: { outcome?: string } }>(
-        `/v1/apps/${encodeURIComponent(effectiveAppId)}/hook/refresh`,
-        "POST",
-        {},
-      ),
-    onSuccess: (resp) => {
-      queryClient.invalidateQueries({ queryKey: ["deployments"] });
-      const suffix = resp?.admission?.outcome === "deduplicated" ? " (deduplicated — same commit already in the pipeline)" : "";
-      toast(`Deployment ${resp?.deployment_id ?? "?"} queued @ ${resp?.commit?.slice(0, 7) ?? "?"}${suffix}`, {
-        action: resp?.deployment_id ? { label: "View", onClick: () => onDeployed?.(resp.deployment_id!) } : undefined,
-      });
-      onOpenChange(false);
+  const refresh = useCommand(deploymentsResource.commands.hookRefresh, {
+    scope: { projectId },
+    // rejected/conflict/failure → 下方结果盒（盒子优先，toast 不双响）
+    onSettled: (result) => {
+      if (result?.status === "ok") {
+        const suffix =
+          result.payload.outcome === "deduplicated" ? " (deduplicated — same commit already in the pipeline)" : "";
+        toast(`Deployment ${result.payload.deploymentId ?? "?"} queued @ ${result.payload.commit?.slice(0, 7) ?? "?"}${suffix}`, {
+          action: result.payload.deploymentId
+            ? { label: "View", onClick: () => onDeployed?.(result.payload.deploymentId!) }
+            : undefined,
+        });
+        onOpenChange(false);
+      }
     },
-    onError: (cause) => toast.error(`${describeError(cause).title} — ${describeError(cause).detail}`),
   });
 
   // current 源预填：冻结体 pretty JSON（App 切换/冻结更新时重播，除非已
@@ -145,43 +147,23 @@ export function DeploySheet({
     }
   }, [source, specEdited, frozen.data]);
 
-  const mutation = useMutation<DeployResponse, Error, void>({
-    mutationFn: () =>
-      apiSend<DeployResponse>(
-        "/v1/deployments",
-        "POST",
-        buildDeployPayload({
-          appId: effectiveAppId,
-          source: source ?? "image",
-          image,
-          processName,
-          port,
-          protocol,
-          envText,
-          httpProbe,
-          tcpProbe,
-          composeYaml,
-          specJson,
-          uploadId,
-          builder,
-          dockerfile,
-          railpackVersion,
-          outputDir,
-          idempotencyKey,
-          commitSha,
-          supersede,
-        }),
-      ),
-    onSuccess: (response) => {
-      queryClient.invalidateQueries({ queryKey: ["deployments"] });
-      const id = response.deployment?.id;
-      toast("Deployment created", {
-        description: id ? `${id.slice(0, 12)}… queued` : undefined,
-        action: id
-          ? { label: "View", onClick: () => onDeployed?.(id) }
-          : undefined,
-      });
-      onOpenChange(false);
+  // 提交面（批2 命令化）：五源表单状态整包交给 deployments.deploy 命令
+  // （载荷构造单源 lib/deployPayload 在命令内消费）；失效面 = 默认同资源
+  // + legacyKeys 桥 ["deployments"]（与旧 invalidate 键同形）。
+  const deploy = useCommand(deploymentsResource.commands.deploy, {
+    scope: { projectId },
+    // rejected/conflict/failure → 下方结果盒（盒子优先，toast 不双响）
+    onSettled: (result) => {
+      if (result?.status === "ok") {
+        const id = result.payload.deployment?.id;
+        toast("Deployment created", {
+          description: id ? `${id.slice(0, 12)}… queued` : undefined,
+          action: id
+            ? { label: "View", onClick: () => onDeployed?.(id) }
+            : undefined,
+        });
+        onOpenChange(false);
+      }
     },
   });
 
@@ -195,10 +177,20 @@ export function DeploySheet({
     }
   })();
   const canSubmit =
-    !mutation.isPending &&
+    !deploy.pending &&
     effectiveAppId !== "" &&
     specJsonValid &&
     (source !== "upload" || uploadId !== "");
+
+  // 重开清上一轮结果/失败面（结果盒不跨会话残留）
+  const resetDeploy = deploy.reset;
+  const resetRefresh = refresh.reset;
+  useEffect(() => {
+    if (open) {
+      resetDeploy();
+      resetRefresh();
+    }
+  }, [open, resetDeploy, resetRefresh]);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -441,34 +433,50 @@ export function DeploySheet({
           </>
           ) : null}
 
-          {mutation.isError ? (
-            <div className="rounded-lg border border-[color-mix(in_oklch,var(--status-danger)_35%,transparent)] bg-[var(--status-danger-bg)] px-3 py-2">
-              <div className="text-xs font-semibold text-[var(--status-danger)]">{describeError(mutation.error).title}</div>
-              <div className="mt-0.5 font-mono text-2xs break-all text-muted-foreground">
-                {describeError(mutation.error).detail}
-              </div>
-            </div>
-          ) : null}
-          {refresh.isError ? (
-            <div className="rounded-lg border border-[color-mix(in_oklch,var(--status-danger)_35%,transparent)] bg-[var(--status-danger-bg)] px-3 py-2">
-              <div className="text-xs font-semibold text-[var(--status-danger)]">{describeError(refresh.error).title}</div>
-              <div className="mt-0.5 font-mono text-2xs break-all text-muted-foreground">
-                {describeError(refresh.error).detail}
-              </div>
-            </div>
-          ) : null}
+          {/* 结果盒（form 块结果分支同形，Sheet 保留壳不迁 Form 块）：
+              rejected 带 code 前缀；conflict（OCC：spec 链 restart_seq 陈旧
+              CAS / 幂等键冲突）message-first 如实呈现；失败通道走
+              describeApiError 文案。resultAction 动作槽（「刷新重载」）留待
+              后批接线。 */}
+          <CommandResultBox result={deploy.result} failure={deploy.failure} />
+          <CommandResultBox result={refresh.result} failure={refresh.failure} />
         </div>
         <div className="flex justify-end gap-2 border-t px-4 py-3">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
           {hookOwned ? (
-            <Button disabled={refresh.isPending} onClick={() => refresh.mutate()}>
-              {refresh.isPending ? "Pulling…" : "Deploy now"}
+            <Button disabled={refresh.pending} onClick={() => refresh.mutate({ appId: effectiveAppId })}>
+              {refresh.pending ? "Pulling…" : "Deploy now"}
             </Button>
           ) : (
-            <Button disabled={!canSubmit} onClick={() => void mutation.mutate()}>
-              {mutation.isPending ? "Submitting…" : "Deploy"}
+            <Button
+              disabled={!canSubmit}
+              onClick={() =>
+                deploy.mutate({
+                  appId: effectiveAppId,
+                  source: source ?? "image",
+                  image,
+                  processName,
+                  port,
+                  protocol,
+                  envText,
+                  httpProbe,
+                  tcpProbe,
+                  composeYaml,
+                  specJson,
+                  uploadId,
+                  builder,
+                  dockerfile,
+                  railpackVersion,
+                  outputDir,
+                  idempotencyKey,
+                  commitSha,
+                  supersede,
+                })
+              }
+            >
+              {deploy.pending ? "Submitting…" : "Deploy"}
             </Button>
           )}
         </div>
@@ -490,6 +498,38 @@ function SelectiveProtocol({ value, onChange }: { value: string; onChange: (valu
       </SelectContent>
     </Select>
   );
+}
+
+// 提交面的 message-first 结果盒（form 块结果分支同形）：结果通道非 ok 即
+// 盒（rejected 带 code 前缀）；失败通道（网络/401/5xx）走 describeApiError。
+function CommandResultBox({
+  result,
+  failure,
+}: {
+  result: CommandResult<unknown> | null;
+  failure: ApiError | null;
+}) {
+  if (result != null && result.status !== "ok") {
+    return (
+      <div
+        role="alert"
+        className="rounded-md border border-err/40 bg-err/10 px-3 py-2 text-xs text-err"
+      >
+        {result.status === "rejected" && result.code ? (
+          <span className="font-mono">[{result.code}] </span>
+        ) : null}
+        {result.message}
+      </div>
+    );
+  }
+  if (failure != null) {
+    return (
+      <div role="alert" className="rounded-md border border-err/40 bg-err/10 px-3 py-2 font-mono text-2xs break-all text-err">
+        {describeApiError(failure)}
+      </div>
+    );
+  }
+  return null;
 }
 
 function FieldRow({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {

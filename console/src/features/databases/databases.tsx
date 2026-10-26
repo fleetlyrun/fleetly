@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
-import { useCollection } from "@lynx-go/uikit-core";
+import { useCollection, useCommand, useCommandForm } from "@lynx-go/uikit-core";
+import type { ApiError } from "@lynx-go/uikit-core/kernel";
 import type { components } from "@/api/structure";
 import {
   DatabaseIcon,
@@ -35,8 +35,10 @@ import { DataTable } from "@/components/kit/query/data-table";
 import { FilterBar } from "@/components/kit/query/filter-bar";
 import { ListPage as FleetListPage } from "@/components/kit/query/list-page";
 import { Pagination } from "@/components/kit/query/pagination";
+import { Form } from "@/components/kit/command/form";
+import { SelectField, TextField } from "@/components/kit/command/fields";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -57,14 +59,18 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { DATABASE_ENGINES, databasesResource, databasesSearch, type DatabaseRow } from "@/kit/databases";
+import { browseDatabaseCommand, DATABASE_ENGINES, databasesResource, databasesSearch, type DatabaseRow } from "@/kit/databases";
+import { describeApiError } from "@/kit/errors";
+import { toastOnSettled } from "@/kit/toast";
 
 // Databases 一级页族（IA v3 T3，docs/design/2026-10-09-console-ia-v3.md §4.2）：
 // 列表（备份健康度列）+ 详情 5-tab（Overview/Metrics/Backups/Browse/Settings）。
 // Logs tab 按设计文档 §8 T8 结论留二期（StreamLogsRequest 无 database 轴）；
 // Metrics 走载体寻址 preset（T8：docker label + k3s namespace/pod 双臂）。
 // 2026-10-26 批1 useCollection 化（仅列表页）：骨架换 fleet 块，快筛/引擎
-// 下拉/分页进 URL；详情 5-tab 与写面（RowActions/创建对话框）不动。
+// 下拉/分页进 URL。批2 写路径命令化：9 位 useMutation → useCommand/
+// useCommandForm（kit/databases commands 单源；创建对话框迁 kit form 块，
+// 结果通道 rejected/conflict 走结果盒，失败通道 toast describeApiError）。
 
 type DatabaseEntry = DatabaseRow;
 type BackupEntry = components["schemas"]["v1Backup"];
@@ -85,10 +91,6 @@ function databaseTone(status: string | undefined): StatusTone {
 
 function fieldError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-function invalidateDatabases(queryClient: ReturnType<typeof useQueryClient>) {
-  void queryClient.invalidateQueries({ queryKey: ["resources", "databases"] });
 }
 
 // ---- 列表页 ----
@@ -261,41 +263,38 @@ export function DatabasesListPage({ projectId, from }: { projectId: string; from
 
 function RowActions({ projectId, database }: { projectId: string; database: DatabaseEntry }) {
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const id = database.id ?? "";
-  const backup = useMutation({
-    mutationFn: async () => apiSend(`/v1/databases/${encodeURIComponent(id)}/backups`, "POST", {}),
-    onSuccess: () => {
-      invalidateDatabases(queryClient);
-      toast("Backup triggered");
-    },
-    onError: (cause) => toast.error(fieldError(cause)),
+  // 批2：三写位走 kit commands（invalidates 默认同资源 + legacyKeys 桥
+  // catalog 键；browse 动作类裸 descriptor 无失效面）。反馈走 toast 单源。
+  const backup = useCommand(databasesResource.commands.backup, {
+    scope: { projectId },
+    onSettled: toastOnSettled(() => toast("Backup triggered")),
   });
-  const browse = useMutation({
-    mutationFn: async () => apiSend<{ url?: string }>(`/v1/databases/${encodeURIComponent(id)}/browse`, "POST", {}),
-    onSuccess: (resp) => {
-      if (resp?.url) window.open(resp.url, "_blank", "noopener");
-    },
-    onError: (cause) => toast.error(fieldError(cause)),
+  const browse = useCommand(browseDatabaseCommand, {
+    onSettled: toastOnSettled((payload) => {
+      if (payload.url) window.open(payload.url, "_blank", "noopener");
+    }),
   });
-  const remove = useMutation({
-    mutationFn: async () => apiSend(`/v1/databases/${encodeURIComponent(id)}`, "DELETE"),
-    onSuccess: () => {
-      invalidateDatabases(queryClient);
-      toast(`Database ${database.name} deleted`);
-    },
-    onError: (cause) => toast.error(fieldError(cause)),
+  const remove = useCommand(databasesResource.commands.delete, {
+    scope: { projectId },
+    onSettled: toastOnSettled(() => toast(`Database ${database.name} deleted`)),
   });
   return (
     <div className="flex items-center justify-end gap-1" onClick={(event) => event.stopPropagation()}>
-      <Button variant="outline" size="sm" disabled={backup.isPending} onClick={() => backup.mutate()} title="Trigger an on-demand backup">
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={backup.pending}
+        onClick={() => backup.mutate({ id })}
+        title="Trigger an on-demand backup"
+      >
         Back up
       </Button>
       <Button
         variant="outline"
         size="sm"
-        disabled={browse.isPending}
-        onClick={() => browse.mutate()}
+        disabled={browse.pending}
+        onClick={() => browse.mutate({ id })}
         title="Launch a managed browse session (one-time ticket, 120s)"
       >
         Browse
@@ -332,13 +331,13 @@ function RowActions({ projectId, database }: { projectId: string; database: Data
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
                 <AlertDialogAction
-                  disabled={remove.isPending}
+                  disabled={remove.pending}
                   onClick={(event) => {
                     event.preventDefault();
-                    remove.mutate(undefined, { onSuccess: () => undefined });
+                    remove.mutate({ id });
                   }}
                 >
-                  {remove.isPending ? "Deleting…" : "Delete"}
+                  {remove.pending ? "Deleting…" : "Delete"}
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
@@ -350,7 +349,9 @@ function RowActions({ projectId, database }: { projectId: string; database: Data
 }
 
 // New database 对话框（创建交互统一契约 + §5.5 瘦契约）：Name + engine +
-// 可选 restore-from-backup；引擎参数配置属二期。
+// 可选 restore-from-backup；引擎参数配置属二期。批2 迁 kit form/fields 块
+// （静态字段三枚）：rejected/conflict 走 Form 块结果盒（message-first），
+// 失败通道 toast describeApiError；ok 后原句 toast + 关窗 + 重置 + 跳详情。
 export function CreateDatabaseDialog({
   projectId,
   open,
@@ -362,91 +363,62 @@ export function CreateDatabaseDialog({
   onOpenChange: (open: boolean) => void;
   onCreated?: (databaseId: string) => void;
 }) {
-  const queryClient = useQueryClient();
-  const [form, setForm] = useState({ name: "", engine: "postgres", restoreFrom: "" });
-  const create = useMutation({
-    mutationFn: async () =>
-      apiSend<{ id?: string }>("/v1/databases", "POST", {
-        project_id: projectId,
-        name: form.name,
-        engine: form.engine,
-        restore_from_backup: form.restoreFrom || undefined,
-      }),
-    onSuccess: (resp) => {
-      invalidateDatabases(queryClient);
-      toast(form.restoreFrom ? "Restore queued — the new database converges from the backup" : "Database created");
-      onOpenChange(false);
-      setForm({ name: "", engine: "postgres", restoreFrom: "" });
-      if (resp?.id) onCreated?.(resp.id);
+  const { form, submitting, result, command } = useCommandForm(databasesResource.commands.create, {
+    defaultValues: { name: "", engine: "postgres", restoreFrom: "" },
+    scope: { projectId },
+    // ok 载荷从 settled.result 自取（reveal 是渲染帧值——onSettled 在重渲
+    // 前触发，闭包里恒陈旧）
+    onSettled: (settled, failure) => {
+      if (settled?.status === "ok") {
+        // restore 分句在提交值上判（reset 前读取，与旧文案口径一致）
+        const restored = form.state.values.restoreFrom !== "";
+        toast(restored ? "Restore queued — the new database converges from the backup" : "Database created");
+        onOpenChange(false);
+        form.reset();
+        if (settled.payload.id) onCreated?.(settled.payload.id);
+      } else if (settled == null && failure != null) {
+        // 失败通道（网络/401/5xx）：结果盒只吃结果两分，失败走 toast
+        toast.error(describeApiError(failure));
+      }
     },
-    onError: (cause) => toast.error(fieldError(cause)),
   });
+  // 重开清上一轮结果/失败面（结果盒不跨会话残留）
+  const resetCommand = command.reset;
+  useEffect(() => {
+    if (open) resetCommand();
+  }, [open, resetCommand]);
   return (
     <Dialog
       open={open}
       onOpenChange={(next) => {
-        if (!create.isPending) onOpenChange(next);
+        if (!submitting) onOpenChange(next);
       }}
     >
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>New database</DialogTitle>
         </DialogHeader>
-        <form
-          className="flex flex-col gap-4"
-          onSubmit={(event) => {
-            event.preventDefault();
-            create.mutate();
-          }}
+        <Form
+          form={form}
+          submitting={submitting}
+          result={result}
+          submitLabel="Create"
+          submittingLabel="Creating…"
+          cancelLabel="Cancel"
+          onCancel={() => onOpenChange(false)}
         >
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="db-name">Name</Label>
-            <Input
-              id="db-name"
-              className="font-mono"
-              value={form.name}
-              onChange={(event) => setForm({ ...form, name: event.target.value })}
-              placeholder="orders-db"
-              autoFocus
-            />
-          </div>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="db-engine">Engine</Label>
-            <select
-              id="db-engine"
-              className="h-9 rounded-md border bg-transparent px-3 text-sm shadow-xs"
-              value={form.engine}
-              onChange={(event) => setForm({ ...form, engine: event.target.value })}
-            >
-              {DATABASE_ENGINES.map((engine) => (
-                <option key={engine} value={engine}>
-                  {engine}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="db-restore">Restore from backup (optional)</Label>
-            <Input
-              id="db-restore"
-              className="font-mono"
-              value={form.restoreFrom}
-              onChange={(event) => setForm({ ...form, restoreFrom: event.target.value })}
-              placeholder="bk_01j…"
-            />
-            <p className="text-2xs text-muted-foreground">
-              Restore creates a new database seeded from the backup — the source is never overwritten.
-            </p>
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={create.isPending || form.name === ""}>
-              {create.isPending ? "Creating…" : "Create"}
-            </Button>
-          </DialogFooter>
-        </form>
+          <TextField form={form} name="name" label="Name" placeholder="orders-db" required />
+          <SelectField
+            form={form}
+            name="engine"
+            label="Engine"
+            options={DATABASE_ENGINES.map((engine) => ({ value: engine, label: engine }))}
+          />
+          <TextField form={form} name="restoreFrom" label="Restore from backup (optional)" placeholder="bk_01j…" />
+          <p className="text-2xs text-muted-foreground">
+            Restore creates a new database seeded from the backup — the source is never overwritten.
+          </p>
+        </Form>
       </DialogContent>
     </Dialog>
   );
@@ -460,22 +432,16 @@ export function DatabaseDetailPage({ projectId, databaseId }: { projectId: strin
   const { specs } = useAppSpecs(projectId, apps.data ?? []);
   const database = (databases.data ?? []).find((entry) => entry.id === databaseId);
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const [tab, setTab] = useState<"overview" | "metrics" | "logs" | "backups" | "browse" | "settings">("overview");
-  const backup = useMutation({
-    mutationFn: async () => apiSend(`/v1/databases/${encodeURIComponent(databaseId)}/backups`, "POST", {}),
-    onSuccess: () => {
-      invalidateDatabases(queryClient);
-      toast("Backup triggered");
-    },
-    onError: (cause) => toast.error(fieldError(cause)),
+  // 批2：页角备份/开窗两写位走 kit commands（与 RowActions 同失效面）
+  const backup = useCommand(databasesResource.commands.backup, {
+    scope: { projectId },
+    onSettled: toastOnSettled(() => toast("Backup triggered")),
   });
-  const browse = useMutation({
-    mutationFn: async () => apiSend<{ url?: string }>(`/v1/databases/${encodeURIComponent(databaseId)}/browse`, "POST", {}),
-    onSuccess: (resp) => {
-      if (resp?.url) window.open(resp.url, "_blank", "noopener");
-    },
-    onError: (cause) => toast.error(fieldError(cause)),
+  const browse = useCommand(browseDatabaseCommand, {
+    onSettled: toastOnSettled((payload) => {
+      if (payload.url) window.open(payload.url, "_blank", "noopener");
+    }),
   });
   return (
     <PageFrame
@@ -507,11 +473,11 @@ export function DatabaseDetailPage({ projectId, databaseId }: { projectId: strin
           </div>
         </div>
         <div className="ml-auto flex flex-none items-center gap-2">
-          <Button size="sm" disabled={backup.isPending} onClick={() => backup.mutate()}>
+          <Button size="sm" disabled={backup.pending} onClick={() => backup.mutate({ id: databaseId })}>
             <HardDriveDownloadIcon data-icon-start-inline />
             Back up now
           </Button>
-          <Button size="sm" variant="outline" disabled={browse.isPending} onClick={() => browse.mutate()}>
+          <Button size="sm" variant="outline" disabled={browse.pending} onClick={() => browse.mutate({ id: databaseId })}>
             <EyeIcon data-icon-start-inline />
             Browse
           </Button>
@@ -535,11 +501,17 @@ export function DatabaseDetailPage({ projectId, databaseId }: { projectId: strin
       {tab === "logs" ? <DatabaseLogsTab databaseId={databaseId} /> : null}
       {tab === "backups" ? <DatabaseBackups database={database} projectId={projectId} databaseId={databaseId} /> : null}
       {tab === "browse" ? (
-        <DatabaseBrowsePanel browse={() => browse.mutate()} pending={browse.isPending} error={browse.error} engine={database?.engine} />
+        <DatabaseBrowsePanel
+          browse={() => browse.mutate({ id: databaseId })}
+          pending={browse.pending}
+          failure={browse.failure}
+          engine={database?.engine}
+        />
       ) : null}
       {tab === "settings" ? (
         <DatabaseSettings
           database={database}
+          projectId={projectId}
           projectApps={apps.data ?? []}
           specs={specs}
           onDeleted={() => navigate({ to: "/p/$projectId/databases", params: { projectId } })}
@@ -719,7 +691,6 @@ function DatabaseBackups({
   databaseId: string;
 }) {
   const backups = useDatabaseBackups(databaseId);
-  const queryClient = useQueryClient();
   const rows = backups.data ?? [];
   return (
     <div className="flex flex-col gap-4">
@@ -754,7 +725,7 @@ function DatabaseBackups({
                 </td>
               </tr>
             ) : (
-              rows.map((backup) => <BackupRow key={backup.id} backup={backup} projectId={projectId} engine={database?.engine ?? ""} queryClient={queryClient} />)
+              rows.map((backup) => <BackupRow key={backup.id} backup={backup} projectId={projectId} engine={database?.engine ?? ""} />)
             )}
           </tbody>
         </table>
@@ -780,33 +751,25 @@ function BackupRow({
   backup,
   projectId,
   engine,
-  queryClient,
 }: {
   backup: BackupEntry;
   projectId: string;
   engine: string;
-  queryClient: ReturnType<typeof useQueryClient>;
 }) {
   const [verifying, setVerifying] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [verifyResult, setVerifyResult] = useState<{ ok: boolean; detail: string } | null>(null);
   const [restoreOpen, setRestoreOpen] = useState(false);
   const [restoreName, setRestoreName] = useState("");
-  const restore = useMutation({
-    mutationFn: async () =>
-      apiSend("/v1/databases", "POST", {
-        project_id: projectId,
-        name: restoreName,
-        engine,
-        restore_from_backup: backup.id,
-      }),
-    onSuccess: () => {
-      invalidateDatabases(queryClient);
+  // restore = create 命令的 restore_from_backup 形（ADR-0039：恒新建库）；
+  // 行内面无结果盒，结果/失败通道都走 toast 单源
+  const restore = useCommand(databasesResource.commands.create, {
+    scope: { projectId },
+    onSettled: toastOnSettled(() => {
       toast("Restore queued — the new database converges from the backup");
       setRestoreOpen(false);
       setRestoreName("");
-    },
-    onError: (cause) => toast.error(fieldError(cause)),
+    }),
   });
   async function runDownload() {
     setDownloading(true);
@@ -882,7 +845,7 @@ function BackupRow({
             className="mt-2 flex items-end justify-end gap-2"
             onSubmit={(event) => {
               event.preventDefault();
-              restore.mutate();
+              restore.mutate({ name: restoreName, engine, restoreFrom: backup.id ?? "" });
             }}
           >
             <div className="flex flex-col gap-1">
@@ -898,8 +861,8 @@ function BackupRow({
                 autoFocus
               />
             </div>
-            <Button type="submit" size="sm" disabled={restore.isPending || restoreName === ""}>
-              {restore.isPending ? "Creating…" : "Restore"}
+            <Button type="submit" size="sm" disabled={restore.pending || restoreName === ""}>
+              {restore.pending ? "Creating…" : "Restore"}
             </Button>
           </form>
         ) : null}
@@ -911,12 +874,12 @@ function BackupRow({
 function DatabaseBrowsePanel({
   browse,
   pending,
-  error,
+  failure,
   engine,
 }: {
   browse: () => void;
   pending: boolean;
-  error: unknown;
+  failure: ApiError | null;
   engine: string | undefined;
 }) {
   return (
@@ -936,23 +899,24 @@ function DatabaseBrowsePanel({
         </Button>
         <span className="text-2xs text-muted-foreground">read-only dialect</span>
       </div>
-      {error != null ? <p className="mt-3 text-xs text-destructive">{fieldError(error)}</p> : null}
+      {failure != null ? <p className="mt-3 text-xs text-destructive">{describeApiError(failure)}</p> : null}
     </div>
   );
 }
 
 function DatabaseSettings({
   database,
+  projectId,
   projectApps,
   specs,
   onDeleted,
 }: {
   database: DatabaseEntry | undefined;
+  projectId: string;
   projectApps: Array<{ id: string; name: string }>;
   specs: Map<string, AppSpec>;
   onDeleted: () => void;
 }) {
-  const queryClient = useQueryClient();
   const id = database?.id ?? "";
   // 级联披露数据源（与 Overview Used-by 同锚）：credentials_ref 扫项目内
   // App 冻结 Spec 的 secret_refs——确认页必须点名引用方（IA v3 §4.2）。
@@ -961,24 +925,22 @@ function DatabaseSettings({
         .map((appId) => projectApps.find((app) => app.id === appId)?.name ?? appId)
     : [];
   const ready = database?.status === "running" || database?.status === "degraded";
-  const remove = useMutation({
-    mutationFn: async () => apiSend(`/v1/databases/${encodeURIComponent(id)}`, "DELETE"),
-    onSuccess: () => {
-      invalidateDatabases(queryClient);
+  // 批2：配置面 delete/rotate 两写位走 kit commands（AlertDialog 壳不动，
+  // 反馈 toast 单源）
+  const remove = useCommand(databasesResource.commands.delete, {
+    scope: { projectId },
+    onSettled: toastOnSettled(() => {
       toast(`Database ${database?.name} deleted`);
       onDeleted();
-    },
-    onError: (cause) => toast.error(fieldError(cause)),
+    }),
   });
   const [rotateOpen, setRotateOpen] = useState(false);
-  const rotate = useMutation({
-    mutationFn: async () => apiSend(`/v1/databases/${encodeURIComponent(id)}/rotate-password`, "POST", {}),
-    onSuccess: () => {
-      invalidateDatabases(queryClient);
+  const rotate = useCommand(databasesResource.commands.rotate, {
+    scope: { projectId },
+    onSettled: toastOnSettled(() => {
       setRotateOpen(false); // W-4：成功即关确认框（数据已换、引用方披露已确认）
       toast("Credential rotated — redeploy referencing apps to pick up the new value");
-    },
-    onError: (cause) => toast.error(fieldError(cause)),
+    }),
   });
   return (
     <div className="flex flex-col gap-4">
@@ -991,9 +953,9 @@ function DatabaseSettings({
         </p>
         <AlertDialog open={rotateOpen} onOpenChange={setRotateOpen}>
           <AlertDialogTrigger asChild>
-            <Button size="sm" disabled={database == null || !ready || rotate.isPending}>
+            <Button size="sm" disabled={database == null || !ready || rotate.pending}>
               <RefreshCwIcon data-icon-start-inline />
-              {rotate.isPending ? "Rotating…" : "Rotate password…"}
+              {rotate.pending ? "Rotating…" : "Rotate password…"}
             </Button>
           </AlertDialogTrigger>
           <AlertDialogContent>
@@ -1010,13 +972,13 @@ function DatabaseSettings({
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
               <AlertDialogAction
-                disabled={rotate.isPending}
+                disabled={rotate.pending}
                 onClick={(event) => {
                   event.preventDefault();
-                  rotate.mutate();
+                  rotate.mutate({ id });
                 }}
               >
-                {rotate.isPending ? "Rotating…" : "Rotate"}
+                {rotate.pending ? "Rotating…" : "Rotate"}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
@@ -1052,13 +1014,13 @@ function DatabaseSettings({
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
               <AlertDialogAction
-                disabled={remove.isPending}
+                disabled={remove.pending}
                 onClick={(event) => {
                   event.preventDefault();
-                  remove.mutate();
+                  remove.mutate({ id });
                 }}
               >
-                {remove.isPending ? "Deleting…" : "Delete"}
+                {remove.pending ? "Deleting…" : "Delete"}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

@@ -1,9 +1,10 @@
 import { clientCollection, createHttp } from "@lynx-go/uikit-core/adapters";
-import { defineResource, type ResourceScope } from "@lynx-go/uikit-core/kernel";
+import { defineResource, type CommandDescriptor, type ResourceScope } from "@lynx-go/uikit-core/kernel";
 import { collectionQuerySchema } from "@lynx-go/uikit-core/schema";
-import { notifyUnauthorized } from "@/api/client";
+import { apiSend, notifyUnauthorized } from "@/api/client";
 import type { AppEntry } from "@/lib/catalog";
 import { getToken } from "@/lib/token";
+import { runCommandMapped } from "./errors";
 
 // fleet-ui 适配器族（试点切片：apps 目录是第一个资源，后续 12 上下文分批
 // 落此目录）。REST+protojson 直连 /v1/apps——int64 全 string（生成链钉死，
@@ -48,11 +49,34 @@ export async function fetchApps(ctx: ResourceScope, signal?: AbortSignal): Promi
   return toAppEntries(res.apps);
 }
 
+// ---- 写路径命令（批2） ----
+
+// create = New app 瘦对话框（§5.5 契约）：只承载 Name——create-then-
+// configure，进程/端口/变量等初始值建后到各 tab/Deploy 承接。projectId
+// 经 ctx scope 线程注入（资源声明 scope: ["projectId"]）。
+export interface CreateAppInput {
+  name: string;
+}
+
+const createAppCommand: CommandDescriptor<CreateAppInput, { appId?: string }> = {
+  run: (input, ctx) =>
+    runCommandMapped(async () => {
+      const res = await apiSend<{ app?: { id?: string } }>("/v1/apps", "POST", {
+        project_id: ctx.projectId,
+        name: input.name.trim(),
+      });
+      return { appId: res?.app?.id };
+    }),
+};
+
 export const appsResource = defineResource({
   name: "apps",
   getId: (row: AppEntry) => row.id,
   scope: ["projectId"],
   collection: clientCollection(fetchApps),
+  commands: {
+    create: createAppCommand,
+  },
 });
 
 // URL 搜索 schema（路由与绑定共用同一实例）：文本快筛 name/id（与旧页

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { textPredicate } from "@lynx-go/uikit-core/kernel";
 import { setToken } from "@/lib/token";
-import { alertsSearch, fetchAlertingChannels, fetchAlertRules } from "./alerts";
+import { alertRulesResource, alertsSearch, fetchAlertingChannels, fetchAlertRules } from "./alerts";
 
 // 告警域适配器单测（批1 Wave2-A）：rules/channels 端点锚、protojson 行收
 // 敛、双 tab 共享 schema 的 URL 编解码往返（平台域无 scope——fetch 恒发）。
@@ -80,5 +80,32 @@ describe("alertsSearch（URL 编解码契约，双 tab 共享实例）", () => {
     expect("q" in patch).toBe(true);
     expect(patch.q).toBeUndefined();
     expect(patch.page).toBeUndefined();
+  });
+});
+
+describe("alertRules commands（批2 写路径命令锚）", () => {
+  it("create：POST /v1/alerts/rules 载荷形锚（threshold Number / for_seconds 字符串）", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await alertRulesResource.commands.create.run(
+      { appId: "a1", metric: "cpu_percent", threshold: 90, forSeconds: "0" },
+      {},
+    );
+
+    expect(result).toMatchObject({ status: "ok" });
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(String(url)).toContain("/v1/alerts/rules");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(String(init.body))).toEqual({
+      app_id: "a1",
+      metric: "cpu_percent",
+      threshold: 90,
+      for_seconds: "0",
+    });
+  });
+
+  it("legacyKeys 桥对齐旧 invalidate 键（[\"alerts\"] 前缀盖 rules/states 双键）", () => {
+    expect(alertRulesResource.commands.create.legacyKeys?.({})).toEqual([["alerts"]]);
   });
 });

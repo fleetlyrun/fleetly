@@ -1,10 +1,8 @@
 import { useState } from "react";
 import { Outlet, useLocation, createFileRoute } from "@tanstack/react-router";
-import { useMutation } from "@tanstack/react-query";
+import { useCommand } from "@lynx-go/uikit-core";
 import { MoreHorizontalIcon, RefreshCwIcon, RocketIcon, ScrollTextIcon, SquareTerminalIcon, TriangleAlertIcon, Undo2Icon } from "lucide-react";
 import { toast } from "sonner";
-import { apiSend } from "@/api/client";
-import { redeployFrozenSpec } from "@/lib/redeploy";
 import { DeploySheet } from "@/features/deployments/deploy-sheet";
 import { useAppDeployments } from "@/features/deployments/hooks";
 import { firingAlerts } from "@/features/apps-tabs/alert-badges";
@@ -13,6 +11,8 @@ import { PageFrame } from "@/components/domain/page-frame";
 import { CopyButton } from "@/components/domain/copy-button";
 import { ProjectAvatar } from "@/components/domain/project-avatar";
 import { DeploymentStatusBadge } from "@/components/domain/status-badge";
+import { deploymentsResource } from "@/kit/deployments";
+import { toastOnSettled } from "@/kit/toast";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -37,6 +37,8 @@ import { appNameOf, useAlertStates, useApps } from "@/lib/catalog";
 // 卡（状态徽标 + firing + 右侧动作组含 Rollback）+ 8 tab。内容区三段
 // crumb（项目 / Apps / app）是项目域唯一面包屑——topbar 对 /p/ 域不再
 // 重复渲染（原型顶栏无 crumb）。
+// 批2（2026-10-26）：Rollback/Redeploy 两写位迁 deployments resource
+// commands（AlertDialog 壳不动，反馈 toast 单源，成功跳详情保留）。
 export const Route = createFileRoute("/_shell/p/$projectId/apps/$appId")({
   component: AppDetailLayout,
 });
@@ -57,27 +59,24 @@ function AppDetailLayout() {
 
   const tabBase = `/p/${encodeURIComponent(projectId)}/apps/${encodeURIComponent(appId)}`;
 
-  const rollback = useMutation({
-    mutationFn: async () =>
-      apiSend<{ deployment?: { id?: string } }>(`/v1/apps/${encodeURIComponent(appId)}/rollback`, "POST", {}),
-    onSuccess: (resp) => {
+  const rollback = useCommand(deploymentsResource.commands.rollback, {
+    scope: { projectId },
+    onSettled: toastOnSettled((payload) => {
       toast("Rollback requested — a new deployment is rolling the previous baseline forward");
-      const id = resp?.deployment?.id;
-      if (id) window.location.assign(`${tabBase}/deployments/${encodeURIComponent(id)}`);
-    },
-    onError: (cause) => toast.error(cause instanceof Error ? cause.message : String(cause)),
+      // 成功跳 deployment 详情（现状保留：整页导航）
+      if (payload.deploymentId) window.location.assign(`${tabBase}/deployments/${encodeURIComponent(payload.deploymentId)}`);
+    }),
   });
 
   // Redeploy（ADR-0069 批）：重发冻结 Spec 走 spec_file 第四源——共享变量
   // /secret 合成拾取走这条；语义如实披露（ADR-0064 内容寻址）：内容未变的
   // 进程零滚动，排障重启走 Processes 页的行级 Restart（RestartProcess）。
-  const redeploy = useMutation({
-    mutationFn: () => redeployFrozenSpec(appId),
-    onSuccess: (id) => {
+  const redeploy = useCommand(deploymentsResource.commands.redeploy, {
+    scope: { projectId },
+    onSettled: toastOnSettled((payload) => {
       toast("Redeploy queued — the frozen spec is submitted as a new deployment");
-      if (id) window.location.assign(`${tabBase}/deployments/${encodeURIComponent(id)}`);
-    },
-    onError: (cause) => toast.error(cause instanceof Error ? cause.message : String(cause)),
+      if (payload.deploymentId) window.location.assign(`${tabBase}/deployments/${encodeURIComponent(payload.deploymentId)}`);
+    }),
   });
 
   const tabs = [
@@ -134,7 +133,7 @@ function AppDetailLayout() {
           </Button>
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button size="sm" variant="outline" disabled={redeploy.isPending || latest == null}>
+              <Button size="sm" variant="outline" disabled={redeploy.pending || latest == null}>
                 <RefreshCwIcon data-icon-start-inline />
                 Redeploy
               </Button>
@@ -151,13 +150,13 @@ function AppDetailLayout() {
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
                 <AlertDialogAction
-                  disabled={redeploy.isPending}
+                  disabled={redeploy.pending}
                   onClick={(event) => {
                     event.preventDefault();
-                    redeploy.mutate();
+                    redeploy.mutate({ appId });
                   }}
                 >
-                  {redeploy.isPending ? "Redeploying…" : "Redeploy"}
+                  {redeploy.pending ? "Redeploying…" : "Redeploy"}
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
@@ -176,7 +175,7 @@ function AppDetailLayout() {
           </Button>
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button size="sm" variant="outline" disabled={rollback.isPending || latest == null}>
+              <Button size="sm" variant="outline" disabled={rollback.pending || latest == null}>
                 <Undo2Icon data-icon-start-inline />
                 Rollback
               </Button>
@@ -192,13 +191,13 @@ function AppDetailLayout() {
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
                 <AlertDialogAction
-                  disabled={rollback.isPending}
+                  disabled={rollback.pending}
                   onClick={(event) => {
                     event.preventDefault();
-                    rollback.mutate();
+                    rollback.mutate({ appId });
                   }}
                 >
-                  {rollback.isPending ? "Rolling back…" : "Roll back"}
+                  {rollback.pending ? "Rolling back…" : "Roll back"}
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>

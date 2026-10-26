@@ -1,15 +1,15 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate, createFileRoute } from "@tanstack/react-router";
-import { useMutation } from "@tanstack/react-query";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
 import { MoreHorizontalIcon, PlusIcon, RocketIcon, ScrollTextIcon, SquareTerminalIcon } from "lucide-react";
 import { toast } from "sonner";
-import { useCollection } from "@lynx-go/uikit-core";
-import { apiSend } from "@/api/client";
+import { useCollection, useCommandForm } from "@lynx-go/uikit-core";
 import { DataTable } from "@/components/kit/query/data-table";
 import { FilterBar } from "@/components/kit/query/filter-bar";
 import { ListPage as FleetListPage } from "@/components/kit/query/list-page";
 import { Pagination } from "@/components/kit/query/pagination";
+import { Form } from "@/components/kit/command/form";
+import { TextField } from "@/components/kit/command/fields";
 import { DeploySheet } from "@/features/deployments/deploy-sheet";
 import { useAppDeployments, type Deployment } from "@/features/deployments/hooks";
 import { CopyButton } from "@/components/domain/copy-button";
@@ -19,21 +19,14 @@ import { ProjectAvatar } from "@/components/domain/project-avatar";
 import { RelativeTime } from "@/components/domain/relative-time";
 import { DeploymentStatusBadge } from "@/components/domain/status-badge";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { describeApiError } from "@/kit/errors";
 import { useProjectName, useRoutes, type AppEntry } from "@/lib/catalog";
 import { appsResource, appsSearch } from "@/kit/apps";
 
@@ -42,6 +35,8 @@ import { appsResource, appsSearch } from "@/kit/apps";
 // page/sort——旧页是 useState 本地态，无存量参数兼容面，纯增量）；业务件
 // （单元格/创建对话框/DeploySheet/CLI 行）保持本仓自持。语境 projectId 经
 // useCollection 的 scope 注入数据层（query key 嵌入 scope 段）。
+// 批2（2026-10-26）：New app 写位迁 useCommandForm + kit form 块（apps
+// resource create 命令单源）。
 export const Route = createFileRoute("/_shell/p/$projectId/apps/")({
   validateSearch: appsSearch.toSearchSchema(),
   component: AppsListPage,
@@ -219,7 +214,8 @@ function AppsListPage() {
 }
 
 // NewAppDialog 是创建瘦对话框（§5.5 契约）：只承载 Name——create-then-
-// configure，进程/端口/变量等初始值建后到各 tab/Deploy 承接。
+// configure，进程/端口/变量等初始值建后到各 tab/Deploy 承接。批2 迁 kit
+// form 块（单静态字段）：rejected/conflict 走结果盒，失败通道 toast。
 function NewAppDialog({
   projectId,
   open,
@@ -231,48 +227,47 @@ function NewAppDialog({
   onOpenChange: (open: boolean) => void;
   onCreated: (appId: string) => void;
 }) {
-  const [name, setName] = useState("");
-  const create = useMutation({
-    mutationFn: async () =>
-      apiSend<{ app?: { id?: string } }>("/v1/apps", "POST", { project_id: projectId, name: name.trim() }),
-    onSuccess: (resp) => {
-      toast(`App ${name.trim()} created — deploy to freeze its first spec`);
-      setName("");
-      onOpenChange(false);
-      if (resp?.app?.id) onCreated(resp.app.id);
+  const { form, submitting, result, command } = useCommandForm(appsResource.commands.create, {
+    defaultValues: { name: "" },
+    scope: { projectId },
+    // ok 载荷从 settled.result 自取（reveal 是渲染帧值——onSettled 在重渲
+    // 前触发，闭包里恒陈旧）
+    onSettled: (settled, failure) => {
+      if (settled?.status === "ok") {
+        toast(`App ${form.state.values.name.trim()} created — deploy to freeze its first spec`);
+        onOpenChange(false);
+        form.reset();
+        if (settled.payload.appId) onCreated(settled.payload.appId);
+      } else if (settled == null && failure != null) {
+        toast.error(describeApiError(failure));
+      }
     },
-    onError: (cause) => toast.error(cause instanceof Error ? cause.message : String(cause)),
   });
+  // 重开清上一轮结果/失败面（结果盒不跨会话残留）
+  const resetCommand = command.reset;
+  useEffect(() => {
+    if (open) resetCommand();
+  }, [open, resetCommand]);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>New app</DialogTitle>
         </DialogHeader>
-        <form
-          className="flex flex-col gap-3"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (name.trim() === "") return;
-            create.mutate();
-          }}
+        <Form
+          form={form}
+          submitting={submitting}
+          result={result}
+          submitLabel="Create"
+          submittingLabel="Creating…"
+          cancelLabel="Cancel"
+          onCancel={() => onOpenChange(false)}
         >
-          <Label className="flex flex-col gap-1.5">
-            <span className="text-xs font-semibold">Name</span>
-            <Input value={name} onChange={(event) => setName(event.target.value)} autoFocus />
-            <span className="text-2xs font-normal text-muted-foreground">
-              Source and configuration land on the app's tabs after creation — deploy to freeze the first spec.
-            </span>
-          </Label>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={create.isPending || name.trim() === ""}>
-              {create.isPending ? "Creating…" : "Create"}
-            </Button>
-          </DialogFooter>
-        </form>
+          <TextField form={form} name="name" label="Name" required />
+          <p className="text-2xs text-muted-foreground">
+            Source and configuration land on the app's tabs after creation — deploy to freeze the first spec.
+          </p>
+        </Form>
       </DialogContent>
     </Dialog>
   );

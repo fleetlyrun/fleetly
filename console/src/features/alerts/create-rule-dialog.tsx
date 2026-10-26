@@ -1,7 +1,7 @@
-import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { useCommand } from "@lynx-go/uikit-core";
+import type { ApiError, CommandResult } from "@lynx-go/uikit-core/kernel";
 import { useProjects, useApps } from "@/lib/catalog";
-import { apiSend } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -14,10 +14,16 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { alertRulesResource } from "@/kit/alerts";
+import { describeApiError } from "@/kit/errors";
 
 // 告警规则创建（List 原型主操作，UI v2 批 3）：旧 CreateRuleModal 的
 // Dialog 化迁移——值域冻结（ADR-0041 cpu_percent/memory_working_set_bytes）
 // 与聚合口径文案保真；写后失效 alerts 键。
+// 批2（2026-10-26）写位命令化：挂 alertRules resource commands（legacyKeys
+// 桥 ["alerts"] 前缀）；壳保留（project→app 级联 Radix Select 动态值域不
+// 迁 form 块），rejected/conflict 结果通道改 message-first 结果盒（旧
+// String(error) 盒退役）。
 
 const ALERT_METRICS = [
   { key: "cpu_percent", label: "CPU (% of node)" },
@@ -25,7 +31,6 @@ const ALERT_METRICS = [
 ] as const;
 
 export function CreateRuleDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
-  const queryClient = useQueryClient();
   const projects = useProjects();
   const [projectId, setProjectId] = useState("");
   const apps = useApps(projectId);
@@ -34,20 +39,21 @@ export function CreateRuleDialog({ open, onOpenChange }: { open: boolean; onOpen
   const [threshold, setThreshold] = useState("");
   const [forSeconds, setForSeconds] = useState("0");
 
-  const create = useMutation({
-    mutationFn: () =>
-      apiSend("/v1/alerts/rules", "POST", {
-        app_id: appId,
-        metric,
-        threshold: Number(threshold),
-        for_seconds: forSeconds === "" ? "0" : forSeconds,
-      }),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["alerts"] });
-      onOpenChange(false);
-      setThreshold("");
+  const create = useCommand(alertRulesResource.commands.create, {
+    // rejected/conflict/failure → 下方结果盒（盒子优先，toast 不双响）
+    onSettled: (result) => {
+      if (result?.status === "ok") {
+        onOpenChange(false);
+        setThreshold("");
+      }
     },
   });
+
+  // 重开清上一轮结果/失败面（结果盒不跨会话残留）
+  const resetCreate = create.reset;
+  useEffect(() => {
+    if (open) resetCreate();
+  }, [open, resetCreate]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -127,21 +133,56 @@ export function CreateRuleDialog({ open, onOpenChange }: { open: boolean; onOpen
               <p className="text-2xs text-muted-foreground">consecutive breach window (0 = immediately)</p>
             </div>
           </div>
-          {create.isError ? (
-            <div className="rounded-lg border border-[color-mix(in_oklch,var(--status-danger)_35%,transparent)] bg-[var(--status-danger-bg)] px-3 py-2 font-mono text-2xs break-all text-muted-foreground">
-              {String(create.error)}
-            </div>
-          ) : null}
+          <CommandResultBox result={create.result} failure={create.failure} />
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button disabled={create.isPending || appId === "" || threshold === ""} onClick={() => void create.mutate()}>
-            {create.isPending ? "Creating…" : "Create rule"}
+          <Button
+            disabled={create.pending || appId === "" || threshold === ""}
+            onClick={() =>
+              create.mutate({
+                appId,
+                metric,
+                threshold: Number(threshold),
+                forSeconds: forSeconds === "" ? "0" : forSeconds,
+              })
+            }
+          >
+            {create.pending ? "Creating…" : "Create rule"}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
+}
+
+// 结果盒（form 块结果分支同形）：rejected 带 code 前缀 message-first；
+// conflict 如实呈现；失败通道走 describeApiError 文案。
+function CommandResultBox({
+  result,
+  failure,
+}: {
+  result: CommandResult<unknown> | null;
+  failure: ApiError | null;
+}) {
+  if (result != null && result.status !== "ok") {
+    return (
+      <div role="alert" className="rounded-md border border-err/40 bg-err/10 px-3 py-2 text-xs text-err">
+        {result.status === "rejected" && result.code ? (
+          <span className="font-mono">[{result.code}] </span>
+        ) : null}
+        {result.message}
+      </div>
+    );
+  }
+  if (failure != null) {
+    return (
+      <div role="alert" className="rounded-md border border-err/40 bg-err/10 px-3 py-2 font-mono text-2xs break-all text-err">
+        {describeApiError(failure)}
+      </div>
+    );
+  }
+  return null;
 }

@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { setToken } from "@/lib/token";
-import { DATABASE_ENGINES, databasesSearch, fetchDatabases } from "./databases";
+import { browseDatabaseCommand, DATABASE_ENGINES, databasesResource, databasesSearch, fetchDatabases } from "./databases";
 
 // 数据库域适配器单测（批1）：端点锚、protojson 行收敛、空 scope 不发请求、
-// 快筛/引擎下拉的 URL 编解码往返。fetch 面 stub 在 global（fetchRows 走
-// apiFetch 裸 fetch 管线）。
+// 快筛/引擎下拉的 URL 编解码往返。fetch 面 stub 在 global（fetchRows 命令
+// 面走 apiSend → apiFetch 裸 fetch 管线）。批2 增写路径命令锚：实体动词
+// 挂 resource commands、browse 动作类裸 descriptor、结果两分（400→
+// rejected/409→conflict）与 legacyKeys 桥。
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -58,5 +60,103 @@ describe("databasesSearch（URL 编解码契约）", () => {
     const filter = databasesSearch.spec.filters?.[0];
     expect(filter?.field).toBe("engine");
     expect(filter?.options?.map((option) => option.value)).toEqual([...DATABASE_ENGINES]);
+  });
+});
+
+describe("databases commands（批2 写路径命令锚）", () => {
+  it("create：POST /v1/databases，projectId 取 ctx scope；restoreFrom 空串 → 键缺席", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ id: "db_new" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await databasesResource.commands.create.run(
+      { name: "orders-db", engine: "postgres" },
+      { projectId: "shop" },
+    );
+
+    expect(result).toEqual({ status: "ok", payload: { id: "db_new" } });
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(String(url)).toContain("/v1/databases");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(String(init.body))).toEqual({ project_id: "shop", name: "orders-db", engine: "postgres" });
+  });
+
+  it("create：restoreFrom 在场 → restore_from_backup 键（restore 语义共用 create）", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ id: "db_restored" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await databasesResource.commands.create.run(
+      { name: "copy", engine: "redis", restoreFrom: "bk_01" },
+      { projectId: "shop" },
+    );
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toEqual({
+      project_id: "shop",
+      name: "copy",
+      engine: "redis",
+      restore_from_backup: "bk_01",
+    });
+  });
+
+  it("delete/backup/rotate：动词端点锚（DELETE / POST 同形）", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await databasesResource.commands.delete.run({ id: "db1" }, { projectId: "shop" });
+    await databasesResource.commands.backup.run({ id: "db1" }, { projectId: "shop" });
+    await databasesResource.commands.rotate.run({ id: "db1" }, { projectId: "shop" });
+
+    const calls = fetchMock.mock.calls as unknown as Array<[string, RequestInit]>;
+    expect(calls.map(([url, init]) => `${init.method} ${url}`)).toEqual([
+      "DELETE /v1/databases/db1",
+      "POST /v1/databases/db1/backups",
+      "POST /v1/databases/db1/rotate-password",
+    ]);
+  });
+
+  it("browse：动作类裸 descriptor，POST /v1/databases/{id}/browse 回 url", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ url: "https://browse.example/ticket" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await browseDatabaseCommand.run({ id: "db1" }, {});
+
+    expect(result).toEqual({ status: "ok", payload: { url: "https://browse.example/ticket" } });
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(String(url)).toContain("/v1/databases/db1/browse");
+    expect(init.method).toBe("POST");
+  });
+
+  it("结果两分：400 → rejected（code 保留）；409 → conflict（结果通道非异常）", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse({ code: "E_INVALID_ARGUMENT", message: "name is required" }, 400)),
+    );
+    const rejected = await databasesResource.commands.create.run(
+      { name: "", engine: "postgres" },
+      { projectId: "shop" },
+    );
+    expect(rejected).toEqual({ status: "rejected", code: "E_INVALID_ARGUMENT", message: "name is required" });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse({ code: "E_CONFLICT", message: "changed concurrently" }, 409)),
+    );
+    const conflict = await databasesResource.commands.delete.run({ id: "db1" }, { projectId: "shop" });
+    expect(conflict).toEqual({ status: "conflict", message: "changed concurrently" });
+  });
+
+  it("失败出界收敛 kernel ApiError（5xx → server）", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ code: "E_BOOM", message: "boom" }, 503)));
+    const attempt = databasesResource.commands.backup.run({ id: "db1" }, { projectId: "shop" });
+    await expect(attempt).rejects.toEqual({ kind: "server", status: 503, message: "E_BOOM: boom" });
+  });
+
+  it("legacyKeys 桥对齐旧 invalidate 键（[\"resources\",\"databases\",projectId]）", () => {
+    expect(databasesResource.commands.create.legacyKeys?.({ projectId: "shop" })).toEqual([
+      ["resources", "databases", "shop"],
+    ]);
+    expect(databasesResource.commands.delete.legacyKeys?.({ projectId: "shop" })).toEqual([
+      ["resources", "databases", "shop"],
+    ]);
   });
 });

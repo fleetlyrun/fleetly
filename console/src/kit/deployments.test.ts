@@ -1,12 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { textPredicate } from "@lynx-go/uikit-core/kernel";
 import { setToken } from "@/lib/token";
-import { deploymentsSearch, fetchProjectDeployments } from "./deployments";
+import type { DeployFormState } from "@/lib/deployPayload";
+import { deploymentsResource, deploymentsSearch, fetchProjectDeployments } from "./deployments";
 
-// 项目级部署 fan-out 适配器单测（批1）：apps 整取 → 逐 app deployments
-// 合并按 updated_at 倒序、per-app 失败吞为空、空 scope/无 app 不发请求、
-// URL 编解码往返。apps 段经 kit/apps 的 uikit http 管线（裸 fetch），
+// 项目级部署 fan-out 适配器单测（批1）：apps 整取 → 逐 app deployments 合并
+// 按 updated_at 倒序、per-app 失败吞为空、空 scope/无 app 不发请求、URL
+// 编解码往返。apps 段经 kit/apps 的 uikit http 管线（裸 fetch），
 // deployments 段经 apiFetch——同一 global stub 覆盖两管线。
+// 批2 增写路径命令锚：五源 deploy 载荷、redeploy 两步链（含 OCC
+// restart_seq 陈旧的 409→conflict 诚实面）、rollback/hookRefresh 端点、
+// legacyKeys 桥。
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -19,6 +23,28 @@ function jsonResponse(body: unknown, status = 200): Response {
     headers: { "Content-Type": "application/json" },
   });
 }
+
+const IMAGE_FORM: DeployFormState = {
+  appId: "a1",
+  source: "image",
+  image: "nginx:1.27",
+  processName: "",
+  port: "",
+  protocol: "",
+  envText: "",
+  httpProbe: "",
+  tcpProbe: "",
+  composeYaml: "",
+  specJson: "",
+  uploadId: "",
+  builder: "dockerfile",
+  dockerfile: "",
+  railpackVersion: "",
+  outputDir: "",
+  idempotencyKey: "",
+  commitSha: "",
+  supersede: false,
+};
 
 describe("fetchProjectDeployments（fan-out 复刻）", () => {
   it("apps → 逐 app /v1/deployments?app_id 合并，按 updated_at 倒序收敛", async () => {
@@ -90,5 +116,105 @@ describe("deploymentsSearch（URL 编解码契约）", () => {
     expect("q" in patch).toBe(true);
     expect(patch.q).toBeUndefined();
     expect(patch.page).toBeUndefined();
+  });
+});
+
+describe("deployments commands（批2 写路径命令锚）", () => {
+  it("deploy：五源表单状态经 buildDeployPayload 后 POST /v1/deployments", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ deployment: { id: "dep_1" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await deploymentsResource.commands.deploy.run(IMAGE_FORM, { projectId: "shop" });
+
+    expect(result).toEqual({ status: "ok", payload: { deployment: { id: "dep_1" } } });
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(String(url)).toContain("/v1/deployments");
+    expect(init.method).toBe("POST");
+    // 载荷单源 lib/deployPayload：image 源只发 app_id/image（空值键缺席）
+    expect(JSON.parse(String(init.body))).toEqual({ app_id: "a1", image: "nginx:1.27" });
+  });
+
+  it("deploy：spec/current 源 spec_file 键（restart_seq 随冻结体原样携带）", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ deployment: { id: "dep_2" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const specJson = JSON.stringify({ processes: [{ name: "web", restart_seq: 3 }] });
+
+    await deploymentsResource.commands.deploy.run({ ...IMAGE_FORM, source: "spec", specJson }, { projectId: "shop" });
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toEqual({ app_id: "a1", spec_file: specJson });
+  });
+
+  it("deploy：OCC 陈旧序数的服务端拒绝（409）→ conflict 结果，不复现为 ok", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse({ code: "E_CONFLICT", message: "spec was changed concurrently" }, 409)),
+    );
+    const result = await deploymentsResource.commands.deploy.run(
+      { ...IMAGE_FORM, source: "current", specJson: "{}" },
+      { projectId: "shop" },
+    );
+    expect(result).toEqual({ status: "conflict", message: "spec was changed concurrently" });
+  });
+
+  it("redeploy：回读冻结 Spec → 原样 spec_file 第四源提交", async () => {
+    const frozenSpec = { processes: [{ name: "web", restart_seq: 3 }] };
+    const fetchMock = vi.fn(async (input: unknown) => {
+      if (String(input).includes("/spec")) {
+        return jsonResponse({ spec: frozenSpec, revision_seq: "5" });
+      }
+      return jsonResponse({ deployment: { id: "dep_3" } });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await deploymentsResource.commands.redeploy.run({ appId: "a1" }, { projectId: "shop" });
+
+    expect(result).toEqual({ status: "ok", payload: { deploymentId: "dep_3" } });
+    const [url, init] = fetchMock.mock.calls[1] as unknown as [string, RequestInit];
+    expect(String(url)).toContain("/v1/deployments");
+    expect(JSON.parse(String(init.body))).toEqual({ app_id: "a1", spec_file: JSON.stringify(frozenSpec) });
+  });
+
+  it("redeploy：未部署（GetAppSpec 404 → 无冻结体）→ 诚实 rejected", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: unknown) => (String(input).includes("/spec") ? jsonResponse({}, 404) : jsonResponse({}))),
+    );
+    const result = await deploymentsResource.commands.redeploy.run({ appId: "a1" }, { projectId: "shop" });
+    expect(result).toEqual({ status: "rejected", message: "the app has no frozen spec yet — deploy first" });
+  });
+
+  it("rollback：POST /v1/apps/{id}/rollback → deploymentId 投影", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ deployment: { id: "dep_4" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await deploymentsResource.commands.rollback.run({ appId: "a1" }, { projectId: "shop" });
+
+    expect(result).toEqual({ status: "ok", payload: { deploymentId: "dep_4" } });
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(String(url)).toContain("/v1/apps/a1/rollback");
+    expect(init.method).toBe("POST");
+  });
+
+  it("hookRefresh：POST /v1/apps/{id}/hook/refresh → deploymentId/commit/outcome 投影", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({ deployment_id: "dep_5", commit: "abc1234", admission: { outcome: "deduplicated" } }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await deploymentsResource.commands.hookRefresh.run({ appId: "a1" }, { projectId: "shop" });
+
+    expect(result).toEqual({
+      status: "ok",
+      payload: { deploymentId: "dep_5", commit: "abc1234", outcome: "deduplicated" },
+    });
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(String(url)).toContain("/v1/apps/a1/hook/refresh");
+    expect(init.method).toBe("POST");
+  });
+
+  it("legacyKeys 桥对齐旧 invalidate 键（[\"deployments\"] 前缀盖 hooks 双形态）", () => {
+    expect(deploymentsResource.commands.deploy.legacyKeys?.({ projectId: "shop" })).toEqual([["deployments"]]);
+    expect(deploymentsResource.commands.rollback.legacyKeys?.({})).toEqual([["deployments"]]);
   });
 });

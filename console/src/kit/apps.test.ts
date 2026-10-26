@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { setToken } from "@/lib/token";
-import { appsSearch, fetchApps } from "./apps";
+import { appsResource, appsSearch, fetchApps } from "./apps";
 
 // fleet-ui 适配器族单测（试点切片）：protojson 行收敛、作用域参数与鉴权头、
 // 空 scope 不发请求、URL 编解码往返。fetch 面 stub 在 global（kit http 管线
@@ -92,5 +92,29 @@ describe("appsSearch（URL 编解码契约）", () => {
     expect("q" in patch).toBe(true);
     expect(patch.q).toBeUndefined();
     expect(patch.page).toBeUndefined();
+  });
+});
+
+describe("apps commands（批2 写路径命令锚）", () => {
+  it("create：POST /v1/apps，projectId 取 ctx scope，name trim 后发送", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ app: { id: "a_new" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await appsResource.commands.create.run({ name: "  web  " }, { projectId: "shop" });
+
+    expect(result).toEqual({ status: "ok", payload: { appId: "a_new" } });
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(String(url)).toContain("/v1/apps");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(String(init.body))).toEqual({ project_id: "shop", name: "web" });
+  });
+
+  it("create：400 → rejected（结果通道，code 保留）", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse({ code: "E_ALREADY_EXISTS", message: "app name already used" }, 400)),
+    );
+    const result = await appsResource.commands.create.run({ name: "web" }, { projectId: "shop" });
+    expect(result).toEqual({ status: "rejected", code: "E_ALREADY_EXISTS", message: "app name already used" });
   });
 });
