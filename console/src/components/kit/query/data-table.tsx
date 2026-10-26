@@ -6,6 +6,9 @@
 // - 未映射方言 token bg-panel-2 ×2——每块语境判断（torchwood amber/emerald、fleetly status vars 先例）
 // - 未映射方言 token border-line ×2——每块语境判断（torchwood amber/emerald、fleetly status vars 先例）
 // - 未映射方言 token text-fg ×2——每块语境判断（torchwood amber/emerald、fleetly status vars 先例）
+// - 本地扩展（fleetly 2026-10-26 批1，上游 @0.3.1 无此槽）：renderExtraRow——
+//   跨行展开行槽（tasks runs 子表首用）。展开态归页面持有，本块无内建展开
+//   模型；升版重拷时对照重落。
 // 其余与上游一致。
 import type { CollectionHandle } from "@lynx-go/uikit-core/react";
 import { flexRender, type RowData } from "@tanstack/react-table";
@@ -14,6 +17,7 @@ import {
   type LegacyColumnDef,
   useLegacyTable,
 } from "@tanstack/react-table/legacy";
+import { Fragment, type ReactNode } from "react";
 import { Checkbox } from "@/components/kit/ui/checkbox"; /* 方言桥：demo Checkbox=Base UI 形态（indeterminate/onChange），本仓是 Radix */
 import { cn } from "@/lib/utils";
 
@@ -48,6 +52,9 @@ export interface DataTableProps<T extends RowData> {
   getRowId: (row: T) => string;
   onRowClick?: (row: T) => void;
   selection?: RowSelection<T>;
+  /** 本地扩展槽：跨行展开——每行之后追加一个整行（colSpan 全列）；
+   * 返回 null/undefined 不渲染。展开态归页面，本块只提供渲染位。 */
+  renderExtraRow?: (row: T) => ReactNode | null | undefined;
 }
 
 export function DataTable<T extends RowData>({
@@ -56,6 +63,7 @@ export function DataTable<T extends RowData>({
   getRowId,
   onRowClick,
   selection,
+  renderExtraRow,
 }: DataTableProps<T>) {
   const table = useLegacyTable({
     data: list.rows as T[],
@@ -143,40 +151,52 @@ export function DataTable<T extends RowData>({
               ? (selection.isRowSelectable?.(row.original as T) ?? true)
               : false;
             const rowSelected = selection?.selectedIds.has(row.id) ?? false;
+            // 本地扩展槽：展开行占全列（含复选列时 +1）
+            const extraRow = renderExtraRow ? renderExtraRow(row.original as T) : null;
+            const columnSpan =
+              (table.getHeaderGroups()[0]?.headers.length ?? columns.length) + (selection ? 1 : 0);
             return (
-              <tr
-                key={row.id}
-                className={cn(
-                  "border-b border-line/60 hover:bg-panel-2/50",
-                  onRowClick && "cursor-pointer",
-                  rowSelected && "bg-panel-2/40",
-                )}
-                onClick={
-                  onRowClick
-                    ? (e) => {
-                        // 行内交互元素（操作按钮/链接/复选/label）不触发行导航
-                        if ((e.target as HTMLElement).closest("button, a, input, label")) return;
-                        onRowClick(row.original as T);
-                      }
-                    : undefined
-                }
-              >
-                {selection ? (
-                  <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
-                    <Checkbox
-                      aria-label={`Select ${row.id}`}
-                      checked={rowSelected}
-                      disabled={!rowSelectable}
-                      onChange={() => selection.onToggle(row.id)}
-                    />
-                  </td>
+              <Fragment key={row.id}>
+                <tr
+                  className={cn(
+                    "border-b border-line/60 hover:bg-panel-2/50",
+                    onRowClick && "cursor-pointer",
+                    rowSelected && "bg-panel-2/40",
+                  )}
+                  onClick={
+                    onRowClick
+                      ? (e) => {
+                          // 行内交互元素（操作按钮/链接/复选/label）不触发行导航
+                          if ((e.target as HTMLElement).closest("button, a, input, label")) return;
+                          onRowClick(row.original as T);
+                        }
+                      : undefined
+                  }
+                >
+                  {selection ? (
+                    <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                      <Checkbox
+                        aria-label={`Select ${row.id}`}
+                        checked={rowSelected}
+                        disabled={!rowSelectable}
+                        onChange={() => selection.onToggle(row.id)}
+                      />
+                    </td>
+                  ) : null}
+                  {row.getVisibleCells().map((cell) => (
+                    <td key={cell.id} className="px-3 py-2">
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </td>
+                  ))}
+                </tr>
+                {extraRow != null ? (
+                  <tr className="hover:bg-transparent">
+                    <td colSpan={columnSpan} className="p-0">
+                      {extraRow}
+                    </td>
+                  </tr>
                 ) : null}
-                {row.getVisibleCells().map((cell) => (
-                  <td key={cell.id} className="px-3 py-2">
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </td>
-                ))}
-              </tr>
+              </Fragment>
             );
           })}
         </tbody>

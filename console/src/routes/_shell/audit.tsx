@@ -1,31 +1,30 @@
-import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
-import { ScrollTextIcon } from "lucide-react";
+import { useCollection } from "@lynx-go/uikit-core";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
 import { formatAbsolute } from "@/lib/format";
-import { useAudit } from "@/lib/catalog";
-import { EmptyState } from "@/components/domain/empty-state";
-import { ListPage } from "@/components/domain/list-page";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { DataTable } from "@/components/kit/query/data-table";
+import { FilterBar } from "@/components/kit/query/filter-bar";
+import { ListPage as FleetListPage } from "@/components/kit/query/list-page";
+import { Pagination } from "@/components/kit/query/pagination";
+import { CliEquivalent } from "@/components/domain/list-toolbar";
+import { PageFrame } from "@/components/domain/page-frame";
+import { auditResource, auditSearch, type AuditRow } from "@/kit/audit";
 
-// 审计页（F3.1 → UI v2 批 5 reskin；模板化收编 ListPage）：GET /v1/audit
-// 只读面 + CLI 同款服务器过滤器（source/action 前缀/actor/resource，
-// Filter 提交生效）走 ListPage 的 onFilterSubmit（form 包工具栏）+
-// filters 槽，快筛为页内过滤。审计行服务端只写——Console 是观察面。
-const SOURCES = ["", "api", "cli", "manual", "webhook", "schedule", "system"];
-
-type AuditEntry = NonNullable<ReturnType<typeof useAudit>["data"]>[number];
-
+// 审计页（F3.1 → UI v2 批 5 reskin → 2026-10-26 批1 useCollection 化）：
+// GET /v1/audit 只读面（整取 limit 100 + 客户端求值方言）。旧页的提交式
+// 服务器过滤（source 下拉/action 前缀/actor/resource 表单）退役，改为
+// FilterBar 即时过滤（q 覆盖 source/actor/action/resource，进 URL）——
+// 行为增量：即时生效 + 可分享。审计行服务端只写——Console 是观察面。
 export const Route = createFileRoute("/_shell/audit")({
+  validateSearch: auditSearch.toSearchSchema(),
   component: AuditPage,
 });
 
-const columns: LegacyColumnDef<AuditEntry, any>[] = [
+const columns: LegacyColumnDef<AuditRow, any>[] = [
   {
     accessorKey: "created_at",
     header: "Time",
+    meta: { sortField: "created_at" },
     cell: ({ row }) => (
       <span className="whitespace-nowrap text-xs text-muted-foreground" title={formatAbsolute(row.original.created_at)}>
         {formatAbsolute(row.original.created_at)}
@@ -35,6 +34,7 @@ const columns: LegacyColumnDef<AuditEntry, any>[] = [
   {
     accessorKey: "source",
     header: "Source",
+    meta: { sortField: "source" },
     cell: ({ row }) => <span className="text-xs">{row.original.source}</span>,
   },
   {
@@ -49,6 +49,7 @@ const columns: LegacyColumnDef<AuditEntry, any>[] = [
   {
     accessorKey: "action",
     header: "Action",
+    meta: { sortField: "action" },
     cell: ({ row }) => <span className="font-mono text-xs">{row.original.action}</span>,
   },
   {
@@ -73,60 +74,34 @@ const columns: LegacyColumnDef<AuditEntry, any>[] = [
 ];
 
 function AuditPage() {
-  const [source, setSource] = useState("");
-  const [action, setAction] = useState("");
-  const [actor, setActor] = useState("");
-  const [resource, setResource] = useState("");
-  const [active, setActive] = useState({ source: "", action: "", actor: "", resource: "" });
-  const audit = useAudit({ ...active, limit: 100 });
-  const entries = audit.data ?? [];
+  const list = useCollection(auditResource, {
+    from: Route.id,
+    search: auditSearch,
+    query: { refetchInterval: 15_000 },
+  });
+
+  // 源空与过滤空两套文案：谓词在场 = 过滤空。
+  const filtered = list.query.predicate != null;
 
   return (
-    <ListPage
+    <PageFrame
       title="Audit"
       description="Server-written audit records (GET /v1/audit) — the console observes, never writes"
-      label="audit entries"
-      placeholder="Filter audit..."
-      rows={entries}
-      fieldsOf={(entry) => [entry.source ?? "", entry.actor ?? "", entry.action ?? "", entry.resource ?? ""]}
-      loading={audit.isPending}
-      error={audit.isError ? audit.error : null}
-      onRetry={() => void audit.refetch()}
-      columns={columns}
-      skeletonRows={6}
-      filters={
-        <>
-          <Select value={source} onValueChange={setSource}>
-            <SelectTrigger aria-label="Source" className="h-8 w-28">
-              <SelectValue>{source === "" ? "any" : source}</SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {SOURCES.map((item) => (
-                <SelectItem key={item || "any"} value={item}>
-                  {item === "" ? "any" : item}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Input value={action} onChange={(event) => setAction(event.target.value)} placeholder="action prefix" aria-label="Action prefix" className="h-8 w-32 font-mono text-xs" />
-          <Input value={actor} onChange={(event) => setActor(event.target.value)} placeholder="actor" aria-label="Actor" className="h-8 w-28" />
-          <Input value={resource} onChange={(event) => setResource(event.target.value)} placeholder="resource" aria-label="Resource" className="h-8 w-36" />
-        </>
-      }
-      actions={
-        <Button type="submit" size="sm">
-          Filter
-        </Button>
-      }
-      onFilterSubmit={() => setActive({ source, action, actor, resource })}
-      empty={
-        <EmptyState
-          icon={ScrollTextIcon}
-          title="No audit entries match"
-          description="Widen the filters, or act on the platform to populate the audit view."
-        />
-      }
-      cli="fleetly audit --limit 100"
-    />
+    >
+      <FleetListPage
+        list={list}
+        toolbar={<FilterBar list={list} schema={auditSearch} textPlaceholder="Filter audit..." />}
+        pagination={<Pagination list={list} />}
+        emptyTitle={filtered ? "No audit entries match the filter" : "No audit entries"}
+        emptyDescription={
+          filtered
+            ? "Adjust or clear the filter to see rows again."
+            : "Act on the platform to populate the audit view."
+        }
+        appendix={<CliEquivalent command="fleetly audit --limit 100" />}
+      >
+        <DataTable list={list} columns={columns} getRowId={(row) => row.id ?? ""} />
+      </FleetListPage>
+    </PageFrame>
   );
 }

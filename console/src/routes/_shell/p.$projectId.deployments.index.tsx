@@ -1,35 +1,48 @@
 import { useState } from "react";
 import { useNavigate, createFileRoute } from "@tanstack/react-router";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
+import { useCollection } from "@lynx-go/uikit-core";
 import { RocketIcon } from "lucide-react";
 import { DeploySheet } from "@/features/deployments/deploy-sheet";
-import { useProjectDeployments, type Deployment } from "@/features/deployments/hooks";
-import { EmptyState } from "@/components/domain/empty-state";
-import { ListPage } from "@/components/domain/list-page";
+import { DataTable } from "@/components/kit/query/data-table";
+import { FilterBar } from "@/components/kit/query/filter-bar";
+import { ListPage as FleetListPage } from "@/components/kit/query/list-page";
+import { Pagination } from "@/components/kit/query/pagination";
 import { ProjectAvatar } from "@/components/domain/project-avatar";
 import { RelativeTime } from "@/components/domain/relative-time";
 import { DeploymentStatusBadge } from "@/components/domain/status-badge";
+import { PageFrame } from "@/components/domain/page-frame";
 import { Button } from "@/components/ui/button";
 import { useApps } from "@/lib/catalog";
+import { deploymentsResource, deploymentsSearch, type DeploymentRow } from "@/kit/deployments";
 
-// 项目级部署流（List 原型，UI v2 批 2）：跨 App 聚合走客户端 fan-out
-//（有界 50 App、15s 档——服务端 per-App 轴契约不动，聚合是 Console 侧的
-// 诚实替代，ADR-0057 不变量）。
+// 项目级部署流（List 原型，UI v2 批 2；2026-10-26 批1 useCollection 化）：
+// 跨 App 聚合走客户端 fan-out（有界 50 App、15s 档——服务端 per-App 轴
+// 契约不动，聚合是 Console 侧的诚实替代，ADR-0057 不变量）。快筛/分页/
+// 排序首次进 URL（deploymentsSearch）；App 名解析与 DeploySheet 继续吃
+// useApps 的 catalog 缓存（60s 目录档）。
 export const Route = createFileRoute("/_shell/p/$projectId/deployments/")({
+  validateSearch: deploymentsSearch.toSearchSchema(),
   component: ProjectDeploymentsPage,
 });
 
 function ProjectDeploymentsPage() {
   const { projectId } = Route.useParams();
   const navigate = useNavigate();
+  const list = useCollection(deploymentsResource, {
+    from: Route.id,
+    search: deploymentsSearch,
+    scope: { projectId },
+    query: { refetchInterval: 15_000 },
+  });
   const apps = useApps(projectId);
-  const deployments = useProjectDeployments((apps.data ?? []).map((app) => app.id));
   const [deployOpen, setDeployOpen] = useState(false);
 
-  const columns: LegacyColumnDef<Deployment, any>[] = [
+  const columns: LegacyColumnDef<DeploymentRow, any>[] = [
     {
       accessorKey: "state",
       header: "State",
+      meta: { sortField: "state" },
       cell: ({ row }) => <DeploymentStatusBadge state={row.original.state} />,
     },
     {
@@ -71,6 +84,7 @@ function ProjectDeploymentsPage() {
     {
       id: "updated",
       header: "Updated",
+      meta: { sortField: "updated_at" },
       cell: ({ row }) => <RelativeTime value={row.original.updated_at} className="text-xs text-muted-foreground" />,
     },
     {
@@ -87,57 +101,64 @@ function ProjectDeploymentsPage() {
     },
   ];
 
+  // 源空与过滤空两套文案：谓词在场 = 过滤空。
+  const filtered = list.query.predicate != null;
+
   return (
-    <ListPage
-      title="Deployments"
-      description="All apps in this project — client-side fan-out, refreshed every 15s"
-      label="deployments"
-      placeholder="Filter deployments..."
-      rows={deployments.data ?? []}
-      fieldsOf={(d) => [d.id ?? "", d.app_id ?? "", d.state ?? "", d.to_revision ?? ""]}
-      loading={deployments.isPending}
-      error={deployments.isError ? deployments.error : null}
-      onRetry={() => void deployments.refetch()}
-      columns={columns}
-      skeletonRows={8}
-      onRowClick={(deployment) => {
-        const appId = deployment.app_id ?? "";
-        if (appId === "") return;
-        void navigate({
-          to: "/p/$projectId/apps/$appId/deployments/$deploymentId",
-          params: { projectId, appId, deploymentId: deployment.id ?? "" },
-        });
-      }}
-      empty={
-        <EmptyState
-          icon={RocketIcon}
-          title="No deployments yet"
-          description="Deploy from an app's page, or pick an app above and hit Deploy."
+    <PageFrame title="Deployments" description="All apps in this project — client-side fan-out, refreshed every 15s">
+      <FleetListPage
+        list={list}
+        toolbar={
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <FilterBar list={list} schema={deploymentsSearch} textPlaceholder="Filter deployments..." />
+            {/* 列表主动作钉工具栏行最右（对齐批 5 裁决） */}
+            <div className="py-2 pr-3">
+              <Button size="sm" onClick={() => setDeployOpen(true)}>
+                <RocketIcon data-icon-start-inline />
+                Deploy…
+              </Button>
+            </div>
+          </div>
+        }
+        pagination={<Pagination list={list} />}
+        emptyTitle={filtered ? "No deployments match the filter" : "No deployments yet"}
+        emptyDescription={
+          filtered
+            ? "Adjust or clear the filter to see rows again."
+            : "Deploy from an app's page, or pick an app above and hit Deploy."
+        }
+        appendix={
+          <DeploySheet
+            open={deployOpen}
+            onOpenChange={setDeployOpen}
+            apps={apps.data ?? []}
+            defaultAppId={(apps.data ?? [])[0]?.id ?? ""}
+            projectId={projectId}
+            onDeployed={(deploymentId) => {
+              const appId = (apps.data ?? [])[0]?.id ?? "";
+              if (appId === "") return;
+              void navigate({
+                to: "/p/$projectId/apps/$appId/deployments/$deploymentId",
+                params: { projectId, appId, deploymentId },
+              });
+            }}
+          />
+        }
+      >
+        <DataTable
+          list={list}
+          columns={columns}
+          getRowId={(row) => row.id ?? ""}
+          onRowClick={(deployment) => {
+            const appId = deployment.app_id ?? "";
+            if (appId === "") return;
+            void navigate({
+              to: "/p/$projectId/apps/$appId/deployments/$deploymentId",
+              params: { projectId, appId, deploymentId: deployment.id ?? "" },
+            });
+          }}
         />
-      }
-      actions={
-        <Button size="sm" onClick={() => setDeployOpen(true)}>
-          <RocketIcon data-icon-start-inline />
-          Deploy…
-        </Button>
-      }
-      appendix={
-      <DeploySheet
-        open={deployOpen}
-        onOpenChange={setDeployOpen}
-        apps={apps.data ?? []}
-        defaultAppId={(apps.data ?? [])[0]?.id ?? ""}
-        projectId={projectId}
-        onDeployed={(deploymentId) => {
-          const appId = (apps.data ?? [])[0]?.id ?? "";
-          if (appId === "") return;
-          void navigate({
-            to: "/p/$projectId/apps/$appId/deployments/$deploymentId",
-            params: { projectId, appId, deploymentId },
-          });
-        }}
-      />
-      }
-    />
+      </FleetListPage>
+    </PageFrame>
   );
 }

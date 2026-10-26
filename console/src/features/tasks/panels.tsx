@@ -1,15 +1,20 @@
 import { useState } from "react";
+import { Link } from "@tanstack/react-router";
 import { PlusIcon } from "lucide-react";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
-import { useRuns, useSchedules, useTasks } from "@/lib/catalog";
+import { useCollection } from "@lynx-go/uikit-core";
+import { useRuns } from "@/lib/catalog";
 import { useApiMutation } from "@/lib/use-api-mutation";
 import { describeError } from "@/lib/api-errors";
 import { shortId } from "@/lib/format";
 import { ConfirmDialog } from "@/components/domain/confirm-dialog";
-import { EmptyState } from "@/components/domain/empty-state";
 import { ErrorState } from "@/components/domain/error-state";
-import { ListCard } from "@/components/domain/list-page";
+import { CliEquivalent } from "@/components/domain/list-toolbar";
 import { RelativeTime } from "@/components/domain/relative-time";
+import { DataTable } from "@/components/kit/query/data-table";
+import { FilterBar } from "@/components/kit/query/filter-bar";
+import { ListPage as FleetListPage } from "@/components/kit/query/list-page";
+import { Pagination } from "@/components/kit/query/pagination";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -26,12 +31,17 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import { schedulesResource, tasksResource, tasksSearch, type ScheduleEntry, type TaskEntry } from "@/kit/tasks";
 
-// Tasks 面板族（UI v2 批 4 → 模板化收编 ListCard）：Task 双形态
-//（one-shot/resident 池）+ Run 观察 + 时区 cron Schedule。动词面对齐 CLI
-//（create/scale/stop/delete/renew + schedules create/trigger/delete +
-// runs stop）。项目语境改为入参。Tasks 表的 runs 跨行展开走 children
-// 渲染槽；表格四态/工具栏/分页/CLI 行收口 ListCard。pre-v2 共享层脱钩。
+// Tasks 面板族（UI v2 批 4 → 模板化收编 ListCard → 2026-10-26 批1
+// useCollection 化）：Task 双形态（one-shot/resident 池）+ Run 观察 + 时区
+// cron Schedule。动词面对齐 CLI（create/scale/stop/delete/renew +
+// schedules create/trigger/delete + runs stop）。项目语境改为入参；
+// from=路由 id 由路由文件注入（panels 不反查路由，避免 route ↔ feature
+// 循环引用）。列表骨架换 fleet 块（FleetListPage × FilterBar × DataTable ×
+// Pagination），快筛/分页首次进 URL（tasksSearch 双 tab 共享实例）；runs
+// 跨行展开走 DataTable 本地扩展槽 renderExtraRow（展开态归页面）；写面
+// useApiMutation/弹窗/Confirm 原样保留（批2 迁命令面）。
 
 // kvLines 文本域 → 重复旗标面（K=V 行）。
 function kvLines(text: string): Array<string> {
@@ -201,59 +211,116 @@ export function NewTaskButton({ projectId }: { projectId: string }) {
   );
 }
 
-// TasksPanel：Task 表（runs 跨行展开）+ scale/stop/renew/delete。
-export function TasksPanel({ projectId }: { projectId: string }) {
-  return <TasksTab projectId={projectId} />;
-}
+// TasksPanel：Task 表（runs 跨行展开）+ scale/stop/renew/delete。数据面
+// useCollection（15s 轮询，与旧 useTasks 同拍）；行点击无导航（Task 名
+// 链接进详情，行为保持）。
+export function TasksPanel({ projectId, from }: { projectId: string; from: string }) {
+  const list = useCollection(tasksResource, {
+    from,
+    search: tasksSearch,
+    scope: { projectId },
+    query: { refetchInterval: 15_000 },
+  });
+  // runs 展开态归页面（单开；id 空兜底不展开）
+  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
 
-function TasksTab({ projectId }: { projectId: string }) {
-  const tasks = useTasks(projectId);
+  const columns: LegacyColumnDef<TaskEntry, any>[] = [
+    {
+      accessorKey: "name",
+      header: "Task",
+      meta: { sortField: "name" },
+      cell: ({ row }) => (
+        <div>
+          <div className="font-medium">
+            <Link
+              to="/p/$projectId/tasks/$taskId"
+              params={{ projectId: row.original.project_id ?? projectId, taskId: row.original.id ?? "" }}
+              className="hover:underline"
+            >
+              {row.original.name || shortId(row.original.id)}
+            </Link>
+          </div>
+          <div className="font-mono text-xs text-muted-foreground" title={row.original.id}>
+            {shortId(row.original.id)}
+          </div>
+        </div>
+      ),
+    },
+    {
+      accessorKey: "form",
+      header: "Form",
+      meta: { sortField: "form" },
+      cell: ({ row }) => <span className="text-xs text-muted-foreground">{row.original.form}</span>,
+    },
+    {
+      accessorKey: "state",
+      header: "State",
+      meta: { sortField: "state" },
+      cell: ({ row }) => <span className="text-xs text-muted-foreground">{row.original.state ?? "—"}</span>,
+    },
+    {
+      accessorKey: "image",
+      header: "Image",
+      meta: { sortField: "image" },
+      cell: ({ row }) => <span className="font-mono text-xs text-muted-foreground">{row.original.image}</span>,
+    },
+    {
+      id: "actions",
+      header: () => <span className="sr-only">Actions</span>,
+      cell: ({ row }) => (
+        <TaskActionsCell
+          task={row.original}
+          expanded={expandedTaskId != null && row.original.id === expandedTaskId}
+          onToggleRuns={() =>
+            setExpandedTaskId((prev) => (prev === row.original.id ? null : row.original.id ?? null))
+          }
+        />
+      ),
+    },
+  ];
+
+  const filtered = list.query.predicate != null;
   return (
-    <section className="flex flex-col gap-3">
-      <ListCard
-        label="tasks"
-        placeholder="Filter tasks..."
-        rows={tasks.data ?? []}
-        fieldsOf={(task) => [task.name ?? "", task.id ?? "", task.form ?? "", task.state ?? ""]}
-        loading={tasks.isPending}
-        error={tasks.isError ? tasks.error : null}
-        onRetry={() => void tasks.refetch()}
-        cli={`fleetly tasks list --project ${projectId}`}
-        actions={<NewTaskButton projectId={projectId} />}
-        empty={
-          projectId === "" ? (
-            <EmptyState icon={PlusIcon} title="Enter a project id" description="Pick a project to list its tasks." />
-          ) : (
-            <EmptyState icon={PlusIcon} title="No tasks" description="Create a one-shot task or a resident pool." />
-          )
+    <FleetListPage
+      list={list}
+      toolbar={
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <FilterBar list={list} schema={tasksSearch} textPlaceholder="Filter tasks..." />
+          <div className="py-2 pr-3">
+            <NewTaskButton projectId={projectId} />
+          </div>
+        </div>
+      }
+      pagination={<Pagination list={list} />}
+      emptyTitle={filtered ? "No tasks match the filter" : "No tasks"}
+      emptyDescription={
+        filtered ? "Adjust or clear the filter to see rows again." : "Create a one-shot task or a resident pool."
+      }
+      appendix={<CliEquivalent command={`fleetly tasks list --project ${projectId}`} />}
+    >
+      <DataTable
+        list={list}
+        columns={columns}
+        getRowId={(row) => row.id ?? ""}
+        renderExtraRow={(task) =>
+          expandedTaskId != null && task.id === expandedTaskId ? <RunsPanel taskId={task.id} /> : null
         }
-      >
-        {({ pageRows }) => (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Task</TableHead>
-                <TableHead>Form</TableHead>
-                <TableHead>State</TableHead>
-                <TableHead>Image</TableHead>
-                <TableHead />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {pageRows.map((task) => (
-                <TaskRow key={task.id} task={task} />
-              ))}
-            </TableBody>
-          </Table>
-        )}
-      </ListCard>
-    </section>
+      />
+    </FleetListPage>
   );
 }
 
-function TaskRow({ task }: { task: { id?: string; name?: string; form?: string; state?: string; status?: string; image?: string; project_id?: string } }) {
-  const [expanded, setExpanded] = useState(false);
-  const runs = useRuns(expanded ? task.id ?? "" : "");
+// TaskActionsCell：行内动作（runs 展开 / resident scale / renew / stop /
+// delete + 行内错误披露 + Confirm）——写面 useApiMutation 原样保留。
+function TaskActionsCell({
+  task,
+  expanded,
+  onToggleRuns,
+}: {
+  task: TaskEntry;
+  expanded: boolean;
+  onToggleRuns: () => void;
+}) {
   const [scaleTo, setScaleTo] = useState("");
   const [stopping, setStopping] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -280,100 +347,48 @@ function TaskRow({ task }: { task: { id?: string; name?: string; form?: string; 
     invalidate: [["resources", "tasks"]],
   });
   return (
-    <>
-      <TableRow>
-        <TableCell>
-          <div className="font-medium">
-            <a
-              href={`/p/${encodeURIComponent(task.project_id ?? "")}/tasks/${encodeURIComponent(task.id ?? "")}`}
-              className="hover:underline"
-            >
-              {task.name || shortId(task.id)}
-            </a>
-          </div>
-          <div className="font-mono text-xs text-muted-foreground" title={task.id}>
-            {shortId(task.id)}
-          </div>
-        </TableCell>
-        <TableCell className="text-xs text-muted-foreground">{task.form}</TableCell>
-        <TableCell className="text-xs text-muted-foreground">{task.state ?? task.status ?? "—"}</TableCell>
-        <TableCell className="font-mono text-xs text-muted-foreground">{task.image}</TableCell>
-        <TableCell>
-          <div className="flex flex-wrap items-center justify-end gap-1">
-            <Button variant="outline" size="sm" onClick={() => setExpanded((prev) => !prev)}>
-              {expanded ? "hide runs" : "runs"}
+    <div className="flex flex-col items-end">
+      <div className="flex flex-wrap items-center justify-end gap-1">
+        <Button variant="outline" size="sm" onClick={onToggleRuns}>
+          {expanded ? "hide runs" : "runs"}
+        </Button>
+        {task.form === "resident" ? (
+          <span className="flex items-center gap-1">
+            <Input
+              value={scaleTo}
+              onChange={(event) => setScaleTo(event.target.value)}
+              placeholder="n"
+              className="h-7 w-14 bg-panel-2/40 px-1.5 text-xs"
+            />
+            <Button variant="outline" size="sm" disabled={scale.isPending || scaleTo === ""} onClick={() => void scale.mutate()}>
+              scale
             </Button>
-            {task.form === "resident" ? (
-              <span className="flex items-center gap-1">
-                <Input
-                  value={scaleTo}
-                  onChange={(event) => setScaleTo(event.target.value)}
-                  placeholder="n"
-                  className="h-7 w-14 bg-panel-2/40 px-1.5 text-xs"
-                />
-                <Button variant="outline" size="sm" disabled={scale.isPending || scaleTo === ""} onClick={() => void scale.mutate()}>
-                  scale
-                </Button>
-              </span>
-            ) : null}
-            <Button variant="outline" size="sm" disabled={renew.isPending} onClick={() => void renew.mutate()} title="Renew the owner lease">
-              renew
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="text-[var(--status-danger)]"
-              disabled={stop.isPending}
-              onClick={() => setStopping(true)}
-            >
-              stop
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="text-[var(--status-danger)]"
-              disabled={del.isPending}
-              onClick={() => setDeleting(true)}
-            >
-              delete
-            </Button>
-          </div>
-          {scale.isError ? <RowError error={scale.error} /> : null}
-          {stop.isError ? <RowError error={stop.error} /> : null}
-        </TableCell>
-      </TableRow>
-      {expanded ? (
-        <TableRow className="hover:bg-transparent">
-          <TableCell colSpan={5} className="bg-panel-2/30">
-            {runs.isPending ? (
-              <Skeleton className="h-10 w-full" />
-            ) : runs.isError ? (
-              <ErrorState error={runs.error} onRetry={() => void runs.refetch()} />
-            ) : (runs.data ?? []).length === 0 ? (
-              <p className="py-3 text-center text-xs text-muted-foreground">No runs.</p>
-            ) : (
-              <div className="overflow-x-auto rounded-lg border bg-card">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Run</TableHead>
-                      <TableHead>State</TableHead>
-                      <TableHead>Exit</TableHead>
-                      <TableHead>Started</TableHead>
-                      <TableHead />
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {(runs.data ?? []).map((run) => (
-                      <RunRow key={run.id} run={run} />
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </TableCell>
-        </TableRow>
-      ) : null}
+          </span>
+        ) : null}
+        <Button variant="outline" size="sm" disabled={renew.isPending} onClick={() => void renew.mutate()} title="Renew the owner lease">
+          renew
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="text-[var(--status-danger)]"
+          disabled={stop.isPending}
+          onClick={() => setStopping(true)}
+        >
+          stop
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="text-[var(--status-danger)]"
+          disabled={del.isPending}
+          onClick={() => setDeleting(true)}
+        >
+          delete
+        </Button>
+      </div>
+      {scale.isError ? <RowError error={scale.error} /> : null}
+      {stop.isError ? <RowError error={stop.error} /> : null}
       <ConfirmDialog
         open={stopping}
         onOpenChange={setStopping}
@@ -390,7 +405,43 @@ function TaskRow({ task }: { task: { id?: string; name?: string; form?: string; 
         confirmLabel="Delete task"
         onConfirm={() => del.mutateAsync()}
       />
-    </>
+    </div>
+  );
+}
+
+// RunsPanel：跨行展开的 runs 子表（按需 useRuns——展开挂载即取、收起即
+// 停；catalog 查询键与任务详情页共享缓存）。
+function RunsPanel({ taskId }: { taskId: string }) {
+  const runs = useRuns(taskId);
+  return (
+    <div className="bg-panel-2/30 px-3 py-3">
+      {runs.isPending ? (
+        <Skeleton className="h-10 w-full" />
+      ) : runs.isError ? (
+        <ErrorState error={runs.error} onRetry={() => void runs.refetch()} />
+      ) : (runs.data ?? []).length === 0 ? (
+        <p className="py-3 text-center text-xs text-muted-foreground">No runs.</p>
+      ) : (
+        <div className="overflow-x-auto rounded-lg border bg-card">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Run</TableHead>
+                <TableHead>State</TableHead>
+                <TableHead>Exit</TableHead>
+                <TableHead>Started</TableHead>
+                <TableHead />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {(runs.data ?? []).map((run) => (
+                <RunRow key={run.id} run={run} />
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -535,18 +586,22 @@ export function NewScheduleButton({ projectId }: { projectId: string }) {
   );
 }
 
-// SchedulesPanel：时区 cron Schedule 表 + trigger/delete。
-export function SchedulesPanel({ projectId }: { projectId: string }) {
-  return <SchedulesTab projectId={projectId} />;
-}
+// SchedulesPanel：时区 cron Schedule 表 + trigger/delete。数据面
+// useCollection（15s 轮询）；与 Tasks tab 共享 tasksSearch 实例（q/分页
+// 跨 tab 持久）。
+export function SchedulesPanel({ projectId, from }: { projectId: string; from: string }) {
+  const list = useCollection(schedulesResource, {
+    from,
+    search: tasksSearch,
+    scope: { projectId },
+    query: { refetchInterval: 15_000 },
+  });
 
-function SchedulesTab({ projectId }: { projectId: string }) {
-  const schedules = useSchedules(projectId);
-
-  const columns: LegacyColumnDef<{ id?: string; name?: string; cron?: string; timezone?: string; image?: string; next_run_at?: string }, any>[] = [
+  const columns: LegacyColumnDef<ScheduleEntry, any>[] = [
     {
       accessorKey: "name",
       header: "Schedule",
+      meta: { sortField: "name" },
       cell: ({ row }) => (
         <div>
           <div className="font-medium">{row.original.name || shortId(row.original.id)}</div>
@@ -569,14 +624,17 @@ function SchedulesTab({ projectId }: { projectId: string }) {
     {
       accessorKey: "image",
       header: "Image",
+      meta: { sortField: "image" },
       cell: ({ row }) => <span className="font-mono text-xs text-muted-foreground">{row.original.image}</span>,
     },
     {
-      accessorKey: "next_run_at",
+      // v1Schedule 的下一拍字段是 next_fire_at（旧列读 next_run_at 恒空，
+      // 迁移时对齐生成类型修正）
+      accessorKey: "next_fire_at",
       header: "Next",
       cell: ({ row }) => (
         <span className="text-xs text-muted-foreground">
-          <RelativeTime value={row.original.next_run_at} />
+          <RelativeTime value={row.original.next_fire_at} />
         </span>
       ),
     },
@@ -587,28 +645,27 @@ function SchedulesTab({ projectId }: { projectId: string }) {
     },
   ];
 
+  const filtered = list.query.predicate != null;
   return (
-    <section className="flex flex-col gap-3">
-      <ListCard
-        label="schedules"
-        placeholder="Filter schedules..."
-        rows={schedules.data ?? []}
-        fieldsOf={(schedule) => [schedule.name ?? "", schedule.cron ?? "", schedule.image ?? ""]}
-        loading={schedules.isPending}
-        error={schedules.isError ? schedules.error : null}
-        onRetry={() => void schedules.refetch()}
-        columns={columns}
-        cli={`fleetly schedules list --project ${projectId}`}
-        actions={<NewScheduleButton projectId={projectId} />}
-        empty={
-          projectId === "" ? (
-            <EmptyState icon={PlusIcon} title="Enter a project id" description="Pick a project to list its schedules." />
-          ) : (
-            <EmptyState icon={PlusIcon} title="No schedules" description="Create a cron schedule to run tasks on a clock." />
-          )
-        }
-      />
-    </section>
+    <FleetListPage
+      list={list}
+      toolbar={
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <FilterBar list={list} schema={tasksSearch} textPlaceholder="Filter schedules..." />
+          <div className="py-2 pr-3">
+            <NewScheduleButton projectId={projectId} />
+          </div>
+        </div>
+      }
+      pagination={<Pagination list={list} />}
+      emptyTitle={filtered ? "No schedules match the filter" : "No schedules"}
+      emptyDescription={
+        filtered ? "Adjust or clear the filter to see rows again." : "Create a cron schedule to run tasks on a clock."
+      }
+      appendix={<CliEquivalent command={`fleetly schedules list --project ${projectId}`} />}
+    >
+      <DataTable list={list} columns={columns} getRowId={(row) => row.id ?? ""} />
+    </FleetListPage>
   );
 }
 

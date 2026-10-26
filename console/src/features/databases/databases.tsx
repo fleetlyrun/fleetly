@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
+import { useCollection } from "@lynx-go/uikit-core";
 import type { components } from "@/api/structure";
 import {
   DatabaseIcon,
@@ -24,12 +25,16 @@ import { useAppSpecs, specIndex, type AppSpec } from "@/features/spec/use-app-sp
 import { CopyButton } from "@/components/domain/copy-button";
 import { ContentCrumb } from "@/components/domain/content-crumb";
 import { EmptyState } from "@/components/domain/empty-state";
-import { ListPage } from "@/components/domain/list-page";
+import { CliEquivalent } from "@/components/domain/list-toolbar";
 import { PageFrame } from "@/components/domain/page-frame";
 import { PageTabs } from "@/components/domain/page-tabs";
 import { ProjectAvatar } from "@/components/domain/project-avatar";
 import { RelativeTime } from "@/components/domain/relative-time";
 import { StatusBadge, statusToneClass, type StatusTone } from "@/components/domain/status-badge";
+import { DataTable } from "@/components/kit/query/data-table";
+import { FilterBar } from "@/components/kit/query/filter-bar";
+import { ListPage as FleetListPage } from "@/components/kit/query/list-page";
+import { Pagination } from "@/components/kit/query/pagination";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -52,16 +57,17 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { DATABASE_ENGINES, databasesResource, databasesSearch, type DatabaseRow } from "@/kit/databases";
 
 // Databases 一级页族（IA v3 T3，docs/design/2026-10-09-console-ia-v3.md §4.2）：
 // 列表（备份健康度列）+ 详情 5-tab（Overview/Metrics/Backups/Browse/Settings）。
 // Logs tab 按设计文档 §8 T8 结论留二期（StreamLogsRequest 无 database 轴）；
 // Metrics 走载体寻址 preset（T8：docker label + k3s namespace/pod 双臂）。
+// 2026-10-26 批1 useCollection 化（仅列表页）：骨架换 fleet 块，快筛/引擎
+// 下拉/分页进 URL；详情 5-tab 与写面（RowActions/创建对话框）不动。
 
-export type DatabaseEntry = components["schemas"]["v1Database"];
+type DatabaseEntry = DatabaseRow;
 type BackupEntry = components["schemas"]["v1Backup"];
-
-const ENGINES = ["postgres", "pgvector", "redis", "mysql", "mongo"] as const;
 
 // status: pending | running | degraded | stopped（收敛环推进）。
 function databaseTone(status: string | undefined): StatusTone {
@@ -87,21 +93,23 @@ function invalidateDatabases(queryClient: ReturnType<typeof useQueryClient>) {
 
 // ---- 列表页 ----
 
-export function DatabasesListPage({ projectId }: { projectId: string }) {
-  const databases = useDatabases(projectId);
-  const rows = databases.data ?? [];
+export function DatabasesListPage({ projectId, from }: { projectId: string; from: string }) {
+  const list = useCollection(databasesResource, {
+    from,
+    search: databasesSearch,
+    scope: { projectId },
+    query: { refetchInterval: 15_000 },
+  });
+  const rows = list.rows;
   const projectName = useProjectName(projectId);
   const navigate = useNavigate();
   const [createOpen, setCreateOpen] = useState(false);
-  const [engine, setEngine] = useState("all");
-  const engines = Array.from(new Set(rows.map((row) => row.engine ?? "").filter(Boolean))).sort();
-  // 引擎下拉是 ListCard 快筛之外的预过滤（行集先收窄，快筛在其上匹配）。
-  const engineRows = engine === "all" ? rows : rows.filter((row) => row.engine === engine);
 
   const columns: LegacyColumnDef<DatabaseEntry, any>[] = [
     {
       accessorKey: "name",
       header: "Database",
+      meta: { sortField: "name" },
       cell: ({ row }) => (
         <div className="flex items-center gap-2.5">
           <ProjectAvatar seed={row.original.id ?? ""} label={row.original.name ?? ""} />
@@ -118,6 +126,7 @@ export function DatabasesListPage({ projectId }: { projectId: string }) {
     {
       accessorKey: "engine",
       header: "Engine",
+      meta: { sortField: "engine" },
       cell: ({ row }) => (
         <span className="font-mono text-xs text-muted-foreground">
           {row.original.engine}
@@ -181,65 +190,72 @@ export function DatabasesListPage({ projectId }: { projectId: string }) {
     },
   ];
 
+  // 源空与过滤空两套文案（旧页 filterEmpty 契约）：谓词在场 = 过滤空。
+  const filtered = list.query.predicate != null;
+  const count = list.total ?? rows.length;
+
   return (
-    <ListPage
+    <PageFrame
       title="Databases"
       description={
-        rows.length > 0
-          ? `${rows.length} database${rows.length === 1 ? "" : "s"} in ${projectName ?? "this project"} — scheduled backups with verify & restore (ADR-0039)`
+        count > 0
+          ? `${count} database${count === 1 ? "" : "s"} in ${projectName ?? "this project"} — scheduled backups with verify & restore (ADR-0039)`
           : "Managed databases — scheduled backups with verify & restore (ADR-0039)"
       }
-      label="databases"
-      placeholder="Filter databases..."
-      rows={engineRows}
-      fieldsOf={(database) => [database.name ?? "", database.engine ?? ""]}
-      loading={databases.isPending}
-      error={databases.isError ? databases.error : null}
-      onRetry={() => void databases.refetch()}
-      columns={columns}
-      onRowClick={(row) => navigate({ to: "/p/$projectId/databases/$databaseId", params: { projectId, databaseId: row.id ?? "" } })}
-      cli={`fleetly databases list --project ${projectId}`}
-      actions={
-        <Button size="sm" onClick={() => setCreateOpen(true)}>
-          <DatabaseIcon data-icon-start-inline />
-          New database
-        </Button>
-      }
-      filters={
-        <select
-          value={engine}
-          onChange={(event) => setEngine(event.target.value)}
-          aria-label="Filter by engine"
-          className="h-8 rounded-md border bg-panel-2/40 px-2 text-xs text-foreground"
-        >
-          <option value="all">All engines</option>
-          {engines.map((entry) => (
-            <option key={entry} value={entry}>
-              {entry}
-            </option>
-          ))}
-        </select>
-      }
-      empty={
-        <EmptyState
-          icon={DatabaseIcon}
-          title="No databases"
-          description="Create a database to get a template-rendered managed service with scheduled backups."
-          actionLabel="New database"
-          onAction={() => setCreateOpen(true)}
-        />
-      }
-      appendix={
-        <CreateDatabaseDialog
-          projectId={projectId}
-          open={createOpen}
-          onOpenChange={setCreateOpen}
-          onCreated={(databaseId) =>
-            navigate({ to: "/p/$projectId/databases/$databaseId", params: { projectId, databaseId } })
+    >
+      <FleetListPage
+        list={list}
+        toolbar={
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            {/* 引擎下拉由 FilterBar 经 schema filters 渲染（静态值域），页内自持 select 退役 */}
+            <FilterBar list={list} schema={databasesSearch} textPlaceholder="Filter databases..." />
+            <div className="py-2 pr-3">
+              <Button size="sm" onClick={() => setCreateOpen(true)}>
+                <DatabaseIcon data-icon-start-inline />
+                New database
+              </Button>
+            </div>
+          </div>
+        }
+        pagination={<Pagination list={list} />}
+        emptyTitle={filtered ? "No databases match the filter" : "No databases"}
+        emptyDescription={
+          filtered
+            ? "Adjust or clear the filter to see rows again."
+            : "Create a database to get a template-rendered managed service with scheduled backups."
+        }
+        emptyAction={
+          filtered ? undefined : (
+            <Button size="sm" onClick={() => setCreateOpen(true)}>
+              <DatabaseIcon data-icon-start-inline />
+              New database
+            </Button>
+          )
+        }
+        appendix={
+          <>
+            <CliEquivalent command={`fleetly databases list --project ${projectId}`} />
+            <CreateDatabaseDialog
+              projectId={projectId}
+              open={createOpen}
+              onOpenChange={setCreateOpen}
+              onCreated={(databaseId) =>
+                navigate({ to: "/p/$projectId/databases/$databaseId", params: { projectId, databaseId } })
+              }
+            />
+          </>
+        }
+      >
+        <DataTable
+          list={list}
+          columns={columns}
+          getRowId={(row) => row.id ?? ""}
+          onRowClick={(row) =>
+            navigate({ to: "/p/$projectId/databases/$databaseId", params: { projectId, databaseId: row.id ?? "" } })
           }
         />
-      }
-    />
+      </FleetListPage>
+    </PageFrame>
   );
 }
 
@@ -402,7 +418,7 @@ export function CreateDatabaseDialog({
               value={form.engine}
               onChange={(event) => setForm({ ...form, engine: event.target.value })}
             >
-              {ENGINES.map((engine) => (
+              {DATABASE_ENGINES.map((engine) => (
                 <option key={engine} value={engine}>
                   {engine}
                 </option>
