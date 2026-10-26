@@ -2,10 +2,9 @@ import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { PlusIcon } from "lucide-react";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
-import { useCollection } from "@lynx-go/uikit-core";
+import { useCollection, useCommand } from "@lynx-go/uikit-core";
+import type { ApiError, CommandResult } from "@lynx-go/uikit-core/kernel";
 import { useRuns } from "@/lib/catalog";
-import { useApiMutation } from "@/lib/use-api-mutation";
-import { describeError } from "@/lib/api-errors";
 import { shortId } from "@/lib/format";
 import { ConfirmDialog } from "@/components/domain/confirm-dialog";
 import { ErrorState } from "@/components/domain/error-state";
@@ -15,6 +14,7 @@ import { DataTable } from "@/components/kit/query/data-table";
 import { FilterBar } from "@/components/kit/query/filter-bar";
 import { ListPage as FleetListPage } from "@/components/kit/query/list-page";
 import { Pagination } from "@/components/kit/query/pagination";
+import { describeApiError } from "@/kit/errors";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -31,17 +31,27 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
-import { schedulesResource, tasksResource, tasksSearch, type ScheduleEntry, type TaskEntry } from "@/kit/tasks";
+import {
+  schedulesResource,
+  stopRunCommand,
+  tasksResource,
+  tasksSearch,
+  type ScheduleEntry,
+  type TaskEntry,
+} from "@/kit/tasks";
 
 // Tasks 面板族（UI v2 批 4 → 模板化收编 ListCard → 2026-10-26 批1
-// useCollection 化）：Task 双形态（one-shot/resident 池）+ Run 观察 + 时区
-// cron Schedule。动词面对齐 CLI（create/scale/stop/delete/renew +
-// schedules create/trigger/delete + runs stop）。项目语境改为入参；
-// from=路由 id 由路由文件注入（panels 不反查路由，避免 route ↔ feature
-// 循环引用）。列表骨架换 fleet 块（FleetListPage × FilterBar × DataTable ×
-// Pagination），快筛/分页首次进 URL（tasksSearch 双 tab 共享实例）；runs
-// 跨行展开走 DataTable 本地扩展槽 renderExtraRow（展开态归页面）；写面
-// useApiMutation/弹窗/Confirm 原样保留（批2 迁命令面）。
+// useCollection 化 → 批2 写路径命令化）：Task 双形态（one-shot/resident 池）
+// + Run 观察 + 时区 cron Schedule。动词面对齐 CLI（create/scale/stop/
+// delete/renew + schedules create/trigger/delete + runs stop）。项目语境改
+// 为入参；from=路由 id 由路由文件注入（panels 不反查路由，避免 route ↔
+// feature 循环引用）。列表骨架换 fleet 块（FleetListPage × FilterBar ×
+// DataTable × Pagination），快筛/分页首次进 URL（tasksSearch 双 tab 共享
+// 实例）；runs 跨行展开走 DataTable 本地扩展槽 renderExtraRow（展开态归页
+// 面）。批2：写面 useCommand（kit/tasks.ts 的 defineResource commands +
+// runs 裸 descriptor），弹窗保留 useState 壳（复杂表单不迁 useCommandForm），
+// ConfirmDialog 壳不动；错误披露走结果两分（rejected/conflict = result，
+// 网络/5xx = failure→describeApiError）。
 
 // kvLines 文本域 → 重复旗标面（K=V 行）。
 function kvLines(text: string): Array<string> {
@@ -51,26 +61,42 @@ function kvLines(text: string): Array<string> {
     .filter((line) => line !== "" && !line.startsWith("#"));
 }
 
-// FormError 是弹窗表单的提交错误面（danger 信封盒，describeError 单源）。
-function FormError({ error }: { error: unknown }) {
+// 命令错误面的两分文案：结果通道（rejected/conflict）message-first（rejected
+// 带信封 code 前缀，机器判别面保留）；失败通道（kernel ApiError）走
+// describeApiError 单源。null 双通道都空 = 不渲染。
+function commandErrorText(
+  result: CommandResult<unknown> | null,
+  failure: ApiError | null,
+): string | null {
+  if (result != null && result.status !== "ok") {
+    return result.status === "rejected" && result.code
+      ? `[${result.code}] ${result.message}`
+      : result.message;
+  }
+  if (failure != null) return describeApiError(failure);
+  return null;
+}
+
+// FormError 是弹窗表单的提交错误面（danger 信封盒，结果两分单源）。
+function FormError({ result, failure }: { result: CommandResult<unknown> | null; failure: ApiError | null }) {
+  const text = commandErrorText(result, failure);
+  if (text == null) return null;
   return (
     <div className="rounded-lg border border-[color-mix(in_oklch,var(--status-danger)_35%,transparent)] bg-[var(--status-danger-bg)] px-3 py-2 font-mono text-2xs break-all text-muted-foreground">
-      {describeError(error).detail}
+      {text}
     </div>
   );
 }
 
-// RowError 是行内动作失败的披露行（v2 口径：分状态文案单源）。
-function RowError({ error }: { error: unknown }) {
-  const described = describeError(error);
-  return (
-    <div className="mt-1 text-2xs text-[var(--status-danger)]">
-      {described.title} — <span className="font-mono">{described.detail}</span>
-    </div>
-  );
+// RowError 是行内动作失败的披露行（v2 口径：结果两分文案单源）。
+function RowError({ result, failure }: { result: CommandResult<unknown> | null; failure: ApiError | null }) {
+  const text = commandErrorText(result, failure);
+  if (text == null) return null;
+  return <div className="mt-1 text-2xs text-[var(--status-danger)]">{text}</div>;
 }
 
-// NewTaskButton 是 Tasks 工具栏主创建钮——弹窗与 mutation 自包含。
+// NewTaskButton 是 Tasks 工具栏主创建钮——弹窗与命令自包含（useState 壳
+// 保留，提交面走 tasksResource.commands.create）。
 export function NewTaskButton({ projectId }: { projectId: string }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [form, setForm] = useState({
@@ -86,24 +112,12 @@ export function NewTaskButton({ projectId }: { projectId: string }) {
     cpuMillis: "",
     memoryMb: "",
   });
-  const create = useApiMutation({
-    path: "/v1/tasks",
-    method: "POST",
-    body: () => ({
-      project_id: projectId,
-      name: form.name || undefined,
-      image: form.image,
-      form: form.form === "resident" ? "resident" : undefined,
-      concurrency: form.form === "resident" ? Number(form.concurrency) : undefined,
-      ttl_seconds: form.ttl === "" ? undefined : Number(form.ttl),
-      network_group: form.networkGroup || undefined,
-      command: form.command === "" ? undefined : form.command.split(/\s+/).filter((part) => part !== ""),
-      env: form.env === "" ? undefined : Object.fromEntries(kvLines(form.env).map((line) => [line.slice(0, line.indexOf("=")), line.slice(line.indexOf("=") + 1)])),
-      secret_refs: form.secretRefs === "" ? undefined : form.secretRefs.split(/[,\s]+/).filter((part) => part !== ""),
-      cpu_millis: form.cpuMillis === "" ? undefined : Number(form.cpuMillis),
-      memory_mb: form.memoryMb === "" ? undefined : Number(form.memoryMb),
-    }),
-    invalidate: [["resources", "tasks", projectId]],
+  const create = useCommand(tasksResource.commands.create, {
+    scope: { projectId },
+    // ok 关窗（沿用旧 onSuccess 行为；无成功 toast——现句为无）
+    onSettled: (result) => {
+      if (result?.status === "ok") setCreateOpen(false);
+    },
   });
   return (
     <>
@@ -126,7 +140,19 @@ export function NewTaskButton({ projectId }: { projectId: string }) {
             className="flex flex-col gap-3"
             onSubmit={(event) => {
               event.preventDefault();
-              create.mutate(undefined, { onSuccess: () => setCreateOpen(false) });
+              create.mutate({
+                name: form.name || undefined,
+                image: form.image,
+                form: form.form === "resident" ? "resident" : undefined,
+                desired_concurrency: form.form === "resident" ? Number(form.concurrency) : undefined,
+                ttl_seconds: form.ttl === "" ? undefined : Number(form.ttl),
+                network_group: form.networkGroup || undefined,
+                command: form.command === "" ? undefined : form.command.split(/\s+/).filter((part) => part !== ""),
+                env: form.env === "" ? undefined : Object.fromEntries(kvLines(form.env).map((line) => [line.slice(0, line.indexOf("=")), line.slice(line.indexOf("=") + 1)])),
+                secret_refs: form.secretRefs === "" ? undefined : form.secretRefs.split(/[,\s]+/).filter((part) => part !== ""),
+                cpu_millis: form.cpuMillis === "" ? undefined : Number(form.cpuMillis),
+                memory_mb: form.memoryMb === "" ? undefined : Number(form.memoryMb),
+              });
             }}
           >
             <div className="grid grid-cols-2 gap-3">
@@ -195,13 +221,13 @@ export function NewTaskButton({ projectId }: { projectId: string }) {
                 <Input value={form.memoryMb} onChange={(event) => setForm({ ...form, memoryMb: event.target.value })} inputMode="numeric" />
               </Label>
             </div>
-            {create.isError ? <FormError error={create.error} /> : null}
+            {create.result?.status === "ok" ? null : <FormError result={create.result} failure={create.failure} />}
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={create.isPending || form.image === ""}>
-                {create.isPending ? "Creating…" : "Create"}
+              <Button type="submit" disabled={create.pending || form.image === ""}>
+                {create.pending ? "Creating…" : "Create"}
               </Button>
             </DialogFooter>
           </form>
@@ -270,6 +296,7 @@ export function TasksPanel({ projectId, from }: { projectId: string; from: strin
       cell: ({ row }) => (
         <TaskActionsCell
           task={row.original}
+          projectId={projectId}
           expanded={expandedTaskId != null && row.original.id === expandedTaskId}
           onToggleRuns={() =>
             setExpandedTaskId((prev) => (prev === row.original.id ? null : row.original.id ?? null))
@@ -311,41 +338,28 @@ export function TasksPanel({ projectId, from }: { projectId: string; from: strin
 }
 
 // TaskActionsCell：行内动作（runs 展开 / resident scale / renew / stop /
-// delete + 行内错误披露 + Confirm）——写面 useApiMutation 原样保留。
+// delete + 行内错误披露 + Confirm）——批2 迁 kit 命令面（scope 显式注入：
+// app 未挂 ResourceScopeProvider，缺省 scope 会错失 kit 键相交失效）。
 function TaskActionsCell({
   task,
+  projectId,
   expanded,
   onToggleRuns,
 }: {
   task: TaskEntry;
+  projectId: string;
   expanded: boolean;
   onToggleRuns: () => void;
 }) {
   const [scaleTo, setScaleTo] = useState("");
   const [stopping, setStopping] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const scale = useApiMutation({
-    path: `/v1/tasks/${encodeURIComponent(task.id ?? "")}/scale`,
-    method: "POST",
-    body: () => ({ concurrency: Number(scaleTo) }),
-    invalidate: [["resources", "tasks"], ["resources", "runs", task.id]],
-  });
-  const stop = useApiMutation({
-    path: `/v1/tasks/${encodeURIComponent(task.id ?? "")}/stop`,
-    method: "POST",
-    body: () => ({}),
-    invalidate: [["resources", "tasks"], ["resources", "runs", task.id]],
-  });
-  const renew = useApiMutation({
-    path: `/v1/tasks/${encodeURIComponent(task.id ?? "")}/renew`,
-    method: "POST",
-    body: () => ({}),
-  });
-  const del = useApiMutation({
-    path: `/v1/tasks/${encodeURIComponent(task.id ?? "")}`,
-    method: "DELETE",
-    invalidate: [["resources", "tasks"]],
-  });
+  const taskId = task.id ?? "";
+  const scope = { projectId };
+  const scale = useCommand(tasksResource.commands.scale, { scope });
+  const stop = useCommand(tasksResource.commands.stop, { scope });
+  const renew = useCommand(tasksResource.commands.renew, { scope });
+  const del = useCommand(tasksResource.commands.delete, { scope });
   return (
     <div className="flex flex-col items-end">
       <div className="flex flex-wrap items-center justify-end gap-1">
@@ -360,19 +374,30 @@ function TaskActionsCell({
               placeholder="n"
               className="h-7 w-14 bg-panel-2/40 px-1.5 text-xs"
             />
-            <Button variant="outline" size="sm" disabled={scale.isPending || scaleTo === ""} onClick={() => void scale.mutate()}>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={scale.pending || scaleTo === ""}
+              onClick={() => void scale.mutate({ id: taskId, desired_concurrency: Number(scaleTo) })}
+            >
               scale
             </Button>
           </span>
         ) : null}
-        <Button variant="outline" size="sm" disabled={renew.isPending} onClick={() => void renew.mutate()} title="Renew the owner lease">
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={renew.pending}
+          onClick={() => void renew.mutate({ id: taskId })}
+          title="Renew the owner lease"
+        >
           renew
         </Button>
         <Button
           variant="outline"
           size="sm"
           className="text-[var(--status-danger)]"
-          disabled={stop.isPending}
+          disabled={stop.pending}
           onClick={() => setStopping(true)}
         >
           stop
@@ -381,21 +406,21 @@ function TaskActionsCell({
           variant="outline"
           size="sm"
           className="text-[var(--status-danger)]"
-          disabled={del.isPending}
+          disabled={del.pending}
           onClick={() => setDeleting(true)}
         >
           delete
         </Button>
       </div>
-      {scale.isError ? <RowError error={scale.error} /> : null}
-      {stop.isError ? <RowError error={stop.error} /> : null}
+      <RowError result={scale.result} failure={scale.failure} />
+      <RowError result={stop.result} failure={stop.failure} />
       <ConfirmDialog
         open={stopping}
         onOpenChange={setStopping}
         title={`Stop task ${task.name ?? task.id ?? ""}?`}
         description="Resident pool generations are wound down; the task row stays."
         confirmLabel="Stop task"
-        onConfirm={() => stop.mutateAsync()}
+        onConfirm={() => stop.mutateAsync({ id: taskId })}
       />
       <ConfirmDialog
         open={deleting}
@@ -403,7 +428,7 @@ function TaskActionsCell({
         title={`Delete task ${task.name ?? task.id ?? ""}?`}
         description="The task definition and its pool are removed. This cannot be undone."
         confirmLabel="Delete task"
-        onConfirm={() => del.mutateAsync()}
+        onConfirm={() => del.mutateAsync({ id: taskId })}
       />
     </div>
   );
@@ -446,12 +471,7 @@ function RunsPanel({ taskId }: { taskId: string }) {
 }
 
 function RunRow({ run }: { run: { id?: string; state?: string; status?: string; exit_code?: number; started_at?: string; created_at?: string } }) {
-  const stop = useApiMutation({
-    path: `/v1/runs/${encodeURIComponent(run.id ?? "")}/stop`,
-    method: "POST",
-    body: () => ({}),
-    invalidate: [["resources", "runs"]],
-  });
+  const stop = useCommand(stopRunCommand);
   const [stopping, setStopping] = useState(false);
   return (
     <>
@@ -469,7 +489,7 @@ function RunRow({ run }: { run: { id?: string; state?: string; status?: string; 
             variant="outline"
             size="sm"
             className="text-[var(--status-danger)]"
-            disabled={stop.isPending}
+            disabled={stop.pending}
             onClick={() => setStopping(true)}
           >
             stop
@@ -482,33 +502,25 @@ function RunRow({ run }: { run: { id?: string; state?: string; status?: string; 
         title={`Stop run ${run.id ?? ""}?`}
         description="The running generation is terminated."
         confirmLabel="Stop run"
-        onConfirm={() => stop.mutateAsync()}
+        onConfirm={() => stop.mutateAsync({ id: run.id ?? "" })}
       />
     </>
   );
 }
 
-// NewScheduleButton 是 Schedules tab 工具栏主创建钮——弹窗与 mutation
-// 自包含。
+// NewScheduleButton 是 Schedules tab 工具栏主创建钮——弹窗与命令自包含
+//（useState 壳保留，提交面走 schedulesResource.commands.create）。
 export function NewScheduleButton({ projectId }: { projectId: string }) {
   const [createOpen, setCreateOpen] = useState(false);
   // 时区默认浏览器本地时区（用户裁定 2026-10-21），检测失败回退 UTC；
   // 切换走可搜索下拉（timezone-combobox），服务端校验仍是真源。
   const [form, setForm] = useState({ name: "", cron: "0 3 * * *", timezone: detectedTimezone(), image: "", command: "", env: "", ttl: "3600" });
-  const create = useApiMutation({
-    path: "/v1/schedules",
-    method: "POST",
-    body: () => ({
-      project_id: projectId,
-      name: form.name || undefined,
-      cron: form.cron,
-      timezone: form.timezone || undefined,
-      image: form.image,
-      command: form.command === "" ? undefined : form.command.split(/\s+/).filter((part) => part !== ""),
-      env: form.env === "" ? undefined : Object.fromEntries(kvLines(form.env).map((line) => [line.slice(0, line.indexOf("=")), line.slice(line.indexOf("=") + 1)])),
-      ttl_seconds: form.ttl === "" ? undefined : Number(form.ttl),
-    }),
-    invalidate: [["resources", "schedules", projectId]],
+  const create = useCommand(schedulesResource.commands.create, {
+    scope: { projectId },
+    // ok 关窗（沿用旧 onSuccess 行为；无成功 toast——现句为无）
+    onSettled: (result) => {
+      if (result?.status === "ok") setCreateOpen(false);
+    },
   });
   return (
     <>
@@ -531,7 +543,15 @@ export function NewScheduleButton({ projectId }: { projectId: string }) {
             className="flex flex-col gap-3"
             onSubmit={(event) => {
               event.preventDefault();
-              create.mutate(undefined, { onSuccess: () => setCreateOpen(false) });
+              create.mutate({
+                name: form.name || undefined,
+                cron: form.cron,
+                timezone: form.timezone || undefined,
+                image: form.image,
+                command: form.command === "" ? undefined : form.command.split(/\s+/).filter((part) => part !== ""),
+                env: form.env === "" ? undefined : Object.fromEntries(kvLines(form.env).map((line) => [line.slice(0, line.indexOf("=")), line.slice(line.indexOf("=") + 1)])),
+                ttl_seconds: form.ttl === "" ? undefined : Number(form.ttl),
+              });
             }}
           >
             <div className="grid grid-cols-2 gap-3">
@@ -570,13 +590,13 @@ export function NewScheduleButton({ projectId }: { projectId: string }) {
               <span className="text-xs font-semibold">TTL seconds</span>
               <Input value={form.ttl} onChange={(event) => setForm({ ...form, ttl: event.target.value })} inputMode="numeric" />
             </Label>
-            {create.isError ? <FormError error={create.error} /> : null}
+            {create.result?.status === "ok" ? null : <FormError result={create.result} failure={create.failure} />}
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={create.isPending || form.image === "" || form.cron === ""}>
-                {create.isPending ? "Creating…" : "Create"}
+              <Button type="submit" disabled={create.pending || form.image === "" || form.cron === ""}>
+                {create.pending ? "Creating…" : "Create"}
               </Button>
             </DialogFooter>
           </form>
@@ -641,7 +661,7 @@ export function SchedulesPanel({ projectId, from }: { projectId: string; from: s
     {
       id: "actions",
       header: () => <span className="sr-only">Actions</span>,
-      cell: ({ row }) => <ScheduleActionsCell schedule={row.original} />,
+      cell: ({ row }) => <ScheduleActionsCell schedule={row.original} projectId={projectId} />,
     },
   ];
 
@@ -669,42 +689,44 @@ export function SchedulesPanel({ projectId, from }: { projectId: string; from: s
   );
 }
 
-function ScheduleActionsCell({ schedule }: { schedule: { id?: string; name?: string } }) {
-  const trigger = useApiMutation({
-    path: `/v1/schedules/${encodeURIComponent(schedule.id ?? "")}/trigger`,
-    method: "POST",
-    body: () => ({}),
-  });
-  const del = useApiMutation({
-    path: `/v1/schedules/${encodeURIComponent(schedule.id ?? "")}`,
-    method: "DELETE",
-    invalidate: [["resources", "schedules"]],
-  });
+// ScheduleActionsCell：trigger/delete 行内动作——批2 迁 kit 命令面（scope
+// 显式注入；trigger 失效跨 tasks+schedules 双面）。
+function ScheduleActionsCell({ schedule, projectId }: { schedule: { id?: string; name?: string }; projectId: string }) {
+  const scope = { projectId };
+  const scheduleId = schedule.id ?? "";
+  const trigger = useCommand(schedulesResource.commands.trigger, { scope });
+  const del = useCommand(schedulesResource.commands.delete, { scope });
   const [deleting, setDeleting] = useState(false);
   return (
     <div className="text-right">
       <div className="flex items-center justify-end gap-1">
-        <Button variant="outline" size="sm" disabled={trigger.isPending} onClick={() => void trigger.mutate()} title="Run now (does not move the next tick)">
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={trigger.pending}
+          onClick={() => void trigger.mutate({ id: scheduleId })}
+          title="Run now (does not move the next tick)"
+        >
           trigger
         </Button>
         <Button
           variant="outline"
           size="sm"
           className="text-[var(--status-danger)]"
-          disabled={del.isPending}
+          disabled={del.pending}
           onClick={() => setDeleting(true)}
         >
           delete
         </Button>
       </div>
-      {trigger.isError ? <RowError error={trigger.error} /> : null}
+      <RowError result={trigger.result} failure={trigger.failure} />
       <ConfirmDialog
         open={deleting}
         onOpenChange={setDeleting}
         title={`Delete schedule ${schedule.name ?? schedule.id ?? ""}?`}
         description="Fired tasks already created keep running; the clock stops."
         confirmLabel="Delete schedule"
-        onConfirm={() => del.mutateAsync()}
+        onConfirm={() => del.mutateAsync({ id: scheduleId })}
       />
     </div>
   );

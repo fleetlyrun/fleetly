@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ClockIcon, ListRestartIcon } from "lucide-react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiSend } from "@/api/client";
+import { useCommand } from "@lynx-go/uikit-core";
+import type { ApiError, CommandResult } from "@lynx-go/uikit-core/kernel";
 import type { components } from "@/api/automation";
 import { useRuns, useSchedules, useTasks } from "@/lib/catalog";
 import { ContentCrumb } from "@/components/domain/content-crumb";
@@ -17,12 +17,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import { describeApiError } from "@/kit/errors";
+import { stopRunCommand, tasksResource } from "@/kit/tasks";
 import { useLogStream } from "@/features/logs/use-log-stream";
 import { LogViewer } from "@/features/logs/log-viewer";
 
 // Task 详情（IA v3 T3b，3 tabs——工作负载三兄弟对齐）：Overview（定义/形态/
 // Lease/Schedule 反链）/ Runs（列表 + Stop；run 日志按 T8 结论一期无通路，
-// WaitRun 收流视图后续批）/ Settings（Scale/Stop 排空/删除）。
+// WaitRun 收流视图后续批）/ Settings（Scale/Stop 排空/删除）。批2 写路径
+// 命令化：动作族迁 kit 命令面（读面 useTasks/useRuns/useSchedules 仍走
+// catalog，失效经 legacyKeys 桥回收）；ok 沿用原 toast 句，rejected/
+// conflict → result.message，failure → describeApiError。
 
 export type TaskEntry = components["schemas"]["v1Task"];
 type RunEntry = components["schemas"]["v1Run"];
@@ -53,10 +58,6 @@ function runTone(state: string | undefined): StatusTone {
     default:
       return "success";
   }
-}
-
-function fieldError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 export function TaskDetailPage({ projectId, taskId }: { projectId: string; taskId: string }) {
@@ -246,10 +247,17 @@ function RunRow({ run }: { run: RunEntry }) {
     setLogsOpen(true);
     log.start({ runId: run.id ?? "", processes: [], containers: [], tailLines: "300", text: "", follow: true });
   }
-  const stop = useMutation({
-    mutationFn: async () => apiSend(`/v1/runs/${encodeURIComponent(run.id ?? "")}/stop`, "POST", {}),
-    onSuccess: () => toast("Stop requested"),
-    onError: (cause) => toast.error(fieldError(cause)),
+  const stop = useCommand(stopRunCommand, {
+    // ok 原句保留；rejected/conflict → result.message；failure → describeApiError
+    onSettled: (result, failure) => {
+      if (result?.status === "ok") {
+        toast("Stop requested");
+      } else if (result != null) {
+        toast.error(result.message);
+      } else if (failure != null) {
+        toast.error(describeApiError(failure));
+      }
+    },
   });
   const active = run.state === "running" || run.state === "pending" || run.state === "stopping";
   return (
@@ -282,8 +290,8 @@ function RunRow({ run }: { run: RunEntry }) {
           variant="outline"
           size="sm"
           className="ml-1.5"
-          disabled={!active || stop.isPending}
-          onClick={() => stop.mutate()}
+          disabled={!active || stop.pending}
+          onClick={() => stop.mutate({ id: run.id ?? "" })}
           title="Request a graceful stop"
         >
           Stop
@@ -311,40 +319,37 @@ function RunRow({ run }: { run: RunEntry }) {
 }
 
 function TaskSettings({ task, projectId, taskId }: { task: TaskEntry | undefined; projectId: string; taskId: string }) {
-  const queryClient = useQueryClient();
   const [scaleTo, setScaleTo] = useState("");
-  const invalidate = () => void queryClient.invalidateQueries({ queryKey: ["resources", "tasks", projectId] });
-  const scale = useMutation({
-    mutationFn: async () => apiSend(`/v1/tasks/${encodeURIComponent(taskId)}/scale`, "POST", { desired_concurrency: scaleTo }),
-    onSuccess: () => {
-      toast("Scale updated — converges on the next reconcile");
-      invalidate();
-    },
-    onError: (cause) => toast.error(fieldError(cause)),
+  const scope = { projectId };
+  // ok 沿用原 toast 句；结果两分错误面（rejected/conflict → message，
+  // failure → describeApiError）。失效由命令 descriptor 承载（kit selector
+  // + legacyKeys 桥），不再手握 queryClient。
+  const settleToast =
+    (okMessage: string) =>
+    (result: CommandResult<unknown> | null, failure: ApiError | null): void => {
+      if (result?.status === "ok") {
+        toast(okMessage);
+      } else if (result != null) {
+        toast.error(result.message);
+      } else if (failure != null) {
+        toast.error(describeApiError(failure));
+      }
+    };
+  const scale = useCommand(tasksResource.commands.scale, {
+    scope,
+    onSettled: settleToast("Scale updated — converges on the next reconcile"),
   });
-  const stop = useMutation({
-    mutationFn: async (force: boolean) => apiSend(`/v1/tasks/${encodeURIComponent(taskId)}/stop`, "POST", { force }),
-    onSuccess: () => {
-      toast("Drain requested — runs wind down to their terminal states");
-      invalidate();
-    },
-    onError: (cause) => toast.error(fieldError(cause)),
+  const stop = useCommand(tasksResource.commands.stop, {
+    scope,
+    onSettled: settleToast("Drain requested — runs wind down to their terminal states"),
   });
-  const renew = useMutation({
-    mutationFn: async () => apiSend(`/v1/tasks/${encodeURIComponent(taskId)}/renew`, "POST", {}),
-    onSuccess: () => {
-      toast("Owner lease renewed");
-      invalidate();
-    },
-    onError: (cause) => toast.error(fieldError(cause)),
+  const renew = useCommand(tasksResource.commands.renew, {
+    scope,
+    onSettled: settleToast("Owner lease renewed"),
   });
-  const remove = useMutation({
-    mutationFn: async () => apiSend(`/v1/tasks/${encodeURIComponent(taskId)}`, "DELETE"),
-    onSuccess: () => {
-      toast("Task deleted");
-      invalidate();
-    },
-    onError: (cause) => toast.error(fieldError(cause)),
+  const remove = useCommand(tasksResource.commands.delete, {
+    scope,
+    onSettled: settleToast("Task deleted"),
   });
   return (
     <div className="flex flex-col gap-4">
@@ -364,22 +369,22 @@ function TaskSettings({ task, projectId, taskId }: { task: TaskEntry | undefined
               placeholder={String(task?.desired_concurrency ?? "")}
             />
           </div>
-          <Button size="sm" disabled={scale.isPending || scaleTo === ""} onClick={() => scale.mutate()}>
+          <Button size="sm" disabled={scale.pending || scaleTo === ""} onClick={() => scale.mutate({ id: taskId, desired_concurrency: Number(scaleTo) })}>
             Scale pool
           </Button>
-          <Button size="sm" variant="outline" disabled={renew.isPending} onClick={() => renew.mutate()} title="Renew the owner lease (proves ownership presence)">
+          <Button size="sm" variant="outline" disabled={renew.pending} onClick={() => renew.mutate({ id: taskId })} title="Renew the owner lease (proves ownership presence)">
             Renew lease
           </Button>
           <Button
             size="sm"
             variant="outline"
-            disabled={stop.isPending || task?.state !== "active"}
-            onClick={() => stop.mutate(false)}
+            disabled={stop.pending || task?.state !== "active"}
+            onClick={() => stop.mutate({ id: taskId, force: false })}
             title="Stop feeding new runs; existing runs finish naturally (TTL/completion)"
           >
             Drain
           </Button>
-          <Button size="sm" variant="outline" disabled={stop.isPending || task?.state !== "active"} onClick={() => stop.mutate(true)} title="Graceful stop with StopGrace — running runs are wound down">
+          <Button size="sm" variant="outline" disabled={stop.pending || task?.state !== "active"} onClick={() => stop.mutate({ id: taskId, force: true })} title="Graceful stop with StopGrace — running runs are wound down">
             Force stop…
           </Button>
         </div>
@@ -405,13 +410,13 @@ function TaskSettings({ task, projectId, taskId }: { task: TaskEntry | undefined
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
               <AlertDialogAction
-                disabled={remove.isPending}
+                disabled={remove.pending}
                 onClick={(event) => {
                   event.preventDefault();
-                  remove.mutate();
+                  remove.mutate({ id: taskId });
                 }}
               >
-                {remove.isPending ? "Deleting…" : "Delete"}
+                {remove.pending ? "Deleting…" : "Delete"}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
