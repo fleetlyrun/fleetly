@@ -1,6 +1,6 @@
-import { clientCollection, createHttp } from "@lynx-go/ui-kit/adapters";
-import { defineResource, type ResourceScope } from "@lynx-go/ui-kit/kernel";
-import { collectionQuerySchema } from "@lynx-go/ui-kit/schema";
+import { clientCollection, createHttp } from "@lynx-go/uikit-core/adapters";
+import { defineResource, type ResourceScope } from "@lynx-go/uikit-core/kernel";
+import { collectionQuerySchema } from "@lynx-go/uikit-core/schema";
 import { notifyUnauthorized } from "@/api/client";
 import type { AppEntry } from "@/lib/catalog";
 import { getToken } from "@/lib/token";

@@ -2,10 +2,10 @@
 // 拷贝适配（design.md §12.1）：token 方言类名按映射表改写；Select 基元改用
 // fleet 本地原生 select 桥（本仓 ui/select 是 Radix compound，形态不匹配）；
 // 其余与上游一致。
-import type { Predicate } from "@lynx-go/ui-kit/kernel";
-import { textPredicate } from "@lynx-go/ui-kit/kernel";
-import type { CollectionHandle } from "@lynx-go/ui-kit/react";
-import type { FilterFieldDef, QuerySearchSchema } from "@lynx-go/ui-kit/schema";
+import type { Predicate } from "@lynx-go/uikit-core/kernel";
+import { textPredicate } from "@lynx-go/uikit-core/kernel";
+import type { CollectionHandle } from "@lynx-go/uikit-core/react";
+import type { FilterFieldDef, QuerySearchSchema } from "@lynx-go/uikit-core/schema";
 import { Search, X } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";

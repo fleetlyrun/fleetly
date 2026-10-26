@@ -1,7 +1,7 @@
 // vendored from fleet-ui registry/query/data-table.tsx @0.1.0（2026-10-24 试点切片）
 // 拷贝适配（design.md §12.1）：token 方言类名按映射表改写；RowData 改从
 // react-table 主入口取（本仓无 table-core 直接依赖）；其余与上游一致。
-import type { CollectionHandle } from "@lynx-go/ui-kit/react";
+import type { CollectionHandle } from "@lynx-go/uikit-core/react";
 import type { RowData } from "@tanstack/react-table";
 import { flexRender } from "@tanstack/react-table";
 import {

@@ -4,7 +4,7 @@ import { useMutation } from "@tanstack/react-query";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
 import { MoreHorizontalIcon, PlusIcon, RocketIcon, ScrollTextIcon, SquareTerminalIcon } from "lucide-react";
 import { toast } from "sonner";
-import { useCollection } from "@lynx-go/ui-kit";
+import { useCollection } from "@lynx-go/uikit-core";
 import { apiSend } from "@/api/client";
 import { DataTable } from "@/components/fleet/query/data-table";
 import { FilterBar } from "@/components/fleet/query/filter-bar";
