@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import { createFileRoute } from "@tanstack/react-router";
 import { useSubscription } from "@lynx-go/uikit-core/react";
 import { PauseIcon, PlayIcon, RotateCwIcon } from "lucide-react";
-import { apiFetch } from "@/api/client";
+import { apiFetch, ApiError as FetchApiError } from "@/api/client";
 import type { EventRow } from "@/api/streams";
 import { formatAbsolute } from "@/lib/format";
 import { describeApiError } from "@/kit/errors";
@@ -44,6 +44,17 @@ function prettyPayload(payload: string | undefined): string {
   }
 }
 
+// anchorOf 定跟随锚（ADR-0026 契约：earliest_seq 是保留窗起点与断档判定
+// 锚）。last_seq 滞后于保留窗的服务端态（检查点滞后——staging 实测咬点：
+// last_seq 1684 < earliest，follow 恒 410 死角）从窗起点定锚，不假装补齐
+// 旧档；初始装载与 resync 两条路径共用本裁决。
+function anchorOf(status: StatusResponse): string {
+  const earliest = Number(status.earliest_seq ?? "0");
+  const last = Number(status.last_seq ?? "0");
+  if (earliest > 0 && last < earliest) return String(earliest);
+  return status.last_seq ?? "0";
+}
+
 export const Route = createFileRoute("/_shell/events")({
   component: EventsPageV2,
 });
@@ -69,11 +80,21 @@ function EventsPageV2() {
     void (async () => {
       try {
         const status = await apiFetch<StatusResponse>("/v1/events/status");
-        const lastSeq = Number(status.last_seq ?? "0");
-        const afterSeq = Math.max(0, lastSeq - BACKLOG_LIMIT);
-        const list = await apiFetch<ListEventsResponse>(`/v1/events?after_seq=${afterSeq}&limit=${BACKLOG_LIMIT}`);
-        setBacklog((list.events ?? []).flatMap((event) => (event?.seq ? [event] : [])));
-        setAnchor(status.last_seq ?? "0");
+        const anchorSeq = Number(anchorOf(status));
+        const afterSeq = Math.max(0, anchorSeq - BACKLOG_LIMIT);
+        let rows: EventRow[] = [];
+        try {
+          const list = await apiFetch<ListEventsResponse>(`/v1/events?after_seq=${afterSeq}&limit=${BACKLOG_LIMIT}`);
+          rows = (list.events ?? []).flatMap((event) => (event?.seq ? [event] : []));
+        } catch (err) {
+          // 补档起点被 retention 裁掉（ListEvents 同执法 E_EVENTS_GONE——
+          // 低事件流量下 BACKLOG_LIMIT 窗跨过保留窗起点）：跳过补档直接
+          // 跟随（不假装补齐旧档；非 410 错误照常上抛走 Retry 面）。
+          const code = err instanceof FetchApiError ? err.code : "";
+          if (code !== "E_EVENTS_GONE") throw err;
+        }
+        setBacklog(rows);
+        setAnchor(String(anchorSeq));
       } catch (err) {
         setLoadError(err);
       }
@@ -87,7 +108,7 @@ function EventsPageV2() {
       try {
         const status = await apiFetch<StatusResponse>("/v1/events/status");
         setBacklog([]);
-        sub.resync(status.last_seq ?? "0");
+        sub.resync(anchorOf(status));
       } catch {
         // status 读失败：停在 gapped，横幅上的 Resync 按钮可重试。
       }
