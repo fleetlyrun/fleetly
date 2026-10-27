@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
-import { useCollection, useCommand, useCommandForm } from "@lynx-go/uikit-core";
+import { useQuery } from "@tanstack/react-query";
+import { collectionQueryOptions, useCollection, useCommand, useCommandForm } from "@lynx-go/uikit-core";
 import type { ApiError } from "@lynx-go/uikit-core/kernel";
 import type { components } from "@/api/structure";
 import {
@@ -20,8 +21,8 @@ import { DatabaseLogsTab } from "@/features/databases/database-logs";
 import { downloadBackupChunks } from "@/api/streams";
 import { DATABASE_CARRIER_PRESETS } from "@/features/databases/database-metrics";
 import { MetricChart } from "@/features/metrics/metric-chart";
-import { useDatabases, useDatabaseBackups, useScopedMetricsSeries, useApps, useProjectName } from "@/lib/catalog";
-import { useAppSpecs, specIndex, type AppSpec } from "@/features/spec/use-app-specs";
+import { useScopedMetricsSeries } from "@/kit/metrics";
+import { specIndex } from "@/features/spec/use-app-specs";
 import { CopyButton } from "@/components/domain/copy-button";
 import { ContentCrumb } from "@/components/domain/content-crumb";
 import { EmptyState } from "@/components/domain/empty-state";
@@ -59,7 +60,19 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { browseDatabaseCommand, DATABASE_ENGINES, databasesResource, databasesSearch, type DatabaseRow } from "@/kit/databases";
+import { appsResource, appsDirectorySearch } from "@/kit/apps";
+import { projectsAllQuery, projectsResource } from "@/kit/projects";
+import { appSpecsResource, appSpecsLookup, type AppSpec } from "@/kit/app-specs";
+import {
+  browseDatabaseCommand,
+  databaseBackupListLookup,
+  databaseBackupListResource,
+  DATABASE_ENGINES,
+  databasesLookup,
+  databasesResource,
+  databasesSearch,
+  type DatabaseRow,
+} from "@/kit/databases";
 import { describeApiError } from "@/kit/errors";
 import { toastOnSettled } from "@/kit/toast";
 
@@ -103,7 +116,12 @@ export function DatabasesListPage({ projectId, from }: { projectId: string; from
     query: { refetchInterval: 15_000 },
   });
   const rows = list.rows;
-  const projectName = useProjectName(projectId);
+  // 项目名反查（R1 的 kit/projects 伴读形：collectionQueryOptions + 固定窗，
+  // 不经 URL——旧 catalog useProjects 60s 拍）。
+  const projectName = useQuery({
+    ...collectionQueryOptions(projectsResource, projectsAllQuery, { refetchInterval: 60_000 }),
+    select: (segment) => segment.rows.find((project) => project.id === projectId)?.name,
+  }).data;
   const navigate = useNavigate();
   const [createOpen, setCreateOpen] = useState(false);
 
@@ -117,7 +135,7 @@ export function DatabasesListPage({ projectId, from }: { projectId: string; from
           <ProjectAvatar seed={row.original.id ?? ""} label={row.original.name ?? ""} />
           <div className="min-w-0">
             <div className="text-sm font-semibold">{row.original.name}</div>
-            <div className="flex items-center gap-0.5 font-mono text-2xs text-muted-foreground">
+            <div className="flex items-center gap-0.5 font-mono text-2xs text-muted">
               {(row.original.id ?? "").slice(0, 10)}…
               <CopyButton value={row.original.id ?? ""} />
             </div>
@@ -130,7 +148,7 @@ export function DatabasesListPage({ projectId, from }: { projectId: string; from
       header: "Engine",
       meta: { sortField: "engine" },
       cell: ({ row }) => (
-        <span className="font-mono text-xs text-muted-foreground">
+        <span className="font-mono text-xs text-muted">
           {row.original.engine}
           {row.original.version ? ` · ${row.original.version}` : ""}
         </span>
@@ -168,19 +186,19 @@ export function DatabasesListPage({ projectId, from }: { projectId: string; from
       header: "Endpoint",
       cell: ({ row }) =>
         row.original.host ? (
-          <span className="flex items-center gap-1 font-mono text-xs text-muted-foreground">
+          <span className="flex items-center gap-1 font-mono text-xs text-muted">
             {row.original.host}:{row.original.port ?? "?"}
             <CopyButton value={`${row.original.host}:${row.original.port ?? ""}`} />
           </span>
         ) : (
-          <span className="text-xs text-muted-foreground">—</span>
+          <span className="text-xs text-muted">—</span>
         ),
     },
     {
       id: "created",
       header: "Created",
       cell: ({ row }) => (
-        <span className="text-xs text-muted-foreground">
+        <span className="text-xs text-muted">
           <RelativeTime value={row.original.created_at} />
         </span>
       ),
@@ -415,7 +433,7 @@ export function CreateDatabaseDialog({
             options={DATABASE_ENGINES.map((engine) => ({ value: engine, label: engine }))}
           />
           <TextField form={form} name="restoreFrom" label="Restore from backup (optional)" placeholder="bk_01j…" />
-          <p className="text-2xs text-muted-foreground">
+          <p className="text-2xs text-muted">
             Restore creates a new database seeded from the backup — the source is never overwritten.
           </p>
         </Form>
@@ -426,11 +444,30 @@ export function CreateDatabaseDialog({
 
 // ---- 详情页（5 tabs） ----
 
-export function DatabaseDetailPage({ projectId, databaseId }: { projectId: string; databaseId: string }) {
-  const databases = useDatabases(projectId);
-  const apps = useApps(projectId);
-  const { specs } = useAppSpecs(projectId, apps.data ?? []);
-  const database = (databases.data ?? []).find((entry) => entry.id === databaseId);
+export function DatabaseDetailPage({ projectId, databaseId, routeId }: { projectId: string; databaseId: string; routeId: string }) {
+  // 批4（2026-10-27）读面收编：库行查找/目录/spec 反查三读面迁 kit
+  // useCollection——大页 lookup 不截断行集，拍同旧 catalog 常量；Used-by
+  // 反查逻辑不动。metrics 与 projects 反查仍走 lib/catalog（R2/R1 域）。
+  const databases = useCollection(databasesResource, {
+    from: routeId,
+    search: databasesLookup,
+    scope: { projectId },
+    query: { refetchInterval: 15_000 },
+  });
+  const apps = useCollection(appsResource, {
+    from: routeId,
+    search: appsDirectorySearch,
+    scope: { projectId },
+    query: { refetchInterval: 60_000 },
+  });
+  const specsList = useCollection(appSpecsResource, {
+    from: routeId,
+    search: appSpecsLookup,
+    scope: { projectId },
+    query: { refetchInterval: 60_000 },
+  });
+  const specs = new Map(specsList.rows.map((row) => [row.appId, row.spec]));
+  const database = databases.rows.find((entry) => entry.id === databaseId);
   const navigate = useNavigate();
   const [tab, setTab] = useState<"overview" | "metrics" | "logs" | "backups" | "browse" | "settings">("overview");
   // 批2：页角备份/开窗两写位走 kit commands（与 RowActions 同失效面）
@@ -455,7 +492,7 @@ export function DatabaseDetailPage({ projectId, databaseId }: { projectId: strin
     >
       {/* 英雄卡对齐 App Detail（2026-10-12 走查：裸标题 + 页角动作钮与 Apps
           形态脱队——头像/名称/徽标/可读 id/动作组统一收卡。 */}
-      <section className="mb-5 flex flex-wrap items-center gap-4 rounded-xl border bg-card p-5">
+      <section className="mb-5 flex flex-wrap items-center gap-4 rounded-xl border bg-panel p-5">
         <ProjectAvatar seed={databaseId} label={database?.name ?? databaseId} className="size-11 rounded-xl text-base" />
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -467,7 +504,7 @@ export function DatabaseDetailPage({ projectId, databaseId }: { projectId: strin
               </StatusBadge>
             ) : null}
           </div>
-          <div className="flex items-center gap-1 font-mono text-2xs text-muted-foreground">
+          <div className="flex items-center gap-1 font-mono text-2xs text-muted">
             {databaseId}
             <CopyButton value={databaseId} />
           </div>
@@ -496,10 +533,12 @@ export function DatabaseDetailPage({ projectId, databaseId }: { projectId: strin
         current={tab}
         onChange={setTab}
       />
-      {tab === "overview" ? <DatabaseOverview database={database} projectApps={apps.data ?? []} specs={specs} /> : null}
+      {tab === "overview" ? <DatabaseOverview database={database} projectApps={apps.rows} specs={specs} /> : null}
       {tab === "metrics" ? <DatabaseMetrics databaseId={databaseId} /> : null}
       {tab === "logs" ? <DatabaseLogsTab databaseId={databaseId} /> : null}
-      {tab === "backups" ? <DatabaseBackups database={database} projectId={projectId} databaseId={databaseId} /> : null}
+      {tab === "backups" ? (
+        <DatabaseBackups database={database} projectId={projectId} databaseId={databaseId} routeId={routeId} />
+      ) : null}
       {tab === "browse" ? (
         <DatabaseBrowsePanel
           browse={() => browse.mutate({ id: databaseId })}
@@ -512,7 +551,7 @@ export function DatabaseDetailPage({ projectId, databaseId }: { projectId: strin
         <DatabaseSettings
           database={database}
           projectId={projectId}
-          projectApps={apps.data ?? []}
+          projectApps={apps.rows}
           specs={specs}
           onDeleted={() => navigate({ to: "/p/$projectId/databases", params: { projectId } })}
         />
@@ -527,7 +566,7 @@ function DatabaseOverview({
   specs,
 }: {
   database: DatabaseEntry | undefined;
-  projectApps: Array<{ id: string; name: string }>;
+  projectApps: ReadonlyArray<{ id: string; name: string }>;
   specs: Map<string, AppSpec>;
 }) {
   if (database == null) {
@@ -542,47 +581,47 @@ function DatabaseOverview({
   const health = backupHealth(database.last_backup_at);
   return (
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-      <section className="rounded-xl border bg-card p-4">
+      <section className="rounded-xl border bg-panel p-4">
         <h3 className="mb-3 text-sm font-semibold">Connection</h3>
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
-          <dt className="text-muted-foreground">host</dt>
+          <dt className="text-muted">host</dt>
           <dd className="flex items-center gap-1 font-mono">
             {database.host ?? "—"}
             {database.host ? <CopyButton value={database.host} /> : null}
           </dd>
-          <dt className="text-muted-foreground">port</dt>
+          <dt className="text-muted">port</dt>
           <dd className="font-mono">{database.port ?? "—"}</dd>
-          <dt className="text-muted-foreground">credential</dt>
+          <dt className="text-muted">credential</dt>
           <dd className="flex items-center gap-1 font-mono">
             {database.credentials_ref ?? "—"}
             {database.credentials_ref ? <CopyButton value={database.credentials_ref} /> : null}
           </dd>
         </dl>
-        <p className="mt-3 text-2xs text-muted-foreground">
+        <p className="mt-3 text-2xs text-muted">
           The full connection URL lives in the project secret and is never displayed. Apps receive it via secret_refs.
         </p>
       </section>
-      <section className="rounded-xl border bg-card p-4">
+      <section className="rounded-xl border bg-panel p-4">
         <h3 className="mb-3 text-sm font-semibold">Engine</h3>
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
-          <dt className="text-muted-foreground">engine</dt>
+          <dt className="text-muted">engine</dt>
           <dd className="font-mono">{database.engine ?? "—"}</dd>
-          <dt className="text-muted-foreground">version</dt>
+          <dt className="text-muted">version</dt>
           <dd className="font-mono">{database.version ?? "pinned"}</dd>
-          <dt className="text-muted-foreground">created</dt>
+          <dt className="text-muted">created</dt>
           <dd>
             <RelativeTime value={database.created_at} />
           </dd>
-          <dt className="text-muted-foreground">updated</dt>
+          <dt className="text-muted">updated</dt>
           <dd>
             <RelativeTime value={database.updated_at} />
           </dd>
         </dl>
       </section>
-      <section className="rounded-xl border bg-card p-4">
+      <section className="rounded-xl border bg-panel p-4">
         <h3 className="mb-3 text-sm font-semibold">Used by</h3>
         {usedBy.length === 0 ? (
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-muted">
             No app references this database yet — apps attach via secret_refs on the credential secret{" "}
             <span className="font-mono">{database.credentials_ref ?? "—"}</span>.
           </p>
@@ -598,11 +637,11 @@ function DatabaseOverview({
             ))}
           </div>
         )}
-        <p className="mt-3 text-2xs text-muted-foreground">
+        <p className="mt-3 text-2xs text-muted">
           Resolved from frozen app specs (secret_refs scan) — live after the next deploy.
         </p>
       </section>
-      <section className="rounded-xl border bg-card p-4">
+      <section className="rounded-xl border bg-panel p-4">
         <h3 className="mb-3 text-sm font-semibold">Backup</h3>
         <div className="mb-2 flex items-center gap-2">
           <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${statusToneClass(health.tone)}`}>
@@ -610,16 +649,16 @@ function DatabaseOverview({
             {health.label}
           </span>
         </div>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-muted">
           Last successful backup:{" "}
           {database.last_backup_at ? <RelativeTime value={database.last_backup_at} /> : "never"}
         </p>
         {database.restore_from_backup ? (
           <div className="mt-3 rounded-md border border-info/30 bg-info/10 p-2.5 text-xs">
             <p className="font-medium">Restore in progress</p>
-            <p className="mt-1 font-mono text-2xs text-muted-foreground">from {database.restore_from_backup}</p>
+            <p className="mt-1 font-mono text-2xs text-muted">from {database.restore_from_backup}</p>
             {database.restore_error ? (
-              <p className="mt-1 text-2xs text-destructive">last error: {database.restore_error}</p>
+              <p className="mt-1 text-2xs text-err">last error: {database.restore_error}</p>
             ) : null}
           </div>
         ) : null}
@@ -639,7 +678,7 @@ function DatabaseMetrics({ databaseId }: { databaseId: string }) {
         <MetricCard title="Memory working set" unit="bytes" series={memorySeries} />
         <MetricCard title="CPU (cores)" unit="plain" series={cpuSeries} />
       </div>
-      <p className="text-2xs text-muted-foreground">
+      <p className="text-2xs text-muted">
         Scoped metric templates: the server resolves this database's project and builds the docker/k3s arms — the
         console never sends PromQL.
       </p>
@@ -658,17 +697,17 @@ function MetricCard({
 }) {
   const seriesList = series.data?.series ?? [];
   return (
-    <section className="rounded-xl border bg-card p-4">
+    <section className="rounded-xl border bg-panel p-4">
       <div className="mb-2 flex items-baseline justify-between">
         <h3 className="text-sm font-semibold">{title}</h3>
-        <span className="text-2xs text-muted-foreground">window 1h · refreshed 30s</span>
+        <span className="text-2xs text-muted">window 1h · refreshed 30s</span>
       </div>
       {series.isPending ? (
-        <p className="py-10 text-center text-xs text-muted-foreground">Loading series…</p>
+        <p className="py-10 text-center text-xs text-muted">Loading series…</p>
       ) : series.isError ? (
-        <p className="py-10 text-center text-xs text-destructive">{fieldError(series.error)}</p>
+        <p className="py-10 text-center text-xs text-err">{fieldError(series.error)}</p>
       ) : seriesList.length === 0 ? (
-        <p className="py-10 text-center text-xs text-muted-foreground">No series — the carrier may be stopped.</p>
+        <p className="py-10 text-center text-xs text-muted">No series — the carrier may be stopped.</p>
       ) : (
         <MetricChart
           seriesList={seriesList}
@@ -685,13 +724,21 @@ function DatabaseBackups({
   database,
   projectId,
   databaseId,
+  routeId,
 }: {
   database: DatabaseEntry | undefined;
   projectId: string;
   databaseId: string;
+  routeId: string;
 }) {
-  const backups = useDatabaseBackups(databaseId);
-  const rows = backups.data ?? [];
+  // 批4：单库备份读面迁 kit databaseBackupListResource（15s 轮询同旧拍）。
+  const backups = useCollection(databaseBackupListResource, {
+    from: routeId,
+    search: databaseBackupListLookup,
+    scope: { projectId, databaseId },
+    query: { refetchInterval: 15_000 },
+  });
+  const rows = backups.rows;
   return (
     <div className="flex flex-col gap-4">
       <div className="grid gap-3 sm:grid-cols-3">
@@ -701,7 +748,7 @@ function DatabaseBackups({
       </div>
       <div className="overflow-hidden rounded-xl border">
         <table className="w-full text-sm">
-          <thead className="border-b bg-panel-2/40 text-left text-2xs font-semibold tracking-wide text-muted-foreground uppercase">
+          <thead className="border-b bg-panel-2/40 text-left text-2xs font-semibold tracking-wide text-muted uppercase">
             <tr>
               <th className="px-3 py-2">Backup</th>
               <th className="px-3 py-2">Status</th>
@@ -712,15 +759,15 @@ function DatabaseBackups({
             </tr>
           </thead>
           <tbody>
-            {backups.isPending ? (
+            {backups.status === "loading" ? (
               <tr>
-                <td colSpan={6} className="px-3 py-6 text-center text-xs text-muted-foreground">
+                <td colSpan={6} className="px-3 py-6 text-center text-xs text-muted">
                   Loading backups…
                 </td>
               </tr>
             ) : rows.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-3 py-6 text-center text-xs text-muted-foreground">
+                <td colSpan={6} className="px-3 py-6 text-center text-xs text-muted">
                   No backups yet — trigger one with “Back up now”.
                 </td>
               </tr>
@@ -730,7 +777,7 @@ function DatabaseBackups({
           </tbody>
         </table>
       </div>
-      <p className="text-2xs text-muted-foreground">
+      <p className="text-2xs text-muted">
         Restore always creates a new database — the source is never overwritten (ADR-0039).
       </p>
     </div>
@@ -739,10 +786,10 @@ function DatabaseBackups({
 
 function InfoTile({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
-    <div className="rounded-xl border bg-card p-3.5">
-      <div className="text-2xs font-medium tracking-wide text-muted-foreground uppercase">{label}</div>
+    <div className="rounded-xl border bg-panel p-3.5">
+      <div className="text-2xs font-medium tracking-wide text-muted uppercase">{label}</div>
       <div className="mt-1 text-sm font-semibold">{value}</div>
-      {hint ? <div className="mt-0.5 text-2xs text-muted-foreground">{hint}</div> : null}
+      {hint ? <div className="mt-0.5 text-2xs text-muted">{hint}</div> : null}
     </div>
   );
 }
@@ -812,21 +859,21 @@ function BackupRow({
         <StatusBadge tone={backup.status === "succeeded" ? "success" : backup.status === "failed" ? "danger" : "info"} pulse={backup.status === "running"}>
           {backup.status ?? "unknown"}
         </StatusBadge>
-        {backup.error ? <div className="mt-1 max-w-56 truncate text-2xs text-destructive" title={backup.error}>{backup.error}</div> : null}
+        {backup.error ? <div className="mt-1 max-w-56 truncate text-2xs text-err" title={backup.error}>{backup.error}</div> : null}
       </td>
-      <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
+      <td className="px-3 py-2 font-mono text-xs text-muted">
         {backup.size_bytes ? `${(Number(backup.size_bytes) / 1048576).toFixed(2)} MiB` : "—"}
       </td>
-      <td className="px-3 py-2 font-mono text-xs text-muted-foreground" title={backup.digest}>
+      <td className="px-3 py-2 font-mono text-xs text-muted" title={backup.digest}>
         {backup.digest ? `${backup.digest.slice(0, 16)}…` : "—"}
       </td>
-      <td className="px-3 py-2 text-xs text-muted-foreground">
+      <td className="px-3 py-2 text-xs text-muted">
         <RelativeTime value={backup.finished_at ?? backup.created_at} />
       </td>
       <td className="px-3 py-2">
         <div className="flex items-center justify-end gap-1.5">
           {verifyResult != null ? (
-            <span className={`text-2xs ${verifyResult.ok ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"}`}>
+            <span className={`text-2xs ${verifyResult.ok ? "text-emerald-600 dark:text-emerald-400" : "text-err"}`}>
               {verifyResult.ok ? `ok — ${verifyResult.detail}` : `failed — ${verifyResult.detail}`}
             </span>
           ) : null}
@@ -883,12 +930,12 @@ function DatabaseBrowsePanel({
   engine: string | undefined;
 }) {
   return (
-    <div className="max-w-xl rounded-xl border bg-card p-5">
+    <div className="max-w-xl rounded-xl border bg-panel p-5">
       <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold">
-        <EyeIcon className="size-4 text-muted-foreground" />
+        <EyeIcon className="size-4 text-muted" />
         Browse session
       </h3>
-      <p className="mb-4 text-xs text-muted-foreground">
+      <p className="mb-4 text-xs text-muted">
         Launches a managed web console for {engine ?? "this engine"}. The session runs as a throwaway workload behind a
         one-time launcher ticket (120s); the session itself is capped at 30 minutes (ADR-0051).
       </p>
@@ -897,9 +944,9 @@ function DatabaseBrowsePanel({
           <ExternalLinkIcon data-icon-start-inline />
           {pending ? "Launching…" : "Launch session"}
         </Button>
-        <span className="text-2xs text-muted-foreground">read-only dialect</span>
+        <span className="text-2xs text-muted">read-only dialect</span>
       </div>
-      {failure != null ? <p className="mt-3 text-xs text-destructive">{describeApiError(failure)}</p> : null}
+      {failure != null ? <p className="mt-3 text-xs text-err">{describeApiError(failure)}</p> : null}
     </div>
   );
 }
@@ -913,7 +960,7 @@ function DatabaseSettings({
 }: {
   database: DatabaseEntry | undefined;
   projectId: string;
-  projectApps: Array<{ id: string; name: string }>;
+  projectApps: ReadonlyArray<{ id: string; name: string }>;
   specs: Map<string, AppSpec>;
   onDeleted: () => void;
 }) {
@@ -944,9 +991,9 @@ function DatabaseSettings({
   });
   return (
     <div className="flex flex-col gap-4">
-      <section className="rounded-xl border bg-card p-5">
+      <section className="rounded-xl border bg-panel p-5">
         <h3 className="mb-2 text-sm font-semibold">Credential</h3>
-        <p className="mb-4 text-xs text-muted-foreground">
+        <p className="mb-4 text-xs text-muted">
           The single credential lives in the project secret{" "}
           <span className="font-mono">{database?.credentials_ref ?? "—"}</span> (full connection URL, never displayed). Rotation
           mints a new password; referencing apps must be redeployed to pick it up.
@@ -984,15 +1031,15 @@ function DatabaseSettings({
           </AlertDialogContent>
         </AlertDialog>
         {!ready ? (
-          <p className="mt-3 text-2xs text-muted-foreground">
+          <p className="mt-3 text-2xs text-muted">
             Rotation needs a running database — the data-plane change requires a live target.
           </p>
         ) : null}
       </section>
-      <section className="rounded-xl border border-destructive/30 bg-card p-5">
-        <h3 className="mb-2 text-sm font-semibold text-destructive">Danger zone</h3>
-        <p className="mb-4 text-xs text-muted-foreground">
-          Deleting <span className="font-semibold text-foreground">{database?.name}</span> removes the carrier workload and its
+      <section className="rounded-xl border border-err/30 bg-panel p-5">
+        <h3 className="mb-2 text-sm font-semibold text-err">Danger zone</h3>
+        <p className="mb-4 text-xs text-muted">
+          Deleting <span className="font-semibold text-fg">{database?.name}</span> removes the carrier workload and its
           deploy state. The volume and the credential secret{" "}
           <span className="font-mono">{database?.credentials_ref ?? "—"}</span> are kept and must be cleaned up separately. Data
           is destroyed.

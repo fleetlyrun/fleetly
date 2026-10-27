@@ -1,7 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { textPredicate } from "@lynx-go/uikit-core/kernel";
 import { setToken } from "@/lib/token";
-import { alertRulesResource, alertsSearch, fetchAlertingChannels, fetchAlertRules } from "./alerts";
+import {
+  alertRulesResource,
+  alertStatesLookup,
+  alertStatesResource,
+  alertsSearch,
+  fetchAlertingChannels,
+  fetchAlertRules,
+  fetchAlertStates,
+} from "./alerts";
 
 // 告警域适配器单测（批1 Wave2-A）：rules/channels 端点锚、protojson 行收
 // 敛、双 tab 共享 schema 的 URL 编解码往返（平台域无 scope——fetch 恒发）。
@@ -107,5 +115,30 @@ describe("alertRules commands（批2 写路径命令锚）", () => {
 
   it("legacyKeys 桥对齐旧 invalidate 键（[\"alerts\"] 前缀盖 rules/states 双键）", () => {
     expect(alertRulesResource.commands.create.legacyKeys?.({})).toEqual([["alerts"]]);
+  });
+});
+
+// ---- alert states（2026-10-27 批4 读面收编：catalog useAlertStates 退役） ----
+
+describe("fetchAlertStates（端点 + 收敛）", () => {
+  it("GET /v1/alerts 并展平 undefined 行（catalog rowsOf 口径）", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({ states: [{ rule_id: "r1", app_id: "A1", state: "firing" }, undefined] }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const rows = await fetchAlertStates({});
+
+    expect(rows).toEqual([{ rule_id: "r1", app_id: "A1", state: "firing" }]);
+    const [url] = fetchMock.mock.calls[0] as unknown as [string];
+    expect(String(url)).toBe("/v1/alerts");
+  });
+
+  it("非 2xx 走统一错误信封；平台域无 scope，桥键对齐 catalog 的 states 键", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ code: "E_X", message: "boom" }, 503)));
+    await expect(fetchAlertStates({})).rejects.toThrowError(/boom/);
+    expect(alertStatesResource.scope).toBeUndefined();
+    expect(alertStatesResource.legacyKeys?.({})).toEqual([["alerts", "states"]]);
+    expect(alertStatesLookup.decode({}).window.size).toBe(200);
   });
 });

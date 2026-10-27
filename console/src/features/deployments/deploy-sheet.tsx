@@ -1,12 +1,11 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useCommand } from "@lynx-go/uikit-core";
+import { useCollection, useCommand } from "@lynx-go/uikit-core";
 import type { ApiError, CommandResult } from "@lynx-go/uikit-core/kernel";
 import { RocketIcon } from "lucide-react";
 import { toast } from "sonner";
 import { ApiError as FetchApiError, apiFetch } from "@/api/client";
 import type { DeployFormState } from "@/lib/deployPayload";
-import { useUploads, type AppEntry } from "@/lib/catalog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,6 +14,8 @@ import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import type { AppEntry } from "@/kit/apps";
+import { uploadsResource, uploadsLookup } from "@/kit/storage";
 import { deploymentsResource } from "@/kit/deployments";
 import { describeApiError } from "@/kit/errors";
 
@@ -48,14 +49,18 @@ export function DeploySheet({
   defaultAppId,
   projectId,
   onDeployed,
+  from,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  apps: AppEntry[];
+  /** 目录行集由宿主路由注入（kit useCollection 的大页行集，只读） */
+  apps: readonly AppEntry[];
   defaultAppId: string;
   projectId: string;
   /** 部署受理后的跳转回调（路由语境里给 navigate） */
   onDeployed?: (deploymentId: string) => void;
+  /** 宿主路由 id（uploads 读面的 useCollection from 锚——批4 目录读收编） */
+  from: string;
 }) {
   const [appId, setAppId] = useState(defaultAppId);
   // 缺省源推导（ADR-0072 写面）：已有冻结 Spec 的 App 缺省走 current
@@ -83,8 +88,15 @@ export function DeploySheet({
 
   const effectiveAppId = appId || defaultAppId;
   const selectedApp = apps.find((app) => app.id === effectiveAppId);
-  const uploads = useUploads(selectedApp?.project_id ?? projectId);
-  const uploadRows = uploads.data ?? [];
+  // 批4（2026-10-27）：uploads 目录读面迁 kit useCollection（15s 轮询同旧
+  // 拍；fetch 对空 projectId 自守为空段——旧 enabled 门同语义）。
+  const uploads = useCollection(uploadsResource, {
+    from,
+    search: uploadsLookup,
+    scope: { projectId: selectedApp?.project_id ?? projectId },
+    query: { refetchInterval: 15_000 },
+  });
+  const uploadRows = uploads.rows;
 
   // 生效锚 + 冻结体预填（GetAppSpec 的 Revision 锚，ADR-0071）。
   const frozen = useQuery({
@@ -211,7 +223,7 @@ export function DeploySheet({
             <Label>
               App
               {frozen.data?.revision_seq ? (
-                <span className="ml-2 font-mono text-2xs font-normal text-muted-foreground">
+                <span className="ml-2 font-mono text-2xs font-normal text-muted">
                   frozen R{frozen.data.revision_seq}
                 </span>
               ) : null}
@@ -239,20 +251,20 @@ export function DeploySheet({
             <div className="flex flex-col gap-2">
               <Label>Git material</Label>
               <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
-                <dt className="text-muted-foreground">repo</dt>
+                <dt className="text-muted">repo</dt>
                 <dd className="break-all font-mono">{hook.data?.repo ?? "—"}</dd>
-                <dt className="text-muted-foreground">branch</dt>
+                <dt className="text-muted">branch</dt>
                 <dd className="font-mono">{hook.data?.branch || "every branch"}</dd>
-                <dt className="text-muted-foreground">compose / dockerfile</dt>
+                <dt className="text-muted">compose / dockerfile</dt>
                 <dd className="break-all font-mono">{hook.data?.dockerfile || "Dockerfile"}</dd>
               </dl>
-              <p className="text-2xs leading-snug text-muted-foreground">
-                <span className="font-semibold text-foreground">Deploy now</span> pulls the branch HEAD and deploys immediately —
+              <p className="text-2xs leading-snug text-muted">
+                <span className="font-semibold text-fg">Deploy now</span> pulls the branch HEAD and deploys immediately —
                 no webhook required. A <span className="font-mono">.yml/.yaml</span> file becomes processes (images deploy
                 directly); anything else builds as a Dockerfile. Pushes trigger automatically once the GitHub webhook is configured
                 (URL on the hook card in Settings).
               </p>
-              <p className="text-2xs leading-snug text-muted-foreground">
+              <p className="text-2xs leading-snug text-muted">
                 Runtime settings live in Variables — the next pull bakes them. Material-source deploys (image/compose/upload) are
                 refused while the hook owns the spec; removing the hook returns ownership to this sheet.
               </p>
@@ -284,7 +296,7 @@ export function DeploySheet({
                 </SelectItem>
               </SelectContent>
             </Select>
-            <p className="text-2xs text-muted-foreground">
+            <p className="text-2xs text-muted">
               {source != null ? SOURCE_HINTS[source] : ""}
               {hookOwned && (source === "current" || source === "spec")
                 ? " Runtime overlay: the material half (source, build) stays with the frozen revision."
@@ -426,7 +438,7 @@ export function DeploySheet({
               <Input value={commitSha} onChange={(event) => setCommitSha(event.target.value)} />
             </FieldRow>
           </div>
-          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+          <label className="flex items-center gap-2 text-xs text-muted">
             <Switch checked={supersede} onCheckedChange={setSupersede} />
             Supersede in-flight deployments (take over the queue)
           </label>
@@ -537,7 +549,7 @@ function FieldRow({ label, hint, children }: { label: string; hint?: string; chi
     <div className="flex flex-col gap-1.5">
       <Label className="text-xs">{label}</Label>
       {children}
-      {hint ? <p className="text-2xs leading-snug text-muted-foreground">{hint}</p> : null}
+      {hint ? <p className="text-2xs leading-snug text-muted">{hint}</p> : null}
     </div>
   );
 }

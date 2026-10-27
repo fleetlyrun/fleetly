@@ -51,6 +51,15 @@ const RULES: Array<{ pattern: RegExp; message: string; skip?: (path: string) => 
     // 模板定义域合法（本规则的唯一合法宿主）
     skip: (path) => path.startsWith("src/components/domain/"),
   },
+  {
+    // 批2/批4 收官不变量（2026-10-27）：写面一律 useCommand/useCommandForm
+    //（结果两分 + kit selector 失效），读面一律 kit 绑定（useCollection/
+    // useRecord/collectionQueryOptions 伴读）。lib/use-api-mutation 与
+    // lib/catalog 均已退役——防复活。
+    pattern: /\buseMutation\s*\(|useApiMutation|from ["']\@\/lib\/catalog["']/,
+    message:
+      "bare mutation / catalog import is banned — writes go through useCommand (kit commands), reads through kit bindings (uikit data-plane contract)",
+  },
 ];
 
 function* walk(dir: string): Generator<string> {

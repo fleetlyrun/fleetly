@@ -29,7 +29,7 @@ export function ListToolbar({
   actions?: React.ReactNode;
 }) {
   return (
-    <div className="mb-3 flex flex-wrap items-center gap-3 rounded-xl border bg-card px-3 py-2">
+    <div className="mb-3 flex flex-wrap items-center gap-3 rounded-xl border bg-panel px-3 py-2">
       <Input
         value={value}
         onChange={(event) => onChange(event.target.value)}
@@ -38,7 +38,7 @@ export function ListToolbar({
         aria-label={`Filter ${label}`}
       />
       {children}
-      <span className="ml-auto text-2xs font-semibold tracking-wide text-muted-foreground uppercase">
+      <span className="ml-auto text-2xs font-semibold tracking-wide text-muted uppercase">
         {shown} of {total}
       </span>
       {actions ? <div className="flex flex-none items-center gap-2">{actions}</div> : null}
@@ -81,7 +81,7 @@ export function ListPagination({
 }) {
   if (pageCount <= 1) return null;
   return (
-    <div className="flex items-center justify-end gap-2 border-t px-3 py-2 text-xs text-muted-foreground">
+    <div className="flex items-center justify-end gap-2 border-t px-3 py-2 text-xs text-muted">
       <span>
         {total} rows · page {page + 1} of {pageCount}
       </span>
@@ -99,9 +99,9 @@ export function ListPagination({
 // 命令文本 + 一键复制。命令里的项目/资源锚由调用方注入（真实可执行）。
 export function CliEquivalent({ command }: { command: string }) {
   return (
-    <p className="mt-2.5 flex items-center gap-1.5 font-mono text-2xs text-muted-foreground">
+    <p className="mt-2.5 flex items-center gap-1.5 font-mono text-2xs text-muted">
       <span aria-hidden>❯</span>
-      <span className="text-foreground/80">CLI equivalent:</span>
+      <span className="text-fg/80">CLI equivalent:</span>
       <span>{command}</span>
       <CopyButton value={command} />
     </p>

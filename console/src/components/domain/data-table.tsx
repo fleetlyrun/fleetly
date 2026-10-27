@@ -84,7 +84,7 @@ export function DataTable<T extends Record<string, any>>({
           表头 12px 大写微标签——Slate 重定稿（2026-10-12 原型 A）的表格底座。 */}
       <Table
         className={cn(
-          "[&_th]:h-11 [&_th]:px-3 [&_th]:text-2xs [&_th]:font-semibold [&_th]:uppercase [&_th]:tracking-[0.08em] [&_th]:text-muted-foreground [&_td]:px-3 [&_td]:py-3",
+          "[&_th]:h-11 [&_th]:px-3 [&_th]:text-2xs [&_th]:font-semibold [&_th]:uppercase [&_th]:tracking-[0.08em] [&_th]:text-muted [&_td]:px-3 [&_td]:py-3",
           className,
         )}
       >
@@ -100,7 +100,7 @@ export function DataTable<T extends Record<string, any>>({
                       <button
                         type="button"
                         onClick={header.column.getToggleSortingHandler()}
-                        className="-mx-1 inline-flex items-center gap-1 rounded-sm px-1 hover:text-foreground"
+                        className="-mx-1 inline-flex items-center gap-1 rounded-sm px-1 hover:text-fg"
                       >
                         {flexRender(header.column.columnDef.header, header.getContext())}
                         {sorted === "asc" ? (
@@ -167,7 +167,7 @@ function ErrorInline({ error, onRetry }: { error: unknown; onRetry?: () => void 
     <div className="flex flex-col items-start gap-2 rounded-lg border border-[color-mix(in_oklch,var(--status-danger)_35%,transparent)] bg-[var(--status-danger-bg)] px-4 py-3">
       <div className="text-sm font-semibold text-[var(--status-danger)]">{described.title}</div>
       <div className="text-xs text-[var(--status-danger)]/80">{described.hint}</div>
-      <div className="font-mono text-xs break-all text-muted-foreground">{described.detail}</div>
+      <div className="font-mono text-xs break-all text-muted">{described.detail}</div>
       {onRetry ? (
         <Button variant="outline" size="sm" onClick={onRetry}>
           Retry

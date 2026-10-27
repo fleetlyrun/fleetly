@@ -7,6 +7,7 @@ import { buildDeployPayload, type DeployFormState } from "@/lib/deployPayload";
 import { fetchFrozenSpec } from "@/lib/spec-deploy";
 import { fetchApps } from "./apps";
 import { runCommandMapped, toApiError } from "./errors";
+import { fetchRows, qs } from "./http";
 
 // 部署域资源适配（2026-10-26 批1 useCollection 化，项目级聚合页；批2 写
 // 路径命令化）：API
@@ -151,3 +152,42 @@ export const deploymentsSearch = collectionQuerySchema({
   text: ["id", "app_id", "state", "to_revision"],
   defaultSize: 20,
 });
+
+// ---- per-App 部署集合（2026-10-27 批4 读面收编：features/deployments/
+// hooks.ts 的 useAppDeployments 退役） ----
+
+// 独立资源而不复用项目 fan-out 集合的原因：hero/行级/概览的 per-App 消费
+// 按 (projectId, appId) 键共享缓存；走扇出集合会让每行挂载放大成全项目
+// 取数（apps + ≤50 deployments 请求）×行数。端点与收敛照抄 hooks 的
+// useAppDeployments（per-app limit 50、id 缺行过滤同口径）；5s 轮询由消费
+// 方 query.refetchInterval 注入（旧 APP_POLL_MS 同拍）。
+const APP_DEPLOYMENTS_LIMIT = 50;
+
+export async function fetchAppDeployments(ctx: ResourceScope, signal?: AbortSignal): Promise<DeploymentRow[]> {
+  const appId = ctx.appId;
+  if (appId === undefined || appId === "") return [];
+  try {
+    return await fetchRows<DeploymentRow>(
+      `/v1/deployments${qs({ app_id: appId, limit: APP_DEPLOYMENTS_LIMIT })}`,
+      (res) => (res as DeploymentsEnvelope).deployments?.flatMap((item) => (item?.id ? [item] : [])),
+      signal,
+    );
+  } catch (err) {
+    // 资源适配器失败必须收敛为 kernel ApiError（states 块错误分诊契约）
+    throw toApiError(err);
+  }
+}
+
+export const appDeploymentsResource = defineResource({
+  name: "app-deployments",
+  getId: (row: DeploymentRow) => row.id ?? "",
+  scope: ["projectId", "appId"],
+  collection: clientCollection(fetchAppDeployments),
+  // 存量键失效桥：对齐 hooks 的 ["deployments", appId] 前缀（Sheet/命令族
+  // 的 ["deployments"] 桥键已覆盖该前缀，双向兼容）
+  legacyKeys: () => [["deployments"]],
+});
+
+// join 读面用大页 schema（hero 的 recent 卡与 per-App 列表同源全集——窗口
+// 不截断行集；per-App 时间线的列表页若成形态再立 search schema）。
+export const appDeploymentsLookup = collectionQuerySchema({ defaultSize: 200 });

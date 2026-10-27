@@ -1,8 +1,12 @@
 import { useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
+import { useCollection } from "@lynx-go/uikit-core";
+import { collectionQuerySchema } from "@lynx-go/uikit-core/schema";
 import { z } from "zod";
 import { MinusIcon, PlusIcon, CircleStopIcon, PlayIcon } from "lucide-react";
-import { useApps, useProjects, useRevisions } from "@/lib/catalog";
+import { appsDirectorySearch, appsResource } from "@/kit/apps";
+import { projectsResource } from "@/kit/projects";
+import { revisionsLookup, revisionsResource } from "@/kit/revisions";
 import { useProjectId } from "@/lib/project";
 import { useExecSession } from "@/features/terminal/use-exec-session";
 import { Button } from "@/components/ui/button";
@@ -17,7 +21,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 // 含 disconnect 主动收口与切换作废在飞受理）。页面层只留差异面：项目/
 // 进程选择 UI + search param 预选 + 字号调节。批 5 增量保留：flex 自适应
 // 高度（ResizeObserver 驱动 fit）+ 项目语境来自切换器 + 状态徽章。
+// 2026-10-27 批4 读面收尾：项目/App 目录走 kit 资源（选择器非列表语义，
+// 目录级大页直接吃 rows，60s 目录轮询照 catalog 原值）。
 const terminalSearch = z.object({ app: z.string().optional(), process: z.string().optional() });
+
+// 目录级大页（纯目录拉取：窗口 ≥ 取数封顶，目录不截断）。
+const projectsDirectorySearch = collectionQuerySchema({ defaultSize: 200 });
 
 export const Route = createFileRoute("/_shell/terminal")({
   validateSearch: terminalSearch,
@@ -27,17 +36,29 @@ export const Route = createFileRoute("/_shell/terminal")({
 function TerminalWorkbench() {
   const search = Route.useSearch();
   const [projectId] = useProjectId();
-  const projects = useProjects();
-  const apps = useApps(projectId);
+  const projects = useCollection(projectsResource, { from: Route.id, search: projectsDirectorySearch, query: { refetchInterval: 60_000 } });
+  const apps = useCollection(appsResource, {
+    from: Route.id,
+    search: appsDirectorySearch,
+    scope: { projectId: projectId || undefined },
+    query: { refetchInterval: 60_000 },
+  });
   const [appId, setAppId] = useState(search.app ?? "");
   const [process, setProcess] = useState(search.process ?? "");
   const [command, setCommand] = useState("");
-  const revisions = useRevisions(appId !== "" ? appId : (apps.data?.[0]?.id ?? ""));
 
-  const effectiveApp = appId !== "" ? appId : (apps.data?.[0]?.id ?? "");
+  const effectiveApp = appId !== "" ? appId : (apps.rows[0]?.id ?? "");
+  // 冻结历史 join 读（进程下拉数据源）：appId 显式 scope（资源声明
+  // projectId/appId 双键，未就绪自动停查），15s 轮询照 catalog 原值。
+  const revisions = useCollection(revisionsResource, {
+    from: Route.id,
+    search: revisionsLookup,
+    scope: { projectId: projectId || undefined, appId: effectiveApp || undefined },
+    query: { refetchInterval: 15_000 },
+  });
   const processes = useMemo(
-    () => (revisions.data?.[0]?.process_strategies ?? []).map((entry) => entry?.process ?? "").filter((name) => name !== ""),
-    [revisions.data],
+    () => (revisions.rows[0]?.process_strategies ?? []).map((entry) => entry?.process ?? "").filter((name) => name !== ""),
+    [revisions.rows],
   );
   const effectiveProcess = process !== "" ? process : (processes[0] ?? "");
 
@@ -66,18 +87,18 @@ function TerminalWorkbench() {
     <div className="flex h-full flex-col px-5 pt-4">
       <div className="mb-1 flex items-baseline gap-3">
         <h1 className="font-heading text-lg font-bold tracking-tight">Terminal</h1>
-        <span className="text-xs text-muted-foreground">Exec session — one-shot ticket over WebSocket</span>
+        <span className="text-xs text-muted">Exec session — one-shot ticket over WebSocket</span>
       </div>
 
       <div className="flex flex-none flex-wrap items-end gap-2.5 py-3">
         <div className="flex flex-col gap-1">
-          <Label className="text-2xs text-muted-foreground">Project</Label>
+          <Label className="text-2xs text-muted">Project</Label>
           <Select value={projectId} onValueChange={() => undefined} disabled>
             <SelectTrigger className="w-40">
-              <SelectValue placeholder={projects.data?.find((project) => project.id === projectId)?.name ?? "—"} />
+              <SelectValue placeholder={projects.rows.find((project) => project.id === projectId)?.name ?? "—"} />
             </SelectTrigger>
             <SelectContent>
-              {(projects.data ?? []).map((project) => (
+              {projects.rows.map((project) => (
                 <SelectItem key={project.id} value={project.id}>
                   {project.name}
                 </SelectItem>
@@ -86,13 +107,13 @@ function TerminalWorkbench() {
           </Select>
         </div>
         <div className="flex flex-col gap-1">
-          <Label className="text-2xs text-muted-foreground">App</Label>
+          <Label className="text-2xs text-muted">App</Label>
           <Select value={effectiveApp} onValueChange={pickApp}>
             <SelectTrigger className="w-44">
               <SelectValue placeholder="select an app…" />
             </SelectTrigger>
             <SelectContent>
-              {(apps.data ?? []).map((app) => (
+              {apps.rows.map((app) => (
                 <SelectItem key={app.id} value={app.id}>
                   {app.name}
                 </SelectItem>
@@ -101,7 +122,7 @@ function TerminalWorkbench() {
           </Select>
         </div>
         <div className="flex flex-col gap-1">
-          <Label className="text-2xs text-muted-foreground">Process</Label>
+          <Label className="text-2xs text-muted">Process</Label>
           <Select value={effectiveProcess} onValueChange={pickProcess}>
             <SelectTrigger className="w-32">
               <SelectValue placeholder={effectiveProcess === "" ? "—" : ""} />
@@ -116,7 +137,7 @@ function TerminalWorkbench() {
           </Select>
         </div>
         <div className="flex flex-1 flex-col gap-1">
-          <Label className="text-2xs text-muted-foreground">Command (empty = /bin/sh)</Label>
+          <Label className="text-2xs text-muted">Command (empty = /bin/sh)</Label>
           <Input
             value={command}
             placeholder="/bin/sh"
@@ -151,11 +172,11 @@ function TerminalWorkbench() {
         </div>
       </div>
 
-      <div ref={session.shellRef} className="relative min-h-0 flex-1 overflow-hidden rounded-lg border bg-background">
+      <div ref={session.shellRef} className="relative min-h-0 flex-1 overflow-hidden rounded-lg border bg-bg">
         <div ref={session.termDivRef} className="absolute inset-0 px-2 py-1" />
       </div>
 
-      <div className="flex flex-none items-center gap-4 py-2 font-mono text-2xs text-muted-foreground">
+      <div className="flex flex-none items-center gap-4 py-2 font-mono text-2xs text-muted">
         <span
           className={
             session.status === "open"
@@ -174,7 +195,7 @@ function TerminalWorkbench() {
         ) : null}
         <span className="ml-auto">POST /v1/exec/sessions → /v1/exec/stream</span>
       </div>
-      <p className="flex-none pb-3 text-2xs leading-relaxed text-muted-foreground">
+      <p className="flex-none pb-3 text-2xs leading-relaxed text-muted">
         Sessions are interactive TTYs into a running replica (platform picks the first running instance and reports it in the session
         header). Change freeze does not cover exec — it is a diagnostics face (ADR-0049).
       </p>

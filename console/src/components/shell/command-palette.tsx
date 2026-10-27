@@ -9,7 +9,8 @@ import {
   CommandList,
   CommandSeparator,
 } from "@/components/ui/command";
-import { useWhoami } from "@/lib/catalog";
+import { useRecord } from "@lynx-go/uikit-core";
+import { sessionResource } from "@/kit/settings";
 import { navSections } from "@/lib/nav";
 
 // ⌘K 命令面板（UI v2 键盘契约）：全局导航 + 动作入口。⌘K/Ctrl-K 开合，
@@ -17,7 +18,8 @@ import { navSections } from "@/lib/nav";
 // 管理员显隐同判；R08-M1）。
 export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const navigate = useNavigate();
-  const whoami = useWhoami(true);
+  // 会话读（批4 kit 资源化）：与壳层同 record 键，零额外请求。
+  const whoami = useRecord(sessionResource, { id: "self", query: { staleTime: 30_000 } });
   const sections = navSections(undefined, whoami.data?.platformAdmin === true);
 
   useEffect(() => {

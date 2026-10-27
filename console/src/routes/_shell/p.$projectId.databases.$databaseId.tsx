@@ -9,5 +9,6 @@ export const Route = createFileRoute("/_shell/p/$projectId/databases/$databaseId
 
 function DatabaseDetailRoute() {
   const { projectId, databaseId } = Route.useParams();
-  return <DatabaseDetailPage projectId={projectId} databaseId={databaseId} />;
+  // routeId 线程：批4 读面 useCollection 的 from 锚（NetworksPanel 同款）。
+  return <DatabaseDetailPage projectId={projectId} databaseId={databaseId} routeId={Route.id} />;
 }

@@ -2,13 +2,15 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useRouter } from "@tanstack/react-router";
+import { useCollection } from "@lynx-go/uikit-core";
+import { collectionQuerySchema } from "@lynx-go/uikit-core/schema";
 import { SparklesIcon } from "lucide-react";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
 import { apiFetch, apiSend } from "@/api/client";
 import type { components } from "@/api/templates";
 import { describeError } from "@/lib/api-errors";
 import { buildTemplateValues, inputKindOf, type TemplateVariableDecl } from "@/lib/templateForm";
-import { useProjects } from "@/lib/catalog";
+import { projectsResource } from "@/kit/projects";
 import { EmptyState } from "@/components/domain/empty-state";
 import { ErrorState } from "@/components/domain/error-state";
 import { ListPage } from "@/components/domain/list-page";
@@ -29,6 +31,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 // 模板库（F3.3/ADR-0050 决策 6 → UI v2 批 5 reskin；模板化收编 ListPage）：
 // 目录 → 详情（变量声明 + compose 体只读）→ 实例化（project/app/values
 // ——secret 型 platform-generated 注入文件，值不回显）→ 提交跳部署详情。
+// 2026-10-27 批4 读面收尾：实例化向导的项目名录走 kit projects 资源
+//（选择器非列表语义，目录级大页直接吃 rows，60s 目录轮询照 catalog 原值）。
+
+// 目录级大页（纯目录拉取：窗口 ≥ 取数封顶，目录不截断）。
+const projectsDirectorySearch = collectionQuerySchema({ defaultSize: 200 });
+
 export const Route = createFileRoute("/_shell/templates")({
   component: TemplatesPageV2,
 });
@@ -71,7 +79,7 @@ function useTemplatesCatalog() {
 function TemplatesPageV2() {
   const navigate = useRouter();
   const catalog = useTemplatesCatalog();
-  const projects = useProjects();
+  const projects = useCollection(projectsResource, { from: Route.id, search: projectsDirectorySearch, query: { refetchInterval: 60_000 } });
   const [detailName, setDetailName] = useState<string | null>(null);
   const [wizard, setWizard] = useState<TemplateEntry | null>(null);
   const detailQuery = useQuery({
@@ -100,13 +108,13 @@ function TemplatesPageV2() {
     {
       accessorKey: "version",
       header: "Version",
-      cell: ({ row }) => <span className="font-mono text-xs text-muted-foreground">{row.original.version}</span>,
+      cell: ({ row }) => <span className="font-mono text-xs text-muted">{row.original.version}</span>,
     },
     {
       accessorKey: "description",
       header: "Description",
       cell: ({ row }) => (
-        <span className="block max-w-96 truncate text-sm text-muted-foreground" title={row.original.description}>
+        <span className="block max-w-96 truncate text-sm text-muted" title={row.original.description}>
           {row.original.description}
         </span>
       ),
@@ -185,7 +193,7 @@ function TemplatesPageV2() {
           {wizard ? (
             <InstantiateWizard
               template={wizard}
-              projects={projects.data ?? []}
+              projects={projects.rows}
               onClose={() => setWizard(null)}
               onDeployed={(projectId, appId, deploymentId) => {
                 setWizard(null);
@@ -210,7 +218,7 @@ function InstantiateWizard({
   onDeployed,
 }: {
   template: TemplateEntry;
-  projects: Array<{ id: string; name: string }>;
+  projects: ReadonlyArray<{ id: string; name: string }>;
   onClose: () => void;
   onDeployed: (projectId: string, appId: string, deploymentId: string) => void;
 }) {
@@ -287,17 +295,17 @@ function InstantiateWizard({
                 onChange={(event) => setValues((prev) => ({ ...prev, [v.name]: event.target.value }))}
                 placeholder={v.default || (v.type === "domain" ? "host serving this app" : "")}
               />
-              {v.description ? <p className="text-2xs text-muted-foreground">{v.description}</p> : null}
+              {v.description ? <p className="text-2xs text-muted">{v.description}</p> : null}
             </div>
           ))}
           {template.variables.some((v) => v.type === "secret") ? (
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-muted">
               secret variables ({template.variables.filter((v) => v.type === "secret").map((v) => v.name).join(", ")}) are
               platform-generated and injected as files; their values are never shown.
             </p>
           ) : null}
           {error !== null ? (
-            <div className="rounded-lg border border-[color-mix(in_oklch,var(--status-danger)_35%,transparent)] bg-[var(--status-danger-bg)] px-3 py-2 font-mono text-2xs break-all text-muted-foreground">
+            <div className="rounded-lg border border-[color-mix(in_oklch,var(--status-danger)_35%,transparent)] bg-[var(--status-danger-bg)] px-3 py-2 font-mono text-2xs break-all text-muted">
               {describeError(error).detail}
             </div>
           ) : null}

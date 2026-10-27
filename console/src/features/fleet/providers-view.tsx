@@ -6,10 +6,14 @@ import {
   formatWatermark,
   lastPointValue,
 } from "@/features/fleet/freshness";
-import { componentHealth, useSystemStatus } from "@/features/fleet/use-system-status";
+import { componentHealth } from "@/features/fleet/use-system-status";
 import { toast } from "sonner";
-import { useCommand } from "@lynx-go/uikit-core";
+import { useCommand, useRecord } from "@lynx-go/uikit-core";
+import { useQuery } from "@tanstack/react-query";
+import { recordQueryOptions } from "@lynx-go/uikit-core/react";
 import { systemResource } from "@/kit/system";
+import { sessionResource } from "@/kit/settings";
+import { useRawMetricsSeries } from "@/kit/metrics";
 import { toastOnSettled } from "@/kit/toast";
 import {
   AlertDialog,
@@ -22,7 +26,6 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { useRawMetricsSeries, useWhoami } from "@/lib/catalog";
 import { PageFrame } from "@/components/domain/page-frame";
 import { StatusBadge, type StatusTone } from "@/components/domain/status-badge";
 import { Button } from "@/components/ui/button";
@@ -35,6 +38,10 @@ import { Button } from "@/components/ui/button";
 // provider Health() 二期接线）；endpoint 是 config 文件唯源不可读；
 // Logs 侧 ingest 时效需 VL 查询代理（三期 ticket 面）。钉版数字是
 // provider 编译期事实（受管 Workload 的镜像钉），非运行时探测。
+// 2026-10-27 批4 读面收尾：系统状态走 systemResource record "current"
+//（30s 轮询经 recordQueryOptions 直挂 useQuery 恢复——useRecord 无轮询
+// 形参），会话读走 sessionResource record，raw metrics 走 kit/metrics。
+// 写面（restart 命令）零改动。
 
 interface ManagedProviderCard {
   key: string;
@@ -70,22 +77,29 @@ const MANAGED_PROVIDERS: ManagedProviderCard[] = [
 ];
 
 export function ManagedProvidersView() {
-  const status = useSystemStatus();
+  // 系统状态 record 读 + 30s 轮询恢复（useRecord 无轮询形参——经
+  // recordQueryOptions 直挂 useQuery，集成批收口 R2 挂起项）。
+  const statusQuery = useQuery({
+    ...recordQueryOptions(systemResource, "current"),
+    refetchInterval: 30_000,
+  });
+  const status = statusQuery.data;
   // raw metrics 两卡（ingest freshness / disk usage）是平台管理员诊断面
   // （S9 收紧后 member 由服务端 403）：非管理员不发起请求，行显示诚实
   // 的 n/a——显隐只看服务端 platform_admin，Console 不复制 role/team 判定
-  // （Metrics 工作台 Custom tab 同口径）。
-  const whoami = useWhoami(true);
-  const platformAdmin = whoami.data?.platformAdmin === true;
+  // （Metrics 工作台 Custom tab 同口径）。会话读经 sessionResource record
+  //（id 恒 "self"，收敛形与 catalog useWhoami 同名）。
+  const session = useRecord(sessionResource, { id: "self" });
+  const platformAdmin = session.data?.platformAdmin === true;
   const diskSeries = useRawMetricsSeries(DISK_WATERMARK_QUERY, "30m", platformAdmin);
   const diskUsage = formatWatermark(lastPointValue(diskSeries.data));
-  const degraded = status.data?.state === "STATUS_STATE_DEGRADED";
+  const degraded = status?.state === "STATUS_STATE_DEGRADED";
   return (
     <PageFrame
       title="Components"
       description="Platform-hosted provider instances — health, pins and data freshness"
       actions={
-        <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-2xs font-semibold ${degraded ? "border-destructive/30 bg-destructive/10 text-destructive" : "border-success/30 bg-success/10 text-[var(--status-success)]"}`}>
+        <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-2xs font-semibold ${degraded ? "border-err/30 bg-err/10 text-err" : "border-success/30 bg-success/10 text-[var(--status-success)]"}`}>
           <span className={`inline-block size-1.5 rounded-full bg-current ${degraded ? "" : ""}`} />
           platform {degraded ? "degraded" : "healthy"}
         </span>
@@ -96,14 +110,14 @@ export function ManagedProvidersView() {
           <ProviderCardView
             key={provider.key}
             provider={provider}
-            health={componentHealth(status.data?.components, provider.key)}
+            health={componentHealth(status?.components, provider.key)}
             diskUsage={diskUsage}
             canProbeMetrics={platformAdmin}
-            onRestarted={() => void status.refetch()}
+            onRestarted={() => void statusQuery.refetch()}
           />
         ))}
       </div>
-      <p className="mt-4 text-2xs text-muted-foreground">
+      <p className="mt-4 text-2xs text-muted">
         cAdvisor runs per node for container metrics. Health is probed per provider (2s budget; timeout counts as unhealthy) and
         aggregated into the platform state. Endpoints are config-defined (config file is the single source) and not exposed over
         the API.
@@ -139,9 +153,9 @@ function ProviderCardView({
     </StatusBadge>
   );
   return (
-    <section className="flex flex-col gap-3 rounded-xl border bg-card p-5">
+    <section className="flex flex-col gap-3 rounded-xl border bg-panel p-5">
       <div className="flex items-center gap-3">
-        <span className="grid size-9 place-items-center rounded-lg bg-panel-2 text-muted-foreground">
+        <span className="grid size-9 place-items-center rounded-lg bg-panel-2 text-muted">
           <provider.icon className="size-4" />
         </span>
         <div className="min-w-0">
@@ -149,30 +163,30 @@ function ProviderCardView({
             <span className="text-base font-bold">{provider.name}</span>
             {badge}
           </div>
-          <div className="text-2xs text-muted-foreground">{provider.role}</div>
+          <div className="text-2xs text-muted">{provider.role}</div>
         </div>
         <div className="ml-auto text-right">
           <div className="font-mono text-2xs">{provider.pinned}</div>
-          <div className="text-2xs text-muted-foreground">pinned (provider)</div>
+          <div className="text-2xs text-muted">pinned (provider)</div>
         </div>
       </div>
       {!probed || healthy ? null : (
-        <p className="rounded-md border border-destructive/30 bg-destructive/10 px-2.5 py-1.5 text-2xs text-destructive">
+        <p className="rounded-md border border-err/30 bg-err/10 px-2.5 py-1.5 text-2xs text-err">
           {health?.details || "health check failed"}
         </p>
       )}
       <div className="flex items-center gap-2 text-xs">
-        <span className="w-32 flex-none text-muted-foreground">ingest freshness</span>
+        <span className="w-32 flex-none text-muted">ingest freshness</span>
         {provider.freshness === "metrics-probe" ? (
           canProbeMetrics ? (
             <MetricsFreshness />
           ) : (
-            <span className="font-mono text-2xs text-muted-foreground">n/a — platform admin diagnostics</span>
+            <span className="font-mono text-2xs text-muted">n/a — platform admin diagnostics</span>
           )
         ) : provider.freshness === "needs-vl-proxy" ? (
-          <span className="font-mono text-2xs text-muted-foreground">n/a — needs VL query proxy (phase 3)</span>
+          <span className="font-mono text-2xs text-muted">n/a — needs VL query proxy (phase 3)</span>
         ) : (
-          <span className="font-mono text-2xs text-muted-foreground">n/a</span>
+          <span className="font-mono text-2xs text-muted">n/a</span>
         )}
       </div>
       {/* disk usage（原型卡内行形态，IA v3 对齐批）：数据卷所在宿主盘水位
@@ -180,24 +194,24 @@ function ProviderCardView({
           节点锚（GetStatus 载体节点信息挂账）。非管理员不显示（raw metrics
           是管理员诊断面）。 */}
       <div className="flex items-center gap-2 text-xs">
-        <span className="w-32 flex-none text-muted-foreground">disk usage</span>
+        <span className="w-32 flex-none text-muted">disk usage</span>
         {canProbeMetrics ? (
           <>
             <span className="hidden h-1.5 w-40 overflow-hidden rounded-full bg-panel-2 sm:block">
               <span
                 className={`block h-full rounded-full ${
-                  diskUsage.tone === "danger" ? "bg-destructive" : diskUsage.tone === "warning" ? "bg-amber-500" : "bg-emerald-500"
+                  diskUsage.tone === "danger" ? "bg-err" : diskUsage.tone === "warning" ? "bg-amber-500" : "bg-emerald-500"
                 }`}
                 style={{ width: `${Math.min(100, Math.round(diskUsage.ratio * 100))}%` }}
               />
             </span>
-            <span className={`font-mono text-2xs font-semibold ${diskUsage.tone === "danger" ? "text-destructive" : ""}`}>
+            <span className={`font-mono text-2xs font-semibold ${diskUsage.tone === "danger" ? "text-err" : ""}`}>
               {diskUsage.label}
             </span>
-            <span className="text-2xs text-muted-foreground">root fs</span>
+            <span className="text-2xs text-muted">root fs</span>
           </>
         ) : (
-          <span className="font-mono text-2xs text-muted-foreground">n/a — platform admin diagnostics</span>
+          <span className="font-mono text-2xs text-muted">n/a — platform admin diagnostics</span>
         )}
       </div>
       <div className="mt-1 flex gap-2 border-t pt-3">
@@ -263,9 +277,9 @@ function MetricsFreshness() {
   const toneClass: Record<StatusTone, string> = {
     success: "text-emerald-600 dark:text-emerald-400",
     warning: "text-amber-600 dark:text-amber-400",
-    danger: "text-destructive",
+    danger: "text-err",
     info: "text-info",
-    neutral: "text-muted-foreground",
+    neutral: "text-muted",
   };
   return (
     <span className={`font-mono text-2xs font-semibold ${toneClass[fresh.tone]}`}>{fresh.label}</span>

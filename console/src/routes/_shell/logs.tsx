@@ -4,7 +4,12 @@ import { useSubscription } from "@lynx-go/uikit-core/react";
 import { z } from "zod";
 import { ChevronDownIcon, DownloadIcon, PlayIcon, SquareIcon, XIcon } from "lucide-react";
 import type { LogFrame } from "@/api/streams";
-import { useApps, useProjects, useRevisions } from "@/lib/catalog";
+import { useQuery } from "@tanstack/react-query";
+import { collectionQueryOptions } from "@lynx-go/uikit-core/react";
+import { scoped } from "@lynx-go/uikit-core/kernel";
+import { useProjectsDirectory } from "@/kit/projects";
+import { useAppsDirectory } from "@/kit/apps";
+import { revisionsResource, revisionsLookup } from "@/kit/revisions";
 import { useProjectId } from "@/lib/project";
 import { decodeLine, type LogControls } from "@/features/logs/use-log-stream";
 import { describeApiError } from "@/kit/errors";
@@ -65,8 +70,6 @@ function LogsWorkbench() {
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
   const [projectId] = useProjectId();
-  const projects = useProjects();
-  const apps = useApps(projectId);
   const [appId, setAppId] = useState(search.app ?? "");
   // process= 逗号形多值（空 = 全部 process）。
   const [processes, setProcesses] = useState<string[]>(() => parseProcesses(search.process));
@@ -82,8 +85,16 @@ function LogsWorkbench() {
     autoStart: run !== null,
     policy: { buffer: LOG_BUFFER, retry: { backoffMs: LOG_BACKOFF_MS } },
   });
-  const revisions = useRevisions(appId);
-  const processOptions = (revisions.data?.[0]?.process_strategies ?? [])
+  // 批4 集成收口：目录/修订伴读迁 kit（revisions 取最新一条做进程候选）。
+  const projects = useProjectsDirectory();
+  const apps = useAppsDirectory(projectId);
+  const revisions = useQuery({
+    ...collectionQueryOptions(scoped(revisionsResource, { projectId, appId }), revisionsLookup.defaults, {
+      refetchInterval: 15_000,
+    }),
+    enabled: appId !== "",
+  });
+  const processOptions = (revisions.data?.rows[0]?.process_strategies ?? [])
     .map((entry) => entry?.process ?? "")
     .filter((name) => name !== "");
 
@@ -94,15 +105,16 @@ function LogsWorkbench() {
 
   // 项目目录到达后补默认 App（切换器语境优先，search 参数其次）
   useEffect(() => {
-    if (appId === "" && search.app === undefined && (apps.data ?? []).length > 0) {
-      setAppId(apps.data![0].id);
+    if (appId === "" && search.app === undefined && (apps.data?.rows ?? []).length > 0) {
+      setAppId(apps.data!.rows[0].id);
     }
   }, [apps.data, appId, search.app]);
 
   // 已选 App 不在当前项目目录（切了项目）→ 重置
   useEffect(() => {
-    if (appId !== "" && (apps.data ?? []).length > 0 && !apps.data!.some((entry) => entry.id === appId)) {
-      setAppId(apps.data![0].id);
+    const rows = apps.data?.rows ?? [];
+    if (appId !== "" && rows.length > 0 && !rows.some((entry) => entry.id === appId)) {
+      setAppId(rows[0].id);
     }
   }, [apps.data, appId]);
 
@@ -161,20 +173,20 @@ function LogsWorkbench() {
     <div className="flex h-[calc(100svh-3.25rem)] flex-col px-5 pt-4">
       <div className="mb-1 flex items-baseline gap-3">
         <h1 className="font-heading text-lg font-bold tracking-tight">Logs</h1>
-        <span className="text-xs text-muted-foreground">
-          {projects.data?.find((project) => project.id === projectId)?.name ?? "—"} — live stream or stored search
+        <span className="text-xs text-muted">
+          {projects.data?.rows?.find((project) => project.id === projectId)?.name ?? "—"} — live stream or stored search
         </span>
       </div>
 
       <div className="flex flex-none flex-wrap items-end gap-2.5 py-3">
         <div className="flex flex-col gap-1">
-          <Label className="text-2xs text-muted-foreground">App</Label>
+          <Label className="text-2xs text-muted">App</Label>
           <Select value={appId} onValueChange={setAppId}>
             <SelectTrigger className="w-44">
               <SelectValue placeholder={noApp ? "select an app…" : ""} />
             </SelectTrigger>
             <SelectContent>
-              {(apps.data ?? []).map((app) => (
+              {(apps.data?.rows ?? []).map((app) => (
                 <SelectItem key={app.id} value={app.id}>
                   {app.name}
                 </SelectItem>
@@ -183,7 +195,7 @@ function LogsWorkbench() {
           </Select>
         </div>
         <div className="flex flex-col gap-1">
-          <Label className="text-2xs text-muted-foreground">Process</Label>
+          <Label className="text-2xs text-muted">Process</Label>
           <ProcessMultiSelect
             options={processOptions}
             selected={processes}
@@ -191,7 +203,7 @@ function LogsWorkbench() {
           />
         </div>
         <div className="flex flex-col gap-1">
-          <Label className="text-2xs text-muted-foreground">Tail</Label>
+          <Label className="text-2xs text-muted">Tail</Label>
           <Input
             value={tailLines}
             onChange={(event) => setTailLines(event.target.value.replace(/[^0-9]/g, ""))}
@@ -200,7 +212,7 @@ function LogsWorkbench() {
           />
         </div>
         <div className="flex flex-1 flex-col gap-1">
-          <Label className="text-2xs text-muted-foreground">Text filter</Label>
+          <Label className="text-2xs text-muted">Text filter</Label>
           <Input
             value={text}
             onChange={(event) => setText(event.target.value)}
@@ -211,7 +223,7 @@ function LogsWorkbench() {
             }}
           />
         </div>
-        <Label className="mb-1.5 flex items-center gap-2 text-xs text-muted-foreground">
+        <Label className="mb-1.5 flex items-center gap-2 text-xs text-muted">
           <Switch checked={follow} onCheckedChange={setFollow} />
           Follow
         </Label>
@@ -240,7 +252,7 @@ function LogsWorkbench() {
       </div>
 
       {log.status === "error" && log.error ? (
-        <div className="mb-2 flex items-center gap-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+        <div className="mb-2 flex items-center gap-3 rounded-md border border-err/30 bg-err/10 px-3 py-2 text-xs text-err">
           <span>{describeApiError(log.error)}</span>
           <Button type="button" size="sm" variant="outline" className="ml-auto" onClick={start}>
             Retry
@@ -251,14 +263,14 @@ function LogsWorkbench() {
       <div ref={holderRef} className="min-h-0 flex-1">
         {run === null ? (
           <div className="flex size-full items-center justify-center rounded-lg border bg-panel/40">
-            <p className="text-sm text-muted-foreground">Pick filters and press Start.</p>
+            <p className="text-sm text-muted">Pick filters and press Start.</p>
           </div>
         ) : (
           <LogViewer sub={log} formatLine={formatLogLine} height={Math.max(holderHeight, 120)} />
         )}
       </div>
 
-      <div className="flex flex-none items-center gap-4 py-2 font-mono text-2xs text-muted-foreground">
+      <div className="flex flex-none items-center gap-4 py-2 font-mono text-2xs text-muted">
         <span>
           {log.frames.length} frame{log.frames.length === 1 ? "" : "s"}
           {streaming ? " · streaming" : log.status === "ended" ? " · ended" : ""}
@@ -288,13 +300,13 @@ function ProcessMultiSelect({
       <DropdownMenuTrigger asChild>
         <Button type="button" variant="outline" size="sm" className="mb-0 h-8 w-44 justify-between font-normal">
           <span className="truncate font-mono text-xs">{summary}</span>
-          <ChevronDownIcon className="size-3.5 flex-none text-muted-foreground" />
+          <ChevronDownIcon className="size-3.5 flex-none text-muted" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-44">
-        <DropdownMenuLabel className="text-2xs text-muted-foreground">Filter by process</DropdownMenuLabel>
+        <DropdownMenuLabel className="text-2xs text-muted">Filter by process</DropdownMenuLabel>
         {options.length === 0 ? (
-          <div className="px-2 py-1.5 text-2xs text-muted-foreground">No frozen processes yet — deploy first.</div>
+          <div className="px-2 py-1.5 text-2xs text-muted">No frozen processes yet — deploy first.</div>
         ) : (
           options.map((name) => (
             <DropdownMenuCheckboxItem

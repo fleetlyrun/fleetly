@@ -24,7 +24,7 @@ export type ExecStatus = "idle" | "connecting" | "open" | "closed";
 
 // TERMINAL_BACKGROUND xterm 画布底色：镜像 demo token --background（styles.css
 // oklch(0.145 0 0)）。xterm 主题色经 canvas fillStyle 解析、不认 var()——
-// 具体色串在此单源；容器面走 bg-background 同值对齐（原硬编码
+// 具体色串在此单源；容器面走 bg-bg 同值对齐（原硬编码
 // oklch(0.135 0.015 285) 为 demo 色板采纳前的旧值）。
 export const TERMINAL_BACKGROUND = "oklch(0.145 0 0)";
 

@@ -1,7 +1,9 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { ChevronDownIcon } from "lucide-react";
-import { useProjects } from "@/lib/catalog";
+import { collectionQueryOptions } from "@lynx-go/uikit-core";
+import { projectsAllQuery, projectsResource } from "@/kit/projects";
 import { useProjectId } from "@/lib/project";
 import { ProjectAvatar } from "@/components/domain/project-avatar";
 import {
@@ -18,8 +20,14 @@ import {
 export function ProjectSwitcher() {
   const [projectId, setProjectId] = useProjectId();
   const navigate = useNavigate();
-  const projects = useProjects();
-  const list = projects.data ?? [];
+  // 项目目录读（批4 kit 资源化）：固定窗伴读不经 URL（useCollection 的
+  // location 级共享键会被列表页 q/cursor 污染——kit/projects.ts 注）；
+  // 60s 轮询对齐旧 catalog useProjects（CATALOG_MS）。写回逻辑/陈旧记忆
+  // 校正原样保留，只换数据源。
+  const projects = useQuery(
+    collectionQueryOptions(projectsResource, projectsAllQuery, { refetchInterval: 60_000 }),
+  );
+  const list = projects.data?.rows ?? [];
   // store 空时落首个项目——导航语境（navSections）以 store 为准，切换器
   // 展示与导航置灰必须一致（走查发现：显示 n0reg 但 Apps 全灰）。
   // 陈旧记忆校正（W-1，真机咬点）：localStorage 缓存的 id 会随重建/更名

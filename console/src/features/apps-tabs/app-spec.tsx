@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
+import { useCollection } from "@lynx-go/uikit-core";
 import { ActivityIcon, FileJsonIcon, LayersIcon, PencilIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -21,7 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { useRevisions } from "@/lib/catalog";
+import { revisionsResource, revisionsLookup } from "@/kit/revisions";
 
 type WorkloadView = Delivery["schemas"]["v1Workload"];
 type WorkloadObservation = Workloads["schemas"]["v1WorkloadObservation"];
@@ -31,7 +32,9 @@ type WorkloadObservation = Workloads["schemas"]["v1WorkloadObservation"];
 // 下发什么，渲染与部署路径单源）；③ 在服观测（集群真跑着什么，含真实
 // wire-gen）。缺省寻址 = 当前生效（最新成功部署的 to_revision）；"最新
 // 冻结 ≠ 当前生效"显形为提示条（部署失败/回滚中的分野锚）。
-export function AppSpecTab({ projectId, appId, seq }: { projectId: string; appId: string; seq?: number }) {
+// 批4（2026-10-27）：revisions 读面迁 kit useCollection（routeId 由宿主
+// 路由注入；大页 lookup 不截断历史下拉；15s 轮询同旧拍）。
+export function AppSpecTab({ projectId, appId, seq, routeId }: { projectId: string; appId: string; seq?: number; routeId: string }) {
   const navigate = useNavigate();
   const explicitSeq = seq ?? 0;
 
@@ -50,9 +53,14 @@ export function AppSpecTab({ projectId, appId, seq }: { projectId: string; appId
       apiFetch<{ observations?: WorkloadObservation[] }>(`/v1/apps/${encodeURIComponent(appId)}/workloads/live`),
     refetchInterval: 10_000,
   });
-  const revisions = useRevisions(appId);
+  const revisions = useCollection(revisionsResource, {
+    from: routeId,
+    search: revisionsLookup,
+    scope: { projectId, appId },
+    query: { refetchInterval: 15_000 },
+  });
   const viewSeq = view.data?.revision?.seq ? Number(view.data.revision.seq) : undefined;
-  const latestFrozen = revisions.data?.[(revisions.data ?? []).length - 1];
+  const latestFrozen = revisions.rows[revisions.rows.length - 1];
   const latestFrozenSeq = latestFrozen?.seq ? Number(latestFrozen.seq) : undefined;
   const showingEffective = explicitSeq === 0;
 
@@ -87,7 +95,7 @@ export function AppSpecTab({ projectId, appId, seq }: { projectId: string; appId
     const message = view.error instanceof ApiError ? view.error.message : String(view.error);
     return (
       <Card>
-        <CardContent className="py-10 text-center text-xs text-muted-foreground">
+        <CardContent className="py-10 text-center text-xs text-muted">
           {message.includes("not found")
             ? "No effective revision yet — deploy once, or pick a revision after the first freeze."
             : message}
@@ -101,12 +109,12 @@ export function AppSpecTab({ projectId, appId, seq }: { projectId: string; appId
   return (
     <div className="flex flex-col gap-5">
       {/* 生效锚 + 历史 seq 切换（变更走 search 参数——部署详情 View spec 链接可直达） */}
-      <section className="flex flex-wrap items-center gap-3 rounded-xl border bg-card p-4">
+      <section className="flex flex-wrap items-center gap-3 rounded-xl border bg-panel p-4">
         <Badge variant="outline" className="font-mono">
           R{viewSeq ?? "…"}
         </Badge>
         {sourceKind ? <Badge variant="secondary">{sourceKind}</Badge> : null}
-        <span className="min-w-0 flex-1 truncate font-mono text-2xs text-muted-foreground" title={view.data?.revision?.digest ?? ""}>
+        <span className="min-w-0 flex-1 truncate font-mono text-2xs text-muted" title={view.data?.revision?.digest ?? ""}>
           {view.data?.revision?.digest ?? "…"}
         </span>
         <CopyButton value={view.data?.revision?.digest ?? ""} />
@@ -139,7 +147,7 @@ export function AppSpecTab({ projectId, appId, seq }: { projectId: string; appId
             <SelectItem value="effective" className="text-xs">
               Effective (latest succeeded)
             </SelectItem>
-            {(revisions.data ?? [])
+            {revisions.rows
               .slice()
               .reverse()
               .map((rev) => (
@@ -163,11 +171,11 @@ export function AppSpecTab({ projectId, appId, seq }: { projectId: string; appId
         <Card>
           <CardHeader className="flex-row items-center">
             <CardTitle className="flex items-center gap-1.5 text-sm">
-              <FileJsonIcon className="size-3.5 text-muted-foreground" />
+              <FileJsonIcon className="size-3.5 text-muted" />
               Compose Source
             </CardTitle>
             <span className="ml-auto flex items-center gap-2">
-              <span className="text-2xs text-muted-foreground">verbatim as accepted · frozen with the revision</span>
+              <span className="text-2xs text-muted">verbatim as accepted · frozen with the revision</span>
               <CopyButton value={frozen.data.revision.source_text} />
             </span>
           </CardHeader>
@@ -183,11 +191,11 @@ export function AppSpecTab({ projectId, appId, seq }: { projectId: string; appId
       <Card>
         <CardHeader className="flex-row items-center">
           <CardTitle className="flex items-center gap-1.5 text-sm">
-            <FileJsonIcon className="size-3.5 text-muted-foreground" />
+            <FileJsonIcon className="size-3.5 text-muted" />
             Frozen Spec
           </CardTitle>
           <span className="ml-auto flex items-center gap-2">
-            <span className="text-2xs text-muted-foreground">
+            <span className="text-2xs text-muted">
               {frozen.isFetching ? "loading…" : "protojson · schema-validated at freeze time"}
             </span>
             <CopyButton value={prettySpec(frozen.data)} />
@@ -204,10 +212,10 @@ export function AppSpecTab({ projectId, appId, seq }: { projectId: string; appId
       <Card>
         <CardHeader className="flex-row items-center">
           <CardTitle className="flex items-center gap-1.5 text-sm">
-            <LayersIcon className="size-3.5 text-muted-foreground" />
+            <LayersIcon className="size-3.5 text-muted" />
             Projected Workloads
           </CardTitle>
-          <span className="ml-auto text-2xs text-muted-foreground">
+          <span className="ml-auto text-2xs text-muted">
             read-only replay of the deployment projection — secrets never enter this view
           </span>
         </CardHeader>
@@ -216,7 +224,7 @@ export function AppSpecTab({ projectId, appId, seq }: { projectId: string; appId
             <WorkloadCard key={w.id ?? w.process} workload={w} />
           ))}
           {view.data != null && (view.data.workloads ?? []).length === 0 ? (
-            <p className="py-4 text-center text-xs text-muted-foreground">No processes in this revision.</p>
+            <p className="py-4 text-center text-xs text-muted">No processes in this revision.</p>
           ) : null}
         </CardContent>
       </Card>
@@ -225,18 +233,18 @@ export function AppSpecTab({ projectId, appId, seq }: { projectId: string; appId
       <Card>
         <CardHeader className="flex-row items-center">
           <CardTitle className="flex items-center gap-1.5 text-sm">
-            <ActivityIcon className="size-3.5 text-muted-foreground" />
+            <ActivityIcon className="size-3.5 text-muted" />
             Live Carriers
           </CardTitle>
-          <span className="ml-auto text-2xs text-muted-foreground">in-service observation · 10s snapshot</span>
+          <span className="ml-auto text-2xs text-muted">in-service observation · 10s snapshot</span>
         </CardHeader>
         <CardContent>
           {live.isError ? (
-            <p className="py-4 text-center text-xs text-muted-foreground">
+            <p className="py-4 text-center text-xs text-muted">
               {live.error instanceof ApiError ? live.error.message : String(live.error)}
             </p>
           ) : (live.data?.observations ?? []).length === 0 ? (
-            <p className="py-4 text-center text-xs text-muted-foreground">
+            <p className="py-4 text-center text-xs text-muted">
               No running carriers — replicas may be stopped or between deploys.
             </p>
           ) : (
@@ -263,11 +271,11 @@ export function AppSpecTab({ projectId, appId, seq }: { projectId: string; appId
                     <TableCell className="text-xs">{o.state ?? "—"}</TableCell>
                     <TableCell className="text-xs">
                       {o.rollout_stalled ? (
-                        <span className="text-destructive" title={o.rollout_detail ?? ""}>
+                        <span className="text-err" title={o.rollout_detail ?? ""}>
                           stalled
                         </span>
                       ) : (
-                        <span className="text-muted-foreground">ok</span>
+                        <span className="text-muted">ok</span>
                       )}
                     </TableCell>
                   </TableRow>
@@ -283,7 +291,7 @@ export function AppSpecTab({ projectId, appId, seq }: { projectId: string; appId
           <DialogHeader>
             <DialogTitle>Edit spec &amp; deploy</DialogTitle>
           </DialogHeader>
-          <p className="text-2xs text-muted-foreground">
+          <p className="text-2xs text-muted">
             The frozen spec, prefilled — deploys as spec_file. Hook-owned apps deploy a runtime overlay (the material
             half stays with the frozen revision); env values from app variables re-synthesize on top at freeze.
           </p>
@@ -338,48 +346,48 @@ function WorkloadCard({ workload }: { workload: WorkloadView }) {
       <div className="flex flex-wrap items-baseline gap-2">
         <span className="text-sm font-medium">{workload.process}</span>
         <Badge variant="secondary">×{Number(workload.replicas ?? 0)} replicas</Badge>
-        <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground" title={workload.image ?? ""}>
+        <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted" title={workload.image ?? ""}>
           {workload.image ?? ""}
         </span>
       </div>
       <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-2xs">
-        <dt className="text-muted-foreground">command</dt>
+        <dt className="text-muted">command</dt>
         <dd className="break-all font-mono">{workload.command?.length ? workload.command.join(" ") : "image default"}</dd>
-        <dt className="text-muted-foreground">ports</dt>
+        <dt className="text-muted">ports</dt>
         <dd className="font-mono">
           {(workload.ports ?? []).map((p) => `${p.port}/${(p.protocol ?? "").replace("PROTOCOL_", "").toLowerCase()}`).join("  ") || "—"}
         </dd>
-        <dt className="text-muted-foreground">healthcheck</dt>
+        <dt className="text-muted">healthcheck</dt>
         <dd className="font-mono">{healthSummary}</dd>
-        <dt className="text-muted-foreground">resources</dt>
+        <dt className="text-muted">resources</dt>
         <dd className="font-mono">
           {workload.resources?.cpu_millis || workload.resources?.memory_mb
             ? `${workload.resources?.cpu_millis ? `${workload.resources.cpu_millis}m cpu` : ""}${workload.resources?.cpu_millis && workload.resources?.memory_mb ? " · " : ""}${workload.resources?.memory_mb ? `${workload.resources.memory_mb}MB mem` : ""}`
             : "unlimited"}
         </dd>
-        <dt className="text-muted-foreground">placement</dt>
+        <dt className="text-muted">placement</dt>
         <dd className="font-mono">{workload.placement?.node_ids?.join(", ") || "any node"}</dd>
-        <dt className="text-muted-foreground">volumes</dt>
+        <dt className="text-muted">volumes</dt>
         <dd className="font-mono">
           {(workload.volumes ?? []).map((v) => `${v.volume_id}→${v.target}${v.read_only ? " (ro)" : ""}`).join("  ") || "—"}
         </dd>
-        <dt className="text-muted-foreground">networks</dt>
+        <dt className="text-muted">networks</dt>
         <dd className="font-mono">
           {(workload.networks ?? []).join(", ") || "—"}
           {(workload.egress_networks ?? []).length > 0 ? (
             <span className="text-[var(--status-warning)]"> (egress restricted: {(workload.egress_networks ?? []).join(", ")})</span>
           ) : null}
         </dd>
-        <dt className="text-muted-foreground">dns</dt>
+        <dt className="text-muted">dns</dt>
         <dd className="font-mono">{(workload.addressing ?? []).join("  ") || "—"}</dd>
       </dl>
       {env.length > 0 ? (
         <div className="mt-2">
-          <p className="text-2xs text-muted-foreground">env (synthesized, non-sensitive)</p>
+          <p className="text-2xs text-muted">env (synthesized, non-sensitive)</p>
           <div className="mt-1 grid gap-x-4 gap-y-0.5 sm:grid-cols-2">
             {env.map(([key, value]) => (
               <div key={key} className="flex min-w-0 items-baseline gap-2 font-mono text-2xs">
-                <span className="shrink-0 text-muted-foreground">{key}</span>
+                <span className="shrink-0 text-muted">{key}</span>
                 <span className="min-w-0 flex-1 truncate" title={value}>
                   {value}
                 </span>

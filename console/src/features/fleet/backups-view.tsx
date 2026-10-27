@@ -77,7 +77,7 @@ function DatabasesTab({ from }: { from: string }) {
       header: "Project",
       meta: { sortField: "project_name" },
       cell: ({ row }) => (
-        <span className="flex items-center gap-1 text-xs text-muted-foreground">
+        <span className="flex items-center gap-1 text-xs text-muted">
           <LinkIcon className="size-3" />
           {row.original.project_name}
         </span>
@@ -87,7 +87,7 @@ function DatabasesTab({ from }: { from: string }) {
       accessorKey: "engine",
       header: "Engine",
       meta: { sortField: "engine" },
-      cell: ({ row }) => <span className="font-mono text-xs text-muted-foreground">{row.original.engine}</span>,
+      cell: ({ row }) => <span className="font-mono text-xs text-muted">{row.original.engine}</span>,
     },
     {
       id: "health",
@@ -109,10 +109,10 @@ function DatabasesTab({ from }: { from: string }) {
         row.original.database.restore_from_backup ? (
           <span className="text-info">
             restoring from {row.original.database.restore_from_backup}
-            {row.original.database.restore_error ? <div className="text-2xs text-destructive">{row.original.database.restore_error}</div> : null}
+            {row.original.database.restore_error ? <div className="text-2xs text-err">{row.original.database.restore_error}</div> : null}
           </span>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          <span className="text-muted">—</span>
         ),
     },
     {
@@ -169,13 +169,13 @@ function SnapshotsTab({ from }: { from: string }) {
       accessorKey: "hostname",
       header: "Host",
       meta: { sortField: "hostname" },
-      cell: ({ row }) => <span className="font-mono text-xs text-muted-foreground">{row.original.hostname}</span>,
+      cell: ({ row }) => <span className="font-mono text-xs text-muted">{row.original.hostname}</span>,
     },
     {
       accessorKey: "time",
       header: "Taken",
       cell: ({ row }) => (
-        <span className="text-xs text-muted-foreground">
+        <span className="text-xs text-muted">
           <RelativeTime value={row.original.time} />
         </span>
       ),
@@ -197,7 +197,7 @@ function SnapshotsTab({ from }: { from: string }) {
       appendix={
         <>
           <CliEquivalent command="fleetly platform backups" />
-          <p className="mt-3 flex items-center gap-1.5 text-2xs text-muted-foreground">
+          <p className="mt-3 flex items-center gap-1.5 text-2xs text-muted">
             <HardDriveDownloadIcon className="size-3.5" />
             Snapshot cadence and retention follow the platform backup config; the local store is same-node — not disaster
             recovery.
@@ -214,7 +214,7 @@ function ButtonLink({ href, label }: { href: string; label: string }) {
   return (
     <a
       href={href}
-      className="inline-flex h-8 items-center justify-center gap-2 rounded-md border bg-card px-3 text-xs font-medium hover:bg-panel-2"
+      className="inline-flex h-8 items-center justify-center gap-2 rounded-md border bg-panel px-3 text-xs font-medium hover:bg-panel-2"
     >
       {label}
     </a>

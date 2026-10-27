@@ -126,20 +126,20 @@ export function AppVariablesTab({ projectId, appId }: { projectId: string; appId
       <Card>
         <CardHeader className="flex-row items-center">
           <CardTitle className="flex items-center gap-1.5 text-sm">
-            <SlidersIcon className="size-3.5 text-muted-foreground" />
+            <SlidersIcon className="size-3.5 text-muted" />
             App variables
           </CardTitle>
-          <span className="ml-auto text-2xs text-muted-foreground">
+          <span className="ml-auto text-2xs text-muted">
             top merge layer · app variable &gt; source env &gt; project shared · the next deploy bakes the values
           </span>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           {store.isError ? (
-            <p className="py-4 text-center text-xs text-muted-foreground">
+            <p className="py-4 text-center text-xs text-muted">
               {store.error instanceof ApiError ? store.error.message : String(store.error)}
             </p>
           ) : rows.length === 0 ? (
-            <p className="py-2 text-center text-xs text-muted-foreground">
+            <p className="py-2 text-center text-xs text-muted">
               No app variables — add one; values land in every process environment at the next deploy.
             </p>
           ) : (
@@ -202,13 +202,13 @@ export function AppVariablesTab({ projectId, appId }: { projectId: string; appId
       <Card>
         <CardHeader className="flex-row items-center">
           <CardTitle className="text-sm">Effective environment</CardTitle>
-          <span className="ml-auto text-2xs text-muted-foreground">
+          <span className="ml-auto text-2xs text-muted">
             read-only · frozen-spec synthesis (the Spec tab shows the full projection)
           </span>
         </CardHeader>
         <CardContent>
           {spec.data == null ? (
-            <p className="py-4 text-center text-xs text-muted-foreground">
+            <p className="py-4 text-center text-xs text-muted">
               No frozen spec yet — variables bake in at the first deploy.
             </p>
           ) : (
@@ -217,7 +217,7 @@ export function AppVariablesTab({ projectId, appId }: { projectId: string; appId
                 <div key={process.name ?? ""} className="rounded-lg border p-3">
                   <div className="flex items-baseline gap-2">
                     <span className="text-sm font-medium">{process.name ?? ""}</span>
-                    <span className="text-2xs text-muted-foreground">
+                    <span className="text-2xs text-muted">
                       {Object.keys(process.env ?? {}).length} keys
                       {(process.secret_refs ?? []).length > 0
                         ? ` · ${(process.secret_refs ?? []).length} secret refs`
@@ -227,7 +227,7 @@ export function AppVariablesTab({ projectId, appId }: { projectId: string; appId
                   <div className="mt-1 grid gap-x-4 gap-y-0.5 sm:grid-cols-2">
                     {Object.entries(process.env ?? {}).map(([key, value]) => (
                       <div key={key} className="flex min-w-0 items-baseline gap-2 font-mono text-2xs">
-                        <span className="shrink-0 text-muted-foreground">{key}</span>
+                        <span className="shrink-0 text-muted">{key}</span>
                         <span className="min-w-0 flex-1 truncate" title={value}>
                           {value}
                         </span>

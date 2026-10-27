@@ -1,17 +1,18 @@
 import { useState } from "react";
 import { Outlet, useLocation, createFileRoute } from "@tanstack/react-router";
-import { useCommand } from "@lynx-go/uikit-core";
+import { useCollection, useCommand } from "@lynx-go/uikit-core";
 import { MoreHorizontalIcon, RefreshCwIcon, RocketIcon, ScrollTextIcon, SquareTerminalIcon, TriangleAlertIcon, Undo2Icon } from "lucide-react";
 import { toast } from "sonner";
 import { DeploySheet } from "@/features/deployments/deploy-sheet";
-import { useAppDeployments } from "@/features/deployments/hooks";
 import { firingAlerts } from "@/features/apps-tabs/alert-badges";
 import { ContentCrumb } from "@/components/domain/content-crumb";
 import { PageFrame } from "@/components/domain/page-frame";
 import { CopyButton } from "@/components/domain/copy-button";
 import { ProjectAvatar } from "@/components/domain/project-avatar";
 import { DeploymentStatusBadge } from "@/components/domain/status-badge";
-import { deploymentsResource } from "@/kit/deployments";
+import { alertStatesResource, alertStatesLookup } from "@/kit/alerts";
+import { appNameOf, appsResource, appsDirectorySearch } from "@/kit/apps";
+import { appDeploymentsResource, appDeploymentsLookup, deploymentsResource } from "@/kit/deployments";
 import { toastOnSettled } from "@/kit/toast";
 import {
   AlertDialog,
@@ -31,7 +32,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { appNameOf, useAlertStates, useApps } from "@/lib/catalog";
 
 // App 详情布局（Detail 原型 + IA v3 原型 screen-appdetail 对齐批）：hero
 // 卡（状态徽标 + firing + 右侧动作组含 Rollback）+ 8 tab。内容区三段
@@ -39,21 +39,38 @@ import { appNameOf, useAlertStates, useApps } from "@/lib/catalog";
 // 重复渲染（原型顶栏无 crumb）。
 // 批2（2026-10-26）：Rollback/Redeploy 两写位迁 deployments resource
 // commands（AlertDialog 壳不动，反馈 toast 单源，成功跳详情保留）。
+// 批4（2026-10-27）读面收编：目录/部署/告警三读面迁 kit useCollection——
+// 目录 60s、per-App 部署 5s、告警态 15s（旧 catalog 拍）；join/下拉读面
+// 一律大页 lookup schema（窗口不截断行集）。
 export const Route = createFileRoute("/_shell/p/$projectId/apps/$appId")({
   component: AppDetailLayout,
 });
 
 function AppDetailLayout() {
   const { projectId, appId } = Route.useParams();
-  const apps = useApps(projectId);
-  const deployments = useAppDeployments(appId);
-  const alerts = useAlertStates();
-  const firing = firingAlerts(alerts.data, appId);
-  const latest = deployments.data?.[0];
-  // W-1 修复（2026-10-12 走查）：目录加载窗内 apps.data 为 undefined——
+  const apps = useCollection(appsResource, {
+    from: Route.id,
+    search: appsDirectorySearch,
+    scope: { projectId },
+    query: { refetchInterval: 60_000 },
+  });
+  const deployments = useCollection(appDeploymentsResource, {
+    from: Route.id,
+    search: appDeploymentsLookup,
+    scope: { projectId, appId },
+    query: { refetchInterval: 5_000 },
+  });
+  const alerts = useCollection(alertStatesResource, {
+    from: Route.id,
+    search: alertStatesLookup,
+    query: { refetchInterval: 15_000 },
+  });
+  const firing = firingAlerts([...alerts.rows], appId);
+  const latest = deployments.rows[0];
+  // W-1 修复（2026-10-12 走查）：目录加载窗内 apps 行集为空——
   // 裸 `?? appId` 让 hero/面包屑闪原始 id；appNameOf 的截断回落接住窗口
   //（`01M4QA9B56…` 形态），目录落定即换真名。
-  const appLabel = appNameOf(apps.data, appId);
+  const appLabel = appNameOf(apps.rows, appId);
   const [deployOpen, setDeployOpen] = useState(false);
   const pathname = useLocation({ select: (location) => location.pathname });
 
@@ -104,7 +121,7 @@ function AppDetailLayout() {
         />
       }
     >
-      <section className="mb-5 flex flex-wrap items-center gap-4 rounded-xl border bg-card p-5">
+      <section className="mb-5 flex flex-wrap items-center gap-4 rounded-xl border bg-panel p-5">
         <ProjectAvatar seed={appId} label={appLabel} className="size-11 rounded-xl text-base" />
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -114,14 +131,14 @@ function AppDetailLayout() {
               <a
                 href="/alerts"
                 title={`${firing.length} alert(s) firing on this app`}
-                className="inline-flex items-center gap-1 rounded-full border border-destructive/40 bg-destructive/10 px-2 py-0.5 text-2xs font-semibold text-destructive"
+                className="inline-flex items-center gap-1 rounded-full border border-err/40 bg-err/10 px-2 py-0.5 text-2xs font-semibold text-err"
               >
                 <TriangleAlertIcon className="size-3" />
                 {firing.length} alert firing
               </a>
             ) : null}
           </div>
-          <div className="flex items-center gap-1 font-mono text-2xs text-muted-foreground">
+          <div className="flex items-center gap-1 font-mono text-2xs text-muted">
             {appId}
             <CopyButton value={appId} />
           </div>
@@ -229,8 +246,8 @@ function AppDetailLayout() {
               href={tab.to}
               className={`-mb-px rounded-t-md border-b-2 px-3.5 py-2 text-sm font-medium transition-colors ${
                 active
-                  ? "border-primary text-primary"
-                  : "border-transparent text-muted-foreground hover:bg-panel-2 hover:text-foreground"
+                  ? "border-accent text-accent"
+                  : "border-transparent text-muted hover:bg-panel-2 hover:text-fg"
               }`}
             >
               {tab.label}
@@ -244,9 +261,10 @@ function AppDetailLayout() {
       <DeploySheet
         open={deployOpen}
         onOpenChange={setDeployOpen}
-        apps={apps.data ?? []}
+        apps={apps.rows}
         defaultAppId={appId}
         projectId={projectId}
+        from={Route.id}
         onDeployed={(deploymentId) => {
           window.location.assign(`${tabBase}/deployments/${encodeURIComponent(deploymentId)}`);
         }}

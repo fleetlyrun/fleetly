@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { CircleStopIcon, MinusIcon, PlusIcon, PlayIcon } from "lucide-react";
-import { useProcessInstances } from "@/lib/catalog";
+import { useProcessInstances } from "@/kit/exec";
 import { useExecSession } from "@/features/terminal/use-exec-session";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,7 +28,7 @@ export function ExecTerminal({ appId, processes }: { appId: string; processes: s
   const effectiveProcess = process !== "" ? process : (processes[0] ?? "");
 
   const instances = useProcessInstances(appId, effectiveProcess);
-  const instanceRows = instances.data?.instances ?? [];
+  const instanceRows = instances.data?.rows ?? [];
 
   const session = useExecSession();
 
@@ -58,7 +58,7 @@ export function ExecTerminal({ appId, processes }: { appId: string; processes: s
     <div className="flex h-[32rem] flex-col">
       <div className="flex flex-none flex-wrap items-end gap-2.5 pb-2.5">
         <div className="flex flex-col gap-1">
-          <Label className="text-2xs text-muted-foreground">Process</Label>
+          <Label className="text-2xs text-muted">Process</Label>
           <Select value={effectiveProcess} onValueChange={pickProcess}>
             <SelectTrigger className="w-32">
               <SelectValue placeholder={effectiveProcess === "" ? "—" : ""} />
@@ -73,14 +73,14 @@ export function ExecTerminal({ appId, processes }: { appId: string; processes: s
           </Select>
         </div>
         <div className="flex flex-col gap-1">
-          <Label className="text-2xs text-muted-foreground">Instance</Label>
+          <Label className="text-2xs text-muted">Instance</Label>
           <Select value={instance} onValueChange={pickInstance}>
             <SelectTrigger className="w-48 font-mono">
               <SelectValue placeholder="—" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="auto" className="font-mono text-xs">
-                auto <span className="text-muted-foreground">(first running)</span>
+                auto <span className="text-muted">(first running)</span>
               </SelectItem>
               {instanceRows.map((row) => {
                 const id = row.instance ?? "";
@@ -88,7 +88,7 @@ export function ExecTerminal({ appId, processes }: { appId: string; processes: s
                 return (
                   <SelectItem key={id} value={id} className="font-mono text-xs">
                     {shortInstance(id)}
-                    {node !== "" ? <span className="ml-1.5 text-muted-foreground">@ {shortInstance(node)}</span> : null}
+                    {node !== "" ? <span className="ml-1.5 text-muted">@ {shortInstance(node)}</span> : null}
                   </SelectItem>
                 );
               })}
@@ -96,7 +96,7 @@ export function ExecTerminal({ appId, processes }: { appId: string; processes: s
           </Select>
         </div>
         <div className="flex flex-1 flex-col gap-1">
-          <Label className="text-2xs text-muted-foreground">Command (empty = /bin/sh)</Label>
+          <Label className="text-2xs text-muted">Command (empty = /bin/sh)</Label>
           <Input
             value={command}
             placeholder="/bin/sh"
@@ -131,11 +131,11 @@ export function ExecTerminal({ appId, processes }: { appId: string; processes: s
         </div>
       </div>
 
-      <div ref={session.shellRef} className="relative min-h-0 flex-1 overflow-hidden rounded-lg border bg-background">
+      <div ref={session.shellRef} className="relative min-h-0 flex-1 overflow-hidden rounded-lg border bg-bg">
         <div ref={session.termDivRef} className="absolute inset-0 px-2 py-1" />
       </div>
 
-      <div className="flex flex-none items-center gap-4 py-2 font-mono text-2xs text-muted-foreground">
+      <div className="flex flex-none items-center gap-4 py-2 font-mono text-2xs text-muted">
         <span
           className={
             session.status === "open"

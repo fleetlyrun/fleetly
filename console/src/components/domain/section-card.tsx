@@ -18,9 +18,9 @@ export function SectionCard({
   children: ReactNode;
 }) {
   return (
-    <section className={cn("rounded-xl border bg-card", className)}>
+    <section className={cn("rounded-xl border bg-panel", className)}>
       <div className="flex items-center gap-2 border-b px-5 py-3.5">
-        {Icon ? <Icon className="size-4 text-muted-foreground" /> : null}
+        {Icon ? <Icon className="size-4 text-muted" /> : null}
         <h2 className="text-sm font-semibold">{title}</h2>
         {action ? <div className="ml-auto">{action}</div> : null}
       </div>

@@ -3,7 +3,7 @@ import { defineResource, type CommandDescriptor, type ResourceScope } from "@lyn
 import { collectionQuerySchema } from "@lynx-go/uikit-core/schema";
 import { apiSend } from "@/api/client";
 import type { components as automationSchemas } from "@/api/automation";
-import { runCommandMapped } from "./errors";
+import { runCommandMapped, toApiError } from "./errors";
 import { fetchRows, qs } from "./http";
 
 // 自动化域资源适配（2026-10-26 批1 useCollection 化；批2 写路径命令化）：
@@ -135,8 +135,8 @@ export const schedulesResource = defineResource({
   },
 });
 
-// runs 无 kit 资源（读面仍是 catalog useRuns 的按需查询）：stop 是裸
-// descriptor——无 __resource 缺省失效，桥键显式声明 runs 前缀（与旧
+// runs 集合资源（2026-10-27 批4 读面收编：catalog useRuns 退役）——stop
+// 仍是裸 descriptor：无 __resource 缺省失效，桥键显式声明 runs 前缀（与旧
 // panels RunRow stop 的 invalidate 口径一致）。
 export const stopRunCommand: CommandDescriptor<{ id: string }, { run?: RunEntry }> = {
   run: (input, _ctx) =>
@@ -145,6 +145,36 @@ export const stopRunCommand: CommandDescriptor<{ id: string }, { run?: RunEntry 
     ),
   legacyKeys: () => [["resources", "runs"]],
 };
+
+export async function fetchRuns(ctx: ResourceScope, signal?: AbortSignal): Promise<RunEntry[]> {
+  const taskId = ctx.taskId;
+  if (taskId === undefined || taskId === "") return [];
+  try {
+    return await fetchRows<RunEntry>(
+      `/v1/runs${qs({ task_id: taskId })}`,
+      (res) => (res as { runs?: Array<RunEntry | undefined> }).runs,
+      signal,
+    );
+  } catch (err) {
+    // 资源适配器失败必须收敛为 kernel ApiError（states 块错误分诊契约）
+    throw toApiError(err);
+  }
+}
+
+// runs 资源（scope projectId+taskId）：展开行/详情 Runs tab 的按需观测面，
+// 轮询由消费方 query.refetchInterval 注入（旧 RESOURCE_MS 15s 同拍）。
+export const runsResource = defineResource({
+  name: "runs",
+  getId: (row: RunEntry) => row.id ?? "",
+  scope: ["projectId", "taskId"],
+  collection: clientCollection(fetchRuns),
+  // 存量键失效桥：catalog useRuns 的 ["resources","runs",taskId] 前缀
+  legacyKeys: (scope) => [["resources", "runs", String(scope.taskId ?? "")]],
+});
+
+// runs 读面用大页 schema（Run 观测要全集——窗口不截断行集；只读消费不写
+// URL，与列表页 search schema 分立）。
+export const runsLookup = collectionQuerySchema({ defaultSize: 200 });
 
 // create 输入面：wire 形（protojson snake_case）——页表单值在调用点归一，
 // project_id 由命令 ctx 注入。desired_concurrency 是 proto 真名（spec.proto
@@ -181,3 +211,9 @@ export const tasksSearch = collectionQuerySchema({
   text: ["name", "id", "form", "state", "cron", "image"],
   defaultSize: 20,
 });
+
+// ---- 行查找/join 读面大页 schema（2026-10-27 批4）：任务详情的行查找与
+// Schedule 反链要项目全集——窗口不截断行集；无 text 字段（列表页的 q 是
+// 双 tab 快筛，不串台）；只读消费不写 URL，与 tasksSearch 分立。 ----
+export const tasksLookup = collectionQuerySchema({ defaultSize: 200 });
+export const schedulesLookup = collectionQuerySchema({ defaultSize: 200 });

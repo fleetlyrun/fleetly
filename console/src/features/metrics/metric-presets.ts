@@ -7,8 +7,8 @@
 //（工作台/总览原语义）。
 
 // ScopedMetric 与服务端指标白名单同形（proto QueryScopedMetricsRequest.metric）；
-// 类型单源在 lib/catalog 的查询层。
-import type { ScopedMetric } from "@/lib/catalog";
+// 类型单源在 kit/metrics 的查询层（批4 自 lib/catalog 迁入）。
+import type { ScopedMetric } from "@/kit/metrics";
 
 export interface MetricPreset {
   key: string;

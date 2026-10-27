@@ -8,8 +8,15 @@ import { toast } from "sonner";
 import { useCollection } from "@lynx-go/uikit-core";
 import type { components as telemetrySchemas } from "@/api/telemetry";
 import { apiSend } from "@/api/client";
-import { useAlertStates } from "@/lib/catalog";
-import { alertRulesResource, alertsSearch, channelsResource, type AlertRuleRow, type ChannelRow } from "@/kit/alerts";
+import {
+  alertRulesResource,
+  alertStatesLookup,
+  alertStatesResource,
+  alertsSearch,
+  channelsResource,
+  type AlertRuleRow,
+  type ChannelRow,
+} from "@/kit/alerts";
 import { CreateRuleDialog } from "@/features/alerts/create-rule-dialog";
 import { ConfirmDialog } from "@/components/domain/confirm-dialog";
 import { CopyButton } from "@/components/domain/copy-button";
@@ -27,9 +34,10 @@ import { Card } from "@/components/ui/card";
 // 告警页（List 变体，UI v2 批 3 → 2026-10-26 批1 Wave2-A useCollection 化）：
 // firing 摘要条置顶（lead 槽）+ rules/channels 双 tab。rules/channels 列表
 // 读面走 kit 双资源（15s 轮询沿用旧拍，快筛/分页进 URL——validateSearch
-// 合并形态收编 tab 键 + 集合键）；alert states 保持 useQuery（lead 槽
-// firing 摘要 + 行内 state 覆盖列的前端 join 数据源，不是列表）。rules×
-// states join 列、Test/Delete 动作与 CreateRuleDialog 原样保留。
+// 合并形态收编 tab 键 + 集合键）；alert states 批4（2026-10-27）也收进 kit
+//（lead 槽 firing 摘要 + 行内 state 覆盖列的前端 join 数据源，不是列表——
+// 大页 lookup 读面不写 URL）。rules×states join 列、Test/Delete 动作与
+// CreateRuleDialog 原样保留。
 
 type AlertState = telemetrySchemas["schemas"]["v1AlertState"];
 
@@ -46,9 +54,15 @@ export const Route = createFileRoute("/_shell/alerts")({
 function AlertsPage() {
   const navigate = Route.useNavigate();
   const tab = Route.useSearch({ select: (search) => search.tab ?? "rules" });
-  const states = useAlertStates();
+  // 批4：states 读面迁 kit useCollection（无 scope 平台域；大页 lookup 不
+  // 截断 firing 总览；15s 轮询同旧拍；join 逻辑不动）。
+  const states = useCollection(alertStatesResource, {
+    from: Route.id,
+    search: alertStatesLookup,
+    query: { refetchInterval: 15_000 },
+  });
   const [createOpen, setCreateOpen] = useState(false);
-  const firing = (states.data ?? []).filter((state) => state.state === "firing");
+  const firing = states.rows.filter((state) => state.state === "firing");
 
   return (
     <ModulePage
@@ -67,7 +81,7 @@ function AlertsPage() {
                 <span>
                   observed <b className="font-mono">{state.observed_value?.toFixed(2)}</b>
                 </span>
-                {state.state_since ? <RelativeTime value={state.state_since} className="text-xs text-muted-foreground" /> : null}
+                {state.state_since ? <RelativeTime value={state.state_since} className="text-xs text-muted" /> : null}
                 {state.rule_id ? <CopyButton value={state.rule_id} /> : null}
               </div>
             ))}
@@ -82,7 +96,7 @@ function AlertsPage() {
       onTabChange={(value) => void navigate({ search: (prev) => ({ ...prev, tab: value }) })}
     >
       {tab === "rules" ? (
-        <RulesPanel from={Route.id} states={states.data ?? []} onCreate={() => setCreateOpen(true)} />
+        <RulesPanel from={Route.id} states={[...states.rows]} onCreate={() => setCreateOpen(true)} />
       ) : (
         <ChannelsPanel from={Route.id} />
       )}
@@ -130,7 +144,7 @@ function RulesPanel({ from, states, onCreate }: { from: string; states: AlertSta
     {
       accessorKey: "for_seconds",
       header: "For",
-      cell: ({ row }) => <span className="font-mono text-xs text-muted-foreground">{row.original.for_seconds ?? "0"}s</span>,
+      cell: ({ row }) => <span className="font-mono text-xs text-muted">{row.original.for_seconds ?? "0"}s</span>,
     },
     {
       id: "state",
@@ -150,7 +164,7 @@ function RulesPanel({ from, states, onCreate }: { from: string; states: AlertSta
       cell: ({ row }) => {
         const live = stateOf.get(row.original.id ?? "");
         return (
-          <span className="text-xs text-muted-foreground">
+          <span className="text-xs text-muted">
             <RelativeTime value={live?.state_since ?? row.original.state_since} />
           </span>
         );
@@ -286,7 +300,7 @@ function ChannelsPanel({ from }: { from: string }) {
       id: "created",
       header: "Created",
       cell: ({ row }) => (
-        <span className="text-xs text-muted-foreground">
+        <span className="text-xs text-muted">
           <RelativeTime value={row.original.created_at} />
         </span>
       ),

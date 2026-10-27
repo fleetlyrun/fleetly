@@ -1,5 +1,7 @@
 import { clientCollection } from "@lynx-go/uikit-core/adapters";
-import { defineResource, type ResourceScope } from "@lynx-go/uikit-core/kernel";
+import { defineResource, scoped, type ResourceScope } from "@lynx-go/uikit-core/kernel";
+import { useQuery } from "@tanstack/react-query";
+import { collectionQueryOptions } from "@lynx-go/uikit-core/react";
 import { collectionQuerySchema } from "@lynx-go/uikit-core/schema";
 import type { components as runtimeSchemas } from "@/api/runtime";
 import { toApiError } from "./errors";
@@ -40,3 +42,38 @@ export const nodesSearch = collectionQuerySchema({
   defaultOrder: [{ field: "available", dir: "desc" }],
   defaultSize: 20,
 });
+
+// 目录级大页 schema（overview 节点卡计数等非列表消费方——直接吃 rows，
+// 窗口不截断节点全集）。
+export const nodesDirectorySearch = collectionQuerySchema({ defaultSize: 200 });
+
+// 节点容器观测（ADR-0067/记录·五十六的 ListNodeContainers 读面）——批4
+// catalog 退役迁入：按节点锚定的容器行（10s 轮询同旧拍）。伴读钩子落 kit
+// 层（node-detail 页消费），列表化消费（未来）再落 schema。
+export type NodeContainerRow = runtimeSchemas["schemas"]["v1NodeContainer"];
+
+async function fetchNodeContainers(ctx: ResourceScope): Promise<NodeContainerRow[]> {
+  const nodeId = ctx.nodeId ?? "";
+  if (nodeId === "") return [];
+  return fetchRows<NodeContainerRow>(
+    `/v1/nodes/${encodeURIComponent(nodeId)}/containers`,
+    (res) => (res as { containers?: Array<NodeContainerRow | undefined> }).containers,
+  );
+}
+
+export const nodeContainersResource = defineResource({
+  name: "node-containers",
+  getId: (row: NodeContainerRow) => row.instance ?? "",
+  scope: ["nodeId"],
+  collection: clientCollection(fetchNodeContainers),
+  legacyKeys: (scope) => [["node-containers", String(scope.nodeId ?? "")]],
+});
+
+export function useNodeContainers(nodeId: string) {
+  return useQuery({
+    ...collectionQueryOptions(scoped(nodeContainersResource, { nodeId }), { window: { size: 200 } }, {
+      refetchInterval: 10_000,
+    }),
+    enabled: nodeId !== "",
+  });
+}

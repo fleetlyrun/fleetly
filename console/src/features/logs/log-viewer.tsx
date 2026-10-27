@@ -42,7 +42,7 @@ export function LogViewer({ frames, streaming }: { frames: LogFrame[]; streaming
         style={{ color: "var(--term-fg, oklch(0.88 0.01 285))" }}
       >
         {frames.length === 0 ? (
-          <div className="p-6 text-center text-muted-foreground">
+          <div className="p-6 text-center text-muted">
             {streaming ? "Waiting for frames…" : "Pick filters and press Start."}
           </div>
         ) : (
@@ -84,7 +84,7 @@ export function LogViewer({ frames, streaming }: { frames: LogFrame[]; streaming
             const el = scrollRef.current;
             if (el) el.scrollTop = el.scrollHeight;
           }}
-          className="absolute bottom-3.5 left-1/2 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-primary px-3.5 py-1.5 text-xs font-semibold text-primary-foreground shadow-lg"
+          className="absolute bottom-3.5 left-1/2 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-accent px-3.5 py-1.5 text-xs font-semibold text-accent-foreground shadow-lg"
         >
           <ArrowDownIcon className="size-3" />
           Jump to live

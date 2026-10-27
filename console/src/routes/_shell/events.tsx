@@ -126,19 +126,19 @@ function EventsPageV2() {
   const renderEvent = (event: EventRow): ReactNode => (
     <div className="min-w-0 flex-1">
       <div className="flex min-w-0 items-baseline gap-3">
-        <span className="w-14 flex-none font-mono text-muted-foreground">{event.seq ?? "—"}</span>
+        <span className="w-14 flex-none font-mono text-muted">{event.seq ?? "—"}</span>
         <span className="w-52 flex-none truncate font-mono text-[var(--status-info)]">{event.name ?? "—"}</span>
-        <span className="min-w-0 flex-1 truncate font-mono text-muted-foreground">
+        <span className="min-w-0 flex-1 truncate font-mono text-muted">
           {event.aggregate ?? "—"}
           {event.aggregate_id ? <span className="opacity-50"> / {event.aggregate_id}</span> : null}
         </span>
-        <span className="flex-none text-muted-foreground" title={formatAbsolute(event.created_at)}>
+        <span className="flex-none text-muted" title={formatAbsolute(event.created_at)}>
           {formatAbsolute(event.created_at)}
         </span>
       </div>
       {event.payload && event.payload !== "{}" ? (
         <details className="mt-0.5">
-          <summary className="cursor-pointer hover:text-foreground">payload</summary>
+          <summary className="cursor-pointer hover:text-fg">payload</summary>
           <pre className="mt-1 max-w-lg overflow-auto rounded border bg-panel-2/40 p-2 font-mono text-2xs">
             {prettyPayload(event.payload)}
           </pre>
@@ -168,7 +168,7 @@ function EventsPageV2() {
         </div>
       ) : null}
       {sub.status === "error" && sub.error ? (
-        <div className="mb-3 flex items-center gap-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+        <div className="mb-3 flex items-center gap-3 rounded-md border border-err/30 bg-err/10 px-3 py-2 text-xs text-err">
           <span>{describeApiError(sub.error)}</span>
           <Button type="button" size="sm" variant="outline" className="ml-auto" onClick={() => sub.restart()}>
             <RotateCwIcon data-icon-start-inline />
@@ -177,7 +177,7 @@ function EventsPageV2() {
         </div>
       ) : null}
 
-      <div className="mb-3 flex items-center gap-3 font-mono text-2xs text-muted-foreground">
+      <div className="mb-3 flex items-center gap-3 font-mono text-2xs text-muted">
         <span className={sub.status === "live" ? "text-[var(--status-success)]" : ""}>
           {sub.status === "paused" ? "○ paused" : sub.status === "live" ? "● following" : `● ${sub.status}`}
         </span>

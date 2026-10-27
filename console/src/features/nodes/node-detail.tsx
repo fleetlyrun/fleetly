@@ -1,7 +1,11 @@
 import { Link } from "@tanstack/react-router";
 import { ArrowUpRightIcon, BoxesIcon, CheckCircle2Icon, ShieldAlertIcon } from "lucide-react";
 import type { components as runtimeSchemas } from "@/api/runtime";
-import { useNodeContainers, useNodes, useWhoami } from "@/lib/catalog";
+import { useRecord } from "@lynx-go/uikit-core";
+import { useQuery } from "@tanstack/react-query";
+import { collectionQueryOptions } from "@lynx-go/uikit-core/react";
+import { sessionResource } from "@/kit/settings";
+import { nodesDirectorySearch, nodesResource, useNodeContainers } from "@/kit/nodes";
 import { CopyButton } from "@/components/domain/copy-button";
 import { EmptyState } from "@/components/domain/empty-state";
 import { ErrorState } from "@/components/domain/error-state";
@@ -27,14 +31,17 @@ type NodeContainer = runtimeSchemas["schemas"]["v1NodeContainer"];
 // docker 本义使用（2026-10-16 用户裁定）。只读页——cordon/drain 动词面
 // 留在列表页行内。
 export function NodeDetailPage({ nodeId }: { nodeId: string }) {
-  const whoami = useWhoami(true);
+  const whoami = useRecord(sessionResource, { id: "self" });
   // 平台管理员门（R08-M1/S16-c7）：节点详情与在跑容器同属平台级读面；
   // Console fail-closed（whoami 未到/失败/非管理员都不请求读面）。
   const platformAdmin = whoami.data?.platformAdmin === true;
-  const nodes = useNodes(platformAdmin);
-  const node = (nodes.data ?? []).find((entry) => entry.platform_id === nodeId);
+  const nodes = useQuery({
+    ...collectionQueryOptions(nodesResource, nodesDirectorySearch.defaults, { refetchInterval: 15_000 }),
+    enabled: platformAdmin,
+  });
+  const node = (nodes.data?.rows ?? []).find((entry) => entry.platform_id === nodeId);
 
-  if (whoami.isPending) {
+  if (whoami.status === "loading") {
     return (
       <PageFrame>
         <Skeleton className="mb-5 h-24 w-full rounded-xl" />
@@ -56,12 +63,12 @@ export function NodeDetailPage({ nodeId }: { nodeId: string }) {
   return (
     <PageFrame
       breadcrumb={
-        <span className="text-xs text-muted-foreground">
-          <Link to="/nodes" className="hover:text-foreground">
+        <span className="text-xs text-muted">
+          <Link to="/nodes" className="hover:text-fg">
             Nodes
           </Link>
           <span className="mx-1.5">/</span>
-          <span className="text-foreground">{node?.hostname ?? nodeId}</span>
+          <span className="text-fg">{node?.hostname ?? nodeId}</span>
         </span>
       }
     >
@@ -75,16 +82,16 @@ export function NodeDetailPage({ nodeId }: { nodeId: string }) {
         />
       ) : (
         <>
-          <section className="mb-5 flex flex-wrap items-center gap-4 rounded-xl border bg-card p-5">
+          <section className="mb-5 flex flex-wrap items-center gap-4 rounded-xl border bg-panel p-5">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <h1 className="font-heading text-xl font-semibold tracking-tight">{node.hostname}</h1>
                 <StatusBadge tone={nodeTone(node.available)}>{node.available ? "active" : "unavailable"}</StatusBadge>
                 {node.role ? (
-                  <span className="rounded-full border px-2 py-0.5 text-2xs font-semibold text-muted-foreground">{node.role}</span>
+                  <span className="rounded-full border px-2 py-0.5 text-2xs font-semibold text-muted">{node.role}</span>
                 ) : null}
               </div>
-              <div className="flex items-center gap-1 font-mono text-2xs text-muted-foreground">
+              <div className="flex items-center gap-1 font-mono text-2xs text-muted">
                 {node.platform_id}
                 <CopyButton value={node.platform_id ?? ""} />
               </div>
@@ -103,10 +110,10 @@ export function NodeDetailPage({ nodeId }: { nodeId: string }) {
 // 中继活体与首末见时间——排障第一眼（relay offline = exec 不可达）。
 function NodeFacts({ node }: { node: Node }) {
   return (
-    <section className="mb-5 rounded-xl border bg-card p-4">
+    <section className="mb-5 rounded-xl border bg-panel p-4">
       <h3 className="mb-3 text-sm font-semibold">Node</h3>
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
-        <dt className="text-muted-foreground">relay</dt>
+        <dt className="text-muted">relay</dt>
         <dd>
           {node.relay_online ? (
             <span className="font-mono" title="node relay online — exec sessions can route to this node">
@@ -118,11 +125,11 @@ function NodeFacts({ node }: { node: Node }) {
             </span>
           )}
         </dd>
-        <dt className="text-muted-foreground">first seen</dt>
+        <dt className="text-muted">first seen</dt>
         <dd>
           <RelativeTime value={node.first_seen_at} />
         </dd>
-        <dt className="text-muted-foreground">last seen</dt>
+        <dt className="text-muted">last seen</dt>
         <dd>
           <RelativeTime value={node.last_seen_at} />
         </dd>
@@ -162,13 +169,13 @@ function workloadCell(row: NodeContainer) {
 
 function ContainersCard({ nodeId }: { nodeId: string }) {
   const containers = useNodeContainers(nodeId);
-  const rows = containers.data ?? [];
+  const rows = containers.data?.rows ?? [];
   return (
-    <section className="rounded-xl border bg-card p-4">
+    <section className="rounded-xl border bg-panel p-4">
       <div className="mb-3 flex items-center justify-between">
         <h3 className="text-sm font-semibold">Containers</h3>
         {!containers.isPending && !containers.isError ? (
-          <span className="text-2xs text-muted-foreground">{rows.length} running</span>
+          <span className="text-2xs text-muted">{rows.length} running</span>
         ) : null}
       </div>
       {containers.isPending ? (
@@ -207,12 +214,12 @@ function ContainersCard({ nodeId }: { nodeId: string }) {
                 <TableCell className="text-xs">{workloadCell(row)}</TableCell>
                 <TableCell>
                   {row.domain ? (
-                    <span className="rounded-full border px-2 py-0.5 text-2xs font-semibold text-muted-foreground">{row.domain}</span>
+                    <span className="rounded-full border px-2 py-0.5 text-2xs font-semibold text-muted">{row.domain}</span>
                   ) : (
-                    <span className="text-xs text-muted-foreground">—</span>
+                    <span className="text-xs text-muted">—</span>
                   )}
                 </TableCell>
-                <TableCell className="break-all font-mono text-xs text-muted-foreground">{row.image || "—"}</TableCell>
+                <TableCell className="break-all font-mono text-xs text-muted">{row.image || "—"}</TableCell>
               </TableRow>
             ))}
           </TableBody>

@@ -2,7 +2,8 @@ import { Suspense, useState, type ReactNode } from "react";
 import { Outlet } from "@tanstack/react-router";
 import { BoxIcon } from "lucide-react";
 import { AppShell, MobileNav, type NavSection } from "@/components/kit/shell/app-shell";
-import { useWhoami } from "@/lib/catalog";
+import { useRecord } from "@lynx-go/uikit-core";
+import { sessionResource } from "@/kit/settings";
 import { navSections } from "@/lib/nav";
 import { useProjectId } from "@/lib/project";
 import { CommandPalette } from "./command-palette";
@@ -18,8 +19,9 @@ export function ShellLayout() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [projectId] = useProjectId();
   // 平台域入口显隐依据（fail-closed：whoami 未到/失败即隐藏）——Nodes 读面
-  // 自 S16-c7 起是平台管理员门；user-menu 持有同一 query key，零额外请求。
-  const whoami = useWhoami(true);
+  // 自 S16-c7 起是平台管理员门；user-menu/command-palette 持有同一 kit
+  // record 键（["record","session","self"]），零额外请求。
+  const whoami = useRecord(sessionResource, { id: "self", query: { staleTime: 30_000 } });
   const sections: NavSection[] = navSections(projectId || undefined, whoami.data?.platformAdmin === true).map(
     (section) => ({
       ...section,

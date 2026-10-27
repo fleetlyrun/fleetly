@@ -1,6 +1,8 @@
 import { useNavigate, useRouterState } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import { PlusIcon, RocketIcon, SearchIcon, SparklesIcon, SquareTerminalIcon } from "lucide-react";
 import type { ReactNode } from "react";
+import { collectionQueryOptions } from "@lynx-go/uikit-core";
 import { Breadcrumb, BreadcrumbItem, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
 import {
@@ -9,11 +11,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useProjects } from "@/lib/catalog";
+import { projectsAllQuery, projectsResource } from "@/kit/projects";
 
 // 顶条（AppShell 主区 flex-none 行）：移动菜单触发 + 面包屑 + New + 搜索⌘K。
 // 面包屑按 pathname 分段直译，静态段走词条表；项目 ID 段反查目录显
 // 项目名（W-1 走查教训：裸 ID 不该出现在面包屑），查无此段时回退截断。
+// 项目目录读（批4 kit 资源化）：固定窗伴读不经 URL（useCollection 的
+// location 级共享键会被列表页 q/cursor 污染——kit/projects.ts 注）。
 const CRUMB_LABELS: Record<string, string> = {
   p: "Projects",
   overview: "Overview",
@@ -45,8 +49,11 @@ const CRUMB_LABELS: Record<string, string> = {
 
 export function Topbar({ onOpenPalette, mobileNav }: { onOpenPalette: () => void; mobileNav?: ReactNode }) {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const projects = useProjects();
-  const projectNames = new Map((projects.data ?? []).map((project) => [project.id, project.name]));
+  // 60s 轮询对齐旧 catalog useProjects（CATALOG_MS）。
+  const projects = useQuery(
+    collectionQueryOptions(projectsResource, projectsAllQuery, { refetchInterval: 60_000 }),
+  );
+  const projectNames = new Map((projects.data?.rows ?? []).map((project) => [project.id, project.name]));
   const crumbs = pathname.split("/").filter(Boolean);
 
   return (
@@ -65,7 +72,7 @@ export function Topbar({ onOpenPalette, mobileNav }: { onOpenPalette: () => void
               <BreadcrumbItem key={`${crumb}-${index}`}>
                 <div className="flex items-center gap-2">
                   {index > 0 ? <BreadcrumbSeparator /> : null}
-                  <BreadcrumbPage className={last ? "" : "text-muted-foreground"} title={named === undefined && crumb.length > 20 ? crumb : undefined}>
+                  <BreadcrumbPage className={last ? "" : "text-muted"} title={named === undefined && crumb.length > 20 ? crumb : undefined}>
                     {shown}
                   </BreadcrumbPage>
                 </div>
@@ -77,10 +84,10 @@ export function Topbar({ onOpenPalette, mobileNav }: { onOpenPalette: () => void
       )}
       <div className="ml-auto flex items-center gap-1">
         <NewMenu />
-        <Button variant="ghost" size="sm" className="gap-2 text-muted-foreground" onClick={onOpenPalette}>
+        <Button variant="ghost" size="sm" className="gap-2 text-muted" onClick={onOpenPalette}>
           <SearchIcon className="size-3.5" />
           <span className="hidden md:inline">Search…</span>
-          <kbd className="pointer-events-none rounded border border-line bg-panel-2 px-1.5 font-mono text-2xs text-muted-foreground">
+          <kbd className="pointer-events-none rounded border border-line bg-panel-2 px-1.5 font-mono text-2xs text-muted">
             ⌘K
           </kbd>
         </Button>

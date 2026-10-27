@@ -25,7 +25,7 @@ function GitHubAppsPage() {
       description="Platform-wide installations — private-repo access material for every project (ADR-0073)"
     >
       <GitHubAppsView from={Route.id} />
-      <p className="mt-3 flex items-start gap-1.5 rounded-lg border bg-panel-2/40 px-3 py-2 text-2xs text-muted-foreground">
+      <p className="mt-3 flex items-start gap-1.5 rounded-lg border bg-panel-2/40 px-3 py-2 text-2xs text-muted">
         <InfoIcon className="mt-px size-3.5 flex-none" />
         Global rows serve every project at clone time; a project-scoped row for the same owner shadows the global one for that
         project only. These rows are platform-admin material — visible and writable only with a platform-admin token.

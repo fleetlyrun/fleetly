@@ -133,7 +133,7 @@ function ConnectPage() {
     return (
       <ConnectFrame>
         {complete.pending ? (
-          <p className="flex items-center gap-2 text-sm text-muted-foreground">
+          <p className="flex items-center gap-2 text-sm text-muted">
             <FingerprintIcon className="size-4" /> Verifying the installation and landing the row…
           </p>
         ) : completeError != null ? (
@@ -148,7 +148,7 @@ function ConnectPage() {
     return (
       <ConnectFrame>
         {consume.pending ? (
-          <p className="text-sm text-muted-foreground">Exchanging the creation code…</p>
+          <p className="text-sm text-muted">Exchanging the creation code…</p>
         ) : consumeError != null ? (
           <ErrorState error={consumeError} onRetry={() => void consume.mutate(consumeInput)} />
         ) : (
@@ -158,7 +158,7 @@ function ConnectPage() {
               App <span className="font-semibold">{appName}</span> created — the key was delivered to fleetly (sealed, never
               shown).
             </p>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-muted">
               Step 2 of 3 — install it on your account and pick the repositories it may read.
             </p>
             <Button onClick={() => installUrl != null && (window.location.href = installUrl)}>
@@ -166,7 +166,7 @@ function ConnectPage() {
               Continue to GitHub — install the app
               <ArrowRightIcon />
             </Button>
-            <p className="text-2xs text-muted-foreground">
+            <p className="text-2xs text-muted">
               After installing, GitHub redirects right back here and the row lands automatically.
             </p>
           </div>

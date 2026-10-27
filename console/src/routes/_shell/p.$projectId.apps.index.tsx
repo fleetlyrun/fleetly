@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { collectionQueryOptions } from "@lynx-go/uikit-core";
 import { Link, useNavigate, createFileRoute } from "@tanstack/react-router";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
 import { MoreHorizontalIcon, PlusIcon, RocketIcon, ScrollTextIcon, SquareTerminalIcon } from "lucide-react";
@@ -11,7 +13,6 @@ import { Pagination } from "@/components/kit/query/pagination";
 import { Form } from "@/components/kit/command/form";
 import { TextField } from "@/components/kit/command/fields";
 import { DeploySheet } from "@/features/deployments/deploy-sheet";
-import { useAppDeployments, type Deployment } from "@/features/deployments/hooks";
 import { CopyButton } from "@/components/domain/copy-button";
 import { CliEquivalent } from "@/components/domain/list-toolbar";
 import { PageFrame } from "@/components/domain/page-frame";
@@ -27,8 +28,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { describeApiError } from "@/kit/errors";
-import { useProjectName, useRoutes, type AppEntry } from "@/lib/catalog";
-import { appsResource, appsSearch } from "@/kit/apps";
+import { appsResource, appsSearch, type AppEntry } from "@/kit/apps";
+import { appDeploymentsResource, appDeploymentsLookup, type DeploymentRow } from "@/kit/deployments";
+import { routesResource, routesLookup } from "@/kit/routes";
+import { projectsAllQuery, projectsResource } from "@/kit/projects";
 
 // Apps 列表（fleet-ui 试点切片，2026-10-24）：骨架换 fleet 块（ListPage ×
 // FilterBar × DataTable × Pagination），快筛/分页/排序首次进 URL（q/size/
@@ -42,6 +45,19 @@ export const Route = createFileRoute("/_shell/p/$projectId/apps/")({
   component: AppsListPage,
 });
 
+// 行级最近部署读面（批4：hooks.ts 的 useAppDeployments 退役——per-App
+// 资源按 (projectId, appId) 键共享缓存，5s 轮询同旧拍；单元格挂载语义
+// 原样保留）。
+function useLatestDeployment(projectId: string, appId: string, from: string): DeploymentRow | undefined {
+  const deployments = useCollection(appDeploymentsResource, {
+    from,
+    search: appDeploymentsLookup,
+    scope: { projectId, appId },
+    query: { refetchInterval: 5_000 },
+  });
+  return deployments.rows[0];
+}
+
 function AppsListPage() {
   const { projectId } = Route.useParams();
   const navigate = useNavigate();
@@ -54,8 +70,20 @@ function AppsListPage() {
     scope: { projectId },
     query: { refetchInterval: 60_000 },
   });
-  const routes = useRoutes(projectId);
-  const projectName = useProjectName(projectId);
+  // 批4（2026-10-27）：路由归簇读面迁 kit useCollection（大页 lookup 不截
+  // 断行集；15s 轮询同旧拍）。
+  const routes = useCollection(routesResource, {
+    from: Route.id,
+    search: routesLookup,
+    scope: { projectId },
+    query: { refetchInterval: 15_000 },
+  });
+  // 项目名反查（R1 的 kit/projects 伴读形：collectionQueryOptions + 固定窗，
+  // 不经 URL——旧 catalog useProjects 60s 拍）。
+  const projectName = useQuery({
+    ...collectionQueryOptions(projectsResource, projectsAllQuery, { refetchInterval: 60_000 }),
+    select: (segment) => segment.rows.find((project) => project.id === projectId)?.name,
+  }).data;
   const rows = list.rows;
   const [createOpen, setCreateOpen] = useState(false);
   const [deployOpen, setDeployOpen] = useState(false);
@@ -63,7 +91,7 @@ function AppsListPage() {
 
   // ROUTES 列数据源：项目路由按 app 归簇（host 计数；链接进 app routes tab）。
   const routeCountByApp = new Map<string, number>();
-  for (const route of routes.data ?? []) {
+  for (const route of routes.rows) {
     if (route.app_id == null) continue;
     routeCountByApp.set(route.app_id, (routeCountByApp.get(route.app_id) ?? 0) + 1);
   }
@@ -78,7 +106,7 @@ function AppsListPage() {
           <ProjectAvatar seed={row.original.id} label={row.original.name} />
           <div className="min-w-0">
             <div className="text-sm font-semibold">{row.original.name}</div>
-            <div className="flex items-center gap-0.5 font-mono text-2xs text-muted-foreground">
+            <div className="flex items-center gap-0.5 font-mono text-2xs text-muted">
               {row.original.id.slice(0, 10)}…
               <CopyButton value={row.original.id ?? ""} />
             </div>
@@ -89,19 +117,19 @@ function AppsListPage() {
     {
       id: "status",
       header: "Status",
-      cell: ({ row }) => <LatestCell appId={row.original.id} />,
+      cell: ({ row }) => <LatestCell projectId={projectId} appId={row.original.id} from={Route.id} />,
     },
     {
       id: "latest",
       header: "Latest deployment",
-      cell: ({ row }) => <LatestDetailCell appId={row.original.id} />,
+      cell: ({ row }) => <LatestDetailCell projectId={projectId} appId={row.original.id} from={Route.id} />,
     },
     {
       id: "routes",
       header: "Routes",
       cell: ({ row }) => {
         const count = routeCountByApp.get(row.original.id ?? "") ?? 0;
-        if (count === 0) return <span className="text-xs text-muted-foreground">0</span>;
+        if (count === 0) return <span className="text-xs text-muted">0</span>;
         return (
           <Link
             to="/p/$projectId/apps/$appId/routes"
@@ -116,7 +144,7 @@ function AppsListPage() {
     {
       id: "updated",
       header: "Updated",
-      cell: ({ row }) => <LatestUpdatedCell appId={row.original.id} />,
+      cell: ({ row }) => <LatestUpdatedCell projectId={projectId} appId={row.original.id} from={Route.id} />,
     },
     {
       id: "actions",
@@ -190,6 +218,7 @@ function AppsListPage() {
               apps={[...rows]}
               defaultAppId={deployAppId || rows[0]?.id || ""}
               projectId={projectId}
+              from={Route.id}
               onDeployed={(deploymentId) => {
                 void navigate({
                   to: "/p/$projectId/apps/$appId/deployments/$deploymentId",
@@ -264,7 +293,7 @@ function NewAppDialog({
           onCancel={() => onOpenChange(false)}
         >
           <TextField form={form} name="name" label="Name" required />
-          <p className="text-2xs text-muted-foreground">
+          <p className="text-2xs text-muted">
             Source and configuration land on the app's tabs after creation — deploy to freeze the first spec.
           </p>
         </Form>
@@ -273,21 +302,15 @@ function NewAppDialog({
   );
 }
 
-// 单元格组件（每行自持最近部署查询——与磁贴/详情页同查询键共享缓存）。
-function useLatestDeployment(appId: string): Deployment | undefined {
-  const deployments = useAppDeployments(appId);
-  return deployments.data?.[0];
-}
-
-function LatestCell({ appId }: { appId: string }) {
-  const latest = useLatestDeployment(appId);
-  if (!latest?.state) return <span className="text-xs text-muted-foreground">—</span>;
+function LatestCell({ projectId, appId, from }: { projectId: string; appId: string; from: string }) {
+  const latest = useLatestDeployment(projectId, appId, from);
+  if (!latest?.state) return <span className="text-xs text-muted">—</span>;
   return <DeploymentStatusBadge state={latest.state} />;
 }
 
-function LatestDetailCell({ appId }: { appId: string }) {
-  const latest = useLatestDeployment(appId);
-  if (!latest) return <span className="text-xs text-muted-foreground">no deployments yet</span>;
+function LatestDetailCell({ projectId, appId, from }: { projectId: string; appId: string; from: string }) {
+  const latest = useLatestDeployment(projectId, appId, from);
+  if (!latest) return <span className="text-xs text-muted">no deployments yet</span>;
   return (
     <div className="min-w-0">
       <div className="font-mono text-xs">
@@ -303,9 +326,9 @@ function LatestDetailCell({ appId }: { appId: string }) {
   );
 }
 
-function LatestUpdatedCell({ appId }: { appId: string }) {
-  const latest = useLatestDeployment(appId);
-  return <RelativeTime value={latest?.updated_at} className="text-xs text-muted-foreground" />;
+function LatestUpdatedCell({ projectId, appId, from }: { projectId: string; appId: string; from: string }) {
+  const latest = useLatestDeployment(projectId, appId, from);
+  return <RelativeTime value={latest?.updated_at} className="text-xs text-muted" />;
 }
 
 function RowActions({ projectId, appId, onDeploy }: { projectId: string; appId: string; onDeploy: () => void }) {

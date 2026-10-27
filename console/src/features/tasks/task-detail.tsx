@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { ClockIcon, ListRestartIcon } from "lucide-react";
-import { useCommand } from "@lynx-go/uikit-core";
+import { useCollection, useCommand } from "@lynx-go/uikit-core";
 import type { ApiError, CommandResult } from "@lynx-go/uikit-core/kernel";
 import type { components } from "@/api/automation";
-import { useRuns, useSchedules, useTasks } from "@/lib/catalog";
+
 import { ContentCrumb } from "@/components/domain/content-crumb";
 import { CopyButton } from "@/components/domain/copy-button";
 import { EmptyState } from "@/components/domain/empty-state";
@@ -18,16 +18,26 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { describeApiError } from "@/kit/errors";
-import { stopRunCommand, tasksResource } from "@/kit/tasks";
+import {
+  runsLookup,
+  runsResource,
+  schedulesLookup,
+  schedulesResource,
+  stopRunCommand,
+  tasksLookup,
+  tasksResource,
+} from "@/kit/tasks";
 import { useLogStream } from "@/features/logs/use-log-stream";
 import { LogViewer } from "@/features/logs/log-viewer";
 
 // Task 详情（IA v3 T3b，3 tabs——工作负载三兄弟对齐）：Overview（定义/形态/
 // Lease/Schedule 反链）/ Runs（列表 + Stop；run 日志按 T8 结论一期无通路，
 // WaitRun 收流视图后续批）/ Settings（Scale/Stop 排空/删除）。批2 写路径
-// 命令化：动作族迁 kit 命令面（读面 useTasks/useRuns/useSchedules 仍走
-// catalog，失效经 legacyKeys 桥回收）；ok 沿用原 toast 句，rejected/
-// conflict → result.message，failure → describeApiError。
+// 命令化：动作族迁 kit 命令面；批4（2026-10-27）读面收编——tasks/
+// schedules/runs 三读面迁 kit useCollection（行查找/join 用大页 lookup
+// schema，15s 轮询同旧拍；失效 = kit selector + legacyKeys 桥）；ok 沿用
+// 原 toast 句，rejected/conflict → result.message，failure →
+// describeApiError。
 
 export type TaskEntry = components["schemas"]["v1Task"];
 type RunEntry = components["schemas"]["v1Run"];
@@ -60,12 +70,23 @@ function runTone(state: string | undefined): StatusTone {
   }
 }
 
-export function TaskDetailPage({ projectId, taskId }: { projectId: string; taskId: string }) {
-  const tasks = useTasks(projectId);
-  const task = (tasks.data ?? []).find((entry) => entry.id === taskId);
-  const schedules = useSchedules(projectId);
+export function TaskDetailPage({ projectId, taskId, routeId }: { projectId: string; taskId: string; routeId: string }) {
+  // 行查找读面（大页 lookup 不截断——任务/日程超首页也能命中）。
+  const tasks = useCollection(tasksResource, {
+    from: routeId,
+    search: tasksLookup,
+    scope: { projectId },
+    query: { refetchInterval: 15_000 },
+  });
+  const task = tasks.rows.find((entry) => entry.id === taskId);
+  const schedules = useCollection(schedulesResource, {
+    from: routeId,
+    search: schedulesLookup,
+    scope: { projectId },
+    query: { refetchInterval: 15_000 },
+  });
   // 来源 Schedule 反链：schedule.last_task_id = 最近一拍铸出的 Task。
-  const sourceSchedule = (schedules.data ?? []).find((schedule) => schedule.last_task_id === taskId);
+  const sourceSchedule = schedules.rows.find((schedule) => schedule.last_task_id === taskId);
   const [tab, setTab] = useState<"overview" | "runs" | "settings">("overview");
 
   return (
@@ -80,17 +101,17 @@ export function TaskDetailPage({ projectId, taskId }: { projectId: string; taskI
     >
       {/* 英雄卡对齐 App Detail（2026-10-12 走查：裸标题与 Apps 形态脱队——
           头像/名称/徽标/可读 id 统一收卡）。 */}
-      <section className="mb-5 flex flex-wrap items-center gap-4 rounded-xl border bg-card p-5">
+      <section className="mb-5 flex flex-wrap items-center gap-4 rounded-xl border bg-panel p-5">
         <ProjectAvatar seed={taskId} label={task?.name ?? taskId} className="size-11 rounded-xl text-base" />
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="font-heading text-xl font-semibold tracking-tight">{task?.name ?? taskId}</h1>
             <StatusBadge tone={taskTone(task?.state)}>{task?.state ?? "unknown"}</StatusBadge>
             {task?.form ? (
-              <span className="rounded-full border px-2 py-0.5 text-2xs font-semibold text-muted-foreground">{task.form}</span>
+              <span className="rounded-full border px-2 py-0.5 text-2xs font-semibold text-muted">{task.form}</span>
             ) : null}
           </div>
-          <div className="flex items-center gap-1 font-mono text-2xs text-muted-foreground">
+          <div className="flex items-center gap-1 font-mono text-2xs text-muted">
             {taskId}
             <CopyButton value={taskId} />
           </div>
@@ -109,7 +130,7 @@ export function TaskDetailPage({ projectId, taskId }: { projectId: string; taskI
       {tab === "overview" ? (
         <TaskOverview task={task} sourceScheduleId={sourceSchedule?.id} sourceScheduleName={sourceSchedule?.name} sourceScheduleCron={sourceSchedule?.cron} />
       ) : null}
-      {tab === "runs" ? <TaskRuns taskId={taskId} /> : null}
+      {tab === "runs" ? <TaskRuns projectId={projectId} taskId={taskId} routeId={routeId} /> : null}
       {tab === "settings" ? <TaskSettings task={task} projectId={projectId} taskId={taskId} /> : null}
     </PageFrame>
   );
@@ -131,54 +152,54 @@ function TaskOverview({
   }
   return (
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-      <section className="rounded-xl border bg-card p-4">
+      <section className="rounded-xl border bg-panel p-4">
         <h3 className="mb-3 text-sm font-semibold">Definition</h3>
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
-          <dt className="text-muted-foreground">image</dt>
+          <dt className="text-muted">image</dt>
           <dd className="break-all font-mono">{task.image ?? "—"}</dd>
-          <dt className="text-muted-foreground">command</dt>
+          <dt className="text-muted">command</dt>
           <dd className="font-mono">{task.command?.length ? task.command.join(" ") : "—"}</dd>
-          <dt className="text-muted-foreground">network group</dt>
+          <dt className="text-muted">network group</dt>
           <dd className="font-mono">{task.network_group || "—"}</dd>
-          <dt className="text-muted-foreground">owner token</dt>
+          <dt className="text-muted">owner token</dt>
           <dd className="font-mono">{task.owner_token_id ? `${task.owner_token_id.slice(0, 12)}…` : "—"}</dd>
         </dl>
       </section>
-      <section className="rounded-xl border bg-card p-4">
+      <section className="rounded-xl border bg-panel p-4">
         <h3 className="mb-3 text-sm font-semibold">Pool &amp; lease</h3>
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
-          <dt className="text-muted-foreground">form</dt>
+          <dt className="text-muted">form</dt>
           <dd className="font-mono">{task.form ?? "—"}</dd>
-          <dt className="text-muted-foreground">desired concurrency</dt>
+          <dt className="text-muted">desired concurrency</dt>
           <dd className="font-mono">{task.desired_concurrency ?? "—"}</dd>
-          <dt className="text-muted-foreground">active runs</dt>
+          <dt className="text-muted">active runs</dt>
           <dd className="font-mono">{task.active_run_count ?? "0"}</dd>
-          <dt className="text-muted-foreground">ttl</dt>
+          <dt className="text-muted">ttl</dt>
           <dd className="font-mono">{task.ttl_seconds ? `${task.ttl_seconds}s` : "—"}</dd>
-          <dt className="text-muted-foreground">lease deadline</dt>
+          <dt className="text-muted">lease deadline</dt>
           <dd>
             <RelativeTime value={task.lease_deadline} />
           </dd>
         </dl>
       </section>
-      <section className="rounded-xl border bg-card p-4">
+      <section className="rounded-xl border bg-panel p-4">
         <h3 className="mb-3 text-sm font-semibold">Timing &amp; source</h3>
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
-          <dt className="text-muted-foreground">dns</dt>
+          <dt className="text-muted">dns</dt>
           <dd className="break-all font-mono">{task.dns_name || "—"}</dd>
-          <dt className="text-muted-foreground">created</dt>
+          <dt className="text-muted">created</dt>
           <dd>
             <RelativeTime value={task.created_at} />
           </dd>
-          <dt className="text-muted-foreground">updated</dt>
+          <dt className="text-muted">updated</dt>
           <dd>
             <RelativeTime value={task.updated_at} />
           </dd>
-          <dt className="text-muted-foreground">finished</dt>
+          <dt className="text-muted">finished</dt>
           <dd>
             <RelativeTime value={task.finished_at} />
           </dd>
-          <dt className="text-muted-foreground">schedule</dt>
+          <dt className="text-muted">schedule</dt>
           <dd>
             {sourceScheduleId ? (
               <span className="flex flex-col">
@@ -186,10 +207,10 @@ function TaskOverview({
                   {sourceScheduleName || sourceScheduleId}
                   {sourceScheduleCron ? ` · ${sourceScheduleCron}` : ""}
                 </span>
-                <span className="text-2xs text-muted-foreground">last beat spawned this task</span>
+                <span className="text-2xs text-muted">last beat spawned this task</span>
               </span>
             ) : (
-              <span className="text-muted-foreground">—</span>
+              <span className="text-muted">—</span>
             )}
           </dd>
         </dl>
@@ -198,19 +219,24 @@ function TaskOverview({
   );
 }
 
-function TaskRuns({ taskId }: { taskId: string }) {
-  const runs = useRuns(taskId);
-  const rows = runs.data ?? [];
+function TaskRuns({ projectId, taskId, routeId }: { projectId: string; taskId: string; routeId: string }) {
+  const runs = useCollection(runsResource, {
+    from: routeId,
+    search: runsLookup,
+    scope: { projectId, taskId },
+    query: { refetchInterval: 15_000 },
+  });
+  const rows = runs.rows;
   return (
     <div className="flex flex-col gap-3">
-      {runs.isPending ? (
-        <p className="py-10 text-center text-xs text-muted-foreground">Loading runs…</p>
+      {runs.status === "loading" ? (
+        <p className="py-10 text-center text-xs text-muted">Loading runs…</p>
       ) : rows.length === 0 ? (
         <EmptyState icon={ListRestartIcon} title="No runs yet" description="Runs appear here as the pool (or a schedule beat) spawns them." />
       ) : (
         <div className="overflow-hidden rounded-xl border">
           <table className="w-full text-sm">
-            <thead className="border-b bg-panel-2/40 text-left text-2xs font-semibold tracking-wide text-muted-foreground uppercase">
+            <thead className="border-b bg-panel-2/40 text-left text-2xs font-semibold tracking-wide text-muted uppercase">
               <tr>
                 <th className="px-3 py-2">Run</th>
                 <th className="px-3 py-2">State</th>
@@ -228,7 +254,7 @@ function TaskRuns({ taskId }: { taskId: string }) {
           </table>
         </div>
       )}
-      <p className="text-2xs text-muted-foreground">
+      <p className="text-2xs text-muted">
         Run logs need the database/run addressing axis (IA v3 §8 二期 proto) — states and stop reasons are shown here until then.
       </p>
     </div>
@@ -275,11 +301,11 @@ function RunRow({ run }: { run: RunEntry }) {
           {run.state ?? "unknown"}
         </span>
       </td>
-      <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
+      <td className="px-3 py-2 font-mono text-xs text-muted">
         {run.exit_code === 0 || (run.exit_code != null && run.exit_code !== 0) ? run.exit_code : "—"}
       </td>
-      <td className="px-3 py-2 text-xs text-muted-foreground">{run.stop_reason ?? "—"}</td>
-      <td className="px-3 py-2 text-xs text-muted-foreground">
+      <td className="px-3 py-2 text-xs text-muted">{run.stop_reason ?? "—"}</td>
+      <td className="px-3 py-2 text-xs text-muted">
         <RelativeTime value={run.created_at} />
       </td>
       <td className="px-3 py-2 text-right">
@@ -304,11 +330,11 @@ function RunRow({ run }: { run: RunEntry }) {
             <div className="h-64 overflow-hidden rounded-lg border">
               <LogViewer frames={log.frames} streaming={log.streaming} />
             </div>
-            <div className="mt-1.5 flex items-center gap-3 font-mono text-2xs text-muted-foreground">
+            <div className="mt-1.5 flex items-center gap-3 font-mono text-2xs text-muted">
               <span>scope: run {run.id}</span>
               <span>{log.frames.length} frames</span>
               {log.error != null ? (
-                <span className="text-destructive">{log.error instanceof Error ? log.error.message : String(log.error)}</span>
+                <span className="text-err">{log.error instanceof Error ? log.error.message : String(log.error)}</span>
               ) : null}
             </div>
           </td>
@@ -353,11 +379,11 @@ function TaskSettings({ task, projectId, taskId }: { task: TaskEntry | undefined
   });
   return (
     <div className="flex flex-col gap-4">
-      <section className="rounded-xl border bg-card p-5">
+      <section className="rounded-xl border bg-panel p-5">
         <h3 className="mb-3 text-sm font-semibold">Pool operations</h3>
         <div className="flex flex-wrap items-end gap-3">
           <div className="flex flex-col gap-1">
-            <Label htmlFor="task-scale" className="text-2xs text-muted-foreground">
+            <Label htmlFor="task-scale" className="text-2xs text-muted">
               Desired concurrency
             </Label>
             <Input
@@ -389,9 +415,9 @@ function TaskSettings({ task, projectId, taskId }: { task: TaskEntry | undefined
           </Button>
         </div>
       </section>
-      <section className="rounded-xl border border-destructive/30 bg-card p-5">
-        <h3 className="mb-2 text-sm font-semibold text-destructive">Danger zone</h3>
-        <p className="mb-4 text-xs text-muted-foreground">
+      <section className="rounded-xl border border-err/30 bg-panel p-5">
+        <h3 className="mb-2 text-sm font-semibold text-err">Danger zone</h3>
+        <p className="mb-4 text-xs text-muted">
           Deleting the task removes its definition and pool. Terminal runs stay in the ledger; active runs are drained first.
         </p>
         <AlertDialog>

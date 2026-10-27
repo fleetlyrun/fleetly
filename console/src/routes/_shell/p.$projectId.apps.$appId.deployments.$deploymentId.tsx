@@ -10,5 +10,5 @@ export const Route = createFileRoute(
 
 function RouteWrapper() {
   const { projectId, appId, deploymentId } = Route.useParams();
-  return <DeploymentDetailView projectId={projectId} appId={appId} deploymentId={deploymentId} />;
+  return <DeploymentDetailView projectId={projectId} appId={appId} deploymentId={deploymentId} routeId={Route.id} />;
 }

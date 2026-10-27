@@ -1,11 +1,16 @@
 import { Link } from "@tanstack/react-router";
+import { useCollection } from "@lynx-go/uikit-core";
 import { ArrowUpRightIcon, BoxesIcon, GlobeIcon, LayersIcon } from "lucide-react";
-import { useAppDeployments } from "@/features/deployments/hooks";
-import { useAppSpecs } from "@/features/spec/use-app-specs";
 import { firingAlerts } from "@/features/apps-tabs/alert-badges";
 import { lastPointValue } from "@/features/fleet/freshness";
-import { useAlertStates, useApps, useRevisions, useRoutes, useScopedMetricsSeries } from "@/lib/catalog";
+import { useScopedMetricsSeries } from "@/kit/metrics";
 import { formatBytes, revisionLabel } from "@/lib/format";
+import { alertStatesResource, alertStatesLookup } from "@/kit/alerts";
+import { appSpecsResource, appSpecsLookup } from "@/kit/app-specs";
+import { appDeploymentsResource, appDeploymentsLookup } from "@/kit/deployments";
+import { revisionsResource, revisionsLookup } from "@/kit/revisions";
+import { routesResource, routesLookup } from "@/kit/routes";
+import { describeApiError } from "@/kit/errors";
 import { RunningCount } from "@/features/apps-tabs/running-instances";
 import { CopyButton } from "@/components/domain/copy-button";
 import { EmptyState } from "@/components/domain/empty-state";
@@ -22,15 +27,44 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 // 健康吗"——App 汇总之下铺 per-process 行（声明 Replicas × live Running），
 // 不进 Instance（钻取点在 Processes 页）。组件自路由文件外挪，与其余
 // tab 同构（features/apps-tabs）。
-export function AppOverviewTab({ projectId, appId }: { projectId: string; appId: string }) {
-  const apps = useApps(projectId);
-  const deployments = useAppDeployments(appId);
-  const revisions = useRevisions(appId);
-  const routes = useRoutes(projectId);
-  const alerts = useAlertStates();
-  const { specs } = useAppSpecs(projectId, apps.data ?? []);
-  const rows = deployments.data ?? [];
-  const firing = firingAlerts(alerts.data, appId);
+// 批4（2026-10-27）读面收编：apps/deployments/revisions/routes/alert
+// states/app specs 六读面迁 kit useCollection（routeId 由宿主路由注入，
+// NetworksPanel 同款线程）；join 读面一律大页 lookup schema（窗口不截断
+// 行集），轮询拍照抄旧 catalog 常量。metrics 仍走 lib/catalog 的 scoped
+// 模板查询（telemetry 面属 R2 域）。
+export function AppOverviewTab({ projectId, appId, routeId }: { projectId: string; appId: string; routeId: string }) {
+  const deployments = useCollection(appDeploymentsResource, {
+    from: routeId,
+    search: appDeploymentsLookup,
+    scope: { projectId, appId },
+    query: { refetchInterval: 5_000 },
+  });
+  const revisions = useCollection(revisionsResource, {
+    from: routeId,
+    search: revisionsLookup,
+    scope: { projectId, appId },
+    query: { refetchInterval: 15_000 },
+  });
+  const routes = useCollection(routesResource, {
+    from: routeId,
+    search: routesLookup,
+    scope: { projectId },
+    query: { refetchInterval: 15_000 },
+  });
+  const alerts = useCollection(alertStatesResource, {
+    from: routeId,
+    search: alertStatesLookup,
+    query: { refetchInterval: 15_000 },
+  });
+  const specsList = useCollection(appSpecsResource, {
+    from: routeId,
+    search: appSpecsLookup,
+    scope: { projectId },
+    query: { refetchInterval: 60_000 },
+  });
+  const specs = new Map(specsList.rows.map((row) => [row.appId, row.spec]));
+  const rows = deployments.rows;
+  const firing = firingAlerts([...alerts.rows], appId);
   const spec = specs.get(appId);
   const specProcesses = spec?.processes ?? [];
   const replicas = specProcesses.reduce((sum, process) => sum + Number(process.replicas ?? 0), 0);
@@ -40,8 +74,9 @@ export function AppOverviewTab({ projectId, appId }: { projectId: string; appId:
   const cpuValue = lastPointValue(cpu.data?.series);
   const memValue = lastPointValue(mem.data?.series);
   // R 序号对表：revision id → seq
-  const seqByRevision = new Map((revisions.data ?? []).map((rev) => [rev.id ?? "", rev.seq ?? ""]));
-  const appRoutes = (routes.data ?? []).filter((route) => route.app_id === appId);
+  const seqByRevision = new Map(revisions.rows.map((rev) => [rev.id ?? "", rev.seq ?? ""]));
+  const appRoutes = routes.rows.filter((route) => route.app_id === appId);
+  const deploymentsPending = deployments.status === "loading";
 
   return (
     <div className="flex flex-col gap-4">
@@ -68,10 +103,10 @@ export function AppOverviewTab({ projectId, appId }: { projectId: string; appId:
             <CardTitle className="text-sm">Current status</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-col gap-2 text-sm">
-            {deployments.isPending ? (
+            {deploymentsPending ? (
               <Skeleton className="h-20 w-full" />
-            ) : deployments.isError ? (
-              <p className="text-xs text-destructive">{deployments.error instanceof Error ? deployments.error.message : String(deployments.error)}</p>
+            ) : deployments.error != null ? (
+              <p className="text-xs text-err">{describeApiError(deployments.error)}</p>
             ) : rows.length === 0 ? (
               <EmptyState
                 icon={BoxesIcon}
@@ -80,13 +115,13 @@ export function AppOverviewTab({ projectId, appId }: { projectId: string; appId:
               />
             ) : (
               <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5">
-                <dt className="text-muted-foreground">state</dt>
+                <dt className="text-muted">state</dt>
                 <dd><DeploymentStatusBadge state={rows[0]?.state} /></dd>
-                <dt className="text-muted-foreground">generation</dt>
+                <dt className="text-muted">generation</dt>
                 <dd className="font-mono text-xs">{rows[0]?.from_generation && rows[0]?.from_generation !== "0" ? `g${rows[0]?.from_generation} → ` : ""}g{rows[0]?.generation ?? "?"}</dd>
-                <dt className="text-muted-foreground">latest revision</dt>
+                <dt className="text-muted">latest revision</dt>
                 <dd className="font-mono text-xs">{revisionLabel(seqByRevision.get(rows[0]?.to_revision ?? ""), rows[0]?.to_revision)}</dd>
-                <dt className="text-muted-foreground">updated</dt>
+                <dt className="text-muted">updated</dt>
                 <dd className="text-xs"><RelativeTime value={rows[0]?.updated_at} /></dd>
               </dl>
             )}
@@ -96,13 +131,13 @@ export function AppOverviewTab({ projectId, appId }: { projectId: string; appId:
         <Card>
           <CardHeader className="flex-row items-center">
             <CardTitle className="flex items-center gap-1.5 text-sm">
-              <GlobeIcon className="size-3.5 text-muted-foreground" />
+              <GlobeIcon className="size-3.5 text-muted" />
               Routes
             </CardTitle>
             <Link
               to="/p/$projectId/apps/$appId/routes"
               params={{ projectId, appId }}
-              className="ml-auto flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+              className="ml-auto flex items-center gap-1 text-xs font-medium text-accent hover:underline"
             >
               Manage
               <ArrowUpRightIcon className="size-3" />
@@ -110,13 +145,13 @@ export function AppOverviewTab({ projectId, appId }: { projectId: string; appId:
           </CardHeader>
           <CardContent className="flex flex-col gap-1.5 text-xs">
             {appRoutes.length === 0 ? (
-              <p className="text-muted-foreground">No public routes — declare one from the Routes tab.</p>
+              <p className="text-muted">No public routes — declare one from the Routes tab.</p>
             ) : (
               appRoutes.map((route) => (
                 <div key={route.id} className="flex items-center gap-2">
                   <span className="min-w-0 flex-1 truncate font-mono">
                     {route.host}
-                    <span className="text-muted-foreground"> → {route.process ?? "web"}:{route.port ?? "?"}</span>
+                    <span className="text-muted"> → {route.process ?? "web"}:{route.port ?? "?"}</span>
                   </span>
                   {route.host ? <CopyButton value={route.host ?? ""} /> : null}
                   <a
@@ -131,7 +166,7 @@ export function AppOverviewTab({ projectId, appId }: { projectId: string; appId:
                 </div>
               ))
             )}
-            <p className="text-2xs text-muted-foreground">TLS auto (ACME) · managed Traefik</p>
+            <p className="text-2xs text-muted">TLS auto (ACME) · managed Traefik</p>
           </CardContent>
         </Card>
       </div>
@@ -139,13 +174,13 @@ export function AppOverviewTab({ projectId, appId }: { projectId: string; appId:
       <Card>
         <CardHeader className="flex-row items-center">
           <CardTitle className="flex items-center gap-1.5 text-sm">
-            <LayersIcon className="size-3.5 text-muted-foreground" />
+            <LayersIcon className="size-3.5 text-muted" />
             Processes
           </CardTitle>
           <Link
             to="/p/$projectId/apps/$appId/processes"
             params={{ projectId, appId }}
-            className="ml-auto flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+            className="ml-auto flex items-center gap-1 text-xs font-medium text-accent hover:underline"
           >
             Manage
             <ArrowUpRightIcon className="size-3" />
@@ -153,9 +188,9 @@ export function AppOverviewTab({ projectId, appId }: { projectId: string; appId:
         </CardHeader>
         <CardContent>
           {spec == null ? (
-            <p className="text-xs text-muted-foreground">No frozen spec yet — processes appear after the first deploy.</p>
+            <p className="text-xs text-muted">No frozen spec yet — processes appear after the first deploy.</p>
           ) : specProcesses.length === 0 ? (
-            <p className="text-xs text-muted-foreground">The frozen spec carries no processes.</p>
+            <p className="text-xs text-muted">The frozen spec carries no processes.</p>
           ) : (
             <Table className="text-xs">
               <TableHeader>
@@ -169,7 +204,7 @@ export function AppOverviewTab({ projectId, appId }: { projectId: string; appId:
                 {specProcesses.map((process) => (
                   <TableRow key={process.name ?? ""}>
                     <TableCell className="font-mono">{process.name}</TableCell>
-                    <TableCell className="font-mono text-muted-foreground">{String(process.replicas ?? 0)}</TableCell>
+                    <TableCell className="font-mono text-muted">{String(process.replicas ?? 0)}</TableCell>
                     <TableCell className="font-mono">
                       <RunningCount appId={appId} processName={process.name ?? ""} />
                     </TableCell>
@@ -178,7 +213,7 @@ export function AppOverviewTab({ projectId, appId }: { projectId: string; appId:
               </TableBody>
             </Table>
           )}
-          <p className="mt-2 text-2xs text-muted-foreground">
+          <p className="mt-2 text-2xs text-muted">
             Replicas are declared in the frozen spec; Running is the live instance count — expand the Processes tab for instance
             details.
           </p>
@@ -191,14 +226,14 @@ export function AppOverviewTab({ projectId, appId }: { projectId: string; appId:
           <Link
             to="/p/$projectId/apps/$appId/deployments"
             params={{ projectId, appId }}
-            className="ml-auto flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+            className="ml-auto flex items-center gap-1 text-xs font-medium text-accent hover:underline"
           >
             View all
             <ArrowUpRightIcon className="size-3" />
           </Link>
         </CardHeader>
         <CardContent>
-          {deployments.isPending ? (
+          {deploymentsPending ? (
             <Skeleton className="h-20 w-full" />
           ) : (
             <Table className="text-xs">
@@ -216,7 +251,7 @@ export function AppOverviewTab({ projectId, appId }: { projectId: string; appId:
                     <TableCell><DeploymentStatusBadge state={item.state} /></TableCell>
                     <TableCell className="font-mono text-2xs">{revisionLabel(seqByRevision.get(item.to_revision ?? ""), item.to_revision)}</TableCell>
                     <TableCell className="font-mono text-2xs">g{item.generation ?? "?"}</TableCell>
-                    <TableCell className="text-muted-foreground"><RelativeTime value={item.updated_at} /></TableCell>
+                    <TableCell className="text-muted"><RelativeTime value={item.updated_at} /></TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -247,13 +282,13 @@ function MetricCard({
   return (
     <Card>
       <CardContent className="flex flex-col gap-1 p-4">
-        <span className="text-2xs font-semibold tracking-wide text-muted-foreground uppercase">{label}</span>
+        <span className="text-2xs font-semibold tracking-wide text-muted uppercase">{label}</span>
         {pending ? (
           <Skeleton className="h-7 w-16" />
         ) : (
-          <span className={`font-heading text-2xl font-bold ${danger ? "text-destructive" : ""}`}>{value ?? "—"}</span>
+          <span className={`font-heading text-2xl font-bold ${danger ? "text-err" : ""}`}>{value ?? "—"}</span>
         )}
-        {hint ? <span className="truncate text-2xs text-muted-foreground">{hint}</span> : null}
+        {hint ? <span className="truncate text-2xs text-muted">{hint}</span> : null}
       </CardContent>
     </Card>
   );

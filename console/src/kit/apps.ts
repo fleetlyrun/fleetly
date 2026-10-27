@@ -1,10 +1,20 @@
 import { clientCollection, createHttp } from "@lynx-go/uikit-core/adapters";
-import { defineResource, type CommandDescriptor, type ResourceScope } from "@lynx-go/uikit-core/kernel";
+import { defineResource, scoped, type CommandDescriptor, type ResourceScope, type Segment } from "@lynx-go/uikit-core/kernel";
 import { collectionQuerySchema } from "@lynx-go/uikit-core/schema";
+import { useQuery } from "@tanstack/react-query";
+import { collectionQueryOptions } from "@lynx-go/uikit-core/react";
 import { apiSend, notifyUnauthorized } from "@/api/client";
-import type { AppEntry } from "@/lib/catalog";
 import { getToken } from "@/lib/token";
 import { runCommandMapped } from "./errors";
+
+// App 目录行（批4 catalog 退役：类型自 lib/catalog 上收至此——id/name 双
+// 全非空形态，protojson 行收敛在此钉死）。
+export interface AppEntry {
+  id: string;
+  project_id: string;
+  name: string;
+  created_at: string;
+}
 
 // fleet-ui 适配器族（试点切片：apps 目录是第一个资源，后续 12 上下文分批
 // 落此目录）。REST+protojson 直连 /v1/apps——int64 全 string（生成链钉死，
@@ -86,3 +96,33 @@ export const appsSearch = collectionQuerySchema({
   text: ["name", "id"],
   defaultSize: 20,
 });
+
+// 目录级大页 schema（非列表消费方——overview 磁贴计数、metrics/terminal
+// 选择器——直接吃 rows；取数封顶 200，窗口 200 不截断目录）。
+export const appsDirectorySearch = collectionQuerySchema({ defaultSize: 200 });
+
+// ---- 批4 追加导出（既有内容不动） ----
+
+// 目录行类型随资源出口（消费面从 catalog 的 type import 迁此单源）。
+
+// 目录名解析单源（kit 侧出口）：ID→名；目录未达时 undefined 入参回退截断
+// 短 id——裸 ID 不该出现在面包屑/hero（W-1/W-2 走查教训）。lib/catalog 的
+// 同名帮手随消费面迁移退役，口径逐字相同。
+export function appNameOf(apps: ReadonlyArray<AppEntry> | undefined, appId: string | undefined): string {
+  if (!appId) return "—";
+  const hit = apps?.find((app) => app.id === appId);
+  return hit ? hit.name : `${appId.slice(0, 10)}…`;
+}
+
+
+// useAppsDirectory 是 App 目录伴读钩子（表单/名字反查消费；60s 与旧
+// catalog useApps 同拍，空 projectId 禁查同旧 enabled 门）——落 kit 层
+// 让消费面免于裸 useQuery。
+export function useAppsDirectory(projectId: string, options?: { refetchInterval?: number }) {
+  return useQuery<Segment<AppEntry>>({
+    ...collectionQueryOptions(scoped(appsResource, { projectId }), appsDirectorySearch.defaults, {
+      refetchInterval: options?.refetchInterval ?? 60_000,
+    }),
+    enabled: projectId !== "",
+  });
+}

@@ -3,10 +3,15 @@ import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { DatabaseBackupIcon, KeyRound, PlusIcon, ShieldOffIcon } from "lucide-react";
 import { toast } from "sonner";
-import { useCommand } from "@lynx-go/uikit-core";
-import { apiFetch } from "@/api/client";
-import { usePlatformBackups, useRoles, useTokens, useWhoami } from "@/lib/catalog";
-import { freezesResource, platformBackupsResource, tokensResource } from "@/kit/settings";
+import { collectionQueryOptions, useCommand, useRecord } from "@lynx-go/uikit-core";
+import type { CollectionQuery } from "@lynx-go/uikit-core/kernel";
+import { rolesResource } from "@/kit/identity";
+import {
+  freezesResource,
+  platformBackupsResource,
+  sessionResource,
+  tokensResource,
+} from "@/kit/settings";
 import { toastOnSettled } from "@/kit/toast";
 import { CopyButton } from "@/components/domain/copy-button";
 import { EmptyState } from "@/components/domain/empty-state";
@@ -51,12 +56,17 @@ import {
 // SectionCard）：身份（whoami）/ Token 铸造与吊销（Console 自身凭证生命
 // 周期；secret 一次性揭示）/ 平台治理（变更冻结 + 平台备份触发与台账）。
 // 2026-10-26 批2 写路径命令化：五写位（mint/revoke/freeze/lift/backup）全
-// 走 kit/settings.ts 的 resource commands——失效经 legacyKeys 桥存量
-// ["settings",…] 键，toast 单源在 kit/toast.ts（toastOnSettled）；动词语义
-// 原样。
+// 走 kit/settings.ts 的 resource commands；批4 读面收尾：读面 catalog 钩子
+// 全量换 kit 资源（whoami 走 session record、tokens/freezes/platform-backups
+// 走 kit 集合、roles 走 identity 同资源）——伴读固定窗不经 URL，轮询拍频
+// 对齐旧 catalog 钩子（tokens 15s / freezes 30s / roles·backups 60s）。
 export const Route = createFileRoute("/_shell/settings")({
   component: SettingsPageV2,
 });
+
+// 伴读固定窗：settings 三表原为整表渲染（无分页/快筛 UI），size 100 是
+// clientCollection 取数上限的既定口径（projects=100）。
+const allRowsQuery: CollectionQuery = { window: { size: 100 } };
 
 function SettingsPageV2() {
   return (
@@ -71,22 +81,23 @@ function SettingsPageV2() {
 }
 
 function IdentityCard() {
-  const whoami = useWhoami(true);
+  // 会话读（批4 kit 资源化）：与壳层同 record 键（["record","session","self"]）。
+  const whoami = useRecord(sessionResource, { id: "self", query: { staleTime: 30_000 } });
   return (
     <SectionCard title="Identity" icon={KeyRound}>
-      {whoami.isPending ? (
+      {whoami.status === "loading" ? (
         <Skeleton className="h-12 w-full" />
-      ) : whoami.isError ? (
+      ) : whoami.status === "error" ? (
         <ErrorState error={whoami.error} onRetry={() => void whoami.refetch()} />
       ) : (
         <dl className="grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-1.5 text-sm">
-          <dt className="text-muted-foreground">token</dt>
-          <dd className="font-medium">{whoami.data.tokenName || "—"}</dd>
-          <dt className="text-muted-foreground">user</dt>
-          <dd className="font-medium">{whoami.data.userName || "—"}</dd>
-          <dt className="text-muted-foreground">role</dt>
+          <dt className="text-muted">token</dt>
+          <dd className="font-medium">{whoami.data?.tokenName || "—"}</dd>
+          <dt className="text-muted">user</dt>
+          <dd className="font-medium">{whoami.data?.userName || "—"}</dd>
+          <dt className="text-muted">role</dt>
           <dd>
-            <StatusBadge tone="info">{whoami.data.roleName || "—"}</StatusBadge>
+            <StatusBadge tone="info">{whoami.data?.roleName || "—"}</StatusBadge>
           </dd>
         </dl>
       )}
@@ -95,8 +106,16 @@ function IdentityCard() {
 }
 
 function TokensCard() {
-  const tokens = useTokens();
-  const roles = useRoles();
+  // 台账读（批4 kit 资源化）：tokens 15s 轮询对齐旧 catalog useTokens
+  //（RESOURCE_MS）；roles 60s 对齐旧 catalog useRoles（CATALOG_MS）——
+  // roles 消费 identity 的 kit 集合（identity 页列表 15s 是另一窗形键）。
+  const tokens = useQuery(
+    collectionQueryOptions(tokensResource, allRowsQuery, { refetchInterval: 15_000 }),
+  );
+  const roles = useQuery(
+    collectionQueryOptions(rolesResource, allRowsQuery, { refetchInterval: 60_000 }),
+  );
+  const tokenRows = tokens.data?.rows ?? [];
   const [createOpen, setCreateOpen] = useState(false);
   return (
     <SectionCard
@@ -113,7 +132,7 @@ function TokensCard() {
         <Skeleton className="h-16 w-full" />
       ) : tokens.isError ? (
         <ErrorState error={tokens.error} onRetry={() => void tokens.refetch()} />
-      ) : (tokens.data ?? []).length === 0 ? (
+      ) : tokenRows.length === 0 ? (
         <EmptyState icon={KeyRound} title="No tokens visible to this role" description="Token administration needs elevated scope." />
       ) : (
         <Table className="text-sm">
@@ -127,13 +146,13 @@ function TokensCard() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {(tokens.data ?? []).map((token) => (
+            {tokenRows.map((token) => (
               <TokenRow key={token.id} token={token} />
             ))}
           </TableBody>
         </Table>
       )}
-      <CreateTokenDialog open={createOpen} onClose={() => setCreateOpen(false)} roles={roles.data ?? []} />
+      <CreateTokenDialog open={createOpen} onClose={() => setCreateOpen(false)} roles={roles.data?.rows ?? []} />
     </SectionCard>
   );
 }
@@ -151,11 +170,11 @@ function TokenRow({ token }: { token: { id?: string; name?: string; role_id?: st
       <TableRow className={token.revoked_at ? "opacity-50" : ""}>
         <TableCell className="text-sm font-medium">
           {token.name}
-          {token.revoked_at ? <span className="ml-2 text-xs text-muted-foreground">revoked</span> : null}
+          {token.revoked_at ? <span className="ml-2 text-xs text-muted">revoked</span> : null}
         </TableCell>
-        <TableCell className="font-mono text-2xs text-muted-foreground">{token.role_id?.slice(0, 10)}…</TableCell>
-        <TableCell className="text-xs text-muted-foreground"><RelativeTime value={token.created_at} /></TableCell>
-        <TableCell className="text-xs text-muted-foreground"><RelativeTime value={token.last_used_at} /></TableCell>
+        <TableCell className="font-mono text-2xs text-muted">{token.role_id?.slice(0, 10)}…</TableCell>
+        <TableCell className="text-xs text-muted"><RelativeTime value={token.created_at} /></TableCell>
+        <TableCell className="text-xs text-muted"><RelativeTime value={token.last_used_at} /></TableCell>
         <TableCell className="text-right">
           {!token.revoked_at ? (
             <Button variant="outline" size="sm" className="text-[var(--status-danger)]" onClick={() => setRevoking(true)}>
@@ -186,7 +205,7 @@ function TokenRow({ token }: { token: { id?: string; name?: string; role_id?: st
   );
 }
 
-function CreateTokenDialog({ open, onClose, roles }: { open: boolean; onClose: () => void; roles: Array<{ id?: string; name?: string; builtin?: boolean }> }) {
+function CreateTokenDialog({ open, onClose, roles }: { open: boolean; onClose: () => void; roles: ReadonlyArray<{ id?: string; name?: string; builtin?: boolean }> }) {
   const [name, setName] = useState("");
   const [roleId, setRoleId] = useState("");
   const [minted, setMinted] = useState<string | null>(null);
@@ -266,14 +285,11 @@ function CreateTokenDialog({ open, onClose, roles }: { open: boolean; onClose: (
 }
 
 function GovernanceCard() {
-  const freezes = useQuery({
-    queryKey: ["settings", "freezes"],
-    queryFn: async () => {
-      const res = await apiFetch<{ freezes?: Array<{ id?: string; team_id?: string; reason?: string; created_at?: string; lifted_at?: string } | undefined> }>("/v1/governance/freezes");
-      return (res.freezes ?? []).flatMap((row) => (row != null ? [row] : []));
-    },
-    refetchInterval: 30_000,
-  });
+  // 冻结台账读（批4 kit 资源化）：30s 轮询对齐旧页内 useQuery 原值。
+  const freezes = useQuery(
+    collectionQueryOptions(freezesResource, allRowsQuery, { refetchInterval: 30_000 }),
+  );
+  const freezeRows = freezes.data?.rows ?? [];
   const [reason, setReason] = useState("");
   const [lifting, setLifting] = useState<{ id: string; reason: string } | null>(null);
   const freeze = useCommand(freezesResource.commands.freeze, {
@@ -291,7 +307,7 @@ function GovernanceCard() {
       setLifting(null);
     }),
   });
-  const active = (freezes.data ?? []).filter((row) => !row.lifted_at);
+  const active = freezeRows.filter((row) => !row.lifted_at);
 
   return (
     <SectionCard title="Platform governance" icon={ShieldOffIcon}>
@@ -326,7 +342,7 @@ function GovernanceCard() {
           <div className="flex flex-col gap-1">
             <Label className="text-xs">Set change freeze</Label>
             <Input value={reason} onChange={(event) => setReason(event.target.value)} placeholder="maintenance window" className="h-8 w-56" />
-            <p className="text-2xs text-muted-foreground">platform-wide (all teams); change verbs are refused until lifted</p>
+            <p className="text-2xs text-muted">platform-wide (all teams); change verbs are refused until lifted</p>
           </div>
           <Button type="submit" size="sm" disabled={freeze.pending || reason === ""} className="mb-4.5">
             set freeze
@@ -337,7 +353,7 @@ function GovernanceCard() {
             <DatabaseBackupIcon data-icon-start-inline />
             {backup.pending ? "Backing up…" : "Trigger platform backup"}
           </Button>
-          <span className="text-xs text-muted-foreground">synchronous full platform snapshot (SQLite + secrets + object store)</span>
+          <span className="text-xs text-muted">synchronous full platform snapshot (SQLite + secrets + object store)</span>
         </div>
         <PlatformBackupsTable />
       </div>
@@ -363,12 +379,16 @@ function GovernanceCard() {
 }
 
 // PlatformBackupsTable 是平台备份台账（C2 补齐面）：只读消费——触发按钮
-// 写后即时失效；pre-upgrade 快照是换装硬门（runbook 换装序）。
+// 写后即时失效（kit 集合键默认失效）；pre-upgrade 快照是换装硬门（runbook
+// 换装序）。60s 轮询对齐旧 catalog usePlatformBackups。
 function PlatformBackupsTable() {
-  const backups = usePlatformBackups();
+  const backups = useQuery(
+    collectionQueryOptions(platformBackupsResource, allRowsQuery, { refetchInterval: 60_000 }),
+  );
+  const backupRows = backups.data?.rows ?? [];
   if (backups.isPending) return <Skeleton className="h-16 w-full" />;
   if (backups.isError) return <ErrorState error={backups.error} onRetry={() => void backups.refetch()} />;
-  if ((backups.data ?? []).length === 0) {
+  if (backupRows.length === 0) {
     return (
       <EmptyState
         icon={DatabaseBackupIcon}
@@ -387,16 +407,16 @@ function PlatformBackupsTable() {
         </TableRow>
       </TableHeader>
       <TableBody>
-        {(backups.data ?? []).map((row) => (
+        {backupRows.map((row) => (
           <TableRow key={row.id}>
             <TableCell className="font-mono text-xs">
               {row.id}
               <CopyButton value={row.id ?? ""} className="ml-1" />
             </TableCell>
-            <TableCell className="text-xs text-muted-foreground" title={row.time}>
+            <TableCell className="text-xs text-muted" title={row.time}>
               <RelativeTime value={row.time} />
             </TableCell>
-            <TableCell className="text-xs text-muted-foreground">{row.hostname}</TableCell>
+            <TableCell className="text-xs text-muted">{row.hostname}</TableCell>
           </TableRow>
         ))}
       </TableBody>

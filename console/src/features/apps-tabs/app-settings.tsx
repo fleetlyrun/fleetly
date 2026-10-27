@@ -40,24 +40,24 @@ export function AppSettingsTab({
   return (
     <div className="flex flex-col gap-4">
       <div className="grid gap-4 md:grid-cols-2">
-        <section className="rounded-xl border bg-card p-4">
+        <section className="rounded-xl border bg-panel p-4">
           <h3 className="mb-3 text-sm font-semibold">General</h3>
           <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
-            <dt className="text-muted-foreground">name</dt>
+            <dt className="text-muted">name</dt>
             <dd className="font-semibold">{appName}</dd>
-            <dt className="text-muted-foreground">app id</dt>
+            <dt className="text-muted">app id</dt>
             <dd className="flex items-center gap-1 font-mono">
               {appId}
               <CopyButton value={appId} />
             </dd>
-            <dt className="text-muted-foreground">project</dt>
+            <dt className="text-muted">project</dt>
             <dd className="font-mono">{projectId}</dd>
-            <dt className="text-muted-foreground">created</dt>
+            <dt className="text-muted">created</dt>
             <dd>
               <RelativeTime value={createdAt} />
             </dd>
           </dl>
-          <p className="mt-3 text-2xs text-muted-foreground">
+          <p className="mt-3 text-2xs text-muted">
             Build &amp; process settings (source, builder, replicas, health gate) land here once the app spec read path ships
             (IA v3 §8 二期) — until then configure them via deploy.
           </p>
@@ -134,9 +134,9 @@ function GitHookCard({ appId, projectId }: { appId: string; projectId: string })
 
   const configured = hook.data != null;
   return (
-    <section className="rounded-xl border bg-card p-4">
+    <section className="rounded-xl border bg-panel p-4">
       <h3 className="mb-3 text-sm font-semibold">Git deploy hook</h3>
-      <p className="mb-3 rounded-lg border bg-panel-2/40 px-3 py-2 text-2xs text-muted-foreground">
+      <p className="mb-3 rounded-lg border bg-panel-2/40 px-3 py-2 text-2xs text-muted">
         Private repository?{" "}
         <Link
           to="/p/$projectId/registry"
@@ -150,19 +150,19 @@ function GitHookCard({ appId, projectId }: { appId: string; projectId: string })
         of a token-URL: access material resolves at build time, nothing lands in revisions, and rotating needs no redeploy.
       </p>
       {hook.isPending ? (
-        <p className="text-xs text-muted-foreground">Loading hook…</p>
+        <p className="text-xs text-muted">Loading hook…</p>
       ) : configured && !editing ? (
         <>
           <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
-            <dt className="text-muted-foreground">repo</dt>
+            <dt className="text-muted">repo</dt>
             <dd className="font-mono">{hook.data!.repo ?? "—"}</dd>
-            <dt className="text-muted-foreground">branch</dt>
+            <dt className="text-muted">branch</dt>
             <dd className="font-mono">{hook.data!.branch ?? "—"}</dd>
-            <dt className="text-muted-foreground">dockerfile</dt>
+            <dt className="text-muted">dockerfile</dt>
             <dd className="font-mono">{hook.data!.dockerfile || "—"}</dd>
-            <dt className="text-muted-foreground">token</dt>
+            <dt className="text-muted">token</dt>
             <dd className="font-mono">{hook.data!.token_prefix ?? "—"}…</dd>
-            <dt className="text-muted-foreground">updated</dt>
+            <dt className="text-muted">updated</dt>
             <dd>
               <RelativeTime value={hook.data!.updated_at} />
             </dd>
@@ -184,7 +184,7 @@ function GitHookCard({ appId, projectId }: { appId: string; projectId: string })
             </Button>
             <AlertDialog>
               <AlertDialogTrigger asChild>
-                <Button size="sm" variant="outline" className="text-destructive" disabled={remove.pending}>
+                <Button size="sm" variant="outline" className="text-err" disabled={remove.pending}>
                   Remove…
                 </Button>
               </AlertDialogTrigger>
@@ -212,8 +212,8 @@ function GitHookCard({ appId, projectId }: { appId: string; projectId: string })
               </AlertDialogContent>
             </AlertDialog>
           </div>
-          <p className="mt-2 text-2xs text-muted-foreground">
-            <span className="font-semibold text-foreground">Deploy now</span> pulls the branch HEAD and deploys immediately — no
+          <p className="mt-2 text-2xs text-muted">
+            <span className="font-semibold text-fg">Deploy now</span> pulls the branch HEAD and deploys immediately — no
             webhook required (template repos, first config). A <span className="font-mono">.yml/.yaml</span> path is taken as a
             compose file (its services become processes; images deploy directly); anything else builds as a Dockerfile. For push
             triggers, paste the webhook URL (revealed at configure/rotate time) into GitHub → Webhooks; the secret doubles as the
@@ -229,7 +229,7 @@ function GitHookCard({ appId, projectId }: { appId: string; projectId: string })
           }}
         >
           {editing ? (
-            <p className="rounded-lg border bg-panel-2/40 px-3 py-2 text-2xs text-muted-foreground">
+            <p className="rounded-lg border bg-panel-2/40 px-3 py-2 text-2xs text-muted">
               Editing the existing hook — SetGitHook is a full upsert: fields become this save&apos;s values, the token stays
               unchanged. Repo URL must keep its scheme (https).
             </p>
@@ -271,13 +271,13 @@ function GitHookCard({ appId, projectId }: { appId: string; projectId: string })
             {`${window.location.origin}/v1/hooks/${revealedSecret}`}
             <CopyButton value={`${window.location.origin}/v1/hooks/${revealedSecret}`} />
           </p>
-          <p className="mt-1 text-2xs text-muted-foreground">
+          <p className="mt-1 text-2xs text-muted">
             The token doubles as the webhook signing key (secret field). Rotating revokes the old URL immediately. Or skip
             webhooks entirely — Deploy now above pulls and deploys without GitHub-side configuration.
           </p>
         </div>
       ) : null}
-      {hook.isError ? <p className="mt-3 text-xs text-destructive">{fieldError(hook.error)}</p> : null}
+      {hook.isError ? <p className="mt-3 text-xs text-err">{fieldError(hook.error)}</p> : null}
     </section>
   );
 }
@@ -291,10 +291,10 @@ function DangerZone({ appId, appName, projectId, onDeleted }: { appId: string; a
     }),
   });
   return (
-    <section className="rounded-xl border border-destructive/30 bg-card p-5">
-      <h3 className="mb-2 text-sm font-semibold text-destructive">Danger zone</h3>
-      <p className="mb-4 text-xs text-muted-foreground">
-        Deleting <span className="font-semibold text-foreground">{appName}</span> removes its deployments history, routes and exec
+    <section className="rounded-xl border border-err/30 bg-panel p-5">
+      <h3 className="mb-2 text-sm font-semibold text-err">Danger zone</h3>
+      <p className="mb-4 text-xs text-muted">
+        Deleting <span className="font-semibold text-fg">{appName}</span> removes its deployments history, routes and exec
         sessions. Databases and volumes are kept. Recent revisions stay in the registry and must be cleaned up separately.
       </p>
       <AlertDialog>

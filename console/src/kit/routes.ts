@@ -95,3 +95,8 @@ export const routesSearch = collectionQuerySchema({
   text: ["host", "app_id", "process"],
   defaultSize: 20,
 });
+
+// ---- join 读面大页 schema（2026-10-27 批4）：app 域反查（Overview 路由卡
+// /Processes 归因/apps 列表路由计数）要项目路由全集——窗口不截断行集；
+// 只读消费不写 URL，与列表页 routesSearch 分立。 ----
+export const routesLookup = collectionQuerySchema({ defaultSize: 200 });

@@ -18,7 +18,7 @@ export function PageHeader({
       <div className="min-w-0 flex-1">
         {breadcrumb ? <div className="mb-1.5">{breadcrumb}</div> : null}
         <h1 className="font-heading text-2xl font-semibold tracking-tight">{title}</h1>
-        {description ? <p className="mt-1 text-sm text-muted-foreground">{description}</p> : null}
+        {description ? <p className="mt-1 text-sm text-muted">{description}</p> : null}
       </div>
       {actions ? <div className="flex flex-none items-center gap-2 pt-1">{actions}</div> : null}
     </div>

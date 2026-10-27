@@ -14,15 +14,15 @@ import { Label } from "@/components/ui/label";
 // （describeError 单源）。W1' 纪律：本页恰一 form 且无 form 祖先。
 export function LoginPage() {
   return (
-    <div className="grid min-h-svh place-items-center bg-background px-4">
+    <div className="grid min-h-svh place-items-center bg-bg px-4">
       <div className="w-full max-w-sm">
         <div className="mb-5 flex flex-col items-center gap-2.5">
           {/* 品牌 logo（2026-10-12 换官方 F 叶形标；原图白底已转透明，public/logo.png 128px） */}
           <img src="/logo.png" alt="" aria-hidden className="size-11 rounded-2xl" />
           <h1 className="font-heading text-lg font-bold tracking-tight">fleetly console</h1>
-          <p className="text-xs text-muted-foreground">Sign in with your user name and password.</p>
+          <p className="text-xs text-muted">Sign in with your user name and password.</p>
         </div>
-        <div className="rounded-xl border bg-card p-6 shadow-[0_1px_2px_oklch(0_0_0/0.08)]">
+        <div className="rounded-xl border bg-panel p-6 shadow-[0_1px_2px_oklch(0_0_0/0.08)]">
           <PasswordForm />
         </div>
       </div>

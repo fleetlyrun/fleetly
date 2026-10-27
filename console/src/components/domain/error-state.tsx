@@ -27,7 +27,7 @@ export function ErrorState({
         </EmptyMedia>
         <EmptyTitle>{described.title}</EmptyTitle>
         <EmptyDescription className="max-w-md">{described.hint}</EmptyDescription>
-        <span className="max-w-lg truncate font-mono text-2xs text-muted-foreground" title={described.detail}>
+        <span className="max-w-lg truncate font-mono text-2xs text-muted" title={described.detail}>
           {described.detail}
         </span>
         {onRetry ? (

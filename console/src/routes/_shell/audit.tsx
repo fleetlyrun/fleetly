@@ -26,7 +26,7 @@ const columns: LegacyColumnDef<AuditRow, any>[] = [
     header: "Time",
     meta: { sortField: "created_at" },
     cell: ({ row }) => (
-      <span className="whitespace-nowrap text-xs text-muted-foreground" title={formatAbsolute(row.original.created_at)}>
+      <span className="whitespace-nowrap text-xs text-muted" title={formatAbsolute(row.original.created_at)}>
         {formatAbsolute(row.original.created_at)}
       </span>
     ),
@@ -41,7 +41,7 @@ const columns: LegacyColumnDef<AuditRow, any>[] = [
     accessorKey: "actor",
     header: "Actor",
     cell: ({ row }) => (
-      <span className="font-mono text-xs text-muted-foreground" title={row.original.actor}>
+      <span className="font-mono text-xs text-muted" title={row.original.actor}>
         {row.original.actor}
       </span>
     ),
@@ -56,7 +56,7 @@ const columns: LegacyColumnDef<AuditRow, any>[] = [
     accessorKey: "resource",
     header: "Resource",
     cell: ({ row }) => (
-      <span className="font-mono text-xs text-muted-foreground" title={row.original.resource}>
+      <span className="font-mono text-xs text-muted" title={row.original.resource}>
         {row.original.resource}
       </span>
     ),
@@ -65,7 +65,7 @@ const columns: LegacyColumnDef<AuditRow, any>[] = [
     id: "fingerprints",
     header: "Before → After",
     cell: ({ row }) => (
-      <span className="font-mono text-2xs text-muted-foreground opacity-80">
+      <span className="font-mono text-2xs text-muted opacity-80">
         {row.original.before_fp ? <span title={row.original.before_fp}>{row.original.before_fp.slice(0, 8)}…</span> : "∅"} →{" "}
         {row.original.after_fp ? <span title={row.original.after_fp}>{row.original.after_fp.slice(0, 8)}…</span> : "∅"}
       </span>

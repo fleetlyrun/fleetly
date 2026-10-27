@@ -107,3 +107,8 @@ export const storageSearch = collectionQuerySchema({
   text: ["name", "id", "digest"],
   defaultSize: 20,
 });
+
+// ---- join 读面大页 schema（2026-10-27 批4）：DeploySheet 的 upload 产物
+// 下拉要目录全集——窗口不截断行集；无 text 字段（宿主路由的 q 是别的集合
+// 的快筛，不串台）；只读消费不写 URL，与 storageSearch 分立。 ----
+export const uploadsLookup = collectionQuerySchema({ defaultSize: 200 });

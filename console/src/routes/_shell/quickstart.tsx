@@ -133,17 +133,17 @@ function QuickstartPageV2() {
   return (
     <PageFrame width="flow" title="Quickstart" description="One form, full chain: project → app → network → deploy → route → wait">
 
-      <form onSubmit={run} className="flex flex-col gap-3.5 rounded-xl border bg-card px-5 py-5">
+      <form onSubmit={run} className="flex flex-col gap-3.5 rounded-xl border bg-panel px-5 py-5">
         <div className="grid grid-cols-2 gap-3">
           <div className="flex flex-col gap-1.5">
             <Label className="text-xs">Project</Label>
             <Input value={form.project} onChange={(event) => setForm({ ...form, project: event.target.value })} />
-            <p className="text-2xs text-muted-foreground">reused if it already exists</p>
+            <p className="text-2xs text-muted">reused if it already exists</p>
           </div>
           <div className="flex flex-col gap-1.5">
             <Label className="text-xs">App name</Label>
             <Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
-            <p className="text-2xs text-muted-foreground">reused if it already exists</p>
+            <p className="text-2xs text-muted">reused if it already exists</p>
           </div>
         </div>
         <div className="grid grid-cols-3 gap-3">
@@ -175,7 +175,7 @@ function QuickstartPageV2() {
             onChange={(event) => setForm({ ...form, host: event.target.value })}
             placeholder={`${form.name}.127.0.0.1.sslip.io`}
           />
-          <p className="text-2xs text-muted-foreground">
+          <p className="text-2xs text-muted">
             route hostname; default {"<app>"}.127.0.0.1.sslip.io (local trial form — use your server IP for external access)
           </p>
         </div>
@@ -185,7 +185,7 @@ function QuickstartPageV2() {
             {running ? "Running…" : "Run quickstart"}
           </Button>
           {url != null ? (
-            <a href={url} target="_blank" rel="noreferrer" className="text-sm font-medium text-primary underline">
+            <a href={url} target="_blank" rel="noreferrer" className="text-sm font-medium text-accent underline">
               {url}
             </a>
           ) : null}
@@ -199,16 +199,16 @@ function QuickstartPageV2() {
       ) : null}
 
       {logs.length > 0 ? (
-        <ol className="mt-4 list-decimal space-y-1 rounded-xl border bg-card px-6 py-3.5 font-mono text-xs text-muted-foreground">
+        <ol className="mt-4 list-decimal space-y-1 rounded-xl border bg-panel px-6 py-3.5 font-mono text-xs text-muted">
           {logs.map((entry) => (
             <li key={`${entry.step}-${entry.detail}`}>
-              <span className="text-foreground">{entry.step}</span>: {entry.detail}
+              <span className="text-fg">{entry.step}</span>: {entry.detail}
             </li>
           ))}
           {running ? <li className="animate-pulse text-[var(--status-info)]">steps in progress…</li> : null}
         </ol>
       ) : null}
-      <p className="mt-3 text-2xs text-muted-foreground">Every step is idempotent — re-running reuses what exists.</p>
+      <p className="mt-3 text-2xs text-muted">Every step is idempotent — re-running reuses what exists.</p>
     </PageFrame>
   );
 }

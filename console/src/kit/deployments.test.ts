@@ -2,7 +2,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { textPredicate } from "@lynx-go/uikit-core/kernel";
 import { setToken } from "@/lib/token";
 import type { DeployFormState } from "@/lib/deployPayload";
-import { deploymentsResource, deploymentsSearch, fetchProjectDeployments } from "./deployments";
+import {
+  appDeploymentsLookup,
+  appDeploymentsResource,
+  deploymentsResource,
+  deploymentsSearch,
+  fetchAppDeployments,
+  fetchProjectDeployments,
+} from "./deployments";
 
 // 项目级部署 fan-out 适配器单测（批1）：apps 整取 → 逐 app deployments 合并
 // 按 updated_at 倒序、per-app 失败吞为空、空 scope/无 app 不发请求、URL
@@ -216,5 +223,44 @@ describe("deployments commands（批2 写路径命令锚）", () => {
   it("legacyKeys 桥对齐旧 invalidate 键（[\"deployments\"] 前缀盖 hooks 双形态）", () => {
     expect(deploymentsResource.commands.deploy.legacyKeys?.({ projectId: "shop" })).toEqual([["deployments"]]);
     expect(deploymentsResource.commands.rollback.legacyKeys?.({})).toEqual([["deployments"]]);
+  });
+});
+
+// ---- per-App 部署集合（2026-10-27 批4 读面收编：features/deployments/
+// hooks.ts 的 useAppDeployments 退役——行级/hero 消费按 app 键共享缓存，
+// 不放大成项目 fan-out） ----
+
+describe("fetchAppDeployments（端点 + 收敛）", () => {
+  it("GET /v1/deployments?app_id&limit=50，id 缺行过滤同旧 hooks rowsOf 口径", async () => {
+    const fetchMock = vi.fn(async (path: string) => {
+      if (path.startsWith("/v1/deployments")) {
+        return jsonResponse({
+          deployments: [{ id: "D2", app_id: "A1", updated_at: "2026-10-18T00:00:00Z" }, { app_id: "A1" }, undefined],
+        });
+      }
+      return jsonResponse({}, 404);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const rows = await fetchAppDeployments({ projectId: "P1", appId: "A1" });
+
+    expect(rows).toEqual([{ id: "D2", app_id: "A1", updated_at: "2026-10-18T00:00:00Z" }]);
+    const [url] = fetchMock.mock.calls[0] as unknown as [string];
+    expect(String(url)).toBe("/v1/deployments?app_id=A1&limit=50");
+  });
+
+  it("scope 缺 appId 时零请求空段（catalog enabled 门同语义）", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await fetchAppDeployments({ projectId: "P1" })).toEqual([]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("非 2xx 收敛错误信封；scope 声明与存量键桥对齐 hooks 前缀", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ code: "E_X", message: "boom" }, 503)));
+    await expect(fetchAppDeployments({ projectId: "P1", appId: "A1" })).rejects.toThrowError(/boom/);
+    expect(appDeploymentsResource.scope).toEqual(["projectId", "appId"]);
+    expect(appDeploymentsResource.legacyKeys?.({ projectId: "P1", appId: "A1" })).toEqual([["deployments"]]);
+    expect(appDeploymentsLookup.decode({}).window.size).toBe(200);
   });
 });

@@ -6,7 +6,8 @@ import { toast } from "sonner";
 import type { components } from "@/api/delivery";
 import { apiFetch, apiSend } from "@/api/client";
 import { streamDeploymentWait } from "@/api/streams";
-import { useRevisions } from "@/lib/catalog";
+import { useCollection } from "@lynx-go/uikit-core";
+import { revisionsResource, revisionsLookup } from "@/kit/revisions";
 import { CopyButton } from "@/components/domain/copy-button";
 import { RelativeTime } from "@/components/domain/relative-time";
 import { DeploymentStatusBadge, isActiveDeploymentState } from "@/components/domain/status-badge";
@@ -51,10 +52,12 @@ export function DeploymentDetailView({
   projectId,
   appId,
   deploymentId,
+  routeId,
 }: {
   projectId: string;
   appId: string;
   deploymentId: string;
+  routeId: string;
 }) {
   const [live, setLive] = useState<Deployment | null>(null);
   const [streamError, setStreamError] = useState<unknown>(null);
@@ -118,8 +121,16 @@ export function DeploymentDetailView({
   const state = effective?.state ?? "";
   const active = isActiveDeploymentState(state);
 
-  const revisions = useRevisions(appId);
-  const revisionIndex = new Map((revisions.data ?? []).map((rev) => [rev.id ?? "", rev]));
+  // 批4（2026-10-27）：revisions 读面迁 kit useCollection（routeId 由宿主
+  // 路由注入；大页 lookup 不截断 diff 全集；15s 轮询同旧拍）。wait 流（SSE）
+  // 与轮询兜底不动——只换 useQuery 目录读。
+  const revisions = useCollection(revisionsResource, {
+    from: routeId,
+    search: revisionsLookup,
+    scope: { projectId, appId },
+    query: { refetchInterval: 15_000 },
+  });
+  const revisionIndex = new Map(revisions.rows.map((rev) => [rev.id ?? "", rev]));
   const toRevision = effective?.to_revision ? revisionIndex.get(effective.to_revision) : undefined;
 
   const invalidate = useCallback(() => {
@@ -137,7 +148,7 @@ export function DeploymentDetailView({
     return (
       <div className="p-8">
         <div className="text-sm font-semibold text-[var(--status-danger)]">{describeError(streamError).title}</div>
-        <div className="mt-1 font-mono text-xs text-muted-foreground">{describeError(streamError).detail}</div>
+        <div className="mt-1 font-mono text-xs text-muted">{describeError(streamError).detail}</div>
         <Button variant="outline" size="sm" className="mt-3" onClick={() => setRestartToken((token) => token + 1)}>
           Reconnect stream
         </Button>
@@ -176,7 +187,7 @@ export function DeploymentDetailView({
           Deployment <span className="font-mono">R{toRevision?.seq ?? "?"}</span>
         </h1>
         <DeploymentStatusBadge state={state} />
-        <span className="font-mono text-xs text-muted-foreground">{effective.id}</span>
+        <span className="font-mono text-xs text-muted">{effective.id}</span>
         <CopyButton value={effective.id ?? ""} />
         <div className="ml-auto flex items-center gap-2">
           {active ? (
@@ -215,9 +226,9 @@ export function DeploymentDetailView({
       </div>
 
       {/* 阶段时间线 */}
-      <div className="rounded-xl border bg-card px-5 pt-5 pb-4">
+      <div className="rounded-xl border bg-panel px-5 pt-5 pb-4">
         <Timeline currentStage={currentStage} state={state} deployment={effective} />
-        <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground">
+        <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted">
           <span>started <RelativeTime value={startedAt} className="font-mono" /></span>
           <span>
             duration{" "}
@@ -240,12 +251,12 @@ export function DeploymentDetailView({
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <ProcessStrategiesCard deployment={effective} toRevision={toRevision} />
-        <RevisionsDiffCard appId={appId} revisions={revisions.data ?? []} />
+        <RevisionsDiffCard appId={appId} revisions={revisions.rows} />
       </div>
 
-      <details className="rounded-xl border bg-card px-4 py-3">
-        <summary className="cursor-pointer text-sm font-semibold text-muted-foreground">Raw fields (protojson)</summary>
-        <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 font-mono text-xs text-muted-foreground">
+      <details className="rounded-xl border bg-panel px-4 py-3">
+        <summary className="cursor-pointer text-sm font-semibold text-muted">Raw fields (protojson)</summary>
+        <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 font-mono text-xs text-muted">
           <dt>app_id</dt><dd>{effective.app_id}</dd>
           <dt>from_revision</dt>
           <dd className="break-all">
@@ -325,7 +336,7 @@ function Timeline({
                     ? "border-[var(--status-success)] bg-[var(--status-success)] text-white"
                     : isCurrent
                       ? "border-[var(--status-info)] text-[var(--status-info)]"
-                      : "border-border-strong text-transparent"
+                      : "border-line-strong text-transparent"
                 }`}
               >
                 {isDone ? "✓" : isCurrent ? <span className="size-1.5 animate-pulse rounded-full bg-current" /> : "·"}
@@ -340,7 +351,7 @@ function Timeline({
                 }`}
               />
             </div>
-            <span className={`mt-1.5 text-2xs font-semibold ${isDone || isCurrent ? "" : "text-muted-foreground"}`}>
+            <span className={`mt-1.5 text-2xs font-semibold ${isDone || isCurrent ? "" : "text-muted"}`}>
               {stage === "succeeded" && aborted ? "outcome" : stage}
             </span>
             {aborted && index === STAGES.length - 1 ? (
@@ -409,12 +420,12 @@ function GenerationWindowCard({ window: info }: { window: GenerationWindow }) {
         <h3 className="text-sm font-semibold text-[var(--status-info)]">
           {info.observing ? "blue-green window · observing" : "blue-green window"}
         </h3>
-        <span className="font-mono text-xs text-muted-foreground">
+        <span className="font-mono text-xs text-muted">
           serving g{info.fromGen} → current g{info.toGen}
         </span>
       </div>
-      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-        Both generations of <span className="font-mono text-foreground">{info.processes.join(", ")}</span> run side by side until
+      <p className="mt-1 text-xs leading-relaxed text-muted">
+        Both generations of <span className="font-mono text-fg">{info.processes.join(", ")}</span> run side by side until
         the new one is fully healthy; traffic switches only after that. During the window replicas double for those processes,
         and cross-process DNS names (<span className="font-mono">{"{process}"}</span> /{" "}
         <span className="font-mono">{"{process}.{app}"}</span>) may round-robin to either generation — use the proxy route or
@@ -429,10 +440,10 @@ function GenerationWindowCard({ window: info }: { window: GenerationWindow }) {
 function ProcessStrategiesCard({ deployment, toRevision }: { deployment: Deployment; toRevision: Revision | undefined }) {
   const strategies = toRevision?.process_strategies ?? [];
   return (
-    <div className="rounded-xl border bg-card px-4 py-3">
+    <div className="rounded-xl border bg-panel px-4 py-3">
       <h3 className="text-sm font-semibold">Processes</h3>
       {strategies.length === 0 ? (
-        <p className="mt-1 text-xs text-muted-foreground">
+        <p className="mt-1 text-xs text-muted">
           No strategy catalog on the target revision (older revision or data unavailable).
         </p>
       ) : (
@@ -452,11 +463,11 @@ function ProcessStrategiesCard({ deployment, toRevision }: { deployment: Deploym
                 <TableRow key={process}>
                   <TableCell className="font-mono">{process}</TableCell>
                   <TableCell>
-                    <span className={blueGreen ? "text-[var(--status-info)]" : "text-muted-foreground"}>
+                    <span className={blueGreen ? "text-[var(--status-info)]" : "text-muted"}>
                       {blueGreen ? "blue-green" : "rolling"}
                     </span>
                   </TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground">
+                  <TableCell className="font-mono text-xs text-muted">
                     {process} · {process}.{deployment.app_id?.slice(0, 10)}…{blueGreen ? ` · ${process}.g${deployment.generation ?? "?"}` : ""}
                   </TableCell>
                 </TableRow>
@@ -465,7 +476,7 @@ function ProcessStrategiesCard({ deployment, toRevision }: { deployment: Deploym
           </TableBody>
         </Table>
       )}
-      <p className="mt-2 text-2xs leading-relaxed text-muted-foreground">
+      <p className="mt-2 text-2xs leading-relaxed text-muted">
         Bare and fully-qualified names are stable references; the generation name targets one generation for debugging and
         moves with each deploy.
       </p>
@@ -477,7 +488,7 @@ function ProcessStrategiesCard({ deployment, toRevision }: { deployment: Deploym
 
 type DiffEntry = { path?: string; old_value?: string; new_value?: string };
 
-function RevisionsDiffCard({ appId, revisions }: { appId: string; revisions: Revision[] }) {
+function RevisionsDiffCard({ appId, revisions }: { appId: string; revisions: readonly Revision[] }) {
   const seqs = revisions
     .map((rev) => Number(rev.seq ?? "0"))
     .filter((seq) => seq > 0)
@@ -495,9 +506,9 @@ function RevisionsDiffCard({ appId, revisions }: { appId: string; revisions: Rev
     },
   });
   return (
-    <div className="rounded-xl border bg-card px-4 py-3">
+    <div className="rounded-xl border bg-panel px-4 py-3">
       <h3 className="text-sm font-semibold">Revision diff</h3>
-      <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+      <div className="mt-2 flex items-center gap-2 text-xs text-muted">
         from
         <DiffSeqSelect value={fromSeq} onChange={setFromSeq} seqs={seqs} />
         to
@@ -505,7 +516,7 @@ function RevisionsDiffCard({ appId, revisions }: { appId: string; revisions: Rev
       </div>
       {diff.data != null ? (
         diff.data.length === 0 ? (
-          <p className="mt-2 text-xs text-muted-foreground">no field-level differences between the selected revisions.</p>
+          <p className="mt-2 text-xs text-muted">no field-level differences between the selected revisions.</p>
         ) : (
           <Table className="mt-2 text-xs">
             <TableHeader>
@@ -531,7 +542,7 @@ function RevisionsDiffCard({ appId, revisions }: { appId: string; revisions: Rev
           </Table>
         )
       ) : (
-        <p className="mt-2 text-xs text-muted-foreground">pick two revisions to diff.</p>
+        <p className="mt-2 text-xs text-muted">pick two revisions to diff.</p>
       )}
       {diff.isFetching ? <Separator className="my-2" /> : null}
     </div>
@@ -543,7 +554,7 @@ function DiffSeqSelect({ value, onChange, seqs }: { value: string; onChange: (va
     <select
       value={value}
       onChange={(event) => onChange(event.target.value)}
-      className="rounded-md border bg-background px-2 py-1 font-mono text-xs"
+      className="rounded-md border bg-bg px-2 py-1 font-mono text-xs"
     >
       <option value="">—</option>
       {seqs.map((seq) => (
@@ -584,8 +595,8 @@ function ErrorLine({ error }: { error: unknown }) {
   return (
     <div className="flex items-center gap-2 rounded-lg border border-[color-mix(in_oklch,var(--status-danger)_35%,transparent)] bg-[var(--status-danger-bg)] px-3 py-2 text-xs">
       <span className="font-semibold text-[var(--status-danger)]">{described.title}</span>
-      <span className="font-mono text-muted-foreground">{described.detail}</span>
-      <CopyIcon className="size-3 text-muted-foreground" />
+      <span className="font-mono text-muted">{described.detail}</span>
+      <CopyIcon className="size-3 text-muted" />
     </div>
   );
 }

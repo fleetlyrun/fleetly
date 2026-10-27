@@ -4,12 +4,17 @@ import { useQuery } from "@tanstack/react-query";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
 import { toast } from "sonner";
 import { useCollection, useCommand, useCommandForm } from "@lynx-go/uikit-core";
+import { collectionQueryOptions } from "@lynx-go/uikit-core/react";
+import { scoped } from "@lynx-go/uikit-core/kernel";
 import type { ApiError, CommandResult } from "@lynx-go/uikit-core/kernel";
-import { useApps, useDatabases, useNetworks, useProjects } from "@/lib/catalog";
+import { appsResource, appsDirectorySearch } from "@/kit/apps";
+import { databasesResource, databasesLookup } from "@/kit/databases";
+import { projectsResource, projectsAllQuery } from "@/kit/projects";
 import { apiSendRaw, apiFetch } from "@/api/client";
 import { describeApiError, toApiError } from "@/kit/errors";
+import { appSpecsResource, appSpecsLookup, type AppSpecRow } from "@/kit/app-specs";
 import { shortId } from "@/lib/format";
-import { specIndex, useAppSpecs } from "@/features/spec/use-app-specs";
+import { specIndex } from "@/features/spec/use-app-specs";
 import { buildTar, rootPrefixOf } from "@/lib/tar";
 import { DataTable } from "@/components/kit/query/data-table";
 import { FilterBar } from "@/components/kit/query/filter-bar";
@@ -99,7 +104,7 @@ import { describeError } from "@/lib/api-errors";
 // （rejected/conflict）走 CmdResultError/kit Form 结果盒。
 function FormError({ error }: { error: unknown }) {
   return (
-    <div className="rounded-lg border border-[color-mix(in_oklch,var(--status-danger)_35%,transparent)] bg-[var(--status-danger-bg)] px-3 py-2 font-mono text-2xs break-all text-muted-foreground">
+    <div className="rounded-lg border border-[color-mix(in_oklch,var(--status-danger)_35%,transparent)] bg-[var(--status-danger-bg)] px-3 py-2 font-mono text-2xs break-all text-muted">
       {describeError(error).detail}
     </div>
   );
@@ -110,7 +115,7 @@ function FormError({ error }: { error: unknown }) {
 // apperr code 保留机器判别面前缀，失败通道（网络/5xx）不走这里（toast）。
 function CmdResultError({ result }: { result: Extract<CommandResult<unknown>, { status: "rejected" | "conflict" }> }) {
   return (
-    <div className="rounded-lg border border-[color-mix(in_oklch,var(--status-danger)_35%,transparent)] bg-[var(--status-danger-bg)] px-3 py-2 font-mono text-2xs break-all text-muted-foreground">
+    <div className="rounded-lg border border-[color-mix(in_oklch,var(--status-danger)_35%,transparent)] bg-[var(--status-danger-bg)] px-3 py-2 font-mono text-2xs break-all text-muted">
       {result.status === "rejected" && result.code ? `[${result.code}] ` : ""}
       {result.message}
     </div>
@@ -170,7 +175,7 @@ export function NewNetworkButton({ projectId }: { projectId: string }) {
             <TextField form={create.form} name="name" label="Name" required />
             <create.form.Field name="egressNone">
               {(field: { state: { value: boolean }; handleChange(value: boolean): void }) => (
-                <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                <label className="flex items-center gap-2 text-xs text-muted">
                   <input
                     type="checkbox"
                     checked={field.state.value}
@@ -201,7 +206,7 @@ function NetworksTab({ projectId, routeId }: { projectId: string; routeId: strin
       accessorKey: "id",
       header: "ID",
       cell: ({ row }) => (
-        <span className="font-mono text-xs text-muted-foreground" title={row.original.id}>
+        <span className="font-mono text-xs text-muted" title={row.original.id}>
           {shortId(row.original.id)}
         </span>
       ),
@@ -209,13 +214,13 @@ function NetworksTab({ projectId, routeId }: { projectId: string; routeId: strin
     {
       accessorKey: "egress_none",
       header: "Egress",
-      cell: ({ row }) => <span className="text-xs text-muted-foreground">{row.original.egress_none ? "none (isolated)" : "open"}</span>,
+      cell: ({ row }) => <span className="text-xs text-muted">{row.original.egress_none ? "none (isolated)" : "open"}</span>,
     },
     {
       accessorKey: "created_at",
       header: "Created",
       cell: ({ row }) => (
-        <span className="text-xs text-muted-foreground">
+        <span className="text-xs text-muted">
           <RelativeTime value={row.original.created_at} />
         </span>
       ),
@@ -289,8 +294,14 @@ export function PeersPanel({ projectId, routeId }: { projectId: string; routeId:
     scope: { projectId },
     query: { refetchInterval: 15_000 },
   });
-  // DeclarePeerForm 的网络下拉数据（写面伴读，不经 kit 集合）。
-  const networks = useNetworks(projectId);
+  // DeclarePeerForm 的网络下拉数据（伴读 = collectionQueryOptions + scoped——
+  // 下拉不进 URL，批4 集成收口）。
+  const networks = useQuery({
+    ...collectionQueryOptions(scoped(networksResource, { projectId }), networksSearch.defaults, {
+      refetchInterval: 15_000,
+    }),
+    enabled: projectId !== "",
+  });
 
   const columns: LegacyColumnDef<NetworkPeer, any>[] = [
     {
@@ -306,7 +317,7 @@ export function PeersPanel({ projectId, routeId }: { projectId: string; routeId:
       id: "peer_project",
       header: "Peer project",
       cell: ({ row }) => (
-        <span className="font-mono text-xs text-muted-foreground" title={row.original.peer_project_id}>
+        <span className="font-mono text-xs text-muted" title={row.original.peer_project_id}>
           {shortId(row.original.peer_project_id)}
         </span>
       ),
@@ -314,13 +325,13 @@ export function PeersPanel({ projectId, routeId }: { projectId: string; routeId:
     {
       accessorKey: "state",
       header: "State",
-      cell: ({ row }) => <span className="text-xs text-muted-foreground">{row.original.state}</span>,
+      cell: ({ row }) => <span className="text-xs text-muted">{row.original.state}</span>,
     },
     {
       id: "id",
       header: "ID",
       cell: ({ row }) => (
-        <span className="font-mono text-xs text-muted-foreground" title={row.original.id}>
+        <span className="font-mono text-xs text-muted" title={row.original.id}>
           {shortId(row.original.id)}
         </span>
       ),
@@ -337,7 +348,7 @@ export function PeersPanel({ projectId, routeId }: { projectId: string; routeId:
 
   return (
     <section className="flex flex-col gap-3">
-      <p className="text-xs text-muted-foreground">
+      <p className="text-xs text-muted">
         Cross-project network attachment: the attaching project declares, the network owner approves.
       </p>
       <FleetListPage
@@ -351,7 +362,7 @@ export function PeersPanel({ projectId, routeId }: { projectId: string; routeId:
       >
         <DataTable list={list} columns={columns} getRowId={(row) => row.id ?? ""} />
       </FleetListPage>
-      <DeclarePeerForm projectId={projectId} networks={networks.data ?? []} />
+      <DeclarePeerForm projectId={projectId} networks={networks.data?.rows ?? []} />
     </section>
   );
 }
@@ -402,8 +413,10 @@ function PeerActionsCell({ projectId, peer }: { projectId: string; peer: Network
 // DeclarePeerForm：跨项目挂靠声明（inline 工具栏表单——壳保留：shadcn
 // Select 双下拉与行内提交钮形态不变，只换命令接线；结果盒/Working… 占位
 // 原位，成功占位保持瞬时态（reset 后即退场，零漂移））。
-function DeclarePeerForm({ projectId, networks }: { projectId: string; networks: Array<{ id?: string; name?: string }> }) {
-  const projects = useProjects();
+function DeclarePeerForm({ projectId, networks }: { projectId: string; networks: ReadonlyArray<{ id?: string; name?: string }> }) {
+  const projects = useQuery({
+    ...collectionQueryOptions(projectsResource, projectsAllQuery, { refetchInterval: 60_000 }),
+  });
   const [networkId, setNetworkId] = useState("");
   const [peerProject, setPeerProject] = useState("");
   const declare = useCommand(declarePeerDescriptor, {
@@ -428,7 +441,7 @@ function DeclarePeerForm({ projectId, networks }: { projectId: string; networks:
       }}
     >
       <Label className="flex flex-col gap-1 text-xs">
-        <span className="font-medium text-foreground">Declare peer — network</span>
+        <span className="font-medium text-fg">Declare peer — network</span>
         <Select value={networkId} onValueChange={setNetworkId}>
           <SelectTrigger className="h-8 w-44">
             <SelectValue placeholder="select…" />
@@ -443,13 +456,13 @@ function DeclarePeerForm({ projectId, networks }: { projectId: string; networks:
         </Select>
       </Label>
       <Label className="flex flex-col gap-1 text-xs">
-        <span className="font-medium text-foreground">Peer project (owner of the network you want to attach)</span>
+        <span className="font-medium text-fg">Peer project (owner of the network you want to attach)</span>
         <Select value={peerProject} onValueChange={setPeerProject}>
           <SelectTrigger className="h-8 w-44">
             <SelectValue placeholder="select…" />
           </SelectTrigger>
           <SelectContent>
-            {(projects.data ?? [])
+            {(projects.data?.rows ?? [])
               .filter((project) => project.id !== projectId)
               .map((project) => (
                 <SelectItem key={project.id} value={project.id}>
@@ -462,7 +475,7 @@ function DeclarePeerForm({ projectId, networks }: { projectId: string; networks:
       <Button type="submit" size="sm" disabled={declare.pending || networkId === "" || peerProject === ""}>
         declare
       </Button>
-      {declare.pending ? <span className="text-xs text-muted-foreground">Working…</span> : null}
+      {declare.pending ? <span className="text-xs text-muted">Working…</span> : null}
       {declare.result != null && declare.result.status !== "ok" ? <CmdResultError result={declare.result} /> : null}
       {declare.result?.status === "ok" ? <span className="text-xs text-[var(--status-success)]">peer declared</span> : null}
     </form>
@@ -643,7 +656,7 @@ function RoutesTab({
     {
       accessorKey: "path",
       header: "Path",
-      cell: ({ row }) => <span className="font-mono text-xs text-muted-foreground">{row.original.path || "—"}</span>,
+      cell: ({ row }) => <span className="font-mono text-xs text-muted">{row.original.path || "—"}</span>,
     },
     {
       id: "target",
@@ -661,7 +674,7 @@ function RoutesTab({
       accessorKey: "port",
       header: "Port",
       cell: ({ row }) => (
-        <span className="font-mono text-xs text-muted-foreground">
+        <span className="font-mono text-xs text-muted">
           {row.original.port} {row.original.protocol ? `(${row.original.protocol})` : ""}
         </span>
       ),
@@ -669,7 +682,7 @@ function RoutesTab({
     {
       accessorKey: "tls_mode",
       header: "TLS",
-      cell: ({ row }) => <span className="text-xs text-muted-foreground">{row.original.tls_mode}</span>,
+      cell: ({ row }) => <span className="text-xs text-muted">{row.original.tls_mode}</span>,
     },
     {
       id: "actions",
@@ -751,9 +764,30 @@ function VolumesTab({ projectId, routeId }: { projectId: string; routeId: string
     scope: { projectId },
     query: { refetchInterval: 15_000 },
   });
-  const apps = useApps(projectId);
-  const databases = useDatabases(projectId);
-  const { specs, pending: specsPending } = useAppSpecs(projectId, apps.data ?? []);
+  // 批4 集成收口：目录伴读迁 kit（下拉/反查不进 URL——scoped + lookup 大页）。
+  const apps = useQuery({
+    ...collectionQueryOptions(scoped(appsResource, { projectId }), appsDirectorySearch.defaults, {
+      refetchInterval: 60_000,
+    }),
+    enabled: projectId !== "",
+  });
+  const databases = useQuery({
+    ...collectionQueryOptions(scoped(databasesResource, { projectId }), databasesLookup.defaults, {
+      refetchInterval: 15_000,
+    }),
+    enabled: projectId !== "",
+  });
+  // 批4（2026-10-27）：冻结 Spec 反查迁 kit appSpecsResource（fan-out 内联
+  // 于 fetch——apps 整取不再由本页喂；大页 lookup 不截断；60s 轮询同旧拍；
+  // Mounted by 反查逻辑不动）。
+  const specsList = useCollection(appSpecsResource, {
+    from: routeId,
+    search: appSpecsLookup,
+    scope: { projectId },
+    query: { refetchInterval: 60_000 },
+  });
+  const specs = new Map<string, AppSpecRow["spec"]>(specsList.rows.map((row) => [row.appId, row.spec]));
+  const specsPending = specsList.status === "loading";
   const [createOpen, setCreateOpen] = useState(false);
   const create = useCommandForm(createVolumeCommand, {
     defaultValues: { name: "", pinnedNode: "" },
@@ -771,10 +805,10 @@ function VolumesTab({ projectId, routeId }: { projectId: string; routeId: string
   const volumeIndex = specIndex(specs, (spec) =>
     (spec.processes ?? []).flatMap((process) => (process.volumes ?? []).map((volume) => volume.volume_id ?? "")),
   );
-  const appName = (id: string) => (apps.data ?? []).find((app) => app.id === id)?.name ?? id;
+  const appName = (id: string) => (apps.data?.rows ?? []).find((app) => app.id === id)?.name ?? id;
   const mountOf = (volume: { name?: string }): { carrier: boolean; users: string[] } => {
     const users = (volumeIndex.get(volume.name ?? "") ?? []).map(appName);
-    const carried = (databases.data ?? []).some((database) => database.name === volume.name);
+    const carried = (databases.data?.rows ?? []).some((database) => database.name === volume.name);
     return { carrier: carried, users: carried ? [] : users };
   };
   const openCreate = () => {
@@ -793,18 +827,18 @@ function VolumesTab({ projectId, routeId }: { projectId: string; routeId: string
     {
       accessorKey: "pinned_node_id",
       header: "Pinned node",
-      cell: ({ row }) => <span className="font-mono text-xs text-muted-foreground">{row.original.pinned_node_id || "any"}</span>,
+      cell: ({ row }) => <span className="font-mono text-xs text-muted">{row.original.pinned_node_id || "any"}</span>,
     },
     {
       id: "mounted_by",
       header: "Mounted by",
       cell: ({ row }) => {
         // 异步反查占位是块外槽（页面列 cell 自绘——kit 块无此槽）
-        if (specsPending) return <span className="text-xs text-muted-foreground">…</span>;
+        if (specsPending) return <span className="text-xs text-muted">…</span>;
         const mount = mountOf(row.original);
         if (mount.carrier) {
           return (
-            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1 text-xs text-muted">
               <LinkIcon className="size-3" />
               database {row.original.name} (carrier data volume)
             </span>
@@ -812,20 +846,20 @@ function VolumesTab({ projectId, routeId }: { projectId: string; routeId: string
         }
         if (mount.users.length > 0) {
           return (
-            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1 text-xs text-muted">
               <LinkIcon className="size-3" />
               {mount.users.join(", ")}
             </span>
           );
         }
-        return <span className="text-xs text-muted-foreground">—</span>;
+        return <span className="text-xs text-muted">—</span>;
       },
     },
     {
       accessorKey: "created_at",
       header: "Created",
       cell: ({ row }) => (
-        <span className="text-xs text-muted-foreground">
+        <span className="text-xs text-muted">
           <RelativeTime value={row.original.created_at} />
         </span>
       ),
@@ -906,7 +940,7 @@ function VolumesTab({ projectId, routeId }: { projectId: string; routeId: string
               </Form>
             </DialogContent>
           </Dialog>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-muted">
             Mounts resolve from frozen app specs — new references go live on the app's next deploy.
           </p>
         </>
@@ -949,7 +983,7 @@ function VolumeActionsCell({
     <div className="text-right">
       <AlertDialog>
         <AlertDialogTrigger asChild>
-          <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" disabled={del.pending}>
+          <Button variant="ghost" size="sm" className="text-err hover:text-err" disabled={del.pending}>
             delete
           </Button>
         </AlertDialogTrigger>
@@ -1057,7 +1091,7 @@ function PutForm({
               ) : (
                 <Input type="password" value={value} onChange={(event) => setValue(event.target.value)} />
               )}
-              {valueHint ? <span className="text-2xs font-normal text-muted-foreground">{valueHint}</span> : null}
+              {valueHint ? <span className="text-2xs font-normal text-muted">{valueHint}</span> : null}
             </Label>
             {result !== null ? <CmdResultError result={result} /> : null}
             <DialogFooter>
@@ -1099,7 +1133,7 @@ function SecretsTab({ projectId, routeId }: { projectId: string; routeId: string
       id: "updated",
       header: "Updated",
       cell: ({ row }) => (
-        <span className="text-xs text-muted-foreground">
+        <span className="text-xs text-muted">
           {/* v1Secret 只有 updated_at（fingerprint 行无 created_at） */}
           <RelativeTime value={row.original.updated_at} />
         </span>
@@ -1200,13 +1234,13 @@ function ConfigsTab({ projectId, routeId }: { projectId: string; routeId: string
     {
       accessorKey: "version",
       header: "Version",
-      cell: ({ row }) => <span className="font-mono text-xs text-muted-foreground">{row.original.version ?? "—"}</span>,
+      cell: ({ row }) => <span className="font-mono text-xs text-muted">{row.original.version ?? "—"}</span>,
     },
     {
       id: "updated",
       header: "Updated",
       cell: ({ row }) => (
-        <span className="text-xs text-muted-foreground">
+        <span className="text-xs text-muted">
           <RelativeTime value={row.original.created_at} />
         </span>
       ),
@@ -1351,7 +1385,7 @@ function ConfigDetailDialog({
           </form>
         ) : (
           <>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-muted">
               version <span className="font-mono">{detail.data?.version ?? "…"}</span>
               {" · updated "}
               <RelativeTime value={detail.data?.created_at} />
@@ -1458,7 +1492,7 @@ function VariablesTab({
       accessorKey: "value",
       header: "Value",
       cell: ({ row }) => (
-        <span className="block max-w-xs truncate font-mono text-xs text-muted-foreground" title={row.original.value}>
+        <span className="block max-w-xs truncate font-mono text-xs text-muted" title={row.original.value}>
           {row.original.value}
         </span>
       ),
@@ -1467,7 +1501,7 @@ function VariablesTab({
       accessorKey: "updated_at",
       header: "Updated",
       cell: ({ row }) => (
-        <span className="text-xs text-muted-foreground">
+        <span className="text-xs text-muted">
           <RelativeTime value={row.original.updated_at} />
         </span>
       ),
@@ -1507,7 +1541,7 @@ function VariablesTab({
       appendix={
         <>
           <CliEquivalent command={`fleetly shared-variables list --project ${projectId}`} />
-          {putCommand.pending ? <p className="text-xs text-muted-foreground">Working…</p> : null}
+          {putCommand.pending ? <p className="text-xs text-muted">Working…</p> : null}
           {banner ? <p className="text-xs text-[var(--status-success)]">{banner}</p> : null}
         </>
       }
@@ -1586,8 +1620,24 @@ function UploadsTab({ projectId, routeId }: { projectId: string; routeId: string
     scope: { projectId },
     query: { refetchInterval: 15_000 },
   });
-  const apps = useApps(projectId);
-  const { specs, pending: specsPending } = useAppSpecs(projectId, apps.data ?? []);
+  // 批4 集成收口：App 目录伴读迁 kit（Uploads 引用反查用，不进 URL）。
+  const appsQuery = useQuery({
+    ...collectionQueryOptions(scoped(appsResource, { projectId }), appsDirectorySearch.defaults, {
+      refetchInterval: 60_000,
+    }),
+    enabled: projectId !== "",
+  });
+  const apps = appsQuery.data?.rows ?? [];
+  // 批4（2026-10-27）：冻结 Spec 反查迁 kit appSpecsResource（同 Volumes
+  // tab 口径；Referenced by 反查逻辑不动）。
+  const specsList = useCollection(appSpecsResource, {
+    from: routeId,
+    search: appSpecsLookup,
+    scope: { projectId },
+    query: { refetchInterval: 60_000 },
+  });
+  const specs = new Map<string, AppSpecRow["spec"]>(specsList.rows.map((row) => [row.appId, row.spec]));
+  const specsPending = specsList.status === "loading";
   const inputRef = useRef<HTMLInputElement>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -1596,7 +1646,7 @@ function UploadsTab({ projectId, routeId }: { projectId: string; routeId: string
   // upload → apps 引用反查（原 UsageIndex Upload→apps 面收编入列）：扫
   // App 冻结 Spec 的 source.upload.id（客户端 fan-out，ADR-0057 惯例）。
   const uploadIndex = specIndex(specs, (spec) => (spec.source?.upload?.id ? [spec.source.upload.id] : []));
-  const appName = (id: string) => (apps.data ?? []).find((app) => app.id === id)?.name ?? id;
+  const appName = (id: string) => apps.find((app) => app.id === id)?.name ?? id;
 
   // webkitdirectory 是非标准属性（目录选择面）：React TS 类型不含它，
   // 经 ref 挂属性（Chromium/Firefox 均支持目录选择）。
@@ -1642,14 +1692,14 @@ function UploadsTab({ projectId, routeId }: { projectId: string; routeId: string
       id: "size",
       header: "Size",
       cell: ({ row }) => (
-        <span className="font-mono text-xs text-muted-foreground">{(Number(row.original.size_bytes ?? 0) / 1024).toFixed(1)} KiB</span>
+        <span className="font-mono text-xs text-muted">{(Number(row.original.size_bytes ?? 0) / 1024).toFixed(1)} KiB</span>
       ),
     },
     {
       accessorKey: "digest",
       header: "Digest",
       cell: ({ row }) => (
-        <span className="font-mono text-xs text-muted-foreground" title={row.original.digest}>
+        <span className="font-mono text-xs text-muted" title={row.original.digest}>
           {row.original.digest?.slice(0, 16)}…
         </span>
       ),
@@ -1658,7 +1708,7 @@ function UploadsTab({ projectId, routeId }: { projectId: string; routeId: string
       accessorKey: "created_at",
       header: "Created",
       cell: ({ row }) => (
-        <span className="text-xs text-muted-foreground">
+        <span className="text-xs text-muted">
           <RelativeTime value={row.original.created_at} />
         </span>
       ),
@@ -1668,11 +1718,11 @@ function UploadsTab({ projectId, routeId }: { projectId: string; routeId: string
       header: "Referenced by",
       cell: ({ row }) => {
         // 异步反查占位是块外槽（页面列 cell 自绘——kit 块无此槽）
-        if (specsPending) return <span className="text-xs text-muted-foreground">…</span>;
+        if (specsPending) return <span className="text-xs text-muted">…</span>;
         const users = (uploadIndex.get(row.original.id ?? "") ?? []).map(appName);
-        if (users.length === 0) return <span className="text-xs text-muted-foreground">—</span>;
+        if (users.length === 0) return <span className="text-xs text-muted">—</span>;
         return (
-          <span className="flex items-center gap-1 text-xs text-muted-foreground">
+          <span className="flex items-center gap-1 text-xs text-muted">
             <LinkIcon className="size-3" />
             {users.join(", ")}
           </span>
@@ -1691,7 +1741,7 @@ function UploadsTab({ projectId, routeId }: { projectId: string; routeId: string
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-3">
             <FilterBar list={list} schema={storageSearch} textPlaceholder="Filter uploads..." />
-            <span className="hidden text-xs text-muted-foreground lg:inline">deterministic tar · .git skipped · content-addressed</span>
+            <span className="hidden text-xs text-muted lg:inline">deterministic tar · .git skipped · content-addressed</span>
           </div>
           <div className="py-2 pr-3">
             <input ref={inputRef} type="file" multiple className="hidden" onChange={(event) => void onFiles(event.target.files)} />
@@ -1710,10 +1760,10 @@ function UploadsTab({ projectId, routeId }: { projectId: string; routeId: string
       appendix={
         <>
           <CliEquivalent command={`fleetly uploads list --project ${projectId}`} />
-          {pending ? <p className="text-xs text-muted-foreground">Packing & uploading…</p> : null}
+          {pending ? <p className="text-xs text-muted">Packing & uploading…</p> : null}
           {error != null ? <FormError error={error} /> : null}
-          {result != null ? <p className="text-xs text-muted-foreground">{result}</p> : null}
-          <p className="text-xs text-muted-foreground">
+          {result != null ? <p className="text-xs text-muted">{result}</p> : null}
+          <p className="text-xs text-muted">
             Upload references resolve from frozen app specs — they go live on the app's next deploy.
           </p>
         </>

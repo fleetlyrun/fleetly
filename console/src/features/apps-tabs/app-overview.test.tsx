@@ -11,11 +11,15 @@ import { setToken } from "@/lib/token";
 // 上下文（useLinkProps 读 router 实例），单测无路由树——换纯 <a> 桩
 //（同文件 useNavigate 桩的先例，app-processes.test）。
 
+// 批4 useCollection 化：绑定层读 useSearch/useNavigate——裸 render 无路由
+// 树，一并桩化（Link 桩同款；search 恒空 = lookup schema 走缺省窗口）。
 vi.mock("@tanstack/react-router", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@tanstack/react-router")>();
   return {
     ...actual,
     Link: ({ children }: { children?: ReactNode }) => <a href="#">{children}</a>,
+    useSearch: () => ({}),
+    useNavigate: () => () => Promise.resolve(),
   };
 });
 
@@ -62,7 +66,7 @@ describe("AppOverviewTab processes summary", () => {
       return new Response(JSON.stringify({ series: [] }), { status: 200 });
     });
     const { client, wrapper } = withClient();
-    render(<AppOverviewTab projectId="P1" appId="A1" />, { wrapper });
+    render(<AppOverviewTab projectId="P1" appId="A1" routeId="/_shell/p/$projectId/apps/$appId/" />, { wrapper });
 
     await waitFor(() => expect(screen.getByText("Processes")).toBeTruthy());
     // 行出现 = apps 目录 → spec 扇出两轮异步已落值
@@ -108,7 +112,7 @@ describe("AppOverviewTab processes summary", () => {
       return new Response(JSON.stringify({ series: [] }), { status: 200 });
     });
     const { client, wrapper } = withClient();
-    render(<AppOverviewTab projectId="P1" appId="A1" />, { wrapper });
+    render(<AppOverviewTab projectId="P1" appId="A1" routeId="/_shell/p/$projectId/apps/$appId/" />, { wrapper });
 
     // 方向钉测（2026-10-18 用户裁决）：generation 读作 基线→目标，
     // 与 Revision 列 from→to 同向；旧 "NEW←BASE" 形态显式废弃。

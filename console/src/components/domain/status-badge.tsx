@@ -11,7 +11,7 @@ const TONE_CLASS: Record<StatusTone, string> = {
   info: "text-[var(--status-info)] bg-[var(--status-info-bg)] border-[color-mix(in_oklch,var(--status-info)_30%,transparent)]",
   warning: "text-[var(--status-warning)] bg-[var(--status-warning-bg)] border-[color-mix(in_oklch,var(--status-warning)_30%,transparent)]",
   danger: "text-[var(--status-danger)] bg-[var(--status-danger-bg)] border-[color-mix(in_oklch,var(--status-danger)_30%,transparent)]",
-  neutral: "text-muted-foreground bg-panel-2 border-border",
+  neutral: "text-muted bg-panel-2 border-line",
 };
 
 export function statusToneClass(tone: StatusTone): string {

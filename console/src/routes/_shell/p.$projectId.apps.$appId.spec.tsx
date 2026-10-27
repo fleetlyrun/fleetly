@@ -14,5 +14,5 @@ export const Route = createFileRoute("/_shell/p/$projectId/apps/$appId/spec")({
 function AppSpecRoute() {
   const { projectId, appId } = Route.useParams();
   const { seq } = Route.useSearch();
-  return <AppSpecTab projectId={projectId} appId={appId} seq={seq} />;
+  return <AppSpecTab projectId={projectId} appId={appId} seq={seq} routeId={Route.id} />;
 }

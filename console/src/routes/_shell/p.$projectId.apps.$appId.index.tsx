@@ -10,5 +10,5 @@ export const Route = createFileRoute("/_shell/p/$projectId/apps/$appId/")({
 
 function AppOverviewRoute() {
   const { projectId, appId } = Route.useParams();
-  return <AppOverviewTab projectId={projectId} appId={appId} />;
+  return <AppOverviewTab projectId={projectId} appId={appId} routeId={Route.id} />;
 }

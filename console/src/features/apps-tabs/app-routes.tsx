@@ -1,9 +1,10 @@
 import { useState } from "react";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
-import { useCommand } from "@lynx-go/uikit-core";
-import { useRoutes } from "@/lib/catalog";
+import { useCollection, useCommand } from "@lynx-go/uikit-core";
+import { routesResource, routesLookup } from "@/kit/routes";
 import { appTabCommands } from "@/kit/app-tabs";
 import { toastOnSettled } from "@/kit/toast";
+import { describeApiError } from "@/kit/errors";
 import { CopyButton } from "@/components/domain/copy-button";
 import { DataTable } from "@/components/domain/data-table";
 import { EmptyState } from "@/components/domain/empty-state";
@@ -22,9 +23,17 @@ type RouteEntry = { id?: string; host?: string; path?: string; app_id?: string; 
 // 2026-10-12 走查：手拼 table 与其他列表形态脱队）；创建交互统一契约：
 // 入口钉工具栏主动作槽 + 模态对话框。写面批2 命令化（kit/app-tabs 的
 // createRoute/deleteRoute，失效声明在命令内）。
-export function AppRoutesTab({ projectId, appId }: { projectId: string; appId: string }) {
-  const routes = useRoutes(projectId);
-  const rows = (routes.data ?? []).filter((route) => route.app_id === appId);
+// 批4（2026-10-27）：路由表读面迁 kit useCollection（routeId 由宿主路由
+// 注入；大页 lookup 不截断行集；15s 轮询同旧拍；错误面经 describeApiError
+// 收敛 kernel ApiError——与 ErrorInline 的 fetch-Error 口径并轨）。
+export function AppRoutesTab({ projectId, appId, routeId }: { projectId: string; appId: string; routeId: string }) {
+  const routes = useCollection(routesResource, {
+    from: routeId,
+    search: routesLookup,
+    scope: { projectId },
+    query: { refetchInterval: 15_000 },
+  });
+  const rows = routes.rows.filter((route) => route.app_id === appId);
   const [createOpen, setCreateOpen] = useState(false);
   const [query, setQuery] = useState("");
   const filtered = useListFilter(rows, query, (route: RouteEntry) => [
@@ -49,7 +58,7 @@ export function AppRoutesTab({ projectId, appId }: { projectId: string; appId: s
     {
       accessorKey: "path",
       header: "Path",
-      cell: ({ row }) => <span className="font-mono text-xs text-muted-foreground">{row.original.path || "/"}</span>,
+      cell: ({ row }) => <span className="font-mono text-xs text-muted">{row.original.path || "/"}</span>,
     },
     {
       id: "target",
@@ -69,7 +78,7 @@ export function AppRoutesTab({ projectId, appId }: { projectId: string; appId: s
       accessorKey: "tls_mode",
       header: "TLS",
       cell: ({ row }) => (
-        <span className="text-xs text-muted-foreground">
+        <span className="text-xs text-muted">
           {row.original.tls_mode === "auto" ? "auto (ACME)" : (row.original.tls_mode ?? "—")}
         </span>
       ),
@@ -83,7 +92,7 @@ export function AppRoutesTab({ projectId, appId }: { projectId: string; appId: s
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="rounded-xl border bg-card">
+      <div className="rounded-xl border bg-panel">
         <div className="px-3 pt-3">
           <ListToolbar
             label="routes"
@@ -103,9 +112,9 @@ export function AppRoutesTab({ projectId, appId }: { projectId: string; appId: s
         <DataTable
           data={filtered}
           columns={columns}
-          loading={routes.isPending}
-          error={routes.isError ? routes.error : null}
-          onRetry={() => void routes.refetch()}
+          loading={routes.status === "loading"}
+          error={routes.error != null ? new Error(describeApiError(routes.error)) : null}
+          onRetry={routes.refetch}
           empty={
             <EmptyState
               icon={GlobeIcon}

@@ -8,13 +8,14 @@ import { setToken } from "@/lib/token";
 // 首个项目（replace，死地址不留历史）；目录全空才诚实 Not found；命中正常
 // 渲染不导航。redirect 只在目录加载完成后判定（pending 窗不弹跳——记录·
 // 四十九"整页弹回"教训）。页体住 features（router 插件改写路由文件，薄壳
-// 不可单测）——mock 只需 useNavigate。
+// 不可单测）——mock useNavigate + useSearch（useCollection 的 URL 解码锚，
+// 无路由上下文的测试环境给空 search 即 schema 缺省窗）。
 
 const { navigateMock } = vi.hoisted(() => ({ navigateMock: vi.fn() }));
 
 vi.mock("@tanstack/react-router", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@tanstack/react-router")>();
-  return { ...actual, useNavigate: () => navigateMock };
+  return { ...actual, useNavigate: () => navigateMock, useSearch: () => ({}) };
 });
 
 const fetchMock = vi.fn();
@@ -36,7 +37,7 @@ function renderPage(client?: QueryClient, projectId = "gone") {
   const queryClient = client ?? new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queryClient}>
-      <ProjectOverviewPage projectId={projectId} />
+      <ProjectOverviewPage from="test" projectId={projectId} />
     </QueryClientProvider>,
   );
   return queryClient;

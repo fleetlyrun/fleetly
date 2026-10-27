@@ -2,7 +2,17 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { invalidateAfterCommand } from "@lynx-go/uikit-core";
 import { textPredicate, type CommandDescriptor } from "@lynx-go/uikit-core/kernel";
 import { setToken } from "@/lib/token";
-import { fetchSchedules, fetchTasks, schedulesResource, stopRunCommand, tasksResource, tasksSearch } from "./tasks";
+import {
+  fetchRuns,
+  fetchSchedules,
+  fetchTasks,
+  runsLookup,
+  runsResource,
+  schedulesResource,
+  stopRunCommand,
+  tasksResource,
+  tasksSearch,
+} from "./tasks";
 
 // 自动化域适配器单测（批1）：tasks/schedules 端点锚、protojson 行收敛、
 // 空 scope 不发请求、双 tab 共享 schema 的 URL 编解码往返。fetch 面 stub
@@ -320,5 +330,37 @@ describe("失效编排（kit selector 缺省 + legacyKeys 桥）", () => {
     );
     expect(callsOf(client).every(([c]) => c.predicate === undefined)).toBe(true);
     expect(client.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["resources", "runs"] });
+  });
+});
+
+// ---- runs 资源（2026-10-27 批4 读面收编：catalog useRuns 退役） ----
+
+describe("fetchRuns（端点 + 收敛）", () => {
+  it("GET /v1/runs?task_id 并展平 undefined 行（catalog rowsOf 口径）", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({ runs: [{ id: "R1", state: "running" }, undefined, { id: "R2", state: "failed" }] }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const rows = await fetchRuns({ projectId: "P1", taskId: "T1" });
+
+    expect(rows).toEqual([{ id: "R1", state: "running" }, { id: "R2", state: "failed" }]);
+    const [url] = fetchMock.mock.calls[0] as unknown as [string];
+    expect(String(url)).toBe("/v1/runs?task_id=T1");
+  });
+
+  it("scope 缺 taskId 时零请求空段（catalog enabled 门同语义）", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await fetchRuns({ projectId: "P1" })).toEqual([]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("非 2xx 走统一错误信封；scope 声明与存量键桥对齐", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ code: "E_X", message: "boom" }, 503)));
+    await expect(fetchRuns({ projectId: "P1", taskId: "T1" })).rejects.toThrowError(/boom/);
+    expect(runsResource.scope).toEqual(["projectId", "taskId"]);
+    expect(runsResource.legacyKeys?.({ projectId: "P1", taskId: "T1" })).toEqual([["resources", "runs", "T1"]]);
+    expect(runsLookup.decode({}).window.size).toBe(200);
   });
 });

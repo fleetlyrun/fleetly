@@ -1,6 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { setToken } from "@/lib/token";
-import { browseDatabaseCommand, DATABASE_ENGINES, databasesResource, databasesSearch, fetchDatabases } from "./databases";
+import {
+  browseDatabaseCommand,
+  databaseBackupListLookup,
+  databaseBackupListResource,
+  DATABASE_ENGINES,
+  databasesResource,
+  databasesSearch,
+  fetchDatabases,
+  fetchDatabaseBackupList,
+} from "./databases";
 
 // 数据库域适配器单测（批1）：端点锚、protojson 行收敛、空 scope 不发请求、
 // 快筛/引擎下拉的 URL 编解码往返。fetch 面 stub 在 global（fetchRows 命令
@@ -158,5 +167,38 @@ describe("databases commands（批2 写路径命令锚）", () => {
     expect(databasesResource.commands.delete.legacyKeys?.({ projectId: "shop" })).toEqual([
       ["resources", "databases", "shop"],
     ]);
+  });
+});
+
+// ---- per-Database 备份列表（2026-10-27 批4 读面收编：catalog
+// useDatabaseBackups 退役；与 kit/backups 的跨项目台账分立） ----
+
+describe("fetchDatabaseBackupList（端点 + 收敛）", () => {
+  it("GET /v1/databases/{id}/backups 并展平 undefined 行", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse({ backups: [{ id: "B1", created_at: "t" }, undefined, { id: "B2" }] }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const rows = await fetchDatabaseBackupList({ projectId: "P1", databaseId: "D1" });
+
+    expect(rows).toEqual([{ id: "B1", created_at: "t" }, { id: "B2" }]);
+    const [url] = fetchMock.mock.calls[0] as unknown as [string];
+    expect(String(url)).toBe("/v1/databases/D1/backups");
+  });
+
+  it("scope 缺 databaseId 时零请求空段；非 2xx 收敛错误信封；桥键对齐", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await fetchDatabaseBackupList({ projectId: "P1" })).toEqual([]);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ code: "E_X", message: "boom" }, 503)));
+    await expect(fetchDatabaseBackupList({ projectId: "P1", databaseId: "D1" })).rejects.toThrowError(/boom/);
+    expect(databaseBackupListResource.scope).toEqual(["projectId", "databaseId"]);
+    expect(databaseBackupListResource.legacyKeys?.({ projectId: "P1", databaseId: "D1" })).toEqual([
+      ["resources", "database-backups", "D1"],
+    ]);
+    expect(databaseBackupListLookup.decode({}).window.size).toBe(200);
   });
 });

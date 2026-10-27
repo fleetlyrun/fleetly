@@ -10,7 +10,7 @@ export function RouteFallback() {
     <div
       role="status"
       aria-label="Loading"
-      className="flex min-h-[50vh] items-center justify-center p-10 text-muted-foreground"
+      className="flex min-h-[50vh] items-center justify-center p-10 text-muted"
     >
       <LoaderCircleIcon className="size-5 animate-spin" />
     </div>

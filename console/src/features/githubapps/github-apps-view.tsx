@@ -85,11 +85,11 @@ export function GitHubAppsView({ projectId, from }: { projectId?: string; from: 
           <div>
             <div className="flex items-center gap-1.5 text-sm font-semibold">
               {row.original.account_login}
-              <span className="rounded border px-1 py-px font-mono text-2xs text-muted-foreground">
+              <span className="rounded border px-1 py-px font-mono text-2xs text-muted">
                 {row.original.project_id ? "PROJECT" : "GLOBAL"}
               </span>
             </div>
-            <div className="font-mono text-2xs text-muted-foreground">{row.original.api_base || "api.github.com"}</div>
+            <div className="font-mono text-2xs text-muted">{row.original.api_base || "api.github.com"}</div>
           </div>
         </div>
       ),
@@ -104,7 +104,7 @@ export function GitHubAppsView({ projectId, from }: { projectId?: string; from: 
       id: "fingerprint",
       header: "Private key",
       cell: ({ row }) => (
-        <span className="flex items-center gap-1 font-mono text-xs text-muted-foreground" title="key never leaves the store — fingerprint only">
+        <span className="flex items-center gap-1 font-mono text-xs text-muted" title="key never leaves the store — fingerprint only">
           <CopyButton value={row.original.private_key_fingerprint ?? ""} />
           {row.original.private_key_fingerprint}
         </span>
@@ -114,7 +114,7 @@ export function GitHubAppsView({ projectId, from }: { projectId?: string; from: 
       accessorKey: "created_at",
       header: "Added",
       cell: ({ row }) => (
-        <span className="text-xs text-muted-foreground">
+        <span className="text-xs text-muted">
           <RelativeTime value={row.original.created_at} />
         </span>
       ),
@@ -173,7 +173,7 @@ export function GitHubAppsView({ projectId, from }: { projectId?: string; from: 
         />
       </FleetListPage>
       {projectId != null ? (
-        <p className="mt-3 text-2xs text-muted-foreground">
+        <p className="mt-3 text-2xs text-muted">
           Build-time resolution order: <span className="font-medium">project GitHub App</span> →{" "}
           <span className="font-medium">global GitHub App</span> → anonymous clone. A private repo without material fails with
           an auth error and a pointer here; rotating a key is a re-put away (no redeploy).
@@ -218,27 +218,27 @@ function ReposPanel({ appId }: { appId: string }) {
   return (
     <div className="bg-panel-2/30 px-4 pb-4 pt-3 sm:pl-14">
       <div className="mb-2 flex items-center gap-2">
-        <span className="text-2xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <span className="text-2xs font-semibold uppercase tracking-wide text-muted">
           Repositories reachable via this installation
         </span>
-        <span className="font-mono text-2xs text-muted-foreground">resolved live · not stored</span>
+        <span className="font-mono text-2xs text-muted">resolved live · not stored</span>
       </div>
       {repos.isPending ? (
-        <p className="text-xs text-muted-foreground">Minting a short-lived token and listing…</p>
+        <p className="text-xs text-muted">Minting a short-lived token and listing…</p>
       ) : repos.isError ? (
-        <p className="rounded-lg border bg-card px-3 py-2 text-xs text-[var(--status-danger)]">
+        <p className="rounded-lg border bg-panel px-3 py-2 text-xs text-[var(--status-danger)]">
           {describeError(repos.error).title} — {describeError(repos.error).detail}
         </p>
       ) : (repos.data ?? []).length === 0 ? (
-        <p className="text-xs text-muted-foreground">No repositories reachable via this installation.</p>
+        <p className="text-xs text-muted">No repositories reachable via this installation.</p>
       ) : (
-        <div className="overflow-hidden rounded-lg border bg-card">
+        <div className="overflow-hidden rounded-lg border bg-panel">
           {(repos.data ?? []).map((repo) => (
             <div key={repo.full_name} className="flex items-center gap-2 border-b px-3 py-1.5 text-xs last:border-b-0">
               <span className="font-mono">{repo.full_name}</span>
               <span
                 className={`rounded border px-1 py-px font-mono text-2xs ${
-                  repo.private ? "border-[color-mix(in_oklch,var(--status-warn)_35%,transparent)] text-[var(--status-warn)]" : "text-muted-foreground"
+                  repo.private ? "border-[color-mix(in_oklch,var(--status-warn)_35%,transparent)] text-[var(--status-warn)]" : "text-muted"
                 }`}
               >
                 {repo.private ? "private" : "public"}
@@ -315,7 +315,7 @@ function AddGitHubAppDialog({
   // 预填 name/权限/回跳；用户确认后 GitHub 302 回 /github-apps/connect）。
   if (ghFlow != null) {
     return (
-      <div className="flex min-h-svh flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
+      <div className="flex min-h-svh flex-col items-center justify-center gap-3 text-sm text-muted">
         <p>Redirecting to GitHub…</p>
         <form ref={flowFormRef} method="POST" action={ghFlow.actionUrl}>
           <input type="hidden" name="manifest" value={ghFlow.manifest} />
@@ -336,7 +336,7 @@ function AddGitHubAppDialog({
         </DialogHeader>
         <div className="flex flex-col gap-2 rounded-lg border bg-panel-2/30 p-3">
           <div className="text-xs font-semibold">Recommended — create it on GitHub automatically</div>
-          <p className="text-2xs text-muted-foreground">
+          <p className="text-2xs text-muted">
             GitHub generates the key and delivers it to fleetly (sealed, never shown) — nothing to copy by hand.
           </p>
           <Button
@@ -348,7 +348,7 @@ function AddGitHubAppDialog({
             <FingerprintIcon data-icon-start-inline />
             {startFlow.pending ? "Preparing…" : "Continue to GitHub →"}
           </Button>
-          <div className="pt-1 text-2xs text-muted-foreground">
+          <div className="pt-1 text-2xs text-muted">
             or configure manually below (GitHub Enterprise Server / restricted environments)
           </div>
         </div>
@@ -356,7 +356,7 @@ function AddGitHubAppDialog({
           <label className="flex flex-col gap-1.5">
             <span className="text-xs font-semibold">App ID</span>
             <Input value={appId} onChange={(e) => setAppId(e.target.value)} placeholder="182345" inputMode="numeric" />
-            <span className="text-2xs text-muted-foreground">GitHub App → General → About → App ID (numeric).</span>
+            <span className="text-2xs text-muted">GitHub App → General → About → App ID (numeric).</span>
           </label>
           <label className="flex flex-col gap-1.5">
             <span className="text-xs font-semibold">Installation ID</span>
@@ -366,11 +366,11 @@ function AddGitHubAppDialog({
               placeholder="51790921"
               inputMode="numeric"
             />
-            <span className="text-2xs text-muted-foreground">Install the app on your account, then take the ID from the installation URL.</span>
+            <span className="text-2xs text-muted">Install the app on your account, then take the ID from the installation URL.</span>
           </label>
           <label className="flex flex-col gap-1.5">
             <span className="text-xs font-semibold">
-              Private key <span className="font-normal text-muted-foreground">(PEM — write-only)</span>
+              Private key <span className="font-normal text-muted">(PEM — write-only)</span>
             </span>
             <textarea
               className="min-h-24 rounded-lg border bg-transparent px-3 py-2 font-mono text-xs"
@@ -378,14 +378,14 @@ function AddGitHubAppDialog({
               value={privateKey}
               onChange={(e) => setPrivateKey(e.target.value)}
             />
-            <span className="text-2xs text-muted-foreground">
+            <span className="text-2xs text-muted">
               Sealed with the platform master key at rest. Never returned by the API — only a fingerprint stays visible.
             </span>
           </label>
           <div>
             <button
               type="button"
-              className="text-xs font-semibold text-muted-foreground hover:text-foreground"
+              className="text-xs font-semibold text-muted hover:text-fg"
               onClick={() => setAdvanced(!advanced)}
             >
               {advanced ? "▾" : "▸"} Advanced · API base for GitHub Enterprise Server
@@ -393,13 +393,13 @@ function AddGitHubAppDialog({
             {advanced ? (
               <label className="mt-2 flex flex-col gap-1.5">
                 <Input value={apiBase} onChange={(e) => setApiBase(e.target.value)} placeholder="https://api.github.com" />
-                <span className="text-2xs text-muted-foreground">
+                <span className="text-2xs text-muted">
                   Leave empty for github.com. GHES example: <span className="font-mono">https://ghe.example.com/api/v3</span>.
                 </span>
               </label>
             ) : null}
           </div>
-          <p className="flex items-start gap-1.5 rounded-lg border bg-panel-2/40 px-3 py-2 text-2xs text-muted-foreground">
+          <p className="flex items-start gap-1.5 rounded-lg border bg-panel-2/40 px-3 py-2 text-2xs text-muted">
             <InfoIcon className="mt-px size-3.5 flex-none" />
             On save, fleetly verifies the app + installation + key against GitHub and fills in the owner automatically — repos
             under that owner resolve to this app{projectId != null ? " (project rows shadow global rows)" : ""}.

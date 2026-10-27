@@ -11,9 +11,11 @@ import { setToken } from "@/lib/token";
 
 const { navigateMock } = vi.hoisted(() => ({ navigateMock: vi.fn() }));
 
+// 批4 useCollection 化：绑定层读 useSearch（revisions 集合）——裸 render
+// 无路由树，桩化为恒空（lookup schema 走缺省窗口）。
 vi.mock("@tanstack/react-router", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@tanstack/react-router")>();
-  return { ...actual, useNavigate: () => navigateMock };
+  return { ...actual, useNavigate: () => navigateMock, useSearch: () => ({}) };
 });
 
 function withClient() {
@@ -76,7 +78,7 @@ describe("AppSpecTab", () => {
   it("renders the three observability layers from the effective revision", async () => {
     stubFetch({ live: [{ workload_id: "A1-web", generation: "4", image: "nginx:1.27", replicas: "3", state: "running" }] });
     const { wrapper } = withClient();
-    render(<AppSpecTab projectId="P1" appId="A1" />, { wrapper });
+    render(<AppSpecTab projectId="P1" appId="A1" routeId="/_shell/p/$projectId/apps/$appId/spec" />, { wrapper });
 
     await waitFor(() => expect(screen.getByText("R2")).toBeTruthy());
     expect(fetchMock).toHaveBeenCalledWith("/v1/apps/A1/workloads", expect.anything());
@@ -92,7 +94,7 @@ describe("AppSpecTab", () => {
   it("warns when the latest frozen revision is not effective", async () => {
     stubFetch({ latestFrozenSeq: 3 });
     const { wrapper } = withClient();
-    render(<AppSpecTab projectId="P1" appId="A1" />, { wrapper });
+    render(<AppSpecTab projectId="P1" appId="A1" routeId="/_shell/p/$projectId/apps/$appId/spec" />, { wrapper });
 
     await waitFor(() =>
       expect(screen.getByText(/Latest frozen R3 is not effective yet — the cluster is running R2/)).toBeTruthy(),
@@ -102,7 +104,7 @@ describe("AppSpecTab", () => {
   it("addresses an explicit seq via the query parameter", async () => {
     stubFetch();
     const { wrapper } = withClient();
-    render(<AppSpecTab projectId="P1" appId="A1" seq={1} />, { wrapper });
+    render(<AppSpecTab projectId="P1" appId="A1" seq={1} routeId="/_shell/p/$projectId/apps/$appId/spec" />, { wrapper });
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/v1/apps/A1/workloads?seq=1", expect.anything()));
   });

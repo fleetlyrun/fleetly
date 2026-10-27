@@ -5,7 +5,8 @@ import { RefreshCwIcon, ShieldAlertIcon } from "lucide-react";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
 import { useCollection, useCommand } from "@lynx-go/uikit-core";
 import { apiSend } from "@/api/client";
-import { useWhoami } from "@/lib/catalog";
+import { useRecord } from "@lynx-go/uikit-core";
+import { sessionResource } from "@/kit/settings";
 import { describeError } from "@/lib/api-errors";
 import { enrollMaterialCommand } from "@/kit/app-tabs";
 import { toastOnSettled } from "@/kit/toast";
@@ -45,12 +46,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 // 单源），与各 Confirm 弹窗原样保留。
 
 export function NodesPage({ from }: { from: string }) {
-  const whoami = useWhoami(true);
+  const whoami = useRecord(sessionResource, { id: "self" });
   // 平台管理员门（fail-closed：whoami 未到/失败/非平台管理员都不请求
   // /v1/nodes——成员不再撞 403 页面）。
   const platformAdmin = whoami.data?.platformAdmin === true;
 
-  if (whoami.isPending) {
+  if (whoami.status === "loading") {
     return (
       <PageFrame title="Nodes" description="Cluster membership, relay liveness and the runtime admin verbs">
         <Skeleton className="h-48 w-full rounded-xl" />
@@ -97,7 +98,7 @@ function NodesList({ from }: { from: string }) {
       cell: ({ row }) => (
         <span className="font-medium" title="View the containers running on this node">
           {row.original.hostname}
-          <span className="ml-1.5 font-mono text-2xs text-muted-foreground" title={row.original.platform_id}>
+          <span className="ml-1.5 font-mono text-2xs text-muted" title={row.original.platform_id}>
             {row.original.platform_id?.slice(0, 8)}…
           </span>
         </span>
@@ -107,7 +108,7 @@ function NodesList({ from }: { from: string }) {
       accessorKey: "role",
       header: "Role",
       meta: { sortField: "role" },
-      cell: ({ row }) => <span className="text-xs text-muted-foreground">{row.original.role}</span>,
+      cell: ({ row }) => <span className="text-xs text-muted">{row.original.role}</span>,
     },
     {
       accessorKey: "available",
@@ -124,7 +125,7 @@ function NodesList({ from }: { from: string }) {
       header: "Relay",
       cell: ({ row }) =>
         row.original.relay_online ? (
-          <span className="font-mono text-xs text-muted-foreground" title="node relay online — exec sessions can route to this node">
+          <span className="font-mono text-xs text-muted" title="node relay online — exec sessions can route to this node">
             online{row.original.relay_version ? ` · ${row.original.relay_version}` : ""}
           </span>
         ) : (
@@ -137,7 +138,7 @@ function NodesList({ from }: { from: string }) {
       accessorKey: "last_seen_at",
       header: "Last seen",
       cell: ({ row }) => (
-        <span className="text-xs text-muted-foreground">
+        <span className="text-xs text-muted">
           <RelativeTime value={row.original.last_seen_at} />
         </span>
       ),
@@ -183,7 +184,7 @@ function NodesList({ from }: { from: string }) {
             : "The control plane node appears once its daemon has observed the runtime."
         }
         appendix={
-          <p className="mt-3 text-xs text-muted-foreground">
+          <p className="mt-3 text-xs text-muted">
             Drain migrates running tasks off the node (real task movement); cordon/uncordon toggle schedulability. The
             control-plane node hosts the managed carriers (proxy, registry, metrics) and cannot be drained away from them.
           </p>
@@ -377,7 +378,7 @@ function MaterialDialog({ material, onClose }: { material: { join: string }; onC
               <CopyButton value={material.join} className="absolute top-2 right-2" />
             </div>
           </div>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-muted">
             After the node anchors, fetch its relay command from the node row.
           </p>
         </div>

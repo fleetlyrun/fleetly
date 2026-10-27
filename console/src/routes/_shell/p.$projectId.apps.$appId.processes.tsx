@@ -8,7 +8,5 @@ export const Route = createFileRoute("/_shell/p/$projectId/apps/$appId/processes
 
 function AppProcessesRoute() {
   const { projectId, appId } = Route.useParams();
-  return (
-    <AppProcessesTab projectId={projectId} appId={appId} />
-  );
+  return <AppProcessesTab projectId={projectId} appId={appId} routeId={Route.id} />;
 }

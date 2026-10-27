@@ -1,7 +1,9 @@
 import { useState } from "react";
+import { useCollection } from "@lynx-go/uikit-core";
 import { METRIC_PRESETS, type MetricPreset } from "@/features/metrics/metric-presets";
 import { MetricChart } from "@/features/metrics/metric-chart";
-import { useRevisions, useScopedMetricsSeries, type ScopedMetric } from "@/lib/catalog";
+import { useScopedMetricsSeries, type ScopedMetric } from "@/kit/metrics";
+import { revisionsResource, revisionsLookup } from "@/kit/revisions";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
@@ -10,9 +12,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 // 按行解析出的 Project 固定构造（设计 §5.4）。process 选择器是 per-process
 // 下钻（2026-10-12 层级定案：观测类 tab 可下探 Process；Instance 级留给
 // 工作台自定义 PromQL）——"all" = 全进程并集（原语义）。
-export function AppMetricsTab({ appId }: { appId: string }) {
-  const revisions = useRevisions(appId);
-  const processes = (revisions.data?.[0]?.process_strategies ?? [])
+// 批4（2026-10-27）：revisions 读面迁 kit useCollection（routeId 注入；
+// metrics 的 scoped 模板查询仍在 lib/catalog——telemetry 面属 R2 域）。
+export function AppMetricsTab({ appId, routeId, projectId }: { appId: string; routeId: string; projectId: string }) {
+  const revisions = useCollection(revisionsResource, {
+    from: routeId,
+    search: revisionsLookup,
+    scope: { projectId, appId },
+    query: { refetchInterval: 15_000 },
+  });
+  const processes = (revisions.rows[0]?.process_strategies ?? [])
     .map((entry) => entry?.process ?? "")
     .filter((name) => name !== "");
   const [process, setProcess] = useState("all");
@@ -22,14 +31,14 @@ export function AppMetricsTab({ appId }: { appId: string }) {
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-end gap-2.5">
         <div className="flex flex-col gap-1">
-          <Label className="text-2xs text-muted-foreground">Process</Label>
+          <Label className="text-2xs text-muted">Process</Label>
           <Select value={process} onValueChange={setProcess}>
             <SelectTrigger className="w-44">
               <SelectValue placeholder="—" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">
-                all <span className="text-muted-foreground">(processes combined)</span>
+                all <span className="text-muted">(processes combined)</span>
               </SelectItem>
               {processes.map((name) => (
                 <SelectItem key={name} value={name}>
@@ -52,7 +61,7 @@ export function AppMetricsTab({ appId }: { appId: string }) {
           />
         ))}
       </div>
-      <p className="text-2xs text-muted-foreground">
+      <p className="text-2xs text-muted">
         Scope: app <span className="font-mono">{appId}</span>
         {process !== "all" ? (
           <>
@@ -86,17 +95,17 @@ function PresetCard({
   const series = useScopedMetricsSeries({ kind: "app", id: appId }, metric, process, "1h");
   const seriesList = series.data?.series ?? [];
   return (
-    <section className="rounded-xl border bg-card p-4">
+    <section className="rounded-xl border bg-panel p-4">
       <div className="mb-2 flex items-baseline justify-between">
         <h3 className="text-sm font-semibold">{title}</h3>
-        <span className="text-2xs text-muted-foreground">window 1h · refreshed 30s</span>
+        <span className="text-2xs text-muted">window 1h · refreshed 30s</span>
       </div>
       {series.isPending ? (
-        <p className="py-10 text-center text-xs text-muted-foreground">Loading series…</p>
+        <p className="py-10 text-center text-xs text-muted">Loading series…</p>
       ) : series.isError ? (
-        <p className="py-10 text-center text-xs text-destructive">{series.error instanceof Error ? series.error.message : String(series.error)}</p>
+        <p className="py-10 text-center text-xs text-err">{series.error instanceof Error ? series.error.message : String(series.error)}</p>
       ) : seriesList.length === 0 ? (
-        <p className="py-10 text-center text-xs text-muted-foreground">No series — replicas may be stopped.</p>
+        <p className="py-10 text-center text-xs text-muted">No series — replicas may be stopped.</p>
       ) : (
         <MetricChart
           seriesList={seriesList}

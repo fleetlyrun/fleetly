@@ -1,11 +1,12 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 import { PlusIcon } from "lucide-react";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
 import { toast } from "sonner";
-import { useCollection, useCommand } from "@lynx-go/uikit-core";
-import { useRoles, useTeams } from "@/lib/catalog";
+import { collectionQueryOptions, useCollection, useCommand } from "@lynx-go/uikit-core";
+import type { CollectionQuery } from "@lynx-go/uikit-core/kernel";
 import { shortId } from "@/lib/format";
 import { toastOnSettled } from "@/kit/toast";
 import {
@@ -43,20 +44,24 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 // 身份管理页（C2 治理批 → UI v2 批 5 reskin → 2026-10-26 批1 Wave2-B
-// useCollection 化 + 批2 写面 useCommand 化）：users / teams / roles /
-// invitations 四 tab（URL param），动词面对齐 CLI。明文凭证沿 CLI 口径：
-// 邀请 secret 只在铸造响应出现一次（SecretReveal 形态）。列表骨架换 fleet
-// 块（FleetListPage × FilterBar × DataTable × Pagination），快筛/分页首次
-// 进 URL（identitySearch 四 tab 共享实例，q/分页跨 tab 持久）；users 行内设密
-// 跨行展开走 DataTable 本地扩展槽 renderExtraRow（展开态归页面）。写面批2
-// 全走 kit/identity.ts 的 resource commands（四创建弹窗保留 useState 壳只
-// 换提交面——mint→reveal 链敏感不迁 Form 块；Confirm 壳原样；toast 单源
-// 在 kit/toast.ts；catalog 的 useTeams/useRoles 是创建弹窗下拉的写面伴读，
-// 不经 kit 集合）。
+// useCollection 化 + 批2 写面 useCommand 化 + 批4 伴读 kit 化）：users /
+// teams / roles / invitations 四 tab（URL param），动词面对齐 CLI。明文凭证
+// 沿 CLI 口径：邀请 secret 只在铸造响应出现一次（SecretReveal 形态）。列表
+// 骨架换 fleet 块（FleetListPage × FilterBar × DataTable × Pagination），快筛/
+// 分页首次进 URL（identitySearch 四 tab 共享实例，q/分页跨 tab 持久）；users
+// 行内设密跨行展开走 DataTable 本地扩展槽 renderExtraRow（展开态归页面）。
+// 写面批2 全走 kit/identity.ts 的 resource commands（四创建弹窗保留
+// useState 壳只换提交面——mint→reveal 链敏感不迁 Form 块；Confirm 壳原样；
+// toast 单源在 kit/toast.ts）。批4：创建弹窗下拉的伴读也换 kit 集合——固定
+// 窗（pickerQuery）不经 URL，列表页的 q/cursor 残留不泄进下拉。
 // useCollection 化批：validateSearch 合并形态收编 tab 键 + kit 集合参数
 //（toSearchSchema 不认 tab，必须显式并入）；tab 切换走函数式 search 保
 // q/分页跨 tab 持久（接受语义）。
 const identityTabSearch = z.object({ tab: z.enum(["users", "teams", "roles", "invitations"]).optional() });
+
+// 创建弹窗下拉的伴读固定窗：全量行整取（size 100），不经 URL——useCollection
+// 解码的是 location 级共享键，列表页写进的 q/cursor 会误收进下拉窗形。
+const pickerQuery: CollectionQuery = { window: { size: 100 } };
 
 export const Route = createFileRoute("/_shell/identity")({
   validateSearch: (input: Record<string, unknown>) => ({
@@ -129,7 +134,7 @@ function UsersTab({ createOpen, onCreateOpenChange }: { createOpen: boolean; onC
       header: "ID",
       meta: { sortField: "id" },
       cell: ({ row }) => (
-        <span className="font-mono text-2xs text-muted-foreground" title={row.original.id}>
+        <span className="font-mono text-2xs text-muted" title={row.original.id}>
           {shortId(row.original.id)}
           <CopyButton value={row.original.id ?? ""} />
         </span>
@@ -140,7 +145,7 @@ function UsersTab({ createOpen, onCreateOpenChange }: { createOpen: boolean; onC
       header: "Created",
       meta: { sortField: "created_at" },
       cell: ({ row }) => (
-        <span className="text-xs text-muted-foreground">
+        <span className="text-xs text-muted">
           <RelativeTime value={row.original.created_at} />
         </span>
       ),
@@ -257,15 +262,23 @@ function SetPasswordRow({ userId, onDone }: { userId: string; onDone: () => void
         <Button type="submit" size="sm" disabled={set.pending || password === ""} className="mb-0.5">
           {set.pending ? "Setting…" : "Set password"}
         </Button>
-        <p className="mb-1.5 text-2xs text-muted-foreground">admin reset — the user signs in with this on the password tab</p>
+        <p className="mb-1.5 text-2xs text-muted">admin reset — the user signs in with this on the password tab</p>
       </form>
     </div>
   );
 }
 
 function CreateUserDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const teams = useTeams();
-  const roles = useRoles();
+  // 下拉伴读（批4 kit 集合化）：teams 15s / roles 60s 对齐旧 catalog
+  // useTeams（RESOURCE_MS）/useRoles（CATALOG_MS）拍频。
+  const teams = useQuery(
+    collectionQueryOptions(teamsResource, pickerQuery, { refetchInterval: 15_000 }),
+  );
+  const roles = useQuery(
+    collectionQueryOptions(rolesResource, pickerQuery, { refetchInterval: 60_000 }),
+  );
+  const teamRows = teams.data?.rows ?? [];
+  const roleRows = roles.data?.rows ?? [];
   const [name, setName] = useState("");
   const [teamId, setTeamId] = useState("");
   const [roleId, setRoleId] = useState("");
@@ -296,29 +309,29 @@ function CreateUserDialog({ open, onClose }: { open: boolean; onClose: () => voi
             <Select value={teamId} onValueChange={setTeamId}>
               <SelectTrigger><SelectValue placeholder="default" /></SelectTrigger>
               <SelectContent>
-                {(teams.data ?? []).map((team) => (
+                {teamRows.map((team) => (
                   <SelectItem key={team.id} value={team.id ?? ""}>{team.name}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            <p className="text-2xs text-muted-foreground">defaults to the default team</p>
+            <p className="text-2xs text-muted">defaults to the default team</p>
           </div>
           <div className="flex flex-col gap-1.5">
             <Label className="text-xs">Role</Label>
             <Select value={roleId} onValueChange={setRoleId}>
               <SelectTrigger><SelectValue placeholder="— pick a role —" /></SelectTrigger>
               <SelectContent>
-                {(roles.data ?? []).map((role) => (
+                {roleRows.map((role) => (
                   <SelectItem key={role.id} value={role.id ?? ""}>{role.name}{role.builtin ? " (builtin)" : ""}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            <p className="text-2xs text-muted-foreground">the role granted within the team</p>
+            <p className="text-2xs text-muted">the role granted within the team</p>
           </div>
           <div className="flex flex-col gap-1.5">
             <Label className="text-xs">Initial password (optional)</Label>
             <Input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="••••••••" />
-            <p className="text-2xs text-muted-foreground">empty means no password login (set one later from the users row)</p>
+            <p className="text-2xs text-muted">empty means no password login (set one later from the users row)</p>
           </div>
         </form>
         <DialogFooter>
@@ -364,7 +377,7 @@ function TeamsTab() {
       header: "ID",
       meta: { sortField: "id" },
       cell: ({ row }) => (
-        <span className="font-mono text-2xs text-muted-foreground" title={row.original.id}>
+        <span className="font-mono text-2xs text-muted" title={row.original.id}>
           {shortId(row.original.id)}
           <CopyButton value={row.original.id ?? ""} />
         </span>
@@ -375,7 +388,7 @@ function TeamsTab() {
       header: "Created",
       meta: { sortField: "created_at" },
       cell: ({ row }) => (
-        <span className="text-xs text-muted-foreground"><RelativeTime value={row.original.created_at} /></span>
+        <span className="text-xs text-muted"><RelativeTime value={row.original.created_at} /></span>
       ),
     },
     {
@@ -460,8 +473,11 @@ function TeamsTab() {
 // ---- roles ----
 
 function RolesTab({ createOpen, onCreateOpenChange }: { createOpen: boolean; onCreateOpenChange: (open: boolean) => void }) {
-  // useTeams 是创建弹窗下拉的写面伴读（不经 kit 集合）。
-  const teams = useTeams();
+  // teams 是创建弹窗下拉的伴读（批4 换 kit 集合固定窗；15s 对齐旧
+  // catalog useTeams）。
+  const teams = useQuery(
+    collectionQueryOptions(teamsResource, pickerQuery, { refetchInterval: 15_000 }),
+  );
   // 数据面 useCollection：轮询统一 15s 取齐其余三表（旧 catalog useRoles
   // 键在 ["settings","roles"] 是 60s 前缀异类——kit fetch 直打同端点
   // /v1/roles，拍频对齐本页四表）。
@@ -480,7 +496,7 @@ function RolesTab({ createOpen, onCreateOpenChange }: { createOpen: boolean; onC
       accessorKey: "team_id",
       header: "Team",
       meta: { sortField: "team_id" },
-      cell: ({ row }) => <span className="font-mono text-2xs text-muted-foreground" title={row.original.team_id}>{row.original.team_id?.slice(0, 10) ?? "—"}</span>,
+      cell: ({ row }) => <span className="font-mono text-2xs text-muted" title={row.original.team_id}>{row.original.team_id?.slice(0, 10) ?? "—"}</span>,
     },
     {
       accessorKey: "builtin",
@@ -494,7 +510,7 @@ function RolesTab({ createOpen, onCreateOpenChange }: { createOpen: boolean; onC
       header: "Scopes",
       cell: ({ row }) => (
         <span
-          className="block max-w-md truncate font-mono text-2xs text-muted-foreground"
+          className="block max-w-md truncate font-mono text-2xs text-muted"
           title={(row.original.scopes ?? []).join(" ")}
         >
           {(row.original.scopes ?? []).join(" ")}
@@ -554,12 +570,12 @@ function RolesTab({ createOpen, onCreateOpenChange }: { createOpen: boolean; onC
         confirmLabel="Delete role"
         onConfirm={() => removeRole.mutateAsync({ id: deleting?.id ?? "" })}
       />
-      <CreateRoleDialog open={createOpen} onClose={() => onCreateOpenChange(false)} teams={teams.data ?? []} />
+      <CreateRoleDialog open={createOpen} onClose={() => onCreateOpenChange(false)} teams={teams.data?.rows ?? []} />
     </>
   );
 }
 
-function CreateRoleDialog({ open, onClose, teams }: { open: boolean; onClose: () => void; teams: TeamEntry[] }) {
+function CreateRoleDialog({ open, onClose, teams }: { open: boolean; onClose: () => void; teams: ReadonlyArray<TeamEntry> }) {
   const [name, setName] = useState("");
   const [teamId, setTeamId] = useState("");
   const [scopes, setScopes] = useState("");
@@ -601,7 +617,7 @@ function CreateRoleDialog({ open, onClose, teams }: { open: boolean; onClose: ()
                 ))}
               </SelectContent>
             </Select>
-            <p className="text-2xs text-muted-foreground">custom roles belong to a team</p>
+            <p className="text-2xs text-muted">custom roles belong to a team</p>
           </div>
           <div className="flex flex-col gap-1.5">
             <Label className="text-xs">Scopes</Label>
@@ -628,9 +644,14 @@ function InvitationsTab({ createOpen, onCreateOpenChange }: { createOpen: boolea
     search: identitySearch,
     query: { refetchInterval: 15_000 },
   });
-  // useTeams/useRoles 是创建弹窗下拉的写面伴读（不经 kit 集合）。
-  const teams = useTeams();
-  const roles = useRoles();
+  // 下拉伴读（批4 换 kit 集合固定窗）：teams 15s / roles 60s 对齐旧
+  // catalog useTeams/useRoles 拍频。
+  const teams = useQuery(
+    collectionQueryOptions(teamsResource, pickerQuery, { refetchInterval: 15_000 }),
+  );
+  const roles = useQuery(
+    collectionQueryOptions(rolesResource, pickerQuery, { refetchInterval: 60_000 }),
+  );
 
   const columns: LegacyColumnDef<InvitationEntry, any>[] = [
     {
@@ -638,7 +659,7 @@ function InvitationsTab({ createOpen, onCreateOpenChange }: { createOpen: boolea
       header: "ID",
       meta: { sortField: "id" },
       cell: ({ row }) => (
-        <span className="font-mono text-2xs text-muted-foreground" title={row.original.id}>
+        <span className="font-mono text-2xs text-muted" title={row.original.id}>
           {shortId(row.original.id)}
           <CopyButton value={row.original.id ?? ""} />
         </span>
@@ -648,7 +669,7 @@ function InvitationsTab({ createOpen, onCreateOpenChange }: { createOpen: boolea
       accessorKey: "team_id",
       header: "Team",
       cell: ({ row }) => (
-        <span className="font-mono text-2xs text-muted-foreground" title={row.original.team_id}>
+        <span className="font-mono text-2xs text-muted" title={row.original.team_id}>
           {row.original.team_id?.slice(0, 10)}
         </span>
       ),
@@ -657,7 +678,7 @@ function InvitationsTab({ createOpen, onCreateOpenChange }: { createOpen: boolea
       accessorKey: "role_id",
       header: "Role",
       cell: ({ row }) => (
-        <span className="font-mono text-2xs text-muted-foreground" title={row.original.role_id}>
+        <span className="font-mono text-2xs text-muted" title={row.original.role_id}>
           {row.original.role_id?.slice(0, 10)}
         </span>
       ),
@@ -665,13 +686,13 @@ function InvitationsTab({ createOpen, onCreateOpenChange }: { createOpen: boolea
     {
       accessorKey: "created_by",
       header: "Created by",
-      cell: ({ row }) => <span className="text-xs text-muted-foreground">{row.original.created_by}</span>,
+      cell: ({ row }) => <span className="text-xs text-muted">{row.original.created_by}</span>,
     },
     {
       accessorKey: "expires_at",
       header: "Expires",
       cell: ({ row }) => (
-        <span className="text-xs text-muted-foreground"><RelativeTime value={row.original.expires_at} /></span>
+        <span className="text-xs text-muted"><RelativeTime value={row.original.expires_at} /></span>
       ),
     },
     {
@@ -679,7 +700,7 @@ function InvitationsTab({ createOpen, onCreateOpenChange }: { createOpen: boolea
       header: "Consumed",
       cell: ({ row }) =>
         row.original.consumed_at ? (
-          <span className="text-xs text-muted-foreground">yes</span>
+          <span className="text-xs text-muted">yes</span>
         ) : (
           <StatusBadge tone="success">open</StatusBadge>
         ),
@@ -689,7 +710,7 @@ function InvitationsTab({ createOpen, onCreateOpenChange }: { createOpen: boolea
       header: "Created",
       meta: { sortField: "created_at" },
       cell: ({ row }) => (
-        <span className="text-xs text-muted-foreground"><RelativeTime value={row.original.created_at} /></span>
+        <span className="text-xs text-muted"><RelativeTime value={row.original.created_at} /></span>
       ),
     },
   ];
@@ -719,12 +740,17 @@ function InvitationsTab({ createOpen, onCreateOpenChange }: { createOpen: boolea
         <DataTable list={list} columns={columns} getRowId={(row) => row.id ?? ""} />
       </FleetListPage>
       {/* invitations 无 CLI list 动词——CLI 行诚实省略 */}
-      <CreateInvitationDialog open={createOpen} onClose={() => onCreateOpenChange(false)} teams={teams.data ?? []} roles={roles.data ?? []} />
+      <CreateInvitationDialog
+        open={createOpen}
+        onClose={() => onCreateOpenChange(false)}
+        teams={teams.data?.rows ?? []}
+        roles={roles.data?.rows ?? []}
+      />
     </>
   );
 }
 
-function CreateInvitationDialog({ open, onClose, teams, roles }: { open: boolean; onClose: () => void; teams: TeamEntry[]; roles: RoleEntry[] }) {
+function CreateInvitationDialog({ open, onClose, teams, roles }: { open: boolean; onClose: () => void; teams: ReadonlyArray<TeamEntry>; roles: ReadonlyArray<RoleEntry> }) {
   const [teamId, setTeamId] = useState("");
   const [roleId, setRoleId] = useState("");
   const [ttl, setTtl] = useState("24h");
@@ -795,7 +821,7 @@ function CreateInvitationDialog({ open, onClose, teams, roles }: { open: boolean
           <div className="flex flex-col gap-1.5">
             <Label className="text-xs">TTL</Label>
             <Input value={ttl} onChange={(event) => setTtl(event.target.value)} placeholder="24h" />
-            <p className="text-2xs text-muted-foreground">duration form (default 24h, cap 168h)</p>
+            <p className="text-2xs text-muted">duration form (default 24h, cap 168h)</p>
           </div>
         </form>
         <DialogFooter>

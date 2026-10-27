@@ -14,9 +14,11 @@ import { setToken } from "@/lib/token";
 // （.. 吃掉 appId 段）——路由把 "deployments" 认成 $appId → 404 页。
 const { navigateMock } = vi.hoisted(() => ({ navigateMock: vi.fn() }));
 
+// 批4 useCollection 化：绑定层读 useSearch（路由归因集合）——裸 render 无
+// 路由树，桩化为恒空（lookup schema 走缺省窗口）。
 vi.mock("@tanstack/react-router", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@tanstack/react-router")>();
-  return { ...actual, useNavigate: () => navigateMock };
+  return { ...actual, useNavigate: () => navigateMock, useSearch: () => ({}) };
 });
 
 function withClient() {
@@ -62,7 +64,7 @@ describe("AppProcessesTab apply changes", () => {
   it("navigates to the created deployment detail after staging replicas", async () => {
     stubFetch();
     const { client, wrapper } = withClient();
-    render(<AppProcessesTab projectId="P1" appId="A1" />, { wrapper });
+    render(<AppProcessesTab projectId="P1" appId="A1" routeId="/_shell/p/$projectId/apps/$appId/processes" />, { wrapper });
     await waitFor(() => expect(screen.getByText("web")).toBeTruthy());
 
     fireEvent.click(screen.getByRole("button", { name: "Increase replicas of web" }));
@@ -89,7 +91,7 @@ describe("AppProcessesTab apply changes", () => {
       return new Response("{}", { status: 200 });
     });
     const { client, wrapper } = withClient();
-    render(<AppProcessesTab projectId="P1" appId="A1" />, { wrapper });
+    render(<AppProcessesTab projectId="P1" appId="A1" routeId="/_shell/p/$projectId/apps/$appId/processes" />, { wrapper });
     await waitFor(() => expect(screen.getByText("No frozen spec yet")).toBeTruthy());
 
     fireEvent.click(screen.getByRole("button", { name: "Deploy now" }));
@@ -109,7 +111,7 @@ describe("AppProcessesTab instance drill-down", () => {
   it("shows the live running count and expands to instance rows", async () => {
     stubFetch();
     const { client, wrapper } = withClient();
-    render(<AppProcessesTab projectId="P1" appId="A1" />, { wrapper });
+    render(<AppProcessesTab projectId="P1" appId="A1" routeId="/_shell/p/$projectId/apps/$appId/processes" />, { wrapper });
     await waitFor(() => expect(screen.getByText("web")).toBeTruthy());
     await waitFor(() => expect(screen.getByText("2")).toBeTruthy()); // Running 列：2 在跑
 
@@ -128,7 +130,7 @@ describe("AppProcessesTab process restart", () => {
   it("confirms and posts to the process restart endpoint", async () => {
     stubFetch();
     const { client, wrapper } = withClient();
-    render(<AppProcessesTab projectId="P1" appId="A1" />, { wrapper });
+    render(<AppProcessesTab projectId="P1" appId="A1" routeId="/_shell/p/$projectId/apps/$appId/processes" />, { wrapper });
     await waitFor(() => expect(screen.getByText("web")).toBeTruthy());
 
     // 触发钮与确认钮同名（触发 → 确认框 portal 渲染在末尾，取末个）。

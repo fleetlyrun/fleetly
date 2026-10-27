@@ -9,5 +9,6 @@ export const Route = createFileRoute("/_shell/p/$projectId/tasks/$taskId")({
 
 function TaskDetailRoute() {
   const { projectId, taskId } = Route.useParams();
-  return <TaskDetailPage projectId={projectId} taskId={taskId} />;
+  // routeId 线程：批4 读面 useCollection 的 from 锚（NetworksPanel 同款）。
+  return <TaskDetailPage projectId={projectId} taskId={taskId} routeId={Route.id} />;
 }

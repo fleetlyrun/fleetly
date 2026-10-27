@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
+import { useCollection, useRecord } from "@lynx-go/uikit-core";
 import { z } from "zod";
 import { RefreshCwIcon } from "lucide-react";
-import { METRIC_RANGES, useApps, useRawMetricsSeries, useScopedMetricsSeries, useWhoami } from "@/lib/catalog";
+import { appsDirectorySearch, appsResource } from "@/kit/apps";
+import { METRIC_RANGES, useRawMetricsSeries, useScopedMetricsSeries } from "@/kit/metrics";
+import { sessionResource } from "@/kit/settings";
 import { useProjectId } from "@/lib/project";
 import { METRIC_PRESETS } from "@/features/metrics/metric-presets";
 import { MetricChart } from "@/features/metrics/metric-chart";
@@ -23,6 +26,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 // param，URL 契约不变；Custom tab 仅 whoami.platform_admin 可见，非管理员
 // 深链 preset=custom 诚实回落到 CPU %（设计 §5.4）。根高
 // calc(100svh-3.25rem)（顶栏 h-13）：workbench 视口定死，图区内部滚动。
+// 2026-10-27 批4 读面收尾：App 目录走 kit apps 资源（选择器非列表语义，
+// 目录级大页直接吃 rows，60s 目录轮询照 catalog 原值）、会话读走
+// sessionResource record、时序读走 kit/metrics——URL 即真相页，search
+// 逻辑零改动。
 
 const metricsSearch = z.object({
   app: z.string().optional(),
@@ -48,8 +55,17 @@ function MetricsWorkbench() {
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
   const [projectId] = useProjectId();
-  const apps = useApps(projectId);
-  const whoami = useWhoami(true);
+  // 选择器非列表语义：目录级大页直接吃 rows（scope 未就绪自动停用——
+  // projectId 缺省不发请求）。60s 目录轮询照 lib/catalog 原值。
+  const apps = useCollection(appsResource, {
+    from: Route.id,
+    search: appsDirectorySearch,
+    scope: { projectId: projectId || undefined },
+    query: { refetchInterval: 60_000 },
+  });
+  // 会话读经 sessionResource record（id 恒 "self"）；Custom PromQL 显隐只看
+  // 服务端 platform_admin——Console 不复制 role/team 判定。
+  const session = useRecord(sessionResource, { id: "self" });
   // URL 即真相（批1 §3 裁决）：app/preset/range 三选全进 search——原 useState
   // 持有 + 仅 range 回写的半吊子形态在回退/前进时失同步（设计路线所指
   // useState 不一致即此）。customQuery 是草稿输入，保持本地态。
@@ -60,19 +76,19 @@ function MetricsWorkbench() {
 
   // 项目目录到达后补默认 App（同日志页口径）：缺省选择写回 URL（replace）。
   useEffect(() => {
-    if (search.app === undefined && (apps.data ?? []).length > 0) {
-      void navigate({ replace: true, search: (prev) => ({ ...prev, app: apps.data![0].id }) });
+    if (search.app === undefined && apps.rows.length > 0) {
+      void navigate({ replace: true, search: (prev) => ({ ...prev, app: apps.rows[0].id }) });
     }
-  }, [apps.data, search.app, navigate]);
+  }, [apps.rows, search.app, navigate]);
 
   // Custom PromQL 是平台管理员诊断面：显隐只看服务端 platform_admin，
   // Console 不复制 role/team 判定。
-  const platformAdmin = whoami.data?.platformAdmin === true;
+  const platformAdmin = session.data?.platformAdmin === true;
   const allowedTabs = platformAdmin ? METRIC_TABS : METRIC_TABS.filter((tab) => tab.value !== "custom");
   const activeTab: MetricTab = presetKey === "custom" && !platformAdmin ? "cpu_percent" : presetKey;
   const preset = METRIC_PRESETS.find((entry) => entry.key === activeTab) ?? METRIC_PRESETS[0];
   const custom = activeTab === "custom";
-  const scopedAppId = appId || (apps.data ?? [])[0]?.id || "";
+  const scopedAppId = appId || apps.rows[0]?.id || "";
   const rawQuery = custom ? customQuery.trim() : "";
 
   // 两钩子都无条件调用；scoped 钩子在 custom 模式下 enabled=false（不产生
@@ -92,7 +108,7 @@ function MetricsWorkbench() {
     <div className="flex h-[calc(100svh-3.25rem)] flex-col px-5 pt-4">
       <div className="mb-1 flex items-baseline gap-3">
         <h1 className="font-heading text-lg font-bold tracking-tight">Metrics</h1>
-        <span className="text-xs text-muted-foreground">
+        <span className="text-xs text-muted">
           {custom
             ? "Raw PromQL diagnostics (platform admin) · refreshed every 30s"
             : "Scoped metric templates from managed VictoriaMetrics · refreshed every 30s"}
@@ -101,13 +117,13 @@ function MetricsWorkbench() {
 
       <div className="flex flex-none flex-wrap items-end gap-2.5 py-3">
         <div className="flex flex-col gap-1">
-          <Label className="text-2xs text-muted-foreground">App</Label>
+          <Label className="text-2xs text-muted">App</Label>
           <Select value={appId} onValueChange={(value) => update({ app: value })}>
             <SelectTrigger className="w-44">
               <SelectValue placeholder="select an app…" />
             </SelectTrigger>
             <SelectContent>
-              {(apps.data ?? []).map((app) => (
+              {apps.rows.map((app) => (
                 <SelectItem key={app.id} value={app.id}>
                   {app.name}
                 </SelectItem>
@@ -116,7 +132,7 @@ function MetricsWorkbench() {
           </Select>
         </div>
         <div className="flex flex-col gap-1">
-          <Label className="text-2xs text-muted-foreground">Range</Label>
+          <Label className="text-2xs text-muted">Range</Label>
           <Select value={rangeKey} onValueChange={(value) => update({ range: value })}>
             <SelectTrigger className="w-24">
               <SelectValue />
@@ -146,7 +162,7 @@ function MetricsWorkbench() {
 
       {custom ? (
         <div className="mb-3 flex flex-none flex-col gap-1">
-          <Label className="text-2xs text-muted-foreground">PromQL</Label>
+          <Label className="text-2xs text-muted">PromQL</Label>
           <Input
             value={customQuery}
             onChange={(event) => setCustomQuery(event.target.value)}
@@ -170,7 +186,7 @@ function MetricsWorkbench() {
             <CardHeader className="pb-2">
               <CardTitle className="text-sm">
                 {custom ? "Custom query" : preset.label}
-                <span className="ml-2 text-2xs font-normal text-muted-foreground">
+                <span className="ml-2 text-2xs font-normal text-muted">
                   {seriesList.length} series · step {Math.max(15, Math.round((METRIC_RANGES[rangeKey] ?? 3_600_000) / 1000 / 240))}s
                 </span>
               </CardTitle>
@@ -185,15 +201,15 @@ function MetricsWorkbench() {
             </CardContent>
           </Card>
         ) : hasQuery ? (
-          <div className="rounded-xl border border-dashed px-6 py-10 text-center text-sm text-muted-foreground">
+          <div className="rounded-xl border border-dashed px-6 py-10 text-center text-sm text-muted">
             No series matched — pick an app with running processes, or widen the range.
           </div>
         ) : custom ? (
-          <div className="rounded-xl border border-dashed px-6 py-10 text-center text-sm text-muted-foreground">
+          <div className="rounded-xl border border-dashed px-6 py-10 text-center text-sm text-muted">
             Type a PromQL query above — series chart as you type.
           </div>
         ) : (
-          <div className="rounded-xl border border-dashed px-6 py-10 text-center text-sm text-muted-foreground">
+          <div className="rounded-xl border border-dashed px-6 py-10 text-center text-sm text-muted">
             Pick an app to chart — CPU and memory presets come preloaded.
           </div>
         )}

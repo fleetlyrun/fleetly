@@ -1,6 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
+import { useCollection } from "@lynx-go/uikit-core";
+import { collectionQuerySchema } from "@lynx-go/uikit-core/schema";
 import { ArrowUpRightIcon, LayersIcon } from "lucide-react";
 import { apiFetch } from "@/api/client";
 import { ErrorState } from "@/components/domain/error-state";
@@ -10,7 +12,8 @@ import { DeploymentStatusBadge } from "@/components/domain/status-badge";
 import { RelativeTime } from "@/components/domain/relative-time";
 import { RouteFallback } from "@/components/shell/route-fallback";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useApps } from "@/lib/catalog";
+import { appsDirectorySearch, appsResource } from "@/kit/apps";
+import { projectsResource } from "@/kit/projects";
 
 // 项目总览页体（Dashboard 原型，UI v2 批 2）：App 磁贴墙 + 每磁贴最近部署
 // 态。页面体住 features/（路由文件只剩薄壳——router 插件改写路由文件，
@@ -19,47 +22,38 @@ import { useApps } from "@/lib/catalog";
 // 在册校验（切换器 5a44138 只校准 store，URL 不回头）确认查无即 redirect
 // 首个项目（replace：死地址不留历史）；目录全空才是诚实 Not found。
 // redirect 只在目录加载完成且确认查无后触发（pending 窗不弹跳——记录·
-// 四十九"整页弹回"教训）。
+// 四十九"整页弹回"教训）。2026-10-27 批4 读面收尾：在册校验与 App 目录
+// 走 kit 资源（useCollection，from 由路由薄壳注入；非列表语义用目录级
+// 大页直接吃 rows，60s 目录轮询照 lib/catalog 原值）。
 
-interface ProjectEntry {
-  id: string;
-  name: string;
-}
+// 目录级大页（纯目录拉取：窗口 ≥ 取数封顶，目录不截断）。
+const projectsDirectorySearch = collectionQuerySchema({ defaultSize: 200 });
 
-export function ProjectOverviewPage({ projectId }: { projectId: string }) {
+export function ProjectOverviewPage({ from, projectId }: { from: string; projectId: string }) {
   const navigate = useNavigate();
-  const project = useQuery({
-    queryKey: ["catalog", "project", projectId],
-    queryFn: async (): Promise<{ projects: ProjectEntry[]; hit: ProjectEntry | null }> => {
-      const res = await apiFetch<{ projects?: Array<{ id?: string; name?: string } | undefined> }>(
-        `/v1/projects?limit=100`,
-      );
-      const projects = (res.projects ?? []).flatMap((entry) =>
-        entry?.id && entry?.name ? [{ id: entry.id, name: entry.name }] : [],
-      );
-      return { projects, hit: projects.find((entry) => entry.id === projectId) ?? null };
-    },
-  });
-  const apps = useApps(projectId);
-
-  const miss = project.data?.hit == null && !project.isPending && !project.isError;
+  const projectsCollection = useCollection(projectsResource, { from, search: projectsDirectorySearch, query: { refetchInterval: 60_000 } });
+  const projects = projectsCollection.rows;
+  const hit = projects.find((entry) => entry.id === projectId) ?? null;
+  const pending = projectsCollection.status === "loading";
+  const failed = projectsCollection.status === "error";
+  const miss = hit == null && !pending && !failed;
   useEffect(() => {
-    const projects = project.data?.projects ?? [];
     if (miss && projects.length > 0) {
       // replace：陈旧地址不留历史（回退是导航语境修正，不是新页面）。
       void navigate({ to: "/p/$projectId", params: { projectId: projects[0].id }, replace: true });
     }
-  }, [miss, project.data, navigate]);
+  }, [miss, projects, navigate]);
 
-  if (project.isError) {
+  const apps = useCollection(appsResource, { from, search: appsDirectorySearch, scope: { projectId }, query: { refetchInterval: 60_000 } });
+
+  if (failed) {
     return (
       <div className="p-8">
-        <ErrorState error={project.error} onRetry={() => void project.refetch()} />
+        <ErrorState error={projectsCollection.error} onRetry={() => void projectsCollection.refetch()} />
       </div>
     );
   }
   if (miss) {
-    const projects = project.data?.projects ?? [];
     if (projects.length === 0) {
       return (
         <div className="p-8">
@@ -71,7 +65,7 @@ export function ProjectOverviewPage({ projectId }: { projectId: string }) {
     return <RouteFallback />;
   }
 
-  const name = project.data?.hit?.name ?? "…";
+  const name = hit?.name ?? "…";
 
   return (
     <PageFrame
@@ -83,24 +77,24 @@ export function ProjectOverviewPage({ projectId }: { projectId: string }) {
       }
       description="Project overview — apps and their latest deployments"
     >
-      {apps.isPending ? (
+      {apps.status === "loading" ? (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">
           {Array.from({ length: 3 }).map((_, index) => (
             <Skeleton key={index} className="h-28 rounded-xl" />
           ))}
         </div>
-      ) : apps.isError ? (
+      ) : apps.status === "error" ? (
         <ErrorState error={apps.error} onRetry={() => void apps.refetch()} />
-      ) : (apps.data ?? []).length === 0 ? (
+      ) : apps.rows.length === 0 ? (
         <div className="rounded-xl border border-dashed px-6 py-10 text-center">
           <p className="text-sm font-semibold">No apps yet</p>
-          <p className="mt-1 text-xs text-muted-foreground">
+          <p className="mt-1 text-xs text-muted">
             Create one via Quickstart, or deploy an image straight from the Deployments page.
           </p>
         </div>
       ) : (
         <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">
-          {(apps.data ?? []).map((app) => (
+          {apps.rows.map((app) => (
             <AppTile key={app.id} projectId={projectId} appId={app.id} appName={app.name} />
           ))}
         </div>
@@ -129,15 +123,15 @@ function AppTile({ projectId, appId, appName }: { projectId: string; appId: stri
   return (
     <a
       href={base}
-      className="group rounded-xl border bg-card p-5 transition-all hover:-translate-y-px hover:border-border-strong"
+      className="group rounded-xl border bg-panel p-5 transition-all hover:-translate-y-px hover:border-line-strong"
     >
       <div className="flex items-center gap-3">
         <ProjectAvatar seed={appId} label={appName} className="size-9 rounded-xl text-sm" />
         <div className="min-w-0">
           <div className="truncate text-sm font-bold">{appName}</div>
-          <div className="font-mono text-2xs text-muted-foreground">{appId.slice(0, 10)}…</div>
+          <div className="font-mono text-2xs text-muted">{appId.slice(0, 10)}…</div>
         </div>
-        <ArrowUpRightIcon className="ml-auto size-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+        <ArrowUpRightIcon className="ml-auto size-4 text-muted opacity-0 transition-opacity group-hover:opacity-100" />
       </div>
       <div className="mt-3 flex items-center gap-2">
         {deployments.isPending ? (
@@ -146,11 +140,11 @@ function AppTile({ projectId, appId, appName }: { projectId: string; appId: stri
           <>
             <DeploymentStatusBadge state={latest.state} />
             {latest.updated_at ? (
-              <RelativeTime value={latest.updated_at} className="text-2xs text-muted-foreground" />
+              <RelativeTime value={latest.updated_at} className="text-2xs text-muted" />
             ) : null}
           </>
         ) : (
-          <span className="inline-flex items-center gap-1 text-2xs text-muted-foreground">
+          <span className="inline-flex items-center gap-1 text-2xs text-muted">
             <LayersIcon className="size-3" />
             no deployments yet
           </span>

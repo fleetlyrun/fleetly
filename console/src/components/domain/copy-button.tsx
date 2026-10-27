@@ -36,7 +36,7 @@ export function CopyButton({
       }}
       title={label ?? `Copy: ${value}`}
       className={cn(
-        "inline-flex items-center gap-1 rounded-sm px-1 py-0.5 text-muted-foreground transition-colors hover:bg-panel-2 hover:text-foreground",
+        "inline-flex items-center gap-1 rounded-sm px-1 py-0.5 text-muted transition-colors hover:bg-panel-2 hover:text-fg",
         className,
       )}
     >

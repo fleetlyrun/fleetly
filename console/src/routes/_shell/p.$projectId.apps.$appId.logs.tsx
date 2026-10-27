@@ -7,8 +7,6 @@ export const Route = createFileRoute("/_shell/p/$projectId/apps/$appId/logs")({
 });
 
 function AppLogsRoute() {
-  const { appId } = Route.useParams();
-  return (
-    <AppLogsTab appId={appId} />
-  );
+  const { projectId, appId } = Route.useParams();
+  return <AppLogsTab projectId={projectId} appId={appId} routeId={Route.id} />;
 }

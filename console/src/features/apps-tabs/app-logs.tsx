@@ -1,5 +1,7 @@
 import { useState } from "react";
-import { useProcessInstances, useRevisions } from "@/lib/catalog";
+import { useCollection } from "@lynx-go/uikit-core";
+import { useProcessInstances } from "@/kit/exec";
+import { revisionsResource, revisionsLookup } from "@/kit/revisions";
 import { useLogStream } from "@/features/logs/use-log-stream";
 import { LogViewer } from "@/features/logs/log-viewer";
 import { Button } from "@/components/ui/button";
@@ -24,10 +26,17 @@ function shortInstance(id: string): string {
 // process/text/tail 由 tab 内控件给定，instance 由在跑实例集观测给定
 //（all = 全部实例容器；ADR-0067 实例锚定——运行侧个体用词 instance，
 // 声明侧数量仍是 replicas）。URL 契约不变：全局工作台深链仍走 /logs?app=。
-export function AppLogsTab({ appId }: { appId: string }) {
+// 批4（2026-10-27）：revisions 读面迁 kit useCollection（routeId 注入；
+// 实例观测经 kit/exec 的 useProcessInstances 伴读（批4 收口迁入）。
+export function AppLogsTab({ appId, routeId, projectId }: { appId: string; routeId: string; projectId: string }) {
   const log = useLogStream();
-  const revisions = useRevisions(appId);
-  const processes = (revisions.data?.[0]?.process_strategies ?? [])
+  const revisions = useCollection(revisionsResource, {
+    from: routeId,
+    search: revisionsLookup,
+    scope: { projectId, appId },
+    query: { refetchInterval: 15_000 },
+  });
+  const processes = (revisions.rows[0]?.process_strategies ?? [])
     .map((entry) => entry?.process ?? "")
     .filter((name) => name !== "");
   const [process, setProcess] = useState("");
@@ -37,7 +46,7 @@ export function AppLogsTab({ appId }: { appId: string }) {
   const effectiveProcess = process !== "" ? process : (processes[0] ?? "");
 
   const instances = useProcessInstances(appId, effectiveProcess);
-  const instanceRows = instances.data?.instances ?? [];
+  const instanceRows = instances.data?.rows ?? [];
 
   const start = () =>
     log.start({
@@ -53,7 +62,7 @@ export function AppLogsTab({ appId }: { appId: string }) {
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-end gap-2.5">
         <div className="flex flex-col gap-1">
-          <Label className="text-2xs text-muted-foreground">Process</Label>
+          <Label className="text-2xs text-muted">Process</Label>
           <Select
             value={effectiveProcess}
             onValueChange={(name) => {
@@ -74,14 +83,14 @@ export function AppLogsTab({ appId }: { appId: string }) {
           </Select>
         </div>
         <div className="flex flex-col gap-1">
-          <Label className="text-2xs text-muted-foreground">Instance</Label>
+          <Label className="text-2xs text-muted">Instance</Label>
           <Select value={instance} onValueChange={setInstance}>
             <SelectTrigger className="w-48 font-mono">
               <SelectValue placeholder="—" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all" className="font-mono text-xs">
-                all <span className="text-muted-foreground">({instanceRows.length} running)</span>
+                all <span className="text-muted">({instanceRows.length} running)</span>
               </SelectItem>
               {instanceRows.map((row) => {
                 const id = row.instance ?? "";
@@ -89,7 +98,7 @@ export function AppLogsTab({ appId }: { appId: string }) {
                 return (
                   <SelectItem key={id} value={id} className="font-mono text-xs">
                     {shortInstance(id)}
-                    {node !== "" ? <span className="ml-1.5 text-muted-foreground">@ {shortInstance(node)}</span> : null}
+                    {node !== "" ? <span className="ml-1.5 text-muted">@ {shortInstance(node)}</span> : null}
                   </SelectItem>
                 );
               })}
@@ -97,7 +106,7 @@ export function AppLogsTab({ appId }: { appId: string }) {
           </Select>
         </div>
         <div className="flex flex-col gap-1">
-          <Label className="text-2xs text-muted-foreground">Filter text (VL retrieval)</Label>
+          <Label className="text-2xs text-muted">Filter text (VL retrieval)</Label>
           <Input
             value={text}
             placeholder="error, timeout…"
@@ -106,7 +115,7 @@ export function AppLogsTab({ appId }: { appId: string }) {
           />
         </div>
         <div className="flex flex-col gap-1">
-          <Label className="text-2xs text-muted-foreground">Tail lines</Label>
+          <Label className="text-2xs text-muted">Tail lines</Label>
           <Input
             value={tailLines}
             inputMode="numeric"
@@ -131,7 +140,7 @@ export function AppLogsTab({ appId }: { appId: string }) {
       </div>
 
       {log.error != null ? (
-        <p className="text-xs text-destructive">{log.error instanceof Error ? log.error.message : String(log.error)}</p>
+        <p className="text-xs text-err">{log.error instanceof Error ? log.error.message : String(log.error)}</p>
       ) : null}
 
       {/* flex-col 使 LogViewer 的 flex-1 生效：定高盒内滚，追加帧不撑页
@@ -140,14 +149,14 @@ export function AppLogsTab({ appId }: { appId: string }) {
         <LogViewer frames={log.frames} streaming={log.streaming} />
       </div>
 
-      <div className="flex items-center gap-3 font-mono text-2xs text-muted-foreground">
+      <div className="flex items-center gap-3 font-mono text-2xs text-muted">
         <span>scope: app {appId}</span>
         {instance !== "all" ? <span>instance {shortInstance(instance)}</span> : null}
         <span>{log.frames.length} frames</span>
         {log.ended && !log.streaming ? <span>stream ended — adjust filters and restart</span> : null}
         <span className="ml-auto">GET /v1/logs?app_id=…&follow (NDJSON)</span>
       </div>
-      <p className="text-2xs text-muted-foreground">
+      <p className="text-2xs text-muted">
         Full workbench (history window, export, cross-app filters):{" "}
         <a className="text-info underline-offset-2 hover:underline" href={`/logs?app=${encodeURIComponent(appId)}`}>
           open in Logs workbench

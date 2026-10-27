@@ -8,10 +8,11 @@ import { fetchRows } from "./http";
 
 // 告警域资源适配（2026-10-26 批1 Wave2-A useCollection 化，平台域——无
 // scope）：rules / channels 双资源供双 tab 双列表。alert states（GET
-// /v1/alerts 的现行评估态）**不在本域**——它是 lead 槽 firing 摘要 + 行内
-// state 覆盖列的前端 join 数据源而非列表，保持 useQuery（lib/catalog 的
-// useAlertStates）。REST 端点与收敛口径照抄 lib/catalog 的
-// useAlertRules/useAlertingChannels（rowsOf 同款 undefined 行过滤）。
+// /v1/alerts 的现行评估态）批4 起也收进 kit（alertStatesResource）——它是
+// lead 槽 firing 摘要 + 行内 state 覆盖列的前端 join 数据源而非列表，读面
+// 用大页 lookup schema 不写 URL。REST 端点与收敛口径照抄 lib/catalog 的
+// useAlertRules/useAlertingChannels/useAlertStates（rowsOf 同款 undefined
+// 行过滤）。
 
 export type AlertRuleRow = telemetrySchemas["schemas"]["v1AlertRule"];
 export type ChannelRow = telemetrySchemas["schemas"]["v1NotificationChannel"];
@@ -89,3 +90,33 @@ export const alertsSearch = collectionQuerySchema({
   text: ["app_id", "metric", "name", "kind"],
   defaultSize: 20,
 });
+
+// ---- alert states（2026-10-27 批4 读面收编：catalog useAlertStates 退役；
+// 端点与收敛照抄，轮询由消费方 query.refetchInterval 注入 15s 同拍） ----
+
+export type AlertStateRow = telemetrySchemas["schemas"]["v1AlertState"];
+
+export async function fetchAlertStates(_ctx: ResourceScope, signal?: AbortSignal): Promise<AlertStateRow[]> {
+  try {
+    return await fetchRows<AlertStateRow>(
+      "/v1/alerts",
+      (res) => (res as { states?: Array<AlertStateRow | undefined> }).states,
+      signal,
+    );
+  } catch (err) {
+    throw toApiError(err);
+  }
+}
+
+// 平台域无 scope（join 数据源全局一张表）；行 id = rule×app 复合（评估态
+// 无独立 id，规则行 join 键是 rule_id）。
+export const alertStatesResource = defineResource({
+  name: "alert-states",
+  getId: (row: AlertStateRow) => `${row.rule_id ?? ""}:${row.app_id ?? ""}`,
+  collection: clientCollection(fetchAlertStates),
+  // 存量键失效桥：catalog 的 ["alerts","states"] 键
+  legacyKeys: () => [["alerts", "states"]],
+});
+
+// join 读面用大页 schema（firing 总览要全集——窗口不截断行集）。
+export const alertStatesLookup = collectionQuerySchema({ defaultSize: 200 });

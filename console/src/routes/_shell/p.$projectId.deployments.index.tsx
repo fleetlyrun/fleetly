@@ -13,7 +13,7 @@ import { RelativeTime } from "@/components/domain/relative-time";
 import { DeploymentStatusBadge } from "@/components/domain/status-badge";
 import { PageFrame } from "@/components/domain/page-frame";
 import { Button } from "@/components/ui/button";
-import { useApps } from "@/lib/catalog";
+import { appsResource, appsDirectorySearch } from "@/kit/apps";
 import { deploymentsResource, deploymentsSearch, type DeploymentRow } from "@/kit/deployments";
 
 // 项目级部署流（List 原型，UI v2 批 2；2026-10-26 批1 useCollection 化）：
@@ -35,7 +35,14 @@ function ProjectDeploymentsPage() {
     scope: { projectId },
     query: { refetchInterval: 15_000 },
   });
-  const apps = useApps(projectId);
+  // 批4（2026-10-27）：目录读面迁 kit useCollection（大页 lookup 承接旧
+  // useApps 整取 200；60s 轮询同旧拍）——行名反查 join。
+  const apps = useCollection(appsResource, {
+    from: Route.id,
+    search: appsDirectorySearch,
+    scope: { projectId },
+    query: { refetchInterval: 60_000 },
+  });
   const [deployOpen, setDeployOpen] = useState(false);
 
   const columns: LegacyColumnDef<DeploymentRow, any>[] = [
@@ -49,7 +56,7 @@ function ProjectDeploymentsPage() {
       id: "app",
       header: "App",
       cell: ({ row }) => {
-        const app = (apps.data ?? []).find((entry) => entry.id === row.original.app_id);
+        const app = apps.rows.find((entry) => entry.id === row.original.app_id);
         return (
           <div className="flex items-center gap-2">
             <ProjectAvatar seed={row.original.app_id} label={app?.name ?? "?"} className="size-5 rounded-md text-2xs" />
@@ -74,7 +81,7 @@ function ProjectDeploymentsPage() {
       cell: ({ row }) => {
         const hasBaseline = row.original.from_generation != null && row.original.from_generation !== "0";
         return (
-          <span className="font-mono text-xs text-muted-foreground">
+          <span className="font-mono text-xs text-muted">
             {hasBaseline ? `g${row.original.from_generation} → ` : ""}
             g{row.original.generation ?? "?"}
           </span>
@@ -85,7 +92,7 @@ function ProjectDeploymentsPage() {
       id: "updated",
       header: "Updated",
       meta: { sortField: "updated_at" },
-      cell: ({ row }) => <RelativeTime value={row.original.updated_at} className="text-xs text-muted-foreground" />,
+      cell: ({ row }) => <RelativeTime value={row.original.updated_at} className="text-xs text-muted" />,
     },
     {
       id: "error",
@@ -96,7 +103,7 @@ function ProjectDeploymentsPage() {
             {row.original.error}
           </div>
         ) : (
-          <span className="text-xs text-muted-foreground">—</span>
+          <span className="text-xs text-muted">—</span>
         ),
     },
   ];
@@ -131,11 +138,12 @@ function ProjectDeploymentsPage() {
           <DeploySheet
             open={deployOpen}
             onOpenChange={setDeployOpen}
-            apps={apps.data ?? []}
-            defaultAppId={(apps.data ?? [])[0]?.id ?? ""}
+            apps={apps.rows}
+            defaultAppId={apps.rows[0]?.id ?? ""}
             projectId={projectId}
+            from={Route.id}
             onDeployed={(deploymentId) => {
-              const appId = (apps.data ?? [])[0]?.id ?? "";
+              const appId = apps.rows[0]?.id ?? "";
               if (appId === "") return;
               void navigate({
                 to: "/p/$projectId/apps/$appId/deployments/$deploymentId",

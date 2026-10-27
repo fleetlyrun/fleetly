@@ -1,12 +1,12 @@
 import { Fragment, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { useCommand } from "@lynx-go/uikit-core";
+import { useCollection, useCommand } from "@lynx-go/uikit-core";
 import { ApiError, apiFetch } from "@/api/client";
 import type { components } from "@/api/structure";
 import { ChevronRightIcon, MinusIcon, PlusIcon, RotateCwIcon } from "lucide-react";
 import { toast } from "sonner";
-import { useRoutes } from "@/lib/catalog";
+import { routesResource, routesLookup } from "@/kit/routes";
 import { appTabCommands } from "@/kit/app-tabs";
 import { toastOnSettled } from "@/kit/toast";
 import { InstanceList, RunningCount } from "./running-instances";
@@ -35,7 +35,10 @@ type AppSpec = components["schemas"]["v1AppSpec"];
 // Running 列 + 行展开是 App→Process→Instance 的唯一钻取点（2026-10-12
 // 层级定案）：声明 Replicas 旁对照 live 在跑数，展开见实例明细（ADR-0067
 // 观测原语，10s 快照）。
-export function AppProcessesTab({ projectId, appId }: { projectId: string; appId: string }) {
+// 批4（2026-10-27）：路由归因读面迁 kit useCollection（routeId 注入；
+// 大页 lookup 不截断行集；15s 轮询同旧拍）。冻结 Spec 读面保持局部
+// useQuery（legacy 键与 appTabCommands.redeploy 的失效桥对齐）。
+export function AppProcessesTab({ projectId, appId, routeId }: { projectId: string; appId: string; routeId: string }) {
   const navigate = useNavigate();
   const [staged, setStaged] = useState<Record<string, number>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -52,9 +55,14 @@ export function AppProcessesTab({ projectId, appId }: { projectId: string; appId
     },
     refetchInterval: 60_000,
   });
-  const routes = useRoutes(projectId);
+  const routes = useCollection(routesResource, {
+    from: routeId,
+    search: routesLookup,
+    scope: { projectId },
+    query: { refetchInterval: 15_000 },
+  });
   const routesByProcess = new Map<string, number>();
-  for (const route of routes.data ?? []) {
+  for (const route of routes.rows) {
     if (route.app_id !== appId) continue;
     const key = route.process ?? "web";
     routesByProcess.set(key, (routesByProcess.get(key) ?? 0) + 1);
@@ -116,16 +124,16 @@ export function AppProcessesTab({ projectId, appId }: { projectId: string; appId
   });
 
   if (spec.isPending) {
-    return <p className="py-10 text-center text-xs text-muted-foreground">Loading spec…</p>;
+    return <p className="py-10 text-center text-xs text-muted">Loading spec…</p>;
   }
   if (spec.isError) {
-    return <p className="py-10 text-center text-xs text-destructive">{spec.error instanceof Error ? spec.error.message : String(spec.error)}</p>;
+    return <p className="py-10 text-center text-xs text-err">{spec.error instanceof Error ? spec.error.message : String(spec.error)}</p>;
   }
   if (frozen == null) {
     return (
-      <div className="rounded-xl border bg-card p-6 text-center">
+      <div className="rounded-xl border bg-panel p-6 text-center">
         <h3 className="text-sm font-semibold">No frozen spec yet</h3>
-        <p className="mt-1 text-xs text-muted-foreground">
+        <p className="mt-1 text-xs text-muted">
           The app has no deployment — its spec freezes on the first deploy, and its processes show up here.
         </p>
         {/* Deploy now 落部署 tab（Deploy Sheet 所在面）；旧 ?deploy=1 全仓无
@@ -142,9 +150,9 @@ export function AppProcessesTab({ projectId, appId }: { projectId: string; appId
   }
 
   return (
-    <div className="rounded-xl border bg-card">
+    <div className="rounded-xl border bg-panel">
       <div className="flex flex-wrap items-center gap-2 border-b px-4 py-3">
-        <p className="mr-auto text-xs text-muted-foreground">
+        <p className="mr-auto text-xs text-muted">
           {processes.length} process{processes.length === 1 ? "" : "es"} in the frozen spec · scaling stages a new deployment
         </p>
         {hasStagedEdits ? (
@@ -165,7 +173,7 @@ export function AppProcessesTab({ projectId, appId }: { projectId: string; appId
       </div>
 
       {processes.length === 0 ? (
-        <p className="px-4 py-6 text-center text-xs text-muted-foreground">The frozen spec carries no processes.</p>
+        <p className="px-4 py-6 text-center text-xs text-muted">The frozen spec carries no processes.</p>
       ) : (
         <Table>
           <TableHeader>
@@ -237,9 +245,9 @@ export function AppProcessesTab({ projectId, appId }: { projectId: string; appId
                     <TableCell className="font-mono text-xs">
                       <RunningCount appId={appId} processName={name} />
                     </TableCell>
-                    <TableCell className="font-mono text-xs text-muted-foreground">{strategyLabel(process.strategy)}</TableCell>
-                    <TableCell className="font-mono text-xs text-muted-foreground">{process.ports?.length ?? 0}</TableCell>
-                    <TableCell className="font-mono text-xs text-muted-foreground">{routesByProcess.get(name) ?? 0}</TableCell>
+                    <TableCell className="font-mono text-xs text-muted">{strategyLabel(process.strategy)}</TableCell>
+                    <TableCell className="font-mono text-xs text-muted">{process.ports?.length ?? 0}</TableCell>
+                    <TableCell className="font-mono text-xs text-muted">{routesByProcess.get(name) ?? 0}</TableCell>
                     <TableCell className="text-right">
                       <ProcessRestartButton
                         processName={name}
@@ -262,7 +270,7 @@ export function AppProcessesTab({ projectId, appId }: { projectId: string; appId
           </TableBody>
         </Table>
       )}
-      <p className="border-t px-4 py-2 text-2xs text-muted-foreground">
+      <p className="border-t px-4 py-2 text-2xs text-muted">
         Replicas 0 suspends the process. Strategy comes from the frozen spec — change it at deploy time. Running is the live
         instance count (10s refresh); expand a row for instance details.
       </p>
@@ -292,13 +300,13 @@ function ProcessDetail({ process }: { process: components["schemas"]["v1ProcessS
           : "none";
   return (
     <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 border-b py-1.5 text-2xs">
-      <dt className="text-muted-foreground">image</dt>
+      <dt className="text-muted">image</dt>
       <dd className="break-all font-mono">{process.image || process.from_build || "—"}</dd>
-      <dt className="text-muted-foreground">command</dt>
+      <dt className="text-muted">command</dt>
       <dd className="break-all font-mono">{process.command?.length ? process.command.join(" ") : "image default"}</dd>
-      <dt className="text-muted-foreground">healthcheck</dt>
+      <dt className="text-muted">healthcheck</dt>
       <dd className="font-mono">{healthSummary}</dd>
-      <dt className="text-muted-foreground">resources</dt>
+      <dt className="text-muted">resources</dt>
       <dd className="font-mono">
         {process.resources?.cpu_millis || process.resources?.memory_mb
           ? `${process.resources?.cpu_millis ? `${process.resources.cpu_millis}m cpu` : ""}${process.resources?.cpu_millis && process.resources?.memory_mb ? " · " : ""}${process.resources?.memory_mb ? `${process.resources.memory_mb}MB mem` : ""}`

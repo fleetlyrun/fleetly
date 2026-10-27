@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useCommand } from "@lynx-go/uikit-core";
 import type { ApiError, CommandResult } from "@lynx-go/uikit-core/kernel";
-import { useProjects, useApps } from "@/lib/catalog";
+import { useProjectsDirectory } from "@/kit/projects";
+import { useAppsDirectory } from "@/kit/apps";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -31,9 +32,9 @@ const ALERT_METRICS = [
 ] as const;
 
 export function CreateRuleDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
-  const projects = useProjects();
+  const projects = useProjectsDirectory();
   const [projectId, setProjectId] = useState("");
-  const apps = useApps(projectId);
+  const apps = useAppsDirectory(projectId);
   const [appId, setAppId] = useState("");
   const [metric, setMetric] = useState<string>(ALERT_METRICS[0].key);
   const [threshold, setThreshold] = useState("");
@@ -76,7 +77,7 @@ export function CreateRuleDialog({ open, onOpenChange }: { open: boolean; onOpen
                 <SelectValue placeholder="— pick a project —" />
               </SelectTrigger>
               <SelectContent>
-                {(projects.data ?? []).map((project) => (
+                {(projects.data?.rows ?? []).map((project) => (
                   <SelectItem key={project.id} value={project.id}>
                     {project.name}
                   </SelectItem>
@@ -91,7 +92,7 @@ export function CreateRuleDialog({ open, onOpenChange }: { open: boolean; onOpen
                 <SelectValue placeholder="— pick an app —" />
               </SelectTrigger>
               <SelectContent>
-                {(apps.data ?? []).map((app) => (
+                {(apps.data?.rows ?? []).map((app) => (
                   <SelectItem key={app.id} value={app.id}>
                     {app.name}
                   </SelectItem>
@@ -125,12 +126,12 @@ export function CreateRuleDialog({ open, onOpenChange }: { open: boolean; onOpen
                 onChange={(event) => setThreshold(event.target.value)}
                 placeholder={metric === "cpu_percent" ? "90" : "1073741824"}
               />
-              <p className="text-2xs text-muted-foreground">cpu rules are percent of node; memory rules are bytes</p>
+              <p className="text-2xs text-muted">cpu rules are percent of node; memory rules are bytes</p>
             </div>
             <div className="flex flex-col gap-1.5">
               <Label className="text-xs">For (seconds)</Label>
               <Input type="number" min="0" value={forSeconds} onChange={(event) => setForSeconds(event.target.value)} />
-              <p className="text-2xs text-muted-foreground">consecutive breach window (0 = immediately)</p>
+              <p className="text-2xs text-muted">consecutive breach window (0 = immediately)</p>
             </div>
           </div>
           <CommandResultBox result={create.result} failure={create.failure} />

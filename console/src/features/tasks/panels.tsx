@@ -4,7 +4,6 @@ import { PlusIcon } from "lucide-react";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
 import { useCollection, useCommand } from "@lynx-go/uikit-core";
 import type { ApiError, CommandResult } from "@lynx-go/uikit-core/kernel";
-import { useRuns } from "@/lib/catalog";
 import { shortId } from "@/lib/format";
 import { ConfirmDialog } from "@/components/domain/confirm-dialog";
 import { ErrorState } from "@/components/domain/error-state";
@@ -32,6 +31,8 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  runsResource,
+  runsLookup,
   schedulesResource,
   stopRunCommand,
   tasksResource,
@@ -82,7 +83,7 @@ function FormError({ result, failure }: { result: CommandResult<unknown> | null;
   const text = commandErrorText(result, failure);
   if (text == null) return null;
   return (
-    <div className="rounded-lg border border-[color-mix(in_oklch,var(--status-danger)_35%,transparent)] bg-[var(--status-danger-bg)] px-3 py-2 font-mono text-2xs break-all text-muted-foreground">
+    <div className="rounded-lg border border-[color-mix(in_oklch,var(--status-danger)_35%,transparent)] bg-[var(--status-danger-bg)] px-3 py-2 font-mono text-2xs break-all text-muted">
       {text}
     </div>
   );
@@ -163,7 +164,7 @@ export function NewTaskButton({ projectId }: { projectId: string }) {
               <Label className="flex flex-col gap-1.5">
                 <span className="text-xs font-semibold">Name</span>
                 <Input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
-                <span className="text-2xs font-normal text-muted-foreground">optional</span>
+                <span className="text-2xs font-normal text-muted">optional</span>
               </Label>
             </div>
             <div className="grid grid-cols-3 gap-3">
@@ -188,28 +189,28 @@ export function NewTaskButton({ projectId }: { projectId: string }) {
               <Label className="flex flex-col gap-1.5">
                 <span className="text-xs font-semibold">TTL seconds</span>
                 <Input value={form.ttl} onChange={(event) => setForm({ ...form, ttl: event.target.value })} inputMode="numeric" />
-                <span className="text-2xs font-normal text-muted-foreground">lease lifetime</span>
+                <span className="text-2xs font-normal text-muted">lease lifetime</span>
               </Label>
             </div>
             <Label className="flex flex-col gap-1.5">
               <span className="text-xs font-semibold">Network group</span>
               <Input value={form.networkGroup} onChange={(event) => setForm({ ...form, networkGroup: event.target.value })} placeholder="dispatcher" />
-              <span className="text-2xs font-normal text-muted-foreground">optional dedicated network group (cross-attach via taskGroup:&lt;name&gt;)</span>
+              <span className="text-2xs font-normal text-muted">optional dedicated network group (cross-attach via taskGroup:&lt;name&gt;)</span>
             </Label>
             <Label className="flex flex-col gap-1.5">
               <span className="text-xs font-semibold">Command</span>
               <Input value={form.command} onChange={(event) => setForm({ ...form, command: event.target.value })} placeholder="sh -c migrate up" />
-              <span className="text-2xs font-normal text-muted-foreground">argv elements separated by spaces</span>
+              <span className="text-2xs font-normal text-muted">argv elements separated by spaces</span>
             </Label>
             <Label className="flex flex-col gap-1.5">
               <span className="text-xs font-semibold">Env</span>
               <Textarea rows={2} value={form.env} onChange={(event) => setForm({ ...form, env: event.target.value })} />
-              <span className="text-2xs font-normal text-muted-foreground">one KEY=VALUE per line</span>
+              <span className="text-2xs font-normal text-muted">one KEY=VALUE per line</span>
             </Label>
             <Label className="flex flex-col gap-1.5">
               <span className="text-xs font-semibold">Secret refs</span>
               <Input value={form.secretRefs} onChange={(event) => setForm({ ...form, secretRefs: event.target.value })} />
-              <span className="text-2xs font-normal text-muted-foreground">comma-separated project secret names</span>
+              <span className="text-2xs font-normal text-muted">comma-separated project secret names</span>
             </Label>
             <div className="grid grid-cols-2 gap-3">
               <Label className="flex flex-col gap-1.5">
@@ -266,7 +267,7 @@ export function TasksPanel({ projectId, from }: { projectId: string; from: strin
               {row.original.name || shortId(row.original.id)}
             </Link>
           </div>
-          <div className="font-mono text-xs text-muted-foreground" title={row.original.id}>
+          <div className="font-mono text-xs text-muted" title={row.original.id}>
             {shortId(row.original.id)}
           </div>
         </div>
@@ -276,19 +277,19 @@ export function TasksPanel({ projectId, from }: { projectId: string; from: strin
       accessorKey: "form",
       header: "Form",
       meta: { sortField: "form" },
-      cell: ({ row }) => <span className="text-xs text-muted-foreground">{row.original.form}</span>,
+      cell: ({ row }) => <span className="text-xs text-muted">{row.original.form}</span>,
     },
     {
       accessorKey: "state",
       header: "State",
       meta: { sortField: "state" },
-      cell: ({ row }) => <span className="text-xs text-muted-foreground">{row.original.state ?? "—"}</span>,
+      cell: ({ row }) => <span className="text-xs text-muted">{row.original.state ?? "—"}</span>,
     },
     {
       accessorKey: "image",
       header: "Image",
       meta: { sortField: "image" },
-      cell: ({ row }) => <span className="font-mono text-xs text-muted-foreground">{row.original.image}</span>,
+      cell: ({ row }) => <span className="font-mono text-xs text-muted">{row.original.image}</span>,
     },
     {
       id: "actions",
@@ -330,7 +331,9 @@ export function TasksPanel({ projectId, from }: { projectId: string; from: strin
         columns={columns}
         getRowId={(row) => row.id ?? ""}
         renderExtraRow={(task) =>
-          expandedTaskId != null && task.id === expandedTaskId ? <RunsPanel taskId={task.id} /> : null
+          expandedTaskId != null && task.id === expandedTaskId ? (
+            <RunsPanel projectId={projectId} from={from} taskId={task.id} />
+          ) : null
         }
       />
     </FleetListPage>
@@ -434,20 +437,27 @@ function TaskActionsCell({
   );
 }
 
-// RunsPanel：跨行展开的 runs 子表（按需 useRuns——展开挂载即取、收起即
-// 停；catalog 查询键与任务详情页共享缓存）。
-function RunsPanel({ taskId }: { taskId: string }) {
-  const runs = useRuns(taskId);
+// RunsPanel：跨行展开的 runs 子表（按需挂载语义保留——展开挂载即取、收
+// 起即卸载；批4 读面迁 kit runsResource，scope projectId+taskId 与任务详
+// 情页 Runs tab 共享缓存；15s 轮询同旧拍）。
+function RunsPanel({ projectId, from, taskId }: { projectId: string; from: string; taskId: string }) {
+  const runs = useCollection(runsResource, {
+    from,
+    search: runsLookup,
+    scope: { projectId, taskId },
+    query: { refetchInterval: 15_000 },
+  });
+  const rows = runs.rows;
   return (
     <div className="bg-panel-2/30 px-3 py-3">
-      {runs.isPending ? (
+      {runs.status === "loading" ? (
         <Skeleton className="h-10 w-full" />
-      ) : runs.isError ? (
-        <ErrorState error={runs.error} onRetry={() => void runs.refetch()} />
-      ) : (runs.data ?? []).length === 0 ? (
-        <p className="py-3 text-center text-xs text-muted-foreground">No runs.</p>
+      ) : runs.error != null ? (
+        <ErrorState error={new Error(describeApiError(runs.error))} onRetry={runs.refetch} />
+      ) : rows.length === 0 ? (
+        <p className="py-3 text-center text-xs text-muted">No runs.</p>
       ) : (
-        <div className="overflow-x-auto rounded-lg border bg-card">
+        <div className="overflow-x-auto rounded-lg border bg-panel">
           <Table>
             <TableHeader>
               <TableRow>
@@ -459,7 +469,7 @@ function RunsPanel({ taskId }: { taskId: string }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {(runs.data ?? []).map((run) => (
+              {rows.map((run) => (
                 <RunRow key={run.id} run={run} />
               ))}
             </TableBody>
@@ -476,12 +486,12 @@ function RunRow({ run }: { run: { id?: string; state?: string; status?: string; 
   return (
     <>
       <TableRow>
-        <TableCell className="font-mono text-xs text-muted-foreground" title={run.id}>
+        <TableCell className="font-mono text-xs text-muted" title={run.id}>
           {shortId(run.id)}
         </TableCell>
-        <TableCell className="text-xs text-muted-foreground">{run.state ?? run.status ?? "—"}</TableCell>
-        <TableCell className="font-mono text-xs text-muted-foreground">{run.exit_code ?? "—"}</TableCell>
-        <TableCell className="text-xs text-muted-foreground">
+        <TableCell className="text-xs text-muted">{run.state ?? run.status ?? "—"}</TableCell>
+        <TableCell className="font-mono text-xs text-muted">{run.exit_code ?? "—"}</TableCell>
+        <TableCell className="text-xs text-muted">
           <RelativeTime value={run.started_at ?? run.created_at} />
         </TableCell>
         <TableCell className="text-right">
@@ -558,12 +568,12 @@ export function NewScheduleButton({ projectId }: { projectId: string }) {
               <Label className="flex flex-col gap-1.5">
                 <span className="text-xs font-semibold">Cron</span>
                 <Input value={form.cron} onChange={(event) => setForm({ ...form, cron: event.target.value })} autoFocus />
-                <span className="text-2xs font-normal text-muted-foreground">5-field, in the schedule's timezone</span>
+                <span className="text-2xs font-normal text-muted">5-field, in the schedule's timezone</span>
               </Label>
               <Label className="flex flex-col gap-1.5">
                 <span className="text-xs font-semibold">Timezone</span>
                 <TimezoneCombobox value={form.timezone} onChange={(timezone) => setForm({ ...form, timezone })} />
-                <span className="text-2xs font-normal text-muted-foreground">IANA name</span>
+                <span className="text-2xs font-normal text-muted">IANA name</span>
               </Label>
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -579,12 +589,12 @@ export function NewScheduleButton({ projectId }: { projectId: string }) {
             <Label className="flex flex-col gap-1.5">
               <span className="text-xs font-semibold">Command</span>
               <Input value={form.command} onChange={(event) => setForm({ ...form, command: event.target.value })} />
-              <span className="text-2xs font-normal text-muted-foreground">argv elements separated by spaces</span>
+              <span className="text-2xs font-normal text-muted">argv elements separated by spaces</span>
             </Label>
             <Label className="flex flex-col gap-1.5">
               <span className="text-xs font-semibold">Env</span>
               <Textarea rows={2} value={form.env} onChange={(event) => setForm({ ...form, env: event.target.value })} />
-              <span className="text-2xs font-normal text-muted-foreground">one KEY=VALUE per line</span>
+              <span className="text-2xs font-normal text-muted">one KEY=VALUE per line</span>
             </Label>
             <Label className="flex flex-col gap-1.5">
               <span className="text-xs font-semibold">TTL seconds</span>
@@ -625,7 +635,7 @@ export function SchedulesPanel({ projectId, from }: { projectId: string; from: s
       cell: ({ row }) => (
         <div>
           <div className="font-medium">{row.original.name || shortId(row.original.id)}</div>
-          <div className="font-mono text-xs text-muted-foreground" title={row.original.id}>
+          <div className="font-mono text-xs text-muted" title={row.original.id}>
             {shortId(row.original.id)}
           </div>
         </div>
@@ -637,7 +647,7 @@ export function SchedulesPanel({ projectId, from }: { projectId: string; from: s
       cell: ({ row }) => (
         <span className="font-mono text-xs">
           {row.original.cron}
-          {row.original.timezone ? <span className="ml-1 text-muted-foreground">({row.original.timezone})</span> : null}
+          {row.original.timezone ? <span className="ml-1 text-muted">({row.original.timezone})</span> : null}
         </span>
       ),
     },
@@ -645,7 +655,7 @@ export function SchedulesPanel({ projectId, from }: { projectId: string; from: s
       accessorKey: "image",
       header: "Image",
       meta: { sortField: "image" },
-      cell: ({ row }) => <span className="font-mono text-xs text-muted-foreground">{row.original.image}</span>,
+      cell: ({ row }) => <span className="font-mono text-xs text-muted">{row.original.image}</span>,
     },
     {
       // v1Schedule 的下一拍字段是 next_fire_at（旧列读 next_run_at 恒空，
@@ -653,7 +663,7 @@ export function SchedulesPanel({ projectId, from }: { projectId: string; from: s
       accessorKey: "next_fire_at",
       header: "Next",
       cell: ({ row }) => (
-        <span className="text-xs text-muted-foreground">
+        <span className="text-xs text-muted">
           <RelativeTime value={row.original.next_fire_at} />
         </span>
       ),

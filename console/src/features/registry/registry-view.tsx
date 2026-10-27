@@ -17,7 +17,7 @@ import { FilterBar } from "@/components/kit/query/filter-bar";
 import { ListPage as FleetListPage } from "@/components/kit/query/list-page";
 import { Pagination } from "@/components/kit/query/pagination";
 import { GitHubAppsView } from "@/features/githubapps/github-apps-view";
-import { useApps } from "@/lib/catalog";
+import { useAppsDirectory } from "@/kit/apps";
 import { formatBytes } from "@/lib/format";
 
 // Registry v1（IA v3 T5，§5.1 一期；模板化收编 ModulePage+ListCard →
@@ -38,7 +38,7 @@ export function RegistryView({
   onTabChange: (value: "apps" | "catalog" | "github") => void;
 }) {
   // useApps 供 catalog tab 的仓名反查（apps tab 已并轨 kit 集合）。
-  const apps = useApps(projectId);
+  const apps = useAppsDirectory(projectId);
 
   return (
     <ModulePage
@@ -55,7 +55,7 @@ export function RegistryView({
       {tab === "github" ? (
         <GitHubAppsView projectId={projectId} from={routeId} />
       ) : tab === "catalog" ? (
-        <RegistryCatalog projectId={projectId} apps={apps.data ?? []} />
+        <RegistryCatalog projectId={projectId} apps={apps.data?.rows ?? []} />
       ) : (
         <RegistryAppsTab projectId={projectId} routeId={routeId} />
       )}
@@ -94,10 +94,10 @@ function RegistryAppsTab({ projectId, routeId }: { projectId: string; routeId: s
         row.original.deployment ? (
           <div className="flex items-center gap-2">
             <DeploymentStatusBadge state={row.original.deployment.state} />
-            <span className="font-mono text-xs text-muted-foreground">{row.original.deployment.id?.slice(0, 10)}…</span>
+            <span className="font-mono text-xs text-muted">{row.original.deployment.id?.slice(0, 10)}…</span>
           </div>
         ) : (
-          <span className="text-xs text-muted-foreground">never deployed</span>
+          <span className="text-xs text-muted">never deployed</span>
         ),
     },
     {
@@ -110,19 +110,19 @@ function RegistryAppsTab({ projectId, routeId }: { projectId: string; routeId: s
             <CopyButton value={row.original.digest} />
           </span>
         ) : (
-          <span className="text-xs text-muted-foreground">—</span>
+          <span className="text-xs text-muted">—</span>
         ),
     },
     {
       id: "commit",
       header: "Commit",
-      cell: ({ row }) => <span className="font-mono text-xs text-muted-foreground">{row.original.deployment?.commit_sha || "—"}</span>,
+      cell: ({ row }) => <span className="font-mono text-xs text-muted">{row.original.deployment?.commit_sha || "—"}</span>,
     },
     {
       id: "deployed",
       header: "Deployed",
       cell: ({ row }) => (
-        <span className="text-xs text-muted-foreground">
+        <span className="text-xs text-muted">
           <RelativeTime value={row.original.deployment?.finished_at ?? row.original.deployment?.created_at} />
         </span>
       ),
@@ -159,7 +159,7 @@ function RegistryAppsTab({ projectId, routeId }: { projectId: string; routeId: s
           : "Registry rows appear per app once apps exist — each row resolves the running revision digest."
       }
       appendix={
-        <p className="text-2xs text-muted-foreground">Digests are content-addressed — they identify exactly what is running.</p>
+        <p className="text-2xs text-muted">Digests are content-addressed — they identify exactly what is running.</p>
       }
     >
       <DataTable list={list} columns={columns} getRowId={(row) => row.id} />
@@ -170,7 +170,7 @@ function RegistryAppsTab({ projectId, routeId }: { projectId: string; routeId: s
 // RegistryCatalog 镜像仓内容视图（IA v3 二期⑤b）：项目前纲下的仓名清单
 //（受管仓只读代理），逐仓名展开 tag 事实（digest/压缩大小/推送时刻）。
 // 上游缺席诚实呈现（代理面未配置 = 明确的不可用文案，不伪装空清单）。
-function RegistryCatalog({ projectId, apps }: { projectId: string; apps: Array<{ id: string; name: string }> }) {
+function RegistryCatalog({ projectId, apps }: { projectId: string; apps: ReadonlyArray<{ id: string; name: string }> }) {
   const [openRepo, setOpenRepo] = useState<string | null>(null);
   const catalog = useQuery({
     queryKey: ["registry", "catalog", projectId],
@@ -187,13 +187,13 @@ function RegistryCatalog({ projectId, apps }: { projectId: string; apps: Array<{
   return (
     <>
       {catalog.isPending ? (
-        <p className="text-xs text-muted-foreground">Loading repositories…</p>
+        <p className="text-xs text-muted">Loading repositories…</p>
       ) : catalog.isError ? (
-        <p className="rounded-xl border bg-card p-4 text-xs text-muted-foreground">
+        <p className="rounded-xl border bg-panel p-4 text-xs text-muted">
           Registry content is unavailable on this platform ({catalog.error instanceof Error ? catalog.error.message : "unknown error"}).
         </p>
       ) : (catalog.data ?? []).length === 0 ? (
-        <p className="rounded-xl border bg-card p-4 text-xs text-muted-foreground">
+        <p className="rounded-xl border bg-panel p-4 text-xs text-muted">
           No images pushed under this project yet — repositories appear after the first build.
         </p>
       ) : (
@@ -206,9 +206,9 @@ function RegistryCatalog({ projectId, apps }: { projectId: string; apps: Array<{
                 onClick={() => setOpenRepo(openRepo === repo ? null : repo)}
               >
                 {openRepo === repo ? (
-                  <ChevronDownIcon className="size-4 text-muted-foreground" />
+                  <ChevronDownIcon className="size-4 text-muted" />
                 ) : (
-                  <ChevronRightIcon className="size-4 text-muted-foreground" />
+                  <ChevronRightIcon className="size-4 text-muted" />
                 )}
                 <span className="font-mono text-xs">{repo}</span>
                 <span className="text-sm font-semibold">{appName(repo)}</span>
@@ -237,14 +237,14 @@ function RegistryTags({ projectId, repo }: { projectId: string; repo: string }) 
     retry: false,
   });
   if (tags.isPending) {
-    return <p className="px-3 pb-2 pl-9 text-xs text-muted-foreground">Loading tags…</p>;
+    return <p className="px-3 pb-2 pl-9 text-xs text-muted">Loading tags…</p>;
   }
   if (tags.isError) {
-    return <p className="px-3 pb-2 pl-9 text-xs text-destructive">{tags.error instanceof Error ? tags.error.message : "tag listing failed"}</p>;
+    return <p className="px-3 pb-2 pl-9 text-xs text-err">{tags.error instanceof Error ? tags.error.message : "tag listing failed"}</p>;
   }
   return (
     <table className="mb-1 ml-6 w-[calc(100%-1.5rem)] text-xs">
-      <thead className="text-left text-2xs font-semibold tracking-wide text-muted-foreground uppercase">
+      <thead className="text-left text-2xs font-semibold tracking-wide text-muted uppercase">
         <tr>
           <th className="px-2 py-1">Tag</th>
           <th className="px-2 py-1">Digest</th>
