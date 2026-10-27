@@ -3,6 +3,9 @@
 // token 方言映射 本块无方言 token；cn 统一 @/lib/utils。
 // 手工步骤（判断题，工具不自动改）：
 // - 未映射方言 token text-muted ×1——每块语境判断（torchwood amber/emerald、fleetly status vars 先例）
+// 本地扩展（2026-10-27 走查反馈，升版重拷对照）：
+// - 容器宽度 max-w-5xl → 流体全宽 + px-6（数据密集 console 的列表有效
+//   宽度反馈——demo 方言的窄容器在宽屏留白过大）
 // 其余与上游一致。
 import type { CollectionHandle } from "@lynx-go/uikit-core/react";
 import type { ApiError } from "@lynx-go/uikit-core/kernel";
@@ -54,7 +57,7 @@ export function ListPage<T>({
 }: ListPageProps<T>) {
   const showHeader = title !== undefined || description !== undefined || actions !== undefined;
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-4 p-6">
+    <div className="w-full space-y-4 px-6 py-6">
       {showHeader ? (
         <header className="flex items-start justify-between gap-4">
           <div>

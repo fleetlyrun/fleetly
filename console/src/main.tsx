@@ -48,8 +48,9 @@ if (migrated) window.history.replaceState(null, "", migrated);
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      {/* uikit demo 视觉（2026-10-26）：纯暗色单主题，forcedTheme 钉死；class 形态 + index.html 静态 dark 同键 */}
-      <ThemeProvider attribute="class" forcedTheme="dark">
+      {/* 双主题（demo 视觉暗缺省 + 亮色派生；2026-10-27 走查反馈恢复切换）：
+          class 形态 + index.html 防闪同键 */}
+      <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false} storageKey="fleetly_console_theme">
         <RouterProvider router={router} />
         <Toaster position="bottom-right" />
       </ThemeProvider>

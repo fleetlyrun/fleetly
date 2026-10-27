@@ -1,21 +1,69 @@
-/* Console UI 主题层（uikit demo 视觉采纳，2026-10-26 裁决）：
-   色板单源 = @lynx-go/uikit demo token 体系（uikit/apps/demo/src/styles.css）——
-   近黑三层 panel 灰阶（bg/panel/panel-2）、零彩度中性线与文字、蓝 accent、
-   ok/warn/err 语义色、暗底五序列图表色。纯暗色单主题（html.dark 恒置），
-   system 字体栈 14px 基准。registry 块以 demo 方言原生落地（text-muted/
-   bg-panel/border-line/...），shadcn 词汇经 @theme inline 取同值——两词汇
-   同值异名，基元层零改动。
-   撞名裁决：--color-muted 归 demo 文字角色（0.62 灰），shadcn 底色面一律
-   bg-panel-2（原 bg-muted 消费面已全量迁移）；--color-accent 归 demo 蓝，
-   shadcn 侧无裸 bg-accent 消费（查证零命中）。 */
+/* Console UI 主题层（uikit demo 视觉采纳，2026-10-26；2026-10-27 双主题回归）：
+   色板单源 = @lynx-go/uikit demo token 体系——暗色（缺省）为 demo 原生
+   oklch 值（近黑三层 panel 灰阶、零彩度中性线与文字、蓝 accent、暗底五
+   序列图表色）；亮色为同族派生（近白底/白 panel/浅灰线、深文字、accent
+   压深保对比）。registry 块以 demo 方言原生落地（text-muted/bg-panel/
+   border-line/...），shadcn 词汇经 @theme inline 取同值——两词汇同值异名，
+   基元层零改动。主题 = next-themes class 形态（html.dark），暗缺省可切。 */
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
 @custom-variant dark (&:is(.dark *));
 
+/* —— 亮色（同族派生）—— */
 :root {
-  /* demo 色板（oklch） */
+  --background: oklch(0.975 0 0);
+  --foreground: oklch(0.205 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.205 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.205 0 0);
+  --primary: oklch(0.55 0.16 250);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.96 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted-foreground: oklch(0.46 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.55 0.2 25);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(0.9 0 0);
+  --input: oklch(0.88 0 0);
+  --ring: oklch(0.55 0.16 250);
+  /* 图表序列色（暗底挑的五色在中性亮底同样可读，双主题共用） */
+  --chart-1: oklch(0.6 0.15 250);
+  --chart-2: oklch(0.62 0.14 155);
+  --chart-3: oklch(0.66 0.14 85);
+  --chart-4: oklch(0.58 0.16 320);
+  --chart-5: oklch(0.6 0.13 200);
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.205 0 0);
+  --sidebar-primary: oklch(0.55 0.16 250);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.95 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.9 0 0);
+  --sidebar-ring: oklch(0.55 0.16 250);
+
+  /* 语义状态色（StatusBadge 单源消费）：亮底压深保对比 + 10% 微底 */
+  --status-success: oklch(0.55 0.14 155);
+  --status-success-bg: oklch(0.55 0.14 155 / 0.1);
+  --status-warning: oklch(0.6 0.13 85);
+  --status-warning-bg: oklch(0.6 0.13 85 / 0.12);
+  --status-danger: oklch(0.55 0.2 25);
+  --status-danger-bg: oklch(0.55 0.2 25 / 0.1);
+  --status-info: oklch(0.55 0.15 250);
+  --status-info-bg: oklch(0.55 0.15 250 / 0.1);
+  --brand-gradient: linear-gradient(135deg, oklch(0.55 0.16 250), oklch(0.58 0.13 300));
+
+  --radius: 0.5rem;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --font-heading: var(--font-sans);
+}
+
+/* —— 暗色（demo 原生值，缺省）—— */
+.dark {
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.97 0 0);
   --card: oklch(0.185 0 0);
@@ -33,7 +81,6 @@
   --border: oklch(0.28 0 0);
   --input: oklch(0.28 0 0);
   --ring: oklch(0.68 0.16 250);
-  /* 图表序列色（demo 暗底五色；MetricChart 块直读 var(--chart-N)） */
   --chart-1: oklch(0.72 0.15 250);
   --chart-2: oklch(0.75 0.14 155);
   --chart-3: oklch(0.8 0.14 85);
@@ -48,7 +95,6 @@
   --sidebar-border: oklch(0.28 0 0);
   --sidebar-ring: oklch(0.68 0.16 250);
 
-  /* 语义状态色（StatusBadge 单源消费）：demo ok/warn/err/accent 同值派生 + 10% 微底 */
   --status-success: oklch(0.72 0.17 155);
   --status-success-bg: oklch(0.72 0.17 155 / 0.1);
   --status-warning: oklch(0.78 0.15 85);
@@ -57,13 +103,7 @@
   --status-danger-bg: oklch(0.68 0.2 25 / 0.1);
   --status-info: oklch(0.68 0.16 250);
   --status-info-bg: oklch(0.68 0.16 250 / 0.1);
-  /* 品牌渐变（登录 hero/磁贴专用）：accent 蓝起头的微渐变 */
   --brand-gradient: linear-gradient(135deg, oklch(0.68 0.16 250), oklch(0.7 0.13 300));
-
-  --radius: 0.5rem;
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
-  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  --font-heading: var(--font-sans);
 }
 
 @theme inline {

@@ -47,7 +47,10 @@ export interface AppShellProps {
 export function AppShell({ brand, nav, header, footer, topbar, children }: AppShellProps) {
   const matchRoute = useMatchRoute();
   return (
-    <div className="flex h-full">
+    // h-screen：壳自带高度链（本仓无 demo 的 html/body/#root height:100%
+    // 规则——h-full 会塌成内容高，侧栏背景/边线只画到内容尾，走查实咬）。
+    // 侧栏/顶条 flex-none 固定，主区独立滚动。
+    <div className="flex h-screen overflow-hidden">
       <aside className="hidden w-56 shrink-0 flex-col border-r border-line bg-panel/40 md:flex">
         <SidebarBody matchRoute={matchRoute} nav={nav} brand={brand} header={header} footer={footer} />
       </aside>

@@ -1,0 +1,1 @@
+import{M as i}from"./vendor-DKbg3gz5.js";import{b as e,f as o}from"./format-qj1nMhDA.js";function f({value:t,className:r}){return t?i.jsx("span",{title:o(t),className:r,children:e(t)}):i.jsx("span",{className:r,children:"—"})}export{f as R};

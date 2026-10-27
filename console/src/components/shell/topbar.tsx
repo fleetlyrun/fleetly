@@ -12,6 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { projectsAllQuery, projectsResource } from "@/kit/projects";
+import { ThemeToggle } from "./theme-toggle";
 
 // 顶条（AppShell 主区 flex-none 行）：移动菜单触发 + 面包屑 + New + 搜索⌘K。
 // 面包屑按 pathname 分段直译，静态段走词条表；项目 ID 段反查目录显
@@ -84,6 +85,7 @@ export function Topbar({ onOpenPalette, mobileNav }: { onOpenPalette: () => void
       )}
       <div className="ml-auto flex items-center gap-1">
         <NewMenu />
+        <ThemeToggle />
         <Button variant="ghost" size="sm" className="gap-2 text-muted" onClick={onOpenPalette}>
           <SearchIcon className="size-3.5" />
           <span className="hidden md:inline">Search…</span>
