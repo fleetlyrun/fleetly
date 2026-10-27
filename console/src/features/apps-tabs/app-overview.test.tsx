@@ -119,4 +119,55 @@ describe("AppOverviewTab processes summary", () => {
     await waitFor(() => expect(screen.getByText("g1 → g2")).toBeTruthy());
     client.clear();
   });
+
+  // 部署身份（走查反馈 2026-10-27）：Current status 亮 source 行——compose
+  // 受理（image kind + 冻结原文）报 compose 且链接 Spec tab；git 源附
+  // commit 短码。
+  it("shows the deployment source in Current status (compose via frozen source text)", async () => {
+    fetchMock.mockImplementation(async (path: string) => {
+      if (path.startsWith("/v1/apps?")) {
+        return new Response(JSON.stringify({ apps: [{ id: "A1", project_id: "P1", name: "alpha" }] }), { status: 200 });
+      }
+      if (path.startsWith("/v1/apps/A1/spec")) {
+        return new Response(JSON.stringify({ spec: { processes: [{ name: "web", replicas: "1" }] } }), { status: 200 });
+      }
+      if (path.startsWith("/v1/apps/A1/exec/instances")) {
+        return new Response(JSON.stringify({ instances: [] }), { status: 200 });
+      }
+      if (path.startsWith("/v1/deployments")) {
+        return new Response(
+          JSON.stringify({
+            deployments: [
+              {
+                id: "D2", state: "succeeded", generation: "2", from_generation: "1",
+                from_revision: "R1", to_revision: "R2", commit_sha: "abcdef1234deadbeef",
+                updated_at: "2026-10-18T00:00:00Z",
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (path.startsWith("/v1/revisions")) {
+        return new Response(
+          JSON.stringify({
+            revisions: [
+              { id: "R2", seq: "2", source_kind: "SOURCE_KIND_IMAGE", source_text: "services:\n  web:\n" },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      if (path.startsWith("/v1/routes")) return new Response(JSON.stringify({ routes: [] }), { status: 200 });
+      if (path.startsWith("/v1/alerts")) return new Response(JSON.stringify({ states: [] }), { status: 200 });
+      return new Response(JSON.stringify({ series: [] }), { status: 200 });
+    });
+    const { client, wrapper } = withClient();
+    render(<AppOverviewTab projectId="P1" appId="A1" routeId="/_shell/p/$projectId/apps/$appId/" />, { wrapper });
+
+    await waitFor(() => expect(screen.getByText("compose")).toBeTruthy());
+    // 非 git 源不带 commit 短码。
+    expect(screen.queryByText(/abcdef1/)).toBeNull();
+    client.clear();
+  });
 });

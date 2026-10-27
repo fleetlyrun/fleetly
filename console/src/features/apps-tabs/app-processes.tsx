@@ -4,8 +4,10 @@ import { useCollection, useCommand } from "@lynx-go/uikit-core";
 import type { components } from "@/api/structure";
 import { ChevronRightIcon, MinusIcon, PlusIcon, RotateCwIcon } from "lucide-react";
 import { toast } from "sonner";
+import { DeploySheet } from "@/features/deployments/deploy-sheet";
 import { routesResource, routesLookup } from "@/kit/routes";
 import { appTabCommands } from "@/kit/app-tabs";
+import { appsResource, appsDirectorySearch } from "@/kit/apps";
 import { useAppSpecSheet } from "@/kit/app-observe";
 import { toastOnSettled } from "@/kit/toast";
 import { InstanceList, RunningCount } from "./running-instances";
@@ -42,6 +44,16 @@ export function AppProcessesTab({ projectId, appId, routeId }: { projectId: stri
   const navigate = useNavigate();
   const [staged, setStaged] = useState<Record<string, number>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  // 空态直达部署表单（走查反馈 2026-10-27）：DeploySheet 本组件第三挂载点
+  //（hero / Deployments 列表同款）——apps 目录查询与布局同键去重，零额外
+  // 网络面。
+  const [deployOpen, setDeployOpen] = useState(false);
+  const apps = useCollection(appsResource, {
+    from: routeId,
+    search: appsDirectorySearch,
+    scope: { projectId },
+    query: { refetchInterval: 60_000 },
+  });
   const spec = useAppSpecSheet(projectId, appId, { refetchInterval: 60_000 });
   const routes = useCollection(routesResource, {
     from: routeId,
@@ -120,21 +132,33 @@ export function AppProcessesTab({ projectId, appId, routeId }: { projectId: stri
   }
   if (frozen == null) {
     return (
-      <div className="rounded-xl border bg-panel p-6 text-center">
-        <h3 className="text-sm font-semibold">No frozen spec yet</h3>
-        <p className="mt-1 text-xs text-muted">
-          The app has no deployment — its spec freezes on the first deploy, and its processes show up here.
-        </p>
-        {/* Deploy now 落部署 tab（Deploy Sheet 所在面）；旧 ?deploy=1 全仓无
-            消费方，整页 reload 是死按钮。 */}
-        <Button
-          size="sm"
-          className="mt-3"
-          onClick={() => void navigate({ to: "/p/$projectId/apps/$appId/deployments", params: { projectId, appId } })}
-        >
-          Deploy now
-        </Button>
-      </div>
+      <>
+        <div className="rounded-xl border bg-panel p-6 text-center">
+          <h3 className="text-sm font-semibold">No frozen spec yet</h3>
+          <p className="mt-1 text-xs text-muted">
+            The app has no deployment — its spec freezes on the first deploy, and its processes show up here.
+          </p>
+          {/* 空态直达表单（走查反馈 2026-10-27）：旧动线跳 Deployments 列表
+              再点一次 Deploy… 绕一跳；此按钮直开 DeploySheet（下方挂载）。 */}
+          <Button size="sm" className="mt-3" onClick={() => setDeployOpen(true)}>
+            Deploy now
+          </Button>
+        </div>
+        <DeploySheet
+          open={deployOpen}
+          onOpenChange={setDeployOpen}
+          apps={apps.rows}
+          defaultAppId={appId}
+          projectId={projectId}
+          from={routeId}
+          onDeployed={(deploymentId) => {
+            void navigate({
+              to: "/p/$projectId/apps/$appId/deployments/$deploymentId",
+              params: { projectId, appId, deploymentId },
+            });
+          }}
+        />
+      </>
     );
   }
 

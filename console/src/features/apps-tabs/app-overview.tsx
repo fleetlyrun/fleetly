@@ -4,7 +4,7 @@ import { ArrowUpRightIcon, BoxesIcon, GlobeIcon, LayersIcon } from "lucide-react
 import { firingAlerts } from "@/features/apps-tabs/alert-badges";
 import { lastPointValue } from "@/features/fleet/freshness";
 import { useScopedMetricsSeries } from "@/kit/metrics";
-import { formatBytes, revisionLabel } from "@/lib/format";
+import { formatBytes, revisionLabel, sourceKindLabel } from "@/lib/format";
 import { alertStatesResource, alertStatesLookup } from "@/kit/alerts";
 import { appSpecsResource, appSpecsLookup } from "@/kit/app-specs";
 import { appDeploymentsResource, appDeploymentsLookup } from "@/kit/deployments";
@@ -75,6 +75,11 @@ export function AppOverviewTab({ projectId, appId, routeId }: { projectId: strin
   const memValue = lastPointValue(mem.data?.series);
   // R 序号对表：revision id → seq
   const seqByRevision = new Map(revisions.rows.map((rev) => [rev.id ?? "", rev.seq ?? ""]));
+  // 部署身份（走查反馈 2026-10-27）：最新部署 to_revision 的材料来源——
+  // compose 判定用行上 source_text（sourceKindLabel 单源）；git 源附 commit
+  // 短码（deployment 行自带）。
+  const latestRevision = revisions.rows.find((rev) => rev.id === rows[0]?.to_revision);
+  const sourceText = latestRevision?.source_text;
   const appRoutes = routes.rows.filter((route) => route.app_id === appId);
   const deploymentsPending = deployments.status === "loading";
 
@@ -121,6 +126,20 @@ export function AppOverviewTab({ projectId, appId, routeId }: { projectId: strin
                 <dd className="font-mono text-xs">{rows[0]?.from_generation && rows[0]?.from_generation !== "0" ? `g${rows[0]?.from_generation} → ` : ""}g{rows[0]?.generation ?? "?"}</dd>
                 <dt className="text-muted">latest revision</dt>
                 <dd className="font-mono text-xs">{revisionLabel(seqByRevision.get(rows[0]?.to_revision ?? ""), rows[0]?.to_revision)}</dd>
+                <dt className="text-muted">source</dt>
+                <dd className="font-mono text-xs">
+                  <Link
+                    to="/p/$projectId/apps/$appId/spec"
+                    params={{ projectId, appId }}
+                    className="text-info underline-offset-2 hover:underline"
+                    title="The full configuration lives on the Spec tab"
+                  >
+                    {sourceKindLabel(latestRevision?.source_kind, sourceText)}
+                  </Link>
+                  {latestRevision?.source_kind === "SOURCE_KIND_GIT" && rows[0]?.commit_sha
+                    ? ` · ${rows[0].commit_sha.slice(0, 7)}`
+                    : ""}
+                </dd>
                 <dt className="text-muted">updated</dt>
                 <dd className="text-xs"><RelativeTime value={rows[0]?.updated_at} /></dd>
               </dl>

@@ -69,3 +69,16 @@ export function revisionLabel(seq: string | undefined, revisionId: string | unde
   if (revisionId) return `R…${revisionId.slice(-6)}`;
   return "—";
 }
+
+// sourceKindLabel 把 SourceKind 枚举（protojson 原串）归一为展示词：
+// git / image / uploaded source——材料来源投影（ADR-0071 决策 6，值域只有
+// 三值）。compose 受理落 image：source_text 非空时改报 compose（受理原文
+// 在 Revision 行上，Spec tab Compose Source 卡同判据），不新增枚举。
+// 消费方：app hero 徽标 / Overview Current status / Settings Deployment 卡。
+export function sourceKindLabel(kind: string | undefined, sourceText?: string): string {
+  const value = (kind ?? "").replace("SOURCE_KIND_", "").toLowerCase();
+  if (value === "git") return "git";
+  if (value === "upload") return "uploaded source";
+  if (value === "image") return sourceText ? "compose" : "image";
+  return "—";
+}

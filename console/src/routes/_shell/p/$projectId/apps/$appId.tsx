@@ -13,6 +13,8 @@ import { DeploymentStatusBadge } from "@/components/domain/status-badge";
 import { alertStatesResource, alertStatesLookup } from "@/kit/alerts";
 import { appNameOf, appsResource, appsDirectorySearch } from "@/kit/apps";
 import { appDeploymentsResource, appDeploymentsLookup, deploymentsResource } from "@/kit/deployments";
+import { useAppWorkloads } from "@/kit/app-observe";
+import { sourceKindLabel } from "@/lib/format";
 import { toastOnSettled } from "@/kit/toast";
 import {
   AlertDialog,
@@ -67,6 +69,13 @@ function AppDetailLayout() {
   });
   const firing = firingAlerts([...alerts.rows], appId);
   const latest = deployments.rows[0];
+  // 部署身份徽标（走查反馈 2026-10-27）：hero 第一眼面亮 source kind——
+  // 生效锚经 workloads 单查（无轮询，record 一次取）；compose 细分留
+  // Settings/Spec（hero 只给粗粒度枚举词）。
+  const identity = useAppWorkloads(projectId, appId, 0);
+  const sourceBadge = identity.data?.revision
+    ? sourceKindLabel(identity.data.revision.source_kind)
+    : undefined;
   // W-1 修复（2026-10-12 走查）：目录加载窗内 apps 行集为空——
   // 裸 `?? appId` 让 hero/面包屑闪原始 id；appNameOf 的截断回落接住窗口
   //（`01M4QA9B56…` 形态），目录落定即换真名。
@@ -127,6 +136,14 @@ function AppDetailLayout() {
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="font-heading text-xl font-semibold tracking-tight">{appLabel}</h1>
             {latest?.state ? <DeploymentStatusBadge state={latest.state} /> : null}
+            {sourceBadge && sourceBadge !== "—" ? (
+              <span
+                className="rounded-full border bg-panel-2/60 px-2 py-0.5 font-mono text-2xs text-muted"
+                title="Deployment source — details on the Settings and Spec tabs"
+              >
+                {sourceBadge}
+              </span>
+            ) : null}
             {firing.length > 0 ? (
               <a
                 href="/alerts"

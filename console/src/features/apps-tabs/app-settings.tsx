@@ -2,10 +2,12 @@ import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useCommand } from "@lynx-go/uikit-core";
 import { appTabCommands } from "@/kit/app-tabs";
-import { useAppHook } from "@/kit/app-observe";
+import { useAppHook, useAppRevisionSpec, useAppWorkloads } from "@/kit/app-observe";
+import { describeApiError } from "@/kit/errors";
 import { toastOnSettled } from "@/kit/toast";
 import { CopyButton } from "@/components/domain/copy-button";
 import { RelativeTime } from "@/components/domain/relative-time";
+import { sourceKindLabel } from "@/lib/format";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,9 +17,10 @@ import { toast } from "sonner";
 // App Settings scoped tab（IA v3 T2，§4.1 边界：Settings = 低频配置面 +
 // 生命周期与凭证）：General 元数据 / Git deploy hook（get/set/rotate，
 // secret 仅铸造时回显一次）/ Danger zone 删除（级联披露）。
-// Variables（spec 面）与 Build/Processes 卡按 §4.1 挂二期 proto（spec 读取
-// 通路）后并入本 tab。写面批2 命令化（kit/app-tabs 的 hook/deleteApp 动词
-// 族，失效声明在命令内）。
+// 走查反馈（2026-10-27）：部署身份的答案面入座——顶部 Deployment 摘要卡
+//（source kind + 生效锚 + 按所有权一句话更新路径），General 占位注释退役
+// 换真链接；未配置 hook 不再裸出创建表单（空态 + Configure 展开）。
+// 写面批2 命令化（kit/app-tabs 的 hook/deleteApp 动词族，失效声明在命令内）。
 
 function fieldError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -38,6 +41,7 @@ export function AppSettingsTab({
 }) {
   return (
     <div className="flex flex-col gap-4">
+      <DeploymentSummaryCard projectId={projectId} appId={appId} />
       <div className="grid gap-4 md:grid-cols-2">
         <section className="rounded-xl border bg-panel p-4">
           <h3 className="mb-3 text-sm font-semibold">General</h3>
@@ -57,8 +61,15 @@ export function AppSettingsTab({
             </dd>
           </dl>
           <p className="mt-3 text-2xs text-muted">
-            Build &amp; process settings (source, builder, replicas, health gate) land here once the app spec read path ships
-            (IA v3 §8 二期) — until then configure them via deploy.
+            Build &amp; process settings live with the frozen spec — see the Deployment card above; edit it via{" "}
+            <Link
+              to="/p/$projectId/apps/$appId/spec"
+              params={{ projectId, appId }}
+              className="font-medium text-info underline-offset-2 hover:underline"
+            >
+              Spec → Edit &amp; deploy
+            </Link>
+            .
           </p>
         </section>
         <GitHookCard appId={appId} projectId={projectId} />
@@ -68,6 +79,135 @@ export function AppSettingsTab({
     </div>
   );
 }
+
+// Deployment 摘要卡（走查反馈 2026-10-27）：部署身份的答案面——source
+// kind + 生效 Revision 锚 + 按材料所有权（ADR-0072）一句话更新路径，把人
+// 指到正确的编辑面（Spec / Variables / Processes 或下方 hook 卡），自身
+// 只读零编辑。数据全走既有 kit record 读面（workloads 生效锚 / GetRevision
+// 原文判 compose / hook 所有权），零新 API。
+function DeploymentSummaryCard({ projectId, appId }: { projectId: string; appId: string }) {
+  const view = useAppWorkloads(projectId, appId, 0);
+  const hook = useAppHook(projectId, appId);
+  const seq = view.data?.revision?.seq ? Number(view.data.revision.seq) : undefined;
+  // GetRevision 原文仅用于 compose 判定（sourceKindLabel 第二参）。
+  const frozen = useAppRevisionSpec(projectId, appId, seq);
+  const revision = view.data?.revision;
+
+  if (view.isError) {
+    return (
+      <section className="rounded-xl border bg-panel p-4">
+        <h3 className="mb-3 text-sm font-semibold">Deployment</h3>
+        {view.error?.kind === "not-found" ? (
+          <p className="text-xs text-muted">
+            No effective revision yet — the spec freezes on the first deploy. Hit{" "}
+            <span className="font-semibold text-fg">Deploy</span> in the header; history then lives on the{" "}
+            <Link
+              to="/p/$projectId/apps/$appId/deployments"
+              params={{ projectId, appId }}
+              className="font-medium text-info underline-offset-2 hover:underline"
+            >
+              Deployments
+            </Link>{" "}
+            tab.
+          </p>
+        ) : (
+          <p className="text-xs text-err">{describeApiError(view.error)}</p>
+        )}
+      </section>
+    );
+  }
+  if (revision == null) {
+    return (
+      <section className="rounded-xl border bg-panel p-4">
+        <h3 className="mb-3 text-sm font-semibold">Deployment</h3>
+        <p className="text-xs text-muted">Loading…</p>
+      </section>
+    );
+  }
+
+  const kind = sourceKindLabel(revision.source_kind, frozen.data?.revision?.source_text);
+  const hookOwned = hook.data != null;
+  return (
+    <section className="rounded-xl border bg-panel p-4">
+      <h3 className="mb-3 text-sm font-semibold">Deployment</h3>
+      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
+        <dt className="text-muted">source</dt>
+        <dd className="font-mono">{kind}</dd>
+        <dt className="text-muted">effective revision</dt>
+        <dd className="flex items-center gap-1 font-mono">
+          <Link
+            to="/p/$projectId/apps/$appId/spec"
+            params={{ projectId, appId }}
+            className="text-info underline-offset-2 hover:underline"
+          >
+            R{seq}
+          </Link>
+          <span className="text-muted" title={revision.digest ?? ""}>
+            {(revision.digest ?? "").slice(0, 12)}
+          </span>
+          <CopyButton value={revision.digest ?? ""} />
+        </dd>
+        <dt className="text-muted">updated</dt>
+        <dd>
+          <RelativeTime value={revision.created_at} />
+        </dd>
+      </dl>
+      <p className="mt-3 rounded-lg border bg-panel-2/40 px-3 py-2 text-xs leading-relaxed text-muted">
+        {hookOwned ? (
+          <>
+            <span className="font-semibold text-fg">
+              Updates: push to <span className="font-mono">{hook.data?.repo}</span>
+              {hook.data?.branch ? ` (${hook.data.branch})` : ""}
+            </span>{" "}
+            — or pull the branch HEAD any time from the git hook card below. Runtime settings stay with you: Variables and
+            Processes edits deploy as a runtime overlay (ADR-0072). Full config: the{" "}
+            <Link
+              to="/p/$projectId/apps/$appId/spec"
+              params={{ projectId, appId }}
+              className="font-medium text-info underline-offset-2 hover:underline"
+            >
+              Spec
+            </Link>{" "}
+            tab.
+          </>
+        ) : (
+          <>
+            <span className="font-semibold text-fg">Updates: Deploy in the header</span> — it prefills the current spec for
+            editing (same as Edit &amp; deploy on the{" "}
+            <Link
+              to="/p/$projectId/apps/$appId/spec"
+              params={{ projectId, appId }}
+              className="font-medium text-info underline-offset-2 hover:underline"
+            >
+              Spec
+            </Link>{" "}
+            tab). Environment values live in{" "}
+            <Link
+              to="/p/$projectId/apps/$appId/variables"
+              params={{ projectId, appId }}
+              className="font-medium text-info underline-offset-2 hover:underline"
+            >
+              Variables
+            </Link>
+            , replica counts on{" "}
+            <Link
+              to="/p/$projectId/apps/$appId/processes"
+              params={{ projectId, appId }}
+              className="font-medium text-info underline-offset-2 hover:underline"
+            >
+              Processes
+            </Link>
+            .
+          </>
+        )}
+      </p>
+    </section>
+  );
+}
+
+// GitHookCard 未配置空态与表单态的分界（走查反馈 2026-10-27）：裸创建
+// 表单的 placeholder 值形似配置实非配置——先空态说明所有权语义，
+// Configure 展开后才进表单。
 
 function useGitHook(projectId: string, appId: string) {
   // 收尾批 kit 化：hook 伴读（404 → null 未托管，kit 单源）。
@@ -80,7 +220,7 @@ function GitHookCard({ appId, projectId }: { appId: string; projectId: string })
   const [editing, setEditing] = useState(false);
   const [revealedSecret, setRevealedSecret] = useState<string | null>(null);
   // 编辑入口（SetGitHook 是全量 upsert：改配置不换 Token）——表单按现值
-  // 预填，保存即回展示态。
+  // 预填，保存即回展示态；创建入口（未配置空态）回空白初值。
   const startEdit = () => {
     setForm({
       repo: hook.data?.repo ?? "",
@@ -88,6 +228,10 @@ function GitHookCard({ appId, projectId }: { appId: string; projectId: string })
       dockerfile: hook.data?.dockerfile ?? "",
       watchPaths: (hook.data?.watch_paths ?? []).join(", "),
     });
+    setEditing(true);
+  };
+  const startCreate = () => {
+    setForm({ repo: "", branch: "main", dockerfile: "", watchPaths: "" });
     setEditing(true);
   };
 
@@ -215,7 +359,7 @@ function GitHookCard({ appId, projectId }: { appId: string; projectId: string })
             signing key.
           </p>
         </>
-      ) : (
+      ) : editing ? (
         <form
           className="flex flex-col gap-3"
           onSubmit={(event) => {
@@ -223,12 +367,17 @@ function GitHookCard({ appId, projectId }: { appId: string; projectId: string })
             save.mutate({ repo: form.repo, branch: form.branch, dockerfile: form.dockerfile, watchPaths: form.watchPaths });
           }}
         >
-          {editing ? (
+          {configured ? (
             <p className="rounded-lg border bg-panel-2/40 px-3 py-2 text-2xs text-muted">
               Editing the existing hook — SetGitHook is a full upsert: fields become this save&apos;s values, the token stays
               unchanged. Repo URL must keep its scheme (https).
             </p>
-          ) : null}
+          ) : (
+            <p className="rounded-lg border bg-panel-2/40 px-3 py-2 text-2xs text-muted">
+              Configuring a hook hands the material half of the spec (source, build) to git — repo URL keeps its scheme
+              (https).
+            </p>
+          )}
           <div className="flex flex-col gap-2">
             <Label htmlFor="hook-repo">Repo</Label>
             <Input id="hook-repo" className="font-mono text-xs" value={form.repo} onChange={(event) => setForm({ ...form, repo: event.target.value })} placeholder="github.com/acme/web" />
@@ -249,15 +398,25 @@ function GitHookCard({ appId, projectId }: { appId: string; projectId: string })
           </div>
           <div className="flex gap-2">
             <Button type="submit" size="sm" disabled={save.pending || form.repo === ""}>
-              {save.pending ? "Saving…" : editing ? "Save changes" : "Configure hook"}
+              {save.pending ? "Saving…" : configured ? "Save changes" : "Configure hook"}
             </Button>
-            {editing ? (
-              <Button type="button" size="sm" variant="outline" onClick={() => setEditing(false)}>
-                Cancel
-              </Button>
-            ) : null}
+            <Button type="button" size="sm" variant="outline" onClick={() => setEditing(false)}>
+              Cancel
+            </Button>
           </div>
         </form>
+      ) : (
+        <div className="flex flex-col gap-3">
+          <p className="text-xs leading-relaxed text-muted">
+            Not configured — deploys own the material half of this app&apos;s spec (source, build). Configuring a hook hands
+            that half to git: pushes redeploy automatically while your runtime settings stay put.
+          </p>
+          <div>
+            <Button size="sm" variant="outline" onClick={startCreate}>
+              Configure hook…
+            </Button>
+          </div>
+        </div>
       )}
       {revealedSecret != null ? (
         <div className="mt-3 rounded-md border border-warning/40 bg-warning/10 p-2.5 text-xs">

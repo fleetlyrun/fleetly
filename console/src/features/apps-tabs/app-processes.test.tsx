@@ -81,13 +81,19 @@ describe("AppProcessesTab apply changes", () => {
     client.clear();
   });
 
-  it("sends the empty state to the deployments tab (deploy entry lives there)", async () => {
-    // 未部署 = spec 404（W-3 空态面）；旧 ?deploy=1 整页 reload 是死参。
+  it("opens the deploy sheet directly from the empty state (no detour through the deployments list)", async () => {
+    // 未部署 = spec 404（W-3 空态面）；走查反馈（2026-10-27）：旧动线跳
+    // Deployments 列表再点一次 Deploy… 绕一跳——Deploy now 直开表单。
     fetchMock.mockImplementation(async (path: string) => {
       if (path.startsWith("/v1/apps/A1/spec")) {
         return new Response(JSON.stringify({ code: "not_found", message: "no deployment" }), { status: 404 });
       }
       if (path.startsWith("/v1/routes")) return new Response(JSON.stringify({ routes: [] }), { status: 200 });
+      if (path.startsWith("/v1/apps?")) {
+        return new Response(JSON.stringify({ apps: [{ id: "A1", project_id: "P1", name: "alpha" }] }), { status: 200 });
+      }
+      if (path.startsWith("/v1/apps/A1/hook")) return new Response("not found", { status: 404 });
+      if (path.startsWith("/v1/storage/uploads")) return new Response(JSON.stringify({ uploads: [] }), { status: 200 });
       return new Response("{}", { status: 200 });
     });
     const { client, wrapper } = withClient();
@@ -96,10 +102,10 @@ describe("AppProcessesTab apply changes", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Deploy now" }));
 
-    expect(navigateMock).toHaveBeenCalledWith({
-      to: "/p/$projectId/apps/$appId/deployments",
-      params: { projectId: "P1", appId: "A1" },
-    });
+    // DeploySheet 直开：非 hook + 无冻结体 → 五源表单（缺省 image）。
+    expect(await screen.findByText("Create a deployment — the server queues and supersedes by generation.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Deploy" })).toBeTruthy();
+    expect(navigateMock).not.toHaveBeenCalled();
     client.clear();
   });
 });

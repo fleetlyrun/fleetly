@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { formatAbsolute, formatBytes, formatDuration, formatRelative, revisionLabel, shortId } from "./format";
+import { formatAbsolute, formatBytes, formatDuration, formatRelative, revisionLabel, shortId, sourceKindLabel } from "./format";
 
 // formatRelative/Absolute 依赖当前钟——钉死系统时间断言确定性。
 describe("format", () => {
@@ -81,6 +81,25 @@ describe("format", () => {
     });
     it("renders dash when both are absent", () => {
       expect(revisionLabel(undefined, undefined)).toBe("—");
+    });
+  });
+
+  // 部署身份展示词（走查反馈 2026-10-27）：枚举值域 git/image/upload 三值
+  //（材料来源投影）；compose 受理落 image——source_text 非空改报 compose，
+  // 不新增枚举（Spec tab Compose Source 卡同判据）。
+  describe("sourceKindLabel", () => {
+    it("normalizes the protojson enum to display words", () => {
+      expect(sourceKindLabel("SOURCE_KIND_GIT")).toBe("git");
+      expect(sourceKindLabel("SOURCE_KIND_IMAGE")).toBe("image");
+      expect(sourceKindLabel("SOURCE_KIND_UPLOAD")).toBe("uploaded source");
+    });
+    it("reports compose when the accepted source text is frozen on the revision", () => {
+      expect(sourceKindLabel("SOURCE_KIND_IMAGE", "services:\n  web:\n")).toBe("compose");
+      expect(sourceKindLabel("SOURCE_KIND_GIT", "services:\n  web:\n")).toBe("git");
+    });
+    it("renders dash for absent or unknown kinds", () => {
+      expect(sourceKindLabel(undefined)).toBe("—");
+      expect(sourceKindLabel("")).toBe("—");
     });
   });
 });
