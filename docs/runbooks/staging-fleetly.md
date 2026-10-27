@@ -1400,3 +1400,7 @@ systemctl daemon-reload && systemctl start fleetlyd
 **现役**：staging = `8015e6f5`（console = @lynx-go/uikit-core 0.3.1 全量换装形态）；回滚锚 = Platform Backup 9547f6ca + `/root/upgrade-8015e6f5/`（含旧二进制备份路径 `/usr/local/bin` 替换前版本可由 4cfcc7fc 目录重装——`/root/fleetly-upgrade-4cfcc7fc/` 仍在）。
 
 **收尾批随上内容**（挂账清偿）：观测面 20 处手写 useQuery 全量 kit 化（kit/app-observe 六资源 + templates/deployment-lookup/revision-diff/repos/catalog/tags/config-detail 九资源）；nodes 行内五动词全套命令化；OCC conflict 盒「Reload frozen spec」动作槽（resultAction 上游回流）；日志块虚拟滚动（react-virtual，192 帧只渲染 50 行实证）；token mint 失效翻转 + platform backup trigger 联动 Fleet 台账。
+
+### 追记（同日第二换：8015e6f5 → 6405db3a，走查反馈三修）
+
+现网走查三问题（侧栏下方缺口/无主题切换/列表过窄）当日修复并二次换装：AppShell 根 `h-full`→`h-screen`（本仓无 demo 的根高度链，侧栏背景塌成内容高实咬）、双主题回归（styles.css 亮色同族派生套 + next-themes 可切换 + 防闪脚本复位 + ThemeToggle 回归顶条）、FleetListPage 容器流体全宽（max-w-5xl→px-6 流体，vendor 本地扩展）。序同前：Platform Backup `57621c49` → 二进制替换 → doctor 11 ok/2w/0f → 零扰动（task 龄原样/双 200）→ 活体资产 `index-DUHWcm65.js` 对账一致 → 现网亮暗切换与全高侧栏截图验收。回滚锚 = `57621c49` + `/root/upgrade-8015e6f5/`（含 8015e6f5 版二进制）。
