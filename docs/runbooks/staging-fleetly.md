@@ -1381,3 +1381,22 @@ systemctl daemon-reload && systemctl start fleetlyd
 
 - **存量 Login 会话 Token 永不过期**：迁移 00036 只给**新登录**铸造的会话 Token 写 `expires_at`（`auth.login_token_ttl`，缺省 720h）；存量行 `expires_at=''` 语义为永不过期（升级零扰动的有意取舍，00036 注记同文）。口令曾泄露或离手的账号，旧会话不会因升级自动失效——轮换路径：`fleetly tokens list` 找出 password session 行逐个 `fleetly tokens revoke <id>`，必要时全量重登。Agent/CI Token（`tokens create`/bootstrap）本就无时效，不受影响。
 - **Login 限速的反代聚合面**：进程内双桶 = 单来源 IP 5 次失败/分钟 + 单账号 5 次失败/5 分钟。经 traefik/反代终结后转发 gRPC 的部署形态（staging 的 `api.*` 公网直连即此），所有外部登录共享反代的单一 peer 地址——IP 桶退化为**全局** 5 次失败/分钟，一次分布式爆破尝试可误锁全体登录至多 1 分钟（fail-closed 方向，无泄露无绕过）。处置：外部入口（WAF/网关）自备限流，进程内桶只作纵深防御层（loginlimit.go 文件头同口径）。
+
+## 2026-10-27 记录（console uikit 换装：4cfcc7fc → 8015e6f5 现役）
+
+**批次**：console 全面换装 @lynx-go/uikit（四批 26 commits，74e4aac4..b82a21b9）+ 余留挂账收尾批——纯 console/前端批次，无 IR 形状变化、无迁移（goose v36 零迁移实证）。构建通道 hermetic PASS（双构建 sha256 逐字节一致，commit 戳 8015e6f5 对账）。
+
+**换装序**（平台升级操作序全步走完）：
+
+1. Platform Backup 前置：snapshot `9547f6ca`（2026-10-27T10:01:45Z）。
+2. 手工卷 tar 九件 → `/root/upgrade-8015e6f5/vols/`（zot/traefik-acme/edge-acme/victorialogs/victoriametrics/torchwood-pg/minio/redis/zot 旧卷）。
+3. 排水替换：`systemctl stop fleetlyd` → 双二进制 install（`/root/upgrade-8015e6f5/`）→ 起服；drop-in 八件在位核验（logging/metrics/api/browse/console/railpack/registry——runbook「drop-in 会丢」教训的例行对账，零丢失）。
+4. 健康核对：doctor **11 ok / 2 warning / 0 failed**（2 warning = bind surface + notification channels，既有基线良性）；goose `no migrations to run, current version: 36`。
+5. **升级零扰动断言全过**：容器 task 行零新增（traefik/db 12h、quickstart 8d、torchwood 9d、zot 9d、messaging 11d——task ID 尾巴逐位一致）；torchwood-pg **21 表锚**不变；`tw.dev.fleetly.run` 200；journal 15 分钟零 error。
+6. relay 重铸：不适用（swarm 现役 = manager 单节点回环，无 worker relay 面）。
+
+**console 活体对账**：站上 asset `index-Bq8UeCUg.js` 与二进制嵌入 `dist/index.html` 指纹逐字一致；现网登录（platform 密码形）→ overview/apps/metrics/nodes 抽页全渲染零错误边界；CLI 公网 `grpcs://api.dev.fleetly.run` version 8015e6f5 + apps list 真数据往返。
+
+**现役**：staging = `8015e6f5`（console = @lynx-go/uikit-core 0.3.1 全量换装形态）；回滚锚 = Platform Backup 9547f6ca + `/root/upgrade-8015e6f5/`（含旧二进制备份路径 `/usr/local/bin` 替换前版本可由 4cfcc7fc 目录重装——`/root/fleetly-upgrade-4cfcc7fc/` 仍在）。
+
+**收尾批随上内容**（挂账清偿）：观测面 20 处手写 useQuery 全量 kit 化（kit/app-observe 六资源 + templates/deployment-lookup/revision-diff/repos/catalog/tags/config-detail 九资源）；nodes 行内五动词全套命令化；OCC conflict 盒「Reload frozen spec」动作槽（resultAction 上游回流）；日志块虚拟滚动（react-virtual，192 帧只渲染 50 行实证）；token mint 失效翻转 + platform backup trigger 联动 Fleet 台账。
