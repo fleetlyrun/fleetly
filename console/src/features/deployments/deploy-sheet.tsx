@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCollection, useCommand } from "@lynx-go/uikit-core";
 import type { ApiError, CommandResult } from "@lynx-go/uikit-core/kernel";
 import { RocketIcon } from "lucide-react";
@@ -112,6 +112,8 @@ export function DeploySheet({
     },
   });
   const hasFrozen = frozen.data != null;
+  const queryClient = useQueryClient();
+
   // hook 所有权（ADR-0072）：hook 在即整张四源表单退场（Deploy from git
   // 分支接管），source 归 null 让各源条件段全部跳过。
   const hook = useQuery({
@@ -178,6 +180,18 @@ export function DeploySheet({
       }
     },
   });
+
+  // OCC conflict 的「刷新重载」（torchwood B2-5 同款 UX）：spec 链冲突 =
+  // 冻结体已被其他部署推进（restart_seq CAS）或幂等键冲突——失效冻结体
+  // 查询回服务端态、清除手编旗标让预填重播、清结果盒。仅在 spec 链源
+  //（current/spec）出现 conflict 时呈现。
+  const reloadFrozenSpec = () => {
+    void queryClient.invalidateQueries({ queryKey: ["resources", "app-spec-sheet", effectiveAppId] });
+    setSpecEdited(false);
+    deploy.reset();
+  };
+  const showConflictReload =
+    deploy.result?.status === "conflict" && (source === "current" || source === "spec");
 
   const specJsonValid = (() => {
     if (source !== "spec" && source !== "current") return true;
@@ -447,10 +461,20 @@ export function DeploySheet({
 
           {/* 结果盒（form 块结果分支同形，Sheet 保留壳不迁 Form 块）：
               rejected 带 code 前缀；conflict（OCC：spec 链 restart_seq 陈旧
-              CAS / 幂等键冲突）message-first 如实呈现；失败通道走
-              describeApiError 文案。resultAction 动作槽（「刷新重载」）留待
-              后批接线。 */}
-          <CommandResultBox result={deploy.result} failure={deploy.failure} />
+              CAS / 幂等键冲突）message-first 如实呈现 + 「刷新重载」动作槽
+              （冻结体回服务端态重建草稿，torchwood B2-5 先例——resultAction
+              槽已随上游 @0.3.1 回流）；失败通道走 describeApiError 文案。 */}
+          <CommandResultBox
+            result={deploy.result}
+            failure={deploy.failure}
+            action={
+              showConflictReload ? (
+                <Button variant="outline" size="sm" className="mt-1.5" onClick={reloadFrozenSpec}>
+                  Reload frozen spec
+                </Button>
+              ) : undefined
+            }
+          />
           <CommandResultBox result={refresh.result} failure={refresh.failure} />
         </div>
         <div className="flex justify-end gap-2 border-t px-4 py-3">
@@ -517,9 +541,12 @@ function SelectiveProtocol({ value, onChange }: { value: string; onChange: (valu
 function CommandResultBox({
   result,
   failure,
+  action,
 }: {
   result: CommandResult<unknown> | null;
   failure: ApiError | null;
+  /** 结果盒动作槽（conflict 的「刷新重载」等页面编排——form 块 resultAction 同位） */
+  action?: React.ReactNode;
 }) {
   if (result != null && result.status !== "ok") {
     return (
@@ -531,6 +558,7 @@ function CommandResultBox({
           <span className="font-mono">[{result.code}] </span>
         ) : null}
         {result.message}
+        {action ? <div className="mt-1.5">{action}</div> : null}
       </div>
     );
   }
