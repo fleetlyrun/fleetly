@@ -1404,3 +1404,7 @@ systemctl daemon-reload && systemctl start fleetlyd
 ### 追记（同日第二换：8015e6f5 → 6405db3a，走查反馈三修）
 
 现网走查三问题（侧栏下方缺口/无主题切换/列表过窄）当日修复并二次换装：AppShell 根 `h-full`→`h-screen`（本仓无 demo 的根高度链，侧栏背景塌成内容高实咬）、双主题回归（styles.css 亮色同族派生套 + next-themes 可切换 + 防闪脚本复位 + ThemeToggle 回归顶条）、FleetListPage 容器流体全宽（max-w-5xl→px-6 流体，vendor 本地扩展）。序同前：Platform Backup `57621c49` → 二进制替换 → doctor 11 ok/2w/0f → 零扰动（task 龄原样/双 200）→ 活体资产 `index-DUHWcm65.js` 对账一致 → 现网亮暗切换与全高侧栏截图验收。回滚锚 = `57621c49` + `/root/upgrade-8015e6f5/`（含 8015e6f5 版二进制）。
+
+### 追记（同日第三换：6405db3a → b5a677bb，统一 Layout + 账号左对齐）
+
+现网走查两问题当日修复：①PageFrame 三档 max-w 退役、主内容宽度唯一裁决 = 流体全宽列（与 FleetListPage 同族——双容器体系并存是页面间宽度不一致根因），五处 PageFrame>FleetListPage 双壳嵌套解绑（title/description 移块 header 槽；backups 的 PageTabs 下沉 toolbar 槽）；②侧栏底部账号行左对齐（Button 基类 justify-center 使整宽钮内容居中）。序同前：Platform Backup `9c1f44f1` → 替换 → doctor 11 ok/2w/0f → 零扰动 → 活体资产 `index-D3aM72NG.js` 对账 → 现网截图验收（统一列 + 左对齐）。回滚锚 = `9c1f44f1` + `/root/upgrade-8015e6f5/`（含 6405db3a 版二进制）。
