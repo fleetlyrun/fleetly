@@ -38,7 +38,7 @@ export function LogViewer({ frames, streaming }: { frames: LogFrame[]; streaming
       <div
         ref={scrollRef}
         onScroll={onScroll}
-        className="size-full overflow-auto rounded-lg border bg-[oklch(0.135_0.015_285)] py-2 font-mono text-xs leading-relaxed dark:bg-[oklch(0.135_0.015_285)]"
+        className="size-full overflow-auto rounded-lg border bg-[oklch(0.145_0_0)] py-2 font-mono text-xs leading-relaxed dark:bg-[oklch(0.145_0_0)]"
         style={{ color: "var(--term-fg, oklch(0.88 0.01 285))" }}
       >
         {frames.length === 0 ? (
