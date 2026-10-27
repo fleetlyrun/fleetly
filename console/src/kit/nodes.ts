@@ -3,8 +3,9 @@ import { defineResource, scoped, type ResourceScope } from "@lynx-go/uikit-core/
 import { useQuery } from "@tanstack/react-query";
 import { collectionQueryOptions } from "@lynx-go/uikit-core/react";
 import { collectionQuerySchema } from "@lynx-go/uikit-core/schema";
+import { apiSend } from "@/api/client";
 import type { components as runtimeSchemas } from "@/api/runtime";
-import { toApiError } from "./errors";
+import { runCommandMapped, toApiError } from "./errors";
 import { fetchRows } from "./http";
 
 // 节点域资源适配（2026-10-26 批1 Wave2-A useCollection 化，平台域——无
@@ -32,6 +33,35 @@ export const nodesResource = defineResource({
   name: "nodes",
   getId: (row: NodeRow) => row.platform_id ?? "",
   collection: clientCollection(fetchNodes),
+  // 节点运维动词（批4 收尾挂账清偿：自批2 集成桥的裸 apiSend + 双前缀
+  // 失效全套命令化）。失效 = 默认同资源（kit 集合键全 scope 相交）——
+  // 桥时代打的 ["nodes"] legacy 键已随 catalog 退役消亡，不再补桥。
+  commands: {
+    cordon: {
+      run: (input: { nodeId: string }) =>
+        runCommandMapped(() => apiSend(`/v1/nodes/${encodeURIComponent(input.nodeId)}/cordon`, "POST", {})),
+    },
+    uncordon: {
+      run: (input: { nodeId: string }) =>
+        runCommandMapped(() => apiSend(`/v1/nodes/${encodeURIComponent(input.nodeId)}/uncordon`, "POST", {})),
+    },
+    drain: {
+      run: (input: { nodeId: string }) =>
+        runCommandMapped(() => apiSend(`/v1/nodes/${encodeURIComponent(input.nodeId)}/drain`, "POST", {})),
+    },
+    // Relay command（H10 §4.6）：重铸即断旧连接——响应携带该节点个体凭证
+    //（脚本是 node-root 等价材料），ok 载荷交页面揭示面。
+    issueRelayCommand: {
+      run: (input: { nodeId: string }) =>
+        runCommandMapped<{ relay_command?: string }>(() =>
+          apiSend<{ relay_command?: string }>("/v1/nodes/enroll", "POST", { node_id: input.nodeId }),
+        ),
+    },
+    revokeRelay: {
+      run: (input: { nodeId: string }) =>
+        runCommandMapped(() => apiSend("/v1/nodes/enroll", "POST", { node_id: input.nodeId, revoke: true })),
+    },
+  },
 });
 
 // URL 搜索 schema：text 快筛 hostname/platform_id/role（与旧页 fieldsOf

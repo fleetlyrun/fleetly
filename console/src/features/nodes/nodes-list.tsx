@@ -1,15 +1,13 @@
 import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { RefreshCwIcon, ShieldAlertIcon } from "lucide-react";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
-import { useCollection, useCommand } from "@lynx-go/uikit-core";
-import { apiSend } from "@/api/client";
-import { useRecord } from "@lynx-go/uikit-core";
+import { useCollection, useCommand, useRecord } from "@lynx-go/uikit-core";
+import type { ApiError, CommandResult } from "@lynx-go/uikit-core/kernel";
 import { sessionResource } from "@/kit/settings";
-import { describeError } from "@/lib/api-errors";
 import { enrollMaterialCommand } from "@/kit/app-tabs";
 import { toastOnSettled } from "@/kit/toast";
+import { describeApiError } from "@/kit/errors";
 import { nodesResource, nodesSearch, type NodeRow } from "@/kit/nodes";
 import { ConfirmDialog } from "@/components/domain/confirm-dialog";
 import { CopyButton } from "@/components/domain/copy-button";
@@ -86,7 +84,7 @@ function NodesList({ from }: { from: string }) {
   const [relayMaterial, setRelayMaterial] = useState<{ nodeId: string; script: string } | null>(null);
   const [rotating, setRotating] = useState(false);
   // 行内动作失败披露（单开：verb 前清、catch 记）——renderExtraRow 消费
-  const [actionError, setActionError] = useState<{ nodeId: string; cause: unknown } | null>(null);
+  const [actionError, setActionError] = useState<{ nodeId: string; message: string } | null>(null);
   const enroll = useEnrollMaterial(setMaterial);
   const rotate = useEnrollMaterial(setMaterial);
 
@@ -150,7 +148,7 @@ function NodesList({ from }: { from: string }) {
         <NodeActionsCell
           node={row.original}
           onRelayMaterial={(script) => setRelayMaterial({ nodeId: row.original.platform_id ?? "", script })}
-          onActionError={(cause) => setActionError({ nodeId: row.original.platform_id ?? "", cause })}
+          onActionError={(message) => setActionError({ nodeId: row.original.platform_id ?? "", message })}
           clearActionError={() => setActionError(null)}
         />
       ),
@@ -197,10 +195,9 @@ function NodesList({ from }: { from: string }) {
           onRowClick={(node) => void navigate({ to: "/nodes/$nodeId", params: { nodeId: node.platform_id ?? "" } })}
           renderExtraRow={(node) =>
             actionError != null && node.platform_id === actionError.nodeId ? (
-              <div className="px-3 py-2 text-xs text-[var(--status-danger)]">
-                {describeError(actionError.cause).title} —{" "}
-                <span className="font-mono">{describeError(actionError.cause).detail}</span>
-              </div>
+              // 命令化后披露消息单源（describeApiError / rejected message
+              // 在动作位已折算成字符串——行级不再持错误对象）。
+              <div className="px-3 py-2 text-xs text-[var(--status-danger)]">{actionError.message}</div>
             ) : null
           }
         />
@@ -232,7 +229,10 @@ function useEnrollMaterial(onMaterial: (data: { join: string }) => void) {
 
 // NodeActionsCell：worker 行的 Relay command/Revoke（平台管理员 + 非
 // manager 行才显）与全员 cordon/uncordon/drain——行点击导航由 DataTable
-// 的行内交互短路承接（button 点击不触发行导航）。
+// 的行内交互短路承接（button 点击不触发行导航）。批4 收尾清偿：五个动词
+// 全套命令化（nodesResource.commands，默认同资源失效接 kit 集合键——双
+// 前缀失效桥退役）；错误经 onActionError 折算成披露消息（failure 通道
+// describeApiError、结果通道 rejected/conflict message）。
 function NodeActionsCell({
   node,
   onRelayMaterial,
@@ -241,35 +241,36 @@ function NodeActionsCell({
 }: {
   node: NodeRow;
   onRelayMaterial: (script: string) => void;
-  onActionError: (cause: unknown) => void;
+  onActionError: (message: string) => void;
   clearActionError: () => void;
 }) {
-  const queryClient = useQueryClient();
   const [revoking, setRevoking] = useState(false);
   const nodeId = node.platform_id ?? "";
 
-  function verb(path: string, body: Record<string, unknown> = {}) {
-    clearActionError();
-    return apiSend(path, "POST", body)
-      // 批2 集成桥：legacy ["nodes"] 前缀打不中 kit 集合键——双前缀失效
-      //（裸 apiSend promise 非本批 mutation 钉口，全套命令化随批4 大扫除）。
-      .then(() =>
-        queryClient.invalidateQueries({ queryKey: ["nodes"] }),
-      )
-      .then(() =>
-        queryClient.invalidateQueries({ queryKey: ["collection", "nodes"] }),
-      )
-      .catch((cause: unknown) => onActionError(cause));
-  }
+  // 动作统一 settle 面：ok 即清披露行（列表随同资源失效即时刷新）；
+  // rejected/conflict 走披露行（结果通道 message）；failure 走
+  // describeApiError（失败通道）。无 ok toast——可用性变化由列表行
+  // Availability 徽章即时呈现（与旧 verb() 行为等价）。
+  const settle = (onOk?: (payload: unknown) => void) => (result: CommandResult<unknown> | null, failure: ApiError | null) => {
+    if (result != null) {
+      if (result.status === "ok") {
+        clearActionError();
+        onOk?.(result.payload);
+      } else {
+        onActionError(result.message);
+      }
+    } else if (failure != null) {
+      onActionError(describeApiError(failure));
+    }
+  };
 
-  // Relay command（H10 §4.6）：重铸即断旧连接——先取脚本、就地执行；不是
-  // 只读预览。响应携带该节点个体凭证（脚本是 node-root 等价材料）。
-  function relayCommand() {
-    clearActionError();
-    void apiSend<{ relay_command?: string }>("/v1/nodes/enroll", "POST", { node_id: nodeId })
-      .then((data) => onRelayMaterial(data.relay_command ?? ""))
-      .catch((cause: unknown) => onActionError(cause));
-  }
+  const cordon = useCommand(nodesResource.commands.cordon, { onSettled: settle() });
+  const uncordon = useCommand(nodesResource.commands.uncordon, { onSettled: settle() });
+  const drain = useCommand(nodesResource.commands.drain, { onSettled: settle() });
+  const issueRelay = useCommand(nodesResource.commands.issueRelayCommand, {
+    onSettled: settle((payload) => onRelayMaterial((payload as { relay_command?: string }).relay_command ?? "")),
+  });
+  const revoke = useCommand(nodesResource.commands.revokeRelay, { onSettled: settle(() => setRevoking(false)) });
 
   return (
     <div className="flex flex-wrap items-center justify-end gap-1.5">
@@ -278,10 +279,11 @@ function NodeActionsCell({
           <Button
             variant="outline"
             size="sm"
+            disabled={issueRelay.pending}
             title="Issue this node's individual relay credential and show its install command (sensitive; drops the current relay)"
-            onClick={() => relayCommand()}
+            onClick={() => issueRelay.mutate({ nodeId })}
           >
-            Relay command
+            {issueRelay.pending ? "Issuing…" : "Relay command"}
           </Button>
           <Button
             variant="outline"
@@ -298,8 +300,9 @@ function NodeActionsCell({
         <Button
           variant="outline"
           size="sm"
+          disabled={cordon.pending}
           title="Mark the node unschedulable (reversible)"
-          onClick={() => void verb(`/v1/nodes/${encodeURIComponent(nodeId)}/cordon`)}
+          onClick={() => cordon.mutate({ nodeId })}
         >
           cordon
         </Button>
@@ -307,13 +310,14 @@ function NodeActionsCell({
         <Button
           variant="outline"
           size="sm"
+          disabled={uncordon.pending}
           title="Return the node to schedulable"
-          onClick={() => void verb(`/v1/nodes/${encodeURIComponent(nodeId)}/uncordon`)}
+          onClick={() => uncordon.mutate({ nodeId })}
         >
           uncordon
         </Button>
       )}
-      <DrainButton hostname={node.hostname ?? ""} onRun={() => verb(`/v1/nodes/${encodeURIComponent(nodeId)}/drain`)} />
+      <DrainButton hostname={node.hostname ?? ""} onRun={() => drain.mutateAsync({ nodeId })} />
       <ConfirmDialog
         open={revoking}
         onOpenChange={setRevoking}
@@ -321,7 +325,7 @@ function NodeActionsCell({
         description="The node's relay drops immediately; exec cannot route until you issue a new relay command and run it on the node."
         confirmLabel="Revoke relay"
         pendingLabel="Revoking…"
-        onConfirm={() => verb("/v1/nodes/enroll", { node_id: nodeId, revoke: true })}
+        onConfirm={() => revoke.mutateAsync({ nodeId })}
       />
     </div>
   );
