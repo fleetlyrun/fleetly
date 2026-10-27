@@ -84,7 +84,7 @@ function TerminalWorkbench() {
   }
 
   return (
-    <div className="flex h-full flex-col px-5 pt-4">
+    <div className="flex h-full flex-col px-6 pt-6">
       <div className="mb-1 flex items-baseline gap-3">
         <h1 className="font-heading text-lg font-bold tracking-tight">Terminal</h1>
         <span className="text-xs text-muted">Exec session — one-shot ticket over WebSocket</span>

@@ -11,7 +11,6 @@ import { Pagination } from "@/components/kit/query/pagination";
 import { ProjectAvatar } from "@/components/domain/project-avatar";
 import { RelativeTime } from "@/components/domain/relative-time";
 import { DeploymentStatusBadge } from "@/components/domain/status-badge";
-import { PageFrame } from "@/components/domain/page-frame";
 import { Button } from "@/components/ui/button";
 import { appsResource, appsDirectorySearch } from "@/kit/apps";
 import { deploymentsResource, deploymentsSearch, type DeploymentRow } from "@/kit/deployments";
@@ -112,61 +111,63 @@ function ProjectDeploymentsPage() {
   const filtered = list.query.predicate != null;
 
   return (
-    <PageFrame title="Deployments" description="All apps in this project — client-side fan-out, refreshed every 15s">
-      <FleetListPage
-        list={list}
-        toolbar={
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <FilterBar list={list} schema={deploymentsSearch} textPlaceholder="Filter deployments..." />
-            {/* 列表主动作钉工具栏行最右（对齐批 5 裁决） */}
-            <div className="py-2 pr-3">
-              <Button size="sm" onClick={() => setDeployOpen(true)}>
-                <RocketIcon data-icon-start-inline />
-                Deploy…
-              </Button>
-            </div>
+    // FleetListPage 自带页面衬垫与 header 槽（收尾批统一 Layout：去掉
+    // PageFrame 外壳——双衬垫 + 双层宽度容器随统一列退役）。
+    <FleetListPage
+      list={list}
+      title="Deployments"
+      description="All apps in this project — client-side fan-out, refreshed every 15s"
+      toolbar={
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <FilterBar list={list} schema={deploymentsSearch} textPlaceholder="Filter deployments..." />
+          {/* 列表主动作钉工具栏行最右（对齐批 5 裁决） */}
+          <div className="py-2 pr-3">
+            <Button size="sm" onClick={() => setDeployOpen(true)}>
+              <RocketIcon data-icon-start-inline />
+              Deploy…
+            </Button>
           </div>
-        }
-        pagination={<Pagination list={list} />}
-        emptyTitle={filtered ? "No deployments match the filter" : "No deployments yet"}
-        emptyDescription={
-          filtered
-            ? "Adjust or clear the filter to see rows again."
-            : "Deploy from an app's page, or pick an app above and hit Deploy."
-        }
-        appendix={
-          <DeploySheet
-            open={deployOpen}
-            onOpenChange={setDeployOpen}
-            apps={apps.rows}
-            defaultAppId={apps.rows[0]?.id ?? ""}
-            projectId={projectId}
-            from={Route.id}
-            onDeployed={(deploymentId) => {
-              const appId = apps.rows[0]?.id ?? "";
-              if (appId === "") return;
-              void navigate({
-                to: "/p/$projectId/apps/$appId/deployments/$deploymentId",
-                params: { projectId, appId, deploymentId },
-              });
-            }}
-          />
-        }
-      >
-        <DataTable
-          list={list}
-          columns={columns}
-          getRowId={(row) => row.id ?? ""}
-          onRowClick={(deployment) => {
-            const appId = deployment.app_id ?? "";
+        </div>
+      }
+      pagination={<Pagination list={list} />}
+      emptyTitle={filtered ? "No deployments match the filter" : "No deployments yet"}
+      emptyDescription={
+        filtered
+          ? "Adjust or clear the filter to see rows again."
+          : "Deploy from an app's page, or pick an app above and hit Deploy."
+      }
+      appendix={
+        <DeploySheet
+          open={deployOpen}
+          onOpenChange={setDeployOpen}
+          apps={apps.rows}
+          defaultAppId={apps.rows[0]?.id ?? ""}
+          projectId={projectId}
+          from={Route.id}
+          onDeployed={(deploymentId) => {
+            const appId = apps.rows[0]?.id ?? "";
             if (appId === "") return;
             void navigate({
               to: "/p/$projectId/apps/$appId/deployments/$deploymentId",
-              params: { projectId, appId, deploymentId: deployment.id ?? "" },
+              params: { projectId, appId, deploymentId },
             });
           }}
         />
-      </FleetListPage>
-    </PageFrame>
+      }
+    >
+      <DataTable
+        list={list}
+        columns={columns}
+        getRowId={(row) => row.id ?? ""}
+        onRowClick={(deployment) => {
+          const appId = deployment.app_id ?? "";
+          if (appId === "") return;
+          void navigate({
+            to: "/p/$projectId/apps/$appId/deployments/$deploymentId",
+            params: { projectId, appId, deploymentId: deployment.id ?? "" },
+          });
+        }}
+      />
+    </FleetListPage>
   );
 }

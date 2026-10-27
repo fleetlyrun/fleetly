@@ -170,7 +170,7 @@ function LogsWorkbench() {
   };
 
   return (
-    <div className="flex h-[calc(100svh-3.25rem)] flex-col px-5 pt-4">
+    <div className="flex h-[calc(100svh-3.25rem)] flex-col px-6 pt-6">
       <div className="mb-1 flex items-baseline gap-3">
         <h1 className="font-heading text-lg font-bold tracking-tight">Logs</h1>
         <span className="text-xs text-muted">

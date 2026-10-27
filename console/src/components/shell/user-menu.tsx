@@ -30,11 +30,13 @@ export function UserMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" className="h-9 gap-2 px-2">
+        {/* 侧栏底部账号行：w-full + justify-start 左对齐（Button 基类
+            justify-center 会让整宽钮的内容居中——走查反馈实咬）。 */}
+        <Button variant="ghost" className="h-9 w-full justify-start gap-2 px-2">
           <ProjectAvatar seed={name} label={name} className="rounded-full text-2xs" />
-          <span className="hidden flex-col items-start leading-tight sm:flex">
-            <span className="text-xs font-semibold">{name}</span>
-            <span className="text-2xs text-muted">{role}</span>
+          <span className="hidden min-w-0 flex-col items-start leading-tight sm:flex">
+            <span className="truncate text-xs font-semibold">{name}</span>
+            <span className="truncate text-2xs text-muted">{role}</span>
           </span>
         </Button>
       </DropdownMenuTrigger>

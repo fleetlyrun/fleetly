@@ -1,16 +1,17 @@
 import type { ReactNode } from "react";
-import { cn } from "cn";
 import { PageHeader } from "./page-header";
 
-// PageFrame 是页面壳单源（六原型公共底座）：宽容器 + 页头一处收口——
-// 手拼 "mx-auto max-w-7xl px-6 pt-6 pb-8" 是反模式（守卫执法）。width
-// 三档对齐六原型：wide=Dashboard/List/Workbench 默认；narrow=Settings
-// 表单区块页；flow=Flow 类多步页。title 省略 = 纯容器（Detail 类页自带
-// 英雄卡）：此时 breadcrumb 落壳内裸 crumb 槽（mb-3 接英雄卡）——不收
-// 槽位页面裸塞首元素，上吃满 pt 下贴卡片（2026-10-12 走查实咬）。
-// ListPage/ModulePage 模板内部经此落壳。
+// PageFrame 是页面壳单源（六原型公共底座）：主内容列一处收口——手拼
+// "mx-auto max-w-7xl px-6 pt-6 pb-8" 是反模式（守卫执法）。
+// 2026-10-27 走查统一裁决：**主内容宽度流体全宽，全部页面同列**——
+// 原 wide/narrow/flow 三档 max-w 与 kit FleetListPage 的流体容器并存造成
+// 页面间宽度不一致（用户反馈），三档退役：width prop 保留签名兼容（不再
+// 分档），容器统一 `w-full px-6 pt-6 pb-8`（与 FleetListPage/壳横向衬垫
+// px-6 同族）。title 省略 = 纯容器（Detail 类页自带英雄卡）：此时
+// breadcrumb 落壳内裸 crumb 槽（mb-3 接英雄卡）——不收槽位页面裸塞首
+// 元素，上吃满 pt 下贴卡片（2026-10-12 走查实咬）。
 export function PageFrame({
-  width = "wide",
+  width: _width = "wide",
   breadcrumb,
   title,
   description,
@@ -24,9 +25,9 @@ export function PageFrame({
   actions?: ReactNode;
   children: ReactNode;
 }) {
-  const maxW = width === "narrow" ? "max-w-5xl" : width === "flow" ? "max-w-3xl" : "max-w-7xl";
+  void _width;
   return (
-    <div className={cn("mx-auto px-7 pt-7 pb-10", maxW)}>
+    <div className="w-full px-6 pt-6 pb-8">
       {title != null ? (
         <PageHeader breadcrumb={breadcrumb} title={title} description={description} actions={actions} />
       ) : breadcrumb != null ? (

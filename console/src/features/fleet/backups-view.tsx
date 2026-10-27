@@ -5,7 +5,6 @@ import { backupHealth } from "@/features/databases/backup-health";
 import { backupsSearch, databaseBackupsResource, platformSnapshotsResource, type DatabaseBackupRow, type PlatformSnapshotRow } from "@/kit/backups";
 import { CliEquivalent } from "@/components/domain/list-toolbar";
 import { PageTabs } from "@/components/domain/page-tabs";
-import { PageFrame } from "@/components/domain/page-frame";
 import { ProjectAvatar } from "@/components/domain/project-avatar";
 import { RelativeTime } from "@/components/domain/relative-time";
 import { statusToneClass } from "@/components/domain/status-badge";
@@ -31,29 +30,28 @@ export function BackupsView({
   onTabChange: (value: "databases" | "snapshots") => void;
   from: string;
 }) {
-  return (
-    <PageFrame
-      title="Backups"
-      description="Data safety at a glance — database backups and platform snapshots"
-      actions={<ButtonLink href="/settings" label="Platform backup settings" />}
-    >
-      <PageTabs
-        tabs={[
-          { value: "databases", label: "Databases" },
-          { value: "snapshots", label: "Snapshots" },
-        ]}
-        current={tab}
-        onChange={onTabChange}
-      />
-
-      {tab === "databases" ? <DatabasesTab from={from} /> : <SnapshotsTab from={from} />}
-    </PageFrame>
+  // FleetListPage 自带页面衬垫与 header 槽（收尾批统一 Layout：去掉
+  // PageFrame 外壳——双衬垫 + 双层宽度容器随统一列退役）。页头三件
+  //（title/description/actions）下沉双 tab 各自的 FleetListPage；模块
+  // tab 条随壳内迁 toolbar 槽（壳内唯一保持 header→tabs→列表位次的槽）。
+  return tab === "databases" ? (
+    <DatabasesTab from={from} tab={tab} onTabChange={onTabChange} />
+  ) : (
+    <SnapshotsTab from={from} tab={tab} onTabChange={onTabChange} />
   );
 }
 
 // DatabasesTab：跨项目备份健康台账（kit fan-out 资源；staleness 业务排序
 // 在 fetch 内，URL 无 sort 时保持视线序）。
-function DatabasesTab({ from }: { from: string }) {
+function DatabasesTab({
+  from,
+  tab,
+  onTabChange,
+}: {
+  from: string;
+  tab: "databases" | "snapshots";
+  onTabChange: (value: "databases" | "snapshots") => void;
+}) {
   const list = useCollection(databaseBackupsResource, {
     from,
     search: backupsSearch,
@@ -135,7 +133,23 @@ function DatabasesTab({ from }: { from: string }) {
   return (
     <FleetListPage
       list={list}
-      toolbar={<FilterBar list={list} schema={backupsSearch} textPlaceholder="Filter databases..." />}
+      title="Backups"
+      description="Data safety at a glance — database backups and platform snapshots"
+      actions={<ButtonLink href="/settings" label="Platform backup settings" />}
+      toolbar={
+        <div>
+          <PageTabs
+            className="px-3"
+            tabs={[
+              { value: "databases", label: "Databases" },
+              { value: "snapshots", label: "Snapshots" },
+            ]}
+            current={tab}
+            onChange={onTabChange}
+          />
+          <FilterBar list={list} schema={backupsSearch} textPlaceholder="Filter databases..." />
+        </div>
+      }
       pagination={<Pagination list={list} />}
       emptyTitle={filtered ? "No databases match the filter" : "No databases"}
       emptyDescription={
@@ -151,7 +165,15 @@ function DatabasesTab({ from }: { from: string }) {
 
 // SnapshotsTab：平台快照区块（restic）——只读三列小表；快照行数 = 备份
 // 窗口频次的台账（kit 四件套收编，60s 轮询沿用旧拍）。
-function SnapshotsTab({ from }: { from: string }) {
+function SnapshotsTab({
+  from,
+  tab,
+  onTabChange,
+}: {
+  from: string;
+  tab: "databases" | "snapshots";
+  onTabChange: (value: "databases" | "snapshots") => void;
+}) {
   const list = useCollection(platformSnapshotsResource, {
     from,
     search: backupsSearch,
@@ -186,7 +208,23 @@ function SnapshotsTab({ from }: { from: string }) {
   return (
     <FleetListPage
       list={list}
-      toolbar={<FilterBar list={list} schema={backupsSearch} textPlaceholder="Filter snapshots..." />}
+      title="Backups"
+      description="Data safety at a glance — database backups and platform snapshots"
+      actions={<ButtonLink href="/settings" label="Platform backup settings" />}
+      toolbar={
+        <div>
+          <PageTabs
+            className="px-3"
+            tabs={[
+              { value: "databases", label: "Databases" },
+              { value: "snapshots", label: "Snapshots" },
+            ]}
+            current={tab}
+            onChange={onTabChange}
+          />
+          <FilterBar list={list} schema={backupsSearch} textPlaceholder="Filter snapshots..." />
+        </div>
+      }
       pagination={<Pagination list={list} />}
       emptyTitle={filtered ? "No snapshots match the filter" : "No snapshots listed yet"}
       emptyDescription={

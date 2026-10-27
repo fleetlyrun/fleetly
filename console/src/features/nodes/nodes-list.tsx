@@ -157,9 +157,13 @@ function NodesList({ from }: { from: string }) {
 
   const filtered = list.query.predicate != null;
   return (
-    <PageFrame title="Nodes" description="Cluster membership, relay liveness and the runtime admin verbs">
+    <>
+      {/* FleetListPage 自带页面衬垫与 header 槽（收尾批统一 Layout：去掉
+          PageFrame 外壳——双衬垫 + 双层宽度容器随统一列退役）。 */}
       <FleetListPage
         list={list}
+        title="Nodes"
+        description="Cluster membership, relay liveness and the runtime admin verbs"
         toolbar={
           <div className="flex flex-wrap items-center justify-between gap-2">
             <FilterBar list={list} schema={nodesSearch} textPlaceholder="Filter nodes..." />
@@ -214,7 +218,7 @@ function NodesList({ from }: { from: string }) {
         pendingLabel="Rotating…"
         onConfirm={() => rotate.mutateAsync({ rotate: true })}
       />
-    </PageFrame>
+    </>
   );
 }
 
