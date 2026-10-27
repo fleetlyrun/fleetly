@@ -1,16 +1,22 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import type { ApiError } from "@lynx-go/uikit-core/kernel";
+import { recordQueryOptions } from "@lynx-go/uikit-core/react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useRouter } from "@tanstack/react-router";
 import { useCollection } from "@lynx-go/uikit-core";
 import { collectionQuerySchema } from "@lynx-go/uikit-core/schema";
 import { SparklesIcon } from "lucide-react";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
-import { apiFetch, apiSend } from "@/api/client";
-import type { components } from "@/api/templates";
+import { apiSend } from "@/api/client";
 import { describeError } from "@/lib/api-errors";
-import { buildTemplateValues, inputKindOf, type TemplateVariableDecl } from "@/lib/templateForm";
+import { buildTemplateValues, inputKindOf } from "@/lib/templateForm";
 import { projectsResource } from "@/kit/projects";
+import {
+  templatesResource,
+  useTemplateDetail,
+  type TemplateEntry,
+} from "@/kit/templates";
 import { EmptyState } from "@/components/domain/empty-state";
 import { ErrorState } from "@/components/domain/error-state";
 import { ListPage } from "@/components/domain/list-page";
@@ -41,37 +47,12 @@ export const Route = createFileRoute("/_shell/templates")({
   component: TemplatesPageV2,
 });
 
-type Templates = components["schemas"];
 
-interface TemplateEntry {
-  name: string;
-  version: string;
-  digest: string;
-  description: string;
-  variables: TemplateVariableDecl[];
-}
-
-interface TemplateDetail extends TemplateEntry {
-  body: string;
-}
-
+// 模板目录/详情伴读（收尾批 kit 化）：收敛形与 detail 映射在 kit/templates
+// 单源；60s 拍子同旧。
 function useTemplatesCatalog() {
-  return useQuery({
-    queryKey: ["catalog", "templates"],
-    queryFn: async (): Promise<{ source: string; templates: TemplateEntry[] }> => {
-      const res = await apiFetch<{ source?: string; templates?: Array<Templates["v1Template"] | undefined> }>("/v1/templates");
-      const rows: TemplateEntry[] = [];
-      for (const t of res.templates ?? []) {
-        if (!t?.name) continue;
-        const variables: TemplateVariableDecl[] = [];
-        for (const v of t.variables ?? []) {
-          if (!v?.name) continue;
-          variables.push({ name: v.name, type: v.type ?? "string", description: v.description ?? "", default: v.default ?? "", required: v.required ?? false });
-        }
-        rows.push({ name: t.name, version: t.version ?? "", digest: t.digest ?? "", description: t.description ?? "", variables });
-      }
-      return { source: res.source ?? "", templates: rows };
-    },
+  return useQuery<{ source: string; templates: TemplateEntry[] }, ApiError>({
+    ...recordQueryOptions(templatesResource, "current", {}),
     refetchInterval: 60_000,
   });
 }
@@ -82,22 +63,7 @@ function TemplatesPageV2() {
   const projects = useCollection(projectsResource, { from: Route.id, search: projectsDirectorySearch, query: { refetchInterval: 60_000 } });
   const [detailName, setDetailName] = useState<string | null>(null);
   const [wizard, setWizard] = useState<TemplateEntry | null>(null);
-  const detailQuery = useQuery({
-    queryKey: ["catalog", "templates", detailName],
-    enabled: detailName !== null,
-    queryFn: async (): Promise<TemplateDetail | null> => {
-      if (!detailName) return null;
-      const res = await apiFetch<{ template?: Templates["v1Template"]; body?: string }>(`/v1/templates/${encodeURIComponent(detailName)}`);
-      const t = res.template;
-      if (!t?.name) return null;
-      const variables: TemplateVariableDecl[] = [];
-      for (const v of t.variables ?? []) {
-        if (!v?.name) continue;
-        variables.push({ name: v.name, type: v.type ?? "string", description: v.description ?? "", default: v.default ?? "", required: v.required ?? false });
-      }
-      return { name: t.name, version: t.version ?? "", digest: t.digest ?? "", description: t.description ?? "", body: res.body ?? "", variables };
-    },
-  });
+  const detailQuery = useTemplateDetail(detailName);
 
   const columns: LegacyColumnDef<TemplateEntry, any>[] = [
     {

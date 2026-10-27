@@ -1,10 +1,14 @@
 import { clientCollection } from "@lynx-go/uikit-core/adapters";
 import {
+  type ApiError,
   type CommandResult,
   defineResource,
+  scoped,
   type ResourceScope,
 } from "@lynx-go/uikit-core/kernel";
 import { collectionQuerySchema } from "@lynx-go/uikit-core/schema";
+import { useQuery } from "@tanstack/react-query";
+import { recordQueryOptions } from "@lynx-go/uikit-core/react";
 import type { components as structureSchemas } from "@/api/structure";
 import { apiSend } from "@/api/client";
 import { runCommandMapped, toApiError } from "./errors";
@@ -142,6 +146,9 @@ export const configsResource = defineResource({
             content: input.content,
           }),
         ),
+      // 详情 record（config-detail）随列表一并失效——PUT 同名冻结新版本，
+      // 详情弹窗回读即时换版（收尾批测试实咬：record 键不受 legacy 桥覆盖）。
+      invalidates: [{ resource: "configs" }, { resource: "config-detail" }],
     },
   },
 });
@@ -196,3 +203,36 @@ export const variablesSearch = collectionQuerySchema({
   text: ["name"],
   defaultSize: 20,
 });
+
+// Config 详情回读（ConfigDetailDialog 的 GetConfig 单记录；PUT 同名冻结
+// 新版本后经 legacyKeys 双键桥失效——批2 既有桥值）。
+export interface ConfigDetail {
+  version?: string;
+  created_at?: string;
+  content?: string;
+}
+
+export const configDetailResource = defineResource({
+  name: "config-detail",
+  scope: ["projectId"],
+  record: (name: string, ctx: ResourceScope, signal?: AbortSignal) =>
+    fetchRows<ConfigDetail>(
+      `/v1/configs/${encodeURIComponent(ctx.projectId ?? "")}/${encodeURIComponent(name)}`,
+      (res) => {
+        const config = (res as { config?: ConfigDetail | undefined }).config;
+        return config != null ? [config] : [];
+      },
+      signal,
+    )
+      .then((rows) => rows[0] ?? null)
+      .catch((err: unknown) => {
+        throw toApiError(err);
+      }),
+});
+
+export function useConfigDetail(projectId: string, name: string) {
+  return useQuery<ConfigDetail | null, ApiError>({
+    ...recordQueryOptions(scoped(configDetailResource, { projectId }), name, {}),
+    enabled: name !== "",
+  });
+}

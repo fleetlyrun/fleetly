@@ -44,7 +44,7 @@ describe("命令锚：freezes freeze（映射 + 存量键桥）", () => {
     expect(queryClient.getQueryState(["settings", "freezes"])?.isInvalidated).toBe(true);
   });
 
-  it("400 → rejected 保留 apperr code；mint 无失效声明（语义保留：旧 onSuccess 只进揭示链）", async () => {
+  it("400 → rejected 保留 apperr code；mint 失效 tokens 集合（收尾批翻转：mint 后台账即时可见）", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ code: "E_TOKEN_NAME_TAKEN", message: "name taken" }, 400)));
     await expect(tokensResource.commands.mint.run({ name: "ci" })).resolves.toEqual({
       status: "rejected",
@@ -53,9 +53,10 @@ describe("命令锚：freezes freeze（映射 + 存量键桥）", () => {
     });
 
     const queryClient = new QueryClient();
-    queryClient.setQueryData(["settings", "tokens"], []);
+    const collectionKey = ["collection", "tokens", {}, "all"];
+    queryClient.setQueryData(collectionKey, { rows: [], total: 0 });
     invalidateAfterCommand(queryClient, tokensResource.commands.mint, {});
-    expect(queryClient.getQueryState(["settings", "tokens"])?.isInvalidated).toBeFalsy();
+    expect(queryClient.getQueryState(collectionKey)?.isInvalidated).toBe(true);
   });
 });
 

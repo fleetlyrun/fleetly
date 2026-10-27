@@ -1,13 +1,11 @@
-import { useQuery } from "@tanstack/react-query";
 import { FingerprintIcon, InfoIcon, PlusIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
 import { useCollection, useCommand } from "@lynx-go/uikit-core";
-import type { components as ghSchemas } from "@/api/github_apps";
-import { apiFetch } from "@/api/client";
+
 import { describeApiError } from "@/kit/errors";
-import { githubAppsResource, githubAppsSearch, type GitHubAppRow } from "@/kit/githubapps";
+import { githubAppsResource, githubAppsSearch, useGitHubAppRepos, type GitHubAppRow } from "@/kit/githubapps";
 import { toastOnSettled } from "@/kit/toast";
 import { ConfirmDialog } from "@/components/domain/confirm-dialog";
 import { CopyButton } from "@/components/domain/copy-button";
@@ -28,7 +26,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { describeError } from "@/lib/api-errors";
 
-type GitHubAppRepo = ghSchemas["schemas"]["v1GitHubAppRepo"];
 
 // GitHubAppsView 是 GitHub App 接入材料的管理卡（ADR-0073 阶段 B，视觉
 // 真源 docs/design/2026-10-13-github-app-material-prototype.html——列表行
@@ -205,16 +202,8 @@ export function GitHubAppsView({ projectId, from }: { projectId?: string; from: 
 // ——挂起/卸载的安装在这里以 E_GITHUB_UPSTREAM 诚实呈现）。renderExtraRow
 // 槽内自持取数（展开挂载即取、收起即停）。
 function ReposPanel({ appId }: { appId: string }) {
-  const repos = useQuery({
-    queryKey: ["github-apps", appId, "repos"],
-    queryFn: async (): Promise<GitHubAppRepo[]> => {
-      const res = await apiFetch<{ repos?: Array<GitHubAppRepo | undefined> }>(
-        `/v1/github-apps/${encodeURIComponent(appId)}/repos`,
-      );
-      return (res.repos ?? []).flatMap((entry) => (entry != null ? [entry] : []));
-    },
-    retry: false,
-  });
+  // repos 展开伴读（收尾批 kit 化）：retry:false 同旧，展开生命周期归页面。
+  const repos = useGitHubAppRepos(appId);
   return (
     <div className="bg-panel-2/30 px-4 pb-4 pt-3 sm:pl-14">
       <div className="mb-2 flex items-center gap-2">
@@ -229,11 +218,11 @@ function ReposPanel({ appId }: { appId: string }) {
         <p className="rounded-lg border bg-panel px-3 py-2 text-xs text-[var(--status-danger)]">
           {describeError(repos.error).title} — {describeError(repos.error).detail}
         </p>
-      ) : (repos.data ?? []).length === 0 ? (
+      ) : (repos.data?.rows ?? []).length === 0 ? (
         <p className="text-xs text-muted">No repositories reachable via this installation.</p>
       ) : (
         <div className="overflow-hidden rounded-lg border bg-panel">
-          {(repos.data ?? []).map((repo) => (
+          {(repos.data?.rows ?? []).map((repo) => (
             <div key={repo.full_name} className="flex items-center gap-2 border-b px-3 py-1.5 text-xs last:border-b-0">
               <span className="font-mono">{repo.full_name}</span>
               <span

@@ -1,13 +1,12 @@
 import { Fragment, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useCollection, useCommand } from "@lynx-go/uikit-core";
-import { ApiError, apiFetch } from "@/api/client";
 import type { components } from "@/api/structure";
 import { ChevronRightIcon, MinusIcon, PlusIcon, RotateCwIcon } from "lucide-react";
 import { toast } from "sonner";
 import { routesResource, routesLookup } from "@/kit/routes";
 import { appTabCommands } from "@/kit/app-tabs";
+import { useAppSpecSheet } from "@/kit/app-observe";
 import { toastOnSettled } from "@/kit/toast";
 import { InstanceList, RunningCount } from "./running-instances";
 import {
@@ -36,25 +35,14 @@ type AppSpec = components["schemas"]["v1AppSpec"];
 // 层级定案）：声明 Replicas 旁对照 live 在跑数，展开见实例明细（ADR-0067
 // 观测原语，10s 快照）。
 // 批4（2026-10-27）：路由归因读面迁 kit useCollection（routeId 注入；
-// 大页 lookup 不截断行集；15s 轮询同旧拍）。冻结 Spec 读面保持局部
-// useQuery（legacy 键与 appTabCommands.redeploy 的失效桥对齐）。
+// 大页 lookup 不截断行集；15s 轮询同旧拍）。冻结 Spec 读面收尾批迁
+// kit/app-observe 伴读（60s 同拍；AppSpec 断言归消费方——redeploy 失效
+// 桥的 legacy 键由 appSpecSheetResource.legacyKeys 等值承接）。
 export function AppProcessesTab({ projectId, appId, routeId }: { projectId: string; appId: string; routeId: string }) {
   const navigate = useNavigate();
   const [staged, setStaged] = useState<Record<string, number>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const spec = useQuery({
-    queryKey: ["resources", "app-spec", projectId, appId],
-    queryFn: async (): Promise<AppSpec | null> => {
-      try {
-        const res = await apiFetch<{ spec?: AppSpec }>(`/v1/apps/${encodeURIComponent(appId)}/spec`);
-        return res?.spec ?? null;
-      } catch (error) {
-        if (error instanceof ApiError && error.status === 404) return null; // 未部署 = 无冻结 Spec（空态面，W-3）
-        throw error;
-      }
-    },
-    refetchInterval: 60_000,
-  });
+  const spec = useAppSpecSheet(projectId, appId, { refetchInterval: 60_000 });
   const routes = useCollection(routesResource, {
     from: routeId,
     search: routesLookup,
@@ -68,7 +56,8 @@ export function AppProcessesTab({ projectId, appId, routeId }: { projectId: stri
     routesByProcess.set(key, (routesByProcess.get(key) ?? 0) + 1);
   }
 
-  const frozen = spec.data;
+  // spec.data 形 = { spec: AppSpec-like | null }——AppSpec 断言归消费方（kit 侧 unknown）。
+  const frozen = (spec.data?.spec ?? null) as AppSpec | null;
   const processes = frozen?.processes ?? [];
   const replicasOf = (name: string): number => {
     if (staged[name] != null) return staged[name];

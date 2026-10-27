@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useCollection } from "@lynx-go/uikit-core";
 import { ActivityIcon, FileJsonIcon, LayersIcon, PencilIcon } from "lucide-react";
@@ -8,9 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { useSpecDeploy } from "@/lib/spec-deploy";
-import { ApiError, apiFetch } from "@/api/client";
-import type { components as Delivery } from "@/api/delivery";
-import type { components as Workloads } from "@/api/workloads";
+import { ApiError } from "@/api/client";
+import { useAppRevisionSpec, useAppWorkloads, useAppWorkloadsLive, type WorkloadObservation, type WorkloadView } from "@/kit/app-observe";
 import { CopyButton } from "@/components/domain/copy-button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,8 +22,6 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { revisionsResource, revisionsLookup } from "@/kit/revisions";
 
-type WorkloadView = Delivery["schemas"]["v1Workload"];
-type WorkloadObservation = Workloads["schemas"]["v1WorkloadObservation"];
 
 // App 详情 · Spec tab（ADR-0071 配置可观测面）：三层真源并置——
 // ① 冻结 Spec（声明了什么，按 Revision 全文）；② Workload 投影（平台会
@@ -38,21 +34,10 @@ export function AppSpecTab({ projectId, appId, seq, routeId }: { projectId: stri
   const navigate = useNavigate();
   const explicitSeq = seq ?? 0;
 
-  const view = useQuery({
-    queryKey: ["app-workloads", appId, explicitSeq],
-    queryFn: async () => {
-      const qs = explicitSeq > 0 ? `?seq=${explicitSeq}` : "";
-      return apiFetch<{ revision?: { seq?: string; digest?: string; created_at?: string; source_kind?: string }; workloads?: WorkloadView[] }>(
-        `/v1/apps/${encodeURIComponent(appId)}/workloads${qs}`,
-      );
-    },
-  });
-  const live = useQuery({
-    queryKey: ["app-workloads-live", appId],
-    queryFn: async () =>
-      apiFetch<{ observations?: WorkloadObservation[] }>(`/v1/apps/${encodeURIComponent(appId)}/workloads/live`),
-    refetchInterval: 10_000,
-  });
+  // 观测面伴读（收尾批 kit 化）：workloads 投影 / 在服观测 10s / 冻结全文
+  // 按生效 seq 寻址——轮询拍子与 404/空态语义在 kit/app-observe 单源。
+  const view = useAppWorkloads(projectId, appId, explicitSeq);
+  const live = useAppWorkloadsLive(projectId, appId);
   const revisions = useCollection(revisionsResource, {
     from: routeId,
     search: revisionsLookup,
@@ -65,12 +50,7 @@ export function AppSpecTab({ projectId, appId, seq, routeId }: { projectId: stri
   const showingEffective = explicitSeq === 0;
 
   // 冻结全文按渲染寻址到的 seq 取（缺省寻址先解析出生效 Revision）。
-  const frozen = useQuery({
-    queryKey: ["app-revision-spec", appId, viewSeq ?? -1],
-    enabled: viewSeq != null && viewSeq > 0,
-    queryFn: async () =>
-      apiFetch<{ spec?: unknown; revision?: { source_text?: string } }>(`/v1/revisions/${encodeURIComponent(appId)}/${viewSeq}`),
-  });
+  const frozen = useAppRevisionSpec(projectId, appId, viewSeq);
 
   // 编辑-部署动线（ADR-0072 写面）：冻结体预填可编辑，部署走 spec_file
   //（hook 应用服务端按运行时 overlay 受理）。
@@ -243,7 +223,7 @@ export function AppSpecTab({ projectId, appId, seq, routeId }: { projectId: stri
             <p className="py-4 text-center text-xs text-muted">
               {live.error instanceof ApiError ? live.error.message : String(live.error)}
             </p>
-          ) : (live.data?.observations ?? []).length === 0 ? (
+          ) : (live.data ?? []).length === 0 ? (
             <p className="py-4 text-center text-xs text-muted">
               No running carriers — replicas may be stopped or between deploys.
             </p>
@@ -260,7 +240,7 @@ export function AppSpecTab({ projectId, appId, seq, routeId }: { projectId: stri
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {(live.data?.observations ?? []).map((o) => (
+                {(live.data ?? []).map((o: WorkloadObservation) => (
                   <TableRow key={o.workload_id}>
                     <TableCell className="font-mono text-xs">{o.workload_id}</TableCell>
                     <TableCell className="text-xs">{o.generation ?? "—"}</TableCell>
@@ -330,7 +310,7 @@ export function AppSpecTab({ projectId, appId, seq, routeId }: { projectId: stri
 // WorkloadCard 是单载体投影卡：image/command/env/ports/探针/资源/调度/
 // 卷/网络/DNS——投影视图的用户面全字段（Generation/Materials 不进视图）。
 function WorkloadCard({ workload }: { workload: WorkloadView }) {
-  const env = Object.entries(workload.env ?? {});
+  const env = Object.entries((workload.env ?? {}) as Record<string, string>);
   const health = workload.healthcheck;
   const healthSummary = !health
     ? "none"
@@ -369,7 +349,9 @@ function WorkloadCard({ workload }: { workload: WorkloadView }) {
         <dd className="font-mono">{workload.placement?.node_ids?.join(", ") || "any node"}</dd>
         <dt className="text-muted">volumes</dt>
         <dd className="font-mono">
-          {(workload.volumes ?? []).map((v) => `${v.volume_id}→${v.target}${v.read_only ? " (ro)" : ""}`).join("  ") || "—"}
+          {(Object.values(workload.volumes ?? {}) as Array<{ volume_id?: string; target?: string; read_only?: boolean }>)
+            .map((v) => `${v.volume_id}→${v.target}${v.read_only ? " (ro)" : ""}`)
+            .join("  ") || "—"}
         </dd>
         <dt className="text-muted">networks</dt>
         <dd className="font-mono">

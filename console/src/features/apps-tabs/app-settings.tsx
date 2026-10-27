@@ -1,9 +1,8 @@
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
 import { useCommand } from "@lynx-go/uikit-core";
-import { apiFetch, ApiError } from "@/api/client";
-import { appTabCommands, type GitHook } from "@/kit/app-tabs";
+import { appTabCommands } from "@/kit/app-tabs";
+import { useAppHook } from "@/kit/app-observe";
 import { toastOnSettled } from "@/kit/toast";
 import { CopyButton } from "@/components/domain/copy-button";
 import { RelativeTime } from "@/components/domain/relative-time";
@@ -70,24 +69,13 @@ export function AppSettingsTab({
   );
 }
 
-function useGitHook(appId: string) {
-  return useQuery({
-    queryKey: ["apps", "hook", appId],
-    enabled: appId !== "",
-    queryFn: async () => {
-      try {
-        const res = await apiFetch<{ hook?: GitHook }>(`/v1/apps/${encodeURIComponent(appId)}/hook`);
-        return res?.hook;
-      } catch (error) {
-        if (error instanceof ApiError && error.status === 404) return null;
-        throw error;
-      }
-    },
-  });
+function useGitHook(projectId: string, appId: string) {
+  // 收尾批 kit 化：hook 伴读（404 → null 未托管，kit 单源）。
+  return useAppHook(projectId, appId);
 }
 
 function GitHookCard({ appId, projectId }: { appId: string; projectId: string }) {
-  const hook = useGitHook(appId);
+  const hook = useGitHook(projectId, appId);
   const [form, setForm] = useState({ repo: "", branch: "main", dockerfile: "", watchPaths: "" });
   const [editing, setEditing] = useState(false);
   const [revealedSecret, setRevealedSecret] = useState<string | null>(null);
@@ -104,7 +92,12 @@ function GitHookCard({ appId, projectId }: { appId: string; projectId: string })
   };
 
   const commands = appTabCommands(projectId, appId);
+  // scope 显式传（{projectId, appId}）：hook 读面已迁 kit record 键——命令
+  // 失效 selector 与键 scope 必须相等（appTabCommands 的 appId 在闭包不进
+  // scope，缺省 {} 与键不相交——收尾批测试实咬）。
+  const commandScope = { projectId, appId };
   const save = useCommand(commands.setGitHook, {
+    scope: commandScope,
     onSettled: toastOnSettled((payload) => {
       setEditing(false);
       toast("Git deploy hook configured");
@@ -112,6 +105,7 @@ function GitHookCard({ appId, projectId }: { appId: string; projectId: string })
     }),
   });
   const rotate = useCommand(commands.rotateGitHook, {
+    scope: commandScope,
     onSettled: toastOnSettled((payload) => {
       toast("Hook token rotated — the previous token is revoked");
       if (payload.secret) setRevealedSecret(payload.secret);
@@ -120,7 +114,7 @@ function GitHookCard({ appId, projectId }: { appId: string; projectId: string })
   // Deploy now：拉取通道（RefreshGitHook）——不依赖 GitHub 侧 webhook 配置
   // 即可立即部署（首配验证 / App Templates 第三方模板仓的前提原语）。
   const refresh = useCommand(commands.refreshGitHook, {
-    scope: { projectId },
+    scope: commandScope,
     onSettled: toastOnSettled((payload) => {
       const suffix = payload.admission?.outcome === "deduplicated" ? " (deduplicated — same commit already in the pipeline)" : "";
       toast(`Deployment ${payload.deployment_id ?? "?"} queued @ ${payload.commit?.slice(0, 7) ?? "?"}${suffix}`);
@@ -129,6 +123,7 @@ function GitHookCard({ appId, projectId }: { appId: string; projectId: string })
   // Remove：解除通道（DeleteGitHook，W-8）——token 与 webhook secret 即刻
   // 失效，材料所有权归还 deploy 面。非幂等（无 hook 即 404）。
   const remove = useCommand(commands.deleteGitHook, {
+    scope: commandScope,
     onSettled: toastOnSettled(() => toast("Git deploy hook removed — material ownership returned to deploys")),
   });
 

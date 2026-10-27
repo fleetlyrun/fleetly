@@ -1,1 +1,0 @@
-import{a_ as t}from"./vendor-9xNphWzp.js";import{d as a}from"./index-BdcO2Eop.js";function n(e){return(o,r)=>{o!=null?o.status==="ok"?e?.(o.payload):t.error(o.message):r!=null&&t.error(a(r))}}export{n as t};

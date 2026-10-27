@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { ArrowLeftIcon, CopyIcon, RocketIcon } from "lucide-react";
 import { toast } from "sonner";
 import type { components } from "@/api/delivery";
-import { apiFetch, apiSend } from "@/api/client";
+// apiFetch 面（SSE wait 流）在 api/streams —— 本页经 kit 伴读取数。
+import { apiSend } from "@/api/client";
 import { streamDeploymentWait } from "@/api/streams";
 import { useCollection } from "@lynx-go/uikit-core";
-import { revisionsResource, revisionsLookup } from "@/kit/revisions";
+import { useDeploymentLookup } from "@/kit/deployments";
+import { revisionsResource, revisionsLookup, useRevisionDiff, type RevisionDiffEntry } from "@/kit/revisions";
 import { CopyButton } from "@/components/domain/copy-button";
 import { RelativeTime } from "@/components/domain/relative-time";
 import { DeploymentStatusBadge, isActiveDeploymentState } from "@/components/domain/status-badge";
@@ -104,17 +105,11 @@ export function DeploymentDetailView({
 
   // 轮询兜底：流 stalled 或尚未收到首帧时兜住数据面（5s 频率借用 app 列表口径的
   // 低频形态——wait 流健康时本查询 staleTime 内不发）。
-  const poll = useQuery({
-    queryKey: ["deployment-poll", deploymentId],
-    enabled: streamStalled || (live == null && streamError == null),
+  // 轮询兜底伴读（收尾批 kit 化）：stalled/缺流时 5s 拍子查证（S2 裁决
+  // 的 stalled+轮询组合轮询半）。
+  const poll = useDeploymentLookup(projectId, appId, deploymentId, {
     refetchInterval: POLL_FALLBACK_MS,
-    queryFn: async (): Promise<Deployment | null> => {
-      const res = await apiFetch<{ deployments?: Array<Deployment | undefined> }>(
-        `/v1/deployments?app_id=${encodeURIComponent(appId)}&limit=50`,
-      );
-      const hit = (res.deployments ?? []).find((item) => item?.id === deploymentId);
-      return hit ?? null;
-    },
+    enabled: streamStalled || (live == null && streamError == null),
   });
 
   const effective = live ?? poll.data ?? null;
@@ -251,7 +246,7 @@ export function DeploymentDetailView({
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <ProcessStrategiesCard deployment={effective} toRevision={toRevision} />
-        <RevisionsDiffCard appId={appId} revisions={revisions.rows} />
+        <RevisionsDiffCard projectId={projectId} appId={appId} revisions={revisions.rows} />
       </div>
 
       <details className="rounded-xl border bg-panel px-4 py-3">
@@ -486,25 +481,15 @@ function ProcessStrategiesCard({ deployment, toRevision }: { deployment: Deploym
 
 // ---- Revision diff ----
 
-type DiffEntry = { path?: string; old_value?: string; new_value?: string };
-
-function RevisionsDiffCard({ appId, revisions }: { appId: string; revisions: readonly Revision[] }) {
+function RevisionsDiffCard({ projectId, appId, revisions }: { projectId: string; appId: string; revisions: readonly Revision[] }) {
   const seqs = revisions
     .map((rev) => Number(rev.seq ?? "0"))
     .filter((seq) => seq > 0)
     .sort((a, b) => b - a);
   const [fromSeq, setFromSeq] = useState("");
   const [toSeq, setToSeq] = useState("");
-  const diff = useQuery({
-    queryKey: ["revisions", "diff", appId, fromSeq, toSeq],
-    enabled: fromSeq !== "" && toSeq !== "" && fromSeq !== toSeq,
-    queryFn: async (): Promise<DiffEntry[]> => {
-      const res = await apiFetch<{ entries?: Array<DiffEntry | undefined> }>(
-        `/v1/revisions/diff?app_id=${encodeURIComponent(appId)}&from_seq=${fromSeq}&to_seq=${toSeq}`,
-      );
-      return (res.entries ?? []).flatMap((entry) => (entry != null ? [entry] : []));
-    },
-  });
+  // diff 伴读（收尾批 kit 化）。
+  const diff = useRevisionDiff(projectId, appId, fromSeq, toSeq);
   return (
     <div className="rounded-xl border bg-panel px-4 py-3">
       <h3 className="text-sm font-semibold">Revision diff</h3>
@@ -527,7 +512,7 @@ function RevisionsDiffCard({ appId, revisions }: { appId: string; revisions: rea
               </TableRow>
             </TableHeader>
             <TableBody>
-              {diff.data.map((entry) => (
+              {diff.data.map((entry: RevisionDiffEntry) => (
                 <TableRow key={entry.path}>
                   <TableCell className="font-mono">{entry.path}</TableCell>
                   <TableCell className="max-w-40 truncate font-mono text-[var(--status-danger)]" title={entry.old_value}>

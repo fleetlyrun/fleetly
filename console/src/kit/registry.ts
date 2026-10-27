@@ -1,5 +1,7 @@
 import { clientCollection } from "@lynx-go/uikit-core/adapters";
-import { defineResource, type ResourceScope } from "@lynx-go/uikit-core/kernel";
+import { defineResource, scoped, type ApiError, type ResourceScope, type Segment } from "@lynx-go/uikit-core/kernel";
+import { useQuery } from "@tanstack/react-query";
+import { collectionQueryOptions } from "@lynx-go/uikit-core/react";
 import { collectionQuerySchema } from "@lynx-go/uikit-core/schema";
 import type { components as deliverySchemas } from "@/api/delivery";
 import { digestByRevisionId, latestDeploymentPerApp } from "@/features/registry/registry-model";
@@ -105,3 +107,68 @@ export const registrySearch = collectionQuerySchema({
   text: ["name", "id"],
   defaultSize: 20,
 });
+
+// Image catalog 台账（Registry Catalog tab 的手风琴主表）：repo 名单 60s
+// retry:false 同旧；打开手风琴后的 tag 子表按 repo 锚定（打开态归页面）。
+async function fetchRegistryCatalog(ctx: ResourceScope, signal?: AbortSignal): Promise<string[]> {
+  try {
+    return await fetchRows<string>(
+      `/v1/registry/catalog?project_id=${encodeURIComponent(ctx.projectId ?? "")}`,
+      (res) => (res as { repositories?: Array<string | undefined> }).repositories,
+      signal,
+    );
+  } catch (err) {
+    throw toApiError(err);
+  }
+}
+
+export const registryCatalogResource = defineResource({
+  name: "registry-catalog",
+  getId: (repo: string) => repo,
+  scope: ["projectId"],
+  collection: clientCollection(fetchRegistryCatalog),
+});
+
+export function useRegistryCatalog(projectId: string) {
+  return useQuery({
+    ...collectionQueryOptions(scoped(registryCatalogResource, { projectId }), { window: { size: 200 } }, {
+      refetchInterval: 60_000,
+    }),
+    enabled: projectId !== "",
+    retry: false,
+  });
+}
+
+export interface RegistryTagRow {
+  name?: string;
+  digest?: string;
+  size_bytes?: string | number;
+  pushed_at?: string;
+}
+
+async function fetchRegistryTags(ctx: ResourceScope, signal?: AbortSignal): Promise<RegistryTagRow[]> {
+  try {
+    return await fetchRows<RegistryTagRow>(
+      `/v1/registry/${encodeURIComponent(ctx.repo ?? "")}/tags?project_id=${encodeURIComponent(ctx.projectId ?? "")}`,
+      (res) => (res as { tags?: Array<RegistryTagRow | undefined> }).tags,
+      signal,
+    );
+  } catch (err) {
+    throw toApiError(err);
+  }
+}
+
+export const registryTagsResource = defineResource({
+  name: "registry-tags",
+  getId: (row: RegistryTagRow) => row.name ?? "",
+  scope: ["projectId", "repo"],
+  collection: clientCollection(fetchRegistryTags),
+});
+
+export function useRegistryTags(projectId: string, repo: string, options?: { enabled?: boolean }) {
+  return useQuery<Segment<RegistryTagRow>, ApiError>({
+    ...collectionQueryOptions(scoped(registryTagsResource, { projectId, repo }), { window: { size: 200 } }, {}),
+    enabled: (options?.enabled ?? true) && repo !== "",
+    retry: false,
+  });
+}

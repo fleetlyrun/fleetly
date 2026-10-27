@@ -1,5 +1,7 @@
 import { clientCollection } from "@lynx-go/uikit-core/adapters";
-import { defineResource, type QuerySelector, type ResourceScope } from "@lynx-go/uikit-core/kernel";
+import { defineResource, scoped, type QuerySelector, type ResourceScope } from "@lynx-go/uikit-core/kernel";
+import { useQuery } from "@tanstack/react-query";
+import { collectionQueryOptions } from "@lynx-go/uikit-core/react";
 import { collectionQuerySchema } from "@lynx-go/uikit-core/schema";
 import type { components as ghSchemas } from "@/api/github_apps";
 import { apiSend } from "@/api/client";
@@ -151,3 +153,34 @@ export const githubAppsSearch = collectionQuerySchema({
   text: ["account_login", "id"],
   defaultSize: 20,
 });
+
+// Installation 可达仓库（Repos ▾ 展开的即时健康验证面——现铸 token 拉
+// 清单；retry:false 同旧，展开生命周期归页面）。
+export type GitHubAppRepo = ghSchemas["schemas"]["v1GitHubAppRepo"];
+
+async function fetchGitHubAppRepos(ctx: ResourceScope, signal?: AbortSignal): Promise<GitHubAppRepo[]> {
+  try {
+    return await fetchRows<GitHubAppRepo>(
+      `/v1/github-apps/${encodeURIComponent(ctx.appId ?? "")}/repos`,
+      (res) => (res as { repos?: Array<GitHubAppRepo | undefined> }).repos,
+      signal,
+    );
+  } catch (err) {
+    throw toApiError(err);
+  }
+}
+
+export const githubAppReposResource = defineResource({
+  name: "github-app-repos",
+  getId: (row: GitHubAppRepo) => row.full_name ?? "",
+  scope: ["appId"],
+  collection: clientCollection(fetchGitHubAppRepos),
+});
+
+export function useGitHubAppRepos(appId: string, options?: { enabled?: boolean }) {
+  return useQuery({
+    ...collectionQueryOptions(scoped(githubAppReposResource, { appId }), { window: { size: 200 } }, {}),
+    enabled: (options?.enabled ?? true) && appId !== "",
+    retry: false,
+  });
+}

@@ -1,11 +1,10 @@
 import { useEffect, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCollection, useCommand } from "@lynx-go/uikit-core";
 import type { ApiError, CommandResult } from "@lynx-go/uikit-core/kernel";
 import { RocketIcon } from "lucide-react";
 import { toast } from "sonner";
-import { ApiError as FetchApiError, apiFetch } from "@/api/client";
 import type { DeployFormState } from "@/lib/deployPayload";
+import { useAppHook, useAppSpecSheet } from "@/kit/app-observe";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -98,38 +97,11 @@ export function DeploySheet({
   });
   const uploadRows = uploads.rows;
 
-  // 生效锚 + 冻结体预填（GetAppSpec 的 Revision 锚，ADR-0071）。
-  const frozen = useQuery({
-    queryKey: ["resources", "app-spec-sheet", effectiveAppId],
-    enabled: open && effectiveAppId !== "",
-    queryFn: async () => {
-      try {
-        return await apiFetch<{ spec?: unknown; revision_seq?: string }>(`/v1/apps/${encodeURIComponent(effectiveAppId)}/spec`);
-      } catch (error) {
-        if (error instanceof FetchApiError && error.status === 404) return null;
-        throw error;
-      }
-    },
-  });
+  // 生效锚 + 冻结体预填 + hook 所有权（收尾批 kit 化）：观测 record 伴读
+  //（404 → null 空态/未托管语义在 kit 单源）；OCC 重载经 frozen.refetch()。
+  const frozen = useAppSpecSheet(projectId, effectiveAppId, { enabled: open && effectiveAppId !== "" });
+  const hook = useAppHook(projectId, effectiveAppId, { enabled: open && effectiveAppId !== "" });
   const hasFrozen = frozen.data != null;
-  const queryClient = useQueryClient();
-
-  // hook 所有权（ADR-0072）：hook 在即整张四源表单退场（Deploy from git
-  // 分支接管），source 归 null 让各源条件段全部跳过。
-  const hook = useQuery({
-    queryKey: ["resources", "app-hook", effectiveAppId],
-    enabled: open && effectiveAppId !== "",
-    queryFn: async () => {
-      try {
-        const res = await apiFetch<{ hook?: { repo?: string; branch?: string; dockerfile?: string } }>(
-          `/v1/apps/${encodeURIComponent(effectiveAppId)}/hook`);
-        return res?.hook ?? null;
-      } catch (error) {
-        if (error instanceof FetchApiError && error.status === 404) return null;
-        throw error;
-      }
-    },
-  });
   const hookOwned = hook.data != null;
   const source: SourceKind | null = hookOwned ? null : (sourceChosen ?? (hasFrozen ? "current" : "image"));
 
@@ -186,7 +158,7 @@ export function DeploySheet({
   // 查询回服务端态、清除手编旗标让预填重播、清结果盒。仅在 spec 链源
   //（current/spec）出现 conflict 时呈现。
   const reloadFrozenSpec = () => {
-    void queryClient.invalidateQueries({ queryKey: ["resources", "app-spec-sheet", effectiveAppId] });
+    void frozen.refetch();
     setSpecEdited(false);
     deploy.reset();
   };

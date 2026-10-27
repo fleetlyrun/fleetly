@@ -1,5 +1,7 @@
 import { clientCollection } from "@lynx-go/uikit-core/adapters";
-import { defineResource, type CommandDescriptor, type ResourceScope } from "@lynx-go/uikit-core/kernel";
+import { defineResource, scoped, type ApiError, type CommandDescriptor, type ResourceScope } from "@lynx-go/uikit-core/kernel";
+import { useQuery } from "@tanstack/react-query";
+import { recordQueryOptions } from "@lynx-go/uikit-core/react";
 import { collectionQuerySchema } from "@lynx-go/uikit-core/schema";
 import type { components as deliverySchemas } from "@/api/delivery";
 import { apiFetch, apiSend } from "@/api/client";
@@ -191,3 +193,32 @@ export const appDeploymentsResource = defineResource({
 // join 读面用大页 schema（hero 的 recent 卡与 per-App 列表同源全集——窗口
 // 不截断行集；per-App 时间线的列表页若成形态再立 search schema）。
 export const appDeploymentsLookup = collectionQuerySchema({ defaultSize: 200 });
+
+// 单部署查证（deployment-detail 的 stalled/缺流轮询兜底——wait 流是主径，
+// 此为 S2 裁决保留的 stalled+轮询组合的轮询半）。app 轴 list 里按 id 拾取。
+export const deploymentLookupResource = defineResource({
+  name: "deployment-lookup",
+  scope: ["projectId", "appId"],
+  record: (id, ctx, signal) =>
+    apiFetch<{ deployments?: Array<DeploymentRow | undefined> }>(
+      `/v1/deployments?app_id=${encodeURIComponent(ctx.appId ?? "")}&limit=50`,
+      { signal },
+    )
+      .then((res) => (res.deployments ?? []).find((item) => item?.id === id) ?? null)
+      .catch((err: unknown) => {
+        throw toApiError(err);
+      }),
+});
+
+export function useDeploymentLookup(
+  projectId: string,
+  appId: string,
+  deploymentId: string,
+  options?: { refetchInterval?: number; enabled?: boolean },
+) {
+  return useQuery<DeploymentRow | null, ApiError>({
+    ...recordQueryOptions(scoped(deploymentLookupResource, { projectId, appId }), deploymentId, {}),
+    refetchInterval: options?.refetchInterval,
+    enabled: (options?.enabled ?? true) && appId !== "" && deploymentId !== "",
+  });
+}

@@ -1,11 +1,10 @@
 import { Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
 import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
 import { useState } from "react";
 import { useCollection } from "@lynx-go/uikit-core";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
-import { apiFetch } from "@/api/client";
-import { registryResource, registrySearch, type RegistryRow } from "@/kit/registry";
+import { describeApiError } from "@/kit/errors";
+import { registryResource, registrySearch, useRegistryCatalog, useRegistryTags, type RegistryRow } from "@/kit/registry";
 import { DeploymentStatusBadge } from "@/components/domain/status-badge";
 import { CliEquivalent } from "@/components/domain/list-toolbar";
 import { CopyButton } from "@/components/domain/copy-button";
@@ -172,17 +171,8 @@ function RegistryAppsTab({ projectId, routeId }: { projectId: string; routeId: s
 // 上游缺席诚实呈现（代理面未配置 = 明确的不可用文案，不伪装空清单）。
 function RegistryCatalog({ projectId, apps }: { projectId: string; apps: ReadonlyArray<{ id: string; name: string }> }) {
   const [openRepo, setOpenRepo] = useState<string | null>(null);
-  const catalog = useQuery({
-    queryKey: ["registry", "catalog", projectId],
-    queryFn: async (): Promise<string[]> => {
-      const res = await apiFetch<{ repositories?: Array<string | undefined> }>(
-        `/v1/registry/catalog?project_id=${encodeURIComponent(projectId)}`,
-      );
-      return (res.repositories ?? []).flatMap((entry) => (entry != null ? [entry] : []));
-    },
-    retry: false,
-    refetchInterval: 60_000,
-  });
+  // catalog 台账伴读（收尾批 kit 化）：60s retry:false 同旧。
+  const catalog = useRegistryCatalog(projectId);
   const appName = (repo: string) => apps.find((app) => app.id.toLowerCase() === repo.split("/")[1])?.name ?? repo.split("/")[1];
   return (
     <>
@@ -192,13 +182,13 @@ function RegistryCatalog({ projectId, apps }: { projectId: string; apps: Readonl
         <p className="rounded-xl border bg-panel p-4 text-xs text-muted">
           Registry content is unavailable on this platform ({catalog.error instanceof Error ? catalog.error.message : "unknown error"}).
         </p>
-      ) : (catalog.data ?? []).length === 0 ? (
+      ) : (catalog.data?.rows ?? []).length === 0 ? (
         <p className="rounded-xl border bg-panel p-4 text-xs text-muted">
           No images pushed under this project yet — repositories appear after the first build.
         </p>
       ) : (
         <div className="overflow-hidden rounded-xl border">
-          {(catalog.data ?? []).map((repo) => (
+          {(catalog.data?.rows ?? []).map((repo) => (
             <div key={repo} className="border-b last:border-b-0">
               <button
                 type="button"
@@ -225,22 +215,13 @@ function RegistryCatalog({ projectId, apps }: { projectId: string; apps: Readonl
 
 // RegistryTags 单仓名的 tag 事实表（展开时拉取；错误行内诚实呈现）。
 function RegistryTags({ projectId, repo }: { projectId: string; repo: string }) {
-  const tags = useQuery({
-    queryKey: ["registry", "tags", projectId, repo],
-    queryFn: async () => {
-      const res = await apiFetch<{
-        repository?: string;
-        tags?: Array<{ name?: string; digest?: string; size_bytes?: string | number; pushed_at?: string } | undefined>;
-      }>(`/v1/registry/${encodeURIComponent(repo)}/tags?project_id=${encodeURIComponent(projectId)}`);
-      return (res.tags ?? []).flatMap((entry) => (entry != null ? [entry] : []));
-    },
-    retry: false,
-  });
+  // tags 子表伴读（收尾批 kit 化）：retry:false 同旧。
+  const tags = useRegistryTags(projectId, repo);
   if (tags.isPending) {
     return <p className="px-3 pb-2 pl-9 text-xs text-muted">Loading tags…</p>;
   }
   if (tags.isError) {
-    return <p className="px-3 pb-2 pl-9 text-xs text-err">{tags.error instanceof Error ? tags.error.message : "tag listing failed"}</p>;
+    return <p className="px-3 pb-2 pl-9 text-xs text-err">{describeApiError(tags.error)}</p>;
   }
   return (
     <table className="mb-1 ml-6 w-[calc(100%-1.5rem)] text-xs">
@@ -253,7 +234,7 @@ function RegistryTags({ projectId, repo }: { projectId: string; repo: string }) 
         </tr>
       </thead>
       <tbody>
-        {tags.data.map((tag) => (
+        {(tags.data?.rows ?? []).map((tag) => (
           <tr key={tag.name} className="border-t">
             <td className="px-2 py-1 font-mono">{tag.name}</td>
             <td className="px-2 py-1 font-mono">

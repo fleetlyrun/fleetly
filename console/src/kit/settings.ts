@@ -89,7 +89,9 @@ export const tokensResource = defineResource({
             role_id: input.roleId || undefined,
           }),
         ),
-      invalidates: [],
+      // 收尾批裁决翻转（原「无失效=旧语义保守保留」）：mint 后台账即时
+      // 可见（kit 集合键，R1 的 tokens collection 读面）。
+      invalidates: [{ resource: "tokens" }],
     },
     revoke: {
       run: (input: { id: string }) =>
@@ -131,6 +133,9 @@ export const platformBackupsResource = defineResource({
           apiSend<{ backup?: { id?: string } }>("/v1/platform/backups", "POST", {}),
         ),
       legacyKeys: () => [["settings", "platform-backups"]],
+      // Fleet 备份台账联动（收尾批挂账清偿）：触发后 snapshots 资源一并
+      // 失效——Backups 页台账即时出新行。
+      invalidates: [{ resource: "platform-snapshots" }],
     },
   },
 });

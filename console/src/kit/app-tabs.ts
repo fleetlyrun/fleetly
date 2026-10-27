@@ -142,11 +142,17 @@ export function appTabCommands(projectId: string, appId: string): AppTabCommands
           }),
         ),
       legacyKeys: () => [["apps", "hook", appId]],
+      // hook 读面已迁 kit record（app-hook）——legacy 桥之外补 kit selector
+      //（写后 Configure/Hook 卡即时翻转，收尾批测试实咬）。
+      invalidates: [{ resource: "app-hook" }],
     },
     rotateGitHook: {
       run: () =>
         runCommandMapped(() => apiSend<GitHookPayload>(`/v1/apps/${encodeURIComponent(appId)}/hook/rotate`, "POST", {})),
       legacyKeys: () => [["apps", "hook", appId]],
+      // hook 读面已迁 kit record（app-hook）——legacy 桥之外补 kit selector
+      //（写后 Configure/Hook 卡即时翻转，收尾批测试实咬）。
+      invalidates: [{ resource: "app-hook" }],
     },
     // Deploy now（拉取通道）：受理建部署——失效面同 redeploy 的部署两形态
     //（kit 时间线旧代码只失效 legacy 前缀，命令化后统一补 kit 面）。
@@ -164,6 +170,9 @@ export function appTabCommands(projectId: string, appId: string): AppTabCommands
           await apiSend(`/v1/apps/${encodeURIComponent(appId)}/hook`, "DELETE");
         }),
       legacyKeys: () => [["apps", "hook", appId]],
+      // hook 读面已迁 kit record（app-hook）——legacy 桥之外补 kit selector
+      //（写后 Configure/Hook 卡即时翻转，收尾批测试实咬）。
+      invalidates: [{ resource: "app-hook" }],
     },
     // App 删除（级联披露在确认框）：apps 两形态（kit 集合 + catalog 目录）
     // + 部署两形态（历史随 app 消失，项目时间线不留幽灵行）。

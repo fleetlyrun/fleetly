@@ -10,7 +10,8 @@ import type { ApiError, CommandResult } from "@lynx-go/uikit-core/kernel";
 import { appsResource, appsDirectorySearch } from "@/kit/apps";
 import { databasesResource, databasesLookup } from "@/kit/databases";
 import { projectsResource, projectsAllQuery } from "@/kit/projects";
-import { apiSendRaw, apiFetch } from "@/api/client";
+import { useConfigDetail } from "@/kit/variables";
+import { apiSendRaw } from "@/api/client";
 import { describeApiError, toApiError } from "@/kit/errors";
 import { appSpecsResource, appSpecsLookup, type AppSpecRow } from "@/kit/app-specs";
 import { shortId } from "@/lib/format";
@@ -1316,16 +1317,9 @@ function ConfigDetailDialog({
   onClose: () => void;
 }) {
   const name = config?.name ?? "";
-  const detail = useQuery({
-    queryKey: ["resources", "config", projectId, name],
-    enabled: name !== "",
-    queryFn: async () => {
-      const res = await apiFetch<{ config?: { version?: string; created_at?: string; content?: string } }>(
-        `/v1/configs/${encodeURIComponent(projectId)}/${encodeURIComponent(name)}`,
-      );
-      return res.config;
-    },
-  });
+  // Config 详情回读伴读（收尾批 kit 化）：PUT 冻结新版本后经 legacyKeys
+  // 双键桥失效（批2 桥值）。
+  const detail = useConfigDetail(projectId, name);
   const [editing, setEditing] = useState(false);
   const [content, setContent] = useState("");
   // Config 编辑壳保留（批 2 只换命令接线）：保存 PUT 同名即冻结新版本，

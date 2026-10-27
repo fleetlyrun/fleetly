@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useCommand } from "@lynx-go/uikit-core";
 import type { CommandDescriptor } from "@lynx-go/uikit-core/kernel";
-import { ApiError, apiFetch, apiSend } from "@/api/client";
+import { ApiError, apiSend } from "@/api/client";
+import { useAppSpecSheet, useAppVariablesStore } from "@/kit/app-observe";
 import { PlusIcon, SlidersIcon, TrashIcon } from "lucide-react";
 import { toast } from "sonner";
 import { CopyButton } from "@/components/domain/copy-button";
@@ -65,25 +65,14 @@ export function applyAppVariablesDescriptor(
 export function AppVariablesTab({ projectId, appId }: { projectId: string; appId: string }) {
   const navigate = useNavigate();
 
-  const store = useQuery({
-    queryKey: ["resources", "app-variables", appId],
-    queryFn: async () => {
-      const res = await apiFetch<{ variables?: VariableRow[] }>(
-        `/v1/app-variables?app_id=${encodeURIComponent(appId)}&limit=200`,
-      );
-      return (res?.variables ?? []).slice();
-    },
-  });
-  const spec = useQuery({
-    queryKey: ["resources", "app-spec", projectId, appId],
-    queryFn: () => fetchFrozenSpec(appId),
-    refetchInterval: 60_000,
-  });
+  // store/冻结 Spec 伴读（收尾批 kit 化）：60s 拍子同旧。
+  const store = useAppVariablesStore(projectId, appId);
+  const spec = useAppSpecSheet(projectId, appId, { refetchInterval: 60_000 });
 
   // 暂存面：行集 = store 基线 + 本地增删改；Apply 一次性落库 + 部署。
   const [staged, setStaged] = useState<VariableRow[] | null>(null);
-  const rows = staged ?? (store.data ?? []);
-  const base = store.data ?? [];
+  const rows = staged ?? (store.data?.rows ?? []);
+  const base = store.data?.rows ?? [];
   const hasChanges =
     staged != null &&
     (staged.length !== base.length ||
@@ -207,13 +196,20 @@ export function AppVariablesTab({ projectId, appId }: { projectId: string; appId
           </span>
         </CardHeader>
         <CardContent>
-          {spec.data == null ? (
-            <p className="py-4 text-center text-xs text-muted">
-              No frozen spec yet — variables bake in at the first deploy.
-            </p>
-          ) : (
-            <div className="flex flex-col gap-3">
-              {(spec.data.processes ?? []).map((process) => (
+          {(() => {
+            // kit 侧 spec 保持 unknown（资源面不带业务形状）——AppSpec 断言
+            // 归消费方（lib/spec-deploy 是 AppSpec 词汇单源）。
+            const frozen = spec.data?.spec as AppSpec | null;
+            if (frozen == null) {
+              return (
+                <p className="py-4 text-center text-xs text-muted">
+                  No frozen spec yet — variables bake in at the first deploy.
+                </p>
+              );
+            }
+            return (
+              <div className="flex flex-col gap-3">
+                {(frozen.processes ?? []).map((process) => (
                 <div key={process.name ?? ""} className="rounded-lg border p-3">
                   <div className="flex items-baseline gap-2">
                     <span className="text-sm font-medium">{process.name ?? ""}</span>
@@ -238,7 +234,8 @@ export function AppVariablesTab({ projectId, appId }: { projectId: string; appId
                 </div>
               ))}
             </div>
-          )}
+            );
+          })()}
         </CardContent>
       </Card>
     </div>
