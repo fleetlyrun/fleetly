@@ -7,8 +7,13 @@
 // - 未映射方言 token border-line ×2——每块语境判断（torchwood amber/emerald、fleetly status vars 先例）
 // - Badge tone= ×1——已适配（torchwood event-feed 先例 + fleetly status vars）：
 //   ok=default、err=destructive、warn=secondary+text-warn、neutral=secondary，见 statusBadge
+// 本地扩展（2026-10-27 收尾批，上游候选落地——升版重拷时对照重落）：
+// - 虚拟滚动 @tanstack/react-virtual（上游注释「虚拟滚动后置」的落地）：
+//   缓冲上限 5000 帧不再全量 DOM——measureElement 动态测高（wrap 折行行高
+//   不定），overscan 24；跟随/jump-to-live 改 scrollToIndex(end)。
 // 其余与上游一致。
 import type { SubscriptionEngine } from "@lynx-go/uikit-core/react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowDown, Download, Trash2 } from "lucide-react";
 import { useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Badge } from "@/components/ui/badge";
@@ -66,17 +71,29 @@ export function LogViewer<F>({
   const [following, setFollowing] = useState(true);
   const badge = statusBadge(STATUS_TONE[state.status] ?? "neutral");
 
+  // 虚拟滚动（本地扩展）：折行行高不定 → measureElement 动态测高；
+  // 容器 p-3 内衬随滚动容器，虚拟层以 translateY 定位。
+  const virtualizer = useVirtualizer({
+    count: frames.length,
+    getScrollElement: () => containerRef.current,
+    estimateSize: () => 20,
+    overscan: 24,
+    getItemKey: (index) => index,
+  });
+
   const onScroll = () => {
     const el = containerRef.current;
     if (!el) return;
     setFollowing(el.scrollHeight - el.scrollTop - el.clientHeight < 48);
   };
 
-  // 智能跟随：贴底时新帧到达即贴底（useLayoutEffect 防闪跳）
+  // 智能跟随：贴底时新帧到达即贴底（useLayoutEffect 防闪跳）；虚拟面
+  // scrollTop 编排归 virtualizer（scrollToIndex end = 旧 scrollHeight 赋值）。
   useLayoutEffect(() => {
-    const el = containerRef.current;
-    if (following && el) el.scrollTop = el.scrollHeight;
-  }, [frames, following]);
+    if (following && frames.length > 0) {
+      virtualizer.scrollToIndex(frames.length - 1, { align: "end" });
+    }
+  }, [frames, following, virtualizer]);
 
   const jumpToLive = () => setFollowing(true);
 
@@ -125,15 +142,20 @@ export function LogViewer<F>({
           {frames.length === 0 ? (
             <p className="text-muted">Waiting for frames…</p>
           ) : (
-            frames.map((frame, index) => (
-              <div
-                key={index}
-                data-line={index}
-                className={cn("whitespace-pre", wrap ? "break-all" : "whitespace-nowrap")}
-              >
-                {formatLine(frame, index)}
-              </div>
-            ))
+            <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
+              {virtualizer.getVirtualItems().map((virtualRow) => (
+                <div
+                  key={virtualRow.key}
+                  data-index={virtualRow.index}
+                  ref={virtualizer.measureElement}
+                  data-line={virtualRow.index}
+                  className={cn("absolute left-0 top-0 w-full whitespace-pre", wrap ? "break-all" : "whitespace-nowrap")}
+                  style={{ transform: `translateY(${virtualRow.start}px)` }}
+                >
+                  {formatLine(frames[virtualRow.index], virtualRow.index)}
+                </div>
+              ))}
+            </div>
           )}
         </div>
         {!following ? (
