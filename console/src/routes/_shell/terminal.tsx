@@ -1,33 +1,28 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
-import { FitAddon } from "@xterm/addon-fit";
-import { Terminal } from "@xterm/xterm";
-import "@xterm/xterm/css/xterm.css";
-import { MinusIcon, PlusIcon, PlayIcon } from "lucide-react";
+import { MinusIcon, PlusIcon, CircleStopIcon, PlayIcon } from "lucide-react";
 import { useApps, useProjects, useRevisions } from "@/lib/catalog";
 import { useProjectId } from "@/lib/project";
-import { createExecSession, openExecStream, sendResize, sendStdin } from "@/api/execstream";
-import { ApiError } from "@/api/client";
-import type { ServerFrame } from "@/lib/execFrames";
+import { useExecSession } from "@/features/terminal/use-exec-session";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-// 终端工作台（F3.2/ADR-0049 → UI v2 批 5 reskin）：受理换票据 → WS 流 →
-// xterm 双向接线（协议/会话语义零改动：断线/退出呈现重开面——会话不迁移，
-// 重开 = 新会话新票据，ADR-0049 决策 5）。批 5 增量：flex 自适应高度
-//（ResizeObserver 驱动 fit）+ 项目语境来自切换器 + search param 预选 +
-// 状态徽章 + 字号调节。
+// 终端工作台（F3.2/ADR-0049 → UI v2 批 5 reskin → 批3 订阅族收尾）：受理换
+// 票据 → WS 流 → xterm 双向接线——会话生命周期走 features/terminal
+// use-exec-session 单源（协议/会话语义零改动：断线/退出呈现重开面——会话
+// 不迁移，重开 = 新会话新票据，ADR-0049 决策 5；语义取两处消费面并集，
+// 含 disconnect 主动收口与切换作废在飞受理）。页面层只留差异面：项目/
+// 进程选择 UI + search param 预选 + 字号调节。批 5 增量保留：flex 自适应
+// 高度（ResizeObserver 驱动 fit）+ 项目语境来自切换器 + 状态徽章。
 const terminalSearch = z.object({ app: z.string().optional(), process: z.string().optional() });
 
 export const Route = createFileRoute("/_shell/terminal")({
   validateSearch: terminalSearch,
   component: TerminalWorkbench,
 });
-
-type Status = "idle" | "connecting" | "open" | "closed";
 
 function TerminalWorkbench() {
   const search = Route.useSearch();
@@ -37,9 +32,6 @@ function TerminalWorkbench() {
   const [appId, setAppId] = useState(search.app ?? "");
   const [process, setProcess] = useState(search.process ?? "");
   const [command, setCommand] = useState("");
-  const [status, setStatus] = useState<Status>("idle");
-  const [banner, setBanner] = useState("");
-  const [fontSize, setFontSize] = useState(13);
   const revisions = useRevisions(appId !== "" ? appId : (apps.data?.[0]?.id ?? ""));
 
   const effectiveApp = appId !== "" ? appId : (apps.data?.[0]?.id ?? "");
@@ -49,102 +41,24 @@ function TerminalWorkbench() {
   );
   const effectiveProcess = process !== "" ? process : (processes[0] ?? "");
 
-  const termRef = useRef<Terminal | null>(null);
-  const fitRef = useRef<FitAddon | null>(null);
-  const wsRef = useRef<WebSocket | null>(null);
-  const termDiv = useRef<HTMLDivElement | null>(null);
-  const shellRef = useRef<HTMLDivElement | null>(null);
-  const statusRef = useRef(status);
-  statusRef.current = status;
+  const session = useExecSession();
 
-  // xterm 挂载（一次）：输出写入 + 输入上行 + resize 双向。批 5：
-  // ResizeObserver 观察容器（flex 自适应高度，不再写死 28rem）。
-  useEffect(() => {
-    const term = new Terminal({
-      cursorBlink: true,
-      fontSize: 13,
-      scrollback: 5000,
-      theme: { background: "oklch(0.135 0.015 285)" },
-    });
-    const fit = new FitAddon();
-    term.loadAddon(fit);
-    if (termDiv.current !== null) {
-      term.open(termDiv.current);
-      fit.fit();
-    }
-    term.onData((data) => sendStdin(wsRef.current, data));
-    term.onResize(({ cols, rows }) => sendResize(wsRef.current, cols, rows));
-    termRef.current = term;
-    fitRef.current = fit;
-    const observer = new ResizeObserver(() => fitRef.current?.fit());
-    if (shellRef.current !== null) observer.observe(shellRef.current);
-    return () => {
-      observer.disconnect();
-      wsRef.current?.close();
-      wsRef.current = null;
-      term.dispose();
-      termRef.current = null;
-    };
-  }, []);
+  const argv = command.trim() === "" ? [] : command.trim().split(/\s+/);
 
-  useEffect(() => {
-    if (termRef.current != null) termRef.current.options.fontSize = fontSize;
-    fitRef.current?.fit();
-  }, [fontSize]);
-
-  function connect() {
-    if (effectiveApp === "" || effectiveProcess === "" || termRef.current === null) return;
-    const term = termRef.current;
-    term.reset();
-    setBanner("");
-    setStatus("connecting");
-    const argv = command.trim() === "" ? [] : command.trim().split(/\s+/);
-    createExecSession(effectiveApp, effectiveProcess, argv, true)
-      .then((created) => {
-        const session = created.session;
-        if (session?.id === "" || session?.id == null || created.ticket == null || created.ticket === "") {
-          throw new ApiError(0, "no_session", "session acceptance returned no ticket");
-        }
-        term.writeln(`\x1b[90m# session ${session.id} on ${effectiveApp}/${effectiveProcess} (instance ${session.instance ?? "?"}, node ${session.node_id ?? "?"})\x1b[0m`);
-        const ws = openExecStream(session.id, created.ticket, {
-          onFrame: (frame: ServerFrame) => deliver(term, frame),
-          onClose: () => {
-            setStatus((cur) => (cur === "open" ? "closed" : cur));
-          },
-        });
-        ws.onopen = () => {
-          wsRef.current = ws;
-          setStatus("open");
-          fitRef.current?.fit();
-        };
-        wsRef.current = ws;
-      })
-      .catch((err: unknown) => {
-        const message = err instanceof ApiError ? `${err.code}: ${err.message}` : String(err);
-        term.writeln(`\x1b[31m${message}\x1b[0m`);
-        setBanner(message);
-        setStatus("idle");
-      });
+  // 进程切换即对准新目标重开（会话锚定受理时刻的实例与节点，ADR-0049/0067
+  // ——开着会话换目标 = 断旧开新，auto 锚）；app 切换语境整体换血，进程集
+  // 随之未知，只断旧呈现重开面（用户对新 app 显式 Connect）。
+  function pickApp(value: string) {
+    setAppId(value);
+    setProcess("");
+    if (session.status === "open" || session.status === "connecting") session.disconnect();
   }
 
-  function deliver(term: Terminal, frame: ServerFrame) {
-    switch (frame.kind) {
-      case "stdout":
-      case "stderr":
-        term.write(frame.data);
-        return;
-      case "exit":
-        term.writeln(`\x1b[90m# exited with code ${frame.exit.code}\x1b[0m`);
-        setBanner(`exited with code ${frame.exit.code}`);
-        setStatus("closed");
-        return;
-      case "error":
-        term.writeln(`\x1b[31m# ${frame.error.code}: ${frame.error.message}\x1b[0m`);
-        setBanner(`${frame.error.code}: ${frame.error.message}`);
-        setStatus("closed");
-        return;
-      case "meta":
-        return;
+  function pickProcess(name: string) {
+    setProcess(name);
+    if (name !== "" && (session.status === "open" || session.status === "connecting")) {
+      session.disconnect();
+      session.connect({ appId: effectiveApp, process: name, argv });
     }
   }
 
@@ -173,13 +87,7 @@ function TerminalWorkbench() {
         </div>
         <div className="flex flex-col gap-1">
           <Label className="text-2xs text-muted-foreground">App</Label>
-          <Select
-            value={effectiveApp}
-            onValueChange={(value) => {
-              setAppId(value);
-              setProcess("");
-            }}
-          >
+          <Select value={effectiveApp} onValueChange={pickApp}>
             <SelectTrigger className="w-44">
               <SelectValue placeholder="select an app…" />
             </SelectTrigger>
@@ -194,7 +102,7 @@ function TerminalWorkbench() {
         </div>
         <div className="flex flex-col gap-1">
           <Label className="text-2xs text-muted-foreground">Process</Label>
-          <Select value={effectiveProcess} onValueChange={setProcess}>
+          <Select value={effectiveProcess} onValueChange={pickProcess}>
             <SelectTrigger className="w-32">
               <SelectValue placeholder={effectiveProcess === "" ? "—" : ""} />
             </SelectTrigger>
@@ -216,45 +124,54 @@ function TerminalWorkbench() {
             className="h-8 font-mono text-xs"
           />
         </div>
-        <Button
-          type="button"
-          size="sm"
-          className="mb-0.5"
-          disabled={status === "connecting" || status === "open" || effectiveApp === "" || effectiveProcess === ""}
-          onClick={connect}
-        >
-          <PlayIcon className="size-3" />
-          {status === "open" ? "Connected" : status === "connecting" ? "Connecting…" : "Connect"}
-        </Button>
+        {session.status === "open" || session.status === "connecting" ? (
+          <Button type="button" size="sm" variant="destructive" className="mb-0.5" onClick={session.disconnect}>
+            <CircleStopIcon className="size-3" />
+            {session.status === "open" ? "Disconnect" : "Cancel"}
+          </Button>
+        ) : (
+          <Button
+            type="button"
+            size="sm"
+            className="mb-0.5"
+            disabled={effectiveApp === "" || effectiveProcess === ""}
+            onClick={() => session.connect({ appId: effectiveApp, process: effectiveProcess, argv })}
+          >
+            <PlayIcon className="size-3" />
+            Connect
+          </Button>
+        )}
         <div className="mb-0.5 flex items-center gap-1">
-          <Button variant="outline" size="sm" onClick={() => setFontSize((size) => Math.max(10, size - 1))} aria-label="Decrease font size">
+          <Button variant="outline" size="sm" onClick={() => session.setFontSize((size) => Math.max(10, size - 1))} aria-label="Decrease font size">
             <MinusIcon className="size-3" />
           </Button>
-          <Button variant="outline" size="sm" onClick={() => setFontSize((size) => Math.min(18, size + 1))} aria-label="Increase font size">
+          <Button variant="outline" size="sm" onClick={() => session.setFontSize((size) => Math.min(18, size + 1))} aria-label="Increase font size">
             <PlusIcon className="size-3" />
           </Button>
         </div>
       </div>
 
-      <div ref={shellRef} className="relative min-h-0 flex-1 overflow-hidden rounded-lg border bg-[oklch(0.135_0.015_285)]">
-        <div ref={termDiv} className="absolute inset-0 px-2 py-1" />
+      <div ref={session.shellRef} className="relative min-h-0 flex-1 overflow-hidden rounded-lg border bg-background">
+        <div ref={session.termDivRef} className="absolute inset-0 px-2 py-1" />
       </div>
 
       <div className="flex flex-none items-center gap-4 py-2 font-mono text-2xs text-muted-foreground">
         <span
           className={
-            status === "open"
+            session.status === "open"
               ? "text-[var(--status-success)]"
-              : status === "closed"
+              : session.status === "closed"
                 ? "text-[var(--status-warning)]"
-                : status === "connecting"
+                : session.status === "connecting"
                   ? "text-[var(--status-info)]"
                   : ""
           }
         >
-          ws: {status}
+          ws: {session.status}
         </span>
-        {banner !== "" ? <span className="truncate">{banner} — the session has ended; press Connect to open a new one.</span> : null}
+        {session.banner !== "" ? (
+          <span className="truncate">{session.banner} — the session has ended; press Connect to open a new one.</span>
+        ) : null}
         <span className="ml-auto">POST /v1/exec/sessions → /v1/exec/stream</span>
       </div>
       <p className="flex-none pb-3 text-2xs leading-relaxed text-muted-foreground">
