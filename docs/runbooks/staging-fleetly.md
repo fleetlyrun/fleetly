@@ -1408,3 +1408,13 @@ systemctl daemon-reload && systemctl start fleetlyd
 ### 追记（同日第三换：6405db3a → b5a677bb，统一 Layout + 账号左对齐）
 
 现网走查两问题当日修复：①PageFrame 三档 max-w 退役、主内容宽度唯一裁决 = 流体全宽列（与 FleetListPage 同族——双容器体系并存是页面间宽度不一致根因），五处 PageFrame>FleetListPage 双壳嵌套解绑（title/description 移块 header 槽；backups 的 PageTabs 下沉 toolbar 槽）；②侧栏底部账号行左对齐（Button 基类 justify-center 使整宽钮内容居中）。序同前：Platform Backup `9c1f44f1` → 替换 → doctor 11 ok/2w/0f → 零扰动 → 活体资产 `index-D3aM72NG.js` 对账 → 现网截图验收（统一列 + 左对齐）。回滚锚 = `9c1f44f1` + `/root/upgrade-8015e6f5/`（含 6405db3a 版二进制）。
+
+### 追记（同日第四换：b5a677bb → ffc17066，部署身份可发现性批）
+
+纯 console 批（零 Go IR 变化，goose v36 零迁移实证）：Settings 新增 Deployment 摘要卡（source kind + 生效 R#/digest 锚 + 按材料所有权 ADR-0072 的更新路径一句话，深链 Spec/Variables/Processes）/ General 过期占位注释退役换真链接 / hook 未配置改 Not configured 空态（不再裸出创建表单）/ Overview Current status 加 source 行（git 附 commit 短码）/ hero 状态徽标旁 source 徽标 / Processes 空态 Deploy now 直开 DeploySheet（原跳列表绕一跳）/ `lib/format.sourceKindLabel` 单源（compose 受理落 image，按 Revision source_text 非空改报 compose）。
+
+序同前三换：Platform Backup `5d5bdd56`（14:20:30Z）+ 九卷 tar → `/root/upgrade-ffc17066/vols/` → 停服替换（b5a677bb 双二进制留 `/root/upgrade-ffc17066/old/`）→ drop-in 七件在位（api/browse/console/logging/metrics/railpack/registry）→ doctor **11 ok / 2 warning / 0 failed**（2w = bind surface + notification channels，既有基线良性）→ **零扰动 diff PASS**（running task 集与停服前基线逐位一致）→ journal 零 error → 公网双 200（tw.dev / console.dev）+ 站上资产 `index-Bw4Xj1km.js` 与仓内 dist 逐字一致 + 公网 `grpcs://api.dev.fleetly.run` version `ffc17066` 往返 + `apps workloads torchwood-14`（R9，source_kind=SOURCE_KIND_IMAGE + digest 锚——摘要卡数据源活体）。relay 面：node-2 起服即连（帧协议只增容忍，无需重铸）。
+
+附带修正：d2c0da72 曾把未提交源码的防闪脚本编进已提交 dist（源码/产物漂移，CI verify 对 HEAD 构建必红）——本批 dist 随源码状态重建已回退自洽，防闪 WIP（console/index.html）留在工作树待其源头自行提交。
+
+**现役** = `ffc17066`；回滚锚 = Platform Backup `5d5bdd56` + `/root/upgrade-ffc17066/`（含 b5a677bb 双二进制于 old/ + 九卷 tar）。
