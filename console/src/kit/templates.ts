@@ -1,6 +1,4 @@
-import { defineResource, type ApiError, type ResourceScope } from "@lynx-go/uikit-core/kernel";
-import { useQuery } from "@tanstack/react-query";
-import { recordQueryOptions } from "@lynx-go/uikit-core/react";
+import { defineResource, type ResourceScope } from "@lynx-go/uikit-core/kernel";
 import { apiFetch } from "@/api/client";
 import type { components as Templates } from "@/api/templates";
 import { toApiError } from "./errors";
@@ -70,14 +68,11 @@ export const templatesResource = defineResource({
       }),
 });
 
-export function useTemplates() {
-  // record 已解包 {source, templates}——目录行集经 select 直出（source 披露
-  // 留资源面；现 UI 未消费）。
-  return useQuery({
-    ...recordQueryOptions(templatesResource, "current", {}),
-    select: (data) => data.templates,
-  });
-}
+// 伴读消费面（2026-10-29 F1 回流批）：useTemplates/useTemplateDetail 伴读
+// 钩子退役——Templates 页直接 useRecord(templatesResource, { id: "current",
+// query: { refetchInterval: 60_000 } })（目录行集 = data.templates，source
+// 披露留资源面）与 useRecord(templateDetailResource, { id: name ?? undefined })
+//（undefined id 自动停查 = 旧 enabled 门）。
 
 export const templateDetailResource = defineResource({
   name: "template-detail",
@@ -107,10 +102,3 @@ export const templateDetailResource = defineResource({
         throw toApiError(err);
       }),
 });
-
-export function useTemplateDetail(detailName: string | null) {
-  return useQuery<TemplateDetail | null, ApiError>({
-    ...recordQueryOptions(templateDetailResource, detailName ?? "", {}),
-    enabled: detailName != null,
-  });
-}

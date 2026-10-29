@@ -1,7 +1,5 @@
 import { clientCollection } from "@lynx-go/uikit-core/adapters";
-import { defineResource, scoped, type ApiError, type ResourceScope } from "@lynx-go/uikit-core/kernel";
-import { useQuery } from "@tanstack/react-query";
-import { recordQueryOptions } from "@lynx-go/uikit-core/react";
+import { defineResource, type ResourceScope } from "@lynx-go/uikit-core/kernel";
 import { apiFetch } from "@/api/client";
 import { collectionQuerySchema } from "@lynx-go/uikit-core/schema";
 import type { components as deliverySchemas } from "@/api/delivery";
@@ -70,9 +68,7 @@ export const revisionDiffResource = defineResource({
   },
 });
 
-export function useRevisionDiff(projectId: string, appId: string, fromSeq: string, toSeq: string) {
-  return useQuery<RevisionDiffEntry[], ApiError>({
-    ...recordQueryOptions(scoped(revisionDiffResource, { projectId, appId }), `${fromSeq}:${toSeq}`, {}),
-    enabled: fromSeq !== "" && toSeq !== "" && fromSeq !== toSeq,
-  });
-}
+// 伴读消费面（2026-10-29 F1 回流批）：useRevisionDiff 伴读钩子退役——
+// deployment-detail 直接 useRecord(revisionDiffResource, { id: seq 未选齐
+// 或相同 ? undefined : `${fromSeq}:${toSeq}`, scope })（undefined id 门 =
+// 旧 enabled 语义）。

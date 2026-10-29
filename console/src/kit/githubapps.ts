@@ -1,7 +1,5 @@
 import { clientCollection } from "@lynx-go/uikit-core/adapters";
-import { defineResource, scoped, type QuerySelector, type ResourceScope } from "@lynx-go/uikit-core/kernel";
-import { useQuery } from "@tanstack/react-query";
-import { collectionQueryOptions } from "@lynx-go/uikit-core/react";
+import { defineResource, type QuerySelector, type ResourceScope } from "@lynx-go/uikit-core/kernel";
 import { collectionQuerySchema } from "@lynx-go/uikit-core/schema";
 import type { components as ghSchemas } from "@/api/github_apps";
 import { apiSend } from "@/api/client";
@@ -177,10 +175,6 @@ export const githubAppReposResource = defineResource({
   collection: clientCollection(fetchGitHubAppRepos),
 });
 
-export function useGitHubAppRepos(appId: string, options?: { enabled?: boolean }) {
-  return useQuery({
-    ...collectionQueryOptions(scoped(githubAppReposResource, { appId }), { window: { size: 200 } }, {}),
-    enabled: (options?.enabled ?? true) && appId !== "",
-    retry: false,
-  });
-}
+// 伴读消费面（2026-10-29 F1 回流批）：useGitHubAppRepos 伴读钩子退役——
+// 展开面板直接 useCollectionData(githubAppReposResource, { scope: { appId },
+// window: { size: 200 }, enabled: appId !== "", retry: false })。

@@ -1,7 +1,5 @@
 import { clientCollection } from "@lynx-go/uikit-core/adapters";
-import { defineResource, scoped, type ApiError, type ResourceScope, type Segment } from "@lynx-go/uikit-core/kernel";
-import { useQuery } from "@tanstack/react-query";
-import { collectionQueryOptions } from "@lynx-go/uikit-core/react";
+import { defineResource, type ResourceScope } from "@lynx-go/uikit-core/kernel";
 import { collectionQuerySchema } from "@lynx-go/uikit-core/schema";
 import type { components as deliverySchemas } from "@/api/delivery";
 import { digestByRevisionId, latestDeploymentPerApp } from "@/features/registry/registry-model";
@@ -129,16 +127,6 @@ export const registryCatalogResource = defineResource({
   collection: clientCollection(fetchRegistryCatalog),
 });
 
-export function useRegistryCatalog(projectId: string) {
-  return useQuery({
-    ...collectionQueryOptions(scoped(registryCatalogResource, { projectId }), { window: { size: 200 } }, {
-      refetchInterval: 60_000,
-    }),
-    enabled: projectId !== "",
-    retry: false,
-  });
-}
-
 export interface RegistryTagRow {
   name?: string;
   digest?: string;
@@ -165,10 +153,6 @@ export const registryTagsResource = defineResource({
   collection: clientCollection(fetchRegistryTags),
 });
 
-export function useRegistryTags(projectId: string, repo: string, options?: { enabled?: boolean }) {
-  return useQuery<Segment<RegistryTagRow>, ApiError>({
-    ...collectionQueryOptions(scoped(registryTagsResource, { projectId, repo }), { window: { size: 200 } }, {}),
-    enabled: (options?.enabled ?? true) && repo !== "",
-    retry: false,
-  });
-}
+// 伴读消费面（2026-10-29 F1 回流批）：useRegistryCatalog/useRegistryTags
+// 伴读钩子退役——消费点（registry-view）直接 useCollectionData（catalog
+// 60s 轮询 + retry:false；tags 展开拉取 retry:false，同旧拍）。

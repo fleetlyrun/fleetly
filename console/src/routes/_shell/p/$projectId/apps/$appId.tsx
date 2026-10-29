@@ -13,7 +13,8 @@ import { DeploymentStatusBadge } from "@/components/domain/status-badge";
 import { alertStatesResource, alertStatesLookup } from "@/kit/alerts";
 import { appNameOf, appsResource, appsDirectorySearch } from "@/kit/apps";
 import { appDeploymentsResource, appDeploymentsLookup, deploymentsResource } from "@/kit/deployments";
-import { useAppWorkloads } from "@/kit/app-observe";
+import { useRecord } from "@lynx-go/uikit-core";
+import { appWorkloadsResource } from "@/kit/app-observe";
 import { sourceKindLabel } from "@/lib/format";
 import { toastOnSettled } from "@/kit/toast";
 import {
@@ -72,7 +73,11 @@ function AppDetailLayout() {
   // 部署身份徽标（走查反馈 2026-10-27）：hero 第一眼面亮 source kind——
   // 生效锚经 workloads 单查（无轮询，record 一次取）；compose 细分留
   // Settings/Spec（hero 只给粗粒度枚举词）。
-  const identity = useAppWorkloads(projectId, appId, 0);
+  const identity = useRecord(appWorkloadsResource, {
+    id: "0",
+    scope: { projectId, appId },
+    query: { enabled: appId !== "" },
+  });
   const sourceBadge = identity.data?.revision
     ? sourceKindLabel(identity.data.revision.source_kind)
     : undefined;

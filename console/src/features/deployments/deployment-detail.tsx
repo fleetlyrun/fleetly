@@ -6,9 +6,9 @@ import type { components } from "@/api/delivery";
 // apiFetch 面（SSE wait 流）在 api/streams —— 本页经 kit 伴读取数。
 import { apiSend } from "@/api/client";
 import { streamDeploymentWait } from "@/api/streams";
-import { useCollection } from "@lynx-go/uikit-core";
-import { useDeploymentLookup } from "@/kit/deployments";
-import { revisionsResource, revisionsLookup, useRevisionDiff, type RevisionDiffEntry } from "@/kit/revisions";
+import { useCollection, useRecord } from "@lynx-go/uikit-core";
+import { deploymentLookupResource } from "@/kit/deployments";
+import { revisionDiffResource, revisionsResource, revisionsLookup, type RevisionDiffEntry } from "@/kit/revisions";
 import { ContentCrumb } from "@/components/domain/content-crumb";
 import { CopyButton } from "@/components/domain/copy-button";
 import { PageFrame } from "@/components/domain/page-frame";
@@ -107,11 +107,15 @@ export function DeploymentDetailView({
 
   // 轮询兜底：流 stalled 或尚未收到首帧时兜住数据面（5s 频率借用 app 列表口径的
   // 低频形态——wait 流健康时本查询 staleTime 内不发）。
-  // 轮询兜底伴读（收尾批 kit 化）：stalled/缺流时 5s 拍子查证（S2 裁决
-  // 的 stalled+轮询组合轮询半）。
-  const poll = useDeploymentLookup(projectId, appId, deploymentId, {
-    refetchInterval: POLL_FALLBACK_MS,
-    enabled: streamStalled || (live == null && streamError == null),
+  // 轮询兜底伴读（M1 useRecord）：stalled/缺流时 5s 拍子查证（S2 裁决的
+  // stalled+轮询组合轮询半）。
+  const poll = useRecord(deploymentLookupResource, {
+    id: deploymentId || undefined,
+    scope: { projectId, appId },
+    query: {
+      refetchInterval: POLL_FALLBACK_MS,
+      enabled: (streamStalled || (live == null && streamError == null)) && appId !== "" && deploymentId !== "",
+    },
   });
 
   const effective = live ?? poll.data ?? null;
@@ -504,8 +508,11 @@ function RevisionsDiffCard({ projectId, appId, revisions }: { projectId: string;
     .sort((a, b) => b - a);
   const [fromSeq, setFromSeq] = useState("");
   const [toSeq, setToSeq] = useState("");
-  // diff 伴读（收尾批 kit 化）。
-  const diff = useRevisionDiff(projectId, appId, fromSeq, toSeq);
+  // diff 伴读（M1 useRecord）：seq 未选齐/相同即停查（undefined id 门）。
+  const diff = useRecord(revisionDiffResource, {
+    id: fromSeq !== "" && toSeq !== "" && fromSeq !== toSeq ? `${fromSeq}:${toSeq}` : undefined,
+    scope: { projectId, appId },
+  });
   return (
     <div className="rounded-xl border bg-panel px-4 py-3">
       <h3 className="text-sm font-semibold">Revision diff</h3>
@@ -545,7 +552,8 @@ function RevisionsDiffCard({ projectId, appId, revisions }: { projectId: string;
       ) : (
         <p className="mt-2 text-xs text-muted">pick two revisions to diff.</p>
       )}
-      {diff.isFetching ? <Separator className="my-2" /> : null}
+      {/* isFetching 不在 useRecord 句柄面（库面挂账）——loading 态近似 */}
+      {diff.status === "loading" ? <Separator className="my-2" /> : null}
     </div>
   );
 }

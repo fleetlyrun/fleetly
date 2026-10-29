@@ -1,10 +1,8 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { DatabaseBackupIcon, KeyRound, PlusIcon, ShieldOffIcon } from "lucide-react";
 import { toast } from "sonner";
-import { collectionQueryOptions, useCommand, useRecord } from "@lynx-go/uikit-core";
-import type { CollectionQuery } from "@lynx-go/uikit-core/kernel";
+import { useCollectionData, useCommand, useRecord } from "@lynx-go/uikit-core";
 import { rolesResource } from "@/kit/identity";
 import {
   freezesResource,
@@ -64,10 +62,6 @@ export const Route = createFileRoute("/_shell/settings")({
   component: SettingsPageV2,
 });
 
-// 伴读固定窗：settings 三表原为整表渲染（无分页/快筛 UI），size 100 是
-// clientCollection 取数上限的既定口径（projects=100）。
-const allRowsQuery: CollectionQuery = { window: { size: 100 } };
-
 function SettingsPageV2() {
   return (
     <PageFrame width="narrow" title="Settings" description="Identity, API tokens and platform governance">
@@ -106,16 +100,13 @@ function IdentityCard() {
 }
 
 function TokensCard() {
-  // 台账读（批4 kit 资源化）：tokens 15s 轮询对齐旧 catalog useTokens
-  //（RESOURCE_MS）；roles 60s 对齐旧 catalog useRoles（CATALOG_MS）——
-  // roles 消费 identity 的 kit 集合（identity 页列表 15s 是另一窗形键）。
-  const tokens = useQuery(
-    collectionQueryOptions(tokensResource, allRowsQuery, { refetchInterval: 15_000 }),
-  );
-  const roles = useQuery(
-    collectionQueryOptions(rolesResource, allRowsQuery, { refetchInterval: 60_000 }),
-  );
-  const tokenRows = tokens.data?.rows ?? [];
+  // 台账读（M1 useCollectionData 伴读）：tokens 15s 轮询对齐旧 catalog
+  // useTokens（RESOURCE_MS）；roles 60s 对齐旧 catalog useRoles（CATALOG_MS）
+  //——roles 消费 identity 的 kit 集合（identity 页列表 15s 是另一窗形键）。
+  // 三表原为整表渲染（无分页/快筛 UI），size 100 整表窗。
+  const tokens = useCollectionData(tokensResource, { window: { size: 100 }, refetchInterval: 15_000 });
+  const roles = useCollectionData(rolesResource, { window: { size: 100 }, refetchInterval: 60_000 });
+  const tokenRows = tokens.rows;
   const [createOpen, setCreateOpen] = useState(false);
   return (
     <SectionCard
@@ -128,9 +119,9 @@ function TokensCard() {
         </Button>
       }
     >
-      {tokens.isPending ? (
+      {tokens.status === "loading" ? (
         <Skeleton className="h-16 w-full" />
-      ) : tokens.isError ? (
+      ) : tokens.status === "error" ? (
         <ErrorState error={tokens.error} onRetry={() => void tokens.refetch()} />
       ) : tokenRows.length === 0 ? (
         <EmptyState icon={KeyRound} title="No tokens visible to this role" description="Token administration needs elevated scope." />
@@ -152,7 +143,7 @@ function TokensCard() {
           </TableBody>
         </Table>
       )}
-      <CreateTokenDialog open={createOpen} onClose={() => setCreateOpen(false)} roles={roles.data?.rows ?? []} />
+      <CreateTokenDialog open={createOpen} onClose={() => setCreateOpen(false)} roles={roles.rows} />
     </SectionCard>
   );
 }
@@ -285,11 +276,9 @@ function CreateTokenDialog({ open, onClose, roles }: { open: boolean; onClose: (
 }
 
 function GovernanceCard() {
-  // 冻结台账读（批4 kit 资源化）：30s 轮询对齐旧页内 useQuery 原值。
-  const freezes = useQuery(
-    collectionQueryOptions(freezesResource, allRowsQuery, { refetchInterval: 30_000 }),
-  );
-  const freezeRows = freezes.data?.rows ?? [];
+  // 冻结台账读（M1 useCollectionData 伴读）：30s 轮询对齐旧页内 useQuery 原值。
+  const freezes = useCollectionData(freezesResource, { window: { size: 100 }, refetchInterval: 30_000 });
+  const freezeRows = freezes.rows;
   const [reason, setReason] = useState("");
   const [lifting, setLifting] = useState<{ id: string; reason: string } | null>(null);
   const freeze = useCommand(freezesResource.commands.freeze, {
@@ -382,12 +371,11 @@ function GovernanceCard() {
 // 写后即时失效（kit 集合键默认失效）；pre-upgrade 快照是换装硬门（runbook
 // 换装序）。60s 轮询对齐旧 catalog usePlatformBackups。
 function PlatformBackupsTable() {
-  const backups = useQuery(
-    collectionQueryOptions(platformBackupsResource, allRowsQuery, { refetchInterval: 60_000 }),
-  );
-  const backupRows = backups.data?.rows ?? [];
-  if (backups.isPending) return <Skeleton className="h-16 w-full" />;
-  if (backups.isError) return <ErrorState error={backups.error} onRetry={() => void backups.refetch()} />;
+  // 台账读（M1 useCollectionData 伴读）：60s 轮询对齐旧 catalog usePlatformBackups。
+  const backups = useCollectionData(platformBackupsResource, { window: { size: 100 }, refetchInterval: 60_000 });
+  const backupRows = backups.rows;
+  if (backups.status === "loading") return <Skeleton className="h-16 w-full" />;
+  if (backups.status === "error") return <ErrorState error={backups.error} onRetry={() => void backups.refetch()} />;
   if (backupRows.length === 0) {
     return (
       <EmptyState

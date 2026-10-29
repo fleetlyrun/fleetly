@@ -1,7 +1,5 @@
 import { clientCollection } from "@lynx-go/uikit-core/adapters";
-import { defineResource, scoped, type ResourceScope } from "@lynx-go/uikit-core/kernel";
-import { useQuery } from "@tanstack/react-query";
-import { collectionQueryOptions } from "@lynx-go/uikit-core/react";
+import { defineResource, type ResourceScope } from "@lynx-go/uikit-core/kernel";
 import { collectionQuerySchema } from "@lynx-go/uikit-core/schema";
 import { apiSend } from "@/api/client";
 import type { components as runtimeSchemas } from "@/api/runtime";
@@ -99,11 +97,7 @@ export const nodeContainersResource = defineResource({
   legacyKeys: (scope) => [["node-containers", String(scope.nodeId ?? "")]],
 });
 
-export function useNodeContainers(nodeId: string) {
-  return useQuery({
-    ...collectionQueryOptions(scoped(nodeContainersResource, { nodeId }), { window: { size: 200 } }, {
-      refetchInterval: 10_000,
-    }),
-    enabled: nodeId !== "",
-  });
-}
+// 伴读消费面（2026-10-29 F1 回流批）：useNodeContainers 伴读钩子退役——
+// node-detail 直接 useCollectionData(nodeContainersResource,
+// { scope: { nodeId }, window: { size: 200 }, refetchInterval: 10_000,
+// enabled: nodeId !== "" })（10s 轮询同旧拍）。

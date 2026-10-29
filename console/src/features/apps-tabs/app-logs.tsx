@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useCollection } from "@lynx-go/uikit-core";
-import { useProcessInstances } from "@/kit/exec";
+import { useCollectionData } from "@lynx-go/uikit-core";
+import { execInstancesResource } from "@/kit/exec";
 import { revisionsResource, revisionsLookup } from "@/kit/revisions";
 import { useLogStream } from "@/features/logs/use-log-stream";
 import { LogViewer } from "@/features/logs/log-viewer";
@@ -45,8 +46,13 @@ export function AppLogsTab({ appId, routeId, projectId }: { appId: string; route
   const [tailLines, setTailLines] = useState("300");
   const effectiveProcess = process !== "" ? process : (processes[0] ?? "");
 
-  const instances = useProcessInstances(appId, effectiveProcess);
-  const instanceRows = instances.data?.rows ?? [];
+  const instances = useCollectionData(execInstancesResource, {
+    scope: { appId, process: effectiveProcess },
+    window: { size: 200 },
+    refetchInterval: 10_000,
+    enabled: appId !== "" && effectiveProcess !== "",
+  });
+  const instanceRows = instances.rows;
 
   const start = () =>
     log.start({

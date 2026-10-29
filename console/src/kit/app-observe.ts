@@ -1,7 +1,5 @@
 import { clientCollection } from "@lynx-go/uikit-core/adapters";
-import { defineResource, scoped, type ApiError, type ResourceScope } from "@lynx-go/uikit-core/kernel";
-import { useQuery } from "@tanstack/react-query";
-import { collectionQueryOptions, recordQueryOptions } from "@lynx-go/uikit-core/react";
+import { defineResource, type ResourceScope } from "@lynx-go/uikit-core/kernel";
 import { apiFetch, ApiError as FetchApiError } from "@/api/client";
 import type { components as Delivery } from "@/api/delivery";
 import type { components as Workloads } from "@/api/workloads";
@@ -37,13 +35,6 @@ export const appWorkloadsResource = defineResource({
       }),
 });
 
-export function useAppWorkloads(projectId: string, appId: string, seq: number) {
-  return useQuery<AppWorkloadsView, ApiError>({
-    ...recordQueryOptions(scoped(appWorkloadsResource, { projectId, appId }), String(seq || 0), {}),
-    enabled: appId !== "",
-  });
-}
-
 // ③ 在服观测（集群真跑着什么，含真实 wire-gen）：10s 轮询同旧拍。
 export const appWorkloadsLiveResource = defineResource({
   name: "app-workloads-live",
@@ -59,14 +50,6 @@ export const appWorkloadsLiveResource = defineResource({
       }),
 });
 
-export function useAppWorkloadsLive(projectId: string, appId: string, options?: { refetchInterval?: number }) {
-  return useQuery<WorkloadObservation[], ApiError>({
-    ...recordQueryOptions(scoped(appWorkloadsLiveResource, { projectId, appId }), "live", {}),
-    refetchInterval: options?.refetchInterval ?? 10_000,
-    enabled: appId !== "",
-  });
-}
-
 // 冻结全文按 Revision 寻址（Spec tab ① 层）：record id = seq。
 export const appRevisionSpecResource = defineResource({
   name: "app-revision-spec",
@@ -81,13 +64,6 @@ export const appRevisionSpecResource = defineResource({
         throw toApiError(err);
       }),
 });
-
-export function useAppRevisionSpec(projectId: string, appId: string, seq: number | undefined) {
-  return useQuery<{ spec?: unknown; revision?: { source_text?: string } }, ApiError>({
-    ...recordQueryOptions(scoped(appRevisionSpecResource, { projectId, appId }), String(seq ?? -1), {}),
-    enabled: seq != null && seq > 0,
-  });
-}
 
 // 最新冻结 Spec（GetAppSpec，404 → null 空态面）：变量页 60s / 进程页与
 // DeploySheet 预填无轮询——拍子经 options 传。
@@ -114,18 +90,6 @@ export const appSpecSheetResource = defineResource({
       }),
 });
 
-export function useAppSpecSheet(
-  projectId: string,
-  appId: string,
-  options?: { refetchInterval?: number; enabled?: boolean },
-) {
-  return useQuery<AppSpecSheet | null, ApiError>({
-    ...recordQueryOptions(scoped(appSpecSheetResource, { projectId, appId }), "current", {}),
-    refetchInterval: options?.refetchInterval,
-    enabled: (options?.enabled ?? true) && appId !== "",
-  });
-}
-
 // Git deploy hook（ADR-0072 所有权面，404 → null 未托管）：行形复用
 // kit/app-tabs 的 GitHook（SetGitHook upsert 与读面同一形状单源）。
 export type AppGitHook = import("./app-tabs").GitHook;
@@ -141,13 +105,6 @@ export const appHookResource = defineResource({
         throw toApiError(err);
       }),
 });
-
-export function useAppHook(projectId: string, appId: string, options?: { enabled?: boolean }) {
-  return useQuery<AppGitHook | null, ApiError>({
-    ...recordQueryOptions(scoped(appHookResource, { projectId, appId }), "current", {}),
-    enabled: (options?.enabled ?? true) && appId !== "",
-  });
-}
 
 // App 变量 store 面（Apply-then-deploy 的基线行集；limit 200 上限同旧）。
 // 行形照旧页局部类型（响应信封宽松形收敛）。
@@ -177,9 +134,10 @@ export const appVariablesStoreResource = defineResource({
   collection: clientCollection(fetchAppVariables),
 });
 
-export function useAppVariablesStore(projectId: string, appId: string) {
-  return useQuery({
-    ...collectionQueryOptions(scoped(appVariablesStoreResource, { projectId, appId }), { window: { size: 200 } }, {}),
-    enabled: appId !== "",
-  });
-}
+// 伴读消费面（2026-10-29 F1 回流批）：本文件六个伴读钩子（useAppWorkloads/
+// useAppWorkloadsLive/useAppRevisionSpec/useAppSpecSheet/useAppHook/
+// useAppVariablesStore）退役——消费点直接 useRecord(resource, { id, scope,
+// query: { refetchInterval?, enabled? } }) / useCollectionData（app-variables
+// 的 store 面，size 200）。record id 约定：workloads=String(seq)（"0" 当前
+// 生效）、live="live"、spec-sheet/hook="current"、revision-spec=String(seq)
+//（缺席传 undefined 即自动停查）。

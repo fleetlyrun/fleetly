@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
-import { useProjectName } from "@/kit/projects";
+import { useCollectionData } from "@lynx-go/uikit-core";
+import { projectsResource } from "@/kit/projects";
 
 // 内容区面包屑（List/Detail 原型页头位）：项目名 > 区段 > 当前资源名。
 // 首段恒为项目名（目录反查，未达回退 Project）——W-1/W-2 走查教训：
@@ -13,7 +14,9 @@ export function ContentCrumb({
   section?: { label: string; to: string };
   current?: string;
 }) {
-  const projectName = useProjectName(projectId);
+  // 目录伴读（M1 useCollectionData）：项目名反查单源，60s 轮询同壳层目录拍。
+  const projects = useCollectionData(projectsResource, { window: { size: 100 }, refetchInterval: 60_000 });
+  const projectName = projects.rows.find((project) => project.id === projectId)?.name;
   return (
     <span className="text-xs text-muted">
       <Link to="/p/$projectId" params={{ projectId }} className="hover:text-fg">

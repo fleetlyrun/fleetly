@@ -1,6 +1,6 @@
 import { HardDriveDownloadIcon, LinkIcon } from "lucide-react";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
-import { useCollection } from "@lynx-go/uikit-core";
+import { useCollection, useCollectionData } from "@lynx-go/uikit-core";
 import { backupHealth } from "@/features/databases/backup-health";
 import { backupsSearch, databaseBackupsResource, platformSnapshotsResource, type DatabaseBackupRow, type PlatformSnapshotRow } from "@/kit/backups";
 import { CliEquivalent } from "@/components/domain/list-toolbar";
@@ -19,8 +19,9 @@ import { Pagination } from "@/components/kit/query/pagination";
 // 跨项目聚合不变量保持客户端 fan-out（ADR-0057），取数并轨 kit/backups
 // 双资源（Databases 60s 轮询沿用旧拍）；快照小表收编 kit 四件套——页内
 // 手挂分页的反模式豁免随迁移摘除（分页/快筛进 URL）。页头动态计数
-//（N databases · M healthy）随列表句柄化退场（句柄只暴露当前页切片），
-// 页头描述收敛静态文案。
+//（N databases · M healthy）曾随列表句柄化退场（句柄只暴露当前页切片），
+// F1 回流批（2026-10-29）经 useCollectionData window:"all" 复原——统计条
+// 与列表窗口互不影响（整取方言全量行，clientCollection 天然支持）。
 export function BackupsView({
   tab,
   onTabChange,
@@ -30,13 +31,20 @@ export function BackupsView({
   onTabChange: (value: "databases" | "snapshots") => void;
   from: string;
 }) {
+  // 全量统计伴读（M1 window:"all"）：与列表窗口互不影响的独立缓存键。
+  const all = useCollectionData(databaseBackupsResource, { window: "all", refetchInterval: 60_000 });
+  const healthy = all.rows.filter((row) => backupHealth(row.database.last_backup_at).tone === "success").length;
+  const description =
+    all.rows.length > 0
+      ? `${all.rows.length} databases · ${healthy} healthy`
+      : "Data safety at a glance — database backups and platform snapshots";
   // 一页一壳（2026-10-28 机制收口）：壳 = ModulePage（衬垫 + 页头三件 +
   // 页级 tab 条，位次对齐 Tasks/Registry 模块页）；双 tab 的 kit ListPage
   // 降为壳内模块配方（kit 件零页面 chrome）——tab 条不再内迁 toolbar。
   return (
     <ModulePage
       title="Backups"
-      description="Data safety at a glance — database backups and platform snapshots"
+      description={description}
       actions={<ButtonLink href="/settings" label="Platform backup settings" />}
       tabs={[
         { value: "databases", label: "Databases" },

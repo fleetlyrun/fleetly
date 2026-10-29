@@ -1,0 +1,1 @@
+import{V as s,a4 as a,K as c}from"./index-CIlahPR1.js";import{_ as i,a0 as n}from"./vendor-D4v-q2m6.js";async function m(o,r){try{return(await s(`/v1/projects${a({limit:100})}`,t=>t.projects,r)).flatMap(t=>t.id&&t.name?[{id:t.id,name:t.name}]:[])}catch(e){throw c(e)}}const p=i({name:"projects",getId:o=>o.id,collection:n(m)});export{p};

@@ -1,8 +1,6 @@
 import { clientCollection, createHttp } from "@lynx-go/uikit-core/adapters";
-import { defineResource, scoped, type CommandDescriptor, type ResourceScope, type Segment } from "@lynx-go/uikit-core/kernel";
+import { defineResource, type CommandDescriptor, type ResourceScope } from "@lynx-go/uikit-core/kernel";
 import { collectionQuerySchema } from "@lynx-go/uikit-core/schema";
-import { useQuery } from "@tanstack/react-query";
-import { collectionQueryOptions } from "@lynx-go/uikit-core/react";
 import { apiSend, notifyUnauthorized } from "@/api/client";
 import { getToken } from "@/lib/token";
 import { runCommandMapped } from "./errors";
@@ -115,14 +113,7 @@ export function appNameOf(apps: ReadonlyArray<AppEntry> | undefined, appId: stri
 }
 
 
-// useAppsDirectory 是 App 目录伴读钩子（表单/名字反查消费；60s 与旧
-// catalog useApps 同拍，空 projectId 禁查同旧 enabled 门）——落 kit 层
-// 让消费面免于裸 useQuery。
-export function useAppsDirectory(projectId: string, options?: { refetchInterval?: number }) {
-  return useQuery<Segment<AppEntry>>({
-    ...collectionQueryOptions(scoped(appsResource, { projectId }), appsDirectorySearch.defaults, {
-      refetchInterval: options?.refetchInterval ?? 60_000,
-    }),
-    enabled: projectId !== "",
-  });
-}
+// 目录伴读消费面（2026-10-29 F1 回流批）：useAppsDirectory 伴读钩子退役——
+// 消费点直接 useCollectionData(appsResource, { scope: { projectId },
+// window: { size: 200 }, refetchInterval: 60_000, enabled: projectId !== "" })
+//（60s 与旧 catalog useApps 同拍；size 200 同 appsDirectorySearch 大页）。

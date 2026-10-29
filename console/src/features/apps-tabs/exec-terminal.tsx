@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { CircleStopIcon, MinusIcon, PlusIcon, PlayIcon } from "lucide-react";
-import { useProcessInstances } from "@/kit/exec";
+import { useCollectionData } from "@lynx-go/uikit-core";
+import { execInstancesResource } from "@/kit/exec";
 import { useExecSession } from "@/features/terminal/use-exec-session";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,8 +28,13 @@ export function ExecTerminal({ appId, processes }: { appId: string; processes: s
   const [command, setCommand] = useState("");
   const effectiveProcess = process !== "" ? process : (processes[0] ?? "");
 
-  const instances = useProcessInstances(appId, effectiveProcess);
-  const instanceRows = instances.data?.rows ?? [];
+  const instances = useCollectionData(execInstancesResource, {
+    scope: { appId, process: effectiveProcess },
+    window: { size: 200 },
+    refetchInterval: 10_000,
+    enabled: appId !== "" && effectiveProcess !== "",
+  });
+  const instanceRows = instances.rows;
 
   const session = useExecSession();
 

@@ -1,7 +1,5 @@
 import { clientCollection } from "@lynx-go/uikit-core/adapters";
-import { defineResource, scoped, type ApiError, type CommandDescriptor, type ResourceScope } from "@lynx-go/uikit-core/kernel";
-import { useQuery } from "@tanstack/react-query";
-import { recordQueryOptions } from "@lynx-go/uikit-core/react";
+import { defineResource, type CommandDescriptor, type ResourceScope } from "@lynx-go/uikit-core/kernel";
 import { collectionQuerySchema } from "@lynx-go/uikit-core/schema";
 import type { components as deliverySchemas } from "@/api/delivery";
 import { apiFetch, apiSend } from "@/api/client";
@@ -210,15 +208,6 @@ export const deploymentLookupResource = defineResource({
       }),
 });
 
-export function useDeploymentLookup(
-  projectId: string,
-  appId: string,
-  deploymentId: string,
-  options?: { refetchInterval?: number; enabled?: boolean },
-) {
-  return useQuery<DeploymentRow | null, ApiError>({
-    ...recordQueryOptions(scoped(deploymentLookupResource, { projectId, appId }), deploymentId, {}),
-    refetchInterval: options?.refetchInterval,
-    enabled: (options?.enabled ?? true) && appId !== "" && deploymentId !== "",
-  });
-}
+// 伴读消费面（2026-10-29 F1 回流批）：useDeploymentLookup 伴读钩子退役——
+// deployment-detail 直接 useRecord(deploymentLookupResource, { id:
+// deploymentId || undefined, scope, query: { refetchInterval?, enabled? } })。

@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { useCommand } from "@lynx-go/uikit-core";
+import { useCommand, useCollectionData, useRecord } from "@lynx-go/uikit-core";
 import type { CommandDescriptor } from "@lynx-go/uikit-core/kernel";
 import { ApiError, apiSend } from "@/api/client";
-import { useAppSpecSheet, useAppVariablesStore } from "@/kit/app-observe";
+import { appSpecSheetResource, appVariablesStoreResource } from "@/kit/app-observe";
 import { PlusIcon, SlidersIcon, TrashIcon } from "lucide-react";
 import { toast } from "sonner";
 import { CopyButton } from "@/components/domain/copy-button";
@@ -65,14 +65,22 @@ export function applyAppVariablesDescriptor(
 export function AppVariablesTab({ projectId, appId }: { projectId: string; appId: string }) {
   const navigate = useNavigate();
 
-  // store/冻结 Spec 伴读（收尾批 kit 化）：60s 拍子同旧。
-  const store = useAppVariablesStore(projectId, appId);
-  const spec = useAppSpecSheet(projectId, appId, { refetchInterval: 60_000 });
+  // store/冻结 Spec 伴读（M1 useCollectionData/useRecord 直消费）：60s 拍子同旧。
+  const store = useCollectionData(appVariablesStoreResource, {
+    scope: { projectId, appId },
+    window: { size: 200 },
+    enabled: appId !== "",
+  });
+  const spec = useRecord(appSpecSheetResource, {
+    id: "current",
+    scope: { projectId, appId },
+    query: { refetchInterval: 60_000, enabled: appId !== "" },
+  });
 
   // 暂存面：行集 = store 基线 + 本地增删改；Apply 一次性落库 + 部署。
   const [staged, setStaged] = useState<VariableRow[] | null>(null);
-  const rows = staged ?? (store.data?.rows ?? []);
-  const base = store.data?.rows ?? [];
+  const rows = staged ?? store.rows;
+  const base = store.rows;
   const hasChanges =
     staged != null &&
     (staged.length !== base.length ||
@@ -123,7 +131,7 @@ export function AppVariablesTab({ projectId, appId }: { projectId: string; appId
           </span>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
-          {store.isError ? (
+          {store.status === "error" ? (
             <p className="py-4 text-center text-xs text-muted">
               {store.error instanceof ApiError ? store.error.message : String(store.error)}
             </p>

@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
-import { useCollection, useCommand } from "@lynx-go/uikit-core";
+import { useCollection, useCommand, useRecord } from "@lynx-go/uikit-core";
 import type { ApiError, CommandResult } from "@lynx-go/uikit-core/kernel";
 import { RocketIcon } from "lucide-react";
 import { toast } from "sonner";
 import type { DeployFormState } from "@/lib/deployPayload";
-import { useAppHook, useAppSpecSheet } from "@/kit/app-observe";
+import { appHookResource, appSpecSheetResource } from "@/kit/app-observe";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -97,10 +97,18 @@ export function DeploySheet({
   });
   const uploadRows = uploads.rows;
 
-  // 生效锚 + 冻结体预填 + hook 所有权（收尾批 kit 化）：观测 record 伴读
-  //（404 → null 空态/未托管语义在 kit 单源）；OCC 重载经 frozen.refetch()。
-  const frozen = useAppSpecSheet(projectId, effectiveAppId, { enabled: open && effectiveAppId !== "" });
-  const hook = useAppHook(projectId, effectiveAppId, { enabled: open && effectiveAppId !== "" });
+  // 生效锚 + 冻结体预填 + hook 所有权（M1 useRecord 直消费）：观测 record
+  // 伴读（404 → null 空态/未托管语义在 kit 单源）；OCC 重载经 frozen.refetch()。
+  const frozen = useRecord(appSpecSheetResource, {
+    id: "current",
+    scope: { projectId, appId: effectiveAppId },
+    query: { enabled: open && effectiveAppId !== "" },
+  });
+  const hook = useRecord(appHookResource, {
+    id: "current",
+    scope: { projectId, appId: effectiveAppId },
+    query: { enabled: open && effectiveAppId !== "" },
+  });
   const hasFrozen = frozen.data != null;
   const hookOwned = hook.data != null;
   const source: SourceKind | null = hookOwned ? null : (sourceChosen ?? (hasFrozen ? "current" : "image"));

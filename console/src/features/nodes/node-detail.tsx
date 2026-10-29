@@ -1,11 +1,9 @@
 import { Link } from "@tanstack/react-router";
 import { ArrowUpRightIcon, BoxesIcon, CheckCircle2Icon, ShieldAlertIcon } from "lucide-react";
 import type { components as runtimeSchemas } from "@/api/runtime";
-import { useRecord } from "@lynx-go/uikit-core";
-import { useQuery } from "@tanstack/react-query";
-import { collectionQueryOptions } from "@lynx-go/uikit-core/react";
+import { useCollectionData, useRecord } from "@lynx-go/uikit-core";
 import { sessionResource } from "@/kit/settings";
-import { nodesDirectorySearch, nodesResource, useNodeContainers } from "@/kit/nodes";
+import { nodeContainersResource, nodesResource } from "@/kit/nodes";
 import { CopyButton } from "@/components/domain/copy-button";
 import { EmptyState } from "@/components/domain/empty-state";
 import { ErrorState } from "@/components/domain/error-state";
@@ -35,11 +33,13 @@ export function NodeDetailPage({ nodeId }: { nodeId: string }) {
   // 平台管理员门（R08-M1/S16-c7）：节点详情与在跑容器同属平台级读面；
   // Console fail-closed（whoami 未到/失败/非管理员都不请求读面）。
   const platformAdmin = whoami.data?.platformAdmin === true;
-  const nodes = useQuery({
-    ...collectionQueryOptions(nodesResource, nodesDirectorySearch.defaults, { refetchInterval: 15_000 }),
+  // 节点目录伴读（M1 useCollectionData）：大页窗 + 15s 轮询同旧拍。
+  const nodes = useCollectionData(nodesResource, {
+    window: { size: 200 },
+    refetchInterval: 15_000,
     enabled: platformAdmin,
   });
-  const node = (nodes.data?.rows ?? []).find((entry) => entry.platform_id === nodeId);
+  const node = nodes.rows.find((entry) => entry.platform_id === nodeId);
 
   if (whoami.status === "loading") {
     return (
@@ -72,7 +72,7 @@ export function NodeDetailPage({ nodeId }: { nodeId: string }) {
         </span>
       }
     >
-      {nodes.isPending ? (
+      {nodes.status === "loading" ? (
         <Skeleton className="mb-5 h-24 w-full rounded-xl" />
       ) : node == null ? (
         <EmptyState
@@ -168,23 +168,29 @@ function workloadCell(row: NodeContainer) {
 }
 
 function ContainersCard({ nodeId }: { nodeId: string }) {
-  const containers = useNodeContainers(nodeId);
-  const rows = containers.data?.rows ?? [];
+  // 容器观测伴读（M1 useCollectionData）：10s 轮询 + 空 nodeId 禁查同旧拍。
+  const containers = useCollectionData(nodeContainersResource, {
+    scope: { nodeId },
+    window: { size: 200 },
+    refetchInterval: 10_000,
+    enabled: nodeId !== "",
+  });
+  const rows = containers.rows;
   return (
     <section className="rounded-xl border bg-panel p-4">
       <div className="mb-3 flex items-center justify-between">
         <h3 className="text-sm font-semibold">Containers</h3>
-        {!containers.isPending && !containers.isError ? (
+        {containers.status === "success" || containers.status === "empty" ? (
           <span className="text-2xs text-muted">{rows.length} running</span>
         ) : null}
       </div>
-      {containers.isPending ? (
+      {containers.status === "loading" ? (
         <div className="flex flex-col gap-2">
           {Array.from({ length: 3 }).map((_, index) => (
             <Skeleton key={index} className="h-8 w-full" />
           ))}
         </div>
-      ) : containers.isError ? (
+      ) : containers.status === "error" ? (
         <ErrorState error={containers.error} onRetry={() => void containers.refetch()} />
       ) : rows.length === 0 ? (
         <EmptyState

@@ -1,14 +1,10 @@
 import { clientCollection } from "@lynx-go/uikit-core/adapters";
 import {
-  type ApiError,
   type CommandResult,
   defineResource,
-  scoped,
   type ResourceScope,
 } from "@lynx-go/uikit-core/kernel";
 import { collectionQuerySchema } from "@lynx-go/uikit-core/schema";
-import { useQuery } from "@tanstack/react-query";
-import { recordQueryOptions } from "@lynx-go/uikit-core/react";
 import type { components as structureSchemas } from "@/api/structure";
 import { apiSend } from "@/api/client";
 import { runCommandMapped, toApiError } from "./errors";
@@ -230,9 +226,6 @@ export const configDetailResource = defineResource({
       }),
 });
 
-export function useConfigDetail(projectId: string, name: string) {
-  return useQuery<ConfigDetail | null, ApiError>({
-    ...recordQueryOptions(scoped(configDetailResource, { projectId }), name, {}),
-    enabled: name !== "",
-  });
-}
+// 伴读消费面（2026-10-29 F1 回流批）：useConfigDetail 伴读钩子退役——
+// panels 直接 useRecord(configDetailResource, { id: name || undefined,
+// scope: { projectId } })（空 name 停查 = undefined id 门）。

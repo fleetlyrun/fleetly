@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { useCollection } from "@lynx-go/uikit-core";
+import { useCollection, useRecord } from "@lynx-go/uikit-core";
 import { ActivityIcon, FileJsonIcon, LayersIcon, PencilIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Textarea } from "@/components/ui/textarea";
 import { useSpecDeploy } from "@/lib/spec-deploy";
 import { ApiError } from "@/api/client";
-import { useAppRevisionSpec, useAppWorkloads, useAppWorkloadsLive, type WorkloadObservation, type WorkloadView } from "@/kit/app-observe";
+import { appRevisionSpecResource, appWorkloadsLiveResource, appWorkloadsResource, type WorkloadObservation, type WorkloadView } from "@/kit/app-observe";
 import { CopyButton } from "@/components/domain/copy-button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -34,10 +34,18 @@ export function AppSpecTab({ projectId, appId, seq, routeId }: { projectId: stri
   const navigate = useNavigate();
   const explicitSeq = seq ?? 0;
 
-  // 观测面伴读（收尾批 kit 化）：workloads 投影 / 在服观测 10s / 冻结全文
-  // 按生效 seq 寻址——轮询拍子与 404/空态语义在 kit/app-observe 单源。
-  const view = useAppWorkloads(projectId, appId, explicitSeq);
-  const live = useAppWorkloadsLive(projectId, appId);
+  // 观测面伴读（M1 useRecord 直消费）：workloads 投影 / 在服观测 10s /
+  // 冻结全文按生效 seq 寻址——轮询拍子与 404/空态语义在 kit/app-observe 单源。
+  const view = useRecord(appWorkloadsResource, {
+    id: String(explicitSeq),
+    scope: { projectId, appId },
+    query: { enabled: appId !== "" },
+  });
+  const live = useRecord(appWorkloadsLiveResource, {
+    id: "live",
+    scope: { projectId, appId },
+    query: { refetchInterval: 10_000, enabled: appId !== "" },
+  });
   const revisions = useCollection(revisionsResource, {
     from: routeId,
     search: revisionsLookup,
@@ -49,8 +57,12 @@ export function AppSpecTab({ projectId, appId, seq, routeId }: { projectId: stri
   const latestFrozenSeq = latestFrozen?.seq ? Number(latestFrozen.seq) : undefined;
   const showingEffective = explicitSeq === 0;
 
-  // 冻结全文按渲染寻址到的 seq 取（缺省寻址先解析出生效 Revision）。
-  const frozen = useAppRevisionSpec(projectId, appId, viewSeq);
+  // 冻结全文按渲染寻址到的 seq 取（缺省寻址先解析出生效 Revision；seq
+  // 缺席即停查——undefined id 门）。
+  const frozen = useRecord(appRevisionSpecResource, {
+    id: viewSeq != null && viewSeq > 0 ? String(viewSeq) : undefined,
+    scope: { projectId, appId },
+  });
 
   // 编辑-部署动线（ADR-0072 写面）：冻结体预填可编辑，部署走 spec_file
   //（hook 应用服务端按运行时 overlay 受理）。
@@ -71,7 +83,7 @@ export function AppSpecTab({ projectId, appId, seq, routeId }: { projectId: stri
     }
   })();
 
-  if (view.isError) {
+  if (view.status === "error") {
     const message = view.error instanceof ApiError ? view.error.message : String(view.error);
     return (
       <Card>
@@ -176,7 +188,8 @@ export function AppSpecTab({ projectId, appId, seq, routeId }: { projectId: stri
           </CardTitle>
           <span className="ml-auto flex items-center gap-2">
             <span className="text-2xs text-muted">
-              {frozen.isFetching ? "loading…" : "protojson · schema-validated at freeze time"}
+              {/* isFetching 不在 useRecord 句柄面（库面挂账）——loading 态近似 */}
+              {frozen.status === "loading" ? "loading…" : "protojson · schema-validated at freeze time"}
             </span>
             <CopyButton value={prettySpec(frozen.data)} />
           </span>
@@ -219,7 +232,7 @@ export function AppSpecTab({ projectId, appId, seq, routeId }: { projectId: stri
           <span className="ml-auto text-2xs text-muted">in-service observation · 10s snapshot</span>
         </CardHeader>
         <CardContent>
-          {live.isError ? (
+          {live.status === "error" ? (
             <p className="py-4 text-center text-xs text-muted">
               {live.error instanceof ApiError ? live.error.message : String(live.error)}
             </p>

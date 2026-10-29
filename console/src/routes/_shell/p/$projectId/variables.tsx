@@ -2,10 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 import { ConfigsPanel, SecretsPanel, VariablesPanel } from "@/features/resources/panels";
 import { ModulePage } from "@/components/domain/module-page";
-import { useQuery } from "@tanstack/react-query";
-import { collectionQueryOptions } from "@lynx-go/uikit-core/react";
-import { scoped } from "@lynx-go/uikit-core/kernel";
-import { appsResource, appsDirectorySearch } from "@/kit/apps";
+import { useCollectionData } from "@lynx-go/uikit-core";
+import { appsResource } from "@/kit/apps";
 import { variablesSearch } from "@/kit/variables";
 
 // Variables 页（原 Configuration，ADR-0059 同批重组；ADR-0060 路由对齐
@@ -28,15 +26,13 @@ export const Route = createFileRoute("/_shell/p/$projectId/variables")({
 function VariablesPage() {
   const { projectId } = Route.useParams();
   const navigate = Route.useNavigate();
-  // 批4 集成收口：App 目录伴读迁 kit（collectionQueryOptions + scoped——
-  // 表单/名字反查不进 URL）。
-  const appsQuery = useQuery({
-    ...collectionQueryOptions(scoped(appsResource, { projectId }), appsDirectorySearch.defaults, {
-      refetchInterval: 60_000,
-    }),
+  // App 目录伴读（M1 useCollectionData——表单/名字反查不进 URL，大页窗）。
+  const apps = useCollectionData(appsResource, {
+    scope: { projectId },
+    window: { size: 200 },
+    refetchInterval: 60_000,
     enabled: projectId !== "",
-  });
-  const apps = appsQuery.data?.rows ?? [];
+  }).rows;
   const tab = Route.useSearch({ select: (search) => search.tab ?? "secrets" });
   return (
     <ModulePage

@@ -9,8 +9,6 @@ import {
 import { componentHealth } from "@/features/fleet/use-system-status";
 import { toast } from "sonner";
 import { useCommand, useRecord } from "@lynx-go/uikit-core";
-import { useQuery } from "@tanstack/react-query";
-import { recordQueryOptions } from "@lynx-go/uikit-core/react";
 import { systemResource } from "@/kit/system";
 import { sessionResource } from "@/kit/settings";
 import { useRawMetricsSeries } from "@/kit/metrics";
@@ -39,8 +37,8 @@ import { Button } from "@/components/ui/button";
 // Logs 侧 ingest 时效需 VL 查询代理（三期 ticket 面）。钉版数字是
 // provider 编译期事实（受管 Workload 的镜像钉），非运行时探测。
 // 2026-10-27 批4 读面收尾：系统状态走 systemResource record "current"
-//（30s 轮询经 recordQueryOptions 直挂 useQuery 恢复——useRecord 无轮询
-// 形参），会话读走 sessionResource record，raw metrics 走 kit/metrics。
+//（30s 轮询），会话读走 sessionResource record，raw metrics 走 kit/metrics；
+// F1 回流批（2026-10-29）：useRecord 扩齐 refetchInterval 后裸 useQuery 退役。
 // 写面（restart 命令）零改动。
 
 interface ManagedProviderCard {
@@ -77,12 +75,9 @@ const MANAGED_PROVIDERS: ManagedProviderCard[] = [
 ];
 
 export function ManagedProvidersView() {
-  // 系统状态 record 读 + 30s 轮询恢复（useRecord 无轮询形参——经
-  // recordQueryOptions 直挂 useQuery，集成批收口 R2 挂起项）。
-  const statusQuery = useQuery({
-    ...recordQueryOptions(systemResource, "current"),
-    refetchInterval: 30_000,
-  });
+  // 系统状态 record 读 + 30s 轮询（M1 useRecord 扩齐 query.refetchInterval——
+  // 集成批收口 R2 挂起项随 F1 回流批清偿，不再落回裸 useQuery）。
+  const statusQuery = useRecord(systemResource, { id: "current", query: { refetchInterval: 30_000 } });
   const status = statusQuery.data;
   // raw metrics 两卡（ingest freshness / disk usage）是平台管理员诊断面
   // （S9 收紧后 member 由服务端 403）：非管理员不发起请求，行显示诚实

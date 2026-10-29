@@ -1,10 +1,7 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import type { ApiError } from "@lynx-go/uikit-core/kernel";
-import { recordQueryOptions } from "@lynx-go/uikit-core/react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useRouter } from "@tanstack/react-router";
-import { useCollection } from "@lynx-go/uikit-core";
+import { useCollection, useRecord } from "@lynx-go/uikit-core";
 import { collectionQuerySchema } from "@lynx-go/uikit-core/schema";
 import { SparklesIcon } from "lucide-react";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
@@ -12,11 +9,7 @@ import { apiSend } from "@/api/client";
 import { describeError } from "@/lib/api-errors";
 import { buildTemplateValues, inputKindOf } from "@/lib/templateForm";
 import { projectsResource } from "@/kit/projects";
-import {
-  templatesResource,
-  useTemplateDetail,
-  type TemplateEntry,
-} from "@/kit/templates";
+import { templateDetailResource, templatesResource, type TemplateEntry } from "@/kit/templates";
 import { EmptyState } from "@/components/domain/empty-state";
 import { ErrorState } from "@/components/domain/error-state";
 import { ListPage } from "@/components/domain/list-page";
@@ -47,23 +40,16 @@ export const Route = createFileRoute("/_shell/templates")({
   component: TemplatesPageV2,
 });
 
-
-// 模板目录/详情伴读（收尾批 kit 化）：收敛形与 detail 映射在 kit/templates
-// 单源；60s 拍子同旧。
-function useTemplatesCatalog() {
-  return useQuery<{ source: string; templates: TemplateEntry[] }, ApiError>({
-    ...recordQueryOptions(templatesResource, "current", {}),
-    refetchInterval: 60_000,
-  });
-}
-
 function TemplatesPageV2() {
   const navigate = useRouter();
-  const catalog = useTemplatesCatalog();
+  // 模板目录/详情伴读（M1 useRecord 直消费）：收敛形与 detail 映射在
+  // kit/templates 单源；目录 60s 拍子同旧（useTemplates/useTemplateDetail
+  // 伴读钩子随 F1 回流批退役）。
+  const catalog = useRecord(templatesResource, { id: "current", query: { refetchInterval: 60_000 } });
   const projects = useCollection(projectsResource, { from: Route.id, search: projectsDirectorySearch, query: { refetchInterval: 60_000 } });
   const [detailName, setDetailName] = useState<string | null>(null);
   const [wizard, setWizard] = useState<TemplateEntry | null>(null);
-  const detailQuery = useTemplateDetail(detailName);
+  const detailQuery = useRecord(templateDetailResource, { id: detailName ?? undefined });
 
   const columns: LegacyColumnDef<TemplateEntry, any>[] = [
     {
@@ -109,8 +95,8 @@ function TemplatesPageV2() {
       placeholder="Filter templates..."
       rows={catalog.data?.templates ?? []}
       fieldsOf={(template) => [template.name, template.description]}
-      loading={catalog.isPending}
-      error={catalog.isError ? catalog.error : null}
+      loading={catalog.status === "loading"}
+      error={catalog.status === "error" ? catalog.error : null}
       onRetry={() => void catalog.refetch()}
       columns={columns}
       empty={
@@ -129,8 +115,8 @@ function TemplatesPageV2() {
                     : "loading…"}
                 </DialogDescription>
               </DialogHeader>
-              {detailQuery.isPending ? <Skeleton className="h-40 w-full" /> : null}
-              {detailQuery.isError ? <ErrorState error={detailQuery.error} onRetry={() => void detailQuery.refetch()} /> : null}
+              {detailQuery.status === "loading" ? <Skeleton className="h-40 w-full" /> : null}
+              {detailQuery.status === "error" ? <ErrorState error={detailQuery.error} onRetry={() => void detailQuery.refetch()} /> : null}
               {detailQuery.data ? (
                 <div className="flex flex-col gap-3">
                   {detailQuery.data.variables.length > 0 ? (

@@ -1,5 +1,5 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { useCollection, useRecord } from "@lynx-go/uikit-core";
+import { useCollection, useCollectionData, useRecord } from "@lynx-go/uikit-core";
 import { collectionQuerySchema } from "@lynx-go/uikit-core/schema";
 import { BellIcon, BoxesIcon, PlusIcon } from "lucide-react";
 import { ErrorState } from "@/components/domain/error-state";
@@ -11,11 +11,9 @@ import { appsDirectorySearch, appsResource } from "@/kit/apps";
 import { nodesDirectorySearch, nodesResource } from "@/kit/nodes";
 import { projectsResource } from "@/kit/projects";
 import { sessionResource } from "@/kit/settings";
-// 残留（批4 收尾注记）：alert states 是 join 数据源非列表，kit/alerts 头注
-// 钉它保持 useQuery——归 alerts 域（R1）收编，本页随迁。
-import { useQuery } from "@tanstack/react-query";
-import { collectionQueryOptions } from "@lynx-go/uikit-core/react";
-import { alertStatesResource, alertStatesLookup } from "@/kit/alerts";
+// alert states 是 join 数据源非列表（kit/alerts 头注）：伴读经 useCollectionData
+// 直消费（M1），15s 轮询照旧。
+import { alertStatesResource } from "@/kit/alerts";
 import { useProjectId } from "@/lib/project";
 
 // 舰队总览（Dashboard 原型，UI v2 批 2）：平台状态条 + 项目磁贴墙 +
@@ -42,10 +40,8 @@ function OverviewPage() {
   const session = useRecord(sessionResource, { id: "self" });
   const platformAdmin = session.data?.platformAdmin === true;
   const nodes = useCollection(nodesResource, { from: Route.id, search: nodesDirectorySearch, query: { refetchInterval: RESOURCE_MS, enabled: platformAdmin } });
-  const alerts = useQuery({
-    ...collectionQueryOptions(alertStatesResource, alertStatesLookup.defaults, { refetchInterval: 15_000 }),
-  });
-  const firing = (alerts.data?.rows ?? []).filter((state) => state.state === "firing");
+  const alerts = useCollectionData(alertStatesResource, { window: { size: 200 }, refetchInterval: 15_000 });
+  const firing = alerts.rows.filter((state) => state.state === "firing");
   const availableNodes = nodes.rows.filter((node) => node.available === true);
   const [, setProjectId] = useProjectId();
 
@@ -72,7 +68,7 @@ function OverviewPage() {
           value={String(firing.length)}
           sub={firing.length > 0 ? "firing now" : "all quiet"}
           tone={firing.length > 0 ? "danger" : "neutral"}
-          loading={alerts.isPending}
+          loading={alerts.status === "loading"}
         />
         <StatCard label="Projects" value={String(projects.rows.length)} sub="in this fleet" loading={projects.status === "loading"} />
       </div>

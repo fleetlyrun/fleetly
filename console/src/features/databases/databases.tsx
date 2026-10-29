@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
-import { useQuery } from "@tanstack/react-query";
-import { collectionQueryOptions, useCollection, useCommand, useCommandForm } from "@lynx-go/uikit-core";
+import { useCollection, useCollectionData, useCommand, useCommandForm } from "@lynx-go/uikit-core";
 import type { ApiError } from "@lynx-go/uikit-core/kernel";
 import type { components } from "@/api/structure";
 import {
@@ -61,7 +60,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { appsResource, appsDirectorySearch } from "@/kit/apps";
-import { projectsAllQuery, projectsResource } from "@/kit/projects";
+import { projectsResource } from "@/kit/projects";
 import { appSpecsResource, appSpecsLookup, type AppSpec } from "@/kit/app-specs";
 import {
   browseDatabaseCommand,
@@ -116,12 +115,10 @@ export function DatabasesListPage({ projectId, from }: { projectId: string; from
     query: { refetchInterval: 15_000 },
   });
   const rows = list.rows;
-  // 项目名反查（R1 的 kit/projects 伴读形：collectionQueryOptions + 固定窗，
-  // 不经 URL——旧 catalog useProjects 60s 拍）。
-  const projectName = useQuery({
-    ...collectionQueryOptions(projectsResource, projectsAllQuery, { refetchInterval: 60_000 }),
-    select: (segment) => segment.rows.find((project) => project.id === projectId)?.name,
-  }).data;
+  // 项目名反查（M1 useCollectionData 伴读，60s 同旧 catalog useProjects 拍）。
+  const projectName = useCollectionData(projectsResource, { window: { size: 100 }, refetchInterval: 60_000 }).rows.find(
+    (project) => project.id === projectId,
+  )?.name;
   const navigate = useNavigate();
   const [createOpen, setCreateOpen] = useState(false);
 

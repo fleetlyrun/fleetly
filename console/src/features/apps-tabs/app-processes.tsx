@@ -1,6 +1,6 @@
 import { Fragment, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { useCollection, useCommand } from "@lynx-go/uikit-core";
+import { useCollection, useCommand, useRecord } from "@lynx-go/uikit-core";
 import type { components } from "@/api/structure";
 import { ChevronRightIcon, MinusIcon, PlusIcon, RotateCwIcon } from "lucide-react";
 import { toast } from "sonner";
@@ -8,7 +8,7 @@ import { DeploySheet } from "@/features/deployments/deploy-sheet";
 import { routesResource, routesLookup } from "@/kit/routes";
 import { appTabCommands } from "@/kit/app-tabs";
 import { appsResource, appsDirectorySearch } from "@/kit/apps";
-import { useAppSpecSheet } from "@/kit/app-observe";
+import { appSpecSheetResource } from "@/kit/app-observe";
 import { toastOnSettled } from "@/kit/toast";
 import { InstanceList, RunningCount } from "./running-instances";
 import {
@@ -54,7 +54,12 @@ export function AppProcessesTab({ projectId, appId, routeId }: { projectId: stri
     scope: { projectId },
     query: { refetchInterval: 60_000 },
   });
-  const spec = useAppSpecSheet(projectId, appId, { refetchInterval: 60_000 });
+  // 冻结 Spec 伴读（M1 useRecord）：60s 拍子同旧。
+  const spec = useRecord(appSpecSheetResource, {
+    id: "current",
+    scope: { projectId, appId },
+    query: { refetchInterval: 60_000, enabled: appId !== "" },
+  });
   const routes = useCollection(routesResource, {
     from: routeId,
     search: routesLookup,
@@ -124,10 +129,10 @@ export function AppProcessesTab({ projectId, appId, routeId }: { projectId: stri
     }),
   });
 
-  if (spec.isPending) {
+  if (spec.status === "loading") {
     return <p className="py-10 text-center text-xs text-muted">Loading spec…</p>;
   }
-  if (spec.isError) {
+  if (spec.status === "error") {
     return <p className="py-10 text-center text-xs text-err">{spec.error instanceof Error ? spec.error.message : String(spec.error)}</p>;
   }
   if (frozen == null) {

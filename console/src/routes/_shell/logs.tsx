@@ -4,12 +4,10 @@ import { useSubscription } from "@lynx-go/uikit-core/react";
 import { z } from "zod";
 import { ChevronDownIcon, DownloadIcon, PlayIcon, SquareIcon, XIcon } from "lucide-react";
 import type { LogFrame } from "@/api/streams";
-import { useQuery } from "@tanstack/react-query";
-import { collectionQueryOptions } from "@lynx-go/uikit-core/react";
-import { scoped } from "@lynx-go/uikit-core/kernel";
-import { useProjectsDirectory } from "@/kit/projects";
-import { useAppsDirectory } from "@/kit/apps";
-import { revisionsResource, revisionsLookup } from "@/kit/revisions";
+import { useCollectionData } from "@lynx-go/uikit-core/react";
+import { projectsResource } from "@/kit/projects";
+import { appsResource } from "@/kit/apps";
+import { revisionsResource } from "@/kit/revisions";
 import { useProjectId } from "@/lib/project";
 import { decodeLine, type LogControls } from "@/features/logs/use-log-stream";
 import { describeApiError } from "@/kit/errors";
@@ -85,16 +83,22 @@ function LogsWorkbench() {
     autoStart: run !== null,
     policy: { buffer: LOG_BUFFER, retry: { backoffMs: LOG_BACKOFF_MS } },
   });
-  // 批4 集成收口：目录/修订伴读迁 kit（revisions 取最新一条做进程候选）。
-  const projects = useProjectsDirectory();
-  const apps = useAppsDirectory(projectId);
-  const revisions = useQuery({
-    ...collectionQueryOptions(scoped(revisionsResource, { projectId, appId }), revisionsLookup.defaults, {
-      refetchInterval: 15_000,
-    }),
+  // 目录/修订伴读（M1 useCollectionData 直消费；revisions 取最新一条做
+  // 进程候选，15s 轮询同旧拍）。
+  const projects = useCollectionData(projectsResource, { window: { size: 100 }, refetchInterval: 60_000 });
+  const apps = useCollectionData(appsResource, {
+    scope: { projectId },
+    window: { size: 200 },
+    refetchInterval: 60_000,
+    enabled: projectId !== "",
+  });
+  const revisions = useCollectionData(revisionsResource, {
+    scope: { projectId, appId },
+    window: { size: 200 },
+    refetchInterval: 15_000,
     enabled: appId !== "",
   });
-  const processOptions = (revisions.data?.rows[0]?.process_strategies ?? [])
+  const processOptions = (revisions.rows[0]?.process_strategies ?? [])
     .map((entry) => entry?.process ?? "")
     .filter((name) => name !== "");
 
@@ -105,18 +109,18 @@ function LogsWorkbench() {
 
   // 项目目录到达后补默认 App（切换器语境优先，search 参数其次）
   useEffect(() => {
-    if (appId === "" && search.app === undefined && (apps.data?.rows ?? []).length > 0) {
-      setAppId(apps.data!.rows[0].id);
+    if (appId === "" && search.app === undefined && apps.rows.length > 0) {
+      setAppId(apps.rows[0].id);
     }
-  }, [apps.data, appId, search.app]);
+  }, [apps.rows, appId, search.app]);
 
   // 已选 App 不在当前项目目录（切了项目）→ 重置
   useEffect(() => {
-    const rows = apps.data?.rows ?? [];
+    const rows = apps.rows;
     if (appId !== "" && rows.length > 0 && !rows.some((entry) => entry.id === appId)) {
       setAppId(rows[0].id);
     }
-  }, [apps.data, appId]);
+  }, [apps.rows, appId]);
 
   // LogViewer 块定高（px prop）——以容器实测高度注入，保持 workbench 满
   // 高口径（追加帧只滚日志框不撑高页面）。
@@ -174,7 +178,7 @@ function LogsWorkbench() {
       <div className="mb-1 flex items-baseline gap-3">
         <h1 className="font-heading text-lg font-bold tracking-tight">Logs</h1>
         <span className="text-xs text-muted">
-          {projects.data?.rows?.find((project) => project.id === projectId)?.name ?? "—"} — live stream or stored search
+          {projects.rows.find((project) => project.id === projectId)?.name ?? "—"} — live stream or stored search
         </span>
       </div>
 
@@ -186,7 +190,7 @@ function LogsWorkbench() {
               <SelectValue placeholder={noApp ? "select an app…" : ""} />
             </SelectTrigger>
             <SelectContent>
-              {(apps.data?.rows ?? []).map((app) => (
+              {apps.rows.map((app) => (
                 <SelectItem key={app.id} value={app.id}>
                   {app.name}
                 </SelectItem>

@@ -1,16 +1,14 @@
 import { useState, useEffect, useRef } from "react";
 import { LinkIcon, PencilIcon, PlusIcon } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
 import { toast } from "sonner";
-import { useCollection, useCommand, useCommandForm } from "@lynx-go/uikit-core";
-import { collectionQueryOptions } from "@lynx-go/uikit-core/react";
-import { scoped } from "@lynx-go/uikit-core/kernel";
+import { useCollection, useCollectionData, useCommand, useCommandForm, useRecord } from "@lynx-go/uikit-core";
+
 import type { ApiError, CommandResult } from "@lynx-go/uikit-core/kernel";
-import { appsResource, appsDirectorySearch } from "@/kit/apps";
-import { databasesResource, databasesLookup } from "@/kit/databases";
-import { projectsResource, projectsAllQuery } from "@/kit/projects";
-import { useConfigDetail } from "@/kit/variables";
+import { appsResource } from "@/kit/apps";
+import { databasesResource } from "@/kit/databases";
+import { projectsResource } from "@/kit/projects";
+import { configDetailResource } from "@/kit/variables";
 import { apiSendRaw } from "@/api/client";
 import { describeApiError, toApiError } from "@/kit/errors";
 import { appSpecsResource, appSpecsLookup, type AppSpecRow } from "@/kit/app-specs";
@@ -295,12 +293,11 @@ export function PeersPanel({ projectId, routeId }: { projectId: string; routeId:
     scope: { projectId },
     query: { refetchInterval: 15_000 },
   });
-  // DeclarePeerForm 的网络下拉数据（伴读 = collectionQueryOptions + scoped——
-  // 下拉不进 URL，批4 集成收口）。
-  const networks = useQuery({
-    ...collectionQueryOptions(scoped(networksResource, { projectId }), networksSearch.defaults, {
-      refetchInterval: 15_000,
-    }),
+  // DeclarePeerForm 的网络下拉数据（M1 useCollectionData 伴读——下拉不进 URL）。
+  const networks = useCollectionData(networksResource, {
+    scope: { projectId },
+    window: { size: 20 },
+    refetchInterval: 15_000,
     enabled: projectId !== "",
   });
 
@@ -363,7 +360,7 @@ export function PeersPanel({ projectId, routeId }: { projectId: string; routeId:
       >
         <DataTable list={list} columns={columns} getRowId={(row) => row.id ?? ""} />
       </ListPage>
-      <DeclarePeerForm projectId={projectId} networks={networks.data?.rows ?? []} />
+      <DeclarePeerForm projectId={projectId} networks={networks.rows} />
     </section>
   );
 }
@@ -415,9 +412,7 @@ function PeerActionsCell({ projectId, peer }: { projectId: string; peer: Network
 // Select 双下拉与行内提交钮形态不变，只换命令接线；结果盒/Working… 占位
 // 原位，成功占位保持瞬时态（reset 后即退场，零漂移））。
 function DeclarePeerForm({ projectId, networks }: { projectId: string; networks: ReadonlyArray<{ id?: string; name?: string }> }) {
-  const projects = useQuery({
-    ...collectionQueryOptions(projectsResource, projectsAllQuery, { refetchInterval: 60_000 }),
-  });
+  const projects = useCollectionData(projectsResource, { window: { size: 100 }, refetchInterval: 60_000 });
   const [networkId, setNetworkId] = useState("");
   const [peerProject, setPeerProject] = useState("");
   const declare = useCommand(declarePeerDescriptor, {
@@ -463,7 +458,7 @@ function DeclarePeerForm({ projectId, networks }: { projectId: string; networks:
             <SelectValue placeholder="select…" />
           </SelectTrigger>
           <SelectContent>
-            {(projects.data?.rows ?? [])
+            {projects.rows
               .filter((project) => project.id !== projectId)
               .map((project) => (
                 <SelectItem key={project.id} value={project.id}>
@@ -765,17 +760,17 @@ function VolumesTab({ projectId, routeId }: { projectId: string; routeId: string
     scope: { projectId },
     query: { refetchInterval: 15_000 },
   });
-  // 批4 集成收口：目录伴读迁 kit（下拉/反查不进 URL——scoped + lookup 大页）。
-  const apps = useQuery({
-    ...collectionQueryOptions(scoped(appsResource, { projectId }), appsDirectorySearch.defaults, {
-      refetchInterval: 60_000,
-    }),
+  // 目录伴读（M1 useCollectionData——下拉/反查不进 URL，大页窗同 lookup）。
+  const apps = useCollectionData(appsResource, {
+    scope: { projectId },
+    window: { size: 200 },
+    refetchInterval: 60_000,
     enabled: projectId !== "",
   });
-  const databases = useQuery({
-    ...collectionQueryOptions(scoped(databasesResource, { projectId }), databasesLookup.defaults, {
-      refetchInterval: 15_000,
-    }),
+  const databases = useCollectionData(databasesResource, {
+    scope: { projectId },
+    window: { size: 200 },
+    refetchInterval: 15_000,
     enabled: projectId !== "",
   });
   // 批4（2026-10-27）：冻结 Spec 反查迁 kit appSpecsResource（fan-out 内联
@@ -806,10 +801,10 @@ function VolumesTab({ projectId, routeId }: { projectId: string; routeId: string
   const volumeIndex = specIndex(specs, (spec) =>
     (spec.processes ?? []).flatMap((process) => (process.volumes ?? []).map((volume) => volume.volume_id ?? "")),
   );
-  const appName = (id: string) => (apps.data?.rows ?? []).find((app) => app.id === id)?.name ?? id;
+  const appName = (id: string) => apps.rows.find((app) => app.id === id)?.name ?? id;
   const mountOf = (volume: { name?: string }): { carrier: boolean; users: string[] } => {
     const users = (volumeIndex.get(volume.name ?? "") ?? []).map(appName);
-    const carried = (databases.data?.rows ?? []).some((database) => database.name === volume.name);
+    const carried = databases.rows.some((database) => database.name === volume.name);
     return { carrier: carried, users: carried ? [] : users };
   };
   const openCreate = () => {
@@ -1317,9 +1312,9 @@ function ConfigDetailDialog({
   onClose: () => void;
 }) {
   const name = config?.name ?? "";
-  // Config 详情回读伴读（收尾批 kit 化）：PUT 冻结新版本后经 legacyKeys
-  // 双键桥失效（批2 桥值）。
-  const detail = useConfigDetail(projectId, name);
+  // Config 详情回读伴读（M1 useRecord）：PUT 冻结新版本后经 legacyKeys
+  // 双键桥失效（批2 桥值）；空 name 停查（undefined id 门）。
+  const detail = useRecord(configDetailResource, { id: name || undefined, scope: { projectId } });
   const [editing, setEditing] = useState(false);
   const [content, setContent] = useState("");
   // Config 编辑壳保留（批 2 只换命令接线）：保存 PUT 同名即冻结新版本，
@@ -1386,16 +1381,16 @@ function ConfigDetailDialog({
               {" · "}
               {new TextEncoder().encode(detail.data?.content ?? "").length} bytes
             </p>
-            {detail.isPending ? (
+            {detail.status === "loading" ? (
               <Skeleton className="h-48 w-full" />
-            ) : detail.isError ? (
-              <FormError error={detail.error} />
+            ) : detail.status === "error" ? (
+              <FormError error={detail.error ?? undefined} />
             ) : (
               <pre className="max-h-[50vh] overflow-auto rounded-lg border bg-panel-2/40 p-3 font-mono text-xs break-all whitespace-pre-wrap">
                 {detail.data?.content}
               </pre>
             )}
-            {detail.isError ? (
+            {detail.status === "error" ? (
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={close}>
                   Close
@@ -1410,7 +1405,7 @@ function ConfigDetailDialog({
                 <Button
                   type="button"
                   size="sm"
-                  disabled={detail.isPending || detail.isError}
+                  disabled={detail.status !== "success"}
                   onClick={() => {
                     setContent(detail.data?.content ?? "");
                     setEditing(true);
@@ -1614,14 +1609,13 @@ function UploadsTab({ projectId, routeId }: { projectId: string; routeId: string
     scope: { projectId },
     query: { refetchInterval: 15_000 },
   });
-  // 批4 集成收口：App 目录伴读迁 kit（Uploads 引用反查用，不进 URL）。
-  const appsQuery = useQuery({
-    ...collectionQueryOptions(scoped(appsResource, { projectId }), appsDirectorySearch.defaults, {
-      refetchInterval: 60_000,
-    }),
+  // App 目录伴读（M1 useCollectionData——Uploads 引用反查用，不进 URL）。
+  const apps = useCollectionData(appsResource, {
+    scope: { projectId },
+    window: { size: 200 },
+    refetchInterval: 60_000,
     enabled: projectId !== "",
-  });
-  const apps = appsQuery.data?.rows ?? [];
+  }).rows;
   // 批4（2026-10-27）：冻结 Spec 反查迁 kit appSpecsResource（同 Volumes
   // tab 口径；Referenced by 反查逻辑不动）。
   const specsList = useCollection(appSpecsResource, {

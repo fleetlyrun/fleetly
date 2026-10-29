@@ -1,10 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { RoutesPanel } from "@/features/resources/panels";
 import { PageFrame } from "@/components/domain/page-frame";
-import { useQuery } from "@tanstack/react-query";
-import { collectionQueryOptions } from "@lynx-go/uikit-core/react";
-import { scoped } from "@lynx-go/uikit-core/kernel";
-import { appsResource, appsDirectorySearch } from "@/kit/apps";
+import { useCollectionData } from "@lynx-go/uikit-core";
+import { appsResource } from "@/kit/apps";
 import { routesSearch } from "@/kit/routes";
 
 // 路由页（UI v2 批 4；模板化收编 PageFrame）：host → app/process/port
@@ -19,15 +17,13 @@ export const Route = createFileRoute("/_shell/p/$projectId/routes")({
 
 function RoutesPage() {
   const { projectId } = Route.useParams();
-  // 批4 集成收口：App 目录伴读迁 kit（collectionQueryOptions + scoped——
-  // 表单/名字反查不进 URL）。
-  const appsQuery = useQuery({
-    ...collectionQueryOptions(scoped(appsResource, { projectId }), appsDirectorySearch.defaults, {
-      refetchInterval: 60_000,
-    }),
+  // App 目录伴读（M1 useCollectionData——表单/名字反查不进 URL，大页窗）。
+  const apps = useCollectionData(appsResource, {
+    scope: { projectId },
+    window: { size: 200 },
+    refetchInterval: 60_000,
     enabled: projectId !== "",
-  });
-  const apps = appsQuery.data?.rows ?? [];
+  }).rows;
   return (
     <PageFrame title="Routes" description="Traffic enters through routes on the managed proxy">
       <RoutesPanel projectId={projectId} routeId={Route.id} apps={[...apps]} />

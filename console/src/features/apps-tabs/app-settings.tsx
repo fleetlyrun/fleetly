@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { useCommand } from "@lynx-go/uikit-core";
+import { useCommand, useRecord } from "@lynx-go/uikit-core";
 import { appTabCommands } from "@/kit/app-tabs";
-import { useAppHook, useAppRevisionSpec, useAppWorkloads } from "@/kit/app-observe";
+import { appHookResource, appRevisionSpecResource, appWorkloadsResource } from "@/kit/app-observe";
 import { describeApiError } from "@/kit/errors";
 import { toastOnSettled } from "@/kit/toast";
 import { CopyButton } from "@/components/domain/copy-button";
@@ -86,14 +86,27 @@ export function AppSettingsTab({
 // 只读零编辑。数据全走既有 kit record 读面（workloads 生效锚 / GetRevision
 // 原文判 compose / hook 所有权），零新 API。
 function DeploymentSummaryCard({ projectId, appId }: { projectId: string; appId: string }) {
-  const view = useAppWorkloads(projectId, appId, 0);
-  const hook = useAppHook(projectId, appId);
+  // 伴读读面（M1 useRecord 直消费）：workloads 生效锚无轮询一次取；hook
+  // 404 → null 未托管；frozen 的 GetRevision 原文仅用于 compose 判定
+  //（sourceKindLabel 第二参，seq 缺席即停查——undefined id 门）。
+  const view = useRecord(appWorkloadsResource, {
+    id: "0",
+    scope: { projectId, appId },
+    query: { enabled: appId !== "" },
+  });
+  const hook = useRecord(appHookResource, {
+    id: "current",
+    scope: { projectId, appId },
+    query: { enabled: appId !== "" },
+  });
   const seq = view.data?.revision?.seq ? Number(view.data.revision.seq) : undefined;
-  // GetRevision 原文仅用于 compose 判定（sourceKindLabel 第二参）。
-  const frozen = useAppRevisionSpec(projectId, appId, seq);
+  const frozen = useRecord(appRevisionSpecResource, {
+    id: seq != null && seq > 0 ? String(seq) : undefined,
+    scope: { projectId, appId },
+  });
   const revision = view.data?.revision;
 
-  if (view.isError) {
+  if (view.status === "error") {
     return (
       <section className="rounded-xl border bg-panel p-4">
         <h3 className="mb-3 text-sm font-semibold">Deployment</h3>
@@ -111,7 +124,7 @@ function DeploymentSummaryCard({ projectId, appId }: { projectId: string; appId:
             tab.
           </p>
         ) : (
-          <p className="text-xs text-err">{describeApiError(view.error)}</p>
+          <p className="text-xs text-err">{view.error ? describeApiError(view.error) : ""}</p>
         )}
       </section>
     );
@@ -210,8 +223,12 @@ function DeploymentSummaryCard({ projectId, appId }: { projectId: string; appId:
 // Configure 展开后才进表单。
 
 function useGitHook(projectId: string, appId: string) {
-  // 收尾批 kit 化：hook 伴读（404 → null 未托管，kit 单源）。
-  return useAppHook(projectId, appId);
+  // hook 伴读（M1 useRecord；404 → null 未托管在资源内单源收敛）。
+  return useRecord(appHookResource, {
+    id: "current",
+    scope: { projectId, appId },
+    query: { enabled: appId !== "" },
+  });
 }
 
 function GitHookCard({ appId, projectId }: { appId: string; projectId: string }) {
@@ -288,7 +305,7 @@ function GitHookCard({ appId, projectId }: { appId: string; projectId: string })
         (project or global) — or put a <span className="font-mono">git:&lt;host&gt;</span> project secret for other hosts — instead
         of a token-URL: access material resolves at build time, nothing lands in revisions, and rotating needs no redeploy.
       </p>
-      {hook.isPending ? (
+      {hook.status === "loading" ? (
         <p className="text-xs text-muted">Loading hook…</p>
       ) : configured && !editing ? (
         <>
@@ -431,7 +448,7 @@ function GitHookCard({ appId, projectId }: { appId: string; projectId: string })
           </p>
         </div>
       ) : null}
-      {hook.isError ? <p className="mt-3 text-xs text-err">{fieldError(hook.error)}</p> : null}
+      {hook.status === "error" ? <p className="mt-3 text-xs text-err">{hook.error ? fieldError(hook.error) : ""}</p> : null}
     </section>
   );
 }

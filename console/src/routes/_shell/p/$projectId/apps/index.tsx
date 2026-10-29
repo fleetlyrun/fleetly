@@ -1,11 +1,10 @@
 import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { collectionQueryOptions } from "@lynx-go/uikit-core";
+
 import { Link, useNavigate, createFileRoute } from "@tanstack/react-router";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
 import { MoreHorizontalIcon, PlusIcon, RocketIcon, ScrollTextIcon, SquareTerminalIcon } from "lucide-react";
 import { toast } from "sonner";
-import { useCollection, useCommandForm } from "@lynx-go/uikit-core";
+import { useCollection, useCollectionData, useCommandForm } from "@lynx-go/uikit-core";
 import { DataTable } from "@/components/kit/query/data-table";
 import { FilterBar } from "@/components/kit/query/filter-bar";
 import { ListPage } from "@/components/kit/query/list-page";
@@ -31,7 +30,7 @@ import { describeApiError } from "@/kit/errors";
 import { appsResource, appsSearch, type AppEntry } from "@/kit/apps";
 import { appDeploymentsResource, appDeploymentsLookup, type DeploymentRow } from "@/kit/deployments";
 import { routesResource, routesLookup } from "@/kit/routes";
-import { projectsAllQuery, projectsResource } from "@/kit/projects";
+import { projectsResource } from "@/kit/projects";
 
 // Apps 列表（uikit 试点切片，2026-10-24）：骨架换 uikit 块（ListPage ×
 // FilterBar × DataTable × Pagination），快筛/分页/排序首次进 URL（q/size/
@@ -78,12 +77,10 @@ function AppsListPage() {
     scope: { projectId },
     query: { refetchInterval: 15_000 },
   });
-  // 项目名反查（R1 的 kit/projects 伴读形：collectionQueryOptions + 固定窗，
-  // 不经 URL——旧 catalog useProjects 60s 拍）。
-  const projectName = useQuery({
-    ...collectionQueryOptions(projectsResource, projectsAllQuery, { refetchInterval: 60_000 }),
-    select: (segment) => segment.rows.find((project) => project.id === projectId)?.name,
-  }).data;
+  // 项目名反查（M1 useCollectionData 伴读，60s 同旧 catalog useProjects 拍）。
+  const projectName = useCollectionData(projectsResource, { window: { size: 100 }, refetchInterval: 60_000 }).rows.find(
+    (project) => project.id === projectId,
+  )?.name;
   const rows = list.rows;
   const [createOpen, setCreateOpen] = useState(false);
   const [deployOpen, setDeployOpen] = useState(false);

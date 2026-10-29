@@ -1,12 +1,10 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 import { PlusIcon } from "lucide-react";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
 import { toast } from "sonner";
-import { collectionQueryOptions, useCollection, useCommand } from "@lynx-go/uikit-core";
-import type { CollectionQuery } from "@lynx-go/uikit-core/kernel";
+import { useCollection, useCollectionData, useCommand } from "@lynx-go/uikit-core";
 import { shortId } from "@/lib/format";
 import { toastOnSettled } from "@/kit/toast";
 import {
@@ -53,7 +51,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 // 写面批2 全走 kit/identity.ts 的 resource commands（四创建弹窗保留
 // useState 壳只换提交面——mint→reveal 链敏感不迁 Form 块；Confirm 壳原样；
 // toast 单源在 kit/toast.ts）。批4：创建弹窗下拉的伴读也换 kit 集合——固定
-// 窗（pickerQuery）不经 URL，列表页的 q/cursor 残留不泄进下拉。
+// 窗（size 100 整表，M1 useCollectionData）不经 URL，列表页的 q/cursor
+// 残留不泄进下拉。
 // useCollection 化批：validateSearch 合并形态收编 tab 键 + kit 集合参数
 //（toSearchSchema 不认 tab，必须显式并入）；tab 切换走函数式 search 保
 // q/分页跨 tab 持久（接受语义）。
@@ -61,8 +60,6 @@ const identityTabSearch = z.object({ tab: z.enum(["users", "teams", "roles", "in
 
 // 创建弹窗下拉的伴读固定窗：全量行整取（size 100），不经 URL——useCollection
 // 解码的是 location 级共享键，列表页写进的 q/cursor 会误收进下拉窗形。
-const pickerQuery: CollectionQuery = { window: { size: 100 } };
-
 export const Route = createFileRoute("/_shell/identity")({
   validateSearch: (input: Record<string, unknown>) => ({
     ...identityTabSearch.parse(input),
@@ -271,14 +268,10 @@ function SetPasswordRow({ userId, onDone }: { userId: string; onDone: () => void
 function CreateUserDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   // 下拉伴读（批4 kit 集合化）：teams 15s / roles 60s 对齐旧 catalog
   // useTeams（RESOURCE_MS）/useRoles（CATALOG_MS）拍频。
-  const teams = useQuery(
-    collectionQueryOptions(teamsResource, pickerQuery, { refetchInterval: 15_000 }),
-  );
-  const roles = useQuery(
-    collectionQueryOptions(rolesResource, pickerQuery, { refetchInterval: 60_000 }),
-  );
-  const teamRows = teams.data?.rows ?? [];
-  const roleRows = roles.data?.rows ?? [];
+  const teams = useCollectionData(teamsResource, { window: { size: 100 }, refetchInterval: 15_000 });
+  const roles = useCollectionData(rolesResource, { window: { size: 100 }, refetchInterval: 60_000 });
+  const teamRows = teams.rows;
+  const roleRows = roles.rows;
   const [name, setName] = useState("");
   const [teamId, setTeamId] = useState("");
   const [roleId, setRoleId] = useState("");
@@ -475,9 +468,7 @@ function TeamsTab() {
 function RolesTab({ createOpen, onCreateOpenChange }: { createOpen: boolean; onCreateOpenChange: (open: boolean) => void }) {
   // teams 是创建弹窗下拉的伴读（批4 换 kit 集合固定窗；15s 对齐旧
   // catalog useTeams）。
-  const teams = useQuery(
-    collectionQueryOptions(teamsResource, pickerQuery, { refetchInterval: 15_000 }),
-  );
+  const teams = useCollectionData(teamsResource, { window: { size: 100 }, refetchInterval: 15_000 });
   // 数据面 useCollection：轮询统一 15s 取齐其余三表（旧 catalog useRoles
   // 键在 ["settings","roles"] 是 60s 前缀异类——kit fetch 直打同端点
   // /v1/roles，拍频对齐本页四表）。
@@ -570,7 +561,7 @@ function RolesTab({ createOpen, onCreateOpenChange }: { createOpen: boolean; onC
         confirmLabel="Delete role"
         onConfirm={() => removeRole.mutateAsync({ id: deleting?.id ?? "" })}
       />
-      <CreateRoleDialog open={createOpen} onClose={() => onCreateOpenChange(false)} teams={teams.data?.rows ?? []} />
+      <CreateRoleDialog open={createOpen} onClose={() => onCreateOpenChange(false)} teams={teams.rows} />
     </>
   );
 }
@@ -644,14 +635,10 @@ function InvitationsTab({ createOpen, onCreateOpenChange }: { createOpen: boolea
     search: identitySearch,
     query: { refetchInterval: 15_000 },
   });
-  // 下拉伴读（批4 换 kit 集合固定窗）：teams 15s / roles 60s 对齐旧
-  // catalog useTeams/useRoles 拍频。
-  const teams = useQuery(
-    collectionQueryOptions(teamsResource, pickerQuery, { refetchInterval: 15_000 }),
-  );
-  const roles = useQuery(
-    collectionQueryOptions(rolesResource, pickerQuery, { refetchInterval: 60_000 }),
-  );
+  // 下拉伴读（批4 换 kit 集合固定窗；F1 回流批 useCollectionData 化）：
+  // teams 15s / roles 60s 对齐旧 catalog useTeams/useRoles 拍频。
+  const teams = useCollectionData(teamsResource, { window: { size: 100 }, refetchInterval: 15_000 });
+  const roles = useCollectionData(rolesResource, { window: { size: 100 }, refetchInterval: 60_000 });
 
   const columns: LegacyColumnDef<InvitationEntry, any>[] = [
     {
@@ -743,8 +730,8 @@ function InvitationsTab({ createOpen, onCreateOpenChange }: { createOpen: boolea
       <CreateInvitationDialog
         open={createOpen}
         onClose={() => onCreateOpenChange(false)}
-        teams={teams.data?.rows ?? []}
-        roles={roles.data?.rows ?? []}
+        teams={teams.rows}
+        roles={roles.rows}
       />
     </>
   );

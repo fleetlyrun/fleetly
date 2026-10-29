@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { useCommand } from "@lynx-go/uikit-core";
+import { useCollectionData, useCommand } from "@lynx-go/uikit-core";
 import type { ApiError, CommandResult } from "@lynx-go/uikit-core/kernel";
-import { useProjectsDirectory } from "@/kit/projects";
-import { useAppsDirectory } from "@/kit/apps";
+import { projectsResource } from "@/kit/projects";
+import { appsResource } from "@/kit/apps";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -32,9 +32,14 @@ const ALERT_METRICS = [
 ] as const;
 
 export function CreateRuleDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
-  const projects = useProjectsDirectory();
+  const projects = useCollectionData(projectsResource, { window: { size: 100 }, refetchInterval: 60_000 });
   const [projectId, setProjectId] = useState("");
-  const apps = useAppsDirectory(projectId);
+  const apps = useCollectionData(appsResource, {
+    scope: { projectId },
+    window: { size: 200 },
+    refetchInterval: 60_000,
+    enabled: projectId !== "",
+  });
   const [appId, setAppId] = useState("");
   const [metric, setMetric] = useState<string>(ALERT_METRICS[0].key);
   const [threshold, setThreshold] = useState("");
@@ -77,7 +82,7 @@ export function CreateRuleDialog({ open, onOpenChange }: { open: boolean; onOpen
                 <SelectValue placeholder="— pick a project —" />
               </SelectTrigger>
               <SelectContent>
-                {(projects.data?.rows ?? []).map((project) => (
+                {projects.rows.map((project) => (
                   <SelectItem key={project.id} value={project.id}>
                     {project.name}
                   </SelectItem>
@@ -92,7 +97,7 @@ export function CreateRuleDialog({ open, onOpenChange }: { open: boolean; onOpen
                 <SelectValue placeholder="— pick an app —" />
               </SelectTrigger>
               <SelectContent>
-                {(apps.data?.rows ?? []).map((app) => (
+                {apps.rows.map((app) => (
                   <SelectItem key={app.id} value={app.id}>
                     {app.name}
                   </SelectItem>

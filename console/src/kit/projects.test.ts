@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { setToken } from "@/lib/token";
-import { fetchProjects, projectsAllQuery, projectsResource } from "./projects";
+import { fetchProjects, projectsResource } from "./projects";
 
 // 项目目录资源锚（批4 读面收尾 R1）：端点（GET /v1/projects?limit=100）与
 // 收敛口径（id/name 双全才收——裸行不带名的宽松生成形不进目录）。
@@ -38,8 +38,7 @@ describe("projects fetcher（端点 + 收敛）", () => {
     expect(String(url)).toBe("/v1/projects?limit=100");
   });
 
-  it("伴读固定窗 size 100（queryKey 嵌窗形——共享 projectsAllQuery 即同缓存条目）", () => {
-    expect(projectsAllQuery).toEqual({ window: { size: 100 } });
+  it("getId 锚（伴读窗约定见 kit/projects.ts 注——size 100 整表窗）", () => {
     expect(projectsResource.getId?.({ id: "p1", name: "fleet" })).toBe("p1");
   });
 });

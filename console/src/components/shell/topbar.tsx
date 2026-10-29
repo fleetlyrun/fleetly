@@ -1,8 +1,7 @@
 import { useNavigate, useRouterState } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
 import { PlusIcon, RocketIcon, SearchIcon, SparklesIcon, SquareTerminalIcon } from "lucide-react";
 import type { ReactNode } from "react";
-import { collectionQueryOptions } from "@lynx-go/uikit-core";
+import { useCollectionData } from "@lynx-go/uikit-core";
 import { Breadcrumb, BreadcrumbItem, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,7 +10,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { projectsAllQuery, projectsResource } from "@/kit/projects";
+import { projectsResource } from "@/kit/projects";
 import { ThemeToggle } from "./theme-toggle";
 
 // 顶条（AppShell 主区 flex-none 行）：移动菜单触发 + 面包屑 + New + 搜索⌘K。
@@ -50,11 +49,9 @@ const CRUMB_LABELS: Record<string, string> = {
 
 export function Topbar({ onOpenPalette, mobileNav }: { onOpenPalette: () => void; mobileNav?: ReactNode }) {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
-  // 60s 轮询对齐旧 catalog useProjects（CATALOG_MS）。
-  const projects = useQuery(
-    collectionQueryOptions(projectsResource, projectsAllQuery, { refetchInterval: 60_000 }),
-  );
-  const projectNames = new Map((projects.data?.rows ?? []).map((project) => [project.id, project.name]));
+  // 60s 轮询对齐旧 catalog useProjects（CATALOG_MS）；整表窗 size 100。
+  const projects = useCollectionData(projectsResource, { window: { size: 100 }, refetchInterval: 60_000 });
+  const projectNames = new Map(projects.rows.map((project) => [project.id, project.name]));
   const crumbs = pathname.split("/").filter(Boolean);
 
   return (
