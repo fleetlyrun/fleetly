@@ -6,9 +6,9 @@ import { PageHeader } from "./page-header";
 // 机制收口后衬垫/页头全仓唯一宿主就是本件（ModulePage 经此组合）：kit
 // ListPage 已零页面 chrome（壳内模块配方），一页一壳由组件形状保证。
 // 2026-10-27 走查统一裁决：**主内容宽度流体全宽，全部页面同列**——
-// 原 wide/narrow/flow 三档 max-w 与 kit FleetListPage 的流体容器并存造成
+// 原 wide/narrow/flow 三档 max-w 与 kit kit ListPage 的流体容器并存造成
 // 页面间宽度不一致（用户反馈），三档退役：width prop 保留签名兼容（不再
-// 分档），容器统一 `w-full px-6 pt-6 pb-8`（与 FleetListPage/壳横向衬垫
+// 分档），容器统一 `w-full px-6 pt-6 pb-8`（与 kit ListPage/壳横向衬垫
 // px-6 同族）。title 省略 = 纯容器（Detail 类页自带英雄卡）：此时
 // breadcrumb 落壳内裸 crumb 槽（mb-3 接英雄卡）——不收槽位页面裸塞首
 // 元素，上吃满 pt 下贴卡片（2026-10-12 走查实咬）。

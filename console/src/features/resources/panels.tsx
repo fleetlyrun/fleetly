@@ -19,7 +19,7 @@ import { specIndex } from "@/features/spec/use-app-specs";
 import { buildTar, rootPrefixOf } from "@/lib/tar";
 import { DataTable } from "@/components/kit/query/data-table";
 import { FilterBar } from "@/components/kit/query/filter-bar";
-import { ListPage as FleetListPage } from "@/components/kit/query/list-page";
+import { ListPage } from "@/components/kit/query/list-page";
 import { Pagination } from "@/components/kit/query/pagination";
 import { Form } from "@/components/kit/command/form";
 import { SelectField, TextField } from "@/components/kit/command/fields";
@@ -237,7 +237,7 @@ function NetworksTab({ projectId, routeId }: { projectId: string; routeId: strin
   const filtered = list.query.predicate != null;
 
   return (
-    <FleetListPage
+    <ListPage
       list={list}
       toolbar={
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -256,7 +256,7 @@ function NetworksTab({ projectId, routeId }: { projectId: string; routeId: strin
       appendix={<CliEquivalent command={`fleetly networks list --project ${projectId}`} />}
     >
       <DataTable list={list} columns={columns} getRowId={(row) => row.id ?? ""} />
-    </FleetListPage>
+    </ListPage>
   );
 }
 
@@ -352,7 +352,7 @@ export function PeersPanel({ projectId, routeId }: { projectId: string; routeId:
       <p className="text-xs text-muted">
         Cross-project network attachment: the attaching project declares, the network owner approves.
       </p>
-      <FleetListPage
+      <ListPage
         list={list}
         toolbar={<FilterBar list={list} schema={networksSearch} textPlaceholder="Filter peers..." />}
         pagination={<Pagination list={list} />}
@@ -362,7 +362,7 @@ export function PeersPanel({ projectId, routeId }: { projectId: string; routeId:
         }
       >
         <DataTable list={list} columns={columns} getRowId={(row) => row.id ?? ""} />
-      </FleetListPage>
+      </ListPage>
       <DeclarePeerForm projectId={projectId} networks={networks.data?.rows ?? []} />
     </section>
   );
@@ -696,7 +696,7 @@ function RoutesTab({
   const filtered = list.query.predicate != null;
 
   return (
-    <FleetListPage
+    <ListPage
       list={list}
       toolbar={
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -714,7 +714,7 @@ function RoutesTab({
       appendix={<CliEquivalent command={`fleetly routes list --project ${projectId}`} />}
     >
       <DataTable list={list} columns={columns} getRowId={(row) => row.id ?? ""} />
-    </FleetListPage>
+    </ListPage>
   );
 }
 
@@ -885,7 +885,7 @@ function VolumesTab({ projectId, routeId }: { projectId: string; routeId: string
   const filtered = list.query.predicate != null;
 
   return (
-    <FleetListPage
+    <ListPage
       list={list}
       toolbar={
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -948,7 +948,7 @@ function VolumesTab({ projectId, routeId }: { projectId: string; routeId: string
       }
     >
       <DataTable list={list} columns={columns} getRowId={(row) => row.id ?? ""} />
-    </FleetListPage>
+    </ListPage>
   );
 }
 
@@ -1151,7 +1151,7 @@ function SecretsTab({ projectId, routeId }: { projectId: string; routeId: string
   const filtered = list.query.predicate != null;
 
   return (
-    <FleetListPage
+    <ListPage
       list={list}
       toolbar={
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1175,7 +1175,7 @@ function SecretsTab({ projectId, routeId }: { projectId: string; routeId: string
       appendix={<CliEquivalent command={`fleetly secrets list --project ${projectId}`} />}
     >
       <DataTable list={list} columns={columns} getRowId={(row) => row.id ?? row.name ?? ""} />
-    </FleetListPage>
+    </ListPage>
   );
 }
 
@@ -1263,7 +1263,7 @@ function ConfigsTab({ projectId, routeId }: { projectId: string; routeId: string
   const filtered = list.query.predicate != null;
 
   return (
-    <FleetListPage
+    <ListPage
       list={list}
       toolbar={
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1298,7 +1298,7 @@ function ConfigsTab({ projectId, routeId }: { projectId: string; routeId: string
         getRowId={(row) => row.id ?? row.name ?? ""}
         onRowClick={(row) => setSelected(row)}
       />
-    </FleetListPage>
+    </ListPage>
   );
 }
 
@@ -1511,7 +1511,7 @@ function VariablesTab({
   const filtered = list.query.predicate != null;
 
   return (
-    <FleetListPage
+    <ListPage
       list={list}
       toolbar={
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1541,7 +1541,7 @@ function VariablesTab({
       }
     >
       <DataTable list={list} columns={columns} getRowId={(row) => row.id ?? row.name ?? ""} />
-    </FleetListPage>
+    </ListPage>
   );
 }
 
@@ -1729,7 +1729,7 @@ function UploadsTab({ projectId, routeId }: { projectId: string; routeId: string
   const filtered = list.query.predicate != null;
 
   return (
-    <FleetListPage
+    <ListPage
       list={list}
       toolbar={
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1764,6 +1764,6 @@ function UploadsTab({ projectId, routeId }: { projectId: string; routeId: string
       }
     >
       <DataTable list={list} columns={columns} getRowId={(row) => row.id ?? ""} />
-    </FleetListPage>
+    </ListPage>
   );
 }

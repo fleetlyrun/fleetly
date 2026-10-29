@@ -28,7 +28,7 @@ import { RelativeTime } from "@/components/domain/relative-time";
 import { StatusBadge } from "@/components/domain/status-badge";
 import { DataTable } from "@/components/kit/query/data-table";
 import { FilterBar } from "@/components/kit/query/filter-bar";
-import { ListPage as FleetListPage } from "@/components/kit/query/list-page";
+import { ListPage } from "@/components/kit/query/list-page";
 import { Pagination } from "@/components/kit/query/pagination";
 import { Button } from "@/components/ui/button";
 import {
@@ -47,7 +47,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 // useCollection 化 + 批2 写面 useCommand 化 + 批4 伴读 kit 化）：users /
 // teams / roles / invitations 四 tab（URL param），动词面对齐 CLI。明文凭证
 // 沿 CLI 口径：邀请 secret 只在铸造响应出现一次（SecretReveal 形态）。列表
-// 骨架换 fleet 块（FleetListPage × FilterBar × DataTable × Pagination），快筛/
+// 骨架换 uikit 块（kit ListPage × FilterBar × DataTable × Pagination），快筛/
 // 分页首次进 URL（identitySearch 四 tab 共享实例，q/分页跨 tab 持久）；users
 // 行内设密跨行展开走 DataTable 本地扩展槽 renderExtraRow（展开态归页面）。
 // 写面批2 全走 kit/identity.ts 的 resource commands（四创建弹窗保留
@@ -168,7 +168,7 @@ function UsersTab({ createOpen, onCreateOpenChange }: { createOpen: boolean; onC
   const filtered = list.query.predicate != null;
   return (
     <>
-      <FleetListPage
+      <ListPage
         list={list}
         toolbar={
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -198,7 +198,7 @@ function UsersTab({ createOpen, onCreateOpenChange }: { createOpen: boolean; onC
             ) : null
           }
         />
-      </FleetListPage>
+      </ListPage>
       <CreateUserDialog open={createOpen} onClose={() => onCreateOpenChange(false)} />
     </>
   );
@@ -407,7 +407,7 @@ function TeamsTab() {
   const filtered = list.query.predicate != null;
   return (
     <>
-      <FleetListPage
+      <ListPage
         list={list}
         toolbar={
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -428,7 +428,7 @@ function TeamsTab() {
         appendix={<CliEquivalent command="fleetly teams list" />}
       >
         <DataTable list={list} columns={columns} getRowId={(row) => row.id ?? ""} />
-      </FleetListPage>
+      </ListPage>
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -540,7 +540,7 @@ function RolesTab({ createOpen, onCreateOpenChange }: { createOpen: boolean; onC
   const filtered = list.query.predicate != null;
   return (
     <>
-      <FleetListPage
+      <ListPage
         list={list}
         toolbar={
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -561,7 +561,7 @@ function RolesTab({ createOpen, onCreateOpenChange }: { createOpen: boolean; onC
         appendix={<CliEquivalent command="fleetly roles list" />}
       >
         <DataTable list={list} columns={columns} getRowId={(row) => row.id ?? ""} />
-      </FleetListPage>
+      </ListPage>
       <ConfirmDialog
         open={deleting != null}
         onOpenChange={(open) => !open && setDeleting(null)}
@@ -718,7 +718,7 @@ function InvitationsTab({ createOpen, onCreateOpenChange }: { createOpen: boolea
   const filtered = list.query.predicate != null;
   return (
     <>
-      <FleetListPage
+      <ListPage
         list={list}
         toolbar={
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -738,7 +738,7 @@ function InvitationsTab({ createOpen, onCreateOpenChange }: { createOpen: boolea
         }
       >
         <DataTable list={list} columns={columns} getRowId={(row) => row.id ?? ""} />
-      </FleetListPage>
+      </ListPage>
       {/* invitations 无 CLI list 动词——CLI 行诚实省略 */}
       <CreateInvitationDialog
         open={createOpen}

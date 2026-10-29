@@ -10,7 +10,7 @@ import { RelativeTime } from "@/components/domain/relative-time";
 import { statusToneClass } from "@/components/domain/status-badge";
 import { DataTable } from "@/components/kit/query/data-table";
 import { FilterBar } from "@/components/kit/query/filter-bar";
-import { ListPage as FleetListPage } from "@/components/kit/query/list-page";
+import { ListPage } from "@/components/kit/query/list-page";
 import { Pagination } from "@/components/kit/query/pagination";
 
 // Backups 聚合页（IA v3 T7，§5.3 → 2026-10-26 批1 Wave2-A useCollection
@@ -31,7 +31,7 @@ export function BackupsView({
   from: string;
 }) {
   // 一页一壳（2026-10-28 机制收口）：壳 = ModulePage（衬垫 + 页头三件 +
-  // 页级 tab 条，位次对齐 Tasks/Registry 模块页）；双 tab 的 FleetListPage
+  // 页级 tab 条，位次对齐 Tasks/Registry 模块页）；双 tab 的 kit ListPage
   // 降为壳内模块配方（kit 件零页面 chrome）——tab 条不再内迁 toolbar。
   return (
     <ModulePage
@@ -132,7 +132,7 @@ function DatabasesTab({ from }: { from: string }) {
 
   const filtered = list.query.predicate != null;
   return (
-    <FleetListPage
+    <ListPage
       list={list}
       toolbar={<FilterBar list={list} schema={backupsSearch} textPlaceholder="Filter databases..." />}
       pagination={<Pagination list={list} />}
@@ -144,7 +144,7 @@ function DatabasesTab({ from }: { from: string }) {
       }
     >
       <DataTable list={list} columns={columns} getRowId={(row) => row.id} />
-    </FleetListPage>
+    </ListPage>
   );
 }
 
@@ -183,7 +183,7 @@ function SnapshotsTab({ from }: { from: string }) {
 
   const filtered = list.query.predicate != null;
   return (
-    <FleetListPage
+    <ListPage
       list={list}
       toolbar={<FilterBar list={list} schema={backupsSearch} textPlaceholder="Filter snapshots..." />}
       pagination={<Pagination list={list} />}
@@ -205,7 +205,7 @@ function SnapshotsTab({ from }: { from: string }) {
       }
     >
       <DataTable list={list} columns={columns} getRowId={(row) => row.id ?? ""} />
-    </FleetListPage>
+    </ListPage>
   );
 }
 

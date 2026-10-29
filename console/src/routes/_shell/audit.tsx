@@ -4,7 +4,7 @@ import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
 import { formatAbsolute } from "@/lib/format";
 import { DataTable } from "@/components/kit/query/data-table";
 import { FilterBar } from "@/components/kit/query/filter-bar";
-import { ListPage as FleetListPage } from "@/components/kit/query/list-page";
+import { ListPage } from "@/components/kit/query/list-page";
 import { Pagination } from "@/components/kit/query/pagination";
 import { CliEquivalent } from "@/components/domain/list-toolbar";
 import { PageFrame } from "@/components/domain/page-frame";
@@ -85,12 +85,12 @@ function AuditPage() {
 
   return (
     // 一页一壳（2026-10-28 机制收口）：壳 = PageFrame（衬垫 + 页头三件
-    // 单源）；FleetListPage 降为壳内模块配方（kit 件零页面 chrome）。
+    // 单源）；kit ListPage 降为壳内模块配方（kit 件零页面 chrome）。
     <PageFrame
       title="Audit"
       description="Server-written audit records (GET /v1/audit) — the console observes, never writes"
     >
-      <FleetListPage
+      <ListPage
         list={list}
         toolbar={<FilterBar list={list} schema={auditSearch} textPlaceholder="Filter audit..." />}
         pagination={<Pagination list={list} />}
@@ -103,7 +103,7 @@ function AuditPage() {
         appendix={<CliEquivalent command="fleetly audit --limit 100" />}
       >
         <DataTable list={list} columns={columns} getRowId={(row) => row.id ?? ""} />
-      </FleetListPage>
+      </ListPage>
     </PageFrame>
   );
 }

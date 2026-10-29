@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { setToken } from "@/lib/token";
 import { appsResource, appsSearch, fetchApps } from "./apps";
 
-// fleet-ui 适配器族单测（试点切片）：protojson 行收敛、作用域参数与鉴权头、
+// uikit 适配器族单测（试点切片）：protojson 行收敛、作用域参数与鉴权头、
 // 空 scope 不发请求、URL 编解码往返。fetch 面 stub 在 global（kit http 管线
 // 调用裸 fetch）。
 

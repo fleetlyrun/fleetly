@@ -13,7 +13,7 @@ import { ProjectAvatar } from "@/components/domain/project-avatar";
 import { RelativeTime } from "@/components/domain/relative-time";
 import { DataTable } from "@/components/kit/query/data-table";
 import { FilterBar } from "@/components/kit/query/filter-bar";
-import { ListPage as FleetListPage } from "@/components/kit/query/list-page";
+import { ListPage } from "@/components/kit/query/list-page";
 import { Pagination } from "@/components/kit/query/pagination";
 import { GitHubAppsView } from "@/features/githubapps/github-apps-view";
 import { useAppsDirectory } from "@/kit/apps";
@@ -147,7 +147,7 @@ function RegistryAppsTab({ projectId, routeId }: { projectId: string; routeId: s
   const filtered = list.query.predicate != null;
 
   return (
-    <FleetListPage
+    <ListPage
       list={list}
       toolbar={<FilterBar list={list} schema={registrySearch} textPlaceholder="Filter apps..." />}
       pagination={<Pagination list={list} />}
@@ -162,7 +162,7 @@ function RegistryAppsTab({ projectId, routeId }: { projectId: string; routeId: s
       }
     >
       <DataTable list={list} columns={columns} getRowId={(row) => row.id} />
-    </FleetListPage>
+    </ListPage>
   );
 }
 

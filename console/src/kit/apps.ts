@@ -16,9 +16,9 @@ export interface AppEntry {
   created_at: string;
 }
 
-// fleet-ui 适配器族（试点切片：apps 目录是第一个资源，后续 12 上下文分批
+// uikit 适配器族（试点切片：apps 目录是第一个资源，后续 12 上下文分批
 // 落此目录）。REST+protojson 直连 /v1/apps——int64 全 string（生成链钉死，
-// fleet-ui design §5.2 string 侧）；列表方言 = 整取 + 客户端求值
+// uikit design §5.2 string 侧）；列表方言 = 整取 + 客户端求值
 // （clientCollection 本地求值谓词/排序/窗口并伪造游标，fleetly 方言）。
 
 const http = createHttp({ onUnauthorized: notifyUnauthorized });

@@ -34,7 +34,7 @@ import { RelativeTime } from "@/components/domain/relative-time";
 import { StatusBadge, statusToneClass, type StatusTone } from "@/components/domain/status-badge";
 import { DataTable } from "@/components/kit/query/data-table";
 import { FilterBar } from "@/components/kit/query/filter-bar";
-import { ListPage as FleetListPage } from "@/components/kit/query/list-page";
+import { ListPage } from "@/components/kit/query/list-page";
 import { Pagination } from "@/components/kit/query/pagination";
 import { Form } from "@/components/kit/command/form";
 import { SelectField, TextField } from "@/components/kit/command/fields";
@@ -80,7 +80,7 @@ import { toastOnSettled } from "@/kit/toast";
 // 列表（备份健康度列）+ 详情 5-tab（Overview/Metrics/Backups/Browse/Settings）。
 // Logs tab 按设计文档 §8 T8 结论留二期（StreamLogsRequest 无 database 轴）；
 // Metrics 走载体寻址 preset（T8：docker label + k3s namespace/pod 双臂）。
-// 2026-10-26 批1 useCollection 化（仅列表页）：骨架换 fleet 块，快筛/引擎
+// 2026-10-26 批1 useCollection 化（仅列表页）：骨架换 uikit 块，快筛/引擎
 // 下拉/分页进 URL。批2 写路径命令化：9 位 useMutation → useCommand/
 // useCommandForm（kit/databases commands 单源；创建对话框迁 kit form 块，
 // 结果通道 rejected/conflict 走结果盒，失败通道 toast describeApiError）。
@@ -216,7 +216,7 @@ export function DatabasesListPage({ projectId, from }: { projectId: string; from
 
   return (
     // 一页一壳（2026-10-28 机制收口）：壳 = PageFrame（衬垫 + 页头三件
-    // 单源）；FleetListPage 降为壳内模块配方（kit 件零页面 chrome）。
+    // 单源）；kit ListPage 降为壳内模块配方（kit 件零页面 chrome）。
     <PageFrame
       title="Databases"
       description={
@@ -225,7 +225,7 @@ export function DatabasesListPage({ projectId, from }: { projectId: string; from
           : "Managed databases — scheduled backups with verify & restore (ADR-0039)"
       }
     >
-      <FleetListPage
+      <ListPage
         list={list}
         toolbar={
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -276,7 +276,7 @@ export function DatabasesListPage({ projectId, from }: { projectId: string; from
             navigate({ to: "/p/$projectId/databases/$databaseId", params: { projectId, databaseId: row.id ?? "" } })
           }
         />
-      </FleetListPage>
+      </ListPage>
     </PageFrame>
   );
 }

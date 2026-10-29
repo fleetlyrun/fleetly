@@ -6,7 +6,7 @@ import { RocketIcon } from "lucide-react";
 import { DeploySheet } from "@/features/deployments/deploy-sheet";
 import { DataTable } from "@/components/kit/query/data-table";
 import { FilterBar } from "@/components/kit/query/filter-bar";
-import { ListPage as FleetListPage } from "@/components/kit/query/list-page";
+import { ListPage } from "@/components/kit/query/list-page";
 import { Pagination } from "@/components/kit/query/pagination";
 import { PageFrame } from "@/components/domain/page-frame";
 import { ProjectAvatar } from "@/components/domain/project-avatar";
@@ -113,12 +113,12 @@ function ProjectDeploymentsPage() {
 
   return (
     // 一页一壳（2026-10-28 机制收口）：壳 = PageFrame（衬垫 + 页头三件
-    // 单源）；FleetListPage 降为壳内模块配方（kit 件零页面 chrome）。
+    // 单源）；kit ListPage 降为壳内模块配方（kit 件零页面 chrome）。
     <PageFrame
       title="Deployments"
       description="All apps in this project — client-side fan-out, refreshed every 15s"
     >
-      <FleetListPage
+      <ListPage
         list={list}
         toolbar={
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -171,7 +171,7 @@ function ProjectDeploymentsPage() {
             });
           }}
         />
-      </FleetListPage>
+      </ListPage>
     </PageFrame>
   );
 }

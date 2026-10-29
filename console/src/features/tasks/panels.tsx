@@ -11,7 +11,7 @@ import { CliEquivalent } from "@/components/domain/list-toolbar";
 import { RelativeTime } from "@/components/domain/relative-time";
 import { DataTable } from "@/components/kit/query/data-table";
 import { FilterBar } from "@/components/kit/query/filter-bar";
-import { ListPage as FleetListPage } from "@/components/kit/query/list-page";
+import { ListPage } from "@/components/kit/query/list-page";
 import { Pagination } from "@/components/kit/query/pagination";
 import { describeApiError } from "@/kit/errors";
 import { Button } from "@/components/ui/button";
@@ -46,7 +46,7 @@ import {
 // + Run 观察 + 时区 cron Schedule。动词面对齐 CLI（create/scale/stop/
 // delete/renew + schedules create/trigger/delete + runs stop）。项目语境改
 // 为入参；from=路由 id 由路由文件注入（panels 不反查路由，避免 route ↔
-// feature 循环引用）。列表骨架换 fleet 块（FleetListPage × FilterBar ×
+// feature 循环引用）。列表骨架换 uikit 块（kit ListPage × FilterBar ×
 // DataTable × Pagination），快筛/分页首次进 URL（tasksSearch 双 tab 共享
 // 实例）；runs 跨行展开走 DataTable 本地扩展槽 renderExtraRow（展开态归页
 // 面）。批2：写面 useCommand（kit/tasks.ts 的 defineResource commands +
@@ -309,7 +309,7 @@ export function TasksPanel({ projectId, from }: { projectId: string; from: strin
 
   const filtered = list.query.predicate != null;
   return (
-    <FleetListPage
+    <ListPage
       list={list}
       toolbar={
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -336,7 +336,7 @@ export function TasksPanel({ projectId, from }: { projectId: string; from: strin
           ) : null
         }
       />
-    </FleetListPage>
+    </ListPage>
   );
 }
 
@@ -677,7 +677,7 @@ export function SchedulesPanel({ projectId, from }: { projectId: string; from: s
 
   const filtered = list.query.predicate != null;
   return (
-    <FleetListPage
+    <ListPage
       list={list}
       toolbar={
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -695,7 +695,7 @@ export function SchedulesPanel({ projectId, from }: { projectId: string; from: s
       appendix={<CliEquivalent command={`fleetly schedules list --project ${projectId}`} />}
     >
       <DataTable list={list} columns={columns} getRowId={(row) => row.id ?? ""} />
-    </FleetListPage>
+    </ListPage>
   );
 }
 

@@ -26,7 +26,7 @@ import { RelativeTime } from "@/components/domain/relative-time";
 import { StatusBadge, alertTone } from "@/components/domain/status-badge";
 import { DataTable } from "@/components/kit/query/data-table";
 import { FilterBar } from "@/components/kit/query/filter-bar";
-import { ListPage as FleetListPage } from "@/components/kit/query/list-page";
+import { ListPage } from "@/components/kit/query/list-page";
 import { Pagination } from "@/components/kit/query/pagination";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -186,7 +186,7 @@ function RulesPanel({ from, states, onCreate }: { from: string; states: AlertSta
   const filtered = list.query.predicate != null;
   return (
     <>
-      <FleetListPage
+      <ListPage
         list={list}
         toolbar={
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -216,7 +216,7 @@ function RulesPanel({ from, states, onCreate }: { from: string; states: AlertSta
         appendix={<CliEquivalent command="fleetly alerts rules list" />}
       >
         <DataTable list={list} columns={columns} getRowId={(row) => row.id ?? ""} />
-      </FleetListPage>
+      </ListPage>
 
       <ConfirmDialog
         open={deleting != null}
@@ -324,7 +324,7 @@ function ChannelsPanel({ from }: { from: string }) {
   const filtered = list.query.predicate != null;
   return (
     <>
-      <FleetListPage
+      <ListPage
         list={list}
         toolbar={
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -348,7 +348,7 @@ function ChannelsPanel({ from }: { from: string }) {
         appendix={<CliEquivalent command="fleetly channels list" />}
       >
         <DataTable list={list} columns={columns} getRowId={(row) => row.id ?? ""} />
-      </FleetListPage>
+      </ListPage>
 
       <ConfirmDialog
         open={deleting != null}

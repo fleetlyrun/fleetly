@@ -2,12 +2,12 @@ import { useMemo } from "react";
 import type { components } from "@/api/telemetry";
 import {
   type MetricSeries,
-  MetricChart as FleetMetricChart,
+  MetricChart as UIKitMetricChart,
 } from "@/components/kit/values/metric-chart";
 import { formatMetricValue } from "./metric-presets";
 
-// MetricChart（metrics 直迁批，2026-10-24）：渲染面整页换 fleet-ui 块
-// （components/fleet/values/metric-chart——序列治理四件套内置），本文件只剩
+// MetricChart（metrics 直迁批，2026-10-24）：渲染面整页换 uikit 块
+// （components/kit/values/metric-chart——序列治理四件套内置），本文件只剩
 // **页面投影**：v1MetricSeries → MetricSeries（seriesIdentity 是业务词汇，
 // 留 console 侧——design §6.1 裁决"base/replica 归一不进块"）。三个调用点
 // （工作台 / app metrics tab / databases metrics）props 不变。
@@ -15,7 +15,7 @@ import { formatMetricValue } from "./metric-presets";
 // 序列归属与生命周期（ADR-0065 L3）：显示名优先 process 人读服务名（词汇
 // 与 raw cadvisor 标签双形态识别），同名副本以容器名尾判别；键 = s{原始下标}
 // 跨刷新稳定（配色随键稳定；曾用 index%5 当键，>5 序列碰撞覆写的教训成文于
-// fleet-ui §6.1）。
+// uikit §6.1）。
 
 type V1MetricSeries = components["schemas"]["v1MetricSeries"];
 
@@ -88,7 +88,7 @@ export function MetricChart({
 }) {
   const series = useMemo(() => toMetricSeries(seriesList), [seriesList]);
   return (
-    <FleetMetricChart
+    <UIKitMetricChart
       series={series}
       formatValue={(value) => formatMetricValue(value, unit)}
       serverCap={serverCapOf(truncated, seriesTotal, seriesList.length)}

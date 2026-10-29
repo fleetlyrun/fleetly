@@ -3,7 +3,7 @@ import type { components } from "@/api/telemetry";
 import { buildMetricRows } from "@/components/kit/values/metric-chart";
 import { serverCapOf, toMetricSeries } from "./metric-chart";
 
-// 数据底座锚（metrics 直迁批：渲染面换 fleet-ui 块后，锚走薄壳的真实执行
+// 数据底座锚（metrics 直迁批：渲染面换 uikit 块后，锚走薄壳的真实执行
 // 路径 toMetricSeries → buildMetricRows）：protojson 零值缺省（value 缺席 =
 // 0，idle 应用全零序列必须有行——W-B1 曾把它当缺数据跳点致图表空白）、多
 // 序列时间轴对齐、脏点（time 缺席/不可解析）跳过；ADR-0065 L3：键全序列

@@ -12,7 +12,7 @@ import { CopyButton } from "@/components/domain/copy-button";
 import { RelativeTime } from "@/components/domain/relative-time";
 import { DataTable } from "@/components/kit/query/data-table";
 import { FilterBar } from "@/components/kit/query/filter-bar";
-import { ListPage as FleetListPage } from "@/components/kit/query/list-page";
+import { ListPage } from "@/components/kit/query/list-page";
 import { Pagination } from "@/components/kit/query/pagination";
 import { Button } from "@/components/ui/button";
 import {
@@ -139,7 +139,7 @@ export function GitHubAppsView({ projectId, from }: { projectId?: string; from: 
   const filtered = list.query.predicate != null;
   return (
     <>
-      <FleetListPage
+      <ListPage
         list={list}
         toolbar={
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -168,7 +168,7 @@ export function GitHubAppsView({ projectId, from }: { projectId?: string; from: 
           getRowId={(row) => row.id ?? ""}
           renderExtraRow={(app) => (openRepos != null && app.id === openRepos ? <ReposPanel appId={app.id ?? ""} /> : null)}
         />
-      </FleetListPage>
+      </ListPage>
       {projectId != null ? (
         <p className="mt-3 text-2xs text-muted">
           Build-time resolution order: <span className="font-medium">project GitHub App</span> →{" "}

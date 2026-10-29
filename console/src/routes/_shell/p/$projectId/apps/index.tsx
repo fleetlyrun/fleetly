@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { useCollection, useCommandForm } from "@lynx-go/uikit-core";
 import { DataTable } from "@/components/kit/query/data-table";
 import { FilterBar } from "@/components/kit/query/filter-bar";
-import { ListPage as FleetListPage } from "@/components/kit/query/list-page";
+import { ListPage } from "@/components/kit/query/list-page";
 import { PageFrame } from "@/components/domain/page-frame";
 import { Pagination } from "@/components/kit/query/pagination";
 import { Form } from "@/components/kit/command/form";
@@ -33,7 +33,7 @@ import { appDeploymentsResource, appDeploymentsLookup, type DeploymentRow } from
 import { routesResource, routesLookup } from "@/kit/routes";
 import { projectsAllQuery, projectsResource } from "@/kit/projects";
 
-// Apps 列表（fleet-ui 试点切片，2026-10-24）：骨架换 fleet 块（ListPage ×
+// Apps 列表（uikit 试点切片，2026-10-24）：骨架换 uikit 块（ListPage ×
 // FilterBar × DataTable × Pagination），快筛/分页/排序首次进 URL（q/size/
 // page/sort——旧页是 useState 本地态，无存量参数兼容面，纯增量）；业务件
 // （单元格/创建对话框/DeploySheet/CLI 行）保持本仓自持。语境 projectId 经
@@ -168,7 +168,7 @@ function AppsListPage() {
 
   return (
     // 一页一壳（2026-10-28 机制收口）：壳 = PageFrame（衬垫 + 页头三件
-    // 单源）；FleetListPage 降为壳内模块配方（kit 件零页面 chrome）。
+    // 单源）；kit ListPage 降为壳内模块配方（kit 件零页面 chrome）。
     <PageFrame
       title="Apps"
       description={
@@ -177,12 +177,12 @@ function AppsListPage() {
           : "Deployments are tracked per app — create one to get started"
       }
     >
-      <FleetListPage
+      <ListPage
         list={list}
         toolbar={
           <div className="flex flex-wrap items-center justify-between gap-2">
             <FilterBar list={list} schema={appsSearch} textPlaceholder="Filter apps..." />
-            {/* 列表主动作钉工具栏行最右（本仓对齐批 5 裁决——不吃 fleet 块的页头钮位） */}
+            {/* 列表主动作钉工具栏行最右（本仓对齐批 5 裁决——不吃 uikit 块的页头钮位） */}
             <div className="py-2 pr-3">
               <Button
                 size="sm"
@@ -239,7 +239,7 @@ function AppsListPage() {
             void navigate({ to: "/p/$projectId/apps/$appId", params: { projectId, appId: app.id } });
           }}
         />
-      </FleetListPage>
+      </ListPage>
     </PageFrame>
   )
 }

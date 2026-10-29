@@ -17,7 +17,7 @@ import { RelativeTime } from "@/components/domain/relative-time";
 import { StatusBadge, nodeTone } from "@/components/domain/status-badge";
 import { DataTable } from "@/components/kit/query/data-table";
 import { FilterBar } from "@/components/kit/query/filter-bar";
-import { ListPage as FleetListPage } from "@/components/kit/query/list-page";
+import { ListPage } from "@/components/kit/query/list-page";
 import { Pagination } from "@/components/kit/query/pagination";
 import { Button } from "@/components/ui/button";
 import {
@@ -37,7 +37,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 // 平台管理员门（R08-M1/S16-c7）保持门在 useCollection 之外：whoami 未到
 // /失败/非平台管理员都不挂集合（fail-closed，非管理员不发 /v1/nodes 请
 // 求）——门内表体拆子组件 NodesList，避免条件 return 跨渲染增删 hook。
-// 列表骨架换 fleet 块（ListPage × FilterBar × DataTable × Pagination），
+// 列表骨架换 uikit 块（ListPage × FilterBar × DataTable × Pagination），
 // 快筛/分页/available 降序默认排序进 URL；行内动作失败披露行走
 // DataTable 本地扩展槽 renderExtraRow（错误态归页面 {nodeId, cause} 单开）。
 // 工具栏 Enrollment material/rotate tokens 批2 命令化（useCommand + toast
@@ -155,9 +155,9 @@ function NodesList({ from }: { from: string }) {
   const filtered = list.query.predicate != null;
   return (
     <>
-      {/* FleetListPage 是壳内模块配方（壳在 NodesPage 单源，2026-10-28
+      {/* kit ListPage 是壳内模块配方（壳在 NodesPage 单源，2026-10-28
           机制收口）——弹窗与本表平级，衬垫/页头不归本件。 */}
-      <FleetListPage
+      <ListPage
         list={list}
         toolbar={
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -200,7 +200,7 @@ function NodesList({ from }: { from: string }) {
             ) : null
           }
         />
-      </FleetListPage>
+      </ListPage>
 
       {material != null ? <MaterialDialog material={material} onClose={() => setMaterial(null)} /> : null}
       {relayMaterial != null ? <RelayDialog material={relayMaterial} onClose={() => setRelayMaterial(null)} /> : null}
