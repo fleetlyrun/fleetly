@@ -70,11 +70,14 @@ export const alertRulesResource = defineResource({
   name: "alert-rules",
   getId: (row: AlertRuleRow) => row.id ?? "",
   collection: clientCollection(fetchAlertRules),
-  // 存量键失效桥：对齐旧对话框的 invalidate 键（["alerts"] 前缀——覆盖
-  // catalog 的 ["alerts","rules"] 与 ["alerts","states"] 双键）。
-  legacyKeys: () => [["alerts"]],
   commands: {
     create: createAlertRuleCommand,
+    delete: {
+      run: (input: { id: string }) =>
+        runCommandMapped(async () => {
+          await apiSend(`/v1/alerts/rules/${encodeURIComponent(input.id)}`, "DELETE");
+        }),
+    },
   },
 });
 
@@ -82,6 +85,14 @@ export const channelsResource = defineResource({
   name: "notification-channels",
   getId: (row: ChannelRow) => row.id ?? "",
   collection: clientCollection(fetchAlertingChannels),
+  commands: {
+    delete: {
+      run: (input: { id: string }) =>
+        runCommandMapped(async () => {
+          await apiSend(`/v1/channels/${encodeURIComponent(input.id)}`, "DELETE");
+        }),
+    },
+  },
 });
 
 // 双列表各持 namespace 实例（F1 回流批 M1：rules.q 与 channels.q 并存互
@@ -121,8 +132,6 @@ export const alertStatesResource = defineResource({
   name: "alert-states",
   getId: (row: AlertStateRow) => `${row.rule_id ?? ""}:${row.app_id ?? ""}`,
   collection: clientCollection(fetchAlertStates),
-  // 存量键失效桥：catalog 的 ["alerts","states"] 键
-  legacyKeys: () => [["alerts", "states"]],
 });
 
 // join 读面用大页 schema（firing 总览要全集——窗口不截断行集）。

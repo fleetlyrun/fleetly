@@ -167,14 +167,9 @@ describe("variables 命令族（批 2 写路径命令化）", () => {
     });
   });
 
-  it("失效桥键清单（旧 useApiMutation invalidate 等值；configs 含详情宽前缀）", () => {
-    expect(secretsResource.legacyKeys?.({ projectId: "shop" })).toEqual([["resources", "secrets", "shop"]]);
-    expect(configsResource.legacyKeys?.({ projectId: "shop" })).toEqual([
-      ["resources", "configs", "shop"],
-      ["resources", "config", "shop"],
-    ]);
-    expect(sharedVariablesResource.legacyKeys?.({ projectId: "shop" })).toEqual([
-      ["resources", "shared-variables", "shop"],
-    ]);
+  it("失效桥零读者退役（F1 回流批审计——kit selector 单源，含 config-detail）", () => {
+    expect(secretsResource.legacyKeys).toBeUndefined();
+    expect(configsResource.legacyKeys).toBeUndefined();
+    expect(sharedVariablesResource.legacyKeys).toBeUndefined();
   });
 });

@@ -37,7 +37,6 @@ export const revisionsResource = defineResource({
   scope: ["projectId", "appId"],
   collection: clientCollection(fetchRevisions),
   // 存量键失效桥：catalog useRevisions 的 ["resources","revisions",appId] 前缀
-  legacyKeys: (scope) => [["resources", "revisions", String(scope.appId ?? "")]],
 });
 
 // join 读面用大页 schema（历史下拉/R 序号对表要全集——窗口不截断行集；

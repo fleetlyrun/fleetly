@@ -248,7 +248,7 @@ function TaskRuns({ projectId, taskId, routeId }: { projectId: string; taskId: s
             </thead>
             <tbody>
               {rows.map((run) => (
-                <RunRow key={run.id} run={run} />
+                <RunRow key={run.id} run={run} projectId={projectId} taskId={taskId} />
               ))}
             </tbody>
           </table>
@@ -261,7 +261,7 @@ function TaskRuns({ projectId, taskId, routeId }: { projectId: string; taskId: s
   );
 }
 
-function RunRow({ run }: { run: RunEntry }) {
+function RunRow({ run, projectId, taskId }: { run: RunEntry; projectId: string; taskId: string }) {
   const [logsOpen, setLogsOpen] = useState(false);
   const log = useLogStream();
   function toggleLogs() {
@@ -273,7 +273,10 @@ function RunRow({ run }: { run: RunEntry }) {
     setLogsOpen(true);
     log.start({ runId: run.id ?? "", processes: [], containers: [], tailLines: "300", text: "", follow: true });
   }
+  // M2：失效身份与 runs 读键同形（{projectId, taskId}）——stop 的 runs
+  // selector 投影匹配命中，行状态即时刷新（不再只靠 15s 轮询兜底）。
   const stop = useCommand(stopRunCommand, {
+    scope: { projectId, taskId },
     // ok 原句保留；rejected/conflict → result.message；failure → describeApiError
     onSettled: (result, failure) => {
       if (result?.status === "ok") {

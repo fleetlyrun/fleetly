@@ -7,9 +7,8 @@ import { fetchRows } from "./http";
 
 // 平台设置域资源（2026-10-26 批2 写面 useCommand 化；批4 读面收尾补集合/
 // record 读形）：API token 铸造/吊销、治理冻结 set/lift、平台备份触发、
-// whoami 会话读。写动词沿用 legacyKeys 桥（存量 ["settings",…] 键——
-// command-only 时期的读面键，kit 集合落位后桥待 catalog 退役统一清理）；
-// run 统一 runCommandMapped 结果两分。
+// whoami 会话读。写动词失效 = kit selector（["settings",…] 旧键桥零读者
+// 已退役——F1 回流批审计）；run 统一 runCommandMapped 结果两分。
 
 export type TokenEntry = identitySchemas["schemas"]["v1Token"];
 
@@ -96,7 +95,6 @@ export const tokensResource = defineResource({
     revoke: {
       run: (input: { id: string }) =>
         runCommandMapped(() => apiSend(`/v1/tokens/${encodeURIComponent(input.id)}/revoke`, "POST")),
-      legacyKeys: () => [["settings", "tokens"]],
     },
   },
 });
@@ -110,12 +108,10 @@ export const freezesResource = defineResource({
     freeze: {
       run: (input: { reason: string }) =>
         runCommandMapped(() => apiSend("/v1/governance/freezes", "POST", { reason: input.reason })),
-      legacyKeys: () => [["settings", "freezes"]],
     },
     lift: {
       run: (input: { id: string }) =>
         runCommandMapped(() => apiSend(`/v1/governance/freezes/${encodeURIComponent(input.id)}/lift`, "POST")),
-      legacyKeys: () => [["settings", "freezes"]],
     },
   },
 });
@@ -132,7 +128,6 @@ export const platformBackupsResource = defineResource({
         runCommandMapped<{ backup?: { id?: string } }>(() =>
           apiSend<{ backup?: { id?: string } }>("/v1/platform/backups", "POST", {}),
         ),
-      legacyKeys: () => [["settings", "platform-backups"]],
       // Fleet 备份台账联动（收尾批挂账清偿）：触发后 snapshots 资源一并
       // 失效——Backups 页台账即时出新行。
       invalidates: [{ resource: "platform-snapshots" }],

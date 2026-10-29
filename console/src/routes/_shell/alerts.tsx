@@ -1,13 +1,13 @@
 import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 import { BellIcon, PlusIcon } from "lucide-react";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
 import { toast } from "sonner";
-import { useCollection } from "@lynx-go/uikit-core";
+import { useCollection, useCommand } from "@lynx-go/uikit-core";
 import type { components as telemetrySchemas } from "@/api/telemetry";
 import { apiSend } from "@/api/client";
+import { toastOnSettled } from "@/kit/toast";
 import {
   alertRulesResource,
   alertStatesLookup,
@@ -112,11 +112,15 @@ function AlertsPage() {
 // RulesPanel：规则表（行内 state/since 由 states 前端 join 覆盖——live 值
 // 优先，缺席回退行内联 state）+ Delete。
 function RulesPanel({ from, states, onCreate }: { from: string; states: AlertState[]; onCreate: () => void }) {
-  const queryClient = useQueryClient();
   const list = useCollection(alertRulesResource, {
     from,
     search: rulesSearch,
     query: { refetchInterval: 15_000 },
+  });
+  // 删除走 kit 命令（F1 回流批）：失效经同资源 selector 单源——裸 apiSend +
+  // 手工 invalidateQueries(["alerts"]) 的旧键族打空已退役。
+  const removeRule = useCommand(alertRulesResource.commands.delete, {
+    onSettled: toastOnSettled(() => toast("Alert rule deleted")),
   });
   const stateOf = new Map(states.map((state) => [state.rule_id ?? "", state]));
   const [deleting, setDeleting] = useState<AlertRuleRow | null>(null);
@@ -124,10 +128,8 @@ function RulesPanel({ from, states, onCreate }: { from: string; states: AlertSta
   // deleteRule 供 ConfirmDialog 的 onConfirm 消费（失败经 toast 披露，
   // 弹窗由 ConfirmDialog 落定关窗——全站统一契约）。
   function deleteRule(id: string) {
-    return apiSend(`/v1/alerts/rules/${encodeURIComponent(id)}`, "DELETE").then(() => {
-      void queryClient.invalidateQueries({ queryKey: ["alerts"] });
-      toast("Alert rule deleted");
-    });
+    removeRule.mutate({ id });
+    return Promise.resolve();
   }
 
   const columns: LegacyColumnDef<AlertRuleRow, any>[] = [
@@ -239,7 +241,6 @@ function RulesPanel({ from, states, onCreate }: { from: string; states: AlertSta
 }
 
 function ChannelsPanel({ from }: { from: string }) {
-  const queryClient = useQueryClient();
   const list = useCollection(channelsResource, {
     from,
     search: channelsSearch,
@@ -247,12 +248,15 @@ function ChannelsPanel({ from }: { from: string }) {
   });
   const [deleting, setDeleting] = useState<ChannelRow | null>(null);
   const [testing, setTesting] = useState<string | null>(null);
+  // 删除走 kit 命令（F1 回流批）：失效经同资源 selector 单源（旧
+  // ["settings","channels"] 手工失效键族打空已退役）。
+  const removeChannel = useCommand(channelsResource.commands.delete, {
+    onSettled: toastOnSettled(() => toast("Channel deleted")),
+  });
 
   function deleteChannel(id: string) {
-    return apiSend(`/v1/channels/${encodeURIComponent(id)}`, "DELETE").then(() => {
-      void queryClient.invalidateQueries({ queryKey: ["settings", "channels"] });
-      toast("Channel deleted");
-    });
+    removeChannel.mutate({ id });
+    return Promise.resolve();
   }
 
   function runTest(channelId: string) {

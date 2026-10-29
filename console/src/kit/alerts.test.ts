@@ -5,6 +5,7 @@ import {
   alertRulesResource,
   alertStatesLookup,
   alertStatesResource,
+  channelsResource,
   channelsSearch,
   rulesSearch,
   fetchAlertingChannels,
@@ -116,8 +117,15 @@ describe("alertRules commands（批2 写路径命令锚）", () => {
     });
   });
 
-  it("legacyKeys 桥对齐旧 invalidate 键（[\"alerts\"] 前缀盖 rules/states 双键）", () => {
-    expect(alertRulesResource.commands.create.legacyKeys?.({})).toEqual([["alerts"]]);
+  it("delete 命令端点锚；legacyKeys 桥零读者退役（F1 回流批审计）", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({}));
+    vi.stubGlobal("fetch", fetchMock);
+    await alertRulesResource.commands.delete.run({ id: "r1" });
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(String(url)).toBe("/v1/alerts/rules/r1");
+    expect(init.method).toBe("DELETE");
+    expect(alertRulesResource.commands.delete.legacyKeys).toBeUndefined();
+    expect(channelsResource.commands.delete).toBeDefined();
   });
 });
 
@@ -137,11 +145,11 @@ describe("fetchAlertStates（端点 + 收敛）", () => {
     expect(String(url)).toBe("/v1/alerts");
   });
 
-  it("非 2xx 走统一错误信封；平台域无 scope，桥键对齐 catalog 的 states 键", async () => {
+  it("非 2xx 走统一错误信封；平台域无 scope（states 桥零读者退役）", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ code: "E_X", message: "boom" }, 503)));
     await expect(fetchAlertStates({})).rejects.toThrowError(/boom/);
     expect(alertStatesResource.scope).toBeUndefined();
-    expect(alertStatesResource.legacyKeys?.({})).toEqual([["alerts", "states"]]);
+    expect(alertStatesResource.legacyKeys).toBeUndefined();
     expect(alertStatesLookup.decode({}).window.size).toBe(200);
   });
 });

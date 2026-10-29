@@ -1,4 +1,4 @@
-import type { CommandDescriptor } from "@lynx-go/uikit-core/kernel";
+import type { CommandDescriptor, ResourceScope } from "@lynx-go/uikit-core/kernel";
 import { apiSend } from "@/api/client";
 import { appsResource } from "./apps";
 import { deploymentsResource } from "./deployments";
@@ -7,14 +7,14 @@ import { routesResource } from "./routes";
 
 // App 子面（进程/路由/设置）+ nodes enroll 的写动词族（批2 写路径命令化，
 // 2026-10-26）。这些是 app 实体的子面动词——不定义独立资源，统一裸
-// descriptor + invalidates/legacyKeys 声明；kit 侧失效面按 ADR-0007 词汇
-// 引用资源（appsResource/deploymentsResource/routesResource——import 引用，
-// 不在本文件重述键名）。注意两条失效通道的分工：
-// - invalidates（kit selector）：与命令执行 scope（调用点传 { projectId }）
-//   相交匹配 kit 集合键（["collection",<name>,{projectId},…]）；
-// - legacyKeys（前缀桥）：存量 react-query 键（catalog/局部 useQuery）。
-// 因此 appId 一律走闭包/入参，不进 scope——scope 混入 appId 会破坏 selector
-// 的整 scope 相等匹配。
+// descriptor + invalidates 声明；kit 侧失效面按 ADR-0007 词汇引用资源
+//（appsResource/deploymentsResource/routesResource——import 引用，不在本
+// 文件重述键名）。F1 回流批（M2 scope 同源）：工厂命令统一声明
+// scopeOf: () => ({ projectId, appId })——同一份 scope 既喂 run(ctx) 又喂
+// 失效匹配（投影匹配：命令 scope 在读资源声明的键集上逐键相等即命中，
+// 携带声明外的多余键不阻断——appId 参与匹配不破坏 projectId 级读键的命中）。
+// 调用点零手传 scope（0.3.1 时代「appId 不进 scope 保整对象全等」的理由
+// 随投影匹配退役）。
 
 // —— 载荷与入参形态（组件表单 → wire 契约的映射单源在此） ——
 
@@ -68,11 +68,14 @@ export interface AppTabCommands {
   deleteApp: CommandDescriptor<void, void>;
 }
 
-// appTabCommands 按 (projectId, appId) 关闭出全套子面动词：URL 与存量键
-// 需要的 id 在此钉死，组件不再拼 URL/键（测试锚直接对返回的 descriptor
-// 断言映射与失效清单）。每渲染新建实例对 useCommand 无害（descriptor 只
-// 进 mutationFn/onSuccess 闭包，无订阅关系）。
+// appTabCommands 按 (projectId, appId) 关闭出全套子面动词：URL 需要的 id
+// 在此钉死，组件不再拼 URL（测试锚直接对返回的 descriptor 断言映射与失效
+// 清单）。身份经 scopeOf 声明派生（M2：从闭包迁入声明——引擎解析
+// effectiveScope 单源喂执行与失效）。每渲染新建实例对 useCommand 无害
+//（descriptor 只进 mutationFn/onSuccess 闭包，无订阅关系）。
 export function appTabCommands(projectId: string, appId: string): AppTabCommands {
+  // M2 同源声明：全套动词的失效 scope 从闭包派生（调用点零手传）。
+  const scopeOf = (): ResourceScope => ({ projectId, appId });
   return {
     // 失效面刻意最小（零 lineage 锚）：仅 exec-instances 前缀（Running 列/
     // 行展开的观测缓存），apps/deployments/spec 面一概不动——与 redeploy
@@ -88,22 +91,24 @@ export function appTabCommands(projectId: string, appId: string): AppTabCommands
           // ok 文案需要进程名（输入面，不在载荷里）——回执携带回填
           return { process: input.process };
         }),
-      legacyKeys: () => [["exec-instances", appId]],
+      scopeOf,
     },
     // 声明式路径：受理即建部署。失效面 = 冻结 Spec（本 tab 重取落新 replicas）
     // + 部署两形态（kit 项目时间线 + legacy per-app/fan-out 前缀）。
     redeploy: {
       run: (input) =>
         runCommandMapped(() => apiSend<DeploymentAccepted>("/v1/deployments", "POST", { app_id: appId, spec_file: input.specFile })),
-      invalidates: [{ resource: deploymentsResource.name }],
-      legacyKeys: () => [
-        ["resources", "app-spec", projectId, appId],
-        ["deployments"],
-      ],
+      scopeOf,
+      invalidates: [{ resource: deploymentsResource.name }, { resource: "app-spec-sheet" }],
+      // ["deployments"] 前缀桥：project-overview AppTile 的裸键（["deployments",
+      // "latest", appId]）仍在读——catalog 其余键族零读者后（F1 回流批审计）
+      // 唯一存活的存量键面。
+      legacyKeys: () => [["deployments"]],
     },
     // app 面路由 CRUD（项目路由表按 app 挂靠）：kit 面覆盖 resources/panels
     // 的 routes 集合，legacy 面覆盖 catalog useRoutes（本 tab/app 列表页/概览）。
     createRoute: {
+      scopeOf,
       run: (input) =>
         runCommandMapped(async () => {
           await apiSend("/v1/routes", "POST", {
@@ -118,20 +123,20 @@ export function appTabCommands(projectId: string, appId: string): AppTabCommands
           });
         }),
       invalidates: [{ resource: routesResource.name }],
-      legacyKeys: () => [["resources", "routes", projectId]],
     },
     deleteRoute: {
+      scopeOf,
       run: (input) =>
         runCommandMapped(async () => {
           await apiSend(`/v1/routes/${encodeURIComponent(input.id)}`, "DELETE");
         }),
       invalidates: [{ resource: routesResource.name }],
-      legacyKeys: () => [["resources", "routes", projectId]],
     },
     // Git deploy hook（W-8 通道）：get/set/rotate/refresh/remove。set 是全量
     // upsert（改配置不换 Token）；remove 非幂等（无 hook 即 404，诚实走失败
     // 通道不覆写）。失效面只有 hook 查询（legacy 键，读面在 app-settings）。
     setGitHook: {
+      scopeOf,
       run: (input) =>
         runCommandMapped(() =>
           apiSend<GitHookPayload>(`/v1/apps/${encodeURIComponent(appId)}/hook`, "POST", {
@@ -141,51 +146,47 @@ export function appTabCommands(projectId: string, appId: string): AppTabCommands
             watch_paths: input.watchPaths === "" ? undefined : input.watchPaths.split(/[,\s]+/).filter((entry) => entry !== ""),
           }),
         ),
-      legacyKeys: () => [["apps", "hook", appId]],
-      // hook 读面已迁 kit record（app-hook）——legacy 桥之外补 kit selector
-      //（写后 Configure/Hook 卡即时翻转，收尾批测试实咬）。
+      // hook 读面在 kit record（app-hook）——kit selector 命中即翻转（M2
+      // 投影匹配下零手传 scope 自动命中）。
       invalidates: [{ resource: "app-hook" }],
     },
     rotateGitHook: {
+      scopeOf,
       run: () =>
         runCommandMapped(() => apiSend<GitHookPayload>(`/v1/apps/${encodeURIComponent(appId)}/hook/rotate`, "POST", {})),
-      legacyKeys: () => [["apps", "hook", appId]],
-      // hook 读面已迁 kit record（app-hook）——legacy 桥之外补 kit selector
-      //（写后 Configure/Hook 卡即时翻转，收尾批测试实咬）。
       invalidates: [{ resource: "app-hook" }],
     },
     // Deploy now（拉取通道）：受理建部署——失效面同 redeploy 的部署两形态
     //（kit 时间线旧代码只失效 legacy 前缀，命令化后统一补 kit 面）。
     refreshGitHook: {
+      scopeOf,
       run: () =>
         runCommandMapped(() =>
           apiSend<RefreshPayload>(`/v1/apps/${encodeURIComponent(appId)}/hook/refresh`, "POST", {}),
         ),
       invalidates: [{ resource: deploymentsResource.name }],
+      // AppTile 存量键面（同 redeploy 注）。
       legacyKeys: () => [["deployments"]],
     },
     deleteGitHook: {
+      scopeOf,
       run: () =>
         runCommandMapped(async () => {
           await apiSend(`/v1/apps/${encodeURIComponent(appId)}/hook`, "DELETE");
         }),
-      legacyKeys: () => [["apps", "hook", appId]],
-      // hook 读面已迁 kit record（app-hook）——legacy 桥之外补 kit selector
-      //（写后 Configure/Hook 卡即时翻转，收尾批测试实咬）。
       invalidates: [{ resource: "app-hook" }],
     },
-    // App 删除（级联披露在确认框）：apps 两形态（kit 集合 + catalog 目录）
-    // + 部署两形态（历史随 app 消失，项目时间线不留幽灵行）。
+    // App 删除（级联披露在确认框）：apps 集合 + 部署两形态（历史随 app
+    // 消失，项目时间线不留幽灵行）。
     deleteApp: {
+      scopeOf,
       run: () =>
         runCommandMapped(async () => {
           await apiSend(`/v1/apps/${encodeURIComponent(appId)}`, "DELETE");
         }),
       invalidates: [{ resource: appsResource.name }, { resource: deploymentsResource.name }],
-      legacyKeys: () => [
-        ["catalog", "apps", projectId],
-        ["deployments"],
-      ],
+      // AppTile 存量键面（同 redeploy 注）。
+      legacyKeys: () => [["deployments"]],
     },
   };
 }

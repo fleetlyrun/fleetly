@@ -72,7 +72,7 @@ describe("usersSearch（URL 编解码契约，四 namespace 实例之一）", ()
 // 失效桥（kit 集合键默认失效 × legacyKeys 存量键）。identity 锚在 users
 // remove（create/setPassword 等同族同管线）。
 describe("命令锚：users remove（映射 + 失效桥）", () => {
-  it("ok → kit users 集合键与存量 [identity,users] 键同批失效", async () => {
+  it("ok → kit users 集合键失效（[identity,users] 旧键桥零读者退役）", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({})));
     const result = await usersResource.commands.remove.run({ id: "u1" });
     expect(result.status).toBe("ok");
@@ -81,10 +81,8 @@ describe("命令锚：users remove（映射 + 失效桥）", () => {
     // kit 键经 collectionQueryOptions 单源取（0.4.0 键形含 scopeKeys 段）
     const kitKey = collectionQueryOptions(usersResource, { window: { size: 20 } }).queryKey;
     queryClient.setQueryData(kitKey, []);
-    queryClient.setQueryData(["identity", "users"], []);
     invalidateAfterCommand(queryClient, usersResource.commands.remove, {});
     expect(queryClient.getQueryState(kitKey)?.isInvalidated).toBe(true);
-    expect(queryClient.getQueryState(["identity", "users"])?.isInvalidated).toBe(true);
   });
 
   it("400 → rejected 保留 apperr code；remove 打 DELETE /v1/users/{id}", async () => {

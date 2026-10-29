@@ -80,7 +80,6 @@ export const databasesResource = defineResource({
   collection: clientCollection(fetchDatabases),
   // 存量键失效桥：对齐旧页 invalidateDatabases 的 catalog 键
   // （["resources","databases",projectId]——useDatabases 的读键）。
-  legacyKeys: (scope) => [["resources", "databases", scope.projectId]],
   commands: {
     create: createDatabaseCommand,
     delete: deleteDatabaseCommand,
@@ -134,7 +133,6 @@ export const databaseBackupListResource = defineResource({
   collection: clientCollection(fetchDatabaseBackupList),
   // 存量键失效桥：catalog useDatabaseBackups 的
   // ["resources","database-backups",databaseId] 前缀
-  legacyKeys: (scope) => [["resources", "database-backups", String(scope.databaseId ?? "")]],
 });
 
 // 备份 tab 读面用大页 schema（恢复台账要全集——窗口不截断行集）。

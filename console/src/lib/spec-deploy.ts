@@ -34,9 +34,9 @@ export function useSpecDeploy(appId: string, onDeployed?: (deploymentId: string)
         spec_file: JSON.stringify(spec),
       }),
     onSuccess: (resp) => {
-      void queryClient.invalidateQueries({ queryKey: ["resources", "app-spec"] });
+      // ["deployments"] 前缀：project-overview AppTile 裸键（唯一存活存量键
+      // 面）；app-spec/revisions 旧键族零读者（F1 回流批审计）已退役。
       void queryClient.invalidateQueries({ queryKey: ["deployments"] });
-      void queryClient.invalidateQueries({ queryKey: ["resources", "revisions"] });
       const id = resp?.deployment?.id;
       if (id) onDeployed?.(id);
     },

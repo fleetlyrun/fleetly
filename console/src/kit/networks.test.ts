@@ -167,10 +167,8 @@ describe("networks 命令族（批 2 写路径命令化）", () => {
     });
   });
 
-  it("失效桥键清单（旧 useApiMutation invalidate 等值）", () => {
-    expect(networksResource.legacyKeys?.({ projectId: "shop" })).toEqual([["resources", "networks", "shop"]]);
-    expect(declarePeerDescriptor.legacyKeys?.({ projectId: "shop" })).toEqual([
-      ["resources", "network-peers", "shop"],
-    ]);
+  it("失效桥零读者退役（F1 回流批审计——kit selector 单源）", () => {
+    expect(networksResource.legacyKeys).toBeUndefined();
+    expect(declarePeerDescriptor.legacyKeys).toBeUndefined();
   });
 });

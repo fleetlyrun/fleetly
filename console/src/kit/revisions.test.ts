@@ -47,11 +47,9 @@ describe("fetchRevisions（端点 + 收敛）", () => {
 });
 
 describe("revisionsResource（scope/失效桥/lookup schema）", () => {
-  it("scope 声明 projectId+appId；legacyKeys 桥按 appId 对齐 catalog 键", () => {
+  it("scope 声明 projectId+appId；legacyKeys 桥零读者退役（F1 回流批审计）", () => {
     expect(revisionsResource.scope).toEqual(["projectId", "appId"]);
-    expect(revisionsResource.legacyKeys?.({ projectId: "P1", appId: "A1" })).toEqual([
-      ["resources", "revisions", "A1"],
-    ]);
+    expect(revisionsResource.legacyKeys).toBeUndefined();
   });
 
   it("revisionsLookup 缺省窗口 = 整取上限（join 读面窗口不截断行集）", () => {

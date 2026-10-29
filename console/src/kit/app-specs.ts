@@ -51,7 +51,6 @@ export const appSpecsResource = defineResource({
   collection: clientCollection(fetchAppSpecs),
   // 存量键失效桥：catalog/局部 useQuery 的 ["resources","app-spec",projectId,appId]
   // 前缀（appTabCommands.redeploy 的桥键仍打在这族键上）
-  legacyKeys: (scope) => [["resources", "app-spec", String(scope.projectId ?? "")]],
 });
 
 // join 读面用大页 schema（反查行集 = 项目 App 全集 ≤50，窗口不截断）。

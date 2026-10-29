@@ -64,7 +64,6 @@ export const volumesResource = defineResource({
   collection: clientCollection(fetchVolumes),
   // 存量键失效桥：值域照抄旧 useApiMutation invalidate
   // （[["resources","volumes",projectId]]）
-  legacyKeys: (scope) => [["resources", "volumes", String(scope.projectId ?? "")]],
   commands: {
     create: {
       run: async (

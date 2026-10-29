@@ -15,10 +15,10 @@ export interface SystemStatus {
 }
 
 // 系统面（2026-10-27 批4 读面收尾）：status record 读（Components 页经
-// useQuery(recordQueryOptions(systemResource, "current")) + 30s 轮询消费）
+// useRecord(systemResource, { id: "current", query: { refetchInterval: 30_000 } })
 // + restart 写命令（批2，零改动）。失效语义保留——重启后健康面靠
-// onRestarted refetch 与轮询兜底，legacyKeys 桥接存量 ["system","status"]
-// 键。滚动重排期间 unhealthy 是预期中间态。
+// onRestarted refetch 与轮询兜底（["system","status"] 旧键桥零读者已退役，
+// F1 回流批审计）。滚动重排期间 unhealthy 是预期中间态。
 
 export const systemResource = defineResource({
   name: "system",
@@ -38,7 +38,6 @@ export const systemResource = defineResource({
         runCommandMapped<{ restarted?: number }>(() =>
           apiSend<{ restarted?: number }>(`/v1/system/components/${encodeURIComponent(input.name)}/restart`, "POST", {}),
         ),
-      legacyKeys: () => [["system", "status"]],
     },
   },
 });

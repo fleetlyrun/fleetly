@@ -40,9 +40,9 @@ export async function fetchInvitations(_ctx: ResourceScope, signal?: AbortSignal
 
 // ---- 写面命令（批2 useCommand 化）----
 // run 统一 runCommandMapped（400→rejected 保 apperr code、409→conflict、
-// 其余 throw kernel ApiError）；legacyKeys 对齐旧 useMutation 的 invalidate
-// 键（catalog 读面还在旧键上）。空串选值在 run 内归一为 undefined（JSON
-// 体省略字段——与旧弹窗手工三目同口径）。
+// 其余 throw kernel ApiError）；失效 = kit selector 同资源缺省（M2 投影
+// 匹配——["identity",…] 旧键桥零读者已退役，F1 回流批审计）。空串选值在
+// run 内归一为 undefined（JSON 体省略字段——与旧弹窗手工三目同口径）。
 
 export interface CreateUserInput {
   name: string;
@@ -68,12 +68,10 @@ export const usersResource = defineResource({
             password: input.password || undefined,
           }),
         ),
-      legacyKeys: () => [["identity", "users"]],
     },
     remove: {
       run: (input: { id: string }) =>
         runCommandMapped(() => apiSend(`/v1/users/${encodeURIComponent(input.id)}`, "DELETE")),
-      legacyKeys: () => [["identity", "users"]],
     },
     // 行内设密：不改行集（旧行此动词无 invalidate——语义保留，invalidates
     // 显式置空也免默认同资源集合失效的白跑一趟）。
@@ -94,12 +92,10 @@ export const teamsResource = defineResource({
   commands: {
     create: {
       run: (input: { name: string }) => runCommandMapped(() => apiSend("/v1/teams", "POST", { name: input.name })),
-      legacyKeys: () => [["identity", "teams"]],
     },
     remove: {
       run: (input: { id: string }) =>
         runCommandMapped(() => apiSend(`/v1/teams/${encodeURIComponent(input.id)}`, "DELETE")),
-      legacyKeys: () => [["identity", "teams"]],
     },
   },
 });
@@ -119,12 +115,10 @@ export const rolesResource = defineResource({
           }),
         ),
       // roles 读面的存量键异类：catalog useRoles 在 ["settings","roles"]
-      legacyKeys: () => [["settings", "roles"]],
     },
     remove: {
       run: (input: { id: string }) =>
         runCommandMapped(() => apiSend(`/v1/roles/${encodeURIComponent(input.id)}`, "DELETE")),
-      legacyKeys: () => [["settings", "roles"]],
     },
   },
 });
@@ -149,7 +143,6 @@ export const invitationsResource = defineResource({
             ttl: input.ttl || undefined,
           }),
         ),
-      legacyKeys: () => [["identity", "invitations"]],
     },
   },
 });

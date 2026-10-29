@@ -132,8 +132,8 @@ export function AppRoutesTab({ projectId, appId, routeId }: { projectId: string;
 }
 
 function RouteDeleteButton({ projectId, route }: { projectId: string; route: RouteEntry }) {
+  // M2：deleteRoute 的失效身份经工厂 scopeOf 派生，零手传。
   const remove = useCommand(appTabCommands(projectId, route.app_id ?? "").deleteRoute, {
-    scope: { projectId },
     onSettled: toastOnSettled(() => toast("Route deleted")),
   });
   return (

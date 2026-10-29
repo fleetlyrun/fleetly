@@ -7,12 +7,10 @@ import { runCommandMapped, toApiError } from "./errors";
 import { fetchRows, qs } from "./http";
 
 // 自动化域资源适配（2026-10-26 批1 useCollection 化；批2 写路径命令化）：
-// tasks/schedules 双资源共享同一 search schema 实例（双 tab 双列表——q/分
-// 页跨 tab 持久是接受的语义，text 字段取两表过滤字段的并集）。REST 端点
-// 与收敛口径照抄 lib/catalog.ts 的 useTasks/useSchedules（rowsOf 同款
+// tasks/schedules 双资源（REST 端点与收敛口径照抄旧 catalog——rowsOf 同款
 // undefined 行过滤）。批2：实体动词挂 defineResource commands（run 内
-// runCommandMapped 结果两分），失效 = kit selector 缺省（同资源、scope 相
-// 交）+ legacyKeys 桥（存量 ["resources", …] catalog 键前缀失效）。
+// runCommandMapped 结果两分），失效 = kit selector 缺省（同资源、投影匹配）
+// ——F1 回流批审计：catalog 键族零读者后 legacyKeys 桥全数退役。
 
 export type TaskEntry = automationSchemas["schemas"]["v1Task"];
 export type ScheduleEntry = automationSchemas["schemas"]["v1Schedule"];
@@ -42,9 +40,6 @@ export const tasksResource = defineResource({
   getId: (row: TaskEntry) => row.id ?? "",
   scope: ["projectId"],
   collection: clientCollection(fetchTasks),
-  // 存量键失效桥：对齐旧 useApiMutation 的 invalidate 键（task 详情页
-  // useTasks 等仍读 ["resources","tasks",projectId]——批2 迁期双轨）。
-  legacyKeys: (scope) => [["resources", "tasks", scope.projectId]],
   commands: {
     // create 的 project_id 走命令 ctx（ResourceScope 线程），输入不重复携带。
     create: {
@@ -54,10 +49,10 @@ export const tasksResource = defineResource({
         ),
     },
     scale: {
-      // scale/stop 改变池与 Run 面：除默认同资源失效外，桥面追加 runs 前缀
-      // 键（runs 无 kit 资源、legacyKeys 只收 scope——按行 id 的精确键表达
-      // 不了，取全 tasks 共享的 ["resources","runs"] 前缀，与旧 RunRow stop
-      // 的失效口径一致）。
+      // scale/stop 改变池与 Run 面：命令 scope 只有 {projectId}（类型执法
+      // 要求覆盖 tasks 声明键全量），与 runs 声明键 [projectId, taskId] 投影
+      // 不相等——runs 面的精确失效归 stopRun（调用点双 id scope），此处
+      // 同资源缺省失效 + 列表 15s 轮询兜底。
       run: (input: { id: string; desired_concurrency: number }, _ctx: ResourceScope) =>
         runCommandMapped(() =>
           apiSend<{ task?: TaskEntry }>(
@@ -66,7 +61,6 @@ export const tasksResource = defineResource({
             { desired_concurrency: input.desired_concurrency },
           ),
         ),
-      legacyKeys: (scope: ResourceScope) => [["resources", "tasks", scope.projectId], ["resources", "runs"]],
     },
     stop: {
       run: (input: { id: string; force?: boolean }, _ctx: ResourceScope) =>
@@ -75,7 +69,6 @@ export const tasksResource = defineResource({
             force: input.force ?? false,
           }),
         ),
-      legacyKeys: (scope: ResourceScope) => [["resources", "tasks", scope.projectId], ["resources", "runs"]],
     },
     renew: {
       run: (input: { id: string }, _ctx: ResourceScope) =>
@@ -99,7 +92,6 @@ export const schedulesResource = defineResource({
   getId: (row: ScheduleEntry) => row.id ?? "",
   scope: ["projectId"],
   collection: clientCollection(fetchSchedules),
-  legacyKeys: (scope) => [["resources", "schedules", scope.projectId]],
   commands: {
     create: {
       run: (input: CreateScheduleInput, ctx: ResourceScope) =>
@@ -122,7 +114,6 @@ export const schedulesResource = defineResource({
           ),
         ),
       invalidates: [{ resource: "tasks" }, { resource: "schedules" }],
-      legacyKeys: (scope: ResourceScope) => [["resources", "tasks", scope.projectId], ["resources", "schedules", scope.projectId]],
     },
     delete: {
       // 幂等裁决保持 throw：服务端终态行返回 200（tombstone 幂等），404 =
@@ -136,14 +127,14 @@ export const schedulesResource = defineResource({
 });
 
 // runs 集合资源（2026-10-27 批4 读面收编：catalog useRuns 退役）——stop
-// 仍是裸 descriptor：无 __resource 缺省失效，桥键显式声明 runs 前缀（与旧
-// panels RunRow stop 的 invalidate 口径一致）。
+// 是裸 descriptor：失效面显式声明 runs selector，scope 由调用点线程
+//（TaskRuns 有 {projectId, taskId} 双 id——M2 同源喂执行与失效匹配）。
 export const stopRunCommand: CommandDescriptor<{ id: string }, { run?: RunEntry }> = {
   run: (input, _ctx) =>
     runCommandMapped(() =>
       apiSend<{ run?: RunEntry }>(`/v1/runs/${encodeURIComponent(input.id)}/stop`, "POST", {}),
     ),
-  legacyKeys: () => [["resources", "runs"]],
+  invalidates: [{ resource: "runs" }],
 };
 
 export async function fetchRuns(ctx: ResourceScope, signal?: AbortSignal): Promise<RunEntry[]> {
@@ -168,8 +159,6 @@ export const runsResource = defineResource({
   getId: (row: RunEntry) => row.id ?? "",
   scope: ["projectId", "taskId"],
   collection: clientCollection(fetchRuns),
-  // 存量键失效桥：catalog useRuns 的 ["resources","runs",taskId] 前缀
-  legacyKeys: (scope) => [["resources", "runs", String(scope.taskId ?? "")]],
 });
 
 // runs 读面用大页 schema（Run 观测要全集——窗口不截断行集；只读消费不写

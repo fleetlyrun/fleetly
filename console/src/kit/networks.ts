@@ -68,7 +68,6 @@ export const networksResource = defineResource({
   collection: clientCollection(fetchNetworks),
   // 存量键失效桥：命令 ok 后除 kit 集合键外失效旧 catalog 目录键（值域
   // 照抄旧 useApiMutation invalidate：[["resources","networks",projectId]]）
-  legacyKeys: (scope) => [["resources", "networks", String(scope.projectId ?? "")]],
   commands: {
     // 建网：表单展示形（egressNone 布尔）在 run 内收敛为提交形
     // （egress_none 未勾选 = 不发送）
@@ -130,8 +129,8 @@ export const revokePeerDescriptor: CommandDescriptor<{ peerId: string }, null> =
   invalidates: [{ resource: networkPeersResource.name }],
 };
 
-// declare：跨项目挂靠声明（本项目为 attaching 方）；旧 invalidate 键
-// [["resources","network-peers",projectId]] 在 legacyKeys 桥
+// declare：跨项目挂靠声明（本项目为 attaching 方）；失效 = peers 集合
+// selector（旧 catalog 前缀桥零读者退役——F1 回流批审计）
 export const declarePeerDescriptor: CommandDescriptor<
   { networkId: string; peerProjectId: string },
   null
@@ -146,7 +145,6 @@ export const declarePeerDescriptor: CommandDescriptor<
       return null;
     }),
   invalidates: [{ resource: networkPeersResource.name }],
-  legacyKeys: (scope) => [["resources", "network-peers", String(scope.projectId ?? "")]],
 };
 
 // 双列表各持 namespace 实例（F1 回流批 M1：networks.q 与 peers.q 并存互

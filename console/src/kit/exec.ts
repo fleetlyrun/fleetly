@@ -20,7 +20,6 @@ export const execInstancesResource = defineResource({
   getId: (row: ExecInstance) => row.instance ?? "",
   scope: ["appId", "process"],
   collection: clientCollection(fetchExecInstances),
-  legacyKeys: (scope) => [["exec-instances", String(scope.appId ?? "")]],
 });
 
 // 伴读消费面（2026-10-29 F1 回流批）：useProcessInstances 伴读钩子退役——

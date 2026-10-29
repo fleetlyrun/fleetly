@@ -58,7 +58,6 @@ export const routesResource = defineResource({
   collection: clientCollection(fetchRoutes),
   // 存量键失效桥：值域照抄旧 useApiMutation invalidate
   // （[["resources","routes",projectId]]——apps 域 useRoutes 消费面）
-  legacyKeys: (scope) => [["resources", "routes", String(scope.projectId ?? "")]],
   commands: {
     create: {
       run: async (input: RouteCreateForm, ctx: ResourceScope): Promise<CommandResult<null>> =>

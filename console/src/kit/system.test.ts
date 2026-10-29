@@ -1,6 +1,4 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { QueryClient } from "@tanstack/react-query";
-import { invalidateAfterCommand } from "@lynx-go/uikit-core";
 import { setToken } from "@/lib/token";
 import { systemResource } from "./system";
 
@@ -20,7 +18,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe("命令锚：system restart（映射 + 存量键桥）", () => {
-  it("ok 透传 restarted 载荷并失效 [system,status]；restart 打 POST /v1/system/components/{name}/restart", async () => {
+  it("ok 透传 restarted 载荷；restart 打 POST /v1/system/components/{name}/restart", async () => {
     const fetchMock = vi.fn(async () => jsonResponse({ restarted: 2 }));
     vi.stubGlobal("fetch", fetchMock);
     const result = await systemResource.commands.restart.run({ name: "traefik" });
@@ -29,10 +27,9 @@ describe("命令锚：system restart（映射 + 存量键桥）", () => {
     expect(String(url)).toBe("/v1/system/components/traefik/restart");
     expect(init.method).toBe("POST");
 
-    const queryClient = new QueryClient();
-    queryClient.setQueryData(["system", "status"], { state: "STATUS_STATE_HEALTHY" });
-    invalidateAfterCommand(queryClient, systemResource.commands.restart, {});
-    expect(queryClient.getQueryState(["system", "status"])?.isInvalidated).toBe(true);
+    // [system,status] 旧键桥零读者退役（F1 回流批审计）——重启后健康面靠
+    // onRestarted refetch 与轮询兜底（kit/system.ts 头注）。
+    expect(systemResource.commands.restart.legacyKeys).toBeUndefined();
   });
 
   it("403 → throw kernel ApiError（treatAs 未覆写 forbidden——走失败通道）", async () => {

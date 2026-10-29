@@ -40,9 +40,12 @@ export interface ApplyAppVariablesInput {
 // applyAppVariablesDescriptor：变量落库 + 重部署一条动线（deploy 是组件
 // 侧 hook 句柄——闭包注入保持 useSpecDeploy 的失效/导航单源）。
 export function applyAppVariablesDescriptor(
+  projectId: string,
   appId: string,
   deploy: (spec: AppSpec) => Promise<unknown>,
 ): CommandDescriptor<ApplyAppVariablesInput, null> {
+  // M2 同源：失效身份（store 读键 scope {projectId, appId}）从闭包派生。
+  const scopeOf = () => ({ projectId, appId });
   return {
     run: async (input) =>
       runCommandMapped(async () => {
@@ -57,8 +60,10 @@ export function applyAppVariablesDescriptor(
         if (frozen) await deploy(frozen);
         return null;
       }),
-    // 存量 store 键桥（旧 useMutation invalidate 等值）
-    legacyKeys: () => [["resources", "app-variables", appId]],
+    // 失效面：kit selector（app-variables 集合）——存量 store 键桥零读者
+    // 退役（F1 回流批审计）。
+    scopeOf,
+    invalidates: [{ resource: "app-variables" }],
   };
 }
 
@@ -93,7 +98,7 @@ export function AppVariablesTab({ projectId, appId }: { projectId: string; appId
     });
   });
 
-  const apply = useCommand(applyAppVariablesDescriptor(appId, (frozen) => deploy.mutateAsync(frozen)), {
+  const apply = useCommand(applyAppVariablesDescriptor(projectId, appId, (frozen) => deploy.mutateAsync(frozen)), {
     onSettled: (result, failure) => {
       if (result?.status === "ok") {
         setStaged(null);

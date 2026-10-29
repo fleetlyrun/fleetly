@@ -94,7 +94,6 @@ export const nodeContainersResource = defineResource({
   getId: (row: NodeContainerRow) => row.instance ?? "",
   scope: ["nodeId"],
   collection: clientCollection(fetchNodeContainers),
-  legacyKeys: (scope) => [["node-containers", String(scope.nodeId ?? "")]],
 });
 
 // 伴读消费面（2026-10-29 F1 回流批）：useNodeContainers 伴读钩子退役——

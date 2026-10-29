@@ -83,9 +83,9 @@ describe("fetchAppSpecs（fan-out + 收敛）", () => {
 });
 
 describe("appSpecsResource（scope/失效桥/lookup schema）", () => {
-  it("scope 声明 projectId；legacyKeys 桥对齐 appTabCommands.redeploy 的存量键前缀", () => {
+  it("scope 声明 projectId；legacyKeys 桥零读者退役（F1 回流批审计）", () => {
     expect(appSpecsResource.scope).toEqual(["projectId"]);
-    expect(appSpecsResource.legacyKeys?.({ projectId: "P1" })).toEqual([["resources", "app-spec", "P1"]]);
+    expect(appSpecsResource.legacyKeys).toBeUndefined();
   });
 
   it("appSpecsLookup 缺省窗口覆盖 fan-out 上界（≤50 App 行集不截断）", () => {

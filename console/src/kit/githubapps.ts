@@ -19,11 +19,10 @@ export type GitHubAppRow = ghSchemas["schemas"]["v1GitHubApp"];
 
 // ---- 写面命令（批2 useCommand 化）----
 // put/remove 落行即全量并轨失效：invalidates allScopes（project/global 两
-// 面集合键都过——project 行 shadow global 行，旧行为就是整前缀失效）+
-// legacyKeys ["github-apps"]（repos 子查询 ["github-apps",appId,"repos"] 前
-// 缀——批1 写后双失效特判在此退役，统一由 commands 声明承载）。manifest
-// 三动词是流编排（不改行集，旧行无失效）：start/consume 显式空失效；
-// complete 落行与 put 同口径。
+// 面集合键都过——project 行 shadow global 行，旧行为就是整前缀失效；
+// ["github-apps"] 旧键桥零读者退役——F1 回流批审计）。manifest 三动词是
+// 流编排（不改行集，旧行无失效）：start/consume 显式空失效；complete 落行
+// 与 put 同口径。
 
 /** 落行动词的全量失效声明（双语境集合 + 存量键桥） */
 const landingInvalidates: ReadonlyArray<QuerySelector> = [{ resource: "github-apps", allScopes: true }];
@@ -72,13 +71,11 @@ export const githubAppsResource = defineResource({
         return runCommandMapped<{ app?: GitHubAppRow }>(() => apiSend<{ app?: GitHubAppRow }>("/v1/github-apps", "POST", body));
       },
       invalidates: landingInvalidates,
-      legacyKeys: () => [["github-apps"]],
     },
     remove: {
       run: (input: { id: string }) =>
         runCommandMapped(() => apiSend(`/v1/github-apps/${encodeURIComponent(input.id)}`, "DELETE", {})),
       invalidates: landingInvalidates,
-      legacyKeys: () => [["github-apps"]],
     },
     // manifest 自动建流三段（ADR-0073 决策 8）：start 发起（浏览器整页 POST
     // 到 GitHub）、consume 换安装页 URL、complete 落行。
@@ -126,7 +123,6 @@ export const githubAppsResource = defineResource({
         );
       },
       invalidates: landingInvalidates,
-      legacyKeys: () => [["github-apps"]],
     },
   },
 });

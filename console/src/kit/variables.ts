@@ -92,7 +92,6 @@ export const secretsResource = defineResource({
   collection: clientCollection(fetchSecrets),
   // 存量键失效桥：值域照抄旧 useApiMutation invalidate
   // （[["resources","secrets",projectId]]）
-  legacyKeys: (scope) => [["resources", "secrets", String(scope.projectId ?? "")]],
   commands: {
     put: {
       run: async (input: { name: string; value: string }, ctx: ResourceScope): Promise<CommandResult<null>> =>
@@ -123,12 +122,6 @@ export const configsResource = defineResource({
   getId: (row: Config) => row.id ?? row.name ?? "",
   scope: ["projectId"],
   collection: clientCollection(fetchConfigs),
-  // 存量键失效桥：列表键 + 详情宽前缀（覆盖 ConfigDetailDialog 的
-  // ["resources","config",projectId,name] 形——写后回读新版本）
-  legacyKeys: (scope) => [
-    ["resources", "configs", String(scope.projectId ?? "")],
-    ["resources", "config", String(scope.projectId ?? "")],
-  ],
   commands: {
     put: {
       run: async (
@@ -156,7 +149,6 @@ export const sharedVariablesResource = defineResource({
   collection: clientCollection(fetchSharedVariables),
   // 存量键失效桥：值域照抄旧 useApiMutation invalidate
   // （[["resources","shared-variables",projectId]]）
-  legacyKeys: (scope) => [["resources", "shared-variables", String(scope.projectId ?? "")]],
   commands: {
     put: {
       run: async (
@@ -200,7 +192,8 @@ export const configsSearch = collectionQuerySchema({ namespace: "configs", text:
 export const sharedVarsSearch = collectionQuerySchema({ namespace: "variables", text: ["name"], defaultSize: 20 });
 
 // Config 详情回读（ConfigDetailDialog 的 GetConfig 单记录；PUT 同名冻结
-// 新版本后经 legacyKeys 双键桥失效——批2 既有桥值）。
+// 新版本后经 put 的 config-detail selector 失效——M2 投影匹配命中 kit
+// record 键，legacy 桥零读者退役）。
 export interface ConfigDetail {
   version?: string;
   created_at?: string;

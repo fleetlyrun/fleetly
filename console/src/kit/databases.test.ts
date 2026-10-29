@@ -160,13 +160,9 @@ describe("databases commands（批2 写路径命令锚）", () => {
     await expect(attempt).rejects.toEqual({ kind: "server", status: 503, message: "E_BOOM: boom" });
   });
 
-  it("legacyKeys 桥对齐旧 invalidate 键（[\"resources\",\"databases\",projectId]）", () => {
-    expect(databasesResource.commands.create.legacyKeys?.({ projectId: "shop" })).toEqual([
-      ["resources", "databases", "shop"],
-    ]);
-    expect(databasesResource.commands.delete.legacyKeys?.({ projectId: "shop" })).toEqual([
-      ["resources", "databases", "shop"],
-    ]);
+  it("legacyKeys 桥零读者退役（F1 回流批审计——catalog databases 键族无读者）", () => {
+    expect(databasesResource.commands.create.legacyKeys).toBeUndefined();
+    expect(databasesResource.commands.delete.legacyKeys).toBeUndefined();
   });
 });
 
@@ -187,7 +183,7 @@ describe("fetchDatabaseBackupList（端点 + 收敛）", () => {
     expect(String(url)).toBe("/v1/databases/D1/backups");
   });
 
-  it("scope 缺 databaseId 时零请求空段；非 2xx 收敛错误信封；桥键对齐", async () => {
+  it("scope 缺 databaseId 时零请求空段；非 2xx 收敛错误信封（桥零读者退役）", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
     expect(await fetchDatabaseBackupList({ projectId: "P1" })).toEqual([]);
@@ -196,9 +192,7 @@ describe("fetchDatabaseBackupList（端点 + 收敛）", () => {
     vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ code: "E_X", message: "boom" }, 503)));
     await expect(fetchDatabaseBackupList({ projectId: "P1", databaseId: "D1" })).rejects.toThrowError(/boom/);
     expect(databaseBackupListResource.scope).toEqual(["projectId", "databaseId"]);
-    expect(databaseBackupListResource.legacyKeys?.({ projectId: "P1", databaseId: "D1" })).toEqual([
-      ["resources", "database-backups", "D1"],
-    ]);
+    expect(databaseBackupListResource.legacyKeys).toBeUndefined();
     expect(databaseBackupListLookup.decode({}).window.size).toBe(200);
   });
 });

@@ -86,7 +86,7 @@ describe("githubAppsSearch（URL 编解码契约）", () => {
 // manifestComplete 同 invalidates/legacyKeys 声明）——allScopes 双语境集合
 // 失效 + ["github-apps"] 存量键桥（repos 子查询）+ 结果两分映射。
 describe("命令锚：remove（映射 + 双语境失效桥）", () => {
-  it("ok → global/project 两面 kit 集合键与存量 [github-apps] repos 键同批失效", async () => {
+  it("ok → global/project 两面 kit 集合键同批失效（[github-apps] 旧键族零读者退役）", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({})));
     const result = await githubAppsResource.commands.remove.run({ id: "g1" });
     expect(result.status).toBe("ok");
@@ -96,14 +96,11 @@ describe("命令锚：remove（映射 + 双语境失效桥）", () => {
     // allScopes 命令两侧都清——project 行 shadow global 行——旧整前缀失效语义）
     const globalKey = collectionQueryOptions(githubAppsResource, { window: { size: 20 } }).queryKey;
     const projectKey = collectionQueryOptions(scoped(githubAppsResource, { projectId: "shop" }), { window: { size: 20 } }).queryKey;
-    const reposKey = ["github-apps", "g1", "repos"];
     queryClient.setQueryData(globalKey, []);
     queryClient.setQueryData(projectKey, []);
-    queryClient.setQueryData(reposKey, []);
     invalidateAfterCommand(queryClient, githubAppsResource.commands.remove, {});
     expect(queryClient.getQueryState(globalKey)?.isInvalidated).toBe(true);
     expect(queryClient.getQueryState(projectKey)?.isInvalidated).toBe(true);
-    expect(queryClient.getQueryState(reposKey)?.isInvalidated).toBe(true);
   });
 
   it("409 → conflict；remove 打 DELETE /v1/github-apps/{id}", async () => {

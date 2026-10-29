@@ -75,9 +75,6 @@ export interface AppSpecSheet {
 export const appSpecSheetResource = defineResource({
   name: "app-spec-sheet",
   scope: ["projectId", "appId"],
-  // 存量键桥：appTabCommands.redeploy 的旧失效键（["resources","app-spec",
-  // projectId, appId]）等值承接——写后冻结体即时刷新不断链。
-  legacyKeys: (scope) => [["resources", "app-spec", String(scope.projectId ?? ""), String(scope.appId ?? "")]],
   record: (_id, ctx, signal) =>
     apiFetch<{ spec?: unknown; revision_seq?: string }>(
       `/v1/apps/${encodeURIComponent(ctx.appId ?? "")}/spec`,

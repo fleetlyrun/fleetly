@@ -159,7 +159,7 @@ describe("volumes 命令族（批 2 写路径命令化）", () => {
     expect(init.method).toBe("DELETE");
   });
 
-  it("失效桥键清单（旧 useApiMutation invalidate 等值）", () => {
-    expect(volumesResource.legacyKeys?.({ projectId: "shop" })).toEqual([["resources", "volumes", "shop"]]);
+  it("失效桥零读者退役（F1 回流批审计——kit selector 单源）", () => {
+    expect(volumesResource.legacyKeys).toBeUndefined();
   });
 });

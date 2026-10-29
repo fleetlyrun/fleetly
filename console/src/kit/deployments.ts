@@ -133,9 +133,8 @@ export const deploymentsResource = defineResource({
   getId: (row: DeploymentRow) => row.id ?? "",
   scope: ["projectId"],
   collection: clientCollection(fetchProjectDeployments),
-  // 存量键失效桥：对齐旧 Sheet 的 invalidate 键（["deployments"] 前缀——
-  // 覆盖 features/deployments/hooks.ts 的 ["deployments", appId] 与
-  // ["deployments", "project-fanout", …] 双形态）。
+  // 存量键桥（F1 回流批审计后唯一存活族）：["deployments"] 前缀服务
+  // project-overview AppTile 的裸键（["deployments","latest",appId]）。
   legacyKeys: () => [["deployments"]],
   commands: {
     deploy: deployCommand,

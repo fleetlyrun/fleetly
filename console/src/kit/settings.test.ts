@@ -29,7 +29,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe("命令锚：freezes freeze（映射 + 存量键桥）", () => {
-  it("ok → [settings,freezes] 存量键失效；freeze 打 POST /v1/governance/freezes", async () => {
+  it("ok → kit freezes 集合键失效；freeze 打 POST /v1/governance/freezes", async () => {
     const fetchMock = vi.fn(async () => jsonResponse({}));
     vi.stubGlobal("fetch", fetchMock);
     const result = await freezesResource.commands.freeze.run({ reason: "maintenance window" });
@@ -38,10 +38,13 @@ describe("命令锚：freezes freeze（映射 + 存量键桥）", () => {
     expect(String(url)).toBe("/v1/governance/freezes");
     expect(JSON.parse(String(init.body))).toEqual({ reason: "maintenance window" });
 
+    // [settings,freezes] 旧键桥零读者退役（F1 回流批审计）——kit selector
+    // 单源命中 freezes 集合键。
     const queryClient = new QueryClient();
-    queryClient.setQueryData(["settings", "freezes"], []);
+    const kitKey = collectionQueryOptions(freezesResource, { window: { size: 100 } }).queryKey;
+    queryClient.setQueryData(kitKey, { rows: [] });
     invalidateAfterCommand(queryClient, freezesResource.commands.freeze, {});
-    expect(queryClient.getQueryState(["settings", "freezes"])?.isInvalidated).toBe(true);
+    expect(queryClient.getQueryState(kitKey)?.isInvalidated).toBe(true);
   });
 
   it("400 → rejected 保留 apperr code；mint 失效 tokens 集合（收尾批翻转：mint 后台账即时可见）", async () => {

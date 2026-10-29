@@ -253,12 +253,9 @@ function GitHookCard({ appId, projectId }: { appId: string; projectId: string })
   };
 
   const commands = appTabCommands(projectId, appId);
-  // scope 显式传（{projectId, appId}）：hook 读面已迁 kit record 键——命令
-  // 失效 selector 与键 scope 必须相等（appTabCommands 的 appId 在闭包不进
-  // scope，缺省 {} 与键不相交——收尾批测试实咬）。
-  const commandScope = { projectId, appId };
+  // M2：命令身份经工厂 scopeOf 派生（{projectId, appId}）——同一份 scope
+  // 喂执行与失效匹配，零手传（0.3.1 时代的 commandScope 手传补丁退役）。
   const save = useCommand(commands.setGitHook, {
-    scope: commandScope,
     onSettled: toastOnSettled((payload) => {
       setEditing(false);
       toast("Git deploy hook configured");
@@ -266,7 +263,6 @@ function GitHookCard({ appId, projectId }: { appId: string; projectId: string })
     }),
   });
   const rotate = useCommand(commands.rotateGitHook, {
-    scope: commandScope,
     onSettled: toastOnSettled((payload) => {
       toast("Hook token rotated — the previous token is revoked");
       if (payload.secret) setRevealedSecret(payload.secret);
@@ -275,7 +271,6 @@ function GitHookCard({ appId, projectId }: { appId: string; projectId: string })
   // Deploy now：拉取通道（RefreshGitHook）——不依赖 GitHub 侧 webhook 配置
   // 即可立即部署（首配验证 / App Templates 第三方模板仓的前提原语）。
   const refresh = useCommand(commands.refreshGitHook, {
-    scope: commandScope,
     onSettled: toastOnSettled((payload) => {
       const suffix = payload.admission?.outcome === "deduplicated" ? " (deduplicated — same commit already in the pipeline)" : "";
       toast(`Deployment ${payload.deployment_id ?? "?"} queued @ ${payload.commit?.slice(0, 7) ?? "?"}${suffix}`);
@@ -284,7 +279,6 @@ function GitHookCard({ appId, projectId }: { appId: string; projectId: string })
   // Remove：解除通道（DeleteGitHook，W-8）——token 与 webhook secret 即刻
   // 失效，材料所有权归还 deploy 面。非幂等（无 hook 即 404）。
   const remove = useCommand(commands.deleteGitHook, {
-    scope: commandScope,
     onSettled: toastOnSettled(() => toast("Git deploy hook removed — material ownership returned to deploys")),
   });
 
@@ -455,7 +449,6 @@ function GitHookCard({ appId, projectId }: { appId: string; projectId: string })
 
 function DangerZone({ appId, appName, projectId, onDeleted }: { appId: string; appName: string; projectId: string; onDeleted: () => void }) {
   const remove = useCommand(appTabCommands(projectId, appId).deleteApp, {
-    scope: { projectId },
     onSettled: toastOnSettled(() => {
       toast(`App ${appName} deleted`);
       onDeleted();

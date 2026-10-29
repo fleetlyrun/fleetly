@@ -290,8 +290,8 @@ function predicateOf(client: { invalidateQueries: ReturnType<typeof vi.fn> }) {
   return call![0].predicate!;
 }
 
-describe("失效编排（kit selector 缺省 + legacyKeys 桥）", () => {
-  it("task 命令缺省失效：同资源 kit 键 scope 相交 + 存量 catalog 键前缀", () => {
+describe("失效编排（kit selector 单源；catalog 桥零读者退役）", () => {
+  it("task 命令缺省失效：同资源 kit 键投影匹配", () => {
     const client = fakeQueryClient();
     invalidateAfterCommand(
       client as unknown as Parameters<typeof invalidateAfterCommand>[0],
@@ -302,10 +302,9 @@ describe("失效编排（kit selector 缺省 + legacyKeys 桥）", () => {
     expect(predicate({ queryKey: collectionKey(tasksResource, "shop") })).toBe(true);
     expect(predicate({ queryKey: collectionKey(tasksResource, "other") })).toBe(false);
     expect(predicate({ queryKey: collectionKey(schedulesResource, "shop") })).toBe(false);
-    expect(client.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["resources", "tasks", "shop"] });
   });
 
-  it("scale/stop 桥面追加 runs 前缀键（runs 无 kit 资源，与旧 RunRow stop 口径一致）", () => {
+  it("scale/stop 同资源缺省失效（runs 面投影不相等——精确失效归 stopRun）", () => {
     for (const descriptor of [tasksResource.commands.scale, tasksResource.commands.stop]) {
       const client = fakeQueryClient();
       invalidateAfterCommand(
@@ -313,12 +312,17 @@ describe("失效编排（kit selector 缺省 + legacyKeys 桥）", () => {
         descriptor,
         { projectId: "shop" },
       );
-      expect(client.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["resources", "tasks", "shop"] });
-      expect(client.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["resources", "runs"] });
+      const predicate = predicateOf(client);
+      expect(predicate({ queryKey: collectionKey(tasksResource, "shop") })).toBe(true);
+      // runs 声明键 [projectId, taskId]：命令 scope {projectId} 的投影缺
+      // taskId——不相等（如实的 scope 边界，非缺陷）。
+      expect(
+        predicate({ queryKey: ["collection", "runs", { projectId: "shop", taskId: "T1" }, ["projectId", "taskId"], null, null, { size: 200, cursor: null, offset: null }] }),
+      ).toBe(false);
     }
   });
 
-  it("trigger 失效跨 tasks + schedules 双面（selector 声明 + 桥键）", () => {
+  it("trigger 失效跨 tasks + schedules 双面（selector 声明）", () => {
     const client = fakeQueryClient();
     invalidateAfterCommand(
       client as unknown as Parameters<typeof invalidateAfterCommand>[0],
@@ -329,19 +333,18 @@ describe("失效编排（kit selector 缺省 + legacyKeys 桥）", () => {
     expect(predicate({ queryKey: collectionKey(tasksResource, "shop") })).toBe(true);
     expect(predicate({ queryKey: collectionKey(schedulesResource, "shop") })).toBe(true);
     expect(predicate({ queryKey: collectionKey(schedulesResource, "other") })).toBe(false);
-    expect(client.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["resources", "tasks", "shop"] });
-    expect(client.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["resources", "schedules", "shop"] });
   });
 
-  it("stopRun 裸 descriptor：无 kit selector（仅桥键），失效 runs 前缀", () => {
+  it("stopRun 裸 descriptor：runs selector 投影匹配（scope 同源喂匹配）", () => {
     const client = fakeQueryClient();
     invalidateAfterCommand(
       client as unknown as Parameters<typeof invalidateAfterCommand>[0],
       stopRunCommand,
-      {},
+      { projectId: "shop", taskId: "T1" },
     );
-    expect(callsOf(client).every(([c]) => c.predicate === undefined)).toBe(true);
-    expect(client.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["resources", "runs"] });
+    const predicate = predicateOf(client);
+    expect(predicate({ queryKey: ["collection", "runs", { projectId: "shop", taskId: "T1" }, ["projectId", "taskId"], null, null, { size: 200, cursor: null, offset: null }] })).toBe(true);
+    expect(predicate({ queryKey: ["collection", "runs", { projectId: "shop", taskId: "T2" }, ["projectId", "taskId"], null, null, { size: 200, cursor: null, offset: null }] })).toBe(false);
   });
 });
 
@@ -368,11 +371,11 @@ describe("fetchRuns（端点 + 收敛）", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("非 2xx 走统一错误信封；scope 声明与存量键桥对齐", async () => {
+  it("非 2xx 走统一错误信封；scope 声明（存量键桥零读者退役）", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ code: "E_X", message: "boom" }, 503)));
     await expect(fetchRuns({ projectId: "P1", taskId: "T1" })).rejects.toThrowError(/boom/);
     expect(runsResource.scope).toEqual(["projectId", "taskId"]);
-    expect(runsResource.legacyKeys?.({ projectId: "P1", taskId: "T1" })).toEqual([["resources", "runs", "T1"]]);
+    expect(runsResource.legacyKeys).toBeUndefined();
     expect(runsLookup.decode({}).window.size).toBe(200);
   });
 });
