@@ -1418,3 +1418,13 @@ systemctl daemon-reload && systemctl start fleetlyd
 附带修正：d2c0da72 曾把未提交源码的防闪脚本编进已提交 dist（源码/产物漂移，CI verify 对 HEAD 构建必红）——本批 dist 随源码状态重建已回退自洽，防闪 WIP（console/index.html）留在工作树待其源头自行提交。
 
 **现役** = `ffc17066`；回滚锚 = Platform Backup `5d5bdd56` + `/root/upgrade-ffc17066/`（含 b5a677bb 双二进制于 old/ + 九卷 tar）。
+
+### 追记（2026-10-29 第五换：ffc17066 → b4ff15ad，uikit 0.4.0 回流批）
+
+纯 console 批（零 Go IR 变化，goose 零迁移）：@lynx-go/uikit-core 0.3.1→0.4.0 + F1 机制消费方补丁退役四组——A 伴读面（19 伴读钩子 + 41 处 `.data?.rows` 解包 → useCollectionData/useRecord 直消费；providers-view 30s 轮询裸 useQuery 退役；backups 页头动态统计 window:"all" 复原）/ B 合并路由（7 多集合同路由切 namespace——URL 键形 q → tasks.q/schedules.q 等前缀键，存量深链失效随批记录；registry 单集合合并形态转正）/ C 命令-失效同源（appTabCommands 九动词 scopeOf 闭包派生 + 调用点 6 处手传 scope 退役；legacyKeys 桥 44 处退役——catalog 零 importer 后全部打空，唯一存活 ["deployments"] 前缀服务 project-overview AppTile）/ D rest 工厂三域试点（settings/app-observe/variables(configDetail)——fetchRows/qs/toApiError 样板归零，2 处 404→null 手写分支 → notFound:"null"）。
+
+序同前四换：Platform Backup `8eef5364`（14:59:10Z）+ 18 卷 tar → `/root/upgrade-b4ff15ad/vols/` → 停服替换（ffc17066 双二进制留 `/root/upgrade-b4ff15ad/old/`）→ drop-in 七件在位 → doctor **11 ok / 2 warning / 0 failed**（基线一致）→ **零扰动 PASS**（docker ps 清单 md5 与停服前逐字一致，15 容器）→ journal 零 error → 公网双 200 + 站上资产 `index-Do6Lxtgk.js` 与仓内 dist sha256 一致 + 公网 `grpcs://api.dev.fleetly.run` version `b4ff15ad` 往返（本地 CLI + hermetic 双构建 sha256 `5e1ec277…` 一致）。
+
+现网走查五项 PASS：backups 页头「1 databases · 1 healthy」（window:"all" 全量统计复原，与列表窗口互不影响）/ tasks 双列表键隔离（`tasks.q=web&schedules.q=beat` 并存互不携带——两 tab Search 各自回显自己 namespace 的键）+ 深链刷新还原 + ModulePage tab 键存活（M3 passthrough）/ Components 30s 轮询（四 provider 卡渲染 + 65s 双采样 VM freshness 均 "1s ago"——数据持续刷新）/ app-settings 读面全链（demo-19 hook：空态 → REST 写 → 页面重载配置态（repo/branch/token 渲染）→ 删 → 重载空态恢复——app-hook restRecord 200/404 双路径活体；M2 写后失效链以测试锚验收——app-settings/panels 零手传 scope 全绿。注：IAB 后端本会话 evaluate/click 通道故障（title 副作用探针实证），UI 内写操作未走通，非产品面证据）。demo-19 走查后已恢复无 hook 原态。
+
+**现役** = `b4ff15ad`；回滚锚 = Platform Backup `8eef5364` + `/root/upgrade-b4ff15ad/`（含 ffc17066 双二进制于 old/ + 18 卷 tar）。
