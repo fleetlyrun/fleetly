@@ -8,11 +8,14 @@ import { useCollection, useCollectionData, useCommand } from "@lynx-go/uikit-cor
 import { shortId } from "@/lib/format";
 import { toastOnSettled } from "@/kit/toast";
 import {
-  identitySearch,
   invitationsResource,
+  invitationsSearch,
   rolesResource,
+  rolesSearch,
   teamsResource,
+  teamsSearch,
   usersResource,
+  usersSearch,
   type InvitationEntry,
   type RoleEntry,
   type TeamEntry,
@@ -46,16 +49,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 // teams / roles / invitations 四 tab（URL param），动词面对齐 CLI。明文凭证
 // 沿 CLI 口径：邀请 secret 只在铸造响应出现一次（SecretReveal 形态）。列表
 // 骨架换 uikit 块（kit ListPage × FilterBar × DataTable × Pagination），快筛/
-// 分页首次进 URL（identitySearch 四 tab 共享实例，q/分页跨 tab 持久）；users
+// 分页首次进 URL（F1 回流批起四列表各持 namespace：users.q/teams.q/roles.q/
+// invitations.q 并存互不携带——URL 键形从共享 q 变前缀键，存量深链失效随批
+// 记录）；users
 // 行内设密跨行展开走 DataTable 本地扩展槽 renderExtraRow（展开态归页面）。
 // 写面批2 全走 kit/identity.ts 的 resource commands（四创建弹窗保留
 // useState 壳只换提交面——mint→reveal 链敏感不迁 Form 块；Confirm 壳原样；
 // toast 单源在 kit/toast.ts）。批4：创建弹窗下拉的伴读也换 kit 集合——固定
 // 窗（size 100 整表，M1 useCollectionData）不经 URL，列表页的 q/cursor
 // 残留不泄进下拉。
-// useCollection 化批：validateSearch 合并形态收编 tab 键 + kit 集合参数
-//（toSearchSchema 不认 tab，必须显式并入）；tab 切换走函数式 search 保
-// q/分页跨 tab 持久（接受语义）。
+// validateSearch = tab zod + 四个 toSearchSchema().validate 输出组合直挂
+//（M3 passthrough 保 tab 键存活，零手写合并器）。
 const identityTabSearch = z.object({ tab: z.enum(["users", "teams", "roles", "invitations"]).optional() });
 
 // 创建弹窗下拉的伴读固定窗：全量行整取（size 100），不经 URL——useCollection
@@ -63,7 +67,10 @@ const identityTabSearch = z.object({ tab: z.enum(["users", "teams", "roles", "in
 export const Route = createFileRoute("/_shell/identity")({
   validateSearch: (input: Record<string, unknown>) => ({
     ...identityTabSearch.parse(input),
-    ...identitySearch.toSearchSchema()["~standard"].validate(input).value,
+    ...usersSearch.toSearchSchema()["~standard"].validate(input).value,
+    ...teamsSearch.toSearchSchema()["~standard"].validate(input).value,
+    ...rolesSearch.toSearchSchema()["~standard"].validate(input).value,
+    ...invitationsSearch.toSearchSchema()["~standard"].validate(input).value,
   }),
   component: IdentityPageV2,
 });
@@ -113,7 +120,7 @@ function UsersTab({ createOpen, onCreateOpenChange }: { createOpen: boolean; onC
   // 存量键（legacyKeys）失效，轮询是兜底不是唯一新鲜度来源。
   const list = useCollection(usersResource, {
     from: Route.id,
-    search: identitySearch,
+    search: usersSearch,
     query: { refetchInterval: 15_000 },
   });
   // 行内设密展开态归页面（单开；id 空兜底不展开）
@@ -169,7 +176,7 @@ function UsersTab({ createOpen, onCreateOpenChange }: { createOpen: boolean; onC
         list={list}
         toolbar={
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <FilterBar list={list} schema={identitySearch} textPlaceholder="Filter users..." />
+            <FilterBar list={list} schema={usersSearch} textPlaceholder="Filter users..." />
             <div className="py-2 pr-3">
               <Button size="sm" onClick={() => onCreateOpenChange(true)}>
                 <PlusIcon data-icon-start-inline />
@@ -344,7 +351,7 @@ function TeamsTab() {
   // 数据面 useCollection（15s 轮询，与旧 useTeams 同拍）。
   const list = useCollection(teamsResource, {
     from: Route.id,
-    search: identitySearch,
+    search: teamsSearch,
     query: { refetchInterval: 15_000 },
   });
   const [name, setName] = useState("");
@@ -404,7 +411,7 @@ function TeamsTab() {
         list={list}
         toolbar={
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <FilterBar list={list} schema={identitySearch} textPlaceholder="Filter teams..." />
+            <FilterBar list={list} schema={teamsSearch} textPlaceholder="Filter teams..." />
             <div className="py-2 pr-3">
               <Button size="sm" onClick={() => { setName(""); setCreateOpen(true); }}>
                 <PlusIcon data-icon-start-inline />
@@ -474,7 +481,7 @@ function RolesTab({ createOpen, onCreateOpenChange }: { createOpen: boolean; onC
   // /v1/roles，拍频对齐本页四表）。
   const list = useCollection(rolesResource, {
     from: Route.id,
-    search: identitySearch,
+    search: rolesSearch,
     query: { refetchInterval: 15_000 },
   });
   const removeRole = useCommand(rolesResource.commands.remove, {
@@ -535,7 +542,7 @@ function RolesTab({ createOpen, onCreateOpenChange }: { createOpen: boolean; onC
         list={list}
         toolbar={
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <FilterBar list={list} schema={identitySearch} textPlaceholder="Filter roles..." />
+            <FilterBar list={list} schema={rolesSearch} textPlaceholder="Filter roles..." />
             <div className="py-2 pr-3">
               <Button size="sm" onClick={() => onCreateOpenChange(true)}>
                 <PlusIcon data-icon-start-inline />
@@ -632,7 +639,7 @@ function InvitationsTab({ createOpen, onCreateOpenChange }: { createOpen: boolea
   // 数据面 useCollection（15s 轮询，与旧 useInvitations 同拍）。
   const list = useCollection(invitationsResource, {
     from: Route.id,
-    search: identitySearch,
+    search: invitationsSearch,
     query: { refetchInterval: 15_000 },
   });
   // 下拉伴读（批4 换 kit 集合固定窗；F1 回流批 useCollectionData 化）：
@@ -709,7 +716,7 @@ function InvitationsTab({ createOpen, onCreateOpenChange }: { createOpen: boolea
         list={list}
         toolbar={
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <FilterBar list={list} schema={identitySearch} textPlaceholder="Filter invitations..." />
+            <FilterBar list={list} schema={invitationsSearch} textPlaceholder="Filter invitations..." />
             <div className="py-2 pr-3">
               <Button size="sm" onClick={() => onCreateOpenChange(true)}>
                 <PlusIcon data-icon-start-inline />

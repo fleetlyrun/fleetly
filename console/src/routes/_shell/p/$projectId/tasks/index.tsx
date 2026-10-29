@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 import { SchedulesPanel, TasksPanel } from "@/features/tasks/panels";
 import { ModulePage } from "@/components/domain/module-page";
-import { tasksSearch } from "@/kit/tasks";
+import { schedulesSearch, tasksSearch } from "@/kit/tasks";
 
 // 自动化页（UI v2 批 4；模板化收编 ModulePage）：Tasks + Schedules 双
 // tab（URL param）——项目语境来自 URL，手贴 project ID 交互退役。tab
@@ -12,18 +12,18 @@ import { tasksSearch } from "@/kit/tasks";
 // 在其下而本页不渲染 Outlet，详情路由 URL 可达但组件永不挂载（2026-10-12
 // 走查 W-6 实咬，f6069a8 起既有）。改名 index 对齐 databases 先例：列表
 // = index 子路由、详情 = 无布局兄弟路由。
-// 2026-10-26 批1 useCollection 化：validateSearch 改合并形态（tab 键走既有
-// zod 解析 + collection 查询键 q/filter/sort/page/size 走 tasksSearch——
-// toSearchSchema 会丢 tab 键，两段必须合并）；双 tab 双列表共享 tasksSearch
-// 同一实例，q/分页跨 tab 持久是接受的语义（tab 切换经函数式 search 展开保
-// 留其余键）。from=Route.id 经 props 注入面板（panels 不反查路由，避免
-// route ↔ feature 循环引用）。
+// F1 回流批（M1+M3）：双 tab 双列表各持 namespace schema（tasks.q 与
+// schedules.q 并存互不携带——URL 键形从共享 q 变前缀键，存量深链失效随批
+// 记录）；validateSearch = tab zod + 两个 toSearchSchema().validate 输出
+// 组合直挂（M3 passthrough 保 tab 键存活，零手写合并器）。from=Route.id
+// 经 props 注入面板（panels 不反查路由，避免 route ↔ feature 循环引用）。
 const tasksTabSearch = z.object({ tab: z.enum(["tasks", "schedules"]).optional() });
 
 export const Route = createFileRoute("/_shell/p/$projectId/tasks/")({
   validateSearch: (input: Record<string, unknown>) => ({
     ...tasksTabSearch.parse(input),
     ...tasksSearch.toSearchSchema()["~standard"].validate(input).value,
+    ...schedulesSearch.toSearchSchema()["~standard"].validate(input).value,
   }),
   component: TasksPage,
 });

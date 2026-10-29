@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { textPredicate } from "@lynx-go/uikit-core/kernel";
 import { setToken } from "@/lib/token";
-import { backupsSearch, fetchDatabaseBackups, fetchPlatformSnapshots } from "./backups";
+import { databasesSearch, fetchDatabaseBackups, fetchPlatformSnapshots } from "./backups";
 
 // Backups 域适配器单测（批1 Wave2-A）：跨项目 fan-out 复刻（projects →
 // 逐项目 databases 合并 + staleness 业务排序 + 单项目失败吞空段）、平台
@@ -102,23 +102,24 @@ describe("fetchPlatformSnapshots（端点 + 收敛）", () => {
   });
 });
 
-describe("backupsSearch（URL 编解码契约，双 tab 共享实例）", () => {
+describe("databasesSearch/snapshotsSearch（URL 编解码契约，双 namespace 实例）", () => {
   it("q 编码往返为并集字段集的 contains 谓词；decode 容忍缺省", () => {
     const fields = ["name", "engine", "project_name", "id", "hostname"];
-    const encoded = backupsSearch.encode({
+    const encoded = databasesSearch.encode({
       predicate: textPredicate(fields, "pg"),
       window: { size: 20 },
     });
-    expect(encoded.q).toBe("pg");
-    const decoded = backupsSearch.decode({ q: "pg" });
+    // namespace 物理键（F1 回流批）：databases.q；decode 不读他命名空间键
+    expect(encoded["databases.q"]).toBe("pg");
+    const decoded = databasesSearch.decode({ "databases.q": "pg" });
     expect(decoded.predicate).toEqual(textPredicate(fields, "pg"));
     expect(decoded.window.size).toBe(20);
   });
 
   it("清除谓词的补丁显式置空 q（函数式 search 展开不残留旧值）", () => {
-    const patch = backupsSearch.patch({ predicate: null });
-    expect("q" in patch).toBe(true);
-    expect(patch.q).toBeUndefined();
-    expect(patch.page).toBeUndefined();
+    const patch = databasesSearch.patch({ predicate: null });
+    expect("databases.q" in patch).toBe(true);
+    expect(patch["databases.q"]).toBeUndefined();
+    expect(patch["databases.page"]).toBeUndefined();
   });
 });

@@ -5,7 +5,8 @@ import {
   alertRulesResource,
   alertStatesLookup,
   alertStatesResource,
-  alertsSearch,
+  channelsSearch,
+  rulesSearch,
   fetchAlertingChannels,
   fetchAlertRules,
   fetchAlertStates,
@@ -70,24 +71,26 @@ describe("fetchAlertRules/fetchAlertingChannels（端点 + 收敛）", () => {
   });
 });
 
-describe("alertsSearch（URL 编解码契约，双 tab 共享实例）", () => {
+describe("rulesSearch/channelsSearch（URL 编解码契约，双 namespace 实例）", () => {
   it("q 编码往返为并集字段集的 contains 谓词；decode 容忍缺省", () => {
     const fields = ["app_id", "metric", "name", "kind"];
-    const encoded = alertsSearch.encode({
+    const encoded = rulesSearch.encode({
       predicate: textPredicate(fields, "cpu"),
       window: { size: 20 },
     });
-    expect(encoded.q).toBe("cpu");
-    const decoded = alertsSearch.decode({ q: "cpu" });
+    // namespace 物理键（F1 回流批）：rules.q；channels 键不携带
+    expect(encoded["rules.q"]).toBe("cpu");
+    const decoded = rulesSearch.decode({ "rules.q": "cpu" });
+    expect(channelsSearch.decode({ "rules.q": "cpu" }).predicate).toBeUndefined();
     expect(decoded.predicate).toEqual(textPredicate(fields, "cpu"));
     expect(decoded.window.size).toBe(20);
   });
 
   it("清除谓词的补丁显式置空 q（函数式 search 展开不残留旧值）", () => {
-    const patch = alertsSearch.patch({ predicate: null });
-    expect("q" in patch).toBe(true);
-    expect(patch.q).toBeUndefined();
-    expect(patch.page).toBeUndefined();
+    const patch = rulesSearch.patch({ predicate: null });
+    expect("rules.q" in patch).toBe(true);
+    expect(patch["rules.q"]).toBeUndefined();
+    expect(patch["rules.page"]).toBeUndefined();
   });
 });
 

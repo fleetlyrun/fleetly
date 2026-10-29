@@ -1,23 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import {
-  createMemoryHistory,
-  createRootRoute,
-  createRoute,
-  createRouter,
-  RouterProvider,
-} from "@tanstack/react-router";
+import { RouterProvider } from "@tanstack/react-router";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { createTestRouter } from "@lynx-go/uikit-core/testing";
 import { ConfigsPanel } from "./panels";
-import { variablesSearch } from "@/kit/variables";
+import { configsSearch } from "@/kit/variables";
 import { setToken } from "@/lib/token";
 
 // Configs 面板（详情/编辑批；useCollection 化批 3 补 URL 上下文——
 // useCollection 需要 Router/Query 两上下文，裸 render 不再成立）：view
 // 动词/行点击进 GetConfig 回读弹窗；编辑 PUT 同名冻结新版本，成功后回
 // 视图并刷新到新版本号；内容未变更时 Save 诚实禁用（不铸无谓版本）。
-// （uikit-core/testing 的 renderWithKit harness 源码过不了本仓
-// noUnusedLocals，此处内联等价最小路由。）
+// F1 回流批（M10）：内联最小路由退役——uikit-core 0.4.0 /testing 出口
+// 修复严格度后 createTestRouter 是单源（0.3.1 时代 noUnusedLocals 违例的
+// 内联理由不复存在）。
 
 // CONFIGS_ROUTE_ID：path 即根路由 id——useSearch({ from }) 按此锚定活跃
 // match（真实路由 id 是 /_shell/p/$projectId/variables，此处测试路由自
@@ -26,19 +22,19 @@ const CONFIGS_ROUTE_ID = "/p/P1/variables";
 
 function renderConfigsPanel() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const rootRoute = createRootRoute({ validateSearch: variablesSearch.toSearchSchema() });
-  const pageRoute = createRoute({
-    getParentRoute: () => rootRoute,
-    path: CONFIGS_ROUTE_ID,
-    component: () => (
-      <QueryClientProvider client={queryClient}>
-        <ConfigsPanel projectId="P1" routeId={CONFIGS_ROUTE_ID} />
-      </QueryClientProvider>
-    ),
-  });
-  const router = createRouter({
-    routeTree: rootRoute.addChildren([pageRoute]),
-    history: createMemoryHistory({ initialEntries: [CONFIGS_ROUTE_ID] }),
+  const router = createTestRouter({
+    routes: [
+      {
+        path: CONFIGS_ROUTE_ID,
+        component: () => (
+          <QueryClientProvider client={queryClient}>
+            <ConfigsPanel projectId="P1" routeId={CONFIGS_ROUTE_ID} />
+          </QueryClientProvider>
+        ),
+        searchSchema: configsSearch,
+      },
+    ],
+    initial: { path: CONFIGS_ROUTE_ID },
   });
   return render(<RouterProvider router={router} />);
 }

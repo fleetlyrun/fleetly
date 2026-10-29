@@ -149,10 +149,16 @@ export const declarePeerDescriptor: CommandDescriptor<
   legacyKeys: (scope) => [["resources", "network-peers", String(scope.projectId ?? "")]],
 };
 
-// 双 tab 共用实例：q/分页跨 tab 持久是接受语义（tab 切换函数式 search 保
-// 留集合键）。字段集 = 旧 fieldsOf 并集（networks name/id；peers 行只有
-// id 参与）。
+// 双列表各持 namespace 实例（F1 回流批 M1：networks.q 与 peers.q 并存互
+// 不携带，「q 跨 tab 持久」妥协退役；字段集保持旧并集——networks name/id、
+// peers 行只有 id 参与）。
 export const networksSearch = collectionQuerySchema({
+  namespace: "networks",
+  text: ["name", "id"],
+  defaultSize: 20,
+});
+export const peersSearch = collectionQuerySchema({
+  namespace: "peers",
   text: ["name", "id"],
   defaultSize: 20,
 });

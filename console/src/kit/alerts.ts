@@ -84,9 +84,16 @@ export const channelsResource = defineResource({
   collection: clientCollection(fetchAlertingChannels),
 });
 
-// 双 tab 共用实例：q/分页跨 tab 持久是接受语义（tab 切换函数式 search 保
-// 留集合键）。字段集 = Rules（app_id/metric）∪ Channels（name/kind）。
-export const alertsSearch = collectionQuerySchema({
+// 双列表各持 namespace 实例（F1 回流批 M1：rules.q 与 channels.q 并存互
+// 不携带，「q 跨 tab 持久」妥协退役；字段集保持旧并集——Rules（app_id/
+// metric）∪ Channels（name/kind））。
+export const rulesSearch = collectionQuerySchema({
+  namespace: "rules",
+  text: ["app_id", "metric", "name", "kind"],
+  defaultSize: 20,
+});
+export const channelsSearch = collectionQuerySchema({
+  namespace: "channels",
   text: ["app_id", "metric", "name", "kind"],
   defaultSize: 20,
 });

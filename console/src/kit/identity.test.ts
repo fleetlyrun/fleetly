@@ -3,7 +3,7 @@ import { QueryClient } from "@tanstack/react-query";
 import { collectionQueryOptions, invalidateAfterCommand } from "@lynx-go/uikit-core";
 import { textPredicate } from "@lynx-go/uikit-core/kernel";
 import { setToken } from "@/lib/token";
-import { fetchInvitations, fetchRoles, fetchTeams, fetchUsers, identitySearch, usersResource } from "./identity";
+import { fetchInvitations, fetchRoles, fetchTeams, fetchUsers, teamsSearch, usersResource, usersSearch } from "./identity";
 
 // 身份域适配器单测（批1 Wave2-B）：四 resource 端点锚、信封行收敛、共享
 // schema 的 URL 编解码往返（平台域无 scope——fetch 恒发）。fetch 面 stub
@@ -45,24 +45,26 @@ describe("身份域四 fetcher（端点 + 收敛）", () => {
   });
 });
 
-describe("identitySearch（URL 编解码契约，四 tab 共享实例）", () => {
+describe("usersSearch（URL 编解码契约，四 namespace 实例之一）", () => {
   it("q 编码往返为并集字段集的 contains 谓词；decode 容忍缺省", () => {
     const fields = ["name", "id", "scopes", "team_id", "role_id", "created_by"];
-    const encoded = identitySearch.encode({
+    const encoded = usersSearch.encode({
       predicate: textPredicate(fields, "alice"),
       window: { size: 20 },
     });
-    expect(encoded.q).toBe("alice");
-    const decoded = identitySearch.decode({ q: "alice" });
+    // namespace 物理键（F1 回流批）：users.q；他命名空间键不携带
+    expect(encoded["users.q"]).toBe("alice");
+    const decoded = usersSearch.decode({ "users.q": "alice" });
+    expect(teamsSearch.decode({ "users.q": "alice" }).predicate).toBeUndefined();
     expect(decoded.predicate).toEqual(textPredicate(fields, "alice"));
     expect(decoded.window.size).toBe(20);
   });
 
   it("清除谓词的补丁显式置空 q（函数式 search 展开不残留旧值）", () => {
-    const patch = identitySearch.patch({ predicate: null });
-    expect("q" in patch).toBe(true);
-    expect(patch.q).toBeUndefined();
-    expect(patch.page).toBeUndefined();
+    const patch = usersSearch.patch({ predicate: null });
+    expect("users.q" in patch).toBe(true);
+    expect(patch["users.q"]).toBeUndefined();
+    expect(patch["users.page"]).toBeUndefined();
   });
 });
 

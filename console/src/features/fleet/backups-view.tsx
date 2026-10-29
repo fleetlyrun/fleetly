@@ -2,7 +2,7 @@ import { HardDriveDownloadIcon, LinkIcon } from "lucide-react";
 import type { LegacyColumnDef } from "@tanstack/react-table/legacy";
 import { useCollection, useCollectionData } from "@lynx-go/uikit-core";
 import { backupHealth } from "@/features/databases/backup-health";
-import { backupsSearch, databaseBackupsResource, platformSnapshotsResource, type DatabaseBackupRow, type PlatformSnapshotRow } from "@/kit/backups";
+import { databaseBackupsResource, databasesSearch, platformSnapshotsResource, snapshotsSearch, type DatabaseBackupRow, type PlatformSnapshotRow } from "@/kit/backups";
 import { CliEquivalent } from "@/components/domain/list-toolbar";
 import { ModulePage } from "@/components/domain/module-page";
 import { ProjectAvatar } from "@/components/domain/project-avatar";
@@ -63,7 +63,7 @@ export function BackupsView({
 function DatabasesTab({ from }: { from: string }) {
   const list = useCollection(databaseBackupsResource, {
     from,
-    search: backupsSearch,
+    search: databasesSearch,
     query: { refetchInterval: 60_000 },
   });
 
@@ -142,7 +142,7 @@ function DatabasesTab({ from }: { from: string }) {
   return (
     <ListPage
       list={list}
-      toolbar={<FilterBar list={list} schema={backupsSearch} textPlaceholder="Filter databases..." />}
+      toolbar={<FilterBar list={list} schema={databasesSearch} textPlaceholder="Filter databases..." />}
       pagination={<Pagination list={list} />}
       emptyTitle={filtered ? "No databases match the filter" : "No databases"}
       emptyDescription={
@@ -161,7 +161,7 @@ function DatabasesTab({ from }: { from: string }) {
 function SnapshotsTab({ from }: { from: string }) {
   const list = useCollection(platformSnapshotsResource, {
     from,
-    search: backupsSearch,
+    search: snapshotsSearch,
     query: { refetchInterval: 60_000 },
   });
 
@@ -193,7 +193,7 @@ function SnapshotsTab({ from }: { from: string }) {
   return (
     <ListPage
       list={list}
-      toolbar={<FilterBar list={list} schema={backupsSearch} textPlaceholder="Filter snapshots..." />}
+      toolbar={<FilterBar list={list} schema={snapshotsSearch} textPlaceholder="Filter snapshots..." />}
       pagination={<Pagination list={list} />}
       emptyTitle={filtered ? "No snapshots match the filter" : "No snapshots listed yet"}
       emptyDescription={

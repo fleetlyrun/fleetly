@@ -12,7 +12,8 @@ import {
   alertRulesResource,
   alertStatesLookup,
   alertStatesResource,
-  alertsSearch,
+  channelsSearch,
+  rulesSearch,
   channelsResource,
   type AlertRuleRow,
   type ChannelRow,
@@ -33,8 +34,9 @@ import { Card } from "@/components/ui/card";
 
 // 告警页（List 变体，UI v2 批 3 → 2026-10-26 批1 Wave2-A useCollection 化）：
 // firing 摘要条置顶（lead 槽）+ rules/channels 双 tab。rules/channels 列表
-// 读面走 kit 双资源（15s 轮询沿用旧拍，快筛/分页进 URL——validateSearch
-// 合并形态收编 tab 键 + 集合键）；alert states 批4（2026-10-27）也收进 kit
+// 读面走 kit 双资源（15s 轮询沿用旧拍，快筛/分页进 URL——F1 回流批起双列
+// 表各持 namespace：rules.q 与 channels.q 并存互不携带，URL 键形从共享 q
+// 变前缀键，存量深链失效随批记录）；alert states 批4（2026-10-27）也收进 kit
 //（lead 槽 firing 摘要 + 行内 state 覆盖列的前端 join 数据源，不是列表——
 // 大页 lookup 读面不写 URL）。rules×states join 列、Test/Delete 动作与
 // CreateRuleDialog 原样保留。
@@ -46,7 +48,8 @@ const alertsTabSearch = z.object({ tab: z.enum(["rules", "channels"]).optional()
 export const Route = createFileRoute("/_shell/alerts")({
   validateSearch: (input: Record<string, unknown>) => ({
     ...alertsTabSearch.parse(input),
-    ...alertsSearch.toSearchSchema()["~standard"].validate(input).value,
+    ...rulesSearch.toSearchSchema()["~standard"].validate(input).value,
+    ...channelsSearch.toSearchSchema()["~standard"].validate(input).value,
   }),
   component: AlertsPage,
 });
@@ -112,7 +115,7 @@ function RulesPanel({ from, states, onCreate }: { from: string; states: AlertSta
   const queryClient = useQueryClient();
   const list = useCollection(alertRulesResource, {
     from,
-    search: alertsSearch,
+    search: rulesSearch,
     query: { refetchInterval: 15_000 },
   });
   const stateOf = new Map(states.map((state) => [state.rule_id ?? "", state]));
@@ -190,7 +193,7 @@ function RulesPanel({ from, states, onCreate }: { from: string; states: AlertSta
         list={list}
         toolbar={
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <FilterBar list={list} schema={alertsSearch} textPlaceholder="Filter rules..." />
+            <FilterBar list={list} schema={rulesSearch} textPlaceholder="Filter rules..." />
             <div className="py-2 pr-3">
               <Button size="sm" onClick={onCreate}>
                 <PlusIcon data-icon-start-inline />
@@ -239,7 +242,7 @@ function ChannelsPanel({ from }: { from: string }) {
   const queryClient = useQueryClient();
   const list = useCollection(channelsResource, {
     from,
-    search: alertsSearch,
+    search: channelsSearch,
     query: { refetchInterval: 15_000 },
   });
   const [deleting, setDeleting] = useState<ChannelRow | null>(null);
@@ -328,7 +331,7 @@ function ChannelsPanel({ from }: { from: string }) {
         list={list}
         toolbar={
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <FilterBar list={list} schema={alertsSearch} textPlaceholder="Filter channels..." />
+            <FilterBar list={list} schema={channelsSearch} textPlaceholder="Filter channels..." />
             <div className="py-2 pr-3">
               {/* 渠道创建 Dialog 批 6 补齐（表单面迁移尾巴，不在本批谎称完成） */}
               <Button size="sm" variant="outline" disabled title="Ships with the settings milestone">

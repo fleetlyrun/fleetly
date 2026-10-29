@@ -28,6 +28,7 @@ import {
   networkPeersResource,
   networksResource,
   networksSearch,
+  peersSearch,
   rebuildNetworkDescriptor,
   revokePeerDescriptor,
   type Network,
@@ -43,9 +44,10 @@ import {
 import {
   createVolumeCommand,
   removeVolumeCommand,
-  storageSearch,
   uploadsResource,
+  uploadsSearch,
   volumesResource,
+  volumesSearch,
   type Upload,
   type Volume,
 } from "@/kit/storage";
@@ -57,8 +59,10 @@ import {
   removeSecretCommand,
   removeSharedVariableCommand,
   secretsResource,
+  secretsSearch,
+  configsSearch,
+  sharedVarsSearch,
   sharedVariablesResource,
-  variablesSearch,
   type Config,
   type Secret,
   type SharedVariable,
@@ -289,7 +293,7 @@ function NetworkActionsCell({ projectId, networkId }: { projectId: string; netwo
 export function PeersPanel({ projectId, routeId }: { projectId: string; routeId: string }) {
   const list = useCollection(networkPeersResource, {
     from: routeId,
-    search: networksSearch,
+    search: peersSearch,
     scope: { projectId },
     query: { refetchInterval: 15_000 },
   });
@@ -351,7 +355,7 @@ export function PeersPanel({ projectId, routeId }: { projectId: string; routeId:
       </p>
       <ListPage
         list={list}
-        toolbar={<FilterBar list={list} schema={networksSearch} textPlaceholder="Filter peers..." />}
+        toolbar={<FilterBar list={list} schema={peersSearch} textPlaceholder="Filter peers..." />}
         pagination={<Pagination list={list} />}
         emptyTitle={filtered ? "No peers match the filter" : "No peers declared"}
         emptyDescription={
@@ -756,7 +760,7 @@ export function VolumesPanel({ projectId, routeId }: { projectId: string; routeI
 function VolumesTab({ projectId, routeId }: { projectId: string; routeId: string }) {
   const list = useCollection(volumesResource, {
     from: routeId,
-    search: storageSearch,
+    search: volumesSearch,
     scope: { projectId },
     query: { refetchInterval: 15_000 },
   });
@@ -884,7 +888,7 @@ function VolumesTab({ projectId, routeId }: { projectId: string; routeId: string
       list={list}
       toolbar={
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <FilterBar list={list} schema={storageSearch} textPlaceholder="Filter volumes..." />
+          <FilterBar list={list} schema={volumesSearch} textPlaceholder="Filter volumes..." />
           <div className="py-2 pr-3">
             <Button size="sm" onClick={openCreate}>
               <PlusIcon data-icon-start-inline />
@@ -1010,7 +1014,7 @@ function VolumeActionsCell({
 }
 
 // ---- secrets / configs / shared variables（put 型写面；列表读面本批
-// kit 化，三 tab 共享 variablesSearch，均 15s 轮询沿用） ----
+// kit 化，三 tab 各持 namespace schema（F1 回流批），均 15s 轮询沿用） ----
 
 // PutForm 是 Add 型写面的统一弹窗（secret/config/shared variable 共用，
 // API 动词是 PUT——组件名承动词面，按钮文案统一 Add *，用户裁决 2026-10-11）：
@@ -1112,7 +1116,7 @@ export function SecretsPanel({ projectId, routeId }: { projectId: string; routeI
 function SecretsTab({ projectId, routeId }: { projectId: string; routeId: string }) {
   const list = useCollection(secretsResource, {
     from: routeId,
-    search: variablesSearch,
+    search: secretsSearch,
     scope: { projectId },
     query: { refetchInterval: 15_000 },
   });
@@ -1150,7 +1154,7 @@ function SecretsTab({ projectId, routeId }: { projectId: string; routeId: string
       list={list}
       toolbar={
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <FilterBar list={list} schema={variablesSearch} textPlaceholder="Filter secrets..." />
+          <FilterBar list={list} schema={secretsSearch} textPlaceholder="Filter secrets..." />
           <div className="py-2 pr-3">
             <PutForm
               title="Add secret…"
@@ -1213,7 +1217,7 @@ export function ConfigsPanel({ projectId, routeId }: { projectId: string; routeI
 function ConfigsTab({ projectId, routeId }: { projectId: string; routeId: string }) {
   const list = useCollection(configsResource, {
     from: routeId,
-    search: variablesSearch,
+    search: configsSearch,
     scope: { projectId },
     query: { refetchInterval: 15_000 },
   });
@@ -1262,7 +1266,7 @@ function ConfigsTab({ projectId, routeId }: { projectId: string; routeId: string
       list={list}
       toolbar={
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <FilterBar list={list} schema={variablesSearch} textPlaceholder="Filter configs..." />
+          <FilterBar list={list} schema={configsSearch} textPlaceholder="Filter configs..." />
           <div className="py-2 pr-3">
             <PutForm
               title="Add config…"
@@ -1446,7 +1450,7 @@ function VariablesTab({
 }) {
   const list = useCollection(sharedVariablesResource, {
     from: routeId,
-    search: variablesSearch,
+    search: sharedVarsSearch,
     scope: { projectId },
     query: { refetchInterval: 15_000 },
   });
@@ -1510,7 +1514,7 @@ function VariablesTab({
       list={list}
       toolbar={
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <FilterBar list={list} schema={variablesSearch} textPlaceholder="Filter variables..." />
+          <FilterBar list={list} schema={sharedVarsSearch} textPlaceholder="Filter variables..." />
           <div className="py-2 pr-3">
             <PutForm
               title="Add variable…"
@@ -1605,7 +1609,7 @@ export function UploadsPanel({ projectId, routeId }: { projectId: string; routeI
 function UploadsTab({ projectId, routeId }: { projectId: string; routeId: string }) {
   const list = useCollection(uploadsResource, {
     from: routeId,
-    search: storageSearch,
+    search: volumesSearch,
     scope: { projectId },
     query: { refetchInterval: 15_000 },
   });
@@ -1728,7 +1732,7 @@ function UploadsTab({ projectId, routeId }: { projectId: string; routeId: string
       toolbar={
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-3">
-            <FilterBar list={list} schema={storageSearch} textPlaceholder="Filter uploads..." />
+            <FilterBar list={list} schema={uploadsSearch} textPlaceholder="Filter uploads..." />
             <span className="hidden text-xs text-muted lg:inline">deterministic tar · .git skipped · content-addressed</span>
           </div>
           <div className="py-2 pr-3">

@@ -206,8 +206,17 @@ export interface CreateScheduleInput {
 
 export type RunEntry = automationSchemas["schemas"]["v1Run"];
 
-// 双 tab 共享实例：text = Tasks（name/id/form/state）∪ Schedules（name/cron/image）。
+// 双列表各持 namespace 实例（F1 回流批 M1：多集合同路由显式切——URL 键
+// tasks.q 与 schedules.q 并存互不携带，曾有的「q 跨 tab 持久」语义妥协
+// 随之退役；字段集保持旧并集，过滤能力不变）。注意 URL 键形变化：q →
+// tasks.q / schedules.q（存量深链失效，行为变更随批记录）。
 export const tasksSearch = collectionQuerySchema({
+  namespace: "tasks",
+  text: ["name", "id", "form", "state", "cron", "image"],
+  defaultSize: 20,
+});
+export const schedulesSearch = collectionQuerySchema({
+  namespace: "schedules",
   text: ["name", "id", "form", "state", "cron", "image"],
   defaultSize: 20,
 });

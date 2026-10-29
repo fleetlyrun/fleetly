@@ -154,10 +154,28 @@ export const invitationsResource = defineResource({
   },
 });
 
-// 四 tab 共享实例：text = Users（name/id）∪ Teams（name/id）∪
-// Roles（name/scopes——数组字段客户端求值走 String() 逗连，与旧 fieldsOf
-// 展平同语义）∪ Invitations（id/team_id/role_id/created_by）。
-export const identitySearch = collectionQuerySchema({
+// 四列表各持 namespace 实例（F1 回流批 M1：users.q/teams.q/roles.q/
+// invitations.q 并存互不携带，「q 跨 tab 持久」妥协退役；字段集保持旧并集
+// ——text = Users（name/id）∪ Teams（name/id）∪ Roles（name/scopes——数组
+// 字段客户端求值走 String() 逗连）∪ Invitations（id/team_id/role_id/
+// created_by））。
+export const usersSearch = collectionQuerySchema({
+  namespace: "users",
+  text: ["name", "id", "scopes", "team_id", "role_id", "created_by"],
+  defaultSize: 20,
+});
+export const teamsSearch = collectionQuerySchema({
+  namespace: "teams",
+  text: ["name", "id", "scopes", "team_id", "role_id", "created_by"],
+  defaultSize: 20,
+});
+export const rolesSearch = collectionQuerySchema({
+  namespace: "roles",
+  text: ["name", "id", "scopes", "team_id", "role_id", "created_by"],
+  defaultSize: 20,
+});
+export const invitationsSearch = collectionQuerySchema({
+  namespace: "invitations",
   text: ["name", "id", "scopes", "team_id", "role_id", "created_by"],
   defaultSize: 20,
 });

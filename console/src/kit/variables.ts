@@ -193,12 +193,11 @@ export const putConfigCommand = configsResource.commands.put;
 export const putSharedVariableCommand = sharedVariablesResource.commands.put;
 export const removeSharedVariableCommand = sharedVariablesResource.commands.remove;
 
-// 三 tab 共用实例：q/分页跨 tab 持久是接受语义（tab 切换函数式 search 保
-// 留集合键）。字段集 = 旧 fieldsOf 同款 name 单字段。
-export const variablesSearch = collectionQuerySchema({
-  text: ["name"],
-  defaultSize: 20,
-});
+// 三列表各持 namespace 实例（F1 回流批 M1：secrets.q/configs.q/variables.q
+// 并存互不携带，「q 跨 tab 持久」妥协退役；字段集同旧 name 单字段）。
+export const secretsSearch = collectionQuerySchema({ namespace: "secrets", text: ["name"], defaultSize: 20 });
+export const configsSearch = collectionQuerySchema({ namespace: "configs", text: ["name"], defaultSize: 20 });
+export const sharedVarsSearch = collectionQuerySchema({ namespace: "variables", text: ["name"], defaultSize: 20 });
 
 // Config 详情回读（ConfigDetailDialog 的 GetConfig 单记录；PUT 同名冻结
 // 新版本后经 legacyKeys 双键桥失效——批2 既有桥值）。

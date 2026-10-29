@@ -101,9 +101,16 @@ export const uploadsResource = defineResource({
   collection: clientCollection(fetchUploads),
 });
 
-// 双 tab 共用实例：q/分页跨 tab 持久是接受语义（tab 切换函数式 search 保
-// 留集合键）。字段集 = 旧 fieldsOf 并集（volumes name/id + uploads id/digest）。
-export const storageSearch = collectionQuerySchema({
+// 双列表各持 namespace 实例（F1 回流批 M1：volumes.q 与 uploads.q 并存互
+// 不携带，「q 跨 tab 持久」妥协退役；字段集保持旧并集——volumes name/id +
+// uploads id/digest）。
+export const volumesSearch = collectionQuerySchema({
+  namespace: "volumes",
+  text: ["name", "id", "digest"],
+  defaultSize: 20,
+});
+export const uploadsSearch = collectionQuerySchema({
+  namespace: "uploads",
   text: ["name", "id", "digest"],
   defaultSize: 20,
 });

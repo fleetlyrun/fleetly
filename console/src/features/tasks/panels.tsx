@@ -34,6 +34,7 @@ import {
   runsResource,
   runsLookup,
   schedulesResource,
+  schedulesSearch,
   stopRunCommand,
   tasksResource,
   tasksSearch,
@@ -617,12 +618,12 @@ export function NewScheduleButton({ projectId }: { projectId: string }) {
 }
 
 // SchedulesPanel：时区 cron Schedule 表 + trigger/delete。数据面
-// useCollection（15s 轮询）；与 Tasks tab 共享 tasksSearch 实例（q/分页
-// 跨 tab 持久）。
+// useCollection（15s 轮询）；schedulesSearch 带独立 namespace（与 Tasks
+// tab 的 q/page 互不携带——M1）。
 export function SchedulesPanel({ projectId, from }: { projectId: string; from: string }) {
   const list = useCollection(schedulesResource, {
     from,
-    search: tasksSearch,
+    search: schedulesSearch,
     scope: { projectId },
     query: { refetchInterval: 15_000 },
   });

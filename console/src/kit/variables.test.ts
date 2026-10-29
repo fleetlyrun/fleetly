@@ -10,9 +10,10 @@ import {
   putSharedVariableCommand,
   removeSecretCommand,
   removeSharedVariableCommand,
+  secretsSearch,
+  configsSearch,
   secretsResource,
   sharedVariablesResource,
-  variablesSearch,
 } from "./variables";
 
 // Variables 域资源适配单测：三资源端点/信封收敛、空 scope 不发请求、URL
@@ -79,23 +80,25 @@ describe("三资源 fetch（端点 + 信封 + 收敛）", () => {
   });
 });
 
-describe("variablesSearch（URL 编解码契约——三 tab 共享 name 单字段）", () => {
+describe("secretsSearch/configsSearch/sharedVarsSearch（URL 编解码契约——三 namespace）", () => {
   it("q 编码往返为 name contains 谓词（单字段仍是 any 单叶）；decode 容忍缺省", () => {
-    const encoded = variablesSearch.encode({
+    const encoded = secretsSearch.encode({
       predicate: { any: [{ field: "name", op: "contains", value: "api" }] },
       window: { size: 20 },
     });
-    expect(encoded.q).toBe("api");
-    const decoded = variablesSearch.decode({ q: "api" });
+    // namespace 物理键（F1 回流批）：secrets.q；他命名空间键不携带
+    expect(encoded["secrets.q"]).toBe("api");
+    const decoded = secretsSearch.decode({ "secrets.q": "api" });
+    expect(configsSearch.decode({ "secrets.q": "api" }).predicate).toBeUndefined();
     expect(decoded.predicate).toEqual({ any: [{ field: "name", op: "contains", value: "api" }] });
     expect(decoded.window.size).toBe(20);
   });
 
   it("清除谓词的补丁显式置空 q（函数式 search 展开不残留旧值）", () => {
-    const patch = variablesSearch.patch({ predicate: null });
-    expect("q" in patch).toBe(true);
-    expect(patch.q).toBeUndefined();
-    expect(patch.page).toBeUndefined();
+    const patch = secretsSearch.patch({ predicate: null });
+    expect("secrets.q" in patch).toBe(true);
+    expect(patch["secrets.q"]).toBeUndefined();
+    expect(patch["secrets.page"]).toBeUndefined();
   });
 });
 

@@ -9,6 +9,7 @@ import {
   runsLookup,
   runsResource,
   schedulesResource,
+  schedulesSearch,
   stopRunCommand,
   tasksResource,
   tasksSearch,
@@ -79,24 +80,31 @@ describe("fetchTasks/fetchSchedules（端点 + 收敛 + 空 scope）", () => {
   });
 });
 
-describe("tasksSearch（URL 编解码契约，双 tab 共享实例）", () => {
-  it("q 编码往返为并集字段集的 contains 谓词；decode 容忍缺省", () => {
+describe("tasksSearch/schedulesSearch（URL 编解码契约，双 namespace 实例）", () => {
+  it("q 编码往返为并集字段集的 contains 谓词；物理键带 namespace 前缀", () => {
     const fields = ["name", "id", "form", "state", "cron", "image"];
     const encoded = tasksSearch.encode({
       predicate: textPredicate(fields, "mig"),
       window: { size: 20 },
     });
-    expect(encoded.q).toBe("mig");
-    const decoded = tasksSearch.decode({ q: "mig" });
+    // namespace 物理键：tasks.q（URL 键形变化是 F1 回流批的行为变更）
+    expect(encoded["tasks.q"]).toBe("mig");
+    expect("q" in encoded).toBe(false);
+    const decoded = tasksSearch.decode({ "tasks.q": "mig" });
     expect(decoded.predicate).toEqual(textPredicate(fields, "mig"));
     expect(decoded.window.size).toBe(20);
+    // decode 只读本命名空间键——他命名空间键互不携带（M1 验收锚）
+    expect(tasksSearch.decode({ "schedules.q": "mig" }).predicate).toBeUndefined();
+    expect(schedulesSearch.decode({ "schedules.q": "mig" }).predicate).toEqual(
+      textPredicate(fields, "mig"),
+    );
   });
 
-  it("清除谓词的补丁显式置空 q（函数式 search 展开不残留旧值）", () => {
+  it("清除谓词的补丁显式置空前缀键（函数式 search 展开不残留旧值）", () => {
     const patch = tasksSearch.patch({ predicate: null });
-    expect("q" in patch).toBe(true);
-    expect(patch.q).toBeUndefined();
-    expect(patch.page).toBeUndefined();
+    expect("tasks.q" in patch).toBe(true);
+    expect(patch["tasks.q"]).toBeUndefined();
+    expect(patch["tasks.page"]).toBeUndefined();
   });
 });
 

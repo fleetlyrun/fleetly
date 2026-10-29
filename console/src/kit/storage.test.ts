@@ -5,7 +5,8 @@ import {
   fetchUploads,
   fetchVolumes,
   removeVolumeCommand,
-  storageSearch,
+  volumesSearch,
+  uploadsSearch,
   volumesResource,
 } from "./storage";
 
@@ -71,9 +72,9 @@ describe("fetchVolumes / fetchUploads（收敛 + 作用域参数）", () => {
   });
 });
 
-describe("storageSearch（URL 编解码契约——双 tab 共享 name/id/digest 并集）", () => {
+describe("volumesSearch/uploadsSearch（URL 编解码契约——双 namespace 并集字段）", () => {
   it("q 编码往返为三字段 contains 谓词；decode 容忍缺省", () => {
-    const encoded = storageSearch.encode({
+    const encoded = volumesSearch.encode({
       predicate: { any: [
         { field: "name", op: "contains", value: "web" },
         { field: "id", op: "contains", value: "web" },
@@ -81,8 +82,11 @@ describe("storageSearch（URL 编解码契约——双 tab 共享 name/id/digest
       ] },
       window: { size: 20 },
     });
-    expect(encoded.q).toBe("web");
-    const decoded = storageSearch.decode({ q: "web" });
+    // namespace 物理键（F1 回流批）：volumes.q；他命名空间键不携带
+    expect(encoded["volumes.q"]).toBe("web");
+    expect("q" in encoded).toBe(false);
+    const decoded = volumesSearch.decode({ "volumes.q": "web" });
+    expect(uploadsSearch.decode({ "volumes.q": "web" }).predicate).toBeUndefined();
     expect(decoded.predicate).toEqual({
       any: [
         { field: "name", op: "contains", value: "web" },
@@ -94,10 +98,10 @@ describe("storageSearch（URL 编解码契约——双 tab 共享 name/id/digest
   });
 
   it("清除谓词的补丁显式置空 q（函数式 search 展开不残留旧值）", () => {
-    const patch = storageSearch.patch({ predicate: null });
-    expect("q" in patch).toBe(true);
-    expect(patch.q).toBeUndefined();
-    expect(patch.page).toBeUndefined();
+    const patch = volumesSearch.patch({ predicate: null });
+    expect("volumes.q" in patch).toBe(true);
+    expect(patch["volumes.q"]).toBeUndefined();
+    expect(patch["volumes.page"]).toBeUndefined();
   });
 });
 

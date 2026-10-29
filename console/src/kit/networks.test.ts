@@ -9,6 +9,7 @@ import {
   networkPeersResource,
   networksResource,
   networksSearch,
+  peersSearch,
   rebuildNetworkDescriptor,
   revokePeerDescriptor,
 } from "./networks";
@@ -73,7 +74,7 @@ describe("fetchNetworks / fetchNetworkPeers（收敛 + 作用域参数）", () =
   });
 });
 
-describe("networksSearch（URL 编解码契约——双 tab 共享 name/id）", () => {
+describe("networksSearch/peersSearch（URL 编解码契约——双 namespace）", () => {
   it("q 编码往返为双字段 contains 谓词；decode 容忍缺省", () => {
     const encoded = networksSearch.encode({
       predicate: { any: [
@@ -82,8 +83,10 @@ describe("networksSearch（URL 编解码契约——双 tab 共享 name/id）", 
       ] },
       window: { size: 20 },
     });
-    expect(encoded.q).toBe("net");
-    const decoded = networksSearch.decode({ q: "net" });
+    // namespace 物理键（F1 回流批）：networks.q；peers 键不携带
+    expect(encoded["networks.q"]).toBe("net");
+    const decoded = networksSearch.decode({ "networks.q": "net" });
+    expect(peersSearch.decode({ "networks.q": "net" }).predicate).toBeUndefined();
     expect(decoded.predicate).toEqual({
       any: [
         { field: "name", op: "contains", value: "net" },
@@ -95,9 +98,9 @@ describe("networksSearch（URL 编解码契约——双 tab 共享 name/id）", 
 
   it("清除谓词的补丁显式置空 q（函数式 search 展开不残留旧值）", () => {
     const patch = networksSearch.patch({ predicate: null });
-    expect("q" in patch).toBe(true);
-    expect(patch.q).toBeUndefined();
-    expect(patch.page).toBeUndefined();
+    expect("networks.q" in patch).toBe(true);
+    expect(patch["networks.q"]).toBeUndefined();
+    expect(patch["networks.page"]).toBeUndefined();
   });
 });
 

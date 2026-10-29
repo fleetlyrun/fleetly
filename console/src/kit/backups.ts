@@ -115,10 +115,15 @@ export const platformSnapshotsResource = defineResource({
   collection: clientCollection(fetchPlatformSnapshots),
 });
 
-// 双 tab 共用实例：q/分页跨 tab 持久是接受语义（tab 切换函数式 search 保
-// 留集合键）。字段集 = Databases（name/engine/project_name）∪ Snapshots
-//（id/hostname）。
-export const backupsSearch = collectionQuerySchema({
+// 双列表各持 namespace 实例（F1 回流批 M1：URL 键 databases.q 与
+// snapshots.q 并存互不携带，「q 跨 tab 持久」妥协退役；字段集保持旧并集）。
+export const databasesSearch = collectionQuerySchema({
+  namespace: "databases",
+  text: ["name", "engine", "project_name", "id", "hostname"],
+  defaultSize: 20,
+});
+export const snapshotsSearch = collectionQuerySchema({
+  namespace: "snapshots",
   text: ["name", "engine", "project_name", "id", "hostname"],
   defaultSize: 20,
 });

@@ -1,1 +1,0 @@
-import{l as n}from"./execstream-jCddbWE0.js";import{_ as t,a0 as a}from"./vendor-D4v-q2m6.js";async function o(e){const s=e.appId??"",c=e.process??"";return s===""||c===""?[]:(await n(s,c)).instances??[]}const l=t({name:"exec-instances",getId:e=>e.instance??"",scope:["appId","process"],collection:a(o),legacyKeys:e=>[["exec-instances",String(e.appId??"")]]});export{l as e};
