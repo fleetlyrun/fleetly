@@ -1,29 +1,20 @@
-import { clientCollection } from "@lynx-go/uikit-core/adapters";
-import { defineResource, type ResourceScope } from "@lynx-go/uikit-core/kernel";
+import { restCollection, restRecord } from "@lynx-go/uikit-core/adapters";
+import { defineResource } from "@lynx-go/uikit-core/kernel";
 import type { components as identitySchemas } from "@/api/identity";
-import { apiFetch, apiSend } from "@/api/client";
-import { runCommandMapped, toApiError } from "./errors";
-import { fetchRows } from "./http";
+import { apiSend } from "@/api/client";
+import { runCommandMapped } from "./errors";
+import { authFetch } from "./http";
 
 // 平台设置域资源（2026-10-26 批2 写面 useCommand 化；批4 读面收尾补集合/
 // record 读形）：API token 铸造/吊销、治理冻结 set/lift、平台备份触发、
 // whoami 会话读。写动词失效 = kit selector（["settings",…] 旧键桥零读者
 // 已退役——F1 回流批审计）；run 统一 runCommandMapped 结果两分。
+// F1 回流批 D 组（M4 rest 工厂试点域 1/3）：三集合 + 会话 record 走
+// restCollection/restRecord——组 URL/信封展平/undefined 行过滤/错误收敛
+// 全归工厂内置（fetchRows/qs/toApiError 样板在本域归零；三集合是纯
+// data 层消费——useCollectionData 固定窗，无 URL 求值方言依赖）。
 
 export type TokenEntry = identitySchemas["schemas"]["v1Token"];
-
-export async function fetchTokens(_ctx: ResourceScope, signal?: AbortSignal): Promise<TokenEntry[]> {
-  try {
-    return await fetchRows<TokenEntry>(
-      "/v1/tokens",
-      (res) => (res as { tokens?: Array<TokenEntry | undefined> }).tokens,
-      signal,
-    );
-  } catch (err) {
-    // 资源适配器失败必须收敛为 kernel ApiError（错误态分诊契约）
-    throw toApiError(err);
-  }
-}
 
 // 治理冻结行形：governance 服务不在 console 生成上下文（同 platform 备份
 // 面）——类型内联手写，与 lib/catalog.ts 原内联同形。
@@ -35,35 +26,11 @@ export interface FreezeEntry {
   lifted_at?: string;
 }
 
-export async function fetchFreezes(_ctx: ResourceScope, signal?: AbortSignal): Promise<FreezeEntry[]> {
-  try {
-    return await fetchRows<FreezeEntry>(
-      "/v1/governance/freezes",
-      (res) => (res as { freezes?: Array<FreezeEntry | undefined> }).freezes,
-      signal,
-    );
-  } catch (err) {
-    throw toApiError(err);
-  }
-}
-
 // 平台备份行形（C2 台账面）：PlatformSnapshot = { id, time, hostname }。
 export interface PlatformSnapshot {
   id: string;
   time: string;
   hostname: string;
-}
-
-export async function fetchPlatformBackups(_ctx: ResourceScope, signal?: AbortSignal): Promise<PlatformSnapshot[]> {
-  try {
-    return await fetchRows<PlatformSnapshot>(
-      "/v1/platform/backups",
-      (res) => (res as { snapshots?: Array<PlatformSnapshot | undefined> }).snapshots,
-      signal,
-    );
-  } catch (err) {
-    throw toApiError(err);
-  }
 }
 
 // token 铸造的 reveal 载荷：secret 只在铸造响应出现一次（CreateTokenDialog
@@ -76,7 +43,11 @@ export interface MintTokenPayload {
 export const tokensResource = defineResource({
   name: "tokens",
   getId: (row: TokenEntry) => row.id ?? "",
-  collection: clientCollection(fetchTokens),
+  collection: restCollection<TokenEntry>({
+    path: () => "/v1/tokens",
+    envelope: (body) => (body as { tokens?: Array<TokenEntry | undefined> }).tokens ?? [],
+    fetch: authFetch,
+  }),
   commands: {
     // 铸造无失效（语义保留：旧 onSuccess 只进揭示链，台账新鲜度靠轮询；
     // 显式置空声明意图）。
@@ -103,7 +74,11 @@ export const tokensResource = defineResource({
 export const freezesResource = defineResource({
   name: "freezes",
   getId: (row: FreezeEntry) => row.id ?? "",
-  collection: clientCollection(fetchFreezes),
+  collection: restCollection<FreezeEntry>({
+    path: () => "/v1/governance/freezes",
+    envelope: (body) => (body as { freezes?: Array<FreezeEntry | undefined> }).freezes ?? [],
+    fetch: authFetch,
+  }),
   commands: {
     freeze: {
       run: (input: { reason: string }) =>
@@ -121,7 +96,11 @@ export const freezesResource = defineResource({
 export const platformBackupsResource = defineResource({
   name: "platform-backups",
   getId: (row: PlatformSnapshot) => row.id,
-  collection: clientCollection(fetchPlatformBackups),
+  collection: restCollection<PlatformSnapshot>({
+    path: () => "/v1/platform/backups",
+    envelope: (body) => (body as { snapshots?: Array<PlatformSnapshot | undefined> }).snapshots ?? [],
+    fetch: authFetch,
+  }),
   commands: {
     trigger: {
       run: () =>
@@ -148,24 +127,22 @@ export interface SessionInfo {
   platformAdmin: boolean;
 }
 
-export async function fetchSession(_id: string, _ctx: ResourceScope, signal?: AbortSignal): Promise<SessionInfo> {
-  try {
-    const res = await apiFetch<Record<string, unknown>>("/v1/whoami", { signal });
-    return {
-      tokenName: typeof res.token_name === "string" ? res.token_name : "",
-      roleName: typeof res.role_name === "string" ? res.role_name : "",
-      userName: typeof res.user_name === "string" ? res.user_name : "",
-      platformAdmin: res.platform_admin === true,
-    };
-  } catch (err) {
-    throw toApiError(err);
-  }
-}
-
 // whoami 无 id 维度——id 恒 "self"（record 键 ["record","session","self"]，
 // 壳层各持有点共享同一缓存条目）；无 scope。token 缺席的禁查门在调用点：
-// useRecord 对 undefined id 自动停查。
+// useRecord 对 undefined id 自动停查。收敛形（camelCase 投影）在 envelope。
 export const sessionResource = defineResource({
   name: "session",
-  record: fetchSession,
+  record: restRecord<SessionInfo>({
+    path: () => "/v1/whoami",
+    envelope: (body) => {
+      const res = body as Record<string, unknown>;
+      return {
+        tokenName: typeof res.token_name === "string" ? res.token_name : "",
+        roleName: typeof res.role_name === "string" ? res.role_name : "",
+        userName: typeof res.user_name === "string" ? res.user_name : "",
+        platformAdmin: res.platform_admin === true,
+      };
+    },
+    fetch: authFetch,
+  }),
 });

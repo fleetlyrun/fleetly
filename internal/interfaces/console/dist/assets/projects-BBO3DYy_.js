@@ -1,0 +1,1 @@
+import{a9 as r,aa as s,P as c}from"./index-Do6Lxtgk.js";import{_ as i,a0 as n}from"./vendor-DknzNwHE.js";async function m(o,a){try{return(await r(`/v1/projects${s({limit:100})}`,t=>t.projects,a)).flatMap(t=>t.id&&t.name?[{id:t.id,name:t.name}]:[])}catch(e){throw c(e)}}const p=i({name:"projects",getId:o=>o.id,collection:n(m)});export{p};

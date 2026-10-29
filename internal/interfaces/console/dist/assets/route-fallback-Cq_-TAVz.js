@@ -1,0 +1,1 @@
+import{M as e,bl as a}from"./vendor-DknzNwHE.js";function t(){return e.jsx("div",{role:"status","aria-label":"Loading",className:"flex min-h-[50vh] items-center justify-center p-10 text-muted",children:e.jsx(a,{className:"size-5 animate-spin"})})}export{t as R};

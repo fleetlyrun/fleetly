@@ -1,4 +1,4 @@
-import { clientCollection } from "@lynx-go/uikit-core/adapters";
+import { clientCollection, restRecord } from "@lynx-go/uikit-core/adapters";
 import {
   type CommandResult,
   defineResource,
@@ -8,7 +8,7 @@ import { collectionQuerySchema } from "@lynx-go/uikit-core/schema";
 import type { components as structureSchemas } from "@/api/structure";
 import { apiSend } from "@/api/client";
 import { runCommandMapped, toApiError } from "./errors";
-import { fetchRows, qs } from "./http";
+import { authFetch, fetchRows, qs } from "./http";
 
 // Variables 域资源适配（useCollection 化批 3）：secrets / configs / shared
 // variables 三 tab 共享一 schema（过滤均 name 单字段，与旧 fieldsOf 同）。
@@ -200,22 +200,18 @@ export interface ConfigDetail {
   content?: string;
 }
 
+// F1 回流批 D 组（M4 rest 工厂试点域 3/3）：config 详情回读走 restRecord
+// ——信封缺席（config 键不在）经 envelope 投影为 null 空态；fetchRows +
+// rows[0] ?? null + toApiError 样板归零。
 export const configDetailResource = defineResource({
   name: "config-detail",
   scope: ["projectId"],
-  record: (name: string, ctx: ResourceScope, signal?: AbortSignal) =>
-    fetchRows<ConfigDetail>(
+  record: restRecord<ConfigDetail | null>({
+    path: (name, ctx) =>
       `/v1/configs/${encodeURIComponent(ctx.projectId ?? "")}/${encodeURIComponent(name)}`,
-      (res) => {
-        const config = (res as { config?: ConfigDetail | undefined }).config;
-        return config != null ? [config] : [];
-      },
-      signal,
-    )
-      .then((rows) => rows[0] ?? null)
-      .catch((err: unknown) => {
-        throw toApiError(err);
-      }),
+    envelope: (body) => (body as { config?: ConfigDetail | undefined }).config ?? null,
+    fetch: authFetch,
+  }),
 });
 
 // 伴读消费面（2026-10-29 F1 回流批）：useConfigDetail 伴读钩子退役——

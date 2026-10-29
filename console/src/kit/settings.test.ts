@@ -3,11 +3,9 @@ import { QueryClient } from "@tanstack/react-query";
 import { collectionQueryOptions, invalidateAfterCommand } from "@lynx-go/uikit-core";
 import { setToken } from "@/lib/token";
 import {
-  fetchFreezes,
-  fetchPlatformBackups,
-  fetchSession,
-  fetchTokens,
   freezesResource,
+  platformBackupsResource,
+  sessionResource,
   tokensResource,
 } from "./settings";
 
@@ -65,10 +63,12 @@ describe("命令锚：freezes freeze（映射 + 存量键桥）", () => {
   });
 });
 
-// 读面锚（批4）：session record + 三集合 fetcher——端点与收敛口径钉死
-//（catalog rowsOf 同款 undefined 行过滤；whoami camelCase 收敛 + platform_admin
-// 布尔判别）。
-describe("读面锚：session record + settings 三集合", () => {
+// 读面锚（批4 → F1 回流批 D 组改 rest 工厂口径）：session record + 三集合
+// 走 restCollection/restRecord——经资源适配器调用（端点/信封展平/undefined
+// 行过滤/whoami camelCase 收敛钉死；错误收敛是工厂内置 Response→ApiError）。
+const ALL = { window: { size: 100 } } as const;
+
+describe("读面锚：session record + settings 三集合（rest 工厂）", () => {
   it("session record 打 GET /v1/whoami 并收敛 snake_case → camelCase", async () => {
     const fetchMock = vi.fn(async () =>
       jsonResponse({
@@ -80,7 +80,7 @@ describe("读面锚：session record + settings 三集合", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const session = await fetchSession("self", {}, undefined);
+    const session = await sessionResource.record!("self", {}, undefined);
 
     expect(session).toEqual({
       tokenName: "ci-token",
@@ -93,28 +93,34 @@ describe("读面锚：session record + settings 三集合", () => {
   });
 
   it.each([
-    { name: "fetchTokens", fetcher: fetchTokens, path: "/v1/tokens", envelope: "tokens", row: { id: "t1", name: "ci" } },
     {
-      name: "fetchFreezes",
-      fetcher: fetchFreezes,
+      name: "tokens",
+      resource: tokensResource,
+      path: "/v1/tokens",
+      envelope: "tokens",
+      row: { id: "t1", name: "ci" },
+    },
+    {
+      name: "freezes",
+      resource: freezesResource,
       path: "/v1/governance/freezes",
       envelope: "freezes",
       row: { id: "f1", reason: "maintenance window" },
     },
     {
-      name: "fetchPlatformBackups",
-      fetcher: fetchPlatformBackups,
+      name: "platform-backups",
+      resource: platformBackupsResource,
       path: "/v1/platform/backups",
       envelope: "snapshots",
       row: { id: "b1", time: "2026-10-27T00:00:00Z", hostname: "cp-1" },
     },
-  ])("$name 打 $path 并展平 undefined 行（catalog rowsOf 口径）", async ({ fetcher, path, envelope, row }) => {
+  ])("$name 打 $path 并展平 undefined 行（restCollection 信封过滤）", async ({ resource, path, envelope, row }) => {
     const fetchMock = vi.fn(async () => jsonResponse({ [envelope]: [row, undefined] }));
     vi.stubGlobal("fetch", fetchMock);
 
-    const rows = await fetcher({}, undefined);
+    const segment = await resource.collection!(ALL, {}, undefined);
 
-    expect(rows).toEqual([row]);
+    expect(segment.rows).toEqual([row]);
     const [url] = fetchMock.mock.calls[0] as unknown as [string];
     expect(String(url)).toContain(path);
   });

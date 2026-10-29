@@ -1,1 +1,0 @@
-import{_ as s,a9 as a,P as c}from"./index-Cc3818pQ.js";import{_ as i,a0 as n}from"./vendor-D4v-q2m6.js";async function m(o,r){try{return(await s(`/v1/projects${a({limit:100})}`,t=>t.projects,r)).flatMap(t=>t.id&&t.name?[{id:t.id,name:t.name}]:[])}catch(e){throw c(e)}}const p=i({name:"projects",getId:o=>o.id,collection:n(m)});export{p};

@@ -1,4 +1,5 @@
-import { apiFetch } from "@/api/client";
+import { apiFetch, authHeaders, notifyUnauthorized } from "@/api/client";
+import { getToken } from "@/lib/token";
 
 // kit 资源适配族的共享读取帮手（src/kit/<domain>.ts 统一经此取数，不再
 // 各自复制 catalog.ts 的信封处理）。鉴权（Bearer 注入 + 401 全局闭环）由
@@ -30,4 +31,14 @@ export async function fetchRows<T>(
 ): Promise<T[]> {
   const res = await apiFetch<Parameters<typeof envelope>[0]>(path, { signal });
   return rowsOf(envelope(res));
+}
+
+// rest 工厂（M4，uikit restCollection/restRecord）的 fetch 注入点：Bearer
+// 头 + 401 全局闭环与 apiFetch 同管线；错误收敛归工厂内置的
+// Response→kernel ApiError 单源（kit/errors.ts 的 toApiError 收敛样板随之
+// 在试点域退役）。
+export async function authFetch(url: string, init?: RequestInit): Promise<Response> {
+  const res = await fetch(url, { ...init, headers: authHeaders(init?.headers) });
+  if (res.status === 401 && getToken() !== "") notifyUnauthorized();
+  return res;
 }
