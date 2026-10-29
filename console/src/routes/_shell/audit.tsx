@@ -7,6 +7,7 @@ import { FilterBar } from "@/components/kit/query/filter-bar";
 import { ListPage as FleetListPage } from "@/components/kit/query/list-page";
 import { Pagination } from "@/components/kit/query/pagination";
 import { CliEquivalent } from "@/components/domain/list-toolbar";
+import { PageFrame } from "@/components/domain/page-frame";
 import { auditResource, auditSearch, type AuditRow } from "@/kit/audit";
 
 // 审计页（F3.1 → UI v2 批 5 reskin → 2026-10-26 批1 useCollection 化）：
@@ -83,23 +84,26 @@ function AuditPage() {
   const filtered = list.query.predicate != null;
 
   return (
-    // FleetListPage 自带页面衬垫与 header 槽（收尾批统一 Layout：去掉
-    // PageFrame 外壳——双衬垫 + 双层宽度容器随统一列退役）。
-    <FleetListPage
-      list={list}
+    // 一页一壳（2026-10-28 机制收口）：壳 = PageFrame（衬垫 + 页头三件
+    // 单源）；FleetListPage 降为壳内模块配方（kit 件零页面 chrome）。
+    <PageFrame
       title="Audit"
       description="Server-written audit records (GET /v1/audit) — the console observes, never writes"
-      toolbar={<FilterBar list={list} schema={auditSearch} textPlaceholder="Filter audit..." />}
-      pagination={<Pagination list={list} />}
-      emptyTitle={filtered ? "No audit entries match the filter" : "No audit entries"}
-      emptyDescription={
-        filtered
-          ? "Adjust or clear the filter to see rows again."
-          : "Act on the platform to populate the audit view."
-      }
-      appendix={<CliEquivalent command="fleetly audit --limit 100" />}
     >
-      <DataTable list={list} columns={columns} getRowId={(row) => row.id ?? ""} />
-    </FleetListPage>
+      <FleetListPage
+        list={list}
+        toolbar={<FilterBar list={list} schema={auditSearch} textPlaceholder="Filter audit..." />}
+        pagination={<Pagination list={list} />}
+        emptyTitle={filtered ? "No audit entries match the filter" : "No audit entries"}
+        emptyDescription={
+          filtered
+            ? "Adjust or clear the filter to see rows again."
+            : "Act on the platform to populate the audit view."
+        }
+        appendix={<CliEquivalent command="fleetly audit --limit 100" />}
+      >
+        <DataTable list={list} columns={columns} getRowId={(row) => row.id ?? ""} />
+      </FleetListPage>
+    </PageFrame>
   );
 }

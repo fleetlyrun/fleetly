@@ -3,9 +3,15 @@
 // token 方言映射 本块无方言 token；cn 统一 @/lib/utils。
 // 手工步骤（判断题，工具不自动改）：
 // - 未映射方言 token text-muted ×1——每块语境判断（torchwood amber/emerald、fleetly status vars 先例）
-// 本地扩展（2026-10-27 走查反馈，升版重拷对照）：
-// - 容器宽度 max-w-5xl → 流体全宽 + px-6（数据密集 console 的列表有效
-//   宽度反馈——demo 方言的窄容器在宽屏留白过大）
+// 本地扩展（升版重拷对照清单）：
+// - 容器宽度 max-w-5xl → 流体全宽（数据密集 console 的列表有效宽度反馈
+//   ——demo 方言的窄容器在宽屏留白过大）。
+// - 页面 chrome 退役（2026-10-28 机制收口）：外层 padding（px-6 py-6）与
+//   页头三件（title/description/actions）不再是本件职责——一页一壳，壳 =
+//   PageFrame/ModulePage 单源（domain），本件降为壳内模块配方（卡体 +
+//   工具栏 + 四态 + appendix）。双衬垫/双页头从组件形状上不可能发生；
+//   升版重拷时上游的 padding 与 header 块不再回拷。执法：
+//   console.ui.antipattern.test.ts kit chrome 禁令。
 // 其余与上游一致。
 import type { CollectionHandle } from "@lynx-go/uikit-core/react";
 import type { ApiError } from "@lynx-go/uikit-core/kernel";
@@ -14,18 +20,15 @@ import { Card } from "@/components/ui/card";
 import { EmptyState, ErrorState, LoadingState } from "../values/states";
 
 /**
- * ListPage（query 块）—— 列表页配方骨架：header × toolbar × 四态 × appendix。
+ * ListPage（query 块）—— 壳内列表模块配方：toolbar × 四态 × appendix。
  * 所有 part 都是 ReactNode（结构性逃生舱）：不满意任一部分就传自己的组件，
  * 只要消费 list 句柄。四态在此切换；DataTable 只渲染 success 表体。
- * header 可选（title/actions 全缺省时不渲染——消费方自有页头架构时
- * shell-agnostic 化，§12.10-⑤；fleetly/torchwood 先例回流）。
- * 错误态文案透传（describeError/title/retryLabel，§12.10 余款）：消费方
- * describeApiError 单源经此注入，states 块免于逐副本中文化。
+ * 页面壳与页头不归本件（fleetly 分叉）：外层必须是 PageFrame/ModulePage
+ * （一页一壳），页头三件走壳的 props。错误态文案透传（describeError/
+ * title/retryLabel，§12.10 余款）：消费方 describeApiError 单源经此注入，
+ * states 块免于逐副本中文化。
  */
 export interface ListPageProps<T> {
-  title?: string;
-  description?: string;
-  actions?: ReactNode;
   toolbar?: ReactNode;
   pagination?: ReactNode;
   appendix?: ReactNode;
@@ -40,9 +43,6 @@ export interface ListPageProps<T> {
 }
 
 export function ListPage<T>({
-  title,
-  description,
-  actions,
   toolbar,
   pagination,
   appendix,
@@ -55,18 +55,8 @@ export function ListPage<T>({
   retryLabel,
   children,
 }: ListPageProps<T>) {
-  const showHeader = title !== undefined || description !== undefined || actions !== undefined;
   return (
-    <div className="w-full space-y-4 px-6 py-6">
-      {showHeader ? (
-        <header className="flex items-start justify-between gap-4">
-          <div>
-            {title ? <h1 className="text-lg font-semibold">{title}</h1> : null}
-            {description ? <p className="mt-0.5 text-xs text-muted">{description}</p> : null}
-          </div>
-          {actions ? <div className="flex items-center gap-2">{actions}</div> : null}
-        </header>
-      ) : null}
+    <div className="w-full space-y-4">
       <Card>
         {toolbar}
         {list.status === "loading" ? (

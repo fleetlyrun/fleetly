@@ -215,66 +215,69 @@ export function DatabasesListPage({ projectId, from }: { projectId: string; from
   const count = list.total ?? rows.length;
 
   return (
-    // FleetListPage 自带页面衬垫与 header 槽（收尾批统一 Layout：去掉
-    // PageFrame 外壳——双衬垫 + 双层宽度容器随统一列退役）。
-    <FleetListPage
-      list={list}
+    // 一页一壳（2026-10-28 机制收口）：壳 = PageFrame（衬垫 + 页头三件
+    // 单源）；FleetListPage 降为壳内模块配方（kit 件零页面 chrome）。
+    <PageFrame
       title="Databases"
       description={
         count > 0
           ? `${count} database${count === 1 ? "" : "s"} in ${projectName ?? "this project"} — scheduled backups with verify & restore (ADR-0039)`
           : "Managed databases — scheduled backups with verify & restore (ADR-0039)"
       }
-      toolbar={
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          {/* 引擎下拉由 FilterBar 经 schema filters 渲染（静态值域），页内自持 select 退役 */}
-          <FilterBar list={list} schema={databasesSearch} textPlaceholder="Filter databases..." />
-          <div className="py-2 pr-3">
+    >
+      <FleetListPage
+        list={list}
+        toolbar={
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            {/* 引擎下拉由 FilterBar 经 schema filters 渲染（静态值域），页内自持 select 退役 */}
+            <FilterBar list={list} schema={databasesSearch} textPlaceholder="Filter databases..." />
+            <div className="py-2 pr-3">
+              <Button size="sm" onClick={() => setCreateOpen(true)}>
+                <DatabaseIcon data-icon-start-inline />
+                New database
+              </Button>
+            </div>
+          </div>
+        }
+        pagination={<Pagination list={list} />}
+        emptyTitle={filtered ? "No databases match the filter" : "No databases"}
+        emptyDescription={
+          filtered
+            ? "Adjust or clear the filter to see rows again."
+            : "Create a database to get a template-rendered managed service with scheduled backups."
+        }
+        emptyAction={
+          filtered ? undefined : (
             <Button size="sm" onClick={() => setCreateOpen(true)}>
               <DatabaseIcon data-icon-start-inline />
               New database
             </Button>
-          </div>
-        </div>
-      }
-      pagination={<Pagination list={list} />}
-      emptyTitle={filtered ? "No databases match the filter" : "No databases"}
-      emptyDescription={
-        filtered
-          ? "Adjust or clear the filter to see rows again."
-          : "Create a database to get a template-rendered managed service with scheduled backups."
-      }
-      emptyAction={
-        filtered ? undefined : (
-          <Button size="sm" onClick={() => setCreateOpen(true)}>
-            <DatabaseIcon data-icon-start-inline />
-            New database
-          </Button>
-        )
-      }
-      appendix={
-        <>
-          <CliEquivalent command={`fleetly databases list --project ${projectId}`} />
-          <CreateDatabaseDialog
-            projectId={projectId}
-            open={createOpen}
-            onOpenChange={setCreateOpen}
-            onCreated={(databaseId) =>
-              navigate({ to: "/p/$projectId/databases/$databaseId", params: { projectId, databaseId } })
-            }
-          />
-        </>
-      }
-    >
-      <DataTable
-        list={list}
-        columns={columns}
-        getRowId={(row) => row.id ?? ""}
-        onRowClick={(row) =>
-          navigate({ to: "/p/$projectId/databases/$databaseId", params: { projectId, databaseId: row.id ?? "" } })
+          )
         }
-      />
-    </FleetListPage>
+        appendix={
+          <>
+            <CliEquivalent command={`fleetly databases list --project ${projectId}`} />
+            <CreateDatabaseDialog
+              projectId={projectId}
+              open={createOpen}
+              onOpenChange={setCreateOpen}
+              onCreated={(databaseId) =>
+                navigate({ to: "/p/$projectId/databases/$databaseId", params: { projectId, databaseId } })
+              }
+            />
+          </>
+        }
+      >
+        <DataTable
+          list={list}
+          columns={columns}
+          getRowId={(row) => row.id ?? ""}
+          onRowClick={(row) =>
+            navigate({ to: "/p/$projectId/databases/$databaseId", params: { projectId, databaseId: row.id ?? "" } })
+          }
+        />
+      </FleetListPage>
+    </PageFrame>
   );
 }
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { ArrowLeftIcon, CopyIcon, RocketIcon } from "lucide-react";
+import { CopyIcon, RocketIcon } from "lucide-react";
 import { toast } from "sonner";
 import type { components } from "@/api/delivery";
 // apiFetch 面（SSE wait 流）在 api/streams —— 本页经 kit 伴读取数。
@@ -9,7 +9,9 @@ import { streamDeploymentWait } from "@/api/streams";
 import { useCollection } from "@lynx-go/uikit-core";
 import { useDeploymentLookup } from "@/kit/deployments";
 import { revisionsResource, revisionsLookup, useRevisionDiff, type RevisionDiffEntry } from "@/kit/revisions";
+import { ContentCrumb } from "@/components/domain/content-crumb";
 import { CopyButton } from "@/components/domain/copy-button";
+import { PageFrame } from "@/components/domain/page-frame";
 import { RelativeTime } from "@/components/domain/relative-time";
 import { DeploymentStatusBadge, isActiveDeploymentState } from "@/components/domain/status-badge";
 import { Button } from "@/components/ui/button";
@@ -141,22 +143,24 @@ export function DeploymentDetailView({
 
   if (effective == null && streamError != null) {
     return (
-      <div className="p-8">
+      <PageFrame>
         <div className="text-sm font-semibold text-[var(--status-danger)]">{describeError(streamError).title}</div>
         <div className="mt-1 font-mono text-xs text-muted">{describeError(streamError).detail}</div>
         <Button variant="outline" size="sm" className="mt-3" onClick={() => setRestartToken((token) => token + 1)}>
           Reconnect stream
         </Button>
-      </div>
+      </PageFrame>
     );
   }
   if (effective == null) {
     return (
-      <div className="flex flex-col gap-3 p-6">
-        <Skeleton className="h-8 w-72" />
-        <Skeleton className="h-16 w-full" />
-        <Skeleton className="h-32 w-full" />
-      </div>
+      <PageFrame>
+        <div className="flex flex-col gap-3">
+          <Skeleton className="h-8 w-72" />
+          <Skeleton className="h-16 w-full" />
+          <Skeleton className="h-32 w-full" />
+        </div>
+      </PageFrame>
     );
   }
 
@@ -170,136 +174,148 @@ export function DeploymentDetailView({
   const currentStage = stageIndex(state);
 
   return (
-    <div className="flex flex-col gap-4 p-6">
-      {/* hero：状态 + 标识 + 主操作 */}
-      <div className="flex flex-wrap items-center gap-3">
-        <Button variant="outline" size="icon-sm" asChild>
-          <a href={`/p/${encodeURIComponent(projectId)}/apps/${encodeURIComponent(appId)}/deployments`} title="All deployments">
-            <ArrowLeftIcon className="size-4" />
-          </a>
-        </Button>
-        <h1 className="font-heading text-lg font-bold tracking-tight">
-          Deployment <span className="font-mono">R{toRevision?.seq ?? "?"}</span>
-        </h1>
-        <DeploymentStatusBadge state={state} />
-        <span className="font-mono text-xs text-muted">{effective.id}</span>
-        <CopyButton value={effective.id ?? ""} />
-        <div className="ml-auto flex items-center gap-2">
-          {active ? (
+    // 一页一壳（2026-10-28 机制收口）：详情壳 = PageFrame（面包屑槽 +
+    // 衬垫单源），裸 p-6 根退役；英雄卡归详情锚点形态。
+    <PageFrame
+      breadcrumb={
+        <ContentCrumb
+          projectId={projectId}
+          section={{ label: "Deployments", to: "/p/$projectId/deployments" }}
+          current={`R${toRevision?.seq ?? "?"}`}
+        />
+      }
+    >
+      <div className="flex flex-col gap-4">
+        {/* 英雄卡：状态 + 标识 + 主操作（详情页统一形态锚点，对齐 Task/DB） */}
+        <section className="flex flex-wrap items-center gap-4 rounded-xl border bg-panel p-5">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="font-heading text-xl font-semibold tracking-tight">
+                Deployment <span className="font-mono">R{toRevision?.seq ?? "?"}</span>
+              </h1>
+              <DeploymentStatusBadge state={state} />
+              <span className="font-mono text-xs text-muted">{effective.id}</span>
+              <CopyButton value={effective.id ?? ""} />
+            </div>
+          </div>
+          <div className="ml-auto flex items-center gap-2">
+            {active ? (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={cancel.pending}
+                onClick={() =>
+                  cancel.mutate(undefined, {
+                    onSuccess: () => toast("Cancellation requested"),
+                  })
+                }
+              >
+                Cancel
+              </Button>
+            ) : null}
             <Button
               variant="outline"
               size="sm"
-              disabled={cancel.pending}
+              disabled={rollback.pending}
               onClick={() =>
-                cancel.mutate(undefined, {
-                  onSuccess: () => toast("Cancellation requested"),
+                rollback.mutate(undefined, {
+                  onSuccess: (data) => {
+                    const replayId = (data as { deployment?: Deployment }).deployment?.id;
+                    toast("Rollback accepted", {
+                      description: replayId ? `replay deployment ${replayId.slice(0, 12)}…` : undefined,
+                    });
+                  },
                 })
               }
             >
-              Cancel
+              <RocketIcon className="size-3.5" />
+              Rollback app
             </Button>
-          ) : null}
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={rollback.pending}
-            onClick={() =>
-              rollback.mutate(undefined, {
-                onSuccess: (data) => {
-                  const replayId = (data as { deployment?: Deployment }).deployment?.id;
-                  toast("Rollback accepted", {
-                    description: replayId ? `replay deployment ${replayId.slice(0, 12)}…` : undefined,
-                  });
-                },
-              })
-            }
-          >
-            <RocketIcon className="size-3.5" />
-            Rollback app
-          </Button>
-        </div>
-      </div>
+          </div>
+        </section>
 
-      {/* 阶段时间线 */}
-      <div className="rounded-xl border bg-panel px-5 pt-5 pb-4">
-        <Timeline currentStage={currentStage} state={state} deployment={effective} />
-        <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted">
-          <span>started <RelativeTime value={startedAt} className="font-mono" /></span>
-          <span>
-            duration{" "}
-            <span className="font-mono">{durationSeconds !== undefined ? formatDuration(durationSeconds) : "—"}</span>
-          </span>
-          {effective.error ? (
-            <span className="font-mono text-[var(--status-danger)]" title={effective.error}>
-              {effective.error.length > 80 ? `${effective.error.slice(0, 80)}…` : effective.error}
+        {/* 阶段时间线 */}
+        <div className="rounded-xl border bg-panel px-5 pt-5 pb-4">
+          <Timeline currentStage={currentStage} state={state} deployment={effective} />
+          <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted">
+            <span>started <RelativeTime value={startedAt} className="font-mono" /></span>
+            <span>
+              duration{" "}
+              <span className="font-mono">{durationSeconds !== undefined ? formatDuration(durationSeconds) : "—"}</span>
             </span>
-          ) : null}
-          {streamStalled && !TERMINAL_STATES.has(state) ? (
-            <span className="text-[var(--status-warning)]">stream stalled — polling fallback active</span>
-          ) : null}
+            {effective.error ? (
+              <span className="font-mono text-[var(--status-danger)]" title={effective.error}>
+                {effective.error.length > 80 ? `${effective.error.slice(0, 80)}…` : effective.error}
+              </span>
+            ) : null}
+            {streamStalled && !TERMINAL_STATES.has(state) ? (
+              <span className="text-[var(--status-warning)]">stream stalled — polling fallback active</span>
+            ) : null}
+          </div>
         </div>
+
+        {windowInfo ? <GenerationWindowCard window={windowInfo} /> : null}
+        {cancel.error ? <ErrorLine error={cancel.error} /> : null}
+        {rollback.error ? <ErrorLine error={rollback.error} /> : null}
+
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <ProcessStrategiesCard deployment={effective} toRevision={toRevision} />
+          <RevisionsDiffCard projectId={projectId} appId={appId} revisions={revisions.rows} />
+        </div>
+
+        <details className="rounded-xl border bg-panel px-4 py-3">
+          <summary className="cursor-pointer text-sm font-semibold text-muted">Raw fields (protojson)</summary>
+          <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 font-mono text-xs text-muted">
+            <dt>app_id</dt><dd>{effective.app_id}</dd>
+            <dt>from_revision</dt>
+            <dd className="break-all">
+              {effective.from_revision || "—"}
+              {revisionIndex.get(effective.from_revision ?? "")?.seq ? (
+                <>
+                  {" "}
+                  <Link
+                    to="/p/$projectId/apps/$appId/spec"
+                    params={{ projectId, appId }}
+                    search={{ seq: Number(revisionIndex.get(effective.from_revision ?? "")?.seq) }}
+                    className="text-info underline-offset-2 hover:underline"
+                  >
+                    view spec R{revisionIndex.get(effective.from_revision ?? "")?.seq}
+                  </Link>
+                </>
+              ) : null}
+            </dd>
+            <dt>to_revision</dt>
+            <dd className="break-all">
+              {effective.to_revision || "—"}
+              {revisionIndex.get(effective.to_revision ?? "")?.seq ? (
+                <>
+                  {" "}
+                  <Link
+                    to="/p/$projectId/apps/$appId/spec"
+                    params={{ projectId, appId }}
+                    search={{ seq: Number(revisionIndex.get(effective.to_revision ?? "")?.seq) }}
+                    className="text-info underline-offset-2 hover:underline"
+                  >
+                    view spec R{revisionIndex.get(effective.to_revision ?? "")?.seq}
+                  </Link>
+                </>
+              ) : null}
+            </dd>
+            <dt>generation</dt><dd>{effective.generation ?? "—"}</dd>
+            <dt>from_generation</dt><dd>{effective.from_generation ?? "—"}</dd>
+            <dt>observe_deadline</dt><dd>{effective.observe_deadline || "—"}</dd>
+            <dt>commit_sha</dt><dd>{effective.commit_sha || "—"}</dd>
+            <dt>idempotency_key</dt><dd>{effective.idempotency_key || "—"}</dd>
+            <dt>superseded_by</dt><dd>{effective.superseded_by || "—"}</dd>
+            <dt>pre_deploy_task_id</dt><dd>{effective.pre_deploy_task_id || "—"}</dd>
+            <dt>created_at</dt><dd>{formatAbsolute(effective.created_at)}</dd>
+            <dt>updated_at</dt><dd>{formatAbsolute(effective.updated_at)}</dd>
+            <dt>finished_at</dt><dd>{formatAbsolute(effective.finished_at)}</dd>
+          </dl>
+        </details>
+
       </div>
-
-      {windowInfo ? <GenerationWindowCard window={windowInfo} /> : null}
-      {cancel.error ? <ErrorLine error={cancel.error} /> : null}
-      {rollback.error ? <ErrorLine error={rollback.error} /> : null}
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <ProcessStrategiesCard deployment={effective} toRevision={toRevision} />
-        <RevisionsDiffCard projectId={projectId} appId={appId} revisions={revisions.rows} />
-      </div>
-
-      <details className="rounded-xl border bg-panel px-4 py-3">
-        <summary className="cursor-pointer text-sm font-semibold text-muted">Raw fields (protojson)</summary>
-        <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 font-mono text-xs text-muted">
-          <dt>app_id</dt><dd>{effective.app_id}</dd>
-          <dt>from_revision</dt>
-          <dd className="break-all">
-            {effective.from_revision || "—"}
-            {revisionIndex.get(effective.from_revision ?? "")?.seq ? (
-              <>
-                {" "}
-                <Link
-                  to="/p/$projectId/apps/$appId/spec"
-                  params={{ projectId, appId }}
-                  search={{ seq: Number(revisionIndex.get(effective.from_revision ?? "")?.seq) }}
-                  className="text-info underline-offset-2 hover:underline"
-                >
-                  view spec R{revisionIndex.get(effective.from_revision ?? "")?.seq}
-                </Link>
-              </>
-            ) : null}
-          </dd>
-          <dt>to_revision</dt>
-          <dd className="break-all">
-            {effective.to_revision || "—"}
-            {revisionIndex.get(effective.to_revision ?? "")?.seq ? (
-              <>
-                {" "}
-                <Link
-                  to="/p/$projectId/apps/$appId/spec"
-                  params={{ projectId, appId }}
-                  search={{ seq: Number(revisionIndex.get(effective.to_revision ?? "")?.seq) }}
-                  className="text-info underline-offset-2 hover:underline"
-                >
-                  view spec R{revisionIndex.get(effective.to_revision ?? "")?.seq}
-                </Link>
-              </>
-            ) : null}
-          </dd>
-          <dt>generation</dt><dd>{effective.generation ?? "—"}</dd>
-          <dt>from_generation</dt><dd>{effective.from_generation ?? "—"}</dd>
-          <dt>observe_deadline</dt><dd>{effective.observe_deadline || "—"}</dd>
-          <dt>commit_sha</dt><dd>{effective.commit_sha || "—"}</dd>
-          <dt>idempotency_key</dt><dd>{effective.idempotency_key || "—"}</dd>
-          <dt>superseded_by</dt><dd>{effective.superseded_by || "—"}</dd>
-          <dt>pre_deploy_task_id</dt><dd>{effective.pre_deploy_task_id || "—"}</dd>
-          <dt>created_at</dt><dd>{formatAbsolute(effective.created_at)}</dd>
-          <dt>updated_at</dt><dd>{formatAbsolute(effective.updated_at)}</dd>
-          <dt>finished_at</dt><dd>{formatAbsolute(effective.finished_at)}</dd>
-        </dl>
-      </details>
-    </div>
+    </PageFrame>
   );
 }
 

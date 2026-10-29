@@ -47,18 +47,19 @@ export function ProjectOverviewPage({ from, projectId }: { from: string; project
   const apps = useCollection(appsResource, { from, search: appsDirectorySearch, scope: { projectId }, query: { refetchInterval: 60_000 } });
 
   if (failed) {
+    // 一页一壳（2026-10-28 机制收口）：瞬态分支同样走壳，裸 p-8 根退役。
     return (
-      <div className="p-8">
+      <PageFrame>
         <ErrorState error={projectsCollection.error} onRetry={() => void projectsCollection.refetch()} />
-      </div>
+      </PageFrame>
     );
   }
   if (miss) {
     if (projects.length === 0) {
       return (
-        <div className="p-8">
+        <PageFrame>
           <ErrorState error={new Error("no projects yet — create one via Quickstart")} />
-        </div>
+        </PageFrame>
       );
     }
     // redirect 在途帧：spinner 兜住，不渲染死页内容。

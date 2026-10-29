@@ -49,26 +49,23 @@ export function NodesPage({ from }: { from: string }) {
   // /v1/nodes——成员不再撞 403 页面）。
   const platformAdmin = whoami.data?.platformAdmin === true;
 
-  if (whoami.status === "loading") {
-    return (
-      <PageFrame title="Nodes" description="Cluster membership, relay liveness and the runtime admin verbs">
+  // 一页一壳（2026-10-28 机制收口）：三态共享同一个 PageFrame（衬垫 +
+  // 页头单源），门内列表是壳内模块配方（kit 件零页面 chrome）。
+  return (
+    <PageFrame title="Nodes" description="Cluster membership, relay liveness and the runtime admin verbs">
+      {whoami.status === "loading" ? (
         <Skeleton className="h-48 w-full rounded-xl" />
-      </PageFrame>
-    );
-  }
-  if (!platformAdmin) {
-    return (
-      <PageFrame title="Nodes" description="Cluster membership, relay liveness and the runtime admin verbs">
+      ) : !platformAdmin ? (
         <EmptyState
           icon={ShieldAlertIcon}
           title="Platform admin only"
           description="Cluster nodes and their running containers are platform-scoped. Sign in as the platform owner to inspect them."
         />
-      </PageFrame>
-    );
-  }
-
-  return <NodesList from={from} />;
+      ) : (
+        <NodesList from={from} />
+      )}
+    </PageFrame>
+  );
 }
 
 // NodesList：门内的成员表本体（useCollection 15s 轮询，与旧 useNodes 同拍；
@@ -158,12 +155,10 @@ function NodesList({ from }: { from: string }) {
   const filtered = list.query.predicate != null;
   return (
     <>
-      {/* FleetListPage 自带页面衬垫与 header 槽（收尾批统一 Layout：去掉
-          PageFrame 外壳——双衬垫 + 双层宽度容器随统一列退役）。 */}
+      {/* FleetListPage 是壳内模块配方（壳在 NodesPage 单源，2026-10-28
+          机制收口）——弹窗与本表平级，衬垫/页头不归本件。 */}
       <FleetListPage
         list={list}
-        title="Nodes"
-        description="Cluster membership, relay liveness and the runtime admin verbs"
         toolbar={
           <div className="flex flex-wrap items-center justify-between gap-2">
             <FilterBar list={list} schema={nodesSearch} textPlaceholder="Filter nodes..." />

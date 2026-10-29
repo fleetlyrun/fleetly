@@ -9,6 +9,7 @@ import { useCollection, useCommandForm } from "@lynx-go/uikit-core";
 import { DataTable } from "@/components/kit/query/data-table";
 import { FilterBar } from "@/components/kit/query/filter-bar";
 import { ListPage as FleetListPage } from "@/components/kit/query/list-page";
+import { PageFrame } from "@/components/domain/page-frame";
 import { Pagination } from "@/components/kit/query/pagination";
 import { Form } from "@/components/kit/command/form";
 import { TextField } from "@/components/kit/command/fields";
@@ -166,77 +167,80 @@ function AppsListPage() {
   const count = list.total ?? rows.length;
 
   return (
-    // FleetListPage 自带页面衬垫与 header 槽（收尾批统一 Layout：去掉
-    // PageFrame 外壳——双衬垫 + 双层宽度容器随统一列退役）。
-    <FleetListPage
-      list={list}
+    // 一页一壳（2026-10-28 机制收口）：壳 = PageFrame（衬垫 + 页头三件
+    // 单源）；FleetListPage 降为壳内模块配方（kit 件零页面 chrome）。
+    <PageFrame
       title="Apps"
       description={
         count > 0
           ? `${count} app${count === 1 ? "" : "s"} in ${projectName ?? "this project"} — deployments are tracked per app`
           : "Deployments are tracked per app — create one to get started"
       }
-      toolbar={
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <FilterBar list={list} schema={appsSearch} textPlaceholder="Filter apps..." />
-          {/* 列表主动作钉工具栏行最右（本仓对齐批 5 裁决——不吃 fleet 块的页头钮位） */}
-          <div className="py-2 pr-3">
-            <Button
-              size="sm"
-              onClick={() => {
-                setCreateOpen(true);
-              }}
-            >
-              <PlusIcon data-icon-start-inline />
-              New app
-            </Button>
-          </div>
-        </div>
-      }
-      pagination={<Pagination list={list} />}
-      emptyTitle={filtered ? "No apps match the filter" : "No apps yet"}
-      emptyDescription={
-        filtered
-          ? "Adjust or clear the filter to see rows again."
-          : "Create one with New app — or close this and deploy an image, the app appears here."
-      }
-      appendix={
-        <>
-          <CliEquivalent command={`fleetly apps list --project ${projectId}`} />
-          <NewAppDialog
-            projectId={projectId}
-            open={createOpen}
-            onOpenChange={setCreateOpen}
-            onCreated={(appId) => {
-              void navigate({ to: "/p/$projectId/apps/$appId", params: { projectId, appId } });
-            }}
-          />
-          <DeploySheet
-            open={deployOpen}
-            onOpenChange={setDeployOpen}
-            apps={[...rows]}
-            defaultAppId={deployAppId || rows[0]?.id || ""}
-            projectId={projectId}
-            from={Route.id}
-            onDeployed={(deploymentId) => {
-              void navigate({
-                to: "/p/$projectId/apps/$appId/deployments/$deploymentId",
-                params: { projectId, appId: deployAppId || rows[0]?.id || "", deploymentId },
-              });
-            }}
-          />
-        </>
-      }
     >
-      <DataTable
+      <FleetListPage
         list={list}
-        columns={columns}
-        getRowId={(row) => row.id}
-        onRowClick={(app) => {
-          void navigate({ to: "/p/$projectId/apps/$appId", params: { projectId, appId: app.id } });
-        }}
-      />
-    </FleetListPage>
+        toolbar={
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <FilterBar list={list} schema={appsSearch} textPlaceholder="Filter apps..." />
+            {/* 列表主动作钉工具栏行最右（本仓对齐批 5 裁决——不吃 fleet 块的页头钮位） */}
+            <div className="py-2 pr-3">
+              <Button
+                size="sm"
+                onClick={() => {
+                  setCreateOpen(true);
+                }}
+              >
+                <PlusIcon data-icon-start-inline />
+                New app
+              </Button>
+            </div>
+          </div>
+        }
+        pagination={<Pagination list={list} />}
+        emptyTitle={filtered ? "No apps match the filter" : "No apps yet"}
+        emptyDescription={
+          filtered
+            ? "Adjust or clear the filter to see rows again."
+            : "Create one with New app — or close this and deploy an image, the app appears here."
+        }
+        appendix={
+          <>
+            <CliEquivalent command={`fleetly apps list --project ${projectId}`} />
+            <NewAppDialog
+              projectId={projectId}
+              open={createOpen}
+              onOpenChange={setCreateOpen}
+              onCreated={(appId) => {
+                void navigate({ to: "/p/$projectId/apps/$appId", params: { projectId, appId } });
+              }}
+            />
+            <DeploySheet
+              open={deployOpen}
+              onOpenChange={setDeployOpen}
+              apps={[...rows]}
+              defaultAppId={deployAppId || rows[0]?.id || ""}
+              projectId={projectId}
+              from={Route.id}
+              onDeployed={(deploymentId) => {
+                void navigate({
+                  to: "/p/$projectId/apps/$appId/deployments/$deploymentId",
+                  params: { projectId, appId: deployAppId || rows[0]?.id || "", deploymentId },
+                });
+              }}
+            />
+          </>
+        }
+      >
+        <DataTable
+          list={list}
+          columns={columns}
+          getRowId={(row) => row.id}
+          onRowClick={(app) => {
+            void navigate({ to: "/p/$projectId/apps/$appId", params: { projectId, appId: app.id } });
+          }}
+        />
+      </FleetListPage>
+    </PageFrame>
   )
 }
 

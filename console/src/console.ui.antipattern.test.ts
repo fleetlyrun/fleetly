@@ -12,6 +12,11 @@ import { describe, expect, it } from "vitest";
 // ⑦ pre-v2 共享层死灰复燃（components/ui.tsx 已退役：Modal/RowButton/
 //    DangerRowButton/formatTime 等被 shadcn 件 + lib/format + ConfirmDialog
 //    取代；列表分页由 ListCard/DataTable 内建，页面不手接）。
+// ⑧ kit 列表件携带页面 chrome（一页一壳律的机制面）：页面衬垫与页头
+//    只归 PageFrame/ModulePage 壳单源；kit ListPage 是壳内模块配方，
+//    必须零页面 chrome（padding/页头三件）。升版重拷把上游的 px-6
+//    py-6/header 回拷即红——双壳回归的唯一通道在组件形状上堵死
+//    （2026-10-28 机制收口，取代逐位点 embedded 白名单）。
 // 执法范围：全量 src/**。components/ui/**（shadcn 上游手植层）按上游原样
 // 纪律天然不在扫描面。
 // 范围例外（带理由，双向保鲜）：
@@ -69,6 +74,29 @@ function* walk(dir: string): Generator<string> {
     else if (/\.(tsx?|css)$/.test(name)) yield path;
   }
 }
+
+// kit 列表件 chrome 禁令（2026-10-28 机制收口）：页面衬垫与页头只归
+// PageFrame/ModulePage 壳单源；kit ListPage 是壳内模块配方，零页面
+// chrome。升版重拷回拷上游 padding/header 即红——这类"双壳"回归的
+// 唯一通道在组件形状上堵死。只扫 className 字面量（散文注释不射程）。
+const KIT_LIST_PAGE_FILE = "src/components/kit/query/list-page.tsx";
+
+describe("console kit list-page chrome guard", () => {
+  it("kit ListPage carries no page chrome (one shell per page — PageFrame/ModulePage owns padding)", () => {
+    const lines = readFileSync(KIT_LIST_PAGE_FILE, "utf8").split("\n");
+    const violations: string[] = [];
+    lines.forEach((line, index) => {
+      if (!/className=/.test(line)) return;
+      const hit = line.match(/\b(?:px-6|py-6|pt-6|pb-8|mx-auto)\b/);
+      if (hit != null) {
+        violations.push(
+          `${KIT_LIST_PAGE_FILE}:${index + 1} — page chrome (${hit[0]}) in kit ListPage; the shell (PageFrame/ModulePage) owns padding and the page header`,
+        );
+      }
+    });
+    expect(violations, `\n${violations.join("\n")}`).toEqual([]);
+  });
+});
 
 describe("console UI anti-pattern guard", () => {
   for (const root of SCANNED_ROOTS) {

@@ -2,7 +2,9 @@ import type { ReactNode } from "react";
 import { PageHeader } from "./page-header";
 
 // PageFrame 是页面壳单源（六原型公共底座）：主内容列一处收口——手拼
-// "mx-auto max-w-7xl px-6 pt-6 pb-8" 是反模式（守卫执法）。
+// "mx-auto max-w-7xl px-6 pt-6 pb-8" 是反模式（守卫执法）。2026-10-28
+// 机制收口后衬垫/页头全仓唯一宿主就是本件（ModulePage 经此组合）：kit
+// ListPage 已零页面 chrome（壳内模块配方），一页一壳由组件形状保证。
 // 2026-10-27 走查统一裁决：**主内容宽度流体全宽，全部页面同列**——
 // 原 wide/narrow/flow 三档 max-w 与 kit FleetListPage 的流体容器并存造成
 // 页面间宽度不一致（用户反馈），三档退役：width prop 保留签名兼容（不再
