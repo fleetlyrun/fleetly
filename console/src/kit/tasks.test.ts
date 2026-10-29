@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { invalidateAfterCommand } from "@lynx-go/uikit-core";
-import { textPredicate, type CommandDescriptor } from "@lynx-go/uikit-core/kernel";
+import { collectionQueryOptions, invalidateAfterCommand } from "@lynx-go/uikit-core";
+import { scoped, textPredicate, type CommandDescriptor, type CommandsRecord, type Resource, type SubsRecord } from "@lynx-go/uikit-core/kernel";
 import { setToken } from "@/lib/token";
 import {
   fetchRuns,
@@ -263,9 +263,13 @@ function fakeQueryClient() {
   return { invalidateQueries: vi.fn() };
 }
 
-// kit collection 键形：["collection", resource, canonicalScope, predicate, order, window]
-function collectionKey(resource: string, projectId: string): readonly unknown[] {
-  return ["collection", resource, { projectId }, null, null, { size: 20, cursor: null, offset: null }];
+// kit collection 键经 collectionQueryOptions 单源取（0.4.0 键形含 scopeKeys
+// 段，手拼会漏——宽容降级只保旧形键，不保新形手拼）。
+function collectionKey<T, ID, C extends CommandsRecord<ID>, S extends SubsRecord, K extends readonly string[]>(
+  resource: Resource<T, ID, C, S, K>,
+  projectId: string,
+): readonly unknown[] {
+  return collectionQueryOptions(scoped(resource, { projectId }), { window: { size: 20 } }).queryKey;
 }
 
 function callsOf(client: { invalidateQueries: ReturnType<typeof vi.fn> }): Array<[InvalidateCall]> {
@@ -287,9 +291,9 @@ describe("失效编排（kit selector 缺省 + legacyKeys 桥）", () => {
       { projectId: "shop" },
     );
     const predicate = predicateOf(client);
-    expect(predicate({ queryKey: collectionKey("tasks", "shop") })).toBe(true);
-    expect(predicate({ queryKey: collectionKey("tasks", "other") })).toBe(false);
-    expect(predicate({ queryKey: collectionKey("schedules", "shop") })).toBe(false);
+    expect(predicate({ queryKey: collectionKey(tasksResource, "shop") })).toBe(true);
+    expect(predicate({ queryKey: collectionKey(tasksResource, "other") })).toBe(false);
+    expect(predicate({ queryKey: collectionKey(schedulesResource, "shop") })).toBe(false);
     expect(client.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["resources", "tasks", "shop"] });
   });
 
@@ -314,9 +318,9 @@ describe("失效编排（kit selector 缺省 + legacyKeys 桥）", () => {
       { projectId: "shop" },
     );
     const predicate = predicateOf(client);
-    expect(predicate({ queryKey: collectionKey("tasks", "shop") })).toBe(true);
-    expect(predicate({ queryKey: collectionKey("schedules", "shop") })).toBe(true);
-    expect(predicate({ queryKey: collectionKey("schedules", "other") })).toBe(false);
+    expect(predicate({ queryKey: collectionKey(tasksResource, "shop") })).toBe(true);
+    expect(predicate({ queryKey: collectionKey(schedulesResource, "shop") })).toBe(true);
+    expect(predicate({ queryKey: collectionKey(schedulesResource, "other") })).toBe(false);
     expect(client.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["resources", "tasks", "shop"] });
     expect(client.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["resources", "schedules", "shop"] });
   });

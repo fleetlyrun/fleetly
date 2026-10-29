@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
-import { invalidateAfterCommand } from "@lynx-go/uikit-core";
-import { textPredicate } from "@lynx-go/uikit-core/kernel";
+import { collectionQueryOptions, invalidateAfterCommand } from "@lynx-go/uikit-core";
+import { scoped, textPredicate } from "@lynx-go/uikit-core/kernel";
 import { setToken } from "@/lib/token";
 import { fetchGitHubApps, githubAppsResource, githubAppsSearch } from "./githubapps";
 
@@ -92,10 +92,10 @@ describe("命令锚：remove（映射 + 双语境失效桥）", () => {
     expect(result.status).toBe("ok");
 
     const queryClient = new QueryClient();
-    // collectionKey 同形：scope 段分面 {projectId:…} / {}，allScopes 命令
-    // 两侧都清（project 行 shadow global 行——旧整前缀失效语义）
-    const globalKey = ["collection", "github-apps", {}, null, null, { size: 20, cursor: null, offset: null }];
-    const projectKey = ["collection", "github-apps", { projectId: "shop" }, null, null, { size: 20, cursor: null, offset: null }];
+    // kit 键经 collectionQueryOptions 单源取（scope 段分面 {projectId:…} / {}，
+    // allScopes 命令两侧都清——project 行 shadow global 行——旧整前缀失效语义）
+    const globalKey = collectionQueryOptions(githubAppsResource, { window: { size: 20 } }).queryKey;
+    const projectKey = collectionQueryOptions(scoped(githubAppsResource, { projectId: "shop" }), { window: { size: 20 } }).queryKey;
     const reposKey = ["github-apps", "g1", "repos"];
     queryClient.setQueryData(globalKey, []);
     queryClient.setQueryData(projectKey, []);

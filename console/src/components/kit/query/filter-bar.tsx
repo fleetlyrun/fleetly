@@ -1,12 +1,13 @@
-// vendored from @lynx-go/uikit registry/query/filter-bar.tsx @0.3.1（2026-10-26 批0 底座重拷（demo 视觉原生落地））
+// vendored from @lynx-go/uikit registry/query/filter-bar.tsx @0.4.0（2026-10-29 0.4.0 回流批：初始文本回读改 filterLeaves 谓词纯函数层（namespace 内部适配，非 namespace 行为不变））
 // 拷贝适配（scripts/devtool.mjs --profile fleetly）：
 // token 方言映射 本块无方言 token；cn 统一 @/lib/utils。
 // 手工步骤（判断题，工具不自动改）：
 // - 未映射方言 token text-muted ×1——每块语境判断（torchwood amber/emerald、fleetly status vars 先例）
+// - Select 基元换 native-select 方言桥（demo Select=原生包装，本仓 ui/select 是 Radix compound）
 // 其余与上游一致。
 import { textPredicate, type Predicate } from "@lynx-go/uikit-core/kernel";
 import type { CollectionHandle } from "@lynx-go/uikit-core/react";
-import { filterValues, predicateOf } from "@lynx-go/uikit-core/schema";
+import { filterLeaves, filterValues, predicateOf } from "@lynx-go/uikit-core/schema";
 import type { FilterFieldDef, QuerySearchSchema } from "@lynx-go/uikit-core/schema";
 import { Search, X } from "lucide-react";
 import { useState } from "react";
@@ -29,9 +30,14 @@ export interface FilterBarProps<T> {
 
 export function FilterBar<T>({ list, schema, textPlaceholder }: FilterBarProps<T>) {
   const spec: ReadonlyArray<FilterFieldDef> = schema.spec.filters ?? [];
-  const [text, setText] = useState(() =>
-    typeof schema.encode(list.query).q === "string" ? (schema.encode(list.query).q as string) : "",
-  );
+  // 初始文本经谓词纯函数层回读（namespace 形态下 encode 输出物理前缀键，不可直读）
+  const textFields = new Set(schema.spec.text ?? []);
+  const [text, setText] = useState(() => {
+    const leaf = filterLeaves(list.query.predicate).find(
+      (l) => l.op === "contains" && textFields.has(l.field as string) && typeof l.value === "string",
+    );
+    return typeof leaf?.value === "string" ? leaf.value : "";
+  });
   // 读路径：单值投影收窄到 spec 字段（过滤下拉即单值）
   const values = filterValues(list.query.predicate);
   const selects: Record<string, string | undefined> = {};

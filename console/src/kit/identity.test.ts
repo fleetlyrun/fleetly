@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
-import { invalidateAfterCommand } from "@lynx-go/uikit-core";
+import { collectionQueryOptions, invalidateAfterCommand } from "@lynx-go/uikit-core";
 import { textPredicate } from "@lynx-go/uikit-core/kernel";
 import { setToken } from "@/lib/token";
 import { fetchInvitations, fetchRoles, fetchTeams, fetchUsers, identitySearch, usersResource } from "./identity";
@@ -76,8 +76,8 @@ describe("命令锚：users remove（映射 + 失效桥）", () => {
     expect(result.status).toBe("ok");
 
     const queryClient = new QueryClient();
-    // collectionKey 同形：["collection",name,scope,predicate,order,window]
-    const kitKey = ["collection", "users", {}, null, null, { size: 20, cursor: null, offset: null }];
+    // kit 键经 collectionQueryOptions 单源取（0.4.0 键形含 scopeKeys 段）
+    const kitKey = collectionQueryOptions(usersResource, { window: { size: 20 } }).queryKey;
     queryClient.setQueryData(kitKey, []);
     queryClient.setQueryData(["identity", "users"], []);
     invalidateAfterCommand(queryClient, usersResource.commands.remove, {});

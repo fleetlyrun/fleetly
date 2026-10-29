@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
-import { invalidateAfterCommand } from "@lynx-go/uikit-core";
+import { collectionQueryOptions, invalidateAfterCommand } from "@lynx-go/uikit-core";
 import { setToken } from "@/lib/token";
 import {
   fetchFreezes,
@@ -53,7 +53,9 @@ describe("命令锚：freezes freeze（映射 + 存量键桥）", () => {
     });
 
     const queryClient = new QueryClient();
-    const collectionKey = ["collection", "tokens", {}, "all"];
+    // kit 键经 collectionQueryOptions 单源取（窗口与 settings.tsx allRowsQuery
+    // 同形 size 100）
+    const collectionKey = collectionQueryOptions(tokensResource, { window: { size: 100 } }).queryKey;
     queryClient.setQueryData(collectionKey, { rows: [], total: 0 });
     invalidateAfterCommand(queryClient, tokensResource.commands.mint, {});
     expect(queryClient.getQueryState(collectionKey)?.isInvalidated).toBe(true);
