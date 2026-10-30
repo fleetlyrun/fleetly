@@ -35,11 +35,12 @@ var freezeExemptions = map[string]string{
 	"/fleetly.runtime.v1.NodesService/CordonNode":   "cluster ops: cordon is runtime administration, not workload change control",
 	"/fleetly.runtime.v1.NodesService/UncordonNode": "cluster ops: uncordon is runtime administration, not workload change control",
 	// 受管组件重启（IA v3 二期④）：排障修复族——强制重排不迁移资源状态
-	//（冻结窗内排障恰恰最需要，与 exec 诊断面同型）。
+	//（冻结窗内排障恰恰最需要，与 exec 排障面同型）。
 	"/fleetly.system.v1.SystemService/RestartComponent": "cluster ops: carrier force-reschedule is runtime remediation, not workload change control (freezing must not block the troubleshooting path)",
-	// exec 诊断面（F3.2，ADR-0049 决策 4）：会话不变更资源状态——冻结窗内诊断恰恰最需要。
-	"/fleetly.runtime.v1.ExecService/CreateExecSession": "diagnostics face: an exec session mutates no resource state (ADR-0049); a freeze window is exactly when diagnosis is needed",
-	"/fleetly.runtime.v1.ExecService/StreamExecSession": "diagnostics face: an exec session mutates no resource state (ADR-0049); a freeze window is exactly when diagnosis is needed",
+	// exec 排障面（F3.2，ADR-0049 决策 4；称谓随 D0 改定，四义划界见
+	// ADR-0085）：会话不变更资源状态——冻结窗内排障恰恰最需要。
+	"/fleetly.runtime.v1.ExecService/CreateExecSession": "排障面（exec 冻结豁免义）: an exec session mutates no resource state (ADR-0049); a freeze window is exactly when troubleshooting is needed",
+	"/fleetly.runtime.v1.ExecService/StreamExecSession": "排障面（exec 冻结豁免义）: an exec session mutates no resource state (ADR-0049); a freeze window is exactly when troubleshooting is needed",
 	// identity 全部变更：账号/Token 管理不属变更控制，且冻结解除依赖这些
 	// 面可用（冻结不得把自己锁在门外）。Login 是认证面（铸 Token 无资源
 	// 迁移；冻结不得锁死账号）——动词不在读前缀集，豁免登记。
@@ -70,10 +71,10 @@ var freezeExemptions = map[string]string{
 	// VerifyBackup：无状态迁移的校验面（重算摘要比对回执——读路径的
 	// 执行面，动词名不在读前缀集，豁免登记）。
 	"/fleetly.structure.v1.DatabasesService/VerifyBackup": "read-path execution: recomputes the object digest against the ledger receipt, changes no platform state",
-	// Browse 会话受理（F3.6，ADR-0051 决策 1）：诊断面同 exec 语义——
+	// Browse 会话受理（F3.6，ADR-0051 决策 1）：排障面同 exec 语义——
 	// 会话不变更资源状态（browse 台账行是会话自身的回收锚，非资源迁移）；
-	// 冻结窗内诊断恰恰最需要。
-	"/fleetly.structure.v1.DatabasesService/BrowseDatabase": "diagnostics face: a browse session mutates no resource state (ADR-0051); a freeze window is exactly when diagnosis is needed",
+	// 冻结窗内排障恰恰最需要。
+	"/fleetly.structure.v1.DatabasesService/BrowseDatabase": "排障面（browse 冻结豁免义）: a browse session mutates no resource state (ADR-0051); a freeze window is exactly when troubleshooting is needed",
 	// 告警面（F2.5，ADR-0041）：通道/规则是运维配置不是变更控制面
 	//（ADR-0017 冻结语义 = Workload 与结构变更族）；通道无 Team 锚
 	//（平台级），test 是诊断动作。

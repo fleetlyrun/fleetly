@@ -117,6 +117,20 @@ var bannedPatterns = map[string]*regexp.Regexp{
 	// Heroku 系规范形态（进程命令清单，表达力不足）；机械无歧义、扫描面
 	// 零命中。
 	"procfile": wordRe(`procfile|procfiles`),
+	// Change Preview/Confirm Ticket 词条（ADR-0085 入册，zeabur 借鉴 D0）：
+	// apply preview 精确钉死 zeabur 词形（短语零命中直扫；单词 apply 已由
+	// Deployment 词条在册禁）；confirmation token 零命中直扫（B1 不是审批
+	// 流，approval 语境限定进 skipped）。
+	"apply preview":      wordRe(`apply[ _-]previews?`),
+	"confirmation token": wordRe(`confirmation[ _-]?tokens?`),
+	// Fault Class 词条（ADR-0085 入册）：归属是「往哪看」非「谁来修」——
+	// blame/fault owner 问责措辞禁用；均机械无歧义、扫描面零命中。
+	"blame":       wordRe(`blame|blames|blamed|blaming`),
+	"fault owner": wordRe(`fault[ _-]?owners?`),
+	// Diagnosis/Platform Incident 词条（ADR-0085 入册）：self-check 防把诊
+	// 断引擎叫自检（自检义归 fleetly doctor/GetStatus，四义划界）；零命中
+	// 直扫（incident 裸用与 outage 语境限定进 skipped）。
+	"self-check": wordRe(`self[ _-]?checks?`),
 }
 
 // wordRe 构造大小写不敏感、词边界的匹配器（多形态以 | 预展开）。
@@ -184,6 +198,9 @@ var skippedTokens = map[string]string{
 	"deploy":   "仅禁名词单用；动词义（deploy the app）合法",
 	"throttle": "另指限流（F1.9 创建速率）合法；Admission 同义词语境禁",
 	"gate":     "健康门（L1 门）语境合法；Admission 同义词语境人工评审",
+	// Change Preview/Confirm Ticket 词条（ADR-0085 入册，zeabur 借鉴 D0）。
+	"plan":     "railpack 构建计划（plan.json/--plan-out）、dokploy 迁移计划（DokployPlan）与 CLI 退出码注释 diff/plan 类、泛指计划义均为既有合法语汇；Change Preview 同义词语境人工评审（zeabur 引述语境合法）",
+	"approval": "网络 peer 声明批准义（eventcode 在册文案 needs receiver approval）合法；Confirm Ticket/审批流同义词语境人工评审（B1 不是审批流）",
 	// Change Freeze 词条（ADR-0017 附录 A 入册，F1.9）。
 	"maintenance window": "运维通用短语；Change Freeze 同义词语境人工评审",
 	"block":              "通用词（blocker/阻塞义、FakeRuntime removeBlock 标识符）合法；tsuru Block 同义词语境禁",
@@ -257,6 +274,12 @@ var skippedTokens = map[string]string{
 	// Deployment Strategy 词条（ADR-0048）：slot 禁的是 zane 的 slot 别名
 	// 机制义；占位泛义（free a slot/实例池 slot）为通用英文在用。
 	"slot": "通用占位义（free a slot/task slot）合法；zane slot 别名机制义人工评审",
+	// ---- 诊断与排障 ----
+	// Diagnosis/Finding/Platform Incident 词条（ADR-0085 入册，zeabur 借鉴 D0）。
+	"incident": "仅禁裸用混指（Platform Incident 应全称）；冻结测试夹具 incident window（一般事件义）合法，zeabur 引述语境合法",
+	"issue":    "IssueEventTicket 签发义、GitHub issues webhook 事件（第三方契约）与 re-issue 动词义合法；Finding 工单同义词语境人工评审",
+	"alert":    "Alert Rule/alerting 实体族本义高频合法；Finding 同义词语境（把诊断条目叫 alert）人工评审",
+	"outage":   "converge_test 的 freeze store/gate outage（一般宕机义，失败关门/不进冷却台账断言）合法；Platform Incident 同义词语境人工评审",
 }
 
 // contextAvoidTokens 解析 CONTEXT.md 的 _Avoid_ 行，收集全部词条（剥除
@@ -345,6 +368,22 @@ var wordingExemptions = map[string]map[string]string{
 		"console/src/features/apps-tabs/app-variables.test.tsx": "vitest 回归锚引用同一钦定按钮文案（getByRole name: \"Apply changes\"）；豁免随 50d0c12 组件面同裁定（user ruling 2026-10-10）",
 		"console/src/features/apps-tabs/app-processes.test.tsx": "vitest 回归锚引用同一钦定按钮文案（getByRole name: \"Apply changes\"）；豁免随 50d0c12 组件面同裁定（user ruling 2026-10-10）",
 		"cmd/fleetlyd/main.go":                                  "lynx boot.Bootstrap.Apply 是框架 API（钩子/服务挂载面）；ADR-0007 禁的是部署语义 apply，框架方法名不可更名",
+		// console kit 化遗留欠账（批 D 扩面后 kit 组件入扫面，ADR-0085 批顺
+		// 手补齐双向保鲜）：
+		"console/src/components/kit/query/filter-bar.tsx": "re-vendored uikit kit component (library code): local function applying filter text/selects to the query state, not a deploy-by-apply verb",
+		"console/src/kit/app-observe.ts":                  "注释引用钦定 Apply changes 按钮的动线（Apply-then-deploy 基线行集，user ruling 2026-10-10）；非部署动词泛用",
+	},
+	// epoch（Generation 词条 _Avoid_）：console kit 数值组件的时间轴口径
+	//（t = ms epoch）是 Unix 纪元时间戳技术义，非 Generation 同义词
+	//（kit 化批次 b82a21b9 引入，ADR-0085 批补豁免）。
+	"epoch": {
+		"console/src/components/kit/values/metric-chart.tsx": "ms-epoch timestamp axis convention in the re-vendored kit chart component; not the Generation synonym sense",
+		"console/src/components/kit/values/metric-rows.ts":   "ms-epoch timestamp axis convention in the re-vendored kit value rows; not the Generation synonym sense",
+	},
+	// api key（Token 词条 _Avoid_）：变量 store 测试的 secret 名夹具（任意
+	// 用户命名数据，put/remove 往返断言），非把 Token 叫 api key 的命名缺陷。
+	"api key": {
+		"console/src/kit/variables.test.ts": "secret-name fixture data (arbitrary user-chosen names in the store round-trip assertions); not Token synonym naming",
 	},
 	// ssh（ADR-0049 入册）：git 传输 scheme 拒绝文案是技术义（hooks 面
 	// 只收 https 直连仓库），非把 exec 面叫 ssh 的命名缺陷。
@@ -354,14 +393,15 @@ var wordingExemptions = map[string]map[string]string{
 	},
 	// addon（Database 词条 _Avoid_）：xterm 库 API 标识符（@xterm/addon-fit
 	// 包名 / FitAddon 类 / loadAddon 方法）不可更名——终端页（F3.2，ADR-
-	// 0049）的库依赖面，非平台 Database 同义词。shadcn 官方 registry 组件
-	// （radix-nova，ADR-0057）的 addon 是 UI 库 API 命名（Input Addon 附属
-	// 位），CLI 生成物、再装即漂移——非平台 Database 同义词。
+	// 0049）的库依赖面，非平台 Database 同义词。批3-S2 terminal 收口
+	//（50e83430）把 xterm 接线收进 use-exec-session.ts，豁免随迁。shadcn
+	// 官方 registry 组件（radix-nova，ADR-0057）的 addon 是 UI 库 API 命名
+	//（Input Addon 附属位），CLI 生成物、再装即漂移——非平台 Database 同
+	// 义词。
 	"addon": {
-		"console/src/routes/_shell/terminal.tsx":           "xterm library API identifiers (@xterm/addon-fit, FitAddon, loadAddon) cannot be renamed; not platform database naming (ADR-0049 terminal page)",
-		"console/src/features/apps-tabs/exec-terminal.tsx": "xterm library API identifiers (@xterm/addon-fit, FitAddon, loadAddon) cannot be renamed; not platform database naming (ADR-0049 core extracted to app tab, IA v3 T2)",
-		"console/src/components/ui/command.tsx":            "shadcn registry component API naming (addon slot); generated file, not platform database naming (ADR-0057)",
-		"console/src/components/ui/input-group.tsx":        "shadcn registry component API naming (Input Addon); generated file, not platform database naming (ADR-0057)",
+		"console/src/features/terminal/use-exec-session.ts": "xterm library API identifiers (@xterm/addon-fit, FitAddon, loadAddon) cannot be renamed; not platform database naming (ADR-0049 terminal page, wiring consolidated into the session hook by console batch 3-S2)",
+		"console/src/components/ui/command.tsx":             "shadcn registry component API naming (addon slot); generated file, not platform database naming (ADR-0057)",
+		"console/src/components/ui/input-group.tsx":         "shadcn registry component API naming (Input Addon); generated file, not platform database naming (ADR-0057)",
 	},
 	// ingress（Proxy 词条 _Avoid_）：k8s NetworkPolicy API 的入站方向字段/
 	// 枚举/类型名（Spec.Ingress、PolicyTypeIngress、NetworkPolicyIngressRule）

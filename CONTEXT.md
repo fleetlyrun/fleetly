@@ -126,6 +126,14 @@ _Avoid_: version, snapshot
 从旧 Revision 到新 Revision 的受监督迁移。
 _Avoid_: apply, release, rollout, deploy(名词单用)
 
+**Change Preview**:
+变更预览——Deploy/Teardown 受理的只读孪生投影（PreviewDeploy/PreviewTeardown）：三段单源抽取受理管线（api 受理前半 + engine 合成 + 投影前段），产出 spec diff、逐 Workload 滚动后果判定（zero_touch/scale_only/replace）、结构化 warnings，并铸 Confirm Ticket；「预览=执行」由守卫钉死（同输入预览投影与部署投影逐字节同源）；载荷脱敏红线同 ADR-0071 决策 5；预览展示渲染意图非 runtime 现场（B1，ADR-0085）。
+_Avoid_: plan, apply preview
+
+**Confirm Ticket**:
+Change Preview 铸造的一次性确认票据：600s TTL、单用途、绑请求指纹/基线多锚/提交语义/操作者；验票与烧票在 SubmitSpec 受理临界区内一次闭合；进程内票据店第四 purpose（Launcher Ticket 先例），重启即失需重预览；非资源行（不可列表回读，台账=审计）（B1，ADR-0085）。
+_Avoid_: confirmation token, approval
+
 **Deployment Strategy**:
 Process 级部署切换策略：rolling（默认，健康门内逐代替换）| blue-green（双 Generation 并存窗，先验后切；ADR-0048）。Database/受管域不适用。
 _Avoid_: canary, slot
@@ -264,6 +272,24 @@ _Avoid_: addon, internal service（component 经 ADR-0059 复裁为在册页面�
 经部署管线或实体行落期望态的写类。按**有无运行时面**分两子类：有运行时面 = 引擎负责把运行时收敛到该状态，未变声明重放 = 零扰动 no-op；状态即事实 = 该域无运行时基底可收敛（identity/governance/alerting），行内容即事实，重放语义是行级 upsert 幂等、**不承诺 no-op**（写入不可复现内容如 bcrypt 随机盐者每次必变）。与 Scope 词条的 `resource:action` 同词异轴——授权 action 见 Scope 词条（授权轴），本词是写类轴（Write Class 的 DECLARATION 桶）。判据与域级收敛面表见 ADR-0081 §1/§1.1。
 **Author Class**:
 期望态的作者权属学说，三类：Document（部署事务的输入文档，冻结成 Revision）、Entity（持续在线的平台实体行）、System（控制环与平台决策——只写经策略委托的授权槽位、漂移对照合成后期望态、声明重放不清洗系统态）；学说与冲突语义表见 ADR-0081 附录。
+
+**Fault Class**:
+Finding 的错误归属轴，X-Class 族词条（Write Class 写类轴/Author Class 作者轴旁）：四档枚举 app（用户代码/镜像/依赖）| declaration（声明/配置）| platform（受管组件/控制面/收敛环/集群——三分合一）| external（上游外部）；自托管语义在「往哪看」非「谁来修」，platform 的错永远不读成用户的错（Platform Incident 可解释时改写 fault_class 并链回事故条目，守卫承载）（B2，ADR-0085）。
+_Avoid_: blame, fault owner
+
+### 诊断与排障
+
+**Diagnosis**:
+读时计算的排障解释层（DiagnoseApp）：以观测事件快照/事件近窗/告警行/spec 对照为事实，产出 per-App/per-Process 诊断条目回答「为什么现在坏」；不评估趋势（Alert Rule 分立）、不收敛（Drift 分立）、不重复部署失败解释（deployment error 与 build log 承载）；读时计算、非实体、不落行。四义划界（ADR-0085）：本词条只指 B2 诊断引擎；SystemService 公开诊断面（GetStatus/GetVersion，平台自检）、`fleetly doctor`（本机自检）、Explain（资源自描述）、排障面（exec/browse 冻结豁免义）各是各的面，不得以「diagnosis/诊断」统称。
+_Avoid_: self-check, incident(裸用)
+
+**Finding**:
+诊断规则的产出条目：注册表三链同 errcode（ID/Summary/Severity/FaultClass/Source/Fix），Fix 是结构化动作（纯值类型，verb 可选）；读时计算、非实体、不落行——「需要你」页按 project 域聚合（ListProjectFindings；platform 组单列「平台造成（等管理员修）」形态）（B2，ADR-0085）。
+_Avoid_: issue, alert
+
+**Platform Incident**:
+平台侧单因事故条目：组件健康/engine health/managed 状态/Route 归属派生波及面（受影响 App/Route）；解释与波及、绝不触发收敛（与 Drift 分立）；读时计算、非实体、不落行；ListPlatformIncidents 钉 platform:read + RequirePlatformAdmin（B2，ADR-0085）。
+_Avoid_: outage, incident(裸用)
 
 ### 状态语义
 
