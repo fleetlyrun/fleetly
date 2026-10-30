@@ -26,7 +26,7 @@ func TestDeployEndToEnd(t *testing.T) {
 	appID := h.CreateApp(t, h.CreateProject(t, "shop").GetId(), "web").GetId()
 
 	// 镜像直投部署。
-	dep, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{
+	dep, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(),
 		AppId: appID, Image: "nginx:1.27",
 	})
 	require.NoError(t, err)
@@ -68,7 +68,7 @@ func TestRollbackNoBaselineMapsStable(t *testing.T) {
 
 	appID := h.CreateApp(t, h.CreateProject(t, "rollback").GetId(), "web").GetId()
 
-	_, err := deployments.Rollback(ctx, &deliveryv1.RollbackRequest{AppId: appID})
+	_, err := deployments.Rollback(ctx, &deliveryv1.RollbackRequest{Confirmation: yesSkip(), AppId: appID})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "E_NO_BASELINE")
 	require.Contains(t, err.Error(), "no successful deployment to roll back to")
@@ -83,7 +83,7 @@ func TestComposeDeployNormalizes(t *testing.T) {
 	appID := h.CreateApp(t, h.CreateProject(t, "shop").GetId(), "compose").GetId()
 
 	compose := "services:\n  web:\n    image: nginx:1.27\n    ports:\n      - \"8080\"\n    deploy:\n      replicas: 2\n"
-	dep, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: appID, ComposeYaml: compose})
+	dep, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appID, ComposeYaml: compose})
 	require.NoError(t, err)
 
 	revs, err := revisions.ListRevisions(ctx, &deliveryv1.ListRevisionsRequest{AppId: appID})
@@ -93,7 +93,7 @@ func TestComposeDeployNormalizes(t *testing.T) {
 	// 同内容重复部署：Revision 内容寻址复用；admission 附注排队于在途之后
 	//（P10：harness 自动驱动首条已 releasing，位次 2——无幂等键/commit 锚
 	// 不去重、不合并 queued）。
-	dep2, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: appID, ComposeYaml: compose})
+	dep2, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appID, ComposeYaml: compose})
 	require.NoError(t, err)
 	revs2, _ := revisions.ListRevisions(ctx, &deliveryv1.ListRevisionsRequest{AppId: appID})
 	require.Len(t, revs2.GetRevisions(), 1, "identical spec reuses the frozen revision")
@@ -113,14 +113,14 @@ func TestDeployCommitDedupAdmission(t *testing.T) {
 	appID := h.CreateApp(t, h.CreateProject(t, "dedup").GetId(), "web").GetId()
 
 	commit := "2222222222222222222222222222222222222222"
-	first, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{
+	first, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(),
 		AppId: appID, Image: "nginx:1.27", CommitSha: commit,
 	})
 	require.NoError(t, err)
 	require.NotNil(t, first.GetAdmission())
 	assert.Equal(t, "queued", first.GetAdmission().GetOutcome())
 
-	again, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{
+	again, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(),
 		AppId: appID, Image: "nginx:1.27", CommitSha: commit,
 	})
 	require.NoError(t, err)
@@ -137,7 +137,7 @@ func TestComposeRejectedField(t *testing.T) {
 	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
 
 	appID := h.CreateApp(t, h.CreateProject(t, "p").GetId(), "a").GetId()
-	_, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{
+	_, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(),
 		AppId:       appID,
 		ComposeYaml: "services:\n  web:\n    image: nginx\n    privileged: true\n",
 	})

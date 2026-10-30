@@ -76,7 +76,7 @@ func TestScopeEnforcementMatrix(t *testing.T) {
 
 	// member：member 面内的写（deployments:write）拿到的是业务错误而非
 	// 401/403（App 不存在 → E_NOT_FOUND）。
-	_, err = deployments.Deploy(member, &deliveryv1.DeployRequest{AppId: "01APPDOESNOTEXIST000000000", Image: "nginx:1.27"})
+	_, err = deployments.Deploy(member, &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: "01APPDOESNOTEXIST000000000", Image: "nginx:1.27"})
 	require.Error(t, err)
 	assert.NotEqual(t, codes.PermissionDenied, status.Code(err), "member may deploy")
 	assert.NotEqual(t, codes.Unauthenticated, status.Code(err))

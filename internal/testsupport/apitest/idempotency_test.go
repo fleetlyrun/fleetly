@@ -40,7 +40,7 @@ func TestIdempotencyDeployReplayAndConflicts(t *testing.T) {
 
 	// 夹具链：项目 + App（幂等键挂部署面）。
 	appID := h.CreateApp(t, h.CreateProject(t, "idem-proj").GetId(), "idem-app").GetId()
-	req := &deliveryv1.DeployRequest{AppId: appID, Image: "nginx:1.28", ProcessName: "web"}
+	req := &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appID, Image: "nginx:1.28", ProcessName: "web"}
 
 	dc := deliveryv1.NewDeploymentsServiceClient(h.Conn)
 	kctx := sdk.WithIdempotencyKey(ctx, "torchwood-run-1")
@@ -56,13 +56,13 @@ func TestIdempotencyDeployReplayAndConflicts(t *testing.T) {
 	assert.Len(t, dl.GetDeployments(), 1, "replay must not admit a second deployment")
 
 	// 同键异体：409 族错误码。
-	other := &deliveryv1.DeployRequest{AppId: appID, Image: "nginx:1.29", ProcessName: "web"}
+	other := &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appID, Image: "nginx:1.29", ProcessName: "web"}
 	_, err = dc.Deploy(kctx, other)
 	require.Error(t, err)
 	assert.Equal(t, "E_IDEMPOTENCY_KEY_CONFLICT", codeOf(t, err))
 
 	// 双源不一致：头 k2 + body k3 → 拒绝（未执行）。
-	dual := &deliveryv1.DeployRequest{AppId: appID, Image: "nginx:1.28", ProcessName: "web", IdempotencyKey: "body-anchor"}
+	dual := &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appID, Image: "nginx:1.28", ProcessName: "web", IdempotencyKey: "body-anchor"}
 	_, err = dc.Deploy(sdk.WithIdempotencyKey(ctx, "header-key"), dual)
 	require.Error(t, err)
 	assert.Equal(t, "E_IDEMPOTENCY_KEY_CONFLICT", codeOf(t, err))

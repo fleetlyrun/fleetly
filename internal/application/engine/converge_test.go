@@ -522,7 +522,7 @@ func TestTeardownRaceDoesNotRebuild(t *testing.T) {
 	driftDeployToSucceeded(t, e, rt, clock, rev)
 	settleSlowChannel(t, e)
 
-	require.NoError(t, e.TeardownApp(context.Background(), tAppID))
+	require.NoError(t, e.TeardownApp(context.Background(), tAppID, nil))
 	before := len(rt.calls())
 	e.driftScan(context.Background())
 	assert.Equal(t, 0, ensureDelta(t, rt, before), "post-teardown carriers must not be rebuilt by convergence")
@@ -1305,7 +1305,7 @@ func TestExpectationLedgerForgottenOnTeardown(t *testing.T) {
 	e.obs.mu.RUnlock()
 	require.True(t, ledgered, "the cancelled deployment's materialize wrote the ledger")
 
-	require.NoError(t, e.TeardownApp(ctx, tAppID))
+	require.NoError(t, e.TeardownApp(ctx, tAppID, nil))
 	e.obs.mu.RLock()
 	_, ledgered = e.obs.ensuredBy[tAppID+"-web"]
 	e.obs.mu.RUnlock()

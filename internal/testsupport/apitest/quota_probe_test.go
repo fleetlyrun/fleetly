@@ -154,10 +154,10 @@ func TestDeployProbeDeclarationValidation(t *testing.T) {
 		req  *deliveryv1.DeployRequest
 		want string
 	}{
-		{"http and tcp are mutually exclusive", &deliveryv1.DeployRequest{AppId: id, Image: "nginx:1.27", HttpProbe: "/healthz", TcpProbe: 8080}, "mutually exclusive"},
-		{"http path must be absolute", &deliveryv1.DeployRequest{AppId: id, Image: "nginx:1.27", HttpProbe: "healthz"}, "starting with '/'"},
-		{"tcp port range", &deliveryv1.DeployRequest{AppId: id, Image: "nginx:1.27", TcpProbe: 70000}, "port out of range"},
-		{"compose rejects direct probes", &deliveryv1.DeployRequest{AppId: id, ComposeYaml: "services:\n  web:\n    image: nginx\n", HttpProbe: "/healthz"}, "compose declares probes"},
+		{"http and tcp are mutually exclusive", &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: id, Image: "nginx:1.27", HttpProbe: "/healthz", TcpProbe: 8080}, "mutually exclusive"},
+		{"http path must be absolute", &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: id, Image: "nginx:1.27", HttpProbe: "healthz"}, "starting with '/'"},
+		{"tcp port range", &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: id, Image: "nginx:1.27", TcpProbe: 70000}, "port out of range"},
+		{"compose rejects direct probes", &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: id, ComposeYaml: "services:\n  web:\n    image: nginx\n", HttpProbe: "/healthz"}, "compose declares probes"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := deployments.Deploy(ctx, tc.req)
@@ -168,6 +168,6 @@ func TestDeployProbeDeclarationValidation(t *testing.T) {
 	}
 
 	// 合法形态照常受理（http 单独声明）。
-	_, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: id, Image: "nginx:1.27", HttpProbe: "/healthz"})
+	_, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: id, Image: "nginx:1.27", HttpProbe: "/healthz"})
 	require.NoError(t, err)
 }

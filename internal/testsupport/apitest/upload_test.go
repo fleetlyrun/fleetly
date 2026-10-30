@@ -116,7 +116,7 @@ func TestUploadSourceLifecycle(t *testing.T) {
 	// deploy upload 形态：Revision 冻结 upload 引用 → building 驱动解包 →
 	// FakeBuilder 构建输入 = 解包后的上下文目录 → releasing/observing 手动
 	// 推进至 succeeded（FakeRuntime 观测注入，promoteToSucceeded 同款）。
-	dep, err := deployments.Deploy(owner, &deliveryv1.DeployRequest{AppId: appID, UploadId: resp.GetId()})
+	dep, err := deployments.Deploy(owner, &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appID, UploadId: resp.GetId()})
 	require.NoError(t, err)
 	depID := dep.GetDeployment().GetId()
 
@@ -211,7 +211,7 @@ func TestDeployUploadCrossProject(t *testing.T) {
 	up, err := uploadTar(owner, builds, projA.GetId(), buildFixtureTar(), 8)
 	require.NoError(t, err)
 
-	_, err = deployments.Deploy(owner, &deliveryv1.DeployRequest{AppId: appB.GetId(), UploadId: up.GetId()})
+	_, err = deployments.Deploy(owner, &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appB.GetId(), UploadId: up.GetId()})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "belongs to project")
 }

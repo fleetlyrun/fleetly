@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
+	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/model/entityid"
 
@@ -23,6 +24,15 @@ type SubmitRequest struct {
 	CommitSHA      string // 可选；git 触发的 commit 去重锚
 	Supersede      bool   // 显式抢占在途部署（ADR-0016）
 	Kind           string // 可选；来源标注（KindRollback：审计标注 + pre_deploy 游标直落 done——回滚永不重跑 preDeployJobs，ADR-0030 决策 5）
+	// Confirm 是 B1 确认票消费入参（nil = 非强制面路径：webhook/git 触发
+	// 与内部受理天然豁免——设计稿 §1.2 豁免族）。非 nil 时 ④digest/⑤base
+	// 内容绑定与本字段同临界区（appMu）闭合，见 confirm.go。
+	Confirm *ConfirmInput
+	// ConfirmSpecBody 是④比对的载荷锚：Deploy = 本临界区产出的冻结体
+	// marshalSpec 规范形（SubmitSpec 透传 rev.Spec——比对对象是冻结体，
+	// 非 handler 侧重算，消灭合成双跑）；Rollback = 目标 Revision 冻结体。
+	// Confirm 非 nil 且非 skip 时必填。
+	ConfirmSpecBody []byte
 }
 
 // AdmissionOutcome 是 admission 判定形态（P10 响应显式化；取值与 proto
@@ -97,6 +107,15 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 	appMu.Lock()
 	defer appMu.Unlock()
 
+	// B1 Confirm Ticket 内容绑定④（设计稿 §1.4 甲'：验票在 appMu 受理
+	// 临界区内、冻结体产出之后）：票面复核 + 目标锚比对（peek 不删——
+	// 烧票在 admission 相落库成功后）。并发同票第二请求在此排队，进锁后
+	// 撞 tombstone（已确认过）。request_digest 的比对在事务内 2.5 步。
+	plan, cerr := e.peekConfirmTicket(req.Confirm, req.AppID)
+	if cerr != nil {
+		return nil, nil, cerr
+	}
+
 	var out *deployment.Deployment
 	var adm *Admission
 	var supersededIDs []string
@@ -121,12 +140,17 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 
 		// 1. 幂等键去重（键作用域 = App，B10：异 App 同键各自独立受理）。
 		//    命中即 deduplicated 附注（位次 = 既有部署在活跃集内的位置）。
+		//    B1：去重命中也是受理成功——票面审计行照落（锚既有行），烧票
+		//    在事务提交后统一执行（confirm.go 烧票契约）。
 		if req.IdempotencyKey != "" {
 			existing, err := s.Deployments.FindActiveByIdempotencyKey(ctx, req.AppID, req.IdempotencyKey)
 			if err == nil {
 				active, aerr := s.Deployments.ActiveByApp(ctx, req.AppID)
 				if aerr != nil {
 					return aerr
+				}
+				if lerr := e.confirmLedger(ctx, s, plan, existing.ID); lerr != nil {
+					return lerr
 				}
 				out = existing
 				adm = &Admission{Outcome: AdmissionDeduplicated, Position: admissionPosition(active, existing), Existing: existing.ID}
@@ -146,6 +170,9 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 			d := &active[i]
 			// 2. commit 去重（活跃同 commit → 既有）。
 			if req.CommitSHA != "" && d.CommitSHA == req.CommitSHA {
+				if lerr := e.confirmLedger(ctx, s, plan, d.ID); lerr != nil {
+					return lerr
+				}
 				out = d
 				adm = &Admission{Outcome: AdmissionDeduplicated, Position: admissionPosition(active, d), Existing: d.ID}
 				return nil
@@ -154,6 +181,25 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 				queued = append(queued, d)
 			} else {
 				inFlight = append(inFlight, d)
+			}
+		}
+
+		// 2.5 B1 内容绑定（设计稿 §1.4 ④⑤，辨因序：世界先核对）：
+		//  ⑤ base 多锚比对——最新冻结体/LatestSucceeded/活跃变量环境摘要/
+		//  hook 行版本与票面锚全等（与落行同事务快照；最新冻结体锚排除
+		//  self 形态，见 checkConfirmBase）。漂移即 STALE：变量/hook 行
+		//  变化改写合成结果使 digest 必变的归此腿，不误判 MISMATCH
+		// （独立审查轮 #7 的归腿要求——base 先于 digest 判）。
+		//  ④ request_digest 与本临界区冻结体规范形比对（含 Semantics）：
+		//  世界一致而不符才是请求被改 → MISMATCH（指纹单源 governance.
+		//  ConfirmRequestDigest，铸票面同参数）。
+		//  去重命中不做两比对（既有行即受理终局，判定无意义）。
+		if plan != nil && plan.peeked != nil {
+			if berr := e.checkConfirmBase(ctx, s, req.AppID, appRow.ProjectID, revisionDigest(req.ConfirmSpecBody), plan.peeked.Base); berr != nil {
+				return berr
+			}
+			if governance.ConfirmRequestDigest(req.ConfirmSpecBody, req.Confirm.Semantics) != plan.peeked.RequestDigest {
+				return ErrConfirmMismatch
 			}
 		}
 
@@ -224,20 +270,26 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 		if req.Kind != "" {
 			afterFP = fmt.Sprintf("%s; kind=%s", d.ToRevision, req.Kind)
 		}
+		// B1 LedgerOnly 审计行（confirm.go ledgerFact）：带票与 skip 两形态
+		// 同拍落库——取证面可辨「确认过」「跳过」；无 confirm 面零行为。
+		facts := []func() writes.FactRow{func() writes.FactRow {
+			fr := writes.FactRow{
+				Name: eventStateName(d.State), Aggregate: "deployment", ID: d.ID,
+				Payload: deploymentEventPayloadJSON(d), TeamID: e.eventTeamOfApp(ctx, s, d.AppID),
+				Action: "deployment.create", Resource: "deployment/" + d.ID, AfterFP: afterFP,
+				Actor:  authn.ActorFromContext(ctx),
+				Source: authn.SourceFromContext(ctx),
+			}
+			return fr
+		}}
+		if plan != nil {
+			facts = append(facts, func() writes.FactRow { return plan.ledgerFact(ctx, d.ID) })
+		}
 		if err := e.commitWrite(ctx, s, writeFact{
 			write: func(ctx context.Context, s transact.Stores) error {
 				return s.Deployments.Create(ctx, d)
 			},
-			facts: []func() writes.FactRow{func() writes.FactRow {
-				fr := writes.FactRow{
-					Name: eventStateName(d.State), Aggregate: "deployment", ID: d.ID,
-					Payload: deploymentEventPayloadJSON(d), TeamID: e.eventTeamOfApp(ctx, s, d.AppID),
-					Action: "deployment.create", Resource: "deployment/" + d.ID, AfterFP: afterFP,
-					Actor:  authn.ActorFromContext(ctx),
-					Source: authn.SourceFromContext(ctx),
-				}
-				return fr
-			}},
+			facts: facts,
 		}); err != nil {
 			return err
 		}
@@ -261,6 +313,12 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 	if err != nil {
 		return nil, nil, err
 	}
+	// B1 烧票契约（设计稿 §1.4）：discard 仅在 admission 相落库成功后——
+	// 冻结成功而 admission 拒（queue full 等）在上方 return err 出锁，票
+	// 保留可重试（重试经冻结体内容寻址复用，④仍成立）；deduplicated 命中
+	// 也是受理成功，同烧。此刻仍在 appMu 内——并发同票第二请求在锁外
+	// 排队，进锁后撞 tombstone。
+	e.discardConfirmTicket(plan)
 	for _, id := range supersededIDs {
 		if fresh, err := e.repos.Deployments.Get(ctx, id); err == nil {
 			e.abandonPreDeployJobs(ctx, fresh)

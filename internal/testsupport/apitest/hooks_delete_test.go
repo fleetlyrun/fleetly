@@ -113,7 +113,7 @@ func TestDeleteAppWithHookDeliveriesCascades(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	_, err = apps.DeleteApp(ctx, &structurev1.DeleteAppRequest{Id: appID})
+	_, err = apps.DeleteApp(ctx, &structurev1.DeleteAppRequest{Confirmation: yesSkip(), Id: appID})
 	require.NoError(t, err, "delete must cascade the hook aggregate (deliveries included), never fail on the FK")
 
 	// hook 行随 tombstone 走：配置面 404（与接收面同语义）。

@@ -102,7 +102,7 @@ func TestRowLevelTeamAuthorization(t *testing.T) {
 	taskA, err := tasks.CreateTask(owner, &automationv1.CreateTaskRequest{ProjectId: projAID, Name: "migrate", Image: "nginx:1.27"})
 	require.NoError(t, err)
 	taskAID := taskA.GetTask().GetId()
-	depA, err := deployments.Deploy(owner, &deliveryv1.DeployRequest{AppId: appAID, Image: "nginx:1.27"})
+	depA, err := deployments.Deploy(owner, &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appAID, Image: "nginx:1.27"})
 	require.NoError(t, err)
 	depAID := depA.GetDeployment().GetId()
 
@@ -167,9 +167,9 @@ func TestRowLevelTeamAuthorization(t *testing.T) {
 	assert.Equal(t, codes.PermissionDenied, status.Code(err), "cross-team CreateApp")
 	_, err = tasks.CreateTask(bAdmin, &automationv1.CreateTaskRequest{ProjectId: projAID, Image: "nginx:1.27"})
 	assert.Equal(t, codes.PermissionDenied, status.Code(err), "cross-team CreateTask")
-	_, err = deployments.Deploy(bAdmin, &deliveryv1.DeployRequest{AppId: appAID, Image: "nginx:1.27"})
+	_, err = deployments.Deploy(bAdmin, &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appAID, Image: "nginx:1.27"})
 	assert.Equal(t, codes.PermissionDenied, status.Code(err), "cross-team Deploy")
-	_, err = deployments.Rollback(bAdmin, &deliveryv1.RollbackRequest{AppId: appAID, ToRevision: "1"})
+	_, err = deployments.Rollback(bAdmin, &deliveryv1.RollbackRequest{Confirmation: yesSkip(), AppId: appAID, ToRevision: "1"})
 	assert.Equal(t, codes.PermissionDenied, status.Code(err), "cross-team Rollback")
 	_, err = routes.CreateRoute(bAdmin, &proxyv1.CreateRouteRequest{
 		ProjectId: projAID, AppId: appAID, Process: "web", Port: 8080, Host: "hijack.example.com",

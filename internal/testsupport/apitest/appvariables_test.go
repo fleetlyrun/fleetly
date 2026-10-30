@@ -49,7 +49,7 @@ func TestAppVariablesVerb(t *testing.T) {
 	// 部署（源声明 env TIER=intake）→ 冻结体 = 三级合成终态。
 	body := `{"app":{"id":"X","project":"Y"},"source":{"image":{"ref":"nginx:1.27"}},"processes":[` +
 		`{"name":"web","image":"nginx:1.27","replicas":1,"env":{"TIER":"intake"}}]}`
-	_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: appID, SpecFile: body})
+	_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appID, SpecFile: body})
 	require.NoError(t, err)
 
 	frozen, err := revisions.GetRevision(ctx, &deliveryv1.GetRevisionRequest{AppId: appID, Seq: 1})
@@ -64,7 +64,7 @@ func TestAppVariablesVerb(t *testing.T) {
 	_, err = appVars.PutAppVariable(ctx, &structurev1.PutAppVariableRequest{AppId: appID, Name: "TIER", Value: "rotated"})
 	require.NoError(t, err)
 	redeploy := frozen.GetSpec()
-	_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: appID, SpecFile: marshalSpec(t, redeploy)})
+	_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appID, SpecFile: marshalSpec(t, redeploy)})
 	require.NoError(t, err)
 	frozen2, err := revisions.GetRevision(ctx, &deliveryv1.GetRevisionRequest{AppId: appID, Seq: 2})
 	require.NoError(t, err)
@@ -74,7 +74,7 @@ func TestAppVariablesVerb(t *testing.T) {
 	// 删除 store 键 → 回落源声明值（中间层语义）。
 	_, err = appVars.DeleteAppVariable(ctx, &structurev1.DeleteAppVariableRequest{AppId: appID, Name: "TIER"})
 	require.NoError(t, err)
-	_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: appID, SpecFile: body})
+	_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appID, SpecFile: body})
 	require.NoError(t, err)
 	frozen3, err := revisions.GetRevision(ctx, &deliveryv1.GetRevisionRequest{AppId: appID, Seq: 3})
 	require.NoError(t, err)

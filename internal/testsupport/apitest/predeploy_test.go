@@ -48,7 +48,7 @@ func TestComposePreDeployDeployEndToEnd(t *testing.T) {
 		"secrets:\n" +
 		"  db-url:\n" +
 		"    external: true\n"
-	dep, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: appID, ComposeYaml: compose})
+	dep, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appID, ComposeYaml: compose})
 	require.NoError(t, err)
 	depID := dep.GetDeployment().GetId()
 

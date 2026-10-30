@@ -1,0 +1,4 @@
+cascade TEARDOWN_ITEM_KIND_WORKLOAD: <app>-web
+cascade TEARDOWN_ITEM_KIND_HOOK_ROW: https://github.com/acme/w2a-web.git
+cascade TEARDOWN_ITEM_KIND_ROUTE_ROW: w2a.teardown.test
+kept KEPT_ITEM_KIND_VOLUME: volumes are project-scoped and survive app deletion (mounted: scratch)

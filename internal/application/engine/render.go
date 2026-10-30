@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 
+	"google.golang.org/protobuf/proto"
+
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/revision"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -48,6 +50,52 @@ func (e *Engine) projectRevision(ctx context.Context, appID, revisionID string, 
 		return nil, nil, capability.NamespaceRef{}, fmt.Errorf("project spec: %w", err)
 	}
 	return spec, ws, ns, nil
+}
+
+// PreviewDigestPendingImage 是 from_build 进程在预览投影的镜像引用占位
+// （B1 预览管线，设计稿 §1.3 digest-pending 形态）：预览无冻结行无 Build
+// 行，from_build 的下发镜像引用构建后落定——镜像引用位以本占位标注，
+// 同时透出 DIGEST_PENDING warning（PreviewWarningKind 第 9 值）。「预览
+// =执行」逐字节守卫域由此限定：image 直投/既成 digest 源逐字节相等，
+// from_build 断言本形态。
+const PreviewDigestPendingImage = "digest-pending (resolved after the build)"
+
+// projectSpecMem 是 projectRevision 的内存 spec 投影变体（B1 预览管线
+// 段三，设计稿 §1.3 守卫域限定）：无冻结行无 Build 行——与按冻结行取数
+// 的 projectRevision 差异仅在 digest 解析（from_build 进程无 Build 行可
+// 查，产出 digest-pending 形态）；侧表装配（team/peers/egress）与投影
+// 单源（Project 同函数）。spec 是合成后 Spec（段二产物），克隆后替换
+// from_build 镜像位——输入 spec 不被改写（diff/digest 消费原形）。
+// pendingFromBuild 回带 digest-pending 进程名（warning 面）。isolate 语义
+// 同 projectRevision（预览恒 strict，调用方裁决）。
+func (e *Engine) projectSpecMem(ctx context.Context, appID string, in *specv1.AppSpec, isolate bool) ([]capability.Workload, []string, error) {
+	team, appRow, err := e.appTeam(ctx, appID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("resolve app: %w", err)
+	}
+	peers, err := e.resolvePeerRefs(ctx, e.repos, in.GetApp().GetProject(), in, isolate)
+	if err != nil {
+		return nil, nil, fmt.Errorf("resolve cross-project network peers: %w", err)
+	}
+	// digest-pending 替换在克隆体上执行（Project 单源直用；from_build 无
+	// Build 行可解析——镜像引用位占位标注）。
+	projected := proto.Clone(in).(*specv1.AppSpec)
+	var pending []string
+	for _, p := range projected.GetProcesses() {
+		if p.GetFromBuild() != "" {
+			pending = append(pending, p.GetName())
+		}
+	}
+	digests := map[string]string{}
+	for _, name := range pending {
+		digests[name] = PreviewDigestPendingImage
+	}
+	egress := e.egressNetworkMap(ctx, projected.GetApp().GetProject())
+	ws, _, err := Project(projected, team, appRow.Name, digests, peers, egress)
+	if err != nil {
+		return nil, nil, fmt.Errorf("project spec: %w", err)
+	}
+	return ws, pending, nil
 }
 
 // RenderWorkloads 按 Revision 只读重放 Workload 投影（ADR-0071 投影层）：

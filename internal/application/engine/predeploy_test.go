@@ -479,7 +479,7 @@ func TestRollbackDeploymentSkipsPreDeployJobs(t *testing.T) {
 	require.Equal(t, deployment.StateSucceeded, getDeployment(t, e, second.ID).State)
 
 	// 显式 rollback 回 R1（spec 带 jobs）。
-	rb, _, err := e.Rollback(ctx, tAppID, r1)
+	rb, _, err := e.Rollback(ctx, tAppID, r1, nil)
 	require.NoError(t, err)
 	e.step(ctx) // queued → preparing → releasing →（游标 done）→ carrier
 	d = getDeployment(t, e, rb.ID)
@@ -517,7 +517,7 @@ func TestRollbackAuditAnnotatesKind(t *testing.T) {
 	require.Len(t, entries, 1)
 	assert.NotContains(t, entries[0].AfterFP, "kind=", "plain deploys carry no kind annotation")
 
-	rb, _, err := e.Rollback(ctx, tAppID, revID)
+	rb, _, err := e.Rollback(ctx, tAppID, revID, nil)
 	require.NoError(t, err)
 	entries, err = e.repos.Audits.ListFiltered(ctx,
 		audit.Filter{ActionPrefix: "deployment.create", Resource: "deployment/" + rb.ID})

@@ -117,6 +117,9 @@ func (e *Engine) resolveOnePeerRef(ctx context.Context, s transact.Stores, consu
 // CheckPeerRefs 是受理面的 strict 预检（Deploy admission，ADR-0013 附录
 // A.3 双层拒绝的第一道）：spec 引用任一未 approved 的跨 Project 网络即
 // 拒绝入队。Revision 读取经调用方事务 Runner（所见即受理终局）。
+// B1 预览管线的 spec 参数变体单源：CheckPeerRefsSpec 与本函数同一谓词
+// （设计稿 §1.3 admission 预检——「未批准 peer 引用」是入队即拒项，
+// 预览期透出为 ADMISSION_PRECHECK warning）。
 func (e *Engine) CheckPeerRefs(ctx context.Context, s transact.Stores, consumerProjectID, revisionID string) error {
 	rev, err := s.Revisions.Get(ctx, revisionID)
 	if err != nil {
@@ -126,7 +129,14 @@ func (e *Engine) CheckPeerRefs(ctx context.Context, s transact.Stores, consumerP
 	if err != nil {
 		return err
 	}
-	_, err = e.resolvePeerRefs(ctx, s, consumerProjectID, spec, false)
+	return e.CheckPeerRefsSpec(ctx, s, consumerProjectID, spec)
+}
+
+// CheckPeerRefsSpec 是 CheckPeerRefs 的 spec 参数变体（内存 spec 直检，
+// 无冻结行寻址——预览管线与 Submit 单源共用：同一谓词，预览侧把拒绝
+// 透出为 warning 而非整单失败）。
+func (e *Engine) CheckPeerRefsSpec(ctx context.Context, s transact.Stores, consumerProjectID string, spec *specv1.AppSpec) error {
+	_, err := e.resolvePeerRefs(ctx, s, consumerProjectID, spec, false)
 	return err
 }
 

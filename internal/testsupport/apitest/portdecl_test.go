@@ -23,7 +23,7 @@ func TestDeployImagePortDeclaration(t *testing.T) {
 
 	appID := h.CreateApp(t, h.CreateProject(t, "port-decl").GetId(), "web").GetId()
 
-	dep, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{
+	dep, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(),
 		AppId: appID, Image: "nginx:1.27", Port: 8080, Protocol: "h2c",
 	})
 	require.NoError(t, err)
@@ -51,19 +51,19 @@ func TestDeployImagePortDeclaration(t *testing.T) {
 	}, 3e9, 1e7)
 
 	// 互斥与值域执法。
-	_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{
+	_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(),
 		AppId: appID, ComposeYaml: "services:\n  web:\n    image: nginx:1.27\n", Port: 8080,
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "port and protocol are for image or upload deploys")
 
-	_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{
+	_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(),
 		AppId: appID, Image: "nginx:1.27", Protocol: "h2c",
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "protocol is only meaningful together with a declared port")
 
-	_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{
+	_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(),
 		AppId: appID, Image: "nginx:1.27", Port: 8080, Protocol: "grpc",
 	})
 	require.Error(t, err)
@@ -71,7 +71,7 @@ func TestDeployImagePortDeclaration(t *testing.T) {
 	// 的 %q 动态回显静态化——新文案逐字节钉死（契约变化在案）。
 	assert.Contains(t, err.Error(), `protocol: must be http, h2c or tcp`)
 
-	_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{
+	_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(),
 		AppId: appID, Image: "nginx:1.27", Port: 70000,
 	})
 	require.Error(t, err)
@@ -93,7 +93,7 @@ func TestDeployUploadPortDeclaration(t *testing.T) {
 	up, err := uploadTar(ctx, builds, proj.GetId(), buildFixtureTar(), 8)
 	require.NoError(t, err)
 
-	dep, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{
+	dep, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(),
 		AppId: appID, UploadId: up.GetId(), Builder: "static", Port: 8080,
 	})
 	require.NoError(t, err)

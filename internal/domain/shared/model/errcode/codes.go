@@ -269,4 +269,25 @@ var builtins = []Code{
 		Source:     "internal/infrastructure/providers/victoriametrics/provider.go queryRange (H8 design docs/design/2026-10-19-security-backlog-design.md §5.3.3: 30s typed timeout; parent-context cancellation excluded)",
 		GRPC:       "DeadlineExceeded",
 	},
+	{
+		ID:         "E_CONFIRMATION_REQUIRED",
+		Summary:    "The operation is in the mandatory confirmation set and was sent without a ticket or an explicit skip.",
+		Suggestion: "Run the matching preview RPC to mint a one-shot ticket (600s TTL) and resend with it, or set skip (--yes) for scripted calls that intentionally bypass the preview.",
+		Source:     "internal/application/governance/confirm.go ConfirmGuard.enforce (B1 default-mandatory + escape hatch, design 2026-10-30 §1.2/§1.4; webhook/git, Restart/Scale and --yes exemption families)",
+		GRPC:       "FailedPrecondition",
+	},
+	{
+		ID:         "E_CONFIRMATION_STALE",
+		Summary:    "The confirmation no longer matches the current state: the baseline moved or the ticket expired.",
+		Suggestion: "A newer revision, deployment, variable environment or hook row changed what the deploy/rollback/teardown would do, or the ticket passed its TTL. Run the preview again and confirm the fresh ticket.",
+		Source:     "internal/application/engine/confirm.go checkConfirmBase / PeekConfirm expired leg (B1 baseline multi-anchor binding, design 2026-10-30 §1.4 ⑤; server-side input drift lands here, audit review round #7)",
+		GRPC:       "FailedPrecondition",
+	},
+	{
+		ID:         "E_CONFIRMATION_MISMATCH",
+		Summary:    "The confirmation ticket does not match the request: payload fingerprint, operator, target, or an unknown/already-redeemed ticket.",
+		Suggestion: "Resend the exact request that was previewed under the same operator identity, or mint a fresh preview ticket. An already-redeemed ticket means the change was confirmed — query the resulting deployment instead of resending.",
+		Source:     "internal/application/governance/confirm.go ConfirmGuard.enforce (verb/operator binding) + internal/application/engine/confirm.go peekConfirmTicket ④ request-digest binding (B1, design 2026-10-30 §1.4; tombstone makes an already-redeemed ticket distinguishable from an expired or forged one)",
+		GRPC:       "FailedPrecondition",
+	},
 }

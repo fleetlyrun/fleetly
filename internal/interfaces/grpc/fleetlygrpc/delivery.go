@@ -16,6 +16,7 @@ import (
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/composeintake"
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
+	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/build"
 	"github.com/fleetlyrun/fleetly/internal/domain/delivery/sourceupload"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/apperr"
@@ -34,12 +35,59 @@ type DeploymentsService struct {
 // AppSpec spec_file）并受理部署（合并/冻结/admission 全在
 // engine.SubmitSpec 单咽喉——P3-7 下沉批；hook 闸门留 api）。
 func (svc *DeploymentsService) Deploy(ctx context.Context, req *deliveryv1.DeployRequest) (*deliveryv1.DeployResponse, error) {
+	// 受理前半（段一）与 PreviewDeploy 共享单源（B1 预览管线，设计稿
+	// §1.3——漏段一则预览不复执法，违反「确认的正是展示的」）。
+	intake, err := svc.deployIntake(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	// 受理单咽喉（P3-7）：合并（方向参数化）→ 三级变量合成 → Revision
+	// 冻结（内容寻址复用）→ admission 全在 engine.SubmitSpec；无冻结
+	// Revision（hook 配置后从未部署）= 首部署原样受理的语义在 engine 同形。
+	// rev 响应面不回显（与现行一致——deployment.to_revision 已承载锚定）。
+	// B1 确认票透传（设计稿 §1.4 甲'）：通用验票已过 confirm 拦截器，
+	// ④digest/⑤base 内容绑定与烧票在 engine 的 appMu 临界区内闭合；
+	// 提交语义位（supersede/override_hook）随入参进④指纹。
+	_, d, adm, err := svc.s.Engine.SubmitSpec(ctx, engine.SubmitSpecRequest{
+		AppID: intake.appRow.ID, Spec: intake.spec, SourceText: req.GetComposeYaml(),
+		HookOwned: intake.hookOwned, Merge: intake.merge,
+		Submit: &engine.SubmitOptions{
+			IdempotencyKey: req.GetIdempotencyKey(), CommitSHA: req.GetCommitSha(),
+			Supersede: req.GetSupersede(),
+		},
+		Confirmation: deployConfirmInput(req),
+	})
+	if err != nil {
+		if cerr := mapConfirmError(err); cerr != nil {
+			return nil, cerr
+		}
+		return nil, mapStateError(err, "revision")
+	}
+	return &deliveryv1.DeployResponse{Deployment: deploymentMsg(*d), Admission: admissionMsg(adm)}, nil
+}
+
+// deployIntakeResult 是受理前半（段一）的产物。
+type deployIntakeResult struct {
+	appRow    *app.App
+	spec      *specv1.AppSpec
+	merge     engine.MergeMode
+	hookOwned bool
+}
+
+// deployIntake 是 Deploy/PreviewDeploy 共享的受理前半（B1 段一抽取，设计稿
+// §1.3）：authorize → spec_file 解析 → upload 归属/blob 在盘 → 变量
+// lookup → normalizeDeploySource → hook 闸门（E_APP_HOOK_OWNED）与 merge
+// 裁决。Preview 与 Deploy 同一入口执法——授权/四源互斥（descriptor CEL
+// 经 PreviewDeployRequest 内嵌 DeployRequest 单源继承）/材料归属/hook
+// 所有权在预览侧全量复执法。
+func (svc *DeploymentsService) deployIntake(ctx context.Context, req *deliveryv1.DeployRequest) (*deployIntakeResult, error) {
 	// 受理面形状执法（app_id 必填 + 四源互斥/至少一源/spec_file×单进程
 	// 旗标/probe 组/env×compose/port×compose/protocol/builder 族）已全量
 	// 退役 DeployRequest descriptor 注解（P4-1 批 1 + P4-2 批 2）：由
 	// protovalidate 拦截器在受理面前拦截，文案与退役前手写逐字节（含
 	// %q 回显的静态化，契约变化在 P4-2 批 2 报告列明）。此处只留业务检查
-	// （upload 归属/blob 在盘）、spec 组装与 SubmitSpec 提交。
+	// （upload 归属/blob 在盘）、spec 组装。
 	// 行级授权（ADR-0035）：App 归属 Team 比对（载行供归一化复用）。
 	appRow, err := svc.s.authorizeAppID(ctx, req.GetAppId())
 	if err != nil {
@@ -115,23 +163,41 @@ func (svc *DeploymentsService) Deploy(ctx context.Context, req *deliveryv1.Deplo
 	} else if !errors.Is(herr, state.ErrNotFound) {
 		return nil, mapStateError(herr, "hook")
 	}
+	return &deployIntakeResult{appRow: appRow, spec: appSpec, merge: merge, hookOwned: hookOwned}, nil
+}
 
-	// 受理单咽喉（P3-7）：合并（方向参数化）→ 三级变量合成 → Revision
-	// 冻结（内容寻址复用）→ admission 全在 engine.SubmitSpec；无冻结
-	// Revision（hook 配置后从未部署）= 首部署原样受理的语义在 engine 同形。
-	// rev 响应面不回显（与现行一致——deployment.to_revision 已承载锚定）。
-	_, d, adm, err := svc.s.Engine.SubmitSpec(ctx, engine.SubmitSpecRequest{
-		AppID: appRow.ID, Spec: appSpec, SourceText: req.GetComposeYaml(),
-		HookOwned: hookOwned, Merge: merge,
-		Submit: &engine.SubmitOptions{
-			IdempotencyKey: req.GetIdempotencyKey(), CommitSHA: req.GetCommitSha(),
-			Supersede: req.GetSupersede(),
-		},
-	})
-	if err != nil {
-		return nil, mapStateError(err, "revision")
+// deployConfirmInput 把请求的 confirmation 铸为 engine 入参（nil = 未携带
+// ——拦截器已拦 REQUIRED，此处是透传面；语义位取服务端观察的本请求事实）。
+func deployConfirmInput(req *deliveryv1.DeployRequest) *engine.ConfirmInput {
+	conf := req.GetConfirmation()
+	if conf == nil {
+		return nil
 	}
-	return &deliveryv1.DeployResponse{Deployment: deploymentMsg(*d), Admission: admissionMsg(adm)}, nil
+	return &engine.ConfirmInput{
+		Ticket: conf.GetTicket(), Skip: conf.GetSkip(),
+		Semantics: governance.ConfirmSemantics{
+			Supersede:    req.GetSupersede(),
+			OverrideHook: req.GetOverrideHook(),
+		},
+	}
+}
+
+// mapConfirmError 把 engine 确认哨兵映射为用户面 errcode（设计稿 §1.2 三
+// 码；文案不内插票串/digest）。AdmissionError 包装经 Unwrap 穿透哨兵。
+func mapConfirmError(err error) error {
+	switch {
+	case errors.Is(err, engine.ErrConfirmStale):
+		return apperr.New("E_CONFIRMATION_STALE",
+			"the confirmation for this deploy no longer matches the current state").
+			WithCause(err).
+			WithSuggestion("The baseline moved (a newer revision, deployment, variable environment or hook row) or the ticket expired. Run the preview again and confirm the fresh ticket.")
+	case errors.Is(err, engine.ErrConfirmMismatch):
+		return apperr.New("E_CONFIRMATION_MISMATCH",
+			"the confirmation ticket does not match the submitted request").
+			WithCause(err).
+			WithSuggestion("The ticket binds the previewed payload and its operator. Resend the exact previewed request, or mint a fresh preview ticket.")
+	}
+	return nil
 }
 
 // deployVarLookup 合成 compose 官方插值的平台变量环境：Project 层
@@ -291,17 +357,38 @@ func (svc *DeploymentsService) Rollback(ctx context.Context, req *deliveryv1.Rol
 	if err := svc.s.authorizeAppIDOnly(ctx, req.GetAppId()); err != nil {
 		return nil, err
 	}
-	d, adm, err := svc.s.Engine.Rollback(ctx, req.GetAppId(), req.GetToRevision())
+	// B1 单目标验票（设计稿 §1.2 重裁）：confirmation 透传 engine——
+	// Rollback 走 Submit 路径，④digest/⑤base 与烧票复用 Deploy 的临界区
+	// 闭合（④锚 = 目标 Revision 冻结体；语义位 supersede 由 engine 单源
+	// 归一）。
+	d, adm, err := svc.s.Engine.Rollback(ctx, req.GetAppId(), req.GetToRevision(), rollbackConfirmInput(req))
 	if err != nil {
 		// 哨兵判定（Q-13）：engine 哨兵 → E_NO_BASELINE（映射目标不变，
 		// 只把文案 Contains 换成 errors.Is——文案再改不破坏错误契约）。
 		if errors.Is(err, engine.ErrNoSuccessfulBaseline) {
 			return nil, apperr.New("E_NO_BASELINE", "app %s has no successful deployment to roll back to", req.GetAppId()).WithCause(err)
 		}
+		if cerr := mapConfirmError(err); cerr != nil {
+			return nil, cerr
+		}
 		return nil, mapStateError(err, "rollback")
 	}
 	return &deliveryv1.RollbackResponse{Deployment: deploymentMsg(*d), Admission: admissionMsg(adm)}, nil
 }
+
+// rollbackConfirmInput 把 RollbackRequest 的 confirmation 铸为 engine 入参
+// （nil = 未携带——拦截器已拦 REQUIRED）。
+func rollbackConfirmInput(req *deliveryv1.RollbackRequest) *engine.ConfirmInput {
+	conf := req.GetConfirmation()
+	if conf == nil {
+		return nil
+	}
+	return &engine.ConfirmInput{Ticket: conf.GetTicket(), Skip: conf.GetSkip()}
+}
+
+// PreviewDeploy / PreviewTeardown / ScaleProcess 的实装在 preview.go
+// （B1 W2a 预览管线；PreviewDeploy = 段一 deployIntake + engine 段二/段三
+// 只读孪生 + 铸票，设计稿 §1.3/§1.4）。
 
 // RestartProcess 强制重排单个进程的载体（ADR-0069）：授权面与 Rollback
 // 同款（app 域写面）；engine 哨兵 map 为精确错误码（仿 systemgrpc 组件

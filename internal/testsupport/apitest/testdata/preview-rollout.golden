@@ -1,0 +1,10 @@
+== zero_touch ==
+diff_entries=0
+change <app>-web action=WORKLOAD_CHANGE_ACTION_CHANGED rollout=WORKLOAD_ROLLOUT_ZERO_TOUCH image=nginx:1.27 replicas=1->1
+== scale_only ==
+change <app>-web action=WORKLOAD_CHANGE_ACTION_CHANGED rollout=WORKLOAD_ROLLOUT_SCALE_ONLY replicas=1->3
+== replace_blue_green ==
+change <app>-web action=WORKLOAD_CHANGE_ACTION_CHANGED rollout=WORKLOAD_ROLLOUT_REPLACE image=nginx:1.31
+== removed ==
+change <app>-other action=WORKLOAD_CHANGE_ACTION_ADDED rollout=WORKLOAD_ROLLOUT_SCALE_ONLY replicas=0->1
+change <app>-web action=WORKLOAD_CHANGE_ACTION_REMOVED rollout=WORKLOAD_ROLLOUT_REPLACE replicas=1->0

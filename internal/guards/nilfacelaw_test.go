@@ -85,6 +85,16 @@ var nilFaceExemptions = map[string][]nilFaceExemption{
 			reason: "lexical validation on the url.Parse success path (embedded credentials rejection), not a face-absence negotiation",
 		},
 	},
+	"internal/interfaces/grpc/fleetlygrpc/preview.go": {
+		{
+			// PreviewDeploy 的 deploy==nil 是内嵌请求消息缺席的载荷校验
+			//（PreviewDeployRequest.deploy 是 proto 请求字段，非平台配置面
+			//——uploads.go 首帧 meta 同款形态）——E_INVALID_ARGUMENT 对码
+			// 正确，不属 G17 能力面射程（B1 W2a，设计稿 2026-10-30 §1.3）。
+			anchor: "the preview carries the same deploy request",
+			reason: "request-payload validation: a missing embedded deploy message is the caller's input error (E_INVALID_ARGUMENT), not a platform capability face",
+		},
+	},
 }
 
 // nilFaceHit 是一处 nil 面映射点命中。

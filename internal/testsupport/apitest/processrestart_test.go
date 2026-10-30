@@ -37,7 +37,7 @@ func TestRestartProcessVerb(t *testing.T) {
 	body := `{"app":{"id":"X","project":"Y"},"source":{"image":{"ref":"nginx:1.27"}},"processes":[` +
 		`{"name":"web","image":"nginx:1.27","replicas":1},` +
 		`{"name":"worker","image":"busybox:1.37","command":["sleep","3600"]}]}`
-	_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: appID, SpecFile: body})
+	_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appID, SpecFile: body})
 	require.NoError(t, err)
 	require.Eventually(t, func() bool { return len(h.Runtime.Calls()) > 0 }, 2e9, 1e7)
 

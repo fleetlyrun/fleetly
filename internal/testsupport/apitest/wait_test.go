@@ -41,7 +41,7 @@ func deployToSucceeded(t *testing.T, h *apitest.Harness, appID string) string {
 	t.Helper()
 	ctx := context.Background()
 	dc := deliveryv1.NewDeploymentsServiceClient(h.Conn)
-	d, err := dc.Deploy(h.Ctx(), &deliveryv1.DeployRequest{
+	d, err := dc.Deploy(h.Ctx(), &deliveryv1.DeployRequest{Confirmation: yesSkip(),
 		AppId: appID, Image: "nginx:1.27", ProcessName: "web",
 	})
 	require.NoError(t, err)
@@ -66,7 +66,7 @@ func TestWaitDeployment(t *testing.T) {
 	appID := waitFixtureApp(t, h)
 
 	dc := deliveryv1.NewDeploymentsServiceClient(h.Conn)
-	dep, err := dc.Deploy(ctx, &deliveryv1.DeployRequest{AppId: appID, Image: "nginx:1.27", ProcessName: "web"})
+	dep, err := dc.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appID, Image: "nginx:1.27", ProcessName: "web"})
 	require.NoError(t, err)
 	depID := dep.GetDeployment().GetId()
 

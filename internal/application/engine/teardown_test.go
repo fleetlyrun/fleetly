@@ -23,7 +23,7 @@ func TestTeardownAppRemovesCarriersAndClearsCaches(t *testing.T) {
 	rev := freezeSpec(t, e, 1, tImageSpec)
 	driftDeployToSucceeded(t, e, rt, clock, rev)
 
-	require.NoError(t, e.TeardownApp(context.Background(), tAppID))
+	require.NoError(t, e.TeardownApp(context.Background(), tAppID, nil))
 
 	removed := rt.removedSnapshot()
 	require.Len(t, removed, 1, "teardown must call Runtime.Remove exactly once")
@@ -40,7 +40,7 @@ func TestTeardownAppRemovesCarriersAndClearsCaches(t *testing.T) {
 	assert.False(t, hasOwner, "ownership cache must be cleared")
 
 	// 幂等：再拆一次不报错、不重复计数。
-	require.NoError(t, e.TeardownApp(context.Background(), tAppID))
+	require.NoError(t, e.TeardownApp(context.Background(), tAppID, nil))
 	assert.Len(t, rt.removedSnapshot(), 2, "Remove is idempotent-reachable (carrier count per call is provider-side)")
 }
 
@@ -63,7 +63,7 @@ func TestTeardownAppRefusesFailedPendingRollbackWindow(t *testing.T) {
 	require.NoError(t, e.repos.Deployments.Create(ctx, planted))
 	before := len(rt.removedSnapshot())
 
-	err := e.TeardownApp(ctx, tAppID)
+	err := e.TeardownApp(ctx, tAppID, nil)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrActiveDeployment), "the failed rollback window is driving; teardown must refuse, got %v", err)
 	assert.Len(t, rt.removedSnapshot(), before, "the refusal happens before any carrier side effect")
@@ -72,7 +72,7 @@ func TestTeardownAppRefusesFailedPendingRollbackWindow(t *testing.T) {
 	require.NoError(t, e.repos.Deployments.Transit(ctx, planted.ID,
 		[]deployment.State{deployment.StateFailed}, deployment.StateFailed,
 		func(m *deployment.Deployment) { m.RollbackAttempted = true }))
-	require.NoError(t, e.TeardownApp(ctx, tAppID))
+	require.NoError(t, e.TeardownApp(ctx, tAppID, nil))
 	assert.Len(t, rt.removedSnapshot(), before+1, "after the rollback window closes the teardown proceeds")
 }
 
@@ -86,7 +86,7 @@ func TestTeardownAppWaitsForMaintenanceWriter(t *testing.T) {
 
 	e.maintenanceMu.Lock() // 模拟 RebuildNetwork 写半边
 	done := make(chan error, 1)
-	go func() { done <- e.TeardownApp(context.Background(), tAppID) }()
+	go func() { done <- e.TeardownApp(context.Background(), tAppID, nil) }()
 	select {
 	case err := <-done:
 		e.maintenanceMu.Unlock()
@@ -189,7 +189,7 @@ func TestTeardownAppClearsConvergeLedger(t *testing.T) {
 	require.Positive(t, projKeys, "fixture: the projection memo holds the app's baseline key")
 	assert.Equal(t, "firing", e.SystemConvergeAlertState().State, "fixture: the builtin converge alert is firing")
 
-	require.NoError(t, e.TeardownApp(ctx, tAppID))
+	require.NoError(t, e.TeardownApp(ctx, tAppID, nil))
 
 	e.converge.mu.Lock()
 	_, memoAfter := e.converge.memo[tAppID]

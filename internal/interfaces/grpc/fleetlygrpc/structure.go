@@ -14,6 +14,7 @@ import (
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/application/authn"
 	"github.com/fleetlyrun/fleetly/internal/application/engine"
+	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/identity/audit"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
@@ -464,16 +465,31 @@ func (svc *AppsService) DeleteApp(ctx context.Context, req *structurev1.DeleteAp
 		return nil, apperr.New("E_CONFLICT",
 			"app %s has %d active deployment(s); cancel them or wait for a terminal state before deleting", req.GetId(), len(driving))
 	}
-	if err := svc.s.Engine.TeardownApp(ctx, req.GetId()); err != nil {
+	// B1 LedgerOnly 审计行的票面锚在此 peek（必须在 TeardownApp 烧票之前
+	// ——烧后 peek 只见 tombstone）；peek 不删，权威验票/烧票在 engine 锁内。
+	confirmFact := svc.teardownConfirmFact(ctx, req)
+	if err := svc.s.Engine.TeardownApp(ctx, req.GetId(), deleteConfirmInput(req)); err != nil {
 		// 并发双删：对手已落 tombstone（Get 活跃行口径）→ 同形 404；
 		// 锁内预检命中活跃部署 → E_CONFLICT（零副作用，App 保持可操作）；
-		// 其余收口失败保持 E_INTERNAL（App 未落账，可重试删除）。
+		// B1 确认哨兵 → 三码（票检在 TeardownApp 的 appMu 内、拆载体之前
+		// ——零副作用拒绝）；其余收口失败保持 E_INTERNAL（App 未落账，
+		// 可重试删除）。
 		switch {
 		case errors.Is(err, state.ErrNotFound):
 			return nil, apperr.New("E_NOT_FOUND", "app %s not found", req.GetId())
 		case errors.Is(err, engine.ErrActiveDeployment):
 			return nil, apperr.New("E_CONFLICT",
 				"app %s has active deployment(s); cancel them or wait for a terminal state before deleting", req.GetId()).WithCause(err)
+		case errors.Is(err, engine.ErrConfirmStale):
+			return nil, apperr.New("E_CONFIRMATION_STALE",
+				"the confirmation for this teardown no longer matches the current state").
+				WithCause(err).
+				WithSuggestion("The teardown baseline moved (hook configuration changed) or the ticket expired. Run the teardown preview again and confirm the fresh ticket.")
+		case errors.Is(err, engine.ErrConfirmMismatch):
+			return nil, apperr.New("E_CONFIRMATION_MISMATCH",
+				"the confirmation ticket does not match this teardown").
+				WithCause(err).
+				WithSuggestion("The ticket binds the previewed app and its operator. Mint a fresh preview ticket for this app, or pass --yes.")
 		}
 		return nil, apperr.New("E_INTERNAL", "app teardown failed").WithCause(err)
 	}
@@ -494,6 +510,9 @@ func (svc *AppsService) DeleteApp(ctx context.Context, req *structurev1.DeleteAp
 	if err != nil {
 		return nil, err
 	}
+	// B1 LedgerOnly 审计行：拆除确认的取证形态（proof=redeemed/skipped）
+	// 与 app.delete 同事务落库——「确认过」「跳过」与拦截器的「无凭证
+	// 拒绝」三形态取证面可辨（设计稿 §1.2 审计 A8）。
 	err = svc.s.commit(ctx, writeFact{
 		// 驱动权复查（R02-M4）：收口后、落账前受理的部署（含 failed 待
 		// 自动回滚窗）在此拒绝——整单回滚（无 tombstone、无路由删除；与
@@ -535,7 +554,7 @@ func (svc *AppsService) DeleteApp(ctx context.Context, req *structurev1.DeleteAp
 			}
 			return nil
 		},
-		facts: []func() writes.FactRow{fact},
+		facts: teardownConfirmFacts(confirmFact, fact),
 	})
 	if err != nil {
 		if aborted > 0 {
@@ -553,6 +572,54 @@ func (svc *AppsService) DeleteApp(ctx context.Context, req *structurev1.DeleteAp
 	}
 	svc.s.Engine.PublishRoutesNow() // Proxy 全量发布即时触发（撤流收口）
 	return &structurev1.DeleteAppResponse{}, nil
+}
+
+// deleteConfirmInput 把 DeleteAppRequest 的 confirmation 铸为 engine 入参
+// （nil = 未携带——confirm 拦截器已拦 E_CONFIRMATION_REQUIRED）。
+func deleteConfirmInput(req *structurev1.DeleteAppRequest) *engine.ConfirmInput {
+	conf := req.GetConfirmation()
+	if conf == nil {
+		return nil
+	}
+	return &engine.ConfirmInput{Ticket: conf.GetTicket(), Skip: conf.GetSkip()}
+}
+
+// teardownConfirmFact 铸拆除确认的 LedgerOnly 审计行（票面锚经 peek 取，
+// 不删；调用时点必须在 TeardownApp 烧票之前——烧后 peek 只见 tombstone。
+// 票不可 peek 时〔伪造腿会被 engine 拒，此处防御〕只落 proof 形态）。
+func (svc *AppsService) teardownConfirmFact(ctx context.Context, req *structurev1.DeleteAppRequest) *writes.FactRow {
+	conf := req.GetConfirmation()
+	if conf == nil {
+		return nil
+	}
+	fr := writes.FactRow{
+		Aggregate: "app", ID: req.GetId(),
+		Action: "confirm.redeem", Resource: "app/" + req.GetId(),
+		Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+		// LedgerOnly：取证面单行（app.delete 的流面事实由 fact 承载）。
+		LedgerOnly: true,
+	}
+	if conf.GetSkip() {
+		fr.Action = "confirm.skip"
+		fr.AfterFP = "proof=skipped"
+		return &fr
+	}
+	if payload, status := svc.s.eventTickets.PeekConfirm(conf.GetTicket()); status == governance.ConfirmPeekHit {
+		b := payload.Base
+		fr.AfterFP = fmt.Sprintf("proof=redeemed; verb=%s; preview_digest=%s; request_digest=%s; hook_row=%s",
+			payload.Verb, payload.PreviewDigest, payload.RequestDigest, b.HookRowVersion)
+	}
+	return &fr
+}
+
+// teardownConfirmFacts 组装 tombstone 事务的事实集（confirm 行在场时居前，
+// app.delete 殿后——确认事实与删除事实同事务）。
+func teardownConfirmFacts(confirmFact *writes.FactRow, fact func() writes.FactRow) []func() writes.FactRow {
+	if confirmFact == nil {
+		return []func() writes.FactRow{fact}
+	}
+	cf := *confirmFact
+	return []func() writes.FactRow{func() writes.FactRow { return cf }, fact}
 }
 
 // errDeleteAborted 是 tombstone 事务复查命中活跃部署的回滚哨兵（事务内

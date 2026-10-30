@@ -69,7 +69,7 @@ func TestGitHookCascadeOnAppDelete(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	_, err = apps.DeleteApp(ctx, &structurev1.DeleteAppRequest{Id: appID})
+	_, err = apps.DeleteApp(ctx, &structurev1.DeleteAppRequest{Confirmation: yesSkip(), Id: appID})
 	require.NoError(t, err)
 
 	// 级联 + 活跃行执法：配置面三动词对已删 App 即刻 404（真机咬点——

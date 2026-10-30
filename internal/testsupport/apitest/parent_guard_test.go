@@ -49,7 +49,7 @@ func setupParentFixtures(t *testing.T, h *apitest.Harness, tag string) *parentFi
 	fx.deletedID = h.CreateProject(t, tag+"-gone").GetId()
 	goneApp := h.CreateApp(t, fx.deletedID, "web")
 	require.NoError(t, func() error {
-		_, err := apps.DeleteApp(h.Ctx(), &structurev1.DeleteAppRequest{Id: goneApp.GetId()})
+		_, err := apps.DeleteApp(h.Ctx(), &structurev1.DeleteAppRequest{Confirmation: yesSkip(), Id: goneApp.GetId()})
 		return err
 	}())
 	require.NoError(t, func() error {
@@ -61,7 +61,7 @@ func setupParentFixtures(t *testing.T, h *apitest.Harness, tag string) *parentFi
 	appGone := h.CreateApp(t, fx.liveID, "gone")
 	fx.deletedApp = appGone.GetId()
 	require.NoError(t, func() error {
-		_, err := apps.DeleteApp(h.Ctx(), &structurev1.DeleteAppRequest{Id: fx.deletedApp})
+		_, err := apps.DeleteApp(h.Ctx(), &structurev1.DeleteAppRequest{Confirmation: yesSkip(), Id: fx.deletedApp})
 		return err
 	}())
 	return fx

@@ -27,7 +27,7 @@ func TestDeleteAppRefusesFailedPendingRollbackWindow(t *testing.T) {
 	appID := h.CreateApp(t, projectID, "web").GetId()
 
 	// 冻结一条真 Revision（部署后取消，行留终态；Revision 行可作基线锚）。
-	dep, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: appID, Image: "nginx:1.27"})
+	dep, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appID, Image: "nginx:1.27"})
 	require.NoError(t, err)
 	revID := dep.GetDeployment().GetToRevision()
 	require.NotEmpty(t, revID)
@@ -44,7 +44,7 @@ func TestDeleteAppRefusesFailedPendingRollbackWindow(t *testing.T) {
 		return deploymentrepo.New(h.DB.Clock(), run).Create(ctx, planted)
 	}))
 
-	_, err = apps.DeleteApp(ctx, &structurev1.DeleteAppRequest{Id: appID})
+	_, err = apps.DeleteApp(ctx, &structurev1.DeleteAppRequest{Confirmation: yesSkip(), Id: appID})
 	require.Error(t, err)
 	require.Equal(t, "E_CONFLICT", appErrCode(t, err),
 		"the failed pending-rollback window is driving; the delete must be refused")
@@ -58,7 +58,7 @@ func TestDeleteAppRefusesFailedPendingRollbackWindow(t *testing.T) {
 			[]deployment.State{deployment.StateFailed}, deployment.StateFailed,
 			func(m *deployment.Deployment) { m.RollbackAttempted = true })
 	}))
-	_, err = apps.DeleteApp(ctx, &structurev1.DeleteAppRequest{Id: appID})
+	_, err = apps.DeleteApp(ctx, &structurev1.DeleteAppRequest{Confirmation: yesSkip(), Id: appID})
 	require.NoError(t, err)
 	require.NotEmpty(t, h.Runtime.Removed(), "after the rollback window closes the delete tears down carriers")
 }

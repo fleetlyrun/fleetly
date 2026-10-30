@@ -70,14 +70,14 @@ func TestRESTStateConflictReturns409(t *testing.T) {
 	appID := h.CreateApp(t, projectID, "web").GetId()
 
 	// 活跃部署在 → 删除拒绝（E_CONFLICT）。
-	_, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: appID, Image: "nginx:1.27"})
+	_, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appID, Image: "nginx:1.27"})
 	require.NoError(t, err)
-	rec := rest.Del("/v1/apps/" + appID)
+	rec := rest.Del("/v1/apps/" + appID + "?confirmation.skip=true")
 	require.Equal(t, http.StatusConflict, rec.Code, rec.Body.String())
 	assert.Contains(t, rec.Body.String(), `"code":"E_CONFLICT"`)
 
 	// gRPC 面同步断言：FailedPrecondition（传输语义不变，409 由 REST 映射层承载）。
-	_, err = apps.DeleteApp(ctx, &structurev1.DeleteAppRequest{Id: appID})
+	_, err = apps.DeleteApp(ctx, &structurev1.DeleteAppRequest{Confirmation: yesSkip(), Id: appID})
 	require.Error(t, err)
 	require.Equal(t, codes.FailedPrecondition, status.Code(err))
 }

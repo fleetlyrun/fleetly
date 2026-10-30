@@ -46,7 +46,7 @@ func TestRESTDeploymentReadSurface(t *testing.T) {
 	appID := h.CreateApp(t, h.CreateProject(t, "deploy-read").GetId(), "web").GetId()
 
 	// R1 = blue-green compose（首代无基线：from_generation 零值省略）。
-	first, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{
+	first, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(),
 		AppId: appID, ComposeYaml: "services:\n  web:\n    image: nginx:1.27\n    deploy:\n      x-fleetly-strategy: blue-green\n",
 	})
 	require.NoError(t, err)
@@ -65,7 +65,7 @@ func TestRESTDeploymentReadSurface(t *testing.T) {
 	}, 3e9, 5e6)
 
 	// 第二笔（rolling 直投）：from_generation = 基线 gen 1。
-	second, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: appID, Image: "nginx:1.26"})
+	second, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appID, Image: "nginx:1.26"})
 	require.NoError(t, err)
 	assert.EqualValues(t, 1, second.GetDeployment().GetFromGeneration())
 

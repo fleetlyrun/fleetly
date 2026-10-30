@@ -702,6 +702,10 @@ func NewAPIServices(db *persistence.DB, bind transact.Binder, e *engine.Engine, 
 	if cfg.Console != nil && cfg.Console.GetHost() != "" {
 		s.GitHubManifestBase = "https://" + cfg.Console.GetHost()
 	}
+	// B1 确认票据面回注（engine 先于 Services 构造的装配序闭合点）：
+	// engine 受理临界区的验票/烧票与 confirm 拦截器共享 Services 的同一
+	// 进程内票据店（NewGRPCServer 侧经 Services.ConfirmTickets 取同一实例）。
+	e.BindConfirmTickets(s.ConfirmTickets())
 	return s, nil
 }
 

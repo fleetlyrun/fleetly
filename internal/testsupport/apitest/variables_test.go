@@ -56,7 +56,7 @@ func TestSharedVariableMergeAtNormalization(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{
+	_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(),
 		AppId: appID, Image: "nginx:1.27",
 		Env: map[string]string{"LOG_LEVEL": "warn", "EXTRA_FLAG": "app-only"},
 	})
@@ -70,7 +70,7 @@ func TestSharedVariableMergeAtNormalization(t *testing.T) {
 	}, env)
 
 	// 同源同变量状态重复部署：内容寻址复用（仍只有 R1，无新冻结）。
-	_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{
+	_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(),
 		AppId: appID, Image: "nginx:1.27",
 		Env: map[string]string{"LOG_LEVEL": "warn", "EXTRA_FLAG": "app-only"},
 	})
@@ -96,12 +96,12 @@ func TestSharedVariableComposeOverride(t *testing.T) {
 	require.NoError(t, err)
 
 	compose := "services:\n  web:\n    image: nginx:1.27\n    environment:\n      LOG_LEVEL: warn\n"
-	_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: appID, ComposeYaml: compose})
+	_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appID, ComposeYaml: compose})
 	require.NoError(t, err)
 	assert.Equal(t, map[string]string{"LOG_LEVEL": "warn"}, latestSpecEnv(t, h, ctx, appID, "web"))
 
 	// compose 形态携带 env 直传即拒（compose 自带声明面）。
-	_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{
+	_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(),
 		AppId: appID, ComposeYaml: compose, Env: map[string]string{"X": "y"},
 	})
 	require.Error(t, err)
@@ -132,7 +132,7 @@ func TestSharedVariableChangeNoRedeployButAffectedHint(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, put.GetAffectedApps())
 
-	_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: appID, Image: "nginx:1.27"})
+	_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appID, Image: "nginx:1.27"})
 	require.NoError(t, err)
 	depCount := func() int {
 		list, err := deployments.ListDeployments(ctx, &deliveryv1.ListDeploymentsRequest{AppId: appID})
@@ -157,7 +157,7 @@ func TestSharedVariableChangeNoRedeployButAffectedHint(t *testing.T) {
 	assert.Equal(t, before, depCount(), "changing a shared variable must not trigger a redeploy")
 
 	// 重部署取新值（合成发生在归一化期）。
-	_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: appID, Image: "nginx:1.26"})
+	_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appID, Image: "nginx:1.26"})
 	require.NoError(t, err)
 	assert.Equal(t, "postgres://v2", latestSpecEnv(t, h, ctx, appID, "web")["DATABASE_URL"])
 	_ = other // other 全程无部署（受影响口径的负锚）
@@ -179,7 +179,7 @@ func TestSharedVariableDelete(t *testing.T) {
 		ProjectId: projectID, Name: "DATABASE_URL", Value: "postgres://v1",
 	})
 	require.NoError(t, err)
-	_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: appID, Image: "nginx:1.27"})
+	_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appID, Image: "nginx:1.27"})
 	require.NoError(t, err)
 
 	del, err := vars.DeleteSharedVariable(ctx, &structurev1.DeleteSharedVariableRequest{
@@ -200,7 +200,7 @@ func TestSharedVariableDelete(t *testing.T) {
 
 	// 既有 Revision 不变（删除同样不重部署）；重部署后键消失。
 	assert.Equal(t, "postgres://v1", latestSpecEnv(t, h, ctx, appID, "web")["DATABASE_URL"])
-	_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: appID, Image: "nginx:1.26"})
+	_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appID, Image: "nginx:1.26"})
 	require.NoError(t, err)
 	assert.NotContains(t, latestSpecEnv(t, h, ctx, appID, "web"), "DATABASE_URL")
 

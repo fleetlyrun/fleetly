@@ -80,7 +80,7 @@ func TestContentEquivalentRedeployKeepsWireGen(t *testing.T) {
 	_ = deployToSucceeded(t, h, appID)
 
 	dc := deliveryv1.NewDeploymentsServiceClient(h.Conn)
-	second, err := dc.Deploy(ctx, &deliveryv1.DeployRequest{
+	second, err := dc.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(),
 		AppId: appID, Image: "nginx:1.27", ProcessName: "web",
 	})
 	require.NoError(t, err)
@@ -113,7 +113,7 @@ func TestEmptyEnsureReceiptKeepsL1Waiting(t *testing.T) {
 	_ = deployToSucceeded(t, h, appID)
 
 	dc := deliveryv1.NewDeploymentsServiceClient(h.Conn)
-	second, err := dc.Deploy(ctx, &deliveryv1.DeployRequest{
+	second, err := dc.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(),
 		AppId: appID, Image: "nginx:1.27", ProcessName: "web",
 	})
 	require.NoError(t, err)
@@ -143,7 +143,7 @@ func TestRolloutStalledTriggersConvergence(t *testing.T) {
 	appID := h.CreateApp(t, h.CreateProject(t, "stalled").GetId(), "web").GetId()
 
 	dc := deliveryv1.NewDeploymentsServiceClient(h.Conn)
-	dep, err := dc.Deploy(ctx, &deliveryv1.DeployRequest{
+	dep, err := dc.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(),
 		AppId: appID, Image: "nginx:1.27", ProcessName: "web",
 	})
 	require.NoError(t, err)

@@ -230,7 +230,7 @@ func TestRevokeNetworkPeerDoesNotBlockOnSlowEnsure(t *testing.T) {
 		"source":{"image":{"ref":"nginx:1.27"}},
 		"processes":[{"name":"web","image":"nginx:1.27","replicas":1,"networks":["project:%s/bus","default"]}]}`,
 		receiver.GetId())
-	dep, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: app.GetId(), SpecFile: body})
+	dep, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: app.GetId(), SpecFile: body})
 	require.NoError(t, err)
 	require.Eventually(t, func() bool { return len(h.Runtime.Calls()) > 0 }, 10*time.Second, 10*time.Millisecond)
 	h.Runtime.ReportRunning(app.GetId()+"-web", capability.Generation(dep.GetDeployment().GetGeneration()))

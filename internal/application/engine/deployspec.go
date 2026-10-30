@@ -27,6 +27,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/domain/services/writes"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/spec"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/state"
+	"github.com/fleetlyrun/fleetly/internal/domain/structure/app"
 )
 
 // MergeMode 是冻结前与当前冻结体的合并方向（ADR-0072 所有权分裂）。
@@ -57,6 +58,11 @@ type SubmitSpecRequest struct {
 	Merge MergeMode
 	// Submit 非 nil = 冻结后走 admission；nil = 只冻结不部署。
 	Submit *SubmitOptions
+	// Confirmation 是 B1 确认票的受理入参透传（设计稿 §1.2：confirmation
+	// 是 SubmitSpec 的入参；§1.4 甲'：④⑤内容绑定与烧票在 Submit 的
+	// appMu 临界区内——冻结体产出之后）。只在 Submit != nil 时消费；
+	// 只冻结形态携带 = 编程错误（预览管线铸票在 W2a，不占本入参）。
+	Confirmation *ConfirmInput
 }
 
 // SubmitOptions 是 admission 透传面（幂等键/commit 去重锚/显式抢占）。
@@ -121,61 +127,18 @@ func (e *Engine) SubmitSpec(ctx context.Context, req SubmitSpecRequest) (*revisi
 	if req.Merge != MergeNone && !req.HookOwned {
 		return nil, nil, nil, fmt.Errorf("engine: submit spec: merge without hook ownership is a programming error (the api gate must set HookOwned for MergeMaterial/MergeOverlay)")
 	}
-	// App 行载入（Project 轴解析——SharedVariable 合成的装载锚）；行缺失/
-	// 存储故障原样上抛，api 层 mapStateError 兜 errcode。
-	appRow, err := e.repos.Apps.Get(ctx, req.AppID)
+	if req.Confirmation != nil && req.Submit == nil {
+		return nil, nil, nil, fmt.Errorf("engine: submit spec: confirmation without admission is a programming error (freeze-only intake never consumes tickets)")
+	}
+	// 段二（merge + 三级变量合成）自本咽喉抽取为 composeSpec（B1 预览
+	// 管线单源，设计稿 §1.3——Deploy 与 PreviewDeploy 同一合成函数产出；
+	// 预览侧到此为止**不冻结**）。App 行载入（Project 轴解析）在
+	// composeSpec 内完成。
+	composed, _, err := e.composeSpec(ctx, req)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-
-	// 2. 合并（方向参数化，ADR-0072）：命中当前冻结体按方向合并；无冻结
-	// Revision（hook 配置后从未部署）= 首部署形态，提交件原样受理——材料
-	// 自提交件建立，后续 push 按合并语义接力。
-	switch req.Merge {
-	case MergeNone:
-		// 直投不合并。
-	case MergeMaterial, MergeOverlay:
-		latest, lerr := e.repos.Revisions.Latest(ctx, req.AppID)
-		if lerr == nil {
-			frozen := &specv1.AppSpec{}
-			if uerr := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(latest.Spec, frozen); uerr != nil {
-				return nil, nil, nil, &FrozenSpecError{Site: frozenSpecSite(req.Merge), Err: uerr}
-			}
-			// 参数序即方向（MergeHookOwned(material, runtime)——不变式③）：
-			// overlay = 冻结材料 + 提交件运行时；push = 提交件材料 + 冻结运行时。
-			if req.Merge == MergeOverlay {
-				req.Spec = spec.MergeHookOwned(frozen, req.Spec)
-			} else {
-				req.Spec = spec.MergeHookOwned(req.Spec, frozen)
-			}
-		} else if !errors.Is(lerr, state.ErrNotFound) {
-			return nil, nil, nil, lerr
-		}
-	default:
-		return nil, nil, nil, fmt.Errorf("engine: submit spec: unknown merge mode %d", req.Merge)
-	}
-
-	// 3. 三级变量合成（自 api 层冻结位移植；顺序即合成律——Shared 底 <
-	// 源声明 env 中 < AppVariable 顶，不变式②）。装载失败上抛不吞
-	//（P0-7.1 fail-closed：DB 瞬断不得静默吞成空环境）。
-	if vars, verr := e.repos.SharedVariables.ListActive(ctx, appRow.ProjectID); verr != nil {
-		return nil, nil, nil, verr
-	} else if len(vars) > 0 {
-		shared := make(map[string]string, len(vars))
-		for _, v := range vars {
-			shared[v.Name] = v.Value
-		}
-		spec.MergeSharedEnv(req.Spec, shared)
-	}
-	if vars, verr := e.repos.AppVariables.ListActive(ctx, req.AppID); verr != nil {
-		return nil, nil, nil, verr
-	} else if len(vars) > 0 {
-		appVars := make(map[string]string, len(vars))
-		for _, v := range vars {
-			appVars[v.Name] = v.Value
-		}
-		spec.MergeAppEnv(req.Spec, appVars)
-	}
+	req.Spec = composed
 
 	// 4. 冻结（不变式⑨ 经 writes kernel 单源）：marshal 与 api 层
 	// marshalSpec 同参（digest 关键——文件头铁律）；内容寻址复用命中即
@@ -239,15 +202,87 @@ func (e *Engine) SubmitSpec(ctx context.Context, req SubmitSpecRequest) (*revisi
 	if req.Submit == nil {
 		return rev, nil, nil, nil // 只冻结不部署
 	}
+	// B1（设计稿 §1.4 甲'）：confirmation 透传 admission——④比对锚 =
+	// 本临界区产出的冻结体 rev.Spec（marshalSpec 规范形；内容寻址复用
+	// 命中的既有冻结体同 digest，④照常成立），比对与烧票都在 Submit 的
+	// appMu 内闭合。
 	d, adm, serr := e.Submit(ctx, SubmitRequest{
-		AppID:          req.AppID,
-		RevisionID:     rev.ID,
-		IdempotencyKey: req.Submit.IdempotencyKey,
-		CommitSHA:      req.Submit.CommitSHA,
-		Supersede:      req.Submit.Supersede,
+		AppID:           req.AppID,
+		RevisionID:      rev.ID,
+		IdempotencyKey:  req.Submit.IdempotencyKey,
+		CommitSHA:       req.Submit.CommitSHA,
+		Supersede:       req.Submit.Supersede,
+		Confirm:         req.Confirmation,
+		ConfirmSpecBody: rev.Spec,
 	})
 	if serr != nil {
 		return nil, nil, nil, &AdmissionError{Err: serr}
 	}
 	return rev, d, adm, nil
+}
+
+// composeSpec 是 SubmitSpec 的段二抽取（B1 预览管线三段单源之一，设计稿
+// §1.3）：App 行载入 → 合并（MergeNone/MergeMaterial/MergeOverlay，方向
+// 参数化）→ 三级变量合成（Shared 底 < 源声明 env 中 < AppVariable 顶，
+// 不变式②）。产出**合成后 Spec（不冻结）**——Deploy 受理咽喉与 PreviewSpec
+// （预览管线）走同一函数，预览侧到此为止（冻结/admission/材料注入全不
+// 触碰）。返回的 appRow 供调用方复用（Project 轴已解析）。
+func (e *Engine) composeSpec(ctx context.Context, req SubmitSpecRequest) (*specv1.AppSpec, *app.App, error) {
+	// App 行载入（Project 轴解析——SharedVariable 合成的装载锚）；行缺失/
+	// 存储故障原样上抛，api 层 mapStateError 兜 errcode。
+	appRow, err := e.repos.Apps.Get(ctx, req.AppID)
+	if err != nil {
+		return nil, nil, err
+	}
+	out := req.Spec
+
+	// 合并（方向参数化，ADR-0072）：命中当前冻结体按方向合并；无冻结
+	// Revision（hook 配置后从未部署）= 首部署形态，提交件原样受理——材料
+	// 自提交件建立，后续 push 按合并语义接力。
+	switch req.Merge {
+	case MergeNone:
+		// 直投不合并。
+	case MergeMaterial, MergeOverlay:
+		latest, lerr := e.repos.Revisions.Latest(ctx, req.AppID)
+		if lerr == nil {
+			frozen := &specv1.AppSpec{}
+			if uerr := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(latest.Spec, frozen); uerr != nil {
+				return nil, nil, &FrozenSpecError{Site: frozenSpecSite(req.Merge), Err: uerr}
+			}
+			// 参数序即方向（MergeHookOwned(material, runtime)——不变式③）：
+			// overlay = 冻结材料 + 提交件运行时；push = 提交件材料 + 冻结运行时。
+			if req.Merge == MergeOverlay {
+				out = spec.MergeHookOwned(frozen, out)
+			} else {
+				out = spec.MergeHookOwned(out, frozen)
+			}
+		} else if !errors.Is(lerr, state.ErrNotFound) {
+			return nil, nil, lerr
+		}
+	default:
+		return nil, nil, fmt.Errorf("engine: submit spec: unknown merge mode %d", req.Merge)
+	}
+
+	// 三级变量合成（自 api 层冻结位移植；顺序即合成律——Shared 底 <
+	// 源声明 env 中 < AppVariable 顶，不变式②）。装载失败上抛不吞
+	//（P0-7.1 fail-closed：DB 瞬断不得静默吞成空环境）。
+	if vars, verr := e.repos.SharedVariables.ListActive(ctx, appRow.ProjectID); verr != nil {
+		return nil, nil, verr
+	} else if len(vars) > 0 {
+		shared := make(map[string]string, len(vars))
+		for _, v := range vars {
+			shared[v.Name] = v.Value
+		}
+		spec.MergeSharedEnv(out, shared)
+	}
+	if vars, verr := e.repos.AppVariables.ListActive(ctx, req.AppID); verr != nil {
+		return nil, nil, verr
+	} else if len(vars) > 0 {
+		appVars := make(map[string]string, len(vars))
+		for _, v := range vars {
+			appVars[v.Name] = v.Value
+		}
+		spec.MergeAppEnv(out, appVars)
+	}
+	return out, appRow, nil
 }

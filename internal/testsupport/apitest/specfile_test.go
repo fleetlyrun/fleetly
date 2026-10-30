@@ -40,7 +40,7 @@ func TestDeploySpecFileFullChain(t *testing.T) {
 			{"name": "worker", "image": "busybox:1.37", "command": ["sleep", "3600"]}
 		]
 	}`
-	dep, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{
+	dep, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(),
 		AppId: app.GetId(), SpecFile: body,
 	})
 	require.NoError(t, err)
@@ -92,37 +92,37 @@ func TestDeploySpecFileValidation(t *testing.T) {
 	}{
 		{
 			"unknown field rejected",
-			&deliveryv1.DeployRequest{AppId: appID, SpecFile: `{"source":{"image":{"ref":"nginx:1.27"}},"processes":[{"name":"web","image":"nginx:1.27"}],"not_a_field":true}`},
+			&deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appID, SpecFile: `{"source":{"image":{"ref":"nginx:1.27"}},"processes":[{"name":"web","image":"nginx:1.27"}],"not_a_field":true}`},
 			"invalid AppSpec JSON",
 		},
 		{
 			"schema version jump rejected",
-			&deliveryv1.DeployRequest{AppId: appID, SpecFile: `{"schema_version":99,"source":{"image":{"ref":"nginx:1.27"}},"processes":[{"name":"web","image":"nginx:1.27"}]}`},
+			&deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appID, SpecFile: `{"schema_version":99,"source":{"image":{"ref":"nginx:1.27"}},"processes":[{"name":"web","image":"nginx:1.27"}]}`},
 			"unsupported schema version",
 		},
 		{
 			"missing source rejected",
-			&deliveryv1.DeployRequest{AppId: appID, SpecFile: `{"processes":[{"name":"web","image":"nginx:1.27"}]}`},
+			&deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appID, SpecFile: `{"processes":[{"name":"web","image":"nginx:1.27"}]}`},
 			"one of git, image or upload is required",
 		},
 		{
 			"no processes rejected",
-			&deliveryv1.DeployRequest{AppId: appID, SpecFile: `{"source":{"image":{"ref":"nginx:1.27"}},"processes":[]}`},
+			&deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appID, SpecFile: `{"source":{"image":{"ref":"nginx:1.27"}},"processes":[]}`},
 			"at least one process is required",
 		},
 		{
 			"four-way source mutex",
-			&deliveryv1.DeployRequest{AppId: appID, SpecFile: `{"source":{"image":{"ref":"nginx:1.27"}},"processes":[{"name":"web","image":"nginx:1.27"}]}`, Image: "nginx:1.27"},
+			&deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appID, SpecFile: `{"source":{"image":{"ref":"nginx:1.27"}},"processes":[{"name":"web","image":"nginx:1.27"}]}`, Image: "nginx:1.27"},
 			"mutually exclusive",
 		},
 		{
 			"single-process flags mutex",
-			&deliveryv1.DeployRequest{AppId: appID, SpecFile: `{"source":{"image":{"ref":"nginx:1.27"}},"processes":[{"name":"web","image":"nginx:1.27"}]}`, Port: 8080},
+			&deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appID, SpecFile: `{"source":{"image":{"ref":"nginx:1.27"}},"processes":[{"name":"web","image":"nginx:1.27"}]}`, Port: 8080},
 			"spec_file carries the full process declaration",
 		},
 		{
 			"env flag mutex",
-			&deliveryv1.DeployRequest{AppId: appID, SpecFile: `{"source":{"image":{"ref":"nginx:1.27"}},"processes":[{"name":"web","image":"nginx:1.27"}]}`, Env: map[string]string{"A": "b"}},
+			&deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appID, SpecFile: `{"source":{"image":{"ref":"nginx:1.27"}},"processes":[{"name":"web","image":"nginx:1.27"}]}`, Env: map[string]string{"A": "b"}},
 			"spec_file carries the full process declaration",
 		},
 	}
@@ -144,7 +144,7 @@ func TestDeploySpecFileRetiredConfigRefsKey(t *testing.T) {
 
 	app := h.CreateApp(t, h.CreateProject(t, "spec-file-legacy").GetId(), "web")
 
-	_, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{
+	_, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(),
 		AppId: app.GetId(),
 		SpecFile: `{"source":{"image":{"ref":"nginx:1.27"}},` +
 			`"processes":[{"name":"web","image":"nginx:1.27","config_refs":["app.conf"]}]}`,
@@ -173,7 +173,7 @@ func TestDeploySpecFileUploadSource(t *testing.T) {
 	require.NoError(t, err)
 
 	// 跨项目引用（文件内声明）拒绝。
-	_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{
+	_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(),
 		AppId: appB.GetId(),
 		SpecFile: `{"source":{"upload":{"id":"` + up.GetId() + `"}},"build":{"builder":"dockerfile","dockerfile":"Dockerfile"},` +
 			`"processes":[{"name":"web","from_build":"web"}]}`,
@@ -183,7 +183,7 @@ func TestDeploySpecFileUploadSource(t *testing.T) {
 
 	// 同项目引用：app 建在 A 项目，全链到 succeeded（FakeBuilder 构建链）。
 	appA := h.CreateApp(t, projA.GetId(), "builder")
-	dep, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{
+	dep, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(),
 		AppId: appA.GetId(),
 		SpecFile: `{"source":{"upload":{"id":"` + up.GetId() + `"}},"build":{"builder":"dockerfile","dockerfile":"Dockerfile"},` +
 			`"processes":[{"name":"web","from_build":"web"}]}`,

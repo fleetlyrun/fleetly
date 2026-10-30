@@ -61,9 +61,9 @@ func TestDeleteAppSemantics(t *testing.T) {
 	require.NoError(t, err)
 
 	// 活跃部署在 → E_CONFLICT（先 cancel/等终态的提示在 suggestion）。
-	_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: appID, Image: "nginx:1.27"})
+	_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appID, Image: "nginx:1.27"})
 	require.NoError(t, err)
-	_, err = apps.DeleteApp(ctx, &structurev1.DeleteAppRequest{Id: appID})
+	_, err = apps.DeleteApp(ctx, &structurev1.DeleteAppRequest{Confirmation: yesSkip(), Id: appID})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "E_CONFLICT")
 	require.Contains(t, err.Error(), "active deployment")
@@ -82,7 +82,7 @@ func TestDeleteAppSemantics(t *testing.T) {
 	_, err = deployments.CancelDeployment(ctx, &deliveryv1.CancelDeploymentRequest{Id: list.GetDeployments()[0].GetId()})
 	require.NoError(t, err)
 
-	_, err = apps.DeleteApp(ctx, &structurev1.DeleteAppRequest{Id: appID})
+	_, err = apps.DeleteApp(ctx, &structurev1.DeleteAppRequest{Confirmation: yesSkip(), Id: appID})
 	require.NoError(t, err)
 
 	// Runtime.Remove 已被触发（收口）。
@@ -106,7 +106,7 @@ func TestDeleteAppSemantics(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "E_NOT_FOUND")
 	// 删后 deploy 拒绝：不重建载体。
-	_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: appID, Image: "nginx:1.27"})
+	_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appID, Image: "nginx:1.27"})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "E_NOT_FOUND")
 
@@ -114,7 +114,7 @@ func TestDeleteAppSemantics(t *testing.T) {
 	require.NotEqual(t, appID, again.GetId(), "a new app gets a new id (ids are never reused)")
 
 	// 旧 ID 再删 → E_NOT_FOUND。
-	_, err = apps.DeleteApp(ctx, &structurev1.DeleteAppRequest{Id: appID})
+	_, err = apps.DeleteApp(ctx, &structurev1.DeleteAppRequest{Confirmation: yesSkip(), Id: appID})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "E_NOT_FOUND")
 }
@@ -143,7 +143,7 @@ func TestDeleteProjectSemantics(t *testing.T) {
 
 	// 删净 App 后可删 Project。Project 读面语义（Get 含已删行、再删幂等）
 	// 是既有设计（tombstone 是事实不是秘密）——活跃面以 List 断言。
-	_, err = apps.DeleteApp(ctx, &structurev1.DeleteAppRequest{Id: app.GetId()})
+	_, err = apps.DeleteApp(ctx, &structurev1.DeleteAppRequest{Confirmation: yesSkip(), Id: app.GetId()})
 	require.NoError(t, err)
 	_, err = projects.DeleteProject(ctx, &structurev1.DeleteProjectRequest{Id: projectID})
 	require.NoError(t, err)
@@ -207,7 +207,7 @@ func TestDeleteDeployRaceInvariant(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			_, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: appID, Image: "nginx:1.27"})
+			_, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appID, Image: "nginx:1.27"})
 			mu.Lock()
 			deployErrs = append(deployErrs, err)
 			mu.Unlock()
@@ -215,7 +215,7 @@ func TestDeleteDeployRaceInvariant(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			_, err := apps.DeleteApp(ctx, &structurev1.DeleteAppRequest{Id: appID})
+			_, err := apps.DeleteApp(ctx, &structurev1.DeleteAppRequest{Confirmation: yesSkip(), Id: appID})
 			mu.Lock()
 			deleteErrs = append(deleteErrs, err)
 			mu.Unlock()
@@ -287,7 +287,7 @@ func TestDeleteAppTeardownAbortKeepsRoute(t *testing.T) {
 	// 它可在引擎拾取后停在被 L1 门钉住的 releasing 态（假时钟不走，
 	// ReleaseTimeout 永不到期），避免 planted 行在复查前被驱动成终态的
 	// 残余竞态。
-	dep, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: appID, Image: "nginx:1.27"})
+	dep, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appID, Image: "nginx:1.27"})
 	require.NoError(t, err)
 	revID := dep.GetDeployment().GetToRevision()
 	require.NotEmpty(t, revID)
@@ -299,7 +299,7 @@ func TestDeleteAppTeardownAbortKeepsRoute(t *testing.T) {
 	entered, release := h.Runtime.ArmRemoveBlock()
 	errCh := make(chan error, 1)
 	go func() {
-		_, err := apps.DeleteApp(ctx, &structurev1.DeleteAppRequest{Id: appID})
+		_, err := apps.DeleteApp(ctx, &structurev1.DeleteAppRequest{Confirmation: yesSkip(), Id: appID})
 		errCh <- err
 	}()
 	<-entered
@@ -382,7 +382,7 @@ func TestDeleteAppRoutesRaceInvariant(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			_, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: appID, Image: "nginx:1.27"})
+			_, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appID, Image: "nginx:1.27"})
 			mu.Lock()
 			deployErrs = append(deployErrs, err)
 			mu.Unlock()
@@ -390,7 +390,7 @@ func TestDeleteAppRoutesRaceInvariant(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			_, err := apps.DeleteApp(ctx, &structurev1.DeleteAppRequest{Id: appID})
+			_, err := apps.DeleteApp(ctx, &structurev1.DeleteAppRequest{Confirmation: yesSkip(), Id: appID})
 			mu.Lock()
 			deleteErrs = append(deleteErrs, err)
 			mu.Unlock()

@@ -81,7 +81,7 @@ func TestSpecOwnershipSplit(t *testing.T) {
 	edited.Source.GetGit().Ref = "0000000000000000000000000000000000000000"
 	body, err := protojson.Marshal(edited)
 	require.NoError(t, err)
-	_, err = deployments.Deploy(owner, &deliveryv1.DeployRequest{AppId: appID, SpecFile: string(body)})
+	_, err = deployments.Deploy(owner, &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appID, SpecFile: string(body)})
 	require.NoError(t, err)
 
 	r2 := revAt(2)
@@ -105,10 +105,10 @@ func TestSpecOwnershipSplit(t *testing.T) {
 	assert.Equal(t, "appvar", r3.GetSpec().GetProcesses()[0].GetEnv()["TIER"], "app variables re-synthesize on every freeze")
 
 	// 材料源硬闸门：image 直投拒收；override_hook 一次性接管。
-	_, err = deployments.Deploy(owner, &deliveryv1.DeployRequest{AppId: appID, Image: "nginx:1.27"})
+	_, err = deployments.Deploy(owner, &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appID, Image: "nginx:1.27"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "E_APP_HOOK_OWNED")
-	takeover, err := deployments.Deploy(owner, &deliveryv1.DeployRequest{AppId: appID, Image: "nginx:1.27", OverrideHook: true})
+	takeover, err := deployments.Deploy(owner, &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appID, Image: "nginx:1.27", OverrideHook: true})
 	require.NoError(t, err)
 	require.NotEmpty(t, takeover.GetDeployment().GetId())
 	r4 := revAt(4)
@@ -118,7 +118,7 @@ func TestSpecOwnershipSplit(t *testing.T) {
 	// 非 hook 应用不受闸门（材料源直投照旧）。
 	p2 := h.CreateProject(t, "ownsplit2")
 	a2 := h.CreateApp(t, p2.GetId(), "plain")
-	_, err = deployments.Deploy(owner, &deliveryv1.DeployRequest{AppId: a2.GetId(), Image: "nginx:1.27"})
+	_, err = deployments.Deploy(owner, &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: a2.GetId(), Image: "nginx:1.27"})
 	require.NoError(t, err)
 
 	// 审计时序修复锚：webhook 冻结新 Revision 的 revision.create 审计行

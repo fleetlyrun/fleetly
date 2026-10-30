@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -34,7 +35,11 @@ type Deps struct {
 	Metrics     capability.Metrics            // 可空：零采集/零告警、查询精确失败（ADR-0041）
 	ObjectStore capability.ObjectStore        // 可空：备份链停用（ADR-0039；本地目标零配置在册，缺席 = 装配缺口）
 	Cipher      *material.Cipher              // 可空：Secret 面停用（引用 Secret 的部署得精确错误）
-	Logger      *slog.Logger
+	// ConfirmTickets 是 B1 Confirm Ticket 消费面（可空 = 引擎半边缺席：
+	// 无 confirm 入参的受理不受影响；带票受理在缺席面下按不可辨票拒绝
+	// ——拦截器半边独立执法 REQUIRED，正常装配恒注入）。
+	ConfirmTickets governance.ConfirmTicketStore
+	Logger         *slog.Logger
 }
 
 // New 构造引擎（不启动；Start 后进入驱动）。
@@ -60,6 +65,7 @@ func New(deps Deps, opts Options) *Engine {
 		opts:            opts,
 		repos:           deps.Stores,
 		tx:              deps.Tx,
+		confirmTickets:  deps.ConfirmTickets,
 		alertRules:      deps.Stores.AlertRules,
 		channels:        deps.Stores.Channels,
 		loop:            NewLoop("deployment", log),

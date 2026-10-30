@@ -103,14 +103,14 @@ func TestGitSourceSpecIntakeCleanURL(t *testing.T) {
 		return `{"source":{"git":{"repo":"` + repo + `","ref":"main"}},"build":{"builder":"dockerfile","dockerfile":"Dockerfile"},"processes":[{"name":"web","from_build":"/"}]}`
 	}
 
-	_, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{
+	_, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(),
 		AppId: appID, SpecFile: specFor("https://user:ghp_x@github.com/acme/web"),
 	})
 	require.Error(t, err, "a materialized git URL must be refused at spec intake")
 	assert.Contains(t, err.Error(), "access material")
 	assert.Equal(t, codes.InvalidArgument, status.Code(err), "spec intake rejects map to invalid argument")
 
-	ok, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{
+	ok, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(),
 		AppId: appID, SpecFile: specFor("https://github.com/acme/web"),
 	})
 	require.NoError(t, err)

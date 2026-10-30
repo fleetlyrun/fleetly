@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/fleetlyrun/fleetly/internal/application/governance"
 	"github.com/fleetlyrun/fleetly/internal/application/transact"
 	"github.com/fleetlyrun/fleetly/internal/domain/services/material"
 	"github.com/fleetlyrun/fleetly/internal/domain/shared/capability"
@@ -224,6 +225,11 @@ type Engine struct {
 	//（ADR-0080 目录化）+ 最小客户端——clone 前按 host+属主解析并现铸
 	// installation token（gitmaterial.go）。
 	ghClient *github.Client
+
+	// confirmTickets 是 B1 Confirm Ticket 的消费面（nil = 强制确认引擎
+	// 半边缺席——装配缺口由组合根兜底注入，旧测试直构形态按无票豁免；
+	// 拦截器半边独立执法 E_CONFIRMATION_REQUIRED，见 confirm.go）。
+	confirmTickets governance.ConfirmTicketStore
 
 	// rotateMu 串行化 Database 凭证轮换（IA v3 二期⑤b）：并发轮换的
 	// utility/Secret 写交错可能落下 Secret 与数据面不一致的终态——全域

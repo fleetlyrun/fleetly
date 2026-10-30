@@ -66,7 +66,7 @@ func TestNewInterceptorsBoundsUnaryHandler(t *testing.T) {
 		authenticator,
 		idem.NewEnforcer(db, idemrepo.New(db.Clock(), db.Runner()), slog.New(slog.DiscardHandler)),
 		governance.NewRateLimiter(db.Clock(), 0, 0),
-		governance.NewFreezeGuard(db, freezerepo.New(db.Clock(), db.Runner()), NewAnchor(db), slog.New(slog.DiscardHandler)))
+		governance.NewFreezeGuard(db, freezerepo.New(db.Clock(), db.Runner()), NewAnchor(db), slog.New(slog.DiscardHandler)), nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, unary)
 	require.NotEmpty(t, stream)
@@ -102,7 +102,7 @@ func TestNewInterceptorsSanitizeAtChainHead(t *testing.T) {
 		authenticator,
 		idem.NewEnforcer(db, idemrepo.New(db.Clock(), db.Runner()), slog.New(slog.DiscardHandler)),
 		governance.NewRateLimiter(db.Clock(), 0, 0),
-		governance.NewFreezeGuard(db, freezerepo.New(db.Clock(), db.Runner()), NewAnchor(db), slog.New(slog.DiscardHandler)))
+		governance.NewFreezeGuard(db, freezerepo.New(db.Clock(), db.Runner()), NewAnchor(db), slog.New(slog.DiscardHandler)), nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, unary)
 

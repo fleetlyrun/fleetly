@@ -72,7 +72,7 @@ func TestChangeFreezeLifecycle(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "E_CHANGE_FROZEN")
 
-	_, err = deliveryv1.NewDeploymentsServiceClient(h.Conn).Deploy(owner, &deliveryv1.DeployRequest{
+	_, err = deliveryv1.NewDeploymentsServiceClient(h.Conn).Deploy(owner, &deliveryv1.DeployRequest{Confirmation: yesSkip(),
 		AppId: appA.GetId(), Image: "nginx:1.27",
 	})
 	require.Error(t, err)

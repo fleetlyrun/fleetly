@@ -141,7 +141,10 @@ func NewGRPCServer(
 	system *systemgrpc.Service,
 	services *fleetlygrpc.Services,
 ) (*lynxgrpc.Server, error) {
-	unary, stream, err := NewInterceptors(app.Logger(), policySet, authenticator, enforcer, limiter, freeze)
+	// B1 确认拦截器：票据面取自 Services 的进程内票据店（与 engine 受理
+	// 临界区消费同一实例——两段分工共享单店）。
+	confirm := governance.NewConfirmGuard(services.ConfirmTickets())
+	unary, stream, err := NewInterceptors(app.Logger(), policySet, authenticator, enforcer, limiter, freeze, confirm)
 	if err != nil {
 		return nil, err
 	}
@@ -213,15 +216,17 @@ func sanitizeExitError(ctx context.Context, logger *slog.Logger, err error, meth
 
 // NewInterceptors 构造完整拦截器链（unary + 流式）——assembly 服务器与
 // apitest 夹具共用（夹具不经 lynx，但必须走同一条执法链，否则测试面与
-// 生产面漂移）。链序（ADR-0017/0024）：出口纪律（链头，P0-3——E_INTERNAL
-// 三面统一收口）→ 执法链（clientinfo/authn/validate）→ 冻结拦截器（拒绝
-// 不占幂等记录）→ 幂等执法器（重放不消耗业务超时预算、鉴权失败不占幂等
-// 记录）→ 创建速率限制器（仅实际执行计数——重放不消耗预算）→ 请求超时。
-// 流式链：出口纪律 → authn → 冻结（首帧 RecvMsg 执法，F1.10 起
-// client-streaming 写面在封禁面——ADR-0019 附录 A.2）；幂等/速率/超时保持
-// unary 面（上传的自然幂等=内容寻址，限额刹车=大小上限与项目存量配额，
-// 流生命周期由取消信号管理）。
-func NewInterceptors(logger *slog.Logger, policySet *policy.Set, authenticator *authn.Authenticator, enforcer *idem.Enforcer, limiter *governance.RateLimiter, freeze *governance.FreezeGuard) ([]grpc.UnaryServerInterceptor, []grpc.StreamServerInterceptor, error) {
+// 生产面漂移）。链序（ADR-0017/0024 + B1 设计稿 §1.4）：出口纪律（链头，
+// P0-3——E_INTERNAL 三面统一收口）→ 执法链（clientinfo/authn/validate）→
+// 冻结拦截器（拒绝不占幂等记录）→ 幂等执法器（重放不消耗业务超时预算、
+// 鉴权失败不占幂等记录）→ 确认拦截器（**idem 命中重放先于 confirm——重放
+// 不验票不烧票**，B1 两段分工的通用半边；幂等降级窗内同键重跑撞已烧票 =
+// 预期 MISMATCH）→ 创建速率限制器（仅实际执行计数——重放不消耗预算）→
+// 请求超时。流式链：出口纪律 → authn → 冻结（首帧 RecvMsg 执法，F1.10 起
+// client-streaming 写面在封禁面——ADR-0019 附录 A.2）；幂等/确认/速率/
+// 超时保持 unary 面（上传的自然幂等=内容寻址，限额刹车=大小上限与项目
+// 存量配额，流生命周期由取消信号管理）。
+func NewInterceptors(logger *slog.Logger, policySet *policy.Set, authenticator *authn.Authenticator, enforcer *idem.Enforcer, limiter *governance.RateLimiter, freeze *governance.FreezeGuard, confirm *governance.ConfirmGuard) ([]grpc.UnaryServerInterceptor, []grpc.StreamServerInterceptor, error) {
 	chain, err := grpcapiinterceptor.Assemble(
 		grpcapiinterceptor.Stage{
 			Name:  grpcapiinterceptor.StageClientInfo,
@@ -249,6 +254,9 @@ func NewInterceptors(logger *slog.Logger, policySet *policy.Set, authenticator *
 		unary = append(unary, freeze.Unary())
 	}
 	unary = append(unary, enforcer.Unary())
+	if confirm != nil {
+		unary = append(unary, confirm.Unary())
+	}
 	unary = append(unary, limiter.Unary())
 	// 请求级超时挂链尾（最贴近 handler）：执法链（clientinfo/authn/validate）
 	// 在 deadline 外运行——超时的请求同样要过完整的执法与未来的审计/用量

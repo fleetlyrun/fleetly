@@ -52,13 +52,13 @@ func TestRollbackReplayVerb(t *testing.T) {
 	require.NoError(t, err)
 	e.step(ctx) // → releasing（在途）
 
-	rb, _, err := e.Rollback(ctx, tAppID, "")
+	rb, _, err := e.Rollback(ctx, tAppID, "", nil)
 	require.NoError(t, err)
 	assert.Equal(t, r2, rb.ToRevision, "empty target rolls back to the last succeeded baseline")
 	assert.Equal(t, deployment.StateSuperseded, getDeployment(t, e, inFlight.ID).State, "rollback preempts in-flight")
 
 	// 显式目标回放（r1）。
-	rb2, _, err := e.Rollback(ctx, tAppID, r1)
+	rb2, _, err := e.Rollback(ctx, tAppID, r1, nil)
 	require.NoError(t, err)
 	assert.Equal(t, r1, rb2.ToRevision)
 }
@@ -67,7 +67,7 @@ func TestRollbackReplayVerb(t *testing.T) {
 // （Q-13）：API 层经 errors.Is 判定 E_NO_BASELINE，文案改写不得破坏契约。
 func TestRollbackWithoutBaseline(t *testing.T) {
 	e, _, _ := newTestEngine(t)
-	_, _, err := e.Rollback(context.Background(), tAppID, "")
+	_, _, err := e.Rollback(context.Background(), tAppID, "", nil)
 	require.ErrorIs(t, err, ErrNoSuccessfulBaseline)
 	assert.ErrorContains(t, err, "no successful baseline")
 }

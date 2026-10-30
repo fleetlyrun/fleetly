@@ -152,7 +152,7 @@ func TestInvariant1ContentAddressedReuse(t *testing.T) {
 	appID, _ := invNewApp(t, h, "inv1", "web")
 
 	// 同 body 两次 deploy（无键无 commit——只考内容寻址复用本身）。
-	req := &deliveryv1.DeployRequest{AppId: appID, Image: "nginx:1.27"}
+	req := &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appID, Image: "nginx:1.27"}
 	d1, err := deployments.Deploy(ctx, req)
 	require.NoError(t, err)
 	d2, err := deployments.Deploy(ctx, req)
@@ -204,7 +204,7 @@ func TestInvariant2SynthesisOrderAndDigestCoverage(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	req := &deliveryv1.DeployRequest{AppId: appID, Image: "nginx:1.27", Env: map[string]string{"LAYER": "from-source"}}
+	req := &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appID, Image: "nginx:1.27", Env: map[string]string{"LAYER": "from-source"}}
 	_, err = deployments.Deploy(ctx, req)
 	require.NoError(t, err)
 
@@ -267,7 +267,7 @@ func TestInvariant3MergeDirectionsEndToEnd(t *testing.T) {
 		Command:     []string{"sleep", "3600"},
 	})
 	edited.Source.GetGit().Ref = "0000000000000000000000000000000000000000"
-	_, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: appID, SpecFile: marshalSpec(t, edited)})
+	_, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appID, SpecFile: marshalSpec(t, edited)})
 	require.NoError(t, err)
 
 	r2 := revAt(2)
@@ -338,7 +338,7 @@ func TestInvariant5DualIdempotencyWindows(t *testing.T) {
 
 	// 窗一（拦截器 24h 窗）：同 IdempotencyKey 同 body 两次——第二响应逐字节
 	// 重放首响应（不达受理面）。
-	req := &deliveryv1.DeployRequest{AppId: appID, Image: "nginx:1.30"}
+	req := &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appID, Image: "nginx:1.30"}
 	kctx := sdk.WithIdempotencyKey(ctx, "inv5-key")
 	resp1, err := deployments.Deploy(kctx, req)
 	require.NoError(t, err)
@@ -381,14 +381,14 @@ func TestInvariant6FreezeTxOutlivesSubmitTx(t *testing.T) {
 	appID, _ := invNewApp(t, h, "inv6", "web")
 
 	// 占满 per-App 队列（容量 1）。
-	first, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: appID, Image: "nginx:2.0"})
+	first, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appID, Image: "nginx:2.0"})
 	require.NoError(t, err)
 
 	// 第二发：冻结相先行（独立 Tx），admission 相命中 queue-full 拒绝——
 	// 不变式⑥：E_QUEUE_FULL 到达调用方，但冻结行已落库存活。该行为正是
 	// 禁止冻结与受理并单 Tx 的原因：并单则 queue-full 回滚连带丢弃冻结行，
 	// 同 body 重发只能重冻结（内容寻址复用窗被受理失败撕开）。
-	_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: appID, Image: "nginx:2.1"})
+	_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appID, Image: "nginx:2.1"})
 	require.Error(t, err)
 	assert.Equal(t, "E_QUEUE_FULL", codeOf(t, err), "不变式⑥：queue-full is the explicit backpressure code")
 
@@ -406,7 +406,7 @@ func TestInvariant6FreezeTxOutlivesSubmitTx(t *testing.T) {
 	// 之后的冻结行是可复用资产。
 	_, err = deployments.CancelDeployment(ctx, &deliveryv1.CancelDeploymentRequest{Id: first.GetDeployment().GetId()})
 	require.NoError(t, err)
-	third, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: appID, Image: "nginx:2.1"})
+	third, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appID, Image: "nginx:2.1"})
 	require.NoError(t, err)
 	assert.Len(t, invRevisionRows(t, h, ctx, appID), 2,
 		"不变式⑥：resubmitting the same body reuses the surviving frozen row")
@@ -425,7 +425,7 @@ func TestInvariant7UserVisibleErrorTextsByteStable(t *testing.T) {
 		appID, _ := invHookApp(t, h, "inv7a", "gitapp", repo)
 
 		// 不变式⑦：E_APP_HOOK_OWNED 全文案逐字节（用户可见行为零变化）。
-		_, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: appID, Image: "nginx:1.27"})
+		_, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appID, Image: "nginx:1.27"})
 		require.Error(t, err)
 		assert.Equal(t, "E_APP_HOOK_OWNED", codeOf(t, err))
 		assert.Equal(t,
@@ -442,7 +442,7 @@ func TestInvariant7UserVisibleErrorTextsByteStable(t *testing.T) {
 		appID, _ := invNewApp(t, h, "inv7b", "web")
 
 		// 不变式⑦：四源互斥全文案逐字节。
-		_, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{
+		_, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(),
 			AppId: appID, Image: "nginx:1.27", ComposeYaml: "services:\n  web:\n    image: nginx:1.27\n",
 		})
 		require.Error(t, err)
@@ -486,7 +486,7 @@ func TestInvariant7UserVisibleErrorTextsByteStable(t *testing.T) {
 		// 不变式⑦（用户可见面）：spec_file overlay deploy 过 api 层同一映射
 		// 落 E_INTERNAL；出口纪律（P0-3，仅 E_INTERNAL）把 message 收口为脱敏
 		// 文案——切换前后线上形态逐字节同形（全句只落服务端日志）。
-		_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: appID, SpecFile: body})
+		_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appID, SpecFile: body})
 		require.Error(t, err)
 		assert.Equal(t, "E_INTERNAL", codeOf(t, err))
 		assert.Equal(t, "E_INTERNAL: internal server error", invStatusMessage(t, err),
@@ -510,7 +510,7 @@ func TestInvariant9FreezeFactsLedgerOnly(t *testing.T) {
 	events := telemetryv1.NewEventsServiceClient(h.Conn)
 	appID, _ := invNewApp(t, h, "inv9", "web")
 
-	_, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: appID, Image: "nginx:1.27"})
+	_, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appID, Image: "nginx:1.27"})
 	require.NoError(t, err)
 
 	// 不变式⑨：outbox 流面零 revision 事件（LedgerOnly 偏离——材料面不是

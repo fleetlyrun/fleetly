@@ -172,12 +172,16 @@ func newHarness(t testing.TB, autostart bool, mutators ...EngineOption) *Harness
 	enforcer := idem.NewEnforcer(db, idemrepo.New(db.Clock(), db.Runner()), log)
 	limiter := governance.NewRateLimiter(db.Clock(), governance.DefaultRateWindow, governance.DefaultRateBudget)
 	freeze := governance.NewFreezeGuard(db, freezerepo.New(db.Clock(), db.Runner()), assembly.NewAnchor(db), log)
-	unary, stream, err := assembly.NewInterceptors(log, policySet, authenticator, enforcer, limiter, freeze)
+	services := fleetlygrpc.NewServices(assembly.NewAPIDeps(db, bind, eng, cipher, rt, dataRoot, assembly.ScopeResources(), log))
+	// B1 确认票据面回注（engine 先于 Services 构造的装配序闭合点）：
+	// engine 受理临界区与 confirm 拦截器共享 Services 的同一进程内票据店
+	//（与生产 NewAPIServices → NewGRPCServer 同一接线形态）。
+	eng.BindConfirmTickets(services.ConfirmTickets())
+	confirm := governance.NewConfirmGuard(services.ConfirmTickets())
+	unary, stream, err := assembly.NewInterceptors(log, policySet, authenticator, enforcer, limiter, freeze, confirm)
 	if err != nil {
 		t.Fatalf("apitest: interceptors: %v", err)
 	}
-
-	services := fleetlygrpc.NewServices(assembly.NewAPIDeps(db, bind, eng, cipher, rt, dataRoot, assembly.ScopeResources(), log))
 	// 传输层选项与生产服务器同源（收包限额等，assembly.GRPCServerOptions
 	// 单一真源）——夹具缺同款限额会让大请求面（如 webhook payload）的
 	// 测试结果与生产漂移。
@@ -379,6 +383,13 @@ type FakeRuntime struct {
 	// InspectWorkloads 按此上报 RolloutStalled，收敛环按 ADR-0082 行4 触发
 	// 收敛（R12-M7 的"停摆→收敛"全栈复现面）。空串/键缺席 = 无停摆。
 	stalled map[string]string
+
+	// obsReplicas 是现场副本观测桩（workloadID → 覆写副本数）：模拟编排
+	// 器侧手动扩缩副本（docker service scale / kubectl scale）——Inspect
+	// Workloads 据此上报与最近一次 Ensure spec 相异的 Replicas（B1 预览
+	// LIVE_DRIFT 预警的「活观测 vs 声明态」事实源，2026-10-30 真机案例
+	// 收编）。键缺席 = 按 Ensure spec 上报。
+	obsReplicas map[string]int64
 }
 
 // SetNodeContainers 布置节点在跑容器行集（按平台节点 ID 键；rows nil =
@@ -619,6 +630,22 @@ func (f *FakeRuntime) SetRolloutStalled(workloadID string, stalled bool) {
 	f.stalled[workloadID] = "injected rollout stall (apitest observation stub)"
 }
 
+// SetObservedReplicas 布置现场副本观测覆写（B1 预览 LIVE_DRIFT 预警桩）：
+// InspectWorkloads 对指定 Workload 上报该副本数（模拟编排器侧手动扩缩
+// ——声明面不变）；键删除形态 replicas<0（恢复按 Ensure spec 上报）。
+func (f *FakeRuntime) SetObservedReplicas(workloadID string, replicas int64) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if replicas < 0 {
+		delete(f.obsReplicas, workloadID)
+		return
+	}
+	if f.obsReplicas == nil {
+		f.obsReplicas = map[string]int64{}
+	}
+	f.obsReplicas[workloadID] = replicas
+}
+
 // RestartCall 是一次 RuntimeRestart 动词记录（ADR-0069）。
 type RestartCall struct {
 	NS         capability.NamespaceRef
@@ -803,13 +830,17 @@ func (f *FakeRuntime) InspectWorkloads(_ context.Context, ns capability.Namespac
 		for _, w := range c.Spec {
 			gen := c.Gen
 			if g, ok := c.Report.Gens[w.ID]; ok && g != 0 {
-				gen = g // 回执 wire gen：内容等价跳过/scale-only 的旧代锚
+				gen = capability.Generation(g) // 回执 wire gen：内容等价保留旧代，ADR-0064
 			} else if w.Generation != 0 {
 				gen = capability.Generation(w.Generation)
 			}
+			replicas := w.Replicas
+			if or, ok := f.obsReplicas[w.ID]; ok {
+				replicas = or // 现场副本观测桩：手动扩缩覆写（LIVE_DRIFT 事实源）
+			}
 			obs = append(obs, capability.WorkloadObservation{
 				WorkloadID: w.ID, Generation: gen,
-				Image: w.Image, Command: w.Command, Replicas: w.Replicas,
+				Image: w.Image, Command: w.Command, Replicas: replicas,
 				State:          capability.WorkloadRunning,
 				RolloutStalled: f.stalled[w.ID] != "",
 				RolloutDetail:  f.stalled[w.ID],

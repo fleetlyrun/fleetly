@@ -20,7 +20,7 @@ import (
 // 部署行（含 generation 锚）。
 func deployAndWaitSucceeded(t *testing.T, h *apitest.Harness, ctx context.Context, deployments deliveryv1.DeploymentsServiceClient, appID, body string) *deliveryv1.Deployment {
 	t.Helper()
-	dep, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: appID, SpecFile: body})
+	dep, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appID, SpecFile: body})
 	require.NoError(t, err)
 	id := dep.GetDeployment().GetId()
 	require.Eventually(t, func() bool {
@@ -52,7 +52,7 @@ func TestGetRevisionVerb(t *testing.T) {
 
 	body := `{"app":{"id":"X","project":"Y"},"source":{"image":{"ref":"nginx:1.27"}},"processes":[` +
 		`{"name":"web","image":"nginx:1.27","replicas":2}]}`
-	_, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: appID, SpecFile: body})
+	_, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appID, SpecFile: body})
 	require.NoError(t, err)
 
 	got, err := revisions.GetRevision(ctx, &deliveryv1.GetRevisionRequest{AppId: appID, Seq: 1})

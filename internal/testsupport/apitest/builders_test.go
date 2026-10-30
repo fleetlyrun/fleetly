@@ -38,7 +38,7 @@ func TestDeployUploadBuilderStrategies(t *testing.T) {
 		{
 			name: "railpack carries the pin end to end",
 			req: func(appID string) *deliveryv1.DeployRequest {
-				return &deliveryv1.DeployRequest{AppId: appID, UploadId: up.GetId(), Builder: "railpack", RailpackVersion: "0.39.0"}
+				return &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appID, UploadId: up.GetId(), Builder: "railpack", RailpackVersion: "0.39.0"}
 			},
 			verify: func(t *testing.T, _ int) {
 				calls := h.Builder.Calls()
@@ -51,7 +51,7 @@ func TestDeployUploadBuilderStrategies(t *testing.T) {
 		{
 			name: "static carries the output dir",
 			req: func(appID string) *deliveryv1.DeployRequest {
-				return &deliveryv1.DeployRequest{AppId: appID, UploadId: up.GetId(), Builder: "static", OutputDir: "dist"}
+				return &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appID, UploadId: up.GetId(), Builder: "static", OutputDir: "dist"}
 			},
 			verify: func(t *testing.T, _ int) {
 				calls := h.Builder.Calls()
@@ -64,7 +64,7 @@ func TestDeployUploadBuilderStrategies(t *testing.T) {
 		{
 			name: "dockerfile stays the default track",
 			req: func(appID string) *deliveryv1.DeployRequest {
-				return &deliveryv1.DeployRequest{AppId: appID, UploadId: up.GetId()}
+				return &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appID, UploadId: up.GetId()}
 			},
 			verify: func(t *testing.T, _ int) {
 				calls := h.Builder.Calls()
@@ -118,14 +118,14 @@ func TestDeployBuilderFlagEnforcement(t *testing.T) {
 
 	invalid := codes.InvalidArgument
 	for name, req := range map[string]*deliveryv1.DeployRequest{
-		"builder flags on image deploy":     {AppId: appID, Image: "nginx:1.27", Builder: "railpack"},
-		"builder flags on compose deploy":   {AppId: appID, ComposeYaml: "services: {web: {image: nginx:1.27}}", Builder: "static"},
-		"railpack without version":          {AppId: appID, UploadId: up.GetId(), Builder: "railpack"},
-		"railpack_version without railpack": {AppId: appID, UploadId: up.GetId(), RailpackVersion: "0.39.0"},
-		"output_dir without static":         {AppId: appID, UploadId: up.GetId(), OutputDir: "dist"},
-		"dockerfile with railpack builder":  {AppId: appID, UploadId: up.GetId(), Builder: "railpack", RailpackVersion: "0.39.0", Dockerfile: "Dockerfile"},
-		"unknown builder":                   {AppId: appID, UploadId: up.GetId(), Builder: "makeimg"},
-		"bad pin form":                      {AppId: appID, UploadId: up.GetId(), Builder: "railpack", RailpackVersion: "latest"},
+		"builder flags on image deploy":     {Confirmation: yesSkip(), AppId: appID, Image: "nginx:1.27", Builder: "railpack"},
+		"builder flags on compose deploy":   {Confirmation: yesSkip(), AppId: appID, ComposeYaml: "services: {web: {image: nginx:1.27}}", Builder: "static"},
+		"railpack without version":          {Confirmation: yesSkip(), AppId: appID, UploadId: up.GetId(), Builder: "railpack"},
+		"railpack_version without railpack": {Confirmation: yesSkip(), AppId: appID, UploadId: up.GetId(), RailpackVersion: "0.39.0"},
+		"output_dir without static":         {Confirmation: yesSkip(), AppId: appID, UploadId: up.GetId(), OutputDir: "dist"},
+		"dockerfile with railpack builder":  {Confirmation: yesSkip(), AppId: appID, UploadId: up.GetId(), Builder: "railpack", RailpackVersion: "0.39.0", Dockerfile: "Dockerfile"},
+		"unknown builder":                   {Confirmation: yesSkip(), AppId: appID, UploadId: up.GetId(), Builder: "makeimg"},
+		"bad pin form":                      {Confirmation: yesSkip(), AppId: appID, UploadId: up.GetId(), Builder: "railpack", RailpackVersion: "latest"},
 	} {
 		_, err := deployments.Deploy(owner, req)
 		require.Error(t, err, name)

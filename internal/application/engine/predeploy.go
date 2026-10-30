@@ -294,6 +294,9 @@ func (e *Engine) preDeployJobNetworks(ctx context.Context, d *deployment.Deploym
 // 存储错误如实上抛（与受理面整体拒绝语义一致）。Revision 读取经调用方
 // 事务 Runner（所见即受理终局；CheckPeerRefs 同款形态，各持一次读——
 // 受理是冷路径，换取两个预检各自自洽）。
+// B1 预览管线的 spec 参数变体单源：CheckPreDeployNetworksSpec 与本函数
+// 同一谓词（设计稿 §1.3——「preDeployJobs 裸网名」是入队即拒项，预览期
+// 透出为 ADMISSION_PRECHECK warning）。
 func (e *Engine) CheckPreDeployNetworks(ctx context.Context, s transact.Stores, projectID, revisionID string) error {
 	rev, err := s.Revisions.Get(ctx, revisionID)
 	if err != nil {
@@ -303,6 +306,12 @@ func (e *Engine) CheckPreDeployNetworks(ctx context.Context, s transact.Stores, 
 	if err != nil {
 		return err
 	}
+	return e.CheckPreDeployNetworksSpec(ctx, s, projectID, spec)
+}
+
+// CheckPreDeployNetworksSpec 是 CheckPreDeployNetworks 的 spec 参数变体
+// （内存 spec 直检，无冻结行寻址——预览管线与 Submit 单源共用）。
+func (e *Engine) CheckPreDeployNetworksSpec(ctx context.Context, s transact.Stores, projectID string, spec *specv1.AppSpec) error {
 	for i, j := range spec.GetPreDeployJobs() {
 		for _, net := range j.GetProcess().GetNetworks() {
 			if specir.IsNetworkGroupRef(net) || specir.IsCrossProjectRef(net) {

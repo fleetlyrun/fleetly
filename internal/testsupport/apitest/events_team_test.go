@@ -69,7 +69,7 @@ func TestEventsTeamFilterMatrix(t *testing.T) {
 	appAID := h.CreateApp(t, projAID, "web").GetId()
 	taskA, err := tasks.CreateTask(owner, &automationv1.CreateTaskRequest{ProjectId: projAID, Name: "migrate", Image: "nginx:1.27"})
 	require.NoError(t, err)
-	depA, err := deployments.Deploy(owner, &deliveryv1.DeployRequest{AppId: appAID, Image: "nginx:1.27"})
+	depA, err := deployments.Deploy(owner, &deliveryv1.DeployRequest{Confirmation: yesSkip(), AppId: appAID, Image: "nginx:1.27"})
 	require.NoError(t, err)
 	depAID := depA.GetDeployment().GetId()
 
