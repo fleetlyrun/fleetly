@@ -1,7 +1,7 @@
 import type { CommandDescriptor, ResourceScope } from "@lynx-go/uikit-core/kernel";
 import { apiSend } from "@/api/client";
 import { appsResource } from "./apps";
-import { deploymentsResource } from "./deployments";
+import { deploymentsResource, type PreviewTeardownPayload } from "./deployments";
 import { runCommandMapped } from "./errors";
 import { routesResource } from "./routes";
 
@@ -57,15 +57,19 @@ export interface RouteDraft {
 export interface AppTabCommands {
   /** RestartProcess（ADR-0069 行级重启）：零 lineage——不动 Spec、不建部署；失效面只有实例观测 */
   restartProcess: CommandDescriptor<{ process: string }, { process: string }>;
-  /** 实例数暂存 → Deploy（声明式路径）：冻结 Spec 全量 + 改动组装 spec_file 走 Deploy */
-  redeploy: CommandDescriptor<{ specFile: string }, DeploymentAccepted>;
+  /** 实例数暂存 → Deploy（声明式路径）：冻结 Spec 全量 + 改动组装 spec_file 走 Deploy。
+   *  skip = B1 W4 双击确认的二击形态（ConfirmSkipDialog；--yes 通道，proof=skipped 进审计） */
+  redeploy: CommandDescriptor<{ specFile: string; skip?: boolean }, DeploymentAccepted>;
   createRoute: CommandDescriptor<RouteDraft, void>;
   deleteRoute: CommandDescriptor<{ id: string }, void>;
   setGitHook: CommandDescriptor<GitHookDraft, GitHookPayload>;
   rotateGitHook: CommandDescriptor<void, GitHookPayload>;
   refreshGitHook: CommandDescriptor<void, RefreshPayload>;
   deleteGitHook: CommandDescriptor<void, void>;
-  deleteApp: CommandDescriptor<void, void>;
+  /** PreviewTeardown（B1 拆除预演）：级联/保留清单 + 驱动权冲突 + 铸票；无失效面（只读孪生 + 铸票） */
+  previewTeardown: CommandDescriptor<void, PreviewTeardownPayload>;
+  /** DeleteApp（delete 族强制集）：ticket 来自 previewTeardown 的铸票 */
+  deleteApp: CommandDescriptor<{ ticket?: string }, void>;
 }
 
 // appTabCommands 按 (projectId, appId) 关闭出全套子面动词：URL 需要的 id
@@ -95,9 +99,19 @@ export function appTabCommands(projectId: string, appId: string): AppTabCommands
     },
     // 声明式路径：受理即建部署。失效面 = 冻结 Spec（本 tab 重取落新 replicas）
     // + 部署两形态（kit 项目时间线 + legacy per-app/fan-out 前缀）。
+    // B1 W4 遗留直发面收口（2026-10-31）：Processes 暂存提交钮（钮词钦定
+    // 豁免见 wording 守卫）经 ConfirmSkipDialog 双击形态接确认动线——
+    // skip = 二击显式跳过（--yes 通道，proof=skipped 进审计）；预览化
+    // （DeploySheet 面板铸票）留 B2a。
     redeploy: {
       run: (input) =>
-        runCommandMapped(() => apiSend<DeploymentAccepted>("/v1/deployments", "POST", { app_id: appId, spec_file: input.specFile })),
+        runCommandMapped(() =>
+          apiSend<DeploymentAccepted>("/v1/deployments", "POST", {
+            app_id: appId,
+            spec_file: input.specFile,
+            ...(input.skip ? { confirmation: { skip: true } } : {}),
+          }),
+        ),
       scopeOf,
       invalidates: [{ resource: deploymentsResource.name }, { resource: "app-spec-sheet" }],
       // ["deployments"] 前缀桥：project-overview AppTile 的裸键（["deployments",
@@ -176,13 +190,26 @@ export function appTabCommands(projectId: string, appId: string): AppTabCommands
         }),
       invalidates: [{ resource: "app-hook" }],
     },
-    // App 删除（级联披露在确认框）：apps 集合 + 部署两形态（历史随 app
-    // 消失，项目时间线不留幽灵行）。
-    deleteApp: {
+    // App 删除（B1 W4 拆除确认闭环）：DeleteApp 在 delete 族强制集——
+    // ticket 由 previewTeardown 铸（宽档确认框先读级联/保留清单再落到钮
+    // 上，设计稿 §1.6）。REST 形态注意：DeleteApp 无 body（proto 注解
+    // delete: "/v1/apps/{id}"），confirmation 走 **query 参数**
+    // confirmation.ticket=…（gateway 生成面，api/structure.ts 同形）。
+    // 级联披露在确认框（PreviewTeardown 载荷填充）；失效面 = apps 集合 +
+    // 部署两形态（历史随 app 消失，项目时间线不留幽灵行）。
+    previewTeardown: {
       scopeOf,
       run: () =>
+        runCommandMapped(() =>
+          apiSend<PreviewTeardownPayload>(`/v1/apps/${encodeURIComponent(appId)}/preview-teardown`, "POST", {}),
+        ),
+    },
+    deleteApp: {
+      scopeOf,
+      run: (input) =>
         runCommandMapped(async () => {
-          await apiSend(`/v1/apps/${encodeURIComponent(appId)}`, "DELETE");
+          const query = input?.ticket ? `?confirmation.ticket=${encodeURIComponent(input.ticket)}` : "";
+          await apiSend(`/v1/apps/${encodeURIComponent(appId)}${query}`, "DELETE");
         }),
       invalidates: [{ resource: appsResource.name }, { resource: deploymentsResource.name }],
       // AppTile 存量键面（同 redeploy 注）。

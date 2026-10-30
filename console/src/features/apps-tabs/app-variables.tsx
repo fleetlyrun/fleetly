@@ -1,17 +1,20 @@
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useCommand, useCollectionData, useRecord } from "@lynx-go/uikit-core";
-import type { CommandDescriptor } from "@lynx-go/uikit-core/kernel";
+import type { CommandDescriptor, CommandResult } from "@lynx-go/uikit-core/kernel";
 import { ApiError, apiSend } from "@/api/client";
 import { appSpecSheetResource, appVariablesStoreResource } from "@/kit/app-observe";
 import { PlusIcon, SlidersIcon, TrashIcon } from "lucide-react";
 import { toast } from "sonner";
 import { CopyButton } from "@/components/domain/copy-button";
+import { ConfirmSkipDialog } from "@/components/domain/confirm-skip-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { describeApiError, runCommandMapped } from "@/kit/errors";
-import { fetchFrozenSpec, useSpecDeploy, type AppSpec } from "@/lib/spec-deploy";
+import { runCommandMapped } from "@/kit/errors";
+import { deploymentsResource, type DeployOutcome } from "@/kit/deployments";
+import { specFileDeployState } from "@/lib/deployPayload";
+import { fetchFrozenSpec, type AppSpec } from "@/lib/spec-deploy";
 
 type VariableRow = { id?: string; name: string; value: string; updated_at?: string };
 
@@ -24,42 +27,66 @@ type VariableRow = { id?: string; name: string; value: string; updated_at?: stri
 //
 // 批 2 写路径命令化：Apply 动线（PUT 变更键 → DELETE 移除键 → 回读冻结
 // 体 → 重发 Spec）是一条原子命令——模块级 descriptor 工厂闭包 appId 与
-// 部署步（useSpecDeploy 句柄注入，lib 共享件不动）；未变键过滤在提交边
-// （staged/base diff 是 UI 状态语义）。存量 store 键
-// ["resources","app-variables",appId] 经 legacyKeys 桥（读面尚未 kit 化，
-// 无 kit 键可失效）；结果两分经 runCommandMapped（400→rejected 保留
-// apperr code、409→conflict、其余 throw）；toast 单源 onSettled。
+// 部署步（deploy 命令句柄注入）；未变键过滤在提交边（staged/base diff
+// 是 UI 状态语义）。失效面 kit selector（app-variables 集合）+ 命令内
+// deploy 步自带的部署两形态；结果两分经 runCommandMapped（400/428→
+// rejected 保留 apperr code、409→conflict、其余 throw）。
+//
+// B1 W4 遗留直发面收口（2026-10-31）：内嵌 deploy 步原经 lib useSpecDeploy
+// 裸 useMutation 直发（强制确认下恒收 428）——改走 deployments.deploy
+// 命令（写必经 useCommand；skip 通道 = ConfirmSkipDialog 双击形态）。
+// 双击语义：一击已把变量写入 store、仅部署被拒（REQUIRED）；二击全量
+// 重放（PUT 幂等、DELETE 对已删键容忍 404 = 目标态已达成）带 skip=true
+// 完成部署（proof=skipped 进审计）。预览化（PreviewDeploy 铸票复用
+// DeploySheet 面板）留 B2a。
 
 export interface ApplyAppVariablesInput {
   /** 变更键全量行（空名与未变键已在提交边过滤） */
   puts: ReadonlyArray<{ name: string; value: string }>;
   /** 移除键名 */
   deletes: ReadonlyArray<string>;
+  /** 双击确认二击形态：deploy 步带 confirmation.skip=true（ConfirmSkipDialog） */
+  skip?: boolean;
 }
 
 // applyAppVariablesDescriptor：变量落库 + 重部署一条动线（deploy 是组件
-// 侧 hook 句柄——闭包注入保持 useSpecDeploy 的失效/导航单源）。
+// 侧命令句柄——闭包注入保持失效/导航单源；返回结果两分供双击态分诊）。
+// 结构：写步（PUT/DELETE/回读冻结体）经 runCommandMapped 保持既有两分
+// 口径；部署步的结果两分**原样透传**（非 ok 变体不携带 payload，与 null
+// 载荷并集结构相容——REJECTED 交 ConfirmSkipDialog 分诊双击态）。
 export function applyAppVariablesDescriptor(
   projectId: string,
   appId: string,
-  deploy: (spec: AppSpec) => Promise<unknown>,
+  deploy: (spec: AppSpec, skip: boolean) => Promise<CommandResult<DeployOutcome>>,
 ): CommandDescriptor<ApplyAppVariablesInput, null> {
   // M2 同源：失效身份（store 读键 scope {projectId, appId}）从闭包派生。
   const scopeOf = () => ({ projectId, appId });
   return {
-    run: async (input) =>
-      runCommandMapped(async () => {
+    run: async (input): Promise<CommandResult<null>> => {
+      const writes = await runCommandMapped<AppSpec | null>(async () => {
         for (const row of input.puts) {
           await apiSend("/v1/app-variables", "PUT", { app_id: appId, name: row.name, value: row.value });
         }
         for (const name of input.deletes) {
-          await apiSend(`/v1/app-variables/${encodeURIComponent(appId)}/${encodeURIComponent(name)}`, "DELETE");
+          try {
+            await apiSend(`/v1/app-variables/${encodeURIComponent(appId)}/${encodeURIComponent(name)}`, "DELETE");
+          } catch (err) {
+            // 双击二击的全量重放：键已被一击删除（目标态已达成）→ 404 容忍
+            // 为幂等成功；其余错误照常出界。
+            if (err instanceof ApiError && err.status === 404) continue;
+            throw err;
+          }
         }
-        // 变量生效需一次部署（冻结咽喉合成）；无冻结体的 App 在首部署取新值。
-        const frozen = await fetchFrozenSpec(appId);
-        if (frozen) await deploy(frozen);
-        return null;
-      }),
+        return await fetchFrozenSpec(appId);
+      });
+      if (writes.status !== "ok") return writes;
+      // 变量生效需一次部署（冻结咽喉合成）；无冻结体的 App 在首部署取新值。
+      const frozen = writes.payload;
+      if (frozen == null) return { status: "ok", payload: null };
+      const deployResult = await deploy(frozen, input.skip === true);
+      if (deployResult.status !== "ok") return deployResult;
+      return { status: "ok", payload: null };
+    },
     // 失效面：kit selector（app-variables 集合）——存量 store 键桥零读者
     // 退役（F1 回流批审计）。
     scopeOf,
@@ -91,28 +118,24 @@ export function AppVariablesTab({ projectId, appId }: { projectId: string; appId
     (staged.length !== base.length ||
       staged.some((row, i) => row.name !== base[i]?.name || row.value !== base[i]?.value));
 
-  const deploy = useSpecDeploy(appId, (id) => {
-    void navigate({
-      to: "/p/$projectId/apps/$appId/deployments/$deploymentId",
-      params: { projectId, appId, deploymentId: id },
-    });
-  });
-
-  const apply = useCommand(applyAppVariablesDescriptor(projectId, appId, (frozen) => deploy.mutateAsync(frozen)), {
-    onSettled: (result, failure) => {
-      if (result?.status === "ok") {
-        setStaged(null);
-        toast.success("Variables saved — a new deployment rolls the new values");
-      } else if (result) {
-        toast.error(result.message);
-      } else if (failure) {
-        toast.error(describeApiError(failure));
+  // deploy 步 = deployments.deploy 命令（spec_file 形态经 lib/deployPayload
+  // 的表单态工厂）：受理成功落部署详情的导航锚（apply 命令内嵌调用）。
+  const deploy = useCommand(deploymentsResource.commands.deploy, {
+    scope: { projectId },
+    onSettled: (result) => {
+      if (result?.status !== "ok") return;
+      const id = result.payload.deployment?.id;
+      if (id) {
+        void navigate({
+          to: "/p/$projectId/apps/$appId/deployments/$deploymentId",
+          params: { projectId, appId, deploymentId: id },
+        });
       }
     },
   });
 
   // 提交边 diff：未变键不重写、移除键 DELETE、空名行丢弃（原动线语义）。
-  function applyStaged() {
+  const stagedDiff = () => {
     const baseline = new Map(base.map((row) => [row.name, row]));
     const puts = (staged ?? []).filter(
       (row) => row.name !== "" && baseline.get(row.name)?.value !== row.value,
@@ -120,8 +143,8 @@ export function AppVariablesTab({ projectId, appId }: { projectId: string; appId
     const deletes = base
       .filter((row) => !(staged ?? []).some((kept) => kept.name === row.name))
       .map((row) => row.name);
-    apply.mutate({ puts, deletes });
-  }
+    return { puts, deletes };
+  };
 
   return (
     <div className="flex flex-col gap-5">
@@ -189,13 +212,34 @@ export function AppVariablesTab({ projectId, appId }: { projectId: string; appId
             </Button>
             <div className="flex items-center gap-2">
               {staged != null ? (
-                <Button size="sm" variant="ghost" onClick={() => setStaged(null)} disabled={apply.pending}>
+                <Button size="sm" variant="ghost" onClick={() => setStaged(null)}>
                   Discard
                 </Button>
               ) : null}
-              <Button size="sm" disabled={!hasChanges || apply.pending} onClick={applyStaged}>
-                {apply.pending ? "Applying…" : "Apply & deploy"}
-              </Button>
+              {/* B1 W4：Apply & deploy 接 ConfirmSkipDialog 双击 skip 形态
+                  （首击写 store + 无票部署被拒 → 「已请求确认」态 → 二击
+                  skip 完成部署；写步幂等可重放）。 */}
+              <ConfirmSkipDialog
+                label="Apply & deploy"
+                disabled={!hasChanges}
+                title="Apply variables and deploy?"
+                description={
+                  "Writes the staged variables to the app store, then re-deploys the frozen spec — variable values only take effect when a deployment freezes them (top merge layer: app variable > source env > project shared)."
+                }
+                confirmLabel="Apply & deploy"
+                confirmAgainLabel="Confirm apply"
+                pendingLabel="Applying…"
+                askedSubject="Deploying these variable changes"
+                askedNote="the values are saved already and bake in at the next deploy, which this path submits without a preview"
+                descriptor={applyAppVariablesDescriptor(projectId, appId, (frozen, skip) =>
+                  deploy.mutateAsync({ ...specFileDeployState(appId, JSON.stringify(frozen)), skip: skip || undefined }),
+                )}
+                buildInput={(skip) => ({ ...stagedDiff(), skip: skip || undefined })}
+                onOk={() => {
+                  setStaged(null);
+                  toast.success("Variables saved — a new deployment rolls the new values");
+                }}
+              />
             </div>
           </div>
         </CardContent>

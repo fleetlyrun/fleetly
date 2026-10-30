@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useCommand, useRecord } from "@lynx-go/uikit-core";
 import { appTabCommands } from "@/kit/app-tabs";
 import { appHookResource, appRevisionSpecResource, appWorkloadsResource } from "@/kit/app-observe";
-import { describeApiError } from "@/kit/errors";
+import type { PreviewTeardownPayload } from "@/kit/deployments";
+import { describeApiError, isConfirmationStale } from "@/kit/errors";
 import { toastOnSettled } from "@/kit/toast";
 import { CopyButton } from "@/components/domain/copy-button";
 import { ConfirmDialog } from "@/components/domain/confirm-dialog";
@@ -434,14 +435,125 @@ function GitHookCard({ appId, projectId }: { appId: string; projectId: string })
   );
 }
 
+// Teardown/Kept 分类的用户面词（PreviewTeardown 载荷的 kind 枚举 → 标签；
+// 未知 kind 回退原始枚举词，不吞服务端新增）。
+const TEARDOWN_KIND_LABELS: Record<string, string> = {
+  TEARDOWN_ITEM_KIND_WORKLOAD: "workload",
+  TEARDOWN_ITEM_KIND_HOOK_ROW: "git hook row",
+  TEARDOWN_ITEM_KIND_ROUTE_ROW: "route row",
+};
+const KEPT_KIND_LABELS: Record<string, string> = {
+  KEPT_ITEM_KIND_DATABASE: "database",
+  KEPT_ITEM_KIND_VOLUME: "volume",
+  KEPT_ITEM_KIND_SECRET: "secret",
+  KEPT_ITEM_KIND_UPLOAD: "uploaded source",
+};
+
+// 拆除面后果先行段（B1 W4）：级联清单 + 保留清单带理由 + 驱动权冲突，
+// 全部由 PreviewTeardown 载荷填充（设计稿 §1.3 Teardown 面/§1.6「拆除面
+// confirm-dialog 升级为预览清单形态」）——预览载荷是确认票绑定的对象，
+// 弹窗展示的正是票面锚的清单。加载/失败态也在此节点内诚实呈现。
+function TeardownConsequences({ payload }: { payload: PreviewTeardownPayload | null }) {
+  if (payload == null) return null;
+  const cascade = payload.cascade ?? [];
+  const kept = payload.kept ?? [];
+  return (
+    <div className="flex flex-col gap-2.5">
+      <div>
+        <p className="text-2xs font-semibold text-fg">Will be removed</p>
+        {cascade.length === 0 ? (
+          <p className="mt-0.5 text-2xs text-muted">Nothing cascades — no carriers, hook or route rows.</p>
+        ) : (
+          <ul className="mt-0.5 ml-4 list-disc space-y-0.5">
+            {cascade.map((item, index) => (
+              <li key={`${item.kind}-${item.name}-${index}`} className="text-2xs leading-snug">
+                {TEARDOWN_KIND_LABELS[item.kind ?? ""] ?? item.kind}{" "}
+                <span className="break-all font-mono">{item.name}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <div>
+        <p className="text-2xs font-semibold text-fg">Kept (not deleted)</p>
+        {kept.length === 0 ? (
+          <p className="mt-0.5 text-2xs text-muted">Nothing is kept back explicitly.</p>
+        ) : (
+          <ul className="mt-0.5 ml-4 list-disc space-y-0.5">
+            {kept.map((item, index) => (
+              <li key={`${item.kind}-${index}`} className="text-2xs leading-snug">
+                {KEPT_KIND_LABELS[item.kind ?? ""] ?? item.kind}
+                {item.reason ? <span className="text-muted"> — {item.reason}</span> : null}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      {payload.driving_conflict ? (
+        <p className="rounded-md border border-[color-mix(in_oklch,var(--status-warning)_40%,transparent)] bg-[var(--status-warning-bg)] px-2 py-1.5 text-2xs leading-snug text-fg">
+          Deletion is currently blocked by a driving deployment
+          {payload.driving_detail ? ` (${payload.driving_detail})` : ""} — let it finish or cancel it first, then preview
+          again.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function DangerZone({ appId, appName, projectId, onDeleted }: { appId: string; appName: string; projectId: string; onDeleted: () => void }) {
   const [deleting, setDeleting] = useState(false);
-  const remove = useCommand(appTabCommands(projectId, appId).deleteApp, {
-    onSettled: toastOnSettled(() => {
-      toast(`App ${appName} deleted`);
-      onDeleted();
-    }),
+  // STALE 重开令牌：ConfirmDialog 落定即关窗（finally 关窗在 mutation 回调
+  // 之后的微任务里跑，同批 setState 会晚于重开被覆盖）——经计数器沿触发
+  // effect 重开，确定性赢过关窗序。
+  const [reopenToken, setReopenToken] = useState(0);
+  useEffect(() => {
+    if (reopenToken > 0) setDeleting(true);
+  }, [reopenToken]);
+  const commands = appTabCommands(projectId, appId);
+  // 拆除预演（B1 W4）：开窗即拉——清单 + 冲突 + 铸票；重开重拉（票随基线
+  // 锚定，旧窗的票不作数）。铸票动词不进失效面（与 previewDeploy 同理）。
+  const preview = useCommand(commands.previewTeardown, {});
+  const remove = useCommand(commands.deleteApp, {
+    onSettled: (result, failure) => {
+      if (result?.status === "ok") {
+        toast(`App ${appName} deleted`);
+        onDeleted();
+        return;
+      }
+      if (isConfirmationStale(result)) {
+        // 基线漂移（app 行版本/hook 行/route 集，§1.4 teardown 票绑定）：
+        // 票作废——重拉预演 + 重开窗，操作者对新清单再确认。
+        preview.mutate();
+        setReopenToken((token) => token + 1);
+        toast.error("The app changed since the preview — review the fresh teardown list and confirm again");
+        return;
+      }
+      if (result != null) toast.error(result.message);
+      else if (failure != null) toast.error(describeApiError(failure));
+    },
   });
+  // 开窗即预演（触发钮/STALE 重开两处直呼——useEffect 依赖 mutate 会因
+  // useCommand 每渲染新箭头而循环，不走 effect）。
+
+  const teardown = preview.result?.status === "ok" ? preview.result.payload : null;
+  const ticket = teardown?.ticket;
+  const consequences =
+    teardown != null ? (
+      <TeardownConsequences payload={teardown} />
+    ) : preview.pending ? (
+      <p className="text-2xs text-muted">Loading the teardown preview…</p>
+    ) : preview.result?.status === "rejected" ? (
+      <div>
+        <p className="text-2xs text-err">
+          {preview.result.code ? <span className="font-mono">[{preview.result.code}] </span> : null}
+          {preview.result.message}
+        </p>
+      </div>
+    ) : preview.failure != null ? (
+      <p className="text-2xs text-err">{describeApiError(preview.failure)}</p>
+    ) : (
+      <p className="text-2xs text-muted">Previewing the teardown…</p>
+    );
   return (
     <section className="rounded-xl border border-err/30 bg-panel p-5">
       <h3 className="mb-2 text-sm font-semibold text-err">Danger zone</h3>
@@ -449,25 +561,30 @@ function DangerZone({ appId, appName, projectId, onDeleted }: { appId: string; a
         Deleting <span className="font-semibold text-fg">{appName}</span> removes its deployments history, routes and exec
         sessions. Databases and volumes are kept. Recent revisions stay in the registry and must be cleaned up separately.
       </p>
-      {/* B4a：删 App 是级联影响面的破坏动作（载体 + hook/route 行级联）→
-          wide——后果先行段列出拆除面与保留面（与上方段落同语义单源，
-          不新造：databases/volumes/secrets 为 Project 级材料不随删）。 */}
-      <Button variant="destructive" size="sm" onClick={() => setDeleting(true)}>
+      {/* B4a wide 档 + B1 W4 拆除确认闭环：consequences 由 PreviewTeardown
+          载荷填充（级联/保留/冲突——上方 TeardownConsequences）；确认钮在
+          票到手前置灰（confirmDisabled）——DeleteApp 在 delete 族强制集，
+          确认的正是展示的清单。 */}
+      <Button
+        variant="destructive"
+        size="sm"
+        onClick={() => {
+          setDeleting(true);
+          preview.mutate();
+        }}
+      >
         Delete app…
       </Button>
       <ConfirmDialog
         open={deleting}
         onOpenChange={setDeleting}
         title={`Delete app ${appName}?`}
-        description="This permanently removes the app, its deployments history, routes and exec sessions."
+        description="This permanently removes the app, its deployments history, routes and exec sessions — the previewed list below is exactly what the confirmation ticket covers."
         confirmLabel="Delete"
         pendingLabel="Deleting…"
-        risk={{
-          tier: "wide",
-          consequences:
-            "Removed: the app carrier, its deployments history, routes and exec sessions. Kept: databases, volumes and project secrets — they are project-level material and survive this delete. Recent revisions stay in the registry and must be cleaned up separately.",
-        }}
-        onConfirm={() => remove.mutateAsync()}
+        confirmDisabled={ticket == null}
+        risk={{ tier: "wide", consequences }}
+        onConfirm={() => remove.mutateAsync({ ticket: ticket ?? undefined })}
       />
     </section>
   );

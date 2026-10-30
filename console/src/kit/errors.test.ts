@@ -56,6 +56,19 @@ describe("runCommandMapped", () => {
     ).resolves.toEqual({ status: "conflict", message: "exists" });
   });
 
+  // B1 确认族（W4）：428 = E_CONFIRMATION_REQUIRED/STALE/MISMATCH（服务端
+  // assembly/errors.go 的映射）——已知分支入结果通道且保 code（消费面按
+  // code 分诊：STALE 自动重预览、REQUIRED 双击确认）。
+  it("428 → rejected 保留确认族 code（REQUIRED/STALE/MISMATCH）", async () => {
+    for (const code of ["E_CONFIRMATION_REQUIRED", "E_CONFIRMATION_STALE", "E_CONFIRMATION_MISMATCH"]) {
+      await expect(
+        runCommandMapped(async () => {
+          throw new FetchApiError(428, code, "confirmation refused");
+        }),
+      ).resolves.toEqual({ status: "rejected", code, message: "confirmation refused" });
+    }
+  });
+
   it("其余 → throw kernel ApiError（treatAs 在 descriptor 裁决）", async () => {
     await expect(
       runCommandMapped(async () => {

@@ -31,6 +31,7 @@ const fetchMock = vi.fn();
 beforeEach(() => {
   fetchMock.mockReset();
   navigateMock.mockReset();
+  deployResponses = [];
   vi.stubGlobal("fetch", fetchMock);
   setToken("flt_test_token");
 });
@@ -42,7 +43,9 @@ afterEach(() => {
 });
 
 // fetch 面桩：冻结 Spec（web ×1）+ 路由目录空 + Deploy 受理回 D1 + 在跑
-// 实例集观测（Running 列/行展开的数据源，ADR-0067）。
+// 实例集观测（Running 列/行展开的数据源，ADR-0067）。deployResponses =
+// POST /v1/deployments 响应序（双击 skip：首击 428 → 二击 200）。
+let deployResponses: Array<{ status: number; body: unknown }> = [];
 function stubFetch() {
   fetchMock.mockImplementation(async (path: string) => {
     if (path.startsWith("/v1/apps/A1/spec")) {
@@ -55,29 +58,63 @@ function stubFetch() {
       );
     }
     if (path.startsWith("/v1/routes")) return new Response(JSON.stringify({ routes: [] }), { status: 200 });
-    if (path === "/v1/deployments") return new Response(JSON.stringify({ deployment: { id: "D1" } }), { status: 200 });
+    if (path === "/v1/deployments") {
+      const next = deployResponses.shift();
+      if (next != null && next.status !== 200) {
+        return new Response(JSON.stringify(next.body), { status: next.status });
+      }
+      return new Response(JSON.stringify({ deployment: { id: "D1" } }), { status: 200 });
+    }
     return new Response("{}", { status: 200 });
   });
 }
 
+function deployPosts(): Array<[string, RequestInit]> {
+  return fetchMock.mock.calls.filter(([p, i]) => p === "/v1/deployments" && i?.method === "POST") as Array<[string, RequestInit]>;
+}
+
 describe("AppProcessesTab apply changes", () => {
-  it("navigates to the created deployment detail after staging replicas", async () => {
+  it("double-click skip: first send is refused with REQUIRED, second sends an explicit skip and navigates", async () => {
+    // B1 W4 遗留直发面收口：Apply changes 接 ConfirmSkipDialog——首击
+    // staged spec 无票直发（428）→ 「已请求确认」态 → 二击 confirmation.
+    // skip=true → 受理后清暂存 + 导航落部署详情。
     stubFetch();
+    deployResponses = [
+      { status: 428, body: { code: "E_CONFIRMATION_REQUIRED", message: "requires confirmation: pass the ticket from a preview, or set skip" } },
+    ];
     const { client, wrapper } = withClient();
     render(<AppProcessesTab projectId="P1" appId="A1" routeId="/_shell/p/$projectId/apps/$appId/processes" />, { wrapper });
     await waitFor(() => expect(screen.getByText("web")).toBeTruthy());
 
     fireEvent.click(screen.getByRole("button", { name: "Increase replicas of web" }));
     fireEvent.click(screen.getByRole("button", { name: "Apply changes" }));
+    expect(await screen.findByText("Apply replica changes?")).toBeTruthy();
 
+    // 首击：spec_file 带新副本数，无 confirmation 键。
+    fireEvent.click(screen.getAllByRole("button", { name: "Apply changes" }).at(-1)!);
+    await waitFor(() => expect(deployPosts()).toHaveLength(1));
+    expect(JSON.parse(String(deployPosts()[0][1].body))).toEqual({
+      app_id: "A1",
+      spec_file: JSON.stringify({ processes: [{ name: "web", replicas: "2" }] }),
+    });
+
+    // REQUIRED → 「已请求确认」态（Apply changes 动词措辞）。
+    expect(await screen.findByText(/Applying these replica changes requires an explicit confirmation/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Confirm apply" }));
+
+    // 二击：skip=true；受理后导航落部署详情。
+    await waitFor(() => expect(deployPosts()).toHaveLength(2));
+    expect(JSON.parse(String(deployPosts()[1][1].body))).toEqual({
+      app_id: "A1",
+      spec_file: JSON.stringify({ processes: [{ name: "web", replicas: "2" }] }),
+      confirmation: { skip: true },
+    });
     await waitFor(() =>
       expect(navigateMock).toHaveBeenCalledWith({
         to: "/p/$projectId/apps/$appId/deployments/$deploymentId",
         params: { projectId: "P1", appId: "A1", deploymentId: "D1" },
       }),
     );
-    const [, init] = fetchMock.mock.calls.find(([p]) => p === "/v1/deployments") as [string, RequestInit];
-    expect(JSON.parse(String(init.body)).spec_file).toContain('"replicas":"2"');
     client.clear();
   });
 
@@ -102,9 +139,12 @@ describe("AppProcessesTab apply changes", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Deploy now" }));
 
-    // DeploySheet 直开：非 hook + 无冻结体 → 五源表单（缺省 image）。
-    expect(await screen.findByText("Create a deployment — the server queues and supersedes by generation.")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Deploy" })).toBeTruthy();
+    // DeploySheet 直开：非 hook + 无冻结体 → 五源表单（缺省 image）。W4
+    // 两段式后主钮是 Preview & deploy（先预览铸票，确认钮在预览面板后）。
+    expect(
+      await screen.findByText("Preview the deployment first, then confirm with the minted ticket — the server queues and supersedes by generation."),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Preview & deploy" })).toBeTruthy();
     expect(navigateMock).not.toHaveBeenCalled();
     client.clear();
   });

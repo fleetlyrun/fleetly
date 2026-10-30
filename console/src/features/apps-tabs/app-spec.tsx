@@ -6,8 +6,10 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { useSpecDeploy } from "@/lib/spec-deploy";
+import { ConfirmSkipDialog } from "@/components/domain/confirm-skip-dialog";
+import { specFileDeployState } from "@/lib/deployPayload";
 import { ApiError } from "@/api/client";
+import { deploymentsResource } from "@/kit/deployments";
 import { appRevisionSpecResource, appWorkloadsLiveResource, appWorkloadsResource, type WorkloadObservation, type WorkloadView } from "@/kit/app-observe";
 import { CopyButton } from "@/components/domain/copy-button";
 import { Badge } from "@/components/ui/badge";
@@ -65,15 +67,14 @@ export function AppSpecTab({ projectId, appId, seq, routeId }: { projectId: stri
   });
 
   // 编辑-部署动线（ADR-0072 写面）：冻结体预填可编辑，部署走 spec_file
-  //（hook 应用服务端按运行时 overlay 受理）。
+  //（hook 应用服务端按运行时 overlay 受理）。B1 W4 遗留直发面收口
+  //（2026-10-31）：直发面（lib useSpecDeploy 裸 useMutation）退役，改走
+  // deployments.deploy 命令（写必经 useCommand）+ ConfirmSkipDialog 双击
+  // skip 形态（首击 REQUIRED → 二击 confirmation.skip=true，proof=skipped
+  // 进审计）；预览化（PreviewDeploy 铸票复用 DeploySheet 预览面板——本面
+  // 有完整表单体，预览价值最高）留 B2a。
   const [editOpen, setEditOpen] = useState(false);
   const [editBody, setEditBody] = useState("");
-  const deploy = useSpecDeploy(appId, (id) => {
-    void navigate({
-      to: "/p/$projectId/apps/$appId/deployments/$deploymentId",
-      params: { projectId, appId, deploymentId: id },
-    });
-  });
   const editValid = (() => {
     try {
       JSON.parse(editBody);
@@ -298,20 +299,35 @@ export function AppSpecTab({ projectId, appId, seq, routeId }: { projectId: stri
             <Button variant="outline" onClick={() => setEditOpen(false)}>
               Cancel
             </Button>
-            <Button
-              disabled={!editValid || deploy.isPending}
-              onClick={() => {
-                deploy.mutate(JSON.parse(editBody), {
-                  onSuccess: () => {
-                    setEditOpen(false);
-                    toast("Deployment created — the edited spec was submitted");
-                  },
-                  onError: (cause) => toast.error(cause instanceof Error ? cause.message : String(cause)),
-                });
+            {/* 双击确认壳叠在编辑 Dialog 之上（portal 层级自然置顶）；JSON
+                合法性门闩在触发钮（首击前就拦住非法编辑体）。 */}
+            <ConfirmSkipDialog
+              label="Deploy"
+              disabled={!editValid}
+              title="Deploy the edited spec?"
+              description={
+                "Submits the edited spec as a new deployment (spec_file). Hook-owned apps deploy a runtime overlay — the material half stays with the frozen revision; env values from app variables re-synthesize on top at freeze."
+              }
+              confirmLabel="Deploy"
+              confirmAgainLabel="Confirm deploy"
+              pendingLabel="Submitting…"
+              askedSubject="This deployment"
+              askedNote="the edited spec is submitted without a preview"
+              descriptor={deploymentsResource.commands.deploy}
+              scope={{ projectId }}
+              buildInput={(skip) => ({ ...specFileDeployState(appId, editBody), skip: skip || undefined })}
+              onOk={(payload) => {
+                setEditOpen(false);
+                toast("Deployment created — the edited spec was submitted");
+                const id = payload.deployment?.id;
+                if (id) {
+                  void navigate({
+                    to: "/p/$projectId/apps/$appId/deployments/$deploymentId",
+                    params: { projectId, appId, deploymentId: id },
+                  });
+                }
               }}
-            >
-              {deploy.isPending ? "Submitting…" : "Deploy"}
-            </Button>
+            />
           </DialogFooter>
         </DialogContent>
       </Dialog>

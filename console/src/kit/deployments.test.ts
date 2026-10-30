@@ -201,6 +201,86 @@ describe("deployments commands（批2 写路径命令锚）", () => {
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(String(url)).toContain("/v1/apps/a1/rollback");
     expect(init.method).toBe("POST");
+    // B1 W4：无票形态 body 空体（首击——服务端 ConfirmableVerbs 拒 REQUIRED）。
+    expect(JSON.parse(String(init.body))).toEqual({});
+  });
+
+  // B1 W4 确认闭环命令锚：
+  it("deploy 带 ticket：confirmation.ticket 附加在诚实载荷上（其余键零变化）", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ deployment: { id: "dep_6" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await deploymentsResource.commands.deploy.run({ ...IMAGE_FORM, ticket: "tkt-1" }, { projectId: "shop" });
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toEqual({
+      app_id: "a1",
+      image: "nginx:1.27",
+      confirmation: { ticket: "tkt-1" },
+    });
+  });
+
+  it("previewDeploy：POST /v1/deployments/preview，体 = {deploy: 同一 DeployRequest}", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ ticket: "tkt-2", ticket_expires_in: 600 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await deploymentsResource.commands.previewDeploy.run(IMAGE_FORM, { projectId: "shop" });
+
+    expect(result).toEqual({ status: "ok", payload: { ticket: "tkt-2", ticket_expires_in: 600 } });
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(String(url)).toBe("/v1/deployments/preview");
+    expect(init.method).toBe("POST");
+    // 内嵌同一 DeployRequest（形状层单源，设计稿 §1.3）。
+    expect(JSON.parse(String(init.body))).toEqual({ deploy: { app_id: "a1", image: "nginx:1.27" } });
+  });
+
+  it("rollback 双击二段：skip=true 显式跳过（--yes 逃生门通道）", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ deployment: { id: "dep_7" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await deploymentsResource.commands.rollback.run({ appId: "a1", skip: true }, { projectId: "shop" });
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toEqual({ confirmation: { skip: true } });
+  });
+
+  // B1 W4 遗留直发面收口（2026-10-31）：deploy/redeploy 的 skip 形态——
+  // Spec 编辑器与 Variables 的 deploy step / hero Redeploy 经
+  // ConfirmSkipDialog 双击确认，二击携 skip=true（proof=skipped 进审计）。
+  it("deploy 双击二段：skip=true 附加在诚实载荷上（spec_file 源）", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ deployment: { id: "dep_8" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const specJson = JSON.stringify({ processes: [{ name: "web" }] });
+
+    await deploymentsResource.commands.deploy.run(
+      { ...IMAGE_FORM, source: "spec", specJson, skip: true },
+      { projectId: "shop" },
+    );
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toEqual({
+      app_id: "a1",
+      spec_file: specJson,
+      confirmation: { skip: true },
+    });
+  });
+
+  it("redeploy 双击二段：skip=true 附着在冻结体重发载荷上", async () => {
+    const frozenSpec = { processes: [{ name: "web" }] };
+    const fetchMock = vi.fn(async (input: unknown) => {
+      if (String(input).includes("/spec")) return jsonResponse({ spec: frozenSpec });
+      return jsonResponse({ deployment: { id: "dep_9" } });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await deploymentsResource.commands.redeploy.run({ appId: "a1", skip: true }, { projectId: "shop" });
+
+    const [, init] = fetchMock.mock.calls[1] as unknown as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toEqual({
+      app_id: "a1",
+      spec_file: JSON.stringify(frozenSpec),
+      confirmation: { skip: true },
+    });
   });
 
   it("hookRefresh：POST /v1/apps/{id}/hook/refresh → deploymentId/commit/outcome 投影", async () => {

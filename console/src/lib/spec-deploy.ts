@@ -1,11 +1,15 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ApiError, apiFetch, apiSend } from "@/api/client";
+import { ApiError, apiFetch } from "@/api/client";
 import type { components } from "@/api/structure";
 
-// Spec 编辑-部署动线的共享件（ADR-0072 写面：console 的"改配置"恒走
+// Spec 编辑-部署动线的读面共享件（ADR-0072 写面：console 的"改配置"恒走
 // spec_file 第四源——hook 应用服务端按运行时 overlay 受理，非 hook 应用
-// full-replace；三处消费面（Redeploy/Processes/Spec 编辑器）单源于此，
-// 替代此前三份手写同构装配）。
+// full-replace）。B1 W4 遗留直发面收口（2026-10-31）：写半边 useSpecDeploy
+// （裸 useMutation 直发 POST /v1/deployments，在强制确认下恒收 428）退役
+// ——Spec 编辑器与 Variables 的 deploy step 改走 deployments.deploy 命令
+//（kit/deployments，写必经 useCommand；表单态工厂 lib/deployPayload 的
+// specFileDeployState）+ ConfirmSkipDialog 双击 skip 形态。本文件只剩回读
+// 半边（fetchFrozenSpec 是 redeploy 命令与 Variables 的 store 写+部署
+// 组合链的共享读）。
 
 export type AppSpec = components["schemas"]["v1AppSpec"];
 
@@ -18,27 +22,4 @@ export async function fetchFrozenSpec(appId: string): Promise<AppSpec | null> {
     if (error instanceof ApiError && error.status === 404) return null;
     throw error;
   }
-}
-
-type SpecDeployResult = { deployment?: { id?: string } };
-
-// useSpecDeploy 是"组装 + POST /v1/deployments (spec_file)"的共享
-// mutation：入参是完整 AppSpec（调用方完成编辑），成功面统一失效
-// app-spec/deployments/revisions 缓存；onDeployed 回调交调用方导航。
-export function useSpecDeploy(appId: string, onDeployed?: (deploymentId: string) => void) {
-  const queryClient = useQueryClient();
-  return useMutation<SpecDeployResult, Error, AppSpec>({
-    mutationFn: async (spec) =>
-      apiSend<SpecDeployResult>("/v1/deployments", "POST", {
-        app_id: appId,
-        spec_file: JSON.stringify(spec),
-      }),
-    onSuccess: (resp) => {
-      // ["deployments"] 前缀：project-overview AppTile 裸键（唯一存活存量键
-      // 面）；app-spec/revisions 旧键族零读者（F1 回流批审计）已退役。
-      void queryClient.invalidateQueries({ queryKey: ["deployments"] });
-      const id = resp?.deployment?.id;
-      if (id) onDeployed?.(id);
-    },
-  });
 }

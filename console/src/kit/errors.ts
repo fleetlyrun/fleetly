@@ -45,12 +45,17 @@ export function describeApiError(error: ApiError): string {
 // rejected{code,message}（apperr 信封 code 保留机器判别面）、409→conflict、
 // 其余 throw toApiError（404 幂等与否归 descriptor.treatAs 裁决）。域有额
 // 外方言（OCC 域码/字段错）时在域内自写变体复用本层。
+// B1 确认族入结果通道（2026-10-30 W4）：428 PreconditionRequired =
+// E_CONFIRMATION_REQUIRED/STALE/MISMATCH（服务端 errors.go 映射）——三者
+// 都是「已知分支」而非传输失败，且消费面要按 code 分诊（STALE → 自动重
+// 预览、REQUIRED → 双击确认、MISMATCH → 结果盒如实呈现），故与 400 同
+// 走 rejected 且保 code。
 export async function runCommandMapped<Payload>(op: () => Promise<Payload>): Promise<CommandResult<Payload>> {
   try {
     return { status: "ok", payload: await op() };
   } catch (err) {
     if (err instanceof FetchApiError) {
-      if (err.status === 400) {
+      if (err.status === 400 || err.status === 428) {
         return { status: "rejected", code: err.code, message: err.message };
       }
       if (err.status === 409) {
@@ -59,4 +64,15 @@ export async function runCommandMapped<Payload>(op: () => Promise<Payload>): Pro
     }
     throw toApiError(err);
   }
+}
+
+// 确认族 code 的分诊谓词（B1 W4）：STALE = 基线漂移/票过期（重预览）；
+// REQUIRED = 无票直发（双击确认的 skip 通道）；MISMATCH = 指纹/操作者/
+// 票不存在（结果盒如实呈现）。消费面不内联字符串比对——经本单源。
+export function isConfirmationStale(result: CommandResult<unknown> | null): boolean {
+  return result?.status === "rejected" && result.code === "E_CONFIRMATION_STALE";
+}
+
+export function isConfirmationRequired(result: CommandResult<unknown> | null): boolean {
+  return result?.status === "rejected" && result.code === "E_CONFIRMATION_REQUIRED";
 }

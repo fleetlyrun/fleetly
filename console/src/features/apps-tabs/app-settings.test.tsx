@@ -178,3 +178,99 @@ describe("AppSettingsTab deployment summary", () => {
     expect(screen.getByText(/the spec freezes on the first deploy/)).toBeTruthy();
   });
 });
+
+// DangerZone 拆除确认闭环（B1 W4）：开窗即 PreviewTeardown → consequences
+// 由载荷填充（级联清单 + 保留清单带理由 + 驱动权冲突）→ 确认发带票
+// DeleteApp（query 参数 confirmation.ticket——DeleteApp 无 body 的 REST
+// 形态）；STALE → 重开窗重拉预演。
+const TEARDOWN_PAYLOAD = {
+  cascade: [
+    { kind: "TEARDOWN_ITEM_KIND_WORKLOAD", name: "A1-web" },
+    { kind: "TEARDOWN_ITEM_KIND_HOOK_ROW", name: "https://github.com/acme/shop.git" },
+    { kind: "TEARDOWN_ITEM_KIND_ROUTE_ROW", name: "shop.test" },
+  ],
+  kept: [{ kind: "KEPT_ITEM_KIND_VOLUME", reason: "volumes are project-scoped and survive app deletion" }],
+  driving_conflict: true,
+  driving_detail: "deployment D5 is driving this app",
+  ticket: "tkt-9",
+  ticket_expires_in: 600,
+};
+
+function renderDangerZone({ deleteStatus = 200 }: { deleteStatus?: number } = {}) {
+  fetchMock.mockImplementation(async (path: string, init?: RequestInit) => {
+    const method = init?.method ?? "GET";
+    if (path.startsWith("/v1/apps/A1/hook")) return new Response("not found", { status: 404 });
+    if (path.startsWith("/v1/apps/A1/workloads")) return new Response("not found", { status: 404 });
+    if (path === "/v1/apps/A1/preview-teardown" && method === "POST") {
+      return new Response(JSON.stringify(TEARDOWN_PAYLOAD), { status: 200 });
+    }
+    if (path.startsWith("/v1/apps/A1") && method === "DELETE") {
+      if (deleteStatus !== 200) {
+        return new Response(
+          JSON.stringify({ code: "E_CONFIRMATION_STALE", message: "the confirmation no longer matches the current state" }),
+          { status: deleteStatus },
+        );
+      }
+      return new Response("{}", { status: 200 });
+    }
+    return new Response("{}", { status: 200 });
+  });
+  const { wrapper } = withClient();
+  const onDeleted = vi.fn();
+  render(
+    <AppSettingsTab projectId="P1" appId="A1" appName="web" createdAt="2026-10-17T00:00:00Z" onDeleted={onDeleted} />,
+    { wrapper },
+  );
+  return { onDeleted };
+}
+
+describe("AppSettingsTab danger zone teardown preview", () => {
+  it("fills the consequences from PreviewTeardown and deletes with the minted ticket", async () => {
+    const { onDeleted } = renderDangerZone();
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete app…" }));
+    expect(await screen.findByText("Delete app web?")).toBeTruthy();
+
+    // 开窗即预演：级联清单 + 保留清单带理由 + 驱动权冲突透出。
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(([p, i]) => p === "/v1/apps/A1/preview-teardown" && i?.method === "POST"),
+      ).toBe(true),
+    );
+    expect(await screen.findByText("Will be removed")).toBeTruthy();
+    expect(screen.getByText(/workload/)).toBeTruthy();
+    expect(screen.getByText("A1-web")).toBeTruthy();
+    expect(screen.getByText(/git hook row/)).toBeTruthy();
+    expect(screen.getByText(/route row/)).toBeTruthy();
+    expect(screen.getByText(/Kept \(not deleted\)/)).toBeTruthy();
+    expect(screen.getByText(/volumes are project-scoped and survive app deletion/)).toBeTruthy();
+    expect(screen.getByText(/blocked by a driving deployment/)).toBeTruthy();
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Delete" }).at(-1)!);
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(([p, i]) => p === "/v1/apps/A1?confirmation.ticket=tkt-9" && i?.method === "DELETE"),
+      ).toBe(true),
+    );
+    await waitFor(() => expect(onDeleted).toHaveBeenCalled());
+  });
+
+  it("re-previews after E_CONFIRMATION_STALE (the ticket no longer covers the current state)", async () => {
+    renderDangerZone({ deleteStatus: 428 });
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete app…" }));
+    await screen.findByText("Will be removed");
+    fireEvent.click(screen.getAllByRole("button", { name: "Delete" }).at(-1)!);
+
+    // STALE：票作废——重开窗重拉预演（第二次 preview-teardown 调用），清
+    // 单重新在场（toast 文案在 sonner Toaster，jsdom 无挂载点——以调用与
+    // 弹窗重开为锚）。
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.filter(([p, i]) => p === "/v1/apps/A1/preview-teardown" && i?.method === "POST"),
+      ).toHaveLength(2),
+    );
+    expect(await screen.findByText("Delete app web?")).toBeTruthy();
+    expect(screen.getByText("Will be removed")).toBeTruthy();
+  });
+});

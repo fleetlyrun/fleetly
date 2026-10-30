@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { CopyIcon, RocketIcon } from "lucide-react";
+import { CopyIcon } from "lucide-react";
 import { toast } from "sonner";
 import type { components } from "@/api/delivery";
 // apiFetch 面（SSE wait 流）在 api/streams —— 本页经 kit 伴读取数。
@@ -8,6 +8,7 @@ import { apiSend } from "@/api/client";
 import { streamDeploymentWait } from "@/api/streams";
 import { useCollection, useRecord } from "@lynx-go/uikit-core";
 import { deploymentLookupResource } from "@/kit/deployments";
+import { RollbackButton } from "./rollback-confirm";
 import { revisionDiffResource, revisionsResource, revisionsLookup, type RevisionDiffEntry } from "@/kit/revisions";
 import { ContentCrumb } from "@/components/domain/content-crumb";
 import { CopyButton } from "@/components/domain/copy-button";
@@ -143,7 +144,6 @@ export function DeploymentDetailView({
     "POST",
     invalidate,
   );
-  const rollback = useDeployAction(`/v1/apps/${encodeURIComponent(appId)}/rollback`, "POST", invalidate);
 
   if (effective == null && streamError != null) {
     return (
@@ -217,24 +217,10 @@ export function DeploymentDetailView({
                 Cancel
               </Button>
             ) : null}
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={rollback.pending}
-              onClick={() =>
-                rollback.mutate(undefined, {
-                  onSuccess: (data) => {
-                    const replayId = (data as { deployment?: Deployment }).deployment?.id;
-                    toast("Rollback accepted", {
-                      description: replayId ? `replay deployment ${replayId.slice(0, 12)}…` : undefined,
-                    });
-                  },
-                })
-              }
-            >
-              <RocketIcon className="size-3.5" />
-              Rollback app
-            </Button>
+            {/* Rollback（W4 B1 确认闭环）：双击确认共享件（无 Preview RPC 的
+                动词走「首击 REQUIRED → 二击 skip=true」，设计稿 §1.6）——
+                旧直发钮在强制确认下发不出去，收编进确认弹窗形态。 */}
+            <RollbackButton projectId={projectId} appId={appId} appLabel={appId} label="Rollback app" />
           </div>
         </section>
 
@@ -260,7 +246,6 @@ export function DeploymentDetailView({
 
         {windowInfo ? <GenerationWindowCard window={windowInfo} /> : null}
         {cancel.error ? <ErrorLine error={cancel.error} /> : null}
-        {rollback.error ? <ErrorLine error={rollback.error} /> : null}
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <ProcessStrategiesCard deployment={effective} toRevision={toRevision} />

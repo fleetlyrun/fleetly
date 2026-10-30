@@ -9,6 +9,7 @@ import { routesResource, routesLookup } from "@/kit/routes";
 import { appTabCommands } from "@/kit/app-tabs";
 import { appsResource, appsDirectorySearch } from "@/kit/apps";
 import { appSpecSheetResource } from "@/kit/app-observe";
+import { ConfirmSkipDialog } from "@/components/domain/confirm-skip-dialog";
 import { toastOnSettled } from "@/kit/toast";
 import { InstanceList, RunningCount } from "./running-instances";
 import {
@@ -31,7 +32,8 @@ type AppSpec = components["schemas"]["v1AppSpec"];
 // Processes 页（ADR-0060，用户裁决：App Detail 应有进程列表 + 管理面）：
 // 冻结 Spec 全进程一览（Replicas/Strategy/Ports/Routes 归因）+ 实例数
 // 暂存编辑——Apply changes 与 App Variables 同一暂存面（冻结 Spec 全量 +
-// 改动组装 spec_file 走 Deploy，零 proto）。实例数语义 = spec replicas
+// 改动组装 spec_file 走 Deploy，零 proto；B1 W4 起接 ConfirmSkipDialog
+// 双击确认）。实例数语义 = spec replicas
 //（0 = 挂起合法，"must not be negative" 是唯一下限——spec.go:316）。
 // Running 列 + 行展开是 App→Process→Instance 的唯一钻取点（2026-10-12
 // 层级定案）：声明 Replicas 旁对照 live 在跑数，展开见实例明细（ADR-0067
@@ -91,32 +93,19 @@ export function AppProcessesTab({ projectId, appId, routeId }: { projectId: stri
   // 实例数暂存 → Deploy（声明式路径，批2 命令化）：spec 组装留在组件
   //（冻结 Spec 在本 tab 的读面上），命令只受理 spec_file。失效面在命令内
   //（冻结 Spec + 部署两形态）；受理成功落部署详情的导航锚不动。
+  // B1 W4 遗留直发面收口（2026-10-31）：Apply changes 直发 Deploy 在强制
+  // 确认下发不出去（428）——接 ConfirmSkipDialog 双击 skip 形态（首击
+  // REQUIRED → 二击 confirmation.skip=true，proof=skipped 进审计）；预览
+  // 化（PreviewDeploy 铸票复用 DeploySheet 面板）留 B2a。
   const commands = appTabCommands(projectId, appId);
-  const deploy = useCommand(commands.redeploy, {
-    scope: { projectId },
-    onSettled: toastOnSettled((payload) => {
-      setStaged({});
-      toast("Replicas staged as a new deployment");
-      // 受理成功落部署详情：typed 路由 SPA 导航。相对 URL（../deployments/<id>）
-      // 在 tab 路由下会解析成 /p/<pid>/apps/deployments/<id>（.. 吃掉 appId
-      // 段）——404 页，禁回退。
-      const id = payload.deployment?.id;
-      if (id) {
-        void navigate({
-          to: "/p/$projectId/apps/$appId/deployments/$deploymentId",
-          params: { projectId, appId, deploymentId: id },
-        });
-      }
-    }),
-  });
-  const applyStaged = () => {
-    if (frozen == null) return; // hasStagedEdits 已保证 frozen 在册（防御钉）
+  const buildStagedSpecFile = () => {
+    if (frozen == null) return ""; // hasStagedEdits 已保证 frozen 在册（防御钉）
     const editedProcesses = processes.map((process) => {
       const replicas = staged[process.name ?? ""];
       if (replicas == null) return process;
       return { ...process, replicas: String(replicas) };
     });
-    deploy.mutate({ specFile: JSON.stringify({ ...frozen, processes: editedProcesses }) });
+    return JSON.stringify({ ...frozen, processes: editedProcesses });
   };
 
   // RestartProcess（ADR-0069）：行级就地强制重排——不动 Spec 零 lineage，
@@ -185,9 +174,36 @@ export function AppProcessesTab({ projectId, appId, routeId }: { projectId: stri
             Discard
           </Button>
         ) : null}
-        <Button size="sm" disabled={!hasStagedEdits || deploy.pending} onClick={applyStaged}>
-          {deploy.pending ? "Deploying…" : "Apply changes"}
-        </Button>
+        <ConfirmSkipDialog
+          label="Apply changes"
+          disabled={!hasStagedEdits}
+          title="Apply replica changes?"
+          description={
+            "Stages the edited replica counts as a new deployment — the frozen spec is resubmitted with the new counts. Unchanged processes are not restarted (content-addressed rollout)."
+          }
+          confirmLabel="Apply changes"
+          confirmAgainLabel="Confirm apply"
+          pendingLabel="Deploying…"
+          askedSubject="Applying these replica changes"
+          askedNote="the staged spec is submitted without a preview"
+          descriptor={commands.redeploy}
+          scope={{ projectId }}
+          buildInput={(skip) => ({ specFile: buildStagedSpecFile(), skip: skip || undefined })}
+          onOk={(payload) => {
+            setStaged({});
+            toast("Replicas staged as a new deployment");
+            // 受理成功落部署详情：typed 路由 SPA 导航。相对 URL（../deployments/<id>）
+            // 在 tab 路由下会解析成 /p/<pid>/apps/deployments/<id>（.. 吃掉 appId
+            // 段）——404 页，禁回退。
+            const id = payload.deployment?.id;
+            if (id) {
+              void navigate({
+                to: "/p/$projectId/apps/$appId/deployments/$deploymentId",
+                params: { projectId, appId, deploymentId: id },
+              });
+            }
+          }}
+        />
       </div>
 
       {processes.length === 0 ? (

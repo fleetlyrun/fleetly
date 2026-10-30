@@ -27,6 +27,36 @@ export interface DeployFormState {
   supersede: boolean;
 }
 
+// specFileDeployState：spec_file 直投面的表单态工厂（B1 W4 遗留直发面收口，
+// 2026-10-31）——Spec 编辑器 / Variables 的 deploy step 等没有五源表单的
+// 调用点，只有一份完整的 AppSpec JSON；经本工厂走 DeploySheet 同一条
+// deployments.deploy 命令（载荷面 = {app_id, spec_file}，其余字段空值在
+// buildDeployPayload 出口剥除）。源形态取 "spec"（裸 AppSpec protojson；
+// 与 "current" 在载荷面同键，仅表单语义差异）。
+export function specFileDeployState(appId: string, specJson: string): DeployFormState {
+  return {
+    appId,
+    source: "spec",
+    image: "",
+    processName: "",
+    port: "",
+    protocol: "",
+    envText: "",
+    httpProbe: "",
+    tcpProbe: "",
+    composeYaml: "",
+    specJson,
+    uploadId: "",
+    builder: "dockerfile",
+    dockerfile: "",
+    railpackVersion: "",
+    outputDir: "",
+    idempotencyKey: "",
+    commitSha: "",
+    supersede: false,
+  };
+}
+
 // envLines 文本域 → map（K=V 行；空行/注释行跳过；无 = 的行跳过）。
 export function envMapOf(text: string): Record<string, string> {
   const map: Record<string, string> = {};

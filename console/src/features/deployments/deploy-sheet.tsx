@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useCollection, useCommand, useRecord } from "@lynx-go/uikit-core";
 import type { ApiError, CommandResult } from "@lynx-go/uikit-core/kernel";
 import { RocketIcon } from "lucide-react";
@@ -15,8 +15,9 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import type { AppEntry } from "@/kit/apps";
 import { uploadsResource, uploadsLookup } from "@/kit/storage";
-import { deploymentsResource } from "@/kit/deployments";
-import { describeApiError } from "@/kit/errors";
+import { deploymentsResource, type PreviewDeployPayload } from "@/kit/deployments";
+import { describeApiError, isConfirmationStale } from "@/kit/errors";
+import { DeployPreviewPanel, diffPreviews, type PreviewDelta } from "./deploy-preview";
 
 // DeploySheet（List 原型的主操作，UI v2 批 2）：五源部署表单的 Sheet 形态
 // ——current（冻结体可编辑）/ image 直投 / compose 受理语言 / spec_file 裸
@@ -30,6 +31,16 @@ import { describeApiError } from "@/kit/errors";
 // AppSpec.restart_seq（ADR-0083 OCC 面），陈旧序数的服务端 CAS 拒绝落
 // conflict 分支，如实呈现不复现为 ok；失败通道（网络/401/5xx）走
 // describeApiError 文案盒。
+// W4（2026-10-30，B1 变更确认闭环 ADR-0085/设计稿 §1.6）：提交面升两段
+// 式——表单（form 段）→ Preview & deploy（PreviewDeploy 只读孪生，请求
+// 内嵌同一 DeployRequest）→ 预览面板（diff 摘要/逐 Workload rollout 徽章/
+// warnings 分组）→ Confirm deploy 带票发 Deploy（confirmation.ticket）。
+// 票绑 request_digest——确认发的是**预览时的表单快照**（previewedState），
+// 预览段隐藏表单防编辑漂移；E_CONFIRMATION_STALE（428 → rejected，
+// kit/errors）→ 自动重预览 + **增量展示**（新载荷 vs 组件态保存的上一次
+// 所见 seen：added/dropped 两组，「这次会写而上次不写的 / 上次写而这次
+// 不写的」）。hook 托管面（Deploy now = RefreshGitHook）不走预览——
+// webhook/git 面豁免强制确认（设计稿 §1.2）。
 
 type SourceKind = DeployFormState["source"];
 
@@ -141,9 +152,11 @@ export function DeploySheet({
     }
   }, [source, specEdited, frozen.data]);
 
-  // 提交面（批2 命令化）：五源表单状态整包交给 deployments.deploy 命令
-  // （载荷构造单源 lib/deployPayload 在命令内消费）；失效面 = 默认同资源
-  // + legacyKeys 桥 ["deployments"]（与旧 invalidate 键同形）。
+  // 提交面（批2 命令化 + W4 两段式）：五源表单状态整包交给
+  // deployments.deploy 命令（载荷构造单源 lib/deployPayload 在命令内消费）；
+  // 失效面 = 默认同资源 + legacyKeys 桥 ["deployments"]。W4：确认钮携带
+  // previewDeploy 铸的票；E_CONFIRMATION_STALE → 自动重预览（增量展示在
+  // preview 命令的落定回调里算）。
   const deploy = useCommand(deploymentsResource.commands.deploy, {
     scope: { projectId },
     // rejected/conflict/failure → 下方结果盒（盒子优先，toast 不双响）
@@ -157,18 +170,102 @@ export function DeploySheet({
             : undefined,
         });
         onOpenChange(false);
+        return;
+      }
+      // STALE（基线漂移/票过期）：自动重预览——增量展示由 preview 落定
+      // 回调对 seen 计算（服务端 suggestion 同指向重预览，§1.4）。
+      if (isConfirmationStale(result) && previewedStateRef.current != null) {
+        preview.mutate(previewedStateRef.current);
       }
     },
   });
 
+  // ---- W4 预览步状态：段位 + 票锚载荷 + 增量基线 ----
+  // stage：form（五源表单）/ preview（预览面板——表单隐藏防编辑漂移，
+  // 票绑的是 previewedState 快照的 request_digest）。
+  // seen：**上一次所见**的预览载荷（组件态保存，重预览增量的对照基线，
+  // §1.6「重预览增量展示」）。delta/staleNote 仅在 STALE 重预览后置位。
+  const [stage, setStage] = useState<"form" | "preview">("form");
+  const [seen, setSeen] = useState<PreviewDeployPayload | null>(null);
+  const [delta, setDelta] = useState<PreviewDelta | null>(null);
+  const [staleNote, setStaleNote] = useState(false);
+  // 预览时的表单快照（票面锚）：ref 而非 state——避免 deploy.onSettled 闭
+  // 包吃旧值（onSettled 每渲染重建但 mutate 时的 descriptor 闭包以最新
+  // ref 取数，重预览与确认同源）。
+  const previewedStateRef = useRef<DeployFormState | null>(null);
+  const seenRef = useRef<PreviewDeployPayload | null>(null);
+
+  // 预览命令（PreviewDeploy）：请求内嵌同一 DeployRequest（预览拒绝面与
+  // Deploy 逐规则一致）；落定 ok → 进预览段，STALE 重预览则同时算增量。
+  const preview = useCommand(deploymentsResource.commands.previewDeploy, {
+    scope: { projectId },
+    onSettled: (result) => {
+      if (result?.status !== "ok") return;
+      const payload = result.payload;
+      // 增量展示：有上一次所见（STALE 重预览）才存在——首预览 delta=null。
+      if (seenRef.current != null) {
+        setDelta(diffPreviews(payload, seenRef.current));
+        setStaleNote(true);
+        // STALE 拒绝已被重预览接手——清 deploy 结果盒（增量块承载叙事）。
+        deploy.reset();
+      } else {
+        setDelta(null);
+        setStaleNote(false);
+      }
+      seenRef.current = payload;
+      setSeen(payload);
+      setStage("preview");
+    },
+  });
+
+  // Preview & deploy（form 段主钮）：先快照表单（票面锚）再发预览。
+  const startPreview = () => {
+    const snapshot: DeployFormState = {
+      appId: effectiveAppId,
+      source: source ?? "image",
+      image,
+      processName,
+      port,
+      protocol,
+      envText,
+      httpProbe,
+      tcpProbe,
+      composeYaml,
+      specJson,
+      uploadId,
+      builder,
+      dockerfile,
+      railpackVersion,
+      outputDir,
+      idempotencyKey,
+      commitSha,
+      supersede,
+    };
+    previewedStateRef.current = snapshot;
+    preview.mutate(snapshot);
+  };
+
+  // 回编辑（预览段返回表单）：清票面锚与预览/结果面——回到 form 段的
+  // 表单值原样保留（useState 不卸载）。
+  const backToForm = () => {
+    setStage("form");
+    previewedStateRef.current = null;
+    seenRef.current = null;
+    setSeen(null);
+    setDelta(null);
+    setStaleNote(false);
+    preview.reset();
+    deploy.reset();
+  };
+
   // OCC conflict 的「刷新重载」（torchwood B2-5 同款 UX）：spec 链冲突 =
   // 冻结体已被其他部署推进（restart_seq CAS）或幂等键冲突——失效冻结体
-  // 查询回服务端态、清除手编旗标让预填重播、清结果盒。仅在 spec 链源
-  //（current/spec）出现 conflict 时呈现。
+  // 查询回服务端态、清除手编旗标让预填重播、清结果盒。W4：预览段的
+  // conflict 同样回 form 段重载（冻结体已动，预览票面随之失效）。
   const reloadFrozenSpec = () => {
     void frozen.refetch();
     setSpecEdited(false);
-    deploy.reset();
+    backToForm();
   };
   const showConflictReload =
     deploy.result?.status === "conflict" && (source === "current" || source === "spec");
@@ -182,21 +279,35 @@ export function DeploySheet({
       return false;
     }
   })();
-  const canSubmit =
-    !deploy.pending &&
+  // form 段主钮（发预览）的门：与旧直发门同口径（deploy.pending 不在此
+  // 段出现，确认钮单独设门）。
+  const canPreview =
+    !preview.pending &&
     effectiveAppId !== "" &&
     specJsonValid &&
     (source !== "upload" || uploadId !== "");
 
-  // 重开清上一轮结果/失败面（结果盒不跨会话残留）
+  // 重开清上一轮结果/失败面（结果盒不跨会话残留）；W4：预览段状态同清
+  //（票 600s TTL 但跨会话残留所见基线会让增量展示说谎——干净开局）。
   const resetDeploy = deploy.reset;
   const resetRefresh = refresh.reset;
+  const resetPreview = preview.reset;
+  const startOver = () => {
+    setStage("form");
+    previewedStateRef.current = null;
+    seenRef.current = null;
+    setSeen(null);
+    setDelta(null);
+    setStaleNote(false);
+  };
   useEffect(() => {
     if (open) {
       resetDeploy();
       resetRefresh();
+      resetPreview();
+      startOver();
     }
-  }, [open, resetDeploy, resetRefresh]);
+  }, [open, resetDeploy, resetRefresh, resetPreview]);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -209,10 +320,30 @@ export function DeploySheet({
           <SheetDescription>
             {hookOwned
               ? "Deploy from git — pulls the branch HEAD now; pushes trigger automatically once the webhook is configured."
-              : "Create a deployment — the server queues and supersedes by generation."}
+              : "Preview the deployment first, then confirm with the minted ticket — the server queues and supersedes by generation."}
           </SheetDescription>
         </SheetHeader>
         <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
+          {/* W4 预览段：表单整体隐藏（票面锚是快照，编辑即漂移）；回编辑经
+              底部 Edit 钮。hook 托管面常规动线是 Deploy now（豁免面），但
+              spec 源预览（运行时 overlay）合法——预览段优先于 hookOwned 分
+              支呈现，避免 hook 读面晚到时段位闪翻。 */}
+          {stage === "preview" && seen != null ? (
+            <>
+              {staleNote ? (
+                // STALE 重预览横幅：服务端已拒过一次（结果盒被重预览接手
+                // 清空），此处交代发生了什么 + 增量块在哪。
+                <div className="rounded-lg border border-[color-mix(in_oklch,var(--status-warning)_40%,transparent)] bg-[var(--status-warning-bg)] px-3 py-2 text-2xs leading-snug text-fg">
+                  The baseline moved since your last preview (a newer revision, deployment, variable environment or hook
+                  row — or the ticket expired). This is a fresh preview with a fresh ticket; the highlighted block shows
+                  what changed against what you last saw.
+                </div>
+              ) : null}
+              {preview.pending ? <p className="text-2xs text-muted">Re-previewing…</p> : null}
+              <DeployPreviewPanel payload={seen} delta={delta} />
+            </>
+          ) : (
+          <>
           <div className="flex flex-col gap-2">
             <Label>
               App
@@ -438,12 +569,15 @@ export function DeploySheet({
           </label>
           </>
           ) : null}
+          </>)}
 
+          {/* 预览结果盒（form 段为主：CEL 拒收/受理失败如实呈现；ok 不出盒）。 */}
+          <CommandResultBox result={preview.result} failure={preview.failure} />
           {/* 结果盒（form 块结果分支同形，Sheet 保留壳不迁 Form 块）：
-              rejected 带 code 前缀；conflict（OCC：spec 链 restart_seq 陈旧
-              CAS / 幂等键冲突）message-first 如实呈现 + 「刷新重载」动作槽
-              （冻结体回服务端态重建草稿，torchwood B2-5 先例——resultAction
-              槽已随上游 @0.3.1 回流）；失败通道走 describeApiError 文案。 */}
+              rejected 带 code 前缀（E_CONFIRMATION_MISMATCH 等）；conflict
+              （OCC：spec 链 restart_seq 陈旧 CAS / 幂等键冲突）message-first
+              如实呈现 + 「刷新重载」动作槽（冻结体回服务端态重建草稿，
+              torchwood B2-5 先例）；失败通道走 describeApiError 文案。 */}
           <CommandResultBox
             result={deploy.result}
             failure={deploy.failure}
@@ -461,38 +595,33 @@ export function DeploySheet({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          {hookOwned ? (
+          {stage === "preview" && seen != null ? (
+            // 预览段底部：回编辑（清票面锚回 form 段，表单值保留）+ 带票
+            // 确认（发 previewedState 快照 + 当前面板票据——确认的正是展示的）。
+            <>
+              <Button variant="outline" disabled={deploy.pending} onClick={backToForm}>
+                Edit
+              </Button>
+              <Button
+                disabled={deploy.pending || preview.pending || !seen.ticket}
+                onClick={() => {
+                  const snapshot = previewedStateRef.current;
+                  if (snapshot != null && seen.ticket) {
+                    deploy.mutate({ ...snapshot, ticket: seen.ticket });
+                  }
+                }}
+              >
+                {deploy.pending ? "Deploying…" : "Confirm deploy"}
+              </Button>
+            </>
+          ) : hookOwned ? (
             <Button disabled={refresh.pending} onClick={() => refresh.mutate({ appId: effectiveAppId })}>
               {refresh.pending ? "Pulling…" : "Deploy now"}
             </Button>
           ) : (
-            <Button
-              disabled={!canSubmit}
-              onClick={() =>
-                deploy.mutate({
-                  appId: effectiveAppId,
-                  source: source ?? "image",
-                  image,
-                  processName,
-                  port,
-                  protocol,
-                  envText,
-                  httpProbe,
-                  tcpProbe,
-                  composeYaml,
-                  specJson,
-                  uploadId,
-                  builder,
-                  dockerfile,
-                  railpackVersion,
-                  outputDir,
-                  idempotencyKey,
-                  commitSha,
-                  supersede,
-                })
-              }
-            >
-              {deploy.pending ? "Submitting…" : "Deploy"}
+            // form 段主钮：先预览（铸票）——预览面板落定后才出现确认钮。
+            <Button disabled={!canPreview} onClick={startPreview}>
+              {preview.pending ? "Previewing…" : "Preview & deploy"}
             </Button>
           )}
         </div>

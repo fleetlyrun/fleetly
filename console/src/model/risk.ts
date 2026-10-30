@@ -9,6 +9,8 @@
 //                   删除与平台级操作。
 // 本模块是分级规则的唯一真源：消费点按动作语义取轴值，不各自跳档。
 
+import type { ReactNode } from "react";
+
 /** 触发面：动作锚定的对象层级。 */
 export type RiskScope = "resource" | "project" | "platform";
 
@@ -26,9 +28,12 @@ export interface RiskInput {
 
 // 确认弹窗的 risk 元数据形状（判别联合：编译期执法「档位携带档位专属
 // 元数据」——wide 必带后果段文案，type_to_confirm 必带确认串）。
+// B1 W4：wide 档 consequences 放宽为 ReactNode——拆除面由 PreviewTeardown
+// 载荷组结构化清单（级联/保留 ul）；字符串调用点零感（Node ⊇ string）。
+// type-only import，运行时纯度不破。
 export type ConfirmRisk =
   | { tier: "standard" }
-  | { tier: "wide"; consequences: string }
+  | { tier: "wide"; consequences: ReactNode }
   | { tier: "type_to_confirm"; confirmName: string };
 
 // 分级规则（唯一真源）：

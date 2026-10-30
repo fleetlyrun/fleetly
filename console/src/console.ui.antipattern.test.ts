@@ -22,13 +22,16 @@ import { describe, expect, it } from "vitest";
 //    是弹窗形态契约（宽框/后果先行/输入资源名门），无档位即无契约。
 //    分级真源 src/model/risk.ts（触发面 × 影响面 → 档位）。
 // ⑩ 裸 AlertDialog 禁令（不经 confirm-dialog 的确认弹窗）——暂缓立法：
-//    现存裸用清点非零（2026-10-30 B4a 批实清点，均非破坏性确认面或已
-//    裁定与风险分级间档）：
+//    现存裸用清点非零（2026-10-31 B1 W4 遗留直发面收口后实清点，均非
+//    破坏性确认面或已裁定与 B4a 风险分级间档）：
 //    - settings.tsx lift freeze：非破坏性治理动作（destructive=false 语义）；
-//    - $appId.tsx Redeploy/Rollback：滚动类部署动作非破坏面，Rollback 的
-//      确认闭环走 B1 票据面（后续批收编）；
 //    - app-processes.tsx Restart process：B1 裁决 Restart/Scale 轻且可逆，
 //      与 B4a 风险分级间档（豁免）。
+//    确认闭环族不在此列：B1 强制确认的双击形态统一走
+//    components/domain/confirm-skip-dialog（Rollback/Redeploy/Processes
+//    暂存提交钮/Spec 编辑器与 Variables 的 deploy step——保持开窗态承接
+//    「首击 REQUIRED → 二击 skip」两段交互，ConfirmDialog 落定即关窗不适
+//    配双击节奏；$appId.tsx Redeploy 裸用已随本批收编退役）。
 //    上述清点归零之日即立 ⑩ 禁令条（零容忍，同 B4a 设计 §4）。
 // 执法范围：全量 src/**。components/ui/**（shadcn 上游手植层）按上游原样
 // 纪律天然不在扫描面。

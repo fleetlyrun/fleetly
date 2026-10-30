@@ -68,21 +68,64 @@ export async function fetchProjectDeployments(
 // （AppSpec.restart_seq，ADR-0083）：序数随冻结体预填/用户编辑原样携带；
 // 陈旧序数的服务端拒绝（CAS 冲突，409）经 runCommandMapped 落 conflict
 // 分支——结果盒 message-first 如实呈现，不复现为 ok。
+// B1 确认闭环（W4，ADR-0085）：Deploy 在 ConfirmableVerbs 强制集——
+// ticket = PreviewDeploy 铸的 Confirm Ticket（DeploySheet 预览步的确认钮
+// 携带）；票绑 request_digest（同载荷同语义才可烧），故 ticket 必须配
+// 「预览过的那份表单状态」发——组件侧用快照保证，载荷侧仅追加
+// confirmation 字段（不进 digest 输入）。
+// 遗留直发面收口（W4 第 6.5 条，2026-10-31）：skip = --yes 逃生门的双击
+// 形态——无表单可预览的调用点（Spec 编辑器/Variables 的 deploy step）经
+// ConfirmSkipDialog「首击 REQUIRED → 二击 skip=true」走本命令（proof=
+// skipped 进审计）；预览化（复用 DeploySheet 预览面板铸票）留 B2a。
 export interface DeployOutcome {
   deployment?: deliverySchemas["schemas"]["v1Deployment"];
   admission?: deliverySchemas["schemas"]["v1Admission"];
 }
 
-const deployCommand: CommandDescriptor<DeployFormState, DeployOutcome> = {
-  run: (state) =>
-    runCommandMapped(() => apiSend<DeployOutcome>("/v1/deployments", "POST", buildDeployPayload(state))),
+export type DeployCommandInput = DeployFormState & { ticket?: string; skip?: boolean };
+
+const deployCommand: CommandDescriptor<DeployCommandInput, DeployOutcome> = {
+  run: (input) =>
+    runCommandMapped(() =>
+      apiSend<DeployOutcome>("/v1/deployments", "POST", {
+        ...buildDeployPayload(input),
+        ...(input.ticket ? { confirmation: { ticket: input.ticket } } : {}),
+        ...(input.skip ? { confirmation: { skip: true } } : {}),
+      }),
+    ),
 };
+
+// previewDeploy = DeploySheet 预览步（B1 Change Preview，设计稿 §1.6）：
+// 请求内嵌同一 DeployRequest（{deploy: …}——descriptor CEL 规则单源继承，
+// 预览拒绝面与 Deploy 逐规则一致）；产出 spec diff/逐 Workload 滚动后果/
+// 结构化 warnings + 票。铸票动词不进任何失效面（无终态可持有，幂等面
+// 同理由不收编）；400（含 CEL 拒收）→ rejected 结果盒。
+export type PreviewDeployPayload = deliverySchemas["schemas"]["v1PreviewDeployResponse"];
+export type PreviewWorkloadChange = deliverySchemas["schemas"]["v1WorkloadChange"];
+export type PreviewWarning = deliverySchemas["schemas"]["v1PreviewWarning"];
+export type PreviewDiffEntry = deliverySchemas["schemas"]["v1DiffEntry"];
+
+const previewDeployCommand: CommandDescriptor<DeployFormState, PreviewDeployPayload> = {
+  run: (state) =>
+    runCommandMapped(() =>
+      apiSend<PreviewDeployPayload>("/v1/deployments/preview", "POST", { deploy: buildDeployPayload(state) }),
+    ),
+};
+
+// PreviewTeardown 的载荷形态（拆除预演：级联/保留/驱动权冲突 + 票）。
+// 类型单源在本域（delivery API 契约），app-tabs 的 previewTeardown/
+// deleteApp 与 app-settings 的拆除面消费共享——B4a wide 档 consequences
+// 的数据源（设计稿 §1.6「拆除面 confirm-dialog 升级为预览清单形态」）。
+export type PreviewTeardownPayload = deliverySchemas["schemas"]["v1PreviewTeardownResponse"];
 
 // redeploy = 重发冻结 Spec（ADR-0069/0072）：回读 GetAppSpec → 原样走
 // spec_file 第四源。未部署 = 无冻结体 → 诚实 rejected（hero 侧按钮已按
 // latest 部署禁用，此处是深度防御）；apiSend 的 400/409 照常两分。
-const redeployCommand: CommandDescriptor<{ appId: string }, { deploymentId?: string }> = {
-  run: async ({ appId }) => {
+// B1 W4 遗留直发面收口（2026-10-31）：hero Redeploy 与 rollback 同走
+// ConfirmSkipDialog 双击形态——skip 输入 = 二击显式跳过（--yes 通道，
+// proof=skipped 进审计）；预览化留 B2a。
+const redeployCommand: CommandDescriptor<{ appId: string; skip?: boolean }, { deploymentId?: string }> = {
+  run: async ({ appId, skip }) => {
     try {
       const spec = await fetchFrozenSpec(appId);
       if (!spec) {
@@ -92,6 +135,7 @@ const redeployCommand: CommandDescriptor<{ appId: string }, { deploymentId?: str
         const res = await apiSend<{ deployment?: { id?: string } }>("/v1/deployments", "POST", {
           app_id: appId,
           spec_file: JSON.stringify(spec),
+          ...(skip ? { confirmation: { skip: true } } : {}),
         });
         return { deploymentId: res?.deployment?.id };
       });
@@ -105,13 +149,17 @@ const redeployCommand: CommandDescriptor<{ appId: string }, { deploymentId?: str
 
 // rollback = App 级动作产出新 deployment（POST /v1/apps/{id}/rollback）：
 // 效果是部署时间线新行，挂 deployments 命令族共享失效面。
-const rollbackCommand: CommandDescriptor<{ appId: string }, { deploymentId?: string }> = {
-  run: ({ appId }) =>
+// B1 确认闭环（W4）：Rollback 在强制集但**无 Preview RPC 铸票**——console
+// 走「重发确认」双击形态（设计稿 §1.6 最简形态）：首击无票 → 服务端
+// E_CONFIRMATION_REQUIRED（428 → rejected，kit/errors 结果通道）→ 提示
+// 重试确认；二击带 skip=true（--yes 逃生门的显式通道，审计 proof=skipped）。
+const rollbackCommand: CommandDescriptor<{ appId: string; skip?: boolean }, { deploymentId?: string }> = {
+  run: ({ appId, skip }) =>
     runCommandMapped(async () => {
       const res = await apiSend<{ deployment?: { id?: string } }>(
         `/v1/apps/${encodeURIComponent(appId)}/rollback`,
         "POST",
-        {},
+        skip ? { confirmation: { skip: true } } : {},
       );
       return { deploymentId: res?.deployment?.id };
     }),
@@ -148,6 +196,7 @@ export const deploymentsResource = defineResource({
   legacyKeys: () => [["deployments"]],
   commands: {
     deploy: deployCommand,
+    previewDeploy: previewDeployCommand,
     redeploy: redeployCommand,
     rollback: rollbackCommand,
     hookRefresh: hookRefreshCommand,

@@ -36,6 +36,7 @@ export function ConfirmDialog({
   pendingLabel = "Working…",
   destructive = true,
   risk,
+  confirmDisabled = false,
   onConfirm,
 }: {
   open: boolean;
@@ -46,6 +47,8 @@ export function ConfirmDialog({
   pendingLabel?: string;
   destructive?: boolean;
   risk: ConfirmRisk;
+  /** 外部门闩（B1 W4）：拆除面在 Confirm Ticket 到手前置灰确认钮——确认的正是展示的，无票即无确认。 */
+  confirmDisabled?: boolean;
   onConfirm: () => unknown;
 }) {
   const [pending, setPending] = useState(false);
@@ -72,9 +75,11 @@ export function ConfirmDialog({
         {risk.tier === "wide" ? (
           // 后果先行段（wide 档必带）：级联/保留清单的显式披露块，置于
           // 描述之下、动作钮之上；左对齐阅读（标题/描述区移动端居中）。
+          // B1 W4：consequences 放宽为 ReactNode——拆除面由 PreviewTeardown
+          // 载荷组结构化清单（级联 ul/保留 ul/冲突警示），字符串调用点零感。
           <div className="rounded-lg border bg-panel-2/40 px-3 py-2.5 text-left">
             <p className="text-2xs font-semibold uppercase tracking-wide text-muted">Consequences</p>
-            <p className="mt-1 text-xs leading-relaxed text-fg">{risk.consequences}</p>
+            <div className="mt-1 text-xs leading-relaxed text-fg">{risk.consequences}</div>
           </div>
         ) : null}
         {risk.tier === "type_to_confirm" ? (
@@ -97,7 +102,7 @@ export function ConfirmDialog({
           <AlertDialogAction asChild>
             <Button
               variant={destructive ? "destructive" : "default"}
-              disabled={pending || !nameGate}
+              disabled={pending || !nameGate || confirmDisabled}
               onClick={() => {
                 setPending(true);
                 void Promise.resolve(onConfirm())
