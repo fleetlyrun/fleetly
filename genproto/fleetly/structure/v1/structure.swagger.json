@@ -281,6 +281,20 @@
             "in": "path",
             "required": true,
             "type": "string"
+          },
+          {
+            "name": "confirmation.ticket",
+            "description": "ticket 是 Change Preview 响应回执的票据标识；无票直发即拒\n（E_CONFIRMATION_REQUIRED——webhook/git、Restart/Scale 豁免族不经\n本字段，--yes 走 skip）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "confirmation.skip",
+            "description": "skip 是 --yes 逃生门的显式通道（设计稿 §1.2 重裁 §8.2'）：true =\n操作者显式跳过预览确认直发（脚本/CI 形态），进审计（proof=skipped）；\n与 ticket 互斥语义由受理位执法（skip 优先放行、不验票不烧票）。",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
           }
         ],
         "tags": [
@@ -1836,6 +1850,20 @@
         }
       },
       "title": "DeployStrategy 是部署切换策略（CONTEXT.md Deployment Strategy 词条：\nrolling | blue-green；Avoid 表两词条不引入——渐进分流与代次槽位机制\n均显式不做，ADR-0048）。blue-green = engine 的编排变体（Runtime 契约\n不变，ADR-0048）：双代窗期间两代载体并存，新代 L1 全就绪才切换流量。\nUNSPECIFIED（零值）语义归一为 rolling——存量 Revision 无该字段重放即\nrolling，无迁移面。\nConfigMount 是单条 Config 挂载（名引用 + 容器内目标路径）。"
+    },
+    "v1Confirmation": {
+      "type": "object",
+      "properties": {
+        "ticket": {
+          "type": "string",
+          "title": "ticket 是 Change Preview 响应回执的票据标识；无票直发即拒\n（E_CONFIRMATION_REQUIRED——webhook/git、Restart/Scale 豁免族不经\n本字段，--yes 走 skip）。"
+        },
+        "skip": {
+          "type": "boolean",
+          "title": "skip 是 --yes 逃生门的显式通道（设计稿 §1.2 重裁 §8.2'）：true =\n操作者显式跳过预览确认直发（脚本/CI 形态），进审计（proof=skipped）；\n与 ticket 互斥语义由受理位执法（skip 优先放行、不验票不烧票）。"
+        }
+      },
+      "title": "Confirmation 是写动词携带的确认票面（B1 变更确认闭环，ADR-0085\nConfirm Ticket 词条）：ticket 引用 Change Preview 铸造的一次性票据\n（600s TTL、单用途、绑请求指纹/基线多锚/提交语义/操作者——票面绑定物\n与验票序见设计稿 §1.4）。验票/烧票在 engine 受理临界区内一次闭合；\n默认强制 + 逃生门立法已随 ConfirmableVerbs 表驱动批次落地（设计稿\n§1.2 重裁 §8.2'，W2b）。ticket 与 skip 均缺省 = ConfirmableVerbs 内\n动词无凭证直发，拒绝 E_CONFIRMATION_REQUIRED。"
     },
     "v1CreateAppRequest": {
       "type": "object",

@@ -76,6 +76,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/apps/{app_id}/preview-teardown": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * PreviewTeardown 是拆除预演（B1，设计稿 §1.3 Teardown 面）：级联清单
+         *     （将拆载体、将删 hook/route 行）+ 保留清单带理由（databases/volumes/
+         *     secrets/上传产物）+ 驱动权冲突透出，并铸 Confirm Ticket（票面绑定 =
+         *     app 行版本 + hook 行 digest + route 行 ID 集摘要，设计稿 §1.4）。
+         *     scope 钉 apps:admin——镜像 DeleteApp：预演动词不得低于被预演动词的
+         *     权限门槛（窄权 token 不得枚举拆除计划，设计稿 §1.2 裁决）。实现随
+         *     W2（本批契约先行）。
+         */
+        post: operations["DeploymentsService_PreviewTeardown"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/apps/{app_id}/processes/{process_name}/restart": {
         parameters: {
             query?: never;
@@ -93,6 +118,30 @@ export interface paths {
          *     Ensure 互补：重发未变更 Spec 零替换，本动词是显式强制面。
          */
         post: operations["DeploymentsService_RestartProcess"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/apps/{app_id}/processes/{process}/scale": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * ScaleProcess 是进程副本伸缩的一等动词（B1s，设计稿 §1.2 第二轮定稿）：
+         *     服务端读当前生效 Spec → 改 replicas → MergeOverlay 提交（ADR-0064
+         *     保证 scale-only 零载体替换）。对称 ScaleTask；CLI `fleetly apps scale`
+         *     为其皮，也是诊断修护动线（现场漂移 Fix）的动词落点。豁免强制确认
+         *     （轻且可逆，Restart/Scale 豁免族）；不进幂等执法面（去重走 admission
+         *     判定附注）。实现随 W2（本批契约先行）。
+         */
+        post: operations["DeploymentsService_ScaleProcess"];
         delete?: never;
         options?: never;
         head?: never;
@@ -206,6 +255,32 @@ export interface paths {
          *     AppSpec）并受理部署。
          */
         post: operations["DeploymentsService_Deploy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/deployments/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * PreviewDeploy 是部署受理的只读孪生（B1 Change Preview，ADR-0085）：
+         *     请求内嵌同一 DeployRequest——descriptor 的 CEL 受理规则经嵌套单源
+         *     继承，预览拒绝面与 Deploy 逐规则一致，防「确认后才发现拒收」（设计稿
+         *     §1.2/§1.3 形状层单源）。产出 spec diff、逐 Workload 滚动后果判定、
+         *     结构化 warnings，并铸 Confirm Ticket。只读投影 + 铸票：不进冻结封禁
+         *     面（冻结期可用；冻结期铸的票解冻后 TTL 窗内可消费属预期——冻结期内
+         *     Deploy 先拒，票不可消费）。载荷脱敏红线同 ADR-0071 决策 5（不含
+         *     env 值集/数据库材料值/代戳）。实现随 W2（本批契约先行）。
+         */
+        post: operations["DeploymentsService_PreviewDeploy"];
         delete?: never;
         options?: never;
         head?: never;
@@ -346,14 +421,35 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         DeploymentsServiceCancelDeploymentBody: Record<string, never>;
+        /** PreviewTeardownRequest 按 app_id 寻址拆除预演（镜像 DeleteApp）。 */
+        DeploymentsServicePreviewTeardownBody: Record<string, never>;
         /**
          * RestartProcessRequest 按进程名定位（App 域内 Workload ID = app_id +
          *     process_name，projection 单源）；进程必须存在于当前冻结 Spec（未知进程
          *     精确拒绝——k3s pod 驱逐对零命中静默，引擎侧先行校验）。
          */
         DeploymentsServiceRestartProcessBody: Record<string, never>;
+        /**
+         * RollbackRequest 的 confirmation 是单目标验票（B1 强制集成员，设计稿
+         *     §1.2 重裁）：票绑目标 id + 当前 revision digest + 操作者，同临界区验烧
+         *     （B2a 修护动词确认闭环的依赖）。Rollback 在 ConfirmableVerbs 强制集：
+         *     无票且无 skip 即拒 E_CONFIRMATION_REQUIRED（W2b 立法）。
+         */
         DeploymentsServiceRollbackBody: {
             to_revision?: string;
+            confirmation?: components["schemas"]["v1Confirmation"];
+        };
+        /**
+         * ScaleProcessRequest 按进程名定位（App 域内 Workload 寻址，与
+         *     RestartProcess 同轴）；进程必须存在于当前生效 Spec（未知进程精确拒绝）。
+         */
+        DeploymentsServiceScaleProcessBody: {
+            /**
+             * replicas 非负（0 = 显式缩零；对称 ScaleTask 的 desired_concurrency，
+             *     上限由配额承载）。
+             * Format: int32
+             */
+            replicas?: number;
         };
         HooksServiceRefreshGitHookBody: {
             /**
@@ -468,6 +564,29 @@ export interface components {
             config?: string;
             target?: string;
         };
+        /**
+         * Confirmation 是写动词携带的确认票面（B1 变更确认闭环，ADR-0085
+         *     Confirm Ticket 词条）：ticket 引用 Change Preview 铸造的一次性票据
+         *     （600s TTL、单用途、绑请求指纹/基线多锚/提交语义/操作者——票面绑定物
+         *     与验票序见设计稿 §1.4）。验票/烧票在 engine 受理临界区内一次闭合；
+         *     默认强制 + 逃生门立法已随 ConfirmableVerbs 表驱动批次落地（设计稿
+         *     §1.2 重裁 §8.2'，W2b）。ticket 与 skip 均缺省 = ConfirmableVerbs 内
+         *     动词无凭证直发，拒绝 E_CONFIRMATION_REQUIRED。
+         */
+        v1Confirmation: {
+            /**
+             * ticket 是 Change Preview 响应回执的票据标识；无票直发即拒
+             *     （E_CONFIRMATION_REQUIRED——webhook/git、Restart/Scale 豁免族不经
+             *     本字段，--yes 走 skip）。
+             */
+            ticket?: string;
+            /**
+             * skip 是 --yes 逃生门的显式通道（设计稿 §1.2 重裁 §8.2'）：true =
+             *     操作者显式跳过预览确认直发（脚本/CI 形态），进审计（proof=skipped）；
+             *     与 ticket 互斥语义由受理位执法（skip 优先放行、不验票不烧票）。
+             */
+            skip?: boolean;
+        };
         v1DeleteGitHookResponse: Record<string, never>;
         /**
          * DeployRequest 四源互斥（image 直投 / compose_yaml 受控子集 / upload_id
@@ -557,6 +676,7 @@ export interface components {
              *     提交件 source 被忽略）。
              */
             override_hook?: boolean;
+            confirmation?: components["schemas"]["v1Confirmation"];
         };
         v1DeployResponse: {
             deployment?: components["schemas"]["v1Deployment"];
@@ -687,6 +807,18 @@ export interface components {
             ttl?: string;
             process?: components["schemas"]["v1ProcessSpec"];
         };
+        /** KeptItem 是保留清单单条（kind + reason：为何不在级联内）。 */
+        v1KeptItem: {
+            kind?: components["schemas"]["v1KeptItemKind"];
+            reason?: string;
+        };
+        /**
+         * KeptItemKind 是保留清单的分类（拆除语义下不随 App 消失的资源族——
+         *     缺席语义的显式透出）。
+         * @default KEPT_ITEM_KIND_UNSPECIFIED
+         * @enum {string}
+         */
+        v1KeptItemKind: "KEPT_ITEM_KIND_UNSPECIFIED" | "KEPT_ITEM_KIND_DATABASE" | "KEPT_ITEM_KIND_VOLUME" | "KEPT_ITEM_KIND_SECRET" | "KEPT_ITEM_KIND_UPLOAD";
         v1ListBuildsResponse: {
             builds?: components["schemas"]["v1Build"][];
         };
@@ -712,6 +844,94 @@ export interface components {
             port?: number;
             protocol?: components["schemas"]["v1Protocol"];
         };
+        /**
+         * PreviewDeployRequest 内嵌同一 DeployRequest message（非形状复制）：
+         *     descriptor 的 CEL 受理规则经嵌套单源继承——预览与 Deploy 的拒绝面
+         *     逐规则同源（设计稿 §1.3 形状层单源）。
+         */
+        v1PreviewDeployRequest: {
+            deploy?: components["schemas"]["v1DeployRequest"];
+        };
+        /**
+         * PreviewDeployResponse 是预览载荷（设计稿 §1.3）：预览展示渲染意图非
+         *     runtime 现场（现场面 = GetAppWorkloadObservations）；脱敏红线 = 预览
+         *     投影停在 projectRevision、不进 materialize 段（ADR-0071 决策 5 同款）。
+         */
+        v1PreviewDeployResponse: {
+            /**
+             * spec_diff 是合成后 Spec 对基线的字段级差异（路径字典序，DiffEntry
+             *     与 DiffRevisions 同形；空基线 = 全量 added）。
+             */
+            spec_diff?: components["schemas"]["v1DiffEntry"][];
+            /**
+             * workload_changes 是逐 Workload 变更摘要 + 滚动后果判定（操作者第一
+             *     问「会不会动我在跑的容器」由 rollout 回答）。
+             */
+            workload_changes?: components["schemas"]["v1WorkloadChange"][];
+            /** warnings 是结构化只增预警（设计稿 §1.3 全集见 PreviewWarningKind）。 */
+            warnings?: components["schemas"]["v1PreviewWarning"][];
+            /** ticket 是本次预览铸造的 Confirm Ticket 标识（单用途、600s TTL）。 */
+            ticket?: string;
+            /**
+             * ticket_expires_in 是票据存活秒数（口径 600s，随铸造时刻递减）。
+             * Format: int32
+             */
+            ticket_expires_in?: number;
+        };
+        /**
+         * PreviewTeardownResponse 是拆除预演载荷（一致性由 golden 钉死，设计稿
+         *     §1.3）；ticket 票面绑定 = app 行版本 + hook 行 digest + route 行 ID 集
+         *     摘要（预览后新增的 route/hook 若不锚，确认时会被清单从未展示地删除）。
+         */
+        v1PreviewTeardownResponse: {
+            /** cascade 是将级联拆除/删除的对象清单。 */
+            cascade?: components["schemas"]["v1TeardownItem"][];
+            /** kept 是显式保留（不随拆除消失）的资源清单带理由。 */
+            kept?: components["schemas"]["v1KeptItem"][];
+            /**
+             * driving_conflict 是驱动权在位冲突（三层同谓词预检的只读版：有活跃
+             *     部署行驱动本 App 时置位——DeleteApp 受理位同款拒绝的预演透出）。
+             */
+            driving_conflict?: boolean;
+            /** driving_detail 是冲突细节（驱动行标识与位次）。 */
+            driving_detail?: string;
+            /** ticket 是本次预演铸造的 Confirm Ticket 标识（DeleteApp 的确认票）。 */
+            ticket?: string;
+            /**
+             * ticket_expires_in 是票据存活秒数（口径 600s）。
+             * Format: int32
+             */
+            ticket_expires_in?: number;
+        };
+        /**
+         * PreviewWarning 是单条结构化预警：kind 分类 + detail 结构化承载（各
+         *     kind 的 detail 形状随 W2 实现冻结；文案不内插票串/digest）。
+         */
+        v1PreviewWarning: {
+            kind?: components["schemas"]["v1PreviewWarningKind"];
+            detail?: string;
+        };
+        /**
+         * PreviewWarningKind 是结构化预警的分类轴（设计稿 §1.3，只增枚举）。
+         * @description - PREVIEW_WARNING_KIND_REPLICAS_CHANGE: 副本数变化（声明与基线不一致）。
+         *      - PREVIEW_WARNING_KIND_BLUE_GREEN_WINDOW: blue-green 策略窗（双 Generation 并存，先验后切）。
+         *      - PREVIEW_WARNING_KIND_VOLUME_PIN_MOVE: 卷钉住变更（placement 约束随钉住漂移）。
+         *      - PREVIEW_WARNING_KIND_HOOK_OWNERSHIP_MERGE: hook 所有权合并（spec_file overlay 接管运行时半边）。
+         *      - PREVIEW_WARNING_KIND_PRE_DEPLOY_JOBS_PRESENT: preDeployJobs 在场（部署期 init 作业将执行）。
+         *      - PREVIEW_WARNING_KIND_ADMISSION_PRECHECK: 受理位只读预检（配额/队列容量/父资源/peer 引用/preDeploy 网络——
+         *     入队即拒项在预览期透出）。
+         *      - PREVIEW_WARNING_KIND_IN_FLIGHT_DEPLOYMENT: 在途/排队部署预警（其完成将使本票过期；本次确认将排队/合并/抢占
+         *     @位次——预览展示静态世界，admission 结局才是真实执行史）。
+         *      - PREVIEW_WARNING_KIND_LIVE_DRIFT: 现场漂移预警（活观测 vs 声明态对照：现场副本与声明不一致时，本次
+         *     部署将按声明收敛；要保留现场值需在声明中显式表达）。
+         *      - PREVIEW_WARNING_KIND_DIGEST_PENDING: digest 待落定（from_build 源的预览形态：无 Revision 无 Build 行可解
+         *     析，镜像引用位标注「构建后落定」——W2a 定形：专用 kind 第 9 值；
+         *     「预览=执行」逐字节守卫域限定在 image 直投/既成 digest 源，from_build
+         *     断言本形态）。
+         * @default PREVIEW_WARNING_KIND_UNSPECIFIED
+         * @enum {string}
+         */
+        v1PreviewWarningKind: "PREVIEW_WARNING_KIND_UNSPECIFIED" | "PREVIEW_WARNING_KIND_REPLICAS_CHANGE" | "PREVIEW_WARNING_KIND_BLUE_GREEN_WINDOW" | "PREVIEW_WARNING_KIND_VOLUME_PIN_MOVE" | "PREVIEW_WARNING_KIND_HOOK_OWNERSHIP_MERGE" | "PREVIEW_WARNING_KIND_PRE_DEPLOY_JOBS_PRESENT" | "PREVIEW_WARNING_KIND_ADMISSION_PRECHECK" | "PREVIEW_WARNING_KIND_IN_FLIGHT_DEPLOYMENT" | "PREVIEW_WARNING_KIND_LIVE_DRIFT" | "PREVIEW_WARNING_KIND_DIGEST_PENDING";
         /** ProcessSpec 是 App 内的进程模板（web/worker…）。 */
         v1ProcessSpec: {
             name?: string;
@@ -849,6 +1069,14 @@ export interface components {
             /** 新明文，仅此一次 */
             secret?: string;
         };
+        /**
+         * ScaleProcessResponse 复用 Admission 受理判定附注（与 DeployResponse
+         *     同构——服务端展开为 MergeOverlay 提交，排队/合并/抢占/去重语义与
+         *     Deploy 同面）。
+         */
+        v1ScaleProcessResponse: {
+            admission?: components["schemas"]["v1Admission"];
+        };
         v1SetGitHookResponse: {
             hook?: components["schemas"]["v1GitHook"];
             /**
@@ -885,6 +1113,21 @@ export interface components {
             /** Format: byte */
             line?: string;
         };
+        /** TeardownItem 是级联清单单条（kind + name 定位将被拆除的对象）。 */
+        v1TeardownItem: {
+            kind?: components["schemas"]["v1TeardownItemKind"];
+            name?: string;
+        };
+        /**
+         * TeardownItemKind 是级联清单的条目分类（设计稿 §1.3 Teardown 面：行
+         *     级联在 API 层 tombstone 事务，本面是其只读预演）。
+         * @description - TEARDOWN_ITEM_KIND_WORKLOAD: 将拆除的 Workload 载体。
+         *      - TEARDOWN_ITEM_KIND_HOOK_ROW: 将删除的 hook 配置行。
+         *      - TEARDOWN_ITEM_KIND_ROUTE_ROW: 将删除的 Route 行。
+         * @default TEARDOWN_ITEM_KIND_UNSPECIFIED
+         * @enum {string}
+         */
+        v1TeardownItemKind: "TEARDOWN_ITEM_KIND_UNSPECIFIED" | "TEARDOWN_ITEM_KIND_WORKLOAD" | "TEARDOWN_ITEM_KIND_HOOK_ROW" | "TEARDOWN_ITEM_KIND_ROUTE_ROW";
         /** Upload 是上传产物行投影（ListUploads 读面）。 */
         v1Upload: {
             id?: string;
@@ -982,6 +1225,47 @@ export interface components {
             restart_seq?: number;
         };
         /**
+         * WorkloadChange 是预览载荷的逐 Workload 摘要（设计稿 §1.3：摘要粒度，
+         *     全量投影走 GetAppWorkloads 深链）。摘要字段是变更后的终态（replicas
+         *     双值除外）；env 值集不进载荷（脱敏红线，至多列名集）。
+         */
+        v1WorkloadChange: {
+            /**
+             * workload_id 是 Workload 域内标识（app_id + process 寻址，projection
+             *     单源）。
+             */
+            workload_id?: string;
+            action?: components["schemas"]["v1WorkloadChangeAction"];
+            /**
+             * image 是下发镜像引用（from_build 源为 digest-pending 形态——构建后
+             *     落定，镜像引用位标注）。
+             */
+            image?: string;
+            /** command 是容器命令摘要（变更后终态）。 */
+            command?: string[];
+            /**
+             * replicas_from/replicas_to 是副本数变更前后值（ADDED 时 from = 0、
+             *     REMOVED 时 to = 0）。
+             * Format: int64
+             */
+            replicas_from?: string;
+            /** Format: int64 */
+            replicas_to?: string;
+            /** healthcheck 是探针变更摘要（简述形态；全解析探针走 GetAppWorkloads）。 */
+            healthcheck?: string;
+            /** volumes 是卷挂载摘要（卷名集；卷钉住变更另经 warnings 透出）。 */
+            volumes?: string[];
+            /** networks 是网络挂靠摘要（网络名集）。 */
+            networks?: string[];
+            rollout?: components["schemas"]["v1WorkloadRollout"];
+        };
+        /**
+         * WorkloadChangeAction 是预览对照基线的单 Workload 动作判定。
+         * @default WORKLOAD_CHANGE_ACTION_UNSPECIFIED
+         * @enum {string}
+         */
+        v1WorkloadChangeAction: "WORKLOAD_CHANGE_ACTION_UNSPECIFIED" | "WORKLOAD_CHANGE_ACTION_ADDED" | "WORKLOAD_CHANGE_ACTION_REMOVED" | "WORKLOAD_CHANGE_ACTION_CHANGED";
+        /**
          * WorkloadHealthcheck 是全解析探针投影：与 spec.v1.HealthcheckSpec 的声明
          *     形态分立——oneof 装不下解析结果（http 探针的端口回退链解析后恒显式、
          *     exec 恒干净 argv）。
@@ -1002,6 +1286,15 @@ export interface components {
             /** Format: int32 */
             retries?: number;
         };
+        /**
+         * WorkloadRollout 是滚动后果判定（设计稿 §1.3，内容锚定等价使三态纯
+         *     spec 侧可判）：zero_touch = 零触碰（内容等价跳过）；scale_only = 纯
+         *     副本数伸缩（零载体替换）；replace = 载体替换（rolling 逐代/blue-green
+         *     双代窗，策略见 ProcessStrategy）。
+         * @default WORKLOAD_ROLLOUT_UNSPECIFIED
+         * @enum {string}
+         */
+        v1WorkloadRollout: "WORKLOAD_ROLLOUT_UNSPECIFIED" | "WORKLOAD_ROLLOUT_ZERO_TOUCH" | "WORKLOAD_ROLLOUT_SCALE_ONLY" | "WORKLOAD_ROLLOUT_REPLACE";
         ErrorResponse: {
             code?: string;
             message?: string;
@@ -1185,6 +1478,42 @@ export interface operations {
             };
         };
     };
+    DeploymentsService_PreviewTeardown: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description app_id 必填：目标 App 行（行级授权锚）。 */
+                app_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeploymentsServicePreviewTeardownBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1PreviewTeardownResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     DeploymentsService_RestartProcess: {
         parameters: {
             query?: never;
@@ -1208,6 +1537,44 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1RestartProcessResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    DeploymentsService_ScaleProcess: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description app_id 必填：目标 App 行（行级授权锚）。 */
+                app_id: string;
+                /** @description process 必填：进程名（当前生效 Spec 的 process 键）。 */
+                process: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeploymentsServiceScaleProcessBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ScaleProcessResponse"];
                 };
             };
             /** @description An unexpected error response. */
@@ -1463,6 +1830,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1DeployResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    DeploymentsService_PreviewDeploy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["v1PreviewDeployRequest"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1PreviewDeployResponse"];
                 };
             };
             /** @description An unexpected error response. */

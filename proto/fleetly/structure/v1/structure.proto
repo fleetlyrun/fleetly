@@ -9,6 +9,10 @@ option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1
 
 import "buf/validate/validate.proto";
 import "fleetly/spec/v1/spec.proto";
+// delivery.Confirmation（B1 确认票面）——DeleteApp 携带确认票的契约引用；
+// 单源定义在 delivery（铸票动词 PreviewDeploy/PreviewTeardown 所在域），
+// 本包零复制。
+import "fleetly/delivery/v1/delivery.proto";
 import "google/api/annotations.proto";
 import "protoc-gen-openapiv2/options/annotations.proto";
 import "grpcapi/v1/policy.proto";
@@ -586,6 +590,12 @@ message DeleteAppRequest {
       expression: "this.size() > 0"
     }
   ];
+  // confirmation 是拆除确认票（B1 强制集成员，delete 族）：PreviewTeardown
+  // 铸票 → 带票拆除的两调用流闭环；票面绑定 = app 行版本 + hook 行 digest
+  // + route 行 ID 集摘要（设计稿 §1.2/§1.4）。DeleteApp 在
+  // ConfirmableVerbs 强制集：无票且无 skip 即拒 E_CONFIRMATION_REQUIRED
+  //（W2b 立法）。
+  optional fleetly.delivery.v1.Confirmation confirmation = 2;
 }
 message DeleteAppResponse {}
 

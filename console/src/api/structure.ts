@@ -672,6 +672,29 @@ export interface components {
             config?: string;
             target?: string;
         };
+        /**
+         * Confirmation 是写动词携带的确认票面（B1 变更确认闭环，ADR-0085
+         *     Confirm Ticket 词条）：ticket 引用 Change Preview 铸造的一次性票据
+         *     （600s TTL、单用途、绑请求指纹/基线多锚/提交语义/操作者——票面绑定物
+         *     与验票序见设计稿 §1.4）。验票/烧票在 engine 受理临界区内一次闭合；
+         *     默认强制 + 逃生门立法已随 ConfirmableVerbs 表驱动批次落地（设计稿
+         *     §1.2 重裁 §8.2'，W2b）。ticket 与 skip 均缺省 = ConfirmableVerbs 内
+         *     动词无凭证直发，拒绝 E_CONFIRMATION_REQUIRED。
+         */
+        v1Confirmation: {
+            /**
+             * ticket 是 Change Preview 响应回执的票据标识；无票直发即拒
+             *     （E_CONFIRMATION_REQUIRED——webhook/git、Restart/Scale 豁免族不经
+             *     本字段，--yes 走 skip）。
+             */
+            ticket?: string;
+            /**
+             * skip 是 --yes 逃生门的显式通道（设计稿 §1.2 重裁 §8.2'）：true =
+             *     操作者显式跳过预览确认直发（脚本/CI 形态），进审计（proof=skipped）；
+             *     与 ticket 互斥语义由受理位执法（skip 优先放行、不验票不烧票）。
+             */
+            skip?: boolean;
+        };
         v1CreateAppRequest: {
             /** project_id 必填：App 的父 Project（受理位父存活/配额校验的锚）。 */
             project_id?: string;
@@ -1461,7 +1484,20 @@ export interface operations {
     };
     AppsService_DeleteApp: {
         parameters: {
-            query?: never;
+            query?: {
+                /**
+                 * @description ticket 是 Change Preview 响应回执的票据标识；无票直发即拒
+                 *     （E_CONFIRMATION_REQUIRED——webhook/git、Restart/Scale 豁免族不经
+                 *     本字段，--yes 走 skip）。
+                 */
+                "confirmation.ticket"?: string;
+                /**
+                 * @description skip 是 --yes 逃生门的显式通道（设计稿 §1.2 重裁 §8.2'）：true =
+                 *     操作者显式跳过预览确认直发（脚本/CI 形态），进审计（proof=skipped）；
+                 *     与 ticket 互斥语义由受理位执法（skip 优先放行、不验票不烧票）。
+                 */
+                "confirmation.skip"?: boolean;
+            };
             header?: never;
             path: {
                 /** @description id 必填：目标 App 行。 */

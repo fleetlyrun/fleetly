@@ -29,7 +29,10 @@ const (
 	DeploymentsService_ListDeployments_FullMethodName  = "/fleetly.delivery.v1.DeploymentsService/ListDeployments"
 	DeploymentsService_CancelDeployment_FullMethodName = "/fleetly.delivery.v1.DeploymentsService/CancelDeployment"
 	DeploymentsService_Rollback_FullMethodName         = "/fleetly.delivery.v1.DeploymentsService/Rollback"
+	DeploymentsService_PreviewDeploy_FullMethodName    = "/fleetly.delivery.v1.DeploymentsService/PreviewDeploy"
+	DeploymentsService_PreviewTeardown_FullMethodName  = "/fleetly.delivery.v1.DeploymentsService/PreviewTeardown"
 	DeploymentsService_RestartProcess_FullMethodName   = "/fleetly.delivery.v1.DeploymentsService/RestartProcess"
+	DeploymentsService_ScaleProcess_FullMethodName     = "/fleetly.delivery.v1.DeploymentsService/ScaleProcess"
 	DeploymentsService_WaitDeployment_FullMethodName   = "/fleetly.delivery.v1.DeploymentsService/WaitDeployment"
 )
 
@@ -45,12 +48,36 @@ type DeploymentsServiceClient interface {
 	CancelDeployment(ctx context.Context, in *CancelDeploymentRequest, opts ...grpc.CallOption) (*CancelDeploymentResponse, error)
 	// Rollback 是一等动词（F0.11）：Revision Replay——空目标回上一成功基线。
 	Rollback(ctx context.Context, in *RollbackRequest, opts ...grpc.CallOption) (*RollbackResponse, error)
+	// PreviewDeploy 是部署受理的只读孪生（B1 Change Preview，ADR-0085）：
+	// 请求内嵌同一 DeployRequest——descriptor 的 CEL 受理规则经嵌套单源
+	// 继承，预览拒绝面与 Deploy 逐规则一致，防「确认后才发现拒收」（设计稿
+	// §1.2/§1.3 形状层单源）。产出 spec diff、逐 Workload 滚动后果判定、
+	// 结构化 warnings，并铸 Confirm Ticket。只读投影 + 铸票：不进冻结封禁
+	// 面（冻结期可用；冻结期铸的票解冻后 TTL 窗内可消费属预期——冻结期内
+	// Deploy 先拒，票不可消费）。载荷脱敏红线同 ADR-0071 决策 5（不含
+	// env 值集/数据库材料值/代戳）。实现随 W2（本批契约先行）。
+	PreviewDeploy(ctx context.Context, in *PreviewDeployRequest, opts ...grpc.CallOption) (*PreviewDeployResponse, error)
+	// PreviewTeardown 是拆除预演（B1，设计稿 §1.3 Teardown 面）：级联清单
+	// （将拆载体、将删 hook/route 行）+ 保留清单带理由（databases/volumes/
+	// secrets/上传产物）+ 驱动权冲突透出，并铸 Confirm Ticket（票面绑定 =
+	// app 行版本 + hook 行 digest + route 行 ID 集摘要，设计稿 §1.4）。
+	// scope 钉 apps:admin——镜像 DeleteApp：预演动词不得低于被预演动词的
+	// 权限门槛（窄权 token 不得枚举拆除计划，设计稿 §1.2 裁决）。实现随
+	// W2（本批契约先行）。
+	PreviewTeardown(ctx context.Context, in *PreviewTeardownRequest, opts ...grpc.CallOption) (*PreviewTeardownResponse, error)
 	// RestartProcess 强制重排单个 Process 的载体（ADR-0069，排障动线"进程
 	// 卡死 → 就地重启"）：不动镜像不动 Spec、零 lineage（不产生 Revision/
 	// Deployment），经 Runtime 重启子面（swarm = ForceUpdate 滚动重排；
 	// k3s = pod 驱逐由 Deployment 自愈）逐副本替换。与 ADR-0064 内容寻址
 	// Ensure 互补：重发未变更 Spec 零替换，本动词是显式强制面。
 	RestartProcess(ctx context.Context, in *RestartProcessRequest, opts ...grpc.CallOption) (*RestartProcessResponse, error)
+	// ScaleProcess 是进程副本伸缩的一等动词（B1s，设计稿 §1.2 第二轮定稿）：
+	// 服务端读当前生效 Spec → 改 replicas → MergeOverlay 提交（ADR-0064
+	// 保证 scale-only 零载体替换）。对称 ScaleTask；CLI `fleetly apps scale`
+	// 为其皮，也是诊断修护动线（现场漂移 Fix）的动词落点。豁免强制确认
+	// （轻且可逆，Restart/Scale 豁免族）；不进幂等执法面（去重走 admission
+	// 判定附注）。实现随 W2（本批契约先行）。
+	ScaleProcess(ctx context.Context, in *ScaleProcessRequest, opts ...grpc.CallOption) (*ScaleProcessResponse, error)
 	// WaitDeployment 是等待原语（F1.3，架构 §7）：事件流过滤实现——逐状态
 	// 快照帧，终态帧后收流。Agent/Console 的"部署-等待-验证"循环不必自写
 	// 轮询。WaitRun 随 Run 实体（F1.5/6）落地，不预发空面。
@@ -115,10 +142,40 @@ func (c *deploymentsServiceClient) Rollback(ctx context.Context, in *RollbackReq
 	return out, nil
 }
 
+func (c *deploymentsServiceClient) PreviewDeploy(ctx context.Context, in *PreviewDeployRequest, opts ...grpc.CallOption) (*PreviewDeployResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PreviewDeployResponse)
+	err := c.cc.Invoke(ctx, DeploymentsService_PreviewDeploy_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deploymentsServiceClient) PreviewTeardown(ctx context.Context, in *PreviewTeardownRequest, opts ...grpc.CallOption) (*PreviewTeardownResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PreviewTeardownResponse)
+	err := c.cc.Invoke(ctx, DeploymentsService_PreviewTeardown_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *deploymentsServiceClient) RestartProcess(ctx context.Context, in *RestartProcessRequest, opts ...grpc.CallOption) (*RestartProcessResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(RestartProcessResponse)
 	err := c.cc.Invoke(ctx, DeploymentsService_RestartProcess_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *deploymentsServiceClient) ScaleProcess(ctx context.Context, in *ScaleProcessRequest, opts ...grpc.CallOption) (*ScaleProcessResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ScaleProcessResponse)
+	err := c.cc.Invoke(ctx, DeploymentsService_ScaleProcess_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -156,12 +213,36 @@ type DeploymentsServiceServer interface {
 	CancelDeployment(context.Context, *CancelDeploymentRequest) (*CancelDeploymentResponse, error)
 	// Rollback 是一等动词（F0.11）：Revision Replay——空目标回上一成功基线。
 	Rollback(context.Context, *RollbackRequest) (*RollbackResponse, error)
+	// PreviewDeploy 是部署受理的只读孪生（B1 Change Preview，ADR-0085）：
+	// 请求内嵌同一 DeployRequest——descriptor 的 CEL 受理规则经嵌套单源
+	// 继承，预览拒绝面与 Deploy 逐规则一致，防「确认后才发现拒收」（设计稿
+	// §1.2/§1.3 形状层单源）。产出 spec diff、逐 Workload 滚动后果判定、
+	// 结构化 warnings，并铸 Confirm Ticket。只读投影 + 铸票：不进冻结封禁
+	// 面（冻结期可用；冻结期铸的票解冻后 TTL 窗内可消费属预期——冻结期内
+	// Deploy 先拒，票不可消费）。载荷脱敏红线同 ADR-0071 决策 5（不含
+	// env 值集/数据库材料值/代戳）。实现随 W2（本批契约先行）。
+	PreviewDeploy(context.Context, *PreviewDeployRequest) (*PreviewDeployResponse, error)
+	// PreviewTeardown 是拆除预演（B1，设计稿 §1.3 Teardown 面）：级联清单
+	// （将拆载体、将删 hook/route 行）+ 保留清单带理由（databases/volumes/
+	// secrets/上传产物）+ 驱动权冲突透出，并铸 Confirm Ticket（票面绑定 =
+	// app 行版本 + hook 行 digest + route 行 ID 集摘要，设计稿 §1.4）。
+	// scope 钉 apps:admin——镜像 DeleteApp：预演动词不得低于被预演动词的
+	// 权限门槛（窄权 token 不得枚举拆除计划，设计稿 §1.2 裁决）。实现随
+	// W2（本批契约先行）。
+	PreviewTeardown(context.Context, *PreviewTeardownRequest) (*PreviewTeardownResponse, error)
 	// RestartProcess 强制重排单个 Process 的载体（ADR-0069，排障动线"进程
 	// 卡死 → 就地重启"）：不动镜像不动 Spec、零 lineage（不产生 Revision/
 	// Deployment），经 Runtime 重启子面（swarm = ForceUpdate 滚动重排；
 	// k3s = pod 驱逐由 Deployment 自愈）逐副本替换。与 ADR-0064 内容寻址
 	// Ensure 互补：重发未变更 Spec 零替换，本动词是显式强制面。
 	RestartProcess(context.Context, *RestartProcessRequest) (*RestartProcessResponse, error)
+	// ScaleProcess 是进程副本伸缩的一等动词（B1s，设计稿 §1.2 第二轮定稿）：
+	// 服务端读当前生效 Spec → 改 replicas → MergeOverlay 提交（ADR-0064
+	// 保证 scale-only 零载体替换）。对称 ScaleTask；CLI `fleetly apps scale`
+	// 为其皮，也是诊断修护动线（现场漂移 Fix）的动词落点。豁免强制确认
+	// （轻且可逆，Restart/Scale 豁免族）；不进幂等执法面（去重走 admission
+	// 判定附注）。实现随 W2（本批契约先行）。
+	ScaleProcess(context.Context, *ScaleProcessRequest) (*ScaleProcessResponse, error)
 	// WaitDeployment 是等待原语（F1.3，架构 §7）：事件流过滤实现——逐状态
 	// 快照帧，终态帧后收流。Agent/Console 的"部署-等待-验证"循环不必自写
 	// 轮询。WaitRun 随 Run 实体（F1.5/6）落地，不预发空面。
@@ -191,8 +272,17 @@ func (UnimplementedDeploymentsServiceServer) CancelDeployment(context.Context, *
 func (UnimplementedDeploymentsServiceServer) Rollback(context.Context, *RollbackRequest) (*RollbackResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Rollback not implemented")
 }
+func (UnimplementedDeploymentsServiceServer) PreviewDeploy(context.Context, *PreviewDeployRequest) (*PreviewDeployResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PreviewDeploy not implemented")
+}
+func (UnimplementedDeploymentsServiceServer) PreviewTeardown(context.Context, *PreviewTeardownRequest) (*PreviewTeardownResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PreviewTeardown not implemented")
+}
 func (UnimplementedDeploymentsServiceServer) RestartProcess(context.Context, *RestartProcessRequest) (*RestartProcessResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RestartProcess not implemented")
+}
+func (UnimplementedDeploymentsServiceServer) ScaleProcess(context.Context, *ScaleProcessRequest) (*ScaleProcessResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ScaleProcess not implemented")
 }
 func (UnimplementedDeploymentsServiceServer) WaitDeployment(*WaitDeploymentRequest, grpc.ServerStreamingServer[WaitDeploymentResponse]) error {
 	return status.Error(codes.Unimplemented, "method WaitDeployment not implemented")
@@ -308,6 +398,42 @@ func _DeploymentsService_Rollback_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DeploymentsService_PreviewDeploy_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PreviewDeployRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeploymentsServiceServer).PreviewDeploy(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DeploymentsService_PreviewDeploy_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeploymentsServiceServer).PreviewDeploy(ctx, req.(*PreviewDeployRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DeploymentsService_PreviewTeardown_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PreviewTeardownRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeploymentsServiceServer).PreviewTeardown(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DeploymentsService_PreviewTeardown_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeploymentsServiceServer).PreviewTeardown(ctx, req.(*PreviewTeardownRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _DeploymentsService_RestartProcess_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(RestartProcessRequest)
 	if err := dec(in); err != nil {
@@ -322,6 +448,24 @@ func _DeploymentsService_RestartProcess_Handler(srv interface{}, ctx context.Con
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DeploymentsServiceServer).RestartProcess(ctx, req.(*RestartProcessRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DeploymentsService_ScaleProcess_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ScaleProcessRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DeploymentsServiceServer).ScaleProcess(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DeploymentsService_ScaleProcess_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DeploymentsServiceServer).ScaleProcess(ctx, req.(*ScaleProcessRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -365,8 +509,20 @@ var DeploymentsService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _DeploymentsService_Rollback_Handler,
 		},
 		{
+			MethodName: "PreviewDeploy",
+			Handler:    _DeploymentsService_PreviewDeploy_Handler,
+		},
+		{
+			MethodName: "PreviewTeardown",
+			Handler:    _DeploymentsService_PreviewTeardown_Handler,
+		},
+		{
 			MethodName: "RestartProcess",
 			Handler:    _DeploymentsService_RestartProcess_Handler,
+		},
+		{
+			MethodName: "ScaleProcess",
+			Handler:    _DeploymentsService_ScaleProcess_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

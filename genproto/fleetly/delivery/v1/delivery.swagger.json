@@ -202,6 +202,46 @@
         ]
       }
     },
+    "/v1/apps/{app_id}/preview-teardown": {
+      "post": {
+        "summary": "PreviewTeardown 是拆除预演（B1，设计稿 §1.3 Teardown 面）：级联清单\n（将拆载体、将删 hook/route 行）+ 保留清单带理由（databases/volumes/\nsecrets/上传产物）+ 驱动权冲突透出，并铸 Confirm Ticket（票面绑定 =\napp 行版本 + hook 行 digest + route 行 ID 集摘要，设计稿 §1.4）。\nscope 钉 apps:admin——镜像 DeleteApp：预演动词不得低于被预演动词的\n权限门槛（窄权 token 不得枚举拆除计划，设计稿 §1.2 裁决）。实现随\nW2（本批契约先行）。",
+        "operationId": "DeploymentsService_PreviewTeardown",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1PreviewTeardownResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "app_id",
+            "description": "app_id 必填：目标 App 行（行级授权锚）。",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/DeploymentsServicePreviewTeardownBody"
+            }
+          }
+        ],
+        "tags": [
+          "DeploymentsService"
+        ]
+      }
+    },
     "/v1/apps/{app_id}/processes/{process_name}/restart": {
       "post": {
         "summary": "RestartProcess 强制重排单个 Process 的载体（ADR-0069，排障动线\"进程\n卡死 → 就地重启\"）：不动镜像不动 Spec、零 lineage（不产生 Revision/\nDeployment），经 Runtime 重启子面（swarm = ForceUpdate 滚动重排；\nk3s = pod 驱逐由 Deployment 自愈）逐副本替换。与 ADR-0064 内容寻址\nEnsure 互补：重发未变更 Spec 零替换，本动词是显式强制面。",
@@ -239,6 +279,53 @@
             "required": true,
             "schema": {
               "$ref": "#/definitions/DeploymentsServiceRestartProcessBody"
+            }
+          }
+        ],
+        "tags": [
+          "DeploymentsService"
+        ]
+      }
+    },
+    "/v1/apps/{app_id}/processes/{process}/scale": {
+      "post": {
+        "summary": "ScaleProcess 是进程副本伸缩的一等动词（B1s，设计稿 §1.2 第二轮定稿）：\n服务端读当前生效 Spec → 改 replicas → MergeOverlay 提交（ADR-0064\n保证 scale-only 零载体替换）。对称 ScaleTask；CLI `fleetly apps scale`\n为其皮，也是诊断修护动线（现场漂移 Fix）的动词落点。豁免强制确认\n（轻且可逆，Restart/Scale 豁免族）；不进幂等执法面（去重走 admission\n判定附注）。实现随 W2（本批契约先行）。",
+        "operationId": "DeploymentsService_ScaleProcess",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ScaleProcessResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "app_id",
+            "description": "app_id 必填：目标 App 行（行级授权锚）。",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "process",
+            "description": "process 必填：进程名（当前生效 Spec 的 process 键）。",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/DeploymentsServiceScaleProcessBody"
             }
           }
         ],
@@ -520,6 +607,39 @@
             "required": true,
             "schema": {
               "$ref": "#/definitions/v1DeployRequest"
+            }
+          }
+        ],
+        "tags": [
+          "DeploymentsService"
+        ]
+      }
+    },
+    "/v1/deployments/preview": {
+      "post": {
+        "summary": "PreviewDeploy 是部署受理的只读孪生（B1 Change Preview，ADR-0085）：\n请求内嵌同一 DeployRequest——descriptor 的 CEL 受理规则经嵌套单源\n继承，预览拒绝面与 Deploy 逐规则一致，防「确认后才发现拒收」（设计稿\n§1.2/§1.3 形状层单源）。产出 spec diff、逐 Workload 滚动后果判定、\n结构化 warnings，并铸 Confirm Ticket。只读投影 + 铸票：不进冻结封禁\n面（冻结期可用；冻结期铸的票解冻后 TTL 窗内可消费属预期——冻结期内\nDeploy 先拒，票不可消费）。载荷脱敏红线同 ADR-0071 决策 5（不含\nenv 值集/数据库材料值/代戳）。实现随 W2（本批契约先行）。",
+        "operationId": "DeploymentsService_PreviewDeploy",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1PreviewDeployResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1PreviewDeployRequest"
             }
           }
         ],
@@ -816,6 +936,10 @@
     "DeploymentsServiceCancelDeploymentBody": {
       "type": "object"
     },
+    "DeploymentsServicePreviewTeardownBody": {
+      "type": "object",
+      "title": "PreviewTeardownRequest 按 app_id 寻址拆除预演（镜像 DeleteApp）。"
+    },
     "DeploymentsServiceRestartProcessBody": {
       "type": "object",
       "title": "RestartProcessRequest 按进程名定位（App 域内 Workload ID = app_id +\nprocess_name，projection 单源）；进程必须存在于当前冻结 Spec（未知进程\n精确拒绝——k3s pod 驱逐对零命中静默，引擎侧先行校验）。"
@@ -825,8 +949,23 @@
       "properties": {
         "to_revision": {
           "type": "string"
+        },
+        "confirmation": {
+          "$ref": "#/definitions/v1Confirmation"
         }
-      }
+      },
+      "title": "RollbackRequest 的 confirmation 是单目标验票（B1 强制集成员，设计稿\n§1.2 重裁）：票绑目标 id + 当前 revision digest + 操作者，同临界区验烧\n（B2a 修护动词确认闭环的依赖）。Rollback 在 ConfirmableVerbs 强制集：\n无票且无 skip 即拒 E_CONFIRMATION_REQUIRED（W2b 立法）。"
+    },
+    "DeploymentsServiceScaleProcessBody": {
+      "type": "object",
+      "properties": {
+        "replicas": {
+          "type": "integer",
+          "format": "int32",
+          "title": "replicas 非负（0 = 显式缩零；对称 ScaleTask 的 desired_concurrency，\n上限由配额承载）。"
+        }
+      },
+      "title": "ScaleProcessRequest 按进程名定位（App 域内 Workload 寻址，与\nRestartProcess 同轴）；进程必须存在于当前生效 Spec（未知进程精确拒绝）。"
     },
     "HooksServiceRefreshGitHookBody": {
       "type": "object",
@@ -1013,6 +1152,20 @@
       },
       "title": "DeployStrategy 是部署切换策略（CONTEXT.md Deployment Strategy 词条：\nrolling | blue-green；Avoid 表两词条不引入——渐进分流与代次槽位机制\n均显式不做，ADR-0048）。blue-green = engine 的编排变体（Runtime 契约\n不变，ADR-0048）：双代窗期间两代载体并存，新代 L1 全就绪才切换流量。\nUNSPECIFIED（零值）语义归一为 rolling——存量 Revision 无该字段重放即\nrolling，无迁移面。\nConfigMount 是单条 Config 挂载（名引用 + 容器内目标路径）。"
     },
+    "v1Confirmation": {
+      "type": "object",
+      "properties": {
+        "ticket": {
+          "type": "string",
+          "title": "ticket 是 Change Preview 响应回执的票据标识；无票直发即拒\n（E_CONFIRMATION_REQUIRED——webhook/git、Restart/Scale 豁免族不经\n本字段，--yes 走 skip）。"
+        },
+        "skip": {
+          "type": "boolean",
+          "title": "skip 是 --yes 逃生门的显式通道（设计稿 §1.2 重裁 §8.2'）：true =\n操作者显式跳过预览确认直发（脚本/CI 形态），进审计（proof=skipped）；\n与 ticket 互斥语义由受理位执法（skip 优先放行、不验票不烧票）。"
+        }
+      },
+      "title": "Confirmation 是写动词携带的确认票面（B1 变更确认闭环，ADR-0085\nConfirm Ticket 词条）：ticket 引用 Change Preview 铸造的一次性票据\n（600s TTL、单用途、绑请求指纹/基线多锚/提交语义/操作者——票面绑定物\n与验票序见设计稿 §1.4）。验票/烧票在 engine 受理临界区内一次闭合；\n默认强制 + 逃生门立法已随 ConfirmableVerbs 表驱动批次落地（设计稿\n§1.2 重裁 §8.2'，W2b）。ticket 与 skip 均缺省 = ConfirmableVerbs 内\n动词无凭证直发，拒绝 E_CONFIRMATION_REQUIRED。"
+    },
     "v1DeleteGitHookResponse": {
       "type": "object"
     },
@@ -1095,6 +1248,10 @@
         "override_hook": {
           "type": "boolean",
           "title": "override_hook 是 hook 所有权闸门的一次性接管声明（ADR-0072 决策 4）：\n配置了 git hook 的 App 携带材料源（image/compose/upload）需显式置位\n才被受理（全量接管）；正规路径 = 先删 hook。spec_file 不受本旗标\n约束——hook 应用的 spec_file 恒为运行时 overlay（材料半边取冻结侧，\n提交件 source 被忽略）。"
+        },
+        "confirmation": {
+          "$ref": "#/definitions/v1Confirmation",
+          "title": "confirmation 是 Deploy 的确认票（B1）：Change Preview 铸票 → 带票直发\n的两调用流闭环（设计稿 §1.2/§1.4）。提交语义位（supersede/\noverride_hook）显式入票面指纹；幂等重放不烧票（enforcer 在 handler\n前重放）。Deploy 在 ConfirmableVerbs 强制集：无票且无 skip 即拒\nE_CONFIRMATION_REQUIRED（W2b 立法）。"
         }
       },
       "description": "受理面的字段形状与跨字段互斥执法全量住 descriptor（P4-2 批 2 上移，\nhandler 手写检查同步退役）：message 级 CEL 承载跨字段互斥/至少一源，\nfield 级承载单字段值域。文案与退役前手写逐字节（含 %q 动态回显的\n静态化，逐案在 P4-2 批 2 报告列明）；四源互斥全文案被\napitest/submit_spec_invariants 不变式⑦逐字节钉死——改文案即设计缺陷。",
@@ -1370,6 +1527,30 @@
       },
       "title": "JobSpec 是部署期一次性作业（pre-deploy job，ADR-0007 词汇裁决：词条归\nTask——部署期特例；字段名 ADR-0078 由 first_boot_jobs 改名）。C-13 重塑：\n进程模板共享 ProcessSpec（process 字段，与 TaskSpec 同款嵌套形态）。\n2026-10-16 挂账清偿整删（用户裁决；写读两面 C-13 起已全走 process；\nbuf breaking 对 origin/main 恰一条 FILE 红=开发期基线追认，与 config_refs\n先例同款，上 main 后自愈）。"
     },
+    "v1KeptItem": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/definitions/v1KeptItemKind"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "title": "KeptItem 是保留清单单条（kind + reason：为何不在级联内）。"
+    },
+    "v1KeptItemKind": {
+      "type": "string",
+      "enum": [
+        "KEPT_ITEM_KIND_UNSPECIFIED",
+        "KEPT_ITEM_KIND_DATABASE",
+        "KEPT_ITEM_KIND_VOLUME",
+        "KEPT_ITEM_KIND_SECRET",
+        "KEPT_ITEM_KIND_UPLOAD"
+      ],
+      "default": "KEPT_ITEM_KIND_UNSPECIFIED",
+      "title": "KeptItemKind 是保留清单的分类（拆除语义下不随 App 消失的资源族——\n缺席语义的显式透出）。"
+    },
     "v1ListBuildsResponse": {
       "type": "object",
       "properties": {
@@ -1442,6 +1623,124 @@
         }
       },
       "title": "PortSpec 是进程监听端口声明（Route 投影来源）。"
+    },
+    "v1PreviewDeployRequest": {
+      "type": "object",
+      "properties": {
+        "deploy": {
+          "$ref": "#/definitions/v1DeployRequest",
+          "title": "deploy 与 Deploy 同形（四源互斥/at-least-one/builder 族等 CEL 全量\n继承）；空载荷兜底执法随 W2 受理实现。"
+        }
+      },
+      "title": "PreviewDeployRequest 内嵌同一 DeployRequest message（非形状复制）：\ndescriptor 的 CEL 受理规则经嵌套单源继承——预览与 Deploy 的拒绝面\n逐规则同源（设计稿 §1.3 形状层单源）。"
+    },
+    "v1PreviewDeployResponse": {
+      "type": "object",
+      "properties": {
+        "spec_diff": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1DiffEntry"
+          },
+          "title": "spec_diff 是合成后 Spec 对基线的字段级差异（路径字典序，DiffEntry\n与 DiffRevisions 同形；空基线 = 全量 added）。"
+        },
+        "workload_changes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1WorkloadChange"
+          },
+          "title": "workload_changes 是逐 Workload 变更摘要 + 滚动后果判定（操作者第一\n问「会不会动我在跑的容器」由 rollout 回答）。"
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1PreviewWarning"
+          },
+          "title": "warnings 是结构化只增预警（设计稿 §1.3 全集见 PreviewWarningKind）。"
+        },
+        "ticket": {
+          "type": "string",
+          "title": "ticket 是本次预览铸造的 Confirm Ticket 标识（单用途、600s TTL）。"
+        },
+        "ticket_expires_in": {
+          "type": "integer",
+          "format": "int32",
+          "title": "ticket_expires_in 是票据存活秒数（口径 600s，随铸造时刻递减）。"
+        }
+      },
+      "title": "PreviewDeployResponse 是预览载荷（设计稿 §1.3）：预览展示渲染意图非\nruntime 现场（现场面 = GetAppWorkloadObservations）；脱敏红线 = 预览\n投影停在 projectRevision、不进 materialize 段（ADR-0071 决策 5 同款）。"
+    },
+    "v1PreviewTeardownResponse": {
+      "type": "object",
+      "properties": {
+        "cascade": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1TeardownItem"
+          },
+          "title": "cascade 是将级联拆除/删除的对象清单。"
+        },
+        "kept": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1KeptItem"
+          },
+          "title": "kept 是显式保留（不随拆除消失）的资源清单带理由。"
+        },
+        "driving_conflict": {
+          "type": "boolean",
+          "title": "driving_conflict 是驱动权在位冲突（三层同谓词预检的只读版：有活跃\n部署行驱动本 App 时置位——DeleteApp 受理位同款拒绝的预演透出）。"
+        },
+        "driving_detail": {
+          "type": "string",
+          "title": "driving_detail 是冲突细节（驱动行标识与位次）。"
+        },
+        "ticket": {
+          "type": "string",
+          "title": "ticket 是本次预演铸造的 Confirm Ticket 标识（DeleteApp 的确认票）。"
+        },
+        "ticket_expires_in": {
+          "type": "integer",
+          "format": "int32",
+          "title": "ticket_expires_in 是票据存活秒数（口径 600s）。"
+        }
+      },
+      "title": "PreviewTeardownResponse 是拆除预演载荷（一致性由 golden 钉死，设计稿\n§1.3）；ticket 票面绑定 = app 行版本 + hook 行 digest + route 行 ID 集\n摘要（预览后新增的 route/hook 若不锚，确认时会被清单从未展示地删除）。"
+    },
+    "v1PreviewWarning": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/definitions/v1PreviewWarningKind"
+        },
+        "detail": {
+          "type": "string"
+        }
+      },
+      "title": "PreviewWarning 是单条结构化预警：kind 分类 + detail 结构化承载（各\nkind 的 detail 形状随 W2 实现冻结；文案不内插票串/digest）。"
+    },
+    "v1PreviewWarningKind": {
+      "type": "string",
+      "enum": [
+        "PREVIEW_WARNING_KIND_UNSPECIFIED",
+        "PREVIEW_WARNING_KIND_REPLICAS_CHANGE",
+        "PREVIEW_WARNING_KIND_BLUE_GREEN_WINDOW",
+        "PREVIEW_WARNING_KIND_VOLUME_PIN_MOVE",
+        "PREVIEW_WARNING_KIND_HOOK_OWNERSHIP_MERGE",
+        "PREVIEW_WARNING_KIND_PRE_DEPLOY_JOBS_PRESENT",
+        "PREVIEW_WARNING_KIND_ADMISSION_PRECHECK",
+        "PREVIEW_WARNING_KIND_IN_FLIGHT_DEPLOYMENT",
+        "PREVIEW_WARNING_KIND_LIVE_DRIFT",
+        "PREVIEW_WARNING_KIND_DIGEST_PENDING"
+      ],
+      "default": "PREVIEW_WARNING_KIND_UNSPECIFIED",
+      "description": "- PREVIEW_WARNING_KIND_REPLICAS_CHANGE: 副本数变化（声明与基线不一致）。\n - PREVIEW_WARNING_KIND_BLUE_GREEN_WINDOW: blue-green 策略窗（双 Generation 并存，先验后切）。\n - PREVIEW_WARNING_KIND_VOLUME_PIN_MOVE: 卷钉住变更（placement 约束随钉住漂移）。\n - PREVIEW_WARNING_KIND_HOOK_OWNERSHIP_MERGE: hook 所有权合并（spec_file overlay 接管运行时半边）。\n - PREVIEW_WARNING_KIND_PRE_DEPLOY_JOBS_PRESENT: preDeployJobs 在场（部署期 init 作业将执行）。\n - PREVIEW_WARNING_KIND_ADMISSION_PRECHECK: 受理位只读预检（配额/队列容量/父资源/peer 引用/preDeploy 网络——\n入队即拒项在预览期透出）。\n - PREVIEW_WARNING_KIND_IN_FLIGHT_DEPLOYMENT: 在途/排队部署预警（其完成将使本票过期；本次确认将排队/合并/抢占\n@位次——预览展示静态世界，admission 结局才是真实执行史）。\n - PREVIEW_WARNING_KIND_LIVE_DRIFT: 现场漂移预警（活观测 vs 声明态对照：现场副本与声明不一致时，本次\n部署将按声明收敛；要保留现场值需在声明中显式表达）。\n - PREVIEW_WARNING_KIND_DIGEST_PENDING: digest 待落定（from_build 源的预览形态：无 Revision 无 Build 行可解\n析，镜像引用位标注「构建后落定」——W2a 定形：专用 kind 第 9 值；\n「预览=执行」逐字节守卫域限定在 image 直投/既成 digest 源，from_build\n断言本形态）。",
+      "title": "PreviewWarningKind 是结构化预警的分类轴（设计稿 §1.3，只增枚举）。"
     },
     "v1ProcessSpec": {
       "type": "object",
@@ -1687,6 +1986,15 @@
         }
       }
     },
+    "v1ScaleProcessResponse": {
+      "type": "object",
+      "properties": {
+        "admission": {
+          "$ref": "#/definitions/v1Admission"
+        }
+      },
+      "title": "ScaleProcessResponse 复用 Admission 受理判定附注（与 DeployResponse\n同构——服务端展开为 MergeOverlay 提交，排队/合并/抢占/去重语义与\nDeploy 同面）。"
+    },
     "v1SetGitHookResponse": {
       "type": "object",
       "properties": {
@@ -1750,6 +2058,30 @@
         }
       },
       "title": "StreamBuildLogsResponse 一帧构建日志（time RFC3339）。"
+    },
+    "v1TeardownItem": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/definitions/v1TeardownItemKind"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "title": "TeardownItem 是级联清单单条（kind + name 定位将被拆除的对象）。"
+    },
+    "v1TeardownItemKind": {
+      "type": "string",
+      "enum": [
+        "TEARDOWN_ITEM_KIND_UNSPECIFIED",
+        "TEARDOWN_ITEM_KIND_WORKLOAD",
+        "TEARDOWN_ITEM_KIND_HOOK_ROW",
+        "TEARDOWN_ITEM_KIND_ROUTE_ROW"
+      ],
+      "default": "TEARDOWN_ITEM_KIND_UNSPECIFIED",
+      "description": "- TEARDOWN_ITEM_KIND_WORKLOAD: 将拆除的 Workload 载体。\n - TEARDOWN_ITEM_KIND_HOOK_ROW: 将删除的 hook 配置行。\n - TEARDOWN_ITEM_KIND_ROUTE_ROW: 将删除的 Route 行。",
+      "title": "TeardownItemKind 是级联清单的条目分类（设计稿 §1.3 Teardown 面：行\n级联在 API 层 tombstone 事务，本面是其只读预演）。"
     },
     "v1Upload": {
       "type": "object",
@@ -1931,6 +2263,73 @@
       },
       "title": "Workload 是 Workload 视图的单载体投影（ADR-0071 投影层）：\ncapability.Workload 的用户面字段镜像。不进视图的面：Generation（渲染\n非下发，代戳语义归 ADR-0064 的 Ensure 与观测层）、Materials（凭证永不\n进视图，ADR-0014）、受管域专用声明（global/skip_materials/host_binds/\nnetwork_refs/publish——用户 Spec 投影白名单外）。"
     },
+    "v1WorkloadChange": {
+      "type": "object",
+      "properties": {
+        "workload_id": {
+          "type": "string",
+          "title": "workload_id 是 Workload 域内标识（app_id + process 寻址，projection\n单源）。"
+        },
+        "action": {
+          "$ref": "#/definitions/v1WorkloadChangeAction",
+          "title": "action 是对基线的动作判定（ADDED = 基线无此进程；REMOVED = 本次\n不再声明；CHANGED = 声明变化）。"
+        },
+        "image": {
+          "type": "string",
+          "title": "image 是下发镜像引用（from_build 源为 digest-pending 形态——构建后\n落定，镜像引用位标注）。"
+        },
+        "command": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "command 是容器命令摘要（变更后终态）。"
+        },
+        "replicas_from": {
+          "type": "string",
+          "format": "int64",
+          "title": "replicas_from/replicas_to 是副本数变更前后值（ADDED 时 from = 0、\nREMOVED 时 to = 0）。"
+        },
+        "replicas_to": {
+          "type": "string",
+          "format": "int64"
+        },
+        "healthcheck": {
+          "type": "string",
+          "title": "healthcheck 是探针变更摘要（简述形态；全解析探针走 GetAppWorkloads）。"
+        },
+        "volumes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "volumes 是卷挂载摘要（卷名集；卷钉住变更另经 warnings 透出）。"
+        },
+        "networks": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "networks 是网络挂靠摘要（网络名集）。"
+        },
+        "rollout": {
+          "$ref": "#/definitions/v1WorkloadRollout",
+          "title": "rollout 是滚动后果判定（操作者决策的第一输入）。"
+        }
+      },
+      "title": "WorkloadChange 是预览载荷的逐 Workload 摘要（设计稿 §1.3：摘要粒度，\n全量投影走 GetAppWorkloads 深链）。摘要字段是变更后的终态（replicas\n双值除外）；env 值集不进载荷（脱敏红线，至多列名集）。"
+    },
+    "v1WorkloadChangeAction": {
+      "type": "string",
+      "enum": [
+        "WORKLOAD_CHANGE_ACTION_UNSPECIFIED",
+        "WORKLOAD_CHANGE_ACTION_ADDED",
+        "WORKLOAD_CHANGE_ACTION_REMOVED",
+        "WORKLOAD_CHANGE_ACTION_CHANGED"
+      ],
+      "default": "WORKLOAD_CHANGE_ACTION_UNSPECIFIED",
+      "title": "WorkloadChangeAction 是预览对照基线的单 Workload 动作判定。"
+    },
     "v1WorkloadHealthcheck": {
       "type": "object",
       "properties": {
@@ -1967,6 +2366,17 @@
         }
       },
       "title": "WorkloadHealthcheck 是全解析探针投影：与 spec.v1.HealthcheckSpec 的声明\n形态分立——oneof 装不下解析结果（http 探针的端口回退链解析后恒显式、\nexec 恒干净 argv）。"
+    },
+    "v1WorkloadRollout": {
+      "type": "string",
+      "enum": [
+        "WORKLOAD_ROLLOUT_UNSPECIFIED",
+        "WORKLOAD_ROLLOUT_ZERO_TOUCH",
+        "WORKLOAD_ROLLOUT_SCALE_ONLY",
+        "WORKLOAD_ROLLOUT_REPLACE"
+      ],
+      "default": "WORKLOAD_ROLLOUT_UNSPECIFIED",
+      "title": "WorkloadRollout 是滚动后果判定（设计稿 §1.3，内容锚定等价使三态纯\nspec 侧可判）：zero_touch = 零触碰（内容等价跳过）；scale_only = 纯\n副本数伸缩（零载体替换）；replace = 载体替换（rolling 逐代/blue-green\n双代窗，策略见 ProcessStrategy）。"
     }
   }
 }
