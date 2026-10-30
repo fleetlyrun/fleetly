@@ -358,6 +358,36 @@ jobs:
       - name: bluegreen e2e (blue-green strategy + generation cutover)
         run: mise run e2e:bluegreen
 
+  # B1/B1s（zeabur-oss 借鉴程序第 2 批，ADR-0089）：变更确认闭环 + ScaleProcess
+  # 全链——预览-确认两调用流 / 无票直发 428 拒 / --yes 逃生门 / STALE /
+  # MISMATCH / webhook 豁免 / teardown 预演 TOCTOU / LedgerOnly 审计行 /
+  # scale-only 零替换（任务 ID 不变）。
+  e2e-confirm:
+    name: E2E (dind change preview + confirm ticket + scale)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: jdx/mise-action@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-${{ runner.os }}-${{ hashFiles('go.sum', 'genproto/go.sum', 'sdk/go/go.sum') }}
+          restore-keys: go-${{ runner.os }}-
+
+      - name: Pre-pull images
+        run: |
+          docker pull docker:29-dind
+          docker pull nginx:1.27
+          docker pull traefik:v3.5
+
+      - name: confirm e2e (preview -> ticket -> deploy / refusals / exemptions / teardown / scale)
+        run: mise run e2e:confirm
+
   # F4.1/ADR-0052：k3s 第二运行时两腿进 CI。snapshotter 走 fuse-overlayfs
   #（GH runner 的 dind 内同样拒 nested overlay——PR #1 实证 multiple-
   # lowerdir mount invalid argument，overlayfs 假设否决；fuse 用户态 CoW

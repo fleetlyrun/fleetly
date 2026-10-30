@@ -109,7 +109,7 @@ promote 跨项目原语（ADR-0011 触发条件）；预览环境（同上）；
 ## Z1 zeabur-oss 借鉴程序（2026-10-30 立项，四批；提案/设计 docs/proposals+design/2026-10-30-zeabur-oss-borrowing.md，两轮裁决在案）
 
 - Z1.1 [x] **第 1 批：D0 词汇 + B4 console 纪律**（2026-10-30 子代理三路实施）：D0 = ADR-0085（六词条：Change Preview/Confirm Ticket/Diagnosis/Finding/Fault Class/Platform Incident，非资源行/非实体声明 + Diagnosis 四义划界 + 「排障面」改称）+ CONTEXT.md 入册 + wording 11 token 分诊（顺手清 HEAD 既有豁免失养红）；B4a = ADR-0086 风险三档（standard/wide/type_to_confirm，26 确认点赋档，Databases 矛盾文案单源修复，反模式守卫 risk 必填扩条）；B4b = brotli 双层体积预算入 console:verify（三层执法 + 稳定基线冻结）。
-- Z1.2 [ ] **第 2 批：B1+B1s 变更确认闭环**（PreviewDeploy/PreviewTeardown + ConfirmableVerbs 默认强制 + ScaleProcess + 票据临界区验烧 + CLI 三形态）。
+- Z1.2 [x] **第 2 批：B1+B1s 变更确认闭环**（PreviewDeploy/PreviewTeardown + ConfirmableVerbs 默认强制 + ScaleProcess + 票据临界区验烧 + CLI 三形态）。2026-10-30 五工作面收官（ADR-0089）：W1 契约层（三 ACTION + errcode 三码 + REST 428）→ W2a/W2b 引擎半边（三段单源 + 甲'临界区验烧 + confirmguard 七件守卫连坐）→ W3 CLI/console（三形态 golden + apps scale + DeploySheet 预览步/双击 skip）→ W5 e2e 腿 `e2e/dind-confirm.sh`（mise `e2e:confirm` + CI `e2e-confirm` job，八腿本地首跑全绿：预览-确认两调用流/无票直发 428/--yes 逃生门/STALE/MISMATCH/webhook 豁免/teardown 预演 TOCTOU 零孤儿/scale-only 零替换任务 ID 不变）。
 - Z1.3 [ ] **第 3 批：B2a+B3a 诊断核心 + corpus**（Finding 注册表 + 终态计数事件账本单源 + pending 窗直接改列 + 通知投递两类 + apps diagnose + compose corpus）。
 - Z1.4 [ ] **第 4 批：B2b+B3b 平台事故 + 契约双跑**。
 

@@ -12,9 +12,10 @@ package guards
 //   - verify 类门禁：名字含 verify / generate: / console: 前缀的任务必须
 //     从 CI 可达（直接调用或经任务引用闭包），否则登记 ciTaskExemptions
 //     带理由（"没有 CI 承载"成为一条要写理由的登记，而不是沉默——R12-M5）。
-//   - 防盲：mise e2e 任务实测 12、CI e2e 调用实测 12（2026-10-16 挂账清偿
-//     批后 template/browse/bluegreen 三腿进 CI）；阈值贴实测值，解析退化
-//     （文件挪走/改格式）在此显形，不留 1/3 余量（R12-L5）。
+//   - 防盲：mise e2e 任务实测 13、CI e2e 调用实测 13（2026-10-30 B1/B1s 批
+//     e2e:confirm 进 CI；此前 2026-10-16 挂账清偿批 template/browse/
+//     bluegreen 三腿进 CI）；阈值贴实测值，解析退化（文件挪走/改格式）
+//     在此显形，不留 1/3 余量（R12-L5）。
 //
 // go.mod/go.sum 的零漂移范围由 generate:verify 任务体断言（R09-L4）；只
 // 编译不测试的 Windows 门禁由 TestCIHasWindowsCrossCompile 断言（R09-L7）。
@@ -163,12 +164,12 @@ func TestE2ECIAccount(t *testing.T) {
 	mise := parseMiseE2ETasks(miseContent)
 	ci := parseCIE2ECalls(ciContent)
 
-	// 防盲：实测值之下即解析退化（2026-10-16 实测 12/12，阈值贴边）。
-	if len(mise) < 12 {
-		t.Fatalf("mise.toml scan found only %d e2e tasks (expected >= 12) — guard is blind, fix the scan", len(mise))
+	// 防盲：实测值之下即解析退化（2026-10-30 实测 13/13，阈值贴边）。
+	if len(mise) < 13 {
+		t.Fatalf("mise.toml scan found only %d e2e tasks (expected >= 13) — guard is blind, fix the scan", len(mise))
 	}
-	if len(ci) < 12 {
-		t.Fatalf("ci.yml scan found only %d e2e invocations (expected >= 12) — guard is blind, fix the scan", len(ci))
+	if len(ci) < 13 {
+		t.Fatalf("ci.yml scan found only %d e2e invocations (expected >= 13) — guard is blind, fix the scan", len(ci))
 	}
 
 	miseSet := map[string]bool{}
@@ -235,9 +236,9 @@ func TestE2ETaskScriptsExist(t *testing.T) {
 			}
 		}
 	}
-	// 防盲：12 个 e2e 任务各至少一条脚本。
-	if checked < 12 {
-		t.Fatalf("only %d e2e script references checked (expected >= 12) — guard is blind, fix the scan", checked)
+	// 防盲：13 个 e2e 任务各至少一条脚本。
+	if checked < 13 {
+		t.Fatalf("only %d e2e script references checked (expected >= 13) — guard is blind, fix the scan", checked)
 	}
 }
 

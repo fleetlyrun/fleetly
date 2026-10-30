@@ -97,7 +97,7 @@
 ## 9. 分期（已裁）
 
 - **第 1 批（D0+B4a+B4b）**：词汇 + console 纪律 + 守卫，零 API 变更，可独立上站。**（已实施 2026-10-30：ADR-0085/0086，Z1.1 记档）**
-- **第 2 批（B1+B1s）**：PreviewDeploy/PreviewTeardown（含 CEL 单源）+ **ConfirmableVerbs 表驱动强制确认（Deploy/delete 族/Rollback；拦截器通用验票 + engine 内容绑定两段分工）** + `--yes` 逃生门与 webhook 豁免 + 三段单源抽取 + 票据临界区原语 + **ScaleProcess 一等 RPC** + console 接线 + CLI（交互预览默认/--yes/--ticket）+ e2e 腿（预览-确认-执行-过期重预览-增量展示-并发同票拒绝-无票拒绝-webhook 豁免）。
+- **第 2 批（B1+B1s）**：PreviewDeploy/PreviewTeardown（含 CEL 单源）+ **ConfirmableVerbs 表驱动强制确认（Deploy/delete 族/Rollback；拦截器通用验票 + engine 内容绑定两段分工）** + `--yes` 逃生门与 webhook 豁免 + 三段单源抽取 + 票据临界区原语 + **ScaleProcess 一等 RPC** + console 接线 + CLI（交互预览默认/--yes/--ticket）+ e2e 腿（预览-确认-执行-过期重预览-增量展示-并发同票拒绝-无票拒绝-webhook 豁免）。**（已实施 2026-10-30：ADR-0089）**
 - **第 3 批（B2a+B3a）**：Finding 注册表 + 诊断核心规则 + unexplained 兜底 + 事实源（**终态计数=事件账本派生**：container 终态 eventcode + App 索引 + WorkloadEvent 快照导出）+ **pending 窗直接改列** + **通知投递两类** + CLI 动词 + corpus。
 - **第 4 批（B2b+B3b）**：平台事故波及面 + 组件健康/managed 导出 + 契约双跑。
 - 每批收官在 `docs/plan/2026-09-30-feature-checklist.md` 记档；B5 参照点随各自线立项时引用。
