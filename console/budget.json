@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "entry": {
+    "js": { "budgetBytes": 14336 },
+    "css": { "budgetBytes": 17408 }
+  },
+  "chunks": [
+    { "name": "charts", "pattern": "charts-*.js", "budgetBytes": 71680 },
+    { "name": "cmdk", "pattern": "cmdk-*.js", "budgetBytes": 5120 },
+    { "name": "forms", "pattern": "forms-*.js", "budgetBytes": 23552 },
+    { "name": "table", "pattern": "table-*.js", "budgetBytes": 27648 },
+    { "name": "vendor", "pattern": "vendor-*.js", "budgetBytes": 228352 },
+    { "name": "virtual", "pattern": "virtual-*.js", "budgetBytes": 1024 },
+    { "name": "xterm", "pattern": "xterm-*", "budgetBytes": 63488 }
+  ],
+  "fallback": { "maxBytes": 51200 }
+}

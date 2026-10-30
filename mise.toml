@@ -203,12 +203,18 @@ description = "console 开发服（vite，/v1 代理到 localhost:9081）"
 dir = "console"
 run = "pnpm dev"
 
+[tasks."console:budget"]
+description = "console UI 体积预算断言（B4b：brotli q11 双层口径 entry+命名 chunk + 50KB 兜底，预算 console/budget.json；上涨须同 commit 改预算并带理由）"
+dir = "console"
+run = "node scripts/check-ui-budget.mjs"
+
 [tasks."console:verify"]
-description = "console 再生成 + 再构建 + 零漂移断言（src/api 类型 + routeTree 生成物 + dist 产物）"
+description = "console 再生成 + 再构建 + 体积预算 + 零漂移断言（src/api 类型 + routeTree 生成物 + dist 产物）"
 run = [
   { task = "console:install" },
   { task = "console:gen" },
   { task = "console:build" },
+  { task = "console:budget" },
   { task = "console:test" },
   "git diff --exit-code -- console/src/api console/src/routeTree.gen.ts internal/interfaces/console/dist",
 ]
