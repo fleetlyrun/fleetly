@@ -424,6 +424,7 @@ function TaskActionsCell({
         title={`Stop task ${task.name ?? task.id ?? ""}?`}
         description="Resident pool generations are wound down; the task row stays."
         confirmLabel="Stop task"
+        risk={{ tier: "standard" }}
         onConfirm={() => stop.mutateAsync({ id: taskId })}
       />
       <ConfirmDialog
@@ -432,6 +433,7 @@ function TaskActionsCell({
         title={`Delete task ${task.name ?? task.id ?? ""}?`}
         description="The task definition and its pool are removed. This cannot be undone."
         confirmLabel="Delete task"
+        risk={{ tier: "standard" }}
         onConfirm={() => del.mutateAsync({ id: taskId })}
       />
     </div>
@@ -513,6 +515,7 @@ function RunRow({ run }: { run: { id?: string; state?: string; status?: string; 
         title={`Stop run ${run.id ?? ""}?`}
         description="The running generation is terminated."
         confirmLabel="Stop run"
+        risk={{ tier: "standard" }}
         onConfirm={() => stop.mutateAsync({ id: run.id ?? "" })}
       />
     </>
@@ -737,6 +740,7 @@ function ScheduleActionsCell({ schedule, projectId }: { schedule: { id?: string;
         title={`Delete schedule ${schedule.name ?? schedule.id ?? ""}?`}
         description="Fired tasks already created keep running; the clock stops."
         confirmLabel="Delete schedule"
+        risk={{ tier: "standard" }}
         onConfirm={() => del.mutateAsync({ id: scheduleId })}
       />
     </div>

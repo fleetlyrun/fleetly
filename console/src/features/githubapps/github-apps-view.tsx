@@ -192,6 +192,7 @@ export function GitHubAppsView({ projectId, from }: { projectId?: string; from: 
         description="Clones stop using this row immediately; the installation on GitHub is untouched. Private repos it covered will fail with an auth error until a row is added again."
         confirmLabel="Remove app"
         pendingLabel="Removing…"
+        risk={{ tier: "standard" }}
         onConfirm={() => (deleting != null ? del.mutateAsync({ id: deleting.id ?? "" }) : Promise.resolve())}
       />
     </>

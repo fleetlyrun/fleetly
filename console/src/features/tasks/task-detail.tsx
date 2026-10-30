@@ -5,6 +5,7 @@ import type { ApiError, CommandResult } from "@lynx-go/uikit-core/kernel";
 import type { components } from "@/api/automation";
 
 import { ContentCrumb } from "@/components/domain/content-crumb";
+import { ConfirmDialog } from "@/components/domain/confirm-dialog";
 import { CopyButton } from "@/components/domain/copy-button";
 import { EmptyState } from "@/components/domain/empty-state";
 import { PageFrame } from "@/components/domain/page-frame";
@@ -12,7 +13,6 @@ import { PageTabs } from "@/components/domain/page-tabs";
 import { ProjectAvatar } from "@/components/domain/project-avatar";
 import { RelativeTime } from "@/components/domain/relative-time";
 import { StatusBadge, statusToneClass, type StatusTone } from "@/components/domain/status-badge";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -380,6 +380,7 @@ function TaskSettings({ task, projectId, taskId }: { task: TaskEntry | undefined
     scope,
     onSettled: settleToast("Task deleted"),
   });
+  const [deleting, setDeleting] = useState(false);
   return (
     <div className="flex flex-col gap-4">
       <section className="rounded-xl border bg-panel p-5">
@@ -423,33 +424,21 @@ function TaskSettings({ task, projectId, taskId }: { task: TaskEntry | undefined
         <p className="mb-4 text-xs text-muted">
           Deleting the task removes its definition and pool. Terminal runs stay in the ledger; active runs are drained first.
         </p>
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button variant="destructive" size="sm" disabled={task == null}>
-              Delete task…
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Delete task {task?.name}?</AlertDialogTitle>
-              <AlertDialogDescription>
-                The task definition and pool are removed. Active runs are drained; terminal runs remain in the ledger.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                disabled={remove.pending}
-                onClick={(event) => {
-                  event.preventDefault();
-                  remove.mutate({ id: taskId });
-                }}
-              >
-                {remove.pending ? "Deleting…" : "Delete"}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+        {/* B4a 风险分级收编：删 task = 单资源破坏动作（定义 + 自有 pool，
+            终态 run 留账）→ standard。 */}
+        <Button variant="destructive" size="sm" disabled={task == null} onClick={() => setDeleting(true)}>
+          Delete task…
+        </Button>
+        <ConfirmDialog
+          open={deleting}
+          onOpenChange={setDeleting}
+          title={`Delete task ${task?.name}?`}
+          description="The task definition and pool are removed. Active runs are drained; terminal runs remain in the ledger."
+          confirmLabel="Delete"
+          pendingLabel="Deleting…"
+          risk={{ tier: "standard" }}
+          onConfirm={() => remove.mutateAsync({ id: taskId })}
+        />
       </section>
     </div>
   );

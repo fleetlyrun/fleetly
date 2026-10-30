@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { ActivityIcon, GlobeIcon, LayersIcon, ScrollTextIcon } from "lucide-react";
 import {
   DISK_WATERMARK_QUERY,
@@ -13,17 +14,7 @@ import { systemResource } from "@/kit/system";
 import { sessionResource } from "@/kit/settings";
 import { useRawMetricsSeries } from "@/kit/metrics";
 import { toastOnSettled } from "@/kit/toast";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
+import { ConfirmDialog } from "@/components/domain/confirm-dialog";
 import { PageFrame } from "@/components/domain/page-frame";
 import { StatusBadge, type StatusTone } from "@/components/domain/status-badge";
 import { Button } from "@/components/ui/button";
@@ -222,11 +213,15 @@ function ProviderCardView({
 }
 
 // RestartButton（IA v3 二期④）：载体重启（Runtime 重启子面强制重排）——
-// 破坏性动作走 AlertDialog 确认（守卫执法：禁 window.confirm）；批2 走
+// 破坏性动作走确认弹窗（守卫执法：禁 window.confirm）；批2 走
 // kit/system.ts 的 restart 命令——["system","status"] 失效语义经 legacyKeys
 // 保留，成功后另由 onRestarted 刷新健康面（滚动重排期间 unhealthy 是预
 // 期中间态）。
+// B4a 风险分级收编：受管组件 Restart 归平台级破坏动作（组件面全平台可用
+// 性受波及）→ type_to_confirm——须输入组件名（confirmName = name）才激活
+// 确认钮；destructive=false 维持常规钮色（非删除语义，重量由输入门承载）。
 function RestartButton({ name, onRestarted }: { name: string; onRestarted: () => void }) {
+  const [open, setOpen] = useState(false);
   const restart = useCommand(systemResource.commands.restart, {
     onSettled: toastOnSettled((payload) => {
       toast(`Restart requested — ${payload.restarted ?? 1} carrier(s) rescheduling`);
@@ -234,34 +229,22 @@ function RestartButton({ name, onRestarted }: { name: string; onRestarted: () =>
     }),
   });
   return (
-    <AlertDialog>
-      <AlertDialogTrigger asChild>
-        <Button size="sm" variant="outline" disabled={restart.pending}>
-          {restart.pending ? "Restarting…" : "Restart…"}
-        </Button>
-      </AlertDialogTrigger>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Restart {name}?</AlertDialogTitle>
-          <AlertDialogDescription>
-            The carrier is force-rescheduled (tasks replaced with a rolling restart). Brief downtime on this component's
-            face is expected while the replacement becomes healthy.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            disabled={restart.pending}
-            onClick={(event) => {
-              event.preventDefault();
-              restart.mutate({ name });
-            }}
-          >
-            {restart.pending ? "Restarting…" : "Restart"}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <>
+      <Button size="sm" variant="outline" disabled={restart.pending} onClick={() => setOpen(true)}>
+        {restart.pending ? "Restarting…" : "Restart…"}
+      </Button>
+      <ConfirmDialog
+        open={open}
+        onOpenChange={setOpen}
+        title={`Restart ${name}?`}
+        description="The carrier is force-rescheduled (tasks replaced with a rolling restart). Brief downtime on this component's face is expected while the replacement becomes healthy."
+        confirmLabel="Restart"
+        pendingLabel="Restarting…"
+        destructive={false}
+        risk={{ tier: "type_to_confirm", confirmName: name }}
+        onConfirm={() => restart.mutateAsync({ name })}
+      />
+    </>
   );
 }
 

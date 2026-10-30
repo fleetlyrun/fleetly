@@ -11,6 +11,7 @@ import {
   tokensResource,
 } from "@/kit/settings";
 import { toastOnSettled } from "@/kit/toast";
+import { ConfirmDialog } from "@/components/domain/confirm-dialog";
 import { CopyButton } from "@/components/domain/copy-button";
 import { EmptyState } from "@/components/domain/empty-state";
 import { ErrorState } from "@/components/domain/error-state";
@@ -153,7 +154,6 @@ function TokenRow({ token }: { token: { id?: string; name?: string; role_id?: st
   const revoke = useCommand(tokensResource.commands.revoke, {
     onSettled: toastOnSettled(() => {
       toast("Token revoked — clients using it fail immediately");
-      setRevoking(false);
     }),
   });
   return (
@@ -174,24 +174,18 @@ function TokenRow({ token }: { token: { id?: string; name?: string; role_id?: st
           ) : null}
         </TableCell>
       </TableRow>
-      <AlertDialog open={revoking} onOpenChange={setRevoking}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Revoke token {token.name}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Clients using it fail immediately — this includes the console itself if it is the current token.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction asChild>
-              <Button variant="destructive" disabled={revoke.pending} onClick={() => revoke.mutate({ id: token.id ?? "" })}>
-                {revoke.pending ? "Revoking…" : "Revoke token"}
-              </Button>
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {/* B4a 风险分级收编：吊销 token = 单资源破坏动作 → standard（destructive
+          钮色保持既有红钮口径）。 */}
+      <ConfirmDialog
+        open={revoking}
+        onOpenChange={setRevoking}
+        title={`Revoke token ${token.name}?`}
+        description="Clients using it fail immediately — this includes the console itself if it is the current token."
+        confirmLabel="Revoke token"
+        pendingLabel="Revoking…"
+        risk={{ tier: "standard" }}
+        onConfirm={() => revoke.mutateAsync({ id: token.id ?? "" })}
+      />
     </>
   );
 }
@@ -347,6 +341,9 @@ function GovernanceCard() {
         <PlatformBackupsTable />
       </div>
 
+      {/* lift freeze 非破坏性动作（恢复受理面，destructive=false 语义）——
+          B4a 风险分级只覆盖破坏性确认面，本批保留裸 AlertDialog 形态
+          （反模式守卫的裸 AlertDialog 清单在案）。 */}
       <AlertDialog open={lifting != null} onOpenChange={(open) => !open && setLifting(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>

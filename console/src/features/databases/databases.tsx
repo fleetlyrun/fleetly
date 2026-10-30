@@ -38,6 +38,7 @@ import { Pagination } from "@/components/kit/query/pagination";
 import { Form } from "@/components/kit/command/form";
 import { SelectField, TextField } from "@/components/kit/command/fields";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/domain/confirm-dialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   DropdownMenu,
@@ -48,17 +49,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
 import { appsResource, appsDirectorySearch } from "@/kit/apps";
 import { projectsResource } from "@/kit/projects";
 import { appSpecsResource, appSpecsLookup, type AppSpec } from "@/kit/app-specs";
@@ -86,6 +76,14 @@ import { toastOnSettled } from "@/kit/toast";
 
 type DatabaseEntry = DatabaseRow;
 type BackupEntry = components["schemas"]["v1Backup"];
+
+// 删库后果文案（B4a wide 档单源，行删与 Settings Danger zone 两确认面
+// 共用）：修复既有自相矛盾——旧文案同时说「卷保留」与 "Data is destroyed"。
+// 真实语义（ADR-0029 决策 8 / DeleteDatabase handler：数据卷与凭证 Secret
+// 是 Project 级材料不随删）：数据不毁、卷保留，同名重建复用卷、凭证重铸
+// 进同一 Secret。
+const DELETE_DATABASE_CONSEQUENCES =
+  "Kept: the data volume and the credential secret — nothing on disk is deleted. Recreating a database with the same name reuses the volume (its credential is re-minted into the same secret). Clean both up separately if you mean to discard the data.";
 
 // status: pending | running | degraded | stopped（收敛环推进）。
 function databaseTone(status: string | undefined): StatusTone {
@@ -281,6 +279,7 @@ export function DatabasesListPage({ projectId, from }: { projectId: string; from
 function RowActions({ projectId, database }: { projectId: string; database: DatabaseEntry }) {
   const navigate = useNavigate();
   const id = database.id ?? "";
+  const [deleting, setDeleting] = useState(false);
   // 批2：三写位走 kit commands（invalidates 默认同资源 + legacyKeys 桥
   // catalog 键；browse 动作类裸 descriptor 无失效面）。反馈走 toast 单源。
   const backup = useCommand(databasesResource.commands.backup, {
@@ -330,37 +329,31 @@ function RowActions({ projectId, database }: { projectId: string; database: Data
             Open details
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <DropdownMenuItem variant="destructive" onSelect={(event) => event.preventDefault()}>
-                <Trash2Icon />
-                Delete database…
-              </DropdownMenuItem>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Delete database {database.name}?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  The carrier workload and its deploy state are removed. The volume and the credential secret are kept and must be
-                  cleaned up separately. Data is destroyed.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction
-                  disabled={remove.pending}
-                  onClick={(event) => {
-                    event.preventDefault();
-                    remove.mutate({ id });
-                  }}
-                >
-                  {remove.pending ? "Deleting…" : "Delete"}
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+          {/* B4a：删库 = 级联影响面（数据语义）→ wide；后果段单源
+              DELETE_DATABASE_CONSEQUENCES（onSelect preventDefault 维持
+              菜单原行为——确认面 portaled 弹出）。 */}
+          <DropdownMenuItem
+            variant="destructive"
+            onSelect={(event) => {
+              event.preventDefault();
+              setDeleting(true);
+            }}
+          >
+            <Trash2Icon />
+            Delete database…
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+      <ConfirmDialog
+        open={deleting}
+        onOpenChange={setDeleting}
+        title={`Delete database ${database.name}?`}
+        description="The carrier workload and its deploy state are removed."
+        confirmLabel="Delete"
+        pendingLabel="Deleting…"
+        risk={{ tier: "wide", consequences: DELETE_DATABASE_CONSEQUENCES }}
+        onConfirm={() => remove.mutateAsync({ id })}
+      />
     </div>
   );
 }
@@ -980,6 +973,7 @@ function DatabaseSettings({
       onDeleted();
     }),
   });
+  const [deleting, setDeleting] = useState(false);
   const [rotateOpen, setRotateOpen] = useState(false);
   const rotate = useCommand(databasesResource.commands.rotate, {
     scope: { projectId },
@@ -997,38 +991,32 @@ function DatabaseSettings({
           <span className="font-mono">{database?.credentials_ref ?? "—"}</span> (full connection URL, never displayed). Rotation
           mints a new password; referencing apps must be redeployed to pick it up.
         </p>
-        <AlertDialog open={rotateOpen} onOpenChange={setRotateOpen}>
-          <AlertDialogTrigger asChild>
-            <Button size="sm" disabled={database == null || !ready || rotate.pending}>
-              <RefreshCwIcon data-icon-start-inline />
-              {rotate.pending ? "Rotating…" : "Rotate password…"}
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Rotate the credential for {database?.name}?</AlertDialogTitle>
-              <AlertDialogDescription>
-                A new password is minted and the connection URL in the credential secret is rewritten; the old password stops
-                working. Apps referencing this database keep the old value until redeployed
-                {usedBy.length > 0 ? `: ${usedBy.join(", ")}` : " (none found in this project right now)"}. Carriers re-roll as
-                the new materials are published, so expect a brief connection blip. The new URL is never displayed — apps receive
-                it via their secret refs.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                disabled={rotate.pending}
-                onClick={(event) => {
-                  event.preventDefault();
-                  rotate.mutate({ id });
-                }}
-              >
-                {rotate.pending ? "Rotating…" : "Rotate"}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+        {/* B4a 风险分级收编：凭证轮换 = 单资源破坏动作（旧口令即刻失效）→
+            standard（钮色维持常规——非删除语义）；W-4 成功关窗改由
+            ConfirmDialog 落定自动关窗内建。 */}
+        <Button size="sm" disabled={database == null || !ready || rotate.pending} onClick={() => setRotateOpen(true)}>
+          <RefreshCwIcon data-icon-start-inline />
+          {rotate.pending ? "Rotating…" : "Rotate password…"}
+        </Button>
+        <ConfirmDialog
+          open={rotateOpen}
+          onOpenChange={setRotateOpen}
+          title={`Rotate the credential for ${database?.name}?`}
+          description={
+            <>
+              A new password is minted and the connection URL in the credential secret is rewritten; the old password stops
+              working. Apps referencing this database keep the old value until redeployed
+              {usedBy.length > 0 ? `: ${usedBy.join(", ")}` : " (none found in this project right now)"}. Carriers re-roll as
+              the new materials are published, so expect a brief connection blip. The new URL is never displayed — apps receive
+              it via their secret refs.
+            </>
+          }
+          confirmLabel="Rotate"
+          pendingLabel="Rotating…"
+          destructive={false}
+          risk={{ tier: "standard" }}
+          onConfirm={() => rotate.mutateAsync({ id })}
+        />
         {!ready ? (
           <p className="mt-3 text-2xs text-muted">
             Rotation needs a running database — the data-plane change requires a live target.
@@ -1037,40 +1025,28 @@ function DatabaseSettings({
       </section>
       <section className="rounded-xl border border-err/30 bg-panel p-5">
         <h3 className="mb-2 text-sm font-semibold text-err">Danger zone</h3>
+        {/* 段落与确认弹窗同语义单源（B4a 修复自相矛盾：不再说 "Data is
+            destroyed"）——后果清单见 DELETE_DATABASE_CONSEQUENCES。 */}
         <p className="mb-4 text-xs text-muted">
           Deleting <span className="font-semibold text-fg">{database?.name}</span> removes the carrier workload and its
           deploy state. The volume and the credential secret{" "}
-          <span className="font-mono">{database?.credentials_ref ?? "—"}</span> are kept and must be cleaned up separately. Data
-          is destroyed.
+          <span className="font-mono">{database?.credentials_ref ?? "—"}</span> are kept — nothing on disk is deleted; recreate
+          with the same name to reuse the volume, or clean both up separately to discard the data.
         </p>
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button variant="destructive" size="sm" disabled={database == null}>
-              <Trash2Icon data-icon-start-inline />
-              Delete database…
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Delete database {database?.name}?</AlertDialogTitle>
-              <AlertDialogDescription>
-                This permanently destroys the database data. The volume and credential secret are kept for post-mortem cleanup.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                disabled={remove.pending}
-                onClick={(event) => {
-                  event.preventDefault();
-                  remove.mutate({ id });
-                }}
-              >
-                {remove.pending ? "Deleting…" : "Delete"}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+        <Button variant="destructive" size="sm" disabled={database == null} onClick={() => setDeleting(true)}>
+          <Trash2Icon data-icon-start-inline />
+          Delete database…
+        </Button>
+        <ConfirmDialog
+          open={deleting}
+          onOpenChange={setDeleting}
+          title={`Delete database ${database?.name}?`}
+          description="This removes the carrier workload and its deploy state."
+          confirmLabel="Delete"
+          pendingLabel="Deleting…"
+          risk={{ tier: "wide", consequences: DELETE_DATABASE_CONSEQUENCES }}
+          onConfirm={() => remove.mutateAsync({ id })}
+        />
       </section>
     </div>
   );

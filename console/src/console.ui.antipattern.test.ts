@@ -17,6 +17,19 @@ import { describe, expect, it } from "vitest";
 //    必须零页面 chrome（padding/页头三件）。升版重拷把上游的 px-6
 //    py-6/header 回拷即红——双壳回归的唯一通道在组件形状上堵死
 //    （2026-10-28 机制收口，取代逐位点 embedded 白名单）。
+// ⑨ ConfirmDialog 调用点必带 risk 元数据（B4a 风险分级执法面，2026-10-30）：
+//    risk={{ tier: … }} 缺席即红——档位（standard/wide/type_to_confirm）
+//    是弹窗形态契约（宽框/后果先行/输入资源名门），无档位即无契约。
+//    分级真源 src/model/risk.ts（触发面 × 影响面 → 档位）。
+// ⑩ 裸 AlertDialog 禁令（不经 confirm-dialog 的确认弹窗）——暂缓立法：
+//    现存裸用清点非零（2026-10-30 B4a 批实清点，均非破坏性确认面或已
+//    裁定与风险分级间档）：
+//    - settings.tsx lift freeze：非破坏性治理动作（destructive=false 语义）；
+//    - $appId.tsx Redeploy/Rollback：滚动类部署动作非破坏面，Rollback 的
+//      确认闭环走 B1 票据面（后续批收编）；
+//    - app-processes.tsx Restart process：B1 裁决 Restart/Scale 轻且可逆，
+//      与 B4a 风险分级间档（豁免）。
+//    上述清点归零之日即立 ⑩ 禁令条（零容忍，同 B4a 设计 §4）。
 // 执法范围：全量 src/**。components/ui/**（shadcn 上游手植层）按上游原样
 // 纪律天然不在扫描面。
 // 范围例外（带理由，双向保鲜）：
@@ -75,6 +88,34 @@ function* walk(dir: string): Generator<string> {
   }
 }
 
+// ⑨ ConfirmDialog 调用点 risk 元数据守卫（B4a）：每个 <ConfirmDialog 调用
+// 点必须在 prop 窗内携带 risk={{ tier: … }}。prop 窗 = 从 <ConfirmDialog
+// 行扫到首个含 onConfirm= 的行（必填 prop，稳定哨兵）或元素自闭合行
+// （/> 独占一行）——等价风格约束：risk 元数据先于回调声明（本仓全部
+// 调用点即此形态）。tier 伴随后行（多行 risk 对象字面量）也在窗内命中。
+// 范围例外（带理由，双向保鲜——不再命中即应移除）：暂无。
+const CONFIRM_RISK_ALLOWLIST: Array<{ path: string; reason: string }> = [];
+
+function confirmRiskViolations(path: string, lines: string[]): string[] {
+  const violations: string[] = [];
+  lines.forEach((line, index) => {
+    if (!/<ConfirmDialog\b/.test(line)) return;
+    let end = index;
+    while (end < lines.length) {
+      if (/onConfirm=/.test(lines[end])) break;
+      if (end > index && /^\s*\/>\s*$/.test(lines[end])) break;
+      end++;
+    }
+    const propWindow = lines.slice(index, end + 1).join("\n");
+    if (!/\brisk=\{\s*\{/.test(propWindow) || !/\btier\s*:/.test(propWindow)) {
+      violations.push(
+        `${path}:${index + 1} — ConfirmDialog call site must carry risk={{ tier: … }} (B4a risk grading; place it before onConfirm)\n    ${line.trim()}`,
+      );
+    }
+  });
+  return violations;
+}
+
 // kit 列表件 chrome 禁令（2026-10-28 机制收口）：页面衬垫与页头只归
 // PageFrame/ModulePage 壳单源；kit ListPage 是壳内模块配方，零页面
 // chrome。升版重拷回拷上游 padding/header 即红——这类"双壳"回归的
@@ -114,6 +155,22 @@ describe("console UI anti-pattern guard", () => {
             }
           }
         });
+      }
+      expect(violations, `\n${violations.join("\n")}`).toEqual([]);
+    });
+  }
+});
+
+// ⑨ 的执法体（独立 describe：窗口扫描不是逐行规则，不入 RULES 表）。
+describe("console confirm-dialog risk guard (B4a)", () => {
+  for (const root of SCANNED_ROOTS) {
+    it(`scans ${root}`, () => {
+      if (!existsSync(root)) return;
+      const violations: string[] = [];
+      for (const path of walk(root)) {
+        const normalized = path.replaceAll("\\", "/");
+        if (CONFIRM_RISK_ALLOWLIST.some((entry) => entry.path === normalized)) continue;
+        violations.push(...confirmRiskViolations(path, readFileSync(path, "utf8").split("\n")));
       }
       expect(violations, `\n${violations.join("\n")}`).toEqual([]);
     });

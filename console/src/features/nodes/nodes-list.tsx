@@ -204,6 +204,8 @@ function NodesList({ from }: { from: string }) {
 
       {material != null ? <MaterialDialog material={material} onClose={() => setMaterial(null)} /> : null}
       {relayMaterial != null ? <RelayDialog material={relayMaterial} onClose={() => setRelayMaterial(null)} /> : null}
+      {/* B4a：平台级破坏动作（全集群凭证失效）→ type_to_confirm；确认串
+          用等价确认词 "rotate"（动作无单一资源名可锚）。 */}
       <ConfirmDialog
         open={rotating}
         onOpenChange={setRotating}
@@ -211,6 +213,7 @@ function NodesList({ from }: { from: string }) {
         description="Rotate join tokens and revoke all node relay credentials; connected relays drop. Reissue relay commands per node."
         confirmLabel="Rotate tokens"
         pendingLabel="Rotating…"
+        risk={{ tier: "type_to_confirm", confirmName: "rotate" }}
         onConfirm={() => rotate.mutateAsync({ rotate: true })}
       />
     </>
@@ -324,6 +327,7 @@ function NodeActionsCell({
         description="The node's relay drops immediately; exec cannot route until you issue a new relay command and run it on the node."
         confirmLabel="Revoke relay"
         pendingLabel="Revoking…"
+        risk={{ tier: "standard" }}
         onConfirm={() => revoke.mutateAsync({ nodeId })}
       />
     </div>
@@ -344,6 +348,8 @@ function DrainButton({ hostname, onRun }: { hostname: string; onRun: () => Promi
       >
         drain
       </Button>
+      {/* B4a：drain 的级联影响面 = 节点上全部承载 workload 实迁移 → wide
+          （后果先行段披露迁移抖动与调度语义）。 */}
       <ConfirmDialog
         open={open}
         onOpenChange={setOpen}
@@ -351,6 +357,11 @@ function DrainButton({ hostname, onRun }: { hostname: string; onRun: () => Promi
         description="Running tasks migrate to other nodes in real time."
         confirmLabel="Drain node"
         pendingLabel="Draining…"
+        risk={{
+          tier: "wide",
+          consequences:
+            "Every workload scheduled on this node is migrated off in real time — each moved container is stopped and restarted on another node (brief per-workload downtime). The node itself stays registered; cordon/uncordon control future scheduling.",
+        }}
         onConfirm={onRun}
       />
     </>

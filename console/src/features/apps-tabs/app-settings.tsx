@@ -6,9 +6,9 @@ import { appHookResource, appRevisionSpecResource, appWorkloadsResource } from "
 import { describeApiError } from "@/kit/errors";
 import { toastOnSettled } from "@/kit/toast";
 import { CopyButton } from "@/components/domain/copy-button";
+import { ConfirmDialog } from "@/components/domain/confirm-dialog";
 import { RelativeTime } from "@/components/domain/relative-time";
 import { sourceKindLabel } from "@/lib/format";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -235,6 +235,7 @@ function GitHookCard({ appId, projectId }: { appId: string; projectId: string })
   const hook = useGitHook(projectId, appId);
   const [form, setForm] = useState({ repo: "", branch: "main", dockerfile: "", watchPaths: "" });
   const [editing, setEditing] = useState(false);
+  const [removing, setRemoving] = useState(false);
   const [revealedSecret, setRevealedSecret] = useState<string | null>(null);
   // 编辑入口（SetGitHook 是全量 upsert：改配置不换 Token）——表单按现值
   // 预填，保存即回展示态；创建入口（未配置空态）回空白初值。
@@ -332,35 +333,21 @@ function GitHookCard({ appId, projectId }: { appId: string; projectId: string })
             <Button size="sm" variant="outline" disabled={rotate.pending} onClick={() => rotate.mutate()}>
               Rotate token…
             </Button>
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button size="sm" variant="outline" className="text-err" disabled={remove.pending}>
-                  Remove…
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Remove the git deploy hook?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    The URL token and the GitHub webhook secret are revoked immediately — pushes to the old webhook URL fail.
-                    Material ownership returns to deploys (image/compose/upload deploys are accepted again). Configure a new hook
-                    any time.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction
-                    disabled={remove.pending}
-                    onClick={(event) => {
-                      event.preventDefault();
-                      remove.mutate();
-                    }}
-                  >
-                    {remove.pending ? "Removing…" : "Remove"}
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
+            {/* B4a 风险分级收编：单资源破坏动作（token + webhook secret 即刻
+                失效、所有权归还 deploy 面）→ standard。 */}
+            <Button size="sm" variant="outline" className="text-err" disabled={remove.pending} onClick={() => setRemoving(true)}>
+              Remove…
+            </Button>
+            <ConfirmDialog
+              open={removing}
+              onOpenChange={setRemoving}
+              title="Remove the git deploy hook?"
+              description="The URL token and the GitHub webhook secret are revoked immediately — pushes to the old webhook URL fail. Material ownership returns to deploys (image/compose/upload deploys are accepted again). Configure a new hook any time."
+              confirmLabel="Remove"
+              pendingLabel="Removing…"
+              risk={{ tier: "standard" }}
+              onConfirm={() => remove.mutateAsync()}
+            />
           </div>
           <p className="mt-2 text-2xs text-muted">
             <span className="font-semibold text-fg">Deploy now</span> pulls the branch HEAD and deploys immediately — no
@@ -448,6 +435,7 @@ function GitHookCard({ appId, projectId }: { appId: string; projectId: string })
 }
 
 function DangerZone({ appId, appName, projectId, onDeleted }: { appId: string; appName: string; projectId: string; onDeleted: () => void }) {
+  const [deleting, setDeleting] = useState(false);
   const remove = useCommand(appTabCommands(projectId, appId).deleteApp, {
     onSettled: toastOnSettled(() => {
       toast(`App ${appName} deleted`);
@@ -461,33 +449,26 @@ function DangerZone({ appId, appName, projectId, onDeleted }: { appId: string; a
         Deleting <span className="font-semibold text-fg">{appName}</span> removes its deployments history, routes and exec
         sessions. Databases and volumes are kept. Recent revisions stay in the registry and must be cleaned up separately.
       </p>
-      <AlertDialog>
-        <AlertDialogTrigger asChild>
-          <Button variant="destructive" size="sm">
-            Delete app…
-          </Button>
-        </AlertDialogTrigger>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete app {appName}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This permanently removes the app, its deployments history, routes and exec sessions. Databases and volumes are kept.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={remove.pending}
-              onClick={(event) => {
-                event.preventDefault();
-                remove.mutate();
-              }}
-            >
-              {remove.pending ? "Deleting…" : "Delete"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {/* B4a：删 App 是级联影响面的破坏动作（载体 + hook/route 行级联）→
+          wide——后果先行段列出拆除面与保留面（与上方段落同语义单源，
+          不新造：databases/volumes/secrets 为 Project 级材料不随删）。 */}
+      <Button variant="destructive" size="sm" onClick={() => setDeleting(true)}>
+        Delete app…
+      </Button>
+      <ConfirmDialog
+        open={deleting}
+        onOpenChange={setDeleting}
+        title={`Delete app ${appName}?`}
+        description="This permanently removes the app, its deployments history, routes and exec sessions."
+        confirmLabel="Delete"
+        pendingLabel="Deleting…"
+        risk={{
+          tier: "wide",
+          consequences:
+            "Removed: the app carrier, its deployments history, routes and exec sessions. Kept: databases, volumes and project secrets — they are project-level material and survive this delete. Recent revisions stay in the registry and must be cleaned up separately.",
+        }}
+        onConfirm={() => remove.mutateAsync()}
+      />
     </section>
   );
 }

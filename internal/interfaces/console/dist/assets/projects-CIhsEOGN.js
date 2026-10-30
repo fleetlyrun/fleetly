@@ -1,1 +1,0 @@
-import{_ as a}from"./index-D0tl56QS.js";import{_ as o,$ as s,a0 as i}from"./vendor-4o4hbqEa.js";const m=o({name:"projects",getId:t=>t.id,collection:s(i({path:()=>"/v1/projects",params:()=>({limit:100}),envelope:t=>t.projects?.flatMap(e=>e?.id&&e.name?[{id:e.id,name:e.name}]:[])??[],fetch:a}))});export{m as p};

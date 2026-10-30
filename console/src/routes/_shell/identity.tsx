@@ -232,6 +232,7 @@ function UserActionsCell({ user, expanded, onTogglePassword }: { user: UserEntry
         title={`Delete user ${user.name ?? ""}?`}
         description="Tokens minted by this user lose their membership scoping. This cannot be undone."
         confirmLabel="Delete user"
+        risk={{ tier: "standard" }}
         onConfirm={() => remove.mutateAsync({ id: user.id ?? "" })}
       />
     </div>
@@ -464,6 +465,7 @@ function TeamsTab() {
         title={`Delete team ${deleting?.name ?? ""}?`}
         description="Members lose this team's role grants. This cannot be undone."
         confirmLabel="Delete team"
+        risk={{ tier: "standard" }}
         onConfirm={() => removeTeam.mutateAsync({ id: deleting?.id ?? "" })}
       />
     </>
@@ -566,6 +568,7 @@ function RolesTab({ createOpen, onCreateOpenChange }: { createOpen: boolean; onC
         title={`Delete role ${deleting?.name ?? ""}?`}
         description="Users holding this role lose its scopes. This cannot be undone."
         confirmLabel="Delete role"
+        risk={{ tier: "standard" }}
         onConfirm={() => removeRole.mutateAsync({ id: deleting?.id ?? "" })}
       />
       <CreateRoleDialog open={createOpen} onClose={() => onCreateOpenChange(false)} teams={teams.rows} />

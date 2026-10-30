@@ -71,17 +71,6 @@ import { ConfirmDialog } from "@/components/domain/confirm-dialog";
 import { CopyButton } from "@/components/domain/copy-button";
 import { CliEquivalent } from "@/components/domain/list-toolbar";
 import { RelativeTime } from "@/components/domain/relative-time";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -406,6 +395,7 @@ function PeerActionsCell({ projectId, peer }: { projectId: string; peer: Network
         title="Revoke this peer?"
         description="The cross-project attachment is detached immediately."
         confirmLabel="Revoke"
+        risk={{ tier: "standard" }}
         onConfirm={() => revoke.mutateAsync({ peerId: peer.id ?? "" })}
       />
     </div>
@@ -743,15 +733,16 @@ function RouteActionsCell({ routeId, host, projectId }: { routeId?: string; host
         title={`Delete route ${host ?? ""}?`}
         description="Traffic to this host stops being served by the managed proxy."
         confirmLabel="Delete route"
+        risk={{ tier: "standard" }}
         onConfirm={() => del.mutateAsync({ routeId: routeId ?? "" })}
       />
     </div>
   );
 }
 
-// ---- volumes（IA v3 二期⑤b v2 形态：Dialog 创建 + AlertDialog 删除
-// 确认 + token 类；mutation 语义自批 4 零漂移；本批 kit 化列表读面，
-// 15s 轮询沿用） ----
+// ---- volumes（IA v3 二期⑤b v2 形态：Dialog 创建 + 删除确认（B4a 收编
+// ConfirmDialog/standard）+ token 类；mutation 语义自批 4 零漂移；本批 kit
+// 化列表读面，15s 轮询沿用） ----
 
 export function VolumesPanel({ projectId, routeId }: { projectId: string; routeId: string }) {
   return <VolumesTab projectId={projectId} routeId={routeId} />;
@@ -953,8 +944,9 @@ function VolumesTab({ projectId, routeId }: { projectId: string; routeId: string
 
 // VolumeActionsCell：未挂载才可删（挂载判据由服务端 E_CONFLICT 兜底——
 // 客户端隐藏是前置体验面；挂载方信息由 Mounted by 列承载）；删除仅收口
-// 平台行，底层 runtime 卷留存（数据兜底永不级联），AlertDialog 确认文案
-// 明示。
+// 平台行，底层 runtime 卷留存（数据兜底永不级联），确认文案明示。
+// B4a 风险分级收编：单资源破坏动作 → standard（原 AlertDialog 壳迁
+// ConfirmDialog，pending 态改内建）。
 function VolumeActionsCell({
   volume,
   mounted,
@@ -964,6 +956,7 @@ function VolumeActionsCell({
   mounted: boolean;
   projectId: string;
 }) {
+  const [deleting, setDeleting] = useState(false);
   const del = useCommand(removeVolumeCommand, {
     scope: { projectId },
     onSettled: (result, failure) => {
@@ -981,34 +974,18 @@ function VolumeActionsCell({
   }
   return (
     <div className="text-right">
-      <AlertDialog>
-        <AlertDialogTrigger asChild>
-          <Button variant="ghost" size="sm" className="text-err hover:text-err" disabled={del.pending}>
-            delete
-          </Button>
-        </AlertDialogTrigger>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete volume {volume.name}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              The platform row is removed; the runtime-side volume stays (data is not reclaimed automatically). A volume still
-              mounted by an app or carried by a database is refused with the referencing list.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={del.pending}
-              onClick={(event) => {
-                event.preventDefault();
-                del.mutate({ volumeId: volume.id ?? "" });
-              }}
-            >
-              {del.pending ? "Deleting…" : "Delete"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <Button variant="ghost" size="sm" className="text-err hover:text-err" disabled={del.pending} onClick={() => setDeleting(true)}>
+        delete
+      </Button>
+      <ConfirmDialog
+        open={deleting}
+        onOpenChange={setDeleting}
+        title={`Delete volume ${volume.name}?`}
+        description="The platform row is removed; the runtime-side volume stays (data is not reclaimed automatically). A volume still mounted by an app or carried by a database is refused with the referencing list."
+        confirmLabel="Delete"
+        risk={{ tier: "standard" }}
+        onConfirm={() => del.mutateAsync({ volumeId: volume.id ?? "" })}
+      />
     </div>
   );
 }
@@ -1204,6 +1181,7 @@ function SecretActionsCell({ name, projectId }: { name?: string; projectId: stri
         title={`Delete secret ${name ?? ""}?`}
         description="Apps referencing it at deploy freeze time will fail to resolve."
         confirmLabel="Delete secret"
+        risk={{ tier: "standard" }}
         onConfirm={() => del.mutateAsync({ name: name ?? "" })}
       />
     </div>
@@ -1594,6 +1572,7 @@ function VariableActionsCell({
         title={`Delete shared variable ${row.name ?? ""}?`}
         description="Apps referencing it keep the last merged value until the next deploy freeze."
         confirmLabel="Delete variable"
+        risk={{ tier: "standard" }}
         onConfirm={() => del.mutateAsync({ name: row.name ?? "" })}
       />
     </div>

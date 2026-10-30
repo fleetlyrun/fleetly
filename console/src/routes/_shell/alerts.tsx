@@ -234,6 +234,7 @@ function RulesPanel({ from, states, onCreate }: { from: string; states: AlertSta
           </>
         }
         confirmLabel="Delete rule"
+        risk={{ tier: "standard" }}
         onConfirm={() => deleteRule(deleting?.id ?? "")}
       />
     </>
@@ -363,6 +364,7 @@ function ChannelsPanel({ from }: { from: string }) {
         title={`Delete notification channel ${deleting?.name ?? ""}?`}
         description="Alert rules referencing it will stop delivering. This cannot be undone."
         confirmLabel="Delete channel"
+        risk={{ tier: "standard" }}
         onConfirm={() => deleteChannel(deleting?.id ?? "")}
       />
     </>
